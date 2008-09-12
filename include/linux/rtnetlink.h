@@ -204,6 +204,7 @@ enum
 #define RTPROT_DNROUTED	13	/* DECnet routing daemon */
 #define RTPROT_XORP	14	/* XORP */
 #define RTPROT_NTK	15	/* Netsukuku */
+#define RTPROT_SHIM6    17      /* 16 already taken by MIPv6 (RTPROT_MIP)*/
 
 /* rtm_scope
 

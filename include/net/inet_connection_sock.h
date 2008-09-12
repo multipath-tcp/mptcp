@@ -101,6 +101,12 @@ struct inet_connection_sock {
 	__u8			  icsk_syn_retries;
 	__u8			  icsk_probes_out;
 	__u16			  icsk_ext_hdr_len;
+#ifdef CONFIG_IPV6_SHIM6
+/*This flag indicates that the shim6 header is used for 
+  this socket, this allows for correctly adjusting the previous field,
+  icsk_ext_hdr_len*/
+	__u8                      shim6:1;
+#endif               
 	struct {
 		__u8		  pending;	 /* ACK is pending			   */
 		__u8		  quick;	 /* Scheduled number of quick acks	   */

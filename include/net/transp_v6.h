@@ -21,6 +21,7 @@ extern void				ipv6_rthdr_init(void);
 extern void				ipv6_frag_init(void);
 extern void				ipv6_nodata_init(void);
 extern void				ipv6_destopt_init(void);
+extern void                             ipv6_shim6_init(void);
 
 /* transport protocols */
 extern void				rawv6_init(void);

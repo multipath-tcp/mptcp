@@ -41,6 +41,13 @@
 #define NEXTHDR_ICMP		58	/* ICMP for IPv6. */
 #define NEXTHDR_NONE		59	/* No next header */
 #define NEXTHDR_DEST		60	/* Destination options header. */
+#define NEXTHDR_SHIM6           61      /* Shim6 header -- TO BE CHANGED WITH 
+					   THE NUMBER CHOSEN BY IANA : 
+					   this value is arbitrary ! 
+					   When changing this, we'll also have 
+					   to change IPPROTO_SHIM6 in 
+					   linux/in6.h
+					   --SB*/
 #define NEXTHDR_MOBILITY	135	/* Mobility header. */
 
 #define NEXTHDR_MAX		255
@@ -633,6 +640,9 @@ static inline int snmp6_unregister_dev(struct inet6_dev *idev)
 #ifdef CONFIG_SYSCTL
 extern ctl_table ipv6_route_table[];
 extern ctl_table ipv6_icmp_table[];
+#ifdef CONFIG_IPV6_SHIM6
+extern ctl_table ipv6_shim6_table[];
+#endif
 
 extern void ipv6_sysctl_register(void);
 extern void ipv6_sysctl_unregister(void);

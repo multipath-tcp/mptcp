@@ -20,6 +20,8 @@
 #include <linux/module.h>
 #include <linux/cache.h>
 #include <asm/uaccess.h>
+#include <linux/shim6.h>
+#include <net/shim6.h>
 
 #include "xfrm_hash.h"
 
@@ -377,6 +379,7 @@ static void xfrm_state_gc_destroy(struct xfrm_state *x)
 	kfree(x->calg);
 	kfree(x->encap);
 	kfree(x->coaddr);
+	kfree(x->shim6);
 	if (x->inner_mode)
 		xfrm_put_mode(x->inner_mode);
 	if (x->outer_mode)
@@ -456,21 +459,22 @@ static void xfrm_timer_handler(unsigned long data)
 	if (x->lft.soft_use_expires_seconds) {
 		long tmo = x->lft.soft_use_expires_seconds +
 			(x->curlft.use_time ? : now) - now;
+		
 		if (tmo <= 0)
 			warn = 1;
 		else if (tmo < next)
 			next = tmo;
 	}
-
+	
 	x->km.dying = warn;
 	if (warn)
 		km_state_expired(x, 0, 0);
 resched:
 	if (next != LONG_MAX)
 		mod_timer(&x->timer, jiffies + make_jiffies(next));
-
+	
 	goto out;
-
+	
 expired:
 	if (x->km.state == XFRM_STATE_ACQ && x->id.spi == 0) {
 		x->km.state = XFRM_STATE_EXPIRED;
@@ -526,6 +530,7 @@ EXPORT_SYMBOL(xfrm_state_alloc);
 void __xfrm_state_destroy(struct xfrm_state *x)
 {
 	BUG_TRAP(x->km.state == XFRM_STATE_DEAD);
+	PDEBUG("Entering xfrm_state_destroy\n");
 
 	spin_lock_bh(&xfrm_state_gc_lock);
 	hlist_add_head(&x->bydst, &xfrm_state_gc_list);
@@ -537,6 +542,8 @@ EXPORT_SYMBOL(__xfrm_state_destroy);
 int __xfrm_state_delete(struct xfrm_state *x)
 {
 	int err = -ESRCH;
+
+	PDEBUG("Entering xfrm_state_delete\n");
 
 	if (x->km.state != XFRM_STATE_DEAD) {
 		x->km.state = XFRM_STATE_DEAD;
@@ -690,6 +697,79 @@ static struct xfrm_state *__xfrm_state_lookup(xfrm_address_t *daddr, __be32 spi,
 				continue;
 			break;
 		}
+
+		xfrm_state_hold(x);
+		return x;
+	}
+
+	return NULL;
+}
+
+
+/*Looks up based on ct, it uses the spi hash table for the lookup, thus 
+  the 32 low order bits of the ct must be stored in the spi field.
+  Moreover, ct lookup is supposed to be done only for inbound contexts
+  (outbound contexts are looked up based on ulids)*/
+static struct xfrm_state *__xfrm_state_lookup_byct(__u64 ct)
+{
+	unsigned int h;
+	struct xfrm_state *x;
+	struct hlist_node *entry;
+	struct in6_addr any;
+	xfrm_address_t* xany;
+
+	ipv6_addr_set(&any, 0, 0, 0, 0);
+	xany=(xfrm_address_t*)&any;
+
+	h=xfrm_spi_hash(xany,(__be32)(ct & 0xFFFFFFFF),IPPROTO_SHIM6,AF_INET6);
+	
+	hlist_for_each_entry(x, entry, xfrm_state_byspi+h, byspi) {
+		if (x->props.family != AF_INET6 ||
+		    x->id.proto     != IPPROTO_SHIM6 ||
+		    !x->shim6 || !(x->shim6->flags & SHIM6_DATA_INBOUND) ||
+		    x->shim6->ct    != ct)
+			continue;
+		xfrm_state_hold(x);
+		return x;
+	}
+
+	return NULL;
+}
+
+/*Looks up based on input ulids, it uses the src addr hash table for the 
+  lookup. Requirements :
+  - daddr is ulid_local
+  - saddr is ulid_peer
+  The searched state will have xany as daddr (because of spi lookup using daddr)
+  and ulid_peer as saddr. Collisions are resolved by looking at
+  ctx->shim6->in6_local (wich is ulid_local for inbound contexts)*/
+static struct xfrm_state *__xfrm_state_lookup_byulid_in(xfrm_address_t *daddr, 
+							xfrm_address_t *saddr)
+{
+	unsigned int h;
+	struct xfrm_state *x;
+	struct hlist_node *entry;
+	struct in6_addr any;
+	xfrm_address_t* xany;
+
+	ipv6_addr_set(&any, 0, 0, 0, 0);
+	xany=(xfrm_address_t*)&any;
+
+	h=xfrm_src_hash(xany,saddr,AF_INET6);
+	
+	hlist_for_each_entry(x, entry, xfrm_state_bysrc+h, bysrc) {
+		if (x->props.family != AF_INET6 ||
+		    x->id.proto     != IPPROTO_SHIM6 ||
+		    !x->shim6 || !(x->shim6->flags & SHIM6_DATA_INBOUND))
+			continue;
+
+		if (!ipv6_addr_equal((struct in6_addr *)daddr,
+				     (struct in6_addr *)
+				     &x->shim6->in6_local) ||
+		    !ipv6_addr_equal((struct in6_addr *)saddr,
+				     (struct in6_addr *)
+				     &x->shim6->in6_peer))
+			continue;
 
 		xfrm_state_hold(x);
 		return x;
@@ -1047,12 +1127,13 @@ int xfrm_state_add(struct xfrm_state *x)
 	struct xfrm_state *x1;
 	int family;
 	int err;
-	int use_spi = xfrm_id_proto_match(x->id.proto, IPSEC_PROTO_ANY);
-
+	int use_spi = (xfrm_id_proto_match(x->id.proto, IPSEC_PROTO_ANY)
+		       || is_shim6_inbound(x));
+	
 	family = x->props.family;
-
+	
 	spin_lock_bh(&xfrm_state_lock);
-
+	
 	x1 = __xfrm_state_locate(x, use_spi, family);
 	if (x1) {
 		xfrm_state_put(x1);
@@ -1060,33 +1141,34 @@ int xfrm_state_add(struct xfrm_state *x)
 		err = -EEXIST;
 		goto out;
 	}
-
+	
 	if (use_spi && x->km.seq) {
 		x1 = __xfrm_find_acq_byseq(x->km.seq);
 		if (x1 && ((x1->id.proto != x->id.proto) ||
-		    xfrm_addr_cmp(&x1->id.daddr, &x->id.daddr, family))) {
+			   xfrm_addr_cmp(&x1->id.daddr, &x->id.daddr, 
+					 family))) {
 			xfrm_state_put(x1);
 			x1 = NULL;
 		}
 	}
-
+	
 	if (use_spi && !x1)
 		x1 = __find_acq_core(family, x->props.mode, x->props.reqid,
 				     x->id.proto,
 				     &x->id.daddr, &x->props.saddr, 0);
-
+	
 	__xfrm_state_bump_genids(x);
 	__xfrm_state_insert(x);
 	err = 0;
-
+	
 out:
 	spin_unlock_bh(&xfrm_state_lock);
-
+	
 	if (x1) {
 		xfrm_state_delete(x1);
 		xfrm_state_put(x1);
 	}
-
+	
 	return err;
 }
 EXPORT_SYMBOL(xfrm_state_add);
@@ -1142,6 +1224,13 @@ struct xfrm_state *xfrm_state_clone(struct xfrm_state *orig, int *errp)
 			goto error;
 	}
 
+	if (orig->shim6) {
+		x->shim6 = kmemdup(orig->shim6, sizeof(*x->shim6),
+				   GFP_KERNEL);
+		if (!x->shim6)
+			goto error;
+	}
+
 	err = xfrm_init_state(x);
 	if (err)
 		goto error;
@@ -1163,6 +1252,7 @@ struct xfrm_state *xfrm_state_clone(struct xfrm_state *orig, int *errp)
 		kfree(x->calg);
 		kfree(x->encap);
 		kfree(x->coaddr);
+		kfree(x->ct);
 	}
 	kfree(x);
 	return NULL;
@@ -1249,10 +1339,12 @@ int xfrm_state_update(struct xfrm_state *x)
 {
 	struct xfrm_state *x1;
 	int err;
-	int use_spi = xfrm_id_proto_match(x->id.proto, IPSEC_PROTO_ANY);
+	int use_spi = (xfrm_id_proto_match(x->id.proto, IPSEC_PROTO_ANY)
+		       || is_shim6_inbound(x));
 
 	spin_lock_bh(&xfrm_state_lock);
 	x1 = __xfrm_state_locate(x, use_spi, x->props.family);
+	PDEBUG("xfrm_state_update, found context %p\n",x1);
 
 	err = -ESRCH;
 	if (!x1)
@@ -1265,6 +1357,7 @@ int xfrm_state_update(struct xfrm_state *x)
 	}
 
 	if (x1->km.state == XFRM_STATE_ACQ) {
+		PDEBUG("found context has km.state==XFRM_STATE_ACQ\n");
 		__xfrm_state_insert(x);
 		x = NULL;
 	}
@@ -1285,10 +1378,14 @@ out:
 	err = -EINVAL;
 	spin_lock_bh(&x1->lock);
 	if (likely(x1->km.state == XFRM_STATE_VALID)) {
+		PDEBUG("Found state is valid, copying new data\n");
 		if (x->encap && x1->encap)
 			memcpy(x1->encap, x->encap, sizeof(*x1->encap));
 		if (x->coaddr && x1->coaddr) {
 			memcpy(x1->coaddr, x->coaddr, sizeof(*x1->coaddr));
+		}
+		if (x->shim6 && x1->shim6) {
+			memcpy(x1->shim6,x->shim6,sizeof(*x1->shim6));
 		}
 		if (!use_spi && memcmp(&x1->sel, &x->sel, sizeof(x1->sel)))
 			memcpy(&x1->sel, &x->sel, sizeof(x1->sel));
@@ -1346,6 +1443,34 @@ xfrm_state_lookup(xfrm_address_t *daddr, __be32 spi, u8 proto,
 	return x;
 }
 EXPORT_SYMBOL(xfrm_state_lookup);
+
+/*Additional lookup function for shim6 context tag based lookup. This function
+  uses the already existing spi based hashtables.*/
+struct xfrm_state*
+xfrm_state_lookup_byct(__u64 ct)
+{
+	struct xfrm_state *x;
+	
+	spin_lock_bh(&xfrm_state_lock);
+	x = __xfrm_state_lookup_byct(ct);
+	spin_unlock_bh(&xfrm_state_lock);
+	return x;
+}
+EXPORT_SYMBOL(xfrm_state_lookup_byct);
+
+/*Additional lookup function for shim6 ulid based input lookup. This function
+  uses the already existing src addr based hashtables.*/
+struct xfrm_state *
+xfrm_state_lookup_byulid_in(xfrm_address_t *daddr, xfrm_address_t *saddr)
+{
+	struct xfrm_state *x;
+	
+	spin_lock_bh(&xfrm_state_lock);
+	x = __xfrm_state_lookup_byulid_in(daddr,saddr);
+	spin_unlock_bh(&xfrm_state_lock);
+	return x;
+}
+EXPORT_SYMBOL(xfrm_state_lookup_byulid_in);
 
 struct xfrm_state *
 xfrm_state_lookup_byaddr(xfrm_address_t *daddr, xfrm_address_t *saddr,

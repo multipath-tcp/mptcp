@@ -53,6 +53,9 @@
 #if defined(CONFIG_IPV6_MIP6) || defined(CONFIG_IPV6_MIP6_MODULE)
 #include <net/mip6.h>
 #endif
+#ifdef CONFIG_IPV6_SHIM6
+#include <net/shim6.h>
+#endif
 
 #include <net/rawv6.h>
 #include <net/xfrm.h>
@@ -218,6 +221,11 @@ int ipv6_raw_deliver(struct sk_buff *skb, int nexthdr)
 			break;
 		}
 #endif
+#ifdef CONFIG_IPV6_SHIM6
+		case IPPROTO_SHIM6:
+			filtered = shim6_filter(sk,skb);
+			break;
+#endif
 		default:
 			filtered = 0;
 			break;
@@ -241,6 +249,7 @@ out:
 	read_unlock(&raw_v6_lock);
 	return delivered;
 }
+
 
 /* This cleans up af_inet6 a bit. -DaveM */
 static int rawv6_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len)

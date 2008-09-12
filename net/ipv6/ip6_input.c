@@ -44,6 +44,9 @@
 #include <net/ip6_route.h>
 #include <net/addrconf.h>
 #include <net/xfrm.h>
+#ifdef CONFIG_IPV6_SHIM6
+#include <net/shim6.h>
+#endif
 
 
 
@@ -157,6 +160,10 @@ static int ip6_input_finish(struct sk_buff *skb)
 	int nexthdr;
 	u8 hash;
 	struct inet6_dev *idev;
+#ifdef CONFIG_IPV6_SHIM6
+	int shim6_processed=0;
+	int found_rthdr=0;
+#endif
 
 	/*
 	 *	Parse extension headers
@@ -169,6 +176,31 @@ resubmit:
 		goto discard;
 	nhoff = IP6CB(skb)->nhoff;
 	nexthdr = skb_network_header(skb)[nhoff];
+
+#ifdef CONFIG_IPV6_SHIM6
+/*This gives a first approach in dealing correctly with ext headers.
+ * With this kind of checks, MIPv6 headers are dealt with before shim6.
+ * This means that MIPv6 is layered below shim6. Just change the checks to 
+ * change shim6 layering for inbound packet processing.
+ * Another option would be to let the user choose where to layer shim6 
+ * (before or 
+ * after MIPv6/inside or outside a tunnel), and then making checks for
+ * xfrm policy at various steps.*/
+
+	if (!shim6_processed 
+	    && nexthdr!=NEXTHDR_SHIM6
+	    && nexthdr!=NEXTHDR_ICMP
+	    && nexthdr!=NEXTHDR_ROUTING
+	    && (nexthdr!=NEXTHDR_DEST || found_rthdr)) {
+		shim6_input_std(skb);
+		shim6_processed=1;
+	}
+	
+	if (nexthdr==NEXTHDR_ROUTING) found_rthdr=1;
+	/*If a shim6 hdr is found, shim6_input_std must not be called
+	 * for this packet.*/
+	if (nexthdr==NEXTHDR_SHIM6) shim6_processed=1;
+#endif
 
 	raw_sk = sk_head(&raw_v6_htable[nexthdr & (MAX_INET_PROTOS - 1)]);
 	if (raw_sk && !ipv6_raw_deliver(skb, nexthdr))

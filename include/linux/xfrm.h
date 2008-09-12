@@ -114,7 +114,7 @@ enum
 	XFRM_POLICY_IN	= 0,
 	XFRM_POLICY_OUT	= 1,
 	XFRM_POLICY_FWD	= 2,
-	XFRM_POLICY_MAX	= 3
+	XFRM_POLICY_MAX	= 4
 };
 
 enum
@@ -130,7 +130,9 @@ enum
 #define XFRM_MODE_ROUTEOPTIMIZATION 2
 #define XFRM_MODE_IN_TRIGGER 3
 #define XFRM_MODE_BEET 4
-#define XFRM_MODE_MAX 5
+#define XFRM_MODE_SHIM6 5
+#define XFRM_MODE_MAX 6
+
 
 /* Netlink configuration messages.  */
 enum {
@@ -269,6 +271,7 @@ enum xfrm_attr_type_t {
 	XFRMA_LASTUSED,
 	XFRMA_POLICY_TYPE,	/* struct xfrm_userpolicy_type */
 	XFRMA_MIGRATE,
+	XFRMA_SHIM6,            /*Shim6 data*/
 	__XFRMA_MAX
 
 #define XFRMA_MAX (__XFRMA_MAX - 1)

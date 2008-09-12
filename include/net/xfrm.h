@@ -19,6 +19,9 @@
 #include <net/route.h>
 #include <net/ipv6.h>
 #include <net/ip6_fib.h>
+#ifdef CONFIG_IPV6_SHIM6
+#include <linux/shim6.h>
+#endif
 
 #define XFRM_PROTO_ESP		50
 #define XFRM_PROTO_AH		51
@@ -119,7 +122,7 @@ struct xfrm_state
 
 	u32			genid;
 
-	/* Key manger bits */
+	/* Key manager bits */
 	struct {
 		u8		state;
 		u8		dying;
@@ -150,7 +153,10 @@ struct xfrm_state
 	struct xfrm_encap_tmpl	*encap;
 
 	/* Data for care-of address */
-	xfrm_address_t	*coaddr;
+	xfrm_address_t	        *coaddr;
+
+	/* Shim6-related data */
+	struct shim6_data       *shim6;
 
 	/* IPComp needs an IPIP tunnel for handling uncompressed packets */
 	struct xfrm_state	*tunnel;
@@ -763,11 +769,11 @@ extern int __xfrm_policy_check(struct sock *, int dir, struct sk_buff *skb, unsi
 static inline int xfrm_policy_check(struct sock *sk, int dir, struct sk_buff *skb, unsigned short family)
 {
 	if (sk && sk->sk_policy[XFRM_POLICY_IN])
-		return __xfrm_policy_check(sk, dir, skb, family);
-
-	return	(!xfrm_policy_count[dir] && !skb->sp) ||
-		(skb->dst->flags & DST_NOPOLICY) ||
-		__xfrm_policy_check(sk, dir, skb, family);
+                return __xfrm_policy_check(sk, dir, skb, family);
+	
+        return  (!xfrm_policy_count[dir] && !skb->sp) ||
+                (skb->dst->flags & DST_NOPOLICY) ||
+                __xfrm_policy_check(sk, dir, skb, family);
 }
 
 static inline int xfrm4_policy_check(struct sock *sk, int dir, struct sk_buff *skb)
@@ -1004,6 +1010,9 @@ extern int xfrm_state_add(struct xfrm_state *x);
 extern int xfrm_state_update(struct xfrm_state *x);
 extern struct xfrm_state *xfrm_state_lookup(xfrm_address_t *daddr, __be32 spi, u8 proto, unsigned short family);
 extern struct xfrm_state *xfrm_state_lookup_byaddr(xfrm_address_t *daddr, xfrm_address_t *saddr, u8 proto, unsigned short family);
+extern struct xfrm_state* xfrm_state_lookup_byct(__u64 ct);
+extern struct xfrm_state *xfrm_state_lookup_byulid_in(xfrm_address_t *daddr, 
+						      xfrm_address_t *saddr);
 #ifdef CONFIG_XFRM_SUB_POLICY
 extern int xfrm_tmpl_sort(struct xfrm_tmpl **dst, struct xfrm_tmpl **src,
 			  int n, unsigned short family);
