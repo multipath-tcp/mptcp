@@ -82,12 +82,16 @@ static void verify_one_addr(struct nlattr **attrs, enum xfrm_attr_type_t type,
 static int verify_one_shim6(struct nlattr **attrs, enum xfrm_attr_type_t type,
 			    struct shim6_data **datap)
 {
+	struct shim6_data *data;
 	struct nlattr *rt = attrs[type];
 
 	if (!rt) 
 		return 0;
+	data=nla_data(rt);
 
-	if (nla_len(rt) < sizeof(struct shim6_data))
+	if (nla_len(rt) < sizeof(struct shim6_data) || 
+	    data->npaths > MAX_SHIM6_PATHS ||
+	    nla_len(rt) < SHIM6_DATA_LENGTH(data))
 		return -EINVAL;
 	if (datap)
 		*datap = nla_data(rt);
@@ -239,7 +243,7 @@ static int attach_one_shim6(struct shim6_data **shim6pp, struct nlattr *rta)
 	if (!rta)
 		return 0;
 	shim6 = nla_data(rta);
-	p = kmemdup(shim6, sizeof(*p), GFP_KERNEL);
+	p = kmemdup(shim6, nla_len(rta), GFP_KERNEL);
 	if (!p)
 		return -ENOMEM;
 
@@ -567,7 +571,8 @@ static int copy_to_user_state_extra(struct xfrm_state *x,
 	if (x->coaddr)
 		NLA_PUT(skb, XFRMA_COADDR, sizeof(*x->coaddr), x->coaddr);
 
-	if (x->shim6) NLA_PUT(skb, XFRMA_SHIM6, sizeof(*x->shim6), x->shim6);
+	if (x->shim6) NLA_PUT(skb, XFRMA_SHIM6, SHIM6_DATA_LENGTH(x->shim6),
+			      x->shim6);
 
 	if (x->lastused)
 		NLA_PUT_U64(skb, XFRMA_LASTUSED, x->lastused);
@@ -1958,10 +1963,10 @@ static void xfrm_netlink_rcv(struct sk_buff *skb)
 	mutex_unlock(&xfrm_cfg_mutex);
 }
 
-static inline size_t xfrm_expire_msgsize(void)
+static inline size_t xfrm_expire_msgsize(struct xfrm_state *x)
 {
-	return NLMSG_ALIGN(sizeof(struct xfrm_user_expire)+
-			   nla_total_size(sizeof(struct shim6_data)));
+	return NLMSG_ALIGN(sizeof(struct xfrm_user_expire))+
+		((!x->shim6)?0:nla_total_size(SHIM6_DATA_LENGTH(x->shim6)));
 }
 
 static int build_expire(struct sk_buff *skb, struct xfrm_state *x, struct km_event *c)
@@ -1978,7 +1983,7 @@ static int build_expire(struct sk_buff *skb, struct xfrm_state *x, struct km_eve
 	ue->hard = (c->data.hard != 0) ? 1 : 0;
 
 	if (x->shim6) {
-		NLA_PUT(skb, XFRMA_SHIM6, sizeof(*x->shim6), x->shim6);
+		NLA_PUT(skb, XFRMA_SHIM6, SHIM6_DATA_LENGTH(x->shim6),x->shim6);
 	}
 
 	return nlmsg_end(skb, nlh);
@@ -1992,7 +1997,7 @@ static int xfrm_exp_state_notify(struct xfrm_state *x, struct km_event *c)
 {
 	struct sk_buff *skb;
 
-	skb = nlmsg_new(xfrm_expire_msgsize(), GFP_ATOMIC);
+	skb = nlmsg_new(xfrm_expire_msgsize(x), GFP_ATOMIC);
 	if (skb == NULL)
 		return -ENOMEM;
 
@@ -2059,7 +2064,7 @@ static inline size_t xfrm_sa_len(struct xfrm_state *x)
 		l += nla_total_size(sizeof(*x->coaddr));
 
 	if (x->shim6)
-		l+= nla_total_size(sizeof(*x->shim6));
+		l+= nla_total_size(SHIM6_DATA_LENGTH(x->shim6));
 
 	/* Must count this as this may become non-zero behind our back. */
 	l += nla_total_size(sizeof(x->lastused));

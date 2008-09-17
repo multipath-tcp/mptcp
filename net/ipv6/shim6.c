@@ -115,8 +115,8 @@ static int shim6_input(struct xfrm_state *x, struct sk_buff *skb)
 	if (!opt->shim6) return 1;
 
 	/*Rewriting the addresses*/
-	ipv6_addr_copy(&iph->saddr,&x->shim6->in6_peer);
-	ipv6_addr_copy(&iph->daddr,&x->shim6->in6_local);
+	ipv6_addr_copy(&iph->saddr,&x->shim6->paths[0].remote);
+	ipv6_addr_copy(&iph->daddr,&x->shim6->paths[0].local);
 
 	return hdr->nexthdr;
 }
@@ -152,6 +152,7 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 	struct ipv6hdr* iph;
 	u8 nexthdr;
 	struct shim6hdr_pld* shim6h;
+	int path_idx=x->shim6->cur_path_idx;
 
 	skb_push(skb, -skb_network_offset(skb));
 	iph = ipv6_hdr(skb);
@@ -159,7 +160,8 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 	reap_notify_out(rctx);
 	x->curlft.use_time = (unsigned long)xtime.tv_sec;       
 
-	if (!(x->shim6->flags & SHIM6_DATA_TRANSLATE)) return 0;
+	if (!(x->shim6->paths[path_idx].flags & SHIM6_DATA_TRANSLATE)) 
+		goto finish;
 
 	/*ok, packet needs translation and shim6 ext header*/
 	nexthdr = *skb_mac_header(skb);
@@ -171,9 +173,10 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 	set_ct(x->shim6->ct,shim6h->ct_1,shim6h->ct_2,shim6h->ct_3);
 
 	/*Rewriting the addresses*/
-	ipv6_addr_copy(&iph->saddr,&x->shim6->in6_local);
-	ipv6_addr_copy(&iph->daddr,&x->shim6->in6_peer);
+	ipv6_addr_copy(&iph->saddr,&x->shim6->paths[path_idx].local);
+	ipv6_addr_copy(&iph->daddr,&x->shim6->paths[path_idx].remote);
 
+finish:
 	return 0;
 }
 
@@ -265,8 +268,8 @@ static int shim6_init_state(struct xfrm_state *x)
 	/*Trying to find an xfrm state for the reverse direction*/
 	if (x->shim6->flags & SHIM6_DATA_INBOUND) {
 		rev_x=xfrm_state_lookup_byaddr(
-			(xfrm_address_t*)&x->shim6->in6_peer,
-			(xfrm_address_t*)&x->shim6->in6_local,
+			(xfrm_address_t*)&x->shim6->paths[0].remote,
+			(xfrm_address_t*)&x->shim6->paths[0].local,
 			IPPROTO_SHIM6,AF_INET6);
 		if (!rev_x) {
 			printk(KERN_ERR "%s: Trying to create a shim6 inbound"
@@ -327,13 +330,13 @@ static void shim6_destroy(struct xfrm_state *x)
 static xfrm_address_t *shim6_local_addr(struct xfrm_state *x, 
 					xfrm_address_t *addr)
 {
-	return (xfrm_address_t*)&x->shim6->in6_local;
+	return (xfrm_address_t*)&x->shim6->paths[x->shim6->cur_path_idx].local;
 }
 
 static xfrm_address_t *shim6_remote_addr(struct xfrm_state *x, 
 					xfrm_address_t *addr)
 {
-	return (xfrm_address_t*)&x->shim6->in6_peer;
+	return (xfrm_address_t*)&x->shim6->paths[x->shim6->cur_path_idx].remote;
 }
 
 static struct xfrm_type shim6_type =

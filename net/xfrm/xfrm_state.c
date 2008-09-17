@@ -742,7 +742,7 @@ static struct xfrm_state *__xfrm_state_lookup_byct(__u64 ct)
   - saddr is ulid_peer
   The searched state will have xany as daddr (because of spi lookup using daddr)
   and ulid_peer as saddr. Collisions are resolved by looking at
-  ctx->shim6->in6_local (wich is ulid_local for inbound contexts)*/
+  ctx->shim6->paths[0].local (wich is ulid_local for inbound contexts)*/
 static struct xfrm_state *__xfrm_state_lookup_byulid_in(xfrm_address_t *daddr, 
 							xfrm_address_t *saddr)
 {
@@ -765,10 +765,10 @@ static struct xfrm_state *__xfrm_state_lookup_byulid_in(xfrm_address_t *daddr,
 
 		if (!ipv6_addr_equal((struct in6_addr *)daddr,
 				     (struct in6_addr *)
-				     &x->shim6->in6_local) ||
+				     &x->shim6->paths[0].local) ||
 		    !ipv6_addr_equal((struct in6_addr *)saddr,
 				     (struct in6_addr *)
-				     &x->shim6->in6_peer))
+				     &x->shim6->paths[0].remote))
 			continue;
 
 		xfrm_state_hold(x);
