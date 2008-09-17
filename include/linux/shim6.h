@@ -26,6 +26,14 @@
 #endif /*__KERNEL__*/
 #include <linux/netlink.h>
 
+struct shim6_path {
+	struct in6_addr    local;
+	struct in6_addr    remote;
+	uint8_t            flags;
+#define PROBED 0x1
+#define SHIM6_DATA_TRANSLATE 0x2 /* Translation activated*/
+};
+
 /*shim6 data to be stored inside struct xfrm_state*/
 struct shim6_data {
 	/*inbound - ct is ct_local
