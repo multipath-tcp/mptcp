@@ -234,7 +234,7 @@ static int shim6_offset(struct xfrm_state *x, struct sk_buff *skb,
  * This function may be called in two case :
  * -> Normal context creation (first outbound, then inbound)
  * -> Context update. In this case it is not necessary to completely initialize
- *    the context, since @x is just a temporary state that must holds the 
+ *    the context, since @x is just a temporary state that must hold the 
  *    data that will be updated next in the existing context 
  *    (by xfrm_state_update)
  *
