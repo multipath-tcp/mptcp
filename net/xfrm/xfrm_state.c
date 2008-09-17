@@ -22,6 +22,7 @@
 #include <asm/uaccess.h>
 #include <linux/shim6.h>
 #include <net/shim6.h>
+#include <net/netevent.h>
 
 #include "xfrm_hash.h"
 
@@ -1401,6 +1402,15 @@ out:
 	spin_unlock_bh(&x1->lock);
 
 	xfrm_state_put(x1);
+
+	/*In case of path change, send a notification*/
+	if (!err && x->shim6) {
+		struct ulid_pair up={
+			.local=(struct in6_addr*)&x->sel.saddr,
+			.remote=(struct in6_addr*)&x->sel.daddr,
+		};
+		call_netevent_notifiers(NETEVENT_PATH_UPDATE, &up);
+	}
 
 	return err;
 }
