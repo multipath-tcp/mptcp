@@ -110,6 +110,7 @@ static int shim6_input(struct xfrm_state *x, struct sk_buff *skb)
 	struct inet6_skb_parm *opt = IP6CB(skb);
 	struct shim6hdr_ctl* hdr=(struct shim6hdr_ctl*) skb->data;
 	struct ipv6hdr* iph=ipv6_hdr(skb);
+	struct timespec curtime;	
 	
 	if (opt->shim6 && hdr->P==SHIM6_MSG_CONTROL)
 		return reap_input(hdr,rctx);
@@ -118,7 +119,8 @@ static int shim6_input(struct xfrm_state *x, struct sk_buff *skb)
 	reap_notify_in(rctx);
 
 	/*update the use time*/
-	x->curlft.use_time = (unsigned long)xtime.tv_sec;
+	getnstimeofday(&curtime);
+	x->curlft.use_time = (unsigned long)curtime.tv_sec;
 	
 	if (!opt->shim6) return 1;
 
@@ -161,12 +163,14 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 	u8 nexthdr;
 	struct shim6hdr_pld* shim6h;
 	int path_idx=x->shim6->cur_path_idx;
+	struct timespec curtime;
 
 	skb_push(skb, -skb_network_offset(skb));
 	iph = ipv6_hdr(skb);
 
 	reap_notify_out(rctx);
-	x->curlft.use_time = (unsigned long)xtime.tv_sec;       
+	getnstimeofday(&curtime);
+	x->curlft.use_time = (unsigned long)curtime.tv_sec;
 
 	if (!(x->shim6->paths[path_idx].flags & SHIM6_DATA_TRANSLATE)) 
 		goto finish;
