@@ -60,6 +60,7 @@
 #include <net/dsfield.h>
 #include <net/timewait_sock.h>
 #include <net/netdma.h>
+#include <net/netevent.h>
 
 #include <asm/uaccess.h>
 
@@ -2166,6 +2167,53 @@ static struct inet_protosw tcpv6_protosw = {
 				INET_PROTOSW_ICSK,
 };
 
+static int netevent_callback(struct notifier_block *self, unsigned long event,
+			     void *ctx)
+{
+        if (event == NETEVENT_PATH_UPDATE) {
+		int bucket;
+		/*Code inspired from established_get_first() 
+		  (net/ipv4/tcp_ipv4.c) */
+		
+                struct ulid_pair *up = ctx;
+		struct ipv6_pinfo *np;
+		 
+		printk("path update event received\n");
+		
+		for (bucket=0;bucket < tcp_hashinfo.ehash_size; ++bucket) {
+			struct sock *sk;
+			struct hlist_node *node;
+			rwlock_t *lock = inet_ehash_lockp(&tcp_hashinfo,bucket);
+			write_lock_bh(lock);
+			sk_for_each(sk,node,&tcp_hashinfo.ehash[bucket].chain) {
+				if (sk->sk_family != AF_INET6) continue;
+				np = inet6_sk(sk);
+				if (!ipv6_addr_equal(up->local,&np->saddr) ||
+				    !ipv6_addr_equal(up->remote,&np->daddr))
+					continue;
+				
+				printk("Found a TCP context to update\n");
+				/*Reinitialize the retransmit timer*/
+				inet_csk(sk)->icsk_rto = TCP_TIMEOUT_INIT;
+				inet_csk(sk)->icsk_retransmits = 0;
+				/*retransmit now*/
+				printk("TCP retransmitting after "
+				       "path change\n");
+				inet_csk_reset_xmit_timer(
+					sk, ICSK_TIME_RETRANS,0,TCP_RTO_MAX);
+				
+			}
+			write_unlock_bh(lock);
+		}
+		
+        }
+        return 0;
+}
+
+static struct notifier_block nb = {
+        .notifier_call = netevent_callback
+};
+
 void __init tcpv6_init(void)
 {
 	/* register inet6 protocol */
@@ -2176,4 +2224,6 @@ void __init tcpv6_init(void)
 	if (inet_csk_ctl_sock_create(&tcp6_socket, PF_INET6, SOCK_RAW,
 				     IPPROTO_TCP) < 0)
 		panic("Failed to create the TCPv6 control socket.\n");
+
+	register_netevent_notifier(&nb);
 }
