@@ -106,8 +106,10 @@ static int shim6_input(struct xfrm_state *x, struct sk_buff *skb)
 	if (opt->shim6 && hdr->P==SHIM6_MSG_CONTROL)
 		return reap_input(hdr,rctx);
 
+#ifndef CONFIG_IPV6_SHIM6_MULTIPATH
 	/*If the message is a data message notify the reap module*/
 	reap_notify_in(rctx);
+#endif
 
 	/*update the use time*/
 	x->curlft.use_time = (unsigned long)xtime.tv_sec;
@@ -148,16 +150,19 @@ void shim6_input_std(struct sk_buff* skb)
  */
 static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 {
-	struct reap_ctx* rctx=(struct reap_ctx*) x->data;
 	struct ipv6hdr* iph;
 	u8 nexthdr;
 	struct shim6hdr_pld* shim6h;
 	int path_idx=x->shim6->cur_path_idx;
 
+#ifndef CONFIG_IPV6_SHIM6_MULTIPATH
+	struct reap_ctx* rctx=(struct reap_ctx*) x->data;		
+	reap_notify_out(rctx);
+#endif
+
 	skb_push(skb, -skb_network_offset(skb));
 	iph = ipv6_hdr(skb);
 
-	reap_notify_out(rctx);
 	x->curlft.use_time = (unsigned long)xtime.tv_sec;       
 
 	if (!(x->shim6->paths[path_idx].flags & SHIM6_DATA_TRANSLATE)) 
