@@ -132,9 +132,7 @@ struct in6_flowlabel_req
 #define IPPROTO_ICMPV6		58	/* ICMPv6			*/
 #define IPPROTO_NONE		59	/* IPv6 no next header		*/
 #define IPPROTO_DSTOPTS		60	/* IPv6 destination options	*/
-#ifdef CONFIG_IPV6_SHIM6
 #define IPPROTO_SHIM6           61      /* Shim6 */
-#endif
 #define IPPROTO_MH		135	/* IPv6 mobility header		*/
 
 /*
