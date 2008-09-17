@@ -122,6 +122,18 @@ config IPV6_SHIM6
 
 	  If unsure, say N.
 
+config IPV6_SHIM6_MULTIPATH
+       bool "Shim6 multipath mode"
+       depends on IPV6_SHIM6
+       default n
+       ---help---
+       Set Shim6 in multipath mode. This is NOT the originally intended
+       design of Shim6, and currently exists only for research purpose.
+       In Multipath mode, shim6 uses all available paths at once, by doing
+       a round-robin selection of the path to take for each packet.
+       Note the LinShim6 daemon must be compiled with --enable-multipath
+       option for multipath mode to work.
+
 config IPV6_SHIM6_DEBUG
        bool "Shim6 debug messages"
        depends on IPV6_SHIM6
