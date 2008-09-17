@@ -109,7 +109,7 @@ config INET6_IPCOMP
 	  If unsure, say Y.
 
 config IPV6_SHIM6 
-	bool "IPv6: Shim6 support (EXPERIMENTAL)"
+	tristate "IPv6: Shim6 support (EXPERIMENTAL)"
 	depends on IPV6 && EXPERIMENTAL
 	select CRYPTO
 	select CRYPTO_SHA1
