@@ -44,6 +44,14 @@
 #include <net/xfrm.h>
 #include <net/transp_v6.h>
 
+/*If shim6 is loaded as a module, we cannot access the global 
+ * ipv6_statistics symbol, thus we define our own symbol. (essentially
+ * to allow the linker to work correctly, since net/ipv6.h declares it,
+ * but in the future, we could also modify and display the stats, locally 
+ * for the module)*/
+#ifdef CONFIG_IPV6_SHIM6_MODULE
+DEFINE_SNMP_STAT(struct ipstats_mib, ipv6_statistics);
+#endif
 
 int sysctl_shim6_enabled = 0; /*Will be enabled at the end of shim6 init*/
 
