@@ -117,8 +117,8 @@ config IPV6_SHIM6
 	select XFRM_USER
 	select NETFILTER
 	---help---
-	  (still partial) Support for IPv6 multihoming with shim6
-	  (draft-ietf-shim6-proto-08.txt)
+	  Support for IPv6 multihoming with shim6
+	  (draft-ietf-shim6-proto-10.txt)
 
 	  If unsure, say N.
 
