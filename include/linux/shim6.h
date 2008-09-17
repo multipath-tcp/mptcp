@@ -23,10 +23,7 @@
 #include <linux/in6.h>
 #include <asm/byteorder.h>
 #include <asm/types.h>
-#define SHIM6_DEBUG /*To comment if you don't want debug messages
-		      This is only for kernel space because in user
-		      space, this is decided inside ../config.h*/
-#endif
+#endif /*__KERNEL__*/
 #include <linux/netlink.h>
 
 /*shim6 data to be stored inside struct xfrm_state*/
