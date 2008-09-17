@@ -428,8 +428,9 @@ module_exit(shim6_exit);
 
 void shim6_add_glob_locator(struct inet6_ifaddr* loc) 
 {
+	struct in6_addr loaddr=IN6ADDR_LOOPBACK_INIT;
 	/*The loopback address cannot be sent as a locator.*/
-	if (ipv6_addr_equal(&loc->addr,&in6addr_loopback)) return;
+	if (ipv6_addr_equal(&loc->addr,&loaddr)) return;
 
 	/*Loopback addresses are currently not used as locators*/
 	if (ipv6_addr_scope(&loc->addr) == IPV6_ADDR_LINKLOCAL) return;
@@ -443,9 +444,11 @@ void shim6_add_glob_locator(struct inet6_ifaddr* loc)
 /*Deletes a shim6 glob locator
  */
 void shim6_del_glob_locator(struct inet6_ifaddr* loc)
+
 {
+	struct in6_addr loaddr=IN6ADDR_LOOPBACK_INIT;
 	/*The loopback address cannot be sent as a locator.*/
-	if (ipv6_addr_equal(&loc->addr,&in6addr_loopback)) return;
+	if (ipv6_addr_equal(&loc->addr,&loaddr)) return;
 
 	/*Loopback addresses are currently not used as locators*/
 	if (ipv6_addr_scope(&loc->addr) == IPV6_ADDR_LINKLOCAL) return;
