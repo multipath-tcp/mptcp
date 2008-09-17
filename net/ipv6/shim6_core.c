@@ -635,6 +635,7 @@ drop:
 		xfrm_state_put(x);
 	return -1;
 }
+EXPORT_SYMBOL(shim6_xfrm_input_ct);
 
 /*Modified version of xfrm6_input_addr (net/ipv6/xfrm6_input.c)
   That does the xfrm lookup based on saddr=ulid_peer, daddr=ulid_local
