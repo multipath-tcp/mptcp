@@ -39,17 +39,27 @@ struct shim6_data {
 	/*inbound - ct is ct_local
 	 *outbound - ct is ct_peer*/
 	__u64               ct;
-	/*inbound - in6_local is ULID_local, in6_peer is ULID_peer
-	 *outbound - in6_local is lp_local, in6_peer is lp_peer */
-	struct in6_addr     in6_peer;
-	struct in6_addr     in6_local;
-	
 /*flags*/
 	__u8		    flags;
-#define SHIM6_DATA_TRANSLATE 0x1 /* Translation activated*/
-#define SHIM6_DATA_INBOUND   0x2 /* context is inbound*/
-#define SHIM6_DATA_UPD       0x4 /* context update*/
-}; 
+#define SHIM6_DATA_INBOUND   0x1 /* context is inbound*/
+#define SHIM6_DATA_UPD       0x2 /* context update*/
+
+	/*inbound - local is ULID_local, remote is ULID_peer
+	 *outbound - local is lp_local, remote is lp_peer 
+	 *     Only for outbound multiple simultaneous paths can
+	 *     be defined (multipath) 
+	 */
+	int                 npaths; /*1 if inbound or normal shim6, 
+				      n paths if outbound and multipath mode*/
+	int                 cur_path_idx; /*Index of the path currently used*/
+	struct shim6_path   paths[0];	
+};
+
+/*Computes the total length of a struct shim6_data (including paths)
+ * @data must be a struct shim6_data*
+ */
+#define SHIM6_DATA_LENGTH(data) (sizeof(*(data))+			\
+				 (data)->npaths*sizeof(struct shim6_path)) 
 
 
 /*type values for shim6 messages*/
@@ -157,6 +167,7 @@ extern void shim6_listener_exit(void);
 #define MIN_PROBE_LEN 56 /*A probe with only one probe report (at least
 			   one sent probe report is mandatory, and is the 
 			   probe currently sent)*/
+#define MAX_SHIM6_PATHS 32 /*Max number of paths that Shim6 can manage*/
 
 
 /*REAP states*/

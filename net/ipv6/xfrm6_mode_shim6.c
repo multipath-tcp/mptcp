@@ -50,7 +50,8 @@ static int xfrm6_shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 	u8 *prevhdr;
 	int hdr_len;
 
-	if (x->shim6->flags & SHIM6_DATA_TRANSLATE) {	
+	if (x->shim6->paths[x->shim6->cur_path_idx].flags 
+	    & SHIM6_DATA_TRANSLATE) {	
 		hdr_len = x->type->hdr_offset(x, skb, &prevhdr);
 		skb_set_mac_header(skb, (prevhdr - x->props.header_len) - 
 				   skb->data);

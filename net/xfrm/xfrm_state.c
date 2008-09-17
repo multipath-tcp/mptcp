@@ -742,7 +742,7 @@ static struct xfrm_state *__xfrm_state_lookup_byct(__u64 ct)
   - saddr is ulid_peer
   The searched state will have xany as daddr (because of spi lookup using daddr)
   and ulid_peer as saddr. Collisions are resolved by looking at
-  ctx->shim6->in6_local (wich is ulid_local for inbound contexts)*/
+  ctx->shim6->paths[0].local (wich is ulid_local for inbound contexts)*/
 static struct xfrm_state *__xfrm_state_lookup_byulid_in(xfrm_address_t *daddr, 
 							xfrm_address_t *saddr)
 {
@@ -765,10 +765,10 @@ static struct xfrm_state *__xfrm_state_lookup_byulid_in(xfrm_address_t *daddr,
 
 		if (!ipv6_addr_equal((struct in6_addr *)daddr,
 				     (struct in6_addr *)
-				     &x->shim6->in6_local) ||
+				     &x->shim6->paths[0].local) ||
 		    !ipv6_addr_equal((struct in6_addr *)saddr,
 				     (struct in6_addr *)
-				     &x->shim6->in6_peer))
+				     &x->shim6->paths[0].remote))
 			continue;
 
 		xfrm_state_hold(x);
@@ -1225,7 +1225,7 @@ struct xfrm_state *xfrm_state_clone(struct xfrm_state *orig, int *errp)
 	}
 
 	if (orig->shim6) {
-		x->shim6 = kmemdup(orig->shim6, sizeof(*x->shim6),
+		x->shim6 = kmemdup(orig->shim6, SHIM6_DATA_LENGTH(x->shim6),
 				   GFP_KERNEL);
 		if (!x->shim6)
 			goto error;
@@ -1385,7 +1385,18 @@ out:
 			memcpy(x1->coaddr, x->coaddr, sizeof(*x1->coaddr));
 		}
 		if (x->shim6 && x1->shim6) {
-			memcpy(x1->shim6,x->shim6,sizeof(*x1->shim6));
+			if (SHIM6_DATA_LENGTH(x1->shim6)!=
+			    SHIM6_DATA_LENGTH(x->shim6)) {
+				printk(KERN_ERR "%s:error:trying to copy shim6 "
+				       "data from structure of size %d to "
+				       "size %d", __FUNCTION__,
+				       SHIM6_DATA_LENGTH(x->shim6),
+				       SHIM6_DATA_LENGTH(x1->shim6));
+				err=-1;
+			}
+			else
+				memcpy(x1->shim6,x->shim6,
+				       SHIM6_DATA_LENGTH(x1->shim6));
 		}
 		if (!use_spi && memcmp(&x1->sel, &x->sel, sizeof(x1->sel)))
 			memcpy(&x1->sel, &x->sel, sizeof(x1->sel));
