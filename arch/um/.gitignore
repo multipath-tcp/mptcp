@@ -1,1 +1,9 @@
+#Symlinks used by uml
 /Kconfig.arch
+/include/kern_constants.h
+/include/sysdep
+/include/uml-config.h
+/include/user_constants.h
+/kernel/config.c
+/kernel/config.tmp
+/os
