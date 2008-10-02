@@ -1403,11 +1403,13 @@ out:
 
 	xfrm_state_put(x1);
 
-	/*In case of path change, send a notification*/
-	if (!err && x->shim6) {
+	/*In case of path change, send a notification
+	  (we check if we are updating the inbound direction, because the
+	  outbound is set first, then the inbound, then the path can be used)*/
+	if (!err && x->shim6 && (x->shim6->flags & SHIM6_DATA_INBOUND)) {
 		struct ulid_pair up={
-			.local=(struct in6_addr*)&x->sel.saddr,
-			.remote=(struct in6_addr*)&x->sel.daddr,
+			.local=&x->shim6->paths[0].local,
+			.remote=&x->shim6->paths[0].remote,
 		};
 		call_netevent_notifiers(NETEVENT_PATH_UPDATE, &up);
 	}
