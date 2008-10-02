@@ -1226,7 +1226,7 @@ struct xfrm_state *xfrm_state_clone(struct xfrm_state *orig, int *errp)
 	}
 
 	if (orig->shim6) {
-		x->shim6 = kmemdup(orig->shim6, sizeof(*x->shim6),
+		x->shim6 = kmemdup(orig->shim6, SHIM6_DATA_LENGTH(x->shim6),
 				   GFP_KERNEL);
 		if (!x->shim6)
 			goto error;
@@ -1386,7 +1386,18 @@ out:
 			memcpy(x1->coaddr, x->coaddr, sizeof(*x1->coaddr));
 		}
 		if (x->shim6 && x1->shim6) {
-			memcpy(x1->shim6,x->shim6,sizeof(*x1->shim6));
+			if (SHIM6_DATA_LENGTH(x1->shim6)!=
+			    SHIM6_DATA_LENGTH(x->shim6)) {
+				printk(KERN_ERR "%s:error:trying to copy shim6 "
+				       "data from structure of size %d to "
+				       "size %d", __FUNCTION__,
+				       SHIM6_DATA_LENGTH(x->shim6),
+				       SHIM6_DATA_LENGTH(x1->shim6));
+				err=-1;
+			}
+			else
+				memcpy(x1->shim6,x->shim6,
+				       SHIM6_DATA_LENGTH(x1->shim6));
 		}
 		if (!use_spi && memcmp(&x1->sel, &x->sel, sizeof(x1->sel)))
 			memcpy(&x1->sel, &x->sel, sizeof(x1->sel));
