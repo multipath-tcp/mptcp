@@ -31,6 +31,7 @@
 #include <linux/seq_file.h>
 #include <linux/in6.h>
 #include <net/shim6_types.h>
+#include <linux/shim6.h>
 
 
 #define REAP_DEBUG /*To comment if you don't want debug messages*/
@@ -48,8 +49,8 @@ struct reap_ctx {
 					      */
 	
 /*Timeout values in seconds*/
-	int                 ka_timeout;
-	int                 send_timeout;
+	int                 tka;
+	int                 tsend;
 
 /*Used for keeping track of keepalive timeout.
  * When first starting the keepalive timer, we
@@ -70,8 +71,8 @@ struct reap_ctx {
 	struct kref         kref;
 };
 
-void init_reap_ctx(struct reap_ctx* rctx);
-void del_reap_ctx(struct reap_ctx* rctx);
+void init_reap_ctx(struct reap_ctx* rctx, struct shim6_data* sd);
+void del_reap_ctx(struct reap_ctx *rctx);
 
 /*To notify reap about occurrence of an incoming/outgoing packet*/
 void reap_notify_in(struct reap_ctx* x);
@@ -87,5 +88,4 @@ void reap_seq_show(struct seq_file *s, struct reap_ctx *rctx);
  * This can be called ONLY by shim6_init*/
 void __exit reap_exit(void);
 
-
-#endif
+#endif /*_NET_REAP_H*/

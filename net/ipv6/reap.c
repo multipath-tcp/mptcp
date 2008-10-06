@@ -6,7 +6,7 @@
  *
  *	date : May 2008
  *
- *      Based on draft-ietf-shim6-failure-detection-11
+ *      Based on draft-ietf-shim6-failure-detection-13
  *
  *
  *	This program is free software; you can redistribute it and/or
@@ -67,7 +67,7 @@ inline void send_start(struct reap_ctx* rctx)
 	}
 
 	if (!timer_pending(&rctx->timer)) {
-		rctx->timer.expires=jiffies+rctx->send_timeout*HZ;
+		rctx->timer.expires=jiffies+rctx->tsend*HZ;
 		rctx->timer.function=&send_handler;
 		lock_hold=spin_trylock_bh(&rctx->stop_timer_lock);
 		if (!rctx->stop_timer) add_timer(&rctx->timer);
@@ -104,7 +104,7 @@ inline void ka_start(struct reap_ctx* rctx, int rearmed)
 		rctx->timer.function=&ka_handler;
 	}
 	
-	rctx->timer.expires=jiffies+rctx->ka_timeout*HZ/3;
+	rctx->timer.expires=jiffies+rctx->tka*HZ/3;
  	lock_hold=spin_trylock(&rctx->stop_timer_lock);
 	if (!rctx->stop_timer) add_timer(&rctx->timer);
 	if (lock_hold) spin_unlock(&rctx->stop_timer_lock);
@@ -149,8 +149,8 @@ static void ka_handler(unsigned long data)
 	/*Rearm the timer if the next expiry will fall before the keepalive
 	 * timeout*/
 
-	if (jiffies+rctx->ka_timeout*HZ/3<
-	    rctx->ka_timestamp+rctx->ka_timeout*HZ)
+	if (jiffies+rctx->tka*HZ/3<
+	    rctx->ka_timestamp+rctx->tka*HZ)
 		ka_start(rctx,1);
 	else rctx->ka_timestamp=0; /*Also disable the conceptual timer*/
 	
@@ -217,13 +217,13 @@ void __exit reap_exit(void)
 }
 
 
+#include <net/xfrm.h>
 
 /**
  * @pre The corresponding Shim6 is in state ESTABLISHED.
  * This initializes the reap context pointed to by rctx
  */
-void init_reap_ctx(struct reap_ctx* rctx) {
-
+void init_reap_ctx(struct reap_ctx* rctx, struct shim6_data* sd) {
 	memset(rctx,0,sizeof(struct reap_ctx));
 	spin_lock_init(&rctx->lock);
 	kref_init(&rctx->kref);
@@ -234,9 +234,10 @@ void init_reap_ctx(struct reap_ctx* rctx) {
 	
 	rctx->state=REAP_OPERATIONAL;
 
-	/*Init the timeouts to default values*/
-	rctx->ka_timeout=REAP_SEND_TIMEOUT;
-	rctx->send_timeout=REAP_SEND_TIMEOUT;
+	/*Init the timeouts
+	 *Until we find something cleaner, we duplicate this information*/
+	rctx->tka=sd->tka;
+	rctx->tsend=sd->tsend;
 	
 	rctx->started=1;
 

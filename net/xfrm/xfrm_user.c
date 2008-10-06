@@ -95,6 +95,7 @@ static int verify_one_shim6(struct nlattr **attrs, enum xfrm_attr_type_t type,
 		return -EINVAL;
 	if (datap)
 		*datap = nla_data(rt);
+	
 	return 0;
 }
 
@@ -172,7 +173,7 @@ static int verify_newsa_info(struct xfrm_usersa_info *p,
 		break;
 	case IPPROTO_SHIM6:
 		if (!attrs[XFRMA_SHIM6])
-			goto out;
+			goto out;		
 		break;
 #endif
 		

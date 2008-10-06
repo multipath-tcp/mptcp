@@ -305,7 +305,7 @@ static int shim6_init_state(struct xfrm_state *x)
 			       __FUNCTION__);
 			return -ENOMEM;
 		}
-		init_reap_ctx(rctx);
+		init_reap_ctx(rctx, x->shim6);
 	}
 	return 0;
 }
