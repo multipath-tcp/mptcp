@@ -104,7 +104,7 @@ inline void ka_start(struct reap_ctx* rctx, int rearmed)
 		rctx->timer.function=&ka_handler;
 	}
 	
-	rctx->timer.expires=jiffies+rctx->ka_interval*HZ;
+	rctx->timer.expires=jiffies+rctx->ka_timeout*HZ/3;
  	lock_hold=spin_trylock(&rctx->stop_timer_lock);
 	if (!rctx->stop_timer) add_timer(&rctx->timer);
 	if (lock_hold) spin_unlock(&rctx->stop_timer_lock);
@@ -149,7 +149,7 @@ static void ka_handler(unsigned long data)
 	/*Rearm the timer if the next expiry will fall before the keepalive
 	 * timeout*/
 
-	if (jiffies+rctx->ka_interval*HZ<
+	if (jiffies+rctx->ka_timeout*HZ/3<
 	    rctx->ka_timestamp+rctx->ka_timeout*HZ)
 		ka_start(rctx,1);
 	else rctx->ka_timestamp=0; /*Also disable the conceptual timer*/
@@ -236,7 +236,6 @@ void init_reap_ctx(struct reap_ctx* rctx) {
 
 	/*Init the timeouts to default values*/
 	rctx->ka_timeout=REAP_SEND_TIMEOUT;
-	rctx->ka_interval=REAP_KA_INTERVAL;
 	rctx->send_timeout=REAP_SEND_TIMEOUT;
 	
 	rctx->started=1;

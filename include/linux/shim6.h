@@ -177,7 +177,6 @@ extern void shim6_listener_exit(void);
 
 /*REAP default parameters*/
 #define REAP_SEND_TIMEOUT             15 /*seconds*/
-#define REAP_KA_INTERVAL              3 /*seconds*/
 
 /*Structures for the probe messages. We have two structures :
  * - The first is structure for the beginning of the probe message.

@@ -49,7 +49,6 @@ struct reap_ctx {
 	
 /*Timeout values in seconds*/
 	int                 ka_timeout;
-	int                 ka_interval;
 	int                 send_timeout;
 
 /*Used for keeping track of keepalive timeout.
