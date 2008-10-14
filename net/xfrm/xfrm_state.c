@@ -1395,9 +1395,14 @@ out:
 				       SHIM6_DATA_LENGTH(x1->shim6));
 				err=-1;
 			}
-			else
+			else {
+				struct reap_ctx* rctx=x1->data;
+				BUG_ON(!x1->data);
 				memcpy(x1->shim6,x->shim6,
 				       SHIM6_DATA_LENGTH(x1->shim6));
+				rctx->tka=x1->shim6->tka;
+				rctx->tsend=x1->shim6->tsend;
+			}
 		}
 		if (!use_spi && memcmp(&x1->sel, &x->sel, sizeof(x1->sel)))
 			memcpy(&x1->sel, &x->sel, sizeof(x1->sel));
