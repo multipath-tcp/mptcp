@@ -323,8 +323,16 @@ static void shim6_destroy(struct xfrm_state *x)
 	if (!rctx) return;
 	PDEBUG("Destroying Shim6 context : %p\n",x);
 	del_reap_ctx(rctx);
-	x->data=NULL;
+	x->data=NULL;	
 	kref_put(&rctx->kref,ctx_release);
+
+	/*Notify the Shim6 packet listener*/
+	BUG_ON(!x->shim6);
+	if (x->shim6->flags & SHIM6_DATA_INBOUND) {
+		/*The inbound context is deleted after the outbound*/
+		shim6pl_state_removed(&x->shim6->paths[0].remote, 
+				      &x->shim6->paths[0].local);
+	}
 }
 
 static xfrm_address_t *shim6_local_addr(struct xfrm_state *x, 

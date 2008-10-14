@@ -327,6 +327,22 @@ static unsigned int shim6list_local_out(unsigned int hooknum,
 	return NF_ACCEPT;
 }
 
+/**
+ * @pre: The shim6 context related to @ulid_local,
+ * @post: The 'triggered' flag is cleared, so that the daemon can
+ *       be notified again that a new context should be created upon 
+ *       data flowing for that pair.
+ */
+void shim6pl_state_removed(struct in6_addr *ulid_peer, 
+			  struct in6_addr *ulid_local)
+{
+	struct shim6_ctx_count* ctxc;
+	ctxc=shim6_lookup_ulid(ulid_peer,ulid_local);
+	if (!ctxc) return;
+	ctxc->triggered=0;
+	kref_put(&ctxc->kref,ctxc_release);
+}
+
 
 static struct nf_hook_ops shim6_hook_ops[] = {
 	{.hook=shim6list_local_in,

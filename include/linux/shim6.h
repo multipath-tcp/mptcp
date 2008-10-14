@@ -149,6 +149,14 @@ struct shim6hdr_ctl
 
 extern void shim6_listener_init(void);
 extern void shim6_listener_exit(void);
+/**
+ * @pre: The shim6 context related to @ulid_local,
+ * @post: The 'triggered' flag is cleared, so that the daemon can
+ *       be notified again that a new context should be created upon 
+ *       data flowing for that pair.
+ */
+extern void shim6pl_state_removed(struct in6_addr *ulid_peer, 
+				  struct in6_addr *ulid_local);
 
 
 /*=================
