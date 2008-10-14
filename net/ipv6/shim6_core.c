@@ -225,7 +225,6 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 					     the bundle, with an MTU value that
 					     would be the minimum among all 
 					     interfaces.*/
-
 	}
 #endif
 
@@ -362,7 +361,7 @@ static int shim6_init_state(struct xfrm_state *x)
 			       __FUNCTION__);
 			return -ENOMEM;
 		}
-		init_reap_ctx(rctx);
+		init_reap_ctx(rctx, x->shim6);
 	}
 	return 0;
 }

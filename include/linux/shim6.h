@@ -38,7 +38,10 @@ struct shim6_path {
 struct shim6_data {
 	/*inbound - ct is ct_local
 	 *outbound - ct is ct_peer*/
-	__u64               ct;
+        uint64_t            ct;
+
+	uint16_t            tka;   /*Keepalive timeout*/
+	uint16_t            tsend; /*Send timeout*/
 /*flags*/
 	__u8		    flags;
 #define SHIM6_DATA_INBOUND   0x1 /* context is inbound*/
@@ -52,7 +55,7 @@ struct shim6_data {
 	int                 npaths; /*1 if inbound or normal shim6, 
 				      n paths if outbound and multipath mode*/
 	int                 cur_path_idx; /*Index of the path currently used*/
-	struct shim6_path   paths[0];	
+	struct shim6_path   paths[0];
 };
 
 /*Computes the total length of a struct shim6_data (including paths)
@@ -176,8 +179,7 @@ extern void shim6_listener_exit(void);
 #define REAP_INBOUND_OK               2
 
 /*REAP default parameters*/
-#define REAP_SEND_TIMEOUT             10 /*seconds*/
-#define REAP_KA_INTERVAL              3 /*seconds*/
+#define REAP_SEND_TIMEOUT             15 /*seconds*/
 
 /*Structures for the probe messages. We have two structures :
  * - The first is structure for the beginning of the probe message.
