@@ -180,4 +180,6 @@ static inline int is_shim6_inbound(struct xfrm_state* x)
 		(x->shim6->flags & SHIM6_DATA_INBOUND));
 }
 
+extern int sysctl_shim6_tcphint; /*declared in shim6_core.c*/
+
 #endif /* _NET_SHIM6_H */

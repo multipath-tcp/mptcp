@@ -46,6 +46,7 @@
 
 
 int sysctl_shim6_enabled = 0; /*Will be enabled at the end of shim6 init*/
+int sysctl_shim6_tcphint = 1; /*if 0, disables TCP hint, default 1*/
 
 /*Sysctl data*/
 
@@ -59,6 +60,14 @@ static ctl_table shim6_table[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= &proc_dointvec
+	},
+	{
+		.ctl_name       = CTL_UNNUMBERED,
+		.procname       = "tcphint",
+		.data           = &sysctl_shim6_tcphint,
+		.maxlen         = sizeof(int),
+		.mode           = 0644,
+		.proc_handler   = &proc_dointvec
 	},
 	{ .ctl_name = 0 },
 };
