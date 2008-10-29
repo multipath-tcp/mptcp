@@ -68,6 +68,12 @@ struct reap_ctx {
 				    state, since two different xfrm states 
 				    may use a shim6_ctx in the same time
 				    (inbound and outbound)*/
+	int                 last_recvd_data; /*Timestamp for last received 
+					       data*/
+	char                path_changed:1; /*Flag to indicate that the path
+					      has changed recently,
+					      it is cleared on the first pkt
+					      received following the update*/
 	struct kref         kref;
 };
 

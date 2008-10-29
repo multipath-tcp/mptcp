@@ -2178,8 +2178,6 @@ static int netevent_callback(struct notifier_block *self, unsigned long event,
                 struct ulid_pair *up = ctx;
 		struct ipv6_pinfo *np;
 		 
-		printk("path update event received\n");
-		
 		for (bucket=0;bucket < tcp_hashinfo.ehash_size; ++bucket) {
 			struct sock *sk;
 			struct hlist_node *node;
@@ -2192,13 +2190,10 @@ static int netevent_callback(struct notifier_block *self, unsigned long event,
 				    !ipv6_addr_equal(up->remote,&np->daddr))
 					continue;
 				
-				printk("Found a TCP context to update\n");
 				/*Reinitialize the retransmit timer*/
 				inet_csk(sk)->icsk_rto = TCP_TIMEOUT_INIT;
 				inet_csk(sk)->icsk_retransmits = 0;
 				/*retransmit now*/
-				printk("TCP retransmitting after "
-				       "path change\n");
 				inet_csk_reset_xmit_timer(
 					sk, ICSK_TIME_RETRANS,0,TCP_RTO_MAX);
 				

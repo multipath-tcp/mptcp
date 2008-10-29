@@ -1400,8 +1400,14 @@ out:
 				BUG_ON(!x1->data);
 				memcpy(x1->shim6,x->shim6,
 				       SHIM6_DATA_LENGTH(x1->shim6));
-				rctx->tka=x1->shim6->tka;
-				rctx->tsend=x1->shim6->tsend;
+#ifdef CONFIG_IPV6_SHIM6_DEBUG
+				/*Update is either tka or path,
+				  if not tka, then it is a path update*/
+				if (rctx->tka==x1->shim6->tka)
+					rctx->path_changed=1;
+				else
+#endif
+					rctx->tka=x1->shim6->tka;
 			}
 		}
 		if (!use_spi && memcmp(&x1->sel, &x->sel, sizeof(x1->sel)))

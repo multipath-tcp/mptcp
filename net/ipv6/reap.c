@@ -228,7 +228,7 @@ void init_reap_ctx(struct reap_ctx* rctx, struct shim6_data* sd) {
 	spin_lock_init(&rctx->lock);
 	kref_init(&rctx->kref);
 	
-        /*Timers initialization*/
+        /*Timer initialization*/
 	init_timer(&rctx->timer);
 	rctx->timer.data=(unsigned long)rctx;
 	
@@ -259,6 +259,14 @@ void del_reap_ctx(struct reap_ctx* rctx) {
  *  ------------------------------
  * |context tag (64 bits, 47 used)|
  *  ------------------------------
+ *
+ * Also, if option IPV6_SHIM6_DEBUG is set, the ART (Application Recovery Time)
+ * is sent to the daemon in case the path change flag is set.
+ * In that case the message format(ART) is the following:
+ * 
+ *  -----------------------------------------------------------
+ * |context tag (64 bits, 47 used)| ART (microseconds, 32bits) |
+ *  -----------------------------------------------------------
  */
 void reap_notify_in(struct reap_ctx* rctx)
 {
@@ -266,7 +274,32 @@ void reap_notify_in(struct reap_ctx* rctx)
 	struct sk_buff* skb;
 	u64* ct;
 	int err;
+#ifdef CONFIG_IPV6_SHIM6_DEBUG
+	u32* art;
 
+	/*Update timestamp*/
+	if (rctx->path_changed) {
+		/*Notifying daemon*/
+		pld_len=sizeof(*ct)+sizeof(*art);
+		if (!(skb=shim6_alloc_netlink_skb(pld_len,REAP_NL_ART,
+						  GFP_ATOMIC)))
+			return;
+		ct=NLMSG_DATA((struct nlmsghdr*)skb->data);
+		*ct=rctx->ct_local;
+		art=(u32*)(ct+1);
+		*art=(jiffies-rctx->last_recvd_data)*1000000/HZ;
+		if ((err=netlink_broadcast(shim6nl_sk,skb,0,SHIM6NLGRP_DEFAULT,
+					   GFP_ATOMIC)))
+			printk(KERN_ERR "shim6, %s : nl broadcast, error %d,"
+			       "daemon down ?\n", 
+			       __FUNCTION__, err);
+		/*Resetting flag*/
+		rctx->path_changed=0;
+	}
+	/*debug check*/
+	if (rctx->state!=REAP_OPERATIONAL) printk("reap_notify_in called\n");
+	rctx->last_recvd_data=jiffies;
+#endif
 
 	if (rctx->state==REAP_OPERATIONAL) {
 		ka_start(rctx,0);
