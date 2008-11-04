@@ -91,7 +91,7 @@ static int verify_one_shim6(struct nlattr **attrs, enum xfrm_attr_type_t type,
 
 	if (nla_len(rt) < sizeof(struct shim6_data) || 
 	    data->npaths > MAX_SHIM6_PATHS ||
-	    nla_len(rt) < SHIM6_DATA_LENGTH(data))
+	    nla_len(rt) != SHIM6_DATA_LENGTH(data))
 		return -EINVAL;
 	if (datap)
 		*datap = nla_data(rt);
