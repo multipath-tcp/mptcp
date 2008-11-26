@@ -33,7 +33,7 @@
 struct shim6_data {
 	/*inbound - ct is ct_local
 	 *outbound - ct is ct_peer*/
-	__u64               ct;
+	uint64_t               ct;
 	/*inbound - in6_local is ULID_local, in6_peer is ULID_peer
 	 *outbound - in6_local is lp_local, in6_peer is lp_peer */
 	struct in6_addr     in6_peer;
@@ -70,9 +70,10 @@ enum shim6_types_comm {
 /* get a context tag, from its parts in a message
  * @ct is in host byte order
  * @ct1, @ct2, @ct3 are in network byte order*/
-static inline void get_ct(__u64* ct, __u8 ct_1, __u8 ct_2, __u32 ct_3) 
+static inline void get_ct(uint64_t* ct, 
+			  uint8_t ct_1, uint8_t ct_2, uint32_t ct_3) 
 {
-	__u64 temp_ct;
+	uint64_t temp_ct;
 	*ct=ct_1;
 	*ct<<=40;
 	temp_ct=ct_2;
