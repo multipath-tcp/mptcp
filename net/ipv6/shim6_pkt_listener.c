@@ -349,13 +349,13 @@ static struct nf_hook_ops shim6_hook_ops[] = {
 	 .owner=THIS_MODULE,
 	 .pf=PF_INET6,
 	 .hooknum=NF_IP6_LOCAL_IN,
-	 .priority=NF_IP6_PRI_CONNTRACK-1 /*Just before connection tracking*/,
+	 .priority=NF_IP6_PRI_FILTER+1 /*Just after the filter*/,
 	},
 	{.hook=shim6list_local_out,
 	 .owner=THIS_MODULE,
 	 .pf=PF_INET6,
 	 .hooknum=NF_IP6_LOCAL_OUT,
-	 .priority=NF_IP6_PRI_CONNTRACK-1 /*Just before connection tracking*/,
+	 .priority=NF_IP6_PRI_FILTER+1 /*Just after the filter*/,
 	},
 };
 
