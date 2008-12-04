@@ -1388,8 +1388,8 @@ out:
 			if (SHIM6_DATA_LENGTH(x1->shim6)!=
 			    SHIM6_DATA_LENGTH(x->shim6)) {
 				printk(KERN_ERR "%s:error:trying to copy shim6 "
-				       "data from structure of size %d to "
-				       "size %d", __FUNCTION__,
+				       "data from structure of size %lu to "
+				       "size %lu", __FUNCTION__,
 				       SHIM6_DATA_LENGTH(x->shim6),
 				       SHIM6_DATA_LENGTH(x1->shim6));
 				err=-1;
