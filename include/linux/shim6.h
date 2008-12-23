@@ -61,8 +61,9 @@ struct shim6_data {
 /*Computes the total length of a struct shim6_data (including paths)
  * @data must be a struct shim6_data*
  */
-#define SHIM6_DATA_LENGTH(data) (sizeof(*(data))+			\
-				 (data)->npaths*sizeof(struct shim6_path)) 
+#define SHIM6_DATA_LENGTH(data) ((unsigned int)                         \
+                                 (sizeof(*(data))+                      \
+				  (data)->npaths*sizeof(struct shim6_path))) 
 
 
 /*type values for shim6 messages*/
