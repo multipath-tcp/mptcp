@@ -278,7 +278,7 @@ void reap_notify_in(struct reap_ctx* rctx)
 	u32* art;
 
 	/*Update timestamp*/
-	if (rctx->path_changed) {
+	if (rctx->art_switch) {
 		/*Notifying daemon*/
 		pld_len=sizeof(*ct)+sizeof(*art);
 		if (!(skb=shim6_alloc_netlink_skb(pld_len,REAP_NL_ART,
@@ -294,7 +294,7 @@ void reap_notify_in(struct reap_ctx* rctx)
 			       "daemon down ?\n", 
 			       __FUNCTION__, err);
 		/*Resetting flag*/
-		rctx->path_changed=0;
+		rctx->art_switch=0;
 	}
 	/*debug check*/
 	if (rctx->state!=REAP_OPERATIONAL) printk("reap_notify_in called\n");
@@ -386,6 +386,12 @@ static int reap_rcv_probe(reaphdr_probe* hdr,struct reap_ctx* rctx)
 		printk(KERN_ERR "reap_rcv_probe : invalid probe length\n");
 		return -1;
 	}
+
+#ifdef CONFIG_IPV6_SHIM6_DEBUG
+	if (hdr->sta==REAP_EXPLORING ||
+	    hdr->sta==REAP_INBOUND_OK)
+	  rctx->art_switch=1;
+#endif
 	
 	if (rctx->state==REAP_OPERATIONAL) {
 		switch(hdr->sta) {
