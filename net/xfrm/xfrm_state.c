@@ -1389,8 +1389,8 @@ out:
 			if (SHIM6_DATA_LENGTH(x1->shim6)!=
 			    SHIM6_DATA_LENGTH(x->shim6)) {
 				printk(KERN_ERR "%s:error:trying to copy shim6 "
-				       "data from structure of size %d to "
-				       "size %d", __FUNCTION__,
+				       "data from structure of size %u to "
+				       "size %u", __FUNCTION__,
 				       SHIM6_DATA_LENGTH(x->shim6),
 				       SHIM6_DATA_LENGTH(x1->shim6));
 				err=-1;
@@ -1400,14 +1400,8 @@ out:
 				BUG_ON(!x1->data);
 				memcpy(x1->shim6,x->shim6,
 				       SHIM6_DATA_LENGTH(x1->shim6));
-#ifdef CONFIG_IPV6_SHIM6_DEBUG
-				/*Update is either tka or path,
-				  if not tka, then it is a path update*/
-				if (rctx->tka==x1->shim6->tka)
-					rctx->path_changed=1;
-				else
-#endif
-					rctx->tka=x1->shim6->tka;
+				rctx->tka=x1->shim6->tka;
+				rctx->tsend=x1->shim6->tsend;
 			}
 		}
 		if (!use_spi && memcmp(&x1->sel, &x->sel, sizeof(x1->sel)))

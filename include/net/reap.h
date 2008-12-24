@@ -70,10 +70,10 @@ struct reap_ctx {
 				    (inbound and outbound)*/
 	int                 last_recvd_data; /*Timestamp for last received 
 					       data*/
-	char                path_changed:1; /*Flag to indicate that the path
-					      has changed recently,
-					      it is cleared on the first pkt
-					      received following the update*/
+        char                art_switch:1; /*ART switch, this will trigger
+					    a message to the daemon, when
+					    the next data packet 
+					    will enter*/
 	struct kref         kref;
 };
 
