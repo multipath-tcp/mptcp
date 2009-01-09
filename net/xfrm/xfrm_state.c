@@ -1253,7 +1253,6 @@ struct xfrm_state *xfrm_state_clone(struct xfrm_state *orig, int *errp)
 		kfree(x->calg);
 		kfree(x->encap);
 		kfree(x->coaddr);
-		kfree(x->ct);
 	}
 	kfree(x);
 	return NULL;
