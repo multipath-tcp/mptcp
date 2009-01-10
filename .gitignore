@@ -30,6 +30,8 @@ vmlinux*
 System.map
 Module.symvers
 !.gitignore
+/debian
+/build-um
 
 #
 # Generated include files

@@ -6,7 +6,7 @@
  *
  *	date : May 2008
  *
- *      Based on draft-ietf-shim6-failure-detection-11
+ *      Based on draft-ietf-shim6-failure-detection-13
  *
  *
  *	This program is free software; you can redistribute it and/or
@@ -67,7 +67,7 @@ inline void send_start(struct reap_ctx* rctx)
 	}
 
 	if (!timer_pending(&rctx->timer)) {
-		rctx->timer.expires=jiffies+rctx->send_timeout*HZ;
+		rctx->timer.expires=jiffies+rctx->tsend*HZ;
 		rctx->timer.function=&send_handler;
 		lock_hold=spin_trylock_bh(&rctx->stop_timer_lock);
 		if (!rctx->stop_timer) add_timer(&rctx->timer);
@@ -104,7 +104,7 @@ inline void ka_start(struct reap_ctx* rctx, int rearmed)
 		rctx->timer.function=&ka_handler;
 	}
 	
-	rctx->timer.expires=jiffies+rctx->ka_interval*HZ;
+	rctx->timer.expires=jiffies+rctx->tka*HZ/3;
  	lock_hold=spin_trylock(&rctx->stop_timer_lock);
 	if (!rctx->stop_timer) add_timer(&rctx->timer);
 	if (lock_hold) spin_unlock(&rctx->stop_timer_lock);
@@ -149,8 +149,8 @@ static void ka_handler(unsigned long data)
 	/*Rearm the timer if the next expiry will fall before the keepalive
 	 * timeout*/
 
-	if (jiffies+rctx->ka_interval*HZ<
-	    rctx->ka_timestamp+rctx->ka_timeout*HZ)
+	if (jiffies+rctx->tka*HZ/3<
+	    rctx->ka_timestamp+rctx->tka*HZ)
 		ka_start(rctx,1);
 	else rctx->ka_timestamp=0; /*Also disable the conceptual timer*/
 	
@@ -217,27 +217,27 @@ void __exit reap_exit(void)
 }
 
 
+#include <net/xfrm.h>
 
 /**
  * @pre The corresponding Shim6 is in state ESTABLISHED.
  * This initializes the reap context pointed to by rctx
  */
-void init_reap_ctx(struct reap_ctx* rctx) {
-
+void init_reap_ctx(struct reap_ctx* rctx, struct shim6_data* sd) {
 	memset(rctx,0,sizeof(struct reap_ctx));
 	spin_lock_init(&rctx->lock);
 	kref_init(&rctx->kref);
 	
-        /*Timers initialization*/
+        /*Timer initialization*/
 	init_timer(&rctx->timer);
 	rctx->timer.data=(unsigned long)rctx;
 	
 	rctx->state=REAP_OPERATIONAL;
 
-	/*Init the timeouts to default values*/
-	rctx->ka_timeout=REAP_SEND_TIMEOUT;
-	rctx->ka_interval=REAP_KA_INTERVAL;
-	rctx->send_timeout=REAP_SEND_TIMEOUT;
+	/*Init the timeouts
+	 *Until we find something cleaner, we duplicate this information*/
+	rctx->tka=sd->tka;
+	rctx->tsend=sd->tsend;
 	
 	rctx->started=1;
 
@@ -259,6 +259,14 @@ void del_reap_ctx(struct reap_ctx* rctx) {
  *  ------------------------------
  * |context tag (64 bits, 47 used)|
  *  ------------------------------
+ *
+ * Also, if option IPV6_SHIM6_DEBUG is set, the ART (Application Recovery Time)
+ * is sent to the daemon in case the path change flag is set.
+ * In that case the message format(ART) is the following:
+ * 
+ *  -----------------------------------------------------------
+ * |context tag (64 bits, 47 used)| ART (microseconds, 32bits) |
+ *  -----------------------------------------------------------
  */
 void reap_notify_in(struct reap_ctx* rctx)
 {
@@ -266,7 +274,32 @@ void reap_notify_in(struct reap_ctx* rctx)
 	struct sk_buff* skb;
 	u64* ct;
 	int err;
+#ifdef CONFIG_IPV6_SHIM6_DEBUG
+	u32* art;
 
+	/*Update timestamp*/
+	if (rctx->art_switch) {
+		/*Notifying daemon*/
+		pld_len=sizeof(*ct)+sizeof(*art);
+		if (!(skb=shim6_alloc_netlink_skb(pld_len,REAP_NL_ART,
+						  GFP_ATOMIC)))
+			return;
+		ct=NLMSG_DATA((struct nlmsghdr*)skb->data);
+		*ct=rctx->ct_local;
+		art=(u32*)(ct+1);
+		*art=(jiffies-rctx->last_recvd_data)*1000000/HZ;
+		if ((err=netlink_broadcast(shim6nl_sk,skb,0,SHIM6NLGRP_DEFAULT,
+					   GFP_ATOMIC)))
+			printk(KERN_ERR "shim6, %s : nl broadcast, error %d,"
+			       "daemon down ?\n", 
+			       __FUNCTION__, err);
+		/*Resetting flag*/
+		rctx->art_switch=0;
+	}
+	/*debug check*/
+	if (rctx->state!=REAP_OPERATIONAL) printk("reap_notify_in called\n");
+	rctx->last_recvd_data=jiffies;
+#endif
 
 	if (rctx->state==REAP_OPERATIONAL) {
 		ka_start(rctx,0);
@@ -353,6 +386,12 @@ static int reap_rcv_probe(reaphdr_probe* hdr,struct reap_ctx* rctx)
 		printk(KERN_ERR "reap_rcv_probe : invalid probe length\n");
 		return -1;
 	}
+
+#ifdef CONFIG_IPV6_SHIM6_DEBUG
+	if (hdr->sta==REAP_EXPLORING ||
+	    hdr->sta==REAP_INBOUND_OK)
+	  rctx->art_switch=1;
+#endif
 	
 	if (rctx->state==REAP_OPERATIONAL) {
 		switch(hdr->sta) {

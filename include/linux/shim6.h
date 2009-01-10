@@ -38,7 +38,10 @@ struct shim6_path {
 struct shim6_data {
 	/*inbound - ct is ct_local
 	 *outbound - ct is ct_peer*/
-	__u64               ct;
+        uint64_t            ct;
+
+	uint16_t            tka;   /*Keepalive timeout*/
+	uint16_t            tsend; /*Send timeout*/
 /*flags*/
 	__u8		    flags;
 #define SHIM6_DATA_INBOUND   0x1 /* context is inbound*/
@@ -52,14 +55,15 @@ struct shim6_data {
 	int                 npaths; /*1 if inbound or normal shim6, 
 				      n paths if outbound and multipath mode*/
 	int                 cur_path_idx; /*Index of the path currently used*/
-	struct shim6_path   paths[0];	
+	struct shim6_path   paths[0];
 };
 
 /*Computes the total length of a struct shim6_data (including paths)
  * @data must be a struct shim6_data*
  */
-#define SHIM6_DATA_LENGTH(data) (sizeof(*(data))+			\
-				 (data)->npaths*sizeof(struct shim6_path)) 
+#define SHIM6_DATA_LENGTH(data) ((unsigned int)                         \
+                                 (sizeof(*(data))+                      \
+				  (data)->npaths*sizeof(struct shim6_path))) 
 
 
 /*type values for shim6 messages*/
@@ -85,9 +89,10 @@ enum shim6_types_comm {
 /* get a context tag, from its parts in a message
  * @ct is in host byte order
  * @ct1, @ct2, @ct3 are in network byte order*/
-static inline void get_ct(__u64* ct, __u8 ct_1, __u8 ct_2, __u32 ct_3) 
+static inline void get_ct(uint64_t* ct, 
+			  uint8_t ct_1, uint8_t ct_2, uint32_t ct_3) 
 {
-	__u64 temp_ct;
+	uint64_t temp_ct;
 	*ct=ct_1;
 	*ct<<=40;
 	temp_ct=ct_2;
@@ -146,6 +151,14 @@ struct shim6hdr_ctl
 
 extern void shim6_listener_init(void);
 extern void shim6_listener_exit(void);
+/**
+ * @pre: The shim6 context related to @ulid_local,
+ * @post: The 'triggered' flag is cleared, so that the daemon can
+ *       be notified again that a new context should be created upon 
+ *       data flowing for that pair.
+ */
+extern void shim6pl_state_removed(struct in6_addr *ulid_peer, 
+				  struct in6_addr *ulid_local);
 
 
 /*=================
@@ -176,8 +189,7 @@ extern void shim6_listener_exit(void);
 #define REAP_INBOUND_OK               2
 
 /*REAP default parameters*/
-#define REAP_SEND_TIMEOUT             10 /*seconds*/
-#define REAP_KA_INTERVAL              3 /*seconds*/
+#define REAP_SEND_TIMEOUT             15 /*seconds*/
 
 /*Structures for the probe messages. We have two structures :
  * - The first is structure for the beginning of the probe message.

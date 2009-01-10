@@ -272,6 +272,8 @@ enum xfrm_attr_type_t {
 	XFRMA_POLICY_TYPE,	/* struct xfrm_userpolicy_type */
 	XFRMA_MIGRATE,
 	XFRMA_SHIM6,            /*Shim6 data*/
+	XFRM_SHIM6_TKA,         /*Shim6 Keepalive timer*/
+	XFRM_SHIM6_TSEND,       /*Shim6 Send timer*/
 	__XFRMA_MAX
 
 #define XFRMA_MAX (__XFRMA_MAX - 1)

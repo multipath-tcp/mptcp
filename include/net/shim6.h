@@ -142,7 +142,8 @@ static inline int shim6_alloc_skb(int msg_len, int opt_len, int type,
 	
 	
 	skb_reserve(skb,MAX_SHIM6_HEADER+opt_len);
-	skb->transport_header = skb_push(skb,msg_len+opt_len);
+	skb_push(skb,msg_len+opt_len);
+	skb_reset_transport_header(skb);
 	common=(struct shim6hdr_ctl*) skb_transport_header(skb);
 	
 	memset(common, 0, sizeof(struct shim6hdr_ctl));
@@ -179,5 +180,7 @@ static inline int is_shim6_inbound(struct xfrm_state* x)
 	return (x->id.proto==IPPROTO_SHIM6 && x->shim6 &&
 		(x->shim6->flags & SHIM6_DATA_INBOUND));
 }
+
+extern int sysctl_shim6_tcphint; /*declared in shim6_core.c*/
 
 #endif /* _NET_SHIM6_H */

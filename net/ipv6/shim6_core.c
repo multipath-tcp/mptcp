@@ -54,6 +54,7 @@ DEFINE_SNMP_STAT(struct ipstats_mib, ipv6_statistics);
 #endif
 
 int sysctl_shim6_enabled = 0; /*Will be enabled at the end of shim6 init*/
+int sysctl_shim6_tcphint = 1; /*if 0, disables TCP hint, default 1*/
 
 /*Sysctl data*/
 
@@ -67,6 +68,14 @@ static ctl_table shim6_table[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= &proc_dointvec
+	},
+	{
+		.ctl_name       = CTL_UNNUMBERED,
+		.procname       = "tcphint",
+		.data           = &sysctl_shim6_tcphint,
+		.maxlen         = sizeof(int),
+		.mode           = 0644,
+		.proc_handler   = &proc_dointvec
 	},
 	{ .ctl_name = 0 },
 };
@@ -317,7 +326,7 @@ static int shim6_init_state(struct xfrm_state *x)
 			       __FUNCTION__);
 			return -ENOMEM;
 		}
-		init_reap_ctx(rctx);
+		init_reap_ctx(rctx, x->shim6);
 	}
 	return 0;
 }
@@ -335,8 +344,16 @@ static void shim6_destroy(struct xfrm_state *x)
 	if (!rctx) return;
 	PDEBUG("Destroying Shim6 context : %p\n",x);
 	del_reap_ctx(rctx);
-	x->data=NULL;
+	x->data=NULL;	
 	kref_put(&rctx->kref,ctx_release);
+
+	/*Notify the Shim6 packet listener*/
+	BUG_ON(!x->shim6);
+	if (x->shim6->flags & SHIM6_DATA_INBOUND) {
+		/*The inbound context is deleted after the outbound*/
+		shim6pl_state_removed(&x->shim6->paths[0].remote, 
+				      &x->shim6->paths[0].local);
+	}
 }
 
 static xfrm_address_t *shim6_local_addr(struct xfrm_state *x, 

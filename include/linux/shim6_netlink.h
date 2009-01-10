@@ -49,6 +49,9 @@ enum shim6_nl_type_t {
 			     during an exploration process)*/
 	REAP_NL_NOTIFY_OUT, /*Notify outgoing packet (only 
 			      during an exploration process)*/
+	REAP_NL_ART, /*Notify Application Recovery Time
+		      (time between the last received packet before a failure
+		      and the first received packet after the recovery)*/
 	REAP_NL_SEND_KA, /*Tells the daemon that a ka must be sent*/	      
 
 /*Messages for shim6 */

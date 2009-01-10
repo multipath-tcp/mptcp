@@ -22,6 +22,7 @@
 #include <asm/uaccess.h>
 #include <linux/shim6.h>
 #include <net/shim6.h>
+#include <net/netevent.h>
 
 #include "xfrm_hash.h"
 
@@ -1225,7 +1226,7 @@ struct xfrm_state *xfrm_state_clone(struct xfrm_state *orig, int *errp)
 	}
 
 	if (orig->shim6) {
-		x->shim6 = kmemdup(orig->shim6, sizeof(*x->shim6),
+		x->shim6 = kmemdup(orig->shim6, SHIM6_DATA_LENGTH(x->shim6),
 				   GFP_KERNEL);
 		if (!x->shim6)
 			goto error;
@@ -1252,7 +1253,6 @@ struct xfrm_state *xfrm_state_clone(struct xfrm_state *orig, int *errp)
 		kfree(x->calg);
 		kfree(x->encap);
 		kfree(x->coaddr);
-		kfree(x->ct);
 	}
 	kfree(x);
 	return NULL;
@@ -1385,7 +1385,23 @@ out:
 			memcpy(x1->coaddr, x->coaddr, sizeof(*x1->coaddr));
 		}
 		if (x->shim6 && x1->shim6) {
-			memcpy(x1->shim6,x->shim6,sizeof(*x1->shim6));
+			if (SHIM6_DATA_LENGTH(x1->shim6)!=
+			    SHIM6_DATA_LENGTH(x->shim6)) {
+				printk(KERN_ERR "%s:error:trying to copy shim6 "
+				       "data from structure of size %u to "
+				       "size %u", __FUNCTION__,
+				       SHIM6_DATA_LENGTH(x->shim6),
+				       SHIM6_DATA_LENGTH(x1->shim6));
+				err=-1;
+			}
+			else {
+				struct reap_ctx* rctx=x1->data;
+				BUG_ON(!x1->data);
+				memcpy(x1->shim6,x->shim6,
+				       SHIM6_DATA_LENGTH(x1->shim6));
+				rctx->tka=x1->shim6->tka;
+				rctx->tsend=x1->shim6->tsend;
+			}
 		}
 		if (!use_spi && memcmp(&x1->sel, &x->sel, sizeof(x1->sel)))
 			memcpy(&x1->sel, &x->sel, sizeof(x1->sel));
@@ -1401,6 +1417,18 @@ out:
 	spin_unlock_bh(&x1->lock);
 
 	xfrm_state_put(x1);
+
+	/*In case of path change, send a notification
+	  (we check if we are updating the inbound direction, because the
+	  outbound is set first, then the inbound, then the path can be used)*/
+	if (sysctl_shim6_tcphint &&
+	    !err && x->shim6 && (x->shim6->flags & SHIM6_DATA_INBOUND)) {
+		struct ulid_pair up={
+			.local=&x->shim6->paths[0].local,
+			.remote=&x->shim6->paths[0].remote,
+		};
+		call_netevent_notifiers(NETEVENT_PATH_UPDATE, &up);
+	}
 
 	return err;
 }
