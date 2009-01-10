@@ -4,7 +4,7 @@
 
 #   IPv6 as module will cause a CRASH if you try to unload it
 config IPV6
-	bool "The IPv6 protocol"
+	tristate "The IPv6 protocol"
 	default m
 	---help---
 	  This is complemental support for the IP version 6.

@@ -34,6 +34,7 @@
 #include <linux/timer.h>
 #include <linux/shim6_netlink.h>
 #include <linux/jhash.h>
+#include <linux/shim6.h>
 
 #include <net/shim6.h>
 #include <net/addrconf.h>
@@ -333,8 +334,8 @@ static unsigned int shim6list_local_out(unsigned int hooknum,
  *       be notified again that a new context should be created upon 
  *       data flowing for that pair.
  */
-void shim6pl_state_removed(struct in6_addr *ulid_peer, 
-			  struct in6_addr *ulid_local)
+static void shim6pl_state_removed(struct in6_addr *ulid_peer, 
+				  struct in6_addr *ulid_local)
 {
 	struct shim6_ctx_count* ctxc;
 	ctxc=shim6_lookup_ulid(ulid_peer,ulid_local);
@@ -359,8 +360,11 @@ static struct nf_hook_ops shim6_hook_ops[] = {
 	},
 };
 
+static struct shim6_pl default_heuristic = {
+	.state_removed=shim6pl_state_removed,
+};
 
-void __init shim6_listener_init(void) 
+static int __init shim6_listener_init(void) 
 {
 	int i;
 	PDEBUG("Entering %s\n",__FUNCTION__);
@@ -371,10 +375,14 @@ void __init shim6_listener_init(void)
 	for (i=0;i<SHIM6_HASH_SIZE;i++) {
 		INIT_LIST_HEAD(&ulid_hashtable[i]);
 	}
-
+	/*register the packet listener in shim6*/
+	return shim6_register_pl(&default_heuristic);
 }
+module_init(shim6_listener_init);
 
-void __exit shim6_listener_exit(void)
+static void __exit shim6_listener_exit(void)
 {
 	nf_unregister_hooks(shim6_hook_ops,2);
+	shim6_unregister_pl(&default_heuristic);
 }
+module_exit(shim6_listener_exit)

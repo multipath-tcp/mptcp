@@ -53,9 +53,6 @@
 DEFINE_SNMP_STAT(struct ipstats_mib, ipv6_statistics);
 #endif
 
-int sysctl_shim6_enabled = 0; /*Will be enabled at the end of shim6 init*/
-int sysctl_shim6_tcphint = 1; /*if 0, disables TCP hint, default 1*/
-
 /*Sysctl data*/
 
 #ifdef CONFIG_SYSCTL
@@ -338,6 +335,21 @@ static void ctx_release(struct kref* kref) {
 	kfree(rctx);
 }
 
+struct shim6_pl *heuristic=NULL;
+
+/**
+ * @pre: The shim6 context related to @ulid_local,
+ * @post: The 'triggered' flag is cleared, so that the daemon can
+ *       be notified again that a new context should be created upon 
+ *       data flowing for that pair.
+ */
+void shim6pl_state_removed(struct in6_addr *ulid_peer, 
+			   struct in6_addr *ulid_local)
+{
+	if (heuristic)
+		heuristic->state_removed(ulid_peer,ulid_local);
+}
+
 static void shim6_destroy(struct xfrm_state *x)
 {	
 	struct reap_ctx* rctx=(struct reap_ctx*) x->data;
@@ -402,14 +414,12 @@ static int __init shim6_init(void)
 	/*Now we can make shim6 available*/
 	
 	sysctl_shim6_enabled=1;
+	sysctl_shim6_tcphint=1;
 
 	/*...and allow user to play with (de)activation*/
 #ifdef CONFIG_SYSCTL
 	register_sysctl_table(shim6_root_table);
 #endif
-
-	/*Register the shim6 packet listener*/
-	shim6_listener_init();
 
 	/*Register shim6 xfrm type*/
 	if (xfrm_register_type(&shim6_type, AF_INET6) < 0) {
@@ -428,9 +438,6 @@ module_init(shim6_init);
 static void __exit shim6_exit(void)
 {
 	reap_exit();
-	/*shim6 specific still to be completed.*/
-	shim6_listener_exit();
-	
 	if (xfrm_unregister_type(&shim6_type, AF_INET6) < 0)
 		printk(KERN_INFO "%s: can't remove xfrm type(shim6)\n", 
 		       __FUNCTION__);
@@ -719,5 +726,21 @@ error:
 		xfrm_state_put(x);
 	return -1;
 }
+
+int shim6_register_pl(struct shim6_pl *listener)
+{
+	if (heuristic) return -1; /*Only one heuristic is allowed at a time*/
+	heuristic=listener;
+	return 0;
+}
+int shim6_unregister_pl(struct shim6_pl *listener)
+{
+	if (heuristic!=listener) return -1; /*trying to unregister something 
+					      else, probably a bug*/
+	heuristic=NULL;
+	return 0;
+}
+EXPORT_SYMBOL(shim6_register_pl);
+EXPORT_SYMBOL(shim6_unregister_pl);
 
 MODULE_LICENSE("GPL");
