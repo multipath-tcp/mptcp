@@ -533,7 +533,14 @@ int os_create_unix_socket(char *file, int len, int close_on_exec)
 	addr.sun_family = AF_UNIX;
 
 	/* XXX Be more careful about overflow */
-	snprintf(addr.sun_path, len, "%s", file);
+	if (len>sizeof(addr.sun_path)) {
+		printk("%s: filename too long, truncated:%s\n",__FUNCTION__,
+		       file);
+		printk("\t it should be max %lu long\n",sizeof(addr.sun_path));
+		snprintf(addr.sun_path, sizeof(addr.sun_path)-1, "%s", file);
+		addr.sun_path[sizeof(addr.sun_path)-1]='\0';
+	}
+	else snprintf(addr.sun_path, len, "%s", file);
 
 	err = bind(sock, (struct sockaddr *) &addr, sizeof(addr));
 	if(err < 0)
