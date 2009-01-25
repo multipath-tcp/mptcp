@@ -19,7 +19,7 @@
 #include <net/route.h>
 #include <net/ipv6.h>
 #include <net/ip6_fib.h>
-#ifdef CONFIG_IPV6_SHIM6
+#if defined(CONFIG_IPV6_SHIM6) || defined(CONFIG_IPV6_SHIM6_MODULE)
 #include <linux/shim6.h>
 #endif
 

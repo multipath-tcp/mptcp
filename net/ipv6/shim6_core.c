@@ -157,6 +157,7 @@ void shim6_input_std(struct sk_buff* skb)
 	shim6_xfrm_input_ulid(skb,(xfrm_address_t *)&iph->daddr, 
 			      (xfrm_address_t *)&iph->saddr);
 }
+EXPORT_SYMBOL(shim6_input_std);
 
 /* Shim6 Header is inserted, if necessary.
  * IP Header's dst address and src address (ULIDs) are replaced with
@@ -464,6 +465,7 @@ void shim6_add_glob_locator(struct inet6_ifaddr* loc)
 	shim6_new_daemon_loc(&loc->addr, loc->idev->dev->ifindex);
 	return;
 }
+EXPORT_SYMBOL(shim6_add_glob_locator);
 
 /*Deletes a shim6 glob locator
  */
@@ -479,6 +481,7 @@ void shim6_del_glob_locator(struct inet6_ifaddr* loc)
 
 	shim6_del_daemon_loc(&loc->addr,loc->idev->dev->ifindex);	
 }
+EXPORT_SYMBOL(shim6_del_glob_locator);
 
 
 /*
@@ -598,6 +601,7 @@ int shim6_filter(struct sock *sk, struct sk_buff *skb)
 	
 	return 0;
 }
+EXPORT_SYMBOL(shim6_filter);
 
 /*Modified version of xfrm6_input_addr (net/ipv6/xfrm6_input.c)
   That does the xfrm lookup based on the shim6 context tag*/

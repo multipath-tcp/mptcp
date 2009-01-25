@@ -640,7 +640,7 @@ static inline int snmp6_unregister_dev(struct inet6_dev *idev)
 #ifdef CONFIG_SYSCTL
 extern ctl_table ipv6_route_table[];
 extern ctl_table ipv6_icmp_table[];
-#ifdef CONFIG_IPV6_SHIM6
+#if defined(CONFIG_IPV6_SHIM6) || defined(CONFIG_IPV6_SHIM6_MODULE)
 extern ctl_table ipv6_shim6_table[];
 #endif
 
