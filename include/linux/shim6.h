@@ -23,6 +23,7 @@
 #include <linux/in6.h>
 #include <asm/byteorder.h>
 #include <asm/types.h>
+#include <net/if_inet6.h>
 #endif /*__KERNEL__*/
 #include <linux/netlink.h>
 
@@ -144,6 +145,21 @@ struct shim6hdr_ctl
 #define SHIM6_MSG_CONTROL              0
 #define SHIM6_MSG_PAYLOAD              1
 
+
+#ifdef __KERNEL__
+
+/*Support for module loading*/
+struct shim6_ops {
+	void (*input_std)(struct sk_buff* skb);
+	void (*add_glob_locator)(struct inet6_ifaddr* loc);
+	void (*del_glob_locator)(struct inet6_ifaddr* loc);
+	int  (*filter)(struct sock *sk, struct sk_buff *skb);
+	int  (*xfrm_input_ct)(struct sk_buff *skb, __u64 ct);
+};
+
+int shim6_register_ops(struct shim6_ops *ops);
+int shim6_unregister_ops(struct shim6_ops *ops);
+
 /*=================
  *  Shim6 Listener
  *=================
@@ -156,6 +172,9 @@ struct shim6_pl {
 };
 int shim6_register_pl(struct shim6_pl *listener);
 int shim6_unregister_pl(struct shim6_pl *listener);
+
+#endif
+
 /*=================
  *     REAP
  *=================

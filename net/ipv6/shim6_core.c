@@ -145,7 +145,7 @@ static int shim6_input(struct xfrm_state *x, struct sk_buff *skb)
  * If no context is found, then nothing is done, the packet can continue
  * to go up.
  */
-void shim6_input_std(struct sk_buff* skb) 
+static void input_std(struct sk_buff* skb) 
 {
 	struct ipv6hdr* iph=ipv6_hdr(skb);
 	if (!sysctl_shim6_enabled) return;
@@ -157,7 +157,6 @@ void shim6_input_std(struct sk_buff* skb)
 	shim6_xfrm_input_ulid(skb,(xfrm_address_t *)&iph->daddr, 
 			      (xfrm_address_t *)&iph->saddr);
 }
-EXPORT_SYMBOL(shim6_input_std);
 
 /* Shim6 Header is inserted, if necessary.
  * IP Header's dst address and src address (ULIDs) are replaced with
@@ -381,77 +380,12 @@ static xfrm_address_t *shim6_remote_addr(struct xfrm_state *x,
 	return (xfrm_address_t*)&x->shim6->paths[x->shim6->cur_path_idx].remote;
 }
 
-static struct xfrm_type shim6_type =
-{
-	.description	= "SHIM6",
-	.owner		= THIS_MODULE,
-	.proto	     	= IPPROTO_SHIM6,
-	.flags          = XFRM_TYPE_NON_FRAGMENT,
-	.init_state	= shim6_init_state,
-	.destructor	= shim6_destroy,
-	.input		= shim6_input,
-	.output		= shim6_output,
-	.hdr_offset	= shim6_offset,
-	.local_addr     = shim6_local_addr,
-	.remote_addr    = shim6_remote_addr,
-};
-
-
-/*General initialization of the shim6 mechanism
- *(this is executed in user context)
- */
-static int __init shim6_init(void) 
-{
-	int err;
-
-	printk("shim6 global initialization...\n");
-
-	/*netlink initialization*/
-	if ((err=shim6_netlink_init())<0) goto fail;
-
-	/*Shim6 ext header registration*/
-	ipv6_shim6_init();
-
-	/*Now we can make shim6 available*/
-	
-	sysctl_shim6_enabled=1;
-	sysctl_shim6_tcphint=1;
-
-	/*...and allow user to play with (de)activation*/
-#ifdef CONFIG_SYSCTL
-	register_sysctl_table(shim6_root_table);
-#endif
-
-	/*Register shim6 xfrm type*/
-	if (xfrm_register_type(&shim6_type, AF_INET6) < 0) {
-		printk(KERN_INFO "%s: can't add xfrm type(shim6)\n", 
-		       __FUNCTION__);
-		return -EAGAIN;		
-	}
-
-	return 0;
-
- fail:
-	return err;
-}
-module_init(shim6_init);
-
-static void __exit shim6_exit(void)
-{
-	reap_exit();
-	if (xfrm_unregister_type(&shim6_type, AF_INET6) < 0)
-		printk(KERN_INFO "%s: can't remove xfrm type(shim6)\n", 
-		       __FUNCTION__);
-}
-
-module_exit(shim6_exit);
-
 
 /* If @loc is a suitable locator for 
  * use inside shim6, notifies the daemon that it is now available.
  */
 
-void shim6_add_glob_locator(struct inet6_ifaddr* loc) 
+static void add_glob_locator(struct inet6_ifaddr* loc) 
 {
 	struct in6_addr loaddr=IN6ADDR_LOOPBACK_INIT;
 	/*The loopback address cannot be sent as a locator.*/
@@ -465,11 +399,10 @@ void shim6_add_glob_locator(struct inet6_ifaddr* loc)
 	shim6_new_daemon_loc(&loc->addr, loc->idev->dev->ifindex);
 	return;
 }
-EXPORT_SYMBOL(shim6_add_glob_locator);
 
 /*Deletes a shim6 glob locator
  */
-void shim6_del_glob_locator(struct inet6_ifaddr* loc)
+static void del_glob_locator(struct inet6_ifaddr* loc)
 
 {
 	struct in6_addr loaddr=IN6ADDR_LOOPBACK_INIT;
@@ -481,7 +414,6 @@ void shim6_del_glob_locator(struct inet6_ifaddr* loc)
 
 	shim6_del_daemon_loc(&loc->addr,loc->idev->dev->ifindex);	
 }
-EXPORT_SYMBOL(shim6_del_glob_locator);
 
 
 /*
@@ -557,7 +489,7 @@ static inline void shim6_param_prob(struct sk_buff *skb, int code, int pos)
 	icmpv6_send(skb, ICMPV6_PARAMPROB, code, pos, skb->dev);
 }
 
-int shim6_filter(struct sock *sk, struct sk_buff *skb)
+static int filter(struct sock *sk, struct sk_buff *skb)
 {
 	struct shim6hdr_ctl *hdr;
 	int type_src,type_dst;
@@ -601,11 +533,10 @@ int shim6_filter(struct sock *sk, struct sk_buff *skb)
 	
 	return 0;
 }
-EXPORT_SYMBOL(shim6_filter);
 
 /*Modified version of xfrm6_input_addr (net/ipv6/xfrm6_input.c)
   That does the xfrm lookup based on the shim6 context tag*/
-int shim6_xfrm_input_ct(struct sk_buff *skb, __u64 ct)
+static int xfrm_input_ct(struct sk_buff *skb, __u64 ct)
 {
 	struct xfrm_state *x = NULL;
 	int nh = 0;
@@ -663,7 +594,6 @@ drop:
 		xfrm_state_put(x);
 	return -1;
 }
-EXPORT_SYMBOL(shim6_xfrm_input_ct);
 
 /*Modified version of xfrm6_input_addr (net/ipv6/xfrm6_input.c)
   That does the xfrm lookup based on saddr=ulid_peer, daddr=ulid_local
@@ -746,5 +676,89 @@ int shim6_unregister_pl(struct shim6_pl *listener)
 }
 EXPORT_SYMBOL(shim6_register_pl);
 EXPORT_SYMBOL(shim6_unregister_pl);
+
+
+static struct xfrm_type shim6_type =
+{
+	.description	= "SHIM6",
+	.owner		= THIS_MODULE,
+	.proto	     	= IPPROTO_SHIM6,
+	.flags          = XFRM_TYPE_NON_FRAGMENT,
+	.init_state	= shim6_init_state,
+	.destructor	= shim6_destroy,
+	.input		= shim6_input,
+	.output		= shim6_output,
+	.hdr_offset	= shim6_offset,
+	.local_addr     = shim6_local_addr,
+	.remote_addr    = shim6_remote_addr,
+};
+
+static struct shim6_ops shim6_fcts=
+{
+	.input_std=input_std,
+	.add_glob_locator=add_glob_locator,
+	.del_glob_locator=del_glob_locator,
+	.filter=filter,
+	.xfrm_input_ct=xfrm_input_ct,
+};
+
+
+/*General initialization of the shim6 mechanism
+ *(this is executed in user context)
+ */
+static int __init shim6_init(void) 
+{
+	int err;
+
+	printk("shim6 global initialization...\n");
+
+	/*netlink initialization*/
+	if ((err=shim6_netlink_init())<0) goto fail;
+
+	/*Shim6 ext header registration*/
+	ipv6_shim6_init();
+
+	/*Now we can make shim6 available*/
+	
+	sysctl_shim6_enabled=1;
+	sysctl_shim6_tcphint=1;
+
+	/*...and allow user to play with (de)activation*/
+#ifdef CONFIG_SYSCTL
+	register_sysctl_table(shim6_root_table);
+#endif
+
+	/*Register shim6 xfrm type*/
+	if (xfrm_register_type(&shim6_type, AF_INET6) < 0) {
+		printk(KERN_INFO "%s: can't add xfrm type(shim6)\n", 
+		       __FUNCTION__);
+		return -EAGAIN;		
+	}
+	if (shim6_register_ops(&shim6_fcts)<0) {
+		printk(KERN_INFO "%s: can't shim6 ops\n", 
+		       __FUNCTION__);
+		return -EAGAIN;		
+	}
+
+	return 0;
+
+ fail:
+	return err;
+}
+module_init(shim6_init);
+
+static void __exit shim6_exit(void)
+{
+	reap_exit();
+	if (xfrm_unregister_type(&shim6_type, AF_INET6) < 0)
+		printk(KERN_INFO "%s: can't remove xfrm type(shim6)\n", 
+		       __FUNCTION__);
+	if (shim6_unregister_ops(&shim6_fcts)<0)
+		printk(KERN_INFO "%s: can't remove shim6 ops\n",
+		       __FUNCTION__);
+}
+
+module_exit(shim6_exit);
+
 
 MODULE_LICENSE("GPL");
