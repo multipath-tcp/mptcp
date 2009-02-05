@@ -19,13 +19,13 @@
  */
 
 #include <linux/kernel.h>
-#include <linux/kprobes.h>
 #include <linux/socket.h>
 #include <linux/tcp.h>
 #include <linux/proc_fs.h>
 #include <linux/module.h>
 #include <linux/ktime.h>
 #include <linux/time.h>
+#include <linux/tcp_probe.h>
 #include <net/net_namespace.h>
 //AD:
 #include <net/ipv6.h>
@@ -90,8 +90,8 @@ static inline int tcp_probe_avail(void)
  * Hook inserted to be called before each receive packet.
  * Note: arguments must match tcp_rcv_established()!
  */
-static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
-			       struct tcphdr *th, unsigned len)
+static int rcv_established(struct sock *sk, struct sk_buff *skb,
+			   struct tcphdr *th, unsigned len)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_sock *inet = inet_sk(sk);
@@ -101,7 +101,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 // 	dest  = &np->daddr;
 // 	src   = &np->saddr;
 	/* Only update if port matches */
-	if ((port == 0 || ntohs(inet->dport) == port || ntohs(inet->sport) == port)
+	if ((skb->protocol == htons(ETH_P_IPV6)) && (port == 0 || ntohs(inet->dport) == port || ntohs(inet->sport) == port)
 	    && (full || tp->snd_cwnd != tcp_probe.lastcwnd)) {
 
 		spin_lock(&tcp_probe.lock);
@@ -132,16 +132,8 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 		wake_up(&tcp_probe.wait);
 	}
 
-	jprobe_return();
 	return 0;
 }
-
-static struct jprobe tcp_jprobe = {
-	.kp = {
-		.symbol_name	= "tcp_rcv_established",
-	},
-	.entry	= jtcp_rcv_established,
-};
 
 static int tcpprobe_open(struct inode * inode, struct file * file)
 {
@@ -234,6 +226,10 @@ static const struct file_operations tcpprobe_fops = {
 	.read    = tcpprobe_read,
 };
 
+static struct tcpprobe_ops tcpprobe_fcts = {
+	.rcv_established=rcv_established,
+};
+
 static __init int tcpprobe_init(void)
 {
 	int ret = -ENOMEM;
@@ -251,7 +247,7 @@ static __init int tcpprobe_init(void)
 	if (!proc_net_fops_create(&init_net, procname, S_IRUSR, &tcpprobe_fops))
 		goto err0;
 
-	ret = register_jprobe(&tcp_jprobe);
+	ret = register_probe(&tcpprobe_fcts);
 	if (ret)
 		goto err1;
 
@@ -274,7 +270,7 @@ module_init(tcpprobe_init);
 static __exit void tcpprobe_exit(void)
 {
 	proc_net_remove(&init_net, procname);
-	unregister_jprobe(&tcp_jprobe);
+	unregister_probe(&tcpprobe_fcts);
 	kfree(tcp_probe.log);
 }
 module_exit(tcpprobe_exit);
