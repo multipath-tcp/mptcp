@@ -228,7 +228,7 @@ struct inet6_skb_parm {
 #if defined(CONFIG_IPV6_MIP6) || defined(CONFIG_IPV6_MIP6_MODULE)
 	__u16			dsthao;
 #endif
-#ifdef CONFIG_IPV6_SHIM6
+#if defined(CONFIG_IPV6_SHIM6) || defined(CONFIG_IPV6_SHIM6_MODULE)
 	__u16                   shim6;
 #endif
 

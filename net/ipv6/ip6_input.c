@@ -44,7 +44,7 @@
 #include <net/ip6_route.h>
 #include <net/addrconf.h>
 #include <net/xfrm.h>
-#ifdef CONFIG_IPV6_SHIM6
+#if defined(CONFIG_IPV6_SHIM6) || defined(CONFIG_IPV6_SHIM6_MODULE)
 #include <net/shim6.h>
 #endif
 
@@ -160,7 +160,7 @@ static int ip6_input_finish(struct sk_buff *skb)
 	int nexthdr;
 	u8 hash;
 	struct inet6_dev *idev;
-#ifdef CONFIG_IPV6_SHIM6
+#if defined(CONFIG_IPV6_SHIM6) || defined(CONFIG_IPV6_SHIM6_MODULE)
 	int shim6_processed=0;
 	int found_rthdr=0;
 #endif
@@ -177,7 +177,7 @@ resubmit:
 	nhoff = IP6CB(skb)->nhoff;
 	nexthdr = skb_network_header(skb)[nhoff];
 
-#ifdef CONFIG_IPV6_SHIM6
+#if defined(CONFIG_IPV6_SHIM6) || defined(CONFIG_IPV6_SHIM6_MODULE)
 /*This gives a first approach in dealing correctly with ext headers.
  * With this kind of checks, MIPv6 headers are dealt with before shim6.
  * This means that MIPv6 is layered below shim6. Just change the checks to 

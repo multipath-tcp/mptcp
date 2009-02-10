@@ -1142,6 +1142,13 @@ static int xfrm_add_policy(struct sk_buff *skb, struct nlmsghdr *nlh,
 	 * a type XFRM_MSG_UPDPOLICY - JHS */
 	excl = nlh->nlmsg_type == XFRM_MSG_NEWPOLICY;
 	err = xfrm_policy_insert(p->dir, xp, excl);
+	if (xp->selector.family==AF_INET6) {
+		struct rt6_info *rt;
+		rt=rt6_lookup((struct in6_addr*)&xp->selector.daddr.a6,
+			      (struct in6_addr*)&xp->selector.saddr.a6,0,0);
+		dst_negative_advice((struct dst_entry**)&rt);
+	}
+
 	xfrm_audit_policy_add(xp, err ? 0 : 1, NETLINK_CB(skb).loginuid,
 			      NETLINK_CB(skb).sid);
 

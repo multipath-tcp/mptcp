@@ -53,7 +53,7 @@
 #if defined(CONFIG_IPV6_MIP6) || defined(CONFIG_IPV6_MIP6_MODULE)
 #include <net/mip6.h>
 #endif
-#ifdef CONFIG_IPV6_SHIM6
+#if defined(CONFIG_IPV6_SHIM6) || defined(CONFIG_IPV6_SHIM6_MODULE)
 #include <net/shim6.h>
 #endif
 
@@ -221,7 +221,7 @@ int ipv6_raw_deliver(struct sk_buff *skb, int nexthdr)
 			break;
 		}
 #endif
-#ifdef CONFIG_IPV6_SHIM6
+#if defined(CONFIG_IPV6_SHIM6) || defined(CONFIG_IPV6_SHIM6_MODULE)
 		case IPPROTO_SHIM6:
 			filtered = shim6_filter(sk,skb);
 			break;

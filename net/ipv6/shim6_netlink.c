@@ -77,3 +77,6 @@ int __init shim6_netlink_init(void)
 	
 	return 0;
 }
+
+EXPORT_SYMBOL(shim6nl_sk);
+EXPORT_SYMBOL(shim6_alloc_netlink_skb);
