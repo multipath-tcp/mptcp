@@ -139,7 +139,9 @@ enum
 #define XFRM_MODE_ROUTEOPTIMIZATION 2
 #define XFRM_MODE_IN_TRIGGER 3
 #define XFRM_MODE_BEET 4
-#define XFRM_MODE_MAX 5
+#define XFRM_MODE_SHIM6 5
+#define XFRM_MODE_MAX 6
+
 
 /* Netlink configuration messages.  */
 enum {
@@ -279,6 +281,7 @@ enum xfrm_attr_type_t {
 	XFRMA_POLICY_TYPE,	/* struct xfrm_userpolicy_type */
 	XFRMA_MIGRATE,
 	XFRMA_ALG_AEAD,		/* struct xfrm_algo_aead */
+	XFRMA_SHIM6,            /*Shim6 data*/
 	__XFRMA_MAX
 
 #define XFRMA_MAX (__XFRMA_MAX - 1)

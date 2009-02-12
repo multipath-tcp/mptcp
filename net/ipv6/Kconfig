@@ -104,6 +104,28 @@ config INET6_IPCOMP
 
 	  If unsure, say Y.
 
+config IPV6_SHIM6 
+	tristate "IPv6: Shim6 support (EXPERIMENTAL)"
+	depends on IPV6 && EXPERIMENTAL
+	select CRYPTO
+	select CRYPTO_SHA1
+	select XFRM
+	select XFRM_USER
+	select NETFILTER
+	---help---
+	  Support for IPv6 multihoming with shim6
+	  (draft-ietf-shim6-proto-10.txt)
+
+	  If unsure, say N.
+
+config IPV6_SHIM6_DEBUG
+       bool "Shim6 debug messages"
+       depends on IPV6_SHIM6
+       default y
+       ---help---
+       Enables logging of shim6 related debugging messages. Highly recommended.
+
+
 config IPV6_MIP6
 	tristate "IPv6: Mobility (EXPERIMENTAL)"
 	depends on EXPERIMENTAL

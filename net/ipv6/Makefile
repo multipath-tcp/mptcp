@@ -13,6 +13,10 @@ ipv6-objs :=	af_inet6.o anycast.o ip6_output.o ip6_input.o addrconf.o \
 ipv6-$(CONFIG_SYSCTL) = sysctl_net_ipv6.o
 ipv6-$(CONFIG_IPV6_MROUTE) += ip6mr.o
 
+obj-$(CONFIG_IPV6_SHIM6) += shim6.o xfrm6_mode_shim6.o shim6_pkt_listener.o
+shim6-objs := 	shim6_core.o reap.o  \
+		shim6_netlink.o shim6_exthdrs.o
+
 ipv6-$(CONFIG_XFRM) += xfrm6_policy.o xfrm6_state.o xfrm6_input.o \
 	xfrm6_output.o
 ipv6-$(CONFIG_NETFILTER) += netfilter.o
@@ -37,6 +41,6 @@ obj-$(CONFIG_NETFILTER)	+= netfilter/
 obj-$(CONFIG_IPV6_SIT) += sit.o
 obj-$(CONFIG_IPV6_TUNNEL) += ip6_tunnel.o
 
-obj-y += addrconf_core.o exthdrs_core.o
+obj-y += addrconf_core.o exthdrs_core.o shim6_static.o
 
 obj-$(subst m,y,$(CONFIG_IPV6)) += inet6_hashtables.o

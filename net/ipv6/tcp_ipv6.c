@@ -59,6 +59,7 @@
 #include <net/timewait_sock.h>
 #include <net/netdma.h>
 #include <net/inet_common.h>
+#include <net/netevent.h>
 
 #include <asm/uaccess.h>
 
@@ -2139,6 +2140,48 @@ static struct inet_protosw tcpv6_protosw = {
 				INET_PROTOSW_ICSK,
 };
 
+static int netevent_callback(struct notifier_block *self, unsigned long event,
+			     void *ctx)
+{
+        if (event == NETEVENT_PATH_UPDATE) {
+		int bucket;
+		/*Code inspired from established_get_first() 
+		  (net/ipv4/tcp_ipv4.c) */
+		
+                struct ulid_pair *up = ctx;
+		struct ipv6_pinfo *np;
+		 
+		for (bucket=0;bucket < tcp_hashinfo.ehash_size; ++bucket) {
+			struct sock *sk;
+			struct hlist_node *node;
+			rwlock_t *lock = inet_ehash_lockp(&tcp_hashinfo,bucket);
+			write_lock_bh(lock);
+			sk_for_each(sk,node,&tcp_hashinfo.ehash[bucket].chain) {
+				if (sk->sk_family != AF_INET6) continue;
+				np = inet6_sk(sk);
+				if (!ipv6_addr_equal(up->local,&np->saddr) ||
+				    !ipv6_addr_equal(up->remote,&np->daddr))
+					continue;
+				
+				/*Reinitialize the retransmit timer*/
+				inet_csk(sk)->icsk_rto = TCP_TIMEOUT_INIT;
+				inet_csk(sk)->icsk_retransmits = 0;
+				/*retransmit now*/
+				inet_csk_reset_xmit_timer(
+					sk, ICSK_TIME_RETRANS,0,TCP_RTO_MAX);
+				
+			}
+			write_unlock_bh(lock);
+		}
+		
+        }
+        return 0;
+}
+
+static struct notifier_block nb = {
+        .notifier_call = netevent_callback
+};
+
 static int tcpv6_net_init(struct net *net)
 {
 	return inet_ctl_sock_create(&net->ipv6.tcp_sk, PF_INET6,
@@ -2168,13 +2211,15 @@ int __init tcpv6_init(void)
 	ret = inet6_register_protosw(&tcpv6_protosw);
 	if (ret)
 		goto out_tcpv6_protocol;
-
+	
 	ret = register_pernet_subsys(&tcpv6_net_ops);
 	if (ret)
 		goto out_tcpv6_protosw;
+	register_netevent_notifier(&nb);
+	
 out:
 	return ret;
-
+	
 out_tcpv6_protocol:
 	inet6_del_protocol(&tcpv6_protocol, IPPROTO_TCP);
 out_tcpv6_protosw:
@@ -2184,7 +2229,8 @@ out_tcpv6_protosw:
 
 void tcpv6_exit(void)
 {
+	unregister_netevent_notifier(&nb);
 	unregister_pernet_subsys(&tcpv6_net_ops);
 	inet6_unregister_protosw(&tcpv6_protosw);
-	inet6_del_protocol(&tcpv6_protocol, IPPROTO_TCP);
+	inet6_del_protocol(&tcpv6_protocol, IPPROTO_TCP);	
 }

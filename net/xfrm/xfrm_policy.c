@@ -603,6 +603,7 @@ int xfrm_policy_insert(int dir, struct xfrm_policy *policy, int excl)
 		hlist_add_after(newpos, &policy->bydst);
 	else
 		hlist_add_head(&policy->bydst, chain);
+
 	xfrm_pol_hold(policy);
 	xfrm_policy_count[dir]++;
 	atomic_inc(&flow_cache_genid);

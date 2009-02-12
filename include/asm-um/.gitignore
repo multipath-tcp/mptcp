@@ -1,0 +1,11 @@
+#symlinks used by uml arch
+/arch
+/archparam.h
+/elf.h
+/host_ldt.h
+/module.h
+/processor.h
+/ptrace.h
+/sigcontext.h
+/system.h
+/vm-flags.h
