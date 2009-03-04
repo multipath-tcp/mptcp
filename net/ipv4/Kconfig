@@ -291,6 +291,13 @@ config ARPD
 	  and you should also say Y to "Kernel/User network link driver",
 	  below. If unsure, say N.
 
+config MTCP
+       tristate "MTCP protocol"
+       depends on EXPERIMENTAL
+       ---help---
+	This replaces the normal TCP stack with a Multipath TCP stack,
+	able to use several paths at once.
+
 config SYN_COOKIES
 	bool "IP: TCP syncookie support (disabled per default)"
 	---help---
