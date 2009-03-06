@@ -218,7 +218,7 @@ static int check_trigger(struct shim6_ctx_count* ctxc)
 {
 	if (!ctxc->triggered &&
 	    (ctxc->bytes >= FLOW_SIZE_TRIGGER ||
-	     jiffies-ctxc->timestamp >= FLOW_TIME_TRIGGER)) {
+	     time_before_eq(ctxc->timestamp+FLOW_TIME_TRIGGER,jiffies))) {
 		PDEBUG("trigger ctx establishment :"
 		       "bytes=%d, time=%ld seconds\n",ctxc->bytes,
 		       (jiffies-ctxc->timestamp)/HZ);
