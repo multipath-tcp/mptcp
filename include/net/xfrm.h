@@ -319,6 +319,7 @@ struct xfrm_type
 #define XFRM_TYPE_REPLAY_PROT	2
 #define XFRM_TYPE_LOCAL_COADDR	4
 #define XFRM_TYPE_REMOTE_COADDR	8
+#define XFRM_TYPE_SHIM6_ADDR    16
 
 	int			(*init_state)(struct xfrm_state *x);
 	void			(*destructor)(struct xfrm_state *);

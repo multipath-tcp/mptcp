@@ -133,6 +133,12 @@ static inline struct dst_entry *xfrm_dst_lookup(struct xfrm_state *x, int tos,
 		saddr = prev_saddr;
 		daddr = x->coaddr;
 	}
+	if (x->type->flags & XFRM_TYPE_SHIM6_ADDR) {
+		saddr = (xfrm_address_t*)
+			&x->shim6->paths[x->shim6->cur_path_idx].local;
+		daddr = (xfrm_address_t*)
+			&x->shim6->paths[x->shim6->cur_path_idx].remote;
+	}
 
 	dst = __xfrm_dst_lookup(tos, saddr, daddr, family);
 

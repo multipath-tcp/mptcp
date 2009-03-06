@@ -32,7 +32,6 @@
 #include <linux/sysctl.h>
 #endif
 
-#include <asm/semaphore.h>
 #include <asm/errno.h>
 
 #include <net/ipv6.h>
@@ -368,18 +367,6 @@ static void shim6_destroy(struct xfrm_state *x)
 	}
 }
 
-static xfrm_address_t *shim6_local_addr(struct xfrm_state *x, 
-					xfrm_address_t *addr)
-{
-	return (xfrm_address_t*)&x->shim6->paths[x->shim6->cur_path_idx].local;
-}
-
-static xfrm_address_t *shim6_remote_addr(struct xfrm_state *x, 
-					xfrm_address_t *addr)
-{
-	return (xfrm_address_t*)&x->shim6->paths[x->shim6->cur_path_idx].remote;
-}
-
 
 /* If @loc is a suitable locator for 
  * use inside shim6, notifies the daemon that it is now available.
@@ -683,14 +670,12 @@ static struct xfrm_type shim6_type =
 	.description	= "SHIM6",
 	.owner		= THIS_MODULE,
 	.proto	     	= IPPROTO_SHIM6,
-	.flags          = XFRM_TYPE_NON_FRAGMENT,
+	.flags          = XFRM_TYPE_NON_FRAGMENT | XFRM_TYPE_SHIM6_ADDR,
 	.init_state	= shim6_init_state,
 	.destructor	= shim6_destroy,
 	.input		= shim6_input,
 	.output		= shim6_output,
 	.hdr_offset	= shim6_offset,
-	.local_addr     = shim6_local_addr,
-	.remote_addr    = shim6_remote_addr,
 };
 
 static struct shim6_ops shim6_fcts=
