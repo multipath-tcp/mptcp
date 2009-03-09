@@ -270,6 +270,8 @@ static unsigned int shim6list_local_out(unsigned int hooknum,
 	struct shim6_ctx_count* ctxc; 
 	struct ipv6hdr* nh=ipv6_hdr(skb);
 	int trigger=0; /*1 if we need to trigger a ctx establishment*/
+
+	BUG_ON(!out);
 	
 	if (!check_packet(skb)) return NF_ACCEPT;
 
@@ -355,7 +357,7 @@ static struct nf_hook_ops shim6_hook_ops[] = {
 	{.hook=shim6list_local_out,
 	 .owner=THIS_MODULE,
 	 .pf=PF_INET6,
-	 .hooknum=NF_INET_LOCAL_IN,
+	 .hooknum=NF_INET_LOCAL_OUT,
 	 .priority=NF_IP6_PRI_FILTER+1 /*Just after the filter*/,
 	},
 };
