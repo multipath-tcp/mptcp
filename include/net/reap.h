@@ -13,12 +13,9 @@
  *  
  *      TODO : - verify that we are not using bad addresses after a change in
  *               link layer connectivity (maybe see DNA). (draft section 3.2).
- *             - Tell to upper layers when a path has changed, for example in
- *               order for TCP to initiate a slow start procedure (section 4.2)
  *             - Trigger an exploration when there are indications of failure
  *               from different things than the send timeout (indication from 
  *               upper layers (lower layers:done). (section 3.3)
- *               
  *             - Tune exploration order by using rfc3484 and addr selection 
  *               draft (to study) (section 4.3)
  *             - Use the MAX_PROBE_TIMEOUT as an indication that the context is
@@ -59,7 +56,7 @@ struct reap_ctx {
  * next expiry will fall after ka_timestamp+ka_timeout*HZ,
  * in which case the timer is not rearmed.
  */
-	int                 ka_timestamp;
+	unsigned long       ka_timestamp;
 
 /*For the shim6 garbage collector, to indicate that the reap context
   has been initialized, and so must be freed in case of garbage collection.*/
@@ -68,7 +65,7 @@ struct reap_ctx {
 				    state, since two different xfrm states 
 				    may use a shim6_ctx in the same time
 				    (inbound and outbound)*/
-	int                 last_recvd_data; /*Timestamp for last received 
+	unsigned long       last_recvd_data; /*Timestamp for last received 
 					       data*/
         char                art_switch:1; /*ART switch, this will trigger
 					    a message to the daemon, when

@@ -148,9 +148,9 @@ static void ka_handler(unsigned long data)
 	
 	/*Rearm the timer if the next expiry will fall before the keepalive
 	 * timeout*/
-
-	if (jiffies+rctx->tka*HZ/3<
-	    rctx->ka_timestamp+rctx->tka*HZ)
+	
+	if (time_before(jiffies+rctx->tka*HZ/3,
+			rctx->ka_timestamp+rctx->tka*HZ))
 		ka_start(rctx,1);
 	else rctx->ka_timestamp=0; /*Also disable the conceptual timer*/
 	
