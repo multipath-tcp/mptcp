@@ -120,8 +120,10 @@ static int shim6_input(struct xfrm_state *x, struct sk_buff *skb)
 	if (opt->shim6 && hdr->P==SHIM6_MSG_CONTROL)
 		return reap_input(hdr,rctx);
 
+#ifndef CONFIG_IPV6_SHIM6_MULTIPATH
 	/*If the message is a data message notify the reap module*/
 	reap_notify_in(rctx);
+#endif
 
 	/*update the use time*/
 	getnstimeofday(&curtime);
@@ -163,17 +165,20 @@ static void input_std(struct sk_buff* skb)
  */
 static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 {
-	struct reap_ctx* rctx=(struct reap_ctx*) x->data;
 	struct ipv6hdr* iph;
 	u8 nexthdr;
 	struct shim6hdr_pld* shim6h;
 	int path_idx=x->shim6->cur_path_idx;
 	struct timespec curtime;
 
+#ifndef CONFIG_IPV6_SHIM6_MULTIPATH
+	struct reap_ctx* rctx=(struct reap_ctx*) x->data;		
+	reap_notify_out(rctx);
+#endif
+
 	skb_push(skb, -skb_network_offset(skb));
 	iph = ipv6_hdr(skb);
 
-	reap_notify_out(rctx);
 	getnstimeofday(&curtime);
 	x->curlft.use_time = (unsigned long)curtime.tv_sec;
 
@@ -193,7 +198,58 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 	ipv6_addr_copy(&iph->saddr,&x->shim6->paths[path_idx].local);
 	ipv6_addr_copy(&iph->daddr,&x->shim6->paths[path_idx].remote);
 
+#ifdef CONFIG_IPV6_SHIM6_MULTIPATH
+	/*Redefining the outgoing dst entry*/
+	{
+		struct dst_entry *shim6_dst = skb->dst;
+		struct flowi fl;
+		struct rt6_info *rt  = NULL;
+		int err;
+		
+		/*Remove previous dst*/
+		dst_free(shim6_dst->child);
+		/*Redo some of the work of __xfrm6_bundle_create
+		  Note : When doing such round-robin across all adress pairs, 
+		  thus probably across all interfaces, we may have problems if 
+		  different interfaces have different MTUs, since here the
+		  packet size is already determined. We should determine in 
+		  Shim6 the minimum MTU for all interfaces and use that one as
+		  official MTU seen by uppper layers*/
+		ipv6_addr_copy(&fl.fl6_dst, 
+			       (struct in6_addr*)x->type->remote_addr(x, NULL));
+		ipv6_addr_copy(&fl.fl6_src, 
+			       (struct in6_addr*)x->type->local_addr(x, NULL));
+
+		err = xfrm_dst_lookup((struct xfrm_dst **) &rt,
+				      &fl, AF_INET6);
+		if (err) {
+			PDEBUG("xfrm_dst_lookup failed");
+			return err;
+		}
+		shim6_dst->child = &rt->u.dst;
+		shim6_dst->path = &rt->u.dst;
+		if (rt->rt6i_node)
+			((struct xfrm_dst *)shim6_dst)->path_cookie = 
+				rt->rt6i_node->fn_sernum;
+		shim6_dst->dev = rt->u.dst.dev;
+		if (rt->u.dst.dev)
+			dev_hold(rt->u.dst.dev);
+		shim6_dst->lastuse	= jiffies;
+		shim6_dst->neighbour    = neigh_clone(rt->u.dst.neighbour);
+		shim6_dst->input        = rt->u.dst.input;
+		xfrm_init_pmtu(shim6_dst); /*Ideally this function should 
+					     be called only when initializing
+					     the bundle, with an MTU value that
+					     would be the minimum among all 
+					     interfaces.*/
+	}
+#endif
+
 finish:
+#ifdef CONFIG_IPV6_SHIM6_MULTIPATH
+	/*Doing the round-robin */
+	x->shim6->cur_path_idx=(path_idx+1)%x->shim6->npaths;
+#endif
 	return 0;
 }
 
