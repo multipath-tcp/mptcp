@@ -42,6 +42,7 @@
 #include <net/protocol.h>
 #include <net/xfrm.h>
 #include <net/transp_v6.h>
+#include <net/ip6_route.h>
 
 /*If shim6 is loaded as a module, we cannot access the global 
  * ipv6_statistics symbol, thus we define our own symbol. (essentially
@@ -203,45 +204,42 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 	{
 		struct dst_entry *shim6_dst = skb->dst;
 		struct flowi fl;
-		struct rt6_info *rt  = NULL;
-		int err;
-		
+		struct dst_entry *dst  = NULL;
+		int err;	      		
+
 		/*Remove previous dst*/
 		dst_free(shim6_dst->child);
-		/*Redo some of the work of __xfrm6_bundle_create
+		/*Redo some of the work of xfrm_bundle_create
 		  Note : When doing such round-robin across all adress pairs, 
 		  thus probably across all interfaces, we may have problems if 
 		  different interfaces have different MTUs, since here the
 		  packet size is already determined. We should determine in 
 		  Shim6 the minimum MTU for all interfaces and use that one as
-		  official MTU seen by uppper layers*/
-		ipv6_addr_copy(&fl.fl6_dst, 
-			       (struct in6_addr*)x->type->remote_addr(x, NULL));
-		ipv6_addr_copy(&fl.fl6_src, 
-			       (struct in6_addr*)x->type->local_addr(x, NULL));
+		  official MTU seen by uppper layers
+		  Note that this code is very very probably highly buggy.
+		  I don't fix it however, since I think I will remove it in a 
+		  later stage.
+		*/
+		ipv6_addr_copy(&fl.fl6_dst,
+			       &x->shim6->paths[x->shim6->cur_path_idx].remote);
+		ipv6_addr_copy(&fl.fl6_src,
+			       &x->shim6->paths[x->shim6->cur_path_idx].local);
 
-		err = xfrm_dst_lookup((struct xfrm_dst **) &rt,
-				      &fl, AF_INET6);
+		dst=ip6_route_output(&init_net,NULL,&fl);
+		err=dst->error;
 		if (err) {
-			PDEBUG("xfrm_dst_lookup failed");
+			PDEBUG("ip6_route_output failed");
+			dst_release(dst);
 			return err;
 		}
-		shim6_dst->child = &rt->u.dst;
-		shim6_dst->path = &rt->u.dst;
-		if (rt->rt6i_node)
-			((struct xfrm_dst *)shim6_dst)->path_cookie = 
-				rt->rt6i_node->fn_sernum;
-		shim6_dst->dev = rt->u.dst.dev;
-		if (rt->u.dst.dev)
-			dev_hold(rt->u.dst.dev);
+		shim6_dst->child = dst;
+		shim6_dst->path = dst;
+		shim6_dst->dev = dst->dev;
+		if (dst->dev)
+			dev_hold(dst->dev);
 		shim6_dst->lastuse	= jiffies;
-		shim6_dst->neighbour    = neigh_clone(rt->u.dst.neighbour);
-		shim6_dst->input        = rt->u.dst.input;
-		xfrm_init_pmtu(shim6_dst); /*Ideally this function should 
-					     be called only when initializing
-					     the bundle, with an MTU value that
-					     would be the minimum among all 
-					     interfaces.*/
+		shim6_dst->neighbour    = neigh_clone(dst->neighbour);
+		shim6_dst->input        = dst->input;
 	}
 #endif
 
