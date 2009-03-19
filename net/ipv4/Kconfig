@@ -292,11 +292,25 @@ config ARPD
 	  below. If unsure, say N.
 
 config MTCP
-       tristate "MTCP protocol"
+       bool "MTCP protocol (EXPERIMENTAL)"
        depends on EXPERIMENTAL
        ---help---
 	This replaces the normal TCP stack with a Multipath TCP stack,
 	able to use several paths at once.
+
+config MTCP_PM
+       bool "built-in MTCP Path Manager"
+       ---help---
+       This is a built-in path manager for MTCP. It uses
+       TCP options to carry information about the multiple paths, and
+       assumes that several IPv4 addresses are available.
+
+config MTCP_DEBUG
+       bool "MTCP debug messages"
+       depends on MTCP
+       default y
+       ---help---
+       Enables logging of mtcp related debugging messages. Highly recommended.	
 
 config SYN_COOKIES
 	bool "IP: TCP syncookie support (disabled per default)"

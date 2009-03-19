@@ -70,6 +70,7 @@
 #include <linux/ipsec.h>
 #include <asm/unaligned.h>
 #include <net/netdma.h>
+#include <net/mtcp.h>
 
 int sysctl_tcp_timestamps __read_mostly = 1;
 int sysctl_tcp_window_scaling __read_mostly = 1;
@@ -3350,7 +3351,7 @@ uninteresting_ack:
  * the fast version below fails.
  */
 void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
-		       int estab)
+		       struct multipath_options *mopt, int estab)
 {
 	unsigned char *ptr;
 	struct tcphdr *th = tcp_hdr(skb);
@@ -3358,6 +3359,9 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 
 	ptr = (unsigned char *)(th + 1);
 	opt_rx->saw_tstamp = 0;
+	if (mopt)
+		/*anounce if mp gets parsed!*/
+		mopt->first = 0;
 
 	while (length > 0) {
 		int opcode = *ptr++;
@@ -3434,8 +3438,61 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				 */
 				break;
 #endif
-			}
 
+#ifdef CONFIG_MTCP
+			case TCPOPT_MULTIPATH:
+				if (!mopt) {
+					PDEBUG("Multipath Option Enabled "
+					       "but options NULL\n");
+					break;
+				}
+				PDEBUG("Multipath Option Enabled! Parsing:\n");
+				reset_options(mopt);
+				
+				tmp = ptr;
+				mp->remote_token = ntohl(*tmp++);
+				mp->first = 1;
+				
+				printf("TK Remote %d\t",mp->remote_token);
+				
+				if (opsize>6){
+					mp->ip_count = (opsize-6)/4;
+					mp->ip_list = (__u32*)malloc(mp->ip_count*sizeof(__u32));
+					for (i = 0;i<mp->ip_count;i++){
+						mp->ip_list[i] = ntohl(*tmp++);
+						print_ip(mp->ip_list[i]);
+						printf(" ");
+					}
+				}
+				printf("\n");
+				break;
+			case TCPOPT_NEW_SUBFLOW:
+				if (mp==NULL) {
+					printf("\nNew Subflow Enabled but options NULL");
+					exit(1);
+				}
+				reset_options(mp);
+				
+				tmp = ptr;
+				mp->remote_token = ntohl(*tmp++);
+				mp->local_token = ntohl(*tmp++);
+				mp->first = 0;
+				
+				printf("New subflow for local connection with id %d remote id %d\n",mp->local_token,mp->remote_token);
+				break;
+				
+			case TCPOPT_DATA_SEQ:
+				if (!mp){
+					printf("Data seq present but mpath struct NULL!");
+					exit(1);
+				}
+				mp->data_seq = ntohl(*(__u32*)ptr);
+				//printf("[Data seq:%d]\t",mp->data_seq);
+				break;
+			}
+#endif
+			
+			
 			ptr += opsize-2;
 			length -= opsize;
 		}

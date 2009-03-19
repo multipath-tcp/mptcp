@@ -56,6 +56,9 @@ struct request_sock {
 	struct sock			*sk;
 	u32				secid;
 	u32				peer_secid;
+#ifdef CONFIG_MTCP
+	struct multipath_options        mopt;
+#endif
 };
 
 static inline struct request_sock *reqsk_alloc(const struct request_sock_ops *ops)
