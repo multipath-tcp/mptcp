@@ -108,10 +108,10 @@ static inline void get_ct(uint64_t* ct,
  * address of a bitfield as an argument to a function.
  */
 
-#define set_ct(ct, ct_1, ct_2, ct_3) \
-	do {ct_1=(ct>>40)&0x7F; \
- ct_2=(ct>>32)&0xFF; \
- ct_3=htonl(ct&0xFFFFFFFF); } while(0);
+#define set_ct(ct, ct_1, ct_2, ct_3)			\
+	do {ct_1=(ct>>40)&0x7F;				\
+		ct_2=(ct>>32)&0xFF;			\
+		ct_3=htonl(ct&0xFFFFFFFF); } while(0);
 
 /*defines for computing size of option fields in shim6 packets
  * @length is the length of the option field, without padding nor tl header*/
