@@ -21,6 +21,7 @@
 #include <linux/bug.h>
 
 #include <net/sock.h>
+#include <net/mtcp.h>
 
 struct request_sock;
 struct sk_buff;

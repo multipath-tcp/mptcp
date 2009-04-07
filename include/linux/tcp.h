@@ -177,6 +177,7 @@ struct tcp_md5sig {
 #include <net/sock.h>
 #include <net/inet_connection_sock.h>
 #include <net/inet_timewait_sock.h>
+#include <linux/tcp_options.h>
 
 static inline struct tcphdr *tcp_hdr(const struct sk_buff *skb)
 {
@@ -202,26 +203,6 @@ struct tcp_sack_block_wire {
 struct tcp_sack_block {
 	u32	start_seq;
 	u32	end_seq;
-};
-
-struct tcp_options_received {
-/*	PAWS/RTTM data	*/
-	long	ts_recent_stamp;/* Time we stored ts_recent (for aging) */
-	u32	ts_recent;	/* Time stamp to echo next		*/
-	u32	rcv_tsval;	/* Time stamp value             	*/
-	u32	rcv_tsecr;	/* Time stamp echo reply        	*/
-	u16 	saw_tstamp : 1,	/* Saw TIMESTAMP on last packet		*/
-		tstamp_ok : 1,	/* TIMESTAMP seen on SYN packet		*/
-		dsack : 1,	/* D-SACK is scheduled			*/
-		wscale_ok : 1,	/* Wscale seen on SYN packet		*/
-		sack_ok : 4,	/* SACK seen on SYN packet		*/
-		snd_wscale : 4,	/* Window scaling received from sender	*/
-		rcv_wscale : 4;	/* Window scaling to send to receiver	*/
-/*	SACKs data	*/
-	u8	eff_sacks;	/* Size of SACK array to send with next packet */
-	u8	num_sacks;	/* Number of SACK blocks		*/
-	u16	user_mss;  	/* mss requested by user in ioctl */
-	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
 };
 
 /* This is the max number of SACKS that we'll generate and process. It's safe
@@ -411,6 +392,11 @@ struct tcp_sock {
 #endif
 
 	int			linger2;
+#ifdef CONFIG_MTCP
+	struct multipath_pcb    *mpcb;
+	int                     path_index;
+	struct tcp_sock         *next; /*Next subflow socket*/
+#endif
 };
 
 static inline struct tcp_sock *tcp_sk(const struct sock *sk)

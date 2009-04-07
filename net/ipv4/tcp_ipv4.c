@@ -1798,6 +1798,15 @@ static int tcp_v4_init_sock(struct sock *sk)
 	sk->sk_sndbuf = sysctl_tcp_wmem[1];
 	sk->sk_rcvbuf = sysctl_tcp_rmem[1];
 
+#ifdef CONFIG_MTCP
+	/*Init the MTCP mpcb*/
+	{
+		struct multipath_pcb *mpcb;		
+		mpcb=mtcp_alloc_mpcb();
+		mtcp_add_sock(mpcb,tp);
+	}
+#endif
+
 	atomic_inc(&tcp_sockets_allocated);
 
 	return 0;

@@ -43,6 +43,7 @@
 #include <net/xfrm.h>
 #include <net/transp_v6.h>
 #include <net/ip6_route.h>
+#include <net/netevent.h>
 
 /*If shim6 is loaded as a module, we cannot access the global 
  * ipv6_statistics symbol, thus we define our own symbol. (essentially
@@ -65,14 +66,6 @@ static ctl_table shim6_table[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= &proc_dointvec
-	},
-	{
-		.ctl_name       = CTL_UNNUMBERED,
-		.procname       = "tcphint",
-		.data           = &sysctl_shim6_tcphint,
-		.maxlen         = sizeof(int),
-		.mode           = 0644,
-		.proc_handler   = &proc_dointvec
 	},
 	{ .ctl_name = 0 },
 };
@@ -299,7 +292,8 @@ static int shim6_offset(struct xfrm_state *x, struct sk_buff *skb,
 	return offset;
 }
 
-/*The shim6 state for the outgoing direction MUST be the first one created.
+/**
+ * The shim6 state for the outgoing direction MUST be the first one created.
  * This is to avoid mixing src and dst addresses
  *
  * This function may be called in two case :
@@ -309,7 +303,7 @@ static int shim6_offset(struct xfrm_state *x, struct sk_buff *skb,
  *    data that will be updated next in the existing context 
  *    (by xfrm_state_update)
  *
- **/
+ */
 static int shim6_init_state(struct xfrm_state *x)
 {
 	struct reap_ctx* rctx;
@@ -338,6 +332,7 @@ static int shim6_init_state(struct xfrm_state *x)
 	
 	/*Trying to find an xfrm state for the reverse direction*/
 	if (x->shim6->flags & SHIM6_DATA_INBOUND) {
+		struct ulid_pair up;
 		rev_x=xfrm_state_lookup_byaddr(
 			(xfrm_address_t*)&x->shim6->paths[0].remote,
 			(xfrm_address_t*)&x->shim6->paths[0].local,
@@ -366,6 +361,16 @@ static int shim6_init_state(struct xfrm_state *x)
 		}
 		xfrm_state_put(rev_x);
 		PDEBUG("\tkref is now : %d\n",rctx->kref.refcount.counter);
+		/*Generating netevent notification.
+		  The binary trick for path_indices aims at setting 
+		  consecutive numbers from 1 to npaths for the currently
+		  available paths. That is, if 5 paths are available,
+		  this sets the 5 last bits of the bitmap to 1. This indicate
+		  to MPS that path 1,2,3,4,5 can be used*/
+		up.local=&x->shim6->paths[0].local;
+		up.remote=&x->shim6->paths[0].remote;
+		up.path_indices=(uint32_t)(-1)>>(32-rev_x->shim6->npaths);
+		call_netevent_notifiers(NETEVENT_PATH_UPDATE, &up);
 	}
 	else if (!(x->shim6->flags & SHIM6_DATA_UPD)) {		
 		/*Alloc new memory for the REAP context and initialize it*/
@@ -760,7 +765,6 @@ static int __init shim6_init(void)
 	/*Now we can make shim6 available*/
 	
 	sysctl_shim6_enabled=1;
-	sysctl_shim6_tcphint=1;
 
 	/*...and allow user to play with (de)activation*/
 #ifdef CONFIG_SYSCTL

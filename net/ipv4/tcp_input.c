@@ -3359,9 +3359,6 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 
 	ptr = (unsigned char *)(th + 1);
 	opt_rx->saw_tstamp = 0;
-	if (mopt)
-		/*anounce if mp gets parsed!*/
-		mopt->first = 0;
 
 	while (length > 0) {
 		int opcode = *ptr++;
@@ -3446,52 +3443,44 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 					       "but options NULL\n");
 					break;
 				}
-				PDEBUG("Multipath Option Enabled! Parsing:\n");
-				reset_options(mopt);
-				
-				tmp = ptr;
-				mp->remote_token = ntohl(*tmp++);
-				mp->first = 1;
-				
-				printf("TK Remote %d\t",mp->remote_token);
-				
-				if (opsize>6){
-					mp->ip_count = (opsize-6)/4;
-					mp->ip_list = (__u32*)malloc(mp->ip_count*sizeof(__u32));
-					for (i = 0;i<mp->ip_count;i++){
-						mp->ip_list[i] = ntohl(*tmp++);
-						print_ip(mp->ip_list[i]);
-						printf(" ");
-					}
+				if (opsize!=4) {
+					PDEBUG("multipath opt:bad option "
+					       "size\n");
+					break;
 				}
-				printf("\n");
+				PDEBUG("recvd multipath opt\n");
+				mtcp_reset_options(mopt);
 				break;
+
+#ifdef CONFIG_MTCP_PM
+			case TCPOPT_TOKEN:
+				PDEBUG("tk opt not supported yet\n");
+				break;
+			case MTCP_ADDADDRESS:
+				PDEBUG("addaddress opt not supported yet\n");
+				break;
+
 			case TCPOPT_NEW_SUBFLOW:
-				if (mp==NULL) {
-					printf("\nNew Subflow Enabled but options NULL");
-					exit(1);
-				}
-				reset_options(mp);
-				
-				tmp = ptr;
-				mp->remote_token = ntohl(*tmp++);
-				mp->local_token = ntohl(*tmp++);
-				mp->first = 0;
-				
-				printf("New subflow for local connection with id %d remote id %d\n",mp->local_token,mp->remote_token);
+				PDEBUG("addaddress opt not supported yet\n");
 				break;
-				
+#endif /*CONFIG_MTCP_PM*/				
 			case TCPOPT_DATA_SEQ:
-				if (!mp){
-					printf("Data seq present but mpath struct NULL!");
-					exit(1);
+				if (!mopt) {
+					PDEBUG("Dataseq Option present "
+					       "but options NULL\n");
+					break;
 				}
-				mp->data_seq = ntohl(*(__u32*)ptr);
-				//printf("[Data seq:%d]\t",mp->data_seq);
+				if (opsize!=4) {
+					PDEBUG("dataseq opt:bad option "
+					       "size\n");
+					break;
+				}
+				
+				mopt->data_seq = ntohl(*(uint32_t*)ptr);
 				break;
-			}
-#endif
 			
+#endif /* CONFIG_MTCP */
+			}
 			
 			ptr += opsize-2;
 			length -= opsize;
@@ -3505,6 +3494,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 				  struct tcp_sock *tp)
 {
+	struct multipath_pcb* mpcb;
 	if (th->doff == sizeof(struct tcphdr) >> 2) {
 		tp->rx_opt.saw_tstamp = 0;
 		return 0;
@@ -3521,7 +3511,11 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 			return 1;
 		}
 	}
-	tcp_parse_options(skb, &tp->rx_opt, 1);
+	mpcb = mpcb_from_tcpsock(tp);
+	if (!mpcb)
+		PDEBUG("mpcb null in fast parse options\n");
+	tcp_parse_options(skb, &tp->rx_opt,mpcb?&mpcb->received_options:NULL, 
+			  1);
 	return 1;
 }
 
@@ -5033,8 +5027,15 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	int saved_clamp = tp->rx_opt.mss_clamp;
+	struct multipath_pcb* mpcb;
 
-	tcp_parse_options(skb, &tp->rx_opt, 0);
+	mpcb = mpcb_from_tcpsock(tp);
+	if (mpcb==NULL){
+		printk(KERN_ERR "MPCB null in synsent state process\n");
+		BUG();
+	}
+
+	tcp_parse_options(skb, &tp->rx_opt,&mpcb->received_options, 0);
 
 	if (th->ack) {
 		/* rfc793:

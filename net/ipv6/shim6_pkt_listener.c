@@ -81,8 +81,8 @@ struct shim6_ctx_count {
 };
 
 
-static void ctxc_release(struct kref* kref) {
-	struct shim6_ctx_count* ctxc;
+static void ctxc_release(struct kref *kref) {
+	struct shim6_ctx_count *ctxc;
 	ctxc=container_of(kref,struct shim6_ctx_count,kref);
 	kfree(ctxc);
 }

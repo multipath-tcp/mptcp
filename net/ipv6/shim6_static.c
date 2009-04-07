@@ -24,9 +24,6 @@
 #include <net/sock.h>
 
 int sysctl_shim6_enabled = 0; /*Will be enabled at the end of shim6 init*/
-int sysctl_shim6_tcphint = 0; /*if 0, disables TCP hint, by default it is
-				enabled at the end of shim6 init*/
-
 
 static struct shim6_ops *shim6_fcts=NULL;
 
@@ -85,4 +82,3 @@ EXPORT_SYMBOL(shim6_xfrm_input_ct);
 
 
 EXPORT_SYMBOL(sysctl_shim6_enabled);
-EXPORT_SYMBOL(sysctl_shim6_tcphint);

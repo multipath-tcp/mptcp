@@ -348,6 +348,8 @@ static void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags)
 #define OPTION_SACK_ADVERTISE	(1 << 0)
 #define OPTION_TS		(1 << 1)
 #define OPTION_MD5		(1 << 2)
+#define OPTION_MULTIPATH        (1 << 3)
+#define OPTION_TOKEN            (1 << 4)
 
 struct tcp_out_options {
 	u8 options;		/* bit field of OPTION_* */
@@ -430,6 +432,10 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			tp->rx_opt.eff_sacks--;
 		}
 	}
+	if (unlikely(OPTION_MULTIPATH & opts->options)) {
+		*ptr++ = htonl((TCPOPT_MULTIPATH << 24) |
+			       (TCPOLEN_MULTIPATH << 16));
+	}
 }
 
 static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
@@ -476,7 +482,10 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		if (unlikely(!(OPTION_TS & opts->options)))
 			size += TCPOLEN_SACKPERM_ALIGNED;
 	}
-
+#ifdef CONFIG_MTCP
+	opts->options |= OPTION_MULTIPATH;
+	size+=TCPOLEN_MULTIPATH_ALIGNED;
+#endif
 	return size;
 }
 
@@ -525,6 +534,10 @@ static unsigned tcp_synack_options(struct sock *sk,
 			size += TCPOLEN_SACKPERM_ALIGNED;
 	}
 
+#ifdef CONFIG_MTCP
+	opts->options |= OPTION_MULTIPATH;
+	size+=TCPOLEN_MULTIPATH_ALIGNED;
+#endif
 	return size;
 }
 

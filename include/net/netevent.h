@@ -28,6 +28,11 @@ struct netevent_redirect {
 struct ulid_pair {
 	struct in6_addr* local;
 	struct in6_addr* remote;
+	uint32_t         path_indices; /*bitmap of paths that can be used
+					 For example, if bit 3 is set, then
+					 3 is currently a valid path index
+					 that can be understood by a Path 
+					 Manager*/
 };
 
 enum netevent_notif_type {

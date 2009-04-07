@@ -300,6 +300,7 @@ config MTCP
 
 config MTCP_PM
        bool "built-in MTCP Path Manager"
+       depends on MTCP
        ---help---
        This is a built-in path manager for MTCP. It uses
        TCP options to carry information about the multiple paths, and
