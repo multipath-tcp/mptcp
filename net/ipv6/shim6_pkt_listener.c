@@ -71,7 +71,7 @@ struct shim6_ctx_count {
 	int                 in_pkts;
 	int                 out_pkts;
 	int                 triggered:1; /*1 if the trigger message has 
-					   been sent to the daemon*/
+					   been sent to the daemon*/	
 	unsigned long       timestamp; /*values of jiffies when creating the 
 					 entry*/
 	int                 bytes; /*Total number of bytes seen during the 
@@ -299,6 +299,7 @@ static unsigned int shim6list_local_out(unsigned int hooknum,
 		add_timer(&ctxc->timer);
 		ctxc->in_pkts=0;
 		ctxc->out_pkts=1;
+		ctxc->triggered=0;
 		ctxc->bytes=skb->len;
 		ctxc->timestamp=jiffies;
 		spin_lock_init(&ctxc->lock);
@@ -384,7 +385,17 @@ module_init(shim6_listener_init);
 
 static void __exit shim6_listener_exit(void)
 {
+	int i;
+	struct shim6_ctx_count *ctxc, *tmp;
+	shim6_unregister_pl(&default_heuristic);	
 	nf_unregister_hooks(shim6_hook_ops,2);
-	shim6_unregister_pl(&default_heuristic);
+	/*Remove all states*/
+	for (i=0;i<SHIM6_HASH_SIZE;i++)
+		list_for_each_entry_safe(ctxc,tmp,&ulid_hashtable[i],
+					 collide_ulid) {
+			list_del(&ctxc->collide_ulid);
+			del_timer_sync(&ctxc->timer);
+			kfree(ctxc);
+		}
 }
 module_exit(shim6_listener_exit)
