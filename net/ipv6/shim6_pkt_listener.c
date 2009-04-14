@@ -20,7 +20,7 @@
  *
  *      Based on draft-ietf-shim6-proto-09
  *
- *      date : March 2008
+ *      date : April 2009
  *
  *	This program is free software; you can redistribute it and/or
  *      modify it under the terms of the GNU General Public License
@@ -188,6 +188,7 @@ static int shim6_trigger(struct shim6_ctx_count* ctxc)
  *
  * Are not taken into account as negotiation triggers :
  *    - ICMP packets
+ *    - Mobility control packets (MH)
  *    - Multicast packets
  *    - Shim6 control packets
  */
@@ -201,9 +202,10 @@ static int check_packet(struct sk_buff* skb)
 	
 	if (nexthdr==IPPROTO_SHIM6) return 0;
 	
-	/* Do not take into account ICMP packets*/
+	/* Do not take into account ICMP nor MH packets*/
 	ipv6_skip_exthdr(skb,offset,&nexthdr); /*Skip any extension header*/
 	if (nexthdr==IPPROTO_ICMPV6) return 0;
+	if (nexthdr==IPPROTO_MH) return 0;
 	
 	/*Do not take into account multicast packets*/
 	if (ipv6_addr_is_multicast(&nh->daddr))
