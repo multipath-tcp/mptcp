@@ -370,7 +370,7 @@ static int shim6_init_state(struct xfrm_state *x)
 		up.local=&x->shim6->paths[0].local;
 		up.remote=&x->shim6->paths[0].remote;
 		up.path_indices=(uint32_t)(-1)>>(32-rev_x->shim6->npaths);
-		call_netevent_notifiers(NETEVENT_PATH_UPDATE, &up);
+		call_netevent_notifiers(NETEVENT_PATH_UPDATEV6, &up);
 	}
 	else if (!(x->shim6->flags & SHIM6_DATA_UPD)) {		
 		/*Alloc new memory for the REAP context and initialize it*/

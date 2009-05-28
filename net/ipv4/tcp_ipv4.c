@@ -254,6 +254,9 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	if (err)
 		goto failure;
 
+#ifdef CONFIG_MTCP
+	mtcp_update_metasocket(sk);
+#endif
 	return 0;
 
 failure:
@@ -1162,7 +1165,7 @@ static struct tcp_request_sock_ops tcp_request_sock_ipv4_ops = {
 };
 #endif
 
-static struct timewait_sock_ops tcp_timewait_sock_ops = {
+struct timewait_sock_ops tcp_timewait_sock_ops = {
 	.twsk_obj_size	= sizeof(struct tcp_timewait_sock),
 	.twsk_unique	= tcp_twsk_unique,
 	.twsk_destructor= tcp_twsk_destructor,
@@ -1803,7 +1806,7 @@ static int tcp_v4_init_sock(struct sock *sk)
 	{
 		struct multipath_pcb *mpcb;		
 		mpcb=mtcp_alloc_mpcb();
-		mtcp_add_sock(mpcb,tp);
+		mtcp_add_sock(mpcb,tp,0);
 	}
 #endif
 
