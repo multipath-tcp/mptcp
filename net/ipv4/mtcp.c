@@ -1,0 +1,308 @@
+/*
+ *	MTCP implementation
+ *
+ *	Authors:
+ *      Sébastien Barré		<sebastien.barre@uclouvain.be>
+ *
+ *      Based on an initial user space MTCP stack from Costin Raiciu.
+ *
+ *
+ *
+ *      date : April 09
+ *
+ *
+ *	This program is free software; you can redistribute it and/or
+ *      modify it under the terms of the GNU General Public License
+ *      as published by the Free Software Foundation; either version
+ *      2 of the License, or (at your option) any later version.
+ */
+
+
+#include <net/sock.h>
+#include <net/tcp_states.h>
+#include <net/mtcp.h>
+#include <net/netevent.h>
+#include <net/ipv6.h>
+#include <linux/list.h>
+#include <linux/jhash.h>
+#include <linux/tcp.h>
+#include <linux/net.h>
+#include <linux/in.h>
+#include <asm/atomic.h>
+
+struct pcb_lookup_node {
+	struct list_head collide_sd;
+	int sd; /*Socket descriptor -- NOT CORRECT - change this with another 
+		  key !*/
+	struct multipath_pcb *mpcb;
+};
+
+static struct list_head pcb_hashtable[MTCP_HASH_SIZE];
+static rwlock_t mtcp_hash_lock; /*hashtable protection*/
+#define hash_sd(sd)				\
+	jhash_1word(sd,0)%MTCP_HASH_SIZE
+
+
+static atomic_t conn_no;
+
+
+void mtcp_reset_options(struct multipath_options* mopt){
+#ifdef CONFIG_MTCP_PM
+	mopt->remote_token = -1;
+	mopt->local_token = -1;
+	if (mopt->ip_count>0){
+		if (mopt->ip_list){
+			mopt->ip_list = NULL;
+		}
+	}
+	mopt->ip_count = 0;
+	mopt->first = 0;
+#endif
+}
+
+/**
+ * Returns the mpcb if it exists, else NULL
+ * If an mpcb is found, the reference count is incremented.
+ * For this reason, anybody who calls this function
+ * MUST do a kref_put() when it no longer needs the reference
+ * to the mpcb.
+ */
+struct multipath_pcb* lookup_mpcb(int sd)
+{
+	
+	int sd_hash=hash_sd(sd);
+	struct pcb_lookup_node *node;
+	
+	read_lock_bh(&mtcp_hash_lock);
+	list_for_each_entry(node,&pcb_hashtable[sd_hash],collide_sd) {
+		if (node->sd==sd) {
+			kref_get(&node->mpcb->kref);
+			read_unlock_bh(&mtcp_hash_lock);
+			return node->mpcb;
+		}
+	}
+	read_unlock_bh(&mtcp_hash_lock);
+	return NULL;
+}
+
+
+/**
+ * Creates as many sockets as path indices announced by the Path Manager.
+ * The first path indices are (re)allocated to existing sockets.
+ * New sockets are created if needed.
+ */
+static int __mtcp_init_subsockets(struct multipath_pcb *mpcb, 
+				  uint32_t path_indices)
+{
+	int i;
+	int retval;
+	struct socket *sock;
+	struct tcp_sock *tp=mpcb->connection_list;
+
+	PDEBUG("Entering %s, path_indices:%x\n",__FUNCTION__,path_indices);
+	for (i=0;i<sizeof(path_indices)*8;i++) {
+		if (!((1<<i) & path_indices))
+			continue;
+		if (tp) {
+			/*realloc path index*/
+			tp->path_index=i+1;
+			tp=tp->next;
+		}
+		else {
+			struct tcp_sock *newtp;
+			struct sockaddr *loculid;
+			int loculid_size;
+			struct sockaddr_in loculid_in;
+			struct sockaddr_in6 loculid_in6;
+			/*a new socket must be created*/
+			retval = sock_create(mpcb->sa_family, SOCK_STREAM, 
+					     IPPROTO_MTCPSUB, &sock);
+			
+			if (retval<0) {
+				printk(KERN_ERR "%s:sock_create failed\n",
+				       __FUNCTION__);
+				return retval;
+			}
+			newtp=tcp_sk(sock->sk);
+			mtcp_add_sock(mpcb,newtp, i+1);
+
+			/*Binding the new socket to the local ulid*/
+			switch(mpcb->sa_family) {
+			case AF_INET:
+				memset(&loculid,0,sizeof(loculid));
+				loculid_in.sin_family=mpcb->sa_family;
+				loculid_in.sin_port=mpcb->local_port;
+				memcpy(&loculid_in.sin_addr,
+				       (struct in_addr*)&mpcb->local_ulid.a4,
+				       sizeof(struct in_addr));
+				loculid=(struct sockaddr *)&loculid_in;
+				loculid_size=sizeof(loculid_in);
+				break;
+			case AF_INET6:
+				memset(&loculid,0,sizeof(loculid));
+				loculid_in6.sin6_family=mpcb->sa_family;
+				loculid_in6.sin6_port=mpcb->local_port;
+				ipv6_addr_copy(&loculid_in6.sin6_addr,
+					       (struct in6_addr*)&mpcb->
+					       local_ulid.a6);
+				loculid=(struct sockaddr *)&loculid_in6;
+				loculid_size=sizeof(loculid_in6);
+				break;
+			}
+			retval = sock->ops->bind(sock, loculid, loculid_size);
+
+			if (retval<0) return -1;
+			
+			PDEBUG("New MTCP subsocket created, pi %d\n",i+1);
+		}
+	}
+	return 0;
+}
+
+static int mtcp_init_subsockets(struct multipath_pcb *mpcb, 
+				  uint32_t path_indices)
+{
+	int ret;
+	spin_lock_bh(&mpcb->lock);
+	ret=__mtcp_init_subsockets(mpcb,path_indices);
+	spin_unlock_bh(&mpcb->lock);
+	return ret;	
+}
+
+static int netevent_callback(struct notifier_block *self, unsigned long event,
+			     void *ctx)
+{	
+	struct multipath_pcb *mpcb;
+	struct ulid_pair *up;
+	PDEBUG("Received path update event\n");
+	switch(event) {
+	case NETEVENT_PATH_UPDATEV6:
+		mpcb=container_of(self,struct multipath_pcb,nb);
+		up=ctx;
+		PDEBUG("mpcb is %p\n",mpcb);
+		if (mpcb->sa_family!=AF_INET6) break;
+		
+		PDEBUG("ev loc ulid:" NIP6_FMT "\n",NIP6(*up->local));
+		PDEBUG("ev loc ulid:" NIP6_FMT "\n",NIP6(*up->remote));
+		PDEBUG("ev loc ulid:" NIP6_FMT "\n",NIP6(*(struct in6_addr*)mpcb->local_ulid.a6));
+		PDEBUG("ev loc ulid:" NIP6_FMT "\n",NIP6(*(struct in6_addr*)mpcb->remote_ulid.a6));
+		if (ipv6_addr_equal(up->local,
+				    (struct in6_addr*)&mpcb->local_ulid) &&
+		    ipv6_addr_equal(up->remote,
+				    (struct in6_addr*)&mpcb->remote_ulid))
+			mtcp_init_subsockets(mpcb,
+					     up->path_indices);
+		break;
+        }
+        return 0;
+}
+
+struct multipath_pcb* mtcp_alloc_mpcb(void)
+{
+  struct multipath_pcb * mpcb = kmalloc(
+	  sizeof(struct multipath_pcb),GFP_KERNEL);
+	
+  memset(mpcb,sizeof(struct multipath_pcb),0);
+
+  skb_queue_head_init(&mpcb->receive_queue);
+  skb_queue_head_init(&mpcb->write_queue);
+  skb_queue_head_init(&mpcb->retransmit_queue);
+  skb_queue_head_init(&mpcb->error_queue);
+  skb_queue_head_init(&mpcb->out_of_order_queue);
+  
+  mpcb->write_buffer = kmalloc(sysctl_wmem_max,GFP_KERNEL);
+  mpcb->wb_size = sysctl_wmem_max;
+
+  mpcb->rcvbuf = sysctl_rmem_default;
+  mpcb->sndbuf = sysctl_wmem_default;
+  
+  mpcb->state = TCPF_CLOSE;
+  
+  kref_init(&mpcb->kref);
+  spin_lock_init(&mpcb->lock);
+
+  mpcb->nb.notifier_call=netevent_callback;
+  register_netevent_notifier(&mpcb->nb);
+
+  return mpcb;
+}
+
+static void mpcb_release(struct kref* kref)
+{
+	struct multipath_pcb *mpcb;
+	mpcb=container_of(kref,struct multipath_pcb,kref);
+	kfree(mpcb);
+}
+
+void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
+{
+	unregister_netevent_notifier(&mpcb->nb);
+	kref_put(&mpcb->kref,mpcb_release);
+}
+
+void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp, 
+		   int path_index)
+{
+	tp->path_index=path_index;
+	
+	/*Adding new node to head of connection_list*/
+	tp->next=mpcb->connection_list;
+	mpcb->connection_list=tp;
+	
+	mpcb->cnt_subflows++;	
+	tp->mpcb = mpcb;
+}
+
+/**
+ * Updates the metasocket ULID data, based on the given sock.
+ * The argument sock must be the sock accessible to the application.
+ * In this function, we update the meta socket info, based on the changes 
+ * in the application socket (bind, address allocation, ...)
+ */
+void mtcp_update_metasocket(struct sock *sk)
+{
+	struct tcp_sock *tp;
+	struct multipath_pcb *mpcb;
+	if (sk->sk_protocol != IPPROTO_TCP) return;
+	tp=tcp_sk(sk);
+	mpcb=mpcb_from_tcpsock(tp);
+
+	PDEBUG("Entering %s, mpcb %p\n",__FUNCTION__,mpcb);
+
+	mpcb->sa_family=sk->sk_family;
+	
+	switch (sk->sk_family) {
+	case AF_INET:
+		mpcb->remote_ulid.a4=inet_sk(sk)->daddr;
+		mpcb->local_ulid.a4=inet_sk(sk)->saddr;
+		break;
+	case AF_INET6:
+		ipv6_addr_copy((struct in6_addr*)&mpcb->remote_ulid,
+			       &inet6_sk(sk)->daddr);
+		ipv6_addr_copy((struct in6_addr*)&mpcb->local_ulid,
+			       &inet6_sk(sk)->saddr);
+		PDEBUG("mum loc ulid:" NIP6_FMT "\n",NIP6(*(struct in6_addr*)mpcb->local_ulid.a6));
+		PDEBUG("mum loc ulid:" NIP6_FMT "\n",NIP6(*(struct in6_addr*)mpcb->remote_ulid.a6));
+
+		break;
+	}
+}
+
+/*General initialization of MTCP
+ */
+static int __init mtcp_init(void) 
+{
+  int i;
+
+  /*Initialize the ctx list*/
+  for (i=0;i<MTCP_HASH_SIZE;i++)
+	  INIT_LIST_HEAD(&pcb_hashtable[i]);
+
+  rwlock_init(&mtcp_hash_lock);
+  atomic_set(&conn_no,0);
+  return 0;
+}
+
+module_init(mtcp_init);
+
+MODULE_LICENSE("GPL");
