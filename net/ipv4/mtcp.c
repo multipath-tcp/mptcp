@@ -6,9 +6,7 @@
  *
  *      Based on an initial user space MTCP stack from Costin Raiciu.
  *
- *
- *
- *      date : April 09
+ *      date : June 09
  *
  *
  *	This program is free software; you can redistribute it and/or
@@ -90,9 +88,16 @@ struct multipath_pcb* lookup_mpcb(int sd)
  * Creates as many sockets as path indices announced by the Path Manager.
  * The first path indices are (re)allocated to existing sockets.
  * New sockets are created if needed.
+ *
+ * WARNING: We make the assumption that this function is run in user context
+ *      (we use sock_create_kern, that reserves ressources with GFP_KERNEL)
+ *      AND only one user process can trigger the sending of a PATH_UPDATE
+ *      notification. This is in conformance with the fact that only one PM
+ *      can send messages to the MPS, according to our multipath arch.
+ *      (further PMs are cascaded and use the depth attribute).
  */
-static int __mtcp_init_subsockets(struct multipath_pcb *mpcb, 
-				  uint32_t path_indices)
+static int mtcp_init_subsockets(struct multipath_pcb *mpcb, 
+				uint32_t path_indices)
 {
 	int i;
 	int retval;
@@ -110,13 +115,13 @@ static int __mtcp_init_subsockets(struct multipath_pcb *mpcb,
 		}
 		else {
 			struct tcp_sock *newtp;
-			struct sockaddr *loculid;
-			int loculid_size;
-			struct sockaddr_in loculid_in;
-			struct sockaddr_in6 loculid_in6;
+			struct sockaddr *loculid,*remulid;
+			int ulid_size;
+			struct sockaddr_in loculid_in,remulid_in;
+			struct sockaddr_in6 loculid_in6,remulid_in6;
 			/*a new socket must be created*/
-			retval = sock_create(mpcb->sa_family, SOCK_STREAM, 
-					     IPPROTO_MTCPSUB, &sock);
+			retval = sock_create_kern(mpcb->sa_family, SOCK_STREAM, 
+						  IPPROTO_MTCPSUB, &sock);
 			
 			if (retval<0) {
 				printk(KERN_ERR "%s:sock_create failed\n",
@@ -124,49 +129,62 @@ static int __mtcp_init_subsockets(struct multipath_pcb *mpcb,
 				return retval;
 			}
 			newtp=tcp_sk(sock->sk);
-			mtcp_add_sock(mpcb,newtp, i+1);
 
 			/*Binding the new socket to the local ulid*/
 			switch(mpcb->sa_family) {
 			case AF_INET:
 				memset(&loculid,0,sizeof(loculid));
 				loculid_in.sin_family=mpcb->sa_family;
+				
+				memcpy(&remulid_in,&loculid_in,
+				       sizeof(remulid_in));
+				
 				loculid_in.sin_port=mpcb->local_port;
+				remulid_in.sin_port=mpcb->remote_port;
 				memcpy(&loculid_in.sin_addr,
 				       (struct in_addr*)&mpcb->local_ulid.a4,
 				       sizeof(struct in_addr));
+				memcpy(&remulid_in.sin_addr,
+				       (struct in_addr*)&mpcb->remote_ulid.a4,
+				       sizeof(struct in_addr));
 				loculid=(struct sockaddr *)&loculid_in;
-				loculid_size=sizeof(loculid_in);
+				remulid=(struct sockaddr *)&remulid_in;
+				ulid_size=sizeof(loculid_in);
 				break;
 			case AF_INET6:
 				memset(&loculid,0,sizeof(loculid));
 				loculid_in6.sin6_family=mpcb->sa_family;
+				
+				memcpy(&remulid_in6,&loculid_in6,
+				       sizeof(remulid_in6));
+
 				loculid_in6.sin6_port=mpcb->local_port;
+				remulid_in6.sin6_port=mpcb->remote_port;
 				ipv6_addr_copy(&loculid_in6.sin6_addr,
 					       (struct in6_addr*)&mpcb->
 					       local_ulid.a6);
+				ipv6_addr_copy(&remulid_in6.sin6_addr,
+					       (struct in6_addr*)&mpcb->
+					       remote_ulid.a6);
+
 				loculid=(struct sockaddr *)&loculid_in6;
-				loculid_size=sizeof(loculid_in6);
+				remulid=(struct sockaddr *)&remulid_in6;
+				ulid_size=sizeof(loculid_in6);
 				break;
 			}
-			retval = sock->ops->bind(sock, loculid, loculid_size);
-
-			if (retval<0) return -1;
+			retval = sock->ops->bind(sock, loculid, ulid_size);
+			if (retval<0) goto fail_bind;
+			retval = sock->ops->connect(sock,remulid,ulid_size,0);
+			
+			mtcp_add_sock(mpcb,newtp, i+1);				
 			
 			PDEBUG("New MTCP subsocket created, pi %d\n",i+1);
 		}
 	}
 	return 0;
-}
-
-static int mtcp_init_subsockets(struct multipath_pcb *mpcb, 
-				  uint32_t path_indices)
-{
-	int ret;
-	spin_lock_bh(&mpcb->lock);
-	ret=__mtcp_init_subsockets(mpcb,path_indices);
-	spin_unlock_bh(&mpcb->lock);
-	return ret;	
+fail_bind:
+	sock_release(sock);
+	return -1;
 }
 
 static int netevent_callback(struct notifier_block *self, unsigned long event,
@@ -244,13 +262,15 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp,
 		   int path_index)
 {
 	tp->path_index=path_index;
-	
+		
 	/*Adding new node to head of connection_list*/
+	spin_lock_bh(&mpcb->lock);
 	tp->next=mpcb->connection_list;
 	mpcb->connection_list=tp;
 	
 	mpcb->cnt_subflows++;	
 	tp->mpcb = mpcb;
+	spin_unlock_bh(&mpcb->lock);
 }
 
 /**

@@ -135,6 +135,11 @@ int __init mtcpv6_init(void)
 	int ret;
 	/* register inet6 protocol */
 	ret = inet6_register_protosw(&mtcpsubv6_protosw);
+	
+	/*Although the protocol is not used as such, it is necessary to register
+	  it, so that slab memory is allocated for it.*/
+	if (ret==0) 
+		ret=proto_register(&mtcpsubv6_prot, 1);
 	return ret;
 }
 

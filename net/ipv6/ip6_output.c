@@ -198,10 +198,26 @@ int ip6_xmit(struct sock *sk, struct sk_buff *skb, struct flowi *fl,
 	struct in6_addr *first_hop = &fl->fl6_dst;
 	struct dst_entry *dst = skb->dst;
 	struct ipv6hdr *hdr;
-	u8  proto = fl->proto;
+	u8  proto = fl->proto;	
 	int seg_len = skb->len;
 	int hlimit, tclass;
 	u32 mtu;
+
+	/*MTCP hack: We need to distinguish the creation of a TCP 
+	  master subsocket, from TCP slave subsockets created by the
+	  kernel. The only way we found to do that was to define a specific
+	  "MTCPSUB" protocol, so that some of the TCP functions (in particular
+	  socket creation can be made MTCP slave specific, while the majority
+	  of functions are taken from TCP. But The protocol cannot be used
+	  without being registered at the IPv6 layer, so we needed to define
+	  a new unused protocol number for MTCPSUB: IPPROTO_MTCPSUB. This 
+	  protocol number MUST NOT be used to send packets to the network,
+	  and is only used inside the kernel, as a workaround to the socket
+	  system. The consequence is that we need to fix here the proto field 
+	  in case we find it to be IPPROTO_MTCPSUB, and replace it with 
+	  IPPROTO_TCP. Of course it would be nice to find a less intrusive 
+	  design in the future.*/
+	if (proto==IPPROTO_MTCPSUB) proto=IPPROTO_TCP;
 
 	if (opt) {
 		unsigned int head_room;
