@@ -53,9 +53,8 @@ struct shim6_data {
 	 *     Only for outbound multiple simultaneous paths can
 	 *     be defined (multipath) 
 	 */
-	int                 npaths; /*1 if inbound or normal shim6, 
+	unsigned int        npaths; /*1 if inbound or normal shim6, 
 				      n paths if outbound and multipath mode*/
-	int                 cur_path_idx; /*Index of the path currently used*/
 	struct shim6_path   paths[0];
 };
 

@@ -124,6 +124,12 @@ static inline struct dst_entry *xfrm_dst_lookup(struct xfrm_state *x, int tos,
 	xfrm_address_t *saddr = &x->props.saddr;
 	xfrm_address_t *daddr = &x->id.daddr;
 	struct dst_entry *dst;
+	/*TODO, I guess that dealing with the path index here is useless, since
+	  anyway we recompute the outgoing interface later in Shim6.
+	  To check that this indeed useless, I set the path_index to 0 in all
+	  cases here.*/
+
+	int path_index=0;
 
 	if (x->type->flags & XFRM_TYPE_LOCAL_COADDR) {
 		saddr = x->coaddr;
@@ -135,9 +141,9 @@ static inline struct dst_entry *xfrm_dst_lookup(struct xfrm_state *x, int tos,
 	}
 	if (x->type->flags & XFRM_TYPE_SHIM6_ADDR) {
 		saddr = (xfrm_address_t*)
-			&x->shim6->paths[x->shim6->cur_path_idx].local;
+			&x->shim6->paths[path_index].local;
 		daddr = (xfrm_address_t*)
-			&x->shim6->paths[x->shim6->cur_path_idx].remote;
+			&x->shim6->paths[path_index].remote;
 	}
 
 	dst = __xfrm_dst_lookup(tos, saddr, daddr, family);

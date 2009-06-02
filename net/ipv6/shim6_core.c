@@ -162,7 +162,7 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 	struct ipv6hdr* iph;
 	u8 nexthdr;
 	struct shim6hdr_pld* shim6h;
-	int path_idx=x->shim6->cur_path_idx;
+	unsigned int path_idx=skb->path_index-1;
 	struct timespec curtime;
 
 #ifndef CONFIG_IPV6_SHIM6_MULTIPATH
@@ -198,8 +198,8 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 		struct dst_entry *shim6_dst = skb->dst;
 		struct flowi fl;
 		struct dst_entry *dst  = NULL;
-		int err;	      		
-
+		int err;
+	      		
 		/*Remove previous dst*/
 		dst_free(shim6_dst->child);
 		/*Redo some of the work of xfrm_bundle_create
@@ -214,9 +214,9 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 		  later stage.
 		*/
 		ipv6_addr_copy(&fl.fl6_dst,
-			       &x->shim6->paths[x->shim6->cur_path_idx].remote);
+			       &x->shim6->paths[path_idx].remote);
 		ipv6_addr_copy(&fl.fl6_src,
-			       &x->shim6->paths[x->shim6->cur_path_idx].local);
+			       &x->shim6->paths[path_idx].local);
 
 		dst=ip6_route_output(&init_net,NULL,&fl);
 		err=dst->error;
@@ -237,10 +237,6 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 #endif
 
 finish:
-#ifdef CONFIG_IPV6_SHIM6_MULTIPATH
-	/*Doing the round-robin */
-	x->shim6->cur_path_idx=(path_idx+1)%x->shim6->npaths;
-#endif
 	return 0;
 }
 

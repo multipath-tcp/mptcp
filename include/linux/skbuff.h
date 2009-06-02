@@ -264,6 +264,7 @@ struct sk_buff {
 		struct  rtable		*rtable;
 	};
 	struct	sec_path	*sp;
+	unsigned int            path_index; /*Path index for multipath control*/
 
 	/*
 	 * This is the control buffer. It is free to use for every

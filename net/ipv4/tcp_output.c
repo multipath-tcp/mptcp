@@ -2411,6 +2411,8 @@ int tcp_connect(struct sock *sk)
 	sk->sk_wmem_queued += buff->truesize;
 	sk_mem_charge(sk, buff->truesize);
 	tp->packets_out += tcp_skb_pcount(buff);
+	buff->path_index=tp->path_index;
+	
 	tcp_transmit_skb(sk, buff, 1, GFP_KERNEL);
 
 	/* We change tp->snd_nxt after the tcp_transmit_skb() call
