@@ -180,6 +180,11 @@ int mtcpsub_v6_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	if (!(addr_type & IPV6_ADDR_MULTICAST))
 		ipv6_addr_copy(&np->saddr, &addr->sin6_addr);
 
+	/*At the moment, we don't call get_port because it would refuse the 
+	  binding because it would be a duplicate binding. We thus just 
+	  force the port value in the socket.*/
+	inet->num=snum;
+
 	if (addr_type != IPV6_ADDR_ANY)
 		sk->sk_userlocks |= SOCK_BINDADDR_LOCK;
 	if (snum)

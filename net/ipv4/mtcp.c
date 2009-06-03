@@ -159,6 +159,8 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 				       sizeof(remulid_in6));
 
 				loculid_in6.sin6_port=mpcb->local_port;
+				printk(KERN_ERR "local port is %d\n",
+				       ntohs(mpcb->local_port));
 				remulid_in6.sin6_port=mpcb->remote_port;
 				ipv6_addr_copy(&loculid_in6.sin6_addr,
 					       (struct in6_addr*)&mpcb->
@@ -173,11 +175,16 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 				break;
 			}
 			newtp->path_index=i+1;
-		
+			printk(KERN_ERR "source port:%d\n",
+			       inet_sk(sock->sk)->sport);
 			retval = sock->ops->bind(sock, loculid, ulid_size);
 			if (retval<0) goto fail_bind;
+			printk(KERN_ERR "source port:%d\n",
+			       inet_sk(sock->sk)->sport);
 			retval = sock->ops->connect(sock,remulid,ulid_size,0);
 			if (retval<0) goto fail_connect;
+			printk(KERN_ERR "source port:%d\n",
+			       inet_sk(sock->sk)->sport);
 			
 			mtcp_add_sock(mpcb,newtp);		
 			
