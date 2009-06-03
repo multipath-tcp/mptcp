@@ -105,8 +105,7 @@ struct multipath_pcb {
 #define mpcb_from_tcpsock(tp) (tp->mpcb)
 
 struct multipath_pcb* mtcp_alloc_mpcb(void);
-void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp, 
-		   int path_index);
+void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp);
 struct multipath_pcb* mtcp_lookup_mpcb(int sd);
 void mtcp_reset_options(struct multipath_options* mopt);
 void mtcp_update_metasocket(struct sock *sock);

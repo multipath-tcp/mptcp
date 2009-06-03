@@ -162,7 +162,10 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 	struct ipv6hdr* iph;
 	u8 nexthdr;
 	struct shim6hdr_pld* shim6h;
-	unsigned int path_idx=skb->path_index-1;
+	/*If path index is 0, the MPS did not decide anything about the packet
+	  and we use the default path (0). If it is not zero, we apply or
+	  mapping, which is to use index path_index-1 in our path_array*/
+	unsigned int path_idx=(skb->path_index)?skb->path_index-1:0;
 	struct timespec curtime;
 
 #ifndef CONFIG_IPV6_SHIM6_MULTIPATH
@@ -176,6 +179,7 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 	getnstimeofday(&curtime);
 	x->curlft.use_time = (unsigned long)curtime.tv_sec;
 
+/*MAKES A SEGFAULT HERE*/
 	if (!(x->shim6->paths[path_idx].flags & SHIM6_DATA_TRANSLATE)) 
 		goto finish;
 

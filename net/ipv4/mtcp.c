@@ -172,11 +172,13 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 				ulid_size=sizeof(loculid_in6);
 				break;
 			}
+			newtp->path_index=i+1;
+		
 			retval = sock->ops->bind(sock, loculid, ulid_size);
 			if (retval<0) goto fail_bind;
 			retval = sock->ops->connect(sock,remulid,ulid_size,0);
 			
-			mtcp_add_sock(mpcb,newtp, i+1);				
+			mtcp_add_sock(mpcb,newtp);		
 			
 			PDEBUG("New MTCP subsocket created, pi %d\n",i+1);
 		}
@@ -258,11 +260,8 @@ void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
 	kref_put(&mpcb->kref,mpcb_release);
 }
 
-void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp, 
-		   int path_index)
+void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 {
-	tp->path_index=path_index;
-		
 	/*Adding new node to head of connection_list*/
 	spin_lock_bh(&mpcb->lock);
 	tp->next=mpcb->connection_list;

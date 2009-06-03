@@ -1806,7 +1806,8 @@ static int tcp_v4_init_sock(struct sock *sk)
 	{
 		struct multipath_pcb *mpcb;		
 		mpcb=mtcp_alloc_mpcb();
-		mtcp_add_sock(mpcb,tp,0);
+		tp->path_index=0;
+		mtcp_add_sock(mpcb,tp);
 	}
 #endif
 
