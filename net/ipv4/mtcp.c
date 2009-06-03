@@ -273,7 +273,7 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 }
 
 /**
- * Updates the metasocket ULID data, based on the given sock.
+ * Updates the metasocket ULID/port data, based on the given sock.
  * The argument sock must be the sock accessible to the application.
  * In this function, we update the meta socket info, based on the changes 
  * in the application socket (bind, address allocation, ...)
@@ -289,6 +289,8 @@ void mtcp_update_metasocket(struct sock *sk)
 	PDEBUG("Entering %s, mpcb %p\n",__FUNCTION__,mpcb);
 
 	mpcb->sa_family=sk->sk_family;
+	mpcb->remote_port=inet_sk(sk)->dport;
+	mpcb->local_port=inet_sk(sk)->sport;
 	
 	switch (sk->sk_family) {
 	case AF_INET:
@@ -300,6 +302,7 @@ void mtcp_update_metasocket(struct sock *sk)
 			       &inet6_sk(sk)->daddr);
 		ipv6_addr_copy((struct in6_addr*)&mpcb->local_ulid,
 			       &inet6_sk(sk)->saddr);
+
 		PDEBUG("mum loc ulid:" NIP6_FMT "\n",NIP6(*(struct in6_addr*)mpcb->local_ulid.a6));
 		PDEBUG("mum loc ulid:" NIP6_FMT "\n",NIP6(*(struct in6_addr*)mpcb->remote_ulid.a6));
 

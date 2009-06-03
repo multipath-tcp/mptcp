@@ -61,7 +61,7 @@ struct multipath_pcb {
 	/*connection identifier*/
 	sa_family_t               sa_family;
 	xfrm_address_t            remote_ulid, local_ulid;
-	__u16                     remote_port,local_port;
+	__be16                    remote_port,local_port;
 	
 	/*list of sockets in this multipath connection*/
 	struct tcp_sock*          connection_list;

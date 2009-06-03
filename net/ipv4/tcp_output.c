@@ -2413,8 +2413,6 @@ int tcp_connect(struct sock *sk)
 	tp->packets_out += tcp_skb_pcount(buff);
 	buff->path_index=tp->path_index;
 	
-	/*DEBUG*/
-	printk(KERN_ERR "new SYN: setting path index to %d\n",tp->path_index);
 	tcp_transmit_skb(sk, buff, 1, GFP_KERNEL);
 
 	/* We change tp->snd_nxt after the tcp_transmit_skb() call

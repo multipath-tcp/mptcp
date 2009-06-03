@@ -168,8 +168,6 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 	unsigned int path_idx=(skb->path_index)?skb->path_index-1:0;
 	struct timespec curtime;
 
-	printk(KERN_ERR "shim6_output: index in path_array %d\n",path_idx);
-
 #ifndef CONFIG_IPV6_SHIM6_MULTIPATH
 	struct reap_ctx* rctx=(struct reap_ctx*) x->data;		
 	reap_notify_out(rctx);
