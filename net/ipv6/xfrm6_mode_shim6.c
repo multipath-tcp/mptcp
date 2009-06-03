@@ -49,7 +49,7 @@ static int xfrm6_shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 	struct ipv6hdr *iph=ipv6_hdr(skb);
 	u8 *prevhdr;
 	int hdr_len;
-	int path_idx=skb->path_index-1;
+	int path_idx=(skb->path_index)?skb->path_index-1:0;
 
 	if (path_idx >= x->shim6->npaths) {
 		PDEBUG("Warning: path index too high. Set to 0.\n");

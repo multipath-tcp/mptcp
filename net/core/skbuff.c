@@ -461,6 +461,8 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 #endif
 #endif
 	new->vlan_tci		= old->vlan_tci;
+	
+	new->path_index         = old->path_index;
 
 	skb_copy_secmark(new, old);
 }
