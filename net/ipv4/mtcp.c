@@ -177,6 +177,7 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			retval = sock->ops->bind(sock, loculid, ulid_size);
 			if (retval<0) goto fail_bind;
 			retval = sock->ops->connect(sock,remulid,ulid_size,0);
+			if (retval<0) goto fail_connect;
 			
 			mtcp_add_sock(mpcb,newtp);		
 			
@@ -185,6 +186,9 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 	}
 	return 0;
 fail_bind:
+	printk(KERN_ERR "MTCP subsocket bind() failed\n");
+fail_connect:
+	printk(KERN_ERR "MTCP subsocket connect() failed\n");
 	sock_release(sock);
 	return -1;
 }
