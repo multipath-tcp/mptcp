@@ -173,6 +173,8 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 				break;
 			}
 			newtp->path_index=i+1;
+			newtp->mpcb = mpcb;
+       
 			retval = sock->ops->bind(sock, loculid, ulid_size);
 			if (retval<0) goto fail_bind;
 			retval = sock->ops->connect(sock,remulid,ulid_size,0);
@@ -267,11 +269,11 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 {
 	/*Adding new node to head of connection_list*/
 	spin_lock_bh(&mpcb->lock);
+	tp->mpcb = mpcb;
 	tp->next=mpcb->connection_list;
 	mpcb->connection_list=tp;
 	
 	mpcb->cnt_subflows++;	
-	tp->mpcb = mpcb;
 	spin_unlock_bh(&mpcb->lock);
 }
 

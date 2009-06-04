@@ -109,7 +109,8 @@ static int shim6_input(struct xfrm_state *x, struct sk_buff *skb)
 	struct inet6_skb_parm *opt = IP6CB(skb);
 	struct shim6hdr_ctl* hdr=(struct shim6hdr_ctl*) skb->data;
 	struct ipv6hdr* iph=ipv6_hdr(skb);
-	struct timespec curtime;	
+	struct timespec curtime;
+	int i;
 	
 	if (opt->shim6 && hdr->P==SHIM6_MSG_CONTROL)
 		return reap_input(hdr,rctx);
@@ -123,6 +124,22 @@ static int shim6_input(struct xfrm_state *x, struct sk_buff *skb)
 	getnstimeofday(&curtime);
 	x->curlft.use_time = (unsigned long)curtime.tv_sec;
 	
+	/*Translating used locators into path index*/
+	for (i=0;i<x->shim6->nlocpairs;i++) {
+		if (ipv6_addr_equal(&iph->saddr,&x->shim6->loc_pairs[i].remote)
+		    && 
+		    ipv6_addr_equal(&iph->daddr,&x->shim6->loc_pairs[i].local))
+			break;
+	}
+	if (i==x->shim6->nlocpairs) {
+		printk(KERN_ERR "%s:Received packet with invalid locators\n",
+		       __FUNCTION__);
+		return -1;
+	}
+
+	PDEBUG("Rcvd packet at path index %d\n",i);
+	skb->path_index=i+1;
+
 	if (!opt->shim6) return 1;
 
 	/*Rewriting the addresses*/
@@ -347,6 +364,7 @@ static int shim6_init_state(struct xfrm_state *x)
 		PDEBUG("reverse context found (0x%p), setting the shim6" 
 		       " pointer to it\n",rev_x);
 		x->data=rev_x->data;
+		x->shim6->loc_pairs=rev_x->shim6->paths;
 		
 		rctx=(struct reap_ctx*)rev_x->data;
 		if (x->shim6->flags & SHIM6_DATA_UPD) {

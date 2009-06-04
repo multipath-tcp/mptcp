@@ -48,6 +48,12 @@ struct shim6_data {
 #define SHIM6_DATA_INBOUND   0x1 /* context is inbound*/
 #define SHIM6_DATA_UPD       0x2 /* context update*/
 
+	unsigned int        nlocpairs; /*-n paths if inbound and multipath 
+					* mode
+					*-0 if outbound*/
+	/*inbound - pointer to the "paths" field of the reverse ctx
+	 *outbound - NULL */
+	struct shim6_path*  loc_pairs;	
 	/*inbound - local is ULID_local, remote is ULID_peer
 	 *outbound - local is lp_local, remote is lp_peer 
 	 *     Only for outbound multiple simultaneous paths can
