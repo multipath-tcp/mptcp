@@ -502,7 +502,7 @@ ok:
 	tb  = inet_csk(sk)->icsk_bind_hash;
 	printk(KERN_ERR "tb:%p\n",tb);
 	spin_lock_bh(&head->lock);
-	if (sk_head(&tb->owners) == sk && !sk->sk_bind_node.next) {
+	if (sk_bind_head(&tb->owners) == sk && !sk->sk_bind_node.next) {
 		hash(sk);
 		spin_unlock_bh(&head->lock);
 		return 0;
