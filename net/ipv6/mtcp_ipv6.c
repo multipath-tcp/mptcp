@@ -180,10 +180,14 @@ int mtcpsub_v6_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	if (!(addr_type & IPV6_ADDR_MULTICAST))
 		ipv6_addr_copy(&np->saddr, &addr->sin6_addr);
 
-	/*At the moment, we don't call get_port because it would refuse the 
-	  binding because it would be a duplicate binding. We thus just 
-	  force the port value in the socket.*/
-	inet->num=snum;
+	/* Make sure we are allowed to bind here. */
+	if (sk->sk_prot->get_port(sk, snum)) {
+		inet_reset_saddr(sk);
+		printk(KERN_ERR "mtcp - get_port failed\n");
+		err = -1;
+		goto out;
+	}
+
 
 	if (addr_type != IPV6_ADDR_ANY)
 		sk->sk_userlocks |= SOCK_BINDADDR_LOCK;
@@ -195,6 +199,48 @@ int mtcpsub_v6_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 out:
 	release_sock(sk);
 	return err;
+}
+
+/* Obtain a reference to a local port for the given sock,
+ * snum MUST have a valid port number, since it must be a copy 
+ * of the snum from a master TCP socket.
+ */
+int mtcpsub_v6_get_port(struct sock *sk, unsigned short snum)
+{
+	struct inet_hashinfo *hashinfo = sk->sk_prot->h.hashinfo;
+	struct inet_bind_hashbucket *head;
+	struct hlist_node *node;
+	struct inet_bind_bucket *tb;
+	int ret;
+	struct net *net = sock_net(sk);
+
+	local_bh_disable();
+	if (!snum) {
+		ret=-1;
+		goto fail; /*snum is required in MTCPSUB, since it must be
+			     the copy of the originating socket*/
+	} else {
+		head = &hashinfo->bhash[inet_bhashfn(net, snum,
+				hashinfo->bhash_size)];
+		spin_lock(&head->lock);
+		inet_bind_bucket_for_each(tb, node, &head->chain)
+			if (tb->ib_net == net && tb->port == snum)
+				goto success;
+	}
+	tb = NULL;
+	ret = 1;
+	goto fail_unlock;
+success:
+	if (!inet_csk(sk)->icsk_bind_hash)
+		inet_bind_hash(sk, tb, snum);
+	WARN_ON(inet_csk(sk)->icsk_bind_hash != tb);
+	ret = 0;
+
+fail_unlock:
+	spin_unlock(&head->lock);
+fail:
+	local_bh_enable();
+	return ret;
 }
 
 struct proto mtcpsubv6_prot = {
@@ -211,11 +257,11 @@ struct proto mtcpsubv6_prot = {
 	.setsockopt		= tcp_setsockopt,
 	.getsockopt		= tcp_getsockopt,
 	.recvmsg		= tcp_recvmsg,
-	.bind                   = mtcpsub_v6_bind,
+/*	.bind                   = mtcpsub_v6_bind,*/
 	.backlog_rcv		= tcp_v6_do_rcv,
 	.hash			= tcp_v6_hash,
 	.unhash			= inet_unhash,
-	.get_port		= inet_csk_get_port,
+	.get_port		= mtcpsub_v6_get_port,
 	.enter_memory_pressure	= tcp_enter_memory_pressure,
 	.sockets_allocated	= &tcp_sockets_allocated,
 	.memory_allocated	= &tcp_memory_allocated,

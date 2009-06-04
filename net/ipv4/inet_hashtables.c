@@ -61,6 +61,8 @@ void inet_bind_hash(struct sock *sk, struct inet_bind_bucket *tb,
 {
 	inet_sk(sk)->num = snum;
 	sk_add_bind_node(sk, &tb->owners);
+	printk(KERN_ERR "inet_bind_hash:sk_head(&tb->owners):%p\n",sk_head(&tb->owners));
+	printk(KERN_ERR "inet_bind_hash:sk:%p\n",sk);
 	inet_csk(sk)->icsk_bind_hash = tb;
 }
 
@@ -454,7 +456,7 @@ int __inet_hash_connect(struct inet_timewait_death_row *death_row,
 					if (tb->fastreuse >= 0)
 						goto next_port;
 					if (!check_established(death_row, sk,
-								port, &tw))
+							       port, &tw))
 						goto ok;
 					goto next_port;
 				}
@@ -498,12 +500,19 @@ ok:
 
 	head = &hinfo->bhash[inet_bhashfn(net, snum, hinfo->bhash_size)];
 	tb  = inet_csk(sk)->icsk_bind_hash;
+	printk(KERN_ERR "tb:%p\n",tb);
 	spin_lock_bh(&head->lock);
 	if (sk_head(&tb->owners) == sk && !sk->sk_bind_node.next) {
 		hash(sk);
 		spin_unlock_bh(&head->lock);
 		return 0;
 	} else {
+		if (sk_head(&tb->owners) == sk && sk->sk_bind_node.next)
+			printk(KERN_ERR "gagné !\n");
+		printk(KERN_ERR "sk_head(&tb->owners):%p\n",
+		       sk_head(&tb->owners));
+		printk(KERN_ERR "sk (should be eq to prev):%p\n",sk);
+		printk(KERN_ERR "sk->sk_bind_node.next:%p\n",sk->sk_bind_node.next);
 		spin_unlock(&head->lock);
 		/* No definite answer... Walk to established hash table */
 		ret = check_established(death_row, sk, snum, NULL);
