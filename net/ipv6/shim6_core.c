@@ -137,7 +137,6 @@ static int shim6_input(struct xfrm_state *x, struct sk_buff *skb)
 		return -1;
 	}
 
-	PDEBUG("Rcvd packet at path index %d\n",i);
 	skb->path_index=i+1;
 
 	if (!opt->shim6) return 1;

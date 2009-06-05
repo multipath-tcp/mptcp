@@ -59,6 +59,7 @@
 #include <net/timewait_sock.h>
 #include <net/netdma.h>
 #include <net/inet_common.h>
+#include <net/mtcp_v6.h>
 
 #include <asm/uaccess.h>
 
@@ -319,7 +320,7 @@ failure:
 }
 
 static void tcp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
-		int type, int code, int offset, __be32 info)
+		       int type, int code, int offset, __be32 info)
 {
 	struct ipv6hdr *hdr = (struct ipv6hdr*)skb->data;
 	const struct tcphdr *th = (struct tcphdr *)(skb->data+offset);
@@ -330,8 +331,9 @@ static void tcp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 	__u32 seq;
 	struct net *net = dev_net(skb->dev);
 
-	sk = inet6_lookup(net, &tcp_hashinfo, &hdr->daddr,
-			th->dest, &hdr->saddr, th->source, skb->dev->ifindex);
+	sk = mtcpv6_lookup(net, &tcp_hashinfo, &hdr->daddr,
+			   th->dest, &hdr->saddr, th->source, 
+			   skb->dev->ifindex,skb->path_index);
 
 	if (sk == NULL) {
 		ICMP6_INC_STATS_BH(__in6_dev_get(skb->dev), ICMP6_MIB_INERRORS);
@@ -1164,9 +1166,11 @@ static struct sock *tcp_v6_hnd_req(struct sock *sk,struct sk_buff *skb)
 	if (req)
 		return tcp_check_req(sk, skb, req, prev);
 
-	nsk = __inet6_lookup_established(sock_net(sk), &tcp_hashinfo,
-			&ipv6_hdr(skb)->saddr, th->source,
-			&ipv6_hdr(skb)->daddr, ntohs(th->dest), inet6_iif(skb));
+	nsk = __mtcpv6_lookup_established(sock_net(sk), &tcp_hashinfo,
+					  &ipv6_hdr(skb)->saddr, th->source,
+					  &ipv6_hdr(skb)->daddr, 
+					  ntohs(th->dest), inet6_iif(skb),
+					  skb->path_index);
 
 	if (nsk) {
 		if (nsk->sk_state != TCP_TIME_WAIT) {
@@ -1687,10 +1691,10 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->flags = ipv6_get_dsfield(ipv6_hdr(skb));
 	TCP_SKB_CB(skb)->sacked = 0;
 
-	sk = __inet6_lookup(net, &tcp_hashinfo,
-			&ipv6_hdr(skb)->saddr, th->source,
-			&ipv6_hdr(skb)->daddr, ntohs(th->dest),
-			inet6_iif(skb));
+	sk = __mtcpv6_lookup(net, &tcp_hashinfo,
+			     &ipv6_hdr(skb)->saddr, th->source,
+			     &ipv6_hdr(skb)->daddr, ntohs(th->dest),
+			     inet6_iif(skb),skb->path_index);	
 
 	if (!sk)
 		goto no_tcp_socket;

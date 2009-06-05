@@ -2,11 +2,11 @@
  *	MTCP implementation
  *
  *	Authors:
- *      Costin Raiciu           <c.raiciu@cs.ucl.ac.uk>
  *      Sébastien Barré		<sebastien.barre@uclouvain.be>
+ *      Costin Raiciu           <c.raiciu@cs.ucl.ac.uk>
  *
  *
- *      date : March 09
+ *      date : June 09
  *
  *
  *	This program is free software; you can redistribute it and/or
@@ -110,5 +110,6 @@ struct multipath_pcb* mtcp_lookup_mpcb(int sd);
 void mtcp_reset_options(struct multipath_options* mopt);
 void mtcp_update_metasocket(struct sock *sock);
 int mtcpv6_init(void);
+
 
 #endif /*_MTCP_H*/
