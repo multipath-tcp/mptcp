@@ -74,6 +74,54 @@ hit:
 	return sk;
 }
 
+struct sock *mtcpv6_lookup_listener(struct net *net,
+				    struct inet_hashinfo *hashinfo, 
+				    const struct in6_addr *daddr,
+				    const unsigned short hnum, const int dif, 
+				    const int path_index)
+{
+	struct sock *sk;
+	struct tcp_sock *tp;
+	const struct hlist_node *node;
+	struct sock *result = NULL;
+	int score, hiscore = 0;
+
+	read_lock(&hashinfo->lhash_lock);
+	sk_for_each(sk, node,
+		    &hashinfo->listening_hash[inet_lhashfn(net, hnum)]) {
+		tp=tcp_sk(sk);
+		if (net_eq(sock_net(sk), net) && inet_sk(sk)->num == hnum &&
+		    sk->sk_family == PF_INET6 && 
+		    (!path_index || tp->path_index==path_index)) {
+			const struct ipv6_pinfo *np = inet6_sk(sk);
+			
+			score = 1;
+			if (!ipv6_addr_any(&np->rcv_saddr)) {
+				if (!ipv6_addr_equal(&np->rcv_saddr, daddr))
+					continue;
+				score++;
+			}
+			if (sk->sk_bound_dev_if) {
+				if (sk->sk_bound_dev_if != dif)
+					continue;
+				score++;
+			}
+			if (score == 3) {
+				result = sk;
+				break;
+			}
+			if (score > hiscore) {
+				hiscore = score;
+				result = sk;
+			}
+		}
+	}
+	if (result)
+		sock_hold(result);
+	read_unlock(&hashinfo->lhash_lock);
+	return result;
+}
+
 struct sock *mtcpv6_lookup(struct net *net, struct inet_hashinfo *hashinfo,
 			   const struct in6_addr *saddr, const __be16 sport,
 			   const struct in6_addr *daddr, const __be16 dport,

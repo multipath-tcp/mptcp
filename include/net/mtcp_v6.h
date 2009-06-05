@@ -33,6 +33,12 @@ struct sock *__mtcpv6_lookup_established(struct net *net,
 					 const u16 hnum,
 					 const int dif, const int path_index);
 
+struct sock *mtcpv6_lookup_listener(struct net *net,
+				    struct inet_hashinfo *hashinfo, 
+				    const struct in6_addr *daddr,
+				    const unsigned short hnum, const int dif, 
+				    const int path_index);
+
 static inline struct sock *__mtcpv6_lookup(struct net *net,
 					   struct inet_hashinfo *hashinfo,
 					   const struct in6_addr *saddr,
@@ -44,16 +50,27 @@ static inline struct sock *__mtcpv6_lookup(struct net *net,
 	struct sock *sk = __mtcpv6_lookup_established(net, hashinfo, saddr,
 						      sport, daddr, hnum, dif,
 						      path_index);
-	/*DEBUG*/
 	if (path_index==2)
-		printk(KERN_ERR "called __mtcpv6_lookup with path index 2\n");
-	if (sk)
+		printk(KERN_ERR 
+		       "sk found: protocol %p,%d\n",sk,(sk)?sk->sk_protocol:0);
+	/*DEBUG*/
+	if (sk) {
+ 		if (path_index==2)
+			printk(KERN_ERR 
+			       "sk found: protocol %d\n",sk->sk_protocol);
+		/*TODO vérifier si le socket trouvé est un slave*/
 		return sk;
+	}
 	
 	/*For listening sockest, we use the standard function, simply ignoring
 	  the path index, since no MTCP slave socket is listening. (we do never
 	  call listen on those kinds of sockets)*/
-	return inet6_lookup_listener(net, hashinfo, daddr, hnum, dif);
+	sk=mtcpv6_lookup_listener(net, hashinfo, daddr, hnum, dif,path_index);
+	if (path_index==2)
+		printk(KERN_ERR 
+		       "2-sk found: protocol %p,%d\n",sk,(sk)?sk->sk_protocol:0);
+
+	return sk;
 }
 
 extern struct sock *mtcpv6_lookup(struct net *net, 
