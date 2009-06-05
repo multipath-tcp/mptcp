@@ -261,6 +261,18 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 
 	newsk = reqsk_queue_get_child(&icsk->icsk_accept_queue, sk);
 	WARN_ON(newsk->sk_state == TCP_SYN_RECV);
+
+#ifdef CONFIG_MTCP
+	/*Init the MTCP mpcb*/
+	if (newsk->sk_protocol==IPPROTO_TCP) {
+		struct tcp_sock *tp=tcp_sk(newsk);
+		struct multipath_pcb *mpcb;		
+		mpcb=mtcp_alloc_mpcb();
+		tp->path_index=0;
+		mtcp_add_sock(mpcb,tp);
+	}
+#endif
+
 out:
 	release_sock(sk);
 	return newsk;
