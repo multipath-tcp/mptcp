@@ -115,6 +115,8 @@ static int shim6_input(struct xfrm_state *x, struct sk_buff *skb)
 	if (opt->shim6 && hdr->P==SHIM6_MSG_CONTROL)
 		return reap_input(hdr,rctx);
 
+	
+
 #ifndef CONFIG_IPV6_SHIM6_MULTIPATH
 	/*If the message is a data message notify the reap module*/
 	reap_notify_in(rctx);
@@ -131,6 +133,12 @@ static int shim6_input(struct xfrm_state *x, struct sk_buff *skb)
 		    ipv6_addr_equal(&iph->daddr,&x->shim6->loc_pairs[i].local))
 			break;
 	}
+
+	if (opt->shim6) { /*TODEL*/
+		printk(KERN_ERR "Recvd Shim6 data:\n\t" NIP6_FMT "\n\t" 
+		       NIP6_FMT "\n",NIP6(iph->saddr),NIP6(iph->daddr));
+	}
+
 	if (i==x->shim6->nlocpairs) {
 		printk(KERN_ERR "%s:Received packet with invalid locators\n",
 		       __FUNCTION__);
@@ -138,6 +146,9 @@ static int shim6_input(struct xfrm_state *x, struct sk_buff *skb)
 	}
 
 	skb->path_index=i+1;
+
+	if (skb->path_index==2) /*TODEL*/
+		printk(KERN_ERR "rcvd packet with path index 2\n");
 
 	if (!opt->shim6) return 1;
 
@@ -378,7 +389,7 @@ static int shim6_init_state(struct xfrm_state *x)
 		}
 		xfrm_state_put(rev_x);
 		PDEBUG("\tkref is now : %d\n",rctx->kref.refcount.counter);
-		/*Generating netevent notification.
+		/*Generating netevent notification. TOMOVE
 		  The binary trick for path_indices aims at setting 
 		  consecutive numbers from 1 to npaths for the currently
 		  available paths. That is, if 5 paths are available,
@@ -621,6 +632,7 @@ static int xfrm_input_ct(struct sk_buff *skb, __u64 ct)
 		x = NULL;
 		goto drop;
 	}
+
 	nh = x->type->input(x, skb);
 	if (nh <= 0) {
 		spin_unlock(&x->lock);

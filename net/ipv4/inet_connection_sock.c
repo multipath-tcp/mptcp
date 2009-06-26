@@ -272,6 +272,7 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 		mpcb=mtcp_alloc_mpcb();
 		tp->path_index=0;
 		mtcp_add_sock(mpcb,tp);
+		mtcp_update_metasocket(newsk);
 	}
 #endif
 

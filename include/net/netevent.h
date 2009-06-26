@@ -21,10 +21,9 @@ struct netevent_redirect {
 	struct dst_entry *new;
 };
 
-/*For the moment this is only supported for IPv6, the path update
-  notification indicates that the path underlying a given ULID pair
-  (the IP address pair used as identifiers at the socket layer) has
-  changed. */
+/*For the moment this is only supported for IPv6
+  This indicates that new paths are available for the given 
+  local and remote ulids. */
 struct ulid_pair {
 	struct in6_addr* local;
 	struct in6_addr* remote;

@@ -92,7 +92,7 @@ struct sk_buff* shim6_alloc_netlink_skb(int pld_len,int type,int gfp);
 #define NETLINK_SHIM6 20
 #endif
 
-extern int nlsd; /*Netlink socket descriptor*/
+extern int shim6_nlsd,pm_nlsd; /*Netlink socket descriptors*/
 
 /*Alloc @size bytes in a new netlink message. @data is filled with a pointer
  * to the data part of the message; @msg is filled with a pointer to the
@@ -111,6 +111,12 @@ int netlink_alloc_send(int size, int type, void** data, struct nlmsghdr** msg);
  */
 int netlink_alloc_rcv(int size, struct nlmsghdr** nlhdr, struct msghdr* msg,
 		      struct iovec* iov);
+
+/* Sends @msg, then frees the memory used by msg. 
+ * @group is either NETLINK_PM or NETLINK_SHIM6
+ * -1 is returned in case of problem, but in any case the memory is freed
+ */
+int netlink_send(struct nlmsghdr* nlhdr, int group);
 
 int netlink_init(void);
 

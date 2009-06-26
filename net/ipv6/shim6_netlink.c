@@ -59,7 +59,6 @@ struct sk_buff* shim6_alloc_netlink_skb(int pld_len,int type,int gfp)
 	return NULL;
 }
 
-
 /*Netlink initialization. This may be called ONLY
   by shim6_init (shim6.c) */
 int __init shim6_netlink_init(void) 

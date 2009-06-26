@@ -1019,7 +1019,6 @@ static void __xfrm_state_insert(struct xfrm_state *x)
 	if (x->id.spi) {
 		h = xfrm_spi_hash(&x->id.daddr, x->id.spi, x->id.proto,
 				  x->props.family);
-
 		hlist_add_head(&x->byspi, xfrm_state_byspi+h);
 	}
 

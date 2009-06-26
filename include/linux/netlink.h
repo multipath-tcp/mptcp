@@ -25,6 +25,7 @@
 #define NETLINK_SCSITRANSPORT	18	/* SCSI Transports */
 #define NETLINK_ECRYPTFS	19
 #define NETLINK_SHIM6           20      /* Communication with shim6d daemon */
+#define NETLINK_PM              21      /* Communication with user space PM */
 
 #define MAX_LINKS 32		
 
