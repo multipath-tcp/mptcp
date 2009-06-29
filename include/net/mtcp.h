@@ -21,6 +21,9 @@
 #include <linux/tcp_options.h>
 #include <linux/notifier.h>
 #include <linux/xfrm.h>
+#include <linux/aio.h>
+#include <linux/net.h>
+#include <linux/socket.h>
 
 /*Macro for activation/deactivation of debug messages*/
 
@@ -80,11 +83,21 @@ struct multipath_pcb {
 
 	struct multipath_options  received_options;
 	struct tcp_options_received tcp_opt;
-	
-	/*user data, unpacketized*/
+
+	__u32    write_seq;  /*data sequence number, counts the number of 
+			       bytes the user has written so far */
+
+	/*user data, unpacketized
+	  This is a circular buffer, data is stored in the "subbuffer"
+	  starting at byte index wb_start with the write_buffer,
+	  with length wb_length. Uppon mpcb init, the size
+	  of the write buffer is stored in wb_size */
 	char*                     write_buffer;
-	/*user data counters;*/
-	int                       wb_size,wb_start,wb_end;
+	/*wb_size: size of the circular sending buffer
+	  wb_start: index of the first byte of pending data in the buffer
+	  wb_length: number of bytes occupied by the pending data.
+	             of course, it never exceeds wb_size*/
+	int                       wb_size,wb_start,wb_length;
 	
 	/*remember user flags*/
 	struct flag_stack*        flags;
@@ -108,11 +121,13 @@ struct multipath_pcb {
 
 #define mpcb_from_tcpsock(tp) (tp->mpcb)
 
-struct multipath_pcb* mtcp_alloc_mpcb(uint8_t flags);
+struct multipath_pcb* mtcp_alloc_mpcb(void);
 void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp);
 struct multipath_pcb* mtcp_lookup_mpcb(int sd);
 void mtcp_reset_options(struct multipath_options* mopt);
 void mtcp_update_metasocket(struct sock *sock);
+int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
+		 size_t size);
 int mtcpv6_init(void);
 
 

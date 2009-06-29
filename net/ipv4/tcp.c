@@ -810,6 +810,14 @@ static inline int select_size(struct sock *sk)
 	return tmp;
 }
 
+
+/**
+ * In the original version of tcp_sendmsg, size is not used.
+ * If CONFIG_MTCP is set, size is interpreted as the offset inside the message
+ * to copy from. (that is, byte 0 to size-1 are simply ignored.
+ * Moreover, in an MTCP context, this function only eats what it can reasonably
+ * take, knowing that another subsocket can eat the rest.
+ */
 int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		size_t size)
 {
@@ -821,6 +829,10 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	int mss_now, size_goal;
 	int err, copied;
 	long timeo;
+#ifdef CONFIG_MTCP
+	/*1 when the offset in the message is correctly skipped*/
+	int skipped=0;        
+#endif
 
 	lock_sock(sk);
 	TCP_CHECK_TIMER(sk);
@@ -852,7 +864,22 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		int seglen = iov->iov_len;
 		unsigned char __user *from = iov->iov_base;
 
-		iov++;
+		iov++;						
+		
+#ifdef CONFIG_MTCP
+		/*Skipping the offset (stored in the size argument)*/
+		if (!skipped) {
+			if (seglen>=size) {
+				seglen-=size;
+				from+=size;
+				skipped=1;
+			}
+			else {
+				size-=seglen;
+				continue;
+			}
+		}
+#endif
 
 		while (seglen > 0) {
 			int copy;

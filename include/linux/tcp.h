@@ -395,6 +395,10 @@ struct tcp_sock {
 #ifdef CONFIG_MTCP
 	struct multipath_pcb    *mpcb;
 	int                     path_index;
+	uint8_t                 mtcp_flags;
+#define MTCP_CURRENT_SUBFLOW 0x1 /*This socket is selected as the current 
+				   subflow the one that was lastly used to 
+				   transmit data*/
 	struct tcp_sock         *next; /*Next subflow socket*/
 #endif
 };

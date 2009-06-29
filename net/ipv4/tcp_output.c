@@ -350,6 +350,7 @@ static void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags)
 #define OPTION_MD5		(1 << 2)
 #define OPTION_MULTIPATH        (1 << 3)
 #define OPTION_TOKEN            (1 << 4)
+#define OPTION_DATA_SEQ         (1 << 5)
 
 struct tcp_out_options {
 	u8 options;		/* bit field of OPTION_* */
@@ -357,6 +358,7 @@ struct tcp_out_options {
 	u8 num_sack_blocks;	/* number of SACK blocks to include */
 	u16 mss;		/* 0 to disable */
 	__u32 tsval, tsecr;	/* need to include OPTION_TS */
+	__u32 data_seq;         /* data sequence number, for MTCP */
 };
 
 static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
@@ -432,10 +434,18 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			tp->rx_opt.eff_sacks--;
 		}
 	}
+#ifdef CONFIG_MTCP
 	if (unlikely(OPTION_MULTIPATH & opts->options)) {
 		*ptr++ = htonl((TCPOPT_MULTIPATH << 24) |
 			       (TCPOLEN_MULTIPATH << 16));
 	}
+	if (likely(OPTION_DATA_SEQ & opts->options)) {
+		*ptr++ = htonl((TCPOPT_DATA_SEQ << 24) |
+			       (TCPOLEN_DATA_SEQ << 16));
+		*ptr++ = htonl(opts->data_seq);
+		
+	}
+#endif
 }
 
 static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
@@ -574,6 +584,13 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		size += TCPOLEN_SACK_BASE_ALIGNED +
 			opts->num_sack_blocks * TCPOLEN_SACK_PERBLOCK;
 	}
+#ifdef CONFIG_MTCP
+	{
+		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+		opts->options |= OPTION_DATA_SEQ;
+		opts->data_seq=mpcb->write_seq;
+	}
+#endif
 
 	return size;
 }
@@ -689,6 +706,8 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	if (after(tcb->end_seq, tp->snd_nxt) || tcb->seq == tcb->end_seq)
 		TCP_INC_STATS(sock_net(sk), TCP_MIB_OUTSEGS);
 
+	skb->path_index=tp->path_index;
+		
 	err = icsk->icsk_af_ops->queue_xmit(skb, 0);
 	if (likely(err <= 0))
 		return err;
@@ -2411,7 +2430,6 @@ int tcp_connect(struct sock *sk)
 	sk->sk_wmem_queued += buff->truesize;
 	sk_mem_charge(sk, buff->truesize);
 	tp->packets_out += tcp_skb_pcount(buff);
-	buff->path_index=tp->path_index;
 	
 	tcp_transmit_skb(sk, buff, 1, GFP_KERNEL);
 

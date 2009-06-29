@@ -857,7 +857,11 @@ const struct proto_ops inet_stream_ops = {
 	.shutdown	   = inet_shutdown,
 	.setsockopt	   = sock_common_setsockopt,
 	.getsockopt	   = sock_common_getsockopt,
+#ifdef CONFIG_MTCP
+	.sendmsg	   = mtcp_sendmsg,
+#else
 	.sendmsg	   = tcp_sendmsg,
+#endif
 	.recvmsg	   = sock_common_recvmsg,
 	.mmap		   = sock_no_mmap,
 	.sendpage	   = tcp_sendpage,

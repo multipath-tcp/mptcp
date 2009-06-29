@@ -21,11 +21,13 @@
 #include <net/mtcp.h>
 #include <net/netevent.h>
 #include <net/ipv6.h>
+#include <net/tcp.h>
 #include <linux/list.h>
 #include <linux/jhash.h>
 #include <linux/tcp.h>
 #include <linux/net.h>
 #include <linux/in.h>
+#include <linux/random.h>
 #include <asm/atomic.h>
 
 struct pcb_lookup_node {
@@ -174,6 +176,7 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			}
 			newtp->path_index=i+1;
 			newtp->mpcb = mpcb;
+			newtp->mtcp_flags=0;
        
 			retval = sock->ops->bind(sock, loculid, ulid_size);
 			if (retval<0) goto fail_bind;
@@ -223,7 +226,7 @@ static int netevent_callback(struct notifier_block *self, unsigned long event,
         return 0;
 }
 
-struct multipath_pcb* mtcp_alloc_mpcb(uint8_t flags)
+struct multipath_pcb* mtcp_alloc_mpcb()
 {
 	struct multipath_pcb * mpcb = kmalloc(
 		sizeof(struct multipath_pcb),GFP_KERNEL);
@@ -236,21 +239,19 @@ struct multipath_pcb* mtcp_alloc_mpcb(uint8_t flags)
 	skb_queue_head_init(&mpcb->error_queue);
 	skb_queue_head_init(&mpcb->out_of_order_queue);
 	
-	mpcb->write_buffer = kmalloc(sysctl_wmem_max,GFP_KERNEL);
-	mpcb->wb_size = sysctl_wmem_max;
-	
 	mpcb->rcvbuf = sysctl_rmem_default;
 	mpcb->sndbuf = sysctl_wmem_default;
 	
 	mpcb->state = TCPF_CLOSE;
 
-	mpcb->mtcp_flags=flags;
-	
 	kref_init(&mpcb->kref);
 	spin_lock_init(&mpcb->lock);
 	
 	mpcb->nb.notifier_call=netevent_callback;
 	register_netevent_notifier(&mpcb->nb);
+
+	/*Choose a random initial seqnum*/
+	mpcb->write_seq=get_random_int();
 	
 	return mpcb;
 }
@@ -276,8 +277,9 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 	tp->next=mpcb->connection_list;
 	mpcb->connection_list=tp;
 	
-	mpcb->cnt_subflows++;	
+	mpcb->cnt_subflows++;
 	spin_unlock_bh(&mpcb->lock);
+	
 }
 
 /**
@@ -318,6 +320,70 @@ void mtcp_update_metasocket(struct sock *sk)
 	}
 }
 
+/*This is the scheduler. This function decides on which flow to send
+  a given MSS. Currently we choose a simple round-robin policy.*/
+static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb) 
+{
+	struct tcp_sock *tp, *sel_tp;
+	for (tp=mpcb->connection_list;tp;tp=tp->next) {
+		if (tp->mtcp_flags & MTCP_CURRENT_SUBFLOW) {
+			/*Find the next tcp sock to round robin*/
+			sel_tp=(tp->next)?tp->next:mpcb->connection_list;
+			/*Move the flag to it*/
+			tp->mtcp_flags&=~MTCP_CURRENT_SUBFLOW;
+			sel_tp->mtcp_flags|=MTCP_CURRENT_SUBFLOW;
+			return sel_tp;
+		}
+	}
+	/*No socket has the flag yet, take the first one available*/
+	sel_tp=mpcb->connection_list;
+	sel_tp->mtcp_flags|=MTCP_CURRENT_SUBFLOW;	
+	return sel_tp;
+}
+
+int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
+		 size_t size)
+{
+	struct sock *master_sk = sock->sk;
+	struct tcp_sock *tp;
+	struct iovec *iov;
+	struct multipath_pcb *mpcb;
+	int iovlen,copied,msg_size;
+
+	mpcb=mpcb_from_tcpsock(tcp_sk(master_sk));
+	if (mpcb==NULL){
+		printk(KERN_ERR "MPCB null in %s\n",__FUNCTION__);
+		BUG();
+	}
+	
+	/* Compute the total number of bytes stored in the message*/
+	iovlen=msg->msg_iovlen;
+	iov=msg->msg_iov;
+	msg_size=0;
+	while(--iovlen>=0) {
+		msg_size+=iov->iov_len;
+		iov++;
+	}
+	
+	/*Until everything is sent, we round-robin on the subsockets
+	  TODO: This part MUST be able to sleep.(to avoid looping forever)
+	  Currently it sleeps inside tcp_sendmsg, but it is not the most
+	  efficient, since during that time, we could try sending on other
+	  subsockets*/
+	copied=0;
+	while (copied<msg_size) {
+		/*Find a candidate socket for eating data*/
+		tp=get_available_subflow(mpcb);
+		/*Let the selected socket eat*/
+		copied+=tcp_sendmsg(NULL,((struct sock*)tp)->sk_socket, 
+				    msg, copied);
+		/*Advance the dataseq value*/
+		mpcb->write_seq += copied;
+	}
+
+	return copied;
+}
+
 /*General initialization of MTCP
  */
 static int __init mtcp_init(void) 
@@ -336,3 +402,5 @@ static int __init mtcp_init(void)
 module_init(mtcp_init);
 
 MODULE_LICENSE("GPL");
+
+EXPORT_SYMBOL(mtcp_sendmsg);
