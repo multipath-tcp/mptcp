@@ -44,17 +44,18 @@ static void pm_netlink_rcv(struct sk_buff *skb)
 
 	switch(nlh->nlmsg_type) {
 	case PM_NL_PATHUPDATE:
-		if (nlmsglen!=sizeof(*data)) 
+		if (nlmsglen<sizeof(*data)) {
+			printk(KERN_ERR "nlmsglen:%d\n",nlmsglen);
 			return;
+		}
 		data=nlmsg_data(nlh);
 		up.local=&data->local;
 		up.remote=&data->remote;
 		up.path_indices=data->path_indices;
 		call_netevent_notifiers(NETEVENT_PATH_UPDATEV6, &up);
 		break;
-	}       
+	}
 }
-
 
 
 int __init pm_netlink_init(void)

@@ -177,7 +177,8 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
        
 			retval = sock->ops->bind(sock, loculid, ulid_size);
 			if (retval<0) goto fail_bind;
-			retval = sock->ops->connect(sock,remulid,ulid_size,0);
+			retval = sock->ops->connect(sock,remulid,
+						    ulid_size,0);
 			if (retval<0) goto fail_connect;
 			
 			mtcp_add_sock(mpcb,newtp);		
@@ -222,34 +223,36 @@ static int netevent_callback(struct notifier_block *self, unsigned long event,
         return 0;
 }
 
-struct multipath_pcb* mtcp_alloc_mpcb(void)
+struct multipath_pcb* mtcp_alloc_mpcb(uint8_t flags)
 {
-  struct multipath_pcb * mpcb = kmalloc(
-	  sizeof(struct multipath_pcb),GFP_KERNEL);
+	struct multipath_pcb * mpcb = kmalloc(
+		sizeof(struct multipath_pcb),GFP_KERNEL);
 	
-  memset(mpcb,sizeof(struct multipath_pcb),0);
+	memset(mpcb,sizeof(struct multipath_pcb),0);
+	
+	skb_queue_head_init(&mpcb->receive_queue);
+	skb_queue_head_init(&mpcb->write_queue);
+	skb_queue_head_init(&mpcb->retransmit_queue);
+	skb_queue_head_init(&mpcb->error_queue);
+	skb_queue_head_init(&mpcb->out_of_order_queue);
+	
+	mpcb->write_buffer = kmalloc(sysctl_wmem_max,GFP_KERNEL);
+	mpcb->wb_size = sysctl_wmem_max;
+	
+	mpcb->rcvbuf = sysctl_rmem_default;
+	mpcb->sndbuf = sysctl_wmem_default;
+	
+	mpcb->state = TCPF_CLOSE;
 
-  skb_queue_head_init(&mpcb->receive_queue);
-  skb_queue_head_init(&mpcb->write_queue);
-  skb_queue_head_init(&mpcb->retransmit_queue);
-  skb_queue_head_init(&mpcb->error_queue);
-  skb_queue_head_init(&mpcb->out_of_order_queue);
-  
-  mpcb->write_buffer = kmalloc(sysctl_wmem_max,GFP_KERNEL);
-  mpcb->wb_size = sysctl_wmem_max;
-
-  mpcb->rcvbuf = sysctl_rmem_default;
-  mpcb->sndbuf = sysctl_wmem_default;
-  
-  mpcb->state = TCPF_CLOSE;
-  
-  kref_init(&mpcb->kref);
-  spin_lock_init(&mpcb->lock);
-
-  mpcb->nb.notifier_call=netevent_callback;
-  register_netevent_notifier(&mpcb->nb);
-
-  return mpcb;
+	mpcb->mtcp_flags=flags;
+	
+	kref_init(&mpcb->kref);
+	spin_lock_init(&mpcb->lock);
+	
+	mpcb->nb.notifier_call=netevent_callback;
+	register_netevent_notifier(&mpcb->nb);
+	
+	return mpcb;
 }
 
 static void mpcb_release(struct kref* kref)

@@ -88,6 +88,10 @@ struct multipath_pcb {
 	
 	/*remember user flags*/
 	struct flag_stack*        flags;
+	uint8_t                   mtcp_flags;
+#define MTCP_ACCEPT 0x1  /*the user socket is in accept mode
+			   keep accept mode for subsockets
+			   (that is, we don't make a connect)*/
 	
 	struct sk_buff_head       receive_queue;/*received data*/
 	struct sk_buff_head       write_queue;/*sent stuff, waiting for ack*/
@@ -104,7 +108,7 @@ struct multipath_pcb {
 
 #define mpcb_from_tcpsock(tp) (tp->mpcb)
 
-struct multipath_pcb* mtcp_alloc_mpcb(void);
+struct multipath_pcb* mtcp_alloc_mpcb(uint8_t flags);
 void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp);
 struct multipath_pcb* mtcp_lookup_mpcb(int sd);
 void mtcp_reset_options(struct multipath_options* mopt);

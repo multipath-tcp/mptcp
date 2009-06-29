@@ -5133,6 +5133,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		 * is initialized. */
 		tp->copied_seq = tp->rcv_nxt;
 		smp_mb();
+
 		tcp_set_state(sk, TCP_ESTABLISHED);
 
 		security_inet_conn_established(sk, skb);

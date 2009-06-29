@@ -1912,7 +1912,7 @@ static int tcp_v6_init_sock(struct sock *sk)
 	/*Init the MTCP mpcb*/
 	{
 		struct multipath_pcb *mpcb;		
-		mpcb=mtcp_alloc_mpcb();
+		mpcb=mtcp_alloc_mpcb(0);
 		tp->path_index=0;
 		mtcp_add_sock(mpcb,tp);
 	}

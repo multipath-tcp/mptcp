@@ -359,7 +359,6 @@ static int shim6_init_state(struct xfrm_state *x)
 	
 	/*Trying to find an xfrm state for the reverse direction*/
 	if (x->shim6->flags & SHIM6_DATA_INBOUND) {
-		struct ulid_pair up;
 		rev_x=xfrm_state_lookup_byaddr(
 			(xfrm_address_t*)&x->shim6->paths[0].remote,
 			(xfrm_address_t*)&x->shim6->paths[0].local,
