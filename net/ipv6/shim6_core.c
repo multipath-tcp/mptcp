@@ -389,16 +389,6 @@ static int shim6_init_state(struct xfrm_state *x)
 		}
 		xfrm_state_put(rev_x);
 		PDEBUG("\tkref is now : %d\n",rctx->kref.refcount.counter);
-		/*Generating netevent notification. TOMOVE
-		  The binary trick for path_indices aims at setting 
-		  consecutive numbers from 1 to npaths for the currently
-		  available paths. That is, if 5 paths are available,
-		  this sets the 5 last bits of the bitmap to 1. This indicate
-		  to MPS that path 1,2,3,4,5 can be used*/
-		up.local=&x->shim6->paths[0].local;
-		up.remote=&x->shim6->paths[0].remote;
-		up.path_indices=(uint32_t)(-1)>>(32-rev_x->shim6->npaths);
-		call_netevent_notifiers(NETEVENT_PATH_UPDATEV6, &up);
 	}
 	else if (!(x->shim6->flags & SHIM6_DATA_UPD)) {		
 		/*Alloc new memory for the REAP context and initialize it*/

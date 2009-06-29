@@ -20,35 +20,39 @@
 #include <linux/module.h>
 #include <net/netlink.h>
 #include <net/net_namespace.h>
+#include <net/netevent.h>
 
 #include <linux/pm_netlink.h>
 
 struct sock *pmnl_sk;
 
-static int pm_netlink_cb(struct sk_buff* skb, struct nlmsghdr* nlh)
+static void pm_netlink_rcv(struct sk_buff *skb)
 {
+	struct nlmsghdr *nlh;
+	int skblen,nlmsglen;
 	struct nl_ulid_pair *data;
+	struct ulid_pair up;
+		
+	skblen = skb->len;
+	if (skblen < sizeof(*nlh))
+		return;
 	
-	
-	/*process netlink message pointed to by skb->data*/
+	nlh = nlmsg_hdr(skb);
+	nlmsglen = nlh->nlmsg_len;
+	if (nlmsglen < sizeof(*nlh) || skblen < nlmsglen)
+		return;
+
 	switch(nlh->nlmsg_type) {
 	case PM_NL_PATHUPDATE:
-		
-		
-		return 0;
+		if (nlmsglen!=sizeof(*data)) 
+			return;
+		data=nlmsg_data(nlh);
+		up.local=&data->local;
+		up.remote=&data->remote;
+		up.path_indices=data->path_indices;
+		call_netevent_notifiers(NETEVENT_PATH_UPDATEV6, &up);
 		break;
-	} 
-	return -1;
-}
-
-
-static void pm_netlink_rcv(struct sock *sk, int len)
-{
-	unsigned int qlen=0;
-	
-	do {
-		netlink_run_queue(sk, &qlen, &pm_netlink_cb);
-	} while(qlen);	
+	}       
 }
 
 
