@@ -3437,7 +3437,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 #endif
 
 #ifdef CONFIG_MTCP
-			case TCPOPT_MULTIPATH:
+			case TCPOPT_MPC:
 				if (!mopt) {
 					PDEBUG("Multipath Option Enabled "
 					       "but options NULL\n");
@@ -3464,7 +3464,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				PDEBUG("addaddress opt not supported yet\n");
 				break;
 #endif /*CONFIG_MTCP_PM*/				
-			case TCPOPT_DATA_SEQ:
+			case TCPOPT_DSN:
 				if (!mopt) {
 					PDEBUG("Dataseq Option present "
 					       "but options NULL\n");

@@ -348,9 +348,9 @@ static void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags)
 #define OPTION_SACK_ADVERTISE	(1 << 0)
 #define OPTION_TS		(1 << 1)
 #define OPTION_MD5		(1 << 2)
-#define OPTION_MULTIPATH        (1 << 3)
+#define OPTION_MPC              (1 << 3)
 #define OPTION_TOKEN            (1 << 4)
-#define OPTION_DATA_SEQ         (1 << 5)
+#define OPTION_DSN              (1 << 5)
 
 struct tcp_out_options {
 	u8 options;		/* bit field of OPTION_* */
@@ -435,13 +435,15 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		}
 	}
 #ifdef CONFIG_MTCP
-	if (unlikely(OPTION_MULTIPATH & opts->options)) {
-		*ptr++ = htonl((TCPOPT_MULTIPATH << 24) |
-			       (TCPOLEN_MULTIPATH << 16));
+	if (unlikely(OPTION_MPC & opts->options)) {
+		*ptr++ = htonl((TCPOPT_MPC << 24) |
+			       (TCPOLEN_MPC << 16));
 	}
-	if (likely(OPTION_DATA_SEQ & opts->options)) {
-		*ptr++ = htonl((TCPOPT_DATA_SEQ << 24) |
-			       (TCPOLEN_DATA_SEQ << 16));
+	if (likely(OPTION_DSN & opts->options)) {
+		*ptr++ = htonl((TCPOPT_NOP << 24) |
+			       (TCPOPT_NOP << 16) |
+			       (TCPOPT_DSN << 8) |
+			       TCPOLEN_DSN);
 		*ptr++ = htonl(opts->data_seq);
 		
 	}
@@ -493,8 +495,8 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 			size += TCPOLEN_SACKPERM_ALIGNED;
 	}
 #ifdef CONFIG_MTCP
-	opts->options |= OPTION_MULTIPATH;
-	size+=TCPOLEN_MULTIPATH_ALIGNED;
+	opts->options |= OPTION_MPC;
+	size+=TCPOLEN_MPC_ALIGNED;
 #endif
 	return size;
 }
@@ -545,8 +547,8 @@ static unsigned tcp_synack_options(struct sock *sk,
 	}
 
 #ifdef CONFIG_MTCP
-	opts->options |= OPTION_MULTIPATH;
-	size+=TCPOLEN_MULTIPATH_ALIGNED;
+	opts->options |= OPTION_MPC;
+	size+=TCPOLEN_MPC_ALIGNED;
 #endif
 	return size;
 }
@@ -587,8 +589,9 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 #ifdef CONFIG_MTCP
 	{
 		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
-		opts->options |= OPTION_DATA_SEQ;
+		opts->options |= OPTION_DSN;
 		opts->data_seq=mpcb->write_seq;
+		size += TCPOLEN_DSN_ALIGNED;
 	}
 #endif
 

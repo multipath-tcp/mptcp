@@ -167,14 +167,15 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOPT_TIMESTAMP	8	/* Better RTT estimations/PAWS */
 #define TCPOPT_MD5SIG		19	/* MD5 Signature (RFC2385) */
 
-#define TCPOPT_MULTIPATH	30
-#define TCPOPT_DATA_SEQ		31
-#define TCPOPT_DATA_FIN		32
-#define TCPOPT_GET_OVER_IT 	33
+#define TCPOPT_MPC   	        30
+#define TCPOPT_DSN		31
+#define TCPOPT_DFIN		32
+#define TCPOPT_RESYNC   	33
 
 #define TCPOPT_TOKEN            60
-#define TCPOPT_ADDADDRESS       61
-#define TCPOPT_NEW_SUBFLOW	62
+#define TCPOPT_ADDR             61
+#define TCPOPT_REMADR           62
+#define TCPOPT_NEW_SUBFLOW	63
 
 /*
  *     TCP option lengthsx
@@ -185,8 +186,8 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_SACK_PERM      2
 #define TCPOLEN_TIMESTAMP      10
 #define TCPOLEN_MD5SIG         18
-#define TCPOLEN_MULTIPATH      4
-#define TCPOLEN_DATA_SEQ       8
+#define TCPOLEN_MPC            4
+#define TCPOLEN_DSN            6
 
 /* But this is what stacks really send out. */
 #define TCPOLEN_TSTAMP_ALIGNED		12
@@ -197,7 +198,9 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_SACK_PERBLOCK		8
 #define TCPOLEN_MD5SIG_ALIGNED		20
 #define TCPOLEN_MSS_ALIGNED		4
-#define TCPOLEN_MULTIPATH_ALIGNED       4
+#define TCPOLEN_MPC_ALIGNED             4
+#define TCPOLEN_DSN_ALIGNED             8
+
 
 /* Flags in tp->nonagle */
 #define TCP_NAGLE_OFF		1	/* Nagle's algo is disabled */
