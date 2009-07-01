@@ -3443,7 +3443,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 					       "but options NULL\n");
 					break;
 				}
-				if (opsize!=4) {
+				if (opsize!=TCPOLEN_MPC) {
 					PDEBUG("multipath opt:bad option "
 					       "size\n");
 					break;
@@ -3470,7 +3470,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 					       "but options NULL\n");
 					break;
 				}
-				if (opsize!=4) {
+				if (opsize!=TCPOLEN_DSN) {
 					PDEBUG("dataseq opt:bad option "
 					       "size\n");
 					break;
