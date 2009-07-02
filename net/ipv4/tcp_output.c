@@ -497,6 +497,8 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 #ifdef CONFIG_MTCP
 	opts->options |= OPTION_MPC;
 	size+=TCPOLEN_MPC_ALIGNED;
+	opts->options |= OPTION_DSN;
+	size+=TCPOLEN_DSN_ALIGNED;
 #endif
 	return size;
 }
@@ -549,6 +551,8 @@ static unsigned tcp_synack_options(struct sock *sk,
 #ifdef CONFIG_MTCP
 	opts->options |= OPTION_MPC;
 	size+=TCPOLEN_MPC_ALIGNED;
+	opts->options |= OPTION_DSN;
+	size+=TCPOLEN_DSN_ALIGNED;
 #endif
 	return size;
 }
