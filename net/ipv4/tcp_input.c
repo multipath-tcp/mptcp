@@ -3359,7 +3359,8 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 
 	ptr = (unsigned char *)(th + 1);
 	opt_rx->saw_tstamp = 0;
-
+	if (mopt) memset(mopt,0,sizeof(*mopt));
+	
 	while (length > 0) {
 		int opcode = *ptr++;
 		int opsize;
@@ -3450,6 +3451,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				}
 				PDEBUG("recvd multipath opt\n");
 				mtcp_reset_options(mopt);
+				mopt->saw_mpc=1;
 				break;
 
 #ifdef CONFIG_MTCP_PM
@@ -3477,6 +3479,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				}
 				
 				mopt->data_seq = ntohl(*(uint32_t*)ptr);
+				mopt->saw_dsn=1;
 				break;
 			
 #endif /* CONFIG_MTCP */
@@ -3516,6 +3519,12 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 		PDEBUG("mpcb null in fast parse options\n");
 	tcp_parse_options(skb, &tp->rx_opt,mpcb?&mpcb->received_options:NULL, 
 			  1);
+	if (unlikely(mpcb && mpcb->received_options.saw_mpc && 
+		     mpcb->received_options.saw_dsn)) {
+		/*This is the beginning of the multipath session, init
+		  the dsn value*/
+		mpcb->copied_seq=mpcb->received_options.data_seq+1;
+	}
 	return 1;
 }
 
@@ -4085,7 +4094,7 @@ queue_and_out:
 			__kfree_skb(skb);
 		else if (!sock_flag(sk, SOCK_DEAD))
 #ifdef CONFIG_MTCP			
-			
+			mtcp_data_ready(sk);
 #else
 			sk->sk_data_ready(sk, 0);
 #endif
@@ -5041,6 +5050,13 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 	}
 
 	tcp_parse_options(skb, &tp->rx_opt,&mpcb->received_options, 0);
+
+	if (unlikely(mpcb && mpcb->received_options.saw_mpc && 
+		     mpcb->received_options.saw_dsn)) {
+		/*This is the beginning of the multipath session, init
+		  the dsn value*/
+		mpcb->copied_seq=mpcb->received_options.data_seq+1;
+	}
 
 	if (th->ack) {
 		/* rfc793:

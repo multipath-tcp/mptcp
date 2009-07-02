@@ -46,7 +46,7 @@ static rwlock_t mtcp_hash_lock; /*hashtable protection*/
 static atomic_t conn_no;
 
 
-void mtcp_reset_options(struct multipath_options* mopt){
+inline void mtcp_reset_options(struct multipath_options* mopt){
 #ifdef CONFIG_MTCP_PM
 	mopt->remote_token = -1;
 	mopt->local_token = -1;
@@ -387,13 +387,13 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 
 void mtcp_data_ready(struct sock *sk)
 {
-	struct sk_buff *skb;
-	u32 *seq;
+/*	struct sk_buff *skb;
+	u32 *dataseq;
 
 	while ((skb = skb_peek(&sk->sk_receive_queue))!=NULL) {
 		u32 offset;
 		offset = *seq - TCP_SKB_CB(skb)->seq;
-	}
+		}*/
 }
 
 /*General initialization of MTCP

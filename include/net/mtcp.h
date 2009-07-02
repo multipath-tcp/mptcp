@@ -39,15 +39,17 @@
 #define hash_fd(fd) \
 	jhash_1word(fd,0)%MTCP_HASH_SIZE
 
-struct multipath_options {
+struct multipath_options {	
 #ifdef CONFIG_MTCP_PM
-	__u32    remote_token;
-	__u32    local_token;
-	__u8     ip_count;
-	__u32*   ip_list;
-	__u8     list_rcvd:1; /*1 if IP list has been received*/
+	u32    remote_token;
+	u32    local_token;
+	u8     ip_count;
+	u32*   ip_list;
+	u8     list_rcvd:1; /*1 if IP list has been received*/
 #endif
-	__u32    data_seq;
+	u32    data_seq;
+	u8     saw_mpc:1,
+	       saw_dsn:1;	
 };
 
 extern struct proto mtcpsub_prot;

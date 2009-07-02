@@ -445,7 +445,6 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			       (TCPOPT_DSN << 8) |
 			       TCPOLEN_DSN);
 		*ptr++ = htonl(opts->data_seq);
-		
 	}
 #endif
 }
@@ -495,10 +494,17 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 			size += TCPOLEN_SACKPERM_ALIGNED;
 	}
 #ifdef CONFIG_MTCP
-	opts->options |= OPTION_MPC;
-	size+=TCPOLEN_MPC_ALIGNED;
-	opts->options |= OPTION_DSN;
-	size+=TCPOLEN_DSN_ALIGNED;
+	{
+		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+		
+		opts->options |= OPTION_MPC;
+		size+=TCPOLEN_MPC_ALIGNED;
+		opts->options |= OPTION_DSN;
+		size+=TCPOLEN_DSN_ALIGNED;
+		opts->data_seq=mpcb->write_seq++; /*First data byte is 
+						    initial data seq + 1 
+						    (IDSN+1)*/
+	}
 #endif
 	return size;
 }
@@ -549,10 +555,17 @@ static unsigned tcp_synack_options(struct sock *sk,
 	}
 
 #ifdef CONFIG_MTCP
-	opts->options |= OPTION_MPC;
-	size+=TCPOLEN_MPC_ALIGNED;
-	opts->options |= OPTION_DSN;
-	size+=TCPOLEN_DSN_ALIGNED;
+	{
+		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
+		
+		opts->options |= OPTION_MPC;
+		size+=TCPOLEN_MPC_ALIGNED;
+		opts->options |= OPTION_DSN;
+		size+=TCPOLEN_DSN_ALIGNED;
+		opts->data_seq=mpcb->write_seq++; /*First data byte is 
+						  initial data seq + 1 
+						  (IDSN+1)*/
+	}
 #endif
 	return size;
 }
@@ -648,7 +661,7 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	tp = tcp_sk(sk);
 	tcb = TCP_SKB_CB(skb);
 	memset(&opts, 0, sizeof(opts));
-
+	
 	if (unlikely(tcb->flags & TCPCB_FLAG_SYN))
 		tcp_options_size = tcp_syn_options(sk, skb, &opts, &md5);
 	else
@@ -2309,8 +2322,8 @@ struct sk_buff *tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 	tcp_header_size = tcp_synack_options(sk, req,
 					     dst_metric(dst, RTAX_ADVMSS),
 					     skb, &opts, &md5) +
-			  sizeof(struct tcphdr);
-
+		sizeof(struct tcphdr);       
+	
 	skb_push(skb, tcp_header_size);
 	skb_reset_transport_header(skb);
 
