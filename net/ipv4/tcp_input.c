@@ -4084,7 +4084,12 @@ queue_and_out:
 		if (eaten > 0)
 			__kfree_skb(skb);
 		else if (!sock_flag(sk, SOCK_DEAD))
+#ifdef CONFIG_MTCP			
+			
+#else
 			sk->sk_data_ready(sk, 0);
+#endif
+
 		return;
 	}
 

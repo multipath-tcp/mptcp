@@ -1500,6 +1500,12 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			/* __ Restore normal policy in scheduler __ */
 
 			if ((chunk = len - tp->ucopy.len) != 0) {
+#ifdef CONFIG_MTCP
+				/*For this first version of MTCP, we have
+				  disabled the backlog. So it is a bug 
+				  to arrive here*/
+				BUG();
+#endif
 				NET_ADD_STATS_USER(sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMBACKLOG, chunk);
 				len -= chunk;
 				copied += chunk;
@@ -1508,6 +1514,12 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			if (tp->rcv_nxt == tp->copied_seq &&
 			    !skb_queue_empty(&tp->ucopy.prequeue)) {
 do_prequeue:
+#ifdef CONFIG_MTCP
+				/* For this first version of MTCP, we have
+				   disabled the prequeue. So it is a bug 
+				   to arrive here */
+				BUG();
+#endif
 				tcp_prequeue_process(sk);
 
 				if ((chunk = len - tp->ucopy.len) != 0) {

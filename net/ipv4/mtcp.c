@@ -4,7 +4,7 @@
  *	Authors:
  *      Sébastien Barré		<sebastien.barre@uclouvain.be>
  *
- *      Based on an initial user space MTCP stack from Costin Raiciu.
+ *      Partially inspired from initial user space MTCP stack by Costin Raiciu.
  *
  *      date : June 09
  *
@@ -382,6 +382,18 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	}
 
 	return copied;
+}
+
+
+void mtcp_data_ready(struct sock *sk)
+{
+	struct sk_buff *skb;
+	u32 *seq;
+
+	while ((skb = skb_peek(&sk->sk_receive_queue))!=NULL) {
+		u32 offset;
+		offset = *seq - TCP_SKB_CB(skb)->seq;
+	}
 }
 
 /*General initialization of MTCP

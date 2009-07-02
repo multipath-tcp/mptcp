@@ -84,8 +84,9 @@ struct multipath_pcb {
 	struct multipath_options  received_options;
 	struct tcp_options_received tcp_opt;
 
-	__u32    write_seq;  /*data sequence number, counts the number of 
+	u32    write_seq;  /*data sequence number, counts the number of 
 			       bytes the user has written so far */
+	u32    copied_seq; /* Head of yet unread data		*/
 
 	/*user data, unpacketized
 	  This is a circular buffer, data is stored in the "subbuffer"
@@ -128,6 +129,7 @@ void mtcp_reset_options(struct multipath_options* mopt);
 void mtcp_update_metasocket(struct sock *sock);
 int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		 size_t size);
+void mtcp_data_ready(struct sock *sk);
 int mtcpv6_init(void);
 
 
