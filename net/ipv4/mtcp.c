@@ -226,12 +226,12 @@ static int netevent_callback(struct notifier_block *self, unsigned long event,
         return 0;
 }
 
-struct multipath_pcb* mtcp_alloc_mpcb()
+struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 {
 	struct multipath_pcb * mpcb = kmalloc(
 		sizeof(struct multipath_pcb),GFP_KERNEL);
 	
-	memset(mpcb,sizeof(struct multipath_pcb),0);
+	memset(mpcb,0,sizeof(struct multipath_pcb));
 	
 	skb_queue_head_init(&mpcb->receive_queue);
 	skb_queue_head_init(&mpcb->write_queue);
@@ -243,6 +243,8 @@ struct multipath_pcb* mtcp_alloc_mpcb()
 	mpcb->sndbuf = sysctl_wmem_default;
 	
 	mpcb->state = TCPF_CLOSE;
+
+	mpcb->master_sk=master_sk;
 
 	kref_init(&mpcb->kref);
 	spin_lock_init(&mpcb->lock);
@@ -278,8 +280,7 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 	mpcb->connection_list=tp;
 	
 	mpcb->cnt_subflows++;
-	spin_unlock_bh(&mpcb->lock);
-	
+	spin_unlock_bh(&mpcb->lock);	
 }
 
 /**
@@ -325,7 +326,7 @@ void mtcp_update_metasocket(struct sock *sk)
 static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb) 
 {
 	struct tcp_sock *tp, *sel_tp;
-	for (tp=mpcb->connection_list;tp;tp=tp->next) {
+	mtcp_for_each_tp(mpcb,tp)
 		if (tp->mtcp_flags & MTCP_CURRENT_SUBFLOW) {
 			/*Find the next tcp sock to round robin*/
 			sel_tp=(tp->next)?tp->next:mpcb->connection_list;
@@ -334,7 +335,6 @@ static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb)
 			sel_tp->mtcp_flags|=MTCP_CURRENT_SUBFLOW;
 			return sel_tp;
 		}
-	}
 	/*No socket has the flag yet, take the first one available*/
 	sel_tp=mpcb->connection_list;
 	sel_tp->mtcp_flags|=MTCP_CURRENT_SUBFLOW;	
@@ -384,16 +384,173 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	return copied;
 }
 
-
-void mtcp_data_ready(struct sock *sk)
+/**
+ * sk_wait_data - wait for data to arrive at sk_receive_queue
+ * on any of the subsockets attached to the mpcb
+ * @mpcb:  the mpcb to wait on
+ * @sk:    its master socket
+ * @timeo: for how long
+ *
+ * Now socket state including sk->sk_err is changed only under lock,
+ * hence we may omit checks after joining wait queue.
+ * We check receive queue before schedule() only as optimization;
+ * it is very likely that release_sock() added new data.
+ */
+int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
+		   long *timeo)
 {
-/*	struct sk_buff *skb;
-	u32 *dataseq;
+	int rc; struct sock *sk; struct tcp_sock *tp;
+	DEFINE_WAIT(wait);
 
-	while ((skb = skb_peek(&sk->sk_receive_queue))!=NULL) {
-		u32 offset;
-		offset = *seq - TCP_SKB_CB(skb)->seq;
-		}*/
+	prepare_to_wait(master_sk->sk_sleep, &wait, TASK_INTERRUPTIBLE);
+	mtcp_for_each_sk(mpcb,sk,tp)
+		set_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
+	rc = mtcp_wait_event_any_sk(mpcb, sk, timeo, 
+				    !skb_queue_empty(&sk->sk_receive_queue));
+	mtcp_for_each_sk(mpcb,sk,tp)
+		clear_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
+	finish_wait(master_sk->sk_sleep, &wait);
+	return rc;
+}
+
+static void mtcp_ofo_queue(struct sock *sk, struct msghdr *msg, size_t *len,
+			   u32 *data_seq, int *copied)
+{
+	struct tcp_sock *tp=tcp_sk(sk);
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+	struct sk_buff *skb;
+	int err;
+	u32 data_offset;
+	unsigned long used;
+	
+	while ((skb = skb_peek(&mpcb->out_of_order_queue)) != NULL) {
+		if (after(TCP_SKB_CB(skb)->data_seq, *data_seq))
+			break;
+				
+		if (!after(TCP_SKB_CB(skb)->end_data_seq, *data_seq)) {
+			PDEBUG("ofo packet was already received \n");
+			__skb_unlink(skb, &mpcb->out_of_order_queue);
+			__kfree_skb(skb);
+			continue;
+		}
+		PDEBUG("ofo delivery : nxt_data_seq %X data_seq %X - %X\n",
+		       *data_seq, TCP_SKB_CB(skb)->data_seq,
+		       TCP_SKB_CB(skb)->end_data_seq);
+		
+		__skb_unlink(skb, &mpcb->out_of_order_queue);
+		
+		/*The skb can be read by the app*/
+		data_offset= *data_seq - TCP_SKB_CB(skb)->data_seq;
+		if (tcp_hdr(skb)->syn)
+			data_offset--;
+		used = skb->len - data_offset;
+		if (*len < used)
+			used = *len;
+				
+		err=skb_copy_datagram_iovec(skb, data_offset,
+					    msg->msg_iov, used);
+		*copied+=used;
+		tcp_sk(skb->sk)->copied+=used;
+		__kfree_skb(skb);
+		
+		*data_seq = TCP_SKB_CB(skb)->end_seq;
+	}
+}
+
+int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
+		   unsigned long *used, struct msghdr *msg, size_t *len,
+		   u32 *data_seq, int *copied)
+{
+	struct tcp_sock *tp=tcp_sk(sk);
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+	u32 data_offset;
+	int err;
+
+	/*Is this a duplicate segment ?*/
+	if (after(*data_seq,TCP_SKB_CB(skb)->data_seq+skb->len)) {
+		return MTCP_EATEN;
+	}
+
+	if (before(*data_seq,TCP_SKB_CB(skb)->data_seq)) {		
+		/*the skb must be queued in the ofo queue*/
+		__skb_unlink(skb, &sk->sk_receive_queue);
+		
+		if (!skb_peek(&mpcb->out_of_order_queue)) {
+			/* Initial out of order segment */
+			__skb_queue_head(&mpcb->out_of_order_queue, skb);
+			return MTCP_QUEUED;
+		}
+		else {	
+			struct sk_buff *skb1 = mpcb->out_of_order_queue.prev;
+			/* Find place to insert this segment. */
+			do {
+				if (!after(TCP_SKB_CB(skb1)->data_seq, 
+					   TCP_SKB_CB(skb)->data_seq))
+					break;
+			} while ((skb1 = skb1->prev) !=
+				 (struct sk_buff *)&tp->out_of_order_queue);
+
+			/* Do skb overlap to previous one? */
+			if (skb1 != 
+			    (struct sk_buff *)&mpcb->out_of_order_queue &&
+			    before(TCP_SKB_CB(skb)->data_seq, 
+				   TCP_SKB_CB(skb1)->end_data_seq)) {
+				if (!after(TCP_SKB_CB(skb)->end_data_seq, 
+					   TCP_SKB_CB(skb1)->end_data_seq)) {
+					/* All the bits are present. Drop. */
+					return MTCP_EATEN;
+				}
+				if (!after(TCP_SKB_CB(skb)->data_seq, 
+					   TCP_SKB_CB(skb1)->data_seq)) {
+					/*skb and skb1 have the same starting 
+					  point, but skb terminates after skb1*/
+					skb1 = skb1->prev;
+				}
+			}
+			__skb_insert(skb, skb1, skb1->next, 
+				     &mpcb->out_of_order_queue);
+			/* And clean segments covered by new one as whole. */
+			while ((skb1 = skb->next) !=
+			       (struct sk_buff *)&mpcb->out_of_order_queue &&
+			       after(TCP_SKB_CB(skb)->end_data_seq, 
+				     TCP_SKB_CB(skb1)->data_seq)) {
+				if (!before(TCP_SKB_CB(skb)->end_data_seq, 
+					    TCP_SKB_CB(skb1)->end_data_seq)) {
+					__skb_unlink(skb1, 
+						     &mpcb->out_of_order_queue);
+					__kfree_skb(skb1);
+				}
+			}
+			return MTCP_QUEUED;
+		}
+	}
+
+	else {
+		/*The skb can be read by the app*/
+		data_offset= *data_seq - TCP_SKB_CB(skb)->data_seq;
+		if (tcp_hdr(skb)->syn)
+			data_offset--;
+		*used = skb->len - data_offset;
+		if (*len < *used)
+			*used = *len;
+		
+		err=skb_copy_datagram_iovec(skb, data_offset,
+					    msg->msg_iov, *used);
+		if (err) return err;
+		
+		*tp->seq += *used;
+		*data_seq += *used;
+		*len -= *used;
+		*copied+=*used;
+		tp->copied+=*used;
+		
+		/*Check if this fills a gap in the ofo queue*/
+		if (!skb_queue_empty(&tp->out_of_order_queue))
+			mtcp_ofo_queue(sk,msg,len,data_seq,copied);
+		/*If the skb has been partially eaten, it will tcp_recvmsg
+		  will see it anyway thanks to the @used pointer.*/
+		return MTCP_EATEN;
+	}
 }
 
 /*General initialization of MTCP

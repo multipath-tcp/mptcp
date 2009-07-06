@@ -245,6 +245,12 @@ struct tcp_sock {
  */
  	u32	rcv_nxt;	/* What we want to receive next 	*/
 	u32	copied_seq;	/* Head of yet unread data		*/
+#ifdef CONFIG_MTCP
+	/*per subflow data, for tcp_recvmsg*/
+	u32     peek_seq;       /* Peek seq, for use by MTCP            */
+	u32     *seq;
+	u32     copied;
+#endif
 	u32	rcv_wup;	/* rcv_nxt on last window update sent	*/
  	u32	snd_nxt;	/* Next sequence we send		*/
 
@@ -256,17 +262,19 @@ struct tcp_sock {
 	/* Data for direct copy to user */
 	struct {
 		struct sk_buff_head	prequeue;
+		int			memory;		
+#ifndef CONFIG_MTCP
 		struct task_struct	*task;
 		struct iovec		*iov;
-		int			memory;
-		int			len;
 #ifdef CONFIG_NET_DMA
+		int			copied;		
 		/* members for async copy */
 		struct dma_chan		*dma_chan;
 		int			wakeup;
 		struct dma_pinned_list	*pinned_list;
 		dma_cookie_t		dma_cookie;
 #endif
+#endif /*CONFIG_MTCP*/
 	} ucopy;
 
 	u32	snd_wl1;	/* Sequence for window update		*/

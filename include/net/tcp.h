@@ -567,8 +567,8 @@ extern u32	__tcp_select_window(struct sock *sk);
 /* This is what the send packet queuing engine uses to pass
  * TCP per-packet control information to the transmission
  * code.  We also store the host-order sequence numbers in
- * here too.  This is 36 bytes on 32-bit architectures,
- * 40 bytes on 64-bit machines, if this grows please adjust
+ * here too.  This is 40 bytes on 32-bit architectures,
+ * 48 bytes on 64-bit machines, if this grows please adjust
  * skbuff.h:skbuff->cb[xxx] size appropriately.
  */
 struct tcp_skb_cb {
@@ -580,6 +580,8 @@ struct tcp_skb_cb {
 	} header;	/* For incoming frames		*/
 	__u32		seq;		/* Starting sequence number	*/
 	__u32		end_seq;	/* SEQ + FIN + SYN + datalen	*/
+	__u32           data_seq;       /* Starting data seq            */
+	__u32           end_data_seq;   /* DATA_SEQ + FIN+ SYN + datalen*/
 	__u32		when;		/* used to compute rtt's	*/
 	__u8		flags;		/* TCP header flags.		*/
 
@@ -877,9 +879,11 @@ static inline int tcp_checksum_complete(struct sk_buff *skb)
 
 static inline void tcp_prequeue_init(struct tcp_sock *tp)
 {
+#ifndef CONFIG_MTCP
 	tp->ucopy.task = NULL;
 	tp->ucopy.len = 0;
 	tp->ucopy.memory = 0;
+#endif /*In MTCP, those fields are in the mpcb structure*/
 	skb_queue_head_init(&tp->ucopy.prequeue);
 #ifdef CONFIG_NET_DMA
 	tp->ucopy.dma_chan = NULL;
@@ -897,6 +901,38 @@ static inline void tcp_prequeue_init(struct tcp_sock *tp)
  *
  * NOTE: is this not too big to inline?
  */
+#ifdef CONFIG_MTCP
+static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+	
+	if (!sysctl_tcp_low_latency && mpcb->ucopy.task) {
+		__skb_queue_tail(&tp->ucopy.prequeue, skb);
+		tp->ucopy.memory += skb->truesize;
+		if (tp->ucopy.memory > sk->sk_rcvbuf) {
+			struct sk_buff *skb1;
+
+			BUG_ON(sock_owned_by_user(sk));
+
+			while ((skb1 = __skb_dequeue(&tp->ucopy.prequeue)) != NULL) {
+				sk->sk_backlog_rcv(sk, skb1);
+				NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPPREQUEUEDROPPED);
+			}
+
+			tp->ucopy.memory = 0;
+		} else if (skb_queue_len(&tp->ucopy.prequeue) == 1) {
+			wake_up_interruptible(sk->sk_sleep);
+			if (!inet_csk_ack_scheduled(sk))
+				inet_csk_reset_xmit_timer(sk, ICSK_TIME_DACK,
+						          (3 * TCP_RTO_MIN) / 4,
+							  TCP_RTO_MAX);
+		}
+		return 1;
+	}
+	return 0;
+}
+#else
 static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -926,6 +962,7 @@ static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 	}
 	return 0;
 }
+#endif
 
 
 #undef STATE_TRACE

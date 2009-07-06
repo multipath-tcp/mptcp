@@ -4019,6 +4019,9 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcphdr *th = tcp_hdr(skb);
 	struct tcp_sock *tp = tcp_sk(sk);
+#ifdef CONFIG_MTCP
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+#endif
 	int eaten = -1;
 
 	if (TCP_SKB_CB(skb)->seq == TCP_SKB_CB(skb)->end_seq)
@@ -4042,6 +4045,27 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 			goto out_of_window;
 
 		/* Ok. In sequence. In window. */
+#ifdef CONFIG_MTCP
+		if (mpcb->ucopy.task == current &&
+		    tp->copied_seq == tp->rcv_nxt && mpcb->ucopy.len &&
+		    sock_owned_by_user(sk) && !tp->urg_data) {
+			int chunk = min_t(unsigned int, skb->len,
+					  mpcb->ucopy.len);
+			
+			__set_current_state(TASK_RUNNING);
+			
+			local_bh_enable();
+			if (!skb_copy_datagram_iovec(skb, 0, mpcb->ucopy.iov, 
+						     chunk)) {
+				mpcb->ucopy.len -= chunk;
+				tp->copied_seq += chunk;
+				tp->copied += chunk;
+				eaten = (chunk == skb->len && !th->fin);
+				tcp_rcv_space_adjust(sk);
+			}
+			local_bh_disable();
+		}
+#else
 		if (tp->ucopy.task == current &&
 		    tp->copied_seq == tp->rcv_nxt && tp->ucopy.len &&
 		    sock_owned_by_user(sk) && !tp->urg_data) {
@@ -4059,6 +4083,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 			}
 			local_bh_disable();
 		}
+#endif
 
 		if (eaten <= 0) {
 queue_and_out:
@@ -4093,12 +4118,7 @@ queue_and_out:
 		if (eaten > 0)
 			__kfree_skb(skb);
 		else if (!sock_flag(sk, SOCK_DEAD))
-#ifdef CONFIG_MTCP			
-			mtcp_data_ready(sk);
-#else
-			sk->sk_data_ready(sk, 0);
-#endif
-
+			mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
 		return;
 	}
 
@@ -4664,6 +4684,33 @@ static void tcp_urg(struct sock *sk, struct sk_buff *skb, struct tcphdr *th)
 	}
 }
 
+#ifdef CONFIG_MTCP
+static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+	int chunk = skb->len - hlen;
+	int err;
+
+	local_bh_enable();
+	if (skb_csum_unnecessary(skb))
+		err = skb_copy_datagram_iovec(skb, hlen, mpcb->ucopy.iov, 
+					      chunk);
+	else
+		err = skb_copy_and_csum_datagram_iovec(skb, hlen,
+						       mpcb->ucopy.iov);
+
+	if (!err) {
+		mpcb->ucopy.len -= chunk;
+		tp->copied_seq += chunk;
+		tp->copied += chunk;
+		tcp_rcv_space_adjust(sk);
+	}
+
+	local_bh_disable();
+	return err;
+}
+#else
 static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -4686,6 +4733,7 @@ static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 	local_bh_disable();
 	return err;
 }
+#endif /*CONFIG_MTCP*/
 
 static __sum16 __tcp_checksum_complete_user(struct sock *sk,
 					    struct sk_buff *skb)
@@ -4779,6 +4827,266 @@ out:
  *	the rest is checked inline. Fast processing is turned on in
  *	tcp_data_queue when everything is OK.
  */
+#ifdef CONFIG_MTCP
+int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
+			struct tcphdr *th, unsigned len)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
+
+	/*
+	 *	Header prediction.
+	 *	The code loosely follows the one in the famous
+	 *	"30 instruction TCP receive" Van Jacobson mail.
+	 *
+	 *	Van's trick is to deposit buffers into socket queue
+	 *	on a device interrupt, to call tcp_recv function
+	 *	on the receive process context and checksum and copy
+	 *	the buffer to user space. smart...
+	 *
+	 *	Our current scheme is not silly either but we take the
+	 *	extra cost of the net_bh soft interrupt processing...
+	 *	We do checksum and copy also but from device to kernel.
+	 */
+
+	tp->rx_opt.saw_tstamp = 0;
+
+	/*	pred_flags is 0xS?10 << 16 + snd_wnd
+	 *	if header_prediction is to be made
+	 *	'S' will always be tp->tcp_header_len >> 2
+	 *	'?' will be 0 for the fast path, otherwise pred_flags is 0 to
+	 *  turn it off	(when there are holes in the receive
+	 *	 space for instance)
+	 *	PSH flag is ignored.
+	 */
+
+	if ((tcp_flag_word(th) & TCP_HP_BITS) == tp->pred_flags &&
+	    TCP_SKB_CB(skb)->seq == tp->rcv_nxt) {
+		int tcp_header_len = tp->tcp_header_len;
+
+		/* Timestamp header prediction: tcp_header_len
+		 * is automatically equal to th->doff*4 due to pred_flags
+		 * match.
+		 */
+
+		/* Check timestamp */
+		if (tcp_header_len == sizeof(struct tcphdr) + TCPOLEN_TSTAMP_ALIGNED) {
+			__be32 *ptr = (__be32 *)(th + 1);
+
+			/* No? Slow path! */
+			if (*ptr != htonl((TCPOPT_NOP << 24) | (TCPOPT_NOP << 16)
+					  | (TCPOPT_TIMESTAMP << 8) | TCPOLEN_TIMESTAMP))
+				goto slow_path;
+
+			tp->rx_opt.saw_tstamp = 1;
+			++ptr;
+			tp->rx_opt.rcv_tsval = ntohl(*ptr);
+			++ptr;
+			tp->rx_opt.rcv_tsecr = ntohl(*ptr);
+
+			/* If PAWS failed, check it more carefully in slow path */
+			if ((s32)(tp->rx_opt.rcv_tsval - tp->rx_opt.ts_recent) < 0)
+				goto slow_path;
+
+			/* DO NOT update ts_recent here, if checksum fails
+			 * and timestamp was corrupted part, it will result
+			 * in a hung connection since we will drop all
+			 * future packets due to the PAWS test.
+			 */
+		}
+
+		if (len <= tcp_header_len) {
+			/* Bulk data transfer: sender */
+			if (len == tcp_header_len) {
+				/* Predicted packet is in window by definition.
+				 * seq == rcv_nxt and rcv_wup <= rcv_nxt.
+				 * Hence, check seq<=rcv_wup reduces to:
+				 */
+				if (tcp_header_len ==
+				    (sizeof(struct tcphdr) + TCPOLEN_TSTAMP_ALIGNED) &&
+				    tp->rcv_nxt == tp->rcv_wup)
+					tcp_store_ts_recent(tp);
+
+				/* We know that such packets are checksummed
+				 * on entry.
+				 */
+				tcp_ack(sk, skb, 0);
+				__kfree_skb(skb);
+				tcp_data_snd_check(sk);
+				return 0;
+			} else { /* Header too small */
+				TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_INERRS);
+				goto discard;
+			}
+		} else {
+			int eaten = 0;
+
+			if (tp->copied_seq == tp->rcv_nxt &&
+			    len - tcp_header_len <= mpcb->ucopy.len) {
+				if (mpcb->ucopy.task == current &&
+				    sock_owned_by_user(sk)) {
+					/*We have not yet finished to adapt
+					  the code for the fast path, thus
+					  we put this BUG to ensure that it
+					  is not accidentally taken
+					  When we implement this, we must
+					  ensure that this iovec copy is
+					  replaced with a call to 
+					  mtcp_queue_skb, and that the skb is
+					  only destroyed when that function
+					  returns MCTP_EATEN (here, the 
+					  skb is always destroyed if eaten
+					  is 1, which is no longer
+					  correct with MTCP)*/
+					BUG();
+					__set_current_state(TASK_RUNNING);
+
+					if (!tcp_copy_to_iovec(sk, skb, 
+							       tcp_header_len))
+						eaten = 1;
+				}
+				if (eaten) {
+					/* Predicted packet is in window by 
+					 * definition.seq == rcv_nxt and 
+					 * rcv_wup <= rcv_nxt.
+					 * Hence, check seq<=rcv_wup reduces to:
+					 */
+					if (tcp_header_len ==
+					    (sizeof(struct tcphdr) +
+					     TCPOLEN_TSTAMP_ALIGNED) &&
+					    tp->rcv_nxt == tp->rcv_wup)
+						tcp_store_ts_recent(tp);
+
+					tcp_rcv_rtt_measure_ts(sk, skb);
+
+					__skb_pull(skb, tcp_header_len);
+					tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
+					NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPHPHITSTOUSER);
+				}
+			}
+			if (!eaten) {
+				if (tcp_checksum_complete_user(sk, skb))
+					goto csum_error;
+
+				/* Predicted packet is in window by definition.
+				 * seq == rcv_nxt and rcv_wup <= rcv_nxt.
+				 * Hence, check seq<=rcv_wup reduces to:
+				 */
+				if (tcp_header_len ==
+				    (sizeof(struct tcphdr) + TCPOLEN_TSTAMP_ALIGNED) &&
+				    tp->rcv_nxt == tp->rcv_wup)
+					tcp_store_ts_recent(tp);
+
+				tcp_rcv_rtt_measure_ts(sk, skb);
+
+				if ((int)skb->truesize > sk->sk_forward_alloc)
+					goto step5;
+
+				NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPHPHITS);
+
+				/* Bulk data transfer: receiver */
+				__skb_pull(skb, tcp_header_len);
+				__skb_queue_tail(&sk->sk_receive_queue, skb);
+				skb_set_owner_r(skb, sk);
+				tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
+			}
+
+			tcp_event_data_recv(sk, skb);
+
+			if (TCP_SKB_CB(skb)->ack_seq != tp->snd_una) {
+				/* Well, only one small jumplet in fast path... */
+				tcp_ack(sk, skb, FLAG_DATA);
+				tcp_data_snd_check(sk);
+				if (!inet_csk_ack_scheduled(sk))
+					goto no_ack;
+			}
+
+			if (tp->rcv_nxt != tp->rcv_wup)
+				__tcp_ack_snd_check(sk, 0);
+no_ack:
+			if (eaten)
+				__kfree_skb(skb);
+			else
+				sk->sk_data_ready(sk, 0);
+			return 0;
+		}
+	}
+
+slow_path:
+	if (len < (th->doff << 2) || tcp_checksum_complete_user(sk, skb))
+		goto csum_error;
+
+	/*
+	 * RFC1323: H1. Apply PAWS check first.
+	 */
+	if (tcp_fast_parse_options(skb, th, tp) && tp->rx_opt.saw_tstamp &&
+	    tcp_paws_discard(sk, skb)) {
+		if (!th->rst) {
+			NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_PAWSESTABREJECTED);
+			tcp_send_dupack(sk, skb);
+			goto discard;
+		}
+		/* Resets are accepted even if PAWS failed.
+
+		   ts_recent update must be made after we are sure
+		   that the packet is in window.
+		 */
+	}
+
+	/*
+	 *	Standard slow path.
+	 */
+
+	if (!tcp_sequence(tp, TCP_SKB_CB(skb)->seq, TCP_SKB_CB(skb)->end_seq)) {
+		/* RFC793, page 37: "In all states except SYN-SENT, all reset
+		 * (RST) segments are validated by checking their SEQ-fields."
+		 * And page 69: "If an incoming segment is not acceptable,
+		 * an acknowledgment should be sent in reply (unless the RST bit
+		 * is set, if so drop the segment and return)".
+		 */
+		if (!th->rst)
+			tcp_send_dupack(sk, skb);
+		goto discard;
+	}
+
+	if (th->rst) {
+		tcp_reset(sk);
+		goto discard;
+	}
+
+	tcp_replace_ts_recent(tp, TCP_SKB_CB(skb)->seq);
+
+	if (th->syn && !before(TCP_SKB_CB(skb)->seq, tp->rcv_nxt)) {
+		TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_INERRS);
+		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPABORTONSYN);
+		tcp_reset(sk);
+		return 1;
+	}
+
+step5:
+	if (th->ack)
+		tcp_ack(sk, skb, FLAG_SLOWPATH);
+
+	tcp_rcv_rtt_measure_ts(sk, skb);
+
+	/* Process urgent data. */
+	tcp_urg(sk, skb, th);
+
+	/* step 7: process the segment text */
+	tcp_data_queue(sk, skb);
+
+	tcp_data_snd_check(sk);
+	tcp_ack_snd_check(sk);
+	return 0;
+
+csum_error:
+	TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_INERRS);
+
+discard:
+	__kfree_skb(skb);
+	return 0;
+}
+#else
 int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			struct tcphdr *th, unsigned len)
 {
@@ -5034,6 +5342,7 @@ discard:
 	__kfree_skb(skb);
 	return 0;
 }
+#endif /*CONFIG_MTCP*/
 
 static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 					 struct tcphdr *th, unsigned len)
