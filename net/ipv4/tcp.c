@@ -1400,6 +1400,10 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			offset = *tp->seq - TCP_SKB_CB(skb)->seq;
 			if (tcp_hdr(skb)->syn)
 				offset--;
+			/*TODEL*/
+			printk(KERN_ERR "tp->seq:%d,skb->seq:%d,"
+			       "skb->len:%d\n",*tp->seq,TCP_SKB_CB(skb)->seq,
+			       skb->len);
 			if (offset < skb->len)
 				goto found_ok_skb;
 			if (tcp_hdr(skb)->fin)
@@ -1531,8 +1535,9 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			
 			/* __ Restore normal policy in scheduler __ */
 
-			if ((chunk = len - mpcb->ucopy.len) != 0) {
+			if ((chunk = len - mpcb->ucopy.len) != 0) {		
 				NET_ADD_STATS_USER(sock_net(master_sk), LINUX_MIB_TCPDIRECTCOPYFROMBACKLOG, chunk);
+				printk(KERN_ERR "backlog copy: %d\n",chunk);
 				len -= chunk;
 				copied += chunk;
 			}
@@ -1541,11 +1546,15 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 					     tp->rcv_nxt == tp->copied_seq &&
 					     !skb_queue_empty(
 						     &tp->ucopy.prequeue))) {
+				printk(KERN_ERR "do_prequeue after if\n");
 			do_prequeue:
 				sk=(struct sock*) tp;
 				tcp_prequeue_process(sk);
+				printk(KERN_ERR "do_prequeue\n");
 				
 				if ((chunk = len - mpcb->ucopy.len) != 0) {
+					printk(KERN_ERR "prequeue copy :%d\n",
+					       chunk);
 					NET_ADD_STATS_USER(sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
 					len -= chunk;
 					copied += chunk;
@@ -1576,7 +1585,10 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		/* Do we have urgent data here? */
 		if (tp->urg_data) {
 			u32 urg_offset = tp->urg_seq - *tp->seq;
-			PDEBUG("Received urgent data\n");
+			printk(KERN_ERR "Received urgent data\n");
+			printk(KERN_ERR "Urgent data not supported at the "
+			       "moment");
+			BUG();
 			if (urg_offset < used) {
 				if (!urg_offset) {
 					if (!sock_flag(sk, SOCK_URGINLINE)) {
@@ -1592,6 +1604,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		}
 
 		if (!(flags & MSG_TRUNC)) {
+			printk(KERN_ERR "MSG_TRUNC is not set\n");
 			/*From this subsocket point of view, data is ready
 			  to be eaten. Give it to the metasocket. If it is 
 			  in order from the dataseq point of view, it will be

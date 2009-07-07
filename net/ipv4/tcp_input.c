@@ -4052,9 +4052,12 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 #ifdef CONFIG_MTCP
 		if (mpcb->ucopy.task == current &&
 		    tp->copied_seq == tp->rcv_nxt && mpcb->ucopy.len &&
-		    sock_owned_by_user(sk) && !tp->urg_data) {
+		    sock_owned_by_user(sk) && !tp->urg_data &&
+		    TCP_SKB_CB(skb)->data_seq==mpcb->copied_seq) {
 			int chunk = min_t(unsigned int, skb->len,
 					  mpcb->ucopy.len);
+
+			printk(KERN_ERR "YES: copying %d bytes\n",chunk);
 			
 			__set_current_state(TASK_RUNNING);
 			
@@ -4063,6 +4066,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 						     chunk)) {
 				mpcb->ucopy.len -= chunk;
 				tp->copied_seq += chunk;
+				mpcb->copied_seq += chunk;
 				tp->copied += chunk;
 				eaten = (chunk == skb->len && !th->fin);
 				tcp_rcv_space_adjust(sk);
