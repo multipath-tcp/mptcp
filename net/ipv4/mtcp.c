@@ -251,9 +251,6 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	
 	mpcb->nb.notifier_call=netevent_callback;
 	register_netevent_notifier(&mpcb->nb);
-
-	/*Choose a random initial seqnum*/
-	mpcb->write_seq=get_random_int();
 	
 	return mpcb;
 }

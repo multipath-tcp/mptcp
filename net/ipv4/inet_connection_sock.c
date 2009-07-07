@@ -270,9 +270,12 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 		struct tcp_sock *tp=tcp_sk(newsk);
 		struct multipath_pcb *mpcb;		
 		mpcb=mtcp_alloc_mpcb(newsk);
-		tp->path_index=0;
+		tp->path_index=0;		
 		mtcp_add_sock(mpcb,tp);
 		mtcp_update_metasocket(newsk);
+		mpcb->write_seq=1; /*first byte is IDSN+1
+				     To be replaced later with a random IDSN
+				     (well, if it indeed improve security)*/
 	}
 #endif
 

@@ -555,17 +555,17 @@ static unsigned tcp_synack_options(struct sock *sk,
 	}
 
 #ifdef CONFIG_MTCP
-	{
-		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
-		
-		opts->options |= OPTION_MPC;
-		size+=TCPOLEN_MPC_ALIGNED;
-		opts->options |= OPTION_DSN;
-		size+=TCPOLEN_DSN_ALIGNED;
-		opts->data_seq=mpcb->write_seq++; /*First data byte is 
-						  initial data seq + 1 
-						  (IDSN+1)*/
-	}
+	/*For the SYNACK, the mpcb is normally not yet initialized
+	  (to protect against SYN DoS attack)
+	  So we cannot use it here.*/
+	
+	opts->options |= OPTION_MPC;
+	size+=TCPOLEN_MPC_ALIGNED;
+	opts->options |= OPTION_DSN;
+	size+=TCPOLEN_DSN_ALIGNED;
+	opts->data_seq=0; /*First data byte is 
+			    initial data seq + 1 
+			    (IDSN+1)*/
 #endif
 	return size;
 }
