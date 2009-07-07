@@ -3480,6 +3480,10 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				
 				mopt->data_seq = ntohl(*(uint32_t*)ptr);
 				mopt->saw_dsn=1;
+				TCP_SKB_CB(skb)->data_seq=mopt->data_seq;
+				TCP_SKB_CB(skb)->end_data_seq=mopt->data_seq+
+					TCP_SKB_CB(skb)->end_seq-
+					TCP_SKB_CB(skb)->seq;
 				break;
 			
 #endif /* CONFIG_MTCP */
