@@ -1537,6 +1537,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 
 			if ((chunk = len - mpcb->ucopy.len) != 0) {		
 				NET_ADD_STATS_USER(sock_net(master_sk), LINUX_MIB_TCPDIRECTCOPYFROMBACKLOG, chunk);
+				/*TODEL*/
 				printk(KERN_ERR "backlog copy: %d\n",chunk);
 				len -= chunk;
 				copied += chunk;
@@ -1546,15 +1547,16 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 					     tp->rcv_nxt == tp->copied_seq &&
 					     !skb_queue_empty(
 						     &tp->ucopy.prequeue))) {
-				printk(KERN_ERR "do_prequeue after if\n");
+                                /*TODEL*/				
+				printk(KERN_ERR "do_prequeue after if\n"); 
 			do_prequeue:
 				sk=(struct sock*) tp;
 				tcp_prequeue_process(sk);
-				printk(KERN_ERR "do_prequeue\n");
+				printk(KERN_ERR "do_prequeue\n"); /*TODEL*/
 				
 				if ((chunk = len - mpcb->ucopy.len) != 0) {
 					printk(KERN_ERR "prequeue copy :%d\n",
-					       chunk);
+					       chunk); /*TODEL*/
 					NET_ADD_STATS_USER(sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
 					len -= chunk;
 					copied += chunk;
@@ -1604,6 +1606,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		}
 
 		if (!(flags & MSG_TRUNC)) {
+			/*TODEL*/
 			printk(KERN_ERR "MSG_TRUNC is not set\n");
 			/*From this subsocket point of view, data is ready
 			  to be eaten. Give it to the metasocket. If it is 
@@ -1612,7 +1615,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			  queued in the metasocket out of order queue.*/
 			mtcp_op=err= mtcp_queue_skb(sk,skb,offset,&used,msg,
 						    &len, data_seq,&copied);
-			if (err) {
+			if (err<0) {
+				printk(KERN_ERR "error in mtcp_queue_skb\n");
 				/* Exception. Bailout! */
 				if (!copied)
 					copied = -EFAULT;
@@ -1628,12 +1632,16 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			tp->urg_data = 0;
 			tcp_fast_path_check(sk);
 		}
-		if (used + offset < skb->len)
-			continue;
+		if (used + offset < skb->len) {
+			printk(KERN_ERR "used:%lu\n",used); /*TODEL*/
+			continue; 
+		}
+		printk(KERN_ERR "about to eat the skb\n"); /*TODEL*/
 
 		if (tcp_hdr(skb)->fin)
 			goto found_fin_ok;
 		if (!(flags & MSG_PEEK) && mtcp_op == MTCP_EATEN) {
+			printk(KERN_ERR "will call sk_eat_skb\n");
 			sk_eat_skb(sk, skb, 0);
 		}
 		continue;

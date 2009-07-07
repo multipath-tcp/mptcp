@@ -4057,8 +4057,6 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 			int chunk = min_t(unsigned int, skb->len,
 					  mpcb->ucopy.len);
 
-			printk(KERN_ERR "YES: copying %d bytes\n",chunk);
-			
 			__set_current_state(TASK_RUNNING);
 			
 			local_bh_enable();
