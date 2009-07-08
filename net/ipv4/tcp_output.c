@@ -606,7 +606,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 #ifdef CONFIG_MTCP
 	{
 		opts->options |= OPTION_DSN;
-		opts->data_seq=tcb->data_seq;
+		opts->data_seq=tcb?tcb->data_seq:0;
 		size += TCPOLEN_DSN_ALIGNED;
 	}
 #endif
