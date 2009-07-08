@@ -374,8 +374,6 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		/*Let the selected socket eat*/
 		copied+=tcp_sendmsg(NULL,((struct sock*)tp)->sk_socket, 
 				    msg, copied);
-		/*Advance the dataseq value*/
-		mpcb->write_seq += copied;
 	}
 
 	return copied;
@@ -471,6 +469,10 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 	if (before(*data_seq,TCP_SKB_CB(skb)->data_seq)) {		
 		/*the skb must be queued in the ofo queue*/
 		__skb_unlink(skb, &sk->sk_receive_queue);
+
+		/*TODEL*/
+		printk(KERN_ERR "exp. data_seq:%x, skb->data_seq:%x\n",
+		       *data_seq,TCP_SKB_CB(skb)->data_seq);
 		
 		if (!skb_peek(&mpcb->out_of_order_queue)) {
 			/* Initial out of order segment */

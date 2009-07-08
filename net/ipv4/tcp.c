@@ -476,12 +476,14 @@ static inline int forced_push(struct tcp_sock *tp)
 static inline void skb_entail(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 
-	skb->csum    = 0;
-	tcb->seq     = tcb->end_seq = tp->write_seq;
-	tcb->flags   = TCPCB_FLAG_ACK;
-	tcb->sacked  = 0;
+	skb->csum     = 0;
+	tcb->seq      = tcb->end_seq = tp->write_seq;
+	tcb->data_seq = tcb->end_data_seq = mpcb->write_seq;
+	tcb->flags    = TCPCB_FLAG_ACK;
+	tcb->sacked   = 0;
 	skb_header_release(skb);
 	tcp_add_write_queue_tail(sk, skb);
 	sk->sk_wmem_queued += skb->truesize;
@@ -662,6 +664,9 @@ static ssize_t do_tcp_sendpages(struct sock *sk, struct page **pages, int poffse
 	ssize_t copied;
 	long timeo = sock_sndtimeo(sk, flags & MSG_DONTWAIT);
 
+	printk(KERN_ERR "%s: function not yet supported\n",__FUNCTION__);
+	BUG();
+	
 	/* Wait for a connection to finish. */
 	if ((1 << sk->sk_state) & ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT))
 		if ((err = sk_stream_wait_connect(sk, &timeo)) != 0)
@@ -824,6 +829,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	struct sock *sk = sock->sk;
 	struct iovec *iov;
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 	struct sk_buff *skb;
 	int iovlen, flags;
 	int mss_now, size_goal;
@@ -999,7 +1005,9 @@ new_segment:
 				TCP_SKB_CB(skb)->flags &= ~TCPCB_FLAG_PSH;
 
 			tp->write_seq += copy;
+			mpcb->write_seq += copy;
 			TCP_SKB_CB(skb)->end_seq += copy;
+			TCP_SKB_CB(skb)->end_data_seq += copy;
 			skb_shinfo(skb)->gso_segs = 0;
 
 			from += copy;
@@ -1401,9 +1409,14 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			if (tcp_hdr(skb)->syn)
 				offset--;
 			/*TODEL*/
-			printk(KERN_ERR "tp->seq:%d,skb->seq:%d,"
+			printk(KERN_ERR "tp->seq:%x,skb->seq:%x,"
 			       "skb->len:%d\n",*tp->seq,TCP_SKB_CB(skb)->seq,
 			       skb->len);
+			printk(KERN_ERR "mpcb->copied_seq:%x,skb->data_seq:%x,"
+			       "skb->len:%d\n",mpcb->copied_seq,
+			       TCP_SKB_CB(skb)->data_seq,
+			       skb->len);
+
 			if (offset < skb->len)
 				goto found_ok_skb;
 			if (tcp_hdr(skb)->fin)
