@@ -1628,10 +1628,12 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			tcp_rcv_space_adjust(sk);
 
 	skip_copy:
-		if (tp->urg_data && after(tp->copied_seq, tp->urg_seq)) {
-			tp->urg_data = 0;
-			tcp_fast_path_check(sk);
-		}
+		mtcp_for_each_sk(mpcb,sk,tp)
+			if (tp->urg_data && after(tp->copied_seq, 
+						  tp->urg_seq)) {
+				tp->urg_data = 0;
+				tcp_fast_path_check(sk);
+			}
 		if (used + offset < skb->len) {
 			printk(KERN_ERR "used:%lu\n",used); /*TODEL*/
 			continue; 
@@ -1642,16 +1644,15 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			goto found_fin_ok;
 		if (!(flags & MSG_PEEK) && mtcp_op == MTCP_EATEN) {
 			printk(KERN_ERR "will call sk_eat_skb\n");
-			sk_eat_skb(sk, skb, 0);
+			sk_eat_skb(skb->sk, skb, 0);
 		}
 		continue;
 
 	found_fin_ok:
 		/* Process the FIN. */
-		++*tp->seq;
-		if (!(flags & MSG_PEEK)) {
-			sk_eat_skb(sk, skb, 0);
-		}
+		++*(tcp_sk(skb->sk))->seq;
+		if (!(flags & MSG_PEEK))
+			sk_eat_skb(skb->sk, skb, 0);
 		break;
 	} while (len > 0);
 
