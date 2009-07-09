@@ -4027,7 +4027,11 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
 #endif
 	int eaten = -1;
-
+	
+	if (skb->path_index==2) /*TODEL*/
+		printk(KERN_ERR "%s:rcvd packet with path index 2\n",
+		       __FUNCTION__);
+	
 	if (TCP_SKB_CB(skb)->seq == TCP_SKB_CB(skb)->end_seq)
 		goto drop;
 
@@ -4093,10 +4097,15 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 
 		if (eaten <= 0) {
 queue_and_out:
+			if (skb->path_index==2) /*TODEL*/
+				printk(KERN_ERR "%s:2-rcvd packet with "
+				       "path index 2\n",
+				       __FUNCTION__);
 			if (eaten < 0 &&
 			    tcp_try_rmem_schedule(sk, skb->truesize))
 				goto drop;
-
+			if (skb->path_index==2) /*TODEL*/
+				printk(KERN_ERR " 3 - rcvd packet pi 2\n");
 			skb_set_owner_r(skb, sk);
 			__skb_queue_tail(&sk->sk_receive_queue, skb);
 		}
@@ -4107,6 +4116,8 @@ queue_and_out:
 			tcp_fin(skb, sk, th);
 
 		if (!skb_queue_empty(&tp->out_of_order_queue)) {
+			if (skb->path_index==2) /*TODEL*/
+				printk(KERN_ERR " 4 - rcvd packet pi 2\n");
 			tcp_ofo_queue(sk);
 
 			/* RFC2581. 4.2. SHOULD send immediate ACK, when
@@ -4123,8 +4134,11 @@ queue_and_out:
 
 		if (eaten > 0)
 			__kfree_skb(skb);
-		else if (!sock_flag(sk, SOCK_DEAD))
+		else if (!sock_flag(sk, SOCK_DEAD)) {
+			if (skb->path_index==2) /*TODEL*/
+				printk(KERN_ERR " 5 - rcvd packet pi 2\n");
 			mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
+		}
 		return;
 	}
 
@@ -4855,6 +4869,10 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	 *	We do checksum and copy also but from device to kernel.
 	 */
 
+	if (skb->path_index==2) /*TODEL*/
+		printk(KERN_ERR "%s:rcvd packet with path index 2\n",
+		       __FUNCTION__);
+	
 	tp->rx_opt.saw_tstamp = 0;
 
 	/*	pred_flags is 0xS?10 << 16 + snd_wnd

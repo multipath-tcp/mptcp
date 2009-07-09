@@ -501,9 +501,10 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		size+=TCPOLEN_MPC_ALIGNED;
 		opts->options |= OPTION_DSN;
 		size+=TCPOLEN_DSN_ALIGNED;
-		opts->data_seq=mpcb->write_seq++; /*First data byte is 
-						    initial data seq + 1 
-						    (IDSN+1)*/
+		opts->data_seq=mpcb->write_seq; /*First data byte is 
+						  initial data seq + 1 
+						  (IDSN+1)*/
+		if (is_master_sk(tp)) mpcb->write_seq++;
 	}
 #endif
 	return size;

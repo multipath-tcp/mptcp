@@ -136,6 +136,7 @@ struct multipath_pcb {
 };
 
 #define mpcb_from_tcpsock(tp) (tp->mpcb)
+#define is_master_sk(tp) (tp->mpcb && tcp_sk(tp->mpcb->master_sk)==tp)
 
 /*Iterates overs all subflows*/
 #define mtcp_for_each_tp(mpcb,tp)			\

@@ -1549,6 +1549,10 @@ int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 		goto discard;
 #endif
 
+	if (skb->path_index==2) /*TODEL*/
+		printk(KERN_ERR "%s:rcvd packet with path index 2\n",
+		       __FUNCTION__);
+
 	if (sk_filter(sk, skb))
 		goto discard;
 

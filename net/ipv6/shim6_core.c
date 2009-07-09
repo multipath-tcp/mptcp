@@ -134,11 +134,6 @@ static int shim6_input(struct xfrm_state *x, struct sk_buff *skb)
 			break;
 	}
 
-	if (opt->shim6) { /*TODEL*/
-		printk(KERN_ERR "Recvd Shim6 data:\n\t" NIP6_FMT "\n\t" 
-		       NIP6_FMT "\n",NIP6(iph->saddr),NIP6(iph->daddr));
-	}
-
 	if (i==x->shim6->nlocpairs) {
 		printk(KERN_ERR "%s:Received packet with invalid locators\n",
 		       __FUNCTION__);
@@ -146,9 +141,6 @@ static int shim6_input(struct xfrm_state *x, struct sk_buff *skb)
 	}
 
 	skb->path_index=i+1;
-
-	if (skb->path_index==2) /*TODEL*/
-		printk(KERN_ERR "rcvd packet with path index 2\n");
 
 	if (!opt->shim6) return 1;
 

@@ -1630,6 +1630,11 @@ static void sock_def_error_report(struct sock *sk)
 
 static void sock_def_readable(struct sock *sk, int len)
 {
+	/*TODEL*/
+	if (sk->sk_protocol==IPPROTO_MTCPSUB)
+		*((char*)0)=0; /*Generate a segfault for tracking by gdb*/
+		
+	
 	read_lock(&sk->sk_callback_lock);
 	if (sk->sk_sleep && waitqueue_active(sk->sk_sleep))
 		wake_up_interruptible_sync(sk->sk_sleep);
