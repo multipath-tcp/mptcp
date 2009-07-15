@@ -582,6 +582,9 @@ static unsigned tcp_synack_options(struct sock *sk,
 	return size;
 }
 
+
+/*if skb is NULL, then we are evaluating the MSS, thus, we take into account
+ * ALL potential options. */
 static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 					struct tcp_out_options *opts,
 					struct tcp_md5sig_key **md5) {
@@ -616,7 +619,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			opts->num_sack_blocks * TCPOLEN_SACK_PERBLOCK;
 	}
 #ifdef CONFIG_MTCP
-	{
+	if (!skb || skb->len!=0) {
 		opts->options |= OPTION_DSN;
 		opts->data_seq=tcb?tcb->data_seq:0;
 		size += TCPOLEN_DSN_ALIGNED;
