@@ -499,12 +499,23 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		
 		opts->options |= OPTION_MPC;
 		size+=TCPOLEN_MPC_ALIGNED;
-		opts->options |= OPTION_DSN;
-		size+=TCPOLEN_DSN_ALIGNED;
-		opts->data_seq=mpcb->write_seq; /*First data byte is 
-						  initial data seq + 1 
-						  (IDSN+1)*/
-		if (is_master_sk(tp)) mpcb->write_seq++;
+		
+		/*We arrive here either when sending a SYN or a
+		  SYN+ACK when in SYN_SENT state (that is, tcp_synack_options
+		  is only called for syn+ack replied by a server, while this
+		  function is called when SYNs are sent by both parties and 
+		  are crossed.
+		  Due to this possibility, a slave subsocket may arrive here,
+		  and does not need to set the dataseq options, since
+		  there is no data in the segment*/
+		if (is_master_sk(tp)) {			
+			opts->options |= OPTION_DSN;
+			size+=TCPOLEN_DSN_ALIGNED;
+			opts->data_seq=mpcb->write_seq; /*First data byte is 
+							  initial data seq + 1 
+							  (IDSN+1)*/	
+			mpcb->write_seq++;
+		}
 	}
 #endif
 	return size;

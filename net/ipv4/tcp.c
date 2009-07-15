@@ -1323,6 +1323,12 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	struct task_struct *user_recv = NULL;
 	struct sk_buff *skb;
 
+	
+	printk("Entering %s\n",__FUNCTION__);
+
+	if (tcp_sk(master_sk)->next) { /*TODEL*/
+		printk("2_Entering %s\n",__FUNCTION__);
+	}
 
 	/*We listen on every subflow.
 	 * Here we are awoken each time
@@ -1331,21 +1337,25 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	 * halves we are expecting data from every subflow at once.
 	 */
 	
-	
 	/*For every subflow, init copied to 0*/
 	mtcp_for_each_tp(mpcb,tp) 
 		tp->copied=0;
 	
 	/*Locking all subsockets*/
 	mtcp_for_each_sk(mpcb,sk,tp) lock_sock(sk);
+	printk("%s:after first lock\n",__FUNCTION__);
+	if (tcp_sk(master_sk)->next) /*TODEL*/
+		printk("%s:2-after first lock\n",__FUNCTION__);
 	err = -ENOTCONN;
 	if (master_sk->sk_state == TCP_LISTEN)
-		goto out; /*TODO: Vérifier où on arrive, en paritculier si on
-			    arrive sur le bon subsocket.*/
+		goto out; 
 
 	/*Receive timeout, set by application. This is the same for 
 	  all subflows, and the real value is stored in the master socket.*/
 	timeo = sock_rcvtimeo(master_sk, nonblock);
+	printk("%s:after sock_rcvtimeo\n",__FUNCTION__);
+	if (tcp_sk(master_sk)->next) /*TODEL*/
+ 		printk("%s:2-after sock_rcvtimeo\n",__FUNCTION__);
 
 	/* Urgent data needs to be handled specially. */
 	if (flags & MSG_OOB)
@@ -1424,11 +1434,17 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			BUG();
 
 		}
-
+		printk("%s:after first loop\n",__FUNCTION__);
+		if (tcp_sk(master_sk)->next) /*TODEL*/
+			printk("%s:2-after first loop\n",__FUNCTION__);
+		
 		/* Well, if we have backlog, try to process it now yet. */
 		if (copied >= target && 
 		    !mtcp_test_any_sk(mpcb,sk,sk->sk_backlog.tail))
 			break;
+		printk("%s:after backlog test\n",__FUNCTION__);
+		if (tcp_sk(master_sk)->next) /*TODEL*/
+			printk("%s:2-after backlog test\n",__FUNCTION__);
 
 		/*Here we test a set of conditions to return immediately to
 		  the user*/
@@ -1473,15 +1489,23 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				copied = -EAGAIN;
 				break;
 			}
-
+			printk("%s:before signal pending\n",__FUNCTION__);
+			if (tcp_sk(master_sk)->next) /*TODEL*/
+				printk("%s:2-before signal pending\n",__FUNCTION__);
 			if (signal_pending(current)) {
 				copied = sock_intr_errno(timeo);
 				break;
 			}
+			printk("%s:after signal pending\n",__FUNCTION__);
+			if (tcp_sk(master_sk)->next) /*TODEL*/
+				printk("%s:2-after signal pending\n",__FUNCTION__);
 		}
 
 		mtcp_for_each_sk(mpcb,sk,tp)
 			tcp_cleanup_rbuf(sk, tp->copied);
+		printk("%s:after tcp_clean_rbuf\n",__FUNCTION__);
+		if (tcp_sk(master_sk)->next) /*TODEL*/
+			printk("%s:2-after tcp_clean_rbuf\n",__FUNCTION__);
 
 		if (!sysctl_tcp_low_latency && mpcb->ucopy.task == 
 		    user_recv) {
@@ -1529,19 +1553,38 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 					     !skb_queue_empty(
 						     &tp->ucopy.prequeue)))
 				goto do_prequeue;
+			printk("%s:after goto do_prequeue\n",__FUNCTION__);
+			if (tcp_sk(master_sk)->next) /*TODEL*/
+				printk("%s:2-after goto do_prequeue\n",__FUNCTION__);
 
 			/* __ Set realtime policy in scheduler __ */
 		}
 
 		if (copied >= target) {
+			printk("%s:before release/lock\n",__FUNCTION__);
+			if (tcp_sk(master_sk)->next) /*TODEL*/
+				printk("%s:2-before release/lock\n",__FUNCTION__);
+
 			/* Do not sleep, just process backlog. */
 			mtcp_for_each_sk(mpcb,sk,tp) {
 				release_sock(sk);
 				lock_sock(sk);
 			}
-		} else
+			printk("%s:after release/lock\n",__FUNCTION__);
+			if (tcp_sk(master_sk)->next) /*TODEL*/
+				printk("%s:2-after release/lock\n",__FUNCTION__);
+			
+		} else {
 			/*Wait for data arriving on any subsocket*/
+			
+			if (master_sk->sk_protocol==IPPROTO_TCP && /*TODEL*/
+			    master_sk->sk_family==AF_INET6)
+				printk(KERN_ERR " going to wait\n"); 
 			mtcp_wait_data(mpcb,master_sk, &timeo);
+			if (master_sk->sk_protocol==IPPROTO_TCP && /*TODEL*/
+			    master_sk->sk_family==AF_INET6)
+				printk(KERN_ERR " woken up - out!!!\n"); 
+		}
 		
 		if (user_recv) {
 			int chunk;

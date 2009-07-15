@@ -4116,8 +4116,6 @@ queue_and_out:
 			tcp_fin(skb, sk, th);
 
 		if (!skb_queue_empty(&tp->out_of_order_queue)) {
-			if (skb->path_index==2) /*TODEL*/
-				printk(KERN_ERR " 4 - rcvd packet pi 2\n");
 			tcp_ofo_queue(sk);
 
 			/* RFC2581. 4.2. SHOULD send immediate ACK, when
@@ -4135,8 +4133,6 @@ queue_and_out:
 		if (eaten > 0)
 			__kfree_skb(skb);
 		else if (!sock_flag(sk, SOCK_DEAD)) {
-			if (skb->path_index==2) /*TODEL*/
-				printk(KERN_ERR " 5 - rcvd packet pi 2\n");
 			mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
 		}
 		return;

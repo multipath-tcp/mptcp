@@ -178,10 +178,19 @@ struct multipath_pcb {
 			release_sock(__sk);				\
 		__rc = mtcp_test_any_sk(__mpcb,__sk,__condition);	\
 		if (!__rc) {						\
+			if (__mpcb->master_sk->sk_protocol==IPPROTO_TCP && \
+			    __mpcb->master_sk->sk_family==AF_INET6)	\
+				printk("will really sleep\n");		\
 			*(__timeo) = schedule_timeout(*(__timeo));	\
+			if (__mpcb->master_sk->sk_protocol==IPPROTO_TCP && \
+			    __mpcb->master_sk->sk_family==AF_INET6)	\
+				printk("woken up\n");			\
 		}							\
 		mtcp_for_each_sk(__mpcb,__sk,__tp)			\
 			lock_sock(__sk);				\
+		if (__mpcb->master_sk->sk_protocol==IPPROTO_TCP &&	\
+		    __mpcb->master_sk->sk_family==AF_INET6)		\
+			printk("will really sleep\n");			\
 		__rc = mtcp_test_any_sk(__mpcb,__sk,__condition);	\
 		__rc;							\
 	})
