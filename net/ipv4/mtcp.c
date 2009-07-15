@@ -278,6 +278,8 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 	
 	mpcb->cnt_subflows++;
 	spin_unlock_bh(&mpcb->lock);	
+	printk(KERN_ERR "%s:cnt_subflows now %d\n",__FUNCTION__,
+	       mpcb->cnt_subflows); /*TODEL*/
 }
 
 /**

@@ -4097,10 +4097,11 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 
 		if (eaten <= 0) {
 queue_and_out:
-			if (skb->path_index==2) /*TODEL*/
+			if (skb->path_index==2) { /*TODEL*/
 				printk(KERN_ERR "%s:2-rcvd packet with "
 				       "path index 2\n",
 				       __FUNCTION__);
+			}
 			if (eaten < 0 &&
 			    tcp_try_rmem_schedule(sk, skb->truesize))
 				goto drop;

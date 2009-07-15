@@ -331,6 +331,101 @@ EXPORT_SYMBOL(tcp_enter_memory_pressure);
  *	take care of normal races (between the test and the event) and we don't
  *	go look at any of the socket buffers directly.
  */
+#ifdef CONFIG_MTCP
+unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
+{
+	unsigned int mask;
+	struct sock *master_sk = sock->sk;
+	struct tcp_sock *master_tp = tcp_sk(master_sk);
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(master_tp);
+	struct sock *sk; /*For subsocket iteration*/
+	struct tcp_sock *tp; /*for subsocket iteration*/
+
+	/*TODEL*/
+	printk(KERN_ERR "%s:entering\n",__FUNCTION__);
+
+	poll_wait(file, master_sk->sk_sleep, wait);
+	printk(KERN_ERR "%s:after poll_wait\n",__FUNCTION__);
+	if (master_sk->sk_state == TCP_LISTEN)
+		return inet_csk_listen_poll(master_sk);
+
+	/* Socket is not locked. We are protected from async events
+	 * by poll logic and correct handling of state changes
+	 * made by other threads is impossible in any case.
+	 */
+
+	mask = 0;
+	if (mtcp_test_any_sk(mpcb,sk,sk->sk_err))
+		mask = POLLERR;
+	
+	/*
+	 * POLLHUP is certainly not done right. But poll() doesn't
+	 * have a notion of HUP in just one direction, and for a
+	 * socket the read side is more interesting.
+	 *
+	 * Some poll() documentation says that POLLHUP is incompatible
+	 * with the POLLOUT/POLLWR flags, so somebody should check this
+	 * all. But careful, it tends to be safer to return too many
+	 * bits than too few, and you can easily break real applications
+	 * if you don't tell them that something has hung up!
+	 *
+	 * Check-me.
+	 *
+	 * Check number 1. POLLHUP is _UNMASKABLE_ event (see UNIX98 and
+	 * our fs/select.c). It means that after we received EOF,
+	 * poll always returns immediately, making impossible poll() on write()
+	 * in state CLOSE_WAIT. One solution is evident --- to set POLLHUP
+	 * if and only if shutdown has been made in both directions.
+	 * Actually, it is interesting to look how Solaris and DUX
+	 * solve this dilemma. I would prefer, if POLLHUP were maskable,
+	 * then we could set it on SND_SHUTDOWN. BTW examples given
+	 * in Stevens' books assume exactly this behaviour, it explains
+	 * why POLLHUP is incompatible with POLLOUT.	--ANK
+	 *
+	 * NOTE. Check for TCP_CLOSE is added. The goal is to prevent
+	 * blocking on fresh not-connected or disconnected socket. --ANK
+	 */
+	if (master_sk->sk_shutdown == SHUTDOWN_MASK || 
+	    master_sk->sk_state == TCP_CLOSE)
+		mask |= POLLHUP;
+	if (master_sk->sk_shutdown & RCV_SHUTDOWN)
+		mask |= POLLIN | POLLRDNORM | POLLRDHUP;
+
+	/* Connected? */
+	mtcp_for_each_sk(mpcb,sk,tp)
+		if ((1 << sk->sk_state) & ~(TCPF_SYN_SENT | TCPF_SYN_RECV)) {
+			/* Potential race condition. If read of tp below will
+			 * escape above sk->sk_state, we can be illegally awaken
+			 * in SYN_* states. */
+			if ((tp->rcv_nxt != tp->copied_seq) &&
+			    (tp->urg_seq != tp->copied_seq ||
+			     tp->rcv_nxt != tp->copied_seq + 1 ||
+			     sock_flag(sk, SOCK_URGINLINE) || !tp->urg_data))
+				mask |= POLLIN | POLLRDNORM;
+			
+			if (!(sk->sk_shutdown & SEND_SHUTDOWN)) {
+				if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk)) {
+					mask |= POLLOUT | POLLWRNORM;
+				} else {  /* send SIGIO later */
+					set_bit(SOCK_ASYNC_NOSPACE,
+						&sk->sk_socket->flags);
+					set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+					
+					/* Race breaker. If space is freed after
+					 * wspace test but before the flags are set,
+					 * IO signal will be lost.
+					 */
+					if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk))
+						mask |= POLLOUT | POLLWRNORM;
+				}
+			}
+			
+			if (tp->urg_data & TCP_URG_VALID)
+				mask |= POLLPRI;
+		}
+	return mask;
+}
+#else
 unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 {
 	unsigned int mask;
@@ -338,6 +433,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	poll_wait(file, sk->sk_sleep, wait);
+
 	if (sk->sk_state == TCP_LISTEN)
 		return inet_csk_listen_poll(sk);
 
@@ -415,6 +511,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	}
 	return mask;
 }
+#endif
 
 int tcp_ioctl(struct sock *sk, int cmd, unsigned long arg)
 {
@@ -840,6 +937,8 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	int skipped=0;        
 #endif
 
+	printk(KERN_ERR "%s:entering\n",__FUNCTION__);
+
 	lock_sock(sk);
 	TCP_CHECK_TIMER(sk);
 
@@ -1044,6 +1143,7 @@ out:
 		tcp_push(sk, flags, mss_now, tp->nonagle);
 	TCP_CHECK_TIMER(sk);
 	release_sock(sk);
+	printk(KERN_ERR "%s:leaving. copied is %d\n",__FUNCTION__,copied);
 	return copied;
 
 do_fault:
@@ -1324,10 +1424,10 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	struct sk_buff *skb;
 
 	
-	printk("Entering %s\n",__FUNCTION__);
+	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
 
-	if (tcp_sk(master_sk)->next) { /*TODEL*/
-		printk("2_Entering %s\n",__FUNCTION__);
+	if (mpcb->cnt_subflows==2) { /*TODEL*/
+		printk(KERN_ERR "2_Entering %s\n",__FUNCTION__);
 	}
 
 	/*We listen on every subflow.
@@ -1343,9 +1443,9 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	
 	/*Locking all subsockets*/
 	mtcp_for_each_sk(mpcb,sk,tp) lock_sock(sk);
-	printk("%s:after first lock\n",__FUNCTION__);
-	if (tcp_sk(master_sk)->next) /*TODEL*/
-		printk("%s:2-after first lock\n",__FUNCTION__);
+	printk(KERN_ERR "%s:after first lock\n",__FUNCTION__);
+	if (mpcb->cnt_subflows==2) /*TODEL*/
+		printk(KERN_ERR "%s:2-after first lock\n",__FUNCTION__);
 	err = -ENOTCONN;
 	if (master_sk->sk_state == TCP_LISTEN)
 		goto out; 
@@ -1353,9 +1453,9 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	/*Receive timeout, set by application. This is the same for 
 	  all subflows, and the real value is stored in the master socket.*/
 	timeo = sock_rcvtimeo(master_sk, nonblock);
-	printk("%s:after sock_rcvtimeo\n",__FUNCTION__);
-	if (tcp_sk(master_sk)->next) /*TODEL*/
- 		printk("%s:2-after sock_rcvtimeo\n",__FUNCTION__);
+	printk(KERN_ERR "%s:after sock_rcvtimeo\n",__FUNCTION__);
+	if (mpcb->cnt_subflows==2) /*TODEL*/
+ 		printk(KERN_ERR "%s:2-after sock_rcvtimeo\n",__FUNCTION__);
 
 	/* Urgent data needs to be handled specially. */
 	if (flags & MSG_OOB)
@@ -1434,17 +1534,20 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			BUG();
 
 		}
-		printk("%s:after first loop\n",__FUNCTION__);
-		if (tcp_sk(master_sk)->next) /*TODEL*/
-			printk("%s:2-after first loop\n",__FUNCTION__);
+		printk(KERN_ERR "%s:after first loop\n",__FUNCTION__);
+		if (mpcb->cnt_subflows==2) /*TODEL*/
+			printk(KERN_ERR "%s:2-after first loop\n",__FUNCTION__);
 		
 		/* Well, if we have backlog, try to process it now yet. */
 		if (copied >= target && 
-		    !mtcp_test_any_sk(mpcb,sk,sk->sk_backlog.tail))
+		    !mtcp_test_any_sk(mpcb,sk,sk->sk_backlog.tail)) {		
+			printk(KERN_ERR "%s:copied:%d,target:%d\n",
+			       __FUNCTION__,copied,target);
 			break;
-		printk("%s:after backlog test\n",__FUNCTION__);
-		if (tcp_sk(master_sk)->next) /*TODEL*/
-			printk("%s:2-after backlog test\n",__FUNCTION__);
+		}
+		printk(KERN_ERR "%s:after backlog test\n",__FUNCTION__);
+		if (mpcb->cnt_subflows==2) /*TODEL*/
+			printk(KERN_ERR "%s:2-after backlog test\n",__FUNCTION__);
 
 		/*Here we test a set of conditions to return immediately to
 		  the user*/
@@ -1489,23 +1592,23 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				copied = -EAGAIN;
 				break;
 			}
-			printk("%s:before signal pending\n",__FUNCTION__);
-			if (tcp_sk(master_sk)->next) /*TODEL*/
-				printk("%s:2-before signal pending\n",__FUNCTION__);
+			printk(KERN_ERR "%s:before signal pending\n",__FUNCTION__);
+			if (mpcb->cnt_subflows==2) /*TODEL*/
+				printk(KERN_ERR "%s:2-before signal pending\n",__FUNCTION__);
 			if (signal_pending(current)) {
 				copied = sock_intr_errno(timeo);
 				break;
 			}
-			printk("%s:after signal pending\n",__FUNCTION__);
-			if (tcp_sk(master_sk)->next) /*TODEL*/
-				printk("%s:2-after signal pending\n",__FUNCTION__);
+			printk(KERN_ERR "%s:after signal pending\n",__FUNCTION__);
+			if (mpcb->cnt_subflows==2) /*TODEL*/
+				printk(KERN_ERR "%s:2-after signal pending\n",__FUNCTION__);
 		}
 
 		mtcp_for_each_sk(mpcb,sk,tp)
 			tcp_cleanup_rbuf(sk, tp->copied);
-		printk("%s:after tcp_clean_rbuf\n",__FUNCTION__);
-		if (tcp_sk(master_sk)->next) /*TODEL*/
-			printk("%s:2-after tcp_clean_rbuf\n",__FUNCTION__);
+		printk(KERN_ERR "%s:after tcp_clean_rbuf\n",__FUNCTION__);
+		if (mpcb->cnt_subflows==2) /*TODEL*/
+			printk(KERN_ERR "%s:2-after tcp_clean_rbuf\n",__FUNCTION__);
 
 		if (!sysctl_tcp_low_latency && mpcb->ucopy.task == 
 		    user_recv) {
@@ -1553,26 +1656,26 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 					     !skb_queue_empty(
 						     &tp->ucopy.prequeue)))
 				goto do_prequeue;
-			printk("%s:after goto do_prequeue\n",__FUNCTION__);
-			if (tcp_sk(master_sk)->next) /*TODEL*/
-				printk("%s:2-after goto do_prequeue\n",__FUNCTION__);
+			printk(KERN_ERR "%s:after goto do_prequeue\n",__FUNCTION__);
+			if (mpcb->cnt_subflows==2) /*TODEL*/
+				printk(KERN_ERR "%s:2-after goto do_prequeue\n",__FUNCTION__);
 
 			/* __ Set realtime policy in scheduler __ */
 		}
 
 		if (copied >= target) {
-			printk("%s:before release/lock\n",__FUNCTION__);
-			if (tcp_sk(master_sk)->next) /*TODEL*/
-				printk("%s:2-before release/lock\n",__FUNCTION__);
+			printk(KERN_ERR "%s:before release/lock\n",__FUNCTION__);
+			if (mpcb->cnt_subflows==2) /*TODEL*/
+				printk(KERN_ERR "%s:2-before release/lock\n",__FUNCTION__);
 
 			/* Do not sleep, just process backlog. */
 			mtcp_for_each_sk(mpcb,sk,tp) {
 				release_sock(sk);
 				lock_sock(sk);
 			}
-			printk("%s:after release/lock\n",__FUNCTION__);
-			if (tcp_sk(master_sk)->next) /*TODEL*/
-				printk("%s:2-after release/lock\n",__FUNCTION__);
+			printk(KERN_ERR "%s:after release/lock\n",__FUNCTION__);
+			if (mpcb->cnt_subflows==2) /*TODEL*/
+				printk(KERN_ERR "%s:2-after release/lock\n",__FUNCTION__);
 			
 		} else {
 			/*Wait for data arriving on any subsocket*/
@@ -1716,7 +1819,10 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		mtcp_for_each_tp(mpcb,tp)
 			if (!skb_queue_empty(&tp->ucopy.prequeue)) {
 				int chunk;
-				
+
+				printk(KERN_ERR "%s:calling "
+				       "tcp_prequeue_process\n",__FUNCTION__);
+								
 				mpcb->ucopy.len = copied > 0 ? len : 0;
 				
 				tcp_prequeue_process(sk);
@@ -1741,7 +1847,9 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	mtcp_for_each_sk(mpcb,sk,tp)
 		tcp_cleanup_rbuf(sk, tp->copied);
 	
+	printk(KERN_ERR "%s:about to leave...\n",__FUNCTION__);
 	mtcp_for_each_sk(mpcb,sk,tp) release_sock(sk);
+	printk(KERN_ERR "%s:leaving\n",__FUNCTION__);
 	return copied;
 
 out:
