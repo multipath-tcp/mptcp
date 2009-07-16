@@ -570,7 +570,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		tp->copied+=*used;
 		
 		/*Check if this fills a gap in the ofo queue*/
-		if (!skb_queue_empty(&tp->out_of_order_queue))
+		if (!skb_queue_empty(&mpcb->out_of_order_queue))
 			mtcp_ofo_queue(sk,msg,len,data_seq,copied);
 		/*If the skb has been partially eaten, it will tcp_recvmsg
 		  will see it anyway thanks to the @used pointer.*/
