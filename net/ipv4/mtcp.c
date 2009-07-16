@@ -30,22 +30,6 @@
 #include <linux/random.h>
 #include <asm/atomic.h>
 
-struct pcb_lookup_node {
-	struct list_head collide_sd;
-	int sd; /*Socket descriptor -- NOT CORRECT - change this with another 
-		  key !*/
-	struct multipath_pcb *mpcb;
-};
-
-static struct list_head pcb_hashtable[MTCP_HASH_SIZE];
-static rwlock_t mtcp_hash_lock; /*hashtable protection*/
-#define hash_sd(sd)				\
-	jhash_1word(sd,0)%MTCP_HASH_SIZE
-
-
-static atomic_t conn_no;
-
-
 inline void mtcp_reset_options(struct multipath_options* mopt){
 #ifdef CONFIG_MTCP_PM
 	mopt->remote_token = -1;
@@ -59,32 +43,6 @@ inline void mtcp_reset_options(struct multipath_options* mopt){
 	mopt->first = 0;
 #endif
 }
-
-/**
- * Returns the mpcb if it exists, else NULL
- * If an mpcb is found, the reference count is incremented.
- * For this reason, anybody who calls this function
- * MUST do a kref_put() when it no longer needs the reference
- * to the mpcb.
- */
-struct multipath_pcb* lookup_mpcb(int sd)
-{
-	
-	int sd_hash=hash_sd(sd);
-	struct pcb_lookup_node *node;
-	
-	read_lock_bh(&mtcp_hash_lock);
-	list_for_each_entry(node,&pcb_hashtable[sd_hash],collide_sd) {
-		if (node->sd==sd) {
-			kref_get(&node->mpcb->kref);
-			read_unlock_bh(&mtcp_hash_lock);
-			return node->mpcb;
-		}
-	}
-	read_unlock_bh(&mtcp_hash_lock);
-	return NULL;
-}
-
 
 /**
  * Creates as many sockets as path indices announced by the Path Manager.
@@ -280,7 +238,8 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 	mpcb->connection_list=tp;
 	
 	mpcb->cnt_subflows++;
-	spin_unlock_bh(&mpcb->lock);	
+	kref_get(&mpcb->kref);	
+	spin_unlock_bh(&mpcb->lock);
 }
 
 void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
@@ -303,6 +262,7 @@ void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 		}
 	spin_unlock_bh(&mpcb->lock);
 	tp->mpcb=NULL; tp->next=NULL;
+	kref_put(&mpcb->kref,mpcb_release);
 	BUG_ON(!done);
 }
 
@@ -581,23 +541,6 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		return MTCP_EATEN;
 	}
 }
-
-/*General initialization of MTCP
- */
-static int __init mtcp_init(void) 
-{
-  int i;
-
-  /*Initialize the ctx list*/
-  for (i=0;i<MTCP_HASH_SIZE;i++)
-	  INIT_LIST_HEAD(&pcb_hashtable[i]);
-
-  rwlock_init(&mtcp_hash_lock);
-  atomic_set(&conn_no,0);
-  return 0;
-}
-
-module_init(mtcp_init);
 
 MODULE_LICENSE("GPL");
 

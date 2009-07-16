@@ -8254,7 +8254,6 @@ void __might_sleep(char *file, int line)
 		debug_show_held_locks(current);
 		if (irqs_disabled())
 			print_irqtrace_events(current);
-		*((char*)0)=0;/*Trigger segfault --TODEL*/
 		dump_stack();		
 	}
 #endif
