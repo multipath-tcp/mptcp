@@ -422,12 +422,13 @@ static void mtcp_ofo_queue(struct sock *sk, struct msghdr *msg, size_t *len,
 			break;
 				
 		if (!after(TCP_SKB_CB(skb)->end_data_seq, *data_seq)) {
-			PDEBUG("ofo packet was already received \n");
+			printk(KERN_ERR "ofo packet was already received \n");
 			__skb_unlink(skb, &mpcb->out_of_order_queue);
 			__kfree_skb(skb);
 			continue;
 		}
-		PDEBUG("ofo delivery : nxt_data_seq %X data_seq %X - %X\n",
+		printk(KERN_ERR "ofo delivery : "
+		       "nxt_data_seq %X data_seq %X - %X\n",
 		       *data_seq, TCP_SKB_CB(skb)->data_seq,
 		       TCP_SKB_CB(skb)->end_data_seq);
 		
@@ -444,7 +445,6 @@ static void mtcp_ofo_queue(struct sock *sk, struct msghdr *msg, size_t *len,
 		err=skb_copy_datagram_iovec(skb, data_offset,
 					    msg->msg_iov, used);
 		*copied+=used;
-		tcp_sk(skb->sk)->copied+=used;
 		__kfree_skb(skb);
 		
 		*data_seq = TCP_SKB_CB(skb)->end_seq;
@@ -473,7 +473,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		  we must advance the seq num in the corresponding
 		  tp*/
 		*tp->seq += skb->len;
-
+		
 		/*TODEL*/
 		printk(KERN_ERR "exp. data_seq:%x, skb->data_seq:%x\n",
 		       *data_seq,TCP_SKB_CB(skb)->data_seq);

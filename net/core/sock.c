@@ -1630,16 +1630,9 @@ static void sock_def_error_report(struct sock *sk)
 
 static void sock_def_readable(struct sock *sk, int len)
 {       	
-	if (sk->sk_protocol==IPPROTO_TCP && sk->sk_family==AF_INET6)
-		printk(KERN_ERR " 4 - rcvd packet pi 2\n"); /*TODEL*/
 	read_lock(&sk->sk_callback_lock);
-	if (sk->sk_protocol==IPPROTO_TCP && sk->sk_family==AF_INET6)
-		printk(KERN_ERR " 5 - rcvd packet pi 2\n"); /*TODEL*/
-	if (sk->sk_sleep && waitqueue_active(sk->sk_sleep)) {
-		if (sk->sk_protocol==IPPROTO_TCP && sk->sk_family==AF_INET6)
-			printk(KERN_ERR " 6 - rcvd packet pi 2\n"); /*TODEL*/
+	if (sk->sk_sleep && waitqueue_active(sk->sk_sleep))
 		wake_up_interruptible_sync(sk->sk_sleep);
-	}
 	sk_wake_async(sk, SOCK_WAKE_WAITD, POLL_IN);
 	read_unlock(&sk->sk_callback_lock);
 }

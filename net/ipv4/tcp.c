@@ -1711,8 +1711,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		}
 
 		if (!(flags & MSG_TRUNC)) {
-			/*TODEL*/
-			printk(KERN_ERR "MSG_TRUNC is not set\n");
 			/*From this subsocket point of view, data is ready
 			  to be eaten. Give it to the metasocket. If it is 
 			  in order from the dataseq point of view, it will be
@@ -1728,7 +1726,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				break;
 			}
 		}
-		
+		else 
+			printk(KERN_ERR "MSG_TRUNC is set\n"); /*TODEL*/
 		mtcp_for_each_sk(mpcb,sk,tp)
 			tcp_rcv_space_adjust(sk);
 

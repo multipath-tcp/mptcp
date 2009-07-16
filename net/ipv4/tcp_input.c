@@ -4105,8 +4105,6 @@ queue_and_out:
 			if (eaten < 0 &&
 			    tcp_try_rmem_schedule(sk, skb->truesize))
 				goto drop;
-			if (skb->path_index==2) /*TODEL*/
-				printk(KERN_ERR " 3 - rcvd packet pi 2\n");
 			skb_set_owner_r(skb, sk);
 			__skb_queue_tail(&sk->sk_receive_queue, skb);
 		}
