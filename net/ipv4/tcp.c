@@ -2318,9 +2318,11 @@ void tcp_close(struct sock *sk, long timeout)
 		  end of the subsocket list.*/
 		mtcp_for_each_sk_safe(mpcb,slave_sk,temp) {
 			unsigned long prevtime=jiffies;
-			if (is_master_sk(tcp_sk(slave_sk)))
+			if (is_master_sk(tcp_sk(slave_sk))) {
+				mtcp_destroy_mpcb(mpcb);
 				break; /*All slaves have been closed,
 					 process to close the master*/
+			}
 			tcp_close(slave_sk,timeout);
 			if (timeout) timeout-=(jiffies-prevtime);
 		}

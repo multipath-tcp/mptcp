@@ -263,6 +263,8 @@ static void mpcb_release(struct kref* kref)
 	kfree(mpcb);
 }
 
+/*Warning: can only be called in user conext
+  (due to unregister_netevent_notifier)*/
 void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
 {
 	unregister_netevent_notifier(&mpcb->nb);
@@ -301,8 +303,6 @@ void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 		}
 	spin_unlock_bh(&mpcb->lock);
 	tp->mpcb=NULL; tp->next=NULL;
-	if (mpcb->cnt_subflows==0)
-		mtcp_destroy_mpcb(mpcb);
 	BUG_ON(!done);
 }
 
