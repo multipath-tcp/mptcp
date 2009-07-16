@@ -341,11 +341,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	struct sock *sk; /*For subsocket iteration*/
 	struct tcp_sock *tp; /*for subsocket iteration*/
 
-	/*TODEL*/
-	printk(KERN_ERR "%s:entering\n",__FUNCTION__);
-
 	poll_wait(file, master_sk->sk_sleep, wait);
-	printk(KERN_ERR "%s:after poll_wait\n",__FUNCTION__);
 	if (master_sk->sk_state == TCP_LISTEN)
 		return inet_csk_listen_poll(master_sk);
 
@@ -937,8 +933,6 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	int skipped=0;        
 #endif
 
-	printk(KERN_ERR "%s:entering\n",__FUNCTION__);
-
 	lock_sock(sk);
 	TCP_CHECK_TIMER(sk);
 
@@ -1143,7 +1137,6 @@ out:
 		tcp_push(sk, flags, mss_now, tp->nonagle);
 	TCP_CHECK_TIMER(sk);
 	release_sock(sk);
-	printk(KERN_ERR "%s:leaving. copied is %d\n",__FUNCTION__,copied);
 	return copied;
 
 do_fault:
@@ -1423,13 +1416,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	struct task_struct *user_recv = NULL;
 	struct sk_buff *skb;
 
-	
-	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
-
-	if (mpcb->cnt_subflows==2) { /*TODEL*/
-		printk(KERN_ERR "2_Entering %s\n",__FUNCTION__);
-	}
-
 	/*We listen on every subflow.
 	 * Here we are awoken each time
 	 * any subflow wants to give work to tcp_recvmsg. To be more clear,
@@ -1443,9 +1429,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	
 	/*Locking all subsockets*/
 	mtcp_for_each_sk(mpcb,sk,tp) lock_sock(sk);
-	printk(KERN_ERR "%s:after first lock\n",__FUNCTION__);
-	if (mpcb->cnt_subflows==2) /*TODEL*/
-		printk(KERN_ERR "%s:2-after first lock\n",__FUNCTION__);
+
 	err = -ENOTCONN;
 	if (master_sk->sk_state == TCP_LISTEN)
 		goto out; 
@@ -1453,16 +1437,16 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	/*Receive timeout, set by application. This is the same for 
 	  all subflows, and the real value is stored in the master socket.*/
 	timeo = sock_rcvtimeo(master_sk, nonblock);
-	printk(KERN_ERR "%s:after sock_rcvtimeo\n",__FUNCTION__);
-	if (mpcb->cnt_subflows==2) /*TODEL*/
- 		printk(KERN_ERR "%s:2-after sock_rcvtimeo\n",__FUNCTION__);
 
 	/* Urgent data needs to be handled specially. */
 	if (flags & MSG_OOB)
 		goto recv_urg; 
 
 	/*Setting global and local seq pointer*/
-	if (flags & MSG_PEEK) {
+	if (flags & MSG_PEEK) {	
+		/*We put this because it is not sure at all that MSG_PEEK
+		  works correctly.*/
+		printk(KERN_ERR "Warning: MSG_PEEK is set...\n");
 		peek_data_seq = mpcb->copied_seq;
 		data_seq = &peek_data_seq; /*global pointer*/
 		mtcp_for_each_tp(mpcb,tp) {
@@ -1534,20 +1518,11 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			BUG();
 
 		}
-		printk(KERN_ERR "%s:after first loop\n",__FUNCTION__);
-		if (mpcb->cnt_subflows==2) /*TODEL*/
-			printk(KERN_ERR "%s:2-after first loop\n",__FUNCTION__);
 		
 		/* Well, if we have backlog, try to process it now yet. */
 		if (copied >= target && 
-		    !mtcp_test_any_sk(mpcb,sk,sk->sk_backlog.tail)) {		
-			printk(KERN_ERR "%s:copied:%d,target:%d\n",
-			       __FUNCTION__,copied,target);
+		    !mtcp_test_any_sk(mpcb,sk,sk->sk_backlog.tail))
 			break;
-		}
-		printk(KERN_ERR "%s:after backlog test\n",__FUNCTION__);
-		if (mpcb->cnt_subflows==2) /*TODEL*/
-			printk(KERN_ERR "%s:2-after backlog test\n",__FUNCTION__);
 
 		/*Here we test a set of conditions to return immediately to
 		  the user*/
@@ -1592,23 +1567,15 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				copied = -EAGAIN;
 				break;
 			}
-			printk(KERN_ERR "%s:before signal pending\n",__FUNCTION__);
-			if (mpcb->cnt_subflows==2) /*TODEL*/
-				printk(KERN_ERR "%s:2-before signal pending\n",__FUNCTION__);
+
 			if (signal_pending(current)) {
 				copied = sock_intr_errno(timeo);
 				break;
 			}
-			printk(KERN_ERR "%s:after signal pending\n",__FUNCTION__);
-			if (mpcb->cnt_subflows==2) /*TODEL*/
-				printk(KERN_ERR "%s:2-after signal pending\n",__FUNCTION__);
 		}
 
 		mtcp_for_each_sk(mpcb,sk,tp)
 			tcp_cleanup_rbuf(sk, tp->copied);
-		printk(KERN_ERR "%s:after tcp_clean_rbuf\n",__FUNCTION__);
-		if (mpcb->cnt_subflows==2) /*TODEL*/
-			printk(KERN_ERR "%s:2-after tcp_clean_rbuf\n",__FUNCTION__);
 
 		if (!sysctl_tcp_low_latency && mpcb->ucopy.task == 
 		    user_recv) {
@@ -1656,37 +1623,19 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 					     !skb_queue_empty(
 						     &tp->ucopy.prequeue)))
 				goto do_prequeue;
-			printk(KERN_ERR "%s:after goto do_prequeue\n",__FUNCTION__);
-			if (mpcb->cnt_subflows==2) /*TODEL*/
-				printk(KERN_ERR "%s:2-after goto do_prequeue\n",__FUNCTION__);
-
 			/* __ Set realtime policy in scheduler __ */
 		}
 
 		if (copied >= target) {
-			printk(KERN_ERR "%s:before release/lock\n",__FUNCTION__);
-			if (mpcb->cnt_subflows==2) /*TODEL*/
-				printk(KERN_ERR "%s:2-before release/lock\n",__FUNCTION__);
-
 			/* Do not sleep, just process backlog. */
 			mtcp_for_each_sk(mpcb,sk,tp) {
 				release_sock(sk);
 				lock_sock(sk);
 			}
-			printk(KERN_ERR "%s:after release/lock\n",__FUNCTION__);
-			if (mpcb->cnt_subflows==2) /*TODEL*/
-				printk(KERN_ERR "%s:2-after release/lock\n",__FUNCTION__);
 			
 		} else {
-			/*Wait for data arriving on any subsocket*/
-			
-			if (master_sk->sk_protocol==IPPROTO_TCP && /*TODEL*/
-			    master_sk->sk_family==AF_INET6)
-				printk(KERN_ERR " going to wait\n"); 
+			/*Wait for data arriving on any subsocket*/		
 			mtcp_wait_data(mpcb,master_sk, &timeo);
-			if (master_sk->sk_protocol==IPPROTO_TCP && /*TODEL*/
-			    master_sk->sk_family==AF_INET6)
-				printk(KERN_ERR " woken up - out!!!\n"); 
 		}
 		
 		if (user_recv) {
@@ -1706,12 +1655,9 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 					     tp->rcv_nxt == tp->copied_seq &&
 					     !skb_queue_empty(
 						     &tp->ucopy.prequeue))) {
-                                /*TODEL*/				
-				printk(KERN_ERR "do_prequeue after if\n"); 
 			do_prequeue:
 				sk=(struct sock*) tp;
 				tcp_prequeue_process(sk);
-				printk(KERN_ERR "do_prequeue\n"); /*TODEL*/
 				
 				if ((chunk = len - mpcb->ucopy.len) != 0) {
 					printk(KERN_ERR "prequeue copy :%d\n",
@@ -1797,7 +1743,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			printk(KERN_ERR "used:%lu\n",used); /*TODEL*/
 			continue; 
 		}
-		printk(KERN_ERR "about to eat the skb\n"); /*TODEL*/
 
 		if (tcp_hdr(skb)->fin)
 			goto found_fin_ok;
@@ -1847,9 +1792,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	mtcp_for_each_sk(mpcb,sk,tp)
 		tcp_cleanup_rbuf(sk, tp->copied);
 	
-	printk(KERN_ERR "%s:about to leave...\n",__FUNCTION__);
 	mtcp_for_each_sk(mpcb,sk,tp) release_sock(sk);
-	printk(KERN_ERR "%s:leaving\n",__FUNCTION__);
 	return copied;
 
 out:
@@ -2364,6 +2307,21 @@ void tcp_close(struct sock *sk, long timeout)
 	struct sk_buff *skb;
 	int data_was_unread = 0;
 	int state;
+
+#ifdef CONFIG_MTCP
+	/*if this is the master subsocket, we must first close the
+	  slave subsockets*/
+	if (is_master_sk(tcp_sk(sk))) {
+		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
+		struct sock *slave_sk;
+		struct tcp_sock *slave_tp;
+		mtcp_for_each_sk(mpcb,slave_sk,slave_tp) {
+			unsigned long prevtime=jiffies;
+			tcp_close(slave_sk,timeout);
+			if (timeout) timeout-=(jiffies-prevtime);
+		}
+	}
+#endif
 
 	lock_sock(sk);
 	sk->sk_shutdown = SHUTDOWN_MASK;

@@ -278,8 +278,6 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 	
 	mpcb->cnt_subflows++;
 	spin_unlock_bh(&mpcb->lock);	
-	printk(KERN_ERR "%s:cnt_subflows now %d\n",__FUNCTION__,
-	       mpcb->cnt_subflows); /*TODEL*/
 }
 
 /**
@@ -413,8 +411,7 @@ int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 static void mtcp_ofo_queue(struct sock *sk, struct msghdr *msg, size_t *len,
 			   u32 *data_seq, int *copied)
 {
-	struct tcp_sock *tp=tcp_sk(sk);
-	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
 	struct sk_buff *skb;
 	int err;
 	u32 data_offset;
@@ -461,8 +458,8 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 	struct tcp_sock *tp=tcp_sk(sk);
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
 	u32 data_offset;
-	int err;
-
+	int err;      
+	
 	/*Is this a duplicate segment ?*/
 	if (after(*data_seq,TCP_SKB_CB(skb)->data_seq+skb->len)) {
 		return MTCP_EATEN;
@@ -471,6 +468,11 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 	if (before(*data_seq,TCP_SKB_CB(skb)->data_seq)) {		
 		/*the skb must be queued in the ofo queue*/
 		__skb_unlink(skb, &sk->sk_receive_queue);
+		
+		/*Since the skb is removed from the receive queue
+		  we must advance the seq num in the corresponding
+		  tp*/
+		*tp->seq += skb->len;
 
 		/*TODEL*/
 		printk(KERN_ERR "exp. data_seq:%x, skb->data_seq:%x\n",
