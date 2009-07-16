@@ -2312,10 +2312,15 @@ void tcp_close(struct sock *sk, long timeout)
 	  slave subsockets*/
 	if (is_master_sk(tcp_sk(sk))) {
 		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
-		struct sock *slave_sk;
-		struct tcp_sock *slave_tp;
-		mtcp_for_each_sk(mpcb,slave_sk,slave_tp) {
+		struct sock *slave_sk,*temp;
+		/*We MUST close the master socket in the last place.
+		  this is indeed the case, because the master socket is at the
+		  end of the subsocket list.*/
+		mtcp_for_each_sk_safe(mpcb,slave_sk,temp) {
 			unsigned long prevtime=jiffies;
+			if (is_master_sk(tcp_sk(slave_sk)))
+				break; /*All slaves have been closed,
+					 process to close the master*/
 			tcp_close(slave_sk,timeout);
 			if (timeout) timeout-=(jiffies-prevtime);
 		}
@@ -3217,6 +3222,15 @@ void tcp_done(struct sock *sk)
 	if(sk->sk_state == TCP_SYN_SENT || sk->sk_state == TCP_SYN_RECV)
 		TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_ATTEMPTFAILS);
 
+#ifdef CONFIG_MTCP
+	{
+		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
+		printk(KERN_ERR "Removing subsocket\n");
+		mtcp_del_sock(mpcb,tcp_sk(sk));
+		if (is_master_sk(tcp_sk(sk))) 
+			mtcp_destroy_mpcb(mpcb);
+	}
+#endif       
 	tcp_set_state(sk, TCP_CLOSE);
 	tcp_clear_xmit_timers(sk);
 

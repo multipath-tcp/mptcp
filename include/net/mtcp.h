@@ -147,6 +147,13 @@ struct multipath_pcb {
 	     sk;							\
 	     sk=(struct sock*)tcp_sk(sk)->next,tp=tcp_sk(sk))
 
+#define mtcp_for_each_sk_safe(__mpcb,__sk,__temp)			\
+	for (__sk=(struct sock*)__mpcb->connection_list,		\
+		     __temp=(__sk)?(struct sock*)tcp_sk(__sk)->next:NULL; \
+	     __sk;							\
+	     __sk=__temp,						\
+		     __temp=(__sk)?(struct sock*)tcp_sk(__sk)->next:NULL)
+
 /*Returns 1 if any subflow meets the condition @cond
   Else return 0. Moreover, if 1 is returned, sk points to the
   first subsocket that verified the condition*/
@@ -205,7 +212,9 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 #define MTCP_QUEUED 2 /*The skb has been queued in the mpcb ofo queue*/
 
 struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk);
+void mtcp_destroy_mpcb(struct multipath_pcb *mpcb);
 void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp);
+void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp);
 struct multipath_pcb* mtcp_lookup_mpcb(int sd);
 void mtcp_reset_options(struct multipath_options* mopt);
 void mtcp_update_metasocket(struct sock *sock);

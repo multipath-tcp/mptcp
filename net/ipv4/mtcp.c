@@ -280,6 +280,28 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 	spin_unlock_bh(&mpcb->lock);	
 }
 
+void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
+{
+	struct tcp_sock *tp_prev=mpcb->connection_list;
+	int done=0;
+	spin_lock_bh(&mpcb->lock);
+	if (tp_prev==tp) {
+		mpcb->connection_list=tp->next;
+		mpcb->cnt_subflows--;
+		done=1;
+	}
+	else for (;tp_prev && tp_prev->next;tp_prev=tp_prev->next) {
+			if (tp_prev->next==tp) {
+				tp_prev->next=tp->next;
+				mpcb->cnt_subflows--;
+				done=1;
+				break;
+			}
+		}
+	spin_unlock_bh(&mpcb->lock);
+	BUG_ON(!done);
+}
+
 /**
  * Updates the metasocket ULID/port data, based on the given sock.
  * The argument sock must be the sock accessible to the application.
