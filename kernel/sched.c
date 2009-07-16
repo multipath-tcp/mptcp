@@ -4680,7 +4680,7 @@ do_wait_for_common(struct completion *x, long timeout, int state)
 
 static long __sched
 wait_for_common(struct completion *x, long timeout, int state)
-{
+{	
 	might_sleep();
 
 	spin_lock_irq(&x->wait.lock);
@@ -8254,7 +8254,8 @@ void __might_sleep(char *file, int line)
 		debug_show_held_locks(current);
 		if (irqs_disabled())
 			print_irqtrace_events(current);
-		dump_stack();
+		*((char*)0)=0;/*Trigger segfault --TODEL*/
+		dump_stack();		
 	}
 #endif
 }

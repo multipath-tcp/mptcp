@@ -3227,8 +3227,6 @@ void tcp_done(struct sock *sk)
 		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
 		printk(KERN_ERR "Removing subsocket\n");
 		mtcp_del_sock(mpcb,tcp_sk(sk));
-		if (is_master_sk(tcp_sk(sk))) 
-			mtcp_destroy_mpcb(mpcb);
 	}
 #endif       
 	tcp_set_state(sk, TCP_CLOSE);

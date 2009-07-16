@@ -259,6 +259,7 @@ static void mpcb_release(struct kref* kref)
 {
 	struct multipath_pcb *mpcb;
 	mpcb=container_of(kref,struct multipath_pcb,kref);
+	printk(KERN_ERR "about to kfree\n");
 	kfree(mpcb);
 }
 
@@ -299,6 +300,9 @@ void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 			}
 		}
 	spin_unlock_bh(&mpcb->lock);
+	tp->mpcb=NULL; tp->next=NULL;
+	if (mpcb->cnt_subflows==0)
+		mtcp_destroy_mpcb(mpcb);
 	BUG_ON(!done);
 }
 
@@ -469,7 +473,7 @@ static void mtcp_ofo_queue(struct sock *sk, struct msghdr *msg, size_t *len,
 		*copied+=used;
 		__kfree_skb(skb);
 		
-		*data_seq = TCP_SKB_CB(skb)->end_seq;
+		*data_seq = TCP_SKB_CB(skb)->end_data_seq;
 	}
 }
 
