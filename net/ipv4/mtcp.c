@@ -63,6 +63,7 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 	int retval;
 	struct socket *sock;
 	struct tcp_sock *tp=mpcb->connection_list;
+	struct tcp_sock *newtp;
 
 	PDEBUG("Entering %s, path_indices:%x\n",__FUNCTION__,path_indices);
 	for (i=0;i<sizeof(path_indices)*8;i++) {
@@ -74,7 +75,6 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			tp=tp->next;
 		}
 		else {
-			struct tcp_sock *newtp;
 			struct sockaddr *loculid,*remulid;
 			int ulid_size;
 			struct sockaddr_in loculid_in,remulid_in;
@@ -135,15 +135,15 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			newtp->path_index=i+1;
 			newtp->mpcb = mpcb;
 			newtp->mtcp_flags=0;
+			mtcp_add_sock(mpcb,newtp);			
        
 			retval = sock->ops->bind(sock, loculid, ulid_size);
 			if (retval<0) goto fail_bind;
+			
 			retval = sock->ops->connect(sock,remulid,
 						    ulid_size,0);
 			if (retval<0) goto fail_connect;
-			
-			mtcp_add_sock(mpcb,newtp);		
-			
+						
 			PDEBUG("New MTCP subsocket created, pi %d\n",i+1);
 		}
 	}
@@ -152,6 +152,7 @@ fail_bind:
 	printk(KERN_ERR "MTCP subsocket bind() failed\n");
 fail_connect:
 	printk(KERN_ERR "MTCP subsocket connect() failed\n");
+	mtcp_del_sock(mpcb,newtp);
 	sock_release(sock);
 	return -1;
 }
@@ -240,6 +241,8 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 	mpcb->cnt_subflows++;
 	kref_get(&mpcb->kref);	
 	spin_unlock_bh(&mpcb->lock);
+	printk(KERN_ERR "Added subsocket, cnt_subflows now %d\n",
+	       mpcb->cnt_subflows);
 }
 
 void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)

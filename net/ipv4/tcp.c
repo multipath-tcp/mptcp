@@ -2310,6 +2310,7 @@ void tcp_close(struct sock *sk, long timeout)
 #ifdef CONFIG_MTCP
 	/*if this is the master subsocket, we must first close the
 	  slave subsockets*/
+	printk(KERN_ERR "%s:app close\n",__FUNCTION__);
 	if (is_master_sk(tcp_sk(sk))) {
 		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
 		struct sock *slave_sk,*temp;
@@ -3223,14 +3224,7 @@ void tcp_done(struct sock *sk)
 {
 	if(sk->sk_state == TCP_SYN_SENT || sk->sk_state == TCP_SYN_RECV)
 		TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_ATTEMPTFAILS);
-
-#ifdef CONFIG_MTCP
-	{
-		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
-		printk(KERN_ERR "Removing subsocket\n");
-		mtcp_del_sock(mpcb,tcp_sk(sk));
-	}
-#endif       
+    
 	tcp_set_state(sk, TCP_CLOSE);
 	tcp_clear_xmit_timers(sk);
 

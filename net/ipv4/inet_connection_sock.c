@@ -559,6 +559,12 @@ EXPORT_SYMBOL_GPL(inet_csk_clone);
  */
 void inet_csk_destroy_sock(struct sock *sk)
 {
+#ifdef CONFIG_MTCP
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
+	printk(KERN_ERR "Removing subsocket\n");
+	mtcp_del_sock(mpcb,tcp_sk(sk));
+#endif   
+
 	WARN_ON(sk->sk_state != TCP_CLOSE);
 	WARN_ON(!sock_flag(sk, SOCK_DEAD));
 
