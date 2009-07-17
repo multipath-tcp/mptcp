@@ -24,6 +24,20 @@
 #include <net/inet6_hashtables.h>
 #include <net/mtcp_v6.h>
 
+
+/**
+ * Returns true if the given path index matched with the tp
+ * a match is considered in the following cases:
+ * -either the path_index or the tp path index is zero. (which means
+ *  that the path index is just bypassed)
+ * -or the path index is equal to that of the tp
+ */
+inline int check_path_index(int path_index, struct tcp_sock *tp)
+{
+	return (!path_index || tp->path_index==path_index
+		|| !tp->path_index);
+}
+
 /*
  * Sockets in TCP_CLOSE state are _always_ taken out of the hash, so
  * we need not check it for TCP lookups anymore, thanks Alexey. -DaveM
@@ -55,14 +69,14 @@ struct sock *__mtcpv6_lookup_established(struct net *net,
 		tp=tcp_sk(sk);
 		/* For IPV6 do the cheaper port and family tests first. */
 		if (INET6_MATCH(sk, net, hash, saddr, daddr, ports, dif) &&
-		    (!path_index || tp->path_index==path_index))
+		    check_path_index(path_index,tp))
 			goto hit; /* You sunk my battleship! */
 	}
 	/* Must check for a TIME_WAIT'er before going to listener hash. */
 	sk_for_each(sk, node, &head->twchain) {
 		tp=tcp_sk(sk);
 		if (INET6_TW_MATCH(sk, net, hash, saddr, daddr, ports, dif) &&
-		    (!path_index || tp->path_index==path_index))
+		    check_path_index(path_index,tp))
 			goto hit;
 	}
 	read_unlock(lock);
@@ -93,8 +107,7 @@ struct sock *mtcpv6_lookup_listener(struct net *net,
 		
 		if (net_eq(sock_net(sk), net) && inet_sk(sk)->num == hnum &&
 		    sk->sk_family == PF_INET6 && 
-		    (!path_index || tp->path_index==path_index
-		     || !tp->path_index)) {
+		    check_path_index(path_index,tp)) {
 			const struct ipv6_pinfo *np = inet6_sk(sk);
 			
 			score = 1;

@@ -1549,10 +1549,6 @@ int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 		goto discard;
 #endif
 
-	if (skb->path_index==2) /*TODEL*/
-		printk(KERN_ERR "%s:rcvd packet with path index 2\n",
-		       __FUNCTION__);
-
 	if (sk_filter(sk, skb))
 		goto discard;
 
@@ -1677,9 +1673,6 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 		goto discard_it;
 
 	th = tcp_hdr(skb);
-
-	if (th->syn)
-		printk(KERN_ERR "%s:Entering\n",__FUNCTION__);
 
 	if (th->doff < sizeof(struct tcphdr)/4)
 		goto bad_packet;
