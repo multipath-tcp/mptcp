@@ -90,9 +90,11 @@ struct sock *mtcpv6_lookup_listener(struct net *net,
 	sk_for_each(sk, node,
 		    &hashinfo->listening_hash[inet_lhashfn(net, hnum)]) {
 		tp=tcp_sk(sk);
+		
 		if (net_eq(sock_net(sk), net) && inet_sk(sk)->num == hnum &&
 		    sk->sk_family == PF_INET6 && 
-		    (!path_index || tp->path_index==path_index)) {
+		    (!path_index || tp->path_index==path_index
+		     || !tp->path_index)) {
 			const struct ipv6_pinfo *np = inet6_sk(sk);
 			
 			score = 1;

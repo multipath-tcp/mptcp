@@ -1531,7 +1531,7 @@ int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 {
 	struct ipv6_pinfo *np = inet6_sk(sk);
 	struct tcp_sock *tp;
-	struct sk_buff *opt_skb = NULL;
+	struct sk_buff *opt_skb = NULL;       
 
 	/* Imagine: socket is IPv6. IPv4 packet arrives,
 	   goes to IPv4 receive handler and backlogged.
@@ -1664,7 +1664,7 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 	struct sock *sk;
 	int ret;
 	struct net *net = dev_net(skb->dev);
-
+	
 	if (skb->pkt_type != PACKET_HOST)
 		goto discard_it;
 
@@ -1677,6 +1677,9 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 		goto discard_it;
 
 	th = tcp_hdr(skb);
+
+	if (th->syn)
+		printk(KERN_ERR "%s:Entering\n",__FUNCTION__);
 
 	if (th->doff < sizeof(struct tcphdr)/4)
 		goto bad_packet;
