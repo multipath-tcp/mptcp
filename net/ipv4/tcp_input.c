@@ -3527,6 +3527,7 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 		     mpcb->received_options.saw_dsn)) {
 		/*This is the beginning of the multipath session, init
 		  the dsn value*/
+		tp->mpc=1;
 		mpcb->copied_seq=mpcb->received_options.data_seq+1;
 	}
 	return 1;
@@ -5383,6 +5384,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		     mpcb->received_options.saw_dsn)) {
 		/*This is the beginning of the multipath session, init
 		  the dsn value*/
+		tp->mpc=1;
 		mpcb->copied_seq=mpcb->received_options.data_seq+1;
 	}
 

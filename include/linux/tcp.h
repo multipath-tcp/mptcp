@@ -250,6 +250,7 @@ struct tcp_sock {
 	u32     peek_seq;       /* Peek seq, for use by MTCP            */
 	u32     *seq;
 	u32     copied;
+	u8      mpc:1;          /* Multipath capable                    */
 #endif
 	u32	rcv_wup;	/* rcv_nxt on last window update sent	*/
  	u32	snd_nxt;	/* Next sequence we send		*/

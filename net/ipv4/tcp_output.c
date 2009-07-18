@@ -439,7 +439,7 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		*ptr++ = htonl((TCPOPT_MPC << 24) |
 			       (TCPOLEN_MPC << 16));
 	}
-	if (likely(OPTION_DSN & opts->options)) {
+	if (OPTION_DSN & opts->options) {
 		*ptr++ = htonl((TCPOPT_NOP << 24) |
 			       (TCPOPT_NOP << 16) |
 			       (TCPOPT_DSN << 8) |
@@ -619,7 +619,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			opts->num_sack_blocks * TCPOLEN_SACK_PERBLOCK;
 	}
 #ifdef CONFIG_MTCP
-	if (!skb || skb->len!=0) {
+	if (tp->mpc && (!skb || skb->len!=0)) {
 		opts->options |= OPTION_DSN;
 		opts->data_seq=tcb?tcb->data_seq:0;
 		size += TCPOLEN_DSN_ALIGNED;
