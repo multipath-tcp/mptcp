@@ -293,7 +293,7 @@ config ARPD
 
 config MTCP
        bool "MTCP protocol (EXPERIMENTAL)"
-       depends on EXPERIMENTAL && !SYN_COOKIES && !NET_DMA
+       depends on EXPERIMENTAL && !SYN_COOKIES && !NET_DMA && !TCP_MD5SIG
        ---help---
 	This replaces the normal TCP stack with a Multipath TCP stack,
 	able to use several paths at once.
