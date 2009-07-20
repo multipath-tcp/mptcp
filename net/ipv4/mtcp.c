@@ -336,7 +336,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	struct multipath_pcb *mpcb;
 	int iovlen,copied,msg_size;
 	
-	if (!tp->mpc)
+	if (!tcp_sk(master_sk)->mpc)
 		return tcp_sendmsg(iocb,sock, msg, size);
 	
 	mpcb=mpcb_from_tcpsock(tcp_sk(master_sk));
