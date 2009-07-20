@@ -512,9 +512,8 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 			opts->options |= OPTION_DSN;
 			size+=TCPOLEN_DSN_ALIGNED;
 			opts->data_seq=mpcb->write_seq; /*First data byte is 
-							  initial data seq + 1 
-							  (IDSN+1)*/	
-			mpcb->write_seq++;
+							  initial data seq
+							  (IDSN)*/
 		}
 	}
 #endif
@@ -575,9 +574,7 @@ static unsigned tcp_synack_options(struct sock *sk,
 	size+=TCPOLEN_MPC_ALIGNED;
 	opts->options |= OPTION_DSN;
 	size+=TCPOLEN_DSN_ALIGNED;
-	opts->data_seq=0; /*First data byte is 
-			    initial data seq + 1 
-			    (IDSN+1)*/
+	opts->data_seq=0;
 #endif
 	return size;
 }
@@ -618,7 +615,17 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		size += TCPOLEN_SACK_BASE_ALIGNED +
 			opts->num_sack_blocks * TCPOLEN_SACK_PERBLOCK;
 	}
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MTCP	
+	/*Even if the mpc option has been sent in the SYN, it must be repeated
+	  in the first segment of the established flow, because the server
+	  only creates the socket when it receives the final ACK, not when
+	  we send the SYN.*/
+	if (unlikely(!mpcb_from_tcpsock(tp)->mpc_sent)) {
+		opts->options |= OPTION_MPC;
+		size+=TCPOLEN_MPC_ALIGNED;
+		mpcb_from_tcpsock(tp)->mpc_sent=1;
+	}
+
 	if (tp->mpc && (!skb || skb->len!=0)) {
 		opts->options |= OPTION_DSN;
 		opts->data_seq=tcb?tcb->data_seq:0;

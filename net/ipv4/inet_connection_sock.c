@@ -273,11 +273,11 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 		tp->path_index=0;		
 		mtcp_add_sock(mpcb,tp);
 		mtcp_update_metasocket(newsk);
-		mpcb->write_seq=1; /*first byte is IDSN+1
+		mpcb->write_seq=0; /*first byte is IDSN
 				     To be replaced later with a random IDSN
 				     (well, if it indeed improve security)*/
 		
-		mpcb->copied_seq=1; /* First byte of yet unread data */
+		mpcb->copied_seq=0; /* First byte of yet unread data */
 	}
 #endif
 

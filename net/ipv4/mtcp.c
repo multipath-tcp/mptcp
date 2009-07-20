@@ -135,6 +135,7 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			newtp->path_index=i+1;
 			newtp->mpcb = mpcb;
 			newtp->mtcp_flags=0;
+			newtp->mpc=1;
 			mtcp_add_sock(mpcb,newtp);			
        
 			retval = sock->ops->bind(sock, loculid, ulid_size);

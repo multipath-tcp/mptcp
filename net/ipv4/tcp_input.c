@@ -3523,13 +3523,17 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 		PDEBUG("mpcb null in fast parse options\n");
 	tcp_parse_options(skb, &tp->rx_opt,mpcb?&mpcb->received_options:NULL, 
 			  1);
-	if (unlikely(mpcb && mpcb->received_options.saw_mpc && 
-		     mpcb->received_options.saw_dsn)) {
+	if (unlikely(mpcb && mpcb->received_options.saw_mpc))
+		tp->mpc=1;
+	
+	if (unlikely(!mpcb->init_dsn) &&
+	    mpcb && mpcb->received_options.saw_dsn) {
 		/*This is the beginning of the multipath session, init
 		  the dsn value*/
-		tp->mpc=1;
-		mpcb->copied_seq=mpcb->received_options.data_seq+1;
+		mpcb->copied_seq=mpcb->received_options.data_seq;
+		mpcb->init_dsn=1;
 	}
+	
 	return 1;
 }
 
@@ -5385,7 +5389,8 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		/*This is the beginning of the multipath session, init
 		  the dsn value*/
 		tp->mpc=1;
-		mpcb->copied_seq=mpcb->received_options.data_seq+1;
+		mpcb->copied_seq=mpcb->received_options.data_seq;
+		mpcb->init_dsn=1;
 	}
 
 	if (th->ack) {

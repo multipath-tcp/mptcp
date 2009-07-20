@@ -116,13 +116,9 @@ struct multipath_pcb {
 	             of course, it never exceeds wb_size*/
 	int                       wb_size,wb_start,wb_length;
 	
-	/*remember user flags*/
-	struct flag_stack*        flags;
-	uint8_t                   mtcp_flags;
-#define MTCP_ACCEPT 0x1  /*the user socket is in accept mode
-			   keep accept mode for subsockets
-			   (that is, we don't make a connect)*/
-	
+	uint8_t                   mpc_sent:1, /*MPC option has been sent, do 
+						not send it anymore*/
+		                  init_dsn:1; /*Initial dataseq has been seen*/
 	struct sk_buff_head       receive_queue;/*received data*/
 	struct sk_buff_head       write_queue;/*sent stuff, waiting for ack*/
 	struct sk_buff_head       retransmit_queue;/*need to rexmit*/

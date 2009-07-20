@@ -1838,7 +1838,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	if (!master_tp->mpc)
 		return tcp_recvmsg_fallback(iocb,master_sk,msg,len,nonblock,
 					    flags,addr_len);
-
 	/*We listen on every subflow.
 	 * Here we are awoken each time
 	 * any subflow wants to give work to tcp_recvmsg. To be more clear,
@@ -2162,7 +2161,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				tcp_fast_path_check(sk);
 			}
 		if (used + offset < skb->len) {
-			printk(KERN_ERR "used:%lu\n",used); /*TODEL*/
+			printk(KERN_ERR "used:%lu, offset:%lu\n",used,
+			       (long unsigned int)offset); /*TODEL*/
 			continue; 
 		}
 
