@@ -4952,17 +4952,17 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 					/*We have not yet finished to adapt
 					  the code for the fast path, thus
 					  we put this BUG to ensure that it
-					  is not accidentally taken
+					  is not accidentally taken.
 					  When we implement this, we must
 					  ensure that this iovec copy is
 					  replaced with a call to 
 					  mtcp_queue_skb, and that the skb is
 					  only destroyed when that function
-					  returns MCTP_EATEN (here, the 
+					  returns MTCP_EATEN (here, the 
 					  skb is always destroyed if eaten
 					  is 1, which is no longer
 					  correct with MTCP)*/
-					BUG();
+					if (tp->mpc) BUG();
 					__set_current_state(TASK_RUNNING);
 
 					if (!tcp_copy_to_iovec(sk, skb, 
