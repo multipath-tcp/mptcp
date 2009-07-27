@@ -75,8 +75,8 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			tp=tp->next;
 		}
 		else {
-			struct sockaddr *loculid,*remulid;
-			int ulid_size;
+			struct sockaddr *loculid,*remulid=NULL;
+			int ulid_size=0;
 			struct sockaddr_in loculid_in,remulid_in;
 			struct sockaddr_in6 loculid_in6,remulid_in6;
 			/*a new socket must be created*/
@@ -131,6 +131,8 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 				remulid=(struct sockaddr *)&remulid_in6;
 				ulid_size=sizeof(loculid_in6);
 				break;
+			default:
+				BUG();
 			}
 			newtp->path_index=i+1;
 			newtp->mpcb = mpcb;
