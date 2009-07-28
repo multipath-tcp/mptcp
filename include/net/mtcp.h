@@ -24,6 +24,7 @@
 #include <linux/aio.h>
 #include <linux/net.h>
 #include <linux/socket.h>
+#include <linux/mutex.h>
 
 /*Macro for activation/deactivation of debug messages*/
 
@@ -127,6 +128,7 @@ struct multipath_pcb {
 							 go here */
 	
 	spinlock_t                lock;
+	struct mutex              mutex;
 	struct kref               kref;
 	struct notifier_block     nb; /*For listening to PM events*/
 };

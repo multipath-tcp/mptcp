@@ -1098,6 +1098,9 @@ new_segment:
 				TCP_SKB_CB(skb)->flags &= ~TCPCB_FLAG_PSH;
 
 			tp->write_seq += copy;
+			printk(KERN_ERR "pi %d, tp->write_seq now %x "
+			       "(copy is %d)\n", tp->path_index,
+			       tp->write_seq,copy);
 			TCP_SKB_CB(skb)->end_seq += copy;
 			skb_shinfo(skb)->gso_segs = 0;
 #ifdef CONFIG_MTCP
@@ -1834,6 +1837,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	long timeo;
 	struct task_struct *user_recv = NULL;
 	struct sk_buff *skb;
+	int cnt_subflows;
 
 	if (!master_tp->mpc)
 		return tcp_recvmsg_fallback(iocb,master_sk,msg,len,nonblock,
@@ -1849,6 +1853,9 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	mtcp_for_each_tp(mpcb,tp) 
 		tp->copied=0;
 	
+	/*Locking metasocket*/
+	mutex_lock(&mpcb->mutex);
+
 	/*Locking all subsockets*/
 	mtcp_for_each_sk(mpcb,sk,tp) lock_sock(sk);
 
@@ -1914,6 +1921,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			/* Now that we have two receive queues this
 			 * shouldn't happen.
 			 */
+			BUG_ON(!tp->seq);
+			
 			if (before(*tp->seq, TCP_SKB_CB(skb)->seq)) {
 				printk(KERN_ERR 
 				       "recvmsg bug: copied %X "
@@ -1921,6 +1930,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				       TCP_SKB_CB(skb)->seq);
 				BUG();
 			}
+			
 			offset = *tp->seq - TCP_SKB_CB(skb)->seq;
 			if (tcp_hdr(skb)->syn)
 				offset--;
@@ -2056,8 +2066,29 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			}
 			
 		} else {
-			/*Wait for data arriving on any subsocket*/		
+			/*Wait for data arriving on any subsocket*/
+			cnt_subflows=mpcb->cnt_subflows;
+			mutex_unlock(&mpcb->mutex);
 			mtcp_wait_data(mpcb,master_sk, &timeo);
+			
+			/*We may have received data on a newly created
+			  subsocket, check if the list has grown*/
+			mutex_lock(&mpcb->mutex);
+			if (cnt_subflows!=mpcb->cnt_subflows) {
+				printk(KERN_ERR "New subflow arrived"
+				       " in live\n");
+				/*We must ensure  that for each new tp, 
+				  the seq pointer is correctly set. In 
+				  particular we'll get a segfault if
+				  the pointer is NULL*/
+				if (flags & MSG_PEEK)				
+					mtcp_for_each_tp(mpcb,tp) {
+						tp->peek_seq=tp->copied_seq;
+						tp->seq=&tp->peek_seq;
+					}
+				else mtcp_for_each_tp(mpcb,tp)
+					     tp->seq=&tp->copied_seq;
+			}
 		}
 		
 		if (user_recv) {
@@ -2215,10 +2246,12 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		tcp_cleanup_rbuf(sk, tp->copied);
 	
 	mtcp_for_each_sk(mpcb,sk,tp) release_sock(sk);
+	mutex_unlock(&mpcb->mutex);
 	return copied;
 
 out:
 	mtcp_for_each_sk(mpcb,sk,tp) release_sock(sk);
+	mutex_unlock(&mpcb->mutex);
 	return err;
 
 recv_urg:

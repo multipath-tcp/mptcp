@@ -66,6 +66,9 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 	struct tcp_sock *newtp;
 
 	PDEBUG("Entering %s, path_indices:%x\n",__FUNCTION__,path_indices);
+
+	mutex_lock(&mpcb->mutex);
+
 	for (i=0;i<sizeof(path_indices)*8;i++) {
 		if (!((1<<i) & path_indices))
 			continue;
@@ -86,6 +89,7 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			if (retval<0) {
 				printk(KERN_ERR "%s:sock_create failed\n",
 				       __FUNCTION__);
+				mutex_unlock(&mpcb->mutex);
 				return retval;
 			}
 			newtp=tcp_sk(sock->sk);
@@ -138,7 +142,8 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			newtp->mpcb = mpcb;
 			newtp->mtcp_flags=0;
 			newtp->mpc=1;
-			mtcp_add_sock(mpcb,newtp);			
+			mtcp_add_sock(mpcb,newtp);
+			
        
 			retval = sock->ops->bind(sock, loculid, ulid_size);
 			if (retval<0) goto fail_bind;
@@ -150,6 +155,7 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			PDEBUG("New MTCP subsocket created, pi %d\n",i+1);
 		}
 	}
+	mutex_unlock(&mpcb->mutex);
 	return 0;
 fail_bind:
 	printk(KERN_ERR "MTCP subsocket bind() failed\n");
@@ -157,6 +163,7 @@ fail_connect:
 	printk(KERN_ERR "MTCP subsocket connect() failed\n");
 	mtcp_del_sock(mpcb,newtp);
 	sock_release(sock);
+	mutex_unlock(&mpcb->mutex);
 	return -1;
 }
 
@@ -210,6 +217,7 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 
 	kref_init(&mpcb->kref);
 	spin_lock_init(&mpcb->lock);
+	mutex_init(&mpcb->mutex);
 	
 	mpcb->nb.notifier_call=netevent_callback;
 	register_netevent_notifier(&mpcb->nb);
@@ -221,6 +229,7 @@ static void mpcb_release(struct kref* kref)
 {
 	struct multipath_pcb *mpcb;
 	mpcb=container_of(kref,struct multipath_pcb,kref);
+	mutex_destroy(&mpcb->mutex);
 	printk(KERN_ERR "about to kfree\n");
 	kfree(mpcb);
 }
@@ -229,7 +238,7 @@ static void mpcb_release(struct kref* kref)
   (due to unregister_netevent_notifier)*/
 void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
 {
-	unregister_netevent_notifier(&mpcb->nb);
+	unregister_netevent_notifier(&mpcb->nb);	
 	kref_put(&mpcb->kref,mpcb_release);
 }
 
