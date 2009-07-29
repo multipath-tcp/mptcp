@@ -382,7 +382,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 }
 
 /**
- * sk_wait_data - wait for data to arrive at sk_receive_queue
+ * mtcp_wait_data - wait for data to arrive at sk_receive_queue
  * on any of the subsockets attached to the mpcb
  * @mpcb:  the mpcb to wait on
  * @sk:    its master socket
@@ -400,6 +400,7 @@ int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 	DEFINE_WAIT(wait);
 
 	prepare_to_wait(master_sk->sk_sleep, &wait, TASK_INTERRUPTIBLE);
+
 	mtcp_for_each_sk(mpcb,sk,tp)
 		set_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
 	rc = mtcp_wait_event_any_sk(mpcb, sk, timeo, 
@@ -464,6 +465,11 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 	
 	/*Is this a duplicate segment ?*/
 	if (after(*data_seq,TCP_SKB_CB(skb)->data_seq+skb->len)) {
+		/*In the current implementation, we do not 
+		  retransmit skbs on other queues, so we cannot have any
+		  duplicate here. Duplicates are managed by each subflow 
+		  individually.*/
+		BUG();
 		return MTCP_EATEN;
 	}
 
@@ -533,9 +539,12 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 	else {
 		/*The skb can be read by the app*/
 		data_offset= *data_seq - TCP_SKB_CB(skb)->data_seq;
-		if (tcp_hdr(skb)->syn)
-			data_offset--;
 		*used = skb->len - data_offset;
+		/*In the current implementation, we do not 
+		  retransmit skbs on other queues, so we cannot have any
+		  duplicate here. Duplicates are managed by each subflow 
+		  individually.*/
+		BUG_ON(*used==0);
 		if (*len < *used)
 			*used = *len;
 		

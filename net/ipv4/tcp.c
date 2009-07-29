@@ -1098,14 +1098,13 @@ new_segment:
 				TCP_SKB_CB(skb)->flags &= ~TCPCB_FLAG_PSH;
 
 			tp->write_seq += copy;
-			printk(KERN_ERR "pi %d, tp->write_seq now %x "
-			       "(copy is %d)\n", tp->path_index,
-			       tp->write_seq,copy);
 			TCP_SKB_CB(skb)->end_seq += copy;
 			skb_shinfo(skb)->gso_segs = 0;
 #ifdef CONFIG_MTCP
 			if (tp->mpc) {
 				mpcb->write_seq += copy;
+				printk(KERN_ERR "write_seq now %x, copied %d"
+				       " bytes\n",mpcb->write_seq,copy);
 				TCP_SKB_CB(skb)->end_data_seq += copy;
 			}
 #endif
@@ -1287,6 +1286,9 @@ static void tcp_prequeue_process(struct sock *sk)
 {
 	struct sk_buff *skb;
 	struct tcp_sock *tp = tcp_sk(sk);
+
+	if (tp->path_index==0 || tp->path_index==1) 
+		printk(KERN_ERR "Entering %s\n",__FUNCTION__);
 
 	NET_INC_STATS_USER(sock_net(sk), LINUX_MIB_TCPPREQUEUED);
 
@@ -1847,7 +1849,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	/*We listen on every subflow.
 	 * Here we are awoken each time
 	 * any subflow wants to give work to tcp_recvmsg. To be more clear,
-	 * we behave here somewhat like doing a select, by as seen by bottom 
+	 * we behave here somewhat like doing a select, but as seen by bottom 
 	 * halves we are expecting data from every subflow at once.
 	 */
 	
@@ -2117,22 +2119,25 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				copied += chunk;
 			}
 			
-			if (mtcp_test_any_tp(mpcb,tp,
-					     tp->rcv_nxt == tp->copied_seq &&
-					     !skb_queue_empty(
-						     &tp->ucopy.prequeue))) {
-			do_prequeue:
-				sk=(struct sock*) tp;
-				tcp_prequeue_process(sk);
-				
-				if ((chunk = len - mpcb->ucopy.len) != 0) {
-					printk(KERN_ERR "prequeue copy :%d\n",
-					       chunk); /*TODEL*/
-					NET_ADD_STATS_USER(sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
-					len -= chunk;
-					copied += chunk;
+			mtcp_for_each_tp(mpcb,tp)
+				if (tp->rcv_nxt == tp->copied_seq &&
+				    !skb_queue_empty(
+					    &tp->ucopy.prequeue)) {
+					
+				do_prequeue:
+					sk=(struct sock*) tp;
+					tcp_prequeue_process(sk);
+					
+					if ((chunk = len - mpcb->ucopy.len) 
+					    != 0) {
+						printk(KERN_ERR "prequeue copy :%d\n",
+						       chunk); /*TODEL*/
+						NET_ADD_STATS_USER(
+							sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
+						len -= chunk;
+						copied += chunk;
+					}
 				}
-			}
 		}
 		mtcp_for_each_tp(mpcb,tp)
 			if ((flags & MSG_PEEK) && 
@@ -2233,9 +2238,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		mtcp_for_each_tp(mpcb,tp)
 			if (!skb_queue_empty(&tp->ucopy.prequeue)) {
 				int chunk;
-
-				printk(KERN_ERR "%s:calling "
-				       "tcp_prequeue_process\n",__FUNCTION__);
 								
 				mpcb->ucopy.len = copied > 0 ? len : 0;
 				
@@ -3028,6 +3030,9 @@ struct sk_buff *tcp_tso_segment(struct sk_buff *skb, int features)
 	__be32 delta;
 	unsigned int oldlen;
 	unsigned int len;
+
+	printk(KERN_ERR "Entering %s\n (unsupported by mtcp !)\n",
+	       __FUNCTION__); /*TODEL*/
 
 	if (!pskb_may_pull(skb, sizeof(*th)))
 		goto out;
