@@ -4033,9 +4033,9 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 #endif
 	int eaten = -1;
 	
-	if (skb->path_index==2) /*TODEL*/
-		printk(KERN_ERR "%s:rcvd packet with path index 2\n",
-		       __FUNCTION__);
+	if (skb->path_index==1) /*TODEL*/
+		printk(KERN_ERR "%s:pi 1 - data_seq is %x\n",
+		       __FUNCTION__,TCP_SKB_CB(skb)->data_seq);
 	
 	if (TCP_SKB_CB(skb)->seq == TCP_SKB_CB(skb)->end_seq)
 		goto drop;

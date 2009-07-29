@@ -1839,6 +1839,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	struct sk_buff *skb;
 	int cnt_subflows;
 
+	printk(KERN_ERR "At line %d\n",__LINE__);
+
 	if (!master_tp->mpc)
 		return tcp_recvmsg_fallback(iocb,master_sk,msg,len,nonblock,
 					    flags,addr_len);
@@ -1950,11 +1952,15 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			BUG();
 
 		}
+
+		printk(KERN_ERR "At line %d\n",__LINE__);
 		
 		/* Well, if we have backlog, try to process it now yet. */
 		if (copied >= target && 
 		    !mtcp_test_any_sk(mpcb,sk,sk->sk_backlog.tail))
 			break;
+
+		printk(KERN_ERR "At line %d\n",__LINE__);
 
 		/*Here we test a set of conditions to return immediately to
 		  the user*/
@@ -2057,8 +2063,10 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				goto do_prequeue;
 			/* __ Set realtime policy in scheduler __ */
 		}
+		printk(KERN_ERR "At line %d\n",__LINE__);
 
 		if (copied >= target) {
+			printk(KERN_ERR "At line %d\n",__LINE__);
 			/* Do not sleep, just process backlog. */
 			mtcp_for_each_sk(mpcb,sk,tp) {
 				release_sock(sk);
@@ -2066,14 +2074,18 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			}
 			
 		} else {
+			printk(KERN_ERR "At line %d\n",__LINE__);
 			/*Wait for data arriving on any subsocket*/
-			cnt_subflows=mpcb->cnt_subflows;
+			cnt_subflows=mpcb->cnt_subflows;			
 			mutex_unlock(&mpcb->mutex);
+			printk(KERN_ERR "At line %d\n",__LINE__);
 			mtcp_wait_data(mpcb,master_sk, &timeo);
+			printk(KERN_ERR "At line %d\n",__LINE__);
 			
 			/*We may have received data on a newly created
 			  subsocket, check if the list has grown*/
 			mutex_lock(&mpcb->mutex);
+			printk(KERN_ERR "At line %d\n",__LINE__);
 			if (cnt_subflows!=mpcb->cnt_subflows) {
 				printk(KERN_ERR "New subflow arrived"
 				       " in live\n");
@@ -2093,6 +2105,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		
 		if (user_recv) {
 			int chunk;
+			printk(KERN_ERR "At line %d\n",__LINE__);
 			
 			/* __ Restore normal policy in scheduler __ */
 
@@ -2125,7 +2138,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			if ((flags & MSG_PEEK) && 
 			    tp->peek_seq != tp->copied_seq) {
 				if (net_ratelimit())
-					printk(KERN_DEBUG "TCP(%s:%d): "
+					printk(KERN_ERR "TCP(%s:%d): "
 					       "Application bug, race in "
 					       "MSG_PEEK.\n",
 					       current->comm, 
@@ -2169,6 +2182,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			  in order from the dataseq point of view, it will be
 			  delivered to the application, otherwise it will be
 			  queued in the metasocket out of order queue.*/
+			printk(KERN_ERR "At line %d\n",__LINE__);
 			mtcp_op=err= mtcp_queue_skb(sk,skb,offset,&used,msg,
 						    &len, data_seq,&copied);
 			if (err<0) {
@@ -2185,6 +2199,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			tcp_rcv_space_adjust(sk);
 
 	skip_copy:
+		printk(KERN_ERR "At line %d\n",__LINE__);
 		mtcp_for_each_sk(mpcb,sk,tp)
 			if (tp->urg_data && after(tp->copied_seq, 
 						  tp->urg_seq)) {
@@ -2213,6 +2228,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		break;
 	} while (len > 0);
 
+	printk(KERN_ERR "At line %d\n",__LINE__);
 	if (user_recv) {
 		mtcp_for_each_tp(mpcb,tp)
 			if (!skb_queue_empty(&tp->ucopy.prequeue)) {
@@ -2247,17 +2263,20 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	
 	mtcp_for_each_sk(mpcb,sk,tp) release_sock(sk);
 	mutex_unlock(&mpcb->mutex);
+	printk(KERN_ERR "At line %d\n",__LINE__);
 	return copied;
 
 out:
 	mtcp_for_each_sk(mpcb,sk,tp) release_sock(sk);
 	mutex_unlock(&mpcb->mutex);
+	printk(KERN_ERR "At line %d\n",__LINE__);
 	return err;
 
 recv_urg:
 	/*At the moment we only allow receiving urgent data on the master
 	  subsocket. Makes sense ?*/
 	err = tcp_recv_urg(master_sk, timeo, msg, len, flags, addr_len);
+	printk(KERN_ERR "At line %d\n",__LINE__);
 	goto out;
 }
 
