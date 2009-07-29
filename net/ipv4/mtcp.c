@@ -67,8 +67,6 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 
 	PDEBUG("Entering %s, path_indices:%x\n",__FUNCTION__,path_indices);
 
-	mutex_lock(&mpcb->mutex);
-
 	for (i=0;i<sizeof(path_indices)*8;i++) {
 		if (!((1<<i) & path_indices))
 			continue;
@@ -89,7 +87,6 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			if (retval<0) {
 				printk(KERN_ERR "%s:sock_create failed\n",
 				       __FUNCTION__);
-				mutex_unlock(&mpcb->mutex);
 				return retval;
 			}
 			newtp=tcp_sk(sock->sk);
@@ -148,14 +145,15 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			retval = sock->ops->bind(sock, loculid, ulid_size);
 			if (retval<0) goto fail_bind;
 			
+			printk(KERN_ERR "%s:About to connect\n",__FUNCTION__);
 			retval = sock->ops->connect(sock,remulid,
 						    ulid_size,0);
+			printk(KERN_ERR "%s:connected\n",__FUNCTION__);
 			if (retval<0) goto fail_connect;
 						
 			PDEBUG("New MTCP subsocket created, pi %d\n",i+1);
 		}
 	}
-	mutex_unlock(&mpcb->mutex);
 	return 0;
 fail_bind:
 	printk(KERN_ERR "MTCP subsocket bind() failed\n");
@@ -163,7 +161,6 @@ fail_connect:
 	printk(KERN_ERR "MTCP subsocket connect() failed\n");
 	mtcp_del_sock(mpcb,newtp);
 	sock_release(sock);
-	mutex_unlock(&mpcb->mutex);
 	return -1;
 }
 
@@ -242,17 +239,18 @@ void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
 	kref_put(&mpcb->kref,mpcb_release);
 }
 
+/*MUST be called in user context*/
 void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 {
 	/*Adding new node to head of connection_list*/
-	spin_lock_bh(&mpcb->lock);
+	mutex_lock(&mpcb->mutex);
 	tp->mpcb = mpcb;
 	tp->next=mpcb->connection_list;
 	mpcb->connection_list=tp;
 	
 	mpcb->cnt_subflows++;
 	kref_get(&mpcb->kref);	
-	spin_unlock_bh(&mpcb->lock);
+	mutex_unlock(&mpcb->mutex);
 	printk(KERN_ERR "Added subsocket, cnt_subflows now %d\n",
 	       mpcb->cnt_subflows);
 }

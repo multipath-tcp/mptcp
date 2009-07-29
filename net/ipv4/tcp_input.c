@@ -4032,11 +4032,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
 #endif
 	int eaten = -1;
-	
-	if (skb->path_index==1) /*TODEL*/
-		printk(KERN_ERR "%s:pi 1 - data_seq is %x\n",
-		       __FUNCTION__,TCP_SKB_CB(skb)->data_seq);
-	
+		
 	if (TCP_SKB_CB(skb)->seq == TCP_SKB_CB(skb)->end_seq)
 		goto drop;
 
@@ -4853,6 +4849,11 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
+	
+	if (skb->path_index==1 || skb->path_index==0) /*TODEL*/
+		printk(KERN_ERR "%s:pi %d - seq is %x\n",
+		       __FUNCTION__,skb->path_index,TCP_SKB_CB(skb)->seq);
+	
 
 	/*
 	 *	Header prediction.
