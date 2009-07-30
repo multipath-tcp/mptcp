@@ -1016,6 +1016,7 @@ new_segment:
 
 			/* Where to copy to? */
 			if (skb_tailroom(skb) > 0) {
+				printk(KERN_ERR "to tail room\n");
 				/* We have some space in skb head. Superb! */
 				if (copy > skb_tailroom(skb))
 					copy = skb_tailroom(skb);
@@ -1026,6 +1027,7 @@ new_segment:
 				int i = skb_shinfo(skb)->nr_frags;
 				struct page *page = TCP_PAGE(sk);
 				int off = TCP_OFF(sk);
+				printk(KERN_ERR "coalesce\n");
 
 				if (skb_can_coalesce(skb, i, page, off) &&
 				    off != PAGE_SIZE) {
@@ -1104,7 +1106,10 @@ new_segment:
 			if (tp->mpc) {
 				mpcb->write_seq += copy;
 				printk(KERN_ERR "write_seq now %x, copied %d"
-				       " bytes\n",mpcb->write_seq,copy);
+				       " bytes to skb %p\n",mpcb->write_seq,
+				       copy,skb);
+				printk(KERN_ERR "skb->len is %d\n",
+				       skb->len);
 				TCP_SKB_CB(skb)->end_data_seq += copy;
 			}
 #endif

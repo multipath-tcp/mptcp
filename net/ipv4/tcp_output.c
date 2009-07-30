@@ -768,6 +768,8 @@ static void tcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	/* Advance write_seq and place onto the write_queue. */
+	printk(KERN_ERR "%s: tp->write_seq:%x,skb->end_seq:%x\n",
+	       __FUNCTION__,tp->write_seq,TCP_SKB_CB(skb)->end_seq); /*TODEL*/
 	tp->write_seq = TCP_SKB_CB(skb)->end_seq;	
 	skb_header_release(skb);
 	tcp_add_write_queue_tail(sk, skb);
@@ -1339,6 +1341,8 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	int nlen = skb->len - len;
 	u16 flags;
 
+	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
+
 	/* All of a TSO frame must be composed of paged data.  */
 	if (skb->len != skb->data_len)
 		return tcp_fragment(sk, skb, len, mss_now);
@@ -1356,6 +1360,10 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	TCP_SKB_CB(buff)->seq = TCP_SKB_CB(skb)->seq + len;
 	TCP_SKB_CB(buff)->end_seq = TCP_SKB_CB(skb)->end_seq;
 	TCP_SKB_CB(skb)->end_seq = TCP_SKB_CB(buff)->seq;
+#ifdef CONFIG_MTCP
+	TCP_SKB_CB(buff)->data_seq=TCP_SKB_CB(skb)->data_seq + len;
+	TCP_SKB_CB(buff)->end_data_seq = TCP_SKB_CB(skb)->end_data_seq;
+#endif
 
 	/* PSH and FIN should only be set in the second packet. */
 	flags = TCP_SKB_CB(skb)->flags;
@@ -1835,6 +1843,8 @@ static void tcp_retrans_try_collapse(struct sock *sk, struct sk_buff *skb,
 	int skb_size, next_skb_size;
 	u16 flags;
 
+	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
+
 	/* The first test we must make is that neither of these two
 	 * SKB's are still referenced by someone else.
 	 */
@@ -1879,6 +1889,7 @@ static void tcp_retrans_try_collapse(struct sock *sk, struct sk_buff *skb,
 
 	/* Update sequence range on original skb. */
 	TCP_SKB_CB(skb)->end_seq = TCP_SKB_CB(next_skb)->end_seq;
+	TCP_SKB_CB(skb)->end_data_seq = TCP_SKB_CB(next_skb)->end_data_seq;
 
 	/* Merge over control information. */
 	flags |= TCP_SKB_CB(next_skb)->flags; /* This moves PSH/FIN etc. over */
