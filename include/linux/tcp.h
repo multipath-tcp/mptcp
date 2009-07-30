@@ -251,6 +251,16 @@ struct tcp_sock {
 	u32     *seq;
 	u32     copied;
 	u8      mpc:1;          /* Other end is multipath capable       */
+	u32     last_write_seq; /* Last write seq copied by this subsocket
+				   to the network. When we receive new data
+				   with a write_seq non contigues to this 
+				   one (that is, some data in between has been
+				   sent on another subsocket), we enforce
+				   the use of a new segment to store the data
+				   (because data in a single segment must
+				   be contigues, since dataseq numbers
+				   does not allow iovec-like encoding of
+				   mtcp data*/
 #endif
 	u32	rcv_wup;	/* rcv_nxt on last window update sent	*/
  	u32	snd_nxt;	/* Next sequence we send		*/

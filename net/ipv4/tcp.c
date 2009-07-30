@@ -985,7 +985,8 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 
 			skb = tcp_write_queue_tail(sk);
 
-			if (!tcp_send_head(sk) ||
+			if (!tcp_send_head(sk) || 
+			    mpcb->write_seq!=tp->last_write_seq ||
 			    (copy = size_goal - skb->len) <= 0) {
 
 new_segment:
@@ -1105,6 +1106,7 @@ new_segment:
 #ifdef CONFIG_MTCP
 			if (tp->mpc) {
 				mpcb->write_seq += copy;
+				tp->last_write_seq=mpcb->write_seq;
 				printk(KERN_ERR "write_seq now %x, copied %d"
 				       " bytes to skb %p\n",mpcb->write_seq,
 				       copy,skb);
