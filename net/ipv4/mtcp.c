@@ -411,10 +411,9 @@ int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 	return rc;
 }
 
-static void mtcp_ofo_queue(struct sock *sk, struct msghdr *msg, size_t *len,
-			   u32 *data_seq, int *copied)
+void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
+		    u32 *data_seq, int *copied)
 {
-	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
 	struct sk_buff *skb;
 	int err;
 	u32 data_offset;
@@ -473,7 +472,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		return MTCP_EATEN;
 	}
 
-	if (before(*data_seq,TCP_SKB_CB(skb)->data_seq)) {		
+	if (before(*data_seq,TCP_SKB_CB(skb)->data_seq)) {
 		/*the skb must be queued in the ofo queue*/
 		__skb_unlink(skb, &sk->sk_receive_queue);
 		
@@ -488,6 +487,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		
 		if (!skb_peek(&mpcb->out_of_order_queue)) {
 			/* Initial out of order segment */
+			printk(KERN_ERR "First meta-ofo segment\n");
 			__skb_queue_head(&mpcb->out_of_order_queue, skb);
 			return MTCP_QUEUED;
 		}
@@ -560,7 +560,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		
 		/*Check if this fills a gap in the ofo queue*/
 		if (!skb_queue_empty(&mpcb->out_of_order_queue))
-			mtcp_ofo_queue(sk,msg,len,data_seq,copied);
+			mtcp_ofo_queue(mpcb,msg,len,data_seq,copied);
 		/*If the skb has been partially eaten, it will tcp_recvmsg
 		  will see it anyway thanks to the @used pointer.*/
 		return MTCP_EATEN;

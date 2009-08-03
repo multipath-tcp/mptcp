@@ -4086,7 +4086,8 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 			__set_current_state(TASK_RUNNING);
 
 			local_bh_enable();
-			if (!skb_copy_datagram_iovec(skb, 0, tp->ucopy.iov, chunk)) {
+			if (!skb_copy_datagram_iovec(skb, 0, tp->ucopy.iov, 
+						     chunk)) {
 				tp->ucopy.len -= chunk;
 				tp->copied_seq += chunk;
 				eaten = (chunk == skb->len && !th->fin);
@@ -4850,7 +4851,7 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 	
-	if (skb->path_index==1 || skb->path_index==0) /*TODEL*/
+	if (skb->path_index==2) /*TODEL*/
 		printk(KERN_ERR "%s:pi %d - seq is %x\n",
 		       __FUNCTION__,skb->path_index,TCP_SKB_CB(skb)->seq);
 	

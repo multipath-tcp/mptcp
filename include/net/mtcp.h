@@ -205,6 +205,8 @@ int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		   unsigned long *used, struct msghdr *msg, size_t *len,   
 		   u32 *data_seq, int *copied);
+void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
+		    u32 *data_seq, int *copied);
 /*Possible return values from mtcp_queue_skb*/
 #define MTCP_EATEN 1 /*The skb has been (fully or partially) eaten by the app*/
 #define MTCP_QUEUED 2 /*The skb has been queued in the mpcb ofo queue*/

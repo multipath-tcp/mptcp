@@ -1294,8 +1294,8 @@ static void tcp_prequeue_process(struct sock *sk)
 	struct sk_buff *skb;
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	if (tp->path_index==0 || tp->path_index==1) 
-		printk(KERN_ERR "Entering %s\n",__FUNCTION__);
+	printk(KERN_ERR "Entering %s for pi %d\n",__FUNCTION__,
+	       tp->path_index);
 
 	NET_INC_STATS_USER(sock_net(sk), LINUX_MIB_TCPPREQUEUED);
 
@@ -2124,9 +2124,17 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				printk(KERN_ERR "backlog copy: %d\n",chunk);
 				len -= chunk;
 				copied += chunk;
+				/*Check if this fills a gap in the ofo queue*/
+				if (!skb_queue_empty(&mpcb->out_of_order_queue))
+					mtcp_ofo_queue(mpcb,msg,&len,data_seq,
+						       &copied);
 			}
 			
-			mtcp_for_each_tp(mpcb,tp)
+			mtcp_for_each_tp(mpcb,tp) {
+				printk(KERN_ERR "Checking prequeue for pi %d,"
+				       "prequeue len:%d\n",
+				       tp->path_index,
+				       skb_queue_len(&tp->ucopy.prequeue));
 				if (tp->rcv_nxt == tp->copied_seq &&
 				    !skb_queue_empty(
 					    &tp->ucopy.prequeue)) {
@@ -2143,8 +2151,19 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 							sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
 						len -= chunk;
 						copied += chunk;
+						/*Check if this fills a gap in 
+						  the ofo queue*/
+						if (!skb_queue_empty(
+							    &mpcb->
+							    out_of_order_queue))
+							mtcp_ofo_queue(mpcb,
+								       msg,&len,
+								       data_seq,
+								       &copied);
+						
 					}
 				}
+			}
 		}
 		mtcp_for_each_tp(mpcb,tp)
 			if ((flags & MSG_PEEK) && 
@@ -2253,8 +2272,17 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				if (copied > 0 && (chunk = len - 
 						   mpcb->ucopy.len) != 0) {
 					NET_ADD_STATS_USER(sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
+					printk(KERN_ERR "prequeue2 copy :%d\n",
+					       chunk); /*TODEL*/
 					len -= chunk;
 					copied += chunk;
+					/*Check if this fills a gap in the ofo 
+					  queue*/
+					if (!skb_queue_empty(
+						    &mpcb->out_of_order_queue))
+						mtcp_ofo_queue(mpcb,msg,&len,
+							       data_seq, 
+							       &copied);
 				}
 			}
 		
