@@ -1848,8 +1848,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	struct sk_buff *skb;
 	int cnt_subflows;
 
-	printk(KERN_ERR "At line %d\n",__LINE__);
-
 	if (!master_tp->mpc)
 		return tcp_recvmsg_fallback(iocb,master_sk,msg,len,nonblock,
 					    flags,addr_len);
@@ -2116,9 +2114,14 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				  particular we'll get a segfault if
 				  the pointer is NULL*/
 				if (flags & MSG_PEEK)				
-					mtcp_for_each_tp(mpcb,tp) {
+					mtcp_for_each_newtp(mpcb,tp,
+							    cnt_subflows) {
 						tp->peek_seq=tp->copied_seq;
 						tp->seq=&tp->peek_seq;
+						/*Here, all subsocks are locked
+						  so we must also lock
+						  new subsocks*/
+						lock_sock((struct sock*)tp);
 					}
 				else mtcp_for_each_tp(mpcb,tp)
 					     tp->seq=&tp->copied_seq;

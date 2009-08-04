@@ -140,6 +140,13 @@ struct multipath_pcb {
 #define mtcp_for_each_tp(mpcb,tp)			\
 	for (tp=mpcb->connection_list;tp;tp=tp->next)
 
+/*Iterates over new subflows prevnum is the number
+  of flows already known by the caller
+  Note that prevnum is altered by this macro*/
+#define mtcp_for_each_newtp(mpcb,tp,prevnum)				\
+	for (tp=mpcb->connection_list,prevnum=mpcb->cnt_subflows-prevnum; \
+	     tp && prevnum;tp=tp->next,prevnum--)
+
 #define mtcp_for_each_sk(mpcb,sk,tp)					\
 	for (sk=(struct sock*)mpcb->connection_list,tp=tcp_sk(sk);	\
 	     sk;							\

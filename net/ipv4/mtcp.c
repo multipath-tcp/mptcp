@@ -243,7 +243,8 @@ void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
 	kref_put(&mpcb->kref,mpcb_release);
 }
 
-/*MUST be called in user context*/
+/*MUST be called in user context
+ */
 void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 {
 	/*Adding new node to head of connection_list*/
