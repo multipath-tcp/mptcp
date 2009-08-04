@@ -326,20 +326,32 @@ void mtcp_update_metasocket(struct sock *sk)
   a given MSS. Currently we choose a simple round-robin policy.*/
 static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb) 
 {
-	struct tcp_sock *tp, *sel_tp;
+	struct tcp_sock *tp;
+	struct tcp_sock *cursubflow=NULL;
+
+	/*First, find the current subflow*/
 	mtcp_for_each_tp(mpcb,tp)
 		if (tp->mtcp_flags & MTCP_CURRENT_SUBFLOW) {
-			/*Find the next tcp sock to round robin*/
-			sel_tp=(tp->next)?tp->next:mpcb->connection_list;
-			/*Move the flag to it*/
+			/*Remove the flag*/
 			tp->mtcp_flags&=~MTCP_CURRENT_SUBFLOW;
-			sel_tp->mtcp_flags|=MTCP_CURRENT_SUBFLOW;
-			return sel_tp;
+			cursubflow=tp;
+			break;
 		}
-	/*No socket has the flag yet, take the first one available*/
-	sel_tp=mpcb->connection_list;
-	sel_tp->mtcp_flags|=MTCP_CURRENT_SUBFLOW;	
-	return sel_tp;
+	
+	/*Flag is not yet set on any subflow*/
+	if (unlikely(!cursubflow)) {
+		tp=mpcb->connection_list;
+	}	
+	/*Now try to find the next available flow*/
+	else for (tp=(tp->next)?tp->next:mpcb->connection_list;
+		  tp!=cursubflow && 
+			  (((struct sock*)tp)->sk_state!=TCP_ESTABLISHED);
+		  tp=(tp->next)?tp->next:mpcb->connection_list);
+	
+		
+	/*Set the flag to it*/
+	tp->mtcp_flags|=MTCP_CURRENT_SUBFLOW;
+	return tp;		
 }
 
 int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,

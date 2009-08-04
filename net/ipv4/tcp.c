@@ -1858,13 +1858,14 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	 * we behave here somewhat like doing a select, but as seen by bottom 
 	 * halves we are expecting data from every subflow at once.
 	 */
-	
+		
+	/*Locking metasocket*/
+	mutex_lock(&mpcb->mutex);
+
 	/*For every subflow, init copied to 0*/
 	mtcp_for_each_tp(mpcb,tp) 
 		tp->copied=0;
-	
-	/*Locking metasocket*/
-	mutex_lock(&mpcb->mutex);
+
 
 	/*Locking all subsockets*/
 	mtcp_for_each_sk(mpcb,sk,tp) lock_sock(sk);
