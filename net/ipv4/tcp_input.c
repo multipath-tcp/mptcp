@@ -5804,28 +5804,40 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 					sk->sk_state_change(sk);
 				else {
 					int tmo;
-
+					
 					if (tp->linger2 < 0 ||
-					    (TCP_SKB_CB(skb)->end_seq != TCP_SKB_CB(skb)->seq &&
-					     after(TCP_SKB_CB(skb)->end_seq - th->fin, tp->rcv_nxt))) {
+					    (TCP_SKB_CB(skb)->end_seq != 
+					     TCP_SKB_CB(skb)->seq &&
+					     after(TCP_SKB_CB(skb)->end_seq - 
+						   th->fin, tp->rcv_nxt))) {
 						tcp_done(sk);
-						NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPABORTONDATA);
+						NET_INC_STATS_BH(sock_net(sk), 
+								 LINUX_MIB_TCPABORTONDATA);
 						return 1;
 					}
 
 					tmo = tcp_fin_time(sk);
 					if (tmo > TCP_TIMEWAIT_LEN) {
-						inet_csk_reset_keepalive_timer(sk, tmo - TCP_TIMEWAIT_LEN);
-					} else if (th->fin || sock_owned_by_user(sk)) {
-						/* Bad case. We could lose such FIN otherwise.
-						 * It is not a big problem, but it looks confusing
-						 * and not so rare event. We still can lose it now,
-						 * if it spins in bh_lock_sock(), but it is really
-						 * marginal case.
+						inet_csk_reset_keepalive_timer(
+							sk, tmo - 
+							TCP_TIMEWAIT_LEN);
+					} else if (th->fin || 
+						   sock_owned_by_user(sk)) {
+						/* Bad case. We could lose 
+						 * such FIN otherwise.
+						 * It is not a big problem, 
+						 * but it looks confusing
+						 * and not so rare event. We 
+						 * still can lose it now,
+						 * if it spins in 
+						 * bh_lock_sock(), but it is 
+						 * really marginal case.
 						 */
-						inet_csk_reset_keepalive_timer(sk, tmo);
+						inet_csk_reset_keepalive_timer(
+							sk, tmo);
 					} else {
-						tcp_time_wait(sk, TCP_FIN_WAIT2, tmo);
+						tcp_time_wait(sk, TCP_FIN_WAIT2,
+							      tmo);
 						goto discard;
 					}
 				}

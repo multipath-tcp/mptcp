@@ -361,14 +361,14 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	struct tcp_sock *tp;
 	struct iovec *iov;
 	struct multipath_pcb *mpcb;
-	int iovlen,copied,msg_size;
+	size_t iovlen,copied,msg_size;
+	int i;
 	
 	if (!tcp_sk(master_sk)->mpc)
 		return tcp_sendmsg(iocb,sock, msg, size);
 	
 	mpcb=mpcb_from_tcpsock(tcp_sk(master_sk));
 	if (mpcb==NULL){
-		printk(KERN_ERR "MPCB null in %s\n",__FUNCTION__);
 		BUG();
 	}
 	
@@ -376,7 +376,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	iovlen=msg->msg_iovlen;
 	iov=msg->msg_iov;
 	msg_size=0;
-	while(--iovlen>=0) {
+	while(iovlen-- > 0) {
 		msg_size+=iov->iov_len;
 		iov++;
 	}
@@ -386,13 +386,15 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	  Currently it sleeps inside tcp_sendmsg, but it is not the most
 	  efficient, since during that time, we could try sending on other
 	  subsockets*/
-	copied=0;
-	while (copied<msg_size) {
+	copied=0;i=0;
+	while (copied<msg_size) {		
+		printk(KERN_ERR "copied %d\n",(int)copied);
 		/*Find a candidate socket for eating data*/
 		tp=get_available_subflow(mpcb);
 		/*Let the selected socket eat*/
 		copied+=tcp_sendmsg(NULL,((struct sock*)tp)->sk_socket, 
 				    msg, copied);
+		BUG_ON(i++==30);
 	}
 
 	return copied;
@@ -445,6 +447,8 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 				
 		if (!after(TCP_SKB_CB(skb)->end_data_seq, *data_seq)) {
 			printk(KERN_ERR "ofo packet was already received \n");
+			/*Should not happen in the current design*/
+			BUG();
 			__skb_unlink(skb, &mpcb->out_of_order_queue);
 			__kfree_skb(skb);
 			continue;
@@ -467,14 +471,19 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 		/*The skb can be read by the app*/
 		data_offset= *data_seq - TCP_SKB_CB(skb)->data_seq;
 
+		BUG_ON(data_offset != 0);
+
 		used = skb->len - data_offset;
 		if (*len < used)
 			used = *len;
 				
 		err=skb_copy_datagram_iovec(skb, data_offset,
 					    msg->msg_iov, used);
+		BUG_ON(err);
+		
 		*copied+=used;
 		*data_seq+=used;
+		*len-=used;
 
 		/*We can free the skb only if it has been completely eaten
 		  Else we queue it in the mpcb receive queue, for reading by
@@ -650,6 +659,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		
 		err=skb_copy_datagram_iovec(skb, data_offset,
 					    msg->msg_iov, *used);
+		BUG_ON(err);
 		if (err) return err;
 		
 		*tp->seq += *used;

@@ -928,10 +928,6 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	int mss_now, size_goal;
 	int err, copied;
 	long timeo;
-#ifdef CONFIG_MTCP
-	/*1 when the offset in the message is correctly skipped*/
-	int skipped=0;        
-#endif
 
 	lock_sock(sk);
 	TCP_CHECK_TIMER(sk);
@@ -959,6 +955,8 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	if (sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN))
 		goto do_error;
 
+	printk(KERN_ERR "%s:line %d, size %d,iovlen %d\n",__FUNCTION__,
+	       __LINE__,size,iovlen);
 	while (--iovlen >= 0) {
 		int seglen = iov->iov_len;
 		unsigned char __user *from = iov->iov_base;
@@ -967,11 +965,12 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		
 #ifdef CONFIG_MTCP
 		/*Skipping the offset (stored in the size argument)*/
-		if (tp->mpc && !skipped) {
-			if (seglen>=size) {
+		if (tp->mpc) {
+			printk(KERN_ERR "seglen:%d\n",seglen);
+			if (seglen>=size) {				
 				seglen-=size;
 				from+=size;
-				skipped=1;
+				size=0;
 			}
 			else {
 				size-=seglen;
@@ -979,7 +978,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			}
 		}
 #endif
-
+		printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
 		while (seglen > 0) {
 			int copy;
 
@@ -988,18 +987,21 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			if (!tcp_send_head(sk) || 
 			    mpcb->write_seq!=tp->last_write_seq ||
 			    (copy = size_goal - skb->len) <= 0) {
-
-new_segment:
+				printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
+			new_segment:
 				/* Allocate new segment. If the interface is SG,
 				 * allocate skb fitting to single page.
 				 */
+				printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
 				if (!sk_stream_memory_free(sk))
 					goto wait_for_sndbuf;
-
+				printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
 				skb = sk_stream_alloc_skb(sk, select_size(sk),
 						sk->sk_allocation);
+				printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
 				if (!skb)
 					goto wait_for_memory;
+				printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
 
 				/*
 				 * Check whether we can use HW checksum.
@@ -1021,8 +1023,10 @@ new_segment:
 				/* We have some space in skb head. Superb! */
 				if (copy > skb_tailroom(skb))
 					copy = skb_tailroom(skb);
+				printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
 				if ((err = skb_add_data(skb, from, copy)) != 0)
 					goto do_fault;
+				printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
 			} else {
 				int merge = 0;
 				int i = skb_shinfo(skb)->nr_frags;
@@ -1115,31 +1119,32 @@ new_segment:
 				TCP_SKB_CB(skb)->end_data_seq += copy;
 			}
 #endif
-
+			printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
 			from += copy;
 			copied += copy;
 			if ((seglen -= copy) == 0 && iovlen == 0)
 				goto out;
-
+			printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
 			if (skb->len < size_goal || (flags & MSG_OOB))
 				continue;
 
+			printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
 			if (forced_push(tp)) {
 				tcp_mark_push(tp, skb);
 				__tcp_push_pending_frames(sk, mss_now, TCP_NAGLE_PUSH);
 			} else if (skb == tcp_send_head(sk))
 				tcp_push_one(sk, mss_now);
 			continue;
-
-wait_for_sndbuf:
+			printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
+		wait_for_sndbuf:
 			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
-wait_for_memory:
+		wait_for_memory:
 			if (copied)
 				tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
 
 			if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
 				goto do_error;
-
+			printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
 			mss_now = tcp_current_mss(sk, !(flags&MSG_OOB));
 			size_goal = tp->xmit_size_goal;
 		}
@@ -1150,6 +1155,7 @@ out:
 		tcp_push(sk, flags, mss_now, tp->nonagle);
 	TCP_CHECK_TIMER(sk);
 	release_sock(sk);
+	printk(KERN_ERR "%s:line %d, copied %d\n",__FUNCTION__,__LINE__,copied);
 	return copied;
 
 do_fault:
@@ -1701,7 +1707,8 @@ do_prequeue:
 #endif
 			{
 				err = skb_copy_datagram_iovec(skb, offset,
-						msg->msg_iov, used);
+							      msg->msg_iov, 
+							      used);
 				if (err) {
 					/* Exception. Bailout! */
 					if (!copied)

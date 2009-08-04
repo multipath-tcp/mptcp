@@ -1711,7 +1711,9 @@ process:
 
 	skb->dev = NULL;
 
+	printk(KERN_ERR "%s: lock sock\n",__FUNCTION__);
 	bh_lock_sock_nested(sk);
+	printk(KERN_ERR "%s: locked sock\n",__FUNCTION__);
 	ret = 0;
 	if (!sock_owned_by_user(sk)) {
 #ifdef CONFIG_NET_DMA
@@ -1729,6 +1731,7 @@ process:
 	} else
 		sk_add_backlog(sk, skb);
 	bh_unlock_sock(sk);
+	printk(KERN_ERR "%s: unlock sock\n",__FUNCTION__);
 
 	sock_put(sk);
 	return ret ? -1 : 0;
