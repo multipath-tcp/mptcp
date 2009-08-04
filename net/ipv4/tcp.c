@@ -1853,6 +1853,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	if (!master_tp->mpc)
 		return tcp_recvmsg_fallback(iocb,master_sk,msg,len,nonblock,
 					    flags,addr_len);
+
 	/*We listen on every subflow.
 	 * Here we are awoken each time
 	 * any subflow wants to give work to tcp_recvmsg. To be more clear,
@@ -1903,6 +1904,18 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	/*low water test: minimal number of bytes that must be consumed before
 	  tcp_recvmsg completes*/
 	target = sock_rcvlowat(master_sk, flags & MSG_WAITALL, len);
+
+	/*Start by checking if skbs are waiting on the mpcb receive queue*/
+	printk(KERN_ERR "%d: copied_seq:%x\n",__LINE__,mpcb->copied_seq);
+	err=mtcp_check_rcv_queue(mpcb,msg, &len, data_seq, &copied, flags);
+	printk(KERN_ERR "%d: copied_seq:%x\n",__LINE__,mpcb->copied_seq);
+	if (err<0) {
+		printk(KERN_ERR "error in mtcp_check_rcv_queue\n");
+		/* Exception. Bailout! */
+		if (!copied)
+			copied = -EFAULT;
+		goto skip_loop;
+	}
 
 	do {
 		u32 offset;
@@ -2127,7 +2140,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				/*Check if this fills a gap in the ofo queue*/
 				if (!skb_queue_empty(&mpcb->out_of_order_queue))
 					mtcp_ofo_queue(mpcb,msg,&len,data_seq,
-						       &copied);
+						       &copied, flags);
 			}
 			
 			mtcp_for_each_tp(mpcb,tp) {
@@ -2159,7 +2172,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 							mtcp_ofo_queue(mpcb,
 								       msg,&len,
 								       data_seq,
-								       &copied);
+								       &copied,
+								       flags);
 						
 					}
 				}
@@ -2215,7 +2229,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			  queued in the metasocket out of order queue.*/
 			printk(KERN_ERR "At line %d\n",__LINE__);
 			mtcp_op=err= mtcp_queue_skb(sk,skb,offset,&used,msg,
-						    &len, data_seq,&copied);
+						    &len, data_seq,&copied,
+						    flags);
 			if (err<0) {
 				printk(KERN_ERR "error in mtcp_queue_skb\n");
 				/* Exception. Bailout! */
@@ -2258,7 +2273,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			sk_eat_skb(skb->sk, skb, 0);
 		break;
 	} while (len > 0);
-
+skip_loop:
+	
 	printk(KERN_ERR "At line %d\n",__LINE__);
 	if (user_recv) {
 		mtcp_for_each_tp(mpcb,tp)
@@ -2282,7 +2298,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 						    &mpcb->out_of_order_queue))
 						mtcp_ofo_queue(mpcb,msg,&len,
 							       data_seq, 
-							       &copied);
+							       &copied, flags);
 				}
 			}
 		

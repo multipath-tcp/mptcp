@@ -235,7 +235,11 @@ static void mpcb_release(struct kref* kref)
   (due to unregister_netevent_notifier)*/
 void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
 {
-	unregister_netevent_notifier(&mpcb->nb);	
+	/*Stop listening to PM events*/
+	unregister_netevent_notifier(&mpcb->nb);
+	/*Remove any remaining skb from the queues*/
+	skb_queue_purge(&mpcb->receive_queue);
+	skb_queue_purge(&mpcb->out_of_order_queue);
 	kref_put(&mpcb->kref,mpcb_release);
 }
 
@@ -412,12 +416,15 @@ int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 }
 
 void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
-		    u32 *data_seq, int *copied)
+		    u32 *data_seq, int *copied, int flags)
 {
 	struct sk_buff *skb;
 	int err;
 	u32 data_offset;
 	unsigned long used;
+	u32 rcv_nxt=0;
+	int enqueue=0; /*1 if we must enqueue from ofo to rcv queue
+			 to insufficient space in app buffer*/
 	
 	while ((skb = skb_peek(&mpcb->out_of_order_queue)) != NULL) {
 		if (after(TCP_SKB_CB(skb)->data_seq, *data_seq))
@@ -435,11 +442,18 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 		       TCP_SKB_CB(skb)->end_data_seq);
 		
 		__skb_unlink(skb, &mpcb->out_of_order_queue);
+
+		/*if enqueue is 1, than the app buffer is full and we must
+		  enqueue the buff into the receive queue*/
+		if (enqueue) {
+			__skb_queue_tail(&mpcb->receive_queue, skb);
+			rcv_nxt+=skb->len;
+			continue;
+		}
 		
 		/*The skb can be read by the app*/
 		data_offset= *data_seq - TCP_SKB_CB(skb)->data_seq;
-		if (tcp_hdr(skb)->syn)
-			data_offset--;
+
 		used = skb->len - data_offset;
 		if (*len < used)
 			used = *len;
@@ -447,15 +461,86 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 		err=skb_copy_datagram_iovec(skb, data_offset,
 					    msg->msg_iov, used);
 		*copied+=used;
-		__kfree_skb(skb);
-		
-		*data_seq = TCP_SKB_CB(skb)->end_data_seq;
+		*data_seq+=used;
+
+		/*We can free the skb only if it has been completely eaten
+		  Else we queue it in the mpcb receive queue, for reading by
+		  the app on next call to tcp_recvmsg().*/
+ 		if (*data_seq==TCP_SKB_CB(skb)->end_data_seq)
+			__kfree_skb(skb);
+		else {
+			__skb_queue_tail(&mpcb->receive_queue, skb);
+			BUG_ON(*len!=0);
+			/*Now we must also enqueue all subsequent contigues 
+			  skbs*/
+			enqueue=1;
+			rcv_nxt=TCP_SKB_CB(skb)->end_data_seq;
+			data_seq=&rcv_nxt;
+		}
 	}
+}
+
+static inline void mtcp_eat_skb(struct multipath_pcb *mpcb, struct sk_buff *skb)
+{
+	__skb_unlink(skb,&mpcb->receive_queue);
+	__kfree_skb(skb);
+}
+
+/*This verifies if any skbuff has been let on the mpcb 
+  receive queue due app buffer being full.
+  This only needs to be called when starting tcp_recvmsg, since 
+  during immediate segment reception from TCP subsockets, segments reach
+  the receive queue only when the app buffer becomes full.*/
+int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg, 
+			 size_t *len, u32 *data_seq, int *copied, int flags)
+{
+	struct sk_buff *skb;
+	int err;
+	if (skb_queue_empty(&mpcb->receive_queue)) 
+		return 0;
+
+	do {
+		u32 offset;
+		unsigned long used;
+		skb = skb_peek(&mpcb->receive_queue);
+		if (!skb) return 0;
+
+		printk(KERN_ERR "Receiving a meta-queued skb\n");
+
+		if (before(*data_seq, TCP_SKB_CB(skb)->data_seq)) {
+			printk(KERN_ERR 
+			       "%s bug: copied %X "
+			       "dataseq %X\n", __FUNCTION__, *data_seq, 
+			       TCP_SKB_CB(skb)->data_seq);
+			BUG();
+		}
+		offset = *data_seq - TCP_SKB_CB(skb)->data_seq;
+		BUG_ON(offset >= skb->len);
+		used = skb->len - offset;
+		if (*len < used)
+			used = *len;
+		
+		err=skb_copy_datagram_iovec(skb, offset,
+					    msg->msg_iov, used);
+		if (err) return err;
+		
+		*data_seq += used;
+		*len -= used;
+		*copied+= used;
+		
+ 		if (*data_seq==TCP_SKB_CB(skb)->end_data_seq && 
+		    !(flags & MSG_PEEK))
+			mtcp_eat_skb(mpcb, skb);
+		else
+			BUG_ON(!(flags & MSG_PEEK) && *len!=0);
+		
+	} while (*len>0);
+	return 0;
 }
 
 int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		   unsigned long *used, struct msghdr *msg, size_t *len,
-		   u32 *data_seq, int *copied)
+		   u32 *data_seq, int *copied, int flags)
 {
 	struct tcp_sock *tp=tcp_sk(sk);
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
@@ -509,12 +594,14 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 				if (!after(TCP_SKB_CB(skb)->end_data_seq, 
 					   TCP_SKB_CB(skb1)->end_data_seq)) {
 					/* All the bits are present. Drop. */
+					BUG();
 					return MTCP_EATEN;
 				}
 				if (!after(TCP_SKB_CB(skb)->data_seq, 
 					   TCP_SKB_CB(skb1)->data_seq)) {
 					/*skb and skb1 have the same starting 
 					  point, but skb terminates after skb1*/
+					BUG();
 					skb1 = skb1->prev;
 				}
 			}
@@ -560,7 +647,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		
 		/*Check if this fills a gap in the ofo queue*/
 		if (!skb_queue_empty(&mpcb->out_of_order_queue))
-			mtcp_ofo_queue(mpcb,msg,len,data_seq,copied);
+			mtcp_ofo_queue(mpcb,msg,len,data_seq,copied, flags);
 		/*If the skb has been partially eaten, it will tcp_recvmsg
 		  will see it anyway thanks to the @used pointer.*/
 		return MTCP_EATEN;

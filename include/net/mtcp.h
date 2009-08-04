@@ -114,7 +114,7 @@ struct multipath_pcb {
 	/*wb_size: size of the circular sending buffer
 	  wb_start: index of the first byte of pending data in the buffer
 	  wb_length: number of bytes occupied by the pending data.
-	             of course, it never exceeds wb_size*/
+	  of course, it never exceeds wb_size*/
 	int                       wb_size,wb_start,wb_length;
 	
 	uint8_t                   mpc_sent:1, /*MPC option has been sent, do 
@@ -204,9 +204,11 @@ int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 			  long *timeo);
 int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		   unsigned long *used, struct msghdr *msg, size_t *len,   
-		   u32 *data_seq, int *copied);
+		   u32 *data_seq, int *copied, int flags);
 void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
-		    u32 *data_seq, int *copied);
+		    u32 *data_seq, int *copied, int flags);
+int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg, 
+			 size_t *len, u32 *data_seq, int *copied, int flags);
 /*Possible return values from mtcp_queue_skb*/
 #define MTCP_EATEN 1 /*The skb has been (fully or partially) eaten by the app*/
 #define MTCP_QUEUED 2 /*The skb has been queued in the mpcb ofo queue*/
