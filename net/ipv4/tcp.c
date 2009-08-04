@@ -956,7 +956,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		goto do_error;
 
 	printk(KERN_ERR "%s:line %d, size %d,iovlen %d\n",__FUNCTION__,
-	       __LINE__,size,iovlen);
+	       __LINE__,(int)size,(int)iovlen);
 	while (--iovlen >= 0) {
 		int seglen = iov->iov_len;
 		unsigned char __user *from = iov->iov_base;
@@ -2288,10 +2288,10 @@ skip_loop:
 	
 	printk(KERN_ERR "At line %d\n",__LINE__);
 	if (user_recv) {
-		mtcp_for_each_tp(mpcb,tp)
+		mtcp_for_each_sk(mpcb,sk,tp)
 			if (!skb_queue_empty(&tp->ucopy.prequeue)) {
 				int chunk;
-								
+				
 				mpcb->ucopy.len = copied > 0 ? len : 0;
 				
 				tcp_prequeue_process(sk);
