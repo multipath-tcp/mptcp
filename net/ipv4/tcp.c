@@ -2150,8 +2150,13 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				copied += chunk;
 				/*Check if this fills a gap in the ofo queue*/
 				if (!skb_queue_empty(&mpcb->out_of_order_queue))
+				{
 					mtcp_ofo_queue(mpcb,msg,&len,data_seq,
 						       &copied, flags);
+					/*Update the len field for the 
+					  prequeue*/
+					mpcb->ucopy.len=len;
+				}
 			}
 			
 			mtcp_for_each_tp(mpcb,tp) {
@@ -2169,10 +2174,14 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 					
 					if ((chunk = len - mpcb->ucopy.len) 
 					    != 0) {
-						printk(KERN_ERR "prequeue copy :%d\n",
-						       chunk); /*TODEL*/
+						printk(KERN_ERR "prequeue "
+						       "copy :%d, len %d,"
+						       "ucopy.len %d\n",
+						       chunk,(int)len,
+						       mpcb->ucopy.len);/*TODEL*/
 						NET_ADD_STATS_USER(
 							sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
+						BUG_ON(chunk<0);
 						len -= chunk;
 						copied += chunk;
 						/*Check if this fills a gap in 
@@ -2180,12 +2189,14 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 						if (!skb_queue_empty(
 							    &mpcb->
 							    out_of_order_queue))
+						{
 							mtcp_ofo_queue(mpcb,
 								       msg,&len,
 								       data_seq,
 								       &copied,
 								       flags);
-						
+							mpcb->ucopy.len=len;
+						}
 					}
 				}
 			}

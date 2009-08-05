@@ -4709,6 +4709,8 @@ static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 	int chunk = skb->len - hlen;
 	int err;
 
+	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
+
 	local_bh_enable();
 	if (skb_csum_unnecessary(skb))
 		err = skb_copy_datagram_iovec(skb, hlen, mpcb->ucopy.iov, 
@@ -4851,9 +4853,8 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 	
-	if (skb->path_index==2) /*TODEL*/
-		printk(KERN_ERR "%s:pi %d - seq is %x\n",
-		       __FUNCTION__,skb->path_index,TCP_SKB_CB(skb)->seq);
+	printk(KERN_ERR "%s:pi %d - seq is %x\n",
+	       __FUNCTION__,skb->path_index,TCP_SKB_CB(skb)->seq);
 	
 
 	/*
@@ -4870,10 +4871,6 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	 *	extra cost of the net_bh soft interrupt processing...
 	 *	We do checksum and copy also but from device to kernel.
 	 */
-
-	if (skb->path_index==2) /*TODEL*/
-		printk(KERN_ERR "%s:rcvd packet with path index 2\n",
-		       __FUNCTION__);
 	
 	tp->rx_opt.saw_tstamp = 0;
 
