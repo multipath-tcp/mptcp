@@ -909,18 +909,18 @@ static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 	struct tcphdr *th = tcp_hdr(skb); /*TODEL*/
 
 	if (skb->path_index==2)
-		printk(KERN_ERR "%s:pi 2 - received seqnum %x\n",__FUNCTION__,
+		PDEBUG("%s:pi 2 - received seqnum %x\n",__FUNCTION__,
 		       ntohl(th->seq)); /*TODEL*/
 	
 	if (!sysctl_tcp_low_latency && mpcb->ucopy.task) {
 		__skb_queue_tail(&tp->ucopy.prequeue, skb);
 		tp->ucopy.memory += skb->truesize;
-		printk(KERN_ERR "%s:line %d, prequeue length: %d\n",
+		PDEBUG("%s:line %d, prequeue length: %d\n",
 		       __FUNCTION__,__LINE__, 
 		       skb_queue_len(&tp->ucopy.prequeue)); /*TODEL*/
 		if (tp->ucopy.memory > sk->sk_rcvbuf) {			
 			struct sk_buff *skb1;
-			printk(KERN_ERR "%s:line %d\n",
+			PDEBUG("%s:line %d\n",
 			       __FUNCTION__,__LINE__); /*TODEL*/
 
 			BUG_ON(sock_owned_by_user(sk));
@@ -934,10 +934,10 @@ static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 
 			tp->ucopy.memory = 0;
 		} else if (skb_queue_len(&tp->ucopy.prequeue) == 1) {
-			printk(KERN_ERR "%s:line %d\n",
+			PDEBUG("%s:line %d\n",
 			       __FUNCTION__,__LINE__); /*TODEL*/
 			wake_up_interruptible(sk->sk_sleep);
-			printk(KERN_ERR "%s:line %d\n",
+			PDEBUG("%s:line %d\n",
 			       __FUNCTION__,__LINE__); /*TODEL*/
 			if (!inet_csk_ack_scheduled(sk))
 				inet_csk_reset_xmit_timer(sk, ICSK_TIME_DACK,

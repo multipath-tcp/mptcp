@@ -768,7 +768,7 @@ static void tcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	/* Advance write_seq and place onto the write_queue. */
-	printk(KERN_ERR "%s: tp->write_seq:%x,skb->end_seq:%x\n",
+	PDEBUG("%s: tp->write_seq:%x,skb->end_seq:%x\n",
 	       __FUNCTION__,tp->write_seq,TCP_SKB_CB(skb)->end_seq); /*TODEL*/
 	tp->write_seq = TCP_SKB_CB(skb)->end_seq;	
 	skb_header_release(skb);
@@ -1341,7 +1341,7 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	int nlen = skb->len - len;
 	u16 flags;
 
-	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
+	PDEBUG("Entering %s\n",__FUNCTION__);
 
 	/* All of a TSO frame must be composed of paged data.  */
 	if (skb->len != skb->data_len)
@@ -1843,7 +1843,7 @@ static void tcp_retrans_try_collapse(struct sock *sk, struct sk_buff *skb,
 	int skb_size, next_skb_size;
 	u16 flags;
 
-	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
+	PDEBUG("Entering %s\n",__FUNCTION__);
 
 	/* The first test we must make is that neither of these two
 	 * SKB's are still referenced by someone else.

@@ -4100,7 +4100,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 		if (eaten <= 0) {
 queue_and_out:
 			if (skb->path_index==2) { /*TODEL*/
-				printk(KERN_ERR "%s:2-rcvd packet with "
+				PDEBUG("%s:2-rcvd packet with "
 				       "path index 2\n",
 				       __FUNCTION__);
 			}
@@ -4709,7 +4709,7 @@ static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 	int chunk = skb->len - hlen;
 	int err;
 
-	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
+	PDEBUG("Entering %s\n",__FUNCTION__);
 
 	local_bh_enable();
 	if (skb_csum_unnecessary(skb))
@@ -4853,7 +4853,7 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 	
-	printk(KERN_ERR "%s:pi %d - seq is %x\n",
+	PDEBUG("%s:pi %d - seq is %x\n",
 	       __FUNCTION__,skb->path_index,TCP_SKB_CB(skb)->seq);
 	
 

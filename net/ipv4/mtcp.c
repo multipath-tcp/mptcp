@@ -145,10 +145,10 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			retval = sock->ops->bind(sock, loculid, ulid_size);
 			if (retval<0) goto fail_bind;
 			
-			printk(KERN_ERR "%s:About to connect\n",__FUNCTION__);
+			PDEBUG("%s:About to connect\n",__FUNCTION__);
 			retval = sock->ops->connect(sock,remulid,
 						    ulid_size,0);
-			printk(KERN_ERR "%s:connected\n",__FUNCTION__);
+			PDEBUG("%s:connected\n",__FUNCTION__);
 			if (retval<0) goto fail_connect;
 						
 			PDEBUG("New MTCP subsocket created, pi %d\n",i+1);
@@ -227,7 +227,7 @@ static void mpcb_release(struct kref* kref)
 	struct multipath_pcb *mpcb;
 	mpcb=container_of(kref,struct multipath_pcb,kref);
 	mutex_destroy(&mpcb->mutex);
-	printk(KERN_ERR "about to kfree\n");
+	PDEBUG("about to kfree\n");
 	kfree(mpcb);
 }
 
@@ -256,7 +256,7 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 	mpcb->cnt_subflows++;
 	kref_get(&mpcb->kref);	
 	mutex_unlock(&mpcb->mutex);
-	printk(KERN_ERR "Added subsocket, cnt_subflows now %d\n",
+	PDEBUG("Added subsocket, cnt_subflows now %d\n",
 	       mpcb->cnt_subflows);
 }
 
@@ -390,7 +390,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	copied=0;i=0;nberr=0;
 	while (copied<msg_size) {		
 		int ret;
-		printk(KERN_ERR "copied %d,msg_size %d, i %d\n",(int)copied,
+		PDEBUG("copied %d,msg_size %d, i %d\n",(int)copied,
 		       (int)msg_size,i);
 		/*Find a candidate socket for eating data*/
 		tp=get_available_subflow(mpcb);
@@ -408,7 +408,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			  returned on a subsequent call anyway.*/
 			nberr++;
 			if (nberr==mpcb->cnt_subflows) {
-				printk(KERN_ERR "%s: returning error "
+				PDEBUG(KERN_ERR "%s: returning error "
 				       "to app:%d, copied %d\n",__FUNCTION__,
 				       ret,(int)copied);
 				return (copied)?copied:ret;
@@ -475,7 +475,7 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 			__kfree_skb(skb);
 			continue;
 		}
-		printk(KERN_ERR "ofo delivery : "
+		PDEBUG("ofo delivery : "
 		       "nxt_data_seq %X data_seq %X - %X\n",
 		       *data_seq, TCP_SKB_CB(skb)->data_seq,
 		       TCP_SKB_CB(skb)->end_data_seq);
@@ -549,7 +549,7 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 		skb = skb_peek(&mpcb->receive_queue);
 		if (!skb) return 0;
 
-		printk(KERN_ERR "Receiving a meta-queued skb\n");
+		PDEBUG("Receiving a meta-queued skb\n");
 
 		if (before(*data_seq, TCP_SKB_CB(skb)->data_seq)) {
 			printk(KERN_ERR 
@@ -573,7 +573,7 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 		*len -= used;
 		*copied+= used;
 
-		printk(KERN_ERR "copied %d bytes, from dataseq %x to %x, "
+		PDEBUG("copied %d bytes, from dataseq %x to %x, "
 		       "len %d, skb->len %d\n",*copied,
 		       TCP_SKB_CB(skb)->data_seq+(u32)offset,
 		       TCP_SKB_CB(skb)->data_seq+(u32)used+(u32)offset,
@@ -618,12 +618,12 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		*tp->seq += skb->len;
 		
 		/*TODEL*/
-		printk(KERN_ERR "exp. data_seq:%x, skb->data_seq:%x\n",
+		PDEBUG("exp. data_seq:%x, skb->data_seq:%x\n",
 		       *data_seq,TCP_SKB_CB(skb)->data_seq);
 		
 		if (!skb_peek(&mpcb->out_of_order_queue)) {
 			/* Initial out of order segment */
-			printk(KERN_ERR "First meta-ofo segment\n");
+			PDEBUG("First meta-ofo segment\n");
 			__skb_queue_head(&mpcb->out_of_order_queue, skb);
 			return MTCP_QUEUED;
 		}

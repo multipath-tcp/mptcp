@@ -955,7 +955,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	if (sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN))
 		goto do_error;
 
-	printk(KERN_ERR "%s:line %d, size %d,iovlen %d\n",__FUNCTION__,
+	PDEBUG("%s:line %d, size %d,iovlen %d\n",__FUNCTION__,
 	       __LINE__,(int)size,(int)iovlen);
 	while (--iovlen >= 0) {
 		int seglen = iov->iov_len;
@@ -966,7 +966,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 #ifdef CONFIG_MTCP
 		/*Skipping the offset (stored in the size argument)*/
 		if (tp->mpc) {
-			printk(KERN_ERR "seglen:%d\n",seglen);
+			PDEBUG("seglen:%d\n",seglen);
 			if (seglen>=size) {				
 				seglen-=size;
 				from+=size;
@@ -978,7 +978,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			}
 		}
 #endif
-		printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
+		PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
 		while (seglen > 0) {
 			int copy;
 
@@ -987,21 +987,21 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			if (!tcp_send_head(sk) || 
 			    mpcb->write_seq!=tp->last_write_seq ||
 			    (copy = size_goal - skb->len) <= 0) {
-				printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
+				PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
 			new_segment:
 				/* Allocate new segment. If the interface is SG,
 				 * allocate skb fitting to single page.
 				 */
-				printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
+				PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
 				if (!sk_stream_memory_free(sk))
 					goto wait_for_sndbuf;
-				printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
+				PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
 				skb = sk_stream_alloc_skb(sk, select_size(sk),
 						sk->sk_allocation);
-				printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
+				PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
 				if (!skb)
 					goto wait_for_memory;
-				printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
+				PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
 
 				/*
 				 * Check whether we can use HW checksum.
@@ -1019,20 +1019,20 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 
 			/* Where to copy to? */
 			if (skb_tailroom(skb) > 0) {
-				printk(KERN_ERR "to tail room\n");
+				PDEBUG("to tail room\n");
 				/* We have some space in skb head. Superb! */
 				if (copy > skb_tailroom(skb))
 					copy = skb_tailroom(skb);
-				printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
+				PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
 				if ((err = skb_add_data(skb, from, copy)) != 0)
 					goto do_fault;
-				printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
+				PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
 			} else {
 				int merge = 0;
 				int i = skb_shinfo(skb)->nr_frags;
 				struct page *page = TCP_PAGE(sk);
 				int off = TCP_OFF(sk);
-				printk(KERN_ERR "coalesce\n");
+				PDEBUG("coalesce\n");
 
 				if (skb_can_coalesce(skb, i, page, off) &&
 				    off != PAGE_SIZE) {
@@ -1111,31 +1111,31 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			if (tp->mpc) {
 				mpcb->write_seq += copy;
 				tp->last_write_seq=mpcb->write_seq;
-				printk(KERN_ERR "write_seq now %x, copied %d"
+				PDEBUG("write_seq now %x, copied %d"
 				       " bytes to skb %p\n",mpcb->write_seq,
 				       copy,skb);
-				printk(KERN_ERR "skb->len is %d\n",
+				PDEBUG("skb->len is %d\n",
 				       skb->len);
 				TCP_SKB_CB(skb)->end_data_seq += copy;
 			}
 #endif
-			printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
+			PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
 			from += copy;
 			copied += copy;
 			if ((seglen -= copy) == 0 && iovlen == 0)
 				goto out;
-			printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
+			PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
 			if (skb->len < size_goal || (flags & MSG_OOB))
 				continue;
 
-			printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
+			PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
 			if (forced_push(tp)) {
 				tcp_mark_push(tp, skb);
 				__tcp_push_pending_frames(sk, mss_now, TCP_NAGLE_PUSH);
 			} else if (skb == tcp_send_head(sk))
 				tcp_push_one(sk, mss_now);
 			continue;
-			printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
+			PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
 		wait_for_sndbuf:
 			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 		wait_for_memory:
@@ -1144,7 +1144,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 
 			if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
 				goto do_error;
-			printk(KERN_ERR "%s:line %d\n",__FUNCTION__,__LINE__);
+			PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
 			mss_now = tcp_current_mss(sk, !(flags&MSG_OOB));
 			size_goal = tp->xmit_size_goal;
 		}
@@ -1155,7 +1155,7 @@ out:
 		tcp_push(sk, flags, mss_now, tp->nonagle);
 	TCP_CHECK_TIMER(sk);
 	release_sock(sk);
-	printk(KERN_ERR "%s:line %d, copied %d\n",__FUNCTION__,__LINE__,copied);
+	PDEBUG("%s:line %d, copied %d\n",__FUNCTION__,__LINE__,copied);
 	return copied;
 
 do_fault:
@@ -1300,7 +1300,7 @@ static void tcp_prequeue_process(struct sock *sk)
 	struct sk_buff *skb;
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	printk(KERN_ERR "Entering %s for pi %d\n",__FUNCTION__,
+	PDEBUG("Entering %s for pi %d\n",__FUNCTION__,
 	       tp->path_index);
 
 	NET_INC_STATS_USER(sock_net(sk), LINUX_MIB_TCPPREQUEUED);
@@ -1893,7 +1893,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	if (flags & MSG_PEEK) {	
 		/*We put this because it is not sure at all that MSG_PEEK
 		  works correctly.*/
-		printk(KERN_ERR "Warning: MSG_PEEK is set...\n");
+		PDEBUG("Warning: MSG_PEEK is set...\n");
 		peek_data_seq = mpcb->copied_seq;
 		data_seq = &peek_data_seq; /*global pointer*/
 		mtcp_for_each_tp(mpcb,tp) {
@@ -1912,9 +1912,9 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	target = sock_rcvlowat(master_sk, flags & MSG_WAITALL, len);
 
 	/*Start by checking if skbs are waiting on the mpcb receive queue*/
-	printk(KERN_ERR "%d: copied_seq:%x\n",__LINE__,mpcb->copied_seq);
+	PDEBUG("%d: copied_seq:%x\n",__LINE__,mpcb->copied_seq);
 	err=mtcp_check_rcv_queue(mpcb,msg, &len, data_seq, &copied, flags);
-	printk(KERN_ERR "%d: copied_seq:%x\n",__LINE__,mpcb->copied_seq);
+	PDEBUG("%d: copied_seq:%x\n",__LINE__,mpcb->copied_seq);
 	if (err<0) {
 		printk(KERN_ERR "error in mtcp_check_rcv_queue\n");
 		/* Exception. Bailout! */
@@ -1981,10 +1981,11 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			if (tcp_hdr(skb)->syn)
 				offset--;
 			/*TODEL*/
-			printk(KERN_ERR "tp->seq:%x,skb->seq:%x,"
+			PDEBUG("tp->seq:%x,skb->seq:%x,"
 			       "skb->len:%d\n",*tp->seq,TCP_SKB_CB(skb)->seq,
 			       skb->len);
-			printk(KERN_ERR "mpcb->copied_seq:%x,skb->data_seq:%x,"
+			PDEBUG("mpcb->copied_seq:%x,"
+			       "skb->data_seq:%x,"
 			       "skb->len:%d\n",mpcb->copied_seq,
 			       TCP_SKB_CB(skb)->data_seq,
 			       skb->len);
@@ -1997,14 +1998,14 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 
 		}
 
-		printk(KERN_ERR "At line %d\n",__LINE__);
+		PDEBUG("At line %d\n",__LINE__);
 		
 		/* Well, if we have backlog, try to process it now yet. */
 		if (copied >= target && 
 		    !mtcp_test_any_sk(mpcb,sk,sk->sk_backlog.tail))
 			break;
 
-		printk(KERN_ERR "At line %d\n",__LINE__);
+		PDEBUG("At line %d\n",__LINE__);
 
 		/*Here we test a set of conditions to return immediately to
 		  the user*/
@@ -2107,10 +2108,10 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				goto do_prequeue;
 			/* __ Set realtime policy in scheduler __ */
 		}
-		printk(KERN_ERR "At line %d\n",__LINE__);
+		PDEBUG("At line %d\n",__LINE__);
 
 		if (copied >= target) {
-			printk(KERN_ERR "At line %d\n",__LINE__);
+			PDEBUG("At line %d\n",__LINE__);
 			/* Do not sleep, just process backlog. */
 			mtcp_for_each_sk(mpcb,sk,tp) {
 				release_sock(sk);
@@ -2118,20 +2119,20 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			}
 			
 		} else {
-			printk(KERN_ERR "At line %d\n",__LINE__);
+			PDEBUG("At line %d\n",__LINE__);
 			/*Wait for data arriving on any subsocket*/
 			cnt_subflows=mpcb->cnt_subflows;			
 			mutex_unlock(&mpcb->mutex);
-			printk(KERN_ERR "At line %d\n",__LINE__);
+			PDEBUG("At line %d\n",__LINE__);
 			mtcp_wait_data(mpcb,master_sk, &timeo);
-			printk(KERN_ERR "At line %d\n",__LINE__);
+			PDEBUG("At line %d\n",__LINE__);
 			
 			/*We may have received data on a newly created
 			  subsocket, check if the list has grown*/
 			mutex_lock(&mpcb->mutex);
-			printk(KERN_ERR "At line %d\n",__LINE__);
+			PDEBUG("At line %d\n",__LINE__);
 			if (cnt_subflows!=mpcb->cnt_subflows) {
-				printk(KERN_ERR "New subflow arrived"
+				PDEBUG("New subflow arrived"
 				       " in live\n");
 				/*We must ensure  that for each new tp, 
 				  the seq pointer is correctly set. In 
@@ -2154,14 +2155,14 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		
 		if (user_recv) {
 			int chunk;
-			printk(KERN_ERR "At line %d\n",__LINE__);
+			PDEBUG("At line %d\n",__LINE__);
 			
 			/* __ Restore normal policy in scheduler __ */
 
 			if ((chunk = len - mpcb->ucopy.len) != 0) {		
 				NET_ADD_STATS_USER(sock_net(master_sk), LINUX_MIB_TCPDIRECTCOPYFROMBACKLOG, chunk);
 				/*TODEL*/
-				printk(KERN_ERR "backlog copy: %d\n",chunk);
+				PDEBUG("backlog copy: %d\n",chunk);
 				len -= chunk;
 				copied += chunk;
 				/*Check if this fills a gap in the ofo queue*/
@@ -2176,7 +2177,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			}
 			
 			mtcp_for_each_tp(mpcb,tp) {
-				printk(KERN_ERR "Checking prequeue for pi %d,"
+				PDEBUG("Checking prequeue for pi %d,"
 				       "prequeue len:%d\n",
 				       tp->path_index,
 				       skb_queue_len(&tp->ucopy.prequeue));
@@ -2190,7 +2191,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 					
 					if ((chunk = len - mpcb->ucopy.len) 
 					    != 0) {
-						printk(KERN_ERR "prequeue "
+						PDEBUG("prequeue "
 						       "copy :%d, len %d,"
 						       "ucopy.len %d\n",
 						       chunk,(int)len,
@@ -2221,7 +2222,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			if ((flags & MSG_PEEK) && 
 			    tp->peek_seq != tp->copied_seq) {
 				if (net_ratelimit())
-					printk(KERN_ERR "TCP(%s:%d): "
+					PDEBUG("TCP(%s:%d): "
 					       "Application bug, race in "
 					       "MSG_PEEK.\n",
 					       current->comm, 
@@ -2241,8 +2242,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		/* Do we have urgent data here? */
 		if (tp->urg_data) {
 			u32 urg_offset = tp->urg_seq - *tp->seq;
-			printk(KERN_ERR "Received urgent data\n");
-			printk(KERN_ERR "Urgent data not supported at the "
+			PDEBUG("Received urgent data\n");
+			PDEBUG("Urgent data not supported at the "
 			       "moment");
 			BUG();
 			if (urg_offset < used) {
@@ -2265,12 +2266,12 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			  in order from the dataseq point of view, it will be
 			  delivered to the application, otherwise it will be
 			  queued in the metasocket out of order queue.*/
-			printk(KERN_ERR "At line %d\n",__LINE__);
+			PDEBUG("At line %d\n",__LINE__);
 			mtcp_op=err= mtcp_queue_skb(sk,skb,offset,&used,msg,
 						    &len, data_seq,&copied,
 						    flags);
 			if (err<0) {
-				printk(KERN_ERR "error in mtcp_queue_skb\n");
+				PDEBUG("error in mtcp_queue_skb\n");
 				/* Exception. Bailout! */
 				if (!copied)
 					copied = -EFAULT;
@@ -2278,12 +2279,12 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			}
 		}
 		else 
-			printk(KERN_ERR "MSG_TRUNC is set\n"); /*TODEL*/
+			PDEBUG("MSG_TRUNC is set\n"); /*TODEL*/
 		mtcp_for_each_sk(mpcb,sk,tp)
 			tcp_rcv_space_adjust(sk);
 
 	skip_copy:
-		printk(KERN_ERR "At line %d\n",__LINE__);
+		PDEBUG("At line %d\n",__LINE__);
 		mtcp_for_each_sk(mpcb,sk,tp)
 			if (tp->urg_data && after(tp->copied_seq, 
 						  tp->urg_seq)) {
@@ -2291,7 +2292,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				tcp_fast_path_check(sk);
 			}
 		if (used + offset < skb->len) {
-			printk(KERN_ERR "used:%lu, offset:%lu\n",used,
+			PDEBUG("used:%lu, offset:%lu\n",used,
 			       (long unsigned int)offset); /*TODEL*/
 			continue; 
 		}
@@ -2299,7 +2300,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		if (tcp_hdr(skb)->fin)
 			goto found_fin_ok;
 		if (!(flags & MSG_PEEK) && mtcp_op == MTCP_EATEN) {
-			printk(KERN_ERR "will call sk_eat_skb\n");
+			PDEBUG("will call sk_eat_skb\n");
 			sk_eat_skb(skb->sk, skb, 0);
 		}
 		continue;
@@ -2313,7 +2314,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	} while (len > 0);
 skip_loop:
 	
-	printk(KERN_ERR "At line %d\n",__LINE__);
+	PDEBUG("At line %d\n",__LINE__);
 	if (user_recv) {
 		mtcp_for_each_sk(mpcb,sk,tp)
 			if (!skb_queue_empty(&tp->ucopy.prequeue)) {
@@ -2326,7 +2327,7 @@ skip_loop:
 				if (copied > 0 && (chunk = len - 
 						   mpcb->ucopy.len) != 0) {
 					NET_ADD_STATS_USER(sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
-					printk(KERN_ERR "prequeue2 copy :%d\n",
+					PDEBUG("prequeue2 copy :%d\n",
 					       chunk); /*TODEL*/
 					len -= chunk;
 					copied += chunk;
@@ -2354,20 +2355,20 @@ skip_loop:
 	
 	mtcp_for_each_sk(mpcb,sk,tp) release_sock(sk);
 	mutex_unlock(&mpcb->mutex);
-	printk(KERN_ERR "At line %d\n",__LINE__);
+	PDEBUG("At line %d\n",__LINE__);
 	return copied;
 
 out:
 	mtcp_for_each_sk(mpcb,sk,tp) release_sock(sk);
 	mutex_unlock(&mpcb->mutex);
-	printk(KERN_ERR "At line %d\n",__LINE__);
+	PDEBUG("At line %d\n",__LINE__);
 	return err;
 
 recv_urg:
 	/*At the moment we only allow receiving urgent data on the master
 	  subsocket. Makes sense ?*/
 	err = tcp_recv_urg(master_sk, timeo, msg, len, flags, addr_len);
-	printk(KERN_ERR "At line %d\n",__LINE__);
+	PDEBUG("At line %d\n",__LINE__);
 	goto out;
 }
 
@@ -2474,7 +2475,7 @@ void tcp_close(struct sock *sk, long timeout)
 #ifdef CONFIG_MTCP
 	/*if this is the master subsocket, we must first close the
 	  slave subsockets*/
-	printk(KERN_ERR "%s:app close\n",__FUNCTION__);
+	PDEBUG("%s:app close\n",__FUNCTION__);
 	if (is_master_sk(tcp_sk(sk))) {
 		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
 		struct sock *slave_sk,*temp;
@@ -3120,7 +3121,7 @@ struct sk_buff *tcp_tso_segment(struct sk_buff *skb, int features)
 	unsigned int oldlen;
 	unsigned int len;
 
-	printk(KERN_ERR "Entering %s\n (unsupported by mtcp !)\n",
+	PDEBUG("Entering %s\n (unsupported by mtcp !)\n",
 	       __FUNCTION__); /*TODEL*/
 
 	if (!pskb_may_pull(skb, sizeof(*th)))
