@@ -363,6 +363,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	struct multipath_pcb *mpcb;
 	size_t iovlen,copied,msg_size;
 	int i;
+	int nberr;
 	
 	if (!tcp_sk(master_sk)->mpc)
 		return tcp_sendmsg(iocb,sock, msg, size);
@@ -386,17 +387,38 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	  Currently it sleeps inside tcp_sendmsg, but it is not the most
 	  efficient, since during that time, we could try sending on other
 	  subsockets*/
-	copied=0;i=0;
+	copied=0;i=0;nberr=0;
 	while (copied<msg_size) {		
-		printk(KERN_ERR "copied %d\n",(int)copied);
+		int ret;
+		printk(KERN_ERR "copied %d,msg_size %d, i %d\n",(int)copied,
+		       (int)msg_size,i);
 		/*Find a candidate socket for eating data*/
 		tp=get_available_subflow(mpcb);
 		/*Let the selected socket eat*/
-		copied+=tcp_sendmsg(NULL,((struct sock*)tp)->sk_socket, 
-				    msg, copied);
+		ret=tcp_sendmsg(NULL,((struct sock*)tp)->sk_socket, 
+				msg, copied);
+		if (ret<0) {
+			/*If this subflow refuses to send our data, try
+			  another one. If no subflow accepts to send it
+			  send the error code from the last subflow to the
+			  app. If no subflow can send the data, but a part of 
+			  the message has been sent already, then we tell the 
+			  application about the copied bytes, instead
+			  of returning the error code. The error code would be
+			  returned on a subsequent call anyway.*/
+			nberr++;
+			if (nberr==mpcb->cnt_subflows) {
+				printk(KERN_ERR "%s: returning error "
+				       "to app:%d, copied %d\n",__FUNCTION__,
+				       ret,(int)copied);
+				return (copied)?copied:ret;
+			}
+			continue;
+		}
+		copied+=ret;
 		BUG_ON(i++==30);
 	}
-
+	
 	return copied;
 }
 
@@ -543,12 +565,18 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 			used = *len;
 		
 		err=skb_copy_datagram_iovec(skb, offset,
-					    msg->msg_iov, used);
+					    msg->msg_iov, used);		
+		BUG_ON(err);
 		if (err) return err;
 		
 		*data_seq += used;
 		*len -= used;
 		*copied+= used;
+
+		printk(KERN_ERR "copied %d bytes, from dataseq %x to %x, "
+		       "len %d, skb->len %d\n",*copied,
+		       TCP_SKB_CB(skb)->data_seq,
+		       TCP_SKB_CB(skb)->data_seq+(u32)used,(int)*len,(int)skb->len);
 		
  		if (*data_seq==TCP_SKB_CB(skb)->end_data_seq && 
 		    !(flags & MSG_PEEK))

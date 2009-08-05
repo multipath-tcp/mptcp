@@ -1932,6 +1932,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		   data on the master subflow at the moment*/
 		if (master_tp->urg_data && 
 		    master_tp->urg_seq == master_tp->copied_seq) {
+			/*urg data not managed currently*/
+			BUG();
 			if (copied)
 				break;
 			if (signal_pending(current)) {
@@ -2327,7 +2329,7 @@ skip_loop:
 		mpcb->ucopy.task = NULL;
 		mpcb->ucopy.len = 0;
 	}
-
+	
 	/* According to UNIX98, msg_name/msg_namelen are ignored
 	 * on connected socket. I was just happy when found this 8) --ANK
 	 */
