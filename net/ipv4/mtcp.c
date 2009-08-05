@@ -575,8 +575,9 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 
 		printk(KERN_ERR "copied %d bytes, from dataseq %x to %x, "
 		       "len %d, skb->len %d\n",*copied,
-		       TCP_SKB_CB(skb)->data_seq,
-		       TCP_SKB_CB(skb)->data_seq+(u32)used,(int)*len,(int)skb->len);
+		       TCP_SKB_CB(skb)->data_seq+(u32)offset,
+		       TCP_SKB_CB(skb)->data_seq+(u32)used+(u32)offset,
+		       (int)*len,(int)skb->len);
 		
  		if (*data_seq==TCP_SKB_CB(skb)->end_data_seq && 
 		    !(flags & MSG_PEEK))

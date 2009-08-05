@@ -1923,6 +1923,20 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		goto skip_loop;
 	}
 
+	/*It is important to skip the loop if the meta receive queue has 
+	  given enough bytes for the application to eat. The reason is
+	  that if the next segment to receive follows immediately the last
+	  one in the meta-receive queue. Skipping the loop will result in 
+	  correctly finishing the copy at the next call to tcp_recvmsg(),
+	  then receiving immediately in sequence the next segment. OTOH,
+	  if we enter the loop in the middle of the parsing of 
+	  the meta-receive queue, the new segment will be considered out of 
+	  order, be put in the meta-ofo queue, then we return because 
+	  len is 0. On the next call, the meta-receive queued is purged,
+	  but the meta-ofo queue is not consulted anymore ! So this would make
+	  a hole in the segment reception, making the connexion stall.*/
+	if (len==0) goto skip_loop;
+
 	do {
 		u32 offset;
 
