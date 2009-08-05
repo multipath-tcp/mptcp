@@ -39,6 +39,7 @@ enum netevent_notif_type {
 	NETEVENT_PMTU_UPDATE,	   /* arg is struct dst_entry ptr */
 	NETEVENT_REDIRECT,	   /* arg is struct netevent_redirect ptr */
 	NETEVENT_PATH_UPDATEV6,    /* arg is struct ulid_pair ptr*/
+	NETEVENT_MPS_UPDATEME,     /* arg is struct ulid_pair ptr*/
 };
 
 extern int register_netevent_notifier(struct notifier_block *nb);

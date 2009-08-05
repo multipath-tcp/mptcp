@@ -2382,6 +2382,9 @@ void tcp_set_state(struct sock *sk, int state)
 	case TCP_ESTABLISHED:
 		if (oldstate != TCP_ESTABLISHED)
 			TCP_INC_STATS(sock_net(sk), TCP_MIB_CURRESTAB);
+#ifdef CONFIG_MTCP
+		mtcp_ask_update(sk);
+#endif
 		break;
 
 	case TCP_CLOSE:

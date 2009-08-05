@@ -28,6 +28,7 @@
 #include <linux/seq_file.h>
 #include <linux/scatterlist.h>
 #include <linux/crypto.h>
+#include <linux/notifier.h>
 #ifdef CONFIG_SYSCTL
 #include <linux/sysctl.h>
 #endif
@@ -756,6 +757,47 @@ static struct shim6_ops shim6_fcts=
 	.xfrm_input_ct=xfrm_input_ct,
 };
 
+/*
+ * propagates a PM update request.
+ *
+ * Format for the message :
+ *  ----------------------------------------------------------------
+ * |   IPv6 local addr. (128 bits)  |  IPv6 remote addr. (128 bits) |
+ *  ----------------------------------------------------------------
+ */
+static int netevent_callback(struct notifier_block *self, unsigned long event,
+			     void *ctx)
+{
+	struct ulid_pair *up;
+	struct in6_addr *local, *remote;
+	struct sk_buff *skb;
+	int pld_len=2*sizeof(struct in6_addr);
+	int err;
+	switch(event) {
+		/*Must be sent from user context*/
+	case NETEVENT_MPS_UPDATEME:
+		up=ctx;
+		/*Simply propagate this request to the daemon*/
+		if (!(skb=shim6_alloc_netlink_skb(pld_len,SHIM6_NL_UPDATE_MPS,
+						  GFP_KERNEL)))
+			return -1;
+		local=NLMSG_DATA((struct nlmsghdr*)skb->data);
+		remote=local+1;
+		ipv6_addr_copy(local,up->local);
+		ipv6_addr_copy(remote,up->remote);
+		if ((err=netlink_broadcast(shim6nl_sk,skb,0,SHIM6NLGRP_DEFAULT,
+					   GFP_KERNEL)))
+			printk(KERN_INFO "shim6, %s : nl broadcast, error %d,"
+			       "daemon down ?\n", 
+			       __FUNCTION__, err);
+		break;
+	}
+	return 0;
+}
+
+static struct notifier_block nb = {
+	.notifier_call=netevent_callback,
+};
 
 /*General initialization of the shim6 mechanism
  *(this is executed in user context)
@@ -793,6 +835,8 @@ static int __init shim6_init(void)
 		return -EAGAIN;		
 	}
 
+	register_netevent_notifier(&nb);	
+	
 	return 0;
 
  fail:
@@ -807,9 +851,10 @@ static void __exit shim6_exit(void)
 		printk(KERN_INFO "%s: can't remove xfrm type(shim6)\n", 
 		       __FUNCTION__);
 	if (shim6_unregister_ops(&shim6_fcts)<0)
-		printk(KERN_INFO "%s: can't remove shim6 ops\n",
+		printk(KERN_INFO "%s: can't remove shim6 ops\n",	
 		       __FUNCTION__);
 	
+	unregister_netevent_notifier(&nb);
 	ipv6_shim6_exit();
 }
 

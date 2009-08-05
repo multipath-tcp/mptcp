@@ -61,6 +61,7 @@ enum shim6_nl_type_t {
 				 kernel*/
 	SHIM6_NL_DEL_LOC_ADDR, /*address not anymore available 
 				in the kernel*/
+	SHIM6_NL_UPDATE_MPS, /*An MPS has requested to be updated.*/
 };
 
 #ifdef __KERNEL__ /*definitions for kernel space*/

@@ -192,6 +192,23 @@ static int netevent_callback(struct notifier_block *self, unsigned long event,
         return 0;
 }
 
+/*Ask to the PM to be updated about available path indices
+ *
+ * The argument must be any TCP socket in established state
+ */
+void mtcp_ask_update(struct sock *sk)
+{
+	struct ulid_pair up;
+	struct tcp_sock *tp=tcp_sk(sk);
+
+	if (!is_master_sk(tp)) return;
+
+	up.local=&inet6_sk(sk)->daddr;
+	up.remote=&inet6_sk(sk)->saddr;
+	up.path_indices=0; /*This is what we ask for*/
+	call_netevent_notifiers(NETEVENT_MPS_UPDATEME, &up);
+}
+
 struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 {
 	struct multipath_pcb * mpcb = kmalloc(
@@ -218,7 +235,7 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	
 	mpcb->nb.notifier_call=netevent_callback;
 	register_netevent_notifier(&mpcb->nb);
-	
+		
 	return mpcb;
 }
 
@@ -231,7 +248,7 @@ static void mpcb_release(struct kref* kref)
 	kfree(mpcb);
 }
 
-/*Warning: can only be called in user conext
+/*Warning: can only be called in user context
   (due to unregister_netevent_notifier)*/
 void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
 {
