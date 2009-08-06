@@ -72,6 +72,10 @@
 #include <net/netdma.h>
 #include <net/mtcp.h>
 
+
+#undef PDEBUG
+#define PDEBUG(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
+
 int sysctl_tcp_timestamps __read_mostly = 1;
 int sysctl_tcp_window_scaling __read_mostly = 1;
 int sysctl_tcp_sack __read_mostly = 1;

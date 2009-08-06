@@ -30,6 +30,9 @@
 #include <linux/random.h>
 #include <asm/atomic.h>
 
+#undef PDEBUG
+#define PDEBUG(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
+
 inline void mtcp_reset_options(struct multipath_options* mopt){
 #ifdef CONFIG_MTCP_PM
 	mopt->remote_token = -1;
@@ -485,7 +488,9 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 			break;
 				
 		if (!after(TCP_SKB_CB(skb)->end_data_seq, *data_seq)) {
-			printk(KERN_ERR "ofo packet was already received \n");
+			printk(KERN_ERR "ofo packet was already received."
+			       "skb->end_data_seq:%x,exp. data_seq:%x\n",
+			       TCP_SKB_CB(skb)->end_data_seq,*data_seq);
 			/*Should not happen in the current design*/
 			BUG();
 			__skb_unlink(skb, &mpcb->out_of_order_queue);

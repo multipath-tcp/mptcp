@@ -275,6 +275,13 @@
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
 
+
+#undef PDEBUG
+#define PDEBUG(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
+
+#define PDEBUG_SEND(fmt,args...)
+
+
 int sysctl_tcp_fin_timeout __read_mostly = TCP_FIN_TIMEOUT;
 
 atomic_t tcp_orphan_count = ATOMIC_INIT(0);
@@ -955,7 +962,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	if (sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN))
 		goto do_error;
 
-	PDEBUG("%s:line %d, size %d,iovlen %d\n",__FUNCTION__,
+	PDEBUG_SEND("%s:line %d, size %d,iovlen %d\n",__FUNCTION__,
 	       __LINE__,(int)size,(int)iovlen);
 	while (--iovlen >= 0) {
 		int seglen = iov->iov_len;
@@ -966,7 +973,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 #ifdef CONFIG_MTCP
 		/*Skipping the offset (stored in the size argument)*/
 		if (tp->mpc) {
-			PDEBUG("seglen:%d\n",seglen);
+			PDEBUG_SEND("seglen:%d\n",seglen);
 			if (seglen>=size) {				
 				seglen-=size;
 				from+=size;
@@ -978,7 +985,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			}
 		}
 #endif
-		PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
+		PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 		while (seglen > 0) {
 			int copy;
 
@@ -987,21 +994,21 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			if (!tcp_send_head(sk) || 
 			    mpcb->write_seq!=tp->last_write_seq ||
 			    (copy = size_goal - skb->len) <= 0) {
-				PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
+				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 			new_segment:
 				/* Allocate new segment. If the interface is SG,
 				 * allocate skb fitting to single page.
 				 */
-				PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
+				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 				if (!sk_stream_memory_free(sk))
 					goto wait_for_sndbuf;
-				PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
+				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 				skb = sk_stream_alloc_skb(sk, select_size(sk),
 						sk->sk_allocation);
-				PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
+				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 				if (!skb)
 					goto wait_for_memory;
-				PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
+				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 
 				/*
 				 * Check whether we can use HW checksum.
@@ -1019,20 +1026,20 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 
 			/* Where to copy to? */
 			if (skb_tailroom(skb) > 0) {
-				PDEBUG("to tail room\n");
+				PDEBUG_SEND("to tail room\n");
 				/* We have some space in skb head. Superb! */
 				if (copy > skb_tailroom(skb))
 					copy = skb_tailroom(skb);
-				PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
+				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 				if ((err = skb_add_data(skb, from, copy)) != 0)
 					goto do_fault;
-				PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
+				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 			} else {
 				int merge = 0;
 				int i = skb_shinfo(skb)->nr_frags;
 				struct page *page = TCP_PAGE(sk);
 				int off = TCP_OFF(sk);
-				PDEBUG("coalesce\n");
+				PDEBUG_SEND("coalesce\n");
 
 				if (skb_can_coalesce(skb, i, page, off) &&
 				    off != PAGE_SIZE) {
@@ -1111,31 +1118,31 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			if (tp->mpc) {
 				mpcb->write_seq += copy;
 				tp->last_write_seq=mpcb->write_seq;
-				PDEBUG("write_seq now %x, copied %d"
+				PDEBUG_SEND("write_seq now %x, copied %d"
 				       " bytes to skb %p\n",mpcb->write_seq,
 				       copy,skb);
-				PDEBUG("skb->len is %d\n",
+				PDEBUG_SEND("skb->len is %d\n",
 				       skb->len);
 				TCP_SKB_CB(skb)->end_data_seq += copy;
 			}
 #endif
-			PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
+			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 			from += copy;
 			copied += copy;
 			if ((seglen -= copy) == 0 && iovlen == 0)
 				goto out;
-			PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
+			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 			if (skb->len < size_goal || (flags & MSG_OOB))
 				continue;
 
-			PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
+			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 			if (forced_push(tp)) {
 				tcp_mark_push(tp, skb);
 				__tcp_push_pending_frames(sk, mss_now, TCP_NAGLE_PUSH);
 			} else if (skb == tcp_send_head(sk))
 				tcp_push_one(sk, mss_now);
 			continue;
-			PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
+			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 		wait_for_sndbuf:
 			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 		wait_for_memory:
@@ -1144,7 +1151,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 
 			if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
 				goto do_error;
-			PDEBUG("%s:line %d\n",__FUNCTION__,__LINE__);
+			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 			mss_now = tcp_current_mss(sk, !(flags&MSG_OOB));
 			size_goal = tp->xmit_size_goal;
 		}
@@ -1155,7 +1162,7 @@ out:
 		tcp_push(sk, flags, mss_now, tp->nonagle);
 	TCP_CHECK_TIMER(sk);
 	release_sock(sk);
-	PDEBUG("%s:line %d, copied %d\n",__FUNCTION__,__LINE__,copied);
+	PDEBUG_SEND("%s:line %d, copied %d\n",__FUNCTION__,__LINE__,copied);
 	return copied;
 
 do_fault:
