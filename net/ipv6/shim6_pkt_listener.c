@@ -20,7 +20,7 @@
  *
  *      Based on draft-ietf-shim6-proto-09
  *
- *      date : March 2008
+ *      date : April 2009
  *
  *	This program is free software; you can redistribute it and/or
  *      modify it under the terms of the GNU General Public License
@@ -71,7 +71,7 @@ struct shim6_ctx_count {
 	int                 in_pkts;
 	int                 out_pkts;
 	int                 triggered:1; /*1 if the trigger message has 
-					   been sent to the daemon*/
+					   been sent to the daemon*/	
 	unsigned long       timestamp; /*values of jiffies when creating the 
 					 entry*/
 	int                 bytes; /*Total number of bytes seen during the 
@@ -188,6 +188,7 @@ static int shim6_trigger(struct shim6_ctx_count* ctxc)
  *
  * Are not taken into account as negotiation triggers :
  *    - ICMP packets
+ *    - Mobility control packets (MH)
  *    - Multicast packets
  *    - Shim6 control packets
  */
@@ -201,9 +202,10 @@ static int check_packet(struct sk_buff* skb)
 	
 	if (nexthdr==IPPROTO_SHIM6) return 0;
 	
-	/* Do not take into account ICMP packets*/
+	/* Do not take into account ICMP nor MH packets*/
 	ipv6_skip_exthdr(skb,offset,&nexthdr); /*Skip any extension header*/
 	if (nexthdr==IPPROTO_ICMPV6) return 0;
+	if (nexthdr==IPPROTO_MH) return 0;
 	
 	/*Do not take into account multicast packets*/
 	if (ipv6_addr_is_multicast(&nh->daddr))
@@ -218,7 +220,7 @@ static int check_trigger(struct shim6_ctx_count* ctxc)
 {
 	if (!ctxc->triggered &&
 	    (ctxc->bytes >= FLOW_SIZE_TRIGGER ||
-	     jiffies-ctxc->timestamp >= FLOW_TIME_TRIGGER)) {
+	     time_before_eq(ctxc->timestamp+FLOW_TIME_TRIGGER,jiffies))) {
 		PDEBUG("trigger ctx establishment :"
 		       "bytes=%d, time=%ld seconds\n",ctxc->bytes,
 		       (jiffies-ctxc->timestamp)/HZ);
@@ -278,14 +280,14 @@ static unsigned int shim6list_local_out(unsigned int hooknum,
 	/*Lookup and creation must be atomic because several packets
 	  (from different applications)
 	  may trigger a creation in the same time*/
-	spin_lock(&new_ctx_lock);
+	spin_lock_bh(&new_ctx_lock);
 	ctxc=shim6_lookup_ulid(&nh->daddr,&nh->saddr);
 	if (!ctxc) { /*Then create it*/
 		ctxc=kmalloc(sizeof(struct shim6_ctx_count), GFP_ATOMIC);
 		if (!ctxc) {
 			printk(KERN_ERR
 			       "shim6list_local_out : Not enough memory\n");
-			spin_unlock(&new_ctx_lock);
+			spin_unlock_bh(&new_ctx_lock);
 			return NF_ACCEPT;
 		}
 		kref_init(&ctxc->kref);
@@ -299,6 +301,7 @@ static unsigned int shim6list_local_out(unsigned int hooknum,
 		add_timer(&ctxc->timer);
 		ctxc->in_pkts=0;
 		ctxc->out_pkts=1;
+		ctxc->triggered=0;
 		ctxc->bytes=skb->len;
 		ctxc->timestamp=jiffies;
 		spin_lock_init(&ctxc->lock);
@@ -306,10 +309,10 @@ static unsigned int shim6list_local_out(unsigned int hooknum,
 		trigger=check_trigger(ctxc);
       		shim6_register_ctx_ulid(ctxc);
 		kref_get(&ctxc->kref);
-		spin_unlock(&new_ctx_lock);		
+		spin_unlock_bh(&new_ctx_lock);
 	}
 	else { /*A context was found */
-		spin_unlock(&new_ctx_lock);
+		spin_unlock_bh(&new_ctx_lock);
 		/*Restart timer*/
 		mod_timer(&ctxc->timer,jiffies+PKT_CNT_TIMEOUT);
 		/*Update pkt count*/
@@ -384,7 +387,17 @@ module_init(shim6_listener_init);
 
 static void __exit shim6_listener_exit(void)
 {
+	int i;
+	struct shim6_ctx_count *ctxc, *tmp;
+	shim6_unregister_pl(&default_heuristic);	
 	nf_unregister_hooks(shim6_hook_ops,2);
-	shim6_unregister_pl(&default_heuristic);
+	/*Remove all states*/
+	for (i=0;i<SHIM6_HASH_SIZE;i++)
+		list_for_each_entry_safe(ctxc,tmp,&ulid_hashtable[i],
+					 collide_ulid) {
+			list_del(&ctxc->collide_ulid);
+			del_timer_sync(&ctxc->timer);
+			kfree(ctxc);
+		}
 }
 module_exit(shim6_listener_exit)
