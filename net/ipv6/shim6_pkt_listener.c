@@ -280,14 +280,14 @@ static unsigned int shim6list_local_out(unsigned int hooknum,
 	/*Lookup and creation must be atomic because several packets
 	  (from different applications)
 	  may trigger a creation in the same time*/
-	spin_lock(&new_ctx_lock);
+	spin_lock_bh(&new_ctx_lock);
 	ctxc=shim6_lookup_ulid(&nh->daddr,&nh->saddr);
 	if (!ctxc) { /*Then create it*/
 		ctxc=kmalloc(sizeof(struct shim6_ctx_count), GFP_ATOMIC);
 		if (!ctxc) {
 			printk(KERN_ERR
 			       "shim6list_local_out : Not enough memory\n");
-			spin_unlock(&new_ctx_lock);
+			spin_unlock_bh(&new_ctx_lock);
 			return NF_ACCEPT;
 		}
 		kref_init(&ctxc->kref);
@@ -309,10 +309,10 @@ static unsigned int shim6list_local_out(unsigned int hooknum,
 		trigger=check_trigger(ctxc);
       		shim6_register_ctx_ulid(ctxc);
 		kref_get(&ctxc->kref);
-		spin_unlock(&new_ctx_lock);		
+		spin_unlock_bh(&new_ctx_lock);
 	}
 	else { /*A context was found */
-		spin_unlock(&new_ctx_lock);
+		spin_unlock_bh(&new_ctx_lock);
 		/*Restart timer*/
 		mod_timer(&ctxc->timer,jiffies+PKT_CNT_TIMEOUT);
 		/*Update pkt count*/
