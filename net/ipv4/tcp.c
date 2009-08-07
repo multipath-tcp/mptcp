@@ -1971,6 +1971,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			if (!skb)
 				continue;
 			
+			if (skb->len>1500) BUG();      
+
 			/* Now that we have two receive queues this
 			 * shouldn't happen.
 			 */
@@ -2139,24 +2141,27 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			mutex_lock(&mpcb->mutex);
 			PDEBUG("At line %d\n",__LINE__);
 			if (cnt_subflows!=mpcb->cnt_subflows) {
-				PDEBUG("New subflow arrived"
-				       " in live\n");
+				printk(KERN_ERR "New subflow arrived"
+					 " in live\n");
 				/*We must ensure  that for each new tp, 
 				  the seq pointer is correctly set. In 
 				  particular we'll get a segfault if
 				  the pointer is NULL*/
-				if (flags & MSG_PEEK)				
-					mtcp_for_each_newtp(mpcb,tp,
-							    cnt_subflows) {
+				mtcp_for_each_newtp(mpcb,tp,
+						    cnt_subflows) {
+					if (flags & MSG_PEEK) {
 						tp->peek_seq=tp->copied_seq;
 						tp->seq=&tp->peek_seq;
-						/*Here, all subsocks are locked
-						  so we must also lock
-						  new subsocks*/
-						lock_sock((struct sock*)tp);
 					}
-				else mtcp_for_each_tp(mpcb,tp)
-					     tp->seq=&tp->copied_seq;
+					else 
+						tp->seq=&tp->copied_seq;
+					/*Here, all subsocks are locked
+					  so we must also lock
+					  new subsocks*/
+					printk(KERN_ERR "locksock pi %d\n",
+					       tp->path_index);
+					lock_sock((struct sock*)tp);
+				}
 			}
 		}
 		
@@ -2266,6 +2271,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 					used = urg_offset;
 			}
 		}
+		if (skb->len>1500) BUG();
 
 		if (!(flags & MSG_TRUNC)) {
 			/*From this subsocket point of view, data is ready

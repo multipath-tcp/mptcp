@@ -35,6 +35,14 @@
 # define PDEBUG(fmt,args...)
 #endif
 
+/*DEBUG - TODEL*/
+
+#define MTCP_DEBUG_OFO_QUEUE 0x1
+#define MTCP_DEBUG_QUEUE_SKB 0x2
+#define MTCP_DEBUG_CHECK_RCV_QUEUE 0x4
+#define MTCP_DEBUG_DATA_QUEUE 0x8
+#define MTCP_DEBUG_COPY_TO_IOVEC 0x10
+
 /*hashtable Not used currently -- To delete ?*/
 #define MTCP_HASH_SIZE                16
 #define hash_fd(fd) \

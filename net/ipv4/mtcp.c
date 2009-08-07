@@ -492,6 +492,11 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 			       "skb->end_data_seq:%x,exp. data_seq:%x\n",
 			       TCP_SKB_CB(skb)->end_data_seq,*data_seq);
 			/*Should not happen in the current design*/
+			printk(KERN_ERR "debug:%d,count:%d\n",skb->debug,
+			       skb->debug_count);
+			printk(KERN_ERR "init data_seq:%x,*copied:%x\n",
+			       skb->data_seq,*copied);
+			
 			BUG();
 			__skb_unlink(skb, &mpcb->out_of_order_queue);
 			__kfree_skb(skb);
@@ -523,7 +528,12 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 				
 		err=skb_copy_datagram_iovec(skb, data_offset,
 					    msg->msg_iov, used);
+		
+		
 		BUG_ON(err);
+
+		skb->debug|=MTCP_DEBUG_OFO_QUEUE;
+		skb->debug_count++;
 		
 		*copied+=used;
 		*data_seq+=used;
@@ -571,17 +581,25 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 		skb = skb_peek(&mpcb->receive_queue);
 		if (!skb) return 0;
 
-		PDEBUG("Receiving a meta-queued skb\n");
-
-		if (before(*data_seq, TCP_SKB_CB(skb)->data_seq)) {
+		if (before(*data_seq,TCP_SKB_CB(skb)->data_seq)) {
 			printk(KERN_ERR 
 			       "%s bug: copied %X "
 			       "dataseq %X\n", __FUNCTION__, *data_seq, 
 			       TCP_SKB_CB(skb)->data_seq);
 			BUG();
 		}
+		skb->data_seq=*data_seq; /*TODEL*/
 		offset = *data_seq - TCP_SKB_CB(skb)->data_seq;
 		BUG_ON(offset >= skb->len);
+
+		if (skb->len != 
+		    TCP_SKB_CB(skb)->end_data_seq - TCP_SKB_CB(skb)->data_seq) {
+			printk(KERN_ERR "skb->len:%d, should be %d\n",
+			       skb->len,
+			       TCP_SKB_CB(skb)->end_data_seq - 
+			       TCP_SKB_CB(skb)->data_seq);
+			BUG();
+		}
 		used = skb->len - offset;
 		if (*len < used)
 			used = *len;
@@ -591,21 +609,34 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 		BUG_ON(err);
 		if (err) return err;
 		
+		skb->debug|=MTCP_DEBUG_CHECK_RCV_QUEUE;
+		skb->debug_count++;;
+		
 		*data_seq += used;
 		*len -= used;
 		*copied+= used;
 
-		PDEBUG("copied %d bytes, from dataseq %x to %x, "
+/*		PDEBUG("copied %d bytes, from dataseq %x to %x, "
 		       "len %d, skb->len %d\n",*copied,
 		       TCP_SKB_CB(skb)->data_seq+(u32)offset,
 		       TCP_SKB_CB(skb)->data_seq+(u32)used+(u32)offset,
-		       (int)*len,(int)skb->len);
+		       (int)*len,(int)skb->len);*/
 		
  		if (*data_seq==TCP_SKB_CB(skb)->end_data_seq && 
 		    !(flags & MSG_PEEK))
 			mtcp_eat_skb(mpcb, skb);
-		else
-			BUG_ON(!(flags & MSG_PEEK) && *len!=0);
+		else {
+			printk(KERN_ERR 
+			       "%s bug: copied %X "
+			       "dataseq %X, *len %d\n", __FUNCTION__, 
+			       *data_seq, 
+			       TCP_SKB_CB(skb)->data_seq, (int)*len);
+			printk(KERN_ERR "debug:%d,count:%d\n",skb->debug,
+			       skb->debug_count);
+			printk(KERN_ERR "init data_seq:%x,used:%d\n",
+			       skb->data_seq,used);
+			BUG_ON(!(flags & MSG_PEEK) && *len!=0);			
+		}
 		
 	} while (*len>0);
 	return 0;
@@ -618,7 +649,9 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 	struct tcp_sock *tp=tcp_sk(sk);
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
 	u32 data_offset;
-	int err;      
+	int err;
+
+	if (skb->len>1500) BUG();      
 	
 	/*Is this a duplicate segment ?*/
 	if (after(*data_seq,TCP_SKB_CB(skb)->data_seq+skb->len)) {
@@ -626,6 +659,12 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		  retransmit skbs on other queues, so we cannot have any
 		  duplicate here. Duplicates are managed by each subflow 
 		  individually.*/
+		printk(KERN_ERR "debug:%d,count:%d\n",skb->debug,
+		       skb->debug_count);
+		printk(KERN_ERR "init data_seq:%x,len:%d,copied:%x,"
+		       "data_seq:%x\n",
+		       skb->data_seq,*len,*data_seq,TCP_SKB_CB(skb)->data_seq);
+		
 		BUG();
 		return MTCP_EATEN;
 	}
@@ -704,7 +743,14 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		  retransmit skbs on other queues, so we cannot have any
 		  duplicate here. Duplicates are managed by each subflow 
 		  individually.*/
-		BUG_ON(*used==0);
+		if (*used==0) {
+			printk(KERN_ERR "debug:%d,count:%d\n",skb->debug,
+			       skb->debug_count);
+			printk(KERN_ERR "init data_seq:%x,used:%d\n",
+			       skb->data_seq,*used);
+			
+			BUG();
+		}
 		if (*len < *used)
 			*used = *len;
 		
@@ -713,6 +759,9 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		BUG_ON(err);
 		if (err) return err;
 		
+		skb->debug|=MTCP_DEBUG_QUEUE_SKB;
+		skb->debug_count++;
+
 		*tp->seq += *used;
 		*data_seq += *used;
 		*len -= *used;
@@ -722,7 +771,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		/*Check if this fills a gap in the ofo queue*/
 		if (!skb_queue_empty(&mpcb->out_of_order_queue))
 			mtcp_ofo_queue(mpcb,msg,len,data_seq,copied, flags);
-		/*If the skb has been partially eaten, it will tcp_recvmsg
+		/*If the skb has been partially eaten, tcp_recvmsg
 		  will see it anyway thanks to the @used pointer.*/
 		return MTCP_EATEN;
 	}

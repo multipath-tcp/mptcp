@@ -265,6 +265,9 @@ struct sk_buff {
 	};
 	struct	sec_path	*sp;
 	unsigned int            path_index; /*Path index for multipath control*/
+	__u32                   debug; /*TODEL*/
+	int                     debug_count; /*TODEL*/
+	__u32                   data_seq; /*TODEL*/
 
 	/*
 	 * This is the control buffer. It is free to use for every

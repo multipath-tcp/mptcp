@@ -3999,6 +3999,9 @@ static void tcp_ofo_queue(struct sock *sk)
 			   TCP_SKB_CB(skb)->end_seq);
 
 		__skb_unlink(skb, &tp->out_of_order_queue);
+		if (skb->len>1500) BUG();
+			
+			
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
 		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 		if (tcp_hdr(skb)->fin)
@@ -4065,12 +4068,16 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 		    TCP_SKB_CB(skb)->data_seq==mpcb->copied_seq) {
 			int chunk = min_t(unsigned int, skb->len,
 					  mpcb->ucopy.len);
-
+			
 			__set_current_state(TASK_RUNNING);
 			
 			local_bh_enable();
 			if (!skb_copy_datagram_iovec(skb, 0, mpcb->ucopy.iov, 
 						     chunk)) {
+				
+				skb->debug|=MTCP_DEBUG_DATA_QUEUE;
+				skb->debug_count++;
+				
 				mpcb->ucopy.len -= chunk;
 				tp->copied_seq += chunk;
 				mpcb->copied_seq += chunk;
@@ -4112,6 +4119,8 @@ queue_and_out:
 			    tcp_try_rmem_schedule(sk, skb->truesize))
 				goto drop;
 			skb_set_owner_r(skb, sk);
+			if (skb->len>1500) BUG();
+			
 			__skb_queue_tail(&sk->sk_receive_queue, skb);
 		}
 		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
@@ -4724,6 +4733,9 @@ static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 						       mpcb->ucopy.iov);
 
 	if (!err) {
+		skb->debug|=MTCP_DEBUG_COPY_TO_IOVEC;
+		skb->debug_count++;
+
 		mpcb->ucopy.len -= chunk;
 		tp->copied_seq += chunk;
 		tp->copied += chunk;
@@ -5012,7 +5024,10 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 				NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPHPHITS);
 
 				/* Bulk data transfer: receiver */
+				if (skb->len>1500) BUG();			
+			
 				__skb_pull(skb, tcp_header_len);
+				if (skb->len>1500) BUG();			
 				__skb_queue_tail(&sk->sk_receive_queue, skb);
 				skb_set_owner_r(skb, sk);
 				tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
@@ -5263,7 +5278,11 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 				NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPHPHITS);
 
 				/* Bulk data transfer: receiver */
+				if (skb->len>1500) BUG();
+			
+			
 				__skb_pull(skb, tcp_header_len);
+				if (skb->len>1500) BUG();			
 				__skb_queue_tail(&sk->sk_receive_queue, skb);
 				skb_set_owner_r(skb, sk);
 				tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
