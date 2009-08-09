@@ -218,6 +218,8 @@ struct sock {
 	unsigned short		sk_type;
 	int			sk_rcvbuf;
 	socket_lock_t		sk_lock;
+	int                     sk_debug; /*TODEL*/
+	int                     sk_debug_count; /*TODEL*/
 	/*
 	 * The backlog queue is special, it is always used with
 	 * the per-socket spinlock held and requires low latency

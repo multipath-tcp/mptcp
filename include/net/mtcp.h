@@ -194,8 +194,10 @@ struct multipath_pcb {
   This is the MTCP equivalent of sk_wait_event */
 #define mtcp_wait_event_any_sk(__mpcb,__sk, __timeo, __condition)	\
 	({	int __rc; struct tcp_sock *__tp;			\
-		mtcp_for_each_sk(__mpcb,__sk,__tp)			\
+		mtcp_for_each_sk(__mpcb,__sk,__tp) {			\
 			release_sock(__sk);				\
+			__tp->wait_event_any_sk_released=1;		\
+		}							\
 		__rc = mtcp_test_any_sk(__mpcb,__sk,__condition);	\
 		if (!__rc) {						\
 			if (__mpcb->master_sk->sk_protocol==IPPROTO_TCP && \
@@ -207,10 +209,14 @@ struct multipath_pcb {
 				printk("woken up\n");			\
 		}							\
 		mtcp_for_each_sk(__mpcb,__sk,__tp)			\
-			lock_sock(__sk);				\
+			if (__tp->wait_event_any_sk_released) {		\
+				/*Lock only those socks we have released*/ \
+				lock_sock(__sk);			\
+				__tp->wait_event_any_sk_released=0;	\
+			}						\
 		if (__mpcb->master_sk->sk_protocol==IPPROTO_TCP &&	\
 		    __mpcb->master_sk->sk_family==AF_INET6)		\
-			printk("will really sleep\n");			\
+			printk("mtcp_wait_event_any_sk: checking\n");	\
 		__rc = mtcp_test_any_sk(__mpcb,__sk,__condition);	\
 		__rc;							\
 	})

@@ -273,11 +273,13 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 	tp->next=mpcb->connection_list;
 	mpcb->connection_list=tp;
 	
+	if (tp->path_index==2) ((struct sock*)tp)->sk_debug=1; /*TODEL*/
+
 	mpcb->cnt_subflows++;
 	kref_get(&mpcb->kref);	
 	mutex_unlock(&mpcb->mutex);
-	PDEBUG("Added subsocket, cnt_subflows now %d\n",
-	       mpcb->cnt_subflows);
+	printk(KERN_ERR "Added subsocket with pi %d, cnt_subflows now %d\n",
+	       tp->path_index,mpcb->cnt_subflows);
 }
 
 void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
@@ -634,7 +636,7 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 			printk(KERN_ERR "debug:%d,count:%d\n",skb->debug,
 			       skb->debug_count);
 			printk(KERN_ERR "init data_seq:%x,used:%d\n",
-			       skb->data_seq,used);
+			       skb->data_seq,(int)used);
 			BUG_ON(!(flags & MSG_PEEK) && *len!=0);			
 		}
 		
@@ -663,7 +665,8 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		       skb->debug_count);
 		printk(KERN_ERR "init data_seq:%x,len:%d,copied:%x,"
 		       "data_seq:%x\n",
-		       skb->data_seq,*len,*data_seq,TCP_SKB_CB(skb)->data_seq);
+		       skb->data_seq,(int)*len,*data_seq,
+		       TCP_SKB_CB(skb)->data_seq);
 		
 		BUG();
 		return MTCP_EATEN;
@@ -747,7 +750,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 			printk(KERN_ERR "debug:%d,count:%d\n",skb->debug,
 			       skb->debug_count);
 			printk(KERN_ERR "init data_seq:%x,used:%d\n",
-			       skb->data_seq,*used);
+			       skb->data_seq,(int)*used);
 			
 			BUG();
 		}

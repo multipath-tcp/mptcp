@@ -2141,7 +2141,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			mutex_lock(&mpcb->mutex);
 			PDEBUG("At line %d\n",__LINE__);
 			if (cnt_subflows!=mpcb->cnt_subflows) {
-				printk(KERN_ERR "New subflow arrived"
+				printk(KERN_DEBUG "New subflow arrived"
 					 " in live\n");
 				/*We must ensure  that for each new tp, 
 				  the seq pointer is correctly set. In 
@@ -2158,8 +2158,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 					/*Here, all subsocks are locked
 					  so we must also lock
 					  new subsocks*/
-					printk(KERN_ERR "locksock pi %d\n",
-					       tp->path_index);
 					lock_sock((struct sock*)tp);
 				}
 			}

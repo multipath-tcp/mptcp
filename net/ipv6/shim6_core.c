@@ -759,6 +759,8 @@ static struct shim6_ops shim6_fcts=
 
 /*
  * propagates a PM update request.
+ * This must be atomic, because an MPS may ask for an update
+ * while in soft IRQ context. This is indeed possible for MTCP.
  *
  * Format for the message :
  *  ----------------------------------------------------------------
@@ -779,14 +781,14 @@ static int netevent_callback(struct notifier_block *self, unsigned long event,
 		up=ctx;
 		/*Simply propagate this request to the daemon*/
 		if (!(skb=shim6_alloc_netlink_skb(pld_len,SHIM6_NL_UPDATE_MPS,
-						  GFP_KERNEL)))
+						  GFP_ATOMIC)))
 			return -1;
 		local=NLMSG_DATA((struct nlmsghdr*)skb->data);
 		remote=local+1;
 		ipv6_addr_copy(local,up->local);
 		ipv6_addr_copy(remote,up->remote);
 		if ((err=netlink_broadcast(shim6nl_sk,skb,0,SHIM6NLGRP_DEFAULT,
-					   GFP_KERNEL)))
+					   GFP_ATOMIC)))
 			printk(KERN_INFO "shim6, %s : nl broadcast, error %d,"
 			       "daemon down ?\n", 
 			       __FUNCTION__, err);
