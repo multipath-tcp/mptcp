@@ -205,6 +205,8 @@ void mtcp_ask_update(struct sock *sk)
 	struct tcp_sock *tp=tcp_sk(sk);
 
 	if (!is_master_sk(tp)) return;
+	/*Currently we only support AF_INET6*/
+	if (sk->sk_family!=AF_INET6) return;
 
 	up.local=&inet6_sk(sk)->daddr;
 	up.remote=&inet6_sk(sk)->saddr;
