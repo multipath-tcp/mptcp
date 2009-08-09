@@ -629,18 +629,18 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
  		if (*data_seq==TCP_SKB_CB(skb)->end_data_seq && 
 		    !(flags & MSG_PEEK))
 			mtcp_eat_skb(mpcb, skb);
-		else {
-			printk(KERN_ERR 
-			       "%s bug: copied %X "
-			       "dataseq %X, *len %d\n", __FUNCTION__, 
-			       *data_seq, 
-			       TCP_SKB_CB(skb)->data_seq, (int)*len);
-			printk(KERN_ERR "debug:%d,count:%d\n",skb->debug,
-			       skb->debug_count);
-			printk(KERN_ERR "init data_seq:%x,used:%d\n",
-			       skb->data_seq,(int)used);
-			BUG_ON(!(flags & MSG_PEEK) && *len!=0);			
-		}
+		else if (!(flags & MSG_PEEK) && *len!=0) {
+				printk(KERN_ERR 
+				       "%s bug: copied %X "
+				       "dataseq %X, *len %d\n", __FUNCTION__, 
+				       *data_seq, 
+				       TCP_SKB_CB(skb)->data_seq, (int)*len);
+				printk(KERN_ERR "debug:%d,count:%d\n",skb->debug,
+				       skb->debug_count);
+				printk(KERN_ERR "init data_seq:%x,used:%d\n",
+				       skb->data_seq,(int)used);
+				BUG();
+		}			
 		
 	} while (*len>0);
 	return 0;
