@@ -102,6 +102,8 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 
 	tmp_opt.saw_tstamp = 0;
 	if (th->doff > (sizeof(*th) >> 2) && tcptw->tw_ts_recent_stamp) {
+		/*TODEL*/
+		printk(KERN_ERR "calling tcp_parse_options with NULL mopt\n");
 		tcp_parse_options(skb, &tmp_opt, NULL, 0);
 
 		if (tmp_opt.saw_tstamp) {

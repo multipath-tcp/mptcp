@@ -208,8 +208,8 @@ void mtcp_ask_update(struct sock *sk)
 	/*Currently we only support AF_INET6*/
 	if (sk->sk_family!=AF_INET6) return;
 
-	up.local=&inet6_sk(sk)->daddr;
-	up.remote=&inet6_sk(sk)->saddr;
+	up.local=&inet6_sk(sk)->saddr;
+	up.remote=&inet6_sk(sk)->daddr;
 	up.path_indices=0; /*This is what we ask for*/
 	call_netevent_notifiers(NETEVENT_MPS_UPDATEME, &up);
 }
@@ -442,7 +442,8 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		copied+=ret;
 		BUG_ON(i++==30);
 	}
-	
+
+	PDEBUG("Leaving %s\n",__FUNCTION__);
 	return copied;
 }
 

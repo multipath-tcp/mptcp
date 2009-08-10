@@ -3473,7 +3473,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 			case TCPOPT_DSN:
 				if (!mopt) {
 					PDEBUG("Dataseq Option present "
-					       "but options NULL\n");
+					       "but mopt NULL\n");
 					break;
 				}
 				if (opsize!=TCPOLEN_DSN) {
