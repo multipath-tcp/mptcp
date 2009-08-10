@@ -432,7 +432,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			  returned on a subsequent call anyway.*/
 			nberr++;
 			if (nberr==mpcb->cnt_subflows) {
-				PDEBUG(KERN_ERR "%s: returning error "
+				PDEBUG("%s: returning error "
 				       "to app:%d, copied %d\n",__FUNCTION__,
 				       ret,(int)copied);
 				return (copied)?copied:ret;
