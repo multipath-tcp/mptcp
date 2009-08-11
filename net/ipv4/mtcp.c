@@ -414,7 +414,8 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	copied=0;i=0;nberr=0;
 	while (copied<msg_size) {		
 		int ret;
-		PDEBUG("copied %d,msg_size %d, i %d\n",(int)copied,
+		PDEBUG("%s:copied %d,msg_size %d, i %d\n",__FUNCTION__,
+		       (int)copied,
 		       (int)msg_size,i);
 		/*Find a candidate socket for eating data*/
 		tp=get_available_subflow(mpcb);
@@ -508,9 +509,9 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 			continue;
 		}
 		PDEBUG("ofo delivery : "
-		       "nxt_data_seq %X data_seq %X - %X\n",
+		       "nxt_data_seq %X data_seq %X - %X, enqueue is %d\n",
 		       *data_seq, TCP_SKB_CB(skb)->data_seq,
-		       TCP_SKB_CB(skb)->end_data_seq);
+		       TCP_SKB_CB(skb)->end_data_seq,enqueue);
 		
 		__skb_unlink(skb, &mpcb->out_of_order_queue);
 

@@ -347,10 +347,11 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(master_tp);
 	struct sock *sk; /*For subsocket iteration*/
 	struct tcp_sock *tp; /*for subsocket iteration*/
-
+	
 	poll_wait(file, master_sk->sk_sleep, wait);
-	if (master_sk->sk_state == TCP_LISTEN)
+	if (master_sk->sk_state == TCP_LISTEN) {
 		return inet_csk_listen_poll(master_sk);
+	}
 
 	/* Socket is not locked. We are protected from async events
 	 * by poll logic and correct handling of state changes
@@ -394,7 +395,14 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	if (master_sk->sk_shutdown & RCV_SHUTDOWN)
 		mask |= POLLIN | POLLRDNORM | POLLRDHUP;
 
+	/*This can happen if the previous read could not eat all
+	  available data, and part of it is remaining on the meta receive 
+	  queue*/
+	if (skb_peek(&mpcb->receive_queue))
+		mask |= POLLIN | POLLRDNORM;
+
 	/* Connected? */
+
 	mtcp_for_each_sk(mpcb,sk,tp)
 		if ((1 << sk->sk_state) & ~(TCPF_SYN_SENT | TCPF_SYN_RECV)) {
 			/* Potential race condition. If read of tp below will
@@ -659,6 +667,11 @@ ssize_t tcp_splice_read(struct socket *sock, loff_t *ppos,
 	long timeo;
 	ssize_t spliced;
 	int ret;
+
+#ifdef CONFIG_MTCP
+	printk(KERN_ERR "%s not supported yet\n",__FUNCTION__);
+	BUG();
+#endif
 
 	/*
 	 * We can't seek on a socket input
@@ -1861,7 +1874,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	struct task_struct *user_recv = NULL;
 	struct sk_buff *skb;
 	int cnt_subflows;
-
+	
 	if (!master_tp->mpc)
 		return tcp_recvmsg_fallback(iocb,master_sk,msg,len,nonblock,
 					    flags,addr_len);
@@ -1958,6 +1971,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			if (copied)
 				break;
 			if (signal_pending(current)) {
+				BUG_ON(copied);
 				copied = timeo ? 
 					sock_intr_errno(timeo) : 
 					-EAGAIN;
@@ -2037,7 +2051,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				break;
 
 			if (mtcp_test_any_sk(mpcb,sk,sk->sk_err)) {
-				copied = sock_error(sk);
+				copied=sock_error(sk);
 				break;
 			}
 
@@ -2366,7 +2380,7 @@ skip_loop:
 	
 	mtcp_for_each_sk(mpcb,sk,tp) release_sock(sk);
 	mutex_unlock(&mpcb->mutex);
-	PDEBUG("At line %d\n",__LINE__);
+	PDEBUG("Leaving %s, copied %d\n",__FUNCTION__,copied);
 	return copied;
 
 out:
