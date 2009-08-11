@@ -561,7 +561,7 @@ void inet_csk_destroy_sock(struct sock *sk)
 {
 #ifdef CONFIG_MTCP
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
-	PDEBUG("Removing subsocket\n");
+	PDEBUG("Removing subsocket %p\n",sk);
 	mtcp_del_sock(mpcb,tcp_sk(sk));
 #endif   
 

@@ -3150,7 +3150,7 @@ struct sk_buff *tcp_tso_segment(struct sk_buff *skb, int features)
 	unsigned int oldlen;
 	unsigned int len;
 
-	PDEBUG("Entering %s\n (unsupported by mtcp !)\n",
+	printk(KERN_ERR "Entering %s\n (not sure that this will work well !)\n",
 	       __FUNCTION__); /*TODEL*/
 
 	if (!pskb_may_pull(skb, sizeof(*th)))

@@ -29,13 +29,26 @@
  * Returns true if the given path index matched with the tp
  * a match is considered in the following cases:
  * -either the path_index or the tp path index is zero. (which means
- *  that the path index is just bypassed)
+ *  that the path index is just bypassed). However, if only one of those
+ *  is zero, the other one can only be 1. This is to avoid the following
+ *  scenario. We start a connection, then we stop it. The PM has path indices 
+ *  one and two. Then we start a second connection, with one subsocket and pi 0
+ *  at the beginning. If the other end sends us a SYN on pi 2 before we 
+ *  receive the PM notification, that SYN will arrive on the already
+ *  established socket, which is incorrect. 
+ *  Enforcing equivalence between pi 0 and pi 1 avoids this problem.
+ *  It is still useful, to keep those two numbers (0 and 1) to differentiate
+ *  between a blind segment (path 0), and a segment voluntarily sent to path 1.
  * -or the path index is equal to that of the tp
  */
 inline int check_path_index(int path_index, struct tcp_sock *tp)
 {
-	return (!path_index || tp->path_index==path_index
-		|| !tp->path_index);
+	/*1 and 0 can be used interchangeably*/
+	if (path_index==1 || path_index==0)
+		return (tp->path_index==1 || tp->path_index==0);
+	
+	/*Other path indices must be strictly equal*/
+	return (tp->path_index==path_index);
 }
 
 /*

@@ -4874,10 +4874,10 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 	
-	PDEBUG("%s:pi %d - seq is %x\n",
-	       __FUNCTION__,skb->path_index,TCP_SKB_CB(skb)->seq);
+	PDEBUG("%s:pi %d - seq is %x,sock is %p\n",
+	       __FUNCTION__,skb->path_index,TCP_SKB_CB(skb)->seq,
+	       sk);
 	
-
 	/*
 	 *	Header prediction.
 	 *	The code loosely follows the one in the famous
