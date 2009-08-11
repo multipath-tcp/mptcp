@@ -98,13 +98,12 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 {
 	struct tcp_timewait_sock *tcptw = tcp_twsk((struct sock *)tw);
 	struct tcp_options_received tmp_opt;
+	struct multipath_options mopt;
 	int paws_reject = 0;
 
 	tmp_opt.saw_tstamp = 0;
 	if (th->doff > (sizeof(*th) >> 2) && tcptw->tw_ts_recent_stamp) {
-		/*TODEL*/
-		printk(KERN_ERR "calling tcp_parse_options with NULL mopt\n");
-		tcp_parse_options(skb, &tmp_opt, NULL, 0);
+		tcp_parse_options(skb, &tmp_opt, &mopt, 0);
 
 		if (tmp_opt.saw_tstamp) {
 			tmp_opt.ts_recent	= tcptw->tw_ts_recent;
