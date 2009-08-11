@@ -277,7 +277,8 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 				     To be replaced later with a random IDSN
 				     (well, if it indeed improve security)*/
 		
-		mpcb->copied_seq=0; /* First byte of yet unread data */
+		mpcb->copied_seq=0; /* First byte of yet unread data */		
+		mtcp_ask_update(newsk);
 	}
 #endif
 

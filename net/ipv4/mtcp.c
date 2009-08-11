@@ -151,9 +151,8 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			PDEBUG("%s:About to connect\n",__FUNCTION__);
 			retval = sock->ops->connect(sock,remulid,
 						    ulid_size,0);
-			PDEBUG("%s:connected\n",__FUNCTION__);
 			if (retval<0) goto fail_connect;
-						
+			
 			PDEBUG("New MTCP subsocket created, pi %d\n",i+1);
 		}
 	}
@@ -203,6 +202,8 @@ void mtcp_ask_update(struct sock *sk)
 {
 	struct ulid_pair up;
 	struct tcp_sock *tp=tcp_sk(sk);
+
+	printk(KERN_ERR "Entering %s\n",__FUNCTION__); /*TODEL*/
 
 	if (!is_master_sk(tp)) return;
 	/*Currently we only support AF_INET6*/
