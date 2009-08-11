@@ -2408,7 +2408,8 @@ void tcp_set_state(struct sock *sk, int state)
 		if (oldstate != TCP_ESTABLISHED)
 			TCP_INC_STATS(sock_net(sk), TCP_MIB_CURRESTAB);
 #ifdef CONFIG_MTCP
-		if (tcp_sk(sk)->mpc) mtcp_ask_update(sk);
+		if (tcp_sk(sk)->mpc && is_master_sk(tcp_sk(sk))) 
+			mtcp_ask_update(sk);
 #endif
 		break;
 
