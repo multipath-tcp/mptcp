@@ -224,8 +224,8 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 		struct dst_entry *dst  = NULL;
 		int err;
 	      		
-		/*Remove previous dst*/
-		dst_free(shim6_dst->child);
+		/*Release previous dst*/
+		dst_release(shim6_dst->child);
 		/*Redo some of the work of xfrm_bundle_create
 		  Note : When doing such round-robin across all adress pairs, 
 		  thus probably across all interfaces, we may have problems if 
