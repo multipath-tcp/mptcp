@@ -72,9 +72,14 @@
 #include <net/netdma.h>
 #include <net/mtcp.h>
 
+#undef DEBUG_TCP_INPUT /*set to define if you want debugging messages*/
 
 #undef PDEBUG
+#ifdef DEBUG_TCP_INPUT
 #define PDEBUG(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
+#else
+#define PDEBUG(fmt,args...)
+#endif /*DEBUG_TCP_INPUT*/
 
 int sysctl_tcp_timestamps __read_mostly = 1;
 int sysctl_tcp_window_scaling __read_mostly = 1;

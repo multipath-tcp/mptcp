@@ -30,8 +30,15 @@
 #include <linux/random.h>
 #include <asm/atomic.h>
 
+#undef DEBUG_MTCP /*set to define if you want debugging messages*/
+
 #undef PDEBUG
+#ifdef DEBUG_MTCP
 #define PDEBUG(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
+#else
+#define PDEBUG(fmt,args...)
+#endif /*DEBUG_MTCP*/
+
 
 inline void mtcp_reset_options(struct multipath_options* mopt){
 #ifdef CONFIG_MTCP_PM
@@ -271,7 +278,10 @@ void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
 void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 {
 	/*Adding new node to head of connection_list*/
-	mutex_lock(&mpcb->mutex);
+	mutex_lock(&mpcb->mutex); /*To protect against concurrency with
+				    mtcp_recvmsg*/
+	local_bh_disable(); /*To protect against concurrency with
+			      mtcp_del_sock*/
 	tp->mpcb = mpcb;
 	tp->next=mpcb->connection_list;
 	mpcb->connection_list=tp;
@@ -280,6 +290,7 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 
 	mpcb->cnt_subflows++;
 	kref_get(&mpcb->kref);	
+	local_bh_enable();
 	mutex_unlock(&mpcb->mutex);
 	printk(KERN_ERR "Added subsocket with pi %d, cnt_subflows now %d\n",
 	       tp->path_index,mpcb->cnt_subflows);
@@ -287,9 +298,15 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 
 void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 {
-	struct tcp_sock *tp_prev=mpcb->connection_list;
+	struct tcp_sock *tp_prev=mpcb->connection_list;	
 	int done=0;
-	spin_lock_bh(&mpcb->lock);
+	
+	if (!in_interrupt()) {
+		/*Then we must take the mutex to avoid racing
+		  with mtcp_add_sock*/
+		mutex_lock(&mpcb->mutex);
+	}
+
 	if (tp_prev==tp) {
 		mpcb->connection_list=tp->next;
 		mpcb->cnt_subflows--;
@@ -303,8 +320,12 @@ void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 				break;
 			}
 		}
-	spin_unlock_bh(&mpcb->lock);
 	tp->mpcb=NULL; tp->next=NULL;
+	if (!in_interrupt()) {
+		/*Then we must take the mutex to avoid racing
+		  with mtcp_add_sock*/
+		mutex_unlock(&mpcb->mutex);
+	}
 	kref_put(&mpcb->kref,mpcb_release);
 	BUG_ON(!done);
 }

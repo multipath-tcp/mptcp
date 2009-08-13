@@ -275,12 +275,16 @@
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
 
+#undef DEBUG_TCP /*set to define if you want debugging messages*/
 
 #undef PDEBUG
+#ifdef DEBUG_TCP
 #define PDEBUG(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
-
+#define PDEBUG_SEND(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
+#else
+#define PDEBUG(fmt,args...)
 #define PDEBUG_SEND(fmt,args...)
-
+#endif /*DEBUG_TCP*/
 
 int sysctl_tcp_fin_timeout __read_mostly = TCP_FIN_TIMEOUT;
 
