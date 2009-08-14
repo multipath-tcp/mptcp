@@ -167,7 +167,8 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 fail_bind:
 	printk(KERN_ERR "MTCP subsocket bind() failed\n");
 fail_connect:
-	printk(KERN_ERR "MTCP subsocket connect() failed\n");
+	printk(KERN_ERR "MTCP subsocket connect() failed, error %d\n", 
+	       retval);
 	/*sock_release will indirectly call mtcp_del_sock()*/
 	sock_release(sock);
 	return -1;
