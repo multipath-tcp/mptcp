@@ -161,7 +161,8 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			PDEBUG("%s:About to connect\n",__FUNCTION__);
 			retval = sock->ops->connect(sock,remulid,
 						    ulid_size,O_NONBLOCK);
-			if (retval<0) goto fail_connect;
+			if (retval<0 && retval != -EINPROGRESS) 
+				goto fail_connect;
 			
 			PDEBUG("New MTCP subsocket created, pi %d\n",i+1);
 		}
