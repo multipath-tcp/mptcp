@@ -115,9 +115,7 @@ static int shim6_input(struct xfrm_state *x, struct sk_buff *skb)
 	
 	if (opt->shim6 && hdr->P==SHIM6_MSG_CONTROL)
 		return reap_input(hdr,rctx);
-
-	
-
+       
 #ifndef CONFIG_IPV6_SHIM6_MULTIPATH
 	/*If the message is a data message notify the reap module*/
 	reap_notify_in(rctx);
@@ -146,10 +144,15 @@ static int shim6_input(struct xfrm_state *x, struct sk_buff *skb)
 
 	if (!opt->shim6) return 1;
 
+	printk(KERN_ERR "INPUT - local: " NIP6_FMT "\n",
+	       NIP6(iph->daddr));
+	printk(KERN_ERR "    remote: " NIP6_FMT "\n",NIP6(iph->saddr));
+	printk(KERN_ERR "    pi: %d\n",skb->path_index);
+
 	/*Rewriting the addresses*/
 	ipv6_addr_copy(&iph->saddr,&x->shim6->paths[0].remote);
 	ipv6_addr_copy(&iph->daddr,&x->shim6->paths[0].local);
-
+	
 	return hdr->nexthdr;
 }
 
@@ -172,20 +175,6 @@ static void input_std(struct sk_buff* skb)
 	*/
 	shim6_xfrm_input_ulid(skb,(xfrm_address_t *)&iph->daddr, 
 			      (xfrm_address_t *)&iph->saddr);
-}
-
-/*Currently this is not very efficient, optimize this later.*/
-static inline struct shim6_path *map_pi_path(int pi, struct shim6_path *pa,
-					     int pa_size)
-{
-	int i=0;
-	if (pi==0) pi=1; /*if pi is 0, use the ULIDs*/
-	for (i=0;i<pa_size;i++) {
-		if (pa[i].path_index==pi) return &pa[i];
-	}
-	
-	BUG(); /*Should not arrive here*/
-	return NULL;
 }
 
 /* Shim6 Header is inserted, if necessary.
@@ -256,6 +245,11 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 			       &path->local);
 
 		dst=ip6_route_output(&init_net,NULL,&fl);
+		printk(KERN_ERR "OUTPUT - local: " NIP6_FMT "\n",
+		       NIP6(fl.fl6_src));
+		printk(KERN_ERR "    remote: " NIP6_FMT "\n",NIP6(fl.fl6_dst));
+		printk(KERN_ERR "    pi: %d,iface:%d,%s\n",skb->path_index,
+		       dst->dev->ifindex,dst->dev->name);
 		err=dst->error;
 		if (err) {
 			PDEBUG("ip6_route_output failed");

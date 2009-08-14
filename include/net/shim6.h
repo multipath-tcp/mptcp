@@ -185,4 +185,21 @@ static inline int is_shim6_inbound(struct xfrm_state* x)
 extern int sysctl_shim6_tcphint; /*declared in shim6_static.c*/
 extern int sysctl_shim6_enabled; /*idem*/
 
+
+#ifdef CONFIG_MTCP
+/*Currently this is not very efficient, optimize this later.*/
+static inline struct shim6_path *map_pi_path(int pi, struct shim6_path *pa,
+					     int pa_size)
+{
+	int i=0;
+	if (pi==0) pi=1; /*if pi is 0, use the ULIDs*/
+	for (i=0;i<pa_size;i++) {
+		if (pa[i].path_index==pi) return &pa[i];
+	}
+	
+	BUG(); /*Should not arrive here*/
+	return NULL;
+}
+#endif /*CONFIG_MTCP*/
+
 #endif /* _NET_SHIM6_H */

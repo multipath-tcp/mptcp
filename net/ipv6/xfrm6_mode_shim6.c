@@ -49,14 +49,10 @@ static int xfrm6_shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 	struct ipv6hdr *iph=ipv6_hdr(skb);
 	u8 *prevhdr;
 	int hdr_len;
-	int path_idx=(skb->path_index)?skb->path_index-1:0;
+	struct shim6_path *path=map_pi_path(skb->path_index,x->shim6->paths,
+					    x->shim6->npaths);
 
-	if (path_idx >= x->shim6->npaths) {
-		PDEBUG("Warning: path index too high. Set to 0.\n");
-		path_idx=0;
-	}
-
-	if (x->shim6->paths[path_idx].flags 
+	if (path->flags 
 	    & SHIM6_DATA_TRANSLATE) {	
 		hdr_len = x->type->hdr_offset(x, skb, &prevhdr);
 		skb_set_mac_header(skb, (prevhdr - x->props.header_len) - 
