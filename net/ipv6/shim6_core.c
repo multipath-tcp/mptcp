@@ -173,6 +173,20 @@ static void input_std(struct sk_buff* skb)
 			      (xfrm_address_t *)&iph->saddr);
 }
 
+/*Currently this is not very efficient, optimize this later.*/
+static inline struct shim6_path *map_pi_path(int pi, struct shim6_path *pa,
+					     int pa_size)
+{
+	int i=0;
+	if (pi==0) pi=1; /*if pi is 0, use the ULIDs*/
+	for (i=0;i<pa_size;i++) {
+		if (pa[i].path_index==pi) return &pa[i];
+	}
+	
+	BUG(); /*Should not arrive here*/
+	return NULL;
+}
+
 /* Shim6 Header is inserted, if necessary.
  * IP Header's dst address and src address (ULIDs) are replaced with
  * current dst and src locators.
@@ -181,28 +195,26 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 {
 	struct ipv6hdr* iph;
 	u8 nexthdr;
-	struct shim6hdr_pld* shim6h;
-	/*If path index is 0, the MPS did not decide anything about the packet
-	  and we use the default path (0). If it is not zero, we apply or
-	  mapping, which is to use index path_index-1 in our path_array*/
-	unsigned int path_idx=(skb->path_index)?skb->path_index-1:0;
+	struct shim6hdr_pld* shim6h;      
+	struct shim6_path *path=map_pi_path(skb->path_index,x->shim6->paths,
+					    x->shim6->npaths);
 	struct timespec curtime;
-
+	
 #ifndef CONFIG_IPV6_SHIM6_MULTIPATH
 	struct reap_ctx* rctx=(struct reap_ctx*) x->data;		
 	reap_notify_out(rctx);
 #endif
-
+	
+	
 	skb_push(skb, -skb_network_offset(skb));
 	iph = ipv6_hdr(skb);
-
+	
 	getnstimeofday(&curtime);
 	x->curlft.use_time = (unsigned long)curtime.tv_sec;
-
-/*MAKES A SEGFAULT HERE*/
-	if (!(x->shim6->paths[path_idx].flags & SHIM6_DATA_TRANSLATE)) 
+	
+	if (!(path->flags & SHIM6_DATA_TRANSLATE)) 
 		goto finish;
-
+	
 	/*ok, packet needs translation and shim6 ext header*/
 	nexthdr = *skb_mac_header(skb);
 	*skb_mac_header(skb) = IPPROTO_SHIM6;
@@ -213,8 +225,8 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 	set_ct(x->shim6->ct,shim6h->ct_1,shim6h->ct_2,shim6h->ct_3);
 
 	/*Rewriting the addresses*/
-	ipv6_addr_copy(&iph->saddr,&x->shim6->paths[path_idx].local);
-	ipv6_addr_copy(&iph->daddr,&x->shim6->paths[path_idx].remote);
+	ipv6_addr_copy(&iph->saddr,&path->local);
+	ipv6_addr_copy(&iph->daddr,&path->remote);
 
 #ifdef CONFIG_IPV6_SHIM6_MULTIPATH
 	/*Redefining the outgoing dst entry*/
@@ -238,9 +250,9 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 		  later stage.
 		*/
 		ipv6_addr_copy(&fl.fl6_dst,
-			       &x->shim6->paths[path_idx].remote);
+			       &path->remote);
 		ipv6_addr_copy(&fl.fl6_src,
-			       &x->shim6->paths[path_idx].local);
+			       &path->local);
 
 		dst=ip6_route_output(&init_net,NULL,&fl);
 		err=dst->error;

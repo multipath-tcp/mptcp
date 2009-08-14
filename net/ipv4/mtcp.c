@@ -77,14 +77,17 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 
 	PDEBUG("Entering %s, path_indices:%x\n",__FUNCTION__,path_indices);
 
+	/*First, ensure that we keep existing path indices.*/
+	while (tp!=NULL) {
+		/*disable the corresponding bit*/
+		if (tp->path_index==0) tp->path_index=1;
+		path_indices&=~(1<<(tp->path_index-1));
+		tp=tp->next;
+	}
+
 	for (i=0;i<sizeof(path_indices)*8;i++) {
 		if (!((1<<i) & path_indices))
 			continue;
-		if (tp) {
-			/*realloc path index*/
-			tp->path_index=i+1;
-			tp=tp->next;
-		}
 		else {
 			struct sockaddr *loculid,*remulid=NULL;
 			int ulid_size=0;

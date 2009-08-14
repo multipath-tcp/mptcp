@@ -29,8 +29,9 @@
 
 struct shim6_path {
 	struct in6_addr    local;
-	struct in6_addr    remote;
+	struct in6_addr    remote;	
 	uint8_t            flags;
+	int                path_index;
 #define PROBED 0x1
 #define SHIM6_DATA_TRANSLATE 0x2 /* Translation activated*/
 };
