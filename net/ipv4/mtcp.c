@@ -168,7 +168,7 @@ fail_bind:
 	printk(KERN_ERR "MTCP subsocket bind() failed\n");
 fail_connect:
 	printk(KERN_ERR "MTCP subsocket connect() failed\n");
-	mtcp_del_sock(mpcb,newtp);
+	/*sock_release will indirectly call mtcp_del_sock()*/
 	sock_release(sock);
 	return -1;
 }
