@@ -132,7 +132,10 @@ static int shim6_input(struct xfrm_state *x, struct sk_buff *skb)
 		if (ipv6_addr_equal(&iph->saddr,&x->shim6->loc_pairs[i].remote)
 		    && 
 		    ipv6_addr_equal(&iph->daddr,&x->shim6->loc_pairs[i].local))
-			break;
+		{
+			skb->path_index=x->shim6->loc_pairs[i].path_index;
+ 			break;
+		}
 	}
 
 	if (i==x->shim6->nlocpairs) {
@@ -140,8 +143,6 @@ static int shim6_input(struct xfrm_state *x, struct sk_buff *skb)
 		       __FUNCTION__);
 		return -1;
 	}
-
-	skb->path_index=i+1;
 
 	if (!opt->shim6) return 1;
 
