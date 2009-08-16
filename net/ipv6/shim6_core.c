@@ -144,11 +144,6 @@ static int shim6_input(struct xfrm_state *x, struct sk_buff *skb)
 
 	if (!opt->shim6) return 1;
 
-	printk(KERN_ERR "INPUT - local: " NIP6_FMT "\n",
-	       NIP6(iph->daddr));
-	printk(KERN_ERR "    remote: " NIP6_FMT "\n",NIP6(iph->saddr));
-	printk(KERN_ERR "    pi: %d\n",skb->path_index);
-
 	/*Rewriting the addresses*/
 	ipv6_addr_copy(&iph->saddr,&x->shim6->paths[0].remote);
 	ipv6_addr_copy(&iph->daddr,&x->shim6->paths[0].local);
@@ -218,8 +213,14 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 	ipv6_addr_copy(&iph->saddr,&path->local);
 	ipv6_addr_copy(&iph->daddr,&path->remote);
 
+finish:
+
 #ifdef CONFIG_IPV6_SHIM6_MULTIPATH
-	/*Redefining the outgoing dst entry*/
+	/*Redefining the outgoing dst entry
+	  Note that we are after the 'finish' label, so this executes even 
+	  for the ULIDs. This is because we don't use the routing cache with
+	  Multipath, so we need to compute the outgoing interface in any case
+	  even if no rewriting is done.*/
 	{
 		struct dst_entry *shim6_dst = skb->dst;
 		struct flowi fl;
@@ -245,11 +246,6 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 			       &path->local);
 
 		dst=ip6_route_output(&init_net,NULL,&fl);
-		printk(KERN_ERR "OUTPUT - local: " NIP6_FMT "\n",
-		       NIP6(fl.fl6_src));
-		printk(KERN_ERR "    remote: " NIP6_FMT "\n",NIP6(fl.fl6_dst));
-		printk(KERN_ERR "    pi: %d,iface:%d,%s\n",skb->path_index,
-		       dst->dev->ifindex,dst->dev->name);
 		err=dst->error;
 		if (err) {
 			PDEBUG("ip6_route_output failed");
@@ -266,8 +262,6 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 		shim6_dst->input        = dst->input;
 	}
 #endif
-
-finish:
 	return 0;
 }
 

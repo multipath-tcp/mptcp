@@ -5602,7 +5602,6 @@ discard:
 		 * simultaneous connect with crossed SYNs.
 		 * Particularly, it can be connect to self.
 		 */
-		printk(KERN_ERR "Received SYN\n");
 		tcp_set_state(sk, TCP_SYN_RECV);
 
 		if (tp->rx_opt.saw_tstamp) {
