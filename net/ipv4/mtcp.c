@@ -30,7 +30,7 @@
 #include <linux/random.h>
 #include <asm/atomic.h>
 
-#undef DEBUG_MTCP /*set to define if you want debugging messages*/
+#define DEBUG_MTCP /*set to define if you want debugging messages*/
 
 #undef PDEBUG
 #ifdef DEBUG_MTCP
@@ -52,6 +52,22 @@ inline void mtcp_reset_options(struct multipath_options* mopt){
 	mopt->ip_count = 0;
 	mopt->first = 0;
 #endif
+}
+
+/*This function can only be called with *slave* subsockets 
+  as argument.*/
+static void mtcp_def_readable(struct sock *sk, int len)
+{
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
+	struct sock *msk=mpcb->master_sk;
+	
+	BUG_ON(!mpcb);
+
+	read_lock(&msk->sk_callback_lock);
+	if (msk->sk_sleep && waitqueue_active(msk->sk_sleep))
+		wake_up_interruptible_sync(msk->sk_sleep);
+	sk_wake_async(msk, SOCK_WAKE_WAITD, POLL_IN);
+	read_unlock(&msk->sk_callback_lock);
 }
 
 /**
@@ -153,6 +169,9 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			newtp->mtcp_flags=0;
 			newtp->mpc=1;
 			mtcp_add_sock(mpcb,newtp);
+
+			/*Redefine the sk_data_ready function*/
+			((struct sock*)newtp)->sk_data_ready=mtcp_def_readable;
 			
        
 			retval = sock->ops->bind(sock, loculid, ulid_size);

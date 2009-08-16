@@ -72,7 +72,7 @@
 #include <net/netdma.h>
 #include <net/mtcp.h>
 
-#undef DEBUG_TCP_INPUT /*set to define if you want debugging messages*/
+#define DEBUG_TCP_INPUT /*set to define if you want debugging messages*/
 
 #undef PDEBUG
 #ifdef DEBUG_TCP_INPUT
