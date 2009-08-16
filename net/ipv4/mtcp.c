@@ -730,7 +730,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 					   TCP_SKB_CB(skb)->data_seq))
 					break;
 			} while ((skb1 = skb1->prev) !=
-				 (struct sk_buff *)&tp->out_of_order_queue);
+				 (struct sk_buff *)&mpcb->out_of_order_queue);
 
 			/* Do skb overlap to previous one? */
 			if (skb1 != 
