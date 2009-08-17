@@ -275,7 +275,7 @@
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
 
-#define DEBUG_TCP /*set to define if you want debugging messages*/
+#undef DEBUG_TCP /*set to define if you want debugging messages*/
 
 #undef PDEBUG
 #ifdef DEBUG_TCP
@@ -1161,6 +1161,10 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			continue;
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 		wait_for_sndbuf:
+			printk(KERN_ERR "%s:Waiting for send memory,"
+			       "wmem queued:%d,snd buf:%d\n",
+			       __FUNCTION__,sk->sk_wmem_queued,sk->sk_sndbuf);
+			mpcb->sleeping=1;
 			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 		wait_for_memory:
 			if (copied)
@@ -1168,6 +1172,9 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 
 			if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
 				goto do_error;
+			printk(KERN_ERR "%s:got memory, continuing\n",
+			       __FUNCTION__);
+			mpcb->sleeping=0;
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 			mss_now = tcp_current_mss(sk, !(flags&MSG_OOB));
 			size_goal = tp->xmit_size_goal;
@@ -1934,7 +1941,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	/*low water test: minimal number of bytes that must be consumed before
 	  tcp_recvmsg completes*/
 	target = sock_rcvlowat(master_sk, flags & MSG_WAITALL, len);
-
+	
 	/*Start by checking if skbs are waiting on the mpcb receive queue*/
 	PDEBUG("%d: copied_seq:%x\n",__LINE__,mpcb->copied_seq);
 	err=mtcp_check_rcv_queue(mpcb,msg, &len, data_seq, &copied, flags);
@@ -1989,7 +1996,14 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			if (!skb)
 				continue;
 			
-			if (skb->len>1500) BUG();      
+			if (skb->len>1500) {
+				printk(KERN_ERR "BUG:pi %d, skb->seq %x\n",
+				       skb->path_index,TCP_SKB_CB(skb)->seq);
+				/*This ensures that we will have a backtrace
+				  on the console.*/
+				console_loglevel=8;
+				BUG();
+			}
 
 			/* Now that we have two receive queues this
 			 * shouldn't happen.
@@ -2152,14 +2166,14 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			mutex_unlock(&mpcb->mutex);
 			PDEBUG("At line %d\n",__LINE__);
 			mtcp_wait_data(mpcb,master_sk, &timeo);
-			PDEBUG("At line %d\n",__LINE__);
+			printk(KERN_ERR "At line %d\n",__LINE__);
 			
 			/*We may have received data on a newly created
 			  subsocket, check if the list has grown*/
 			mutex_lock(&mpcb->mutex);
 			PDEBUG("At line %d\n",__LINE__);
 			if (cnt_subflows!=mpcb->cnt_subflows) {
-				printk(KERN_DEBUG "New subflow arrived"
+				printk(KERN_ERR "New subflow arrived"
 					 " in live\n");
 				/*We must ensure  that for each new tp, 
 				  the seq pointer is correctly set. In 
@@ -2329,7 +2343,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		if (tcp_hdr(skb)->fin)
 			goto found_fin_ok;
 		if (!(flags & MSG_PEEK) && mtcp_op == MTCP_EATEN) {
-			PDEBUG("will call sk_eat_skb\n");
+			printk(KERN_ERR "will call sk_eat_skb with dataseq"
+			       ":%x\n",TCP_SKB_CB(skb)->data_seq);
 			sk_eat_skb(skb->sk, skb, 0);
 		}
 		continue;

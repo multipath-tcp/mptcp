@@ -72,7 +72,7 @@
 #include <net/netdma.h>
 #include <net/mtcp.h>
 
-#define DEBUG_TCP_INPUT /*set to define if you want debugging messages*/
+#undef DEBUG_TCP_INPUT /*set to define if you want debugging messages*/
 
 #undef PDEBUG
 #ifdef DEBUG_TCP_INPUT
@@ -3546,6 +3546,8 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 		  the dsn value*/
 		mpcb->copied_seq=mpcb->received_options.data_seq;
 		mpcb->init_dsn=1;
+		/*Currently we start with dataseq 0*/
+		BUG_ON(mpcb->copied_seq!=0);
 	}
 	
 	return 1;
@@ -4156,7 +4158,7 @@ queue_and_out:
 
 		if (eaten > 0)
 			__kfree_skb(skb);
-		else if (!sock_flag(sk, SOCK_DEAD)) {
+		else if (!sock_flag(sk, SOCK_DEAD)) {			
 			mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
 		}
 		return;
@@ -4704,14 +4706,19 @@ static void tcp_urg(struct sock *sk, struct sk_buff *skb, struct tcphdr *th)
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	/* Check if we get a new urgent pointer - normally not. */
-	if (th->urg)
+	if (th->urg) {
+		/*Not supported yet*/
+		BUG();
 		tcp_check_urg(sk, th);
+	}
 
 	/* Do we wait for any urgent data? - normally not... */
-	if (tp->urg_data == TCP_URG_NOTYET) {
+	if (tp->urg_data == TCP_URG_NOTYET) {		
 		u32 ptr = tp->urg_seq - ntohl(th->seq) + (th->doff * 4) -
 			  th->syn;
 
+		/*Not supported yet*/
+		BUG();
 		/* Is the urgent pointer pointing into this packet? */
 		if (ptr < skb->len) {
 			u8 tmp;
@@ -4732,7 +4739,7 @@ static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 	int chunk = skb->len - hlen;
 	int err;
 
-	PDEBUG("Entering %s\n",__FUNCTION__);
+	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
 
 	local_bh_enable();
 	if (skb_csum_unnecessary(skb))
@@ -4748,6 +4755,7 @@ static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 
 		mpcb->ucopy.len -= chunk;
 		tp->copied_seq += chunk;
+		mpcb->copied_seq += chunk;
 		tp->copied += chunk;
 		tcp_rcv_space_adjust(sk);
 	}
@@ -5058,8 +5066,10 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 no_ack:
 			if (eaten)
 				__kfree_skb(skb);
-			else
-				sk->sk_data_ready(sk, 0);
+			else {
+				printk(KERN_ERR "Will wake the master sk up");
+				mpcb->master_sk->sk_data_ready(sk, 0);
+			}
 			return 0;
 		}
 	}
@@ -5420,9 +5430,12 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		     mpcb->received_options.saw_dsn)) {
 		/*This is the beginning of the multipath session, init
 		  the dsn value*/
+		printk(KERN_ERR "%s:saw dsn and mpc options\n",__FUNCTION__);
 		tp->mpc=1;
 		mpcb->copied_seq=mpcb->received_options.data_seq;
 		mpcb->init_dsn=1;
+		/*Currently we start with dataseq 0*/
+		BUG_ON(mpcb->copied_seq!=0);
 	}
 
 	if (th->ack) {
@@ -5551,6 +5564,11 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		if (!sock_flag(sk, SOCK_DEAD)) {
 			sk->sk_state_change(sk);
 			sk_wake_async(sk, SOCK_WAKE_IO, POLL_OUT);
+			if (mpcb->sleeping) {
+				printk(KERN_ERR "This should have woken up"
+				       "the socket, pi %d, line %d\n",
+				       tp->path_index,__LINE__);
+			}
 		}
 
 		if (sk->sk_write_pending ||

@@ -251,13 +251,15 @@ struct tcp_sock {
 	u32     *seq;
 	u32     copied;
 	u8      mpc:1,          /* Other end is multipath capable       */
-		wait_event_any_sk_released:1; /*1 if mtcp_wait_event_any_sk()
+		wait_event_any_sk_released:1, /*1 if mtcp_wait_event_any_sk()
 						has released this sock, and
 						must thus lock it again,
 						so that to let everything
 						equal. This is important
 						because a new subsocket
 						can appear during we sleep.*/
+		wait_data_bit_set:1; /*Similar to previous, for wait_data*/
+	
 	u32     last_write_seq; /* Last write seq copied by this subsocket
 				   to the network. When we receive new data
 				   with a write_seq non contigues to this 

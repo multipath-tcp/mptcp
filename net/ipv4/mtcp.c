@@ -63,6 +63,8 @@ static void mtcp_def_readable(struct sock *sk, int len)
 	
 	BUG_ON(!mpcb);
 
+	printk(KERN_ERR "Waking up master subsock...\n");
+	
 	read_lock(&msk->sk_callback_lock);
 	if (msk->sk_sleep && waitqueue_active(msk->sk_sleep))
 		wake_up_interruptible_sync(msk->sk_sleep);
@@ -433,11 +435,13 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	struct multipath_pcb *mpcb;
 	size_t iovlen,copied,msg_size;
 	int i;
-	int nberr;
+	int nberr;		
 	
 	if (!tcp_sk(master_sk)->mpc)
 		return tcp_sendmsg(iocb,sock, msg, size);
 	
+	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
+
 	mpcb=mpcb_from_tcpsock(tcp_sk(master_sk));
 	if (mpcb==NULL){
 		BUG();
@@ -460,11 +464,14 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	copied=0;i=0;nberr=0;
 	while (copied<msg_size) {		
 		int ret;
-		PDEBUG("%s:copied %d,msg_size %d, i %d\n",__FUNCTION__,
-		       (int)copied,
-		       (int)msg_size,i);
 		/*Find a candidate socket for eating data*/
 		tp=get_available_subflow(mpcb);
+
+		printk(KERN_ERR "%s:copied %d,msg_size %d, i %d, pi %d\n",
+		       __FUNCTION__,
+		       (int)copied,
+		       (int)msg_size,i,tp->path_index);
+		
 		/*Let the selected socket eat*/
 		ret=tcp_sendmsg(NULL,((struct sock*)tp)->sk_socket, 
 				msg, copied);
@@ -479,7 +486,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			  returned on a subsequent call anyway.*/
 			nberr++;
 			if (nberr==mpcb->cnt_subflows) {
-				PDEBUG("%s: returning error "
+				printk(KERN_ERR "%s: returning error "
 				       "to app:%d, copied %d\n",__FUNCTION__,
 				       ret,(int)copied);
 				return (copied)?copied:ret;
@@ -490,7 +497,9 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		BUG_ON(i++==30);
 	}
 
-	PDEBUG("Leaving %s\n",__FUNCTION__);
+	printk(KERN_ERR "Leaving %s, copied %d, next data seq %x\n",
+	       __FUNCTION__,
+	       (int) copied,mpcb->write_seq);
 	return copied;
 }
 
@@ -514,12 +523,43 @@ int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 
 	prepare_to_wait(master_sk->sk_sleep, &wait, TASK_INTERRUPTIBLE);
 
-	mtcp_for_each_sk(mpcb,sk,tp)
+	mtcp_for_each_sk(mpcb,sk,tp) {
 		set_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
+		tp->wait_data_bit_set=1;
+	}
+	*timeo=10*HZ; /*TODEL*/
 	rc = mtcp_wait_event_any_sk(mpcb, sk, timeo, 
 				    !skb_queue_empty(&sk->sk_receive_queue));
+
+	/*Print info about the problem. -- TODEL*/
+	if (*timeo==0) {
+		struct sk_buff *first_ofo=skb_peek(&mpcb->out_of_order_queue);
+		printk(KERN_ERR "mpcb next exp. dataseq:%x\n"
+		       "  meta-recv queue:%d\n"
+		       "  meta-ofo queue:%d\n"
+		       "  first seq,dataseq in meta-ofo-queue:%x,%x\n",
+		       mpcb->copied_seq,
+		       skb_queue_len(&mpcb->receive_queue),
+		       skb_queue_len(&mpcb->out_of_order_queue),
+		       first_ofo?TCP_SKB_CB(first_ofo)->seq:0,
+		       first_ofo?TCP_SKB_CB(first_ofo)->data_seq:0);
+		mtcp_for_each_sk(mpcb,sk,tp) {
+			printk(KERN_ERR "pi:%d\n"
+			       "  recv queue:%d\n"
+			       "  state:%d\n"
+			       "  next exp. seq num:%x\n",tp->path_index,
+			       skb_queue_len(&sk->sk_receive_queue),
+			       sk->sk_state,
+			       *tp->seq);
+		}
+		BUG();
+	}
+
 	mtcp_for_each_sk(mpcb,sk,tp)
-		clear_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
+		if (tp->wait_data_bit_set) {
+			clear_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
+			tp->wait_data_bit_set=0;
+		}
 	finish_wait(master_sk->sk_sleep, &wait);
 	return rc;
 }
@@ -714,10 +754,11 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		printk(KERN_ERR "debug:%d,count:%d\n",skb->debug,
 		       skb->debug_count);
 		printk(KERN_ERR "init data_seq:%x,len:%d,copied:%x,"
-		       "data_seq:%x\n",
+		       "data_seq:%x, skb->len : %d,ucopy.task:%p\n",
 		       skb->data_seq,(int)*len,*data_seq,
-		       TCP_SKB_CB(skb)->data_seq);
-		
+		       TCP_SKB_CB(skb)->data_seq,(int)skb->len,
+		       mpcb->ucopy.task);
+		console_loglevel=8;
 		BUG();
 		return MTCP_EATEN;
 	}
@@ -801,7 +842,19 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 			       skb->debug_count);
 			printk(KERN_ERR "init data_seq:%x,used:%d\n",
 			       skb->data_seq,(int)*used);
-			
+			printk(KERN_ERR "init data_seq:%x,len:%d,copied:%x,"
+			       "data_seq:%x, skb->len : %d,ucopy.task:%p\n",
+			       skb->data_seq,(int)*len,*data_seq,
+			       TCP_SKB_CB(skb)->data_seq,(int)skb->len,
+			       mpcb->ucopy.task);
+			console_loglevel=8;
+			BUG();
+		}
+
+		if (data_offset != offset) {
+			console_loglevel=8;
+			printk(KERN_ERR "metasocket and subsocket don't agree"
+			       "on offset value\n");
 			BUG();
 		}
 		if (*len < *used)

@@ -8247,6 +8247,7 @@ void __might_sleep(char *file, int line)
 		if (time_before(jiffies, prev_jiffy + HZ) && prev_jiffy)
 			return;
 		prev_jiffy = jiffies;
+		console_loglevel=8;
 		printk(KERN_ERR "BUG: sleeping function called from invalid"
 				" context at %s:%d\n", file, line);
 		printk("in_atomic():%d, irqs_disabled():%d\n",
