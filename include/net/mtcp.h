@@ -127,7 +127,6 @@ struct multipath_pcb {
 	
 	uint8_t                   mpc_sent:1, /*MPC option has been sent, do 
 						not send it anymore*/
-		                  init_dsn:1, /*Initial dataseq has been seen*/
 		                  sleeping:1; /*Sleeping inside tcp_recvmsg
 						or tcp_sendmsg*/
 	struct sk_buff_head       receive_queue;/*received data*/
