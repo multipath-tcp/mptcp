@@ -268,7 +268,7 @@ struct tcp_sock {
 				   the use of a new segment to store the data
 				   (because data in a single segment must
 				   be contigues, since dataseq numbers
-				   does not allow iovec-like encoding of
+				   do not allow iovec-like encoding of
 				   mtcp data*/
 #endif
 	u32	rcv_wup;	/* rcv_nxt on last window update sent	*/

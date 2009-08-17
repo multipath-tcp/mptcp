@@ -544,11 +544,19 @@ int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 		       first_ofo?TCP_SKB_CB(first_ofo)->seq:0,
 		       first_ofo?TCP_SKB_CB(first_ofo)->data_seq:0);
 		mtcp_for_each_sk(mpcb,sk,tp) {
+			struct sk_buff *first_ofosub=skb_peek(
+				&tp->out_of_order_queue);
 			printk(KERN_ERR "pi:%d\n"
 			       "  recv queue:%d\n"
+			       "  ofo queue:%d\n"
+			       "  first seq,dataseq in ofo queue:%x,%x\n"
 			       "  state:%d\n"
 			       "  next exp. seq num:%x\n",tp->path_index,
 			       skb_queue_len(&sk->sk_receive_queue),
+			       skb_queue_len(&tp->out_of_order_queue),
+			       first_ofosub?TCP_SKB_CB(first_ofosub)->seq:0,
+			       first_ofosub?TCP_SKB_CB(first_ofosub)->
+			       data_seq:0,
 			       sk->sk_state,
 			       *tp->seq);
 		}

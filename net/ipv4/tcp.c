@@ -280,7 +280,7 @@
 #undef PDEBUG
 #ifdef DEBUG_TCP
 #define PDEBUG(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
-#define PDEBUG_SEND(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
+#define PDEBUG_SEND(fmt,args...) printk( KERN_ERR __FILE__ ": " fmt,##args)
 #else
 #define PDEBUG(fmt,args...)
 #define PDEBUG_SEND(fmt,args...)
@@ -1021,7 +1021,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 					goto wait_for_sndbuf;
 				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 				skb = sk_stream_alloc_skb(sk, select_size(sk),
-						sk->sk_allocation);
+							  sk->sk_allocation);
 				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 				if (!skb)
 					goto wait_for_memory;
@@ -1162,11 +1162,21 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 		wait_for_sndbuf:
 			printk(KERN_ERR "%s:Waiting for send memory,"
-			       "wmem queued:%d,snd buf:%d\n",
-			       __FUNCTION__,sk->sk_wmem_queued,sk->sk_sndbuf);
+			       "wmem queued:%d,snd buf:%d, next seq:%x\n",
+			       __FUNCTION__,sk->sk_wmem_queued,sk->sk_sndbuf,
+			       tp->write_seq);
 			mpcb->sleeping=1;
 			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 		wait_for_memory:
+			if (!mpcb->sleeping) {
+				printk(KERN_ERR "%s:Waiting for memory,"
+				       "wmem queued:%d,snd buf:%d, "
+				       "next seq:%x\n",
+				       __FUNCTION__,sk->sk_wmem_queued,
+				       sk->sk_sndbuf,
+				       tp->write_seq);
+				mpcb->sleeping=1;
+			}
 			if (copied)
 				tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
 
@@ -2343,8 +2353,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		if (tcp_hdr(skb)->fin)
 			goto found_fin_ok;
 		if (!(flags & MSG_PEEK) && mtcp_op == MTCP_EATEN) {
-			printk(KERN_ERR "will call sk_eat_skb with dataseq"
-			       ":%x\n",TCP_SKB_CB(skb)->data_seq);
 			sk_eat_skb(skb->sk, skb, 0);
 		}
 		continue;
