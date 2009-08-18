@@ -232,7 +232,7 @@ struct multipath_pcb {
 
 /*For debugging only. Verifies consistency between subsock seqnums
   and metasock seqnums*/
-void mtcp_check_seqnums(struct multipath_pcb *mpcb);
+void mtcp_check_seqnums(struct multipath_pcb *mpcb, int before);
 
 
 int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk, 

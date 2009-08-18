@@ -2031,22 +2031,21 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			offset = *tp->seq - TCP_SKB_CB(skb)->seq;
 			if (tcp_hdr(skb)->syn)
 				offset--;
-			/*TODEL*/
-			PDEBUG("tp->seq:%x,skb->seq:%x,"
-			       "skb->len:%d\n",*tp->seq,TCP_SKB_CB(skb)->seq,
-			       skb->len);
-			PDEBUG("mpcb->copied_seq:%x,"
-			       "skb->data_seq:%x,"
-			       "skb->len:%d\n",mpcb->copied_seq,
-			       TCP_SKB_CB(skb)->data_seq,
-			       skb->len);
 
 			if (offset < skb->len)
 				goto found_ok_skb;
 			if (tcp_hdr(skb)->fin)
 				goto found_fin_ok;
+			/*TODEL*/
+			printk(KERN_ERR "tp->seq:%x,skb->seq:%x,"
+			       "skb->len:%d\n",*tp->seq,TCP_SKB_CB(skb)->seq,
+			       skb->len);
+			printk(KERN_ERR "mpcb->copied_seq:%x,"
+			       "skb->data_seq:%x,"
+			       "skb->len:%d, offset:%d\n",mpcb->copied_seq,
+			       TCP_SKB_CB(skb)->data_seq,
+			       skb->len,(int)offset);
 			BUG();
-
 		}
 
 		PDEBUG("At line %d\n",__LINE__);

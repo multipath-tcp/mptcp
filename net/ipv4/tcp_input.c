@@ -4080,6 +4080,8 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 				skb->debug|=MTCP_DEBUG_DATA_QUEUE;
 				skb->debug_count++;
 				
+				mtcp_check_seqnums(mpcb,1);
+
 				mpcb->ucopy.len -= chunk;
 				tp->copied_seq += chunk;
 				mpcb->copied_seq += chunk;
@@ -4088,7 +4090,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 				eaten = (chunk == skb->len && !th->fin);
 				tcp_rcv_space_adjust(sk);
 
-				mtcp_check_seqnums(mpcb);
+				mtcp_check_seqnums(mpcb,0);
 			}
 			local_bh_disable();
 		}
@@ -4746,6 +4748,8 @@ static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 		skb->debug|=MTCP_DEBUG_COPY_TO_IOVEC;
 		skb->debug_count++;
 
+		mtcp_check_seqnums(mpcb,1);
+
 		mpcb->ucopy.len -= chunk;
 		tp->copied_seq += chunk;
 		mpcb->copied_seq += chunk;
@@ -4753,7 +4757,7 @@ static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 		tp->bytes_eaten += chunk;
 		tcp_rcv_space_adjust(sk);
 
-		mtcp_check_seqnums(mpcb);
+		mtcp_check_seqnums(mpcb,0);
 	}
 
 	local_bh_disable();
