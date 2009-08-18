@@ -742,6 +742,26 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 	return 0;
 }
 
+void mtcp_check_seqnums(struct multipath_pcb *mpcb)
+{
+	int subsock_bytes=0;
+	struct sock *sk;
+	struct tcp_sock *tp;
+
+	mtcp_for_each_sk(mpcb,sk,tp)
+		subsock_bytes+=tp->bytes_eaten;
+	/*The number bytes received by the metasocket must always
+	  be equal to the sum of the number of bytes received by the
+	  subsockets*/
+	if (subsock_bytes!=mpcb->copied_seq) {
+		printk(KERN_ERR "subsock_bytes:%d,mpcb bytes:%d\n",
+		       subsock_bytes,
+		       mpcb->copied_seq);
+		console_loglevel=8;
+		BUG();
+	}
+}
+
 int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		   unsigned long *used, struct msghdr *msg, size_t *len,
 		   u32 *data_seq, int *copied, int flags)
@@ -881,6 +901,9 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		*len -= *used;
 		*copied+=*used;
 		tp->copied+=*used;
+		tp->bytes_eaten=*used;
+		
+		mtcp_check_seqnums(mpcb);
 		
 		/*Check if this fills a gap in the ofo queue*/
 		if (!skb_queue_empty(&mpcb->out_of_order_queue))

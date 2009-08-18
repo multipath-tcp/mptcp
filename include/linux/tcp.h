@@ -428,6 +428,8 @@ struct tcp_sock {
 				   subflow the one that was lastly used to 
 				   transmit data*/
 	struct tcp_sock         *next; /*Next subflow socket*/
+	int                     bytes_eaten; /*Bytes eaten by app. - 
+					       For debugging*/
 #endif
 };
 

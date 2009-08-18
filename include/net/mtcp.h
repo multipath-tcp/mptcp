@@ -93,7 +93,7 @@ struct multipath_pcb {
 	
 	char                      done;
 	unsigned short            shutdown;
-
+	
 	struct {
 		struct task_struct	*task;
 		struct iovec		*iov;
@@ -229,6 +229,11 @@ struct multipath_pcb {
 		__rc = mtcp_test_any_sk(__mpcb,__sk,__condition);	\
 		__rc;							\
 	})
+
+/*For debugging only. Verifies consistency between subsock seqnums
+  and metasock seqnums*/
+void mtcp_check_seqnums(struct multipath_pcb *mpcb);
+
 
 int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk, 
 			  long *timeo);

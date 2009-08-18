@@ -4084,8 +4084,11 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 				tp->copied_seq += chunk;
 				mpcb->copied_seq += chunk;
 				tp->copied += chunk;
+				tp->bytes_eaten += chunk;
 				eaten = (chunk == skb->len && !th->fin);
 				tcp_rcv_space_adjust(sk);
+
+				mtcp_check_seqnums(mpcb);
 			}
 			local_bh_disable();
 		}
@@ -4747,7 +4750,10 @@ static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 		tp->copied_seq += chunk;
 		mpcb->copied_seq += chunk;
 		tp->copied += chunk;
+		tp->bytes_eaten += chunk;
 		tcp_rcv_space_adjust(sk);
+
+		mtcp_check_seqnums(mpcb);
 	}
 
 	local_bh_disable();

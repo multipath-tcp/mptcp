@@ -139,9 +139,10 @@ static int shim6_input(struct xfrm_state *x, struct sk_buff *skb)
 	if (i==x->shim6->nlocpairs) {
 		printk(KERN_ERR "%s:Received packet with invalid locators\n",
 		       __FUNCTION__);
+		BUG();
 		return -1;
 	}
-
+	
 	if (!opt->shim6) return 1;
 
 	/*Rewriting the addresses*/
@@ -190,10 +191,12 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 	reap_notify_out(rctx);
 #endif
 	
-	
 	skb_push(skb, -skb_network_offset(skb));
 	iph = ipv6_hdr(skb);
 	
+	/*TODEL - write path index in flow label for debugging*/
+	iph->flow_lbl[0]=skb->path_index;
+
 	getnstimeofday(&curtime);
 	x->curlft.use_time = (unsigned long)curtime.tv_sec;
 	
