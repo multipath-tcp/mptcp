@@ -637,12 +637,14 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 		skb->debug|=MTCP_DEBUG_OFO_QUEUE;
 		skb->debug_count++;
 		
+		mtcp_check_seqnums(mpcb,1);
+
 		*copied+=used;
 		*data_seq+=used;
 		*len-=used;
-		*tp->seq +=used;
-		tp->copied+=used;		
-		tp->bytes_eaten+=used;
+		mpcb->ofo_bytes-=used;
+
+		mtcp_check_seqnums(mpcb,0);
 		
 		/*We can free the skb only if it has been completely eaten
 		  Else we queue it in the mpcb receive queue, for reading by
@@ -720,14 +722,15 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 		
 		skb->debug|=MTCP_DEBUG_CHECK_RCV_QUEUE;
 		skb->debug_count++;;
-		
-		*data_seq += used;
-		*len -= used;
-		*copied+= used;
-		*tp->seq += used;
-		tp->copied+= used;		
-		tp->bytes_eaten+= used;
 
+		mtcp_check_seqnums(mpcb,1);
+
+		*copied+=used;
+		*data_seq+=used;
+		*len-=used;
+		mpcb->ofo_bytes-=used;	   
+
+		mtcp_check_seqnums(mpcb,0);    
 
 /*		PDEBUG("copied %d bytes, from dataseq %x to %x, "
 		       "len %d, skb->len %d\n",*copied,
@@ -765,13 +768,15 @@ void mtcp_check_seqnums(struct multipath_pcb *mpcb, int before)
 		subsock_bytes+=tp->bytes_eaten;
 	/*The number bytes received by the metasocket must always
 	  be equal to the sum of the number of bytes received by the
-	  subsockets*/
-	if (unlikely(subsock_bytes!=mpcb->copied_seq)) {
+	  subsockets, minus the number of bytes waiting in the meta-ofo
+	  and meta-receive queue*/
+	if (unlikely(subsock_bytes!=mpcb->copied_seq+mpcb->ofo_bytes)) {
 		struct sk_buff *first_ofo=skb_peek(&mpcb->out_of_order_queue);
 		printk(KERN_ERR "subsock_bytes:%d,mpcb bytes:%d, "
+		       "meta-ofo bytes:%d, "
 		       "before: %d\n",
 		       subsock_bytes,
-		       mpcb->copied_seq,before);
+		       mpcb->copied_seq,mpcb->ofo_bytes,before);
 		console_loglevel=8;
 		printk(KERN_ERR "mpcb next exp. dataseq:%x\n"
 		       "  meta-recv queue:%d\n"
@@ -790,14 +795,16 @@ void mtcp_check_seqnums(struct multipath_pcb *mpcb, int before)
 			       "  ofo queue:%d\n"
 			       "  first seq,dataseq in ofo queue:%x,%x\n"
 			       "  state:%d\n"
-			       "  next exp. seq num:%x\n",tp->path_index,
+			       "  next exp. seq num:%x\n"
+			       "  bytes_eaten:%d\n",tp->path_index,
 			       skb_queue_len(&sk->sk_receive_queue),
 			       skb_queue_len(&tp->out_of_order_queue),
 			       first_ofosub?TCP_SKB_CB(first_ofosub)->seq:0,
 			       first_ofosub?TCP_SKB_CB(first_ofosub)->
 			       data_seq:0,
 			       sk->sk_state,
-			       *tp->seq);
+			       *tp->seq,
+			       tp->bytes_eaten);
 		}
 		
 		BUG();
@@ -840,7 +847,12 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		/*Since the skb is removed from the receive queue
 		  we must advance the seq num in the corresponding
 		  tp*/
-		*tp->seq += skb->len;
+		mtcp_check_seqnums(mpcb,1);
+		*tp->seq +=skb->len;
+		tp->copied+=skb->len;		
+		tp->bytes_eaten+=skb->len;
+		mpcb->ofo_bytes+=skb->len;
+		mtcp_check_seqnums(mpcb,0);
 		
 		/*TODEL*/
 		PDEBUG("exp. data_seq:%x, skb->data_seq:%x\n",

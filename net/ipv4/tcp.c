@@ -2002,6 +2002,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 
 		/* Next get a buffer. */
 		mtcp_for_each_sk(mpcb,sk,tp) {
+			struct sk_buff *first_ofo=skb_peek(&mpcb->out_of_order_queue); /*TODEL*/
 			skb = skb_peek(&sk->sk_receive_queue);
 			if (!skb)
 				continue;
@@ -2036,7 +2037,9 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				goto found_ok_skb;
 			if (tcp_hdr(skb)->fin)
 				goto found_fin_ok;
-			/*TODEL*/
+			/*TODEL
+			  Not normal to arrive here. Print a lot of info,
+			  than panic*/
 			printk(KERN_ERR "tp->seq:%x,skb->seq:%x,"
 			       "skb->len:%d\n",*tp->seq,TCP_SKB_CB(skb)->seq,
 			       skb->len);
@@ -2045,6 +2048,34 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			       "skb->len:%d, offset:%d\n",mpcb->copied_seq,
 			       TCP_SKB_CB(skb)->data_seq,
 			       skb->len,(int)offset);
+			
+			printk(KERN_ERR "mpcb next exp. dataseq:%x\n"
+			       "  meta-recv queue:%d\n"
+			       "  meta-ofo queue:%d\n"
+			       "  first seq,dataseq in meta-ofo-queue:%x,%x\n",
+			       mpcb->copied_seq,
+			       skb_queue_len(&mpcb->receive_queue),
+			       skb_queue_len(&mpcb->out_of_order_queue),
+			       first_ofo?TCP_SKB_CB(first_ofo)->seq:0,
+			       first_ofo?TCP_SKB_CB(first_ofo)->data_seq:0);
+			mtcp_for_each_sk(mpcb,sk,tp) {
+				struct sk_buff *first_ofosub=skb_peek(
+					&tp->out_of_order_queue);       
+				printk(KERN_ERR "pi:%d\n"
+				       "  recv queue:%d\n"
+				       "  ofo queue:%d\n"
+				       "  first seq,dataseq in ofo queue:%x,%x\n"
+				       "  state:%d\n"
+				       "  next exp. seq num:%x\n",tp->path_index,
+				       skb_queue_len(&sk->sk_receive_queue),
+				       skb_queue_len(&tp->out_of_order_queue),
+				       first_ofosub?TCP_SKB_CB(first_ofosub)->seq:0,
+				       first_ofosub?TCP_SKB_CB(first_ofosub)->
+				       data_seq:0,
+				       sk->sk_state,
+				       *tp->seq);
+			}
+			
 			BUG();
 		}
 

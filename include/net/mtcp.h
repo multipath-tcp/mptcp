@@ -135,6 +135,10 @@ struct multipath_pcb {
 	struct sk_buff_head       error_queue;
 	struct sk_buff_head       out_of_order_queue; /* Out of order segments 
 							 go here */
+	int                       ofo_bytes; /*Counts the number of bytes 
+					       waiting ot be eaten by the app
+					       in the meta-ofo queue or the
+					       meta-receive queue.*/
 	
 	spinlock_t                lock;
 	struct mutex              mutex;
