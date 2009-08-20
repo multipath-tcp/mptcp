@@ -83,8 +83,12 @@ __xfrm6_find_bundle(struct flowi *fl, struct xfrm_policy *policy)
 		ipv6_addr_prefix(&fl_src_prefix,
 				 &fl->fl6_src,
 				 xdst->u.rt6.rt6i_src.plen);
-		if (ipv6_addr_equal(&xdst->u.rt6.rt6i_dst.addr, &fl_dst_prefix) &&
-		    ipv6_addr_equal(&xdst->u.rt6.rt6i_src.addr, &fl_src_prefix) &&
+		if (ipv6_addr_equal(&xdst->u.rt6.rt6i_dst.addr, &fl_dst_prefix)
+		    &&
+		    ipv6_addr_equal(&xdst->u.rt6.rt6i_src.addr, &fl_src_prefix)
+		    &&
+		    dst->path_index==fl->path_index
+		    &&
 		    xfrm_bundle_ok(policy, xdst, fl, AF_INET6,
 				   (xdst->u.rt6.rt6i_dst.plen != 128 ||
 				    xdst->u.rt6.rt6i_src.plen != 128))) {

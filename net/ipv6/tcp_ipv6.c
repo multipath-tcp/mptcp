@@ -118,7 +118,7 @@ static __u32 tcp_v6_init_sequence(struct sk_buff *skb)
 }
 
 int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
-			  int addr_len)
+		   int addr_len)
 {
 	struct sockaddr_in6 *usin = (struct sockaddr_in6 *) uaddr;
 	struct inet_sock *inet = inet_sk(sk);
@@ -261,6 +261,9 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 	if (final_p)
 		ipv6_addr_copy(&fl.fl6_dst, final_p);
 
+
+	printk(KERN_ERR "%s:calling xfrm_lookup, pi %d\n",__FUNCTION__,
+	       tp->path_index);
 	if ((err = __xfrm_lookup(&dst, &fl, sk, XFRM_LOOKUP_WAIT)) < 0) {
 		if (err == -EREMOTE)
 			err = ip6_dst_blackhole(sk, &dst, &fl);

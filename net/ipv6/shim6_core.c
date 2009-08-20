@@ -223,58 +223,6 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 	ipv6_addr_copy(&iph->daddr,&path->remote);
 
 finish:
-
-#ifdef CONFIG_IPV6_SHIM6_MULTIPATH
-	/*Redefining the outgoing dst entry
-	  Note that we are after the 'finish' label, so this executes even 
-	  for the ULIDs. This is because we don't use the routing cache with
-	  Multipath, so we need to compute the outgoing interface in any case
-	  even if no rewriting is done.*/
-	{
-		struct dst_entry *shim6_dst = skb->dst;
-		struct flowi fl;
-		struct dst_entry *dst  = NULL;
-		int err;
-	      		
-		/*Release previous dst*/
-		if (atomic_read(&shim6_dst->child->__refcnt)<1) {
-			printk(KERN_ERR "Ca va chier...\n");
-			console_loglevel=8;
-		}
-		dst_release(shim6_dst->child);
-		/*Redo some of the work of xfrm_bundle_create
-		  Note : When doing such round-robin across all adress pairs, 
-		  thus probably across all interfaces, we may have problems if 
-		  different interfaces have different MTUs, since here the
-		  packet size is already determined. We should determine in 
-		  Shim6 the minimum MTU for all interfaces and use that one as
-		  official MTU seen by uppper layers
-		  Note that this code is very very probably highly buggy.
-		  I don't fix it however, since I think I will remove it in a 
-		  later stage.
-		*/
-		ipv6_addr_copy(&fl.fl6_dst,
-			       &path->remote);
-		ipv6_addr_copy(&fl.fl6_src,
-			       &path->local);
-
-		dst=ip6_route_output(&init_net,NULL,&fl);
-		err=dst->error;
-		if (err) {
-			PDEBUG("ip6_route_output failed");
-			dst_release(dst);
-			return err;
-		}
-		shim6_dst->child = dst;
-		shim6_dst->path = dst;
-		shim6_dst->dev = dst->dev;
-		if (dst->dev)
-			dev_hold(dst->dev);
-		shim6_dst->lastuse	= jiffies;
-		shim6_dst->neighbour    = neigh_clone(dst->neighbour);
-		shim6_dst->input        = dst->input;
-	}
-#endif
 	return 0;
 }
 
