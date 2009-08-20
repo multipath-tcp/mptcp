@@ -750,8 +750,11 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	skb->path_index=tp->path_index;
 		
 	err = icsk->icsk_af_ops->queue_xmit(skb, 0);
-	if (likely(err <= 0))
+	if (likely(err <= 0)) {
+		if (err<0) 
+			printk(KERN_ERR "%s:error %d\n",__FUNCTION__,err);
 		return err;
+	}
 
 	tcp_enter_cwr(sk, 1);
 
@@ -768,7 +771,7 @@ static void tcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	/* Advance write_seq and place onto the write_queue. */
-	PDEBUG("%s: tp->write_seq:%x,skb->end_seq:%x\n",
+	printk(KERN_ERR "%s: tp->write_seq:%x,skb->end_seq:%x\n",
 	       __FUNCTION__,tp->write_seq,TCP_SKB_CB(skb)->end_seq); /*TODEL*/
 	tp->write_seq = TCP_SKB_CB(skb)->end_seq;	
 	skb_header_release(skb);
@@ -1613,6 +1616,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 
 	while ((skb = tcp_send_head(sk))) {
 		unsigned int limit;
+		int err;
 
 		tso_segs = tcp_init_tso_segs(sk, skb, mss_now);
 		BUG_ON(!tso_segs);
@@ -1644,9 +1648,14 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			break;
 
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
-
-		if (unlikely(tcp_transmit_skb(sk, skb, 1, GFP_ATOMIC)))
+		
+		printk(KERN_ERR "%s:seq is %x, len is %d\n",__FUNCTION__,
+		       TCP_SKB_CB(skb)->seq,skb->len);
+		if (unlikely(err=tcp_transmit_skb(sk, skb, 1, GFP_ATOMIC))) {
+			printk(KERN_ERR "%s:transmit failed,pi %d ,err:%d\n\n",
+			       __FUNCTION__,skb->path_index,err);	
 			break;
+		}
 
 		/* Advance the send_head.  This one is sent out.
 		 * This call will increment packets_out.
@@ -1703,8 +1712,10 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 						    cwnd_quota);
 
 		if (skb->len > limit &&
-		    unlikely(tso_fragment(sk, skb, limit, mss_now)))
+		    unlikely(tso_fragment(sk, skb, limit, mss_now))) {
+			printk(KERN_ERR "NOT SENDING TCP SEGMENT\n");
 			return;
+		}
 
 		/* Send it out now. */
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;

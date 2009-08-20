@@ -22,6 +22,7 @@
 #include <net/netevent.h>
 #include <net/ipv6.h>
 #include <net/tcp.h>
+#include <net/shim6.h>
 #include <linux/list.h>
 #include <linux/jhash.h>
 #include <linux/tcp.h>
@@ -560,6 +561,7 @@ int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 			       sk->sk_state,
 			       *tp->seq);
 		}
+		shim6_print_map();
 		BUG();
 	}
 

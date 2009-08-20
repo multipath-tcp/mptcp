@@ -271,6 +271,7 @@
 #include <net/ip.h>
 #include <net/netdma.h>
 #include <net/sock.h>
+#include <net/shim6.h>
 
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
@@ -1162,26 +1163,46 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 		wait_for_sndbuf:
 			printk(KERN_ERR "%s:Waiting for send memory,"
-			       "wmem queued:%d,snd buf:%d, next seq:%x\n",
+			       "wmem queued:%d,snd buf:%d, next seq:%x, pi:%d"
+			       " snd_una:%x, wmem queue len:%d\n",
 			       __FUNCTION__,sk->sk_wmem_queued,sk->sk_sndbuf,
-			       tp->write_seq);
+			       tp->write_seq,tp->path_index,tp->snd_una,
+			       skb_queue_len(&sk->sk_write_queue));
 			mpcb->sleeping=1;
 			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 		wait_for_memory:
 			if (!mpcb->sleeping) {
 				printk(KERN_ERR "%s:Waiting for memory,"
 				       "wmem queued:%d,snd buf:%d, "
-				       "next seq:%x\n",
+				       "next seq:%x,wmem queue len:%d\n",
 				       __FUNCTION__,sk->sk_wmem_queued,
 				       sk->sk_sndbuf,
-				       tp->write_seq);
+				       tp->write_seq,
+				       skb_queue_len(&sk->sk_write_queue));
 				mpcb->sleeping=1;
 			}
 			if (copied)
 				tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
 
-			if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
-				goto do_error;
+			/*TODEL*/
+			timeo=10*HZ;
+
+			err = sk_stream_wait_memory(sk, &timeo);
+			if (!timeo) {
+				struct sk_buff *skb;
+				printk(KERN_ERR "snd_una:%x\n",tp->snd_una);
+				shim6_print_map();
+
+				tcp_for_write_queue(skb,sk) {
+					printk(KERN_ERR "seqnum:%x,length:%d,"
+					       "pi:%d\n",
+					       TCP_SKB_CB(skb)->seq,
+					       skb->len,skb->path_index);
+				}
+				BUG();
+			}
+			
+			if (err) goto do_error;
 			printk(KERN_ERR "%s:got memory, continuing\n",
 			       __FUNCTION__);
 			mpcb->sleeping=0;

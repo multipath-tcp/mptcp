@@ -200,6 +200,8 @@ static inline struct shim6_path *map_pi_path(int pi, struct shim6_path *pa,
 	BUG(); /*Should not arrive here*/
 	return NULL;
 }
+/*TODEL*/
+void shim6_print_map(void); 
 #endif /*CONFIG_MTCP*/
 
 #endif /* _NET_SHIM6_H */

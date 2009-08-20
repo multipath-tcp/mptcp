@@ -46,6 +46,12 @@
 #include <net/ip6_route.h>
 #include <net/netevent.h>
 
+/*TODEL*/
+
+struct shim6_path *shim6_paths;
+int shim6_npaths;
+
+
 /*If shim6 is loaded as a module, we cannot access the global 
  * ipv6_statistics symbol, thus we define our own symbol. (essentially
  * to allow the linker to work correctly, since net/ipv6.h declares it,
@@ -231,6 +237,10 @@ finish:
 		int err;
 	      		
 		/*Release previous dst*/
+		if (atomic_read(&shim6_dst->child->__refcnt)<1) {
+			printk(KERN_ERR "Ca va chier...\n");
+			console_loglevel=8;
+		}
 		dst_release(shim6_dst->child);
 		/*Redo some of the work of xfrm_bundle_create
 		  Note : When doing such round-robin across all adress pairs, 
@@ -371,6 +381,10 @@ static int shim6_init_state(struct xfrm_state *x)
 		       " pointer to it\n",rev_x);
 		x->data=rev_x->data;
 		x->shim6->loc_pairs=rev_x->shim6->paths;
+
+		BUG_ON(x->shim6->nlocpairs!=rev_x->shim6->npaths);
+		shim6_paths=rev_x->shim6->paths;
+		shim6_npaths=rev_x->shim6->npaths;
 		
 		rctx=(struct reap_ctx*)rev_x->data;
 		if (x->shim6->flags & SHIM6_DATA_UPD) {
@@ -805,6 +819,19 @@ static struct notifier_block nb = {
 	.notifier_call=netevent_callback,
 };
 
+void shim6_print_map(void) 
+{
+	int i;
+	for (i=0;i<shim6_npaths;i++) {
+		printk(KERN_ERR "pi:%d",shim6_paths[i].path_index);
+		printk(KERN_ERR "  local:" NIP6_FMT "\n",
+		       NIP6(shim6_paths[i].local));
+		printk(KERN_ERR "  remote:" NIP6_FMT "\n",
+		       NIP6(shim6_paths[i].remote));
+	}
+}
+
+
 /*General initialization of the shim6 mechanism
  *(this is executed in user context)
  */
@@ -819,6 +846,8 @@ static int __init shim6_init(void)
 
 	/*Shim6 ext header registration*/
 	ipv6_shim6_init();
+
+	shim6_paths=NULL; /*TODEL*/
 
 	/*Now we can make shim6 available*/
 	
