@@ -26,15 +26,6 @@
 #include <linux/socket.h>
 #include <linux/mutex.h>
 
-/*Macro for activation/deactivation of debug messages*/
-
-#undef PDEBUG
-#ifdef CONFIG_MTCP_DEBUG
-# define PDEBUG(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
-#else
-# define PDEBUG(fmt,args...)
-#endif
-
 /*DEBUG - TODEL*/
 
 #define MTCP_DEBUG_OFO_QUEUE 0x1
@@ -125,10 +116,8 @@ struct multipath_pcb {
 	  of course, it never exceeds wb_size*/
 	int                       wb_size,wb_start,wb_length;
 	
-	uint8_t                   mpc_sent:1, /*MPC option has been sent, do 
+	uint8_t                   mpc_sent:1; /*MPC option has been sent, do 
 						not send it anymore*/
-		                  sleeping:1; /*Sleeping inside tcp_recvmsg
-						or tcp_sendmsg*/
 	struct sk_buff_head       receive_queue;/*received data*/
 	struct sk_buff_head       write_queue;/*sent stuff, waiting for ack*/
 	struct sk_buff_head       retransmit_queue;/*need to rexmit*/
@@ -204,33 +193,14 @@ struct multipath_pcb {
 			__tp->wait_event_any_sk_released=1;		\
 		}							\
 		__rc = mtcp_test_any_sk(__mpcb,__sk,__condition);	\
-		if (!__rc) {						\
-			if (__mpcb->master_sk->sk_protocol==IPPROTO_TCP && \
-			    __mpcb->master_sk->sk_family==AF_INET6) {	\
-				printk(KERN_DEBUG			\
-				       "will really sleep\n");		\
-				printk(KERN_DEBUG "next expected:%x, "	\
-				       "n subflows:%d\n",		\
-				       __mpcb->copied_seq,		\
-				       __mpcb->cnt_subflows);		\
-				__mpcb->sleeping=1;			\
-			}						\
+		if (!__rc)  						\
 			*(__timeo) = schedule_timeout(*(__timeo));	\
-			if (__mpcb->master_sk->sk_protocol==IPPROTO_TCP && \
-			    __mpcb->master_sk->sk_family==AF_INET6) {	\
-				printk(KERN_DEBUG "woken up\n");	\
-				__mpcb->sleeping=0;			\
-			}						\
-		}							\
 		mtcp_for_each_sk(__mpcb,__sk,__tp)			\
 			if (__tp->wait_event_any_sk_released) {		\
 				/*Lock only those socks we have released*/ \
 				lock_sock(__sk);			\
 				__tp->wait_event_any_sk_released=0;	\
 			}						\
-		if (__mpcb->master_sk->sk_protocol==IPPROTO_TCP &&	\
-		    __mpcb->master_sk->sk_family==AF_INET6)		\
-			printk("mtcp_wait_event_any_sk: checking\n");	\
 		__rc = mtcp_test_any_sk(__mpcb,__sk,__condition);	\
 		__rc;							\
 	})

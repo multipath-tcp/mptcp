@@ -24,6 +24,15 @@
 #include <net/tcp_states.h>
 #include <net/xfrm.h>
 
+#undef DEBUG_MTCP /*set to define if you want debugging messages*/
+
+#undef PDEBUG
+#ifdef DEBUG_MTCP
+#define PDEBUG(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
+#else
+#define PDEBUG(fmt,args...)
+#endif /*DEBUG_MTCP*/
+
 #ifdef INET_CSK_DEBUG
 const char inet_csk_timer_bug_msg[] = "inet_csk BUG: unknown timer value\n";
 EXPORT_SYMBOL(inet_csk_timer_bug_msg);

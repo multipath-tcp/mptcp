@@ -39,6 +39,15 @@
 #include <linux/compiler.h>
 #include <linux/module.h>
 
+#undef DEBUG_TCP /*set to define if you want debugging messages*/
+
+#undef PDEBUG
+#ifdef DEBUG_TCP
+#define PDEBUG(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
+#else
+#define PDEBUG(fmt,args...)
+#endif /*DEBUG_TCP*/
+
 /* People can turn this off for buggy TCP's found in printers etc. */
 int sysctl_tcp_retrans_collapse __read_mostly = 1;
 
@@ -752,7 +761,7 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	err = icsk->icsk_af_ops->queue_xmit(skb, 0);
 	if (likely(err <= 0)) {
 		if (err<0) 
-			printk(KERN_ERR "%s:error %d\n",__FUNCTION__,err);
+			PDEBUG("%s:error %d\n",__FUNCTION__,err);
 		return err;
 	}
 
@@ -771,7 +780,7 @@ static void tcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	/* Advance write_seq and place onto the write_queue. */
-	printk(KERN_ERR "%s: tp->write_seq:%x,skb->end_seq:%x\n",
+	PDEBUG("%s: tp->write_seq:%x,skb->end_seq:%x\n",
 	       __FUNCTION__,tp->write_seq,TCP_SKB_CB(skb)->end_seq); /*TODEL*/
 	tp->write_seq = TCP_SKB_CB(skb)->end_seq;	
 	skb_header_release(skb);
@@ -1649,10 +1658,10 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
 		
-		printk(KERN_ERR "%s:seq is %x, len is %d\n",__FUNCTION__,
+		PDEBUG("%s:seq is %x, len is %d\n",__FUNCTION__,
 		       TCP_SKB_CB(skb)->seq,skb->len);
 		if (unlikely(err=tcp_transmit_skb(sk, skb, 1, GFP_ATOMIC))) {
-			printk(KERN_ERR "%s:transmit failed,pi %d ,err:%d\n\n",
+			PDEBUG("%s:transmit failed,pi %d ,err:%d\n\n",
 			       __FUNCTION__,skb->path_index,err);	
 			break;
 		}
@@ -1713,7 +1722,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 
 		if (skb->len > limit &&
 		    unlikely(tso_fragment(sk, skb, limit, mss_now))) {
-			printk(KERN_ERR "NOT SENDING TCP SEGMENT\n");
+			PDEBUG("NOT SENDING TCP SEGMENT\n");
 			return;
 		}
 

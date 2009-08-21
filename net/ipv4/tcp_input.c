@@ -4734,7 +4734,7 @@ static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 	int chunk = skb->len - hlen;
 	int err;
 
-	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
+	PDEBUG("Entering %s\n",__FUNCTION__);
 
 	local_bh_enable();
 	if (skb_csum_unnecessary(skb))
@@ -5067,7 +5067,7 @@ no_ack:
 			if (eaten)
 				__kfree_skb(skb);
 			else {
-				printk(KERN_ERR "Will wake the master sk up");
+				PDEBUG("Will wake the master sk up");
 				mpcb->master_sk->sk_data_ready(sk, 0);
 			}
 			return 0;
@@ -5430,7 +5430,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		     mpcb->received_options.saw_dsn)) {
 		/*This is the beginning of the multipath session, init
 		  the dsn value*/
-		printk(KERN_ERR "%s:saw dsn and mpc options\n",__FUNCTION__);
+		PDEBUG("%s:saw dsn and mpc options\n",__FUNCTION__);
 		tp->mpc=1;
 		mpcb->copied_seq=mpcb->received_options.data_seq;
 		/*Currently we start with dataseq 0*/
@@ -5563,11 +5563,6 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		if (!sock_flag(sk, SOCK_DEAD)) {
 			sk->sk_state_change(sk);
 			sk_wake_async(sk, SOCK_WAKE_IO, POLL_OUT);
-			if (mpcb->sleeping) {
-				printk(KERN_ERR "This should have woken up"
-				       "the socket, pi %d, line %d\n",
-				       tp->path_index,__LINE__);
-			}
 		}
 
 		if (sk->sk_write_pending ||

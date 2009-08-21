@@ -2213,10 +2213,6 @@ static void xfrm_init_pmtu(struct dst_entry *dst)
 
 		if (pmtu > route_mtu_cached)
 			pmtu = route_mtu_cached;
-		printk(KERN_ERR "%s:shim6 pmtu:%d, route pmtu:%d\n",
-		       __FUNCTION__,
-		       pmtu,xdst->child_mtu_cached);
-
 		dst->metrics[RTAX_MTU-1] = pmtu;
 	} while ((dst = dst->next));
 }

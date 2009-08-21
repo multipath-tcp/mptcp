@@ -31,7 +31,7 @@
 #include <linux/random.h>
 #include <asm/atomic.h>
 
-#define DEBUG_MTCP /*set to define if you want debugging messages*/
+#undef DEBUG_MTCP /*set to define if you want debugging messages*/
 
 #undef PDEBUG
 #ifdef DEBUG_MTCP
@@ -64,7 +64,7 @@ static void mtcp_def_readable(struct sock *sk, int len)
 	
 	BUG_ON(!mpcb);
 
-	printk(KERN_ERR "Waking up master subsock...\n");
+	PDEBUG("Waking up master subsock...\n");
 	
 	read_lock(&msk->sk_callback_lock);
 	if (msk->sk_sleep && waitqueue_active(msk->sk_sleep))
@@ -237,7 +237,7 @@ void mtcp_ask_update(struct sock *sk)
 	struct ulid_pair up;
 	struct tcp_sock *tp=tcp_sk(sk);
 
-	printk(KERN_ERR "Entering %s\n",__FUNCTION__); /*TODEL*/
+	PDEBUG("Entering %s\n",__FUNCTION__); /*TODEL*/
 
 	if (!is_master_sk(tp)) return;
 	/*Currently we only support AF_INET6*/
@@ -319,7 +319,7 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 	kref_get(&mpcb->kref);	
 	local_bh_enable();
 	mutex_unlock(&mpcb->mutex);
-	printk(KERN_ERR "Added subsocket with pi %d, cnt_subflows now %d\n",
+	PDEBUG("Added subsocket with pi %d, cnt_subflows now %d\n",
 	       tp->path_index,mpcb->cnt_subflows);
 }
 
@@ -468,7 +468,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		/*Find a candidate socket for eating data*/
 		tp=get_available_subflow(mpcb);
 
-		printk(KERN_ERR "%s:copied %d,msg_size %d, i %d, pi %d\n",
+		PDEBUG("%s:copied %d,msg_size %d, i %d, pi %d\n",
 		       __FUNCTION__,
 		       (int)copied,
 		       (int)msg_size,i,tp->path_index);
@@ -487,7 +487,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			  returned on a subsequent call anyway.*/
 			nberr++;
 			if (nberr==mpcb->cnt_subflows) {
-				printk(KERN_ERR "%s: returning error "
+				PDEBUG("%s: returning error "
 				       "to app:%d, copied %d\n",__FUNCTION__,
 				       ret,(int)copied);
 				return (copied)?copied:ret;
@@ -528,42 +528,8 @@ int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 		set_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
 		tp->wait_data_bit_set=1;
 	}
-	*timeo=10*HZ; /*TODEL*/
 	rc = mtcp_wait_event_any_sk(mpcb, sk, timeo, 
 				    !skb_queue_empty(&sk->sk_receive_queue));
-
-	/*Print info about the problem. -- TODEL*/
-	if (*timeo==0) {
-		struct sk_buff *first_ofo=skb_peek(&mpcb->out_of_order_queue);
-		printk(KERN_ERR "mpcb next exp. dataseq:%x\n"
-		       "  meta-recv queue:%d\n"
-		       "  meta-ofo queue:%d\n"
-		       "  first seq,dataseq in meta-ofo-queue:%x,%x\n",
-		       mpcb->copied_seq,
-		       skb_queue_len(&mpcb->receive_queue),
-		       skb_queue_len(&mpcb->out_of_order_queue),
-		       first_ofo?TCP_SKB_CB(first_ofo)->seq:0,
-		       first_ofo?TCP_SKB_CB(first_ofo)->data_seq:0);
-		mtcp_for_each_sk(mpcb,sk,tp) {
-			struct sk_buff *first_ofosub=skb_peek(
-				&tp->out_of_order_queue);
-			printk(KERN_ERR "pi:%d\n"
-			       "  recv queue:%d\n"
-			       "  ofo queue:%d\n"
-			       "  first seq,dataseq in ofo queue:%x,%x\n"
-			       "  state:%d\n"
-			       "  next exp. seq num:%x\n",tp->path_index,
-			       skb_queue_len(&sk->sk_receive_queue),
-			       skb_queue_len(&tp->out_of_order_queue),
-			       first_ofosub?TCP_SKB_CB(first_ofosub)->seq:0,
-			       first_ofosub?TCP_SKB_CB(first_ofosub)->
-			       data_seq:0,
-			       sk->sk_state,
-			       *tp->seq);
-		}
-		shim6_print_map();
-		BUG();
-	}
 
 	mtcp_for_each_sk(mpcb,sk,tp)
 		if (tp->wait_data_bit_set) {
@@ -600,6 +566,7 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 			       skb->debug_count);
 			printk(KERN_ERR "init data_seq:%x,*copied:%x\n",
 			       skb->data_seq,*copied);
+			console_loglevel=8;
 			
 			BUG();
 			__skb_unlink(skb, &mpcb->out_of_order_queue);
@@ -699,6 +666,7 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 			       "%s bug: copied %X "
 			       "dataseq %X\n", __FUNCTION__, *data_seq, 
 			       TCP_SKB_CB(skb)->data_seq);
+			console_loglevel=8;
 			BUG();
 		}
 		skb->data_seq=*data_seq; /*TODEL*/
@@ -711,6 +679,7 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 			       skb->len,
 			       TCP_SKB_CB(skb)->end_data_seq - 
 			       TCP_SKB_CB(skb)->data_seq);
+			console_loglevel=8;
 			BUG();
 		}
 		used = skb->len - offset;

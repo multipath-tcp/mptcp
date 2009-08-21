@@ -1162,50 +1162,14 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			continue;
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 		wait_for_sndbuf:
-			PDEBUG("%s:Waiting for send memory,"
-			       "wmem queued:%d,snd buf:%d, next seq:%x, pi:%d"
-			       " snd_una:%x, wmem queue len:%d\n",
-			       __FUNCTION__,sk->sk_wmem_queued,sk->sk_sndbuf,
-			       tp->write_seq,tp->path_index,tp->snd_una,
-			       skb_queue_len(&sk->sk_write_queue));
-			mpcb->sleeping=1;
 			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 		wait_for_memory:
-			if (!mpcb->sleeping) {
-				PDEBUG("%s:Waiting for memory,"
-				       "wmem queued:%d,snd buf:%d, "
-				       "next seq:%x,wmem queue len:%d\n",
-				       __FUNCTION__,sk->sk_wmem_queued,
-				       sk->sk_sndbuf,
-				       tp->write_seq,
-				       skb_queue_len(&sk->sk_write_queue));
-				mpcb->sleeping=1;
-			}
 			if (copied)
 				tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
 
-			/*TODEL*/
-			timeo=10*HZ;
-
 			err = sk_stream_wait_memory(sk, &timeo);
-			if (!timeo) {
-				struct sk_buff *skb;
-				printk(KERN_ERR "snd_una:%x\n",tp->snd_una);
-				shim6_print_map();
-
-				tcp_for_write_queue(skb,sk) {
-					printk(KERN_ERR "seqnum:%x,length:%d,"
-					       "pi:%d\n",
-					       TCP_SKB_CB(skb)->seq,
-					       skb->len,skb->path_index);
-				}
-				BUG();
-			}
 			
 			if (err) goto do_error;
-			printk(KERN_ERR "%s:got memory, continuing\n",
-			       __FUNCTION__);
-			mpcb->sleeping=0;
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 			mss_now = tcp_current_mss(sk, !(flags&MSG_OOB));
 			size_goal = tp->xmit_size_goal;
@@ -2029,8 +1993,10 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				continue;
 			
 			if (skb->len>1500) {
-				printk(KERN_ERR "BUG:pi %d, skb->seq %x\n",
-				       skb->path_index,TCP_SKB_CB(skb)->seq);
+				printk(KERN_ERR "BUG:pi %d, skb->seq %x,"
+				       "skb->len:%d\n",
+				       skb->path_index,TCP_SKB_CB(skb)->seq,
+				       skb->len);
 				/*This ensures that we will have a backtrace
 				  on the console.*/
 				console_loglevel=8;
@@ -2227,7 +2193,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			mutex_unlock(&mpcb->mutex);
 			PDEBUG("At line %d\n",__LINE__);
 			mtcp_wait_data(mpcb,master_sk, &timeo);
-			printk(KERN_ERR "At line %d\n",__LINE__);
+			PDEBUG("At line %d\n",__LINE__);
 			
 			/*We may have received data on a newly created
 			  subsocket, check if the list has grown*/
@@ -2235,7 +2201,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			PDEBUG("At line %d\n",__LINE__);
 			if (cnt_subflows!=mpcb->cnt_subflows) {
 				printk(KERN_ERR "New subflow arrived"
-					 " in live\n");
+				       " in live\n");
 				/*We must ensure  that for each new tp, 
 				  the seq pointer is correctly set. In 
 				  particular we'll get a segfault if
