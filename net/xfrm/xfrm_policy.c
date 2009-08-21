@@ -2305,7 +2305,6 @@ int xfrm_bundle_ok(struct xfrm_policy *pol, struct xfrm_dst *first,
 	}
 
 	printk(KERN_ERR "%s:mtu set to %d\n", __FUNCTION__,mtu);
-	BUG(); /*TODEL*/
 	return 1;
 }
 

@@ -295,6 +295,16 @@ int ip6_xmit(struct sock *sk, struct sk_buff *skb, struct flowi *fl,
 	if (net_ratelimit())
 		printk(KERN_DEBUG "IPv6: sending pkt_too_big to self\n");
 	skb->dev = dst->dev;
+
+	/*In case xfrm is used, ICMP pkt too big must be sent with the
+	  iface mtu, not the adjusted mtu that takes xfrm headers into account.
+	  If we don't do this, then we will enter into an infinite 
+	  mtu reduction loop,
+	  since the ICMP handler in xfrm will recompute its MTUs, since it
+	  understands the provided mtu as coming from the network.*/
+	while ((dst=dst->child))
+		mtu=dst_mtu(dst);
+
 	icmpv6_send(skb, ICMPV6_PKT_TOOBIG, 0, mtu, skb->dev);
 	IP6_INC_STATS(ip6_dst_idev(skb->dst), IPSTATS_MIB_FRAGFAILS);
 	kfree_skb(skb);
