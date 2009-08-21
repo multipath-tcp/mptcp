@@ -298,7 +298,8 @@ int ip6_xmit(struct sock *sk, struct sk_buff *skb, struct flowi *fl,
 	icmpv6_send(skb, ICMPV6_PKT_TOOBIG, 0, mtu, skb->dev);
 	IP6_INC_STATS(ip6_dst_idev(skb->dst), IPSTATS_MIB_FRAGFAILS);
 	kfree_skb(skb);
-	printk(KERN_ERR "%s:error is here, mtu %d...\n",__FUNCTION__,mtu);
+	printk(KERN_ERR "%s:error is here, mtu %d,seglen %d...\n",
+	       __FUNCTION__,mtu,skb->len);
 	return -EMSGSIZE;
 }
 

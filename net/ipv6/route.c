@@ -1517,6 +1517,8 @@ void rt6_pmtu_discovery(struct in6_addr *daddr, struct in6_addr *saddr,
 	int allfrag = 0;
 
 	rt = rt6_lookup(net, daddr, saddr, dev->ifindex, 0);
+	printk(KERN_ERR "%s:Received new pmtu:%d\n",__FUNCTION__,pmtu);
+
 	if (rt == NULL)
 		return;
 
@@ -1987,6 +1989,8 @@ void rt6_mtu_change(struct net_device *dev, unsigned mtu)
 		.dev = dev,
 		.mtu = mtu,
 	};
+
+	printk(KERN_ERR "%s:new mtu:%d\n",__FUNCTION__,mtu);
 
 	fib6_clean_all(dev_net(dev), rt6_mtu_change_route, 0, &arg);
 }
