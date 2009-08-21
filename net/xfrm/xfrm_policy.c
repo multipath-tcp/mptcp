@@ -1430,9 +1430,6 @@ static struct dst_entry *xfrm_bundle_create(struct xfrm_policy *policy,
 			dst1->flags |= DST_NOHASH;
 		}
 
-		xdst->route = dst;
-		memcpy(&dst1->metrics, &dst->metrics, sizeof(dst->metrics));
-
 		if (xfrm[i]->props.mode != XFRM_MODE_TRANSPORT) {
 			family = xfrm[i]->props.family;
 			dst = xfrm_dst_lookup(xfrm[i], tos, &saddr, &daddr,
@@ -1442,6 +1439,9 @@ static struct dst_entry *xfrm_bundle_create(struct xfrm_policy *policy,
 				goto put_states;
 		} else
 			dst_hold(dst);
+
+  		xdst->route = dst;
+		memcpy(&dst1->metrics, &dst->metrics, sizeof(dst->metrics));
 
 		dst1->xfrm = xfrm[i];
 		xdst->genid = xfrm[i]->genid;
