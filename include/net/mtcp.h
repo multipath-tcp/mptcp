@@ -207,8 +207,9 @@ struct multipath_pcb {
 		if (!__rc) {						\
 			if (__mpcb->master_sk->sk_protocol==IPPROTO_TCP && \
 			    __mpcb->master_sk->sk_family==AF_INET6) {	\
-				printk(KERN_ERR "will really sleep\n");	\
-				printk(KERN_ERR "next expected:%x, "	\
+				printk(KERN_DEBUG			\
+				       "will really sleep\n");		\
+				printk(KERN_DEBUG "next expected:%x, "	\
 				       "n subflows:%d\n",		\
 				       __mpcb->copied_seq,		\
 				       __mpcb->cnt_subflows);		\
@@ -217,7 +218,7 @@ struct multipath_pcb {
 			*(__timeo) = schedule_timeout(*(__timeo));	\
 			if (__mpcb->master_sk->sk_protocol==IPPROTO_TCP && \
 			    __mpcb->master_sk->sk_family==AF_INET6) {	\
-				printk(KERN_ERR "woken up\n");		\
+				printk(KERN_DEBUG "woken up\n");	\
 				__mpcb->sleeping=0;			\
 			}						\
 		}							\

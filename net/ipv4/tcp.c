@@ -1162,7 +1162,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			continue;
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 		wait_for_sndbuf:
-			printk(KERN_ERR "%s:Waiting for send memory,"
+			PDEBUG("%s:Waiting for send memory,"
 			       "wmem queued:%d,snd buf:%d, next seq:%x, pi:%d"
 			       " snd_una:%x, wmem queue len:%d\n",
 			       __FUNCTION__,sk->sk_wmem_queued,sk->sk_sndbuf,
@@ -1172,7 +1172,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 		wait_for_memory:
 			if (!mpcb->sleeping) {
-				printk(KERN_ERR "%s:Waiting for memory,"
+				PDEBUG("%s:Waiting for memory,"
 				       "wmem queued:%d,snd buf:%d, "
 				       "next seq:%x,wmem queue len:%d\n",
 				       __FUNCTION__,sk->sk_wmem_queued,
@@ -3227,9 +3227,6 @@ struct sk_buff *tcp_tso_segment(struct sk_buff *skb, int features)
 	__be32 delta;
 	unsigned int oldlen;
 	unsigned int len;
-
-	printk(KERN_ERR "Entering %s\n (not sure that this will work well !)\n",
-	       __FUNCTION__); /*TODEL*/
 
 	if (!pskb_may_pull(skb, sizeof(*th)))
 		goto out;

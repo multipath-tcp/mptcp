@@ -839,7 +839,7 @@ static inline int xfrm_sec_ctx_match(struct xfrm_sec_ctx *s1, struct xfrm_sec_ct
 /* A struct encoding bundle of transformations to apply to some set of flow.
  *
  * dst->child points to the next element of bundle.
- * dst->xfrm  points to an instanse of transformer.
+ * dst->xfrm  points to an instance of transformer.
  *
  * Due to unfortunate limitations of current routing cache, which we
  * have no time to fix, it mirrors struct rtable and bound to the same

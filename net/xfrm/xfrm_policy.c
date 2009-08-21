@@ -2264,6 +2264,8 @@ int xfrm_bundle_ok(struct xfrm_policy *pol, struct xfrm_dst *first,
 
 		mtu = dst_mtu(dst->child);
 		if (xdst->child_mtu_cached != mtu) {
+			printk(KERN_ERR "child_mtu_cached:%d,mtu:%d\n",
+			       xdst->child_mtu_cached,mtu);
 			last = xdst;
 			xdst->child_mtu_cached = mtu;
 		}
@@ -2294,10 +2296,13 @@ int xfrm_bundle_ok(struct xfrm_policy *pol, struct xfrm_dst *first,
 		if (last == first)
 			break;
 
+		printk(KERN_ERR "should not arrive here\n");
 		last = (struct xfrm_dst *)last->u.dst.next;
 		last->child_mtu_cached = mtu;
 	}
 
+	printk(KERN_ERR "%s:mtu set to %d\n", __FUNCTION__,mtu);
+	BUG(); /*TODEL*/
 	return 1;
 }
 

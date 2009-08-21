@@ -961,8 +961,6 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		tp->copied+=*used;
 		tp->bytes_eaten+=*used;
 
-		printk(KERN_ERR "used :%d\n", (int)*used);
-		
 		mtcp_check_seqnums(mpcb,0);
 		
 		/*Check if this fills a gap in the ofo queue*/
