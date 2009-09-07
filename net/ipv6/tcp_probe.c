@@ -55,6 +55,7 @@ struct tcp_log {
 	ktime_t tstamp;
 	struct in6_addr daddr, saddr;
 	__be16	sport, dport;
+	int     path_index;
 	u16	length;
 	u32	snd_nxt;
 	u32	snd_una;
@@ -109,6 +110,7 @@ static int rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->sport = inet->sport;
 			ipv6_addr_copy(&p->daddr,&np->daddr);
 			p->dport = inet->dport;
+			p->path_index = skb->path_index;
 			p->length = skb->len;
 			p->snd_nxt = tp->snd_nxt;
 			p->snd_una = tp->snd_una;
@@ -147,12 +149,12 @@ static int tcpprobe_sprint(char *tbuf, int n)
 
 	return snprintf(tbuf, n,
 			"%lu.%09lu " NIP6_FMT ":%u " NIP6_FMT ":%u"
-			" %d %#x %#x %u %u %u %u\n",
+			" %d %d %#x %#x %u %u %u %u\n",
 			(unsigned long) tv.tv_sec,
 			(unsigned long) tv.tv_nsec,
 			NIP6(p->saddr), ntohs(p->sport),
 			NIP6(p->daddr), ntohs(p->dport),
-			p->length, p->snd_nxt, p->snd_una,
+			p->path_index, p->length, p->snd_nxt, p->snd_una,
 			p->snd_cwnd, p->ssthresh, p->snd_wnd, p->srtt);
 }
 
