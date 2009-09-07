@@ -37,11 +37,12 @@ obj-$(CONFIG_INET6_XFRM_MODE_TUNNEL) += xfrm6_mode_tunnel.o
 obj-$(CONFIG_INET6_XFRM_MODE_ROUTEOPTIMIZATION) += xfrm6_mode_ro.o
 obj-$(CONFIG_INET6_XFRM_MODE_BEET) += xfrm6_mode_beet.o
 obj-$(CONFIG_IPV6_MIP6) += mip6.o
+obj-$(CONFIG_IPV6_TCPPROBE) += tcp_probe.o
 obj-$(CONFIG_NETFILTER)	+= netfilter/
 
 obj-$(CONFIG_IPV6_SIT) += sit.o
 obj-$(CONFIG_IPV6_TUNNEL) += ip6_tunnel.o
 
-obj-y += addrconf_core.o exthdrs_core.o shim6_static.o
+obj-y += addrconf_core.o exthdrs_core.o shim6_static.o tcp_probe_static.o
 
 obj-$(subst m,y,$(CONFIG_IPV6)) += inet6_hashtables.o

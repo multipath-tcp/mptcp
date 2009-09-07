@@ -71,6 +71,7 @@
 #include <asm/unaligned.h>
 #include <net/netdma.h>
 #include <net/mtcp.h>
+#include <linux/tcp_probe.h>
 
 #undef DEBUG_TCP_INPUT /*set to define if you want debugging messages*/
 
@@ -4890,6 +4891,8 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	PDEBUG("%s:pi %d - seq is %x,sock is %p\n",
 	       __FUNCTION__,skb->path_index,TCP_SKB_CB(skb)->seq,
 	       sk);
+
+	tcpprobe_rcv_established(sk,skb,th,len);
 	
 	/*
 	 *	Header prediction.
@@ -5153,6 +5156,7 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			struct tcphdr *th, unsigned len)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	tcpprobe_rcv_established(sk,skb,th,len);
 
 	/*
 	 *	Header prediction.
