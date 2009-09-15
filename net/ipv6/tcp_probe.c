@@ -238,7 +238,7 @@ static __init int tcpprobe_init(void)
 	if (!proc_net_fops_create(&init_net, procname, S_IRUSR, &tcpprobe_fops))
 		goto err0;
 
-	ret = register_probe(&tcpprobe_fcts);
+	ret = register_probe(&tcpprobe_fcts,6);
 	if (ret)
 		goto err1;
 
@@ -261,7 +261,7 @@ module_init(tcpprobe_init);
 static __exit void tcpprobe_exit(void)
 {
 	proc_net_remove(&init_net, procname);
-	unregister_probe(&tcpprobe_fcts);
+	unregister_probe(&tcpprobe_fcts,6);
 	kfree(tcp_probe.log);
 }
 module_exit(tcpprobe_exit);

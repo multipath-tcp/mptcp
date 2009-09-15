@@ -9,8 +9,8 @@ struct tcpprobe_ops {
 };
 
 
-int register_probe(struct tcpprobe_ops* ops);
-int unregister_probe(struct tcpprobe_ops* ops);
+int register_probe(struct tcpprobe_ops* ops, unsigned char ipversion);
+int unregister_probe(struct tcpprobe_ops* ops, unsigned char ipversion);
 
 int tcpprobe_rcv_established(struct sock *sk, struct sk_buff *skb,
 			     struct tcphdr *th, unsigned len);
