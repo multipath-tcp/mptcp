@@ -395,6 +395,24 @@ void mtcp_update_metasocket(struct sock *sk)
 	}
 }
 
+static int is_available(struct tcp_sock *tp)
+{
+	/*The following code is inspired from tcp_cwnd_test (tcp_output.c)
+	  We consider a subflow to be available if it has remaining space in 
+	  its congestion window*/
+	
+	u32 in_flight, cwnd;
+
+	if (((struct sock*)tp)->sk_state!=TCP_ESTABLISHED) return 0;
+	
+	in_flight = tcp_packets_in_flight(tp);
+	cwnd = tp->snd_cwnd;
+	if (in_flight < cwnd)
+		return (cwnd - in_flight);
+	
+	return 0;
+}
+
 /*This is the scheduler. This function decides on which flow to send
   a given MSS. Currently we choose a simple round-robin policy.*/
 static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb) 
@@ -417,8 +435,7 @@ static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb)
 	}	
 	/*Now try to find the next available flow*/
 	else for (tp=(tp->next)?tp->next:mpcb->connection_list;
-		  tp!=cursubflow && 
-			  (((struct sock*)tp)->sk_state!=TCP_ESTABLISHED);
+		  tp!=cursubflow && !is_available(tp);
 		  tp=(tp->next)?tp->next:mpcb->connection_list);
 	
 		
