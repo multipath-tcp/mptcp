@@ -66,6 +66,7 @@ struct tcp_log {
 	u32     rcv_nxt;
 	u32     copied_seq;
 	u32     rcv_wnd;
+	char    send; /*1 if sending side, 0 if receive*/
 };
 
 static struct {
@@ -124,6 +125,7 @@ static int rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->rcv_nxt=tp->rcv_nxt;
 			p->copied_seq=tp->copied_seq;
 			p->rcv_wnd=tp->rcv_wnd;
+			p->send=0;
 
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
@@ -133,6 +135,51 @@ static int rcv_established(struct sock *sk, struct sk_buff *skb,
 		wake_up(&tcp_probe.wait);
 	}
 
+	return 0;
+}
+
+/*
+ * Hook inserted to be called before each transmit_skb
+ * Note: arguments must match tcp_transmit_skb()!
+ */
+static int transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
+			gfp_t gfp_mask)
+{
+	const struct tcp_sock *tp = tcp_sk(sk);
+	const struct inet_sock *inet = inet_sk(sk);
+ 	const struct ipv6_pinfo *np=inet6_sk(sk);
+
+	/* Only update if port matches */
+	spin_lock(&tcp_probe.lock);
+	/* If log fills, just silently drop */
+	if (tcp_probe_avail() > 1) {
+		struct tcp_log *p = tcp_probe.log + tcp_probe.head;
+		
+		p->tstamp = ktime_get();
+		ipv6_addr_copy(&p->saddr,&np->saddr);
+		p->sport = inet->sport;
+		ipv6_addr_copy(&p->daddr,&np->daddr);
+		p->dport = inet->dport;
+		p->path_index = tp->path_index;
+		p->length = skb->len;
+		p->snd_nxt = tp->snd_nxt;
+		p->snd_una = tp->snd_una;
+		p->snd_cwnd = tp->snd_cwnd;
+		p->snd_wnd = tp->snd_wnd;
+		p->ssthresh = tcp_current_ssthresh(sk);
+		p->srtt = tp->srtt >> 3;
+		p->rcv_nxt=tp->rcv_nxt;
+		p->copied_seq=tp->copied_seq;
+		p->rcv_wnd=tp->rcv_wnd;
+		p->send=1;
+		
+		tcp_probe.head = (tcp_probe.head + 1) % bufsize;
+	}
+	tcp_probe.lastcwnd = tp->snd_cwnd;
+	spin_unlock(&tcp_probe.lock);
+	
+	wake_up(&tcp_probe.wait);
+	
 	return 0;
 }
 
@@ -155,14 +202,14 @@ static int tcpprobe_sprint(char *tbuf, int n)
 
 	return snprintf(tbuf, n,
 			"%lu.%09lu " NIP6_FMT ":%u " NIP6_FMT ":%u"
-			" %d %d %#x %#x %u %u %u %u %#x %#x %u\n",
+			" %d %d %#x %#x %u %u %u %u %#x %#x %u %d\n",
 			(unsigned long) tv.tv_sec,
 			(unsigned long) tv.tv_nsec,
 			NIP6(p->saddr), ntohs(p->sport),
 			NIP6(p->daddr), ntohs(p->dport),
 			p->path_index, p->length, p->snd_nxt, p->snd_una,
 			p->snd_cwnd, p->ssthresh, p->snd_wnd, p->srtt,
-			p->rcv_nxt,p->copied_seq,p->rcv_wnd);
+			p->rcv_nxt,p->copied_seq,p->rcv_wnd,p->send);
 }
 
 static ssize_t tcpprobe_read(struct file *file, char __user *buf,
@@ -219,6 +266,7 @@ static const struct file_operations tcpprobe_fops = {
 
 static struct tcpprobe_ops tcpprobe_fcts = {
 	.rcv_established=rcv_established,
+	.transmit_skb=transmit_skb,
 };
 
 static __init int tcpprobe_init(void)

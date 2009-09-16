@@ -38,6 +38,7 @@
 
 #include <linux/compiler.h>
 #include <linux/module.h>
+#include <linux/tcp_probe.h>
 
 #undef DEBUG_TCP /*set to define if you want debugging messages*/
 
@@ -671,6 +672,8 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	int err;
 
 	BUG_ON(!skb || !tcp_skb_pcount(skb));
+
+	tcpprobe_transmit_skb(sk,skb,clone_it,gfp_mask);
 
 	/* If congestion control is doing timestamping, we must
 	 * take such a timestamp before we potentially clone/copy.

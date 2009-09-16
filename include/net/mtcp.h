@@ -25,6 +25,7 @@
 #include <linux/net.h>
 #include <linux/socket.h>
 #include <linux/mutex.h>
+#include <linux/completion.h>
 
 /*DEBUG - TODEL*/
 
@@ -131,7 +132,8 @@ struct multipath_pcb {
 	
 	spinlock_t                lock;
 	struct mutex              mutex;
-	struct kref               kref;
+	struct kref               kref;	
+	struct completion         liberate_subflow;
 	struct notifier_block     nb; /*For listening to PM events*/
 };
 
@@ -232,6 +234,7 @@ void mtcp_reset_options(struct multipath_options* mopt);
 void mtcp_update_metasocket(struct sock *sock);
 int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		 size_t size);
+int mtcp_is_available(struct tcp_sock *tp);
 int mtcpv6_init(void);
 
 

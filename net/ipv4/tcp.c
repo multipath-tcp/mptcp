@@ -953,6 +953,8 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	int mss_now, size_goal;
 	int err, copied;
 	long timeo;
+	int nbnewseg=0; /*We permit at most 1 new segment to be created before
+			  to give back control to the scheduler*/
 
 	lock_sock(sk);
 	TCP_CHECK_TIMER(sk);
@@ -1018,6 +1020,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 				 * allocate skb fitting to single page.
 				 */
 				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
+				if (nbnewseg++==1) goto out;
 				if (!sk_stream_memory_free(sk))
 					goto wait_for_sndbuf;
 				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);

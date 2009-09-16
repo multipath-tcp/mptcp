@@ -72,6 +72,7 @@
 #include <net/netdma.h>
 #include <net/mtcp.h>
 #include <linux/tcp_probe.h>
+#include <linux/completion.h>
 
 #undef DEBUG_TCP_INPUT /*set to define if you want debugging messages*/
 
@@ -4585,6 +4586,24 @@ static inline void tcp_data_snd_check(struct sock *sk)
 {
 	tcp_push_pending_frames(sk);
 	tcp_check_space(sk);
+	
+#ifdef CONFIG_MTCP
+	{
+		struct tcp_sock *tp = tcp_sk(sk);
+		struct multipath_pcb *mpcb;
+		if (!tp->mpc) return;
+		mpcb=mpcb_from_tcpsock(tp);
+		/*When we receive an ack, place is made in the cwnd.
+		  Then first operation is to try sending buffered
+		  segments in this subsock (tcp_push_pending_frames).
+		  Then, if the flow is still available as decided by mtcp,
+		  we can wake up the mtcp scheduler, so that it possibly
+		  injects more data into that subflow*/
+		if (mtcp_is_available(tp) && !mpcb->liberate_subflow.done) {
+			complete(&mpcb->liberate_subflow);
+		}
+	}
+#endif
 }
 
 /*

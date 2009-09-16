@@ -50,3 +50,15 @@ int tcpprobe_rcv_established(struct sock *sk, struct sk_buff *skb,
 	if (!*vops) return 0;
 	return (*vops)->rcv_established(sk,skb,th,len);
 }
+
+int tcpprobe_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
+			  gfp_t gfp_mask)
+{
+	int ipversion=ip_hdr(skb)->version;
+	struct tcpprobe_ops **vops=select_family(ipversion);
+	
+	/*return -1 if incorrect family*/
+	if (!vops) return -1;
+	if (!*vops) return 0;
+	return (*vops)->transmit_skb(sk,skb,clone_it,gfp_mask);
+}
