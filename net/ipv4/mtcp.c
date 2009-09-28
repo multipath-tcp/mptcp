@@ -505,12 +505,11 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		
 		tp=get_available_subflow(mpcb);
 		
-		if (!tp) {
+		while (!tp) {
 			/*Go sleeping until one of the subflows at least
 			  becomes ready to eat data*/
 			wait_for_completion(&mpcb->liberate_subflow);
 			tp=get_available_subflow(mpcb);			
-			BUG_ON(!tp); /*tp MUST be non-null now.*/
 		}
 
 		PDEBUG("%s:copied %d,msg_size %d, i %d, pi %d\n",

@@ -150,7 +150,7 @@ static int transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
  	const struct ipv6_pinfo *np=inet6_sk(sk);
 
 	/* Only update if port matches */
-	spin_lock(&tcp_probe.lock);
+	spin_lock_bh(&tcp_probe.lock);
 	/* If log fills, just silently drop */
 	if (tcp_probe_avail() > 1) {
 		struct tcp_log *p = tcp_probe.log + tcp_probe.head;
@@ -176,7 +176,7 @@ static int transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 	}
 	tcp_probe.lastcwnd = tp->snd_cwnd;
-	spin_unlock(&tcp_probe.lock);
+	spin_unlock_bh(&tcp_probe.lock);
 	
 	wake_up(&tcp_probe.wait);
 	

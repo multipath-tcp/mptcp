@@ -90,6 +90,8 @@ static inline int tcp_probe_used(void)
 
 static inline int tcp_probe_avail(void)
 {
+	if (!(bufsize-tcp_probe_used()))
+		printk(KERN_ERR "No log space anymore\n");
 	return bufsize - tcp_probe_used();
 }
 
@@ -158,7 +160,7 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	if ((port == 0 || ntohs(inet->dport) == port || ntohs(inet->sport) == port)
 	    && (full || tp->snd_cwnd != tcp_probe.lastcwnd)) {
 
-		spin_lock(&tcp_probe.lock);
+		spin_lock_bh(&tcp_probe.lock);
 		/* If log fills, just silently drop */
 		if (tcp_probe_avail() > 1) {
 			struct tcp_log *p = tcp_probe.log + tcp_probe.head;
@@ -184,7 +186,7 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
 		tcp_probe.lastcwnd = tp->snd_cwnd;
-		spin_unlock(&tcp_probe.lock);
+		spin_unlock_bh(&tcp_probe.lock);
 
 		wake_up(&tcp_probe.wait);
 	}

@@ -717,6 +717,21 @@ extern struct tcp_congestion_ops tcp_reno;
 static inline void tcp_set_ca_state(struct sock *sk, const u8 ca_state)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
+	struct tcp_sock *tp=tcp_sk(sk);
+	
+	if (ca_state != icsk->icsk_ca_state) {
+		/*TODEL*/
+		if (tp->path_index==0 || tp->path_index==1)
+			printk(KERN_ERR "Changed from state %d to state %d\n",
+			       icsk->icsk_ca_state,ca_state);
+		if ((tp->path_index==0 || tp->path_index==1) &&
+		    ca_state!=0 && ca_state !=2) {
+			console_loglevel=8;					
+			printk(KERN_ERR "tp->snd_nxt:%x,tp->snd_una:%x\n",
+			       tp->snd_nxt,tp->snd_una);
+			WARN_ON(1);
+		}
+	}
 
 	if (icsk->icsk_ca_ops->set_state)
 		icsk->icsk_ca_ops->set_state(sk, ca_state);
