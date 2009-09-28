@@ -614,7 +614,7 @@ static inline void tcp_mark_urg(struct tcp_sock *tp, int flags,
 	}
 }
 
-static inline void tcp_push(struct sock *sk, int flags, int mss_now,
+inline void tcp_push(struct sock *sk, int flags, int mss_now,
 			    int nonagle)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -938,8 +938,8 @@ static inline int select_size(struct sock *sk)
  * In the original version of tcp_sendmsg, size is not used.
  * If CONFIG_MTCP is set, size is interpreted as the offset inside the message
  * to copy from. (that is, byte 0 to size-1 are simply ignored.
- * Moreover, in an MTCP context, this function only eats what it can reasonably
- * take, knowing that another subsocket can eat the rest.
+ * Moreover, in an MTCP context, this function only eats 1 segment
+ * since another subsocket can eat the rest.
  */
 int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		size_t size)
@@ -955,7 +955,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	long timeo;
 	int nbnewseg=0; /*We permit at most 1 new segment to be created before
 			  to give back control to the scheduler*/
-
+	
 	lock_sock(sk);
 	TCP_CHECK_TIMER(sk);
 

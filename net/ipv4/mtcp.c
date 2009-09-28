@@ -73,6 +73,7 @@ static void mtcp_def_readable(struct sock *sk, int len)
 	read_unlock(&msk->sk_callback_lock);
 }
 
+
 /**
  * Creates as many sockets as path indices announced by the Path Manager.
  * The first path indices are (re)allocated to existing sockets.
@@ -983,6 +984,59 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		  will see it anyway thanks to the @used pointer.*/
 		return MTCP_EATEN;
 	}
+}
+
+/**
+ * specific version of skb_entail (tcp.c), that handles segment reinjection
+ * in other subflow.
+ * Here, we do not set the data seq, since it remains the same. However, 
+ * we do change the subflow seqnum.
+ */
+static inline void mtcp_skb_entail_reinj(struct sock *sk, struct sk_buff *skb)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
+	
+	skb->csum     = 0;
+	tcb->seq      = tcb->end_seq = tp->write_seq;
+	tcb->flags    = TCPCB_FLAG_ACK;
+	tcb->sacked   = 0;
+	skb_header_release(skb);
+	tcp_add_write_queue_tail(sk, skb);
+	sk->sk_wmem_queued += skb->truesize;
+	sk_mem_charge(sk, skb->truesize);
+	if (tp->nonagle & TCP_NAGLE_PUSH)
+		tp->nonagle &= ~TCP_NAGLE_PUSH;
+}
+
+/**
+ * Reinject data from one TCP subflow to another one. 
+ * The @skb given pertains to the original tp, that keeps it
+ * because the skb is still send on the original tp. But additionnally,
+ * it is sent on the other subflow. 
+ *
+ * @pre : @tp must be in ESTABLISHED state
+ */
+void mtcp_reinject_data(struct sk_buff *orig_skb, struct tcp_sock *tp)
+{
+	struct sk_buff *skb=pskb_copy(orig_skb,GFP_ATOMIC);
+	struct sock *sk=(struct sock *)tp;
+	int mss_now;
+	BUG_ON(!skb);
+
+	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
+	
+	bh_lock_sock(sk);
+
+	mss_now = tcp_current_mss(sk, 0);
+
+	mtcp_skb_entail_reinj(sk, skb);
+	tp->write_seq += skb->len;
+	TCP_SKB_CB(skb)->end_seq += skb->len;
+	tcp_push(sk, 0, mss_now, tp->nonagle);
+	TCP_CHECK_TIMER(sk);
+
+	bh_unlock_sock(sk);
 }
 
 MODULE_LICENSE("GPL");

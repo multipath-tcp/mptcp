@@ -2004,7 +2004,48 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 	unsigned int cur_mss;
 	int err;
 
-	/* Inconslusive MTU probe */
+#ifdef CONFIG_MTCP
+	/*For any retransmission, we check if we can find another subflow
+	  where it would be better to retransmit
+	  Currently we try with retransmission policy RTX-SSTHRESH*/
+	{
+		int max_ssthresh=0;
+		struct tcp_sock *tp_it,*retrans_tp=NULL;
+		struct multipath_pcb *mpcb=tp->mpcb;
+		
+		if(sk->sk_state!=TCP_ESTABLISHED)
+			goto no_mtcp;
+		
+		mtcp_for_each_tp(mpcb,tp_it) {
+			if (((struct sock*)tp_it)->sk_state==TCP_ESTABLISHED &&
+			    tp_it->snd_ssthresh>=max_ssthresh) {
+				max_ssthresh=tp_it->snd_ssthresh;
+				retrans_tp=tp_it;
+			}
+		}
+		if (!retrans_tp) {
+			mtcp_for_each_tp(mpcb,tp_it) {
+				printk(KERN_ERR "sk_state:%d,ssthresh:%d\n",
+				       ((struct sock*)tp)->sk_state,
+				       tp->snd_ssthresh);
+				if (((struct sock*)tp)->sk_state==
+				    TCP_ESTABLISHED &&
+				    tp_it->snd_ssthresh>=max_ssthresh) {
+					max_ssthresh=tp_it->snd_ssthresh;
+					retrans_tp=tp_it;
+				}
+			}
+		}
+		BUG_ON(!retrans_tp);
+		/*retrans_tp is now the tp with highest ssthresh*/
+		if (retrans_tp->snd_ssthresh>tp->snd_ssthresh)
+			mtcp_reinject_data(skb,retrans_tp);
+	}
+no_mtcp:
+#endif
+
+
+	/* Inconclusive MTU probe */
 	if (icsk->icsk_mtup.probe_size) {
 		icsk->icsk_mtup.probe_size = 0;
 	}

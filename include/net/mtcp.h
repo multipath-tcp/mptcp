@@ -235,6 +235,7 @@ void mtcp_update_metasocket(struct sock *sock);
 int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		 size_t size);
 int mtcp_is_available(struct tcp_sock *tp);
+void mtcp_reinject_data(struct sk_buff *orig_skb, struct tcp_sock *tp);
 int mtcpv6_init(void);
 
 
