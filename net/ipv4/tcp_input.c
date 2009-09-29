@@ -1090,7 +1090,6 @@ static void tcp_update_reordering(struct sock *sk, const int metric,
 static int tcp_is_sackblock_valid(struct tcp_sock *tp, int is_dsack,
 				  u32 start_seq, u32 end_seq)
 {
-	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
 	/* Too far in future, or reversed (interpretation is ambiguous) */
 	if (after(end_seq, tp->snd_nxt) || !before(start_seq, end_seq))
 		return 0;
@@ -3448,7 +3447,6 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 					
 					TCP_SKB_CB(skb)->sacked = 
 						(ptr - 2) - (unsigned char *)th;
-					printk(KERN_ERR "received SACK\n");
 				}
 				break;
 #ifdef CONFIG_TCP_MD5SIG

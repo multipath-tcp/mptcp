@@ -488,6 +488,8 @@ static struct sk_buff *__skb_clone(struct sk_buff *n, struct sk_buff *skb)
 	C(head);
 	C(data);
 	C(truesize);
+	C(path_index);
+	C(debug2);
 #if defined(CONFIG_MAC80211) || defined(CONFIG_MAC80211_MODULE)
 	C(do_not_encrypt);
 #endif

@@ -98,6 +98,9 @@ static int ip6_output_finish(struct sk_buff *skb)
 {
 	struct dst_entry *dst = skb->dst;
 
+	if (skb->debug2==25)
+		printk(KERN_ERR "BINGO3 !!\n");
+
 	if (dst->hh)
 		return neigh_hh_output(dst->hh, skb);
 	else if (dst->neighbour)
@@ -106,7 +109,6 @@ static int ip6_output_finish(struct sk_buff *skb)
 	IP6_INC_STATS_BH(ip6_dst_idev(dst), IPSTATS_MIB_OUTNOROUTES);
 	kfree_skb(skb);
 	return -EINVAL;
-
 }
 
 /* dev_loopback_xmit for use with netfilter. */
@@ -277,7 +279,6 @@ int ip6_xmit(struct sock *sk, struct sk_buff *skb, struct flowi *fl,
 	hdr->payload_len = htons(seg_len);
 	hdr->nexthdr = proto;
 	hdr->hop_limit = hlimit;
-	hdr->flow_lbl[2]=tcp_sk(sk)->path_index; /*TODEL*/
 
 	ipv6_addr_copy(&hdr->saddr, &fl->fl6_src);
 	ipv6_addr_copy(&hdr->daddr, first_hop);

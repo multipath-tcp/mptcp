@@ -266,6 +266,7 @@ struct sk_buff {
 	struct	sec_path	*sp;
 	unsigned int            path_index; /*Path index for multipath control*/
 	__u32                   debug; /*TODEL*/
+	char                    debug2;
 	int                     debug_count; /*TODEL*/
 	__u32                   data_seq; /*TODEL*/
 

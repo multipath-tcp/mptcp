@@ -671,6 +671,9 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	struct tcphdr *th;
 	int err;
 
+	if (skb->debug2==25)
+		printk(KERN_ERR "BINGO3 !!\n");
+
 	BUG_ON(!skb || !tcp_skb_pcount(skb));
 
 	tcpprobe_transmit_skb(sk,skb,clone_it,gfp_mask);
@@ -760,7 +763,10 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		TCP_INC_STATS(sock_net(sk), TCP_MIB_OUTSEGS);
 
 	skb->path_index=tp->path_index;
-		
+	
+	if (skb->debug2==25)
+		printk(KERN_ERR "BINGO5!!\n",
+		       icsk->icsk_af_ops->queue_xmit);
 	err = icsk->icsk_af_ops->queue_xmit(skb, 0);
 	if (likely(err <= 0)) {
 		if (err<0) 
@@ -1629,6 +1635,9 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 	while ((skb = tcp_send_head(sk))) {
 		unsigned int limit;
 		int err;
+
+		if (skb->debug2==25)
+			printk(KERN_ERR "BINGO !!\n");
 
 		tso_segs = tcp_init_tso_segs(sk, skb, mss_now);
 		BUG_ON(!tso_segs);

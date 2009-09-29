@@ -199,6 +199,10 @@ int inet6_csk_xmit(struct sk_buff *skb, int ipfragok)
 	fl.fl_ip_dport = inet->dport;
 	security_sk_classify_flow(sk, &fl);
 
+	if (skb->debug2==25)
+		printk(KERN_ERR "BINGO4 !!\n");
+	fl.fl6_flowlabel = skb->debug2;
+
 	if (np->opt && np->opt->srcrt) {
 		struct rt0_hdr *rt0 = (struct rt0_hdr *)np->opt->srcrt;
 		ipv6_addr_copy(&final, &fl.fl6_dst);

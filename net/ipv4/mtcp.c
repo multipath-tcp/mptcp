@@ -684,7 +684,7 @@ static inline void mtcp_eat_skb(struct multipath_pcb *mpcb, struct sk_buff *skb)
 }
 
 /*This verifies if any skbuff has been let on the mpcb 
-  receive queue due app buffer being full.
+  receive queue due to app buffer being full.
   This only needs to be called when starting tcp_recvmsg, since 
   during immediate segment reception from TCP subsockets, segments reach
   the receive queue only when the app buffer becomes full.*/
@@ -782,7 +782,7 @@ void mtcp_check_seqnums(struct multipath_pcb *mpcb, int before)
 
 	mtcp_for_each_sk(mpcb,sk,tp)
 		subsock_bytes+=tp->bytes_eaten;
-	/*The number bytes received by the metasocket must always
+	/*The number of bytes received by the metasocket must always
 	  be equal to the sum of the number of bytes received by the
 	  subsockets, minus the number of bytes waiting in the meta-ofo
 	  and meta-receive queue*/
@@ -835,8 +835,12 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
 	u32 data_offset;
 	int err;
+	struct ipv6hdr* iph=ipv6_hdr(skb);
 
-	if (skb->len>1500) BUG();      
+	if (skb->len>1500) BUG();   
+
+	if (iph->flow_lbl[0]==10)
+		printk(KERN_ERR "Received reinjected segment\n");
 	
 	/*Is this a duplicate segment ?*/
 	if (after(*data_seq,TCP_SKB_CB(skb)->data_seq+skb->len)) {
@@ -1025,12 +1029,16 @@ void mtcp_reinject_data(struct sk_buff *orig_skb, struct tcp_sock *tp)
 	BUG_ON(!skb);
 
 	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
+	printk(KERN_ERR "old seqnum:%x\n",TCP_SKB_CB(skb)->seq);
+
+	skb->debug2=25;
 	
 	bh_lock_sock(sk);
 
-	mss_now = tcp_current_mss(sk, 0);
+	mss_now = tcp_current_mss(sk, 0); 
 
 	mtcp_skb_entail_reinj(sk, skb);
+	printk(KERN_ERR "new seqnum:%x\n",TCP_SKB_CB(skb)->seq);
 	tp->write_seq += skb->len;
 	TCP_SKB_CB(skb)->end_seq += skb->len;
 	tcp_push(sk, 0, mss_now, tp->nonagle);
