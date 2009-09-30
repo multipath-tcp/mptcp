@@ -1023,7 +1023,7 @@ static inline void mtcp_skb_entail_reinj(struct sock *sk, struct sk_buff *skb)
  */
 void mtcp_reinject_data(struct sk_buff *orig_skb, struct tcp_sock *tp)
 {
-	struct sk_buff *skb=pskb_copy(orig_skb,GFP_ATOMIC);
+	struct sk_buff *skb=skb_copy(orig_skb,GFP_ATOMIC);
 	struct sock *sk=(struct sock *)tp;
 	int mss_now;
 	BUG_ON(!skb);
