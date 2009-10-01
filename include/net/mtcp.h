@@ -207,6 +207,8 @@ struct multipath_pcb {
 		__rc;							\
 	})
 
+#define PI_TO_FLAG(pi) (1<<(pi-1))
+
 /*For debugging only. Verifies consistency between subsock seqnums
   and metasock seqnums*/
 void mtcp_check_seqnums(struct multipath_pcb *mpcb, int before);

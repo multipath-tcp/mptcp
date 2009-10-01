@@ -101,7 +101,7 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 	while (tp!=NULL) {
 		/*disable the corresponding bit*/
 		if (tp->path_index==0) tp->path_index=1;
-		path_indices&=~(1<<(tp->path_index-1));
+		path_indices&=~PI_TO_FLAG(tp->path_index);
 		tp=tp->next;
 	}
 
@@ -1006,7 +1006,7 @@ static inline void mtcp_skb_entail_reinj(struct sock *sk, struct sk_buff *skb)
 	tcb->flags    = TCPCB_FLAG_ACK;
 	tcb->sacked   = 0;
 	skb_header_release(skb);
-	tcp_add_write_queue_tail(sk, skb);
+//	tcp_add_write_queue_tail(sk, skb);
 	sk->sk_wmem_queued += skb->truesize;
 	sk_mem_charge(sk, skb->truesize);
 	if (tp->nonagle & TCP_NAGLE_PUSH)
@@ -1023,25 +1023,34 @@ static inline void mtcp_skb_entail_reinj(struct sock *sk, struct sk_buff *skb)
  */
 void mtcp_reinject_data(struct sk_buff *orig_skb, struct tcp_sock *tp)
 {
-	struct sk_buff *skb=skb_copy(orig_skb,GFP_ATOMIC);
+	struct sk_buff *skb;
 	struct sock *sk=(struct sock *)tp;
 	int mss_now;
-	BUG_ON(!skb);
 
 	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
-	printk(KERN_ERR "old seqnum:%x\n",TCP_SKB_CB(skb)->seq);
+	printk(KERN_ERR "old seqnum:%x\n",TCP_SKB_CB(orig_skb)->seq);
+	printk(KERN_ERR "skb->len:%d\n",orig_skb->len);       
 
-	skb->debug2=25;
+	/*Remember that we have enqueued this skb on this path*/
+	orig_skb->path_mask|=PI_TO_FLAG(tp->path_index);
+
+	skb=skb_copy(orig_skb,GFP_ATOMIC);
+
+	printk(KERN_ERR "skb->path_mask:%x\n", skb->path_mask);
+
+	BUG_ON(!skb);
+		
+	skb->debug2=25;       
 	
 	bh_lock_sock(sk);
 
 	mss_now = tcp_current_mss(sk, 0); 
 
-	mtcp_skb_entail_reinj(sk, skb);
+//	mtcp_skb_entail_reinj(sk, skb);
 	printk(KERN_ERR "new seqnum:%x\n",TCP_SKB_CB(skb)->seq);
 	tp->write_seq += skb->len;
 	TCP_SKB_CB(skb)->end_seq += skb->len;
-	tcp_push(sk, 0, mss_now, tp->nonagle);
+//	tcp_push(sk, 0, mss_now, tp->nonagle);
 	TCP_CHECK_TIMER(sk);
 
 	bh_unlock_sock(sk);

@@ -765,8 +765,7 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	skb->path_index=tp->path_index;
 	
 	if (skb->debug2==25)
-		printk(KERN_ERR "BINGO5!!\n",
-		       icsk->icsk_af_ops->queue_xmit);
+		printk(KERN_ERR "BINGO5!!\n");
 	err = icsk->icsk_af_ops->queue_xmit(skb, 0);
 	if (likely(err <= 0)) {
 		if (err<0) 
@@ -2024,30 +2023,20 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 		
 		if(sk->sk_state!=TCP_ESTABLISHED)
 			goto no_mtcp;
+
+		skb->path_mask|=PI_TO_FLAG(tp->path_index);
 		
 		mtcp_for_each_tp(mpcb,tp_it) {
 			if (((struct sock*)tp_it)->sk_state==TCP_ESTABLISHED &&
+			    !(PI_TO_FLAG(tp_it->path_index)&skb->path_mask) &&
+			    tp_it!=tp &&
 			    tp_it->snd_ssthresh>=max_ssthresh) {
 				max_ssthresh=tp_it->snd_ssthresh;
 				retrans_tp=tp_it;
 			}
 		}
-		if (!retrans_tp) {
-			mtcp_for_each_tp(mpcb,tp_it) {
-				printk(KERN_ERR "sk_state:%d,ssthresh:%d\n",
-				       ((struct sock*)tp)->sk_state,
-				       tp->snd_ssthresh);
-				if (((struct sock*)tp)->sk_state==
-				    TCP_ESTABLISHED &&
-				    tp_it->snd_ssthresh>=max_ssthresh) {
-					max_ssthresh=tp_it->snd_ssthresh;
-					retrans_tp=tp_it;
-				}
-			}
-		}
-		BUG_ON(!retrans_tp);
 		/*retrans_tp is now the tp with highest ssthresh*/
-		if (retrans_tp->snd_ssthresh>tp->snd_ssthresh)
+		if (retrans_tp)
 			mtcp_reinject_data(skb,retrans_tp);
 	}
 no_mtcp:
