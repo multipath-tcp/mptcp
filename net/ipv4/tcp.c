@@ -2548,6 +2548,8 @@ void tcp_close(struct sock *sk, long timeout)
 	int data_was_unread = 0;
 	int state;
 
+	printk(KERN_ERR "Entering %s\n", __FUNCTION__);
+
 #ifdef CONFIG_MTCP
 	/*if this is the master subsocket, we must first close the
 	  slave subsockets*/
@@ -3463,6 +3465,8 @@ EXPORT_SYMBOL(tcp_md5_hash_key);
 
 void tcp_done(struct sock *sk)
 {
+
+	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
 	if(sk->sk_state == TCP_SYN_SENT || sk->sk_state == TCP_SYN_RECV)
 		TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_ATTEMPTFAILS);
     

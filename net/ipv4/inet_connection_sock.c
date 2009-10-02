@@ -568,10 +568,11 @@ EXPORT_SYMBOL_GPL(inet_csk_clone);
  * try to jump onto it.
  */
 void inet_csk_destroy_sock(struct sock *sk)
-{
+{	
 #ifdef CONFIG_MTCP
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
 	PDEBUG("Removing subsocket %p\n",sk);
+	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
 	mtcp_del_sock(mpcb,tcp_sk(sk));
 #endif   
 

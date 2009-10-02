@@ -414,6 +414,8 @@ out_rcu_unlock:
 int inet_release(struct socket *sock)
 {
 	struct sock *sk = sock->sk;
+	
+	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
 
 	if (sk) {
 		long timeout;

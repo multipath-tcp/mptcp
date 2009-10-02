@@ -1928,6 +1928,7 @@ static int tcp_v6_init_sock(struct sock *sk)
 
 void tcp_v6_destroy_sock(struct sock *sk)
 {
+	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
 #ifdef CONFIG_TCP_MD5SIG
 	/* Clean up the MD5 key list */
 	if (tcp_sk(sk)->md5sig_info)

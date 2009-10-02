@@ -1036,24 +1036,24 @@ void mtcp_reinject_data(struct sk_buff *orig_skb, struct tcp_sock *tp)
 
 	skb=skb_copy(orig_skb,GFP_ATOMIC);
 
-	printk(KERN_ERR "skb->path_mask:%x\n", skb->path_mask);
+//	printk(KERN_ERR "skb->path_mask:%x\n", skb->path_mask);
 
-	BUG_ON(!skb);
+//	BUG_ON(!skb);
 		
-	skb->debug2=25;       
+//	skb->debug2=25;       
 	
-	bh_lock_sock(sk);
+//	bh_lock_sock(sk);
 
-	mss_now = tcp_current_mss(sk, 0); 
+//	mss_now = tcp_current_mss(sk, 0); 
 
 //	mtcp_skb_entail_reinj(sk, skb);
-	printk(KERN_ERR "new seqnum:%x\n",TCP_SKB_CB(skb)->seq);
-	tp->write_seq += skb->len;
-	TCP_SKB_CB(skb)->end_seq += skb->len;
+//	printk(KERN_ERR "new seqnum:%x\n",TCP_SKB_CB(skb)->seq);
+//	tp->write_seq += skb->len; /*COUPABLE*/
+//	TCP_SKB_CB(skb)->end_seq += skb->len;
 //	tcp_push(sk, 0, mss_now, tp->nonagle);
-	TCP_CHECK_TIMER(sk);
+//	TCP_CHECK_TIMER(sk);
 
-	bh_unlock_sock(sk);
+//	bh_unlock_sock(sk);
 }
 
 MODULE_LICENSE("GPL");
