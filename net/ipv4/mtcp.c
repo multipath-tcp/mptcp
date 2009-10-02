@@ -492,11 +492,6 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		iov++;
 	}
 	
-	/*Until everything is sent, we round-robin on the subsockets
-	  TODO: This part MUST be able to sleep.(to avoid looping forever)
-	  Currently it sleeps inside tcp_sendmsg, but it is not the most
-	  efficient, since during that time, we could try sending on other
-	  subsockets*/
 	copied=0;i=0;nberr=0;
 	while (copied<msg_size) {		
 		int ret;
@@ -507,9 +502,15 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		tp=get_available_subflow(mpcb);
 		
 		while (!tp) {
+			int err;
 			/*Go sleeping until one of the subflows at least
-			  becomes ready to eat data*/
-			wait_for_completion(&mpcb->liberate_subflow);
+			  becomes ready to eat data.
+			  Note that we must be interruptible, because else we
+			  cannot be killed*/
+			err=wait_for_completion_interruptible(
+				&mpcb->liberate_subflow);
+			if (err<0) return err;
+			
 			tp=get_available_subflow(mpcb);			
 		}
 
@@ -1048,7 +1049,7 @@ void mtcp_reinject_data(struct sk_buff *orig_skb, struct tcp_sock *tp)
 
 //	mtcp_skb_entail_reinj(sk, skb);
 //	printk(KERN_ERR "new seqnum:%x\n",TCP_SKB_CB(skb)->seq);
-//	tp->write_seq += skb->len; /*COUPABLE*/
+	tp->write_seq += skb->len; /*COUPABLE*/
 //	TCP_SKB_CB(skb)->end_seq += skb->len;
 //	tcp_push(sk, 0, mss_now, tp->nonagle);
 //	TCP_CHECK_TIMER(sk);
