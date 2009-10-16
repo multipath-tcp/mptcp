@@ -1883,6 +1883,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	struct task_struct *user_recv = NULL;
 	struct sk_buff *skb;
 	int cnt_subflows;
+
+	
 	
 	if (!master_tp->mpc)
 		return tcp_recvmsg_fallback(iocb,master_sk,msg,len,nonblock,
@@ -2006,6 +2008,11 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				BUG();
 			}
 
+			/*printk(KERN_ERR "Received dataseq %x on path %d,"
+			       "func %s\n",
+			       TCP_SKB_CB(skb)->data_seq,tp->path_index,
+			       __FUNCTION__);*/
+			
 			/* Now that we have two receive queues this
 			 * shouldn't happen.
 			 */

@@ -222,6 +222,7 @@ resubmit:
 			skb_postpull_rcsum(skb, skb_network_header(skb),
 					   skb_network_header_len(skb));
 			hdr = ipv6_hdr(skb);
+			
 			if (ipv6_addr_is_multicast(&hdr->daddr) &&
 			    !ipv6_chk_mcast_addr(skb->dev, &hdr->daddr,
 			    &hdr->saddr) &&
@@ -253,6 +254,7 @@ resubmit:
 	return 0;
 
 discard:
+	printk(KERN_ERR "packet discarded\n");
 	IP6_INC_STATS_BH(idev, IPSTATS_MIB_INDISCARDS);
 	rcu_read_unlock();
 	kfree_skb(skb);

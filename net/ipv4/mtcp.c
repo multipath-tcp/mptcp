@@ -836,12 +836,8 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
 	u32 data_offset;
 	int err;
-	struct ipv6hdr* iph=ipv6_hdr(skb);
 
 	if (skb->len>1500) BUG();   
-
-	if (iph->flow_lbl[0]==10)
-		printk(KERN_ERR "Received reinjected segment\n");
 	
 	/*Is this a duplicate segment ?*/
 	if (after(*data_seq,TCP_SKB_CB(skb)->data_seq+skb->len)) {
@@ -1002,16 +998,93 @@ static inline void mtcp_skb_entail_reinj(struct sock *sk, struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 	
-	skb->csum     = 0;
+//	skb->csum     = 0;
 	tcb->seq      = tcb->end_seq = tp->write_seq;
-	tcb->flags    = TCPCB_FLAG_ACK;
-	tcb->sacked   = 0;
-	skb_header_release(skb);
-//	tcp_add_write_queue_tail(sk, skb);
+//	tcb->flags    = TCPCB_FLAG_ACK;
+//	tcb->sacked   = 0;
+//	skb_header_release(skb);
+	tcp_add_write_queue_tail(sk, skb);
 	sk->sk_wmem_queued += skb->truesize;
 	sk_mem_charge(sk, skb->truesize);
-	if (tp->nonagle & TCP_NAGLE_PUSH)
-		tp->nonagle &= ~TCP_NAGLE_PUSH;
+//	if (tp->nonagle & TCP_NAGLE_PUSH)
+//		tp->nonagle &= ~TCP_NAGLE_PUSH;
+}
+
+int mtcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct inet_connection_sock *icsk = inet_csk(sk);
+	unsigned int cur_mss;
+	int err;
+
+	/* Inconclusive MTU probe */
+	if (icsk->icsk_mtup.probe_size) {
+		icsk->icsk_mtup.probe_size = 0;
+	}
+
+	/* Do not sent more than we queued. 1/4 is reserved for possible
+	 * copying overhead: fragmentation, tunneling, mangling etc.
+	 */
+	if (atomic_read(&sk->sk_wmem_alloc) >
+	    min(sk->sk_wmem_queued + (sk->sk_wmem_queued >> 2), sk->sk_sndbuf))
+		return -EAGAIN;
+
+	if (before(TCP_SKB_CB(skb)->seq, tp->snd_una)) {
+		if (before(TCP_SKB_CB(skb)->end_seq, tp->snd_una))
+			BUG();
+		if (tcp_trim_head(sk, skb, tp->snd_una - TCP_SKB_CB(skb)->seq))
+			return -ENOMEM;
+	}
+
+	if (inet_csk(sk)->icsk_af_ops->rebuild_header(sk))
+		return -EHOSTUNREACH; /* Routing failure or similar. */
+
+	cur_mss = tcp_current_mss(sk, 0);
+
+	/* If receiver has shrunk his window, and skb is out of
+	 * new window, do not retransmit it. The exception is the
+	 * case, when window is shrunk to zero. In this case
+	 * our retransmit serves as a zero window probe.
+	 */
+	if (!before(TCP_SKB_CB(skb)->seq, tcp_wnd_end(tp))
+	    && TCP_SKB_CB(skb)->seq != tp->snd_una)
+		return -EAGAIN;
+
+	if (skb->len > cur_mss) {
+		if (tcp_fragment(sk, skb, cur_mss, cur_mss))
+			return -ENOMEM; /* We'll try again later. */
+	}
+
+	/* Make a copy, if the first transmission SKB clone we made
+	 * is still in somebody's hands, else make a clone.
+	 */
+	TCP_SKB_CB(skb)->when = tcp_time_stamp;
+
+//	err = tcp_transmit_skb(sk, skb, 1, GFP_ATOMIC);
+
+	if (err == 0) {
+		/* Update global TCP statistics. */
+		TCP_INC_STATS(sock_net(sk), TCP_MIB_RETRANSSEGS);
+
+		tp->total_retrans++;
+
+		if (!tp->retrans_out)
+			tp->lost_retrans_low = tp->snd_nxt;
+		TCP_SKB_CB(skb)->sacked |= TCPCB_RETRANS;
+		tp->retrans_out += tcp_skb_pcount(skb);
+
+		/* Save stamp of the first retransmit. */
+		if (!tp->retrans_stamp)
+			tp->retrans_stamp = TCP_SKB_CB(skb)->when;
+
+		tp->undo_retrans++;
+
+		/* snd_nxt is stored to detect loss of retransmitted segment,
+		 * see tcp_input.c tcp_sacktag_write_queue().
+		 */
+		TCP_SKB_CB(skb)->ack_seq = tp->snd_nxt;
+	}
+	return err;
 }
 
 /**
@@ -1027,34 +1100,62 @@ void mtcp_reinject_data(struct sk_buff *orig_skb, struct tcp_sock *tp)
 	struct sk_buff *skb;
 	struct sock *sk=(struct sock *)tp;
 	int mss_now;
+	struct tcphdr *th;
+//	int carry;
 
 	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
 	printk(KERN_ERR "old seqnum:%x\n",TCP_SKB_CB(orig_skb)->seq);
+	printk(KERN_ERR "reinjected dataseq: %x on path %d\n", 
+	       TCP_SKB_CB(orig_skb)->data_seq,tp->path_index);
 	printk(KERN_ERR "skb->len:%d\n",orig_skb->len);       
+	printk(KERN_ERR "orig_skb->csum:%x\n",orig_skb->csum);
 
 	/*Remember that we have enqueued this skb on this path*/
 	orig_skb->path_mask|=PI_TO_FLAG(tp->path_index);
 
 	skb=skb_copy(orig_skb,GFP_ATOMIC);
+	skb->sk=sk;
 
-//	printk(KERN_ERR "skb->path_mask:%x\n", skb->path_mask);
+	th=tcp_hdr(skb);
 
-//	BUG_ON(!skb);
-		
-//	skb->debug2=25;       
+	printk(KERN_ERR "test: source port is %d\n",th->source);
+	printk(KERN_ERR "skb->path_mask:%x\n", skb->path_mask);
+	printk(KERN_ERR "csum on the data part:%x\n",
+	       csum_partial((char *)th, th->doff<<2,
+			    skb->csum));
 	
-//	bh_lock_sock(sk);
+	BUG_ON(!skb);
+	
+	skb->debug2=25;       
+	
+	bh_lock_sock(sk);
 
-//	mss_now = tcp_current_mss(sk, 0); 
+	mss_now = tcp_current_mss(sk, 0);
 
-//	mtcp_skb_entail_reinj(sk, skb);
-//	printk(KERN_ERR "new seqnum:%x\n",TCP_SKB_CB(skb)->seq);
-	tp->write_seq += skb->len; /*COUPABLE*/
-//	TCP_SKB_CB(skb)->end_seq += skb->len;
-//	tcp_push(sk, 0, mss_now, tp->nonagle);
+	mtcp_skb_entail_reinj(sk, skb);
+	printk(KERN_ERR "new seqnum:%x\n",TCP_SKB_CB(skb)->seq);
+	tp->write_seq += skb->len;
+	TCP_SKB_CB(skb)->end_seq += skb->len;
+	tcp_push(sk, 0, mss_now, tp->nonagle);
+//	mtcp_retransmit_skb(sk, skb);
 //	TCP_CHECK_TIMER(sk);
 
-//	bh_unlock_sock(sk);
+	/*TODO: correctly adapt the checksum here. Currently we recompute the
+	  whole checksum in inet6_csk_xmit, but this is of course less 
+	  efficient*/
+		
+	/*Removing old seqnum from the checksum*/	
+
+	/*skb->csum+=~(TCP_SKB_CB(orig_skb)->seq);
+	carry=(skb->csum<(~(TCP_SKB_CB(orig_skb)->seq)));
+	skb->csum+=carry;*/ 
+	
+	/*Adding the new seqnum to the info*/
+	/*skb->csum+= tp->write_seq;
+	carry=(skb->csum<tp->write_seq);
+	skb->csum+=carry;*/
+	
+	bh_unlock_sock(sk);
 }
 
 MODULE_LICENSE("GPL");

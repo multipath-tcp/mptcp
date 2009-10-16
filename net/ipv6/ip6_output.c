@@ -98,9 +98,6 @@ static int ip6_output_finish(struct sk_buff *skb)
 {
 	struct dst_entry *dst = skb->dst;
 
-	if (skb->debug2==25)
-		printk(KERN_ERR "BINGO3 !!\n");
-
 	if (dst->hh)
 		return neigh_hh_output(dst->hh, skb);
 	else if (dst->neighbour)

@@ -5000,6 +5000,7 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 				return 0;
 			} else { /* Header too small */
 				TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_INERRS);
+				printk(KERN_ERR "At line %d\n",__LINE__);
 				goto discard;
 			}
 		} else {
@@ -5049,8 +5050,10 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 				}
 			}
 			if (!eaten) {
-				if (tcp_checksum_complete_user(sk, skb))
+				if (tcp_checksum_complete_user(sk, skb)) {
+					printk(KERN_ERR "At line %d\n",__LINE__);
 					goto csum_error;
+				}
 
 				/* Predicted packet is in window by definition.
 				 * seq == rcv_nxt and rcv_wup <= rcv_nxt.
@@ -5102,8 +5105,14 @@ no_ack:
 	}
 
 slow_path:
-	if (len < (th->doff << 2) || tcp_checksum_complete_user(sk, skb))
+	if (len < (th->doff << 2) || tcp_checksum_complete_user(sk, skb)) {
+		printk(KERN_ERR "At line %d\n",__LINE__);
+		if (len < (th->doff << 2)) 
+			printk(KERN_ERR "  Length is the problem\n");
+		else
+			printk(KERN_ERR "  csum is the problem\n");
 		goto csum_error;
+	}
 
 	/*
 	 * RFC1323: H1. Apply PAWS check first.
@@ -5113,6 +5122,7 @@ slow_path:
 		if (!th->rst) {
 			NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_PAWSESTABREJECTED);
 			tcp_send_dupack(sk, skb);
+			printk(KERN_ERR "At line %d\n",__LINE__);
 			goto discard;
 		}
 		/* Resets are accepted even if PAWS failed.
@@ -5135,11 +5145,13 @@ slow_path:
 		 */
 		if (!th->rst)
 			tcp_send_dupack(sk, skb);
+		printk(KERN_ERR "At line %d\n",__LINE__);
 		goto discard;
 	}
 
 	if (th->rst) {
 		tcp_reset(sk);
+		printk(KERN_ERR "At line %d\n",__LINE__);
 		goto discard;
 	}
 
@@ -5172,6 +5184,8 @@ csum_error:
 	TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_INERRS);
 
 discard:
+	printk(KERN_ERR "discarding segment with dataseq %x "
+	       "on path %d\n",TCP_SKB_CB(skb)->data_seq,tp->path_index);
 	__kfree_skb(skb);
 	return 0;
 }

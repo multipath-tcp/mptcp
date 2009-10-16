@@ -200,13 +200,9 @@ static int shim6_output(struct xfrm_state *x, struct sk_buff *skb)
 	skb_push(skb, -skb_network_offset(skb));
 	iph = ipv6_hdr(skb);       
 
-	iph->flow_lbl[2]=skb->path_index; /*TODEL*/
-	iph->flow_lbl[2]=skb->debug2; /*TODEL*/
-	
-	if (skb->debug2==25)
-		printk(KERN_ERR "BINGO2 !!\n");
-
-
+//	iph->flow_lbl[2]=skb->path_index; /*TODEL*/
+//	iph->flow_lbl[2]=skb->debug2; /*TODEL*/
+       
 	getnstimeofday(&curtime);
 	x->curlft.use_time = (unsigned long)curtime.tv_sec;
 	

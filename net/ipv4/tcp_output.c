@@ -671,9 +671,6 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	struct tcphdr *th;
 	int err;
 
-	if (skb->debug2==25)
-		printk(KERN_ERR "BINGO3 !!\n");
-
 	BUG_ON(!skb || !tcp_skb_pcount(skb));
 
 	tcpprobe_transmit_skb(sk,skb,clone_it,gfp_mask);
@@ -764,8 +761,6 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 
 	skb->path_index=tp->path_index;
 	
-	if (skb->debug2==25)
-		printk(KERN_ERR "BINGO5!!\n");
 	err = icsk->icsk_af_ops->queue_xmit(skb, 0);
 	if (likely(err <= 0)) {
 		if (err<0) 
@@ -1635,9 +1630,6 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		unsigned int limit;
 		int err;
 
-		if (skb->debug2==25)
-			printk(KERN_ERR "BINGO !!\n");
-
 		tso_segs = tcp_init_tso_segs(sk, skb, mss_now);
 		BUG_ON(!tso_segs);
 
@@ -2118,20 +2110,7 @@ no_mtcp:
 	if (err == 0) {
 		/* Update global TCP statistics. */
 		TCP_INC_STATS(sock_net(sk), TCP_MIB_RETRANSSEGS);
-
-		tp->total_retrans++;
-
-#if FASTRETRANS_DEBUG > 0
-		if (TCP_SKB_CB(skb)->sacked & TCPCB_SACKED_RETRANS) {
-			if (net_ratelimit())
-				printk(KERN_DEBUG "retrans_out leaked.\n");
-		}
-#endif
-		if (!tp->retrans_out)
-			tp->lost_retrans_low = tp->snd_nxt;
-		TCP_SKB_CB(skb)->sacked |= TCPCB_RETRANS;
-		tp->retrans_out += tcp_skb_pcount(skb);
-
+		
 		/* Save stamp of the first retransmit. */
 		if (!tp->retrans_stamp)
 			tp->retrans_stamp = TCP_SKB_CB(skb)->when;
