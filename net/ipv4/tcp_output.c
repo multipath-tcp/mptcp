@@ -2028,8 +2028,10 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 			}
 		}
 		/*retrans_tp is now the tp with highest ssthresh*/
-		if (retrans_tp)
+		if (retrans_tp) {
+			
 			mtcp_reinject_data(skb,retrans_tp);
+		}
 	}
 no_mtcp:
 #endif

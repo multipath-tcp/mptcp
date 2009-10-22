@@ -3676,6 +3676,15 @@ static inline int tcp_paws_discard(const struct sock *sk,
 
 static inline int tcp_sequence(struct tcp_sock *tp, u32 seq, u32 end_seq)
 {
+	if (before(end_seq, tp->rcv_wup)) {
+		printk(KERN_ERR "endseq %x before rcvwup %x\n",end_seq,
+		       tp->rcv_wup);
+	}
+	if (after(seq, tp->rcv_nxt + tcp_receive_window(tp))) {
+		printk(KERN_ERR "seq %x after rcv_nxt %x +receivewindow %d\n",
+		       seq,tp->rcv_nxt,tcp_receive_window(tp));
+	}
+	
 	return	!before(end_seq, tp->rcv_wup) &&
 		!after(seq, tp->rcv_nxt + tcp_receive_window(tp));
 }

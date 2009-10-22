@@ -937,6 +937,8 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		  duplicate here. Duplicates are managed by each subflow 
 		  individually.*/
 		if (*used==0) {
+			printk(KERN_ERR "Received exact duplicate segment"
+			       "by reinjection\n");
 			printk(KERN_ERR "debug:%d,count:%d\n",skb->debug,
 			       skb->debug_count);
 			printk(KERN_ERR "init data_seq:%x,used:%d\n",
@@ -946,8 +948,16 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 			       skb->data_seq,(int)*len,*data_seq,
 			       TCP_SKB_CB(skb)->data_seq,(int)skb->len,
 			       mpcb->ucopy.task);
-			console_loglevel=8;
-			BUG();
+
+			/*Since this segment has already been received on
+			  another subflow, we can just ignore it, and advance
+			  the subflow seqnum of this subsocket*/
+			*used=skb->len;
+			*tp->seq += *used;
+			tp->bytes_eaten+=*used;
+			tp->copied+=*used;
+			
+			return MTCP_EATEN;
 		}
 
 		if (data_offset != offset) {
@@ -969,7 +979,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 
 		mtcp_check_seqnums(mpcb,1);
 
-		*tp->seq += *used;
+ 		*tp->seq += *used;
 		*data_seq += *used;
 		*len -= *used;
 		*copied+=*used;
@@ -1010,87 +1020,10 @@ static inline void mtcp_skb_entail_reinj(struct sock *sk, struct sk_buff *skb)
 //		tp->nonagle &= ~TCP_NAGLE_PUSH;
 }
 
-int mtcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct inet_connection_sock *icsk = inet_csk(sk);
-	unsigned int cur_mss;
-	int err;
-
-	/* Inconclusive MTU probe */
-	if (icsk->icsk_mtup.probe_size) {
-		icsk->icsk_mtup.probe_size = 0;
-	}
-
-	/* Do not sent more than we queued. 1/4 is reserved for possible
-	 * copying overhead: fragmentation, tunneling, mangling etc.
-	 */
-	if (atomic_read(&sk->sk_wmem_alloc) >
-	    min(sk->sk_wmem_queued + (sk->sk_wmem_queued >> 2), sk->sk_sndbuf))
-		return -EAGAIN;
-
-	if (before(TCP_SKB_CB(skb)->seq, tp->snd_una)) {
-		if (before(TCP_SKB_CB(skb)->end_seq, tp->snd_una))
-			BUG();
-		if (tcp_trim_head(sk, skb, tp->snd_una - TCP_SKB_CB(skb)->seq))
-			return -ENOMEM;
-	}
-
-	if (inet_csk(sk)->icsk_af_ops->rebuild_header(sk))
-		return -EHOSTUNREACH; /* Routing failure or similar. */
-
-	cur_mss = tcp_current_mss(sk, 0);
-
-	/* If receiver has shrunk his window, and skb is out of
-	 * new window, do not retransmit it. The exception is the
-	 * case, when window is shrunk to zero. In this case
-	 * our retransmit serves as a zero window probe.
-	 */
-	if (!before(TCP_SKB_CB(skb)->seq, tcp_wnd_end(tp))
-	    && TCP_SKB_CB(skb)->seq != tp->snd_una)
-		return -EAGAIN;
-
-	if (skb->len > cur_mss) {
-		if (tcp_fragment(sk, skb, cur_mss, cur_mss))
-			return -ENOMEM; /* We'll try again later. */
-	}
-
-	/* Make a copy, if the first transmission SKB clone we made
-	 * is still in somebody's hands, else make a clone.
-	 */
-	TCP_SKB_CB(skb)->when = tcp_time_stamp;
-
-//	err = tcp_transmit_skb(sk, skb, 1, GFP_ATOMIC);
-
-	if (err == 0) {
-		/* Update global TCP statistics. */
-		TCP_INC_STATS(sock_net(sk), TCP_MIB_RETRANSSEGS);
-
-		tp->total_retrans++;
-
-		if (!tp->retrans_out)
-			tp->lost_retrans_low = tp->snd_nxt;
-		TCP_SKB_CB(skb)->sacked |= TCPCB_RETRANS;
-		tp->retrans_out += tcp_skb_pcount(skb);
-
-		/* Save stamp of the first retransmit. */
-		if (!tp->retrans_stamp)
-			tp->retrans_stamp = TCP_SKB_CB(skb)->when;
-
-		tp->undo_retrans++;
-
-		/* snd_nxt is stored to detect loss of retransmitted segment,
-		 * see tcp_input.c tcp_sacktag_write_queue().
-		 */
-		TCP_SKB_CB(skb)->ack_seq = tp->snd_nxt;
-	}
-	return err;
-}
-
 /**
  * Reinject data from one TCP subflow to another one. 
  * The @skb given pertains to the original tp, that keeps it
- * because the skb is still send on the original tp. But additionnally,
+ * because the skb is still sent on the original tp. But additionnally,
  * it is sent on the other subflow. 
  *
  * @pre : @tp must be in ESTABLISHED state
