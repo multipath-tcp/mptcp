@@ -2029,8 +2029,13 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 		}
 		/*retrans_tp is now the tp with highest ssthresh*/
 		if (retrans_tp) {
-			
-			mtcp_reinject_data(skb,retrans_tp);
+			struct sk_buff *skb_it;
+			/*Reinject all queued skbuffs to the other 
+			  subsocket*/
+			for(skb_it=sk->sk_write_queue.next;
+			    skb_it != (struct sk_buff*)&sk->sk_write_queue;
+			    skb_it=skb_it->next)
+				mtcp_reinject_data(skb_it,retrans_tp);
 		}
 	}
 no_mtcp:
