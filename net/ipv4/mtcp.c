@@ -40,6 +40,62 @@
 #define PDEBUG(fmt,args...)
 #endif /*DEBUG_MTCP*/
 
+/*=====================================*/
+/*DEBUGGING*/
+
+#ifdef MTCP_RCV_QUEUE_DEBUG
+struct mtcp_debug mtcp_debug_array1[1000];
+struct mtcp_debug mtcp_debug_array2[1000];
+
+void print_debug_array(void)
+{
+	int i;
+	printk(KERN_ERR "debug array, path index 1:\n");
+	for (i=0;i<1000 && mtcp_debug_array1[i-1].end==0;i++) {
+		printk(KERN_ERR "\t%s:skb %x, len %d\n",
+		       mtcp_debug_array1[i].func_name,
+		       mtcp_debug_array1[i].seq,
+		       mtcp_debug_array1[i].len);
+	}
+	printk(KERN_ERR "debug array, path index 2:\n");
+	for (i=0;i<1000 && mtcp_debug_array2[i-1].end==0;i++) {
+		printk(KERN_ERR "\t%s:skb %x, len %d\n",
+		       mtcp_debug_array2[i].func_name,
+		       mtcp_debug_array2[i].seq,
+		       mtcp_debug_array2[i].len);
+	}
+}
+
+void freeze_rcv_queue(struct sock *sk, const char *func_name)
+{
+	int i;
+	struct sk_buff *skb;	
+	struct tcp_sock *tp=tcp_sk(sk);
+	int path_index=tp->path_index;
+	struct mtcp_debug *mtcp_debug_array;
+
+	if (path_index==0 || path_index==1)
+		mtcp_debug_array=mtcp_debug_array1;
+	else
+		mtcp_debug_array=mtcp_debug_array2;
+	for (skb=skb_peek(&sk->sk_receive_queue),i=0;
+	     skb && skb!=(struct sk_buff*)&sk->sk_receive_queue;
+	     skb=skb->next,i++) {
+		mtcp_debug_array[i].func_name=func_name;
+		mtcp_debug_array[i].seq=TCP_SKB_CB(skb)->seq;
+		mtcp_debug_array[i].len=skb->len;			
+		mtcp_debug_array[i].end=0;
+		BUG_ON(i>=999);
+	}
+	if (i>0) mtcp_debug_array[i-1].end=1;
+	else {
+		mtcp_debug_array[0].func_name="NO_FUNC";
+		mtcp_debug_array[0].end=1;
+	}
+}
+
+#endif
+/*=====================================*/
 
 inline void mtcp_reset_options(struct multipath_options* mopt){
 #ifdef CONFIG_MTCP_PM
@@ -669,7 +725,7 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 		else {
 			__skb_queue_tail(&mpcb->receive_queue, skb);
 			BUG_ON(*len!=0);
-			/*Now we must also enqueue all subsequent contigues 
+			/*Now we must also enqueue all subsequent contiguous
 			  skbs*/
 			enqueue=1;
 			rcv_nxt=TCP_SKB_CB(skb)->end_data_seq;

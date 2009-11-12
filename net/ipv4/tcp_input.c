@@ -4017,9 +4017,6 @@ static void tcp_ofo_queue(struct sock *sk)
 			   TCP_SKB_CB(skb)->end_seq);
 
 		__skb_unlink(skb, &tp->out_of_order_queue);
-		if (skb->len>1500) BUG();
-			
-			
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
 		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 		if (tcp_hdr(skb)->fin)
@@ -4141,14 +4138,15 @@ queue_and_out:
 			if (eaten < 0 &&
 			    tcp_try_rmem_schedule(sk, skb->truesize))
 				goto drop;
+
 			skb_set_owner_r(skb, sk);
-			if (skb->len>1500) BUG();
 			
-			__skb_queue_tail(&sk->sk_receive_queue, skb);
+			__skb_queue_tail(&sk->sk_receive_queue, skb);		
 		}
 		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 		if (skb->len)
 			tcp_event_data_recv(sk, skb);
+
 		if (th->fin)
 			tcp_fin(skb, sk, th);
 
@@ -4171,7 +4169,7 @@ queue_and_out:
 			__kfree_skb(skb);
 		else if (!sock_flag(sk, SOCK_DEAD)) {			
 			mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
-		}
+		}		
 		return;
 	}
 
@@ -4183,11 +4181,11 @@ queue_and_out:
 out_of_window:
 		tcp_enter_quickack_mode(sk);
 		inet_csk_schedule_ack(sk);
-drop:
+drop:		
 		__kfree_skb(skb);
 		return;
 	}
-
+	
 	/* Out of window. F.e. zero window probe. */
 	if (!before(TCP_SKB_CB(skb)->seq, tp->rcv_nxt + tcp_receive_window(tp)))
 		goto out_of_window;
@@ -4303,14 +4301,22 @@ add_sack:
  * sequence numbers start..end.
  * Segments with FIN/SYN are not collapsed (only because this
  * simplifies code)
+ *
+ * TODO: for MPTCP, we CANNOT collapse segments that have non contiguous 
+ * dataseq numbers. It is possible the seq numbers are contiguous but not
+ * dataseq. In that case we must keep the segments separated. Until this
+ * is supported, we disable the tcp_collapse function.
+ * NOTE that when supporting this, we will need to ensure that the path_index
+ * field is copied when creating the new skbuff.
  */
+#ifndef CONFIG_MTCP
 static void
 tcp_collapse(struct sock *sk, struct sk_buff_head *list,
 	     struct sk_buff *head, struct sk_buff *tail,
-	     u32 start, u32 end)
+	     u32 start, u32 end, u32 data_start, u32 data_end)
 {
 	struct sk_buff *skb;
-
+	
 	/* First, check that queue is collapsible and find
 	 * the point where collapsing can be useful. */
 	for (skb = head; skb != tail;) {
@@ -4338,6 +4344,7 @@ tcp_collapse(struct sock *sk, struct sk_buff_head *list,
 
 		/* Decided to skip this, advance start seq. */
 		start = TCP_SKB_CB(skb)->end_seq;
+		data_start = TCP_SKB_CB(skb)->end_data_seq;
 		skb = skb->next;
 	}
 	if (skb == tail || tcp_hdr(skb)->syn || tcp_hdr(skb)->fin)
@@ -4366,6 +4373,8 @@ tcp_collapse(struct sock *sk, struct sk_buff_head *list,
 		memcpy(nskb->head, skb->head, header);
 		memcpy(nskb->cb, skb->cb, sizeof(skb->cb));
 		TCP_SKB_CB(nskb)->seq = TCP_SKB_CB(nskb)->end_seq = start;
+		TCP_SKB_CB(nskb)->data_seq = TCP_SKB_CB(nskb)->end_data_seq = 
+			data_start;
 		__skb_insert(nskb, skb->prev, skb, list);
 		skb_set_owner_r(nskb, sk);
 
@@ -4380,6 +4389,7 @@ tcp_collapse(struct sock *sk, struct sk_buff_head *list,
 				if (skb_copy_bits(skb, offset, skb_put(nskb, size), size))
 					BUG();
 				TCP_SKB_CB(nskb)->end_seq += size;
+				TCP_SKB_CB(nskb)->end_data_seq += size;
 				copy -= size;
 				start += size;
 			}
@@ -4394,25 +4404,29 @@ tcp_collapse(struct sock *sk, struct sk_buff_head *list,
 				    tcp_hdr(skb)->fin)
 					return;
 			}
-		}
+		}		
 	}
 }
+#endif
 
 /* Collapse ofo queue. Algorithm: select contiguous sequence of skbs
  * and tcp_collapse() them until all the queue is collapsed.
  */
+#ifndef CONFIG_MTCP
 static void tcp_collapse_ofo_queue(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *skb = skb_peek(&tp->out_of_order_queue);
 	struct sk_buff *head;
-	u32 start, end;
+	u32 start, end,data_start,data_end;
 
 	if (skb == NULL)
 		return;
 
 	start = TCP_SKB_CB(skb)->seq;
+	data_start = TCP_SKB_CB(skb)->data_seq;
 	end = TCP_SKB_CB(skb)->end_seq;
+	data_end = TCP_SKB_CB(skb)->end_data_seq;
 	head = skb;
 
 	for (;;) {
@@ -4424,21 +4438,29 @@ static void tcp_collapse_ofo_queue(struct sock *sk)
 		    after(TCP_SKB_CB(skb)->seq, end) ||
 		    before(TCP_SKB_CB(skb)->end_seq, start)) {
 			tcp_collapse(sk, &tp->out_of_order_queue,
-				     head, skb, start, end);
+				     head, skb, start, end,data_start,data_end);
 			head = skb;
 			if (skb == (struct sk_buff *)&tp->out_of_order_queue)
 				break;
 			/* Start new segment */
 			start = TCP_SKB_CB(skb)->seq;
+			data_start=TCP_SKB_CB(skb)->data_seq;
 			end = TCP_SKB_CB(skb)->end_seq;
+			data_end = TCP_SKB_CB(skb)->end_data_seq;
 		} else {
-			if (before(TCP_SKB_CB(skb)->seq, start))
+			if (before(TCP_SKB_CB(skb)->seq, start)) {
 				start = TCP_SKB_CB(skb)->seq;
-			if (after(TCP_SKB_CB(skb)->end_seq, end))
+				data_start = TCP_SKB_CB(skb)->data_seq;
+			}
+			if (after(TCP_SKB_CB(skb)->end_seq, end)) {
 				end = TCP_SKB_CB(skb)->end_seq;
+				data_end = TCP_SKB_CB(skb)->end_data_seq;
+			}
 		}
 	}
 }
+#endif
+
 
 /*
  * Purge the out-of-order queue.
@@ -4486,11 +4508,13 @@ static int tcp_prune_queue(struct sock *sk)
 	else if (tcp_memory_pressure)
 		tp->rcv_ssthresh = min(tp->rcv_ssthresh, 4U * tp->advmss);
 
+#ifndef CONFIG_MTCP
 	tcp_collapse_ofo_queue(sk);
 	tcp_collapse(sk, &sk->sk_receive_queue,
 		     sk->sk_receive_queue.next,
 		     (struct sk_buff *)&sk->sk_receive_queue,
 		     tp->copied_seq, tp->rcv_nxt);
+#endif
 	sk_mem_reclaim(sk);
 
 	if (atomic_read(&sk->sk_rmem_alloc) <= sk->sk_rcvbuf)
@@ -4924,7 +4948,7 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	PDEBUG("%s:pi %d - seq is %x,sock is %p\n",
 	       __FUNCTION__,skb->path_index,TCP_SKB_CB(skb)->seq,
 	       sk);
-
+	       
 	tcpprobe_rcv_established(sk,skb,th,len);
 	
 	/*
@@ -5081,15 +5105,12 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 				NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPHPHITS);
 
 				/* Bulk data transfer: receiver */
-				if (skb->len>1500) BUG();			
-			
 				__skb_pull(skb, tcp_header_len);
-				if (skb->len>1500) BUG();			
 				__skb_queue_tail(&sk->sk_receive_queue, skb);
 				skb_set_owner_r(skb, sk);
 				tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 			}
-
+			
 			tcp_event_data_recv(sk, skb);
 
 			if (TCP_SKB_CB(skb)->ack_seq != tp->snd_una) {
@@ -5112,7 +5133,7 @@ no_ack:
 			return 0;
 		}
 	}
-
+	
 slow_path:
 	if (len < (th->doff << 2) || tcp_checksum_complete_user(sk, skb)) {
 		printk(KERN_ERR "At line %d\n",__LINE__);
@@ -5349,11 +5370,7 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 				NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPHPHITS);
 
 				/* Bulk data transfer: receiver */
-				if (skb->len>1500) BUG();
-			
-			
 				__skb_pull(skb, tcp_header_len);
-				if (skb->len>1500) BUG();			
 				__skb_queue_tail(&sk->sk_receive_queue, skb);
 				skb_set_owner_r(skb, sk);
 				tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;

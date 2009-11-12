@@ -401,9 +401,25 @@ static void skb_release_all(struct sk_buff *skb)
  *	Clean the state. This is an internal helper function. Users should
  *	always call kfree_skb
  */
+#include <net/tcp.h>
 
 void __kfree_skb(struct sk_buff *skb)
 {
+	struct sk_buff_head *queue;
+	if (skb->sk) {
+		struct sk_buff *it;
+		queue=&skb->sk->sk_receive_queue;
+		it=queue->next;
+		
+		while (it!=(struct sk_buff*) queue) {
+			if (it==skb) {
+				console_loglevel=8;
+				BUG();
+			}
+			it=it->next;
+		}
+	}
+		
 	skb_release_all(skb);
 	kfree_skbmem(skb);
 }

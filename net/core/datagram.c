@@ -521,7 +521,6 @@ fault:
 __sum16 __skb_checksum_complete_head(struct sk_buff *skb, int len)
 {
 	__sum16 sum;
-	__wsum sum_orig=skb->csum;
 
 	sum = csum_fold(skb_checksum(skb, 0, len, skb->csum));
 	if (likely(!sum)) {
@@ -530,13 +529,6 @@ __sum16 __skb_checksum_complete_head(struct sk_buff *skb, int len)
 		skb->ip_summed = CHECKSUM_UNNECESSARY;
 	}
 
-	if (sum) {
-//		printk(KERN_ERR "bad checksum for seq:%x\n",
-//		       TCP_SKB_CB(skb)->seq); /*TODEL*/
-		printk(KERN_ERR "obtained %x instead of 0, "
-		       "sum_orig:%x\n",sum,sum_orig);
-		printk(KERN_ERR "headlen:%d\n",skb_headlen(skb));
-	}
 	return sum;
 }
 EXPORT_SYMBOL(__skb_checksum_complete_head);

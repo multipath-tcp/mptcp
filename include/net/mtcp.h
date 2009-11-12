@@ -53,6 +53,19 @@ struct multipath_options {
 	       saw_dsn:1;	
 };
 
+
+#ifdef MTCP_RCV_QUEUE_DEBUG
+struct mtcp_debug {
+	const char* func_name;
+	u32 seq;
+	int len;
+	int end; /*1 if this is the last debug info*/
+};
+
+void print_debug_array(void);
+void freeze_rcv_queue(struct sock *sk, const char *func_name);
+#endif
+
 extern struct proto mtcpsub_prot;
 
 struct tcp_sock;
@@ -185,9 +198,9 @@ struct multipath_pcb {
 	})						\
 
 
-/*Wait for event @__condition to happen ony subsocket, 
+/*Wait for event @__condition to happen on any subsocket, 
   or __timeo to expire
-  This is the MTCP equivalent of sk_wait_event */
+  This is the MPTCP equivalent of sk_wait_event */
 #define mtcp_wait_event_any_sk(__mpcb,__sk, __timeo, __condition)	\
 	({	int __rc; struct tcp_sock *__tp;			\
 		mtcp_for_each_sk(__mpcb,__sk,__tp) {			\

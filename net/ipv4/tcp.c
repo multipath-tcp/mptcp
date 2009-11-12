@@ -1991,11 +1991,14 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		/* Next get a buffer. */
 		mtcp_for_each_sk(mpcb,sk,tp) {
 			struct sk_buff *first_ofo=skb_peek(&mpcb->out_of_order_queue); /*TODEL*/
+
 			skb = skb_peek(&sk->sk_receive_queue);
 			if (!skb)
 				continue;
 			
 			if (skb->len>1500) {
+				printk(KERN_ERR "sock_owned_by_user:%d\n",
+				       sock_owned_by_user(sk));
 				printk(KERN_ERR "BUG:pi %d, skb->seq %x,"
 				       "skb->len:%d\n",
 				       skb->path_index,TCP_SKB_CB(skb)->seq,
@@ -2229,7 +2232,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				}
 			}
 		}
-		
+
 		if (user_recv) {
 			int chunk;
 			PDEBUG("At line %d\n",__LINE__);
@@ -2295,7 +2298,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				}
 			}
 		}
-		mtcp_for_each_tp(mpcb,tp)
+		mtcp_for_each_tp(mpcb,tp) {
 			if ((flags & MSG_PEEK) && 
 			    tp->peek_seq != tp->copied_seq) {
 				if (net_ratelimit())
@@ -2306,6 +2309,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 					       task_pid_nr(current));
 				tp->peek_seq = tp->copied_seq;
 			}
+		}
 		continue;
 
 	found_ok_skb:
@@ -2336,7 +2340,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 					used = urg_offset;
 			}
 		}
-		if (skb->len>1500) BUG();
 
 		if (!(flags & MSG_TRUNC)) {
 			/*From this subsocket point of view, data is ready
@@ -2360,20 +2363,18 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			PDEBUG("MSG_TRUNC is set\n"); /*TODEL*/
 		mtcp_for_each_sk(mpcb,sk,tp)
 			tcp_rcv_space_adjust(sk);
-
+		
 	skip_copy:
 		PDEBUG("At line %d\n",__LINE__);
-		mtcp_for_each_sk(mpcb,sk,tp)
+		mtcp_for_each_sk(mpcb,sk,tp) {
 			if (tp->urg_data && after(tp->copied_seq, 
 						  tp->urg_seq)) {
 				tp->urg_data = 0;
 				tcp_fast_path_check(sk);
 			}
-		if (used + offset < skb->len) {
-			printk(KERN_ERR "used:%lu, offset:%lu\n",used,
-			       (long unsigned int)offset); /*TODEL*/
-			continue; 
 		}
+		if (used + offset < skb->len)
+			continue; 
 
 		if (tcp_hdr(skb)->fin)
 			goto found_fin_ok;
@@ -2427,10 +2428,13 @@ skip_loop:
 	 */
 
 	/* Clean up data we have read: This will do ACK frames. */
-	mtcp_for_each_sk(mpcb,sk,tp)
+	mtcp_for_each_sk(mpcb,sk,tp) {
 		tcp_cleanup_rbuf(sk, tp->copied);
+	}
 	
-	mtcp_for_each_sk(mpcb,sk,tp) release_sock(sk);
+	mtcp_for_each_sk(mpcb,sk,tp) {
+		release_sock(sk);
+	}
 	mutex_unlock(&mpcb->mutex);
 	PDEBUG("Leaving %s, copied %d\n",__FUNCTION__,copied);
 	return copied;

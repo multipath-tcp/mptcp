@@ -1369,10 +1369,11 @@ static void __release_sock(struct sock *sk)
 
 		do {
 			struct sk_buff *next = skb->next;
-
-			skb->next = NULL;
+			
+			skb->next = NULL;		       
+			
 			sk->sk_backlog_rcv(sk, skb);
-
+						
 			/*
 			 * We are in process context here with softirqs
 			 * disabled, use cond_resched_softirq() to preempt.

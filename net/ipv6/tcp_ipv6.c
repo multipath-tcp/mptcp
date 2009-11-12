@@ -1573,19 +1573,23 @@ int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 	   by tcp. Feel free to propose better solution.
 					       --ANK (980728)
 	 */
-	if (np->rxopt.all)
+	if (np->rxopt.all) {
+		printk(KERN_ERR "cloning inc segment\n");
 		opt_skb = skb_clone(skb, GFP_ATOMIC);
+	}
 
 	if (sk->sk_state == TCP_ESTABLISHED) { /* Fast path */
 		TCP_CHECK_TIMER(sk);
+
 		if (tcp_rcv_established(sk, skb, tcp_hdr(skb), skb->len))
 			goto reset;
+		
 		TCP_CHECK_TIMER(sk);
 		if (opt_skb)
 			goto ipv6_pktoptions;
 		return 0;
 	}
-
+	
 	if (skb->len < tcp_hdrlen(skb) || tcp_checksum_complete(skb))
 		goto csum_err;
 
@@ -1618,7 +1622,7 @@ int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 
 reset:
 	tcp_v6_send_reset(sk, skb);
-discard:
+discard:	
 	if (opt_skb)
 		__kfree_skb(opt_skb);
 	kfree_skb(skb);
@@ -1675,7 +1679,7 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 	if (!pskb_may_pull(skb, sizeof(struct tcphdr)))
 		goto discard_it;
 
-	th = tcp_hdr(skb);
+	th = tcp_hdr(skb);	
 
 	if (th->doff < sizeof(struct tcphdr)/4)
 		goto bad_packet;
@@ -1725,14 +1729,12 @@ process:
 			ret = tcp_v6_do_rcv(sk, skb);
 		else
 #endif
-		{
 			if (!tcp_prequeue(sk, skb))
 				ret = tcp_v6_do_rcv(sk, skb);
-		}
-	} else
+	} else 
 		sk_add_backlog(sk, skb);
 	bh_unlock_sock(sk);
-
+	
 	sock_put(sk);
 	return ret ? -1 : 0;
 
