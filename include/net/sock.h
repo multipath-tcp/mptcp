@@ -1117,8 +1117,6 @@ static inline int skb_copy_to_page(struct sock *sk, char __user *from,
 	} else if (copy_from_user(page_address(page) + off, from, copy))
 		return -EFAULT;
 
-	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
-
 	skb->len	     += copy;
 	skb->data_len	     += copy;
 	skb->truesize	     += copy;
