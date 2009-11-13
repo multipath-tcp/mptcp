@@ -597,7 +597,6 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			continue;
 		}
 		copied+=ret;
-		BUG_ON(i++==30);
 	}
 
 	PDEBUG("Leaving %s, copied %d, next data seq %x\n",
