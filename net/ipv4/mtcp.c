@@ -1003,12 +1003,12 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 
 			/*Since this segment has already been received on
 			  another subflow, we can just ignore it, and advance
-			  the subflow seqnum of this subsocket*/
+			  the subflow seqnum of this subsocket.
+			  Note that we do not advance tp->bytes_eaten, since 
+			  this particular data is not eaten by the app.*/
 			*used=skb->len;
 			*tp->seq += *used;
-			tp->bytes_eaten+=*used;
-			tp->copied+=*used;
-			
+			tp->copied+=*used;			
 			return MTCP_EATEN;
 		}
 
