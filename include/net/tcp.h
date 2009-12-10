@@ -1041,9 +1041,30 @@ static inline int tcp_win_from_space(int space)
 /* Note: caller must be prepared to deal with negative returns */ 
 static inline int tcp_space(const struct sock *sk)
 {
+#ifdef CONFIG_MTCP
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct sock *sk_it;
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+	int free_space=0;
+
+	if (!tp->mpc) return tcp_win_from_space(sk->sk_rcvbuf);
+
+	/*Compute the sum of free memory for all subflows*/
+	mtcp_for_each_sk(mpcb,sk_it,tp) {
+		free_space+=sk_it->sk_rcvbuf - 
+			atomic_read(&sk_it->sk_rmem_alloc);
+	}
+	/*We must still remove from this the space needed by meta-buffered
+	  data*/
+	free_space-=mpcb->ofo_bytes;
+		
+	return tcp_win_from_space(free_space);
+	
+#else
 	return tcp_win_from_space(sk->sk_rcvbuf -
 				  atomic_read(&sk->sk_rmem_alloc));
-} 
+#endif
+}
 
 static inline int tcp_full_space(const struct sock *sk)
 {

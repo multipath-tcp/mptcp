@@ -1866,7 +1866,7 @@ static void tcp_retrans_try_collapse(struct sock *sk, struct sk_buff *skb,
 	int skb_size, next_skb_size;
 	u16 flags;
 
-	PDEBUG("Entering %s\n",__FUNCTION__);
+	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
 
 	/* The first test we must make is that neither of these two
 	 * SKB's are still referenced by someone else.
