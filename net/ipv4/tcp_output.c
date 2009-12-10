@@ -2004,7 +2004,6 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 	unsigned int cur_mss;
 	int err;
 
-#ifdef CONFIG_MTCP_REMOVED
 	/*For any retransmission, we check if we can find another subflow
 	  where it would be better to retransmit
 	  Currently we try with retransmission policy RTX-SSTHRESH*/
@@ -2039,8 +2038,6 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 		}
 	}
 no_mtcp:
-#endif
-
 
 	/* Inconclusive MTU probe */
 	if (icsk->icsk_mtup.probe_size) {

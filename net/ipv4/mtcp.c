@@ -987,10 +987,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		/*The skb can be read by the app*/
 		data_offset= *data_seq - TCP_SKB_CB(skb)->data_seq;
 		*used = skb->len - data_offset;
-		/*In the current implementation, we do not 
-		  retransmit skbs on other queues, so we cannot have any
-		  duplicate here. Duplicates are managed by each subflow 
-		  individually.*/
+		/*duplicate segment*/
 		if (*used==0) {
 			printk(KERN_ERR "Received exact duplicate segment"
 			       "by reinjection\n");
