@@ -117,6 +117,7 @@ struct multipath_pcb {
 	u32    write_seq;  /*data sequence number, counts the number of 
 			     bytes the user has written so far */
 	u32    copied_seq; /* Head of yet unread data		*/
+ 	u32    snd_una;	/* First dataseq we want an ack for */
 	
 	/*user data, unpacketized
 	  This is a circular buffer, data is stored in the "subbuffer"

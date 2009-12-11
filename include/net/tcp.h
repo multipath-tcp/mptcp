@@ -836,7 +836,17 @@ static __inline__ __u32 tcp_max_burst(const struct tcp_sock *tp)
 /* Returns end sequence number of the receiver's advertised window */
 static inline u32 tcp_wnd_end(const struct tcp_sock *tp)
 {
+#ifdef CONFIG_MTCP	
+	/*With MPTCP, we return the end DATASEQ number of the receiver's
+	  advertised window*/
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+	
+	if (!tp->mpc) return tp->snd_una + tp->snd_wnd;
+	
+	return mpcb->snd_una+tp->snd_wnd;
+#else
 	return tp->snd_una + tp->snd_wnd;
+#endif
 }
 extern int tcp_is_cwnd_limited(const struct sock *sk, u32 in_flight);
 

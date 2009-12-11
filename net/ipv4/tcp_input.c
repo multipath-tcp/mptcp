@@ -2939,6 +2939,20 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets)
 		if (!fully_acked)
 			break;
 
+		/*Before we remove the skb, we advance mpcb->snd_una*/
+#ifdef CONFIG_MTCP
+		{
+			struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+			if (!tp->mpcb) goto no_mptcp;
+			
+			/*Since we are about to remove this segment from the
+			  retransmit queue, we know for sure that is has been
+			 acked*/
+			if (before(mpcb->snd_una,TCP_SKB_CB(skb)->end_data_seq))
+				mpcb->snd_una=TCP_SKB_CB(skb)->end_data_seq;
+		}
+	no_mptcp:
+#endif
 		tcp_unlink_write_queue(skb, sk);
 		sk_wmem_free_skb(sk, skb);
 		tcp_clear_all_retrans_hints(tp);
@@ -3049,6 +3063,10 @@ static inline int tcp_may_update_window(const struct tcp_sock *tp,
 					const u32 ack, const u32 ack_seq,
 					const u32 nwin)
 {
+/*the variable snd_wl1 tracks the
+  newest sequence number that we've seen.  It helps prevent snd_wnd from
+  being reopened on re-transmitted data.  If snd_wl1 is greater than
+  received sequence #, we skip it.*/
 	return (after(ack, tp->snd_una) ||
 		after(ack_seq, tp->snd_wl1) ||
 		(ack_seq == tp->snd_wl1 && nwin > tp->snd_wnd));
