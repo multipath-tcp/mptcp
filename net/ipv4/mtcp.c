@@ -892,26 +892,23 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 	u32 data_offset;
 	int err;
 
-	if (skb->len>1500) BUG();   
-	
 	/*Is this a duplicate segment ?*/
 	if (after(*data_seq,TCP_SKB_CB(skb)->data_seq+skb->len)) {
-		/*In the current implementation, we do not 
-		  retransmit skbs on other queues, so we cannot have any
-		  duplicate here. Duplicates are managed by each subflow 
-		  individually.*/
-		printk(KERN_ERR "debug:%d,count:%d\n",skb->debug,
-		       skb->debug_count);
+		/*Duplicate segment. We can arrive here only if a segment 
+		  has been retransmitted by the sender on another subflow.
+		  Retransmissions on the same subflow are handled at the
+		  subflow level.*/
+		printk(KERN_ERR "debug:%d,count:%d,line:%d,file:%s\n",
+		       skb->debug,
+		       skb->debug_count,__LINE__,__FILE__);
 		printk(KERN_ERR "init data_seq:%x,len:%d,copied:%x,"
 		       "data_seq:%x, skb->len : %d,ucopy.task:%p\n",
 		       skb->data_seq,(int)*len,*data_seq,
 		       TCP_SKB_CB(skb)->data_seq,(int)skb->len,
 		       mpcb->ucopy.task);
-		console_loglevel=8;
-		BUG();
 		return MTCP_EATEN;
 	}
-
+	
 	if (before(*data_seq,TCP_SKB_CB(skb)->data_seq)) {
 		/*the skb must be queued in the ofo queue*/
 		__skb_unlink(skb, &sk->sk_receive_queue);
