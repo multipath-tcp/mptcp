@@ -97,10 +97,20 @@ static inline __u32 tcp_acceptable_seq(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	if (!before(tcp_wnd_end(tp), tp->snd_nxt))
+	/*We do not call tcp_wnd_end(..,1) here, 
+	  because even when MPTCP is used, 
+	  we exceptionnaly want here to consider the send window as related to
+	  the seqnums, not the dataseqs. The reason is that we have no dataseq
+	  nums in non-data segments (this function is only called for the
+	  construction of non-data segments, e.g. acks), and the dataseq is now
+	  the only field that can be checked by the receiver. The seqnum we
+	  choose here ensure that we are accepted as well by middleboxes
+	  that are not aware of MPTCP stuff.*/
+	
+	if (!before(tcp_wnd_end(tp,0), tp->snd_nxt))
 		return tp->snd_nxt;
 	else
-		return tcp_wnd_end(tp);
+		return tcp_wnd_end(tp,0);
 }
 
 /* Calculate mss to advertise in SYN segment.
@@ -1197,7 +1207,8 @@ static unsigned int tcp_mss_split_point(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	u32 needed, window, cwnd_len;
 
-	window = tcp_wnd_end(tp) - TCP_SKB_CB(skb)->seq;
+	window = tcp_wnd_end(tp,tp->mpc) - 
+		(tp->mpc)?TCP_SKB_CB(skb)->data_seq:TCP_SKB_CB(skb)->seq;
 	cwnd_len = mss_now * cwnd;
 
 	if (likely(cwnd_len <= window && skb != tcp_write_queue_tail(sk)))
@@ -1301,12 +1312,15 @@ static inline int tcp_nagle_test(struct tcp_sock *tp, struct sk_buff *skb,
 static inline int tcp_snd_wnd_test(struct tcp_sock *tp, struct sk_buff *skb,
 				   unsigned int cur_mss)
 {
-	u32 end_seq = TCP_SKB_CB(skb)->end_seq;
-
+	u32 end_seq = (tp->mpc)?TCP_SKB_CB(skb)->end_data_seq:
+		TCP_SKB_CB(skb)->end_seq;
+	
 	if (skb->len > cur_mss)
-		end_seq = TCP_SKB_CB(skb)->seq + cur_mss;
-
-	return !after(end_seq, tcp_wnd_end(tp));
+		end_seq = (tp->mpc)?TCP_SKB_CB(skb)->data_seq:
+			TCP_SKB_CB(skb)->seq + cur_mss;
+	
+	
+	return !after(end_seq, tcp_wnd_end(tp,tp->mpc));
 }
 
 /* This checks if the data bearing packet SKB (usually tcp_send_head(sk))
@@ -1428,8 +1442,10 @@ static int tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb)
 
 	BUG_ON(tcp_skb_pcount(skb) <= 1 || (tp->snd_cwnd <= in_flight));
 
-	send_win = tcp_wnd_end(tp) - TCP_SKB_CB(skb)->seq;
-
+	send_win = tcp_wnd_end(tp,tp->mpc) - 
+		(tp->mpc)?TCP_SKB_CB(skb)->data_seq:
+		TCP_SKB_CB(skb)->seq;
+	
 	/* From in_flight test above, we know that cwnd > in_flight.  */
 	cong_win = (tp->snd_cwnd - in_flight) * tp->mss_cache;
 
@@ -1510,7 +1526,7 @@ static int tcp_mtu_probe(struct sock *sk)
 
 	if (tp->snd_wnd < size_needed)
 		return -1;
-	if (after(tp->snd_nxt + size_needed, tcp_wnd_end(tp)))
+	if (after(tp->snd_nxt + size_needed, tcp_wnd_end(tp,0)))
 		return 0;
 
 	/* Do we need to wait to drain cwnd? With none in flight, don't stall */
@@ -1883,9 +1899,12 @@ static void tcp_retrans_try_collapse(struct sock *sk, struct sk_buff *skb,
 		return;
 
 	/* Next skb is out of window. */
-	if (after(TCP_SKB_CB(next_skb)->end_seq, tcp_wnd_end(tp)))
+	if (!tp->mpc && after(TCP_SKB_CB(next_skb)->end_seq, tcp_wnd_end(tp,0)))
 		return;
-
+	if (tp->mpc && after(TCP_SKB_CB(next_skb)->end_data_seq, 
+			     tcp_wnd_end(tp,1)))
+		return;
+	
 	/* Punt if not enough space exists in the first SKB for
 	 * the data in the second, or the total combined payload
 	 * would exceed the MSS.
@@ -2068,7 +2087,8 @@ no_mtcp:
 	 * case, when window is shrunk to zero. In this case
 	 * our retransmit serves as a zero window probe.
 	 */
-	if (!before(TCP_SKB_CB(skb)->seq, tcp_wnd_end(tp))
+	if (!before((tp->mpc)?TCP_SKB_CB(skb)->data_seq:
+		    TCP_SKB_CB(skb)->seq, tcp_wnd_end(tp,tp->mpc))
 	    && TCP_SKB_CB(skb)->seq != tp->snd_una)
 		return -EAGAIN;
 
@@ -2675,10 +2695,13 @@ int tcp_write_wakeup(struct sock *sk)
 		return -1;
 
 	if ((skb = tcp_send_head(sk)) != NULL &&
-	    before(TCP_SKB_CB(skb)->seq, tcp_wnd_end(tp))) {
+	    before((tp->mpc)?TCP_SKB_CB(skb)->data_seq:
+		   TCP_SKB_CB(skb)->seq, tcp_wnd_end(tp,tp->mpc))) {
 		int err;
 		unsigned int mss = tcp_current_mss(sk, 0);
-		unsigned int seg_size = tcp_wnd_end(tp) - TCP_SKB_CB(skb)->seq;
+		unsigned int seg_size = tcp_wnd_end(tp,tp->mpc) - 
+			(tp->mpc)?TCP_SKB_CB(skb)->data_seq:
+			TCP_SKB_CB(skb)->seq;
 
 		if (before(tp->pushed_seq, TCP_SKB_CB(skb)->end_seq))
 			tp->pushed_seq = TCP_SKB_CB(skb)->end_seq;

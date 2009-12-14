@@ -250,6 +250,10 @@ struct tcp_sock {
 	u32     peek_seq;       /* Peek seq, for use by MTCP            */
 	u32     *seq;
 	u32     copied;
+#endif
+/*We keep these flags even if CONFIG_MTCP is not checked, because it allows
+  checking MTPC capability just by checking the mpc flag, rather than adding
+  ifdefs everywhere.*/
 	u8      mpc:1,          /* Other end is multipath capable       */
 		wait_event_any_sk_released:1, /*1 if mtcp_wait_event_any_sk()
 						has released this sock, and
@@ -260,6 +264,7 @@ struct tcp_sock {
 						can appear during we sleep.*/
 		wait_data_bit_set:1; /*Similar to previous, for wait_data*/
 	
+#ifdef CONFIG_MTCP
 	u32     last_write_seq; /* Last write seq copied by this subsocket
 				   to the network. When we receive new data
 				   with a write_seq non contigues to this 

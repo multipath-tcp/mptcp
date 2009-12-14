@@ -3027,10 +3027,21 @@ static void tcp_ack_probe(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
+	int usable_wopen;
 
 	/* Was it a usable window open? */
 
-	if (!after(TCP_SKB_CB(tcp_send_head(sk))->end_seq, tcp_wnd_end(tp))) {
+	if (tp->mpc) 
+		usable_wopen=(!after(
+				      TCP_SKB_CB(
+					      tcp_send_head(sk))->end_data_seq, 
+				      tcp_wnd_end(tp,1)));
+	else
+		usable_wopen=(!after(TCP_SKB_CB(
+					     tcp_send_head(sk))->end_seq, 
+				     tcp_wnd_end(tp,0)));
+	
+	if (usable_wopen) {
 		icsk->icsk_backoff = 0;
 		inet_csk_clear_xmit_timer(sk, ICSK_TIME_PROBE0);
 		/* Socket must be waked up by subsequent tcp_data_snd_check().
