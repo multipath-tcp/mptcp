@@ -906,6 +906,12 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		       skb->data_seq,(int)*len,*data_seq,
 		       TCP_SKB_CB(skb)->data_seq,(int)skb->len,
 		       mpcb->ucopy.task);
+
+		/* We do not read the skb, since it was already received on
+		   another subflow, but we advance the seqnum so that the
+		   subflow can continue */
+		*tp->seq +=skb->len;
+		
 		return MTCP_EATEN;
 	}
 	
