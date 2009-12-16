@@ -1012,7 +1012,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			skb = tcp_write_queue_tail(sk);
 
 			if (!tcp_send_head(sk) || 
-			    mpcb->write_seq!=tp->last_write_seq ||
+			    (tp->mpc && mpcb->write_seq!=tp->last_write_seq) ||
 			    (copy = size_goal - skb->len) <= 0) {
 				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 			new_segment:
@@ -1020,7 +1020,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 				 * allocate skb fitting to single page.
 				 */
 				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
-				if (nbnewseg++==1) goto out;
+				if (tp->mpc && nbnewseg++==1) goto out;
 				if (!sk_stream_memory_free(sk))
 					goto wait_for_sndbuf;
 				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
@@ -1170,9 +1170,9 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			if (copied)
 				tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
 
-			err = sk_stream_wait_memory(sk, &timeo);
-			
-			if (err) goto do_error;
+			if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
+				goto do_error;
+
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 			mss_now = tcp_current_mss(sk, !(flags&MSG_OOB));
 			size_goal = tp->xmit_size_goal;
