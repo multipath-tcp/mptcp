@@ -2031,7 +2031,7 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 		struct tcp_sock *tp_it,*retrans_tp=NULL;
 		struct multipath_pcb *mpcb=tp->mpcb;
 		
-		if(sk->sk_state!=TCP_ESTABLISHED)
+		if (!tp->mpc || sk->sk_state!=TCP_ESTABLISHED)
 			goto no_mtcp;
 
 		skb->path_mask|=PI_TO_FLAG(tp->path_index);
