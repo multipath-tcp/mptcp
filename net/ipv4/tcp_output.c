@@ -1208,7 +1208,7 @@ static unsigned int tcp_mss_split_point(struct sock *sk, struct sk_buff *skb,
 	u32 needed, window, cwnd_len;
 
 	window = tcp_wnd_end(tp,tp->mpc) - 
-		(tp->mpc)?TCP_SKB_CB(skb)->data_seq:TCP_SKB_CB(skb)->seq;
+		((tp->mpc)?TCP_SKB_CB(skb)->data_seq:TCP_SKB_CB(skb)->seq);
 	cwnd_len = mss_now * cwnd;
 
 	if (likely(cwnd_len <= window && skb != tcp_write_queue_tail(sk)))
@@ -1372,6 +1372,8 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 
 	PDEBUG("Entering %s\n",__FUNCTION__);
 
+	BUG_ON(len==0); /*This would create an empty segment*/
+
 	/* All of a TSO frame must be composed of paged data.  */
 	if (skb->len != skb->data_len)
 		return tcp_fragment(sk, skb, len, mss_now);
@@ -1443,8 +1445,8 @@ static int tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb)
 	BUG_ON(tcp_skb_pcount(skb) <= 1 || (tp->snd_cwnd <= in_flight));
 
 	send_win = tcp_wnd_end(tp,tp->mpc) - 
-		(tp->mpc)?TCP_SKB_CB(skb)->data_seq:
-		TCP_SKB_CB(skb)->seq;
+		((tp->mpc)?TCP_SKB_CB(skb)->data_seq:
+		 TCP_SKB_CB(skb)->seq);
 	
 	/* From in_flight test above, we know that cwnd > in_flight.  */
 	cong_win = (tp->snd_cwnd - in_flight) * tp->mss_cache;
@@ -2700,8 +2702,8 @@ int tcp_write_wakeup(struct sock *sk)
 		int err;
 		unsigned int mss = tcp_current_mss(sk, 0);
 		unsigned int seg_size = tcp_wnd_end(tp,tp->mpc) - 
-			(tp->mpc)?TCP_SKB_CB(skb)->data_seq:
-			TCP_SKB_CB(skb)->seq;
+			((tp->mpc)?TCP_SKB_CB(skb)->data_seq:
+			 TCP_SKB_CB(skb)->seq);
 
 		if (before(tp->pushed_seq, TCP_SKB_CB(skb)->end_seq))
 			tp->pushed_seq = TCP_SKB_CB(skb)->end_seq;

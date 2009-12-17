@@ -988,7 +988,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		int seglen = iov->iov_len;
 		unsigned char __user *from = iov->iov_base;
 
-		iov++;						
+		iov++;
 		
 #ifdef CONFIG_MTCP
 		/*Skipping the offset (stored in the size argument)*/
@@ -1153,6 +1153,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			if ((seglen -= copy) == 0 && iovlen == 0)
 				goto out;
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
+
 			if (skb->len < size_goal || (flags & MSG_OOB))
 				continue;
 
