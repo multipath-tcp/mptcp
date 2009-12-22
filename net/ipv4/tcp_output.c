@@ -979,6 +979,10 @@ int tcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
 		__pskb_trim_head(skb, len - skb_headlen(skb));
 
 	TCP_SKB_CB(skb)->seq += len;
+#ifdef CONFIG_MTCP
+	TCP_SKB_CB(skb)->data_seq += len;
+#endif
+
 	skb->ip_summed = CHECKSUM_PARTIAL;
 
 	skb->truesize	     -= len;
@@ -1567,6 +1571,9 @@ static int tcp_mtu_probe(struct sock *sk)
 				tcp_set_skb_tso_segs(sk, skb, mss_now);
 			}
 			TCP_SKB_CB(skb)->seq += copy;
+#ifdef CONFIG_MTCP
+			TCP_SKB_CB(skb)->data_seq += copy;
+#endif
 		}
 
 		len += copy;
