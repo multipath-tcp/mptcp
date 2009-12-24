@@ -3552,7 +3552,10 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 		}
 	}
 #ifdef CONFIG_MTCP
-	if (!mopt->saw_dsn) TCP_SKB_CB(skb)->data_len=0;
+	if (!mopt->saw_dsn)
+		TCP_SKB_CB(skb)->data_len=
+			TCP_SKB_CB(skb)->data_seq=
+			TCP_SKB_CB(skb)->end_data_seq=0;
 #endif
 }
 
@@ -4121,33 +4124,39 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 #ifdef CONFIG_MTCP
 		if (mpcb->ucopy.task == current &&
 		    tp->copied_seq == tp->rcv_nxt && mpcb->ucopy.len &&
-		    sock_owned_by_user(sk) && !tp->urg_data &&
-		    TCP_SKB_CB(skb)->data_seq==mpcb->copied_seq) {
-			int chunk = min_t(unsigned int, skb->len,
-					  mpcb->ucopy.len);
-			
-			__set_current_state(TASK_RUNNING);
-			
-			local_bh_enable();
-			if (!skb_copy_datagram_iovec(skb, 0, mpcb->ucopy.iov, 
-						     chunk)) {
-				
-				skb->debug|=MTCP_DEBUG_DATA_QUEUE;
-				skb->debug_count++;
-				
-				mtcp_check_seqnums(mpcb,1);
-
-				mpcb->ucopy.len -= chunk;
-				tp->copied_seq += chunk;
-				mpcb->copied_seq += chunk;
-				tp->copied += chunk;
-				tp->bytes_eaten += chunk;
-				eaten = (chunk == skb->len && !th->fin);
-				tcp_rcv_space_adjust(sk);
-
-				mtcp_check_seqnums(mpcb,0);
+		    sock_owned_by_user(sk) && !tp->urg_data) {
+			int mapping=mtcp_get_dataseq_mapping(mpcb,tp,skb);
+			if (mapping==-1) {
+				goto drop;
 			}
-			local_bh_disable();
+			if (mapping==1) {
+				int chunk = min_t(unsigned int, skb->len,
+						  mpcb->ucopy.len);
+				
+				__set_current_state(TASK_RUNNING);
+				
+				local_bh_enable();
+				if (!skb_copy_datagram_iovec(skb, 0, 
+							     mpcb->ucopy.iov, 
+							     chunk)) {
+					
+					skb->debug|=MTCP_DEBUG_DATA_QUEUE;
+					skb->debug_count++;
+					
+					mtcp_check_seqnums(mpcb,1);
+					
+					mpcb->ucopy.len -= chunk;
+					tp->copied_seq += chunk;
+					mpcb->copied_seq += chunk;
+					tp->copied += chunk;
+					tp->bytes_eaten += chunk;
+					eaten = (chunk == skb->len && !th->fin);
+					tcp_rcv_space_adjust(sk);
+					
+					mtcp_check_seqnums(mpcb,0);
+				}
+				local_bh_disable();
+			}
 		}
 #else
 		if (tp->ucopy.task == current &&

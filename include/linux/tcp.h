@@ -250,6 +250,9 @@ struct tcp_sock {
 	u32     peek_seq;       /* Peek seq, for use by MTCP            */
 	u32     *seq;
 	u32     copied;
+	u32    map_data_seq; /*Those three fields record the current mapping*/
+	u16    map_data_len;
+	u32    map_subseq;
 #endif
 /*We keep these flags even if CONFIG_MTCP is not checked, because it allows
   checking MTPC capability just by checking the mpc flag, rather than adding

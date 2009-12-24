@@ -1138,6 +1138,14 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			skb_shinfo(skb)->gso_segs = 0;
 #ifdef CONFIG_MTCP
 			if (tp->mpc) {
+				/*If the previous segment has been sent
+				  also through this subflow, there is
+				  no need for sending the DSN option,
+				  and we can keep data_len to 0*/
+				if (mpcb->write_seq!=tp->last_write_seq)
+					TCP_SKB_CB(skb)->data_len += copy;
+				TCP_SKB_CB(skb)->end_data_seq += copy;
+
 				mpcb->write_seq += copy;
 				tp->last_write_seq=mpcb->write_seq;
 				PDEBUG_SEND("write_seq now %x, copied %d"
@@ -1145,8 +1153,6 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 				       copy,skb);
 				PDEBUG_SEND("skb->len is %d\n",
 				       skb->len);
-				TCP_SKB_CB(skb)->data_len += copy;
-				TCP_SKB_CB(skb)->end_data_seq += copy;
 			}
 #endif
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);

@@ -884,6 +884,9 @@ int tcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 #ifdef CONFIG_MTCP
 	TCP_SKB_CB(buff)->data_seq=TCP_SKB_CB(skb)->data_seq + len;
 	TCP_SKB_CB(buff)->end_data_seq = TCP_SKB_CB(skb)->end_data_seq;
+	/*We do not need to set the dsn option for that segment
+	  (it is implicit)*/
+	TCP_SKB_CB(buff)->data_len=0;
 #endif
 
 	/* PSH and FIN should only be set in the second packet. */
@@ -1404,6 +1407,9 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 #ifdef CONFIG_MTCP
 	TCP_SKB_CB(buff)->data_seq=TCP_SKB_CB(skb)->data_seq + len;
 	TCP_SKB_CB(buff)->end_data_seq = TCP_SKB_CB(skb)->end_data_seq;
+	/*We do not need to set the DSN option for that segment
+	  (implicit)*/
+	TCP_SKB_CB(buff)->data_len=0;
 #endif
 
 	/* PSH and FIN should only be set in the second packet. */

@@ -6,7 +6,7 @@
  *
  *      Partially inspired from initial user space MTCP stack by Costin Raiciu.
  *
- *      date : June 09
+ *      date : December 09
  *
  *
  *	This program is free software; you can redistribute it and/or
@@ -890,10 +890,14 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 	struct tcp_sock *tp=tcp_sk(sk);
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
 	u32 data_offset;
-	int err;
+	int err;	
+
+	/*First, derive the dataseq if it is not yet done*/
+	if (mtcp_get_dataseq_mapping(mpcb, tp, skb)<0)
+		return -1;
 
 	/*Is this a duplicate segment ?*/
-	if (after(*data_seq,TCP_SKB_CB(skb)->data_seq+skb->len)) {
+	if (after(*data_seq,TCP_SKB_CB(skb)->end_data_seq)) {
 		/*Duplicate segment. We can arrive here only if a segment 
 		  has been retransmitted by the sender on another subflow.
 		  Retransmissions on the same subflow are handled at the
@@ -1063,16 +1067,10 @@ static inline void mtcp_skb_entail_reinj(struct sock *sk, struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 	
-//	skb->csum     = 0;
 	tcb->seq      = tcb->end_seq = tp->write_seq;
-//	tcb->flags    = TCPCB_FLAG_ACK;
-//	tcb->sacked   = 0;
-//	skb_header_release(skb);
 	tcp_add_write_queue_tail(sk, skb);
 	sk->sk_wmem_queued += skb->truesize;
 	sk_mem_charge(sk, skb->truesize);
-//	if (tp->nonagle & TCP_NAGLE_PUSH)
-//		tp->nonagle &= ~TCP_NAGLE_PUSH;
 }
 
 /**
@@ -1089,7 +1087,6 @@ void mtcp_reinject_data(struct sk_buff *orig_skb, struct tcp_sock *tp)
 	struct sock *sk=(struct sock *)tp;
 	int mss_now;
 	struct tcphdr *th;
-//	int carry;
 
 	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
 	printk(KERN_ERR "old seqnum:%x\n",TCP_SKB_CB(orig_skb)->seq);
@@ -1124,26 +1121,63 @@ void mtcp_reinject_data(struct sk_buff *orig_skb, struct tcp_sock *tp)
 	printk(KERN_ERR "new seqnum:%x\n",TCP_SKB_CB(skb)->seq);
 	tp->write_seq += skb->len;
 	TCP_SKB_CB(skb)->end_seq += skb->len;
-	tcp_push(sk, 0, mss_now, tp->nonagle);
-//	mtcp_retransmit_skb(sk, skb);
-//	TCP_CHECK_TIMER(sk);
-
-	/*TODO: correctly adapt the checksum here. Currently we recompute the
-	  whole checksum in inet6_csk_xmit, but this is of course less 
-	  efficient*/
-		
-	/*Removing old seqnum from the checksum*/	
-
-	/*skb->csum+=~(TCP_SKB_CB(orig_skb)->seq);
-	carry=(skb->csum<(~(TCP_SKB_CB(orig_skb)->seq)));
-	skb->csum+=carry;*/ 
-	
-	/*Adding the new seqnum to the info*/
-	/*skb->csum+= tp->write_seq;
-	carry=(skb->csum<tp->write_seq);
-	skb->csum+=carry;*/
-	
+	tcp_push(sk, 0, mss_now, tp->nonagle);	
 	bh_unlock_sock(sk);
+}
+
+
+/**
+ * To be called when a segment is in order. That is, either when it is received 
+ * and is immediately in subflow-order, or when it is stored in the ofo-queue
+ * and becomes in-order. This function retrieves the data_seq and end_data_seq
+ * values, needed for that segment to be transmitted to the meta-flow.
+ * *If the segment already holds a mapping, the current mapping is replaced 
+ *  with the one provided in the segment.
+ * *If the segment contains no mapping, we check if its dataseq can be derived 
+ *  from the currently stored mapping. If it cannot, then there is an error,
+ *  and it must be dropped.
+ *
+ * - If the mapping has been correctly updated, or the skb has correctly 
+ *   been given its dataseq, we then check if the segment is in meta-order.
+ *   i) if it is: we return 1
+ *   ii) if it is not in meta-order (keep in mind that the precondition requires
+ *       that it is in subflow order): we return 0
+ * - If the skb is faulty (does not contain a dataseq option, and seqnum
+ *   not contained in currently stored mapping), we return -1
+ * 
+ */
+int mtcp_get_dataseq_mapping(struct multipath_pcb *mpcb, struct tcp_sock *tp, 
+			     struct sk_buff *skb)
+{
+	if (TCP_SKB_CB(skb)->data_len) {
+		tp->map_data_seq=TCP_SKB_CB(skb)->data_seq;
+		tp->map_data_len=TCP_SKB_CB(skb)->data_len;
+		tp->map_subseq=TCP_SKB_CB(skb)->sub_seq;
+	}
+	else {
+		if (before(TCP_SKB_CB(skb)->seq,tp->map_subseq) ||
+		    after(TCP_SKB_CB(skb)->end_seq,
+			  tp->map_subseq+tp->map_data_len)) {
+			BUG(); /*If we only speak with our own implementation,
+				 reaching this point can only be a bug, later we
+				 can remove this.*/
+			return -1;
+		}
+		/*OK, the segment is inside the mapping, we can
+		  derive the dataseq. Note that we maintain 
+		  TCP_SKB_CB(skb)->data_len to zero, so as not to mix
+		  received mappings and derived dataseqs.*/
+		TCP_SKB_CB(skb)->data_seq=tp->map_data_seq+
+			(TCP_SKB_CB(skb)->seq-tp->map_subseq);
+		TCP_SKB_CB(skb)->end_data_seq=
+			TCP_SKB_CB(skb)->data_seq+skb->len;
+	}
+	
+	/*Check now if the segment is in meta-order*/
+	
+	if (TCP_SKB_CB(skb)->data_seq==mpcb->copied_seq)
+		return 1;
+	else return 0;
 }
 
 MODULE_LICENSE("GPL");
