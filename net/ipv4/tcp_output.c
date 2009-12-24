@@ -378,7 +378,9 @@ struct tcp_out_options {
 	u8 num_sack_blocks;	/* number of SACK blocks to include */
 	u16 mss;		/* 0 to disable */
 	__u32 tsval, tsecr;	/* need to include OPTION_TS */
-	__u32 data_seq;         /* data sequence number, for MTCP */
+	__u32 data_seq;         /* data sequence number, for MPTCP */
+	__u16 data_len;         /* data level length, for MPTCP*/
+	__u32 sub_seq;          /* subflow seqnum, for MPTCP*/
 };
 
 static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
@@ -460,10 +462,10 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			       (TCPOLEN_MPC << 16));
 	}
 	if (OPTION_DSN & opts->options) {
-		*ptr++ = htonl((TCPOPT_NOP << 24) |
-			       (TCPOPT_NOP << 16) |
-			       (TCPOPT_DSN << 8) |
-			       TCPOLEN_DSN);
+		*ptr++ = htonl((TCPOPT_DSN << 24) |
+			       (TCPOLEN_DSN << 16) |
+			       htons(opts->data_len));
+		*ptr++ = htonl(opts->sub_seq);
 		*ptr++ = htonl(opts->data_seq);
 	}
 #endif
@@ -647,8 +649,12 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	}
 
 	if (tp->mpc && (!skb || skb->len!=0)) {
-		opts->options |= OPTION_DSN;
-		opts->data_seq=tcb?tcb->data_seq:0;
+		if (tcb && tcb->data_len) {
+			opts->options |= OPTION_DSN;
+			opts->data_seq=tcb->data_seq;
+			opts->data_len=tcb->data_len;
+			opts->sub_seq=tcb->sub_seq;
+		}
 		size += TCPOLEN_DSN_ALIGNED;
 	}
 #endif

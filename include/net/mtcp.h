@@ -48,7 +48,6 @@ struct multipath_options {
 	u32*   ip_list;
 	u8     list_rcvd:1; /*1 if IP list has been received*/
 #endif
-	u32    data_seq;
 	u8     saw_mpc:1,
 	       saw_dsn:1;	
 };

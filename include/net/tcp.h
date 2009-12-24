@@ -190,7 +190,7 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_TIMESTAMP      10
 #define TCPOLEN_MD5SIG         18
 #define TCPOLEN_MPC            4
-#define TCPOLEN_DSN            6
+#define TCPOLEN_DSN            12
 
 /* But this is what stacks really send out. */
 #define TCPOLEN_TSTAMP_ALIGNED		12
@@ -202,7 +202,7 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_MD5SIG_ALIGNED		20
 #define TCPOLEN_MSS_ALIGNED		4
 #define TCPOLEN_MPC_ALIGNED             4
-#define TCPOLEN_DSN_ALIGNED             8
+#define TCPOLEN_DSN_ALIGNED             12
 
 
 /* Flags in tp->nonagle */
@@ -588,6 +588,11 @@ struct tcp_skb_cb {
 	__u32		end_seq;	/* SEQ + FIN + SYN + datalen	*/
 	__u32           data_seq;       /* Starting data seq            */
 	__u32           end_data_seq;   /* DATA_SEQ + FIN+ SYN + datalen*/
+	__u16           data_len;       /* Data-level length (MPTCP)    
+					 * a value of 0 indicates that no DSN
+					 * option is attached to that segment
+					 */
+	__u32           sub_seq;        /* subflow seqnum (MPTCP)       */
 	__u32		when;		/* used to compute rtt's	*/
 	__u8		flags;		/* TCP header flags.		*/
 

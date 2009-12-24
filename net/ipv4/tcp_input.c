@@ -2947,7 +2947,8 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets)
 			
 			/*Since we are about to remove this segment from the
 			  retransmit queue, we know for sure that is has been
-			 acked*/
+			  acked*/
+			BUG_ON(!TCP_SKB_CB(skb)->data_seq);
 			if (before(mpcb->snd_una,TCP_SKB_CB(skb)->end_data_seq))
 				mpcb->snd_una=TCP_SKB_CB(skb)->end_data_seq;
 		}
@@ -3528,14 +3529,21 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 					break;
 				}
 				
-				mopt->data_seq = ntohl(*(uint32_t*)ptr);
+				TCP_SKB_CB(skb)->data_len = 
+					ntohs(*(uint16_t*)ptr);
+				ptr+=sizeof(uint16_t);
+				TCP_SKB_CB(skb)->sub_seq = 
+					ntohl(*(uint32_t*)ptr);
+				ptr+=sizeof(uint32_t);
+				TCP_SKB_CB(skb)->data_seq = 
+					ntohl(*(uint32_t*)ptr);
 				mopt->saw_dsn=1;
-				TCP_SKB_CB(skb)->data_seq=mopt->data_seq;
-				TCP_SKB_CB(skb)->end_data_seq=mopt->data_seq+
+				TCP_SKB_CB(skb)->end_data_seq=
+					TCP_SKB_CB(skb)->data_seq+
 					TCP_SKB_CB(skb)->end_seq-
 					TCP_SKB_CB(skb)->seq;
 				break;
-			
+				
 #endif /* CONFIG_MTCP */
 			}
 			
@@ -3543,6 +3551,9 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 			length -= opsize;
 		}
 	}
+#ifdef CONFIG_MTCP
+	if (!mopt->saw_dsn) TCP_SKB_CB(skb)->data_len=0;
+#endif
 }
 
 /* Fast parse options. This hopes to only see timestamps.
@@ -5531,7 +5542,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		  the dsn value*/
 		PDEBUG("%s:saw dsn and mpc options\n",__FUNCTION__);
 		tp->mpc=1;
-		mpcb->copied_seq=mpcb->received_options.data_seq;
+		mpcb->copied_seq=TCP_SKB_CB(skb)->data_seq;
 		/*Currently we start with dataseq 0*/
 		BUG_ON(mpcb->copied_seq!=0);
 	}

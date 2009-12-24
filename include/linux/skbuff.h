@@ -278,7 +278,7 @@ struct sk_buff {
 	 * want to keep them across layers you have to do a skb_clone()
 	 * first. This is owned by whoever has the skb queued ATM.
 	 */
-	char			cb[56];
+	char			cb[62];
 	unsigned int		len,
 				data_len;
 	__u16			mac_len,

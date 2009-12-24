@@ -593,8 +593,9 @@ static inline void skb_entail(struct sock *sk, struct sk_buff *skb)
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 
 	skb->csum     = 0;
-	tcb->seq      = tcb->end_seq = tp->write_seq;
+	tcb->seq      = tcb->end_seq = tcb->sub_seq = tp->write_seq;
 	tcb->data_seq = tcb->end_data_seq = mpcb->write_seq;
+	tcb->data_len = 0;
 	tcb->flags    = TCPCB_FLAG_ACK;
 	tcb->sacked   = 0;
 	skb_header_release(skb);
@@ -1144,6 +1145,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 				       copy,skb);
 				PDEBUG_SEND("skb->len is %d\n",
 				       skb->len);
+				TCP_SKB_CB(skb)->data_len += copy;
 				TCP_SKB_CB(skb)->end_data_seq += copy;
 			}
 #endif
