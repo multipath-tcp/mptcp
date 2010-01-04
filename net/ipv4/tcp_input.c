@@ -2948,7 +2948,8 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets)
 			/*Since we are about to remove this segment from the
 			  retransmit queue, we know for sure that is has been
 			  acked*/
-			BUG_ON(!TCP_SKB_CB(skb)->data_seq);
+			BUG_ON(!(TCP_SKB_CB(skb)->flags & TCPCB_FLAG_SYN) 
+			       && !TCP_SKB_CB(skb)->data_seq);
 			if (before(mpcb->snd_una,TCP_SKB_CB(skb)->end_data_seq))
 				mpcb->snd_una=TCP_SKB_CB(skb)->end_data_seq;
 		}
