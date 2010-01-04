@@ -1149,15 +1149,22 @@ void mtcp_reinject_data(struct sk_buff *orig_skb, struct tcp_sock *tp)
 int mtcp_get_dataseq_mapping(struct multipath_pcb *mpcb, struct tcp_sock *tp, 
 			     struct sk_buff *skb)
 {
+	int changed=0;
 	if (TCP_SKB_CB(skb)->data_len) {
 		tp->map_data_seq=TCP_SKB_CB(skb)->data_seq;
 		tp->map_data_len=TCP_SKB_CB(skb)->data_len;
 		tp->map_subseq=TCP_SKB_CB(skb)->sub_seq;
+		changed=1;
 	}
 	else {
 		if (before(TCP_SKB_CB(skb)->seq,tp->map_subseq) ||
 		    after(TCP_SKB_CB(skb)->end_seq,
 			  tp->map_subseq+tp->map_data_len)) {
+			printk(KERN_ERR "seq:%x,tp->map_subseq:%x,"
+			       "end_seq:%x,tp->map_data_len:%d,changed:%d\n",
+			       TCP_SKB_CB(skb)->seq,tp->map_subseq,
+			       TCP_SKB_CB(skb)->end_seq,tp->map_data_len,
+			       changed);
 			BUG(); /*If we only speak with our own implementation,
 				 reaching this point can only be a bug, later we
 				 can remove this.*/
