@@ -648,12 +648,13 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		mpcb_from_tcpsock(tp)->mpc_sent=1;
 	}
 
-	if (tp->mpc && (!skb || skb->len!=0) /*Do option apply ?*/
-	    && tcb && tcb->data_len) { /*Ignore dataseq if data_len is 0*/
-		opts->options |= OPTION_DSN;
-		opts->data_seq=tcb->data_seq;
-		opts->data_len=tcb->data_len;
-		opts->sub_seq=tcb->sub_seq;
+	if (tp->mpc && (!skb || skb->len!=0)) {
+		if (tcb && tcb->data_len) { /*Ignore dataseq if data_len is 0*/
+			opts->options |= OPTION_DSN;
+			opts->data_seq=tcb->data_seq;
+			opts->data_len=tcb->data_len;
+			opts->sub_seq=tcb->sub_seq;
+		}
 		size += TCPOLEN_DSN_ALIGNED;
 	}
 #endif
