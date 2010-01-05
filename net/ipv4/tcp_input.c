@@ -3002,9 +3002,9 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets)
 	}
 
 #if FASTRETRANS_DEBUG > 0
-	WARN_ON((int)tp->sacked_out < 0);
-	WARN_ON((int)tp->lost_out < 0);
-	WARN_ON((int)tp->retrans_out < 0);
+	BUG_ON((int)tp->sacked_out < 0);
+	BUG_ON((int)tp->lost_out < 0);
+	BUG_ON((int)tp->retrans_out < 0);
 	if (!tp->packets_out && tcp_is_sack(tp)) {
 		icsk = inet_csk(sk);
 		if (tp->lost_out) {
@@ -3386,6 +3386,7 @@ old_ack:
 	}
 
 uninteresting_ack:
+	printk(KERN_ERR "received uninteresting ack\n");
 	SOCK_DEBUG(sk, "Ack %u out of %u:%u\n", ack, tp->snd_una, tp->snd_nxt);
 	return 0;
 }
