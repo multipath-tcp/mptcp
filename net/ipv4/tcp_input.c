@@ -3534,13 +3534,11 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				}
 				
 				TCP_SKB_CB(skb)->data_len = 
-					ntohs(*(uint16_t*)ptr);
-				ptr+=sizeof(uint16_t);
+					ntohs(*(uint16_t*)ptr);			
 				TCP_SKB_CB(skb)->sub_seq = 
-					ntohl(*(uint32_t*)ptr);
-				ptr+=sizeof(uint32_t);
+					ntohl(*(uint32_t*)(ptr+2));
 				TCP_SKB_CB(skb)->data_seq = 
-					ntohl(*(uint32_t*)ptr);
+					ntohl(*(uint32_t*)(ptr+6));
 				mopt->saw_dsn=1;
 				TCP_SKB_CB(skb)->end_data_seq=
 					TCP_SKB_CB(skb)->data_seq+
