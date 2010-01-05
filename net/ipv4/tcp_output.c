@@ -464,7 +464,7 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	if (OPTION_DSN & opts->options) {
 		*ptr++ = htonl((TCPOPT_DSN << 24) |
 			       (TCPOLEN_DSN << 16) |
-			       htons(opts->data_len));
+			       opts->data_len);
 		*ptr++ = htonl(opts->sub_seq);
 		*ptr++ = htonl(opts->data_seq);
 	}
