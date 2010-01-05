@@ -1156,29 +1156,34 @@ int mtcp_get_dataseq_mapping(struct multipath_pcb *mpcb, struct tcp_sock *tp,
 		tp->map_subseq=TCP_SKB_CB(skb)->sub_seq;
 		changed=1;
 	}
-	else {
-		if (before(TCP_SKB_CB(skb)->seq,tp->map_subseq) ||
-		    after(TCP_SKB_CB(skb)->end_seq,
-			  tp->map_subseq+tp->map_data_len)) {
-			printk(KERN_ERR "seq:%x,tp->map_subseq:%x,"
-			       "end_seq:%x,tp->map_data_len:%d,changed:%d\n",
-			       TCP_SKB_CB(skb)->seq,tp->map_subseq,
-			       TCP_SKB_CB(skb)->end_seq,tp->map_data_len,
-			       changed);
-			BUG(); /*If we only speak with our own implementation,
-				 reaching this point can only be a bug, later we
-				 can remove this.*/
-			return -1;
-		}
-		/*OK, the segment is inside the mapping, we can
-		  derive the dataseq. Note that we maintain 
-		  TCP_SKB_CB(skb)->data_len to zero, so as not to mix
-		  received mappings and derived dataseqs.*/
-		TCP_SKB_CB(skb)->data_seq=tp->map_data_seq+
-			(TCP_SKB_CB(skb)->seq-tp->map_subseq);
-		TCP_SKB_CB(skb)->end_data_seq=
-			TCP_SKB_CB(skb)->data_seq+skb->len;
+	
+	/*Even if we have received a mapping update, it may differ the subflow
+	  seq contained in the mapping may differ from seqnum contained in the
+	  TCP header. In that case we must recompute the data_seq and 
+	  end_data_seq accordingly. This is what happens in case of TSO, because
+	  the NIC keeps the option as is.*/
+
+	if (before(TCP_SKB_CB(skb)->seq,tp->map_subseq) ||
+	    after(TCP_SKB_CB(skb)->end_seq,
+		  tp->map_subseq+tp->map_data_len)) {
+		printk(KERN_ERR "seq:%x,tp->map_subseq:%x,"
+		       "end_seq:%x,tp->map_data_len:%d,changed:%d\n",
+		       TCP_SKB_CB(skb)->seq,tp->map_subseq,
+		       TCP_SKB_CB(skb)->end_seq,tp->map_data_len,
+		       changed);
+		BUG(); /*If we only speak with our own implementation,
+			 reaching this point can only be a bug, later we
+			 can remove this.*/
+		return -1;
 	}
+	/*OK, the segment is inside the mapping, we can
+	  derive the dataseq. Note that we maintain 
+	  TCP_SKB_CB(skb)->data_len to zero, so as not to mix
+	  received mappings and derived dataseqs.*/
+	TCP_SKB_CB(skb)->data_seq=tp->map_data_seq+
+		(TCP_SKB_CB(skb)->seq-tp->map_subseq);
+	TCP_SKB_CB(skb)->end_data_seq=
+		TCP_SKB_CB(skb)->data_seq+skb->len;
 	
 	/*Check now if the segment is in meta-order*/
 	
