@@ -428,8 +428,8 @@ struct tcp_sock {
 #endif
 
 	int			linger2;
-#ifdef CONFIG_MTCP
 	struct multipath_pcb    *mpcb;
+#ifdef CONFIG_MTCP
 	int                     path_index;
 	uint8_t                 mtcp_flags;
 #define MTCP_CURRENT_SUBFLOW 0x1 /*This socket is selected as the current 
