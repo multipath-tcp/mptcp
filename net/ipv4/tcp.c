@@ -1013,7 +1013,9 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			skb = tcp_write_queue_tail(sk);
 
 			if (!tcp_send_head(sk) || 
+#ifdef CONFIG_MTCP
 			    (tp->mpc && mpcb->write_seq!=tp->last_write_seq) ||
+#endif
 			    (copy = size_goal - skb->len) <= 0) {
 				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 			new_segment:
