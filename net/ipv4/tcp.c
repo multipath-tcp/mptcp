@@ -948,7 +948,9 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	struct sock *sk = sock->sk;
 	struct iovec *iov;
 	struct tcp_sock *tp = tcp_sk(sk);
+#ifdef CONFIG_MTCP
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
+#endif
 	struct sk_buff *skb;
 	int iovlen, flags;
 	int mss_now, size_goal;

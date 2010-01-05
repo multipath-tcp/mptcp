@@ -4220,9 +4220,11 @@ queue_and_out:
 
 		if (eaten > 0)
 			__kfree_skb(skb);
+#ifdef CONFIG_MTCP
 		else if (!sock_flag(sk, SOCK_DEAD)) {			
 			mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
-		}		
+		}
+#endif
 		return;
 	}
 
@@ -4366,7 +4368,7 @@ add_sack:
 static void
 tcp_collapse(struct sock *sk, struct sk_buff_head *list,
 	     struct sk_buff *head, struct sk_buff *tail,
-	     u32 start, u32 end, u32 data_start, u32 data_end)
+	     u32 start, u32 end)
 {
 	struct sk_buff *skb;
 	
@@ -4397,7 +4399,6 @@ tcp_collapse(struct sock *sk, struct sk_buff_head *list,
 
 		/* Decided to skip this, advance start seq. */
 		start = TCP_SKB_CB(skb)->end_seq;
-		data_start = TCP_SKB_CB(skb)->end_data_seq;
 		skb = skb->next;
 	}
 	if (skb == tail || tcp_hdr(skb)->syn || tcp_hdr(skb)->fin)
@@ -4426,8 +4427,6 @@ tcp_collapse(struct sock *sk, struct sk_buff_head *list,
 		memcpy(nskb->head, skb->head, header);
 		memcpy(nskb->cb, skb->cb, sizeof(skb->cb));
 		TCP_SKB_CB(nskb)->seq = TCP_SKB_CB(nskb)->end_seq = start;
-		TCP_SKB_CB(nskb)->data_seq = TCP_SKB_CB(nskb)->end_data_seq = 
-			data_start;
 		__skb_insert(nskb, skb->prev, skb, list);
 		skb_set_owner_r(nskb, sk);
 
@@ -4471,15 +4470,13 @@ static void tcp_collapse_ofo_queue(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *skb = skb_peek(&tp->out_of_order_queue);
 	struct sk_buff *head;
-	u32 start, end,data_start,data_end;
+	u32 start, end;
 
 	if (skb == NULL)
 		return;
 
 	start = TCP_SKB_CB(skb)->seq;
-	data_start = TCP_SKB_CB(skb)->data_seq;
 	end = TCP_SKB_CB(skb)->end_seq;
-	data_end = TCP_SKB_CB(skb)->end_data_seq;
 	head = skb;
 
 	for (;;) {
@@ -4491,23 +4488,19 @@ static void tcp_collapse_ofo_queue(struct sock *sk)
 		    after(TCP_SKB_CB(skb)->seq, end) ||
 		    before(TCP_SKB_CB(skb)->end_seq, start)) {
 			tcp_collapse(sk, &tp->out_of_order_queue,
-				     head, skb, start, end,data_start,data_end);
+				     head, skb, start, end);
 			head = skb;
 			if (skb == (struct sk_buff *)&tp->out_of_order_queue)
 				break;
 			/* Start new segment */
 			start = TCP_SKB_CB(skb)->seq;
-			data_start=TCP_SKB_CB(skb)->data_seq;
 			end = TCP_SKB_CB(skb)->end_seq;
-			data_end = TCP_SKB_CB(skb)->end_data_seq;
 		} else {
 			if (before(TCP_SKB_CB(skb)->seq, start)) {
 				start = TCP_SKB_CB(skb)->seq;
-				data_start = TCP_SKB_CB(skb)->data_seq;
 			}
 			if (after(TCP_SKB_CB(skb)->end_seq, end)) {
 				end = TCP_SKB_CB(skb)->end_seq;
-				data_end = TCP_SKB_CB(skb)->end_data_seq;
 			}
 		}
 	}

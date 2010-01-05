@@ -1157,12 +1157,12 @@ int mtcp_get_dataseq_mapping(struct multipath_pcb *mpcb, struct tcp_sock *tp,
 		changed=1;
 	}
 	
-	/*Even if we have received a mapping update, it may differ the subflow
-	  seq contained in the mapping may differ from seqnum contained in the
+	/*Even if we have received a mapping update, it may differ from
+	  the seqnum contained in the
 	  TCP header. In that case we must recompute the data_seq and 
 	  end_data_seq accordingly. This is what happens in case of TSO, because
 	  the NIC keeps the option as is.*/
-
+	
 	if (before(TCP_SKB_CB(skb)->seq,tp->map_subseq) ||
 	    after(TCP_SKB_CB(skb)->end_seq,
 		  tp->map_subseq+tp->map_data_len)) {
