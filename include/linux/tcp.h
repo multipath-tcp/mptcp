@@ -294,6 +294,7 @@ struct tcp_sock {
 #ifndef CONFIG_MTCP
 		struct task_struct	*task;
 		struct iovec		*iov;
+		int                     len;
 #ifdef CONFIG_NET_DMA
 		int			copied;		
 		/* members for async copy */
