@@ -4805,7 +4805,7 @@ static void tcp_urg(struct sock *sk, struct sk_buff *skb, struct tcphdr *th)
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	/* Check if we get a new urgent pointer - normally not. */
-	if (th->urg) {
+	if (tp->mpc && th->urg) {
 		/*Not supported yet*/
 		BUG();
 		tcp_check_urg(sk, th);
@@ -4817,7 +4817,7 @@ static void tcp_urg(struct sock *sk, struct sk_buff *skb, struct tcphdr *th)
 			  th->syn;
 
 		/*Not supported yet*/
-		BUG();
+		if (tp->mpc) BUG();
 		/* Is the urgent pointer pointing into this packet? */
 		if (ptr < skb->len) {
 			u8 tmp;
