@@ -1184,7 +1184,11 @@ int mtcp_get_dataseq_mapping(struct multipath_pcb *mpcb, struct tcp_sock *tp,
 		(TCP_SKB_CB(skb)->seq-tp->map_subseq);
 	TCP_SKB_CB(skb)->end_data_seq=
 		TCP_SKB_CB(skb)->data_seq+skb->len;
-	
+	TCP_SKB_CB(skb)->data_len=0; /*To indicate that there is not anymore
+				       general mapping information in that 
+				       segment (the mapping info is now 
+				       consumed)*/
+		
 	/*Check now if the segment is in meta-order*/
 	
 	if (TCP_SKB_CB(skb)->data_seq==mpcb->copied_seq)
