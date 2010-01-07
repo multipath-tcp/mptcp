@@ -1150,13 +1150,19 @@ int mtcp_get_dataseq_mapping(struct multipath_pcb *mpcb, struct tcp_sock *tp,
 			     struct sk_buff *skb)
 {
 	int changed=0;
+
 	if (TCP_SKB_CB(skb)->data_len) {
 		tp->map_data_seq=TCP_SKB_CB(skb)->data_seq;
 		tp->map_data_len=TCP_SKB_CB(skb)->data_len;
 		tp->map_subseq=TCP_SKB_CB(skb)->sub_seq;
 		changed=1;
 	}
-	
+
+	/*data len does not count for the subflow FIN,
+	  include the FIN in the mapping now.*/
+	if (tcp_hdr(skb)->fin)
+		tp->map_data_len++;
+
 	/*Even if we have received a mapping update, it may differ from
 	  the seqnum contained in the
 	  TCP header. In that case we must recompute the data_seq and 
