@@ -1328,8 +1328,8 @@ static inline int tcp_snd_wnd_test(struct tcp_sock *tp, struct sk_buff *skb,
 		TCP_SKB_CB(skb)->end_seq;
 	
 	if (skb->len > cur_mss)
-		end_seq = (tp->mpc)?TCP_SKB_CB(skb)->data_seq:
-			TCP_SKB_CB(skb)->seq + cur_mss;
+		end_seq = ((tp->mpc)?TCP_SKB_CB(skb)->data_seq:
+			   TCP_SKB_CB(skb)->seq) + cur_mss;
 	
 	
 	return !after(end_seq, tcp_wnd_end(tp,tp->mpc));
