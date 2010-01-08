@@ -1061,13 +1061,18 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
  * in other subflow.
  * Here, we do not set the data seq, since it remains the same. However, 
  * we do change the subflow seqnum.
+ *
+ * Note that we make the assumption that, within the local system, every
+ * segment has tcb->sub_seq==tcb->seq, that is, the dataseq is not shifted
+ * compared to the subflow seqnum. Put another way, the dataseq referenced
+ * is actually the number of the first data byte in the segment.
  */
 static inline void mtcp_skb_entail_reinj(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 	
-	tcb->seq      = tcb->end_seq = tp->write_seq;
+	tcb->seq      = tcb->end_seq = tcb->sub_seq = tp->write_seq;
 	tcp_add_write_queue_tail(sk, skb);
 	sk->sk_wmem_queued += skb->truesize;
 	sk_mem_charge(sk, skb->truesize);
