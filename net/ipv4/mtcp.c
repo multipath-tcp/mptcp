@@ -961,7 +961,10 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 				if (!after(TCP_SKB_CB(skb)->end_data_seq, 
 					   TCP_SKB_CB(skb1)->end_data_seq)) {
 					/* All the bits are present. Drop. */
-					BUG();
+					/* We do not read the skb, since it was
+					   already received on
+					   another subflow */
+
 					return MTCP_EATEN;
 				}
 				if (!after(TCP_SKB_CB(skb)->data_seq, 
