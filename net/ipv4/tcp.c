@@ -2381,6 +2381,11 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				tcp_fast_path_check(sk);
 			}
 		}
+		
+		/*if segment has been dropped by MPTCP, we cannot
+		  access the skb structure anymore*/
+		if (mtcp_op==MTCP_DROPPED) continue;
+
 		if (used + offset < skb->len)
 			continue; 
 

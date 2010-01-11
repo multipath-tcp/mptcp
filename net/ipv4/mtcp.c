@@ -964,8 +964,14 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 					/* We do not read the skb, since it was
 					   already received on
 					   another subflow */
-
-					return MTCP_EATEN;
+					/* first cancel counters we
+					   have incremented before, since
+					   the skb is finally no read*/
+					tp->copied-=skb->len;
+					tp->bytes_eaten-=skb->len;
+					mpcb->ofo_bytes-=skb->len;
+					__kfree_skb(skb);
+					return MTCP_DROPPED;
 				}
 				if (!after(TCP_SKB_CB(skb)->data_seq, 
 					   TCP_SKB_CB(skb1)->data_seq)) {
@@ -1023,10 +1029,42 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		}
 
 		if (data_offset != offset) {
-			console_loglevel=8;
-			printk(KERN_ERR "metasocket and subsocket don't agree"
-			       "on offset value\n");
-			BUG();
+			/*This can happen if the segment has been already
+			  received on another subflow, and partly read by the
+			  app. The original subflow that received the segment
+			  is aware of the offset, but not the new one.
+			  Here, for the purpose of debugging, we check 
+			  our assertion that indeed the data already arrived.
+			  Since it has only be partly read, the only place
+			  it can be is inside the meta-receive queue, even more,
+			  it must be at the first place in the meta-receive 
+			  queue.*/
+
+			struct sk_buff *skb1=skb_peek(&mpcb->receive_queue);
+			
+			if (!skb1 || offset || TCP_SKB_CB(skb1)->data_seq
+			    !=TCP_SKB_CB(skb)->data_seq ||
+			    TCP_SKB_CB(skb1)->end_data_seq !=
+			    TCP_SKB_CB(skb)->end_data_seq) {
+			
+				console_loglevel=8;
+				printk(KERN_ERR "metasocket and subsocket "
+				       "don't agree"
+				       "on offset value\n");
+				BUG();
+			}
+			else {
+				/*OK our assertion is verified, we can
+				  safely drop the new segment*/
+				/* We do not read the skb, since it was 
+				   already received on
+				   another subflow, but we advance the seqnum 
+				   so that the
+				   subflow can continue */
+				*tp->seq +=skb->len;
+				
+				return MTCP_EATEN;
+			}
 		}
 		if (*len < *used)
 			*used = *len;
