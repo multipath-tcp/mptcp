@@ -1073,6 +1073,9 @@ static inline void mtcp_skb_entail_reinj(struct sock *sk, struct sk_buff *skb)
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 	
 	tcb->seq      = tcb->end_seq = tcb->sub_seq = tp->write_seq;
+	tcb->sacked = 0; /*reset the sacked field: from the point of view
+			   of this subflow, we are sending a brand new
+			   segment*/
 	tcp_add_write_queue_tail(sk, skb);
 	sk->sk_wmem_queued += skb->truesize;
 	sk_mem_charge(sk, skb->truesize);
