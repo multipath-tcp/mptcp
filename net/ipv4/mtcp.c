@@ -914,7 +914,15 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		/* We do not read the skb, since it was already received on
 		   another subflow, but we advance the seqnum so that the
 		   subflow can continue */
-		*tp->seq +=skb->len;
+		*used=skb->len; /*We must also tell that the whole
+				  skb has been used, else it will be kept
+				  in the subsocket.*/
+		tp->copied+=*used; /*tp->copied is used by tcp_recvmsg
+				      to know that it can evaluate again
+				      receive buffer, and maybe recompute
+				      the receive window, since memory is
+				      freed.*/
+		*tp->seq +=*used;		
 		
 		return MTCP_EATEN;
 	}
@@ -967,7 +975,6 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 					/* first cancel counters we
 					   have incremented before, since
 					   the skb is finally no read*/
-					tp->copied-=skb->len;
 					tp->bytes_eaten-=skb->len;
 					mpcb->ofo_bytes-=skb->len;
 					__kfree_skb(skb);
@@ -1061,7 +1068,9 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 				   another subflow, but we advance the seqnum 
 				   so that the
 				   subflow can continue */
-				*tp->seq +=skb->len;
+				*used=skb->len;				
+				*tp->seq +=*used;
+				tp->copied+=*used;
 				
 				return MTCP_EATEN;
 			}
