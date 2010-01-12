@@ -974,7 +974,12 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 					   another subflow */
 					/* first cancel counters we
 					   have incremented before, since
-					   the skb is finally no read*/
+					   the skb is finally not read*/
+					BUG_ON(!(TCP_SKB_CB(skb)->data_seq==
+						 TCP_SKB_CB(skb1)->data_seq &&
+						 TCP_SKB_CB(skb)->end_data_seq==
+						 TCP_SKB_CB(skb1)->end_data_seq
+						       ));
 					tp->bytes_eaten-=skb->len;
 					mpcb->ofo_bytes-=skb->len;
 					__kfree_skb(skb);
@@ -984,6 +989,14 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 					   TCP_SKB_CB(skb1)->data_seq)) {
 					/*skb and skb1 have the same starting 
 					  point, but skb terminates after skb1*/
+					printk(KERN_ERR "skb->data_seq:%x,"
+					       "skb->end_data_seq:%x,"
+					       "skb1->data_seq:%x,"
+					       "skb1->end_data_seq:%x\n",
+					       TCP_SKB_CB(skb)->data_seq,
+					       TCP_SKB_CB(skb)->end_data_seq,
+					       TCP_SKB_CB(skb1)->data_seq,
+					       TCP_SKB_CB(skb1)->end_data_seq);
 					BUG();
 					skb1 = skb1->prev;
 				}
@@ -1043,21 +1056,56 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 			  Here, for the purpose of debugging, we check 
 			  our assertion that indeed the data already arrived.
 			  Since it has only be partly read, the only place
-			  it can be is inside the meta-receive queue, even more,
-			  it must be at the first place in the meta-receive 
+			  it can be is at the head of one of the subflow
+			  receive queues, or at the head of the meta-receive
 			  queue.*/
 
 			struct sk_buff *skb1=skb_peek(&mpcb->receive_queue);
+			struct sock *search_sk;
+			struct tcp_sock *search_tp;
+			int found_duplicate=0;
+
+			/*Is the segment in one of the subflows ?*/
+			mtcp_for_each_sk(mpcb,search_sk,search_tp) {
+				struct sk_buff *search_skb=
+					skb_peek(&sk->sk_receive_queue);
+				if (search_skb && 
+				    TCP_SKB_CB(search_skb)->data_seq
+				    ==TCP_SKB_CB(skb)->data_seq && 
+				    TCP_SKB_CB(search_skb)->end_data_seq
+				    ==TCP_SKB_CB(skb)->end_data_seq) {
+					found_duplicate=1;
+					break;
+				}
+			}
 			
-			if (!skb1 || offset || TCP_SKB_CB(skb1)->data_seq
-			    !=TCP_SKB_CB(skb)->data_seq ||
-			    TCP_SKB_CB(skb1)->end_data_seq !=
-			    TCP_SKB_CB(skb)->end_data_seq) {
+			/*If it is not in one of the subflow,
+			  we check the receive queue of the meta-flow*/
+			if (!found_duplicate && skb1 && 
+			    TCP_SKB_CB(skb1)->data_seq
+			    ==TCP_SKB_CB(skb)->data_seq &&
+			    TCP_SKB_CB(skb1)->end_data_seq ==
+			    TCP_SKB_CB(skb)->end_data_seq)
+				found_duplicate=1;
 			
+			if (!found_duplicate)
+			{
+				
 				console_loglevel=8;
 				printk(KERN_ERR "metasocket and subsocket "
-				       "don't agree"
+				       "don't agree "
 				       "on offset value\n");
+				printk(KERN_ERR "offset:%d,"
+				       "data_offset:%d, skb->data_seq:%x,"
+				       "skb->end_data_seq:%x,skb1:%p\n",offset,
+				       data_offset,TCP_SKB_CB(skb)->data_seq,
+				       TCP_SKB_CB(skb)->end_data_seq,skb1);
+				if (skb1) {
+					printk(KERN_ERR "skb1->data_seq:%x,"
+					       "skb1->end_data_seq:%x\n",
+					       TCP_SKB_CB(skb1)->data_seq,
+					       TCP_SKB_CB(skb1)->end_data_seq);
+				}
 				BUG();
 			}
 			else {
