@@ -999,6 +999,8 @@ int tcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
 	TCP_SKB_CB(skb)->seq += len;
 #ifdef CONFIG_MTCP
 	TCP_SKB_CB(skb)->data_seq += len;
+	TCP_SKB_CB(skb)->sub_seq += len;
+	TCP_SKB_CB(skb)->data_len -= len;
 #endif
 
 	skb->ip_summed = CHECKSUM_PARTIAL;
