@@ -902,14 +902,6 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		  has been retransmitted by the sender on another subflow.
 		  Retransmissions on the same subflow are handled at the
 		  subflow level.*/
-		printk(KERN_ERR "debug:%d,count:%d,line:%d,file:%s\n",
-		       skb->debug,
-		       skb->debug_count,__LINE__,__FILE__);
-		printk(KERN_ERR "init data_seq:%x,len:%d,copied:%x,"
-		       "data_seq:%x, skb->len : %d,ucopy.task:%p\n",
-		       skb->data_seq,(int)*len,*data_seq,
-		       TCP_SKB_CB(skb)->data_seq,(int)skb->len,
-		       mpcb->ucopy.task);
 
 		/* We do not read the skb, since it was already received on
 		   another subflow, but we advance the seqnum so that the
@@ -1025,18 +1017,6 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		*used = skb->len - data_offset;
 		/*duplicate segment*/
 		if (*used==0) {
-			printk(KERN_ERR "Received exact duplicate segment"
-			       "by reinjection\n");
-			printk(KERN_ERR "debug:%d,count:%d\n",skb->debug,
-			       skb->debug_count);
-			printk(KERN_ERR "init data_seq:%x,used:%d\n",
-			       skb->data_seq,(int)*used);
-			printk(KERN_ERR "init data_seq:%x,len:%d,copied:%x,"
-			       "data_seq:%x, skb->len : %d,ucopy.task:%p\n",
-			       skb->data_seq,(int)*len,*data_seq,
-			       TCP_SKB_CB(skb)->data_seq,(int)skb->len,
-			       mpcb->ucopy.task);
-
 			/*Since this segment has already been received on
 			  another subflow, we can just ignore it, and advance
 			  the subflow seqnum of this subsocket.
