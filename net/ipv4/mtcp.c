@@ -1194,13 +1194,6 @@ void mtcp_reinject_data(struct sk_buff *orig_skb, struct tcp_sock *tp)
 	int mss_now;
 	struct tcphdr *th;
 
-	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
-	printk(KERN_ERR "old seqnum:%x\n",TCP_SKB_CB(orig_skb)->seq);
-	printk(KERN_ERR "reinjected dataseq: %x on path %d\n", 
-	       TCP_SKB_CB(orig_skb)->data_seq,tp->path_index);
-	printk(KERN_ERR "skb->len:%d\n",orig_skb->len);       
-	printk(KERN_ERR "orig_skb->csum:%x\n",orig_skb->csum);
-
 	/*Remember that we have enqueued this skb on this path*/
 	orig_skb->path_mask|=PI_TO_FLAG(tp->path_index);
 
@@ -1208,12 +1201,6 @@ void mtcp_reinject_data(struct sk_buff *orig_skb, struct tcp_sock *tp)
 	skb->sk=sk;
 
 	th=tcp_hdr(skb);
-
-	printk(KERN_ERR "test: source port is %d\n",th->source);
-	printk(KERN_ERR "skb->path_mask:%x\n", skb->path_mask);
-	printk(KERN_ERR "csum on the data part:%x\n",
-	       csum_partial((char *)th, th->doff<<2,
-			    skb->csum));
 	
 	BUG_ON(!skb);
 	
@@ -1224,7 +1211,6 @@ void mtcp_reinject_data(struct sk_buff *orig_skb, struct tcp_sock *tp)
 	mss_now = tcp_current_mss(sk, 0);
 
 	mtcp_skb_entail_reinj(sk, skb);
-	printk(KERN_ERR "new seqnum:%x\n",TCP_SKB_CB(skb)->seq);
 	tp->write_seq += skb->len;
 	TCP_SKB_CB(skb)->end_seq += skb->len;
 	tcp_push(sk, 0, mss_now, tp->nonagle);	
