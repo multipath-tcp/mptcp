@@ -5221,13 +5221,11 @@ slow_path:
 		 */
 		if (!th->rst)
 			tcp_send_dupack(sk, skb);
-		printk(KERN_ERR "At line %d\n",__LINE__);
 		goto discard;
 	}
 
 	if (th->rst) {
 		tcp_reset(sk);
-		printk(KERN_ERR "At line %d\n",__LINE__);
 		goto discard;
 	}
 
@@ -5260,8 +5258,6 @@ csum_error:
 	TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_INERRS);
 
 discard:
-	printk(KERN_ERR "discarding segment with dataseq %x "
-	       "on path %d\n",TCP_SKB_CB(skb)->data_seq,tp->path_index);
 	__kfree_skb(skb);
 	return 0;
 }
