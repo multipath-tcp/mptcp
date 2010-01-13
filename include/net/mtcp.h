@@ -220,7 +220,17 @@ struct multipath_pcb {
 		__rc;							\
 	})
 
+#define DEBUG_PITOFLAG
+
+#ifdef DEBUG_PITOFLAG
+static inline int PI_TO_FLAG(int pi)
+{
+	BUG_ON(!pi);
+	return (1<<(pi-1));
+}
+#else
 #define PI_TO_FLAG(pi) (1<<(pi-1))
+#endif
 
 /*For debugging only. Verifies consistency between subsock seqnums
   and metasock seqnums*/

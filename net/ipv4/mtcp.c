@@ -1160,6 +1160,17 @@ static inline void mtcp_skb_entail_reinj(struct sock *sk, struct sk_buff *skb)
 	sk_mem_charge(sk, skb->truesize);
 }
 
+/*Algorithm by Bryan Kernighan to count bits in a word*/
+static inline int count_bits(unsigned int v)
+{
+	unsigned int c; /* c accumulates the total bits set in v*/
+	for (c = 0; v; c++)
+	{
+		v &= v - 1; /* clear the least significant bit set*/
+	}
+	return c;
+}
+
 /**
  * Reinject data from one TCP subflow to another one. 
  * The @skb given pertains to the original tp, that keeps it
@@ -1175,11 +1186,11 @@ void __mtcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk)
 	struct tcphdr *th;
 
 	/*Remember that we have enqueued this skb on this path*/
-	BUG_ON(orig_skb->path_mask==3);
+	BUG_ON(count_bits(orig_skb->path_mask)!=1);
 
 	orig_skb->path_mask|=PI_TO_FLAG(tp->path_index);
 
-	BUG_ON(orig_skb->path_mask!=3);
+	BUG_ON(count_bits(orig_skb->path_mask)!=2);
 
 	skb=skb_copy(orig_skb,GFP_ATOMIC);
 	skb->sk=sk;
