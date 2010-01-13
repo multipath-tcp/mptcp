@@ -1172,7 +1172,6 @@ void __mtcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk)
 {
 	struct sk_buff *skb;
 	struct tcp_sock *tp = tcp_sk(sk);
-	int mss_now;
 	struct tcphdr *th;
 
 	/*Remember that we have enqueued this skb on this path*/
@@ -1190,30 +1189,32 @@ void __mtcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk)
 	BUG_ON(!skb);
 	BUG_ON(skb->path_mask!=orig_skb->path_mask);
 	
-	skb->debug2=25;       
-	
-	bh_lock_sock(sk);
-
-	mss_now = tcp_current_mss(sk, 0);
+	skb->debug2=25;              
 
 	mtcp_skb_entail_reinj(sk, skb);
 	tp->write_seq += skb->len;
 	TCP_SKB_CB(skb)->end_seq += skb->len;
-	tcp_push(sk, 0, mss_now, tp->nonagle);	
-	bh_unlock_sock(sk);
 }
 
 void mtcp_reinject_data(struct sock *orig_sk, struct sock *retrans_sk)
 {
 	struct sk_buff *skb_it;
 	struct tcp_sock *orig_tp = tcp_sk(orig_sk);
+	struct tcp_sock *retrans_tp = tcp_sk(retrans_sk);
+	int mss_now;	
 	
+	bh_lock_sock(retrans_sk);
+
 	for(skb_it=orig_sk->sk_write_queue.next;
 	    skb_it != (struct sk_buff*)&orig_sk->sk_write_queue;
 	    skb_it=skb_it->next) {
 		skb_it->path_mask|=PI_TO_FLAG(orig_tp->path_index);
 		__mtcp_reinject_data(skb_it,retrans_sk);
 	}
+	mss_now = tcp_current_mss(retrans_sk, 0);
+	tcp_push(retrans_sk, 0, mss_now, retrans_tp->nonagle);
+
+	bh_unlock_sock(retrans_sk);
 }
 
 /**
