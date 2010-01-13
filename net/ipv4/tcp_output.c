@@ -2052,8 +2052,6 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 		
 		if (!tp->mpc || sk->sk_state!=TCP_ESTABLISHED)
 			goto no_mtcp;
-
-		skb->path_mask|=PI_TO_FLAG(tp->path_index);
 		
 		mtcp_for_each_tp(mpcb,tp_it) {
 			if (((struct sock*)tp_it)->sk_state==TCP_ESTABLISHED &&
@@ -2066,13 +2064,9 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 		}
 		/*retrans_tp is now the tp with highest ssthresh*/
 		if (retrans_tp) {
-			struct sk_buff *skb_it;
 			/*Reinject all queued skbuffs to the other 
 			  subsocket*/
-			for(skb_it=sk->sk_write_queue.next;
-			    skb_it != (struct sk_buff*)&sk->sk_write_queue;
-			    skb_it=skb_it->next)
-				mtcp_reinject_data(skb_it,retrans_tp);
+			mtcp_reinject_data(sk,(struct sock*)retrans_tp);
 		}
 	}
 no_mtcp:

@@ -1,3 +1,4 @@
+
 /*
  *	MTCP implementation
  *
@@ -1165,17 +1166,21 @@ static inline void mtcp_skb_entail_reinj(struct sock *sk, struct sk_buff *skb)
  * because the skb is still sent on the original tp. But additionnally,
  * it is sent on the other subflow. 
  *
- * @pre : @tp must be in ESTABLISHED state
+ * @pre : @sk must be a tcp subsocket in ESTABLISHED state
  */
-void mtcp_reinject_data(struct sk_buff *orig_skb, struct tcp_sock *tp)
+void __mtcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk)
 {
 	struct sk_buff *skb;
-	struct sock *sk=(struct sock *)tp;
+	struct tcp_sock *tp = tcp_sk(sk);
 	int mss_now;
 	struct tcphdr *th;
 
 	/*Remember that we have enqueued this skb on this path*/
+	BUG_ON(orig_skb->path_mask==3);
+
 	orig_skb->path_mask|=PI_TO_FLAG(tp->path_index);
+
+	BUG_ON(orig_skb->path_mask!=3);
 
 	skb=skb_copy(orig_skb,GFP_ATOMIC);
 	skb->sk=sk;
@@ -1183,6 +1188,7 @@ void mtcp_reinject_data(struct sk_buff *orig_skb, struct tcp_sock *tp)
 	th=tcp_hdr(skb);
 	
 	BUG_ON(!skb);
+	BUG_ON(skb->path_mask!=orig_skb->path_mask);
 	
 	skb->debug2=25;       
 	
@@ -1197,6 +1203,18 @@ void mtcp_reinject_data(struct sk_buff *orig_skb, struct tcp_sock *tp)
 	bh_unlock_sock(sk);
 }
 
+void mtcp_reinject_data(struct sock *orig_sk, struct sock *retrans_sk)
+{
+	struct sk_buff *skb_it;
+	struct tcp_sock *orig_tp = tcp_sk(orig_sk);
+	
+	for(skb_it=orig_sk->sk_write_queue.next;
+	    skb_it != (struct sk_buff*)&orig_sk->sk_write_queue;
+	    skb_it=skb_it->next) {
+		skb_it->path_mask|=PI_TO_FLAG(orig_tp->path_index);
+		__mtcp_reinject_data(skb_it,retrans_sk);
+	}
+}
 
 /**
  * To be called when a segment is in order. That is, either when it is received 
