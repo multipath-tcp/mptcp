@@ -2050,7 +2050,8 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 		struct tcp_sock *tp_it,*retrans_tp=NULL;
 		struct multipath_pcb *mpcb=tp->mpcb;
 		
-		if (!tp->mpc || sk->sk_state!=TCP_ESTABLISHED)
+		if (!tp->mpc || sk->sk_state!=TCP_ESTABLISHED || 
+		    !tp->path_index)
 			goto no_mtcp;
 		
 		mtcp_for_each_tp(mpcb,tp_it) {
