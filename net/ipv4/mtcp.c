@@ -1185,6 +1185,11 @@ void __mtcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcphdr *th;
 
+	/*If the skb has already been enqueued in this sk, just 
+	  return immediately*/
+	if (PI_TO_FLAG(tp->path_index) & orig_skb->path_mask)
+		return;
+	
 	/*Remember that we have enqueued this skb on this path*/
 	BUG_ON(count_bits(orig_skb->path_mask)!=1);
 
