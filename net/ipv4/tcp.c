@@ -1148,7 +1148,8 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 				mpcb->write_seq += copy;
 				tp->last_write_seq=mpcb->write_seq;
 				PDEBUG_SEND("write_seq now %x, copied %d"
-					    " bytes to skb %p\n",mpcb->write_seq,
+					    " bytes to skb %p\n",
+					    mpcb->write_seq,
 					    copy,skb);
 				PDEBUG_SEND("skb->len is %d\n",
 					    skb->len);

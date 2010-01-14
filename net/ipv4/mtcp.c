@@ -1204,6 +1204,7 @@ void __mtcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk)
 
 	mtcp_skb_entail_reinj(sk, skb);
 	tp->write_seq += skb->len;
+	tp->last_write_seq=TCP_SKB_CB(skb)->end_data_seq;
 	TCP_SKB_CB(skb)->end_seq += skb->len;
 }
 
