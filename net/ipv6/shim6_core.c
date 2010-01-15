@@ -453,22 +453,17 @@ void shim6_new_daemon_loc(struct in6_addr* addr, int ifidx)
 	int pld_len=sizeof(struct in6_addr)+sizeof(int);
 	struct in6_addr* skb_addr;
 	int* skb_ifidx;
-	int err;
 	
-	PDEBUG("Entering %s\n",__FUNCTION__);
-
-	if (!(skb=shim6_alloc_netlink_skb(pld_len,SHIM6_NL_NEW_LOC_ADDR,GFP_ATOMIC)))
+	if (!(skb=shim6_alloc_netlink_skb(pld_len,
+					  SHIM6_NL_NEW_LOC_ADDR,GFP_ATOMIC)))
 		return;
 	
 	skb_addr=NLMSG_DATA((struct nlmsghdr*)skb->data);
 	ipv6_addr_copy(skb_addr,addr);
 	skb_ifidx=(int*)(skb_addr+1);
 	*skb_ifidx=ifidx;
-	if ((err=netlink_broadcast(shim6nl_sk,skb,0,SHIM6NLGRP_DEFAULT,
-				   GFP_ATOMIC)))
-		printk(KERN_INFO "shim6, %s : nl broadcast, error %d,"
-		       "daemon down ?\n", 
-		       __FUNCTION__, err);
+	netlink_broadcast(shim6nl_sk,skb,0,SHIM6NLGRP_DEFAULT,
+			  GFP_ATOMIC);
 }
 
 /*
@@ -485,11 +480,8 @@ void shim6_del_daemon_loc(struct in6_addr* addr, int ifidx)
 	struct sk_buff* skb;
 	int pld_len=sizeof(struct in6_addr)+sizeof(int);
 	struct in6_addr* skb_addr;
-	int err;
 	int* msg_ifidx;
-	
-	PDEBUG("Entering %s\n",__FUNCTION__);
-	
+		
 	if (!(skb=shim6_alloc_netlink_skb(pld_len,SHIM6_NL_DEL_LOC_ADDR,
 					  GFP_ATOMIC)))
 		return;
@@ -499,11 +491,8 @@ void shim6_del_daemon_loc(struct in6_addr* addr, int ifidx)
 	ipv6_addr_copy(skb_addr,addr);
 	*msg_ifidx=ifidx;
 	
-	if ((err=netlink_broadcast(shim6nl_sk,skb,0,SHIM6NLGRP_DEFAULT,
-				   GFP_ATOMIC)))
-		printk(KERN_INFO "shim6, %s : nl broadcast, error %d,"
-		       "daemon down ?\n", 
-		       __FUNCTION__, err);
+	netlink_broadcast(shim6nl_sk,skb,0,SHIM6NLGRP_DEFAULT,
+			  GFP_ATOMIC); 
 }
 
 static inline void shim6_param_prob(struct sk_buff *skb, int code, int pos)
