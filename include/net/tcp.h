@@ -943,30 +943,14 @@ static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
 
-	if (skb->len>1500) {
-		printk(KERN_ERR "BUG:pi %d, skb->seq %x,"
-		       "skb->len:%d\n",
-		       skb->path_index,TCP_SKB_CB(skb)->seq,
-		       skb->len);
-		/*This ensures that we will have a backtrace
-		  on the console.*/
-		console_loglevel=8;
-		BUG();
-	}
-
 	if (!sysctl_tcp_low_latency && mpcb->ucopy.task) {
 		__skb_queue_tail(&tp->ucopy.prequeue, skb);
 		tp->ucopy.memory += skb->truesize;
-		PDEBUG("%s:line %d, prequeue length: %d\n",
-		       __FUNCTION__,__LINE__, 
-		       skb_queue_len(&tp->ucopy.prequeue)); /*TODEL*/
 		if (tp->ucopy.memory > sk->sk_rcvbuf) {			
 			struct sk_buff *skb1;
-			PDEBUG("%s:line %d\n",
-			       __FUNCTION__,__LINE__); /*TODEL*/
-
+			
 			BUG_ON(sock_owned_by_user(sk));
-
+			
 			while ((skb1 = __skb_dequeue(&tp->ucopy.prequeue)) 
 			       != NULL) {
 				sk->sk_backlog_rcv(sk, skb1);
@@ -976,11 +960,11 @@ static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 			
 			tp->ucopy.memory = 0;
 		} else if (skb_queue_len(&tp->ucopy.prequeue) == 1) {
-			PDEBUG("%s:line %d\n",
-			       __FUNCTION__,__LINE__); /*TODEL*/
-			wake_up_interruptible(sk->sk_sleep);
-			PDEBUG("%s:line %d\n",
-			       __FUNCTION__,__LINE__); /*TODEL*/
+			if (tp->mpc)
+				wake_up_interruptible(
+					tp->mpcb->master_sk->sk_sleep);
+			else
+				wake_up_interruptible(sk->sk_sleep);
 			if (!inet_csk_ack_scheduled(sk))
 				inet_csk_reset_xmit_timer(sk, ICSK_TIME_DACK,
 						          (3 * TCP_RTO_MIN) / 4,
@@ -1003,11 +987,13 @@ static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 
 			BUG_ON(sock_owned_by_user(sk));
 
-			while ((skb1 = __skb_dequeue(&tp->ucopy.prequeue)) != NULL) {
+			while ((skb1 = __skb_dequeue(&tp->ucopy.prequeue)) 
+			       != NULL) {
 				sk->sk_backlog_rcv(sk, skb1);
-				NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPPREQUEUEDROPPED);
+				NET_INC_STATS_BH(sock_net(sk), 
+						 LINUX_MIB_TCPPREQUEUEDROPPED);
 			}
-
+			
 			tp->ucopy.memory = 0;
 		} else if (skb_queue_len(&tp->ucopy.prequeue) == 1) {
 			wake_up_interruptible(sk->sk_sleep);

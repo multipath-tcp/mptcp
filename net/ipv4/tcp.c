@@ -2278,7 +2278,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 					sk=(struct sock*) tp;
 					tcp_prequeue_process(sk);
 					
-					if ((chunk = len - mpcb->ucopy.len) 
+					if ((chunk = len - mpcb->ucopy.len)
 					    != 0) {
 						PDEBUG("prequeue "
 						       "copy :%d, len %d,"
@@ -2311,7 +2311,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			if ((flags & MSG_PEEK) && 
 			    tp->peek_seq != tp->copied_seq) {
 				if (net_ratelimit())
-					PDEBUG("TCP(%s:%d): "
+					printk(KERN_ERR "TCP(%s:%d): "
 					       "Application bug, race in "
 					       "MSG_PEEK.\n",
 					       current->comm, 
@@ -2570,9 +2570,9 @@ void tcp_close(struct sock *sk, long timeout)
 	struct sk_buff *skb;
 	int data_was_unread = 0;
 	int state;
-
+	
 	printk(KERN_ERR "Entering %s\n", __FUNCTION__);
-
+	
 #ifdef CONFIG_MTCP
 	/*if this is the master subsocket, we must first close the
 	  slave subsockets*/
