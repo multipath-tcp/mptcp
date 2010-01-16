@@ -1977,6 +1977,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 
 	do {
 		u32 offset;
+		int empty_prequeues=0;
 
 		/* Are we at urgent data ? 
 		   Stop if we have read anything 
@@ -2192,8 +2193,10 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			 */
 			if (mtcp_test_any_tp(mpcb,tp,
 					     !skb_queue_empty(
-						     &tp->ucopy.prequeue)))
+						     &tp->ucopy.prequeue))) {
+				empty_prequeues=1;
 				goto do_prequeue;
+			}
 			/* __ Set realtime policy in scheduler __ */
 		}
 		PDEBUG("At line %d\n",__LINE__);
@@ -2265,16 +2268,17 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				}
 			}
 			
+		do_prequeue:			
 			mtcp_for_each_tp(mpcb,tp) {
 				PDEBUG("Checking prequeue for pi %d,"
 				       "prequeue len:%d\n",
 				       tp->path_index,
 				       skb_queue_len(&tp->ucopy.prequeue));
-				if (tp->rcv_nxt == tp->copied_seq &&
+				if (empty_prequeues ||
+				    (tp->rcv_nxt == tp->copied_seq &&
 				    !skb_queue_empty(
-					    &tp->ucopy.prequeue)) {
+					    &tp->ucopy.prequeue))) {
 					
-				do_prequeue:
 					sk=(struct sock*) tp;
 					tcp_prequeue_process(sk);
 					
@@ -2306,6 +2310,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 					}
 				}
 			}
+			empty_prequeues=0;
 		}
 		mtcp_for_each_tp(mpcb,tp) {
 			if ((flags & MSG_PEEK) && 
