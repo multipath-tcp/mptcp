@@ -5072,6 +5072,8 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	PDEBUG("%s:pi %d - seq is %x,sock is %p\n",
 	       __FUNCTION__,skb->path_index,TCP_SKB_CB(skb)->seq,
 	       sk);
+
+	tcpprobe_rcv_established(sk,skb,th,len);
 	       
 	/*
 	 *	Header prediction.
