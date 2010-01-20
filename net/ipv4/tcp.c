@@ -2110,8 +2110,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			    master_sk->sk_state == TCP_CLOSE ||
 			    (master_sk->sk_shutdown & RCV_SHUTDOWN) ||
 			    !timeo ||
-			    signal_pending(current) ||
-			    (flags & MSG_PEEK))
+			    signal_pending(current))
 				break;
 		} else {
 			if (sock_flag(master_sk, SOCK_DONE))
