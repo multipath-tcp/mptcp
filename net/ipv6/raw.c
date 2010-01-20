@@ -52,6 +52,9 @@
 #include <net/mip6.h>
 #endif
 #include <linux/mroute6.h>
+#if defined(CONFIG_IPV6_SHIM6) || defined(CONFIG_IPV6_SHIM6_MODULE)
+#include <net/shim6.h>
+#endif
 
 #include <net/raw.h>
 #include <net/rawv6.h>
@@ -197,6 +200,11 @@ static int ipv6_raw_deliver(struct sk_buff *skb, int nexthdr)
 			filtered = filter ? filter(sk, skb) : 0;
 			break;
 		}
+#endif
+#if defined(CONFIG_IPV6_SHIM6) || defined(CONFIG_IPV6_SHIM6_MODULE)
+		case IPPROTO_SHIM6:
+			filtered = shim6_filter(sk,skb);
+			break;
 #endif
 		default:
 			filtered = 0;

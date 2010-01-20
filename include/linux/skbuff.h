@@ -270,6 +270,13 @@ struct sk_buff {
 		struct  rtable		*rtable;
 	};
 	struct	sec_path	*sp;
+	unsigned int            path_index; /*Path index for multipath control*/
+	__u32                   path_mask; /*Mask of the path indices that
+					     have tried to send this skb*/
+	__u32                   debug; /*TODEL*/
+	char                    debug2;
+	int                     debug_count; /*TODEL*/
+	__u32                   data_seq; /*TODEL*/
 
 	/*
 	 * This is the control buffer. It is free to use for every
@@ -277,8 +284,7 @@ struct sk_buff {
 	 * want to keep them across layers you have to do a skb_clone()
 	 * first. This is owned by whoever has the skb queued ATM.
 	 */
-	char			cb[48];
-
+	char			cb[62];
 	unsigned int		len,
 				data_len;
 	__u16			mac_len,

@@ -44,6 +44,9 @@
 
 #include <linux/seq_file.h>
 
+#undef PDEBUG
+#define PDEBUG(fmt,args...)
+
 extern struct inet_hashinfo tcp_hashinfo;
 
 extern atomic_t tcp_orphan_count;
@@ -167,8 +170,18 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOPT_TIMESTAMP	8	/* Better RTT estimations/PAWS */
 #define TCPOPT_MD5SIG		19	/* MD5 Signature (RFC2385) */
 
+#define TCPOPT_MPC   	        30
+#define TCPOPT_DSN		31
+#define TCPOPT_DFIN		32
+#define TCPOPT_RESYNC   	33
+
+#define TCPOPT_TOKEN            60
+#define TCPOPT_ADDR             61
+#define TCPOPT_REMADR           62
+#define TCPOPT_NEW_SUBFLOW	63
+
 /*
- *     TCP option lengths
+ *     TCP option lengthsx
  */
 
 #define TCPOLEN_MSS            4
@@ -176,6 +189,8 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_SACK_PERM      2
 #define TCPOLEN_TIMESTAMP      10
 #define TCPOLEN_MD5SIG         18
+#define TCPOLEN_MPC            4
+#define TCPOLEN_DSN            12
 
 /* But this is what stacks really send out. */
 #define TCPOLEN_TSTAMP_ALIGNED		12
@@ -186,6 +201,9 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_SACK_PERBLOCK		8
 #define TCPOLEN_MD5SIG_ALIGNED		20
 #define TCPOLEN_MSS_ALIGNED		4
+#define TCPOLEN_MPC_ALIGNED             4
+#define TCPOLEN_DSN_ALIGNED             12
+
 
 /* Flags in tp->nonagle */
 #define TCP_NAGLE_OFF		1	/* Nagle's algo is disabled */
@@ -395,6 +413,7 @@ extern int			tcp_recvmsg(struct kiocb *iocb, struct sock *sk,
 
 extern void			tcp_parse_options(struct sk_buff *skb,
 						  struct tcp_options_received *opt_rx,
+						  struct multipath_options *mopt,
 						  int estab);
 
 extern u8			*tcp_parse_md5sig_option(struct tcphdr *th);
@@ -432,6 +451,9 @@ extern struct sk_buff *		tcp_make_synack(struct sock *sk,
 						struct request_sock *req);
 
 extern int			tcp_disconnect(struct sock *sk, int flags);
+
+extern inline void tcp_push(struct sock *sk, int flags, int mss_now,
+			    int nonagle);
 
 
 /* From syncookies.c */
@@ -553,8 +575,8 @@ extern u32	__tcp_select_window(struct sock *sk);
 /* This is what the send packet queuing engine uses to pass
  * TCP per-packet control information to the transmission
  * code.  We also store the host-order sequence numbers in
- * here too.  This is 36 bytes on 32-bit architectures,
- * 40 bytes on 64-bit machines, if this grows please adjust
+ * here too.  This is 40 bytes on 32-bit architectures,
+ * 48 bytes on 64-bit machines, if this grows please adjust
  * skbuff.h:skbuff->cb[xxx] size appropriately.
  */
 struct tcp_skb_cb {
@@ -566,6 +588,13 @@ struct tcp_skb_cb {
 	} header;	/* For incoming frames		*/
 	__u32		seq;		/* Starting sequence number	*/
 	__u32		end_seq;	/* SEQ + FIN + SYN + datalen	*/
+	__u32           data_seq;       /* Starting data seq            */
+	__u32           end_data_seq;   /* DATA_SEQ + FIN+ SYN + datalen*/
+	__u16           data_len;       /* Data-level length (MPTCP)    
+					 * a value of 0 indicates that no DSN
+					 * option is attached to that segment
+					 */
+	__u32           sub_seq;        /* subflow seqnum (MPTCP)       */
 	__u32		when;		/* used to compute rtt's	*/
 	__u8		flags;		/* TCP header flags.		*/
 
@@ -699,6 +728,22 @@ static inline void tcp_set_ca_state(struct sock *sk, const u8 ca_state)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
+#ifdef CONFIG_MTCP
+	struct tcp_sock *tp=tcp_sk(sk);
+	
+	if (ca_state != icsk->icsk_ca_state) {
+		if ((tp->path_index==0 || tp->path_index==1) &&
+		    ca_state!=0 && ca_state !=2) {
+			console_loglevel=8;					
+			printk(KERN_ERR "Changed from state %d to state %d, "
+			       "tp->snd_nxt:%x,tp->snd_una:%x\n",
+			       icsk->icsk_ca_state,ca_state,
+			       tp->snd_nxt,tp->snd_una);
+//					WARN_ON(1);
+		}
+	}
+#endif
+
 	if (icsk->icsk_ca_ops->set_state)
 		icsk->icsk_ca_ops->set_state(sk, ca_state);
 	icsk->icsk_ca_state = ca_state;
@@ -798,11 +843,20 @@ static __inline__ __u32 tcp_max_burst(const struct tcp_sock *tp)
 	return tp->reordering;
 }
 
-/* Returns end sequence number of the receiver's advertised window */
-static inline u32 tcp_wnd_end(const struct tcp_sock *tp)
+/* Returns end sequence number of the receiver's advertised window
+ * If @data_seq is 1, we return an end data_seq number (for mptcp)
+ * rather than an end seq number.
+ */
+static inline u32 tcp_wnd_end(const struct tcp_sock *tp, int data_seq)
 {
-	return tp->snd_una + tp->snd_wnd;
+	/*With MPTCP, we return the end DATASEQ number of the receiver's
+	  advertised window*/
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+	
+	if (!data_seq || !tp->mpc) return tp->snd_una + tp->snd_wnd;
+	else return mpcb->snd_una+tp->snd_wnd;
 }
+
 extern int tcp_is_cwnd_limited(const struct sock *sk, u32 in_flight);
 
 static inline void tcp_minshall_update(struct tcp_sock *tp, unsigned int mss,
@@ -863,9 +917,11 @@ static inline int tcp_checksum_complete(struct sk_buff *skb)
 
 static inline void tcp_prequeue_init(struct tcp_sock *tp)
 {
+#ifndef CONFIG_MTCP
 	tp->ucopy.task = NULL;
 	tp->ucopy.len = 0;
 	tp->ucopy.memory = 0;
+#endif /*In MTCP, those fields are in the mpcb structure*/
 	skb_queue_head_init(&tp->ucopy.prequeue);
 #ifdef CONFIG_NET_DMA
 	tp->ucopy.dma_chan = NULL;
@@ -883,6 +939,44 @@ static inline void tcp_prequeue_init(struct tcp_sock *tp)
  *
  * NOTE: is this not too big to inline?
  */
+#ifdef CONFIG_MTCP
+static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+
+	if (!sysctl_tcp_low_latency && mpcb->ucopy.task) {
+		__skb_queue_tail(&tp->ucopy.prequeue, skb);
+		tp->ucopy.memory += skb->truesize;
+		if (tp->ucopy.memory > sk->sk_rcvbuf) {			
+			struct sk_buff *skb1;
+			
+			BUG_ON(sock_owned_by_user(sk));
+			
+			while ((skb1 = __skb_dequeue(&tp->ucopy.prequeue)) 
+			       != NULL) {
+				sk->sk_backlog_rcv(sk, skb1);
+				NET_INC_STATS_BH(sock_net(sk), 
+						 LINUX_MIB_TCPPREQUEUEDROPPED);
+			}
+			
+			tp->ucopy.memory = 0;
+		} else if (skb_queue_len(&tp->ucopy.prequeue) == 1) {
+			if (tp->mpc)
+				wake_up_interruptible(
+					tp->mpcb->master_sk->sk_sleep);
+			else
+				wake_up_interruptible(sk->sk_sleep);
+			if (!inet_csk_ack_scheduled(sk))
+				inet_csk_reset_xmit_timer(sk, ICSK_TIME_DACK,
+						          (3 * TCP_RTO_MIN) / 4,
+							  TCP_RTO_MAX);
+		}
+		return 1;
+	}
+	return 0;
+}
+#else
 static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -892,14 +986,16 @@ static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 		tp->ucopy.memory += skb->truesize;
 		if (tp->ucopy.memory > sk->sk_rcvbuf) {
 			struct sk_buff *skb1;
-
+			
 			BUG_ON(sock_owned_by_user(sk));
-
-			while ((skb1 = __skb_dequeue(&tp->ucopy.prequeue)) != NULL) {
+			
+			while ((skb1 = __skb_dequeue(&tp->ucopy.prequeue)) 
+			       != NULL) {
 				sk_backlog_rcv(sk, skb1);
-				NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPPREQUEUEDROPPED);
+				NET_INC_STATS_BH(sock_net(sk), 
+						 LINUX_MIB_TCPPREQUEUEDROPPED);
 			}
-
+			
 			tp->ucopy.memory = 0;
 		} else if (skb_queue_len(&tp->ucopy.prequeue) == 1) {
 			wake_up_interruptible(sk->sk_sleep);
@@ -912,6 +1008,7 @@ static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 	}
 	return 0;
 }
+#endif
 
 
 #undef STATE_TRACE
@@ -949,9 +1046,30 @@ static inline int tcp_win_from_space(int space)
 /* Note: caller must be prepared to deal with negative returns */ 
 static inline int tcp_space(const struct sock *sk)
 {
+#ifdef CONFIG_MTCP
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct sock *sk_it;
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+	int free_space=0;
+
+	if (!tp->mpc) return tcp_win_from_space(sk->sk_rcvbuf);
+
+	/*Compute the sum of free memory for all subflows*/
+	mtcp_for_each_sk(mpcb,sk_it,tp) {
+		free_space+=sk_it->sk_rcvbuf - 
+			atomic_read(&sk_it->sk_rmem_alloc);
+	}
+	/*We must still remove from this the space needed by meta-buffered
+	  data*/
+	free_space-=mpcb->ofo_bytes;
+		
+	return tcp_win_from_space(free_space);
+	
+#else
 	return tcp_win_from_space(sk->sk_rcvbuf -
 				  atomic_read(&sk->sk_rmem_alloc));
-} 
+#endif
+}
 
 static inline int tcp_full_space(const struct sock *sk)
 {

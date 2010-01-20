@@ -19,7 +19,6 @@
  */
 
 #include <linux/kernel.h>
-#include <linux/kprobes.h>
 #include <linux/socket.h>
 #include <linux/tcp.h>
 #include <linux/proc_fs.h>
@@ -27,6 +26,12 @@
 #include <linux/ktime.h>
 #include <linux/time.h>
 #include <net/net_namespace.h>
+
+#ifdef CONFIG_KPROBES
+#include <linux/kprobes.h>
+#else
+#include <linux/tcp_probe.h>
+#endif
 
 #include <net/tcp.h>
 
@@ -43,7 +48,7 @@ static int bufsize __read_mostly = 4096;
 MODULE_PARM_DESC(bufsize, "Log buffer size in packets (4096)");
 module_param(bufsize, int, 0);
 
-static int full __read_mostly;
+static int full __read_mostly=1;
 MODULE_PARM_DESC(full, "Full log (1=every ack packet received,  0=only cwnd changes)");
 module_param(full, int, 0);
 
@@ -53,6 +58,7 @@ struct tcp_log {
 	ktime_t tstamp;
 	__be32	saddr, daddr;
 	__be16	sport, dport;
+	int     path_index;
 	u16	length;
 	u32	snd_nxt;
 	u32	snd_una;
@@ -60,6 +66,10 @@ struct tcp_log {
 	u32	snd_cwnd;
 	u32	ssthresh;
 	u32	srtt;
+	u32     rcv_nxt;
+	u32     copied_seq;
+	u32     rcv_wnd;
+	char    send; /*1 if sending side, 0 if receive*/
 };
 
 static struct {
@@ -80,6 +90,8 @@ static inline int tcp_probe_used(void)
 
 static inline int tcp_probe_avail(void)
 {
+	if (!(bufsize-tcp_probe_used()))
+		printk(KERN_ERR "No log space anymore\n");
 	return bufsize - tcp_probe_used();
 }
 
@@ -107,6 +119,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->sport = inet->sport;
 			p->daddr = inet->daddr;
 			p->dport = inet->dport;
+			p->path_index = skb->path_index;
 			p->length = skb->len;
 			p->snd_nxt = tp->snd_nxt;
 			p->snd_una = tp->snd_una;
@@ -114,6 +127,10 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->snd_wnd = tp->snd_wnd;
 			p->ssthresh = tcp_current_ssthresh(sk);
 			p->srtt = tp->srtt >> 3;
+			p->rcv_nxt=tp->rcv_nxt;
+			p->copied_seq=tp->copied_seq;
+			p->rcv_wnd=tp->rcv_wnd;
+			p->send=0;
 
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
@@ -123,16 +140,77 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 		wake_up(&tcp_probe.wait);
 	}
 
+#ifdef CONFIG_KPROBES
 	jprobe_return();
+#endif
 	return 0;
 }
 
+/*
+ * Hook inserted to be called before each packet transmission.
+ * Note: arguments must match tcp_transmit_skb()!
+ */
+static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
+			     gfp_t gfp_mask)
+{
+	const struct tcp_sock *tp = tcp_sk(sk);
+	const struct inet_sock *inet = inet_sk(sk);
+
+	/* Only update if port matches */
+	if ((port == 0 || ntohs(inet->dport) == port || ntohs(inet->sport) == port)
+	    && (full || tp->snd_cwnd != tcp_probe.lastcwnd)) {
+
+		spin_lock_bh(&tcp_probe.lock);
+		/* If log fills, just silently drop */
+		if (tcp_probe_avail() > 1) {
+			struct tcp_log *p = tcp_probe.log + tcp_probe.head;
+
+			p->tstamp = ktime_get();
+			p->saddr = inet->saddr;
+			p->sport = inet->sport;
+			p->daddr = inet->daddr;
+			p->dport = inet->dport;
+			p->path_index = skb->path_index;
+			p->length = skb->len;
+			p->snd_nxt = tp->snd_nxt;
+			p->snd_una = tp->snd_una;
+			p->snd_cwnd = tp->snd_cwnd;
+			p->snd_wnd = tp->snd_wnd;
+			p->ssthresh = tcp_current_ssthresh(sk);
+			p->srtt = tp->srtt >> 3;
+			p->rcv_nxt=tp->rcv_nxt;
+			p->copied_seq=tp->copied_seq;
+			p->rcv_wnd=tp->rcv_wnd;
+			p->send=1;
+
+			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
+		}
+		tcp_probe.lastcwnd = tp->snd_cwnd;
+		spin_unlock_bh(&tcp_probe.lock);
+
+		wake_up(&tcp_probe.wait);
+	}
+
+#ifdef CONFIG_KPROBES
+	jprobe_return();
+#endif
+	return 0;
+}
+
+#ifdef CONFIG_KPROBES
 static struct jprobe tcp_jprobe = {
 	.kp = {
 		.symbol_name	= "tcp_rcv_established",
 	},
 	.entry	= jtcp_rcv_established,
+	};
+#else
+static struct tcpprobe_ops tcpprobe_fcts = {
+	.rcv_established=jtcp_rcv_established,
+	.transmit_skb=jtcp_transmit_skb,
 };
+#endif
+
 
 static int tcpprobe_open(struct inode * inode, struct file * file)
 {
@@ -154,13 +232,14 @@ static int tcpprobe_sprint(char *tbuf, int n)
 
 	return snprintf(tbuf, n,
 			"%lu.%09lu " NIPQUAD_FMT ":%u " NIPQUAD_FMT ":%u"
-			" %d %#x %#x %u %u %u %u\n",
+			" %d %d %#x %#x %u %u %u %u %#x %#x %u %d\n",
 			(unsigned long) tv.tv_sec,
 			(unsigned long) tv.tv_nsec,
 			NIPQUAD(p->saddr), ntohs(p->sport),
 			NIPQUAD(p->daddr), ntohs(p->dport),
-			p->length, p->snd_nxt, p->snd_una,
-			p->snd_cwnd, p->ssthresh, p->snd_wnd, p->srtt);
+			p->path_index,p->length, p->snd_nxt, p->snd_una,
+			p->snd_cwnd, p->ssthresh, p->snd_wnd, p->srtt,
+			p->rcv_nxt,p->copied_seq,p->rcv_wnd,p->send);
 }
 
 static ssize_t tcpprobe_read(struct file *file, char __user *buf,
@@ -172,7 +251,7 @@ static ssize_t tcpprobe_read(struct file *file, char __user *buf,
 		return -EINVAL;
 
 	while (cnt < len) {
-		char tbuf[128];
+		char tbuf[1024];
 		int width;
 
 		/* Wait for data in buffer */
@@ -231,7 +310,11 @@ static __init int tcpprobe_init(void)
 	if (!proc_net_fops_create(&init_net, procname, S_IRUSR, &tcpprobe_fops))
 		goto err0;
 
+#ifdef CONFIG_KPROBES
 	ret = register_jprobe(&tcp_jprobe);
+#else
+	ret=register_probe(&tcpprobe_fcts, 4);
+#endif
 	if (ret)
 		goto err1;
 
@@ -248,7 +331,11 @@ module_init(tcpprobe_init);
 static __exit void tcpprobe_exit(void)
 {
 	proc_net_remove(&init_net, procname);
+#ifdef CONFIG_KPROBES
 	unregister_jprobe(&tcp_jprobe);
+#else
+	unregister_probe(&tcpprobe_fcts,4);
+#endif
 	kfree(tcp_probe.log);
 }
 module_exit(tcpprobe_exit);

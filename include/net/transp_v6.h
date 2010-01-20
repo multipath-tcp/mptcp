@@ -21,6 +21,8 @@ extern int				ipv6_exthdrs_init(void);
 extern void				ipv6_exthdrs_exit(void);
 extern int				ipv6_frag_init(void);
 extern void				ipv6_frag_exit(void);
+extern void                             ipv6_shim6_init(void);
+extern void                             ipv6_shim6_exit(void);
 
 /* transport protocols */
 extern int				rawv6_init(void);

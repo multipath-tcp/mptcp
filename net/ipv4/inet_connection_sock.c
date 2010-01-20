@@ -24,6 +24,15 @@
 #include <net/tcp_states.h>
 #include <net/xfrm.h>
 
+#undef DEBUG_MTCP /*set to define if you want debugging messages*/
+
+#undef PDEBUG
+#ifdef DEBUG_MTCP
+#define PDEBUG(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
+#else
+#define PDEBUG(fmt,args...)
+#endif /*DEBUG_MTCP*/
+
 #ifdef INET_CSK_DEBUG
 const char inet_csk_timer_bug_msg[] = "inet_csk BUG: unknown timer value\n";
 EXPORT_SYMBOL(inet_csk_timer_bug_msg);
@@ -263,6 +272,27 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 
 	newsk = reqsk_queue_get_child(&icsk->icsk_accept_queue, sk);
 	WARN_ON(newsk->sk_state == TCP_SYN_RECV);
+	
+#ifdef CONFIG_MTCP
+	/*Init the MTCP mpcb - we need this because when doing 
+	  an accept the init function (e.g. tcp_v6_init_sock for tcp ipv6)
+	  is not called*/
+	if (newsk->sk_protocol==IPPROTO_TCP) {
+		struct tcp_sock *tp=tcp_sk(newsk);
+		struct multipath_pcb *mpcb;		
+		mpcb=mtcp_alloc_mpcb(newsk);
+		tp->path_index=0;		
+		mtcp_add_sock(mpcb,tp);
+		mtcp_update_metasocket(newsk);
+		mpcb->write_seq=0; /*first byte is IDSN
+				     To be replaced later with a random IDSN
+				     (well, if it indeed improve security)*/
+		
+		mpcb->copied_seq=0; /* First byte of yet unread data */		
+		mtcp_ask_update(newsk);
+	}
+#endif
+
 out:
 	release_sock(sk);
 	return newsk;
@@ -543,7 +573,13 @@ EXPORT_SYMBOL_GPL(inet_csk_clone);
  * try to jump onto it.
  */
 void inet_csk_destroy_sock(struct sock *sk)
-{
+{	
+#ifdef CONFIG_MTCP
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
+	PDEBUG("Removing subsocket %p\n",sk);
+	mtcp_del_sock(mpcb,tcp_sk(sk));
+#endif   
+
 	WARN_ON(sk->sk_state != TCP_CLOSE);
 	WARN_ON(!sock_flag(sk, SOCK_DEAD));
 

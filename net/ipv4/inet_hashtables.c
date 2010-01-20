@@ -454,7 +454,7 @@ int __inet_hash_connect(struct inet_timewait_death_row *death_row,
 					if (tb->fastreuse >= 0)
 						goto next_port;
 					if (!check_established(death_row, sk,
-								port, &tw))
+							       port, &tw))
 						goto ok;
 					goto next_port;
 				}
@@ -499,7 +499,9 @@ ok:
 	head = &hinfo->bhash[inet_bhashfn(net, snum, hinfo->bhash_size)];
 	tb  = inet_csk(sk)->icsk_bind_hash;
 	spin_lock_bh(&head->lock);
-	if (sk_head(&tb->owners) == sk && !sk->sk_bind_node.next) {
+
+	if (sk->sk_protocol==IPPROTO_MTCPSUB ||
+	    (sk_bind_head(&tb->owners) == sk && !sk->sk_bind_node.next)) {
 		hash(sk);
 		spin_unlock_bh(&head->lock);
 		return 0;

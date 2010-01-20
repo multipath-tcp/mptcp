@@ -101,6 +101,7 @@
 #include <net/ip_fib.h>
 #include <net/inet_connection_sock.h>
 #include <net/tcp.h>
+#include <net/mtcp.h>
 #include <net/udp.h>
 #include <net/udplite.h>
 #include <linux/skbuff.h>
@@ -413,7 +414,7 @@ out_rcu_unlock:
 int inet_release(struct socket *sock)
 {
 	struct sock *sk = sock->sk;
-
+	
 	if (sk) {
 		long timeout;
 
@@ -514,6 +515,9 @@ int inet_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	inet->daddr = 0;
 	inet->dport = 0;
 	sk_dst_reset(sk);
+#ifdef CONFIG_MTCP
+	mtcp_update_metasocket(sk);
+#endif
 	err = 0;
 out_release_sock:
 	release_sock(sk);
@@ -853,7 +857,11 @@ const struct proto_ops inet_stream_ops = {
 	.shutdown	   = inet_shutdown,
 	.setsockopt	   = sock_common_setsockopt,
 	.getsockopt	   = sock_common_getsockopt,
+#ifdef CONFIG_MTCP
+	.sendmsg	   = mtcp_sendmsg,
+#else
 	.sendmsg	   = tcp_sendmsg,
+#endif
 	.recvmsg	   = sock_common_recvmsg,
 	.mmap		   = sock_no_mmap,
 	.sendpage	   = tcp_sendpage,
@@ -959,7 +967,19 @@ static struct inet_protosw inetsw_array[] =
 	       .capability = CAP_NET_RAW,
 	       .no_check =   UDP_CSUM_DEFAULT,
 	       .flags =      INET_PROTOSW_REUSE,
-       }
+       },
+#ifdef CONFIG_MTCP
+	{
+		.type =       SOCK_STREAM,
+		.protocol =   IPPROTO_MTCPSUB,
+		.prot =       &mtcpsub_prot,
+		.ops =        &inet_stream_ops,
+		.capability = -1,
+		.no_check =   0,
+		.flags =      INET_PROTOSW_PERMANENT |
+		              INET_PROTOSW_ICSK,
+	},
+#endif
 };
 
 #define INETSW_ARRAY_LEN ARRAY_SIZE(inetsw_array)
@@ -1434,6 +1454,12 @@ static int __init inet_init(void)
 	if (rc)
 		goto out_unregister_udp_proto;
 
+#ifdef CONFIG_MTCP
+	rc = proto_register(&mtcpsub_prot, 1);
+	if (rc) 
+		goto out_unregister_raw_proto;
+#endif
+
 	/*
 	 *	Tell SOCKET that we are alive...
 	 */
@@ -1519,6 +1545,8 @@ static int __init inet_init(void)
 	rc = 0;
 out:
 	return rc;
+out_unregister_raw_proto:
+	proto_unregister(&raw_prot);
 out_unregister_udp_proto:
 	proto_unregister(&udp_prot);
 out_unregister_tcp_proto:

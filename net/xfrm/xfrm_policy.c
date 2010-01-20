@@ -26,6 +26,7 @@
 #include <linux/cache.h>
 #include <linux/audit.h>
 #include <net/dst.h>
+#include <net/shim6.h>
 #include <net/xfrm.h>
 #include <net/ip.h>
 #ifdef CONFIG_XFRM_STATISTICS
@@ -119,7 +120,7 @@ static inline struct dst_entry *__xfrm_dst_lookup(int tos,
 static inline struct dst_entry *xfrm_dst_lookup(struct xfrm_state *x, int tos,
 						xfrm_address_t *prev_saddr,
 						xfrm_address_t *prev_daddr,
-						int family)
+						int family, int path_index)
 {
 	xfrm_address_t *saddr = &x->props.saddr;
 	xfrm_address_t *daddr = &x->id.daddr;
@@ -132,6 +133,13 @@ static inline struct dst_entry *xfrm_dst_lookup(struct xfrm_state *x, int tos,
 	if (x->type->flags & XFRM_TYPE_REMOTE_COADDR) {
 		saddr = prev_saddr;
 		daddr = x->coaddr;
+	}
+	if (x->type->flags & XFRM_TYPE_SHIM6_ADDR) {
+		struct shim6_path *path=map_pi_path(path_index,
+						    x->shim6->paths,
+						    x->shim6->npaths);
+		saddr = (xfrm_address_t*) &path->local;
+		daddr = (xfrm_address_t*) &path->remote;
 	}
 
 	dst = __xfrm_dst_lookup(tos, saddr, daddr, family);
@@ -599,6 +607,7 @@ int xfrm_policy_insert(int dir, struct xfrm_policy *policy, int excl)
 		hlist_add_after(newpos, &policy->bydst);
 	else
 		hlist_add_head(&policy->bydst, chain);
+
 	xfrm_pol_hold(policy);
 	xfrm_policy_count[dir]++;
 	atomic_inc(&flow_cache_genid);
@@ -1391,7 +1400,8 @@ static inline int xfrm_fill_dst(struct xfrm_dst *xdst, struct net_device *dev)
 static struct dst_entry *xfrm_bundle_create(struct xfrm_policy *policy,
 					    struct xfrm_state **xfrm, int nx,
 					    struct flowi *fl,
-					    struct dst_entry *dst)
+					    struct dst_entry *dst, 
+					    int path_index)
 {
 	unsigned long now = jiffies;
 	struct net_device *dev;
@@ -1432,18 +1442,18 @@ static struct dst_entry *xfrm_bundle_create(struct xfrm_policy *policy,
 			dst1->flags |= DST_NOHASH;
 		}
 
-		xdst->route = dst;
-		memcpy(&dst1->metrics, &dst->metrics, sizeof(dst->metrics));
-
 		if (xfrm[i]->props.mode != XFRM_MODE_TRANSPORT) {
 			family = xfrm[i]->props.family;
 			dst = xfrm_dst_lookup(xfrm[i], tos, &saddr, &daddr,
-					      family);
+					      family, path_index);
 			err = PTR_ERR(dst);
 			if (IS_ERR(dst))
 				goto put_states;
 		} else
 			dst_hold(dst);
+
+  		xdst->route = dst;
+		memcpy(&dst1->metrics, &dst->metrics, sizeof(dst->metrics));
 
 		dst1->xfrm = xfrm[i];
 		xdst->genid = xfrm[i]->genid;
@@ -1472,7 +1482,7 @@ static struct dst_entry *xfrm_bundle_create(struct xfrm_policy *policy,
 	if (!dev)
 		goto free_dst;
 
-	/* Copy neighbout for reachability confirmation */
+	/* Copy neighbour for reachability confirmation */
 	dst0->neighbour = neigh_clone(dst->neighbour);
 
 	xfrm_init_path((struct xfrm_dst *)dst0, dst, nfheader_len);
@@ -1562,6 +1572,14 @@ int __xfrm_lookup(struct dst_entry **dst_p, struct flowi *fl,
 	u32 genid;
 	u16 family;
 	u8 dir = policy_to_flow_dir(XFRM_POLICY_OUT);
+	int path_index=0;
+
+	/*Currently, path indices are used only with TCP*/
+	if (sk && (sk->sk_protocol==IPPROTO_TCP || 
+		   sk->sk_protocol==IPPROTO_MTCPSUB)) {
+		path_index= tcp_sk(sk)->path_index;
+		fl->path_index=path_index;
+	}
 
 restart:
 	genid = atomic_read(&flow_cache_genid);
@@ -1723,7 +1741,8 @@ restart:
 			return 0;
 		}
 
-		dst = xfrm_bundle_create(policy, xfrm, nx, fl, dst_orig);
+		dst = xfrm_bundle_create(policy, xfrm, nx, fl, dst_orig,
+					 path_index);
 		err = PTR_ERR(dst);
 		if (IS_ERR(dst)) {
 			XFRM_INC_STATS(LINUX_MIB_XFRMOUTBUNDLEGENERROR);
@@ -1767,6 +1786,7 @@ restart:
 
 		dst->next = policy->bundles;
 		policy->bundles = dst;
+		dst->path_index=fl->path_index;
 		dst_hold(dst);
 		write_unlock_bh(&policy->lock);
 	}
@@ -2205,7 +2225,6 @@ static void xfrm_init_pmtu(struct dst_entry *dst)
 
 		if (pmtu > route_mtu_cached)
 			pmtu = route_mtu_cached;
-
 		dst->metrics[RTAX_MTU-1] = pmtu;
 	} while ((dst = dst->next));
 }
@@ -2256,6 +2275,8 @@ int xfrm_bundle_ok(struct xfrm_policy *pol, struct xfrm_dst *first,
 
 		mtu = dst_mtu(dst->child);
 		if (xdst->child_mtu_cached != mtu) {
+			printk(KERN_ERR "child_mtu_cached:%d,mtu:%d\n",
+			       xdst->child_mtu_cached,mtu);
 			last = xdst;
 			xdst->child_mtu_cached = mtu;
 		}
@@ -2286,10 +2307,12 @@ int xfrm_bundle_ok(struct xfrm_policy *pol, struct xfrm_dst *first,
 		if (last == first)
 			break;
 
+		printk(KERN_ERR "should not arrive here\n");
 		last = (struct xfrm_dst *)last->u.dst.next;
 		last->child_mtu_cached = mtu;
 	}
 
+	printk(KERN_ERR "%s:mtu set to %d\n", __FUNCTION__,mtu);
 	return 1;
 }
 

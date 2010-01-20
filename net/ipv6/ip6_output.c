@@ -107,7 +107,6 @@ static int ip6_output_finish(struct sk_buff *skb)
 			 ip6_dst_idev(dst), IPSTATS_MIB_OUTNOROUTES);
 	kfree_skb(skb);
 	return -EINVAL;
-
 }
 
 /* dev_loopback_xmit for use with netfilter. */
@@ -202,10 +201,26 @@ int ip6_xmit(struct sock *sk, struct sk_buff *skb, struct flowi *fl,
 	struct in6_addr *first_hop = &fl->fl6_dst;
 	struct dst_entry *dst = skb->dst;
 	struct ipv6hdr *hdr;
-	u8  proto = fl->proto;
+	u8  proto = fl->proto;	
 	int seg_len = skb->len;
 	int hlimit, tclass;
 	u32 mtu;
+
+	/*MTCP hack: We need to distinguish the creation of a TCP 
+	  master subsocket, from TCP slave subsockets created by the
+	  kernel. The only way we found to do that was to define a specific
+	  "MTCPSUB" protocol, so that some of the TCP functions (in particular
+	  socket creation can be made MTCP slave specific, while the majority
+	  of functions are taken from TCP. But The protocol cannot be used
+	  without being registered at the IPv6 layer, so we needed to define
+	  a new unused protocol number for MTCPSUB: IPPROTO_MTCPSUB. This 
+	  protocol number MUST NOT be used to send packets to the network,
+	  and is only used inside the kernel, as a workaround to the socket
+	  system. The consequence is that we need to fix here the proto field 
+	  in case we find it to be IPPROTO_MTCPSUB, and replace it with 
+	  IPPROTO_TCP. Of course it would be nice to find a less intrusive 
+	  design in the future.*/
+	if (proto==IPPROTO_MTCPSUB) proto=IPPROTO_TCP;
 
 	if (opt) {
 		unsigned int head_room;
@@ -283,6 +298,16 @@ int ip6_xmit(struct sock *sk, struct sk_buff *skb, struct flowi *fl,
 	if (net_ratelimit())
 		printk(KERN_DEBUG "IPv6: sending pkt_too_big to self\n");
 	skb->dev = dst->dev;
+
+	/*In case xfrm is used, ICMP pkt too big must be sent with the
+	  iface mtu, not the adjusted mtu that takes xfrm headers into account.
+	  If we don't do this, then we will enter into an infinite 
+	  mtu reduction loop,
+	  since the ICMP handler in xfrm will recompute its MTUs, since it
+	  understands the provided mtu as coming from the network.*/
+	while ((dst=dst->child))
+		mtu=dst_mtu(dst);
+
 	icmpv6_send(skb, ICMPV6_PKT_TOOBIG, 0, mtu, skb->dev);
 	IP6_INC_STATS(net, ip6_dst_idev(skb->dst), IPSTATS_MIB_FRAGFAILS);
 	kfree_skb(skb);
@@ -605,6 +630,8 @@ int ip6_find_1stfragopt(struct sk_buff *skb, u8 **nexthdr)
 #endif
 			if (found_rhdr)
 				return offset;
+			break;
+		case NEXTHDR_SHIM6:
 			break;
 		default :
 			return offset;

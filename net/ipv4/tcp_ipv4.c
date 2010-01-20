@@ -254,6 +254,9 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	if (err)
 		goto failure;
 
+#ifdef CONFIG_MTCP
+	mtcp_update_metasocket(sk);
+#endif
 	return 0;
 
 failure:
@@ -1167,7 +1170,7 @@ static struct tcp_request_sock_ops tcp_request_sock_ipv4_ops = {
 };
 #endif
 
-static struct timewait_sock_ops tcp_timewait_sock_ops = {
+struct timewait_sock_ops tcp_timewait_sock_ops = {
 	.twsk_obj_size	= sizeof(struct tcp_timewait_sock),
 	.twsk_unique	= tcp_twsk_unique,
 	.twsk_destructor= tcp_twsk_destructor,
@@ -1225,7 +1228,10 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	tmp_opt.mss_clamp = 536;
 	tmp_opt.user_mss  = tcp_sk(sk)->rx_opt.user_mss;
 
-	tcp_parse_options(skb, &tmp_opt, 0);
+	/*init multipath options*/
+	memset(&req->mopt,0,sizeof(req->mopt));
+
+	tcp_parse_options(skb, &tmp_opt, &req->mopt, 0);
 
 	if (want_cookie && !tmp_opt.saw_tstamp)
 		tcp_clear_options(&tmp_opt);
@@ -1573,6 +1579,11 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->end_seq = (TCP_SKB_CB(skb)->seq + th->syn + th->fin +
 				    skb->len - th->doff * 4);
 	TCP_SKB_CB(skb)->ack_seq = ntohl(th->ack_seq);
+#ifdef CONFIG_MTCP
+	/*Init to zero, will be set upon option parsing.*/
+	TCP_SKB_CB(skb)->data_seq = 0;
+	TCP_SKB_CB(skb)->end_data_seq = 0;
+#endif
 	TCP_SKB_CB(skb)->when	 = 0;
 	TCP_SKB_CB(skb)->flags	 = iph->tos;
 	TCP_SKB_CB(skb)->sacked	 = 0;
@@ -1803,6 +1814,16 @@ static int tcp_v4_init_sock(struct sock *sk)
 
 	sk->sk_sndbuf = sysctl_tcp_wmem[1];
 	sk->sk_rcvbuf = sysctl_tcp_rmem[1];
+
+#ifdef CONFIG_MTCP
+	/*Init the MTCP mpcb*/
+	{
+		struct multipath_pcb *mpcb;		
+		mpcb=mtcp_alloc_mpcb(sk);
+		tp->path_index=0;
+		mtcp_add_sock(mpcb,tp);
+	}
+#endif
 
 	atomic_inc(&tcp_sockets_allocated);
 

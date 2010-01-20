@@ -38,6 +38,16 @@
 
 #include <linux/compiler.h>
 #include <linux/module.h>
+#include <linux/tcp_probe.h>
+
+#undef DEBUG_TCP /*set to define if you want debugging messages*/
+
+#undef PDEBUG
+#ifdef DEBUG_TCP
+#define PDEBUG(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
+#else
+#define PDEBUG(fmt,args...)
+#endif /*DEBUG_TCP*/
 
 /* People can turn this off for buggy TCP's found in printers etc. */
 int sysctl_tcp_retrans_collapse __read_mostly = 1;
@@ -87,10 +97,20 @@ static inline __u32 tcp_acceptable_seq(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	if (!before(tcp_wnd_end(tp), tp->snd_nxt))
+	/*We do not call tcp_wnd_end(..,1) here, 
+	  because even when MPTCP is used, 
+	  we exceptionnaly want here to consider the send window as related to
+	  the seqnums, not the dataseqs. The reason is that we have no dataseq
+	  nums in non-data segments (this function is only called for the
+	  construction of non-data segments, e.g. acks), and the dataseq is now
+	  the only field that can be checked by the receiver. The seqnum we
+	  choose here ensure that we are accepted as well by middleboxes
+	  that are not aware of MPTCP stuff.*/
+	
+	if (!before(tcp_wnd_end(tp,0), tp->snd_nxt))
 		return tp->snd_nxt;
 	else
-		return tcp_wnd_end(tp);
+		return tcp_wnd_end(tp,0);
 }
 
 /* Calculate mss to advertise in SYN segment.
@@ -353,6 +373,9 @@ static inline int tcp_urg_mode(const struct tcp_sock *tp)
 #define OPTION_SACK_ADVERTISE	(1 << 0)
 #define OPTION_TS		(1 << 1)
 #define OPTION_MD5		(1 << 2)
+#define OPTION_MPC              (1 << 3)
+#define OPTION_TOKEN            (1 << 4)
+#define OPTION_DSN              (1 << 5)
 
 struct tcp_out_options {
 	u8 options;		/* bit field of OPTION_* */
@@ -360,6 +383,9 @@ struct tcp_out_options {
 	u8 num_sack_blocks;	/* number of SACK blocks to include */
 	u16 mss;		/* 0 to disable */
 	__u32 tsval, tsecr;	/* need to include OPTION_TS */
+	__u32 data_seq;         /* data sequence number, for MPTCP */
+	__u16 data_len;         /* data level length, for MPTCP*/
+	__u32 sub_seq;          /* subflow seqnum, for MPTCP*/
 };
 
 /* Beware: Something in the Internet is very sensitive to the ordering of
@@ -446,6 +472,19 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			tp->rx_opt.eff_sacks = tp->rx_opt.num_sacks;
 		}
 	}
+#ifdef CONFIG_MTCP
+	if (unlikely(OPTION_MPC & opts->options)) {
+		*ptr++ = htonl((TCPOPT_MPC << 24) |
+			       (TCPOLEN_MPC << 16));
+	}
+	if (OPTION_DSN & opts->options) {
+		*ptr++ = htonl((TCPOPT_DSN << 24) |
+			       (TCPOLEN_DSN << 16) |
+			       opts->data_len);
+		*ptr++ = htonl(opts->sub_seq);
+		*ptr++ = htonl(opts->data_seq);
+	}
+#endif
 }
 
 static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
@@ -492,7 +531,30 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		if (unlikely(!(OPTION_TS & opts->options)))
 			size += TCPOLEN_SACKPERM_ALIGNED;
 	}
-
+#ifdef CONFIG_MTCP
+	{
+		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+		
+		opts->options |= OPTION_MPC;
+		size+=TCPOLEN_MPC_ALIGNED;
+		
+		/*We arrive here either when sending a SYN or a
+		  SYN+ACK when in SYN_SENT state (that is, tcp_synack_options
+		  is only called for syn+ack replied by a server, while this
+		  function is called when SYNs are sent by both parties and 
+		  are crossed.
+		  Due to this possibility, a slave subsocket may arrive here,
+		  and does not need to set the dataseq options, since
+		  there is no data in the segment*/
+		if (is_master_sk(tp)) {			
+			opts->options |= OPTION_DSN;
+			size+=TCPOLEN_DSN_ALIGNED;
+			opts->data_seq=mpcb->write_seq; /*First data byte is 
+							  initial data seq
+							  (IDSN)*/
+		}
+	}
+#endif
 	return size;
 }
 
@@ -541,9 +603,23 @@ static unsigned tcp_synack_options(struct sock *sk,
 			size += TCPOLEN_SACKPERM_ALIGNED;
 	}
 
+#ifdef CONFIG_MTCP
+	/*For the SYNACK, the mpcb is normally not yet initialized
+	  (to protect against SYN DoS attack)
+	  So we cannot use it here.*/
+	
+	opts->options |= OPTION_MPC;
+	size+=TCPOLEN_MPC_ALIGNED;
+	opts->options |= OPTION_DSN;
+	size+=TCPOLEN_DSN_ALIGNED;
+	opts->data_seq=0;
+#endif
 	return size;
 }
 
+
+/*if skb is NULL, then we are evaluating the MSS, thus, we take into account
+ * ALL potential options. */
 static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 					struct tcp_out_options *opts,
 					struct tcp_md5sig_key **md5) {
@@ -577,6 +653,27 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		size += TCPOLEN_SACK_BASE_ALIGNED +
 			opts->num_sack_blocks * TCPOLEN_SACK_PERBLOCK;
 	}
+#ifdef CONFIG_MTCP	
+	/*Even if the mpc option has been sent in the SYN, it must be repeated
+	  in the first segment of the established flow, because the server
+	  only creates the socket when it receives the final ACK, not when
+	  we send the SYN.*/
+	if (unlikely(!mpcb_from_tcpsock(tp)->mpc_sent)) {
+		opts->options |= OPTION_MPC;
+		size+=TCPOLEN_MPC_ALIGNED;
+		mpcb_from_tcpsock(tp)->mpc_sent=1;
+	}
+
+	if (tp->mpc && (!skb || skb->len!=0)) {
+		if (tcb && tcb->data_len) { /*Ignore dataseq if data_len is 0*/
+			opts->options |= OPTION_DSN;
+			opts->data_seq=tcb->data_seq;
+			opts->data_len=tcb->data_len;
+			opts->sub_seq=tcb->sub_seq;
+		}
+		size += TCPOLEN_DSN_ALIGNED;
+	}
+#endif
 
 	return size;
 }
@@ -608,6 +705,8 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 
 	BUG_ON(!skb || !tcp_skb_pcount(skb));
 
+	tcpprobe_transmit_skb(sk,skb,clone_it,gfp_mask);
+
 	/* If congestion control is doing timestamping, we must
 	 * take such a timestamp before we potentially clone/copy.
 	 */
@@ -627,7 +726,7 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	tp = tcp_sk(sk);
 	tcb = TCP_SKB_CB(skb);
 	memset(&opts, 0, sizeof(opts));
-
+	
 	if (unlikely(tcb->flags & TCPCB_FLAG_SYN))
 		tcp_options_size = tcp_syn_options(sk, skb, &opts, &md5);
 	else
@@ -693,9 +792,14 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	if (after(tcb->end_seq, tp->snd_nxt) || tcb->seq == tcb->end_seq)
 		TCP_INC_STATS(sock_net(sk), TCP_MIB_OUTSEGS);
 
+	skb->path_index=tp->path_index;
+	
 	err = icsk->icsk_af_ops->queue_xmit(skb, 0);
-	if (likely(err <= 0))
+	if (likely(err <= 0)) {
+		if (err<0) 
+			PDEBUG("%s:error %d\n",__FUNCTION__,err);
 		return err;
+	}
 
 	tcp_enter_cwr(sk, 1);
 
@@ -712,7 +816,9 @@ static void tcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	/* Advance write_seq and place onto the write_queue. */
-	tp->write_seq = TCP_SKB_CB(skb)->end_seq;
+	PDEBUG("%s: tp->write_seq:%x,skb->end_seq:%x\n",
+	       __FUNCTION__,tp->write_seq,TCP_SKB_CB(skb)->end_seq); /*TODEL*/
+	tp->write_seq = TCP_SKB_CB(skb)->end_seq;	
 	skb_header_release(skb);
 	tcp_add_write_queue_tail(sk, skb);
 	sk->sk_wmem_queued += skb->truesize;
@@ -792,6 +898,12 @@ int tcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	TCP_SKB_CB(buff)->seq = TCP_SKB_CB(skb)->seq + len;
 	TCP_SKB_CB(buff)->end_seq = TCP_SKB_CB(skb)->end_seq;
 	TCP_SKB_CB(skb)->end_seq = TCP_SKB_CB(buff)->seq;
+#ifdef CONFIG_MTCP
+	TCP_SKB_CB(buff)->data_seq=TCP_SKB_CB(skb)->data_seq + len;
+	TCP_SKB_CB(buff)->end_data_seq = TCP_SKB_CB(skb)->end_data_seq;
+	TCP_SKB_CB(buff)->sub_seq = TCP_SKB_CB(skb)->sub_seq + len;
+	TCP_SKB_CB(buff)->data_len=TCP_SKB_CB(skb)->data_len - len;
+#endif
 
 	/* PSH and FIN should only be set in the second packet. */
 	flags = TCP_SKB_CB(skb)->flags;
@@ -902,6 +1014,12 @@ int tcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
 		__pskb_trim_head(skb, len - skb_headlen(skb));
 
 	TCP_SKB_CB(skb)->seq += len;
+#ifdef CONFIG_MTCP
+	TCP_SKB_CB(skb)->data_seq += len;
+	TCP_SKB_CB(skb)->sub_seq += len;
+	TCP_SKB_CB(skb)->data_len -= len;
+#endif
+
 	skb->ip_summed = CHECKSUM_PARTIAL;
 
 	skb->truesize	     -= len;
@@ -1116,7 +1234,8 @@ static unsigned int tcp_mss_split_point(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	u32 needed, window, cwnd_len;
 
-	window = tcp_wnd_end(tp) - TCP_SKB_CB(skb)->seq;
+	window = tcp_wnd_end(tp,tp->mpc) - 
+		((tp->mpc)?TCP_SKB_CB(skb)->data_seq:TCP_SKB_CB(skb)->seq);
 	cwnd_len = mss_now * cwnd;
 
 	if (likely(cwnd_len <= window && skb != tcp_write_queue_tail(sk)))
@@ -1220,12 +1339,15 @@ static inline int tcp_nagle_test(struct tcp_sock *tp, struct sk_buff *skb,
 static inline int tcp_snd_wnd_test(struct tcp_sock *tp, struct sk_buff *skb,
 				   unsigned int cur_mss)
 {
-	u32 end_seq = TCP_SKB_CB(skb)->end_seq;
-
+	u32 end_seq = (tp->mpc)?TCP_SKB_CB(skb)->end_data_seq:
+		TCP_SKB_CB(skb)->end_seq;
+	
 	if (skb->len > cur_mss)
-		end_seq = TCP_SKB_CB(skb)->seq + cur_mss;
-
-	return !after(end_seq, tcp_wnd_end(tp));
+		end_seq = ((tp->mpc)?TCP_SKB_CB(skb)->data_seq:
+			   TCP_SKB_CB(skb)->seq) + cur_mss;
+	
+	
+	return !after(end_seq, tcp_wnd_end(tp,tp->mpc));
 }
 
 /* This checks if the data bearing packet SKB (usually tcp_send_head(sk))
@@ -1275,6 +1397,10 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	int nlen = skb->len - len;
 	u16 flags;
 
+	PDEBUG("Entering %s\n",__FUNCTION__);
+
+	BUG_ON(len==0); /*This would create an empty segment*/
+
 	/* All of a TSO frame must be composed of paged data.  */
 	if (skb->len != skb->data_len)
 		return tcp_fragment(sk, skb, len, mss_now);
@@ -1292,6 +1418,12 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	TCP_SKB_CB(buff)->seq = TCP_SKB_CB(skb)->seq + len;
 	TCP_SKB_CB(buff)->end_seq = TCP_SKB_CB(skb)->end_seq;
 	TCP_SKB_CB(skb)->end_seq = TCP_SKB_CB(buff)->seq;
+#ifdef CONFIG_MTCP
+	TCP_SKB_CB(buff)->data_seq=TCP_SKB_CB(skb)->data_seq + len;
+	TCP_SKB_CB(buff)->end_data_seq = TCP_SKB_CB(skb)->end_data_seq;
+	TCP_SKB_CB(buff)->sub_seq = TCP_SKB_CB(skb)->sub_seq + len;
+	TCP_SKB_CB(buff)->data_len=TCP_SKB_CB(skb)->data_len - len;
+#endif
 
 	/* PSH and FIN should only be set in the second packet. */
 	flags = TCP_SKB_CB(skb)->flags;
@@ -1341,8 +1473,10 @@ static int tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb)
 
 	BUG_ON(tcp_skb_pcount(skb) <= 1 || (tp->snd_cwnd <= in_flight));
 
-	send_win = tcp_wnd_end(tp) - TCP_SKB_CB(skb)->seq;
-
+	send_win = tcp_wnd_end(tp,tp->mpc) - 
+		((tp->mpc)?TCP_SKB_CB(skb)->data_seq:
+		 TCP_SKB_CB(skb)->seq);
+	
 	/* From in_flight test above, we know that cwnd > in_flight.  */
 	cong_win = (tp->snd_cwnd - in_flight) * tp->mss_cache;
 
@@ -1423,7 +1557,7 @@ static int tcp_mtu_probe(struct sock *sk)
 
 	if (tp->snd_wnd < size_needed)
 		return -1;
-	if (after(tp->snd_nxt + size_needed, tcp_wnd_end(tp)))
+	if (after(tp->snd_nxt + size_needed, tcp_wnd_end(tp,0)))
 		return 0;
 
 	/* Do we need to wait to drain cwnd? With none in flight, don't stall */
@@ -1480,6 +1614,9 @@ static int tcp_mtu_probe(struct sock *sk)
 				tcp_set_skb_tso_segs(sk, skb, mss_now);
 			}
 			TCP_SKB_CB(skb)->seq += copy;
+#ifdef CONFIG_MTCP
+			TCP_SKB_CB(skb)->data_seq += copy;
+#endif
 		}
 
 		len += copy;
@@ -1545,6 +1682,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 
 	while ((skb = tcp_send_head(sk))) {
 		unsigned int limit;
+		int err;
 
 		tso_segs = tcp_init_tso_segs(sk, skb, mss_now);
 		BUG_ON(!tso_segs);
@@ -1576,9 +1714,14 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			break;
 
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
-
-		if (unlikely(tcp_transmit_skb(sk, skb, 1, GFP_ATOMIC)))
+		
+		PDEBUG("%s:seq is %x, len is %d\n",__FUNCTION__,
+		       TCP_SKB_CB(skb)->seq,skb->len);
+		if (unlikely(err=tcp_transmit_skb(sk, skb, 1, GFP_ATOMIC))) {
+			PDEBUG("%s:transmit failed,pi %d ,err:%d\n\n",
+			       __FUNCTION__,skb->path_index,err);	
 			break;
+		}
 
 		/* Advance the send_head.  This one is sent out.
 		 * This call will increment packets_out.
@@ -1636,8 +1779,10 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 						    cwnd_quota);
 
 		if (skb->len > limit &&
-		    unlikely(tso_fragment(sk, skb, limit, mss_now)))
+		    unlikely(tso_fragment(sk, skb, limit, mss_now))) {
+			PDEBUG("NOT SENDING TCP SEGMENT\n");
 			return;
+		}
 
 		/* Send it out now. */
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
@@ -1791,9 +1936,12 @@ static void tcp_retrans_try_collapse(struct sock *sk, struct sk_buff *skb,
 		return;
 
 	/* Next skb is out of window. */
-	if (after(TCP_SKB_CB(next_skb)->end_seq, tcp_wnd_end(tp)))
+	if (!tp->mpc && after(TCP_SKB_CB(next_skb)->end_seq, tcp_wnd_end(tp,0)))
 		return;
-
+	if (tp->mpc && after(TCP_SKB_CB(next_skb)->end_data_seq, 
+			     tcp_wnd_end(tp,1)))
+		return;
+	
 	/* Punt if not enough space exists in the first SKB for
 	 * the data in the second, or the total combined payload
 	 * would exceed the MSS.
@@ -1820,6 +1968,7 @@ static void tcp_retrans_try_collapse(struct sock *sk, struct sk_buff *skb,
 
 	/* Update sequence range on original skb. */
 	TCP_SKB_CB(skb)->end_seq = TCP_SKB_CB(next_skb)->end_seq;
+	TCP_SKB_CB(skb)->end_data_seq = TCP_SKB_CB(next_skb)->end_data_seq;
 
 	/* Merge over control information. */
 	flags |= TCP_SKB_CB(next_skb)->flags; /* This moves PSH/FIN etc. over */
@@ -1909,7 +2058,37 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 	unsigned int cur_mss;
 	int err;
 
-	/* Inconslusive MTU probe */
+	/*For any retransmission, we check if we can find another subflow
+	  where it would be better to retransmit
+	  Currently we try with retransmission policy RTX-SSTHRESH*/
+	{
+		int max_ssthresh=0;
+		struct tcp_sock *tp_it,*retrans_tp=NULL;
+		struct multipath_pcb *mpcb=tp->mpcb;
+		
+		if (!tp->mpc || sk->sk_state!=TCP_ESTABLISHED || 
+		    !tp->path_index)
+			goto no_mtcp;
+		
+		mtcp_for_each_tp(mpcb,tp_it) {
+			if (((struct sock*)tp_it)->sk_state==TCP_ESTABLISHED &&
+			    !(PI_TO_FLAG(tp_it->path_index)&skb->path_mask) &&
+			    tp_it!=tp &&
+			    tp_it->snd_ssthresh>=max_ssthresh) {
+				max_ssthresh=tp_it->snd_ssthresh;
+				retrans_tp=tp_it;
+			}
+		}
+		/*retrans_tp is now the tp with highest ssthresh*/
+		if (retrans_tp) {
+			/*Reinject all queued skbuffs to the other 
+			  subsocket*/
+			mtcp_reinject_data(sk,(struct sock*)retrans_tp);
+		}
+	}
+no_mtcp:
+
+	/* Inconclusive MTU probe */
 	if (icsk->icsk_mtup.probe_size) {
 		icsk->icsk_mtup.probe_size = 0;
 	}
@@ -1938,7 +2117,8 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 	 * case, when window is shrunk to zero. In this case
 	 * our retransmit serves as a zero window probe.
 	 */
-	if (!before(TCP_SKB_CB(skb)->seq, tcp_wnd_end(tp))
+	if (!before((tp->mpc)?TCP_SKB_CB(skb)->data_seq:
+		    TCP_SKB_CB(skb)->seq, tcp_wnd_end(tp,tp->mpc))
 	    && TCP_SKB_CB(skb)->seq != tp->snd_una)
 		return -EAGAIN;
 
@@ -1984,20 +2164,7 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 	if (err == 0) {
 		/* Update global TCP statistics. */
 		TCP_INC_STATS(sock_net(sk), TCP_MIB_RETRANSSEGS);
-
-		tp->total_retrans++;
-
-#if FASTRETRANS_DEBUG > 0
-		if (TCP_SKB_CB(skb)->sacked & TCPCB_SACKED_RETRANS) {
-			if (net_ratelimit())
-				printk(KERN_DEBUG "retrans_out leaked.\n");
-		}
-#endif
-		if (!tp->retrans_out)
-			tp->lost_retrans_low = tp->snd_nxt;
-		TCP_SKB_CB(skb)->sacked |= TCPCB_RETRANS;
-		tp->retrans_out += tcp_skb_pcount(skb);
-
+		
 		/* Save stamp of the first retransmit. */
 		if (!tp->retrans_stamp)
 			tp->retrans_stamp = TCP_SKB_CB(skb)->when;
@@ -2288,8 +2455,8 @@ struct sk_buff *tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 	TCP_SKB_CB(skb)->when = tcp_time_stamp;
 	tcp_header_size = tcp_synack_options(sk, req, mss,
 					     skb, &opts, &md5) +
-			  sizeof(struct tcphdr);
-
+		sizeof(struct tcphdr);       
+	
 	skb_push(skb, tcp_header_size);
 	skb_reset_transport_header(skb);
 
@@ -2415,6 +2582,7 @@ int tcp_connect(struct sock *sk)
 	sk->sk_wmem_queued += buff->truesize;
 	sk_mem_charge(sk, buff->truesize);
 	tp->packets_out += tcp_skb_pcount(buff);
+	
 	tcp_transmit_skb(sk, buff, 1, GFP_KERNEL);
 
 	/* We change tp->snd_nxt after the tcp_transmit_skb() call
@@ -2558,10 +2726,13 @@ int tcp_write_wakeup(struct sock *sk)
 		return -1;
 
 	if ((skb = tcp_send_head(sk)) != NULL &&
-	    before(TCP_SKB_CB(skb)->seq, tcp_wnd_end(tp))) {
+	    before((tp->mpc)?TCP_SKB_CB(skb)->data_seq:
+		   TCP_SKB_CB(skb)->seq, tcp_wnd_end(tp,tp->mpc))) {
 		int err;
 		unsigned int mss = tcp_current_mss(sk, 0);
-		unsigned int seg_size = tcp_wnd_end(tp) - TCP_SKB_CB(skb)->seq;
+		unsigned int seg_size = tcp_wnd_end(tp,tp->mpc) - 
+			((tp->mpc)?TCP_SKB_CB(skb)->data_seq:
+			 TCP_SKB_CB(skb)->seq);
 
 		if (before(tp->pushed_seq, TCP_SKB_CB(skb)->end_seq))
 			tp->pushed_seq = TCP_SKB_CB(skb)->end_seq;

@@ -14,6 +14,7 @@ struct flowi {
 	int	oif;
 	int	iif;
 	__u32	mark;
+	unsigned int path_index;
 
 	union {
 		struct {

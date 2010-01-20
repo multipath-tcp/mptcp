@@ -22,6 +22,9 @@
 #ifdef CONFIG_XFRM_STATISTICS
 #include <net/snmp.h>
 #endif
+#if defined(CONFIG_IPV6_SHIM6) || defined(CONFIG_IPV6_SHIM6_MODULE)
+#include <linux/shim6.h>
+#endif
 
 #define XFRM_PROTO_ESP		50
 #define XFRM_PROTO_AH		51
@@ -173,7 +176,10 @@ struct xfrm_state
 	struct xfrm_encap_tmpl	*encap;
 
 	/* Data for care-of address */
-	xfrm_address_t	*coaddr;
+	xfrm_address_t	        *coaddr;
+
+	/* Shim6-related data */
+	struct shim6_data       *shim6;
 
 	/* IPComp needs an IPIP tunnel for handling uncompressed packets */
 	struct xfrm_state	*tunnel;
@@ -320,6 +326,7 @@ struct xfrm_type
 #define XFRM_TYPE_REPLAY_PROT	2
 #define XFRM_TYPE_LOCAL_COADDR	4
 #define XFRM_TYPE_REMOTE_COADDR	8
+#define XFRM_TYPE_SHIM6_ADDR    16
 
 	int			(*init_state)(struct xfrm_state *x);
 	void			(*destructor)(struct xfrm_state *);
@@ -855,7 +862,7 @@ static inline int xfrm_sec_ctx_match(struct xfrm_sec_ctx *s1, struct xfrm_sec_ct
 /* A struct encoding bundle of transformations to apply to some set of flow.
  *
  * dst->child points to the next element of bundle.
- * dst->xfrm  points to an instanse of transformer.
+ * dst->xfrm  points to an instance of transformer.
  *
  * Due to unfortunate limitations of current routing cache, which we
  * have no time to fix, it mirrors struct rtable and bound to the same
@@ -1309,6 +1316,9 @@ extern int xfrm_state_add(struct xfrm_state *x);
 extern int xfrm_state_update(struct xfrm_state *x);
 extern struct xfrm_state *xfrm_state_lookup(xfrm_address_t *daddr, __be32 spi, u8 proto, unsigned short family);
 extern struct xfrm_state *xfrm_state_lookup_byaddr(xfrm_address_t *daddr, xfrm_address_t *saddr, u8 proto, unsigned short family);
+extern struct xfrm_state* xfrm_state_lookup_byct(__u64 ct);
+extern struct xfrm_state *xfrm_state_lookup_byulid_in(xfrm_address_t *daddr, 
+						      xfrm_address_t *saddr);
 #ifdef CONFIG_XFRM_SUB_POLICY
 extern int xfrm_tmpl_sort(struct xfrm_tmpl **dst, struct xfrm_tmpl **src,
 			  int n, unsigned short family);

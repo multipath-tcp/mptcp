@@ -83,8 +83,12 @@ __xfrm6_find_bundle(struct flowi *fl, struct xfrm_policy *policy)
 		ipv6_addr_prefix(&fl_src_prefix,
 				 &fl->fl6_src,
 				 xdst->u.rt6.rt6i_src.plen);
-		if (ipv6_addr_equal(&xdst->u.rt6.rt6i_dst.addr, &fl_dst_prefix) &&
-		    ipv6_addr_equal(&xdst->u.rt6.rt6i_src.addr, &fl_src_prefix) &&
+		if (ipv6_addr_equal(&xdst->u.rt6.rt6i_dst.addr, &fl_dst_prefix)
+		    &&
+		    ipv6_addr_equal(&xdst->u.rt6.rt6i_src.addr, &fl_src_prefix)
+		    &&
+		    dst->path_index==fl->path_index
+		    &&
 		    xfrm_bundle_ok(policy, xdst, fl, AF_INET6,
 				   (xdst->u.rt6.rt6i_dst.plen != 128 ||
 				    xdst->u.rt6.rt6i_src.plen != 128))) {
@@ -225,6 +229,8 @@ static void xfrm6_update_pmtu(struct dst_entry *dst, u32 mtu)
 {
 	struct xfrm_dst *xdst = (struct xfrm_dst *)dst;
 	struct dst_entry *path = xdst->route;
+
+	printk(KERN_ERR "new mtu:%d\n",mtu);
 
 	path->ops->update_pmtu(path, mtu);
 }

@@ -85,6 +85,7 @@ struct dst_entry
 		struct rt6_info   *rt6_next;
 		struct dn_route  *dn_next;
 	};
+	unsigned int            path_index;
 };
 
 

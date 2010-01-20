@@ -25,6 +25,8 @@
 *.elf
 *.bin
 *.gz
+*~
+\#*#
 
 #
 # Top-level generic files
@@ -37,6 +39,8 @@ Module.markers
 Module.symvers
 !.gitignore
 !.mailmap
+/debian
+/build-um
 
 #
 # Generated include files

@@ -342,6 +342,9 @@ int inet6_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	inet->sport = htons(inet->num);
 	inet->dport = 0;
 	inet->daddr = 0;
+#ifdef CONFIG_MTCP
+	mtcp_update_metasocket(sk);
+#endif
 out:
 	release_sock(sk);
 	return err;
@@ -480,7 +483,11 @@ const struct proto_ops inet6_stream_ops = {
 	.shutdown	   = inet_shutdown,		/* ok		*/
 	.setsockopt	   = sock_common_setsockopt,	/* ok		*/
 	.getsockopt	   = sock_common_getsockopt,	/* ok		*/
+#ifdef CONFIG_MTCP
+	.sendmsg	   = mtcp_sendmsg,		/* ok		*/
+#else
 	.sendmsg	   = tcp_sendmsg,		/* ok		*/
+#endif
 	.recvmsg	   = sock_common_recvmsg,	/* ok		*/
 	.mmap		   = sock_no_mmap,
 	.sendpage	   = tcp_sendpage,
@@ -1009,13 +1016,20 @@ static int __init inet6_init(void)
 	if (err)
 		goto sysctl_fail;
 #endif
+#ifdef CONFIG_MTCP
+	err = mtcpv6_init();
+	if (err)
+		goto mtcpsubv6_fail;
+#endif
+
 out:
 	return err;
-
+mtcpsubv6_fail:
 #ifdef CONFIG_SYSCTL
+	ipv6_sysctl_unregister();
+#endif
 sysctl_fail:
 	ipv6_packet_cleanup();
-#endif
 ipv6_packet_fail:
 	tcpv6_exit();
 tcpv6_fail:

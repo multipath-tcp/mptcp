@@ -177,6 +177,7 @@ struct tcp_md5sig {
 #include <net/sock.h>
 #include <net/inet_connection_sock.h>
 #include <net/inet_timewait_sock.h>
+#include <linux/tcp_options.h>
 
 static inline struct tcphdr *tcp_hdr(const struct sk_buff *skb)
 {
@@ -202,26 +203,6 @@ struct tcp_sack_block_wire {
 struct tcp_sack_block {
 	u32	start_seq;
 	u32	end_seq;
-};
-
-struct tcp_options_received {
-/*	PAWS/RTTM data	*/
-	long	ts_recent_stamp;/* Time we stored ts_recent (for aging) */
-	u32	ts_recent;	/* Time stamp to echo next		*/
-	u32	rcv_tsval;	/* Time stamp value             	*/
-	u32	rcv_tsecr;	/* Time stamp echo reply        	*/
-	u16 	saw_tstamp : 1,	/* Saw TIMESTAMP on last packet		*/
-		tstamp_ok : 1,	/* TIMESTAMP seen on SYN packet		*/
-		dsack : 1,	/* D-SACK is scheduled			*/
-		wscale_ok : 1,	/* Wscale seen on SYN packet		*/
-		sack_ok : 4,	/* SACK seen on SYN packet		*/
-		snd_wscale : 4,	/* Window scaling received from sender	*/
-		rcv_wscale : 4;	/* Window scaling to send to receiver	*/
-/*	SACKs data	*/
-	u8	eff_sacks;	/* Size of SACK array to send with next packet */
-	u8	num_sacks;	/* Number of SACK blocks		*/
-	u16	user_mss;  	/* mss requested by user in ioctl */
-	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
 };
 
 /* This is the max number of SACKS that we'll generate and process. It's safe
@@ -264,6 +245,40 @@ struct tcp_sock {
  */
  	u32	rcv_nxt;	/* What we want to receive next 	*/
 	u32	copied_seq;	/* Head of yet unread data		*/
+#ifdef CONFIG_MTCP
+	/*per subflow data, for tcp_recvmsg*/
+	u32     peek_seq;       /* Peek seq, for use by MTCP            */
+	u32     *seq;
+	u32     copied;
+	u32    map_data_seq; /*Those three fields record the current mapping*/
+	u16    map_data_len;
+	u32    map_subseq;
+#endif
+/*We keep these flags even if CONFIG_MTCP is not checked, because it allows
+  checking MTPC capability just by checking the mpc flag, rather than adding
+  ifdefs everywhere.*/
+	u8      mpc:1,          /* Other end is multipath capable       */
+		wait_event_any_sk_released:1, /*1 if mtcp_wait_event_any_sk()
+						has released this sock, and
+						must thus lock it again,
+						so that to let everything
+						equal. This is important
+						because a new subsocket
+						can appear during we sleep.*/
+		wait_data_bit_set:1; /*Similar to previous, for wait_data*/
+	
+#ifdef CONFIG_MTCP
+	u32     last_write_seq; /* Last write seq copied by this subsocket
+				   to the network. When we receive new data
+				   with a write_seq non contigues to this 
+				   one (that is, some data in between has been
+				   sent on another subsocket), we enforce
+				   the use of a new segment to store the data
+				   (because data in a single segment must
+				   be contigues, since dataseq numbers
+				   do not allow iovec-like encoding of
+				   mtcp data*/
+#endif
 	u32	rcv_wup;	/* rcv_nxt on last window update sent	*/
  	u32	snd_nxt;	/* Next sequence we send		*/
 
@@ -275,17 +290,20 @@ struct tcp_sock {
 	/* Data for direct copy to user */
 	struct {
 		struct sk_buff_head	prequeue;
+		int			memory;		
+#ifndef CONFIG_MTCP
 		struct task_struct	*task;
 		struct iovec		*iov;
-		int			memory;
-		int			len;
+		int                     len;
 #ifdef CONFIG_NET_DMA
+		int			copied;		
 		/* members for async copy */
 		struct dma_chan		*dma_chan;
 		int			wakeup;
 		struct dma_pinned_list	*pinned_list;
 		dma_cookie_t		dma_cookie;
 #endif
+#endif /*CONFIG_MTCP*/
 	} ucopy;
 
 	u32	snd_wl1;	/* Sequence for window update		*/
@@ -409,6 +427,17 @@ struct tcp_sock {
 #endif
 
 	int			linger2;
+	struct multipath_pcb    *mpcb;
+#ifdef CONFIG_MTCP
+	int                     path_index;
+	uint8_t                 mtcp_flags;
+#define MTCP_CURRENT_SUBFLOW 0x1 /*This socket is selected as the current 
+				   subflow the one that was lastly used to 
+				   transmit data*/
+	struct tcp_sock         *next; /*Next subflow socket*/
+	int                     bytes_eaten; /*Bytes eaten by app. - 
+					       For debugging*/
+#endif
 };
 
 static inline struct tcp_sock *tcp_sk(const struct sock *sk)
