@@ -66,6 +66,8 @@ struct tcp_log {
 	u32     rcv_nxt;
 	u32     copied_seq;
 	u32     rcv_wnd;
+	u32     rcv_buf;
+	u32     window_clamp;
 	char    send; /*1 if sending side, 0 if receive*/
 };
 
@@ -125,6 +127,8 @@ static int rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->rcv_nxt=tp->rcv_nxt;
 			p->copied_seq=tp->copied_seq;
 			p->rcv_wnd=tp->rcv_wnd;
+			p->rcv_buf=sk->sk_rcvbuf;
+			p->window_clamp=tp->window_clamp;
 			p->send=0;
 
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
@@ -171,6 +175,8 @@ static int transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		p->rcv_nxt=tp->rcv_nxt;
 		p->copied_seq=tp->copied_seq;
 		p->rcv_wnd=tp->rcv_wnd;
+		p->rcv_buf=sk->sk_rcvbuf;
+		p->window_clamp=tp->window_clamp;
 		p->send=1;
 		
 		tcp_probe.head = (tcp_probe.head + 1) % bufsize;
@@ -202,14 +208,15 @@ static int tcpprobe_sprint(char *tbuf, int n)
 
 	return snprintf(tbuf, n,
 			"%lu.%09lu " NIP6_FMT ":%u " NIP6_FMT ":%u"
-			" %d %d %#x %#x %u %u %u %u %#x %#x %u %d\n",
+			" %d %d %#x %#x %u %u %u %u %#x %#x %u %u %u %d\n",
 			(unsigned long) tv.tv_sec,
 			(unsigned long) tv.tv_nsec,
 			NIP6(p->saddr), ntohs(p->sport),
 			NIP6(p->daddr), ntohs(p->dport),
 			p->path_index, p->length, p->snd_nxt, p->snd_una,
 			p->snd_cwnd, p->ssthresh, p->snd_wnd, p->srtt,
-			p->rcv_nxt,p->copied_seq,p->rcv_wnd,p->send);
+			p->rcv_nxt,p->copied_seq,p->rcv_wnd,p->rcv_buf,
+			p->window_clamp,p->send);
 }
 
 static ssize_t tcpprobe_read(struct file *file, char __user *buf,
