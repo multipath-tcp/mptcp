@@ -1,3 +1,4 @@
+
 /*
  * tcpprobe - Observe the TCP flow with kprobes.
  *
@@ -67,6 +68,7 @@ struct tcp_log {
 	u32     copied_seq;
 	u32     rcv_wnd;
 	u32     rcv_buf;
+	u32     rcv_ssthresh;
 	u32     window_clamp;
 	char    send; /*1 if sending side, 0 if receive*/
 };
@@ -128,6 +130,7 @@ static int rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->copied_seq=tp->copied_seq;
 			p->rcv_wnd=tp->rcv_wnd;
 			p->rcv_buf=sk->sk_rcvbuf;
+			p->rcv_ssthresh=tp->rcv_ssthresh;
 			p->window_clamp=tp->window_clamp;
 			p->send=0;
 
@@ -176,6 +179,7 @@ static int transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		p->copied_seq=tp->copied_seq;
 		p->rcv_wnd=tp->rcv_wnd;
 		p->rcv_buf=sk->sk_rcvbuf;
+		p->rcv_ssthresh=tp->rcv_ssthresh;
 		p->window_clamp=tp->window_clamp;
 		p->send=1;
 		
@@ -208,7 +212,7 @@ static int tcpprobe_sprint(char *tbuf, int n)
 
 	return snprintf(tbuf, n,
 			"%lu.%09lu " NIP6_FMT ":%u " NIP6_FMT ":%u"
-			" %d %d %#x %#x %u %u %u %u %#x %#x %u %u %u %d\n",
+			" %d %d %#x %#x %u %u %u %u %#x %#x %u %u %u %u %d\n",
 			(unsigned long) tv.tv_sec,
 			(unsigned long) tv.tv_nsec,
 			NIP6(p->saddr), ntohs(p->sport),
@@ -216,7 +220,7 @@ static int tcpprobe_sprint(char *tbuf, int n)
 			p->path_index, p->length, p->snd_nxt, p->snd_una,
 			p->snd_cwnd, p->ssthresh, p->snd_wnd, p->srtt,
 			p->rcv_nxt,p->copied_seq,p->rcv_wnd,p->rcv_buf,
-			p->window_clamp,p->send);
+			p->window_clamp,p->rcv_ssthresh, p->send);
 }
 
 static ssize_t tcpprobe_read(struct file *file, char __user *buf,
