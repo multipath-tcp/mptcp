@@ -1059,9 +1059,6 @@ static inline int tcp_space(const struct sock *sk)
 		free_space+=sk_it->sk_rcvbuf - 
 			atomic_read(&sk_it->sk_rmem_alloc);
 	}
-	/*We must still remove from this the space needed by meta-buffered
-	  data*/
-	free_space-=mpcb->ofo_bytes;
 		
 	return tcp_win_from_space(free_space);
 	
