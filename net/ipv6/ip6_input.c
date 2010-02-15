@@ -194,6 +194,7 @@ resubmit:
  * after MIPv6/inside or outside a tunnel), and then making checks for
  * xfrm policy at various steps.*/
 
+#ifndef CONFIG_MTCP
 	if (!shim6_processed 
 	    && nexthdr!=NEXTHDR_SHIM6
 	    && nexthdr!=NEXTHDR_ICMP
@@ -202,6 +203,7 @@ resubmit:
 		shim6_input_std(skb);
 		shim6_processed=1;
 	}
+#endif
 	
 	if (nexthdr==NEXTHDR_ROUTING) found_rthdr=1;
 	/*If a shim6 hdr is found, shim6_input_std must not be called
