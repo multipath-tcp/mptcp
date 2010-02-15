@@ -460,9 +460,9 @@ static void tcp_rcv_rtt_update(struct tcp_sock *tp, u32 sample, int win_dep)
 		 */
 		if (!win_dep) {
 			m -= (new_sample >> 3);
-			new_sample += m;
-		} else if (m < new_sample)
-			new_sample = m << 3;
+			new_sample += m; /* new=old*7/8+new*1/8 */
+		} else if (m < new_sample) /* if new < 8*old */
+			new_sample = m << 3; 
 	} else {
 		/* No previous measure. */
 		new_sample = m << 3;
