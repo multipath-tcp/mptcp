@@ -227,7 +227,6 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			}
 			newtp->path_index=i+1;
 			newtp->mpcb = mpcb;
-			newtp->mtcp_flags=0;
 			newtp->mpc=1;
 			mtcp_add_sock(mpcb,newtp);
 
@@ -456,18 +455,12 @@ void mtcp_update_metasocket(struct sock *sk)
 
 int mtcp_is_available(struct tcp_sock *tp)
 {
-	/*The following code is inspired from tcp_cwnd_test (tcp_output.c)
-	  We consider a subflow to be available if it has remaining space in 
-	  its congestion window*/
+	/*We consider a subflow to be available if it has remaining space in 
+	  its sending buffers, and it is established*/
 	
-	u32 in_flight, cwnd;
-
 	if (((struct sock*)tp)->sk_state!=TCP_ESTABLISHED) return 0;
 	
-	in_flight = tcp_packets_in_flight(tp);
-	cwnd = tp->snd_cwnd;
-	if (in_flight < cwnd)
-		return (cwnd - in_flight);
+	return sk_stream_memory_free((struct sock*)tp);
 	
 	return 0;
 }
@@ -478,45 +471,37 @@ int mtcp_is_available(struct tcp_sock *tp)
 static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb) 
 {
 	struct tcp_sock *tp;
+	struct sock *sk;
 	struct tcp_sock *cursubflow=NULL;
+	struct tcp_sock *besttp;
+	unsigned int min_fill_ratio=0xffffffff;
 	
 	/*if there is only one subflow, bypass the scheduling function*/
 	mutex_lock(&mpcb->mutex);
 	if (mpcb->cnt_subflows==1) {
-		tp=mpcb->connection_list;
+		besttp=mpcb->connection_list;
 		goto out;
 	}
 	
-	/*First, find the current subflow*/
-	mtcp_for_each_tp(mpcb,tp)
-		if (tp->mtcp_flags & MTCP_CURRENT_SUBFLOW) {
-			/*Remove the flag*/
-			tp->mtcp_flags&=~MTCP_CURRENT_SUBFLOW;
-			cursubflow=tp;
-			break;
+	besttp=mpcb->connection_list;
+	/*First, find the best subflow*/
+	mtcp_for_each_sk(mpcb,sk,tp) {
+		/*The shift is to avoid having to deal with a float*/
+		unsigned int fill_ratio=(sk->sk_wmem_queued<<4)/sk->sk_sndbuf;
+		if (fill_ratio<min_fill_ratio) {
+			min_fill_ratio=fill_ratio;
+			besttp=tp;
 		}
-	
-	/*Flag is not yet set on any subflow*/
-	if (unlikely(!cursubflow)) {
-		tp=mpcb->connection_list;
-		cursubflow=tp;
-	}
-	/*Now try to find the next available flow*/
-
-	for (tp=(tp->next)?tp->next:mpcb->connection_list;
-	     tp!=cursubflow && !mtcp_is_available(tp);
-	     tp=(tp->next)?tp->next:mpcb->connection_list);
-	
-	if (tp==cursubflow && !mtcp_is_available(tp)) {
-		tp=NULL;
-		goto out; /*All flows are busy currently*/
 	}
 
-	/*Set the flag to it*/
-	tp->mtcp_flags|=MTCP_CURRENT_SUBFLOW;
-out:
+out:		
+	/*Now, even the best subflow may be uneligible for sending.
+	  In that case, we must return NULL.*/
+	if (!mtcp_is_available(besttp))
+		besttp=NULL;
+	
 	mutex_unlock(&mpcb->mutex);
-	return tp;		
+	return besttp;		
 }
 
 int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
