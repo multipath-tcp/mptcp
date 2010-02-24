@@ -954,6 +954,23 @@ static int xfrm_policy_match(struct xfrm_policy *pol, struct flowi *fl,
 	    pol->type != type)
 		return ret;
 
+#ifdef CONFIG_MTCP
+	/*At the moment we simply disable xfrm for flows with 
+	  path index 0 or 1. In fact it is only necessary if the policy is a
+	  Shim6 policy. Interaction with other transformers will be studied
+	  later. 
+	  In the case of shim6 with mptcp, it is necessary to avoid plugging
+	  the transformer in the master subsocket (identified by pi 0 or 1), 
+	  because if we plug it, we will reduce the MSS for that subsocket
+	  by the sizeof of the shim6 ext header, while it is in fact never
+	  inserted. This would be inefficient, and would disable rcv side 
+	  ts-RTT estimation at the receiver as a side effect. Since that
+	  estimation is computed only upon reception of MSS-sized segments.*/
+	if (dir==XFRM_POLICY_OUT && 
+	    (fl->path_index==0 || fl->path_index==1))
+		return ret;
+#endif
+
 	match = xfrm_selector_match(sel, fl, family);
 	if (match)
 		ret = security_xfrm_policy_lookup(pol->security, fl->secid,
