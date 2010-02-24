@@ -461,8 +461,6 @@ int mtcp_is_available(struct tcp_sock *tp)
 	if (((struct sock*)tp)->sk_state!=TCP_ESTABLISHED) return 0;
 	
 	return sk_stream_memory_free((struct sock*)tp);
-	
-	return 0;
 }
 
 /*This is the scheduler. This function decides on which flow to send
@@ -472,7 +470,6 @@ static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb)
 {
 	struct tcp_sock *tp;
 	struct sock *sk;
-	struct tcp_sock *cursubflow=NULL;
 	struct tcp_sock *besttp;
 	unsigned int min_fill_ratio=0xffffffff;
 	
@@ -488,6 +485,8 @@ static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb)
 	mtcp_for_each_sk(mpcb,sk,tp) {
 		/*The shift is to avoid having to deal with a float*/
 		unsigned int fill_ratio=(sk->sk_wmem_queued<<4)/sk->sk_sndbuf;
+		if (!mtcp_is_available(tp)) 
+			continue;
 		if (fill_ratio<min_fill_ratio) {
 			min_fill_ratio=fill_ratio;
 			besttp=tp;
