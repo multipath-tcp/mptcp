@@ -148,6 +148,7 @@ struct multipath_pcb {
 	struct kref               kref;	
 	struct completion         liberate_subflow;
 	struct notifier_block     nb; /*For listening to PM events*/
+	int                       mtcp_rcvbuf;
 };
 
 #define mpcb_from_tcpsock(tp) ((tp)->mpcb)
