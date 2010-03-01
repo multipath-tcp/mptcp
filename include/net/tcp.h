@@ -189,7 +189,11 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_SACK_PERM      2
 #define TCPOLEN_TIMESTAMP      10
 #define TCPOLEN_MD5SIG         18
+#ifdef CONFIG_MTCP_PM
+#define TCPOLEN_MPC            7
+#else
 #define TCPOLEN_MPC            4
+#endif
 #define TCPOLEN_DSN            12
 
 /* But this is what stacks really send out. */
@@ -201,7 +205,11 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_SACK_PERBLOCK		8
 #define TCPOLEN_MD5SIG_ALIGNED		20
 #define TCPOLEN_MSS_ALIGNED		4
+#ifdef CONFIG_MTCP_PM
+#define TCPOLEN_MPC_ALIGNED             8
+#else
 #define TCPOLEN_MPC_ALIGNED             4
+#endif
 #define TCPOLEN_DSN_ALIGNED             12
 
 

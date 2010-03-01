@@ -3526,7 +3526,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 			case TCPOPT_TOKEN:
 				PDEBUG("tk opt not supported yet\n");
 				break;
-			case MTCP_ADDADDRESS:
+			case TCPOPT_ADDR:
 				PDEBUG("addaddress opt not supported yet\n");
 				break;
 

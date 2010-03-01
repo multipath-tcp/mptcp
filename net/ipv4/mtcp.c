@@ -108,7 +108,6 @@ inline void mtcp_reset_options(struct multipath_options* mopt){
 		}
 	}
 	mopt->ip_count = 0;
-	mopt->first = 0;
 #endif
 }
 
@@ -1293,6 +1292,21 @@ int mtcp_get_dataseq_mapping(struct multipath_pcb *mpcb, struct tcp_sock *tp,
 		return 1;
 	else return 0;
 }
+
+#ifdef CONFIG_MTCP_PM
+/* Generates a token for a new MPTCP connection
+ * Currently we assign sequential tokens to
+ * successive MPTCP connections. In the future we
+ * will need to define random tokens, while avoiding
+ * collisions.
+ */
+u32 mtcp_new_token(void)
+{
+	static latest_token=0;
+	latest_token++;
+	return latest_token;
+}
+#endif
 
 MODULE_LICENSE("GPL");
 

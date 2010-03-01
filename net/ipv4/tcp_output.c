@@ -386,6 +386,7 @@ struct tcp_out_options {
 	__u32 data_seq;         /* data sequence number, for MPTCP */
 	__u16 data_len;         /* data level length, for MPTCP*/
 	__u32 sub_seq;          /* subflow seqnum, for MPTCP*/
+	__u32 token;            /* token for mptcp */
 };
 
 /* Beware: Something in the Internet is very sensitive to the ordering of
@@ -474,8 +475,15 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	}
 #ifdef CONFIG_MTCP
 	if (unlikely(OPTION_MPC & opts->options)) {
+#ifdef CONFIG_MTCP_PM
+		*ptr++ = htonl((TCPOPT_NOP  << 24) |
+			       (TCPOPT_MPC << 16) |
+			       (TCPOLEN_MPC << 8));
+		*ptr++ = htonl(opts->token);
+#else
 		*ptr++ = htonl((TCPOPT_MPC << 24) |
 			       (TCPOLEN_MPC << 16));
+#endif
 	}
 	if (OPTION_DSN & opts->options) {
 		*ptr++ = htonl((TCPOPT_DSN << 24) |
