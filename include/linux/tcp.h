@@ -434,8 +434,7 @@ struct tcp_sock {
 	int                     bytes_eaten; /*Bytes eaten by app. - 
 					       For debugging*/
 #ifdef CONFIG_MTCP_PM
-
-	u32                             mtcp_loc_token;
+	u32                     mtcp_loc_token;
 #endif
 #endif
 };

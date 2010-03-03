@@ -3507,19 +3507,12 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 
 #ifdef CONFIG_MTCP
 			case TCPOPT_MPC:
-				if (!mopt) {
-					PDEBUG("Multipath Option Enabled "
-					       "but options NULL\n");
-					break;					
-				}
-
 				if (opsize!=TCPOLEN_MPC) {
 					PDEBUG("multipath opt:bad option "
 					       "size\n");
 					break;
 				}
 				PDEBUG("recvd multipath opt\n");
-				mtcp_reset_options(mopt);
 				opt_rx->saw_mpc=1;
 #ifdef CONFIG_MTCP_PM
 				opt_rx->mtcp_rem_token=ntohl(*(ptr+2));
@@ -3568,7 +3561,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 		}
 	}
 #ifdef CONFIG_MTCP
-	if (!mopt->saw_dsn)
+	if (!mopt || !mopt->saw_dsn)
 		TCP_SKB_CB(skb)->data_len=
 			TCP_SKB_CB(skb)->data_seq=
 			TCP_SKB_CB(skb)->end_data_seq=0;

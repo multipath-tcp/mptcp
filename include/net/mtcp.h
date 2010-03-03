@@ -127,8 +127,6 @@ struct multipath_pcb {
 	  of course, it never exceeds wb_size*/
 	int                       wb_size,wb_start,wb_length;
 	
-	uint8_t                   mpc_sent:1; /*MPC option has been sent, do 
-						not send it anymore*/
 	struct sk_buff_head       receive_queue;/*received data*/
 	struct sk_buff_head       write_queue;/*sent stuff, waiting for ack*/
 	struct sk_buff_head       retransmit_queue;/*need to rexmit*/

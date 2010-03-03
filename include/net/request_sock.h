@@ -59,10 +59,12 @@ struct request_sock {
 	struct sock			*sk;
 	u32				secid;
 	u32				peer_secid;
+#ifdef CONFIG_MTCP
+	u8                              saw_mpc:1;
 #ifdef CONFIG_MTCP_PM
 	u32                             mtcp_loc_token;
 	u32                             mtcp_rem_token;
-	u8                              saw_mpc:1;
+#endif
 #endif
 };
 

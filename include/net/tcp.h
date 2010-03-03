@@ -356,7 +356,7 @@ extern void tcp_enter_quickack_mode(struct sock *sk);
 
 static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
 {
- 	rx_opt->tstamp_ok = rx_opt->sack_ok = rx_opt->wscale_ok = rx_opt->snd_wscale = 0;
+ 	rx_opt->tstamp_ok = rx_opt->sack_ok = rx_opt->wscale_ok = rx_opt->snd_wscale = rx_opt->saw_mpc = 0;
 }
 
 #define	TCP_ECN_OK		1
@@ -1091,6 +1091,13 @@ static inline void tcp_openreq_init(struct request_sock *req,
 	tcp_rsk(req)->rcv_isn = TCP_SKB_CB(skb)->seq;
 	req->mss = rx_opt->mss_clamp;
 	req->ts_recent = rx_opt->saw_tstamp ? rx_opt->rcv_tsval : 0;
+#ifdef CONFIG_MTCP
+	req->saw_mpc = rx_opt->saw_mpc;
+#ifdef CONFIG_MTCP_PM
+	req->mtcp_rem_token = rx_opt->mtcp_rem_token;
+	req->mtcp_loc_token = mtcp_new_token();
+#endif
+#endif
 	ireq->tstamp_ok = rx_opt->tstamp_ok;
 	ireq->sack_ok = rx_opt->sack_ok;
 	ireq->snd_wscale = rx_opt->snd_wscale;

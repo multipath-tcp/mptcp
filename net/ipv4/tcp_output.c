@@ -544,7 +544,7 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		opts->options |= OPTION_MPC;
 		size+=TCPOLEN_MPC_ALIGNED;
 #ifdef CONFIG_MTCP_PM
-		tp->mtcp_loc_token=opts->token=mtcp_new_token();		
+		opts->token=tp->mtcp_loc_token;
 #endif
 		
 		/*We arrive here either when sending a SYN or a
@@ -625,7 +625,7 @@ static unsigned tcp_synack_options(struct sock *sk,
 	opts->options |= OPTION_MPC;
 	size+=TCPOLEN_MPC_ALIGNED;
 #ifdef CONFIG_MTCP_PM
-	req->mtcp_loc_token=opts->token=mtcp_new_token();
+	opts->token = req->mtcp_loc_token;
 #endif
 	opts->options |= OPTION_DSN;
 	size+=TCPOLEN_DSN_ALIGNED;
@@ -671,16 +671,6 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			opts->num_sack_blocks * TCPOLEN_SACK_PERBLOCK;
 	}
 #ifdef CONFIG_MTCP	
-	/*Even if the mpc option has been sent in the SYN, it must be repeated
-	  in the first segment of the established flow, because the server
-	  only creates the socket when it receives the final ACK, not when
-	  we send the SYN.*/
-	if (unlikely(!mpcb_from_tcpsock(tp)->mpc_sent)) {
-		opts->options |= OPTION_MPC;
-		size+=TCPOLEN_MPC_ALIGNED;
-		mpcb_from_tcpsock(tp)->mpc_sent=1;
-	}
-
 	if (tp->mpc && (!skb || skb->len!=0)) {
 		if (tcb && tcb->data_len) { /*Ignore dataseq if data_len is 0*/
 			opts->options |= OPTION_DSN;
@@ -2579,6 +2569,9 @@ int tcp_connect(struct sock *sk)
 	struct sk_buff *buff;
 
 	tcp_connect_init(sk);
+#ifdef CONFIG_MTCP_PM
+	tp->mtcp_loc_token=mtcp_new_token();
+#endif
 
 	buff = alloc_skb_fclone(MAX_TCP_HEADER + 15, sk->sk_allocation);
 	if (unlikely(buff == NULL))

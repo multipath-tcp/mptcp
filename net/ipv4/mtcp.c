@@ -100,7 +100,6 @@ void freeze_rcv_queue(struct sock *sk, const char *func_name)
 
 inline void mtcp_reset_options(struct multipath_options* mopt){
 #ifdef CONFIG_MTCP_PM
-	mopt->remote_token = -1;
 	if (mopt->ip_count>0){
 		if (mopt->ip_list){
 			mopt->ip_list = NULL;

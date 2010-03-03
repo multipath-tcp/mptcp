@@ -683,31 +683,35 @@ struct sock *tcp_check_req(struct sock *sk,struct sk_buff *skb,
 	}
 #endif
 
-#ifdef CONFIG_MTCP_PM
+#ifdef CONFIG_MTCP
 	{
 		/*Copy mptcp related info from req to child
 		  we do this here because this is shared between
 		  ipv4 and ipv6*/
 		struct tcp_sock *child_tp = tcp_sk(child);
-		child_tp->mpc_seen=req->saw_mpc;
+		child_tp->rx_opt.saw_mpc=req->saw_mpc;
+		if (child_tp->rx_opt.saw_mpc)
+			child_tp->mpc=1;
+#ifdef CONFIG_MTCP_PM
+		child_tp->rx_opt.mtcp_rem_token=req->mtcp_rem_token;
 		child_tp->mtcp_loc_token=req->mtcp_loc_token;
-		child_tp->mtcp_rem_token=req->mtcp_rem_token;
+#endif
 	}
 #endif
 	
 	inet_csk_reqsk_queue_unlink(sk, req, prev);
 	inet_csk_reqsk_queue_removed(sk, req);
-
+	
 	inet_csk_reqsk_queue_add(sk, req, child);
 	return child;
-
+	
 listen_overflow:
 	if (!sysctl_tcp_abort_on_overflow) {
 		inet_rsk(req)->acked = 1;
 		return NULL;
 	}
-
-embryonic_reset:
+	
+embryonixc_reset:
 	NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_EMBRYONICRSTS);
 	if (!(flg & TCP_FLAG_RST))
 		req->rsk_ops->send_reset(sk, skb);
