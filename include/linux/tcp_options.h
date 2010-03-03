@@ -28,18 +28,22 @@ struct tcp_options_received {
 	u32	ts_recent;	/* Time stamp to echo next		*/
 	u32	rcv_tsval;	/* Time stamp value             	*/
 	u32	rcv_tsecr;	/* Time stamp echo reply        	*/
-	u16 	saw_tstamp : 1,	/* Saw TIMESTAMP on last packet		*/
+	u32 	saw_tstamp : 1,	/* Saw TIMESTAMP on last packet		*/
 		tstamp_ok : 1,	/* TIMESTAMP seen on SYN packet		*/
 		dsack : 1,	/* D-SACK is scheduled			*/
 		wscale_ok : 1,	/* Wscale seen on SYN packet		*/
 		sack_ok : 4,	/* SACK seen on SYN packet		*/
 		snd_wscale : 4,	/* Window scaling received from sender	*/
-		rcv_wscale : 4;	/* Window scaling to send to receiver	*/
+		rcv_wscale : 4,	/* Window scaling to send to receiver	*/
+		saw_mpc : 1;    /* MPC option seen, for MPTCP */
 /*	SACKs data	*/
 	u8	eff_sacks;	/* Size of SACK array to send with next packet */
 	u8	num_sacks;	/* Number of SACK blocks		*/
 	u16	user_mss;  	/* mss requested by user in ioctl */
 	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
+#ifdef CONFIG_MTCP_PM
+ 	u32     mtcp_rem_token; /* Remote token, for mptcp*/
+#endif
 };
 
 #endif /*_TCP_OPTIONS_H*/

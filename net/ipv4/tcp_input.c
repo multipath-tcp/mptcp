@@ -3510,8 +3510,9 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				if (!mopt) {
 					PDEBUG("Multipath Option Enabled "
 					       "but options NULL\n");
-					break;
+					break;					
 				}
+
 				if (opsize!=TCPOLEN_MPC) {
 					PDEBUG("multipath opt:bad option "
 					       "size\n");
@@ -3519,13 +3520,13 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				}
 				PDEBUG("recvd multipath opt\n");
 				mtcp_reset_options(mopt);
-				mopt->saw_mpc=1;
-				break;
-
+				opt_rx->saw_mpc=1;
 #ifdef CONFIG_MTCP_PM
-			case TCPOPT_TOKEN:
-				PDEBUG("tk opt not supported yet\n");
+				opt_rx->mtcp_rem_token=ntohl(*(ptr+2));
+#endif
 				break;
+				
+#ifdef CONFIG_MTCP_PM
 			case TCPOPT_ADDR:
 				PDEBUG("addaddress opt not supported yet\n");
 				break;
@@ -3610,9 +3611,9 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 		PDEBUG("mpcb null in fast parse options\n");
 	tcp_parse_options(skb, &tp->rx_opt,mpcb?&mpcb->received_options:NULL, 
 			  1);
-	if (unlikely(mpcb && mpcb->received_options.saw_mpc))
-		tp->mpc=1;       
-	
+	if (unlikely(mpcb && tp->rx_opt.saw_mpc))
+		tp->mpc=1;
+
 	return 1;
 }
 
@@ -5511,7 +5512,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 
 	tcp_parse_options(skb, &tp->rx_opt,&mpcb->received_options, 0);
 
-	if (unlikely(mpcb && mpcb->received_options.saw_mpc && 
+	if (unlikely(mpcb && tp->rx_opt.saw_mpc && 
 		     mpcb->received_options.saw_dsn)) {
 		/*This is the beginning of the multipath session, init
 		  the dsn value*/

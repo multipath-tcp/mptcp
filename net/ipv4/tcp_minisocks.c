@@ -683,6 +683,18 @@ struct sock *tcp_check_req(struct sock *sk,struct sk_buff *skb,
 	}
 #endif
 
+#ifdef CONFIG_MTCP_PM
+	{
+		/*Copy mptcp related info from req to child
+		  we do this here because this is shared between
+		  ipv4 and ipv6*/
+		struct tcp_sock *child_tp = tcp_sk(child);
+		child_tp->mpc_seen=req->saw_mpc;
+		child_tp->mtcp_loc_token=req->mtcp_loc_token;
+		child_tp->mtcp_rem_token=req->mtcp_rem_token;
+	}
+#endif
+	
 	inet_csk_reqsk_queue_unlink(sk, req, prev);
 	inet_csk_reqsk_queue_removed(sk, req);
 

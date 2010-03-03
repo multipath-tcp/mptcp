@@ -175,10 +175,9 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOPT_DFIN		32
 #define TCPOPT_RESYNC   	33
 
-#define TCPOPT_TOKEN            60
-#define TCPOPT_ADDR             61
-#define TCPOPT_REMADR           62
-#define TCPOPT_NEW_SUBFLOW	63
+#define TCPOPT_ADDR             60
+#define TCPOPT_REMADR           61
+#define TCPOPT_NEW_SUBFLOW	62
 
 /*
  *     TCP option lengthsx

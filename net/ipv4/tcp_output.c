@@ -540,21 +540,24 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 			size += TCPOLEN_SACKPERM_ALIGNED;
 	}
 #ifdef CONFIG_MTCP
-	{
-		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
-		
+	{		
 		opts->options |= OPTION_MPC;
 		size+=TCPOLEN_MPC_ALIGNED;
+#ifdef CONFIG_MTCP_PM
+		tp->mtcp_loc_token=opts->token=mtcp_new_token();		
+#endif
 		
 		/*We arrive here either when sending a SYN or a
 		  SYN+ACK when in SYN_SENT state (that is, tcp_synack_options
 		  is only called for syn+ack replied by a server, while this
 		  function is called when SYNs are sent by both parties and 
-		  are crossed.
+		  are crossed)
 		  Due to this possibility, a slave subsocket may arrive here,
 		  and does not need to set the dataseq options, since
 		  there is no data in the segment*/
 		if (is_master_sk(tp)) {			
+			struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+			BUG_ON(!mpcb);
 			opts->options |= OPTION_DSN;
 			size+=TCPOLEN_DSN_ALIGNED;
 			opts->data_seq=mpcb->write_seq; /*First data byte is 
@@ -563,6 +566,7 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		}
 	}
 #endif
+
 	return size;
 }
 
@@ -570,7 +574,8 @@ static unsigned tcp_synack_options(struct sock *sk,
 				   struct request_sock *req,
 				   unsigned mss, struct sk_buff *skb,
 				   struct tcp_out_options *opts,
-				   struct tcp_md5sig_key **md5) {
+				   struct tcp_md5sig_key **md5)
+{
 	unsigned size = 0;
 	struct inet_request_sock *ireq = inet_rsk(req);
 	char doing_ts;
@@ -611,13 +616,17 @@ static unsigned tcp_synack_options(struct sock *sk,
 			size += TCPOLEN_SACKPERM_ALIGNED;
 	}
 
+
 #ifdef CONFIG_MTCP
-	/*For the SYNACK, the mpcb is normally not yet initialized
-	  (to protect against SYN DoS attack)
-	  So we cannot use it here.*/
+/*For the SYNACK, the mpcb is normally not yet initialized
+  (to protect against SYN DoS attack)
+  So we cannot use it here.*/
 	
 	opts->options |= OPTION_MPC;
 	size+=TCPOLEN_MPC_ALIGNED;
+#ifdef CONFIG_MTCP_PM
+	req->mtcp_loc_token=opts->token=mtcp_new_token();
+#endif
 	opts->options |= OPTION_DSN;
 	size+=TCPOLEN_DSN_ALIGNED;
 	opts->data_seq=0;

@@ -42,13 +42,11 @@
 
 struct multipath_options {	
 #ifdef CONFIG_MTCP_PM
-	u32    remote_token;
 	u8     ip_count;
 	u32*   ip_list;
 	u8     list_rcvd:1; /*1 if IP list has been received*/
 #endif
-	u8     saw_mpc:1,
-	       saw_dsn:1;	
+	u8     saw_dsn:1;
 };
 
 
@@ -147,9 +145,6 @@ struct multipath_pcb {
 	struct kref               kref;	
 	struct completion         liberate_subflow;
 	struct notifier_block     nb; /*For listening to PM events*/
-#ifdef CONFIG_MTCP_PM
-	u32                       local_token;
-#endif
 };
 
 #define mpcb_from_tcpsock(tp) ((tp)->mpcb)

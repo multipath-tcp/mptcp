@@ -1228,9 +1228,6 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	tmp_opt.mss_clamp = 536;
 	tmp_opt.user_mss  = tcp_sk(sk)->rx_opt.user_mss;
 
-	/*init multipath options*/
-	memset(&req->mopt,0,sizeof(req->mopt));
-
 	tcp_parse_options(skb, &tmp_opt, &req->mopt, 0);
 
 	if (want_cookie && !tmp_opt.saw_tstamp)
