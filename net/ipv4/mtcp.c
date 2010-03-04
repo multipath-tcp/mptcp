@@ -30,6 +30,7 @@
 #include <linux/net.h>
 #include <linux/in.h>
 #include <linux/random.h>
+#include <linux/inetdevice.h>
 #include <asm/atomic.h>
 
 #undef DEBUG_MTCP /*set to define if you want debugging messages*/
@@ -303,6 +304,40 @@ void mtcp_ask_update(struct sock *sk)
 	call_netevent_notifiers(NETEVENT_MPS_UPDATEME, &up);
 }
 
+static void set_addresses(struct multipath_pcb *mpcb)
+{
+	struct net_device *dev;
+
+	mpcb->num_addr4=0;
+	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
+
+	read_lock(&dev_base_lock); 
+
+	for_each_netdev(&init_net,dev) {
+		if(netif_running(dev)) {
+			struct in_device *in_dev=dev->ip_ptr;
+			struct in_ifaddr *ifa;
+			
+			if (!strcmp(dev->name,"lo"))
+				continue;
+
+			if (mpcb->num_addr4==MTCP_MAX_ADDR) {
+				printk(KERN_ERR "Reached max number of local"
+				       "IPv4 addresses : %d\n", MTCP_MAX_ADDR);
+				break;
+			}
+			
+			for (ifa = in_dev->ifa_list; ifa; 
+			     ifa = ifa->ifa_next)
+				mpcb->addr4[mpcb->num_addr4++].s_addr=
+					ifa->ifa_address;
+		}
+	}
+	
+	read_unlock(&dev_base_lock); 
+}
+
+
 struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 {
 	struct multipath_pcb * mpcb = kmalloc(
@@ -330,7 +365,10 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	
 	mpcb->nb.notifier_call=netevent_callback;
 	register_netevent_notifier(&mpcb->nb);
-		
+
+	/*Searching for suitable local addresses*/
+	set_addresses(mpcb);
+	
 	return mpcb;
 }
 

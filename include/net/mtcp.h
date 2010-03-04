@@ -3,10 +3,13 @@
  *
  *	Authors:
  *      Sébastien Barré		<sebastien.barre@uclouvain.be>
- *      Costin Raiciu           <c.raiciu@cs.ucl.ac.uk>
  *
  *
- *      date : June 09
+ *
+ *      Part of this code is inspired from an early version for linux 2.4 by
+ *      Costin Raiciu.
+ *
+ *      date : March 10
  *
  *
  *	This program is free software; you can redistribute it and/or
@@ -34,6 +37,9 @@
 #define MTCP_DEBUG_CHECK_RCV_QUEUE 0x4
 #define MTCP_DEBUG_DATA_QUEUE 0x8
 #define MTCP_DEBUG_COPY_TO_IOVEC 0x10
+
+
+#define MTCP_MAX_ADDR 3 /*Max number of local or remote addresses we can store*/
 
 /*hashtable Not used currently -- To delete ?*/
 #define MTCP_HASH_SIZE                16
@@ -126,6 +132,25 @@ struct multipath_pcb {
 	  wb_length: number of bytes occupied by the pending data.
 	  of course, it never exceeds wb_size*/
 	int                       wb_size,wb_start,wb_length;
+
+	uint8_t                   addr_sent:1; /* 1 if our set of local
+						addresses has been sent
+						already to our peer */
+	
+	struct in_addr            addr4[MTCP_MAX_ADDR]; /*We need to store
+							  the set of local
+							  addresses, so 
+							  that we have 
+							  a stable view
+							  of the available
+							  addresses. 
+							  Playing with the
+							  addresses in the
+							  would expose us
+							  to concurrency
+							  problems*/
+	int                       num_addr4; /*num of addresses actually
+					       stored above.*/
 	
 	struct sk_buff_head       receive_queue;/*received data*/
 	struct sk_buff_head       write_queue;/*sent stuff, waiting for ack*/

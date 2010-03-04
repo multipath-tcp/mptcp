@@ -376,6 +376,7 @@ static inline int tcp_urg_mode(const struct tcp_sock *tp)
 #define OPTION_MPC              (1 << 3)
 #define OPTION_TOKEN            (1 << 4)
 #define OPTION_DSN              (1 << 5)
+#define OPTION_ADDR             (1 << 6)
 
 struct tcp_out_options {
 	u8 options;		/* bit field of OPTION_* */
@@ -387,6 +388,8 @@ struct tcp_out_options {
 	__u16 data_len;         /* data level length, for MPTCP*/
 	__u32 sub_seq;          /* subflow seqnum, for MPTCP*/
 	__u32 token;            /* token for mptcp */
+	struct in_addr *addr4;  /* v4 addresses for MPTCP */
+	int num_addr4;          /* Number of addresses v4, MPTCP*/
 };
 
 /* Beware: Something in the Internet is very sensitive to the ordering of
@@ -485,6 +488,25 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			       (TCPOLEN_MPC << 16));
 #endif
 	}
+
+#ifdef CONFIG_MTCP_PM
+	if (unlikely(OPTION_ADDR & opts->options)) {
+		uint8_t *ptr8=(uint8_t*)ptr; /*We need a per-byte pointer here*/
+		int i;
+		for (i=TCPOLEN_ADDR(opts->num_addr4);
+		     i<TCPOLEN_ADDR_ALIGNED(opts->num_addr4);i++)
+			*ptr8++ = TCPOPT_NOP;
+		*ptr8++ = TCPOPT_ADDR;
+		*ptr8++ = TCPOLEN_ADDR(opts->num_addr4);
+		for (i=0;i<opts->num_addr4;i++) {
+			*ptr8++ = i;
+			*ptr8++ = 64;
+			*((struct in_addr*)ptr8)=opts->addr4[i];
+			ptr8+=sizeof(struct in_addr);
+		}
+		ptr = (__be32*)ptr8;
+	}
+#endif
 	if (OPTION_DSN & opts->options) {
 		*ptr++ = htonl((TCPOPT_DSN << 24) |
 			       (TCPOLEN_DSN << 16) |
@@ -672,13 +694,24 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	}
 #ifdef CONFIG_MTCP	
 	if (tp->mpc && (!skb || skb->len!=0)) {
+		struct multipath_pcb *mpcb = tp->mpcb;
 		if (tcb && tcb->data_len) { /*Ignore dataseq if data_len is 0*/
 			opts->options |= OPTION_DSN;
 			opts->data_seq=tcb->data_seq;
 			opts->data_len=tcb->data_len;
 			opts->sub_seq=tcb->sub_seq;
+			size += TCPOLEN_DSN_ALIGNED;		
 		}
-		size += TCPOLEN_DSN_ALIGNED;
+		
+#ifdef CONFIG_MTCP_PM
+		if (unlikely(!mpcb->addr_sent)) {
+			mpcb->addr_sent=1;
+			opts->options |= OPTION_ADDR;
+			opts->addr4=mpcb->addr4;
+			opts->num_addr4=mpcb->num_addr4;
+			size += TCPOLEN_ADDR_ALIGNED(opts->num_addr4);
+		}
+#endif
 	}
 #endif
 
