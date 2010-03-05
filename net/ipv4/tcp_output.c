@@ -611,7 +611,7 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 #endif
 
 	return size;
-}
+} 
 
 static unsigned tcp_synack_options(struct sock *sk,
 				   struct request_sock *req,
@@ -2626,9 +2626,6 @@ int tcp_connect(struct sock *sk)
 	struct sk_buff *buff;
 
 	tcp_connect_init(sk);
-#ifdef CONFIG_MTCP_PM
-	tp->mtcp_loc_token=mtcp_new_token();
-#endif
 
 	buff = alloc_skb_fclone(MAX_TCP_HEADER + 15, sk->sk_allocation);
 	if (unlikely(buff == NULL))

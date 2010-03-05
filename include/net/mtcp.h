@@ -70,9 +70,7 @@ extern struct proto mtcpsub_prot;
 
 struct tcp_sock;
 
-struct multipath_pcb {
-	struct list_head          collide_sd;
-	
+struct multipath_pcb {	
 	/*receive and send buffer sizing*/
 	int                       rcvbuf, sndbuf;
 	atomic_t                  rmem_alloc;       
@@ -149,6 +147,7 @@ struct multipath_pcb {
 	struct notifier_block     nb; /*For listening to PM events*/
 
 #ifdef CONFIG_MTCP_PM
+	struct list_head          collide_tk;
 	uint8_t                   addr_sent:1; /* 1 if our set of local
 						addresses has been sent
 						already to our peer */

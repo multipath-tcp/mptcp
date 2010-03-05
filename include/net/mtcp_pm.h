@@ -24,10 +24,6 @@
 #include <linux/in.h>
 #include <linux/in6.h>
 
-#define MTCP_HASH_SIZE                16
-#define hash_tk(token) \
-	jhash_1word(fd,0)%MTCP_HASH_SIZE
-
 #define MTCP_MAX_ADDR 3 /*Max number of local or remote addresses we can store*/
 
 struct multipath_pcb;
@@ -58,14 +54,18 @@ struct mtcp_pm_ctx {
 	struct list_head    collide_token;
 
 /*token information*/
-	u32                 tk_local, tk_remote;
+	u32                 tk_local;
 
-/*connection identifier*/
-	__u32 remote_app_ip, local_app_ip;
-	__u16 remote_port,local_port;
+	struct multipath_pcb *mpcb;
 };
 
+#define loc_token(mpcb)					\
+	(tcp_sk(mpcb->master_sk)->mtcp_loc_token)
+
 u32 mtcp_new_token(void);
+void mtcp_hash_insert(struct multipath_pcb *mpcb,u32 token);
+void mtcp_hash_remove(struct multipath_pcb *mpcb);
+struct multipath_pcb* mtcp_hash_find(u32 token);
 void mtcp_set_addresses(struct multipath_pcb *mpcb);
 void mtcp_update_patharray(struct multipath_pcb *mpcb);
 void mtcp_send_updatenotif(struct multipath_pcb *mpcb);

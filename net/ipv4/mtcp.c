@@ -348,8 +348,15 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 #ifdef CONFIG_MTCP_PM
 	/*Pi 1 is reserved for the master subflow*/
 	mpcb->next_unused_pi=2;
+	/*For the server side, the local token has already been allocated*/
+	if (!tcp_sk(master_sk)->mtcp_loc_token)
+		tcp_sk(master_sk)->mtcp_loc_token=mtcp_new_token();
+
+	/*Adding the mpcb in the token hashtable*/
+	mtcp_hash_insert(mpcb,loc_token(mpcb));
+
 #endif
-	
+		
 	return mpcb;
 }
 
@@ -366,12 +373,17 @@ static void mpcb_release(struct kref* kref)
   (due to unregister_netevent_notifier)*/
 void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
 {
+#ifdef CONFIG_MTCP_PM
+	/*Detach the mpcb from the token hashtable*/
+	mtcp_hash_remove(mpcb);
+#endif
 	/*Stop listening to PM events*/
 	unregister_netevent_notifier(&mpcb->nb);
 	/*Remove any remaining skb from the queues*/
 	skb_queue_purge(&mpcb->receive_queue);
 	skb_queue_purge(&mpcb->out_of_order_queue);
 	kref_put(&mpcb->kref,mpcb_release);
+	
 }
 
 /*MUST be called in user context

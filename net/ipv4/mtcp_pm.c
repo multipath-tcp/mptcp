@@ -19,9 +19,17 @@
 #include <net/mtcp_pm.h>
 #include <linux/netdevice.h>
 #include <linux/inetdevice.h>
+#include <linux/list.h>
+#include <linux/tcp.h>
 #include <net/inet_sock.h>
 
+#define MTCP_HASH_SIZE                16
+#define hash_tk(token) \
+	jhash_1word(token,0)%MTCP_HASH_SIZE
+
+
 static struct list_head tk_hashtable[MTCP_HASH_SIZE];
+static rwlock_t tk_hash_lock; /*hashtable protection*/
 
 /* General initialization of MTCP_PM
  */
@@ -30,8 +38,38 @@ static int __init mtcp_pm_init(void)
 	int i;
 	for (i=0;i<MTCP_HASH_SIZE;i++)
 		INIT_LIST_HEAD(&tk_hashtable[i]);		
+	rwlock_init(&tk_hash_lock);
 	return 0;
 }
+
+void mtcp_hash_insert(struct multipath_pcb *mpcb,u32 token)
+{
+	int hash=hash_tk(token);
+	write_lock_bh(&tk_hash_lock);
+	list_add(&mpcb->collide_tk,&tk_hashtable[hash]);
+	write_unlock_bh(&tk_hash_lock);
+}
+
+struct multipath_pcb* mtcp_hash_find(u32 token)
+{
+	int hash=hash_tk(token);
+	struct multipath_pcb *mpcb;
+	read_lock(&tk_hash_lock);
+	list_for_each_entry(mpcb,&tk_hashtable[hash],collide_tk) {
+		if (token==loc_token(mpcb))
+			return mpcb;
+	}
+	read_unlock(&tk_hash_lock);
+	return NULL;
+}
+
+void mtcp_hash_remove(struct multipath_pcb *mpcb)
+{
+	write_lock_bh(&tk_hash_lock);
+	list_del(&mpcb->collide_tk);
+	write_unlock_bh(&tk_hash_lock);
+}
+
 
 /* Generates a token for a new MPTCP connection
  * Currently we assign sequential tokens to
