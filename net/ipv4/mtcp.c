@@ -7,7 +7,7 @@
  *
  *      Partially inspired from initial user space MTCP stack by Costin Raiciu.
  *
- *      date : December 09
+ *      date : March 10
  *
  *
  *	This program is free software; you can redistribute it and/or
@@ -99,17 +99,6 @@ void freeze_rcv_queue(struct sock *sk, const char *func_name)
 #endif
 /*=====================================*/
 
-inline void mtcp_reset_options(struct multipath_options* mopt){
-#ifdef CONFIG_MTCP_PM
-	if (mopt->ip_count>0){
-		if (mopt->ip_list){
-			mopt->ip_list = NULL;
-		}
-	}
-	mopt->ip_count = 0;
-#endif
-}
-
 /*This function can only be called with *slave* subsockets 
   as argument.*/
 static void mtcp_def_readable(struct sock *sk, int len)
@@ -127,6 +116,7 @@ static void mtcp_def_readable(struct sock *sk, int len)
 	sk_wake_async(msk, SOCK_WAKE_WAITD, POLL_IN);
 	read_unlock(&msk->sk_callback_lock);
 }
+
 
 
 /**
@@ -304,40 +294,6 @@ void mtcp_ask_update(struct sock *sk)
 	call_netevent_notifiers(NETEVENT_MPS_UPDATEME, &up);
 }
 
-static void set_addresses(struct multipath_pcb *mpcb)
-{
-	struct net_device *dev;
-
-	mpcb->num_addr4=0;
-	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
-
-	read_lock(&dev_base_lock); 
-
-	for_each_netdev(&init_net,dev) {
-		if(netif_running(dev)) {
-			struct in_device *in_dev=dev->ip_ptr;
-			struct in_ifaddr *ifa;
-			
-			if (!strcmp(dev->name,"lo"))
-				continue;
-
-			if (mpcb->num_addr4==MTCP_MAX_ADDR) {
-				printk(KERN_ERR "Reached max number of local"
-				       "IPv4 addresses : %d\n", MTCP_MAX_ADDR);
-				break;
-			}
-			
-			for (ifa = in_dev->ifa_list; ifa; 
-			     ifa = ifa->ifa_next)
-				mpcb->addr4[mpcb->num_addr4++].s_addr=
-					ifa->ifa_address;
-		}
-	}
-	
-	read_unlock(&dev_base_lock); 
-}
-
-
 struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 {
 	struct multipath_pcb * mpcb = kmalloc(
@@ -365,9 +321,6 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	
 	mpcb->nb.notifier_call=netevent_callback;
 	register_netevent_notifier(&mpcb->nb);
-
-	/*Searching for suitable local addresses*/
-	set_addresses(mpcb);
 	
 	return mpcb;
 }
@@ -486,6 +439,12 @@ void mtcp_update_metasocket(struct sock *sk)
 
 		break;
 	}
+#ifdef CONFIG_MTCP_PM
+	/*Searching for suitable local addresses*/
+	mtcp_set_addresses(mpcb);
+	/*If this added new local addresses, build new paths with them*/
+	if (mpcb->num_addr4 || mpcb->num_addr6) mtcp_update_patharray(mpcb);
+#endif	
 }
 
 int mtcp_is_available(struct tcp_sock *tp)
@@ -1328,21 +1287,6 @@ int mtcp_get_dataseq_mapping(struct multipath_pcb *mpcb, struct tcp_sock *tp,
 		return 1;
 	else return 0;
 }
-
-#ifdef CONFIG_MTCP_PM
-/* Generates a token for a new MPTCP connection
- * Currently we assign sequential tokens to
- * successive MPTCP connections. In the future we
- * will need to define random tokens, while avoiding
- * collisions.
- */
-u32 mtcp_new_token(void)
-{
-	static u32 latest_token=0;
-	latest_token++;
-	return latest_token;
-}
-#endif
 
 MODULE_LICENSE("GPL");
 

@@ -3411,7 +3411,7 @@ uninteresting_ack:
 void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 		       struct multipath_options *mopt, int estab)
 {
-	unsigned char *ptr;
+	unsigned char *ptr,*ptr8;
 	struct tcphdr *th = tcp_hdr(skb);
 	int length = (th->doff * 4) - sizeof(struct tcphdr);
 
@@ -3515,13 +3515,48 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				PDEBUG("recvd multipath opt\n");
 				opt_rx->saw_mpc=1;
 #ifdef CONFIG_MTCP_PM
-				opt_rx->mtcp_rem_token=ntohl(*(ptr+2));
+				opt_rx->mtcp_rem_token=
+					ntohl(*((u32*)(ptr+1)));
 #endif
 				break;
 				
 #ifdef CONFIG_MTCP_PM
 			case TCPOPT_ADDR:
-				PDEBUG("addaddress opt not supported yet\n");
+				if (!mopt) {
+					printk(KERN_DEBUG "MPTCP addresses "
+					       "received, but no mtcp state"
+					       "found\n");
+					break;
+				}
+				mopt->num_addr4=mopt->num_addr6=0;
+				for (ptr8=ptr; ptr8<ptr+opsize-2; ptr8++) {
+					if ((*(ptr8+1))>>4==4 && 
+					    mopt->num_addr4<MTCP_MAX_ADDR) {
+						mopt->addr4[mopt->num_addr4].
+							id=*ptr8;
+						ptr8+=2;
+						mopt->addr4[mopt->num_addr4].
+							addr.s_addr=
+							*((__be32*)ptr8);
+						ptr8+=sizeof(struct in_addr);
+						mopt->num_addr4++;
+					}
+					else if ((*(ptr8+1))>>4==6 && 
+						 mopt->num_addr6<
+						 MTCP_MAX_ADDR) {
+						mopt->addr6[mopt->num_addr6].
+							id=*ptr8;
+						ptr8+=2;
+						memcpy(&mopt->addr6[
+							       mopt->num_addr6].
+						       addr,
+						       ptr8,
+						       sizeof(struct in6_addr));
+						ptr8+=sizeof(struct in6_addr);
+						mopt->num_addr6++;
+					}       				
+				}
+				mopt->list_rcvd=1;
 				break;
 
 			case TCPOPT_NEW_SUBFLOW:

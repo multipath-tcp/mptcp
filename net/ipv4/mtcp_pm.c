@@ -2,12 +2,11 @@
  *	MTCP PM implementation
  *
  *	Authors:
- *      Costin Raiciu           <c.raiciu@cs.ucl.ac.uk>
  *      Sébastien Barré		<sebastien.barre@uclouvain.be>
  *
  *
  *
- *      date : March 09
+ *      date : March 10
  *
  *
  *	This program is free software; you can redistribute it and/or
@@ -17,20 +16,202 @@
  */
 
 #include <net/mtcp.h>
-
+#include <net/mtcp_pm.h>
+#include <linux/netdevice.h>
+#include <linux/inetdevice.h>
+#include <net/inet_sock.h>
 
 static struct list_head tk_hashtable[MTCP_HASH_SIZE];
 
-/*General initialization of MTCP_PM
+/* General initialization of MTCP_PM
  */
 static int __init mtcp_pm_init(void) 
 {
+	int i;
 	for (i=0;i<MTCP_HASH_SIZE;i++)
 		INIT_LIST_HEAD(&tk_hashtable[i]);		
 	return 0;
+}
+
+/* Generates a token for a new MPTCP connection
+ * Currently we assign sequential tokens to
+ * successive MPTCP connections. In the future we
+ * will need to define random tokens, while avoiding
+ * collisions.
+ */
+u32 mtcp_new_token(void)
+{
+	static u32 latest_token=0;
+	latest_token++;
+	return latest_token;
+}
+
+
+struct path4 *find_path_mapping4(struct in_addr *loc,struct in_addr *rem,
+				 struct multipath_pcb *mpcb)
+{
+	int i;
+	for (i=0;i<mpcb->pa4_size;i++)
+		if (mpcb->pa4[i].loc.addr.s_addr == loc->s_addr &&
+		    mpcb->pa4[i].rem.addr.s_addr == rem->s_addr) {
+			printk(KERN_ERR "found mapping\n");
+			return &mpcb->pa4[i];
+		}
+	return NULL;
+}
+
+void print_patharray(struct path4 *pa, int size)
+{
+	int i;
+	printk(KERN_ERR "==================\n");
+	for (i=0;i<size;i++) {
+		printk(KERN_ERR NIPQUAD_FMT "/%d->"
+		       NIPQUAD_FMT "/%d, pi %d\n",
+		       NIPQUAD(pa[i].loc.addr),pa[i].loc.id,
+		       NIPQUAD(pa[i].rem.addr),pa[i].rem.id,
+		       pa[i].path_index);
+	}
+}
+
+
+
+/*This is the MPTCP PM mapping table*/
+void mtcp_update_patharray(struct multipath_pcb *mpcb)
+{
+	struct path4 *new_pa4, *old_pa4;
+	int i,j,newpa_idx=2;
+	/*Count how many paths are available
+	  We add 1 to size of local and remote set, to include the 
+	  ULID*/
+	int ulid_v4=(mpcb->sa_family==AF_INET)?1:0;
+	int pa4_size=(mpcb->num_addr4+ulid_v4)*
+		(mpcb->received_options.num_addr4+ulid_v4)-ulid_v4;
+	
+	new_pa4=kmalloc(pa4_size*sizeof(struct path4),GFP_ATOMIC);
+	
+	if (ulid_v4) {
+		/*ULID src with other dest*/
+		for (j=0;j<mpcb->received_options.num_addr4;j++) {
+			struct path4 *p=find_path_mapping4(
+				(struct in_addr*)&mpcb->local_ulid.a4,
+				&mpcb->received_options.addr4[j].addr,mpcb);
+			if (p)
+				memcpy(&new_pa4[newpa_idx++],p,
+				       sizeof(struct path4));
+			else {
+				/*local addr*/
+				new_pa4[newpa_idx].loc.addr.s_addr=
+					mpcb->local_ulid.a4;
+				new_pa4[newpa_idx].loc.id=-1; /*ulid has no id*/
+				/*remote addr*/
+				memcpy(&new_pa4[newpa_idx].rem,
+				       &mpcb->received_options.addr4[j],
+				       sizeof(struct mtcp_loc4));
+				/*new path index to be given*/
+				new_pa4[newpa_idx++].path_index=
+					mpcb->next_unused_pi++;
+			}				
+		}
+		/*ULID dest with other src*/
+		for (i=0;i<mpcb->num_addr4;i++) {
+			struct path4 *p=find_path_mapping4(
+				&mpcb->addr4[i].addr,
+				(struct in_addr*)&mpcb->remote_ulid.a4,mpcb);
+			if (p)
+				memcpy(&new_pa4[newpa_idx++],p,
+				       sizeof(struct path4));
+			else {
+				/*local addr*/
+				memcpy(&new_pa4[newpa_idx].loc,
+				       &mpcb->addr4[i],
+				       sizeof(struct mtcp_loc4));
+				
+				/*remote addr*/
+				new_pa4[newpa_idx].rem.addr.s_addr=
+					mpcb->remote_ulid.a4;
+				new_pa4[newpa_idx].rem.id=-1; /*ulid has no id*/
+				/*new path index to be given*/
+				new_pa4[newpa_idx++].path_index=
+					mpcb->next_unused_pi++;
+			}
+		}
+	}
+	/*Try all other combinations now*/
+	for (i=0;i<mpcb->num_addr4;i++)
+		for (j=0;j<mpcb->received_options.num_addr4;j++) {
+			struct path4 *p=find_path_mapping4(
+				&mpcb->addr4[i].addr,
+				&mpcb->received_options.addr4[j].addr,mpcb);
+			if (p)
+				memcpy(&new_pa4[newpa_idx++],p,
+				       sizeof(struct path4));	
+			else {
+				/*local addr*/
+				memcpy(&new_pa4[newpa_idx].loc,
+				       &mpcb->addr4[i],
+				       sizeof(struct mtcp_loc4));
+				/*remote addr*/
+				memcpy(&new_pa4[newpa_idx].rem,
+				       &mpcb->received_options.addr4[j],
+				       sizeof(struct mtcp_loc4));
+				
+				/*new path index to be given*/
+				new_pa4[newpa_idx++].path_index=
+					mpcb->next_unused_pi++;
+			}
+		}
+	
+	
+	/*Replacing the mapping table*/
+	old_pa4=mpcb->pa4;
+	mpcb->pa4=new_pa4;
+	mpcb->pa4_size=pa4_size;
+	if (old_pa4) kfree(old_pa4);
+
+	print_patharray(mpcb->pa4, mpcb->pa4_size);
+}
+
+
+void mtcp_set_addresses(struct multipath_pcb *mpcb)
+{
+	struct net_device *dev;
+	int id=0;
+
+	mpcb->num_addr4=0;
+
+	read_lock(&dev_base_lock); 
+
+	for_each_netdev(&init_net,dev) {
+		if(netif_running(dev)) {
+			struct in_device *in_dev=dev->ip_ptr;
+			struct in_ifaddr *ifa;
+			
+			if (!strcmp(dev->name,"lo"))
+				continue;
+
+			if (mpcb->num_addr4==MTCP_MAX_ADDR) {
+				printk(KERN_ERR "Reached max number of local"
+				       "IPv4 addresses : %d\n", MTCP_MAX_ADDR);
+				break;
+			}
+			
+			for (ifa = in_dev->ifa_list; ifa; 
+			     ifa = ifa->ifa_next) {
+				if (ifa->ifa_address==
+				    inet_sk(mpcb->master_sk)->saddr)
+					continue;
+				mpcb->addr4[mpcb->num_addr4].addr.s_addr=
+					ifa->ifa_address;
+				mpcb->addr4[mpcb->num_addr4++].id=id++;
+			}
+		}
+	}
+	
+	read_unlock(&dev_base_lock); 
 }
 
 
 module_init(mtcp_pm_init);
 
 MODULE_LICENSE("GPL");
+

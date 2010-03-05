@@ -29,6 +29,9 @@
 #include <linux/socket.h>
 #include <linux/mutex.h>
 #include <linux/completion.h>
+#include <linux/skbuff.h>
+
+#include <net/mtcp_pm.h>
 
 /*DEBUG - TODEL*/
 
@@ -39,17 +42,12 @@
 #define MTCP_DEBUG_COPY_TO_IOVEC 0x10
 
 
-#define MTCP_MAX_ADDR 3 /*Max number of local or remote addresses we can store*/
-
-/*hashtable Not used currently -- To delete ?*/
-#define MTCP_HASH_SIZE                16
-#define hash_fd(fd) \
-	jhash_1word(fd,0)%MTCP_HASH_SIZE
-
 struct multipath_options {	
 #ifdef CONFIG_MTCP_PM
-	u8     ip_count;
-	u32*   ip_list;
+	int    num_addr4; 
+	int    num_addr6;
+	struct mtcp_loc4 addr4[MTCP_MAX_ADDR];
+	struct mtcp_loc6 addr6[MTCP_MAX_ADDR];
 	u8     list_rcvd:1; /*1 if IP list has been received*/
 #endif
 	u8     saw_dsn:1;
@@ -132,25 +130,6 @@ struct multipath_pcb {
 	  wb_length: number of bytes occupied by the pending data.
 	  of course, it never exceeds wb_size*/
 	int                       wb_size,wb_start,wb_length;
-
-	uint8_t                   addr_sent:1; /* 1 if our set of local
-						addresses has been sent
-						already to our peer */
-	
-	struct in_addr            addr4[MTCP_MAX_ADDR]; /*We need to store
-							  the set of local
-							  addresses, so 
-							  that we have 
-							  a stable view
-							  of the available
-							  addresses. 
-							  Playing with the
-							  addresses in the
-							  would expose us
-							  to concurrency
-							  problems*/
-	int                       num_addr4; /*num of addresses actually
-					       stored above.*/
 	
 	struct sk_buff_head       receive_queue;/*received data*/
 	struct sk_buff_head       write_queue;/*sent stuff, waiting for ack*/
@@ -168,6 +147,39 @@ struct multipath_pcb {
 	struct kref               kref;	
 	struct completion         liberate_subflow;
 	struct notifier_block     nb; /*For listening to PM events*/
+
+#ifdef CONFIG_MTCP_PM
+	uint8_t                   addr_sent:1; /* 1 if our set of local
+						addresses has been sent
+						already to our peer */
+	
+	struct mtcp_loc4          addr4[MTCP_MAX_ADDR]; /*We need to store
+							  the set of local
+							  addresses, so 
+							  that we have 
+							  a stable view
+							  of the available
+							  addresses. 
+							  Playing with the
+							  addresses directly
+							  in the system
+							  would expose us
+							  to concurrency
+							  problems*/
+	int                       num_addr4; /*num of addresses actually
+					       stored above.*/
+	struct mtcp_loc6          addr6[MTCP_MAX_ADDR];
+	int                       num_addr6;
+
+	struct path4             *pa4;
+	int                       pa4_size;
+	struct path6             *pa6;
+	int                       pa6_size;
+
+	int                       next_unused_pi; /*Next pi to pick up
+						    in case a new path
+						    becomes available*/
+#endif
 };
 
 #define mpcb_from_tcpsock(tp) ((tp)->mpcb)
@@ -287,10 +299,5 @@ void mtcp_reinject_data(struct sock *orig_sk, struct sock *retrans_sk);
 int mtcp_get_dataseq_mapping(struct multipath_pcb *mpcb, struct tcp_sock *tp, 
 			     struct sk_buff *skb);
 int mtcpv6_init(void);
-
-
-#ifdef CONFIG_MTCP_PM
-u32 mtcp_new_token(void);
-#endif
 
 #endif /*_MTCP_H*/

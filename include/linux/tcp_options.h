@@ -22,6 +22,8 @@
 #ifndef _TCP_OPTIONS_H
 #define _TCP_OPTIONS_H
 
+#include <linux/types.h>
+
 struct tcp_options_received {
 /*	PAWS/RTTM data	*/
 	long	ts_recent_stamp;/* Time we stored ts_recent (for aging) */
