@@ -298,6 +298,8 @@ int mtcp_is_available(struct tcp_sock *tp);
 void mtcp_reinject_data(struct sock *orig_sk, struct sock *retrans_sk);
 int mtcp_get_dataseq_mapping(struct multipath_pcb *mpcb, struct tcp_sock *tp, 
 			     struct sk_buff *skb);
+int mtcp_init_subsockets(struct multipath_pcb *mpcb, 
+			 uint32_t path_indices);
 int mtcpv6_init(void);
 
 #endif /*_MTCP_H*/

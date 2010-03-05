@@ -3559,8 +3559,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				mopt->list_rcvd=1;
 				break;
 
-			case TCPOPT_NEW_SUBFLOW:
-				PDEBUG("addaddress opt not supported yet\n");
+			case TCPOPT_JOIN:
 				break;
 #endif /*CONFIG_MTCP_PM*/				
 			case TCPOPT_DSN:

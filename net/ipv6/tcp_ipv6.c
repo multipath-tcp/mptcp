@@ -261,9 +261,6 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 	if (final_p)
 		ipv6_addr_copy(&fl.fl6_dst, final_p);
 
-
-	printk(KERN_ERR "%s:calling xfrm_lookup, pi %d\n",__FUNCTION__,
-	       tp->path_index);
 	if ((err = __xfrm_lookup(&dst, &fl, sk, XFRM_LOOKUP_WAIT)) < 0) {
 		if (err == -EREMOTE)
 			err = ip6_dst_blackhole(sk, &dst, &fl);

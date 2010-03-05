@@ -59,6 +59,45 @@ struct path4 *find_path_mapping4(struct in_addr *loc,struct in_addr *rem,
 	return NULL;
 }
 
+struct in_addr *mtcp_get_loc_addr(struct multipath_pcb *mpcb, int path_index)
+{
+	int i;
+ 	if (path_index<=1)
+		return (struct in_addr*)&mpcb->local_ulid.a4;
+	for (i=0;i<mpcb->pa4_size;i++) {
+		if (mpcb->pa4[i].path_index==path_index)
+			return &mpcb->pa4[i].loc.addr;
+	}
+	BUG();
+	return NULL;
+}
+
+struct in_addr *mtcp_get_rem_addr(struct multipath_pcb *mpcb, int path_index)
+{
+	int i;
+ 	if (path_index<=1)
+		return (struct in_addr*)&mpcb->remote_ulid.a4;
+	for (i=0;i<mpcb->pa4_size;i++) {
+		if (mpcb->pa4[i].path_index==path_index)
+			return &mpcb->pa4[i].rem.addr;
+	}
+	BUG();
+	return NULL;
+}
+
+u8 mtcp_get_loc_addrid(struct multipath_pcb *mpcb, int path_index)
+{
+	int i;
+	/*master subsocket has both addresses with id 0*/
+	if (path_index<=1) return 0;
+	for (i=0;i<mpcb->pa4_size;i++) {
+		if (mpcb->pa4[i].path_index==path_index)
+			return mpcb->pa4[i].loc.id;
+	}
+	BUG();
+	return -1;
+}
+
 
 /*For debugging*/
 void print_patharray(struct path4 *pa, int size)
@@ -103,7 +142,7 @@ void mtcp_update_patharray(struct multipath_pcb *mpcb)
 				/*local addr*/
 				new_pa4[newpa_idx].loc.addr.s_addr=
 					mpcb->local_ulid.a4;
-				new_pa4[newpa_idx].loc.id=-1; /*ulid has no id*/
+				new_pa4[newpa_idx].loc.id=0; /*ulid has id 0*/
 				/*remote addr*/
 				memcpy(&new_pa4[newpa_idx].rem,
 				       &mpcb->received_options.addr4[j],
@@ -130,7 +169,7 @@ void mtcp_update_patharray(struct multipath_pcb *mpcb)
 				/*remote addr*/
 				new_pa4[newpa_idx].rem.addr.s_addr=
 					mpcb->remote_ulid.a4;
-				new_pa4[newpa_idx].rem.id=-1; /*ulid has no id*/
+				new_pa4[newpa_idx].rem.id=0; /*ulid has id 0*/
 				/*new path index to be given*/
 				new_pa4[newpa_idx++].path_index=
 					mpcb->next_unused_pi++;
@@ -168,13 +207,14 @@ void mtcp_update_patharray(struct multipath_pcb *mpcb)
 	mpcb->pa4=new_pa4;
 	mpcb->pa4_size=pa4_size;
 	if (old_pa4) kfree(old_pa4);
+	print_patharray(mpcb->pa4, mpcb->pa4_size);
 }
 
 
 void mtcp_set_addresses(struct multipath_pcb *mpcb)
 {
 	struct net_device *dev;
-	int id=0;
+	int id=1;
 
 	mpcb->num_addr4=0;
 
@@ -209,6 +249,23 @@ void mtcp_set_addresses(struct multipath_pcb *mpcb)
 	read_unlock(&dev_base_lock); 
 }
 
+
+/**
+ *Sends an update notification to the MPS
+ *Since this particular PM works in the TCP layer, that is, the same
+ *as the MPS, we "send" the notif through function call, not message
+ *passing.
+ * Warning: this can be called only from user context, not soft irq
+ **/
+void mtcp_send_updatenotif(struct multipath_pcb *mpcb)
+{
+	int i;
+	u32 path_indices=1; /*Path index 1 is reserved for master sk.*/
+	for (i=0;i<mpcb->pa4_size;i++) {
+		path_indices|=PI_TO_FLAG(mpcb->pa4[i].path_index);
+	}
+	mtcp_init_subsockets(mpcb,path_indices);
+}
 
 module_init(mtcp_pm_init);
 

@@ -124,6 +124,7 @@ static void mtcp_def_readable(struct sock *sk, int len)
  * The first path indices are (re)allocated to existing sockets.
  * New sockets are created if needed.
  *
+ *
  * WARNING: We make the assumption that this function is run in user context
  *      (we use sock_create_kern, that reserves ressources with GFP_KERNEL)
  *      AND only one user process can trigger the sending of a PATH_UPDATE
@@ -131,8 +132,8 @@ static void mtcp_def_readable(struct sock *sk, int len)
  *      can send messages to the MPS, according to our multipath arch.
  *      (further PMs are cascaded and use the depth attribute).
  */
-static int mtcp_init_subsockets(struct multipath_pcb *mpcb, 
-				uint32_t path_indices)
+int mtcp_init_subsockets(struct multipath_pcb *mpcb, 
+			 uint32_t path_indices)
 {
 	int i;
 	int retval;
@@ -140,7 +141,8 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 	struct tcp_sock *tp=mpcb->connection_list;
 	struct tcp_sock *newtp;
 
-	PDEBUG("Entering %s, path_indices:%x\n",__FUNCTION__,path_indices);
+	printk(KERN_ERR "Entering %s, path_indices:%x\n",__FUNCTION__,
+	       path_indices);
 
 	/*First, ensure that we keep existing path indices.*/
 	while (tp!=NULL) {
@@ -158,10 +160,10 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			int ulid_size=0;
 			struct sockaddr_in loculid_in,remulid_in;
 			struct sockaddr_in6 loculid_in6,remulid_in6;
+			int newpi=i+1;
 			/*a new socket must be created*/
 			retval = sock_create_kern(mpcb->sa_family, SOCK_STREAM, 
 						  IPPROTO_MTCPSUB, &sock);
-			
 			if (retval<0) {
 				printk(KERN_ERR "%s:sock_create failed\n",
 				       __FUNCTION__);
@@ -169,7 +171,10 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			}
 			newtp=tcp_sk(sock->sk);
 
-			/*Binding the new socket to the local ulid*/
+			/*Binding the new socket to the local ulid
+			  (except if we use the MPCP default PM, in which
+			  case we bind the new socket, directly to its
+			  corresponding locators)*/
 			switch(mpcb->sa_family) {
 			case AF_INET:
 				memset(&loculid,0,sizeof(loculid));
@@ -180,12 +185,29 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 				
 				loculid_in.sin_port=mpcb->local_port;
 				remulid_in.sin_port=mpcb->remote_port;
+#ifdef CONFIG_MTCP_PM
+				/*If the MPTCP PM is used, we use the locators 
+				  as subsock ids, while with other PMs, the
+				  ULIDs are those of the master subsock
+				  for all subsocks.*/
+				memcpy(&loculid_in.sin_addr,
+				       mtcp_get_loc_addr(mpcb,newpi),
+				       sizeof(struct in_addr));
+				memcpy(&remulid_in.sin_addr,
+				       mtcp_get_rem_addr(mpcb,newpi),
+				       sizeof(struct in_addr));
+				printk(KERN_ERR "loc_addr: " NIPQUAD_FMT "\n",
+				       NIPQUAD(loculid_in.sin_addr));
+				printk(KERN_ERR "rem_addr: " NIPQUAD_FMT "\n",
+				       NIPQUAD(remulid_in.sin_addr));
+#else
 				memcpy(&loculid_in.sin_addr,
 				       (struct in_addr*)&mpcb->local_ulid.a4,
 				       sizeof(struct in_addr));
 				memcpy(&remulid_in.sin_addr,
 				       (struct in_addr*)&mpcb->remote_ulid.a4,
 				       sizeof(struct in_addr));
+#endif
 				loculid=(struct sockaddr *)&loculid_in;
 				remulid=(struct sockaddr *)&remulid_in;
 				ulid_size=sizeof(loculid_in);
@@ -213,19 +235,20 @@ static int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			default:
 				BUG();
 			}
-			newtp->path_index=i+1;
-			newtp->mpcb = mpcb;
+			newtp->path_index=newpi;
 			newtp->mpc=1;
+			
 			mtcp_add_sock(mpcb,newtp);
-
+						
 			/*Redefine the sk_data_ready function*/
 			((struct sock*)newtp)->sk_data_ready=mtcp_def_readable;
 			
-       
 			retval = sock->ops->bind(sock, loculid, ulid_size);
 			if (retval<0) goto fail_bind;
 			
-			PDEBUG("%s:About to connect\n",__FUNCTION__);
+			
+			printk(KERN_ERR "%s:About to connect, pi %d\n",
+			       __FUNCTION__,newpi);
 			retval = sock->ops->connect(sock,remulid,
 						    ulid_size,O_NONBLOCK);
 			if (retval<0 && retval != -EINPROGRESS) 
@@ -329,7 +352,7 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	
 	return mpcb;
 }
-mtcp
+
 static void mpcb_release(struct kref* kref)
 {
 	struct multipath_pcb *mpcb;
@@ -363,9 +386,13 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 	tp->mpcb = mpcb;
 	tp->next=mpcb->connection_list;
 	mpcb->connection_list=tp;
-	
-	if (tp->path_index==2) ((struct sock*)tp)->sk_debug=1; /*TODEL*/
 
+#ifdef CONFIG_MTCP_PM
+	/*Same token for all subflows*/
+	tp->rx_opt.mtcp_rem_token=
+		tcp_sk(mpcb->master_sk)->rx_opt.mtcp_rem_token;
+#endif
+	
 	mpcb->cnt_subflows++;
 	kref_get(&mpcb->kref);	
 	local_bh_enable();

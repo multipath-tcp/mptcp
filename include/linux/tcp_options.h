@@ -44,7 +44,7 @@ struct tcp_options_received {
 	u16	user_mss;  	/* mss requested by user in ioctl */
 	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
 #ifdef CONFIG_MTCP_PM
- 	u32     mtcp_rem_token; /* Remote token, for mptcp*/
+ 	u32     mtcp_rem_token; /* Remote token, for mptcp */
 #endif
 };
 

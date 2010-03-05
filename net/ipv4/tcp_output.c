@@ -377,6 +377,7 @@ static inline int tcp_urg_mode(const struct tcp_sock *tp)
 #define OPTION_TOKEN            (1 << 4)
 #define OPTION_DSN              (1 << 5)
 #define OPTION_ADDR             (1 << 6)
+#define OPTION_JOIN             (1 << 7)
 
 struct tcp_out_options {
 	u8 options;		/* bit field of OPTION_* */
@@ -387,9 +388,12 @@ struct tcp_out_options {
 	__u32 data_seq;         /* data sequence number, for MPTCP */
 	__u16 data_len;         /* data level length, for MPTCP*/
 	__u32 sub_seq;          /* subflow seqnum, for MPTCP*/
+#ifdef CONFIG_MTCP_PM
 	__u32 token;            /* token for mptcp */
 	struct mtcp_loc4 *addr4;  /* v4 addresses for MPTCP */
 	int num_addr4;          /* Number of addresses v4, MPTCP*/
+	u8      addr_id;        /* address id */
+#endif
 };
 
 /* Beware: Something in the Internet is very sensitive to the ordering of
@@ -506,6 +510,15 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		}
 		ptr = (__be32*)ptr8;
 	}
+
+	if (unlikely(OPTION_JOIN & opts->options)) {
+		*ptr++ = htonl((TCPOPT_NOP << 24) |
+			       (TCPOPT_JOIN << 16) |
+			       (TCPOLEN_JOIN << 8) |
+			       (opts->token >> 24));
+		*ptr++ = htonl((opts->token<<8) |
+			       opts->addr_id);
+	}
 #endif
 	if (OPTION_DSN & opts->options) {
 		*ptr++ = htonl((TCPOPT_DSN << 24) |
@@ -561,8 +574,10 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		if (unlikely(!(OPTION_TS & opts->options)))
 			size += TCPOLEN_SACKPERM_ALIGNED;
 	}
-#ifdef CONFIG_MTCP
-	{		
+#ifdef CONFIG_MTCP	
+	if (is_master_sk(tp)) {
+		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+
 		opts->options |= OPTION_MPC;
 		size+=TCPOLEN_MPC_ALIGNED;
 #ifdef CONFIG_MTCP_PM
@@ -577,16 +592,22 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		  Due to this possibility, a slave subsocket may arrive here,
 		  and does not need to set the dataseq options, since
 		  there is no data in the segment*/
-		if (is_master_sk(tp)) {			
-			struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
-			BUG_ON(!mpcb);
-			opts->options |= OPTION_DSN;
-			size+=TCPOLEN_DSN_ALIGNED;
-			opts->data_seq=mpcb->write_seq; /*First data byte is 
-							  initial data seq
-							  (IDSN)*/
-		}
+		BUG_ON(!mpcb);
+		opts->options |= OPTION_DSN;
+		size+=TCPOLEN_DSN_ALIGNED;
+		opts->data_seq=mpcb->write_seq; /*First data byte is 
+						  initial data seq
+						  (IDSN)*/
 	}
+#ifdef CONFIG_MTCP_PM
+	else {
+		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+		opts->options |= OPTION_JOIN;
+		size+=TCPOLEN_JOIN_ALIGNED;
+		opts->token=tp->rx_opt.mtcp_rem_token;
+		opts->addr_id=mtcp_get_loc_addrid(mpcb, tp->path_index);
+	}
+#endif
 #endif
 
 	return size;

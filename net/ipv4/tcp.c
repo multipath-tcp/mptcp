@@ -1901,7 +1901,18 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	if (!master_tp->mpc)
 		return tcp_recvmsg_fallback(iocb,master_sk,msg,len,nonblock,
 					    flags,addr_len);
-
+	
+#ifdef CONFIG_MTCP_PM
+	/*Received a new list of addresses recently ?
+	  announce corresponding path indices to the
+	  mpcb, and start new subflows*/
+	if (unlikely(mpcb->received_options.list_rcvd)) {
+		mpcb->received_options.list_rcvd=0;
+		mtcp_update_patharray(mpcb);
+		mtcp_send_updatenotif(mpcb);
+	}
+#endif
+	
 	/*We listen on every subflow.
 	 * Here we are awoken each time
 	 * any subflow wants to give work to tcp_recvmsg. To be more clear,
@@ -1983,16 +1994,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	do {
 		u32 offset;
 		int empty_prequeues=0;
-
-#ifdef CONFIG_MTCP_PM
-		/*Received a new list of addresses recently ?
-		  announce corresponding path indices to the
-		  mpcb, and start new subflows*/
-		if (unlikely(mpcb->received_options.list_rcvd)) {
-			mpcb->received_options.list_rcvd=0;
-			mtcp_update_patharray(mpcb);
-		}
-#endif
 
 		/* Are we at urgent data ? 
 		   Stop if we have read anything 
