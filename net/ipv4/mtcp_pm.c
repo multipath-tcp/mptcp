@@ -47,19 +47,20 @@ u32 mtcp_new_token(void)
 }
 
 
+
 struct path4 *find_path_mapping4(struct in_addr *loc,struct in_addr *rem,
 				 struct multipath_pcb *mpcb)
 {
 	int i;
 	for (i=0;i<mpcb->pa4_size;i++)
 		if (mpcb->pa4[i].loc.addr.s_addr == loc->s_addr &&
-		    mpcb->pa4[i].rem.addr.s_addr == rem->s_addr) {
-			printk(KERN_ERR "found mapping\n");
+		    mpcb->pa4[i].rem.addr.s_addr == rem->s_addr)
 			return &mpcb->pa4[i];
-		}
 	return NULL;
 }
 
+
+/*For debugging*/
 void print_patharray(struct path4 *pa, int size)
 {
 	int i;
@@ -79,7 +80,7 @@ void print_patharray(struct path4 *pa, int size)
 void mtcp_update_patharray(struct multipath_pcb *mpcb)
 {
 	struct path4 *new_pa4, *old_pa4;
-	int i,j,newpa_idx=2;
+	int i,j,newpa_idx=0;
 	/*Count how many paths are available
 	  We add 1 to size of local and remote set, to include the 
 	  ULID*/
@@ -110,7 +111,7 @@ void mtcp_update_patharray(struct multipath_pcb *mpcb)
 				/*new path index to be given*/
 				new_pa4[newpa_idx++].path_index=
 					mpcb->next_unused_pi++;
-			}				
+			}			
 		}
 		/*ULID dest with other src*/
 		for (i=0;i<mpcb->num_addr4;i++) {
@@ -167,8 +168,6 @@ void mtcp_update_patharray(struct multipath_pcb *mpcb)
 	mpcb->pa4=new_pa4;
 	mpcb->pa4_size=pa4_size;
 	if (old_pa4) kfree(old_pa4);
-
-	print_patharray(mpcb->pa4, mpcb->pa4_size);
 }
 
 

@@ -322,9 +322,14 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	mpcb->nb.notifier_call=netevent_callback;
 	register_netevent_notifier(&mpcb->nb);
 	
+#ifdef CONFIG_MTCP_PM
+	/*Pi 1 is reserved for the master subflow*/
+	mpcb->next_unused_pi=2;
+#endif
+	
 	return mpcb;
 }
-
+mtcp
 static void mpcb_release(struct kref* kref)
 {
 	struct multipath_pcb *mpcb;
