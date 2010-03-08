@@ -348,7 +348,7 @@ static inline void TCP_ECN_send(struct sock *sk, struct sk_buff *skb,
 /* Constructs common control bits of non-data skb. If SYN/FIN is present,
  * auto increment end seqno.
  */
-static void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags)
+void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags)
 {
 	skb->csum = 0;
 
@@ -370,31 +370,6 @@ static inline int tcp_urg_mode(const struct tcp_sock *tp)
 	return tp->snd_una != tp->snd_up;
 }
 
-#define OPTION_SACK_ADVERTISE	(1 << 0)
-#define OPTION_TS		(1 << 1)
-#define OPTION_MD5		(1 << 2)
-#define OPTION_MPC              (1 << 3)
-#define OPTION_TOKEN            (1 << 4)
-#define OPTION_DSN              (1 << 5)
-#define OPTION_ADDR             (1 << 6)
-#define OPTION_JOIN             (1 << 7)
-
-struct tcp_out_options {
-	u8 options;		/* bit field of OPTION_* */
-	u8 ws;			/* window scale, 0 to disable */
-	u8 num_sack_blocks;	/* number of SACK blocks to include */
-	u16 mss;		/* 0 to disable */
-	__u32 tsval, tsecr;	/* need to include OPTION_TS */
-	__u32 data_seq;         /* data sequence number, for MPTCP */
-	__u16 data_len;         /* data level length, for MPTCP*/
-	__u32 sub_seq;          /* subflow seqnum, for MPTCP*/
-#ifdef CONFIG_MTCP_PM
-	__u32 token;            /* token for mptcp */
-	struct mtcp_loc4 *addr4;  /* v4 addresses for MPTCP */
-	int num_addr4;          /* Number of addresses v4, MPTCP*/
-	u8      addr_id;        /* address id */
-#endif
-};
 
 /* Beware: Something in the Internet is very sensitive to the ordering of
  * TCP options, we learned this through the hard way, so be careful here.
@@ -407,9 +382,9 @@ struct tcp_out_options {
  * At least SACK_PERM as the first option is known to lead to a disaster
  * (but it may well be that other scenarios fail similarly).
  */
-static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
-			      const struct tcp_out_options *opts,
-			      __u8 **md5_hash) {
+void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
+		       const struct tcp_out_options *opts,
+		       __u8 **md5_hash) {
 	if (unlikely(OPTION_MD5 & opts->options)) {
 		*ptr++ = htonl((TCPOPT_NOP << 24) |
 			       (TCPOPT_NOP << 16) |

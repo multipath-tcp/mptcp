@@ -372,10 +372,20 @@ static void mpcb_release(struct kref* kref)
 /*Warning: can only be called in user context
   (due to unregister_netevent_notifier)*/
 void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
-{
+{	
 #ifdef CONFIG_MTCP_PM
-	/*Detach the mpcb from the token hashtable*/
-	mtcp_hash_remove(mpcb);
+	{
+		struct request_sock *req=mpcb->synqueue;
+		/*Detach the mpcb from the token hashtable*/
+		mtcp_hash_remove(mpcb);
+		
+		/*Remove any request_sock in synqueue*/
+		while (req) {
+			struct request_sock *req_nxt=req->dl_next;
+			reqsk_free(req);
+			req=req_nxt;
+		}
+	}
 #endif
 	/*Stop listening to PM events*/
 	unregister_netevent_notifier(&mpcb->nb);

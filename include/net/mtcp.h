@@ -178,6 +178,8 @@ struct multipath_pcb {
 	int                       next_unused_pi; /*Next pi to pick up
 						    in case a new path
 						    becomes available*/
+	struct request_sock      *synqueue; /*Queue of SYNs with JOIN
+					      option*/
 #endif
 };
 

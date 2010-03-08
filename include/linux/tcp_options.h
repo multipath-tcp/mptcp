@@ -24,6 +24,32 @@
 
 #include <linux/types.h>
 
+#define OPTION_SACK_ADVERTISE	(1 << 0)
+#define OPTION_TS		(1 << 1)
+#define OPTION_MD5		(1 << 2)
+#define OPTION_MPC              (1 << 3)
+#define OPTION_TOKEN            (1 << 4)
+#define OPTION_DSN              (1 << 5)
+#define OPTION_ADDR             (1 << 6)
+#define OPTION_JOIN             (1 << 7)
+
+struct tcp_out_options {
+	u8 options;		/* bit field of OPTION_* */
+	u8 ws;			/* window scale, 0 to disable */
+	u8 num_sack_blocks;	/* number of SACK blocks to include */
+	u16 mss;		/* 0 to disable */
+	__u32 tsval, tsecr;	/* need to include OPTION_TS */
+	__u32 data_seq;         /* data sequence number, for MPTCP */
+	__u16 data_len;         /* data level length, for MPTCP*/
+	__u32 sub_seq;          /* subflow seqnum, for MPTCP*/
+#ifdef CONFIG_MTCP_PM
+	__u32 token;            /* token for mptcp */
+	struct mtcp_loc4 *addr4;  /* v4 addresses for MPTCP */
+	int num_addr4;          /* Number of addresses v4, MPTCP*/
+	u8      addr_id;        /* address id */
+#endif
+};
+
 struct tcp_options_received {
 /*	PAWS/RTTM data	*/
 	long	ts_recent_stamp;/* Time we stored ts_recent (for aging) */

@@ -72,5 +72,6 @@ void mtcp_send_updatenotif(struct multipath_pcb *mpcb);
 struct in_addr *mtcp_get_loc_addr(struct multipath_pcb *mpcb, int path_index);
 struct in_addr *mtcp_get_rem_addr(struct multipath_pcb *mpcb, int path_index);
 u8 mtcp_get_loc_addrid(struct multipath_pcb *mpcb, int path_index);
+int mtcp_lookup_join(struct sk_buff *skb, struct sock **sk);
 #endif /* CONFIG_MTCP_PM */
 #endif /*_MTCP_PM_H*/

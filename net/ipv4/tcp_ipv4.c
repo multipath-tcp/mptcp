@@ -772,8 +772,8 @@ static void syn_flood_warning(struct sk_buff *skb)
 /*
  * Save and compile IPv4 options into the request_sock if needed.
  */
-static struct ip_options *tcp_v4_save_options(struct sock *sk,
-					      struct sk_buff *skb)
+struct ip_options *tcp_v4_save_options(struct sock *sk,
+				       struct sk_buff *skb)
 {
 	struct ip_options *opt = &(IPCB(skb)->opt);
 	struct ip_options *dopt = NULL;
@@ -1547,8 +1547,11 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	int ret;
 	struct net *net = dev_net(skb->dev);
 
+	if (tcp_hdr(skb)->syn) printk(KERN_ERR "rcvd syn with length:%d\n",
+				      tcp_hdr(skb)->doff);
+
 	if (skb->pkt_type != PACKET_HOST)
-		goto discard_it;
+		goto discard_it;	
 
 	/* Count it even if it's bad */
 	TCP_INC_STATS_BH(net, TCP_MIB_INSEGS);
@@ -1585,7 +1588,17 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->flags	 = iph->tos;
 	TCP_SKB_CB(skb)->sacked	 = 0;
 
-	sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
+#ifdef CONFIG_MTCP_PM
+	if (th->syn) {
+		if (mtcp_lookup_join(skb, &sk)) return 0;
+		if (!sk)
+			sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source, 
+					       th->dest);
+	}
+	else
+#endif	
+		sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source, 
+				       th->dest);
 	if (!sk)
 		goto no_tcp_socket;
 
