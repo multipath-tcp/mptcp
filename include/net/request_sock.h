@@ -63,6 +63,7 @@ struct request_sock {
 #ifdef CONFIG_MTCP_PM
 	u32                             mtcp_loc_token;
 	u32                             mtcp_rem_token;
+	struct multipath_pcb            *mpcb;
 #endif
 #endif
 };

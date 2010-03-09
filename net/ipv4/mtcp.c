@@ -560,6 +560,9 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	if (mpcb==NULL){
 		BUG();
 	}
+
+	/*Any new subsock we can use ?*/
+	
 	
 	/* Compute the total number of bytes stored in the message*/
 	iovlen=msg->msg_iovlen;

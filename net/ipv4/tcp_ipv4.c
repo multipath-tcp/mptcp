@@ -608,10 +608,10 @@ static void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
    outside socket context is ugly, certainly. What can I do?
  */
 
-static void tcp_v4_send_ack(struct sk_buff *skb, u32 seq, u32 ack,
-			    u32 win, u32 ts, int oif,
-			    struct tcp_md5sig_key *key,
-			    int reply_flags)
+void tcp_v4_send_ack(struct sk_buff *skb, u32 seq, u32 ack,
+		     u32 win, u32 ts, int oif,
+		     struct tcp_md5sig_key *key,
+		     int reply_flags)
 {
 	struct tcphdr *th = tcp_hdr(skb);
 	struct {
@@ -1588,26 +1588,24 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->when	 = 0;
 	TCP_SKB_CB(skb)->flags	 = iph->tos;
 	TCP_SKB_CB(skb)->sacked	 = 0;
-
+	
 #ifdef CONFIG_MTCP_PM
-	if (th->syn) {
-		if (mtcp_lookup_join(skb, &sk)) return 0;
-		if (!sk)
-			sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source, 
-					       th->dest);
-	}
-	else
-#endif	
-		sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source, 
-				       th->dest);
+	/*We must absolutely check for subflow related segments
+	  before the normal sock lookup, because otherwise subflow
+	  segments could be understood as associated to some listening
+	  socket.*/	
 
-#ifdef CONFIG_MTCP_PM
-	/*No socket found. Maybe there is a pending request sock that
-	  this segment acks ?*/
-	if (!sk) {
-		
-	}
+	/*Is there a pending request sock for this segment ?*/
+	if (mtcp_syn_recv_sock(skb)) return 0;
+	/*Is this a new syn+join ?*/
+	if (th->syn && mtcp_lookup_join(skb)) return 0;
+
+	/*OK, this segment is not related to subflow initiation,
+	  we can proceed to normal lookup*/
 #endif
+
+	sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source, 
+			       th->dest);
 	if (!sk)
 		goto no_tcp_socket;
 

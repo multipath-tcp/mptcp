@@ -35,6 +35,10 @@ extern void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags);
 extern void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		       const struct tcp_out_options *opts,
 		       __u8 **md5_hash);
+extern void tcp_v4_send_ack(struct sk_buff *skb, u32 seq, u32 ack,
+			    u32 win, u32 ts, int oif,
+			    struct tcp_md5sig_key *key,
+			    int reply_flags);
 
 
 static struct list_head tk_hashtable[MTCP_HASH_SIZE];
@@ -580,7 +584,7 @@ static int mtcp_v4_join_request(struct multipath_pcb *mpcb, struct sk_buff *skb)
 	req = inet_reqsk_alloc(mpcb->master_sk->sk_prot->rsk_prot);
 	if (!req)
 		return -1;
-		
+	
 	tcp_clear_options(&tmp_opt);
 	tmp_opt.mss_clamp = 536;
 	tmp_opt.user_mss  = tcp_sk(mpcb->master_sk)->rx_opt.user_mss;
@@ -604,6 +608,8 @@ static int mtcp_v4_join_request(struct multipath_pcb *mpcb, struct sk_buff *skb)
 	ireq->rmt_addr = saddr;
 	ireq->opt = tcp_v4_save_options(NULL, skb);
 
+	req->mpcb=mpcb;
+
 	/*Todo: add the sanity checks here. See tcp_v4_conn_request*/
 
 	isn = tcp_v4_init_sequence(skb);
@@ -620,26 +626,6 @@ static int mtcp_v4_join_request(struct multipath_pcb *mpcb, struct sk_buff *skb)
 drop_and_free:
 	reqsk_free(req);
 	return -1;
-}
-
-
-/*Checker whether there is already a subsock created for that 
-  skb*/
-static struct sock *existing_sock(struct multipath_pcb *mpcb,
-				  struct sk_buff *skb)
-{
-	struct path4 *path;
-	struct tcp_sock *tp;
-	struct iphdr *iph=ip_hdr(skb);
-	path=find_path_mapping4((struct in_addr*)&iph->daddr,
-				(struct in_addr*)&iph->saddr,
-				mpcb);
-	if (!path) return NULL;
-	for (tp=mpcb->connection_list;tp;tp=tp->next) {
-		if (tp->path_index==path->path_index)
-			return (struct sock*)tp;
-	}
-	return NULL;
 }
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
@@ -676,23 +662,252 @@ static struct request_sock *mtcp_search_req(struct request_sock ***prevp,
 	return req;
 }
 
-void mtcp_syn_recv_sock(struct sk_buff *skb)
+/*copied from net/ipv4/tcp_minisocks.c*/
+static __inline__ int tcp_in_window(u32 seq, u32 end_seq, u32 s_win, u32 e_win)
 {
+	if (seq == s_win)
+		return 1;
+	if (after(end_seq, s_win) && before(seq, e_win))
+		return 1;
+	return (seq == e_win && seq == end_seq);
+}
+
+static inline void mtcp_reqsk_queue_add(struct request_sock_queue *queue,
+					struct request_sock *req,
+					struct sock *child)
+{
+	req->sk = child;
+
+	if (queue->rskq_accept_head == NULL)
+		queue->rskq_accept_head = req;
+	else
+		queue->rskq_accept_tail->dl_next = req;
+
+	queue->rskq_accept_tail = req;
+	req->dl_next = NULL;
+}
+
+/*
+ *      (adapted from tcp_check_req)    
+ *	Process an incoming packet for SYN_RECV sockets represented
+ *	as a request_sock.
+ */
+
+static struct sock *mtcp_check_req(struct sk_buff *skb,
+				   struct request_sock *req,
+				   struct request_sock **prev)
+{
+	const struct tcphdr *th = tcp_hdr(skb);
+	__be32 flg = tcp_flag_word(th) & 
+		(TCP_FLAG_RST|TCP_FLAG_SYN|TCP_FLAG_ACK);
+	int paws_reject = 0;
+	struct tcp_options_received tmp_opt;
+	struct multipath_options mtp;
+	struct sock *child;
+	struct multipath_pcb *mpcb=req->mpcb;
+
+	tmp_opt.saw_tstamp = 0;
+	if (th->doff > (sizeof(struct tcphdr)>>2)) {
+		tcp_parse_options(skb, &tmp_opt, &mtp, 0);
+
+		if (tmp_opt.saw_tstamp) {
+			tmp_opt.ts_recent = req->ts_recent;
+			/* We do not store true stamp, but it is not required,
+			 * it can be estimated (approximately)
+			 * from another data.
+			 */
+			tmp_opt.ts_recent_stamp = get_seconds() - ((TCP_TIMEOUT_INIT/HZ)<<req->retrans);
+			paws_reject = tcp_paws_check(&tmp_opt, th->rst);
+		}
+	}
+
+	/* Check for pure retransmitted SYN. */
+	if (TCP_SKB_CB(skb)->seq == tcp_rsk(req)->rcv_isn &&
+	    flg == TCP_FLAG_SYN &&
+	    !paws_reject) {
+		/*
+		 * RFC793 draws (Incorrectly! It was fixed in RFC1122)
+		 * this case on figure 6 and figure 8, but formal
+		 * protocol description says NOTHING.
+		 * To be more exact, it says that we should send ACK,
+		 * because this segment (at least, if it has no data)
+		 * is out of window.
+		 *
+		 *  CONCLUSION: RFC793 (even with RFC1122) DOES NOT
+		 *  describe SYN-RECV state. All the description
+		 *  is wrong, we cannot believe to it and should
+		 *  rely only on common sense and implementation
+		 *  experience.
+		 *
+		 * Enforce "SYN-ACK" according to figure 8, figure 6
+		 * of RFC793, fixed by RFC1122.
+		 */
+		__mtcp_v4_send_synack(mpcb->master_sk, req, NULL);
+		return NULL;
+	}
+
+	/* Further reproduces section "SEGMENT ARRIVES"
+	   for state SYN-RECEIVED of RFC793.
+	   It is broken, however, it does not work only
+	   when SYNs are crossed.
+
+	   You would think that SYN crossing is impossible here, since
+	   we should have a SYN_SENT socket (from connect()) on our end,
+	   but this is not true if the crossed SYNs were sent to both
+	   ends by a malicious third party.  We must defend against this,
+	   and to do that we first verify the ACK (as per RFC793, page
+	   36) and reset if it is invalid.  Is this a true full defense?
+	   To convince ourselves, let us consider a way in which the ACK
+	   test can still pass in this 'malicious crossed SYNs' case.
+	   Malicious sender sends identical SYNs (and thus identical sequence
+	   numbers) to both A and B:
+
+		A: gets SYN, seq=7
+		B: gets SYN, seq=7
+
+	   By our good fortune, both A and B select the same initial
+	   send sequence number of seven :-)
+
+		A: sends SYN|ACK, seq=7, ack_seq=8
+		B: sends SYN|ACK, seq=7, ack_seq=8
+
+	   So we are now A eating this SYN|ACK, ACK test passes.  So
+	   does sequence test, SYN is truncated, and thus we consider
+	   it a bare ACK.
+
+	   If icsk->icsk_accept_queue.rskq_defer_accept, we silently drop this
+	   bare ACK.  Otherwise, we create an established connection.  Both
+	   ends (listening sockets) accept the new incoming connection and try
+	   to talk to each other. 8-)
+
+	   Note: This case is both harmless, and rare.  Possibility is about the
+	   same as us discovering intelligent life on another plant tomorrow.
+
+	   But generally, we should (RFC lies!) to accept ACK
+	   from SYNACK both here and in tcp_rcv_state_process().
+	   tcp_rcv_state_process() does not, hence, we do not too.
+
+	   Note that the case is absolutely generic:
+	   we cannot optimize anything here without
+	   violating protocol. All the checks must be made
+	   before attempt to create socket.
+	 */
+
+	/* RFC793 page 36: "If the connection is in any non-synchronized 
+	 *                  state ... and the incoming segment acknowledges 
+	 *                  something not yet sent (the segment carries an 
+	 *                  unacceptable ACK) ... a reset is sent."
+	 *
+	 * Invalid ACK: reset will be sent by listening socket
+	 */
+	if ((flg & TCP_FLAG_ACK) &&
+	    (TCP_SKB_CB(skb)->ack_seq != tcp_rsk(req)->snt_isn + 1))
+		req->rsk_ops->send_reset(NULL,skb);
+
+	/* Also, it would be not so bad idea to check rcv_tsecr, which
+	 * is essentially ACK extension and too early or too late values
+	 * should cause reset in unsynchronized states.
+	 */
+
+	/* RFC793: "first check sequence number". */
+
+	if (paws_reject || !tcp_in_window(TCP_SKB_CB(skb)->seq, TCP_SKB_CB(skb)->end_seq,
+					  tcp_rsk(req)->rcv_isn + 1, tcp_rsk(req)->rcv_isn + 1 + req->rcv_wnd)) {
+		/* Out of window: send ACK and drop. */
+		if (!(flg & TCP_FLAG_RST))
+			tcp_v4_send_ack(skb, tcp_rsk(req)->snt_isn + 1,
+					tcp_rsk(req)->rcv_isn + 1, req->rcv_wnd,
+					req->ts_recent, 0, NULL,
+					inet_rsk(req)->no_srccheck ? 
+					IP_REPLY_ARG_NOSRCCHECK : 0);
+		return NULL;
+	}
+
+	/* In sequence, PAWS is OK. */
+
+	if (tmp_opt.saw_tstamp && !after(TCP_SKB_CB(skb)->seq, tcp_rsk(req)->rcv_isn + 1))
+		req->ts_recent = tmp_opt.rcv_tsval;
+
+	if (TCP_SKB_CB(skb)->seq == tcp_rsk(req)->rcv_isn) {
+		/* Truncate SYN, it is out of window starting
+		   at tcp_rsk(req)->rcv_isn + 1. */
+		flg &= ~TCP_FLAG_SYN;
+	}
+
+	/* RFC793: "second check the RST bit" and
+	 *	   "fourth, check the SYN bit"
+	 */
+	if (flg & (TCP_FLAG_RST|TCP_FLAG_SYN))
+		goto embryonic_reset;
+
+	/* ACK sequence verified above, just make sure ACK is
+	 * set.  If ACK not set, just silently drop the packet.
+	 */
+	if (!(flg & TCP_FLAG_ACK))
+		return NULL;
+
+	/* OK, ACK is valid, create big socket and
+	 * feed this segment to it. It will repeat all
+	 * the tests. THIS SEGMENT MUST MOVE SOCKET TO
+	 * ESTABLISHED STATE. If it will be dropped after
+	 * socket is created, wait for troubles.
+	 */
+	child = inet_csk(mpcb->master_sk)->icsk_af_ops->
+		syn_recv_sock(mpcb->master_sk, 
+			      skb, req, 
+			      NULL);	
+	if (child == NULL)
+		goto listen_overflow;
+
+	printk(KERN_ERR "Full sock created !!\n");
+
+	tcp_sk(child)->mpc=1;
+	tcp_sk(child)->rx_opt.mtcp_rem_token=req->mtcp_rem_token;
+	tcp_sk(child)->mtcp_loc_token=req->mtcp_loc_token;
 	
+	reqsk_queue_unlink(&mtcp_accept_queue, req, prev);
+	reqsk_queue_removed(&mtcp_accept_queue, req);
+	mtcp_reqsk_queue_add(&mtcp_accept_queue, req, child);
+	return child;
+	
+listen_overflow:
+	if (!sysctl_tcp_abort_on_overflow) {
+		inet_rsk(req)->acked = 1;
+		return NULL;
+	}
+	
+embryonic_reset:
+	if (!(flg & TCP_FLAG_RST))
+		req->rsk_ops->send_reset(NULL, skb);
+
+	reqsk_queue_unlink(&mtcp_accept_queue, req, prev);
+	reqsk_queue_removed(&mtcp_accept_queue, req);
+	reqsk_free(req);
+	return NULL;
+}
+
+int mtcp_syn_recv_sock(struct sk_buff *skb)
+{
+	struct tcphdr *th=tcp_hdr(skb);
+	struct iphdr *iph=ip_hdr(skb);
+	struct request_sock **prev;
+	struct request_sock *req=mtcp_search_req(
+		&prev,th->source,iph->saddr,iph->daddr);
+	struct sock *child;
+	if (!req) return 0;
+
+	/*If this is a valid ack, we can build a full socket*/
+	child=mtcp_check_req(skb,req,prev);
+	kfree_skb(skb);
+	return 1;
 }
 
 /**
- * If *sk is non-NULL, we have found an mpcb, and a subsocket was already
- * present for that subflow. If it is NULL, either we have found an mpcb
- * and sent a notification to MPS so that a new subsocket is created, or we 
- * have * not found it, and the normal lookup must take place. 
- * Doing or not the normal lookup is decided by the return value of this
- * function.
  *
- * Returns 0 if standard lookup must still be performed.
- * Returns 1 if no standard lookup is necessary anymore, even if *sk
- * NULL.*/
-int mtcp_lookup_join(struct sk_buff *skb, struct sock **sk)
+ * Returns 1 if a join option has been found, and a new request_sock has been 
+ * created. Else returns 0.
+ */
+int mtcp_lookup_join(struct sk_buff *skb)
 {
 	struct tcphdr *th=tcp_hdr(skb);
 	const struct iphdr *iph = ip_hdr(skb);
@@ -702,8 +917,6 @@ int mtcp_lookup_join(struct sk_buff *skb, struct sock **sk)
 	struct multipath_pcb *mpcb;
 	int ans;
 
-	*sk=NULL;
-	
 	/*Jump through the options to check whether JOIN is there*/
 	ptr = (unsigned char *)(th + 1);
 	while (length > 0) {
@@ -729,9 +942,6 @@ int mtcp_lookup_join(struct sk_buff *skb, struct sock **sk)
 					printk(KERN_ERR "not found\n");
 					return 0;
 				}
-				/*Is there already a subflow for that path ?*/
-				*sk=existing_sock(mpcb,skb);
-				if (*sk) goto finished;
 				/*Is there already an open request for that
 				  path ?*/
 				if (mtcp_search_req(NULL,
