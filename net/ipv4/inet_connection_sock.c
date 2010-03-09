@@ -23,6 +23,7 @@
 #include <net/route.h>
 #include <net/tcp_states.h>
 #include <net/xfrm.h>
+#include <net/mtcp.h>
 
 #undef DEBUG_MTCP /*set to define if you want debugging messages*/
 

@@ -525,6 +525,26 @@ static int __mtcp_v4_send_synack(struct sock *master_sk,
 	return err;
 }
 
+/*Copied from net/ipv4/inet_connection_sock.c*/
+static inline u32 inet_synq_hash(const __be32 raddr, const __be16 rport,
+				 const u32 rnd, const u32 synq_hsize)
+{
+	return jhash_2words((__force u32)raddr, (__force u32)rport, rnd) & (synq_hsize - 1);
+}
+
+static void mtcp_reqsk_queue_hash_add(
+	struct request_sock_queue *mtcp_accept_queue, 
+	struct request_sock *req,
+	unsigned long timeout)
+{
+	struct listen_sock *lopt = mtcp_accept_queue->listen_opt;
+	const u32 h = inet_synq_hash(inet_rsk(req)->rmt_addr, 
+				     inet_rsk(req)->rmt_port,
+				     lopt->hash_rnd, lopt->nr_table_entries);
+
+	reqsk_queue_hash_req(mtcp_accept_queue, h, req, timeout);
+}
+
 /*Copied from tcp_ipv4.c*/
 static inline __u32 tcp_v4_init_sequence(struct sk_buff *skb)
 {
@@ -581,10 +601,9 @@ static int mtcp_v4_join_request(struct multipath_pcb *mpcb, struct sk_buff *skb)
  	if (__mtcp_v4_send_synack(mpcb->master_sk, req, NULL))
 		goto drop_and_free;
 
-	/*Adding to synqueue in metasocket*/
-	req->dl_next=mpcb->synqueue;
-	mpcb->synqueue=req;
-
+	/*Adding to request queue in metasocket*/
+	mtcp_reqsk_queue_hash_add(&mpcb->mtcp_accept_queue, 
+				  req, TCP_TIMEOUT_INIT);
 	return 0;
 
 drop_and_free:
@@ -612,30 +631,39 @@ static struct sock *existing_sock(struct multipath_pcb *mpcb,
 	return NULL;
 }
 
-
-/**
- * skb is a received SYN
- * Returns the corresponding open request if found.
- * If such a request is found, we reply to the syn with a syn+ack
- * (retransmission)
- */
-static struct request_sock *existing_request(struct multipath_pcb *mpcb,
-					     struct sk_buff *skb)
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#define AF_INET_FAMILY(fam) ((fam) == AF_INET)
+#else
+#define AF_INET_FAMILY(fam) 1
+#endif
+/*inspired from inet_csk_search_req*/
+static struct request_sock *mtcp_search_req(
+	const struct request_sock_queue *mtcp_accept_queue,
+	struct request_sock ***prevp,
+	const __be16 rport, const __be32 raddr,
+	const __be32 laddr)
 {
-	struct request_sock *req;
-	
-	for (req=mpcb->synqueue;req;req=req->dl_next) {
+	struct listen_sock *lopt = mtcp_accept_queue->listen_opt;
+	struct request_sock *req, **prev;
+
+	for (prev = &lopt->syn_table[inet_synq_hash(raddr, rport, 
+						    lopt->hash_rnd,
+						    lopt->nr_table_entries)];
+	     (req = *prev) != NULL;
+	     prev = &req->dl_next) {
 		const struct inet_request_sock *ireq = inet_rsk(req);
-		if (ireq->loc_addr==ip_hdr(skb)->daddr &&
-		    ireq->rmt_addr==ip_hdr(skb)->saddr &&
-		    ireq->loc_port==tcp_hdr(skb)->dest &&
-		    ireq->rmt_port==tcp_hdr(skb)->source) {
-			__mtcp_v4_send_synack(mpcb->master_sk,
-					      req,NULL);
-			return req;
+		
+		if (ireq->rmt_port == rport &&
+		    ireq->rmt_addr == raddr &&
+		    ireq->loc_addr == laddr &&
+		    AF_INET_FAMILY(req->rsk_ops->family)) {
+			WARN_ON(req->sk);
+			if (prevp) *prevp = prev;
+			break;
 		}
 	}
-	return NULL;
+	
+	return req;
 }
 
 /**
@@ -691,7 +719,10 @@ int mtcp_lookup_join(struct sk_buff *skb, struct sock **sk)
 				if (*sk) goto finished;
 				/*Is there already an open request for that
 				  path ?*/
-				if (existing_request(mpcb,skb))
+				if (mtcp_search_req(
+					    &mpcb->mtcp_accept_queue,NULL,
+					    ntohs(th->source),ntohl(iph->saddr),
+					    ntohl(iph->daddr)))
 					goto finished;
 				/*OK, this is a new syn/join, let's 
 				  create a new open request and 

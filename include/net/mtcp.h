@@ -31,7 +31,9 @@
 #include <linux/completion.h>
 #include <linux/skbuff.h>
 
+#include <net/request_sock.h>
 #include <net/mtcp_pm.h>
+
 
 /*DEBUG - TODEL*/
 
@@ -178,11 +180,11 @@ struct multipath_pcb {
 	int                       next_unused_pi; /*Next pi to pick up
 						    in case a new path
 						    becomes available*/
-	struct request_sock      *synqueue; /*Queue of SYNs with JOIN
-					      option*/
+	struct request_sock_queue mtcp_accept_queue; /*To handle incoming
+						       syns+join*/
 #endif
 };
-
+ 
 #define mpcb_from_tcpsock(tp) ((tp)->mpcb)
 #define is_master_sk(tp) ((tp)->mpcb && tcp_sk((tp)->mpcb->master_sk)==tp)
 

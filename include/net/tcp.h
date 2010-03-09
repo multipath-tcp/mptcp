@@ -41,6 +41,7 @@
 #include <net/ip.h>
 #include <net/tcp_states.h>
 #include <net/inet_ecn.h>
+#include <net/mtcp.h>
 
 #include <linux/seq_file.h>
 
