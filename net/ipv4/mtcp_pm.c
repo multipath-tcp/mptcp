@@ -40,6 +40,9 @@ extern void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 static struct list_head tk_hashtable[MTCP_HASH_SIZE];
 static rwlock_t tk_hash_lock; /*hashtable protection*/
 
+struct request_sock_queue mtcp_accept_queue; /*To handle incoming
+					       syns+join*/
+
 
 /* General initialization of MTCP_PM
  */
@@ -49,7 +52,18 @@ static int __init mtcp_pm_init(void)
 	for (i=0;i<MTCP_HASH_SIZE;i++)
 		INIT_LIST_HEAD(&tk_hashtable[i]);		
 	rwlock_init(&tk_hash_lock);
+
+	/*Init the accept_queue structure, we support a queue of 4 pending
+	  connections, it does not need to be huge, since we only store 
+	  here pending subflow creations*/
+	reqsk_queue_alloc(&mtcp_accept_queue,32);	
 	return 0;
+}
+
+static void __exit mtcp_pm_exit(void)
+{
+	/*Destroy the accept queue*/
+	reqsk_queue_destroy(&mtcp_accept_queue);
 }
 
 void mtcp_hash_insert(struct multipath_pcb *mpcb,u32 token)
@@ -532,17 +546,15 @@ static inline u32 inet_synq_hash(const __be32 raddr, const __be16 rport,
 	return jhash_2words((__force u32)raddr, (__force u32)rport, rnd) & (synq_hsize - 1);
 }
 
-static void mtcp_reqsk_queue_hash_add(
-	struct request_sock_queue *mtcp_accept_queue, 
-	struct request_sock *req,
-	unsigned long timeout)
+static void mtcp_reqsk_queue_hash_add(struct request_sock *req,
+				      unsigned long timeout)
 {
-	struct listen_sock *lopt = mtcp_accept_queue->listen_opt;
+	struct listen_sock *lopt = mtcp_accept_queue.listen_opt;
 	const u32 h = inet_synq_hash(inet_rsk(req)->rmt_addr, 
 				     inet_rsk(req)->rmt_port,
 				     lopt->hash_rnd, lopt->nr_table_entries);
 
-	reqsk_queue_hash_req(mtcp_accept_queue, h, req, timeout);
+	reqsk_queue_hash_req(&mtcp_accept_queue, h, req, timeout);
 }
 
 /*Copied from tcp_ipv4.c*/
@@ -602,8 +614,7 @@ static int mtcp_v4_join_request(struct multipath_pcb *mpcb, struct sk_buff *skb)
 		goto drop_and_free;
 
 	/*Adding to request queue in metasocket*/
-	mtcp_reqsk_queue_hash_add(&mpcb->mtcp_accept_queue, 
-				  req, TCP_TIMEOUT_INIT);
+	mtcp_reqsk_queue_hash_add(req, TCP_TIMEOUT_INIT);
 	return 0;
 
 drop_and_free:
@@ -637,13 +648,12 @@ static struct sock *existing_sock(struct multipath_pcb *mpcb,
 #define AF_INET_FAMILY(fam) 1
 #endif
 /*inspired from inet_csk_search_req*/
-static struct request_sock *mtcp_search_req(
-	const struct request_sock_queue *mtcp_accept_queue,
-	struct request_sock ***prevp,
-	const __be16 rport, const __be32 raddr,
-	const __be32 laddr)
+static struct request_sock *mtcp_search_req(struct request_sock ***prevp,
+					    const __be16 rport, 
+					    const __be32 raddr,
+					    const __be32 laddr)
 {
-	struct listen_sock *lopt = mtcp_accept_queue->listen_opt;
+	struct listen_sock *lopt = mtcp_accept_queue.listen_opt;
 	struct request_sock *req, **prev;
 
 	for (prev = &lopt->syn_table[inet_synq_hash(raddr, rport, 
@@ -664,6 +674,11 @@ static struct request_sock *mtcp_search_req(
 	}
 	
 	return req;
+}
+
+void mtcp_syn_recv_sock(struct sk_buff *skb)
+{
+	
 }
 
 /**
@@ -719,10 +734,10 @@ int mtcp_lookup_join(struct sk_buff *skb, struct sock **sk)
 				if (*sk) goto finished;
 				/*Is there already an open request for that
 				  path ?*/
-				if (mtcp_search_req(
-					    &mpcb->mtcp_accept_queue,NULL,
-					    ntohs(th->source),ntohl(iph->saddr),
-					    ntohl(iph->daddr)))
+				if (mtcp_search_req(NULL,
+						    ntohs(th->source),
+						    ntohl(iph->saddr),
+						    ntohl(iph->daddr)))
 					goto finished;
 				/*OK, this is a new syn/join, let's 
 				  create a new open request and 

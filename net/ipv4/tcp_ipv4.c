@@ -1420,9 +1420,10 @@ static struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb)
 						       iph->saddr, iph->daddr);
 	if (req)
 		return tcp_check_req(sk, skb, req, prev);
-
+	
 	nsk = inet_lookup_established(sock_net(sk), &tcp_hashinfo, iph->saddr,
-			th->source, iph->daddr, th->dest, inet_iif(skb));
+				      th->source, iph->daddr, th->dest, 
+				      inet_iif(skb));
 
 	if (nsk) {
 		if (nsk->sk_state != TCP_TIME_WAIT) {
@@ -1599,6 +1600,14 @@ int tcp_v4_rcv(struct sk_buff *skb)
 #endif	
 		sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source, 
 				       th->dest);
+
+#ifdef CONFIG_MTCP_PM
+	/*No socket found. Maybe there is a pending request sock that
+	  this segment acks ?*/
+	if (!sk) {
+		
+	}
+#endif
 	if (!sk)
 		goto no_tcp_socket;
 

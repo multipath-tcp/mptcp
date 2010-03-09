@@ -354,11 +354,6 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 
 	/*Adding the mpcb in the token hashtable*/
 	mtcp_hash_insert(mpcb,loc_token(mpcb));
-
-	/*Init the accept_queue structure, we support a queue of 4 pending
-	  connections, it does not need to be huge, since we only store 
-	  here pending subflow creations*/
-	reqsk_queue_alloc(&mpcb->mtcp_accept_queue,4);	
 #endif
 		
 	return mpcb;
@@ -378,13 +373,8 @@ static void mpcb_release(struct kref* kref)
 void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
 {	
 #ifdef CONFIG_MTCP_PM
-	{
-		/*Detach the mpcb from the token hashtable*/
-		mtcp_hash_remove(mpcb);
-		
-		/*Destroy the accept queue*/
-		reqsk_queue_destroy(&mpcb->mtcp_accept_queue);
-	}
+	/*Detach the mpcb from the token hashtable*/
+	mtcp_hash_remove(mpcb);
 #endif
 	/*Stop listening to PM events*/
 	unregister_netevent_notifier(&mpcb->nb);

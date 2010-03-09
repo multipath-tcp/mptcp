@@ -180,8 +180,6 @@ struct multipath_pcb {
 	int                       next_unused_pi; /*Next pi to pick up
 						    in case a new path
 						    becomes available*/
-	struct request_sock_queue mtcp_accept_queue; /*To handle incoming
-						       syns+join*/
 #endif
 };
  
