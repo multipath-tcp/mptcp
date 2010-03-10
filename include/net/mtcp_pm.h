@@ -74,5 +74,6 @@ struct in_addr *mtcp_get_rem_addr(struct multipath_pcb *mpcb, int path_index);
 u8 mtcp_get_loc_addrid(struct multipath_pcb *mpcb, int path_index);
 int mtcp_lookup_join(struct sk_buff *skb);
 int mtcp_syn_recv_sock(struct sk_buff *skb);
+void mtcp_check_new_subflow(void);
 #endif /* CONFIG_MTCP_PM */
 #endif /*_MTCP_PM_H*/

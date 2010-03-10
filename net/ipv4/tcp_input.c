@@ -3417,7 +3417,6 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 
 	ptr = (unsigned char *)(th + 1);
 	opt_rx->saw_tstamp = 0;
-	if (mopt) memset(mopt,0,sizeof(*mopt));
 	
 	while (length > 0) {
 		int opcode = *ptr++;

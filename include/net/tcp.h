@@ -314,6 +314,11 @@ extern int		    	tcp_v4_tw_remember_stamp(struct inet_timewait_sock *tw);
 
 extern int			tcp_sendmsg(struct kiocb *iocb, struct socket *sock,
 					    struct msghdr *msg, size_t size);
+#ifdef CONFIG_MTCP
+extern int			subtcp_sendmsg(struct kiocb *iocb, 
+					       struct sock *sk,
+					       struct msghdr *msg, size_t size);
+#endif
 extern ssize_t			tcp_sendpage(struct socket *sock, struct page *page, int offset, size_t size, int flags);
 
 extern int			tcp_ioctl(struct sock *sk, 

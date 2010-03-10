@@ -941,6 +941,12 @@ static inline int select_size(struct sock *sk)
 }
 
 
+int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
+		size_t size)
+{
+	return subtcp_sendmsg(iocb,sock->sk,msg,size);
+}
+
 /**
  * In the original version of tcp_sendmsg, size is not used.
  * If CONFIG_MTCP is set, size is interpreted as the offset inside the message
@@ -948,10 +954,9 @@ static inline int select_size(struct sock *sk)
  * Moreover, in an MTCP context, this function only eats 1 segment
  * since another subsocket can eat the rest.
  */
-int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
-		size_t size)
+int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
+		   size_t size)
 {
-	struct sock *sk = sock->sk;
 	struct iovec *iov;
 	struct tcp_sock *tp = tcp_sk(sk);
 #ifdef CONFIG_MTCP
@@ -963,7 +968,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	int err, copied;
 	long timeo;
 	int nbnewseg=0; /*We permit at most 1 new segment to be created before
-			  to give back control to the scheduler*/
+			  to give back control to the scheduler*/	
 	
 	lock_sock(sk);
 	TCP_CHECK_TIMER(sk);
@@ -1906,6 +1911,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	/*Received a new list of addresses recently ?
 	  announce corresponding path indices to the
 	  mpcb, and start new subflows*/
+	mtcp_check_new_subflow();
 	if (unlikely(mpcb->received_options.list_rcvd)) {
 		mpcb->received_options.list_rcvd=0;
 		mtcp_update_patharray(mpcb);
@@ -2235,6 +2241,9 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			
 			/*We may have received data on a newly created
 			  subsocket, check if the list has grown*/
+#ifdef CONFIG_MTCP_PM
+			mtcp_check_new_subflow();
+#endif
 			mutex_lock(&mpcb->mutex);
 			PDEBUG("At line %d\n",__LINE__);
 			if (cnt_subflows!=mpcb->cnt_subflows) {

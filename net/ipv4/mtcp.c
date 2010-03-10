@@ -552,7 +552,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	int nberr;		
 	
 	if (!tcp_sk(master_sk)->mpc)
-		return tcp_sendmsg(iocb,sock, msg, size);
+		return subtcp_sendmsg(iocb,master_sk, msg, size);
 	
 	PDEBUG("Entering %s\n",__FUNCTION__);
 
@@ -561,9 +561,11 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		BUG();
 	}
 
+#ifdef CONFIG_MTCP_PM
 	/*Any new subsock we can use ?*/
-	
-	
+	mtcp_check_new_subflow();
+#endif
+		
 	/* Compute the total number of bytes stored in the message*/
 	iovlen=msg->msg_iovlen;
 	iov=msg->msg_iov;
@@ -601,8 +603,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		       (int)msg_size,i,tp->path_index);
 		
 		/*Let the selected socket eat*/
-		ret=tcp_sendmsg(NULL,((struct sock*)tp)->sk_socket, 
-				msg, copied);
+		ret=subtcp_sendmsg(NULL,(struct sock*)tp,msg, copied);
 		if (ret<0) {
 			/*If this subflow refuses to send our data, try
 			  another one. If no subflow accepts to send it

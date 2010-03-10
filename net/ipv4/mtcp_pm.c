@@ -193,6 +193,9 @@ void mtcp_update_patharray(struct multipath_pcb *mpcb)
 	int pa4_size=(mpcb->num_addr4+ulid_v4)*
 		(mpcb->received_options.num_addr4+ulid_v4)-ulid_v4;
 	
+	printk(KERN_ERR "Entering %s,uild_v4:%d,numaddr:%d\n",__FUNCTION__,
+	       ulid_v4,mpcb->received_options.num_addr4);
+
 	new_pa4=kmalloc(pa4_size*sizeof(struct path4),GFP_ATOMIC);
 	
 	if (ulid_v4) {
@@ -201,10 +204,13 @@ void mtcp_update_patharray(struct multipath_pcb *mpcb)
 			struct path4 *p=find_path_mapping4(
 				(struct in_addr*)&mpcb->local_ulid.a4,
 				&mpcb->received_options.addr4[j].addr,mpcb);
-			if (p)
+			if (p) {
+				printk(KERN_ERR "p is set\n");
 				memcpy(&new_pa4[newpa_idx++],p,
 				       sizeof(struct path4));
+			}
 			else {
+				printk(KERN_ERR "arrived here\n");
 				/*local addr*/
 				new_pa4[newpa_idx].loc.addr.s_addr=
 					mpcb->local_ulid.a4;
@@ -325,6 +331,7 @@ static int mtcp_v4_add_raddress(struct multipath_pcb *mpcb,
 {
 	int i;
 	int num_addr4=mpcb->received_options.num_addr4;
+	printk(KERN_ERR "%s, line %d\n",__FUNCTION__,__LINE__);
 	for (i=0;i<mpcb->received_options.num_addr4;i++) {
 		if (mpcb->received_options.addr4[i].addr.s_addr==
 		    addr->s_addr) {
@@ -333,14 +340,18 @@ static int mtcp_v4_add_raddress(struct multipath_pcb *mpcb,
 			return 0;
 		}
 	}
+	printk(KERN_ERR "%s, line %d\n",__FUNCTION__,__LINE__);
 	if (mpcb->received_options.num_addr4==MTCP_MAX_ADDR)
 		return -1;
+	printk(KERN_ERR "%s, line %d\n",__FUNCTION__,__LINE__);
 
 	/*Address is not known yet, store it*/
 	mpcb->received_options.addr4[num_addr4].addr.s_addr=
 		addr->s_addr;
 	mpcb->received_options.addr4[num_addr4].id=id;
 	mpcb->received_options.num_addr4++;
+	printk(KERN_ERR "%s, line %d,%x,%d\n",__FUNCTION__,__LINE__,
+	       addr->s_addr, mpcb->received_options.num_addr4);
 	return 0;
 }
 
@@ -855,9 +866,14 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 	child = inet_csk(mpcb->master_sk)->icsk_af_ops->
 		syn_recv_sock(mpcb->master_sk, 
 			      skb, req, 
-			      NULL);	
+			      NULL);
+
 	if (child == NULL)
 		goto listen_overflow;
+
+	/*The child is a clone of the master socket, we must now reset
+	  some of the fields*/
+	tcp_sk(child)->bytes_eaten=0;
 
 	printk(KERN_ERR "Full sock created !!\n");
 
@@ -942,13 +958,6 @@ int mtcp_lookup_join(struct sk_buff *skb)
 					printk(KERN_ERR "not found\n");
 					return 0;
 				}
-				/*Is there already an open request for that
-				  path ?*/
-				if (mtcp_search_req(NULL,
-						    ntohs(th->source),
-						    ntohl(iph->saddr),
-						    ntohl(iph->daddr)))
-					goto finished;
 				/*OK, this is a new syn/join, let's 
 				  create a new open request and 
 				  send syn+ack*/
@@ -970,6 +979,34 @@ finished:
 	return 1;
 }
 
+/*checks whether a new established subflow has appeared,
+  in which case that subflow is added to the path set. This should
+  be run by a control daemon in the future*/
+void mtcp_check_new_subflow(void)
+{
+	struct sock *child;
+	struct request_sock *req;
+	struct inet_request_sock *ireq;
+	struct path4 *p;
+	while (!reqsk_queue_empty(&mtcp_accept_queue)) {
+		req = reqsk_queue_remove(&mtcp_accept_queue);
+		ireq =  inet_rsk(req);
+		child = req->sk;
+		BUG_ON(!child);
+		mtcp_update_patharray(req->mpcb);
+		/*Apply correct path index to that subflow*/
+		p=find_path_mapping4((struct in_addr*)&ireq->loc_addr,
+				     (struct in_addr*)&ireq->rmt_addr,
+				     req->mpcb);
+		BUG_ON(!p);
+		tcp_sk(child)->path_index=p->path_index;
+		/*Point it to the same struct socket as the master*/
+		sk_set_socket(child,req->mpcb->master_sk->sk_socket);
+		
+		mtcp_add_sock(req->mpcb,tcp_sk(child));
+		__reqsk_free(req);
+	}
+}
 
 /**
  *Sends an update notification to the MPS
