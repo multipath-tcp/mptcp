@@ -1174,10 +1174,7 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	tmp_opt.mss_clamp = IPV6_MIN_MTU - sizeof(struct tcphdr) - sizeof(struct ipv6hdr);
 	tmp_opt.user_mss = tp->rx_opt.user_mss;
 
-	/*init multipath options*/
-	memset(&req->mopt,0,sizeof(req->mopt));
-
-	tcp_parse_options(skb, &tmp_opt, &req->mopt, 0);
+	tcp_parse_options(skb, &tmp_opt, NULL, 0);
 
 	if (want_cookie && !tmp_opt.saw_tstamp)
 		tcp_clear_options(&tmp_opt);
