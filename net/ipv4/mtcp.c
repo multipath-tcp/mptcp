@@ -243,6 +243,13 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			/*Redefine the sk_data_ready function*/
 			((struct sock*)newtp)->sk_data_ready=mtcp_def_readable;
 			
+			/*Specify that we can reuse existing local addr/port
+			  pair. This is necessary since we typically use 
+			  the same local addr/port several times, with different
+			  remote ids.*/
+			retval = sock->ops->setsockopt(sock,SOL_SOCKET,
+						       SO_REUSEADDR, NULL,0);
+			if (retval<0) goto fail_setsockopt;
 			retval = sock->ops->bind(sock, loculid, ulid_size);
 			if (retval<0) goto fail_bind;
 			
@@ -258,6 +265,8 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 		}
 	}
 	return 0;
+fail_setsockopt:
+	printk(KERN_ERR "MTCP subsocket setsockopt() failed\n");
 fail_bind:
 	printk(KERN_ERR "MTCP subsocket bind() failed\n");
 fail_connect:
