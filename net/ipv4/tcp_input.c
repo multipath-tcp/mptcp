@@ -3528,7 +3528,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 					break;
 				}
 				mopt->num_addr4=mopt->num_addr6=0;
-				for (ptr8=ptr; ptr8<ptr+opsize-2; ptr8++) {
+				for (ptr8=ptr; ptr8<ptr+opsize-2;) {
 					if ((*(ptr8+1))>>4==4 && 
 					    mopt->num_addr4<MTCP_MAX_ADDR) {
 						mopt->addr4[mopt->num_addr4].
