@@ -5,7 +5,7 @@
  *      Sébastien Barré		<sebastien.barre@uclouvain.be>
  *
  *
- *      date : April 09
+ *      date : March 2010
  *
  *
  *	This program is free software; you can redistribute it and/or
@@ -93,7 +93,7 @@ struct proto mtcpsub_prot = {
 	.backlog_rcv		= tcp_v4_do_rcv,
 	.hash			= inet_hash,
 	.unhash			= inet_unhash,
-	.get_port		= inet_csk_get_port,
+	.get_port		= mtcpsub_get_port,
 	.enter_memory_pressure	= tcp_enter_memory_pressure,
 	.sockets_allocated	= &tcp_sockets_allocated,
 	.orphan_count		= &tcp_orphan_count,

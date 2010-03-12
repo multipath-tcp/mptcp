@@ -242,14 +242,7 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 						
 			/*Redefine the sk_data_ready function*/
 			((struct sock*)newtp)->sk_data_ready=mtcp_def_readable;
-			
-			/*Specify that we can reuse existing local addr/port
-			  pair. This is necessary since we typically use 
-			  the same local addr/port several times, with different
-			  remote ids.*/
-			retval = sock->ops->setsockopt(sock,SOL_SOCKET,
-						       SO_REUSEADDR, NULL,0);
-			if (retval<0) goto fail_setsockopt;
+						
 			retval = sock->ops->bind(sock, loculid, ulid_size);
 			if (retval<0) goto fail_bind;
 			
@@ -265,8 +258,7 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 		}
 	}
 	return 0;
-fail_setsockopt:
-	printk(KERN_ERR "MTCP subsocket setsockopt() failed\n");
+
 fail_bind:
 	printk(KERN_ERR "MTCP subsocket bind() failed\n");
 fail_connect:
@@ -1347,6 +1339,48 @@ int mtcp_get_dataseq_mapping(struct multipath_pcb *mpcb, struct tcp_sock *tp,
 	if (TCP_SKB_CB(skb)->data_seq==mpcb->copied_seq)
 		return 1;
 	else return 0;
+}
+
+/* Obtain a reference to a local port for the given sock,
+ * snum MUST have a valid port number, since it must be a copy 
+ * of the snum from a master TCP socket.
+ */
+int mtcpsub_get_port(struct sock *sk, unsigned short snum)
+{
+	struct inet_hashinfo *hashinfo = sk->sk_prot->h.hashinfo;
+	struct inet_bind_hashbucket *head;
+	struct hlist_node *node;
+	struct inet_bind_bucket *tb;
+	int ret;
+	struct net *net = sock_net(sk);
+
+	local_bh_disable();
+	if (!snum) {
+		ret=-1;
+		goto fail; /*snum is required in MTCPSUB, since it must be
+			     the copy of the originating socket*/
+	} else {
+		head = &hashinfo->bhash[inet_bhashfn(net, snum,
+				hashinfo->bhash_size)];
+		spin_lock(&head->lock);
+		inet_bind_bucket_for_each(tb, node, &head->chain)
+			if (tb->ib_net == net && tb->port == snum)
+				goto success;
+	}
+	tb = NULL;
+	ret = 1;
+	goto fail_unlock;
+success:
+	if (!inet_csk(sk)->icsk_bind_hash)
+		inet_bind_hash(sk, tb, snum);
+	WARN_ON(inet_csk(sk)->icsk_bind_hash != tb);
+	ret = 0;
+
+fail_unlock:
+	spin_unlock(&head->lock);
+fail:
+	local_bh_enable();
+	return ret;
 }
 
 MODULE_LICENSE("GPL");
