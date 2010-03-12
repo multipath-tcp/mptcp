@@ -914,6 +914,9 @@ int mtcp_syn_recv_sock(struct sk_buff *skb)
 
 	/*If this is a valid ack, we can build a full socket*/
 	child=mtcp_check_req(skb,req,prev);
+	if (child)
+		tcp_child_process(req->mpcb->master_sk,
+				  child,skb);
 	kfree_skb(skb);
 	return 1;
 }
