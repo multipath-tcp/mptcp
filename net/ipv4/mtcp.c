@@ -1221,12 +1221,7 @@ void __mtcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk)
 	if (PI_TO_FLAG(tp->path_index) & orig_skb->path_mask)
 		return;
 	
-	/*Remember that we have enqueued this skb on this path*/
-	BUG_ON(count_bits(orig_skb->path_mask)!=1);
-
 	orig_skb->path_mask|=PI_TO_FLAG(tp->path_index);
-
-	BUG_ON(count_bits(orig_skb->path_mask)!=2);
 
 	skb=skb_copy(orig_skb,GFP_ATOMIC);
 	skb->sk=sk;
