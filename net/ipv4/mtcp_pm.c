@@ -917,7 +917,6 @@ int mtcp_syn_recv_sock(struct sk_buff *skb)
 	if (child)
 		tcp_child_process(req->mpcb->master_sk,
 				  child,skb);
-	kfree_skb(skb);
 	return 1;
 }
 
