@@ -141,9 +141,6 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 	struct tcp_sock *tp=mpcb->connection_list;
 	struct tcp_sock *newtp;
 
-	printk(KERN_ERR "Entering %s, path_indices:%x\n",__FUNCTION__,
-	       path_indices);
-
 	/*First, ensure that we keep existing path indices.*/
 	while (tp!=NULL) {
 		/*disable the corresponding bit*/
@@ -196,10 +193,6 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 				memcpy(&remulid_in.sin_addr,
 				       mtcp_get_rem_addr(mpcb,newpi),
 				       sizeof(struct in_addr));
-				printk(KERN_ERR "loc_addr: " NIPQUAD_FMT "\n",
-				       NIPQUAD(loculid_in.sin_addr));
-				printk(KERN_ERR "rem_addr: " NIPQUAD_FMT "\n",
-				       NIPQUAD(remulid_in.sin_addr));
 #else
 				memcpy(&loculid_in.sin_addr,
 				       (struct in_addr*)&mpcb->local_ulid.a4,
@@ -246,9 +239,6 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			retval = sock->ops->bind(sock, loculid, ulid_size);
 			if (retval<0) goto fail_bind;
 			
-			
-			printk(KERN_ERR "%s:About to connect, pi %d\n",
-			       __FUNCTION__,newpi);
 			retval = sock->ops->connect(sock,remulid,
 						    ulid_size,O_NONBLOCK);
 			if (retval<0 && retval != -EINPROGRESS) 

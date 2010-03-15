@@ -195,9 +195,6 @@ void mtcp_update_patharray(struct multipath_pcb *mpcb)
 	int pa4_size=(mpcb->num_addr4+ulid_v4)*
 		(mpcb->received_options.num_addr4+ulid_v4)-ulid_v4;
 	
-	printk(KERN_ERR "Entering %s,uild_v4:%d,numaddr:%d\n",__FUNCTION__,
-	       ulid_v4,mpcb->received_options.num_addr4);
-
 	new_pa4=kmalloc(pa4_size*sizeof(struct path4),GFP_ATOMIC);
 	
 	if (ulid_v4) {
@@ -206,13 +203,10 @@ void mtcp_update_patharray(struct multipath_pcb *mpcb)
 			struct path4 *p=find_path_mapping4(
 				(struct in_addr*)&mpcb->local_ulid.a4,
 				&mpcb->received_options.addr4[j].addr,mpcb);
-			if (p) {
-				printk(KERN_ERR "p is set\n");
+			if (p)
 				memcpy(&new_pa4[newpa_idx++],p,
 				       sizeof(struct path4));
-			}
 			else {
-				printk(KERN_ERR "arrived here\n");
 				/*local addr*/
 				new_pa4[newpa_idx].loc.addr.s_addr=
 					mpcb->local_ulid.a4;
@@ -281,7 +275,6 @@ void mtcp_update_patharray(struct multipath_pcb *mpcb)
 	mpcb->pa4=new_pa4;
 	mpcb->pa4_size=pa4_size;
 	if (old_pa4) kfree(old_pa4);
-	print_patharray(mpcb->pa4, mpcb->pa4_size);
 }
 
 
@@ -333,7 +326,6 @@ static int mtcp_v4_add_raddress(struct multipath_pcb *mpcb,
 {
 	int i;
 	int num_addr4=mpcb->received_options.num_addr4;
-	printk(KERN_ERR "%s, line %d\n",__FUNCTION__,__LINE__);
 	for (i=0;i<mpcb->received_options.num_addr4;i++) {
 		if (mpcb->received_options.addr4[i].addr.s_addr==
 		    addr->s_addr) {
@@ -342,18 +334,14 @@ static int mtcp_v4_add_raddress(struct multipath_pcb *mpcb,
 			return 0;
 		}
 	}
-	printk(KERN_ERR "%s, line %d\n",__FUNCTION__,__LINE__);
 	if (mpcb->received_options.num_addr4==MTCP_MAX_ADDR)
 		return -1;
-	printk(KERN_ERR "%s, line %d\n",__FUNCTION__,__LINE__);
 
 	/*Address is not known yet, store it*/
 	mpcb->received_options.addr4[num_addr4].addr.s_addr=
 		addr->s_addr;
 	mpcb->received_options.addr4[num_addr4].id=id;
 	mpcb->received_options.num_addr4++;
-	printk(KERN_ERR "%s, line %d,%x,%d\n",__FUNCTION__,__LINE__,
-	       addr->s_addr, mpcb->received_options.num_addr4);
 	return 0;
 }
 
@@ -396,8 +384,6 @@ static unsigned mtcp_synack_options(struct request_sock *req,
 	char doing_ts;
 
 	*md5 = NULL;
-
-	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
 
 	/* we can't fit any SACK blocks in a packet with MD5 + TS
 	   options. There was discussion about disabling SACK rather than TS in
@@ -451,8 +437,6 @@ static struct sk_buff *mtcp_make_synack(struct sock *master_sk,
 	struct tcp_md5sig_key *md5;
 	__u8 *md5_hash_location;
 	int mss;
-
-	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
 
 	skb = alloc_skb(MAX_TCP_HEADER + 15, GFP_ATOMIC);
 	if (skb == NULL)
@@ -529,8 +513,6 @@ static int __mtcp_v4_send_synack(struct sock *master_sk,
 	int err = -1;
 	struct sk_buff * skb;
 
-	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
-
 	/* First, grab a route. */
 	if (!dst && (dst = mtcp_route_req(req)) == NULL)
 		return -1;
@@ -591,8 +573,6 @@ static int mtcp_v4_join_request(struct multipath_pcb *mpcb, struct sk_buff *skb)
 	__be32 saddr = ip_hdr(skb)->saddr;
 	__be32 daddr = ip_hdr(skb)->daddr;
 	__u32 isn = TCP_SKB_CB(skb)->when;	
-
-	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
 
 	req = inet_reqsk_alloc(mpcb->master_sk->sk_prot->rsk_prot);
 	if (!req)
@@ -877,8 +857,6 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 	  some of the fields*/
 	tcp_sk(child)->bytes_eaten=0;
 
-	printk(KERN_ERR "Full sock created !!\n");
-
 	tcp_sk(child)->mpc=1;
 	tcp_sk(child)->rx_opt.mtcp_rem_token=req->mtcp_rem_token;
 	tcp_sk(child)->mtcp_loc_token=req->mtcp_loc_token;
@@ -959,7 +937,7 @@ int mtcp_lookup_join(struct sk_buff *skb)
 				token=ntohl(*(u32*)ptr);
 				mpcb=mtcp_hash_find(token);			
 				if (!mpcb) {
-					printk(KERN_ERR "not found\n");
+					printk(KERN_ERR "mpcb not found\n");
 					return 0;
 				}
 				/*OK, this is a new syn/join, let's 
