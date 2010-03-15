@@ -84,8 +84,10 @@ struct multipath_pcb* mtcp_hash_find(u32 token)
 	struct multipath_pcb *mpcb;
 	read_lock(&tk_hash_lock);
 	list_for_each_entry(mpcb,&tk_hashtable[hash],collide_tk) {
-		if (token==loc_token(mpcb))
+		if (token==loc_token(mpcb)) {
+			read_unlock(&tk_hash_lock);
 			return mpcb;
+		}
 	}
 	read_unlock(&tk_hash_lock);
 	return NULL;
