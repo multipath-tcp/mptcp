@@ -1548,9 +1548,6 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	int ret;
 	struct net *net = dev_net(skb->dev);
 
-	if (tcp_hdr(skb)->syn) printk(KERN_ERR "rcvd syn with length:%d\n",
-				      tcp_hdr(skb)->doff);
-
 	if (skb->pkt_type != PACKET_HOST)
 		goto discard_it;	
 
