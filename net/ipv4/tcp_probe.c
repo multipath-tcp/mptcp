@@ -126,8 +126,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->sport = inet->sport;
 			p->daddr = inet->daddr;
 			p->dport = inet->dport;
-			p->path_index = (skb->sk)?
-				tcp_sk(skb->sk)->path_index:0;
+			p->path_index = sk?tcp_sk(sk)->path_index:0;
 			p->length = skb->len;
 			p->snd_nxt = tp->snd_nxt;
 			p->snd_una = tp->snd_una;
@@ -184,8 +183,7 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			p->sport = inet->sport;
 			p->daddr = inet->daddr;
 			p->dport = inet->dport;
-			p->path_index = tcp_sk(skb->sk)?
-				tcp_sk(skb->sk)->path_index:0;
+			p->path_index = sk?tcp_sk(sk)->path_index:0;
 			p->length = skb->len;
 			p->snd_nxt = tp->snd_nxt;
 			p->snd_una = tp->snd_una;
