@@ -220,11 +220,17 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 }
 
 #ifdef CONFIG_KPROBES
-static struct jprobe tcp_jprobe = {
+static struct jprobe tcp_jprobe_rcv = {
 	.kp = {
 		.symbol_name	= "tcp_rcv_established",
 	},
 	.entry	= jtcp_rcv_established,
+	};
+static struct jprobe tcp_jprobe_send = {
+	.kp = {
+		.symbol_name	= "tcp_transmit_skb",		
+	},
+	.entry	= jtcp_transmit_skb,
 	};
 #else
 static struct tcpprobe_ops tcpprobe_fcts = {
@@ -336,7 +342,8 @@ static __init int tcpprobe_init(void)
 		goto err0;
 
 #ifdef CONFIG_KPROBES
-	ret = register_jprobe(&tcp_jprobe);
+	ret = register_jprobe(&tcp_jprobe_rcv);
+	if (!ret) ret = register_jprobe(&tcp_jprobe_send);
 #else
 	ret=register_probe(&tcpprobe_fcts, 4);
 #endif
@@ -357,7 +364,8 @@ static __exit void tcpprobe_exit(void)
 {
 	proc_net_remove(&init_net, procname);
 #ifdef CONFIG_KPROBES
-	unregister_jprobe(&tcp_jprobe);
+	unregister_jprobe(&tcp_jprobe_rcv);
+	unregister_jprobe(&tcp_jprobe_send);
 #else
 	unregister_probe(&tcpprobe_fcts,4);
 #endif
