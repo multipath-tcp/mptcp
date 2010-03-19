@@ -1063,17 +1063,22 @@ static inline int tcp_win_from_space(int space)
 /* Note: caller must be prepared to deal with negative returns */ 
 static inline int tcp_space(const struct sock *sk)
 {
-#ifdef CONFIG_MTCP	
+	return tcp_win_from_space(sk->sk_rcvbuf -
+				  atomic_read(&sk->sk_rmem_alloc));
+}
+
+#ifdef CONFIG_MTCP
+/*If MPTCP is used, tcp_space returns the aggregate space for the
+  whole communication. This returns the per-subsocket space.*/
+static inline int mtcp_space(const struct sock *sk)
+{
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sock *sk_it;
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
 	int free_space=0;
-#endif
-	if (!tp->mpc) 
-		return tcp_win_from_space(sk->sk_rcvbuf -
-					  atomic_read(&sk->sk_rmem_alloc));
 	
-#ifdef CONFIG_MTCP
+	if (!tp->mpc) return tcp_space(sk);
+
 	/*Compute the sum of free memory for all subflows*/
 	mtcp_for_each_sk(mpcb,sk_it,tp) {
 		free_space+=sk_it->sk_rcvbuf - 
@@ -1081,10 +1086,21 @@ static inline int tcp_space(const struct sock *sk)
 	}
 		
 	return tcp_win_from_space(free_space);
-#endif
-	BUG(); /*We should not reach that point*/
-	return 0;
 }
+
+static inline int mtcp_full_space(const struct sock *sk)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct sock *sk_it;
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+	int full_space;
+
+	mtcp_for_each_sk(mpcb,sk_it,tp) {
+		full_space+=sk_it->sk_rcvbuf;
+	}
+	return tcp_win_from_space(full_space);
+}
+#endif
 
 static inline int tcp_full_space(const struct sock *sk)
 {

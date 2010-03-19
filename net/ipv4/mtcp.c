@@ -335,7 +335,8 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	mpcb->nb.notifier_call=netevent_callback;
 	register_netevent_notifier(&mpcb->nb);
 
-	mpcb->window_clamp=master_sk->lwindow_clamp;
+	mpcb->window_clamp=tcp_sk(master_sk)->window_clamp;
+	mpcb->rcv_ssthresh=tcp_sk(master_sk)->rcv_ssthresh;
 	
 #ifdef CONFIG_MTCP_PM
 	/*Pi 1 is reserved for the master subflow*/
@@ -397,9 +398,12 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 #endif
 	
 	mpcb->cnt_subflows++;
+	mtcp_update_window_clamp(mpcb);
+
 	kref_get(&mpcb->kref);	
 	local_bh_enable();
 	mutex_unlock(&mpcb->mutex);
+
 	PDEBUG("Added subsocket with pi %d, cnt_subflows now %d\n",
 	       tp->path_index,mpcb->cnt_subflows);
 }
@@ -1377,8 +1381,8 @@ void mtcp_update_window_clamp(struct multipath_pcb *mpcb)
 	u32 new_clamp=0;
 	u32 new_rcv_ssthresh=0;
 	mtcp_for_each_tp(mpcb,tp) {
-		new_clamp += tp->lwindow_clamp;
-		new_rcv_ssthresh += tp->lrcv_ssthresh;
+		new_clamp += tp->window_clamp;
+		new_rcv_ssthresh += tp->rcv_ssthresh;
 	}
 	mpcb->window_clamp=new_clamp;
 	mpcb->rcv_ssthresh = new_rcv_ssthresh;

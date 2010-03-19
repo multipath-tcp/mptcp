@@ -148,6 +148,10 @@ struct multipath_pcb {
 	struct completion         liberate_subflow;
 	struct notifier_block     nb; /*For listening to PM events*/
 
+	/*Receive window management*/
+	u32                       window_clamp;
+	u32                       rcv_ssthresh;
+
 #ifdef CONFIG_MTCP_PM
 	struct list_head          collide_tk;
 	uint8_t                   addr_sent:1; /* 1 if our set of local
