@@ -69,7 +69,14 @@ struct tcp_log {
 	u32     rcv_nxt;
 	u32     copied_seq;
 	u32     rcv_wnd;
+	u32     rcv_buf;  /*N*/
+	u32     rcv_ssthresh; /*N*/
+	u32     window_clamp; /*N*/
 	char    send; /*1 if sending side, 0 if receive*/
+	int     space;
+	u32     rtt_est;
+	u32     in_flight;
+	u32     mss_cache;
 };
 
 static struct {
@@ -100,13 +107,16 @@ static inline int tcp_probe_avail(void)
  * Note: arguments must match tcp_rcv_established()!
  */
 static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
-			       struct tcphdr *th, unsigned len)
+				struct tcphdr *th, unsigned len)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_sock *inet = inet_sk(sk);
 
 	/* Only update if port matches */
-	if ((port == 0 || ntohs(inet->dport) == port || ntohs(inet->sport) == port)
+	if ((port == 0 || ntohs(inet->dport) == port 
+	     || ntohs(inet->sport) == port)
+	    && ntohs(inet->sport) != 22
+	    && ntohs(inet->dport) != 22
 	    && (full || tp->snd_cwnd != tcp_probe.lastcwnd)) {
 
 		spin_lock(&tcp_probe.lock);
@@ -119,7 +129,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->sport = inet->sport;
 			p->daddr = inet->daddr;
 			p->dport = inet->dport;
-			p->path_index = skb->path_index;
+			p->path_index = sk?tcp_sk(sk)->path_index:0;
 			p->length = skb->len;
 			p->snd_nxt = tp->snd_nxt;
 			p->snd_una = tp->snd_una;
@@ -130,8 +140,14 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->rcv_nxt=tp->rcv_nxt;
 			p->copied_seq=tp->copied_seq;
 			p->rcv_wnd=tp->rcv_wnd;
+			p->rcv_buf=sk->sk_rcvbuf;
+			p->rcv_ssthresh=tp->rcv_ssthresh;
+			p->window_clamp=tp->window_clamp;
 			p->send=0;
-
+			p->space=tp->rcvq_space.space;
+			p->rtt_est=tp->rcv_rtt_est.rtt;
+			p->in_flight=tp->packets_out;
+			p->mss_cache=tp->mss_cache;
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
 		tcp_probe.lastcwnd = tp->snd_cwnd;
@@ -156,8 +172,12 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	const struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_sock *inet = inet_sk(sk);
 
-	/* Only update if port matches */
-	if ((port == 0 || ntohs(inet->dport) == port || ntohs(inet->sport) == port)
+	/* Only update if port matches and state is established*/
+	if (sk->sk_state == TCP_ESTABLISHED && 
+	    (port == 0 || ntohs(inet->dport) == port || 
+	     ntohs(inet->sport) == port)
+	    && ntohs(inet->sport) != 22
+	    && ntohs(inet->dport) != 22
 	    && (full || tp->snd_cwnd != tcp_probe.lastcwnd)) {
 
 		spin_lock_bh(&tcp_probe.lock);
@@ -170,7 +190,7 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			p->sport = inet->sport;
 			p->daddr = inet->daddr;
 			p->dport = inet->dport;
-			p->path_index = skb->path_index;
+			p->path_index = tp->path_index;
 			p->length = skb->len;
 			p->snd_nxt = tp->snd_nxt;
 			p->snd_una = tp->snd_una;
@@ -181,7 +201,14 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			p->rcv_nxt=tp->rcv_nxt;
 			p->copied_seq=tp->copied_seq;
 			p->rcv_wnd=tp->rcv_wnd;
+			p->rcv_buf=sk->sk_rcvbuf;
+			p->rcv_ssthresh=tp->rcv_ssthresh;
+			p->window_clamp=tp->window_clamp;		
 			p->send=1;
+			p->space=tp->rcvq_space.space;
+			p->rtt_est=tp->rcv_rtt_est.rtt;
+			p->in_flight=tp->packets_out;
+			p->mss_cache=tp->mss_cache;
 
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
@@ -198,11 +225,17 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 }
 
 #ifdef CONFIG_KPROBES
-static struct jprobe tcp_jprobe = {
+static struct jprobe tcp_jprobe_rcv = {
 	.kp = {
 		.symbol_name	= "tcp_rcv_established",
 	},
 	.entry	= jtcp_rcv_established,
+	};
+static struct jprobe tcp_jprobe_send = {
+	.kp = {
+		.symbol_name	= "tcp_transmit_skb",		
+	},
+	.entry	= jtcp_transmit_skb,
 	};
 #else
 static struct tcpprobe_ops tcpprobe_fcts = {
@@ -232,14 +265,17 @@ static int tcpprobe_sprint(char *tbuf, int n)
 
 	return snprintf(tbuf, n,
 			"%lu.%09lu " NIPQUAD_FMT ":%u " NIPQUAD_FMT ":%u"
-			" %d %d %#x %#x %u %u %u %u %#x %#x %u %d\n",
+			" %d %d %#x %#x %u %u %u %u %#x %#x %u %u %u %u %d"
+			" %d %u %u %u\n",
 			(unsigned long) tv.tv_sec,
 			(unsigned long) tv.tv_nsec,
 			NIPQUAD(p->saddr), ntohs(p->sport),
 			NIPQUAD(p->daddr), ntohs(p->dport),
 			p->path_index,p->length, p->snd_nxt, p->snd_una,
 			p->snd_cwnd, p->ssthresh, p->snd_wnd, p->srtt,
-			p->rcv_nxt,p->copied_seq,p->rcv_wnd,p->send);
+			p->rcv_nxt,p->copied_seq,p->rcv_wnd,p->rcv_buf,
+			p->window_clamp,p->rcv_ssthresh, p->send,
+			p->space,p->rtt_est*1000/HZ,p->in_flight,p->mss_cache);
 }
 
 static ssize_t tcpprobe_read(struct file *file, char __user *buf,
@@ -311,7 +347,8 @@ static __init int tcpprobe_init(void)
 		goto err0;
 
 #ifdef CONFIG_KPROBES
-	ret = register_jprobe(&tcp_jprobe);
+	ret = register_jprobe(&tcp_jprobe_rcv);
+	if (!ret) ret = register_jprobe(&tcp_jprobe_send);
 #else
 	ret=register_probe(&tcpprobe_fcts, 4);
 #endif
@@ -332,7 +369,8 @@ static __exit void tcpprobe_exit(void)
 {
 	proc_net_remove(&init_net, procname);
 #ifdef CONFIG_KPROBES
-	unregister_jprobe(&tcp_jprobe);
+	unregister_jprobe(&tcp_jprobe_rcv);
+	unregister_jprobe(&tcp_jprobe_send);
 #else
 	unregister_probe(&tcpprobe_fcts,4);
 #endif

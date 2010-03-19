@@ -3411,13 +3411,12 @@ uninteresting_ack:
 void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 		       struct multipath_options *mopt, int estab)
 {
-	unsigned char *ptr;
+	unsigned char *ptr,*ptr8;
 	struct tcphdr *th = tcp_hdr(skb);
 	int length = (th->doff * 4) - sizeof(struct tcphdr);
 
 	ptr = (unsigned char *)(th + 1);
 	opt_rx->saw_tstamp = 0;
-	if (mopt) memset(mopt,0,sizeof(*mopt));
 	
 	while (length > 0) {
 		int opcode = *ptr++;
@@ -3507,31 +3506,59 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 
 #ifdef CONFIG_MTCP
 			case TCPOPT_MPC:
-				if (!mopt) {
-					PDEBUG("Multipath Option Enabled "
-					       "but options NULL\n");
-					break;
-				}
 				if (opsize!=TCPOLEN_MPC) {
 					PDEBUG("multipath opt:bad option "
 					       "size\n");
 					break;
 				}
 				PDEBUG("recvd multipath opt\n");
-				mtcp_reset_options(mopt);
-				mopt->saw_mpc=1;
-				break;
-
+				opt_rx->saw_mpc=1;
 #ifdef CONFIG_MTCP_PM
-			case TCPOPT_TOKEN:
-				PDEBUG("tk opt not supported yet\n");
+				opt_rx->mtcp_rem_token=
+					ntohl(*((u32*)(ptr+1)));
+#endif
 				break;
-			case MTCP_ADDADDRESS:
-				PDEBUG("addaddress opt not supported yet\n");
+				
+#ifdef CONFIG_MTCP_PM
+			case TCPOPT_ADDR:
+				if (!mopt) {
+					printk(KERN_DEBUG "MPTCP addresses "
+					       "received, but no mtcp state"
+					       "found\n");
+					break;
+				}
+				mopt->num_addr4=mopt->num_addr6=0;
+				for (ptr8=ptr; ptr8<ptr+opsize-2;) {
+					if ((*(ptr8+1))>>4==4 && 
+					    mopt->num_addr4<MTCP_MAX_ADDR) {
+						mopt->addr4[mopt->num_addr4].
+							id=*ptr8;
+						ptr8+=2;
+						mopt->addr4[mopt->num_addr4].
+							addr.s_addr=
+							*((__be32*)ptr8);
+						ptr8+=sizeof(struct in_addr);
+						mopt->num_addr4++;
+					}
+					else if ((*(ptr8+1))>>4==6 && 
+						 mopt->num_addr6<
+						 MTCP_MAX_ADDR) {
+						mopt->addr6[mopt->num_addr6].
+							id=*ptr8;
+						ptr8+=2;
+						memcpy(&mopt->addr6[
+							       mopt->num_addr6].
+						       addr,
+						       ptr8,
+						       sizeof(struct in6_addr));
+						ptr8+=sizeof(struct in6_addr);
+						mopt->num_addr6++;
+					}       				
+				}
+				mopt->list_rcvd=1;
 				break;
 
-			case TCPOPT_NEW_SUBFLOW:
-				PDEBUG("addaddress opt not supported yet\n");
+			case TCPOPT_JOIN:
 				break;
 #endif /*CONFIG_MTCP_PM*/				
 			case TCPOPT_DSN:
@@ -3567,7 +3594,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 		}
 	}
 #ifdef CONFIG_MTCP
-	if (!mopt->saw_dsn)
+	if (!mopt || !mopt->saw_dsn)
 		TCP_SKB_CB(skb)->data_len=
 			TCP_SKB_CB(skb)->data_seq=
 			TCP_SKB_CB(skb)->end_data_seq=0;
@@ -3610,9 +3637,9 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 		PDEBUG("mpcb null in fast parse options\n");
 	tcp_parse_options(skb, &tp->rx_opt,mpcb?&mpcb->received_options:NULL, 
 			  1);
-	if (unlikely(mpcb && mpcb->received_options.saw_mpc))
-		tp->mpc=1;       
-	
+	if (unlikely(mpcb && tp->rx_opt.saw_mpc))
+		tp->mpc=1;
+
 	return 1;
 }
 
@@ -4137,48 +4164,68 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 		if (mpcb->ucopy.task == current &&
 		    tp->copied_seq == tp->rcv_nxt && mpcb->ucopy.len &&
 		    sock_owned_by_user(sk) && !tp->urg_data) {
-			int mapping=mtcp_get_dataseq_mapping(mpcb,tp,skb);
-			if (mapping==-1) {
-				goto drop;
+			if (tp->mpc) {
+				int mapping=mtcp_get_dataseq_mapping(mpcb,tp,skb);
+				if (mapping==-1) {
+					goto drop;
+				}
+				if (mapping==1) {
+					int chunk = min_t(unsigned int, skb->len,
+							  mpcb->ucopy.len);
+					
+					__set_current_state(TASK_RUNNING);
+					
+					local_bh_enable();
+					if (!skb_copy_datagram_iovec(skb, 0, 
+								     mpcb->ucopy.iov, 
+								     chunk)) {
+						
+						skb->debug|=MTCP_DEBUG_DATA_QUEUE;
+						skb->debug_count++;
+					
+						mtcp_check_seqnums(mpcb,1);
+						
+						mpcb->ucopy.len -= chunk;
+						tp->copied_seq += chunk;
+						mpcb->copied_seq += chunk;
+						tp->copied += chunk;
+						tp->bytes_eaten += chunk;
+						eaten = (chunk == skb->len && !th->fin);
+						tcp_rcv_space_adjust(sk);
+						
+						mtcp_check_seqnums(mpcb,0);
+					}
+					local_bh_disable();
+				}
 			}
-			if (mapping==1) {
+			else {
 				int chunk = min_t(unsigned int, skb->len,
 						  mpcb->ucopy.len);
 				
 				__set_current_state(TASK_RUNNING);
 				
 				local_bh_enable();
-				if (!skb_copy_datagram_iovec(skb, 0, 
-							     mpcb->ucopy.iov, 
+				if (!skb_copy_datagram_iovec(skb, 0, mpcb->ucopy.iov, 
 							     chunk)) {
-					
-					skb->debug|=MTCP_DEBUG_DATA_QUEUE;
-					skb->debug_count++;
-					
-					mtcp_check_seqnums(mpcb,1);
-					
 					mpcb->ucopy.len -= chunk;
 					tp->copied_seq += chunk;
-					mpcb->copied_seq += chunk;
-					tp->copied += chunk;
-					tp->bytes_eaten += chunk;
 					eaten = (chunk == skb->len && !th->fin);
 					tcp_rcv_space_adjust(sk);
-					
-					mtcp_check_seqnums(mpcb,0);
 				}
 				local_bh_disable();
 			}
 		}
+		
+
 #else
 		if (tp->ucopy.task == current &&
 		    tp->copied_seq == tp->rcv_nxt && tp->ucopy.len &&
 		    sock_owned_by_user(sk) && !tp->urg_data) {
 			int chunk = min_t(unsigned int, skb->len,
 					  tp->ucopy.len);
-
+			
 			__set_current_state(TASK_RUNNING);
-
+			
 			local_bh_enable();
 			if (!skb_copy_datagram_iovec(skb, 0, tp->ucopy.iov, 
 						     chunk)) {
@@ -4190,18 +4237,13 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 			local_bh_disable();
 		}
 #endif
-
+		
 		if (eaten <= 0) {
-queue_and_out:
-			if (skb->path_index==2) { /*TODEL*/
-				PDEBUG("%s:2-rcvd packet with "
-				       "path index 2\n",
-				       __FUNCTION__);
-			}
+		queue_and_out:
 			if (eaten < 0 &&
 			    tcp_try_rmem_schedule(sk, skb->truesize))
 				goto drop;
-
+			
 			skb_set_owner_r(skb, sk);
 			
 			__skb_queue_tail(&sk->sk_receive_queue, skb);		
@@ -5511,7 +5553,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 
 	tcp_parse_options(skb, &tp->rx_opt,&mpcb->received_options, 0);
 
-	if (unlikely(mpcb && mpcb->received_options.saw_mpc && 
+	if (unlikely(mpcb && tp->rx_opt.saw_mpc && 
 		     mpcb->received_options.saw_dsn)) {
 		/*This is the beginning of the multipath session, init
 		  the dsn value*/

@@ -608,10 +608,10 @@ static void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
    outside socket context is ugly, certainly. What can I do?
  */
 
-static void tcp_v4_send_ack(struct sk_buff *skb, u32 seq, u32 ack,
-			    u32 win, u32 ts, int oif,
-			    struct tcp_md5sig_key *key,
-			    int reply_flags)
+void tcp_v4_send_ack(struct sk_buff *skb, u32 seq, u32 ack,
+		     u32 win, u32 ts, int oif,
+		     struct tcp_md5sig_key *key,
+		     int reply_flags)
 {
 	struct tcphdr *th = tcp_hdr(skb);
 	struct {
@@ -772,8 +772,8 @@ static void syn_flood_warning(struct sk_buff *skb)
 /*
  * Save and compile IPv4 options into the request_sock if needed.
  */
-static struct ip_options *tcp_v4_save_options(struct sock *sk,
-					      struct sk_buff *skb)
+struct ip_options *tcp_v4_save_options(struct sock *sk,
+				       struct sk_buff *skb)
 {
 	struct ip_options *opt = &(IPCB(skb)->opt);
 	struct ip_options *dopt = NULL;
@@ -1228,10 +1228,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	tmp_opt.mss_clamp = 536;
 	tmp_opt.user_mss  = tcp_sk(sk)->rx_opt.user_mss;
 
-	/*init multipath options*/
-	memset(&req->mopt,0,sizeof(req->mopt));
-
-	tcp_parse_options(skb, &tmp_opt, &req->mopt, 0);
+	tcp_parse_options(skb, &tmp_opt, NULL, 0);
 
 	if (want_cookie && !tmp_opt.saw_tstamp)
 		tcp_clear_options(&tmp_opt);
@@ -1423,9 +1420,10 @@ static struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb)
 						       iph->saddr, iph->daddr);
 	if (req)
 		return tcp_check_req(sk, skb, req, prev);
-
+	
 	nsk = inet_lookup_established(sock_net(sk), &tcp_hashinfo, iph->saddr,
-			th->source, iph->daddr, th->dest, inet_iif(skb));
+				      th->source, iph->daddr, th->dest, 
+				      inet_iif(skb));
 
 	if (nsk) {
 		if (nsk->sk_state != TCP_TIME_WAIT) {
@@ -1551,7 +1549,7 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	struct net *net = dev_net(skb->dev);
 
 	if (skb->pkt_type != PACKET_HOST)
-		goto discard_it;
+		goto discard_it;	
 
 	/* Count it even if it's bad */
 	TCP_INC_STATS_BH(net, TCP_MIB_INSEGS);
@@ -1587,8 +1585,24 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->when	 = 0;
 	TCP_SKB_CB(skb)->flags	 = iph->tos;
 	TCP_SKB_CB(skb)->sacked	 = 0;
+	
+#ifdef CONFIG_MTCP_PM
+	/*We must absolutely check for subflow related segments
+	  before the normal sock lookup, because otherwise subflow
+	  segments could be understood as associated to some listening
+	  socket.*/	
 
-	sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
+	/*Is there a pending request sock for this segment ?*/
+	if (mtcp_syn_recv_sock(skb)) return 0;
+	/*Is this a new syn+join ?*/
+	if (th->syn && mtcp_lookup_join(skb)) return 0;
+
+	/*OK, this segment is not related to subflow initiation,
+	  we can proceed to normal lookup*/
+#endif
+
+	sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source, 
+			       th->dest);
 	if (!sk)
 		goto no_tcp_socket;
 

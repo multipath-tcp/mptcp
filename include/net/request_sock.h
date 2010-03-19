@@ -1,3 +1,4 @@
+
 /*
  * NET		Generic infrastructure for Network protocols.
  *
@@ -21,7 +22,6 @@
 #include <linux/bug.h>
 
 #include <net/sock.h>
-#include <net/mtcp.h>
 
 struct request_sock;
 struct sk_buff;
@@ -59,7 +59,12 @@ struct request_sock {
 	u32				secid;
 	u32				peer_secid;
 #ifdef CONFIG_MTCP
-	struct multipath_options        mopt;
+	u8                              saw_mpc:1;
+#ifdef CONFIG_MTCP_PM
+	u32                             mtcp_loc_token;
+	u32                             mtcp_rem_token;
+	struct multipath_pcb            *mpcb;
+#endif
 #endif
 };
 

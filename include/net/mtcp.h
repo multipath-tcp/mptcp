@@ -3,10 +3,13 @@
  *
  *	Authors:
  *      Sébastien Barré		<sebastien.barre@uclouvain.be>
- *      Costin Raiciu           <c.raiciu@cs.ucl.ac.uk>
  *
  *
- *      date : June 09
+ *
+ *      Part of this code is inspired from an early version for linux 2.4 by
+ *      Costin Raiciu.
+ *
+ *      date : March 10
  *
  *
  *	This program is free software; you can redistribute it and/or
@@ -26,6 +29,11 @@
 #include <linux/socket.h>
 #include <linux/mutex.h>
 #include <linux/completion.h>
+#include <linux/skbuff.h>
+
+#include <net/request_sock.h>
+#include <net/mtcp_pm.h>
+
 
 /*DEBUG - TODEL*/
 
@@ -35,21 +43,16 @@
 #define MTCP_DEBUG_DATA_QUEUE 0x8
 #define MTCP_DEBUG_COPY_TO_IOVEC 0x10
 
-/*hashtable Not used currently -- To delete ?*/
-#define MTCP_HASH_SIZE                16
-#define hash_fd(fd) \
-	jhash_1word(fd,0)%MTCP_HASH_SIZE
 
 struct multipath_options {	
 #ifdef CONFIG_MTCP_PM
-	u32    remote_token;
-	u32    local_token;
-	u8     ip_count;
-	u32*   ip_list;
+	int    num_addr4; 
+	int    num_addr6;
+	struct mtcp_loc4 addr4[MTCP_MAX_ADDR];
+	struct mtcp_loc6 addr6[MTCP_MAX_ADDR];
 	u8     list_rcvd:1; /*1 if IP list has been received*/
 #endif
-	u8     saw_mpc:1,
-	       saw_dsn:1;	
+	u8     saw_dsn:1;
 };
 
 
@@ -69,9 +72,7 @@ extern struct proto mtcpsub_prot;
 
 struct tcp_sock;
 
-struct multipath_pcb {
-	struct list_head          collide_sd;
-	
+struct multipath_pcb {	
 	/*receive and send buffer sizing*/
 	int                       rcvbuf, sndbuf;
 	atomic_t                  rmem_alloc;       
@@ -130,8 +131,6 @@ struct multipath_pcb {
 	  of course, it never exceeds wb_size*/
 	int                       wb_size,wb_start,wb_length;
 	
-	uint8_t                   mpc_sent:1; /*MPC option has been sent, do 
-						not send it anymore*/
 	struct sk_buff_head       receive_queue;/*received data*/
 	struct sk_buff_head       write_queue;/*sent stuff, waiting for ack*/
 	struct sk_buff_head       retransmit_queue;/*need to rexmit*/
@@ -148,9 +147,42 @@ struct multipath_pcb {
 	struct kref               kref;	
 	struct completion         liberate_subflow;
 	struct notifier_block     nb; /*For listening to PM events*/
-	int                       mtcp_rcvbuf;
-};
 
+#ifdef CONFIG_MTCP_PM
+	struct list_head          collide_tk;
+	uint8_t                   addr_sent:1; /* 1 if our set of local
+						addresses has been sent
+						already to our peer */
+	
+	struct mtcp_loc4          addr4[MTCP_MAX_ADDR]; /*We need to store
+							  the set of local
+							  addresses, so 
+							  that we have 
+							  a stable view
+							  of the available
+							  addresses. 
+							  Playing with the
+							  addresses directly
+							  in the system
+							  would expose us
+							  to concurrency
+							  problems*/
+	int                       num_addr4; /*num of addresses actually
+					       stored above.*/
+	struct mtcp_loc6          addr6[MTCP_MAX_ADDR];
+	int                       num_addr6;
+
+	struct path4             *pa4;
+	int                       pa4_size;
+	struct path6             *pa6;
+	int                       pa6_size;
+
+	int                       next_unused_pi; /*Next pi to pick up
+						    in case a new path
+						    becomes available*/
+#endif
+};
+ 
 #define mpcb_from_tcpsock(tp) ((tp)->mpcb)
 #define is_master_sk(tp) ((tp)->mpcb && tcp_sk((tp)->mpcb->master_sk)==tp)
 
@@ -267,7 +299,9 @@ int mtcp_is_available(struct tcp_sock *tp);
 void mtcp_reinject_data(struct sock *orig_sk, struct sock *retrans_sk);
 int mtcp_get_dataseq_mapping(struct multipath_pcb *mpcb, struct tcp_sock *tp, 
 			     struct sk_buff *skb);
+int mtcp_init_subsockets(struct multipath_pcb *mpcb, 
+			 uint32_t path_indices);
+int mtcpsub_get_port(struct sock *sk, unsigned short snum);
 int mtcpv6_init(void);
-
 
 #endif /*_MTCP_H*/

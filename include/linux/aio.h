@@ -5,6 +5,7 @@
 #include <linux/workqueue.h>
 #include <linux/aio_abi.h>
 #include <linux/uio.h>
+#include <linux/wait.h>
 
 #include <asm/atomic.h>
 

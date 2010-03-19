@@ -261,9 +261,6 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 	if (final_p)
 		ipv6_addr_copy(&fl.fl6_dst, final_p);
 
-
-	printk(KERN_ERR "%s:calling xfrm_lookup, pi %d\n",__FUNCTION__,
-	       tp->path_index);
 	if ((err = __xfrm_lookup(&dst, &fl, sk, XFRM_LOOKUP_WAIT)) < 0) {
 		if (err == -EREMOTE)
 			err = ip6_dst_blackhole(sk, &dst, &fl);
@@ -1177,10 +1174,7 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	tmp_opt.mss_clamp = IPV6_MIN_MTU - sizeof(struct tcphdr) - sizeof(struct ipv6hdr);
 	tmp_opt.user_mss = tp->rx_opt.user_mss;
 
-	/*init multipath options*/
-	memset(&req->mopt,0,sizeof(req->mopt));
-
-	tcp_parse_options(skb, &tmp_opt, &req->mopt, 0);
+	tcp_parse_options(skb, &tmp_opt, NULL, 0);
 
 	if (want_cookie && !tmp_opt.saw_tstamp)
 		tcp_clear_options(&tmp_opt);

@@ -348,7 +348,7 @@ static inline void TCP_ECN_send(struct sock *sk, struct sk_buff *skb,
 /* Constructs common control bits of non-data skb. If SYN/FIN is present,
  * auto increment end seqno.
  */
-static void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags)
+void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags)
 {
 	skb->csum = 0;
 
@@ -370,23 +370,6 @@ static inline int tcp_urg_mode(const struct tcp_sock *tp)
 	return tp->snd_una != tp->snd_up;
 }
 
-#define OPTION_SACK_ADVERTISE	(1 << 0)
-#define OPTION_TS		(1 << 1)
-#define OPTION_MD5		(1 << 2)
-#define OPTION_MPC              (1 << 3)
-#define OPTION_TOKEN            (1 << 4)
-#define OPTION_DSN              (1 << 5)
-
-struct tcp_out_options {
-	u8 options;		/* bit field of OPTION_* */
-	u8 ws;			/* window scale, 0 to disable */
-	u8 num_sack_blocks;	/* number of SACK blocks to include */
-	u16 mss;		/* 0 to disable */
-	__u32 tsval, tsecr;	/* need to include OPTION_TS */
-	__u32 data_seq;         /* data sequence number, for MPTCP */
-	__u16 data_len;         /* data level length, for MPTCP*/
-	__u32 sub_seq;          /* subflow seqnum, for MPTCP*/
-};
 
 /* Beware: Something in the Internet is very sensitive to the ordering of
  * TCP options, we learned this through the hard way, so be careful here.
@@ -399,9 +382,9 @@ struct tcp_out_options {
  * At least SACK_PERM as the first option is known to lead to a disaster
  * (but it may well be that other scenarios fail similarly).
  */
-static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
-			      const struct tcp_out_options *opts,
-			      __u8 **md5_hash) {
+void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
+		       const struct tcp_out_options *opts,
+		       __u8 **md5_hash) {
 	if (unlikely(OPTION_MD5 & opts->options)) {
 		*ptr++ = htonl((TCPOPT_NOP << 24) |
 			       (TCPOPT_NOP << 16) |
@@ -474,9 +457,44 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	}
 #ifdef CONFIG_MTCP
 	if (unlikely(OPTION_MPC & opts->options)) {
+#ifdef CONFIG_MTCP_PM
+		*ptr++ = htonl((TCPOPT_NOP  << 24) |
+			       (TCPOPT_MPC << 16) |
+			       (TCPOLEN_MPC << 8));
+		*ptr++ = htonl(opts->token);
+#else
 		*ptr++ = htonl((TCPOPT_MPC << 24) |
 			       (TCPOLEN_MPC << 16));
+#endif
 	}
+
+#ifdef CONFIG_MTCP_PM
+	if (unlikely(OPTION_ADDR & opts->options)) {
+		uint8_t *ptr8=(uint8_t*)ptr; /*We need a per-byte pointer here*/
+		int i;
+		for (i=TCPOLEN_ADDR(opts->num_addr4);
+		     i<TCPOLEN_ADDR_ALIGNED(opts->num_addr4);i++)
+			*ptr8++ = TCPOPT_NOP;
+		*ptr8++ = TCPOPT_ADDR;
+		*ptr8++ = TCPOLEN_ADDR(opts->num_addr4);
+		for (i=0;i<opts->num_addr4;i++) {
+			*ptr8++ = opts->addr4[i].id;
+			*ptr8++ = 64;
+			*((__be32*)ptr8)=opts->addr4[i].addr.s_addr;
+			ptr8+=sizeof(struct in_addr);
+		}
+		ptr = (__be32*)ptr8;
+	}
+
+	if (unlikely(OPTION_JOIN & opts->options)) {
+		*ptr++ = htonl((TCPOPT_NOP << 24) |
+			       (TCPOPT_JOIN << 16) |
+			       (TCPOLEN_JOIN << 8) |
+			       (opts->token >> 24));
+		*ptr++ = htonl((opts->token<<8) |
+			       opts->addr_id);
+	}
+#endif
 	if (OPTION_DSN & opts->options) {
 		*ptr++ = htonl((TCPOPT_DSN << 24) |
 			       (TCPOLEN_DSN << 16) |
@@ -531,38 +549,51 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		if (unlikely(!(OPTION_TS & opts->options)))
 			size += TCPOLEN_SACKPERM_ALIGNED;
 	}
-#ifdef CONFIG_MTCP
-	{
+#ifdef CONFIG_MTCP	
+	if (is_master_sk(tp)) {
 		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
-		
+
 		opts->options |= OPTION_MPC;
 		size+=TCPOLEN_MPC_ALIGNED;
+#ifdef CONFIG_MTCP_PM
+		opts->token=tp->mtcp_loc_token;
+#endif
 		
 		/*We arrive here either when sending a SYN or a
 		  SYN+ACK when in SYN_SENT state (that is, tcp_synack_options
 		  is only called for syn+ack replied by a server, while this
 		  function is called when SYNs are sent by both parties and 
-		  are crossed.
+		  are crossed)
 		  Due to this possibility, a slave subsocket may arrive here,
 		  and does not need to set the dataseq options, since
 		  there is no data in the segment*/
-		if (is_master_sk(tp)) {			
-			opts->options |= OPTION_DSN;
-			size+=TCPOLEN_DSN_ALIGNED;
-			opts->data_seq=mpcb->write_seq; /*First data byte is 
-							  initial data seq
-							  (IDSN)*/
-		}
+		BUG_ON(!mpcb);
+		opts->options |= OPTION_DSN;
+		size+=TCPOLEN_DSN_ALIGNED;
+		opts->data_seq=mpcb->write_seq; /*First data byte is 
+						  initial data seq
+						  (IDSN)*/
+	}
+#ifdef CONFIG_MTCP_PM
+	else {
+		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+		opts->options |= OPTION_JOIN;
+		size+=TCPOLEN_JOIN_ALIGNED;
+		opts->token=tp->rx_opt.mtcp_rem_token;
+		opts->addr_id=mtcp_get_loc_addrid(mpcb, tp->path_index);
 	}
 #endif
+#endif
+
 	return size;
-}
+} 
 
 static unsigned tcp_synack_options(struct sock *sk,
 				   struct request_sock *req,
 				   unsigned mss, struct sk_buff *skb,
 				   struct tcp_out_options *opts,
-				   struct tcp_md5sig_key **md5) {
+				   struct tcp_md5sig_key **md5)
+{
 	unsigned size = 0;
 	struct inet_request_sock *ireq = inet_rsk(req);
 	char doing_ts;
@@ -603,13 +634,17 @@ static unsigned tcp_synack_options(struct sock *sk,
 			size += TCPOLEN_SACKPERM_ALIGNED;
 	}
 
+
 #ifdef CONFIG_MTCP
-	/*For the SYNACK, the mpcb is normally not yet initialized
-	  (to protect against SYN DoS attack)
-	  So we cannot use it here.*/
+/*For the SYNACK, the mpcb is normally not yet initialized
+  (to protect against SYN DoS attack)
+  So we cannot use it here.*/
 	
 	opts->options |= OPTION_MPC;
 	size+=TCPOLEN_MPC_ALIGNED;
+#ifdef CONFIG_MTCP_PM
+	opts->token = req->mtcp_loc_token;
+#endif
 	opts->options |= OPTION_DSN;
 	size+=TCPOLEN_DSN_ALIGNED;
 	opts->data_seq=0;
@@ -626,6 +661,9 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	struct tcp_skb_cb *tcb = skb ? TCP_SKB_CB(skb) : NULL;
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned size = 0;
+#ifdef CONFIG_MTCP
+	struct multipath_pcb *mpcb;
+#endif
 
 #ifdef CONFIG_TCP_MD5SIG
 	*md5 = tp->af_specific->md5_lookup(sk, sk);
@@ -653,28 +691,29 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		size += TCPOLEN_SACK_BASE_ALIGNED +
 			opts->num_sack_blocks * TCPOLEN_SACK_PERBLOCK;
 	}
-#ifdef CONFIG_MTCP	
-	/*Even if the mpc option has been sent in the SYN, it must be repeated
-	  in the first segment of the established flow, because the server
-	  only creates the socket when it receives the final ACK, not when
-	  we send the SYN.*/
-	if (unlikely(!mpcb_from_tcpsock(tp)->mpc_sent)) {
-		opts->options |= OPTION_MPC;
-		size+=TCPOLEN_MPC_ALIGNED;
-		mpcb_from_tcpsock(tp)->mpc_sent=1;
-	}
-
-	if (tp->mpc && (!skb || skb->len!=0)) {
+#ifdef CONFIG_MTCP
+	mpcb = tp->mpcb;
+	if (tp->mpc && (!skb || skb->len!=0)) {		
 		if (tcb && tcb->data_len) { /*Ignore dataseq if data_len is 0*/
 			opts->options |= OPTION_DSN;
 			opts->data_seq=tcb->data_seq;
 			opts->data_len=tcb->data_len;
 			opts->sub_seq=tcb->sub_seq;
 		}
-		size += TCPOLEN_DSN_ALIGNED;
+		size += TCPOLEN_DSN_ALIGNED;		
+	}
+#ifdef CONFIG_MTCP_PM
+	if (tp->mpc) {
+		if (unlikely(!mpcb->addr_sent && mpcb->num_addr4)) {
+			if (skb) mpcb->addr_sent=1;
+			opts->options |= OPTION_ADDR;
+			opts->addr4=mpcb->addr4;
+			opts->num_addr4=mpcb->num_addr4;
+			size += TCPOLEN_ADDR_ALIGNED(mpcb->num_addr4);
+		}
 	}
 #endif
-
+#endif
 	return size;
 }
 

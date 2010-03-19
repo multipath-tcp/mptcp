@@ -41,6 +41,7 @@
 #include <net/ip.h>
 #include <net/tcp_states.h>
 #include <net/inet_ecn.h>
+#include <net/mtcp.h>
 
 #include <linux/seq_file.h>
 
@@ -175,10 +176,9 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOPT_DFIN		32
 #define TCPOPT_RESYNC   	33
 
-#define TCPOPT_TOKEN            60
-#define TCPOPT_ADDR             61
-#define TCPOPT_REMADR           62
-#define TCPOPT_NEW_SUBFLOW	63
+#define TCPOPT_ADDR             60
+#define TCPOPT_REMADR           61
+#define TCPOPT_JOIN      	62
 
 /*
  *     TCP option lengthsx
@@ -189,7 +189,13 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_SACK_PERM      2
 #define TCPOLEN_TIMESTAMP      10
 #define TCPOLEN_MD5SIG         18
+#ifdef CONFIG_MTCP_PM
+#define TCPOLEN_ADDR(num_addr) (2+6*(num_addr))
+#define TCPOLEN_JOIN           7
+#define TCPOLEN_MPC            7
+#else
 #define TCPOLEN_MPC            4
+#endif
 #define TCPOLEN_DSN            12
 
 /* But this is what stacks really send out. */
@@ -201,7 +207,13 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_SACK_PERBLOCK		8
 #define TCPOLEN_MD5SIG_ALIGNED		20
 #define TCPOLEN_MSS_ALIGNED		4
+#ifdef CONFIG_MTCP_PM
+#define TCPOLEN_ADDR_ALIGNED(num_addr) ((5+6*(num_addr)) & (~3))
+#define TCPOLEN_JOIN_ALIGNED            8
+#define TCPOLEN_MPC_ALIGNED             8
+#else
 #define TCPOLEN_MPC_ALIGNED             4
+#endif
 #define TCPOLEN_DSN_ALIGNED             12
 
 
@@ -302,6 +314,11 @@ extern int		    	tcp_v4_tw_remember_stamp(struct inet_timewait_sock *tw);
 
 extern int			tcp_sendmsg(struct kiocb *iocb, struct socket *sock,
 					    struct msghdr *msg, size_t size);
+#ifdef CONFIG_MTCP
+extern int			subtcp_sendmsg(struct kiocb *iocb, 
+					       struct sock *sk,
+					       struct msghdr *msg, size_t size);
+#endif
 extern ssize_t			tcp_sendpage(struct socket *sock, struct page *page, int offset, size_t size, int flags);
 
 extern int			tcp_ioctl(struct sock *sk, 
@@ -349,7 +366,7 @@ extern void tcp_enter_quickack_mode(struct sock *sk);
 
 static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
 {
- 	rx_opt->tstamp_ok = rx_opt->sack_ok = rx_opt->wscale_ok = rx_opt->snd_wscale = 0;
+ 	rx_opt->tstamp_ok = rx_opt->sack_ok = rx_opt->wscale_ok = rx_opt->snd_wscale = rx_opt->saw_mpc = 0;
 }
 
 #define	TCP_ECN_OK		1
@@ -1084,6 +1101,13 @@ static inline void tcp_openreq_init(struct request_sock *req,
 	tcp_rsk(req)->rcv_isn = TCP_SKB_CB(skb)->seq;
 	req->mss = rx_opt->mss_clamp;
 	req->ts_recent = rx_opt->saw_tstamp ? rx_opt->rcv_tsval : 0;
+#ifdef CONFIG_MTCP
+	req->saw_mpc = rx_opt->saw_mpc;
+#ifdef CONFIG_MTCP_PM
+	req->mtcp_rem_token = rx_opt->mtcp_rem_token;
+	req->mtcp_loc_token = mtcp_new_token();
+#endif
+#endif
 	ireq->tstamp_ok = rx_opt->tstamp_ok;
 	ireq->sack_ok = rx_opt->sack_ok;
 	ireq->snd_wscale = rx_opt->snd_wscale;
