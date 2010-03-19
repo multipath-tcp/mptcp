@@ -340,7 +340,7 @@ KBUILD_CPPFLAGS := -D__KERNEL__ $(LINUXINCLUDE)
 
 KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common \
-		   -Werror-implicit-function-declaration -fno-tree-scev-cprop
+		   -Werror-implicit-function-declaration
 
 KBUILD_AFLAGS   := -D__ASSEMBLY__
 
