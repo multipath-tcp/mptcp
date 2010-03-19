@@ -316,8 +316,8 @@ static void tcp_grow_window(struct sock *sk, struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	/* Check #1 */
-	if (tp->rcv_ssthresh < tp->window_clamp &&
-	    (int)tp->rcv_ssthresh < tcp_space(sk) &&
+	if (tp->lrcv_ssthresh < tp->lwindow_clamp &&
+	    (int)tp->lrcv_ssthresh < tcp_space(sk) &&
 	    !tcp_memory_pressure) {
 		int incr;
 

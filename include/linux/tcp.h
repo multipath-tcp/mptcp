@@ -311,9 +311,13 @@ struct tcp_sock {
 	u32	max_window;	/* Maximal window ever seen from peer	*/
 	u32	mss_cache;	/* Cached effective mss, not including SACKS */
 
-	u32	window_clamp;	/* Maximal window to advertise		*/
+#ifdef CONFIG_MTCP
+	u32	lwindow_clamp;	/* Maximal window to advertise		*/
+	u32     lrcv_ssthresh;  /* Current window clamp			*/
+#else
+	u32     window_clamp;   /* Maximal window to advertise		*/
 	u32	rcv_ssthresh;	/* Current window clamp			*/
-
+#endif
 	u32	frto_highmark;	/* snd_nxt when RTO occurred */
 	u16	advmss;		/* Advertised MSS			*/
 	u8	frto_counter;	/* Number of new acks after RTO */

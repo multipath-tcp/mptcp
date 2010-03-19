@@ -334,6 +334,8 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	
 	mpcb->nb.notifier_call=netevent_callback;
 	register_netevent_notifier(&mpcb->nb);
+
+	mpcb->window_clamp=master_sk->lwindow_clamp;
 	
 #ifdef CONFIG_MTCP_PM
 	/*Pi 1 is reserved for the master subflow*/
@@ -1365,6 +1367,21 @@ fail_unlock:
 fail:
 	local_bh_enable();
 	return ret;
+}
+
+/*At the moment we apply a simple addition algorithm.
+  We will complexify later*/
+void mtcp_update_window_clamp(struct multipath_pcb *mpcb)
+{
+	struct tcp_sock *tp;
+	u32 new_clamp=0;
+	u32 new_rcv_ssthresh=0;
+	mtcp_for_each_tp(mpcb,tp) {
+		new_clamp += tp->lwindow_clamp;
+		new_rcv_ssthresh += tp->lrcv_ssthresh;
+	}
+	mpcb->window_clamp=new_clamp;
+	mpcb->rcv_ssthresh = new_rcv_ssthresh;
 }
 
 MODULE_LICENSE("GPL");
