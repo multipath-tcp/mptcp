@@ -4,7 +4,7 @@
  *	Authors:
  *      Sébastien Barré		<sebastien.barre@uclouvain.be>
  *
- *      Partially inspired from initial user space MTCP stack by Costin Raiciu.
+ *      Partially inspired from initial user space MPTCP stack by Costin Raiciu.
  *
  *      date : March 10
  *

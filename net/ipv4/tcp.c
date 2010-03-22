@@ -1953,7 +1953,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	if (flags & MSG_PEEK) {	
 		/*We put this because it is not sure at all that MSG_PEEK
 		  works correctly.*/
-		PDEBUG("Warning: MSG_PEEK is set...\n");
+		printk(KERN_ERR "Warning: MSG_PEEK is set...\n");
 		peek_data_seq = mpcb->copied_seq;
 		data_seq = &peek_data_seq; /*global pointer*/
 		mtcp_for_each_tp(mpcb,tp) {
