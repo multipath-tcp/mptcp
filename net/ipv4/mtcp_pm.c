@@ -351,6 +351,13 @@ static int mtcp_v4_add_raddress(struct multipath_pcb *mpcb,
 {
 	int i;
 	int num_addr4=mpcb->received_options.num_addr4;
+
+	if (mpcb->sa_family==AF_INET && addr->s_addr==mpcb->remote_ulid.a4) {
+		/*This should not happen when talking to this implem*/
+		printk(KERN_ERR "Received ULID in the ADDR opt !\n");
+		return 0;
+	}
+
 	for (i=0;i<mpcb->received_options.num_addr4;i++) {
 		if (mpcb->received_options.addr4[i].addr.s_addr==
 		    addr->s_addr) {
