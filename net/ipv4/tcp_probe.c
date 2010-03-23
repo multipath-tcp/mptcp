@@ -77,6 +77,7 @@ struct tcp_log {
 	u32     rtt_est;
 	u32     in_flight;
 	u32     mss_cache;
+	int     snd_buf;
 };
 
 static struct {
@@ -148,6 +149,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->rtt_est=tp->rcv_rtt_est.rtt;
 			p->in_flight=tp->packets_out;
 			p->mss_cache=tp->mss_cache;
+			p->snd_buf=sk->sk_sndbuf;
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
 		tcp_probe.lastcwnd = tp->snd_cwnd;
@@ -209,6 +211,7 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			p->rtt_est=tp->rcv_rtt_est.rtt;
 			p->in_flight=tp->packets_out;
 			p->mss_cache=tp->mss_cache;
+			p->snd_buf=sk->sk_sndbuf;
 
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
@@ -266,7 +269,7 @@ static int tcpprobe_sprint(char *tbuf, int n)
 	return snprintf(tbuf, n,
 			"%lu.%09lu " NIPQUAD_FMT ":%u " NIPQUAD_FMT ":%u"
 			" %d %d %#x %#x %u %u %u %u %#x %#x %u %u %u %u %d"
-			" %d %u %u %u\n",
+			" %d %u %u %u %d\n",
 			(unsigned long) tv.tv_sec,
 			(unsigned long) tv.tv_nsec,
 			NIPQUAD(p->saddr), ntohs(p->sport),
@@ -275,7 +278,8 @@ static int tcpprobe_sprint(char *tbuf, int n)
 			p->snd_cwnd, p->ssthresh, p->snd_wnd, p->srtt,
 			p->rcv_nxt,p->copied_seq,p->rcv_wnd,p->rcv_buf,
 			p->window_clamp,p->rcv_ssthresh, p->send,
-			p->space,p->rtt_est*1000/HZ,p->in_flight,p->mss_cache);
+			p->space,p->rtt_est*1000/HZ,p->in_flight,p->mss_cache,
+			p->snd_buf);
 }
 
 static ssize_t tcpprobe_read(struct file *file, char __user *buf,
