@@ -962,8 +962,9 @@ int mtcp_lookup_join(struct sk_buff *skb)
 				token=ntohl(*(u32*)ptr);
 				mpcb=mtcp_hash_find(token);			
 				if (!mpcb) {
-					printk(KERN_ERR "%s:mpcb not found\n",
-					       __FUNCTION__);
+					printk(KERN_ERR 
+					       "%s:mpcb not found:%x\n",
+					       __FUNCTION__,token);
 					return 0;
 				}
 				/*OK, this is a new syn/join, let's 
