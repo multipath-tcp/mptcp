@@ -179,7 +179,7 @@ tb_not_found:
 success:
 	if (!inet_csk(sk)->icsk_bind_hash)
 		inet_bind_hash(sk, tb, snum);
-	WARN_ON(inet_csk(sk)->icsk_bind_hash != tb);
+	BUG_ON(inet_csk(sk)->icsk_bind_hash != tb);
 	ret = 0;
 
 fail_unlock:
@@ -273,8 +273,13 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 
 	newsk = reqsk_queue_get_child(&icsk->icsk_accept_queue, sk);
 	WARN_ON(newsk->sk_state == TCP_SYN_RECV);
-	
+
 #ifdef CONFIG_MTCP
+	/*We must have inherited our bind bucket form our father, otherwise
+	  Our slave subsockets will trigger a segfault when calling
+	  __inet_inherit_port*/
+	BUG_ON(!inet_csk(newsk)->icsk_bind_hash);
+
 	/*Init the MTCP mpcb - we need this because when doing 
 	  an accept the init function (e.g. tcp_v6_init_sock for tcp ipv6)
 	  is not called*/
@@ -586,9 +591,9 @@ void inet_csk_destroy_sock(struct sock *sk)
 
 	/* It cannot be in hash table! */
 	WARN_ON(!sk_unhashed(sk));
-
+	
 	/* If it has not 0 inet_sk(sk)->num, it must be bound */
-	WARN_ON(inet_sk(sk)->num && !inet_csk(sk)->icsk_bind_hash);
+	BUG_ON(inet_sk(sk)->num && !inet_csk(sk)->icsk_bind_hash);
 
 	sk->sk_prot->destroy(sk);
 

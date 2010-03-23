@@ -364,7 +364,8 @@ static void mpcb_release(struct kref* kref)
 /*Warning: can only be called in user context
   (due to unregister_netevent_notifier)*/
 void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
-{	
+{
+	printk(KERN_ERR "Destroying mpcb\n");
 #ifdef CONFIG_MTCP_PM
 	/*Detach the mpcb from the token hashtable*/
 	mtcp_hash_remove(mpcb);
@@ -1363,7 +1364,7 @@ int mtcpsub_get_port(struct sock *sk, unsigned short snum)
 success:
 	if (!inet_csk(sk)->icsk_bind_hash)
 		inet_bind_hash(sk, tb, snum);
-	WARN_ON(inet_csk(sk)->icsk_bind_hash != tb);
+	BUG_ON(inet_csk(sk)->icsk_bind_hash != tb);
 	ret = 0;
 
 fail_unlock:

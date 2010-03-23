@@ -95,6 +95,31 @@ struct multipath_pcb* mtcp_hash_find(u32 token)
 
 void mtcp_hash_remove(struct multipath_pcb *mpcb)
 {
+	/*Remove all request_socks pointing to this mpcb*/
+	struct listen_sock *lopt = mtcp_accept_queue.listen_opt;
+
+	if (lopt->qlen != 0) {
+		unsigned int i;
+
+		for (i = 0; i < lopt->nr_table_entries; i++) {
+			struct request_sock **cur_ref;
+			
+			cur_ref = &lopt->syn_table[i];
+			while (*cur_ref) {
+				if ((*cur_ref)->mpcb==mpcb) {
+					struct request_sock *todel;
+					printk(KERN_ERR 
+					       "Destroying request_sock\n");
+					lopt->qlen--;
+					todel=*cur_ref;
+					*cur_ref=(*cur_ref)->dl_next;
+					reqsk_free(todel);
+				}
+				else cur_ref=&(*cur_ref)->dl_next;
+			}
+		}
+	}
+
 	write_lock_bh(&tk_hash_lock);
 	list_del(&mpcb->collide_tk);
 	write_unlock_bh(&tk_hash_lock);
