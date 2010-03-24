@@ -487,14 +487,20 @@ void mtcp_update_metasocket(struct sock *sk)
 #endif	
 }
 
-int mtcp_is_available(struct tcp_sock *tp)
+int mtcp_is_available(struct sock *sk)
 {
 	/*We consider a subflow to be available if it has remaining space in 
 	  its sending buffers, and it is established*/
 	
-	if (((struct sock*)tp)->sk_state!=TCP_ESTABLISHED) return 0;
+	if (sk->sk_state!=TCP_ESTABLISHED) return 0;
 	
-	return sk_stream_memory_free((struct sock*)tp);
+	if (!sk_stream_memory_free(sk)) {
+		/*Setting this bit will tell the send buf auto-tuning algorithm
+		  to try increasing the send buffer for this subsock*/
+		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+		return 0;
+	}
+	else return 1;
 }
 
 /*This is the scheduler. This function decides on which flow to send
@@ -504,37 +510,37 @@ static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb)
 {
 	struct tcp_sock *tp;
 	struct sock *sk;
-	struct tcp_sock *besttp;
+	struct sock *bestsk;
 	unsigned int min_fill_ratio=0xffffffff;
 	
 	/*if there is only one subflow, bypass the scheduling function*/
 	mutex_lock(&mpcb->mutex);
 	if (mpcb->cnt_subflows==1) {
-		besttp=mpcb->connection_list;
+		bestsk=(struct sock *)mpcb->connection_list;
 		goto out;
 	}
 	
-	besttp=mpcb->connection_list;
+	bestsk=(struct sock *)mpcb->connection_list;
 	/*First, find the best subflow*/
 	mtcp_for_each_sk(mpcb,sk,tp) {
 		/*The shift is to avoid having to deal with a float*/
 		unsigned int fill_ratio=(sk->sk_wmem_queued<<4)/sk->sk_sndbuf;
-		if (!mtcp_is_available(tp)) 
+		if (!mtcp_is_available(sk))
 			continue;
 		if (fill_ratio<min_fill_ratio) {
 			min_fill_ratio=fill_ratio;
-			besttp=tp;
+			bestsk=sk;
 		}
 	}
 
 out:		
 	/*Now, even the best subflow may be uneligible for sending.
 	  In that case, we must return NULL.*/
-	if (!mtcp_is_available(besttp))
-		besttp=NULL;
+	if (!mtcp_is_available(bestsk))
+		bestsk=NULL;
 	
 	mutex_unlock(&mpcb->mutex);
-	return besttp;		
+	return tcp_sk(bestsk);		
 }
 
 int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,

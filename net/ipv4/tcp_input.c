@@ -4761,7 +4761,7 @@ static inline void tcp_data_snd_check(struct sock *sk)
 		  Then, if the flow is still available as decided by mtcp,
 		  we can wake up the mtcp scheduler, so that it possibly
 		  injects more data into that subflow*/
-		if (mtcp_is_available(tp) && !mpcb->liberate_subflow.done) {
+		if (mtcp_is_available(sk) && !mpcb->liberate_subflow.done) {
 			complete(&mpcb->liberate_subflow);
 		}
 	}

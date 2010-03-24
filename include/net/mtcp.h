@@ -299,7 +299,7 @@ void mtcp_reset_options(struct multipath_options* mopt);
 void mtcp_update_metasocket(struct sock *sock);
 int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		 size_t size);
-int mtcp_is_available(struct tcp_sock *tp);
+int mtcp_is_available(struct sock *sk);
 void mtcp_reinject_data(struct sock *orig_sk, struct sock *retrans_sk);
 int mtcp_get_dataseq_mapping(struct multipath_pcb *mpcb, struct tcp_sock *tp, 
 			     struct sk_buff *skb);
