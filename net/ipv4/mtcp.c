@@ -948,15 +948,12 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		  we must advance the seq num in the corresponding
 		  tp*/
 		mtcp_check_seqnums(mpcb,1);
+		
 		*tp->seq +=skb->len;
 		tp->copied+=skb->len;		
 		tp->bytes_eaten+=skb->len;
 		mpcb->ofo_bytes+=skb->len;
 		mtcp_check_seqnums(mpcb,0);
-		
-		/*TODEL*/
-		PDEBUG("exp. data_seq:%x, skb->data_seq:%x\n",
-		       *data_seq,TCP_SKB_CB(skb)->data_seq);
 		
 		if (!skb_peek(&mpcb->out_of_order_queue)) {
 			/* Initial out of order segment */
@@ -1142,7 +1139,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		*len -= *used;
 		*copied+=*used;
 		tp->copied+=*used;
-		tp->bytes_eaten+=*used;
+		if (!(flags & MSG_PEEK)) tp->bytes_eaten+=*used;
 
 		mtcp_check_seqnums(mpcb,0);
 		
