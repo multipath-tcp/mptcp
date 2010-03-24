@@ -1235,7 +1235,7 @@ static long sock_wait_for_wmem(struct sock * sk, long timeo)
 			break;
 		if (signal_pending(current))
 			break;
-		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+		set_bit(SOCK_NOSPACE, &sk->sock_flags);
 		prepare_to_wait(sk->sk_sleep, &wait, TASK_INTERRUPTIBLE);
 		if (atomic_read(&sk->sk_wmem_alloc) < sk->sk_sndbuf)
 			break;
@@ -1319,7 +1319,7 @@ static struct sk_buff *sock_alloc_send_pskb(struct sock *sk,
 			goto failure;
 		}
 		set_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
-		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+		set_bit(SOCK_NOSPACE, &sk->sock_flags);
 		err = -EAGAIN;
 		if (!timeo)
 			goto failure;

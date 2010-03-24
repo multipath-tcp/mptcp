@@ -429,7 +429,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 				} else {  /* send SIGIO later */
 					set_bit(SOCK_ASYNC_NOSPACE,
 						&sk->sk_socket->flags);
-					set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+					set_bit(SOCK_NOSPACE, &sk->sock_flags);
 					
 					/* Race breaker. If space is freed after
 					 * wspace test but before the flags are set,
@@ -519,7 +519,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 			} else {  /* send SIGIO later */
 				set_bit(SOCK_ASYNC_NOSPACE,
 					&sk->sk_socket->flags);
-				set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+				set_bit(SOCK_NOSPACE, &sk->sock_flags);
 
 				/* Race breaker. If space is freed after
 				 * wspace test but before the flags are set,
@@ -875,7 +875,7 @@ new_segment:
 		continue;
 
 wait_for_sndbuf:
-		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+		set_bit(SOCK_NOSPACE, &sk->sock_flags);
 wait_for_memory:
 		if (copied)
 			tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
@@ -1037,8 +1037,10 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 				 */
 				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 				if (tp->mpc && nbnewseg++==1) goto out;
-				if (!sk_stream_memory_free(sk))
-					goto wait_for_sndbuf;
+				/*This should not happen, since the scheduler
+				  is supposed to check that*/
+				BUG_ON (!sk_stream_memory_free(sk))
+
 				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 				skb = sk_stream_alloc_skb(sk, select_size(sk),
 							  sk->sk_allocation);
@@ -1184,8 +1186,7 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 				tcp_push_one(sk, mss_now);
 			continue;
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
-		wait_for_sndbuf:
-			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+
 		wait_for_memory:
 			if (copied)
 				tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);

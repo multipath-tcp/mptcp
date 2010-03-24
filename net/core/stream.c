@@ -30,7 +30,7 @@ void sk_stream_write_space(struct sock *sk)
 	struct socket *sock = sk->sk_socket;
 
 	if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk) && sock) {
-		clear_bit(SOCK_NOSPACE, &sock->flags);
+		clear_bit(SOCK_NOSPACE, &sk->sock_flags);
 
 		if (sk->sk_sleep && waitqueue_active(sk->sk_sleep))
 			wake_up_interruptible(sk->sk_sleep);
@@ -137,7 +137,7 @@ int sk_stream_wait_memory(struct sock *sk, long *timeo_p)
 		if (sk_stream_memory_free(sk) && !vm_wait)
 			break;
 
-		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+		set_bit(SOCK_NOSPACE, &sk->sock_flags);
 		sk->sk_write_pending++;
 		sk_wait_event(sk, &current_timeo, !sk->sk_err &&
 						  !(sk->sk_shutdown & SEND_SHUTDOWN) &&

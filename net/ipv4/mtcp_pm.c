@@ -996,8 +996,7 @@ finished:
 }
 
 /*checks whether a new established subflow has appeared,
-  in which case that subflow is added to the path set. This should
-  be run by a control daemon in the future*/
+  in which case that subflow is added to the path set. */
 void mtcp_check_new_subflow(void)
 {
 	struct sock *child;

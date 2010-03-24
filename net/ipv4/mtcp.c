@@ -497,7 +497,7 @@ int mtcp_is_available(struct sock *sk)
 	if (!sk_stream_memory_free(sk)) {
 		/*Setting this bit will tell the send buf auto-tuning algorithm
 		  to try increasing the send buffer for this subsock*/
-		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+		set_bit(SOCK_NOSPACE, &sk->sock_flags);
 		return 0;
 	}
 	else return 1;
