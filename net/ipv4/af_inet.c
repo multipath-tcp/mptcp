@@ -516,7 +516,7 @@ int inet_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	inet->dport = 0;
 	sk_dst_reset(sk);
 #ifdef CONFIG_MTCP
-	mtcp_update_metasocket(sk);
+	if (addr->sin_addr.s_addr) mtcp_update_metasocket(sk);
 #endif
 	err = 0;
 out_release_sock:
