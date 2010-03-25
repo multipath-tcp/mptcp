@@ -621,11 +621,11 @@ static inline void tcp_mark_urg(struct tcp_sock *tp, int flags,
 		tp->snd_up = tp->write_seq;
 }
 
-inline void tcp_push(struct sock *sk, int flags, int mss_now,
-			    int nonagle)
+void tcp_push(struct sock *sk, int flags, int mss_now,
+	      int nonagle)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-
+	
 	if (tcp_send_head(sk)) {
 		struct sk_buff *skb = tcp_write_queue_tail(sk);
 		if (!(flags & MSG_MORE) || forced_push(tp))
@@ -2068,6 +2068,11 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				goto found_ok_skb;
 			if (tcp_hdr(skb)->fin)
 				goto found_fin_ok;
+
+			if (flags & MSG_PEEK) {
+				skb=skb->next;
+				continue;
+			}
 			/*TODEL
 			  Not normal to arrive here. Print a lot of info,
 			  than panic*/
