@@ -621,11 +621,11 @@ static inline void tcp_mark_urg(struct tcp_sock *tp, int flags,
 		tp->snd_up = tp->write_seq;
 }
 
-inline void tcp_push(struct sock *sk, int flags, int mss_now,
-			    int nonagle)
+void tcp_push(struct sock *sk, int flags, int mss_now,
+	      int nonagle)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-
+	
 	if (tcp_send_head(sk)) {
 		struct sk_buff *skb = tcp_write_queue_tail(sk);
 		if (!(flags & MSG_MORE) || forced_push(tp))
