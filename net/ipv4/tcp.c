@@ -1037,9 +1037,9 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 				 */
 				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 				if (tp->mpc && nbnewseg++==1) goto out;
-				/*This should not happen, since the scheduler
-				  is supposed to check that*/
-				BUG_ON (!sk_stream_memory_free(sk))
+
+				if (!sk_stream_memory_free(sk))
+					goto wait_for_sndbuf;
 
 				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 				skb = sk_stream_alloc_skb(sk, select_size(sk),
@@ -1187,6 +1187,13 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			continue;
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 
+		wait_for_sndbuf:
+#ifdef CONFIG_MTCP
+			/*We should arrive here only if
+			  no more than one subflow is available*/
+			BUG_ON(tp->mpcb && tp->mpcb->cnt_subflows!=1);
+#endif
+			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);		
 		wait_for_memory:
 			if (copied)
 				tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
