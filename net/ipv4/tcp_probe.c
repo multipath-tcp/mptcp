@@ -287,7 +287,7 @@ static ssize_t tcpprobe_read(struct file *file, char __user *buf,
 		return -EINVAL;
 
 	while (cnt < len) {
-		char tbuf[2048];
+		char tbuf[512];
 		int width;
 
 		/* Wait for data in buffer */
