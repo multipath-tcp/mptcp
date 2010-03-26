@@ -55,10 +55,10 @@ module_param(full, int, 0);
 static const char procname[] = "tcpprobe";
 
 struct tcp_log {
+	int     path_index;
 	ktime_t tstamp;
 	__be32	saddr, daddr;
 	__be16	sport, dport;
-	int     path_index;
 	u16	length;
 	u32	snd_nxt;
 	u32	snd_una;
@@ -164,6 +164,27 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	return 0;
 }
 
+static int logmsg(struct sock *sk,char *msg)
+{
+	const struct inet_sock *inet = inet_sk(sk);
+	if (sk->sk_state == TCP_ESTABLISHED && 
+	    ntohs(inet->sport) != 22 &&
+	    ntohs(inet->dport) != 22) {
+
+		spin_lock_bh(&tcp_probe.lock);
+		/* If log fills, just silently drop */
+		if (tcp_probe_avail() > 1) {
+			struct tcp_log *p = tcp_probe.log + tcp_probe.head;
+			p->path_index=-1;
+			strncpy((char*)((&p->path_index)+1),msg,
+				sizeof(*p)-sizeof(p->path_index));
+		}
+		spin_unlock_bh(&tcp_probe.lock);
+		wake_up(&tcp_probe.wait);
+	}
+	return 0;
+}
+
 /*
  * Hook inserted to be called before each packet transmission.
  * Note: arguments must match tcp_transmit_skb()!
@@ -244,8 +265,10 @@ static struct jprobe tcp_jprobe_send = {
 static struct tcpprobe_ops tcpprobe_fcts = {
 	.rcv_established=jtcp_rcv_established,
 	.transmit_skb=jtcp_transmit_skb,
+	.logmsg=logmsg,
 };
 #endif
+
 
 
 static int tcpprobe_open(struct inode * inode, struct file * file)
@@ -265,7 +288,12 @@ static int tcpprobe_sprint(char *tbuf, int n)
 		= tcp_probe.log + tcp_probe.tail % bufsize;
 	struct timespec tv
 		= ktime_to_timespec(ktime_sub(p->tstamp, tcp_probe.start));
-
+	
+	if (p->path_index==-1) {
+		strncpy(tbuf,(char*)((&p->path_index)+1), n);
+		return 0;
+	}
+	
 	return snprintf(tbuf, n,
 			"%lu.%09lu " NIPQUAD_FMT ":%u " NIPQUAD_FMT ":%u"
 			" %d %d %#x %#x %u %u %u %u %#x %#x %u %u %u %u %d"
@@ -278,7 +306,8 @@ static int tcpprobe_sprint(char *tbuf, int n)
 			p->snd_cwnd, p->ssthresh, p->snd_wnd, p->srtt,
 			p->rcv_nxt,p->copied_seq,p->rcv_wnd,p->rcv_buf,
 			p->window_clamp,p->rcv_ssthresh, p->send,
-			p->space,p->rtt_est*1000/HZ,p->in_flight,p->mss_cache,
+			p->space,p->rtt_est*1000/HZ,p->in_flight,
+			p->mss_cache,
 			p->snd_buf);
 }
 

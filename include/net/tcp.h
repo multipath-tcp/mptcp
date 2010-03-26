@@ -30,6 +30,7 @@
 #include <linux/dmaengine.h>
 #include <linux/crypto.h>
 #include <linux/cryptohash.h>
+#include <linux/tcp_probe.h>
 
 #include <net/inet_connection_sock.h>
 #include <net/inet_timewait_sock.h>
@@ -746,18 +747,12 @@ static inline void tcp_set_ca_state(struct sock *sk, const u8 ca_state)
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
 #ifdef CONFIG_MTCP
-	struct tcp_sock *tp=tcp_sk(sk);
-	
 	if (ca_state != icsk->icsk_ca_state) {
-		if ((tp->path_index==0 || tp->path_index==1) &&
-		    ca_state!=0 && ca_state !=2) {
-			console_loglevel=8;					
-			printk(KERN_ERR "Changed from state %d to state %d, "
-			       "tp->snd_nxt:%x,tp->snd_una:%x\n",
-			       icsk->icsk_ca_state,ca_state,
-			       tp->snd_nxt,tp->snd_una);
-//					WARN_ON(1);
-		}
+		char buf[200];
+		snprintf(buf,sizeof(buf),
+			 "LOG: changed ca state : %d -> %d",
+			 icsk->icsk_ca_state,ca_state);
+		tcpprobe_logmsg(sk,buf);
 	}
 #endif
 
