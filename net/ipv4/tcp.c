@@ -967,8 +967,6 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	int mss_now, size_goal;
 	int err, copied;
 	long timeo;
-	int nbnewseg=0; /*We permit at most 1 new segment to be created before
-			  to give back control to the scheduler*/	
 	
 	lock_sock(sk);
 	TCP_CHECK_TIMER(sk);
@@ -1019,7 +1017,6 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			}
 		}
 #endif
-		PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 		while (seglen > 0) {
 			int copy;
 
@@ -1030,24 +1027,15 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			    (tp->mpc && mpcb->write_seq!=tp->last_write_seq) ||
 #endif
 			    (copy = size_goal - skb->len) <= 0) {
-				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 			new_segment:
-				/* Allocate new segment. If the interface is SG,
-				 * allocate skb fitting to single page.
-				 */
-				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
-				if (tp->mpc && nbnewseg++==1) goto out;
 
 				if (!sk_stream_memory_free(sk))
 					goto wait_for_sndbuf;
-
-				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
+				
 				skb = sk_stream_alloc_skb(sk, select_size(sk),
 							  sk->sk_allocation);
-				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 				if (!skb)
 					goto wait_for_memory;
-				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 
 				/*
 				 * Check whether we can use HW checksum.
@@ -1184,8 +1172,10 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 				__tcp_push_pending_frames(sk, mss_now, TCP_NAGLE_PUSH);
 			} else if (skb == tcp_send_head(sk))
 				tcp_push_one(sk, mss_now);
-			continue;
-			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
+			
+			/*Once we have filled one skb, we give control back to the scheduler*/
+
+			break;
 
 		wait_for_sndbuf:
 #ifdef CONFIG_MTCP
