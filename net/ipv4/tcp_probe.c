@@ -178,6 +178,7 @@ static int logmsg(struct sock *sk,char *msg)
 			p->path_index=-1;
 			strncpy((char*)((&p->path_index)+1),msg,
 				sizeof(*p)-sizeof(p->path_index));
+			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
 		spin_unlock_bh(&tcp_probe.lock);
 		wake_up(&tcp_probe.wait);
