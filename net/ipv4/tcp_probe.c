@@ -294,8 +294,8 @@ static int tcpprobe_sprint(char *tbuf, int n)
 		= ktime_to_timespec(ktime_sub(p->tstamp, tcp_probe.start));
 	
 	if (p->path_index==-1) {
-		strncpy(tbuf,(char*)((&p->path_index)+1), n);
-		return 0;
+		return snprintf(tbuf,n,
+				(char*)((&p->path_index)+1));
 	}
 	
 	return snprintf(tbuf, n,
