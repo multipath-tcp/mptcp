@@ -295,7 +295,7 @@ static int tcpprobe_sprint(char *tbuf, int n)
 	
 	if (p->path_index==-1) {
 		return snprintf(tbuf,n,
-				(char*)((&p->path_index)+1));
+				"%s\n",(char*)((&p->path_index)+1));
 	}
 	
 	return snprintf(tbuf, n,
