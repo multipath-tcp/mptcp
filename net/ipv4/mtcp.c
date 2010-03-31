@@ -41,6 +41,11 @@
 #define PDEBUG(fmt,args...)
 #endif /*DEBUG_MTCP*/
 
+
+
+static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb);
+
+
 /*=====================================*/
 /*DEBUGGING*/
 
@@ -117,6 +122,77 @@ static void mtcp_def_readable(struct sock *sk, int len)
 }
 
 
+static void realloc_enqueue(struct sk_buff_head *realloc_queue,
+			    struct sk_buff *skb)
+{
+	struct sk_buff *skb1 = realloc_queue->prev;
+	
+	if (!skb_peek(realloc_queue)) {
+		__skb_queue_head(realloc_queue,skb);
+		return;
+	}
+	
+	
+	/* Find place to insert this segment. */
+	do {
+		if (!after(TCP_SKB_CB(skb1)->data_seq, 
+			   TCP_SKB_CB(skb)->data_seq))
+			break;
+	} while ((skb1 = skb1->prev) !=
+		 (struct sk_buff *)realloc_queue);
+
+	__skb_insert(skb, skb1, skb1->next,realloc_queue);
+}
+
+void mtcp_reallocate(struct multipath_pcb *mpcb)
+{
+	struct sk_buff_head realloc_queue;
+	struct sock *sk;
+	struct tcp_sock *tp;
+	struct sk_buff *skb;
+	
+	skb_queue_head_init(&realloc_queue);
+
+	mtcp_for_each_sk(mpcb,sk,tp)
+		lock_sock(sk); 
+	
+	/*Eating all queues contents*/
+	mtcp_for_each_sk(mpcb,sk,tp) {				
+		if ((skb=tcp_send_head(sk))) {
+			/*rewind the write seq*/
+			tp->write_seq=TCP_SKB_CB(skb)->seq;
+		}
+		
+		while ((skb = tcp_send_head(sk))) {
+			/*Unlink from socket*/
+			tcp_advance_send_head(sk, skb);
+			tcp_unlink_write_queue(skb,sk);
+			sk->sk_wmem_queued -= skb->truesize;
+			sk_mem_uncharge(sk, skb->truesize);
+
+			/*link to tp metasocket*/
+			realloc_enqueue(&realloc_queue, skb);
+				
+		}
+	}
+
+	/*Reallocating everything*/
+	while((skb=skb_peek(&realloc_queue))) {
+		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
+		tp=get_available_subflow(mpcb);
+
+		tcb->seq       =   tcb->sub_seq = tp->write_seq;
+		tcb->end_seq   =   tcb->seq+skb->len;
+		tp->write_seq  +=  skb->len;
+		tcp_add_write_queue_tail(sk, skb);
+		sk->sk_wmem_queued += skb->truesize;
+		sk_mem_charge(sk, skb->truesize);
+	}
+	
+	mtcp_for_each_sk(mpcb,sk,tp)
+		release_sock(sk);       
+}
+
 
 /**
  * Creates as many sockets as path indices announced by the Path Manager.
@@ -139,6 +215,7 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 	struct socket *sock;
 	struct tcp_sock *tp=mpcb->connection_list;
 	struct tcp_sock *newtp;
+	int orig_cnt_subflows=mpcb->cnt_subflows;
 
 	/*First, ensure that we keep existing path indices.*/
 	while (tp!=NULL) {
@@ -246,8 +323,13 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			PDEBUG("New MTCP subsocket created, pi %d\n",i+1);
 		}
 	}
-	return 0;
 
+	/*Now that we have one more subflow, we can reequilibrate*/
+	if (mpcb->cnt_subflows!=orig_cnt_subflows)
+		mtcp_reallocate(mpcb);
+	
+	return 0;
+	
 fail_bind:
 	printk(KERN_ERR "MTCP subsocket bind() failed\n");
 fail_connect:
@@ -315,9 +397,6 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	memset(mpcb,0,sizeof(struct multipath_pcb));
 	
 	skb_queue_head_init(&mpcb->receive_queue);
-	skb_queue_head_init(&mpcb->write_queue);
-	skb_queue_head_init(&mpcb->retransmit_queue);
-	skb_queue_head_init(&mpcb->error_queue);
 	skb_queue_head_init(&mpcb->out_of_order_queue);
 	
 	mpcb->rcvbuf = sysctl_rmem_default;
@@ -506,7 +585,7 @@ int mtcp_is_available(struct sock *sk)
 /*This is the scheduler. This function decides on which flow to send
   a given MSS. Currently we choose a simple round-robin policy.
   If all subflows are found to be busy, NULL is returned*/
-static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb) 
+static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb) 
 {
 	struct tcp_sock *tp;
 	struct sock *sk;
@@ -542,6 +621,34 @@ out:
 	mutex_unlock(&mpcb->mutex);
 	return tcp_sk(bestsk);		
 }
+
+static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb)
+{
+	struct tcp_sock *tp;
+
+again:
+	while (!(tp=__get_available_subflow(mpcb))) {
+		int err;
+		/*Go sleeping until one of the subflows at least
+		  becomes ready to eat data.
+		  Note that we must be interruptible, because else we
+		  cannot be killed*/
+		err=wait_for_completion_interruptible(
+			&mpcb->liberate_subflow);		
+		if (err<0) return NULL;
+	}
+
+	if (mpcb->sndbuf_grown) {
+		mpcb->sndbuf_grown=0;
+		mtcp_reallocate(mpcb);
+		goto again;	
+	}
+	
+
+	return tp;
+}
+
+
 
 int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		 size_t size)
@@ -590,20 +697,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 
 		INIT_COMPLETION(mpcb->liberate_subflow);
 		
-		tp=get_available_subflow(mpcb);
-		
-		while (!tp) {
-			int err;
-			/*Go sleeping until one of the subflows at least
-			  becomes ready to eat data.
-			  Note that we must be interruptible, because else we
-			  cannot be killed*/
-			err=wait_for_completion_interruptible(
-				&mpcb->liberate_subflow);
-			if (err<0) return err;
-			
-			tp=get_available_subflow(mpcb);			
-		}
+		tp=get_available_subflow(mpcb);	       
 
 		PDEBUG("%s:copied %d,msg_size %d, i %d, pi %d\n",
 		       __FUNCTION__,

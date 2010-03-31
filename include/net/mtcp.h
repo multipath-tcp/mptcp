@@ -132,9 +132,6 @@ struct multipath_pcb {
 	int                       wb_size,wb_start,wb_length;
 	
 	struct sk_buff_head       receive_queue;/*received data*/
-	struct sk_buff_head       write_queue;/*sent stuff, waiting for ack*/
-	struct sk_buff_head       retransmit_queue;/*need to rexmit*/
-	struct sk_buff_head       error_queue;
 	struct sk_buff_head       out_of_order_queue; /* Out of order segments 
 							 go here */
 	int                       ofo_bytes; /*Counts the number of bytes 
@@ -151,6 +148,10 @@ struct multipath_pcb {
 	/*Receive window management*/
 	u32                       window_clamp;
 	u32                       rcv_ssthresh;
+
+	uint8_t                   sndbuf_grown:1; /*sndbuf has grown
+						    for one of our
+						    subflows*/
 
 #ifdef CONFIG_MTCP_PM
 	struct list_head          collide_tk;
