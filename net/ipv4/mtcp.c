@@ -637,6 +637,7 @@ out:
 static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb)
 {
 	struct tcp_sock *tp;
+	static int reallocating=0;
 
 again:
 	while (!(tp=__get_available_subflow(mpcb))) {
@@ -650,9 +651,13 @@ again:
 		if (err<0) return NULL;
 	}
 
-	if (mpcb->sndbuf_grown) {
+	if (mpcb->sndbuf_grown && !reallocating) {
 		mpcb->sndbuf_grown=0;
+		/*Since mtcp_reallocate itself calls us. This ensures
+		  that we do not loop forever*/
+		reallocating=1;
 		mtcp_reallocate(mpcb);
+		reallocating=0;
 		goto again;	
 	}
 	
