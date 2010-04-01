@@ -199,7 +199,11 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 		tcb->seq       =   tcb->sub_seq = tp->write_seq;
 		tcb->end_seq   =   tcb->seq+skb->len;
 		tp->write_seq  +=  skb->len;
+
+		/*Unlink and relink*/
+		__skb_unlink(skb, &realloc_queue);		
 		tcp_add_write_queue_tail(sk, skb);
+
 		sk->sk_wmem_queued += skb->truesize;
 		sk_mem_charge(sk, skb->truesize);
 	}
