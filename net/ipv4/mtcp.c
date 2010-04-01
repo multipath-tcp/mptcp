@@ -180,6 +180,7 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 	while((skb=skb_peek(&realloc_queue))) {
 		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 		tp=get_available_subflow(mpcb);
+		sk=(struct sock *) tp;
 
 		tcb->seq       =   tcb->sub_seq = tp->write_seq;
 		tcb->end_seq   =   tcb->seq+skb->len;
@@ -697,7 +698,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 
 		INIT_COMPLETION(mpcb->liberate_subflow);
 		
-		tp=get_available_subflow(mpcb);	       
+		tp=get_available_subflow(mpcb);
 
 		PDEBUG("%s:copied %d,msg_size %d, i %d, pi %d\n",
 		       __FUNCTION__,
