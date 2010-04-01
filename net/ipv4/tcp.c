@@ -2505,12 +2505,14 @@ void tcp_set_state(struct sock *sk, int state)
 
 	switch (state) {
 	case TCP_ESTABLISHED:
-		if (oldstate != TCP_ESTABLISHED)
+		if (oldstate != TCP_ESTABLISHED) {
 			TCP_INC_STATS(sock_net(sk), TCP_MIB_CURRESTAB);
 #ifdef CONFIG_MTCP
-		if (tcp_sk(sk)->mpc && is_master_sk(tcp_sk(sk))) 
-			mtcp_ask_update(sk);
+			if (tcp_sk(sk)->mpc && is_master_sk(tcp_sk(sk))) 
+				mtcp_ask_update(sk);
+			tcp_sk(sk)->mpcb->sndbuf_grown=1;
 #endif
+		}
 		break;
 
 	case TCP_CLOSE:

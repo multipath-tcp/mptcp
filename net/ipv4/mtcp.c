@@ -182,6 +182,20 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 		tp=get_available_subflow(mpcb);
 		sk=(struct sock *) tp;
 
+		if (!tp) {
+			/*TODO: We will need to put the realloc queue in the
+			  mpcb rather than as a local variable, to handle
+			  the case where we are interrupted, and we must
+			  continue or work later. Or, maybe is it better
+			  to make a non-interruptible version of 
+			  get_available_subflow. But for this, we must make sure
+			  that it always terminates.*/
+			printk(KERN_ERR "stopped by interrupt\n"
+			       "TODO: Make the realloc queue recuperable"
+			       "in that case\n");
+			goto out;
+		}
+
 		tcb->seq       =   tcb->sub_seq = tp->write_seq;
 		tcb->end_seq   =   tcb->seq+skb->len;
 		tp->write_seq  +=  skb->len;
@@ -189,6 +203,8 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 		sk->sk_wmem_queued += skb->truesize;
 		sk_mem_charge(sk, skb->truesize);
 	}
+
+out:
 	
 	mtcp_for_each_sk(mpcb,sk,tp)
 		release_sock(sk);       
@@ -216,7 +232,6 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 	struct socket *sock;
 	struct tcp_sock *tp=mpcb->connection_list;
 	struct tcp_sock *newtp;
-	int orig_cnt_subflows=mpcb->cnt_subflows;
 
 	/*First, ensure that we keep existing path indices.*/
 	while (tp!=NULL) {
@@ -325,10 +340,6 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 		}
 	}
 
-	/*Now that we have one more subflow, we can reequilibrate*/
-	if (mpcb->cnt_subflows!=orig_cnt_subflows)
-		mtcp_reallocate(mpcb);
-	
 	return 0;
 	
 fail_bind:
