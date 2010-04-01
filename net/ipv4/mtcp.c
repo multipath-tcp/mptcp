@@ -651,7 +651,7 @@ again:
 		  Note that we must be interruptible, because else we
 		  cannot be killed*/
 		err=wait_for_completion_interruptible(
-			&mpcb->liberate_subflow);		
+			&mpcb->liberate_subflow);
 		if (err<0) return NULL;
 	}
 
@@ -719,6 +719,8 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		INIT_COMPLETION(mpcb->liberate_subflow);
 		
 		tp=get_available_subflow(mpcb);
+
+		if (!tp) return -1;
 
 		PDEBUG("%s:copied %d,msg_size %d, i %d, pi %d\n",
 		       __FUNCTION__,
