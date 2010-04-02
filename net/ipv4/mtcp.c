@@ -1135,11 +1135,15 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 					printk(KERN_ERR "skb->data_seq:%x,"
 					       "skb->end_data_seq:%x,"
 					       "skb1->data_seq:%x,"
-					       "skb1->end_data_seq:%x\n",
+					       "skb1->end_data_seq:%x,"
+					       "skb->seq:%x,"
+					       "skb1->seq:%x""\n",
 					       TCP_SKB_CB(skb)->data_seq,
 					       TCP_SKB_CB(skb)->end_data_seq,
 					       TCP_SKB_CB(skb1)->data_seq,
-					       TCP_SKB_CB(skb1)->end_data_seq);
+					       TCP_SKB_CB(skb1)->end_data_seq,
+					       TCP_SKB_CB(skb)->seq,
+					       TCP_SKB_CB(skb1)->seq);
 					BUG();
 					skb1 = skb1->prev;
 				}
