@@ -196,6 +196,9 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 			goto out;
 		}
 
+		BUG_ON(tcb->sub_seq!=tcb->seq);
+		BUG_ON(tcb->data_len!=skb->len);
+
 		tcb->seq       =   tcb->sub_seq = tp->write_seq;
 		tcb->end_seq   =   tcb->seq+skb->len;
 		tp->write_seq  +=  skb->len;
