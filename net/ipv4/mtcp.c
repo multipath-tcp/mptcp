@@ -212,6 +212,10 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 		sk_mem_charge(sk, skb->truesize);
 	}
 
+	/*Push everything*/
+	mtcp_for_each_sk(mpcb,sk,tp)
+		tcp_push(sk, 0, tcp_current_mss(sk, 0), tp->nonagle);
+	
 out:
 	
 	mtcp_for_each_sk(mpcb,sk,tp)
