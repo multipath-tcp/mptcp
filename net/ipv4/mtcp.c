@@ -1037,6 +1037,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 						     &mpcb->out_of_order_queue);
 					__kfree_skb(skb1);
 				}
+				else break;
 			}
 			return MTCP_QUEUED;
 		}
