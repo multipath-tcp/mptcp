@@ -6,7 +6,7 @@
  *
  *      Partially inspired from initial user space MPTCP stack by Costin Raiciu.
  *
- *      date : March 10
+ *      date : April 10
  *
  *
  *	This program is free software; you can redistribute it and/or
@@ -158,6 +158,9 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 	
 	/*Eating all queues contents*/
 	mtcp_for_each_sk(mpcb,sk,tp) {				
+		
+		if (sk->sk_state!=TCP_ESTABLISHED) continue;
+		
 		if ((skb=tcp_send_head(sk))) {
 			/*rewind the write seq*/
 			tp->write_seq=TCP_SKB_CB(skb)->seq;
@@ -214,7 +217,8 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 
 	/*Push everything*/
 	mtcp_for_each_sk(mpcb,sk,tp)
-		tcp_push(sk, 0, tcp_current_mss(sk, 0), tp->nonagle);
+		if (sk->sk_state==TCP_ESTABLISHED)
+			tcp_push(sk, 0, tcp_current_mss(sk, 0), tp->nonagle);
 	
 out:
 	
@@ -663,7 +667,7 @@ again:
 		if (err<0) return NULL;
 	}
 
-	if (mpcb->sndbuf_grown && !reallocating) {
+	if (mpcb->sndbuf_grown && mpcb->cnt_established>1 && !reallocating) {
 		mpcb->sndbuf_grown=0;
 		/*Since mtcp_reallocate itself calls us. This ensures
 		  that we do not loop forever*/

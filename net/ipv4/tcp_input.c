@@ -4727,11 +4727,11 @@ static void tcp_new_space(struct sock *sk)
 				     tp->reordering + 1);
 		sndmem *= 2 * demanded;
 		if (sndmem > sk->sk_sndbuf) {
-			sk->sk_sndbuf = min(sndmem, sysctl_tcp_wmem[2]);
 #ifdef CONFIG_MTCP
-			if (sndmem<sysctl_tcp_wmem[2])
+			if (sk->sk_sndbuf < sysctl_tcp_wmem[2])
 				tp->mpcb->sndbuf_grown=1;
 #endif
+			sk->sk_sndbuf = min(sndmem, sysctl_tcp_wmem[2]);
 		}
 		tp->snd_cwnd_stamp = tcp_time_stamp;
 	}
