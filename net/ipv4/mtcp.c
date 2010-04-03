@@ -165,9 +165,6 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 			/*rewind the write seq*/
 			tp->write_seq=TCP_SKB_CB(skb)->seq;
 		}
-		printk(KERN_ERR "before:pi %d,wmem_queued %d,sndbuf:%d\n",
-		       tp->path_index,sk->sk_wmem_queued,
-		       sk->sk_sndbuf);
 		
 		while ((skb = tcp_send_head(sk))) {
 			/*Unlink from socket*/
@@ -183,12 +180,6 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 		}
 	}
 
-	mtcp_for_each_sk(mpcb,sk,tp) {
-		if (sk->sk_state!=TCP_ESTABLISHED) continue;
-		printk(KERN_ERR "middle:pi %d,wmem_queued %d,sndbuf:%d\n",
-		       tp->path_index,sk->sk_wmem_queued,
-		       sk->sk_sndbuf);		
-	}
 	
 	/*Reallocating everything*/
 	while((skb=skb_peek(&realloc_queue))) {
@@ -207,13 +198,6 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 			printk(KERN_ERR "stopped by interrupt\n"
 			       "TODO: Make the realloc queue recuperable"
 			       "in that case\n");
-			mtcp_for_each_sk(mpcb,sk,tp) {
-				if (sk->sk_state!=TCP_ESTABLISHED) continue;
-				printk(KERN_ERR "middle:pi %d,wmem_queued %d,"
-				       "sndbuf:%d,avail:%d\n",
-				       tp->path_index,sk->sk_wmem_queued,
-				       sk->sk_sndbuf,mtcp_is_available(sk));
-			}
 			
 			BUG();
 			goto out;
@@ -237,15 +221,6 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 		sk_mem_charge(sk, skb->truesize);
 	}
 	
-	mtcp_for_each_sk(mpcb,sk,tp) {
-		if (sk->sk_state!=TCP_ESTABLISHED) continue;
-		printk(KERN_ERR "after:pi %d,wmem_queued %d,sndbuf:%d\n"
-		       "==================\n",
-		       tp->path_index,sk->sk_wmem_queued,
-		       sk->sk_sndbuf);
-		
-	}
-
 
 	/*Push everything*/
 	mtcp_for_each_sk(mpcb,sk,tp)
