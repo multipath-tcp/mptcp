@@ -165,11 +165,15 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 			/*rewind the write seq*/
 			tp->write_seq=TCP_SKB_CB(skb)->seq;
 		}
+		printk(KERN_ERR "before:pi %d,wmem_queued %d,sndbuf:%d\n",
+		       tp->path_index,sk->sk_wmem_queued,
+		       sk->sk_sndbuf);
 		
 		while ((skb = tcp_send_head(sk))) {
 			/*Unlink from socket*/
 			tcp_advance_send_head(sk, skb);
 			tcp_unlink_write_queue(skb,sk);
+			skb->path_mask&=~PI_TO_FLAG(tp->path_index);
 			sk->sk_wmem_queued -= skb->truesize;
 			sk_mem_uncharge(sk, skb->truesize);
 
@@ -179,6 +183,13 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 		}
 	}
 
+	mtcp_for_each_sk(mpcb,sk,tp) {
+		if (sk->sk_state!=TCP_ESTABLISHED) continue;
+		printk(KERN_ERR "middle:pi %d,wmem_queued %d,sndbuf:%d\n",
+		       tp->path_index,sk->sk_wmem_queued,
+		       sk->sk_sndbuf);		
+	}
+	
 	/*Reallocating everything*/
 	while((skb=skb_peek(&realloc_queue))) {
 		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
@@ -196,9 +207,18 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 			printk(KERN_ERR "stopped by interrupt\n"
 			       "TODO: Make the realloc queue recuperable"
 			       "in that case\n");
+			mtcp_for_each_sk(mpcb,sk,tp) {
+				if (sk->sk_state!=TCP_ESTABLISHED) continue;
+				printk(KERN_ERR "middle:pi %d,wmem_queued %d,"
+				       "sndbuf:%d,avail:%d\n",
+				       tp->path_index,sk->sk_wmem_queued,
+				       sk->sk_sndbuf,mtcp_is_available(sk));
+			}
+			
+			BUG();
 			goto out;
 		}
-
+		
 		BUG_ON(tcb->sub_seq!=tcb->seq);
 		BUG_ON(tcb->data_len!=skb->len);
 
@@ -210,10 +230,22 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 		/*Unlink and relink*/
 		__skb_unlink(skb, &realloc_queue);		
 		tcp_add_write_queue_tail(sk, skb);
+		skb->path_mask|=PI_TO_FLAG(tp->path_index);
+		skb->sk=sk;
 
 		sk->sk_wmem_queued += skb->truesize;
 		sk_mem_charge(sk, skb->truesize);
 	}
+	
+	mtcp_for_each_sk(mpcb,sk,tp) {
+		if (sk->sk_state!=TCP_ESTABLISHED) continue;
+		printk(KERN_ERR "after:pi %d,wmem_queued %d,sndbuf:%d\n"
+		       "==================\n",
+		       tp->path_index,sk->sk_wmem_queued,
+		       sk->sk_sndbuf);
+		
+	}
+
 
 	/*Push everything*/
 	mtcp_for_each_sk(mpcb,sk,tp)
@@ -1364,8 +1396,6 @@ void __mtcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk)
 	BUG_ON(!skb);
 	BUG_ON(skb->path_mask!=orig_skb->path_mask);
 	
-	skb->debug2=25;              
-
 	mtcp_skb_entail_reinj(sk, skb);
 	tp->write_seq += skb->len;
 	tp->last_write_seq=TCP_SKB_CB(skb)->end_data_seq;
