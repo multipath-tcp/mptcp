@@ -44,6 +44,7 @@
 
 
 static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb);
+static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb);
 
 
 /*=====================================*/
@@ -184,7 +185,17 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 	/*Reallocating everything*/
 	while((skb=skb_peek(&realloc_queue))) {
 		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
-		tp=get_available_subflow(mpcb);
+		tp=__get_available_subflow(mpcb);
+		if (!tp) {
+			/*Our new repartition has filled all buffers.
+			  Flush and wait*/
+			mtcp_for_each_sk(mpcb,sk,tp)
+				if (sk->sk_state==TCP_ESTABLISHED)
+					tcp_push(sk, 0, tcp_current_mss(sk, 0), 
+						 tp->nonagle);
+			tp=get_available_subflow(mpcb);
+		}
+			
 		sk=(struct sock *) tp;
 
 		if (!tp) {
