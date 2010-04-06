@@ -154,13 +154,14 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 	
 	skb_queue_head_init(&realloc_queue);
 
-	mtcp_for_each_sk(mpcb,sk,tp)
-		lock_sock(sk); 
-	
 	/*Eating all queues contents*/
-	mtcp_for_each_sk(mpcb,sk,tp) {				
+	mtcp_for_each_sk(mpcb,sk,tp) {
+		lock_sock(sk);
 		
-		if (sk->sk_state!=TCP_ESTABLISHED) continue;
+		if (sk->sk_state!=TCP_ESTABLISHED) {
+			release_sock(sk);
+			continue;
+		}
 		
 		if ((skb=tcp_send_head(sk))) {
 			/*rewind the write seq*/
@@ -179,8 +180,8 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 			realloc_enqueue(&realloc_queue, skb);
 				
 		}
+		release_sock(sk);
 	}
-
 	
 	/*Reallocating everything*/
 	while((skb=skb_peek(&realloc_queue))) {
@@ -211,8 +212,9 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 			       "in that case\n");
 			
 			BUG();
-			goto out;
+			return;
 		}
+		lock_sock(sk);
 		
 		BUG_ON(tcb->sub_seq!=tcb->seq);
 		BUG_ON(tcb->data_len!=skb->len);
@@ -230,18 +232,18 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 
 		sk->sk_wmem_queued += skb->truesize;
 		sk_mem_charge(sk, skb->truesize);
+
+		release_sock(sk);
 	}
 	
 
 	/*Push everything*/
 	mtcp_for_each_sk(mpcb,sk,tp)
-		if (sk->sk_state==TCP_ESTABLISHED)
+		if (sk->sk_state==TCP_ESTABLISHED) {
+			lock_sock(sk);
 			tcp_push(sk, 0, tcp_current_mss(sk, 0), tp->nonagle);
-	
-out:
-	
-	mtcp_for_each_sk(mpcb,sk,tp)
-		release_sock(sk);       
+			release_sock(sk);
+		}	
 }
 
 
