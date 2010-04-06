@@ -942,6 +942,7 @@ int tcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	TCP_SKB_CB(buff)->end_data_seq = TCP_SKB_CB(skb)->end_data_seq;
 	TCP_SKB_CB(buff)->sub_seq = TCP_SKB_CB(skb)->sub_seq + len;
 	TCP_SKB_CB(buff)->data_len=TCP_SKB_CB(skb)->data_len - len;
+	TCP_SKB_CB(skb)->data_len=len;
 #endif
 
 	/* PSH and FIN should only be set in the second packet. */
@@ -1462,6 +1463,7 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	TCP_SKB_CB(buff)->end_data_seq = TCP_SKB_CB(skb)->end_data_seq;
 	TCP_SKB_CB(buff)->sub_seq = TCP_SKB_CB(skb)->sub_seq + len;
 	TCP_SKB_CB(buff)->data_len=TCP_SKB_CB(skb)->data_len - len;
+	TCP_SKB_CB(skb)->data_len=len;
 #endif
 
 	/* PSH and FIN should only be set in the second packet. */
