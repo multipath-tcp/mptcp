@@ -2025,25 +2025,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			skb = skb_peek(&sk->sk_receive_queue);
 			if (!skb)
 				continue;
-			
-			if (skb->len>1500) {
-				printk(KERN_ERR "sock_owned_by_user:%d\n",
-				       sock_owned_by_user(sk));
-				printk(KERN_ERR "BUG:pi %d, skb->seq %x,"
-				       "skb->len:%d\n",
-				       skb->path_index,TCP_SKB_CB(skb)->seq,
-				       skb->len);
-				/*This ensures that we will have a backtrace
-				  on the console.*/
-				console_loglevel=8;
-				BUG();
-			}
-
-			/*printk(KERN_ERR "Received dataseq %x on path %d,"
-			       "func %s\n",
-			       TCP_SKB_CB(skb)->data_seq,tp->path_index,
-			       __FUNCTION__);*/
-			
+						
 			/* Now that we have two receive queues this
 			 * shouldn't happen.
 			 */
