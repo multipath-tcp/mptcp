@@ -4168,7 +4168,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 		tp->rx_opt.dsack = 0;
 		tp->rx_opt.eff_sacks = tp->rx_opt.num_sacks;
 	}
-
+	
 	/*  Queue data for delivery to the user.
 	 *  Packets in sequence go to the receive queue.
 	 *  Out of sequence packets to the out_of_order_queue.
