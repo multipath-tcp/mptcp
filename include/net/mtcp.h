@@ -30,6 +30,7 @@
 #include <linux/mutex.h>
 #include <linux/completion.h>
 #include <linux/skbuff.h>
+#include <linux/list.h>
 
 #include <net/request_sock.h>
 #include <net/mtcp_pm.h>
@@ -71,6 +72,19 @@ void freeze_rcv_queue(struct sock *sk, const char *func_name);
 extern struct proto mtcpsub_prot;
 
 struct tcp_sock;
+
+struct dsn_sack {
+	struct list_head list;
+	u32 start;
+	u32 end;
+};
+
+#define dsack_first(mpcb) (list_first_entry(&mpcb->dsack_list,		\
+					    struct dsn_sack,list))
+#define dsack_next(dsack) (list_entry(dsack->list.next,struct dsn_sack,list))
+#define dsack_prev(dsack) (list_entry(dsack->list.prev,struct dsn_sack,list))
+#define dsack_is_last(dsack,mpcb) (list_is_last(&dsack->list,&mpcb->dsack_list))
+#define dsack_is_first(dsack,mpcb) (dsack==dsack_first(mpcb))
 
 struct multipath_pcb {	
 	/*receive and send buffer sizing*/
@@ -116,20 +130,10 @@ struct multipath_pcb {
 
 	u32    write_seq;  /*data sequence number, counts the number of 
 			     bytes the user has written so far */
-	u32    copied_seq; /* Head of yet unread data		*/
- 	u32    snd_una;	/* First dataseq we want an ack for */
-	
-	/*user data, unpacketized
-	  This is a circular buffer, data is stored in the "subbuffer"
-	  starting at byte index wb_start with the write_buffer,
-	  with length wb_length. Uppon mpcb init, the size
-	  of the write buffer is stored in wb_size */
-	char*                     write_buffer;
-	/*wb_size: size of the circular sending buffer
-	  wb_start: index of the first byte of pending data in the buffer
-	  wb_length: number of bytes occupied by the pending data.
-	  of course, it never exceeds wb_size*/
-	int                       wb_size,wb_start,wb_length;
+	u32    copied_seq; /* Head of yet unread data		*/       
+
+	u32    snd_una;
+	struct list_head          dsack_list;
 	
 	struct sk_buff_head       receive_queue;/*received data*/
 	struct sk_buff_head       out_of_order_queue; /* Out of order segments 
@@ -308,6 +312,7 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			 uint32_t path_indices);
 int mtcpsub_get_port(struct sock *sk, unsigned short snum);
 void mtcp_update_window_clamp(struct multipath_pcb *mpcb);
+void mtcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end);
 int mtcpv6_init(void);
 
 #endif /*_MTCP_H*/

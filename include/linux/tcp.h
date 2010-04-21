@@ -253,11 +253,13 @@ struct tcp_sock {
 	u32    map_data_seq; /*Those three fields record the current mapping*/
 	u16    map_data_len;
 	u32    map_subseq;
+	u32    dsn_snd_una; /*First unacked byte as seen by this subflow*/
 #endif
 /*We keep these flags even if CONFIG_MTCP is not checked, because it allows
   checking MTPC capability just by checking the mpc flag, rather than adding
   ifdefs everywhere.*/
 	u8      mpc:1,          /* Other end is multipath capable       */
+		
 		wait_event_any_sk_released:1, /*1 if mtcp_wait_event_any_sk()
 						has released this sock, and
 						must thus lock it again,
