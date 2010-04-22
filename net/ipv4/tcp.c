@@ -1173,7 +1173,8 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			} else if (skb == tcp_send_head(sk))
 				tcp_push_one(sk, mss_now);
 			
-			/*Once we have filled one skb, we give control back to the scheduler*/
+			/*Once we have filled one skb, we give control back to 
+			  the scheduler*/
 
 			break;
 
@@ -1195,6 +1196,10 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			mss_now = tcp_current_mss(sk, !(flags&MSG_OOB));
 			size_goal = tp->xmit_size_goal;
 		}
+		/*If we have filled one skb, or there is no
+		  space anymore in this pipe, return control to the scheduler*/
+		if (!sk_stream_memory_free(sk) || copied >= size_goal)
+			break;
 	}
 
 out:
