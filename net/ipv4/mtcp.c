@@ -1547,8 +1547,8 @@ void mtcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end) {
 			mpcb->snd_una=dsack->end;
 			list_del(&dsack->list);
 			kfree(dsack);			
-			goto out;
 		}
+		goto out;		
 	}
 	/*there is a hole, use the dsack list*/
 	list_for_each_entry(dsack,&mpcb->dsack_list,list) {
