@@ -1455,6 +1455,10 @@ int tcp_read_sock(struct sock *sk, read_descriptor_t *desc,
 	return copied;
 }
 
+#ifndef CONFIG_MTCP
+#define tcp_recvmsg_fallback tcp_recvmsg
+#endif
+
 /*
  *	This routine copies from a sock struct into the user buffer.
  *
@@ -1865,10 +1869,6 @@ recv_urg:
 	err = tcp_recv_urg(sk, timeo, msg, len, flags, addr_len);
 	goto out;
 }
-
-#ifndef CONFIG_MTCP
-#define tcp_recvmsg_fallback tcp_recvmsg
-#endif
 
 #ifdef CONFIG_MTCP
 

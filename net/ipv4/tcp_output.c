@@ -1888,12 +1888,15 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
  * Note, we don't "adjust" for TIMESTAMP or SACK option bytes.
  * Regular options like TIMESTAMP are taken into account.
  */
-#ifdef CONFIG_MTCP
-u32 __tcp_select_window(struct sock *sk)
+
+#ifndef CONFIG_MTCP
+#define __tcp_select_window_fallback __tcp_select_window
+#endif
+
+u32 __tcp_select_window_fallback(struct sock *sk)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct multipath_pcb *mpcb = tp->mpcb;
 	/* MSS for the peer's data.  Previous versions used mss_clamp
 	 * here.  I don't know if the value based on our guesses
 	 * of peer's MSS is better for the performance.  It's more correct
@@ -1901,8 +1904,8 @@ u32 __tcp_select_window(struct sock *sk)
 	 * fluctuations.  --SAW  1998/11/1
 	 */
 	int mss = icsk->icsk_ack.rcv_mss;
-	int free_space = mtcp_space(sk);
-	int full_space = min_t(int, mpcb->window_clamp, mtcp_full_space(sk));
+	int free_space = tcp_space(sk);
+	int full_space = min_t(int, tp->window_clamp, tcp_full_space(sk));
 	int window;
 
 	if (mss > full_space)
@@ -1914,15 +1917,14 @@ u32 __tcp_select_window(struct sock *sk)
 		if (tcp_memory_pressure) {
 			tp->rcv_ssthresh = min(tp->rcv_ssthresh,
 					       4U * tp->advmss);
-			mtcp_update_window_clamp(mpcb);
 		}
 
 		if (free_space < mss)
 			return 0;
 	}
 
-	if (free_space > mpcb->rcv_ssthresh) {
-		free_space = mpcb->rcv_ssthresh;
+	if (free_space > tp->rcv_ssthresh) {
+		free_space = tp->rcv_ssthresh;
 	}
 
 	/* Don't do rounding if we are using window scaling, since the
@@ -1957,21 +1959,26 @@ u32 __tcp_select_window(struct sock *sk)
 
 	return window;
 }
-#else
+
+#ifdef CONFIG_MTCP
 u32 __tcp_select_window(struct sock *sk)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct multipath_pcb *mpcb = tp->mpcb;
+	int mss,free_space,full_space,window;
+
+	if (!tp->mpc) return __tcp_select_window_fallback(sk);
+
 	/* MSS for the peer's data.  Previous versions used mss_clamp
 	 * here.  I don't know if the value based on our guesses
 	 * of peer's MSS is better for the performance.  It's more correct
 	 * but may be worse for the performance because of rcv_mss
 	 * fluctuations.  --SAW  1998/11/1
 	 */
-	int mss = icsk->icsk_ack.rcv_mss;
-	int free_space = tcp_space(sk);
-	int full_space = min_t(int, tp->window_clamp, tcp_full_space(sk));
-	int window;
+	mss = icsk->icsk_ack.rcv_mss;
+	free_space = mtcp_space(sk);
+	full_space = min_t(int, mpcb->window_clamp, mtcp_full_space(sk));
 
 	if (mss > full_space)
 		mss = full_space;
@@ -1982,14 +1989,15 @@ u32 __tcp_select_window(struct sock *sk)
 		if (tcp_memory_pressure) {
 			tp->rcv_ssthresh = min(tp->rcv_ssthresh,
 					       4U * tp->advmss);
+			mtcp_update_window_clamp(mpcb);
 		}
 
 		if (free_space < mss)
 			return 0;
 	}
 
-	if (free_space > tp->rcv_ssthresh) {
-		free_space = tp->rcv_ssthresh;
+	if (free_space > mpcb->rcv_ssthresh) {
+		free_space = mpcb->rcv_ssthresh;
 	}
 
 	/* Don't do rounding if we are using window scaling, since the
