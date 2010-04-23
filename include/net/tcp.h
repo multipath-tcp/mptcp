@@ -1088,7 +1088,7 @@ static inline int mtcp_full_space(const struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sock *sk_it;
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
-	int full_space;
+	int full_space=0;
 
 	mtcp_for_each_sk(mpcb,sk_it,tp) {
 		full_space+=sk_it->sk_rcvbuf;
