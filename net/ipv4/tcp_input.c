@@ -2850,6 +2850,17 @@ static u32 tcp_tso_acked(struct sock *sk, struct sk_buff *skb)
 	BUG_ON(!after(TCP_SKB_CB(skb)->end_seq, tp->snd_una));
 
 	packets_acked = tcp_skb_pcount(skb);
+	
+#ifdef CONFIG_MTCP
+	{
+		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+		if (tp->mpc) 
+			mtcp_update_dsn_ack(mpcb,TCP_SKB_CB(skb)->data_seq,
+					    TCP_SKB_CB(skb)->data_seq+
+					    tp->snd_una - TCP_SKB_CB(skb)->seq);
+	}
+#endif
+
 	if (tcp_trim_head(sk, skb, tp->snd_una - TCP_SKB_CB(skb)->seq))
 		return 0;
 	packets_acked -= tcp_skb_pcount(skb);
@@ -2954,7 +2965,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		if (!fully_acked)
 			break;
 
-		/*Before we remove the skb, we advance mpcb->snd_una*/
+		/*Before we remove the skb, we advance tp->dsn_snd_una*/
 #ifdef CONFIG_MTCP
 		{
 			struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
@@ -2965,13 +2976,13 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			  acked, note that we check the end_data_seq, not the
 			  data_seq, since data_seq is 0 for the first data 
 			  segment (currently)*/
-			BUG_ON(!TCP_SKB_CB(skb)->end_data_seq);
-			if (before(mpcb->snd_una,
-				   TCP_SKB_CB(skb)->end_data_seq))
-				mpcb->snd_una=TCP_SKB_CB(skb)->end_data_seq;
+			BUG_ON(!scb->end_data_seq);
+			mtcp_update_dsn_ack(mpcb,scb->data_seq,
+					    scb->end_data_seq);
 		}
 	no_mptcp_update:
 #endif
+
 		tcp_unlink_write_queue(skb, sk);
 		sk_wmem_free_skb(sk, skb);
 		tp->scoreboard_skb_hint = NULL;

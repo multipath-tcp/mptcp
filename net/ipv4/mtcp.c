@@ -458,7 +458,7 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	spin_lock_init(&mpcb->lock);
 	mutex_init(&mpcb->mutex);
 	init_completion(&mpcb->liberate_subflow);
-	
+	INIT_LIST_HEAD(&mpcb->dsack_list);
 	mpcb->nb.notifier_call=netevent_callback;
 	register_netevent_notifier(&mpcb->nb);
 
@@ -1528,6 +1528,70 @@ fail:
 	local_bh_enable();
 	return ret;
 }
+
+
+void mtcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end) {
+	struct dsn_sack *dsack;
+	struct dsn_sack *new_block;
+	
+	/*We should never be meta-acked twice*/
+	BUG_ON(before(start,mpcb->snd_una));
+	
+	spin_lock(&mpcb->lock);
+	/*Normal case*/
+	if (mpcb->snd_una==start) {
+		mpcb->snd_una=end;
+		if (!list_empty(&mpcb->dsack_list) && 
+		    mpcb->snd_una==dsack_first(mpcb)->start) {
+			dsack=dsack_first(mpcb);
+			mpcb->snd_una=dsack->end;
+			list_del(&dsack->list);
+			kfree(dsack);			
+		}
+		goto out;		
+	}
+	/*there is a hole, use the dsack list*/
+	list_for_each_entry(dsack,&mpcb->dsack_list,list) {
+		if (after(start,dsack->end)) 
+			continue;
+		if (start==dsack->end) {
+			dsack->end=end;
+			if (!dsack_is_last(dsack,mpcb) && 
+			    dsack_next(dsack)->start==end) {
+				/*Glue the two blocks together*/
+				dsack_next(dsack)->start=dsack->start;
+				list_del(&dsack->list);
+				kfree(dsack);
+			}
+			goto out;
+		}
+		if (end==dsack->start) {
+			dsack->start=start;
+			if (!dsack_is_first(dsack,mpcb) &&
+			    dsack_prev(dsack)->end==start) {
+				/*Glue the two blocks together*/
+				dsack_prev(dsack)->end=dsack->end;
+				list_del(&dsack->list);
+				kfree(dsack);
+			}
+			goto out;
+		}
+		/*Else we need to create a new block*/
+		new_block=kmalloc(sizeof(struct dsn_sack),GFP_ATOMIC);
+		new_block->start=start;
+		new_block->end=end;
+		__list_add(&new_block->list,dsack->list.prev,&dsack->list);
+		goto out;
+	}
+	/*The acked block matches nothing, append it to the sack list*/
+	new_block=kmalloc(sizeof(struct dsn_sack),GFP_ATOMIC);
+	new_block->start=start;
+	new_block->end=end;
+	list_add_tail(&new_block->list,&mpcb->dsack_list);
+out:
+	spin_unlock(&mpcb->lock);
+}
+
 
 /*At the moment we apply a simple addition algorithm.
   We will complexify later*/

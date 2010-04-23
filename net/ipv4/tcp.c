@@ -941,8 +941,9 @@ static inline int select_size(struct sock *sk)
 }
 
 
-int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
-		size_t size)
+int tcp_sendmsg(struct kiocb *iocb, struct socket *sock, 
+		       struct msghdr *msg,
+		       size_t size)
 {
 	return subtcp_sendmsg(iocb,sock->sk,msg,size);
 }
@@ -1163,7 +1164,8 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 				goto out;
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 
-			if (skb->len < size_goal || (flags & MSG_OOB))
+			if (sk_stream_memory_free(sk) && 
+			    (skb->len < size_goal || (flags & MSG_OOB)))
 				continue;
 
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
@@ -1173,7 +1175,8 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			} else if (skb == tcp_send_head(sk))
 				tcp_push_one(sk, mss_now);
 			
-			/*Once we have filled one skb, we give control back to the scheduler*/
+			/*Once we have filled one skb, we give control back to 
+			  the scheduler*/
 
 			break;
 
@@ -1195,6 +1198,10 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			mss_now = tcp_current_mss(sk, !(flags&MSG_OOB));
 			size_goal = tp->xmit_size_goal;
 		}
+		/*If we have filled one skb, or there is no
+		  space anymore in this pipe, return control to the scheduler*/
+		if (!sk_stream_memory_free(sk) || copied >= size_goal)
+			break;
 	}
 
 out:
