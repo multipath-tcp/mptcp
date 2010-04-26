@@ -397,6 +397,10 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 		newtp->rcv_wup = newtp->copied_seq = newtp->rcv_nxt = treq->rcv_isn + 1;
 		newtp->snd_sml = newtp->snd_una = newtp->snd_nxt = treq->snt_isn + 1;
 		newtp->snd_up = treq->snt_isn + 1;
+#ifdef CONFIG_MTCP
+		newtp->rx_opt.rcv_isn=treq->rcv_isn;
+		newtp->snt_isn=treq->snt_isn;
+#endif
 
 		tcp_prequeue_init(newtp);
 

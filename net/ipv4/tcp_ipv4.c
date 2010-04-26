@@ -247,6 +247,10 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 							   inet->sport,
 							   usin->sin_port);
 
+#ifdef CONFIG_MTCP
+	tp->snt_isn=tp->write_seq;
+#endif
+
 	inet->id = tp->write_seq ^ jiffies;
 
 	err = tcp_connect(sk);

@@ -3465,7 +3465,8 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				return;	/* don't parse partial options */
 			switch (opcode) {
 			case TCPOPT_MSS:
-				if (opsize == TCPOLEN_MSS && th->syn && !estab) {
+				if (opsize == TCPOLEN_MSS && 
+				    th->syn && !estab) {
 					u16 in_mss = get_unaligned_be16(ptr);
 					if (in_mss) {
 						if (opt_rx->user_mss &&
@@ -3605,7 +3606,8 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				TCP_SKB_CB(skb)->data_len = 
 					ntohs(*(uint16_t*)ptr);			
 				TCP_SKB_CB(skb)->sub_seq = 
-					ntohl(*(uint32_t*)(ptr+2));
+					ntohl(*(uint32_t*)(ptr+2))+
+					opt_rx->rcv_isn;
 				TCP_SKB_CB(skb)->data_seq = 
 					ntohl(*(uint32_t*)(ptr+6));
 				mopt->saw_dsn=1;
@@ -5660,6 +5662,9 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		/* Ok.. it's good. Set up sequence numbers and
 		 * move to established.
 		 */
+#ifdef CONFIG_MTCP
+		tp->rx_opt.rcv_isn = TCP_SKB_CB(skb)->seq;
+#endif
 		tp->rcv_nxt = TCP_SKB_CB(skb)->seq + 1;
 		tp->rcv_wup = TCP_SKB_CB(skb)->seq + 1;
 

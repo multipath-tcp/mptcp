@@ -254,6 +254,8 @@ struct tcp_sock {
 	u16    map_data_len;
 	u32    map_subseq;
 	u32    dsn_snd_una; /*First unacked byte as seen by this subflow*/
+/*snt isn: needed to translate abs to relative subflow seqnums*/
+	u32    snt_isn;
 #endif
 /*We keep these flags even if CONFIG_MTCP is not checked, because it allows
   checking MTPC capability just by checking the mpc flag, rather than adding

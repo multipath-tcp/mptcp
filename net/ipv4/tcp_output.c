@@ -698,7 +698,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			opts->options |= OPTION_DSN;
 			opts->data_seq=tcb->data_seq;
 			opts->data_len=tcb->data_len;
-			opts->sub_seq=tcb->sub_seq;
+			opts->sub_seq=tcb->sub_seq-tp->snt_isn;
 		}
 		size += TCPOLEN_DSN_ALIGNED;		
 	}
