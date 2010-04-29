@@ -651,7 +651,7 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 	/*First, find the best subflow*/
 	mtcp_for_each_sk(mpcb,sk,tp) {
 		/*The shift is to avoid having to deal with a float*/
-		unsigned int fill_ratio=(sk->sk_wmem_queued<<4)/sk->sk_sndbuf;
+		unsigned int fill_ratio=(sk->sk_wmem_queued<<4)/tp->snd_cwnd;
 		if (!mtcp_is_available(sk))
 			continue;
 		if (fill_ratio<min_fill_ratio) {
