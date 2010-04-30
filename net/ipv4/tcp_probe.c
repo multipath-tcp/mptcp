@@ -82,6 +82,8 @@ struct tcp_log {
 	int     rmem_alloc; /*number of ofo bytes received*/
 	int     dsn;
         u32     mtcp_snduna;
+	u32     drs_seq;
+	u32     drs_time;
 };
 
 static struct {
@@ -158,6 +160,8 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->rmem_alloc=atomic_read(&sk->sk_rmem_alloc);
 			p->dsn=TCP_SKB_CB(skb)->data_seq;
 			p->mtcp_snduna=(tp->mpc)?tp->mpcb->snd_una:0;
+			p->drs_seq=tp->rcvq_space.seq;
+			p->drs_time=tp->rcvq_space.time;
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
 		tcp_probe.lastcwnd = tp->snd_cwnd;
@@ -246,6 +250,8 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			p->rmem_alloc=atomic_read(&sk->sk_rmem_alloc);
 			p->dsn=TCP_SKB_CB(skb)->data_seq;
 			p->mtcp_snduna=(tp->mpc)?tp->mpcb->snd_una:0;
+			p->drs_seq=tp->rcvq_space.seq;
+			p->drs_time=tp->rcvq_space.time;
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
 		tcp_probe.lastcwnd = tp->snd_cwnd;
@@ -309,7 +315,7 @@ static int tcpprobe_sprint(char *tbuf, int n)
 	return snprintf(tbuf, n,
 			"%lu.%09lu " NIPQUAD_FMT ":%u " NIPQUAD_FMT ":%u"
 			" %d %d %#x %#x %u %u %u %u %#x %#x %u %u %u %u %d"
-			" %d %u %u %u %d %d %d %#x %#x\n",
+			" %d %u %u %u %d %d %d %#x %#x %#x %#x\n",
 			(unsigned long) tv.tv_sec,
 			(unsigned long) tv.tv_nsec,
 			NIPQUAD(p->saddr), ntohs(p->sport),
@@ -321,7 +327,7 @@ static int tcpprobe_sprint(char *tbuf, int n)
 			p->space,p->rtt_est*1000/HZ,p->in_flight,
 			p->mss_cache,
 			p->snd_buf,p->wmem_queued, p->rmem_alloc, p->dsn,
-			p->mtcp_snduna);
+			p->mtcp_snduna,p->drs_seq,p->drs_time*1000/HZ);
 }
 
 static ssize_t tcpprobe_read(struct file *file, char __user *buf,
