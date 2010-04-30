@@ -520,7 +520,23 @@ void tcp_rcv_space_adjust(struct sock *sk)
 		goto new_measure;
 
 	time = tcp_time_stamp - tp->rcvq_space.time;
-	if (time < (tp->rcv_rtt_est.rtt >> 3) || tp->rcv_rtt_est.rtt == 0)
+
+	if (tp->mpc) { 
+#ifdef CONFIG_MTCP
+		struct multipath_pcb *mpcb=tp->mpcb;
+		struct tcp_sock *tp_it;
+		u32 rtt_max=0;
+		/*In MPTCP, we take the max delay across all flows,
+		  in order to take into account meta-reordering buffers.*/
+		mtcp_for_each_tp(mpcb,tp_it) {
+			if (rtt_max<(tp_it->rcv_rtt_est.rtt >> 3))
+				rtt_max=(tp_it->rcv_rtt_est.rtt >> 3);
+		}
+		if (time < rtt_max || !rtt_max)
+			return;
+#endif
+	}
+	else if (time < (tp->rcv_rtt_est.rtt >> 3) || tp->rcv_rtt_est.rtt == 0)
 		return;
 
 	space = 2 * (tp->copied_seq - tp->rcvq_space.seq);
