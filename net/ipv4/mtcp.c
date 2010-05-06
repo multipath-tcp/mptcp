@@ -631,8 +631,11 @@ int mtcp_is_available(struct sock *sk)
 }
 
 /*This is the scheduler. This function decides on which flow to send
-  a given MSS. Currently we choose a simple round-robin policy.
-  If all subflows are found to be busy, NULL is returned*/
+ *  a given MSS. If all subflows are found to be busy, NULL is returned
+ * The flow is selected based on the estimation of how much time will be
+ * needed to send the segment. If all paths have full send buffers, we
+ * simply block. The flow able to send the segment the soonest get it. 
+ */
 static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb) 
 {
 	struct tcp_sock *tp;
@@ -651,9 +654,8 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 	/*First, find the best subflow*/
 	mtcp_for_each_sk(mpcb,sk,tp) {
 		/*The shift is to avoid having to deal with a float*/
-		unsigned int fill_ratio=(sk->sk_wmem_queued<<4)/tp->snd_cwnd;
-		if (!mtcp_is_available(sk))
-			continue;
+		unsigned int fill_ratio=
+			(sk->sk_wmem_queued<<4)*tp->srtt/tp->snd_cwnd;
 		if (fill_ratio<min_fill_ratio) {
 			min_fill_ratio=fill_ratio;
 			bestsk=sk;
@@ -667,7 +669,7 @@ out:
 		bestsk=NULL;
 	
 	mutex_unlock(&mpcb->mutex);
-	return tcp_sk(bestsk);		
+	return tcp_sk(bestsk);
 }
 
 static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb)
