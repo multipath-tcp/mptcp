@@ -4752,8 +4752,46 @@ static void tcp_new_space(struct sock *sk)
 	if (tcp_should_expand_sndbuf(sk)) {
 		int sndmem = max_t(u32, tp->rx_opt.mss_clamp, tp->mss_cache) +
 			MAX_TCP_HEADER + 16 + sizeof(struct sk_buff);
+#ifndef CONFIG_MTCP
 		int demanded = max_t(unsigned int, tp->snd_cwnd,
 				     tp->reordering + 1);
+#else
+		int demanded;
+		struct multipath_pcb *mpcb=tp->mpcb;
+		struct tcp_sock *tp_it;
+		u32 rtt_max=tp->srtt;
+		mtcp_for_each_tp(mpcb,tp_it)
+			if (rtt_max<tp_it->srtt)
+				rtt_max=tp_it->srtt;
+
+		/* Normally the send buffer is computed as the twice the BDP
+		 * However in multipath, a fast path may need more buffer
+		 * for the following reason:
+		 * Imagine 2 flows with same bw b, and delay 10 and 100, resp.
+		 * Normally flow 10 will have send buffer 2*b*10
+		 *               100 will have send buffer 2*b*100
+		 * In order to minimize reordering at the receiver, the sender
+		 * must ensure that all consecutive packets are sent as close to
+		 * each other as possible, even when spread across several 
+		 * subflows. If we represent a buffer as having a "height" in 
+		 * time units, and a "width" in bandwidth units, we must ensure 
+		 * that each segment is sent on the buffer with smallest 
+		 * "current height". (lowest filling related to his hight).
+		 * The subflow max height, given that its width is its bw,
+		 * is computed as 2d traditionnally, thus 20 and 200 resp. here.
+		 * The problem is that if buffer with delay 10, is kept
+		 * at size 2*b*10, the scheduler will be able to schedule
+		 * segments until height=20 maximum. In summary, the use of 
+		 * all buffers is reduced to the hight of the smallest one.
+		 * This is why all buffers must be arranged to have equal
+		 * height, that hight being the highest hight needed by the
+		 * network, that 2*max(delays).
+		 * Since we estimate bw with (cwnd/srtt), our estimate
+		 * of bw*max(delay) is (cwnd/srtt)*srtt_max
+		 */
+		demanded = max_t(unsigned int, tp->snd_cwnd*rtt_max/tp->srtt,
+				 tp->reordering + 1);
+#endif
 		sndmem *= 2 * demanded;
 		if (sndmem > sk->sk_sndbuf) {
 #ifdef CONFIG_MTCP
