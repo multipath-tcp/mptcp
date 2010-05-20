@@ -455,6 +455,7 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	mpcb->master_sk=master_sk;
 
 	kref_init(&mpcb->kref);
+
 	spin_lock_init(&mpcb->lock);
 	mutex_init(&mpcb->mutex);
 	init_completion(&mpcb->liberate_subflow);
@@ -466,6 +467,10 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	mpcb->rcv_ssthresh=tcp_sk(master_sk)->rcv_ssthresh;
 	
 #ifdef CONFIG_MTCP_PM
+	/*Init the accept_queue structure, we support a queue of 4 pending
+	  connections, it does not need to be huge, since we only store 
+	  here pending subflow creations*/
+	reqsk_queue_alloc(&mpcb->accept_queue,32);
 	/*Pi 1 is reserved for the master subflow*/
 	mpcb->next_unused_pi=2;
 	/*For the server side, the local token has already been allocated*/
@@ -484,8 +489,21 @@ static void mpcb_release(struct kref* kref)
 	struct multipath_pcb *mpcb;
 	mpcb=container_of(kref,struct multipath_pcb,kref);
 	mutex_destroy(&mpcb->mutex);
-	PDEBUG("about to kfree\n");
+#ifdef CONFIG_MTCP_PM
+	mtcp_pm_release(mpcb);
+#endif
+	printk(KERN_ERR 
+	       "will free mpcb\n");
 	kfree(mpcb);
+}
+
+void mpcb_get(struct multipath_pcb *mpcb)
+{
+	kref_get(&mpcb->kref);
+}
+void mpcb_put(struct multipath_pcb *mpcb)
+{
+	kref_put(&mpcb->kref,mpcb_release);
 }
 
 /*Warning: can only be called in user context
@@ -502,8 +520,7 @@ void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
 	/*Remove any remaining skb from the queues*/
 	skb_queue_purge(&mpcb->receive_queue);
 	skb_queue_purge(&mpcb->out_of_order_queue);
-	kref_put(&mpcb->kref,mpcb_release);
-	
+	kref_put(&mpcb->kref,mpcb_release);	
 }
 
 /*MUST be called in user context
@@ -723,13 +740,12 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	PDEBUG("Entering %s\n",__FUNCTION__);
 
 	mpcb=mpcb_from_tcpsock(tcp_sk(master_sk));
-	if (mpcb==NULL){
-		BUG();
-	}
+
+	BUG_ON(!mpcb);
 
 #ifdef CONFIG_MTCP_PM
 	/*Any new subsock we can use ?*/
-	mtcp_check_new_subflow();
+	mtcp_check_new_subflow(mpcb);
 	if (unlikely(mpcb->received_options.list_rcvd)) {
 		mpcb->received_options.list_rcvd=0;
 		mtcp_update_patharray(mpcb);

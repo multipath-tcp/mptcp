@@ -64,6 +64,13 @@ struct request_sock {
 	u32                             mtcp_loc_token;
 	u32                             mtcp_rem_token;
 	struct multipath_pcb            *mpcb;
+	/*Collision list in the tuple hashtable. We need to find
+	  the req sock when receiving the third msg of the 3-way handshake,
+	  since that one does not contain the token. If this makes
+	  the request sock too long, we can use kmalloc'ed specific entries for
+	  that tuple hashtable. At the moment, though, I extend the 
+	  request_sock.*/
+	struct list_head                collide_tuple;
 #endif
 #endif
 };

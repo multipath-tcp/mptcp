@@ -1916,7 +1916,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	/*Received a new list of addresses recently ?
 	  announce corresponding path indices to the
 	  mpcb, and start new subflows*/
-	mtcp_check_new_subflow();
+	mtcp_check_new_subflow(mpcb);
 	if (unlikely(mpcb->received_options.list_rcvd)) {
 		mpcb->received_options.list_rcvd=0;
 		mtcp_update_patharray(mpcb);
@@ -2234,7 +2234,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			/*We may have received data on a newly created
 			  subsocket, check if the list has grown*/
 #ifdef CONFIG_MTCP_PM
-			mtcp_check_new_subflow();
+			mtcp_check_new_subflow(mpcb);
 #endif
 			mutex_lock(&mpcb->mutex);
 			PDEBUG("At line %d\n",__LINE__);

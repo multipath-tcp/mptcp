@@ -98,6 +98,7 @@ struct multipath_pcb {
 	
 	/*list of sockets in this multipath connection*/
 	struct tcp_sock*          connection_list;
+	
 	/*Master socket, also part of the connection_list, this
 	  socket is the one that the application sees.*/
 	struct sock*              master_sk;
@@ -158,6 +159,8 @@ struct multipath_pcb {
 						    subflows*/
 
 #ifdef CONFIG_MTCP_PM
+	/*accept queue (to store join requests)*/
+	struct request_sock_queue accept_queue;
 	struct list_head          collide_tk;
 	uint8_t                   addr_sent:1; /* 1 if our set of local
 						addresses has been sent
@@ -314,5 +317,7 @@ int mtcpsub_get_port(struct sock *sk, unsigned short snum);
 void mtcp_update_window_clamp(struct multipath_pcb *mpcb);
 void mtcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end);
 int mtcpv6_init(void);
+void mpcb_get(struct multipath_pcb *mpcb);
+void mpcb_put(struct multipath_pcb *mpcb);
 
 #endif /*_MTCP_H*/
