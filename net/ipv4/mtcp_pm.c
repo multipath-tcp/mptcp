@@ -1076,7 +1076,6 @@ int mtcp_lookup_join(struct sk_buff *skb)
 					printk(KERN_ERR 
 					       "%s:mpcb not found:%x\n",
 					       __FUNCTION__,token);
-					mpcb_put(mpcb);
 					return 0;
 				}
 				/*OK, this is a new syn/join, let's 
