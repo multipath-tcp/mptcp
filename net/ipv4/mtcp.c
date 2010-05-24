@@ -544,6 +544,13 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 	
 	mpcb->cnt_subflows++;
 	mtcp_update_window_clamp(mpcb);
+	
+	/*The socket is already established if it was in the
+	  accept queue of the mpcb*/
+	if (((struct sock*)tp)->sk_state==TCP_ESTABLISHED) {
+		mpcb->cnt_established++;
+		mpcb->sndbuf_grown=1;
+	}
 
 	kref_get(&mpcb->kref);	
 	local_bh_enable();
