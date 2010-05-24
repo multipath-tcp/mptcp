@@ -2802,7 +2802,9 @@ int tcp_disconnect(struct sock *sk, int flags)
 		/* The last check adjusts for discrepancy of Linux wrt. RFC
 		 * states
 		 */
-		tcp_send_active_reset(sk, gfp_any());
+		/*MTCP: No need to reset half established slave subflows,
+		  since a reset on any flow resets everything*/
+		if (!tp->mpc || tp->mpcb) tcp_send_active_reset(sk, gfp_any());
 		sk->sk_err = ECONNRESET;
 	} else if (old_state == TCP_SYN_SENT)
 		sk->sk_err = ECONNRESET;
