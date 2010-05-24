@@ -578,11 +578,8 @@ void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 			}
 		}
 	tp->mpcb=NULL; tp->next=NULL;
-	if (!in_interrupt()) {
-		/*Then we must take the mutex to avoid racing
-		  with mtcp_add_sock*/
+	if (!in_interrupt())
 		mutex_unlock(&mpcb->mutex);
-	}
 	kref_put(&mpcb->kref,mpcb_release);
 	BUG_ON(!done);
 }

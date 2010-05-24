@@ -983,7 +983,9 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 	/*The child is a clone of the master socket, we must now reset
 	  some of the fields*/
 	tcp_sk(child)->bytes_eaten=0;
-
+	tcp_sk(child)->mpcb=NULL; /*necessary for inet_csk_detroy_sock()
+				    will be set when removed from the 
+				    accept queue*/
 	tcp_sk(child)->mpc=1;
 	tcp_sk(child)->rx_opt.mtcp_rem_token=req->mtcp_rem_token;
 	tcp_sk(child)->mtcp_loc_token=req->mtcp_loc_token;
@@ -1031,7 +1033,7 @@ int mtcp_syn_recv_sock(struct sk_buff *skb)
 	if (child)
 		tcp_child_process(req->mpcb->master_sk,
 				  child,skb);
-	/*The lock has been taken by mtcp_search_req*/
+	/*The refcount has been incremented by mtcp_search_req*/
 	mpcb_put(req->mpcb);
 	return 1;
 }
