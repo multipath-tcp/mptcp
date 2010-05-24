@@ -550,6 +550,7 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 	if (((struct sock*)tp)->sk_state==TCP_ESTABLISHED) {
 		mpcb->cnt_established++;
 		mpcb->sndbuf_grown=1;
+		mtcp_update_window_clamp(mpcb);
 	}
 
 	kref_get(&mpcb->kref);	

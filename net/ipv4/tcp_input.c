@@ -393,7 +393,10 @@ static void tcp_init_buffer_space(struct sock *sk)
 	tp->snd_cwnd_stamp = tcp_time_stamp;
 
 #ifdef CONFIG_MTCP
-	mtcp_update_window_clamp(tp->mpcb);
+	/*mpcb is NULL if the subsock is in the mpcb accept queue.
+	  In that case, the mtcp_update_window_clamp() is called 
+	  later, from mtcp_add_sock()*/
+	if (tp->mpcb) mtcp_update_window_clamp(tp->mpcb);
 #endif
 }
 
