@@ -4211,7 +4211,11 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 
 		/* Ok. In sequence. In window. */
 #ifdef CONFIG_MTCP
-		if (mpcb->ucopy.task == current &&
+		/*mpcb can be NULL if the subsock is still in the mpcb
+		  accept queue, in that case we simply behave as if there
+		  were no prequeue, and store the incoming data locally to that
+		  subsock until it is attached to the mpcb.*/
+		if (mpcb && mpcb->ucopy.task == current &&
 		    tp->copied_seq == tp->rcv_nxt && mpcb->ucopy.len &&
 		    sock_owned_by_user(sk) && !tp->urg_data) {
 			if (tp->mpc) {
