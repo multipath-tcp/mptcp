@@ -6135,8 +6135,13 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 		break;
 	}
 
+	/*MTCP note: here we cannot enter the if body if mpcb is not defined,
+	  because the following functions need the mpcb. Anyway, if the mpcb
+	  is NULL, it means that the socket is not yet attached to the 
+	  mpcb, and thus no data can be given to it.*/
+
 	/* tcp_data could move socket to TIME-WAIT */
-	if (sk->sk_state != TCP_CLOSE) {
+	if (sk->sk_state != TCP_CLOSE && (!tp->mpc || tp->mpcb)) {
 		tcp_data_snd_check(sk);
 		tcp_ack_snd_check(sk);
 	}
