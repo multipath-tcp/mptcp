@@ -956,6 +956,10 @@ static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+	
+	/*If the socket is still in the accept queue of the mpcb,
+	  the mpcb prequeue is not yet available*/
+	if (tp->mpc && !mpcb) return 0;
 
 	if (!sysctl_tcp_low_latency && mpcb->ucopy.task) {
 		__skb_queue_tail(&tp->ucopy.prequeue, skb);
