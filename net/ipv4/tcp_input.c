@@ -4329,7 +4329,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 		if (eaten > 0)
 			__kfree_skb(skb);
 #ifdef CONFIG_MTCP
-		else if (!sock_flag(sk, SOCK_DEAD)) {			
+		else if (!sock_flag(sk, SOCK_DEAD) && mpcb) {
 			mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
 		}
 #endif
