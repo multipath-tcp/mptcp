@@ -5416,7 +5416,8 @@ step5:
 	/* step 7: process the segment text */
 	tcp_data_queue(sk, skb);
 
-	tcp_data_snd_check(sk);
+	if (tp->mpcb)
+		tcp_data_snd_check(sk);
 	tcp_ack_snd_check(sk);
 	return 0;
 

@@ -1970,7 +1970,7 @@ u32 __tcp_select_window(struct sock *sk)
 	struct multipath_pcb *mpcb = tp->mpcb;
 	int mss,free_space,full_space,window;
 
-	if (!tp->mpc) return __tcp_select_window_fallback(sk);
+	if (!tp->mpc || !tp->mpcb) return __tcp_select_window_fallback(sk);
 
 	/* MSS for the peer's data.  Previous versions used mss_clamp
 	 * here.  I don't know if the value based on our guesses
