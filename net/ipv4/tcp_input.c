@@ -638,7 +638,9 @@ static void tcp_event_data_recv(struct sock *sk, struct sk_buff *skb)
 
 	TCP_ECN_check_ce(tp, skb);
 
-	if (skb->len >= 128)
+	/*MPTCP: if the subsock is not yet attached to the mpcb,
+	  we cannot grow the window.*/
+	if (skb->len >= 128 && (!tp->mpc || tp->mpcb))
 		tcp_grow_window(sk, skb);
 }
 
