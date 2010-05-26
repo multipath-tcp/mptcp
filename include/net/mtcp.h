@@ -163,8 +163,8 @@ struct multipath_pcb {
 	struct request_sock_queue accept_queue;
 	struct list_head          collide_tk;
 	uint8_t                   addr_sent:1; /* 1 if our set of local
-						addresses has been sent
-						already to our peer */
+				                  addresses has been sent
+						  already to our peer */
 	
 	struct mtcp_loc4          addr4[MTCP_MAX_ADDR]; /*We need to store
 							  the set of local

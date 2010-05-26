@@ -439,6 +439,9 @@ struct tcp_sock {
 					       For debugging*/
 #ifdef CONFIG_MTCP_PM
 	u32                     mtcp_loc_token;
+	uint8_t                 pending:1; /*One if this is a pending subsock
+					     (established, but not yet
+					     attached to the mpcb)*/
 #endif
 #endif
 };

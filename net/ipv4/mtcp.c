@@ -540,6 +540,7 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 	/*Same token for all subflows*/
 	tp->rx_opt.mtcp_rem_token=
 		tcp_sk(mpcb->master_sk)->rx_opt.mtcp_rem_token;
+	tp->pending=0;
 #endif
 	
 	mpcb->cnt_subflows++;

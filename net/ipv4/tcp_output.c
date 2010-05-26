@@ -703,7 +703,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		size += TCPOLEN_DSN_ALIGNED;		
 	}
 #ifdef CONFIG_MTCP_PM
-	if (tp->mpc) {
+	if (tp->mpc && mpcb) {
 		if (unlikely(!mpcb->addr_sent && mpcb->num_addr4)) {
 			if (skb) mpcb->addr_sent=1;
 			opts->options |= OPTION_ADDR;
@@ -712,6 +712,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			size += TCPOLEN_ADDR_ALIGNED(mpcb->num_addr4);
 		}
 	}
+	BUG_ON(!mpcb && !tp->pending);
 #endif
 #endif
 	return size;
@@ -1970,6 +1971,7 @@ u32 __tcp_select_window(struct sock *sk)
 	struct multipath_pcb *mpcb = tp->mpcb;
 	int mss,free_space,full_space,window;
 
+	BUG_ON(!tp->mpcb && !tp->pending);
 	if (!tp->mpc || !tp->mpcb) return __tcp_select_window_fallback(sk);
 
 	/* MSS for the peer's data.  Previous versions used mss_clamp

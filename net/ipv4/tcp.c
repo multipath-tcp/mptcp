@@ -2488,6 +2488,7 @@ recv_urg:
 void tcp_set_state(struct sock *sk, int state)
 {
 	int oldstate = sk->sk_state;
+	struct tcp_sock *tp=tcp_sk(sk);
 
 	switch (state) {
 	case TCP_ESTABLISHED:
@@ -2496,6 +2497,7 @@ void tcp_set_state(struct sock *sk, int state)
 #ifdef CONFIG_MTCP
 			/*mpcb is NULL if the socket is in the accept
 			  queue of the mpcb.*/
+			BUG_ON(!tp->mpcb && !tp->pending);
 			if (tcp_sk(sk)->mpcb) { 
 				if (tcp_sk(sk)->mpc && 
 				    is_master_sk(tcp_sk(sk))) 
@@ -2801,6 +2803,7 @@ int tcp_disconnect(struct sock *sk, int flags)
 		 */
 		/*MTCP: No need to reset half established slave subflows,
 		  since a reset on any flow resets everything*/
+		if (tp->mpc) BUG_ON(!tp->mpcb && !tp->pending);
 		if (!tp->mpc || tp->mpcb) tcp_send_active_reset(sk, gfp_any());
 		sk->sk_err = ECONNRESET;
 	} else if (old_state == TCP_SYN_SENT)

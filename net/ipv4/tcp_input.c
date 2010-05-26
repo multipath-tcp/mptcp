@@ -396,6 +396,7 @@ static void tcp_init_buffer_space(struct sock *sk)
 	/*mpcb is NULL if the subsock is in the mpcb accept queue.
 	  In that case, the mtcp_update_window_clamp() is called 
 	  later, from mtcp_add_sock()*/
+	BUG_ON(!tp->mpcb && !tp->pending);
 	if (tp->mpcb) mtcp_update_window_clamp(tp->mpcb);
 #endif
 }
@@ -642,6 +643,7 @@ static void tcp_event_data_recv(struct sock *sk, struct sk_buff *skb)
 	  we cannot grow the window.*/
 	if (skb->len >= 128 && (!tp->mpc || tp->mpcb))
 		tcp_grow_window(sk, skb);
+	if (tp->mpc) BUG_ON(!tp->mpcb && !tp->pending);
 }
 
 static u32 tcp_rto_min(struct sock *sk)
@@ -4217,6 +4219,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 		  accept queue, in that case we simply behave as if there
 		  were no prequeue, and store the incoming data locally to that
 		  subsock until it is attached to the mpcb.*/
+		if (tp->mpc) BUG_ON(!mpcb && !tp->pending);
 		if (mpcb && mpcb->ucopy.task == current &&
 		    tp->copied_seq == tp->rcv_nxt && mpcb->ucopy.len &&
 		    sock_owned_by_user(sk) && !tp->urg_data) {
@@ -4332,6 +4335,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 		else if (!sock_flag(sk, SOCK_DEAD) && mpcb) {
 			mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
 		}
+		BUG_ON(!mpcb && !tp->pending);
 #endif
 		return;
 	}
@@ -5418,6 +5422,7 @@ step5:
 
 	if (tp->mpcb)
 		tcp_data_snd_check(sk);
+	BUG_ON(!tp->mpcb && !tp->pending);
 	tcp_ack_snd_check(sk);
 	return 0;
 
@@ -6144,6 +6149,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 	  mpcb, and thus no data can be given to it.*/
 
 	/* tcp_data could move socket to TIME-WAIT */
+	if (tp->mpc) BUG_ON(!tp->mpcb && !tp->pending);
 	if (sk->sk_state != TCP_CLOSE && (!tp->mpc || tp->mpcb)) {
 		tcp_data_snd_check(sk);
 		tcp_ack_snd_check(sk);

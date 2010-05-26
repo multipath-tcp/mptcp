@@ -959,6 +959,7 @@ static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 	
 	/*If the socket is still in the accept queue of the mpcb,
 	  the mpcb prequeue is not yet available*/
+	BUG_ON(!tp->mpcb && !tp->pending);
 	if (tp->mpc && !mpcb) return 0;
 
 	if (!sysctl_tcp_low_latency && mpcb->ucopy.task) {

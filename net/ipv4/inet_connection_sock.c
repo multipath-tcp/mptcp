@@ -583,6 +583,7 @@ void inet_csk_destroy_sock(struct sock *sk)
 #ifdef CONFIG_MTCP
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
 	PDEBUG("Removing subsocket %p\n",sk);
+	BUG_ON(!mpcb && !tcp_sk(sk)->pending);
 	/*mpcb is NULL if the socket is the child subsocket
 	  waiting in the accept queue of the mpcb.
 	  Child subsockets are not yet attached to the mpcb.
