@@ -2061,7 +2061,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			}
 			/*TODEL
 			  Not normal to arrive here. Print a lot of info,
-			  than panic*/
+			  then panic*/
 			printk(KERN_ERR "tp->seq:%x,skb->seq:%x,"
 			       "skb->len:%d\n",*tp->seq,TCP_SKB_CB(skb)->seq,
 			       skb->len);
@@ -2233,9 +2233,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			
 			/*We may have received data on a newly created
 			  subsocket, check if the list has grown*/
-#ifdef CONFIG_MTCP_PM
-			mtcp_check_new_subflow(mpcb);
-#endif
 			mutex_lock(&mpcb->mutex);
 			PDEBUG("At line %d\n",__LINE__);
 			if (cnt_subflows!=mpcb->cnt_subflows) {

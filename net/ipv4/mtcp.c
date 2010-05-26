@@ -824,7 +824,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
  * We check receive queue before schedule() only as optimization;
  * it is very likely that release_sock() added new data.
  */
-int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
+int __mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 		   long *timeo)
 {
 	int rc; struct sock *sk; struct tcp_sock *tp;
@@ -847,6 +847,24 @@ int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 	finish_wait(master_sk->sk_sleep, &wait);
 	return rc;
 }
+
+#ifdef CONFIG_MTCP_PM
+int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
+		   long *timeo) {
+	int rc;
+	int new_subflow=0;
+	/*If no data appears is received but a new subflow appears,
+	  we attach the new subflow and wait again for data.*/
+	do {
+		rc=__mtcp_wait_data(mpcb,master_sk,timeo);
+		new_subflow=mtcp_check_new_subflow(mpcb);
+	} while(!rc && new_subflow);
+
+	return rc;
+}
+#else
+#define mtcp_wait_data __mtcp_wait_data
+#endif
 
 void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 		    u32 *data_seq, int *copied, int flags)

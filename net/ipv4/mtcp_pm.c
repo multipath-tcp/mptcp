@@ -1112,15 +1112,18 @@ finished:
 	return 1;
 }
 
-/*checks whether a new established subflow has appeared,
-  in which case that subflow is added to the path set. */
-void mtcp_check_new_subflow(struct multipath_pcb *mpcb)
+/**
+ * checks whether a new established subflow has appeared,
+ * in which case that subflow is added to the path set. 
+ * @return: the number of newly attached subflows
+ */
+int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 {
 	struct sock *child;
-	struct request_sock *acc_req;
-	struct request_sock *req;
+	struct request_sock *acc_req, *req;
 	struct inet_request_sock *ireq;
 	struct path4 *p;
+	int nb_new=0;
 
 	spin_lock_bh(&mpcb->lock);
 	/* make all the listen_opt local to us */
@@ -1144,7 +1147,9 @@ void mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 		
 		mtcp_add_sock(mpcb,tcp_sk(child));
 		reqsk_free(req);
+		nb_new++;
 	}
+	return nb_new;
 }
 
 /**
