@@ -319,5 +319,6 @@ void mtcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end);
 int mtcpv6_init(void);
 void mpcb_get(struct multipath_pcb *mpcb);
 void mpcb_put(struct multipath_pcb *mpcb);
+void mtcp_data_ready(struct sock *sk);
 
 #endif /*_MTCP_H*/

@@ -73,6 +73,9 @@ void mtcp_hash_insert(struct multipath_pcb *mpcb,u32 token)
 	write_unlock_bh(&tk_hash_lock);
 }
 
+/*This function increments the refcount of the mpcb struct.
+  It is the responsibility of the caller to decrement when releasing
+  the structure.*/
 struct multipath_pcb* mtcp_hash_find(u32 token)
 {
 	int hash=hash_tk(token);
@@ -1036,11 +1039,6 @@ int mtcp_syn_recv_sock(struct sk_buff *skb)
 	if (child)
 		tcp_child_process(req->mpcb->master_sk,
 				  child,skb);
-	/*Tell the mpcb that new data is ready. Here the data is
-	  actually a new established subsocket, but we must wake up the
-	  process, so that it can attach the new subsock to its sets of
-	  subsockets. Otherwise, data arriving on it will be ignored.*/
-	req->mpcb->master_sk->sk_data_ready(req->mpcb->master_sk, 0);
 	/*The refcount has been incremented by mtcp_search_req*/
 	mpcb_put(req->mpcb);
 	return 1;
