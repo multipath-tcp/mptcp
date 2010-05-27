@@ -4156,6 +4156,14 @@ static void tcp_ofo_queue(struct sock *sk)
 
 		__skb_unlink(skb, &tp->out_of_order_queue);
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
+		
+#ifdef CONFIG_MTCP
+		if (tp->mpc) {
+			int mapping=mtcp_get_dataseq_mapping(tp,skb);
+			BUG_ON(mapping==-1);
+			if (mapping==1) mtcp_data_ready(sk);
+		}
+#endif				
 		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 		if (tcp_hdr(skb)->fin)
 			tcp_fin(skb, sk, tcp_hdr(skb));
@@ -4190,6 +4198,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk);
 #ifdef CONFIG_MTCP
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+	int mapping=0;
 #endif
 	int eaten = -1;
 		
@@ -4215,20 +4224,15 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 
 		/* Ok. In sequence. In window. */
 #ifdef CONFIG_MTCP
-		/*mpcb can be NULL if the subsock is still in the mpcb
-		  accept queue, in that case we simply behave as if there
-		  were no prequeue, and store the incoming data locally to that
-		  subsock until it is attached to the mpcb.*/
-		if (tp->mpc) BUG_ON(!mpcb && !tp->pending);
+		if (tp->mpc) {
+			mapping=mtcp_get_dataseq_mapping(tp,skb);
+			if (mapping==-1) goto drop;
+		}
 		if (mpcb && mpcb->ucopy.task == current &&
 		    tp->copied_seq == tp->rcv_nxt && mpcb->ucopy.len &&
 		    sock_owned_by_user(sk) && !tp->urg_data) {
 			if (tp->mpc) {
-				int mapping=mtcp_get_dataseq_mapping(mpcb,tp,skb);
-				if (mapping==-1) {
-					goto drop;
-				}
-				if (mapping==1) {
+				if (mapping==1) { /*in meta-order*/
 					int chunk = min_t(unsigned int, skb->len,
 							  mpcb->ucopy.len);
 					
@@ -4302,7 +4306,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 			if (eaten < 0 &&
 			    tcp_try_rmem_schedule(sk, skb->truesize))
 				goto drop;
-			
+
 			skb_set_owner_r(skb, sk);
 			
 			__skb_queue_tail(&sk->sk_receive_queue, skb);		
@@ -4333,7 +4337,16 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 			__kfree_skb(skb);
 		else if (!sock_flag(sk, SOCK_DEAD)) {
 #ifdef CONFIG_MTCP
-			mtcp_data_ready(sk);
+			/*If mapping is 1, we know that the segment is
+			  in order and in meta-order.
+			  So we can wake up the app. Further, we know that 
+			  eaten is not >0, thus it has not been completely
+			  eaten by the prequeue (otherwise, no need to call
+			  mtcp_data_ready, the prequeue does it).*/
+			if (tp->mpc) {
+				if (mapping==1) mtcp_data_ready(sk);
+			}
+			else sk->sk_data_ready(sk,0);
 #else
 			sk->sk_data_ready(sk, 0);
 #endif

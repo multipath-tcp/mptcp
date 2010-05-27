@@ -404,30 +404,27 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 		mask |= POLLHUP;
 	if (master_sk->sk_shutdown & RCV_SHUTDOWN)
 		mask |= POLLIN | POLLRDNORM | POLLRDHUP;
-
-	/*This can happen if the previous read could not eat all
-	  available data, and part of it is remaining on the meta receive 
-	  queue*/
-	if (skb_peek(&mpcb->receive_queue))
+	
+	if (master_tp->mpc && mpcb->pending_data)
 		mask |= POLLIN | POLLRDNORM;
-
+	
 	/* Connected? */
-
+	
 	mtcp_for_each_sk(mpcb,sk,tp)
 		if ((1 << sk->sk_state) & ~(TCPF_SYN_SENT | TCPF_SYN_RECV)) {
 			int target = sock_rcvlowat(sk,0,INT_MAX);
-
+			
 			if (tp->urg_seq == tp->copied_seq &&
 			    !sock_flag(sk, SOCK_URGINLINE) &&
 			    tp->urg_data)
 				target--;
 			
-			/* Potential race condition. If read of tp below will
+                        /* Potential race condition. If read of tp below will
 			 * escape above sk->sk_state, we can be illegally awaken
 			 * in SYN_* states. */
-			if (tp->rcv_nxt - tp->copied_seq >=target)
+			if (!tp->mpc && (tp->rcv_nxt - tp->copied_seq >=target))
 				mask |= POLLIN | POLLRDNORM;
-			
+						
 			if (!(sk->sk_shutdown & SEND_SHUTDOWN)) {
 				if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk)) {
 					mask |= POLLOUT | POLLWRNORM;
@@ -1912,6 +1909,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	struct task_struct *user_recv = NULL;
 	struct sk_buff *skb;
 	int cnt_subflows;
+	int finished=0;
 	
 	if (!master_tp->mpc)
 		return tcp_recvmsg_fallback(iocb,master_sk,msg,len,nonblock,
@@ -1942,7 +1940,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	/*For every subflow, init copied to 0*/
 	mtcp_for_each_tp(mpcb,tp) 
 		tp->copied=0;
-
 
 	/*Locking all subsockets*/
 	mtcp_for_each_sk(mpcb,sk,tp) lock_sock(sk);
@@ -1980,6 +1977,10 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	/*low water test: minimal number of bytes that must be consumed before
 	  tcp_recvmsg completes*/
 	target = sock_rcvlowat(master_sk, flags & MSG_WAITALL, len);
+	if (target!=1) {
+		printk(KERN_ERR "SO_RCVLOWAT != 1 not yet supported\n");
+		BUG();
+	}
 	
 	/*Start by checking if skbs are waiting on the mpcb receive queue*/
 	PDEBUG("%d: copied_seq:%x\n",__LINE__,mpcb->copied_seq);
@@ -2004,8 +2005,14 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	  order, be put in the meta-ofo queue, then we return because 
 	  len is 0. On the next call, the meta-receive queued is purged,
 	  but the meta-ofo queue is not consulted anymore ! So this would make
-	  a hole in the segment reception, making the connexion stall.*/
-	if (len==0) goto skip_loop;
+	  a hole in the segment reception, making the connexion stall.
+	  Just one special point is worth noting: it is possible, that the app
+	  read *exactly* the amount of data queued in the mpcb receive queue,
+	  in that particular case, we do not skip the loop, so as to see if
+	  further data is already available for later. (and set the 
+	  pending_data flag accordingly).
+	*/
+	if (!skb_queue_empty(&mpcb->receive_queue)) goto skip_loop;
 
 	do {
 		u32 offset;
@@ -2122,7 +2129,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			if (mtcp_test_any_sk(mpcb,sk,sk->sk_err) ||
 			    /*Master has the SHUTDOWN flag set
 			      TODO: Currently this flag is set when the master
-			      receives a FIN. To be in accordance with MTCP, 
+			      receives a FIN. To be in accordance with MPTCP, 
 			      we must rather do that upon reception of 
 			      a DATA FIN on any subflow.*/
 			    master_sk->sk_state == TCP_CLOSE ||
@@ -2233,7 +2240,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			cnt_subflows=mpcb->cnt_subflows;			
 			mutex_unlock(&mpcb->mutex);
 			PDEBUG("At line %d\n",__LINE__);
-			mtcp_wait_data(mpcb,master_sk, &timeo);
+			if (len) mtcp_wait_data(mpcb,master_sk, &timeo);
+			else finished=1;
 			PDEBUG("At line %d\n",__LINE__);
 			
 			/*We may have received data on a newly created
@@ -2290,10 +2298,10 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				       "prequeue len:%d\n",
 				       tp->path_index,
 				       skb_queue_len(&tp->ucopy.prequeue));
-				if (empty_prequeues ||
-				    (tp->rcv_nxt == tp->copied_seq &&
+				if ((empty_prequeues ||
+				     (tp->rcv_nxt == tp->copied_seq)) &&
 				    !skb_queue_empty(
-					    &tp->ucopy.prequeue))) {
+					    &tp->ucopy.prequeue)) {
 					
 					sk=(struct sock*) tp;
 					tcp_prequeue_process(sk);
@@ -2404,9 +2412,11 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			}
 		}
 		
-		/*if segment has been dropped by MPTCP, we cannot
+		/*if segment has been dropped or enqueued elsewhere
+		  (mpcb receive queue or ofo queue) by MPTCP, we cannot
 		  access the skb structure anymore*/
-		if (mtcp_op==MTCP_DROPPED) continue;
+		if (mtcp_op==MTCP_DROPPED || mtcp_op==MTCP_QUEUED) 
+			continue;
 
 		if (used + offset < skb->len)
 			continue; 
@@ -2423,9 +2433,26 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		++*(tcp_sk(skb->sk))->seq;
 		if (!(flags & MSG_PEEK))
 			sk_eat_skb(skb->sk, skb, 0);
-		break;
-	} while (len > 0);
+		break;		
+	} while ((len > 0 || skb_queue_empty(&mpcb->receive_queue)) && 
+		 !finished);
+/*Note on the above while condition:
+  we try to force reading data until at least one segment is put
+  on the mpcb receive queue. This serves to verify wheter
+  there is still pending data, even after feeding the app.
+  the "finished" condition becomes true when we try to wait for data, when 
+  actually len is already 0. In that case we must finish our checks on the 
+  other queues, and then leave the loop.*/
 skip_loop:
+	/*Giving the correct value to the pending_data flag,
+	  Note that if we set the flag to 0, it is still possible, that
+	  it changes to 1 before to leave, here, if tcp_data_queue
+	  (called by tcp_prequeue_process) finds the next app byte.*/
+	if (((flags & MSG_PEEK) && copied) ||
+	    !skb_queue_empty(&mpcb->receive_queue)) {
+		mpcb->pending_data=1;
+	}
+	else mpcb->pending_data=0;
 	
 	PDEBUG("At line %d\n",__LINE__);
 	if (user_recv) {
@@ -2461,7 +2488,7 @@ skip_loop:
 	/* According to UNIX98, msg_name/msg_namelen are ignored
 	 * on connected socket. I was just happy when found this 8) --ANK
 	 */
-
+	
 	/* Clean up data we have read: This will do ACK frames. */
 	mtcp_for_each_sk(mpcb,sk,tp) {
 		tcp_cleanup_rbuf(sk, tp->copied);

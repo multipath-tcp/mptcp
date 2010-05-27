@@ -9,7 +9,7 @@
  *      Part of this code is inspired from an early version for linux 2.4 by
  *      Costin Raiciu.
  *
- *      date : March 10
+ *      date : May 10
  *
  *
  *	This program is free software; you can redistribute it and/or
@@ -131,7 +131,7 @@ struct multipath_pcb {
 
 	u32    write_seq;  /*data sequence number, counts the number of 
 			     bytes the user has written so far */
-	u32    copied_seq; /* Head of yet unread data		*/       
+	u32    copied_seq; /* Head of yet unread data*/
 
 	u32    snd_una;
 	struct list_head          dsack_list;
@@ -154,7 +154,10 @@ struct multipath_pcb {
 	u32                       window_clamp;
 	u32                       rcv_ssthresh;
 
-	uint8_t                   sndbuf_grown:1; /*sndbuf has grown
+	uint8_t                   pending_data:1, /*1 is at least one byte
+						    of data is available for
+						    eating by the app.*/
+	                          sndbuf_grown:1; /*sndbuf has grown
 						    for one of our
 						    subflows*/
 
@@ -194,7 +197,7 @@ struct multipath_pcb {
 						    becomes available*/
 #endif
 };
- 
+
 #define mpcb_from_tcpsock(tp) ((tp)->mpcb)
 #define is_master_sk(tp) ((tp)->mpcb && tcp_sk((tp)->mpcb->master_sk)==tp)
 
@@ -309,8 +312,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		 size_t size);
 int mtcp_is_available(struct sock *sk);
 void mtcp_reinject_data(struct sock *orig_sk, struct sock *retrans_sk);
-int mtcp_get_dataseq_mapping(struct multipath_pcb *mpcb, struct tcp_sock *tp, 
-			     struct sk_buff *skb);
+int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb);
 int mtcp_init_subsockets(struct multipath_pcb *mpcb, 
 			 uint32_t path_indices);
 int mtcpsub_get_port(struct sock *sk, unsigned short snum);

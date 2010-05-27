@@ -1,13 +1,12 @@
 /*
- *	MTCP implementation
+ *	MPTCP implementation
  *
  *	Authors:
  *      Sébastien Barré		<sebastien.barre@uclouvain.be>
  *
  *      Partially inspired from initial user space MPTCP stack by Costin Raiciu.
  *
- *      date : April 10
- *
+ *      date : May 10
  *
  *	This program is free software; you can redistribute it and/or
  *      modify it under the terms of the GNU General Public License
@@ -120,6 +119,39 @@ static void mtcp_def_readable(struct sock *sk, int len)
 	read_unlock(&msk->sk_callback_lock);
 }
 
+/**
+ * Sets the pending_data flag in the mpcb structure, and wakes it up.
+ *
+ * Working of the pending_data flag:
+ *  Whenever there is data ready to be copied to the app, (thus, in meta-order)
+ *  the flag must be set to one. So 
+ *    -when new data becomes available, we must 
+ *     set the flag. New data is available if it just appeared in one of the 
+ *     subsock receive queues (either because it was in order, or it left the
+ *     ofo queue to enter the receive queue) AND it is in meta-order.
+ *    -When the flag is set, and we finish copying data to the app, we check
+ *     whether further data is available. If there is further data, the flag 
+ *     remains set, if there is no data anymore, we reset the flag, until
+ *     the data arrives. In theory, the check should be done at every 
+ *     increment of mpcb->copied_seq, that is, each time data is eaten
+ *     by the app. However, although there are quite diverse places where
+ *     data is copied to the app, all are performed in the context of the
+ *     tcp_recvmsg call. (even the one in tcp_data_queue, since the ucopy
+ *     structure used there is defined only by tcp_recvmsg).
+ *     So it is completely sufficient to do the check just before to return 
+ *     to the app, from tcp_recvmsg.
+ *
+ *  Note that the intent of that pending_data flag is to enable tcp_poll to
+ *  determine whether there is pending data. This job is made more difficult,
+ *  because in-order data arriving on a subsock does not mean that this data
+ *  is in meta-order. If it is not, and we wake-up the app, the app can crash
+ *  because the subsequent read call will fail. 
+ *  Note also that while single-path tcp uses the difference rcv_nxt-copied_seq
+ *  to determine how many bytes are available for the app, we instead use
+ *  a single flag, that just tells "at least one byte is available".
+ *  This implies that the socket option SO_RCVLOWAT is currently not supported.
+ *  rcvlowat is kept at its default value of 1 byte.
+ */
 void mtcp_data_ready(struct sock *sk)
 {
 	struct tcp_sock *tp=tcp_sk(sk);
@@ -132,6 +164,7 @@ void mtcp_data_ready(struct sock *sk)
 		BUG_ON(!tp->pending);
 		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
 		BUG_ON(!mpcb);
+		mpcb->pending_data=1;
 		mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
 		mpcb_put(mpcb);
 	}
@@ -891,7 +924,7 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 	u32 data_offset;
 	unsigned long used;
 	u32 rcv_nxt=0;
-	int enqueue=0; /*1 if we must enqueue from ofo to rcv queue
+	int enqueue=0; /*1 if we must enqueue from ofo to rcv queue due
 			 to insufficient space in app buffer*/
 	struct tcp_sock *tp;
 	
@@ -1000,7 +1033,7 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 		unsigned long used;
 		skb = skb_peek(&mpcb->receive_queue);
 
-		if (!skb) return 0;
+		if (!skb) break;
 
 		tp=tcp_sk(skb->sk);
 
@@ -1045,12 +1078,6 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 		mpcb->ofo_bytes-=used;	   
 
 		mtcp_check_seqnums(mpcb,0);    
-
-/*		PDEBUG("copied %d bytes, from dataseq %x to %x, "
-		       "len %d, skb->len %d\n",*copied,
-		       TCP_SKB_CB(skb)->data_seq+(u32)offset,
-		       TCP_SKB_CB(skb)->data_seq+(u32)used+(u32)offset,
-		       (int)*len,(int)skb->len);*/
 		
  		if (*data_seq==TCP_SKB_CB(skb)->end_data_seq && 
 		    !(flags & MSG_PEEK))
@@ -1066,9 +1093,11 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 				printk(KERN_ERR "init data_seq:%x,used:%d\n",
 				       skb->data_seq,(int)used);
 				BUG();
-		}			
-		
+		}				
 	} while (*len>0);
+	/*Check if this fills a gap in the ofo queue*/
+	if (!skb_queue_empty(&mpcb->out_of_order_queue))
+		mtcp_ofo_queue(mpcb,msg,len,data_seq,copied, flags);
 	return 0;
 }
 
@@ -1133,11 +1162,11 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
 	u32 data_offset;
 	int err;	
+	int moved=0;
 
-	/*First, derive the dataseq if it is not yet done*/
-	if (mtcp_get_dataseq_mapping(mpcb, tp, skb)<0)
-		return -1;
-
+	/*Verify that the mapping info has been read*/
+	BUG_ON(TCP_SKB_CB(skb)->data_len);
+	
 	/*Is this a duplicate segment ?*/
 	if (after(*data_seq,TCP_SKB_CB(skb)->end_data_seq)) {
 		/*Duplicate segment. We can arrive here only if a segment 
@@ -1347,34 +1376,55 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 				return MTCP_EATEN;
 			}
 		}
-		if (*len < *used)
+		if (*len < *used) {
 			*used = *len;
+			/*Store the segment in the mpcb queue, so 
+			  that it is known that further data is ready
+			  for the app*/
+			__skb_unlink(skb, &sk->sk_receive_queue);
+			/*Since the skb is removed from the receive queue
+			  we must advance the seq num in the corresponding
+			  tp*/
+			mtcp_check_seqnums(mpcb,1);
+			*tp->seq +=skb->len;
+			tp->copied+=skb->len;		
+			tp->bytes_eaten+=skb->len;
+			mpcb->ofo_bytes+=skb->len;
+			mtcp_check_seqnums(mpcb,0);		
+			BUG_ON(!skb_queue_empty(&mpcb->receive_queue));
+			__skb_queue_tail(&mpcb->receive_queue, skb);
+			moved=1;
+		}
+
+		/*Happens if the app has been fed already, but we were
+		  searching one more byte of pending data. Reaching
+		  this point means that this byte has been found.
+		  We can leave*/
+		if (!*len) return MTCP_QUEUED;
 		
 		err=skb_copy_datagram_iovec(skb, data_offset,
 					    msg->msg_iov, *used);
 		BUG_ON(err);
 		if (err) return err;
 		
-		skb->debug|=MTCP_DEBUG_QUEUE_SKB;
-		skb->debug_count++;
-
 		mtcp_check_seqnums(mpcb,1);
-
- 		*tp->seq += *used;
-		*data_seq += *used;
-		*len -= *used;
 		*copied+=*used;
-		tp->copied+=*used;
-		if (!(flags & MSG_PEEK)) tp->bytes_eaten+=*used;
-
+		*data_seq+=*used;
+		*len-=*used;			
+		if (moved)
+			mpcb->ofo_bytes-=*used;
+		else {
+			*tp->seq += *used;
+			tp->copied+=*used;
+			if (!(flags & MSG_PEEK)) tp->bytes_eaten+=*used;
+		}
 		mtcp_check_seqnums(mpcb,0);
 		
 		/*Check if this fills a gap in the ofo queue*/
 		if (!skb_queue_empty(&mpcb->out_of_order_queue))
 			mtcp_ofo_queue(mpcb,msg,len,data_seq,copied, flags);
-		/*If the skb has been partially eaten, tcp_recvmsg
-		  will see it anyway thanks to the @used pointer.*/
-		return MTCP_EATEN;
+		if (moved) return MTCP_QUEUED;
+		else return MTCP_EATEN;
 	}
 }
 
@@ -1490,10 +1540,20 @@ void mtcp_reinject_data(struct sock *orig_sk, struct sock *retrans_sk)
  *   not contained in currently stored mapping), we return -1
  * 
  */
-int mtcp_get_dataseq_mapping(struct multipath_pcb *mpcb, struct tcp_sock *tp, 
-			     struct sk_buff *skb)
+int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb)
 {
 	int changed=0;
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+	int ans;
+
+	BUG_ON(!mpcb && !tp->pending);
+	/*We must be able to find the mapping even for a pending
+	  subsock, because that pending subsock can trigger the wake up of
+	  the application. (it is holds the next DSN)*/
+	if (tp->pending) {
+		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
+		BUG_ON(!mpcb);
+	}
 
 	if (TCP_SKB_CB(skb)->data_len) {
 		tp->map_data_seq=TCP_SKB_CB(skb)->data_seq;
@@ -1524,7 +1584,8 @@ int mtcp_get_dataseq_mapping(struct multipath_pcb *mpcb, struct tcp_sock *tp,
 		BUG(); /*If we only speak with our own implementation,
 			 reaching this point can only be a bug, later we
 			 can remove this.*/
-		return -1;
+		ans=1;
+		goto out;
 	}
 	/*OK, the segment is inside the mapping, we can
 	  derive the dataseq. Note that we maintain 
@@ -1542,8 +1603,13 @@ int mtcp_get_dataseq_mapping(struct multipath_pcb *mpcb, struct tcp_sock *tp,
 	/*Check now if the segment is in meta-order*/
 	
 	if (TCP_SKB_CB(skb)->data_seq==mpcb->copied_seq)
-		return 1;
-	else return 0;
+		ans=1;
+	else ans=0;
+
+out:
+	if (tp->pending)
+		mpcb_put(mpcb);
+	return ans;
 }
 
 /* Obtain a reference to a local port for the given sock,
