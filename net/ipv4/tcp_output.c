@@ -693,7 +693,8 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	}
 #ifdef CONFIG_MTCP
 	mpcb = tp->mpcb;
-	if (tp->mpc && (!skb || skb->len!=0)) {		
+	if (tp->mpc && (!skb || skb->len!=0 ||  
+			(tcb->flags & TCPCB_FLAG_FIN))) {
 		if (tcb && tcb->data_len) { /*Ignore dataseq if data_len is 0*/
 			opts->options |= OPTION_DSN;
 			opts->data_seq=tcb->data_seq;
@@ -2446,6 +2447,8 @@ void tcp_send_fin(struct sock *sk)
 	if (tcp_send_head(sk) != NULL) {
 		TCP_SKB_CB(skb)->flags |= TCPCB_FLAG_FIN;
 		TCP_SKB_CB(skb)->end_seq++;
+		TCP_SKB_CB(skb)->end_data_seq++;
+		TCP_SKB_CB(skb)->data_len++;
 		tp->write_seq++;
 	} else {
 		/* Socket is locked, keep trying until memory is available. */
@@ -2458,9 +2461,20 @@ void tcp_send_fin(struct sock *sk)
 
 		/* Reserve space for headers and prepare control bits. */
 		skb_reserve(skb, MAX_TCP_HEADER);
-		/* FIN eats a sequence byte, write_seq advanced by tcp_queue_skb(). */
+		/* FIN eats a sequence byte, write_seq advanced by 
+		   tcp_queue_skb(). */
 		tcp_init_nondata_skb(skb, tp->write_seq,
 				     TCPCB_FLAG_ACK | TCPCB_FLAG_FIN);
+#ifdef CONFIG_MTCP
+		if (tp->mpc) {
+			struct multipath_pcb *mpcb=tp->mpcb;
+			TCP_SKB_CB(skb)->data_seq=mpcb->write_seq++;
+			TCP_SKB_CB(skb)->end_data_seq=
+				TCP_SKB_CB(skb)->data_seq+1;
+			TCP_SKB_CB(skb)->data_len=1;
+			TCP_SKB_CB(skb)->sub_seq=TCP_SKB_CB(skb)->seq;
+		}
+#endif
 		tcp_queue_skb(sk, skb);
 	}
 	__tcp_push_pending_frames(sk, mss_now, TCP_NAGLE_OFF);
