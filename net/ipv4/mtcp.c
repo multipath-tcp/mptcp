@@ -157,7 +157,10 @@ void mtcp_data_ready(struct sock *sk)
 	struct tcp_sock *tp=tcp_sk(sk);
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
 
-	if (mpcb) mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
+	if (mpcb) {
+		mpcb->pending_data=1;
+		mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
+	}
 #ifdef CONFIG_MTCP_PM
 	else {
 		/*This tp is not yet attached to the mpcb*/
