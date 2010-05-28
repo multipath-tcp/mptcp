@@ -4160,7 +4160,6 @@ static void tcp_ofo_queue(struct sock *sk)
 #ifdef CONFIG_MTCP
 		if (tp->mpc) {
 			int mapping=mtcp_get_dataseq_mapping(tp,skb);
-			BUG_ON(mapping==-1);
 			if (mapping==1) mtcp_data_ready(sk);
 		}
 #endif				

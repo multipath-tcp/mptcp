@@ -1541,7 +1541,8 @@ void mtcp_reinject_data(struct sock *orig_sk, struct sock *retrans_sk)
  *       that it is in subflow order): we return 0
  * - If the skb is faulty (does not contain a dataseq option, and seqnum
  *   not contained in currently stored mapping), we return -1
- * 
+ * - If the tp is a pending tp, and the mpcb is destroyed (not anymore
+ *   in the hashtable), we return -1.
  */
 int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb)
 {
@@ -1555,7 +1556,7 @@ int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb)
 	  the application. (it is holds the next DSN)*/
 	if (tp->pending) {
 		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
-		BUG_ON(!mpcb);
+		if(!mpcb) return -1;
 	}
 
 	if (TCP_SKB_CB(skb)->data_len) {

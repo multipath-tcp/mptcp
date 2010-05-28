@@ -153,7 +153,7 @@ void mtcp_pm_release(struct multipath_pcb *mpcb)
 		}
 	}
 
-	/*remove all pending child socks pointing to this mpcb*/
+	/*remove all pending child socks associated to this mpcb*/
 	while (!reqsk_queue_empty(&mpcb->accept_queue)) {
 		struct sock *child;
 		struct request_sock *req;
