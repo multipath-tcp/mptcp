@@ -1409,6 +1409,9 @@ int tcp_read_sock(struct sock *sk, read_descriptor_t *desc,
 	u32 offset;
 	int copied = 0;
 
+	printk(KERN_ERR "tcp_read_sock primitive not yet supported\n");
+	BUG();
+
 	if (sk->sk_state == TCP_LISTEN)
 		return -ENOTCONN;
 	while ((skb = tcp_recv_skb(sk, seq, &offset)) != NULL) {
@@ -2224,30 +2227,23 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			}
 			/* __ Set realtime policy in scheduler __ */
 		}
-		PDEBUG("At line %d\n",__LINE__);
 
 		if (copied >= target) {
-			PDEBUG("At line %d\n",__LINE__);
 			/* Do not sleep, just process backlog. */
 			mtcp_for_each_sk(mpcb,sk,tp) {
 				release_sock(sk);
 				lock_sock(sk);
 			}
-			
 		} else {
-			PDEBUG("At line %d\n",__LINE__);
 			/*Wait for data arriving on any subsocket*/
 			cnt_subflows=mpcb->cnt_subflows;			
 			mutex_unlock(&mpcb->mutex);
-			PDEBUG("At line %d\n",__LINE__);
 			if (len) mtcp_wait_data(mpcb,master_sk, &timeo);
 			else finished=1;
-			PDEBUG("At line %d\n",__LINE__);
 			
 			/*We may have received data on a newly created
 			  subsocket, check if the list has grown*/
 			mutex_lock(&mpcb->mutex);
-			PDEBUG("At line %d\n",__LINE__);
 			if (cnt_subflows!=mpcb->cnt_subflows) {
 				/*We must ensure  that for each new tp, 
 				  the seq pointer is correctly set. In 

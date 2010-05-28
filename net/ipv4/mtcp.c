@@ -1080,7 +1080,7 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 		*len-=used;
 		mpcb->ofo_bytes-=used;	   
 
-		mtcp_check_seqnums(mpcb,0);    
+		mtcp_check_seqnums(mpcb,0);
 		
  		if (*data_seq==TCP_SKB_CB(skb)->end_data_seq && 
 		    !(flags & MSG_PEEK))
@@ -1325,7 +1325,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 			mtcp_for_each_sk(mpcb,search_sk,search_tp) {
 				struct sk_buff *search_skb=
 					skb_peek(&sk->sk_receive_queue);
-				if (search_skb && 
+				if (search_skb && search_skb != skb &&
 				    TCP_SKB_CB(search_skb)->data_seq
 				    ==TCP_SKB_CB(skb)->data_seq && 
 				    TCP_SKB_CB(search_skb)->end_data_seq
@@ -1335,9 +1335,9 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 				}
 			}
 			
-			/*If it is not in one of the subflow,
+			/*If it is not in one of the subflows,
 			  we check the receive queue of the meta-flow*/
-			if (!found_duplicate && skb1 && 
+			if (!found_duplicate && skb1 && skb1!=skb &&
 			    TCP_SKB_CB(skb1)->data_seq
 			    ==TCP_SKB_CB(skb)->data_seq &&
 			    TCP_SKB_CB(skb1)->end_data_seq ==
@@ -1372,30 +1372,31 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 				   another subflow, but we advance the seqnum 
 				   so that the
 				   subflow can continue */
-				*used=skb->len;				
-				*tp->seq +=*used;
-				tp->copied+=*used;
+				*used=skb->len-offset;
+				*tp->seq += *used;
+				tp->copied += *used;
 				
 				return MTCP_EATEN;
 			}
 		}
 		if (*len < *used) {
-			*used = *len;
 			/*Store the segment in the mpcb queue, so 
 			  that it is known that further data is ready
 			  for the app*/
 			__skb_unlink(skb, &sk->sk_receive_queue);
 			/*Since the skb is removed from the receive queue
 			  we must advance the seq num in the corresponding
-			  tp*/
+			  tp (by skb->len-offset, which is *used))*/
 			mtcp_check_seqnums(mpcb,1);
-			*tp->seq +=skb->len;
-			tp->copied+=skb->len;		
-			tp->bytes_eaten+=skb->len;
-			mpcb->ofo_bytes+=skb->len;
-			mtcp_check_seqnums(mpcb,0);		
+			*tp->seq +=*used;
+			tp->copied+=*used;
+			tp->bytes_eaten+=*used;
+			mpcb->ofo_bytes+=*used;
+			mtcp_check_seqnums(mpcb,0);	
 			BUG_ON(!skb_queue_empty(&mpcb->receive_queue));
 			__skb_queue_tail(&mpcb->receive_queue, skb);
+			/*Now, redefine *used to what we can already eat now*/
+			*used = *len;
 			moved=1;
 		}
 
