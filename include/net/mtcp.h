@@ -205,12 +205,12 @@ struct multipath_pcb {
 #define mtcp_for_each_tp(mpcb,tp)			\
 	for (tp=mpcb->connection_list;tp;tp=tp->next)
 
-/*Iterates over new subflows prevnum is the number
-  of flows already known by the caller
+/*Iterates over new subflows. prevnum is the number
+  of flows already known by the caller.
   Note that prevnum is altered by this macro*/
 #define mtcp_for_each_newtp(mpcb,tp,prevnum)				\
 	for (tp=mpcb->connection_list,prevnum=mpcb->cnt_subflows-prevnum; \
-	     tp && prevnum;tp=tp->next,prevnum--)
+	     prevnum;tp=tp->next,prevnum--)
 
 #define mtcp_for_each_sk(mpcb,sk,tp)					\
 	for (sk=(struct sock*)mpcb->connection_list,tp=tcp_sk(sk);	\
@@ -244,27 +244,31 @@ struct multipath_pcb {
 		}					\
 		__ans;					\
 	})						\
-
-
+	
+#define mtcp_test_any_sk_tp(mpcb,sk,tp,cond)		\
+	({int __ans=0;					\
+		mtcp_for_each_sk(mpcb,sk,tp) {		\
+			if (cond) __ans=1;		\
+			break;				\
+		}					\
+		__ans;})				\
+	
 /*Wait for event @__condition to happen on any subsocket, 
   or __timeo to expire
   This is the MPTCP equivalent of sk_wait_event */
-#define mtcp_wait_event_any_sk(__mpcb,__sk, __timeo, __condition)	\
-	({	int __rc; struct tcp_sock *__tp;			\
+#define mtcp_wait_event_any_sk(__mpcb,__sk, __tp, __timeo, __condition)	\
+	({	int __rc;						\
 		mtcp_for_each_sk(__mpcb,__sk,__tp) {			\
 			release_sock(__sk);				\
-			__tp->wait_event_any_sk_released=1;		\
 		}							\
-		__rc = mtcp_test_any_sk(__mpcb,__sk,__condition);	\
+		__rc = mtcp_test_any_sk_tp(__mpcb,__sk,__tp,		\
+					   __condition);		\
 		if (!__rc)  						\
 			*(__timeo) = schedule_timeout(*(__timeo));	\
 		mtcp_for_each_sk(__mpcb,__sk,__tp)			\
-			if (__tp->wait_event_any_sk_released) {		\
-				/*Lock only those socks we have released*/ \
-				lock_sock(__sk);			\
-				__tp->wait_event_any_sk_released=0;	\
-			}						\
-		__rc = mtcp_test_any_sk(__mpcb,__sk,__condition);	\
+			lock_sock(__sk);				\
+		__rc = mtcp_test_any_sk_tp(__mpcb,__sk,__tp,		\
+					   __condition);		\
 		__rc;							\
 	})
 
@@ -286,7 +290,7 @@ void mtcp_check_seqnums(struct multipath_pcb *mpcb, int before);
 
 
 int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk, 
-			  long *timeo);
+		   long *timeo,int flags);
 int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		   unsigned long *used, struct msghdr *msg, size_t *len,   
 		   u32 *data_seq, int *copied, int flags);

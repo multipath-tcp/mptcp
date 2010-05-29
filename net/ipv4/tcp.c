@@ -1911,7 +1911,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	long timeo;
 	struct task_struct *user_recv = NULL;
 	struct sk_buff *skb;
-	int cnt_subflows;
 	int finished=0;
 	
 	if (!master_tp->mpc)
@@ -1922,7 +1921,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	/*Received a new list of addresses recently ?
 	  announce corresponding path indices to the
 	  mpcb, and start new subflows*/
-	mtcp_check_new_subflow(mpcb);
+	mtcp_check_new_subflow(mpcb); 
 	if (unlikely(mpcb->received_options.list_rcvd)) {
 		mpcb->received_options.list_rcvd=0;
 		mtcp_update_patharray(mpcb);
@@ -2236,33 +2235,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			}
 		} else {
 			/*Wait for data arriving on any subsocket*/
-			cnt_subflows=mpcb->cnt_subflows;			
-			mutex_unlock(&mpcb->mutex);
-			if (len) mtcp_wait_data(mpcb,master_sk, &timeo);
+			if (len) mtcp_wait_data(mpcb,master_sk, &timeo,flags);
 			else finished=1;
-			
-			/*We may have received data on a newly created
-			  subsocket, check if the list has grown*/
-			mutex_lock(&mpcb->mutex);
-			if (cnt_subflows!=mpcb->cnt_subflows) {
-				/*We must ensure  that for each new tp, 
-				  the seq pointer is correctly set. In 
-				  particular we'll get a segfault if
-				  the pointer is NULL*/
-				mtcp_for_each_newtp(mpcb,tp,
-						    cnt_subflows) {
-					if (flags & MSG_PEEK) {
-						tp->peek_seq=tp->copied_seq;
-						tp->seq=&tp->peek_seq;
-					}
-					else 
-						tp->seq=&tp->copied_seq;
-					/*Here, all subsocks are locked
-					  so we must also lock
-					  new subsocks*/
-					lock_sock((struct sock*)tp);
-				}
-			}
 		}
 
 		if (user_recv) {

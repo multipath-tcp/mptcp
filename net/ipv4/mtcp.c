@@ -877,8 +877,8 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
  * We check receive queue before schedule() only as optimization;
  * it is very likely that release_sock() added new data.
  */
-int __mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
-		   long *timeo)
+static int __mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
+			    long *timeo)
 {
 	int rc; struct sock *sk; struct tcp_sock *tp;
 	DEFINE_WAIT(wait);
@@ -889,8 +889,9 @@ int __mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 		set_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
 		tp->wait_data_bit_set=1;
 	}
-	rc = mtcp_wait_event_any_sk(mpcb, sk, timeo, 
-				    !skb_queue_empty(&sk->sk_receive_queue));
+	rc = mtcp_wait_event_any_sk(mpcb, sk, tp, timeo, 
+				    (!skb_queue_empty(&sk->sk_receive_queue) ||
+				     !skb_queue_empty(&tp->ucopy.prequeue)));
 
 	mtcp_for_each_sk(mpcb,sk,tp)
 		if (tp->wait_data_bit_set) {
@@ -901,23 +902,66 @@ int __mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 	return rc;
 }
 
+/**
+ * mtcp_rcv_check_subflows, check for arrival of new subflows
+ * while wainting for arriving data
+ * WARNING: that function assumes that the mutex lock is held.
+ * @return: the number of newly added subflows
+ */
+static int mtcp_rcv_check_subflows(struct multipath_pcb *mpcb, int flags)
+{
+	int cnt_subflows,new_subflows=0;
+	struct tcp_sock *tp;	
+	cnt_subflows=mpcb->cnt_subflows;
 #ifdef CONFIG_MTCP_PM
+	/*TODO: do something similar for other path managers*/
+	mutex_unlock(&mpcb->mutex);
+	new_subflows=mtcp_check_new_subflow(mpcb);
+	mutex_lock(&mpcb->mutex);
+#endif
+	/*We may have received data on a newly created
+	  subsocket, check if the list has grown*/
+	if (cnt_subflows!=mpcb->cnt_subflows) {
+		/*We must ensure  that for each new tp, 
+		  the seq pointer is correctly set. In 
+		  particular we'll get a segfault if
+		  the pointer is NULL*/
+		mtcp_for_each_newtp(mpcb,tp,
+				    cnt_subflows) {
+			if (flags & MSG_PEEK) {
+				tp->peek_seq=tp->copied_seq;
+				tp->seq=&tp->peek_seq;
+			}
+			else 
+				tp->seq=&tp->copied_seq;
+			
+			BUG_ON(sock_owned_by_user(
+				       (struct sock*)tp));
+			/*Here, all subsocks are locked
+			  so we must also lock
+			  new subsocks*/
+			lock_sock((struct sock*)tp);
+		}
+	}
+	return new_subflows;
+}
+
 int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
-		   long *timeo) {
+		   long *timeo, int flags) {
 	int rc;
-	int new_subflow=0;
-	/*If no data appears is received but a new subflow appears,
+	int new_subflows=0;
+
+	new_subflows=mtcp_rcv_check_subflows(mpcb, flags);		
+	/*If no data is received but a new subflow appears,
 	  we attach the new subflow and wait again for data.*/
 	do {
 		rc=__mtcp_wait_data(mpcb,master_sk,timeo);
-		new_subflow=mtcp_check_new_subflow(mpcb);
-	} while(!rc && new_subflow);
-
+		new_subflows=mtcp_rcv_check_subflows(mpcb, flags);
+	} while(!rc && new_subflows); /*if a new subflow appeared, and no data,
+					loop to check if data appeared in the
+					newly arrived subsock.*/
 	return rc;
 }
-#else
-#define mtcp_wait_data __mtcp_wait_data
-#endif
 
 void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 		    u32 *data_seq, int *copied, int flags)
