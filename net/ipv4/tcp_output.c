@@ -2444,11 +2444,17 @@ void tcp_send_fin(struct sock *sk)
 	 */
 	mss_now = tcp_current_mss(sk, 1);
 
-	if (tcp_send_head(sk) != NULL) {
+	/*If the sock is not multipath capable, we do not 
+	  attach the FIN to the tail skb. The reason is that the
+	  FIN eats a DSN, that must be contiguous to the last
+	  byte of the data packet. But if we have sent data on other
+	  subflows in between, that contiguous subseq is already given
+	  to another subflow. We could check this and still append the FIN
+	  when it is contiguous, as an optimization, but at the moment
+	  we simply send the FIN alone.*/
+	if (tcp_send_head(sk) != NULL && !tp->mpc) {
 		TCP_SKB_CB(skb)->flags |= TCPCB_FLAG_FIN;
 		TCP_SKB_CB(skb)->end_seq++;
-		TCP_SKB_CB(skb)->end_data_seq++;
-		TCP_SKB_CB(skb)->data_len++;
 		tp->write_seq++;
 	} else {
 		/* Socket is locked, keep trying until memory is available. */
@@ -2467,12 +2473,18 @@ void tcp_send_fin(struct sock *sk)
 				     TCPCB_FLAG_ACK | TCPCB_FLAG_FIN);
 #ifdef CONFIG_MTCP
 		if (tp->mpc) {
-			struct multipath_pcb *mpcb=tp->mpcb;
-			TCP_SKB_CB(skb)->data_seq=mpcb->write_seq++;
-			TCP_SKB_CB(skb)->end_data_seq=
-				TCP_SKB_CB(skb)->data_seq+1;
-			TCP_SKB_CB(skb)->data_len=1;
-			TCP_SKB_CB(skb)->sub_seq=TCP_SKB_CB(skb)->seq;
+			struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+			BUG_ON(!mpcb && !tp->pending);
+			if (tp->pending)
+				mpcb=mtcp_hash_find(tp->mtcp_loc_token);
+			if (mpcb) {
+				TCP_SKB_CB(skb)->data_seq=mpcb->write_seq++;
+				TCP_SKB_CB(skb)->end_data_seq=
+					TCP_SKB_CB(skb)->data_seq+1;
+				TCP_SKB_CB(skb)->data_len=1;
+				TCP_SKB_CB(skb)->sub_seq=TCP_SKB_CB(skb)->seq;
+				if (tp->pending) mpcb_put(mpcb);
+			}
 		}
 #endif
 		tcp_queue_skb(sk, skb);
