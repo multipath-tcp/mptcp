@@ -2608,6 +2608,12 @@ void tcp_close(struct sock *sk, long timeout)
 	if (is_master_sk(tcp_sk(sk))) {
 		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
 		struct sock *slave_sk,*temp;
+		
+		/*Purging the meta-queues. This MUST be done before
+		  to close any subsocket. See comment in function 
+		  mtcp_destroy_mpcb()*/
+		skb_queue_purge(&mpcb->receive_queue);
+		skb_queue_purge(&mpcb->out_of_order_queue);
 		/*We MUST close the master socket in the last place.
 		  this is indeed the case, because the master socket is at the
 		  end of the subsocket list.*/

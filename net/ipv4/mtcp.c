@@ -8,6 +8,14 @@
  *
  *      date : May 10
  *
+ *
+ *      Important note:
+ *            When one wants to add support for closing subsockets *during*
+ *             a communication, he must ensure that all skbs belonging to
+ *             that socket are removed from the meta-queues. Failing
+ *             to do this would lead to General Protection Fault.
+ *             See also comment in function mtcp_destroy_mpcb().
+ *
  *	This program is free software; you can redistribute it and/or
  *      modify it under the terms of the GNU General Public License
  *      as published by the Free Software Foundation; either version
@@ -569,9 +577,21 @@ void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
 #endif
 	/*Stop listening to PM events*/
 	unregister_netevent_notifier(&mpcb->nb);
-	/*Remove any remaining skb from the queues*/
-	skb_queue_purge(&mpcb->receive_queue);
-	skb_queue_purge(&mpcb->out_of_order_queue);
+	/*The meta-queues must all be empty when arriving here, because
+	  we have removed all subsocks. Removing an skb here would lead
+	  to a general protection fault. 
+	  The rule to avoid this is that when any subsock is destroyed
+	  (whether when destroying everything, or when just stopping
+	  one subflow, one MUST ensure that no skb belongin to that
+	  subsock is still living in any of the meta-queues. 
+	  Currently we only suppress meta-flows when closing the connection,
+	  so purging the queues at the right place is sufficient. When we want
+	  to implement subsock suppression during communication, we should
+	  devise some mechanism to enforce that skb suppression from the meta-
+	  queues.
+	*/
+	BUG_ON(!skb_queue_empty(&mpcb->receive_queue));
+	BUG_ON(!skb_queue_empty(&mpcb->out_of_order_queue));
 	kref_put(&mpcb->kref,mpcb_release);	
 }
 
