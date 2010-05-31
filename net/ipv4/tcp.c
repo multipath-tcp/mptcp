@@ -2127,38 +2127,34 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		/*Here we test a set of conditions to return immediately to
 		  the user*/
 		if (copied) {
-			/*Error on any subsocket*/
+			/*Error on any subsocket, shutdown on all subsocks,
+			  timeout or pending signal*/
 			if (mtcp_test_any_sk(mpcb,sk,sk->sk_err) ||
-			    /*Master has the SHUTDOWN flag set
-			      TODO: Currently this flag is set when the master
-			      receives a FIN. To be in accordance with MPTCP, 
-			      we must rather do that upon reception of 
-			      a DATA FIN on any subflow.*/
-			    master_sk->sk_state == TCP_CLOSE ||
-			    (master_sk->sk_shutdown & RCV_SHUTDOWN) ||
+			    mtcp_test_all_sk(mpcb,sk,sk->sk_state==TCP_CLOSE ||
+					     sk->sk_shutdown & RCV_SHUTDOWN) ||
 			    !timeo ||
 			    signal_pending(current))
 				break;
 		} else {
-			if (sock_flag(master_sk, SOCK_DONE))
+			if (mtcp_test_all_sk(mpcb,sk,sock_flag(sk,SOCK_DONE) ||
+					     (!sk->sk_err &&
+					      (sk->sk_shutdown & RCV_SHUTDOWN ||
+					       (sk->sk_state==TCP_CLOSE &&
+						sock_flag(sk,SOCK_DONE))))))
 				break;
-
+			
 			if (mtcp_test_any_sk(mpcb,sk,sk->sk_err)) {
 				copied=sock_error(sk);
 				break;
 			}
-
-			if (master_sk->sk_shutdown & RCV_SHUTDOWN)
-				break;
-
-			if (master_sk->sk_state == TCP_CLOSE) {
-				if (!sock_flag(master_sk, SOCK_DONE)) {
-					/* This occurs when user tries to read
-					 * from never connected socket.
-					 */
-					copied = -ENOTCONN;
-					break;
-				}
+			
+			if (mtcp_test_all_sk(mpcb,sk,
+					     sk->sk_state == TCP_CLOSE &&
+					     !sock_flag(sk,SOCK_DONE))) {
+				/* This occurs when user tries to read
+				 * from never connected socket.
+				 */
+				copied = -ENOTCONN;
 				break;
 			}
 

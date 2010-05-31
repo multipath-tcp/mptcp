@@ -4,8 +4,6 @@
  *	Authors:
  *      Sébastien Barré		<sebastien.barre@uclouvain.be>
  *
- *
- *
  *      Part of this code is inspired from an early version for linux 2.4 by
  *      Costin Raiciu.
  *
@@ -249,6 +247,16 @@ struct multipath_pcb {
 	({int __ans=0;					\
 		mtcp_for_each_sk(mpcb,sk,tp) {		\
 			if (cond) __ans=1;		\
+			break;				\
+		}					\
+		__ans;})				\
+
+/*Returns 1 if all subflows meet the condition @cond
+  Else return 0. */
+#define mtcp_test_all_sk(mpcb,sk,cond)			\
+	({int __ans=1; struct tcp_sock *__tp;		\
+		mtcp_for_each_sk(mpcb,sk,__tp) {	\
+			if (!(cond)) __ans=0;		\
 			break;				\
 		}					\
 		__ans;})				\
