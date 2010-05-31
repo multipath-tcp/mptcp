@@ -228,17 +228,21 @@ struct multipath_pcb {
 #define mtcp_test_any_sk(mpcb,sk,cond)			\
 	({int __ans=0; struct tcp_sock *__tp;		\
 		mtcp_for_each_sk(mpcb,sk,__tp) {	\
-			if (cond) __ans=1;		\
-			break;				\
+			if (cond)  {			\
+				__ans=1;		\
+				break;			\
+			}				\
 		}					\
 		__ans;})				\
-
+	
 /*Idem here with tp in lieu of sk*/	
 #define mtcp_test_any_tp(mpcb,tp,cond)			\
 	({      int __ans=0;				\
 		mtcp_for_each_tp(mpcb,tp) {		\
-			if (cond) __ans=1;		\
-			break;				\
+			if (cond) {			\
+				__ans=1;		\
+				break;			\
+			}				\
 		}					\
 		__ans;					\
 	})						\
@@ -246,18 +250,22 @@ struct multipath_pcb {
 #define mtcp_test_any_sk_tp(mpcb,sk,tp,cond)		\
 	({int __ans=0;					\
 		mtcp_for_each_sk(mpcb,sk,tp) {		\
-			if (cond) __ans=1;		\
-			break;				\
+			if (cond) {			\
+				__ans=1;		\
+				break;			\
+			}				\
 		}					\
 		__ans;})				\
-
+	
 /*Returns 1 if all subflows meet the condition @cond
   Else return 0. */
 #define mtcp_test_all_sk(mpcb,sk,cond)			\
 	({int __ans=1; struct tcp_sock *__tp;		\
 		mtcp_for_each_sk(mpcb,sk,__tp) {	\
-			if (!(cond)) __ans=0;		\
-			break;				\
+			if (!(cond)) {			\
+				__ans=0;		\
+				break;			\
+			}				\
 		}					\
 		__ans;})				\
 	
