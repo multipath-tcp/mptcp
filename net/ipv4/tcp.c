@@ -2395,11 +2395,12 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		continue;
 
 	found_fin_ok:
-		/* Process the FIN. */
-		++*(tcp_sk(skb->sk))->seq;
-		if (!(flags & MSG_PEEK))
+		/* Process the FIN. Currently we only support having
+		   the FIN in a segment with no data*/
+		mtcp_op=mtcp_queue_skb(skb->sk,skb,0,NULL,msg,&len,
+				       data_seq,&copied,flags);
+		if (!(flags & MSG_PEEK) && mtcp_op == MTCP_EATEN)
 			sk_eat_skb(skb->sk, skb, 0);
-		break;		
 	} while ((len > 0 || skb_queue_empty(&mpcb->receive_queue)) && 
 		 !finished);
 /*Note on the above while condition:

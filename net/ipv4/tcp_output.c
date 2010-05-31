@@ -2451,7 +2451,11 @@ void tcp_send_fin(struct sock *sk)
 	  subflows in between, that contiguous subseq is already given
 	  to another subflow. We could check this and still append the FIN
 	  when it is contiguous, as an optimization, but at the moment
-	  we simply send the FIN alone.*/
+	  we simply send the FIN alone.
+	  Moreover, if one wants to implement this optimization, it will
+	  also be necessary to check the FIN in the data reception procedures
+	  of the meta-socket (e.g. mtcp_queue_skb()).
+	*/
 	if (tcp_send_head(sk) != NULL && !tp->mpc) {
 		TCP_SKB_CB(skb)->flags |= TCPCB_FLAG_FIN;
 		TCP_SKB_CB(skb)->end_seq++;

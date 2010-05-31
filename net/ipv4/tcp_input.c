@@ -4242,9 +4242,6 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 								     mpcb->ucopy.iov, 
 								     chunk)) {
 						
-						skb->debug|=MTCP_DEBUG_DATA_QUEUE;
-						skb->debug_count++;
-					
 						mtcp_check_seqnums(mpcb,1);
 						
 						mpcb->ucopy.len -= chunk;
@@ -4308,7 +4305,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 
 			skb_set_owner_r(skb, sk);
 			
-			__skb_queue_tail(&sk->sk_receive_queue, skb);		
+			__skb_queue_tail(&sk->sk_receive_queue, skb);
 		}
 		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 		if (skb->len)
