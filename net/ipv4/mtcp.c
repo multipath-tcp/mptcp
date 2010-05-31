@@ -8,7 +8,6 @@
  *
  *      date : May 10
  *
- *
  *      Important note:
  *            When one wants to add support for closing subsockets *during*
  *             a communication, he must ensure that all skbs belonging to
@@ -1117,7 +1116,7 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 		}
 		skb->data_seq=*data_seq; /*TODEL*/
 		data_offset = *data_seq - TCP_SKB_CB(skb)->data_seq;
-		BUG_ON(data_offset >= skb->len);
+		BUG_ON(data_offset >= skb->len && !tcp_hdr(skb)->fin);
 
 		if (!tcp_hdr(skb)->fin && skb->len != 
 		    TCP_SKB_CB(skb)->end_data_seq - TCP_SKB_CB(skb)->data_seq) {
