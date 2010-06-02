@@ -130,7 +130,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 		/* If log fills, just silently drop */
 		if (tcp_probe_avail() > 1) {
 			struct tcp_log *p = tcp_probe.log + tcp_probe.head;
-
+			if (tp->mpc) BUG_ON(!tp->mpcb && !tp->pending);
 			p->tstamp = ktime_get();
 			p->saddr = inet->saddr;
 			p->sport = inet->sport;
@@ -159,7 +159,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->wmem_queued=sk->sk_wmem_queued;
 			p->rmem_alloc=atomic_read(&sk->sk_rmem_alloc);
 			p->dsn=TCP_SKB_CB(skb)->data_seq;
-			p->mtcp_snduna=(tp->mpc)?tp->mpcb->snd_una:0;
+			p->mtcp_snduna=(tp->mpcb)?tp->mpcb->snd_una:0;
 			p->drs_seq=tp->rcvq_space.seq;
 			p->drs_time=tp->rcvq_space.time;
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
