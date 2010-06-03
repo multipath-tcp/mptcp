@@ -1136,6 +1136,11 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 	/* make all the listen_opt local to us */
 	acc_req = reqsk_queue_yank_acceptq(&mpcb->accept_queue);
 	spin_unlock_bh(&mpcb->lock);
+
+	/*Probably the initial master sk path index can be set to 1 from 
+	  the beginning. 0 meant that multipath is not supported, but we have
+	  the mpc flag now anyway.*/
+	if (acc_req) tcp_sk(mpcb->master_sk)->path_index=1;
 	
 	while ((req = acc_req) != NULL) {
 		acc_req = req->dl_next;

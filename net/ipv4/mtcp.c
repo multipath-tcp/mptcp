@@ -310,6 +310,8 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
  * Creates as many sockets as path indices announced by the Path Manager.
  * The first path indices are (re)allocated to existing sockets.
  * New sockets are created if needed.
+ * Note that this is called only at client side.
+ * Server calls mtcp_check_new_subflow().
  *
  *
  * WARNING: We make the assumption that this function is run in user context
