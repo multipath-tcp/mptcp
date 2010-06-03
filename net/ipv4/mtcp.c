@@ -221,13 +221,10 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 			release_sock(sk);
 			continue;
 		}
-		
-		if ((skb=tcp_send_head(sk))) {
+				
+		while ((skb = tcp_send_head(sk))) {
 			/*rewind the write seq*/
 			tp->write_seq=TCP_SKB_CB(skb)->seq;
-		}
-		
-		while ((skb = tcp_send_head(sk))) {
 			/*Unlink from socket*/
 			tcp_advance_send_head(sk, skb);
 			tcp_unlink_write_queue(skb,sk);
@@ -237,7 +234,7 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 
 			/*link to tp metasocket*/
 			realloc_enqueue(&realloc_queue, skb);
-				
+			
 		}
 		release_sock(sk);
 	}
