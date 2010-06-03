@@ -152,7 +152,10 @@ struct multipath_pcb {
 	u32                       window_clamp;
 	u32                       rcv_ssthresh;
 
-	uint8_t                   pending_data:1, /*1 is at least one byte
+	uint8_t                   server_side:1, /*1 if this mpcb belongs
+						   to a server side connection.
+						   (obtained through a listen)*/
+	                          pending_data:1, /*1 is at least one byte
 						    of data is available for
 						    eating by the app.*/
 	                          sndbuf_grown:1; /*sndbuf has grown

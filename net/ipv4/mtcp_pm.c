@@ -1124,17 +1124,24 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 	struct path4 *p;
 	int nb_new=0;
 
+	if (unlikely(mpcb->received_options.list_rcvd)) {
+		mpcb->received_options.list_rcvd=0;
+		mtcp_update_patharray(mpcb);
+		/*The server uses additional subflows only on request
+		  from the client.*/
+		if (!mpcb->server_side) mtcp_send_updatenotif(mpcb);
+	}
+	
 	spin_lock_bh(&mpcb->lock);
 	/* make all the listen_opt local to us */
 	acc_req = reqsk_queue_yank_acceptq(&mpcb->accept_queue);
 	spin_unlock_bh(&mpcb->lock);
-
+	
 	while ((req = acc_req) != NULL) {
 		acc_req = req->dl_next;
 		ireq =  inet_rsk(req);
 		child = req->sk;
 		BUG_ON(!child);
-		mtcp_update_patharray(mpcb);
 		/*Apply correct path index to that subflow*/
 		p=find_path_mapping4((struct in_addr*)&ireq->loc_addr,
 				     (struct in_addr*)&ireq->rmt_addr,

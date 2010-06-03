@@ -1922,11 +1922,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	  announce corresponding path indices to the
 	  mpcb, and start new subflows*/
 	mtcp_check_new_subflow(mpcb); 
-	if (unlikely(mpcb->received_options.list_rcvd)) {
-		mpcb->received_options.list_rcvd=0;
-		mtcp_update_patharray(mpcb);
-		mtcp_send_updatenotif(mpcb);
-	}
 #endif
 	
 	/*We listen on every subflow.

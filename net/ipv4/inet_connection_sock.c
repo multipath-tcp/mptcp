@@ -286,7 +286,7 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 	if (newsk->sk_protocol==IPPROTO_TCP) {
 		struct tcp_sock *tp=tcp_sk(newsk);
 		struct multipath_pcb *mpcb;		
-		mpcb=mtcp_alloc_mpcb(newsk);
+		mpcb=mtcp_alloc_mpcb(newsk);		
 		tp->path_index=0;		
 		mtcp_add_sock(mpcb,tp);
 		mtcp_update_metasocket(newsk);
@@ -294,7 +294,8 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 				     To be replaced later with a random IDSN
 				     (well, if it indeed improve security)*/
 		
-		mpcb->copied_seq=0; /* First byte of yet unread data */		
+		mpcb->copied_seq=0; /* First byte of yet unread data */
+		mpcb->server_side=1;
 		mtcp_ask_update(newsk);
 	}
 #endif

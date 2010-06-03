@@ -824,11 +824,6 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 #ifdef CONFIG_MTCP_PM
 	/*Any new subsock we can use ?*/
 	mtcp_check_new_subflow(mpcb);
-	if (unlikely(mpcb->received_options.list_rcvd)) {
-		mpcb->received_options.list_rcvd=0;
-		mtcp_update_patharray(mpcb);
-		mtcp_send_updatenotif(mpcb);
-	}
 #endif
 	
 	/* Compute the total number of bytes stored in the message*/
