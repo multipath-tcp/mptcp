@@ -249,10 +249,13 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 		if (!tp) {
 			/*Our new repartition has filled all buffers.
 			  Flush and wait*/
-			mtcp_for_each_sk(mpcb,sk,tp)
+			mtcp_for_each_sk(mpcb,sk,tp) {
+				lock_sock(sk);
 				if (sk->sk_state==TCP_ESTABLISHED)
 					tcp_push(sk, 0, tcp_current_mss(sk, 0), 
 						 tp->nonagle);
+				release_sock(sk);
+			}
 			tp=get_available_subflow(mpcb);
 		}
 			
