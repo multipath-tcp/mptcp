@@ -6154,13 +6154,20 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 		break;
 	}
 
-	/*MTCP note: here we cannot enter the if body if mpcb is not defined,
+	/*MPTCP note: here we cannot enter the if body if mpcb is not defined,
 	  because the following functions need the mpcb. Anyway, if the mpcb
 	  is NULL, it means that the socket is not yet attached to the 
-	  mpcb, and thus no data can be given to it.*/
+	  mpcb, and thus no data can be given to it.
+	  Note that it can happen that the state is already TCP_CLOSE, e.g. if
+	  we are here due to a FIN reception, that FIN triggered a change to
+	  TIMEWAIT state in the context of this function, then the timewait 
+	  timer expires before we reach this point in this same function,
+	  making the socket go to TCP_CLOSE even before we leave. That's very
+	  fast (or this fct is slow), but I have seen it already.*/
 
+	BUG_ON(sk->sk_state != TCP_CLOSE &&
+	       tp->mpc && !tp->mpcb && !tp->pending);
 	/* tcp_data could move socket to TIME-WAIT */
-	if (tp->mpc) BUG_ON(!tp->mpcb && !tp->pending);
 	if (sk->sk_state != TCP_CLOSE && (!tp->mpc || tp->mpcb)) {
 		tcp_data_snd_check(sk);
 		tcp_ack_snd_check(sk);
