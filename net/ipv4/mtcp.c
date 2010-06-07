@@ -204,7 +204,7 @@ static void realloc_enqueue(struct sk_buff_head *realloc_queue,
 	__skb_insert(skb, skb1, skb1->next,realloc_queue);
 }
 
-void mtcp_reallocate(struct multipath_pcb *mpcb)
+static void mtcp_reallocate(struct multipath_pcb *mpcb)
 {
 	struct sk_buff_head realloc_queue;
 	struct sock *sk;
@@ -261,21 +261,7 @@ void mtcp_reallocate(struct multipath_pcb *mpcb)
 			
 		sk=(struct sock *) tp;
 
-		if (!tp) {
-			/*TODO: We will need to put the realloc queue in the
-			  mpcb rather than as a local variable, to handle
-			  the case where we are interrupted, and we must
-			  continue or work later. Or, maybe is it better
-			  to make a non-interruptible version of 
-			  get_available_subflow. But for this, we must make sure
-			  that it always terminates.*/
-			printk(KERN_ERR "stopped by interrupt\n"
-			       "TODO: Make the realloc queue recuperable"
-			       "in that case\n");
-			
-			BUG();
-			return;
-		}
+		BUG_ON(!tp);
 		lock_sock(sk);
 		
 		BUG_ON(tcb->sub_seq!=tcb->seq);
@@ -787,7 +773,21 @@ again:
 		  cannot be killed*/
 		err=wait_for_completion_interruptible(
 			&mpcb->liberate_subflow);
-		if (err<0) return NULL;
+		if (err<0) {
+			/*TODO: We will need to put the realloc queue in the
+			  mpcb rather than as a local variable, to handle
+			  the case where we are interrupted, and we must
+			  continue or work later. Or, maybe is it better
+			  to make a non-interruptible version of 
+			  get_available_subflow. But for this, we must make sure
+			  that it always terminates.*/
+			printk(KERN_ERR "stopped by interrupt\n"
+			       "TODO: Make the realloc queue recuperable"
+			       "in that case\n");
+			
+			BUG();
+			return NULL;
+		}
 	}
 
 	if (mpcb->sndbuf_grown && mpcb->cnt_established>1 && !reallocating) {
@@ -869,7 +869,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 			  returned on a subsequent call anyway.*/
 			nberr++;
 			if (nberr==mpcb->cnt_subflows) {
-				PDEBUG("%s: returning error "
+				printk(KERN_ERR "%s: returning error "
 				       "to app:%d, copied %d\n",__FUNCTION__,
 				       ret,(int)copied);
 				return (copied)?copied:ret;
@@ -924,7 +924,7 @@ static int __mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 
 /**
  * mtcp_rcv_check_subflows, check for arrival of new subflows
- * while wainting for arriving data
+ * while waiting for arriving data
  * WARNING: that function assumes that the mutex lock is held.
  * @return: the number of newly added subflows
  */
