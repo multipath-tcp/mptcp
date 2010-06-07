@@ -216,7 +216,13 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	    && ntohs(inet->dport) != 22
 	    && (full || tp->snd_cwnd != tcp_probe.lastcwnd)) {
 
+#ifdef CONFIG_KPROBES
+		/*kprobes disables irqs before to call this function.
+		  So we cannot use the _bh flavour of spin_lock*/
+		spin_lock(&tcp_probe.lock);
+#else
 		spin_lock_bh(&tcp_probe.lock);
+#endif
 		/* If log fills, just silently drop */
 		if (tcp_probe_avail() > 1) {
 			struct tcp_log *p = tcp_probe.log + tcp_probe.head;
@@ -255,8 +261,12 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
 		tcp_probe.lastcwnd = tp->snd_cwnd;
+#ifdef CONFIG_KPROBES
+		spin_unlock(&tcp_probe.lock);
+#else
 		spin_unlock_bh(&tcp_probe.lock);
-
+#endif
+		
 		wake_up(&tcp_probe.wait);
 	}
 
