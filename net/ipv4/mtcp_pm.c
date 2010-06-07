@@ -532,7 +532,7 @@ static struct sk_buff *mtcp_make_synack(struct sock *master_sk,
 	skb = alloc_skb(MAX_TCP_HEADER + 15, GFP_ATOMIC);
 	if (skb == NULL)
 		return NULL;
-
+	
 	/* Reserve space for headers. */
 	skb_reserve(skb, MAX_TCP_HEADER);
 

@@ -326,7 +326,7 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 		path_indices&=~PI_TO_FLAG(tp->path_index);
 		tp=tp->next;
 	}
-
+	
 	for (i=0;i<sizeof(path_indices)*8;i++) {
 		if (!((1<<i) & path_indices))
 			continue;
@@ -347,7 +347,7 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			newtp=tcp_sk(sock->sk);
 
 			/*Binding the new socket to the local ulid
-			  (except if we use the MPCP default PM, in which
+			  (except if we use the MPTCP default PM, in which
 			  case we bind the new socket, directly to its
 			  corresponding locators)*/
 			switch(mpcb->sa_family) {

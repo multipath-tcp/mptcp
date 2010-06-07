@@ -1834,7 +1834,7 @@ static int tcp_v4_init_sock(struct sock *sk)
 	sk->sk_rcvbuf = sysctl_tcp_rmem[1];
 
 #ifdef CONFIG_MTCP
-	/*Init the MTCP mpcb*/
+	/*Init the MPTCP mpcb*/
 	{
 		struct multipath_pcb *mpcb;		
 		mpcb=mtcp_alloc_mpcb(sk);
