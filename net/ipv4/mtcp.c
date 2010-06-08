@@ -692,8 +692,10 @@ void mtcp_update_metasocket(struct sock *sk)
 		break;
 	}
 #ifdef CONFIG_MTCP_PM
-	/*Searching for suitable local addresses*/
-	mtcp_set_addresses(mpcb);
+	/*Searching for suitable local addresses,
+	  except is the socket is loopback, in which case we simply
+	  don't do multipath*/
+	if (!IN_LOOPBACK(inet_sk(sk)->daddr)) mtcp_set_addresses(mpcb);
 	/*If this added new local addresses, build new paths with them*/
 	if (mpcb->num_addr4 || mpcb->num_addr6) mtcp_update_patharray(mpcb);
 #endif	
