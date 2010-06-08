@@ -1157,7 +1157,22 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 		p=find_path_mapping4((struct in_addr*)&ireq->loc_addr,
 				     (struct in_addr*)&ireq->rmt_addr,
 				     mpcb);
-		BUG_ON(!p);
+		if (unlikely(!p)) {
+			/*It is possible that we don't find the mapping,
+			  if we have not yet updated our set of local
+			  addresses.*/
+			mtcp_set_addresses(mpcb);
+			/*If this added new local addresses, build new paths 
+			  with them*/
+			if (mpcb->num_addr4 || mpcb->num_addr6) 
+				mtcp_update_patharray(mpcb);
+			/*ok, we are up to date, retry*/
+			p=find_path_mapping4((struct in_addr*)&ireq->loc_addr,
+					     (struct in_addr*)&ireq->rmt_addr,
+					     mpcb);
+			BUG_ON(!p);
+		}
+
 		tcp_sk(child)->path_index=p->path_index;
 		/*Point it to the same struct socket as the master*/
 		sk_set_socket(child,mpcb->master_sk->sk_socket);
