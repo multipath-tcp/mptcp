@@ -4,7 +4,7 @@
  *	Authors:
  *      Sébastien Barré		<sebastien.barre@uclouvain.be>
  *
- *      date : May 10
+ *      date : June 10
  *
  *
  *	This program is free software; you can redistribute it and/or
@@ -363,8 +363,7 @@ void mtcp_set_addresses(struct multipath_pcb *mpcb)
 {
 	struct net_device *dev;
 	int id=1;
-
-	mpcb->num_addr4=0;
+	int num_addr4=0;
 
 	read_lock(&dev_base_lock); 
 
@@ -376,7 +375,7 @@ void mtcp_set_addresses(struct multipath_pcb *mpcb)
 			if (!strcmp(dev->name,"lo"))
 				continue;
 
-			if (mpcb->num_addr4==MTCP_MAX_ADDR) {
+			if (num_addr4==MTCP_MAX_ADDR) {
 				printk(KERN_ERR "Reached max number of local"
 				       "IPv4 addresses : %d\n", MTCP_MAX_ADDR);
 				break;
@@ -387,14 +386,21 @@ void mtcp_set_addresses(struct multipath_pcb *mpcb)
 				if (ifa->ifa_address==
 				    inet_sk(mpcb->master_sk)->saddr)
 					continue;
-				mpcb->addr4[mpcb->num_addr4].addr.s_addr=
+				mpcb->addr4[num_addr4].addr.s_addr=
 					ifa->ifa_address;
-				mpcb->addr4[mpcb->num_addr4++].id=id++;
+				mpcb->addr4[num_addr4++].id=id++;
 			}
 		}
 	}
-	
-	read_unlock(&dev_base_lock); 
+
+	read_unlock(&dev_base_lock);
+
+	/*We update num_addr4 at the end to avoid racing with the ADDR option
+	  trigger (in tcp_established_options()), 
+	  which can interrupt us in the middle of this function,
+	  and decide to already send the set of addresses, even though all
+	  addresses have not yet been read.*/
+	mpcb->num_addr4=num_addr4;
 }
 
 /**
