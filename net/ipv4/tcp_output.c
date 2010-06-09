@@ -1737,7 +1737,13 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			break;
 
 		if (unlikely(!tcp_snd_wnd_test(tp, skb, mss_now))) {
-			if (tp->mpcb) tp->mpcb->sndwnd_full=1;
+#ifdef CONGIG_MTCP
+			if (tp->mpcb) {
+				if (in_interrupt())
+					mtcp_bh_sndwnd_full(tp->mpcb, sk);
+				else tp->mpcb->sndwnd_full=1;
+			}
+#endif
 			break;
 		}
 
