@@ -275,7 +275,7 @@ static int mtcp_reallocate(struct multipath_pcb *mpcb)
 						 tp->nonagle);
 				if (!bh) release_sock(sk);
 			}
-			tp=__get_available_subflow(mpcb);
+			tp=get_available_subflow(mpcb);
 		}
 
 		sk=(struct sock *) tp;
