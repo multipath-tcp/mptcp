@@ -294,6 +294,75 @@ static void mtcp_reallocate(struct multipath_pcb *mpcb)
 		}	
 }
 
+/* (pasted from tcp_output.c)
+   Does at least the first segment of SKB fit into the send window? */
+static inline int tcp_snd_wnd_test(struct tcp_sock *tp, struct sk_buff *skb,
+				   unsigned int cur_mss)
+{
+	u32 end_seq = (tp->mpc)?TCP_SKB_CB(skb)->end_data_seq:
+		TCP_SKB_CB(skb)->end_seq;
+	
+	if (skb->len > cur_mss)
+		end_seq = ((tp->mpc)?TCP_SKB_CB(skb)->data_seq:
+			   TCP_SKB_CB(skb)->seq) + cur_mss;
+	
+	
+	return !after(end_seq, tcp_wnd_end(tp,tp->mpc));
+}
+
+/* (pasted from tcp_output.c)
+ * Can at least one segment of SKB be sent right now, according to the
+ * congestion window rules?  If so, return how many segments are allowed.
+ */
+static inline unsigned int tcp_cwnd_test(struct tcp_sock *tp,
+					 struct sk_buff *skb)
+{
+	u32 in_flight, cwnd;
+
+	/* Don't be strict about the congestion window for the final FIN.  */
+	if ((TCP_SKB_CB(skb)->flags & TCPCB_FLAG_FIN) &&
+	    tcp_skb_pcount(skb) == 1)
+		return 1;
+
+	in_flight = tcp_packets_in_flight(tp);
+	cwnd = tp->snd_cwnd;
+	if (in_flight < cwnd)
+		return (cwnd - in_flight);
+
+	return 0;
+}
+
+/**
+ * To be called when we want to send new segments on a subsock,
+ * and we discover that it is not allowed due to the
+ * receive window. 
+ * This function checks rather there is any segment queued in the other
+ * subsocks, that we can feed to this ready subsock.
+ * Remind that this assumes that the send window is shared by the subsocks,
+ * that is, the send window is related the DSNs, not the subseq numbers.
+ * If the test is positive, we return 1.
+ * If it is negative, we return 0.
+ */
+static int mtcp_check_realloc(struct multipath_pcb *mpcb)
+{
+	struct sock *sk;
+	struct tcp_sock *tp;
+
+	mtcp_for_each_sk(mpcb,sk,tp) {		
+		struct sk_buff *skb;
+		
+		lock_sock(sk);
+		if ((skb = tcp_send_head(sk)) &&
+		    tcp_snd_wnd_test(tp,skb,tcp_current_mss(sk,0)) &&
+		    !tcp_cwnd_test(tp,skb)) {
+			release_sock(sk);
+			return 1;
+		}
+		release_sock(sk);
+	}
+	return 0;
+}
+
 
 /**
  * Creates as many sockets as path indices announced by the Path Manager.
@@ -761,11 +830,35 @@ out:
 	return tcp_sk(bestsk);
 }
 
+/*Checks if reallocation must be performed, based on flags
+  sndbuf_grown and sndwnd_full. Returns 1 if the reallocation
+  has indeed been executed, 0 otherwise*/
+static inline int available_subflow_flag_check(struct multipath_pcb *mpcb) 
+{
+	int ans=0;
+	if (!mpcb->sndbuf_grown && mpcb->sndwnd_full &&
+	    mtcp_check_realloc(mpcb))
+		mpcb->sndbuf_grown=1; /*We fake a growth of sndbuf, to
+					force reallocation at the next if*/
+	
+	mpcb->sndwnd_full=0; /*In any case, we clear the flag after checking*/
+	
+	if (mpcb->sndbuf_grown && mpcb->cnt_established>1 && 
+	    !mpcb->reallocating) {
+		mpcb->sndbuf_grown=0;
+		/*Since mtcp_reallocate itself calls us. This ensures
+		  that we do not loop forever*/
+		mpcb->reallocating=1;
+		mtcp_reallocate(mpcb);
+		ans=1;
+		mpcb->reallocating=0;
+	}
+	return ans;
+}
+
 static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb)
 {
 	struct tcp_sock *tp;
-	static int reallocating=0;
-
 again:
 	while (!(tp=__get_available_subflow(mpcb))) {
 		int err;
@@ -779,7 +872,7 @@ again:
 			/*TODO: We will need to put the realloc queue in the
 			  mpcb rather than as a local variable, to handle
 			  the case where we are interrupted, and we must
-			  continue or work later. Or, maybe is it better
+			  continue our work later. Or, maybe is it better
 			  to make a non-interruptible version of 
 			  get_available_subflow. But for this, we must make sure
 			  that it always terminates.*/
@@ -790,18 +883,13 @@ again:
 			BUG();
 			return NULL;
 		}
+		if (mpcb->sndbuf_grown || mpcb->sndwnd_full)
+			available_subflow_flag_check(mpcb);
 	}
 
-	if (mpcb->sndbuf_grown && mpcb->cnt_established>1 && !reallocating) {
-		mpcb->sndbuf_grown=0;
-		/*Since mtcp_reallocate itself calls us. This ensures
-		  that we do not loop forever*/
-		reallocating=1;
-		mtcp_reallocate(mpcb);
-		reallocating=0;
-		goto again;	
-	}
-	
+	/*If we did reallocation, we must reconsider our choice of tp.*/
+	if (available_subflow_flag_check(mpcb))
+		goto again;
 
 	return tp;
 }
