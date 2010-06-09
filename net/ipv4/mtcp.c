@@ -214,7 +214,7 @@ static void realloc_enqueue(struct sk_buff_head *realloc_queue,
  * The only case where reallocation does not happen is when
  * we detect that we are called recursively, which is not allowed.
  */
-static int mtcp_reallocate(struct multipath_pcb *mpcb)
+int mtcp_reallocate(struct multipath_pcb *mpcb)
 {
 	struct sock *sk;
 	struct tcp_sock *tp;

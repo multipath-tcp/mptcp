@@ -353,5 +353,6 @@ void mpcb_get(struct multipath_pcb *mpcb);
 void mpcb_put(struct multipath_pcb *mpcb);
 void mtcp_data_ready(struct sock *sk);
 void mtcp_bh_sndwnd_full(struct multipath_pcb *mpcb, struct sock *cursk);
+int mtcp_reallocate(struct multipath_pcb *mpcb);
 
 #endif /*_MTCP_H*/
