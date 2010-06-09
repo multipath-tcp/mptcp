@@ -413,15 +413,15 @@ void mtcp_bh_sndwnd_full(struct multipath_pcb *mpcb, struct sock *cursk)
 		struct sk_buff *skb;
 		if (sk==cursk) continue;
 		
-		lock_sock(sk);
+		bh_lock_sock(sk);
 		if ((skb = tcp_send_head(sk)) &&
 		    tcp_snd_wnd_test(tp,skb,tcp_current_mss(sk,0)) &&
 		    !tcp_cwnd_test(tp,skb)) {
-			release_sock(sk);
+			bh_unlock_sock(sk);
 			can_realloc=1;
 			break;
 		}
-		release_sock(sk);
+		bh_unlock_sock(sk);
 	}
 	
 	if (!can_realloc) return;
