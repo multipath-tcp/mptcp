@@ -372,7 +372,7 @@ void mtcp_set_addresses(struct multipath_pcb *mpcb)
 			struct in_device *in_dev=dev->ip_ptr;
 			struct in_ifaddr *ifa;
 			
-			if (!strcmp(dev->name,"lo"))
+			if (dev->flags & IFF_LOOPBACK)
 				continue;
 
 			if (num_addr4==MTCP_MAX_ADDR) {
@@ -385,6 +385,8 @@ void mtcp_set_addresses(struct multipath_pcb *mpcb)
 			     ifa = ifa->ifa_next) {
 				if (ifa->ifa_address==
 				    inet_sk(mpcb->master_sk)->saddr)
+					continue;
+				if (ifa->ifa_scope==RT_SCOPE_HOST)
 					continue;
 				mpcb->addr4[num_addr4].addr.s_addr=
 					ifa->ifa_address;
