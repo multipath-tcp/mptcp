@@ -840,7 +840,9 @@ void mtcp_update_metasocket(struct sock *sk)
 	/*Searching for suitable local addresses,
 	  except is the socket is loopback, in which case we simply
 	  don't do multipath*/
-	if (!IN_LOOPBACK(inet_sk(sk)->daddr)) mtcp_set_addresses(mpcb);
+	if (!ipv4_is_loopback(inet_sk(sk)->daddr) &&
+	    !ipv4_is_loopback(inet_sk(sk)->daddr))
+		mtcp_set_addresses(mpcb);
 	/*If this added new local addresses, build new paths with them*/
 	if (mpcb->num_addr4 || mpcb->num_addr6) mtcp_update_patharray(mpcb);
 #endif	
