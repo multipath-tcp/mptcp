@@ -960,8 +960,12 @@ again:
 			BUG();
 			return NULL;
 		}
+		/*If we need to reallocate, do it.
+		  If reallocation was indeed performed, 
+		  force tp to NULL, to reevaluate the choice.*/
 		if (mpcb->sndbuf_grown || mpcb->sndwnd_full)
-			available_subflow_flag_check(mpcb);
+			if (available_subflow_flag_check(mpcb))
+				tp=NULL;
 	}
 
 	/*If we did reallocation, we must reconsider our choice of tp.*/
