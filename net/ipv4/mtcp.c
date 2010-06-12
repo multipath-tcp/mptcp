@@ -891,7 +891,20 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 		/*The shift is to avoid having to deal with a float*/
 		unsigned int fill_ratio;
 		if (sk->sk_state!=TCP_ESTABLISHED) continue;
-		BUG_ON(!tp->snd_cwnd);
+		/*This strange case can happen due to the following line
+		 * in tcp_process_frto():
+		 * tp->snd_cwnd = min(tp->snd_cwnd,
+		 *	tcp_packets_in_flight(tp));
+		 * If tcp_packets_in_flight(tp) is 0 then the snd_cwnd becomes
+		 * 0. Since tcp_packets_in_flight evaluates packets
+		 * that are *really* in flight, having this be 0 does not mean
+		 * that no packet is waiting in the retransmit queue. 
+		 * Instead it means that all segments of rexmit queue have been
+		 * either SACKed, or determined as lost but not yet 
+		 * retransmitted.
+		 */
+		if (!tp->snd_cwnd)
+			continue;
 		fill_ratio=(sk->sk_wmem_queued<<4)*tp->srtt/tp->snd_cwnd;
 		if (fill_ratio<min_fill_ratio) {
 			min_fill_ratio=fill_ratio;
