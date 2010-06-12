@@ -374,15 +374,16 @@ void mtcp_set_addresses(struct multipath_pcb *mpcb)
 			
 			if (dev->flags & IFF_LOOPBACK)
 				continue;
-
-			if (num_addr4==MTCP_MAX_ADDR) {
-				printk(KERN_ERR "Reached max number of local"
-				       "IPv4 addresses : %d\n", MTCP_MAX_ADDR);
-				break;
-			}
 			
 			for (ifa = in_dev->ifa_list; ifa; 
 			     ifa = ifa->ifa_next) {
+				if (num_addr4==MTCP_MAX_ADDR) {
+					printk(KERN_ERR "Reached max number of "
+					       "local IPv4 addresses : %d\n", 
+					       MTCP_MAX_ADDR);
+					goto out;
+				}
+				
 				if (ifa->ifa_address==
 				    inet_sk(mpcb->master_sk)->saddr)
 					continue;
@@ -394,7 +395,8 @@ void mtcp_set_addresses(struct multipath_pcb *mpcb)
 			}
 		}
 	}
-
+	
+out:
 	read_unlock(&dev_base_lock);
 
 	/*We update num_addr4 at the end to avoid racing with the ADDR option
