@@ -6,7 +6,7 @@
  *
  *      Partially inspired from initial user space MPTCP stack by Costin Raiciu.
  *
- *      date : May 10
+ *      date : June 10
  *
  *      Important note:
  *            When one wants to add support for closing subsockets *during*
@@ -234,14 +234,24 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 			continue;
 		}
 		
-		if ((skb=tcp_send_head(sk))) {
+		/*Note: The send head already belongs to the network
+		  part of the queue, so we can absolutely NOT change
+		  it ! The reason is that sack system 
+		  (tcp_sacktag_write_queue()) can cache a pointer to it
+		  in tp->highest_sack). It will do if the highest sack
+		  acks the first byte of the send head.*/
+		if (tcp_send_head(sk) && (skb=tcp_send_head(sk)->next)) {
 			/*rewind the write seq*/
 			tp->write_seq=TCP_SKB_CB(skb)->seq;
 		}
+		else {
+			/*nothing to eat here*/
+			if (!bh) release_sock(sk);
+			continue;
+		}
 		
-		while ((skb = tcp_send_head(sk))) {
+		while ((skb = tcp_send_head(sk)->next)) {
 			/*Unlink from socket*/
-			tcp_advance_send_head(sk, skb);
 			tcp_unlink_write_queue(skb,sk);
 			skb->path_mask&=~PI_TO_FLAG(tp->path_index);
 			sk->sk_wmem_queued -= skb->truesize;
@@ -374,7 +384,7 @@ static int mtcp_check_realloc(struct multipath_pcb *mpcb)
 		struct sk_buff *skb;
 		
 		lock_sock(sk);
-		if ((skb = tcp_send_head(sk)) &&
+		if (tcp_send_head(sk) && (skb = tcp_send_head(sk)->next) &&
 		    tcp_snd_wnd_test(tp,skb,tcp_current_mss(sk,0)) &&
 		    !tcp_cwnd_test(tp,skb)) {
 			release_sock(sk);
@@ -414,7 +424,7 @@ void mtcp_bh_sndwnd_full(struct multipath_pcb *mpcb, struct sock *cursk)
 		if (sk==cursk) continue;
 		
 		bh_lock_sock(sk);
-		if ((skb = tcp_send_head(sk)) &&
+		if (tcp_send_head(sk) && (skb = tcp_send_head(sk)->next) &&
 		    tcp_snd_wnd_test(tp,skb,tcp_current_mss(sk,0)) &&
 		    !tcp_cwnd_test(tp,skb)) {
 			bh_unlock_sock(sk);
