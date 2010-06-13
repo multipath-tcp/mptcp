@@ -137,6 +137,7 @@ struct multipath_pcb {
 	struct sk_buff_head       receive_queue;/*received data*/
 	struct sk_buff_head       out_of_order_queue; /* Out of order segments 
 							 go here */
+	struct sk_buff_head       realloc_queue; /*Realloc sending queue*/
 	int                       ofo_bytes; /*Counts the number of bytes 
 					       waiting to be eaten by the app
 					       in the meta-ofo queue or the
@@ -351,5 +352,7 @@ int mtcpv6_init(void);
 void mpcb_get(struct multipath_pcb *mpcb);
 void mpcb_put(struct multipath_pcb *mpcb);
 void mtcp_data_ready(struct sock *sk);
+void mtcp_bh_sndwnd_full(struct multipath_pcb *mpcb, struct sock *cursk);
+int mtcp_reallocate(struct multipath_pcb *mpcb);
 
 #endif /*_MTCP_H*/

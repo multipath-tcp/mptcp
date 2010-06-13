@@ -2606,6 +2606,11 @@ void tcp_close(struct sock *sk, long timeout)
 		  mtcp_destroy_mpcb()*/
 		skb_queue_purge(&mpcb->receive_queue);
 		skb_queue_purge(&mpcb->out_of_order_queue);
+
+		/*For the realloc queue, instead of purging, we push all the
+		  meta-data for last round or scheduling.*/
+		if (!skb_queue_empty(&mpcb->realloc_queue))
+			mtcp_reallocate(mpcb);
 		/*We MUST close the master socket in the last place.
 		  this is indeed the case, because the master socket is at the
 		  end of the subsocket list.*/

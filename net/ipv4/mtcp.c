@@ -6,7 +6,7 @@
  *
  *      Partially inspired from initial user space MPTCP stack by Costin Raiciu.
  *
- *      date : May 10
+ *      date : June 10
  *
  *      Important note:
  *            When one wants to add support for closing subsockets *during*
@@ -204,65 +204,94 @@ static void realloc_enqueue(struct sk_buff_head *realloc_queue,
 	__skb_insert(skb, skb1, skb1->next,realloc_queue);
 }
 
-static void mtcp_reallocate(struct multipath_pcb *mpcb)
+/**
+ * This can be called either from interrupt or user context.
+ * However, be careful:
+ * - from interrupt: all subsocks must have been locked prior the call
+ * - from user context: no subsock can have been locked.
+ *
+ * return 1 if reallocation did actually happen, else 0.
+ * The only case where reallocation does not happen is when
+ * we detect that we are called recursively, which is not allowed.
+ */
+int mtcp_reallocate(struct multipath_pcb *mpcb)
 {
-	struct sk_buff_head realloc_queue;
 	struct sock *sk;
 	struct tcp_sock *tp;
 	struct sk_buff *skb;
-	
-	skb_queue_head_init(&realloc_queue);
+	int bh=in_interrupt();
+
+	/*Cannot be executed recursively*/
+	if (mpcb->reallocating) return 0;
+	mpcb->reallocating=1;
 
 	/*Eating all queues contents*/
 	mtcp_for_each_sk(mpcb,sk,tp) {
-		lock_sock(sk);
+		if (!bh) lock_sock(sk);
 		
 		if (sk->sk_state!=TCP_ESTABLISHED) {
-			release_sock(sk);
+			if (!bh) release_sock(sk);
 			continue;
 		}
 		
-		if ((skb=tcp_send_head(sk))) {
+		/*Note: The send head already belongs to the network
+		  part of the queue, so we can absolutely NOT change
+		  it ! The reason is that sack system 
+		  (tcp_sacktag_write_queue()) can cache a pointer to it
+		  in tp->highest_sack). It will do if the highest sack
+		  acks the first byte of the send head.*/
+		if (tcp_send_head(sk) && (skb=tcp_send_head(sk)->next)) {
 			/*rewind the write seq*/
 			tp->write_seq=TCP_SKB_CB(skb)->seq;
 		}
+		else {
+			/*nothing to eat here*/
+			if (!bh) release_sock(sk);
+			continue;
+		}
 		
-		while ((skb = tcp_send_head(sk))) {
+		while ((skb = tcp_send_head(sk)->next)) {
 			/*Unlink from socket*/
-			tcp_advance_send_head(sk, skb);
 			tcp_unlink_write_queue(skb,sk);
 			skb->path_mask&=~PI_TO_FLAG(tp->path_index);
 			sk->sk_wmem_queued -= skb->truesize;
 			sk_mem_uncharge(sk, skb->truesize);
 
 			/*link to tp metasocket*/
-			realloc_enqueue(&realloc_queue, skb);
+			realloc_enqueue(&mpcb->realloc_queue, skb);
 				
 		}
-		release_sock(sk);
+		if (!bh) release_sock(sk);
 	}
 	
 	/*Reallocating everything*/
-	while((skb=skb_peek(&realloc_queue))) {
+	while((skb=skb_peek(&mpcb->realloc_queue))) {
 		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 		tp=__get_available_subflow(mpcb);
 		if (!tp) {
+			if (in_interrupt()) {
+				/*We cannot wait more, just give up
+				  and let the user context finish the work*/
+				mpcb->sndwnd_full=1;
+				goto out;
+			}
+
 			/*Our new repartition has filled all buffers.
 			  Flush and wait*/
 			mtcp_for_each_sk(mpcb,sk,tp) {
-				lock_sock(sk);
+				if (!bh) lock_sock(sk);
 				if (sk->sk_state==TCP_ESTABLISHED)
 					tcp_push(sk, 0, tcp_current_mss(sk, 0), 
 						 tp->nonagle);
-				release_sock(sk);
+				if (!bh) release_sock(sk);
 			}
 			tp=get_available_subflow(mpcb);
 		}
-			
+
 		sk=(struct sock *) tp;
 
 		BUG_ON(!tp);
-		lock_sock(sk);
+		if (!bh) lock_sock(sk);
 		
 		BUG_ON(tcb->sub_seq!=tcb->seq);
 		BUG_ON(tcb->data_len!=skb->len);
@@ -273,7 +302,7 @@ static void mtcp_reallocate(struct multipath_pcb *mpcb)
 		tp->last_write_seq = tcb->end_data_seq;
 
 		/*Unlink and relink*/
-		__skb_unlink(skb, &realloc_queue);		
+		__skb_unlink(skb, &mpcb->realloc_queue);		
 		tcp_add_write_queue_tail(sk, skb);
 		skb->path_mask|=PI_TO_FLAG(tp->path_index);
 		skb->sk=sk;
@@ -281,17 +310,20 @@ static void mtcp_reallocate(struct multipath_pcb *mpcb)
 		sk->sk_wmem_queued += skb->truesize;
 		sk_mem_charge(sk, skb->truesize);
 
-		release_sock(sk);
+		if (!bh) release_sock(sk);
 	}
 	
 
 	/*Push everything*/
 	mtcp_for_each_sk(mpcb,sk,tp)
 		if (sk->sk_state==TCP_ESTABLISHED) {
-			lock_sock(sk);
+			if (!bh) lock_sock(sk);
 			tcp_push(sk, 0, tcp_current_mss(sk, 0), tp->nonagle);
-			release_sock(sk);
-		}	
+			if (!bh) release_sock(sk);
+		}
+out:
+	mpcb->reallocating=0;	
+	return 1;
 }
 
 /* (pasted from tcp_output.c)
@@ -352,7 +384,7 @@ static int mtcp_check_realloc(struct multipath_pcb *mpcb)
 		struct sk_buff *skb;
 		
 		lock_sock(sk);
-		if ((skb = tcp_send_head(sk)) &&
+		if (tcp_send_head(sk) && (skb = tcp_send_head(sk)->next) &&
 		    tcp_snd_wnd_test(tp,skb,tcp_current_mss(sk,0)) &&
 		    !tcp_cwnd_test(tp,skb)) {
 			release_sock(sk);
@@ -363,6 +395,58 @@ static int mtcp_check_realloc(struct multipath_pcb *mpcb)
 	return 0;
 }
 
+/*Check if reallocation is possible, reallocation is performed*/
+void mtcp_bh_sndwnd_full(struct multipath_pcb *mpcb, struct sock *cursk)
+{
+	struct sock *sk;
+	struct tcp_sock *tp;
+	int can_realloc=0;
+	if (mtcp_test_any_sk(mpcb,sk,sock_owned_by_user(sk))) {
+		/*We cannot reallocate now, just let the user
+		  context do it*/
+		mpcb->sndwnd_full=1;
+		return;
+	}
+	
+	/*If the user context is already reallocating, we cannot
+	  do it here in the same time*/
+	if (mpcb->reallocating) {
+		mpcb->sndwnd_full=1;
+		return;
+	}
+
+	/*Now we can use all the subsocks, hence we can reallocate*/
+	
+	/*Is it the receiver that blocks its rcv wnd, or ourselves
+	  that incorrectly schedule segments ?*/
+	mtcp_for_each_sk(mpcb,sk,tp) {		
+		struct sk_buff *skb;
+		if (sk==cursk) continue;
+		
+		bh_lock_sock(sk);
+		if (tcp_send_head(sk) && (skb = tcp_send_head(sk)->next) &&
+		    tcp_snd_wnd_test(tp,skb,tcp_current_mss(sk,0)) &&
+		    !tcp_cwnd_test(tp,skb)) {
+			bh_unlock_sock(sk);
+			can_realloc=1;
+			break;
+		}
+		bh_unlock_sock(sk);
+	}
+	
+	if (!can_realloc) return;
+
+	/*OK, we did schedule badly, let's correct this
+	  we lock everything but the cursk, since cursk is already 
+	  locked by us*/
+	mtcp_for_each_sk(mpcb,sk,tp)
+		if (sk!=cursk) bh_lock_sock(sk);
+
+	mtcp_reallocate(mpcb);
+
+	mtcp_for_each_sk(mpcb,sk,tp)
+		if (sk!=cursk) bh_unlock_sock(sk);
+}
 
 /**
  * Creates as many sockets as path indices announced by the Path Manager.
@@ -565,6 +649,7 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	
 	skb_queue_head_init(&mpcb->receive_queue);
 	skb_queue_head_init(&mpcb->out_of_order_queue);
+	skb_queue_head_init(&mpcb->realloc_queue);
 	
 	mpcb->rcvbuf = sysctl_rmem_default;
 	mpcb->sndbuf = sysctl_wmem_default;
@@ -641,7 +726,7 @@ void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
 	  to a general protection fault. 
 	  The rule to avoid this is that when any subsock is destroyed
 	  (whether when destroying everything, or when just stopping
-	  one subflow, one MUST ensure that no skb belongin to that
+	  one subflow, one MUST ensure that no skb belonging to that
 	  subsock is still living in any of the meta-queues. 
 	  Currently we only suppress meta-flows when closing the connection,
 	  so purging the queues at the right place is sufficient. When we want
@@ -651,6 +736,7 @@ void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
 	*/
 	BUG_ON(!skb_queue_empty(&mpcb->receive_queue));
 	BUG_ON(!skb_queue_empty(&mpcb->out_of_order_queue));
+	BUG_ON(!skb_queue_empty(&mpcb->realloc_queue));
 	kref_put(&mpcb->kref,mpcb_release);	
 }
 
@@ -697,7 +783,7 @@ void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 {
 	struct tcp_sock *tp_prev=mpcb->connection_list;	
 	int done=0;
-	
+
 	if (!in_interrupt()) {
 		/*Then we must take the mutex to avoid racing
 		  with mtcp_add_sock*/
@@ -764,7 +850,9 @@ void mtcp_update_metasocket(struct sock *sk)
 	/*Searching for suitable local addresses,
 	  except is the socket is loopback, in which case we simply
 	  don't do multipath*/
-	if (!IN_LOOPBACK(inet_sk(sk)->daddr)) mtcp_set_addresses(mpcb);
+	if (!ipv4_is_loopback(inet_sk(sk)->daddr) &&
+	    !ipv4_is_loopback(inet_sk(sk)->daddr))
+		mtcp_set_addresses(mpcb);
 	/*If this added new local addresses, build new paths with them*/
 	if (mpcb->num_addr4 || mpcb->num_addr6) mtcp_update_patharray(mpcb);
 #endif	
@@ -800,7 +888,8 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 	unsigned int min_fill_ratio=0xffffffff;
 	
 	/*if there is only one subflow, bypass the scheduling function*/
-	mutex_lock(&mpcb->mutex);
+	if (!in_interrupt()) 
+		mutex_lock(&mpcb->mutex);
 	if (mpcb->cnt_subflows==1) {
 		bestsk=(struct sock *)mpcb->connection_list;
 		goto out;
@@ -812,7 +901,20 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 		/*The shift is to avoid having to deal with a float*/
 		unsigned int fill_ratio;
 		if (sk->sk_state!=TCP_ESTABLISHED) continue;
-		BUG_ON(!tp->snd_cwnd);
+		/*This strange case can happen due to the following line
+		 * in tcp_process_frto():
+		 * tp->snd_cwnd = min(tp->snd_cwnd,
+		 *	tcp_packets_in_flight(tp));
+		 * If tcp_packets_in_flight(tp) is 0 then the snd_cwnd becomes
+		 * 0. Since tcp_packets_in_flight evaluates packets
+		 * that are *really* in flight, having this be 0 does not mean
+		 * that no packet is waiting in the retransmit queue. 
+		 * Instead it means that all segments of rexmit queue have been
+		 * either SACKed, or determined as lost but not yet 
+		 * retransmitted.
+		 */
+		if (!tp->snd_cwnd)
+			continue;
 		fill_ratio=(sk->sk_wmem_queued<<4)*tp->srtt/tp->snd_cwnd;
 		if (fill_ratio<min_fill_ratio) {
 			min_fill_ratio=fill_ratio;
@@ -826,7 +928,8 @@ out:
 	if (!mtcp_is_available(bestsk))
 		bestsk=NULL;
 	
-	mutex_unlock(&mpcb->mutex);
+	if (!in_interrupt()) 
+		mutex_unlock(&mpcb->mutex);
 	return tcp_sk(bestsk);
 }
 
@@ -843,15 +946,12 @@ static inline int available_subflow_flag_check(struct multipath_pcb *mpcb)
 	
 	mpcb->sndwnd_full=0; /*In any case, we clear the flag after checking*/
 	
-	if (mpcb->sndbuf_grown && mpcb->cnt_established>1 && 
-	    !mpcb->reallocating) {
+	if (!skb_queue_empty(&mpcb->realloc_queue) ||
+	    (mpcb->sndbuf_grown && mpcb->cnt_established>1)) {
 		mpcb->sndbuf_grown=0;
 		/*Since mtcp_reallocate itself calls us. This ensures
 		  that we do not loop forever*/
-		mpcb->reallocating=1;
-		mtcp_reallocate(mpcb);
-		ans=1;
-		mpcb->reallocating=0;
+		ans=mtcp_reallocate(mpcb);
 	}
 	return ans;
 }
@@ -883,8 +983,12 @@ again:
 			BUG();
 			return NULL;
 		}
+		/*If we need to reallocate, do it.
+		  If reallocation was indeed performed, 
+		  force tp to NULL, to reevaluate the choice.*/
 		if (mpcb->sndbuf_grown || mpcb->sndwnd_full)
-			available_subflow_flag_check(mpcb);
+			if (available_subflow_flag_check(mpcb))
+				tp=NULL;
 	}
 
 	/*If we did reallocation, we must reconsider our choice of tp.*/
