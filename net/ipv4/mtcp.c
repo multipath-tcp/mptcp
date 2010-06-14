@@ -218,7 +218,7 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 {
 	struct sock *sk;
 	struct tcp_sock *tp;
-	struct sk_buff *skb;
+	struct sk_buff *skb,*tmp;
 	int bh=in_interrupt();
 
 	/*Cannot be executed recursively*/
@@ -240,7 +240,8 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 		  (tcp_sacktag_write_queue()) can cache a pointer to it
 		  in tp->highest_sack). It will do if the highest sack
 		  acks the first byte of the send head.*/
-		if (tcp_send_head(sk) && (skb=tcp_send_head(sk)->next)) {
+		if ((skb=tcp_send_head(sk)) && !tcp_skb_is_last(sk,skb)) {
+			skb=tcp_write_queue_next(sk,skb);
 			/*rewind the write seq*/
 			tp->write_seq=TCP_SKB_CB(skb)->seq;
 		}
@@ -250,7 +251,7 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 			continue;
 		}
 		
-		while ((skb = tcp_send_head(sk)->next)) {
+		tcp_for_write_queue_from_safe(skb,tmp,sk) {
 			/*Unlink from socket*/
 			tcp_unlink_write_queue(skb,sk);
 			skb->path_mask&=~PI_TO_FLAG(tp->path_index);
