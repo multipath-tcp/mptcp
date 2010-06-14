@@ -200,7 +200,7 @@ static void realloc_enqueue(struct sk_buff_head *realloc_queue,
 			break;
 	} while ((skb1 = skb1->prev) !=
 		 (struct sk_buff *)realloc_queue);
-
+	
 	__skb_insert(skb, skb1, skb1->next,realloc_queue);
 }
 
@@ -385,11 +385,13 @@ static int mtcp_check_realloc(struct multipath_pcb *mpcb)
 		struct sk_buff *skb;
 		
 		lock_sock(sk);
-		if (tcp_send_head(sk) && (skb = tcp_send_head(sk)->next) &&
-		    tcp_snd_wnd_test(tp,skb,tcp_current_mss(sk,0)) &&
-		    !tcp_cwnd_test(tp,skb)) {
-			release_sock(sk);
-			return 1;
+		if ((skb=tcp_send_head(sk)) && !tcp_skb_is_last(sk,skb)) {
+			skb=tcp_write_queue_next(sk,skb);
+			if (tcp_snd_wnd_test(tp,skb,tcp_current_mss(sk,0)) &&
+			    !tcp_cwnd_test(tp,skb)) {
+				release_sock(sk);
+				return 1;
+			}
 		}
 		release_sock(sk);
 	}
@@ -425,12 +427,14 @@ void mtcp_bh_sndwnd_full(struct multipath_pcb *mpcb, struct sock *cursk)
 		if (sk==cursk) continue;
 		
 		bh_lock_sock(sk);
-		if (tcp_send_head(sk) && (skb = tcp_send_head(sk)->next) &&
-		    tcp_snd_wnd_test(tp,skb,tcp_current_mss(sk,0)) &&
-		    !tcp_cwnd_test(tp,skb)) {
-			bh_unlock_sock(sk);
-			can_realloc=1;
-			break;
+		if ((skb=tcp_send_head(sk)) && !tcp_skb_is_last(sk,skb)) {
+			skb=tcp_write_queue_next(sk,skb);
+			if(tcp_snd_wnd_test(tp,skb,tcp_current_mss(sk,0)) &&
+			   !tcp_cwnd_test(tp,skb)) {
+				bh_unlock_sock(sk);
+				can_realloc=1;
+				break;
+			}
 		}
 		bh_unlock_sock(sk);
 	}
