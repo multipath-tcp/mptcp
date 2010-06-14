@@ -2883,7 +2883,7 @@ static u32 tcp_tso_acked(struct sock *sk, struct sk_buff *skb)
 					    tp->snd_una - TCP_SKB_CB(skb)->seq);
 	}
 #endif
-
+	
 	if (tcp_trim_head(sk, skb, tp->snd_una - TCP_SKB_CB(skb)->seq))
 		return 0;
 	packets_acked -= tcp_skb_pcount(skb);

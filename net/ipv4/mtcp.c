@@ -891,15 +891,19 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 	struct sock *sk;
 	struct sock *bestsk;
 	unsigned int min_fill_ratio=0xffffffff;
+	int bh=in_interrupt();
 	
 	/*if there is only one subflow, bypass the scheduling function*/
-	if (!in_interrupt()) 
+	if (!bh) {
 		mutex_lock(&mpcb->mutex);
+		mtcp_for_each_sk(mpcb,sk,tp) lock_sock(sk);
+	}
+
 	if (mpcb->cnt_subflows==1) {
 		bestsk=(struct sock *)mpcb->connection_list;
 		goto out;
 	}
-	
+
 	bestsk=(struct sock *)mpcb->connection_list;
 	/*First, find the best subflow*/
 	mtcp_for_each_sk(mpcb,sk,tp) {
@@ -933,8 +937,11 @@ out:
 	if (!mtcp_is_available(bestsk))
 		bestsk=NULL;
 	
-	if (!in_interrupt()) 
-		mutex_unlock(&mpcb->mutex);
+	if (!bh) {
+		mtcp_for_each_sk(mpcb,sk,tp) release_sock(sk);
+		mutex_unlock(&mpcb->mutex);		
+	}
+
 	return tcp_sk(bestsk);
 }
 
