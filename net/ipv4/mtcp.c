@@ -300,7 +300,6 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 		tcb->seq       =   tcb->sub_seq = tp->write_seq;
 		tcb->end_seq   =   tcb->seq+skb->len;
 		tp->write_seq  +=  skb->len;
-		tp->last_write_seq = tcb->end_data_seq;
 
 		/*Unlink and relink*/
 		__skb_unlink(skb, &mpcb->realloc_queue);		
@@ -891,15 +890,19 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 	struct sock *sk;
 	struct sock *bestsk;
 	unsigned int min_fill_ratio=0xffffffff;
+	int bh=in_interrupt();
 	
 	/*if there is only one subflow, bypass the scheduling function*/
-	if (!in_interrupt()) 
+	if (!bh) {
 		mutex_lock(&mpcb->mutex);
+		mtcp_for_each_sk(mpcb,sk,tp) lock_sock(sk);
+	}
+
 	if (mpcb->cnt_subflows==1) {
 		bestsk=(struct sock *)mpcb->connection_list;
 		goto out;
 	}
-	
+
 	bestsk=(struct sock *)mpcb->connection_list;
 	/*First, find the best subflow*/
 	mtcp_for_each_sk(mpcb,sk,tp) {
@@ -933,8 +936,11 @@ out:
 	if (!mtcp_is_available(bestsk))
 		bestsk=NULL;
 	
-	if (!in_interrupt()) 
-		mutex_unlock(&mpcb->mutex);
+	if (!bh) {
+		mtcp_for_each_sk(mpcb,sk,tp) release_sock(sk);
+		mutex_unlock(&mpcb->mutex);		
+	}
+
 	return tcp_sk(bestsk);
 }
 
@@ -1789,7 +1795,6 @@ void __mtcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk)
 	
 	mtcp_skb_entail_reinj(sk, skb);
 	tp->write_seq += skb->len;
-	tp->last_write_seq=TCP_SKB_CB(skb)->end_data_seq;
 	TCP_SKB_CB(skb)->end_seq += skb->len;
 }
 

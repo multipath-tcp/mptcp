@@ -1027,7 +1027,10 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 			if (!tcp_send_head(sk) || 
 #ifdef CONFIG_MTCP
-			    (tp->mpc && mpcb->write_seq!=tp->last_write_seq) ||
+			    /*need a new segment if the DSNs are not 
+			      contiguous*/
+			    (tp->mpc && 
+			     mpcb->write_seq!=TCP_SKB_CB(skb)->end_data_seq) ||
 #endif
 			    (copy = size_goal - skb->len) <= 0) {
 			new_segment:
@@ -1150,7 +1153,6 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 				TCP_SKB_CB(skb)->end_data_seq += copy;
 				
 				mpcb->write_seq += copy;
-				tp->last_write_seq=mpcb->write_seq;
 				PDEBUG_SEND("write_seq now %x, copied %d"
 					    " bytes to skb %p\n",
 					    mpcb->write_seq,
