@@ -444,7 +444,8 @@ void mtcp_bh_sndwnd_full(struct multipath_pcb *mpcb, struct sock *cursk)
 	mtcp_for_each_sk(mpcb,sk,tp)
 		if (sk!=cursk) bh_lock_sock(sk);
 
-	mtcp_reallocate(mpcb);
+	if (mtcp_reallocate(mpcb))
+		mpcb->sndwnd_full=0;
 
 	mtcp_for_each_sk(mpcb,sk,tp)
 		if (sk!=cursk) bh_unlock_sock(sk);
@@ -957,8 +958,7 @@ static inline int available_subflow_flag_check(struct multipath_pcb *mpcb)
 	
 	mpcb->sndwnd_full=0; /*In any case, we clear the flag after checking*/
 	
-	if (!skb_queue_empty(&mpcb->realloc_queue) ||
-	    (mpcb->sndbuf_grown && mpcb->cnt_established>1)) {
+	if ((mpcb->sndbuf_grown && mpcb->cnt_established>1)) {
 		mpcb->sndbuf_grown=0;
 		/*Since mtcp_reallocate itself calls us. This ensures
 		  that we do not loop forever*/
