@@ -300,7 +300,6 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 		tcb->seq       =   tcb->sub_seq = tp->write_seq;
 		tcb->end_seq   =   tcb->seq+skb->len;
 		tp->write_seq  +=  skb->len;
-		tp->last_write_seq = tcb->end_data_seq;
 
 		/*Unlink and relink*/
 		__skb_unlink(skb, &mpcb->realloc_queue);		
@@ -1796,7 +1795,6 @@ void __mtcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk)
 	
 	mtcp_skb_entail_reinj(sk, skb);
 	tp->write_seq += skb->len;
-	tp->last_write_seq=TCP_SKB_CB(skb)->end_data_seq;
 	TCP_SKB_CB(skb)->end_seq += skb->len;
 }
 

@@ -271,18 +271,6 @@ struct tcp_sock {
 						can appear during we sleep.*/
 		wait_data_bit_set:1; /*Similar to previous, for wait_data*/
 	
-#ifdef CONFIG_MTCP
-	u32     last_write_seq; /* Last write seq copied by this subsocket
-				   to the network. When we receive new data
-				   with a write_seq non contigues to this 
-				   one (that is, some data in between has been
-				   sent on another subsocket), we enforce
-				   the use of a new segment to store the data
-				   (because data in a single segment must
-				   be contigues, since dataseq numbers
-				   do not allow iovec-like encoding of
-				   mtcp data*/
-#endif
 	u32	rcv_wup;	/* rcv_nxt on last window update sent	*/
  	u32	snd_nxt;	/* Next sequence we send		*/
 
