@@ -270,13 +270,12 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 		tp=__get_available_subflow(mpcb);
 		if (!tp) {
-			if (in_interrupt()) {
-				/*We cannot wait more, just give up
-				  and let the user context finish the work*/
-				mpcb->sndwnd_full=1;
-				goto out;
-			}
-
+			/*if in bh, we __get_available_subflow() must
+			  must give us some sock to give the data to, because
+			  if we let the data in the realloc queue, there is 
+			  no guarantee that the use context will ever wake up
+			  and send the data itself*/
+			BUG_ON(bh);
 			/*Our new repartition has filled all buffers.
 			  Flush and wait*/
 			mtcp_for_each_sk(mpcb,sk,tp) {
@@ -321,7 +320,6 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 			tcp_push(sk, 0, tcp_current_mss(sk, 0), tp->nonagle);
 			if (!bh) release_sock(sk);
 		}
-out:
 	mpcb->reallocating=0;	
 	return 1;
 }
@@ -907,6 +905,9 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 	/*First, find the best subflow*/
 	mtcp_for_each_sk(mpcb,sk,tp) {
 		unsigned int fill_ratio;
+		/*If in bh, we cannot select a non-available subflow,
+		  since this would make us block, and we cannot block in bh*/
+		if (bh && !mtcp_is_available(sk)) continue;
 		if (sk->sk_state!=TCP_ESTABLISHED) continue;
 		/*This strange case can happen due to the following line
 		 * in tcp_process_frto():
@@ -931,8 +932,8 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 
 out:		
 	/*Now, even the best subflow may be uneligible for sending.
-	  In that case, we must return NULL.*/
-	if (!mtcp_is_available(bestsk))
+	  In that case, we must return NULL (only in user ctx, though) */
+	if (!bh && !mtcp_is_available(bestsk))
 		bestsk=NULL;
 	
 	if (!bh) {
