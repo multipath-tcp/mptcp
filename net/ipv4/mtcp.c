@@ -906,7 +906,6 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 	bestsk=(struct sock *)mpcb->connection_list;
 	/*First, find the best subflow*/
 	mtcp_for_each_sk(mpcb,sk,tp) {
-		/*The shift is to avoid having to deal with a float*/
 		unsigned int fill_ratio;
 		if (sk->sk_state!=TCP_ESTABLISHED) continue;
 		/*This strange case can happen due to the following line
@@ -923,7 +922,7 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 		 */
 		if (!tp->snd_cwnd)
 			continue;
-		fill_ratio=(sk->sk_wmem_queued<<4)*tp->srtt/tp->snd_cwnd;
+		fill_ratio=(sk->sk_wmem_queued/tp->snd_cwnd)*tp->srtt;
 		if (fill_ratio<min_fill_ratio) {
 			min_fill_ratio=fill_ratio;
 			bestsk=sk;
