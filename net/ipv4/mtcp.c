@@ -255,12 +255,13 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 			/*We will remove one skb,
 			  update the sack cache if necessary*/
 			tcp_highest_sack_combine(sk,skb,NULL);
+			tcp_advance_send_head(sk,skb);
 			/*Unlink from socket*/			
 			tcp_unlink_write_queue(skb,sk);
 			skb->path_mask&=~PI_TO_FLAG(tp->path_index);
 			sk->sk_wmem_queued -= skb->truesize;
 			sk_mem_uncharge(sk, skb->truesize);
-
+			
 			/*link to tp metasocket*/
 			realloc_enqueue(&mpcb->realloc_queue, skb);
 				
@@ -273,8 +274,8 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 		tp=__get_available_subflow(mpcb);
 		if (!tp) {
-			/*if in bh, we __get_available_subflow() must
-			  must give us some sock to give the data to, because
+			/*if in bh, __get_available_subflow() must
+			  give us some sock to give the data to, because
 			  if we let the data in the realloc queue, there is 
 			  no guarantee that the use context will ever wake up
 			  and send the data itself*/
@@ -386,8 +387,7 @@ static int mtcp_check_realloc(struct multipath_pcb *mpcb)
 		struct sk_buff *skb;
 		
 		lock_sock(sk);
-		if ((skb=tcp_send_head(sk)) && !tcp_skb_is_last(sk,skb)) {
-			skb=tcp_write_queue_next(sk,skb);
+		if ((skb=tcp_send_head(sk))) {
 			if (tcp_snd_wnd_test(tp,skb,tcp_current_mss(sk,0)) &&
 			    !tcp_cwnd_test(tp,skb)) {
 				release_sock(sk);
@@ -428,8 +428,7 @@ void mtcp_bh_sndwnd_full(struct multipath_pcb *mpcb, struct sock *cursk)
 		if (sk==cursk) continue;
 		
 		bh_lock_sock(sk);
-		if ((skb=tcp_send_head(sk)) && !tcp_skb_is_last(sk,skb)) {
-			skb=tcp_write_queue_next(sk,skb);
+		if ((skb=tcp_send_head(sk))) {
 			if(tcp_snd_wnd_test(tp,skb,tcp_current_mss(sk,0)) &&
 			   !tcp_cwnd_test(tp,skb)) {
 				bh_unlock_sock(sk);
