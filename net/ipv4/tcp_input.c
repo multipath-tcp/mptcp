@@ -2988,7 +2988,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		if (!fully_acked)
 			break;
 
-		/*Before we remove the skb, we advance tp->dsn_snd_una*/
+		/*Before we remove the skb, we update the meta-ack count*/
 #ifdef CONFIG_MTCP
 		{
 			struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);

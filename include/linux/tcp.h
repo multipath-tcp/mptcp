@@ -253,7 +253,6 @@ struct tcp_sock {
 	u32    map_data_seq; /*Those three fields record the current mapping*/
 	u16    map_data_len;
 	u32    map_subseq;
-	u32    dsn_snd_una; /*First unacked byte as seen by this subflow*/
 /*snt isn: needed to translate abs to relative subflow seqnums*/
 	u32    snt_isn;
 #endif
