@@ -318,13 +318,17 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 	}
 	
 
-	/*Push everything*/
-	mtcp_for_each_sk(mpcb,sk,tp)
-		if (sk->sk_state==TCP_ESTABLISHED) {
-			if (!bh) lock_sock(sk);
-			tcp_push(sk, 0, tcp_current_mss(sk, 0), tp->nonagle);
-			if (!bh) release_sock(sk);
-		}
+	/*Push everything.
+	  Note that if we are in bh, we are already in a transmit process,
+	  so we just continue it (see tcp_write_xmit())*/
+	if (!bh)
+		mtcp_for_each_sk(mpcb,sk,tp)
+			if (sk->sk_state==TCP_ESTABLISHED) {
+				lock_sock(sk);
+				tcp_push(sk, 0, tcp_current_mss(sk, 0), 
+					 tp->nonagle);
+				release_sock(sk);
+			}
 	mpcb->reallocating=0;	
 	return 1;
 }
@@ -400,23 +404,24 @@ static int mtcp_check_realloc(struct multipath_pcb *mpcb)
 }
 
 /*Check if reallocation is possible, reallocation is performed*/
-void mtcp_bh_sndwnd_full(struct multipath_pcb *mpcb, struct sock *cursk)
+int mtcp_bh_sndwnd_full(struct multipath_pcb *mpcb, struct sock *cursk)
 {
 	struct sock *sk;
 	struct tcp_sock *tp;
 	int can_realloc=0;
+	int ans=0;
 	if (mtcp_test_any_sk(mpcb,sk,sock_owned_by_user(sk))) {
 		/*We cannot reallocate now, just let the user
 		  context do it*/
 		mpcb->sndwnd_full=1;
-		return;
+		return ans;
 	}
 	
 	/*If the user context is already reallocating, we cannot
 	  do it here in the same time*/
 	if (mpcb->reallocating) {
 		mpcb->sndwnd_full=1;
-		return;
+		return ans;
 	}
 
 	/*Now we can use all the subsocks, hence we can reallocate*/
@@ -439,7 +444,7 @@ void mtcp_bh_sndwnd_full(struct multipath_pcb *mpcb, struct sock *cursk)
 		bh_unlock_sock(sk);
 	}
 	
-	if (!can_realloc) return;
+	if (!can_realloc) return ans;
 
 	/*OK, we did schedule badly, let's correct this
 	  we lock everything but the cursk, since cursk is already 
@@ -447,11 +452,14 @@ void mtcp_bh_sndwnd_full(struct multipath_pcb *mpcb, struct sock *cursk)
 	mtcp_for_each_sk(mpcb,sk,tp)
 		if (sk!=cursk) bh_lock_sock(sk);
 
-	if (mtcp_reallocate(mpcb))
-		mpcb->sndwnd_full=0;
+	ans=mtcp_reallocate(mpcb);
+	
+	if (ans) mpcb->sndwnd_full=0;
 
 	mtcp_for_each_sk(mpcb,sk,tp)
 		if (sk!=cursk) bh_unlock_sock(sk);
+
+	return ans;
 }
 
 /**

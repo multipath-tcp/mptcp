@@ -1737,14 +1737,22 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			break;
 
 		if (unlikely(!tcp_snd_wnd_test(tp, skb, mss_now))) {
+			int cont=0;
 #ifdef CONFIG_MTCP
 			if (tp->mpcb) {
-				if (in_interrupt())
-					mtcp_bh_sndwnd_full(tp->mpcb, sk);
+				if (in_interrupt()) {
+					/*Try to realloc. If realloc was 
+					  successful (we know that by checking
+					  again tcp_snd_wnd_test), continue
+					  what we were doing*/
+					if (mtcp_bh_sndwnd_full(tp->mpcb, sk) &&
+					    tcp_snd_wnd_test(tp,skb,mss_now))
+						cont=1;
+				}
 				else tp->mpcb->sndwnd_full=1;
 			}
 #endif
-			break;
+			if (!cont) break;
 		}
 
 		if (tso_segs == 1) {
