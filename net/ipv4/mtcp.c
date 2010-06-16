@@ -218,7 +218,7 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 {
 	struct sock *sk;
 	struct tcp_sock *tp;
-	struct sk_buff *skb,*tmp;
+	struct sk_buff *skb;
 	int bh=in_interrupt();
 
 	/*Cannot be executed recursively*/
@@ -234,14 +234,14 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 			continue;
 		}
 		
-		/*Note: The send head already belongs to the network
-		  part of the queue, so we can absolutely NOT change
-		  it ! The reason is that sack system 
-		  (tcp_sacktag_write_queue()) can cache a pointer to it
-		  in tp->highest_sack). It will do if the highest sack
-		  acks the first byte of the send head.*/
-		if ((skb=tcp_send_head(sk)) && !tcp_skb_is_last(sk,skb)) {
-			skb=tcp_write_queue_next(sk,skb);
+		/*Note: the sack system 
+		  (tcp_sacktag_write_queue()) can cache a pointer to 
+		  the tcp send head (in tp->highest_sack). 
+		  It will do if the highest sack
+		  acks the first byte of the send head. So we need to update
+		  that pointer if we change the send head.
+		  We do that below in the loop*/
+		if ((skb=tcp_send_head(sk))) {
 			/*rewind the write seq*/
 			tp->write_seq=TCP_SKB_CB(skb)->seq;
 		}
@@ -251,8 +251,11 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 			continue;
 		}
 		
-		tcp_for_write_queue_from_safe(skb,tmp,sk) {
-			/*Unlink from socket*/
+		while((skb=tcp_send_head(sk))) {
+			/*We will remove one skb,
+			  update the sack cache if necessary*/
+			tcp_highest_sack_combine(sk,skb,NULL);
+			/*Unlink from socket*/			
 			tcp_unlink_write_queue(skb,sk);
 			skb->path_mask&=~PI_TO_FLAG(tp->path_index);
 			sk->sk_wmem_queued -= skb->truesize;
@@ -301,7 +304,8 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 		tp->write_seq  +=  skb->len;
 
 		/*Unlink and relink*/
-		__skb_unlink(skb, &mpcb->realloc_queue);		
+		__skb_unlink(skb, &mpcb->realloc_queue);
+		/*This will set a new sack cache if needed.*/
 		tcp_add_write_queue_tail(sk, skb);
 		skb->path_mask|=PI_TO_FLAG(tp->path_index);
 		skb->sk=sk;
