@@ -280,15 +280,7 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 			  no guarantee that the use context will ever wake up
 			  and send the data itself*/
 			BUG_ON(bh);
-			/*Our new repartition has filled all buffers.
-			  Flush and wait*/
-			mtcp_for_each_sk(mpcb,sk,tp) {
-				if (!bh) lock_sock(sk);
-				if (sk->sk_state==TCP_ESTABLISHED)
-					tcp_push(sk, 0, tcp_current_mss(sk, 0), 
-						 tp->nonagle);
-				if (!bh) release_sock(sk);
-			}
+			/*Our new repartition has filled all buffers. Wait*/
 			tp=get_available_subflow(mpcb);
 		}
 
@@ -944,8 +936,17 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 out:		
 	/*Now, even the best subflow may be uneligible for sending.
 	  In that case, we must return NULL (only in user ctx, though) */
-	if (!bh && !mtcp_is_available(bestsk))
+	if (!bh && !mtcp_is_available(bestsk)) {
+		/*In some cases it is sufficient to push pending
+		  frames to make the subflow available. Moreover, this
+		  might be necessary to unblock a flow on which we have given
+		  new data. We however still return NULL, because even if
+		  we manage to push frames, the subflow will really become
+		  available only after we receive the first acks.*/		
+		tcp_push(bestsk, 0, tcp_current_mss(bestsk, 0), 
+			 tcp_sk(bestsk)->nonagle);
 		bestsk=NULL;
+	}
 	
 	if (!bh) {
 		mtcp_for_each_sk(mpcb,sk,tp) release_sock(sk);
