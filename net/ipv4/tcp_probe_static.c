@@ -64,13 +64,18 @@ int tcpprobe_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	return (*vops)->transmit_skb(sk,skb,clone_it,gfp_mask);
 }
 
-int tcpprobe_logmsg(struct sock *sk,char *msg)
+int tcpprobe_logmsg(struct sock *sk,char *fmt,...)
 {
 	int ipversion=(sk->sk_family==AF_INET6)?6:4;
 	struct tcpprobe_ops **vops=select_family(ipversion);
+	va_list args;
+	int i;
 	
 	/*return -1 if incorrect family*/
 	if (!vops) return -1;
 	if (!*vops) return 0;
-	return (*vops)->logmsg(sk,msg);
+	va_start(args,fmt);
+	i=(*vops)->logmsg(sk,fmt,args);
+	va_end(args);
+	return i;
 }

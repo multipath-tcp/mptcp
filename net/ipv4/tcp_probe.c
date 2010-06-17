@@ -176,12 +176,16 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	return 0;
 }
 
-static int logmsg(struct sock *sk,char *msg)
+static int logmsg(struct sock *sk,char *fmt, va_list args)
 {
 	const struct inet_sock *inet = inet_sk(sk);
+	char msg[500];	
+
 	if (sk->sk_state == TCP_ESTABLISHED && 
 	    ntohs(inet->sport) != 22 &&
 	    ntohs(inet->dport) != 22) {
+
+		vsnprintf(msg,INT_MAX,fmt,args);
 
 		spin_lock_bh(&tcp_probe.lock);
 		/* If log fills, just silently drop */
