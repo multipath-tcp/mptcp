@@ -1381,8 +1381,10 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 			*copied+=used;
 			*len-=used;
 		}
-		mpcb->ofo_bytes-=used;
-
+		
+		if (!(flags & MSG_PEEK)) 
+			mpcb->ofo_bytes-=used;
+		
 		mtcp_check_seqnums(mpcb,0);
 		
  		if (*data_seq==TCP_SKB_CB(skb)->end_data_seq && 
