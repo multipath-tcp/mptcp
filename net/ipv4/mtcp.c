@@ -786,7 +786,7 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 
 void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 {
-	struct tcp_sock *tp_prev=mpcb->connection_list;	
+	struct tcp_sock *tp_prev;
 	int done=0;
 
 	if (!in_interrupt()) {
@@ -794,6 +794,8 @@ void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 		  with mtcp_add_sock*/
 		mutex_lock(&mpcb->mutex);
 	}
+
+	tp_prev=mpcb->connection_list;	
 
 	if (tp_prev==tp) {
 		mpcb->connection_list=tp->next;
