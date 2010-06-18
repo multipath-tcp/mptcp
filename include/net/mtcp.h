@@ -100,6 +100,11 @@ struct multipath_pcb {
 	/*Master socket, also part of the connection_list, this
 	  socket is the one that the application sees.*/
 	struct sock*              master_sk;
+	/*Last scheduled subsocket. If this pointer is not NULL, 
+	  then the last scheduled subsocket has remaining space 
+	  in it tail skb. This means we should reschedule it, to avoid
+	  that Nagle blocks it.*/
+	struct sock*              last_sk;
 	/*socket count in this connection*/
 	int                       cnt_subflows;    
 	int                       syn_sent;

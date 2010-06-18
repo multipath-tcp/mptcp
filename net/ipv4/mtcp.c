@@ -309,6 +309,12 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 		if (!bh) release_sock(sk);
 	}
 	
+	/*update last_sk. If it was previously defined, so it is now
+	  logically the last sk that received a skb through reallocation.
+	  Indeed, an unfilled skb is necessarily the last one.*/
+	if (mpcb->last_sk)
+		mpcb->last_sk=sk;
+	else mpcb->last_sk=NULL;
 
 	/*Push everything.
 	  Note that if we are in bh, we are already in a transmit process,
@@ -810,6 +816,7 @@ void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 				break;
 			}
 		}
+	if (tcp_sk(mpcb->last_sk)==tp) mpcb->last_sk=NULL;
 	tp->mpcb=NULL; tp->next=NULL;
 	if (!in_interrupt())
 		mutex_unlock(&mpcb->mutex);
@@ -903,6 +910,13 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 
 	if (mpcb->cnt_subflows==1) {
 		bestsk=(struct sock *)mpcb->connection_list;
+		goto out;
+	}
+
+	/*If last_sk is defined, give control to it again
+	  so that it can finish filling its buffer*/
+	if (mpcb->last_sk) {
+		bestsk=mpcb->last_sk;
 		goto out;
 	}
 
