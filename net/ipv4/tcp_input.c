@@ -2988,7 +2988,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		if (!fully_acked)
 			break;
 
-		/*Before we remove the skb, we advance tp->dsn_snd_una*/
+		/*Before we remove the skb, we update the meta-ack count*/
 #ifdef CONFIG_MTCP
 		{
 			struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
@@ -4788,7 +4788,7 @@ static void tcp_new_space(struct sock *sk)
 			if (rtt_max<tp_it->srtt)
 				rtt_max=tp_it->srtt;
 
-		/* Normally the send buffer is computed as the twice the BDP
+		/* Normally the send buffer is computed as twice the BDP
 		 * However in multipath, a fast path may need more buffer
 		 * for the following reason:
 		 * Imagine 2 flows with same bw b, and delay 10 and 100, resp.
@@ -4800,7 +4800,7 @@ static void tcp_new_space(struct sock *sk)
 		 * subflows. If we represent a buffer as having a "height" in 
 		 * time units, and a "width" in bandwidth units, we must ensure 
 		 * that each segment is sent on the buffer with smallest 
-		 * "current height". (lowest filling related to his hight).
+		 * "current height". (lowest filling related to his height).
 		 * The subflow max height, given that its width is its bw,
 		 * is computed as 2d traditionnally, thus 20 and 200 resp. here.
 		 * The problem is that if buffer with delay 10, is kept
@@ -4808,8 +4808,8 @@ static void tcp_new_space(struct sock *sk)
 		 * segments until height=20 maximum. In summary, the use of 
 		 * all buffers is reduced to the hight of the smallest one.
 		 * This is why all buffers must be arranged to have equal
-		 * height, that hight being the highest hight needed by the
-		 * network, that 2*max(delays).
+		 * height, that height being the highest height needed by the
+		 * network, that is 2*max(delays).
 		 * Since we estimate bw with (cwnd/srtt), our estimate
 		 * of bw*max(delay) is (cwnd/srtt)*srtt_max
 		 */

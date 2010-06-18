@@ -1185,12 +1185,14 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			break;
 
 		wait_for_sndbuf:
-#ifdef CONFIG_MTCP
-			/*We should arrive here only if
-			  no more than one subflow is available*/
-			BUG_ON(tp->mpcb && tp->mpcb->cnt_subflows!=1);
-#endif
 			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);		
+#ifdef CONFIG_MTCP
+			/*If we arrive here, then reallocation has happened
+			  under our feet. Just give control back to the
+			  scheduler*/
+			if(tp->mpcb && tp->mpcb->cnt_subflows!=1)
+				break;
+#endif
 		wait_for_memory:
 			if (copied)
 				tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
