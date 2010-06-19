@@ -180,12 +180,16 @@ static int logmsg(struct sock *sk,char *fmt, va_list args)
 {
 	const struct inet_sock *inet = inet_sk(sk);
 	char msg[500];	
+	struct timespec tv
+		= ktime_to_timespec(ktime_sub(ktime_get(), tcp_probe.start));
 
 	if (sk->sk_state == TCP_ESTABLISHED && 
 	    ntohs(inet->sport) != 22 &&
 	    ntohs(inet->dport) != 22) {
 
-		vsnprintf(msg,INT_MAX,fmt,args);
+		sprintf(msg,"LOG:%lu.%09lu ",(unsigned long) tv.tv_sec,
+			(unsigned long) tv.tv_nsec);
+		vsnprintf(msg+strlen(msg),INT_MAX,fmt,args);
 
 		spin_lock_bh(&tcp_probe.lock);
 		/* If log fills, just silently drop */
