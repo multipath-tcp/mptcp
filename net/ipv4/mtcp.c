@@ -211,8 +211,9 @@ static void realloc_enqueue(struct sk_buff_head *realloc_queue,
  * - from user context: no subsock can have been locked.
  *
  * return 1 if reallocation did actually happen, else 0.
- * The only case where reallocation does not happen is when
- * we detect that we are called recursively, which is not allowed.
+ * Reallocation does not happen if
+ * we detect that we are called recursively, which is not allowed,
+ * but also if simply no queue had any segment to reallocate.
  */
 int mtcp_reallocate(struct multipath_pcb *mpcb)
 {
@@ -268,6 +269,10 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 		}
 		if (!bh) release_sock(sk);
 	}
+
+	/*short path*/
+	if (!skb_peek(&mpcb->realloc_queue))
+		return 0;
 	
 	/*Reallocating everything*/
 	while((skb=skb_peek(&mpcb->realloc_queue))) {
