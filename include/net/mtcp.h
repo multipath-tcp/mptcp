@@ -137,6 +137,8 @@ struct multipath_pcb {
 	u32    copied_seq; /* Head of yet unread data*/
 
 	u32    snd_una;
+	u32    snd_wnd;	    /* The window we expect to receive	*/
+	u32    max_window;  /* Maximal window ever seen from peer */
 	struct list_head          dsack_list;
 	
 	struct sk_buff_head       receive_queue;/*received data*/
