@@ -220,11 +220,14 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 	struct sock *sk;
 	struct tcp_sock *tp;
 	struct sk_buff *skb;
+	struct sk_buff_head tmp_queue;
 	int bh=in_interrupt();
 
 	/*Cannot be executed recursively*/
 	if (mpcb->reallocating) return 0;
 	mpcb->reallocating=1;
+
+	skb_queue_head_init(&tmp_queue);
 
 	/*Eating all queues contents*/
 	mtcp_for_each_sk(mpcb,sk,tp) {
@@ -252,6 +255,9 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 			continue;
 		}
 		
+		/*Here we use a tmp queue, so that reordering can be done
+		  with sock unlocked. We indeed observed that otherwise
+		  the sock remains locked for too long*/
 		while((skb=tcp_send_head(sk))) {
 			/*We will remove one skb,
 			  update the sack cache if necessary*/
@@ -259,17 +265,19 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 			tcp_advance_send_head(sk,skb);
 			/*Unlink from socket*/			
 			tcp_unlink_write_queue(skb,sk);
+			skb_queue_tail(&tmp_queue,skb);
 			skb->path_mask&=~PI_TO_FLAG(tp->path_index);
 			sk->sk_wmem_queued -= skb->truesize;
-			sk_mem_uncharge(sk, skb->truesize);
-			
-			/*link to tp metasocket*/
-			realloc_enqueue(&mpcb->realloc_queue, skb);
-				
+			sk_mem_uncharge(sk, skb->truesize);			
 		}
 		if (!bh) release_sock(sk);
+		/*Now we can reorder the segments*/
+		while ((skb=skb_peek(&tmp_queue))) {
+			__skb_unlink(skb,&tmp_queue);
+			realloc_enqueue(&mpcb->realloc_queue,skb);
+		}
 	}
-
+	
 	/*short path*/
 	if (!skb_peek(&mpcb->realloc_queue))
 		return 0;
