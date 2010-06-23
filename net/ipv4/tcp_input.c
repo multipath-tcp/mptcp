@@ -3004,17 +3004,25 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 					    scb->end_data_seq);
 			if (!tp->bw_est.time) {
 				/*bootstrap bw estimation*/
-				tp->bw_est.space=tp->snd_cwnd*tp->mss_cache;
+				tp->bw_est.space=(tp->snd_cwnd*tp->mss_cache)<<
+					tp->bw_est.shift;
 				tp->bw_est.seq=tp->snd_una+tp->bw_est.space;
 				tp->bw_est.time=tcp_time_stamp;
 			}
 			else if (after(tp->snd_una,tp->bw_est.seq)) {
 				/*update the bw estimate for this
 				  subflow*/
-				tp->cur_bw_est=tp->bw_est.space/
-					(tcp_time_stamp-tp->bw_est.time);
-				BUG_ON(!tp->cur_bw_est && tp->bw_est.space);
-				tp->bw_est.space=tp->snd_cwnd*tp->mss_cache;
+				if (tcp_time_stamp-tp->bw_est.time==0)
+					tp->bw_est.shift++;
+				else {
+					tp->cur_bw_est=tp->bw_est.space/
+						(tcp_time_stamp-
+						 tp->bw_est.time);
+					BUG_ON(!tp->cur_bw_est && 
+					       tp->bw_est.space);
+				}
+				tp->bw_est.space=(tp->snd_cwnd*tp->mss_cache)<<
+					tp->bw_est.shift;
 				tp->bw_est.seq=tp->snd_una+tp->bw_est.space;
 				tp->bw_est.time=tcp_time_stamp;
 			}
