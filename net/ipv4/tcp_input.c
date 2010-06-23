@@ -3002,10 +3002,26 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			BUG_ON(!scb->end_data_seq);
 			mtcp_update_dsn_ack(mpcb,scb->data_seq,
 					    scb->end_data_seq);
+			if (!tp->bw_est.time) {
+				/*bootstrap bw estimation*/
+				tp->bw_est.space=tp->snd_cwnd*tp->mss_cache;
+				tp->bw_est.seq=tp->snd_una+tp->bw_est.space;
+				tp->bw_est.time=tcp_time_stamp;
+			}
+			else if (after(tp->snd_una,tp->bw_est.seq)) {
+				/*update the bw estimate for this
+				  subflow*/
+				tp->cur_bw_est=tp->bw_est.space/
+					(tcp_time_stamp-tp->bw_est.time);
+				BUG_ON(!tp->cur_bw_est && tp->bw_est.space);
+				tp->bw_est.space=tp->snd_cwnd*tp->mss_cache;
+				tp->bw_est.seq=tp->snd_una+tp->bw_est.space;
+				tp->bw_est.time=tcp_time_stamp;
+			}
 		}
 	no_mptcp_update:
 #endif
-
+		
 		tcp_unlink_write_queue(skb, sk);
 		sk_wmem_free_skb(sk, skb);
 		tp->scoreboard_skb_hint = NULL;

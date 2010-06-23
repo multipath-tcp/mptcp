@@ -911,9 +911,9 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 {
 	struct tcp_sock *tp;
 	struct sock *sk;
-	struct sock *bestsk;
+	struct sock *bestsk=NULL;
 	unsigned int min_fill_ratio=0xffffffff;
-	int bh=in_interrupt();
+	int bh=in_interrupt(); 
 	
 	/*if there is only one subflow, bypass the scheduling function*/
 	if (!bh) {
@@ -933,7 +933,6 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 		goto out;
 	}
 
-	bestsk=(struct sock *)mpcb->connection_list;
 	/*First, find the best subflow*/
 	mtcp_for_each_sk(mpcb,sk,tp) {
 		unsigned int fill_ratio;
@@ -941,31 +940,31 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 		  since this would make us block, and we cannot block in bh*/
 		if (bh && !mtcp_is_available(sk)) continue;
 		if (sk->sk_state!=TCP_ESTABLISHED) continue;
-		/*This strange case can happen due to the following line
-		 * in tcp_process_frto():
-		 * tp->snd_cwnd = min(tp->snd_cwnd,
-		 *	tcp_packets_in_flight(tp));
-		 * If tcp_packets_in_flight(tp) is 0 then the snd_cwnd becomes
-		 * 0. Since tcp_packets_in_flight evaluates packets
-		 * that are *really* in flight, having this be 0 does not mean
-		 * that no packet is waiting in the retransmit queue. 
-		 * Instead it means that all segments of rexmit queue have been
-		 * either SACKed, or determined as lost but not yet 
-		 * retransmitted.
-		 */
-		if (!tp->snd_cwnd)
+
+		/*If a subflow is available, send immediately*/
+		if (tcp_packets_in_flight(tp)<tp->snd_cwnd) {
+			bestsk=sk;
+			break;
+		}
+
+		/*If there is no bw estimation available currently, 
+		  we only give it data when it has available space in the
+		  cwnd (see above)*/
+		if (!tp->cur_bw_est)
 			continue;
-		fill_ratio=(sk->sk_wmem_queued/tp->snd_cwnd)*tp->srtt;
+		
+		fill_ratio=sk->sk_wmem_queued/tp->cur_bw_est;
+		
 		if (fill_ratio<min_fill_ratio) {
 			min_fill_ratio=fill_ratio;
 			bestsk=sk;
 		}
 	}
 
-out:		
+out:
 	/*Now, even the best subflow may be uneligible for sending.
 	  In that case, we must return NULL (only in user ctx, though) */
-	if (!bh && !mtcp_is_available(bestsk)) {
+	if (!bh && bestsk && !mtcp_is_available(bestsk)) {
 		/*In some cases it is sufficient to push pending
 		  frames to make the subflow available. Moreover, this
 		  might be necessary to unblock a flow on which we have given

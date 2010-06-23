@@ -1003,7 +1003,8 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 	tcp_sk(child)->rx_opt.mtcp_rem_token=req->mtcp_rem_token;
 	tcp_sk(child)->mtcp_loc_token=req->mtcp_loc_token;
 	tcp_sk(child)->pending=1;
-
+	tcp_sk(child)->bw_est.time=0;
+		
 	child->sk_sndmsg_page=NULL;
 	
 	/*Deleting from global hashtable*/
