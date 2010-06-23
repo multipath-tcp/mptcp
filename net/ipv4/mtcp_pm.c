@@ -704,14 +704,14 @@ static int mtcp_v4_join_request(struct multipath_pcb *mpcb, struct sk_buff *skb)
 		tmp_opt.tstamp_ok  = 0;
 	}
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
+
+	req->mpcb=mpcb;
 	tcp_openreq_init(req, &tmp_opt, skb);
 
 	ireq = inet_rsk(req);
 	ireq->loc_addr = daddr;
 	ireq->rmt_addr = saddr;
 	ireq->opt = tcp_v4_save_options(NULL, skb);
-
-	req->mpcb=mpcb;
 
 	/*Todo: add the sanity checks here. See tcp_v4_conn_request*/
 

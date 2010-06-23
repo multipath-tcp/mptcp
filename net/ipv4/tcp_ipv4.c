@@ -1248,6 +1248,12 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	}
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 
+#ifdef CONFIG_MTCP_PM
+	/*Must be set to NULL before calling openreq init.
+	  tcp_openreq_init() uses this to know whether the request
+	  is join request or a conn request.*/
+	req->mpcb=NULL;
+#endif
 	tcp_openreq_init(req, &tmp_opt, skb);
 
 	if (security_inet_conn_request(sk, skb, req))

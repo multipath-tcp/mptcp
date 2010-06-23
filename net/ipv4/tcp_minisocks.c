@@ -700,6 +700,8 @@ struct sock *tcp_check_req(struct sock *sk,struct sk_buff *skb,
 #ifdef CONFIG_MTCP_PM
 		child_tp->rx_opt.mtcp_rem_token=req->mtcp_rem_token;
 		child_tp->mtcp_loc_token=req->mtcp_loc_token;
+		child_tp->mpcb=NULL;
+		child_tp->pending=1;
 #endif
 	}
 #endif

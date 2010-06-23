@@ -1121,8 +1121,13 @@ static inline void tcp_openreq_init(struct request_sock *req,
 #ifdef CONFIG_MTCP
 	req->saw_mpc = rx_opt->saw_mpc;
 #ifdef CONFIG_MTCP_PM
-	req->mtcp_rem_token = rx_opt->mtcp_rem_token;
-	req->mtcp_loc_token = mtcp_new_token();
+	if (!req->mpcb) {
+		/*conn request, prepare a new token for the 
+		  mpcb that will be created in inet_csk_accept(),
+		  and store the received token.*/
+		req->mtcp_rem_token = rx_opt->mtcp_rem_token;
+		req->mtcp_loc_token = mtcp_new_token();
+	}
 #endif
 #endif
 	ireq->tstamp_ok = rx_opt->tstamp_ok;
