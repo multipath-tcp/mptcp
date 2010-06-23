@@ -1213,6 +1213,11 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 out:
 	if (copied)
 		tcp_push(sk, flags, mss_now, tp->nonagle);
+	/*Protection against Nagle blocking*/
+	if ((tcp_send_head(sk)) && (size_goal-tcp_write_queue_tail(sk)->len>0))
+		mpcb->last_sk=sk;
+	else mpcb->last_sk=NULL;
+
 	TCP_CHECK_TIMER(sk);
 	release_sock(sk);
 	PDEBUG_SEND("%s:line %d, copied %d\n",__FUNCTION__,__LINE__,copied);

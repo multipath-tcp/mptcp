@@ -3002,10 +3002,34 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			BUG_ON(!scb->end_data_seq);
 			mtcp_update_dsn_ack(mpcb,scb->data_seq,
 					    scb->end_data_seq);
+			if (!tp->bw_est.time) {
+				/*bootstrap bw estimation*/
+				tp->bw_est.space=(tp->snd_cwnd*tp->mss_cache)<<
+					tp->bw_est.shift;
+				tp->bw_est.seq=tp->snd_una+tp->bw_est.space;
+				tp->bw_est.time=tcp_time_stamp;
+			}
+			else if (after(tp->snd_una,tp->bw_est.seq)) {
+				/*update the bw estimate for this
+				  subflow*/
+				if (tcp_time_stamp-tp->bw_est.time==0)
+					tp->bw_est.shift++;
+				else {
+					tp->cur_bw_est=tp->bw_est.space/
+						(tcp_time_stamp-
+						 tp->bw_est.time);
+					BUG_ON(!tp->cur_bw_est && 
+					       tp->bw_est.space);
+				}
+				tp->bw_est.space=(tp->snd_cwnd*tp->mss_cache)<<
+					tp->bw_est.shift;
+				tp->bw_est.seq=tp->snd_una+tp->bw_est.space;
+				tp->bw_est.time=tcp_time_stamp;
+			}
 		}
 	no_mptcp_update:
 #endif
-
+		
 		tcp_unlink_write_queue(skb, sk);
 		sk_wmem_free_skb(sk, skb);
 		tp->scoreboard_skb_hint = NULL;
@@ -3143,13 +3167,14 @@ static inline int tcp_may_update_window(const struct tcp_sock *tp,
 					const u32 ack, const u32 ack_seq,
 					const u32 nwin)
 {
+	u32 snd_wnd=(tp->mpc && tp->mpcb)?tp->mpcb->snd_wnd:tp->snd_wnd;
 /*the variable snd_wl1 tracks the
   newest sequence number that we've seen.  It helps prevent snd_wnd from
   being reopened on re-transmitted data.  If snd_wl1 is greater than
   received sequence #, we skip it.*/
 	return (after(ack, tp->snd_una) ||
 		after(ack_seq, tp->snd_wl1) ||
-		(ack_seq == tp->snd_wl1 && nwin > tp->snd_wnd));
+		(ack_seq == tp->snd_wl1 && nwin > snd_wnd));
 }
 
 /* Update our send window.
@@ -3163,16 +3188,18 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 	struct tcp_sock *tp = tcp_sk(sk);
 	int flag = 0;
 	u32 nwin = ntohs(tcp_hdr(skb)->window);
+	u32 *snd_wnd=(tp->mpc && tp->mpcb)?&tp->mpcb->snd_wnd:&tp->snd_wnd;
 
 	if (likely(!tcp_hdr(skb)->syn))
 		nwin <<= tp->rx_opt.snd_wscale;
 
 	if (tcp_may_update_window(tp, ack, ack_seq, nwin)) {
+		u32 *max_window=(tp->mpc)?&tp->mpcb->max_window:&tp->max_window;
 		flag |= FLAG_WIN_UPDATE;
 		tcp_update_wl(tp, ack, ack_seq);
 
-		if (tp->snd_wnd != nwin) {
-			tp->snd_wnd = nwin;
+		if (*snd_wnd != nwin) {
+			*snd_wnd = nwin;
 
 			/* Note, it is the only place, where
 			 * fast path is recovered for sending TCP.
@@ -3180,8 +3207,8 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 			tp->pred_flags = 0;
 			tcp_fast_path_check(sk);
 
-			if (nwin > tp->max_window) {
-				tp->max_window = nwin;
+			if (nwin > *max_window) {
+				*max_window = nwin;
 				tcp_sync_mss(sk, inet_csk(sk)->icsk_pmtu_cookie);
 			}
 		}
@@ -3691,9 +3718,13 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 		PDEBUG("mpcb null in fast parse options\n");
 	tcp_parse_options(skb, &tp->rx_opt,mpcb?&mpcb->received_options:NULL, 
 			  1);
-	if (unlikely(mpcb && tp->rx_opt.saw_mpc))
+	if (unlikely(mpcb && tp->rx_opt.saw_mpc)) {
+		/*Transfer sndwnd control to the mpcb*/
+		mpcb->snd_wnd=tp->snd_wnd;
+		mpcb->max_window=tp->max_window;
+		
 		tp->mpc=1;
-
+	}
 	return 1;
 }
 
@@ -5752,7 +5783,10 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		/* RFC1323: The window in SYN & SYN/ACK segments is
 		 * never scaled.
 		 */
-		tp->snd_wnd = ntohs(th->window);
+		if (tp->mpc && tp->mpcb)
+			tp->mpcb->snd_wnd = ntohs(th->window);
+		else
+			tp->snd_wnd = ntohs(th->window);
 		tcp_init_wl(tp, TCP_SKB_CB(skb)->ack_seq, TCP_SKB_CB(skb)->seq);
 
 		if (!tp->rx_opt.wscale_ok) {
@@ -5808,7 +5842,9 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			inet_csk_reset_keepalive_timer(sk, keepalive_time_when(tp));
 
 		if (!tp->rx_opt.snd_wscale)
-			__tcp_fast_path_on(tp, tp->snd_wnd);
+			__tcp_fast_path_on(tp, (tp->mpc && tp->mpcb)?
+					   tp->mpcb->snd_wnd:
+					   tp->snd_wnd);
 		else
 			tp->pred_flags = 0;
 
@@ -5883,9 +5919,15 @@ discard:
 		/* RFC1323: The window in SYN & SYN/ACK segments is
 		 * never scaled.
 		 */
-		tp->snd_wnd    = ntohs(th->window);
 		tp->snd_wl1    = TCP_SKB_CB(skb)->seq;
-		tp->max_window = tp->snd_wnd;
+		if (tp->mpc && tp->mpcb) {
+			tp->mpcb->snd_wnd    = ntohs(th->window);
+			tp->mpcb->max_window = tp->snd_wnd;
+		}
+		else {
+			tp->snd_wnd    = ntohs(th->window);
+			tp->max_window = tp->snd_wnd;
+		}
 
 		TCP_ECN_rcv_syn(tp, th);
 
@@ -6016,8 +6058,12 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 						      SOCK_WAKE_IO, POLL_OUT);
 
 				tp->snd_una = TCP_SKB_CB(skb)->ack_seq;
-				tp->snd_wnd = ntohs(th->window) <<
-					      tp->rx_opt.snd_wscale;
+				if (tp->mpc && tp->mpcb)
+					tp->mpcb->snd_wnd = ntohs(th->window) <<
+						tp->rx_opt.snd_wscale;
+				else
+					tp->snd_wnd = ntohs(th->window) <<
+						tp->rx_opt.snd_wscale;
 				tcp_init_wl(tp, TCP_SKB_CB(skb)->ack_seq,
 					    TCP_SKB_CB(skb)->seq);
 

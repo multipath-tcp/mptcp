@@ -246,6 +246,19 @@ struct tcp_sock {
  	u32	rcv_nxt;	/* What we want to receive next 	*/
 	u32	copied_seq;	/* Head of yet unread data		*/
 #ifdef CONFIG_MTCP
+	/*data for the scheduler*/
+	struct {
+		int	space;
+		u32	seq;
+		u32	time;
+		short   shift; /*Shift to apply to the space field. 
+				 It is increased when space bytes are
+				 flushed in less than a jiffie (can happen 
+				 with gigabit ethernet), so as to use a larger
+				 basis for bw computation.*/
+	} bw_est;
+	u32    cur_bw_est;
+
 	/*per subflow data, for tcp_recvmsg*/
 	u32     peek_seq;       /* Peek seq, for use by MTCP            */
 	u32     *seq;

@@ -1532,8 +1532,9 @@ static int tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb)
 		goto send_now;
 
 	if (sysctl_tcp_tso_win_divisor) {
-		u32 chunk = min(tp->snd_wnd, tp->snd_cwnd * tp->mss_cache);
-
+		u32 snd_wnd=(tp->mpc)?tp->mpcb->snd_wnd:tp->snd_wnd;
+		u32 chunk = min(snd_wnd, tp->snd_cwnd * tp->mss_cache);
+		
 		/* If at least some fraction of a window is available,
 		 * just use it.
 		 */
@@ -1575,6 +1576,7 @@ static int tcp_mtu_probe(struct sock *sk)
 	int size_needed;
 	int copy;
 	int mss_now;
+	u32 snd_wnd=(tp->mpc)?tp->mpcb->snd_wnd:tp->snd_wnd;
 
 	/* Not currently probing/verifying,
 	 * not in recovery,
@@ -1600,7 +1602,7 @@ static int tcp_mtu_probe(struct sock *sk)
 	if (tp->write_seq - tp->snd_nxt < size_needed)
 		return -1;
 
-	if (tp->snd_wnd < size_needed)
+	if (snd_wnd < size_needed)
 		return -1;
 	if (after(tp->snd_nxt + size_needed, tcp_wnd_end(tp,0)))
 		return 0;

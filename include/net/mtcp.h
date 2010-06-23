@@ -100,6 +100,11 @@ struct multipath_pcb {
 	/*Master socket, also part of the connection_list, this
 	  socket is the one that the application sees.*/
 	struct sock*              master_sk;
+	/*Last scheduled subsocket. If this pointer is not NULL, 
+	  then the last scheduled subsocket has remaining space 
+	  in it tail skb. This means we should reschedule it, to avoid
+	  that Nagle blocks it.*/
+	struct sock*              last_sk;
 	/*socket count in this connection*/
 	int                       cnt_subflows;    
 	int                       syn_sent;
@@ -132,6 +137,8 @@ struct multipath_pcb {
 	u32    copied_seq; /* Head of yet unread data*/
 
 	u32    snd_una;
+	u32    snd_wnd;	    /* The window we expect to receive	*/
+	u32    max_window;  /* Maximal window ever seen from peer */
 	struct list_head          dsack_list;
 	
 	struct sk_buff_head       receive_queue;/*received data*/

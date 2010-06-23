@@ -84,6 +84,7 @@ struct tcp_log {
         u32     mtcp_snduna;
 	u32     drs_seq;
 	u32     drs_time;
+	int     bw_est;
 };
 
 static struct {
@@ -162,6 +163,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->mtcp_snduna=(tp->mpcb)?tp->mpcb->snd_una:0;
 			p->drs_seq=tp->rcvq_space.seq;
 			p->drs_time=tp->rcvq_space.time;
+			p->bw_est=tp->cur_bw_est;
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
 		tcp_probe.lastcwnd = tp->snd_cwnd;
@@ -176,12 +178,20 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	return 0;
 }
 
-static int logmsg(struct sock *sk,char *msg)
+static int logmsg(struct sock *sk,char *fmt, va_list args)
 {
 	const struct inet_sock *inet = inet_sk(sk);
+	char msg[500];	
+	struct timespec tv
+		= ktime_to_timespec(ktime_sub(ktime_get(), tcp_probe.start));
+
 	if (sk->sk_state == TCP_ESTABLISHED && 
 	    ntohs(inet->sport) != 22 &&
 	    ntohs(inet->dport) != 22) {
+
+		sprintf(msg,"LOG:%lu.%09lu ",(unsigned long) tv.tv_sec,
+			(unsigned long) tv.tv_nsec);
+		vsnprintf(msg+strlen(msg),INT_MAX,fmt,args);
 
 		spin_lock_bh(&tcp_probe.lock);
 		/* If log fills, just silently drop */
@@ -258,6 +268,7 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			p->mtcp_snduna=(tp->mpc)?tp->mpcb->snd_una:0;
 			p->drs_seq=tp->rcvq_space.seq;
 			p->drs_time=tp->rcvq_space.time;
+			p->bw_est=tp->cur_bw_est;
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
 		tcp_probe.lastcwnd = tp->snd_cwnd;
@@ -325,7 +336,7 @@ static int tcpprobe_sprint(char *tbuf, int n)
 	return snprintf(tbuf, n,
 			"%lu.%09lu " NIPQUAD_FMT ":%u " NIPQUAD_FMT ":%u"
 			" %d %d %#x %#x %u %u %u %u %#x %#x %u %u %u %u %d"
-			" %d %u %u %u %d %d %d %#x %#x %#x %#x\n",
+			" %d %u %u %u %d %d %d %#x %#x %#x %#x %d\n",
 			(unsigned long) tv.tv_sec,
 			(unsigned long) tv.tv_nsec,
 			NIPQUAD(p->saddr), ntohs(p->sport),
@@ -337,7 +348,8 @@ static int tcpprobe_sprint(char *tbuf, int n)
 			p->space,p->rtt_est*1000/HZ,p->in_flight,
 			p->mss_cache,
 			p->snd_buf,p->wmem_queued, p->rmem_alloc, p->dsn,
-			p->mtcp_snduna,p->drs_seq,p->drs_time*1000/HZ);
+			p->mtcp_snduna,p->drs_seq,p->drs_time*1000/HZ,
+			((p->bw_est<<3)/1000)*HZ);
 }
 
 static ssize_t tcpprobe_read(struct file *file, char __user *buf,

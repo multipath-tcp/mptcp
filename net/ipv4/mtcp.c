@@ -211,19 +211,23 @@ static void realloc_enqueue(struct sk_buff_head *realloc_queue,
  * - from user context: no subsock can have been locked.
  *
  * return 1 if reallocation did actually happen, else 0.
- * The only case where reallocation does not happen is when
- * we detect that we are called recursively, which is not allowed.
+ * Reallocation does not happen if
+ * we detect that we are called recursively, which is not allowed,
+ * but also if simply no queue had any segment to reallocate.
  */
 int mtcp_reallocate(struct multipath_pcb *mpcb)
 {
 	struct sock *sk;
 	struct tcp_sock *tp;
 	struct sk_buff *skb;
+	struct sk_buff_head tmp_queue;
 	int bh=in_interrupt();
 
 	/*Cannot be executed recursively*/
 	if (mpcb->reallocating) return 0;
 	mpcb->reallocating=1;
+
+	skb_queue_head_init(&tmp_queue);
 
 	/*Eating all queues contents*/
 	mtcp_for_each_sk(mpcb,sk,tp) {
@@ -251,6 +255,9 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 			continue;
 		}
 		
+		/*Here we use a tmp queue, so that reordering can be done
+		  with sock unlocked. We indeed observed that otherwise
+		  the sock remains locked for too long*/
 		while((skb=tcp_send_head(sk))) {
 			/*We will remove one skb,
 			  update the sack cache if necessary*/
@@ -258,16 +265,22 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 			tcp_advance_send_head(sk,skb);
 			/*Unlink from socket*/			
 			tcp_unlink_write_queue(skb,sk);
+			skb_queue_tail(&tmp_queue,skb);
 			skb->path_mask&=~PI_TO_FLAG(tp->path_index);
 			sk->sk_wmem_queued -= skb->truesize;
-			sk_mem_uncharge(sk, skb->truesize);
-			
-			/*link to tp metasocket*/
-			realloc_enqueue(&mpcb->realloc_queue, skb);
-				
+			sk_mem_uncharge(sk, skb->truesize);			
 		}
 		if (!bh) release_sock(sk);
+		/*Now we can reorder the segments*/
+		while ((skb=skb_peek(&tmp_queue))) {
+			__skb_unlink(skb,&tmp_queue);
+			realloc_enqueue(&mpcb->realloc_queue,skb);
+		}
 	}
+	
+	/*short path*/
+	if (!skb_peek(&mpcb->realloc_queue))
+		return 0;
 	
 	/*Reallocating everything*/
 	while((skb=skb_peek(&mpcb->realloc_queue))) {
@@ -309,6 +322,12 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 		if (!bh) release_sock(sk);
 	}
 	
+	/*update last_sk. If it was previously defined, so it is now
+	  logically the last sk that received a skb through reallocation.
+	  Indeed, an unfilled skb is necessarily the last one.*/
+	if (mpcb->last_sk)
+		mpcb->last_sk=sk;
+	else mpcb->last_sk=NULL;
 
 	/*Push everything.
 	  Note that if we are in bh, we are already in a transmit process,
@@ -810,6 +829,7 @@ void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 				break;
 			}
 		}
+	if (tcp_sk(mpcb->last_sk)==tp) mpcb->last_sk=NULL;
 	tp->mpcb=NULL; tp->next=NULL;
 	if (!in_interrupt())
 		mutex_unlock(&mpcb->mutex);
@@ -891,9 +911,9 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 {
 	struct tcp_sock *tp;
 	struct sock *sk;
-	struct sock *bestsk;
+	struct sock *bestsk=NULL;
 	unsigned int min_fill_ratio=0xffffffff;
-	int bh=in_interrupt();
+	int bh=in_interrupt(); 
 	
 	/*if there is only one subflow, bypass the scheduling function*/
 	if (!bh) {
@@ -906,7 +926,13 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 		goto out;
 	}
 
-	bestsk=(struct sock *)mpcb->connection_list;
+	/*If last_sk is defined, give control to it again
+	  so that it can finish filling its buffer*/
+	if (mpcb->last_sk) {
+		bestsk=mpcb->last_sk;
+		goto out;
+	}
+
 	/*First, find the best subflow*/
 	mtcp_for_each_sk(mpcb,sk,tp) {
 		unsigned int fill_ratio;
@@ -914,31 +940,31 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 		  since this would make us block, and we cannot block in bh*/
 		if (bh && !mtcp_is_available(sk)) continue;
 		if (sk->sk_state!=TCP_ESTABLISHED) continue;
-		/*This strange case can happen due to the following line
-		 * in tcp_process_frto():
-		 * tp->snd_cwnd = min(tp->snd_cwnd,
-		 *	tcp_packets_in_flight(tp));
-		 * If tcp_packets_in_flight(tp) is 0 then the snd_cwnd becomes
-		 * 0. Since tcp_packets_in_flight evaluates packets
-		 * that are *really* in flight, having this be 0 does not mean
-		 * that no packet is waiting in the retransmit queue. 
-		 * Instead it means that all segments of rexmit queue have been
-		 * either SACKed, or determined as lost but not yet 
-		 * retransmitted.
-		 */
-		if (!tp->snd_cwnd)
-			continue;
-		fill_ratio=(sk->sk_wmem_queued/tp->snd_cwnd)*tp->srtt;
+		
+		/*If there is no bw estimation available currently, 
+		  we only give it data when it has available space in the
+		  cwnd (see above)*/
+		if (!tp->cur_bw_est) {
+			/*If a subflow is available, send immediately*/
+			if (tcp_packets_in_flight(tp)<tp->snd_cwnd) {
+				bestsk=sk;
+				break;
+			}
+			else continue;
+		}
+		
+		fill_ratio=sk->sk_wmem_queued/tp->cur_bw_est;
+		
 		if (fill_ratio<min_fill_ratio) {
 			min_fill_ratio=fill_ratio;
 			bestsk=sk;
 		}
 	}
-
-out:		
+	
+out:
 	/*Now, even the best subflow may be uneligible for sending.
 	  In that case, we must return NULL (only in user ctx, though) */
-	if (!bh && !mtcp_is_available(bestsk)) {
+	if (!bh && bestsk && !mtcp_is_available(bestsk)) {
 		/*In some cases it is sufficient to push pending
 		  frames to make the subflow available. Moreover, this
 		  might be necessary to unblock a flow on which we have given
@@ -1367,8 +1393,10 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 			*copied+=used;
 			*len-=used;
 		}
-		mpcb->ofo_bytes-=used;
-
+		
+		if (!(flags & MSG_PEEK)) 
+			mpcb->ofo_bytes-=used;
+		
 		mtcp_check_seqnums(mpcb,0);
 		
  		if (*data_seq==TCP_SKB_CB(skb)->end_data_seq && 
