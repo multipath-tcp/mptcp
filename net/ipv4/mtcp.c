@@ -940,18 +940,18 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 		  since this would make us block, and we cannot block in bh*/
 		if (bh && !mtcp_is_available(sk)) continue;
 		if (sk->sk_state!=TCP_ESTABLISHED) continue;
-
-		/*If a subflow is available, send immediately*/
-		if (tcp_packets_in_flight(tp)<tp->snd_cwnd) {
-			bestsk=sk;
-			break;
-		}
-
+		
 		/*If there is no bw estimation available currently, 
 		  we only give it data when it has available space in the
 		  cwnd (see above)*/
-		if (!tp->cur_bw_est)
-			continue;
+		if (!tp->cur_bw_est) {
+			/*If a subflow is available, send immediately*/
+			if (tcp_packets_in_flight(tp)<tp->snd_cwnd) {
+				bestsk=sk;
+				break;
+			}
+			else continue;
+		}
 		
 		fill_ratio=sk->sk_wmem_queued/tp->cur_bw_est;
 		
@@ -960,7 +960,7 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 			bestsk=sk;
 		}
 	}
-
+	
 out:
 	/*Now, even the best subflow may be uneligible for sending.
 	  In that case, we must return NULL (only in user ctx, though) */
