@@ -75,6 +75,15 @@ struct dsn_sack {
 #define dsack_is_last(dsack,mpcb) (list_is_last(&dsack->list,&mpcb->dsack_list))
 #define dsack_is_first(dsack,mpcb) (dsack==dsack_first(mpcb))
 
+#define MPCB_FLAG_SERVER_SIDE 	0   /* this mpcb belongs to a server side 
+				       connection.
+				       (obtained through a listen)*/
+#define MPCB_FLAG_PENDING_DATA	1   /* at least one byte of data is available 
+				       for eating by the app. */
+#define MPCB_FLAG_SNDBUF_GROWN	2   /* sndbuf has grown for one of our 
+				       subflows*/
+
+
 struct multipath_pcb {
 	struct tcp_sock           tp;
 
@@ -124,17 +133,8 @@ struct multipath_pcb {
 	struct mutex              mutex;
 	struct kref               kref;	
 	struct notifier_block     nb; /*For listening to PM events*/
-
-	uint8_t                   server_side:1, /*1 if this mpcb belongs
-						   to a server side connection.
-						   (obtained through a listen)*/
-	                          pending_data:1, /*1 is at least one byte
-						    of data is available for
-						    eating by the app.*/
-	                          sndbuf_grown:1; /*sndbuf has grown
-						    for one of our
-						    subflows*/
-
+	unsigned long		  flags; /* atomic, for bits see 
+					    MPCB_FLAG_XXX */
 #ifdef CONFIG_MTCP_PM
 	struct list_head          collide_tk;
 	uint8_t                   addr_unsent; /* num of addrs not yet

@@ -1151,7 +1151,8 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 		mtcp_update_patharray(mpcb);
 		/*The server uses additional subflows only on request
 		  from the client.*/
-		if (!mpcb->server_side) mtcp_send_updatenotif(mpcb);
+		if (!test_bit(MPCB_FLAG_SERVER_SIDE,&mpcb->flags))
+			mtcp_send_updatenotif(mpcb);
 	}
 	
 	spin_lock_bh(&mpcb->lock);

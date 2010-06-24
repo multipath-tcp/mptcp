@@ -159,7 +159,7 @@ void mtcp_data_ready(struct sock *sk)
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
 
 	if (mpcb) {
-		mpcb->pending_data=1;
+		set_bit(MPCB_FLAG_PENDING_DATA,&mpcb->flags);
 		mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
 	}
 #ifdef CONFIG_MTCP_PM
@@ -168,7 +168,7 @@ void mtcp_data_ready(struct sock *sk)
 		BUG_ON(!tp->pending);
 		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
 		BUG_ON(!mpcb);
-		mpcb->pending_data=1;
+		set_bit(MPCB_FLAG_PENDING_DATA,&mpcb->flags);
 		mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
 		mpcb_put(mpcb);
 	}
@@ -379,7 +379,7 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	struct inet_connection_sock *mpcb_icsk = inet_csk(mpcb_sk);
 	
 	memset(mpcb,0,sizeof(struct multipath_pcb));
-	
+
 	/*mpcb_sk inherits master sk*/
 	mtcp_inherit_sk(master_sk,mpcb_sk);
 	mpcb_tp->mpcb=mpcb;
@@ -513,14 +513,14 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 	  accept queue of the mpcb*/
 	if (((struct sock*)tp)->sk_state==TCP_ESTABLISHED) {
 		mpcb->cnt_established++;
-		mpcb->sndbuf_grown=1;
+		set_bit(MPCB_FLAG_SNDBUF_GROWN,&mpcb->flags);
 		mpcb_sk->sk_state=TCP_ESTABLISHED;
 	}
-
+	
 	kref_get(&mpcb->kref);	
 	local_bh_enable();
 	mutex_unlock(&mpcb->mutex);
-
+	
 	PDEBUG("Added subsocket with pi %d, cnt_subflows now %d\n",
 	       tp->path_index,mpcb->cnt_subflows);
 }

@@ -4993,7 +4993,7 @@ static void tcp_new_space(struct sock *sk)
 		if (sndmem > sk->sk_sndbuf) {
 #ifdef CONFIG_MTCP
 			if (sk->sk_sndbuf < sysctl_tcp_wmem[2])
-				tp->mpcb->sndbuf_grown=1;
+				set_bit(MPCB_FLAG_SNDBUF_GROWN,&tp->mpcb->flags);
 #endif
 			sk->sk_sndbuf = min(sndmem, sysctl_tcp_wmem[2]);
 		}
@@ -5016,7 +5016,7 @@ void tcp_check_space(struct sock *sk)
 static inline void tcp_data_snd_check(struct sock *sk)
 {
 	struct sock *mpcb_sk;
-
+	
 	BUG_ON(is_meta_sk(sk));
 	if (tcp_sk(sk)->mpc && tcp_sk(sk)->mpcb) {
 		mpcb_sk=((struct sock*)tcp_sk(sk)->mpcb);

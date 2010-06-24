@@ -1779,12 +1779,14 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			/*Should not happen, since mptcp must have
 			  chosen a subsock with open cwnd*/
 			if (sk!=subsk) BUG();
-			if (reinject) printk(KERN_ERR "reinj: line %d\n", __LINE__);
+			if (reinject) printk(KERN_ERR "reinj: line %d\n", 
+					     __LINE__);
 			break;
 		}
 
 		if (unlikely(!tcp_snd_wnd_test(subtp, skb, mss_now))) {
-			if (reinject) printk(KERN_ERR "reinj: line %d\n", __LINE__);
+			if (reinject) printk(KERN_ERR "reinj: line %d\n", 
+					     __LINE__);
 			break;
 		}
 		
@@ -1792,10 +1794,11 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 					     (tcp_skb_is_last(sk, skb) ?
 					      nonagle : 
 					      TCP_NAGLE_PUSH)))) {
-			if (reinject) printk(KERN_ERR "reinj: line %d\n", __LINE__);
+			if (reinject) printk(KERN_ERR "reinj: line %d\n", 
+					     __LINE__);
 			break;
 		}
-
+		
 		limit = mss_now;
 
 		if (skb->len > limit &&

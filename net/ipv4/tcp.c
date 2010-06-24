@@ -405,7 +405,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	if (master_sk->sk_shutdown & RCV_SHUTDOWN)
 		mask |= POLLIN | POLLRDNORM | POLLRDHUP;
 	
-	if (master_tp->mpc && mpcb->pending_data)
+	if (master_tp->mpc && test_bit(MPCB_FLAG_PENDING_DATA,&mpcb->flags))
 		mask |= POLLIN | POLLRDNORM;
 	
 	/* Connected? */
@@ -2444,9 +2444,9 @@ skip_loop:
 	  (called by tcp_prequeue_process) finds the next app byte.*/
 	if (((flags & MSG_PEEK) && copied) ||
 	    !skb_queue_empty(&mpcb_sk->sk_receive_queue)) {
-		mpcb->pending_data=1;
+		set_bit(MPCB_FLAG_PENDING_DATA,&mpcb->flags);
 	}
-	else mpcb->pending_data=0;
+	else clear_bit(MPCB_FLAG_PENDING_DATA,&mpcb->flags);
 	
 	PDEBUG("At line %d\n",__LINE__);
 	if (user_recv) {
@@ -2536,7 +2536,8 @@ void tcp_set_state(struct sock *sk, int state)
 				    is_master_sk(tcp_sk(sk))) 
 					mtcp_ask_update(sk);
 				tcp_sk(sk)->mpcb->cnt_established++;
-				tcp_sk(sk)->mpcb->sndbuf_grown=1;
+				set_bit(MPCB_FLAG_SNDBUF_GROWN,
+					&tcp_sk(sk)->mpcb->flags);
 				mpcb_sk->sk_state=TCP_ESTABLISHED;
 			}
 #endif
