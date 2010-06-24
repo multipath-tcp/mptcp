@@ -964,17 +964,8 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 out:
 	/*Now, even the best subflow may be uneligible for sending.
 	  In that case, we must return NULL (only in user ctx, though) */
-	if (!bh && bestsk && !mtcp_is_available(bestsk)) {
-		/*In some cases it is sufficient to push pending
-		  frames to make the subflow available. Moreover, this
-		  might be necessary to unblock a flow on which we have given
-		  new data. We however still return NULL, because even if
-		  we manage to push frames, the subflow will really become
-		  available only after we receive the first acks.*/		
-		tcp_push(bestsk, 0, tcp_current_mss(bestsk, 0), 
-			 tcp_sk(bestsk)->nonagle);
+	if (!bh && bestsk && !mtcp_is_available(bestsk))
 		bestsk=NULL;
-	}
 	
 	if (!bh) {
 		mtcp_for_each_sk(mpcb,sk,tp) release_sock(sk);
@@ -2072,6 +2063,21 @@ void mtcp_update_window_clamp(struct multipath_pcb *mpcb)
 	}
 	mpcb->window_clamp=new_clamp;
 	mpcb->rcv_ssthresh = new_rcv_ssthresh;
+}
+
+extern void tcp_check_space(struct sock *sk);
+
+void mtcp_push_frames(struct sock *sk)
+{
+	struct tcp_sock *tp=tcp_sk(sk);
+	
+	tp->push_frames=0;
+	lock_sock(sk);
+	tcp_push_pending_frames(sk);
+	tcp_check_space(sk);
+	/*Note release sock can call us again, which is correct because 
+	  it would mean that we received new acks while we were pushing.*/
+	release_sock(sk);
 }
 
 MODULE_LICENSE("GPL");

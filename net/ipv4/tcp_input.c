@@ -4861,7 +4861,7 @@ static void tcp_new_space(struct sock *sk)
 	sk->sk_write_space(sk);
 }
 
-static void tcp_check_space(struct sock *sk)
+void tcp_check_space(struct sock *sk)
 {
 	if (sock_flag(sk, SOCK_QUEUE_SHRUNK)) {
 		sock_reset_flag(sk, SOCK_QUEUE_SHRUNK);
@@ -4879,9 +4879,27 @@ static inline void tcp_data_snd_check(struct sock *sk)
 #ifdef CONFIG_MTCP
 	{
 		struct tcp_sock *tp = tcp_sk(sk);
+		struct tcp_sock *tp_it;
+		struct sock *sk_it;
 		struct multipath_pcb *mpcb;
-		if (!tp->mpc) return;
+		if (!tp->mpc) return;		
+
 		mpcb=mpcb_from_tcpsock(tp);
+
+		mtcp_for_each_sk(mpcb,sk_it,tp_it) {
+			if (sk_it==sk) /*already done*/
+				continue;
+			if (sock_owned_by_user(sk_it))
+				tp_it->push_frames=1; /*let release_sock
+							do it*/
+			else {
+				bh_lock_sock(sk_it);
+				tcp_push_pending_frames(sk_it);
+				tcp_check_space(sk_it);
+				bh_unlock_sock(sk_it);
+			}
+		}
+
 		/*When we receive an ack, place is made in the cwnd.
 		  Then first operation is to try sending buffered
 		  segments in this subsock (tcp_push_pending_frames).
