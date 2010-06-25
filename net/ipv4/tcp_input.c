@@ -4875,24 +4875,24 @@ void tcp_check_space(struct sock *sk)
 static inline void push_other_subsock(struct sock *sk)
 {
 	int bh=in_interrupt();
+
+	tcp_sk(sk)->dont_realloc=1; /*Disable reallocation checks. This is
+				      needed because we have two locked socks
+				      in hand, so the reallocation would 
+				      deadlock when locking the whole socket
+				      array*/
 	if (bh) bh_lock_sock(sk);
 	else lock_sock(sk);
 	
-	tcp_sk(sk)->dont_realloc=1; /*Disable reallocation checks. This is
-				      needed because we have two locked socks
-				      in hand, so the reallocation, would 
-				      make recursive locks*/
-
 	/*When calling this, we have two subsocks locked:
 	  this one, and the one that received the ack triggering the push
 	  on this subsock. */
 	tcp_push_pending_frames(sk);
 	tcp_check_space(sk);	
-
-	tcp_sk(sk)->dont_realloc=0;
 	
 	if (bh) bh_unlock_sock(sk);
 	else release_sock(sk);	
+	tcp_sk(sk)->dont_realloc=0;
 }
 #endif
 
