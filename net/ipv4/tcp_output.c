@@ -1742,7 +1742,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			int cont=0;
 #ifdef CONFIG_MTCP
 			if (tp->mpcb) {
-				if (in_interrupt()) {
+				if (in_interrupt() && !tp->dont_realloc) {
 					/*Try to realloc. If realloc was 
 					  successful (we know that by checking
 					  again tcp_snd_wnd_test), continue

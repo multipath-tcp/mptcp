@@ -4871,6 +4871,31 @@ void tcp_check_space(struct sock *sk)
 	}
 }
 
+#ifdef CONFIG_MTCP
+static inline void push_other_subsock(struct sock *sk)
+{
+	int bh=in_interrupt();
+	if (bh) bh_lock_sock(sk);
+	else lock_sock(sk);
+	
+	tcp_sk(sk)->dont_realloc=1; /*Disable reallocation checks. This is
+				      needed because we have two locked socks
+				      in hand, so the reallocation, would 
+				      make recursive locks*/
+
+	/*When calling this, we have two subsocks locked:
+	  this one, and the one that received the ack triggering the push
+	  on this subsock. */
+	tcp_push_pending_frames(sk);
+	tcp_check_space(sk);	
+
+	tcp_sk(sk)->dont_realloc=0;
+	
+	if (bh) bh_unlock_sock(sk);
+	else release_sock(sk);	
+}
+#endif
+
 static inline void tcp_data_snd_check(struct sock *sk)
 {
 	tcp_push_pending_frames(sk);
@@ -4892,12 +4917,8 @@ static inline void tcp_data_snd_check(struct sock *sk)
 			if (sock_owned_by_user(sk_it))
 				tp_it->push_frames=1; /*let release_sock
 							do it*/
-			else {
-				bh_lock_sock(sk_it);
-				tcp_push_pending_frames(sk_it);
-				tcp_check_space(sk_it);
-				bh_unlock_sock(sk_it);
-			}
+			else
+				push_other_subsock(sk_it);
 		}
 
 		/*When we receive an ack, place is made in the cwnd.

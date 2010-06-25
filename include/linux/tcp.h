@@ -282,11 +282,14 @@ struct tcp_sock {
 						because a new subsocket
 						can appear during we sleep.*/	
 		wait_data_bit_set:1, /*Similar to previous, for wait_data*/
-		push_frames:1; /*An other subsocket may liberate space in the
+		push_frames:1, /*An other subsocket may liberate space in the
 				 sending window of this sock. Normally, a push
 				 is then done immediately, but if the socket is
 				 locked at that moment, push_frames is set, so
 				 that the push is done in the release_sock.*/
+		dont_realloc:1; /*Set to one in special cases where reallocation
+				  checks cannot be done, becaue the lock scheme
+				  does not allow it.*/
 	
 	u32	rcv_wup;	/* rcv_nxt on last window update sent	*/
  	u32	snd_nxt;	/* Next sequence we send		*/
