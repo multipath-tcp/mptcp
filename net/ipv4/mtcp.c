@@ -966,6 +966,14 @@ out:
 	  In that case, we must return NULL (only in user ctx, though) */
 	if (!bh && bestsk && !mtcp_is_available(bestsk))
 		bestsk=NULL;
+
+	/*The following can happen only when the result of a reinjection is
+	  filling all buffers. Since the original distribution of segments
+	  can go higher than sndbuf by one MSS max., the redistribution can 
+	  in the worse case go higher by MSS*nb_subflows max. So it is not
+	  critical here to choose the best subflow*/
+	if (bh && !bestsk)
+		bestsk=(struct sock *)mpcb->connection_list;
 	
 	if (!bh) {
 		mtcp_for_each_sk(mpcb,sk,tp) release_sock(sk);
