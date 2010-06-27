@@ -507,7 +507,8 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 
 static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 				struct tcp_out_options *opts,
-				struct tcp_md5sig_key **md5) {
+				struct tcp_md5sig_key **md5) 
+{
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned size = 0;
 
@@ -568,11 +569,6 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		  and does not need to set the dataseq options, since
 		  there is no data in the segment*/
 		BUG_ON(!mpcb);
-		opts->options |= OPTION_DSN;
-		size+=TCPOLEN_DSN_ALIGNED;
-		opts->data_seq=mpcb->write_seq; /*First data byte is 
-						  initial data seq
-						  (IDSN)*/
 	}
 #ifdef CONFIG_MTCP_PM
 	else {
@@ -586,7 +582,7 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 #endif
 
 	return size;
-} 
+}
 
 static unsigned tcp_synack_options(struct sock *sk,
 				   struct request_sock *req,
