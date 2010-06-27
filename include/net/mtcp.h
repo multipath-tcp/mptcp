@@ -51,7 +51,6 @@ struct multipath_options {
 	struct mtcp_loc6 addr6[MTCP_MAX_ADDR];
 	u8     list_rcvd:1; /*1 if IP list has been received*/
 #endif
-	u8     saw_dsn:1;
 };
 
 

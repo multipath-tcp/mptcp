@@ -3493,6 +3493,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 	unsigned char *ptr,*ptr8;
 	struct tcphdr *th = tcp_hdr(skb);
 	int length = (th->doff * 4) - sizeof(struct tcphdr);
+	int saw_dsn=0;
 
 	ptr = (unsigned char *)(th + 1);
 	opt_rx->saw_tstamp = 0;
@@ -3642,11 +3643,6 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				break;
 #endif /*CONFIG_MTCP_PM*/				
 			case TCPOPT_DSN:
-				if (!mopt) {
-					PDEBUG("Dataseq Option present "
-					       "but mopt NULL\n");
-					break;
-				}
 				if (opsize!=TCPOLEN_DSN) {
 					PDEBUG("dataseq opt:bad option "
 					       "size\n");
@@ -3660,11 +3656,11 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 					opt_rx->rcv_isn;
 				TCP_SKB_CB(skb)->data_seq = 
 					ntohl(*(uint32_t*)(ptr+6));
-				mopt->saw_dsn=1;
 				TCP_SKB_CB(skb)->end_data_seq=
 					TCP_SKB_CB(skb)->data_seq+
 					TCP_SKB_CB(skb)->end_seq-
 					TCP_SKB_CB(skb)->seq;
+				saw_dsn=1;
 				break;
 				
 #endif /* CONFIG_MTCP */
@@ -3675,7 +3671,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 		}
 	}
 #ifdef CONFIG_MTCP
-	if (!mopt || !mopt->saw_dsn)
+	if (!saw_dsn)
 		TCP_SKB_CB(skb)->data_len=
 			TCP_SKB_CB(skb)->data_seq=
 			TCP_SKB_CB(skb)->end_data_seq=0;
@@ -3718,12 +3714,12 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 		PDEBUG("mpcb null in fast parse options\n");
 	tcp_parse_options(skb, &tp->rx_opt,mpcb?&mpcb->received_options:NULL, 
 			  1);
-	if (unlikely(mpcb && tp->rx_opt.saw_mpc)) {
+	if (unlikely(mpcb && tp->rx_opt.saw_mpc && is_master_sk(tp))) {
 		/*Transfer sndwnd control to the mpcb*/
 		mpcb->snd_wnd=tp->snd_wnd;
-		mpcb->max_window=tp->max_window;
-		
-		tp->mpc=1;
+		mpcb->max_window=tp->max_window;		
+		tp->mpc=1;		
+		tp->rx_opt.saw_mpc=0; /*reset that field, it has been read*/
 	}
 	return 1;
 }
@@ -5742,17 +5738,15 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 
 	tcp_parse_options(skb, &tp->rx_opt,&mpcb->received_options, 0);
 
-	if (unlikely(mpcb && tp->rx_opt.saw_mpc && 
-		     mpcb->received_options.saw_dsn)) {
-		/*This is the beginning of the multipath session, init
-		  the dsn value*/
-		PDEBUG("%s:saw dsn and mpc options\n",__FUNCTION__);
+	if (unlikely(mpcb && tp->rx_opt.saw_mpc && is_master_sk(tp))) {
+		/*Transfer sndwnd control to the mpcb*/
+		mpcb->snd_wnd=tp->snd_wnd;
+		mpcb->max_window=tp->max_window;
+		/*We can do multipath with that socket*/
 		tp->mpc=1;
-		mpcb->copied_seq=TCP_SKB_CB(skb)->data_seq;
-		/*Currently we start with dataseq 0*/
-		BUG_ON(mpcb->copied_seq!=0);
+		tp->rx_opt.saw_mpc=0; /*reset that field, it has been read*/
 	}
-
+	
 	if (th->ack) {
 		/* rfc793:
 		 * "If the state is SYN-SENT then
