@@ -274,7 +274,6 @@ struct sk_buff {
 	__u32                   path_mask; /*Mask of the path indices that
 					     have tried to send this skb*/
 	__u32                   debug; /*TODEL*/
-	char                    debug2;
 	int                     debug_count; /*TODEL*/
 	__u32                   data_seq; /*TODEL*/
 
