@@ -535,7 +535,6 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 	
 	new->path_index         = old->path_index;
 	new->path_mask          = old->path_mask;
-	new->debug2             = old->debug2;
 
 	skb_copy_secmark(new, old);
 }
