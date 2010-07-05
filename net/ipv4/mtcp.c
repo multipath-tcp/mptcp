@@ -1420,6 +1420,7 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 	return 0;
 }
 
+#ifdef MTCP_DEBUG_SEQNUMS
 void mtcp_check_seqnums(struct multipath_pcb *mpcb, int before)
 {
 	int subsock_bytes=0;
@@ -1472,6 +1473,7 @@ void mtcp_check_seqnums(struct multipath_pcb *mpcb, int before)
 		BUG();
 	}
 }
+#endif
 
 int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		   unsigned long *used, struct msghdr *msg, size_t *len,
