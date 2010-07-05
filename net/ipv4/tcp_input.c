@@ -3018,8 +3018,6 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 					tp->cur_bw_est=tp->bw_est.space/
 						(tcp_time_stamp-
 						 tp->bw_est.time);
-					BUG_ON(!tp->cur_bw_est && 
-					       tp->bw_est.space);
 				}
 				tp->bw_est.space=(tp->snd_cwnd*tp->mss_cache)<<
 					tp->bw_est.shift;
