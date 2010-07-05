@@ -1008,6 +1008,7 @@ static inline int available_subflow_flag_check(struct multipath_pcb *mpcb)
 static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb)
 {
 	struct tcp_sock *tp;
+	struct sock *sk;
 again:
 	while (!(tp=__get_available_subflow(mpcb))) {
 		int err;
@@ -1028,6 +1029,23 @@ again:
 			printk(KERN_ERR "stopped by interrupt\n"
 			       "TODO: Make the realloc queue recuperable"
 			       "in that case\n");
+
+			mtcp_for_each_sk(mpcb,sk,tp) {
+				if (!mtcp_is_available(sk) && 
+				    sk->sk_state==TCP_ESTABLISHED) {
+					printk("pi %d:wmem_queued:%d,"
+					       "sndbuf:%d,write queue length"
+					       ":%d,rexmit empty:%d,"
+					       "snd_una:%#x,snd_nxt:%#x\n",
+					       tp->path_index,
+					       sk->sk_wmem_queued,sk->sk_sndbuf,
+					       skb_queue_len(
+						       &sk->sk_write_queue),
+					       tcp_send_head(sk)==
+					       tcp_write_queue_head(sk),
+					       tp->snd_una,tp->snd_nxt);
+				}
+			}
 			
 			BUG();
 			return NULL;
