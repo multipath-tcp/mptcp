@@ -2000,10 +2000,7 @@ fail:
 void mtcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end) {
 	struct dsn_sack *dsack;
 	struct dsn_sack *new_block;
-	
-	/*We should never be meta-acked twice*/
-	BUG_ON(before(start,mpcb->snd_una));
-	
+       	
 	spin_lock(&mpcb->lock);
 	/*Normal case*/
 	if (mpcb->snd_una==start) {
