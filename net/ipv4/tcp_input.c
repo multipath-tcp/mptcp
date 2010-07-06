@@ -3723,7 +3723,7 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 		tp->mpc=1;		
 		tp->rx_opt.saw_mpc=0; /*reset that field, it has been read*/
 	}
-	if (release_mpcb) mpcb_put(mpcb);
+	if (release_mpcb && mpcb) mpcb_put(mpcb);
 	return 1;
 }
 
