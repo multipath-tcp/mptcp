@@ -2082,6 +2082,10 @@ void mtcp_update_window_clamp(struct multipath_pcb *mpcb)
 	struct tcp_sock *tp;
 	u32 new_clamp=0;
 	u32 new_rcv_ssthresh=0;
+
+	/*Can happen if called from non mpcb sock.*/
+	if (!mpcb) return;
+
 	mtcp_for_each_tp(mpcb,tp) {
 		new_clamp += tp->window_clamp;
 		new_rcv_ssthresh += tp->rcv_ssthresh;
