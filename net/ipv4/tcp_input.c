@@ -3699,6 +3699,7 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 				  struct tcp_sock *tp)
 {
 	struct multipath_pcb* mpcb;
+	int release_mpcb=0;
 	if (th->doff == sizeof(struct tcphdr) >> 2) {
 		tp->rx_opt.saw_tstamp = 0;
 		return 0;
@@ -3708,8 +3709,11 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 			return 1;
 	}
 	mpcb = mpcb_from_tcpsock(tp);
-	if (!mpcb)
+	if (!mpcb) {
 		PDEBUG("mpcb null in fast parse options\n");
+		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
+		release_mpcb=1;
+	}
 	tcp_parse_options(skb, &tp->rx_opt,mpcb?&mpcb->received_options:NULL, 
 			  1);
 	if (unlikely(mpcb && tp->rx_opt.saw_mpc && is_master_sk(tp))) {
@@ -3719,6 +3723,7 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 		tp->mpc=1;		
 		tp->rx_opt.saw_mpc=0; /*reset that field, it has been read*/
 	}
+	if (release_mpcb) mpcb_put(mpcb);
 	return 1;
 }
 
