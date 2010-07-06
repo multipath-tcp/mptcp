@@ -1505,8 +1505,10 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 	int fin=tcp_hdr(skb)->fin;
 
 	/*Verify that the mapping info has been read*/
-	BUG_ON(TCP_SKB_CB(skb)->data_len);
-		
+	if(TCP_SKB_CB(skb)->data_len) {
+		mtcp_get_dataseq_mapping(tp,skb);
+	}
+	
 	/*Is this a duplicate segment ?*/
 	if (after(*data_seq,TCP_SKB_CB(skb)->end_data_seq)) {
 		/*Duplicate segment. We can arrive here only if a segment 
