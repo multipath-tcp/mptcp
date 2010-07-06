@@ -1822,7 +1822,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 	struct sk_buff *skb = tcp_send_head(sk);
 	unsigned int tso_segs, cwnd_quota;
 
-	BUG_ON(!skb || skb->len < mss_now);
+	BUG_ON(!skb);
 
 	tso_segs = tcp_init_tso_segs(sk, skb, mss_now);
 	cwnd_quota = tcp_snd_test(sk, skb, mss_now, TCP_NAGLE_PUSH);
