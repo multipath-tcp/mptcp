@@ -1649,6 +1649,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		}
 
 		*used = skb->len - data_offset;
+		
 		/*duplicate segment*/
 		if (*used==0) {
 			/*Since this segment has already been received on
@@ -1706,6 +1707,19 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 			if (!(flags & MSG_PEEK)) tp->bytes_eaten+=*used;
 		}
 		mtcp_check_seqnums(mpcb,0);
+
+		/*Update subflow counters if data_offset differs from offset*/
+		if (data_offset!=offset) {
+			/*If data has been eaten by the subflow, 
+			  it has also been eaten by the meta-flow.
+			  if this does not hold, we have a bug*/
+			BUG_ON(data_offset<offset);
+			/*Otherwise, just advance the subflow counters*/
+			*used+=data_offset-offset;
+			*tp->seq += data_offset-offset;
+			tp->copied += data_offset-offset;						
+		}
+
 		
 		/*Check if this fills a gap in the ofo queue*/
 		if (!skb_queue_empty(&mpcb->out_of_order_queue))
