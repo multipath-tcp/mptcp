@@ -268,6 +268,7 @@ struct tcp_sock {
 	u32    map_subseq;
 /*snt isn: needed to translate abs to relative subflow seqnums*/
 	u32    snt_isn;
+	unsigned long last_probe;
 #endif
 /*We keep these flags even if CONFIG_MTCP is not checked, because it allows
   checking MTPC capability just by checking the mpc flag, rather than adding

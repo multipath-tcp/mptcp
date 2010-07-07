@@ -117,16 +117,15 @@ static inline int tcp_probe_avail(void)
 static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 				struct tcphdr *th, unsigned len)
 {
-	const struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_sock *inet = inet_sk(sk);
-	static unsigned long last_called=0;
 
-	if (!last_called)
-		last_called=jiffies;
-	else if (jiffies-last_called<HZ/10)
+	if (!tp->last_probe)
+		tp->last_probe=jiffies;
+	else if (jiffies-tp->last_probe<HZ/10)
 		goto out;
 	
-	last_called=jiffies;
+	tp->last_probe=jiffies;
 
 	/* Only update if port matches */
 	if ((port == 0 || ntohs(inet->dport) == port 
@@ -223,16 +222,16 @@ static int logmsg(struct sock *sk,char *fmt, va_list args)
 static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			     gfp_t gfp_mask)
 {
-	const struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_sock *inet = inet_sk(sk);
-	static unsigned long last_called=0;
 
-	if (!last_called)
-		last_called=jiffies;
-	else if (jiffies-last_called<HZ/10)
+	if (!tp->last_probe)
+		tp->last_probe=jiffies;
+	else if (jiffies-tp->last_probe<HZ/10)
 		goto out;
 	
-	last_called=jiffies;
+	tp->last_probe=jiffies;
+
 	/* Only update if port matches and state is established*/
 	if (sk->sk_state == TCP_ESTABLISHED && 
 	    (port == 0 || ntohs(inet->dport) == port || 
