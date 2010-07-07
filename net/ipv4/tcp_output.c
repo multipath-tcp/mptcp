@@ -701,7 +701,8 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	}
 #ifdef CONFIG_MTCP_PM
 	if (tp->mpc && mpcb) {
-		if (unlikely(!mpcb->addr_sent && mpcb->num_addr4)) {
+		if (unlikely(!mpcb->addr_sent && mpcb->num_addr4 &&
+			     (mpcb->snd_una>30 || mpcb->write_seq>30))) {
 			if (skb) mpcb->addr_sent=1;
 			opts->options |= OPTION_ADDR;
 			opts->addr4=mpcb->addr4;
