@@ -3601,9 +3601,9 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 #ifdef CONFIG_MTCP_PM
 			case TCPOPT_ADDR:
 				if (!mopt) {
-					printk(KERN_DEBUG "MPTCP addresses "
+					printk(KERN_ERR "MPTCP addresses "
 					       "received, but no mtcp state"
-					       "found\n");
+					       "found, using sock struct\n");
 					break;
 				}
 				mopt->num_addr4=mopt->num_addr6=0;
@@ -3700,6 +3700,7 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 {
 	struct multipath_pcb* mpcb;
 	int release_mpcb=0;
+	struct multipath_options *mopt;
 	if (th->doff == sizeof(struct tcphdr) >> 2) {
 		tp->rx_opt.saw_tstamp = 0;
 		return 0;
@@ -3714,8 +3715,9 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
 		release_mpcb=1;
 	}
-	tcp_parse_options(skb, &tp->rx_opt,mpcb?&mpcb->received_options:NULL, 
-			  1);
+	if (mpcb) mopt=&mpcb->received_options;
+	else mopt=&tp->mopt;
+	tcp_parse_options(skb, &tp->rx_opt,mopt,1);
 	if (unlikely(mpcb && tp->rx_opt.saw_mpc && is_master_sk(tp))) {
 		/*Transfer sndwnd control to the mpcb*/
 		mpcb->snd_wnd=tp->snd_wnd;

@@ -20,6 +20,7 @@
 #include <linux/types.h>
 #include <asm/byteorder.h>
 #include <linux/socket.h>
+#include <net/mtcp.h>
 
 struct tcphdr {
 	__be16	source;
@@ -352,6 +353,7 @@ struct tcp_sock {
  *      Options received (usually on last packet, some only on SYN packets).
  */
 	struct tcp_options_received rx_opt;
+	struct multipath_options mopt;
 
 /*
  *	Slow start and congestion control (see also Nagle, and Karn & Partridge)

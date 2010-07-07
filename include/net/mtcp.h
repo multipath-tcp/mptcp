@@ -49,7 +49,7 @@ struct multipath_options {
 	int    num_addr6;
 	struct mtcp_loc4 addr4[MTCP_MAX_ADDR];
 	struct mtcp_loc6 addr6[MTCP_MAX_ADDR];
-	u8     list_rcvd:1; /*1 if IP list has been received*/
+	u8     list_rcvd:1; /*1 if IP list has been received*/	
 #endif
 };
 

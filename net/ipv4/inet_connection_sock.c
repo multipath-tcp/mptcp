@@ -286,7 +286,10 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 	if (newsk->sk_protocol==IPPROTO_TCP) {
 		struct tcp_sock *tp=tcp_sk(newsk);
 		struct multipath_pcb *mpcb;		
-		mpcb=mtcp_alloc_mpcb(newsk);		
+		mpcb=mtcp_alloc_mpcb(newsk);
+		if (tp->mopt.list_rcvd)
+			memcpy(&mpcb->received_options,&tp->mopt,
+			       sizeof(tp->mopt));
 		tp->path_index=0;		
 		mtcp_add_sock(mpcb,tp);
 		mtcp_update_metasocket(newsk);
