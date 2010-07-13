@@ -404,7 +404,7 @@ out:
 	  which can interrupt us in the middle of this function,
 	  and decide to already send the set of addresses, even though all
 	  addresses have not yet been read.*/
-	mpcb->num_addr4=num_addr4;
+	mpcb->num_addr4=mpcb->addr_unsent=num_addr4;
 }
 
 /**

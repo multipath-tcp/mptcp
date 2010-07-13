@@ -192,6 +192,8 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_MD5SIG         18
 #ifdef CONFIG_MTCP_PM
 #define TCPOLEN_ADDR(num_addr) (2+6*(num_addr))
+#define TCPOLEN_ADDR_BASE      2
+#define TCPOLEN_ADDR_PERBLOCK  6
 #define TCPOLEN_JOIN           7
 #define TCPOLEN_MPC            7
 #else
