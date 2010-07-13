@@ -712,7 +712,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 				opts->options |= OPTION_ADDR;
 				opts->addr4=mpcb->addr4+mpcb->num_addr4-
 					mpcb->addr_unsent;
-				mpcb->addr_unsent-=opts->num_addr4;
+				if (skb) mpcb->addr_unsent-=opts->num_addr4;
 				size += TCPOLEN_ADDR_ALIGNED(opts->num_addr4);
 			}
 		}
@@ -720,6 +720,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	BUG_ON(!mpcb && !tp->pending);
 #endif
 #endif
+	BUG_ON(size>MAX_TCP_OPTION_SPACE);
 	return size;
 }
 
