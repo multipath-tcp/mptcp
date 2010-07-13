@@ -412,37 +412,31 @@ out:
  * Returns -1 if there is no space anymore to store an additional 
  * address
  */
-static int mtcp_v4_add_raddress(struct multipath_pcb *mpcb, 
-				struct in_addr *addr, u8 id)
+int mtcp_v4_add_raddress(struct multipath_options *mopt,			
+			 struct in_addr *addr, u8 id)
 {
 	int i;
-	int num_addr4=mpcb->received_options.num_addr4;
+	int num_addr4=mopt->num_addr4;
 
 	/*If the id is zero, this is the ULID, do not add it.*/
 	if (!id) return 0;
 	
-	if (mpcb->sa_family==AF_INET && addr->s_addr==mpcb->remote_ulid.a4) {
-		/*This should not happen when talking to this implem*/
-		printk(KERN_ERR "Received ULID in the ADDR opt !\n");
-		return 0;
-	}
-
-	for (i=0;i<mpcb->received_options.num_addr4;i++) {
-		if (mpcb->received_options.addr4[i].addr.s_addr==
+	for (i=0;i<mopt->num_addr4;i++) {
+		if (mopt->addr4[i].addr.s_addr==
 		    addr->s_addr) {
-			mpcb->received_options.addr4[i].id=id; /*update the 
-								 id*/
+			mopt->addr4[i].id=id; /*update the 
+						id*/
 			return 0;
 		}
 	}
-	if (mpcb->received_options.num_addr4==MTCP_MAX_ADDR)
+	if (mopt->num_addr4==MTCP_MAX_ADDR)
 		return -1;
 
 	/*Address is not known yet, store it*/
-	mpcb->received_options.addr4[num_addr4].addr.s_addr=
+	mopt->addr4[num_addr4].addr.s_addr=
 		addr->s_addr;
-	mpcb->received_options.addr4[num_addr4].id=id;
-	mpcb->received_options.num_addr4++;
+	mopt->addr4[num_addr4].id=id;
+	mopt->num_addr4++;
 	return 0;
 }
 
@@ -1100,7 +1094,8 @@ int mtcp_lookup_join(struct sk_buff *skb)
 				/*OK, this is a new syn/join, let's 
 				  create a new open request and 
 				  send syn+ack*/
-				ans=mtcp_v4_add_raddress(mpcb, 
+				ans=mtcp_v4_add_raddress(&mpcb->
+							 received_options, 
 							 (struct in_addr*)
 							 &iph->saddr, *(ptr+4));
 				if (ans<0) {

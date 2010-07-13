@@ -3606,33 +3606,18 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 					       "found, using sock struct\n");
 					break;
 				}
-				mopt->num_addr4=mopt->num_addr6=0;
+				
 				for (ptr8=ptr; ptr8<ptr+opsize-2;) {
-					if ((*(ptr8+1))>>4==4 && 
-					    mopt->num_addr4<MTCP_MAX_ADDR) {
-						mopt->addr4[mopt->num_addr4].
-							id=*ptr8;
-						ptr8+=2;
-						mopt->addr4[mopt->num_addr4].
-							addr.s_addr=
-							*((__be32*)ptr8);
-						ptr8+=sizeof(struct in_addr);
-						mopt->num_addr4++;
+					if ((*(ptr8+1))>>4==4) {
+						mtcp_v4_add_raddress(
+							mopt,
+							(struct in_addr*) 
+							(ptr8+2),
+							*ptr8
+							);
+						ptr8+=2+sizeof(struct in_addr);
 					}
-					else if ((*(ptr8+1))>>4==6 && 
-						 mopt->num_addr6<
-						 MTCP_MAX_ADDR) {
-						mopt->addr6[mopt->num_addr6].
-							id=*ptr8;
-						ptr8+=2;
-						memcpy(&mopt->addr6[
-							       mopt->num_addr6].
-						       addr,
-						       ptr8,
-						       sizeof(struct in6_addr));
-						ptr8+=sizeof(struct in6_addr);
-						mopt->num_addr6++;
-					}       				
+					/*Add IPv6 stuff here*/
 				}
 				mopt->list_rcvd=1;
 				break;
