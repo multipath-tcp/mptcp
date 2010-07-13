@@ -227,6 +227,7 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 	if (mpcb->reallocating) return 0;
 	mpcb->reallocating=1;
 
+	verif_wqueues(mpcb);
 	skb_queue_head_init(&tmp_queue);
 
 	/*Eating all queues contents*/
@@ -341,6 +342,7 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 				release_sock(sk);
 			}
 	mpcb->reallocating=0;	
+	verif_wqueues(mpcb);
 	return 1;
 }
 
@@ -1806,6 +1808,8 @@ void mtcp_reinject_data(struct sock *orig_sk, struct sock *retrans_sk)
 	struct tcp_sock *retrans_tp = tcp_sk(retrans_sk);
 	int mss_now;	
 	
+	verif_wqueues(orig_tp->mpcb);
+
 	bh_lock_sock(retrans_sk);
 
 	for(skb_it=orig_sk->sk_write_queue.next;
@@ -1818,6 +1822,8 @@ void mtcp_reinject_data(struct sock *orig_sk, struct sock *retrans_sk)
 	tcp_push(retrans_sk, 0, mss_now, retrans_tp->nonagle);
 
 	bh_unlock_sock(retrans_sk);
+	
+	verif_wqueues(orig_tp->mpcb);
 }
 
 /**
@@ -2048,6 +2054,24 @@ void mtcp_push_frames(struct sock *sk)
 	/*Note release sock can call us again, which is correct because 
 	  it would mean that we received new acks while we were pushing.*/
 	release_sock(sk);
+}
+
+void verif_wqueues(struct multipath_pcb *mpcb) {
+	struct sock *sk;
+	struct tcp_sock *tp;
+	struct sk_buff *skb;
+	mtcp_for_each_sk(mpcb,sk,tp) {
+		int sum=0;
+		tcp_for_write_queue(skb,sk) {
+			sum+=skb->truesize;
+		}
+		if (sum!=sk->sk_wmem_queued) {
+			printk(KERN_ERR "wqueue leak: enqueued:%d, recorded "
+			       "value:%d\n",
+			       sum,sk->sk_wmem_queued);
+			BUG();
+		}
+	}
 }
 
 MODULE_LICENSE("GPL");
