@@ -703,7 +703,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	if (tp->mpc && mpcb) {
 		if (unlikely(mpcb->addr_unsent)) {
 			const unsigned remaining = MAX_TCP_OPTION_SPACE - size;
-			opts->num_addr4=min_t(unsigned, mpcb->num_addr4,
+			opts->num_addr4=min_t(unsigned, mpcb->addr_unsent,
 					      (remaining-TCPOLEN_ADDR_BASE) /
 					      TCPOLEN_ADDR_PERBLOCK);
 			/*If no space to send the option, just wait next
