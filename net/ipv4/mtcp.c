@@ -1048,6 +1048,8 @@ again:
 					       tp->snd_una,tp->snd_nxt);
 				}
 			}
+
+			verif_wqueues(mpcb);
 			
 			BUG();
 			return NULL;
