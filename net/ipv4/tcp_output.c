@@ -694,9 +694,14 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	if (tp->mpc && mpcb) {
 		if (unlikely(mpcb->addr_unsent)) {
 			const unsigned remaining = MAX_TCP_OPTION_SPACE - size;
-			opts->num_addr4=min_t(unsigned, mpcb->addr_unsent,
-					      (remaining-TCPOLEN_ADDR_BASE) /
-					      TCPOLEN_ADDR_PERBLOCK);
+			if (remaining<TCPOLEN_ADDR_BASE)
+				opts->num_addr4=0;
+			else
+				opts->num_addr4=min_t(unsigned, 
+						      mpcb->addr_unsent,
+						      (remaining-
+						       TCPOLEN_ADDR_BASE) /
+						      TCPOLEN_ADDR_PERBLOCK);
 			/*If no space to send the option, just wait next
 			  segment*/
 			if (opts->num_addr4) {
@@ -714,10 +719,13 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 
 	if (unlikely(tp->rx_opt.eff_sacks)) {
 		const unsigned remaining = MAX_TCP_OPTION_SPACE - size;
-		opts->num_sack_blocks =
-			min_t(unsigned, tp->rx_opt.eff_sacks,
-			      (remaining - TCPOLEN_SACK_BASE_ALIGNED) /
-			      TCPOLEN_SACK_PERBLOCK);
+		if (remaining<TCPOLEN_SACK_BASE_ALIGNED)
+			opts->num_sack_blocks=0;
+		else
+			opts->num_sack_blocks =
+				min_t(unsigned, tp->rx_opt.eff_sacks,
+				      (remaining - TCPOLEN_SACK_BASE_ALIGNED) /
+				      TCPOLEN_SACK_PERBLOCK);
 		if (opts->num_sack_blocks)
 			size += TCPOLEN_SACK_BASE_ALIGNED +
 				opts->num_sack_blocks * TCPOLEN_SACK_PERBLOCK;
