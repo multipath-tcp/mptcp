@@ -1035,7 +1035,7 @@ again:
 			  get_available_subflow. But for this, we must make sure
 			  that it always terminates.*/
 			printk(KERN_ERR "stopped by interrupt\n"
-			       "TODO: Make the realloc queue recuperable"
+			       "TODO_1: Make the realloc queue recuperable"
 			       "in that case\n");
 
 			mtcp_for_each_sk(mpcb,sk,tp) {
@@ -2082,10 +2082,18 @@ void verif_wqueues(struct multipath_pcb *mpcb) {
 			printk(KERN_ERR "wqueue leak_1: enqueued:%d, recorded "
 			       "value:%d\n",
 			       sum,sk->sk_wmem_queued);
+			
+			tcp_for_write_queue(skb,sk) {
+				printk(KERN_ERR "skb truesize:%d\n",
+				       skb->truesize);
+			}
+			
+			if (!in_interrupt()) local_bh_enable();
 			BUG();
 		}
 	}
 	if (!in_interrupt()) local_bh_enable();
+	
 }
 
 MODULE_LICENSE("GPL");
