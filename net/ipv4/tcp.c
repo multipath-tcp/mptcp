@@ -971,6 +971,8 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	int err, copied;
 	long timeo;
 	
+	BUG_ON(in_atomic());
+
 	lock_sock(sk);
 	TCP_CHECK_TIMER(sk);
 
