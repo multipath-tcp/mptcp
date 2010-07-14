@@ -1431,6 +1431,8 @@ static struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb)
 	if (req)
 		return tcp_check_req(sk, skb, req, prev);
 	
+	BUG_ON(skb->len>3000); /*Try to force the GPF*/
+
 	nsk = inet_lookup_established(sock_net(sk), &tcp_hashinfo, iph->saddr,
 				      th->source, iph->daddr, th->dest, 
 				      inet_iif(skb));
@@ -1481,6 +1483,7 @@ static __sum16 tcp_v4_checksum_init(struct sk_buff *skb)
  * This is because we cannot sleep with the original spinlock
  * held.
  */
+int nofree=0;
 int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 {
 	struct sock *rsk;
@@ -1509,17 +1512,25 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 		goto csum_err;
 
 	if (sk->sk_state == TCP_LISTEN) {
-		struct sock *nsk = tcp_v4_hnd_req(sk, skb);
-		if (!nsk)
+		struct sock *nsk;
+		nofree=1;
+		nsk= tcp_v4_hnd_req(sk, skb);
+		if (!nsk) {
+			nofree=0;
 			goto discard;
-
+		}
+		
+		BUG_ON(skb->len>3000); /*Try to force the GPF*/
 		if (nsk != sk) {
 			if (tcp_child_process(sk, nsk, skb)) {
 				rsk = nsk;
+				nofree=0;
 				goto reset;
 			}
+			nofree=0;
 			return 0;
 		}
+		nofree=0;
 	}
 
 	TCP_CHECK_TIMER(sk);
