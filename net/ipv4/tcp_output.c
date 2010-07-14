@@ -1223,7 +1223,7 @@ unsigned int tcp_current_mss(struct sock *sk, int large_allowed)
 		if (mtu != inet_csk(sk)->icsk_pmtu_cookie)
 			mss_now = tcp_sync_mss(sk, mtu);
 	}
-
+	memset(&opts, 0, sizeof(opts));
 	header_len = tcp_established_options(sk, NULL, &opts, &md5) +
 		     sizeof(struct tcphdr);
 	/* The mss_cache is sized based on tp->tcp_header_len, which assumes
