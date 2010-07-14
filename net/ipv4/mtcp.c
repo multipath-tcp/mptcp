@@ -1060,6 +1060,7 @@ again:
 			BUG();
 			return NULL;
 		}
+		verif_wqueues(mpcb);
 		/*If we need to reallocate, do it.
 		  If reallocation was indeed performed, 
 		  force tp to NULL, to reevaluate the choice.*/
@@ -2078,7 +2079,7 @@ void verif_wqueues(struct multipath_pcb *mpcb) {
 			sum+=skb->truesize;
 		}
 		if (sum!=sk->sk_wmem_queued) {
-			printk(KERN_ERR "wqueue leak: enqueued:%d, recorded "
+			printk(KERN_ERR "wqueue leak_1: enqueued:%d, recorded "
 			       "value:%d\n",
 			       sum,sk->sk_wmem_queued);
 			BUG();
