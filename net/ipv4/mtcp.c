@@ -1011,6 +1011,9 @@ static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb)
 {
 	struct tcp_sock *tp;
 	struct sock *sk;
+
+	verif_wqueues(mpcb);
+
 again:
 	while (!(tp=__get_available_subflow(mpcb))) {
 		int err;
@@ -1081,7 +1084,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	size_t iovlen,copied,msg_size;
 	int i;
 	int nberr;		
-	
+
 	if (!tcp_sk(master_sk)->mpc)
 		return subtcp_sendmsg(iocb,master_sk, msg, size);
 	
@@ -1090,6 +1093,8 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	mpcb=mpcb_from_tcpsock(tcp_sk(master_sk));
 
 	BUG_ON(!mpcb);
+
+	verif_wqueues(mpcb);
 
 #ifdef CONFIG_MTCP_PM
 	/*Any new subsock we can use ?*/
