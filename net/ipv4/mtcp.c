@@ -279,6 +279,8 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 		}
 	}
 	
+	verif_wqueues(mpcb);
+
 	/*short path*/
 	if (!skb_peek(&mpcb->realloc_queue))
 		return 0;
@@ -321,6 +323,7 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 		sk_mem_charge(sk, skb->truesize);
 
 		if (!bh) release_sock(sk);
+		verif_wqueues(mpcb);
 	}
 	
 	/*update last_sk. If it was previously defined, so it is now
@@ -2067,6 +2070,8 @@ void verif_wqueues(struct multipath_pcb *mpcb) {
 	struct sock *sk;
 	struct tcp_sock *tp;
 	struct sk_buff *skb;
+
+	if (!in_interrupt()) local_bh_disable();
 	mtcp_for_each_sk(mpcb,sk,tp) {
 		int sum=0;
 		tcp_for_write_queue(skb,sk) {
@@ -2079,6 +2084,7 @@ void verif_wqueues(struct multipath_pcb *mpcb) {
 			BUG();
 		}
 	}
+	if (!in_interrupt()) local_bh_enable();
 }
 
 MODULE_LICENSE("GPL");
