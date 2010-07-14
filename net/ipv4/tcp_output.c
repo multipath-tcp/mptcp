@@ -683,11 +683,11 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	if (tp->mpc && (!skb || skb->len!=0 ||  
 			(tcb->flags & TCPCB_FLAG_FIN))) {
 		if (tcb && tcb->data_len) { /*Ignore dataseq if data_len is 0*/
-			opts->options |= OPTION_DSN;
 			opts->data_seq=tcb->data_seq;
 			opts->data_len=tcb->data_len;
 			opts->sub_seq=tcb->sub_seq-tp->snt_isn;
 		}
+		opts->options |= OPTION_DSN;
 		size += TCPOLEN_DSN_ALIGNED;		
 	}
 #ifdef CONFIG_MTCP_PM
@@ -723,7 +723,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	}
 
 	if (size>MAX_TCP_OPTION_SPACE) {
-		printk(KERN_ERR "exceeded option space, options:%#x",
+		printk(KERN_ERR "exceeded option space, options:%#x\n",
 		       opts->options);
 		BUG();
 	}
