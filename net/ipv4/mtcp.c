@@ -1102,7 +1102,9 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 
 #ifdef CONFIG_MTCP_PM
 	/*Any new subsock we can use ?*/
+	BUG_ON(in_atomic());
 	mtcp_check_new_subflow(mpcb);
+	BUG_ON(in_atomic());
 #endif
 	
 	/* Compute the total number of bytes stored in the message*/
