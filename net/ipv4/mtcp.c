@@ -2074,7 +2074,7 @@ void verif_wqueues(struct multipath_pcb *mpcb) {
 	struct tcp_sock *tp;
 	struct sk_buff *skb;
 
-	if (!in_interrupt()) local_bh_disable();
+	local_bh_disable();
 	mtcp_for_each_sk(mpcb,sk,tp) {
 		int sum=0;
 		tcp_for_write_queue(skb,sk) {
@@ -2090,11 +2090,11 @@ void verif_wqueues(struct multipath_pcb *mpcb) {
 				       skb->truesize);
 			}
 			
-			if (!in_interrupt()) local_bh_enable();
+			local_bh_enable();
 			BUG();
 		}
 	}
-	if (!in_interrupt()) local_bh_enable();
+	local_bh_enable();
 	
 }
 
