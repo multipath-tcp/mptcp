@@ -5998,7 +5998,7 @@ reset_and_undo:
  *	It's called from both tcp_v4_rcv and tcp_v6_rcv and should be
  *	address independent.
  */
-
+extern int nofree;
 int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 			  struct tcphdr *th, unsigned len)
 {
@@ -6041,6 +6041,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 			 * in the interest of security over speed unless
 			 * it's still in use.
 			 */
+			nofree=0;
 			kfree_skb(skb);
 			return 0;
 		}
@@ -6053,6 +6054,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 
 		/* Do step6 onward by hand. */
 		tcp_urg(sk, skb, th);
+		nofree=0;
 		__kfree_skb(skb);
 		tcp_data_snd_check(sk);
 		return 0;
@@ -6222,6 +6224,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 		}
 		/* Fall through */
 	case TCP_ESTABLISHED:
+		nofree=0;
 		tcp_data_queue(sk, skb);
 		queued = 1;
 		break;
@@ -6248,6 +6251,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 
 	if (!queued) {
 discard:
+		nofree=0;
 		__kfree_skb(skb);
 	}
 	return 0;
