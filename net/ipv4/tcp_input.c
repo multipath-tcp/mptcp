@@ -6060,6 +6060,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 		return 0;
 	}
 
+	nofree=0;
 	res = tcp_validate_incoming(sk, skb, th, 0);
 	if (res <= 0)
 		return -res;

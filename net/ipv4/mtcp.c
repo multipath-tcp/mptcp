@@ -269,7 +269,7 @@ int mtcp_reallocate(struct multipath_pcb *mpcb)
 			skb_queue_tail(&tmp_queue,skb);
 			skb->path_mask&=~PI_TO_FLAG(tp->path_index);
 			sk->sk_wmem_queued -= skb->truesize;
-			sk_mem_uncharge(sk, skb->truesize);			
+			sk_mem_uncharge(sk, skb->truesize);
 		}
 		if (!bh) release_sock(sk);
 		/*Now we can reorder the segments*/
