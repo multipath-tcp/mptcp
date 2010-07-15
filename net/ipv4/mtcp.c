@@ -1010,6 +1010,7 @@ static inline int available_subflow_flag_check(struct multipath_pcb *mpcb)
 	return ans;
 }
 
+int bug_on_sendhead_move=0;
 static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb)
 {
 	struct tcp_sock *tp;
@@ -1041,9 +1042,12 @@ again:
 			
 			verif_wqueues(mpcb);
 			
+			bug_on_sendhead_move=1;
+			
 			mtcp_for_each_sk(mpcb,sk,tp) {				
 				if (!mtcp_is_available(sk) && 
 				    sk->sk_state==TCP_ESTABLISHED) {
+					mtcp_push_frames(sk);
 					printk("pi %d:wmem_queued:%d,"
 					       "sndbuf:%d,write queue length"
 					       ":%d,rexmit empty:%d,"

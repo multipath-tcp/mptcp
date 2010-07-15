@@ -69,6 +69,7 @@ int sysctl_tcp_base_mss __read_mostly = 512;
 /* By default, RFC2861 behavior.  */
 int sysctl_tcp_slow_start_after_idle __read_mostly = 1;
 
+extern int bug_on_sendhead_move;
 static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -76,6 +77,10 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 
 	tcp_advance_send_head(sk, skb);
 	tp->snd_nxt = TCP_SKB_CB(skb)->end_seq;
+
+	/*If this triggers, then we were stall, while in fact we were able to
+	  send data.*/
+	BUG_ON(bug_on_sendhead_move);
 
 	/* Don't override Nagle indefinitely with F-RTO */
 	if (tp->frto_counter == 2)
