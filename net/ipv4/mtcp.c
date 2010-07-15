@@ -1027,6 +1027,7 @@ again:
 		err=wait_for_completion_interruptible(
 			&mpcb->liberate_subflow);
 		if (err<0) {
+			struct sk_buff *skb;
 			/*TODO: We will need to put the realloc queue in the
 			  mpcb rather than as a local variable, to handle
 			  the case where we are interrupted, and we must
@@ -1037,8 +1038,10 @@ again:
 			printk(KERN_ERR "stopped by interrupt\n"
 			       "TODO_1: Make the realloc queue recuperable"
 			       "in that case\n");
-
-			mtcp_for_each_sk(mpcb,sk,tp) {
+			
+			verif_wqueues(mpcb);
+			
+			mtcp_for_each_sk(mpcb,sk,tp) {				
 				if (!mtcp_is_available(sk) && 
 				    sk->sk_state==TCP_ESTABLISHED) {
 					printk("pi %d:wmem_queued:%d,"
@@ -1052,11 +1055,21 @@ again:
 					       tcp_send_head(sk)==
 					       tcp_write_queue_head(sk),
 					       tp->snd_una,tp->snd_nxt);
+					tcp_for_write_queue(skb,sk) {
+						printk(KERN_ERR 
+						       "skb truesize:%d, "
+						       "skb->len:%d,"
+						       "skb->seq:%#x,"
+						       "skb->dsn:%#x\n",
+						       skb->truesize,skb->len,
+						       TCP_SKB_CB(skb)->seq,
+						       TCP_SKB_CB(skb)->data_seq
+							);
+					}
+					
 				}
 			}
 
-			verif_wqueues(mpcb);
-			
 			BUG();
 			return NULL;
 		}
