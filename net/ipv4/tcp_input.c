@@ -4882,6 +4882,7 @@ static inline void push_other_subsock(struct sock *sk)
 }
 #endif
 
+int signal_sent=0;
 static inline void tcp_data_snd_check(struct sock *sk)
 {
 	tcp_push_pending_frames(sk);
@@ -4915,6 +4916,7 @@ static inline void tcp_data_snd_check(struct sock *sk)
 		  injects more data into that subflow*/
 		if ((mtcp_is_available(sk) || mpcb->sndwnd_full)&& 
 		    !mpcb->liberate_subflow.done) {
+			signal_sent=1;
 			complete(&mpcb->liberate_subflow);
 		}
 	}

@@ -1011,6 +1011,7 @@ static inline int available_subflow_flag_check(struct multipath_pcb *mpcb)
 }
 
 int bug_on_sendhead_move=0;
+extern int signal_sent;
 static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb)
 {
 	struct tcp_sock *tp;
@@ -1050,15 +1051,17 @@ again:
 					mtcp_push_frames(sk);
 					printk("pi %d:wmem_queued:%d,"
 					       "sndbuf:%d,write queue length"
-					       ":%d,rexmit empty:%d,"
-					       "snd_una:%#x,snd_nxt:%#x\n",
+					       ":%d,rexmit empty:%d,\n"
+					       "snd_una:%#x,snd_nxt:%#x,"
+					       "signal_sent:%d\n",
 					       tp->path_index,
 					       sk->sk_wmem_queued,sk->sk_sndbuf,
 					       skb_queue_len(
 						       &sk->sk_write_queue),
 					       tcp_send_head(sk)==
 					       tcp_write_queue_head(sk),
-					       tp->snd_una,tp->snd_nxt);
+					       tp->snd_una,tp->snd_nxt,
+					       signal_sent);
 					tcp_for_write_queue(skb,sk) {
 						printk(KERN_ERR 
 						       "skb truesize:%d, "
@@ -1077,6 +1080,7 @@ again:
 			BUG();
 			return NULL;
 		}
+		signal_sent=0;
 		verif_wqueues(mpcb);
 		/*If we need to reallocate, do it.
 		  If reallocation was indeed performed, 
