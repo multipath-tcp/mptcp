@@ -769,10 +769,7 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	struct tcphdr *th;
 	int err;
 
-	BUG_ON(!skb || !tcp_skb_pcount(skb));
-	
-	if (TCP_SKB_CB(skb)->data_len)
-		skb->count_dsn=1;
+	BUG_ON(!skb || !tcp_skb_pcount(skb));		
 
 	tcpprobe_transmit_skb(sk,skb,clone_it,gfp_mask);
 
@@ -795,6 +792,9 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	tp = tcp_sk(sk);
 	tcb = TCP_SKB_CB(skb);
 	memset(&opts, 0, sizeof(opts));
+
+	if (tp->mpc)
+		skb->count_dsn=1;
 	
 	if (unlikely(tcb->flags & TCPCB_FLAG_SYN))
 		tcp_options_size = tcp_syn_options(sk, skb, &opts, &md5);
