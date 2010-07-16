@@ -2881,7 +2881,6 @@ static u32 tcp_tso_acked(struct sock *sk, struct sk_buff *skb)
 			mtcp_update_dsn_ack(mpcb,TCP_SKB_CB(skb)->data_seq,
 					    TCP_SKB_CB(skb)->data_seq+
 					    tp->snd_una - TCP_SKB_CB(skb)->seq);
-			skb->count_dsn=0;
 		}
 		BUG_ON(!tp->mpc && TCP_SKB_CB(skb)->data_seq);
 	}
@@ -3028,8 +3027,9 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 				tp->bw_est.seq=tp->snd_una+tp->bw_est.space;
 				tp->bw_est.time=tcp_time_stamp;
 			}
-		}
+		}		
 	no_mptcp_update:
+		BUG_ON(!tp->mpc && TCP_SKB_CB(skb)->data_seq);
 #endif
 		
 		tcp_unlink_write_queue(skb, sk);
