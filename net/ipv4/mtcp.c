@@ -1044,10 +1044,11 @@ again:
 			verif_wqueues(mpcb);
 			
 			bug_on_sendhead_move=1;
-			
+
+			printk(KERN_ERR "dsn_snd_una:%d\n",mpcb->snd_una);
+
 			mtcp_for_each_sk(mpcb,sk,tp) {				
-				if (!mtcp_is_available(sk) && 
-				    sk->sk_state==TCP_ESTABLISHED) {
+				if (sk->sk_state==TCP_ESTABLISHED) {
 					mtcp_push_frames(sk);
 					printk("pi %d:wmem_queued:%d,"
 					       "sndbuf:%d,write queue length"
