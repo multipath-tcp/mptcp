@@ -1016,6 +1016,7 @@ static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb)
 {
 	struct tcp_sock *tp;
 	struct sock *sk;
+	struct dsn_sack *dsack;
 
 	verif_wqueues(mpcb);
 
@@ -1040,12 +1041,17 @@ again:
 			printk(KERN_ERR "stopped by interrupt\n"
 			       "TODO_1: Make the realloc queue recuperable"
 			       "in that case\n");
+
+			list_for_each_entry(dsack,&mpcb->dsack_list,list) {
+				printk(KERN_ERR "  dsack %#x->%#x\n",
+				       dsack->start,dsack->end);
+			}
 			
 			verif_wqueues(mpcb);
 			
 			bug_on_sendhead_move=1;
 
-			printk(KERN_ERR "dsn_snd_una:%d\n",mpcb->snd_una);
+			printk(KERN_ERR "dsn_snd_una:%#x\n",mpcb->snd_una);
 
 			mtcp_for_each_sk(mpcb,sk,tp) {				
 				if (sk->sk_state==TCP_ESTABLISHED) {
@@ -1303,8 +1309,6 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 			       "skb->end_data_seq:%x,exp. data_seq:%x\n",
 			       TCP_SKB_CB(skb)->end_data_seq,*data_seq);
 			/*Should not happen in the current design*/
-			printk(KERN_ERR "debug:%d,count:%d\n",skb->debug,
-			       skb->debug_count);
 			printk(KERN_ERR "init data_seq:%x,*copied:%x\n",
 			       skb->data_seq,*copied);
 			console_loglevel=8;
@@ -1462,8 +1466,6 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 				       "dataseq %X, *len %d\n", __FUNCTION__, 
 				       *data_seq, 
 				       TCP_SKB_CB(skb)->data_seq, (int)*len);
-				printk(KERN_ERR "debug:%d,count:%d\n",skb->debug,
-				       skb->debug_count);
 				printk(KERN_ERR "init data_seq:%x,used:%d\n",
 				       skb->data_seq,(int)used);
 				BUG();

@@ -2877,10 +2877,13 @@ static u32 tcp_tso_acked(struct sock *sk, struct sk_buff *skb)
 #ifdef CONFIG_MTCP
 	{
 		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
-		if (tp->mpc) 
+		if (tp->mpc) {
 			mtcp_update_dsn_ack(mpcb,TCP_SKB_CB(skb)->data_seq,
 					    TCP_SKB_CB(skb)->data_seq+
 					    tp->snd_una - TCP_SKB_CB(skb)->seq);
+			skb->count_dsn=0;
+		}
+		BUG_ON(!tp->mpc && TCP_SKB_CB(skb)->data_seq);
 	}
 #endif
 	
@@ -3002,6 +3005,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			BUG_ON(!scb->end_data_seq);
 			mtcp_update_dsn_ack(mpcb,scb->data_seq,
 					    scb->end_data_seq);
+			skb->count_dsn=0;
 			if (!tp->bw_est.time) {
 				/*bootstrap bw estimation*/
 				tp->bw_est.space=(tp->snd_cwnd*tp->mss_cache)<<
@@ -5082,9 +5086,6 @@ static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 						       mpcb->ucopy.iov);
 
 	if (!err) {
-		skb->debug|=MTCP_DEBUG_COPY_TO_IOVEC;
-		skb->debug_count++;
-
 		mtcp_check_seqnums(mpcb,1);
 
 		mpcb->ucopy.len -= chunk;

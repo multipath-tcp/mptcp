@@ -431,6 +431,7 @@ extern int nofree;
 void __kfree_skb(struct sk_buff *skb)
 {
 	BUG_ON(nofree);
+	BUG_ON(skb->count_dsn);
 	skb_release_all(skb);
 	kfree_skbmem(skb);
 }

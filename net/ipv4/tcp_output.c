@@ -770,7 +770,10 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	int err;
 
 	BUG_ON(!skb || !tcp_skb_pcount(skb));
-
+	
+	if (TCP_SKB_CB(skb)->data_len)
+		skb->count_dsn=1;
+	
 	tcpprobe_transmit_skb(sk,skb,clone_it,gfp_mask);
 
 	/* If congestion control is doing timestamping, we must

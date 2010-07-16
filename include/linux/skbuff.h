@@ -273,8 +273,7 @@ struct sk_buff {
 	unsigned int            path_index; /*Path index for multipath control*/
 	__u32                   path_mask; /*Mask of the path indices that
 					     have tried to send this skb*/
-	__u32                   debug; /*TODEL*/
-	int                     debug_count; /*TODEL*/
+	int                     count_dsn; /*TODEL*/
 	__u32                   data_seq; /*TODEL*/
 
 	/*
