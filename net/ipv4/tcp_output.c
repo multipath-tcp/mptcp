@@ -1740,13 +1740,18 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 	 * In time closedown will finish, we empty the write queue and all
 	 * will be happy.
 	 */
-	if (unlikely(sk->sk_state == TCP_CLOSE))
+	if (unlikely(sk->sk_state == TCP_CLOSE)) {
+		if (bug_on_sendhead_move)
+			printk(KERN_ERR "cannot send: state is closed\n");
 		return 0;
+	}
 
 	sent_pkts = 0;
 
 	/* Do MTU probing. */
 	if ((result = tcp_mtu_probe(sk)) == 0) {
+		if (bug_on_sendhead_move)
+			printk(KERN_ERR "cannot send: mtu probe failed\n");
 		return 0;
 	} else if (result > 0) {
 		sent_pkts = 1;
@@ -1760,8 +1765,11 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		BUG_ON(!tso_segs);
 
 		cwnd_quota = tcp_cwnd_test(tp, skb);
-		if (!cwnd_quota)
+		if (!cwnd_quota) {
+			if (bug_on_sendhead_move)
+				printk(KERN_ERR "cannot send: no cwnd\n");
 			break;
+		}
 
 		if (unlikely(!tcp_snd_wnd_test(tp, skb, mss_now))) {
 			int cont=0;
@@ -1779,17 +1787,27 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 				else tp->mpcb->sndwnd_full=1;
 			}
 #endif
-			if (!cont) break;
+			if (!cont) {
+				if (bug_on_sendhead_move)
+					printk(KERN_ERR "cannot send: no sndwnd\n");
+				break;
+			}
 		}
 
 		if (tso_segs == 1) {
 			if (unlikely(!tcp_nagle_test(tp, skb, mss_now,
 						     (tcp_skb_is_last(sk, skb) ?
-						      nonagle : TCP_NAGLE_PUSH))))
+						      nonagle : TCP_NAGLE_PUSH)))) {
+				if (bug_on_sendhead_move)
+					printk(KERN_ERR "cannot send: nagle blocked\n");
 				break;
+			}
 		} else {
-			if (tcp_tso_should_defer(sk, skb))
+			if (tcp_tso_should_defer(sk, skb)) {
+				if (bug_on_sendhead_move)
+					printk(KERN_ERR "cannot send: tso should defer\n");
 				break;
+			}
 		}
 
 		limit = mss_now;
@@ -1798,8 +1816,11 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 						    cwnd_quota);
 
 		if (skb->len > limit &&
-		    unlikely(tso_fragment(sk, skb, limit, mss_now)))
+		    unlikely(tso_fragment(sk, skb, limit, mss_now))) {
+			if (bug_on_sendhead_move)
+				printk(KERN_ERR "cannot send: tso_fragment\n");
 			break;
+		}
 
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
 		
@@ -1808,6 +1829,8 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		if (unlikely(err=tcp_transmit_skb(sk, skb, 1, GFP_ATOMIC))) {
 			PDEBUG("%s:transmit failed,pi %d ,err:%d\n\n",
 			       __FUNCTION__,skb->path_index,err);	
+			if (bug_on_sendhead_move)
+				printk(KERN_ERR "cannot send: transmit_skb failed\n");
 			break;
 		}
 
