@@ -1752,7 +1752,12 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 			/*If data has been eaten by the subflow, 
 			  it has also been eaten by the meta-flow.
 			  if this does not hold, we have a bug*/
-			BUG_ON(data_offset<offset);
+			if(data_offset<offset) {
+				printk(KERN_ERR "data_offset<offset:"
+				       "data_offset:%d,offset:%d\n",
+				       data_offset,offset);
+				BUG();
+			}
 			/*Otherwise, just advance the subflow counters*/
 			*used+=data_offset-offset;
 			*tp->seq += data_offset-offset;
