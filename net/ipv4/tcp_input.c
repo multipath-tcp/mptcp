@@ -3029,7 +3029,6 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			}
 		}		
 	no_mptcp_update:
-		BUG_ON(!tp->mpc && TCP_SKB_CB(skb)->data_seq);
 #endif
 		
 		tcp_unlink_write_queue(skb, sk);
