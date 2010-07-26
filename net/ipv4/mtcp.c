@@ -674,7 +674,6 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 {
 	struct multipath_pcb * mpcb = kmalloc(
 		sizeof(struct multipath_pcb),GFP_KERNEL);
-	sysctl_tcp_low_latency=1;
 	
 	memset(mpcb,0,sizeof(struct multipath_pcb));
 	

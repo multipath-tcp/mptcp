@@ -4194,20 +4194,6 @@ static int tcp_prune_queue(struct sock *sk);
 
 static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 {
-#ifdef CONFIG_MTCP
-	/*This part of memory mangement must be carefully thought
-	  for adaptation with mptcp in the mean time, we 
-	  shortcircuit this by virtually allowing an "infinite"
-	  receive buffer here. Note that the standard functions cannot be 
-	  maintained as they are, since mptcp must deal with a shared 
-	  pool of memory for all subsocks, so if it tries to limit
-	  per-subsock reserved space, it will clearly drop segments
-	  and stall a connection. This is because the sender can very
-	  well send all its send window to the same subflow, hence forcing
-	  the receiver to buffer data in one subflow for an amount equal to 
-	  the sum of the receive buffers. More thinking needed :-)*/
-	return 0;
-#endif
 	if (atomic_read(&sk->sk_rmem_alloc) > sk->sk_rcvbuf ||
 	    !sk_rmem_schedule(sk, size)) {
 
