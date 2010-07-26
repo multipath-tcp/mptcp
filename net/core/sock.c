@@ -1137,6 +1137,11 @@ void sock_rfree(struct sk_buff *skb)
 
 	skb_truesize_check(skb);
 	atomic_sub(skb->truesize, &sk->sk_rmem_alloc);
+#ifdef CONFIG_MTCP
+	if (sk->sk_protocol==IPPROTO_TCP && tcp_sk(sk)->mpc &&
+	    tcp_sk(sk)->mpcb)
+		atomic_sub(skb->truesize, &tcp_sk(sk)->mpcb->rmem_alloc);
+#endif
 	sk_mem_uncharge(skb->sk, skb->truesize);
 }
 

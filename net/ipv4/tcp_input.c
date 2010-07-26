@@ -4194,19 +4194,26 @@ static int tcp_prune_queue(struct sock *sk);
 
 static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 {
-	if (atomic_read(&sk->sk_rmem_alloc) > sk->sk_rcvbuf ||
-	    !sk_rmem_schedule(sk, size)) {
-
-		if (tcp_prune_queue(sk) < 0)
-			return -1;
-
-		if (!sk_rmem_schedule(sk, size)) {
-			if (!tcp_prune_ofo_queue(sk))
-				return -1;
-
-			if (!sk_rmem_schedule(sk, size))
-				return -1;
+	struct tcp_sock *tp=tcp_sk(sk);
+	if (tp->mpc && tp->mpcb) {
+		if (atomic_read(&tp->mpcb->rmem_alloc) <= tp->mpcb->rcvbuf &&
+		    sk_rmem_schedule(sk,size)) {
+			return 0;
 		}
+	}
+	else if (atomic_read(&sk->sk_rmem_alloc) <= sk->sk_rcvbuf &&
+		 sk_rmem_schedule(sk, size))
+		return 0;
+	
+	if (tcp_prune_queue(sk) < 0)
+		return -1;
+	
+	if (!sk_rmem_schedule(sk, size)) {
+		if (!tcp_prune_ofo_queue(sk))
+			return -1;
+		
+		if (!sk_rmem_schedule(sk, size))
+			return -1;
 	}
 	return 0;
 }
@@ -4320,8 +4327,11 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 		if (eaten <= 0) {
 		queue_and_out:
 			if (eaten < 0 &&
-			    tcp_try_rmem_schedule(sk, skb->truesize))
+			    tcp_try_rmem_schedule(sk, skb->truesize)) {
+				printk(KERN_ERR "dropping seg after"
+				       " tcp_try_rmem_schedule\n");
 				goto drop;
+			}
 
 			skb_set_owner_r(skb, sk);
 			

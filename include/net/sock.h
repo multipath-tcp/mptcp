@@ -1149,11 +1149,18 @@ static inline void skb_set_owner_w(struct sk_buff *skb, struct sock *sk)
 	atomic_add(skb->truesize, &sk->sk_wmem_alloc);
 }
 
+#ifdef CONFIG_MTCP
+extern void mtcp_set_owner_r(struct sk_buff *skb, struct sock *sk);
+#endif
+
 static inline void skb_set_owner_r(struct sk_buff *skb, struct sock *sk)
 {
 	skb->sk = sk;
 	skb->destructor = sock_rfree;
 	atomic_add(skb->truesize, &sk->sk_rmem_alloc);
+#ifdef CONFIG_MTCP
+	mtcp_set_owner_r(skb, sk);
+#endif
 	sk_mem_charge(sk, skb->truesize);
 }
 

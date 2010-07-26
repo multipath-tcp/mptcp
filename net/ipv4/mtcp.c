@@ -792,6 +792,8 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 	
 	mpcb->cnt_subflows++;
 	mtcp_update_window_clamp(mpcb);
+	atomic_add(atomic_read(&((struct sock *)tp)->sk_rmem_alloc),
+		   &mpcb->rmem_alloc);
 	
 	/*The socket is already established if it was in the
 	  accept queue of the mpcb*/
@@ -2099,18 +2101,22 @@ out:
 void mtcp_update_window_clamp(struct multipath_pcb *mpcb)
 {
 	struct tcp_sock *tp;
+	struct sock *sk;
 	u32 new_clamp=0;
 	u32 new_rcv_ssthresh=0;
+	u32 new_rcvbuf=0;
 
 	/*Can happen if called from non mpcb sock.*/
 	if (!mpcb) return;
 
-	mtcp_for_each_tp(mpcb,tp) {
+	mtcp_for_each_sk(mpcb,sk,tp) {
 		new_clamp += tp->window_clamp;
 		new_rcv_ssthresh += tp->rcv_ssthresh;
+		new_rcvbuf += sk->sk_rcvbuf;
 	}
-	mpcb->window_clamp=new_clamp;
+	mpcb->window_clamp = new_clamp;
 	mpcb->rcv_ssthresh = new_rcv_ssthresh;
+	mpcb->rcvbuf = new_rcvbuf;
 }
 
 extern void tcp_check_space(struct sock *sk);
@@ -2155,6 +2161,13 @@ void verif_wqueues(struct multipath_pcb *mpcb) {
 	}
 	local_bh_enable();
 	
+}
+
+void mtcp_set_owner_r(struct sk_buff *skb, struct sock *sk)
+{
+	if (sk->sk_protocol==IPPROTO_TCP && tcp_sk(sk)->mpc &&
+	    tcp_sk(sk)->mpcb)
+		atomic_add(skb->truesize, &tcp_sk(sk)->mpcb->rmem_alloc);
 }
 
 MODULE_LICENSE("GPL");

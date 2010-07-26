@@ -83,7 +83,7 @@ struct dsn_sack {
 #define dsack_is_last(dsack,mpcb) (list_is_last(&dsack->list,&mpcb->dsack_list))
 #define dsack_is_first(dsack,mpcb) (dsack==dsack_first(mpcb))
 
-struct multipath_pcb {	
+struct multipath_pcb {
 	/*receive and send buffer sizing*/
 	int                       rcvbuf, sndbuf;
 	atomic_t                  rmem_alloc;       
