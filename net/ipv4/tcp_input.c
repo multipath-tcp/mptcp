@@ -4192,6 +4192,29 @@ static void tcp_ofo_queue(struct sock *sk)
 static int tcp_prune_ofo_queue(struct sock *sk);
 static int tcp_prune_queue(struct sock *sk);
 
+static void check_buffers(struct multipath_pcb *mpcb)
+{
+	struct sock *sk;
+	struct tcp_sock *tp;
+	struct sk_buff *skb;
+
+	mtcp_for_each_sk(mpcb,sk,tp) {
+		int ofo_size=0,rcv_size=0;
+		for(skb=skb_peek(&tp->out_of_order_queue);
+		    skb ;skb=(skb_queue_is_last(&tp->out_of_order_queue,skb)?
+			      NULL:
+			      skb_queue_next(&tp->out_of_order_queue,skb)))
+			ofo_size+=skb->truesize;
+		for(skb=skb_peek(&sk->sk_receive_queue);
+		    skb;skb=(skb_queue_is_last(&sk->sk_receive_queue,skb)?NULL:
+			     skb_queue_next(&sk->sk_receive_queue,skb)))
+			rcv_size+=skb->truesize;
+		
+		printk(KERN_ERR "pi %d, ofo_size:%d,rcv_size:%d\n",
+		       tp->path_index, ofo_size,rcv_size);
+	}
+}
+
 static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 {
 	struct tcp_sock *tp=tcp_sk(sk);
@@ -4204,11 +4227,13 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 			mtcp_for_each_sk(tp->mpcb,sk,tp) {
 				if (sk->sk_state!=TCP_ESTABLISHED)
 					continue;
-				printk(KERN_ERR "pi %d,rcvbuf:%d,rmem_alloc:%d",
+				printk(KERN_ERR "pi %d,rcvbuf:%d,"
+				       "rmem_alloc:%d\n",
 				       tp->path_index,
 				       sk->sk_rcvbuf,
 				       atomic_read(&sk->sk_rmem_alloc));
 			}
+			check_buffers(tp->mpcb);
 			BUG();
 		}
 		else if (!sk_rmem_schedule(sk,size)) {
