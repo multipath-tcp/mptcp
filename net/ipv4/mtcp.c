@@ -1951,12 +1951,15 @@ int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb)
 				       segment (the mapping info is now 
 				       consumed)*/
 		
-	/*Check now if the segment is in meta-order*/
+	/*Check now if the segment is in meta-order, it is considered
+	  in meta-order if the next expected DSN is contained in the
+	  segment*/
 	
-	if (TCP_SKB_CB(skb)->data_seq==mpcb->copied_seq)
+	if (!before(mpcb->copied_seq,TCP_SKB_CB(skb)->data_seq) &&
+	    before(mpcb->copied_seq,TCP_SKB_CB(skb)->end_data_seq))
 		ans=1;
 	else ans=0;
-
+	
 out:
 	if (tp->pending)
 		mpcb_put(mpcb);

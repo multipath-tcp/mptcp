@@ -4407,7 +4407,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 			tcp_sack_remove(tp);
 
 		tcp_fast_path_check(sk);
-
+		
 		if (eaten > 0)
 			__kfree_skb(skb);
 		else if (!sock_flag(sk, SOCK_DEAD)) {
