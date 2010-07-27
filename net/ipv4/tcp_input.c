@@ -4196,6 +4196,12 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 {
 	struct tcp_sock *tp=tcp_sk(sk);
 	if (tp->mpc && tp->mpcb) {
+		if (atomic_read(&tp->mpcb->rmem_alloc) > tp->mpcb->rcvbuf) {
+			printk(KERN_ERR "not enough rcvbuf\n");			
+		}
+		else if (!sk_rmem_schedule(sk,size)) {
+			printk(KERN_ERR "impossible to alloc memory\n");
+		}
 		if (atomic_read(&tp->mpcb->rmem_alloc) <= tp->mpcb->rcvbuf &&
 		    sk_rmem_schedule(sk,size)) {
 			return 0;
