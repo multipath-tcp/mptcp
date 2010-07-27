@@ -4200,6 +4200,8 @@ static void check_buffers(struct multipath_pcb *mpcb)
 
 	mtcp_for_each_sk(mpcb,sk,tp) {
 		int ofo_size=0,rcv_size=0;
+		if (sk->sk_state!=TCP_ESTABLISHED)
+			continue;
 		for(skb=skb_peek(&tp->out_of_order_queue);
 		    skb ;skb=(skb_queue_is_last(&tp->out_of_order_queue,skb)?
 			      NULL:
@@ -4224,6 +4226,7 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 			printk(KERN_ERR "mpcb rcvbuf:%d - rmem_alloc:%d\n",
 			       tp->mpcb->rcvbuf,atomic_read(
 				       &tp->mpcb->rmem_alloc));
+			check_buffers(tp->mpcb);
 			mtcp_for_each_sk(tp->mpcb,sk,tp) {
 				if (sk->sk_state!=TCP_ESTABLISHED)
 					continue;
@@ -4233,7 +4236,6 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 				       sk->sk_rcvbuf,
 				       atomic_read(&sk->sk_rmem_alloc));
 			}
-			check_buffers(tp->mpcb);
 			BUG();
 		}
 		else if (!sk_rmem_schedule(sk,size)) {
