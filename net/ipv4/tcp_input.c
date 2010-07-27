@@ -4211,9 +4211,11 @@ static void check_buffers(struct multipath_pcb *mpcb)
 		    skb;skb=(skb_queue_is_last(&sk->sk_receive_queue,skb)?NULL:
 			     skb_queue_next(&sk->sk_receive_queue,skb)))
 			rcv_size+=skb->truesize;
-		
-		printk(KERN_ERR "pi %d, ofo_size:%d,rcv_size:%d\n",
-		       tp->path_index, ofo_size,rcv_size);
+		skb=skb_peek(&sk->sk_receive_queue);
+		printk(KERN_ERR "pi %d, ofo_size:%d,rcv_size:%d, waiting:%d,"
+		       "next dsn:%#x\n",
+		       tp->path_index, ofo_size,rcv_size,tp->wait_data_bit_set,
+		       (skb?TCP_SKB_CB(skb)->data_seq:0));
 	}
 }
 
@@ -4227,6 +4229,8 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 			       tp->mpcb->rcvbuf,atomic_read(
 				       &tp->mpcb->rmem_alloc));
 			check_buffers(tp->mpcb);
+			printk(KERN_ERR "mpcb copied seq:%#x\n",
+			       tp->mpcb->copied_seq);
 			mtcp_for_each_sk(tp->mpcb,sk,tp) {
 				if (sk->sk_state!=TCP_ESTABLISHED)
 					continue;
