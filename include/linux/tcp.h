@@ -289,9 +289,11 @@ struct tcp_sock {
 				 is then done immediately, but if the socket is
 				 locked at that moment, push_frames is set, so
 				 that the push is done in the release_sock.*/
-		dont_realloc:1; /*Set to one in special cases where reallocation
+		dont_realloc:1, /*Set to one in special cases where reallocation
 				  checks cannot be done, becaue the lock scheme
 				  does not allow it.*/
+		pf:1; /*Potentially Failed state: when this flag is set, we
+			stop using the subflow*/
 	
 	u32	rcv_wup;	/* rcv_nxt on last window update sent	*/
  	u32	snd_nxt;	/* Next sequence we send		*/

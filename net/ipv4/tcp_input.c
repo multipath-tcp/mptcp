@@ -3216,6 +3216,7 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 	}
 
 	tp->snd_una = ack;
+	tp->pf=0;
 
 	return flag;
 }
@@ -3404,6 +3405,7 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 		 */
 		tcp_update_wl(tp, ack, ack_seq);
 		tp->snd_una = ack;
+		tp->pf=0;
 		flag |= FLAG_WIN_UPDATE;
 
 		tcp_ca_event(sk, CA_EVENT_FAST_ACK);
@@ -4982,7 +4984,7 @@ static inline void tcp_data_snd_check(struct sock *sk)
 		  Then, if the flow is still available as decided by mtcp,
 		  we can wake up the mptcp scheduler, so that it possibly
 		  injects more data into that subflow*/
-		if ((mtcp_is_available(sk) || mpcb->sndwnd_full)&& 
+		if ((mtcp_is_available(sk) || mpcb->need_realloc)&& 
 		    !mpcb->liberate_subflow.done) {
 			signal_sent=1;
 			complete(&mpcb->liberate_subflow);

@@ -165,10 +165,7 @@ struct multipath_pcb {
 	                          pending_data:1, /*1 is at least one byte
 						    of data is available for
 						    eating by the app.*/
-		                  sndwnd_full:1, /*One subflow at least has 
-						   been prevented from 
-						   transmission due to send 
-						   window full*/
+		                  need_realloc:1, /*realloc window*/
 		                  reallocating:1, /*1 if realloc function is 
 						    running*/
 	                          sndbuf_grown:1; /*sndbuf has grown

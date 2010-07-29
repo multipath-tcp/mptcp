@@ -1787,7 +1787,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 					    tcp_snd_wnd_test(tp,skb,mss_now))
 						cont=1;
 				}
-				else tp->mpcb->sndwnd_full=1;
+				else tp->mpcb->need_realloc=1;
 			}
 #endif
 			if (!cont) {
