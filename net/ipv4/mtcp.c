@@ -2161,7 +2161,9 @@ void mtcp_push_frames(struct sock *sk)
 	release_sock(sk);
 }
 
-void verif_wqueues(struct multipath_pcb *mpcb) {
+#ifdef DEBUG_WQUEUES
+void verif_wqueues(struct multipath_pcb *mpcb) 
+{
 	struct sock *sk;
 	struct tcp_sock *tp;
 	struct sk_buff *skb;
@@ -2189,6 +2191,12 @@ void verif_wqueues(struct multipath_pcb *mpcb) {
 	local_bh_enable();
 	
 }
+#else
+void verif_wqueues(struct multipath_pcb *mpcb)
+{
+	return;
+}
+#endif
 
 void mtcp_set_owner_r(struct sk_buff *skb, struct sock *sk)
 {
