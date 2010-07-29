@@ -1480,6 +1480,7 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 }
 
 #ifdef MTCP_DEBUG_SEQNUMS
+
 void mtcp_check_seqnums(struct multipath_pcb *mpcb, int before)
 {
 	int subsock_bytes=0;
@@ -1884,8 +1885,11 @@ void mtcp_reinject_data(struct sock *orig_sk, struct sock *retrans_sk)
  * - If the mapping has been correctly updated, or the skb has correctly 
  *   been given its dataseq, we then check if the segment is in meta-order.
  *   i) if it is: we return 1
- *   ii) if it is not in meta-order (keep in mind that the precondition requires
- *       that it is in subflow order): we return 0
+ *   ii) it its end_data_seq is older then mpcb->copied_seq, it is a 
+ *       reinjected segment arrived late. We return 2, to indicate to the 
+ *       caller that the segment can be eaten by the subflow immediately.
+ *   iii) if it is not in meta-order (keep in mind that the precondition 
+ *        requires that it is in subflow order): we return 0
  * - If the skb is faulty (does not contain a dataseq option, and seqnum
  *   not contained in currently stored mapping), we return -1
  * - If the tp is a pending tp, and the mpcb is destroyed (not anymore
@@ -1958,6 +1962,8 @@ int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb)
 	if (!before(mpcb->copied_seq,TCP_SKB_CB(skb)->data_seq) &&
 	    before(mpcb->copied_seq,TCP_SKB_CB(skb)->end_data_seq))
 		ans=1;
+	else if (!before(mpcb->copied_seq,TCP_SKB_CB(skb)->end_data_seq))
+		ans=2;
 	else ans=0;
 	
 out:
@@ -2171,6 +2177,24 @@ void mtcp_set_owner_r(struct sk_buff *skb, struct sock *sk)
 	if (sk->sk_protocol==IPPROTO_TCP && tcp_sk(sk)->mpc &&
 	    tcp_sk(sk)->mpcb)
 		atomic_add(skb->truesize, &tcp_sk(sk)->mpcb->rmem_alloc);
+}
+
+/*Removes a segment received on one subflow, but containing DSNs
+  that were already received on another subflow
+  Note that if the segment is not the head of the receive queue,
+  we keep it in the list for future removal, because we cannot advance
+  the tcp counters.
+  WARNING: this may remove the skb, so no further reference to it
+  should happen after calling this function.
+*/
+void mtcp_check_eat_old_seg(struct sock *sk, struct sk_buff *skb)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	if (skb!=skb_peek(&sk->sk_receive_queue))
+		return;
+	/*OK, eat the segment, and advance tcp counters*/
+	tp->copied_seq += skb->len;
+	sk_eat_skb(sk,skb,0);
 }
 
 MODULE_LICENSE("GPL");

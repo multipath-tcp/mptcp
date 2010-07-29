@@ -368,4 +368,5 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 			 struct in_addr *addr, u8 id);
 
 void verif_wqueues(struct multipath_pcb *mpcb);
+void mtcp_check_eat_old_seg(struct sock *sk, struct sk_buff *skb);
 #endif /*_MTCP_H*/

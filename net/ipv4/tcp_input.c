@@ -4177,15 +4177,18 @@ static void tcp_ofo_queue(struct sock *sk)
 		__skb_unlink(skb, &tp->out_of_order_queue);
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
 		
+		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
+
+		if (tcp_hdr(skb)->fin)
+			tcp_fin(skb, sk, tcp_hdr(skb));
 #ifdef CONFIG_MTCP
 		if (tp->mpc) {
 			int mapping=mtcp_get_dataseq_mapping(tp,skb);
 			if (mapping==1) mtcp_data_ready(sk);
+			else if (mapping==2)
+				mtcp_check_eat_old_seg(sk,skb);
 		}
 #endif				
-		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
-		if (tcp_hdr(skb)->fin)
-			tcp_fin(skb, sk, tcp_hdr(skb));
 	}
 }
 
@@ -4387,12 +4390,15 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 			__skb_queue_tail(&sk->sk_receive_queue, skb);
 		}
 		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
-		if (skb->len)
+		if (skb->len && mapping!=2)
 			tcp_event_data_recv(sk, skb);
 
 		if (th->fin)
 			tcp_fin(skb, sk, th);
 
+		if (mapping==2)
+			mtcp_check_eat_old_seg(sk, skb);
+		
 		if (!skb_queue_empty(&tp->out_of_order_queue)) {
 			tcp_ofo_queue(sk);
 
