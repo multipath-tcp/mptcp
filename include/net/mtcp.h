@@ -34,6 +34,12 @@
 #include <net/mtcp_pm.h>
 
 
+/*Default MSS for MPTCP
+  All subflows will be using that MSS. If any subflow has a lower MSS, it is
+  just not used.*/
+#define MPTCP_MSS 1400
+
+
 /*DEBUG - TODEL*/
 
 #define MTCP_DEBUG_OFO_QUEUE 0x1
@@ -143,7 +149,7 @@ struct multipath_pcb {
 	struct sk_buff_head       receive_queue;/*received data*/
 	struct sk_buff_head       out_of_order_queue; /* Out of order segments 
 							 go here */
-	struct sk_buff_head       realloc_queue; /*Realloc sending queue*/
+	struct sk_buff_head       write_queue; /*Global write queue*/
 	int                       ofo_bytes; /*Counts the number of bytes 
 					       waiting to be eaten by the app
 					       in the meta-ofo queue or the
@@ -165,9 +171,6 @@ struct multipath_pcb {
 	                          pending_data:1, /*1 is at least one byte
 						    of data is available for
 						    eating by the app.*/
-		                  need_realloc:1, /*realloc window*/
-		                  reallocating:1, /*1 if realloc function is 
-						    running*/
 	                          sndbuf_grown:1; /*sndbuf has grown
 						    for one of our
 						    subflows*/
@@ -358,8 +361,6 @@ int mtcpv6_init(void);
 void mpcb_get(struct multipath_pcb *mpcb);
 void mpcb_put(struct multipath_pcb *mpcb);
 void mtcp_data_ready(struct sock *sk);
-int mtcp_bh_sndwnd_full(struct multipath_pcb *mpcb, struct sock *cursk);
-int mtcp_reallocate(struct multipath_pcb *mpcb);
 void mtcp_push_frames(struct sock *sk);
 int mtcp_v4_add_raddress(struct multipath_options *mopt,			
 			 struct in_addr *addr, u8 id);

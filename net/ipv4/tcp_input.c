@@ -4932,11 +4932,6 @@ static inline void push_other_subsock(struct sock *sk)
 {
 	int bh=in_interrupt();
 
-	tcp_sk(sk)->dont_realloc=1; /*Disable reallocation checks. This is
-				      needed because we have two locked socks
-				      in hand, so the reallocation would 
-				      deadlock when locking the whole socket
-				      array*/
 	if (bh) bh_lock_sock(sk);
 	else lock_sock(sk);
 	
@@ -4948,7 +4943,6 @@ static inline void push_other_subsock(struct sock *sk)
 	
 	if (bh) bh_unlock_sock(sk);
 	else release_sock(sk);	
-	tcp_sk(sk)->dont_realloc=0;
 }
 #endif
 
@@ -4984,7 +4978,7 @@ static inline void tcp_data_snd_check(struct sock *sk)
 		  Then, if the flow is still available as decided by mtcp,
 		  we can wake up the mptcp scheduler, so that it possibly
 		  injects more data into that subflow*/
-		if ((mtcp_is_available(sk) || mpcb->need_realloc)&& 
+		if ((mtcp_is_available(sk))&& 
 		    !mpcb->liberate_subflow.done) {
 			signal_sent=1;
 			complete(&mpcb->liberate_subflow);

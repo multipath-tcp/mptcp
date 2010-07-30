@@ -1187,14 +1187,8 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			break;
 
 		wait_for_sndbuf:
-			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);		
-#ifdef CONFIG_MTCP
-			/*If we arrive here, then reallocation has happened
-			  under our feet. Just give control back to the
-			  scheduler*/
-			if(tp->mpcb && tp->mpcb->cnt_subflows!=1)
-				break;
-#endif
+			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+
 		wait_for_memory:
 			if (copied)
 				tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
@@ -2618,10 +2612,6 @@ void tcp_close(struct sock *sk, long timeout)
 		skb_queue_purge(&mpcb->receive_queue);
 		skb_queue_purge(&mpcb->out_of_order_queue);
 
-		/*For the realloc queue, instead of purging, we push all the
-		  meta-data for last round or scheduling.*/
-		if (!skb_queue_empty(&mpcb->realloc_queue))
-			mtcp_reallocate(mpcb);
 		/*We MUST close the master socket in the last place.
 		  this is indeed the case, because the master socket is at the
 		  end of the subsocket list.*/

@@ -141,6 +141,9 @@ static __u16 tcp_advertise_mss(struct sock *sk)
 	if (dst && dst_metric(dst, RTAX_ADVMSS) < mss) {
 		mss = dst_metric(dst, RTAX_ADVMSS);
 		tp->advmss = mss;
+#ifdef CONFIG_MTCP
+		tp->mss_too_low=1;
+#endif
 	}
 
 	return (__u16)mss;
@@ -1775,28 +1778,11 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		}
 
 		if (unlikely(!tcp_snd_wnd_test(tp, skb, mss_now))) {
-			int cont=0;
-#ifdef CONFIG_MTCP
-			if (tp->mpcb) {
-				if (in_interrupt() && !tp->dont_realloc) {
-					/*Try to realloc. If realloc was 
-					  successful (we know that by checking
-					  again tcp_snd_wnd_test), continue
-					  what we were doing*/
-					if (mtcp_bh_sndwnd_full(tp->mpcb, sk) &&
-					    tcp_snd_wnd_test(tp,skb,mss_now))
-						cont=1;
-				}
-				else tp->mpcb->need_realloc=1;
-			}
-#endif
-			if (!cont) {
-				if (bug_on_sendhead_move)
-					printk(KERN_ERR "cannot send: no sndwnd\n");
-				break;
-			}
+			if (bug_on_sendhead_move)
+				printk(KERN_ERR "cannot send: no sndwnd\n");
+			break;
 		}
-
+		
 		if (tso_segs == 1) {
 			if (unlikely(!tcp_nagle_test(tp, skb, mss_now,
 						     (tcp_skb_is_last(sk, skb) ?
@@ -2759,7 +2745,13 @@ static void tcp_connect_init(struct sock *sk)
 
 	if (!tp->window_clamp)
 		tp->window_clamp = dst_metric(dst, RTAX_WINDOW);
+#ifdef CONFIG_MTCP
+	tp->advmss = MPTCP_MSS;
+	if (tp->advmss>dst_metric(dst,RTAX_ADVMSS))
+		tp->mss_too_low=1;
+#else
 	tp->advmss = dst_metric(dst, RTAX_ADVMSS);
+#endif
 	if (tp->rx_opt.user_mss && tp->rx_opt.user_mss < tp->advmss)
 		tp->advmss = tp->rx_opt.user_mss;
 
