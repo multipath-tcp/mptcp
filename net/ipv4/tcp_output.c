@@ -1563,7 +1563,7 @@ static int tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb)
 		goto send_now;
 
 	if (sysctl_tcp_tso_win_divisor) {
-		u32 snd_wnd=(tp->mpc)?tp->mpcb->snd_wnd:tp->snd_wnd;
+		u32 snd_wnd=(tp->mpc)?tp->mpcb->tp.snd_wnd:tp->snd_wnd;
 		u32 chunk = min(snd_wnd, tp->snd_cwnd * tp->mss_cache);
 		
 		/* If at least some fraction of a window is available,
@@ -1607,7 +1607,7 @@ static int tcp_mtu_probe(struct sock *sk)
 	int size_needed;
 	int copy;
 	int mss_now;
-	u32 snd_wnd=(tp->mpc)?tp->mpcb->snd_wnd:tp->snd_wnd;
+	u32 snd_wnd=(tp->mpc)?tp->mpcb->tp.snd_wnd:tp->snd_wnd;
 
 	/* Not currently probing/verifying,
 	 * not in recovery,
@@ -2038,7 +2038,7 @@ u32 __tcp_select_window(struct sock *sk)
 	 */
 	mss = icsk->icsk_ack.rcv_mss;
 	free_space = mtcp_space(sk);
-	full_space = min_t(int, mpcb->window_clamp, mtcp_full_space(sk));
+	full_space = min_t(int, mpcb->tp.window_clamp, mtcp_full_space(sk));
 
 	if (mss > full_space)
 		mss = full_space;
@@ -2056,8 +2056,8 @@ u32 __tcp_select_window(struct sock *sk)
 			return 0;
 	}
 
-	if (free_space > mpcb->rcv_ssthresh) {
-		free_space = mpcb->rcv_ssthresh;
+	if (free_space > mpcb->tp.rcv_ssthresh) {
+		free_space = mpcb->tp.rcv_ssthresh;
 	}
 
 	/* Don't do rounding if we are using window scaling, since the
@@ -2539,7 +2539,7 @@ void tcp_send_fin(struct sock *sk)
 			if (tp->pending)
 				mpcb=mtcp_hash_find(tp->mtcp_loc_token);
 			if (mpcb) {
-				TCP_SKB_CB(skb)->data_seq=mpcb->write_seq++;
+				TCP_SKB_CB(skb)->data_seq=mpcb->tp.write_seq++;
 				TCP_SKB_CB(skb)->end_data_seq=
 					TCP_SKB_CB(skb)->data_seq+1;
 				TCP_SKB_CB(skb)->data_len=1;

@@ -23,6 +23,7 @@
 #include <linux/types.h>
 #include <linux/in.h>
 #include <linux/in6.h>
+#include <linux/skbuff.h>
 
 #define MTCP_MAX_ADDR 3 /*Max number of local or remote addresses we can store*/
 

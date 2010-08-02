@@ -23,6 +23,7 @@
 #define _TCP_OPTIONS_H
 
 #include <linux/types.h>
+#include <net/mtcp_pm.h>
 
 #define OPTION_SACK_ADVERTISE	(1 << 0)
 #define OPTION_TS		(1 << 1)
@@ -73,6 +74,16 @@ struct tcp_options_received {
  	u32     mtcp_rem_token; /* Remote token, for mptcp */
 	u32     rcv_isn; /*Needed to retrieve abs subflow seqnum from the
 			   relative version.*/	
+#endif
+};
+
+struct multipath_options {	
+#ifdef CONFIG_MTCP_PM
+	int    num_addr4; 
+	int    num_addr6;
+	struct mtcp_loc4 addr4[MTCP_MAX_ADDR];
+	struct mtcp_loc6 addr6[MTCP_MAX_ADDR];
+	u8     list_rcvd:1; /*1 if IP list has been received*/	
 #endif
 };
 

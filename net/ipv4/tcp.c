@@ -601,10 +601,16 @@ static inline void skb_entail(struct sock *sk, struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
+	struct tcp_sock *mpcb_tp=(struct tcp_sock*)mpcb;
 
 	skb->csum     = 0;
+#ifdef CONFIG_MTCP
+	/*the subflow seqnum will be given later*/
+	tcb->seq      = tcb->end_seq = tcb->sub_seq = 0;
+#else
 	tcb->seq      = tcb->end_seq = tcb->sub_seq = tp->write_seq;
-	tcb->data_seq = tcb->end_data_seq = mpcb->write_seq;
+#endif
+	tcb->data_seq = tcb->end_data_seq = mpcb_tp->write_seq;
 	tcb->data_len = 0;
 	tcb->flags    = TCPCB_FLAG_ACK;
 	tcb->sacked   = 0;
@@ -954,17 +960,13 @@ int tcp_sendmsg(struct kiocb *iocb, struct socket *sock,
  * In the original version of tcp_sendmsg, size is not used.
  * If CONFIG_MTCP is set, size is interpreted as the offset inside the message
  * to copy from. (that is, byte 0 to size-1 are simply ignored.
- * Moreover, in an MTCP context, this function only eats 1 segment
- * since another subsocket can eat the rest.
+ * With mptcp, @sk must be the master subsocket.
  */
 int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		   size_t size)
 {
 	struct iovec *iov;
 	struct tcp_sock *tp = tcp_sk(sk);
-#ifdef CONFIG_MTCP
-	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
-#endif
 	struct sk_buff *skb;
 	int iovlen, flags;
 	int mss_now, size_goal;
@@ -987,8 +989,14 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	/* This should be in poll */
 	clear_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
 
+#ifdef CONFIG_MTCP
+	/*If we want to support TSO later, we'll need 
+	  to define xmit_size_goal to something much larger*/
+	mss_now = size_goal = MPTCP_MSS;
+#else
 	mss_now = tcp_current_mss(sk, !(flags&MSG_OOB));
 	size_goal = tp->xmit_size_goal;
+#endif
 
 	/* Ok commence sending. */
 	iovlen = msg->msg_iovlen;
@@ -996,8 +1004,10 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	copied = 0;
 
 	err = -EPIPE;
+#ifndef CONFIG_MTCP
 	if (sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN))
 		goto do_error;
+#endif
 
 	PDEBUG_SEND("%s:line %d, size %d,iovlen %d\n",__FUNCTION__,
 	       __LINE__,(int)size,(int)iovlen);
@@ -1026,14 +1036,7 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			int copy;
 
 			skb = tcp_write_queue_tail(sk);
-
 			if (!tcp_send_head(sk) || 
-#ifdef CONFIG_MTCP
-			    /*need a new segment if the DSNs are not 
-			      contiguous*/
-			    (tp->mpc && 
-			     mpcb->write_seq!=TCP_SKB_CB(skb)->end_data_seq) ||
-#endif
 			    (copy = size_goal - skb->len) <= 0) {
 			new_segment:
 
@@ -1145,7 +1148,6 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 			if (!copied)
 				TCP_SKB_CB(skb)->flags &= ~TCPCB_FLAG_PSH;
-
 			tp->write_seq += copy;
 			TCP_SKB_CB(skb)->end_seq += copy;
 			skb_shinfo(skb)->gso_segs = 0;
@@ -1153,14 +1155,6 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			if (tp->mpc) {
 				TCP_SKB_CB(skb)->data_len += copy;
 				TCP_SKB_CB(skb)->end_data_seq += copy;
-				
-				mpcb->write_seq += copy;
-				PDEBUG_SEND("write_seq now %x, copied %d"
-					    " bytes to skb %p\n",
-					    mpcb->write_seq,
-					    copy,skb);
-				PDEBUG_SEND("skb->len is %d\n",
-					    skb->len);
 			}
 #endif
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
@@ -1175,16 +1169,17 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 				continue;
 
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
+#ifdef CONFIG_MTCP
+			/*Here, call an MPTCP version of push_pending_frames/
+			  push_one*/
+#else
 			if (forced_push(tp)) {
 				tcp_mark_push(tp, skb);
 				__tcp_push_pending_frames(sk, mss_now, TCP_NAGLE_PUSH);
 			} else if (skb == tcp_send_head(sk))
 				tcp_push_one(sk, mss_now);
-			
-			/*Once we have filled one skb, we give control back to 
-			  the scheduler*/
-
-			break;
+#endif		       			
+			continue;
 
 		wait_for_sndbuf:
 			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
@@ -1207,12 +1202,10 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	}
 
 out:
+#ifndef CONFIG_MTCP
 	if (copied)
 		tcp_push(sk, flags, mss_now, tp->nonagle);
-	/*Protection against Nagle blocking*/
-	if ((tcp_send_head(sk)) && (size_goal-tcp_write_queue_tail(sk)->len>0))
-		mpcb->last_sk=sk;
-	else mpcb->last_sk=NULL;
+#endif
 
 	TCP_CHECK_TIMER(sk);
 	release_sock(sk);
@@ -1491,6 +1484,8 @@ int tcp_recvmsg_fallback(struct kiocb *iocb, struct sock *sk,
 	struct tcp_sock *tp = tcp_sk(sk);
 #ifdef CONFIG_MTCP
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+	struct sock *mpcb_sk=(struct sock*)mpcb;
+	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
 #else
 #define mpcb tp
 #endif
@@ -1720,7 +1715,7 @@ do_prequeue:
 			if (net_ratelimit())
 				printk(KERN_DEBUG "TCP(%s:%d): Application bug, race in MSG_PEEK.\n",
 				       current->comm, task_pid_nr(current));
-			peek_seq = mpcb->copied_seq;
+			peek_seq = mpcb_tp->copied_seq;
 		}
 		continue;
 
@@ -1907,6 +1902,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	struct sock *sk;
 	struct tcp_sock *tp;
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(master_tp);
+	struct sock *mpcb_sk=(struct sock*) mpcb;
+	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
 	int copied = 0;
 	u32 peek_data_seq;
 	u32 *data_seq;
@@ -1963,7 +1960,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		/*We put this because it is not sure at all that MSG_PEEK
 		  works correctly.*/
 		printk(KERN_ERR "Warning: MSG_PEEK is set...\n");
-		peek_data_seq = mpcb->copied_seq;
+		peek_data_seq = mpcb_tp->copied_seq;
 		data_seq = &peek_data_seq; /*global pointer*/
 		mtcp_for_each_tp(mpcb,tp) {
 			tp->peek_seq=tp->copied_seq;
@@ -1971,7 +1968,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		}
 	}
 	else {
-		data_seq = &mpcb->copied_seq; /*global pointer*/
+		data_seq = &mpcb_tp->copied_seq; /*global pointer*/
 		mtcp_for_each_tp(mpcb,tp)
 			tp->seq=&tp->copied_seq; /*local pointer*/
 	}
@@ -1985,9 +1982,9 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	}
 	
 	/*Start by checking if skbs are waiting on the mpcb receive queue*/
-	PDEBUG("%d: copied_seq:%x\n",__LINE__,mpcb->copied_seq);
+	PDEBUG("%d: copied_seq:%x\n",__LINE__,mpcb_tp->copied_seq);
 	err=mtcp_check_rcv_queue(mpcb,msg, &len, data_seq, &copied, flags);
-	PDEBUG("%d: copied_seq:%x\n",__LINE__,mpcb->copied_seq);
+	PDEBUG("%d: copied_seq:%x\n",__LINE__,mpcb_tp->copied_seq);
 	if (err<0) {
 		printk(KERN_ERR "error in mtcp_check_rcv_queue\n");
 		/* Exception. Bailout! */
@@ -2014,7 +2011,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	  further data is already available for later. (and set the 
 	  pending_data flag accordingly).
 	*/
-	if (!skb_queue_empty(&mpcb->receive_queue)) goto skip_loop;
+	if (!skb_queue_empty(&mpcb_sk->sk_receive_queue)) goto skip_loop;
 
 	do {
 		u32 offset;
@@ -2041,7 +2038,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 
 		/* Next get a buffer. */
 		mtcp_for_each_sk(mpcb,sk,tp) {
-			struct sk_buff *first_ofo=skb_peek(&mpcb->out_of_order_queue); /*TODEL*/
+			struct sk_buff *first_ofo=skb_peek(
+				&mpcb_tp->out_of_order_queue); /*TODEL*/
 
 			skb = skb_peek(&sk->sk_receive_queue);
 			if (!skb)
@@ -2081,7 +2079,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			       skb->len);
 			printk(KERN_ERR "mpcb->copied_seq:%x,"
 			       "skb->data_seq:%x,"
-			       "skb->len:%d, offset:%d\n",mpcb->copied_seq,
+			       "skb->len:%d, offset:%d\n",mpcb_tp->copied_seq,
 			       TCP_SKB_CB(skb)->data_seq,
 			       skb->len,(int)offset);
 			
@@ -2089,9 +2087,9 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			       "  meta-recv queue:%d\n"
 			       "  meta-ofo queue:%d\n"
 			       "  first seq,dataseq in meta-ofo-queue:%x,%x\n",
-			       mpcb->copied_seq,
-			       skb_queue_len(&mpcb->receive_queue),
-			       skb_queue_len(&mpcb->out_of_order_queue),
+			       mpcb_tp->copied_seq,
+			       skb_queue_len(&mpcb_sk->sk_receive_queue),
+			       skb_queue_len(&mpcb_tp->out_of_order_queue),
 			       first_ofo?TCP_SKB_CB(first_ofo)->seq:0,
 			       first_ofo?TCP_SKB_CB(first_ofo)->data_seq:0);
 			mtcp_for_each_sk(mpcb,sk,tp) {
@@ -2248,7 +2246,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				len -= chunk;
 				copied += chunk;
 				/*Check if this fills a gap in the ofo queue*/
-				if (!skb_queue_empty(&mpcb->out_of_order_queue))
+				if (!skb_queue_empty(
+					    &mpcb_tp->out_of_order_queue))
 				{
 					mtcp_ofo_queue(mpcb,msg,&len,data_seq,
 						       &copied, flags);
@@ -2287,7 +2286,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 						/*Check if this fills a gap in 
 						  the ofo queue*/
 						if (!skb_queue_empty(
-							    &mpcb->
+							    &mpcb_tp->
 							    out_of_order_queue))
 						{
 							mtcp_ofo_queue(mpcb,
@@ -2401,7 +2400,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				       data_seq,&copied,flags);
 		if (!(flags & MSG_PEEK) && mtcp_op == MTCP_EATEN)
 			sk_eat_skb(skb->sk, skb, 0);
-	} while ((len > 0 || skb_queue_empty(&mpcb->receive_queue)) && 
+	} while ((len > 0 || skb_queue_empty(&mpcb_sk->sk_receive_queue)) && 
 		 !finished);
 /*Note on the above while condition:
   we try to force reading data until at least one segment is put
@@ -2416,7 +2415,7 @@ skip_loop:
 	  it changes to 1 before to leave, here, if tcp_data_queue
 	  (called by tcp_prequeue_process) finds the next app byte.*/
 	if (((flags & MSG_PEEK) && copied) ||
-	    !skb_queue_empty(&mpcb->receive_queue)) {
+	    !skb_queue_empty(&mpcb_sk->sk_receive_queue)) {
 		mpcb->pending_data=1;
 	}
 	else mpcb->pending_data=0;
@@ -2441,7 +2440,8 @@ skip_loop:
 					/*Check if this fills a gap in the ofo 
 					  queue*/
 					if (!skb_queue_empty(
-						    &mpcb->out_of_order_queue))
+						    &mpcb_tp->
+						    out_of_order_queue))
 						mtcp_ofo_queue(mpcb,msg,&len,
 							       data_seq, 
 							       &copied, flags);
@@ -2604,13 +2604,15 @@ void tcp_close(struct sock *sk, long timeout)
 	PDEBUG("%s:app close\n",__FUNCTION__);
 	if (is_master_sk(tcp_sk(sk))) {
 		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
+		struct sock *mpcb_sk=(struct sock*)mpcb;
+		struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
 		struct sock *slave_sk,*temp;
 		
 		/*Purging the meta-queues. This MUST be done before
 		  to close any subsocket. See comment in function 
 		  mtcp_destroy_mpcb()*/
-		skb_queue_purge(&mpcb->receive_queue);
-		skb_queue_purge(&mpcb->out_of_order_queue);
+		skb_queue_purge(&mpcb_sk->sk_receive_queue);
+		skb_queue_purge(&mpcb_tp->out_of_order_queue);
 
 		/*We MUST close the master socket in the last place.
 		  this is indeed the case, because the master socket is at the

@@ -285,19 +285,22 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 	  is not called*/
 	if (newsk->sk_protocol==IPPROTO_TCP) {
 		struct tcp_sock *tp=tcp_sk(newsk);
-		struct multipath_pcb *mpcb;		
-		mpcb=mtcp_alloc_mpcb(newsk);
+		struct multipath_pcb *mpcb=mtcp_alloc_mpcb(newsk);
+		struct tcp_sock *mpcb_tp=(struct tcp_sock *)mpcb;
+		
+		BUG_ON(!mpcb);
+
 		if (tp->mopt.list_rcvd)
 			memcpy(&mpcb->received_options,&tp->mopt,
 			       sizeof(tp->mopt));
 		tp->path_index=0;		
 		mtcp_add_sock(mpcb,tp);
 		mtcp_update_metasocket(newsk);
-		mpcb->write_seq=0; /*first byte is IDSN
-				     To be replaced later with a random IDSN
-				     (well, if it indeed improve security)*/
+		mpcb_tp->write_seq=0; /*first byte is IDSN
+					To be replaced later with a random IDSN
+					(well, if it indeed improve security)*/
 		
-		mpcb->copied_seq=0; /* First byte of yet unread data */
+		mpcb_tp->copied_seq=0; /* First byte of yet unread data */
 		mpcb->server_side=1;
 		mtcp_ask_update(newsk);
 	}

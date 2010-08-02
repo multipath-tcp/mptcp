@@ -20,7 +20,8 @@
 #include <linux/types.h>
 #include <asm/byteorder.h>
 #include <linux/socket.h>
-#include <net/mtcp.h>
+
+struct multipath_pcb;
 
 struct tcphdr {
 	__be16	source;

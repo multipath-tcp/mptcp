@@ -29,6 +29,7 @@
 #include <linux/completion.h>
 #include <linux/skbuff.h>
 #include <linux/list.h>
+#include <linux/tcp.h>
 
 #include <net/request_sock.h>
 #include <net/mtcp_pm.h>
@@ -48,18 +49,6 @@
 #define MTCP_DEBUG_DATA_QUEUE 0x8
 #define MTCP_DEBUG_COPY_TO_IOVEC 0x10
 
-
-struct multipath_options {	
-#ifdef CONFIG_MTCP_PM
-	int    num_addr4; 
-	int    num_addr6;
-	struct mtcp_loc4 addr4[MTCP_MAX_ADDR];
-	struct mtcp_loc6 addr6[MTCP_MAX_ADDR];
-	u8     list_rcvd:1; /*1 if IP list has been received*/	
-#endif
-};
-
-
 #ifdef MTCP_RCV_QUEUE_DEBUG
 struct mtcp_debug {
 	const char* func_name;
@@ -73,8 +62,6 @@ void freeze_rcv_queue(struct sock *sk, const char *func_name);
 #endif
 
 extern struct proto mtcpsub_prot;
-
-struct tcp_sock;
 
 struct dsn_sack {
 	struct list_head list;
@@ -90,10 +77,8 @@ struct dsn_sack {
 #define dsack_is_first(dsack,mpcb) (dsack==dsack_first(mpcb))
 
 struct multipath_pcb {
-	/*receive and send buffer sizing*/
-	int                       rcvbuf, sndbuf;
-	atomic_t                  rmem_alloc;       
-	
+	struct tcp_sock           tp;
+
 	/*connection identifier*/
 	sa_family_t               sa_family;
 	xfrm_address_t            remote_ulid, local_ulid;
@@ -105,18 +90,11 @@ struct multipath_pcb {
 	/*Master socket, also part of the connection_list, this
 	  socket is the one that the application sees.*/
 	struct sock*              master_sk;
-	/*Last scheduled subsocket. If this pointer is not NULL, 
-	  then the last scheduled subsocket has remaining space 
-	  in it tail skb. This means we should reschedule it, to avoid
-	  that Nagle blocks it.*/
-	struct sock*              last_sk;
 	/*socket count in this connection*/
 	int                       cnt_subflows;    
 	int                       syn_sent;
 	int                       cnt_established;
 	
-	/*state, for faster tests in code*/
-	int                       state;
 	int                       err;
 	
 	char                      done;
@@ -137,19 +115,7 @@ struct multipath_pcb {
 	struct multipath_options  received_options;
 	struct tcp_options_received tcp_opt;
 
-	u32    write_seq;  /*data sequence number, counts the number of 
-			     bytes the user has written so far */
-	u32    copied_seq; /* Head of yet unread data*/
-
-	u32    snd_una;
-	u32    snd_wnd;	    /* The window we expect to receive	*/
-	u32    max_window;  /* Maximal window ever seen from peer */
-	struct list_head          dsack_list;
-	
-	struct sk_buff_head       receive_queue;/*received data*/
-	struct sk_buff_head       out_of_order_queue; /* Out of order segments 
-							 go here */
-	struct sk_buff_head       write_queue; /*Global write queue*/
+	struct list_head          dsack_list;	
 	int                       ofo_bytes; /*Counts the number of bytes 
 					       waiting to be eaten by the app
 					       in the meta-ofo queue or the
@@ -160,10 +126,6 @@ struct multipath_pcb {
 	struct kref               kref;	
 	struct completion         liberate_subflow;
 	struct notifier_block     nb; /*For listening to PM events*/
-
-	/*Receive window management*/
-	u32                       window_clamp;
-	u32                       rcv_ssthresh;
 
 	uint8_t                   server_side:1, /*1 if this mpcb belongs
 						   to a server side connection.
@@ -176,8 +138,6 @@ struct multipath_pcb {
 						    subflows*/
 
 #ifdef CONFIG_MTCP_PM
-	/*accept queue (to store join requests)*/
-	struct request_sock_queue accept_queue;
 	struct list_head          collide_tk;
 	uint8_t                   addr_unsent; /* num of addrs not yet
 				                  sent to our peer */
@@ -367,4 +327,5 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 
 void verif_wqueues(struct multipath_pcb *mpcb);
 void mtcp_check_eat_old_seg(struct sock *sk, struct sk_buff *skb);
+
 #endif /*_MTCP_H*/

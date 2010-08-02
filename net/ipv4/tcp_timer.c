@@ -66,7 +66,7 @@ static int tcp_out_of_resources(struct sock *sk, int do_reset)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	int orphans = atomic_read(&tcp_orphan_count);
-	u32 snd_wnd=(tp->mpc && tp->mpcb)?tp->mpcb->snd_wnd:tp->snd_wnd;
+	u32 snd_wnd=(tp->mpc && tp->mpcb)?tp->mpcb->tp.snd_wnd:tp->snd_wnd;
 
 	/* If peer does not open window for long time, or did not transmit
 	 * anything for long time, penalize it. */
@@ -284,7 +284,7 @@ static void tcp_retransmit_timer(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
-	u32 snd_wnd=(tp->mpc && tp->mpcb)?tp->mpcb->snd_wnd:tp->snd_wnd;
+	u32 snd_wnd=(tp->mpc && tp->mpcb)?tp->mpcb->tp.snd_wnd:tp->snd_wnd;
 
 	if (!tp->packets_out)
 		goto out;

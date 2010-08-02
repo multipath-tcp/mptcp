@@ -94,7 +94,9 @@ struct multipath_pcb* mtcp_hash_find(u32 token)
 
 void mtcp_hash_remove(struct multipath_pcb *mpcb)
 {
-	struct listen_sock *lopt = mpcb->accept_queue.listen_opt;
+	struct inet_connection_sock *mpcb_icsk=
+		(struct inet_connection_sock*)mpcb;
+	struct listen_sock *lopt = mpcb_icsk->icsk_accept_queue.listen_opt;
 	
 	/*remove from the token hashtable*/
 	write_lock_bh(&tk_hash_lock);
@@ -130,7 +132,9 @@ void mtcp_hash_remove(struct multipath_pcb *mpcb)
 
 void mtcp_pm_release(struct multipath_pcb *mpcb)
 {
-	struct listen_sock *lopt = mpcb->accept_queue.listen_opt;
+	struct inet_connection_sock *mpcb_icsk=
+		(struct inet_connection_sock*)mpcb;
+	struct listen_sock *lopt = mpcb_icsk->icsk_accept_queue.listen_opt;
 		
 	/*Remove all pending request socks.*/
 	if (lopt->qlen != 0) {
@@ -154,10 +158,10 @@ void mtcp_pm_release(struct multipath_pcb *mpcb)
 	}
 
 	/*remove all pending child socks associated to this mpcb*/
-	while (!reqsk_queue_empty(&mpcb->accept_queue)) {
+	while (!reqsk_queue_empty(&mpcb_icsk->icsk_accept_queue)) {
 		struct sock *child;
 		struct request_sock *req;
-		req = reqsk_queue_remove(&mpcb->accept_queue);
+		req = reqsk_queue_remove(&mpcb_icsk->icsk_accept_queue);
 		child=req->sk;
 
 		/*The code hereafter comes from 
@@ -643,7 +647,9 @@ static inline u32 inet_synq_hash(const __be32 raddr, const __be16 rport,
 static void mtcp_reqsk_queue_hash_add(struct request_sock *req,
 				      unsigned long timeout)
 {
-	struct listen_sock *lopt = req->mpcb->accept_queue.listen_opt;
+	struct inet_connection_sock *mpcb_icsk=
+		(struct inet_connection_sock*)(req->mpcb);
+	struct listen_sock *lopt = mpcb_icsk->icsk_accept_queue.listen_opt;
 	const u32 h_local = inet_synq_hash(inet_rsk(req)->rmt_addr, 
 					   inet_rsk(req)->rmt_port,
 					   lopt->hash_rnd, 
@@ -654,7 +660,8 @@ static void mtcp_reqsk_queue_hash_add(struct request_sock *req,
 					    MTCP_HASH_SIZE);
 	spin_lock(&tuple_hash_lock);
 	spin_lock(&req->mpcb->lock);
-	reqsk_queue_hash_req(&req->mpcb->accept_queue, h_local, req, timeout);
+	reqsk_queue_hash_req(&mpcb_icsk->icsk_accept_queue, 
+			     h_local, req, timeout);
 	list_add(&req->collide_tuple,&tuple_hashtable[h_global]);
 	spin_unlock(&req->mpcb->lock);
 	spin_unlock(&tuple_hash_lock);
@@ -736,7 +743,9 @@ drop_and_free:
 static void mtcp_reqsk_local_remove(struct request_sock *r)
 {
 	struct multipath_pcb *mpcb=r->mpcb;
-	struct listen_sock *lopt = mpcb->accept_queue.listen_opt;
+	struct inet_connection_sock *mpcb_icsk=
+		(struct inet_connection_sock*)mpcb;
+	struct listen_sock *lopt = mpcb_icsk->icsk_accept_queue.listen_opt;
 	struct request_sock *req,**prev;
 	const struct inet_request_sock *i = inet_rsk(r);
 
@@ -750,7 +759,7 @@ static void mtcp_reqsk_local_remove(struct request_sock *r)
 	}
 	BUG_ON(!req);
 
-	reqsk_queue_unlink(&mpcb->accept_queue, req, prev);
+	reqsk_queue_unlink(&mpcb_icsk->icsk_accept_queue, req, prev);
 }
 
 /*inspired from inet_csk_search_req
@@ -832,6 +841,8 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 	struct multipath_options mtp;
 	struct sock *child;
 	struct multipath_pcb *mpcb=req->mpcb;
+	struct inet_connection_sock *mpcb_icsk=
+		(struct inet_connection_sock*)mpcb;
 
 	tmp_opt.saw_tstamp = 0;
 	if (th->doff > (sizeof(struct tcphdr)>>2)) {
@@ -1008,8 +1019,8 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 	spin_unlock(&tuple_hash_lock);
 	/*Deleting from local hashtable*/
 	mtcp_reqsk_local_remove(req);
-	reqsk_queue_removed(&mpcb->accept_queue, req);
-	mtcp_reqsk_queue_add(&mpcb->accept_queue, req, child);
+	reqsk_queue_removed(&mpcb_icsk->icsk_accept_queue, req);
+	mtcp_reqsk_queue_add(&mpcb_icsk->icsk_accept_queue, req, child);
 	return child;
 	
 listen_overflow:
@@ -1023,7 +1034,7 @@ embryonic_reset:
 		req->rsk_ops->send_reset(NULL, skb);
 
 	mtcp_reqsk_local_remove(req);
-	reqsk_queue_removed(&mpcb->accept_queue, req);
+	reqsk_queue_removed(&mpcb_icsk->icsk_accept_queue, req);
 	reqsk_free(req);
 	return NULL;
 }
@@ -1129,6 +1140,8 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 	struct inet_request_sock *ireq;
 	struct path4 *p;
 	int nb_new=0;
+	struct inet_connection_sock *mpcb_icsk=
+		(struct inet_connection_sock*)mpcb;
 
 	if (unlikely(mpcb->received_options.list_rcvd)) {
 		mpcb->received_options.list_rcvd=0;
@@ -1140,7 +1153,7 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 	
 	spin_lock_bh(&mpcb->lock);
 	/* make all the listen_opt local to us */
-	acc_req = reqsk_queue_yank_acceptq(&mpcb->accept_queue);
+	acc_req = reqsk_queue_yank_acceptq(&mpcb_icsk->icsk_accept_queue);
 	spin_unlock_bh(&mpcb->lock);
 
 	/*Probably the initial master sk path index can be set to 1 from 

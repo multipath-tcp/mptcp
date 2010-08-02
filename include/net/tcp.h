@@ -866,9 +866,10 @@ static inline u32 tcp_wnd_end(const struct tcp_sock *tp, int data_seq)
 	/*With MPTCP, we return the end DATASEQ number of the receiver's
 	  advertised window*/
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+	struct tcp_sock *mpcb_tp=(struct tcp_sock *)mpcb;
 	
-	if (!data_seq || !tp->mpc) return tp->snd_una + tp->snd_wnd;
-	else return mpcb->snd_una+mpcb->snd_wnd;
+	if (!data_seq || !tp->mpcb) return tp->snd_una + tp->snd_wnd;
+	else return mpcb_tp->snd_una+mpcb_tp->snd_wnd;
 }
 
 extern int tcp_is_cwnd_limited(const struct sock *sk, u32 in_flight);
