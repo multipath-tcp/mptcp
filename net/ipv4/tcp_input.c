@@ -4931,52 +4931,12 @@ void tcp_check_space(struct sock *sk)
 	}
 }
 
-#ifdef CONFIG_MTCP
-static inline void push_other_subsock(struct sock *sk)
-{
-	int bh=in_interrupt();
-
-	if (bh) bh_lock_sock(sk);
-	else lock_sock(sk);
-	
-	/*When calling this, we have two subsocks locked:
-	  this one, and the one that received the ack triggering the push
-	  on this subsock. */
-	tcp_push_pending_frames(sk);
-	tcp_check_space(sk);	
-	
-	if (bh) bh_unlock_sock(sk);
-	else release_sock(sk);	
-}
-#endif
-
-int signal_sent=0;
 static inline void tcp_data_snd_check(struct sock *sk)
 {
-	tcp_push_pending_frames(sk);
-	tcp_check_space(sk);
-	
-#ifdef CONFIG_MTCP
-	{
-		struct tcp_sock *tp = tcp_sk(sk);
-		struct tcp_sock *tp_it;
-		struct sock *sk_it;
-		struct multipath_pcb *mpcb;
-		if (!tp->mpc) return;		
-
-		mpcb=mpcb_from_tcpsock(tp);
-
-		mtcp_for_each_sk(mpcb,sk_it,tp_it) {
-			if (sk_it==sk) /*already done*/
-				continue;
-			if (sock_owned_by_user(sk_it))
-				tp_it->push_frames=1; /*let release_sock
-							do it*/
-			else
-				push_other_subsock(sk_it);
-		}
-	}
-#endif
+	struct sock *mpcb_sk=(tcp_sk(sk)->mpcb)?
+		((struct sock*)tcp_sk(sk)->mpcb):sk;
+	tcp_push_pending_frames(mpcb_sk);
+	tcp_check_space(mpcb_sk);
 }
 
 /*
