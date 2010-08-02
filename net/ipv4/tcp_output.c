@@ -69,25 +69,22 @@ int sysctl_tcp_base_mss __read_mostly = 512;
 /* By default, RFC2861 behavior.  */
 int sysctl_tcp_slow_start_after_idle __read_mostly = 1;
 
-extern int bug_on_sendhead_move;
 static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int prior_packets = tp->packets_out;
+	int meta_sk=is_meta_sk(tp);
 
 	tcp_advance_send_head(sk, skb);
-	tp->snd_nxt = TCP_SKB_CB(skb)->end_seq;
-
-	/*If this triggers, then we were stall, while in fact we were able to
-	  send data.*/
-	BUG_ON(bug_on_sendhead_move);
+	tp->snd_nxt = meta_sk?TCP_SKB_CB(skb)->end_data_seq:
+		TCP_SKB_CB(skb)->end_seq;
 
 	/* Don't override Nagle indefinitely with F-RTO */
 	if (tp->frto_counter == 2)
 		tp->frto_counter = 3;
 
 	tp->packets_out += tcp_skb_pcount(skb);
-	if (!prior_packets)
+	if (!prior_packets && !is_meta_sk(tp))
 		inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
 					  inet_csk(sk)->icsk_rto, TCP_RTO_MAX);
 }
@@ -1327,7 +1324,7 @@ static unsigned int tcp_mss_split_point(struct sock *sk, struct sk_buff *skb,
  * congestion window rules?  If so, return how many segments are allowed.
  */
 static inline unsigned int tcp_cwnd_test(struct tcp_sock *tp,
-					 struct sk_buff *skb)
+				  struct sk_buff *skb)
 {
 	u32 in_flight, cwnd;
 
@@ -1523,75 +1520,6 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	return 0;
 }
 
-/* Try to defer sending, if possible, in order to minimize the amount
- * of TSO splitting we do.  View it as a kind of TSO Nagle test.
- *
- * This algorithm is from John Heffner.
- */
-static int tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	const struct inet_connection_sock *icsk = inet_csk(sk);
-	u32 send_win, cong_win, limit, in_flight;
-
-	if (TCP_SKB_CB(skb)->flags & TCPCB_FLAG_FIN)
-		goto send_now;
-
-	if (icsk->icsk_ca_state != TCP_CA_Open)
-		goto send_now;
-
-	/* Defer for less than two clock ticks. */
-	if (tp->tso_deferred &&
-	    ((jiffies << 1) >> 1) - (tp->tso_deferred >> 1) > 1)
-		goto send_now;
-
-	in_flight = tcp_packets_in_flight(tp);
-
-	BUG_ON(tcp_skb_pcount(skb) <= 1 || (tp->snd_cwnd <= in_flight));
-
-	send_win = tcp_wnd_end(tp,tp->mpc) - 
-		((tp->mpc)?TCP_SKB_CB(skb)->data_seq:
-		 TCP_SKB_CB(skb)->seq);
-	
-	/* From in_flight test above, we know that cwnd > in_flight.  */
-	cong_win = (tp->snd_cwnd - in_flight) * tp->mss_cache;
-
-	limit = min(send_win, cong_win);
-
-	/* If a full-sized TSO skb can be sent, do it. */
-	if (limit >= sk->sk_gso_max_size)
-		goto send_now;
-
-	if (sysctl_tcp_tso_win_divisor) {
-		u32 snd_wnd=(tp->mpc)?tp->mpcb->tp.snd_wnd:tp->snd_wnd;
-		u32 chunk = min(snd_wnd, tp->snd_cwnd * tp->mss_cache);
-		
-		/* If at least some fraction of a window is available,
-		 * just use it.
-		 */
-		chunk /= sysctl_tcp_tso_win_divisor;
-		if (limit >= chunk)
-			goto send_now;
-	} else {
-		/* Different approach, try not to defer past a single
-		 * ACK.  Receiver should ACK every other full sized
-		 * frame, so if we have space for more than 3 frames
-		 * then send now.
-		 */
-		if (limit > tcp_max_burst(tp) * tp->mss_cache)
-			goto send_now;
-	}
-
-	/* Ok, it looks like it is advisable to defer.  */
-	tp->tso_deferred = 1 | (jiffies << 1);
-
-	return 1;
-
-send_now:
-	tp->tso_deferred = 0;
-	return 0;
-}
-
 /* Create a new MTU probe if we are ready.
  * Returns 0 if we should wait to probe (no cwnd available),
  *         1 if a probe was sent,
@@ -1738,104 +1666,92 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *skb;
-	unsigned int tso_segs, sent_pkts;
+	unsigned int sent_pkts;
 	int cwnd_quota;
 	int result;
+
+	if (tp->mpcb) {
+		BUG_ON(!is_meta_sk(tp));
+		BUG_ON(mss_now!=MPTCP_MSS);
+	}
 
 	/* If we are closed, the bytes will have to remain here.
 	 * In time closedown will finish, we empty the write queue and all
 	 * will be happy.
 	 */
-	if (unlikely(sk->sk_state == TCP_CLOSE)) {
-		if (bug_on_sendhead_move)
-			printk(KERN_ERR "cannot send: state is closed\n");
+	if (unlikely(sk->sk_state == TCP_CLOSE))
 		return 0;
-	}
 
 	sent_pkts = 0;
 
-	/* Do MTU probing. */
-	if ((result = tcp_mtu_probe(sk)) == 0) {
-		if (bug_on_sendhead_move)
-			printk(KERN_ERR "cannot send: mtu probe failed\n");
+	/* Do MTU probing. */	
+	if ((result = tcp_mtu_probe(sk)) == 0)
 		return 0;
-	} else if (result > 0) {
+	else if (result > 0) {
 		sent_pkts = 1;
 	}
 
 	while ((skb = tcp_send_head(sk))) {
 		unsigned int limit;
 		int err;
+		struct sock *subsk=get_available_subflow(tp->mpcb, skb);
+		struct tcp_sock *subtp=tcp_sk(subsk);
+		struct sk_buff *subskb;
 
-		tso_segs = tcp_init_tso_segs(sk, skb, mss_now);
-		BUG_ON(!tso_segs);
-
-		cwnd_quota = tcp_cwnd_test(tp, skb);
-		if (!cwnd_quota) {
-			if (bug_on_sendhead_move)
-				printk(KERN_ERR "cannot send: no cwnd\n");
+		if (tp->mpcb && !subsk)
 			break;
+		if (!tp->mpcb) {
+			subsk=sk; subtp=tp;
 		}
 
-		if (unlikely(!tcp_snd_wnd_test(tp, skb, mss_now))) {
-			if (bug_on_sendhead_move)
-				printk(KERN_ERR "cannot send: no sndwnd\n");
-			break;
-		}
+		/*decide to which subsocket we give the skb*/
 		
-		if (tso_segs == 1) {
-			if (unlikely(!tcp_nagle_test(tp, skb, mss_now,
-						     (tcp_skb_is_last(sk, skb) ?
-						      nonagle : TCP_NAGLE_PUSH)))) {
-				if (bug_on_sendhead_move)
-					printk(KERN_ERR "cannot send: nagle blocked\n");
-				break;
-			}
-		} else {
-			if (tcp_tso_should_defer(sk, skb)) {
-				if (bug_on_sendhead_move)
-					printk(KERN_ERR "cannot send: tso should defer\n");
-				break;
-			}
-		}
+		cwnd_quota = tcp_cwnd_test(subtp, skb);
+		if (!cwnd_quota)
+			break;
+
+		if (unlikely(!tcp_snd_wnd_test(subtp, skb, mss_now)))
+			break;
+		
+		if (unlikely(!tcp_nagle_test(tp, skb, mss_now,
+					     (tcp_skb_is_last(sk, skb) ?
+					      nonagle : 
+					      TCP_NAGLE_PUSH))))
+			break;
 
 		limit = mss_now;
-		if (tso_segs > 1 && !tcp_urg_mode(tp))
-			limit = tcp_mss_split_point(sk, skb, mss_now,
-						    cwnd_quota);
 
 		if (skb->len > limit &&
-		    unlikely(tso_fragment(sk, skb, limit, mss_now))) {
-			if (bug_on_sendhead_move)
-				printk(KERN_ERR "cannot send: tso_fragment\n");
+		    unlikely(tso_fragment(sk, skb, limit, mss_now)))
 			break;
-		}
 
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
-		
-		PDEBUG("%s:seq is %x, len is %d\n",__FUNCTION__,
-		       TCP_SKB_CB(skb)->seq,skb->len);
-		if (unlikely(err=tcp_transmit_skb(sk, skb, 1, GFP_ATOMIC))) {
-			PDEBUG("%s:transmit failed,pi %d ,err:%d\n\n",
-			       __FUNCTION__,skb->path_index,err);	
-			if (bug_on_sendhead_move)
-				printk(KERN_ERR "cannot send: transmit_skb failed\n");
-			break;
-		}
 
+		if (tp->mpcb) {
+			subskb=skb_clone(skb,GFP_ATOMIC);
+			if (!subskb) break;
+			mtcp_skb_entail(subsk, skb);
+		}
+		else subskb=skb;
+		
+		if (unlikely(err=tcp_transmit_skb(subsk, subskb, 1, 
+						  GFP_ATOMIC)))
+			break;
+		
 		/* Advance the send_head.  This one is sent out.
 		 * This call will increment packets_out.
 		 */
-		tcp_event_new_data_sent(sk, skb);
+		tcp_event_new_data_sent(subsk, skb);
+		if (tp->mpcb)
+			tcp_event_new_data_sent(sk,skb);
 
 		tcp_minshall_update(tp, mss_now, skb);
 		sent_pkts++;
-	}
 
-	if (likely(sent_pkts)) {
 		tcp_cwnd_validate(sk);
-		return 0;
 	}
+	if (likely(sent_pkts))
+		return 0;
 	return !tp->packets_out && tcp_send_head(sk);
 }
 
@@ -1861,11 +1777,10 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *skb = tcp_send_head(sk);
-	unsigned int tso_segs, cwnd_quota;
+	unsigned int cwnd_quota;
 
 	BUG_ON(!skb);
 
-	tso_segs = tcp_init_tso_segs(sk, skb, mss_now);
 	cwnd_quota = tcp_snd_test(sk, skb, mss_now, TCP_NAGLE_PUSH);
 
 	if (likely(cwnd_quota)) {

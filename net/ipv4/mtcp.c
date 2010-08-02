@@ -47,12 +47,6 @@
 #define PDEBUG(fmt,args...)
 #endif /*DEBUG_MTCP*/
 
-
-
-static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb);
-static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb);
-
-
 /*=====================================*/
 /*DEBUGGING*/
 
@@ -405,7 +399,6 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 
 	spin_lock_init(&mpcb->lock);
 	mutex_init(&mpcb->mutex);
-	init_completion(&mpcb->liberate_subflow);
 	INIT_LIST_HEAD(&mpcb->dsack_list);
 	mpcb->nb.notifier_call=netevent_callback;
 	register_netevent_notifier(&mpcb->nb);
@@ -606,20 +599,32 @@ void mtcp_update_metasocket(struct sock *sk)
 #endif	
 }
 
-int mtcp_is_available(struct sock *sk)
+/*copied from tcp_output.c*/
+static inline unsigned int tcp_cwnd_test(struct tcp_sock *tp,
+					 struct sk_buff *skb)
+{
+	u32 in_flight, cwnd;
+
+	/* Don't be strict about the congestion window for the final FIN.  */
+	if ((TCP_SKB_CB(skb)->flags & TCPCB_FLAG_FIN) &&
+	    tcp_skb_pcount(skb) == 1)
+		return 1;
+
+	in_flight = tcp_packets_in_flight(tp);
+	cwnd = tp->snd_cwnd;
+	if (in_flight < cwnd)
+		return (cwnd - in_flight);
+
+	return 0;
+}
+
+int mtcp_is_available(struct sock *sk, struct sk_buff *skb)
 {
 	/*We consider a subflow to be available if it has remaining space in 
-	  its sending buffers, and it is established*/
-	
+	  its */	
 	if (sk->sk_state!=TCP_ESTABLISHED || tcp_sk(sk)->pf) return 0;
-	
-	if (!sk_stream_memory_free(sk)) {
-		/*Setting this bit will tell the send buf auto-tuning algorithm
-		  to try increasing the send buffer for this subsock*/
-		set_bit(SOCK_NOSPACE, &sk->sock_flags);
-		return 0;
-	}
-	else return 1;
+	if (tcp_cwnd_test(tcp_sk(sk),skb)) return 1;
+	return 0;
 }
 
 /*This is the scheduler. This function decides on which flow to send
@@ -628,13 +633,16 @@ int mtcp_is_available(struct sock *sk)
  * needed to send the segment. If all paths have full send buffers, we
  * simply block. The flow able to send the segment the soonest get it. 
  */
-static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb) 
+struct sock* get_available_subflow(struct multipath_pcb *mpcb, 
+				       struct sk_buff *skb)
 {
 	struct tcp_sock *tp;
 	struct sock *sk;
 	struct sock *bestsk=NULL;
 	unsigned int min_fill_ratio=0xffffffff;
 	int bh=in_interrupt(); 
+
+	if (!mpcb) return NULL;
 	
 	/*if there is only one subflow, bypass the scheduling function*/
 	if (!bh) {
@@ -652,7 +660,7 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 		unsigned int fill_ratio;
 		/*If in bh, we cannot select a non-available subflow,
 		  since this would make us block, and we cannot block in bh*/
-		if (bh && !mtcp_is_available(sk)) continue;
+		if (bh && !mtcp_is_available(sk,skb)) continue;
 		if (sk->sk_state!=TCP_ESTABLISHED || tp->pf) continue;
 		
 		/*If there is no bw estimation available currently, 
@@ -678,7 +686,7 @@ static struct tcp_sock* __get_available_subflow(struct multipath_pcb *mpcb)
 out:
 	/*Now, even the best subflow may be uneligible for sending.
 	  In that case, we must return NULL (only in user ctx, though) */
-	if (!bh && bestsk && !mtcp_is_available(bestsk))
+	if (!bh && bestsk && !mtcp_is_available(bestsk,skb))
 		bestsk=NULL;
 
 	/*The following can happen only when the result of a reinjection is
@@ -694,92 +702,13 @@ out:
 		mutex_unlock(&mpcb->mutex);		
 	}
 
-	return tcp_sk(bestsk);
+	return bestsk;
 }
-
-int bug_on_sendhead_move=0;
-extern int signal_sent;
-static struct tcp_sock* get_available_subflow(struct multipath_pcb *mpcb)
-{
-	struct tcp_sock *tp;
-	struct sock *sk;
-	struct dsn_sack *dsack;
-	struct tcp_sock *mpcb_tp=(struct tcp_sock *) mpcb;
-
-	verif_wqueues(mpcb);
-	
-	while (!(tp=__get_available_subflow(mpcb))) {
-		int err;
-		/*Go sleeping until one of the subflows at least
-		  becomes ready to eat data.
-		  Note that we must be interruptible, because else we
-		  cannot be killed*/
-		err=wait_for_completion_interruptible(
-			&mpcb->liberate_subflow);
-		if (err<0) {
-			struct sk_buff *skb;
-
-			printk(KERN_ERR "stopped by interrupt\n");
-
-			list_for_each_entry(dsack,&mpcb->dsack_list,list) {
-				printk(KERN_ERR "  dsack %#x->%#x\n",
-				       dsack->start,dsack->end);
-			}
-			
-			verif_wqueues(mpcb);
-			
-			bug_on_sendhead_move=1;
-
-			printk(KERN_ERR "dsn_snd_una:%#x\n",mpcb_tp->snd_una);
-
-			mtcp_for_each_sk(mpcb,sk,tp) {				
-				if (sk->sk_state==TCP_ESTABLISHED) {
-					mtcp_push_frames(sk);
-					printk(KERN_ERR "pi %d:wmem_queued:%d,"
-					       "sndbuf:%d,write queue length"
-					       ":%d,rexmit empty:%d,\n"
-					       "snd_una:%#x,snd_nxt:%#x,"
-					       "signal_sent:%d\n",
-					       tp->path_index,
-					       sk->sk_wmem_queued,sk->sk_sndbuf,
-					       skb_queue_len(
-						       &sk->sk_write_queue),
-					       tcp_send_head(sk)==
-					       tcp_write_queue_head(sk),
-					       tp->snd_una,tp->snd_nxt,
-					       signal_sent);
-					tcp_for_write_queue(skb,sk) {
-						printk(KERN_ERR 
-						       "skb truesize:%d, "
-						       "skb->len:%d,"
-						       "skb->seq:%#x,"
-						       "skb->dsn:%#x\n",
-						       skb->truesize,skb->len,
-						       TCP_SKB_CB(skb)->seq,
-						       TCP_SKB_CB(skb)->data_seq
-							);
-					}
-					
-				}
-			}
-
-			BUG();
-			return NULL;
-		}
-		signal_sent=0;
-		verif_wqueues(mpcb);
-	}
-
-	return tp;
-}
-
-
 
 int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		 size_t size)
 {
 	struct sock *master_sk = sock->sk;
-	struct tcp_sock *tp;
 	struct iovec *iov;
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(master_sk));
 	struct sock *mpcb_sk = (struct sock *) mpcb;
@@ -815,19 +744,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	copied=0;i=0;nberr=0;
 	while (copied<msg_size) {		
 		int ret;
-		/*Find a candidate socket for eating data*/
 
-		INIT_COMPLETION(mpcb->liberate_subflow);
-		
-		tp=get_available_subflow(mpcb);
-
-		if (!tp) return -1;
-
-		PDEBUG("%s:copied %d,msg_size %d, i %d, pi %d\n",
-		       __FUNCTION__,
-		       (int)copied,
-		       (int)msg_size,i,tp->path_index);
-		
 		ret=subtcp_sendmsg(NULL,mpcb_sk,msg, copied);
 		if (ret<0) {
 			/*If this subflow refuses to send our data, try
@@ -1447,8 +1364,8 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 }
 
 /**
- * specific version of skb_entail (tcp.c), that handles segment reinjection
- * in other subflow.
+ * specific version of skb_entail (tcp.c),that allows appending to any
+ * subflow.
  * Here, we do not set the data seq, since it remains the same. However, 
  * we do change the subflow seqnum.
  *
@@ -1457,7 +1374,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
  * compared to the subflow seqnum. Put another way, the dataseq referenced
  * is actually the number of the first data byte in the segment.
  */
-static inline void mtcp_skb_entail_reinj(struct sock *sk, struct sk_buff *skb)
+void mtcp_skb_entail(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
@@ -1469,6 +1386,10 @@ static inline void mtcp_skb_entail_reinj(struct sock *sk, struct sk_buff *skb)
 	tcp_add_write_queue_tail(sk, skb);
 	sk->sk_wmem_queued += skb->truesize;
 	sk_mem_charge(sk, skb->truesize);
+
+	/*Take into account seg len*/
+	tp->write_seq += skb->len;
+	tcb->end_seq += skb->len;
 }
 
 /*Algorithm by Bryan Kernighan to count bits in a word*/
@@ -1511,9 +1432,7 @@ void __mtcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk)
 	BUG_ON(!skb);
 	BUG_ON(skb->path_mask!=orig_skb->path_mask);
 	
-	mtcp_skb_entail_reinj(sk, skb);
-	tp->write_seq += skb->len;
-	TCP_SKB_CB(skb)->end_seq += skb->len;
+	mtcp_skb_entail(sk, skb);
 }
 
 void mtcp_reinject_data(struct sock *orig_sk, struct sock *retrans_sk)

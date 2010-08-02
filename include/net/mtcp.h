@@ -34,7 +34,6 @@
 #include <net/request_sock.h>
 #include <net/mtcp_pm.h>
 
-
 /*Default MSS for MPTCP
   All subflows will be using that MSS. If any subflow has a lower MSS, it is
   just not used.*/
@@ -124,7 +123,6 @@ struct multipath_pcb {
 	spinlock_t                lock;
 	struct mutex              mutex;
 	struct kref               kref;	
-	struct completion         liberate_subflow;
 	struct notifier_block     nb; /*For listening to PM events*/
 
 	uint8_t                   server_side:1, /*1 if this mpcb belongs
@@ -173,6 +171,7 @@ struct multipath_pcb {
 
 #define mpcb_from_tcpsock(tp) ((tp)->mpcb)
 #define is_master_sk(tp) ((tp)->mpcb && tcp_sk((tp)->mpcb->master_sk)==tp)
+#define is_meta_sk(tp) ((tp)->mpcb && &(tp)->mpcb->tp==tp)
 
 /*Iterates overs all subflows*/
 #define mtcp_for_each_tp(mpcb,tp)			\
@@ -309,7 +308,9 @@ void mtcp_reset_options(struct multipath_options* mopt);
 void mtcp_update_metasocket(struct sock *sock);
 int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		 size_t size);
-int mtcp_is_available(struct sock *sk);
+int mtcp_is_available(struct sock *sk, struct sk_buff *skb);
+struct sock* get_available_subflow(struct multipath_pcb *mpcb, 
+				       struct sk_buff *skb);
 void mtcp_reinject_data(struct sock *orig_sk, struct sock *retrans_sk);
 int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb);
 int mtcp_init_subsockets(struct multipath_pcb *mpcb, 
@@ -327,5 +328,7 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 
 void verif_wqueues(struct multipath_pcb *mpcb);
 void mtcp_check_eat_old_seg(struct sock *sk, struct sk_buff *skb);
+
+void mtcp_skb_entail(struct sock *sk, struct sk_buff *skb);
 
 #endif /*_MTCP_H*/

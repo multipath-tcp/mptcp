@@ -4975,18 +4975,6 @@ static inline void tcp_data_snd_check(struct sock *sk)
 			else
 				push_other_subsock(sk_it);
 		}
-
-		/*When we receive an ack, place is made in the cwnd.
-		  Then first operation is to try sending buffered
-		  segments in this subsock (tcp_push_pending_frames).
-		  Then, if the flow is still available as decided by mtcp,
-		  we can wake up the mptcp scheduler, so that it possibly
-		  injects more data into that subflow*/
-		if ((mtcp_is_available(sk))&& 
-		    !mpcb->liberate_subflow.done) {
-			signal_sent=1;
-			complete(&mpcb->liberate_subflow);
-		}
 	}
 #endif
 }
