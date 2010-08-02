@@ -1287,39 +1287,6 @@ static void tcp_cwnd_validate(struct sock *sk)
 	}
 }
 
-/* Returns the portion of skb which can be sent right away without
- * introducing MSS oddities to segment boundaries. In rare cases where
- * mss_now != mss_cache, we will request caller to create a small skb
- * per input skb which could be mostly avoided here (if desired).
- *
- * We explicitly want to create a request for splitting write queue tail
- * to a small skb for Nagle purposes while avoiding unnecessary modulos,
- * thus all the complexity (cwnd_len is always MSS multiple which we
- * return whenever allowed by the other factors). Basically we need the
- * modulo only when the receiver window alone is the limiting factor or
- * when we would be allowed to send the split-due-to-Nagle skb fully.
- */
-static unsigned int tcp_mss_split_point(struct sock *sk, struct sk_buff *skb,
-					unsigned int mss_now, unsigned int cwnd)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	u32 needed, window, cwnd_len;
-
-	window = tcp_wnd_end(tp,tp->mpc) - 
-		((tp->mpc)?TCP_SKB_CB(skb)->data_seq:TCP_SKB_CB(skb)->seq);
-	cwnd_len = mss_now * cwnd;
-
-	if (likely(cwnd_len <= window && skb != tcp_write_queue_tail(sk)))
-		return cwnd_len;
-
-	needed = min(skb->len, window);
-
-	if (cwnd_len <= needed)
-		return cwnd_len;
-
-	return needed - needed % mss_now;
-}
-
 /* Can at least one segment of SKB be sent right now, according to the
  * congestion window rules?  If so, return how many segments are allowed.
  */
@@ -1425,19 +1392,27 @@ static inline int tcp_snd_wnd_test(struct tcp_sock *tp, struct sk_buff *skb,
  * should be put on the wire right now.  If so, it returns the number of
  * packets allowed by the congestion window.
  */
-static unsigned int tcp_snd_test(struct sock *sk, struct sk_buff *skb,
+static unsigned int tcp_snd_test(struct sock *subsk, struct sk_buff *skb,
 				 unsigned int cur_mss, int nonagle)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *subtp = tcp_sk(subsk);
 	unsigned int cwnd_quota;
-
-	tcp_init_tso_segs(sk, skb, cur_mss);
-
-	if (!tcp_nagle_test(tp, skb, cur_mss, nonagle))
+	struct multipath_pcb *mpcb=subtp->mpcb;
+	struct tcp_sock *mpcb_tp=&mpcb->tp;
+	
+	BUG_ON(tcp_skb_pcount(skb)>1);
+	if (!mpcb)
+		mpcb_tp=subtp;
+	
+	if (!tcp_nagle_test(mpcb_tp, skb, cur_mss, nonagle))
 		return 0;
 
-	cwnd_quota = tcp_cwnd_test(tp, skb);
-	if (cwnd_quota && !tcp_snd_wnd_test(tp, skb, cur_mss))
+	cwnd_quota = tcp_cwnd_test(subtp, skb);
+
+	/*Scheduler should prevent that*/
+	BUG_ON(!cwnd_quota && mpcb);
+
+	if (cwnd_quota && !tcp_snd_wnd_test(subtp, skb, cur_mss))
 		cwnd_quota = 0;
 
 	return cwnd_quota;
@@ -1448,6 +1423,7 @@ int tcp_may_send_now(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *skb = tcp_send_head(sk);
 
+	BUG();
 	return (skb &&
 		tcp_snd_test(sk, skb, tcp_current_mss(sk, 1),
 			     (tcp_skb_is_last(sk, skb) ?
@@ -1707,8 +1683,12 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		/*decide to which subsocket we give the skb*/
 		
 		cwnd_quota = tcp_cwnd_test(subtp, skb);
-		if (!cwnd_quota)
+		if (!cwnd_quota) {
+			/*Should not happen, since mptcp must have
+			  chosen a subsock with open cwnd*/
+			if (tp->mpcb) BUG();
 			break;
+		}
 
 		if (unlikely(!tcp_snd_wnd_test(subtp, skb, mss_now)))
 			break;
@@ -1748,7 +1728,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		tcp_minshall_update(tp, mss_now, skb);
 		sent_pkts++;
 
-		tcp_cwnd_validate(sk);
+		tcp_cwnd_validate(subsk);
 	}
 	if (likely(sent_pkts))
 		return 0;
@@ -1778,21 +1758,26 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *skb = tcp_send_head(sk);
 	unsigned int cwnd_quota;
+	struct sock *subsk=get_available_subflow(tp->mpcb, skb);
+	struct tcp_sock *subtp=tcp_sk(subsk);
 
 	BUG_ON(!skb);
 
-	cwnd_quota = tcp_snd_test(sk, skb, mss_now, TCP_NAGLE_PUSH);
+	if (tp->mpcb && !subsk)
+		return;
+	if (!tp->mpcb) {
+		subsk=sk; subtp=tp;
+	}
+
+	cwnd_quota = tcp_snd_test(subsk, skb, mss_now, TCP_NAGLE_PUSH);
 
 	if (likely(cwnd_quota)) {
 		unsigned int limit;
-
-		BUG_ON(!tso_segs);
+		struct sk_buff *subskb;
 
 		limit = mss_now;
-		if (tso_segs > 1 && !tcp_urg_mode(tp))
-			limit = tcp_mss_split_point(sk, skb, mss_now,
-						    cwnd_quota);
 
+		BUG_ON(tp->mpcb && skb->len>limit);
 		if (skb->len > limit &&
 		    unlikely(tso_fragment(sk, skb, limit, mss_now))) {
 			PDEBUG("NOT SENDING TCP SEGMENT\n");
@@ -1801,10 +1786,20 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 
 		/* Send it out now. */
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
+		
+		if (tp->mpcb) {
+			subskb=skb_clone(skb,GFP_ATOMIC);
+			if (!subskb) return;
+			mtcp_skb_entail(subsk, skb);
+		}
+		else subskb=skb;
 
-		if (likely(!tcp_transmit_skb(sk, skb, 1, sk->sk_allocation))) {
-			tcp_event_new_data_sent(sk, skb);
-			tcp_cwnd_validate(sk);
+		if (likely(!tcp_transmit_skb(subsk, subskb, 1, 
+					     subsk->sk_allocation))) {
+			tcp_event_new_data_sent(subsk, skb);
+			if (tp->mpcb)
+				tcp_event_new_data_sent(sk,skb);
+			tcp_cwnd_validate(subsk);
 			return;
 		}
 	}
