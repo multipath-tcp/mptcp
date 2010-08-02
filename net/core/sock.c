@@ -883,7 +883,10 @@ static void sock_copy(struct sock *nsk, const struct sock *osk)
 void mtcp_inherit_sk(struct sock *sk,struct sock *newsk) 
 {
 	struct sk_filter *filter;
-	
+
+#ifdef CONFIG_SECURITY_NETWORK
+	security_sk_alloc(newsk,sk->sk_family,GFP_KERNEL);		
+#endif
 	sock_copy(newsk,sk);
 	
 	/* SANITY */

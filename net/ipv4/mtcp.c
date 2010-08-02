@@ -434,6 +434,9 @@ static void mpcb_release(struct kref* kref)
 #endif
 	printk(KERN_ERR 
 	       "will free mpcb\n");
+#ifdef CONFIG_SECURITY_NETWORK
+	security_sk_free((struct sock *)mpcb);
+#endif
 	kfree(mpcb);
 }
 
