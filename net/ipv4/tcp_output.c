@@ -1667,13 +1667,16 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 	while ((skb = tcp_send_head(sk))) {
 		unsigned int limit;
 		int err;
-		struct sock *subsk=get_available_subflow(tp->mpcb, skb);
+		struct sock *subsk;
 		struct tcp_sock *subtp=tcp_sk(subsk);
 		struct sk_buff *subskb;
 
-		if (tp->mpcb && !subsk)
-			break;
-		if (!tp->mpcb) {
+		if (is_meta_sk(tp)) {
+			subsk=get_available_subflow(tp->mpcb, skb);
+			if (tp->mpcb && !subsk)
+				break;
+		}
+		else {
 			subsk=sk; subtp=tp;
 		}
 
@@ -1704,7 +1707,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
 
-		if (tp->mpcb) {
+		if (sk!=subsk) {
 			subskb=skb_clone(skb,GFP_ATOMIC);
 			if (!subskb) break;
 			mtcp_skb_entail(subsk, skb);
@@ -1718,8 +1721,8 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		/* Advance the send_head.  This one is sent out.
 		 * This call will increment packets_out.
 		 */
-		tcp_event_new_data_sent(subsk, skb);
-		if (tp->mpcb)
+		tcp_event_new_data_sent(subsk, subskb);
+		if (sk!=subsk)
 			tcp_event_new_data_sent(sk,skb);
 
 		tcp_minshall_update(tp, mss_now, skb);
