@@ -1644,7 +1644,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 	int cwnd_quota;
 	int result;
 
-	if (tp->mpcb) {
+	if (tp->mpc) {
 		BUG_ON(mss_now!=MPTCP_MSS);
 	}
 
