@@ -604,12 +604,13 @@ static inline void skb_entail(struct sock *sk, struct sk_buff *skb)
 	struct tcp_sock *mpcb_tp=(struct tcp_sock*)mpcb;
 
 	skb->csum     = 0;
-#ifdef CONFIG_MTCP
-	/*the subflow seqnum will be given later*/
-	tcb->seq      = tcb->end_seq = tcb->sub_seq = 0;
-#else
-	tcb->seq      = tcb->end_seq = tcb->sub_seq = tp->write_seq;
-#endif
+
+	/*in MPTCP mode, the subflow seqnum is given later*/
+	if (tp->mpc)
+		tcb->seq      = tcb->end_seq = tcb->sub_seq = 0;
+	else
+		tcb->seq      = tcb->end_seq = tcb->sub_seq = tp->write_seq;
+
 	tcb->data_seq = tcb->end_data_seq = mpcb_tp->write_seq;
 	tcb->data_len = 0;
 	tcb->flags    = TCPCB_FLAG_ACK;

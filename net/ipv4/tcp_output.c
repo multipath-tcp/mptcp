@@ -1673,7 +1673,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 
 		if (is_meta_sk(tp)) {
 			subsk=get_available_subflow(tp->mpcb, skb);
-			if (tp->mpcb && !subsk)
+			if (!subsk)
 				break;
 		}
 		else {
@@ -1718,7 +1718,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		if (sk!=subsk) {
 			subskb=skb_clone(skb,GFP_ATOMIC);
 			if (!subskb) break;
-			mtcp_skb_entail(subsk, skb);
+			mtcp_skb_entail(subsk, subskb);
 		}
 		else subskb=skb;
 		
@@ -1765,15 +1765,21 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *skb = tcp_send_head(sk);
-	unsigned int cwnd_quota;
-	struct sock *subsk=get_available_subflow(tp->mpcb, skb);
-	struct tcp_sock *subtp=tcp_sk(subsk);
+	unsigned int tso_segs, cwnd_quota;
+	struct sock *subsk;
+	struct tcp_sock *subtp;
 
-	BUG_ON(!skb);
+	BUG_ON(!skb || skb->len < mss_now);
+	
+	tso_segs = tcp_init_tso_segs(sk,skb,mss_now);	
 
-	if (tp->mpcb && !subsk)
-		return;
-	if (!tp->mpcb) {
+	if (is_meta_sk(tp)) {
+		subsk=get_available_subflow(tp->mpcb, skb);
+		subtp=tcp_sk(subsk);
+		if (!subsk)
+			return;
+	}
+	else {
 		subsk=sk; subtp=tp;
 	}
 
@@ -1783,9 +1789,15 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 		unsigned int limit;
 		struct sk_buff *subskb;
 
+		BUG_ON(!tso_segs);
+		/*At the moment we do not support tso, hence 
+		  tso_segs must be 1*/
+		BUG_ON(tp->mpc && tso_segs!=1);
+
 		limit = mss_now;
 
-		BUG_ON(tp->mpcb && skb->len>limit);
+		BUG_ON(tp->mpc && skb->len>limit);
+
 		if (skb->len > limit &&
 		    unlikely(tso_fragment(sk, skb, limit, mss_now))) {
 			PDEBUG("NOT SENDING TCP SEGMENT\n");
@@ -1795,17 +1807,17 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 		/* Send it out now. */
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
 		
-		if (tp->mpcb) {
-			subskb=skb_clone(skb,GFP_ATOMIC);
+		if (sk!=subsk) {
+			subskb=skb_clone(skb,GFP_KERNEL);
 			if (!subskb) return;
-			mtcp_skb_entail(subsk, skb);
+			mtcp_skb_entail(subsk, subskb);
 		}
 		else subskb=skb;
 
 		if (likely(!tcp_transmit_skb(subsk, subskb, 1, 
 					     subsk->sk_allocation))) {
-			tcp_event_new_data_sent(subsk, skb);
-			if (tp->mpcb)
+			tcp_event_new_data_sent(subsk, subskb);
+			if (sk!=subsk)
 				tcp_event_new_data_sent(sk,skb);
 			tcp_cwnd_validate(subsk);
 			return;

@@ -637,7 +637,7 @@ int mtcp_is_available(struct sock *sk, struct sk_buff *skb)
  * simply block. The flow able to send the segment the soonest get it. 
  */
 struct sock* get_available_subflow(struct multipath_pcb *mpcb, 
-				       struct sk_buff *skb)
+				   struct sk_buff *skb)
 {
 	struct tcp_sock *tp;
 	struct sock *sk;
