@@ -1169,16 +1169,12 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 				continue;
 
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
-#ifdef CONFIG_MTCP
-			/*Here, call an MPTCP version of push_pending_frames/
-			  push_one*/
-#else
+
 			if (forced_push(tp)) {
 				tcp_mark_push(tp, skb);
 				__tcp_push_pending_frames(sk, mss_now, TCP_NAGLE_PUSH);
 			} else if (skb == tcp_send_head(sk))
 				tcp_push_one(sk, mss_now);
-#endif		       			
 			continue;
 
 		wait_for_sndbuf:
@@ -1202,10 +1198,8 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	}
 
 out:
-#ifndef CONFIG_MTCP
 	if (copied)
 		tcp_push(sk, flags, mss_now, tp->nonagle);
-#endif
 
 	TCP_CHECK_TIMER(sk);
 	release_sock(sk);
