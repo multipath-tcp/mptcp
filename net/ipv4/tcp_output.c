@@ -1640,7 +1640,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *skb;
-	unsigned int sent_pkts;
+	unsigned int tso_segs, sent_pkts;
 	int cwnd_quota;
 	int result;
 
@@ -1679,6 +1679,14 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		else {
 			subsk=sk; subtp=tp;
 		}
+
+		/*This must be invoked even if we don't want
+		  to support TSO at the moment*/
+		tso_segs=tcp_init_tso_segs(sk,skb,mss_now);
+		BUG_ON(!tso_segs);
+		/*At the moment we do not support tso, hence 
+		  tso_segs must be 1*/
+		BUG_ON(tp->mpc && tso_segs!=1);
 
 		/*decide to which subsocket we give the skb*/
 		
