@@ -885,8 +885,6 @@ static void tcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	/* Advance write_seq and place onto the write_queue. */
-	PDEBUG("%s: tp->write_seq:%x,skb->end_seq:%x\n",
-	       __FUNCTION__,tp->write_seq,TCP_SKB_CB(skb)->end_seq); /*TODEL*/
 	tp->write_seq = TCP_SKB_CB(skb)->end_seq;	
 	skb_header_release(skb);
 	tcp_add_write_queue_tail(sk, skb);
@@ -1647,7 +1645,6 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 	int result;
 
 	if (tp->mpcb) {
-		BUG_ON(!is_meta_sk(tp));
 		BUG_ON(mss_now!=MPTCP_MSS);
 	}
 
