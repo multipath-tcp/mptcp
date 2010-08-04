@@ -1698,7 +1698,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		if (!cwnd_quota) {
 			/*Should not happen, since mptcp must have
 			  chosen a subsock with open cwnd*/
-			if (tp->mpc) BUG();
+			if (sk!=subsk) BUG();
 			break;
 		}
 
