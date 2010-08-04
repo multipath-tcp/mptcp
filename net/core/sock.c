@@ -941,9 +941,9 @@ void mtcp_inherit_sk(struct sock *sk,struct sock *newsk)
 	 */
 	sk_refcnt_debug_inc(newsk);
 	/*MPTCP: make the mpcb_sk point to the same struct socket
-	  as the master subsocket.*/
+	  as the master subsocket. Same for sk_sleep*/
 	sk_set_socket(newsk, sk->sk_socket);
-	newsk->sk_sleep	 = NULL;
+	newsk->sk_sleep	 = sk->sk_sleep;
 	
 	if (newsk->sk_prot->sockets_allocated)
 		atomic_inc(newsk->sk_prot->sockets_allocated);
