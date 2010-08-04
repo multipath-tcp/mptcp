@@ -382,7 +382,6 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	
 	/*mpcb_sk inherits master sk*/
 	mtcp_inherit_sk(master_sk,mpcb_sk);
-
 	mpcb_tp->mpcb=mpcb;
 	mpcb_tp->mpc=1;
 	
