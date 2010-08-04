@@ -384,6 +384,7 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	mtcp_inherit_sk(master_sk,mpcb_sk);
 	mpcb_tp->mpcb=mpcb;
 	mpcb_tp->mpc=1;
+	mpcb_tp->mss_cache=MPTCP_MSS;
 	
 	skb_queue_head_init(&mpcb_tp->out_of_order_queue);
 	
