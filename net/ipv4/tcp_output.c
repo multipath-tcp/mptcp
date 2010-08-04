@@ -1408,7 +1408,7 @@ static unsigned int tcp_snd_test(struct sock *subsk, struct sk_buff *skb,
 	cwnd_quota = tcp_cwnd_test(subtp, skb);
 
 	/*Scheduler should prevent that*/
-	BUG_ON(!cwnd_quota && mpcb);
+	BUG_ON(!cwnd_quota && subtp->mpc);
 
 	if (cwnd_quota && !tcp_snd_wnd_test(subtp, skb, cur_mss))
 		cwnd_quota = 0;
@@ -1694,7 +1694,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		if (!cwnd_quota) {
 			/*Should not happen, since mptcp must have
 			  chosen a subsock with open cwnd*/
-			if (tp->mpcb) BUG();
+			if (tp->mpc) BUG();
 			break;
 		}
 
