@@ -1648,9 +1648,11 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 	int result;
 
 	if (tp->mpc) {
-		printk(KERN_ERR "write xmit-mss_now %d, mptcp mss:%d",
-		       mss_now,MPTCP_MSS);
-		BUG_ON(mss_now!=MPTCP_MSS);
+		if (mss_now!=MPTCP_MSS) {
+			printk(KERN_ERR "write xmit-mss_now %d, mptcp mss:%d\n",
+			       mss_now,MPTCP_MSS);
+			BUG();
+		}
 	}
 
 	/* If we are closed, the bytes will have to remain here.
