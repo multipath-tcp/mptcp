@@ -1227,6 +1227,9 @@ unsigned int tcp_current_mss(struct sock *sk, int large_allowed)
 	struct tcp_out_options opts;
 	struct tcp_md5sig_key *md5;
 
+	/*if sk is the meta-socket, return the common MSS*/
+	if (is_meta_sk(tp)) return MPTCP_MSS;
+
 	mss_now = tp->mss_cache;
 
 	if (large_allowed && sk_can_gso(sk))
