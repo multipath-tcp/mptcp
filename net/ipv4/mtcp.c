@@ -712,12 +712,9 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		 size_t size)
 {
 	struct sock *master_sk = sock->sk;
-	struct iovec *iov;
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(master_sk));
 	struct sock *mpcb_sk = (struct sock *) mpcb;
-	size_t iovlen,copied,msg_size;
-	int i;
-	int nberr;		
+	size_t copied;
 
 	if (!tcp_sk(master_sk)->mpc)
 		return subtcp_sendmsg(iocb,master_sk, msg, size);
@@ -730,44 +727,17 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 
 #ifdef CONFIG_MTCP_PM
 	/*Any new subsock we can use ?*/
-	BUG_ON(in_atomic());
 	mtcp_check_new_subflow(mpcb);
-	BUG_ON(in_atomic());
 #endif
 	
-	/* Compute the total number of bytes stored in the message*/
-	iovlen=msg->msg_iovlen;
-	iov=msg->msg_iov;
-	msg_size=0;
-	while(iovlen-- > 0) {
-		msg_size+=iov->iov_len;
-		iov++;
-	}
-	
-	copied=0;i=0;nberr=0;
-	while (copied<msg_size) {		
-		int ret;
+	/* Compute the total number of bytes stored in the message*/	
+	copied=0;
 
-		ret=subtcp_sendmsg(NULL,mpcb_sk,msg, copied);
-		if (ret<0) {
-			/*If this subflow refuses to send our data, try
-			  another one. If no subflow accepts to send it
-			  send the error code from the last subflow to the
-			  app. If no subflow can send the data, but a part of 
-			  the message has been sent already, then we tell the 
-			  application about the copied bytes, instead
-			  of returning the error code. The error code would be
-			  returned on a subsequent call anyway.*/
-			nberr++;
-			if (nberr==mpcb->cnt_subflows) {
-				printk(KERN_ERR "%s: returning error "
-				       "to app:%d, copied %d\n",__FUNCTION__,
-				       ret,(int)copied);
-				return (copied)?copied:ret;
-			}
-			continue;
-		}
-		copied+=ret;
+	copied=subtcp_sendmsg(NULL,mpcb_sk,msg, 0);
+	if (copied<0) {		
+		printk(KERN_ERR "%s: returning error "
+		       "to app:%d\n",__FUNCTION__,(int)copied);
+		return copied;
 	}
 
 	PDEBUG("Leaving %s, copied %d, next data seq %x\n",
