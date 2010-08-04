@@ -1423,10 +1423,15 @@ int tcp_may_send_now(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *skb = tcp_send_head(sk);
+	int mss;
 
-	BUG();
+	if (tp->mpc)
+		mss=MPTCP_MSS;
+	else
+		mss=tcp_current_mss(sk, 1);
+
 	return (skb &&
-		tcp_snd_test(sk, skb, tcp_current_mss(sk, 1),
+		tcp_snd_test(sk, skb, mss,
 			     (tcp_skb_is_last(sk, skb) ?
 			      tp->nonagle : TCP_NAGLE_PUSH)));
 }
