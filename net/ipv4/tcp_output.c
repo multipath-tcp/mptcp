@@ -2431,7 +2431,7 @@ void tcp_send_fin(struct sock *sk)
 	 */
 	mss_now = tcp_current_mss(sk, 1);
 
-	/*If the sock is not multipath capable, we do not 
+	/*If the sock is multipath capable, we do not 
 	  attach the FIN to the tail skb. The reason is that the
 	  FIN eats a DSN, that must be contiguous to the last
 	  byte of the data packet. But if we have sent data on other

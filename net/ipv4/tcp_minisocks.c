@@ -401,6 +401,7 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 		newtp->rx_opt.rcv_isn=treq->rcv_isn;
 		newtp->snt_isn=treq->snt_isn;
 		memset(&newtp->rcvq_space,0,sizeof(newtp->rcvq_space));
+		newtp->mopt.list_rcvd=0;
 #endif
 
 		tcp_prequeue_init(newtp);
