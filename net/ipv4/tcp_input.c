@@ -4933,7 +4933,8 @@ void tcp_check_space(struct sock *sk)
 
 static inline void tcp_data_snd_check(struct sock *sk)
 {
-	struct sock *mpcb_sk=(tcp_sk(sk)->mpcb)?
+	struct sock *mpcb_sk=
+		(tcp_sk(sk)->mpc && tcp_sk(sk)->mpcb)?
 		((struct sock*)tcp_sk(sk)->mpcb):sk;
 	tcp_push_pending_frames(mpcb_sk);
 	tcp_check_space(mpcb_sk);
