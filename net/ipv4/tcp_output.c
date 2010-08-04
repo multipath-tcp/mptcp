@@ -1675,6 +1675,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			subsk=get_available_subflow(tp->mpcb, skb);
 			if (!subsk)
 				break;
+			subtp=tcp_sk(subsk);
 		}
 		else {
 			subsk=sk; subtp=tp;
