@@ -2492,12 +2492,15 @@ void tcp_set_state(struct sock *sk, int state)
 			/*mpcb is NULL if the socket is in the accept
 			  queue of the mpcb.*/
 			BUG_ON(!tp->mpcb && !tp->pending);
-			if (tcp_sk(sk)->mpcb) { 
+			if (tcp_sk(sk)->mpcb) {
+				struct sock *mpcb_sk=
+					(struct sock*)(tcp_sk(sk)->mpcb);
 				if (tcp_sk(sk)->mpc && 
 				    is_master_sk(tcp_sk(sk))) 
 					mtcp_ask_update(sk);
 				tcp_sk(sk)->mpcb->cnt_established++;
 				tcp_sk(sk)->mpcb->sndbuf_grown=1;
+				mpcb_sk->sk_state=TCP_ESTABLISHED;
 			}
 #endif
 		}
