@@ -1231,23 +1231,14 @@ unsigned int tcp_current_mss(struct sock *sk, int large_allowed)
 	if (is_meta_sk(tp)) return MPTCP_MSS;
 
 	mss_now = tp->mss_cache;
-	if (tp->mpc)
-		printk(KERN_ERR "mss_cache is %d\n",mss_now);
 
-	if (large_allowed && sk_can_gso(sk)) {
-		if (tp->mpc)
-			printk(KERN_ERR "tso allowed\n");
+	if (large_allowed && sk_can_gso(sk))
 		doing_tso = 1;
-	}
 
 	if (dst) {
 		u32 mtu = dst_mtu(dst);
-		if (mtu != inet_csk(sk)->icsk_pmtu_cookie) {
+		if (mtu != inet_csk(sk)->icsk_pmtu_cookie)
 			mss_now = tcp_sync_mss(sk, mtu);
-			if (tp->mpc)
-				printk(KERN_ERR "after sync mss is %d\n",
-				       mss_now);
-		}
 	}
 	memset(&opts, 0, sizeof(opts));
 	header_len = tcp_established_options(sk, NULL, &opts, &md5) +
@@ -1259,9 +1250,6 @@ unsigned int tcp_current_mss(struct sock *sk, int large_allowed)
 	if (header_len != tp->tcp_header_len) {
 		int delta = (int) header_len - tp->tcp_header_len;
 		mss_now -= delta;
-		if (tp->mpc)
-			printk(KERN_ERR "after headers mss is %d\n",
-			       mss_now);
 	}
 
 	xmit_size_goal = mss_now;
@@ -2447,7 +2435,8 @@ void tcp_send_fin(struct sock *sk)
 	 * unsent frames.  But be careful about outgoing SACKS
 	 * and IP options.
 	 */
-	mss_now = tcp_current_mss(sk, 1);
+	if (!tp->mpc) mss_now = tcp_current_mss(sk, 1);
+	else mss_now = MPTCP_MSS;
 
 	/*If the sock is multipath capable, we do not 
 	  attach the FIN to the tail skb. The reason is that the
