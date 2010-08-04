@@ -632,7 +632,7 @@ int mtcp_is_available(struct sock *sk, struct sk_buff *skb)
 /*This is the scheduler. This function decides on which flow to send
  *  a given MSS. If all subflows are found to be busy, NULL is returned
  * The flow is selected based on the estimation of how much time will be
- * needed to send the segment. If all paths have full send buffers, we
+ * needed to send the segment. If all paths have full cong windows, we
  * simply block. The flow able to send the segment the soonest get it. 
  */
 struct sock* get_available_subflow(struct multipath_pcb *mpcb, 
@@ -646,23 +646,23 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 
 	if (!mpcb) return NULL;
 	
-	/*if there is only one subflow, bypass the scheduling function*/
 	if (!bh) {
 		mutex_lock(&mpcb->mutex);
 		mtcp_for_each_sk(mpcb,sk,tp) lock_sock(sk);
 	}
 
+	/*if there is only one subflow, bypass the scheduling function*/
 	if (mpcb->cnt_subflows==1) {
 		bestsk=(struct sock *)mpcb->connection_list;
+		if (!mtcp_is_available(bestsk,skb))
+			bestsk=NULL;
 		goto out;
 	}
 
 	/*First, find the best subflow*/
 	mtcp_for_each_sk(mpcb,sk,tp) {
 		unsigned int fill_ratio;
-		/*If in bh, we cannot select a non-available subflow,
-		  since this would make us block, and we cannot block in bh*/
-		if (bh && !mtcp_is_available(sk,skb)) continue;
+		if (!mtcp_is_available(sk,skb)) continue;
 		if (sk->sk_state!=TCP_ESTABLISHED || tp->pf) continue;
 		
 		/*If there is no bw estimation available currently, 
@@ -686,19 +686,6 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 	}
 	
 out:
-	/*Now, even the best subflow may be uneligible for sending.
-	  In that case, we must return NULL (only in user ctx, though) */
-	if (!bh && bestsk && !mtcp_is_available(bestsk,skb))
-		bestsk=NULL;
-
-	/*The following can happen only when the result of a reinjection is
-	  filling all buffers. Since the original distribution of segments
-	  can go higher than sndbuf by one MSS max., the redistribution can 
-	  in the worse case go higher by MSS*nb_subflows max. So it is not
-	  critical here to choose the best subflow*/
-	if (bh && !bestsk)
-		bestsk=(struct sock *)mpcb->connection_list;
-	
 	if (!bh) {
 		mtcp_for_each_sk(mpcb,sk,tp) release_sock(sk);
 		mutex_unlock(&mpcb->mutex);		
