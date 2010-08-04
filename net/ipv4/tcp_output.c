@@ -2579,8 +2579,12 @@ struct sk_buff *tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 	skb_reserve(skb, MAX_TCP_HEADER);
 
 	skb->dst = dst_clone(dst);
-
+#ifdef CONFIG_MTCP
+	mss = MPTCP_MSS;
+#else
 	mss = dst_metric(dst, RTAX_ADVMSS);
+#endif
+
 	if (tp->rx_opt.user_mss && tp->rx_opt.user_mss < mss)
 		mss = tp->rx_opt.user_mss;
 
