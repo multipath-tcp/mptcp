@@ -1043,7 +1043,7 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			if (!tcp_send_head(sk) || 
 			    (copy = size_goal - skb->len) <= 0) {
 			new_segment:
-
+				
 				if (!sk_stream_memory_free(sk))
 					goto wait_for_sndbuf;
 				
@@ -1189,11 +1189,14 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 				tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
 
 			if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
-				goto do_error;
+				goto do_error;			
 
+			BUG_ON(!sk_stream_memory_free(sk));
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
+#ifndef CONFIG_MTCP
 			mss_now = tcp_current_mss(sk, !(flags&MSG_OOB));
 			size_goal = tp->xmit_size_goal;
+#endif
 		}
 		/*If we have filled one skb, or there is no
 		  space anymore in this pipe, return control to the scheduler*/
