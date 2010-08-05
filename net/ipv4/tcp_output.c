@@ -506,7 +506,6 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			       opts->data_len);
 		*ptr++ = htonl(opts->sub_seq);
 		*ptr++ = htonl(opts->data_seq);
-		BUG_ON(!opts->mss && opts->data_len==0);
 	}
 #endif
 }
@@ -841,7 +840,11 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		th->urg_ptr		= htons(tp->snd_up - tcb->seq);
 		th->urg			= 1;
 	}
-
+	
+	if(!opts.mss && opts.data_len==0) {
+		printk(KERN_ERR "skb->debug:%d\n",skb->debug);
+		BUG();
+	}
 	tcp_options_write((__be32 *)(th + 1), tp, &opts, &md5_hash_location);
 	if (likely((tcb->flags & TCPCB_FLAG_SYN) == 0))
 		TCP_ECN_send(sk, skb, tcp_header_size);
@@ -1737,8 +1740,14 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			subskb=skb_clone(skb,GFP_ATOMIC);
 			if (!subskb) break;
 			mtcp_skb_entail(subsk, subskb);
+			skb->debug=30;
+			subskb->debug=35;
+
 		}
-		else subskb=skb;
+		else {
+			subskb=skb;
+			skb->debug=40;
+		}
 		
 		if (unlikely(err=tcp_transmit_skb(subsk, subskb, 1, 
 						  GFP_ATOMIC)))
