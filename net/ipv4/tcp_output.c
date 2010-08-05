@@ -506,6 +506,7 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			       opts->data_len);
 		*ptr++ = htonl(opts->sub_seq);
 		*ptr++ = htonl(opts->data_seq);
+		BUG_ON(opts->data_len==0);
 	}
 #endif
 }
@@ -774,8 +775,6 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		       tcp_skb_pcount(skb),skb->len);
 		BUG();
 	}
-
-	if (tcp_sk(sk)->mpc) BUG_ON(TCP_SKB_CB(skb)->data_len==0);
 
 	tcpprobe_transmit_skb(sk,skb,clone_it,gfp_mask);
 
