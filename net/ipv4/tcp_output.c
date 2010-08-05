@@ -841,7 +841,8 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		th->urg			= 1;
 	}
 	
-	if(!opts.mss && opts.data_len==0) {
+	if((OPTION_DSN & opts.options)
+	   && !opts.mss && opts.data_len==0) {
 		printk(KERN_ERR "skb->debug:%d\n",skb->debug);
 		BUG();
 	}
