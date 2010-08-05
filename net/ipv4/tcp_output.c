@@ -73,7 +73,7 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int prior_packets = tp->packets_out;
-	int meta_sk=is_meta_sk(tp);
+	int meta_sk=is_meta_tp(tp);
 
 	tcp_advance_send_head(sk, skb);
 	tp->snd_nxt = meta_sk?TCP_SKB_CB(skb)->end_data_seq:
@@ -84,7 +84,7 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 		tp->frto_counter = 3;
 
 	tp->packets_out += tcp_skb_pcount(skb);
-	if (!prior_packets && !is_meta_sk(tp))
+	if (!prior_packets && !is_meta_tp(tp))
 		inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
 					  inet_csk(sk)->icsk_rto, TCP_RTO_MAX);
 }
@@ -1228,7 +1228,7 @@ unsigned int tcp_current_mss(struct sock *sk, int large_allowed)
 	struct tcp_md5sig_key *md5;
 
 	/*if sk is the meta-socket, return the common MSS*/
-	if (is_meta_sk(tp)) return MPTCP_MSS;
+	if (is_meta_tp(tp)) return MPTCP_MSS;
 
 	mss_now = tp->mss_cache;
 
@@ -1683,7 +1683,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		struct tcp_sock *subtp=tcp_sk(subsk);
 		struct sk_buff *subskb;
 
-		if (is_meta_sk(tp)) {
+		if (is_meta_tp(tp)) {
 			subsk=get_available_subflow(tp->mpcb, skb);
 			if (!subsk)
 				break;
@@ -1786,7 +1786,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 	
 	tso_segs = tcp_init_tso_segs(sk,skb,mss_now);	
 
-	if (is_meta_sk(tp)) {
+	if (is_meta_tp(tp)) {
 		subsk=get_available_subflow(tp->mpcb, skb);
 		subtp=tcp_sk(subsk);
 		if (!subsk)

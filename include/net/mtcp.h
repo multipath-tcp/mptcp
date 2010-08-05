@@ -171,7 +171,8 @@ struct multipath_pcb {
 
 #define mpcb_from_tcpsock(tp) ((tp)->mpcb)
 #define is_master_sk(tp) ((tp)->mpcb && tcp_sk((tp)->mpcb->master_sk)==tp)
-#define is_meta_sk(tp) ((tp)->mpcb && &(tp)->mpcb->tp==tp)
+#define is_meta_tp(tp) ((tp)->mpcb && &(tp)->mpcb->tp==tp)
+#define is_meta_sk(sk) ((tcp_sk(sk))->mpcb && &(tcp_sk(sk))->mpcb->tp==tp)
 
 /*Iterates overs all subflows*/
 #define mtcp_for_each_tp(mpcb,tp)			\

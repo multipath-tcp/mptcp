@@ -1567,15 +1567,34 @@ fail:
 	return ret;
 }
 
+/*Cleans the meta-socket retransmission queue.
+  @sk must be the metasocket.*/
+static void mtcp_clean_rtx_queue(struct sock *sk)
+{
+	struct sk_buff *skb;
+	struct tcp_sock *tp=tcp_sk(sk);
+	
+	BUG_ON(!is_meta_tp(tp));
+	while ((skb = tcp_write_queue_head(sk)) && skb != tcp_send_head(sk)) {
+		struct tcp_skb_cb *scb = TCP_SKB_CB(skb);
+		if (before(tp->snd_una,scb->end_data_seq))
+			break;
+		tcp_unlink_write_queue(skb, sk);
+		sk_wmem_free_skb(sk, skb);
+	}
+}
 
 void mtcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end) {
 	struct dsn_sack *dsack, *new_block, *todel, *tmp;
 	int inserted=0;
 	struct tcp_sock *mpcb_tp=(struct tcp_sock *)mpcb;
+	u32 old_snd_una;
 	
 	BUG_ON(!after(end,start));
 
 	spin_lock(&mpcb->lock);
+	old_snd_una=mpcb_tp->snd_una;
+	
 	/*Normal case*/
 	if (!after(start,mpcb_tp->snd_una)) {
 		/*This block has already been acked*/
@@ -1655,6 +1674,8 @@ void mtcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end) {
 		list_add_tail(&new_block->list,&mpcb->dsack_list);
 	}
 out:
+	if (old_snd_una!=mpcb_tp->snd_una)
+		mtcp_clean_rtx_queue((struct sock*)mpcb);
 	spin_unlock(&mpcb->lock);
 }
 
