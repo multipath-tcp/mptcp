@@ -1782,8 +1782,12 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 	struct sock *subsk;
 	struct tcp_sock *subtp;
 
-	BUG_ON(!skb || skb->len < mss_now);
-	
+	if (skb && skb->len<mss_now) {
+		printk(KERN_ERR "skb->len:%d,mss_now:%d\n",skb->len,
+		       mss_now);
+	}
+
+	BUG_ON(!skb || skb->len < mss_now);	
 	tso_segs = tcp_init_tso_segs(sk,skb,mss_now);	
 
 	if (is_meta_tp(tp)) {
@@ -2212,6 +2216,7 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 			mtcp_reinject_data(sk,(struct sock*)retrans_tp);
 		}
 	}
+	else printk(KERN_ERR "avoided reinj in fast rexmit\n");
 no_mtcp:
 
 	/* Inconclusive MTU probe */
