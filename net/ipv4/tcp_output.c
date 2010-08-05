@@ -769,7 +769,7 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	struct tcphdr *th;
 	int err;
 
-	BUG_ON(!skb || !tcp_skb_pcount(skb));		
+	BUG_ON(!skb || !tcp_skb_pcount(skb));
 
 	tcpprobe_transmit_skb(sk,skb,clone_it,gfp_mask);
 
@@ -2216,7 +2216,6 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 			mtcp_reinject_data(sk,(struct sock*)retrans_tp);
 		}
 	}
-	else printk(KERN_ERR "avoided reinj in fast rexmit\n");
 no_mtcp:
 
 	/* Inconclusive MTU probe */
