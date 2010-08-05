@@ -506,7 +506,7 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			       opts->data_len);
 		*ptr++ = htonl(opts->sub_seq);
 		*ptr++ = htonl(opts->data_seq);
-		BUG_ON(opts->data_len==0);
+		BUG_ON(!opts->mss && opts->data_len==0);
 	}
 #endif
 }
