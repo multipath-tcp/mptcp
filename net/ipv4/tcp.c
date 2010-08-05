@@ -1198,10 +1198,6 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			size_goal = tp->xmit_size_goal;
 #endif
 		}
-		/*If we have filled one skb, or there is no
-		  space anymore in this pipe, return control to the scheduler*/
-		if (!sk_stream_memory_free(sk) || copied >= size_goal)
-			break;
 	}
 
 out:
