@@ -2182,11 +2182,12 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	unsigned int cur_mss;
 	int err;
-
-	/*For any retransmission, we check if we can find another subflow
+	
+	/*For any retransmission (RTO only, not fast rexmit), 
+	  we check if we can find another subflow
 	  where it would be better to retransmit
 	  Currently we try with retransmission policy RTX-SSTHRESH*/
-	{
+	if (icsk->icsk_ca_state == TCP_CA_Loss) {
 		int max_ssthresh=0;
 		struct tcp_sock *tp_it,*retrans_tp=NULL;
 		struct multipath_pcb *mpcb=tp->mpcb;
