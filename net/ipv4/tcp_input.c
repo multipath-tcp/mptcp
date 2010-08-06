@@ -2882,7 +2882,6 @@ static u32 tcp_tso_acked(struct sock *sk, struct sk_buff *skb)
 					    TCP_SKB_CB(skb)->data_seq+
 					    tp->snd_una - TCP_SKB_CB(skb)->seq);
 		}
-		BUG_ON(!tp->mpc && TCP_SKB_CB(skb)->data_seq);
 	}
 #endif
 	
