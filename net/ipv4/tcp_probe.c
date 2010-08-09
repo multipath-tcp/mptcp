@@ -120,12 +120,12 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_sock *inet = inet_sk(sk);
 
-	if (!tp->last_probe)
+/*	if (!tp->last_probe)
 		tp->last_probe=jiffies;
 	else if (jiffies-tp->last_probe<HZ/10)
-		goto out;
+	goto out;
 	
-	tp->last_probe=jiffies;
+	tp->last_probe=jiffies;*/
 
 	/* Only update if port matches */
 	if ((port == 0 || ntohs(inet->dport) == port 
@@ -178,7 +178,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 
 		wake_up(&tcp_probe.wait);
 	}
-out:
+//out:
 #ifdef CONFIG_KPROBES
 	jprobe_return();
 #endif
@@ -225,12 +225,12 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_sock *inet = inet_sk(sk);
 
-	if (!tp->last_probe)
+/*	if (!tp->last_probe)
 		tp->last_probe=jiffies;
 	else if (jiffies-tp->last_probe<HZ/10)
-		goto out;
+	goto out;
 	
-	tp->last_probe=jiffies;
+	tp->last_probe=jiffies;*/
 
 	/* Only update if port matches and state is established*/
 	if (sk->sk_state == TCP_ESTABLISHED && 
@@ -295,7 +295,7 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		wake_up(&tcp_probe.wait);
 	}
 
-out:
+//out:
 #ifdef CONFIG_KPROBES
 	jprobe_return();
 #endif
