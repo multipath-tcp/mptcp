@@ -96,7 +96,17 @@ int sysctl_tcp_adv_win_scale __read_mostly = 2;
 int sysctl_tcp_stdurg __read_mostly;
 int sysctl_tcp_rfc1337 __read_mostly;
 int sysctl_tcp_max_orphans __read_mostly = NR_FILE;
+#ifdef CONFIG_MTCP
+/*At the moment we disable frto, because it creates problems
+  with failure recovery: It waits for the next ack before to decide
+  whether it enters the Loss state. But in case of failure, 
+  the next ack never arrives of course. When we have several paths this is
+  a problem because we do want to retransmit on another working subflow
+  in that case.*/
+int sysctl_tcp_frto __read_mostly = 0;
+#else
 int sysctl_tcp_frto __read_mostly = 2;
+#endif
 int sysctl_tcp_frto_response __read_mostly;
 int sysctl_tcp_nometrics_save __read_mostly;
 
