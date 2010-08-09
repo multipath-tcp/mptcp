@@ -2203,7 +2203,9 @@ void mtcp_set_owner_r(struct sk_buff *skb, struct sock *sk)
 	if (sk->sk_protocol==IPPROTO_TCP && tcp_sk(sk)->mpc &&
 	    tcp_sk(sk)->mpcb)
 		atomic_add(skb->truesize, &tcp_sk(sk)->mpcb->rmem_alloc);
+
 }
+EXPORT_SYMBOL(mtcp_set_owner_r);
 
 /*Removes a segment received on one subflow, but containing DSNs
   that were already received on another subflow
