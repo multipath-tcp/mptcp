@@ -843,7 +843,8 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	
 	if((OPTION_DSN & opts.options)
 	   && !opts.mss && opts.data_len==0) {
-		printk(KERN_ERR "skb->debug:%d\n",skb->debug);
+		printk(KERN_ERR "skb->debug:%d, seq:%#x\n",skb->debug,
+		       TCP_SKB_CB(skb)->seq);
 		BUG();
 	}
 	tcp_options_write((__be32 *)(th + 1), tp, &opts, &md5_hash_location);
@@ -1843,8 +1844,13 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 			subskb=skb_clone(skb,GFP_KERNEL);
 			if (!subskb) return;
 			mtcp_skb_entail(subsk, subskb);
+			skb->debug=45;
+			subskb->debug=50;
 		}
-		else subskb=skb;
+		else {
+			subskb=skb;
+			subskb->debug=55;
+		}
 
 		if (likely(!tcp_transmit_skb(subsk, subskb, 1, 
 					     subsk->sk_allocation))) {
