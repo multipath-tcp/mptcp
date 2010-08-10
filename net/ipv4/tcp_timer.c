@@ -289,6 +289,7 @@ static void tcp_retransmit_timer(struct sock *sk)
 	if (!tp->packets_out)
 		goto out;
 
+	BUG_ON(is_meta_sk(sk));
 	BUG_ON(tcp_write_queue_empty(sk));
 
 	if (!snd_wnd && !sock_flag(sk, SOCK_DEAD) &&
