@@ -402,6 +402,8 @@ static void tcp_write_timer(unsigned long data)
 	struct sock *sk = (struct sock*)data;
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	int event;
+	
+	BUG_ON(is_meta_sk(sk));
 
 	bh_lock_sock(sk);
 	if (sock_owned_by_user(sk)) {

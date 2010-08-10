@@ -1748,6 +1748,7 @@ void sk_send_sigurg(struct sock *sk)
 void sk_reset_timer(struct sock *sk, struct timer_list* timer,
 		    unsigned long expires)
 {
+	BUG_ON(is_meta_sk(sk));
 	if (!mod_timer(timer, expires))
 		sock_hold(sk);
 }
