@@ -205,38 +205,9 @@ static inline void inet_csk_clear_xmit_timer(struct sock *sk, const int what)
 #endif
 }
 
-/*
- *	Reset the retransmission timer
- */
-static inline void inet_csk_reset_xmit_timer(struct sock *sk, const int what,
-					     unsigned long when,
-					     const unsigned long max_when)
-{
-	struct inet_connection_sock *icsk = inet_csk(sk);
-
-	if (when > max_when) {
-#ifdef INET_CSK_DEBUG
-		pr_debug("reset_xmit_timer: sk=%p %d when=0x%lx, caller=%p\n",
-			 sk, what, when, current_text_addr());
-#endif
-		when = max_when;
-	}
-
-	if (what == ICSK_TIME_RETRANS || what == ICSK_TIME_PROBE0) {
-		icsk->icsk_pending = what;
-		icsk->icsk_timeout = jiffies + when;
-		sk_reset_timer(sk, &icsk->icsk_retransmit_timer, icsk->icsk_timeout);
-	} else if (what == ICSK_TIME_DACK) {
-		icsk->icsk_ack.pending |= ICSK_ACK_TIMER;
-		icsk->icsk_ack.timeout = jiffies + when;
-		sk_reset_timer(sk, &icsk->icsk_delack_timer, icsk->icsk_ack.timeout);
-	}
-#ifdef INET_CSK_DEBUG
-	else {
-		pr_debug("%s", inet_csk_timer_bug_msg);
-	}
-#endif
-}
+void inet_csk_reset_xmit_timer(struct sock *sk, const int what,
+			       unsigned long when,
+			       const unsigned long max_when);
 
 extern struct sock *inet_csk_accept(struct sock *sk, int flags, int *err);
 
