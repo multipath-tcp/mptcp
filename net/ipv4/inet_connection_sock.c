@@ -23,6 +23,7 @@
 #include <net/route.h>
 #include <net/tcp_states.h>
 #include <net/xfrm.h>
+#include <net/tcp.h>
 #include <net/mtcp.h>
 
 #undef DEBUG_MTCP /*set to define if you want debugging messages*/
@@ -374,6 +375,7 @@ void inet_csk_reset_xmit_timer(struct sock *sk, const int what,
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
 	BUG_ON(is_meta_sk(sk));
+	BUG_ON(tcp_write_queue_empty(sk));
 
 	if (when > max_when) {
 #ifdef INET_CSK_DEBUG
