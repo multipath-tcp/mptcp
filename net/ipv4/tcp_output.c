@@ -1754,7 +1754,12 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			skb->debug=40;
 		}
 
-		BUG_ON(tp->mpc && skb->len && !TCP_SKB_CB(skb)->data_len);
+		if(tp->mpc && skb->len && !TCP_SKB_CB(skb)->data_len) {
+			printk(KERN_ERR "skb->debug:%d,"
+			       "skb->dsn:%#x\n",skb->debug,
+			       TCP_SKB_CB(skb)->data_seq);
+			BUG();
+		}
 		BUG_ON(tp->mpc && subskb->len && !TCP_SKB_CB(subskb)->data_len);
 
 		if (unlikely(err=tcp_transmit_skb(subsk, subskb, 1, 
