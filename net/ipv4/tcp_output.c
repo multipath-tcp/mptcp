@@ -2192,6 +2192,8 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	unsigned int cur_mss;
 	int err;
+
+	BUG_ON(!skb);
 	
 	/*For any retransmission (RTO only, not fast rexmit), 
 	  we check if we can find another subflow
