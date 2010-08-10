@@ -621,7 +621,6 @@ static inline void skb_entail(struct sock *sk, struct sk_buff *skb)
 	sk_mem_charge(sk, skb->truesize);
 	if (tp->nonagle & TCP_NAGLE_PUSH)
 		tp->nonagle &= ~TCP_NAGLE_PUSH;
-	skb->debug=65;
 }
 
 static inline void tcp_mark_urg(struct tcp_sock *tp, int flags,

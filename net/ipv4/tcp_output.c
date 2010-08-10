@@ -768,7 +768,6 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	__u8 *md5_hash_location;
 	struct tcphdr *th;
 	int err;
-	struct sk_buff *orig_skb=skb;
 
 	if(!skb || !tcp_skb_pcount(skb)) {
 		printk(KERN_ERR "tcp_skb_pcount:%d,skb->len:%d\n",
@@ -842,14 +841,6 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		th->urg			= 1;
 	}
 	
-	if((OPTION_DSN & opts.options)
-	   && !opts.mss && opts.data_len==0) {
-		printk(KERN_ERR "skb->debug:%d, seq:%#x,skb->len:%d,"
-		       "dsn:%#x\n",orig_skb->debug,
-		       TCP_SKB_CB(orig_skb)->seq,skb->len,
-		       TCP_SKB_CB(skb)->data_seq);
-		BUG();
-	}
 	tcp_options_write((__be32 *)(th + 1), tp, &opts, &md5_hash_location);
 	if (likely((tcb->flags & TCPCB_FLAG_SYN) == 0))
 		TCP_ECN_send(sk, skb, tcp_header_size);
@@ -1741,27 +1732,13 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
 
-		if(tp->mpc && skb->len && !TCP_SKB_CB(skb)->data_len) {
-			printk(KERN_ERR "skb->debug:%d,"
-			       "skb->dsn:%#x\n",skb->debug,
-			       TCP_SKB_CB(skb)->data_seq);
-			BUG();
-		}
-
 		if (sk!=subsk) {
 			subskb=skb_clone(skb,GFP_ATOMIC);
 			if (!subskb) break;
 			mtcp_skb_entail(subsk, subskb);
-			skb->debug=30;
-			subskb->debug=35;
-
 		}
-		else {
+		else
 			subskb=skb;
-			skb->debug=40;
-		}
-
-		BUG_ON(tp->mpc && subskb->len && !TCP_SKB_CB(subskb)->data_len);
 
 		if (unlikely(err=tcp_transmit_skb(subsk, subskb, 1, 
 						  GFP_ATOMIC)))
@@ -1856,13 +1833,9 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 			subskb=skb_clone(skb,GFP_KERNEL);
 			if (!subskb) return;
 			mtcp_skb_entail(subsk, subskb);
-			skb->debug=45;
-			subskb->debug=50;
 		}
-		else {
+		else
 			subskb=skb;
-			subskb->debug=55;
-		}
 
 		if (likely(!tcp_transmit_skb(subsk, subskb, 1, 
 					     subsk->sk_allocation))) {

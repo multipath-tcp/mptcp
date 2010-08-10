@@ -275,7 +275,6 @@ struct sk_buff {
 					     have tried to send this skb*/
 	int                     count_dsn; /*TODEL*/
 	__u32                   data_seq; /*TODEL*/
-	int                     debug; /*TODEL*/
 
 	/*
 	 * This is the control buffer. It is free to use for every
