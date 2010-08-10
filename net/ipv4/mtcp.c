@@ -1384,7 +1384,7 @@ void __mtcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk)
 	
 	orig_skb->path_mask|=PI_TO_FLAG(tp->path_index);
 
-	skb=skb_copy(orig_skb,GFP_ATOMIC);
+	skb=skb_clone(orig_skb,GFP_ATOMIC);
 	skb->sk=sk;
 
 	th=tcp_hdr(skb);
@@ -1402,14 +1402,14 @@ void mtcp_reinject_data(struct sock *orig_sk, struct sock *retrans_sk)
 	struct tcp_sock *retrans_tp = tcp_sk(retrans_sk);
 	struct multipath_pcb *mpcb=orig_tp->mpcb;
 	int mss_now;	
+
+	BUG_ON(is_meta_sk(orig_sk) || is_meta_sk(retrans_sk));
 	
 	verif_wqueues(mpcb);
 
 	bh_lock_sock(retrans_sk);
 
 	tcp_for_write_queue(skb_it,orig_sk) {
-		if (skb_it==tcp_send_head(orig_sk))
-			break;
 		skb_it->path_mask|=PI_TO_FLAG(orig_tp->path_index);
 		__mtcp_reinject_data(skb_it,retrans_sk);
 	}
