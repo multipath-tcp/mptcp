@@ -1401,7 +1401,6 @@ void mtcp_reinject_data(struct sock *orig_sk, struct sock *retrans_sk)
 	struct tcp_sock *orig_tp = tcp_sk(orig_sk);
 	struct tcp_sock *retrans_tp = tcp_sk(retrans_sk);
 	struct multipath_pcb *mpcb=orig_tp->mpcb;
-	int mss_now;	
 
 	BUG_ON(is_meta_sk(orig_sk) || is_meta_sk(retrans_sk));
 	
@@ -1414,8 +1413,7 @@ void mtcp_reinject_data(struct sock *orig_sk, struct sock *retrans_sk)
 		__mtcp_reinject_data(skb_it,retrans_sk);
 	}
 
-	mss_now = tcp_current_mss(retrans_sk, 0);
-	tcp_push(retrans_sk, 0, mss_now, retrans_tp->nonagle);
+	tcp_push(retrans_sk, 0, MPTCP_MSS, retrans_tp->nonagle);
 
 	bh_unlock_sock(retrans_sk);
 
