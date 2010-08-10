@@ -1168,8 +1168,7 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 				goto out;
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 
-			if (sk_stream_memory_free(sk) && 
-			    (skb->len < size_goal || (flags & MSG_OOB)))
+			if (skb->len < size_goal || (flags & MSG_OOB))
 				continue;
 
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);

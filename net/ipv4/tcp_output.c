@@ -1792,7 +1792,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 		       mss_now);
 	}
 
-	BUG_ON(!skb || skb->len < mss_now);	
+	BUG_ON(!skb || skb->len < mss_now);
 	tso_segs = tcp_init_tso_segs(sk,skb,mss_now);	
 
 	if (is_meta_tp(tp)) {
