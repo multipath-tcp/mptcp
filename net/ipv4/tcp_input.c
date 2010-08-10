@@ -2929,6 +2929,9 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 
 
 	BUG_ON(is_meta_sk(sk));
+	/*Cannot have more packets in flight than packets in the
+	  rexmit queue*/
+	BUG_ON(tp->packets_out>skb_queue_len(&sk->sk_write_queue));
 
 	if (tcp_write_queue_empty(sk) && 
 	    icsk->icsk_pending==ICSK_TIME_RETRANS)
@@ -3054,6 +3057,9 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			tp->retransmit_skb_hint = NULL;
 		if (skb == tp->lost_skb_hint)
 			tp->lost_skb_hint = NULL;
+		/*Cannot have more packets in flight than packets in the
+		  rexmit queue*/
+		BUG_ON(tp->packets_out>skb_queue_len(&sk->sk_write_queue));
 	}
 
 	if (likely(between(tp->snd_up, prior_snd_una, tp->snd_una)))
