@@ -3063,6 +3063,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			= inet_csk(sk)->icsk_ca_ops;
 
 		tcp_ack_update_rtt(sk, flag, seq_rtt);
+		BUG_ON(tcp_write_queue_empty(sk) && tp->packets_out);
 		tcp_rearm_rto(sk);
 
 		if (tcp_is_reno(tp)) {
