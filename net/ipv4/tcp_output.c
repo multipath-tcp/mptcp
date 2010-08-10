@@ -769,6 +769,8 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	struct tcphdr *th;
 	int err;
 
+	BUG_ON(is_meta_sk(sk));
+
 	if(!skb || !tcp_skb_pcount(skb)) {
 		printk(KERN_ERR "tcp_skb_pcount:%d,skb->len:%d\n",
 		       tcp_skb_pcount(skb),skb->len);
