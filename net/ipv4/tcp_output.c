@@ -844,8 +844,10 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	
 	if((OPTION_DSN & opts.options)
 	   && !opts.mss && opts.data_len==0) {
-		printk(KERN_ERR "skb->debug:%d, seq:%#x\n",orig_skb->debug,
-		       TCP_SKB_CB(orig_skb)->seq);
+		printk(KERN_ERR "skb->debug:%d, seq:%#x,skb->len:%d,"
+		       "dsn:%#x\n",orig_skb->debug,
+		       TCP_SKB_CB(orig_skb)->seq,skb->len,
+		       TCP_SKB_CB(skb)->data_seq);
 		BUG();
 	}
 	tcp_options_write((__be32 *)(th + 1), tp, &opts, &md5_hash_location);
@@ -1751,7 +1753,10 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			subskb=skb;
 			skb->debug=40;
 		}
-		
+
+		BUG_ON(skb->len && !TCP_SKB_CB(skb)->data_len);
+		BUG_ON(subskb->len && !TCP_SKB_CB(subskb)->data_len);
+
 		if (unlikely(err=tcp_transmit_skb(subsk, subskb, 1, 
 						  GFP_ATOMIC)))
 			break;
