@@ -2927,6 +2927,9 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 	s32 ca_seq_rtt = -1;
 	ktime_t last_ackt = net_invalid_timestamp();
 
+
+	BUG_ON(is_meta_sk(sk));
+
 	while ((skb = tcp_write_queue_head(sk)) && skb != tcp_send_head(sk)) {
 		struct tcp_skb_cb *scb = TCP_SKB_CB(skb);
 		u32 end_seq;
@@ -3123,6 +3126,10 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		}
 	}
 #endif
+
+	if (tcp_write_queue_empty(sk) && 
+	    timer_pending(&icsk->icsk_retransmit_timer))
+		BUG();
 	return flag;
 }
 
