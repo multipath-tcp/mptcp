@@ -1764,6 +1764,7 @@ void mtcp_set_owner_r(struct sk_buff *skb, struct sock *sk)
 		atomic_add(skb->truesize, 
 			   &((struct sock*)(tcp_sk(sk)->mpcb))->sk_rmem_alloc);
 }
+EXPORT_SYMBOL(mtcp_set_owner_r);
 
 /*Removes a segment received on one subflow, but containing DSNs
   that were already received on another subflow
