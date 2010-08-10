@@ -1754,8 +1754,8 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			skb->debug=40;
 		}
 
-		BUG_ON(skb->len && !TCP_SKB_CB(skb)->data_len);
-		BUG_ON(subskb->len && !TCP_SKB_CB(subskb)->data_len);
+		BUG_ON(tp->mpc && skb->len && !TCP_SKB_CB(skb)->data_len);
+		BUG_ON(tp->mpc && subskb->len && !TCP_SKB_CB(subskb)->data_len);
 
 		if (unlikely(err=tcp_transmit_skb(subsk, subskb, 1, 
 						  GFP_ATOMIC)))
