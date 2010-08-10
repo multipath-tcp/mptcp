@@ -2931,7 +2931,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 	BUG_ON(is_meta_sk(sk));
 
 	if (tcp_write_queue_empty(sk) && 
-	    timer_pending(&icsk->icsk_retransmit_timer))
+	    icsk->icsk_pending==ICSK_TIME_RETRANS)
 		BUG();
 
 	while ((skb = tcp_write_queue_head(sk)) && skb != tcp_send_head(sk)) {
@@ -3131,9 +3131,9 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		}
 	}
 #endif
-
+	
 	if (tcp_write_queue_empty(sk) && 
-	    timer_pending(&icsk->icsk_retransmit_timer)) {
+	    icsk->icsk_pending==ICSK_TIME_RETRANS) {
 		printk(KERN_ERR "packets_out:%d, flag_acked:%d,flag:%#x\n",
 		       tp->packets_out, flag & FLAG_ACKED,flag);
 		BUG();
