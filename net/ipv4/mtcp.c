@@ -1718,6 +1718,7 @@ void mtcp_push_frames(struct sock *sk)
 	release_sock(sk);
 }
 
+#define DEBUG_WQUEUES 1
 #ifdef DEBUG_WQUEUES
 void verif_wqueues(struct multipath_pcb *mpcb) 
 {
