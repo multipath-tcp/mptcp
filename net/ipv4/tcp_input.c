@@ -2938,13 +2938,15 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 	    icsk->icsk_pending==ICSK_TIME_RETRANS)
 		BUG();
 
+	check_pkts_out(sk);
+		
 	while ((skb = tcp_write_queue_head(sk)) && skb != tcp_send_head(sk)) {
 		struct tcp_skb_cb *scb = TCP_SKB_CB(skb);
 		u32 end_seq;
 		u32 acked_pcount;
 		u8 sacked = scb->sacked;
 
-		BUG_ON(tp->packets_out>skb_queue_len(&sk->sk_write_queue));
+		check_pkts_out(sk);
 
 		/* Determine how many packets and what bytes were acked, tso and else */
 		if (after(scb->end_seq, tp->snd_una)) {
@@ -2963,8 +2965,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			end_seq = scb->end_seq;
 			BUG_ON(!acked_pcount);
 		}
-
-		BUG_ON(tp->packets_out>skb_queue_len(&sk->sk_write_queue));
+		check_pkts_out(sk);
 
 		/* MTU probing checks */
 		if (fully_acked && icsk->icsk_mtup.probe_size &&
@@ -2995,8 +2996,8 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		if (sacked & TCPCB_LOST)
 			tp->lost_out -= acked_pcount;
 
-		BUG_ON(tp->packets_out>skb_queue_len(&sk->sk_write_queue));
-
+		check_pkts_out(sk);
+		
 		orig_packets=tp->packets_out;
 		orig_qsize=skb_queue_len(&sk->sk_write_queue);
 
@@ -3063,6 +3064,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		
 		tcp_unlink_write_queue(skb, sk);
 
+		
 		/*Cannot have more packets in flight than packets in the
 		  rexmit queue*/
 		if(tp->packets_out>skb_queue_len(&sk->sk_write_queue)) {
