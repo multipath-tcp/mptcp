@@ -2958,6 +2958,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		} else {
 			acked_pcount = tcp_skb_pcount(skb);
 			end_seq = scb->end_seq;
+			BUG_ON(!acked_pcount);
 		}
 
 		/* MTU probing checks */
