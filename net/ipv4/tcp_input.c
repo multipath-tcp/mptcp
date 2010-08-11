@@ -2926,7 +2926,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 	s32 seq_rtt = -1;
 	s32 ca_seq_rtt = -1;
 	ktime_t last_ackt = net_invalid_timestamp();
-	int orig_packets, orig_qsize;
+	int orig_packets, orig_qsize,orig_outsize;
 
 
 	BUG_ON(is_meta_sk(sk));
@@ -2996,7 +2996,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		if (sacked & TCPCB_LOST)
 			tp->lost_out -= acked_pcount;
 
-		check_pkts_out(sk);
+		orig_outsize=check_pkts_out(sk);
 		
 		orig_packets=tp->packets_out;
 		orig_qsize=skb_queue_len(&sk->sk_write_queue);
@@ -3069,8 +3069,10 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		  rexmit queue*/
 		if(tp->packets_out>skb_queue_len(&sk->sk_write_queue)) {
 			printk(KERN_ERR "acked_pcount:%d\n", acked_pcount);
-			printk(KERN_ERR "orig_packets:%d,orig_qsize:%d\n"
+			printk(KERN_ERR "orig_packets:%d,orig_qsize:%d,"
+			       "orig_outsize:%d\n"
 			       "packets:%d,qsize:%d\n",orig_packets,orig_qsize,
+			       orig_outsize,
 			       tp->packets_out,
 			       skb_queue_len(&sk->sk_write_queue));
 			BUG();
