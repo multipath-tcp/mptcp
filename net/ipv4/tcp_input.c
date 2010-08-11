@@ -2943,6 +2943,8 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		u32 acked_pcount;
 		u8 sacked = scb->sacked;
 
+		BUG_ON(tp->packets_out>skb_queue_len(&sk->sk_write_queue));
+
 		/* Determine how many packets and what bytes were acked, tso and else */
 		if (after(scb->end_seq, tp->snd_una)) {
 			if (tcp_skb_pcount(skb) == 1 ||
@@ -2960,6 +2962,8 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			end_seq = scb->end_seq;
 			BUG_ON(!acked_pcount);
 		}
+
+		BUG_ON(tp->packets_out>skb_queue_len(&sk->sk_write_queue));
 
 		/* MTU probing checks */
 		if (fully_acked && icsk->icsk_mtup.probe_size &&
@@ -2989,6 +2993,8 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			tp->sacked_out -= acked_pcount;
 		if (sacked & TCPCB_LOST)
 			tp->lost_out -= acked_pcount;
+
+		BUG_ON(tp->packets_out>skb_queue_len(&sk->sk_write_queue));
 
 		tp->packets_out -= acked_pcount;
 		pkts_acked += acked_pcount;
