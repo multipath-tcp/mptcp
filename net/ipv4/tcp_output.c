@@ -1301,6 +1301,10 @@ static inline unsigned int tcp_cwnd_test(struct tcp_sock *tp,
 				  struct sk_buff *skb)
 {
 	u32 in_flight, cwnd;
+	struct sock *sk=(struct sock*)tp;
+	struct inet_connection_sock *icsk=inet_csk(sk);
+
+	BUG_ON(is_meta_tp(tp));
 
 	/* Don't be strict about the congestion window for the final FIN.  */
 	if ((TCP_SKB_CB(skb)->flags & TCPCB_FLAG_FIN) &&
@@ -1308,10 +1312,13 @@ static inline unsigned int tcp_cwnd_test(struct tcp_sock *tp,
 		return 1;
 
 	in_flight = tcp_packets_in_flight(tp);
+	if (icsk->icsk_ca_state==TCP_CA_Loss)
+		tcpprobe_logmsg(sk,"tp %d: in_flight is %d",tp->path_index,
+				in_flight);
 	cwnd = tp->snd_cwnd;
 	if (in_flight < cwnd)
 		return (cwnd - in_flight);
-
+	
 	return 0;
 }
 

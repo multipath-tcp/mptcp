@@ -752,7 +752,8 @@ static inline void tcp_set_ca_state(struct sock *sk, const u8 ca_state)
 	if (ca_state != icsk->icsk_ca_state) {
 		char buf[200];
 		snprintf(buf,sizeof(buf),
-			 "LOG: changed ca state : %d -> %d",
+			 "pi %d: changed ca state : %d -> %d",
+			 tcp_sk(sk)->path_index,
 			 icsk->icsk_ca_state,ca_state);
 		tcpprobe_logmsg(sk,buf);
 	}
