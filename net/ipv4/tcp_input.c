@@ -4989,9 +4989,9 @@ static void __tcp_ack_snd_check(struct sock *sk, int ofo_possible)
 	    (ofo_possible && skb_peek(&tp->out_of_order_queue))) {
 		/* Then ack it now */
 		tcp_send_ack(sk);
-		tcpprobe_logmsg(sk,"tp %d: sending ack now\n",tp->path_index);
+		tcpprobe_logmsg(sk,"tp %d: sending ack now",tp->path_index);
 	} else {
-		tcpprobe_logmsg(sk,"tp %d: arming delayed ack\n",
+		tcpprobe_logmsg(sk,"tp %d: arming delayed ack",
 				tp->path_index);
 		/* Else, send delayed ack. */
 		tcp_send_delayed_ack(sk);
@@ -5002,6 +5002,8 @@ static inline void tcp_ack_snd_check(struct sock *sk)
 {
 	if (!inet_csk_ack_scheduled(sk)) {
 		/* We sent a data segment already. */
+		tcpprobe_logmsg(sk,"tp %d: ack is not scheduled",
+				tcp_sk(sk)->path_index);
 		return;
 	}
 	__tcp_ack_snd_check(sk, 1);
