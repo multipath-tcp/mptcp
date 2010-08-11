@@ -1670,7 +1670,9 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 	struct sk_buff *skb;
 	unsigned int tso_segs, sent_pkts;
 	int cwnd_quota;
-	int result;
+	int result;	
+	struct sock *sk_it;
+	struct tcp_sock *tp_it;
 
 	if (tp->mpc) {
 		if (mss_now!=MPTCP_MSS) {
@@ -1679,19 +1681,31 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			BUG();
 		}
 	}
-
+	/*If the arg is the meta-sock, we lock all the subsocks, 
+	  because we can potentially add data to any of them here.*/
+	if (is_meta_sk(sk)) 
+		mtcp_for_each_sk(tp->mpcb,sk_it,tp_it) {
+			if (in_interrupt())
+				bh_lock_sock(sk_it);
+			else lock_sock(sk_it);
+		}
+	
 	/* If we are closed, the bytes will have to remain here.
 	 * In time closedown will finish, we empty the write queue and all
 	 * will be happy.
 	 */
-	if (unlikely(sk->sk_state == TCP_CLOSE))
-		return 0;
+	if (unlikely(sk->sk_state == TCP_CLOSE)) {
+		result=0;
+		goto out;
+	}
 
 	sent_pkts = 0;
 
 	/* Do MTU probing. */	
-	if ((result = tcp_mtu_probe(sk)) == 0)
-		return 0;
+	if ((result = tcp_mtu_probe(sk)) == 0) {		
+		result=0;
+		goto out;
+	}
 	else if (result > 0) {
 		sent_pkts = 1;
 	}
@@ -1772,9 +1786,20 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 
 		tcp_cwnd_validate(subsk);
 	}
-	if (likely(sent_pkts))
-		return 0;
-	return !tp->packets_out && tcp_send_head(sk);
+	if (likely(sent_pkts)) {
+		result=0;
+		goto out;
+	}
+	result = !tp->packets_out && tcp_send_head(sk);
+out:
+	if (is_meta_sk(sk))
+		mtcp_for_each_sk(tp->mpcb,sk_it,tp_it) {
+			if (in_interrupt())
+				bh_unlock_sock(sk_it);
+			else release_sock(sk_it);
+		}
+
+	return result;	
 }
 
 /* Push out any pending frames which were held back due to
@@ -1816,6 +1841,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 		subtp=tcp_sk(subsk);
 		if (!subsk)
 			return;
+		lock_sock(subsk);
 	}
 	else {
 		subsk=sk; subtp=tp;
@@ -1839,7 +1865,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 		if (skb->len > limit &&
 		    unlikely(tso_fragment(sk, skb, limit, mss_now))) {
 			PDEBUG("NOT SENDING TCP SEGMENT\n");
-			return;
+			goto out;
 		}
 
 		/* Send it out now. */
@@ -1847,7 +1873,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 		
 		if (sk!=subsk) {
 			subskb=skb_clone(skb,GFP_KERNEL);
-			if (!subskb) return;
+			if (!subskb) goto out;
 			mtcp_skb_entail(subsk, subskb);
 		}
 		else
@@ -1859,9 +1885,12 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 			if (sk!=subsk)
 				tcp_event_new_data_sent(sk,skb);
 			tcp_cwnd_validate(subsk);
-			return;
+			goto out;
 		}
 	}
+out:
+	if (sk!=subsk)
+		release_sock(subsk);
 }
 
 /* This function returns the amount that we can raise the
