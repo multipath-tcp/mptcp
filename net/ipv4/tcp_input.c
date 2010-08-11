@@ -4989,7 +4989,10 @@ static void __tcp_ack_snd_check(struct sock *sk, int ofo_possible)
 	    (ofo_possible && skb_peek(&tp->out_of_order_queue))) {
 		/* Then ack it now */
 		tcp_send_ack(sk);
+		tcpprobe_logmsg(sk,"tp %d: sending ack now\n",tp->path_index);
 	} else {
+		tcpprobe_logmsg(sk,"tp %d: arming delayed ack\n",
+				tp->path_index);
 		/* Else, send delayed ack. */
 		tcp_send_delayed_ack(sk);
 	}
