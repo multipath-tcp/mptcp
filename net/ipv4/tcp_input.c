@@ -3052,15 +3052,20 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 #endif
 		
 		tcp_unlink_write_queue(skb, sk);
+
+		/*Cannot have more packets in flight than packets in the
+		  rexmit queue*/
+		if(tp->packets_out>skb_queue_len(&sk->sk_write_queue)) {
+			printk(KERN_ERR "acked_pcount:%d\n", acked_pcount);
+			BUG();
+		}
+
 		sk_wmem_free_skb(sk, skb);
 		tp->scoreboard_skb_hint = NULL;
 		if (skb == tp->retransmit_skb_hint)
 			tp->retransmit_skb_hint = NULL;
 		if (skb == tp->lost_skb_hint)
 			tp->lost_skb_hint = NULL;
-		/*Cannot have more packets in flight than packets in the
-		  rexmit queue*/
-		BUG_ON(tp->packets_out>skb_queue_len(&sk->sk_write_queue));
 	}
 
 	if (likely(between(tp->snd_up, prior_snd_una, tp->snd_una)))
