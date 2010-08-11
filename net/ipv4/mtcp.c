@@ -1783,6 +1783,7 @@ void mtcp_check_eat_old_seg(struct sock *sk, struct sk_buff *skb)
 	sk_eat_skb(sk,skb,0);
 }
 
+#ifdef MTCP_DEBUG_PKTS_OUT
 int check_pkts_out(struct sock* sk) {
 	int cnt=0;
 	struct sk_buff *skb;
@@ -1800,6 +1801,7 @@ int check_pkts_out(struct sock* sk) {
 
 	return cnt;
 }
+#endif
 
 MODULE_LICENSE("GPL");
 

@@ -284,7 +284,11 @@ void mtcp_check_seqnums(struct multipath_pcb *mpcb, int before);
 #define mtcp_check_seqnums(mpcb, before)
 #endif
 
+#ifdef MTCP_DEBUG_PKTS_OUT
 int check_pkts_out(struct sock* sk);
+#else
+#define check_pkts_out(sk)
+#endif
 
 int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk, 
 		   long *timeo,int flags);
