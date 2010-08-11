@@ -1783,6 +1783,21 @@ void mtcp_check_eat_old_seg(struct sock *sk, struct sk_buff *skb)
 	sk_eat_skb(sk,skb,0);
 }
 
+void check_pkts_out(struct sock* sk) {
+	int cnt=0;
+	struct sk_buff *skb;
+	struct tcp_sock *tp=tcp_sk(sk);
+	/*TODEL: sanity check on packets_out*/
+	if (tp->mpc && !is_meta_tp(tp)) {
+		tcp_for_write_queue(skb,sk) {
+			if (skb == tcp_send_head(sk))
+				break;
+			else cnt+=tcp_skb_pcount(skb);
+		}
+		BUG_ON(tp->packets_out!=cnt);
+	}
+}
+
 MODULE_LICENSE("GPL");
 
 EXPORT_SYMBOL(mtcp_sendmsg);

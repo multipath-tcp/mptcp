@@ -3425,6 +3425,8 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 	int prior_packets;
 	int frto_cwnd = 0;
 
+	check_pkts_out(sk);
+
 	/* If the ack is newer than sent or older than previous acks
 	 * then we can probably ignore it.
 	 */
@@ -3512,7 +3514,7 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 
 	if ((flag & FLAG_FORWARD_PROGRESS) || !(flag & FLAG_NOT_DUP))
 		dst_confirm(sk->sk_dst_cache);
-
+	check_pkts_out(sk);
 	return 1;
 
 no_queue:
@@ -3522,6 +3524,7 @@ no_queue:
 	 */
 	if (tcp_send_head(sk))
 		tcp_ack_probe(sk);
+	check_pkts_out(sk);
 	return 1;
 
 old_ack:
@@ -3534,6 +3537,7 @@ old_ack:
 uninteresting_ack:
 	printk(KERN_ERR "received uninteresting ack\n");
 	SOCK_DEBUG(sk, "Ack %u out of %u:%u\n", ack, tp->snd_una, tp->snd_nxt);
+	check_pkts_out(sk);
 	return 0;
 }
 
