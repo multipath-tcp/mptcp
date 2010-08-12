@@ -276,7 +276,7 @@
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
 
-#define DEBUG_TCP 1 /*set to define if you want debugging messages*/
+#undef DEBUG_TCP /*set to define if you want debugging messages*/
 
 #undef PDEBUG
 #ifdef DEBUG_TCP
