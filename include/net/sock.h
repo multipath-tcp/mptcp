@@ -219,6 +219,7 @@ struct sock {
 	int			sk_rcvbuf;
 	socket_lock_t		sk_lock;
 	int                     sk_debug; /*TODEL*/
+	char                    sk_func[30]; /*TODEL*/
 	int                     sk_debug_count; /*TODEL*/
 	/*
 	 * The backlog queue is special, it is always used with
@@ -848,10 +849,17 @@ static inline void lock_sock(struct sock *sk)
 extern void release_sock(struct sock *sk);
 
 /* BH context may only use the following locking interface. */
-#define bh_lock_sock(__sk)	spin_lock(&((__sk)->sk_lock.slock))
-#define bh_lock_sock_nested(__sk)					\
-				spin_lock_nested(&((__sk)->sk_lock.slock), \
-				SINGLE_DEPTH_NESTING)
+#define bh_lock_sock(__sk)	do {				\
+		sprintf((__sk)->sk_func,"%s",__FUNCTION__);	\
+		spin_lock(&((__sk)->sk_lock.slock));		\
+	} while(0)						\
+	
+
+#define bh_lock_sock_nested(__sk) do {					\
+		sprintf((__sk)->sk_func,"%s",__FUNCTION__);		\
+		spin_lock_nested(&((__sk)->sk_lock.slock),		\
+				 SINGLE_DEPTH_NESTING);			\
+	} while(0)
 #define bh_unlock_sock(__sk)	spin_unlock(&((__sk)->sk_lock.slock))
 
 extern struct sock		*sk_alloc(struct net *net, int family,

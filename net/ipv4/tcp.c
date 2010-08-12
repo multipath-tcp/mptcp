@@ -979,7 +979,9 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		BUG();
 	}
 	else if (spin_is_locked(&sk->sk_lock.slock)) {
-		printk(KERN_ERR "sk_debug2:%d\n",sk->sk_debug);
+		printk(KERN_ERR "sk_debug2:%d,is_meta_sk:%d,"
+		       "func:%s\n",sk->sk_debug,is_meta_sk(sk),
+		       sk->sk_func);
 		BUG();
 	}
 	lock_sock(sk);
