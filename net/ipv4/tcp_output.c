@@ -1838,6 +1838,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 	unsigned int tso_segs, cwnd_quota;
 	struct sock *subsk;
 	struct tcp_sock *subtp;
+	int is_locked=0;
 
 	if (skb && skb->len<mss_now) {
 		printk(KERN_ERR "skb->len:%d,mss_now:%d\n",skb->len,
@@ -1852,8 +1853,9 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 		subtp=tcp_sk(subsk);
 		if (!subsk)
 			return;
-		subsk->sk_debug=4;
+		subsk->sk_debug=4;		
 		lock_sock(subsk);
+		is_locked=1;
 	}
 	else {
 		subsk=sk; subtp=tp;
@@ -1903,6 +1905,8 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 out:
 	if (sk!=subsk) {
 		subsk->sk_debug=0;
+		BUG_ON(!is_locked);
+		BUG_ON(!sock_owned_by_user(subsk));
 		release_sock(subsk);
 	}
 }
