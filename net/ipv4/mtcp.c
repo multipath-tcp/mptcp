@@ -697,9 +697,13 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 	
 out:
 	if (!bh) {
-		if (!subsocks_locked)
-			mtcp_for_each_sk(mpcb,sk,tp) release_sock(sk);
-		mutex_unlock(&mpcb->mutex);		
+		if (!subsocks_locked) {
+			mtcp_for_each_sk(mpcb,sk,tp) {
+				BUG_ON(!sock_owned_by_user(sk));
+				release_sock(sk);
+			}
+		}
+		mutex_unlock(&mpcb->mutex);
 	}
 
 	return bestsk;
