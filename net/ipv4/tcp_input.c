@@ -5009,11 +5009,8 @@ static inline void tcp_data_snd_check(struct sock *sk)
  *    can take it. And sk_lock.owned is still 1, so no user context can take it.
  *    So the socket is not locked, but no one can take it. In that case, 
  *    we cannot unlock the subsock, otherwise we have double unlock,
- *    so we simply let it as is. We verify the 'AFAICT' with assertion
- *    "if spinlock is not locked, at least it must be owned by the user"
+ *    so we simply let it as is.
  */
-
-
 	BUG_ON(is_meta_sk(sk));
 	if (tcp_sk(sk)->mpc && tcp_sk(sk)->mpcb) {
 		mpcb_sk=((struct sock*)tcp_sk(sk)->mpcb);
@@ -5022,8 +5019,6 @@ static inline void tcp_data_snd_check(struct sock *sk)
 			bh_unlock_sock(sk);
 			relock=1;
 		}
-		else BUG_ON(!sock_owned_by_user(sk) ||
-			    !irqs_disabled());
 	}
 	else mpcb_sk=sk;
 	tcp_push_pending_frames(mpcb_sk);
