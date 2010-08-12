@@ -708,7 +708,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	if (!tcp_sk(master_sk)->mpc)
 		return subtcp_sendmsg(iocb,master_sk, msg, size);
 	
-	PDEBUG("Entering %s\n",__FUNCTION__);
+	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
 
 	BUG_ON(!mpcb);
 
@@ -729,9 +729,8 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		return copied;
 	}
 
-	PDEBUG("Leaving %s, copied %d, next data seq %x\n",
-	       __FUNCTION__,
-	       (int) copied,mpcb_tp->write_seq);
+	printk(KERN_ERR "Leaving %s, copied %d\n",
+	       __FUNCTION__, (int) copied);
 	return copied;
 }
 
