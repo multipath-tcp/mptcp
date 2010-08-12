@@ -974,8 +974,6 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	int err, copied;
 	long timeo;
 	
-	BUG_ON(!is_meta_sk(sk));
-	
 	if (sock_owned_by_user(sk)) {
 		printk(KERN_ERR "sk_debug:%d\n",sk->sk_debug);
 		BUG();
