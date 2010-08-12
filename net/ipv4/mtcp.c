@@ -390,8 +390,10 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	
 	mpcb_sk->sk_rcvbuf = sysctl_rmem_default;
 	mpcb_sk->sk_sndbuf = sysctl_wmem_default;
-	
 	mpcb_sk->sk_state = TCPF_CLOSE;
+	/*inherit locks the mpcb_sk, so we must release it here.*/
+	bh_unlock_sock(mpcb_sk);
+	sock_put(mpcb_sk);
 	
 	mpcb->master_sk=master_sk;
 
