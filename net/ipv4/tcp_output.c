@@ -1692,9 +1692,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			else {
 				BUG_ON(sock_owned_by_user(sk_it));
 				sk_it->sk_debug=3;
-				printk(KERN_ERR "before lock write_xmit\n");
 				lock_sock(sk_it);
-				printk(KERN_ERR "after lock write_xmit\n");
 			}
 		}
 	
