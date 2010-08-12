@@ -974,8 +974,16 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	int err, copied;
 	long timeo;
 	
-	BUG_ON(in_atomic());
-
+	BUG_ON(!is_meta_sk(sk));
+	
+	if (sock_owned_by_user(sk)) {
+		printk(KERN_ERR "sk_debug:%d\n",sk->sk_debug);
+		BUG();
+	}
+	else if (spin_is_locked(&sk->sk_lock.slock)) {
+		printk(KERN_ERR "sk_debug2:%d\n",sk->sk_debug);
+		BUG();
+	}
 	lock_sock(sk);
 	TCP_CHECK_TIMER(sk);
 

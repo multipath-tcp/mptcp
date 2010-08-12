@@ -1685,9 +1685,14 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 	  because we can potentially add data to any of them here.*/
 	if (is_meta_sk(sk)) 
 		mtcp_for_each_sk(tp->mpcb,sk_it,tp_it) {
-			if (in_interrupt())
+			if (in_interrupt()) {
+				sk_it->sk_debug=2;
 				bh_lock_sock(sk_it);
-			else lock_sock(sk_it);
+			}
+			else {
+				sk_it->sk_debug=3;
+				lock_sock(sk_it);
+			}
 		}
 	
 	/* If we are closed, the bytes will have to remain here.
@@ -1794,9 +1799,14 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 out:
 	if (is_meta_sk(sk))
 		mtcp_for_each_sk(tp->mpcb,sk_it,tp_it) {
-			if (in_interrupt())
+			if (in_interrupt()) {
+				sk_it->sk_debug=0;
 				bh_unlock_sock(sk_it);
-			else release_sock(sk_it);
+			}
+			else {
+				sk_it->sk_debug=0;
+				release_sock(sk_it);
+			}
 		}
 
 	return result;	
@@ -1834,13 +1844,14 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 	}
 
 	BUG_ON(!skb || skb->len < mss_now);
-	tso_segs = tcp_init_tso_segs(sk,skb,mss_now);	
+	tso_segs = tcp_init_tso_segs(sk,skb,mss_now);
 
 	if (is_meta_tp(tp)) {
 		subsk=get_available_subflow(tp->mpcb, skb);
 		subtp=tcp_sk(subsk);
 		if (!subsk)
 			return;
+		subsk->sk_debug=4;
 		lock_sock(subsk);
 	}
 	else {
@@ -1889,8 +1900,10 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 		}
 	}
 out:
-	if (sk!=subsk)
+	if (sk!=subsk) {
+		subsk->sk_debug=0;
 		release_sock(subsk);
+	}
 }
 
 /* This function returns the amount that we can raise the

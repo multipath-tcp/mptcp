@@ -4998,17 +4998,22 @@ void tcp_check_space(struct sock *sk)
 static inline void tcp_data_snd_check(struct sock *sk)
 {
 	struct sock *mpcb_sk;
+	BUG_ON(is_meta_sk(sk));
 	if (tcp_sk(sk)->mpc && tcp_sk(sk)->mpcb) {
 		mpcb_sk=((struct sock*)tcp_sk(sk)->mpcb);
 		/*Need to unlock the subsock, because,
 		  tcp_write_xmit will lock all subsocks, so 
 		  keeping this one locked would create a deadlock.*/
+		sk->sk_debug=0;
 		bh_unlock_sock(sk);
 	}
 	else mpcb_sk=sk;
 	tcp_push_pending_frames(mpcb_sk);
 	tcp_check_space(mpcb_sk);
-	if (mpcb_sk!=sk) bh_lock_sock(sk);
+	if (mpcb_sk!=sk) {
+		sk->sk_debug=1;
+		bh_lock_sock(sk);
+	}
 }
 
 /*
