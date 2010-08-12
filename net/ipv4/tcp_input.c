@@ -5008,8 +5008,10 @@ static inline void tcp_data_snd_check(struct sock *sk)
 		  from release_sock() (sk_backlog_rcv()), in that case,
 		  bh_unlock_sock has been called already.*/
 		sk->sk_debug=0;
-		if (in_interrupt())
+		if (in_interrupt()) {
+			BUG_ON(!spin_is_locked(&sk->sk_lock.slock));
 			bh_unlock_sock(sk);
+		}
 	}
 	else mpcb_sk=sk;
 	tcp_push_pending_frames(mpcb_sk);
