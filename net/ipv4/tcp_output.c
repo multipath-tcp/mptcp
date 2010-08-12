@@ -1726,7 +1726,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		struct sk_buff *subskb;
 
 		if (is_meta_tp(tp)) {
-			subsk=get_available_subflow(tp->mpcb, skb);
+			subsk=get_available_subflow(tp->mpcb, skb, 1);
 			if (!subsk)
 				break;
 			subtp=tcp_sk(subsk);
@@ -1850,7 +1850,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 	tso_segs = tcp_init_tso_segs(sk,skb,mss_now);
 
 	if (is_meta_tp(tp)) {
-		subsk=get_available_subflow(tp->mpcb, skb);
+		subsk=get_available_subflow(tp->mpcb, skb,0);
 		subtp=tcp_sk(subsk);
 		if (!subsk)
 			return;

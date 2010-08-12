@@ -984,9 +984,7 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		       sk->sk_func);
 		BUG();
 	}
-	printk(KERN_ERR "before lock\n");
 	lock_sock(sk);
-	printk(KERN_ERR "after lock\n");
 	TCP_CHECK_TIMER(sk);
 
 	flags = msg->msg_flags;

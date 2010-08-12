@@ -632,14 +632,19 @@ int mtcp_is_available(struct sock *sk, struct sk_buff *skb)
 	return 0;
 }
 
-/*This is the scheduler. This function decides on which flow to send
+/**
+ *This is the scheduler. This function decides on which flow to send
  *  a given MSS. If all subflows are found to be busy, NULL is returned
  * The flow is selected based on the estimation of how much time will be
  * needed to send the segment. If all paths have full cong windows, we
  * simply block. The flow able to send the segment the soonest get it. 
+ * @subsocks_locked: 1 if the subsocks are already locked. If 0, we lock them
+ *            ourselves, then release them before to return.
+ *            if in bh, the caller MUST lock himself the subsocks, and set
+ *            @subsocks_locked to 1.
  */
 struct sock* get_available_subflow(struct multipath_pcb *mpcb, 
-				   struct sk_buff *skb)
+				   struct sk_buff *skb, int subsocks_locked)
 {
 	struct tcp_sock *tp;
 	struct sock *sk;
@@ -651,8 +656,10 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 	
 	if (!bh) {
 		mutex_lock(&mpcb->mutex);
-		mtcp_for_each_sk(mpcb,sk,tp) lock_sock(sk);
+		if (!subsocks_locked)
+			mtcp_for_each_sk(mpcb,sk,tp) lock_sock(sk);
 	}
+	else BUG_ON(!subsocks_locked);
 
 	/*if there is only one subflow, bypass the scheduling function*/
 	if (mpcb->cnt_subflows==1) {
@@ -690,7 +697,8 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 	
 out:
 	if (!bh) {
-		mtcp_for_each_sk(mpcb,sk,tp) release_sock(sk);
+		if (!subsocks_locked)
+			mtcp_for_each_sk(mpcb,sk,tp) release_sock(sk);
 		mutex_unlock(&mpcb->mutex);		
 	}
 
