@@ -1430,9 +1430,6 @@ static unsigned int tcp_snd_test(struct sock *subsk, struct sk_buff *skb,
 
 	cwnd_quota = tcp_cwnd_test(subtp, skb);
 
-	/*Scheduler should prevent that*/
-	BUG_ON(!cwnd_quota && subtp->mpc);
-
 	if (cwnd_quota && !tcp_snd_wnd_test(subtp, skb, cur_mss))
 		cwnd_quota = 0;
 
