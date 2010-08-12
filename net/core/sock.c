@@ -1448,7 +1448,6 @@ static void __release_sock(struct sock *sk)
 			struct sk_buff *next = skb->next;
 
 			skb->next = NULL;
-			BUG_ON(in_interrupt());
 			sk_backlog_rcv(sk, skb);
 
 			/*
