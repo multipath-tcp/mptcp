@@ -80,8 +80,10 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 	unsigned int prior_packets = tp->packets_out;
 	int meta_sk=is_meta_tp(tp);
 
-	if (tocheck)
+	if (tocheck) {
+		BUG_ON(check_skb==skb);
 		BUG_ON(tcp_send_head(check_sk)!=check_skb);
+	}
 
 	check_send_head(sk,2);
 	BUG_ON(tcp_send_head(sk)!=skb);
