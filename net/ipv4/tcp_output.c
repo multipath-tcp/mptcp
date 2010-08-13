@@ -1862,14 +1862,14 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 	  (through the sequence release_sock->backlog_rcv->data_snd_check->
 	  tcp_write_xmit).*/
 	skb = tcp_send_head(sk);
+	if (!skb) goto out;
 
-	if (skb && skb->len<mss_now) {
+	if (skb->len<mss_now) {
 		printk(KERN_ERR "skb->len:%d,mss_now:%d\n",skb->len,
 		       mss_now);
+		BUG();
 	}
-
-	BUG_ON(!skb || skb->len < mss_now);
-
+	
 	tso_segs = tcp_init_tso_segs(sk,skb,mss_now);
 
 	cwnd_quota = tcp_snd_test(subsk, skb, mss_now, TCP_NAGLE_PUSH);
