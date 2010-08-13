@@ -1048,6 +1048,17 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			int copy;
 
 			skb = tcp_write_queue_tail(sk);
+
+			/*If this happen, the write queue has been emptied
+			  without setting the send_head to NULL.
+			  Normally the send_head is set to NULL with 
+			  tcp_advance_send_head, called by 
+			  tcp_event_new_data_sent on the meta_sk.
+			  If we transmit an skb without advancing the send
+			  head, the skb will be suppressed, while the send
+			  head will still point to it.*/
+			BUG_ON(!skb && tcp_send_head(sk));
+			
 			if (!tcp_send_head(sk) || 
 			    (copy = size_goal - skb->len) <= 0) {
 			new_segment:

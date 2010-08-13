@@ -1590,6 +1590,13 @@ static void mtcp_clean_rtx_queue(struct sock *sk)
 		struct tcp_skb_cb *scb = TCP_SKB_CB(skb);
 		if (before(tp->snd_una,scb->end_data_seq))
 			break;
+		if(skb==tcp_send_head(sk)) {
+			printk(KERN_ERR "removing the send head !\n");
+			printk(KERN_ERR "was it ever transmitted ?\n");
+			printk(KERN_ERR "dsn is %#x\n",
+			       TCP_SKB_CB(skb)->data_seq);
+			BUG();
+		}
 		tcp_unlink_write_queue(skb, sk);
 		sk_wmem_free_skb(sk, skb);
 	}
@@ -1643,8 +1650,8 @@ void mtcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end) {
 			  previous node, not the current one.*/
 			list_del(&todel->list);
 			kfree(todel);		       
-			/*Need to continue to see if this new extension covers next segment
-			  as well.*/
+			/*Need to continue to see if this new extension covers 
+			  next segment as well.*/
 			continue;
 		}
 		if (before(end,dsack->start)) {
