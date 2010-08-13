@@ -1841,6 +1841,9 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 	struct tcp_sock *subtp;
 	int is_locked=0;
 
+
+	BUG_ON(!sock_owned_by_user(sk));
+	
 	if (skb && skb->len<mss_now) {
 		printk(KERN_ERR "skb->len:%d,mss_now:%d\n",skb->len,
 		       mss_now);
