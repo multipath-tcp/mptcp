@@ -177,22 +177,23 @@ struct multipath_pcb {
 
 /*Iterates overs all subflows*/
 #define mtcp_for_each_tp(mpcb,tp)			\
-	for (tp=mpcb->connection_list;tp;tp=tp->next)
+	for ((tp)=(mpcb)->connection_list;(tp);(tp)=(tp)->next)
 
 /*Iterates over new subflows. prevnum is the number
   of flows already known by the caller.
   Note that prevnum is altered by this macro*/
 #define mtcp_for_each_newtp(mpcb,tp,prevnum)				\
-	for (tp=mpcb->connection_list,prevnum=mpcb->cnt_subflows-prevnum; \
-	     prevnum;tp=tp->next,prevnum--)
+	for ((tp)=(mpcb)->connection_list,				\
+		     prevnum=(mpcb)->cnt_subflows-prevnum;		\
+	     prevnum;(tp)=(tp)->next,prevnum--)
 
 #define mtcp_for_each_sk(mpcb,sk,tp)					\
-	for (sk=(struct sock*)mpcb->connection_list,tp=tcp_sk(sk);	\
+	for ((sk)=(struct sock*)(mpcb)->connection_list,(tp)=tcp_sk(sk); \
 	     sk;							\
 	     sk=(struct sock*)tcp_sk(sk)->next,tp=tcp_sk(sk))
 
 #define mtcp_for_each_sk_safe(__mpcb,__sk,__temp)			\
-	for (__sk=(struct sock*)__mpcb->connection_list,		\
+	for (__sk=(struct sock*)(__mpcb)->connection_list,		\
 		     __temp=(__sk)?(struct sock*)tcp_sk(__sk)->next:NULL; \
 	     __sk;							\
 	     __sk=__temp,						\
