@@ -1802,7 +1802,8 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		 * This call will increment packets_out.
 		 */
 		BUG_ON(tcp_send_head(sk)!=skb);
-		tocheck=1;
+		if (sk!=subsk)
+			tocheck=1;
 		check_skb=skb;
 		check_sk=sk;
 		tcp_event_new_data_sent(subsk, subskb);
