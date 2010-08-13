@@ -1808,9 +1808,10 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		check_sk=sk;
 		tcp_event_new_data_sent(subsk, subskb);
 		tocheck=0;
-		BUG_ON(tcp_send_head(sk)!=skb);
-		if (sk!=subsk)
+		if (sk!=subsk) {
+			BUG_ON(tcp_send_head(sk)!=skb);
 			tcp_event_new_data_sent(sk,skb);
+		}
 		
 		tcp_minshall_update(tp, mss_now, skb);
 		sent_pkts++;
