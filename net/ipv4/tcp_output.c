@@ -1905,6 +1905,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 					     subsk->sk_allocation))) {
 			BUG_ON(tcp_send_head(sk)!=skb);
 			tcp_event_new_data_sent(subsk, subskb);
+			BUG_ON(tcp_send_head(sk)!=skb);
 			if (sk!=subsk)
 				tcp_event_new_data_sent(sk,skb);
 			tcp_cwnd_validate(subsk);
