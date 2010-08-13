@@ -1057,6 +1057,7 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			  If we transmit an skb without advancing the send
 			  head, the skb will be suppressed, while the send
 			  head will still point to it.*/
+			check_send_head(sk);
 			BUG_ON(!skb && tcp_send_head(sk));
 			
 			if (!tcp_send_head(sk) || 

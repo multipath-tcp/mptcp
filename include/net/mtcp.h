@@ -288,8 +288,10 @@ void mtcp_check_seqnums(struct multipath_pcb *mpcb, int before);
 
 #ifdef MTCP_DEBUG_PKTS_OUT
 int check_pkts_out(struct sock* sk);
+void check_send_head(struct sock *sk);
 #else
 #define check_pkts_out(sk)
+#define check_send_head(sk)
 #endif
 
 int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk, 

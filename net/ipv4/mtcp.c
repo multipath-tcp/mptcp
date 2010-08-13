@@ -1586,6 +1586,9 @@ static void mtcp_clean_rtx_queue(struct sock *sk)
 	struct tcp_sock *tp=tcp_sk(sk);
 	
 	BUG_ON(!is_meta_tp(tp));
+	
+	check_send_head(sk);
+	
 	while ((skb = tcp_write_queue_head(sk)) && skb != tcp_send_head(sk)) {
 		struct tcp_skb_cb *scb = TCP_SKB_CB(skb);
 		if (before(tp->snd_una,scb->end_data_seq))
@@ -1600,6 +1603,7 @@ static void mtcp_clean_rtx_queue(struct sock *sk)
 		tcp_unlink_write_queue(skb, sk);
 		sk_wmem_free_skb(sk, skb);
 	}
+	check_send_head(sk);
 }
 
 void mtcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end) {
@@ -1820,6 +1824,22 @@ int check_pkts_out(struct sock* sk) {
 	else cnt=-10;
 
 	return cnt;
+}
+
+void check_send_head(struct sock *sk) {
+	struct sk_buff *head=tcp_send_head(sk);
+	struct sk_buff *skb;
+	int found=0;
+	if (head) {
+		tcp_for_write_queue(skb,sk) {
+			if (skb==head) {
+				found=1;
+				break;
+			}			
+		}
+	}
+	else found=1;
+	BUG_ON(!found);
 }
 #endif
 
