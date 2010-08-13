@@ -69,17 +69,27 @@ int sysctl_tcp_base_mss __read_mostly = 512;
 /* By default, RFC2861 behavior.  */
 int sysctl_tcp_slow_start_after_idle __read_mostly = 1;
 
+/*TODEL*/
+int tocheck=0;
+struct sk_buff *check_skb;
+struct sock *check_sk;
+
 static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int prior_packets = tp->packets_out;
 	int meta_sk=is_meta_tp(tp);
 
+	if (tocheck)
+		BUG_ON(tcp_send_head(check_sk)!=check_skb);
+
 	check_send_head(sk,2);
 	BUG_ON(tcp_send_head(sk)!=skb);
 	check_pkts_out(sk);
 	tcp_advance_send_head(sk, skb);
 	check_send_head(sk,3);
+	if (tocheck)
+		BUG_ON(tcp_send_head(check_sk)!=check_skb);
 	tp->snd_nxt = meta_sk?TCP_SKB_CB(skb)->end_data_seq:
 		TCP_SKB_CB(skb)->end_seq;
 
@@ -91,7 +101,9 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 	if (!prior_packets && !is_meta_tp(tp))
 		inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
 					  inet_csk(sk)->icsk_rto, TCP_RTO_MAX);
-
+	if (tocheck)
+		BUG_ON(tcp_send_head(check_sk)!=check_skb);
+	
 	check_pkts_out(sk);
 	check_send_head(sk,5);
 }
@@ -1787,12 +1799,16 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		/* Advance the send_head.  This one is sent out.
 		 * This call will increment packets_out.
 		 */
-	BUG_ON(tcp_send_head(sk)!=skb);
+		BUG_ON(tcp_send_head(sk)!=skb);
+		tocheck=1;
+		check_skb=skb;
+		check_sk=sk;
 		tcp_event_new_data_sent(subsk, subskb);
-	BUG_ON(tcp_send_head(sk)!=skb);
+		tocheck=0;
+		BUG_ON(tcp_send_head(sk)!=skb);
 		if (sk!=subsk)
 			tcp_event_new_data_sent(sk,skb);
-
+		
 		tcp_minshall_update(tp, mss_now, skb);
 		sent_pkts++;
 
