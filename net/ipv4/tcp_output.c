@@ -1717,7 +1717,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		sent_pkts = 1;
 	}
 
-	while ((skb = tcp_send_head(sk))) {
+	while (tcp_send_head(sk)) {
 		unsigned int limit;
 		int err;
 		struct sock *subsk;
@@ -1725,7 +1725,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		struct sk_buff *subskb;
 
 		if (is_meta_tp(tp)) {
-			subsk=get_available_subflow(tp->mpcb, skb, 1);
+			subsk=get_available_subflow(tp->mpcb, 1);
 			if (!subsk)
 				break;
 			subtp=tcp_sk(subsk);
@@ -1733,6 +1733,9 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		else {
 			subsk=sk; subtp=tp;
 		}
+		/*IMPORTANT: see note in tcp_push_one*/
+		skb=tcp_send_head(sk);		
+		if (!skb) break;
 
 		/*This must be invoked even if we don't want
 		  to support TSO at the moment*/
@@ -1835,27 +1838,14 @@ void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
 void tcp_push_one(struct sock *sk, unsigned int mss_now)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sk_buff *skb = tcp_send_head(sk);
+	struct sk_buff *skb;
 	unsigned int tso_segs, cwnd_quota;
 	struct sock *subsk;
 	struct tcp_sock *subtp;
 	int is_locked=0;
 
-
-	BUG_ON(!sock_owned_by_user(sk));
-	
-	if (skb && skb->len<mss_now) {
-		printk(KERN_ERR "skb->len:%d,mss_now:%d\n",skb->len,
-		       mss_now);
-	}
-	BUG_ON(tcp_send_head(sk)!=skb);
-
-	BUG_ON(!skb || skb->len < mss_now);
-	tso_segs = tcp_init_tso_segs(sk,skb,mss_now);
-	BUG_ON(tcp_send_head(sk)!=skb);
-
 	if (is_meta_tp(tp)) {
-		subsk=get_available_subflow(tp->mpcb, skb,0);
+		subsk=get_available_subflow(tp->mpcb,0);
 		subtp=tcp_sk(subsk);
 		if (!subsk)
 			return;
@@ -1866,10 +1856,23 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 	else {
 		subsk=sk; subtp=tp;
 	}
-	BUG_ON(tcp_send_head(sk)!=skb);
+
+	/*WARNING: tcp_send_head MUST be called after get_available_subflow,
+	  because the scheduler may advance the send head.
+	  (through the sequence release_sock->backlog_rcv->data_snd_check->
+	  tcp_write_xmit).*/
+	skb = tcp_send_head(sk);
+
+	if (skb && skb->len<mss_now) {
+		printk(KERN_ERR "skb->len:%d,mss_now:%d\n",skb->len,
+		       mss_now);
+	}
+
+	BUG_ON(!skb || skb->len < mss_now);
+
+	tso_segs = tcp_init_tso_segs(sk,skb,mss_now);
 
 	cwnd_quota = tcp_snd_test(subsk, skb, mss_now, TCP_NAGLE_PUSH);
-	BUG_ON(tcp_send_head(sk)!=skb);
 
 	if (likely(cwnd_quota)) {
 		unsigned int limit;
@@ -1889,7 +1892,6 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 			PDEBUG("NOT SENDING TCP SEGMENT\n");
 			goto out;
 		}
-		BUG_ON(tcp_send_head(sk)!=skb);
 
 		/* Send it out now. */
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
@@ -1906,9 +1908,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 
 		if (likely(!tcp_transmit_skb(subsk, subskb, 1, 
 					     subsk->sk_allocation))) {
-			BUG_ON(tcp_send_head(sk)!=skb);
 			tcp_event_new_data_sent(subsk, subskb);
-			BUG_ON(tcp_send_head(sk)!=skb);
 			if (sk!=subsk)
 				tcp_event_new_data_sent(sk,skb);
 			tcp_cwnd_validate(subsk);

@@ -605,15 +605,9 @@ void mtcp_update_metasocket(struct sock *sk)
 }
 
 /*copied from tcp_output.c*/
-static inline unsigned int tcp_cwnd_test(struct tcp_sock *tp,
-					 struct sk_buff *skb)
+static inline unsigned int tcp_cwnd_test(struct tcp_sock *tp)
 {
 	u32 in_flight, cwnd;
-
-	/* Don't be strict about the congestion window for the final FIN.  */
-	if ((TCP_SKB_CB(skb)->flags & TCPCB_FLAG_FIN) &&
-	    tcp_skb_pcount(skb) == 1)
-		return 1;
 
 	in_flight = tcp_packets_in_flight(tp);
 	cwnd = tp->snd_cwnd;
@@ -623,12 +617,12 @@ static inline unsigned int tcp_cwnd_test(struct tcp_sock *tp,
 	return 0;
 }
 
-int mtcp_is_available(struct sock *sk, struct sk_buff *skb)
+int mtcp_is_available(struct sock *sk)
 {
 	/*We consider a subflow to be available if it has remaining space in 
 	  its */	
 	if (sk->sk_state!=TCP_ESTABLISHED || tcp_sk(sk)->pf) return 0;
-	if (tcp_cwnd_test(tcp_sk(sk),skb)) return 1;
+	if (tcp_cwnd_test(tcp_sk(sk))) return 1;
 	return 0;
 }
 
@@ -644,7 +638,7 @@ int mtcp_is_available(struct sock *sk, struct sk_buff *skb)
  *            @subsocks_locked to 1.
  */
 struct sock* get_available_subflow(struct multipath_pcb *mpcb, 
-				   struct sk_buff *skb, int subsocks_locked)
+				   int subsocks_locked)
 {
 	struct tcp_sock *tp;
 	struct sock *sk;
@@ -664,7 +658,7 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 	/*if there is only one subflow, bypass the scheduling function*/
 	if (mpcb->cnt_subflows==1) {
 		bestsk=(struct sock *)mpcb->connection_list;
-		if (!mtcp_is_available(bestsk,skb))
+		if (!mtcp_is_available(bestsk))
 			bestsk=NULL;
 		goto out;
 	}
@@ -672,7 +666,7 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 	/*First, find the best subflow*/
 	mtcp_for_each_sk(mpcb,sk,tp) {
 		unsigned int fill_ratio;
-		if (!mtcp_is_available(sk,skb)) continue;
+		if (!mtcp_is_available(sk)) continue;
 		if (sk->sk_state!=TCP_ESTABLISHED || tp->pf) continue;
 		
 		/*If there is no bw estimation available currently, 
