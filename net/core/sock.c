@@ -1854,10 +1854,12 @@ void release_sock(struct sock *sk)
 		  as the meta-socket is locked, every received segment is
 		  put into the backlog queue.*/
 		mtcp_for_each_sk((struct multipath_pcb *)sk,sk_it,tp_it) {
-			spin_lock_bh(&sk_it->sk_lock.slock);
+			/*We do not use _bh here, since bh is already
+			  disabled by the previous spin_lock_bh*/
+			spin_lock(&sk_it->sk_lock.slock);
 			if (sk_it->sk_backlog.tail)
 				__release_sock(sk_it);
-			spin_unlock_bh(&sk_it->sk_lock.slock);
+			spin_unlock(&sk_it->sk_lock.slock);
 		}
 	}
 	sk->sk_lock.owned = 0;
