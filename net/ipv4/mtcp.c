@@ -1840,7 +1840,7 @@ void check_send_head(struct sock *sk, int num) {
 	}
 	else found=1;
 	if(!found) {
-		printk("num:%d\n",num);
+		printk(KERN_ERR "num:%d\n",num);
 		BUG();
 	}
 }

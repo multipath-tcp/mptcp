@@ -76,8 +76,10 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 	int meta_sk=is_meta_tp(tp);
 
 	check_send_head(sk,2);
+	BUG_ON(tcp_send_head(sk)!=skb);
 	check_pkts_out(sk);
 	tcp_advance_send_head(sk, skb);
+	check_send_head(sk,3);
 	tp->snd_nxt = meta_sk?TCP_SKB_CB(skb)->end_data_seq:
 		TCP_SKB_CB(skb)->end_seq;
 
@@ -91,7 +93,7 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 					  inet_csk(sk)->icsk_rto, TCP_RTO_MAX);
 
 	check_pkts_out(sk);
-	check_send_head(sk,3);
+	check_send_head(sk,5);
 }
 
 /* SND.NXT, if window was not shrunk.
