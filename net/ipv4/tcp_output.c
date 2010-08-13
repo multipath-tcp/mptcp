@@ -1845,9 +1845,11 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 		printk(KERN_ERR "skb->len:%d,mss_now:%d\n",skb->len,
 		       mss_now);
 	}
+	BUG_ON(tcp_send_head(sk)!=skb);
 
 	BUG_ON(!skb || skb->len < mss_now);
 	tso_segs = tcp_init_tso_segs(sk,skb,mss_now);
+	BUG_ON(tcp_send_head(sk)!=skb);
 
 	if (is_meta_tp(tp)) {
 		subsk=get_available_subflow(tp->mpcb, skb,0);
@@ -1861,8 +1863,10 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 	else {
 		subsk=sk; subtp=tp;
 	}
+	BUG_ON(tcp_send_head(sk)!=skb);
 
 	cwnd_quota = tcp_snd_test(subsk, skb, mss_now, TCP_NAGLE_PUSH);
+	BUG_ON(tcp_send_head(sk)!=skb);
 
 	if (likely(cwnd_quota)) {
 		unsigned int limit;
@@ -1882,6 +1886,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 			PDEBUG("NOT SENDING TCP SEGMENT\n");
 			goto out;
 		}
+		BUG_ON(tcp_send_head(sk)!=skb);
 
 		/* Send it out now. */
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
@@ -1894,8 +1899,11 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 		else
 			subskb=skb;
 
+		BUG_ON(tcp_send_head(sk)!=skb);
+
 		if (likely(!tcp_transmit_skb(subsk, subskb, 1, 
 					     subsk->sk_allocation))) {
+			BUG_ON(tcp_send_head(sk)!=skb);
 			tcp_event_new_data_sent(subsk, subskb);
 			if (sk!=subsk)
 				tcp_event_new_data_sent(sk,skb);
