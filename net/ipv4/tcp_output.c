@@ -1789,6 +1789,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		if (sk!=subsk) {
 			subskb=skb_clone(skb,GFP_ATOMIC);
 			if (!subskb) break;
+			BUG_ON(tcp_send_head(subsk));
 			mtcp_skb_entail(subsk, subskb);
 		}
 		else
@@ -1921,6 +1922,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 		if (sk!=subsk) {
 			subskb=skb_clone(skb,GFP_KERNEL);
 			if (!subskb) goto out;
+			BUG_ON(tcp_send_head(subsk));
 			mtcp_skb_entail(subsk, subskb);
 		}
 		else
