@@ -119,7 +119,7 @@ struct multipath_pcb {
 					       waiting to be eaten by the app
 					       in the meta-ofo queue or the
 					       meta-receive queue.*/
-	
+	struct sk_buff_head	  reinject_queue;
 	spinlock_t                lock;
 	struct mutex              mutex;
 	struct kref               kref;	
@@ -322,8 +322,8 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		 size_t size);
 int mtcp_is_available(struct sock *sk);
 struct sock* get_available_subflow(struct multipath_pcb *mpcb, 
-				   int subsocks_locked);
-void mtcp_reinject_data(struct sock *orig_sk, struct sock *retrans_sk);
+				   struct sk_buff *skb);
+void mtcp_reinject_data(struct sock *orig_sk);
 int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb);
 int mtcp_init_subsockets(struct multipath_pcb *mpcb, 
 			 uint32_t path_indices);

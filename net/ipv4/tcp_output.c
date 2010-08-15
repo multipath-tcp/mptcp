@@ -1668,6 +1668,28 @@ static int tcp_mtu_probe(struct sock *sk)
 	return -1;
 }
 
+/**
+ * Returns the next segment to be sent from the mptcp meta-queue.
+ * (chooses the reinject queue if any segment is waiting in it, otherwise,
+ * chooses the normal write queue).
+ * Sets *@reinject to 1 if the returned segment comes from the 
+ * reinject queue. Otherwise sets @reinject to 0.
+ */
+static inline struct sk_buff* next_segment(struct sock *sk, int *reinject)
+{	
+	struct multipath_pcb *mpcb=tcp_sk(sk)->mpcb;
+	struct sk_buff *skb;
+	if (reinject) *reinject=0;
+	if (!is_meta_sk(sk))
+		return tcp_send_head(sk);
+	if ((skb=skb_peek(&mpcb->reinject_queue))) {
+ 		if (reinject) *reinject=1; /*Segments in reinject queue are 
+					     already cloned*/
+		return skb;
+	}
+	else return tcp_send_head(sk);
+}
+
 /* This routine writes packets to the network.  It advances the
  * send_head.  This happens as incoming acks open up the remote
  * window for us.
@@ -1688,6 +1710,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 	int result;	
 	struct sock *sk_it;
 	struct tcp_sock *tp_it;
+	int reinject;
 
 	if (tp->mpc) {
 		if (mss_now!=MPTCP_MSS) {
@@ -1731,7 +1754,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		sent_pkts = 1;
 	}
 
-	while (tcp_send_head(sk)) {
+	while ((skb=next_segment(sk,&reinject))) {
 		unsigned int limit;
 		int err;
 		struct sock *subsk;
@@ -1739,7 +1762,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		struct sk_buff *subskb;
 
 		if (is_meta_tp(tp)) {
-			subsk=get_available_subflow(tp->mpcb, 1);
+			subsk=get_available_subflow(tp->mpcb,skb);
 			if (!subsk)
 				break;
 			subtp=tcp_sk(subsk);
@@ -1747,9 +1770,10 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		else {
 			subsk=sk; subtp=tp;
 		}
-		/*IMPORTANT: see note in tcp_push_one*/
-		skb=tcp_send_head(sk);		
-		if (!skb) break;
+
+		/*Since all subsocks are locked before calling the scheduler,
+		  the tcp_send_head should not change.*/
+		BUG_ON(!reinject && tcp_send_head(sk)!=skb);
 
 		/*This must be invoked even if we don't want
 		  to support TSO at the moment*/
@@ -1787,7 +1811,14 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
 
 		if (sk!=subsk) {
-			subskb=skb_clone(skb,GFP_ATOMIC);
+			skb->path_mask|=PI_TO_FLAG(tp->path_index);
+			/*The segment is reinjected, the clone is done already*/
+			if (!reinject)
+				subskb=skb_clone(skb,GFP_ATOMIC);
+			else {
+				skb_unlink(skb,&tp->mpcb->reinject_queue);
+				subskb=skb;
+			}
 			if (!subskb) break;
 			BUG_ON(tcp_send_head(subsk));
 			mtcp_skb_entail(subsk, subskb);
@@ -1809,7 +1840,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		check_sk=sk;
 		tcp_event_new_data_sent(subsk, subskb);
 		tocheck=0;
-		if (sk!=subsk) {
+		if (sk!=subsk && !reinject) {
 			BUG_ON(tcp_send_head(sk)!=skb);
 			tcp_event_new_data_sent(sk,skb);
 		}
@@ -1847,7 +1878,7 @@ out:
 void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
 			       int nonagle)
 {
-	struct sk_buff *skb = tcp_send_head(sk);
+	struct sk_buff *skb = next_segment(sk,NULL);
 
 	if (skb) {
 		if (tcp_write_xmit(sk, cur_mss, nonagle))
@@ -1861,31 +1892,48 @@ void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
 void tcp_push_one(struct sock *sk, unsigned int mss_now)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sk_buff *skb;
+	int reinject;
+	struct sk_buff *skb = next_segment(sk,&reinject);
 	unsigned int tso_segs, cwnd_quota;
 	struct sock *subsk;
 	struct tcp_sock *subtp;
-	int is_locked=0;
+	struct sock *sk_it;
+	struct tcp_sock *tp_it;
 
+	/*I think that tcp_push_one is never called in interrupt
+	  context. This assertion will verify this.
+	  If the assertion is not triggered, then we can remove 
+	  bh_lock_sock versions of locking below*/
+	BUG_ON(in_interrupt());
+
+	BUG_ON(!skb);
+
+	/*If the arg is the meta-sock, we lock all the subsocks, 
+	  because we can potentially add data to any of them here.*/
+	if (is_meta_sk(sk)) 
+		mtcp_for_each_sk(tp->mpcb,sk_it,tp_it) {
+			if (in_interrupt()) {
+				sk_it->sk_debug=2;
+				bh_lock_sock(sk_it);
+			}
+			else {
+				BUG_ON(sock_owned_by_user(sk_it));
+				sk_it->sk_debug=3;
+				lock_sock(sk_it);
+			}
+		}
 	if (is_meta_tp(tp)) {
-		subsk=get_available_subflow(tp->mpcb,0);
+		subsk=get_available_subflow(tp->mpcb,skb);
 		subtp=tcp_sk(subsk);
 		if (!subsk)
 			return;
 		subsk->sk_debug=4;		
-		lock_sock(subsk);
-		is_locked=1;
 	}
 	else {
 		subsk=sk; subtp=tp;
 	}
-
-	/*WARNING: tcp_send_head MUST be called after get_available_subflow,
-	  because the scheduler may advance the send head.
-	  (through the sequence release_sock->backlog_rcv->data_snd_check->
-	  tcp_write_xmit).*/
-	skb = tcp_send_head(sk);
-	if (!skb) goto out;
+	
+	BUG_ON(!reinject && tcp_send_head(sk)!=skb);
 
 	if (skb->len<mss_now) {
 		printk(KERN_ERR "skb->len:%d,mss_now:%d\n",skb->len,
@@ -1920,7 +1968,14 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
 		
 		if (sk!=subsk) {
-			subskb=skb_clone(skb,GFP_KERNEL);
+			skb->path_mask|=PI_TO_FLAG(tp->path_index);
+			if (!reinject) {
+				subskb=skb_clone(skb,GFP_KERNEL);
+			}
+			else {
+				skb_unlink(skb,&tp->mpcb->reinject_queue);
+				subskb=skb;
+			}
 			if (!subskb) goto out;
 			BUG_ON(tcp_send_head(subsk));
 			mtcp_skb_entail(subsk, subskb);
@@ -1933,16 +1988,26 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 		if (likely(!tcp_transmit_skb(subsk, subskb, 1, 
 					     subsk->sk_allocation))) {
 			tcp_event_new_data_sent(subsk, subskb);
-			if (sk!=subsk)
+			if (sk!=subsk && !reinject)
 				tcp_event_new_data_sent(sk,skb);
 			tcp_cwnd_validate(subsk);
 			goto out;
 		}
 	}
 out:
+	if (is_meta_sk(sk))
+		mtcp_for_each_sk(tp->mpcb,sk_it,tp_it) {
+			if (in_interrupt()) {
+				sk_it->sk_debug=0;
+				bh_unlock_sock(sk_it);
+			}
+			else {
+				sk_it->sk_debug=0;
+				release_sock(sk_it);
+			}
+		}
 	if (sk!=subsk) {
 		subsk->sk_debug=0;
-		BUG_ON(!is_locked);
 		BUG_ON(!sock_owned_by_user(subsk));
 		release_sock(subsk);
 	}
@@ -2295,37 +2360,12 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 
 	BUG_ON(!skb);
 	
-	/*For any retransmission (RTO only, not fast rexmit), 
-	  we check if we can find another subflow
-	  where it would be better to retransmit
-	  Currently we try with retransmission policy RTX-SSTHRESH*/
-	if (icsk->icsk_ca_state == TCP_CA_Loss) {
-		int max_ssthresh=0;
-		struct tcp_sock *tp_it,*retrans_tp=NULL;
-		struct multipath_pcb *mpcb=tp->mpcb;
-		
-		if (!tp->mpc || sk->sk_state!=TCP_ESTABLISHED || 
-		    !tp->path_index)
-			goto no_mtcp;
-		
-		mtcp_for_each_tp(mpcb,tp_it) {
-			if (((struct sock*)tp_it)->sk_state==TCP_ESTABLISHED &&
-			    !(PI_TO_FLAG(tp_it->path_index)&skb->path_mask) &&
-			    tp_it!=tp &&
-			    tp_it->snd_ssthresh>=max_ssthresh) {
-				max_ssthresh=tp_it->snd_ssthresh;
-				retrans_tp=tp_it;
-			}
-		}
-		/*retrans_tp is now the tp with highest ssthresh*/
-		if (retrans_tp) {
-			/*Reinject all queued skbuffs to the other 
-			  subsocket*/
-			mtcp_reinject_data(sk,(struct sock*)retrans_tp);
-		}
-	}
-no_mtcp:
-
+	/*In case of RTO (loss state), we reinject data on another subflow*/
+	if (icsk->icsk_ca_state == TCP_CA_Loss &&
+	    tp->mpc && sk->sk_state==TCP_ESTABLISHED &&
+	    tp->path_index)
+		mtcp_reinject_data(sk);
+	
 	/* Inconclusive MTU probe */
 	if (icsk->icsk_mtup.probe_size) {
 		icsk->icsk_mtup.probe_size = 0;

@@ -387,6 +387,7 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	mpcb_tp->mss_cache=MPTCP_MSS;
 	
 	skb_queue_head_init(&mpcb_tp->out_of_order_queue);
+	skb_queue_head_init(&mpcb->reinject_queue);
 	
 	mpcb_sk->sk_rcvbuf = sysctl_rmem_default;
 	mpcb_sk->sk_sndbuf = sysctl_wmem_default;
@@ -632,13 +633,10 @@ int mtcp_is_available(struct sock *sk)
  * The flow is selected based on the estimation of how much time will be
  * needed to send the segment. If all paths have full cong windows, we
  * simply block. The flow able to send the segment the soonest get it. 
- * @subsocks_locked: 1 if the subsocks are already locked. If 0, we lock them
- *            ourselves, then release them before to return.
- *            if in bh, the caller MUST lock himself the subsocks, and set
- *            @subsocks_locked to 1.
+ * All subsocked must be locked before calling this function.
  */
 struct sock* get_available_subflow(struct multipath_pcb *mpcb, 
-				   int subsocks_locked)
+				   struct sk_buff *skb)
 {
 	struct tcp_sock *tp;
 	struct sock *sk;
@@ -648,12 +646,8 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 
 	if (!mpcb) return NULL;
 	
-	if (!bh) {
+	if (!bh)
 		mutex_lock(&mpcb->mutex);
-		if (!subsocks_locked)
-			mtcp_for_each_sk(mpcb,sk,tp) lock_sock(sk);
-	}
-	else BUG_ON(!subsocks_locked);
 
 	/*if there is only one subflow, bypass the scheduling function*/
 	if (mpcb->cnt_subflows==1) {
@@ -668,6 +662,9 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 		unsigned int fill_ratio;
 		if (!mtcp_is_available(sk)) continue;
 		if (sk->sk_state!=TCP_ESTABLISHED || tp->pf) continue;
+		/*If the skb has already been enqueued in this sk, try to find
+		  another one*/
+		if (PI_TO_FLAG(tp->path_index) & skb->path_mask) continue;
 		
 		/*If there is no bw estimation available currently, 
 		  we only give it data when it has available space in the
@@ -690,16 +687,8 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 	}
 	
 out:
-	if (!bh) {
-		if (!subsocks_locked) {
-			mtcp_for_each_sk(mpcb,sk,tp) {
-				BUG_ON(!sock_owned_by_user(sk));
-				release_sock(sk);
-			}
-		}
+	if (!bh)
 		mutex_unlock(&mpcb->mutex);
-	}
-
 	return bestsk;
 }
 
@@ -1371,26 +1360,19 @@ static inline int count_bits(unsigned int v)
 }
 
 /**
- * Reinject data from one TCP subflow to another one. 
+ * Reinject data from one TCP subflow to the mpcb_sk 
  * The @skb given pertains to the original tp, that keeps it
  * because the skb is still sent on the original tp. But additionnally,
  * it is sent on the other subflow. 
  *
- * @pre : @sk must be a tcp subsocket in ESTABLISHED state
+ * @pre : @sk must be the mpcb_sk
  */
 void __mtcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk)
 {
 	struct sk_buff *skb;
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcphdr *th;
-
-	/*If the skb has already been enqueued in this sk, just 
-	  return immediately*/
-	if (PI_TO_FLAG(tp->path_index) & orig_skb->path_mask)
-		return;
 	
-	orig_skb->path_mask|=PI_TO_FLAG(tp->path_index);
-
 	skb=skb_clone(orig_skb,GFP_ATOMIC);
 	skb->sk=sk;
 
@@ -1399,30 +1381,27 @@ void __mtcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk)
 	BUG_ON(!skb);
 	BUG_ON(skb->path_mask!=orig_skb->path_mask);
 	
-	mtcp_skb_entail(sk, skb);
+	skb_queue_tail(&tp->mpcb->reinject_queue,skb);
 }
 
-void mtcp_reinject_data(struct sock *orig_sk, struct sock *retrans_sk)
+/*Inserts data into the reinject queue*/
+void mtcp_reinject_data(struct sock *orig_sk)
 {
 	struct sk_buff *skb_it;
 	struct tcp_sock *orig_tp = tcp_sk(orig_sk);
-	struct tcp_sock *retrans_tp = tcp_sk(retrans_sk);
 	struct multipath_pcb *mpcb=orig_tp->mpcb;
+	struct sock *mpcb_sk=(struct sock*)mpcb;
 
-	BUG_ON(is_meta_sk(orig_sk) || is_meta_sk(retrans_sk));
+	BUG_ON(is_meta_sk(orig_sk));
 	
 	verif_wqueues(mpcb);
-
-	bh_lock_sock(retrans_sk);
-
+	
 	tcp_for_write_queue(skb_it,orig_sk) {
 		skb_it->path_mask|=PI_TO_FLAG(orig_tp->path_index);
-		__mtcp_reinject_data(skb_it,retrans_sk);
+		__mtcp_reinject_data(skb_it,mpcb_sk);
 	}
-
-	tcp_push(retrans_sk, 0, MPTCP_MSS, retrans_tp->nonagle);
-
-	bh_unlock_sock(retrans_sk);
+	
+	tcp_push(mpcb_sk, 0, MPTCP_MSS, TCP_NAGLE_PUSH);
 
 	orig_tp->pf=1;
 
