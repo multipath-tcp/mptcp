@@ -1642,7 +1642,7 @@ process:
 		mpcb_sk=(struct sock*)(tcp_sk(sk)->mpcb);
 
 	if (mpcb_sk)
-		bh_lock_sock_nested(mpcb_sk);
+		bh_lock_sock(mpcb_sk);
 	bh_lock_sock_nested(sk);
 	ret = 0;
 
