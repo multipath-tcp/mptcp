@@ -220,7 +220,7 @@ struct sock {
 	socket_lock_t		sk_lock;
 	int                     sk_debug; /*TODEL*/
 	char                    sk_func[30]; /*TODEL*/
-	int                     sk_debug_count; /*TODEL*/
+	int                     sk_in_write_xmit; /*TODEL*/
 	/*
 	 * The backlog queue is special, it is always used with
 	 * the per-socket spinlock held and requires low latency

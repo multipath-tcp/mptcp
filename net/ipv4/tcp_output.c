@@ -1709,7 +1709,20 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 	int cwnd_quota;
 	int reinject;
 	int result;
+	
+	if (sk->sk_in_write_xmit) {
+		printk(KERN_ERR "sk in write xmit, meta_sk:%d\n",
+		       is_meta_sk(sk));
+		BUG();
+	}
+	if(tp->mpcb && ((struct sock*)tp->mpcb)->sk_in_write_xmit) {
+		printk(KERN_ERR "meta-sk in write xmit, meta-sk:%d\n",
+		       is_meta_sk(sk));
+		BUG();
+	}
 
+	sk->sk_in_write_xmit=1;
+	
 	if (tp->mpc) {
 		if (mss_now!=MPTCP_MSS) {
 			printk(KERN_ERR "write xmit-mss_now %d, mptcp mss:%d\n",
@@ -1722,14 +1735,18 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 	 * In time closedown will finish, we empty the write queue and all
 	 * will be happy.
 	 */
-	if (unlikely(sk->sk_state == TCP_CLOSE))
+	if (unlikely(sk->sk_state == TCP_CLOSE)) {
+		sk->sk_in_write_xmit=0;
 		return 0;
+	}
 
 	sent_pkts = 0;
 
 	/* Do MTU probing. */	
-	if ((result=tcp_mtu_probe(sk)) == 0)
+	if ((result=tcp_mtu_probe(sk)) == 0) {
+		sk->sk_in_write_xmit=0;
 		return 0;
+	}
 	else if (result > 0) {
 		sent_pkts = 1;
 	}
@@ -1814,7 +1831,12 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		/* Advance the send_head.  This one is sent out.
 		 * This call will increment packets_out.
 		 */
-		BUG_ON(!reinject && tcp_send_head(sk)!=skb);
+		if(!reinject && tcp_send_head(sk)!=skb) {
+			printk(KERN_ERR "sock_owned_by_user:%d\n",
+			       sock_owned_by_user(sk));
+			BUG();
+			       
+		}
 		if (sk!=subsk && !reinject)
 			tocheck=1;
 		check_skb=skb;
@@ -1831,9 +1853,12 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 
 		tcp_cwnd_validate(subsk);
 	}
-	if (likely(sent_pkts))
+	if (likely(sent_pkts)) {
+		sk->sk_in_write_xmit=0;
 		return 0;
+	}
 
+	sk->sk_in_write_xmit=0;
 	return !tp->packets_out && tcp_send_head(sk);
 }
 
