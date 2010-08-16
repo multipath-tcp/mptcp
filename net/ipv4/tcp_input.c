@@ -3620,6 +3620,8 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 					       "found, using sock struct\n");
 					break;
 				}
+				if (!mopt->list_rcvd)
+					mopt->num_addr4=mopt->num_addr6=0;
 				
 				for (ptr8=ptr; ptr8<ptr+opsize-2;) {
 					if ((*(ptr8+1))>>4==4) {
