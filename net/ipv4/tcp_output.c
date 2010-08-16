@@ -1760,8 +1760,10 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 
 		if (is_meta_tp(tp)) {
 			subsk=get_available_subflow(tp->mpcb,skb);
-			if (!subsk)
+			if (!subsk) {
+				if (reinject) printk(KERN_ERR "reinj: line %d\n", __LINE__);
 				break;
+			}
 			subtp=tcp_sk(subsk);
 		}
 		else {
@@ -1787,23 +1789,30 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			/*Should not happen, since mptcp must have
 			  chosen a subsock with open cwnd*/
 			if (sk!=subsk) BUG();
+			if (reinject) printk(KERN_ERR "reinj: line %d\n", __LINE__);
 			break;
 		}
 
-		if (unlikely(!tcp_snd_wnd_test(subtp, skb, mss_now)))
+		if (unlikely(!tcp_snd_wnd_test(subtp, skb, mss_now))) {
+			if (reinject) printk(KERN_ERR "reinj: line %d\n", __LINE__);
 			break;
+		}
 		
 		if (unlikely(!tcp_nagle_test(tp, skb, mss_now,
 					     (tcp_skb_is_last(sk, skb) ?
 					      nonagle : 
-					      TCP_NAGLE_PUSH))))
+					      TCP_NAGLE_PUSH)))) {
+			if (reinject) printk(KERN_ERR "reinj: line %d\n", __LINE__);
 			break;
+		}
 
 		limit = mss_now;
 
 		if (skb->len > limit &&
-		    unlikely(tso_fragment(sk, skb, limit, mss_now)))
+		    unlikely(tso_fragment(sk, skb, limit, mss_now))) {
+			if (reinject) printk(KERN_ERR "reinj: line %d\n", __LINE__);
 			break;
+		}
 
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
 
@@ -1817,7 +1826,10 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 				skb_unlink(skb,&tp->mpcb->reinject_queue);
 				subskb=skb;
 			}
-			if (!subskb) break;
+			if (!subskb) {
+				if (reinject) printk(KERN_ERR "reinj: line %d\n", __LINE__);
+				break;
+			}
 			BUG_ON(tcp_send_head(subsk));
 			mtcp_skb_entail(subsk, subskb);
 			if (reinject) {
@@ -1827,7 +1839,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		}
 		else
 			subskb=skb;
-
+		
 		if (unlikely(err=tcp_transmit_skb(subsk, subskb, 1, 
 						  GFP_ATOMIC)))
 			break;
@@ -2318,8 +2330,10 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 	/*In case of RTO (loss state), we reinject data on another subflow*/
 	if (icsk->icsk_ca_state == TCP_CA_Loss &&
 	    tp->mpc && sk->sk_state==TCP_ESTABLISHED &&
-	    tp->path_index)
+	    tp->path_index) {
+		tcpprobe_logmsg(sk,"reinjecting data");
 		mtcp_reinject_data(sk);
+	}
 	
 	/* Inconclusive MTU probe */
 	if (icsk->icsk_mtup.probe_size) {
