@@ -1780,6 +1780,28 @@ void mtcp_check_eat_old_seg(struct sock *sk, struct sk_buff *skb)
 	sk_eat_skb(sk,skb,0);
 }
 
+/**
+ * Returns the next segment to be sent from the mptcp meta-queue.
+ * (chooses the reinject queue if any segment is waiting in it, otherwise,
+ * chooses the normal write queue).
+ * Sets *@reinject to 1 if the returned segment comes from the 
+ * reinject queue. Otherwise sets @reinject to 0.
+ */
+struct sk_buff* mtcp_next_segment(struct sock *sk, int *reinject)
+{	
+	struct multipath_pcb *mpcb=tcp_sk(sk)->mpcb;
+	struct sk_buff *skb;
+	if (reinject) *reinject=0;
+	if (!is_meta_sk(sk))
+		return tcp_send_head(sk);
+	if ((skb=skb_peek(&mpcb->reinject_queue))) {
+ 		if (reinject) *reinject=1; /*Segments in reinject queue are 
+					     already cloned*/
+		return skb;
+	}
+	else return tcp_send_head(sk);
+}
+
 #ifdef MTCP_DEBUG_PKTS_OUT
 int check_pkts_out(struct sock* sk) {
 	int cnt=0;

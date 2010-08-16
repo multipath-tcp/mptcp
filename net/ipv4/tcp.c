@@ -634,8 +634,9 @@ void tcp_push(struct sock *sk, int flags, int mss_now,
 	      int nonagle)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct sock *mpcb_sk=(tp->mpcb)?(struct sock*)(tp->mpcb):sk;
 	
-	if (tcp_send_head(sk)) {
+	if (mtcp_next_segment(mpcb_sk,NULL)) {
 		struct sk_buff *skb = tcp_write_queue_tail(sk);
 		if (!(flags & MSG_MORE) || forced_push(tp))
 			tcp_mark_push(tp, skb);

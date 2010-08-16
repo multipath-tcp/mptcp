@@ -1668,28 +1668,6 @@ static int tcp_mtu_probe(struct sock *sk)
 	return -1;
 }
 
-/**
- * Returns the next segment to be sent from the mptcp meta-queue.
- * (chooses the reinject queue if any segment is waiting in it, otherwise,
- * chooses the normal write queue).
- * Sets *@reinject to 1 if the returned segment comes from the 
- * reinject queue. Otherwise sets @reinject to 0.
- */
-static inline struct sk_buff* next_segment(struct sock *sk, int *reinject)
-{	
-	struct multipath_pcb *mpcb=tcp_sk(sk)->mpcb;
-	struct sk_buff *skb;
-	if (reinject) *reinject=0;
-	if (!is_meta_sk(sk))
-		return tcp_send_head(sk);
-	if ((skb=skb_peek(&mpcb->reinject_queue))) {
- 		if (reinject) *reinject=1; /*Segments in reinject queue are 
-					     already cloned*/
-		return skb;
-	}
-	else return tcp_send_head(sk);
-}
-
 /* This routine writes packets to the network.  It advances the
  * send_head.  This happens as incoming acks open up the remote
  * window for us.
@@ -1751,7 +1729,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		sent_pkts = 1;
 	}
 
-	while ((skb=next_segment(sk,&reinject))) {
+	while ((skb=mtcp_next_segment(sk,&reinject))) {
 		unsigned int limit;
 		int err;
 		struct sock *subsk;
@@ -1885,7 +1863,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
 			       int nonagle)
 {
-	struct sk_buff *skb = next_segment(sk,NULL);
+	struct sk_buff *skb = mtcp_next_segment(sk,NULL);
 
 	if (skb) {
 		if (tcp_write_xmit(sk, cur_mss, nonagle))
@@ -1900,7 +1878,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	int reinject;
-	struct sk_buff *skb = next_segment(sk,&reinject);
+	struct sk_buff *skb = mtcp_next_segment(sk,&reinject);
 	unsigned int tso_segs, cwnd_quota;
 	struct sock *subsk;
 	struct tcp_sock *subtp;

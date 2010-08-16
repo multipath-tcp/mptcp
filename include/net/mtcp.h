@@ -342,5 +342,5 @@ void verif_wqueues(struct multipath_pcb *mpcb);
 void mtcp_check_eat_old_seg(struct sock *sk, struct sk_buff *skb);
 
 void mtcp_skb_entail(struct sock *sk, struct sk_buff *skb);
-
+struct sk_buff* mtcp_next_segment(struct sock *sk, int *reinject);
 #endif /*_MTCP_H*/
