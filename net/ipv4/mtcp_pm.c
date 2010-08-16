@@ -425,6 +425,8 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 	/*If the id is zero, this is the ULID, do not add it.*/
 	if (!id) return 0;
 	
+	BUG_ON(mopt->num_addr4>=MTCP_MAX_ADDR);
+
 	for (i=0;i<mopt->num_addr4;i++) {
 		if (mopt->addr4[i].addr.s_addr==
 		    addr->s_addr) {
@@ -433,9 +435,10 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 			return 0;
 		}
 	}
+
 	if (mopt->num_addr4==MTCP_MAX_ADDR)
 		return -1;
-
+	
 	/*Address is not known yet, store it*/
 	mopt->addr4[num_addr4].addr.s_addr=
 		addr->s_addr;
