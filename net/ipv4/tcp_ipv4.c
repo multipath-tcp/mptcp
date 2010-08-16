@@ -1563,7 +1563,7 @@ int tcp_v4_rcv(struct sk_buff *skb)
 {
 	const struct iphdr *iph;
 	struct tcphdr *th;
-	struct sock *sk, *mpcb_sk;
+	struct sock *sk, *mpcb_sk=NULL;
 	int ret;
 	struct net *net = dev_net(skb->dev);
 
@@ -1638,22 +1638,21 @@ process:
 
 	skb->dev = NULL;
 
-	bh_lock_sock_nested(sk);
+	if (tcp_sk(sk)->mpcb)
+		mpcb_sk=(struct sock*)(tcp_sk(sk)->mpcb);
+
+	if (mpcb_sk)
+		bh_lock_sock_nested(mpcb_sk);
+	else bh_lock_sock_nested(sk);
 	ret = 0;
 
-	if (tcp_sk(sk)->mpcb) {
-		mpcb_sk=(struct sock*)(tcp_sk(sk)->mpcb);
-		/*We need to lock also the meta-socket, 
-		 because when we might do a push_pending_frames
-		 on it afterwards*/
-		if (!sock_owned_by_user(sk) &&
-		    !sock_owned_by_user(mpcb_sk)) {
+	if (mpcb_sk) {
+		if (!sock_owned_by_user(mpcb_sk)) {
 			if (!tcp_prequeue(sk, skb))
 				ret = tcp_v4_do_rcv(sk, skb);
 		}
 		else
-			sk_add_backlog(sk, skb);
-			
+			sk_add_backlog(sk, skb);		
 	}
 	else if (!sock_owned_by_user(sk)) {
 #ifdef CONFIG_NET_DMA
@@ -1670,7 +1669,9 @@ process:
 		}
 	} else
 		sk_add_backlog(sk, skb);
-	bh_unlock_sock(sk);
+	if (mpcb_sk) 
+		bh_unlock_sock(mpcb_sk);
+	else bh_unlock_sock(sk);
 
 	sock_put(sk);
 

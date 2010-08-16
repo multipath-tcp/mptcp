@@ -1707,10 +1707,8 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 	struct sk_buff *skb;
 	unsigned int tso_segs, sent_pkts;
 	int cwnd_quota;
-	int result;	
-	struct sock *sk_it;
-	struct tcp_sock *tp_it;
 	int reinject;
+	int result;
 
 	if (tp->mpc) {
 		if (mss_now!=MPTCP_MSS) {
@@ -1719,37 +1717,19 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			BUG();
 		}
 	}
-	/*If the arg is the meta-sock, we lock all the subsocks, 
-	  because we can potentially add data to any of them here.*/
-	if (is_meta_sk(sk)) 
-		mtcp_for_each_sk(tp->mpcb,sk_it,tp_it) {
-			if (in_interrupt()) {
-				sk_it->sk_debug=2;
-				bh_lock_sock(sk_it);
-			}
-			else {
-				BUG_ON(sock_owned_by_user(sk_it));
-				sk_it->sk_debug=3;
-				lock_sock(sk_it);
-			}
-		}
 	
 	/* If we are closed, the bytes will have to remain here.
 	 * In time closedown will finish, we empty the write queue and all
 	 * will be happy.
 	 */
-	if (unlikely(sk->sk_state == TCP_CLOSE)) {
-		result=0;
-		goto out;
-	}
+	if (unlikely(sk->sk_state == TCP_CLOSE))
+		return 0;
 
 	sent_pkts = 0;
 
 	/* Do MTU probing. */	
-	if ((result = tcp_mtu_probe(sk)) == 0) {		
-		result=0;
-		goto out;
-	}
+	if ((result=tcp_mtu_probe(sk)) == 0)
+		return 0;
 	else if (result > 0) {
 		sent_pkts = 1;
 	}
@@ -1851,25 +1831,10 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 
 		tcp_cwnd_validate(subsk);
 	}
-	if (likely(sent_pkts)) {
-		result=0;
-		goto out;
-	}
-	result = !tp->packets_out && tcp_send_head(sk);
-out:
-	if (is_meta_sk(sk))
-		mtcp_for_each_sk(tp->mpcb,sk_it,tp_it) {
-			if (in_interrupt()) {
-				sk_it->sk_debug=0;
-				bh_unlock_sock(sk_it);
-			}
-			else {
-				sk_it->sk_debug=0;
-				release_sock(sk_it);
-			}
-		}
+	if (likely(sent_pkts))
+		return 0;
 
-	return result;	
+	return !tp->packets_out && tcp_send_head(sk);
 }
 
 /* Push out any pending frames which were held back due to
@@ -1898,41 +1863,18 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 	unsigned int tso_segs, cwnd_quota;
 	struct sock *subsk;
 	struct tcp_sock *subtp;
-	struct sock *sk_it;
-	struct tcp_sock *tp_it;
-
-	/*I think that tcp_push_one is never called in interrupt
-	  context. This assertion will verify this.
-	  If the assertion is not triggered, then we can remove 
-	  bh_lock_sock versions of locking below*/
-	BUG_ON(in_interrupt());
 
 	BUG_ON(!skb);
 
-	/*If the arg is the meta-sock, we lock all the subsocks, 
-	  because we can potentially add data to any of them here.*/
-	if (is_meta_sk(sk)) 
-		mtcp_for_each_sk(tp->mpcb,sk_it,tp_it) {
-			if (in_interrupt()) {
-				sk_it->sk_debug=2;
-				bh_lock_sock(sk_it);
-			}
-			else {
-				BUG_ON(sock_owned_by_user(sk_it));
-				sk_it->sk_debug=3;
-				lock_sock(sk_it);
-			}
-		}
 	if (is_meta_tp(tp)) {
 		subsk=get_available_subflow(tp->mpcb,skb);
 		subtp=tcp_sk(subsk);
 		if (!subsk)
-			goto out;
+			return;
 		subsk->sk_debug=4;		
 	}
-	else {
+	else 
 		subsk=sk; subtp=tp;
-	}
 	
 	BUG_ON(!reinject && tcp_send_head(sk)!=skb);
 
@@ -1962,7 +1904,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 		if (skb->len > limit &&
 		    unlikely(tso_fragment(sk, skb, limit, mss_now))) {
 			PDEBUG("NOT SENDING TCP SEGMENT\n");
-			goto out;
+			return;
 		}
 
 		/* Send it out now. */
@@ -1978,7 +1920,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 				skb_unlink(skb,&tp->mpcb->reinject_queue);
 				subskb=skb;
 			}
-			if (!subskb) goto out;
+			if (!subskb) return;
 			BUG_ON(tcp_send_head(subsk));
 			mtcp_skb_entail(subsk, subskb);
 		}
@@ -1992,22 +1934,9 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 			tcp_event_new_data_sent(subsk, subskb);
 			if (sk!=subsk && !reinject)
 				tcp_event_new_data_sent(sk,skb);
-			tcp_cwnd_validate(subsk);
-			goto out;
+			tcp_cwnd_validate(subsk);			
 		}
 	}
-out:
-	if (is_meta_sk(sk))
-		mtcp_for_each_sk(tp->mpcb,sk_it,tp_it) {
-			if (in_interrupt()) {
-				sk_it->sk_debug=0;
-				bh_unlock_sock(sk_it);
-			}
-			else {
-				sk_it->sk_debug=0;
-				release_sock(sk_it);
-			}
-		}
 }
 
 /* This function returns the amount that we can raise the

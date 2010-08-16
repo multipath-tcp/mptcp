@@ -4998,35 +4998,15 @@ void tcp_check_space(struct sock *sk)
 static inline void tcp_data_snd_check(struct sock *sk)
 {
 	struct sock *mpcb_sk;
-	int relock=0;
 
-/* Note about MPTCP locking strategy here, a bit complicated:
- * When arriving here, either the sk is locked by a parent function or not.
- * ->If it is, we want to unlock it because tcp_write_xmit() will lock all
- *   subsocks, including this one. Of course we relock it at the end.
- * ->If it is not, the only possibility is that we are in backlog processing
- *   (AFAICT). If this is the case, interrupts are disabled so no interrupt
- *    can take it. And sk_lock.owned is still 1, so no user context can take it.
- *    So the socket is not locked, but no one can take it. In that case, 
- *    we cannot unlock the subsock, otherwise we have double unlock,
- *    so we simply let it as is.
- */
 	BUG_ON(is_meta_sk(sk));
 	if (tcp_sk(sk)->mpc && tcp_sk(sk)->mpcb) {
 		mpcb_sk=((struct sock*)tcp_sk(sk)->mpcb);
 		sk->sk_debug=0;
-		if (spin_is_locked(&sk->sk_lock.slock)) {
-			bh_unlock_sock(sk);
-			relock=1;
-		}
 	}
 	else mpcb_sk=sk;
 	tcp_push_pending_frames(mpcb_sk);
 	tcp_check_space(mpcb_sk);
-	if (relock) {
-		sk->sk_debug=1;
-		bh_lock_sock(sk);
-	}
 }
 
 /*

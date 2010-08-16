@@ -408,7 +408,7 @@ static void tcp_write_timer(unsigned long data)
 	BUG_ON(is_meta_sk(sk));
 
   	if (mpcb_sk) bh_lock_sock(mpcb_sk);
-	bh_lock_sock(sk);
+	else bh_lock_sock(sk);
 	if (sock_owned_by_user(sk) ||
 	    (mpcb_sk && sock_owned_by_user(mpcb_sk))) {
 		/* Try again later */
@@ -440,8 +440,8 @@ static void tcp_write_timer(unsigned long data)
 out:
 	sk_mem_reclaim(sk);
 out_unlock:
-	bh_unlock_sock(sk);
 	if (mpcb_sk) bh_unlock_sock(mpcb_sk);
+	else bh_unlock_sock(sk);
 	sock_put(sk);
 }
 
