@@ -1811,7 +1811,8 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
 
 		if (sk!=subsk) {
-			skb->path_mask|=PI_TO_FLAG(tp->path_index);
+			if (tp->path_index) 
+				skb->path_mask|=PI_TO_FLAG(tp->path_index);
 			/*The segment is reinjected, the clone is done already*/
 			if (!reinject)
 				subskb=skb_clone(skb,GFP_ATOMIC);
@@ -1968,7 +1969,8 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
 		
 		if (sk!=subsk) {
-			skb->path_mask|=PI_TO_FLAG(tp->path_index);
+			if (tp->path_index)
+				skb->path_mask|=PI_TO_FLAG(tp->path_index);
 			if (!reinject) {
 				subskb=skb_clone(skb,GFP_KERNEL);
 			}
