@@ -1647,7 +1647,8 @@ process:
 	ret = 0;
 
 	if (mpcb_sk) {
-		if (!sock_owned_by_user(mpcb_sk)) {
+		if (!sock_owned_by_user(mpcb_sk) &&
+		    !sock_owned_by_user(sk)) {
 			if (!tcp_prequeue(sk, skb))
 				ret = tcp_v4_do_rcv(sk, skb);
 		}
