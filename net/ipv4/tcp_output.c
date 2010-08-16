@@ -1820,6 +1820,10 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			if (!subskb) break;
 			BUG_ON(tcp_send_head(subsk));
 			mtcp_skb_entail(subsk, subskb);
+			if (reinject) {
+				tcpprobe_logmsg(sk,"reinj:seq is %#x",
+						TCP_SKB_CB(subskb)->seq);
+			}
 		}
 		else
 			subskb=skb;
