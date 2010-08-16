@@ -634,7 +634,7 @@ void tcp_push(struct sock *sk, int flags, int mss_now,
 	      int nonagle)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *mpcb_sk=(tp->mpcb)?(struct sock*)(tp->mpcb):sk;
+	struct sock *mpcb_sk=(tp->mpc)?(struct sock*)(tp->mpcb):sk;
 	
 	if (mtcp_next_segment(mpcb_sk,NULL)) {
 		struct sk_buff *skb = tcp_write_queue_tail(sk);
