@@ -1643,7 +1643,7 @@ process:
 
 	if (mpcb_sk)
 		bh_lock_sock_nested(mpcb_sk);
-	else bh_lock_sock_nested(sk);
+	bh_lock_sock_nested(sk);
 	ret = 0;
 
 	if (mpcb_sk) {
@@ -1669,10 +1669,10 @@ process:
 		}
 	} else
 		sk_add_backlog(sk, skb);
-	if (mpcb_sk) 
-		bh_unlock_sock(mpcb_sk);
-	else bh_unlock_sock(sk);
 
+	bh_unlock_sock(sk);
+	if (mpcb_sk)
+		bh_unlock_sock(mpcb_sk);
 	sock_put(sk);
 
 	return ret;
