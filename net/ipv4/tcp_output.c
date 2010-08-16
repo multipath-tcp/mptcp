@@ -2008,11 +2008,6 @@ out:
 				release_sock(sk_it);
 			}
 		}
-	if (sk!=subsk) {
-		subsk->sk_debug=0;
-		BUG_ON(!sock_owned_by_user(subsk));
-		release_sock(subsk);
-	}
 }
 
 /* This function returns the amount that we can raise the
