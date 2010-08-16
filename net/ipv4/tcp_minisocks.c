@@ -510,6 +510,7 @@ struct sock *tcp_check_req(struct sock *sk,struct sk_buff *skb,
 	struct sock *child;
 
 	tmp_opt.saw_tstamp = 0;
+	mtp.list_rcvd=0;
 	if (th->doff > (sizeof(struct tcphdr)>>2)) {
 		tcp_parse_options(skb, &tmp_opt, &mtp, 0);
 
@@ -705,6 +706,8 @@ struct sock *tcp_check_req(struct sock *sk,struct sk_buff *skb,
 		child_tp->mtcp_loc_token=req->mtcp_loc_token;
 		child_tp->mpcb=NULL;
 		child_tp->pending=1;
+		if (mtp.list_rcvd)
+			memcpy(&child_tp->mopt,&mtp,sizeof(mtp));
 #endif
 	}
 #endif
