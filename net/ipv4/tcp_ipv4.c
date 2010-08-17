@@ -1679,7 +1679,7 @@ process:
 	if (mpcb_sk)
 		bh_unlock_sock(mpcb_sk);
 	sock_put(sk);
-	kref_put(&mpcb->kref,mpcb_release);
+	if (mpcb) kref_put(&mpcb->kref,mpcb_release);
 
 	return ret;
 
