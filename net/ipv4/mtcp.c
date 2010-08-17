@@ -660,7 +660,7 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 	/*First, find the best subflow*/
 	mtcp_for_each_sk(mpcb,sk,tp) {
 		unsigned int fill_ratio;
-		if (tp->pf) *pf|=PI_TO_FLAG(tp->path_index);
+		if (pf && tp->pf) *pf|=PI_TO_FLAG(tp->path_index);
 		if (!mtcp_is_available(sk)) continue;
 		/*If the skb has already been enqueued in this sk, try to find
 		  another one*/
