@@ -3277,6 +3277,7 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 	}
 
 	tp->snd_una = ack;
+	tcpprobe_logmsg(sk,"pi %d: leaving pf state",tp->path_index);
 	tp->pf=0;
 
 	return flag;
@@ -3468,6 +3469,7 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 		 */
 		tcp_update_wl(tp, ack, ack_seq);
 		tp->snd_una = ack;
+		tcpprobe_logmsg(sk,"pi %d: leaving pf state",tp->path_index);
 		tp->pf=0;
 		flag |= FLAG_WIN_UPDATE;
 
