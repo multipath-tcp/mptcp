@@ -1794,6 +1794,7 @@ void mtcp_check_eat_old_seg(struct sock *sk, struct sk_buff *skb)
 		return;
 	/*OK, eat the segment, and advance tcp counters*/
 	tp->copied_seq += skb->len;
+	BUG_ON(tp->copied_seq!=TCP_SKB_CB(skb)->end_seq);
 	inet_csk_schedule_ack(sk);
 	sk_eat_skb(sk,skb,0);
 }
