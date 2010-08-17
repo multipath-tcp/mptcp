@@ -1792,6 +1792,7 @@ void mtcp_check_eat_old_seg(struct sock *sk, struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk);
 	if (skb!=skb_peek(&sk->sk_receive_queue))
 		return;
+	BUG_ON(tp->copied_seq!=TCP_SKB_CB(skb)->seq);
 	/*OK, eat the segment, and advance tcp counters*/
 	tp->copied_seq += skb->len;
 	BUG_ON(tp->copied_seq!=TCP_SKB_CB(skb)->end_seq);

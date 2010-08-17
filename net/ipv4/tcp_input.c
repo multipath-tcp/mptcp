@@ -4449,6 +4449,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 #endif
 		
 		if (eaten <= 0) {
+			struct sk_buff *skb_test;
 		queue_and_out:
 			if (eaten < 0 &&
 			    tcp_try_rmem_schedule(sk, skb->truesize)) {
@@ -4458,7 +4459,12 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 			}
 
 			skb_set_owner_r(skb, sk);
-			
+			skb_test=skb_peek_tail(&sk->sk_receive_queue);
+			if (skb_test)
+				BUG_ON(TCP_SKB_CB(skb)->seq!=
+				       TCP_SKB_CB(skb_test)->end_seq);
+			else BUG_ON(TCP_SKB_CB(skb)->seq!=tp->copied_seq);
+
 			__skb_queue_tail(&sk->sk_receive_queue, skb);
 		}
 		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
