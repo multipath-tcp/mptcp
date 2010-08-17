@@ -1723,6 +1723,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 	/* Do MTU probing. */	
 	if ((result=tcp_mtu_probe(sk)) == 0) {
 		sk->sk_in_write_xmit=0;
+		tcpprobe_logmsg(sk,"mtu forces us out of write_xmit");
 		return 0;
 	}
 	else if (result > 0) {
@@ -1740,7 +1741,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			int pf=0;
 			subsk=get_available_subflow(tp->mpcb,skb,&pf);
 			if (!subsk) {
-				tcpprobe_logmsg(sk,"no subflow ready, pf:%#x\n",
+				tcpprobe_logmsg(sk,"no subflow ready, pf:%#x",
 						pf);
 				break;
 			}
@@ -1871,6 +1872,7 @@ void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
 		if (tcp_write_xmit(sk, cur_mss, nonagle))
 			tcp_check_probe_timer(sk);
 	}
+	else 	tcpprobe_logmsg(sk,"not running write_xmit");
 }
 
 /* Send _single_ skb sitting at the send head. This function requires
