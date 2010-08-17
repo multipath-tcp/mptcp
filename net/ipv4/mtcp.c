@@ -1790,12 +1790,13 @@ EXPORT_SYMBOL(mtcp_set_owner_r);
 void mtcp_check_eat_old_seg(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcphdr *th = tcp_hdr(skb);
 	if (skb!=skb_peek(&sk->sk_receive_queue))
 		return;
 	BUG_ON(tp->copied_seq!=TCP_SKB_CB(skb)->seq);
 	/*OK, eat the segment, and advance tcp counters*/
 	tp->copied_seq += skb->len;
-	if (tp->copied_seq!=TCP_SKB_CB(skb)->end_seq) {
+	if (tp->copied_seq!=TCP_SKB_CB(skb)->end_seq && !th->fin) {
 		printk(KERN_ERR "corrupted seg: seq:%#x,end_seq:%#x,len:%d\n",
 		       TCP_SKB_CB(skb)->seq,TCP_SKB_CB(skb)->end_seq,skb->len);
 		BUG();
