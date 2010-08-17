@@ -2313,7 +2313,6 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 	if (icsk->icsk_ca_state == TCP_CA_Loss &&
 	    tp->mpc && sk->sk_state==TCP_ESTABLISHED &&
 	    tp->path_index) {
-		tcpprobe_logmsg(sk,"reinjecting data");
 		mtcp_reinject_data(sk);
 	}
 	

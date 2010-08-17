@@ -5011,12 +5011,9 @@ static inline void tcp_data_snd_check(struct sock *sk)
 	if (tcp_sk(sk)->mpc && tcp_sk(sk)->mpcb) {
 		mpcb_sk=((struct sock*)tcp_sk(sk)->mpcb);
 		sk->sk_debug=0;
-		tcpprobe_logmsg(sk,"running data_snd_check with meta-sk");
 	}
-	else {
+	else
 		mpcb_sk=sk;
-		tcpprobe_logmsg(sk,"running data_snd_check with sub-sk");
-	}
 	tcp_push_pending_frames(mpcb_sk);
 	tcp_check_space(mpcb_sk);
 }

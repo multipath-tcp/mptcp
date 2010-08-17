@@ -1419,6 +1419,10 @@ void mtcp_reinject_data(struct sock *orig_sk)
 		__mtcp_reinject_data(skb_it,mpcb_sk);
 	}
 	
+	tcpprobe_logmsg(orig_sk,"after reinj, reinj queue size:%d",
+			skb_queue_len(&mpcb->reinject_queue));
+	
+
 	tcp_push(mpcb_sk, 0, MPTCP_MSS, TCP_NAGLE_PUSH);
 
 	orig_tp->pf=1;
