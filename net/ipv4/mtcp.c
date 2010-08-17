@@ -427,7 +427,7 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	return mpcb;
 }
 
-static void mpcb_release(struct kref* kref)
+void mpcb_release(struct kref* kref)
 {
 	struct multipath_pcb *mpcb;
 	mpcb=container_of(kref,struct multipath_pcb,kref);
@@ -1422,7 +1422,7 @@ void mtcp_reinject_data(struct sock *orig_sk)
  * - If the mapping has been correctly updated, or the skb has correctly 
  *   been given its dataseq, we then check if the segment is in meta-order.
  *   i) if it is: we return 1
- *   ii) it its end_data_seq is older then mpcb->copied_seq, it is a 
+ *   ii) if its end_data_seq is older then mpcb->copied_seq, it is a 
  *       reinjected segment arrived late. We return 2, to indicate to the 
  *       caller that the segment can be eaten by the subflow immediately.
  *   iii) if it is not in meta-order (keep in mind that the precondition 

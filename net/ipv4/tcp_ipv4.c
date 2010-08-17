@@ -1566,6 +1566,7 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	struct sock *sk, *mpcb_sk=NULL;
 	int ret;
 	struct net *net = dev_net(skb->dev);
+	struct multipath_pcb *mpcb=NULL;
 
 	if (skb->pkt_type != PACKET_HOST)
 		goto discard_it;	
@@ -1638,8 +1639,11 @@ process:
 
 	skb->dev = NULL;
 
-	if (tcp_sk(sk)->mpcb)
+	if (tcp_sk(sk)->mpcb) {
+		mpcb=tcp_sk(sk)->mpcb;
+		kref_get(&mpcb->kref);
 		mpcb_sk=(struct sock*)(tcp_sk(sk)->mpcb);
+	}
 
 	if (mpcb_sk)
 		bh_lock_sock(mpcb_sk);
@@ -1675,6 +1679,7 @@ process:
 	if (mpcb_sk)
 		bh_unlock_sock(mpcb_sk);
 	sock_put(sk);
+	kref_put(&mpcb->kref,mpcb_release);
 
 	return ret;
 
