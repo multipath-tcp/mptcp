@@ -1795,7 +1795,11 @@ void mtcp_check_eat_old_seg(struct sock *sk, struct sk_buff *skb)
 	BUG_ON(tp->copied_seq!=TCP_SKB_CB(skb)->seq);
 	/*OK, eat the segment, and advance tcp counters*/
 	tp->copied_seq += skb->len;
-	BUG_ON(tp->copied_seq!=TCP_SKB_CB(skb)->end_seq);
+	if (tp->copied_seq!=TCP_SKB_CB(skb)->end_seq) {
+		printk(KERN_ERR "corrupted seg: seq:%#x,end_seq:%#x,len:%d\n",
+		       TCP_SKB_CB(skb)->seq,TCP_SKB_CB(skb)->end_seq,skb->len);
+		BUG();
+	}
 	inet_csk_schedule_ack(sk);
 	sk_eat_skb(sk,skb,0);
 }
