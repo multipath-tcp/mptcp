@@ -1737,9 +1737,11 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		struct sk_buff *subskb;
 
 		if (is_meta_tp(tp)) {
-			subsk=get_available_subflow(tp->mpcb,skb);
+			int pf=0;
+			subsk=get_available_subflow(tp->mpcb,skb,&pf);
 			if (!subsk) {
-				if (reinject) printk(KERN_ERR "reinj: line %d\n", __LINE__);
+				tcpprobe_logmsg(sk,"no subflow ready, pf:%#x\n",
+						pf);
 				break;
 			}
 			subtp=tcp_sk(subsk);
@@ -1886,7 +1888,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 	BUG_ON(!skb);
 
 	if (is_meta_tp(tp)) {
-		subsk=get_available_subflow(tp->mpcb,skb);
+		subsk=get_available_subflow(tp->mpcb,skb,NULL);
 		subtp=tcp_sk(subsk);
 		if (!subsk)
 			return;

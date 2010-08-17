@@ -5051,12 +5051,8 @@ static void __tcp_ack_snd_check(struct sock *sk, int ofo_possible)
 
 static inline void tcp_ack_snd_check(struct sock *sk)
 {
-	if (!inet_csk_ack_scheduled(sk)) {
-		/* We sent a data segment already. */
-		tcpprobe_logmsg(sk,"tp %d: ack is not scheduled",
-				tcp_sk(sk)->path_index);
+	if (!inet_csk_ack_scheduled(sk))
 		return;
-	}
 	__tcp_ack_snd_check(sk, 1);
 }
 

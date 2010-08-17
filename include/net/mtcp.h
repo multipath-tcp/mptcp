@@ -322,7 +322,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		 size_t size);
 int mtcp_is_available(struct sock *sk);
 struct sock* get_available_subflow(struct multipath_pcb *mpcb, 
-				   struct sk_buff *skb);
+				   struct sk_buff *skb, int *pf);
 void mtcp_reinject_data(struct sock *orig_sk);
 int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb);
 int mtcp_init_subsockets(struct multipath_pcb *mpcb, 
