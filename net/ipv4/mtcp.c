@@ -661,7 +661,6 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 	mtcp_for_each_sk(mpcb,sk,tp) {
 		unsigned int fill_ratio;
 		if (!mtcp_is_available(sk)) continue;
-		if (sk->sk_state!=TCP_ESTABLISHED || tp->pf) continue;
 		/*If the skb has already been enqueued in this sk, try to find
 		  another one*/
 		if (PI_TO_FLAG(tp->path_index) & skb->path_mask) continue;
@@ -1372,7 +1371,25 @@ void __mtcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk)
 	struct sk_buff *skb;
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcphdr *th;
+	struct sock *sk_it;
+	struct tcp_sock *tp_it;
 	
+	/*A segment can be added to the reinject queue only if 
+	  there is at least one working subflow that has never sent
+	  this data*/
+	mtcp_for_each_sk(tp->mpcb,sk_it,tp_it) {
+		if (sk_it->sk_state!=TCP_ESTABLISHED || tp_it->pf) continue;
+		/*If the skb has already been enqueued in this sk, try to find
+		  another one*/
+		if (PI_TO_FLAG(tp_it->path_index) & orig_skb->path_mask) 
+			continue;
+		
+		/*candidate subflow found, we can reinject*/
+		break;
+	}
+	
+	if (!sk_it) return; /*no candidate found*/
+
 	skb=skb_clone(orig_skb,GFP_ATOMIC);
 	skb->sk=sk;
 
