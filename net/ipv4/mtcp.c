@@ -1374,17 +1374,13 @@ void __mtcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk)
 	struct tcphdr *th;
 	struct sock *sk_it;
 	struct tcp_sock *tp_it;
-	int pf_subflows=0;
 	
 	/*A segment can be added to the reinject queue only if 
 	  there is at least one working subflow that has never sent
 	  this data*/
 	mtcp_for_each_sk(tp->mpcb,sk_it,tp_it) {
-		if (sk_it->sk_state!=TCP_ESTABLISHED || tp_it->pf) {
-			if (tp_it->path_index==1 || tp_it->path_index==9)
-				pf_subflows+=tp_it->path_index;
+		if (sk_it->sk_state!=TCP_ESTABLISHED)
 			continue;
-		}
 		/*If the skb has already been enqueued in this sk, try to find
 		  another one*/
 		if (PI_TO_FLAG(tp_it->path_index) & orig_skb->path_mask) 
@@ -1399,8 +1395,6 @@ void __mtcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk)
 		    (PI_TO_FLAG(9) & orig_skb->path_mask))
 			tcpprobe_logmsg(sk,"skb already injected to all "
 					"paths");
-		if (pf_subflows==10) 
-			tcpprobe_logmsg(sk,"all subflows in pf state");
 		return; /*no candidate found*/
 	}
 

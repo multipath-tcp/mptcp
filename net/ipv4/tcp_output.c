@@ -1737,6 +1737,15 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		struct tcp_sock *subtp=tcp_sk(subsk);
 		struct sk_buff *subskb;
 
+		if (reinject && !after(TCP_SKB_CB(skb)->end_data_seq,
+				       tp->snd_una)) {
+			/*another copy of the segment already reached
+			  the peer, just discard this one.*/
+			skb_unlink(skb,&tp->mpcb->reinject_queue);
+			kfree_skb(skb);
+			continue;
+		}
+		
 		if (is_meta_tp(tp)) {
 			int pf=0;
 			subsk=get_available_subflow(tp->mpcb,skb,&pf);
@@ -1887,6 +1896,17 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 	struct sock *subsk;
 	struct tcp_sock *subtp;
 
+	BUG_ON(!skb);
+
+	while (reinject && !after(TCP_SKB_CB(skb)->end_data_seq,
+			       tp->snd_una)) {
+		/*another copy of the segment already reached
+		  the peer, just discard this one.*/
+		skb_unlink(skb,&tp->mpcb->reinject_queue);
+		kfree_skb(skb);
+		skb=mtcp_next_segment(sk,&reinject);
+	}
+	
 	BUG_ON(!skb);
 
 	if (is_meta_tp(tp)) {
