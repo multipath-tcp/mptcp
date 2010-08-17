@@ -3469,8 +3469,6 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 		 */
 		tcp_update_wl(tp, ack, ack_seq);
 		tp->snd_una = ack;
-		tcpprobe_logmsg(sk,"pi %d: leaving pf state",tp->path_index);
-		tp->pf=0;
 		flag |= FLAG_WIN_UPDATE;
 
 		tcp_ca_event(sk, CA_EVENT_FAST_ACK);
@@ -3496,6 +3494,9 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 	/* We passed data and got it acked, remove any soft error
 	 * log. Something worked...
 	 */
+	tcpprobe_logmsg(sk,"pi %d: leaving pf state",tp->path_index);
+	tp->pf=0;
+
 	sk->sk_err_soft = 0;
 	icsk->icsk_probes_out = 0;
 	tp->rcv_tstamp = tcp_time_stamp;
