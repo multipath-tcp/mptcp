@@ -2694,11 +2694,14 @@ void tcp_close(struct sock *sk, long timeout)
 		NET_INC_STATS_USER(sock_net(sk), LINUX_MIB_TCPABORTONCLOSE);
 		tcp_set_state(sk, TCP_CLOSE);
 		tcp_send_active_reset(sk, GFP_KERNEL);
+		printk(KERN_ERR "unread data\n");
 	} else if (sock_flag(sk, SOCK_LINGER) && !sk->sk_lingertime) {
 		/* Check zero linger _after_ checking for unread data. */
 		sk->sk_prot->disconnect(sk, 0);
 		NET_INC_STATS_USER(sock_net(sk), LINUX_MIB_TCPABORTONDATA);
+		printk(KERN_ERR "flag LINGER\n");
 	} else if (tcp_close_state(sk)) {
+		printk(KERN_ERR "will call tcp_fin\n");
 		/* We FIN if the application ate all the data before
 		 * zapping the connection.
 		 */
@@ -2726,6 +2729,7 @@ void tcp_close(struct sock *sk, long timeout)
 		 */
 		tcp_send_fin(sk);
 	}
+	else printk(KERN_ERR "no condition applies\n");
 
 	sk_stream_wait_close(sk, timeout);
 
