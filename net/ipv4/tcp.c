@@ -2588,6 +2588,8 @@ static int tcp_close_state(struct sock *sk)
 	int next = (int)new_state[sk->sk_state];
 	int ns = next & TCP_STATE_MASK;
 
+	printk(KERN_ERR "tcp_close_state: going from state %d to %d\n",
+	       sk->sk_state,next);
 	tcp_set_state(sk, ns);
 
 	return next & TCP_ACTION_FIN;
