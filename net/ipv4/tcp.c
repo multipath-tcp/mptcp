@@ -2486,6 +2486,10 @@ skip_loop:
 	}
 	mutex_unlock(&mpcb->mutex);
 	PDEBUG("Leaving %s, copied %d\n",__FUNCTION__,copied);
+
+	if (mtcp_test_any_sk(mpcb,sk,sk->sk_shutdown & RCV_SHUTDOWN)) {
+		printk(KERN_ERR "at least one subflow shut down\n");
+	}
 	return copied;
 
 out:
