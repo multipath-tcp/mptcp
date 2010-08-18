@@ -633,15 +633,18 @@ static inline void tcp_mark_urg(struct tcp_sock *tp, int flags,
 void tcp_push(struct sock *sk, int flags, int mss_now,
 	      int nonagle)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *tp=tcp_sk(sk);
 	struct sock *mpcb_sk=(tp->mpc)?(struct sock*)(tp->mpcb):sk;
+	struct tcp_sock *mpcb_tp = tcp_sk(mpcb_sk);
 	
 	if (mtcp_next_segment(mpcb_sk,NULL)) {
-		struct sk_buff *skb = tcp_write_queue_tail(sk);
-		if (!(flags & MSG_MORE) || forced_push(tp))
-			tcp_mark_push(tp, skb);
-		tcp_mark_urg(tp, flags, skb);
-		__tcp_push_pending_frames(sk, mss_now,
+		struct sk_buff *skb = tcp_write_queue_tail(mpcb_sk);
+		if (!skb) skb=skb_peek_tail(&tp->mpcb->reinject_queue);
+
+		if (!(flags & MSG_MORE) || forced_push(mpcb_tp))
+			tcp_mark_push(mpcb_tp, skb);
+		tcp_mark_urg(mpcb_tp, flags, skb);
+		__tcp_push_pending_frames(mpcb_sk, mss_now,
 					  (flags & MSG_MORE) ? TCP_NAGLE_CORK : nonagle);
 	}
 }
