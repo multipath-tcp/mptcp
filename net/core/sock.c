@@ -1436,13 +1436,18 @@ static void __lock_sock(struct sock *sk)
 	finish_wait(&sk->sk_lock.wq, &wait);
 }
 
-static void __release_sock(struct sock *sk)
+/**
+ *@meta_sk: used by MPCTP: if not NULL, it is the meta_sk to
+ *          which @sk is attached.
+ */
+static void __release_sock(struct sock *sk, struct sock *meta_sk)
 {
 	struct sk_buff *skb = sk->sk_backlog.head;
 
 	do {
 		sk->sk_backlog.head = sk->sk_backlog.tail = NULL;
 		bh_unlock_sock(sk);
+		if (meta_sk) bh_unlock_sock(meta_sk);
 
 		do {
 			struct sk_buff *next = skb->next;
@@ -1461,6 +1466,7 @@ static void __release_sock(struct sock *sk)
 			skb = next;
 		} while (skb != NULL);
 
+		if (meta_sk) bh_lock_sock(meta_sk);
 		bh_lock_sock(sk);
 	} while ((skb = sk->sk_backlog.head) != NULL);
 }
@@ -1846,7 +1852,7 @@ void release_sock(struct sock *sk)
 
 	spin_lock_bh(&sk->sk_lock.slock);
 	if (sk->sk_backlog.tail)
-		__release_sock(sk);
+		__release_sock(sk, NULL);
 	if (is_meta_sk(sk)) {
 		struct sock *sk_it;
 		struct tcp_sock *tp_it;
@@ -1858,7 +1864,7 @@ void release_sock(struct sock *sk)
 			  disabled by the previous spin_lock_bh*/
 			spin_lock(&sk_it->sk_lock.slock);
 			if (sk_it->sk_backlog.tail)
-				__release_sock(sk_it);
+				__release_sock(sk_it,sk);
 			spin_unlock(&sk_it->sk_lock.slock);
 		}
 	}
