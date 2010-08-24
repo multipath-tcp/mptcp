@@ -1851,6 +1851,7 @@ void mtcp_check_socket(struct sock *sk)
 		sk_set_socket(mpcb_sk,sk->sk_socket);
 	}
 }
+EXPORT_SYMBOL(mtcp_check_socket);
 
 #ifdef MTCP_DEBUG_PKTS_OUT
 int check_pkts_out(struct sock* sk) {
