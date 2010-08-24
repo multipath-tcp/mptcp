@@ -1878,8 +1878,16 @@ void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
 	struct sk_buff *skb = mtcp_next_segment(sk,NULL);
 
 	if (skb) {
-		if (tcp_write_xmit(sk, cur_mss, nonagle))
-			tcp_check_probe_timer(sk);
+		if (tcp_write_xmit(sk, cur_mss, nonagle)) {
+			if (!is_meta_sk(sk))
+				tcp_check_probe_timer(sk);
+			else {
+				struct sock *sk;
+				struct tcp_sock *tp;
+				mtcp_for_each_sk(tcp_sk(sk)->mpcb,sk,tp)
+					tcp_check_probe_timer(sk);
+			}
+		}
 	}
 	else 	tcpprobe_logmsg(sk,"not running write_xmit");
 }
