@@ -1843,6 +1843,15 @@ struct sk_buff* mtcp_next_segment(struct sock *sk, int *reinject)
 	else return tcp_send_head(sk);
 }
 
+/*Sets the socket pointer of the mpcb_sk after an accept at the socket level*/
+void mtcp_check_socket(struct sock *sk)
+{
+	if (sk->sk_protocol==IPPROTO_TCP && tcp_sk(sk)->mpcb) {
+		struct sock *mpcb_sk=(struct sock*)(tcp_sk(sk)->mpcb);
+		sk_set_socket(mpcb_sk,sk->sk_socket);
+	}
+}
+
 #ifdef MTCP_DEBUG_PKTS_OUT
 int check_pkts_out(struct sock* sk) {
 	int cnt=0;
