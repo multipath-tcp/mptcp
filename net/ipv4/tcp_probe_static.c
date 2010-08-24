@@ -71,6 +71,8 @@ int tcpprobe_logmsg(struct sock *sk,char *fmt,...)
 	va_list args;
 	int i;
 	
+	return 0; /*bypassed at the moment*/
+
 	/*return -1 if incorrect family*/
 	if (!vops) return -1;
 	if (!*vops) return 0;
