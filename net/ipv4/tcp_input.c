@@ -4468,7 +4468,12 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 			if (skb_test)
 				BUG_ON(TCP_SKB_CB(skb)->seq!=
 				       TCP_SKB_CB(skb_test)->end_seq);
-			else BUG_ON(TCP_SKB_CB(skb)->seq!=tp->copied_seq);
+			else if(TCP_SKB_CB(skb)->seq!=tp->copied_seq) {
+				printk(KERN_ERR "skb->seq:%#x,"
+				       "tp->copied_seq:%#x",
+				       TCP_SKB_CB(skb)->seq,tp->copied_seq);
+				BUG();
+			}
 
 			__skb_queue_tail(&sk->sk_receive_queue, skb);
 		}
