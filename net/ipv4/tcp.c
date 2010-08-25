@@ -893,6 +893,10 @@ wait_for_memory:
 		if (copied)
 			tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
 
+		if (!sk->sk_sleep) {
+			printk(KERN_ERR "meta-sk:%d\n",is_meta_sk(sk));
+			BUG();
+		}
 		if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
 			goto do_error;
 
