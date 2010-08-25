@@ -4357,9 +4357,6 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 #endif
 	int eaten = -1;
 
-	printk(KERN_ERR "entering %s: copied_seq is %#x, seq is %#x\n",
-	       __FUNCTION__,tp->copied_seq,TCP_SKB_CB(skb)->seq);
-	
 	if (TCP_SKB_CB(skb)->seq == TCP_SKB_CB(skb)->end_seq)
 		goto drop;
 
@@ -5404,9 +5401,6 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 
 	tcpprobe_rcv_established(sk,skb,th,len);
 
-	printk(KERN_ERR "entering %s: copied_seq is %#x, seq is %#x\n",
-	       __FUNCTION__,tp->copied_seq,TCP_SKB_CB(skb)->seq);
-	       
 	/*
 	 *	Header prediction.
 	 *	The code loosely follows the one in the famous
