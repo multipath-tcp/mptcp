@@ -4356,7 +4356,10 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 	int mapping=0;
 #endif
 	int eaten = -1;
-		
+
+	printk(KERN_ERR "entering %s: copied_seq is %#x, seq is %#x\n",
+	       __FUNCTION__,tp->copied_seq,TCP_SKB_CB(skb)->seq);
+	
 	if (TCP_SKB_CB(skb)->seq == TCP_SKB_CB(skb)->end_seq)
 		goto drop;
 
@@ -4402,6 +4405,8 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 						
 						mpcb->ucopy.len -= chunk;
 						tp->copied_seq += chunk;
+						printk(KERN_ERR "line %d: copied_seq is %#x, seq is %#x\n",
+						       __LINE__,tp->copied_seq,TCP_SKB_CB(skb)->seq);
 						mpcb->tp.copied_seq += chunk;
 						tp->copied += chunk;
 						tp->bytes_eaten += chunk;
@@ -4424,6 +4429,8 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 							     chunk)) {
 					mpcb->ucopy.len -= chunk;
 					tp->copied_seq += chunk;
+					printk(KERN_ERR "line %d: copied_seq is %#x, seq is %#x\n",
+					       __LINE__,tp->copied_seq,TCP_SKB_CB(skb)->seq);
 					eaten = (chunk == skb->len && !th->fin);
 					tcp_rcv_space_adjust(sk);
 				}
@@ -4446,6 +4453,8 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 						     chunk)) {
 				tp->ucopy.len -= chunk;
 				tp->copied_seq += chunk;
+				printk(KERN_ERR "line %d: copied_seq is %#x, seq is %#x\n",
+				       __LINE__,tp->copied_seq,TCP_SKB_CB(skb)->seq);
 				eaten = (chunk == skb->len && !th->fin);
 				tcp_rcv_space_adjust(sk);
 			}
