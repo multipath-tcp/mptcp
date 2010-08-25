@@ -1882,10 +1882,11 @@ void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
 			if (!is_meta_sk(sk))
 				tcp_check_probe_timer(sk);
 			else {
-				struct sock *sk;
-				struct tcp_sock *tp;
-				mtcp_for_each_sk(tcp_sk(sk)->mpcb,sk,tp)
-					tcp_check_probe_timer(sk);
+				struct sock *sk_it;
+				struct tcp_sock *tp_it;
+				mtcp_for_each_sk(tcp_sk(sk)->mpcb,sk_it,
+						 tp_it)
+					tcp_check_probe_timer(sk_it);
 			}
 		}
 	}
