@@ -4470,7 +4470,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 				       TCP_SKB_CB(skb_test)->end_seq);
 			else if(TCP_SKB_CB(skb)->seq!=tp->copied_seq) {
 				printk(KERN_ERR "skb->seq:%#x,"
-				       "tp->copied_seq:%#x",
+				       "tp->copied_seq:%#x\n",
 				       TCP_SKB_CB(skb)->seq,tp->copied_seq);
 				BUG();
 			}
@@ -5394,6 +5394,9 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	       sk);
 
 	tcpprobe_rcv_established(sk,skb,th,len);
+
+	printk(KERN_ERR "entering %s: copied_seq is %#x, seq is %#x\n",
+	       __FUNCTION__,tp->copied_seq,TCP_SKB_CB(skb)->seq);
 	       
 	/*
 	 *	Header prediction.
