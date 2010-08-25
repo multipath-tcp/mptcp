@@ -1843,12 +1843,15 @@ struct sk_buff* mtcp_next_segment(struct sock *sk, int *reinject)
 	else return tcp_send_head(sk);
 }
 
-/*Sets the socket pointer of the mpcb_sk after an accept at the socket level*/
+/*Sets the socket pointer of the mpcb_sk after an accept at the socket level
+ * Set also the sk_sleep pointer, because it has just been copied by
+ * sock_graft() */
 void mtcp_check_socket(struct sock *sk)
 {
 	if (sk->sk_protocol==IPPROTO_TCP && tcp_sk(sk)->mpcb) {
 		struct sock *mpcb_sk=(struct sock*)(tcp_sk(sk)->mpcb);
 		sk_set_socket(mpcb_sk,sk->sk_socket);
+		mpcb_sk->sk_sleep=sk->sk_sleep;
 	}
 }
 EXPORT_SYMBOL(mtcp_check_socket);
