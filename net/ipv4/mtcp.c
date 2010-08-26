@@ -831,10 +831,30 @@ int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 	return rc;
 }
 
+/**
+ * Returns a pointer to the next skb, and writes that pointer into
+ * skbp. 
+ * @skbp must not be NULL and must contain a pointer to the current
+ * skbuff (which in turn can be NULL). 
+ * @tp must be mpcb_tp
+ */
+static inline struct sk_buff *get_ofo_next(struct tcp_sock *tp, int flags, 
+					   struct sk_buff **skbp)
+{
+	struct sk_buff *skb=*skbp;
+ 	if (!(flags & MSG_PEEK) || !(*skbp))
+		*skbp=skb_peek(&tp->out_of_order_queue);
+	else if (skb->next !=(struct sk_buff *)
+		 &tp->out_of_order_queue)
+		*skbp=skb->next;
+	else *skbp=NULL;
+	return *skbp;
+}
+
 void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 		    u32 *data_seq, int *copied, int flags)
 {
-	struct sk_buff *skb;
+	struct sk_buff *skb=NULL;
 	int err;
 	u32 data_offset;
 	unsigned long used;
@@ -857,7 +877,7 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 	  false counter, since this would copy new segments to the meta-
 	  receive queue, while the old ones are still in the subsockets.*/
 
-	while ((skb = skb_peek(&mpcb_tp->out_of_order_queue)) != NULL) {
+	while (get_ofo_next(mpcb_tp, flags, &skb) != NULL) {
 		tp=tcp_sk(skb->sk);
 		if (after(TCP_SKB_CB(skb)->data_seq, *data_seq))
 			break;
@@ -872,8 +892,10 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 			console_loglevel=8;
 			
 			BUG();
-			__skb_unlink(skb, &mpcb_tp->out_of_order_queue);
-			__kfree_skb(skb);
+			if (!(flags & MSG_PEEK)) {
+				__skb_unlink(skb, &mpcb_tp->out_of_order_queue);
+				__kfree_skb(skb);
+			}
 			continue;
 		}
 		PDEBUG("ofo delivery : "
@@ -881,8 +903,11 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 		       *data_seq, TCP_SKB_CB(skb)->data_seq,
 		       TCP_SKB_CB(skb)->end_data_seq,enqueue);
 		
-		__skb_unlink(skb, &mpcb_tp->out_of_order_queue);
-		
+		if (!(flags & MSG_PEEK))
+			__skb_unlink(skb, &mpcb_tp->out_of_order_queue);
+		else printk(KERN_ERR "%s:using latest bug fix\n",
+			    __FUNCTION__);
+
 		/*if enqueue is 1, than the app buffer is full and we must
 		  enqueue the buff into the receive queue*/
 		if (enqueue) {
@@ -923,9 +948,10 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 		/*We can free the skb only if it has been completely eaten
 		  Else we queue it in the mpcb receive queue, for reading by
 		  the app on next call to tcp_recvmsg().*/
- 		if (*data_seq==TCP_SKB_CB(skb)->end_data_seq)
+ 		if (*data_seq==TCP_SKB_CB(skb)->end_data_seq &&
+		    !(flags & MSG_PEEK))
 			__kfree_skb(skb);
-		else {
+		else if (!(flags & MSG_PEEK)) {
 			__skb_queue_tail(&mpcb_sk->sk_receive_queue, skb);
 			BUG_ON(*len!=0);
 			BUG_ON(tcp_hdr(skb)->fin);
@@ -935,6 +961,7 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 			rcv_nxt=TCP_SKB_CB(skb)->end_data_seq;
 			data_seq=&rcv_nxt;
 		}
+		else return;
 	}
 }
 
