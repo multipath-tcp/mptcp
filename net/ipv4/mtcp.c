@@ -1099,7 +1099,11 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		  has been retransmitted by the sender on another subflow.
 		  Retransmissions on the same subflow are handled at the
 		  subflow level.*/
-		BUG_ON(fin);
+		if(fin) {
+			printk(KERN_ERR "*data_seq:%#x, end_data_seq:%#x\n",
+			       *data_seq, TCP_SKB_CB(skb)->end_data_seq);
+			BUG();
+		}
 
 		/* We do not read the skb, since it was already received on
 		   another subflow, but we advance the seqnum so that the
