@@ -2077,6 +2077,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			 * shouldn't happen.
 			 */
 			BUG_ON(!tp->seq);
+		msgpeek_next:
 			
 			if (before(*tp->seq, TCP_SKB_CB(skb)->seq)) {
 				printk(KERN_ERR 
@@ -2097,7 +2098,14 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 
 			if (flags & MSG_PEEK) {
 				skb=skb->next;
-				continue;
+				if (skb!=(struct sk_buff *)
+				    &sk->sk_receive_queue) {
+					printk(KERN_ERR "%s:using latest bug "
+					       "fix\n",
+					       __FUNCTION__);
+					goto msgpeek_next;
+				}
+				else continue;
 			}
 			/*TODEL
 			  Not normal to arrive here. Print a lot of info,
