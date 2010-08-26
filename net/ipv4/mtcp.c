@@ -1144,8 +1144,6 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		  has been retransmitted by the sender on another subflow.
 		  Retransmissions on the same subflow are handled at the
 		  subflow level.*/
-		printk(KERN_ERR "received duplicate segment:%#x, copied:%#x\n",
-		       TCP_SKB_CB(skb)->end_data_seq,*data_seq);
 		if(fin) {
 			printk(KERN_ERR "*data_seq:%#x, end_data_seq:%#x\n",
 			       *data_seq, TCP_SKB_CB(skb)->end_data_seq);
