@@ -382,9 +382,12 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 
 	/*mpcb_sk inherits master sk*/
 	mtcp_inherit_sk(master_sk,mpcb_sk);
-	BUG_ON(mpcb_tp->copied_seq); /*copied_seq MUST be initialized to zero.
-				       If this fails, just set it explicitly 
-				       to 0 here.*/
+
+	/*Will be replaced by the IDSN later. Currently the 
+	  IDSN is zero*/
+	mpcb_tp->copied_seq = mpcb_tp->rcv_nxt = 0;
+	mpcb_tp->snd_sml = mpcb_tp->snd_una = mpcb_tp->snd_nxt = 0;
+	
 	mpcb_tp->mpcb=mpcb;
 	mpcb_tp->mpc=1;
 	mpcb_tp->mss_cache=MPTCP_MSS;
