@@ -382,6 +382,9 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 
 	/*mpcb_sk inherits master sk*/
 	mtcp_inherit_sk(master_sk,mpcb_sk);
+	BUG_ON(mpcb_tp->copied_seq); /*copied_seq MUST be initialized to zero.
+				       If this fails, just set it explicitly 
+				       to 0 here.*/
 	mpcb_tp->mpcb=mpcb;
 	mpcb_tp->mpc=1;
 	mpcb_tp->mss_cache=MPTCP_MSS;
@@ -842,6 +845,18 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 	struct sock *mpcb_sk=(struct sock *) mpcb;
 	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
 	
+	/*This will fail if the receive queue is not empty.
+	  So we bug if it happens that it is empty.
+	  If the bug triggers, let's use mpcb_tp->rcv_nxt instead of *data_seq*/
+	BUG_ON(!skb_queue_empty(&mpcb_sk->sk_receive_queue));
+	/*Now, what happens in case of MSG_PEEK ? Then, we read just normally
+	  and advance a false copied_seq counter. *data_seq is that false
+	  counter. As usual, we give data to the app, from the ofo queue, 
+	  and at some point the app has finished reading. Then we MUST NOT
+	  copy any data from the ofo queue to the receive queue based on that
+	  false counter, since this would copy new segments to the meta-
+	  receive queue, while the old ones are still in the subsockets.*/
+
 	while ((skb = skb_peek(&mpcb_tp->out_of_order_queue)) != NULL) {
 		tp=tcp_sk(skb->sk);
 		if (after(TCP_SKB_CB(skb)->data_seq, *data_seq))
@@ -1032,21 +1047,21 @@ void mtcp_check_seqnums(struct multipath_pcb *mpcb, int before)
 	  be equal to the sum of the number of bytes received by the
 	  subsockets, minus the number of bytes waiting in the meta-ofo
 	  and meta-receive queue*/
-	if (unlikely(subsock_bytes!=mpcb->copied_seq+mpcb->ofo_bytes)) {
+	if (unlikely(subsock_bytes!=mpcb_tp->copied_seq+mpcb->ofo_bytes)) {
 		struct sk_buff *first_ofo=skb_peek(
 			&mpcb_tp->out_of_order_queue);
 		printk(KERN_ERR "subsock_bytes:%d,mpcb bytes:%d, "
 		       "meta-ofo bytes:%d, "
 		       "before: %d\n",
 		       subsock_bytes,
-		       mpcb->copied_seq,mpcb->ofo_bytes,before);
+		       mpcb_tp->copied_seq,mpcb->ofo_bytes,before);
 		console_loglevel=8;
 		printk(KERN_ERR "mpcb next exp. dataseq:%x\n"
 		       "  meta-recv queue:%d\n"
 		       "  meta-ofo queue:%d\n"
 		       "  first seq,dataseq in meta-ofo-queue:%x,%x\n",
-		       mpcb->copied_seq,
-		       skb_queue_len(&mpcb_sk->receive_queue),
+		       mpcb_tp->copied_seq,
+		       skb_queue_len(&mpcb_sk->sk_receive_queue),
 		       skb_queue_len(&mpcb_tp->out_of_order_queue),
 		       first_ofo?TCP_SKB_CB(first_ofo)->seq:0,
 		       first_ofo?TCP_SKB_CB(first_ofo)->data_seq:0);
@@ -1099,6 +1114,8 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 		  has been retransmitted by the sender on another subflow.
 		  Retransmissions on the same subflow are handled at the
 		  subflow level.*/
+		printk(KERN_ERR "received duplicate segment:%#x, copied:%#x\n",
+		       TCP_SKB_CB(skb)->end_data_seq,*data_seq);
 		if(fin) {
 			printk(KERN_ERR "*data_seq:%#x, end_data_seq:%#x\n",
 			       *data_seq, TCP_SKB_CB(skb)->end_data_seq);

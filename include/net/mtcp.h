@@ -279,6 +279,7 @@ static inline int PI_TO_FLAG(int pi)
 
 /*For debugging only. Verifies consistency between subsock seqnums
   and metasock seqnums*/
+//#define MTCP_DEBUG_SEQNUMS 1
 #ifdef MTCP_DEBUG_SEQNUMS
 void mtcp_check_seqnums(struct multipath_pcb *mpcb, int before);
 #else
