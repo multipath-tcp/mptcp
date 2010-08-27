@@ -868,11 +868,7 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
 	struct sock *mpcb_sk=(struct sock *) mpcb;
 	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
 	
-	/*This will fail if the receive queue is not empty.
-	  So we bug if it happens that it is empty.
-	  If the bug triggers, let's use mpcb_tp->rcv_nxt instead of *data_seq*/
-	BUG_ON(!skb_queue_empty(&mpcb_sk->sk_receive_queue));
-	/*Now, what happens in case of MSG_PEEK ? Then, we read just normally
+	/*What happens in case of MSG_PEEK ? Then, we read just normally
 	  and advance a false copied_seq counter. *data_seq is that false
 	  counter. As usual, we give data to the app, from the ofo queue, 
 	  and at some point the app has finished reading. Then we MUST NOT
