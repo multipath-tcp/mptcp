@@ -2068,7 +2068,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		mtcp_for_each_sk(mpcb,sk,tp) {
 			struct sk_buff *first_ofo=skb_peek(
 				&mpcb_tp->out_of_order_queue); /*TODEL*/
-
+			
 			skb = skb_peek(&sk->sk_receive_queue);
 			if (!skb)
 				continue;
@@ -2093,7 +2093,11 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 
 			if (offset < skb->len)
 				goto found_ok_skb;
-			if (tcp_hdr(skb)->fin)
+			/*We need to check that the reading head is 
+			  indeed at that fin (!offset), 
+			  otherwise we will read it
+			  several times*/
+			if (tcp_hdr(skb)->fin && !offset)
 				goto found_fin_ok;
 
 			if (flags & MSG_PEEK) {
