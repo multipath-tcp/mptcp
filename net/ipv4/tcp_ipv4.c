@@ -1481,7 +1481,6 @@ static __sum16 tcp_v4_checksum_init(struct sk_buff *skb)
  * This is because we cannot sleep with the original spinlock
  * held.
  */
-int nofree=0;
 int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 {
 	struct sock *rsk;
@@ -1511,10 +1510,8 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 
 	if (sk->sk_state == TCP_LISTEN) {
 		struct sock *nsk;
-		nofree=1;
 		nsk= tcp_v4_hnd_req(sk, skb);
 		if (!nsk) {
-			nofree=0;
 			goto discard;
 		}
 		
@@ -1522,13 +1519,10 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 		if (nsk != sk) {
 			if (tcp_child_process(sk, nsk, skb)) {
 				rsk = nsk;
-				nofree=0;
 				goto reset;
 			}
-			nofree=0;
 			return 0;
 		}
-		nofree=0;
 	}
 
 	TCP_CHECK_TIMER(sk);
