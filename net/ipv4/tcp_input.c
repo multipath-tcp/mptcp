@@ -3667,6 +3667,11 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				}
 				PDEBUG("recvd multipath opt\n");
 				opt_rx->saw_mpc=1;
+				if (mopt)
+					mopt->list_rcvd=1;
+				else 
+					printk(KERN_ERR "%s:mopt should not be"
+					       " nULL",__FUNCTION__);
 #ifdef CONFIG_MTCP_PM
 				opt_rx->mtcp_rem_token=
 					ntohl(*((u32*)(ptr+1)));
