@@ -1413,7 +1413,7 @@ static inline int count_bits(unsigned int v)
  *
  * @pre : @sk must be the mpcb_sk
  */
-void __mtcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk)
+int __mtcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk)
 {
 	struct sk_buff *skb;
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -1441,10 +1441,12 @@ void __mtcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk)
 		    (PI_TO_FLAG(9) & orig_skb->path_mask))
 			tcpprobe_logmsg(sk,"skb already injected to all "
 					"paths");
-		return; /*no candidate found*/
+		return 0; /*no candidate found*/
 	}
 
 	skb=skb_clone(orig_skb,GFP_ATOMIC);
+	if (unlikely(!skb))
+		return -ENOBUFS;
 	skb->sk=sk;
 
 	th=tcp_hdr(skb);
@@ -1469,7 +1471,8 @@ void mtcp_reinject_data(struct sock *orig_sk)
 	
 	tcp_for_write_queue(skb_it,orig_sk) {
 		skb_it->path_mask|=PI_TO_FLAG(orig_tp->path_index);
-		__mtcp_reinject_data(skb_it,mpcb_sk);
+		if (unlikely(__mtcp_reinject_data(skb_it,mpcb_sk)<0))
+			break;
 	}
 	
 	tcpprobe_logmsg(orig_sk,"after reinj, reinj queue size:%d",
