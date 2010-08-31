@@ -3255,7 +3255,7 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 		nwin <<= tp->rx_opt.snd_wscale;
 
 	if (tcp_may_update_window(tp, ack, ack_seq, nwin)) {
-		u32 *max_window=(tp->mpc)?&tp->mpcb->tp.max_window:
+		u32 *max_window=(tp->mpc && tp->mpcb)?&tp->mpcb->tp.max_window:
 			&tp->max_window;
 		flag |= FLAG_WIN_UPDATE;
 		tcp_update_wl(tp, ack, ack_seq);
