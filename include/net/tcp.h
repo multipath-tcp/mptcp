@@ -1089,14 +1089,10 @@ static inline int mtcp_space(const struct sock *sk)
 static inline int mtcp_full_space(const struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *sk_it;
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
-	int full_space=0;
+	struct sock *mpcb_sk=(struct sock*)mpcb;
 
-	mtcp_for_each_sk(mpcb,sk_it,tp) {
-		full_space+=sk_it->sk_rcvbuf;
-	}
-	return tcp_win_from_space(full_space);
+	return tcp_win_from_space(mpcb_sk->sk_rcvbuf);
 }
 #endif
 
