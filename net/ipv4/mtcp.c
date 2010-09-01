@@ -1455,6 +1455,7 @@ int __mtcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk)
 	BUG_ON(skb->path_mask!=orig_skb->path_mask);
 	
 	skb_queue_tail(&tp->mpcb->reinject_queue,skb);
+	return 0;
 }
 
 /*Inserts data into the reinject queue*/
