@@ -1219,9 +1219,11 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			if (copied)
 				tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
 
+			tcpprobe_logmsg(sk, "will wait on write side");
 			if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
-				goto do_error;			
-
+				goto do_error;
+			tcpprobe_logmsg(sk, "write side, woken up");
+			
 			BUG_ON(!sk_stream_memory_free(sk));
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
 #ifndef CONFIG_MTCP
@@ -1251,6 +1253,7 @@ do_fault:
 	}
 
 do_error:
+	printk(KERN_ERR "error in subtcp_sendmsg\n");
 	if (copied)
 		goto out;
 out_err:

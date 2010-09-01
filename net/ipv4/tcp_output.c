@@ -812,8 +812,10 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			skb = pskb_copy(skb, gfp_mask);
 		else
 			skb = skb_clone(skb, gfp_mask);
-		if (unlikely(!skb))
+		if (unlikely(!skb)) {
+			printk(KERN_ERR "transmit_skb, clone failed\n");
 			return -ENOBUFS;
+		}
 	}
 
 	inet = inet_sk(sk);
@@ -1975,7 +1977,10 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 				skb_unlink(skb,&tp->mpcb->reinject_queue);
 				subskb=skb;
 			}
-			if (!subskb) return;
+			if (!subskb) {
+				printk(KERN_ERR "skb_clone failed\n");
+				return;
+			}
 			BUG_ON(tcp_send_head(subsk));
 			mtcp_skb_entail(subsk, subskb);
 		}
