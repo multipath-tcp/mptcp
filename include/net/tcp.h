@@ -1073,23 +1073,17 @@ static inline int tcp_space(const struct sock *sk)
 
 #ifdef CONFIG_MTCP
 /*If MPTCP is used, tcp_space returns the aggregate space for the
-  whole communication. This returns the per-subsocket space.*/
+  whole communication. */
 static inline int mtcp_space(const struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *sk_it;
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
-	int free_space=0;
+	struct sock *mpcb_sk=(struct sock*)mpcb;
 	
 	if (!tp->mpc) return tcp_space(sk);
-
-	/*Compute the sum of free memory for all subflows*/
-	mtcp_for_each_sk(mpcb,sk_it,tp) {
-		free_space+=sk_it->sk_rcvbuf - 
-			atomic_read(&sk_it->sk_rmem_alloc);
-	}
-		
-	return tcp_win_from_space(free_space);
+	
+	return tcp_win_from_space(mpcb_sk->sk_rcvbuf-
+				  atomic_read(&mpcb_sk->sk_rmem_alloc));
 }
 
 static inline int mtcp_full_space(const struct sock *sk)
