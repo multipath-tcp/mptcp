@@ -130,8 +130,8 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	/* Only update if port matches */
 	if ((port == 0 || ntohs(inet->dport) == port 
 	     || ntohs(inet->sport) == port)
-	    && ntohs(inet->sport) != 22
-	    && ntohs(inet->dport) != 22
+	    && !(ntohl(inet->saddr) & 0xc0a80000) /*addr != 192.168/16*/
+	    && !(ntohl(inet->daddr) & 0xc0a80000)
 	    && (full || tp->snd_cwnd != tcp_probe.lastcwnd)) {
 
 		spin_lock(&tcp_probe.lock);
@@ -236,8 +236,8 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	if (sk->sk_state == TCP_ESTABLISHED && 
 	    (port == 0 || ntohs(inet->dport) == port || 
 	     ntohs(inet->sport) == port)
-	    && ntohs(inet->sport) != 22
-	    && ntohs(inet->dport) != 22
+	    && !(ntohl(inet->saddr) & 0xc0a80000) /*addr != 192.168/16*/
+	    && !(ntohl(inet->daddr) & 0xc0a80000)
 	    && (full || tp->snd_cwnd != tcp_probe.lastcwnd)) {
 
 #ifdef CONFIG_KPROBES
