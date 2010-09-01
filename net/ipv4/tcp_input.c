@@ -3437,6 +3437,9 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 	int prior_packets;
 	int frto_cwnd = 0;
 
+	tcpprobe_logmsg(sk,"tp %d, rcv ack %#x", tp->path_index,
+			ack);
+
 	check_pkts_out(sk);
 
 	/* If the ack is newer than sent or older than previous acks
