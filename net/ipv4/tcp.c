@@ -350,6 +350,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	struct sock *master_sk = sock->sk;
 	struct tcp_sock *master_tp = tcp_sk(master_sk);
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(master_tp);
+	struct sock *mpcb_sk = (struct sock *) mpcb;
 	struct sock *sk; /*For subsocket iteration*/
 	struct tcp_sock *tp; /*for subsocket iteration*/
 	
@@ -411,6 +412,28 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 		mask |= POLLIN | POLLRDNORM;
 	
 	/* Connected? */
+
+	/*POLLOUT must be checked against mpcb_sk, while POLLIN is checked
+	  against the subsocks*/
+	if (!(mpcb_sk->sk_shutdown & SEND_SHUTDOWN)) {
+		if (sk_stream_wspace(mpcb_sk) >= 
+		    sk_stream_min_wspace(mpcb_sk)) {
+			mask |= POLLOUT | POLLWRNORM;
+		} else {  /* send SIGIO later */
+			set_bit(SOCK_ASYNC_NOSPACE,
+				&mpcb_sk->sk_socket->flags);
+			set_bit(SOCK_NOSPACE, &mpcb_sk->sock_flags);
+			
+			/* Race breaker. If space is freed after
+			 * wspace test but before the flags are set,
+			 * IO signal will be lost.
+			 */
+			if (sk_stream_wspace(mpcb_sk) >= 
+			    sk_stream_min_wspace(mpcb_sk))
+				mask |= POLLOUT | POLLWRNORM;
+		}
+	}
+	else printk(KERN_ERR "mpcb is in shutdown state\n");
 	
 	mtcp_for_each_sk(mpcb,sk,tp)
 		if ((1 << sk->sk_state) & ~(TCPF_SYN_SENT | TCPF_SYN_RECV)) {
