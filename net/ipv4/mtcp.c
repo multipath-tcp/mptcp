@@ -1828,8 +1828,8 @@ void verif_wqueues(struct multipath_pcb *mpcb)
 			BUG();
 		}
 	}
-	local_bh_enable();
 	BUG_ON(sum_total!=mpcb_sk->sk_wmem_queued);
+	local_bh_enable();
 }
 #else
 void verif_wqueues(struct multipath_pcb *mpcb)
