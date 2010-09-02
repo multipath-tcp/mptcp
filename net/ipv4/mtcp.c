@@ -1802,8 +1802,10 @@ void mtcp_push_frames(struct sock *sk)
 void verif_wqueues(struct multipath_pcb *mpcb) 
 {
 	struct sock *sk;
+	struct sock *mpcb_sk=(struct sock*)mpcb;
 	struct tcp_sock *tp;
 	struct sk_buff *skb;
+	int sum_total=0;
 
 	local_bh_disable();
 	mtcp_for_each_sk(mpcb,sk,tp) {
@@ -1811,6 +1813,7 @@ void verif_wqueues(struct multipath_pcb *mpcb)
 		tcp_for_write_queue(skb,sk) {
 			sum+=skb->truesize;
 		}
+		sum_total+=sum;
 		if (sum!=sk->sk_wmem_queued) {
 			printk(KERN_ERR "wqueue leak_1: enqueued:%d, recorded "
 			       "value:%d\n",
@@ -1826,7 +1829,7 @@ void verif_wqueues(struct multipath_pcb *mpcb)
 		}
 	}
 	local_bh_enable();
-	
+	BUG_ON(sum_total!=mpcb_sk->sk_wmem_queued);
 }
 #else
 void verif_wqueues(struct multipath_pcb *mpcb)
