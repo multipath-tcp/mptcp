@@ -1805,7 +1805,6 @@ void verif_wqueues(struct multipath_pcb *mpcb)
 	struct sock *mpcb_sk=(struct sock*)mpcb;
 	struct tcp_sock *tp;
 	struct sk_buff *skb;
-	int sum_total=0;
 	int sum;
 
 	local_bh_disable();
@@ -1814,7 +1813,6 @@ void verif_wqueues(struct multipath_pcb *mpcb)
 		tcp_for_write_queue(skb,sk) {
 			sum+=skb->truesize;
 		}
-		sum_total+=sum;
 		if (sum!=sk->sk_wmem_queued) {
 			printk(KERN_ERR "wqueue leak_1: enqueued:%d, recorded "
 			       "value:%d\n",
@@ -1830,14 +1828,8 @@ void verif_wqueues(struct multipath_pcb *mpcb)
 		}
 	}
 	sum=0;
-	tcp_for_write_queue(skb,mpcb_sk) {
-		/*The number of bytes stored in the retransmit queue must be
-		  exactly equal to the sum of the bytes contained in all 
-		  the subflow queues*/
-		if (skb==tcp_send_head(mpcb_sk))
-			BUG_ON(sum!=sum_total);
+	tcp_for_write_queue(skb,mpcb_sk)
 		sum+=skb->truesize;		
-	}
 	BUG_ON(sum!=mpcb_sk->sk_wmem_queued);
 	local_bh_enable();
 }
