@@ -1806,10 +1806,11 @@ void verif_wqueues(struct multipath_pcb *mpcb)
 	struct tcp_sock *tp;
 	struct sk_buff *skb;
 	int sum_total=0;
+	int sum;
 
 	local_bh_disable();
 	mtcp_for_each_sk(mpcb,sk,tp) {
-		int sum=0;
+		sum=0;
 		tcp_for_write_queue(skb,sk) {
 			sum+=skb->truesize;
 		}
@@ -1828,7 +1829,16 @@ void verif_wqueues(struct multipath_pcb *mpcb)
 			BUG();
 		}
 	}
-	BUG_ON(sum_total!=mpcb_sk->sk_wmem_queued);
+	sum=0;
+	tcp_for_write_queue(skb,mpcb_sk) {
+		/*The number of bytes stored in the retransmit queue must be
+		  exactly equal to the sum of the bytes contained in all 
+		  the subflow queues*/
+		if (skb==tcp_send_head(mpcb_sk))
+			BUG_ON(sum!=sum_total);
+		sum+=skb->truesize;		
+	}
+	BUG_ON(sum!=mpcb_sk->sk_wmem_queued);
 	local_bh_enable();
 }
 #else
