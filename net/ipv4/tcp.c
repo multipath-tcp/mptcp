@@ -1223,6 +1223,13 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			tcpprobe_logmsg(sk, "will wait on write side, "
 					"wmem_queued:%d,sndbuf:%d",
 					sk->sk_wmem_queued,sk->sk_sndbuf);
+			{
+				struct sk_buff *skb2;
+				tcp_for_write_queue(skb2,sk) {
+					tcpprobe_logmsg(sk,"    dsn:%x",
+							TCP_SKB_CB(skb2)->data_seq);
+				}
+			}
 			verif_wqueues(tp->mpcb);
 			if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
 				goto do_error;
@@ -1255,7 +1262,7 @@ do_fault:
 		tcp_check_send_head(sk, skb);
 		sk_wmem_free_skb(sk, skb);
 	}
-
+	
 do_error:
 	tcpprobe_logmsg(sk, "error in subtcp_sendmsg");
 	if (copied)
