@@ -1214,11 +1214,12 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 		wait_for_sndbuf:
 			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+			tcpprobe_logmsg(sk, "wait_for_sndbuf");
 
 		wait_for_memory:
 			if (copied)
 				tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
-
+			
 			tcpprobe_logmsg(sk, "will wait on write side");
 			if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
 				goto do_error;
@@ -1253,7 +1254,7 @@ do_fault:
 	}
 
 do_error:
-	printk(KERN_ERR "error in subtcp_sendmsg\n");
+	tcpprobe_logmsg(sk, "error in subtcp_sendmsg");
 	if (copied)
 		goto out;
 out_err:
