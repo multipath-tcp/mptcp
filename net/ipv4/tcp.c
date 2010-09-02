@@ -1249,15 +1249,9 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			
 		wait_for_memory:
 			if (copied)
-				tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
-			
-			tcpprobe_logmsg(sk, "will wait on write side, "
-					"wmem_queued:%d,sndbuf:%d",
-					sk->sk_wmem_queued,sk->sk_sndbuf);
-			verif_wqueues(tp->mpcb);
+				tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);			
 			if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
 				goto do_error;
-			tcpprobe_logmsg(sk, "write side, woken up");
 			
 			BUG_ON(!sk_stream_memory_free(sk));
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);

@@ -142,18 +142,12 @@ int sk_stream_wait_memory(struct sock *sk, long *timeo_p)
 
 		prepare_to_wait(sk->sk_sleep, &wait, TASK_INTERRUPTIBLE);
 
-		if (sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN)) {
-			printk(KERN_ERR "wait_memory: shutdown\n");
+		if (sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN))
 			goto do_error;
-		}
-		if (!*timeo_p) {
-			printk(KERN_ERR "wait_memory: non block\n");
+		if (!*timeo_p)
 			goto do_nonblock;
-		}
-		if (signal_pending(current)) {
-			printk(KERN_ERR "wait_memory: signal penging\n");
+		if (signal_pending(current))
 			goto do_interrupted;
-		}
 		clear_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
 		if (sk_stream_memory_free(sk) && !vm_wait)
 			break;
