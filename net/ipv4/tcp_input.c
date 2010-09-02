@@ -5400,9 +5400,6 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 
 	tcpprobe_rcv_established(sk,skb,th,len);
 
-	tcpprobe_logmsg(sk,"tp %d, entering rcv_established, ack:%#x", 
-			tp->path_index,TCP_SKB_CB(skb)->ack_seq);
-
 	/*
 	 *	Header prediction.
 	 *	The code loosely follows the one in the famous

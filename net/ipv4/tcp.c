@@ -353,6 +353,8 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	struct sock *sk; /*For subsocket iteration*/
 	struct tcp_sock *tp; /*for subsocket iteration*/
 	
+	tcpprobe_logmsg(master_sk,"entering tcp_poll");
+
 	poll_wait(file, master_sk->sk_sleep, wait);
 
 #ifdef CONFIG_MTCP_PM
@@ -1223,13 +1225,6 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			tcpprobe_logmsg(sk, "will wait on write side, "
 					"wmem_queued:%d,sndbuf:%d",
 					sk->sk_wmem_queued,sk->sk_sndbuf);
-			{
-				struct sk_buff *skb2;
-				tcp_for_write_queue(skb2,sk) {
-					tcpprobe_logmsg(sk,"    dsn:%x",
-							TCP_SKB_CB(skb2)->data_seq);
-				}
-			}
 			verif_wqueues(tp->mpcb);
 			if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
 				goto do_error;
