@@ -430,6 +430,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 			if (!(sk->sk_shutdown & SEND_SHUTDOWN)) {
 				if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk)) {
 					mask |= POLLOUT | POLLWRNORM;
+					tcpprobe_logmsg(sk, "will set POLOUT");
 				} else {  /* send SIGIO later */
 					set_bit(SOCK_ASYNC_NOSPACE,
 						&sk->sk_socket->flags);
@@ -439,8 +440,12 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 					 * wspace test but before the flags are set,
 					 * IO signal will be lost.
 					 */
-					if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk))
+					if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk)) {
 						mask |= POLLOUT | POLLWRNORM;
+						tcpprobe_logmsg(sk, "will set POLOUT2");
+					}
+					else
+						tcpprobe_logmsg(sk, "did not set POLOUT");
 				}
 			}
 			
@@ -519,6 +524,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 
 		if (!(sk->sk_shutdown & SEND_SHUTDOWN)) {
 			if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk)) {
+				tcpprobe_logmsg(KERN_ERR "setting POLL_OUT");
 				mask |= POLLOUT | POLLWRNORM;
 			} else {  /* send SIGIO later */
 				set_bit(SOCK_ASYNC_NOSPACE,
@@ -1213,11 +1219,11 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			} else if (skb == tcp_send_head(sk))
 				tcp_push_one(sk, mss_now);
 			continue;
-
+			
 		wait_for_sndbuf:
 			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 			tcpprobe_logmsg(sk, "wait_for_sndbuf");
-
+			
 		wait_for_memory:
 			if (copied)
 				tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);

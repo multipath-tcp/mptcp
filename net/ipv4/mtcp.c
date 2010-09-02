@@ -710,7 +710,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	if (!tcp_sk(master_sk)->mpc)
 		return subtcp_sendmsg(iocb,master_sk, msg, size);
 	
-	PDEBUG(KERN_ERR "Entering %s\n",__FUNCTION__);
+	tcpprobe_logmsg(mpcb_sk,"Entering %s",__FUNCTION__);
 
 	BUG_ON(!mpcb);
 
