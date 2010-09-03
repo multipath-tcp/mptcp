@@ -319,6 +319,10 @@ static u16 tcp_select_window(struct sock *sk)
 	if (new_win == 0)
 		tp->pred_flags = 0;
 
+	/*TODEL*/
+	BUG_ON(tp->rx_opt.rcv_wscale!=8);
+	tcpprobe_logmsg(sk, "tp %d,actual window announced:%d, rcv_wnd:%d\n",
+			tp->path_index, new_win,tp->rcv_wnd);
 	return new_win;
 }
 
