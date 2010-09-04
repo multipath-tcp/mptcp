@@ -193,6 +193,10 @@ static int logmsg(struct sock *sk,char *fmt, va_list args)
 	struct timespec tv
 		= ktime_to_timespec(ktime_sub(ktime_get(), tcp_probe.start));
 
+	if (sk->sk_debug==1234) {
+		printk(KERN_ERR "select_window trying to print msg\n");
+	}
+	
 	if (sk->sk_state == TCP_ESTABLISHED
 	    && ((ntohl(inet->saddr) & 0xffff0000)!=0xc0a80000) /*addr != 
 								 192.168/16*/
