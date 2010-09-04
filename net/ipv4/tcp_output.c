@@ -287,7 +287,6 @@ void tcp_select_initial_window(int __space, __u32 mss,
 static u16 tcp_select_window(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	const struct inet_sock *inet = inet_sk(sk); /*TODEL*/
 	u32 cur_win = tcp_receive_window(tp);
 	u32 new_win = __tcp_select_window(sk);
 
@@ -322,10 +321,10 @@ static u16 tcp_select_window(struct sock *sk)
 
 	/*TODEL*/
 	BUG_ON(tp->rx_opt.rcv_wscale!=8);
+	sk->sk_debug=1234;
 	tcpprobe_logmsg(sk, "tp %d,actual window announced:%d, rcv_wnd:%d",
 			tp->path_index, new_win,tp->rcv_wnd);
-	printk(KERN_ERR "select_window, saddr:" NIPQUAD_FMT "daddr:" 
-	       NIPQUAD_FMT "\n",NIPQUAD(inet->saddr),NIPQUAD(inet->daddr));
+	sk->sk_debug=0;
 //	printk(KERN_ERR "tp %d,actual window announced:%d, rcv_wnd:%d\n",
 //	       tp->path_index, new_win,tp->rcv_wnd);
 	return new_win;
