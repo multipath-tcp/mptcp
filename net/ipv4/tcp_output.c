@@ -321,7 +321,7 @@ static u16 tcp_select_window(struct sock *sk)
 
 	/*TODEL*/
 	BUG_ON(tp->rx_opt.rcv_wscale!=8);
-	tcpprobe_logmsg(sk, "tp %d,actual window announced:%d, rcv_wnd:%d\n",
+	tcpprobe_logmsg(sk, "tp %d,actual window announced:%d, rcv_wnd:%d",
 			tp->path_index, new_win,tp->rcv_wnd);
 	printk(KERN_ERR "tp %d,actual window announced:%d, rcv_wnd:%d\n",
 	       tp->path_index, new_win,tp->rcv_wnd);
@@ -861,6 +861,7 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		 */
 		th->window	= htons(min(tp->rcv_wnd, 65535U));
 	} else {
+		printk(KERN_ERR "will call tcp_select_window\n");
 		th->window	= htons(tcp_select_window(sk));
 	}
 	th->check		= 0;
