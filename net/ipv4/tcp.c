@@ -354,8 +354,6 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	struct sock *sk; /*For subsocket iteration*/
 	struct tcp_sock *tp; /*for subsocket iteration*/
 	
-	tcpprobe_logmsg(master_sk,"entering tcp_poll");
-
 	poll_wait(file, master_sk->sk_sleep, wait);
 
 #ifdef CONFIG_MTCP_PM
@@ -451,10 +449,9 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 				mask |= POLLIN | POLLRDNORM;
 						
 			if (!(sk->sk_shutdown & SEND_SHUTDOWN)) {
-				if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk)) {
+				if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk))
 					mask |= POLLOUT | POLLWRNORM;
-					tcpprobe_logmsg(sk, "will set POLOUT");
-				} else {  /* send SIGIO later */
+				else {  /* send SIGIO later */
 					set_bit(SOCK_ASYNC_NOSPACE,
 						&sk->sk_socket->flags);
 					set_bit(SOCK_NOSPACE, &sk->sock_flags);
@@ -546,14 +543,13 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 			mask |= POLLIN | POLLRDNORM;
 
 		if (!(sk->sk_shutdown & SEND_SHUTDOWN)) {
-			if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk)) {
-				tcpprobe_logmsg(KERN_ERR "setting POLL_OUT");
+			if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk))
 				mask |= POLLOUT | POLLWRNORM;
-			} else {  /* send SIGIO later */
+			else {  /* send SIGIO later */
 				set_bit(SOCK_ASYNC_NOSPACE,
 					&sk->sk_socket->flags);
 				set_bit(SOCK_NOSPACE, &sk->sock_flags);
-
+				
 				/* Race breaker. If space is freed after
 				 * wspace test but before the flags are set,
 				 * IO signal will be lost.
