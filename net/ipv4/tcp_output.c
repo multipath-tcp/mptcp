@@ -860,10 +860,8 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		 * is never scaled.
 		 */
 		th->window	= htons(min(tp->rcv_wnd, 65535U));
-	} else {
-		printk(KERN_ERR "will call tcp_select_window\n");
+	} else
 		th->window	= htons(tcp_select_window(sk));
-	}
 	th->check		= 0;
 	th->urg_ptr		= 0;
 
