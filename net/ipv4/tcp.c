@@ -447,28 +447,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 			 * in SYN_* states. */
 			if (!tp->mpc && (tp->rcv_nxt - tp->copied_seq >=target))
 				mask |= POLLIN | POLLRDNORM;
-						
-			if (!(sk->sk_shutdown & SEND_SHUTDOWN)) {
-				if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk))
-					mask |= POLLOUT | POLLWRNORM;
-				else {  /* send SIGIO later */
-					set_bit(SOCK_ASYNC_NOSPACE,
-						&sk->sk_socket->flags);
-					set_bit(SOCK_NOSPACE, &sk->sock_flags);
-					
-					/* Race breaker. If space is freed after
-					 * wspace test but before the flags are set,
-					 * IO signal will be lost.
-					 */
-					if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk)) {
-						mask |= POLLOUT | POLLWRNORM;
-						tcpprobe_logmsg(sk, "will set POLOUT2");
-					}
-					else
-						tcpprobe_logmsg(sk, "did not set POLOUT");
-				}
-			}
-			
+									
 			if (tp->urg_data & TCP_URG_VALID)
 				mask |= POLLPRI;
 		}
