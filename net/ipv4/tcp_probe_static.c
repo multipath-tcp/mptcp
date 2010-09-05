@@ -74,19 +74,9 @@ int tcpprobe_logmsg(struct sock *sk,char *fmt,...)
 //	return 0; /*bypassed at the moment*/
 
 	/*return -1 if incorrect family*/
-	if (sk->sk_debug==1234) {
-		printk(KERN_ERR "select_window trying to print msg 1\n");
-	}
-
 
 	if (!vops) return -1;
-	if (sk->sk_debug==1234) {
-		printk(KERN_ERR "select_window trying to print msg 2\n");
-	}
 	if (!*vops) return 0;
-	if (sk->sk_debug==1234) {
-		printk(KERN_ERR "select_window trying to print msg 3\n");
-	}
 	va_start(args,fmt);
 	i=(*vops)->logmsg(sk,fmt,args);
 	va_end(args);
