@@ -4317,6 +4317,7 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 			printk(KERN_ERR "mpcb copied seq:%#x\n",
 			       mpcb_tp->copied_seq);
 			mtcp_for_each_sk(tp->mpcb,sk,tp) {
+				struct sk_buff *skb;
 				if (sk->sk_state!=TCP_ESTABLISHED)
 					continue;
 				printk(KERN_ERR "pi %d,rcvbuf:%d,"
@@ -4324,6 +4325,18 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 				       tp->path_index,
 				       sk->sk_rcvbuf,
 				       atomic_read(&sk->sk_rmem_alloc));
+				printk(KERN_ERR "pi %d receive queue:",
+				       tp->path_index);
+				skb_queue_walk(&sk->sk_receive_queue, skb) {
+					printk(KERN_ERR "  dsn:%#x\n",
+					       TCP_SKB_CB(skb)->data_seq);
+				}
+				printk(KERN_ERR "pi %d ofo queue:",
+				       tp->path_index);
+				skb_queue_walk(&tp->out_of_order_queue, skb) {
+					printk(KERN_ERR "  dsn:%#x\n",
+					       TCP_SKB_CB(skb)->data_seq);
+				}
 			}
 			BUG();
 		}

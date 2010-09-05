@@ -320,13 +320,9 @@ static u16 tcp_select_window(struct sock *sk)
 		tp->pred_flags = 0;
 
 	/*TODEL*/
-	BUG_ON(tp->rx_opt.rcv_wscale!=8);
-	sk->sk_debug=1234;
 	tcpprobe_logmsg(sk, "tp %d,actual window announced:%d, rcv_wnd:%d",
 			tp->path_index, new_win,tp->rcv_wnd);
 	sk->sk_debug=0;
-//	printk(KERN_ERR "tp %d,actual window announced:%d, rcv_wnd:%d\n",
-//	       tp->path_index, new_win,tp->rcv_wnd);
 	return new_win;
 }
 
