@@ -4301,6 +4301,8 @@ static void check_buffers(struct multipath_pcb *mpcb)
 	}
 }
 
+
+static __u32 rmem_dsn=0;
 static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 {
 	struct tcp_sock *tp=tcp_sk(sk);
@@ -4310,6 +4312,7 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 		if (atomic_read(&mpcb_sk->sk_rmem_alloc) > 
 		    mpcb_sk->sk_rcvbuf) {
 			printk(KERN_ERR "not enough rcvbuf\n");
+			printk(KERN_ERR "rmem_dsn is %#x\n",rmem_dsn);
 			printk(KERN_ERR "mpcb rcvbuf:%d - rmem_alloc:%d\n",
 			       mpcb_sk->sk_rcvbuf,atomic_read(
 				       &mpcb_sk->sk_rmem_alloc));
@@ -4480,6 +4483,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 		if (eaten <= 0) {
 			struct sk_buff *skb_test;
 		queue_and_out:
+			rmem_dsn=TCP_SKB_CB(skb)->data_seq; /*TODEL*/
 			if (eaten < 0 &&
 			    tcp_try_rmem_schedule(sk, skb->truesize)) {
 				printk(KERN_ERR "dropping seg after"
@@ -4585,6 +4589,7 @@ drop:
 
 	TCP_ECN_check_ce(tp, skb);
 
+	rmem_dsn=TCP_SKB_CB(skb)->data_seq; /*TODEL*/
 	if (tcp_try_rmem_schedule(sk, skb->truesize))
 		goto drop;
 
