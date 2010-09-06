@@ -385,7 +385,7 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 
 	/*Will be replaced by the IDSN later. Currently the 
 	  IDSN is zero*/
-	mpcb_tp->copied_seq = mpcb_tp->rcv_nxt = 0;
+	mpcb_tp->copied_seq = mpcb_tp->rcv_nxt = mpcb_tp->rcv_wup = 0;
 	mpcb_tp->snd_sml = mpcb_tp->snd_una = mpcb_tp->snd_nxt = 0;
 	
 	mpcb_tp->mpcb=mpcb;
@@ -832,133 +832,34 @@ int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 	return rc;
 }
 
-/**
- * Returns a pointer to the next skb, and writes that pointer into
- * skbp. 
- * @skbp must not be NULL and must contain a pointer to the current
- * skbuff (which in turn can be NULL). 
- * @tp must be mpcb_tp
- */
-static inline struct sk_buff *get_ofo_next(struct tcp_sock *tp, int flags, 
-					   struct sk_buff **skbp)
-{
-	struct sk_buff *skb=*skbp;
- 	if (!(flags & MSG_PEEK) || !(*skbp))
-		*skbp=skb_peek(&tp->out_of_order_queue);
-	else if (skb->next !=(struct sk_buff *)
-		 &tp->out_of_order_queue)
-		*skbp=skb->next;
-	else *skbp=NULL;
-	return *skbp;
-}
-
-void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
-		    u32 *data_seq, int *copied, int flags)
+void mtcp_ofo_queue(struct multipath_pcb *mpcb)
 {
 	struct sk_buff *skb=NULL;
-	int err;
-	u32 data_offset;
-	unsigned long used;
-	u32 rcv_nxt=0;
-	int enqueue=0; /*1 if we must enqueue from ofo to rcv queue due
-			 to insufficient space in app buffer*/
 	struct tcp_sock *tp;
 	struct sock *mpcb_sk=(struct sock *) mpcb;
 	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
 	
-	/*What happens in case of MSG_PEEK ? Then, we read just normally
-	  and advance a false copied_seq counter. *data_seq is that false
-	  counter. As usual, we give data to the app, from the ofo queue, 
-	  and at some point the app has finished reading. Then we MUST NOT
-	  copy any data from the ofo queue to the receive queue based on that
-	  false counter, since this would copy new segments to the meta-
-	  receive queue, while the old ones are still in the subsockets.*/
-
-	while (get_ofo_next(mpcb_tp, flags, &skb) != NULL) {
+	while ((skb = skb_peek(&mpcb_tp->out_of_order_queue)) != NULL) {
 		tp=tcp_sk(skb->sk);
-		if (after(TCP_SKB_CB(skb)->data_seq, *data_seq))
+		if (after(TCP_SKB_CB(skb)->data_seq, mpcb_tp->rcv_nxt))
 			break;
 				
-		if (!after(TCP_SKB_CB(skb)->end_data_seq, *data_seq)) {
+		if (!after(TCP_SKB_CB(skb)->end_data_seq, mpcb_tp->rcv_nxt)) {
 			printk(KERN_ERR "ofo packet was already received."
-			       "skb->end_data_seq:%x,exp. data_seq:%x\n",
-			       TCP_SKB_CB(skb)->end_data_seq,*data_seq);
+			       "skb->end_data_seq:%x,exp. rcv_nxt:%x\n",
+			       TCP_SKB_CB(skb)->end_data_seq,mpcb_tp->rcv_nxt);
 			/*Should not happen in the current design*/
-			printk(KERN_ERR "init data_seq:%x,*copied:%x\n",
-			       skb->data_seq,*copied);
-			console_loglevel=8;
-			
 			BUG();
-			if (!(flags & MSG_PEEK)) {
-				__skb_unlink(skb, &mpcb_tp->out_of_order_queue);
-				__kfree_skb(skb);
-			}
-			continue;
 		}
 		PDEBUG("ofo delivery : "
 		       "nxt_data_seq %X data_seq %X - %X, enqueue is %d\n",
 		       *data_seq, TCP_SKB_CB(skb)->data_seq,
 		       TCP_SKB_CB(skb)->end_data_seq,enqueue);
 		
-		if (!(flags & MSG_PEEK))
-			__skb_unlink(skb, &mpcb_tp->out_of_order_queue);
-		else printk(KERN_ERR "%s:using latest bug fix\n",
-			    __FUNCTION__);
+		__skb_unlink(skb, &mpcb_tp->out_of_order_queue);
 
-		/*if enqueue is 1, than the app buffer is full and we must
-		  enqueue the buff into the receive queue*/
-		if (enqueue) {
-			__skb_queue_tail(&mpcb_sk->sk_receive_queue, skb);
-			rcv_nxt+=skb->len;
-			continue;
-		}
-		
-		/*The skb can be read by the app*/
-		data_offset= *data_seq - TCP_SKB_CB(skb)->data_seq;
-
-		BUG_ON(data_offset != 0);
-
-		if (tcp_hdr(skb)->fin) {
-			used=1;
-		}
-		else {
-			used = skb->len - data_offset;
-			if (*len < used)
-				used = *len;
-				
-			err=skb_copy_datagram_iovec(skb, data_offset,
-						    msg->msg_iov, used);
-			BUG_ON(err);
-		}
-
-		mtcp_check_seqnums(mpcb,1);
-
-		*data_seq+=used;
-		if (!tcp_hdr(skb)->fin) {
-			*copied+=used;
-			*len-=used;
-		}
-		mpcb->ofo_bytes-=used;
-
-		mtcp_check_seqnums(mpcb,0);
-		
-		/*We can free the skb only if it has been completely eaten
-		  Else we queue it in the mpcb receive queue, for reading by
-		  the app on next call to tcp_recvmsg().*/
- 		if (*data_seq==TCP_SKB_CB(skb)->end_data_seq &&
-		    !(flags & MSG_PEEK))
-			__kfree_skb(skb);
-		else if (!(flags & MSG_PEEK)) {
-			__skb_queue_tail(&mpcb_sk->sk_receive_queue, skb);
-			BUG_ON(*len!=0);
-			BUG_ON(tcp_hdr(skb)->fin);
-			/*Now we must also enqueue all subsequent contiguous
-			  skbs*/
-			enqueue=1;
-			rcv_nxt=TCP_SKB_CB(skb)->end_data_seq;
-			data_seq=&rcv_nxt;
-		}
-		else return;
+		__skb_queue_tail(&mpcb_sk->sk_receive_queue, skb);
+		mpcb_tp->rcv_nxt=TCP_SKB_CB(skb)->end_data_seq;
 	}
 }
 
@@ -1021,18 +922,11 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 			BUG_ON(err);
 		}
 		
-		mtcp_check_seqnums(mpcb,1);
-
 		*data_seq+=used;
 		if (!tcp_hdr(skb)->fin) {
 			*copied+=used;
 			*len-=used;
 		}
-		
-		if (!(flags & MSG_PEEK)) 
-			mpcb->ofo_bytes-=used;
-		
-		mtcp_check_seqnums(mpcb,0);
 		
  		if (*data_seq==TCP_SKB_CB(skb)->end_data_seq && 
 		    !(flags & MSG_PEEK))
@@ -1048,84 +942,20 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 				BUG();
 		}				
 	} while (*len>0);
-	/*Check if this fills a gap in the ofo queue*/
-	if (!skb_queue_empty(&mpcb->tp.out_of_order_queue))
-		mtcp_ofo_queue(mpcb,msg,len,data_seq,copied,flags);
 	return 0;
 }
 
-#ifdef MTCP_DEBUG_SEQNUMS
-
-void mtcp_check_seqnums(struct multipath_pcb *mpcb, int before)
-{
-	int subsock_bytes=0;
-	struct sock *sk;
-	struct tcp_sock *tp;
-	struct sock *mpcb_sk=(struct sock*)mpcb;
-	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
-			     
-
-	mtcp_for_each_sk(mpcb,sk,tp)
-		subsock_bytes+=tp->bytes_eaten;
-	/*The number of bytes received by the metasocket must always
-	  be equal to the sum of the number of bytes received by the
-	  subsockets, minus the number of bytes waiting in the meta-ofo
-	  and meta-receive queue*/
-	if (unlikely(subsock_bytes!=mpcb_tp->copied_seq+mpcb->ofo_bytes)) {
-		struct sk_buff *first_ofo=skb_peek(
-			&mpcb_tp->out_of_order_queue);
-		printk(KERN_ERR "subsock_bytes:%d,mpcb bytes:%d, "
-		       "meta-ofo bytes:%d, "
-		       "before: %d\n",
-		       subsock_bytes,
-		       mpcb_tp->copied_seq,mpcb->ofo_bytes,before);
-		console_loglevel=8;
-		printk(KERN_ERR "mpcb next exp. dataseq:%x\n"
-		       "  meta-recv queue:%d\n"
-		       "  meta-ofo queue:%d\n"
-		       "  first seq,dataseq in meta-ofo-queue:%x,%x\n",
-		       mpcb_tp->copied_seq,
-		       skb_queue_len(&mpcb_sk->sk_receive_queue),
-		       skb_queue_len(&mpcb_tp->out_of_order_queue),
-		       first_ofo?TCP_SKB_CB(first_ofo)->seq:0,
-		       first_ofo?TCP_SKB_CB(first_ofo)->data_seq:0);
-		mtcp_for_each_sk(mpcb,sk,tp) {
-			struct sk_buff *first_ofosub=skb_peek(
-				&tp->out_of_order_queue);
-			printk(KERN_ERR "pi:%d\n"
-			       "  recv queue:%d\n"
-			       "  ofo queue:%d\n"
-			       "  first seq,dataseq in ofo queue:%x,%x\n"
-			       "  state:%d\n"
-			       "  next exp. seq num:%x\n"
-			       "  bytes_eaten:%d\n",tp->path_index,
-			       skb_queue_len(&sk->sk_receive_queue),
-			       skb_queue_len(&tp->out_of_order_queue),
-			       first_ofosub?TCP_SKB_CB(first_ofosub)->seq:0,
-			       first_ofosub?TCP_SKB_CB(first_ofosub)->
-			       data_seq:0,
-			       sk->sk_state,
-			       *tp->seq,
-			       tp->bytes_eaten);
-		}
-		
-		BUG();
-	}
-}
-#endif
-
-int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
-		   unsigned long *used, struct msghdr *msg, size_t *len,
-		   u32 *data_seq, int *copied, int flags)
+int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 {
 	struct tcp_sock *tp=tcp_sk(sk);
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
-	u32 data_offset;
-	int err;	
-	int moved=0;
 	int fin=tcp_hdr(skb)->fin;
 	struct sock *mpcb_sk=(struct sock *) mpcb;
 	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
+	
+	/*In all cases, we remove it from the subsock, so copied_seq
+	  must be advanced*/
+	tp->copied_seq=TCP_SKB_CB(skb)->end_seq+fin;
 
 	/*Verify that the mapping info has been read*/
 	if(TCP_SKB_CB(skb)->data_len) {
@@ -1133,47 +963,18 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 	}
 	
 	/*Is this a duplicate segment ?*/
-	if (after(*data_seq,TCP_SKB_CB(skb)->end_data_seq)) {
+	if (after(mpcb_tp->rcv_nxt,TCP_SKB_CB(skb)->end_data_seq)) {
 		/*Duplicate segment. We can arrive here only if a segment 
 		  has been retransmitted by the sender on another subflow.
 		  Retransmissions on the same subflow are handled at the
 		  subflow level.*/
-		if(fin) {
-			printk(KERN_ERR "*data_seq:%#x, end_data_seq:%#x\n",
-			       *data_seq, TCP_SKB_CB(skb)->end_data_seq);
-			BUG();
-		}
 
 		/* We do not read the skb, since it was already received on
-		   another subflow, but we advance the seqnum so that the
-		   subflow can continue */
-		*used=skb->len; /*We must also tell that the whole
-				  skb has been used, else it will be kept
-				  in the subsocket.*/
-		tp->copied+=*used; /*tp->copied is used by tcp_recvmsg
-				      to know that it can evaluate again
-				      receive buffer, and maybe recompute
-				      the receive window, since memory is
-				      freed.*/
-		*tp->seq +=*used;		
-		
+		   another subflow*/
 		return MTCP_EATEN;
 	}
 	
-	if (before(*data_seq,TCP_SKB_CB(skb)->data_seq)) {
-		/*the skb must be queued in the ofo queue*/
-		__skb_unlink(skb, &sk->sk_receive_queue);
-		
-		/*Since the skb is removed from the receive queue
-		  we must advance the seq num in the corresponding
-		  tp*/
-		mtcp_check_seqnums(mpcb,1);
-		
-		*tp->seq +=skb->len+fin;
-		tp->copied+=skb->len+fin;		
-		tp->bytes_eaten+=skb->len+fin;
-		mpcb->ofo_bytes+=skb->len+fin;
-		mtcp_check_seqnums(mpcb,0);
+	if (before(mpcb_tp->rcv_nxt,TCP_SKB_CB(skb)->data_seq)) {
 		
 		if (!skb_peek(&mpcb_tp->out_of_order_queue)) {
 			/* Initial out of order segment */
@@ -1203,19 +1004,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 					/* We do not read the skb, since it was
 					   already received on
 					   another subflow */
-					BUG_ON(fin);
-					/* first cancel counters we
-					   have incremented before, since
-					   the skb is finally not read*/
-					BUG_ON(!(TCP_SKB_CB(skb)->data_seq==
-						 TCP_SKB_CB(skb1)->data_seq &&
-						 TCP_SKB_CB(skb)->end_data_seq==
-						 TCP_SKB_CB(skb1)->end_data_seq
-						       ));
-					tp->bytes_eaten-=skb->len;
-					mpcb->ofo_bytes-=skb->len;
-					__kfree_skb(skb);
-					return MTCP_DROPPED;
+					return MTCP_EATEN;
 				}
 				if (!after(TCP_SKB_CB(skb)->data_seq, 
 					   TCP_SKB_CB(skb1)->data_seq)) {
@@ -1240,8 +1029,6 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 			__skb_insert(skb, skb1, skb1->next, 
 				     &mpcb_tp->out_of_order_queue);
 
-			if (fin) return MTCP_QUEUED;
-
 			/* And clean segments covered by new one as whole. */
 			while ((skb1 = skb->next) !=
 			       (struct sk_buff *)&mpcb_tp->out_of_order_queue &&
@@ -1261,105 +1048,14 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
 	}
 
 	else {
-		data_offset= *data_seq - TCP_SKB_CB(skb)->data_seq;
-		/*The skb can be read by the app*/
-		if (fin) {
-			BUG_ON(data_offset); /*data_offset should be 0 here*/
-			mtcp_check_seqnums(mpcb,1);
-			(*data_seq)++;
-			(*tp->seq)++;
-			tp->copied++;
-			if (!(flags & MSG_PEEK)) tp->bytes_eaten++;
-			mtcp_check_seqnums(mpcb,0);
-			/*Check if this fills a gap in the ofo queue*/
-			if (!skb_queue_empty(&mpcb_tp->out_of_order_queue))
-				mtcp_ofo_queue(mpcb,msg,len,data_seq,copied,flags);
-			return MTCP_EATEN;
-		}
+		__skb_queue_tail(&mpcb_sk->sk_receive_queue, skb);
+		mpcb_tp->rcv_nxt=TCP_SKB_CB(skb)->end_data_seq;
 
-		*used = skb->len - data_offset;
-		
-		/*duplicate segment*/
-		if (*used==0) {
-			/*Since this segment has already been received on
-			  another subflow, we can just ignore it, and advance
-			  the subflow seqnum of this subsocket.
-			  Note that we do not advance tp->bytes_eaten, since 
-			  this particular data is not eaten by the app.*/
-			*used=skb->len;
-			*tp->seq += *used;
-			tp->copied+=*used;			
-			return MTCP_EATEN;
-		}
-
-		if (*len < *used) {
-			/*Store the segment in the mpcb queue, so 
-			  that it is known that further data is ready
-			  for the app*/
-			__skb_unlink(skb, &sk->sk_receive_queue);
-			/*Since the skb is removed from the receive queue
-			  we must advance the seq num in the corresponding
-			  tp (by skb->len-offset, which is *used))*/
-			mtcp_check_seqnums(mpcb,1);
-			*tp->seq +=*used;
-			tp->copied+=*used;
-			tp->bytes_eaten+=*used;
-			mpcb->ofo_bytes+=*used;
-			mtcp_check_seqnums(mpcb,0);	
-			BUG_ON(!skb_queue_empty(&mpcb_sk->sk_receive_queue));
-			__skb_queue_tail(&mpcb_sk->sk_receive_queue, skb);
-			/*Now, redefine *used to what we can already eat now*/
-			*used = *len;
-			moved=1;
-		}
-
-		/*Happens if the app has been fed already, but we were
-		  searching one more byte of pending data. Reaching
-		  this point means that this byte has been found.
-		  We can leave*/
-		if (!*len) return MTCP_QUEUED;		
-		
-		err=skb_copy_datagram_iovec(skb, data_offset,
-					    msg->msg_iov, *used);
-		BUG_ON(err);
-		if (err) return err;
-		
-		mtcp_check_seqnums(mpcb,1);
-		*copied+=*used;
-		*data_seq+=*used;
-		*len-=*used;			
-		if (moved)
-			mpcb->ofo_bytes-=*used;
-		else {
-			*tp->seq += *used;
-			tp->copied+=*used;
-			if (!(flags & MSG_PEEK)) tp->bytes_eaten+=*used;
-		}
-		mtcp_check_seqnums(mpcb,0);
-
-		/*Update subflow counters if data_offset differs from offset*/
-		if (data_offset!=offset) {
-			/*If data has been eaten by the subflow, 
-			  it has also been eaten by the meta-flow.
-			  if this does not hold, we have a bug*/
-			if(data_offset<offset) {
-				printk(KERN_ERR "data_offset<offset:"
-				       "data_offset:%d,offset:%d\n",
-				       data_offset,offset);
-				BUG();
-			}
-			/*Otherwise, just advance the subflow counters*/
-			*used+=data_offset-offset;
-			*tp->seq += data_offset-offset;
-			tp->copied += data_offset-offset;						
-		}
-
-		
 		/*Check if this fills a gap in the ofo queue*/
 		if (!skb_queue_empty(&mpcb_tp->out_of_order_queue))
-			mtcp_ofo_queue(mpcb,msg,len,data_seq,copied, flags);
-		if (moved) return MTCP_QUEUED;
-		else return MTCP_EATEN;
+			mtcp_ofo_queue(mpcb);
+
+		return MTCP_QUEUED;
 	}
 }
 

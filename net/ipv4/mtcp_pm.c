@@ -1003,7 +1003,6 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 
 	/*The child is a clone of the master socket, we must now reset
 	  some of the fields*/
-	tcp_sk(child)->bytes_eaten=0;
 	tcp_sk(child)->mpcb=NULL; /*necessary for inet_csk_detroy_sock()
 				    will be set when removed from the 
 				    accept queue*/

@@ -448,8 +448,6 @@ struct tcp_sock {
 #ifdef CONFIG_MTCP
 	int                     path_index;
 	struct tcp_sock         *next; /*Next subflow socket*/
-	int                     bytes_eaten; /*Bytes eaten by app. - 
-					       For debugging*/
 #ifdef CONFIG_MTCP_PM
 	u32                     mtcp_loc_token;
 	uint8_t                 pending:1; /*One if this is a pending subsock

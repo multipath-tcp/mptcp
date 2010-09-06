@@ -571,7 +571,15 @@ static inline void tcp_fast_path_check(struct sock *sk)
  */
 static inline u32 tcp_receive_window(const struct tcp_sock *tp)
 {
-	s32 win = tp->rcv_wup + tp->rcv_wnd - tp->rcv_nxt;
+	s32 win;
+	
+	if (tp->mpcb) { 
+		struct tcp_sock *mpcb_tp=(struct tcp_sock*)(tp->mpcb);
+		win=mpcb_tp->rcv_wup + mpcb_tp->rcv_wnd - mpcb_tp->rcv_nxt;
+	}
+	else {
+		win=tp->rcv_wup + tp->rcv_wnd - tp->rcv_nxt;
+	}
 
 	if (win < 0)
 		win = 0;

@@ -1942,12 +1942,10 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	int copied = 0;
 	u32 peek_data_seq;
 	u32 *data_seq;
-	unsigned long used;
-	int err,mtcp_op=0;
+	int err;
 	int target;		/* Read at least this many bytes */
 	long timeo;
 	struct task_struct *user_recv = NULL;
-	struct sk_buff *skb;
 	int finished=0;
 	
 	if (!master_tp->mpc)
@@ -2015,43 +2013,21 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		printk(KERN_ERR "SO_RCVLOWAT != 1 not yet supported\n");
 		BUG();
 	}
-	
-	/*Start by checking if skbs are waiting on the mpcb receive queue*/
-	PDEBUG("%d: copied_seq:%x\n",__LINE__,mpcb_tp->copied_seq);
-	err=mtcp_check_rcv_queue(mpcb,msg, &len, data_seq, &copied, flags);
-	PDEBUG("%d: copied_seq:%x\n",__LINE__,mpcb_tp->copied_seq);
-	if (err<0) {
-		printk(KERN_ERR "error in mtcp_check_rcv_queue\n");
-		/* Exception. Bailout! */
-		if (!copied)
-			copied = -EFAULT;
-		goto skip_loop;
-	}
-
-	/*It is important to skip the loop if the meta receive queue has 
-	  given enough bytes for the application to eat. The reason is
-	  that if the next segment to receive follows immediately the last
-	  one in the meta-receive queue. Skipping the loop will result in 
-	  correctly finishing the copy at the next call to tcp_recvmsg(),
-	  then receiving immediately in sequence the next segment. OTOH,
-	  if we enter the loop in the middle of the parsing of 
-	  the meta-receive queue, the new segment will be considered out of 
-	  order, be put in the meta-ofo queue, then we return because 
-	  len is 0. On the next call, the meta-receive queued is purged,
-	  but the meta-ofo queue is not consulted anymore ! So this would make
-	  a hole in the segment reception, making the connexion stall.
-	  Just one special point is worth noting: it is possible, that the app
-	  read *exactly* the amount of data queued in the mpcb receive queue,
-	  in that particular case, we do not skip the loop, so as to see if
-	  further data is already available for later. (and set the 
-	  pending_data flag accordingly).
-	*/
-	if (!skb_queue_empty(&mpcb_sk->sk_receive_queue)) goto skip_loop;
 
 	do {
-		u32 offset;
 		int empty_prequeues=0;
 
+		/*Start by checking if skbs are waiting on the mpcb 
+		  receive queue*/
+		err=mtcp_check_rcv_queue(mpcb,msg, &len, data_seq, &copied, flags);
+		if (err<0) {
+			printk(KERN_ERR "error in mtcp_check_rcv_queue\n");
+			/* Exception. Bailout! */
+			if (!copied)
+				copied = -EFAULT;
+			break;
+		}
+		
 		/* Are we at urgent data ? 
 		   Stop if we have read anything 
 		   or have SIGURG pending. Note that we only accept Urgent 
@@ -2070,104 +2046,11 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				break;
 			}
 		}
-
-		/* Next get a buffer. */
-		mtcp_for_each_sk(mpcb,sk,tp) {
-			struct sk_buff *first_ofo=skb_peek(
-				&mpcb_tp->out_of_order_queue); /*TODEL*/
-			
-			skb = skb_peek(&sk->sk_receive_queue);
-			if (!skb)
-				continue;
-						
-			/* Now that we have two receive queues this
-			 * shouldn't happen.
-			 */
-			BUG_ON(!tp->seq);
-		msgpeek_next:
-			
-			if (before(*tp->seq, TCP_SKB_CB(skb)->seq)) {
-				printk(KERN_ERR 
-				       "recvmsg bug: copied %X "
-				       "seq %X\n", *tp->seq, 
-				       TCP_SKB_CB(skb)->seq);
-				BUG();
-			}
-			
-			offset = *tp->seq - TCP_SKB_CB(skb)->seq;
-			if (tcp_hdr(skb)->syn)
-				offset--;
-
-			if (offset < skb->len)
-				goto found_ok_skb;
-			/*We need to check that the reading head is 
-			  indeed at that fin (!offset), 
-			  otherwise we will read it
-			  several times*/
-			if (tcp_hdr(skb)->fin && !offset)
-				goto found_fin_ok;
-
-			if (flags & MSG_PEEK) {
-				skb=skb->next;
-				if (skb!=(struct sk_buff *)
-				    &sk->sk_receive_queue) {
-					printk(KERN_ERR "%s:using latest bug "
-					       "fix\n",
-					       __FUNCTION__);
-					goto msgpeek_next;
-				}
-				else continue;
-			}
-			/*TODEL
-			  Not normal to arrive here. Print a lot of info,
-			  then panic*/
-			printk(KERN_ERR "tp->seq:%x,skb->seq:%x,"
-			       "skb->len:%d\n",*tp->seq,TCP_SKB_CB(skb)->seq,
-			       skb->len);
-			printk(KERN_ERR "mpcb->copied_seq:%x,"
-			       "skb->data_seq:%x,"
-			       "skb->len:%d, offset:%d\n",mpcb_tp->copied_seq,
-			       TCP_SKB_CB(skb)->data_seq,
-			       skb->len,(int)offset);
-			
-			printk(KERN_ERR "mpcb next exp. dataseq:%x\n"
-			       "  meta-recv queue:%d\n"
-			       "  meta-ofo queue:%d\n"
-			       "  first seq,dataseq in meta-ofo-queue:%x,%x\n",
-			       mpcb_tp->copied_seq,
-			       skb_queue_len(&mpcb_sk->sk_receive_queue),
-			       skb_queue_len(&mpcb_tp->out_of_order_queue),
-			       first_ofo?TCP_SKB_CB(first_ofo)->seq:0,
-			       first_ofo?TCP_SKB_CB(first_ofo)->data_seq:0);
-			mtcp_for_each_sk(mpcb,sk,tp) {
-				struct sk_buff *first_ofosub=skb_peek(
-					&tp->out_of_order_queue);       
-				printk(KERN_ERR "pi:%d\n"
-				       "  recv queue:%d\n"
-				       "  ofo queue:%d\n"
-				       "  first seq,dataseq in ofo queue:%x,%x\n"
-				       "  state:%d\n"
-				       "  next exp. seq num:%x\n",tp->path_index,
-				       skb_queue_len(&sk->sk_receive_queue),
-				       skb_queue_len(&tp->out_of_order_queue),
-				       first_ofosub?TCP_SKB_CB(first_ofosub)->seq:0,
-				       first_ofosub?TCP_SKB_CB(first_ofosub)->
-				       data_seq:0,
-				       sk->sk_state,
-				       *tp->seq);
-			}
-			
-			BUG();
-		}
-
-		PDEBUG("At line %d\n",__LINE__);
 		
 		/* Well, if we have backlog, try to process it now yet. */
 		if (copied >= target && 
 		    !mtcp_test_any_sk(mpcb,sk,sk->sk_backlog.tail))
 			break;
-
-		PDEBUG("At line %d\n",__LINE__);
 
 		/*Here we test a set of conditions to return immediately to
 		  the user*/
@@ -2292,16 +2175,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				PDEBUG("backlog copy: %d\n",chunk);
 				len -= chunk;
 				copied += chunk;
-				/*Check if this fills a gap in the ofo queue*/
-				if (!skb_queue_empty(
-					    &mpcb_tp->out_of_order_queue))
-				{
-					mtcp_ofo_queue(mpcb,msg,&len,data_seq,
-						       &copied, flags);
-					/*Update the len field for the 
-					  prequeue*/
-					mpcb->ucopy.len=len;
-				}
 			}
 			
 		do_prequeue:			
@@ -2330,19 +2203,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 						BUG_ON(chunk<0);
 						len -= chunk;
 						copied += chunk;
-						/*Check if this fills a gap in 
-						  the ofo queue*/
-						if (!skb_queue_empty(
-							    &mpcb_tp->
-							    out_of_order_queue))
-						{
-							mtcp_ofo_queue(mpcb,
-								       msg,&len,
-								       data_seq,
-								       &copied,
-								       flags);
-							mpcb->ucopy.len=len;
-						}
 					}
 				}
 			}
@@ -2360,93 +2220,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				tp->peek_seq = tp->copied_seq;
 			}
 		}
-		continue;
-
-	found_ok_skb:
-		/*If we arrive here, we have found *one* skb and *one*
-		  subsocket to deal with. Thus tp and sk are valid pointers
-		  to a receiving subsocket. (see the goto line)*/
-
-		/* Ok so how much can we use? */
-		used = skb->len - offset;
-
-		/* Do we have urgent data here? */
-		if (tp->urg_data) {
-			u32 urg_offset = tp->urg_seq - *tp->seq;
-			PDEBUG("Received urgent data\n");
-			PDEBUG("Urgent data not supported at the "
-			       "moment");
-			BUG();
-			if (urg_offset < used) {
-				if (!urg_offset) {
-					if (!sock_flag(sk, SOCK_URGINLINE)) {
-						++*tp->seq;
-						offset++;
-						used--;
-						if (!used)
-							goto skip_copy;
-					}
-				} else
-					used = urg_offset;
-			}
-		}
-
-		if (!(flags & MSG_TRUNC)) {
-			/*From this subsocket point of view, data is ready
-			  to be eaten. Give it to the metasocket. If it is 
-			  in order from the dataseq point of view, it will be
-			  delivered to the application, otherwise it will be
-			  queued in the metasocket out of order queue.*/
-			PDEBUG("At line %d\n",__LINE__);
-			mtcp_op=err= mtcp_queue_skb(sk,skb,offset,&used,msg,
-						    &len, data_seq,&copied,
-						    flags);
-			if (err<0) {
-				PDEBUG("error in mtcp_queue_skb\n");
-				/* Exception. Bailout! */
-				if (!copied)
-					copied = -EFAULT;
-				break;
-			}
-		}
-		else 
-			PDEBUG("MSG_TRUNC is set\n"); /*TODEL*/
-		mtcp_for_each_sk(mpcb,sk,tp)
-			tcp_rcv_space_adjust(sk);
-		
-	skip_copy:
-		PDEBUG("At line %d\n",__LINE__);
-		mtcp_for_each_sk(mpcb,sk,tp) {
-			if (tp->urg_data && after(tp->copied_seq, 
-						  tp->urg_seq)) {
-				tp->urg_data = 0;
-				tcp_fast_path_check(sk);
-			}
-		}
-		
-		/*if segment has been dropped or enqueued elsewhere
-		  (mpcb receive queue or ofo queue) by MPTCP, we cannot
-		  access the skb structure anymore*/
-		if (mtcp_op==MTCP_DROPPED || mtcp_op==MTCP_QUEUED) 
-			continue;
-
-		if (used + offset < skb->len)
-			continue; 
-
-		if (tcp_hdr(skb)->fin)
-			goto found_fin_ok;
-		if (!(flags & MSG_PEEK) && mtcp_op == MTCP_EATEN) {
-			sk_eat_skb(skb->sk, skb, 0);
-		}
-		continue;
-
-	found_fin_ok:
-		/* Process the FIN. Currently we only support having
-		   the FIN in a segment with no data*/
-		mtcp_op=mtcp_queue_skb(skb->sk,skb,0,NULL,msg,&len,
-				       data_seq,&copied,flags);
-		if (!(flags & MSG_PEEK) && mtcp_op == MTCP_EATEN)
-			sk_eat_skb(skb->sk, skb, 0);
 	} while ((len > 0 || skb_queue_empty(&mpcb_sk->sk_receive_queue)) && 
 		 !finished);
 /*Note on the above while condition:
@@ -2456,7 +2229,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
   the "finished" condition becomes true when we try to wait for data, when 
   actually len is already 0. In that case we must finish our checks on the 
   other queues, and then leave the loop.*/
-skip_loop:
+
 	/*Giving the correct value to the pending_data flag,
 	  Note that if we set the flag to 0, it is still possible, that
 	  it changes to 1 before to leave, here, if tcp_data_queue
@@ -2484,14 +2257,6 @@ skip_loop:
 					       chunk); /*TODEL*/
 					len -= chunk;
 					copied += chunk;
-					/*Check if this fills a gap in the ofo 
-					  queue*/
-					if (!skb_queue_empty(
-						    &mpcb_tp->
-						    out_of_order_queue))
-						mtcp_ofo_queue(mpcb,msg,&len,
-							       data_seq, 
-							       &copied, flags);
 				}
 			}
 		

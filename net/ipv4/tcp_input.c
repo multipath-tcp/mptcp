@@ -4231,6 +4231,7 @@ static void tcp_ofo_queue(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	__u32 dsack_high = tp->rcv_nxt;
 	struct sk_buff *skb;
+	int mtcp_eaten=0;
 
 	while ((skb = skb_peek(&tp->out_of_order_queue)) != NULL) {
 		if (after(TCP_SKB_CB(skb)->seq, tp->rcv_nxt))
@@ -4254,19 +4255,15 @@ static void tcp_ofo_queue(struct sock *sk)
 			   TCP_SKB_CB(skb)->end_seq);
 
 		__skb_unlink(skb, &tp->out_of_order_queue);
-		__skb_queue_tail(&sk->sk_receive_queue, skb);
+		mtcp_eaten=mtcp_queue_skb(sk,skb);
 		
 		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 
 		if (tcp_hdr(skb)->fin)
 			tcp_fin(skb, sk, tcp_hdr(skb));
 #ifdef CONFIG_MTCP
-		if (tp->mpc) {
-			int mapping=mtcp_get_dataseq_mapping(tp,skb);
-			if (mapping==1) mtcp_data_ready(sk);
-			else if (mapping==2)
-				mtcp_check_eat_old_seg(sk,skb);
-		}
+		if (tp->mpc && mtcp_eaten==MTCP_EATEN)
+			__kfree_skb(skb);
 #endif				
 	}
 }
@@ -4302,7 +4299,6 @@ static void check_buffers(struct multipath_pcb *mpcb)
 }
 
 
-static __u32 rmem_dsn=0;
 static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 {
 	struct tcp_sock *tp=tcp_sk(sk);
@@ -4314,7 +4310,6 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 		if (atomic_read(&mpcb_sk->sk_rmem_alloc) > 
 		    mpcb_sk->sk_rcvbuf) {
 			printk(KERN_ERR "not enough rcvbuf\n");
-			printk(KERN_ERR "rmem_dsn is %#x\n",rmem_dsn);
 			printk(KERN_ERR "mpcb rcvbuf:%d - rmem_alloc:%d\n",
 			       mpcb_sk->sk_rcvbuf,atomic_read(
 				       &mpcb_sk->sk_rmem_alloc));
@@ -4401,6 +4396,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 	int mapping=0;
 #endif
 	int eaten = -1;
+	int mtcp_eaten=0;
 
 	if (TCP_SKB_CB(skb)->seq == TCP_SKB_CB(skb)->end_seq)
 		goto drop;
@@ -4449,7 +4445,6 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 						tp->copied_seq += chunk;
 						mpcb->tp.copied_seq += chunk;
 						tp->copied += chunk;
-						tp->bytes_eaten += chunk;
 						eaten = (chunk == skb->len && !th->fin);
 						tcp_rcv_space_adjust(sk);
 						
@@ -4499,39 +4494,26 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 #endif
 		
 		if (eaten <= 0) {
-			struct sk_buff *skb_test;
 		queue_and_out:
-			rmem_dsn=TCP_SKB_CB(skb)->data_seq; /*TODEL*/
 			if (eaten < 0 &&
 			    tcp_try_rmem_schedule(sk, skb->truesize)) {
 				printk(KERN_ERR "dropping seg after"
 				       " tcp_try_rmem_schedule\n");
 				goto drop;
 			}
-
-			skb_set_owner_r(skb, sk);
-			skb_test=skb_peek_tail(&sk->sk_receive_queue);
-			if (skb_test)
-				BUG_ON(TCP_SKB_CB(skb)->seq!=
-				       TCP_SKB_CB(skb_test)->end_seq);
-			else if(TCP_SKB_CB(skb)->seq!=tp->copied_seq) {
-				printk(KERN_ERR "skb->seq:%#x,"
-				       "tp->copied_seq:%#x\n",
-				       TCP_SKB_CB(skb)->seq,tp->copied_seq);
-				BUG();
-			}
-
-			__skb_queue_tail(&sk->sk_receive_queue, skb);
+			
+			skb_set_owner_r(skb, sk);			
+			mtcp_eaten=mtcp_queue_skb(sk,skb);
 		}
 		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
-		if (skb->len && mapping!=2)
+		if (skb->len)
 			tcp_event_data_recv(sk, skb);
 
 		if (th->fin)
 			tcp_fin(skb, sk, th);
 
-		if (mapping==2)
-			mtcp_check_eat_old_seg(sk, skb);
+		if (mtcp_eaten==MTCP_EATEN)
+			__kfree_skb(skb);
 		
 		if (!skb_queue_empty(&tp->out_of_order_queue)) {
 			tcp_ofo_queue(sk);
@@ -4607,7 +4589,6 @@ drop:
 
 	TCP_ECN_check_ce(tp, skb);
 
-	rmem_dsn=TCP_SKB_CB(skb)->data_seq; /*TODEL*/
 	if (tcp_try_rmem_schedule(sk, skb->truesize))
 		goto drop;
 
@@ -5238,7 +5219,6 @@ static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 		tp->copied_seq += chunk;
 		mpcb->tp.copied_seq += chunk;
 		tp->copied += chunk;
-		tp->bytes_eaten += chunk;
 		tcp_rcv_space_adjust(sk);
 
 		mtcp_check_seqnums(mpcb,0);
@@ -5432,6 +5412,7 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 	int res;
+	int mtcp_eaten=0;
 	
 	PDEBUG("%s:pi %d - seq is %x,sock is %p\n",
 	       __FUNCTION__,skb->path_index,TCP_SKB_CB(skb)->seq,
@@ -5587,7 +5568,7 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 
 				/* Bulk data transfer: receiver */
 				__skb_pull(skb, tcp_header_len);
-				__skb_queue_tail(&sk->sk_receive_queue, skb);
+				mtcp_eaten=mtcp_queue_skb(sk,skb);
 				skb_set_owner_r(skb, sk);
 				tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 			}
@@ -5605,7 +5586,7 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			if (tp->rcv_nxt != tp->rcv_wup)
 				__tcp_ack_snd_check(sk, 0);
 no_ack:
-			if (eaten)
+			if (eaten || mtcp_eaten)
 				__kfree_skb(skb);
 			else {
 				PDEBUG("Will wake the master sk up");

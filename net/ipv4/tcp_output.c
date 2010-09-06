@@ -301,8 +301,15 @@ static u16 tcp_select_window(struct sock *sk)
 		 */
 		new_win = ALIGN(cur_win, 1 << tp->rx_opt.rcv_wscale);
 	}
-	tp->rcv_wnd = new_win;
-	tp->rcv_wup = tp->rcv_nxt;
+	if (tp->mpcb) {
+		struct tcp_sock *mpcb_tp=(struct tcp_sock*)(tp->mpcb);
+		mpcb_tp->rcv_wnd = new_win;
+		mpcb_tp->rcv_wup = mpcb_tp->rcv_nxt;
+	}
+	else {
+		tp->rcv_wnd = new_win;
+		tp->rcv_wup = tp->rcv_nxt;
+	}
 
 	/* Make sure we do not exceed the maximum possible
 	 * scaled window.

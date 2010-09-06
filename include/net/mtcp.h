@@ -123,11 +123,7 @@ struct multipath_pcb {
 	struct multipath_options  received_options;
 	struct tcp_options_received tcp_opt;
 
-	struct list_head          dsack_list;	
-	int                       ofo_bytes; /*Counts the number of bytes 
-					       waiting to be eaten by the app
-					       in the meta-ofo queue or the
-					       meta-receive queue.*/
+	struct list_head          dsack_list;
 	struct sk_buff_head	  reinject_queue;
 	spinlock_t                lock;
 	struct mutex              mutex;
@@ -298,19 +294,13 @@ void check_send_head(struct sock *sk,int num);
 
 int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk, 
 		   long *timeo,int flags);
-int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,
-		   unsigned long *used, struct msghdr *msg, size_t *len,   
-		   u32 *data_seq, int *copied, int flags);
-void mtcp_ofo_queue(struct multipath_pcb *mpcb, struct msghdr *msg, size_t *len,
-		    u32 *data_seq, int *copied, int flags);
+int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb);
+void mtcp_ofo_queue(struct multipath_pcb *mpcb);
 int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg, 
 			 size_t *len, u32 *data_seq, int *copied, int flags);
 /*Possible return values from mtcp_queue_skb*/
 #define MTCP_EATEN 1 /*The skb has been (fully or partially) eaten by the app*/
 #define MTCP_QUEUED 2 /*The skb has been queued in the mpcb ofo queue*/
-#define MTCP_DROPPED 3 /*The skb has been dropped by the meta-flow.
-			 This happens if a copy of the same data has been 
-			 received on another subflow*/
 
 struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk);
 void mtcp_ask_update(struct sock *sk);
@@ -340,7 +330,6 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 			 struct in_addr *addr, u8 id);
 
 void verif_wqueues(struct multipath_pcb *mpcb);
-void mtcp_check_eat_old_seg(struct sock *sk, struct sk_buff *skb);
 
 void mtcp_skb_entail(struct sock *sk, struct sk_buff *skb);
 struct sk_buff* mtcp_next_segment(struct sock *sk, int *reinject);
