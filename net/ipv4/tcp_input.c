@@ -4325,17 +4325,23 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 				       tp->path_index,
 				       sk->sk_rcvbuf,
 				       atomic_read(&sk->sk_rmem_alloc));
-				printk(KERN_ERR "pi %d receive queue:",
+				printk(KERN_ERR "pi %d receive queue:\n",
 				       tp->path_index);
 				skb_queue_walk(&sk->sk_receive_queue, skb) {
-					printk(KERN_ERR "  dsn:%#x\n",
-					       TCP_SKB_CB(skb)->data_seq);
+					printk(KERN_ERR "  dsn:%#x, "
+					       "skb->len:%d,prop:%d /1000\n",
+					       TCP_SKB_CB(skb)->data_seq,
+					       skb->len,
+					       skb->len*1000/skb->truesize);
 				}
-				printk(KERN_ERR "pi %d ofo queue:",
+				printk(KERN_ERR "pi %d ofo queue:\n",
 				       tp->path_index);
 				skb_queue_walk(&tp->out_of_order_queue, skb) {
-					printk(KERN_ERR "  dsn:%#x\n",
-					       TCP_SKB_CB(skb)->data_seq);
+					printk(KERN_ERR "  dsn:%#x, "
+					       "skb->len:%d,prop:%d /1000\n",
+					       TCP_SKB_CB(skb)->data_seq,
+					       skb->len,
+					       skb->len*1000/skb->truesize);
 				}
 			}
 			BUG();
