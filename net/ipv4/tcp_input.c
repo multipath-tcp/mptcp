@@ -91,7 +91,7 @@ int sysctl_tcp_reordering __read_mostly = TCP_FASTRETRANS_THRESH;
 int sysctl_tcp_ecn __read_mostly;
 int sysctl_tcp_dsack __read_mostly = 1;
 int sysctl_tcp_app_win __read_mostly = 31;
-int sysctl_tcp_adv_win_scale __read_mostly = 2;
+int sysctl_tcp_adv_win_scale __read_mostly = 1;
 
 int sysctl_tcp_stdurg __read_mostly;
 int sysctl_tcp_rfc1337 __read_mostly;
