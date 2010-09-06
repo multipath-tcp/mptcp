@@ -1144,6 +1144,7 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 	int nb_new=0;
 	struct inet_connection_sock *mpcb_icsk=
 		(struct inet_connection_sock*)mpcb;
+	struct sk_buff *skb;
 
 	if (unlikely(mpcb->received_options.list_rcvd)) {
 		mpcb->received_options.list_rcvd=0;
@@ -1196,6 +1197,12 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 		mtcp_add_sock(mpcb,tcp_sk(child));
 		reqsk_free(req);
 		nb_new++;
+		/*Empty the receive queue of the added new subsocket*/
+		while ((skb = skb_peek(&child->sk_receive_queue))) {
+			__skb_unlink(skb, &child->sk_receive_queue);		
+			if (mtcp_queue_skb(child,skb)==MTCP_EATEN)
+				__kfree_skb(skb);
+		}
 	}
 	return nb_new;
 }

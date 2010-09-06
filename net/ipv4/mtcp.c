@@ -952,6 +952,11 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 	int fin=tcp_hdr(skb)->fin;
 	struct sock *mpcb_sk=(struct sock *) mpcb;
 	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
+
+	if (!tp->mpc || !tp->mpcb) {
+		__skb_queue_tail(&sk->sk_receive_queue, skb);
+		return MTCP_QUEUED;
+	}
 	
 	/*In all cases, we remove it from the subsock, so copied_seq
 	  must be advanced*/
