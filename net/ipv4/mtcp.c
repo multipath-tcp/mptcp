@@ -1838,6 +1838,44 @@ void verif_wqueues(struct multipath_pcb *mpcb)
 }
 #endif
 
+//#define DEBUG_RQUEUES 1
+#ifdef DEBUG_RQUEUES
+void verif_rqueues(struct multipath_pcb *mpcb) 
+{
+	struct sock *sk;
+	struct sock *mpcb_sk=(struct sock*)mpcb;
+	struct tcp_sock *tp;
+	struct sk_buff *skb;
+	int sum;
+
+	local_bh_disable();
+	mtcp_for_each_sk(mpcb,sk,tp) {
+		sum=0;
+		skb_queue_walk(&sk->sk_receive_queue, skb) {
+			sum+=skb->truesize;
+		}
+		skb_queue_walk(&tp->out_of_order_queue, skb) {
+			sum+=skb->truesize;
+		}
+		/*TODO: add meta-rcv and meta-ofo-queues*/
+		if (sum!=atomic_read(&sk->sk_rmem_alloc)) {
+			printk(KERN_ERR "rqueue leak: enqueued:%d, recorded "
+			       "value:%d\n",
+			       sum,sk->sk_rmem_alloc);
+			
+			local_bh_enable();
+			BUG();
+		}
+	}
+	local_bh_enable();
+}
+#else
+void verif_rqueues(struct multipath_pcb *mpcb)
+{
+	return;
+}
+#endif
+
 void mtcp_set_owner_r(struct sk_buff *skb, struct sock *sk)
 {
 	if (sk->sk_protocol==IPPROTO_TCP && tcp_sk(sk)->mpc &&

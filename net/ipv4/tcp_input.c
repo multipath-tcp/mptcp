@@ -4306,6 +4306,8 @@ static __u32 rmem_dsn=0;
 static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 {
 	struct tcp_sock *tp=tcp_sk(sk);
+	struct sk_buff *skb;
+
 	if (tp->mpc && tp->mpcb) {
 		struct tcp_sock *mpcb_tp=&tp->mpcb->tp;
 		struct sock *mpcb_sk=(struct sock*)mpcb_tp;
@@ -4320,7 +4322,6 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 			printk(KERN_ERR "mpcb copied seq:%#x\n",
 			       mpcb_tp->copied_seq);
 			mtcp_for_each_sk(tp->mpcb,sk,tp) {
-				struct sk_buff *skb;
 				if (sk->sk_state!=TCP_ESTABLISHED)
 					continue;
 				printk(KERN_ERR "pi %d,rcvbuf:%d,"
@@ -4347,6 +4348,23 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 					       skb->len*1000/skb->truesize);
 				}
 			}
+			printk(KERN_ERR "meta-receive queue:\n");
+			skb_queue_walk(&mpcb_sk->sk_receive_queue, skb) {
+				printk(KERN_ERR "  dsn:%#x, "
+				       "skb->len:%d,prop:%d /1000\n",
+				       TCP_SKB_CB(skb)->data_seq,
+				       skb->len,
+				       skb->len*1000/skb->truesize);
+			}
+			printk(KERN_ERR "meta-ofo queue:\n");
+			skb_queue_walk(&mpcb_tp->out_of_order_queue, skb) {
+				printk(KERN_ERR "  dsn:%#x, "
+				       "skb->len:%d,prop:%d /1000\n",
+					       TCP_SKB_CB(skb)->data_seq,
+				       skb->len,
+				       skb->len*1000/skb->truesize);
+			}
+			
 			BUG();
 		}
 		else if (!sk_rmem_schedule(sk,size)) {
