@@ -4328,9 +4328,10 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 				       tp->path_index);
 				skb_queue_walk(&sk->sk_receive_queue, skb) {
 					printk(KERN_ERR "  dsn:%#x, "
-					       "skb->len:%d,prop:%d /1000\n",
+					       "skb->len:%d,truesize:%d,"
+					       "prop:%d /1000\n",
 					       TCP_SKB_CB(skb)->data_seq,
-					       skb->len,
+					       skb->len, skb->truesize,
 					       skb->len*1000/skb->truesize);
 				}
 				printk(KERN_ERR "pi %d ofo queue:\n",
