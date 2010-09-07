@@ -4364,6 +4364,9 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 				       skb->len*1000/skb->truesize);
 			}
 			
+			printk(KERN_ERR "used mss for wnd computation:%d\n",
+			       inet_csk(sk)->icsk_ack.rcv_mss);
+
 			BUG();
 		}
 		else if (!sk_rmem_schedule(sk,size)) {

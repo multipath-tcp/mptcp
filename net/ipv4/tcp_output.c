@@ -303,6 +303,16 @@ static u16 tcp_select_window(struct sock *sk)
 		 */
 		new_win = ALIGN(cur_win, 1 << tp->rx_opt.rcv_wscale);
 	}
+	else if (tp->mpcb && tp->mpc) {
+		struct tcp_sock *mpcb_tp=(struct tcp_sock*)(tp->mpcb);
+		struct sock *mpcb_sk=(struct sock*)mpcb_tp;
+		printk(KERN_ERR "Increasing rcvwnd:new_win:%d\n",new_win);
+		printk(KERN_ERR "  mpcb rcvbuf:%d - rmem_alloc:%d\n",
+		       mpcb_sk->sk_rcvbuf,atomic_read(
+			       &mpcb_sk->sk_rmem_alloc));
+		printk(KERN_ERR " allowed DSNs %#x->%#x\n",mpcb_tp->rcv_nxt,
+		       mpcb_tp->rcv_nxt+new_win);
+	}
 	if (tp->mpcb && tp->mpc) {
 		struct tcp_sock *mpcb_tp=(struct tcp_sock*)(tp->mpcb);
 		mpcb_tp->rcv_wnd = new_win;
@@ -334,7 +344,7 @@ static u16 tcp_select_window(struct sock *sk)
 		tcpprobe_logmsg(sk, "tp %d,actual window announced:%d, "
 				"rcv_wnd:%d, "
 				"rcv_nxt is %#x, rcv_wup is %#x",
-				tp->path_index, new_win, tp->rcv_wnd,
+				tp->path_index, new_win, mpcb_tp->rcv_wnd,
 				mpcb_tp->rcv_nxt,
 				mpcb_tp->rcv_wup);
 	}
