@@ -863,11 +863,7 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb)
 	}
 }
 
-/*This verifies if any skbuff has been let on the mpcb 
-  receive queue due to app buffer being full.
-  This only needs to be called when starting tcp_recvmsg, since 
-  during immediate segment reception from TCP subsockets, segments reach
-  the receive queue only when the app buffer becomes full.*/
+/*Eats data from the meta-receive queue*/
 int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg, 
 			 size_t *len, u32 *data_seq, int *copied, int flags)
 {
@@ -881,10 +877,13 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 	do {
 		u32 data_offset;
 		unsigned long used;
+		int fin;
 		skb = skb_peek(&mpcb_sk->sk_receive_queue);
-
+		
 		if (!skb) break;
-
+		
+		fin=tcp_hdr(skb)->fin;
+		
 		tp=tcp_sk(skb->sk);
 
 		if (before(*data_seq,TCP_SKB_CB(skb)->data_seq)) {
@@ -895,7 +894,6 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 			console_loglevel=8;
 			BUG();
 		}
-		skb->data_seq=*data_seq; /*TODEL*/
 		data_offset = *data_seq - TCP_SKB_CB(skb)->data_seq;
 		BUG_ON(data_offset >= skb->len && !tcp_hdr(skb)->fin);
 
@@ -909,24 +907,17 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 			BUG();
 		}
 
-		if (tcp_hdr(skb)->fin) {
-			used=1;
-		}
-		else {
-			used = skb->len - data_offset;
-			if (*len < used)
-				used = *len;
-				
-			err=skb_copy_datagram_iovec(skb, data_offset,
-						    msg->msg_iov, used);
-			BUG_ON(err);
-		}
+		used = skb->len - data_offset;
+		if (*len < used)
+			used = *len;
 		
-		*data_seq+=used;
-		if (!tcp_hdr(skb)->fin) {
-			*copied+=used;
-			*len-=used;
-		}
+		err=skb_copy_datagram_iovec(skb, data_offset,
+					    msg->msg_iov, used);
+		BUG_ON(err);
+		
+		*data_seq+=used+fin;
+		*copied+=used;
+		*len-=used;
 		
  		if (*data_seq==TCP_SKB_CB(skb)->end_data_seq && 
 		    !(flags & MSG_PEEK))
