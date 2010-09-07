@@ -471,33 +471,10 @@ void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
 #endif
 	/*Stop listening to PM events*/
 	unregister_netevent_notifier(&mpcb->nb);
-	/*The meta-queues must all be empty when arriving here, because
-	  we have removed all subsocks. Removing an skb here would lead
-	  to a general protection fault. 
-	  The rule to avoid this is that when any subsock is destroyed
-	  (whether when destroying everything, or when just stopping
-	  one subflow, one MUST ensure that no skb belonging to that
-	  subsock is still living in any of the meta-queues. 
-	  Currently we only suppress meta-flows when closing the connection,
-	  so purging the queues at the right place is sufficient. When we want
-	  to implement subsock suppression during communication, we should
-	  devise some mechanism to enforce that skb suppression from the meta-
-	  queues.
-	*/
-	if(!skb_queue_empty(&mpcb_sk->sk_receive_queue)) {
-		struct sk_buff *skb;
-		skb_queue_walk(&mpcb_sk->sk_receive_queue, skb) {
-			printk(KERN_ERR "  dsn:%#x, "
-			       "skb->len:%d,truesize:%d,"
-			       "prop:%d /1000\n",
-			       TCP_SKB_CB(skb)->data_seq,
-			       skb->len, skb->truesize,
-			       skb->len*1000/skb->truesize);
-		}
-		BUG();
-	}
-	
-	BUG_ON(!skb_queue_empty(&mpcb_tp->out_of_order_queue));
+
+	skb_queue_purge(&mpcb_sk->sk_receive_queue);
+	skb_queue_purge(&mpcb_tp->out_of_order_queue);
+
 	kref_put(&mpcb->kref,mpcb_release);
 }
 
@@ -932,8 +909,10 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 		*len-=used;
 		
  		if (*data_seq==TCP_SKB_CB(skb)->end_data_seq && 
-		    !(flags & MSG_PEEK))
+		    !(flags & MSG_PEEK)) {
+			sock_put(skb->sk);
 			sk_eat_skb(mpcb_sk, skb, 0);
+		}
 		else if (!(flags & MSG_PEEK) && *len!=0) {
 				printk(KERN_ERR 
 				       "%s bug: copied %X "
@@ -958,6 +937,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 
 	if (!tp->mpc || !tp->mpcb) {
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
+		sock_hold(skb->sk);
 		return MTCP_QUEUED;
 	}
 	
@@ -988,6 +968,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 			/* Initial out of order segment */
 			PDEBUG("First meta-ofo segment\n");
 			__skb_queue_head(&mpcb_tp->out_of_order_queue, skb);
+			sock_hold(skb->sk);
 			return MTCP_QUEUED;
 		}
 		else {
@@ -1036,7 +1017,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 			}
 			__skb_insert(skb, skb1, skb1->next, 
 				     &mpcb_tp->out_of_order_queue);
-
+			sock_hold(skb->sk);
 			/* And clean segments covered by new one as whole. */
 			while ((skb1 = skb->next) !=
 			       (struct sk_buff *)&mpcb_tp->out_of_order_queue &&
@@ -1044,7 +1025,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 				     TCP_SKB_CB(skb1)->data_seq)) {
 				if (!before(TCP_SKB_CB(skb)->end_data_seq, 
 					    TCP_SKB_CB(skb1)->end_data_seq)) {
-					__skb_unlink(skb1, 
+					skb_unlink(skb1, 
 						     &mpcb_tp->
 						     out_of_order_queue);
 					__kfree_skb(skb1);
@@ -1057,6 +1038,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 
 	else {
 		__skb_queue_tail(&mpcb_sk->sk_receive_queue, skb);
+		sock_hold(skb->sk);
 		mpcb_tp->rcv_nxt=TCP_SKB_CB(skb)->end_data_seq;
 
 		/*Check if this fills a gap in the ofo queue*/
