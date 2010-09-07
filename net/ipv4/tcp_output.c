@@ -290,6 +290,8 @@ static u16 tcp_select_window(struct sock *sk)
 	u32 cur_win = tcp_receive_window(tp);
 	u32 new_win = __tcp_select_window(sk);
 
+	BUG_ON(is_meta_sk(sk));
+
 	/* Never shrink the offered window */
 	if (new_win < cur_win) {
 		/* Danger Will Robinson!
@@ -332,9 +334,9 @@ static u16 tcp_select_window(struct sock *sk)
 		tcpprobe_logmsg(sk, "tp %d,actual window announced:%d, "
 				"rcv_wnd:%d, "
 				"rcv_nxt is %#x, rcv_wup is %#x",
-				tp->path_index, new_win, mpcb_tp->rcv_nxt,
-				mpcb_tp->rcv_wup,
-				tp->rcv_wnd);
+				tp->path_index, new_win, tp->rcv_wnd,
+				mpcb_tp->rcv_nxt,
+				mpcb_tp->rcv_wup);
 	}
 	sk->sk_debug=0;
 	return new_win;
