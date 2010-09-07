@@ -2433,8 +2433,11 @@ void tcp_close(struct sock *sk, long timeout)
 		/*Purging the meta-queues. This MUST be done before
 		  to close any subsocket. See comment in function 
 		  mtcp_destroy_mpcb()*/
+		printk(KERN_ERR "will purge the queues\n");
 		skb_queue_purge(&mpcb_sk->sk_receive_queue);
 		skb_queue_purge(&mpcb_tp->out_of_order_queue);
+
+		BUG_ON(!skb_queue_empty(&mpcb_sk->sk_receive_queue));
 
 		/*We MUST close the master socket in the last place.
 		  this is indeed the case, because the master socket is at the

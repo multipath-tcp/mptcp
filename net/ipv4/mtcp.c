@@ -484,7 +484,19 @@ void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
 	  devise some mechanism to enforce that skb suppression from the meta-
 	  queues.
 	*/
-	BUG_ON(!skb_queue_empty(&mpcb_sk->sk_receive_queue));
+	if(!skb_queue_empty(&mpcb_sk->sk_receive_queue)) {
+		struct sk_buff *skb;
+		skb_queue_walk(&mpcb_sk->sk_receive_queue, skb) {
+			printk(KERN_ERR "  dsn:%#x, "
+			       "skb->len:%d,truesize:%d,"
+			       "prop:%d /1000\n",
+			       TCP_SKB_CB(skb)->data_seq,
+			       skb->len, skb->truesize,
+			       skb->len*1000/skb->truesize);
+		}
+		BUG();
+	}
+	
 	BUG_ON(!skb_queue_empty(&mpcb_tp->out_of_order_queue));
 	kref_put(&mpcb->kref,mpcb_release);
 }
