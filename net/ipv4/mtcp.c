@@ -739,6 +739,7 @@ static int __mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 			    long *timeo)
 {
 	int rc; struct sock *sk; struct tcp_sock *tp;
+	struct sock *mpcb_sk=(struct sock*)mpcb;
 	DEFINE_WAIT(wait);
 
 	prepare_to_wait(master_sk->sk_sleep, &wait, TASK_INTERRUPTIBLE);
@@ -748,7 +749,8 @@ static int __mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 		tp->wait_data_bit_set=1;
 	}
 	rc = mtcp_wait_event_any_sk(mpcb, sk, tp, timeo, 
-				    (!skb_queue_empty(&sk->sk_receive_queue) ||
+				    (!skb_queue_empty(
+					    &mpcb_sk->sk_receive_queue) ||
 				     !skb_queue_empty(&tp->ucopy.prequeue)));
 
 	mtcp_for_each_sk(mpcb,sk,tp)
