@@ -573,7 +573,7 @@ static inline u32 tcp_receive_window(const struct tcp_sock *tp)
 {
 	s32 win;
 	
-	if (tp->mpcb) { 
+	if (tp->mpcb && tp->mpc) { 
 		struct tcp_sock *mpcb_tp=(struct tcp_sock*)(tp->mpcb);
 		win=mpcb_tp->rcv_wup + mpcb_tp->rcv_wnd - mpcb_tp->rcv_nxt;
 	}
