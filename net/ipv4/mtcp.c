@@ -930,7 +930,12 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 			BUG();
 		}
 		data_offset = *data_seq - TCP_SKB_CB(skb)->data_seq;
-		BUG_ON(data_offset >= skb->len && !tcp_hdr(skb)->fin);
+		if(data_offset >= skb->len && !tcp_hdr(skb)->fin) {
+			printk(KERN_ERR "offset>skb->len: *data_seq:%#x,"
+			       "skb->data_seq:%#x, skb->len:%d\n",
+			       *data_seq,TCP_SKB_CB(skb)->data_seq,skb->len);
+			BUG();
+		}
 
 		if (!tcp_hdr(skb)->fin && skb->len != 
 		    TCP_SKB_CB(skb)->end_data_seq - TCP_SKB_CB(skb)->data_seq) {
