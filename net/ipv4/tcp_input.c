@@ -3554,6 +3554,8 @@ old_ack:
 
 uninteresting_ack:
 	printk(KERN_ERR "received uninteresting ack\n");
+	printk(KERN_ERR "pi %d:Ack %#x out of %#x:%#x\n", 
+	       tp->path_index,ack, tp->snd_una, tp->snd_nxt);
 	SOCK_DEBUG(sk, "Ack %u out of %u:%u\n", ack, tp->snd_una, tp->snd_nxt);
 	check_pkts_out(sk);
 	return 0;
@@ -4366,6 +4368,7 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 			
 			printk(KERN_ERR "used mss for wnd computation:%d\n",
 			       inet_csk(sk)->icsk_ack.rcv_mss);
+			
 
 			BUG();
 		}
