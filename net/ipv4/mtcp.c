@@ -37,6 +37,9 @@
 #include <linux/random.h>
 #include <linux/inetdevice.h>
 #include <asm/atomic.h>
+#ifdef CONFIG_SYSCTL
+#include <linux/sysctl.h>
+#endif
 
 #undef DEBUG_MTCP /*set to define if you want debugging messages*/
 
@@ -103,6 +106,47 @@ void freeze_rcv_queue(struct sock *sk, const char *func_name)
 
 #endif
 /*=====================================*/
+
+/*Sysctl data*/
+
+#ifdef CONFIG_SYSCTL
+
+int sysctl_mptcp_mss = MPTCP_MSS; /*Will be enabled at the end of shim6 init*/
+
+static ctl_table mptcp_table[] = {
+	{
+		.ctl_name	= CTL_UNNUMBERED,
+		.procname	= "mptcp_mss",
+		.data		= &sysctl_mptcp_mss,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec
+	},
+	{ .ctl_name = 0 },
+};
+
+static ctl_table mptcp_net_table[] = {
+	{
+		.ctl_name       = CTL_UNNUMBERED,
+		.procname       = "mptcp",
+		.maxlen         = 0,
+		.mode           = 0555,
+		.child          = mptcp_table
+	},
+	{.ctl_name = 0},
+};
+
+static ctl_table mptcp_root_table[] = {
+	{
+		.ctl_name	= CTL_NET,
+		.procname	= "net",
+		.mode		= 0555,
+		.child		= mptcp_net_table
+	},
+        { .ctl_name = 0 }
+};
+#endif
+
 
 static void mtcp_def_readable(struct sock *sk, int len)
 {
@@ -390,7 +434,7 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	
 	mpcb_tp->mpcb=mpcb;
 	mpcb_tp->mpc=1;
-	mpcb_tp->mss_cache=MPTCP_MSS;
+	mpcb_tp->mss_cache=sysctl_mptcp_mss;
 	
 	skb_queue_head_init(&mpcb_tp->out_of_order_queue);
 	skb_queue_head_init(&mpcb->reinject_queue);
@@ -1166,7 +1210,7 @@ void mtcp_reinject_data(struct sock *orig_sk)
 			skb_queue_len(&mpcb->reinject_queue));
 	
 
-	tcp_push(mpcb_sk, 0, MPTCP_MSS, TCP_NAGLE_PUSH);
+	tcp_push(mpcb_sk, 0, sysctl_mptcp_mss, TCP_NAGLE_PUSH);
 
 	if (orig_tp->pf==0)
 		tcpprobe_logmsg(orig_sk,"pi %d: entering pf state",
@@ -1672,6 +1716,17 @@ void check_send_head(struct sock *sk, int num) {
 	}
 }
 #endif
+
+/*General initialization of mptcp
+ */
+static int __init mptcp_init(void)
+{
+#ifdef CONFIG_SYSCTL
+	register_sysctl_table(mptcp_root_table);
+#endif
+	return 0;
+}
+module_init(mptcp_init);
 
 MODULE_LICENSE("GPL");
 

@@ -1290,7 +1290,7 @@ unsigned int tcp_current_mss(struct sock *sk, int large_allowed)
 	struct tcp_md5sig_key *md5;
 
 	/*if sk is the meta-socket, return the common MSS*/
-	if (is_meta_tp(tp)) return MPTCP_MSS;
+	if (is_meta_tp(tp)) return sysctl_mptcp_mss;
 
 	mss_now = tp->mss_cache;
 
@@ -1492,7 +1492,7 @@ int tcp_may_send_now(struct sock *sk)
 	int mss;
 
 	if (tp->mpc)
-		mss=MPTCP_MSS;
+		mss=sysctl_mptcp_mss;
 	else
 		mss=tcp_current_mss(sk, 1);
 
@@ -1733,9 +1733,9 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 	sk->sk_in_write_xmit=1;
 	
 	if (tp->mpc) {
-		if (mss_now!=MPTCP_MSS) {
+		if (mss_now!=sysctl_mptcp_mss) {
 			printk(KERN_ERR "write xmit-mss_now %d, mptcp mss:%d\n",
-			       mss_now,MPTCP_MSS);
+			       mss_now,sysctl_mptcp_mss);
 			BUG();
 		}
 	}
@@ -2614,7 +2614,7 @@ void tcp_send_fin(struct sock *sk)
 	 * and IP options.
 	 */
 	if (!tp->mpc) mss_now = tcp_current_mss(sk, 1);
-	else mss_now = MPTCP_MSS;
+	else mss_now = sysctl_mptcp_mss;
 
 	/*If the sock is multipath capable, we do not 
 	  attach the FIN to the tail skb. The reason is that the
@@ -2756,7 +2756,7 @@ struct sk_buff *tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 
 	skb->dst = dst_clone(dst);
 #ifdef CONFIG_MTCP
-	mss = MPTCP_MSS;
+	mss = sysctl_mptcp_mss;
 #else
 	mss = dst_metric(dst, RTAX_ADVMSS);
 #endif
@@ -2865,7 +2865,7 @@ static void tcp_connect_init(struct sock *sk)
 	if (!tp->window_clamp)
 		tp->window_clamp = dst_metric(dst, RTAX_WINDOW);
 #ifdef CONFIG_MTCP
-	tp->advmss = MPTCP_MSS;
+	tp->advmss = sysctl_mptcp_mss;
 	if (tp->advmss>dst_metric(dst,RTAX_ADVMSS))
 		tp->mss_too_low=1;
 #else

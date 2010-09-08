@@ -38,6 +38,7 @@
   All subflows will be using that MSS. If any subflow has a lower MSS, it is
   just not used.*/
 #define MPTCP_MSS 1400
+extern int sysctl_mptcp_mss;
 
 
 /*DEBUG - TODEL*/

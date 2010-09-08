@@ -1022,7 +1022,7 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 #ifdef CONFIG_MTCP
 	/*If we want to support TSO later, we'll need 
 	  to define xmit_size_goal to something much larger*/
-	mss_now = size_goal = MPTCP_MSS;
+	mss_now = size_goal = sysctl_mptcp_mss;
 #else
 	mss_now = tcp_current_mss(sk, !(flags&MSG_OOB));
 	size_goal = tp->xmit_size_goal;
