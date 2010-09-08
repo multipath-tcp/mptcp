@@ -306,11 +306,11 @@ static u16 tcp_select_window(struct sock *sk)
 	else if (tp->mpcb && tp->mpc) {
 		struct tcp_sock *mpcb_tp=(struct tcp_sock*)(tp->mpcb);
 		struct sock *mpcb_sk=(struct sock*)mpcb_tp;
-		tcpprobe_logmsg(sk,"Increasing rcvwnd:new_win:%d\n",new_win);
-		tcpprobe_logmsg(sk,"  mpcb rcvbuf:%d - rmem_alloc:%d\n",
+		tcpprobe_logmsg(sk,"Increasing rcvwnd:new_win:%d",new_win);
+		tcpprobe_logmsg(sk,"  mpcb rcvbuf:%d - rmem_alloc:%d",
 				mpcb_sk->sk_rcvbuf,atomic_read(
 					&mpcb_sk->sk_rmem_alloc));
-		tcpprobe_logmsg(sk," allowed DSNs %#x->%#x\n",mpcb_tp->rcv_nxt,
+		tcpprobe_logmsg(sk," allowed DSNs %#x->%#x",mpcb_tp->rcv_nxt,
 				mpcb_tp->rcv_nxt+new_win);
 	}
 	if (tp->mpcb && tp->mpc) {
