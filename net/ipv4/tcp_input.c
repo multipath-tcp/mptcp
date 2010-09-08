@@ -4372,8 +4372,8 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 				       skb->len, skb->truesize,
 				       skb->len*1000/skb->truesize);
 			}
-		       
-			BUG();
+			
+			return 0;
 		}
 		else if (!sk_rmem_schedule(sk,size)) {
 			printk(KERN_ERR "impossible to alloc memory\n");
