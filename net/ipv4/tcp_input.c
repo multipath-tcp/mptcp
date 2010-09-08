@@ -3554,8 +3554,10 @@ old_ack:
 
 uninteresting_ack:
 	printk(KERN_ERR "received uninteresting ack\n");
-	printk(KERN_ERR "pi %d:Ack %#x out of %#x:%#x\n", 
-	       tp->path_index,ack, tp->snd_una, tp->snd_nxt);
+	printk(KERN_ERR "pi %d:Ack %#x out of %#x:%#x, addr "
+	       NIPQUAD_FMT "->" NIPQUAD_FMT "\n", 
+	       tp->path_index,ack, tp->snd_una, tp->snd_nxt,
+	       NIPQUAD(inet_sk(sk)->saddr),NIPQUAD(inet_sk(sk)->daddr));
 	SOCK_DEBUG(sk, "Ack %u out of %u:%u\n", ack, tp->snd_una, tp->snd_nxt);
 	check_pkts_out(sk);
 	return 0;
