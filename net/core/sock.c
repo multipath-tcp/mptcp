@@ -1859,14 +1859,22 @@ void release_sock(struct sock *sk)
 		/*We need to do the following, because as far
 		  as the meta-socket is locked, every received segment is
 		  put into the backlog queue.*/
-		mtcp_for_each_sk((struct multipath_pcb *)sk,sk_it,tp_it) {
-			/*We do not use _bh here, since bh is already
-			  disabled by the previous spin_lock_bh*/
-			spin_lock(&sk_it->sk_lock.slock);
-			if (sk_it->sk_backlog.tail)
-				__release_sock(sk_it,sk);
-			spin_unlock(&sk_it->sk_lock.slock);
+		do {
+			mtcp_for_each_sk((struct multipath_pcb *)sk,sk_it,
+					 tp_it) {
+				/*We do not use _bh here, since bh is already
+				  disabled by the previous spin_lock_bh*/
+				spin_lock(&sk_it->sk_lock.slock);
+				if (sk_it->sk_backlog.tail)
+					__release_sock(sk_it,sk);
+				spin_unlock(&sk_it->sk_lock.slock);
+			}
 		}
+		while (mtcp_test_any_sk((struct multipath_pcb*)sk,sk_it,
+					sk_it->sk_backlog.head));
+		/*The while above is needed because, during we eat the content
+		  of the backlog for one subflow, the backlog for another one 
+		  can receive segments*/
 	}
 	sk->sk_lock.owned = 0;
 	if (waitqueue_active(&sk->sk_lock.wq))
