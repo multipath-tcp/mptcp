@@ -1650,13 +1650,8 @@ process:
 			if (!tcp_prequeue(sk, skb))
 				ret = tcp_v4_do_rcv(sk, skb);
 		}
-		else {
-			/*This could happen, and is not correct, because, since
-			  the sock is not locked, sk_backlog_rcv will not be
-			  called to handle the arrived segment*/
-			BUG_ON(!sock_owned_by_user(sk));
+		else 
 			sk_add_backlog(sk, skb);
-		}
 	}
 	else if (!sock_owned_by_user(sk)) {
 #ifdef CONFIG_NET_DMA
