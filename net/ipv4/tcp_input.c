@@ -4314,6 +4314,7 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 		struct sock *mpcb_sk=(struct sock*)mpcb_tp;
 		if (atomic_read(&mpcb_sk->sk_rmem_alloc) > 
 		    mpcb_sk->sk_rcvbuf) {
+			tcpprobe_logmsg(mpcb_sk,"PROBLEM NOW");
 			printk(KERN_ERR "not enough rcvbuf\n");
 			printk(KERN_ERR "mpcb rcvbuf:%d - rmem_alloc:%d\n",
 			       mpcb_sk->sk_rcvbuf,atomic_read(
@@ -4331,6 +4332,9 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 				       atomic_read(&sk->sk_rmem_alloc));
 				printk(KERN_ERR "pi %d receive queue:\n",
 				       tp->path_index);
+				printk(KERN_ERR "used mss for wnd "
+				       "computation:%d\n",
+				       inet_csk(sk)->icsk_ack.rcv_mss);
 				skb_queue_walk(&sk->sk_receive_queue, skb) {
 					printk(KERN_ERR "  dsn:%#x, "
 					       "skb->len:%d,truesize:%d,"
@@ -4368,11 +4372,7 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 				       skb->len, skb->truesize,
 				       skb->len*1000/skb->truesize);
 			}
-			
-			printk(KERN_ERR "used mss for wnd computation:%d\n",
-			       inet_csk(sk)->icsk_ack.rcv_mss);
-			
-
+		       
 			BUG();
 		}
 		else if (!sk_rmem_schedule(sk,size)) {
