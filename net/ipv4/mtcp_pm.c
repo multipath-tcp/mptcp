@@ -1175,6 +1175,8 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 	struct sk_buff *skb;
 
 	if (unlikely(mpcb->received_options.list_rcvd)) {
+		printk(KERN_ERR "setting list_rcvd to 0, mtcp_pm "
+		       "line %d\n",__LINE__);
 		mpcb->received_options.list_rcvd=0;
 		mtcp_update_patharray(mpcb);
 		/*The server uses additional subflows only on request
