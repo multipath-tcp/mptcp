@@ -63,19 +63,6 @@ void freeze_rcv_queue(struct sock *sk, const char *func_name);
 
 extern struct proto mtcpsub_prot;
 
-struct dsn_sack {
-	struct list_head list;
-	u32 start;
-	u32 end;
-};
-
-#define dsack_first(mpcb) (list_first_entry(&mpcb->dsack_list,		\
-					    struct dsn_sack,list))
-#define dsack_next(dsack) (list_entry(dsack->list.next,struct dsn_sack,list))
-#define dsack_prev(dsack) (list_entry(dsack->list.prev,struct dsn_sack,list))
-#define dsack_is_last(dsack,mpcb) (list_is_last(&dsack->list,&mpcb->dsack_list))
-#define dsack_is_first(dsack,mpcb) (dsack==dsack_first(mpcb))
-
 #define MPCB_FLAG_SERVER_SIDE 	0   /* this mpcb belongs to a server side 
 				       connection.
 				       (obtained through a listen)*/
@@ -124,7 +111,6 @@ struct multipath_pcb {
 	struct multipath_options  received_options;
 	struct tcp_options_received tcp_opt;
 
-	struct list_head          dsack_list;
 	struct sk_buff_head	  reinject_queue;
 	spinlock_t                lock;
 	struct mutex              mutex;
@@ -335,4 +321,5 @@ void verif_wqueues(struct multipath_pcb *mpcb);
 void mtcp_skb_entail(struct sock *sk, struct sk_buff *skb);
 struct sk_buff* mtcp_next_segment(struct sock *sk, int *reinject);
 void mpcb_release(struct kref* kref);
+void mtcp_clean_rtx_queue(struct sock *sk);
 #endif /*_MTCP_H*/

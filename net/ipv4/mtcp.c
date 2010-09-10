@@ -452,7 +452,6 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 
 	spin_lock_init(&mpcb->lock);
 	mutex_init(&mpcb->mutex);
-	INIT_LIST_HEAD(&mpcb->dsack_list);
 	mpcb->nb.notifier_call=netevent_callback;
 	register_netevent_notifier(&mpcb->nb);
 
@@ -1370,7 +1369,7 @@ fail:
 
 /*Cleans the meta-socket retransmission queue.
   @sk must be the metasocket.*/
-static void mtcp_clean_rtx_queue(struct sock *sk)
+void mtcp_clean_rtx_queue(struct sock *sk)
 {
 	struct sk_buff *skb;
 	struct tcp_sock *tp=tcp_sk(sk);
@@ -1395,102 +1394,6 @@ static void mtcp_clean_rtx_queue(struct sock *sk)
 	}
 	check_send_head(sk,1);
 }
-
-void mtcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end) {
-	struct dsn_sack *dsack, *new_block, *todel, *tmp;
-	int inserted=0;
-	struct tcp_sock *mpcb_tp=(struct tcp_sock *)mpcb;
-	u32 old_snd_una;
-	
-	BUG_ON(!after(end,start));
-
-	spin_lock(&mpcb->lock);
-	old_snd_una=mpcb_tp->snd_una;
-	
-	/*Normal case*/
-	if (!after(start,mpcb_tp->snd_una)) {
-		/*This block has already been acked*/
-		if (!after(end,mpcb_tp->snd_una))
-			goto out;
-		mpcb_tp->snd_una=end;
-		/*Update the sack block list if needed*/
-		list_for_each_entry_safe(dsack,tmp,&mpcb->dsack_list,list) {
-			if (!before(mpcb_tp->snd_una,dsack->end)) {
-				list_del(&dsack->list);
-				kfree(dsack);
-				continue;
-			}
-			else if (!before(mpcb_tp->snd_una,dsack->start)) {
-				mpcb_tp->snd_una=dsack->end;
-				list_del(&dsack->list);
-				kfree(dsack);
-			}
-			break;
-		}
-		goto out;
-	}
-	/*there is a hole, use the dsack list*/
-	list_for_each_entry(dsack,&mpcb->dsack_list,list) {
-		if (after(start,dsack->end)) 
-			continue;
-		if (inserted && !dsack_is_first(dsack,mpcb) && 
-		    !before(dsack_prev(dsack)->end,dsack->start)) {
-			/*A previous update has extended the end of block*/
-			dsack->start=dsack_prev(dsack)->start;
-			if (after(dsack_prev(dsack)->end, dsack->end))
-				dsack->end=dsack_prev(dsack)->end;
-			todel=dsack_prev(dsack);
-			/*It is safe to delete here, because we are deleting the 
-			  previous node, not the current one.*/
-			list_del(&todel->list);
-			kfree(todel);		       
-			/*Need to continue to see if this new extension covers 
-			  next segment as well.*/
-			continue;
-		}
-		if (before(end,dsack->start)) {
-			if (dsack_is_first(dsack,mpcb) || 
-			    after(start,dsack_prev(dsack)->end)) {
-				new_block=kmalloc(sizeof(struct dsn_sack),GFP_ATOMIC);
-				new_block->start=start;
-				new_block->end=end;
-				__list_add(&new_block->list,&dsack_prev(dsack)->list,&dsack->list);
-				goto out;
-			}
-			if (after(end,dsack_prev(dsack)->end))
-				dsack_prev(dsack)->end=end;
-			goto out;
-		}
-		if (before(start,dsack->start)) {
-			/*This cannot create an overlap with previous block, because if
-			  this would have been the case, we would have extended instead 
-			  the end of the previous block, then deleted one block at the beginning
-			  of this iteration*/
-			dsack->start=start;
-		}
-		
-		if (after(end,dsack->end)) {
-			dsack->end=end;
-			/*Maybe this makes the current block overlap with the next one*/
-			inserted=1;
-			continue;
-		}
-
-		goto out;
-	}
-	/*The acked block matches nothing, append it to the sack list*/
-	if (!inserted) {
-		new_block=kmalloc(sizeof(struct dsn_sack),GFP_ATOMIC);
-		new_block->start=start;
-		new_block->end=end;
-		list_add_tail(&new_block->list,&mpcb->dsack_list);
-	}
-out:
-	if (old_snd_una!=mpcb_tp->snd_una)
-		mtcp_clean_rtx_queue((struct sock*)mpcb);
-	spin_unlock(&mpcb->lock);
-}
-
 
 /*At the moment we apply a simple addition algorithm.
   We will complexify later*/

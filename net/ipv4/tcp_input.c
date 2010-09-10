@@ -2884,17 +2884,6 @@ static u32 tcp_tso_acked(struct sock *sk, struct sk_buff *skb)
 
 	packets_acked = tcp_skb_pcount(skb);
 	
-#ifdef CONFIG_MTCP
-	{
-		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
-		if (tp->mpc) {
-			mtcp_update_dsn_ack(mpcb,TCP_SKB_CB(skb)->data_seq,
-					    TCP_SKB_CB(skb)->data_seq+
-					    tp->snd_una - TCP_SKB_CB(skb)->seq);
-		}
-	}
-#endif
-	
 	if (tcp_trim_head(sk, skb, tp->snd_una - TCP_SKB_CB(skb)->seq))
 		return 0;
 	packets_acked -= tcp_skb_pcount(skb);
@@ -3028,7 +3017,6 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		/*Before we remove the skb, we update the meta-ack count*/
 #ifdef CONFIG_MTCP
 		{
-			struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
 			if (!tp->mpc || !skb->len) goto no_mptcp_update;
 			
 			/*Since we are about to remove this segment from the
@@ -3037,8 +3025,6 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			  data_seq, since data_seq is 0 for the first data 
 			  segment (currently)*/
 			BUG_ON(!scb->end_data_seq);
-			mtcp_update_dsn_ack(mpcb,scb->data_seq,
-					    scb->end_data_seq);
 			skb->count_dsn=0;
 			if (!tp->bw_est.time) {
 				/*bootstrap bw estimation*/
@@ -3291,7 +3277,12 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 	}
 
 	tp->snd_una = ack;
-	if (data_ack) mpcb_tp->snd_una=data_ack;
+	if (data_ack && tp->mpc && tp->mpcb) {
+		int old_snd_una=mpcb_tp->snd_una;
+		mpcb_tp->snd_una=data_ack;
+		if (old_snd_una!=data_ack)
+			mtcp_clean_rtx_queue((struct sock*)mpcb_tp);
+	}
 	if (tp->pf==1)
 		tcpprobe_logmsg(sk,"pi %d: leaving pf state",tp->path_index);
 	tp->pf=0;
