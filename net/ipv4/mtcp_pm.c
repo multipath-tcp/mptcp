@@ -286,7 +286,7 @@ static void __mtcp_update_patharray(struct multipath_pcb *mpcb)
 	  ULID*/
 	int ulid_v4=(mpcb_sk->sk_family==AF_INET)?1:0;
 	int pa4_size=(mpcb->num_addr4+ulid_v4)*
-		(mpcb->received_options.num_addr4+ulid_v4)-ulid_v4;	
+		(mpcb->received_options.num_addr4+ulid_v4)-ulid_v4;
 
 	new_pa4=kmalloc(pa4_size*sizeof(struct path4),GFP_ATOMIC);
 	
@@ -450,6 +450,7 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 		    addr->s_addr) {
 			mopt->addr4[i].id=id; /*update the 
 						id*/
+			printk(KERN_ERR "addr already known\n");
 			return 0;
 		}
 	}
@@ -462,6 +463,12 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 		addr->s_addr;
 	mopt->addr4[num_addr4].id=id;
 	mopt->num_addr4++;
+	printk(KERN_ERR "added remote address, now list is:\n");
+	for (i=0;i<mopt->num_addr4;i++) {
+		printk(KERN_ERR "  " NIPQUAD_FMT ", id %d\n",
+		       NIPQUAD(mopt->addr4[i].addr.s_addr),
+		       mopt->addr4[i].id);
+	}
 	return 0;
 }
 
