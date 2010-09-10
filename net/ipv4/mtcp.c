@@ -241,6 +241,7 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 	int retval;
 	struct socket *sock;
 	struct tcp_sock *tp=mpcb->connection_list;
+	struct sock *mpcb_sk=(struct sock *)mpcb;
 	struct tcp_sock *newtp;
 
 	/*First, ensure that we keep existing path indices.*/
@@ -261,7 +262,8 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			struct sockaddr_in6 loculid_in6,remulid_in6;
 			int newpi=i+1;
 			/*a new socket must be created*/
-			retval = sock_create_kern(mpcb->sa_family, SOCK_STREAM, 
+			retval = sock_create_kern(mpcb_sk->sk_family, 
+						  SOCK_STREAM, 
 						  IPPROTO_MTCPSUB, &sock);
 			if (retval<0) {
 				printk(KERN_ERR "%s:sock_create failed\n",
@@ -274,10 +276,10 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			  (except if we use the MPTCP default PM, in which
 			  case we bind the new socket, directly to its
 			  corresponding locators)*/
-			switch(mpcb->sa_family) {
+			switch(mpcb_sk->sk_family) {
 			case AF_INET:
 				memset(&loculid,0,sizeof(loculid));
-				loculid_in.sin_family=mpcb->sa_family;
+				loculid_in.sin_family=mpcb_sk->sk_family;
 				
 				memcpy(&remulid_in,&loculid_in,
 				       sizeof(remulid_in));
@@ -309,7 +311,7 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 				break;
 			case AF_INET6:
 				memset(&loculid,0,sizeof(loculid));
-				loculid_in6.sin6_family=mpcb->sa_family;
+				loculid_in6.sin6_family=mpcb_sk->sk_family;
 				
 				memcpy(&remulid_in6,&loculid_in6,
 				       sizeof(remulid_in6));
@@ -366,14 +368,16 @@ static int netevent_callback(struct notifier_block *self, unsigned long event,
 			     void *ctx)
 {	
 	struct multipath_pcb *mpcb;
+	struct sock *mpcb_sk;
 	struct ulid_pair *up;
 	PDEBUG("Received path update event\n");
 	switch(event) {
 	case NETEVENT_PATH_UPDATEV6:
 		mpcb=container_of(self,struct multipath_pcb,nb);
+		mpcb_sk=(struct sock*)mpcb;
 		up=ctx;
 		PDEBUG("mpcb is %p\n",mpcb);
-		if (mpcb->sa_family!=AF_INET6) break;
+		if (mpcb_sk->sk_family!=AF_INET6) break;
 		
 		PDEBUG("ev loc ulid:" NIP6_FMT "\n",NIP6(*up->local));
 		PDEBUG("ev loc ulid:" NIP6_FMT "\n",NIP6(*up->remote));
@@ -606,13 +610,15 @@ void mtcp_update_metasocket(struct sock *sk)
 {
 	struct tcp_sock *tp;
 	struct multipath_pcb *mpcb;
+	struct sock *mpcb_sk;
 	if (sk->sk_protocol != IPPROTO_TCP) return;
 	tp=tcp_sk(sk);
 	mpcb=mpcb_from_tcpsock(tp);
+	mpcb_sk=(struct sock*)mpcb;
 
 	PDEBUG("Entering %s, mpcb %p\n",__FUNCTION__,mpcb);
 
-	mpcb->sa_family=sk->sk_family;
+	mpcb_sk->sk_family=sk->sk_family;
 	mpcb->remote_port=inet_sk(sk)->dport;
 	mpcb->local_port=inet_sk(sk)->sport;
 	

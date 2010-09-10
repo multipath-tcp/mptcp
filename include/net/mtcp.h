@@ -76,7 +76,6 @@ struct multipath_pcb {
 	struct tcp_sock           tp;
 
 	/*connection identifier*/
-	sa_family_t               sa_family;
 	xfrm_address_t            remote_ulid, local_ulid;
 	__be16                    remote_port,local_port;
 	

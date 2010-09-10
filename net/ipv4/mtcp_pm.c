@@ -280,10 +280,11 @@ static void __mtcp_update_patharray(struct multipath_pcb *mpcb)
 {
 	struct path4 *new_pa4, *old_pa4;
 	int i,j,newpa_idx=0;
+	struct sock *mpcb_sk=(struct sock *)mpcb;
 	/*Count how many paths are available
 	  We add 1 to size of local and remote set, to include the 
 	  ULID*/
-	int ulid_v4=(mpcb->sa_family==AF_INET)?1:0;
+	int ulid_v4=(mpcb_sk->sk_family==AF_INET)?1:0;
 	int pa4_size=(mpcb->num_addr4+ulid_v4)*
 		(mpcb->received_options.num_addr4+ulid_v4)-ulid_v4;	
 
