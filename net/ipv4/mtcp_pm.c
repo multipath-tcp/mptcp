@@ -285,8 +285,8 @@ static void __mtcp_update_patharray(struct multipath_pcb *mpcb)
 	  ULID*/
 	int ulid_v4=(mpcb->sa_family==AF_INET)?1:0;
 	int pa4_size=(mpcb->num_addr4+ulid_v4)*
-		(mpcb->received_options.num_addr4+ulid_v4)-ulid_v4;
-	
+		(mpcb->received_options.num_addr4+ulid_v4)-ulid_v4;	
+
 	new_pa4=kmalloc(pa4_size*sizeof(struct path4),GFP_ATOMIC);
 	
 	if (ulid_v4) {
@@ -364,8 +364,12 @@ static void __mtcp_update_patharray(struct multipath_pcb *mpcb)
 	
 	/*Replacing the mapping table*/
 	old_pa4=mpcb->pa4;
+	printk(KERN_ERR "old:\n");
+	print_patharray(mpcb->pa4,mpcb->pa4_size);
 	mpcb->pa4=new_pa4;
 	mpcb->pa4_size=pa4_size;
+	printk(KERN_ERR "new:\n");
+	print_patharray(mpcb->pa4,mpcb->pa4_size);
 	if (old_pa4) kfree(old_pa4);
 }
 
