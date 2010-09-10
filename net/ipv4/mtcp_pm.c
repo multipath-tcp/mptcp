@@ -228,6 +228,13 @@ struct in_addr *mtcp_get_rem_addr(struct multipath_pcb *mpcb, int path_index)
 		if (mpcb->pa4[i].path_index==path_index)
 			return &mpcb->pa4[i].rem.addr;
 	}
+	
+	/*should not arrive here*/
+	printk(KERN_ERR "pa4_size:%d,pi:%d\n",mpcb->pa4_size,path_index);
+	for (i=0;i<mpcb->pa4_size;i++) {
+		printk(KERN_ERR, "existing pi:%d\n",mpcb->pa4[i].path_index);
+	}
+	
 	BUG();
 	return NULL;
 }
