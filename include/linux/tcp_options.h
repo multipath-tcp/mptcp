@@ -33,14 +33,16 @@
 #define OPTION_DSN              (1 << 5)
 #define OPTION_ADDR             (1 << 6)
 #define OPTION_JOIN             (1 << 7)
+#define OPTION_DATA_ACK         (1 << 8)
 
 struct tcp_out_options {
-	u8 options;		/* bit field of OPTION_* */
+	u16 options;		/* bit field of OPTION_* */
 	u8 ws;			/* window scale, 0 to disable */
 	u8 num_sack_blocks;	/* number of SACK blocks to include */
 	u16 mss;		/* 0 to disable */
 	__u32 tsval, tsecr;	/* need to include OPTION_TS */
 	__u32 data_seq;         /* data sequence number, for MPTCP */
+	__u32 data_ack;         /* data ack, for MPTCP */
 	__u16 data_len;         /* data level length, for MPTCP*/
 	__u32 sub_seq;          /* subflow seqnum, for MPTCP*/
 #ifdef CONFIG_MTCP_PM

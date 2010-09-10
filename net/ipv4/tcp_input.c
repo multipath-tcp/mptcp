@@ -3228,14 +3228,16 @@ static inline int tcp_may_update_window(const struct tcp_sock *tp,
 					const u32 ack, const u32 ack_seq,
 					const u32 nwin)
 {
-	u32 snd_wnd=(tp->mpc && tp->mpcb)?tp->mpcb->tp.snd_wnd:tp->snd_wnd;
 /*the variable snd_wl1 tracks the
   newest sequence number that we've seen.  It helps prevent snd_wnd from
   being reopened on re-transmitted data.  If snd_wl1 is greater than
   received sequence #, we skip it.*/
-	return (after(ack, tp->snd_una) ||
+/*MPTCP note: added check for ack_seq != 0, because the data seqnum can be 0
+  if the dataseq option is not present. This is the case if we received a pure
+  ack with no data. Since */
+	return (after(ack, tp->snd_una) || !ack_seq ||
 		after(ack_seq, tp->snd_wl1) ||
-		(ack_seq == tp->snd_wl1 && nwin > snd_wnd));
+		(ack_seq == tp->snd_wl1 && nwin > tp->snd_wnd));
 }
 
 /* Update our send window.
@@ -3250,16 +3252,28 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 	int flag = 0;
 	u32 nwin = ntohs(tcp_hdr(skb)->window);
 	u32 *snd_wnd=(tp->mpc && tp->mpcb)?&tp->mpcb->tp.snd_wnd:&tp->snd_wnd;
+	struct tcp_sock *mpcb_tp;
+	u32 data_ack,data_ack_seq;
+
+	if (tp->mpc && tp->mpcb) {
+		mpcb_tp=&tp->mpcb->tp;
+		data_ack=TCP_SKB_CB(skb)->data_ack;
+		data_ack_seq=TCP_SKB_CB(skb)->data_seq;
+	}
+	else {
+		mpcb_tp=tp;
+		data_ack=ack;
+		data_ack_seq=ack_seq;
+	}
 
 	if (likely(!tcp_hdr(skb)->syn))
 		nwin <<= tp->rx_opt.snd_wscale;
 
-	if (tcp_may_update_window(tp, ack, ack_seq, nwin)) {
+	if (tcp_may_update_window(mpcb_tp, data_ack, data_ack_seq, nwin)) {
 		u32 *max_window=(tp->mpc && tp->mpcb)?&tp->mpcb->tp.max_window:
 			&tp->max_window;
 		flag |= FLAG_WIN_UPDATE;
-		tcp_update_wl(tp, ack, ack_seq);
-
+		tcp_update_wl(mpcb_tp, data_ack_seq);
 		if (*snd_wnd != nwin) {
 			*snd_wnd = nwin;
 
@@ -3277,6 +3291,7 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 	}
 
 	tp->snd_una = ack;
+	if (data_ack) mpcb_tp->snd_una=data_ack;
 	if (tp->pf==1)
 		tcpprobe_logmsg(sk,"pi %d: leaving pf state",tp->path_index);
 	tp->pf=0;
@@ -3429,6 +3444,7 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *mpcb_tp=(tp->mpc && tp->mpcb)?&tp->mpcb->tp:tp;
 	u32 prior_snd_una = tp->snd_una;
 	u32 ack_seq = TCP_SKB_CB(skb)->seq;
 	u32 ack = TCP_SKB_CB(skb)->ack_seq;
@@ -3471,7 +3487,8 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 		 * No more checks are required.
 		 * Note, we use the fact that SND.UNA>=SND.WL2.
 		 */
-		tcp_update_wl(tp, ack, ack_seq);
+		tcp_update_wl(mpcb_tp, (tp->mpc)?TCP_SKB_CB(skb)->data_seq:
+			      ack_seq);
 		tp->snd_una = ack;
 		flag |= FLAG_WIN_UPDATE;
 
@@ -3687,7 +3704,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 			case TCPOPT_ADDR:
 				if (!mopt) {
 					printk(KERN_ERR "MPTCP addresses "
-					       "received, but no mtcp state"
+					       "received, but no mptcp state"
 					       "found, using sock struct\n");
 					break;
 				}
@@ -3732,7 +3749,15 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 					TCP_SKB_CB(skb)->seq;
 				saw_dsn=1;
 				break;
-				
+			case TCPOPT_DATA_ACK:
+				if (opsize!=TCPOLEN_DATA_ACK) {
+					PDEBUG("data_ack opt:bad option "
+					       "size\n");
+					break;
+				}
+				TCP_SKB_CB(skb)->data_ack =
+					ntohl(*(uint32_t*)ptr);
+				break;				
 #endif /* CONFIG_MTCP */
 			}
 			
@@ -3889,6 +3914,19 @@ static int tcp_disordered_ack(const struct sock *sk, const struct sk_buff *skb)
 	struct tcphdr *th = tcp_hdr(skb);
 	u32 seq = TCP_SKB_CB(skb)->seq;
 	u32 ack = TCP_SKB_CB(skb)->ack_seq;
+	struct tcp_sock *mpcb_tp;
+	u32 data_ack,data_seq;
+
+	if (tp->mpc && tp->mpcb) {
+		mpcb_tp=&tp->mpcb->tp;
+		data_ack=TCP_SKB_CB(skb)->data_ack;
+		data_seq=TCP_SKB_CB(skb)->data_seq;
+	}
+	else {
+		mpcb_tp=tp;
+		data_ack=ack;
+		data_seq=seq;
+	}
 
 	return (/* 1. Pure ACK with correct sequence number. */
 		(th->ack && seq == TCP_SKB_CB(skb)->end_seq && seq == tp->rcv_nxt) &&
@@ -3897,7 +3935,7 @@ static int tcp_disordered_ack(const struct sock *sk, const struct sk_buff *skb)
 		ack == tp->snd_una &&
 
 		/* 3. ... and does not update window. */
-		!tcp_may_update_window(tp, ack, seq, ntohs(th->window) << tp->rx_opt.snd_wscale) &&
+		!tcp_may_update_window(mpcb_tp, data_ack, data_seq, ntohs(th->window) << tp->rx_opt.snd_wscale) &&
 
 		/* 4. ... and sits in replay window. */
 		(s32)(tp->rx_opt.ts_recent - tp->rx_opt.rcv_tsval) <= (inet_csk(sk)->icsk_rto * 1024) / HZ);
@@ -5937,7 +5975,10 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 
 		TCP_ECN_rcv_synack(tp, th);
 
-		tp->snd_wl1 = TCP_SKB_CB(skb)->seq;
+		if (tp->mpc && tp->mpcb)
+			tp->mpcb->tp.snd_wl1 = TCP_SKB_CB(skb)->data_seq;
+		else
+			tp->snd_wl1=TCP_SKB_CB(skb)->seq;
 		tcp_ack(sk, skb, FLAG_SLOWPATH);
 
 		/* Ok.. it's good. Set up sequence numbers and
@@ -5952,11 +5993,14 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		/* RFC1323: The window in SYN & SYN/ACK segments is
 		 * never scaled.
 		 */
-		if (tp->mpc && tp->mpcb)
+		if (tp->mpc && tp->mpcb) {
 			tp->mpcb->tp.snd_wnd = ntohs(th->window);
-		else
+			tcp_init_wl(&tp->mpcb->tp, tp->mpcb->tp.rcv_nxt);
+		}
+		else {
 			tp->snd_wnd = ntohs(th->window);
-		tcp_init_wl(tp, TCP_SKB_CB(skb)->ack_seq, TCP_SKB_CB(skb)->seq);
+			tcp_init_wl(tp, TCP_SKB_CB(skb)->seq);
+		}
 
 		if (!tp->rx_opt.wscale_ok) {
 			tp->rx_opt.snd_wscale = tp->rx_opt.rcv_wscale = 0;
@@ -6088,12 +6132,13 @@ discard:
 		/* RFC1323: The window in SYN & SYN/ACK segments is
 		 * never scaled.
 		 */
-		tp->snd_wl1    = TCP_SKB_CB(skb)->seq;
 		if (tp->mpc && tp->mpcb) {
+			tp->mpcb->tp.snd_wl1    = TCP_SKB_CB(skb)->data_seq;
 			tp->mpcb->tp.snd_wnd    = ntohs(th->window);
 			tp->mpcb->tp.max_window = tp->snd_wnd;
 		}
 		else {
+			tp->snd_wl1    = TCP_SKB_CB(skb)->seq;
 			tp->snd_wnd    = ntohs(th->window);
 			tp->max_window = tp->snd_wnd;
 		}
@@ -6226,15 +6271,18 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 						      SOCK_WAKE_IO, POLL_OUT);
 
 				tp->snd_una = TCP_SKB_CB(skb)->ack_seq;
-				if (tp->mpc && tp->mpcb)
+				if (tp->mpc && tp->mpcb) {
 					tp->mpcb->tp.snd_wnd = 
 						ntohs(th->window) <<
 						tp->rx_opt.snd_wscale;
-				else
+					tcp_init_wl(&tp->mpcb->tp, 
+						    tp->mpcb->tp.rcv_nxt);
+				}
+				else {
 					tp->snd_wnd = ntohs(th->window) <<
 						tp->rx_opt.snd_wscale;
-				tcp_init_wl(tp, TCP_SKB_CB(skb)->ack_seq,
-					    TCP_SKB_CB(skb)->seq);
+					tcp_init_wl(tp, TCP_SKB_CB(skb)->seq);
+				}
 
 				/* tcp_ack considers this ACK as duplicate
 				 * and does not calculate rtt.

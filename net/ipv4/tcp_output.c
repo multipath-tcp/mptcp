@@ -558,6 +558,13 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		*ptr++ = htonl(opts->sub_seq);
 		*ptr++ = htonl(opts->data_seq);
 	}
+	if (OPTION_DATA_ACK & opts->options) {
+		*ptr++ = htonl((TCPOPT_NOP << 24) |
+			       (TCPOPT_NOP << 16) |
+			       (TCPOPT_DATA_ACK << 8) |
+			       (TCPOLEN_DATA_ACK));
+		*ptr++ = htonl(opts->data_ack);
+	}
 #endif
 }
 
@@ -745,6 +752,11 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		}
 		opts->options |= OPTION_DSN;
 		size += TCPOLEN_DSN_ALIGNED;		
+	}
+	if (tp->mpc && mpcb) {
+		opts->data_ack=mpcb->tp.rcv_nxt;
+		opts->options |= OPTION_DATA_ACK;
+		size += TCPOLEN_DATA_ACK_ALIGNED;
 	}
 #ifdef CONFIG_MTCP_PM
 	if (tp->mpc && mpcb) {
@@ -2902,7 +2914,7 @@ static void tcp_connect_init(struct sock *sk)
 	sk->sk_err = 0;
 	sock_reset_flag(sk, SOCK_DONE);
 	tp->snd_wnd = 0;
-	tcp_init_wl(tp, tp->write_seq, 0);
+	tcp_init_wl(tp, 0);
 	tp->snd_una = tp->write_seq;
 	tp->snd_sml = tp->write_seq;
 	tp->snd_up = tp->write_seq;

@@ -175,7 +175,7 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOPT_MPC   	        30
 #define TCPOPT_DSN		31
 #define TCPOPT_DFIN		32
-#define TCPOPT_RESYNC   	33
+#define TCPOPT_DATA_ACK   	33
 
 #define TCPOPT_ADDR             60
 #define TCPOPT_REMADR           61
@@ -200,6 +200,7 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_MPC            4
 #endif
 #define TCPOLEN_DSN            12
+#define TCPOLEN_DATA_ACK       6
 
 /* But this is what stacks really send out. */
 #define TCPOLEN_TSTAMP_ALIGNED		12
@@ -218,7 +219,7 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_MPC_ALIGNED             4
 #endif
 #define TCPOLEN_DSN_ALIGNED             12
-
+#define TCPOLEN_DATA_ACK_ALIGNED        8
 
 /* Flags in tp->nonagle */
 #define TCP_NAGLE_OFF		1	/* Nagle's algo is disabled */
@@ -617,6 +618,7 @@ struct tcp_skb_cb {
 	__u32		seq;		/* Starting sequence number	*/
 	__u32		end_seq;	/* SEQ + FIN + SYN + datalen	*/
 	__u32           data_seq;       /* Starting data seq            */
+	__u32           data_ack;       /* Data level ack (MPTCP)       */
 	__u32           end_data_seq;   /* DATA_SEQ + FIN+ SYN + datalen*/
 	__u16           data_len;       /* Data-level length (MPTCP)    
 					 * a value of 0 indicates that no DSN
@@ -907,14 +909,15 @@ static inline void tcp_push_pending_frames(struct sock *sk)
 	__tcp_push_pending_frames(sk, tcp_current_mss(sk, 1), tp->nonagle);
 }
 
-static inline void tcp_init_wl(struct tcp_sock *tp, u32 ack, u32 seq)
+static inline void tcp_init_wl(struct tcp_sock *tp, u32 seq)
 {
 	tp->snd_wl1 = seq;
 }
 
-static inline void tcp_update_wl(struct tcp_sock *tp, u32 ack, u32 seq)
+static inline void tcp_update_wl(struct tcp_sock *tp, u32 seq)
 {
-	tp->snd_wl1 = seq;
+	if (seq)
+		tp->snd_wl1 = seq;
 }
 
 /*
