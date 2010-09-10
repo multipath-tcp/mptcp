@@ -443,6 +443,8 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 	/*If the id is zero, this is the ULID, do not add it.*/
 	if (!id) return 0;
 	
+	printk(KERN_ERR " prev val of num_addr4: %d\n",mopt->num_addr4);
+
 	BUG_ON(mopt->num_addr4>=MTCP_MAX_ADDR);
 
 	for (i=0;i<mopt->num_addr4;i++) {
