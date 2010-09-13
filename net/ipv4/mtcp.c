@@ -1007,7 +1007,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 	}
 	
 	/*Is this a duplicate segment ?*/
-	if (after(mpcb_tp->rcv_nxt,TCP_SKB_CB(skb)->end_data_seq)) {
+	if (!before(mpcb_tp->rcv_nxt,TCP_SKB_CB(skb)->end_data_seq)) {
 		/*Duplicate segment. We can arrive here only if a segment 
 		  has been retransmitted by the sender on another subflow.
 		  Retransmissions on the same subflow are handled at the
