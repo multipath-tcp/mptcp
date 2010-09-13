@@ -296,6 +296,14 @@ void check_send_head(struct sock *sk,int num);
 #define check_send_head(sk,num)
 #endif
 
+static inline void mtcp_init_addr_list(struct multipath_options *mopt)
+{
+	mopt->list_rcvd=
+		mopt->num_addr4=
+		mopt->num_addr6=0;
+}
+
+
 int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk, 
 		   long *timeo,int flags);
 int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb, u32 offset,

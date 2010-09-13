@@ -510,7 +510,8 @@ struct sock *tcp_check_req(struct sock *sk,struct sk_buff *skb,
 	struct sock *child;
 
 	tmp_opt.saw_tstamp = 0;
-	mtp.list_rcvd=0;
+	mtcp_init_addr_list(&mtp);
+	
 	if (th->doff > (sizeof(struct tcphdr)>>2)) {
 		tcp_parse_options(skb, &tmp_opt, &mtp, 0);
 
