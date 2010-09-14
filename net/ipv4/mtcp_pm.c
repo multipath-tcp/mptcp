@@ -847,6 +847,20 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 	struct inet_connection_sock *mpcb_icsk=
 		(struct inet_connection_sock*)mpcb;
 
+	if (!inet_csk(mpcb->master_sk)->icsk_bind_hash) {
+		/*This cannot happen, because the bind hash must be inherited
+		  by the child we are trying to create.*/
+		printk(KERN_ERR "no bind bucket in master_sk\n");
+		printk(KERN_ERR "mpcb flags:%lx\n",mpcb->flags);
+		printk(KERN_ERR "master sk addr: " NIPQUAD_FMT ":%d->"
+		       NIPQUAD_FMT ":%d\n",
+		       NIPQUAD(inet_sk(mpcb->master_sk)->saddr),
+		       ntohs(inet_sk(mpcb->master_sk)->sport),
+		       NIPQUAD(inet_sk(mpcb->master_sk)->daddr),
+		       ntohs(inet_sk(mpcb->master_sk)->dport));
+		BUG();
+	}
+
 	tmp_opt.saw_tstamp = 0;
 	if (th->doff > (sizeof(struct tcphdr)>>2)) {
 		tcp_parse_options(skb, &tmp_opt, &mtp, 0);
