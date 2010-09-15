@@ -2867,8 +2867,11 @@ static void tcp_rearm_rto(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	if (!tp->packets_out) {
+		tcpprobe_logmsg(sk,"tp %d, stopping rto timer",tp->path_index);
 		inet_csk_clear_xmit_timer(sk, ICSK_TIME_RETRANS);
 	} else {
+		tcpprobe_logmsg(sk,"tp %d, restarting rto timer with rto %d",
+				 tp->path_index,inet_csk(sk)->icsk_rto*1000/HZ);
 		inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
 					  inet_csk(sk)->icsk_rto, TCP_RTO_MAX);
 	}

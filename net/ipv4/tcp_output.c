@@ -85,7 +85,7 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 		BUG_ON(tcp_send_head(check_sk)!=check_skb);
 	}
 
-	if (!master_sk)
+	if (!meta_sk)
 		tcpprobe_logmsg(sk,"entering new_data_sent, prior_packets:%d",
 				prior_packets);
 
