@@ -680,6 +680,11 @@ static void tcp_rtt_estimator(struct sock *sk, const __u32 mrtt)
 	struct tcp_sock *tp = tcp_sk(sk);
 	long m = mrtt; /* RTT */
 
+	if (m > HZ) {
+		printk(KERN_ERR "pi %d:measured rtt is %ld ms\n",
+		       tp->path_index,m*1000/HZ);
+	}
+
 	/*	The following amusing code comes from Jacobson's
 	 *	article in SIGCOMM '88.  Note that rtt and mdev
 	 *	are scaled versions of rtt and mean deviation.
