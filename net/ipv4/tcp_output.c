@@ -100,9 +100,12 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 		tp->frto_counter = 3;
 
 	tp->packets_out += tcp_skb_pcount(skb);
-	if (!prior_packets && !is_meta_tp(tp))
+	if (!prior_packets && !is_meta_tp(tp)) {
+		tcpprobe_logmsg(sk,"setting RTO to %d ms",
+				inet_csk(sk)->icsk_rto*1000/HZ);
 		inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
 					  inet_csk(sk)->icsk_rto, TCP_RTO_MAX);
+	}
 	if (tocheck)
 		BUG_ON(tcp_send_head(check_sk)!=check_skb);
 	
