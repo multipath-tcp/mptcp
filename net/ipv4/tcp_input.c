@@ -2820,6 +2820,11 @@ static void tcp_ack_saw_tstamp(struct sock *sk, int flag)
 	 */
 	struct tcp_sock *tp = tcp_sk(sk);
 	const __u32 seq_rtt = tcp_time_stamp - tp->rx_opt.rcv_tsecr;
+	if (seq_rtt > HZ) {
+		printk(KERN_ERR "1 - pi %d:measured rtt is %d ms\n",
+		       tp->path_index,seq_rtt*1000/HZ);
+	}
+
 	tcp_rtt_estimator(sk, seq_rtt);
 	tcp_set_rto(sk);
 	inet_csk(sk)->icsk_backoff = 0;
@@ -2839,6 +2844,10 @@ static void tcp_ack_no_tstamp(struct sock *sk, u32 seq_rtt, int flag)
 
 	if (flag & FLAG_RETRANS_DATA_ACKED)
 		return;
+	if (seq_rtt > HZ) {
+		printk(KERN_ERR "2 - pi %d:measured rtt is %d ms\n",
+		       tcp_sk(sk)->path_index,seq_rtt*1000/HZ);
+	}
 
 	tcp_rtt_estimator(sk, seq_rtt);
 	tcp_set_rto(sk);
