@@ -286,6 +286,9 @@ static void tcp_retransmit_timer(struct sock *sk)
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	u32 snd_wnd=(tp->mpc && tp->mpcb)?tp->mpcb->tp.snd_wnd:tp->snd_wnd;
 
+	tcpprobe_logmsg(sk,"pi %d, RTO",tp->path_index);
+
+
 	if (!tp->packets_out)
 		goto out;
 
