@@ -1396,6 +1396,7 @@ void mtcp_clean_rtx_queue(struct sock *sk)
 			BUG();
 		}
 		tcp_unlink_write_queue(skb, sk);
+		
 		sk_wmem_free_skb(sk, skb);
 	}
 	check_send_head(sk,1);
