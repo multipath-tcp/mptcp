@@ -5054,11 +5054,16 @@ static void tcp_new_space(struct sock *sk)
 		 * This is why all buffers must be arranged to have equal
 		 * height, that height being the highest height needed by the
 		 * network, that is 2*max(delays).
-		 * Since we estimate bw with (cwnd/srtt), our estimate
-		 * of bw*max(delay) is (cwnd/srtt)*srtt_max
 		 */
-		demanded = max_t(unsigned int, tp->snd_cwnd*rtt_max/tp->srtt,
-				 tp->reordering + 1);
+		/*If cur_bw_est not yet computed, just delay the re-evaluation
+		  of sndbuf*/
+		if (!tp->cur_bw_est)
+			demanded=0;
+		else 
+			demanded = max_t(unsigned int, 
+					 (tp->cur_bw_est>>tp->bw_est.shift)*
+					 (rtt_max>>3),
+					 tp->reordering + 1);
 #endif
 		sndmem *= 2 * demanded;
 		if (sndmem > sk->sk_sndbuf) {
