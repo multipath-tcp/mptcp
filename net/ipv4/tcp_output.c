@@ -85,6 +85,9 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 		BUG_ON(tcp_send_head(check_sk)!=check_skb);
 	}
 
+	tcpprobe_logmsg(sk,"entering new_data_sent, prior_packets:%d",
+			prior_packets);
+
 	check_send_head(sk,2);
 	BUG_ON(tcp_send_head(sk)!=skb);
 	check_pkts_out(sk);
@@ -100,7 +103,7 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 		tp->frto_counter = 3;
 
 	tp->packets_out += tcp_skb_pcount(skb);
-	if (!prior_packets && !is_meta_tp(tp)) {
+	if (!prior_packets && !meta_sk) {
 		tcpprobe_logmsg(sk,"setting RTO to %d ms",
 				inet_csk(sk)->icsk_rto*1000/HZ);
 		inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
