@@ -357,7 +357,8 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	poll_wait(file, master_sk->sk_sleep, wait);
 
 #ifdef CONFIG_MTCP_PM
-	mtcp_check_new_subflow(mpcb);
+	if (master_tp->mpc)
+		mtcp_check_new_subflow(mpcb);
 #endif
 
 	if (master_sk->sk_state == TCP_LISTEN) {
