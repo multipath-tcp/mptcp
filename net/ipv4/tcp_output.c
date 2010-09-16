@@ -310,6 +310,9 @@ static u16 tcp_select_window(struct sock *sk)
 		struct tcp_sock *mpcb_tp=(struct tcp_sock*)(tp->mpcb);
 		mpcb_tp->rcv_wnd = new_win;
 		mpcb_tp->rcv_wup = mpcb_tp->rcv_nxt;
+		/*the subsock rcv_wup must still be updated,
+		  because it is used to decide when to echo the timestamp*/
+		tp->rcv_wup=tp->rcv_nxt;
 	}
 	else {
 		tp->rcv_wnd = new_win;
