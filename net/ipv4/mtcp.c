@@ -642,7 +642,7 @@ void mtcp_update_metasocket(struct sock *sk)
 	/*Searching for suitable local addresses,
 	  except is the socket is loopback, in which case we simply
 	  don't do multipath*/
-	if (!ipv4_is_loopback(inet_sk(sk)->daddr) &&
+	if (!ipv4_is_loopback(inet_sk(sk)->saddr) &&
 	    !ipv4_is_loopback(inet_sk(sk)->daddr))
 		mtcp_set_addresses(mpcb);
 	/*If this added new local addresses, build new paths with them*/
