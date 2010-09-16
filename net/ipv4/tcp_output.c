@@ -85,10 +85,6 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 		BUG_ON(tcp_send_head(check_sk)!=check_skb);
 	}
 
-	if (!meta_sk)
-		tcpprobe_logmsg(sk,"entering new_data_sent, prior_packets:%d",
-				prior_packets);
-
 	check_send_head(sk,2);
 	BUG_ON(tcp_send_head(sk)!=skb);
 	check_pkts_out(sk);
@@ -310,16 +306,6 @@ static u16 tcp_select_window(struct sock *sk)
 		 */
 		new_win = ALIGN(cur_win, 1 << tp->rx_opt.rcv_wscale);
 	}
-	else if (tp->mpcb && tp->mpc) {
-		struct tcp_sock *mpcb_tp=(struct tcp_sock*)(tp->mpcb);
-		struct sock *mpcb_sk=(struct sock*)mpcb_tp;
-		tcpprobe_logmsg(sk,"Increasing rcvwnd:new_win:%d",new_win);
-		tcpprobe_logmsg(sk,"  mpcb rcvbuf:%d - rmem_alloc:%d",
-				mpcb_sk->sk_rcvbuf,atomic_read(
-					&mpcb_sk->sk_rmem_alloc));
-		tcpprobe_logmsg(sk," allowed DSNs %#x->%#x",mpcb_tp->rcv_nxt,
-				mpcb_tp->rcv_nxt+new_win);
-	}
 	if (tp->mpcb && tp->mpc) {
 		struct tcp_sock *mpcb_tp=(struct tcp_sock*)(tp->mpcb);
 		mpcb_tp->rcv_wnd = new_win;
@@ -345,16 +331,6 @@ static u16 tcp_select_window(struct sock *sk)
 	if (new_win == 0)
 		tp->pred_flags = 0;
 
-	/*TODEL*/
-	if (tp->mpcb && tp->mpc) {
-		struct tcp_sock *mpcb_tp=(struct tcp_sock*)(tp->mpcb);
-		tcpprobe_logmsg(sk, "tp %d,actual window announced:%d, "
-				"rcv_wnd:%d, "
-				"rcv_nxt is %#x, rcv_wup is %#x",
-				tp->path_index, new_win, mpcb_tp->rcv_wnd,
-				mpcb_tp->rcv_nxt,
-				mpcb_tp->rcv_wup);
-	}
 	sk->sk_debug=0;
 	return new_win;
 }
@@ -1799,11 +1775,8 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		if (is_meta_tp(tp)) {
 			int pf=0;
 			subsk=get_available_subflow(tp->mpcb,skb,&pf);
-			if (!subsk) {
-				tcpprobe_logmsg(sk,"no subflow ready, pf:%#x",
-						pf);
+			if (!subsk)
 				break;
-			}
 			subtp=tcp_sk(subsk);
 		}
 		else {

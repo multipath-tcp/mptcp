@@ -3888,7 +3888,14 @@ static inline void tcp_replace_ts_recent(struct tcp_sock *tp, u32 seq)
 		if ((s32)(tp->rx_opt.rcv_tsval - tp->rx_opt.ts_recent) >= 0 ||
 		   get_seconds() >= tp->rx_opt.ts_recent_stamp + TCP_PAWS_24DAYS)
 			tcp_store_ts_recent(tp);
+		tcpprobe_logmsg((struct sock*)tp,"pi %d:ts updated to %x, "
+				"seq is %#x, rcv_wup:%#x",tp->path_index,
+				tp->rx_opt.ts_recent,
+				seq,tp->rcv_wup);
 	}
+	tcpprobe_logmsg((struct sock*)tp,"pi %d:no ts update, "
+			"seq is %#x, rcv_wup:%#x",tp->path_index,
+			seq,tp->rcv_wup);
 }
 
 /* Sorry, PAWS as specified is broken wrt. pure-ACKs -DaveM

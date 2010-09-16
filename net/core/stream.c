@@ -29,16 +29,12 @@
 void sk_stream_write_space(struct sock *sk)
 {
 	struct socket *sock = sk->sk_socket;
-	tcpprobe_logmsg(sk,"entering sk_stream_write_space");
 
 	if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk) && sock) {
-		tcpprobe_logmsg(sk,"condition ok");
 		clear_bit(SOCK_NOSPACE, &sk->sock_flags);
 
-		if (sk->sk_sleep && waitqueue_active(sk->sk_sleep)) {
-			tcpprobe_logmsg(sk,"will really wake up the app");
+		if (sk->sk_sleep && waitqueue_active(sk->sk_sleep))
 			wake_up_interruptible(sk->sk_sleep);
-		}
 		if (sock->fasync_list && !(sk->sk_shutdown & SEND_SHUTDOWN))
 			sock_wake_async(sock, SOCK_WAKE_SPACE, POLL_OUT);
 	}
