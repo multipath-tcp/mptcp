@@ -429,6 +429,7 @@ static void skb_release_all(struct sk_buff *skb)
 #include <net/tcp.h>
 void __kfree_skb(struct sk_buff *skb)
 {
+	BUG_ON(atomic_read(&skb->users) > 1);
 	skb_release_all(skb);
 	kfree_skbmem(skb);
 }
