@@ -1879,6 +1879,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		check_skb=skb;
 		check_sk=sk;
 		tcp_event_new_data_sent(subsk, subskb);
+ 		BUG_ON(tcp_send_head(subsk));
 		tocheck=0;
 		if (sk!=subsk && !reinject) {
 			BUG_ON(tcp_send_head(sk)!=skb);
@@ -2018,10 +2019,13 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 		if (likely(!tcp_transmit_skb(subsk, subskb, 1, 
 					     subsk->sk_allocation))) {
 			tcp_event_new_data_sent(subsk, subskb);
+			BUG_ON(tcp_send_head(subsk));
 			if (sk!=subsk && !reinject)
 				tcp_event_new_data_sent(sk,skb);
 			tcp_cwnd_validate(subsk);			
 		}
+		else
+			printk(KERN_ERR "2-leaving after tcp_transmit_skb\n");
 	}
 }
 
