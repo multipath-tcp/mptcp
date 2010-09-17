@@ -285,6 +285,20 @@ static inline void mtcp_init_addr_list(struct multipath_options *mopt)
 		mopt->num_addr6=0;
 }
 
+/**
+ * This function is almost exactly the same as sk_wmem_free_skb.
+ * The only difference is that we call kfree_skb instead of __kfree_skb.
+ * This is important because a subsock may want to remove an skb,
+ * while the meta-sock still has a reference to it.
+ */
+static inline void mtcp_wmem_free_skb(struct sock *sk, struct sk_buff *skb)
+{
+	skb_truesize_check(skb);
+	sock_set_flag(sk, SOCK_QUEUE_SHRUNK);
+	sk->sk_wmem_queued -= skb->truesize;
+	sk_mem_uncharge(sk, skb->truesize);
+	kfree_skb(skb);
+}
 
 int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk, 
 		   long *timeo,int flags);

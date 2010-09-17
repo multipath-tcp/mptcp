@@ -1763,7 +1763,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		unsigned int limit;
 		int err;
 		struct sock *subsk;
-		struct tcp_sock *subtp=tcp_sk(subsk);
+		struct tcp_sock *subtp;
 		struct sk_buff *subskb;
 
 		if (reinject && !after(TCP_SKB_CB(skb)->end_data_seq,
@@ -1861,7 +1861,13 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		
 		if (unlikely(err=tcp_transmit_skb(subsk, subskb, 1, 
 						  GFP_ATOMIC))) {
-			printk(KERN_ERR "leaving after tcp_transmit_skb\n");
+ 			if (sk!=subsk) {
+				/*Remove the skb from the subsock*/
+				tcp_advance_send_head(subsk,subskb);
+				tcp_unlink_write_queue(subskb,subsk);
+				subtp->write_seq-=subskb->len;
+				mtcp_wmem_free_skb(subsk, subskb);
+			}
 			break;
 		}
 		
@@ -2024,8 +2030,13 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 				tcp_event_new_data_sent(sk,skb);
 			tcp_cwnd_validate(subsk);			
 		}
-		else
-			printk(KERN_ERR "2-leaving after tcp_transmit_skb\n");
+		else if (sk!=subsk) {
+			/*Remove the skb from the subsock*/
+			tcp_advance_send_head(subsk,subskb);
+			tcp_unlink_write_queue(subskb,subsk);
+			subtp->write_seq-=subskb->len;
+			mtcp_wmem_free_skb(subsk, subskb);
+		}
 	}
 }
 
