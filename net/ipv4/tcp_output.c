@@ -1860,8 +1860,10 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			subskb=skb;
 		
 		if (unlikely(err=tcp_transmit_skb(subsk, subskb, 1, 
-						  GFP_ATOMIC)))
+						  GFP_ATOMIC))) {
+			printk(KERN_ERR "leaving after tcp_transmit_skb\n");
 			break;
+		}
 		
 		/* Advance the send_head.  This one is sent out.
 		 * This call will increment packets_out.
