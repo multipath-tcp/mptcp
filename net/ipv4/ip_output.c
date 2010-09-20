@@ -226,6 +226,8 @@ static inline int ip_skb_dst_mtu(struct sk_buff *skb)
 	       skb->dst->dev->mtu : dst_mtu(skb->dst);
 }
 
+#include <net/mtcp.h> /*TODEL*/
+
 static int ip_finish_output(struct sk_buff *skb)
 {
 #if defined(CONFIG_NETFILTER) && defined(CONFIG_XFRM)
@@ -236,9 +238,11 @@ static int ip_finish_output(struct sk_buff *skb)
 	}
 #endif
 	if (skb->len > ip_skb_dst_mtu(skb) && !skb_is_gso(skb)) {
-		if (tcp_sk(skb->sk)->mpc) 
+		if (tcp_sk(skb->sk)->mpc) {
+			BUG_ON(is_meta_sk(skb->sk));
 			printk(KERN_ERR "skb->len:%d,mtu:%d\n",
 			       skb->len,ip_skb_dst_mtu(skb));
+		}
 		return ip_fragment(skb, ip_finish_output2);
 	}
 	else

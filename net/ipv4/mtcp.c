@@ -244,6 +244,8 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 	struct sock *mpcb_sk=(struct sock *)mpcb;
 	struct tcp_sock *newtp;
 
+	BUG_ON(!tcp_sk(mpcb->master_sk)->mpc);
+	
 	/*First, ensure that we keep existing path indices.*/
 	while (tp!=NULL) {
 		/*disable the corresponding bit*/
