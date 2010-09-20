@@ -235,8 +235,11 @@ static int ip_finish_output(struct sk_buff *skb)
 		return dst_output(skb);
 	}
 #endif
-	if (skb->len > ip_skb_dst_mtu(skb) && !skb_is_gso(skb))
+	if (skb->len > ip_skb_dst_mtu(skb) && !skb_is_gso(skb)) {
+		printk(KERN_ERR "skb->len:%d,mtu:%d\n",
+		       skb->len,ip_skb_dst_mtu(skb));
 		return ip_fragment(skb, ip_finish_output2);
+	}
 	else
 		return ip_finish_output2(skb);
 }
