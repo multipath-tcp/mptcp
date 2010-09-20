@@ -1173,6 +1173,23 @@ finished:
 }
 
 /**
+ *Sends an update notification to the MPS
+ *Since this particular PM works in the TCP layer, that is, the same
+ *as the MPS, we "send" the notif through function call, not message
+ *passing.
+ * Warning: this can be called only from user context, not soft irq
+ **/
+static void mtcp_send_updatenotif(struct multipath_pcb *mpcb)
+{
+	int i;
+	u32 path_indices=1; /*Path index 1 is reserved for master sk.*/
+	for (i=0;i<mpcb->pa4_size;i++) {
+		path_indices|=PI_TO_FLAG(mpcb->pa4[i].path_index);
+	}
+	mtcp_init_subsockets(mpcb,path_indices);
+}
+
+/**
  * checks whether a new established subflow has appeared,
  * in which case that subflow is added to the path set. 
  * @return: the number of newly attached subflows
@@ -1249,23 +1266,6 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 		}
 	}
 	return nb_new;
-}
-
-/**
- *Sends an update notification to the MPS
- *Since this particular PM works in the TCP layer, that is, the same
- *as the MPS, we "send" the notif through function call, not message
- *passing.
- * Warning: this can be called only from user context, not soft irq
- **/
-void mtcp_send_updatenotif(struct multipath_pcb *mpcb)
-{
-	int i;
-	u32 path_indices=1; /*Path index 1 is reserved for master sk.*/
-	for (i=0;i<mpcb->pa4_size;i++) {
-		path_indices|=PI_TO_FLAG(mpcb->pa4[i].path_index);
-	}
-	mtcp_init_subsockets(mpcb,path_indices);
 }
 
 module_init(mtcp_pm_init);
