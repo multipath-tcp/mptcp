@@ -826,8 +826,6 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		       tcp_skb_pcount(skb),skb->len);
 		BUG();
 	}
-	if (tcp_sk(sk)->mpc && skb->len>1500) 
-		printk(KERN_ERR "skb->len:%d\n",skb->len);
 
 	tcpprobe_transmit_skb(sk,skb,clone_it,gfp_mask);
 
