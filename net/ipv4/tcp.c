@@ -1443,8 +1443,10 @@ int tcp_read_sock(struct sock *sk, read_descriptor_t *desc,
 	u32 offset;
 	int copied = 0;
 
-	printk(KERN_ERR "tcp_read_sock primitive not yet supported\n");
-	BUG();
+	if (tp->mpc) {
+		printk(KERN_ERR "tcp_read_sock primitive not yet supported\n");
+		BUG();
+	}
 
 	if (sk->sk_state == TCP_LISTEN)
 		return -ENOTCONN;
