@@ -809,8 +809,11 @@ static ssize_t do_tcp_sendpages(struct sock *sk, struct page **pages, int poffse
 	ssize_t copied;
 	long timeo = sock_sndtimeo(sk, flags & MSG_DONTWAIT);
 
-	printk(KERN_ERR "%s: function not yet supported\n",__FUNCTION__);
-	BUG();
+	if (tp->mpc) {
+		printk(KERN_ERR "%s: function not yet supported\n",
+		       __FUNCTION__);
+		BUG();
+	}
 	
 	/* Wait for a connection to finish. */
 	if ((1 << sk->sk_state) & ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT))
