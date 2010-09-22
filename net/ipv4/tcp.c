@@ -2387,8 +2387,6 @@ static int tcp_close_state(struct sock *sk)
 	int next = (int)new_state[sk->sk_state];
 	int ns = next & TCP_STATE_MASK;
 
-	printk(KERN_ERR "tcp_close_state: going from state %d to %d\n",
-	       sk->sk_state,next);
 	tcp_set_state(sk, ns);
 
 	return next & TCP_ACTION_FIN;
@@ -3360,8 +3358,6 @@ EXPORT_SYMBOL(tcp_md5_hash_key);
 
 void tcp_done(struct sock *sk)
 {
-
-	printk(KERN_ERR "Entering %s\n",__FUNCTION__);
 	if(sk->sk_state == TCP_SYN_SENT || sk->sk_state == TCP_SYN_RECV)
 		TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_ATTEMPTFAILS);
     
