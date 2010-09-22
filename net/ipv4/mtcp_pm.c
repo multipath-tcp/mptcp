@@ -288,8 +288,6 @@ static void __mtcp_update_patharray(struct multipath_pcb *mpcb)
 	int pa4_size=(mpcb->num_addr4+ulid_v4)*
 		(mpcb->received_options.num_addr4+ulid_v4)-ulid_v4;
 
-	BUG_ON(!tcp_sk(mpcb->master_sk)->mpc);
-
 	new_pa4=kmalloc(pa4_size*sizeof(struct path4),GFP_ATOMIC);
 	
 	if (ulid_v4) {
