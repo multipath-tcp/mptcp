@@ -443,17 +443,14 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	mpcb_tp->mpcb=mpcb;
 	mpcb_tp->mpc=1;
 	mpcb_tp->mss_cache=sysctl_mptcp_mss;
-	BUG_ON(mpcb->connection_list);
 
 	skb_queue_head_init(&mpcb_tp->out_of_order_queue);
 	skb_queue_head_init(&mpcb->reinject_queue);
-	BUG_ON(mpcb->connection_list);
 	
 	mpcb_sk->sk_rcvbuf = sysctl_rmem_default;
 	mpcb_sk->sk_sndbuf = sysctl_wmem_default;
 	mpcb_sk->sk_state = TCPF_CLOSE;
 	/*inherit locks the mpcb_sk, so we must release it here.*/
-	BUG_ON(mpcb->connection_list);
 	bh_unlock_sock(mpcb_sk);
 	sock_put(mpcb_sk);
 	
@@ -461,12 +458,10 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 
 	kref_init(&mpcb->kref);
 
-	BUG_ON(mpcb->connection_list);
 	spin_lock_init(&mpcb->lock);
 	mutex_init(&mpcb->mutex);
 	mpcb->nb.notifier_call=netevent_callback;
 	register_netevent_notifier(&mpcb->nb);
-	BUG_ON(mpcb->connection_list);
 	mpcb_tp->window_clamp=tcp_sk(master_sk)->window_clamp;
 	mpcb_tp->rcv_ssthresh=tcp_sk(master_sk)->rcv_ssthresh;
 	
@@ -475,17 +470,14 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	  connections, it does not need to be huge, since we only store 
 	  here pending subflow creations*/
 	reqsk_queue_alloc(&mpcb_icsk->icsk_accept_queue,32);
-	BUG_ON(mpcb->connection_list);
 	/*Pi 1 is reserved for the master subflow*/
 	mpcb->next_unused_pi=2;
 	/*For the server side, the local token has already been allocated*/
 	if (!tcp_sk(master_sk)->mtcp_loc_token)
 		tcp_sk(master_sk)->mtcp_loc_token=mtcp_new_token();
-	BUG_ON(mpcb->connection_list);
 
 	/*Adding the mpcb in the token hashtable*/
 	mtcp_hash_insert(mpcb,loc_token(mpcb));
-	BUG_ON(mpcb->connection_list);
 #endif
 		
 	return mpcb;

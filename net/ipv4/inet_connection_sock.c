@@ -290,16 +290,12 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 		struct tcp_sock *mpcb_tp=(struct tcp_sock *)mpcb;
 		
 		BUG_ON(!mpcb);
-		BUG_ON(mpcb->connection_list);
 		if (tp->mopt.list_rcvd) {
-			BUG_ON(mpcb->connection_list);
 			memcpy(&mpcb->received_options,&tp->mopt,
 			       sizeof(tp->mopt));
-			BUG_ON(mpcb->connection_list);
 		}
 		set_bit(MPCB_FLAG_SERVER_SIDE,&mpcb->flags);
 		tp->path_index=0;		
-		BUG_ON(mpcb->connection_list);
 		mtcp_add_sock(mpcb,tp);
 		mtcp_update_metasocket(newsk);
 		mpcb_tp->write_seq=0; /*first byte is IDSN

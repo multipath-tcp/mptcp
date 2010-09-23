@@ -883,11 +883,16 @@ static void sock_copy(struct sock *nsk, const struct sock *osk)
 void mtcp_inherit_sk(struct sock *sk,struct sock *newsk) 
 {
 	struct sk_filter *filter;
+	struct multipath_pcb *mpcb=(struct multipath_pcb *) newsk;
+
+	BUG_ON(mpcb->connection_list);
+
 
 #ifdef CONFIG_SECURITY_NETWORK
 	security_sk_alloc(newsk,sk->sk_family,GFP_KERNEL);
 #endif
 	sock_copy(newsk,sk);
+	BUG_ON(mpcb->connection_list);
 	
 	/* SANITY */
 	get_net(sock_net(newsk));
@@ -895,6 +900,7 @@ void mtcp_inherit_sk(struct sock *sk,struct sock *newsk)
 	sock_lock_init(newsk);
 	bh_lock_sock(newsk);
 	newsk->sk_backlog.head	= newsk->sk_backlog.tail = NULL;
+	BUG_ON(mpcb->connection_list);
 	
 	atomic_set(&newsk->sk_rmem_alloc, 0);
 	atomic_set(&newsk->sk_wmem_alloc, 0);
@@ -904,7 +910,8 @@ void mtcp_inherit_sk(struct sock *sk,struct sock *newsk)
 #ifdef CONFIG_NET_DMA
 	skb_queue_head_init(&newsk->sk_async_wait_queue);
 #endif
-	
+	BUG_ON(mpcb->connection_list);
+
 	rwlock_init(&newsk->sk_dst_lock);
 	rwlock_init(&newsk->sk_callback_lock);
 	lockdep_set_class_and_name(&newsk->sk_callback_lock,
@@ -917,8 +924,10 @@ void mtcp_inherit_sk(struct sock *sk,struct sock *newsk)
 	newsk->sk_send_head	= NULL;
 	newsk->sk_userlocks	= sk->sk_userlocks & ~SOCK_BINDPORT_LOCK;
 	
+	BUG_ON(mpcb->connection_list);
 	sock_reset_flag(newsk, SOCK_DONE);
 	skb_queue_head_init(&newsk->sk_error_queue);
+	BUG_ON(mpcb->connection_list);
 	
 	filter = newsk->sk_filter;
 	if (filter != NULL)
@@ -944,9 +953,10 @@ void mtcp_inherit_sk(struct sock *sk,struct sock *newsk)
 	  as the master subsocket. Same for sk_sleep*/
 	sk_set_socket(newsk, sk->sk_socket);
 	newsk->sk_sleep	 = sk->sk_sleep;
-	
+	BUG_ON(mpcb->connection_list);
 	if (newsk->sk_prot->sockets_allocated)
 		atomic_inc(newsk->sk_prot->sockets_allocated);
+	BUG_ON(mpcb->connection_list);
 }
 
 static struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
