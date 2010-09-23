@@ -429,8 +429,6 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	struct inet_connection_sock *mpcb_icsk = inet_csk(mpcb_sk);
 	
 	memset(mpcb,0,sizeof(struct multipath_pcb));
-	printk(KERN_ERR "allocated mpcb %p with size %lu\n",
-	       mpcb,sizeof(struct multipath_pcb));
 
 	/*mpcb_sk inherits master sk*/
 	mtcp_inherit_sk(master_sk,mpcb_sk);
@@ -1422,14 +1420,11 @@ void mtcp_update_window_clamp(struct multipath_pcb *mpcb)
 	if (!mpcb) return;
 
 	mtcp_for_each_sk(mpcb,sk,tp) {
+		printk(KERN_ERR "will update tp %d\n",tp->path_index);
 		new_clamp += tp->window_clamp;
 		new_rcv_ssthresh += tp->rcv_ssthresh;
 		new_rcvbuf += sk->sk_rcvbuf;
 	}
-	printk(KERN_ERR "size of mpcb:%lu, mpcb addr:%p, "
-	       "window_clamp addr:%p\n"
-	       "mpcb end_addr:%p",sizeof(*mpcb),mpcb,&mpcb_tp->window_clamp,
-	       ((char*)(mpcb))+sizeof(*mpcb));
 	mpcb_tp->window_clamp = new_clamp;
 	mpcb_tp->rcv_ssthresh = new_rcv_ssthresh;
 	mpcb_sk->sk_rcvbuf = new_rcvbuf;
