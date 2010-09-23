@@ -639,7 +639,6 @@ struct tcp_skb_cb {
 #define TCPCB_FLAG_URG		0x20
 #define TCPCB_FLAG_ECE		0x40
 #define TCPCB_FLAG_CWR		0x80
-
 	__u8		sacked;		/* State flags for SACK/FACK.	*/
 #define TCPCB_SACKED_ACKED	0x01	/* SKB ACK'd by a SACK block	*/
 #define TCPCB_SACKED_RETRANS	0x02	/* SKB retransmitted		*/
