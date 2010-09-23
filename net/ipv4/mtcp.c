@@ -427,6 +427,8 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
 	struct tcp_sock *mpcb_tp = &mpcb->tp;
 	struct sock *mpcb_sk = (struct sock *) mpcb_tp;
 	struct inet_connection_sock *mpcb_icsk = inet_csk(mpcb_sk);
+
+	printk(KERN_ERR "master_sk protocol: %s\n",master_sk->sk_prot->name);
 	
 	memset(mpcb,0,sizeof(struct multipath_pcb));
 	BUG_ON(mpcb->connection_list);
