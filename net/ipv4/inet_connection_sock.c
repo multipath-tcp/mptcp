@@ -291,9 +291,12 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 		
 		BUG_ON(!mpcb);
 		BUG_ON(mpcb->connection_list);
-		if (tp->mopt.list_rcvd)
+		if (tp->mopt.list_rcvd) {
+			BUG_ON(mpcb->connection_list);
 			memcpy(&mpcb->received_options,&tp->mopt,
 			       sizeof(tp->mopt));
+			BUG_ON(mpcb->connection_list);
+		}
 		set_bit(MPCB_FLAG_SERVER_SIDE,&mpcb->flags);
 		tp->path_index=0;		
 		BUG_ON(mpcb->connection_list);
