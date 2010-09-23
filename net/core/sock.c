@@ -882,14 +882,19 @@ static void sock_copy(struct sock *nsk, const struct sock *osk)
 /*Code inspired from sk_clone()*/
 void mtcp_inherit_sk(struct sock *sk,struct sock *newsk) 
 {
-	struct sk_filter *filter;
-
+	struct sk_filter *filter;		
 #ifdef CONFIG_SECURITY_NETWORK
+	void *sptr;
 	security_sk_alloc(newsk,sk->sk_family,GFP_KERNEL);
+	sptr = newsk->sk_security;
 #endif
 /*We cannot call sock_copy here, because obj_size may be the size
   of tcp6_sock if the app is loading an ipv6 socket.*/
 	memcpy(newsk,sk,sizeof(struct tcp_sock));
+#ifdef CONFIG_SECURITY_NETWORK
+	newsk->sk_security = sptr;
+	security_sk_clone(sk, newsk);
+#endif
 	
 	/* SANITY */
 	get_net(sock_net(newsk));
