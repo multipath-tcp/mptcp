@@ -887,7 +887,9 @@ void mtcp_inherit_sk(struct sock *sk,struct sock *newsk)
 #ifdef CONFIG_SECURITY_NETWORK
 	security_sk_alloc(newsk,sk->sk_family,GFP_KERNEL);
 #endif
-	sock_copy(newsk,sk);
+/*We cannot call sock_copy here, because obj_size may be the size
+  of tcp6_sock if the app is loading an ipv6 socket.*/
+	memcpy(newsk,sk,sizeof(struct tcp_sock));
 	
 	/* SANITY */
 	get_net(sock_net(newsk));
