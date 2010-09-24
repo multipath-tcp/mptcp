@@ -1423,7 +1423,6 @@ void mtcp_update_window_clamp(struct multipath_pcb *mpcb)
 	if (!mpcb) return;
 
 	mtcp_for_each_sk(mpcb,sk,tp) {
-		printk(KERN_ERR "will update tp %d\n",tp->path_index);
 		new_clamp += tp->window_clamp;
 		new_rcv_ssthresh += tp->rcv_ssthresh;
 		new_rcvbuf += sk->sk_rcvbuf;
