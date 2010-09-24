@@ -439,9 +439,6 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 	/*If the id is zero, this is the ULID, do not add it.*/
 	if (!id) return 0;
 	
-	printk(KERN_ERR " prev val of num_addr4: %d,"
-	       "address of struct:%p\n",mopt->num_addr4,mopt);
-
 	BUG_ON(mopt->num_addr4>=MTCP_MAX_ADDR);
 
 	for (i=0;i<mopt->num_addr4;i++) {
@@ -449,7 +446,6 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 		    addr->s_addr) {
 			mopt->addr4[i].id=id; /*update the 
 						id*/
-			printk(KERN_ERR "addr already known\n");
 			return 0;
 		}
 	}
@@ -462,12 +458,6 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 		addr->s_addr;
 	mopt->addr4[num_addr4].id=id;
 	mopt->num_addr4++;
-	printk(KERN_ERR "added remote address, now list is:\n");
-	for (i=0;i<mopt->num_addr4;i++) {
-		printk(KERN_ERR "  " NIPQUAD_FMT ", id %d\n",
-		       NIPQUAD(mopt->addr4[i].addr.s_addr),
-		       mopt->addr4[i].id);
-	}
 	return 0;
 }
 
@@ -1202,8 +1192,6 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 	struct sk_buff *skb;
 
 	if (unlikely(mpcb->received_options.list_rcvd)) {
-		printk(KERN_ERR "setting list_rcvd to 0, mtcp_pm "
-		       "line %d\n",__LINE__);
 		mpcb->received_options.list_rcvd=0;
 		mtcp_update_patharray(mpcb);
 		/*The server uses additional subflows only on request
