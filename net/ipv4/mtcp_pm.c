@@ -688,7 +688,7 @@ static int mtcp_v4_join_request(struct multipath_pcb *mpcb, struct sk_buff *skb)
 	__be32 daddr = ip_hdr(skb)->daddr;
 	__u32 isn = TCP_SKB_CB(skb)->when;	
 
-	req = inet_reqsk_alloc(mpcb->master_sk->sk_prot->rsk_prot);
+	req = inet_reqsk_alloc(&tcp_request_sock_ops);
 	if (!req)
 		return -1;
 	
