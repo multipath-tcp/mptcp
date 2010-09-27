@@ -729,6 +729,11 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 
 #ifdef CONFIG_MTCP
 	mpcb = tp->mpcb;
+	if (tp->mpc && !mpcb) {
+		BUG_ON(!tp->pending);
+		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
+		BUG_ON(!mpcb);
+	}
 	if (tp->mpc && (!skb || skb->len!=0 ||  
 			(tcb->flags & TCPCB_FLAG_FIN))) {
 		if (tcb && tcb->data_len) { /*Ignore dataseq if data_len is 0*/

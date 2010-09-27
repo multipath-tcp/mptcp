@@ -1019,10 +1019,10 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			goto out_err;
 		}
 	}
-
+	
 	/* This should be in poll */
 	clear_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
-
+	
 #ifdef CONFIG_MTCP
 	/*If we want to support TSO later, we'll need 
 	  to define xmit_size_goal to something much larger*/
