@@ -1006,10 +1006,16 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 {
 	struct tcp_sock *tp=tcp_sk(sk);
-	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+	struct multipath_pcb *mpcb;
 	int fin=tcp_hdr(skb)->fin;
-	struct sock *mpcb_sk=(struct sock *) mpcb;
-	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
+	struct sock *mpcb_sk;
+	struct tcp_sock *mpcb_tp;
+
+	mpcb=mpcb_from_tcpsock(tp);
+	if (tp->pending)
+		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
+	mpcb_sk=(struct sock *) mpcb;
+	mpcb_tp=tcp_sk(mpcb_sk);
 
 	if (!tp->mpc || !tp->mpcb) {
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
