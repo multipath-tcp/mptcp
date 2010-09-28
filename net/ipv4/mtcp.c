@@ -543,17 +543,6 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 				    mtcp_recvmsg and mtcp_sendmsg*/
 	local_bh_disable(); /*To protect against concurrency with
 			      mtcp_del_sock*/
-	/*Empty the receive queue of the added new subsocket
-	  we do it with bh disabled, because before the mpcb is attached,
-	  all segs are received in subflow queue,and after the mpcb is 
-	  attached, all segs are received in meta-queue. So moving segments
-	  from subflow to meta-queue must be done atomically with the 
-	  setting of tp->mpcb.*/
-	while ((skb = skb_peek(&sk->sk_receive_queue))) {
-		__skb_unlink(skb, &sk->sk_receive_queue);
-		if (mtcp_queue_skb(sk,skb)==MTCP_EATEN)
-			__kfree_skb(skb);
-	}
 	tp->mpcb = mpcb;
 	tp->next=mpcb->connection_list;
 	mpcb->connection_list=tp;
@@ -578,7 +567,19 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 		mpcb_sk->sk_state=TCP_ESTABLISHED;
 	}
 	
-	kref_get(&mpcb->kref);	
+	kref_get(&mpcb->kref);
+
+	/*Empty the receive queue of the added new subsocket
+	  we do it with bh disabled, because before the mpcb is attached,
+	  all segs are received in subflow queue,and after the mpcb is 
+	  attached, all segs are received in meta-queue. So moving segments
+	  from subflow to meta-queue must be done atomically with the 
+	  setting of tp->mpcb.*/
+	while ((skb = skb_peek(&sk->sk_receive_queue))) {
+		__skb_unlink(skb, &sk->sk_receive_queue);
+		if (mtcp_queue_skb(sk,skb)==MTCP_EATEN)
+			__kfree_skb(skb);
+	}
 	local_bh_enable();
 	mutex_unlock(&mpcb->mutex);
 	
