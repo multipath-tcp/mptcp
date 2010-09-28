@@ -732,7 +732,10 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	if (tp->mpc && !mpcb) {
 		BUG_ON(!tp->pending);
 		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
-		BUG_ON(!mpcb);
+		if (!mpcb) {
+			printk(KERN_ERR "token : %#x\n",tp->mtcp_loc_token);
+			BUG();
+		}
 	}
 	if (tp->mpc && (!skb || skb->len!=0 ||  
 			(tcb->flags & TCPCB_FLAG_FIN))) {
