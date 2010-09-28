@@ -288,7 +288,6 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 		struct tcp_sock *tp=tcp_sk(newsk);
 		struct multipath_pcb *mpcb=mtcp_alloc_mpcb(newsk);
 		struct tcp_sock *mpcb_tp=(struct tcp_sock *)mpcb;
-		struct sk_buff *skb;
 		
 		BUG_ON(!mpcb);
 		if (tp->mopt.list_rcvd) {

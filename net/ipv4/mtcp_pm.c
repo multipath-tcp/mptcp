@@ -1035,6 +1035,7 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 				    will be set when removed from the 
 				    accept queue*/
 	tcp_sk(child)->mpc=1;
+	tcp_sk(child)->slave_sk=1;
 	tcp_sk(child)->rx_opt.mtcp_rem_token=req->mtcp_rem_token;
 	tcp_sk(child)->mtcp_loc_token=req->mtcp_loc_token;
 	tcp_sk(child)->pending=1;

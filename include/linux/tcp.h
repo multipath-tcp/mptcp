@@ -451,9 +451,10 @@ struct tcp_sock {
 	struct tcp_sock         *next; /*Next subflow socket*/
 #ifdef CONFIG_MTCP_PM
 	u32                     mtcp_loc_token;
-	uint8_t                 pending:1; /*One if this is a pending subsock
+	uint8_t                 pending:1, /*One if this is a pending subsock
 					     (established, but not yet
 					     attached to the mpcb)*/
+		                slave_sk:1;
 #endif
 #endif
 };

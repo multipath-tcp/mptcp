@@ -336,6 +336,7 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			}
 			newtp->path_index=newpi;
 			newtp->mpc=1;
+			newtp->slave_sk=1;
 			
 			mtcp_add_sock(mpcb,newtp);
 						
