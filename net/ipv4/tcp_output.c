@@ -732,10 +732,6 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	if (tp->mpc && !mpcb) {
 		BUG_ON(!tp->pending);
 		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
-		if (!mpcb) {
-			printk(KERN_ERR "token : %#x\n",tp->mtcp_loc_token);
-			BUG();
-		}
 	}
 	if (tp->mpc && (!skb || skb->len!=0 ||  
 			(tcb->flags & TCPCB_FLAG_FIN))) {
@@ -747,8 +743,14 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		opts->options |= OPTION_DSN;
 		size += TCPOLEN_DSN_ALIGNED;		
 	}
-	if (tp->mpc && mpcb) {
-		opts->data_ack=mpcb->tp.rcv_nxt;
+	if (tp->mpc) {
+		/*If we are at the server side, and the accept syscall has not
+		  yet been called, we have no mpcb yet, but we must still
+		  send a data ack. The value of the ack is based on the 
+		  subflow ack since at this step there is necessarily only 
+		  one subflow.*/
+		u32 rcv_nxt=(mpcb)?mpcb->tp.rcv_nxt:tp->rcv_nxt-tp->rcv_isn-1;
+		opts->data_ack=rcv_nxt;
 		opts->options |= OPTION_DATA_ACK;
 		size += TCPOLEN_DATA_ACK_ALIGNED;
 	}
