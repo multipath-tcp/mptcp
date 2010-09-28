@@ -729,10 +729,6 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 
 #ifdef CONFIG_MTCP
 	mpcb = tp->mpcb;
-	if (tp->mpc && !mpcb) {
-		BUG_ON(!tp->pending);
-		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
-	}
 	if (tp->mpc && (!skb || skb->len!=0 ||  
 			(tcb->flags & TCPCB_FLAG_FIN))) {
 		if (tcb && tcb->data_len) { /*Ignore dataseq if data_len is 0*/
@@ -745,11 +741,13 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	}
 	if (tp->mpc) {
 		/*If we are at the server side, and the accept syscall has not
-		  yet been called, we have no mpcb yet, but we must still
+		  yet been called, the received data is still enqueued in the 
+		  subsock receive queue, but we must still
 		  send a data ack. The value of the ack is based on the 
 		  subflow ack since at this step there is necessarily only 
 		  one subflow.*/
-		u32 rcv_nxt=(mpcb)?mpcb->tp.rcv_nxt:tp->rcv_nxt-tp->rcv_isn-1;
+		u32 rcv_nxt=(tp->pending)?tp->rcv_nxt-tp->rcv_isn-1:
+			mpcb->tp.rcv_nxt;
 		opts->data_ack=rcv_nxt;
 		opts->options |= OPTION_DATA_ACK;
 		size += TCPOLEN_DATA_ACK_ALIGNED;

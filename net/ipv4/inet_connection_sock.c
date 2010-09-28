@@ -305,12 +305,6 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 		
 		mpcb_tp->copied_seq=0; /* First byte of yet unread data */
 		set_bit(MPCB_FLAG_SERVER_SIDE,&mpcb->flags);
-		/*Empty the receive queue of the added new subsocket*/
-		while ((skb = skb_peek(&newsk->sk_receive_queue))) {
-			__skb_unlink(skb, &newsk->sk_receive_queue);
-			if (mtcp_queue_skb(newsk,skb)==MTCP_EATEN)
-				__kfree_skb(skb);
-		}
 		mtcp_ask_update(newsk);
 	}
 #endif
