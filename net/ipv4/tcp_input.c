@@ -3583,7 +3583,6 @@ uninteresting_ack:
 	       NIPQUAD_FMT "->" NIPQUAD_FMT "\n", 
 	       tp->path_index,ack, tp->snd_una, tp->snd_nxt,
 	       NIPQUAD(inet_sk(sk)->saddr),NIPQUAD(inet_sk(sk)->daddr));
-	BUG();
 	SOCK_DEBUG(sk, "Ack %u out of %u:%u\n", ack, tp->snd_una, tp->snd_nxt);
 	check_pkts_out(sk);
 	return 0;
