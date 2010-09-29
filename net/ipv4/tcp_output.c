@@ -729,8 +729,18 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 
 #ifdef CONFIG_MTCP
 	mpcb = tp->mpcb;
-	if (!mpcb && tp->pending)
+	if (!mpcb && tp->pending && !is_master_sk(tp) && tp->mpc) {
 		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
+		if (!mpcb) {
+			printk(KERN_ERR "mpcb not found, token %#x,"
+			       "master_sk:%d,pending:%d," NIPQUAD_FMT 
+			       "->" NIPQUAD_FMT "\n",
+			       tp->mtcp_loc_token,is_master_sk(tp), 
+			       tp->pending, NIPQUAD(inet_sk(sk)->saddr),
+			       NIPQUAD(inet_sk(sk)->daddr));
+			BUG();
+		}
+	}
 	if (tp->mpc && (!skb || skb->len!=0 ||  
 			(tcb->flags & TCPCB_FLAG_FIN))) {
 		if (tcb && tcb->data_len) { /*Ignore dataseq if data_len is 0*/
@@ -750,7 +760,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		  one subflow.*/
 		u32 rcv_nxt=(tp->pending && is_master_sk(tp))?
 			tp->rcv_nxt-tp->rcv_isn-1:
-			mpcb->tp.rcv_nxt;
+			mpcb->tp.rcv_nxt;		
 		opts->data_ack=rcv_nxt;
 		opts->options |= OPTION_DATA_ACK;
 		size += TCPOLEN_DATA_ACK_ALIGNED;
