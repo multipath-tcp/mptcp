@@ -576,11 +576,12 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 	  attached, all segs are received in meta-queue. So moving segments
 	  from subflow to meta-queue must be done atomically with the 
 	  setting of tp->mpcb.*/
-	while ((skb = skb_peek(&sk->sk_receive_queue))) {
-		__skb_unlink(skb, &sk->sk_receive_queue);
-		if (mtcp_queue_skb(sk,skb)==MTCP_EATEN)
-			__kfree_skb(skb);
-	}
+	if (tp->mpc)
+		while ((skb = skb_peek(&sk->sk_receive_queue))) {
+			__skb_unlink(skb, &sk->sk_receive_queue);
+			if (mtcp_queue_skb(sk,skb)==MTCP_EATEN)
+				__kfree_skb(skb);
+		}
 	local_bh_enable();
 	mutex_unlock(&mpcb->mutex);
 	
