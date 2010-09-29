@@ -2422,7 +2422,10 @@ void tcp_close(struct sock *sk, long timeout)
 	int data_was_unread = 0;
 	int state;
 	
-	printk(KERN_ERR "Entering %s\n", __FUNCTION__);
+	printk(KERN_ERR "Closing sock " NIPQUAD_FMT "->" NIPQUAD_FMT ", pi %d"
+	       "\n",
+	       NIPQUAD(inet_sk(sk)->saddr),NIPQUAD(inet_sk(sk)->daddr),
+	       tcp_sk(sk)->path_index);
 	
 #ifdef CONFIG_MTCP
 	/*if this is the master subsocket, we must first close the
