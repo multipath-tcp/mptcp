@@ -1019,7 +1019,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 	mpcb_sk=(struct sock *) mpcb;
 	mpcb_tp=tcp_sk(mpcb_sk);
 
-	if (!tp->mpc || !tp->mpcb) {
+	if (!tp->mpc || !mpcb) {
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
 		sock_hold(skb->sk);
 		return MTCP_QUEUED;
