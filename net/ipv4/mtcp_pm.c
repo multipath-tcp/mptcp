@@ -724,6 +724,7 @@ static int mtcp_v4_join_request(struct multipath_pcb *mpcb, struct sk_buff *skb)
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 
 	req->mpcb=mpcb;
+	req->mtcp_loc_token = loc_token(mpcb);
 	tcp_openreq_init(req, &tmp_opt, skb);
 
 	ireq = inet_rsk(req);
