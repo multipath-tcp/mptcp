@@ -1106,7 +1106,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 	  must be advanced*/
 	tp->copied_seq=TCP_SKB_CB(skb)->end_seq+fin;
 	tcp_rcv_space_adjust(sk);
-
+	
 	/*Verify that the mapping info has been read*/
 	if(TCP_SKB_CB(skb)->data_len) {
 		mtcp_get_dataseq_mapping(tp,skb);

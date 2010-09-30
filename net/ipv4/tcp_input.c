@@ -540,6 +540,8 @@ void tcp_rcv_space_adjust(struct sock *sk)
 		struct multipath_pcb *mpcb=tp->mpcb;
 		struct tcp_sock *tp_it;
 		u32 rtt_max=0;
+		if (tp->pending)
+			mpcb=mtcp_hash_find(tp->mtcp_loc_token);
 		/*In MPTCP, we take the max delay across all flows,
 		  in order to take into account meta-reordering buffers.*/
 		mtcp_for_each_tp(mpcb,tp_it) {
