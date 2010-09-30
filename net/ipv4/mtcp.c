@@ -1105,6 +1105,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 	/*In all cases, we remove it from the subsock, so copied_seq
 	  must be advanced*/
 	tp->copied_seq=TCP_SKB_CB(skb)->end_seq+fin;
+	tcp_rcv_space_adjust(sk);
 
 	/*Verify that the mapping info has been read*/
 	if(TCP_SKB_CB(skb)->data_len) {
@@ -1654,6 +1655,7 @@ void mtcp_check_eat_old_seg(struct sock *sk, struct sk_buff *skb)
 	BUG_ON(tp->copied_seq!=TCP_SKB_CB(skb)->seq);
 	/*OK, eat the segment, and advance tcp counters*/
 	tp->copied_seq += skb->len;
+	tcp_rcv_space_adjust(sk);
 	if (tp->copied_seq!=TCP_SKB_CB(skb)->end_seq && !th->fin) {
 		printk(KERN_ERR "corrupted seg: seq:%#x,end_seq:%#x,len:%d\n",
 		       TCP_SKB_CB(skb)->seq,TCP_SKB_CB(skb)->end_seq,skb->len);
