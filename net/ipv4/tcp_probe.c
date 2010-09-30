@@ -120,6 +120,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_sock *inet = inet_sk(sk);
 	struct sock *mpcb_sk=tp->mpcb?(struct sock*)tp->mpcb:sk;
+	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
 
 	if (!tp->last_rcv_probe)
 		tp->last_rcv_probe=jiffies;
@@ -157,7 +158,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->srtt = tp->srtt >> 3;
 			p->rcv_nxt=tp->rcv_nxt;
 			p->copied_seq=tp->copied_seq;
-			p->rcv_wnd=tp->rcv_wnd;
+			p->rcv_wnd=mpcb_tp->rcv_wnd;
 			p->rcv_buf=sk->sk_rcvbuf;
 			p->rcv_ssthresh=tp->rcv_ssthresh;
 			p->window_clamp=tp->window_clamp;
@@ -228,6 +229,7 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_sock *inet = inet_sk(sk);
 	struct sock *mpcb_sk=tp->mpcb?(struct sock*)tp->mpcb:sk;
+	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
 
 	if (!tp->last_snd_probe)
 		tp->last_snd_probe=jiffies;
@@ -273,7 +275,7 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			p->srtt = tp->srtt >> 3;
 			p->rcv_nxt=tp->rcv_nxt;
 			p->copied_seq=tp->copied_seq;
-			p->rcv_wnd=tp->rcv_wnd;
+			p->rcv_wnd=mpcb_tp->rcv_wnd;
 			p->rcv_buf=sk->sk_rcvbuf;
 			p->rcv_ssthresh=tp->rcv_ssthresh;
 			p->window_clamp=tp->window_clamp;		
