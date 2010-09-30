@@ -925,6 +925,80 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb)
 	}
 }
 
+/* Clean up the receive buffer for full frames taken by the user,
+ * then send an ACK if necessary.  COPIED is the number of bytes
+ * tcp_recvmsg has given to the user so far, it speeds up the
+ * calculation of whether or not we must ACK for the sake of
+ * a window update.
+ */
+static void mtcp_cleanup_rbuf(struct sock *mpcb_sk, int copied)
+{
+	struct tcp_sock *mpcb_tp = tcp_sk(mpcb_sk);
+	struct multipath_pcb *mpcb=mpcb_tp->mpcb;
+	struct sock *sk;
+	struct tcp_sock *tp;
+	int time_to_ack = 0;
+
+#if TCP_DEBUG
+	struct sk_buff *skb = skb_peek(&sk->sk_receive_queue);
+
+	WARN_ON(skb && !before(tp->copied_seq, TCP_SKB_CB(skb)->end_seq));
+#endif
+	
+	mtcp_for_each_sk(mpcb,sk,tp) {
+		const struct inet_connection_sock *icsk = inet_csk(sk);
+		if (!inet_csk_ack_scheduled(sk))
+			continue;
+		   /* Delayed ACKs frequently hit locked sockets during bulk
+		    * receive. */
+		if (icsk->icsk_ack.blocked ||
+		    /* Once-per-two-segments ACK was not sent by tcp_input.c */
+		    tp->rcv_nxt - tp->rcv_wup > icsk->icsk_ack.rcv_mss ||
+		    /*
+		     * If this read emptied read buffer, we send ACK, if
+		     * connection is not bidirectional, user drained
+		     * receive buffer and there was a small segment
+		     * in queue.
+		     */
+		    (copied > 0 &&
+		     ((icsk->icsk_ack.pending & ICSK_ACK_PUSHED2) ||
+		      ((icsk->icsk_ack.pending & ICSK_ACK_PUSHED) &&
+		       !icsk->icsk_ack.pingpong)) &&
+		      !atomic_read(&mpcb_sk->sk_rmem_alloc)))
+			time_to_ack = 1;
+	}
+
+	/* We send an ACK if we can now advertise a non-zero window
+	 * which has been raised "significantly".
+	 *
+	 * Even if window raised up to infinity, do not send window open ACK
+	 * in states, where we will not receive more. It is useless.
+	 */
+	if (copied > 0 && !time_to_ack && 
+	    !(mpcb_sk->sk_shutdown & RCV_SHUTDOWN)) {
+		__u32 rcv_window_now = tcp_receive_window(mpcb_tp);
+
+		/* Optimize, __tcp_select_window() is not cheap. */
+		if (2*rcv_window_now <= mpcb_tp->window_clamp) {
+			__u32 new_window = __tcp_select_window(mpcb->master_sk);
+
+			/* Send ACK now, if this read freed lots of space
+			 * in our buffer. Certainly, new_window is new window.
+			 * We can advertise it now, if it is not less than 
+			 * current one.
+			 * "Lots" means "at least twice" here.
+			 */
+			if (new_window && new_window >= 2 * rcv_window_now)
+				time_to_ack = 1;
+		}
+	}
+	/*If we need to send an explicit window update, we need to choose
+	  some subflow to send it. At the moment, we use the master subsock 
+	  for this.*/
+	if (time_to_ack)
+		tcp_send_ack(mpcb->master_sk);
+}
+
 /*Eats data from the meta-receive queue*/
 int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg, 
 			 size_t *len, u32 *data_seq, int *copied, int flags)
@@ -1002,6 +1076,9 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 				BUG();
 		}				
 	} while (*len>0);
+	/*This checks whether an explicit window update is needed to unblock
+	  the receiver*/
+	mtcp_cleanup_rbuf(mpcb_sk,*copied);
 	return 0;
 }
 
