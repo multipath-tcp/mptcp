@@ -938,12 +938,6 @@ static void mtcp_cleanup_rbuf(struct sock *mpcb_sk, int copied)
 	struct sock *sk;
 	struct tcp_sock *tp;
 	int time_to_ack = 0;
-
-#if TCP_DEBUG
-	struct sk_buff *skb = skb_peek(&sk->sk_receive_queue);
-
-	WARN_ON(skb && !before(tp->copied_seq, TCP_SKB_CB(skb)->end_seq));
-#endif
 	
 	mtcp_for_each_sk(mpcb,sk,tp) {
 		const struct inet_connection_sock *icsk = inet_csk(sk);
