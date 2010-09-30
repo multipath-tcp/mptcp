@@ -119,6 +119,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_sock *inet = inet_sk(sk);
+	struct sock *mpcb_sk=tp->mpcb?(struct sock*)tp->mpcb:sk;
 
 	if (!tp->last_rcv_probe)
 		tp->last_rcv_probe=jiffies;
@@ -167,7 +168,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->mss_cache=tp->mss_cache;
 			p->snd_buf=sk->sk_sndbuf;
 			p->wmem_queued=sk->sk_wmem_queued;
-			p->rmem_alloc=atomic_read(&sk->sk_rmem_alloc);
+			p->rmem_alloc=atomic_read(&mpcb_sk->sk_rmem_alloc);
 			p->dsn=TCP_SKB_CB(skb)->data_seq;
 			p->mtcp_snduna=(tp->mpcb)?tp->mpcb->tp.snd_una:0;
 			p->drs_seq=tp->rcvq_space.seq;
@@ -226,6 +227,7 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_sock *inet = inet_sk(sk);
+	struct sock *mpcb_sk=tp->mpcb?(struct sock*)tp->mpcb:sk;
 
 	if (!tp->last_snd_probe)
 		tp->last_snd_probe=jiffies;
@@ -282,7 +284,7 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			p->mss_cache=tp->mss_cache;
 			p->snd_buf=sk->sk_sndbuf;
 			p->wmem_queued=sk->sk_wmem_queued;
-			p->rmem_alloc=atomic_read(&sk->sk_rmem_alloc);
+			p->rmem_alloc=atomic_read(&mpcb_sk->sk_rmem_alloc);
 			p->dsn=TCP_SKB_CB(skb)->data_seq;
 			p->mtcp_snduna=(tp->mpcb)?tp->mpcb->tp.snd_una:0;
 			p->drs_seq=tp->rcvq_space.seq;

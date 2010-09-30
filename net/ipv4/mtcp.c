@@ -853,7 +853,7 @@ static int mtcp_rcv_check_subflows(struct multipath_pcb *mpcb, int flags)
 	/*We may have received data on a newly created
 	  subsocket, check if the list has grown*/
 	if (cnt_subflows!=mpcb->cnt_subflows) {
-		/*We must ensure  that for each new tp, 
+		/*We must ensure that for each new tp, 
 		  the seq pointer is correctly set. In 
 		  particular we'll get a segfault if
 		  the pointer is NULL*/
