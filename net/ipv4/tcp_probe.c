@@ -85,6 +85,7 @@ struct tcp_log {
 	u32     drs_seq;
 	u32     drs_time;
 	int     bw_est;
+	char    mpcb_def;
 };
 
 static struct {
@@ -167,7 +168,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->rtt_est=tp->rcv_rtt_est.rtt;
 			p->in_flight=tp->packets_out;
 			p->mss_cache=tp->mss_cache;
-			p->snd_buf=sk->sk_sndbuf;
+			p->snd_buf=mpcb_sk->sk_sndbuf;
 			p->wmem_queued=mpcb_sk->sk_wmem_queued;
 			p->rmem_alloc=atomic_read(&mpcb_sk->sk_rmem_alloc);
 			p->dsn=TCP_SKB_CB(skb)->data_seq;
@@ -175,6 +176,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->drs_seq=tp->rcvq_space.seq;
 			p->drs_time=tp->rcvq_space.time;
 			p->bw_est=tp->cur_bw_est;
+			p->mpcb_def=(tp->mpcb);
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
 		tcp_probe.lastcwnd = tp->snd_cwnd;
@@ -292,6 +294,7 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			p->drs_seq=tp->rcvq_space.seq;
 			p->drs_time=tp->rcvq_space.time;
 			p->bw_est=tp->cur_bw_est;
+			p->mpcb_def=(tp->mpcb);
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
 		tcp_probe.lastcwnd = tp->snd_cwnd;
@@ -360,7 +363,7 @@ static int tcpprobe_sprint(char *tbuf, int n)
 	return snprintf(tbuf, n,
 			"%lu.%09lu " NIPQUAD_FMT ":%u " NIPQUAD_FMT ":%u"
 			" %d %d %#x %#x %u %u %u %u %#x %#x %u %u %u %u %d"
-			" %d %u %u %u %d %d %d %#x %#x %#x %#x %d\n",
+			" %d %u %u %u %d %d %d %#x %#x %#x %#x %d %d\n",
 			(unsigned long) tv.tv_sec,
 			(unsigned long) tv.tv_nsec,
 			NIPQUAD(p->saddr), ntohs(p->sport),
@@ -373,7 +376,7 @@ static int tcpprobe_sprint(char *tbuf, int n)
 			p->mss_cache,
 			p->snd_buf,p->wmem_queued, p->rmem_alloc, p->dsn,
 			p->mtcp_snduna,p->drs_seq,p->drs_time*1000/HZ,
-			((p->bw_est<<3)/1000)*HZ);
+			((p->bw_est<<3)/1000)*HZ,p->mpcb_def);
 }
 
 static ssize_t tcpprobe_read(struct file *file, char __user *buf,
