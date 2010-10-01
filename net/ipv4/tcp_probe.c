@@ -176,7 +176,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->drs_seq=tp->rcvq_space.seq;
 			p->drs_time=tp->rcvq_space.time;
 			p->bw_est=tp->cur_bw_est;
-			p->mpcb_def=(tp->mpcb);
+			p->mpcb_def=(tp->mpcb==NULL);
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
 		tcp_probe.lastcwnd = tp->snd_cwnd;
@@ -294,7 +294,7 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			p->drs_seq=tp->rcvq_space.seq;
 			p->drs_time=tp->rcvq_space.time;
 			p->bw_est=tp->cur_bw_est;
-			p->mpcb_def=(tp->mpcb);
+			p->mpcb_def=(tp->mpcb==NULL);
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
 		tcp_probe.lastcwnd = tp->snd_cwnd;
