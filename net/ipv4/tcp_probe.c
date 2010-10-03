@@ -123,10 +123,10 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	struct sock *mpcb_sk=tp->mpcb?(struct sock*)tp->mpcb:sk;
 	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
 
-	if (!tp->last_rcv_probe)
+/*	if (!tp->last_rcv_probe)
 		tp->last_rcv_probe=jiffies;
 	else if (jiffies-tp->last_rcv_probe<HZ/10)
-		goto out;
+	goto out;*/
 	
 	tp->last_rcv_probe=jiffies;
 
@@ -184,7 +184,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 
 		wake_up(&tcp_probe.wait);
 	}
-out:
+//out:
 #ifdef CONFIG_KPROBES
 	jprobe_return();
 #endif
@@ -233,10 +233,10 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	struct sock *mpcb_sk=tp->mpcb?(struct sock*)tp->mpcb:sk;
 	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
 
-	if (!tp->last_snd_probe)
+/*	if (!tp->last_snd_probe)
 		tp->last_snd_probe=jiffies;
 	else if (jiffies-tp->last_snd_probe<HZ/10)
-		goto out;
+	goto out;*/
 	
 	tp->last_snd_probe=jiffies;
 
@@ -307,7 +307,7 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		wake_up(&tcp_probe.wait);
 	}
 
-out:
+//out:
 #ifdef CONFIG_KPROBES
 	jprobe_return();
 #endif

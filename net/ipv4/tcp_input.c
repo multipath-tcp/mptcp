@@ -2882,15 +2882,11 @@ static void tcp_rearm_rto(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	if (!tp->packets_out) {
-		tcpprobe_logmsg(sk,"tp %d, stopping rto timer",tp->path_index);
+	if (!tp->packets_out)
 		inet_csk_clear_xmit_timer(sk, ICSK_TIME_RETRANS);
-	} else {
-		tcpprobe_logmsg(sk,"tp %d, restarting rto timer with rto %d",
-				 tp->path_index,inet_csk(sk)->icsk_rto*1000/HZ);
+	else
 		inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
 					  inet_csk(sk)->icsk_rto, TCP_RTO_MAX);
-	}
 }
 
 /* If we get here, the whole TSO packet has not been acked. */
@@ -3463,9 +3459,6 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 	int prior_packets;
 	int frto_cwnd = 0;
 
-	tcpprobe_logmsg(sk,"tp %d, rcv ack %#x", tp->path_index,
-			ack);
-
 	check_pkts_out(sk);
 
 	/* If the ack is newer than sent or older than previous acks
@@ -3889,14 +3882,7 @@ static inline void tcp_replace_ts_recent(struct tcp_sock *tp, u32 seq)
 		if ((s32)(tp->rx_opt.rcv_tsval - tp->rx_opt.ts_recent) >= 0 ||
 		   get_seconds() >= tp->rx_opt.ts_recent_stamp + TCP_PAWS_24DAYS)
 			tcp_store_ts_recent(tp);
-		tcpprobe_logmsg((struct sock*)tp,"pi %d:ts updated to %x, "
-				"seq is %#x, rcv_wup:%#x",tp->path_index,
-				tp->rx_opt.ts_recent,
-				seq,tp->rcv_wup);
 	}
-	tcpprobe_logmsg((struct sock*)tp,"pi %d:no ts update, "
-			"seq is %#x, rcv_wup:%#x",tp->path_index,
-			seq,tp->rcv_wup);
 }
 
 /* Sorry, PAWS as specified is broken wrt. pure-ACKs -DaveM
