@@ -286,7 +286,7 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			p->rtt_est=tp->rcv_rtt_est.rtt;
 			p->in_flight=tp->packets_out;
 			p->mss_cache=tp->mss_cache;
-			p->snd_buf=sk->sk_sndbuf;
+			p->snd_buf=mpcb_sk->sk_sndbuf;
 			p->wmem_queued=mpcb_sk->sk_wmem_queued;
 			p->rmem_alloc=atomic_read(&mpcb_sk->sk_rmem_alloc);
 			p->dsn=TCP_SKB_CB(skb)->data_seq;
