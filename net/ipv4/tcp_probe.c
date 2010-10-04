@@ -191,6 +191,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	return 0;
 }
 
+#ifndef CONFIG_KPROBES
 static int logmsg(struct sock *sk,char *fmt, va_list args)
 {
 	const struct inet_sock *inet = inet_sk(sk);
@@ -220,6 +221,7 @@ static int logmsg(struct sock *sk,char *fmt, va_list args)
 	}
 	return 0;
 }
+#endif
 
 /*
  * Hook inserted to be called before each packet transmission.
