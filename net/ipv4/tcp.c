@@ -1011,11 +1011,9 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 	/* Wait for a connection to finish. */
 	if ((1 << sk->sk_state) & ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT)) {
-		printk(KERN_ERR "doing sk_stream_wait_connect\n");
 		if ((err = sk_stream_wait_connect(
 			     is_meta_sk(sk)?tp->mpcb->master_sk:sk, 
 			     &timeo)) != 0) {
-			printk(KERN_ERR "err in sk_stream_wait_connect\n");
 			goto out_err;
 		}
 	}
