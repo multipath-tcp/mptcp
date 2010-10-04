@@ -1889,6 +1889,10 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 				tcp_unlink_write_queue(subskb,subsk);
 				subtp->write_seq-=subskb->len;
 				mtcp_wmem_free_skb(subsk, subskb);
+				/*If we entered CWR, just try to give
+				  that same skb to another subflow,
+				  by querying again the scheduler*/
+				if (err>0) continue;
 			}
 			break;
 		}
@@ -1960,11 +1964,14 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	int reinject;
-	struct sk_buff *skb = mtcp_next_segment(sk,&reinject);
+	struct sk_buff *skb;
 	unsigned int tso_segs, cwnd_quota;
 	struct sock *subsk;
 	struct tcp_sock *subtp;
+	int err;
 
+again:
+	skb=mtcp_next_segment(sk,&reinject);
 	BUG_ON(!skb);
 
 	while (reinject && !after(TCP_SKB_CB(skb)->end_data_seq,
@@ -2044,8 +2051,8 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 
 		BUG_ON(tcp_send_head(sk)!=skb);
 
-		if (likely(!tcp_transmit_skb(subsk, subskb, 1, 
-					     subsk->sk_allocation))) {
+		if (likely(!(err=tcp_transmit_skb(subsk, subskb, 1, 
+						  subsk->sk_allocation)))) {
 			tcp_event_new_data_sent(subsk, subskb);
 			BUG_ON(tcp_send_head(subsk));
 			if (sk!=subsk && !reinject)
@@ -2058,6 +2065,8 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 			tcp_unlink_write_queue(subskb,subsk);
 			subtp->write_seq-=subskb->len;
 			mtcp_wmem_free_skb(subsk, subskb);
+			if (err>0)
+				goto again;
 		}
 	}
 }
