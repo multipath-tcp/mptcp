@@ -455,6 +455,7 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 	for (i=0;i<mopt->num_addr4;i++) {
 		if (mopt->addr4[i].addr.s_addr==
 		    addr->s_addr) {
+			printk (KERN_ERR "%s, update id, because s_addr already present\n",__FUNCTION__);
 			mopt->addr4[i].id=id; /*update the 
 						id*/
 			return 0;
@@ -469,6 +470,8 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 		addr->s_addr;
 	mopt->addr4[num_addr4].id=id;
 	mopt->num_addr4++;
+
+	printk (KERN_ERR "%s, Added address " NIPQUAD_FMT " id: %d \n",__FUNCTION__, NIPQUAD(addr->s_addr), id);
 	return 0;
 }
 
@@ -1231,6 +1234,8 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 		p=find_path_mapping4((struct in_addr*)&ireq->loc_addr,
 				     (struct in_addr*)&ireq->rmt_addr,
 				     mpcb);
+		printk (KERN_ERR "%s, ireq->loc_addr " NIPQUAD_FMT "\n",__FUNCTION__, NIPQUAD(ireq->loc_addr));
+		printk (KERN_ERR "%s, ireq->rmt_addr " NIPQUAD_FMT "\n",__FUNCTION__, NIPQUAD(ireq->rmt_addr));
 		if (unlikely(!p)) {
 			/*It is possible that we don't find the mapping,
 			  if we have not yet updated our set of local
@@ -1244,10 +1249,6 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 			p=find_path_mapping4((struct in_addr*)&ireq->loc_addr,
 					     (struct in_addr*)&ireq->rmt_addr,
 					     mpcb);
-			if (!p) {
-				printk(KERN_ERR "%s: dumpstack", __FUNCTION__);
-				dump_stack();
-			}
 			BUG_ON(!p);
 		}
 
