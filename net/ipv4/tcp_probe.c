@@ -203,9 +203,11 @@ static int logmsg(struct sock *sk,char *fmt, va_list args)
 	    && ((ntohl(inet->saddr) & 0xffff0000)!=0xc0a80000) /*addr != 
 								 192.168/16*/
 	    && ((ntohl(inet->daddr) & 0xffff0000)!=0xc0a80000)) {
-		sprintf(msg,"LOG:%lu.%09lu ",(unsigned long) tv.tv_sec,
+		int len;
+		snprintf(msg,500,"LOG:%lu.%09lu ",(unsigned long) tv.tv_sec,
 			(unsigned long) tv.tv_nsec);
-		vsnprintf(msg+strlen(msg),INT_MAX,fmt,args);
+		len=strlen(msg);
+		vsnprintf(msg+len,500-len,fmt,args);
 
 		spin_lock_bh(&tcp_probe.lock);
 		/* If log fills, just silently drop */
