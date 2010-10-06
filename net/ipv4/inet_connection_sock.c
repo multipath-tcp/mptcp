@@ -26,15 +26,6 @@
 #include <net/tcp.h>
 #include <net/mtcp.h>
 
-#undef DEBUG_MTCP /*set to define if you want debugging messages*/
-
-#undef PDEBUG
-#ifdef DEBUG_MTCP
-#define PDEBUG(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
-#else
-#define PDEBUG(fmt,args...)
-#endif /*DEBUG_MTCP*/
-
 #ifdef INET_CSK_DEBUG
 const char inet_csk_timer_bug_msg[] = "inet_csk BUG: unknown timer value\n";
 EXPORT_SYMBOL(inet_csk_timer_bug_msg);
@@ -591,7 +582,7 @@ void inet_csk_destroy_sock(struct sock *sk)
 {	
 #ifdef CONFIG_MTCP
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
-	PDEBUG("Removing subsocket %p\n",sk);
+	mtcp_debug("Removing subsocket %p\n",sk);
 	BUG_ON(!mpcb && !tcp_sk(sk)->pending);
 	/*mpcb is NULL if the socket is the child subsocket
 	  waiting in the accept queue of the mpcb.

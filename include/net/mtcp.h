@@ -34,6 +34,13 @@
 #include <net/request_sock.h>
 #include <net/mtcp_pm.h>
 
+#ifdef CONFIG_MTCP_DEBUG
+  # define mtcp_debug(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
+#else
+  # define mtcp_debug(fmt,args...)
+#endif
+
+
 /*Default MSS for MPTCP
   All subflows will be using that MSS. If any subflow has a lower MSS, it is
   just not used.*/

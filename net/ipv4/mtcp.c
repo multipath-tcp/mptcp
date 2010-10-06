@@ -41,15 +41,6 @@
 #include <linux/sysctl.h>
 #endif
 
-#undef DEBUG_MTCP /*set to define if you want debugging messages*/
-
-#undef PDEBUG
-#ifdef DEBUG_MTCP
-#define PDEBUG(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
-#else
-#define PDEBUG(fmt,args...)
-#endif /*DEBUG_MTCP*/
-
 /*=====================================*/
 /*DEBUGGING*/
 
@@ -155,7 +146,7 @@ static void mtcp_def_readable(struct sock *sk, int len)
 	
 	BUG_ON(!mpcb);
 
-	PDEBUG("Waking up master subsock...\n");
+	mtcp_debug("Waking up master subsock...\n");
 	
 	read_lock(&msk->sk_callback_lock);
 	if (msk->sk_sleep && waitqueue_active(msk->sk_sleep))
@@ -351,7 +342,7 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			if (retval<0 && retval != -EINPROGRESS) 
 				goto fail_connect;
 			
-			PDEBUG("New MTCP subsocket created, pi %d\n",i+1);
+			mtcp_debug("New MTCP subsocket created, pi %d\n",i+1);
 		}
 	}
 
@@ -373,19 +364,19 @@ static int netevent_callback(struct notifier_block *self, unsigned long event,
 	struct multipath_pcb *mpcb;
 	struct sock *mpcb_sk;
 	struct ulid_pair *up;
-	PDEBUG("Received path update event\n");
+	mtcp_debug("Received path update event\n");
 	switch(event) {
 	case NETEVENT_PATH_UPDATEV6:
 		mpcb=container_of(self,struct multipath_pcb,nb);
 		mpcb_sk=(struct sock*)mpcb;
 		up=ctx;
-		PDEBUG("mpcb is %p\n",mpcb);
+		mtcp_debug("mpcb is %p\n",mpcb);
 		if (mpcb_sk->sk_family!=AF_INET6) break;
 		
-		PDEBUG("ev loc ulid:" NIP6_FMT "\n",NIP6(*up->local));
-		PDEBUG("ev loc ulid:" NIP6_FMT "\n",NIP6(*up->remote));
-		PDEBUG("ev loc ulid:" NIP6_FMT "\n",NIP6(*(struct in6_addr*)mpcb->local_ulid.a6));
-		PDEBUG("ev loc ulid:" NIP6_FMT "\n",NIP6(*(struct in6_addr*)mpcb->remote_ulid.a6));
+		mtcp_debug("ev loc ulid:" NIP6_FMT "\n",NIP6(*up->local));
+		mtcp_debug("ev loc ulid:" NIP6_FMT "\n",NIP6(*up->remote));
+		mtcp_debug("ev loc ulid:" NIP6_FMT "\n",NIP6(*(struct in6_addr*)mpcb->local_ulid.a6));
+		mtcp_debug("ev loc ulid:" NIP6_FMT "\n",NIP6(*(struct in6_addr*)mpcb->remote_ulid.a6));
 		if (ipv6_addr_equal(up->local,
 				    (struct in6_addr*)&mpcb->local_ulid) &&
 		    ipv6_addr_equal(up->remote,
@@ -406,7 +397,7 @@ void mtcp_ask_update(struct sock *sk)
 	struct ulid_pair up;
 	struct tcp_sock *tp=tcp_sk(sk);
 
-	PDEBUG("Entering %s\n",__FUNCTION__); /*TODEL*/
+	mtcp_debug("Entering %s\n",__FUNCTION__); /*TODEL*/
 
 	if (!is_master_sk(tp)) return;
 	/*Currently we only support AF_INET6*/
@@ -585,7 +576,7 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 	local_bh_enable();
 	mutex_unlock(&mpcb->mutex);
 	
-	PDEBUG("Added subsocket with pi %d, cnt_subflows now %d\n",
+	mtcp_debug("Added subsocket with pi %d, cnt_subflows now %d\n",
 	       tp->path_index,mpcb->cnt_subflows);
 }
 
@@ -638,7 +629,7 @@ void mtcp_update_metasocket(struct sock *sk)
 	mpcb=mpcb_from_tcpsock(tp);
 	mpcb_sk=(struct sock*)mpcb;
 
-	PDEBUG("Entering %s, mpcb %p\n",__FUNCTION__,mpcb);
+	mtcp_debug("Entering %s, mpcb %p\n",__FUNCTION__,mpcb);
 
 	mpcb_sk->sk_family=sk->sk_family;
 	mpcb->remote_port=inet_sk(sk)->dport;
@@ -655,8 +646,8 @@ void mtcp_update_metasocket(struct sock *sk)
 		ipv6_addr_copy((struct in6_addr*)&mpcb->local_ulid,
 			       &inet6_sk(sk)->saddr);
 
-		PDEBUG("mum loc ulid:" NIP6_FMT "\n",NIP6(*(struct in6_addr*)mpcb->local_ulid.a6));
-		PDEBUG("mum loc ulid:" NIP6_FMT "\n",NIP6(*(struct in6_addr*)mpcb->remote_ulid.a6));
+		mtcp_debug("mum loc ulid:" NIP6_FMT "\n",NIP6(*(struct in6_addr*)mpcb->local_ulid.a6));
+		mtcp_debug("mum loc ulid:" NIP6_FMT "\n",NIP6(*(struct in6_addr*)mpcb->remote_ulid.a6));
 
 		break;
 	}
@@ -789,8 +780,8 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		return copied;
 	}
 
-	PDEBUG(KERN_ERR "Leaving %s, copied %d\n",
-	       __FUNCTION__, (int) copied);
+	mtcp_debug(KERN_ERR "Leaving %s, copied %d\n",
+	           __FUNCTION__, (int) copied);
 	return copied;
 }
 
@@ -913,10 +904,10 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb)
 			/*Should not happen in the current design*/
 			BUG();
 		}
-		PDEBUG("ofo delivery : "
-		       "nxt_data_seq %X data_seq %X - %X, enqueue is %d\n",
-		       *data_seq, TCP_SKB_CB(skb)->data_seq,
-		       TCP_SKB_CB(skb)->end_data_seq,enqueue);
+		mtcp_debug("ofo delivery : "
+		           "data_seq %X - %X\n",
+		           TCP_SKB_CB(skb)->data_seq,
+		           TCP_SKB_CB(skb)->end_data_seq);
 		
 		__skb_unlink(skb, &mpcb_tp->out_of_order_queue);
 
@@ -1122,7 +1113,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 		
 		if (!skb_peek(&mpcb_tp->out_of_order_queue)) {
 			/* Initial out of order segment */
-			PDEBUG("First meta-ofo segment\n");
+			mtcp_debug("First meta-ofo segment\n");
 			__skb_queue_head(&mpcb_tp->out_of_order_queue, skb);
 			sock_hold(skb->sk);
 			return MTCP_QUEUED;

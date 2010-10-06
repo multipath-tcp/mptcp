@@ -46,9 +46,6 @@
 
 #include <linux/seq_file.h>
 
-#undef PDEBUG
-#define PDEBUG(fmt,args...)
-
 extern struct inet_hashinfo tcp_hashinfo;
 
 extern atomic_t tcp_orphan_count;
