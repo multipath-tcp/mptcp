@@ -1231,6 +1231,7 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 		p=find_path_mapping4((struct in_addr*)&ireq->loc_addr,
 				     (struct in_addr*)&ireq->rmt_addr,
 				     mpcb);
+
 		if (unlikely(!p)) {
 			/*It is possible that we don't find the mapping,
 			  if we have not yet updated our set of local
@@ -1244,10 +1245,6 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 			p=find_path_mapping4((struct in_addr*)&ireq->loc_addr,
 					     (struct in_addr*)&ireq->rmt_addr,
 					     mpcb);
-			if (!p) {
-				printk(KERN_ERR "%s: dumpstack", __FUNCTION__);
-				dump_stack();
-			}
 			BUG_ON(!p);
 		}
 

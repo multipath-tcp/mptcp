@@ -40,15 +40,6 @@
 #include <linux/module.h>
 #include <linux/tcp_probe.h>
 
-#undef DEBUG_TCP /*set to define if you want debugging messages*/
-
-#undef PDEBUG
-#ifdef DEBUG_TCP
-#define PDEBUG(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
-#else
-#define PDEBUG(fmt,args...)
-#endif /*DEBUG_TCP*/
-
 /* People can turn this off for buggy TCP's found in printers etc. */
 int sysctl_tcp_retrans_collapse __read_mostly = 1;
 
@@ -948,7 +939,7 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 
 	if (likely(err <= 0)) {
 		if (err<0) 
-			PDEBUG("%s:error %d\n",__FUNCTION__,err);
+			mtcp_debug("%s:error %d\n",__FUNCTION__,err);
 		return err;
 	}
 
@@ -1536,7 +1527,7 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	int nlen = skb->len - len;
 	u16 flags;
 
-	PDEBUG("Entering %s\n",__FUNCTION__);
+	mtcp_debug("Entering %s\n",__FUNCTION__);
 
 	BUG_ON(len==0); /*This would create an empty segment*/
 
@@ -2022,7 +2013,7 @@ again:
 
 		if (skb->len > limit &&
 		    unlikely(tso_fragment(sk, skb, limit, mss_now))) {
-			PDEBUG("NOT SENDING TCP SEGMENT\n");
+			mtcp_debug("NOT SENDING TCP SEGMENT\n");
 			return;
 		}
 

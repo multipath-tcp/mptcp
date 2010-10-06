@@ -38,14 +38,12 @@
 
 
 /*Macro for activation/deactivation of debug messages*/
-
-#undef PDEBUG
+# undef PDEBUG
 #ifdef CONFIG_IPV6_SHIM6_DEBUG
-# define PDEBUG(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
+  # define PDEBUG(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
 #else
-# define PDEBUG(fmt,args...)
+  # define PDEBUG(fmt,args...)
 #endif
-
 
 #define MAX_SHIM6_HEADER (24+sizeof(struct ipv6hdr)+MAX_HEADER)
 

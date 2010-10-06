@@ -74,15 +74,6 @@
 #include <linux/tcp_probe.h>
 #include <linux/completion.h>
 
-#undef DEBUG_TCP_INPUT /*set to define if you want debugging messages*/
-
-#undef PDEBUG
-#ifdef DEBUG_TCP_INPUT
-#define PDEBUG(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
-#else
-#define PDEBUG(fmt,args...)
-#endif /*DEBUG_TCP_INPUT*/
-
 int sysctl_tcp_timestamps __read_mostly = 1;
 int sysctl_tcp_window_scaling __read_mostly = 1;
 int sysctl_tcp_sack __read_mostly = 1;
@@ -3688,11 +3679,11 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 #ifdef CONFIG_MTCP
 			case TCPOPT_MPC:
 				if (opsize!=TCPOLEN_MPC) {
-					PDEBUG("multipath opt:bad option "
-					       "size\n");
+					mtcp_debug("multipath opt:bad option "
+					           "size\n");
 					break;
 				}
-				PDEBUG("recvd multipath opt\n");
+				mtcp_debug("recvd multipath opt\n");
 				opt_rx->saw_mpc=1;
 				if (mopt)
 					mopt->list_rcvd=1;
@@ -3731,8 +3722,8 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 #endif /*CONFIG_MTCP_PM*/				
 			case TCPOPT_DSN:
 				if (opsize!=TCPOLEN_DSN) {
-					PDEBUG("dataseq opt:bad option "
-					       "size\n");
+					mtcp_debug("dataseq opt:bad option "
+					           "size\n");
 					break;
 				}
 				
@@ -3751,7 +3742,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				break;
 			case TCPOPT_DATA_ACK:
 				if (opsize!=TCPOLEN_DATA_ACK) {
-					PDEBUG("data_ack opt:bad option "
+					mtcp_debug("data_ack opt:bad option "
 					       "size\n");
 					break;
 				}
@@ -3808,7 +3799,7 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 	}
 	mpcb = mpcb_from_tcpsock(tp);
 	if (!mpcb) {
-		PDEBUG("mpcb null in fast parse options\n");
+		mtcp_debug("mpcb null in fast parse options\n");
 		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
 		release_mpcb=1;
 	}
@@ -5258,7 +5249,7 @@ static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 	int chunk = skb->len - hlen;
 	int err;
 
-	PDEBUG("Entering %s\n",__FUNCTION__);
+	mtcp_debug("Entering %s\n",__FUNCTION__);
 
 	local_bh_enable();
 	if (skb_csum_unnecessary(skb))
@@ -5470,10 +5461,6 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	int res;
 	int mtcp_eaten=0;
 	
-	PDEBUG("%s:pi %d - seq is %x,sock is %p\n",
-	       __FUNCTION__,skb->path_index,TCP_SKB_CB(skb)->seq,
-	       sk);
-
 	tcpprobe_rcv_established(sk,skb,th,len);
 
 	/*
@@ -5645,7 +5632,7 @@ no_ack:
 			if (eaten || mtcp_eaten)
 				__kfree_skb(skb);
 			else {
-				PDEBUG("Will wake the master sk up");
+				mtcp_debug("Will wake the master sk up");
 				mpcb->master_sk->sk_data_ready(sk, 0);
 			}
 			return 0;

@@ -278,12 +278,9 @@
 
 #undef DEBUG_TCP /*set to define if you want debugging messages*/
 
-#undef PDEBUG
 #ifdef DEBUG_TCP
-#define PDEBUG(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
 #define PDEBUG_SEND(fmt,args...) printk( KERN_ERR __FILE__ ": " fmt,##args)
 #else
-#define PDEBUG(fmt,args...)
 #define PDEBUG_SEND(fmt,args...)
 #endif /*DEBUG_TCP*/
 
@@ -1280,7 +1277,7 @@ static int tcp_recv_urg(struct sock *sk, long timeo,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	PDEBUG("Receiving urgent data\n");
+	mtcp_debug("Receiving urgent data\n");
 
 	/* No URG data to read. */
 	if (sock_flag(sk, SOCK_URGINLINE) || !tp->urg_data ||
@@ -1391,8 +1388,8 @@ static void tcp_prequeue_process(struct sock *sk)
 	struct sk_buff *skb;
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	PDEBUG("Entering %s for pi %d\n",__FUNCTION__,
-	       tp->path_index);
+	mtcp_debug("Entering %s for pi %d\n",__FUNCTION__,
+	           tp->path_index);
 
 	NET_INC_STATS_USER(sock_net(sk), LINUX_MIB_TCPPREQUEUED);
 
@@ -2169,24 +2166,24 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 
 		if (user_recv) {
 			int chunk;
-			PDEBUG("At line %d\n",__LINE__);
+			mtcp_debug("At line %d\n",__LINE__);
 			
 			/* __ Restore normal policy in scheduler __ */
 
 			if ((chunk = len - mpcb->ucopy.len) != 0) {		
 				NET_ADD_STATS_USER(sock_net(master_sk), LINUX_MIB_TCPDIRECTCOPYFROMBACKLOG, chunk);
 				/*TODEL*/
-				PDEBUG("backlog copy: %d\n",chunk);
+				mtcp_debug("backlog copy: %d\n",chunk);
 				len -= chunk;
 				copied += chunk;
 			}
 			
 		do_prequeue:			
 			mtcp_for_each_tp(mpcb,tp) {
-				PDEBUG("Checking prequeue for pi %d,"
-				       "prequeue len:%d\n",
-				       tp->path_index,
-				       skb_queue_len(&tp->ucopy.prequeue));
+				mtcp_debug("Checking prequeue for pi %d,"
+				           "prequeue len:%d\n",
+				           tp->path_index,
+				           skb_queue_len(&tp->ucopy.prequeue));
 				if ((empty_prequeues ||
 				     (tp->rcv_nxt == tp->copied_seq)) &&
 				    !skb_queue_empty(
@@ -2197,11 +2194,11 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 					
 					if ((chunk = len - mpcb->ucopy.len)
 					    != 0) {
-						PDEBUG("prequeue "
-						       "copy :%d, len %d,"
-						       "ucopy.len %d\n",
-						       chunk,(int)len,
-						       mpcb->ucopy.len);/*TODEL*/
+						mtcp_debug("prequeue "
+						           "copy :%d, len %d,"
+						           "ucopy.len %d\n",
+						           chunk,(int)len,
+						           mpcb->ucopy.len);/*TODEL*/
 						NET_ADD_STATS_USER(
 							sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
 						BUG_ON(chunk<0);
@@ -2244,7 +2241,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	}
 	else clear_bit(MPCB_FLAG_PENDING_DATA,&mpcb->flags);
 	
-	PDEBUG("At line %d\n",__LINE__);
 	if (user_recv) {
 		mtcp_for_each_sk(mpcb,sk,tp)
 			if (!skb_queue_empty(&tp->ucopy.prequeue)) {
@@ -2257,8 +2253,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				if (copied > 0 && (chunk = len - 
 						   mpcb->ucopy.len) != 0) {
 					NET_ADD_STATS_USER(sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
-					PDEBUG("prequeue2 copy :%d\n",
-					       chunk); /*TODEL*/
+					mtcp_debug("prequeue2 copy :%d\n",
+					           chunk); /*TODEL*/
 					len -= chunk;
 					copied += chunk;
 				}
@@ -2281,7 +2277,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		release_sock(sk);
 	}
 	mutex_unlock(&mpcb->mutex);
-	PDEBUG("Leaving %s, copied %d\n",__FUNCTION__,copied);
 
 	if (mtcp_test_any_sk(mpcb,sk,sk->sk_shutdown & RCV_SHUTDOWN)) {
 		printk(KERN_ERR "at least one subflow shut down\n");
@@ -2291,14 +2286,14 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 out:
 	mtcp_for_each_sk(mpcb,sk,tp) release_sock(sk);
 	mutex_unlock(&mpcb->mutex);
-	PDEBUG("At line %d\n",__LINE__);
+	mtcp_debug("At line %d\n",__LINE__);
 	return err;
 
 recv_urg:
 	/*At the moment we only allow receiving urgent data on the master
 	  subsocket. Makes sense ?*/
 	err = tcp_recv_urg(master_sk, timeo, msg, len, flags, addr_len);
-	PDEBUG("At line %d\n",__LINE__);
+	mtcp_debug("At line %d\n",__LINE__);
 	goto out;
 }
 
@@ -2428,7 +2423,7 @@ void tcp_close(struct sock *sk, long timeout)
 #ifdef CONFIG_MTCP
 	/*if this is the master subsocket, we must first close the
 	  slave subsockets*/
-	PDEBUG("%s:app close\n",__FUNCTION__);
+	mtcp_debug("%s:app close\n",__FUNCTION__);
 	if (is_master_sk(tcp_sk(sk))) {
 		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
 		struct sock *mpcb_sk=(struct sock*)mpcb;
