@@ -73,9 +73,7 @@ extern struct proto mtcpsub_prot;
 #define MPCB_FLAG_SERVER_SIDE 	0   /* this mpcb belongs to a server side 
 				       connection.
 				       (obtained through a listen)*/
-#define MPCB_FLAG_PENDING_DATA	1   /* at least one byte of data is available 
-				       for eating by the app. */
-#define MPCB_FLAG_SNDBUF_GROWN	2   /* sndbuf has grown for one of our 
+#define MPCB_FLAG_SNDBUF_GROWN	1   /* sndbuf has grown for one of our 
 				       subflows*/
 
 

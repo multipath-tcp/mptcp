@@ -193,17 +193,14 @@ void mtcp_data_ready(struct sock *sk)
 	struct tcp_sock *tp=tcp_sk(sk);
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
 
-	if (mpcb) {
-		set_bit(MPCB_FLAG_PENDING_DATA,&mpcb->flags);
+	if (mpcb)
 		mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
-	}
 #ifdef CONFIG_MTCP_PM
 	else {
 		/*This tp is not yet attached to the mpcb*/
 		BUG_ON(!tp->pending);
 		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
 		BUG_ON(!mpcb);
-		set_bit(MPCB_FLAG_PENDING_DATA,&mpcb->flags);
 		mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
 		mpcb_put(mpcb);
 	}

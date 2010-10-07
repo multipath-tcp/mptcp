@@ -347,9 +347,9 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	struct sock *master_sk = sock->sk;
 	struct tcp_sock *master_tp = tcp_sk(master_sk);
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(master_tp);
-	struct sock *mpcb_sk = (struct sock *) mpcb;
-	struct sock *sk; /*For subsocket iteration*/
-	struct tcp_sock *tp; /*for subsocket iteration*/
+	struct sock *mpcb_sk = (master_tp->mpc)?(struct sock *) mpcb:
+		master_sk;
+	struct tcp_sock *mpcb_tp = tcp_sk(mpcb_sk);
 	
 	poll_wait(file, master_sk->sk_sleep, wait);
 
@@ -368,10 +368,12 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	 */
 
 	mask = 0;
-	if (mtcp_test_any_sk(mpcb,sk,sk->sk_err))
+	/*The subsocks are responsible for transferring their errors
+	  here, so that they become visible to the mpcb.*/
+	if (mpcb_sk->sk_err)
 		mask = POLLERR;
 	
-	/*
+	/*x
 	 * POLLHUP is certainly not done right. But poll() doesn't
 	 * have a notion of HUP in just one direction, and for a
 	 * socket the read side is more interesting.
@@ -404,51 +406,45 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	if (master_sk->sk_shutdown & RCV_SHUTDOWN)
 		mask |= POLLIN | POLLRDNORM | POLLRDHUP;
 	
-	if (master_tp->mpc && test_bit(MPCB_FLAG_PENDING_DATA,&mpcb->flags))
-		mask |= POLLIN | POLLRDNORM;
-	
 	/* Connected? */
-
-	/*POLLOUT must be checked against mpcb_sk, while POLLIN is checked
-	  against the subsocks*/
-	if (!(mpcb_sk->sk_shutdown & SEND_SHUTDOWN)) {
-		if (sk_stream_wspace(mpcb_sk) >= 
-		    sk_stream_min_wspace(mpcb_sk)) {
-			mask |= POLLOUT | POLLWRNORM;
-		} else {  /* send SIGIO later */
-			set_bit(SOCK_ASYNC_NOSPACE,
-				&mpcb_sk->sk_socket->flags);
-			set_bit(SOCK_NOSPACE, &mpcb_sk->sock_flags);
-			
-			/* Race breaker. If space is freed after
-			 * wspace test but before the flags are set,
-			 * IO signal will be lost.
-			 */
-			if (sk_stream_wspace(mpcb_sk) >= 
-			    sk_stream_min_wspace(mpcb_sk))
-				mask |= POLLOUT | POLLWRNORM;
-		}
-	}
-	else printk(KERN_ERR "mpcb is in shutdown state\n");
 	
-	mtcp_for_each_sk(mpcb,sk,tp)
-		if ((1 << sk->sk_state) & ~(TCPF_SYN_SENT | TCPF_SYN_RECV)) {
-			int target = sock_rcvlowat(sk,0,INT_MAX);
-			
-			if (tp->urg_seq == tp->copied_seq &&
-			    !sock_flag(sk, SOCK_URGINLINE) &&
-			    tp->urg_data)
-				target--;
-			
-                        /* Potential race condition. If read of tp below will
-			 * escape above sk->sk_state, we can be illegally awaken
-			 * in SYN_* states. */
-			if (!tp->mpc && (tp->rcv_nxt - tp->copied_seq >=target))
-				mask |= POLLIN | POLLRDNORM;
-									
-			if (tp->urg_data & TCP_URG_VALID)
-				mask |= POLLPRI;
+	if ((1 << master_sk->sk_state) & ~(TCPF_SYN_SENT | TCPF_SYN_RECV)) {
+		int target = sock_rcvlowat(master_sk,0,INT_MAX);
+		
+		if (mpcb_tp->urg_seq == mpcb_tp->copied_seq &&
+		    !sock_flag(master_sk, SOCK_URGINLINE) &&
+		    mpcb_tp->urg_data)
+			target--;
+		
+		/* Potential race condition. If read of tp below will
+		 * escape above sk->sk_state, we can be illegally awaken
+		 * in SYN_* states. */
+		if (mpcb_tp->rcv_nxt - mpcb_tp->copied_seq >=target)
+			mask |= POLLIN | POLLRDNORM;
+
+		if (!(mpcb_sk->sk_shutdown & SEND_SHUTDOWN)) {
+			if (sk_stream_wspace(mpcb_sk) >= 
+			    sk_stream_min_wspace(mpcb_sk)) {
+				mask |= POLLOUT | POLLWRNORM;
+			} else {  /* send SIGIO later */
+				set_bit(SOCK_ASYNC_NOSPACE,
+					&mpcb_sk->sk_socket->flags);
+				set_bit(SOCK_NOSPACE, &mpcb_sk->sock_flags);
+				
+				/* Race breaker. If space is freed after
+				 * wspace test but before the flags are set,
+				 * IO signal will be lost.
+				 */
+				if (sk_stream_wspace(mpcb_sk) >= 
+				    sk_stream_min_wspace(mpcb_sk))
+					mask |= POLLOUT | POLLWRNORM;
+			}
 		}
+		else printk(KERN_ERR "mpcb is in shutdown state\n");
+		
+		if (mpcb_tp->urg_data & TCP_URG_VALID)
+			mask |= POLLPRI;
+	}
 	return mask;
 }
 #else
@@ -1947,7 +1943,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	int target;		/* Read at least this many bytes */
 	long timeo;
 	struct task_struct *user_recv = NULL;
-	int finished=0;
 	
 	if (!master_tp->mpc)
 		return tcp_recvmsg_fallback(iocb,master_sk,msg,len,nonblock,
@@ -2160,8 +2155,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			}
 		} else {
 			/*Wait for data arriving on any subsocket*/
-			if (len) mtcp_wait_data(mpcb,master_sk, &timeo,flags);
-			else finished=1;
+			mtcp_wait_data(mpcb,master_sk, &timeo,flags);
 		}
 
 		if (user_recv) {
@@ -2221,25 +2215,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				tp->peek_seq = tp->copied_seq;
 			}
 		}
-	} while ((len > 0 || skb_queue_empty(&mpcb_sk->sk_receive_queue)) && 
-		 !finished);
-/*Note on the above while condition:
-  we try to force reading data until at least one segment is put
-  on the mpcb receive queue. This serves to verify wheter
-  there is still pending data, even after feeding the app.
-  the "finished" condition becomes true when we try to wait for data, when 
-  actually len is already 0. In that case we must finish our checks on the 
-  other queues, and then leave the loop.*/
-
-	/*Giving the correct value to the pending_data flag,
-	  Note that if we set the flag to 0, it is still possible, that
-	  it changes to 1 before to leave, here, if tcp_data_queue
-	  (called by tcp_prequeue_process) finds the next app byte.*/
-	if (((flags & MSG_PEEK) && copied) ||
-	    !skb_queue_empty(&mpcb_sk->sk_receive_queue)) {
-		set_bit(MPCB_FLAG_PENDING_DATA,&mpcb->flags);
-	}
-	else clear_bit(MPCB_FLAG_PENDING_DATA,&mpcb->flags);
+	} while (len > 0);
 	
 	if (user_recv) {
 		mtcp_for_each_sk(mpcb,sk,tp)
