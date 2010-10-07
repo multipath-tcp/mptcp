@@ -700,6 +700,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	unsigned size = 0;
 #ifdef CONFIG_MTCP
 	struct multipath_pcb *mpcb;
+	int release_mpcb=0;
 #endif
 
 #ifdef CONFIG_TCP_MD5SIG
@@ -721,7 +722,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 
 #ifdef CONFIG_MTCP
 	mpcb = tp->mpcb;
-	if (!mpcb && tp->pending && !is_master_sk(tp) && tp->mpc) {
+	if (tp->pending && !is_master_sk(tp) && tp->mpc) {
 		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
 		if (!mpcb) {
 			printk(KERN_ERR "mpcb not found, token %#x,"
@@ -732,6 +733,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			       NIPQUAD(inet_sk(sk)->daddr));
 			BUG();
 		}
+		else release_mpcb=1;
 	}
 	if (tp->mpc && (!skb || skb->len!=0 ||  
 			(tcb->flags & TCPCB_FLAG_FIN))) {
@@ -782,6 +784,8 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	}
 	BUG_ON(!mpcb && !tp->pending);
 #endif
+	if (release_mpcb)
+		mpcb_put(mpcb);
 #endif
 
 	if (unlikely(tp->rx_opt.eff_sacks)) {
@@ -2693,7 +2697,8 @@ void tcp_send_fin(struct sock *sk)
 					TCP_SKB_CB(skb)->data_seq+1;
 				TCP_SKB_CB(skb)->data_len=1;
 				TCP_SKB_CB(skb)->sub_seq=TCP_SKB_CB(skb)->seq;
-				if (tp->pending) mpcb_put(mpcb);
+				if (tp->pending) 
+					mpcb_put(mpcb);
 			}
 		}
 #endif

@@ -520,7 +520,11 @@ void tcp_rcv_space_adjust(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	int time;
 	int space;
-
+#ifdef CONFIG_MTCP
+	struct multipath_pcb *mpcb=tp->mpcb;
+	if (tp->mpc && tp->pending)
+		mpcb=mtcp_hash_find(tp->mtcp_loc_token);		
+#endif
 	if (tp->rcvq_space.time == 0)
 		goto new_measure;
 
@@ -531,8 +535,7 @@ void tcp_rcv_space_adjust(struct sock *sk)
 		struct multipath_pcb *mpcb=tp->mpcb;
 		struct tcp_sock *tp_it;
 		u32 rtt_max=0;
-		if (tp->pending)
-			mpcb=mtcp_hash_find(tp->mtcp_loc_token);
+
 		/*In MPTCP, we take the max delay across all flows,
 		  in order to take into account meta-reordering buffers.*/
 		mtcp_for_each_tp(mpcb,tp_it) {
@@ -540,11 +543,11 @@ void tcp_rcv_space_adjust(struct sock *sk)
 				rtt_max=(tp_it->rcv_rtt_est.rtt >> 3);
 		}
 		if (time < rtt_max || !rtt_max)
-			return;
+			goto out;
 #endif
 	}
 	else if (time < (tp->rcv_rtt_est.rtt >> 3) || tp->rcv_rtt_est.rtt == 0)
-		return;
+		goto out;
 
 	space = 2 * (tp->copied_seq - tp->rcvq_space.seq);
 
@@ -578,7 +581,7 @@ void tcp_rcv_space_adjust(struct sock *sk)
 				/* Make the window clamp follow along.  */
 				tp->window_clamp = new_clamp;
 #ifdef CONFIG_MTCP
-				mtcp_update_window_clamp(tp->mpcb);
+				mtcp_update_window_clamp(mpcb);
 #endif
 					
 			}
@@ -588,6 +591,11 @@ void tcp_rcv_space_adjust(struct sock *sk)
 new_measure:
 	tp->rcvq_space.seq = tp->copied_seq;
 	tp->rcvq_space.time = tcp_time_stamp;
+out:
+#ifdef CONFIG_MTCP
+	if (tp->mpc && tp->pending && mpcb)
+		mpcb_put(mpcb);
+#endif
 }
 
 /* There is something which you must keep in mind when you analyze the
@@ -3787,7 +3795,6 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 				  struct tcp_sock *tp)
 {
 	struct multipath_pcb* mpcb;
-	int release_mpcb=0;
 	struct multipath_options *mopt;
 	if (th->doff == sizeof(struct tcphdr) >> 2) {
 		tp->rx_opt.saw_tstamp = 0;
@@ -3798,13 +3805,13 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 			return 1;
 	}
 	mpcb = mpcb_from_tcpsock(tp);
-	if (!mpcb) {
-		mtcp_debug("mpcb null in fast parse options\n");
+	if (tp->pending)
 		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
-		release_mpcb=1;
-	}
 	if (mpcb) mopt=&mpcb->received_options;
-	else mopt=&tp->mopt;
+	else {
+		mtcp_debug("mpcb null in fast parse options\n");
+		mopt=&tp->mopt;
+	}
 	tcp_parse_options(skb, &tp->rx_opt,mopt,1);
 	if (unlikely(mpcb && tp->rx_opt.saw_mpc && is_master_sk(tp))) {
 		/*Transfer sndwnd control to the mpcb*/
@@ -3813,7 +3820,10 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 		tp->mpc=1;		
 		tp->rx_opt.saw_mpc=0; /*reset that field, it has been read*/
 	}
-	if (release_mpcb && mpcb) mpcb_put(mpcb);
+	/*It can be that mpcb is NULL while tp is pending
+	  if tp is the master sk.*/
+	if (tp->pending && mpcb) 
+		mpcb_put(mpcb);
 	return 1;
 }
 
