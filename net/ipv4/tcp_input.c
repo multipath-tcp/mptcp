@@ -3722,7 +3722,6 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 					}
 					/*Add IPv6 stuff here*/
 				}
-				mopt->list_rcvd=1;
 				break;
 
 			case TCPOPT_JOIN:

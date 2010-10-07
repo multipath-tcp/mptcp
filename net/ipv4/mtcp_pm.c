@@ -469,6 +469,8 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 		addr->s_addr;
 	mopt->addr4[num_addr4].id=id;
 	mopt->num_addr4++;
+	mopt->list_rcvd = 1;
+
 	return 0;
 }
 
