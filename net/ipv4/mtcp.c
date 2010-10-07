@@ -1071,6 +1071,7 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 	int fin=tcp_hdr(skb)->fin;
 	struct sock *mpcb_sk;
 	struct tcp_sock *mpcb_tp;
+	int ans;
 
 	mpcb=mpcb_from_tcpsock(tp);
 	if (tp->pending)
@@ -1103,7 +1104,8 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 
 		/* We do not read the skb, since it was already received on
 		   another subflow*/
-		return MTCP_EATEN;
+		ans=MTCP_EATEN;
+		goto out;
 	}
 	
 	if (before(mpcb_tp->rcv_nxt,TCP_SKB_CB(skb)->data_seq)) {
@@ -1113,7 +1115,8 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 			mtcp_debug("First meta-ofo segment\n");
 			__skb_queue_head(&mpcb_tp->out_of_order_queue, skb);
 			sock_hold(skb->sk);
-			return MTCP_QUEUED;
+			ans=MTCP_QUEUED;
+			goto out;
 		}
 		else {
 			struct sk_buff *skb1 = mpcb_tp->out_of_order_queue.prev;
@@ -1137,7 +1140,8 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 					/* We do not read the skb, since it was
 					   already received on
 					   another subflow */
-					return MTCP_EATEN;
+					ans=MTCP_EATEN;
+					goto out;
 				}
 				if (!after(TCP_SKB_CB(skb)->data_seq, 
 					   TCP_SKB_CB(skb1)->data_seq)) {
@@ -1176,10 +1180,10 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 				}
 				else break;
 			}
-			return MTCP_QUEUED;
+			ans=MTCP_QUEUED;
+			goto out;
 		}
 	}
-
 	else {
 		__skb_queue_tail(&mpcb_sk->sk_receive_queue, skb);
 		sock_hold(skb->sk);
@@ -1189,8 +1193,13 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 		if (!skb_queue_empty(&mpcb_tp->out_of_order_queue))
 			mtcp_ofo_queue(mpcb);
 
-		return MTCP_QUEUED;
+		ans=MTCP_QUEUED;
+		goto out;
 	}
+out:
+	if (tp->pending) 
+		mpcb_put(mpcb);
+	return ans;
 }
 
 /**
