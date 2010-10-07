@@ -154,7 +154,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->snd_nxt = tp->snd_nxt;
 			p->snd_una = tp->snd_una;
 			p->snd_cwnd = tp->snd_cwnd;
-			p->snd_wnd = tp->snd_wnd;
+			p->snd_wnd = mpcb_tp->snd_wnd;
 			p->ssthresh = tcp_current_ssthresh(sk);
 			p->srtt = tp->srtt >> 3;
 			p->rcv_nxt=tp->rcv_nxt;
@@ -275,8 +275,7 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			p->snd_nxt = tp->snd_nxt;
 			p->snd_una = tp->snd_una;
 			p->snd_cwnd = tp->snd_cwnd;
-			p->snd_wnd = (tp->mpcb)?tp->mpcb->tp.snd_wnd:
-				tp->snd_wnd;
+			p->snd_wnd = mpcb_tp->snd_wnd;
 			p->ssthresh = tcp_current_ssthresh(sk);
 			p->srtt = tp->srtt >> 3;
 			p->rcv_nxt=tp->rcv_nxt;
