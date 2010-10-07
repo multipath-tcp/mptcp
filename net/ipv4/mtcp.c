@@ -361,9 +361,9 @@ static int netevent_callback(struct notifier_block *self, unsigned long event,
 	struct multipath_pcb *mpcb;
 	struct sock *mpcb_sk;
 	struct ulid_pair *up;
-	mtcp_debug("Received path update event\n");
 	switch(event) {
 	case NETEVENT_PATH_UPDATEV6:
+		mtcp_debug("%s: Received path update event: %lu\n",__FUNCTION__, event);
 		mpcb=container_of(self,struct multipath_pcb,nb);
 		mpcb_sk=(struct sock*)mpcb;
 		up=ctx;
@@ -777,8 +777,6 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		return copied;
 	}
 
-	mtcp_debug(KERN_ERR "Leaving %s, copied %d\n",
-	           __FUNCTION__, (int) copied);
 	return copied;
 }
 
@@ -901,10 +899,6 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb)
 			/*Should not happen in the current design*/
 			BUG();
 		}
-		mtcp_debug("ofo delivery : "
-		           "data_seq %X - %X\n",
-		           TCP_SKB_CB(skb)->data_seq,
-		           TCP_SKB_CB(skb)->end_data_seq);
 		
 		__skb_unlink(skb, &mpcb_tp->out_of_order_queue);
 
