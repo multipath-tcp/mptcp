@@ -61,12 +61,9 @@ int sk_stream_wait_connect(struct sock *sk, long *timeo_p)
 			printk(KERN_ERR "line %d, err %d\n",__LINE__,err);
 			return err;
 		}
-		if ((1 << sk->sk_state) & ~(TCPF_SYN_SENT | TCPF_SYN_RECV)) {
-			printk(KERN_ERR "line %d, state %#x\n",__LINE__,
-			       sk->sk_state);
-			BUG();
+		if ((1 << sk->sk_state) & ~(TCPF_SYN_SENT | TCPF_SYN_RECV))
 			return -EPIPE;
-		}
+
 		if (!*timeo_p) {
 			printk(KERN_ERR "line %d\n",__LINE__);
 			return -EAGAIN;
