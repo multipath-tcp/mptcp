@@ -4592,11 +4592,8 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 			  eaten by the prequeue (otherwise, no need to call
 			  mtcp_data_ready, the prequeue does it).*/
 			if (tp->mpc) {
-				if (mapping==1) {
+				if (mapping==1)
 					mtcp_data_ready(sk);
-					tcpprobe_logmsg(sk,"will wake the app");
-				}
-				tcpprobe_logmsg(sk,"not waking up the app");
 			}
 			else sk->sk_data_ready(sk,0);
 #else

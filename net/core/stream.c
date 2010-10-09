@@ -29,12 +29,9 @@
 void sk_stream_write_space(struct sock *sk)
 {
 	struct socket *sock = sk->sk_socket;
-	if (tcp_sk(sk)->mpc) tcpprobe_logmsg(sk,"should wake up sock");
 
 	if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk) && sock) {
 		clear_bit(SOCK_NOSPACE, &sk->sock_flags);
-		if (tcp_sk(sk)->mpc)
-			tcpprobe_logmsg(sk,"WILL wake up sock");
 
 		if (sk->sk_sleep && waitqueue_active(sk->sk_sleep))
 			wake_up_interruptible(sk->sk_sleep);

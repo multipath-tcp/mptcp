@@ -759,13 +759,8 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	struct sock *mpcb_sk = (struct sock *) mpcb;
 	size_t copied;
 
-	tcpprobe_logmsg(master_sk,"Entering mtcp_sendmsg");
-	
-	if (!tcp_sk(master_sk)->mpc) {
-		int ans=subtcp_sendmsg(iocb,master_sk, msg, size);
-		tcpprobe_logmsg(master_sk,"Leaving mtcp_sendmsg 1");
-		return ans;
-	}
+	if (!tcp_sk(master_sk)->mpc)
+		return subtcp_sendmsg(iocb,master_sk, msg, size);
 	
 	BUG_ON(!mpcb);
 
@@ -783,13 +778,11 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	if (copied<0) {		
 		printk(KERN_ERR "%s: returning error "
 		       "to app:%d\n",__FUNCTION__,(int)copied);
-		tcpprobe_logmsg(master_sk,"Leaving mtcp_sendmsg 2");
 		return copied;
 	}
 
 	mtcp_debug(KERN_ERR "Leaving %s, copied %d\n",
 	           __FUNCTION__, (int) copied);
-	tcpprobe_logmsg(master_sk,"Leaving mtcp_sendmsg 2");
 	return copied;
 }
 
