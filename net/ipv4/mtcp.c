@@ -696,7 +696,7 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 	struct tcp_sock *tp;
 	struct sock *sk;
 	struct sock *bestsk=NULL;
-	unsigned int min_fill_ratio=0xffffffff;
+	unsigned int min_time_to_peer=0xffffffff;
 	int bh=in_interrupt(); 
 
 	if (!mpcb) return NULL;
@@ -714,7 +714,7 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 
 	/*First, find the best subflow*/
 	mtcp_for_each_sk(mpcb,sk,tp) {
-		unsigned int fill_ratio;
+		unsigned int time_to_peer;
 		if (pf && tp->pf) *pf|=PI_TO_FLAG(tp->path_index);
 		if (!mtcp_is_available(sk)) continue;
 		/*If the skb has already been enqueued in this sk, try to find
@@ -733,10 +733,14 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 			else continue;
 		}
 		
-		fill_ratio=sk->sk_wmem_queued/tp->cur_bw_est;
+		/*Time to reach peer, estimated in units of jiffies*/
+		time_to_peer=
+			((sk->sk_wmem_queued/tp->cur_bw_est)<<
+			 tp->bw_est.shift)+ /*time to reach network*/
+			(tp->srtt>>3); /*Time to reach peer*/
 		
-		if (fill_ratio<min_fill_ratio) {
-			min_fill_ratio=fill_ratio;
+		if (time_to_peer<min_time_to_peer) {
+			min_time_to_peer=time_to_peer;
 			bestsk=sk;
 		}
 	}
@@ -755,8 +759,13 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	struct sock *mpcb_sk = (struct sock *) mpcb;
 	size_t copied;
 
-	if (!tcp_sk(master_sk)->mpc)
-		return subtcp_sendmsg(iocb,master_sk, msg, size);
+	tcpprobe_logmsg(master_sk,"Entering mtcp_sendmsg");
+	
+	if (!tcp_sk(master_sk)->mpc) {
+		int ans=subtcp_sendmsg(iocb,master_sk, msg, size);
+		tcpprobe_logmsg(master_sk,"Leaving mtcp_sendmsg 1");
+		return ans;
+	}
 	
 	BUG_ON(!mpcb);
 
@@ -774,9 +783,13 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	if (copied<0) {		
 		printk(KERN_ERR "%s: returning error "
 		       "to app:%d\n",__FUNCTION__,(int)copied);
+		tcpprobe_logmsg(master_sk,"Leaving mtcp_sendmsg 2");
 		return copied;
 	}
 
+	mtcp_debug(KERN_ERR "Leaving %s, copied %d\n",
+	           __FUNCTION__, (int) copied);
+	tcpprobe_logmsg(master_sk,"Leaving mtcp_sendmsg 2");
 	return copied;
 }
 
