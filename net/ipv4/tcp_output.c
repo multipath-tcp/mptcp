@@ -1733,7 +1733,6 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 	int cwnd_quota;
 	int reinject;
 	int result;
-	int pkt_cnt=0;
 	
 	if (sk->sk_in_write_xmit) {
 		printk(KERN_ERR "sk in write xmit, meta_sk:%d\n",
@@ -1796,12 +1795,8 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		if (is_meta_tp(tp)) {
 			int pf=0;
 			subsk=get_available_subflow(tp->mpcb,skb,&pf);
-			if (!subsk) {
-				if (!pkt_cnt)
-					tcpprobe_logmsg(sk,
-							"write_xmit break, 1");
+			if (!subsk)
 				break;
-			}
 			subtp=tcp_sk(subsk);
 		}
 		else {
@@ -1829,18 +1824,12 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			if (sk!=subsk) BUG();
 			if (reinject) printk(KERN_ERR "reinj: line %d\n", 
 					     __LINE__);
-			if (!pkt_cnt)
-				tcpprobe_logmsg(sk,
-						"write_xmit break, 2");
 			break;
 		}
 
 		if (unlikely(!tcp_snd_wnd_test(subtp, skb, mss_now))) {
 			if (reinject) printk(KERN_ERR "reinj: line %d\n", 
 					     __LINE__);
-			if (!pkt_cnt)
-				tcpprobe_logmsg(sk,
-						"write_xmit break, 3");
 			break;
 		}
 		
@@ -1850,9 +1839,6 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 					      TCP_NAGLE_PUSH)))) {
 			if (reinject) printk(KERN_ERR "reinj: line %d\n", 
 					     __LINE__);
-			if (!pkt_cnt)
-				tcpprobe_logmsg(sk,
-						"write_xmit break, 4");
 			break;
 		}
 		
@@ -1861,9 +1847,6 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		if (skb->len > limit &&
 		    unlikely(tso_fragment(sk, skb, limit, mss_now))) {
 			if (reinject) printk(KERN_ERR "reinj: line %d\n", __LINE__);
-			if (!pkt_cnt)
-				tcpprobe_logmsg(sk,
-						"write_xmit break, 5");
 			break;
 		}
 
@@ -1881,9 +1864,6 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			}
 			if (!subskb) {
 				if (reinject) printk(KERN_ERR "reinj: line %d\n", __LINE__);
-				if (!pkt_cnt)
-					tcpprobe_logmsg(sk,
-							"write_xmit break, 6");
 				break;
 			}
 			BUG_ON(tcp_send_head(subsk));
@@ -1909,12 +1889,8 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 				  by querying again the scheduler*/
 				if (err>0) continue;
 			}
-			if (!pkt_cnt)
-				tcpprobe_logmsg(sk,
-						"write_xmit break, 7");
 			break;
 		}
-		else pkt_cnt++;
 		
 		/* Advance the send_head.  This one is sent out.
 		 * This call will increment packets_out.
