@@ -1679,6 +1679,8 @@ asmlinkage long sys_send(int fd, void __user *buff, size_t len, unsigned flags)
  *	sender address from kernel to user space.
  */
 
+#include <linux/tcp.h>
+#include <linux/tcp_probe.h>
 asmlinkage long sys_recvfrom(int fd, void __user *ubuf, size_t size,
 			     unsigned flags, struct sockaddr __user *addr,
 			     int __user *addr_len)
@@ -1694,6 +1696,8 @@ asmlinkage long sys_recvfrom(int fd, void __user *ubuf, size_t size,
 	if (!sock)
 		goto out;
 
+	if (sock->sk->sk_protocol==IPPROTO_TCP && tcp_sk(sock->sk)->mpc) 
+		tcpprobe_logmsg(sock->sk,"entering sys_recvfrom");
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
 	msg.msg_iovlen = 1;
@@ -1715,6 +1719,8 @@ asmlinkage long sys_recvfrom(int fd, void __user *ubuf, size_t size,
 
 	fput_light(sock->file, fput_needed);
 out:
+	if (sock->sk->sk_protocol==IPPROTO_TCP && tcp_sk(sock->sk)->mpc) 
+		tcpprobe_logmsg(sock->sk,"leaving sys_recvfrom");
 	return err;
 }
 

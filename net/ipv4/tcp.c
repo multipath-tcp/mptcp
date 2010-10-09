@@ -351,6 +351,8 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 		master_sk;
 	struct tcp_sock *mpcb_tp = tcp_sk(mpcb_sk);
 	
+	if (master_tp->mpc) tcpprobe_logmsg(master_sk,"entering tcp_poll");
+
 	poll_wait(file, master_sk->sk_sleep, wait);
 
 #ifdef CONFIG_MTCP_PM
@@ -403,8 +405,11 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	if (master_sk->sk_shutdown == SHUTDOWN_MASK || 
 	    master_sk->sk_state == TCP_CLOSE)
 		mask |= POLLHUP;
-	if (master_sk->sk_shutdown & RCV_SHUTDOWN)
+	if (master_sk->sk_shutdown & RCV_SHUTDOWN) {
+		if (master_tp->mpc) tcpprobe_logmsg(master_sk,
+						    "tcp_poll shutdown");
 		mask |= POLLIN | POLLRDNORM | POLLRDHUP;
+	}
 	
 	/* Connected? */
 	
@@ -419,8 +424,12 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 		/* Potential race condition. If read of tp below will
 		 * escape above sk->sk_state, we can be illegally awaken
 		 * in SYN_* states. */
-		if (mpcb_tp->rcv_nxt - mpcb_tp->copied_seq >=target)
+		if (mpcb_tp->rcv_nxt - mpcb_tp->copied_seq >=target) {
+			if (master_tp->mpc) 
+				tcpprobe_logmsg(master_sk,
+						"tcp_poll normal way");
 			mask |= POLLIN | POLLRDNORM;
+		}
 
 		if (!(mpcb_sk->sk_shutdown & SEND_SHUTDOWN)) {
 			if (sk_stream_wspace(mpcb_sk) >= 
@@ -1219,9 +1228,16 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			
 		wait_for_memory:
 			if (copied)
-				tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);			
-			if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
-				goto do_error;
+				tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);		{	
+				unsigned long timestamp=jiffies;
+				if ((err = sk_stream_wait_memory(sk, &timeo)) 
+				    != 0)
+					goto do_error;
+				if (jiffies-timestamp>HZ*5) {
+					printk(KERN_ERR "woken up too late !!\n");
+//					BUG();
+				}
+			}
 			
 			BUG_ON(!sk_stream_memory_free(sk));
 			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
@@ -1944,9 +1960,16 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	long timeo;
 	struct task_struct *user_recv = NULL;
 	
-	if (!master_tp->mpc)
+	if (!master_tp->mpc) {
+		tcpprobe_logmsg(master_sk,"entering tcp_recvmsg no mpc:"
+				NIPQUAD_FMT "->" NIPQUAD_FMT,
+				NIPQUAD(inet_sk(master_sk)->saddr),
+				NIPQUAD(inet_sk(master_sk)->daddr));
 		return tcp_recvmsg_fallback(iocb,master_sk,msg,len,nonblock,
 					    flags,addr_len);
+	}
+
+	tcpprobe_logmsg(master_sk,"entering tcp_recvmsg");
 	
 #ifdef CONFIG_MTCP_PM
 	/*Received a new list of addresses recently ?
@@ -2155,7 +2178,9 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			}
 		} else {
 			/*Wait for data arriving on any subsocket*/
+			tcpprobe_logmsg(mpcb_sk,"will wait for data");
 			mtcp_wait_data(mpcb,master_sk, &timeo,flags);
+			tcpprobe_logmsg(mpcb_sk,"woken up");
 		}
 
 		if (user_recv) {
@@ -2257,12 +2282,14 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	if (mtcp_test_any_sk(mpcb,sk,sk->sk_shutdown & RCV_SHUTDOWN)) {
 		printk(KERN_ERR "at least one subflow shut down\n");
 	}
+	tcpprobe_logmsg(master_sk,"leaving tcp_recvmsg, copied %d",copied);
 	return copied;
 
 out:
 	mtcp_for_each_sk(mpcb,sk,tp) release_sock(sk);
 	mutex_unlock(&mpcb->mutex);
 	mtcp_debug("At line %d\n",__LINE__);
+	tcpprobe_logmsg(master_sk,"leaving tcp_recvmsg, err %d",err);
 	return err;
 
 recv_urg:
