@@ -73,10 +73,6 @@ extern struct proto mtcpsub_prot;
 #define MPCB_FLAG_SERVER_SIDE 	0   /* this mpcb belongs to a server side 
 				       connection.
 				       (obtained through a listen)*/
-#define MPCB_FLAG_SNDBUF_GROWN	1   /* sndbuf has grown for one of our 
-				       subflows*/
-
-
 struct multipath_pcb {
 	struct tcp_sock           tp;
 
@@ -333,6 +329,7 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			 uint32_t path_indices);
 int mtcpsub_get_port(struct sock *sk, unsigned short snum);
 void mtcp_update_window_clamp(struct multipath_pcb *mpcb);
+void mtcp_update_sndbuf(struct multipath_pcb *mpcb);
 void mtcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end);
 int mtcpv6_init(void);
 void mpcb_get(struct multipath_pcb *mpcb);

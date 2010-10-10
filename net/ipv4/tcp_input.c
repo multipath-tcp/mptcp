@@ -4991,14 +4991,14 @@ void tcp_cwnd_application_limited(struct sock *sk)
 	tp->snd_cwnd_stamp = tcp_time_stamp;
 }
 
-static int tcp_should_expand_sndbuf(struct sock *sk)
+static int tcp_should_expand_sndbuf(struct sock *sk, struct sock *mpcb_sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	/* If the user specified a specific send buffer setting, do
 	 * not modify it.
 	 */
-	if (sk->sk_userlocks & SOCK_SNDBUF_LOCK)
+	if (mpcb_sk->sk_userlocks & SOCK_SNDBUF_LOCK)
 		return 0;
 
 	/* If we are under global TCP memory pressure, do not expand.  */
@@ -5009,8 +5009,12 @@ static int tcp_should_expand_sndbuf(struct sock *sk)
 	if (atomic_read(&tcp_memory_allocated) >= sysctl_tcp_mem[0])
 		return 0;
 
-	/* If we filled the congestion window, do not expand.  */
-	if (tp->packets_out >= tp->snd_cwnd)
+	/* If we filled the congestion window, do not expand.  
+	   MPTCP note: at the moment, we do not take this case into account.
+	   In the future, if we want to do so, we'll need to maintain
+	   packet_out counter at the mpcb_tp level, as well as maintain a 
+	   mpcb_tp->snd_cwnd=sum(sub_tp->snd_cwnd)*/
+	if (!tp->mpc && tp->packets_out >= tp->snd_cwnd)
 		return 0;
 
 	return 1;
@@ -5022,11 +5026,11 @@ static int tcp_should_expand_sndbuf(struct sock *sk)
  *
  * PROBLEM: sndbuf expansion does not work well with largesend.
  */
-static void tcp_new_space(struct sock *sk)
+static void tcp_new_space(struct sock *sk, struct sock *mpcb_sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	if (tcp_should_expand_sndbuf(sk)) {
+	if (tcp_should_expand_sndbuf(sk,mpcb_sk)) {
 		int sndmem = max_t(u32, tp->rx_opt.mss_clamp, tp->mss_cache) +
 			MAX_TCP_HEADER + 16 + sizeof(struct sk_buff);
 #ifndef CONFIG_MTCP
@@ -5074,27 +5078,33 @@ static void tcp_new_space(struct sock *sk)
 					 (rtt_max>>3),
 					 tp->reordering + 1);
 #endif
+		/*After this, sndmem is the new contribution of the
+		  current subflow to the aggregate sndbuf*/
 		sndmem *= 2 * demanded;
 		if (sndmem > sk->sk_sndbuf) {
-#ifdef CONFIG_MTCP
-			if (sk->sk_sndbuf < sysctl_tcp_wmem[2])
-				set_bit(MPCB_FLAG_SNDBUF_GROWN,&tp->mpcb->flags);
-#endif
+			int old_sndbuf=sk->sk_sndbuf;
 			sk->sk_sndbuf = min(sndmem, sysctl_tcp_wmem[2]);
+			/*ok, the subflow sndbuf has grown, reflect this in
+			  the aggregate buffer.*/
+			if (old_sndbuf!=sk->sk_sndbuf && tp->mpcb)
+				mtcp_update_sndbuf(tp->mpcb);
 		}
 		tp->snd_cwnd_stamp = tcp_time_stamp;
 	}
 
-	sk->sk_write_space(sk);
+	sk->sk_write_space(mpcb_sk);
 }
 
-void tcp_check_space(struct sock *sk)
+
+/*If the flow is MPTCP, sk is the subsock, and mpcb_sk is the mpcb.
+  Otherwise both are the regular TCP socket.*/
+void tcp_check_space(struct sock *sk,struct sock *mpcb_sk)
 {
-	if (sock_flag(sk, SOCK_QUEUE_SHRUNK)) {
-		sock_reset_flag(sk, SOCK_QUEUE_SHRUNK);
-		if (sk->sk_socket &&
-		    test_bit(SOCK_NOSPACE, &sk->sock_flags))
-			tcp_new_space(sk);
+	if (sock_flag(mpcb_sk, SOCK_QUEUE_SHRUNK)) {
+		sock_reset_flag(mpcb_sk, SOCK_QUEUE_SHRUNK);
+		if (mpcb_sk->sk_socket &&
+		    test_bit(SOCK_NOSPACE, &mpcb_sk->sock_flags))
+			tcp_new_space(sk,mpcb_sk);
 	}
 }
 
@@ -5103,14 +5113,12 @@ static inline void tcp_data_snd_check(struct sock *sk)
 	struct sock *mpcb_sk;
 	
 	BUG_ON(is_meta_sk(sk));
-	if (tcp_sk(sk)->mpc && tcp_sk(sk)->mpcb) {
+	if (tcp_sk(sk)->mpc && tcp_sk(sk)->mpcb)
 		mpcb_sk=((struct sock*)tcp_sk(sk)->mpcb);
-		sk->sk_debug=0;
-	}
 	else
 		mpcb_sk=sk;
 	tcp_push_pending_frames(mpcb_sk);
-	tcp_check_space(mpcb_sk);
+	tcp_check_space(sk,mpcb_sk);
 }
 
 /*

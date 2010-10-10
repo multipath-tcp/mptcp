@@ -2296,8 +2296,7 @@ void tcp_set_state(struct sock *sk, int state)
 				    is_master_sk(tcp_sk(sk))) 
 					mtcp_ask_update(sk);
 				tcp_sk(sk)->mpcb->cnt_established++;
-				set_bit(MPCB_FLAG_SNDBUF_GROWN,
-					&tcp_sk(sk)->mpcb->flags);
+				mtcp_update_sndbuf(tcp_sk(sk)->mpcb);
 				mpcb_sk->sk_state=TCP_ESTABLISHED;
 			}
 #endif
