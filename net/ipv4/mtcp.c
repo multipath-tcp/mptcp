@@ -552,7 +552,7 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 	  accept queue of the mpcb*/
 	if (((struct sock*)tp)->sk_state==TCP_ESTABLISHED) {
 		mpcb->cnt_established++;
-		set_bit(MPCB_FLAG_SNDBUF_GROWN,&mpcb->flags);
+		mtcp_update_sndbuf(mpcb);
 		mpcb_sk->sk_state=TCP_ESTABLISHED;
 	}
 	
@@ -1522,6 +1522,19 @@ void mtcp_update_window_clamp(struct multipath_pcb *mpcb)
 	mpcb_tp->window_clamp = new_clamp;
 	mpcb_tp->rcv_ssthresh = new_rcv_ssthresh;
 	mpcb_sk->sk_rcvbuf = new_rcvbuf;
+}
+
+/*Update the mpcb send window, based on the contributions
+  of each subflow*/
+void mtcp_update_sndbuf(struct multipath_pcb *mpcb)
+{
+	struct sock *mpcb_sk=(struct sock*)mpcb;
+	struct tcp_sock *tp;
+	struct sock *sk;
+	int new_sndbuf=0;
+	mtcp_for_each_sk(mpcb,sk,tp)
+		new_sndbuf += sk->sk_sndbuf;
+	mpcb_sk->sk_sndbuf = new_sndbuf;
 }
 
 extern void tcp_check_space(struct sock *sk);
