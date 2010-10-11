@@ -1886,8 +1886,15 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 				mtcp_wmem_free_skb(subsk, subskb);
 				/*If we entered CWR, just try to give
 				  that same skb to another subflow,
-				  by querying again the scheduler*/
-				if (err>0) continue;
+				  by querying again the scheduler,
+				  we need however to ensure that the
+				  same subflow is not selected again by
+				  the scheduler, to avoid looping*/
+				if (err>0 && tp->mpcb->cnt_subflows>1) {
+					tp->mpcb->noneligible|=
+						PI_TO_FLAG(subtp->path_index);
+					continue;
+				}
 			}
 			break;
 		}
@@ -1918,6 +1925,9 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 
 		tcp_cwnd_validate(subsk);
 	}
+
+	if (tp->mpcb) tp->mpcb->noneligible=0;
+
 	if (likely(sent_pkts)) {
 		sk->sk_in_write_xmit=0;
 		return 0;
@@ -1984,7 +1994,7 @@ again:
 		subsk=get_available_subflow(tp->mpcb,skb,NULL);
 		subtp=tcp_sk(subsk);
 		if (!subsk)
-			return;
+			goto out;
 		subsk->sk_debug=4;		
 	}
 	else 
@@ -2018,7 +2028,7 @@ again:
 		if (skb->len > limit &&
 		    unlikely(tso_fragment(sk, skb, limit, mss_now))) {
 			mtcp_debug("NOT SENDING TCP SEGMENT\n");
-			return;
+			goto out;
 		}
 
 		/* Send it out now. */
@@ -2036,7 +2046,7 @@ again:
 			}
 			if (!subskb) {
 				printk(KERN_ERR "skb_clone failed\n");
-				return;
+				goto out;
 			}
 			BUG_ON(tcp_send_head(subsk));
 			mtcp_skb_entail(subsk, subskb);
@@ -2060,10 +2070,15 @@ again:
 			tcp_unlink_write_queue(subskb,subsk);
 			subtp->write_seq-=subskb->len;
 			mtcp_wmem_free_skb(subsk, subskb);
-			if (err>0)
+			if (err>0 && tp->mpcb->cnt_subflows>1) {
+				tp->mpcb->noneligible|=
+					PI_TO_FLAG(subtp->path_index);
 				goto again;
+			}
 		}
 	}
+out:
+	if (tp->mpcb) tp->mpcb->noneligible=0;
 }
 
 /* This function returns the amount that we can raise the
