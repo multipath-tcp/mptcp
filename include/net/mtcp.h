@@ -118,6 +118,9 @@ struct multipath_pcb {
 	struct notifier_block     nb; /*For listening to PM events*/
 	unsigned long		  flags; /* atomic, for bits see 
 					    MPCB_FLAG_XXX */
+	u32                       noneligible; /*Path mask of temporarily
+						 non eligible
+						 subflows by the scheduler*/
 #ifdef CONFIG_MTCP_PM
 	struct list_head          collide_tk;
 	uint8_t                   addr_unsent; /* num of addrs not yet

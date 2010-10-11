@@ -237,7 +237,6 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 	/*First, ensure that we keep existing path indices.*/
 	while (tp!=NULL) {
 		/*disable the corresponding bit*/
-		if (tp->path_index==0) tp->path_index=1;
 		path_indices&=~PI_TO_FLAG(tp->path_index);
 		tp=tp->next;
 	}
@@ -527,6 +526,9 @@ void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp)
 	struct sock *sk=(struct sock*)tp;
 	struct sk_buff *skb;
 
+	/*first subflow*/
+	if (!tp->path_index) tp->path_index=1;
+
 	/*Adding new node to head of connection_list*/
 	mutex_lock(&mpcb->mutex); /*To protect against concurrency with
 				    mtcp_recvmsg and mtcp_sendmsg*/
@@ -675,9 +677,10 @@ static inline unsigned int tcp_cwnd_test(struct tcp_sock *tp)
 
 int mtcp_is_available(struct sock *sk)
 {
-	/*We consider a subflow to be available if it has remaining space in 
-	  its */	
-	if (sk->sk_state!=TCP_ESTABLISHED || tcp_sk(sk)->pf) return 0;
+	if (sk->sk_state!=TCP_ESTABLISHED || tcp_sk(sk)->pf ||
+	    (tcp_sk(sk)->mpcb->noneligible & 
+	     PI_TO_FLAG(tcp_sk(sk)->path_index)))
+		return 0;
 	if (tcp_cwnd_test(tcp_sk(sk))) return 1;
 	return 0;
 }
