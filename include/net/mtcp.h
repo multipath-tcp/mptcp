@@ -252,7 +252,7 @@ struct multipath_pcb {
 		__rc;							\
 	})
 
-#define DEBUG_PITOFLAG
+//#define DEBUG_PITOFLAG
 
 #ifdef DEBUG_PITOFLAG
 static inline int PI_TO_FLAG(int pi)
@@ -273,7 +273,7 @@ void mtcp_check_seqnums(struct multipath_pcb *mpcb, int before);
 #define mtcp_check_seqnums(mpcb, before)
 #endif
 
-#define MTCP_DEBUG_PKTS_OUT 1
+//#define MTCP_DEBUG_PKTS_OUT 1
 
 #ifdef MTCP_DEBUG_PKTS_OUT
 int check_pkts_out(struct sock* sk);
