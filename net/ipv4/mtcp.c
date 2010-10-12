@@ -990,8 +990,6 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 	struct tcp_sock *tp;
 	struct sock *mpcb_sk=(struct sock*)mpcb;
 	int err;
-	if (skb_queue_empty(&mpcb_sk->sk_receive_queue)) 
-		return 0;
 
 	do {
 		u32 data_offset;
