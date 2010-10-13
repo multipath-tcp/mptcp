@@ -288,11 +288,6 @@ static void __mtcp_update_patharray(struct multipath_pcb *mpcb)
 	int pa4_size=(mpcb->num_addr4+ulid_v4)*
 		(mpcb->received_options.num_addr4+ulid_v4)-ulid_v4;
 
-	printk(KERN_ERR "%s: ulid_v4:%d, pa4_size:%d, mpcb->num_addr4:%d, "
-			 "mpcb->received_options.num_addr4:%d\n",
-			__FUNCTION__, ulid_v4, pa4_size, mpcb->num_addr4,
-			mpcb->received_options.num_addr4);
-
 	new_pa4=kmalloc(pa4_size*sizeof(struct path4),GFP_ATOMIC);
 	
 	if (ulid_v4) {
@@ -408,14 +403,10 @@ void mtcp_set_addresses(struct multipath_pcb *mpcb)
 				}
 				
 				if (ifa->ifa_address==
-				    inet_sk(mpcb->master_sk)->saddr) {
-					printk (KERN_ERR "%s, continue, ifa->ifa_address " NIPQUAD_FMT "\n",__FUNCTION__, NIPQUAD(ifa->ifa_address));
+				    inet_sk(mpcb->master_sk)->saddr)
 					continue;
-				}
-				if (ifa->ifa_scope==RT_SCOPE_HOST) {
-					printk (KERN_ERR "%s, continue, ifa->ifa_scope==RT_SCOPE_HOST\n",__FUNCTION__);
+				if (ifa->ifa_scope==RT_SCOPE_HOST)
 					continue;
-				}
 				mpcb->addr4[num_addr4].addr.s_addr=
 					ifa->ifa_address;
 				mpcb->addr4[num_addr4++].id=id++;
@@ -432,8 +423,6 @@ out:
 	  and decide to already send the set of addresses, even though all
 	  addresses have not yet been read.*/
 	mpcb->num_addr4=mpcb->addr_unsent=num_addr4;
-
-	printk(KERN_ERR "%s: num_addr4:%d\n", __FUNCTION__, num_addr4);
 }
 
 /**
