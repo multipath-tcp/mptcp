@@ -490,6 +490,13 @@ static void tcp_rcv_rtt_update(struct tcp_sock *tp, u32 sample, int win_dep)
 
 static inline void tcp_rcv_rtt_measure(struct tcp_sock *tp)
 {
+	/*If MPTCP is used, timestamps are mandatory. Hence, 
+	  we can use always tcp_rcv_rtt_measure_ts. Moreover,
+	  this simply CANNOT be used with MPTCP, since 
+	  this function uses tp->rcv_wnd, which is NOT updated 
+	  at all. Using that function with MPTCP, would lead
+	  to underestimate the RTT, and hence undersize the receive window.*/
+	if (tp->mpc) return;
 	if (tp->rcv_rtt_est.time == 0)
 		goto new_measure;
 	if (before(tp->rcv_nxt, tp->rcv_rtt_est.seq))
