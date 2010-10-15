@@ -1850,12 +1850,11 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			break;
 		}
 
-		TCP_SKB_CB(skb)->when = tcp_time_stamp;
-
 		if (sk!=subsk) {
 			if (tp->path_index) 
 				skb->path_mask|=PI_TO_FLAG(tp->path_index);
-			/*The segment is reinjected, the clone is done already*/
+			/*If the segment is reinjected, the clone is done 
+			  already*/
 			if (!reinject)
 				subskb=skb_clone(skb,GFP_ATOMIC);
 			else {
@@ -1876,6 +1875,8 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		else
 			subskb=skb;
 		
+
+		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
 		if (unlikely(err=tcp_transmit_skb(subsk, subskb, 1, 
 						  GFP_ATOMIC))) {
  			if (sk!=subsk) {
@@ -2032,8 +2033,7 @@ again:
 		}
 
 		/* Send it out now. */
-		TCP_SKB_CB(skb)->when = tcp_time_stamp;
-		
+
 		if (sk!=subsk) {
 			if (tp->path_index)
 				skb->path_mask|=PI_TO_FLAG(tp->path_index);
@@ -2056,6 +2056,7 @@ again:
 
 		BUG_ON(tcp_send_head(sk)!=skb);
 
+		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
 		if (likely(!(err=tcp_transmit_skb(subsk, subskb, 1, 
 						  subsk->sk_allocation)))) {
 			tcp_event_new_data_sent(subsk, subskb);
