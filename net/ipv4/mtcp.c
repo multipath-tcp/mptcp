@@ -992,42 +992,44 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 	int err;
 
 	do {
-		u32 data_offset;
+		u32 data_offset = 0;
 		unsigned long used;
-		int fin;
+		int fin = 0;
+
 		skb = skb_peek(&mpcb_sk->sk_receive_queue);
 		
-		if (!skb) break;
-		
-		fin=tcp_hdr(skb)->fin;
-		
-		tp=tcp_sk(skb->sk);
+		do {
+			if (!skb) goto exit;
+			mtcp_debug("%s - len: %d, data_seq: %d TCP_SKB_CB(skb)->data_seq:%d\n",__FUNCTION__, *len, *data_seq,TCP_SKB_CB(skb)->data_seq);
 
-		if (before(*data_seq,TCP_SKB_CB(skb)->data_seq)) {
-			printk(KERN_ERR 
-			       "%s bug: copied %X "
-			       "dataseq %X\n", __FUNCTION__, *data_seq, 
-			       TCP_SKB_CB(skb)->data_seq);
-			console_loglevel=8;
-			BUG();
-		}
-		data_offset = *data_seq - TCP_SKB_CB(skb)->data_seq;
-		if(data_offset >= skb->len && !tcp_hdr(skb)->fin) {
-			printk(KERN_ERR "offset>skb->len: *data_seq:%#x,"
-			       "skb->data_seq:%#x, skb->len:%d\n",
-			       *data_seq,TCP_SKB_CB(skb)->data_seq,skb->len);
-			BUG();
-		}
+			fin=tcp_hdr(skb)->fin;
+		
+			tp=tcp_sk(skb->sk);
 
-		if (!tcp_hdr(skb)->fin && skb->len != 
-		    TCP_SKB_CB(skb)->end_data_seq - TCP_SKB_CB(skb)->data_seq) {
-			printk(KERN_ERR "skb->len:%d, should be %d\n",
-			       skb->len,
-			       TCP_SKB_CB(skb)->end_data_seq - 
-			       TCP_SKB_CB(skb)->data_seq);
-			console_loglevel=8;
-			BUG();
-		}
+			if (before(*data_seq,TCP_SKB_CB(skb)->data_seq)) {
+				printk(KERN_ERR "%s bug: copied %X "
+				       "dataseq %X\n", __FUNCTION__, *data_seq,
+				       TCP_SKB_CB(skb)->data_seq);
+				BUG();
+			}
+			data_offset = *data_seq - TCP_SKB_CB(skb)->data_seq;
+			if (data_offset < skb->len || fin)
+				break;
+
+			if (!tcp_hdr(skb)->fin && skb->len !=
+			    TCP_SKB_CB(skb)->end_data_seq - TCP_SKB_CB(skb)->data_seq) {
+				printk(KERN_ERR "skb->len:%d, should be %d\n",
+				       skb->len,
+				       TCP_SKB_CB(skb)->end_data_seq -
+				       TCP_SKB_CB(skb)->data_seq);
+				BUG();
+			}
+			mtcp_debug("%s: going to skb->next",__FUNCTION__);
+			WARN_ON(!(flags & MSG_PEEK));
+			skb = skb->next;
+		} while (skb != (struct sk_buff *)&mpcb_sk->sk_receive_queue);
+
+		if (skb == (struct sk_buff *)&mpcb_sk->sk_receive_queue) goto exit;
 
 		used = skb->len - data_offset;
 		if (*len < used)
@@ -1059,6 +1061,7 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 	} while (*len>0);
 	/*This checks whether an explicit window update is needed to unblock
 	  the receiver*/
+exit:
 	mtcp_cleanup_rbuf(mpcb_sk,*copied);
 	return 0;
 }
