@@ -537,7 +537,7 @@ void tcp_rcv_space_adjust(struct sock *sk)
 
 	time = tcp_time_stamp - tp->rcvq_space.time;
 
-	if (tp->mpc) { 
+	if (tp->mpc && tp->mpcb) { 
 #ifdef CONFIG_MTCP
 		struct multipath_pcb *mpcb=tp->mpcb;
 		struct tcp_sock *tp_it;
