@@ -936,12 +936,10 @@ int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 void mtcp_ofo_queue(struct multipath_pcb *mpcb)
 {
 	struct sk_buff *skb=NULL;
-	struct tcp_sock *tp;
 	struct sock *mpcb_sk=(struct sock *) mpcb;
 	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
 	
 	while ((skb = skb_peek(&mpcb_tp->out_of_order_queue)) != NULL) {
-		tp=tcp_sk(skb->sk);
 		if (after(TCP_SKB_CB(skb)->data_seq, mpcb_tp->rcv_nxt))
 			break;
 				
@@ -1033,7 +1031,6 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 			 size_t *len, u32 *data_seq, int *copied, int flags)
 {
 	struct sk_buff *skb;
-	struct tcp_sock *tp;
 	struct sock *mpcb_sk=(struct sock*)mpcb;
 	int err;
 
@@ -1048,8 +1045,6 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 			if (!skb) goto exit;
 
 			fin=tcp_hdr(skb)->fin;
-		
-			tp=tcp_sk(skb->sk);
 
 			if (before(*data_seq,TCP_SKB_CB(skb)->data_seq)) {
 				printk(KERN_ERR "%s bug: copied %X "
@@ -1088,10 +1083,8 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 		*len-=used;
 		
  		if (*data_seq==TCP_SKB_CB(skb)->end_data_seq && 
-		    !(flags & MSG_PEEK)) {
-			sock_put(skb->sk);
+		    !(flags & MSG_PEEK))
 			sk_eat_skb(mpcb_sk, skb, 0);
-		}
 		else if (!(flags & MSG_PEEK) && *len!=0) {
 				printk(KERN_ERR 
 				       "%s bug: copied %X "
@@ -1127,7 +1120,6 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 
 	if (!tp->mpc || !mpcb) {
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
-		sock_hold(skb->sk);
 		return MTCP_QUEUED;
 	}
 	
@@ -1160,9 +1152,8 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 			/* Initial out of order segment */
 			mtcp_debug("First meta-ofo segment\n");
 			__skb_queue_head(&mpcb_tp->out_of_order_queue, skb);
-			sock_hold(skb->sk);
 			ans=MTCP_QUEUED;
-			goto out;
+			goto queued;
 		}
 		else {
 			struct sk_buff *skb1 = mpcb_tp->out_of_order_queue.prev;
@@ -1211,7 +1202,6 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 			}
 			__skb_insert(skb, skb1, skb1->next, 
 				     &mpcb_tp->out_of_order_queue);
-			sock_hold(skb->sk);
 			/* And clean segments covered by new one as whole. */
 			while ((skb1 = skb->next) !=
 			       (struct sk_buff *)&mpcb_tp->out_of_order_queue &&
@@ -1227,12 +1217,11 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 				else break;
 			}
 			ans=MTCP_QUEUED;
-			goto out;
+			goto queued;
 		}
 	}
 	else {
 		__skb_queue_tail(&mpcb_sk->sk_receive_queue, skb);
-		sock_hold(skb->sk);
 		mpcb_tp->rcv_nxt=TCP_SKB_CB(skb)->end_data_seq;
 
 		/*Check if this fills a gap in the ofo queue*/
@@ -1240,8 +1229,15 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 			mtcp_ofo_queue(mpcb);
 
 		ans=MTCP_QUEUED;
-		goto out;
+		goto queued;
 	}
+
+queued:
+	/* Uncharge the old socket, and then charge the new one */
+	if (skb->destructor)
+		skb->destructor(skb);
+
+	skb_set_owner_r(skb, mpcb_sk);
 out:
 	if (tp->pending) 
 		mpcb_put(mpcb);
