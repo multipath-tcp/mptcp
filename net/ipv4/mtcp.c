@@ -758,13 +758,45 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 {
 	struct sock *master_sk = sock->sk;
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(master_sk));
-	struct sock *mpcb_sk = (struct sock *) mpcb;
+	struct sock *mpcb_sk=(struct sock *) mpcb;
 	size_t copied = 0;
+	int err;
+	int flags = msg->msg_flags;
+	long timeo = sock_sndtimeo(master_sk, flags & MSG_DONTWAIT);
 
-	if (!tcp_sk(master_sk)->mpc)
-		return subtcp_sendmsg(iocb,master_sk, msg, size);
-	
+	/*At the moment it should be sure 100% that the mpcb pointer is defined
+	  because at the client, alloc_mpcb is called in tcp_v4_init_sock(),
+	  at the server it is called in inet_csk_accept(). sendmsg() can be
+	  called before none of these functions.*/
 	BUG_ON(!mpcb);
+
+	lock_sock(mpcb_sk);
+	lock_sock(master_sk);	
+
+	/*If the master sk is not yet established, we need to wait
+	  until the establishment, so as to know whether the mpc option
+	  is present.*/
+	if (!tcp_sk(master_sk)->mpc) {
+		if ((1 << master_sk->sk_state) & 
+		    ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT)) {
+			if ((err = sk_stream_wait_connect(master_sk,
+							  &timeo)) != 0) {
+				goto out_err;
+			}
+			/*The flag mast be re-checked, because it may have
+			  appeared during sk_stream_wait_connect*/
+			if (!tcp_sk(master_sk)->mpc) {
+				copied=subtcp_sendmsg(iocb,master_sk, msg, 
+						      size);
+				goto out;
+			}
+			
+		}
+		else {
+			copied=subtcp_sendmsg(iocb,master_sk, msg, size);
+			goto out;
+		}
+	}
 
 	verif_wqueues(mpcb);
 
@@ -775,11 +807,24 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	
 	/* Compute the total number of bytes stored in the message*/	
 	copied = subtcp_sendmsg(NULL,mpcb_sk,msg, 0);
-	if (copied<0)
+	if (copied<0) {
 		printk(KERN_ERR "%s: returning error "
 		       "to app:%d\n",__FUNCTION__,(int)copied);
-
+		goto out;
+	}
+	
+	mtcp_debug(KERN_ERR "Leaving %s, copied %d\n",
+	           __FUNCTION__, (int) copied);
+out:
+	release_sock(master_sk);
+	release_sock(mpcb_sk);
 	return copied;
+out_err:
+	err = sk_stream_error(master_sk, flags, err);
+	TCP_CHECK_TIMER(master_sk);
+	release_sock(master_sk);
+	release_sock(mpcb_sk);
+	return err;
 }
 
 /**

@@ -984,19 +984,10 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	int mss_now, size_goal;
 	int err, copied;
 	long timeo;
-	
-	if (sock_owned_by_user(sk)) {
-		printk(KERN_ERR "sk_debug:%d\n",sk->sk_debug);
-		BUG();
-	}
-	else if (spin_is_locked(&sk->sk_lock.slock)) {
-		printk(KERN_ERR "sk_debug2:%d,is_meta_sk:%d,"
-		       "func:%s\n",sk->sk_debug,is_meta_sk(sk),
-		       sk->sk_func);
-		BUG();
-	}
 
+#ifndef CONFIG_MTCP
 	lock_sock(sk);
+#endif
 	TCP_CHECK_TIMER(sk);
 
 	flags = msg->msg_flags;
@@ -1004,6 +995,11 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 	/* Wait for a connection to finish. */
 	if ((1 << sk->sk_state) & ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT)) {
+#ifdef CONFIG_MTCP
+		/*Should not happen anymore, since the check is done in
+		  mtcp_sendmsg*/
+		BUG();
+#endif
 		if ((err = sk_stream_wait_connect(
 			     is_meta_sk(sk)?tp->mpcb->master_sk:sk, 
 			     &timeo)) != 0) {
@@ -1239,7 +1235,9 @@ out:
 		tcp_push(sk, flags, mss_now, tp->nonagle);
 
 	TCP_CHECK_TIMER(sk);
+#ifndef CONFIG_MTCP
 	release_sock(sk);
+#endif
 	PDEBUG_SEND("%s:line %d, copied %d\n",__FUNCTION__,__LINE__,copied);
 	return copied;
 
@@ -1260,7 +1258,9 @@ do_error:
 out_err:
 	err = sk_stream_error(sk, flags, err);
 	TCP_CHECK_TIMER(sk);
+#ifndef CONFIG_MTCP
 	release_sock(sk);
+#endif
 	return err;
 }
 
