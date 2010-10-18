@@ -770,8 +770,8 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	  called before none of these functions.*/
 	BUG_ON(!mpcb);
 
-	lock_sock(mpcb_sk);
 	lock_sock(master_sk);	
+	lock_sock(mpcb_sk);
 
 	/*If the master sk is not yet established, we need to wait
 	  until the establishment, so as to know whether the mpc option
@@ -779,10 +779,12 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	if (!tcp_sk(master_sk)->mpc) {
 		if ((1 << master_sk->sk_state) & 
 		    ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT)) {
-			if ((err = sk_stream_wait_connect(master_sk,
-							  &timeo)) != 0) {
+			release_sock(mpcb_sk);
+			err = sk_stream_wait_connect(master_sk,
+						     &timeo);			
+			lock_sock(mpcb_sk);
+			if (err)
 				goto out_err;
-			}
 			/*The flag mast be re-checked, because it may have
 			  appeared during sk_stream_wait_connect*/
 			if (!tcp_sk(master_sk)->mpc) {
@@ -816,14 +818,14 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	mtcp_debug(KERN_ERR "Leaving %s, copied %d\n",
 	           __FUNCTION__, (int) copied);
 out:
-	release_sock(master_sk);
 	release_sock(mpcb_sk);
+	release_sock(master_sk);
 	return copied;
 out_err:
 	err = sk_stream_error(master_sk, flags, err);
 	TCP_CHECK_TIMER(master_sk);
-	release_sock(master_sk);
 	release_sock(mpcb_sk);
+	release_sock(master_sk);
 	return err;
 }
 
