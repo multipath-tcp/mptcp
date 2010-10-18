@@ -758,7 +758,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	struct sock *master_sk = sock->sk;
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(master_sk));
 	struct sock *mpcb_sk = (struct sock *) mpcb;
-	size_t copied;
+	size_t copied = 0;
 
 	if (!tcp_sk(master_sk)->mpc)
 		return subtcp_sendmsg(iocb,master_sk, msg, size);
@@ -773,17 +773,11 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 #endif
 	
 	/* Compute the total number of bytes stored in the message*/	
-	copied=0;
-
-	copied=subtcp_sendmsg(NULL,mpcb_sk,msg, 0);
-	if (copied<0) {		
+	copied = subtcp_sendmsg(NULL,mpcb_sk,msg, 0);
+	if (copied<0)
 		printk(KERN_ERR "%s: returning error "
 		       "to app:%d\n",__FUNCTION__,(int)copied);
-		return copied;
-	}
 
-	mtcp_debug(KERN_ERR "Leaving %s, copied %d\n",
-	           __FUNCTION__, (int) copied);
 	return copied;
 }
 
