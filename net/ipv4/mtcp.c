@@ -1000,7 +1000,6 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 		
 		do {
 			if (!skb) goto exit;
-			mtcp_debug("%s - len: %d, data_seq: %d TCP_SKB_CB(skb)->data_seq:%d\n",__FUNCTION__, *len, *data_seq,TCP_SKB_CB(skb)->data_seq);
 
 			fin=tcp_hdr(skb)->fin;
 		
@@ -1024,7 +1023,6 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 				       TCP_SKB_CB(skb)->data_seq);
 				BUG();
 			}
-			mtcp_debug("%s: going to skb->next",__FUNCTION__);
 			WARN_ON(!(flags & MSG_PEEK));
 			skb = skb->next;
 		} while (skb != (struct sk_buff *)&mpcb_sk->sk_receive_queue);
