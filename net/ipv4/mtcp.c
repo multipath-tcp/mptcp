@@ -677,7 +677,8 @@ int mtcp_is_available(struct sock *sk)
 {
 	if (sk->sk_state!=TCP_ESTABLISHED || tcp_sk(sk)->pf ||
 	    (tcp_sk(sk)->mpcb->noneligible & 
-	     PI_TO_FLAG(tcp_sk(sk)->path_index)))
+	     PI_TO_FLAG(tcp_sk(sk)->path_index)) ||
+	    inet_csk(sk)->icsk_ca_state==TCP_CA_Loss)
 		return 0;
 	if (tcp_cwnd_test(tcp_sk(sk))) return 1;
 	return 0;
