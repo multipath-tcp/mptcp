@@ -1739,7 +1739,10 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		       is_meta_sk(sk));
 		BUG();
 	}
-	if(tp->mpcb && ((struct sock*)tp->mpcb)->sk_in_write_xmit) {
+	/*We can be recursively called only in TCP_FIN_WAIT1 state (because
+	  the very last segments calls tcp_send_fin() on all subflows)*/
+	if(tp->mpcb && ((struct sock*)tp->mpcb)->sk_in_write_xmit
+	   && sk->sk_state!=TCP_FIN_WAIT1) {		
 		printk(KERN_ERR "meta-sk in write xmit, meta-sk:%d\n",
 		       is_meta_sk(sk));
 		BUG();
@@ -1898,7 +1901,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 				}
 			}
 			break;
-		}
+		}	
 		
 		/* Advance the send_head.  This one is sent out.
 		 * This call will increment packets_out.
@@ -1921,6 +1924,18 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 			tcp_event_new_data_sent(sk,skb);
 		}
 		
+		if (sk!=subsk &&
+		    (TCP_SKB_CB(skb)->flags & TCPCB_FLAG_FIN)) {
+			struct sock *sk_it;
+			struct tcp_sock *tp_it;
+			/*App close: we have sent every app-level byte,
+			  send now the FIN on all subflows.*/
+			mtcp_for_each_sk(tp->mpcb,sk_it,tp_it)
+				if (sk_it!=subsk)
+					tcp_send_fin(sk_it);
+		}
+
+
 		tcp_minshall_update(tp, mss_now, skb);
 		sent_pkts++;
 
@@ -2059,11 +2074,20 @@ again:
 		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
 		if (likely(!(err=tcp_transmit_skb(subsk, subskb, 1, 
 						  subsk->sk_allocation)))) {
+			if (TCP_SKB_CB(skb)->flags & TCPCB_FLAG_FIN) {
+				struct sock *sk_it;
+				struct tcp_sock *tp_it;
+				/*App close: we have sent every app-level byte,
+				  send now the FIN on all subflows.*/
+				mtcp_for_each_sk(tp->mpcb,sk_it,tp_it)
+					if (sk_it!=subsk)
+						tcp_send_fin(sk_it);
+			}
 			tcp_event_new_data_sent(subsk, subskb);
 			BUG_ON(tcp_send_head(subsk));
 			if (sk!=subsk && !reinject)
 				tcp_event_new_data_sent(sk,skb);
-			tcp_cwnd_validate(subsk);			
+			tcp_cwnd_validate(subsk);
 		}
 		else if (sk!=subsk) {
 			/*Remove the skb from the subsock*/
@@ -2337,7 +2361,12 @@ static void tcp_retrans_try_collapse(struct sock *sk, struct sk_buff *skb,
 
 	/* Update sequence range on original skb. */
 	TCP_SKB_CB(skb)->end_seq = TCP_SKB_CB(next_skb)->end_seq;
-	TCP_SKB_CB(skb)->end_data_seq = TCP_SKB_CB(next_skb)->end_data_seq;
+	/*For the dsn space, we need to make an addition and not just
+	  copy the end_seq, because if the next_skb is a pure FIN (with
+	  no data), the len is 1 and the data_len is 0, as well as
+	  the end_data_seq of the FIN. Using an addition takes this
+	  difference into account*/
+	TCP_SKB_CB(skb)->end_data_seq += TCP_SKB_CB(next_skb)->data_len;
 
 	/* Merge over control information. */
 	flags |= TCP_SKB_CB(next_skb)->flags; /* This moves PSH/FIN etc. over */
@@ -2670,30 +2699,38 @@ void tcp_send_fin(struct sock *sk)
 	if (!tp->mpc) mss_now = tcp_current_mss(sk, 1);
 	else mss_now = sysctl_mptcp_mss;
 
-	/*If the sock is multipath capable, we do not 
-	  attach the FIN to the tail skb. The reason is that the
-	  FIN eats a DSN, that must be contiguous to the last
-	  byte of the data packet. But if we have sent data on other
-	  subflows in between, that contiguous subseq is already given
-	  to another subflow. We could check this and still append the FIN
-	  when it is contiguous, as an optimization, but at the moment
-	  we simply send the FIN alone.
-	  Moreover, if one wants to implement this optimization, it will
-	  also be necessary to check the FIN in the data reception procedures
-	  of the meta-socket (e.g. mtcp_queue_skb()).
-	*/
 	if (tcp_send_head(sk) != NULL && !tp->mpc) {
 		TCP_SKB_CB(skb)->flags |= TCPCB_FLAG_FIN;
 		TCP_SKB_CB(skb)->end_seq++;
-		tp->write_seq++;
-	} else {
-		/* Socket is locked, keep trying until memory is available. */
-		for (;;) {
-			skb = alloc_skb_fclone(MAX_TCP_HEADER, GFP_KERNEL);
-			if (skb)
-				break;
-			yield();
-		}
+		tp->write_seq++;	       
+	}
+#ifdef CONFIG_MTCP
+	else if (tp->mpc && tp->mpcb && 
+		 tcp_send_head((struct sock*)&tp->mpcb->tp) != NULL) {
+		struct sock *mpcb_sk=(struct sock*)tp->mpcb;
+		/*Put the FIN on top of the meta-send queue.*/
+		skb = tcp_write_queue_tail(mpcb_sk);
+		TCP_SKB_CB(skb)->flags |= TCPCB_FLAG_FIN;
+		set_bit(MPCB_FLAG_FIN_ENQUEUED,&tp->mpcb->flags);
+		/*To force pushing frames from the meta-sk, not the subsk*/
+		sk=mpcb_sk;
+	}
+#endif
+	else {
+		/* Socket is locked, keep trying until memory is available. 
+		   Due to the possible call from tcp_write_xmit, we might
+		   be called from interrupt context, hence the following cond.*/
+		if (!in_interrupt())
+			for (;;) {
+				skb = alloc_skb_fclone(MAX_TCP_HEADER, 
+						       GFP_KERNEL);
+				if (skb)
+					break;
+				yield();
+			}
+		else
+			skb = alloc_skb_fclone(MAX_TCP_HEADER, 
+					       GFP_ATOMIC);
 
 		/* Reserve space for headers and prepare control bits. */
 		skb_reserve(skb, MAX_TCP_HEADER);
@@ -2701,23 +2738,6 @@ void tcp_send_fin(struct sock *sk)
 		   tcp_queue_skb(). */
 		tcp_init_nondata_skb(skb, tp->write_seq,
 				     TCPCB_FLAG_ACK | TCPCB_FLAG_FIN);
-#ifdef CONFIG_MTCP
-		if (tp->mpc) {
-			struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
-			BUG_ON(!mpcb && !tp->pending);
-			if (tp->pending)
-				mpcb=mtcp_hash_find(tp->mtcp_loc_token);
-			if (mpcb) {
-				TCP_SKB_CB(skb)->data_seq=mpcb->tp.write_seq++;
-				TCP_SKB_CB(skb)->end_data_seq=
-					TCP_SKB_CB(skb)->data_seq+1;
-				TCP_SKB_CB(skb)->data_len=1;
-				TCP_SKB_CB(skb)->sub_seq=TCP_SKB_CB(skb)->seq;
-				if (tp->pending) 
-					mpcb_put(mpcb);
-			}
-		}
-#endif
 		tcp_queue_skb(sk, skb);
 	}
 	__tcp_push_pending_frames(sk, mss_now, TCP_NAGLE_OFF);

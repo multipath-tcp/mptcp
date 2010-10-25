@@ -6337,6 +6337,17 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 
 		case TCP_FIN_WAIT1:
 			if (tp->snd_una == tp->write_seq) {
+				struct sock *mpcb_sk=(struct sock*)tp->mpcb;
+				struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
+				/*If the following condition is true,
+				  the meta-send queue is not yet done,
+				  and we must keep this socket in fin_wait,
+				  so that additional data can be sent on it*/
+				if (tp->mpc && tp->mpcb &&
+				    mpcb_sk->sk_state==TCP_FIN_WAIT1 &&
+				    mpcb_tp->snd_una != mpcb_tp->write_seq)
+					break;
+				
 				tcp_set_state(sk, TCP_FIN_WAIT2);
 				sk->sk_shutdown |= SEND_SHUTDOWN;
 				dst_confirm(sk->sk_dst_cache);

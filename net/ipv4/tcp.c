@@ -2389,12 +2389,7 @@ void tcp_close(struct sock *sk, long timeout)
 	struct sk_buff *skb;
 	int data_was_unread = 0;
 	int state;
-	
-	printk(KERN_ERR "Closing sock " NIPQUAD_FMT "->" NIPQUAD_FMT ", pi %d"
-	       "\n",
-	       NIPQUAD(inet_sk(sk)->saddr),NIPQUAD(inet_sk(sk)->daddr),
-	       tcp_sk(sk)->path_index);
-	
+		
 #ifdef CONFIG_MTCP
 	/*if this is the master subsocket, we must first close the
 	  slave subsockets*/
@@ -2416,6 +2411,8 @@ void tcp_close(struct sock *sk, long timeout)
 		skb_queue_purge(&mpcb_tp->out_of_order_queue);
 
 		BUG_ON(!skb_queue_empty(&mpcb_sk->sk_receive_queue));
+				
+		tcp_close_state(mpcb_sk);
 
 		/*We MUST close the master socket in the last place.
 		  this is indeed the case, because the master socket is at the
@@ -2478,6 +2475,7 @@ void tcp_close(struct sock *sk, long timeout)
 		NET_INC_STATS_USER(sock_net(sk), LINUX_MIB_TCPABORTONDATA);
 		printk(KERN_ERR "flag LINGER\n");
 	} else if (tcp_close_state(sk)) {
+		struct tcp_sock *tp=tcp_sk(sk);
 		mtcp_debug("%s: will call tcp_fin\n", __FUNCTION__);
 		/* We FIN if the application ate all the data before
 		 * zapping the connection.
@@ -2504,7 +2502,12 @@ void tcp_close(struct sock *sk, long timeout)
 		 * Probably, I missed some more holelets.
 		 * 						--ANK
 		 */
-		tcp_send_fin(sk);
+		/*MPTCP note: if FIN_ENQUEUED is set, the FIN has been queued
+		  already in the meta-send queue, hence tcp_write_xmit
+		  will (or has already) send the FIN itself*/
+		if (!tp->mpcb || !test_bit(MPCB_FLAG_FIN_ENQUEUED,
+					   &tp->mpcb->flags))
+			tcp_send_fin(sk);
 	}
 	else printk(KERN_ERR "no condition applies\n");
 

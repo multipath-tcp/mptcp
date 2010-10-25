@@ -154,39 +154,6 @@ static void mtcp_def_readable(struct sock *sk, int len)
 	read_unlock(&msk->sk_callback_lock);
 }
 
-/**
- * Sets the pending_data flag in the mpcb structure, and wakes it up.
- *
- * Working of the pending_data flag:
- *  Whenever there is data ready to be copied to the app, (thus, in meta-order)
- *  the flag must be set to one. So 
- *    -when new data becomes available, we must 
- *     set the flag. New data is available if it just appeared in one of the 
- *     subsock receive queues (either because it was in order, or it left the
- *     ofo queue to enter the receive queue) AND it is in meta-order.
- *    -When the flag is set, and we finish copying data to the app, we check
- *     whether further data is available. If there is further data, the flag 
- *     remains set, if there is no data anymore, we reset the flag, until
- *     the data arrives. In theory, the check should be done at every 
- *     increment of mpcb->copied_seq, that is, each time data is eaten
- *     by the app. However, although there are quite diverse places where
- *     data is copied to the app, all are performed in the context of the
- *     tcp_recvmsg call. (even the one in tcp_data_queue, since the ucopy
- *     structure used there is defined only by tcp_recvmsg).
- *     So it is completely sufficient to do the check just before to return 
- *     to the app, from tcp_recvmsg.
- *
- *  Note that the intent of that pending_data flag is to enable tcp_poll to
- *  determine whether there is pending data. This job is made more difficult,
- *  because in-order data arriving on a subsock does not mean that this data
- *  is in meta-order. If it is not, and we wake-up the app, the app can crash
- *  because the subsequent read call will fail. 
- *  Note also that while single-path tcp uses the difference rcv_nxt-copied_seq
- *  to determine how many bytes are available for the app, we instead use
- *  a single flag, that just tells "at least one byte is available".
- *  This implies that the socket option SO_RCVLOWAT is currently not supported.
- *  rcvlowat is kept at its default value of 1 byte.
- */
 void mtcp_data_ready(struct sock *sk)
 {
 	struct tcp_sock *tp=tcp_sk(sk);
@@ -511,9 +478,6 @@ void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
 	/*Stop listening to PM events*/
 	unregister_netevent_notifier(&mpcb->nb);
 
-	skb_queue_purge(&mpcb_sk->sk_receive_queue);
-	skb_queue_purge(&mpcb_tp->out_of_order_queue);
-
 	kref_put(&mpcb->kref,mpcb_release);
 }
 
@@ -680,7 +644,12 @@ static inline unsigned int tcp_cwnd_test(struct tcp_sock *tp)
 
 int mtcp_is_available(struct sock *sk)
 {
-	if (sk->sk_state!=TCP_ESTABLISHED || tcp_sk(sk)->pf ||
+	struct sock *mpcb_sk=(struct sock*)tcp_sk(sk)->mpcb;
+	if (sk->sk_state!=TCP_ESTABLISHED && 
+	    (sk->sk_state!=TCP_FIN_WAIT1 ||
+	     mpcb_sk->sk_state!=TCP_FIN_WAIT1))
+		return 0;
+	if (tcp_sk(sk)->pf ||
 	    (tcp_sk(sk)->mpcb->noneligible & 
 	     PI_TO_FLAG(tcp_sk(sk)->path_index)) ||
 	    inet_csk(sk)->icsk_ca_state==TCP_CA_Loss)
@@ -1040,14 +1009,11 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 	do {
 		u32 data_offset = 0;
 		unsigned long used;
-		int fin = 0;
 
 		skb = skb_peek(&mpcb_sk->sk_receive_queue);
 		
 		do {
 			if (!skb) goto exit;
-
-			fin=tcp_hdr(skb)->fin;
 
 			if (before(*data_seq,TCP_SKB_CB(skb)->data_seq)) {
 				printk(KERN_ERR "%s bug: copied %X "
@@ -1056,11 +1022,11 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 				BUG();
 			}
 			data_offset = *data_seq - TCP_SKB_CB(skb)->data_seq;
-			if (data_offset < skb->len || fin)
+			if (data_offset < skb->len)
 				break;
 
-			if (!tcp_hdr(skb)->fin && skb->len !=
-			    TCP_SKB_CB(skb)->end_data_seq - TCP_SKB_CB(skb)->data_seq) {
+			if (skb->len != TCP_SKB_CB(skb)->end_data_seq - 
+			    TCP_SKB_CB(skb)->data_seq) {
 				printk(KERN_ERR "skb->len:%d, should be %d\n",
 				       skb->len,
 				       TCP_SKB_CB(skb)->end_data_seq -
@@ -1081,7 +1047,7 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 					    msg->msg_iov, used);
 		BUG_ON(err);
 		
-		*data_seq+=used+fin;
+		*data_seq+=used;
 		*copied+=used;
 		*len-=used;
 		
@@ -1262,6 +1228,7 @@ void mtcp_skb_entail(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
+	int fin=(tcb->flags & TCPCB_FLAG_FIN)?1:0;
 	
 	tcb->seq      = tcb->end_seq = tcb->sub_seq = tp->write_seq;
 	tcb->sacked = 0; /*reset the sacked field: from the point of view
@@ -1272,8 +1239,8 @@ void mtcp_skb_entail(struct sock *sk, struct sk_buff *skb)
 	sk_mem_charge(sk, skb->truesize);
 
 	/*Take into account seg len*/
-	tp->write_seq += skb->len;
-	tcb->end_seq += skb->len;
+	tp->write_seq += skb->len+fin;
+	tcb->end_seq += skb->len+fin;
 }
 
 /*Algorithm by Bryan Kernighan to count bits in a word*/
@@ -1416,12 +1383,7 @@ int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb)
 		tp->map_data_len=TCP_SKB_CB(skb)->data_len;
 		tp->map_subseq=TCP_SKB_CB(skb)->sub_seq;
 		changed=1;
-	}
-	
-	/*data len does not count for the subflow FIN,
-	  include the FIN in the mapping now.*/
-	if (tcp_hdr(skb)->fin)
-		tp->map_data_len++;
+	}	
 	
 	/*Even if we have received a mapping update, it may differ from
 	  the seqnum contained in the
@@ -1431,7 +1393,7 @@ int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb)
 	
 	if (before(TCP_SKB_CB(skb)->seq,tp->map_subseq) ||
 	    after(TCP_SKB_CB(skb)->end_seq,
-		  tp->map_subseq+tp->map_data_len)) {
+		  tp->map_subseq+tp->map_data_len+tcp_hdr(skb)->fin)) {
 		printk(KERN_ERR "seq:%x,tp->map_subseq:%x,"
 		       "end_seq:%x,tp->map_data_len:%d,changed:%d\n",
 		       TCP_SKB_CB(skb)->seq,tp->map_subseq,
@@ -1450,7 +1412,7 @@ int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb)
 	TCP_SKB_CB(skb)->data_seq=tp->map_data_seq+
 		(TCP_SKB_CB(skb)->seq-tp->map_subseq);
 	TCP_SKB_CB(skb)->end_data_seq=
-		TCP_SKB_CB(skb)->data_seq+skb->len+tcp_hdr(skb)->fin;
+		TCP_SKB_CB(skb)->data_seq+skb->len;
 	TCP_SKB_CB(skb)->data_len=0; /*To indicate that there is not anymore
 				       general mapping information in that 
 				       segment (the mapping info is now 

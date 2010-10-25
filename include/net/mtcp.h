@@ -73,6 +73,8 @@ extern struct proto mtcpsub_prot;
 #define MPCB_FLAG_SERVER_SIDE 	0   /* this mpcb belongs to a server side 
 				       connection.
 				       (obtained through a listen)*/
+#define MPCB_FLAG_FIN_ENQUEUED 1  /*A fin has been enqueued on the meta-send
+				     queue. Hence, */
 struct multipath_pcb {
 	struct tcp_sock           tp;
 
