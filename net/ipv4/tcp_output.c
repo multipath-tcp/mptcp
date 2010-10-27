@@ -2489,7 +2489,11 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 	if (inet_csk(sk)->icsk_af_ops->rebuild_header(sk))
 		return -EHOSTUNREACH; /* Routing failure or similar. */
 
+#ifdef CONFIG_MTCP
+	cur_mss = sysctl_mptcp_mss;
+#else
 	cur_mss = tcp_current_mss(sk, 0);
+#endif
 
 	/* If receiver has shrunk his window, and skb is out of
 	 * new window, do not retransmit it. The exception is the
