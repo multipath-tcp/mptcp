@@ -2405,6 +2405,9 @@ void tcp_close(struct sock *sk, long timeout)
 		struct sock *slave_sk,*temp;
 
 		mtcp_debug("%s: Close of master_sk\n",__FUNCTION__);
+
+		lock_sock(mpcb_sk);
+
 		/*Purging the meta-queues. This MUST be done before
 		  to close any subsocket. See comment in function 
 		  mtcp_destroy_mpcb()*/
@@ -2429,8 +2432,9 @@ void tcp_close(struct sock *sk, long timeout)
 		}
 	}
 #endif
-
+#ifndef CONFIG_MTCP
 	lock_sock(sk);
+#endif
 	sk->sk_shutdown = SHUTDOWN_MASK;
 
 	if (sk->sk_state == TCP_LISTEN) {
@@ -2513,8 +2517,15 @@ adjudge_to_death:
 	atomic_inc(sk->sk_prot->orphan_count);
 
 	/* It is the last release_sock in its life. It will remove backlog. */
+#ifdef CONFIG_MTCP
+	/*tcp_close() can be called only on the master subsock.
+	  it recursively calls itself on other subsocks, but
+	  those recursive calls work under the lock of the mpcb.*/
+	if (is_master_sk(tcp_sk(sk)))
+		release_sock((struct sock*)tcp_sk(sk)->mpcb);
+#else
 	release_sock(sk);
-
+#endif
 
 	/* Now socket is owned by kernel and we acquire BH lock
 	   to finish close. No need to check for user refs.
