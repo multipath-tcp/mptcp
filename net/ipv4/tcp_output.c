@@ -543,6 +543,12 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			       (TCPOLEN_DATA_ACK));
 		*ptr++ = htonl(opts->data_ack);
 	}
+	if (OPTION_DFIN & opts->options) {
+		*ptr++ = htonl((TCPOPT_NOP << 24) |
+			       (TCPOPT_NOP << 16) |
+			       (TCPOPT_DFIN << 8) |
+			       (TCPOLEN_DFIN));
+	}
 #endif
 }
 
@@ -744,6 +750,12 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		}
 		opts->options |= OPTION_DSN;
 		size += TCPOLEN_DSN_ALIGNED;		
+	}
+	if (tp->mpc && test_bit(MPCB_FLAG_FIN_ENQUEUED,
+				&tp->mpcb->flags) &&
+	    (!skb || TCP_SKB_CB(skb)->end_data_seq==mpcb->tp.write_seq)) {
+		opts->options |= OPTION_DFIN;
+		size += TCPOLEN_DFIN_ALIGNED;		
 	}
 	if (tp->mpc) {
 		/*If we are at the server side, and the accept syscall has not
@@ -957,12 +969,15 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
  * NOTE: probe0 timer is not checked, do not forget tcp_push_pending_frames,
  * otherwise socket can stall.
  */
-static void tcp_queue_skb(struct sock *sk, struct sk_buff *skb)
+void tcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	/* Advance write_seq and place onto the write_queue. */
-	tp->write_seq = TCP_SKB_CB(skb)->end_seq;	
+	if (is_meta_sk(sk))
+		tp->write_seq = TCP_SKB_CB(skb)->end_data_seq;
+	else
+		tp->write_seq = TCP_SKB_CB(skb)->end_seq;
 	skb_header_release(skb);
 	tcp_add_write_queue_tail(sk, skb);
 	sk->sk_wmem_queued += skb->truesize;
@@ -1728,6 +1743,7 @@ static int tcp_mtu_probe(struct sock *sk)
 static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct sock *mpcb_sk=(struct sock*)tp->mpcb;
 	struct sk_buff *skb;
 	unsigned int tso_segs, sent_pkts;
 	int cwnd_quota;
@@ -1740,11 +1756,13 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		BUG();
 	}
 	/*We can be recursively called only in TCP_FIN_WAIT1 state (because
-	  the very last segments calls tcp_send_fin() on all subflows)*/
-	if(tp->mpcb && ((struct sock*)tp->mpcb)->sk_in_write_xmit
-	   && sk->sk_state!=TCP_FIN_WAIT1) {		
-		printk(KERN_ERR "meta-sk in write xmit, meta-sk:%d\n",
-		       is_meta_sk(sk));
+	  the very last segment calls tcp_send_fin() on all subflows)*/
+	if(tp->mpcb && mpcb_sk->sk_in_write_xmit
+	   && ((1<<mpcb_sk->sk_state) & ~(TCPF_FIN_WAIT1|TCPF_LAST_ACK))) {
+		printk(KERN_ERR "meta-sk in write xmit, meta-sk:%d,"
+		       "state of mpcb_sk:%d, of subsk:%d\n",
+		       is_meta_sk(sk),((struct sock*)tp->mpcb)->sk_state,
+		       sk->sk_state);
 		BUG();
 	}
 
@@ -2711,23 +2729,11 @@ void tcp_send_fin(struct sock *sk)
 	if (!tp->mpc) mss_now = tcp_current_mss(sk, 1);
 	else mss_now = sysctl_mptcp_mss;
 
-	if (tcp_send_head(sk) != NULL && !tp->mpc) {
+	if (tcp_send_head(sk) != NULL) {
 		TCP_SKB_CB(skb)->flags |= TCPCB_FLAG_FIN;
 		TCP_SKB_CB(skb)->end_seq++;
 		tp->write_seq++;	       
 	}
-#ifdef CONFIG_MTCP
-	else if (tp->mpc && tp->mpcb && 
-		 tcp_send_head((struct sock*)&tp->mpcb->tp) != NULL) {
-		struct sock *mpcb_sk=(struct sock*)tp->mpcb;
-		/*Put the FIN on top of the meta-send queue.*/
-		skb = tcp_write_queue_tail(mpcb_sk);
-		TCP_SKB_CB(skb)->flags |= TCPCB_FLAG_FIN;
-		set_bit(MPCB_FLAG_FIN_ENQUEUED,&tp->mpcb->flags);
-		/*To force pushing frames from the meta-sk, not the subsk*/
-		sk=mpcb_sk;
-	}
-#endif
 	else {
 		/* Socket is locked, keep trying until memory is available. 
 		   Due to the possible call from tcp_write_xmit, we might

@@ -34,6 +34,7 @@
 #define OPTION_ADDR             (1 << 6)
 #define OPTION_JOIN             (1 << 7)
 #define OPTION_DATA_ACK         (1 << 8)
+#define OPTION_DFIN             (1 << 9)
 
 struct tcp_out_options {
 	u16 options;		/* bit field of OPTION_* */
@@ -66,7 +67,8 @@ struct tcp_options_received {
 		sack_ok : 4,	/* SACK seen on SYN packet		*/
 		snd_wscale : 4,	/* Window scaling received from sender	*/
 		rcv_wscale : 4,	/* Window scaling to send to receiver	*/
-		saw_mpc : 1;    /* MPC option seen, for MPTCP */
+		saw_mpc : 1,    /* MPC option seen, for MPTCP */
+		saw_dfin :1;    /* DFIN option seen, for MPTCP */
 /*	SACKs data	*/
 	u8	eff_sacks;	/* Size of SACK array to send with next packet */
 	u8	num_sacks;	/* Number of SACK blocks		*/
@@ -85,8 +87,11 @@ struct multipath_options {
 	int    num_addr6;
 	struct mtcp_loc4 addr4[MTCP_MAX_ADDR];
 	struct mtcp_loc6 addr6[MTCP_MAX_ADDR];
-	u8     list_rcvd:1; /*1 if IP list has been received*/	
 #endif
+	u8      list_rcvd:1, /*1 if IP list has been received (MTCP_PM)*/
+		dfin_rcvd:1;
+	u32     fin_dsn; /*DSN of the byte 
+			   FOLLOWING the Data FIN*/
 };
 
 #endif /*_TCP_OPTIONS_H*/

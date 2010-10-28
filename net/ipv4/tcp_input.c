@@ -3754,6 +3754,23 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 					TCP_SKB_CB(skb)->seq;
 				saw_dsn=1;
 				break;
+			case TCPOPT_DFIN:
+				/*the dsn opt MUST be put
+				  before the dfin (to know 
+				  the its data seqnum*/
+				BUG_ON(!saw_dsn);
+				if (opsize!=TCPOLEN_DFIN) {
+					mtcp_debug("dfin opt:bad option "
+						   "size\n");
+					break;
+				}
+				TCP_SKB_CB(skb)->end_data_seq++;
+				if (mopt) {
+					mopt->dfin_rcvd=opt_rx->saw_dfin=1;
+					mopt->fin_dsn=TCP_SKB_CB(skb)->data_seq+
+						TCP_SKB_CB(skb)->data_len;
+				}
+				break;
 			case TCPOPT_DATA_ACK:
 				if (opsize!=TCPOLEN_DATA_ACK) {
 					mtcp_debug("data_ack opt:bad option "
@@ -4560,7 +4577,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 				goto drop;
 			}
 			
-			skb_set_owner_r(skb, sk);			
+			skb_set_owner_r(skb, sk);
 			mtcp_eaten=mtcp_queue_skb(sk,skb);
 		}
 		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;

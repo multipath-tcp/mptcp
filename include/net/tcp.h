@@ -179,7 +179,7 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOPT_JOIN      	62
 
 /*
- *     TCP option lengthsx
+ *     TCP option lengths
  */
 
 #define TCPOLEN_MSS            4
@@ -197,6 +197,7 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_MPC            4
 #endif
 #define TCPOLEN_DSN            12
+#define TCPOLEN_DFIN           2
 #define TCPOLEN_DATA_ACK       6
 
 /* But this is what stacks really send out. */
@@ -216,6 +217,7 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_MPC_ALIGNED             4
 #endif
 #define TCPOLEN_DSN_ALIGNED             12
+#define TCPOLEN_DFIN_ALIGNED            4
 #define TCPOLEN_DATA_ACK_ALIGNED        8
 
 /* Flags in tp->nonagle */
@@ -616,7 +618,7 @@ struct tcp_skb_cb {
 	__u32		end_seq;	/* SEQ + FIN + SYN + datalen	*/
 	__u32           data_seq;       /* Starting data seq            */
 	__u32           data_ack;       /* Data level ack (MPTCP)       */
-	__u32           end_data_seq;   /* DATA_SEQ + FIN+ SYN + datalen*/
+	__u32           end_data_seq;   /* DATA_SEQ + DFIN + SYN + datalen*/
 	__u16           data_len;       /* Data-level length (MPTCP)    
 					 * a value of 0 indicates that no DSN
 					 * option is attached to that segment

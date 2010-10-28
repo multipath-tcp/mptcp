@@ -137,6 +137,21 @@ static ctl_table mptcp_root_table[] = {
 };
 #endif
 
+/**
+ * Equivalent of tcp_fin() for MPTCP
+ * Can be called only when the FIN is validly part
+ * of the data seqnum space. Not before when we get holes.
+ */
+static void mtcp_fin(struct sk_buff *skb, struct multipath_pcb *mpcb)
+{
+	struct sock *mpcb_sk=(struct sock*) mpcb;
+	if (is_dfin_seg(mpcb,skb)) {
+		mpcb_sk->sk_shutdown |= RCV_SHUTDOWN;
+		sock_set_flag(mpcb_sk, SOCK_DONE);
+		if (mpcb_sk->sk_state==TCP_ESTABLISHED)
+			tcp_set_state(mpcb_sk,TCP_CLOSE_WAIT);
+	}
+}
 
 static void mtcp_def_readable(struct sock *sk, int len)
 {
@@ -925,6 +940,8 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb)
 
 		__skb_queue_tail(&mpcb_sk->sk_receive_queue, skb);
 		mpcb_tp->rcv_nxt=TCP_SKB_CB(skb)->end_data_seq;
+		if (tcp_hdr(skb)->fin)
+			mtcp_fin(skb,mpcb);
 	}
 }
 
@@ -1003,16 +1020,23 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 	struct sk_buff *skb;
 	struct sock *mpcb_sk=(struct sock*)mpcb;
 	int err;
+	struct tcp_sock *tp;
 
 	do {
 		u32 data_offset = 0;
 		unsigned long used;
+		int dfin = 0;
 
 		skb = skb_peek(&mpcb_sk->sk_receive_queue);
 		
 		do {
 			if (!skb) goto exit;
 
+			tp=tcp_sk(skb->sk);
+			
+			if (is_dfin_seg(mpcb,skb))
+				dfin=1;
+			
 			if (before(*data_seq,TCP_SKB_CB(skb)->data_seq)) {
 				printk(KERN_ERR "%s bug: copied %X "
 				       "dataseq %X\n", __FUNCTION__, *data_seq,
@@ -1023,7 +1047,7 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 			if (data_offset < skb->len)
 				break;
 
-			if (skb->len != TCP_SKB_CB(skb)->end_data_seq - 
+			if (skb->len + dfin != TCP_SKB_CB(skb)->end_data_seq - 
 			    TCP_SKB_CB(skb)->data_seq) {
 				printk(KERN_ERR "skb->len:%d, should be %d\n",
 				       skb->len,
@@ -1035,7 +1059,8 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 			skb = skb->next;
 		} while (skb != (struct sk_buff *)&mpcb_sk->sk_receive_queue);
 
-		if (skb == (struct sk_buff *)&mpcb_sk->sk_receive_queue) goto exit;
+		if (skb == (struct sk_buff *)&mpcb_sk->sk_receive_queue) 
+			goto exit;
 
 		used = skb->len - data_offset;
 		if (*len < used)
@@ -1045,7 +1070,7 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 					    msg->msg_iov, used);
 		BUG_ON(err);
 		
-		*data_seq+=used;
+		*data_seq+=used+dfin;
 		*copied+=used;
 		*len-=used;
 		
@@ -1054,14 +1079,14 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 			sk_eat_skb(mpcb_sk, skb, 0);
 		else if (!(flags & MSG_PEEK) && *len!=0) {
 				printk(KERN_ERR 
-				       "%s bug: copied %X "
-				       "dataseq %X, *len %d\n", __FUNCTION__, 
+				       "%s bug: copied %#x "
+				       "dataseq %#x, *len %d\n", __FUNCTION__, 
 				       *data_seq, 
 				       TCP_SKB_CB(skb)->data_seq, (int)*len);
-				printk(KERN_ERR "init data_seq:%x,used:%d\n",
+				printk(KERN_ERR "init data_seq:%#x,used:%d\n",
 				       skb->data_seq,(int)used);
 				BUG();
-		}				
+		}
 	} while (*len>0);
 	/*This checks whether an explicit window update is needed to unblock
 	  the receiver*/
@@ -1088,6 +1113,13 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 	if (!tp->mpc || !mpcb) {
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
 		return MTCP_QUEUED;
+	}
+	
+	if (!skb->len && tcp_hdr(skb)->fin && !tp->rx_opt.saw_dfin) {
+		/*Pure subflow FIN (without DFIN)
+		  just update subflow and return*/
+		++tp->copied_seq;
+		return MTCP_EATEN;
 	}
 	
 	/*In all cases, we remove it from the subsock, so copied_seq
@@ -1190,6 +1222,9 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 	else {
 		__skb_queue_tail(&mpcb_sk->sk_receive_queue, skb);
 		mpcb_tp->rcv_nxt=TCP_SKB_CB(skb)->end_data_seq;
+
+		if (fin)
+			mtcp_fin(skb,mpcb);
 
 		/*Check if this fills a gap in the ofo queue*/
 		if (!skb_queue_empty(&mpcb_tp->out_of_order_queue))
@@ -1356,6 +1391,8 @@ void mtcp_reinject_data(struct sock *orig_sk)
  *       caller that the segment can be eaten by the subflow immediately.
  *   iii) if it is not in meta-order (keep in mind that the precondition 
  *        requires that it is in subflow order): we return 0
+ *   iv) particular case: if the segment is a subflow-only segment
+ *      (e.g. FIN without DFIN), we return 3.
  * - If the skb is faulty (does not contain a dataseq option, and seqnum
  *   not contained in currently stored mapping), we return -1
  * - If the tp is a pending tp, and the mpcb is destroyed (not anymore
@@ -1381,8 +1418,13 @@ int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb)
 		tp->map_data_len=TCP_SKB_CB(skb)->data_len;
 		tp->map_subseq=TCP_SKB_CB(skb)->sub_seq;
 		changed=1;
-	}	
+	}
 	
+	/*Is it a subflow only FIN ?*/
+	if (tcp_hdr(skb)->fin && !tp->rx_opt.saw_dfin) {
+		return 3;
+	}
+
 	/*Even if we have received a mapping update, it may differ from
 	  the seqnum contained in the
 	  TCP header. In that case we must recompute the data_seq and 
@@ -1392,6 +1434,7 @@ int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb)
 	if (before(TCP_SKB_CB(skb)->seq,tp->map_subseq) ||
 	    after(TCP_SKB_CB(skb)->end_seq,
 		  tp->map_subseq+tp->map_data_len+tcp_hdr(skb)->fin)) {
+		
 		printk(KERN_ERR "seq:%x,tp->map_subseq:%x,"
 		       "end_seq:%x,tp->map_data_len:%d,changed:%d\n",
 		       TCP_SKB_CB(skb)->seq,tp->map_subseq,
@@ -1411,6 +1454,10 @@ int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb)
 		(TCP_SKB_CB(skb)->seq-tp->map_subseq);
 	TCP_SKB_CB(skb)->end_data_seq=
 		TCP_SKB_CB(skb)->data_seq+skb->len;
+	if (mpcb->received_options.dfin_rcvd &&
+	    TCP_SKB_CB(skb)->end_data_seq+1==mpcb->received_options.fin_dsn) {
+		TCP_SKB_CB(skb)->end_data_seq++;
+	}
 	TCP_SKB_CB(skb)->data_len=0; /*To indicate that there is not anymore
 				       general mapping information in that 
 				       segment (the mapping info is now 
@@ -1638,15 +1685,6 @@ void verif_rqueues(struct multipath_pcb *mpcb)
 }
 #endif
 
-void mtcp_set_owner_r(struct sk_buff *skb, struct sock *sk)
-{
-	if (sk->sk_protocol==IPPROTO_TCP && tcp_sk(sk)->mpc &&
-	    tcp_sk(sk)->mpcb)
-		atomic_add(skb->truesize, 
-			   &((struct sock*)(tcp_sk(sk)->mpcb))->sk_rmem_alloc);
-}
-EXPORT_SYMBOL(mtcp_set_owner_r);
-
 /*Removes a segment received on one subflow, but containing DSNs
   that were already received on another subflow
   Note that if the segment is not the head of the receive queue,
@@ -1708,6 +1746,45 @@ void mtcp_check_socket(struct sock *sk)
 	}
 }
 EXPORT_SYMBOL(mtcp_check_socket);
+
+extern void tcp_queue_skb(struct sock *sk, struct sk_buff *skb);
+void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags);
+
+/*Sends the datafin*/
+void mtcp_send_fin(struct sock *mpcb_sk)
+{
+	struct sk_buff *skb;
+	struct multipath_pcb *mpcb=(struct multipath_pcb *)mpcb_sk;
+	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
+	if (tcp_send_head(mpcb_sk)) {
+		skb = tcp_write_queue_tail(mpcb_sk);
+		TCP_SKB_CB(skb)->flags |= TCPCB_FLAG_FIN;
+		TCP_SKB_CB(skb)->data_len++;
+		TCP_SKB_CB(skb)->end_data_seq++;
+		mpcb_tp->write_seq++;
+	}
+	else {
+		for (;;) {
+			skb = alloc_skb_fclone(MAX_TCP_HEADER, 
+					       GFP_KERNEL);
+			if (skb)
+				break;
+			yield();
+		}
+		/* Reserve space for headers and prepare control bits. */
+		skb_reserve(skb, MAX_TCP_HEADER);
+		tcp_init_nondata_skb(skb, 0,
+				     TCPCB_FLAG_ACK | TCPCB_FLAG_FIN);
+		TCP_SKB_CB(skb)->data_seq=mpcb_tp->write_seq;
+		TCP_SKB_CB(skb)->data_len=1;
+		TCP_SKB_CB(skb)->end_data_seq=mpcb_tp->write_seq+1;
+		/* FIN eats a sequence byte, write_seq advanced by 
+		   tcp_queue_skb(). */
+		tcp_queue_skb(mpcb_sk, skb);
+	}
+	set_bit(MPCB_FLAG_FIN_ENQUEUED,&mpcb->flags);
+	__tcp_push_pending_frames(mpcb_sk, sysctl_mptcp_mss, TCP_NAGLE_OFF);
+}
 
 #ifdef MTCP_DEBUG_PKTS_OUT
 int check_pkts_out(struct sock* sk) {

@@ -372,7 +372,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	if (mpcb_sk->sk_err)
 		mask = POLLERR;
 	
-	/*x
+	/*
 	 * POLLHUP is certainly not done right. But poll() doesn't
 	 * have a notion of HUP in just one direction, and for a
 	 * socket the read side is more interesting.
@@ -399,10 +399,10 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	 * NOTE. Check for TCP_CLOSE is added. The goal is to prevent
 	 * blocking on fresh not-connected or disconnected socket. --ANK
 	 */
-	if (master_sk->sk_shutdown == SHUTDOWN_MASK || 
-	    master_sk->sk_state == TCP_CLOSE)
+	if (mpcb_sk->sk_shutdown == SHUTDOWN_MASK || 
+	    mpcb_sk->sk_state == TCP_CLOSE)
 		mask |= POLLHUP;
-	if (master_sk->sk_shutdown & RCV_SHUTDOWN)
+	if (mpcb_sk->sk_shutdown & RCV_SHUTDOWN)
 		mask |= POLLIN | POLLRDNORM | POLLRDHUP;
 	
 	/* Connected? */
@@ -2053,32 +2053,32 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		if (copied) {
 			/*Error on any subsocket, shutdown on all subsocks,
 			  timeout or pending signal*/
-			if (mtcp_test_any_sk(mpcb,sk,sk->sk_err) ||
-			    mtcp_test_all_sk(mpcb,sk,sk->sk_state==TCP_CLOSE ||
-					     sk->sk_shutdown & RCV_SHUTDOWN) ||
+			if (mpcb_sk->sk_err ||
+			    mpcb_sk->sk_state==TCP_CLOSE ||
+			    (mpcb_sk->sk_shutdown & RCV_SHUTDOWN) ||
 			    !timeo ||
 			    signal_pending(current))
 				break;
 		} else {
-			if (mtcp_test_all_sk(mpcb,sk,sock_flag(sk,SOCK_DONE) ||
-					     (!sk->sk_err &&
-					      (sk->sk_shutdown & RCV_SHUTDOWN ||
-					       (sk->sk_state==TCP_CLOSE &&
-						sock_flag(sk,SOCK_DONE))))))
+			if (sock_flag(mpcb_sk,SOCK_DONE))
 				break;
 			
-			if (mtcp_test_any_sk(mpcb,sk,sk->sk_err)) {
-				copied=sock_error(sk);
+			if (mpcb_sk->sk_err) {
+				copied = sock_error(mpcb_sk);
 				break;
 			}
 			
-			if (mtcp_test_all_sk(mpcb,sk,
-					     sk->sk_state == TCP_CLOSE &&
-					     !sock_flag(sk,SOCK_DONE))) {
-				/* This occurs when user tries to read
-				 * from never connected socket.
-				 */
-				copied = -ENOTCONN;
+			if (mpcb_sk->sk_shutdown & RCV_SHUTDOWN)
+				break;
+
+			if (mpcb_sk->sk_state == TCP_CLOSE) {
+				if (!sock_flag(mpcb_sk,SOCK_DONE)) {
+					/* This occurs when user tries to read
+                                         * from never connected socket.
+					 */
+					copied = -ENOTCONN;
+					break;
+				}
 				break;
 			}
 
@@ -2254,9 +2254,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	}
 	mutex_unlock(&mpcb->mutex);
 
-	if (mtcp_test_any_sk(mpcb,sk,sk->sk_shutdown & RCV_SHUTDOWN)) {
-		printk(KERN_ERR "at least one subflow shut down\n");
-	}
 	return copied;
 
 out:
@@ -2433,7 +2430,9 @@ void tcp_close(struct sock *sk, long timeout)
 		BUG_ON(!skb_queue_empty(&mpcb_sk->sk_receive_queue));
 				
 		tcp_close_state(mpcb_sk);
-
+		/*Enqueuing the data_fin*/
+		if (tcp_sk(sk)->mpc) mtcp_send_fin(mpcb_sk);
+		
 		/*We MUST close the master socket in the last place.
 		  this is indeed the case, because the master socket is at the
 		  end of the subsocket list.*/
@@ -2521,14 +2520,9 @@ void tcp_close(struct sock *sk, long timeout)
 		 * Probably, I missed some more holelets.
 		 * 						--ANK
 		 */
-		/*MPTCP note: if FIN_ENQUEUED is set, the FIN has been queued
-		  already in the meta-send queue, hence tcp_write_xmit
-		  will (or has already) send the FIN itself*/
-		if (!tp->mpcb || !test_bit(MPCB_FLAG_FIN_ENQUEUED,
-					   &tp->mpcb->flags))
+		if (!tp->mpc)
 			tcp_send_fin(sk);
 	}
-	else printk(KERN_ERR "no condition applies\n");
 
 	sk_stream_wait_close(sk, timeout);
 

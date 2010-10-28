@@ -73,8 +73,10 @@ extern struct proto mtcpsub_prot;
 #define MPCB_FLAG_SERVER_SIDE 	0   /* this mpcb belongs to a server side 
 				       connection.
 				       (obtained through a listen)*/
-#define MPCB_FLAG_FIN_ENQUEUED 1  /*A fin has been enqueued on the meta-send
-				     queue. Hence, */
+#define MPCB_FLAG_FIN_ENQUEUED  1  /*A dfin has been enqueued on the meta-send
+				     queue.*/
+#define MPCB_FLAG_FIN_RCVD      2  /*A dfin has been received*/
+
 struct multipath_pcb {
 	struct tcp_sock           tp;
 
@@ -92,7 +94,6 @@ struct multipath_pcb {
 	int                       cnt_subflows;    
 	int                       syn_sent;
 	int                       cnt_established;
-	
 	int                       err;
 	
 	char                      done;
@@ -162,6 +163,9 @@ struct multipath_pcb {
 #define is_meta_tp(tp) ((tp)->mpcb && &(tp)->mpcb->tp==tp)
 #define is_meta_sk(sk) ((tcp_sk(sk))->mpcb && 			\
 			&(tcp_sk(sk))->mpcb->tp==tcp_sk(sk))
+#define is_dfin_seg(mpcb,skb) (mpcb->received_options.dfin_rcvd && \
+			       mpcb->received_options.fin_dsn==	   \
+			       TCP_SKB_CB(skb)->end_data_seq)
 
 /*Iterates overs all subflows*/
 #define mtcp_for_each_tp(mpcb,tp)			\
@@ -350,4 +354,5 @@ void mtcp_skb_entail(struct sock *sk, struct sk_buff *skb);
 struct sk_buff* mtcp_next_segment(struct sock *sk, int *reinject);
 void mpcb_release(struct kref* kref);
 void mtcp_clean_rtx_queue(struct sock *sk);
+void mtcp_send_fin(struct sock *mpcb_sk);
 #endif /*_MTCP_H*/
