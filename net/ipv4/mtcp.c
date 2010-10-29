@@ -818,8 +818,6 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		goto out_mpc;
 	}
 	
-	mtcp_debug(KERN_ERR "Leaving %s, copied %d\n",
-	           __FUNCTION__, (int) copied);
 out_mpc:
 	release_sock(mpcb_sk);
 	return copied;
