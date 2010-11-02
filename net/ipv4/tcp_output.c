@@ -2547,7 +2547,15 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 	if (err == 0) {
 		/* Update global TCP statistics. */
 		TCP_INC_STATS(sock_net(sk), TCP_MIB_RETRANSSEGS);
-		
+
+		tp->total_retrans++;
+
+		if (!tp->retrans_out)
+			tp->lost_retrans_low = tp->snd_nxt;
+
+		TCP_SKB_CB(skb)->sacked |= TCPCB_RETRANS;
+		tp->retrans_out += tcp_skb_pcount(skb);
+
 		/* Save stamp of the first retransmit. */
 		if (!tp->retrans_stamp)
 			tp->retrans_stamp = TCP_SKB_CB(skb)->when;
