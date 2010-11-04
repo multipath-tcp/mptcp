@@ -676,7 +676,8 @@ int mtcp_is_available(struct sock *sk)
 {
 	if (sk->sk_state!=TCP_ESTABLISHED || tcp_sk(sk)->pf ||
 	    (tcp_sk(sk)->mpcb->noneligible & 
-	     PI_TO_FLAG(tcp_sk(sk)->path_index)))
+	     PI_TO_FLAG(tcp_sk(sk)->path_index)) ||
+	    inet_csk(sk)->icsk_ca_state==TCP_CA_Loss)
 		return 0;
 	if (tcp_cwnd_test(tcp_sk(sk))) return 1;
 	return 0;
@@ -756,13 +757,50 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 {
 	struct sock *master_sk = sock->sk;
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(master_sk));
-	struct sock *mpcb_sk = (struct sock *) mpcb;
+	struct sock *mpcb_sk=(struct sock *) mpcb;
 	size_t copied = 0;
+	int err;
+	int flags = msg->msg_flags;
+	long timeo = sock_sndtimeo(master_sk, flags & MSG_DONTWAIT);
 
-	if (!tcp_sk(master_sk)->mpc)
-		return subtcp_sendmsg(iocb,master_sk, msg, size);
-	
+	/*At the moment it should be sure 100% that the mpcb pointer is defined
+	  because at the client, alloc_mpcb is called in tcp_v4_init_sock(),
+	  at the server it is called in inet_csk_accept(). sendmsg() can be
+	  called before none of these functions.*/
 	BUG_ON(!mpcb);
+
+	lock_sock(master_sk);	
+
+	/*If the master sk is not yet established, we need to wait
+	  until the establishment, so as to know whether the mpc option
+	  is present.*/
+	if (!tcp_sk(master_sk)->mpc) {
+		if ((1 << master_sk->sk_state) & 
+		    ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT)) {
+			err = sk_stream_wait_connect(master_sk,
+						     &timeo);
+			if (err) {
+				printk(KERN_ERR "err is %d, state %d\n",err,
+				       master_sk->sk_state);
+				goto out_err_nompc;
+			}
+			/*The flag mast be re-checked, because it may have
+			  appeared during sk_stream_wait_connect*/
+			if (!tcp_sk(master_sk)->mpc) {
+				copied=subtcp_sendmsg(iocb,master_sk, msg, 
+						      size);
+				goto out_nompc;
+			}
+			
+		}
+		else {
+			copied=subtcp_sendmsg(iocb,master_sk, msg, size);
+			goto out_nompc;
+		}
+	}
+
+	release_sock(master_sk);
+	lock_sock(mpcb_sk);
 
 	verif_wqueues(mpcb);
 
@@ -773,11 +811,25 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	
 	/* Compute the total number of bytes stored in the message*/	
 	copied = subtcp_sendmsg(NULL,mpcb_sk,msg, 0);
-	if (copied<0)
+	if (copied<0) {
 		printk(KERN_ERR "%s: returning error "
 		       "to app:%d\n",__FUNCTION__,(int)copied);
-
+		goto out_mpc;
+	}
+	
+	mtcp_debug(KERN_ERR "Leaving %s, copied %d\n",
+	           __FUNCTION__, (int) copied);
+out_mpc:
+	release_sock(mpcb_sk);
 	return copied;
+out_nompc:
+ 	release_sock(master_sk);
+	return copied;
+out_err_nompc:
+	err = sk_stream_error(master_sk, flags, err);
+	TCP_CHECK_TIMER(master_sk);
+	release_sock(master_sk);
+	return err;
 }
 
 /**
@@ -883,12 +935,10 @@ int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 void mtcp_ofo_queue(struct multipath_pcb *mpcb)
 {
 	struct sk_buff *skb=NULL;
-	struct tcp_sock *tp;
 	struct sock *mpcb_sk=(struct sock *) mpcb;
 	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
 	
 	while ((skb = skb_peek(&mpcb_tp->out_of_order_queue)) != NULL) {
-		tp=tcp_sk(skb->sk);
 		if (after(TCP_SKB_CB(skb)->data_seq, mpcb_tp->rcv_nxt))
 			break;
 				
@@ -980,7 +1030,6 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 			 size_t *len, u32 *data_seq, int *copied, int flags)
 {
 	struct sk_buff *skb;
-	struct tcp_sock *tp;
 	struct sock *mpcb_sk=(struct sock*)mpcb;
 	int err;
 
@@ -995,8 +1044,6 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 			if (!skb) goto exit;
 
 			fin=tcp_hdr(skb)->fin;
-		
-			tp=tcp_sk(skb->sk);
 
 			if (before(*data_seq,TCP_SKB_CB(skb)->data_seq)) {
 				printk(KERN_ERR "%s bug: copied %X "
@@ -1035,10 +1082,8 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 		*len-=used;
 		
  		if (*data_seq==TCP_SKB_CB(skb)->end_data_seq && 
-		    !(flags & MSG_PEEK)) {
-			sock_put(skb->sk);
+		    !(flags & MSG_PEEK))
 			sk_eat_skb(mpcb_sk, skb, 0);
-		}
 		else if (!(flags & MSG_PEEK) && *len!=0) {
 				printk(KERN_ERR 
 				       "%s bug: copied %X "
@@ -1074,7 +1119,6 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 
 	if (!tp->mpc || !mpcb) {
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
-		sock_hold(skb->sk);
 		return MTCP_QUEUED;
 	}
 	
@@ -1107,9 +1151,8 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 			/* Initial out of order segment */
 			mtcp_debug("First meta-ofo segment\n");
 			__skb_queue_head(&mpcb_tp->out_of_order_queue, skb);
-			sock_hold(skb->sk);
 			ans=MTCP_QUEUED;
-			goto out;
+			goto queued;
 		}
 		else {
 			struct sk_buff *skb1 = mpcb_tp->out_of_order_queue.prev;
@@ -1158,7 +1201,6 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 			}
 			__skb_insert(skb, skb1, skb1->next, 
 				     &mpcb_tp->out_of_order_queue);
-			sock_hold(skb->sk);
 			/* And clean segments covered by new one as whole. */
 			while ((skb1 = skb->next) !=
 			       (struct sk_buff *)&mpcb_tp->out_of_order_queue &&
@@ -1174,12 +1216,11 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 				else break;
 			}
 			ans=MTCP_QUEUED;
-			goto out;
+			goto queued;
 		}
 	}
 	else {
 		__skb_queue_tail(&mpcb_sk->sk_receive_queue, skb);
-		sock_hold(skb->sk);
 		mpcb_tp->rcv_nxt=TCP_SKB_CB(skb)->end_data_seq;
 
 		/*Check if this fills a gap in the ofo queue*/
@@ -1187,8 +1228,15 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 			mtcp_ofo_queue(mpcb);
 
 		ans=MTCP_QUEUED;
-		goto out;
+		goto queued;
 	}
+
+queued:
+	/* Uncharge the old socket, and then charge the new one */
+	if (skb->destructor)
+		skb->destructor(skb);
+
+	skb_set_owner_r(skb, mpcb_sk);
 out:
 	if (tp->pending) 
 		mpcb_put(mpcb);
