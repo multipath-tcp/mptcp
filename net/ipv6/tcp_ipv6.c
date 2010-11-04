@@ -1626,11 +1626,31 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->end_seq = (TCP_SKB_CB(skb)->seq + th->syn + th->fin +
 				    skb->len - th->doff*4);
 	TCP_SKB_CB(skb)->ack_seq = ntohl(th->ack_seq);
+#ifdef CONFIG_MTCP
+	/*Init to zero, will be set upon option parsing.*/
+	TCP_SKB_CB(skb)->data_seq = 0;
+	TCP_SKB_CB(skb)->end_data_seq = 0;
+#endif
 	TCP_SKB_CB(skb)->when = 0;
 	TCP_SKB_CB(skb)->flags = ipv6_get_dsfield(ipv6_hdr(skb));
 	TCP_SKB_CB(skb)->sacked = 0;
 	
-	sk = __mtcpv6_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
+#ifdef CONFIG_MTCP_PM
+	/*We must absolutely check for subflow related segments
+	  before the normal sock lookup, because otherwise subflow
+	  segments could be understood as associated to some listening
+	  socket.*/
+
+	/*Is there a pending request sock for this segment ?*/
+	if (mtcp_syn_recv_sock(skb)) return 0;
+	/*Is this a new syn+join ?*/
+	if (th->syn && mtcp_lookup_join(skb)) return 0;
+
+	/*OK, this segment is not related to subflow initiation,
+	  we can proceed to normal lookup*/
+#endif
+
+	sk = __inet6_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
 	
 	if (!sk)
 		goto no_tcp_socket;
