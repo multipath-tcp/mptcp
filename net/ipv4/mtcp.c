@@ -337,7 +337,10 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			if (retval<0 && retval != -EINPROGRESS) 
 				goto fail_connect;
 			
-			mtcp_debug("New MTCP subsocket created, pi %d\n",i+1);
+			mtcp_debug("New MTCP subsocket created, pi %d src_addr:"
+                                   NIPQUAD_FMT " dst_addr:" NIPQUAD_FMT " \n",
+                                   newpi, NIPQUAD(loculid_in.sin_addr),
+                                   NIPQUAD(remulid_in.sin_addr));
 		}
 	}
 
@@ -478,8 +481,7 @@ void mpcb_release(struct kref* kref)
 #ifdef CONFIG_MTCP_PM
 	mtcp_pm_release(mpcb);
 #endif
-	printk(KERN_ERR 
-	       "will free mpcb\n");
+	mtcp_debug("%s: Will free mpcb\n", __FUNCTION__);
 #ifdef CONFIG_SECURITY_NETWORK
 	security_sk_free((struct sock *)mpcb);
 #endif
@@ -501,7 +503,7 @@ void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
 {
 	struct sock *mpcb_sk=(struct sock *) mpcb;
 	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
-	printk(KERN_ERR "Destroying mpcb\n");
+	mtcp_debug("%s: Destroying mpcb\n", __FUNCTION__);
 #ifdef CONFIG_MTCP_PM
 	/*Detach the mpcb from the token hashtable*/
 	mtcp_hash_remove(mpcb);
@@ -625,8 +627,6 @@ void mtcp_update_metasocket(struct sock *sk)
 	mpcb=mpcb_from_tcpsock(tp);
 	mpcb_sk=(struct sock*)mpcb;
 
-	mtcp_debug("Entering %s, mpcb %p\n",__FUNCTION__,mpcb);
-
 	mpcb_sk->sk_family=sk->sk_family;
 	mpcb->remote_port=inet_sk(sk)->dport;
 	mpcb->local_port=inet_sk(sk)->sport;
@@ -635,6 +635,12 @@ void mtcp_update_metasocket(struct sock *sk)
 	case AF_INET:
 		mpcb->remote_ulid.a4=inet_sk(sk)->daddr;
 		mpcb->local_ulid.a4=inet_sk(sk)->saddr;
+
+
+		mtcp_debug("%s: loc_ulid:"NIPQUAD_FMT " rem_ulid:" NIPQUAD_FMT
+				" \n", __FUNCTION__,
+				NIPQUAD(mpcb->local_ulid.a4),
+				NIPQUAD(mpcb->remote_ulid.a4));
 		break;
 	case AF_INET6:
 		ipv6_addr_copy((struct in6_addr*)&mpcb->remote_ulid,
@@ -642,8 +648,8 @@ void mtcp_update_metasocket(struct sock *sk)
 		ipv6_addr_copy((struct in6_addr*)&mpcb->local_ulid,
 			       &inet6_sk(sk)->saddr);
 
-		mtcp_debug("mum loc ulid:" NIP6_FMT "\n",NIP6(*(struct in6_addr*)mpcb->local_ulid.a6));
-		mtcp_debug("mum loc ulid:" NIP6_FMT "\n",NIP6(*(struct in6_addr*)mpcb->remote_ulid.a6));
+		mtcp_debug("%s: mum loc ulid:" NIP6_FMT "\n", __FUNCTION__, NIP6(*(struct in6_addr*)mpcb->local_ulid.a6));
+		mtcp_debug("%s: mum loc ulid:" NIP6_FMT "\n", __FUNCTION__, NIP6(*(struct in6_addr*)mpcb->remote_ulid.a6));
 
 		break;
 	}
@@ -817,8 +823,6 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		goto out_mpc;
 	}
 	
-	mtcp_debug(KERN_ERR "Leaving %s, copied %d\n",
-	           __FUNCTION__, (int) copied);
 out_mpc:
 	release_sock(mpcb_sk);
 	return copied;

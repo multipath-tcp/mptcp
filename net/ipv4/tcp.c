@@ -2398,17 +2398,17 @@ void tcp_close(struct sock *sk, long timeout)
 #ifdef CONFIG_MTCP
 	/*if this is the master subsocket, we must first close the
 	  slave subsockets*/
-	mtcp_debug("%s:app close\n",__FUNCTION__);
 	if (is_master_sk(tcp_sk(sk))) {
 		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
 		struct sock *mpcb_sk=(struct sock*)mpcb;
 		struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
 		struct sock *slave_sk,*temp;
-		
+
+		mtcp_debug("%s: Close of master_sk\n",__FUNCTION__);
 		/*Purging the meta-queues. This MUST be done before
 		  to close any subsocket. See comment in function 
 		  mtcp_destroy_mpcb()*/
-		printk(KERN_ERR "will purge the queues\n");
+		mtcp_debug("%s: Will purge the queues\n", __FUNCTION__);
 		skb_queue_purge(&mpcb_sk->sk_receive_queue);
 		skb_queue_purge(&mpcb_tp->out_of_order_queue);
 
@@ -2474,7 +2474,7 @@ void tcp_close(struct sock *sk, long timeout)
 		NET_INC_STATS_USER(sock_net(sk), LINUX_MIB_TCPABORTONDATA);
 		printk(KERN_ERR "flag LINGER\n");
 	} else if (tcp_close_state(sk)) {
-		printk(KERN_ERR "will call tcp_fin\n");
+		mtcp_debug("%s: will call tcp_fin\n", __FUNCTION__);
 		/* We FIN if the application ate all the data before
 		 * zapping the connection.
 		 */
