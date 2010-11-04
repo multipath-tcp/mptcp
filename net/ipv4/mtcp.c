@@ -101,7 +101,7 @@ void freeze_rcv_queue(struct sock *sk, const char *func_name)
 
 #ifdef CONFIG_SYSCTL
 
-int sysctl_mptcp_mss = MPTCP_MSS; /*Will be enabled at the end of shim6 init*/
+int sysctl_mptcp_mss = MPTCP_MSS;
 
 static ctl_table mptcp_table[] = {
 	{
