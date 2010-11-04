@@ -23,7 +23,6 @@
 #include <linux/ipsec.h>
 #include <linux/init.h>
 #include <linux/security.h>
-#include <linux/shim6.h>
 #include <net/sock.h>
 #include <net/xfrm.h>
 #include <net/netlink.h>
@@ -87,26 +86,6 @@ static void verify_one_addr(struct nlattr **attrs, enum xfrm_attr_type_t type,
 
 	if (rt && addrp)
 		*addrp = nla_data(rt);
-}
-
-static int verify_one_shim6(struct nlattr **attrs, enum xfrm_attr_type_t type,
-			    struct shim6_data **datap)
-{
-	struct shim6_data *data;
-	struct nlattr *rt = attrs[type];
-
-	if (!rt) 
-		return 0;
-	data=nla_data(rt);
-
-	if (nla_len(rt) < sizeof(struct shim6_data) || 
-	    data->npaths > MAX_SHIM6_PATHS ||
-	    nla_len(rt) != SHIM6_DATA_LENGTH(data))
-		return -EINVAL;
-	if (datap)
-		*datap = nla_data(rt);
-	
-	return 0;
 }
 
 static inline int verify_sec_ctx_len(struct nlattr **attrs)
@@ -190,10 +169,6 @@ static int verify_newsa_info(struct xfrm_usersa_info *p,
 		    !attrs[XFRMA_COADDR])
 			goto out;
 		break;
-	case IPPROTO_SHIM6:
-		if (!attrs[XFRMA_SHIM6])
-			goto out;		
-		break;
 #endif
 		
 	default:
@@ -210,8 +185,6 @@ static int verify_newsa_info(struct xfrm_usersa_info *p,
 		goto out;
 	if ((err = verify_sec_ctx_len(attrs)))
 		goto out;
-	if ((err = verify_one_shim6(attrs, XFRMA_SHIM6, NULL)))
-		goto out;
 	
 	err = -EINVAL;
 	switch (p->mode) {
@@ -219,7 +192,6 @@ static int verify_newsa_info(struct xfrm_usersa_info *p,
 	case XFRM_MODE_TUNNEL:
 	case XFRM_MODE_ROUTEOPTIMIZATION:
 	case XFRM_MODE_BEET:
-	case XFRM_MODE_SHIM6:
 		break;
 
 	default:
@@ -280,21 +252,6 @@ static int attach_aead(struct xfrm_algo_aead **algpp, u8 *props,
 
 	strcpy(p->alg_name, algo->name);
 	*algpp = p;
-	return 0;
-}
-
-static int attach_one_shim6(struct shim6_data **shim6pp, struct nlattr *rta)
-{
-	struct shim6_data *p,*shim6;
-
-	if (!rta)
-		return 0;
-	shim6 = nla_data(rta);
-	p = kmemdup(shim6, nla_len(rta), GFP_KERNEL);
-	if (!p)
-		return -ENOMEM;
-
-	*shim6pp = p;
 	return 0;
 }
 
@@ -386,8 +343,6 @@ static struct xfrm_state *xfrm_state_construct(struct xfrm_usersa_info *p,
 	if ((err = attach_one_algo(&x->calg, &x->props.calgo,
 				   xfrm_calg_get_byname,
 				   attrs[XFRMA_ALG_COMP])))
-		goto error;
-	if ((err = attach_one_shim6(&x->shim6,attrs[XFRMA_SHIM6])))
 		goto error;
 
 	if (attrs[XFRMA_ENCAP]) {
@@ -487,26 +442,7 @@ static struct xfrm_state *xfrm_user_state_lookup(struct xfrm_usersa_id *p,
 	if (xfrm_id_proto_match(p->proto, IPSEC_PROTO_ANY)) {
 		err = -ESRCH;
 		x = xfrm_state_lookup(&p->daddr, p->spi, p->proto, p->family);
-	}  else if (p->proto==IPPROTO_SHIM6) {
-		struct shim6_data* data=NULL;
-		xfrm_address_t *saddr=NULL;
-		err=verify_one_shim6(attrs,XFRMA_SHIM6,&data);
-		if (err)
-			goto out;
-		verify_one_addr(attrs, XFRMA_SRCADDR, &saddr);
-		if (!data || !saddr) {
-			err = -EINVAL;
-			goto out;
-		}
-		
-		err = -ESRCH;
-		if (data->flags & SHIM6_DATA_INBOUND)
-			x = xfrm_state_lookup_byct(data->ct);   
-		else 
-			x = xfrm_state_lookup_byaddr(&p->daddr,saddr,p->proto,
-						     p->family);		
-	}
-	else {
+	} else {
 		xfrm_address_t *saddr = NULL;
 		
 		verify_one_addr(attrs, XFRMA_SRCADDR, &saddr);
@@ -618,9 +554,6 @@ static int copy_to_user_state_extra(struct xfrm_state *x,
 
 	if (x->coaddr)
 		NLA_PUT(skb, XFRMA_COADDR, sizeof(*x->coaddr), x->coaddr);
-
-	if (x->shim6) NLA_PUT(skb, XFRMA_SHIM6, SHIM6_DATA_LENGTH(x->shim6),
-			      x->shim6);
 
 	if (x->lastused)
 		NLA_PUT_U64(skb, XFRMA_LASTUSED, x->lastused);
@@ -1207,15 +1140,6 @@ static int xfrm_add_policy(struct sk_buff *skb, struct nlmsghdr *nlh,
 	err = xfrm_policy_insert(p->dir, xp, excl);
 	xfrm_audit_policy_add(xp, err ? 0 : 1, loginuid, sessionid, sid);
 
-	/*--SB: This flushes the dst cache, so that a new route for Shim6
-	 locators can be computed. I try to remove this for now, we'll see if
-	 it is still necessary or not.*/
-/*	if (xp->selector.family==AF_INET6) {
-		struct rt6_info *rt;
-		rt=rt6_lookup((struct in6_addr*)&xp->selector.daddr.a6,
-			      (struct in6_addr*)&xp->selector.saddr.a6,0,0);
-		dst_negative_advice((struct dst_entry**)&rt);
-		}*/
 
 	if (err) {
 		security_xfrm_policy_free(xp->security);
@@ -2089,10 +2013,9 @@ static void xfrm_netlink_rcv(struct sk_buff *skb)
 	mutex_unlock(&xfrm_cfg_mutex);
 }
 
-static inline size_t xfrm_expire_msgsize(struct xfrm_state *x)
+static inline size_t xfrm_expire_msgsize(void)
 {
-	return NLMSG_ALIGN(sizeof(struct xfrm_user_expire))+
-		((!x->shim6)?0:nla_total_size(SHIM6_DATA_LENGTH(x->shim6)));
+	return NLMSG_ALIGN(sizeof(struct xfrm_user_expire));
 }
 
 static int build_expire(struct sk_buff *skb, struct xfrm_state *x, struct km_event *c)
@@ -2108,22 +2031,15 @@ static int build_expire(struct sk_buff *skb, struct xfrm_state *x, struct km_eve
 	copy_to_user_state(x, &ue->state);
 	ue->hard = (c->data.hard != 0) ? 1 : 0;
 
-	if (x->shim6) {
-		NLA_PUT(skb, XFRMA_SHIM6, SHIM6_DATA_LENGTH(x->shim6),x->shim6);
-	}
-
 	return nlmsg_end(skb, nlh);
 
-nla_put_failure:
-	nlmsg_cancel(skb, nlh);
-	return -1;	
 }
 
 static int xfrm_exp_state_notify(struct xfrm_state *x, struct km_event *c)
 {
 	struct sk_buff *skb;
 
-	skb = nlmsg_new(xfrm_expire_msgsize(x), GFP_ATOMIC);
+	skb = nlmsg_new(xfrm_expire_msgsize(), GFP_ATOMIC);
 	if (skb == NULL)
 		return -ENOMEM;
 
@@ -2190,9 +2106,6 @@ static inline size_t xfrm_sa_len(struct xfrm_state *x)
 				    x->security->ctx_len);
 	if (x->coaddr)
 		l += nla_total_size(sizeof(*x->coaddr));
-
-	if (x->shim6)
-		l += nla_total_size(SHIM6_DATA_LENGTH(x->shim6));
 
 	/* Must count x->lastused as it may become non-zero behind our back. */
 	l += nla_total_size(sizeof(u64));

@@ -18,8 +18,7 @@ int ipv6_ext_hdr(u8 nexthdr)
 		 (nexthdr == NEXTHDR_FRAGMENT)	||
 		 (nexthdr == NEXTHDR_AUTH)	||
 		 (nexthdr == NEXTHDR_NONE)	||
-		 (nexthdr == NEXTHDR_DEST)      ||
-		 (nexthdr == NEXTHDR_SHIM6));
+		 (nexthdr == NEXTHDR_DEST) );
 }
 
 /*

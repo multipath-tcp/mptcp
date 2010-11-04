@@ -72,9 +72,6 @@
 #include <net/tcp.h>
 #include <net/ip.h>
 
-#if defined(CONFIG_IPV6_SHIM6) || defined(CONFIG_IPV6_SHIM6_MODULE)
-#include <net/shim6.h>
-#endif
 #include <net/netlink.h>
 #include <net/pkt_sched.h>
 #include <linux/if_tunnel.h>
@@ -3950,9 +3947,6 @@ static void __ipv6_ifa_notify(int event, struct inet6_ifaddr *ifp)
 			ip6_ins_rt(ifp->rt);
 		if (ifp->idev->cnf.forwarding)
 			addrconf_join_anycast(ifp);
-#if defined(CONFIG_IPV6_SHIM6) || defined(CONFIG_IPV6_SHIM6_MODULE)
-		shim6_add_glob_locator(ifp);
-#endif
 		break;
 	case RTM_DELADDR:
 		if (ifp->idev->cnf.forwarding)
@@ -3961,9 +3955,6 @@ static void __ipv6_ifa_notify(int event, struct inet6_ifaddr *ifp)
 		dst_hold(&ifp->rt->u.dst);
 		if (ip6_del_rt(ifp->rt))
 			dst_free(&ifp->rt->u.dst);
-#if defined(CONFIG_IPV6_SHIM6) || defined(CONFIG_IPV6_SHIM6_MODULE)
-		shim6_del_glob_locator(ifp);
-#endif
 		break;
 	}
 }

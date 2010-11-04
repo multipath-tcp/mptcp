@@ -26,7 +26,6 @@
 #include <linux/cache.h>
 #include <linux/audit.h>
 #include <net/dst.h>
-#include <net/shim6.h>
 #include <net/xfrm.h>
 #include <net/ip.h>
 #ifdef CONFIG_XFRM_STATISTICS
@@ -133,13 +132,6 @@ static inline struct dst_entry *xfrm_dst_lookup(struct xfrm_state *x, int tos,
 	if (x->type->flags & XFRM_TYPE_REMOTE_COADDR) {
 		saddr = prev_saddr;
 		daddr = x->coaddr;
-	}
-	if (x->type->flags & XFRM_TYPE_SHIM6_ADDR) {
-		struct shim6_path *path=map_pi_path(path_index,
-						    x->shim6->paths,
-						    x->shim6->npaths);
-		saddr = (xfrm_address_t*) &path->local;
-		daddr = (xfrm_address_t*) &path->remote;
 	}
 
 	dst = __xfrm_dst_lookup(tos, saddr, daddr, family);

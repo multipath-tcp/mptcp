@@ -28,7 +28,6 @@
 #include <net/netevent.h>
 #include <net/ipv6.h>
 #include <net/tcp.h>
-#include <net/shim6.h>
 #include <linux/list.h>
 #include <linux/jhash.h>
 #include <linux/tcp.h>

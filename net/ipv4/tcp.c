@@ -271,7 +271,6 @@
 #include <net/ip.h>
 #include <net/netdma.h>
 #include <net/sock.h>
-#include <net/shim6.h>
 
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
