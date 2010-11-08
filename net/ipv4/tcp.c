@@ -2373,7 +2373,27 @@ void tcp_shutdown(struct sock *sk, int how)
 	 */
 	if (!(how & SEND_SHUTDOWN))
 		return;
+#ifdef CONFIG_MTCP
+	/*if this is the master subsocket, we must first close the
+	  slave subsockets*/
+	if (tcp_sk(sk)->mpc && is_master_sk(tcp_sk(sk))) {
+		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
+		struct sock *mpcb_sk=(struct sock*)mpcb;
+		
+		mtcp_debug("%s: Shutdown of master_sk\n",__FUNCTION__);
+		
+		lock_sock(mpcb_sk);		
 
+		if ((1 << mpcb_sk->sk_state) &
+		    (TCPF_ESTABLISHED | TCPF_SYN_SENT |
+		     TCPF_SYN_RECV | TCPF_CLOSE_WAIT)) {
+			if (tcp_close_state(mpcb_sk))
+				mtcp_send_fin(mpcb_sk);
+		}
+		release_sock(mpcb_sk);
+		return;
+	}
+#endif
 	/* If we've already sent a FIN, or it's a closed state, skip this. */
 	if ((1 << sk->sk_state) &
 	    (TCPF_ESTABLISHED | TCPF_SYN_SENT |
@@ -2428,8 +2448,7 @@ void tcp_close(struct sock *sk, long timeout)
 			if (timeout) timeout-=(jiffies-prevtime);
 		}
 	}
-#endif
-#ifndef CONFIG_MTCP
+#else
 	lock_sock(sk);
 #endif
 	sk->sk_shutdown = SHUTDOWN_MASK;
