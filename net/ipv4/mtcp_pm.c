@@ -380,36 +380,35 @@ void mtcp_update_patharray(struct multipath_pcb *mpcb)
 void mtcp_set_addresses(struct multipath_pcb *mpcb)
 {
 	struct net_device *dev;
-	int id=1;
-	int num_addr4=0;
+	int id = 1;
+	int num_addr4 = 0;
 
 	read_lock(&dev_base_lock); 
 
-	for_each_netdev(&init_net,dev) {
-		if(netif_running(dev)) {
-			struct in_device *in_dev=dev->ip_ptr;
+	for_each_netdev (&init_net,dev) {
+		if (netif_running(dev)) {
+			struct in_device *in_dev = dev->ip_ptr;
 			struct in_ifaddr *ifa;
 			
 			if (dev->flags & IFF_LOOPBACK)
 				continue;
 			
-			for (ifa = in_dev->ifa_list; ifa; 
-			     ifa = ifa->ifa_next) {
-				if (num_addr4==MTCP_MAX_ADDR) {
-					printk(KERN_ERR "Reached max number of "
-					       "local IPv4 addresses : %d\n", 
-					       MTCP_MAX_ADDR);
+			for (ifa = in_dev->ifa_list; ifa; ifa = ifa->ifa_next) {
+				if (num_addr4 == MTCP_MAX_ADDR) {
+					mtcp_debug("%s: At max num of local addresses: "
+							"%d --- not adding address: " NIPQUAD_FMT "\n",
+							__FUNCTION__, MTCP_MAX_ADDR, NIPQUAD(ifa->ifa_address));
 					goto out;
 				}
 				
-				if (ifa->ifa_address==
-				    inet_sk(mpcb->master_sk)->saddr)
+				if (ifa->ifa_address ==
+						inet_sk(mpcb->master_sk)->saddr)
 					continue;
-				if (ifa->ifa_scope==RT_SCOPE_HOST)
+				if (ifa->ifa_scope == RT_SCOPE_HOST)
 					continue;
-				mpcb->addr4[num_addr4].addr.s_addr=
+				mpcb->addr4[num_addr4].addr.s_addr =
 					ifa->ifa_address;
-				mpcb->addr4[num_addr4++].id=id++;
+				mpcb->addr4[num_addr4++].id = id++;
 			}
 		}
 	}
@@ -422,7 +421,7 @@ out:
 	  which can interrupt us in the middle of this function,
 	  and decide to already send the set of addresses, even though all
 	  addresses have not yet been read.*/
-	mpcb->num_addr4=mpcb->addr_unsent=num_addr4;
+	mpcb->num_addr4 = mpcb->addr_unsent = num_addr4;
 }
 
 /**
@@ -434,31 +433,33 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 			 struct in_addr *addr, u8 id)
 {
 	int i;
-	int num_addr4=mopt->num_addr4;
+	int num_addr4 = mopt->num_addr4;
 
 	/*If the id is zero, this is the ULID, do not add it.*/
 	if (!id) return 0;
 	
-	BUG_ON(mopt->num_addr4>=MTCP_MAX_ADDR);
+	BUG_ON(num_addr4 > MTCP_MAX_ADDR);
 
-	for (i=0;i<mopt->num_addr4;i++) {
-		if (mopt->addr4[i].addr.s_addr==
-		    addr->s_addr) {
-			mopt->addr4[i].id=id; /*update the 
-						id*/
+	for (i = 0; i < num_addr4; i++) {
+		if (mopt->addr4[i].addr.s_addr == addr->s_addr) {
+			mopt->addr4[i].id = id; /* update the id*/
 			return 0;
 		}
 	}
 
-	if (mopt->num_addr4==MTCP_MAX_ADDR)
+	/* Do we have already the maximum number of local/remote addresses? */
+	if (num_addr4 == MTCP_MAX_ADDR) {
+		mtcp_debug("%s: At max num of remote addresses: %d --- not "
+				"adding address: " NIPQUAD_FMT "\n",
+				__FUNCTION__, MTCP_MAX_ADDR, NIPQUAD(addr->s_addr));
 		return -1;
-	
+	}
+
 	/*Address is not known yet, store it*/
-	mopt->addr4[num_addr4].addr.s_addr=
-		addr->s_addr;
-	mopt->addr4[num_addr4].id=id;
-	mopt->num_addr4++;
+	mopt->addr4[num_addr4].addr.s_addr = addr->s_addr;
+	mopt->addr4[num_addr4].id = id;
 	mopt->list_rcvd = 1;
+	mopt->num_addr4++;
 
 	return 0;
 }
