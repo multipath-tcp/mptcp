@@ -400,7 +400,7 @@ void mtcp_set_addresses(struct multipath_pcb *mpcb)
 							__FUNCTION__, MTCP_MAX_ADDR, NIPQUAD(ifa->ifa_address));
 					goto out;
 				}
-				
+
 				if (ifa->ifa_address ==
 						inet_sk(mpcb->master_sk)->saddr)
 					continue;
@@ -412,7 +412,7 @@ void mtcp_set_addresses(struct multipath_pcb *mpcb)
 			}
 		}
 	}
-	
+
 out:
 	read_unlock(&dev_base_lock);
 
@@ -441,8 +441,25 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 	BUG_ON(num_addr4 > MTCP_MAX_ADDR);
 
 	for (i = 0; i < num_addr4; i++) {
-		if (mopt->addr4[i].addr.s_addr == addr->s_addr) {
-			mopt->addr4[i].id = id; /* update the id*/
+		/* Address is already in the list --- continue */
+		if (mopt->addr4[i].addr.s_addr == addr->s_addr)
+			return 0;
+
+		/* This may be the case, when the peer is behind a NAT. He is
+		 * trying to JOIN, thus sending the JOIN with a certain ID.
+		 * However the src_addr of the IP-packet has been changed. We
+		 * update the addr in the list, because this is the address as
+		 * OUR BOX sees it. */
+		if (mopt->addr4[i].id == id &&
+		    mopt->addr4[i].addr.s_addr != addr->s_addr) {
+			/* update the address*/
+			mtcp_debug("%s: updating old addr:" NIPQUAD_FMT
+					" to addr " NIPQUAD_FMT " with id:%d\n",
+					__FUNCTION__,
+					NIPQUAD(mopt->addr4[i].addr.s_addr),
+					NIPQUAD(addr->s_addr), id);
+			mopt->addr4[i].addr.s_addr = addr->s_addr;
+			mopt->list_rcvd = 1;
 			return 0;
 		}
 	}
