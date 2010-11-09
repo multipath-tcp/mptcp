@@ -1044,7 +1044,7 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 				BUG();
 			}
 			data_offset = *data_seq - TCP_SKB_CB(skb)->data_seq;
-			if (data_offset < skb->len)
+			if (data_offset < skb->len || dfin)
 				break;
 
 			if (skb->len + dfin != TCP_SKB_CB(skb)->end_data_seq - 
