@@ -1729,6 +1729,8 @@ static int tcp_mtu_probe(struct sock *sk)
 	return -1;
 }
 
+extern int tcp_close_state(struct sock *sk);
+
 /* This routine writes packets to the network.  It advances the
  * send_head.  This happens as incoming acks open up the remote
  * window for us.
@@ -1946,10 +1948,12 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		    (TCP_SKB_CB(skb)->flags & TCPCB_FLAG_FIN)) {
 			struct sock *sk_it;
 			struct tcp_sock *tp_it;
+			
+			tcp_close_state(subsk);
 			/*App close: we have sent every app-level byte,
 			  send now the FIN on all subflows.*/
 			mtcp_for_each_sk(tp->mpcb,sk_it,tp_it)
-				if (sk_it!=subsk)
+				if (sk_it!=subsk && tcp_close_state(sk_it))
 					tcp_send_fin(sk_it);
 		}
 

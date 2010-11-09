@@ -657,10 +657,9 @@ static inline unsigned int tcp_cwnd_test(struct tcp_sock *tp)
 
 int mtcp_is_available(struct sock *sk)
 {
-	struct sock *mpcb_sk=(struct sock*)tcp_sk(sk)->mpcb;
-	if (sk->sk_state!=TCP_ESTABLISHED && 
-	    (sk->sk_state!=TCP_FIN_WAIT1 ||
-	     mpcb_sk->sk_state!=TCP_FIN_WAIT1))
+	/*Set of states for which we are allowed to send data*/
+	if ((1 << sk->sk_state) & 
+	    ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT))
 		return 0;
 	if (tcp_sk(sk)->pf ||
 	    (tcp_sk(sk)->mpcb->noneligible & 
@@ -1784,6 +1783,166 @@ void mtcp_send_fin(struct sock *mpcb_sk)
 	}
 	set_bit(MPCB_FLAG_FIN_ENQUEUED,&mpcb->flags);
 	__tcp_push_pending_frames(mpcb_sk, sysctl_mptcp_mss, TCP_NAGLE_OFF);
+}
+
+extern int tcp_close_state(struct sock *sk);
+void mtcp_close(struct sock *master_sk, long timeout)
+{
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(master_sk));
+	struct sock *mpcb_sk=(struct sock*)mpcb;
+	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
+	struct sk_buff *skb;
+	int data_was_unread = 0;
+	int state;
+	
+	mtcp_debug("%s: Close of mpcb_sk\n",__FUNCTION__);
+
+	if (!tcp_sk(master_sk)->mpc)
+		return tcp_close(master_sk,timeout);
+		
+
+	lock_sock(mpcb_sk);
+	mpcb_sk->sk_shutdown = SHUTDOWN_MASK;
+
+	/*  We need to flush the recv. buffs.  We do this only on the
+	 *  descriptor close, not protocol-sourced closes, because the
+	 *  reader process may not have drained the data yet!
+	 */
+	while ((skb = __skb_dequeue(&mpcb_sk->sk_receive_queue)) != NULL) {
+		u32 len = TCP_SKB_CB(skb)->end_data_seq - 
+			TCP_SKB_CB(skb)->data_seq -
+			(is_dfin_seg(mpcb,skb)?1:0);
+		data_was_unread += len;
+		__kfree_skb(skb);
+	}
+
+	sk_mem_reclaim(mpcb_sk);
+
+	/* As outlined in RFC 2525, section 2.17, we send a RST here because
+	 * data was lost. To witness the awful effects of the old behavior of
+	 * always doing a FIN, run an older 2.1.x kernel or 2.0.x, start a bulk
+	 * GET in an FTP client, suspend the process, wait for the client to
+	 * advertise a zero window, then kill -9 the FTP client, wheee...
+	 * Note: timeout is always zero in such a case.
+	 */
+	if (data_was_unread) {
+		/* Unread data was tossed, zap the connection. */
+		NET_INC_STATS_USER(sock_net(mpcb_sk), 
+				   LINUX_MIB_TCPABORTONCLOSE);
+		tcp_set_state(mpcb_sk, TCP_CLOSE);
+		tcp_send_active_reset(master_sk, GFP_KERNEL);
+	} else if (sock_flag(master_sk, SOCK_LINGER) && 
+		   !master_sk->sk_lingertime) {
+		/* Check zero linger _after_ checking for unread data. */
+		mpcb_sk->sk_prot->disconnect(mpcb_sk, 0);
+		NET_INC_STATS_USER(sock_net(mpcb_sk), LINUX_MIB_TCPABORTONDATA);
+	} else if (tcp_close_state(mpcb_sk)) {
+		/* We FIN if the application ate all the data before
+		 * zapping the connection.
+		 */
+
+		/* RED-PEN. Formally speaking, we have broken TCP state
+		 * machine. State transitions:
+		 *
+		 * TCP_ESTABLISHED -> TCP_FIN_WAIT1
+		 * TCP_SYN_RECV	-> TCP_FIN_WAIT1 (forget it, it's impossible)
+		 * TCP_CLOSE_WAIT -> TCP_LAST_ACK
+		 *
+		 * are legal only when FIN has been sent (i.e. in window),
+		 * rather than queued out of window. Purists blame.
+		 *
+		 * F.e. "RFC state" is ESTABLISHED,
+		 * if Linux state is FIN-WAIT-1, but FIN is still not sent.
+		 *
+		 * The visible declinations are that sometimes
+		 * we enter time-wait state, when it is not required really
+		 * (harmless), do not send active resets, when they are
+		 * required by specs (TCP_ESTABLISHED, TCP_CLOSE_WAIT, when
+		 * they look as CLOSING or LAST_ACK for Linux)
+		 * Probably, I missed some more holelets.
+		 * 						--ANK
+		 */
+		mtcp_send_fin(mpcb_sk);
+	}
+
+	sk_stream_wait_close(mpcb_sk, timeout);
+
+	state = mpcb_sk->sk_state;
+	sock_hold(mpcb_sk);
+	sock_orphan(mpcb_sk);
+	atomic_inc(mpcb_sk->sk_prot->orphan_count);
+
+	/* It is the last release_sock in its life. It will remove backlog. */
+	release_sock(mpcb_sk);
+
+	/* Now socket is owned by kernel and we acquire BH lock
+	   to finish close. No need to check for user refs.
+	 */
+
+	local_bh_disable();
+	bh_lock_sock(mpcb_sk);
+	WARN_ON(sock_owned_by_user(mpcb_sk));
+
+	/* Have we already been destroyed by a softirq or backlog? */
+	if (state != TCP_CLOSE && mpcb_sk->sk_state == TCP_CLOSE)
+		goto out;
+
+	/*	This is a (useful) BSD violating of the RFC. There is a
+	 *	problem with TCP as specified in that the other end could
+	 *	keep a socket open forever with no application left this end.
+	 *	We use a 3 minute timeout (about the same as BSD) then kill
+	 *	our end. If they send after that then tough - BUT: long enough
+	 *	that we won't make the old 4*rto = almost no time - whoops
+	 *	reset mistake.
+	 *
+	 *	Nope, it was not mistake. It is really desired behaviour
+	 *	f.e. on http servers, when such sockets are useless, but
+	 *	consume significant resources. Let's do it with special
+	 *	linger2	option.					--ANK
+	 */
+
+	if (mpcb_sk->sk_state == TCP_FIN_WAIT2) {
+		if (mpcb_tp->linger2 < 0) {
+			tcp_set_state(mpcb_sk, TCP_CLOSE);
+			tcp_send_active_reset(master_sk, GFP_ATOMIC);
+			NET_INC_STATS_BH(sock_net(mpcb_sk),
+					LINUX_MIB_TCPABORTONLINGER);
+		} else {
+			const int tmo = tcp_fin_time(mpcb_sk);
+
+			if (tmo > TCP_TIMEWAIT_LEN) {
+				printk(KERN_ERR "don't know what to do here\n");
+				BUG();
+				inet_csk_reset_keepalive_timer(master_sk,
+						tmo - TCP_TIMEWAIT_LEN);
+			} else {
+				tcp_time_wait(mpcb_sk, TCP_FIN_WAIT2, tmo);
+				goto out;
+			}
+		}
+	}
+	if (mpcb_sk->sk_state != TCP_CLOSE) {
+		sk_mem_reclaim(mpcb_sk);
+		if (tcp_too_many_orphans(mpcb_sk,
+					 atomic_read(mpcb_sk->sk_prot->orphan_count))) {
+			if (net_ratelimit())
+				printk(KERN_INFO "TCP: too many of orphaned "
+				       "sockets\n");
+			tcp_set_state(mpcb_sk, TCP_CLOSE);
+			tcp_send_active_reset(master_sk, GFP_ATOMIC);
+			NET_INC_STATS_BH(sock_net(mpcb_sk),
+					 LINUX_MIB_TCPABORTONMEMORY);
+		}
+	}
+	
+	if (mpcb_sk->sk_state == TCP_CLOSE)
+		inet_csk_destroy_sock(mpcb_sk);
+	/* Otherwise, socket is reprieved until protocol close. */
+	
+out:
+	bh_unlock_sock(mpcb_sk);
+	local_bh_enable();
+	sock_put(mpcb_sk);
 }
 
 #ifdef MTCP_DEBUG_PKTS_OUT

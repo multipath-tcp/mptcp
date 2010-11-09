@@ -355,4 +355,5 @@ struct sk_buff* mtcp_next_segment(struct sock *sk, int *reinject);
 void mpcb_release(struct kref* kref);
 void mtcp_clean_rtx_queue(struct sock *sk);
 void mtcp_send_fin(struct sock *mpcb_sk);
+void mtcp_close(struct sock *master_sk, long timeout);
 #endif /*_MTCP_H*/

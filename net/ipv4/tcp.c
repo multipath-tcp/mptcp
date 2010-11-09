@@ -2347,7 +2347,7 @@ static const unsigned char new_state[16] = {
   /* TCP_CLOSING	*/ TCP_CLOSING,
 };
 
-static int tcp_close_state(struct sock *sk)
+int tcp_close_state(struct sock *sk)
 {
 	int next = (int)new_state[sk->sk_state];
 	int ns = next & TCP_STATE_MASK;
@@ -2407,49 +2407,8 @@ void tcp_close(struct sock *sk, long timeout)
 	int data_was_unread = 0;
 	int state;
 		
-#ifdef CONFIG_MTCP
-	/*if this is the master subsocket, we must first close the
-	  slave subsockets*/
-	if (is_master_sk(tcp_sk(sk))) {
-		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
-		struct sock *mpcb_sk=(struct sock*)mpcb;
-		struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
-		struct sock *slave_sk,*temp;
-
-		mtcp_debug("%s: Close of master_sk\n",__FUNCTION__);
-
-		lock_sock(mpcb_sk);
-
-		/*Purging the meta-queues. This MUST be done before
-		  to close any subsocket. See comment in function 
-		  mtcp_destroy_mpcb()*/
-		mtcp_debug("%s: Will purge the queues\n", __FUNCTION__);
-		skb_queue_purge(&mpcb_sk->sk_receive_queue);
-		skb_queue_purge(&mpcb_tp->out_of_order_queue);
-
-		BUG_ON(!skb_queue_empty(&mpcb_sk->sk_receive_queue));
-				
-		tcp_close_state(mpcb_sk);
-		/*Enqueuing the data_fin*/
-		if (tcp_sk(sk)->mpc) mtcp_send_fin(mpcb_sk);
-		
-		/*We MUST close the master socket in the last place.
-		  this is indeed the case, because the master socket is at the
-		  end of the subsocket list.*/
-		mtcp_for_each_sk_safe(mpcb,slave_sk,temp) {
-			unsigned long prevtime=jiffies;
-			if (is_master_sk(tcp_sk(slave_sk))) {
-				mtcp_destroy_mpcb(mpcb);
-				break; /*All slaves have been closed,
-					 process to close the master*/
-			}
-			tcp_close(slave_sk,timeout);
-			if (timeout) timeout-=(jiffies-prevtime);
-		}
-	}
-#else
 	lock_sock(sk);
-#endif
+
 	sk->sk_shutdown = SHUTDOWN_MASK;
 
 	if (sk->sk_state == TCP_LISTEN) {
@@ -2486,15 +2445,11 @@ void tcp_close(struct sock *sk, long timeout)
 		NET_INC_STATS_USER(sock_net(sk), LINUX_MIB_TCPABORTONCLOSE);
 		tcp_set_state(sk, TCP_CLOSE);
 		tcp_send_active_reset(sk, GFP_KERNEL);
-		printk(KERN_ERR "unread data\n");
 	} else if (sock_flag(sk, SOCK_LINGER) && !sk->sk_lingertime) {
 		/* Check zero linger _after_ checking for unread data. */
 		sk->sk_prot->disconnect(sk, 0);
 		NET_INC_STATS_USER(sock_net(sk), LINUX_MIB_TCPABORTONDATA);
-		printk(KERN_ERR "flag LINGER\n");
 	} else if (tcp_close_state(sk)) {
-		struct tcp_sock *tp=tcp_sk(sk);
-		mtcp_debug("%s: will call tcp_fin\n", __FUNCTION__);
 		/* We FIN if the application ate all the data before
 		 * zapping the connection.
 		 */
@@ -2520,8 +2475,7 @@ void tcp_close(struct sock *sk, long timeout)
 		 * Probably, I missed some more holelets.
 		 * 						--ANK
 		 */
-		if (!tp->mpc)
-			tcp_send_fin(sk);
+		tcp_send_fin(sk);
 	}
 
 	sk_stream_wait_close(sk, timeout);
@@ -2533,15 +2487,7 @@ adjudge_to_death:
 	atomic_inc(sk->sk_prot->orphan_count);
 
 	/* It is the last release_sock in its life. It will remove backlog. */
-#ifdef CONFIG_MTCP
-	/*tcp_close() can be called only on the master subsock.
-	  it recursively calls itself on other subsocks, but
-	  those recursive calls work under the lock of the mpcb.*/
-	if (is_master_sk(tcp_sk(sk)))
-		release_sock((struct sock*)tcp_sk(sk)->mpcb);
-#else
 	release_sock(sk);
-#endif
 
 	/* Now socket is owned by kernel and we acquire BH lock
 	   to finish close. No need to check for user refs.
