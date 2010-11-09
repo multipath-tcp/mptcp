@@ -54,6 +54,11 @@ module_param(full, int, 0);
 
 static const char procname[] = "tcpprobe";
 
+struct mtcp_ccc {
+	u64 alpha;
+	u32 alpha_scale;
+};
+
 struct tcp_log {
 	int     path_index;
 	ktime_t tstamp;
@@ -87,6 +92,8 @@ struct tcp_log {
 	u32     drs_time;
 	int     bw_est;
 	char    mpcb_def;
+	u64	alpha;
+	u32	alpha_scale;
 };
 
 static struct {
@@ -179,6 +186,13 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->drs_time=tp->rcvq_space.time;
 			p->bw_est=tp->cur_bw_est;
 			p->mpcb_def=(tp->mpcb!=NULL);
+			if (tp->mpcb) {
+				p->alpha = ((struct mtcp_ccc *) inet_csk_ca((struct sock *) tp->mpcb))->alpha;
+				p->alpha_scale = ((struct mtcp_ccc *) inet_csk_ca((struct sock *) tp->mpcb))->alpha_scale;
+			} else {
+				p->alpha = 0;
+				p->alpha_scale = 0;
+			}
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
 		tcp_probe.lastcwnd = tp->snd_cwnd;
@@ -301,6 +315,13 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			p->drs_time=tp->rcvq_space.time;
 			p->bw_est=tp->cur_bw_est;
 			p->mpcb_def=(tp->mpcb!=NULL);
+			if (tp->mpcb) {
+				p->alpha = ((struct mtcp_ccc *) inet_csk_ca((struct sock *) tp->mpcb))->alpha;
+				p->alpha_scale = ((struct mtcp_ccc *) inet_csk_ca((struct sock *) tp->mpcb))->alpha_scale;
+			} else {
+				p->alpha = 0;
+				p->alpha_scale = 0;
+			}
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
 		tcp_probe.lastcwnd = tp->snd_cwnd;
@@ -369,7 +390,7 @@ static int tcpprobe_sprint(char *tbuf, int n)
 	return snprintf(tbuf, n,
 			"%lu.%09lu " NIPQUAD_FMT ":%u " NIPQUAD_FMT ":%u"
 			" %d %d %#x %#x %u %u %u %u %#x %#x %u %u %u %u %d"
-			" %d %u %u %u %d %d %d %d %#x %#x %#x %#x %d %d\n",
+			" %d %u %u %u %d %d %d %d %#x %#x %#x %#x %d %d %llu %d\n",
 			(unsigned long) tv.tv_sec,
 			(unsigned long) tv.tv_nsec,
 			NIPQUAD(p->saddr), ntohs(p->sport),
@@ -383,7 +404,7 @@ static int tcpprobe_sprint(char *tbuf, int n)
 			p->snd_buf,p->wmem_queued, p->rmem_alloc, 
 			p->rmem_alloc_sub, p->dsn,
 			p->mtcp_snduna,p->drs_seq,p->drs_time*1000/HZ,
-			((p->bw_est<<3)/1000)*HZ,p->mpcb_def);
+			((p->bw_est<<3)/1000)*HZ,p->mpcb_def, p->alpha, p->alpha_scale);
 }
 
 static ssize_t tcpprobe_read(struct file *file, char __user *buf,

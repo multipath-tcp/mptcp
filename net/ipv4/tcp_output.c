@@ -958,7 +958,7 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 
 	if (likely(err <= 0)) {
 		if (err<0) 
-			mtcp_debug("%s:error %d\n",__FUNCTION__,err);
+			mtcp_debug("%s:error %d - pi:%d\n",__FUNCTION__,err,tp->path_index);
 		return err;
 	}
 

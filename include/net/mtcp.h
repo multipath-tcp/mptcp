@@ -85,12 +85,12 @@ struct multipath_pcb {
 	
 	/*list of sockets in this multipath connection*/
 	struct tcp_sock*          connection_list;
-	
+
 	/*Master socket, also part of the connection_list, this
 	  socket is the one that the application sees.*/
 	struct sock*              master_sk;
 	/*socket count in this connection*/
-	int                       cnt_subflows;    
+	int                       cnt_subflows;
 	int                       syn_sent;
 	int                       cnt_established;
 	int                       err;
@@ -123,6 +123,9 @@ struct multipath_pcb {
 	u32                       noneligible; /*Path mask of temporarily
 						 non eligible
 						 subflows by the scheduler*/
+
+	/* This variable can be used to store connection-specific information of
+	 *  the congestion control used for this mptcp-connection */
 #ifdef CONFIG_MTCP_PM
 	struct list_head          collide_tk;
 	uint8_t                   addr_unsent; /* num of addrs not yet

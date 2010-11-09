@@ -2307,6 +2307,11 @@ void tcp_set_state(struct sock *sk, int state)
 		if (inet_csk(sk)->icsk_bind_hash &&
 		    !(sk->sk_userlocks & SOCK_BINDPORT_LOCK))
 			inet_put_port(sk);
+		if (tcp_sk(sk)->mpcb && oldstate != TCP_SYN_SENT &&
+				oldstate != TCP_SYN_RECV && oldstate != TCP_LISTEN) {
+			mtcp_debug("%s - before minus --- tcp_sk(sk)->mpcb->cnt_established:%d pi:%d\n",__FUNCTION__,tcp_sk(sk)->mpcb->cnt_established, tp->path_index);
+			tcp_sk(sk)->mpcb->cnt_established--;
+		}
 		/* fall through */
 	default:
 		if (oldstate==TCP_ESTABLISHED)
