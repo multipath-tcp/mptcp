@@ -2401,13 +2401,22 @@ void tcp_shutdown(struct sock *sk, int how)
 	}
 }
 
+
+/**
+ * MPTCP modif: tcp_close can now be called from tcp_write_xmit()
+ * In that case, timeout must be set to -1.
+ * This prevents the locks from being taken, and enforces atomic operation
+ * everywhere, because in tcp_write_xmit, the sk is already locked, and
+ * and we may be in soft interrupt context.
+ */
 void tcp_close(struct sock *sk, long timeout)
 {
 	struct sk_buff *skb;
 	int data_was_unread = 0;
 	int state;
+	int locked=(timeout==-1)?1:0;
 		
-	lock_sock(sk);
+	if (!locked) lock_sock(sk);
 
 	sk->sk_shutdown = SHUTDOWN_MASK;
 
@@ -2444,7 +2453,7 @@ void tcp_close(struct sock *sk, long timeout)
 		/* Unread data was tossed, zap the connection. */
 		NET_INC_STATS_USER(sock_net(sk), LINUX_MIB_TCPABORTONCLOSE);
 		tcp_set_state(sk, TCP_CLOSE);
-		tcp_send_active_reset(sk, GFP_KERNEL);
+		tcp_send_active_reset(sk, (locked)?GFP_ATOMIC:GFP_KERNEL);
 	} else if (sock_flag(sk, SOCK_LINGER) && !sk->sk_lingertime) {
 		/* Check zero linger _after_ checking for unread data. */
 		sk->sk_prot->disconnect(sk, 0);
@@ -2478,7 +2487,7 @@ void tcp_close(struct sock *sk, long timeout)
 		tcp_send_fin(sk);
 	}
 
-	sk_stream_wait_close(sk, timeout);
+	if (!locked) sk_stream_wait_close(sk, timeout);
 
 adjudge_to_death:
 	state = sk->sk_state;
@@ -2487,13 +2496,16 @@ adjudge_to_death:
 	atomic_inc(sk->sk_prot->orphan_count);
 
 	/* It is the last release_sock in its life. It will remove backlog. */
-	release_sock(sk);
-
+	if (!locked)
+		release_sock(sk);
+	
 	/* Now socket is owned by kernel and we acquire BH lock
 	   to finish close. No need to check for user refs.
 	 */
-	local_bh_disable();
-	bh_lock_sock(sk);
+	if (!locked) {
+		local_bh_disable();
+		bh_lock_sock(sk);
+	}
 	WARN_ON(sock_owned_by_user(sk));
 
 	/* Have we already been destroyed by a softirq or backlog? */
@@ -2552,8 +2564,10 @@ adjudge_to_death:
 	/* Otherwise, socket is reprieved until protocol close. */
 
 out:
-	bh_unlock_sock(sk);
-	local_bh_enable();
+	if (!locked){
+		bh_unlock_sock(sk);
+		local_bh_enable();
+	}
 	sock_put(sk);
 }
 

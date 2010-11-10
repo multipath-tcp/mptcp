@@ -752,7 +752,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		size += TCPOLEN_DSN_ALIGNED;		
 	}
 	if (tp->mpc && test_bit(MPCB_FLAG_FIN_ENQUEUED,
-				&tp->mpcb->flags) &&
+				&mpcb->flags) &&
 	    (!skb || TCP_SKB_CB(skb)->end_data_seq==mpcb->tp.write_seq)) {
 		opts->options |= OPTION_DFIN;
 		size += TCPOLEN_DFIN_ALIGNED;		
@@ -1946,15 +1946,12 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		
 		if (sk!=subsk &&
 		    (TCP_SKB_CB(skb)->flags & TCPCB_FLAG_FIN)) {
-			struct sock *sk_it;
-			struct tcp_sock *tp_it;
-			
+			struct sock *sk_it, *sk_tmp;
 			tcp_close_state(subsk);
 			/*App close: we have sent every app-level byte,
 			  send now the FIN on all subflows.*/
-			mtcp_for_each_sk(tp->mpcb,sk_it,tp_it)
-				if (sk_it!=subsk && tcp_close_state(sk_it))
-					tcp_send_fin(sk_it);
+			mtcp_for_each_sk_safe(tp->mpcb,sk_it,sk_tmp)
+				tcp_close(sk_it,-1);
 		}
 
 

@@ -1619,20 +1619,20 @@ int tcp_v4_rcv(struct sk_buff *skb)
 			       th->dest);
 	if (!sk)
 		goto no_tcp_socket;
-
+	
 process:
 	if (sk->sk_state == TCP_TIME_WAIT)
 		goto do_time_wait;
-
+	
 	if (!xfrm4_policy_check(sk, XFRM_POLICY_IN, skb))
 		goto discard_and_relse;
 	nf_reset(skb);
-
+	
 	if (sk_filter(sk, skb))
 		goto discard_and_relse;
-
+	
 	skb->dev = NULL;
-
+	
 	if (tcp_sk(sk)->mpcb) {
 		mpcb=tcp_sk(sk)->mpcb;
 		kref_get(&mpcb->kref);
