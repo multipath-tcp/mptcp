@@ -2389,6 +2389,7 @@ static void tcp_retrans_try_collapse(struct sock *sk, struct sk_buff *skb,
 	  the end_data_seq of the FIN. Using an addition takes this
 	  difference into account*/
 	TCP_SKB_CB(skb)->end_data_seq += TCP_SKB_CB(next_skb)->data_len;
+	TCP_SKB_CB(skb)->data_len += TCP_SKB_CB(next_skb)->data_len;
 
 	/* Merge over control information. */
 	flags |= TCP_SKB_CB(next_skb)->flags; /* This moves PSH/FIN etc. over */
