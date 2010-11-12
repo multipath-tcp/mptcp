@@ -1789,6 +1789,7 @@ void mtcp_close(struct sock *master_sk, long timeout)
 {
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(master_sk));
 	struct sock *mpcb_sk=(struct sock*)mpcb;
+	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
 	struct sk_buff *skb;
 	int data_was_unread = 0;
 	int state;
@@ -1818,7 +1819,15 @@ void mtcp_close(struct sock *master_sk, long timeout)
 
 	if (tcp_close_state(mpcb_sk))
 		mtcp_send_fin(mpcb_sk);
-
+	else if (mpcb_tp->snd_nxt==mpcb_tp->write_seq) {
+		struct sock *sk_it, *sk_tmp;
+		/*The FIN has been sent already, we need to 
+		  call tcp_close() on the subsocks
+		  ourselves.*/
+		mtcp_for_each_sk_safe(mpcb,sk_it,sk_tmp)
+			tcp_close(sk_it,timeout);
+	}
+	
 	sk_stream_wait_close(mpcb_sk, timeout);
 
 	state = mpcb_sk->sk_state;

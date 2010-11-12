@@ -741,6 +741,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		}
 		else release_mpcb=1;
 	}
+
 	if (tp->mpc && (!skb || skb->len!=0 ||  
 			(tcb->flags & TCPCB_FLAG_FIN))) {
 		if (tcb && tcb->data_len) { /*Ignore dataseq if data_len is 0*/
@@ -751,7 +752,9 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		opts->options |= OPTION_DSN;
 		size += TCPOLEN_DSN_ALIGNED;		
 	}
-	if (tp->mpc && test_bit(MPCB_FLAG_FIN_ENQUEUED,
+	/*we can have mpc==1 and mpcb==NULL if tp is the master_sk
+	  and is established but not yet accepted.*/
+	if (tp->mpc && mpcb && test_bit(MPCB_FLAG_FIN_ENQUEUED,
 				&mpcb->flags) &&
 	    (!skb || TCP_SKB_CB(skb)->end_data_seq==mpcb->tp.write_seq)) {
 		opts->options |= OPTION_DFIN;
@@ -1483,7 +1486,17 @@ static inline int tcp_snd_wnd_test(struct tcp_sock *tp, struct sk_buff *skb,
 	if (skb->len > cur_mss)
 		end_seq = ((tp->mpc)?TCP_SKB_CB(skb)->data_seq:
 			   TCP_SKB_CB(skb)->seq) + cur_mss;
-	
+	if (after(end_seq, tcp_wnd_end(tp,tp->mpc)) && 
+	    (TCP_SKB_CB(skb)->flags & TCPCB_FLAG_FIN)) {
+		mtcp_debug("FIN refused for sndwnd, fin end dsn %#x,"
+			   "tcp_wnd_end: %#x, mpc:%d,mpcb:%p,snd_una:%#x,"
+			   "snd_wnd:%d, mpcb write_seq:%#x, "
+			   "mpcb queue len:%d\n",
+			   end_seq,tcp_wnd_end(tp,tp->mpc),
+			   tp->mpc,tp->mpcb,tp->mpcb->tp.snd_una,
+			   tp->mpcb->tp.snd_wnd,tp->mpcb->tp.write_seq,
+			   ((struct sock*)&tp->mpcb->tp)->sk_write_queue.qlen);
+	}	
 	
 	return !after(end_seq, tcp_wnd_end(tp,tp->mpc));
 }
@@ -1947,13 +1960,24 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle)
 		if (sk!=subsk &&
 		    (TCP_SKB_CB(skb)->flags & TCPCB_FLAG_FIN)) {
 			struct sock *sk_it, *sk_tmp;
-			tcp_close_state(subsk);
+			BUG_ON(!tcp_close_state(subsk));
 			/*App close: we have sent every app-level byte,
-			  send now the FIN on all subflows.*/
-			mtcp_for_each_sk_safe(tp->mpcb,sk_it,sk_tmp)
-				tcp_close(sk_it,-1);
+			  send now the FIN on all subflows.
+			  if the FIN was triggered by mtcp_close(),
+			  then the SHUTDOWN_MASK is set and we call
+			  tcp_close() on all subsocks. Otherwise
+			  only sk_shutdown has been called, and 
+			  we just send the fin on all subflows.*/
+			mtcp_for_each_sk_safe(tp->mpcb,sk_it,sk_tmp) {
+				if (sk->sk_shutdown == SHUTDOWN_MASK)
+					tcp_close(sk_it,-1);
+				else if (sk_it!=subsk && 
+					 tcp_close_state(sk_it)) {
+					tcp_send_fin(sk_it);
+				}
+			}
 		}
-
+		
 
 		tcp_minshall_update(tp, mss_now, skb);
 		sent_pkts++;

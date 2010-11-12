@@ -75,7 +75,6 @@ extern struct proto mtcpsub_prot;
 				       (obtained through a listen)*/
 #define MPCB_FLAG_FIN_ENQUEUED  1  /*A dfin has been enqueued on the meta-send
 				     queue.*/
-#define MPCB_FLAG_FIN_RCVD      2  /*A dfin has been received*/
 
 struct multipath_pcb {
 	struct tcp_sock           tp;
