@@ -2502,8 +2502,6 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 			BUG();
 		if (tcp_trim_head(sk, skb, tp->snd_una - TCP_SKB_CB(skb)->seq))
 			return -ENOMEM;
-		/*TODO: here we will need to update the dsn sack.*/
-		BUG();
 	}
 
 	if (inet_csk(sk)->icsk_af_ops->rebuild_header(sk))
