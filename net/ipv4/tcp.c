@@ -925,7 +925,7 @@ ssize_t tcp_sendpage(struct socket *sock, struct page *page, int offset,
 	struct sock *sk = sock->sk;
 
 	if (!(sk->sk_route_caps & NETIF_F_SG) ||
-	    !(sk->sk_route_caps & NETIF_F_ALL_CSUM))
+	    !(sk->sk_route_caps & NETIF_F_ALL_CSUM) || tcp_sk(sk)->mpc)
 		return sock_no_sendpage(sock, page, offset, size, flags);
 
 	lock_sock(sk);
