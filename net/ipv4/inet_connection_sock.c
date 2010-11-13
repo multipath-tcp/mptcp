@@ -277,9 +277,12 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 	  is not called*/
 	if (newsk->sk_protocol==IPPROTO_TCP) {
 		struct tcp_sock *tp=tcp_sk(newsk);
-		struct multipath_pcb *mpcb=mtcp_alloc_mpcb(newsk);
-		struct tcp_sock *mpcb_tp=(struct tcp_sock *)mpcb;
+		struct multipath_pcb *mpcb;
+		struct tcp_sock *mpcb_tp;
 		
+		lock_sock(newsk);
+		mpcb=mtcp_alloc_mpcb(newsk);
+		mpcb_tp=(struct tcp_sock *)mpcb;
 		BUG_ON(!mpcb);
 		if (tp->mopt.list_rcvd) {
 			memcpy(&mpcb->received_options,&tp->mopt,
@@ -296,6 +299,7 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 		mpcb_tp->copied_seq=0; /* First byte of yet unread data */
 		set_bit(MPCB_FLAG_SERVER_SIDE,&mpcb->flags);
 		mtcp_ask_update(newsk);
+		release_sock(newsk);
 	}
 #endif
 
