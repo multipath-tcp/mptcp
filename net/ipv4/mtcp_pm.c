@@ -190,9 +190,8 @@ void mtcp_pm_release(struct multipath_pcb *mpcb)
  */
 u32 mtcp_new_token(void)
 {
-	static u32 latest_token=0;
-	latest_token++;
-	return latest_token;
+	static atomic_t latest_token={.counter=0};
+	return atomic_inc_return(&latest_token);
 }
 
 struct path4 *find_path_mapping4(struct in_addr *loc,struct in_addr *rem,
