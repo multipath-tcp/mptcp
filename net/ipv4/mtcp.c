@@ -581,6 +581,10 @@ void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 				break;
 			}
 		}
+
+	if ((struct sock *)tp==mpcb->master_sk)
+		mpcb->master_sk=NULL;
+
 	tp->next=NULL;
 	if (!in_interrupt())
 		mutex_unlock(&mpcb->mutex);
@@ -1796,9 +1800,15 @@ void mtcp_close(struct sock *master_sk, long timeout)
 	
 	mtcp_debug("%s: Close of mpcb_sk\n",__FUNCTION__);
 
-	if (!tcp_sk(master_sk)->mpc)
-		return tcp_close(master_sk,timeout);
-		
+	/*destroy the mpcb, it will really disappear when the last subsock 
+	  is destroyed*/
+	mpcb_get(mpcb);
+	mtcp_destroy_mpcb(mpcb);	
+	
+	if (!tcp_sk(master_sk)->mpc) {
+		mpcb_put(mpcb);
+		return tcp_close(master_sk,timeout);		
+	}
 
 	lock_sock(mpcb_sk);
 	mpcb_sk->sk_shutdown = SHUTDOWN_MASK;
@@ -1836,10 +1846,7 @@ void mtcp_close(struct sock *master_sk, long timeout)
 
 	/* It is the last release_sock in its life. It will remove backlog. */
 	release_sock(mpcb_sk);
-	
-	/*Destroy the mpcb. It will be really destroyed when the last
-	  subflow is detached*/
-	mtcp_destroy_mpcb(mpcb);
+	mpcb_put(mpcb);
 }
 
 #ifdef MTCP_DEBUG_PKTS_OUT

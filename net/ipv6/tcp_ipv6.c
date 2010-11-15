@@ -2061,7 +2061,11 @@ void tcp6_proc_exit(struct net *net)
 struct proto tcpv6_prot = {
 	.name			= "TCPv6",
 	.owner			= THIS_MODULE,
+#ifdef CONFIG_MTCP
+	.close			= mtcp_close,
+#else
 	.close			= tcp_close,
+#endif
 	.connect		= tcp_v6_connect,
 	.disconnect		= tcp_disconnect,
 	.accept			= inet_csk_accept,
