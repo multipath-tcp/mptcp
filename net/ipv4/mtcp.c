@@ -468,8 +468,6 @@ void mpcb_put(struct multipath_pcb *mpcb)
   (due to unregister_netevent_notifier)*/
 void mtcp_destroy_mpcb(struct multipath_pcb *mpcb)
 {
-	struct sock *mpcb_sk=(struct sock *) mpcb;
-	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
 	mtcp_debug("%s: Destroying mpcb\n", __FUNCTION__);
 #ifdef CONFIG_MTCP_PM
 	/*Detach the mpcb from the token hashtable*/
