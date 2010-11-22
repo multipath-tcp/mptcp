@@ -1114,6 +1114,17 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 
 	if (!tp->mpc || !mpcb) {
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
+		/*This is the only case of MTCP_QUEUED where 
+		  we can return directly, without goto queued or goto out.
+		  reason: ->we push to receive queue, so no need
+		  to charge mpcb (label queued). 
+		          ->it would have been needed to call mpcb_put()
+		  only if tp->pending is set (meaning, server side),
+		  mpcb defined, and mpc not defined (meaning, one 
+		  subflow only). server+first subflow means: no mpcb
+		  yet. This contradicts previous mpcb!=NULL requirement,
+		  so the "need mpcb_put()" situation is _impossible_ here.
+		*/
 		return MTCP_QUEUED;
 	}
 	
