@@ -710,6 +710,7 @@ struct sock *tcp_check_req(struct sock *sk,struct sk_buff *skb,
 		child_tp->pending=1;
 		if (mtp.list_rcvd)
 			memcpy(&child_tp->mopt,&mtp,sizeof(mtp));
+		mtcp_alloc_mpcb(child);
 #endif
 	}
 #endif

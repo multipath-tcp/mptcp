@@ -281,7 +281,8 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 		struct tcp_sock *mpcb_tp;
 		
 		lock_sock(newsk);
-		mpcb=mtcp_alloc_mpcb(newsk);
+		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
+		BUG_ON(!mpcb);
 		mpcb_tp=(struct tcp_sock *)mpcb;
 		BUG_ON(!mpcb);
 		if (tp->mopt.list_rcvd) {
@@ -297,9 +298,9 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 					(well, if it indeed improve security)*/
 		
 		mpcb_tp->copied_seq=0; /* First byte of yet unread data */
-		set_bit(MPCB_FLAG_SERVER_SIDE,&mpcb->flags);
 		mtcp_ask_update(newsk);
 		release_sock(newsk);
+		mpcb_put(mpcb);
 	}
 #endif
 
