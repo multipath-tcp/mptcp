@@ -937,9 +937,19 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb)
 			break;
 				
 		if (!after(TCP_SKB_CB(skb)->end_data_seq, mpcb_tp->rcv_nxt)) {
+			struct sk_buff *skb_tail=
+				skb_peek_tail(&mpcb_sk->sk_receive_queue);
 			printk(KERN_ERR "ofo packet was already received."
-			       "skb->end_data_seq:%x,exp. rcv_nxt:%x\n",
-			       TCP_SKB_CB(skb)->end_data_seq,mpcb_tp->rcv_nxt);
+			       "skb->end_data_seq:%#x,exp. rcv_nxt:%#x, "
+			       "skb->dsn:%#x,skb->len:%d\n",
+			       TCP_SKB_CB(skb)->end_data_seq,mpcb_tp->rcv_nxt,
+			       TCP_SKB_CB(skb)->data_seq,skb->len);
+			if (skb_tail)
+				printk(KERN_ERR "last packet of the rcv queue:"
+				       "dsn %#x, last dsn %#x, len %d\n",
+				       TCP_SKB_CB(skb_tail)->data_seq,
+				       TCP_SKB_CB(skb_tail)->end_data_seq,
+				       skb_tail->len);
 			/*Should not happen in the current design*/
 			BUG();
 		}
