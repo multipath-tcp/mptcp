@@ -1068,7 +1068,20 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 		
 		err=skb_copy_datagram_iovec(skb, data_offset,
 					    msg->msg_iov, used);
-		BUG_ON(err);
+		if(err) {
+			int iovlen=msg->msg_iovlen;
+			struct iovec* iov=msg->msg_iov;
+			int msg_size=0;
+			while(iovlen-- > 0) {
+				msg_size+=iov->iov_len;
+				iov++;
+			}
+			printk(KERN_ERR "err in skb_coyp_datagram_iovec:"
+			       "skb:%p,data_offset:%d, iov:%p,used:%lu,"
+			       "msg_size:%d",skb,data_offset,iov,used,
+			       msg_size);
+			BUG();
+		}
 		
 		*data_seq+=used+dfin;
 		*copied+=used;
