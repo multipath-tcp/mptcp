@@ -798,8 +798,6 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	/*Any new subsock we can use ?*/
 	mtcp_check_new_subflow(mpcb);
 #endif
-	
-	/* Compute the total number of bytes stored in the message*/	
 	copied = subtcp_sendmsg(NULL,mpcb_sk,msg, 0);
 	if (copied<0) {
 		printk(KERN_ERR "%s: returning error "
