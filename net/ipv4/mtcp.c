@@ -312,7 +312,15 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 			((struct sock*)newtp)->sk_data_ready=mtcp_def_readable;
 						
 			retval = sock->ops->bind(sock, loculid, ulid_size);
-			if (retval<0) goto fail_bind;
+			if (retval<0) {
+				printk(KERN_ERR "bind failed, af %d\n",
+				       loculid->sa_family);
+				if (loculid->sa_family==AF_INET)
+					printk("addr:" NIPQUAD_FMT ":%d\n",
+					       NIPQUAD(loculid_in.sin_addr),
+					       loculid_in.sin_port);
+				goto fail_bind;
+			}
 			
 			retval = sock->ops->connect(sock,remulid,
 						    ulid_size,O_NONBLOCK);
