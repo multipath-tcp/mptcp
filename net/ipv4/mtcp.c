@@ -1414,6 +1414,42 @@ void mtcp_reinject_data(struct sock *orig_sk)
 	verif_wqueues(mpcb);
 }
 
+/*We are short of flags at the moment in tcp_skb_cb to 
+  remember that the dfin has been seen in this segment.
+  Hence, as a quick hack, we currently re-check manually.
+  Anyway, this only happens at the end of the communication.*/
+static int mtcp_check_dfin(struct sk_buff *skb)
+{	
+	struct tcphdr *th=tcp_hdr(skb);
+	unsigned char *ptr;
+	int length = (th->doff * 4) - sizeof(struct tcphdr);
+	/*Jump through the options to check whether JOIN is there*/
+	ptr = (unsigned char *)(th + 1);
+	while (length > 0) {
+		int opcode = *ptr++;
+		int opsize;
+		
+		switch (opcode) {
+		case TCPOPT_EOL:
+			return 0;
+		case TCPOPT_NOP:	/* Ref: RFC 793 section 3.1 */
+			length--;
+			continue;
+		default:
+			opsize = *ptr++;
+			if (opsize < 2) /* "silly options" */
+				return 0;
+			if (opsize > length)
+				return 0; /* don't parse partial options */
+			if (opcode==TCPOPT_DFIN)
+				return 1;
+			ptr += opsize-2;
+			length -= opsize;
+		}
+	}
+	return 0;
+}
+
 /**
  * To be called when a segment is in order. That is, either when it is received 
  * and is immediately in subflow-order, or when it is stored in the ofo-queue
@@ -1498,7 +1534,13 @@ int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb)
 		TCP_SKB_CB(skb)->data_seq+skb->len;
 	if (mpcb->received_options.dfin_rcvd &&
 	    TCP_SKB_CB(skb)->end_data_seq+1==mpcb->received_options.fin_dsn) {
-		TCP_SKB_CB(skb)->end_data_seq++;
+		/*This condition is not enough yet. It is possible that
+		  the skb is in fact the last data segment, and the dfin has
+		  been rcvd out of order separately. If this happens,
+		  we enter this conditional, while the end_data_seq must not
+		  be incremented because the dfin is not there.*/
+		if (mtcp_check_dfin(skb))
+			TCP_SKB_CB(skb)->end_data_seq++;
 	}
 	TCP_SKB_CB(skb)->data_len=0; /*To indicate that there is not anymore
 				       general mapping information in that 
