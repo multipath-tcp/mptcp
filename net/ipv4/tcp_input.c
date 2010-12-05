@@ -3830,11 +3830,8 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 	mpcb = mpcb_from_tcpsock(tp);
 	if (tp->pending)
 		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
-	if (mpcb) mopt=&mpcb->received_options;
-	else {
-		mtcp_debug("mpcb null in fast parse options\n");
-		mopt=&tp->mopt;
-	}
+	BUG_ON(!mpcb);
+	mopt=&mpcb->received_options;
 	tcp_parse_options(skb, &tp->rx_opt,mopt,1);
 	if (unlikely(mpcb && tp->rx_opt.saw_mpc && is_master_sk(tp))) {
 		/*Transfer sndwnd control to the mpcb*/
@@ -3843,9 +3840,7 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 		tp->mpc=1;		
 		tp->rx_opt.saw_mpc=0; /*reset that field, it has been read*/
 	}
-	/*It can be that mpcb is NULL while tp is pending
-	  if tp is the master sk.*/
-	if (tp->pending && mpcb) 
+	if (tp->pending)
 		mpcb_put(mpcb);
 	return 1;
 }

@@ -356,7 +356,6 @@ struct tcp_sock {
  *      Options received (usually on last packet, some only on SYN packets).
  */
 	struct tcp_options_received rx_opt;
-	struct multipath_options mopt;
 
 /*
  *	Slow start and congestion control (see also Nagle, and Karn & Partridge)

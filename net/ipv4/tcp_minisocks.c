@@ -402,7 +402,6 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 		newtp->snt_isn=treq->snt_isn;
 		newtp->rcv_isn=treq->rcv_isn;
 		memset(&newtp->rcvq_space,0,sizeof(newtp->rcvq_space));
-		newtp->mopt.list_rcvd=0;
 #endif
 
 		tcp_prequeue_init(newtp);
@@ -700,6 +699,7 @@ struct sock *tcp_check_req(struct sock *sk,struct sk_buff *skb,
 		  we do this here because this is shared between
 		  ipv4 and ipv6*/
 		struct tcp_sock *child_tp = tcp_sk(child);
+		struct multipath_pcb *mpcb;
 		child_tp->rx_opt.saw_mpc=req->saw_mpc;
 		if (child_tp->rx_opt.saw_mpc)
 			child_tp->mpc=1;
@@ -708,9 +708,9 @@ struct sock *tcp_check_req(struct sock *sk,struct sk_buff *skb,
 		child_tp->mtcp_loc_token=req->mtcp_loc_token;
 		child_tp->mpcb=NULL;
 		child_tp->pending=1;
+		mpcb=mtcp_alloc_mpcb(child);
 		if (mtp.list_rcvd)
-			memcpy(&child_tp->mopt,&mtp,sizeof(mtp));
-		mtcp_alloc_mpcb(child);
+			memcpy(&mpcb->received_options,&mtp,sizeof(mtp));
 #endif
 	}
 #endif

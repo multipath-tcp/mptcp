@@ -875,9 +875,9 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 		(TCP_FLAG_RST|TCP_FLAG_SYN|TCP_FLAG_ACK);
 	int paws_reject = 0;
 	struct tcp_options_received tmp_opt;
-	struct multipath_options mtp;
 	struct sock *child;
 	struct multipath_pcb *mpcb=req->mpcb;
+	struct multipath_options *mopt=&mpcb->received_options;
 	struct inet_connection_sock *mpcb_icsk=
 		(struct inet_connection_sock*)mpcb;
 
@@ -897,7 +897,7 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 
 	tmp_opt.saw_tstamp = 0;
 	if (th->doff > (sizeof(struct tcphdr)>>2)) {
-		tcp_parse_options(skb, &tmp_opt, &mtp, 0);
+		tcp_parse_options(skb, &tmp_opt, mopt, 0);
 
 		if (tmp_opt.saw_tstamp) {
 			tmp_opt.ts_recent = req->ts_recent;

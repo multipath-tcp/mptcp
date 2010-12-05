@@ -285,10 +285,6 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 		BUG_ON(!mpcb);
 		mpcb_tp=(struct tcp_sock *)mpcb;
 		BUG_ON(!mpcb);
-		if (tp->mopt.list_rcvd) {
-			memcpy(&mpcb->received_options,&tp->mopt,
-			       sizeof(tp->mopt));
-		}
 		set_bit(MPCB_FLAG_SERVER_SIDE,&mpcb->flags);
 		tp->path_index=0;		
 		mtcp_add_sock(mpcb,tp);
