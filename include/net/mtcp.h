@@ -124,8 +124,6 @@ struct multipath_pcb {
 						 non eligible
 						 subflows by the scheduler*/
 
-	/* This variable can be used to store connection-specific information of
-	 *  the congestion control used for this mptcp-connection */
 #ifdef CONFIG_MTCP_PM
 	struct list_head          collide_tk;
 	uint8_t                   addr_unsent; /* num of addrs not yet

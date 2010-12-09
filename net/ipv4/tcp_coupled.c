@@ -1,5 +1,5 @@
 /*
- * TCP FULLY COUPLED : 
+ * TCP COUPLED CONGESTION CONTROL:
  * 
  * Algorithm: Costin Raiciu, Daemon Wischik, Mark Handley
  * Implementation: user space by Costin Raiciu.
@@ -361,7 +361,7 @@ static struct tcp_congestion_ops mtcp_fc = {
 	.cwnd_event	= mtcp_cwnd_event,
 	.min_cwnd	= tcp_reno_min_cwnd,
 	.owner		= THIS_MODULE,
-	.name		= "fully_coupled",
+	.name		= "coupled",
 };
 
 static int __init mtcp_fc_register(void)
@@ -380,5 +380,5 @@ module_exit(mtcp_fc_unregister);
 
 MODULE_AUTHOR("Costin Raiciu, Sébastien Barré, Christoph Paasch");
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("MTCP FULLY COUPLED");
+MODULE_DESCRIPTION("MPTCP COUPLED CONGESTION CONTROL");
 MODULE_VERSION("0.1");

@@ -596,12 +596,13 @@ config TCP_CONG_ILLINOIS
 	For further details see:
 	  http://www.ews.uiuc.edu/~shaoliu/tcpillinois/index.html
 
-config TCP_CONG_FULLY_COUPLED
-    tristate "MPTCP FULLY COUPLED"
-    depends on EXPERIMENTAL && MTCP
-    default n
-    ---help---
-    Fully coupled Multipath TCP Congestion Control
+config TCP_CONG_COUPLED
+	tristate "MPTCP COUPLED CONGESTION CONTROL"
+	depends on EXPERIMENTAL && MTCP
+	default n
+	---help---
+	MultiPath TCP Coupled Congestion Control
+	To enable it, just put 'coupled' in tcp_congestion_control
 
 choice
 	prompt "Default TCP congestion control"
