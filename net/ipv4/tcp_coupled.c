@@ -78,7 +78,7 @@ static inline u64 mtcp_ccc_scale(u32 val, u32 alpha_scale)
 
 static inline u64 mtcp_ccc_scale_down(u64 val, u32 alpha_scale)
 {
-	return val / alpha_scale;
+	return div_u64(val,alpha_scale);
 }
 
 static void mtcp_recalc_alpha(struct sock *sk)
@@ -153,8 +153,8 @@ recalc_alpha:
 			 * Integer-overflow is not possible here, because
 			 * new_val will be in u64.
 			 */
-			new_val = ((u64) mtcp_ccc_scale(tp->snd_cwnd, alpha_scale)) /
-					(tp->srtt * tp->srtt);
+			new_val = div64_u64 (mtcp_ccc_scale(tp->snd_cwnd, alpha_scale),
+					(u64) tp->srtt * tp->srtt);
 
 			if (new_val >= max_numerator) {
 				max_numerator = new_val;
@@ -177,8 +177,8 @@ recalc_alpha:
 			/* Potential integer-overflow. We have to use the maximum
 			 * value at the numerator.
 			 */
-			if (rtt_product > ((u64) 0xFFFFFFFFFFFFFFFF) / tp->srtt ||
-			    rtt_product * tp->srtt > ((u64) 0xFFFFFFFFFFFFFFFF) / tp->srtt) {
+			if (rtt_product > div_u64((u64) 0xFFFFFFFFFFFFFFFFLLU, tp->srtt) ||
+			    rtt_product * tp->srtt > div_u64((u64) 0xFFFFFFFFFFFFFFFFLLU, tp->srtt)) {
 				mtcp_debug(KERN_ERR "will use max numerator - rtt_prod: %llu tp->srtt %d\n", rtt_product, tp->srtt);
 				use_max_numerator = 1;
 				break;
@@ -206,7 +206,7 @@ recalc_alpha:
 				/* Potential integer-overflow. We have to use
 				 * the maximum value at the denominator.
 				 */
-				if (rtt_product_tmp > ((u64) 0xFFFFFFFFFFFFFFFF) / tp_tmp->srtt) {
+				if (rtt_product_tmp > div_u64((u64) 0xFFFFFFFFFFFFFFFFLLU, tp->srtt)) {
 					mtcp_debug(KERN_ERR "will use max denominator - rtt_prod_tmp: %llu tp_tmp->srtt %d\n", rtt_product_tmp, tp_tmp->srtt);
 					use_max_denominator = 1;
 					break;
@@ -216,8 +216,8 @@ recalc_alpha:
 			}
 
 			if (use_max_denominator ||
-			    rtt_product_tmp > ((u64) 0xFFFFFFFFFFFFFFFF) / tp->snd_cwnd ||
-			    sum_denominator > ((u64) 0xFFFFFFFFFFFFFFFF) - tp->snd_cwnd * rtt_product_tmp) {
+			    rtt_product_tmp > div_u64((u64) 0xFFFFFFFFFFFFFFFFLLU,  tp->snd_cwnd)||
+			    sum_denominator > ((u64) 0xFFFFFFFFFFFFFFFFLLU) - tp->snd_cwnd * rtt_product_tmp) {
 				mtcp_debug(KERN_ERR "will use max denominator - rtt_prod_tmp: %llu tp->snd_cwnd %d sum_denominator %llu\n", rtt_product_tmp, tp->snd_cwnd, sum_denominator);
 				use_max_denominator = 1;
 				break;
@@ -228,29 +228,29 @@ recalc_alpha:
 		}
 
 		if (use_max_numerator ||
-		    ((u64) mtcp_ccc_scale(tot_cwnd, alpha_scale)) > ((u64) 0xFFFFFFFFFFFFFFFF) / rtt_product ||
-		    ((u64) mtcp_ccc_scale(tot_cwnd, alpha_scale)) * rtt_product > ((u64) 0xFFFFFFFFFFFFFFFF) / best_cwnd) {
+		    ((u64) mtcp_ccc_scale(tot_cwnd, alpha_scale)) > div64_u64((u64) 0xFFFFFFFFFFFFFFFFLLU, rtt_product) ||
+		    ((u64) mtcp_ccc_scale(tot_cwnd, alpha_scale)) * rtt_product > div_u64((u64) 0xFFFFFFFFFFFFFFFFLLU, best_cwnd)) {
 			mtcp_debug(KERN_ERR "using max nominator - scaled_windos %llu, rtt_product %llu, best_cwnd %d\n", mtcp_ccc_scale(tot_cwnd, alpha_scale),rtt_product, best_cwnd);
-			numerator = (u64) 0xFFFFFFFFFFFFFFFF;
+			numerator = (u64) 0xFFFFFFFFFFFFFFFFLLU;
 		} else
 			numerator = ((u64) mtcp_ccc_scale(tot_cwnd, alpha_scale)) * rtt_product * best_cwnd;
 
 		if (use_max_denominator ||
-		    sum_denominator > ((u64) 0xFFFFFFFFFFFFFFFF) / sum_denominator) {
+		    sum_denominator > div64_u64((u64) 0xFFFFFFFFFFFFFFFFLLU, sum_denominator)) {
 			mtcp_debug(KERN_ERR "using max denominator - sum_denominator %llu\n", sum_denominator);
-			denominator = (u64) 0xFFFFFFFFFFFFFFFF;
+			denominator = (u64) 0xFFFFFFFFFFFFFFFFLLU;
 		} else
 			denominator = sum_denominator * sum_denominator;
 
 
-		alpha = numerator / denominator;
+		alpha = div64_u64(numerator, denominator);
 
 		/* We need to improve the scaling-factor */
 		if (!alpha) {
 			u32 new_scale;
 
-			new_scale = denominator /
-				    mtcp_ccc_scale_down(numerator, alpha_scale);
+			new_scale = div64_u64(denominator,
+				    mtcp_ccc_scale_down(numerator, alpha_scale));
 
 			/* This may happen, if the difference is minimal and
 			 * falls into the category of fixed-number caluclation
@@ -334,7 +334,7 @@ static void mtcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 			/* TODO What, if tot_cwnd is 0, due to flightsize == 0? */
 			snd_cwnd = mtcp_get_total_cwnd(mpcb);
 
-			snd_cwnd = (int)((u64) snd_cwnd * alpha_scale / alpha);
+			snd_cwnd = (int) div_u64 ((u64) snd_cwnd * alpha_scale, alpha);
 		}
 		else {
 			snd_cwnd = tp->snd_cwnd;
