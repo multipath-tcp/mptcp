@@ -677,21 +677,17 @@ static unsigned tcp_synack_options(struct sock *sk,
 			size += TCPOLEN_SACKPERM_ALIGNED;
 	}
 
+	if (unlikely(req->saw_mpc)) {
+		opts->options |= OPTION_MPC;
+		size += TCPOLEN_MPC_ALIGNED;
+		#ifdef CONFIG_MTCP_PM
+			opts->token = req->mtcp_loc_token;
+		#endif
+		opts->options |= OPTION_DSN;
+		size += TCPOLEN_DSN_ALIGNED;
+		opts->data_seq = 0;
+	}
 
-#ifdef CONFIG_MTCP
-/*For the SYNACK, the mpcb is normally not yet initialized
-  (to protect against SYN DoS attack)
-  So we cannot use it here.*/
-	
-	opts->options |= OPTION_MPC;
-	size+=TCPOLEN_MPC_ALIGNED;
-#ifdef CONFIG_MTCP_PM
-	opts->token = req->mtcp_loc_token;
-#endif
-	opts->options |= OPTION_DSN;
-	size+=TCPOLEN_DSN_ALIGNED;
-	opts->data_seq=0;
-#endif
 	return size;
 }
 
