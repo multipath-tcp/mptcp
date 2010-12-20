@@ -1037,7 +1037,7 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 {
 	struct sk_buff *skb;
 	struct sock *mpcb_sk=(struct sock*)mpcb;
-	int err;
+	int err;	
 	struct tcp_sock *tp;
 
 	do {
@@ -1062,9 +1062,11 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 				BUG();
 			}
 			data_offset = *data_seq - TCP_SKB_CB(skb)->data_seq;
-			if (data_offset < skb->len || dfin)
-				break;
-
+			if (data_offset < skb->len)
+			  goto found_ok_skb;
+			if (dfin)
+			  goto found_fin_ok;
+			
 			if (skb->len + dfin != TCP_SKB_CB(skb)->end_data_seq - 
 			    TCP_SKB_CB(skb)->data_seq) {
 				printk(KERN_ERR "skb->len:%d, should be %d\n",
@@ -1076,7 +1078,7 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 			WARN_ON(!(flags & MSG_PEEK));
 			skb = skb->next;
 		} while (skb != (struct sk_buff *)&mpcb_sk->sk_receive_queue);
-
+	found_ok_skb:
 		if (skb == (struct sk_buff *)&mpcb_sk->sk_receive_queue) 
 			goto exit;
 
@@ -1096,14 +1098,19 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 			}
 			printk(KERN_ERR "err in skb_copy_datagram_iovec:"
 			       "skb:%p,data_offset:%d, iov:%p,used:%lu,"
-			       "msg_size:%d,err:%d",skb,data_offset,iov,used,
-			       msg_size,err);
+			       "msg_size:%d,err:%d,skb->len:%ul,*len:%d,"
+			       "dfin:%d\n",
+			       skb,data_offset,iov,used,
+			       msg_size,err,skb->len,(int)*len,dfin);
 			BUG();
 		}
 		
-		*data_seq+=used+dfin;
+		*data_seq+=used;
 		*copied+=used;
 		*len-=used;
+		
+		if (dfin)
+			goto found_fin_ok;
 		
  		if (*data_seq==TCP_SKB_CB(skb)->end_data_seq && 
 		    !(flags & MSG_PEEK))
@@ -1118,6 +1125,14 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 				       skb->data_seq,(int)used);
 				BUG();
 		}
+		continue;
+		
+	found_fin_ok:
+		/* Process the FIN. */
+		++*data_seq;
+		if (!(flags & MSG_PEEK))
+			sk_eat_skb(mpcb_sk, skb, 0);
+		break;
 	} while (*len>0);
 	/*This checks whether an explicit window update is needed to unblock
 	  the receiver*/
