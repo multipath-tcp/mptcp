@@ -137,9 +137,6 @@ static void mtcp_recalc_alpha(struct sock *sk)
 			for ( ; alpha_scale < new_val * 2 ; alpha_scale *= 2);
 		}
 
-recalc_alpha:
-		mtcp_set_alpha_scale(mpcb, alpha_scale);
-
 		/* Find the numerator of the alpha-calculation */
 		mtcp_for_each_sk(mpcb,sub_sk,tp) {
 			u64 new_val;
@@ -162,6 +159,11 @@ recalc_alpha:
 				best_cwnd = tp->snd_cwnd;
 			}
 		}
+
+		alpha_scale = 512;
+recalc_alpha:
+
+		mtcp_set_alpha_scale(mpcb, alpha_scale);
 
 		BUG_ON(!best_pi || !best_cwnd);
 
