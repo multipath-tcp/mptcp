@@ -21,7 +21,6 @@
  *      2 of the License, or (at your option) any later version.
  */
 
-
 #include <net/sock.h>
 #include <net/tcp_states.h>
 #include <net/mtcp.h>
@@ -452,14 +451,23 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags)
 	reqsk_queue_alloc(&mpcb_icsk->icsk_accept_queue,32);
 	/*Pi 1 is reserved for the master subflow*/
 	mpcb->next_unused_pi=2;
-	/*For the server side, the local token has already been allocated*/
-	if (!tcp_sk(master_sk)->mtcp_loc_token)
-		tcp_sk(master_sk)->mtcp_loc_token=mtcp_new_token();
+	/*For the server side, the local token has already been allocated.
+	  Later, we should replace this strange condition (quite a quick hack)
+	  with a test_bit on the server flag. But this requires passing
+	  the server flag in arg of mtcp_alloc_mpcb(), so that we know here if
+	  we are at server or client side. At the moment the only way to know
+	  that is to check for uninitialized token (see tcp_check_req()).*/
+	if (!tcp_sk(master_sk)->mtcp_loc_token) {
+		mpcb_tp->mtcp_loc_token=mtcp_new_token();
+		tcp_sk(master_sk)->mtcp_loc_token=loc_token(mpcb);
+	}
+	else 
+		mpcb_tp->mtcp_loc_token=tcp_sk(master_sk)->mtcp_loc_token;
 
 	/*Adding the mpcb in the token hashtable*/
 	mtcp_hash_insert(mpcb,loc_token(mpcb));
 #endif
-		
+
 	return mpcb;
 }
 
@@ -607,14 +615,12 @@ void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
  * In this function, we update the meta socket info, based on the changes 
  * in the application socket (bind, address allocation, ...)
  */
-void mtcp_update_metasocket(struct sock *sk)
+void mtcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 {
 	struct tcp_sock *tp;
-	struct multipath_pcb *mpcb;
 	struct sock *mpcb_sk;
 	if (sk->sk_protocol != IPPROTO_TCP) return;
 	tp=tcp_sk(sk);
-	mpcb=mpcb_from_tcpsock(tp);
 	mpcb_sk=(struct sock*)mpcb;
 
 	mpcb_sk->sk_family=sk->sk_family;

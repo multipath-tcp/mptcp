@@ -305,7 +305,7 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 		goto late_failure;
 
 #ifdef CONFIG_MTCP
-	mtcp_update_metasocket(sk);
+	mtcp_update_metasocket(sk,mpcb_from_tcpsock(tp));
 #endif
 
 	return 0;
