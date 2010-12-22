@@ -1206,7 +1206,6 @@ int mtcp_queue_skb(struct sock *sk,struct sk_buff *skb)
 		
 		if (!skb_peek(&mpcb_tp->out_of_order_queue)) {
 			/* Initial out of order segment */
-			mtcp_debug("First meta-ofo segment\n");
 			__skb_queue_head(&mpcb_tp->out_of_order_queue, skb);
 			ans=MTCP_QUEUED;
 			goto queued;
