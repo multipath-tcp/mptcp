@@ -708,7 +708,7 @@ struct sock *tcp_check_req(struct sock *sk,struct sk_buff *skb,
 		child_tp->mtcp_loc_token=req->mtcp_loc_token;
 		child_tp->mpcb=NULL;
 		child_tp->pending=1;
-		mpcb=mtcp_alloc_mpcb(child);
+		mpcb=mtcp_alloc_mpcb(child, GFP_ATOMIC);
 		if (mtp.list_rcvd)
 			memcpy(&mpcb->received_options,&mtp,sizeof(mtp));
 #endif

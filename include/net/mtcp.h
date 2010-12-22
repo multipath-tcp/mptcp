@@ -320,7 +320,7 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb,struct msghdr *msg,
 #define MTCP_EATEN 1 /*The skb has been (fully or partially) eaten by the app*/
 #define MTCP_QUEUED 2 /*The skb has been queued in the mpcb ofo queue*/
 
-struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk);
+struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags);
 void mtcp_ask_update(struct sock *sk);
 void mtcp_destroy_mpcb(struct multipath_pcb *mpcb);
 void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp);

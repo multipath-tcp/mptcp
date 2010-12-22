@@ -400,10 +400,10 @@ void mtcp_ask_update(struct sock *sk)
 /*Defined in net/core/sock.c*/
 void mtcp_inherit_sk(struct sock *sk,struct sock *newsk);
 
-struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk)
+struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags)
 {
 	struct multipath_pcb * mpcb = kmalloc(
-		sizeof(struct multipath_pcb),GFP_KERNEL);
+		sizeof(struct multipath_pcb),flags);
 	struct tcp_sock *mpcb_tp = &mpcb->tp;
 	struct sock *mpcb_sk = (struct sock *) mpcb_tp;
 	struct inet_connection_sock *mpcb_icsk = inet_csk(mpcb_sk);
