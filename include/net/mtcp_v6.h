@@ -81,4 +81,7 @@ extern struct sock *mtcpv6_lookup(struct net *net,
 				  const __be16 dport,
 				  const int dif, const int path_index);
 
+/*TODO: make this part of the IPv6 module
+  At the moment this will break if IPv6 is compiled as a module*/
+extern int tcp_v6_is_v4_mapped(struct sock *sk);
 #endif /* _MTCP_V6_H */

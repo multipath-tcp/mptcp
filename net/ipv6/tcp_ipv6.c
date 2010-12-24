@@ -1227,6 +1227,11 @@ drop:
 	return 0; /* don't send reset */
 }
 
+int tcp_v6_is_v4_mapped(struct sock *sk)
+{
+	return (inet_csk(sk)->icsk_af_ops == &ipv6_mapped);
+}
+
 static struct sock * tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 					  struct request_sock *req,
 					  struct dst_entry *dst)

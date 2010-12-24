@@ -14,6 +14,7 @@
  */
 
 #include <net/mtcp.h>
+#include <net/mtcp_v6.h>
 #include <net/mtcp_pm.h>
 #include <linux/netdevice.h>
 #include <linux/inetdevice.h>
@@ -208,8 +209,9 @@ struct path4 *find_path_mapping4(struct in_addr *loc,struct in_addr *rem,
 struct in_addr *mtcp_get_loc_addr(struct multipath_pcb *mpcb, int path_index)
 {
 	int i;
+	struct sock *mpcb_sk=(struct sock*)mpcb;
  	if (path_index<=1)
-		return (struct in_addr*)&mpcb->local_ulid.a4;
+		return (struct in_addr*)&inet_sk(mpcb_sk)->saddr;
 	for (i=0;i<mpcb->pa4_size;i++) {
 		if (mpcb->pa4[i].path_index==path_index)
 			return &mpcb->pa4[i].loc.addr;
@@ -221,8 +223,9 @@ struct in_addr *mtcp_get_loc_addr(struct multipath_pcb *mpcb, int path_index)
 struct in_addr *mtcp_get_rem_addr(struct multipath_pcb *mpcb, int path_index)
 {
 	int i;
+	struct sock *mpcb_sk=(struct sock*)mpcb;
  	if (path_index<=1)
-		return (struct in_addr*)&mpcb->remote_ulid.a4;
+		return (struct in_addr*)&inet_sk(mpcb_sk)->daddr;
 	for (i=0;i<mpcb->pa4_size;i++) {
 		if (mpcb->pa4[i].path_index==path_index)
 			return &mpcb->pa4[i].rem.addr;
@@ -283,7 +286,9 @@ static void __mtcp_update_patharray(struct multipath_pcb *mpcb)
 	/*Count how many paths are available
 	  We add 1 to size of local and remote set, to include the 
 	  ULID*/
-	int ulid_v4=(mpcb_sk->sk_family==AF_INET)?1:0;
+	int ulid_v4=(mpcb_sk->sk_family==AF_INET ||
+		     (mpcb_sk->sk_family==AF_INET6 && 
+		      tcp_v6_is_v4_mapped(mpcb_sk)))?1:0;
 	int pa4_size=(mpcb->num_addr4+ulid_v4)*
 		(mpcb->received_options.num_addr4+ulid_v4)-ulid_v4;
 
@@ -293,7 +298,7 @@ static void __mtcp_update_patharray(struct multipath_pcb *mpcb)
 		/*ULID src with other dest*/
 		for (j=0;j<mpcb->received_options.num_addr4;j++) {
 			struct path4 *p=find_path_mapping4(
-				(struct in_addr*)&mpcb->local_ulid.a4,
+				(struct in_addr*)&inet_sk(mpcb_sk)->saddr,
 				&mpcb->received_options.addr4[j].addr,mpcb);
 			if (p)
 				memcpy(&new_pa4[newpa_idx++],p,
@@ -301,7 +306,7 @@ static void __mtcp_update_patharray(struct multipath_pcb *mpcb)
 			else {
 				/*local addr*/
 				new_pa4[newpa_idx].loc.addr.s_addr=
-					mpcb->local_ulid.a4;
+					inet_sk(mpcb_sk)->saddr;
 				new_pa4[newpa_idx].loc.id=0; /*ulid has id 0*/
 				/*remote addr*/
 				memcpy(&new_pa4[newpa_idx].rem,
@@ -316,7 +321,7 @@ static void __mtcp_update_patharray(struct multipath_pcb *mpcb)
 		for (i=0;i<mpcb->num_addr4;i++) {
 			struct path4 *p=find_path_mapping4(
 				&mpcb->addr4[i].addr,
-				(struct in_addr*)&mpcb->remote_ulid.a4,mpcb);
+				(struct in_addr*)&inet_sk(mpcb_sk)->daddr,mpcb);
 			if (p)
 				memcpy(&new_pa4[newpa_idx++],p,
 				       sizeof(struct path4));
@@ -328,7 +333,7 @@ static void __mtcp_update_patharray(struct multipath_pcb *mpcb)
 				
 				/*remote addr*/
 				new_pa4[newpa_idx].rem.addr.s_addr=
-					mpcb->remote_ulid.a4;
+					inet_sk(mpcb_sk)->daddr;
 				new_pa4[newpa_idx].rem.id=0; /*ulid has id 0*/
 				/*new path index to be given*/
 				new_pa4[newpa_idx++].path_index=

@@ -24,6 +24,7 @@
 #include <net/sock.h>
 #include <net/tcp_states.h>
 #include <net/mtcp.h>
+#include <net/mtcp_v6.h>
 #include <net/netevent.h>
 #include <net/ipv6.h>
 #include <net/tcp.h>
@@ -253,8 +254,8 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 				memcpy(&remulid_in,&loculid_in,
 				       sizeof(remulid_in));
 				
-				loculid_in.sin_port=mpcb->local_port;
-				remulid_in.sin_port=mpcb->remote_port;
+				loculid_in.sin_port=inet_sk(mpcb_sk)->sport;
+				remulid_in.sin_port=inet_sk(mpcb_sk)->dport;
 #ifdef CONFIG_MTCP_PM
 				/*If the MPTCP PM is used, we use the locators 
 				  as subsock ids, while with other PMs, the
@@ -285,14 +286,12 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb,
 				memcpy(&remulid_in6,&loculid_in6,
 				       sizeof(remulid_in6));
 
-				loculid_in6.sin6_port=mpcb->local_port;
-				remulid_in6.sin6_port=mpcb->remote_port;
+				loculid_in6.sin6_port=inet_sk(mpcb_sk)->sport;
+				remulid_in6.sin6_port=inet_sk(mpcb_sk)->dport;
 				ipv6_addr_copy(&loculid_in6.sin6_addr,
-					       (struct in6_addr*)&mpcb->
-					       local_ulid.a6);
+					       &inet6_sk(mpcb_sk)->saddr);
 				ipv6_addr_copy(&remulid_in6.sin6_addr,
-					       (struct in6_addr*)&mpcb->
-					       remote_ulid.a6);
+					       &inet6_sk(mpcb_sk)->daddr);
 				
 				loculid=(struct sockaddr *)&loculid_in6;
 				remulid=(struct sockaddr *)&remulid_in6;
@@ -353,21 +352,15 @@ static int netevent_callback(struct notifier_block *self, unsigned long event,
 	struct ulid_pair *up;
 	switch(event) {
 	case NETEVENT_PATH_UPDATEV6:
-		mtcp_debug("%s: Received path update event: %lu\n",__FUNCTION__, event);
 		mpcb=container_of(self,struct multipath_pcb,nb);
 		mpcb_sk=(struct sock*)mpcb;
 		up=ctx;
-		mtcp_debug("mpcb is %p\n",mpcb);
 		if (mpcb_sk->sk_family!=AF_INET6) break;
 		
-		mtcp_debug("ev loc ulid:" NIP6_FMT "\n",NIP6(*up->local));
-		mtcp_debug("ev loc ulid:" NIP6_FMT "\n",NIP6(*up->remote));
-		mtcp_debug("ev loc ulid:" NIP6_FMT "\n",NIP6(*(struct in6_addr*)mpcb->local_ulid.a6));
-		mtcp_debug("ev loc ulid:" NIP6_FMT "\n",NIP6(*(struct in6_addr*)mpcb->remote_ulid.a6));
 		if (ipv6_addr_equal(up->local,
-				    (struct in6_addr*)&mpcb->local_ulid) &&
+				    &inet6_sk(mpcb_sk)->saddr) &&
 		    ipv6_addr_equal(up->remote,
-				    (struct in6_addr*)&mpcb->remote_ulid))
+				    &inet6_sk(mpcb_sk)->daddr))
 			mtcp_init_subsockets(mpcb,
 					     up->path_indices);
 		break;
@@ -619,34 +612,28 @@ void mtcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 {
 	struct tcp_sock *tp;
 	struct sock *mpcb_sk;
+
 	if (sk->sk_protocol != IPPROTO_TCP) return;
 	tp=tcp_sk(sk);
 	mpcb_sk=(struct sock*)mpcb;
 
 	mpcb_sk->sk_family=sk->sk_family;
-	mpcb->remote_port=inet_sk(sk)->dport;
-	mpcb->local_port=inet_sk(sk)->sport;
+	inet_sk(mpcb_sk)->dport=inet_sk(sk)->dport;
+	inet_sk(mpcb_sk)->sport=inet_sk(sk)->sport;
 	
 	switch (sk->sk_family) {
-	case AF_INET:
-		mpcb->remote_ulid.a4=inet_sk(sk)->daddr;
-		mpcb->local_ulid.a4=inet_sk(sk)->saddr;
-
-
-		mtcp_debug("%s: loc_ulid:"NIPQUAD_FMT " rem_ulid:" NIPQUAD_FMT
-				" \n", __FUNCTION__,
-				NIPQUAD(mpcb->local_ulid.a4),
-				NIPQUAD(mpcb->remote_ulid.a4));
-		break;
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	case AF_INET6:
-		ipv6_addr_copy((struct in6_addr*)&mpcb->remote_ulid,
-			       &inet6_sk(sk)->daddr);
-		ipv6_addr_copy((struct in6_addr*)&mpcb->local_ulid,
-			       &inet6_sk(sk)->saddr);
-
-		mtcp_debug("%s: mum loc ulid:" NIP6_FMT "\n", __FUNCTION__, NIP6(*(struct in6_addr*)mpcb->local_ulid.a6));
-		mtcp_debug("%s: mum loc ulid:" NIP6_FMT "\n", __FUNCTION__, NIP6(*(struct in6_addr*)mpcb->remote_ulid.a6));
-
+		/*For IPv6, we just point the meta_sk to the pinet6 struct
+		  of the master_sk, hence inheriting the ulids from there*/
+		inet_sk(mpcb_sk)->pinet6=inet6_sk(sk);
+		/*If the socket is v4 mapped, we continue with v4 operations*/
+		if (!tcp_v6_is_v4_mapped(sk))
+			break;
+#endif
+	case AF_INET:
+		inet_sk(mpcb_sk)->daddr=inet_sk(sk)->daddr;
+		inet_sk(mpcb_sk)->saddr=inet_sk(sk)->saddr;		
 		break;
 	}
 #ifdef CONFIG_MTCP_PM
