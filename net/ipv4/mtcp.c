@@ -449,7 +449,7 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags)
 	/*Init the accept_queue structure, we support a queue of 4 pending
 	  connections, it does not need to be huge, since we only store 
 	  here pending subflow creations*/
-	reqsk_queue_alloc(&mpcb_icsk->icsk_accept_queue,32);
+	reqsk_queue_alloc(&mpcb_icsk->icsk_accept_queue, 32, flags);
 	/*Pi 1 is reserved for the master subflow*/
 	mpcb->next_unused_pi=2;
 	/*For the server side, the local token has already been allocated*/
