@@ -76,11 +76,8 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 		BUG_ON(tcp_send_head(check_sk)!=check_skb);
 	}
 
-	check_send_head(sk,2);
 	BUG_ON(tcp_send_head(sk)!=skb);
-	check_pkts_out(sk);
 	tcp_advance_send_head(sk, skb);
-	check_send_head(sk,3);
 	if (tocheck)
 		BUG_ON(tcp_send_head(check_sk)!=check_skb);
 	tp->snd_nxt = meta_sk?TCP_SKB_CB(skb)->end_data_seq:
@@ -99,9 +96,6 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 	}
 	if (tocheck)
 		BUG_ON(tcp_send_head(check_sk)!=check_skb);
-	
-	check_pkts_out(sk);
-	check_send_head(sk,5);
 }
 
 /* SND.NXT, if window was not shrunk.
@@ -847,7 +841,6 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	int err;
 
 	BUG_ON(is_meta_sk(sk));
-	check_pkts_out(sk);
 
 	if(!skb || !tcp_skb_pcount(skb)) {
 		printk(KERN_ERR "tcp_skb_pcount:%d,skb->len:%d\n",
@@ -949,8 +942,6 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	skb->path_index=tp->path_index;
 	
 	err = icsk->icsk_af_ops->queue_xmit(skb, 0);
-
-	check_pkts_out(sk);
 
 	if (likely(err <= 0)) {
 		if (err<0) 

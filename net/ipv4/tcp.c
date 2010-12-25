@@ -1065,7 +1065,6 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			  If we transmit an skb without advancing the send
 			  head, the skb will be suppressed, while the send
 			  head will still point to it.*/
-			check_send_head(sk,4);
 			BUG_ON(!skb && tcp_send_head(sk));
 			
 			if (!tcp_send_head(sk) || 
@@ -1246,7 +1245,6 @@ do_fault:
 		/* It is the one place in all of TCP, except connection
 		 * reset, where we can be unlinking the send_head.
 		 */
-		tcp_check_send_head(sk, skb);
 		sk_wmem_free_skb(sk, skb);
 	}
 	

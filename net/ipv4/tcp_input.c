@@ -2950,15 +2950,11 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 	    icsk->icsk_pending==ICSK_TIME_RETRANS)
 		BUG();
 
-	check_pkts_out(sk);
-		
 	while ((skb = tcp_write_queue_head(sk)) && skb != tcp_send_head(sk)) {
 		struct tcp_skb_cb *scb = TCP_SKB_CB(skb);
 		u32 end_seq;
 		u32 acked_pcount;
 		u8 sacked = scb->sacked;
-
-		check_pkts_out(sk);
 
 		/* Determine how many packets and what bytes were acked, tso and else */
 		if (after(scb->end_seq, tp->snd_una)) {
@@ -2977,7 +2973,6 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			end_seq = scb->end_seq;
 			BUG_ON(!acked_pcount);
 		}
-		check_pkts_out(sk);
 
 		/* MTU probing checks */
 		if (fully_acked && icsk->icsk_mtup.probe_size &&
@@ -3009,8 +3004,6 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			tp->lost_out -= acked_pcount;
 
 #ifdef MTCP_DEBUG_PKTS_OUT
-		orig_outsize=check_pkts_out(sk);
-		
 		orig_packets=tp->packets_out;
 		orig_qsize=skb_queue_len(&sk->sk_write_queue);
 #endif
@@ -3465,8 +3458,6 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 	int prior_packets;
 	int frto_cwnd = 0;
 
-	check_pkts_out(sk);
-
 	/* If the ack is newer than sent or older than previous acks
 	 * then we can probably ignore it.
 	 */
@@ -3558,7 +3549,6 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 
 	if ((flag & FLAG_FORWARD_PROGRESS) || !(flag & FLAG_NOT_DUP))
 		dst_confirm(sk->sk_dst_cache);
-	check_pkts_out(sk);
 	return 1;
 
 no_queue:
@@ -3568,7 +3558,6 @@ no_queue:
 	 */
 	if (tcp_send_head(sk))
 		tcp_ack_probe(sk);
-	check_pkts_out(sk);
 	return 1;
 
 old_ack:
@@ -3585,7 +3574,6 @@ uninteresting_ack:
 	       tp->path_index,ack, tp->snd_una, tp->snd_nxt,
 	       NIPQUAD(inet_sk(sk)->saddr),NIPQUAD(inet_sk(sk)->daddr));
 	SOCK_DEBUG(sk, "Ack %u out of %u:%u\n", ack, tp->snd_una, tp->snd_nxt);
-	check_pkts_out(sk);
 	return 0;
 }
 
@@ -4509,16 +4497,12 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 								     mpcb->ucopy.iov, 
 								     chunk)) {
 						
-						mtcp_check_seqnums(mpcb,1);
-						
 						mpcb->ucopy.len -= chunk;
 						tp->copied_seq += chunk;
 						mpcb->tp.copied_seq += chunk;
 						tp->copied += chunk;
 						eaten = (chunk == skb->len && !th->fin);
 						tcp_rcv_space_adjust(sk);
-						
-						mtcp_check_seqnums(mpcb,0);
 					}
 					local_bh_disable();
 				}
@@ -5297,15 +5281,11 @@ static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 						       mpcb->ucopy.iov);
 
 	if (!err) {
-		mtcp_check_seqnums(mpcb,1);
-
 		mpcb->ucopy.len -= chunk;
 		tp->copied_seq += chunk;
 		mpcb->tp.copied_seq += chunk;
 		tp->copied += chunk;
 		tcp_rcv_space_adjust(sk);
-
-		mtcp_check_seqnums(mpcb,0);
 	}
 
 	local_bh_disable();
