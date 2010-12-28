@@ -30,6 +30,7 @@
 #include <linux/skbuff.h>
 #include <linux/list.h>
 #include <linux/tcp.h>
+#include <linux/ipv6.h>
 
 #include <net/request_sock.h>
 #include <net/mtcp_pm.h>
@@ -78,10 +79,6 @@ extern struct proto mtcpsub_prot;
 
 struct multipath_pcb {
 	struct tcp_sock           tp;
-
-	/*connection identifier*/
-	xfrm_address_t            remote_ulid, local_ulid;
-	__be16                    remote_port,local_port;
 	
 	/*list of sockets in this multipath connection*/
 	struct tcp_sock*          connection_list;
@@ -326,7 +323,7 @@ void mtcp_destroy_mpcb(struct multipath_pcb *mpcb);
 void mtcp_add_sock(struct multipath_pcb *mpcb,struct tcp_sock *tp);
 void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp);
 void mtcp_reset_options(struct multipath_options* mopt);
-void mtcp_update_metasocket(struct sock *sock);
+void mtcp_update_metasocket(struct sock *sock, struct multipath_pcb *mpcb);
 int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		 size_t size);
 int mtcp_is_available(struct sock *sk);

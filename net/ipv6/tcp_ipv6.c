@@ -305,7 +305,7 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 		goto late_failure;
 
 #ifdef CONFIG_MTCP
-	mtcp_update_metasocket(sk);
+	mtcp_update_metasocket(sk,mpcb_from_tcpsock(tp));
 #endif
 
 	return 0;
@@ -1225,6 +1225,11 @@ drop:
 		reqsk_free(req);
 
 	return 0; /* don't send reset */
+}
+
+int tcp_v6_is_v4_mapped(struct sock *sk)
+{
+	return (inet_csk(sk)->icsk_af_ops == &ipv6_mapped);
 }
 
 static struct sock * tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,

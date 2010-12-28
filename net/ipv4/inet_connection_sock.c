@@ -285,10 +285,8 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 		BUG_ON(!mpcb);
 		mpcb_tp=(struct tcp_sock *)mpcb;
 		BUG_ON(!mpcb);
-		set_bit(MPCB_FLAG_SERVER_SIDE,&mpcb->flags);
 		tp->path_index=0;		
 		mtcp_add_sock(mpcb,tp);
-		mtcp_update_metasocket(newsk);
 		mpcb_tp->write_seq=0; /*first byte is IDSN
 					To be replaced later with a random IDSN
 					(well, if it indeed improve security)*/

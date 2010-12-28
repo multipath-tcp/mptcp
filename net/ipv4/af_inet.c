@@ -521,7 +521,8 @@ int inet_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	inet->dport = 0;
 	sk_dst_reset(sk);
 #ifdef CONFIG_MTCP
-	if (addr->sin_addr.s_addr) mtcp_update_metasocket(sk);
+	if (addr->sin_addr.s_addr)
+		mtcp_update_metasocket(sk,mpcb_from_tcpsock(tcp_sk(sk)));
 #endif
 	err = 0;
 out_release_sock:

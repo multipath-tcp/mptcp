@@ -604,7 +604,7 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		opts->options |= OPTION_MPC;
 		size+=TCPOLEN_MPC_ALIGNED;
 #ifdef CONFIG_MTCP_PM
-		opts->token=tp->mtcp_loc_token;
+		opts->token=loc_token(mpcb);
 #endif
 		
 		/*We arrive here either when sending a SYN or a

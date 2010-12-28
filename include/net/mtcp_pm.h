@@ -60,8 +60,8 @@ struct mtcp_pm_ctx {
 	struct multipath_pcb *mpcb;
 };
 
-#define loc_token(mpcb)					\
-	(tcp_sk(mpcb->master_sk)->mtcp_loc_token)
+#define loc_token(mpcb)				\
+	(mpcb->tp.mtcp_loc_token)
 
 u32 mtcp_new_token(void);
 void mtcp_hash_insert(struct multipath_pcb *mpcb,u32 token);

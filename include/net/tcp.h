@@ -1126,7 +1126,7 @@ static inline void tcp_openreq_init(struct request_sock *req,
 #ifdef CONFIG_MTCP_PM
 	if (!req->mpcb) {
 		/*conn request, prepare a new token for the 
-		  mpcb that will be created in inet_csk_accept(),
+		  mpcb that will be created in tcp_check_req(),
 		  and store the received token.*/
 		req->mtcp_rem_token = rx_opt->mtcp_rem_token;
 		req->mtcp_loc_token = mtcp_new_token();

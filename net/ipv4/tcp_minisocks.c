@@ -705,12 +705,14 @@ struct sock *tcp_check_req(struct sock *sk,struct sk_buff *skb,
 			child_tp->mpc=1;
 #ifdef CONFIG_MTCP_PM
 		child_tp->rx_opt.mtcp_rem_token=req->mtcp_rem_token;
-		child_tp->mtcp_loc_token=req->mtcp_loc_token;
 		child_tp->mpcb=NULL;
 		child_tp->pending=1;
+		child_tp->mtcp_loc_token=req->mtcp_loc_token;
 		mpcb=mtcp_alloc_mpcb(child, GFP_ATOMIC);
 		if (mtp.list_rcvd)
 			memcpy(&mpcb->received_options,&mtp,sizeof(mtp));
+		set_bit(MPCB_FLAG_SERVER_SIDE,&mpcb->flags);
+		mtcp_update_metasocket(child,mpcb);
 #endif
 	}
 #endif
