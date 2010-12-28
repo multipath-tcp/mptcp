@@ -83,5 +83,10 @@ extern struct sock *mtcpv6_lookup(struct net *net,
 
 /*TODO: make this part of the IPv6 module
   At the moment this will break if IPv6 is compiled as a module*/
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 extern int tcp_v6_is_v4_mapped(struct sock *sk);
+#else
+#define tcp_v6_is_v4_mapped(sk) (0)
+#endif
+
 #endif /* _MTCP_V6_H */
