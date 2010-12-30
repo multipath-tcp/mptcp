@@ -805,13 +805,19 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock,
 		goto out_mpc;
 	}
 
-	out_mpc: release_sock(mpcb_sk);
+out_mpc:
+	release_sock(mpcb_sk);
 	return copied;
-	out_nompc: release_sock(master_sk);
+
+out_nompc:
+	release_sock(master_sk);
 	return copied;
-	out_err_nompc: err = sk_stream_error(master_sk, flags, err);
+
+out_err_nompc:
+	err = sk_stream_error(master_sk, flags, err);
 	TCP_CHECK_TIMER(master_sk);
 	release_sock(master_sk);
+
 	return err;
 }
 
