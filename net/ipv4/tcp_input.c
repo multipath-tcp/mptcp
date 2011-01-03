@@ -3818,6 +3818,9 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 	mpcb = mpcb_from_tcpsock(tp);
 	if (tp->pending)
 		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
+	if (!mpcb)
+		mtcp_debug("%s: looked for mpcb with token %d\n",
+				__FUNCTION__, tp->mtcp_loc_token);
 	BUG_ON(!mpcb);
 	mopt=&mpcb->received_options;
 	tcp_parse_options(skb, &tp->rx_opt,mopt,1);

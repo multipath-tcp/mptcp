@@ -69,6 +69,10 @@ static int __init mtcp_pm_init(void)
 void mtcp_hash_insert(struct multipath_pcb *mpcb,u32 token)
 {
 	int hash=hash_tk(token);
+
+	mtcp_debug("%s: add mpcb to hash-table with loc_token %d\n",
+			__FUNCTION__, mpcb->tp.mtcp_loc_token);
+
 	write_lock_bh(&tk_hash_lock);
 	list_add(&mpcb->collide_tk,&tk_hashtable[hash]);
 	write_unlock_bh(&tk_hash_lock);
@@ -81,6 +85,7 @@ struct multipath_pcb* mtcp_hash_find(u32 token)
 {
 	int hash=hash_tk(token);
 	struct multipath_pcb *mpcb;
+
 	read_lock(&tk_hash_lock);
 	list_for_each_entry(mpcb,&tk_hashtable[hash],collide_tk) {
 		if (token==loc_token(mpcb)) {
@@ -98,6 +103,9 @@ void mtcp_hash_remove(struct multipath_pcb *mpcb)
 	struct inet_connection_sock *mpcb_icsk=
 		(struct inet_connection_sock*)mpcb;
 	struct listen_sock *lopt = mpcb_icsk->icsk_accept_queue.listen_opt;
+
+	mtcp_debug("%s: remove mpcb from hash-table with loc_token %d\n",
+			__FUNCTION__, mpcb->tp.mtcp_loc_token);
 	
 	/*remove from the token hashtable*/
 	write_lock_bh(&tk_hash_lock);
