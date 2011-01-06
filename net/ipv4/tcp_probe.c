@@ -217,9 +217,9 @@ static int logmsg(struct sock *sk,char *fmt, va_list args)
 		= ktime_to_timespec(ktime_sub(ktime_get(), tcp_probe.start));
 	
 	if (sk->sk_state == TCP_ESTABLISHED
-	    && ((ntohl(inet->saddr) & 0xffff0000)!=0xc0a80000) /*addr != 
+	    && ((ntohl(inet->inet_saddr) & 0xffff0000)!=0xc0a80000) /*addr != 
 								 192.168/16*/
-	    && ((ntohl(inet->daddr) & 0xffff0000)!=0xc0a80000)) {
+	    && ((ntohl(inet->inet_daddr) & 0xffff0000)!=0xc0a80000)) {
 		int len;
 		snprintf(msg,500,"LOG:%lu.%09lu ",(unsigned long) tv.tv_sec,
 			(unsigned long) tv.tv_nsec);
@@ -263,12 +263,12 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 
 	/* Only update if port matches and state is established*/
 	if (sk->sk_state == TCP_ESTABLISHED && 
-	    (port == 0 || ntohs(inet->dport) == port || 
-	     ntohs(inet->sport) == port)
-	    && ((ntohl(inet->saddr) & 0xffff0000)!=0xc0a80000) /*addr != 
+	    (port == 0 || ntohs(inet->inet_dport) == port || 
+	     ntohs(inet->inet_sport) == port)
+	    && ((ntohl(inet->inet_saddr) & 0xffff0000)!=0xc0a80000) /*addr != 
 							       192.168/16*/
-	    && ((ntohl(inet->daddr) & 0xffff0000)!=0xc0a80000)
-	    && ntohs(inet->sport) != 9000 && ntohs(inet->dport) != 9000
+	    && ((ntohl(inet->inet_daddr) & 0xffff0000)!=0xc0a80000)
+	    && ntohs(inet->inet_sport) != 9000 && ntohs(inet->inet_dport) != 9000
 	    && (full || tp->snd_cwnd != tcp_probe.lastcwnd)) {
 
 #ifdef CONFIG_KPROBES
@@ -283,10 +283,10 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			struct tcp_log *p = tcp_probe.log + tcp_probe.head;
 
 			p->tstamp = ktime_get();
-			p->saddr = inet->saddr;
-			p->sport = inet->sport;
-			p->daddr = inet->daddr;
-			p->dport = inet->dport;
+			p->saddr = inet->inet_saddr;
+			p->sport = inet->inet_sport;
+			p->daddr = inet->inet_daddr;
+			p->dport = inet->inet_dport;
 			p->path_index = tp->path_index;
 			p->length = skb->len;
 			p->snd_nxt = tp->snd_nxt;
