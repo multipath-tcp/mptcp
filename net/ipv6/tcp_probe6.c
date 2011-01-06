@@ -110,7 +110,9 @@ static int rcv_established(struct sock *sk, struct sk_buff *skb,
  	const struct ipv6_pinfo *np=inet6_sk(sk);
 
 	/* Only update if port matches */
-	if ((skb->protocol == htons(ETH_P_IPV6)) && (port == 0 || ntohs(inet->dport) == port || ntohs(inet->sport) == port)
+	if ((skb->protocol == htons(ETH_P_IPV6)) && 
+	    (port == 0 || ntohs(inet->inet_dport) == port || 
+	     ntohs(inet->inet_sport) == port)
 	    && (full || tp->snd_cwnd != tcp_probe.lastcwnd)) {
 		spin_lock(&tcp_probe.lock);
 		/* If log fills, just silently drop */
@@ -119,9 +121,9 @@ static int rcv_established(struct sock *sk, struct sk_buff *skb,
 
 			p->tstamp = ktime_get();
 			ipv6_addr_copy(&p->saddr,&np->saddr);
-			p->sport = inet->sport;
+			p->sport = inet->inet_sport;
 			ipv6_addr_copy(&p->daddr,&np->daddr);
-			p->dport = inet->dport;
+			p->dport = inet->inet_dport;
 			p->path_index = skb->path_index;
 			p->length = skb->len;
 			p->snd_nxt = tp->snd_nxt;
@@ -172,9 +174,9 @@ static int transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		
 		p->tstamp = ktime_get();
 		ipv6_addr_copy(&p->saddr,&np->saddr);
-		p->sport = inet->sport;
+		p->sport = inet->inet_sport;
 		ipv6_addr_copy(&p->daddr,&np->daddr);
-		p->dport = inet->dport;
+		p->dport = inet->inet_dport;
 		p->path_index = tp->path_index;
 		p->length = skb->len;
 		p->snd_nxt = tp->snd_nxt;
@@ -223,13 +225,13 @@ static int tcpprobe_sprint(char *tbuf, int n)
 		= ktime_to_timespec(ktime_sub(p->tstamp, tcp_probe.start));
 
 	return snprintf(tbuf, n,
-			"%lu.%09lu " NIP6_FMT ":%u " NIP6_FMT ":%u"
+			"%lu.%09lu %pI6:%u %pI6:%u"
 			" %d %d %#x %#x %u %u %u %u %#x %#x %u %u %u %u %d"
 			" %d %u %u %u\n",
 			(unsigned long) tv.tv_sec,
 			(unsigned long) tv.tv_nsec,
-			NIP6(p->saddr), ntohs(p->sport),
-			NIP6(p->daddr), ntohs(p->dport),
+			&p->saddr, ntohs(p->sport),
+			&p->daddr, ntohs(p->dport),
 			p->path_index, p->length, p->snd_nxt, p->snd_una,
 			p->snd_cwnd, p->ssthresh, p->snd_wnd, p->srtt,
 			p->rcv_nxt,p->copied_seq,p->rcv_wnd,p->rcv_buf,

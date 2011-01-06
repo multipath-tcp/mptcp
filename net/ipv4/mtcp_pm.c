@@ -900,7 +900,7 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 		  by the child we are trying to create.*/
 		printk(KERN_ERR "no bind bucket in master_sk\n");
 		printk(KERN_ERR "mpcb flags:%lx\n",mpcb->flags);
-		printk(KERN_ERR "master sk addr: %pIP4:%d->%pIP4:%d\n",
+		printk(KERN_ERR "master sk addr: %pI4:%d->%pI4:%d\n",
 		       &inet_sk(mpcb->master_sk)->inet_saddr,
 		       ntohs(inet_sk(mpcb->master_sk)->inet_sport),
 		       &inet_sk(mpcb->master_sk)->inet_daddr,

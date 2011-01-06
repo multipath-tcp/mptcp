@@ -903,7 +903,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
 		if (!mpcb) {
 			printk(KERN_ERR "mpcb not found, token %#x,"
-			       "master_sk:%d,pending:%d, %pIP4->%pIP4\n",
+			       "master_sk:%d,pending:%d, %pI4->%pI4\n",
 			       tp->mtcp_loc_token,is_master_sk(tp), 
 			       tp->pending, &inet_sk(sk)->inet_saddr,
 			       &inet_sk(sk)->inet_daddr);
