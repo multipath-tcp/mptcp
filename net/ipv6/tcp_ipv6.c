@@ -61,6 +61,7 @@
 #include <net/timewait_sock.h>
 #include <net/netdma.h>
 #include <net/inet_common.h>
+#include <net/mtcp_v6.h>
 
 #include <asm/uaccess.h>
 
@@ -74,13 +75,12 @@ static void	tcp_v6_send_reset(struct sock *sk, struct sk_buff *skb);
 static void	tcp_v6_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 				      struct request_sock *req);
 
-static int	tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
+int	tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
 static void	__tcp_v6_send_check(struct sk_buff *skb,
 				    struct in6_addr *saddr,
 				    struct in6_addr *daddr);
-
 static const struct inet_connection_sock_af_ops ipv6_mapped;
-static const struct inet_connection_sock_af_ops ipv6_specific;
+const struct inet_connection_sock_af_ops ipv6_specific;
 #ifdef CONFIG_TCP_MD5SIG
 static const struct tcp_sock_af_ops tcp_sock_ipv6_specific;
 static const struct tcp_sock_af_ops tcp_sock_ipv6_mapped_specific;
@@ -92,7 +92,7 @@ static struct tcp_md5sig_key *tcp_v6_md5_do_lookup(struct sock *sk,
 }
 #endif
 
-static void tcp_v6_hash(struct sock *sk)
+void tcp_v6_hash(struct sock *sk)
 {
 	if (sk->sk_state != TCP_CLOSE) {
 		if (inet_csk(sk)->icsk_af_ops == &ipv6_mapped) {
@@ -121,8 +121,8 @@ static __u32 tcp_v6_init_sequence(struct sk_buff *skb)
 					    tcp_hdr(skb)->source);
 }
 
-static int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
-			  int addr_len)
+int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
+		   int addr_len)
 {
 	struct sockaddr_in6 *usin = (struct sockaddr_in6 *) uaddr;
 	struct inet_sock *inet = inet_sk(sk);
@@ -309,6 +309,10 @@ static int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 	if (err)
 		goto late_failure;
 
+#ifdef CONFIG_MTCP
+	mtcp_update_metasocket(sk,mpcb_from_tcpsock(tp));
+#endif
+
 	return 0;
 
 late_failure:
@@ -331,9 +335,9 @@ static void tcp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 	struct tcp_sock *tp;
 	__u32 seq;
 	struct net *net = dev_net(skb->dev);
-
+	
 	sk = inet6_lookup(net, &tcp_hashinfo, &hdr->daddr,
-			th->dest, &hdr->saddr, th->source, skb->dev->ifindex);
+			  th->dest, &hdr->saddr, th->source, skb->dev->ifindex);
 
 	if (sk == NULL) {
 		ICMP6_INC_STATS_BH(net, __in6_dev_get(skb->dev),
@@ -916,7 +920,7 @@ static const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops = {
 };
 #endif
 
-static struct timewait_sock_ops tcp6_timewait_sock_ops = {
+struct timewait_sock_ops tcp6_timewait_sock_ops = {
 	.twsk_obj_size	= sizeof(struct tcp6_timewait_sock),
 	.twsk_unique	= tcp_twsk_unique,
 	.twsk_destructor= tcp_twsk_destructor,
@@ -1154,8 +1158,8 @@ static struct sock *tcp_v6_hnd_req(struct sock *sk,struct sk_buff *skb)
 		return tcp_check_req(sk, skb, req, prev);
 
 	nsk = __inet6_lookup_established(sock_net(sk), &tcp_hashinfo,
-			&ipv6_hdr(skb)->saddr, th->source,
-			&ipv6_hdr(skb)->daddr, ntohs(th->dest), inet6_iif(skb));
+					 &ipv6_hdr(skb)->saddr, th->source,
+					 &ipv6_hdr(skb)->daddr, ntohs(th->dest), inet6_iif(skb));
 
 	if (nsk) {
 		if (nsk->sk_state != TCP_TIME_WAIT) {
@@ -1223,7 +1227,7 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	tcp_clear_options(&tmp_opt);
 	tmp_opt.mss_clamp = IPV6_MIN_MTU - sizeof(struct tcphdr) - sizeof(struct ipv6hdr);
 	tmp_opt.user_mss = tp->rx_opt.user_mss;
-	tcp_parse_options(skb, &tmp_opt, &hash_location, 0);
+	tcp_parse_options(skb, &tmp_opt, &hash_location, NULL, 0);
 
 	if (tmp_opt.cookie_plus > 0 &&
 	    tmp_opt.saw_tstamp &&
@@ -1317,6 +1321,11 @@ drop_and_free:
 	reqsk_free(req);
 drop:
 	return 0; /* don't send reset */
+}
+
+int tcp_v6_is_v4_mapped(struct sock *sk)
+{
+	return (inet_csk(sk)->icsk_af_ops == &ipv6_mapped);
 }
 
 static struct sock * tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
@@ -1554,11 +1563,11 @@ static __sum16 tcp_v6_checksum_init(struct sk_buff *skb)
  * This is because we cannot sleep with the original spinlock
  * held.
  */
-static int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
+int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 {
 	struct ipv6_pinfo *np = inet6_sk(sk);
 	struct tcp_sock *tp;
-	struct sk_buff *opt_skb = NULL;
+	struct sk_buff *opt_skb = NULL;       
 
 	/* Imagine: socket is IPv6. IPv4 packet arrives,
 	   goes to IPv4 receive handler and backlogged.
@@ -1597,19 +1606,23 @@ static int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 	   by tcp. Feel free to propose better solution.
 					       --ANK (980728)
 	 */
-	if (np->rxopt.all)
+	if (np->rxopt.all) {
+		printk(KERN_ERR "cloning inc segment\n");
 		opt_skb = skb_clone(skb, GFP_ATOMIC);
+	}
 
 	if (sk->sk_state == TCP_ESTABLISHED) { /* Fast path */
 		TCP_CHECK_TIMER(sk);
+
 		if (tcp_rcv_established(sk, skb, tcp_hdr(skb), skb->len))
 			goto reset;
+		
 		TCP_CHECK_TIMER(sk);
 		if (opt_skb)
 			goto ipv6_pktoptions;
 		return 0;
 	}
-
+	
 	if (skb->len < tcp_hdrlen(skb) || tcp_checksum_complete(skb))
 		goto csum_err;
 
@@ -1642,7 +1655,7 @@ static int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 
 reset:
 	tcp_v6_send_reset(sk, skb);
-discard:
+discard:	
 	if (opt_skb)
 		__kfree_skb(opt_skb);
 	kfree_skb(skb);
@@ -1687,7 +1700,7 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 	struct sock *sk;
 	int ret;
 	struct net *net = dev_net(skb->dev);
-
+	
 	if (skb->pkt_type != PACKET_HOST)
 		goto discard_it;
 
@@ -1699,7 +1712,7 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 	if (!pskb_may_pull(skb, sizeof(struct tcphdr)))
 		goto discard_it;
 
-	th = tcp_hdr(skb);
+	th = tcp_hdr(skb);	
 
 	if (th->doff < sizeof(struct tcphdr)/4)
 		goto bad_packet;
@@ -1715,14 +1728,35 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->end_seq = (TCP_SKB_CB(skb)->seq + th->syn + th->fin +
 				    skb->len - th->doff*4);
 	TCP_SKB_CB(skb)->ack_seq = ntohl(th->ack_seq);
+#ifdef CONFIG_MTCP
+	/*Init to zero, will be set upon option parsing.*/
+	TCP_SKB_CB(skb)->data_seq = 0;
+	TCP_SKB_CB(skb)->end_data_seq = 0;
+#endif
 	TCP_SKB_CB(skb)->when = 0;
 	TCP_SKB_CB(skb)->flags = ipv6_get_dsfield(hdr);
 	TCP_SKB_CB(skb)->sacked = 0;
+	
+#ifdef CONFIG_MTCP_PM
+	/*We must absolutely check for subflow related segments
+	  before the normal sock lookup, because otherwise subflow
+	  segments could be understood as associated to some listening
+	  socket.*/
+
+	/*Is there a pending request sock for this segment ?*/
+	if (mtcp_syn_recv_sock(skb)) return 0;
+	/*Is this a new syn+join ?*/
+	if (th->syn && mtcp_lookup_join(skb)) return 0;
+
+	/*OK, this segment is not related to subflow initiation,
+	  we can proceed to normal lookup*/
+#endif
 
 	sk = __inet6_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
+	
 	if (!sk)
 		goto no_tcp_socket;
-
+	
 process:
 	if (sk->sk_state == TCP_TIME_WAIT)
 		goto do_time_wait;
@@ -1761,7 +1795,7 @@ process:
 		goto discard_and_relse;
 	}
 	bh_unlock_sock(sk);
-
+	
 	sock_put(sk);
 	return ret ? -1 : 0;
 
@@ -1834,7 +1868,7 @@ static int tcp_v6_remember_stamp(struct sock *sk)
 	return 0;
 }
 
-static const struct inet_connection_sock_af_ops ipv6_specific = {
+const struct inet_connection_sock_af_ops ipv6_specific = {
 	.queue_xmit	   = inet6_csk_xmit,
 	.send_check	   = tcp_v6_send_check,
 	.rebuild_header	   = inet6_sk_rebuild_header,
@@ -1956,11 +1990,19 @@ static int tcp_v6_init_sock(struct sock *sk)
 	local_bh_disable();
 	percpu_counter_inc(&tcp_sockets_allocated);
 	local_bh_enable();
-
+#ifdef CONFIG_MTCP
+	/*Init the MTCP mpcb*/
+	{
+		struct multipath_pcb *mpcb;		
+		mpcb=mtcp_alloc_mpcb(sk, GFP_KERNEL);
+		tp->path_index=0;
+		mtcp_add_sock(mpcb,tp);
+	}
+#endif
 	return 0;
 }
 
-static void tcp_v6_destroy_sock(struct sock *sk)
+void tcp_v6_destroy_sock(struct sock *sk)
 {
 #ifdef CONFIG_TCP_MD5SIG
 	/* Clean up the MD5 key list */
@@ -2145,7 +2187,11 @@ void tcp6_proc_exit(struct net *net)
 struct proto tcpv6_prot = {
 	.name			= "TCPv6",
 	.owner			= THIS_MODULE,
+#ifdef CONFIG_MTCP
+	.close			= mtcp_close,
+#else
 	.close			= tcp_close,
+#endif
 	.connect		= tcp_v6_connect,
 	.disconnect		= tcp_disconnect,
 	.accept			= inet_csk_accept,
@@ -2234,13 +2280,14 @@ int __init tcpv6_init(void)
 	ret = inet6_register_protosw(&tcpv6_protosw);
 	if (ret)
 		goto out_tcpv6_protocol;
-
+	
 	ret = register_pernet_subsys(&tcpv6_net_ops);
 	if (ret)
 		goto out_tcpv6_protosw;
+	
 out:
 	return ret;
-
+	
 out_tcpv6_protocol:
 	inet6_del_protocol(&tcpv6_protocol, IPPROTO_TCP);
 out_tcpv6_protosw:
@@ -2252,5 +2299,5 @@ void tcpv6_exit(void)
 {
 	unregister_pernet_subsys(&tcpv6_net_ops);
 	inet6_unregister_protosw(&tcpv6_protosw);
-	inet6_del_protocol(&tcpv6_protocol, IPPROTO_TCP);
+	inet6_del_protocol(&tcpv6_protocol, IPPROTO_TCP);	
 }

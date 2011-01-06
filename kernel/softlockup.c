@@ -165,6 +165,7 @@ void softlockup_tick(void)
 	per_cpu(softlockup_print_ts, this_cpu) = touch_ts;
 
 	spin_lock(&print_lock);
+	console_loglevel=8;
 	printk(KERN_ERR "BUG: soft lockup - CPU#%d stuck for %lus! [%s:%d]\n",
 			this_cpu, now - touch_ts,
 			current->comm, task_pid_nr(current));
