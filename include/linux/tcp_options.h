@@ -90,7 +90,7 @@ static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
 {
 	rx_opt->tstamp_ok = rx_opt->sack_ok = 0;
 	rx_opt->wscale_ok = rx_opt->snd_wscale = 0;
-	rx_opt->cookie_plus = 0;
+	rx_opt->cookie_plus = rx_opt->saw_mpc = 0;
 }
 
 struct multipath_options {	
