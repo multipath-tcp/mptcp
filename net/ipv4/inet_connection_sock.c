@@ -23,6 +23,8 @@
 #include <net/route.h>
 #include <net/tcp_states.h>
 #include <net/xfrm.h>
+#include <net/tcp.h>
+#include <net/mtcp.h>
 
 #ifdef INET_CSK_DEBUG
 const char inet_csk_timer_bug_msg[] = "inet_csk BUG: unknown timer value\n";
@@ -202,7 +204,7 @@ tb_not_found:
 success:
 	if (!inet_csk(sk)->icsk_bind_hash)
 		inet_bind_hash(sk, tb, snum);
-	WARN_ON(inet_csk(sk)->icsk_bind_hash != tb);
+	BUG_ON(inet_csk(sk)->icsk_bind_hash != tb);
 	ret = 0;
 
 fail_unlock:
@@ -295,6 +297,39 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 
 	newsk = reqsk_queue_get_child(&icsk->icsk_accept_queue, sk);
 	WARN_ON(newsk->sk_state == TCP_SYN_RECV);
+
+#ifdef CONFIG_MTCP
+	/*We must have inherited our bind bucket form our father, otherwise
+	  Our slave subsockets will trigger a segfault when calling
+	  __inet_inherit_port*/
+	BUG_ON(!inet_csk(newsk)->icsk_bind_hash);
+
+	/*Init the MTCP mpcb - we need this because when doing 
+	  an accept the init function (e.g. tcp_v6_init_sock for tcp ipv6)
+	  is not called*/
+	if (newsk->sk_protocol==IPPROTO_TCP) {
+		struct tcp_sock *tp=tcp_sk(newsk);
+		struct multipath_pcb *mpcb;
+		struct tcp_sock *mpcb_tp;
+		
+		lock_sock(newsk);
+		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
+		BUG_ON(!mpcb);
+		mpcb_tp=(struct tcp_sock *)mpcb;
+		BUG_ON(!mpcb);
+		tp->path_index=0;		
+		mtcp_add_sock(mpcb,tp);
+		mpcb_tp->write_seq=0; /*first byte is IDSN
+					To be replaced later with a random IDSN
+					(well, if it indeed improve security)*/
+		
+		mpcb_tp->copied_seq=0; /* First byte of yet unread data */
+		mtcp_ask_update(newsk);
+		release_sock(newsk);
+		mpcb_put(mpcb);
+	}
+#endif
+
 out:
 	release_sock(sk);
 	return newsk;
@@ -598,10 +633,24 @@ EXPORT_SYMBOL_GPL(inet_csk_clone);
  * try to jump onto it.
  */
 void inet_csk_destroy_sock(struct sock *sk)
-{
+{	
+#ifdef CONFIG_MTCP
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
+
+	mtcp_debug("%s: Removing subsocket - pi:%d\n",__FUNCTION__,
+			tcp_sk(sk)->path_index);
+
+	BUG_ON(!mpcb && !tcp_sk(sk)->pending);
+	/*mpcb is NULL if the socket is the child subsocket
+	  waiting in the accept queue of the mpcb.
+	  Child subsockets are not yet attached to the mpcb.
+	  (they will be upon removal in mtcp_check_new_subflow())*/
+	if (mpcb) mtcp_del_sock(mpcb,tcp_sk(sk));
+#endif   
+	
 	WARN_ON(sk->sk_state != TCP_CLOSE);
 	WARN_ON(!sock_flag(sk, SOCK_DEAD));
-
+	
 	/* It cannot be in hash table! */
 	WARN_ON(!sk_unhashed(sk));
 
@@ -625,7 +674,8 @@ int inet_csk_listen_start(struct sock *sk, const int nr_table_entries)
 {
 	struct inet_sock *inet = inet_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
-	int rc = reqsk_queue_alloc(&icsk->icsk_accept_queue, nr_table_entries);
+	int rc = reqsk_queue_alloc(&icsk->icsk_accept_queue, nr_table_entries,
+			GFP_KERNEL);
 
 	if (rc != 0)
 		return rc;

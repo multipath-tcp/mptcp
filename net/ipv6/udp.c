@@ -1208,7 +1208,7 @@ out:
 	 * things).  We could add another new stat but at least for now that
 	 * seems like overkill.
 	 */
-	if (err == -ENOBUFS || test_bit(SOCK_NOSPACE, &sk->sk_socket->flags)) {
+	if (err == -ENOBUFS || test_bit(SOCK_NOSPACE, &sk->sock_flags)) {
 		UDP6_INC_STATS_USER(sock_net(sk),
 				UDP_MIB_SNDBUFERRORS, is_udplite);
 	}

@@ -250,6 +250,9 @@ struct sock {
 	kmemcheck_bitfield_end(flags);
 	int			sk_rcvbuf;
 	socket_lock_t		sk_lock;
+	int                     sk_debug; /*TODEL*/
+	char                    sk_func[30]; /*TODEL*/
+	int                     sk_in_write_xmit; /*TODEL*/
 	/*
 	 * The backlog queue is special, it is always used with
 	 * the per-socket spinlock held and requires low latency
@@ -287,6 +290,7 @@ struct sock {
 	__u32			sk_rxhash;
 #endif
 	unsigned long 		sk_flags;
+	unsigned long		sock_flags;
 	unsigned long	        sk_lingertime;
 	struct sk_buff_head	sk_error_queue;
 	struct proto		*sk_prot_creator;
@@ -493,6 +497,16 @@ static __inline__ void sk_add_bind_node(struct sock *sk,
 					struct hlist_head *list)
 {
 	hlist_add_head(&sk->sk_bind_node, list);
+}
+
+static inline struct sock *__sk_bind_head(const struct hlist_head *head)
+{
+	return hlist_entry(head->first, struct sock, sk_bind_node);
+}
+
+static inline struct sock *sk_bind_head(const struct hlist_head *head)
+{
+	return hlist_empty(head) ? NULL : __sk_bind_head(head);
 }
 
 #define sk_for_each(__sk, node, list) \
@@ -1025,10 +1039,17 @@ static inline void lock_sock(struct sock *sk)
 extern void release_sock(struct sock *sk);
 
 /* BH context may only use the following locking interface. */
-#define bh_lock_sock(__sk)	spin_lock(&((__sk)->sk_lock.slock))
-#define bh_lock_sock_nested(__sk) \
-				spin_lock_nested(&((__sk)->sk_lock.slock), \
-				SINGLE_DEPTH_NESTING)
+#define bh_lock_sock(__sk)	do {				\
+		sprintf((__sk)->sk_func,"%s",__FUNCTION__);	\
+		spin_lock(&((__sk)->sk_lock.slock));		\
+	} while(0)						\
+	
+
+#define bh_lock_sock_nested(__sk) do {					\
+		sprintf((__sk)->sk_func,"%s",__FUNCTION__);		\
+		spin_lock_nested(&((__sk)->sk_lock.slock),		\
+				 SINGLE_DEPTH_NESTING);			\
+	} while(0)
 #define bh_unlock_sock(__sk)	spin_unlock(&((__sk)->sk_lock.slock))
 
 extern bool lock_sock_fast(struct sock *sk);
@@ -1258,12 +1279,15 @@ static inline void sock_orphan(struct sock *sk)
 	write_unlock_bh(&sk->sk_callback_lock);
 }
 
+void mtcp_check_socket(struct sock *sk);
+
 static inline void sock_graft(struct sock *sk, struct socket *parent)
 {
 	write_lock_bh(&sk->sk_callback_lock);
 	rcu_assign_pointer(sk->sk_wq, parent->wq);
 	parent->sk = sk;
 	sk_set_socket(sk, parent);
+	mtcp_check_socket(sk);
 	security_sock_graft(sk, parent);
 	write_unlock_bh(&sk->sk_callback_lock);
 }
@@ -1507,6 +1531,10 @@ static inline void skb_set_owner_w(struct sk_buff *skb, struct sock *sk)
 	 */
 	atomic_add(skb->truesize, &sk->sk_wmem_alloc);
 }
+
+#ifdef CONFIG_MTCP
+extern void mtcp_set_owner_r(struct sk_buff *skb, struct sock *sk);
+#endif
 
 static inline void skb_set_owner_r(struct sk_buff *skb, struct sock *sk)
 {

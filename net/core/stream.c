@@ -18,6 +18,7 @@
 #include <linux/tcp.h>
 #include <linux/wait.h>
 #include <net/sock.h>
+#include <linux/tcp_probe.h>
 
 /**
  * sk_stream_write_space - stream socket write_space callback.
@@ -31,7 +32,7 @@ void sk_stream_write_space(struct sock *sk)
 	struct socket_wq *wq;
 
 	if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk) && sock) {
-		clear_bit(SOCK_NOSPACE, &sock->flags);
+		clear_bit(SOCK_NOSPACE, &sk->sock_flags);
 
 		rcu_read_lock();
 		wq = rcu_dereference(sk->sk_wq);
@@ -60,14 +61,21 @@ int sk_stream_wait_connect(struct sock *sk, long *timeo_p)
 
 	do {
 		int err = sock_error(sk);
-		if (err)
+		if (err) {
+			printk(KERN_ERR "line %d, err %d\n",__LINE__,err);
 			return err;
+		}
 		if ((1 << sk->sk_state) & ~(TCPF_SYN_SENT | TCPF_SYN_RECV))
 			return -EPIPE;
-		if (!*timeo_p)
+
+		if (!*timeo_p) {
+			printk(KERN_ERR "line %d\n",__LINE__);
 			return -EAGAIN;
-		if (signal_pending(tsk))
+		}
+		if (signal_pending(tsk)) {
+			printk(KERN_ERR "line %d\n",__LINE__);
 			return sock_intr_errno(*timeo_p);
+		}
 
 		prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
 		sk->sk_write_pending++;
@@ -139,7 +147,7 @@ int sk_stream_wait_memory(struct sock *sk, long *timeo_p)
 		if (sk_stream_memory_free(sk) && !vm_wait)
 			break;
 
-		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+		set_bit(SOCK_NOSPACE, &sk->sock_flags);
 		sk->sk_write_pending++;
 		sk_wait_event(sk, &current_timeo, sk->sk_err ||
 						  (sk->sk_shutdown & SEND_SHUTDOWN) ||

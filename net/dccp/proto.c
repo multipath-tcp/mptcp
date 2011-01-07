@@ -341,7 +341,7 @@ unsigned int dccp_poll(struct file *file, struct socket *sock,
 			} else {  /* send SIGIO later */
 				set_bit(SOCK_ASYNC_NOSPACE,
 					&sk->sk_socket->flags);
-				set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+				set_bit(SOCK_NOSPACE, &sk->sock_flags);
 
 				/* Race breaker. If space is freed after
 				 * wspace test but before the flags are set,

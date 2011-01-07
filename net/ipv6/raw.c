@@ -53,7 +53,6 @@
 #include <net/mip6.h>
 #endif
 #include <linux/mroute6.h>
-
 #include <net/raw.h>
 #include <net/rawv6.h>
 #include <net/xfrm.h>

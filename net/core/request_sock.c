@@ -35,7 +35,8 @@
 int sysctl_max_syn_backlog = 256;
 
 int reqsk_queue_alloc(struct request_sock_queue *queue,
-		      unsigned int nr_table_entries)
+		      unsigned int nr_table_entries,
+		      gfp_t flags)
 {
 	size_t lopt_size = sizeof(struct listen_sock);
 	struct listen_sock *lopt;
@@ -46,10 +47,10 @@ int reqsk_queue_alloc(struct request_sock_queue *queue,
 	lopt_size += nr_table_entries * sizeof(struct request_sock *);
 	if (lopt_size > PAGE_SIZE)
 		lopt = __vmalloc(lopt_size,
-			GFP_KERNEL | __GFP_HIGHMEM | __GFP_ZERO,
+			flags | __GFP_HIGHMEM | __GFP_ZERO,
 			PAGE_KERNEL);
 	else
-		lopt = kzalloc(lopt_size, GFP_KERNEL);
+		lopt = kzalloc(lopt_size, flags);
 	if (lopt == NULL)
 		return -ENOMEM;
 

@@ -31,6 +31,7 @@
 #include <linux/crypto.h>
 #include <linux/cryptohash.h>
 #include <linux/kref.h>
+#include <linux/tcp_probe.h>
 
 #include <net/inet_connection_sock.h>
 #include <net/inet_timewait_sock.h>
@@ -43,6 +44,7 @@
 #include <net/tcp_states.h>
 #include <net/inet_ecn.h>
 #include <net/dst.h>
+#include <net/mtcp.h>
 
 #include <linux/seq_file.h>
 
@@ -167,6 +169,15 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOPT_MD5SIG		19	/* MD5 Signature (RFC2385) */
 #define TCPOPT_COOKIE		253	/* Cookie extension (experimental) */
 
+#define TCPOPT_MPC   	        30
+#define TCPOPT_DSN		31
+#define TCPOPT_DFIN		32
+#define TCPOPT_DATA_ACK   	33
+
+#define TCPOPT_ADDR             60
+#define TCPOPT_REMADR           61
+#define TCPOPT_JOIN      	62
+
 /*
  *     TCP option lengths
  */
@@ -180,6 +191,18 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_COOKIE_PAIR    3	/* Cookie pair header extension */
 #define TCPOLEN_COOKIE_MIN     (TCPOLEN_COOKIE_BASE+TCP_COOKIE_MIN)
 #define TCPOLEN_COOKIE_MAX     (TCPOLEN_COOKIE_BASE+TCP_COOKIE_MAX)
+#ifdef CONFIG_MTCP_PM
+#define TCPOLEN_ADDR(num_addr) (2+6*(num_addr))
+#define TCPOLEN_ADDR_BASE      2
+#define TCPOLEN_ADDR_PERBLOCK  6
+#define TCPOLEN_JOIN           7
+#define TCPOLEN_MPC            7
+#else
+#define TCPOLEN_MPC            4
+#endif
+#define TCPOLEN_DSN            12
+#define TCPOLEN_DFIN           2
+#define TCPOLEN_DATA_ACK       6
 
 /* But this is what stacks really send out. */
 #define TCPOLEN_TSTAMP_ALIGNED		12
@@ -190,6 +213,16 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_SACK_PERBLOCK		8
 #define TCPOLEN_MD5SIG_ALIGNED		20
 #define TCPOLEN_MSS_ALIGNED		4
+#ifdef CONFIG_MTCP_PM
+#define TCPOLEN_ADDR_ALIGNED(num_addr) ((5+6*(num_addr)) & (~3))
+#define TCPOLEN_JOIN_ALIGNED            8
+#define TCPOLEN_MPC_ALIGNED             8
+#else
+#define TCPOLEN_MPC_ALIGNED             4
+#endif
+#define TCPOLEN_DSN_ALIGNED             12
+#define TCPOLEN_DFIN_ALIGNED            4
+#define TCPOLEN_DATA_ACK_ALIGNED        8
 
 /* Flags in tp->nonagle */
 #define TCP_NAGLE_OFF		1	/* Nagle's algo is disabled */
@@ -316,6 +349,11 @@ extern int tcp_v4_remember_stamp(struct sock *sk);
 extern int tcp_v4_tw_remember_stamp(struct inet_timewait_sock *tw);
 extern int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		       size_t size);
+#ifdef CONFIG_MTCP
+extern int subtcp_sendmsg(struct kiocb *iocb, 
+			  struct sock *sk,
+			  struct msghdr *msg, size_t size);
+#endif
 extern int tcp_sendpage(struct sock *sk, struct page *page, int offset,
 			size_t size, int flags);
 extern int tcp_ioctl(struct sock *sk, int cmd, unsigned long arg);
@@ -366,7 +404,6 @@ enum tcp_tw_status {
 	TCP_TW_SYN = 3
 };
 
-
 extern enum tcp_tw_status tcp_timewait_state_process(struct inet_timewait_sock *tw,
 						     struct sk_buff *skb,
 						     const struct tcphdr *th);
@@ -397,7 +434,7 @@ extern int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		       size_t len, int nonblock, int flags, int *addr_len);
 extern void tcp_parse_options(struct sk_buff *skb,
 			      struct tcp_options_received *opt_rx, u8 **hvpp,
-			      int estab);
+			      struct multipath_options *mopt, int estab);
 extern u8 *tcp_parse_md5sig_option(struct tcphdr *th);
 
 /*
@@ -420,6 +457,9 @@ extern struct sk_buff * tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 					struct request_sock *req,
 					struct request_values *rvp);
 extern int tcp_disconnect(struct sock *sk, int flags);
+
+extern void tcp_push(struct sock *sk, int flags, int mss_now,
+			    int nonagle);
 
 
 /* From syncookies.c */
@@ -561,7 +601,15 @@ static inline u32 tcp_rto_min(struct sock *sk)
  */
 static inline u32 tcp_receive_window(const struct tcp_sock *tp)
 {
-	s32 win = tp->rcv_wup + tp->rcv_wnd - tp->rcv_nxt;
+	s32 win;
+	
+	if (tp->mpcb && tp->mpc) { 
+		struct tcp_sock *mpcb_tp=(struct tcp_sock*)(tp->mpcb);
+		win=mpcb_tp->rcv_wup + mpcb_tp->rcv_wnd - mpcb_tp->rcv_nxt;
+	}
+	else {
+		win=tp->rcv_wup + tp->rcv_wnd - tp->rcv_nxt;
+	}
 
 	if (win < 0)
 		win = 0;
@@ -608,6 +656,14 @@ struct tcp_skb_cb {
 	} header;	/* For incoming frames		*/
 	__u32		seq;		/* Starting sequence number	*/
 	__u32		end_seq;	/* SEQ + FIN + SYN + datalen	*/
+	__u32           data_seq;       /* Starting data seq            */
+	__u32           data_ack;       /* Data level ack (MPTCP)       */
+	__u32           end_data_seq;   /* DATA_SEQ + DFIN + SYN + datalen*/
+	__u16           data_len;       /* Data-level length (MPTCP)    
+					 * a value of 0 indicates that no DSN
+					 * option is attached to that segment
+					 */
+	__u32           sub_seq;        /* subflow seqnum (MPTCP)       */
 	__u32		when;		/* used to compute rtt's	*/
 	__u8		flags;		/* TCP header flags.		*/
 	__u8		sacked;		/* State flags for SACK/FACK.	*/
@@ -713,6 +769,17 @@ static inline void tcp_set_ca_state(struct sock *sk, const u8 ca_state)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
+#ifdef CONFIG_MTCP
+	if (ca_state != icsk->icsk_ca_state) {
+		char buf[200];
+		snprintf(buf,sizeof(buf),
+			 "pi %d: changed ca state : %d -> %d",
+			 tcp_sk(sk)->path_index,
+			 icsk->icsk_ca_state,ca_state);
+		tcpprobe_logmsg(sk,buf);
+	}
+#endif
+
 	if (icsk->icsk_ca_ops->set_state)
 		icsk->icsk_ca_ops->set_state(sk, ca_state);
 	icsk->icsk_ca_state = ca_state;
@@ -817,11 +884,21 @@ static __inline__ __u32 tcp_max_burst(const struct tcp_sock *tp)
 	return tp->reordering;
 }
 
-/* Returns end sequence number of the receiver's advertised window */
-static inline u32 tcp_wnd_end(const struct tcp_sock *tp)
+/* Returns end sequence number of the receiver's advertised window
+ * If @data_seq is 1, we return an end data_seq number (for mptcp)
+ * rather than an end seq number.
+ */
+static inline u32 tcp_wnd_end(const struct tcp_sock *tp, int data_seq)
 {
-	return tp->snd_una + tp->snd_wnd;
+	/*With MPTCP, we return the end DATASEQ number of the receiver's
+	  advertised window*/
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+	struct tcp_sock *mpcb_tp=(struct tcp_sock *)mpcb;
+	
+	if (!data_seq || !tp->mpcb) return tp->snd_una + tp->snd_wnd;
+	else return mpcb_tp->snd_una+mpcb_tp->snd_wnd;
 }
+
 extern int tcp_is_cwnd_limited(const struct sock *sk, u32 in_flight);
 
 static inline void tcp_minshall_update(struct tcp_sock *tp, unsigned int mss,
@@ -848,7 +925,8 @@ static inline void tcp_init_wl(struct tcp_sock *tp, u32 seq)
 
 static inline void tcp_update_wl(struct tcp_sock *tp, u32 seq)
 {
-	tp->snd_wl1 = seq;
+	if (seq)
+		tp->snd_wl1 = seq;
 }
 
 /*
@@ -875,9 +953,11 @@ static inline int tcp_checksum_complete(struct sk_buff *skb)
 
 static inline void tcp_prequeue_init(struct tcp_sock *tp)
 {
+#ifndef CONFIG_MTCP
 	tp->ucopy.task = NULL;
 	tp->ucopy.len = 0;
 	tp->ucopy.memory = 0;
+#endif /*In MTCP, those fields are in the mpcb structure*/
 	skb_queue_head_init(&tp->ucopy.prequeue);
 #ifdef CONFIG_NET_DMA
 	tp->ucopy.dma_chan = NULL;
@@ -895,6 +975,51 @@ static inline void tcp_prequeue_init(struct tcp_sock *tp)
  *
  * NOTE: is this not too big to inline?
  */
+#ifdef CONFIG_MTCP
+static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+	
+	/*If the socket is still in the accept queue of the mpcb,
+	  the mpcb prequeue is not yet available*/
+	BUG_ON(!tp->mpcb && !tp->pending);
+	if (tp->mpc && !mpcb) return 0;
+
+	if (!sysctl_tcp_low_latency && !mpcb->ucopy.task)
+		return 0;
+	
+	__skb_queue_tail(&tp->ucopy.prequeue, skb);
+	tp->ucopy.memory += skb->truesize;
+	if (tp->ucopy.memory > sk->sk_rcvbuf) {			
+		struct sk_buff *skb1;
+		
+		BUG_ON(sock_owned_by_user(sk));
+		
+		while ((skb1 = __skb_dequeue(&tp->ucopy.prequeue)) != NULL) {
+			sk_backlog_rcv(sk, skb1);
+			NET_INC_STATS_BH(sock_net(sk), 
+					 LINUX_MIB_TCPPREQUEUEDROPPED);
+		}
+		
+		tp->ucopy.memory = 0;
+	} else if (skb_queue_len(&tp->ucopy.prequeue) == 1) {
+		if (tp->mpc)
+			wake_up_interruptible_sync_poll(
+				sk_sleep(tp->mpcb->master_sk),
+				POLLIN | POLLRDNORM | POLLRDBAND);
+		else
+			wake_up_interruptible_sync_poll(
+				sk_sleep(sk),
+				POLLIN | POLLRDNORM | POLLRDBAND);
+		if (!inet_csk_ack_scheduled(sk))
+			inet_csk_reset_xmit_timer(sk, ICSK_TIME_DACK,
+						  (3 * tcp_rto_min(sk)) / 4,
+						  TCP_RTO_MAX);
+	}
+	return 1;
+}
+#else
 static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -926,6 +1051,7 @@ static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 	}
 	return 1;
 }
+#endif
 
 
 #undef STATE_TRACE
@@ -965,7 +1091,32 @@ static inline int tcp_space(const struct sock *sk)
 {
 	return tcp_win_from_space(sk->sk_rcvbuf -
 				  atomic_read(&sk->sk_rmem_alloc));
-} 
+}
+
+#ifdef CONFIG_MTCP
+/*If MPTCP is used, tcp_space returns the aggregate space for the
+  whole communication. */
+static inline int mtcp_space(const struct sock *sk)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+	struct sock *mpcb_sk=(struct sock*)mpcb;
+	
+	if (!tp->mpc) return tcp_space(sk);
+	
+	return tcp_win_from_space(mpcb_sk->sk_rcvbuf-
+				  atomic_read(&mpcb_sk->sk_rmem_alloc));
+}
+
+static inline int mtcp_full_space(const struct sock *sk)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+	struct sock *mpcb_sk=(struct sock*)mpcb;
+
+	return tcp_win_from_space(mpcb_sk->sk_rcvbuf);
+}
+#endif
 
 static inline int tcp_full_space(const struct sock *sk)
 {
@@ -983,6 +1134,18 @@ static inline void tcp_openreq_init(struct request_sock *req,
 	tcp_rsk(req)->rcv_isn = TCP_SKB_CB(skb)->seq;
 	req->mss = rx_opt->mss_clamp;
 	req->ts_recent = rx_opt->saw_tstamp ? rx_opt->rcv_tsval : 0;
+#ifdef CONFIG_MTCP
+	req->saw_mpc = rx_opt->saw_mpc;
+#ifdef CONFIG_MTCP_PM
+	if (!req->mpcb) {
+		/*conn request, prepare a new token for the 
+		  mpcb that will be created in tcp_check_req(),
+		  and store the received token.*/
+		req->mtcp_rem_token = rx_opt->mtcp_rem_token;
+		req->mtcp_loc_token = mtcp_new_token();
+	}
+#endif
+#endif
 	ireq->tstamp_ok = rx_opt->tstamp_ok;
 	ireq->sack_ok = rx_opt->sack_ok;
 	ireq->snd_wscale = rx_opt->snd_wscale;
