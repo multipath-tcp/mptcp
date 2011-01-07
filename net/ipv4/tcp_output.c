@@ -687,7 +687,7 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 			remaining -= TCPOLEN_SACKPERM_ALIGNED;
 	}
 #ifdef CONFIG_MTCP	
-	if (is_master_sk(tp)) {
+	if (is_master_sk(tp) && !ipv4_is_loopback(inet_sk(sk)->inet_daddr)) {
 		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
 
 		opts->options |= OPTION_MPC;
