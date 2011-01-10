@@ -686,10 +686,12 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		if (unlikely(!(OPTION_TS & opts->options)))
 			remaining -= TCPOLEN_SACKPERM_ALIGNED;
 	}
-#ifdef CONFIG_MTCP	
-	if (is_master_sk(tp) && !ipv4_is_loopback(inet_sk(sk)->inet_daddr)) {
+#ifdef CONFIG_MTCP
+	if (ipv4_is_loopback(inet_sk(sk)->inet_daddr))
+		goto nomptcp;
+	if (is_master_sk(tp)) {
 		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
-
+		
 		opts->options |= OPTION_MPC;
 		remaining-=TCPOLEN_MPC_ALIGNED;
 #ifdef CONFIG_MTCP_PM
@@ -715,6 +717,7 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		opts->addr_id=mtcp_get_loc_addrid(mpcb, tp->path_index);
 	}
 #endif
+nomptcp:
 #endif
 
 	/* Note that timestamps are required by the specification.
