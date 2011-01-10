@@ -536,9 +536,9 @@ void tcp_rcv_space_adjust(struct sock *sk)
 	int time;
 	int space;
 #ifdef CONFIG_MTCP
-	struct multipath_pcb *mpcb=tp->mpcb;
+	struct multipath_pcb *mpcb = tp->mpcb;
 	if (tp->mpc && tp->pending)
-		mpcb=mtcp_hash_find(tp->mtcp_loc_token);		
+		mpcb = mtcp_hash_find(tp->mtcp_loc_token);
 #endif
 	if (tp->rcvq_space.time == 0)
 		goto new_measure;
@@ -609,7 +609,7 @@ new_measure:
 out:
 #ifdef CONFIG_MTCP
 	if (tp->mpc && tp->pending && mpcb)
-		mpcb_put(mpcb);
+		mpcb_put(mpcb); /* Taken by mtcp_hash_find */
 #endif
 }
 
@@ -4231,23 +4231,22 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 	}
 	mpcb = mpcb_from_tcpsock(tp);
 	if (tp->pending)
-		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
+		mpcb = mtcp_hash_find(tp->mtcp_loc_token);
 	if (!mpcb)
 		mtcp_debug("%s: looked for mpcb with token %d\n",
 				__FUNCTION__, tp->mtcp_loc_token);
 	BUG_ON(!mpcb);
 	mopt=&mpcb->received_options;
 	tcp_parse_options(skb, &tp->rx_opt, hvpp, mopt, 1);
-
 	if (unlikely(mpcb && tp->rx_opt.saw_mpc && is_master_sk(tp))) {
-		/*Transfer sndwnd control to the mpcb*/
-		mpcb->tp.snd_wnd=tp->snd_wnd;
-		mpcb->tp.max_window=tp->max_window;		
-		tp->mpc=1;		
-		tp->rx_opt.saw_mpc=0; /*reset that field, it has been read*/
+		/* Transfer sndwnd control to the mpcb */
+		mpcb->tp.snd_wnd = tp->snd_wnd;
+		mpcb->tp.max_window = tp->max_window;
+		tp->mpc = 1;
+		tp->rx_opt.saw_mpc = 0; /* reset that field, it has been read */
 	}
 	if (tp->pending)
-		mpcb_put(mpcb);
+		mpcb_put(mpcb); /* Taken by mtcp_hash_find */
 	return 1;
 }
 

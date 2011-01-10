@@ -1638,7 +1638,7 @@ int tcp_v4_rcv(struct sk_buff *skb)
 {
 	const struct iphdr *iph;
 	struct tcphdr *th;
-	struct sock *sk, *mpcb_sk=NULL;
+	struct sock *sk, *meta_sk=NULL;
 	int ret;
 	struct net *net = dev_net(skb->dev);
 	struct multipath_pcb *mpcb=NULL;
@@ -1720,25 +1720,25 @@ process:
 	skb->dev = NULL;
 	
 	if (tcp_sk(sk)->mpcb) {
-		mpcb=tcp_sk(sk)->mpcb;
-		kref_get(&mpcb->kref);
-		mpcb_sk=(struct sock*)(tcp_sk(sk)->mpcb);
+		mpcb = tcp_sk(sk)->mpcb;
+		mpcb_get(mpcb);
+		meta_sk = (struct sock *) (tcp_sk(sk)->mpcb);
 	}
 
 	bh_lock_sock_nested(sk);
-	if (mpcb_sk)
-		bh_lock_sock(mpcb_sk);
+	if (meta_sk)
+		bh_lock_sock(meta_sk);
 	ret = 0;
 
-	if (mpcb_sk) {
-		if (!sock_owned_by_user(mpcb_sk) &&
+	if (meta_sk) {
+		if (!sock_owned_by_user(meta_sk) &&
 		    !sock_owned_by_user(sk)) {
 			if (!tcp_prequeue(sk, skb))
 				ret = tcp_v4_do_rcv(sk, skb);
 		}
 		else if (unlikely(sk_add_backlog(sk, skb))) {
-			if (mpcb_sk)
-				bh_unlock_sock(mpcb_sk);
+			if (meta_sk)
+				bh_unlock_sock(meta_sk);
 			bh_unlock_sock(sk);
 			NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
 			goto discard_and_relse;
@@ -1758,18 +1758,18 @@ process:
 				ret = tcp_v4_do_rcv(sk, skb);
 		}
 	} else if (unlikely(sk_add_backlog(sk, skb))) {
-		if (mpcb_sk)
-			bh_unlock_sock(mpcb_sk);
+		if (meta_sk)
+			bh_unlock_sock(meta_sk);
 		bh_unlock_sock(sk);
 		NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
 		goto discard_and_relse;
 	}
 
-	if (mpcb_sk)
-		bh_unlock_sock(mpcb_sk);
+	if (meta_sk)
+		bh_unlock_sock(meta_sk);
 	bh_unlock_sock(sk);
 	sock_put(sk);
-	if (mpcb) kref_put(&mpcb->kref,mpcb_release);
+	if (mpcb) mpcb_put(mpcb); /* Taken by mpcb_get */
 
 	return ret;
 

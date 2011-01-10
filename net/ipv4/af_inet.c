@@ -145,9 +145,9 @@ void inet_sock_destruct(struct sock *sk)
 		return;
 	}
 
-	if ((sk->sk_protocol==IPPROTO_TCP || sk->sk_protocol==IPPROTO_MTCPSUB)
+	if ((sk->sk_protocol == IPPROTO_TCP || sk->sk_protocol == IPPROTO_MTCPSUB)
 	    && tcp_sk(sk)->mpcb)
-		kref_put(&tcp_sk(sk)->mpcb->kref,mpcb_release);
+		mpcb_put(tcp_sk(sk)->mpcb); /* Taken by mtcp_add_sock */
 	
 	if (!sock_flag(sk, SOCK_DEAD)) {
 		pr_err("Attempt to release alive inet socket %p\n", sk);

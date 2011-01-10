@@ -145,7 +145,7 @@ void mtcp_pm_release(struct multipath_pcb *mpcb)
 		(struct inet_connection_sock*)mpcb;
 	struct listen_sock *lopt = mpcb_icsk->icsk_accept_queue.listen_opt;
 		
-	/*Remove all pending request socks.*/
+	/* Remove all pending request socks. */
 	if (lopt->qlen != 0) {
 		unsigned int i;
 		for (i = 0; i < lopt->nr_table_entries; i++) {
@@ -156,25 +156,25 @@ void mtcp_pm_release(struct multipath_pcb *mpcb)
 				printk(KERN_ERR 
 				       "Destroying request_sock\n");
 				lopt->qlen--;
-				todel=*cur_ref;
-				/*remove from local hashtable, it has
-				  been removed already from the global one by 
-				  mtcp_hash_remove()*/
-				*cur_ref=(*cur_ref)->dl_next;
+				todel = *cur_ref;
+				/* remove from local hashtable, it has
+				   been removed already from the global one by
+				   mtcp_hash_remove() */
+				*cur_ref = (*cur_ref)->dl_next;
 				reqsk_free(todel);
 			}
 		}
 	}
 
-	/*remove all pending child socks associated to this mpcb*/
+	/* remove all pending child socks associated to this mpcb */
 	while (!reqsk_queue_empty(&mpcb_icsk->icsk_accept_queue)) {
 		struct sock *child;
 		struct request_sock *req;
 		req = reqsk_queue_remove(&mpcb_icsk->icsk_accept_queue);
-		child=req->sk;
+		child = req->sk;
 
-		/*The code hereafter comes from 
-		  inet_csk_listen_stop()*/
+		/* The code hereafter comes from
+		   inet_csk_listen_stop() */
 		bh_lock_sock(child);
 		WARN_ON(sock_owned_by_user(child));
 		sock_hold(child);
@@ -1104,22 +1104,22 @@ embryonic_reset:
 
 int mtcp_syn_recv_sock(struct sk_buff *skb)
 {
-	struct tcphdr *th=tcp_hdr(skb);
-	struct iphdr *iph=ip_hdr(skb);
+	struct tcphdr *th = tcp_hdr(skb);
+	struct iphdr *iph = ip_hdr(skb);
 	struct request_sock *req;
 	struct sock *child;
 
-	req=mtcp_search_req(th->source,iph->saddr,iph->daddr);
+	req = mtcp_search_req(th->source,iph->saddr,iph->daddr);
 	if (!req)
 		return 0;
 
 	/*If this is a valid ack, we can build a full socket*/
-	child=mtcp_check_req(skb,req);
+	child = mtcp_check_req(skb,req);
 	if (child)
 		tcp_child_process(req->mpcb->master_sk,
 				  child,skb);
-	/*The refcount has been incremented by mtcp_search_req*/
-	mpcb_put(req->mpcb);
+
+	mpcb_put(req->mpcb); /* Taken by mtcp_search_req */
 	return 1;
 }
 
@@ -1156,28 +1156,28 @@ int mtcp_lookup_join(struct sk_buff *skb)
 				return 0;
 			if (opsize > length)
 				return 0; /* don't parse partial options */
-			if (opcode==TCPOPT_JOIN) {
-				token=ntohl(*(u32*)ptr);
-				mpcb=mtcp_hash_find(token);			
+			if (opcode == TCPOPT_JOIN) {
+				token = ntohl(*(u32*)ptr);
+				mpcb = mtcp_hash_find(token);
 				if (!mpcb) {
 					printk(KERN_ERR 
 					       "%s:mpcb not found:%x\n",
 					       __FUNCTION__,token);
 					goto finished;
 				}
-				/*OK, this is a new syn/join, let's 
-				  create a new open request and 
-				  send syn+ack*/
-				ans=mtcp_v4_add_raddress(&mpcb->
+				/* OK, this is a new syn/join, let's
+				   create a new open request and
+				   send syn+ack */
+				ans = mtcp_v4_add_raddress(&mpcb->
 							 received_options, 
 							 (struct in_addr*)
 							 &iph->saddr, *(ptr+4));
-				if (ans<0) {
-					mpcb_put(mpcb);
+				if (ans < 0) {
+					mpcb_put(mpcb); /* Taken by mtcp_hash_find */
 					goto finished;
 				}
 				mtcp_v4_join_request(mpcb, skb);		
-				mpcb_put(mpcb);
+				mpcb_put(mpcb); /* Taken by mtcp_hash_find */
 				goto finished;
 			}
 			ptr += opsize-2;

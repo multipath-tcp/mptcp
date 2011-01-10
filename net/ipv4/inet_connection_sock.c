@@ -299,34 +299,34 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 	WARN_ON(newsk->sk_state == TCP_SYN_RECV);
 
 #ifdef CONFIG_MTCP
-	/*We must have inherited our bind bucket form our father, otherwise
-	  Our slave subsockets will trigger a segfault when calling
-	  __inet_inherit_port*/
+	/* We must have inherited our bind bucket form our father, otherwise
+	   Our slave subsockets will trigger a segfault when calling
+	   __inet_inherit_port */
 	BUG_ON(!inet_csk(newsk)->icsk_bind_hash);
 
-	/*Init the MTCP mpcb - we need this because when doing 
-	  an accept the init function (e.g. tcp_v6_init_sock for tcp ipv6)
-	  is not called*/
-	if (newsk->sk_protocol==IPPROTO_TCP) {
-		struct tcp_sock *tp=tcp_sk(newsk);
+	/* Init the MTCP mpcb - we need this because when doing
+	   an accept the init function (e.g. tcp_v6_init_sock for tcp ipv6)
+	   is not called */
+	if (newsk->sk_protocol == IPPROTO_TCP) {
+		struct tcp_sock *tp = tcp_sk(newsk);
 		struct multipath_pcb *mpcb;
-		struct tcp_sock *mpcb_tp;
+		struct tcp_sock *meta_tp;
 		
 		lock_sock(newsk);
-		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
+		mpcb = mtcp_hash_find(tp->mtcp_loc_token);
 		BUG_ON(!mpcb);
-		mpcb_tp=(struct tcp_sock *)mpcb;
+		meta_tp = (struct tcp_sock *)mpcb;
 		BUG_ON(!mpcb);
-		tp->path_index=0;		
-		mtcp_add_sock(mpcb,tp);
-		mpcb_tp->write_seq=0; /*first byte is IDSN
-					To be replaced later with a random IDSN
-					(well, if it indeed improve security)*/
+		tp->path_index = 0;
+		mtcp_add_sock(mpcb, tp);
+		meta_tp->write_seq = 0; /* first byte is IDSN
+					   To be replaced later with a random IDSN
+					   (well, if it indeed improve security) */
 		
-		mpcb_tp->copied_seq=0; /* First byte of yet unread data */
+		meta_tp->copied_seq = 0; /* First byte of yet unread data */
 		mtcp_ask_update(newsk);
 		release_sock(newsk);
-		mpcb_put(mpcb);
+		mpcb_put(mpcb); /* Taken by mtcp_hash_find */
 	}
 #endif
 
@@ -635,17 +635,17 @@ EXPORT_SYMBOL_GPL(inet_csk_clone);
 void inet_csk_destroy_sock(struct sock *sk)
 {	
 #ifdef CONFIG_MTCP
-	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
+	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tcp_sk(sk));
 
 	mtcp_debug("%s: Removing subsocket - pi:%d\n",__FUNCTION__,
 			tcp_sk(sk)->path_index);
 
 	BUG_ON(!mpcb && !tcp_sk(sk)->pending);
-	/*mpcb is NULL if the socket is the child subsocket
-	  waiting in the accept queue of the mpcb.
-	  Child subsockets are not yet attached to the mpcb.
-	  (they will be upon removal in mtcp_check_new_subflow())*/
-	if (mpcb) mtcp_del_sock(mpcb,tcp_sk(sk));
+	/* mpcb is NULL if the socket is the child subsocket
+	   waiting in the accept queue of the mpcb.
+	   Child subsockets are not yet attached to the mpcb.
+	   (they will be upon removal in mtcp_check_new_subflow()) */
+	if (mpcb) mtcp_del_sock(mpcb, tcp_sk(sk));
 #endif   
 	
 	WARN_ON(sk->sk_state != TCP_CLOSE);

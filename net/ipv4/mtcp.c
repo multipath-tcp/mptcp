@@ -185,7 +185,7 @@ void mtcp_data_ready(struct sock *sk) {
 		mpcb = mtcp_hash_find(tp->mtcp_loc_token);
 		BUG_ON(!mpcb);
 		mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
-		mpcb_put(mpcb);
+		mpcb_put(mpcb); /* Taken by mtcp_hash_find */
 	}
 #endif
 }
@@ -500,7 +500,7 @@ void mtcp_destroy_mpcb(struct multipath_pcb *mpcb) {
 	/* Stop listening to PM events */
 	unregister_netevent_notifier(&mpcb->nb);
 
-	kref_put(&mpcb->kref, mpcb_release);
+	mpcb_put(mpcb); /* kref set to 1 by kref_init in mtcp_alloc_mpcb */
 }
 
 /* MUST be called in user context */
@@ -543,7 +543,7 @@ void mtcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 		meta_sk->sk_state = TCP_ESTABLISHED;
 	}
 
-	kref_get(&mpcb->kref);
+	mpcb_get(mpcb);
 
 	/* Empty the receive queue of the added new subsocket
 	   we do it with bh disabled, because before the mpcb is attached,
@@ -1289,8 +1289,9 @@ int mtcp_queue_skb(struct sock *sk, struct sk_buff *skb) {
 		skb->destructor(skb);
 
 	skb_set_owner_r(skb, meta_sk);
-	out: if (tp->pending)
-		mpcb_put(mpcb);
+out:
+	if (tp->pending)
+		mpcb_put(mpcb); /* Taken by mtcp_hash_find */
 	return ans;
 }
 
@@ -1560,7 +1561,7 @@ int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb) {
 
 out:
 	if (tp->pending)
-		mpcb_put(mpcb);
+		mpcb_put(mpcb); /* Taken by mtcp_hash_find */
 	return ans;
 }
 
@@ -1870,7 +1871,7 @@ void mtcp_close(struct sock *master_sk, long timeout) {
 	mtcp_destroy_mpcb(mpcb);
 
 	if (!tcp_sk(master_sk)->mpc) {
-		mpcb_put(mpcb);
+		mpcb_put(mpcb); /* Taken by mpcb_get */
 		return tcp_close(master_sk, timeout);
 	}
 
@@ -1910,7 +1911,7 @@ void mtcp_close(struct sock *master_sk, long timeout) {
 
 	/* It is the last release_sock in its life. It will remove backlog. */
 	release_sock(meta_sk);
-	mpcb_put(mpcb);
+	mpcb_put(mpcb); /* Taken by mpcb_get */
 }
 
 #ifdef MTCP_DEBUG_PKTS_OUT

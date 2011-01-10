@@ -895,7 +895,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 #ifdef CONFIG_MTCP
 	mpcb = tp->mpcb;
 	if (tp->pending && !is_master_sk(tp) && tp->mpc) {
-		mpcb=mtcp_hash_find(tp->mtcp_loc_token);
+		mpcb = mtcp_hash_find(tp->mtcp_loc_token);
 		if (!mpcb) {
 			printk(KERN_ERR "mpcb not found, token %#x,"
 			       "master_sk:%d,pending:%d, %pI4->%pI4\n",
@@ -903,8 +903,9 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			       tp->pending, &inet_sk(sk)->inet_saddr,
 			       &inet_sk(sk)->inet_daddr);
 			BUG();
+		} else {
+			release_mpcb = 1;
 		}
-		else release_mpcb=1;
 	}
 	
 	if (tp->mpc && (!skb || skb->len!=0 ||  
@@ -965,7 +966,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	BUG_ON(!mpcb && !tp->pending);
 #endif
 	if (release_mpcb)
-		mpcb_put(mpcb);
+		mpcb_put(mpcb); /* Taken by mtcp_hash_find */
 #endif
 
 	eff_sacks = tp->rx_opt.num_sacks + tp->rx_opt.dsack;
