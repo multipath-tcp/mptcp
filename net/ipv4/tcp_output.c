@@ -690,31 +690,31 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 	if (ipv4_is_loopback(inet_sk(sk)->inet_daddr))
 		goto nomptcp;
 	if (is_master_sk(tp)) {
-		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 		
 		opts->options |= OPTION_MPC;
 		remaining-=TCPOLEN_MPC_ALIGNED;
 #ifdef CONFIG_MTCP_PM
-		opts->token=loc_token(mpcb);
+		opts->token = loc_token(mpcb);
 #endif
 		
-		/*We arrive here either when sending a SYN or a
-		  SYN+ACK when in SYN_SENT state (that is, tcp_synack_options
-		  is only called for syn+ack replied by a server, while this
-		  function is called when SYNs are sent by both parties and 
-		  are crossed)
-		  Due to this possibility, a slave subsocket may arrive here,
-		  and does not need to set the dataseq options, since
-		  there is no data in the segment*/
+		/* We arrive here either when sending a SYN or a
+		   SYN+ACK when in SYN_SENT state (that is, tcp_synack_options
+		   is only called for syn+ack replied by a server, while this
+		   function is called when SYNs are sent by both parties and
+		   are crossed)
+		   Due to this possibility, a slave subsocket may arrive here,
+		   and does not need to set the dataseq options, since
+		   there is no data in the segment */
 		BUG_ON(!mpcb);
 	}
 #ifdef CONFIG_MTCP_PM
 	else {
-		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 		opts->options |= OPTION_JOIN;
 		remaining-=TCPOLEN_JOIN_ALIGNED;
 		opts->token=tp->rx_opt.mtcp_rem_token;
-		opts->addr_id=mtcp_get_loc_addrid(mpcb, tp->path_index);
+		opts->addr_id = mtcp_get_loc_addrid(mpcb, tp->path_index);
 	}
 #endif
 nomptcp:
