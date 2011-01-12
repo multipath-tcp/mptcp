@@ -1156,7 +1156,7 @@ int mtcp_lookup_join(struct sk_buff *skb)
 				return 0;
 			if (opsize > length)
 				return 0; /* don't parse partial options */
-			if (opcode == TCPOPT_JOIN) {
+			if (opcode == TCPOPT_MP_JOIN) {
 				token = ntohl(*(u32*)ptr);
 				mpcb = mtcp_hash_find(token);
 				if (!mpcb) {

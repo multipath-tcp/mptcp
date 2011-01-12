@@ -572,27 +572,27 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		tp->rx_opt.dsack = 0;
 	}
 #ifdef CONFIG_MTCP
-	if (unlikely(OPTION_MPC & opts->options)) {
+	if (unlikely(OPTION_MP_CAPABLE & opts->options)) {
 #ifdef CONFIG_MTCP_PM
 		*ptr++ = htonl((TCPOPT_NOP  << 24) |
-			       (TCPOPT_MPC << 16) |
-			       (TCPOLEN_MPC << 8));
+			       (TCPOPT_MP_CAPABLE << 16) |
+			       (TCPOLEN_MP_CAPABLE << 8));
 		*ptr++ = htonl(opts->token);
 #else
-		*ptr++ = htonl((TCPOPT_MPC << 24) |
-			       (TCPOLEN_MPC << 16));
+		*ptr++ = htonl((TCPOPT_MP_CAPABLE << 24) |
+			       (TCPOLEN_MP_CAPABLE << 16));
 #endif
 	}
 
 #ifdef CONFIG_MTCP_PM
-	if (unlikely((OPTION_ADDR & opts->options) && opts->num_addr4)) {
+	if (unlikely((OPTION_ADD_ADDR & opts->options) && opts->num_addr4)) {
 		uint8_t *ptr8=(uint8_t*)ptr; /*We need a per-byte pointer here*/
 		int i;
-		for (i=TCPOLEN_ADDR(opts->num_addr4);
-		     i<TCPOLEN_ADDR_ALIGNED(opts->num_addr4);i++)
+		for (i=TCPOLEN_ADD_ADDR(opts->num_addr4);
+		     i<TCPOLEN_ADD_ADDR_ALIGNED(opts->num_addr4);i++)
 			*ptr8++ = TCPOPT_NOP;
-		*ptr8++ = TCPOPT_ADDR;
-		*ptr8++ = TCPOLEN_ADDR(opts->num_addr4);
+		*ptr8++ = TCPOPT_ADD_ADDR;
+		*ptr8++ = TCPOLEN_ADD_ADDR(opts->num_addr4);
 		for (i=0;i<opts->num_addr4;i++) {
 			*ptr8++ = opts->addr4[i].id;
 			*ptr8++ = 64;
@@ -602,18 +602,18 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		ptr = (__be32*)ptr8;
 	}
 
-	if (unlikely(OPTION_JOIN & opts->options)) {
+	if (unlikely(OPTION_MP_JOIN & opts->options)) {
 		*ptr++ = htonl((TCPOPT_NOP << 24) |
-			       (TCPOPT_JOIN << 16) |
-			       (TCPOLEN_JOIN << 8) |
+			       (TCPOPT_MP_JOIN << 16) |
+			       (TCPOLEN_MP_JOIN << 8) |
 			       (opts->token >> 24));
 		*ptr++ = htonl((opts->token<<8) |
 			       opts->addr_id);
 	}
 #endif
-	if (OPTION_DSN & opts->options) {
-		*ptr++ = htonl((TCPOPT_DSN << 24) |
-			       (TCPOLEN_DSN << 16) |
+	if (OPTION_DSN_MAP & opts->options) {
+		*ptr++ = htonl((TCPOPT_DSN_MAP << 24) |
+			       (TCPOLEN_DSN_MAP << 16) |
 			       opts->data_len);
 		*ptr++ = htonl(opts->sub_seq);
 		*ptr++ = htonl(opts->data_seq);
@@ -625,11 +625,11 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			       (TCPOLEN_DATA_ACK));
 		*ptr++ = htonl(opts->data_ack);
 	}
-	if (OPTION_DFIN & opts->options) {
+	if (OPTION_DATA_FIN & opts->options) {
 		*ptr++ = htonl((TCPOPT_NOP << 24) |
 			       (TCPOPT_NOP << 16) |
-			       (TCPOPT_DFIN << 8) |
-			       (TCPOLEN_DFIN));
+			       (TCPOPT_DATA_FIN << 8) |
+			       (TCPOLEN_DATA_FIN));
 	}
 #endif
 }
@@ -692,8 +692,8 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 	if (is_master_sk(tp)) {
 		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 		
-		opts->options |= OPTION_MPC;
-		remaining-=TCPOLEN_MPC_ALIGNED;
+		opts->options |= OPTION_MP_CAPABLE;
+		remaining-=TCPOLEN_MP_CAPABLE_ALIGNED;
 #ifdef CONFIG_MTCP_PM
 		opts->token = loc_token(mpcb);
 #endif
@@ -711,8 +711,8 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 #ifdef CONFIG_MTCP_PM
 	else {
 		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
-		opts->options |= OPTION_JOIN;
-		remaining-=TCPOLEN_JOIN_ALIGNED;
+		opts->options |= OPTION_MP_JOIN;
+		remaining-=TCPOLEN_MP_JOIN_ALIGNED;
 		opts->token=tp->rx_opt.mtcp_rem_token;
 		opts->addr_id = mtcp_get_loc_addrid(mpcb, tp->path_index);
 	}
@@ -845,14 +845,14 @@ static unsigned tcp_synack_options(struct sock *sk,
 	}
 
 	if (unlikely(req->saw_mpc)) {
-		opts->options |= OPTION_MPC;
-		remaining -= TCPOLEN_MPC_ALIGNED;
+		opts->options |= OPTION_MP_CAPABLE;
+		remaining -= TCPOLEN_MP_CAPABLE_ALIGNED;
 		#ifdef CONFIG_MTCP_PM
 			opts->token = req->mtcp_loc_token;
 		#endif
-		opts->options |= OPTION_DSN;
+		opts->options |= OPTION_DSN_MAP;
 		opts->data_seq = 0;
-		remaining -= TCPOLEN_DSN_ALIGNED;
+		remaining -= TCPOLEN_DSN_MAP_ALIGNED;
 	}
 
 	return MAX_TCP_OPTION_SPACE - remaining;
@@ -915,16 +915,16 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			opts->data_len=tcb->data_len;
 			opts->sub_seq=tcb->sub_seq-tp->snt_isn;
 		}
-		opts->options |= OPTION_DSN;
-		size += TCPOLEN_DSN_ALIGNED;		
+		opts->options |= OPTION_DSN_MAP;
+		size += TCPOLEN_DSN_MAP_ALIGNED;		
 	}
 	/*we can have mpc==1 and mpcb==NULL if tp is the master_sk
 	  and is established but not yet accepted.*/
 	if (tp->mpc && mpcb && test_bit(MPCB_FLAG_FIN_ENQUEUED,
 					&mpcb->flags) &&
 	    (!skb || TCP_SKB_CB(skb)->end_data_seq==mpcb->tp.write_seq)) {
-		opts->options |= OPTION_DFIN;
-		size += TCPOLEN_DFIN_ALIGNED;		
+		opts->options |= OPTION_DATA_FIN;
+		size += TCPOLEN_DATA_FIN_ALIGNED;		
 	}
 	if (tp->mpc) {
 		/*If we are at the server side, and the accept syscall has not
@@ -944,22 +944,22 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	if (tp->mpc && mpcb) {
 		if (unlikely(mpcb->addr_unsent)) {
 			const unsigned remaining = MAX_TCP_OPTION_SPACE - size;
-			if (remaining<TCPOLEN_ADDR_BASE)
-				opts->num_addr4=0;
+			if (remaining < TCPOLEN_ADD_ADDR_BASE)
+				opts->num_addr4 = 0;
 			else
-				opts->num_addr4=min_t(unsigned, 
-						      mpcb->addr_unsent,
-						      (remaining-
-						       TCPOLEN_ADDR_BASE) /
-						      TCPOLEN_ADDR_PERBLOCK);
-			/*If no space to send the option, just wait next
-			  segment*/
+				opts->num_addr4 = min_t(unsigned,
+							mpcb->addr_unsent,
+							(remaining -
+							TCPOLEN_ADD_ADDR_BASE) /
+							TCPOLEN_ADD_ADDR_PERBLOCK);
+			/* If no space to send the option, just wait next
+			   segment */
 			if (opts->num_addr4) {
-				opts->options |= OPTION_ADDR;
-				opts->addr4=mpcb->addr4+mpcb->num_addr4-
-					mpcb->addr_unsent;
-				if (skb) mpcb->addr_unsent-=opts->num_addr4;
-				size += TCPOLEN_ADDR_ALIGNED(opts->num_addr4);
+				opts->options |= OPTION_ADD_ADDR;
+				opts->addr4 = mpcb->addr4 + mpcb->num_addr4 -
+						mpcb->addr_unsent;
+				if (skb) mpcb->addr_unsent -= opts->num_addr4;
+				size += TCPOLEN_ADD_ADDR_ALIGNED(opts->num_addr4);
 			}
 		}
 	}

@@ -30,13 +30,12 @@
 #define OPTION_MD5		(1 << 2)
 #define OPTION_WSCALE		(1 << 3)
 #define OPTION_COOKIE_EXTENSION	(1 << 4)
-#define OPTION_MPC              (1 << 5)
-#define OPTION_TOKEN            (1 << 6)
-#define OPTION_DSN              (1 << 7)
-#define OPTION_ADDR             (1 << 8)
-#define OPTION_JOIN             (1 << 9)
-#define OPTION_DATA_ACK         (1 << 10)
-#define OPTION_DFIN             (1 << 11)
+#define OPTION_MP_CAPABLE       (1 << 5)
+#define OPTION_DSN_MAP          (1 << 6)
+#define OPTION_DATA_FIN         (1 << 7)
+#define OPTION_DATA_ACK         (1 << 8)
+#define OPTION_ADD_ADDR         (1 << 9)
+#define OPTION_MP_JOIN          (1 << 10)
 
 struct tcp_out_options {
 	u16 options;		/* bit field of OPTION_* */

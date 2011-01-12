@@ -169,14 +169,14 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOPT_MD5SIG		19	/* MD5 Signature (RFC2385) */
 #define TCPOPT_COOKIE		253	/* Cookie extension (experimental) */
 
-#define TCPOPT_MPC   	        30
-#define TCPOPT_DSN		31
-#define TCPOPT_DFIN		32
-#define TCPOPT_DATA_ACK   	33
+#define TCPOPT_MP_CAPABLE	30
+#define TCPOPT_DSN_MAP		31
+#define TCPOPT_DATA_FIN		32
+#define TCPOPT_DATA_ACK		33
 
-#define TCPOPT_ADDR             60
-#define TCPOPT_REMADR           61
-#define TCPOPT_JOIN      	62
+#define TCPOPT_ADD_ADDR		60
+#define TCPOPT_REMOVE_ADDR	61
+#define TCPOPT_MP_JOIN		62
 
 /*
  *     TCP option lengths
@@ -191,18 +191,22 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_COOKIE_PAIR    3	/* Cookie pair header extension */
 #define TCPOLEN_COOKIE_MIN     (TCPOLEN_COOKIE_BASE+TCP_COOKIE_MIN)
 #define TCPOLEN_COOKIE_MAX     (TCPOLEN_COOKIE_BASE+TCP_COOKIE_MAX)
+
 #ifdef CONFIG_MTCP_PM
-#define TCPOLEN_ADDR(num_addr) (2+6*(num_addr))
-#define TCPOLEN_ADDR_BASE      2
-#define TCPOLEN_ADDR_PERBLOCK  6
-#define TCPOLEN_JOIN           7
-#define TCPOLEN_MPC            7
+	#define TCPOLEN_MP_CAPABLE	7
 #else
-#define TCPOLEN_MPC            4
+	#define TCPOLEN_MP_CAPABLE	4
 #endif
-#define TCPOLEN_DSN            12
-#define TCPOLEN_DFIN           2
-#define TCPOLEN_DATA_ACK       6
+#define TCPOLEN_DSN_MAP		12
+#define TCPOLEN_DATA_FIN	2
+#define TCPOLEN_DATA_ACK	6
+
+#define TCPOLEN_ADD_ADDR(num_addr)	(TCPOLEN_ADD_ADDR_BASE +	\
+					 TCPOLEN_ADD_ADDR_PERBLOCK *	\
+					 (num_addr))
+#define TCPOLEN_ADD_ADDR_BASE		2
+#define TCPOLEN_ADD_ADDR_PERBLOCK	6
+#define TCPOLEN_MP_JOIN		7
 
 /* But this is what stacks really send out. */
 #define TCPOLEN_TSTAMP_ALIGNED		12
@@ -213,16 +217,20 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_SACK_PERBLOCK		8
 #define TCPOLEN_MD5SIG_ALIGNED		20
 #define TCPOLEN_MSS_ALIGNED		4
+
 #ifdef CONFIG_MTCP_PM
-#define TCPOLEN_ADDR_ALIGNED(num_addr) ((5+6*(num_addr)) & (~3))
-#define TCPOLEN_JOIN_ALIGNED            8
-#define TCPOLEN_MPC_ALIGNED             8
+#define TCPOLEN_MP_CAPABLE_ALIGNED	8
 #else
-#define TCPOLEN_MPC_ALIGNED             4
+#define TCPOLEN_MP_CAPABLE_ALIGNED	4
 #endif
-#define TCPOLEN_DSN_ALIGNED             12
-#define TCPOLEN_DFIN_ALIGNED            4
-#define TCPOLEN_DATA_ACK_ALIGNED        8
+#define TCPOLEN_DSN_MAP_ALIGNED		12
+#define TCPOLEN_DATA_FIN_ALIGNED	4
+#define TCPOLEN_DATA_ACK_ALIGNED	8
+
+#define TCPOLEN_ADD_ADDR_ALIGNED(num_addr)	((TCPOLEN_ADD_ADDR_BASE +      \
+						  TCPOLEN_ADD_ADDR_PERBLOCK *  \
+						  (num_addr) + 3) & (~3))
+#define TCPOLEN_MP_JOIN_ALIGNED		8
 
 /* Flags in tp->nonagle */
 #define TCP_NAGLE_OFF		1	/* Nagle's algo is disabled */

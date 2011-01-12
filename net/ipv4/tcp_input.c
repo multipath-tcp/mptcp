@@ -4090,8 +4090,8 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				}
 				break;
 #ifdef CONFIG_MTCP
-			case TCPOPT_MPC:
-				if (opsize!=TCPOLEN_MPC) {
+			case TCPOPT_MP_CAPABLE:
+				if (opsize!=TCPOLEN_MP_CAPABLE) {
 					mtcp_debug("multipath opt:bad option "
 					           "size\n");
 					break;
@@ -4107,7 +4107,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				break;
 				
 #ifdef CONFIG_MTCP_PM
-			case TCPOPT_ADDR:
+			case TCPOPT_ADD_ADDR:
 				if (!mopt) {
 					printk(KERN_ERR "MPTCP addresses "
 					       "received, but no mptcp state"
@@ -4129,11 +4129,11 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				}
 				break;
 
-			case TCPOPT_JOIN:
+			case TCPOPT_MP_JOIN:
 				break;
 #endif /*CONFIG_MTCP_PM*/				
-			case TCPOPT_DSN:
-				if (opsize!=TCPOLEN_DSN) {
+			case TCPOPT_DSN_MAP:
+				if (opsize!=TCPOLEN_DSN_MAP) {
 					mtcp_debug("dataseq opt:bad option "
 					           "size\n");
 					break;
@@ -4152,12 +4152,12 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 					TCP_SKB_CB(skb)->seq;
 				saw_dsn=1;
 				break;
-			case TCPOPT_DFIN:
+			case TCPOPT_DATA_FIN:
 				/*the dsn opt MUST be put
 				  before the dfin (to know 
 				  the its data seqnum*/
 				BUG_ON(!saw_dsn);
-				if (opsize!=TCPOLEN_DFIN) {
+				if (opsize!=TCPOLEN_DATA_FIN) {
 					mtcp_debug("dfin opt:bad option "
 						   "size\n");
 					break;

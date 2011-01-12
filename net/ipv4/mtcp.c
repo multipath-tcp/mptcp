@@ -1441,7 +1441,7 @@ static int mtcp_check_dfin(struct sk_buff *skb) {
 				return 0;
 			if (opsize > length)
 				return 0; /* don't parse partial options */
-			if (opcode == TCPOPT_DFIN)
+			if (opcode == TCPOPT_DATA_FIN)
 				return 1;
 			ptr += opsize - 2;
 			length -= opsize;
