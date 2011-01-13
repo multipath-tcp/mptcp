@@ -891,6 +891,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		opts->tsecr = tp->rx_opt.ts_recent;
 		size += TCPOLEN_TSTAMP_ALIGNED;
 	}
+
 	eff_sacks = tp->rx_opt.num_sacks + tp->rx_opt.dsack;
 	if (unlikely(eff_sacks)) {
 		const unsigned remaining = MAX_TCP_OPTION_SPACE - size;
@@ -900,6 +901,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			      TCPOLEN_SACK_PERBLOCK);
 		size += TCPOLEN_SACK_BASE_ALIGNED +
 			opts->num_sack_blocks * TCPOLEN_SACK_PERBLOCK;
+	}
 
 #ifdef CONFIG_MTCP
 	mpcb = tp->mpcb;
@@ -915,7 +917,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		}
 		else release_mpcb=1;
 	}
-
+	
 	if (tp->mpc && (!skb || skb->len!=0 ||  
 			(tcb->flags & TCPHDR_FIN))) {
 		if (tcb && tcb->data_len) { /*Ignore dataseq if data_len is 0*/
@@ -929,7 +931,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	/*we can have mpc==1 and mpcb==NULL if tp is the master_sk
 	  and is established but not yet accepted.*/
 	if (tp->mpc && mpcb && test_bit(MPCB_FLAG_FIN_ENQUEUED,
-				&mpcb->flags) &&
+					&mpcb->flags) &&
 	    (!skb || TCP_SKB_CB(skb)->end_data_seq==mpcb->tp.write_seq)) {
 		opts->options |= OPTION_DFIN;
 		size += TCPOLEN_DFIN_ALIGNED;		
@@ -976,8 +978,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	if (release_mpcb)
 		mpcb_put(mpcb);
 #endif
-	}
-
+	
 	if (size>MAX_TCP_OPTION_SPACE) {
 		printk(KERN_ERR "exceeded option space, options:%#x\n",
 		       opts->options);
