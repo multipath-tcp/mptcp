@@ -892,17 +892,6 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		size += TCPOLEN_TSTAMP_ALIGNED;
 	}
 
-	eff_sacks = tp->rx_opt.num_sacks + tp->rx_opt.dsack;
-	if (unlikely(eff_sacks)) {
-		const unsigned remaining = MAX_TCP_OPTION_SPACE - size;
-		opts->num_sack_blocks =
-			min_t(unsigned, eff_sacks,
-			      (remaining - TCPOLEN_SACK_BASE_ALIGNED) /
-			      TCPOLEN_SACK_PERBLOCK);
-		size += TCPOLEN_SACK_BASE_ALIGNED +
-			opts->num_sack_blocks * TCPOLEN_SACK_PERBLOCK;
-	}
-
 #ifdef CONFIG_MTCP
 	mpcb = tp->mpcb;
 	if (tp->pending && !is_master_sk(tp) && tp->mpc) {
@@ -978,6 +967,21 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	if (release_mpcb)
 		mpcb_put(mpcb);
 #endif
+
+	eff_sacks = tp->rx_opt.num_sacks + tp->rx_opt.dsack;
+	if (unlikely(eff_sacks)) {
+		const unsigned remaining = MAX_TCP_OPTION_SPACE - size;
+		if (remaining<TCPOLEN_SACK_BASE_ALIGNED)
+			opts->num_sack_blocks=0;
+		else
+			opts->num_sack_blocks =
+				min_t(unsigned, eff_sacks,
+				      (remaining - TCPOLEN_SACK_BASE_ALIGNED) /
+				      TCPOLEN_SACK_PERBLOCK);
+		if (opts->num_sack_blocks)
+			size += TCPOLEN_SACK_BASE_ALIGNED +
+				opts->num_sack_blocks * TCPOLEN_SACK_PERBLOCK;
+	}
 	
 	if (size>MAX_TCP_OPTION_SPACE) {
 		printk(KERN_ERR "exceeded option space, options:%#x\n",
