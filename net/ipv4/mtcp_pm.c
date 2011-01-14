@@ -32,8 +32,7 @@ extern struct ip_options *tcp_v4_save_options(struct sock *sk,
 					      struct sk_buff *skb);
 extern void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags);
 extern void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
-		       const struct tcp_out_options *opts,
-		       __u8 **md5_hash);
+			      struct tcp_out_options *opts);
 extern void tcp_v4_send_ack(struct sk_buff *skb, u32 seq, u32 ack,
 			    u32 win, u32 ts, int oif,
 			    struct tcp_md5sig_key *key,
@@ -583,7 +582,6 @@ static struct sk_buff *mtcp_make_synack(struct sock *master_sk,
 	struct tcp_out_options opts;
 	struct sk_buff *skb;
 	struct tcp_md5sig_key *md5;
-	__u8 *md5_hash_location;
 	int mss;
 
 	skb = alloc_skb(MAX_TCP_HEADER + 15, GFP_ATOMIC);
@@ -642,7 +640,7 @@ static struct sk_buff *mtcp_make_synack(struct sock *master_sk,
 	
 	/* RFC1323: The window in SYN & SYN/ACK segments is never scaled. */
 	th->window = htons(min(req->rcv_wnd, 65535U));
-	tcp_options_write((__be32 *)(th + 1), NULL, &opts, &md5_hash_location);
+	tcp_options_write((__be32 *)(th + 1), NULL, &opts);
 	th->doff = (tcp_header_size >> 2);
 
 	return skb;
