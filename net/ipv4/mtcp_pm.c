@@ -918,7 +918,7 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 			 * from another data.
 			 */
 			tmp_opt.ts_recent_stamp = get_seconds() - ((TCP_TIMEOUT_INIT/HZ)<<req->retrans);
-			paws_reject = tcp_paws_check(&tmp_opt, th->rst);
+			paws_reject = tcp_paws_reject(&tmp_opt, th->rst);
 		}
 	}
 
