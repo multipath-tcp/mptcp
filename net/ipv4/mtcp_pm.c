@@ -28,6 +28,9 @@
 	jhash_1word(token,0)%MTCP_HASH_SIZE
 
 
+/*This couple of extern functions should be replaced ASAP
+  with more modular things, because they become quickly a 
+  nightmare when we want to upgrade to recent kernel versions.*/
 extern struct ip_options *tcp_v4_save_options(struct sock *sk,
 					      struct sk_buff *skb);
 extern void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags);
@@ -37,6 +40,8 @@ extern void tcp_v4_send_ack(struct sk_buff *skb, u32 seq, u32 ack,
 			    u32 win, u32 ts, int oif,
 			    struct tcp_md5sig_key *key,
 			    int reply_flags);
+extern void __tcp_v4_send_check(struct sk_buff *skb,
+				__be32 saddr, __be32 daddr);
 
 
 static struct list_head tk_hashtable[MTCP_HASH_SIZE];
@@ -666,13 +671,7 @@ static int __mtcp_v4_send_synack(struct sock *master_sk,
 	skb = mtcp_make_synack(master_sk, dst, req);
 
 	if (skb) {
-		struct tcphdr *th = tcp_hdr(skb);
-
-		th->check = tcp_v4_check(skb->len,
-					 ireq->loc_addr,
-					 ireq->rmt_addr,
-					 csum_partial((char *)th, skb->len,
-						      skb->csum));
+		__tcp_v4_send_check(skb,ireq->loc_addr,ireq->rmt_addr);
 
 		err = ip_build_and_send_pkt(skb, master_sk, ireq->loc_addr,
 					    ireq->rmt_addr,
