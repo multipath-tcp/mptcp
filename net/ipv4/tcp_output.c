@@ -2067,8 +2067,9 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 				break;
 			subtp=tcp_sk(subsk);
 		}
-		else
+		else {
 			subsk=sk; subtp=tp;
+		}
 
 		/*Since all subsocks are locked before calling the scheduler,
 		  the tcp_send_head should not change.*/
