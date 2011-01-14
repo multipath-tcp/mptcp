@@ -1284,10 +1284,7 @@ int mtcp_queue_skb(struct sock *sk, struct sk_buff *skb) {
 	}
 
 	queued:
-	/* Uncharge the old socket, and then charge the new one */
-	if (skb->destructor)
-		skb->destructor(skb);
-
+	/* Reassign the skb to the meta-socket */
 	skb_set_owner_r(skb, meta_sk);
 out:
 	if (tp->pending)
