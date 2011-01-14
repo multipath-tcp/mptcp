@@ -644,6 +644,9 @@ choice
 	config DEFAULT_WESTWOOD
 		bool "Westwood" if TCP_CONG_WESTWOOD=y
 
+	config DEFAULT_COUPLED
+		bool "Coupled" if TCP_CONG_COUPLED=y
+
 	config DEFAULT_RENO
 		bool "Reno"
 
@@ -665,6 +668,7 @@ config DEFAULT_TCP_CONG
 	default "vegas" if DEFAULT_VEGAS
 	default "westwood" if DEFAULT_WESTWOOD
 	default "veno" if DEFAULT_VENO
+	default "coupled" if DEFAULT_COUPLED
 	default "reno" if DEFAULT_RENO
 	default "cubic"
 
