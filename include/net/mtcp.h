@@ -59,6 +59,27 @@ void print_debug_array(void);
 void freeze_rcv_queue(struct sock *sk, const char *func_name);
 #endif
 
+#ifdef MTCP_DEBUG_TIMER
+static void mtcp_debug_timeout(unsigned long data) 
+{
+	printk(KERN_ERR "MPTCP debug timeout ! Function %s\n",
+	       (char *)data);
+	BUG();
+}
+DEFINE_TIMER(mtcp_debug_timer,mtcp_debug_timeout,0,0);
+#define mtcp_start_debug_timer(delay)					\
+	do {								\
+		mtcp_debug_timer.expires=jiffies+delay*HZ;		\
+		mtcp_debug_timer.data=(unsigned long)__FUNCTION__;	\
+		add_timer(&mtcp_debug_timer);				\
+	} while (0)
+
+static void mtcp_stop_debug_timer(void)
+{
+	del_timer(&mtcp_debug_timer);
+}
+#endif
+
 extern struct proto mtcpsub_prot;
 
 #define MPCB_FLAG_SERVER_SIDE 	0 /* This mpcb belongs to a server side
