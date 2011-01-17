@@ -1171,7 +1171,8 @@ int mtcp_queue_skb(struct sock *sk, struct sk_buff *skb) {
 		/* Pure subflow FIN (without DFIN)
 		   just update subflow and return */
 		++tp->copied_seq;
-		return MTCP_EATEN;
+		ans = MTCP_EATEN;
+		goto out;
 	}
 
 	/* In all cases, we remove it from the subsock, so copied_seq
@@ -1283,7 +1284,7 @@ int mtcp_queue_skb(struct sock *sk, struct sk_buff *skb) {
 		goto queued;
 	}
 
-	queued:
+queued:
 	/* Reassign the skb to the meta-socket */
 	skb_set_owner_r(skb, meta_sk);
 out:
