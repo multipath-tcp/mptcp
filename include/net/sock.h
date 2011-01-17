@@ -1574,11 +1574,7 @@ static inline unsigned long sock_wspace(struct sock *sk)
 	return amt;
 }
 
-static inline void sk_wake_async(struct sock *sk, int how, int band)
-{
-	if (sock_flag(sk, SOCK_FASYNC))
-		sock_wake_async(sk->sk_socket, how, band);
-}
+void sk_wake_async(struct sock *sk, int how, int band);
 
 #define SOCK_MIN_SNDBUF 2048
 #define SOCK_MIN_RCVBUF 256

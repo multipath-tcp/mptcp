@@ -1554,9 +1554,9 @@ struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 				     unsigned long data_len, int noblock,
 				     int *errcode)
 {
-	struct sock *meta_sk=((sk->sk_protocol==IPPROTO_TCP ||
-			       sk->sk_protocol==IPPROTO_MTCPSUB) &&
-			      tcp_sk(sk)->mpcb)?
+	struct sock *meta_sk = ((sk->sk_protocol == IPPROTO_TCP ||
+				 sk->sk_protocol == IPPROTO_MTCPSUB) &&
+				tcp_sk(sk)->mpcb)?
 		(struct sock*)tcp_sk(sk)->mpcb:
 		sk;			      
 	struct sk_buff *skb;
@@ -2543,6 +2543,17 @@ void proto_unregister(struct proto *prot)
 	}
 }
 EXPORT_SYMBOL(proto_unregister);
+
+void sk_wake_async(struct sock *sk, int how, int band)
+{
+	struct sock *meta_sk = ((sk->sk_protocol==IPPROTO_TCP ||
+				 sk->sk_protocol==IPPROTO_MTCPSUB) &&
+				tcp_sk(sk)->mpcb)?
+		(struct sock*)tcp_sk(sk)->mpcb:
+		sk;	      
+	if (sock_flag(sk, SOCK_FASYNC))
+		sock_wake_async(meta_sk->sk_socket, how, band);
+}
 
 #ifdef CONFIG_PROC_FS
 static void *proto_seq_start(struct seq_file *seq, loff_t *pos)
