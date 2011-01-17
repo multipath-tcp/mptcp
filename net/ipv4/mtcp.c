@@ -1152,6 +1152,7 @@ int mtcp_queue_skb(struct sock *sk, struct sk_buff *skb) {
 	meta_tp = tcp_sk(meta_sk);
 
 	if (!tp->mpc || !mpcb) {
+		skb_set_owner_r(skb, sk);
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
 		/* This is the only case of MTCP_QUEUED where
 		  we can return directly, without goto queued or goto out.

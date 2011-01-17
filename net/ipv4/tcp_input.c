@@ -4950,7 +4950,6 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 				goto drop;
 			}
 			
-			skb_set_owner_r(skb, sk);
 			mtcp_eaten=mtcp_queue_skb(sk,skb);
 		}
 		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
