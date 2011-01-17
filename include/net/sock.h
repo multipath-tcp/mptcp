@@ -290,7 +290,6 @@ struct sock {
 	__u32			sk_rxhash;
 #endif
 	unsigned long 		sk_flags;
-	unsigned long		sock_flags;
 	unsigned long	        sk_lingertime;
 	struct sk_buff_head	sk_error_queue;
 	struct proto		*sk_prot_creator;

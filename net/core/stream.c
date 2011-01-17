@@ -28,17 +28,23 @@
  */
 void sk_stream_write_space(struct sock *sk)
 {
-	struct socket *sock = sk->sk_socket;
+	struct socket *sock;
 	struct socket_wq *wq;
 
+	if ((sk->sk_protocol==IPPROTO_TCP || sk->sk_protocol==IPPROTO_MTCPSUB)
+	    && tcp_sk(sk)->mpcb)
+		sock=((struct sock*)tcp_sk(sk)->mpcb)->sk_socket;
+	else
+		sock=sk->sk_socket;
+
 	if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk) && sock) {
-		clear_bit(SOCK_NOSPACE, &sk->sock_flags);
+		clear_bit(SOCK_NOSPACE, &sock->flags);
 
 		rcu_read_lock();
 		wq = rcu_dereference(sk->sk_wq);
 		if (wq_has_sleeper(wq))
 			wake_up_interruptible_poll(&wq->wait, POLLOUT |
-						POLLWRNORM | POLLWRBAND);
+						   POLLWRNORM | POLLWRBAND);
 		if (wq && wq->fasync_list && !(sk->sk_shutdown & SEND_SHUTDOWN))
 			sock_wake_async(sock, SOCK_WAKE_SPACE, POLL_OUT);
 		rcu_read_unlock();
@@ -128,12 +134,17 @@ int sk_stream_wait_memory(struct sock *sk, long *timeo_p)
 	long vm_wait = 0;
 	long current_timeo = *timeo_p;
 	DEFINE_WAIT(wait);
+	struct sock *meta_sk=((sk->sk_protocol==IPPROTO_TCP || 
+			       sk->sk_protocol==IPPROTO_MTCPSUB)
+			      && tcp_sk(sk)->mpcb)?
+		((struct sock*)tcp_sk(sk)->mpcb):sk;
+
 
 	if (sk_stream_memory_free(sk))
 		current_timeo = vm_wait = (net_random() % (HZ / 5)) + 2;
 
 	while (1) {
-		set_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
+		set_bit(SOCK_ASYNC_NOSPACE, &meta_sk->sk_socket->flags);
 
 		prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
 
@@ -143,11 +154,11 @@ int sk_stream_wait_memory(struct sock *sk, long *timeo_p)
 			goto do_nonblock;
 		if (signal_pending(current))
 			goto do_interrupted;
-		clear_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
+		clear_bit(SOCK_ASYNC_NOSPACE, &meta_sk->sk_socket->flags);
 		if (sk_stream_memory_free(sk) && !vm_wait)
 			break;
 
-		set_bit(SOCK_NOSPACE, &sk->sock_flags);
+		set_bit(SOCK_NOSPACE, &meta_sk->sk_socket->flags);
 		sk->sk_write_pending++;
 		sk_wait_event(sk, &current_timeo, sk->sk_err ||
 						  (sk->sk_shutdown & SEND_SHUTDOWN) ||

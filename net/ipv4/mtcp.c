@@ -231,7 +231,7 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb, uint32_t path_indices) {
 			struct sockaddr_in loculid_in, remulid_in;
 			struct sockaddr_in6 loculid_in6, remulid_in6;
 			int newpi = i + 1;
-			/* A new socket must be created a*/
+			/* A new socket must be created */
 			retval = sock_create_kern(meta_sk->sk_family,
 					SOCK_STREAM, IPPROTO_MTCPSUB, &sock);
 			if (retval < 0) {

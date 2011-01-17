@@ -467,7 +467,8 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 			} else {  /* send SIGIO later */
 				set_bit(SOCK_ASYNC_NOSPACE,
 					&mpcb_sk->sk_socket->flags);
-				set_bit(SOCK_NOSPACE, &mpcb_sk->sock_flags);
+				set_bit(SOCK_NOSPACE, 
+					&mpcb_sk->sk_socket->flags);
 				
 				/* Race breaker. If space is freed after
 				 * wspace test but before the flags are set,
@@ -557,7 +558,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 			else {  /* send SIGIO later */
 				set_bit(SOCK_ASYNC_NOSPACE,
 					&sk->sk_socket->flags);
-				set_bit(SOCK_NOSPACE, &sk->sock_flags);
+				set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 				
 				/* Race breaker. If space is freed after
 				 * wspace test but before the flags are set,
@@ -981,15 +982,10 @@ new_segment:
 		continue;
 
 wait_for_sndbuf:
-		set_bit(SOCK_NOSPACE, &sk->sock_flags);
+		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 wait_for_memory:
 		if (copied)
 			tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
-
-		if (!sk->sk_wq) {
-			printk(KERN_ERR "meta-sk:%d\n",is_meta_sk(sk));
-			BUG();
-		}
 		if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
 			goto do_error;
 
