@@ -4708,7 +4708,7 @@ static void tcp_ofo_queue(struct sock *sk)
 		if (tcp_hdr(skb)->fin)
 			tcp_fin(skb, sk, tcp_hdr(skb));
 #ifdef CONFIG_MTCP
-		if (tp->mpc && mtcp_eaten==MTCP_EATEN)
+		if (mtcp_eaten==MTCP_EATEN)
 			__kfree_skb(skb);
 #endif				
 	}
@@ -6066,7 +6066,6 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 				/* Bulk data transfer: receiver */
 				__skb_pull(skb, tcp_header_len);
 				mtcp_eaten=mtcp_queue_skb(sk,skb);
-				skb_set_owner_r(skb, sk);
 				tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 			}
 			
@@ -6083,7 +6082,7 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			if (tp->rcv_nxt != tp->rcv_wup)
 				__tcp_ack_snd_check(sk, 0);
 no_ack:
-			if (eaten || mtcp_eaten)
+			if (eaten || mtcp_eaten == MTCP_EATEN)
 				__kfree_skb(skb);
 			else {
 				mtcp_debug("Will wake the master sk up");
