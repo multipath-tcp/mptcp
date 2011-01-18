@@ -531,39 +531,32 @@ static unsigned mtcp_synack_options(struct request_sock *req,
 				    struct tcp_out_options *opts,
 				    struct tcp_md5sig_key **md5)
 {
-	unsigned size = 0;
-	struct inet_request_sock *ireq = inet_rsk(req);
-	char doing_ts;
+	struct inet_request_sock *ireq = inet_rsk(req);	
+	unsigned remaining = MAX_TCP_OPTION_SPACE;
 
 	*md5 = NULL;
 
-	/* we can't fit any SACK blocks in a packet with MD5 + TS
-	   options. There was discussion about disabling SACK rather than TS in
-	   order to fit in better with old, buggy kernels, but that was deemed
-	   to be unnecessary. */
-	doing_ts = ireq->tstamp_ok && !(*md5 && ireq->sack_ok);
-
 	opts->mss = mss;
-	size += TCPOLEN_MSS_ALIGNED;
+	remaining -= TCPOLEN_MSS_ALIGNED;
 
 	if (likely(ireq->wscale_ok)) {
 		opts->ws = ireq->rcv_wscale;
-		if(likely(opts->ws))
-			size += TCPOLEN_WSCALE_ALIGNED;
+		opts->options |= OPTION_WSCALE;
+		remaining -= TCPOLEN_WSCALE_ALIGNED;
 	}
-	if (likely(doing_ts)) {
+	if (likely(ireq->tstamp_ok)) {
 		opts->options |= OPTION_TS;
 		opts->tsval = TCP_SKB_CB(skb)->when;
 		opts->tsecr = req->ts_recent;
-		size += TCPOLEN_TSTAMP_ALIGNED;
+		remaining -= TCPOLEN_TSTAMP_ALIGNED;
 	}
 	if (likely(ireq->sack_ok)) {
 		opts->options |= OPTION_SACK_ADVERTISE;
-		if (unlikely(!doing_ts))
-			size += TCPOLEN_SACKPERM_ALIGNED;
+		if (unlikely(!ireq->tstamp_ok))
+			remaining -= TCPOLEN_SACKPERM_ALIGNED;
 	}
 
-	return size;
+	return MAX_TCP_OPTION_SPACE - remaining;
 }
 
 static __inline__ void
@@ -622,8 +615,8 @@ static struct sk_buff *mtcp_make_synack(struct sock *master_sk,
 
 	TCP_SKB_CB(skb)->when = tcp_time_stamp;
 	tcp_header_size = mtcp_synack_options(req, mss,
-					      skb, &opts, &md5) +
-		sizeof(struct tcphdr);       
+					      skb, &opts, &md5) 
+		+ sizeof(*th);
 	
 	skb_push(skb, tcp_header_size);
 	skb_reset_transport_header(skb);
