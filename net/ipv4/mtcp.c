@@ -591,7 +591,7 @@ void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 		}
 
 	if ((struct sock *) tp == mpcb->master_sk) {
-		printk(KERN_ERR "%s: BUG 54 - setting master_sk == NULL\n",
+		mtcp_debug("%s: Debugging #54 - setting master_sk == NULL\n",
 				__FUNCTION__);
 		mpcb->master_sk = NULL;
 	}
