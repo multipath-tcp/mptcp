@@ -103,11 +103,19 @@ void freeze_rcv_queue(struct sock *sk, const char *func_name)
 #ifdef CONFIG_SYSCTL
 
 int sysctl_mptcp_mss = MPTCP_MSS;
+int sysctl_mptcp_ndiffports=1;
 
 static ctl_table mptcp_table[] = {
 	{
 		.procname = "mptcp_mss",
 		.data = &sysctl_mptcp_mss,
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.proc_handler = &proc_dointvec
+	},
+	{
+		.procname = "mptcp_ndiffports",
+		.data = &sysctl_mptcp_ndiffports,
 		.maxlen = sizeof(int),
 		.mode = 0644,
 		.proc_handler = &proc_dointvec
@@ -197,7 +205,6 @@ void mtcp_data_ready(struct sock *sk) {
  * Note that this is called only at client side.
  * Server calls mtcp_check_new_subflow().
  *
- *
  * WARNING: We make the assumption that this function is run in user context
  *      (we use sock_create_kern, that reserves ressources with GFP_KERNEL)
  *      AND only one user process can trigger the sending of a PATH_UPDATE
@@ -232,8 +239,10 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb, uint32_t path_indices) {
 			struct sockaddr_in6 loculid_in6, remulid_in6;
 			int newpi = i + 1;
 			/* A new socket must be created */
+
 			retval = sock_create_kern(meta_sk->sk_family,
-					SOCK_STREAM, IPPROTO_MTCPSUB, &sock);
+						  SOCK_STREAM, IPPROTO_MTCPSUB,
+						  &sock);
 			if (retval < 0) {
 				printk(KERN_ERR "%s:sock_create failed\n",
 						__FUNCTION__);
@@ -253,8 +262,8 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb, uint32_t path_indices) {
 				memcpy(&remulid_in, &loculid_in,
 				       sizeof(remulid_in));
 
-				loculid_in.sin_port = 
-					inet_sk(meta_sk)->inet_sport;
+				/*let bind select an available port*/
+				loculid_in.sin_port = 0;
 				remulid_in.sin_port = 
 					inet_sk(meta_sk)->inet_dport;
 #ifdef CONFIG_MTCP_PM
@@ -287,8 +296,7 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb, uint32_t path_indices) {
 				memcpy(&remulid_in6, &loculid_in6,
 				       sizeof(remulid_in6));
 
-				loculid_in6.sin6_port = 
-					inet_sk(meta_sk)->inet_sport;
+				loculid_in6.sin6_port = 0;
 				remulid_in6.sin6_port = 
 					inet_sk(meta_sk)->inet_dport;
 
@@ -1566,46 +1574,6 @@ out:
 	if (tp->pending)
 		mpcb_put(mpcb); /* Taken by mtcp_hash_find */
 	return ans;
-}
-
-/* Obtain a reference to a local port for the given sock,
- * snum MUST have a valid port number, since it must be a copy 
- * of the snum from a master TCP socket.
- */
-int mtcpsub_get_port(struct sock *sk, unsigned short snum) {
-	struct inet_hashinfo *hashinfo = sk->sk_prot->h.hashinfo;
-	struct inet_bind_hashbucket *head;
-	struct hlist_node *node;
-	struct inet_bind_bucket *tb;
-	int ret;
-	struct net *net = sock_net(sk);
-
-	local_bh_disable();
-	if (!snum) {
-		ret = -1;
-		goto fail;
-		/* snum is required in MTCPSUB, since it must be
-		   the copy of the originating socket */
-	} else {
-		head = &hashinfo->bhash[inet_bhashfn(net, snum,
-				hashinfo->bhash_size)];
-		spin_lock(&head->lock);
-		inet_bind_bucket_for_each(tb, node, &head->chain)
-			if (net_eq(ib_net(tb),net) && tb->port == snum)
-				goto success;
-	}
-	tb = NULL;
-	ret = 1;
-	goto fail_unlock;
-	success: if (!inet_csk(sk)->icsk_bind_hash)
-		inet_bind_hash(sk, tb, snum);
-	BUG_ON(inet_csk(sk)->icsk_bind_hash != tb);
-	ret = 0;
-
-	fail_unlock:
-	spin_unlock(&head->lock);
-	fail: local_bh_enable();
-	return ret;
 }
 
 /* Cleans the meta-socket retransmission queue.

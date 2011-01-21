@@ -46,6 +46,7 @@
  just not used. */
 #define MPTCP_MSS 1400
 extern int sysctl_mptcp_mss;
+extern int sysctl_mptcp_ndiffports;
 
 #ifdef MTCP_RCV_QUEUE_DEBUG
 struct mtcp_debug {
