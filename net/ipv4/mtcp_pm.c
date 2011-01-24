@@ -855,6 +855,14 @@ static struct request_sock *mtcp_search_req(const __be16 rport,
 						   MTCP_HASH_SIZE)],
 			    collide_tuple) {
 		const struct inet_request_sock *ireq = inet_rsk(req);
+
+		if (!req->collide_tuple.next) {
+			printk(KERN_ERR "tuple hashtable corrupted! (bug 66)\n");
+			printk("bad node %pI4:%d->%pI4:%d\n",
+			       &ireq->loc_addr,ntohs(ireq->loc_port),
+			       &ireq->rmt_addr,ntohs(ireq->rmt_port));
+			BUG();
+		}
 		
 		if (ireq->rmt_port == rport &&
 		    ireq->rmt_addr == raddr &&
