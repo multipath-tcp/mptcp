@@ -35,6 +35,7 @@
  */
 
 #include <net/tcp.h>
+#include <net/ipv6.h>
 
 #include <linux/compiler.h>
 #include <linux/gfp.h>
@@ -687,7 +688,10 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 			remaining -= TCPOLEN_SACKPERM_ALIGNED;
 	}
 #ifdef CONFIG_MTCP
-	if (ipv4_is_loopback(inet_sk(sk)->inet_daddr))
+	if ((sk->sk_family == AF_INET && 
+	     ipv4_is_loopback(inet_sk(sk)->inet_daddr)) ||
+	    (sk->sk_family == AF_INET6 && 
+	     ipv6_addr_loopback(&inet6_sk(sk)->daddr)))
 		goto nomptcp;
 	if (is_master_sk(tp)) {
 		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
