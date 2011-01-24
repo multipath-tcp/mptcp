@@ -123,12 +123,11 @@ static void mtcp_recalc_alpha(struct sock *sk)
 		}
 		sum_denominator *= sum_denominator;
 
-		BUG_ON(!sum_denominator || !best_cwnd || !best_rtt);
-
 		alpha = div64_u64(mtcp_ccc_scale(tot_cwnd, alpha_scale_num) *
 				best_cwnd, sum_denominator);
 
-		if (!alpha) alpha = 1;
+		if (unlikely(!alpha))
+			alpha = 1;
 
 		mtcp_set_alpha(mpcb, alpha);
 	} else {
@@ -175,6 +174,13 @@ static void mtcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 		if (mpcb && mpcb->cnt_established > 1){
 			u64 alpha = mtcp_get_alpha(mpcb);
 
+			/* This may happen, if at the initialization, the mpcb
+			 * was not yet attached to the sock, and thus
+			 * initializing alpha failed.
+			 */
+			if (unlikely(!alpha))
+				alpha = 1;
+
 			snd_cwnd = mtcp_get_total_cwnd(mpcb);
 
 			snd_cwnd = (int) div_u64 ((u64) mtcp_ccc_scale(snd_cwnd,
@@ -190,7 +196,7 @@ static void mtcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 				mtcp_recalc_alpha(sk);
 			}
 			
-			tp->snd_cwnd_cnt=0;
+			tp->snd_cwnd_cnt = 0;
 			
 		} else {
 			tp->snd_cwnd_cnt++;
