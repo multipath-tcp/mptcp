@@ -133,7 +133,10 @@ void mtcp_hash_remove(struct multipath_pcb *mpcb)
 				  This is useful since mtcp_check_req()
 				  might try to remove it as well*/
 				list_del_init(&cur_ref->collide_tuple);
-				/*remove from local hashtable*/
+				/*next element in collision list.
+				  we don't remove yet the request_sock 
+				  from the local hashtable. This will be done
+				  by mtcp_pm_release()*/
 				cur_ref=cur_ref->dl_next;
 			}
 		}
