@@ -4821,12 +4821,16 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcphdr *th = tcp_hdr(skb);
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *meta_tp = tp;
 #ifdef CONFIG_MTCP
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
+
 	int mapping = 0;
 #endif
 	int eaten = -1;
 	int mtcp_eaten = 0;
+
+	if (tp->mpc && mpcb) meta_tp = &mpcb->tp;
 
 	if (TCP_SKB_CB(skb)->seq == TCP_SKB_CB(skb)->end_seq)
 		goto drop;
@@ -4847,76 +4851,37 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 			goto out_of_window;
 
 		/* Ok. In sequence. In window. */
-#ifdef CONFIG_MTCP
 		if (tp->mpc) {
-			mapping = mtcp_get_dataseq_mapping(tp,skb);
+			mapping = mtcp_get_dataseq_mapping(tp, skb);
 			if (mapping == -1) goto drop;
 		}
-		if (mpcb && mpcb->ucopy.task == current &&
-		    tp->copied_seq == tp->rcv_nxt && mpcb->ucopy.len &&
+		/* TODO_cpaasch - When we have removed the mpcb for non-mptcp traffic we will need to fix this here */
+		if (mpcb && meta_tp->ucopy.task == current &&
+		    tp->copied_seq == tp->rcv_nxt && meta_tp->ucopy.len &&
 		    sock_owned_by_user(sk) && !tp->urg_data) {
-			if (tp->mpc) {
-				if (mapping == 1) { /*in meta-order*/
-					int chunk = min_t(unsigned int, skb->len,
-							  mpcb->ucopy.len);
-
-					__set_current_state(TASK_RUNNING);
-
-					local_bh_enable();
-					if (!skb_copy_datagram_iovec(skb, 0,
-								     mpcb->ucopy.iov,
-								     chunk)) {
-
-						mpcb->ucopy.len -= chunk;
-						tp->copied_seq += chunk;
-						mpcb->tp.copied_seq += chunk;
-						tp->copied += chunk;
-						eaten = (chunk == skb->len && !th->fin);
-						tcp_rcv_space_adjust(sk);
-					}
-					local_bh_disable();
-				}
-			}
-			else {
+			if (!tp->mpc || mapping == 1) {
 				int chunk = min_t(unsigned int, skb->len,
-						  mpcb->ucopy.len);
+						  meta_tp->ucopy.len);
+				mtcp_debug("%s: inside ucopy\n",__FUNCTION__);
 
 				__set_current_state(TASK_RUNNING);
 
 				local_bh_enable();
-				if (!skb_copy_datagram_iovec(skb, 0, mpcb->ucopy.iov,
+				if (!skb_copy_datagram_iovec(skb, 0,
+							     meta_tp->ucopy.iov,
 							     chunk)) {
-					mpcb->ucopy.len -= chunk;
+
+					meta_tp->ucopy.len -= chunk;
 					tp->copied_seq += chunk;
+					if (tp->mpc) /* then meta_tp != tp */
+						meta_tp->copied_seq += chunk;
+					tp->copied += chunk;
 					eaten = (chunk == skb->len && !th->fin);
 					tcp_rcv_space_adjust(sk);
 				}
 				local_bh_disable();
 			}
 		}
-
-
-#else
-		if (tp->ucopy.task == current &&
-		    tp->copied_seq == tp->rcv_nxt && tp->ucopy.len &&
-		    sock_owned_by_user(sk) && !tp->urg_data) {
-			int chunk = min_t(unsigned int, skb->len,
-					  tp->ucopy.len);
-
-			__set_current_state(TASK_RUNNING);
-
-			local_bh_enable();
-			if (!skb_copy_datagram_iovec(skb, 0, tp->ucopy.iov,
-						     chunk)) {
-				tp->ucopy.len -= chunk;
-				tp->copied_seq += chunk;
-				eaten = (chunk == skb->len && !th->fin);
-				tcp_rcv_space_adjust(sk);
-			}
-			local_bh_disable();
-		}
-#endif
-
 		if (eaten <= 0) {
 		queue_and_out:
 			if (eaten < 0 &&
@@ -4925,8 +4890,8 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 				       " tcp_try_rmem_schedule\n");
 				goto drop;
 			}
-
-			mtcp_eaten=mtcp_queue_skb(sk,skb);
+			
+			mtcp_eaten = mtcp_queue_skb(sk,skb);
 		}
 		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 		if (skb->len)
@@ -5673,26 +5638,33 @@ static void tcp_urg(struct sock *sk, struct sk_buff *skb, struct tcphdr *th)
 	}
 }
 
-#ifdef CONFIG_MTCP
 static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *tp = tcp_sk(sk), *meta_tp;
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 	int chunk = skb->len - hlen;
 	int err;
 
 	mtcp_debug("Entering %s\n", __FUNCTION__);
 
+	if (tp->mpc && mpcb)
+		meta_tp = &mpcb->tp;
+	else
+		meta_tp = tp;
+
 	local_bh_enable();
 	if (skb_csum_unnecessary(skb))
-		err = skb_copy_datagram_iovec(skb, hlen, mpcb->ucopy.iov, chunk);
+		err = skb_copy_datagram_iovec(skb, hlen, meta_tp->ucopy.iov,
+					      chunk);
 	else
-		err = skb_copy_and_csum_datagram_iovec(skb, hlen, mpcb->ucopy.iov);
+		err = skb_copy_and_csum_datagram_iovec(skb, hlen,
+						       meta_tp->ucopy.iov);
 
 	if (!err) {
-		mpcb->ucopy.len -= chunk;
+		meta_tp->ucopy.len -= chunk;
 		tp->copied_seq += chunk;
-		mpcb->tp.copied_seq += chunk;
+		if (tp->mpc && mpcb)
+			meta_tp->copied_seq += chunk;
 		tp->copied += chunk;
 		tcp_rcv_space_adjust(sk);
 	}
@@ -5700,30 +5672,6 @@ static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 	local_bh_disable();
 	return err;
 }
-#else
-static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	int chunk = skb->len - hlen;
-	int err;
-
-	local_bh_enable();
-	if (skb_csum_unnecessary(skb))
-		err = skb_copy_datagram_iovec(skb, hlen, tp->ucopy.iov, chunk);
-	else
-		err = skb_copy_and_csum_datagram_iovec(skb, hlen,
-						       tp->ucopy.iov);
-
-	if (!err) {
-		tp->ucopy.len -= chunk;
-		tp->copied_seq += chunk;
-		tcp_rcv_space_adjust(sk);
-	}
-
-	local_bh_disable();
-	return err;
-}
-#endif /*CONFIG_MTCP*/
 
 static __sum16 __tcp_checksum_complete_user(struct sock *sk,
 					    struct sk_buff *skb)
@@ -5884,10 +5832,15 @@ discard:
 int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			struct tcphdr *th, unsigned len)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *tp = tcp_sk(sk), *meta_tp;
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 	int res;
 	int mtcp_eaten = 0;
+	
+	if (tp->mpc && mpcb)
+		meta_tp = &mpcb->tp;
+	else
+		meta_tp = tp;
 
 	tcpprobe_rcv_established(sk,skb,th,len);
 
@@ -5975,8 +5928,8 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			int eaten = 0;
 
 			if (tp->copied_seq == tp->rcv_nxt &&
-			    len - tcp_header_len <= mpcb->ucopy.len) {
-				if (mpcb->ucopy.task == current &&
+			    len - tcp_header_len <= meta_tp->ucopy.len) {
+				if (meta_tp->ucopy.task == current &&
 				    sock_owned_by_user(sk)) {
 					/*We have not yet finished to adapt
 					  the code for the fast path, thus

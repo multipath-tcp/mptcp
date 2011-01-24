@@ -342,8 +342,7 @@ struct tcp_sock {
 	/* Data for direct copy to user */
 	struct {
 		struct sk_buff_head	prequeue;
-		int			memory;		
-#ifndef CONFIG_MTCP
+		int			memory;
 		struct task_struct	*task;
 		struct iovec		*iov;
 		int                     len;
@@ -355,7 +354,6 @@ struct tcp_sock {
 		struct dma_pinned_list	*pinned_list;
 		dma_cookie_t		dma_cookie;
 #endif
-#endif /*CONFIG_MTCP*/
 	} ucopy;
 
 	u32	snd_wl1;	/* Sequence for window update		*/

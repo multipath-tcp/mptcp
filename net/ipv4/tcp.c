@@ -1394,6 +1394,7 @@ static void tcp_prequeue_process(struct sock *sk)
 	struct sk_buff *skb;
 	struct tcp_sock *tp = tcp_sk(sk);
 
+	/* TODO_cpaasch - tp should be set to mpcb->tp in case of mptcp */
 	mtcp_debug("Entering %s for pi %d\n",__FUNCTION__,
 	           tp->path_index);
 
@@ -1559,13 +1560,6 @@ int tcp_recvmsg_fallback(struct kiocb *iocb, struct sock *sk,
 			 size_t len, int nonblock, int flags, int *addr_len)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-#ifdef CONFIG_MTCP
-	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
-	struct sock *mpcb_sk=(struct sock*)mpcb;
-	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
-#else
-#define mpcb tp
-#endif
 	int copied = 0;
 	u32 peek_seq;
 	u32 *seq;
@@ -1709,16 +1703,16 @@ int tcp_recvmsg_fallback(struct kiocb *iocb, struct sock *sk,
 
 		tcp_cleanup_rbuf(sk, copied);
 
-		if (!sysctl_tcp_low_latency && mpcb->ucopy.task == user_recv) {
+		if (!sysctl_tcp_low_latency && tp->ucopy.task == user_recv) {
 
 			/* Install new reader */
 			if (!user_recv && !(flags & (MSG_TRUNC | MSG_PEEK))) {
 				user_recv = current;
-				mpcb->ucopy.task = user_recv;
-				mpcb->ucopy.iov = msg->msg_iov;
+				tp->ucopy.task = user_recv;
+				tp->ucopy.iov = msg->msg_iov;
 			}
 			
-			mpcb->ucopy.len = len;
+			tp->ucopy.len = len;
 
 			WARN_ON(tp->copied_seq != tp->rcv_nxt &&
 				!(flags & (MSG_PEEK | MSG_TRUNC)));
@@ -1776,7 +1770,7 @@ int tcp_recvmsg_fallback(struct kiocb *iocb, struct sock *sk,
 
 			/* __ Restore normal policy in scheduler __ */
 
-			if ((chunk = len - mpcb->ucopy.len) != 0) {
+			if ((chunk = len - tp->ucopy.len) != 0) {
 				NET_ADD_STATS_USER(sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMBACKLOG, chunk);
 				len -= chunk;
 				copied += chunk;
@@ -1787,7 +1781,7 @@ int tcp_recvmsg_fallback(struct kiocb *iocb, struct sock *sk,
 do_prequeue:
 				tcp_prequeue_process(sk);
 
-				if ((chunk = len - mpcb->ucopy.len) != 0) {
+				if ((chunk = len - tp->ucopy.len) != 0) {
 					NET_ADD_STATS_USER(sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
 					len -= chunk;
 					copied += chunk;
@@ -1799,7 +1793,7 @@ do_prequeue:
 			if (net_ratelimit())
 				printk(KERN_DEBUG "TCP(%s:%d): Application bug, race in MSG_PEEK.\n",
 				       current->comm, task_pid_nr(current));
-			peek_seq = mpcb_tp->copied_seq;
+			peek_seq = tp->copied_seq;
 		}
 		continue;
 
@@ -1904,11 +1898,11 @@ skip_copy:
 		if (!skb_queue_empty(&tp->ucopy.prequeue)) {
 			int chunk;
 
-			mpcb->ucopy.len = copied > 0 ? len : 0;
+			tp->ucopy.len = copied > 0 ? len : 0;
 
 			tcp_prequeue_process(sk);
 
-			if (copied > 0 && (chunk = len - mpcb->ucopy.len) 
+			if (copied > 0 && (chunk = len - tp->ucopy.len)
 			    != 0) {
 				NET_ADD_STATS_USER(sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
 				len -= chunk;
@@ -1916,8 +1910,8 @@ skip_copy:
 			}
 		}
 
-		mpcb->ucopy.task = NULL;
-		mpcb->ucopy.len = 0;
+		tp->ucopy.task = NULL;
+		tp->ucopy.len = 0;
 	}
 
 #ifdef CONFIG_NET_DMA
@@ -1971,9 +1965,9 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	struct tcp_sock *master_tp = tcp_sk(master_sk);
 	struct sock *sk;
 	struct tcp_sock *tp;
-	struct multipath_pcb *mpcb=mpcb_from_tcpsock(master_tp);
-	struct sock *mpcb_sk=(struct sock*) mpcb;
-	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
+	struct multipath_pcb *mpcb = mpcb_from_tcpsock(master_tp);
+	struct sock *meta_sk = (struct sock*) mpcb;
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	int copied = 0;
 	u32 peek_data_seq;
 	u32 *data_seq;
@@ -2026,7 +2020,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		/*We put this because it is not sure at all that MSG_PEEK
 		  works correctly.*/
 		printk(KERN_ERR "Warning: MSG_PEEK is set...\n");
-		peek_data_seq = mpcb_tp->copied_seq;
+		peek_data_seq = meta_tp->copied_seq;
 		data_seq = &peek_data_seq; /*global pointer*/
 		mtcp_for_each_tp(mpcb,tp) {
 			tp->peek_seq=tp->copied_seq;
@@ -2034,7 +2028,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		}
 	}
 	else {
-		data_seq = &mpcb_tp->copied_seq; /*global pointer*/
+		data_seq = &meta_tp->copied_seq; /*global pointer*/
 		mtcp_for_each_tp(mpcb,tp)
 			tp->seq=&tp->copied_seq; /*local pointer*/
 	}
@@ -2090,26 +2084,26 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		if (copied) {
 			/*Error on any subsocket, shutdown on all subsocks,
 			  timeout or pending signal*/
-			if (mpcb_sk->sk_err ||
-			    mpcb_sk->sk_state==TCP_CLOSE ||
-			    (mpcb_sk->sk_shutdown & RCV_SHUTDOWN) ||
+			if (meta_sk->sk_err ||
+			    meta_sk->sk_state==TCP_CLOSE ||
+			    (meta_sk->sk_shutdown & RCV_SHUTDOWN) ||
 			    !timeo ||
 			    signal_pending(current))
 				break;
 		} else {
-			if (sock_flag(mpcb_sk,SOCK_DONE))
+			if (sock_flag(meta_sk,SOCK_DONE))
 				break;
 			
-			if (mpcb_sk->sk_err) {
-				copied = sock_error(mpcb_sk);
+			if (meta_sk->sk_err) {
+				copied = sock_error(meta_sk);
 				break;
 			}
 			
-			if (mpcb_sk->sk_shutdown & RCV_SHUTDOWN)
+			if (meta_sk->sk_shutdown & RCV_SHUTDOWN)
 				break;
 
-			if (mpcb_sk->sk_state == TCP_CLOSE) {
-				if (!sock_flag(mpcb_sk,SOCK_DONE)) {
+			if (meta_sk->sk_state == TCP_CLOSE) {
+				if (!sock_flag(meta_sk,SOCK_DONE)) {
 					/* This occurs when user tries to read
                                          * from never connected socket.
 					 */
@@ -2133,22 +2127,22 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		mtcp_for_each_sk(mpcb,sk,tp)
 			tcp_cleanup_rbuf(sk, tp->copied);
 
-		if (!sysctl_tcp_low_latency && mpcb->ucopy.task == 
+		if (!sysctl_tcp_low_latency && meta_tp->ucopy.task ==
 		    user_recv) {
 			/* Install new reader */
 			if (!user_recv && !(flags & (MSG_TRUNC | MSG_PEEK))) {
 				user_recv = current;
-				mpcb->ucopy.task = user_recv;
-				mpcb->ucopy.iov = msg->msg_iov;
+				meta_tp->ucopy.task = user_recv;
+				meta_tp->ucopy.iov = msg->msg_iov;
 			}
 
-			mpcb->ucopy.len = len;
+			meta_tp->ucopy.len = len;
 			
-			mtcp_for_each_tp(mpcb,tp) {
+			mtcp_for_each_tp(mpcb, tp) {
 				WARN_ON(tp->copied_seq != tp->rcv_nxt &&
 					!(flags & (MSG_PEEK | MSG_TRUNC)));
 			}
-			
+
 			/* Ugly... If prequeue is not empty, we have to
 			 * process it before releasing socket, otherwise
 			 * order will be broken at second iteration.
@@ -2175,10 +2169,9 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			 * is not empty. It is more elegant, but eats cycles,
 			 * unfortunately.
 			 */
-			if (mtcp_test_any_tp(mpcb,tp,
-					     !skb_queue_empty(
+			if (mtcp_test_any_tp(mpcb, tp, !skb_queue_empty(
 						     &tp->ucopy.prequeue))) {
-				empty_prequeues=1;
+				empty_prequeues = 1;
 				goto do_prequeue;
 			}
 			/* __ Set realtime policy in scheduler __ */
@@ -2186,7 +2179,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 
 		if (copied >= target) {
 			/* Do not sleep, just process backlog. */
-			mtcp_for_each_sk(mpcb,sk,tp) {
+			mtcp_for_each_sk(mpcb, sk, tp) {
 				release_sock(sk);
 				lock_sock(sk);
 			}
@@ -2201,15 +2194,16 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 			
 			/* __ Restore normal policy in scheduler __ */
 
-			if ((chunk = len - mpcb->ucopy.len) != 0) {		
+			if ((chunk = len - meta_tp->ucopy.len) != 0) {
 				NET_ADD_STATS_USER(sock_net(master_sk), LINUX_MIB_TCPDIRECTCOPYFROMBACKLOG, chunk);
 				/*TODEL*/
 				mtcp_debug("backlog copy: %d\n",chunk);
 				len -= chunk;
 				copied += chunk;
 			}
-			
-		do_prequeue:			
+
+			/* TODO_cpaasch - prequeue mess with subflows */
+		do_prequeue:
 			mtcp_for_each_tp(mpcb,tp) {
 				mtcp_debug("Checking prequeue for pi %d,"
 				           "prequeue len:%d\n",
@@ -2220,16 +2214,16 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				    !skb_queue_empty(
 					    &tp->ucopy.prequeue)) {
 					
-					sk=(struct sock*) tp;
+					sk = (struct sock*) tp;
 					tcp_prequeue_process(sk);
 					
-					if ((chunk = len - mpcb->ucopy.len)
+					if ((chunk = len - meta_tp->ucopy.len)
 					    != 0) {
 						mtcp_debug("prequeue "
 						           "copy :%d, len %d,"
 						           "ucopy.len %d\n",
 						           chunk,(int)len,
-						           mpcb->ucopy.len);/*TODEL*/
+						           meta_tp->ucopy.len);/*TODEL*/
 						NET_ADD_STATS_USER(
 							sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
 						BUG_ON(chunk<0);
@@ -2238,9 +2232,9 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 					}
 				}
 			}
-			empty_prequeues=0;
+			empty_prequeues = 0;
 		}
-		mtcp_for_each_tp(mpcb,tp) {
+		mtcp_for_each_tp(mpcb, tp) {
 			if ((flags & MSG_PEEK) && 
 			    tp->peek_seq != tp->copied_seq) {
 				if (net_ratelimit())
@@ -2254,17 +2248,18 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		}
 	} while (len > 0);
 	
+	/* TODO_cpaasch do we have a subflow-prequeue??? */
 	if (user_recv) {
 		mtcp_for_each_sk(mpcb,sk,tp)
 			if (!skb_queue_empty(&tp->ucopy.prequeue)) {
 				int chunk;
 				
-				mpcb->ucopy.len = copied > 0 ? len : 0;
+				meta_tp->ucopy.len = copied > 0 ? len : 0;
 				
 				tcp_prequeue_process(sk);
 				
 				if (copied > 0 && (chunk = len - 
-						   mpcb->ucopy.len) != 0) {
+						meta_tp->ucopy.len) != 0) {
 					NET_ADD_STATS_USER(sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
 					mtcp_debug("prequeue2 copy :%d\n",
 					           chunk); /*TODEL*/
@@ -2273,8 +2268,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 				}
 			}
 		
-		mpcb->ucopy.task = NULL;
-		mpcb->ucopy.len = 0;
+		meta_tp->ucopy.task = NULL;
+		meta_tp->ucopy.len = 0;
 	}
 	
 	/* According to UNIX98, msg_name/msg_namelen are ignored

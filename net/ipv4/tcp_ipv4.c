@@ -83,7 +83,8 @@
 #include <linux/scatterlist.h>
 
 int sysctl_tcp_tw_reuse __read_mostly;
-int sysctl_tcp_low_latency __read_mostly=1;
+/* TODO_cpaasch - enable prequeue here */
+int sysctl_tcp_low_latency __read_mostly = 1;
 EXPORT_SYMBOL(sysctl_tcp_low_latency);
 
 #ifdef CONFIG_TCP_MD5SIG
@@ -1980,10 +1981,10 @@ static int tcp_v4_init_sock(struct sock *sk)
 #ifdef CONFIG_MTCP
 	/* Init the MPTCP mpcb */
 	{
-		struct multipath_pcb *mpcb;
+		struct multipath_pcb *mpcb;		
 		mpcb = mtcp_alloc_mpcb(sk, GFP_KERNEL);
 		tp->path_index = 0;
-		mtcp_add_sock(mpcb, tp);
+		mtcp_add_sock(mpcb,tp);
 	}
 #endif
 

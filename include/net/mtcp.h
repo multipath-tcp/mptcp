@@ -105,18 +105,6 @@ struct multipath_pcb {
 	char                      done;
 	unsigned short            shutdown;
 
-	struct {
-		struct task_struct *task;
-		struct iovec *iov;
-		/* The length field is initialized by mtcp_recvmsg, and decremented by
-		   each subsocket separately, upon data reception. That's why each subsocket
-		   must do the copies with appropriate locks.
-		   Whenever a subsocket decrements this field, it must increment its
-		   tp->copied field, so that we can track later how many bytes have been
-		   eaten by which subsocket. */
-		int len;
-	} ucopy; /* Fields moved from tcp_sock struct to this one */
-
 	struct multipath_options received_options;
 	struct tcp_options_received tcp_opt;
 
