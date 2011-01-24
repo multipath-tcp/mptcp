@@ -1637,10 +1637,10 @@ int tcp_v4_rcv(struct sk_buff *skb)
 {
 	const struct iphdr *iph;
 	struct tcphdr *th;
-	struct sock *sk, *meta_sk=NULL;
+	struct sock *sk, *meta_sk = NULL;
 	int ret;
 	struct net *net = dev_net(skb->dev);
-	struct multipath_pcb *mpcb=NULL;
+	struct multipath_pcb *mpcb = NULL;
 
 	if (skb->pkt_type != PACKET_HOST)
 		goto discard_it;
@@ -1681,18 +1681,18 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->sacked	 = 0;
 
 #ifdef CONFIG_MTCP_PM
-	/*We must absolutely check for subflow related segments
-	  before the normal sock lookup, because otherwise subflow
-	  segments could be understood as associated to some listening
-	  socket.*/
+	/* We must absolutely check for subflow related segments
+	   before the normal sock lookup, because otherwise subflow
+	   segments could be understood as associated to some listening
+	   socket. */
 
-	/*Is there a pending request sock for this segment ?*/
+	/* Is there a pending request sock for this segment ? */
 	if (mtcp_syn_recv_sock(skb)) return 0;
-	/*Is this a new syn+join ?*/
+	/* Is this a new syn+join ? */
 	if (th->syn && mtcp_lookup_join(skb)) return 0;
 
-	/*OK, this segment is not related to subflow initiation,
-	  we can proceed to normal lookup*/
+	/* OK, this segment is not related to subflow initiation,
+	   we can proceed to normal lookup */
 #endif
 
 	sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source,

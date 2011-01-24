@@ -808,10 +808,10 @@ drop_and_free:
 /*Removes a request sock from its local mpcb hashtable*/
 static void mtcp_reqsk_local_remove(struct request_sock *r)
 {
-	struct multipath_pcb *mpcb=r->mpcb;
-	struct inet_connection_sock *mpcb_icsk=
+	struct multipath_pcb *mpcb = r->mpcb;
+	struct inet_connection_sock *meta_icsk =
 		(struct inet_connection_sock*)mpcb;
-	struct listen_sock *lopt = mpcb_icsk->icsk_accept_queue.listen_opt;
+	struct listen_sock *lopt = meta_icsk->icsk_accept_queue.listen_opt;
 	struct request_sock *req,**prev;
 	const struct inet_request_sock *i = inet_rsk(r);
 
@@ -825,10 +825,10 @@ static void mtcp_reqsk_local_remove(struct request_sock *r)
 	}
 	BUG_ON(!req);
 
-	reqsk_queue_unlink(&mpcb_icsk->icsk_accept_queue, req, prev);
+	reqsk_queue_unlink(&meta_icsk->icsk_accept_queue, req, prev);
 }
 
-/*inspired from inet_csk_search_req
+/* inspired from inet_csk_search_req
  * After this, the kref count of the mpcb associated with the request_sock
  * is incremented. Thus it is the responsibility of the caller
  * to call mpcb_put() when the reference is not needed anymore.
@@ -838,7 +838,7 @@ static struct request_sock *mtcp_search_req(const __be16 rport,
 					    const __be32 laddr)
 {
 	struct request_sock *req;
-	int found=0;
+	int found = 0;
 	
 	spin_lock(&tuple_hash_lock);
 	list_for_each_entry(req,&tuple_hashtable[
@@ -860,7 +860,7 @@ static struct request_sock *mtcp_search_req(const __be16 rport,
 		    ireq->loc_addr == laddr &&
 		    AF_INET_FAMILY(req->rsk_ops->family)) {
 			WARN_ON(req->sk);
-			found=1;
+			found = 1;
 			break;
 		}
 	}
@@ -913,11 +913,10 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 	int paws_reject = 0;
 	struct tcp_options_received tmp_opt;
 	struct sock *child;
-	struct multipath_pcb *mpcb=req->mpcb;
-	struct multipath_options *mopt=&mpcb->received_options;
+	struct multipath_pcb *mpcb = req->mpcb;
+	struct multipath_options *mopt = &mpcb->received_options;
 	u8 *hash_location;
-	struct inet_connection_sock *mpcb_icsk=
-		(struct inet_connection_sock*)mpcb;
+	struct inet_connection_sock *meta_icsk = (struct inet_connection_sock*)mpcb;
 
 	if (!mpcb->master_sk)
 		mtcp_debug("%s: Debugging #54 - mpcb->master_sk == NULL\n", __FUNCTION__);
@@ -1091,29 +1090,29 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 	if (child == NULL)
 		goto listen_overflow;
 
-	/*The child is a clone of the master socket, we must now reset
-	  some of the fields*/
-	tcp_sk(child)->mpcb=NULL; /*necessary for inet_csk_detroy_sock()
-				    will be set when removed from the 
-				    accept queue*/
-	tcp_sk(child)->mpc=1;
-	tcp_sk(child)->slave_sk=1;
-	tcp_sk(child)->rx_opt.mtcp_rem_token=req->mtcp_rem_token;
-	tcp_sk(child)->mtcp_loc_token=req->mtcp_loc_token;
-	tcp_sk(child)->pending=1;
-	tcp_sk(child)->bw_est.time=0;
+	/* The child is a clone of the master socket, we must now reset
+	   some of the fields */
+	tcp_sk(child)->mpcb = NULL; /* necessary for inet_csk_detroy_sock()
+				       will be set when removed from the
+				       accept queue */
+	tcp_sk(child)->mpc = 1;
+	tcp_sk(child)->slave_sk = 1;
+	tcp_sk(child)->rx_opt.mtcp_rem_token = req->mtcp_rem_token;
+	tcp_sk(child)->mtcp_loc_token = req->mtcp_loc_token;
+	tcp_sk(child)->pending = 1;
+	tcp_sk(child)->bw_est.time = 0;
 		
-	child->sk_sndmsg_page=NULL;
+	child->sk_sndmsg_page = NULL;
 	
-	/*Deleting from global hashtable*/
+	/* Deleting from global hashtable */
 	spin_lock(&tuple_hash_lock);
-	/*list_del_init: see comment in mtcp_hash_remove()*/
+	/* list_del_init: see comment in mtcp_hash_remove() */
 	list_del_init(&req->collide_tuple);
 	spin_unlock(&tuple_hash_lock);
-	/*Deleting from local hashtable*/
+	/* Deleting from local hashtable */
 	mtcp_reqsk_local_remove(req);
-	reqsk_queue_removed(&mpcb_icsk->icsk_accept_queue, req);
-	mtcp_reqsk_queue_add(&mpcb_icsk->icsk_accept_queue, req, child);
+	reqsk_queue_removed(&meta_icsk->icsk_accept_queue, req);
+	mtcp_reqsk_queue_add(&meta_icsk->icsk_accept_queue, req, child);
 	return child;
 	
 listen_overflow:
@@ -1131,7 +1130,7 @@ embryonic_reset:
 	spin_unlock(&tuple_hash_lock);
 
 	mtcp_reqsk_local_remove(req);
-	reqsk_queue_removed(&mpcb_icsk->icsk_accept_queue, req);
+	reqsk_queue_removed(&meta_icsk->icsk_accept_queue, req);
 	reqsk_free(req);
 	return NULL;
 }
@@ -1147,7 +1146,7 @@ int mtcp_syn_recv_sock(struct sk_buff *skb)
 	if (!req)
 		return 0;
 
-	/*If this is a valid ack, we can build a full socket*/
+	/* If this is a valid ack, we can build a full socket */
 	child = mtcp_check_req(skb,req);
 	if (child)
 		tcp_child_process(req->mpcb->master_sk,
@@ -1164,7 +1163,7 @@ int mtcp_syn_recv_sock(struct sk_buff *skb)
  */
 int mtcp_lookup_join(struct sk_buff *skb)
 {
-	struct tcphdr *th=tcp_hdr(skb);
+	struct tcphdr *th = tcp_hdr(skb);
 	const struct iphdr *iph = ip_hdr(skb);
 	unsigned char *ptr;
 	int length = (th->doff * 4) - sizeof(struct tcphdr);
@@ -1254,8 +1253,8 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 	struct inet_request_sock *ireq;
 	struct path4 *p = NULL;
 	int nb_new = 0;
-	struct inet_connection_sock *mpcb_icsk =
-			(struct inet_connection_sock *) mpcb;
+	struct inet_connection_sock *meta_icsk =
+		(struct inet_connection_sock*)mpcb;
 
 	if (unlikely(mpcb->received_options.list_rcvd)) {
 		mpcb->received_options.list_rcvd = 0;
@@ -1265,12 +1264,12 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 		if (!test_bit(MPCB_FLAG_SERVER_SIDE, &mpcb->flags))
 			mtcp_send_updatenotif(mpcb);
 	}
-	
+
 	spin_lock_bh(&mpcb->lock);
 	/* make all the listen_opt local to us */
-	acc_req = reqsk_queue_yank_acceptq(&mpcb_icsk->icsk_accept_queue);
+	acc_req = reqsk_queue_yank_acceptq(&meta_icsk->icsk_accept_queue);
 	spin_unlock_bh(&mpcb->lock);
-	
+
 	while ((req = acc_req) != NULL) {
 		acc_req = req->dl_next;
 		ireq =  inet_rsk(req);

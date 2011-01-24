@@ -610,13 +610,13 @@ static inline u32 tcp_rto_min(struct sock *sk)
 static inline u32 tcp_receive_window(const struct tcp_sock *tp)
 {
 	s32 win;
-	
+
 	if (tp->mpcb && tp->mpc) { 
-		struct tcp_sock *mpcb_tp=(struct tcp_sock*)(tp->mpcb);
-		win=mpcb_tp->rcv_wup + mpcb_tp->rcv_wnd - mpcb_tp->rcv_nxt;
+		struct tcp_sock *meta_tp = (struct tcp_sock*) (tp->mpcb);
+		win = meta_tp->rcv_wup + meta_tp->rcv_wnd - meta_tp->rcv_nxt;
 	}
 	else {
-		win=tp->rcv_wup + tp->rcv_wnd - tp->rcv_nxt;
+		win = tp->rcv_wup + tp->rcv_wnd - tp->rcv_nxt;
 	}
 
 	if (win < 0)

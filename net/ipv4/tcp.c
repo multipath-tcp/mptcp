@@ -1998,7 +1998,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 	 * we behave here somewhat like doing a select, but as seen by bottom 
 	 * halves we are expecting data from every subflow at once.
 	 */
-		
+
 	/*Locking metasocket*/
 	mutex_lock(&mpcb->mutex);
 
@@ -2312,7 +2312,7 @@ recv_urg:
 void tcp_set_state(struct sock *sk, int state)
 {
 	int oldstate = sk->sk_state;
-	struct tcp_sock *tp=tcp_sk(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
 
 	switch (state) {
 	case TCP_ESTABLISHED:
@@ -2323,8 +2323,7 @@ void tcp_set_state(struct sock *sk, int state)
 			  queue of the mpcb.*/
 			BUG_ON(!tp->mpcb && !tp->pending);
 			if (tcp_sk(sk)->mpcb) {
-				struct sock *meta_sk=
-					(struct sock*)(tcp_sk(sk)->mpcb);
+				struct sock *meta_sk = (struct sock*) (tcp_sk(sk)->mpcb);
 				if (tcp_sk(sk)->mpc && 
 				    is_master_sk(tcp_sk(sk))) 
 					mtcp_ask_update(sk);
@@ -2332,7 +2331,7 @@ void tcp_set_state(struct sock *sk, int state)
 				mtcp_update_sndbuf(tcp_sk(sk)->mpcb);
 				if ((1 << meta_sk->sk_state) &
 				    (TCPF_SYN_SENT | TCPF_SYN_RECV))
-					meta_sk->sk_state=TCP_ESTABLISHED;
+					meta_sk->sk_state = TCP_ESTABLISHED;
 			}
 #endif
 		}
