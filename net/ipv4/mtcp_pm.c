@@ -172,29 +172,11 @@ void mtcp_pm_release(struct multipath_pcb *mpcb)
 		}
 	}
 
-	/* remove all pending child socks associated to this mpcb */
-	while (!reqsk_queue_empty(&mpcb_icsk->icsk_accept_queue)) {
-		struct sock *child;
-		struct request_sock *req;
-		req = reqsk_queue_remove(&mpcb_icsk->icsk_accept_queue);
-		child = req->sk;
-
-		/* The code hereafter comes from
-		   inet_csk_listen_stop() */
-		bh_lock_sock(child);
-		WARN_ON(sock_owned_by_user(child));
-		sock_hold(child);
-		
-		tcp_disconnect(child, O_NONBLOCK);
-		
-		sock_orphan(child);
-		
-		inet_csk_destroy_sock(child);
-		
-		bh_unlock_sock(child);
-		sock_put(child);
-		reqsk_free(req);
-	}
+	/* Normally we should have
+	   accepted all the child socks in destroy_mpcb, after
+	   having removed the mpcb from the hashtable. So having this queue
+	   non-empty can only be a bug.*/
+	BUG_ON(!reqsk_queue_empty(&mpcb_icsk->icsk_accept_queue));
 }
 
 /* Generates a token for a new MPTCP connection
