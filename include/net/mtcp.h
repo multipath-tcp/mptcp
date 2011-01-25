@@ -321,7 +321,6 @@ void mtcp_ask_update(struct sock *sk);
 void mtcp_destroy_mpcb(struct multipath_pcb *mpcb);
 void mtcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp);
 void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp);
-void mtcp_reset_options(struct multipath_options* mopt);
 void mtcp_update_metasocket(struct sock *sock, struct multipath_pcb *mpcb);
 int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		size_t size);

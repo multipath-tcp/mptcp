@@ -97,6 +97,8 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 	int paws_reject = 0;
 
 	tmp_opt.saw_tstamp = 0;
+	mtcp_init_addr_list(&mopt);
+
 	if (th->doff > (sizeof(*th) >> 2) && tcptw->tw_ts_recent_stamp) {
 		tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
@@ -526,7 +528,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 			   struct request_sock **prev)
 {
 	struct tcp_options_received tmp_opt;
-	struct multipath_options mtp;
+	struct multipath_options mopt;
 	u8 *hash_location;
 	struct sock *child;
 	const struct tcphdr *th = tcp_hdr(skb);
@@ -534,10 +536,10 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	int paws_reject = 0;
 
 	tmp_opt.saw_tstamp = 0;
-	mtcp_init_addr_list(&mtp);
+	mtcp_init_addr_list(&mopt);
 	
 	if (th->doff > (sizeof(struct tcphdr)>>2)) {
-		tcp_parse_options(skb, &tmp_opt, &hash_location, &mtp, 0);
+		tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
 
 		if (tmp_opt.saw_tstamp) {
@@ -713,8 +715,8 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		child_tp->pending=1;
 		child_tp->mtcp_loc_token=req->mtcp_loc_token;
 		mpcb=mtcp_alloc_mpcb(child, GFP_ATOMIC);
-		if (mtp.list_rcvd)
-			memcpy(&mpcb->received_options,&mtp,sizeof(mtp));
+		if (mopt.list_rcvd)
+			memcpy(&mpcb->received_options,&mopt,sizeof(mopt));
 		set_bit(MPCB_FLAG_SERVER_SIDE,&mpcb->flags);
 		mtcp_update_metasocket(child,mpcb);
 #endif

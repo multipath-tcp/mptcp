@@ -4217,7 +4217,6 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 				  struct tcp_sock *tp, u8 **hvpp)
 {
 	struct multipath_pcb* mpcb;
-	struct multipath_options *mopt;
 	/* In the spirit of fast parsing, compare doff directly to constant
 	 * values.  Because equality is used, short doff can be ignored here.
 	 */
@@ -4236,8 +4235,7 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 		mtcp_debug("%s: looked for mpcb with token %d\n",
 				__FUNCTION__, tp->mtcp_loc_token);
 	BUG_ON(!mpcb);
-	mopt=&mpcb->received_options;
-	tcp_parse_options(skb, &tp->rx_opt, hvpp, mopt, 1);
+	tcp_parse_options(skb, &tp->rx_opt, hvpp, &mpcb->received_options, 1);
 	if (unlikely(mpcb && tp->rx_opt.saw_mpc && is_master_sk(tp))) {
 		/* Transfer sndwnd control to the mpcb */
 		mpcb->tp.snd_wnd = tp->snd_wnd;
