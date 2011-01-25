@@ -378,17 +378,21 @@ static int retrans_to_secs(u8 retrans, int timeout, int rto_max)
  *	take care of normal races (between the test and the event) and we don't
  *	go look at any of the socket buffers directly.
  */
-#ifdef CONFIG_MTCP
 unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 {
 	unsigned int mask;
 	struct sock *master_sk = sock->sk;
 	struct tcp_sock *master_tp = tcp_sk(master_sk);
+#ifdef CONFIG_MTCP
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(master_tp);
 	struct sock *mpcb_sk = (master_tp->mpc)?(struct sock *) mpcb:
 		master_sk;
 	struct tcp_sock *mpcb_tp = tcp_sk(mpcb_sk);
-	
+#else
+	struct sock *mpcb_sk = master_sk;
+	struct tcp_sock *mpcb_tp = master_tp;
+#endif
+
 	sock_poll_wait(file, sk_sleep(master_sk), wait);
 
 #ifdef CONFIG_MTCP_PM
@@ -396,9 +400,8 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 		mtcp_check_new_subflow(mpcb);
 #endif
 
-	if (master_sk->sk_state == TCP_LISTEN) {
+	if (master_sk->sk_state == TCP_LISTEN)
 		return inet_csk_listen_poll(master_sk);
-	}
 
 	/* Socket is not locked. We are protected from async events
 	 * by poll logic and correct handling of state changes
@@ -406,11 +409,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	 */
 
 	mask = 0;
-	/*The subsocks are responsible for transferring their errors
-	  here, so that they become visible to the mpcb.*/
-	if (mpcb_sk->sk_err)
-		mask = POLLERR;
-	
+
 	/*
 	 * POLLHUP is certainly not done right. But poll() doesn't
 	 * have a notion of HUP in just one direction, and for a
@@ -443,28 +442,27 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 		mask |= POLLHUP;
 	if (mpcb_sk->sk_shutdown & RCV_SHUTDOWN)
 		mask |= POLLIN | POLLRDNORM | POLLRDHUP;
-	
+
 	/* Connected? */
-	
 	if ((1 << master_sk->sk_state) & ~(TCPF_SYN_SENT | TCPF_SYN_RECV)) {
-		int target = sock_rcvlowat(master_sk,0,INT_MAX);
-		
+		int target = sock_rcvlowat(master_sk, 0, INT_MAX);
+
 		if (mpcb_tp->urg_seq == mpcb_tp->copied_seq &&
 		    !sock_flag(master_sk, SOCK_URGINLINE) &&
 		    mpcb_tp->urg_data)
 			target++;
-		
+
 		/* Potential race condition. If read of tp below will
 		 * escape above sk->sk_state, we can be illegally awaken
 		 * in SYN_* states. */
-		if (mpcb_tp->rcv_nxt - mpcb_tp->copied_seq >=target)
+		if (mpcb_tp->rcv_nxt - mpcb_tp->copied_seq >= target)
 			mask |= POLLIN | POLLRDNORM;
 
 		if (!(mpcb_sk->sk_shutdown & SEND_SHUTDOWN)) {
-			if (sk_stream_wspace(mpcb_sk) >= 
-			    sk_stream_min_wspace(mpcb_sk)) {
+			if (sk_stream_wspace(mpcb_sk) 
+			    >= sk_stream_min_wspace(mpcb_sk))
 				mask |= POLLOUT | POLLWRNORM;
-			} else {  /* send SIGIO later */
+			else {  /* send SIGIO later */
 				set_bit(SOCK_ASYNC_NOSPACE,
 					&mpcb_sk->sk_socket->flags);
 				set_bit(SOCK_NOSPACE, 
@@ -478,109 +476,24 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 				    sk_stream_min_wspace(mpcb_sk))
 					mask |= POLLOUT | POLLWRNORM;
 			}
-		}
-		else printk(KERN_ERR "mpcb is in shutdown state\n");
-		
-		if (mpcb_tp->urg_data & TCP_URG_VALID)
-			mask |= POLLPRI;
-	}
-	return mask;
-}
-#else
-unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
-{
-	unsigned int mask;
-	struct sock *sk = sock->sk;
-	struct tcp_sock *tp = tcp_sk(sk);
-
-	sock_poll_wait(file, sk_sleep(sk), wait);
-
-	if (sk->sk_state == TCP_LISTEN)
-		return inet_csk_listen_poll(sk);
-
-	/* Socket is not locked. We are protected from async events
-	 * by poll logic and correct handling of state changes
-	 * made by other threads is impossible in any case.
-	 */
-
-	mask = 0;
-
-	/*
-	 * POLLHUP is certainly not done right. But poll() doesn't
-	 * have a notion of HUP in just one direction, and for a
-	 * socket the read side is more interesting.
-	 *
-	 * Some poll() documentation says that POLLHUP is incompatible
-	 * with the POLLOUT/POLLWR flags, so somebody should check this
-	 * all. But careful, it tends to be safer to return too many
-	 * bits than too few, and you can easily break real applications
-	 * if you don't tell them that something has hung up!
-	 *
-	 * Check-me.
-	 *
-	 * Check number 1. POLLHUP is _UNMASKABLE_ event (see UNIX98 and
-	 * our fs/select.c). It means that after we received EOF,
-	 * poll always returns immediately, making impossible poll() on write()
-	 * in state CLOSE_WAIT. One solution is evident --- to set POLLHUP
-	 * if and only if shutdown has been made in both directions.
-	 * Actually, it is interesting to look how Solaris and DUX
-	 * solve this dilemma. I would prefer, if POLLHUP were maskable,
-	 * then we could set it on SND_SHUTDOWN. BTW examples given
-	 * in Stevens' books assume exactly this behaviour, it explains
-	 * why POLLHUP is incompatible with POLLOUT.	--ANK
-	 *
-	 * NOTE. Check for TCP_CLOSE is added. The goal is to prevent
-	 * blocking on fresh not-connected or disconnected socket. --ANK
-	 */
-	if (sk->sk_shutdown == SHUTDOWN_MASK || sk->sk_state == TCP_CLOSE)
-		mask |= POLLHUP;
-	if (sk->sk_shutdown & RCV_SHUTDOWN)
-		mask |= POLLIN | POLLRDNORM | POLLRDHUP;
-
-	/* Connected? */
-	if ((1 << sk->sk_state) & ~(TCPF_SYN_SENT | TCPF_SYN_RECV)) {
-		int target = sock_rcvlowat(sk, 0, INT_MAX);
-
-		if (tp->urg_seq == tp->copied_seq &&
-		    !sock_flag(sk, SOCK_URGINLINE) &&
-		    tp->urg_data)
-			target++;
-
-		/* Potential race condition. If read of tp below will
-		 * escape above sk->sk_state, we can be illegally awaken
-		 * in SYN_* states. */
-		if (tp->rcv_nxt - tp->copied_seq >= target)
-			mask |= POLLIN | POLLRDNORM;
-
-		if (!(sk->sk_shutdown & SEND_SHUTDOWN)) {
-			if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk))
-				mask |= POLLOUT | POLLWRNORM;
-			else {  /* send SIGIO later */
-				set_bit(SOCK_ASYNC_NOSPACE,
-					&sk->sk_socket->flags);
-				set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
-				
-				/* Race breaker. If space is freed after
-				 * wspace test but before the flags are set,
-				 * IO signal will be lost.
-				 */
-				if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk))
-					mask |= POLLOUT | POLLWRNORM;
-			}
-		} else
+		} else {
 			mask |= POLLOUT | POLLWRNORM;
+			printk(KERN_ERR "mpcb is in shutdown state\n");
+		}
 
-		if (tp->urg_data & TCP_URG_VALID)
+		if (mpcb_tp->urg_data & TCP_URG_VALID)
 			mask |= POLLPRI;
 	}
 	/* This barrier is coupled with smp_wmb() in tcp_reset() */
 	smp_rmb();
-	if (sk->sk_err)
+
+	/*The subsocks are responsible for transferring their errors
+	  here, so that they become visible to the mpcb.*/
+	if (mpcb_sk->sk_err)
 		mask |= POLLERR;
 
 	return mask;
 }
-#endif
 EXPORT_SYMBOL(tcp_poll);
 
 int tcp_ioctl(struct sock *sk, int cmd, unsigned long arg)
