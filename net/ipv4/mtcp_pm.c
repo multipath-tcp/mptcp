@@ -1137,6 +1137,10 @@ listen_overflow:
 embryonic_reset:
 	if (!(flg & TCP_FLAG_RST))
 		req->rsk_ops->send_reset(NULL, skb);
+	/*Deleting from global hashtable*/
+	spin_lock(&tuple_hash_lock);
+	list_del_init(&req->collide_tuple);
+	spin_unlock(&tuple_hash_lock);
 
 	mtcp_reqsk_local_remove(req);
 	reqsk_queue_removed(&mpcb_icsk->icsk_accept_queue, req);
