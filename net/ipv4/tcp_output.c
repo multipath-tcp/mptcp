@@ -1543,6 +1543,38 @@ static void tcp_cwnd_validate(struct sock *sk)
 	}
 }
 
+/* Returns the portion of skb which can be sent right away without
+ * introducing MSS oddities to segment boundaries. In rare cases where
+ * mss_now != mss_cache, we will request caller to create a small skb
+ * per input skb which could be mostly avoided here (if desired).
+ *
+ * We explicitly want to create a request for splitting write queue tail
+ * to a small skb for Nagle purposes while avoiding unnecessary modulos,
+ * thus all the complexity (cwnd_len is always MSS multiple which we
+ * return whenever allowed by the other factors). Basically we need the
+ * modulo only when the receiver window alone is the limiting factor or
+ * when we would be allowed to send the split-due-to-Nagle skb fully.
+ */
+static unsigned int tcp_mss_split_point(struct sock *sk, struct sk_buff *skb,
+					unsigned int mss_now, unsigned int cwnd)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	u32 needed, window, cwnd_len;
+
+	window = tcp_wnd_end(tp,0) - TCP_SKB_CB(skb)->seq;
+	cwnd_len = mss_now * cwnd;
+
+	if (likely(cwnd_len <= window && skb != tcp_write_queue_tail(sk)))
+		return cwnd_len;
+
+	needed = min(skb->len, window);
+
+	if (cwnd_len <= needed)
+		return cwnd_len;
+
+	return needed - needed % mss_now;
+}
+
 /* Can at least one segment of SKB be sent right now, according to the
  * congestion window rules?  If so, return how many segments are allowed.
  */
@@ -1673,11 +1705,13 @@ static unsigned int tcp_snd_test(struct sock *subsk, struct sk_buff *skb,
 	unsigned int cwnd_quota;
 	struct multipath_pcb *mpcb=subtp->mpcb;
 	struct tcp_sock *mpcb_tp=&mpcb->tp;
-
-	BUG_ON(tcp_skb_pcount(skb)>1);
+	
+	BUG_ON(subtp->mpc && tcp_skb_pcount(skb)>1);
 	if (!mpcb)
 		mpcb_tp=subtp;
 
+	tcp_init_tso_segs(subsk,skb,cur_mss);
+	
 	if (!tcp_nagle_test(mpcb_tp, skb, cur_mss, nonagle))
 		return 0;
 
@@ -2108,20 +2142,18 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 				break;
 		} else {
 #ifdef CONFIG_MTCP
-			/* tso not supported in MPTCP */
-			BUG();
+			/*tso not supported in MPTCP*/
+			BUG_ON(tp->mpc);
 #endif
 			if (!push_one && tcp_tso_should_defer(sk, skb))
 				break;
 		}
 
 		limit = mss_now;
-
-#ifndef CONFIG_MTCP
-		if (tso_segs > 1 && !tcp_urg_mode(tp))
+		if (!tp->mpc && tso_segs > 1 && !tcp_urg_mode(tp))
                         limit = tcp_mss_split_point(sk, skb, mss_now,
                                                     cwnd_quota);
-#endif
+
 		if (skb->len > limit &&
 		    unlikely(tso_fragment(sk, skb, limit, mss_now, gfp)))
 			break;

@@ -3314,9 +3314,12 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 
 
 	BUG_ON(is_meta_sk(sk));
-	/* Cannot have more packets in flight than packets in the
-	   rexmit queue */
-	BUG_ON(tp->packets_out>skb_queue_len(&sk->sk_write_queue));
+
+#ifdef MTCP_DEBUG_PKTS_OUT
+	/*Cannot have more packets in flight than packets in the
+	  rexmit queue (if tso disabled)*/
+	BUG_ON(tp->mpc && tp->packets_out>skb_queue_len(&sk->sk_write_queue));
+#endif
 
 	if (tcp_write_queue_empty(sk) &&  icsk->icsk_pending == ICSK_TIME_RETRANS)
 		BUG();
@@ -3421,20 +3424,22 @@ no_mptcp_update:
 
 		tcp_unlink_write_queue(skb, sk);
 
-		/* Cannot have more packets in flight than packets in the
-		   rexmit queue */
-		if (tp->packets_out>skb_queue_len(&sk->sk_write_queue)) {
-			printk(KERN_ERR "acked_pcount:%d\n", acked_pcount);
 #ifdef MTCP_DEBUG_PKTS_OUT
+		
+		/*Cannot have more packets in flight than packets in the
+		  rexmit queue (if tso disabled)*/
+		if(tp->mpc && 
+		   tp->packets_out>skb_queue_len(&sk->sk_write_queue)) {
+			printk(KERN_ERR "acked_pcount:%d\n", acked_pcount);
 			printk(KERN_ERR "orig_packets:%d,orig_qsize:%d,"
 			       "orig_outsize:%d\n"
 			       "packets:%d,qsize:%d\n",orig_packets,orig_qsize,
 			       orig_outsize,
 			       tp->packets_out,
 			       skb_queue_len(&sk->sk_write_queue));
-#endif
 			BUG();
 		}
+#endif
 
 		sk_wmem_free_skb(sk, skb);
 		tp->scoreboard_skb_hint = NULL;
