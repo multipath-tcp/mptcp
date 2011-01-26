@@ -973,7 +973,7 @@ out:
 	 */
 	if (err == -ENOBUFS || test_bit(SOCK_NOSPACE, &sk->sk_socket->flags)) {
 		UDP_INC_STATS_USER(sock_net(sk),
-				   UDP_MIB_SNDBUFERRORS, is_udplite);
+				UDP_MIB_SNDBUFERRORS, is_udplite);
 	}
 	return err;
 

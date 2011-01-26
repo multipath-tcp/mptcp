@@ -79,6 +79,7 @@ int	tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
 static void	__tcp_v6_send_check(struct sk_buff *skb,
 				    struct in6_addr *saddr,
 				    struct in6_addr *daddr);
+
 static const struct inet_connection_sock_af_ops ipv6_mapped;
 const struct inet_connection_sock_af_ops ipv6_specific;
 #ifdef CONFIG_TCP_MD5SIG
@@ -122,7 +123,7 @@ static __u32 tcp_v6_init_sequence(struct sk_buff *skb)
 }
 
 int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
-		   int addr_len)
+			  int addr_len)
 {
 	struct sockaddr_in6 *usin = (struct sockaddr_in6 *) uaddr;
 	struct inet_sock *inet = inet_sk(sk);
@@ -332,7 +333,7 @@ static void tcp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 	struct net *net = dev_net(skb->dev);
 
 	sk = inet6_lookup(net, &tcp_hashinfo, &hdr->daddr,
-			  th->dest, &hdr->saddr, th->source, skb->dev->ifindex);
+			th->dest, &hdr->saddr, th->source, skb->dev->ifindex);
 
 	if (sk == NULL) {
 		ICMP6_INC_STATS_BH(net, __in6_dev_get(skb->dev),
@@ -1148,8 +1149,8 @@ static struct sock *tcp_v6_hnd_req(struct sock *sk,struct sk_buff *skb)
 		return tcp_check_req(sk, skb, req, prev);
 
 	nsk = __inet6_lookup_established(sock_net(sk), &tcp_hashinfo,
-					 &ipv6_hdr(skb)->saddr, th->source,
-					 &ipv6_hdr(skb)->daddr, ntohs(th->dest), inet6_iif(skb));
+			&ipv6_hdr(skb)->saddr, th->source,
+			&ipv6_hdr(skb)->daddr, ntohs(th->dest), inet6_iif(skb));
 
 	if (nsk) {
 		if (nsk->sk_state != TCP_TIME_WAIT) {
@@ -1592,17 +1593,13 @@ int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 	   by tcp. Feel free to propose better solution.
 					       --ANK (980728)
 	 */
-	if (np->rxopt.all) {
-		printk(KERN_ERR "cloning inc segment\n");
+	if (np->rxopt.all)
 		opt_skb = skb_clone(skb, GFP_ATOMIC);
-	}
 
 	if (sk->sk_state == TCP_ESTABLISHED) { /* Fast path */
 		TCP_CHECK_TIMER(sk);
-
 		if (tcp_rcv_established(sk, skb, tcp_hdr(skb), skb->len))
 			goto reset;
-
 		TCP_CHECK_TIMER(sk);
 		if (opt_skb)
 			goto ipv6_pktoptions;
@@ -1739,7 +1736,6 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 #endif
 
 	sk = __inet6_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
-
 	if (!sk)
 		goto no_tcp_socket;
 
@@ -1976,6 +1972,7 @@ static int tcp_v6_init_sock(struct sock *sk)
 	local_bh_disable();
 	percpu_counter_inc(&tcp_sockets_allocated);
 	local_bh_enable();
+
 #ifdef CONFIG_MTCP
 	/*Init the MTCP mpcb*/
 	{

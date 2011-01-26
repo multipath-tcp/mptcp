@@ -375,7 +375,6 @@ int inet6_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	}
 	if (snum)
 		sk->sk_userlocks |= SOCK_BINDPORT_LOCK;
-
 	inet->inet_sport = htons(inet->inet_num);
 	inet->inet_dport = 0;
 	inet->inet_daddr = 0;

@@ -47,7 +47,6 @@
 
 
 
-
 inline int ip6_rcv_finish( struct sk_buff *skb)
 {
 	if (skb_dst(skb) == NULL)
@@ -168,7 +167,6 @@ static int ip6_input_finish(struct sk_buff *skb)
 	struct inet6_dev *idev;
 	struct net *net = dev_net(skb_dst(skb)->dev);
 
-
 	/*
 	 *	Parse extension headers
 	 */
@@ -180,7 +178,7 @@ resubmit:
 		goto discard;
 	nhoff = IP6CB(skb)->nhoff;
 	nexthdr = skb_network_header(skb)[nhoff];
-	
+
 	raw = raw6_local_deliver(skb, nexthdr);
 
 	hash = nexthdr & (MAX_INET_PROTOS - 1);
@@ -198,7 +196,6 @@ resubmit:
 			skb_postpull_rcsum(skb, skb_network_header(skb),
 					   skb_network_header_len(skb));
 			hdr = ipv6_hdr(skb);
-			
 			if (ipv6_addr_is_multicast(&hdr->daddr) &&
 			    !ipv6_chk_mcast_addr(skb->dev, &hdr->daddr,
 			    &hdr->saddr) &&
@@ -231,7 +228,6 @@ resubmit:
 
 discard:
 	IP6_INC_STATS_BH(net, idev, IPSTATS_MIB_INDISCARDS);
-	printk(KERN_ERR "packet discarded\n");
 	rcu_read_unlock();
 	kfree_skb(skb);
 	return 0;

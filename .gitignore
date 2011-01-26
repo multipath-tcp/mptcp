@@ -49,8 +49,6 @@ modules.builtin
 #
 !.gitignore
 !.mailmap
-/debian
-/build-um
 
 #
 # Generated include files

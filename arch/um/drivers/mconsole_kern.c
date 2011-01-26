@@ -779,7 +779,7 @@ static int __init mconsole_init(void)
 		return -1;
 	snprintf(mconsole_socket_name, sizeof(file), "%s", file);
 
-	sock = os_create_unix_socket(file, strlen(file), 1);
+	sock = os_create_unix_socket(file, sizeof(file), 1);
 	if (sock < 0) {
 		printk(KERN_ERR "Failed to initialize management console\n");
 		return 1;

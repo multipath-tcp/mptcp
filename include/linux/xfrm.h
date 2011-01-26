@@ -139,7 +139,6 @@ enum {
 #define XFRM_MODE_BEET 4
 #define XFRM_MODE_MAX 5
 
-
 /* Netlink configuration messages.  */
 enum {
 	XFRM_MSG_BASE = 0x10,

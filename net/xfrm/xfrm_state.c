@@ -1094,24 +1094,24 @@ int xfrm_state_add(struct xfrm_state *x)
 	if (use_spi && x->km.seq) {
 		x1 = __xfrm_find_acq_byseq(net, mark, x->km.seq);
 		if (x1 && ((x1->id.proto != x->id.proto) ||
-			   xfrm_addr_cmp(&x1->id.daddr, &x->id.daddr, family))) {
+		    xfrm_addr_cmp(&x1->id.daddr, &x->id.daddr, family))) {
 			to_put = x1;
 			x1 = NULL;
 		}
 	}
-	
+
 	if (use_spi && !x1)
 		x1 = __find_acq_core(net, &x->mark, family, x->props.mode,
 				     x->props.reqid, x->id.proto,
 				     &x->id.daddr, &x->props.saddr, 0);
-	
+
 	__xfrm_state_bump_genids(x);
 	__xfrm_state_insert(x);
 	err = 0;
-	
+
 out:
 	spin_unlock_bh(&xfrm_state_lock);
-	
+
 	if (x1) {
 		xfrm_state_delete(x1);
 		xfrm_state_put(x1);

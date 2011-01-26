@@ -207,8 +207,6 @@ static void xfrm6_update_pmtu(struct dst_entry *dst, u32 mtu)
 	struct xfrm_dst *xdst = (struct xfrm_dst *)dst;
 	struct dst_entry *path = xdst->route;
 
-	printk(KERN_ERR "new mtu:%d\n",mtu);
-
 	path->ops->update_pmtu(path, mtu);
 }
 

@@ -521,7 +521,7 @@ int os_create_unix_socket(const char *file, int len, int close_on_exec)
 
 	addr.sun_family = AF_UNIX;
 
-	snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", file);
+	snprintf(addr.sun_path, len, "%s", file);
 
 	err = bind(sock, (struct sockaddr *) &addr, sizeof(addr));
 	if (err < 0)

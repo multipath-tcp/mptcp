@@ -570,7 +570,6 @@ int xfrm_policy_insert(int dir, struct xfrm_policy *policy, int excl)
 		hlist_add_after(newpos, &policy->bydst);
 	else
 		hlist_add_head(&policy->bydst, chain);
-
 	xfrm_pol_hold(policy);
 	net->xfrm.policy_count[dir]++;
 	atomic_inc(&flow_cache_genid);
@@ -1430,6 +1429,9 @@ static struct dst_entry *xfrm_bundle_create(struct xfrm_policy *policy,
 			dst1->flags |= DST_NOHASH;
 		}
 
+		xdst->route = dst;
+		                memcpy(&dst1->metrics, &dst->metrics, sizeof(dst->metrics));
+
 		if (xfrm[i]->props.mode != XFRM_MODE_TRANSPORT) {
 			family = xfrm[i]->props.family;
 			dst = xfrm_dst_lookup(xfrm[i], tos, &saddr, &daddr,
@@ -1439,9 +1441,6 @@ static struct dst_entry *xfrm_bundle_create(struct xfrm_policy *policy,
 				goto put_states;
 		} else
 			dst_hold(dst);
-
-  		xdst->route = dst;
-		memcpy(&dst1->metrics, &dst->metrics, sizeof(dst->metrics));
 
 		dst1->xfrm = xfrm[i];
 		xdst->xfrm_genid = xfrm[i]->genid;
@@ -2268,6 +2267,7 @@ static void xfrm_init_pmtu(struct dst_entry *dst)
 
 		if (pmtu > route_mtu_cached)
 			pmtu = route_mtu_cached;
+
 		dst->metrics[RTAX_MTU-1] = pmtu;
 	} while ((dst = dst->next));
 }
@@ -2321,8 +2321,6 @@ int xfrm_bundle_ok(struct xfrm_policy *pol, struct xfrm_dst *first,
 
 		mtu = dst_mtu(dst->child);
 		if (xdst->child_mtu_cached != mtu) {
-			printk(KERN_ERR "child_mtu_cached:%d,mtu:%d\n",
-			       xdst->child_mtu_cached,mtu);
 			last = xdst;
 			xdst->child_mtu_cached = mtu;
 		}
@@ -2353,12 +2351,10 @@ int xfrm_bundle_ok(struct xfrm_policy *pol, struct xfrm_dst *first,
 		if (last == first)
 			break;
 
-		printk(KERN_ERR "should not arrive here\n");
 		last = (struct xfrm_dst *)last->u.dst.next;
 		last->child_mtu_cached = mtu;
 	}
 
-	printk(KERN_ERR "%s:mtu set to %d\n", __FUNCTION__,mtu);
 	return 1;
 }
 
