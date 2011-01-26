@@ -693,6 +693,8 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 	    (sk->sk_family == AF_INET6 && 
 	     ipv6_addr_loopback(&inet6_sk(sk)->daddr)))
 		goto nomptcp;
+	if (is_local_addr4(inet_sk(sk)->inet_daddr))
+		goto nomptcp;
 	if (is_master_sk(tp)) {
 		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 		

@@ -31,6 +31,7 @@
 #include <linux/list.h>
 #include <linux/tcp.h>
 #include <linux/ipv6.h>
+#include <linux/inetdevice.h>
 
 #include <net/request_sock.h>
 #include <net/mtcp_pm.h>
@@ -304,6 +305,35 @@ static inline void mtcp_wmem_free_skb(struct sock *sk, struct sk_buff *skb)
 	sk->sk_wmem_queued -= skb->truesize;
 	sk_mem_uncharge(sk, skb->truesize);
 	kfree_skb(skb);
+}
+
+static inline int is_local_addr4(u32 addr)
+{
+	struct net_device *dev;
+	int ans=0;
+	read_lock(&dev_base_lock);
+	for_each_netdev (&init_net,dev) {
+		if (netif_running(dev)) {
+			struct in_device *in_dev = dev->ip_ptr;
+			struct in_ifaddr *ifa;
+			
+			if (dev->flags & IFF_LOOPBACK)
+				continue;
+			
+			for (ifa = in_dev->ifa_list; ifa; 
+			     ifa = ifa->ifa_next) {
+				
+				if (ifa->ifa_address == addr) {
+					ans=1;
+					goto out;
+				}
+			}
+		}
+	}
+
+out:
+	read_unlock(&dev_base_lock);
+	return ans;
 }
 
 int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
