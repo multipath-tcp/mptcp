@@ -359,7 +359,7 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 		struct sk_buff *skb, int *pf);
 void mtcp_reinject_data(struct sock *orig_sk);
 int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb);
-int mtcp_init_subsockets(struct multipath_pcb *mpcb, uint32_t path_indices);
+int mtcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices);
 int mtcpsub_get_port(struct sock *sk, unsigned short snum);
 void mtcp_update_window_clamp(struct multipath_pcb *mpcb);
 void mtcp_update_sndbuf(struct multipath_pcb *mpcb);

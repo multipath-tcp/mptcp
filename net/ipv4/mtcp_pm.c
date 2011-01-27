@@ -191,11 +191,11 @@ u32 mtcp_new_token(void)
 	return atomic_inc_return(&latest_token);
 }
 
-struct path4 *find_path_mapping4(struct in_addr *loc,struct in_addr *rem,
+struct path4 *find_path_mapping4(struct in_addr *loc, struct in_addr *rem,
 				 struct multipath_pcb *mpcb)
 {
 	int i;
-	for (i=0;i<mpcb->pa4_size;i++)
+	for (i = 0; i < mpcb->pa4_size; i++)
 		if (mpcb->pa4[i].loc.addr.s_addr == loc->s_addr &&
 		    mpcb->pa4[i].rem.addr.s_addr == rem->s_addr)
 			return &mpcb->pa4[i];
@@ -273,138 +273,144 @@ void print_patharray(struct path4 *pa, int size)
 
 static void __mtcp_update_patharray_ports(struct multipath_pcb *mpcb)
 {
-	int pa4_size=sysctl_mptcp_ndiffports-1; /*-1 because the initial
-						  flow counts for one.*/
+	int pa4_size = sysctl_mptcp_ndiffports - 1; /* -1 because the initial
+						       flow counts for one. */
 	struct path4 *new_pa4, *old_pa4;
-	int newpa_idx=0;
-	struct sock *mpcb_sk=(struct sock *)mpcb;
+	int newpa_idx = 0;
+	struct sock *mpcb_sk = (struct sock *) mpcb;
 
 	if(mpcb->pa4) 
-		return; /*path allocation already done*/
+		return; /* path allocation already done */
 
-	new_pa4=kmalloc(pa4_size*sizeof(struct path4),GFP_ATOMIC);
+	new_pa4 = kmalloc(pa4_size * sizeof(struct path4), GFP_ATOMIC);
 	
-	for (newpa_idx=0;newpa_idx<pa4_size;newpa_idx++) {
-		new_pa4[newpa_idx].loc.addr.s_addr=
-			inet_sk(mpcb_sk)->inet_saddr;
-		new_pa4[newpa_idx].loc.id=0; /*ulid has id 0*/
-		new_pa4[newpa_idx].rem.addr.s_addr=
+	for (newpa_idx = 0; newpa_idx < pa4_size; newpa_idx++) {
+		new_pa4[newpa_idx].loc.addr.s_addr =
+				inet_sk(mpcb_sk)->inet_saddr;
+		new_pa4[newpa_idx].loc.id = 0; /* ulid has id 0 */
+		new_pa4[newpa_idx].rem.addr.s_addr =
 			inet_sk(mpcb_sk)->inet_daddr;
-		new_pa4[newpa_idx].rem.id=0; /*ulid has id 0*/
-		/*new path index to be given*/
-		new_pa4[newpa_idx].path_index=
-			mpcb->next_unused_pi++;
+		new_pa4[newpa_idx].rem.id = 0; /* ulid has id 0 */
+
+		/* new path index to be given */
+		new_pa4[newpa_idx].path_index = mpcb->next_unused_pi++;
 	}
 
-	/*Replacing the mapping table*/
-	old_pa4=mpcb->pa4;
-	mpcb->pa4=new_pa4;
-	mpcb->pa4_size=pa4_size;
-	if (old_pa4) kfree(old_pa4);	
+	/* Replacing the mapping table */
+	old_pa4 = mpcb->pa4;
+	mpcb->pa4 = new_pa4;
+	mpcb->pa4_size = pa4_size;
+
+	if (old_pa4)
+		kfree(old_pa4);
 }
 
 /*This is the MPTCP PM mapping table*/
 static void __mtcp_update_patharray(struct multipath_pcb *mpcb)
 {
 	struct path4 *new_pa4, *old_pa4;
-	int i,j,newpa_idx=0;
-	struct sock *mpcb_sk=(struct sock *)mpcb;
-	/*Count how many paths are available
-	  We add 1 to size of local and remote set, to include the 
-	  ULID*/
+	int i, j, newpa_idx = 0;
+	struct sock *mpcb_sk = (struct sock *) mpcb;
+	/* Count how many paths are available
+	   We add 1 to size of local and remote set, to include the
+	   ULID */
 	int ulid_v4;
 	int pa4_size;
 
-	if (sysctl_mptcp_ndiffports>1)
+	if (sysctl_mptcp_ndiffports > 1)
 		return __mtcp_update_patharray_ports(mpcb);
 
-	ulid_v4=(mpcb_sk->sk_family==AF_INET ||
-		     (mpcb_sk->sk_family==AF_INET6 && 
-		      tcp_v6_is_v4_mapped(mpcb_sk)))?1:0;
-	pa4_size=(mpcb->num_addr4+ulid_v4)*
-		(mpcb->received_options.num_addr4+ulid_v4)-ulid_v4;
+	ulid_v4 = (mpcb_sk->sk_family == AF_INET ||
+			(mpcb_sk->sk_family == AF_INET6 &&
+					tcp_v6_is_v4_mapped(mpcb_sk))) ? 1 : 0;
+	pa4_size = (mpcb->num_addr4 + ulid_v4) *
+			(mpcb->received_options.num_addr4 + ulid_v4) - ulid_v4;
 
-	new_pa4=kmalloc(pa4_size*sizeof(struct path4),GFP_ATOMIC);
-	
+	new_pa4 = kmalloc(pa4_size * sizeof(struct path4), GFP_ATOMIC);
+
 	if (ulid_v4) {
-		/*ULID src with other dest*/
-		for (j=0;j<mpcb->received_options.num_addr4;j++) {
-			struct path4 *p=find_path_mapping4(
+		/* ULID src with other dest */
+		for (j = 0; j < mpcb->received_options.num_addr4; j++) {
+			struct path4 *p = find_path_mapping4(
 				(struct in_addr*)&inet_sk(mpcb_sk)->inet_saddr,
 				&mpcb->received_options.addr4[j].addr,mpcb);
 			if (p)
-				memcpy(&new_pa4[newpa_idx++],p,
+				memcpy(&new_pa4[newpa_idx++], p,
 				       sizeof(struct path4));
 			else {
-				/*local addr*/
-				new_pa4[newpa_idx].loc.addr.s_addr=
+				/* local addr */
+				new_pa4[newpa_idx].loc.addr.s_addr =
 					inet_sk(mpcb_sk)->inet_saddr;
-				new_pa4[newpa_idx].loc.id=0; /*ulid has id 0*/
-				/*remote addr*/
+				new_pa4[newpa_idx].loc.id=0; /* ulid has id 0 */
+
+				/* remote addr */
 				memcpy(&new_pa4[newpa_idx].rem,
 				       &mpcb->received_options.addr4[j],
 				       sizeof(struct mtcp_loc4));
-				/*new path index to be given*/
-				new_pa4[newpa_idx++].path_index=
+
+				/* new path index to be given */
+				new_pa4[newpa_idx++].path_index =
 					mpcb->next_unused_pi++;
 			}
 		}
 		/*ULID dest with other src*/
-		for (i=0;i<mpcb->num_addr4;i++) {
-			struct path4 *p=find_path_mapping4(
+		for (i = 0; i < mpcb->num_addr4; i++) {
+			struct path4 *p = find_path_mapping4(
 				&mpcb->addr4[i].addr,
 				(struct in_addr*)&inet_sk(mpcb_sk)->inet_daddr,
 				mpcb);
 			if (p)
-				memcpy(&new_pa4[newpa_idx++],p,
+				memcpy(&new_pa4[newpa_idx++], p,
 				       sizeof(struct path4));
 			else {
-				/*local addr*/
+				/* local addr */
 				memcpy(&new_pa4[newpa_idx].loc,
 				       &mpcb->addr4[i],
 				       sizeof(struct mtcp_loc4));
 				
-				/*remote addr*/
-				new_pa4[newpa_idx].rem.addr.s_addr=
+				/* remote addr */
+				new_pa4[newpa_idx].rem.addr.s_addr =
 					inet_sk(mpcb_sk)->inet_daddr;
-				new_pa4[newpa_idx].rem.id=0; /*ulid has id 0*/
-				/*new path index to be given*/
-				new_pa4[newpa_idx++].path_index=
+				new_pa4[newpa_idx].rem.id=0; /* ulid has id 0 */
+
+				/* new path index to be given */
+				new_pa4[newpa_idx++].path_index =
 					mpcb->next_unused_pi++;
 			}
 		}
 	}
-	/*Try all other combinations now*/
-	for (i=0;i<mpcb->num_addr4;i++)
-		for (j=0;j<mpcb->received_options.num_addr4;j++) {
-			struct path4 *p=find_path_mapping4(
+
+	/* Try all other combinations now */
+	for (i = 0; i < mpcb->num_addr4; i++)
+		for (j = 0; j < mpcb->received_options.num_addr4; j++) {
+			struct path4 *p = find_path_mapping4(
 				&mpcb->addr4[i].addr,
-				&mpcb->received_options.addr4[j].addr,mpcb);
-			if (p)
-				memcpy(&new_pa4[newpa_idx++],p,
-				       sizeof(struct path4));	
-			else {
-				/*local addr*/
+				&mpcb->received_options.addr4[j].addr, mpcb);
+			if (p) {
+				memcpy(&new_pa4[newpa_idx++], p, sizeof(struct path4));
+			} else {
+				/* local addr */
 				memcpy(&new_pa4[newpa_idx].loc,
 				       &mpcb->addr4[i],
 				       sizeof(struct mtcp_loc4));
-				/*remote addr*/
+				/* remote addr */
 				memcpy(&new_pa4[newpa_idx].rem,
 				       &mpcb->received_options.addr4[j],
 				       sizeof(struct mtcp_loc4));
-				
-				/*new path index to be given*/
-				new_pa4[newpa_idx++].path_index=
-					mpcb->next_unused_pi++;
+
+				/* new path index to be given */
+				new_pa4[newpa_idx++].path_index = mpcb->next_unused_pi++;
 			}
 		}
 	
 	
-	/*Replacing the mapping table*/
-	old_pa4=mpcb->pa4;
-	mpcb->pa4=new_pa4;
-	mpcb->pa4_size=pa4_size;
-	if (old_pa4) kfree(old_pa4);
+	/* Replacing the mapping table */
+	old_pa4 = mpcb->pa4;
+	mpcb->pa4 = new_pa4;
+	mpcb->pa4_size = pa4_size;
+
+	if (old_pa4)
+		kfree(old_pa4);
 }
 
 void mtcp_update_patharray(struct multipath_pcb *mpcb)
@@ -420,9 +426,9 @@ void mtcp_set_addresses(struct multipath_pcb *mpcb)
 	int id = 1;
 	int num_addr4 = 0;
 
-	/*if multiports is requested, we work with the main address
-	  and play only with the ports*/
-	if (sysctl_mptcp_ndiffports!=1)
+	/* if multiports is requested, we work with the main address
+	   and play only with the ports */
+	if (sysctl_mptcp_ndiffports != 1)
 		return;
 
 	read_lock(&dev_base_lock);
@@ -1229,11 +1235,11 @@ finished:
 static void mtcp_send_updatenotif(struct multipath_pcb *mpcb)
 {
 	int i;
-	u32 path_indices=1; /*Path index 1 is reserved for master sk.*/
-	for (i=0;i<mpcb->pa4_size;i++) {
-		path_indices|=PI_TO_FLAG(mpcb->pa4[i].path_index);
+	u32 path_indices = 1; /* Path index 1 is reserved for master sk. */
+	for (i = 0; i < mpcb->pa4_size; i++) {
+		path_indices |= PI_TO_FLAG(mpcb->pa4[i].path_index);
 	}
-	mtcp_init_subsockets(mpcb,path_indices);
+	mtcp_init_subsockets(mpcb, path_indices);
 }
 
 /**
@@ -1246,17 +1252,17 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 	struct sock *child;
 	struct request_sock *acc_req, *req;
 	struct inet_request_sock *ireq;
-	struct path4 *p=NULL;
-	int nb_new=0;
-	struct inet_connection_sock *mpcb_icsk=
-		(struct inet_connection_sock*)mpcb;
+	struct path4 *p = NULL;
+	int nb_new = 0;
+	struct inet_connection_sock *mpcb_icsk =
+			(struct inet_connection_sock *) mpcb;
 
 	if (unlikely(mpcb->received_options.list_rcvd)) {
-		mpcb->received_options.list_rcvd=0;
+		mpcb->received_options.list_rcvd = 0;
 		mtcp_update_patharray(mpcb);
-		/*The server uses additional subflows only on request
-		  from the client.*/
-		if (!test_bit(MPCB_FLAG_SERVER_SIDE,&mpcb->flags))
+		/* The server uses additional subflows only on request
+		   from the client. */
+		if (!test_bit(MPCB_FLAG_SERVER_SIDE, &mpcb->flags))
 			mtcp_send_updatenotif(mpcb);
 	}
 	
@@ -1270,39 +1276,46 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 		ireq =  inet_rsk(req);
 		child = req->sk;
 		BUG_ON(!child);
-		/*Apply correct path index to that subflow
-		  (we bypass the patharray if in multiports mode)
-		 */
-		if (sysctl_mptcp_ndiffports>1)
-			p=find_path_mapping4((struct in_addr*)&ireq->loc_addr,
-					     (struct in_addr*)&ireq->rmt_addr,
-					     mpcb);
 
-		if (unlikely(!p && sysctl_mptcp_ndiffports==1)) {
-			/*It is possible that we don't find the mapping,
-			  if we have not yet updated our set of local
-			  addresses.*/
+		/* Apply correct path index to that subflow
+		 * (we bypass the patharray if in multiports mode)
+		 */
+		if (sysctl_mptcp_ndiffports > 1)
+			goto diffPorts;
+
+		p = find_path_mapping4((struct in_addr *) &ireq->loc_addr,
+				(struct in_addr *) &ireq->rmt_addr,
+				mpcb);
+
+		if (!p) {
+			/* It is possible that we don't find the mapping,
+			 * if we have not yet updated our set of local
+			 * addresses. */
 			mtcp_set_addresses(mpcb);
-			/*If this added new local addresses, build new paths 
-			  with them*/
+
+			/* If this added new local addresses, build new paths
+			 * with them */
 			if (mpcb->num_addr4 || mpcb->num_addr6) 
 				mtcp_update_patharray(mpcb);
-			/*ok, we are up to date, retry*/
-			p=find_path_mapping4((struct in_addr*)&ireq->loc_addr,
-					     (struct in_addr*)&ireq->rmt_addr,
-					     mpcb);
+
+			/* ok, we are up to date, retry */
+			p = find_path_mapping4((struct in_addr *) &ireq->loc_addr,
+					(struct in_addr *) &ireq->rmt_addr,
+					mpcb);
 			BUG_ON(!p);
 		}
 
 		if (p)
-			tcp_sk(child)->path_index=p->path_index;
-		else 
-			tcp_sk(child)->path_index=mpcb->next_unused_pi++;
-		/*Point it to the same struct socket and wq as the master*/
+			tcp_sk(child)->path_index = p->path_index;
+		else
+diffPorts:
+			tcp_sk(child)->path_index = mpcb->next_unused_pi++;
+
+		/* Point it to the same struct socket and wq as the master */
 		sk_set_socket(child,mpcb->master_sk->sk_socket);
-		child->sk_wq=mpcb->master_sk->sk_wq;
+		child->sk_wq = mpcb->master_sk->sk_wq;
 		
-		mtcp_add_sock(mpcb,tcp_sk(child));
+		mtcp_add_sock(mpcb, tcp_sk(child));
 		reqsk_free(req);
 		nb_new++;
 	}

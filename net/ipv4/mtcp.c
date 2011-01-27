@@ -212,7 +212,7 @@ void mtcp_data_ready(struct sock *sk) {
  *      can send messages to the MPS, according to our multipath arch.
  *      (further PMs are cascaded and use the depth attribute).
  */
-int mtcp_init_subsockets(struct multipath_pcb *mpcb, uint32_t path_indices) {
+int mtcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 	int i;
 	int retval;
 	struct socket *sock;
