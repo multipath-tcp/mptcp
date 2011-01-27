@@ -43,8 +43,8 @@
 #endif
 
 /* Default MSS for MPTCP
- All subflows will be using that MSS. If any subflow has a lower MSS, it is
- just not used. */
+ * All subflows will be using that MSS. If any subflow has a lower MSS, it is
+ * just not used. */
 #define MPTCP_MSS 1400
 extern int sysctl_mptcp_mss;
 extern int sysctl_mptcp_ndiffports;
@@ -176,9 +176,9 @@ struct multipath_pcb {
 	     prevnum;					\
 	     (tp) = (tp)->next, prevnum--)
 
-#define mtcp_for_each_sk(mpcb, sk, tp)					     \
-	for ((sk) = (struct sock *) (mpcb)->connection_list, (tp)=tcp_sk(sk); \
-	     sk;							     \
+#define mtcp_for_each_sk(mpcb, sk, tp)					       \
+	for ((sk) = (struct sock *) (mpcb)->connection_list, (tp) = tcp_sk(sk);\
+	     sk;							       \
 	     sk = (struct sock *) tcp_sk(sk)->next, tp = tcp_sk(sk))
 
 #define mtcp_for_each_sk_safe(__mpcb, __sk, __temp)			\
@@ -310,21 +310,19 @@ static inline void mtcp_wmem_free_skb(struct sock *sk, struct sk_buff *skb)
 static inline int is_local_addr4(u32 addr)
 {
 	struct net_device *dev;
-	int ans=0;
+	int ans = 0;
 	read_lock(&dev_base_lock);
-	for_each_netdev (&init_net,dev) {
+	for_each_netdev (&init_net, dev) {
 		if (netif_running(dev)) {
 			struct in_device *in_dev = dev->ip_ptr;
 			struct in_ifaddr *ifa;
-			
+
 			if (dev->flags & IFF_LOOPBACK)
 				continue;
-			
-			for (ifa = in_dev->ifa_list; ifa; 
-			     ifa = ifa->ifa_next) {
-				
+
+			for (ifa = in_dev->ifa_list; ifa;  ifa = ifa->ifa_next) {
 				if (ifa->ifa_address == addr) {
-					ans=1;
+					ans = 1;
 					goto out;
 				}
 			}
@@ -337,7 +335,7 @@ out:
 }
 
 int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
-		long *timeo, int flags);
+			long *timeo, int flags);
 int mtcp_queue_skb(struct sock *sk, struct sk_buff *skb);
 void mtcp_ofo_queue(struct multipath_pcb *mpcb);
 int mtcp_check_rcv_queue(struct multipath_pcb *mpcb, struct msghdr *msg,
@@ -360,7 +358,6 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 void mtcp_reinject_data(struct sock *orig_sk);
 int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb);
 int mtcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices);
-int mtcpsub_get_port(struct sock *sk, unsigned short snum);
 void mtcp_update_window_clamp(struct multipath_pcb *mpcb);
 void mtcp_update_sndbuf(struct multipath_pcb *mpcb);
 void mtcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end);
