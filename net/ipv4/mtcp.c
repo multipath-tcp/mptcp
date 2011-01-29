@@ -103,7 +103,8 @@ void freeze_rcv_queue(struct sock *sk, const char *func_name)
 #ifdef CONFIG_SYSCTL
 
 int sysctl_mptcp_mss = MPTCP_MSS;
-int sysctl_mptcp_ndiffports=1;
+int sysctl_mptcp_ndiffports = 1;
+int sysctl_mptcp_enabled = 1;
 
 static ctl_table mptcp_table[] = {
 	{
@@ -116,6 +117,13 @@ static ctl_table mptcp_table[] = {
 	{
 		.procname = "mptcp_ndiffports",
 		.data = &sysctl_mptcp_ndiffports,
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.proc_handler = &proc_dointvec
+	},
+	{
+		.procname = "mptcp_enabled",
+		.data = &sysctl_mptcp_enabled,
 		.maxlen = sizeof(int),
 		.mode = 0644,
 		.proc_handler = &proc_dointvec

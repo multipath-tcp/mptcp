@@ -688,6 +688,8 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 			remaining -= TCPOLEN_SACKPERM_ALIGNED;
 	}
 #ifdef CONFIG_MTCP
+	if (!sysctl_mptcp_enabled)
+		goto nomptcp;
 	if ((sk->sk_family == AF_INET &&
 	     ipv4_is_loopback(inet_sk(sk)->inet_daddr)) ||
 	    (sk->sk_family == AF_INET6 &&
