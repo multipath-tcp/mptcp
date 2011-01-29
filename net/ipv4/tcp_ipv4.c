@@ -1507,9 +1507,9 @@ static struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb)
 						       iph->saddr, iph->daddr);
 	if (req)
 		return tcp_check_req(sk, skb, req, prev);
-	
+
 	nsk = inet_lookup_established(sock_net(sk), &tcp_hashinfo, iph->saddr,
-				      th->source, iph->daddr, th->dest, 
+				      th->source, iph->daddr, th->dest,
 				      inet_iif(skb));
 
 	if (nsk) {
@@ -1592,7 +1592,7 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 		if (!nsk) {
 			goto discard;
 		}
-		
+
 		BUG_ON(skb->len>3000); /*Try to force the GPF*/
 		if (nsk != sk) {
 			if (tcp_child_process(sk, nsk, skb)) {
@@ -1644,7 +1644,7 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	struct multipath_pcb *mpcb=NULL;
 
 	if (skb->pkt_type != PACKET_HOST)
-		goto discard_it;	
+		goto discard_it;
 
 	/* Count it even if it's bad */
 	TCP_INC_STATS_BH(net, TCP_MIB_INSEGS);
@@ -1680,12 +1680,12 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->when	 = 0;
 	TCP_SKB_CB(skb)->flags	 = iph->tos;
 	TCP_SKB_CB(skb)->sacked	 = 0;
-	
+
 #ifdef CONFIG_MTCP_PM
 	/*We must absolutely check for subflow related segments
 	  before the normal sock lookup, because otherwise subflow
 	  segments could be understood as associated to some listening
-	  socket.*/	
+	  socket.*/
 
 	/*Is there a pending request sock for this segment ?*/
 	if (mtcp_syn_recv_sock(skb)) return 0;
@@ -1696,11 +1696,11 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	  we can proceed to normal lookup*/
 #endif
 
-	sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source, 
+	sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source,
 			       th->dest);
 	if (!sk)
 		goto no_tcp_socket;
-	
+
 process:
 	if (sk->sk_state == TCP_TIME_WAIT)
 		goto do_time_wait;
@@ -1713,12 +1713,12 @@ process:
 	if (!xfrm4_policy_check(sk, XFRM_POLICY_IN, skb))
 		goto discard_and_relse;
 	nf_reset(skb);
-	
+
 	if (sk_filter(sk, skb))
 		goto discard_and_relse;
-	
+
 	skb->dev = NULL;
-	
+
 	if (tcp_sk(sk)->mpcb) {
 		mpcb = tcp_sk(sk)->mpcb;
 		mpcb_get(mpcb);
@@ -1979,12 +1979,12 @@ static int tcp_v4_init_sock(struct sock *sk)
 	percpu_counter_inc(&tcp_sockets_allocated);
 	local_bh_enable();
 #ifdef CONFIG_MTCP
-	/*Init the MPTCP mpcb*/
+	/* Init the MPTCP mpcb */
 	{
-		struct multipath_pcb *mpcb;		
-		mpcb=mtcp_alloc_mpcb(sk, GFP_KERNEL);
-		tp->path_index=0;
-		mtcp_add_sock(mpcb,tp);
+		struct multipath_pcb *mpcb;
+		mpcb = mtcp_alloc_mpcb(sk, GFP_KERNEL);
+		tp->path_index = 0;
+		mtcp_add_sock(mpcb, tp);
 	}
 #endif
 

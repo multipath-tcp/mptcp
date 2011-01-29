@@ -166,7 +166,7 @@ static void mtcp_def_readable(struct sock *sk, int len) {
 	struct sock *master_sk = mpcb->master_sk;
 
 	BUG_ON(!mpcb);
-	
+
 	mtcp_debug("Waking up master subsock...\n");
 	rcu_read_lock();
 
@@ -174,7 +174,7 @@ static void mtcp_def_readable(struct sock *sk, int len) {
 	if (wq_has_sleeper(wq))
 		wake_up_interruptible_sync_poll(&wq->wait,POLLIN |
 						POLLRDNORM | POLLRDBAND);
-	
+
 	sk_wake_async(master_sk, SOCK_WAKE_WAITD, POLL_IN);
 
 	rcu_read_unlock();
@@ -258,13 +258,13 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 			case AF_INET:
 				memset(&loculid, 0, sizeof(loculid));
 				loculid_in.sin_family = meta_sk->sk_family;
-	
+
 				memcpy(&remulid_in, &loculid_in,
 				       sizeof(remulid_in));
 
 				/*let bind select an available port*/
 				loculid_in.sin_port = 0;
-				remulid_in.sin_port = 
+				remulid_in.sin_port =
 					inet_sk(meta_sk)->inet_dport;
 #ifdef CONFIG_MTCP_PM
 				/* If the MPTCP PM is used, we use the locators
@@ -297,7 +297,7 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 				       sizeof(remulid_in6));
 
 				loculid_in6.sin6_port = 0;
-				remulid_in6.sin6_port = 
+				remulid_in6.sin6_port =
 					inet_sk(meta_sk)->inet_dport;
 
 				ipv6_addr_copy(&loculid_in6.sin6_addr,
@@ -369,7 +369,7 @@ static int netevent_callback(struct notifier_block *self, unsigned long event,
 		meta_sk = (struct sock *) mpcb;
 		up = ctx;
 		if (meta_sk->sk_family != AF_INET6) break;
-		
+
 		if (ipv6_addr_equal(up->local,
 				    &inet6_sk(meta_sk)->saddr) &&
 		    ipv6_addr_equal(up->remote,
@@ -466,7 +466,7 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
 	if (!tcp_sk(master_sk)->mtcp_loc_token) {
 		meta_tp->mtcp_loc_token = mtcp_new_token();
 		tcp_sk(master_sk)->mtcp_loc_token = loc_token(mpcb);
-	} else 
+	} else
 		meta_tp->mtcp_loc_token = tcp_sk(master_sk)->mtcp_loc_token;
 
 	/* Adding the mpcb in the token hashtable */
@@ -500,7 +500,8 @@ void inline mpcb_put(struct multipath_pcb *mpcb) {
 /* Warning: can only be called in user context
    (due to unregister_netevent_notifier) */
 void mtcp_destroy_mpcb(struct multipath_pcb *mpcb) {
-	mtcp_debug("%s: Destroying mpcb\n", __FUNCTION__);
+	mtcp_debug("%s: Destroying mpcb with token:%d\n", __FUNCTION__,
+			loc_token(mpcb));
 #ifdef CONFIG_MTCP_PM
 	/* Detach the mpcb from the token hashtable */
 	mtcp_hash_remove(mpcb);
@@ -508,8 +509,8 @@ void mtcp_destroy_mpcb(struct multipath_pcb *mpcb) {
 	   This is needed because those subsocks are established
 	   and still reachable by incoming packets. They will hence
 	   try to reference the mpcb, and hence need to take a ref
-	   to it to ensure the mpcb does not die before any of its 
-	   childs*/
+	   to it to ensure the mpcb does not die before any of its
+	   childs */
 	mtcp_check_new_subflow(mpcb);
 #endif
 	/* Stop listening to PM events */
@@ -620,7 +621,7 @@ void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 /**
  * Updates the metasocket ULID/port data, based on the given sock.
  * The argument sock must be the sock accessible to the application.
- * In this function, we update the meta socket info, based on the changes 
+ * In this function, we update the meta socket info, based on the changes
  * in the application socket (bind, address allocation, ...)
  */
 void mtcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
@@ -635,7 +636,7 @@ void mtcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 	meta_sk->sk_family = sk->sk_family;
 	inet_sk(meta_sk)->inet_dport = inet_sk(sk)->inet_dport;
 	inet_sk(meta_sk)->inet_sport = inet_sk(sk)->inet_sport;
-	
+
 	switch (sk->sk_family) {
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	case AF_INET6:
@@ -662,7 +663,7 @@ void mtcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 	/* If this added new local addresses, build new paths with them */
 	if (mpcb->num_addr4 || mpcb->num_addr6)
 		mtcp_update_patharray(mpcb);
-#endif	
+#endif
 }
 
 /* copied from tcp_output.c */
@@ -695,7 +696,7 @@ int mtcp_is_available(struct sock *sk) {
  * a given MSS. If all subflows are found to be busy, NULL is returned
  * The flow is selected based on the estimation of how much time will be
  * needed to send the segment. If all paths have full cong windows, we
- * simply block. The flow able to send the segment the soonest get it. 
+ * simply block. The flow able to send the segment the soonest get it.
  * All subsocked must be locked before calling this function.
  */
 struct sock* get_available_subflow(struct multipath_pcb *mpcb,
@@ -721,7 +722,7 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 	}
 
 	/* First, find the best subflow */
-	mtcp_for_each_sk(mpcb,sk,tp) {
+	mtcp_for_each_sk(mpcb, sk, tp) {
 		unsigned int time_to_peer;
 
 		if (pf && tp->pf)
@@ -742,8 +743,9 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 			if (tcp_packets_in_flight(tp) < tp->snd_cwnd) {
 				bestsk = sk;
 				break;
-			} else
+			} else {
 				continue;
+			}
 		}
 
 		/* Time to reach peer, estimated in units of jiffies */
@@ -869,7 +871,7 @@ static int __mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 				    (!skb_queue_empty(
 					    &meta_sk->sk_receive_queue) ||
 				     !skb_queue_empty(&tp->ucopy.prequeue)));
-	
+
 	mtcp_for_each_sk(mpcb,sk,tp)
 		if (tp->wait_data_bit_set) {
 			clear_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
@@ -1030,7 +1032,7 @@ static void mtcp_cleanup_rbuf(struct sock *meta_sk, int copied) {
 
 			/* Send ACK now, if this read freed lots of space
 			 * in our buffer. Certainly, new_window is new window.
-			 * We can advertise it now, if it is not less than 
+			 * We can advertise it now, if it is not less than
 			 * current one.
 			 * "Lots" means "at least twice" here.
 			 */
@@ -1132,7 +1134,7 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb, struct msghdr *msg,
 		else if (!(flags & MSG_PEEK) && *len != 0) {
 			printk(KERN_ERR
 			"%s bug: copied %#x "
-			"dataseq %#x, *len %d, used:%d\n", __FUNCTION__, 
+			"dataseq %#x, *len %d, used:%d\n", __FUNCTION__,
 			       *data_seq, TCP_SKB_CB(skb)->data_seq,
 			       (int) *len, (int) used);
 			BUG();
@@ -1316,7 +1318,7 @@ out:
 /**
  * specific version of skb_entail (tcp.c),that allows appending to any
  * subflow.
- * Here, we do not set the data seq, since it remains the same. However, 
+ * Here, we do not set the data seq, since it remains the same. However,
  * we do change the subflow seqnum.
  *
  * Note that we make the assumption that, within the local system, every
@@ -1355,7 +1357,7 @@ static inline int count_bits(unsigned int v) {
  * Reinject data from one TCP subflow to the meta_sk
  * The @skb given pertains to the original tp, that keeps it
  * because the skb is still sent on the original tp. But additionnally,
- * it is sent on the other subflow. 
+ * it is sent on the other subflow.
  *
  * @pre : @sk must be the meta_sk
  */
@@ -1469,23 +1471,23 @@ static int mtcp_check_dfin(struct sk_buff *skb) {
 }
 
 /**
- * To be called when a segment is in order. That is, either when it is received 
+ * To be called when a segment is in order. That is, either when it is received
  * and is immediately in subflow-order, or when it is stored in the ofo-queue
  * and becomes in-order. This function retrieves the data_seq and end_data_seq
  * values, needed for that segment to be transmitted to the meta-flow.
- * *If the segment already holds a mapping, the current mapping is replaced 
+ * *If the segment already holds a mapping, the current mapping is replaced
  *  with the one provided in the segment.
- * *If the segment contains no mapping, we check if its dataseq can be derived 
+ * *If the segment contains no mapping, we check if its dataseq can be derived
  *  from the currently stored mapping. If it cannot, then there is an error,
  *  and it must be dropped.
  *
- * - If the mapping has been correctly updated, or the skb has correctly 
+ * - If the mapping has been correctly updated, or the skb has correctly
  *   been given its dataseq, we then check if the segment is in meta-order.
  *   i) if it is: we return 1
- *   ii) if its end_data_seq is older then mpcb->copied_seq, it is a 
- *       reinjected segment arrived late. We return 2, to indicate to the 
+ *   ii) if its end_data_seq is older then mpcb->copied_seq, it is a
+ *       reinjected segment arrived late. We return 2, to indicate to the
  *       caller that the segment can be eaten by the subflow immediately.
- *   iii) if it is not in meta-order (keep in mind that the precondition 
+ *   iii) if it is not in meta-order (keep in mind that the precondition
  *        requires that it is in subflow order): we return 0
  *   iv) particular case: if the segment is a subflow-only segment
  *      (e.g. FIN without DFIN), we return 3.
@@ -1766,7 +1768,7 @@ void mtcp_check_eat_old_seg(struct sock *sk, struct sk_buff *skb) {
  * Returns the next segment to be sent from the mptcp meta-queue.
  * (chooses the reinject queue if any segment is waiting in it, otherwise,
  * chooses the normal write queue).
- * Sets *@reinject to 1 if the returned segment comes from the 
+ * Sets *@reinject to 1 if the returned segment comes from the
  * reinject queue. Otherwise sets @reinject to 0.
  */
 struct sk_buff* mtcp_next_segment(struct sock *sk, int *reinject) {
@@ -1824,7 +1826,7 @@ void mtcp_send_fin(struct sock *meta_sk) {
 		TCP_SKB_CB(skb)->data_seq = meta_tp->write_seq;
 		TCP_SKB_CB(skb)->data_len = 1;
 		TCP_SKB_CB(skb)->end_data_seq = meta_tp->write_seq + 1;
-		/* FIN eats a sequence byte, write_seq advanced by 
+		/* FIN eats a sequence byte, write_seq advanced by
 		   tcp_queue_skb(). */
 		tcp_queue_skb(meta_sk, skb);
 	}

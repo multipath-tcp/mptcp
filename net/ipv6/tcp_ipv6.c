@@ -330,7 +330,7 @@ static void tcp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 	struct tcp_sock *tp;
 	__u32 seq;
 	struct net *net = dev_net(skb->dev);
-	
+
 	sk = inet6_lookup(net, &tcp_hashinfo, &hdr->daddr,
 			  th->dest, &hdr->saddr, th->source, skb->dev->ifindex);
 
@@ -1553,7 +1553,7 @@ int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 {
 	struct ipv6_pinfo *np = inet6_sk(sk);
 	struct tcp_sock *tp;
-	struct sk_buff *opt_skb = NULL;       
+	struct sk_buff *opt_skb = NULL;
 
 	/* Imagine: socket is IPv6. IPv4 packet arrives,
 	   goes to IPv4 receive handler and backlogged.
@@ -1602,13 +1602,13 @@ int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 
 		if (tcp_rcv_established(sk, skb, tcp_hdr(skb), skb->len))
 			goto reset;
-		
+
 		TCP_CHECK_TIMER(sk);
 		if (opt_skb)
 			goto ipv6_pktoptions;
 		return 0;
 	}
-	
+
 	if (skb->len < tcp_hdrlen(skb) || tcp_checksum_complete(skb))
 		goto csum_err;
 
@@ -1641,7 +1641,7 @@ int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 
 reset:
 	tcp_v6_send_reset(sk, skb);
-discard:	
+discard:
 	if (opt_skb)
 		__kfree_skb(opt_skb);
 	kfree_skb(skb);
@@ -1686,7 +1686,7 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 	struct sock *sk;
 	int ret;
 	struct net *net = dev_net(skb->dev);
-	
+
 	if (skb->pkt_type != PACKET_HOST)
 		goto discard_it;
 
@@ -1698,7 +1698,7 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 	if (!pskb_may_pull(skb, sizeof(struct tcphdr)))
 		goto discard_it;
 
-	th = tcp_hdr(skb);	
+	th = tcp_hdr(skb);
 
 	if (th->doff < sizeof(struct tcphdr)/4)
 		goto bad_packet;
@@ -1722,7 +1722,7 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->when = 0;
 	TCP_SKB_CB(skb)->flags = ipv6_get_dsfield(hdr);
 	TCP_SKB_CB(skb)->sacked = 0;
-	
+
 #ifdef CONFIG_MTCP_PM
 	/*We must absolutely check for subflow related segments
 	  before the normal sock lookup, because otherwise subflow
@@ -1739,10 +1739,10 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 #endif
 
 	sk = __inet6_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
-	
+
 	if (!sk)
 		goto no_tcp_socket;
-	
+
 process:
 	if (sk->sk_state == TCP_TIME_WAIT)
 		goto do_time_wait;
@@ -1781,7 +1781,7 @@ process:
 		goto discard_and_relse;
 	}
 	bh_unlock_sock(sk);
-	
+
 	sock_put(sk);
 	return ret ? -1 : 0;
 
@@ -1979,10 +1979,10 @@ static int tcp_v6_init_sock(struct sock *sk)
 #ifdef CONFIG_MTCP
 	/*Init the MTCP mpcb*/
 	{
-		struct multipath_pcb *mpcb;		
-		mpcb=mtcp_alloc_mpcb(sk, GFP_KERNEL);
-		tp->path_index=0;
-		mtcp_add_sock(mpcb,tp);
+		struct multipath_pcb *mpcb;
+		mpcb = mtcp_alloc_mpcb(sk, GFP_KERNEL);
+		tp->path_index = 0;
+		mtcp_add_sock(mpcb, tp);
 	}
 #endif
 	return 0;
@@ -2269,14 +2269,14 @@ int __init tcpv6_init(void)
 	ret = inet6_register_protosw(&tcpv6_protosw);
 	if (ret)
 		goto out_tcpv6_protocol;
-	
+
 	ret = register_pernet_subsys(&tcpv6_net_ops);
 	if (ret)
 		goto out_tcpv6_protosw;
-	
+
 out:
 	return ret;
-	
+
 out_tcpv6_protocol:
 	inet6_del_protocol(&tcpv6_protocol, IPPROTO_TCP);
 out_tcpv6_protosw:
@@ -2288,5 +2288,5 @@ void tcpv6_exit(void)
 {
 	unregister_pernet_subsys(&tcpv6_net_ops);
 	inet6_unregister_protosw(&tcpv6_protosw);
-	inet6_del_protocol(&tcpv6_protocol, IPPROTO_TCP);	
+	inet6_del_protocol(&tcpv6_protocol, IPPROTO_TCP);
 }
