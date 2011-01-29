@@ -62,7 +62,7 @@ void freeze_rcv_queue(struct sock *sk, const char *func_name);
 #endif
 
 #ifdef MTCP_DEBUG_TIMER
-static void mtcp_debug_timeout(unsigned long data) 
+static void mtcp_debug_timeout(unsigned long data)
 {
 	printk(KERN_ERR "MPTCP debug timeout ! Function %s\n",
 	       (char *)data);
@@ -106,7 +106,7 @@ struct multipath_pcb {
 
 	char                      done;
 	unsigned short            shutdown;
-	
+
 	struct {
 		struct task_struct *task;
 		struct iovec *iov;
@@ -202,7 +202,7 @@ struct multipath_pcb {
 		}					\
 		__ans;					\
 	})
-	
+
 /* Idem here with tp in lieu of sk */
 #define mtcp_test_any_tp(mpcb, tp, cond)		\
 	({      int __ans = 0;				\
@@ -214,7 +214,7 @@ struct multipath_pcb {
 		}					\
 		__ans;					\
 	})						\
-	
+
 #define mtcp_test_any_sk_tp(mpcb, sk, tp, cond)		\
 	({						\
 		int __ans = 0;				\
@@ -226,7 +226,7 @@ struct multipath_pcb {
 		}					\
 		__ans;					\
 	})
-	
+
 /* Returns 1 if all subflows meet the condition @cond
    Else return 0. */
 #define mtcp_test_all_sk(mpcb, sk, cond)		\
@@ -241,7 +241,7 @@ struct multipath_pcb {
 		}					\
 		__ans;					\
 	})
-	
+
 /* Wait for event @__condition to happen on any subsocket,
    or __timeo to expire
    This is the MPTCP equivalent of sk_wait_event */
@@ -288,7 +288,7 @@ void check_send_head(struct sock *sk,int num);
 #define check_send_head(sk,num)
 #endif*/
 
-static inline void mtcp_init_addr_list(struct multipath_options *mopt) 
+static inline void mtcp_init_addr_list(struct multipath_options *mopt)
 {
 	mopt->list_rcvd = mopt->num_addr4 = mopt->num_addr6 = 0;
 }
@@ -299,7 +299,7 @@ static inline void mtcp_init_addr_list(struct multipath_options *mopt)
  * This is important because a subsock may want to remove an skb,
  * while the meta-sock still has a reference to it.
  */
-static inline void mtcp_wmem_free_skb(struct sock *sk, struct sk_buff *skb) 
+static inline void mtcp_wmem_free_skb(struct sock *sk, struct sk_buff *skb)
 {
 	sock_set_flag(sk, SOCK_QUEUE_SHRUNK);
 	sk->sk_wmem_queued -= skb->truesize;
@@ -362,8 +362,6 @@ void mtcp_update_window_clamp(struct multipath_pcb *mpcb);
 void mtcp_update_sndbuf(struct multipath_pcb *mpcb);
 void mtcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end);
 int mtcpv6_init(void);
-void mpcb_get(struct multipath_pcb *mpcb);
-void mpcb_put(struct multipath_pcb *mpcb);
 void mtcp_data_ready(struct sock *sk);
 void mtcp_push_frames(struct sock *sk);
 int mtcp_v4_add_raddress(struct multipath_options *mopt, struct in_addr *addr,
@@ -377,5 +375,13 @@ void mpcb_release(struct kref* kref);
 void mtcp_clean_rtx_queue(struct sock *sk);
 void mtcp_send_fin(struct sock *mpcb_sk);
 void mtcp_close(struct sock *master_sk, long timeout);
+
+static void inline mpcb_get(struct multipath_pcb *mpcb) {
+	kref_get(&mpcb->kref);
+}
+
+static void inline mpcb_put(struct multipath_pcb *mpcb) {
+	kref_put(&mpcb->kref, mpcb_release);
+}
 
 #endif /* _MTCP_H */

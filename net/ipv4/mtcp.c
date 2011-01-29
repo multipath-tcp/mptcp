@@ -490,13 +490,6 @@ void mpcb_release(struct kref* kref) {
 	kfree(mpcb);
 }
 
-void inline mpcb_get(struct multipath_pcb *mpcb) {
-	kref_get(&mpcb->kref);
-}
-void inline mpcb_put(struct multipath_pcb *mpcb) {
-	kref_put(&mpcb->kref, mpcb_release);
-}
-
 /* Warning: can only be called in user context
    (due to unregister_netevent_notifier) */
 void mtcp_destroy_mpcb(struct multipath_pcb *mpcb) {
