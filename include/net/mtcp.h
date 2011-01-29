@@ -19,21 +19,18 @@
 #ifndef _MTCP_H
 #define _MTCP_H
 
-#include <linux/tcp_options.h>
-#include <linux/notifier.h>
-#include <linux/xfrm.h>
 #include <linux/aio.h>
-#include <linux/net.h>
-#include <linux/socket.h>
-#include <linux/mutex.h>
-#include <linux/completion.h>
-#include <linux/skbuff.h>
-#include <linux/list.h>
-#include <linux/tcp.h>
-#include <linux/ipv6.h>
 #include <linux/inetdevice.h>
+#include <linux/kref.h>
+#include <linux/list.h>
+#include <linux/mutex.h>
+#include <linux/net.h>
+#include <linux/notifier.h>
+#include <linux/skbuff.h>
+#include <linux/socket.h>
+#include <linux/tcp_options.h>
+#include <linux/tcp.h>
 
-#include <net/request_sock.h>
 #include <net/mtcp_pm.h>
 
 #ifdef CONFIG_MTCP_DEBUG
