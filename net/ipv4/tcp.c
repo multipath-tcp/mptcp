@@ -1007,13 +1007,13 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	/* This should be in poll */
 	clear_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
 	
-#ifdef CONFIG_MTCP
+
 	/*If we want to support TSO later, we'll need 
 	  to define xmit_size_goal to something much larger*/
-	mss_now = size_goal = sysctl_mptcp_mss;
-#else
-	mss_now = tcp_send_mss(sk, &size_goal, flags);
-#endif
+	if (tp->mpc)
+		mss_now = size_goal = sysctl_mptcp_mss;
+	else
+		mss_now = tcp_send_mss(sk, &size_goal, flags);
 
 	/* Ok commence sending. */
 	iovlen = msg->msg_iovlen;

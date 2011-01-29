@@ -797,7 +797,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock,
 						master_sk->sk_state);
 				goto out_err_nompc;
 			}
-			/* The flag mast be re-checked, because it may have
+			/* The flag must be re-checked, because it may have
 			   appeared during sk_stream_wait_connect */
 			if (!tcp_sk(master_sk)->mpc) {
 				copied = subtcp_sendmsg(iocb, master_sk, msg,
@@ -1969,6 +1969,23 @@ void mtcp_detach_unused_child(struct sock *sk)
 		local_bh_enable();
 		sock_put(child);
 	}
+}
+
+/**
+ * Returns 1 if we should enable MPTCP for that socket.
+ */
+int do_mptcp(struct sock *sk)
+{
+	if (!sysctl_mptcp_enabled)
+		return 0;
+	if ((sk->sk_family == AF_INET &&
+	     ipv4_is_loopback(inet_sk(sk)->inet_daddr)) ||
+	    (sk->sk_family == AF_INET6 &&
+	     ipv6_addr_loopback(&inet6_sk(sk)->daddr)))
+		return 0;
+	if (is_local_addr4(inet_sk(sk)->inet_daddr))
+		return 0;
+	return 1;
 }
 
 #ifdef MTCP_DEBUG_PKTS_OUT

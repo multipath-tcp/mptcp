@@ -376,6 +376,7 @@ void mtcp_send_fin(struct sock *mpcb_sk);
 void mtcp_close(struct sock *master_sk, long timeout);
 struct multipath_pcb *mtcp_attach_master_sk(struct sock *sk);
 void mtcp_detach_unused_child(struct sock *sk);
+int do_mptcp(struct sock *sk);
 
 static void inline mpcb_get(struct multipath_pcb *mpcb) {
 	kref_get(&mpcb->kref);

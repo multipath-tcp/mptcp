@@ -688,14 +688,7 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 			remaining -= TCPOLEN_SACKPERM_ALIGNED;
 	}
 #ifdef CONFIG_MTCP
-	if (!sysctl_mptcp_enabled)
-		goto nomptcp;
-	if ((sk->sk_family == AF_INET &&
-	     ipv4_is_loopback(inet_sk(sk)->inet_daddr)) ||
-	    (sk->sk_family == AF_INET6 &&
-	     ipv6_addr_loopback(&inet6_sk(sk)->daddr)))
-		goto nomptcp;
-	if (is_local_addr4(inet_sk(sk)->inet_daddr))
+	if (!do_mptcp(sk))
 		goto nomptcp;
 	if (is_master_sk(tp)) {
 		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
@@ -2682,11 +2675,10 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 	if (inet_csk(sk)->icsk_af_ops->rebuild_header(sk))
 		return -EHOSTUNREACH; /* Routing failure or similar. */
 
-#ifdef CONFIG_MTCP
-	cur_mss = sysctl_mptcp_mss;
-#else
-	cur_mss = tcp_current_mss(sk);
-#endif
+	if (tp->mpc)
+		cur_mss = sysctl_mptcp_mss;
+	else
+		cur_mss = tcp_current_mss(sk);
 
 	/* If receiver has shrunk his window, and skb is out of
 	 * new window, do not retransmit it. The exception is the
@@ -3029,11 +3021,10 @@ struct sk_buff *tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 
 	skb_dst_set(skb, dst_clone(dst));
 
-#ifdef CONFIG_MTCP
-	mss = sysctl_mptcp_mss;
-#else
-	mss = dst_metric(dst, RTAX_ADVMSS);
-#endif
+	if (req->saw_mpc)
+		mss = sysctl_mptcp_mss;
+	else
+		mss = dst_metric(dst, RTAX_ADVMSS);
 
 	if (tp->rx_opt.user_mss && tp->rx_opt.user_mss < mss)
 		mss = tp->rx_opt.user_mss;
@@ -3175,12 +3166,17 @@ static void tcp_connect_init(struct sock *sk)
 	if (!tp->window_clamp)
 		tp->window_clamp = dst_metric(dst, RTAX_WINDOW);
 #ifdef CONFIG_MTCP
-	tp->advmss = sysctl_mptcp_mss;
-	if (tp->advmss>dst_metric(dst,RTAX_ADVMSS))
-		tp->mss_too_low=1;
-#else
-	tp->advmss = dst_metric(dst, RTAX_ADVMSS);
-#endif
+	if (do_mptcp(sk)) {
+		tp->advmss = sysctl_mptcp_mss;
+		if (tp->advmss>dst_metric(dst,RTAX_ADVMSS))
+			tp->mss_too_low=1;
+	}
+	else
+#endif	
+	{	
+		tp->advmss = dst_metric(dst, RTAX_ADVMSS);
+	}
+
 	if (tp->rx_opt.user_mss && tp->rx_opt.user_mss < tp->advmss)
 		tp->advmss = tp->rx_opt.user_mss;
 
