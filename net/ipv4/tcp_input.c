@@ -3394,12 +3394,6 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		{
 			if (!tp->mpc || !skb->len) goto no_mptcp_update;
 
-			/* Since we are about to remove this segment from the
-			   retransmit queue, we know for sure that it has been
-			   acked, note that we check the end_data_seq, not the
-			   data_seq, since data_seq is 0 for the first data
-			   segment (currently) */
-			BUG_ON(!scb->end_data_seq);
 			if (!tp->bw_est.time) {
 				/* bootstrap bw estimation */
 				tp->bw_est.space = (tp->snd_cwnd * tp->mss_cache) <<
