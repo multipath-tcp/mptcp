@@ -718,6 +718,8 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		if (mopt.list_rcvd)
 			memcpy(&mpcb->received_options,&mopt,sizeof(mopt));
 		set_bit(MPCB_FLAG_SERVER_SIDE,&mpcb->flags);
+		/*Will be moved to ESTABLISHED by tcp_rcv_state_process()*/
+		((struct sock*)mpcb)->sk_state=TCP_SYN_RECV;
 		mtcp_update_metasocket(child,mpcb);
 #endif
 	}

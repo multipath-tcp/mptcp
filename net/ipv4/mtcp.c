@@ -433,7 +433,7 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
 
 	meta_sk->sk_rcvbuf = sysctl_rmem_default;
 	meta_sk->sk_sndbuf = sysctl_wmem_default;
-	meta_sk->sk_state = TCPF_CLOSE;
+	meta_sk->sk_state = TCP_CLOSE;
 
 	/* Inherit locks the meta_sk, so we must release it here. */
 	bh_unlock_sock(meta_sk);
@@ -549,7 +549,9 @@ void mtcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 	if (((struct sock*) tp)->sk_state == TCP_ESTABLISHED) {
 		mpcb->cnt_established++;
 		mtcp_update_sndbuf(mpcb);
-		meta_sk->sk_state = TCP_ESTABLISHED;
+		if ((1 << meta_sk->sk_state) &
+		    (TCPF_SYN_SENT | TCPF_SYN_RECV))
+			meta_sk->sk_state = TCP_ESTABLISHED;
 	}
 
 	mpcb_get(mpcb);

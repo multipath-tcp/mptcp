@@ -159,6 +159,7 @@ struct multipath_pcb {
 #define is_dfin_seg(mpcb, skb) (mpcb->received_options.dfin_rcvd &&	\
 			       mpcb->received_options.fin_dsn ==	\
 			       TCP_SKB_CB(skb)->end_data_seq)
+#define mtcp_meta_sk(sk) ((struct sock*)tcp_sk(sk)->mpcb)
 
 /* Iterates overs all subflows */
 #define mtcp_for_each_tp(mpcb, tp) 					\

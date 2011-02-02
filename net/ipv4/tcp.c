@@ -2323,19 +2323,25 @@ void tcp_set_state(struct sock *sk, int state)
 			  queue of the mpcb.*/
 			BUG_ON(!tp->mpcb && !tp->pending);
 			if (tcp_sk(sk)->mpcb) {
-				struct sock *mpcb_sk=
+				struct sock *meta_sk=
 					(struct sock*)(tcp_sk(sk)->mpcb);
 				if (tcp_sk(sk)->mpc && 
 				    is_master_sk(tcp_sk(sk))) 
 					mtcp_ask_update(sk);
 				tcp_sk(sk)->mpcb->cnt_established++;
 				mtcp_update_sndbuf(tcp_sk(sk)->mpcb);
-				mpcb_sk->sk_state=TCP_ESTABLISHED;
+				if ((1 << meta_sk->sk_state) &
+				    (TCPF_SYN_SENT | TCPF_SYN_RECV))
+					meta_sk->sk_state=TCP_ESTABLISHED;
 			}
 #endif
 		}
 		break;
-		
+	case TCP_SYN_SENT:
+	case TCP_SYN_RECV:
+		if (is_master_sk(tp) && tcp_sk(sk)->mpcb)
+			mtcp_meta_sk(sk)->sk_state=state;
+		break;
 	case TCP_CLOSE:
 		if (oldstate == TCP_CLOSE_WAIT || oldstate == TCP_ESTABLISHED)
 			TCP_INC_STATS(sock_net(sk), TCP_MIB_ESTABRESETS);
