@@ -1593,7 +1593,6 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 			goto discard;
 		}
 
-		BUG_ON(skb->len>3000); /*Try to force the GPF*/
 		if (nsk != sk) {
 			if (tcp_child_process(sk, nsk, skb)) {
 				rsk = nsk;

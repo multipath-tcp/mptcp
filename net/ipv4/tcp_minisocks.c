@@ -693,9 +693,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	 * ESTABLISHED STATE. If it will be dropped after
 	 * socket is created, wait for troubles.
 	 */
-	BUG_ON(skb->len>3000); /*Try to force the GPF*/
 	child = inet_csk(sk)->icsk_af_ops->syn_recv_sock(sk, skb, req, NULL);
-	BUG_ON(skb->len>3000); /*Try to force the GPF*/
 	if (child == NULL)
 		goto listen_overflow;
 
@@ -729,18 +727,15 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	inet_csk_reqsk_queue_removed(sk, req);
 	
 	inet_csk_reqsk_queue_add(sk, req, child);
-	BUG_ON(skb->len>3000); /*Try to force the GPF*/
 	return child;
 	
 listen_overflow:
-	BUG_ON(skb->len>3000); /*Try to force the GPF*/
 	if (!sysctl_tcp_abort_on_overflow) {
 		inet_rsk(req)->acked = 1;
 		return NULL;
 	}
 	
 embryonic_reset:
-	BUG_ON(skb->len>3000); /*Try to force the GPF*/
 	NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_EMBRYONICRSTS);
 	if (!(flg & TCP_FLAG_RST))
 		req->rsk_ops->send_reset(sk, skb);
