@@ -1705,7 +1705,7 @@ static unsigned int tcp_snd_test(struct sock *subsk, struct sk_buff *skb,
 	if (!mpcb)
 		mpcb_tp=subtp;
 
-	tcp_init_tso_segs(subsk,skb,cur_mss);
+	tcp_init_tso_segs(subsk, skb, cur_mss);
 	
 	if (!tcp_nagle_test(mpcb_tp, skb, cur_mss, nonagle))
 		return 0;

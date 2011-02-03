@@ -3425,7 +3425,6 @@ no_mptcp_update:
 		tcp_unlink_write_queue(skb, sk);
 
 #ifdef MTCP_DEBUG_PKTS_OUT
-		
 		/*Cannot have more packets in flight than packets in the
 		  rexmit queue (if tso disabled)*/
 		if(tp->mpc && 
