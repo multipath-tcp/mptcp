@@ -307,27 +307,8 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 	/* Init the MTCP mpcb - we need this because when doing
 	   an accept the init function (e.g. tcp_v6_init_sock for tcp ipv6)
 	   is not called */
-	if (newsk->sk_protocol == IPPROTO_TCP) {
-		struct tcp_sock *tp = tcp_sk(newsk);
-		struct multipath_pcb *mpcb;
-		struct tcp_sock *meta_tp;
-		
-		lock_sock(newsk);
-		mpcb = mtcp_hash_find(tp->mtcp_loc_token);
-		BUG_ON(!mpcb);
-		meta_tp = (struct tcp_sock *)mpcb;
-		BUG_ON(!mpcb);
-		tp->path_index = 0;
-		mtcp_add_sock(mpcb, tp);
-		meta_tp->write_seq = 0; /* first byte is IDSN
-					   To be replaced later with a random IDSN
-					   (well, if it indeed improve security) */
-		
-		meta_tp->copied_seq = 0; /* First byte of yet unread data */
-		mtcp_ask_update(newsk);
-		release_sock(newsk);
-		mpcb_put(mpcb); /* Taken by mtcp_hash_find */
-	}
+	if (newsk->sk_protocol == IPPROTO_TCP)
+		mtcp_attach_master_sk(newsk);
 #endif
 
 out:
@@ -734,6 +715,10 @@ void inet_csk_listen_stop(struct sock *sk)
 		struct sock *child = req->sk;
 
 		acc_req = req->dl_next;
+		
+#ifdef CONFIG_MTCP
+		mtcp_detach_unused_child(child);
+#endif
 
 		local_bh_disable();
 		bh_lock_sock(child);

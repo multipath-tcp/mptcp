@@ -1889,6 +1889,80 @@ void mtcp_close(struct sock *master_sk, long timeout) {
 	mpcb_put(mpcb); /* Taken by mpcb_get */
 }
 
+/**
+ * Used by inet_csk_accept() and mtcp_detach_child().
+ * Attaches a new master_sk (child of a listening socket)
+ * to its corresponding mpcb structure.
+ */
+struct multipath_pcb *mtcp_attach_master_sk(struct sock *sk)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct multipath_pcb *mpcb;
+	struct tcp_sock *meta_tp;
+	lock_sock(sk);
+	mpcb = mtcp_hash_find(tp->mtcp_loc_token);
+	BUG_ON(!mpcb);
+	meta_tp = (struct tcp_sock *)mpcb;
+	tp->path_index = 0;
+	mtcp_add_sock(mpcb, tp);
+	meta_tp->write_seq = 0; /* first byte is IDSN
+				   To be replaced later with a random IDSN
+				   (well, if it indeed improves security) */
+	
+	meta_tp->copied_seq = 0; /* First byte of yet unread data */
+	mtcp_ask_update(sk);
+	mpcb_put(mpcb); /* Taken by mtcp_hash_find */
+	release_sock(sk);
+	return mpcb;
+}
+
+/**
+ * When a listening sock is closed with established children still pending,
+ * those children have created already an mpcb (tcp_check_req()).
+ * Moreover, that mpcb has possibly received additional children,
+ * from JOIN subflows. All this must be cleaned correctly, which is done
+ * here. Later we should use a more generic approach, reusing more of
+ * the regular TCP stack.
+ */
+void mtcp_detach_unused_child(struct sock *sk)
+
+{
+	struct multipath_pcb *mpcb;
+	struct sock *child;
+	struct tcp_sock *child_tp;
+	if (!sk->sk_protocol == IPPROTO_TCP)
+		return;	
+	mpcb=mtcp_attach_master_sk(sk);
+	mtcp_destroy_mpcb(mpcb);
+	/*Now all subflows of the mpcb are attached, 
+	  so we can destroy them, being sure that the mpcb
+	  will be correctly destroyed last.*/	
+	mtcp_for_each_sk(mpcb,child,child_tp) {
+		if (child==sk)
+			continue; /*master_sk will be freed last
+				    as part of the normal
+				    inet_csk_listen_stop() function*/
+		/*This section is copied from
+		  inet_csk_listen_stop()*/
+		local_bh_disable();
+		bh_lock_sock(child);
+		WARN_ON(sock_owned_by_user(child));
+		sock_hold(child);
+		
+		sk->sk_prot->disconnect(child, O_NONBLOCK);
+	
+		sock_orphan(child);
+	
+		percpu_counter_inc(sk->sk_prot->orphan_count);
+	
+		inet_csk_destroy_sock(child);
+	
+		bh_unlock_sock(child);
+		local_bh_enable();
+		sock_put(child);
+	}
+}
+
 #ifdef MTCP_DEBUG_PKTS_OUT
 int check_pkts_out(struct sock* sk) {
 	int cnt=0;
