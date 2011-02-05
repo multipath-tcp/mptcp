@@ -1,9 +1,8 @@
 /*
  * TCP COUPLED CONGESTION CONTROL:
- * 
+ *
  * Algorithm: Costin Raiciu, Daemon Wischik, Mark Handley
- * Implementation: user space by Costin Raiciu.
- *           ported to kernel by Sébastien Barré & Christoph Paasch.
+ * Implementation: Christoph Paasch & Sébastien Barré, UCLouvain (Belgium)
  */
 
 #include <net/tcp.h>
@@ -76,64 +75,87 @@ static inline u64 mtcp_ccc_scale(u32 val, int scale)
 
 static void mtcp_recalc_alpha(struct sock *sk)
 {
-	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
+	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tcp_sk(sk));
+	struct tcp_sock *sub_tp;
+	struct sock *sub_sk;
+	int best_cwnd = 0, best_rtt = 0, tot_cwnd;
+	u64 max_numerator = 0, sum_denominator = 0, alpha = 1;
 
 	if (!mpcb)
 		return;
-	if (mpcb->cnt_established > 1) {
-		struct tcp_sock *tp;
-		struct sock *sub_sk;
-		int best_cwnd = 0, best_rtt = 0, tot_cwnd;
-		u64 max_numerator = 0, sum_denominator = 0, tmp, alpha;
 
-		/* The total congestion window might be zero, if the flighsize is 0 */
-		if (!(tot_cwnd = mtcp_get_total_cwnd(mpcb)))
-			tot_cwnd = 1;
+	/* Only one subflow left - fall back to normal reno-behavior
+	 * (set alpha to 1) */
+	if (mpcb->cnt_established <= 1)
+		goto exit;
 
-		/* Find the max numerator of the alpha-calculation */
-		mtcp_for_each_sk(mpcb,sub_sk,tp) {
-			/* This socket is not established and thus srtt is 0 */
-			if (mtcp_sk_not_estab(sub_sk))
-				continue;
+	/* Do regular alpha-calculation for multiple subflows */
 
-			/* We need to look for the path, that provides the max-
-			 * value.
-			 * Integer-overflow is not possible here, because
-			 * tmp will be in u64.
-			 */
-			tmp = div64_u64 (mtcp_ccc_scale(tp->snd_cwnd, alpha_scale_num),
-					 (u64) tp->srtt * tp->srtt);
+	/* The total congestion window might be zero, if the flighsize is 0 */
+	if (!(tot_cwnd = mtcp_get_total_cwnd(mpcb)))
+		tot_cwnd = 1;
 
-			if (tmp >= max_numerator) {
-				max_numerator = tmp;
-				best_cwnd = tp->snd_cwnd;
-				best_rtt = tp->srtt;
-			}
+	/* Find the max numerator of the alpha-calculation */
+	mtcp_for_each_sk(mpcb, sub_sk, sub_tp) {
+		u64 rtt = 1; /* Minimum value is 1, to avoid dividing by 0
+			      * u64 - because anyway we later need it */
+		u64 tmp;
+
+		if (mtcp_sk_not_estab(sub_sk))
+			continue;
+
+		if (likely(sub_tp->srtt))
+			rtt = sub_tp->srtt;
+		else
+			mtcp_debug("%s: estimated rtt == 0, mpcb_token"
+				   ":%d, pi:%d, sub_sk->state:%d\n",
+				   __FUNCTION__, loc_token(mpcb),
+				   sub_tp->path_index, sub_sk->sk_state);
+
+		/* We need to look for the path, that provides the max-value.
+		 * Integer-overflow is not possible here, because
+		 * tmp will be in u64.
+		 */
+		tmp = div64_u64 (mtcp_ccc_scale(sub_tp->snd_cwnd, alpha_scale_num),
+				 rtt * rtt);
+
+		if (tmp >= max_numerator) {
+			max_numerator = tmp;
+			best_cwnd = sub_tp->snd_cwnd;
+			best_rtt = sub_tp->srtt;
 		}
-
-		/* Calculate the denominator */
-		mtcp_for_each_sk(mpcb,sub_sk,tp) {
-			/* This socket is not established and thus srtt is 0 */
-			if (mtcp_sk_not_estab(sub_sk))
-				continue;
-
-			sum_denominator += div_u64(
-					mtcp_ccc_scale(tp->snd_cwnd, alpha_scale_den) *
-					best_rtt, tp->srtt);
-		}
-		sum_denominator *= sum_denominator;
-
-		alpha = div64_u64(mtcp_ccc_scale(tot_cwnd, alpha_scale_num) *
-				best_cwnd, sum_denominator);
-
-		if (unlikely(!alpha))
-			alpha = 1;
-
-		mtcp_set_alpha(mpcb, alpha);
-	} else {
-		/* Only one subflow left - fall back to normal reno-behavior */
-		mtcp_set_alpha(mpcb, 1);
 	}
+
+	/* Calculate the denominator */
+	mtcp_for_each_sk(mpcb, sub_sk, sub_tp) {
+		u64 rtt = 1; /* Minimum value is 1, to avoid dividing by 0
+			      * u64 - because anyway we later need it */
+
+		if (mtcp_sk_not_estab(sub_sk))
+			continue;
+
+		if (likely(sub_tp->srtt))
+			rtt = sub_tp->srtt;
+		else
+			mtcp_debug("%s: estimated rtt == 0, mpcb_token"
+				   ":%d, pi:%d, sub_sk->state:%d\n",
+				   __FUNCTION__, loc_token(mpcb),
+				   sub_tp->path_index, sub_sk->sk_state);
+
+		sum_denominator += div_u64(
+				mtcp_ccc_scale(sub_tp->snd_cwnd, alpha_scale_den) *
+				best_rtt, rtt);
+	}
+	sum_denominator *= sum_denominator;
+
+	alpha = div64_u64(mtcp_ccc_scale(tot_cwnd, alpha_scale_num) *
+					best_cwnd, sum_denominator);
+
+	if (unlikely(!alpha))
+		alpha = 1;
+
+exit:
+	mtcp_set_alpha(mpcb, alpha);
 }
 
 static void mtcp_cc_init(struct sock *sk)
@@ -145,9 +167,6 @@ static void mtcp_cc_init(struct sock *sk)
 
 static void mtcp_cwnd_event(struct sock *sk, enum tcp_ca_event event)
 {
-	if (!mpcb_from_tcpsock(tcp_sk(sk)))
-		return;
-
 	if (event == CA_EVENT_LOSS)
 		mtcp_recalc_alpha(sk);
 }
@@ -161,10 +180,10 @@ static void mtcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 		tcp_reno_cong_avoid(sk, ack, in_flight);
 
 	if (tp->snd_cwnd <= tp->snd_ssthresh) {
-		/* In "safe" area, increase. */		
+		/* In "safe" area, increase. */
 		tp->snd_cwnd++;
 		mtcp_recalc_alpha(sk);
-		
+
 	} else {
 		/* In dangerous area, increase slowly.
 		 * In theory this is tp->snd_cwnd += 1 / tp->snd_cwnd
@@ -184,20 +203,19 @@ static void mtcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 			snd_cwnd = mtcp_get_total_cwnd(mpcb);
 
 			snd_cwnd = (int) div_u64 ((u64) mtcp_ccc_scale(snd_cwnd,
-					alpha_scale), alpha);
-		}
-		else {
+							alpha_scale), alpha);
+		} else {
 			snd_cwnd = tp->snd_cwnd;
 		}
-		
+
 		if (tp->snd_cwnd_cnt >= snd_cwnd) {
 			if (tp->snd_cwnd < tp->snd_cwnd_clamp){
 				tp->snd_cwnd++;
 				mtcp_recalc_alpha(sk);
 			}
-			
+
 			tp->snd_cwnd_cnt = 0;
-			
+
 		} else {
 			tp->snd_cwnd_cnt++;
 		}
@@ -228,7 +246,7 @@ static void __exit mtcp_fc_unregister(void)
 module_init(mtcp_fc_register);
 module_exit(mtcp_fc_unregister);
 
-MODULE_AUTHOR("Costin Raiciu, Sébastien Barré, Christoph Paasch");
+MODULE_AUTHOR("Christoph Paasch, Sébastien Barré");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("MPTCP COUPLED CONGESTION CONTROL");
 MODULE_VERSION("0.1");
