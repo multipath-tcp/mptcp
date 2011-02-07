@@ -486,7 +486,16 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
 
 void mpcb_release(struct kref* kref) {
 	struct multipath_pcb *mpcb;
-	mpcb = container_of(kref,struct multipath_pcb,kref);
+
+	mpcb = container_of(kref,struct multipath_pcb,kref);	
+        
+        /*Must have been destroyed previously*/
+	if (!sock_flag((struct sock*)mpcb, SOCK_DEAD)) {
+		printk(KERN_ERR "Trying to free mpcb without having called "
+		       "mtcp_destroy_mpcb()\n");
+		BUG();
+	}
+
 	mutex_destroy(&mpcb->mutex);
 #ifdef CONFIG_MTCP_PM
 	mtcp_pm_release(mpcb);
@@ -517,6 +526,8 @@ void mtcp_destroy_mpcb(struct multipath_pcb *mpcb) {
 	/* Stop listening to PM events */
 	unregister_netevent_notifier(&mpcb->nb);
 
+	sock_set_flag((struct sock*)mpcb, SOCK_DEAD);
+	
 	mpcb_put(mpcb); /* kref set to 1 by kref_init in mtcp_alloc_mpcb */
 }
 

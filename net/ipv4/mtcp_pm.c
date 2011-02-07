@@ -55,7 +55,7 @@ static spinlock_t tuple_hash_lock; /*hashtable protection*/
 
 /* General initialization of MTCP_PM
  */
-static int __init mtcp_pm_init(void) 
+static int __init mtcp_pm_init(void)
 {
 	int i;
 	for (i=0;i<MTCP_HASH_SIZE;i++) {
