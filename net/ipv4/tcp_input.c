@@ -3427,7 +3427,7 @@ no_mptcp_update:
 #ifdef MTCP_DEBUG_PKTS_OUT
 		/*Cannot have more packets in flight than packets in the
 		  rexmit queue (if tso disabled)*/
-		if(tp->mpc && 
+		if(tp->mpc &&
 		   tp->packets_out>skb_queue_len(&sk->sk_write_queue)) {
 			printk(KERN_ERR "acked_pcount:%d\n", acked_pcount);
 			printk(KERN_ERR "orig_packets:%d,orig_qsize:%d,"
@@ -4696,12 +4696,27 @@ static int tcp_prune_queue(struct sock *sk);
 
 static void check_buffers(struct multipath_pcb *mpcb)
 {
-	struct sock *sk;
-	struct tcp_sock *tp;
+	struct sock *sk, *meta_sk = (struct sock *) mpcb;
+	struct tcp_sock *tp, *meta_tp = (struct tcp_sock *) mpcb;
 	struct sk_buff *skb;
+	int rcv_size = 0, meta_ofo_size = 0;
 
-	mtcp_for_each_sk(mpcb,sk,tp) {
-		int ofo_size = 0,rcv_size = 0;
+	for(skb = skb_peek(&meta_tp->out_of_order_queue);
+	    skb;
+	    skb = (skb_queue_is_last(&meta_tp->out_of_order_queue, skb) ?
+			    NULL :
+	    	    	    skb_queue_next(&meta_tp->out_of_order_queue, skb)))
+		meta_ofo_size += skb->truesize;
+
+	for(skb = skb_peek(&meta_sk->sk_receive_queue);
+	    skb;
+	    skb = (skb_queue_is_last(&meta_sk->sk_receive_queue, skb) ?
+			    NULL :
+	    	    	    skb_queue_next(&meta_sk->sk_receive_queue, skb)))
+		rcv_size += skb->truesize;
+
+	mtcp_for_each_sk(mpcb, sk, tp) {
+		int ofo_size = 0;
 
 		if (sk->sk_state != TCP_ESTABLISHED)
 			continue;
@@ -4711,17 +4726,12 @@ static void check_buffers(struct multipath_pcb *mpcb)
 				    NULL :
 		    	    	    skb_queue_next(&tp->out_of_order_queue, skb)))
 			ofo_size += skb->truesize;
-		for(skb = skb_peek(&sk->sk_receive_queue);
-		    skb;
-		    skb = (skb_queue_is_last(&sk->sk_receive_queue, skb) ?
-				    NULL :
-		    	    	    skb_queue_next(&sk->sk_receive_queue, skb)))
-			rcv_size += skb->truesize;
-		skb = skb_peek(&sk->sk_receive_queue);
-		printk(KERN_ERR "pi %d, ofo_size:%d,rcv_size:%d, waiting:%d,"
-		       "next dsn:%#x\n",
-		       tp->path_index, ofo_size, rcv_size, tp->wait_data_bit_set,
-		       (skb ? TCP_SKB_CB(skb)->data_seq : 0));
+
+		skb = skb_peek(&meta_sk->sk_receive_queue);
+		printk(KERN_ERR "pi %d, ofo_size:%d,meta_ofo_size:%d,"
+				"rcv_size:%d, waiting:%d,next dsn:%#x\n",
+		       tp->path_index, ofo_size, meta_ofo_size, rcv_size,
+		       tp->wait_data_bit_set, (skb ? TCP_SKB_CB(skb)->data_seq : 0));
 	}
 }
 
@@ -4890,7 +4900,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 				       " tcp_try_rmem_schedule\n");
 				goto drop;
 			}
-			
+
 			mtcp_eaten = mtcp_queue_skb(sk,skb);
 		}
 		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
@@ -5836,7 +5846,7 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 	int res;
 	int mtcp_eaten = 0;
-	
+
 	if (tp->mpc && mpcb)
 		meta_tp = &mpcb->tp;
 	else
