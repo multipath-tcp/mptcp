@@ -592,8 +592,8 @@ void mtcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 
 	mtcp_debug("Added subsocket with pi %d, src_addr:%pI4 dst_addr:%pI4,"
 			" cnt_subflows now %d\n",
-			tp->path_index, &loculid_in.sin_addr,
-			&remulid_in.sin_addr, mpcb->cnt_subflows);
+			tp->path_index, &((struct inet_sock *) tp)->inet_saddr,
+			&((struct inet_sock *) tp)->inet_daddr, mpcb->cnt_subflows);
 }
 
 void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
