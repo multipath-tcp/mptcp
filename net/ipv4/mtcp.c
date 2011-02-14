@@ -487,8 +487,8 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
 void mpcb_release(struct kref* kref) {
 	struct multipath_pcb *mpcb;
 
-	mpcb = container_of(kref,struct multipath_pcb,kref);	
-        
+	mpcb = container_of(kref,struct multipath_pcb,kref);
+
         /*Must have been destroyed previously*/
 	if (!sock_flag((struct sock*)mpcb, SOCK_DEAD)) {
 		printk(KERN_ERR "Trying to free mpcb without having called "
@@ -527,7 +527,7 @@ void mtcp_destroy_mpcb(struct multipath_pcb *mpcb) {
 	unregister_netevent_notifier(&mpcb->nb);
 
 	sock_set_flag((struct sock*)mpcb, SOCK_DEAD);
-	
+
 	mpcb_put(mpcb); /* kref set to 1 by kref_init in mtcp_alloc_mpcb */
 }
 
@@ -590,8 +590,10 @@ void mtcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 	local_bh_enable();
 	mutex_unlock(&mpcb->mutex);
 
-	mtcp_debug("Added subsocket with pi %d, cnt_subflows now %d\n",
-			tp->path_index,mpcb->cnt_subflows);
+	mtcp_debug("Added subsocket with pi %d, src_addr:%pI4 dst_addr:%pI4,"
+			" cnt_subflows now %d\n",
+			tp->path_index, &loculid_in.sin_addr,
+			&remulid_in.sin_addr, mpcb->cnt_subflows);
 }
 
 void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
@@ -1927,7 +1929,7 @@ struct multipath_pcb *mtcp_attach_master_sk(struct sock *sk)
 	meta_tp->write_seq = 0; /* first byte is IDSN
 				   To be replaced later with a random IDSN
 				   (well, if it indeed improves security) */
-	
+
 	meta_tp->copied_seq = 0; /* First byte of yet unread data */
 	mtcp_ask_update(sk);
 	mpcb_put(mpcb); /* Taken by mtcp_hash_find */
@@ -1950,12 +1952,12 @@ void mtcp_detach_unused_child(struct sock *sk)
 	struct sock *child;
 	struct tcp_sock *child_tp;
 	if (!sk->sk_protocol == IPPROTO_TCP)
-		return;	
+		return;
 	mpcb=mtcp_attach_master_sk(sk);
 	mtcp_destroy_mpcb(mpcb);
-	/*Now all subflows of the mpcb are attached, 
+	/*Now all subflows of the mpcb are attached,
 	  so we can destroy them, being sure that the mpcb
-	  will be correctly destroyed last.*/	
+	  will be correctly destroyed last.*/
 	mtcp_for_each_sk(mpcb,child,child_tp) {
 		if (child==sk)
 			continue; /*master_sk will be freed last
@@ -1967,15 +1969,15 @@ void mtcp_detach_unused_child(struct sock *sk)
 		bh_lock_sock(child);
 		WARN_ON(sock_owned_by_user(child));
 		sock_hold(child);
-		
+
 		sk->sk_prot->disconnect(child, O_NONBLOCK);
-	
+
 		sock_orphan(child);
-	
+
 		percpu_counter_inc(sk->sk_prot->orphan_count);
-	
+
 		inet_csk_destroy_sock(child);
-	
+
 		bh_unlock_sock(child);
 		local_bh_enable();
 		sock_put(child);
