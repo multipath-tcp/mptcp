@@ -151,8 +151,10 @@ static void mtcp_recalc_alpha(struct sock *sk)
 		mtcp_debug("%s: sum_denominator == 0, cnt_established:%d\n",
 				__FUNCTION__, mpcb->cnt_established);
 		mtcp_for_each_sk(mpcb, sub_sk, sub_tp)
-			mtcp_debug("%s: pi:%d, state:%d\n", __FUNCTION__,
-					sub_tp->path_index, sub_sk->sk_state);
+			mtcp_debug("%s: pi:%d, state:%d\n, rtt:%d, cwnd: %d",
+					__FUNCTION__, sub_tp->path_index,
+					sub_sk->sk_state, sub_tp->srtt,
+					sub_tp->snd_cwnd);
 	}
 
 	alpha = div64_u64(mtcp_ccc_scale(tot_cwnd, alpha_scale_num) *
