@@ -1681,23 +1681,23 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->flags	 = iph->tos;
 	TCP_SKB_CB(skb)->sacked	 = 0;
 
-#ifdef CONFIG_MTCP_PM
-	/* We must absolutely check for subflow related segments
+#ifdef CONFIG_MTCP
+	/* We must absolutely check for subflow related SYNs+JOIN
 	   before the normal sock lookup, because otherwise subflow
-	   segments could be understood as associated to some listening
+	   SYNs could be understood as associated to some listening
 	   socket. */
-
-	/* Is there a pending request sock for this segment ? */
-	if (mtcp_syn_recv_sock(skb)) return 0;
-	/* Is this a new syn+join ? */
 	if (th->syn && mtcp_lookup_join(skb)) return 0;
-
-	/* OK, this segment is not related to subflow initiation,
-	   we can proceed to normal lookup */
 #endif
 
 	sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source,
 			       th->dest);
+
+#ifdef CONFIG_MTCP
+	/* Is there a pending request sock for this segment ? */
+	if ((!sk || sk->sk_state == TCP_LISTEN) && mtcp_syn_recv_sock(skb))
+		return 0;
+#endif
+	
 	if (!sk)
 		goto no_tcp_socket;
 

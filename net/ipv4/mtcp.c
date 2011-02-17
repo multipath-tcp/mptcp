@@ -4,7 +4,7 @@
  *	Authors:
  *      Sébastien Barré		<sebastien.barre@uclouvain.be>
  *
- *      date : Jan 11
+ *      date : Feb 11
  *
  *      Important note:
  *            When one wants to add support for closing subsockets *during*
