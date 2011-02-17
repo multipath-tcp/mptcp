@@ -151,7 +151,7 @@ static void mtcp_recalc_alpha(struct sock *sk)
 		mtcp_debug("%s: sum_denominator == 0, cnt_established:%d\n",
 				__FUNCTION__, mpcb->cnt_established);
 		mtcp_for_each_sk(mpcb, sub_sk, sub_tp)
-			mtcp_debug("%s: pi:%d, state:%d\n, rtt:%d, cwnd: %d",
+			mtcp_debug("%s: pi:%d, state:%d\n, rtt:%u, cwnd: %u",
 					__FUNCTION__, sub_tp->path_index,
 					sub_sk->sk_state, sub_tp->srtt,
 					sub_tp->snd_cwnd);
@@ -184,50 +184,49 @@ static void mtcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
+	int snd_cwnd;
 
 	if (!mpcb)
 		tcp_reno_cong_avoid(sk, ack, in_flight);
 
 	if (tp->snd_cwnd <= tp->snd_ssthresh) {
 		/* In "safe" area, increase. */
-		tp->snd_cwnd++;
+		tcp_slow_start(tp);
 		mtcp_recalc_alpha(sk);
+		return;
+	}
+	/* In dangerous area, increase slowly.
+	 * In theory this is tp->snd_cwnd += 1 / tp->snd_cwnd
+	 */
+
+	if (mpcb && mpcb->cnt_established > 1){
+		u64 alpha = mtcp_get_alpha(mpcb);
+
+		/* This may happen, if at the initialization, the mpcb
+		 * was not yet attached to the sock, and thus
+		 * initializing alpha failed.
+		 */
+		if (unlikely(!alpha))
+			alpha = 1;
+
+		snd_cwnd = mtcp_get_total_cwnd(mpcb);
+
+		snd_cwnd = (int) div_u64 ((u64) mtcp_ccc_scale(snd_cwnd,
+						alpha_scale), alpha);
+	} else {
+		snd_cwnd = tp->snd_cwnd;
+	}
+
+	if (tp->snd_cwnd_cnt >= snd_cwnd) {
+		if (tp->snd_cwnd < tp->snd_cwnd_clamp){
+			tp->snd_cwnd++;
+			mtcp_recalc_alpha(sk);
+		}
+
+		tp->snd_cwnd_cnt = 0;
 
 	} else {
-		/* In dangerous area, increase slowly.
-		 * In theory this is tp->snd_cwnd += 1 / tp->snd_cwnd
-		 */
-		int snd_cwnd;
-
-		if (mpcb && mpcb->cnt_established > 1){
-			u64 alpha = mtcp_get_alpha(mpcb);
-
-			/* This may happen, if at the initialization, the mpcb
-			 * was not yet attached to the sock, and thus
-			 * initializing alpha failed.
-			 */
-			if (unlikely(!alpha))
-				alpha = 1;
-
-			snd_cwnd = mtcp_get_total_cwnd(mpcb);
-
-			snd_cwnd = (int) div_u64 ((u64) mtcp_ccc_scale(snd_cwnd,
-							alpha_scale), alpha);
-		} else {
-			snd_cwnd = tp->snd_cwnd;
-		}
-
-		if (tp->snd_cwnd_cnt >= snd_cwnd) {
-			if (tp->snd_cwnd < tp->snd_cwnd_clamp){
-				tp->snd_cwnd++;
-				mtcp_recalc_alpha(sk);
-			}
-
-			tp->snd_cwnd_cnt = 0;
-
-		} else {
-			tp->snd_cwnd_cnt++;
-		}
+		tp->snd_cwnd_cnt++;
 	}
 }
 
