@@ -28,7 +28,7 @@
 
 
 /*This couple of extern functions should be replaced ASAP
-  with more modular things, because they become quickly a 
+  with more modular things, because they become quickly a
   nightmare when we want to upgrade to recent kernel versions.*/
 extern struct ip_options *tcp_v4_save_options(struct sock *sk,
 					      struct sk_buff *skb);
@@ -62,7 +62,7 @@ static int __init mtcp_pm_init(void)
 		INIT_LIST_HEAD(&tk_hashtable[i]);
 		INIT_LIST_HEAD(&tuple_hashtable[i]);
 	}
-	
+
 	rwlock_init(&tk_hash_lock);
 	spin_lock_init(&tuple_hash_lock);
 
@@ -109,12 +109,12 @@ void mtcp_hash_remove(struct multipath_pcb *mpcb)
 
 	mtcp_debug("%s: remove mpcb from hash-table with loc_token %d\n",
 			__FUNCTION__, mpcb->tp.mtcp_loc_token);
-	
+
 	/*remove from the token hashtable*/
 	write_lock_bh(&tk_hash_lock);
 	list_del(&mpcb->collide_tk);
 	write_unlock_bh(&tk_hash_lock);
-	
+
 	/*Remove all pending request socks.
 	  Note that the lock order is important: it must respect
 	  the order in mtcp_search_req() to avoid deadlocks*/
@@ -134,7 +134,7 @@ void mtcp_hash_remove(struct multipath_pcb *mpcb)
 				  might try to remove it as well*/
 				list_del_init(&cur_ref->collide_tuple);
 				/*next element in collision list.
-				  we don't remove yet the request_sock 
+				  we don't remove yet the request_sock
 				  from the local hashtable. This will be done
 				  by mtcp_pm_release()*/
 				cur_ref=cur_ref->dl_next;
@@ -150,7 +150,7 @@ void mtcp_pm_release(struct multipath_pcb *mpcb)
 	struct inet_connection_sock *mpcb_icsk=
 		(struct inet_connection_sock*)mpcb;
 	struct listen_sock *lopt = mpcb_icsk->icsk_accept_queue.listen_opt;
-		
+
 	/* Remove all pending request socks. */
 	if (lopt->qlen != 0) {
 		unsigned int i;
@@ -159,7 +159,7 @@ void mtcp_pm_release(struct multipath_pcb *mpcb)
 			cur_ref = &lopt->syn_table[i];
 			while (*cur_ref) {
 				struct request_sock *todel;
-				printk(KERN_ERR 
+				printk(KERN_ERR
 				       "Destroying request_sock\n");
 				lopt->qlen--;
 				todel = *cur_ref;
@@ -226,13 +226,13 @@ struct in_addr *mtcp_get_rem_addr(struct multipath_pcb *mpcb, int path_index)
 		if (mpcb->pa4[i].path_index==path_index)
 			return &mpcb->pa4[i].rem.addr;
 	}
-	
+
 	/*should not arrive here*/
 	printk(KERN_ERR "pa4_size:%d,pi:%d\n",mpcb->pa4_size,path_index);
 	for (i=0;i<mpcb->pa4_size;i++) {
 		printk(KERN_ERR "existing pi:%d\n",mpcb->pa4[i].path_index);
 	}
-	
+
 	BUG();
 	return NULL;
 }
@@ -240,7 +240,7 @@ struct in_addr *mtcp_get_rem_addr(struct multipath_pcb *mpcb, int path_index)
 u8 mtcp_get_loc_addrid(struct multipath_pcb *mpcb, int path_index)
 {
 	int i;
-	
+
 	/*master subsocket has both addresses with id 0*/
 	if (path_index<=1) return 0;
 	for (i=0;i<mpcb->pa4_size;i++) {
@@ -252,7 +252,7 @@ u8 mtcp_get_loc_addrid(struct multipath_pcb *mpcb, int path_index)
 	for (i=0;i<mpcb->pa4_size;i++) {
 		printk(KERN_ERR "existing pi:%d\n",mpcb->pa4[i].path_index);
 	}
-	
+
 	BUG();
 	return -1;
 }
@@ -279,11 +279,11 @@ static void __mtcp_update_patharray_ports(struct multipath_pcb *mpcb)
 	int newpa_idx = 0;
 	struct sock *mpcb_sk = (struct sock *) mpcb;
 
-	if(mpcb->pa4) 
+	if(mpcb->pa4)
 		return; /* path allocation already done */
 
 	new_pa4 = kmalloc(pa4_size * sizeof(struct path4), GFP_ATOMIC);
-	
+
 	for (newpa_idx = 0; newpa_idx < pa4_size; newpa_idx++) {
 		new_pa4[newpa_idx].loc.addr.s_addr =
 				inet_sk(mpcb_sk)->inet_saddr;
@@ -367,7 +367,7 @@ static void __mtcp_update_patharray(struct multipath_pcb *mpcb)
 				memcpy(&new_pa4[newpa_idx].loc,
 				       &mpcb->addr4[i],
 				       sizeof(struct mtcp_loc4));
-				
+
 				/* remote addr */
 				new_pa4[newpa_idx].rem.addr.s_addr =
 					inet_sk(mpcb_sk)->inet_daddr;
@@ -402,8 +402,8 @@ static void __mtcp_update_patharray(struct multipath_pcb *mpcb)
 				new_pa4[newpa_idx++].path_index = mpcb->next_unused_pi++;
 			}
 		}
-	
-	
+
+
 	/* Replacing the mapping table */
 	old_pa4 = mpcb->pa4;
 	mpcb->pa4 = new_pa4;
@@ -437,25 +437,26 @@ void mtcp_set_addresses(struct multipath_pcb *mpcb)
 		if (netif_running(dev)) {
 			struct in_device *in_dev = dev->ip_ptr;
 			struct in_ifaddr *ifa;
-			
+			__be32 ifa_address;
+
 			if (dev->flags & IFF_LOOPBACK)
 				continue;
-			
+
 			for (ifa = in_dev->ifa_list; ifa; ifa = ifa->ifa_next) {
+				ifa_address = ifa->ifa_local;
+
 				if (num_addr4 == MTCP_MAX_ADDR) {
 					mtcp_debug("%s: At max num of local addresses: "
 						   "%d --- not adding address: %pI4\n",
-						   __FUNCTION__, MTCP_MAX_ADDR, &ifa->ifa_address);
+						   __FUNCTION__, MTCP_MAX_ADDR, &ifa_address);
 					goto out;
 				}
 
-				if (ifa->ifa_address ==
-				    inet_sk(mpcb->master_sk)->inet_saddr)
+				if (ifa_address == inet_sk(mpcb->master_sk)->inet_saddr)
 					continue;
 				if (ifa->ifa_scope == RT_SCOPE_HOST)
 					continue;
-				mpcb->addr4[num_addr4].addr.s_addr =
-					ifa->ifa_address;
+				mpcb->addr4[num_addr4].addr.s_addr = ifa_address;
 				mpcb->addr4[num_addr4++].id = id++;
 			}
 		}
@@ -465,7 +466,7 @@ out:
 	read_unlock(&dev_base_lock);
 
 	/*We update num_addr4 at the end to avoid racing with the ADDR option
-	  trigger (in tcp_established_options()), 
+	  trigger (in tcp_established_options()),
 	  which can interrupt us in the middle of this function,
 	  and decide to already send the set of addresses, even though all
 	  addresses have not yet been read.*/
@@ -474,10 +475,10 @@ out:
 
 /**
  * Based on function tcp_v4_conn_request (tcp_ipv4.c)
- * Returns -1 if there is no space anymore to store an additional 
+ * Returns -1 if there is no space anymore to store an additional
  * address
  */
-int mtcp_v4_add_raddress(struct multipath_options *mopt,			
+int mtcp_v4_add_raddress(struct multipath_options *mopt,
 			 struct in_addr *addr, u8 id)
 {
 	int i;
@@ -485,7 +486,7 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 
 	/*If the id is zero, this is the ULID, do not add it.*/
 	if (!id) return 0;
-	
+
 	BUG_ON(num_addr4 > MTCP_MAX_ADDR);
 
 	for (i = 0; i < num_addr4; i++) {
@@ -563,7 +564,7 @@ static unsigned mtcp_synack_options(struct request_sock *req,
 				    struct tcp_out_options *opts,
 				    struct tcp_md5sig_key **md5)
 {
-	struct inet_request_sock *ireq = inet_rsk(req);	
+	struct inet_request_sock *ireq = inet_rsk(req);
 	unsigned remaining = MAX_TCP_OPTION_SPACE;
 
 	*md5 = NULL;
@@ -601,7 +602,7 @@ TCP_ECN_make_synack(struct request_sock *req, struct tcphdr *th)
 /*
  * Prepare a SYN-ACK, for JOINed subflows
  */
-static struct sk_buff *mtcp_make_synack(struct sock *master_sk, 
+static struct sk_buff *mtcp_make_synack(struct sock *master_sk,
 					struct dst_entry *dst,
 					struct request_sock *req)
 {
@@ -617,7 +618,7 @@ static struct sk_buff *mtcp_make_synack(struct sock *master_sk,
 	skb = alloc_skb(MAX_TCP_HEADER + 15, GFP_ATOMIC);
 	if (skb == NULL)
 		return NULL;
-	
+
 	/* Reserve space for headers. */
 	skb_reserve(skb, MAX_TCP_HEADER);
 
@@ -631,7 +632,7 @@ static struct sk_buff *mtcp_make_synack(struct sock *master_sk,
 		__u8 rcv_wscale;
 		/* Set this up on the first call only */
 		req->window_clamp = dst_metric(dst, RTAX_WINDOW);
-		/* tcp_full_space because it is guaranteed to be the first 
+		/* tcp_full_space because it is guaranteed to be the first
 		   packet */
 		tcp_select_initial_window(
 			tcp_win_from_space(sysctl_rmem_default),
@@ -647,9 +648,9 @@ static struct sk_buff *mtcp_make_synack(struct sock *master_sk,
 
 	TCP_SKB_CB(skb)->when = tcp_time_stamp;
 	tcp_header_size = mtcp_synack_options(req, mss,
-					      skb, &opts, &md5) 
+					      skb, &opts, &md5)
 		+ sizeof(*th);
-	
+
 	skb_push(skb, tcp_header_size);
 	skb_reset_transport_header(skb);
 
@@ -667,7 +668,7 @@ static struct sk_buff *mtcp_make_synack(struct sock *master_sk,
 			     TCPHDR_SYN | TCPHDR_ACK);
 	th->seq = htonl(TCP_SKB_CB(skb)->seq);
 	th->ack_seq = htonl(tcp_rsk(req)->rcv_isn + 1);
-	
+
 	/* RFC1323: The window in SYN & SYN/ACK segments is never scaled. */
 	th->window = htons(min(req->rcv_wnd, 65535U));
 	tcp_options_write((__be32 *)(th + 1), NULL, &opts);
@@ -721,17 +722,17 @@ static void mtcp_reqsk_queue_hash_add(struct request_sock *req,
 	struct inet_connection_sock *mpcb_icsk=
 		(struct inet_connection_sock*)(req->mpcb);
 	struct listen_sock *lopt = mpcb_icsk->icsk_accept_queue.listen_opt;
-	const u32 h_local = inet_synq_hash(inet_rsk(req)->rmt_addr, 
+	const u32 h_local = inet_synq_hash(inet_rsk(req)->rmt_addr,
 					   inet_rsk(req)->rmt_port,
-					   lopt->hash_rnd, 
+					   lopt->hash_rnd,
 					   lopt->nr_table_entries);
-	const u32 h_global = inet_synq_hash(inet_rsk(req)->rmt_addr, 
+	const u32 h_global = inet_synq_hash(inet_rsk(req)->rmt_addr,
 					    inet_rsk(req)->rmt_port,
-					    0, 
+					    0,
 					    MTCP_HASH_SIZE);
 	spin_lock(&tuple_hash_lock);
 	spin_lock(&req->mpcb->lock);
-	reqsk_queue_hash_req(&mpcb_icsk->icsk_accept_queue, 
+	reqsk_queue_hash_req(&mpcb_icsk->icsk_accept_queue,
 			     h_local, req, timeout);
 	list_add(&req->collide_tuple,&tuple_hashtable[h_global]);
 	spin_unlock(&req->mpcb->lock);
@@ -756,19 +757,19 @@ static int mtcp_v4_join_request(struct multipath_pcb *mpcb, struct sk_buff *skb)
 	u8 *hash_location;
 	__be32 saddr = ip_hdr(skb)->saddr;
 	__be32 daddr = ip_hdr(skb)->daddr;
-	__u32 isn = TCP_SKB_CB(skb)->when;	
+	__u32 isn = TCP_SKB_CB(skb)->when;
 
 	req = inet_reqsk_alloc(&tcp_request_sock_ops);
 	if (!req)
 		return -1;
-	
+
 	tcp_clear_options(&tmp_opt);
 	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
 	tmp_opt.user_mss  = tcp_sk(mpcb->master_sk)->rx_opt.user_mss;
-	
+
 	tcp_parse_options(skb, &tmp_opt, &hash_location,
 			  &mpcb->received_options, 0);
-	
+
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 
 	req->mpcb=mpcb;
@@ -815,7 +816,7 @@ static void mtcp_reqsk_local_remove(struct request_sock *r)
 	struct request_sock *req,**prev;
 	const struct inet_request_sock *i = inet_rsk(r);
 
-	for (prev = &lopt->syn_table[inet_synq_hash(i->rmt_addr, i->rmt_port, 
+	for (prev = &lopt->syn_table[inet_synq_hash(i->rmt_addr, i->rmt_port,
 						    lopt->hash_rnd,
 						    lopt->nr_table_entries)];
 	     (req = *prev) != NULL;
@@ -833,16 +834,16 @@ static void mtcp_reqsk_local_remove(struct request_sock *r)
  * is incremented. Thus it is the responsibility of the caller
  * to call mpcb_put() when the reference is not needed anymore.
  */
-static struct request_sock *mtcp_search_req(const __be16 rport, 
+static struct request_sock *mtcp_search_req(const __be16 rport,
 					    const __be32 raddr,
 					    const __be32 laddr)
 {
 	struct request_sock *req;
 	int found = 0;
-	
+
 	spin_lock(&tuple_hash_lock);
 	list_for_each_entry(req,&tuple_hashtable[
-				    inet_synq_hash(raddr, rport, 0, 
+				    inet_synq_hash(raddr, rport, 0,
 						   MTCP_HASH_SIZE)],
 			    collide_tuple) {
 		const struct inet_request_sock *ireq = inet_rsk(req);
@@ -854,7 +855,7 @@ static struct request_sock *mtcp_search_req(const __be16 rport,
 			       &ireq->rmt_addr,ntohs(ireq->rmt_port));
 			BUG();
 		}
-		
+
 		if (ireq->rmt_port == rport &&
 		    ireq->rmt_addr == raddr &&
 		    ireq->loc_addr == laddr &&
@@ -864,7 +865,7 @@ static struct request_sock *mtcp_search_req(const __be16 rport,
 			break;
 		}
 	}
-	
+
 	if (found) mpcb_get(req->mpcb);
 	spin_unlock(&tuple_hash_lock);
 
@@ -899,7 +900,7 @@ static inline void mtcp_reqsk_queue_add(struct request_sock_queue *queue,
 }
 
 /*
- *      (adapted from tcp_check_req)    
+ *      (adapted from tcp_check_req)
  *	Process an incoming packet for SYN_RECV sockets represented
  *	as a request_sock.
  */
@@ -908,7 +909,7 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 				   struct request_sock *req)
 {
 	const struct tcphdr *th = tcp_hdr(skb);
-	__be32 flg = tcp_flag_word(th) & 
+	__be32 flg = tcp_flag_word(th) &
 		(TCP_FLAG_RST|TCP_FLAG_SYN|TCP_FLAG_ACK);
 	int paws_reject = 0;
 	struct tcp_options_received tmp_opt;
@@ -1023,9 +1024,9 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 	   before attempt to create socket.
 	 */
 
-	/* RFC793 page 36: "If the connection is in any non-synchronized 
-	 *                  state ... and the incoming segment acknowledges 
-	 *                  something not yet sent (the segment carries an 
+	/* RFC793 page 36: "If the connection is in any non-synchronized
+	 *                  state ... and the incoming segment acknowledges
+	 *                  something not yet sent (the segment carries an
 	 *                  unacceptable ACK) ... a reset is sent."
 	 *
 	 * Invalid ACK: reset will be sent by listening socket
@@ -1048,7 +1049,7 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 			tcp_v4_send_ack(skb, tcp_rsk(req)->snt_isn + 1,
 					tcp_rsk(req)->rcv_isn + 1, req->rcv_wnd,
 					req->ts_recent, 0, NULL,
-					inet_rsk(req)->no_srccheck ? 
+					inet_rsk(req)->no_srccheck ?
 					IP_REPLY_ARG_NOSRCCHECK : 0);
 		return NULL;
 	}
@@ -1083,8 +1084,8 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 	 * socket is created, wait for troubles.
 	 */
 	child = inet_csk(mpcb->master_sk)->icsk_af_ops->
-		syn_recv_sock(mpcb->master_sk, 
-			      skb, req, 
+		syn_recv_sock(mpcb->master_sk,
+			      skb, req,
 			      NULL);
 
 	if (child == NULL)
@@ -1101,9 +1102,9 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 	tcp_sk(child)->mtcp_loc_token = req->mtcp_loc_token;
 	tcp_sk(child)->pending = 1;
 	tcp_sk(child)->bw_est.time = 0;
-		
+
 	child->sk_sndmsg_page = NULL;
-	
+
 	/* Deleting from global hashtable */
 	spin_lock(&tuple_hash_lock);
 	/* list_del_init: see comment in mtcp_hash_remove() */
@@ -1114,13 +1115,13 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 	reqsk_queue_removed(&meta_icsk->icsk_accept_queue, req);
 	mtcp_reqsk_queue_add(&meta_icsk->icsk_accept_queue, req, child);
 	return child;
-	
+
 listen_overflow:
 	if (!sysctl_tcp_abort_on_overflow) {
 		inet_rsk(req)->acked = 1;
 		return NULL;
 	}
-	
+
 embryonic_reset:
 	if (!(flg & TCP_FLAG_RST))
 		req->rsk_ops->send_reset(NULL, skb);
@@ -1158,7 +1159,7 @@ int mtcp_syn_recv_sock(struct sk_buff *skb)
 
 /**
  *
- * Returns 1 if a join option has been found, and a new request_sock has been 
+ * Returns 1 if a join option has been found, and a new request_sock has been
  * created. Else returns 0.
  */
 int mtcp_lookup_join(struct sk_buff *skb)
@@ -1193,7 +1194,7 @@ int mtcp_lookup_join(struct sk_buff *skb)
 				token = ntohl(*(u32*)ptr);
 				mpcb = mtcp_hash_find(token);
 				if (!mpcb) {
-					printk(KERN_ERR 
+					printk(KERN_ERR
 					       "%s:mpcb not found:%x\n",
 					       __FUNCTION__,token);
 					goto finished;
@@ -1202,14 +1203,14 @@ int mtcp_lookup_join(struct sk_buff *skb)
 				   create a new open request and
 				   send syn+ack */
 				ans = mtcp_v4_add_raddress(&mpcb->
-							 received_options, 
+							 received_options,
 							 (struct in_addr*)
 							 &iph->saddr, *(ptr+4));
 				if (ans < 0) {
 					mpcb_put(mpcb); /* Taken by mtcp_hash_find */
 					goto finished;
 				}
-				mtcp_v4_join_request(mpcb, skb);		
+				mtcp_v4_join_request(mpcb, skb);
 				mpcb_put(mpcb); /* Taken by mtcp_hash_find */
 				goto finished;
 			}
@@ -1243,7 +1244,7 @@ static void mtcp_send_updatenotif(struct multipath_pcb *mpcb)
 
 /**
  * checks whether a new established subflow has appeared,
- * in which case that subflow is added to the path set. 
+ * in which case that subflow is added to the path set.
  * @return: the number of newly attached subflows
  */
 int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
@@ -1294,7 +1295,7 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 
 			/* If this added new local addresses, build new paths
 			 * with them */
-			if (mpcb->num_addr4 || mpcb->num_addr6) 
+			if (mpcb->num_addr4 || mpcb->num_addr6)
 				mtcp_update_patharray(mpcb);
 
 			/* ok, we are up to date, retry */
@@ -1313,7 +1314,7 @@ diffPorts:
 		/* Point it to the same struct socket and wq as the master */
 		sk_set_socket(child,mpcb->master_sk->sk_socket);
 		child->sk_wq = mpcb->master_sk->sk_wq;
-		
+
 		mtcp_add_sock(mpcb, tcp_sk(child));
 		reqsk_free(req);
 		nb_new++;
@@ -1324,4 +1325,5 @@ diffPorts:
 module_init(mtcp_pm_init);
 
 MODULE_LICENSE("GPL");
+
 
