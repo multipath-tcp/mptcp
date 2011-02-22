@@ -3312,7 +3312,6 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 	int orig_packets, orig_qsize,orig_outsize;
 #endif
 
-
 	BUG_ON(is_meta_sk(sk));
 
 #ifdef MTCP_DEBUG_PKTS_OUT
@@ -3806,7 +3805,6 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct tcp_sock *mpcb_tp=(tp->mpc && tp->mpcb)?&tp->mpcb->tp:tp;
 	u32 prior_snd_una = tp->snd_una;
 	u32 ack_seq = TCP_SKB_CB(skb)->seq;
 	u32 ack = TCP_SKB_CB(skb)->ack_seq;
@@ -3843,11 +3841,14 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 	prior_in_flight = tcp_packets_in_flight(tp);
 
 	if (!(flag & FLAG_SLOWPATH) && after(ack, prior_snd_una)) {
+		struct tcp_sock *meta_tp = (tp->mpc && tp->mpcb) ?
+					   &tp->mpcb->tp 	 :
+					   tp;
 		/* Window is constant, pure forward advance.
 		 * No more checks are required.
 		 * Note, we use the fact that SND.UNA>=SND.WL2.
 		 */
-		tcp_update_wl(mpcb_tp, (tp->mpc)?TCP_SKB_CB(skb)->data_seq:
+		tcp_update_wl(meta_tp, (tp->mpc) ? TCP_SKB_CB(skb)->data_seq:
 			      ack_seq);
 		tp->snd_una = ack;
 		flag |= FLAG_WIN_UPDATE;
@@ -3875,9 +3876,9 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 	/* We passed data and got it acked, remove any soft error
 	 * log. Something worked...
 	 */
-	if (tp->pf==1)
+	if (tp->pf == 1)
 		tcpprobe_logmsg(sk,"pi %d: leaving pf state",tp->path_index);
-	tp->pf=0;
+	tp->pf = 0;
 
 	sk->sk_err_soft = 0;
 	icsk->icsk_probes_out = 0;
