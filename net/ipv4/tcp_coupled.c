@@ -215,6 +215,11 @@ static void mtcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 
 		snd_cwnd = (int) div_u64 ((u64) mtcp_ccc_scale(snd_cwnd,
 						alpha_scale), alpha);
+
+		/* snd_cwnd_cnt >= max (scale * tot_cwnd / alpha, cwnd)
+		 * Thus, we select here the max value. */
+		if (snd_cwnd < tp->snd_cwnd)
+			snd_cwnd = tp->snd_cwnd;
 	} else {
 		snd_cwnd = tp->snd_cwnd;
 	}
