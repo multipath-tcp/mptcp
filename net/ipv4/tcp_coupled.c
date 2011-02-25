@@ -186,8 +186,10 @@ static void mtcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 	int snd_cwnd;
 
-	if (!mpcb)
+	if (!mpcb || !tp->mpc) {
 		tcp_reno_cong_avoid(sk, ack, in_flight);
+		return;
+	}
 
 	if (tp->snd_cwnd <= tp->snd_ssthresh) {
 		/* In "safe" area, increase. */
@@ -199,7 +201,7 @@ static void mtcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 	 * In theory this is tp->snd_cwnd += 1 / tp->snd_cwnd
 	 */
 
-	if (mpcb && mpcb->cnt_established > 1){
+	if (mpcb->cnt_established > 1){
 		u64 alpha = mtcp_get_alpha(mpcb);
 
 		/* This may happen, if at the initialization, the mpcb
@@ -224,7 +226,6 @@ static void mtcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 		}
 
 		tp->snd_cwnd_cnt = 0;
-
 	} else {
 		tp->snd_cwnd_cnt++;
 	}
