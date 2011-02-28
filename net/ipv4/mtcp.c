@@ -1157,7 +1157,7 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb, struct msghdr *msg,
 		}
 		continue;
 
-		found_fin_ok:
+found_fin_ok:
 		/* Process the FIN. */
 		++*data_seq;
 		if (!(flags & MSG_PEEK))
@@ -1166,7 +1166,8 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb, struct msghdr *msg,
 	} while (*len > 0);
 	/* This checks whether an explicit window update is needed to unblock
 	   the receiver */
-	exit: mtcp_cleanup_rbuf(meta_sk, *copied);
+exit:
+	mtcp_cleanup_rbuf(meta_sk, *copied);
 	return 0;
 }
 
