@@ -325,6 +325,7 @@ int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 			long *timeo, int flags);
 int mtcp_queue_skb(struct sock *sk, struct sk_buff *skb);
 void mtcp_ofo_queue(struct multipath_pcb *mpcb);
+void mtcp_cleanup_rbuf(struct sock *meta_sk, int copied);
 int mtcp_check_rcv_queue(struct multipath_pcb *mpcb, struct msghdr *msg,
 		size_t *len, u32 *data_seq, int *copied, int flags);
 /* Possible return values from mtcp_queue_skb */

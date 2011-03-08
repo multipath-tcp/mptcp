@@ -4886,7 +4886,6 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 					tp->copied_seq += chunk;
 					if (tp->mpc) /* then meta_tp != tp */
 						meta_tp->copied_seq += chunk;
-					tp->copied += chunk;
 					eaten = (chunk == skb->len && !th->fin);
 					tcp_rcv_space_adjust(sk);
 				}
@@ -5676,7 +5675,6 @@ static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 		tp->copied_seq += chunk;
 		if (tp->mpc && mpcb)
 			meta_tp->copied_seq += chunk;
-		tp->copied += chunk;
 		tcp_rcv_space_adjust(sk);
 	}
 

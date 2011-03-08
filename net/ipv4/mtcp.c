@@ -1002,14 +1002,14 @@ void mtcp_ofo_queue(struct multipath_pcb *mpcb) {
  * calculation of whether or not we must ACK for the sake of
  * a window update.
  */
-static void mtcp_cleanup_rbuf(struct sock *meta_sk, int copied) {
+void mtcp_cleanup_rbuf(struct sock *meta_sk, int copied) {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct multipath_pcb *mpcb = meta_tp->mpcb;
 	struct sock *sk;
 	struct tcp_sock *tp;
 	int time_to_ack = 0;
 
-	mtcp_for_each_sk(mpcb,sk,tp) {
+	mtcp_for_each_sk(mpcb, sk, tp) {
 		const struct inet_connection_sock *icsk = inet_csk(sk);
 		if (!inet_csk_ack_scheduled(sk))
 			continue;
@@ -1060,7 +1060,10 @@ static void mtcp_cleanup_rbuf(struct sock *meta_sk, int copied) {
 	   some subflow to send it. At the moment, we use the master subsock
 	   for this. */
 	if (time_to_ack)
-		tcp_send_ack(mpcb->master_sk);
+		/* We send it on all the subflows, to get at
+		 * least one working subflow */
+		mtcp_for_each_sk(mpcb, sk, tp)
+			tcp_send_ack(sk);
 }
 
 /* Eats data from the meta-receive queue */
