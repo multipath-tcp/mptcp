@@ -56,9 +56,9 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define MAX_TCP_HEADER	(128 + MAX_HEADER)
 #define MAX_TCP_OPTION_SPACE 40
 
-/* 
+/*
  * Never offer a window over 32767 without using window scaling. Some
- * poor stacks do signed 16bit maths! 
+ * poor stacks do signed 16bit maths!
  */
 #define MAX_TCP_WINDOW		32767U
 
@@ -158,7 +158,7 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 /*
  *	TCP option
  */
- 
+
 #define TCPOPT_NOP		1	/* Padding */
 #define TCPOPT_EOL		0	/* End of options */
 #define TCPOPT_MSS		2	/* Segment size negotiating */
@@ -358,7 +358,7 @@ extern int tcp_v4_tw_remember_stamp(struct inet_timewait_sock *tw);
 extern int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		       size_t size);
 #ifdef CONFIG_MTCP
-extern int subtcp_sendmsg(struct kiocb *iocb, 
+extern int subtcp_sendmsg(struct kiocb *iocb,
 			  struct sock *sk,
 			  struct msghdr *msg, size_t size);
 #endif
@@ -472,9 +472,9 @@ extern void tcp_push(struct sock *sk, int flags, int mss_now,
 
 /* From syncookies.c */
 extern __u32 syncookie_secret[2][16-4+SHA_DIGEST_WORDS];
-extern struct sock *cookie_v4_check(struct sock *sk, struct sk_buff *skb, 
+extern struct sock *cookie_v4_check(struct sock *sk, struct sk_buff *skb,
 				    struct ip_options *opt);
-extern __u32 cookie_v4_init_sequence(struct sock *sk, struct sk_buff *skb, 
+extern __u32 cookie_v4_init_sequence(struct sock *sk, struct sk_buff *skb,
 				     __u16 *mss);
 
 extern __u32 cookie_init_timestamp(struct request_sock *req);
@@ -611,13 +611,10 @@ static inline u32 tcp_receive_window(const struct tcp_sock *tp)
 {
 	s32 win;
 
-	if (tp->mpcb && tp->mpc) { 
-		struct tcp_sock *meta_tp = (struct tcp_sock*) (tp->mpcb);
-		win = meta_tp->rcv_wup + meta_tp->rcv_wnd - meta_tp->rcv_nxt;
-	}
-	else {
-		win = tp->rcv_wup + tp->rcv_wnd - tp->rcv_nxt;
-	}
+	if (tp->mpcb && tp->mpc) /* The window is at the meta-level */
+		tp = (struct tcp_sock *) tp->mpcb;
+
+	win = tp->rcv_wup + tp->rcv_wnd - tp->rcv_nxt;
 
 	if (win < 0)
 		win = 0;
@@ -667,7 +664,7 @@ struct tcp_skb_cb {
 	__u32           data_seq;       /* Starting data seq            */
 	__u32           data_ack;       /* Data level ack (MPTCP)       */
 	__u32           end_data_seq;   /* DATA_SEQ + DFIN + SYN + datalen*/
-	__u16           data_len;       /* Data-level length (MPTCP)    
+	__u16           data_len;       /* Data-level length (MPTCP)
 					 * a value of 0 indicates that no DSN
 					 * option is attached to that segment
 					 */
@@ -902,7 +899,7 @@ static inline u32 tcp_wnd_end(const struct tcp_sock *tp, int data_seq)
 	  advertised window*/
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
 	struct tcp_sock *mpcb_tp=(struct tcp_sock *)mpcb;
-	
+
 	if (!data_seq || !tp->mpcb) return tp->snd_una + tp->snd_wnd;
 	else return mpcb_tp->snd_una+mpcb_tp->snd_wnd;
 }
@@ -1004,14 +1001,14 @@ static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 
 	__skb_queue_tail(&tp->ucopy.prequeue, skb);
 	tp->ucopy.memory += skb->truesize;
-	if (tp->ucopy.memory > sk->sk_rcvbuf) {			
+	if (tp->ucopy.memory > sk->sk_rcvbuf) {
 		struct sk_buff *skb1;
 
 		BUG_ON(sock_owned_by_user(sk));
 
 		while ((skb1 = __skb_dequeue(&tp->ucopy.prequeue)) != NULL) {
 			sk_backlog_rcv(sk, skb1);
-			NET_INC_STATS_BH(sock_net(sk), 
+			NET_INC_STATS_BH(sock_net(sk),
 					 LINUX_MIB_TCPPREQUEUEDROPPED);
 		}
 
@@ -1066,41 +1063,22 @@ static inline int tcp_win_from_space(int space)
 		space - (space>>sysctl_tcp_adv_win_scale);
 }
 
-/* Note: caller must be prepared to deal with negative returns */ 
+/* Note: caller must be prepared to deal with negative returns */
 static inline int tcp_space(const struct sock *sk)
 {
+	if (tcp_sk(sk)->mpc && tcp_sk(sk)->mpcb)
+		sk = (struct sock *) (tcp_sk(sk)->mpcb);
+
 	return tcp_win_from_space(sk->sk_rcvbuf -
 				  atomic_read(&sk->sk_rmem_alloc));
 }
 
-#ifdef CONFIG_MTCP
-/*If MPTCP is used, tcp_space returns the aggregate space for the
-  whole communication. */
-static inline int mtcp_space(const struct sock *sk)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
-	struct sock *mpcb_sk=(struct sock*)mpcb;
-	
-	if (!tp->mpc) return tcp_space(sk);
-	
-	return tcp_win_from_space(mpcb_sk->sk_rcvbuf-
-				  atomic_read(&mpcb_sk->sk_rmem_alloc));
-}
-
-static inline int mtcp_full_space(const struct sock *sk)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
-	struct sock *mpcb_sk=(struct sock*)mpcb;
-
-	return tcp_win_from_space(mpcb_sk->sk_rcvbuf);
-}
-#endif
-
 static inline int tcp_full_space(const struct sock *sk)
 {
-	return tcp_win_from_space(sk->sk_rcvbuf); 
+	if (tcp_sk(sk)->mpc && tcp_sk(sk)->mpcb)
+		sk = (struct sock *) (tcp_sk(sk)->mpcb);
+
+	return tcp_win_from_space(sk->sk_rcvbuf);
 }
 
 static inline void tcp_openreq_init(struct request_sock *req,
@@ -1118,7 +1096,7 @@ static inline void tcp_openreq_init(struct request_sock *req,
 	req->saw_mpc = rx_opt->saw_mpc;
 #ifdef CONFIG_MTCP_PM
 	if (!req->mpcb) {
-		/*conn request, prepare a new token for the 
+		/*conn request, prepare a new token for the
 		  mpcb that will be created in tcp_check_req(),
 		  and store the received token.*/
 		req->mtcp_rem_token = rx_opt->mtcp_rem_token;

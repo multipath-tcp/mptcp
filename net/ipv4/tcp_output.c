@@ -1700,13 +1700,13 @@ static unsigned int tcp_snd_test(struct sock *subsk, struct sk_buff *skb,
 	unsigned int cwnd_quota;
 	struct multipath_pcb *mpcb=subtp->mpcb;
 	struct tcp_sock *mpcb_tp=&mpcb->tp;
-	
+
 	BUG_ON(subtp->mpc && tcp_skb_pcount(skb)>1);
 	if (!mpcb)
 		mpcb_tp=subtp;
 
 	tcp_init_tso_segs(subsk, skb, cur_mss);
-	
+
 	if (!tcp_nagle_test(mpcb_tp, skb, cur_mss, nonagle))
 		return 0;
 
@@ -2459,8 +2459,8 @@ u32 __tcp_select_window(struct sock *sk)
 	 * fluctuations.  --SAW  1998/11/1
 	 */
 	mss = icsk->icsk_ack.rcv_mss;
-	free_space = mtcp_space(sk);
-	full_space = min_t(int, mpcb->tp.window_clamp, mtcp_full_space(sk));
+	free_space = tcp_space(sk);
+	full_space = min_t(int, mpcb->tp.window_clamp, tcp_full_space(sk));
 
 	if (mss > full_space)
 		mss = full_space;
@@ -3035,7 +3035,7 @@ struct sk_buff *tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 		req->window_clamp = tp->window_clamp ? : dst_metric(dst, RTAX_WINDOW);
 		/* tcp_full_space because it is guaranteed to be the first packet */
 #ifdef CONFIG_MTCP
-		tcp_select_initial_window(mtcp_full_space(sk),
+		tcp_select_initial_window(tcp_full_space(sk),
 					  mss - (ireq->tstamp_ok ?
 						 TCPOLEN_TSTAMP_ALIGNED : 0),
 					  &req->rcv_wnd,
@@ -3172,8 +3172,8 @@ static void tcp_connect_init(struct sock *sk)
 			tp->mss_too_low=1;
 	}
 	else
-#endif	
-	{	
+#endif
+	{
 		tp->advmss = dst_metric(dst, RTAX_ADVMSS);
 	}
 
@@ -3183,7 +3183,7 @@ static void tcp_connect_init(struct sock *sk)
 	tcp_initialize_rcv_mss(sk);
 
 #ifdef CONFIG_MTCP
-	tcp_select_initial_window(mtcp_full_space(sk),
+	tcp_select_initial_window(tcp_full_space(sk),
 				  tp->advmss - (tp->rx_opt.ts_recent_stamp ? tp->tcp_header_len - sizeof(struct tcphdr) : 0),
 				  &tp->rcv_wnd,
 				  &tp->window_clamp,
