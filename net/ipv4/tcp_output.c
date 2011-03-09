@@ -2485,7 +2485,7 @@ u32 __tcp_select_window(struct sock *sk)
 	/* Don't do rounding if we are using window scaling, since the
 	 * scaled window will not line up with the MSS boundary anyway.
 	 */
-	window = tp->rcv_wnd;
+	window = mpcb->tp.rcv_wnd;
 	if (tp->rx_opt.rcv_wscale) {
 		window = free_space;
 
