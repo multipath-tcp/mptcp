@@ -2626,7 +2626,7 @@ static void tcp_retrans_try_collapse(struct sock *sk, struct sk_buff *to,
 		    after(TCP_SKB_CB(skb)->end_seq, tcp_wnd_end(tp,0)))
 			break;
 		if (tp->mpc &&
-		    after(TCP_SKB_CB(skb)->end_data_seq, tcp_wnd_end(tp,0)))
+		    after(TCP_SKB_CB(skb)->end_data_seq, tcp_wnd_end(tp,1)))
 			break;
 
 		tcp_collapse_retrans(sk, to);
@@ -3394,8 +3394,8 @@ int tcp_write_wakeup(struct sock *sk)
 		return -1;
 
 	if ((skb = tcp_send_head(sk)) != NULL &&
-	    before((tp->mpc)?TCP_SKB_CB(skb)->data_seq:
-		   TCP_SKB_CB(skb)->seq, tcp_wnd_end(tp,tp->mpc))) {
+	    before((tp->mpc) ? TCP_SKB_CB(skb)->data_seq:
+		   TCP_SKB_CB(skb)->seq, tcp_wnd_end(tp, tp->mpc))) {
 		int err;
 		unsigned int mss = tcp_current_mss(sk);
 		unsigned int seg_size = tcp_wnd_end(tp,tp->mpc) -
