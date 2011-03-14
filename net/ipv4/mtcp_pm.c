@@ -19,6 +19,7 @@
 #include <linux/inetdevice.h>
 #include <linux/list.h>
 #include <linux/tcp.h>
+#include <linux/proc_fs.h> /* Needed by proc_net_fops_create */
 #include <net/inet_sock.h>
 #include <net/tcp.h>
 
@@ -52,22 +53,6 @@ static rwlock_t tk_hash_lock; /*hashtable protection*/
   to retrieve the mpcb.*/
 static struct list_head tuple_hashtable[MTCP_HASH_SIZE];
 static spinlock_t tuple_hash_lock; /*hashtable protection*/
-
-/* General initialization of MTCP_PM
- */
-static int __init mtcp_pm_init(void)
-{
-	int i;
-	for (i=0;i<MTCP_HASH_SIZE;i++) {
-		INIT_LIST_HEAD(&tk_hashtable[i]);
-		INIT_LIST_HEAD(&tuple_hashtable[i]);
-	}
-
-	rwlock_init(&tk_hash_lock);
-	spin_lock_init(&tuple_hash_lock);
-
-	return 0;
-}
 
 void mtcp_hash_insert(struct multipath_pcb *mpcb,u32 token)
 {
@@ -1321,6 +1306,85 @@ diffPorts:
 	}
 	return nb_new;
 }
+
+/*
+ *	Output /proc/net/mtcp_pm
+ */
+static int mtcp_pm_seq_show(struct seq_file *seq, void *v)
+{
+        struct multipath_pcb *mpcb;
+	int i;
+
+	seq_puts(seq, "Multipath TCP (path manager):");
+	seq_putc(seq, '\n');
+
+	for (i = 0; i < MTCP_HASH_SIZE; i++) {
+	   list_for_each_entry(mpcb, &tk_hashtable[i], collide_tk) {
+	      spin_lock(&mpcb->lock);
+
+	      seq_printf (seq, "[%d] %d (%d): %d", loc_token(mpcb),
+			      mpcb->num_addr4, mpcb->pa4_size,
+			      mpcb->cnt_subflows);
+	      seq_putc(seq, '\n');
+
+	      spin_unlock(&mpcb->lock);
+	   }
+	}
+
+	return 0;
+}
+
+static int mtcp_pm_seq_open(struct inode *inode, struct file *file)
+{
+	return single_open_net(inode, file, mtcp_pm_seq_show);
+}
+
+static const struct file_operations mtcp_pm_seq_fops = {
+	.owner	 = THIS_MODULE,
+	.open	 = mtcp_pm_seq_open,
+	.read	 = seq_read,
+	.llseek	 = seq_lseek,
+	.release = single_release_net,
+};
+
+static __net_init int mtcp_pm_proc_init_net(struct net *net)
+{
+	if (!proc_net_fops_create(net, "mtcp_pm", S_IRUGO, &mtcp_pm_seq_fops))
+		goto out_mtcp_pm;
+
+	return 0;
+
+out_mtcp_pm:
+	proc_net_remove(net, "mtcp_pm");
+	return -ENOMEM;
+}
+
+static __net_exit void mtcp_pm_proc_exit_net(struct net *net)
+{
+	proc_net_remove(net, "mtcp_pm");
+}
+
+static __net_initdata struct pernet_operations mtcp_pm_proc_ops = {
+	.init = mtcp_pm_proc_init_net,
+	.exit = mtcp_pm_proc_exit_net,
+};
+
+/* General initialization of MTCP_PM
+ */
+static int __init mtcp_pm_init(void)
+{
+	int i;
+	for (i = 0; i < MTCP_HASH_SIZE; i++) {
+		INIT_LIST_HEAD(&tk_hashtable[i]);
+		INIT_LIST_HEAD(&tuple_hashtable[i]);
+	}
+
+	rwlock_init(&tk_hash_lock);
+	spin_lock_init(&tuple_hash_lock);
+
+	return register_pernet_subsys(&mtcp_pm_proc_ops);
+}
+
 
 module_init(mtcp_pm_init);
 
