@@ -277,7 +277,8 @@ EXPORT_SYMBOL(tcp_select_initial_window);
  */
 static u16 tcp_select_window(struct sock *sk)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *tp = tcp_sk(sk), *tmp_tp;
+	struct sock *tmp_sk;
 	u32 cur_win = tcp_receive_window(tp);
 	u32 new_win = __tcp_select_window(sk);
 
@@ -295,15 +296,19 @@ static u16 tcp_select_window(struct sock *sk)
 		new_win = ALIGN(cur_win, 1 << tp->rx_opt.rcv_wscale);
 	}
 	if (tp->mpcb && tp->mpc) {
-		struct tcp_sock *mpcb_tp=(struct tcp_sock*)(tp->mpcb);
-		mpcb_tp->rcv_wnd = new_win;
-		mpcb_tp->rcv_wup = mpcb_tp->rcv_nxt;
-		/*the subsock rcv_wup must still be updated,
-		  because it is used to decide when to echo the timestamp
-		  and when to delay the acks*/
-		tp->rcv_wup=tp->rcv_nxt;
-	}
-	else {
+		struct tcp_sock *meta_tp = (struct tcp_sock *) (tp->mpcb);
+		meta_tp->rcv_wnd = new_win;
+		meta_tp->rcv_wup = meta_tp->rcv_nxt;
+
+		/* The receive-window is the same for all the subflows */
+		mtcp_for_each_sk(tp->mpcb, tmp_sk, tmp_tp) {
+			tmp_tp->rcv_wnd = new_win;
+		}
+		/* the subsock rcv_wup must still be updated,
+		 * because it is used to decide when to echo the timestamp
+		 * and when to delay the acks */
+		tp->rcv_wup = tp->rcv_nxt;
+	} else {
 		tp->rcv_wnd = new_win;
 		tp->rcv_wup = tp->rcv_nxt;
 	}
