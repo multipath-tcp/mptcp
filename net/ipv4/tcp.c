@@ -2532,22 +2532,25 @@ void tcp_close(struct sock *sk, long timeout)
 adjudge_to_death:
 	state = sk->sk_state;
 	sock_hold(sk);
-	sock_orphan(sk);
+	/*The sock *may* have been orphaned by mtcp_close(), if 
+	  we are called from tcp_write_xmit().*/
+	if (!sock_flag(sk, SOCK_DEAD))
+		sock_orphan(sk);
 
-	/* It is the last release_sock in its life. It will remove backlog. */
-	if (!locked)
-		release_sock(sk);
-
-	/* Now socket is owned by kernel and we acquire BH lock
-	   to finish close. No need to check for user refs.
-	 */
 	if (!locked) {
+		/* It is the last release_sock in its life. 
+		   It will remove backlog. */
+		release_sock(sk);
+		/* Now socket is owned by kernel and we acquire BH lock
+		   to finish close. No need to check for user refs.
+		*/
 		local_bh_disable();
 		bh_lock_sock(sk);
 	}
 	WARN_ON(sock_owned_by_user(sk));
-
-	percpu_counter_inc(sk->sk_prot->orphan_count);
+	
+	if (!sock_flag(sk, SOCK_DEAD))
+		percpu_counter_inc(sk->sk_prot->orphan_count);
 
 	/* Have we already been destroyed by a softirq or backlog? */
 	if (state != TCP_CLOSE && sk->sk_state == TCP_CLOSE)

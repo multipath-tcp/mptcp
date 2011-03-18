@@ -1859,6 +1859,8 @@ void mtcp_close(struct sock *master_sk, long timeout) {
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tcp_sk(master_sk));
 	struct sock *meta_sk = (struct sock*) mpcb;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct sock *subsk;
+	struct tcp_sock *subtp;
 	struct sk_buff *skb;
 	int data_was_unread = 0;
 	int state;
@@ -1908,6 +1910,15 @@ void mtcp_close(struct sock *master_sk, long timeout) {
 	state = meta_sk->sk_state;
 	sock_orphan(meta_sk);
 	percpu_counter_inc(meta_sk->sk_prot->orphan_count);
+
+	mtcp_for_each_sk(mpcb,subsk,subtp) {
+		/*The socket may have been orphaned by the tcp_close()
+		  above, in that case SOCK_DEAD is set already*/
+		if (!sock_flag(subsk, SOCK_DEAD)) {
+			sock_orphan(subsk);
+			percpu_counter_inc(subsk->sk_prot->orphan_count);
+		}
+	}
 
 	/* It is the last release_sock in its life. It will remove backlog. */
 	release_sock(meta_sk);
