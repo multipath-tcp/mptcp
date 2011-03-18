@@ -485,9 +485,9 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
 }
 
 void mpcb_release(struct kref* kref) {
-	struct multipath_pcb *mpcb;
-
-	mpcb = container_of(kref,struct multipath_pcb,kref);
+	struct multipath_pcb *mpcb = container_of(kref,
+						  struct multipath_pcb,kref);
+	struct sock *meta_sk = (struct sock*) mpcb;
 
         /*Must have been destroyed previously*/
 	if (!sock_flag((struct sock*)mpcb, SOCK_DEAD)) {
@@ -504,6 +504,8 @@ void mpcb_release(struct kref* kref) {
 #ifdef CONFIG_SECURITY_NETWORK
 	security_sk_free((struct sock *)mpcb);
 #endif
+	percpu_counter_dec(meta_sk->sk_prot->orphan_count);
+
 	kfree(mpcb);
 }
 
