@@ -518,9 +518,9 @@ static void mtcp_destroy_mpcb(struct multipath_pcb *mpcb) {
 	/* Accept any subsock waiting in the pending queue
 	   This is needed because those subsocks are established
 	   and still reachable by incoming packets. They will hence
-	   try to reference the mpcb, and hence need to take a ref
+	   try to reference the mpcb, and need to take a ref
 	   to it to ensure the mpcb does not die before any of its
-	   childs */
+	   childs. */
 	mtcp_check_new_subflow(mpcb);
 #endif
 	/* Stop listening to PM events */
