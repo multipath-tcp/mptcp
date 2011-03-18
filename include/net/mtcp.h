@@ -334,7 +334,6 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb, struct msghdr *msg,
 
 struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags);
 void mtcp_ask_update(struct sock *sk);
-void mtcp_destroy_mpcb(struct multipath_pcb *mpcb);
 void mtcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp);
 void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp);
 void mtcp_update_metasocket(struct sock *sock, struct multipath_pcb *mpcb);

@@ -509,7 +509,7 @@ void mpcb_release(struct kref* kref) {
 
 /* Warning: can only be called in user context
    (due to unregister_netevent_notifier) */
-void mtcp_destroy_mpcb(struct multipath_pcb *mpcb) {
+static void mtcp_destroy_mpcb(struct multipath_pcb *mpcb) {
 	mtcp_debug("%s: Destroying mpcb with token:%d\n", __FUNCTION__,
 			loc_token(mpcb));
 #ifdef CONFIG_MTCP_PM
