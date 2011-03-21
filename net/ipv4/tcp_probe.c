@@ -415,14 +415,16 @@ static ssize_t tcpprobe_read(struct file *file, char __user *buf,
 		int width;
 
 		/* Wait for data in buffer */
-		error = wait_event_interruptible(tcp_probe.wait,
-						 tcp_probe_used() > 0);
-		if (error)
+		error = wait_event_interruptible_timeout(tcp_probe.wait,
+							 tcp_probe_used() > 0,
+							 3*HZ);
+		if (error == -ERESTARTSYS)
 			break;
 
 		spin_lock_bh(&tcp_probe.lock);
 		if (tcp_probe.head == tcp_probe.tail) {
-			/* multiple readers race? */
+			/* multiple readers race? 
+			   (or timeout and nothing arrived) */
 			spin_unlock_bh(&tcp_probe.lock);
 			continue;
 		}
