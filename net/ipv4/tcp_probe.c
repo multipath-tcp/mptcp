@@ -49,9 +49,13 @@ static unsigned int bufsize __read_mostly = 4096;
 MODULE_PARM_DESC(bufsize, "Log buffer size in packets (4096)");
 module_param(bufsize, uint, 0);
 
-static int full __read_mostly=1;
+static int full __read_mostly = 1;
 MODULE_PARM_DESC(full, "Full log (1=every ack packet received,  0=only cwnd changes)");
 module_param(full, int, 0);
+
+static int log_interval __read_mostly = 100;
+MODULE_PARM_DESC(log_interval, "Log interval (0=log every event, n=log at most every n milliseconds)");
+module_param(log_interval, int, 0);
 
 static const char procname[] = "tcpprobe";
 
@@ -130,13 +134,15 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	struct sock *mpcb_sk=tp->mpcb?(struct sock*)tp->mpcb:sk;
 	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
 
-	if (!tp->last_rcv_probe)
+	if (log_interval) {
+		if (!tp->last_rcv_probe)
+			tp->last_rcv_probe=jiffies;
+		else if (jiffies - tp->last_rcv_probe <
+			 log_interval * HZ / 1000)
+			goto out;       
 		tp->last_rcv_probe=jiffies;
-	else if (jiffies-tp->last_rcv_probe<HZ/10)
-	goto out;
+	}
 	
-	tp->last_rcv_probe=jiffies;
-
 	/* Only update if port matches */
 	if ((port == 0 || ntohs(inet->inet_dport) == port 
 	     || ntohs(inet->inet_sport) == port)
@@ -249,12 +255,14 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	struct sock *mpcb_sk=tp->mpcb?(struct sock*)tp->mpcb:sk;
 	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
 
-	if (!tp->last_snd_probe)
+	if (log_interval) {
+		if (!tp->last_snd_probe)
+			tp->last_snd_probe=jiffies;
+		else if (jiffies-tp->last_snd_probe <
+			 log_interval * HZ / 1000)
+			goto out;		
 		tp->last_snd_probe=jiffies;
-	else if (jiffies-tp->last_snd_probe<HZ/10)
-		goto out;
-	
-	tp->last_snd_probe=jiffies;
+	}
 
 	/* Only update if port matches and state is established*/
 	if (sk->sk_state == TCP_ESTABLISHED && 
@@ -482,7 +490,8 @@ static __init int tcpprobe_init(void)
 	if (ret)
 		goto err1;
 
-	pr_info("TCP probe registered (port=%d) bufsize=%u\n", port, bufsize);
+	pr_info("TCP probe registered (port=%d) bufsize=%u, log_interval=%d\n", 
+		port, bufsize, log_interval);
 	return 0;
  err1:
 	proc_net_remove(&init_net, procname);
