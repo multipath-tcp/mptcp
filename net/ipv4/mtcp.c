@@ -1061,11 +1061,16 @@ void mtcp_cleanup_rbuf(struct sock *meta_sk, int copied) {
 	/* If we need to send an explicit window update, we need to choose
 	   some subflow to send it. At the moment, we use the master subsock
 	   for this. */
-	if (time_to_ack)
-		/* We send it on all the subflows, to get at
-		 * least one working subflow */
-		mtcp_for_each_sk(mpcb, sk, tp)
-			tcp_send_ack(sk);
+	if (time_to_ack) {
+		/* We send it on all the subflows
+		 * that are able to receive data.*/
+		mtcp_for_each_sk(mpcb, sk, tp) {
+			if (sk->sk_state == TCP_ESTABLISHED ||
+			    sk->sk_state == TCP_FIN_WAIT1 ||
+			    sk->sk_state == TCP_FIN_WAIT2)
+				tcp_send_ack(sk);
+		}
+	}
 }
 
 /* Eats data from the meta-receive queue */
