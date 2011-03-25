@@ -140,9 +140,6 @@ static __u16 tcp_advertise_mss(struct sock *sk)
 	if (dst && dst_metric(dst, RTAX_ADVMSS) < mss) {
 		mss = dst_metric(dst, RTAX_ADVMSS);
 		tp->advmss = mss;
-#ifdef CONFIG_MTCP
-		tp->mss_too_low=1;
-#endif
 	}
 
 	return (__u16)mss;
@@ -3173,8 +3170,6 @@ static void tcp_connect_init(struct sock *sk)
 #ifdef CONFIG_MTCP
 	if (do_mptcp(sk)) {
 		tp->advmss = sysctl_mptcp_mss;
-		if (tp->advmss>dst_metric(dst,RTAX_ADVMSS))
-			tp->mss_too_low=1;
 	}
 	else
 #endif

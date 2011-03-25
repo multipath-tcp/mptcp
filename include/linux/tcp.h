@@ -52,7 +52,7 @@ struct tcphdr {
 		fin:1;
 #else
 #error	"Adjust your <asm/byteorder.h> defines"
-#endif	
+#endif
 	__be16	window;
 	__sum16	check;
 	__be16	urg_ptr;
@@ -63,14 +63,14 @@ struct tcphdr {
  *  (union is compatible to any of its members)
  *  This means this part of the code is -fstrict-aliasing safe now.
  */
-union tcp_word_hdr { 
+union tcp_word_hdr {
 	struct tcphdr hdr;
 	__be32 		  words[5];
-}; 
+};
 
-#define tcp_flag_word(tp) ( ((union tcp_word_hdr *)(tp))->words [3]) 
+#define tcp_flag_word(tp) ( ((union tcp_word_hdr *)(tp))->words [3])
 
-enum { 
+enum {
 	TCP_FLAG_CWR = __cpu_to_be32(0x00800000),
 	TCP_FLAG_ECE = __cpu_to_be32(0x00400000),
 	TCP_FLAG_URG = __cpu_to_be32(0x00200000),
@@ -81,7 +81,7 @@ enum {
 	TCP_FLAG_FIN = __cpu_to_be32(0x00010000),
 	TCP_RESERVED_BITS = __cpu_to_be32(0x0F000000),
 	TCP_DATA_OFFSET = __cpu_to_be32(0xF0000000)
-}; 
+};
 
 /*
  * TCP general constants
@@ -288,9 +288,9 @@ struct tcp_sock {
 		int	space;
 		u32	seq;
 		u32	time;
-		short   shift; /*Shift to apply to the space field. 
+		short   shift; /*Shift to apply to the space field.
 				 It is increased when space bytes are
-				 flushed in less than a jiffie (can happen 
+				 flushed in less than a jiffie (can happen
 				 with gigabit ethernet), so as to use a larger
 				 basis for bw computation.*/
 	} bw_est;
@@ -313,24 +313,23 @@ struct tcp_sock {
   checking MTPC capability just by checking the mpc flag, rather than adding
   ifdefs everywhere.*/
 	u8      mpc:1,          /* Other end is multipath capable       */
-		
-		wait_event_any_sk_released:1, /*1 if mtcp_wait_event_any_sk()
-						has released this sock, and
-						must thus lock it again,
-						so that to let everything
-						equal. This is important
-						because a new subsocket
-						can appear during we sleep.*/	
-		wait_data_bit_set:1, /*Similar to previous, for wait_data*/
-		push_frames:1, /*An other subsocket may liberate space in the
-				 sending window of this sock. Normally, a push
-				 is then done immediately, but if the socket is
-				 locked at that moment, push_frames is set, so
-				 that the push is done in the release_sock.*/
-		mss_too_low:1, /*mss for this sock is too low, just ignore*/
-		pf:1; /*Potentially Failed state: when this flag is set, we
-			stop using the subflow*/
-	
+
+		wait_event_any_sk_released:1, /* 1 if mtcp_wait_event_any_sk()
+						 has released this sock, and
+						 must thus lock it again,
+						 so that to let everything
+						 equal. This is important
+						 because a new subsocket
+						 can appear during we sleep. */
+		wait_data_bit_set:1, /* Similar to previous, for wait_data */
+		push_frames:1, /* An other subsocket may liberate space in the
+				  sending window of this sock. Normally, a push
+				  is then done immediately, but if the socket is
+				  locked at that moment, push_frames is set, so
+				  that the push is done in the release_sock. */
+		pf:1; /* Potentially Failed state: when this flag is set, we
+			 stop using the subflow */
+
 	u32	rcv_wup;	/* rcv_nxt on last window update sent	*/
  	u32	snd_nxt;	/* Next sequence we send		*/
 
@@ -347,7 +346,7 @@ struct tcp_sock {
 		struct iovec		*iov;
 		int                     len;
 #ifdef CONFIG_NET_DMA
-		int			copied;		
+		int			copied;
 		/* members for async copy */
 		struct dma_chan		*dma_chan;
 		int			wakeup;
