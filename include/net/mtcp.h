@@ -66,7 +66,7 @@ static void mtcp_debug_timeout(unsigned long data)
 	       (char *)data);
 	BUG();
 }
-DEFINE_TIMER(mtcp_debug_timer,mtcp_debug_timeout,0,0);
+static DEFINE_TIMER(mtcp_debug_timer,mtcp_debug_timeout,0,0);
 #define mtcp_start_debug_timer(delay)					\
 	do {								\
 		mtcp_debug_timer.expires=jiffies+delay*HZ;		\
