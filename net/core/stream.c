@@ -134,17 +134,12 @@ int sk_stream_wait_memory(struct sock *sk, long *timeo_p)
 	long vm_wait = 0;
 	long current_timeo = *timeo_p;
 	DEFINE_WAIT(wait);
-	struct sock *meta_sk=((sk->sk_protocol==IPPROTO_TCP || 
-			       sk->sk_protocol==IPPROTO_MTCPSUB)
-			      && tcp_sk(sk)->mpcb)?
-		((struct sock*)tcp_sk(sk)->mpcb):sk;
-
 
 	if (sk_stream_memory_free(sk))
 		current_timeo = vm_wait = (net_random() % (HZ / 5)) + 2;
 
 	while (1) {
-		set_bit(SOCK_ASYNC_NOSPACE, &meta_sk->sk_socket->flags);
+		set_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
 
 		prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
 
@@ -154,11 +149,11 @@ int sk_stream_wait_memory(struct sock *sk, long *timeo_p)
 			goto do_nonblock;
 		if (signal_pending(current))
 			goto do_interrupted;
-		clear_bit(SOCK_ASYNC_NOSPACE, &meta_sk->sk_socket->flags);
+		clear_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
 		if (sk_stream_memory_free(sk) && !vm_wait)
 			break;
 
-		set_bit(SOCK_NOSPACE, &meta_sk->sk_socket->flags);
+		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 		sk->sk_write_pending++;
 		sk_wait_event(sk, &current_timeo, sk->sk_err ||
 						  (sk->sk_shutdown & SEND_SHUTDOWN) ||
