@@ -23,11 +23,10 @@ struct mtcp_ccc {
 	u64 alpha;
 };
 
-static inline int mtcp_sk_not_estab(struct sock *sk)
+static inline int mtcp_sk_can_send(struct sock *sk)
 {
-	return sk->sk_state == TCP_SYN_SENT ||
-	       sk->sk_state == TCP_SYN_RECV ||
-	       sk->sk_state == TCP_CLOSE;
+	return sk->sk_state == TCP_ESTABLISHED ||
+	       sk->sk_state == TCP_CLOSE_WAIT;
 }
 
 u32 mtcp_get_crt_cwnd(struct tcp_sock* tp)
@@ -49,7 +48,7 @@ u32 mtcp_get_total_cwnd(struct multipath_pcb* mpcb) {
 	tp = mpcb->connection_list;
 
 	mtcp_for_each_sk(mpcb,sub_sk,tp) {
-		if (mtcp_sk_not_estab(sub_sk))
+		if (!mtcp_sk_can_send(sub_sk))
 			continue;
 		cwnd += mtcp_get_crt_cwnd(tp);
 	}
@@ -78,7 +77,7 @@ static void mtcp_recalc_alpha(struct sock *sk)
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tcp_sk(sk));
 	struct tcp_sock *sub_tp;
 	struct sock *sub_sk;
-	int best_cwnd = 0, best_rtt = 0, tot_cwnd;
+	int best_cwnd = 0, best_rtt = 0, tot_cwnd, can_send = 0;
 	u64 max_numerator = 0, sum_denominator = 0, alpha = 1;
 
 	if (!mpcb)
@@ -101,8 +100,10 @@ static void mtcp_recalc_alpha(struct sock *sk)
 			      * u64 - because anyway we later need it */
 		u64 tmp;
 
-		if (mtcp_sk_not_estab(sub_sk))
+		if (!mtcp_sk_can_send(sub_sk))
 			continue;
+
+		can_send++;
 
 		if (likely(sub_tp->srtt))
 			rtt = sub_tp->srtt;
@@ -126,12 +127,16 @@ static void mtcp_recalc_alpha(struct sock *sk)
 		}
 	}
 
+	/* No subflow is able to send - we don't care anymore */
+	if (unlikely(!can_send))
+		goto exit;
+
 	/* Calculate the denominator */
 	mtcp_for_each_sk(mpcb, sub_sk, sub_tp) {
 		u64 rtt = 1; /* Minimum value is 1, to avoid dividing by 0
 			      * u64 - because anyway we later need it */
 
-		if (mtcp_sk_not_estab(sub_sk))
+		if (!mtcp_sk_can_send(sub_sk))
 			continue;
 
 		if (likely(sub_tp->srtt))
