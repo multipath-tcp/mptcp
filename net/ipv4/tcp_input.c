@@ -3647,7 +3647,8 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 	}
 
 	tp->snd_una = ack;
-	if (tp->mpc && tp->mpcb && after(data_ack, meta_tp->snd_una)) {
+	if (data_ack && tp->mpc && tp->mpcb &&
+			after(data_ack, meta_tp->snd_una)) {
 		meta_tp->snd_una = data_ack;
 		mtcp_clean_rtx_queue((struct sock *) meta_tp);
 	}
