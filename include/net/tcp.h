@@ -646,6 +646,13 @@ extern u32 __tcp_select_window(struct sock *sk);
 #define TCPHDR_ECE 0x40
 #define TCPHDR_CWR 0x80
 
+/* MPTCP flags
+ * Later, when the layer separation (subflow vs meta-flow) is clearer,
+ * TCP flags will be rewritten with MPTCP flags when changing the layer.
+ * This will allow using one flags field only, and spare 8 bits.
+ */
+#define MPTCPHDR_ACK 0x10
+
 /* This is what the send packet queuing engine uses to pass
  * TCP per-packet control information to the transmission code.
  * We also store the host-order sequence numbers in here too.
@@ -671,6 +678,7 @@ struct tcp_skb_cb {
 	__u32           sub_seq;        /* subflow seqnum (MPTCP)       */
 	__u32		when;		/* used to compute rtt's	*/
 	__u8		flags;		/* TCP header flags.		*/
+	__u8            mptcp_flags;    /* flags for the MPTCP layer    */
 	__u8		sacked;		/* State flags for SACK/FACK.	*/
 #define TCPCB_SACKED_ACKED	0x01	/* SKB ACK'd by a SACK block	*/
 #define TCPCB_SACKED_RETRANS	0x02	/* SKB retransmitted		*/

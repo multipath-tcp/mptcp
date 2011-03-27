@@ -3647,8 +3647,9 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 	}
 
 	tp->snd_una = ack;
-	if (data_ack && tp->mpc && tp->mpcb &&
-			after(data_ack, meta_tp->snd_una)) {
+	if ((TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_ACK) &&
+	    tp->mpc && tp->mpcb &&
+	    after(data_ack, meta_tp->snd_una)) {
 		meta_tp->snd_una = data_ack;
 		mtcp_clean_rtx_queue((struct sock *) meta_tp);
 	}
@@ -4171,6 +4172,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				}
 				TCP_SKB_CB(skb)->data_ack =
 					ntohl(*(uint32_t*)ptr);
+				TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_ACK;
 				break;
 #endif /* CONFIG_MTCP */
 			}
