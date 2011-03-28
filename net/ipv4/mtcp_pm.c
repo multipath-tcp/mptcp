@@ -1448,19 +1448,15 @@ static const struct file_operations mtcp_pm_seq_fops = {
 
 static __net_init int mtcp_pm_proc_init_net(struct net *net)
 {
-	if (!proc_net_fops_create(net, "mtcp_pm", S_IRUGO, &mtcp_pm_seq_fops))
-		goto out_mtcp_pm;
+	if (!proc_net_fops_create(net, "mptcp_pm", S_IRUGO, &mtcp_pm_seq_fops))
+		return -ENOMEM;
 
 	return 0;
-
-out_mtcp_pm:
-	proc_net_remove(net, "mtcp_pm");
-	return -ENOMEM;
 }
 
 static __net_exit void mtcp_pm_proc_exit_net(struct net *net)
 {
-	proc_net_remove(net, "mtcp_pm");
+	proc_net_remove(net, "mptcp_pm");
 }
 
 static __net_initdata struct pernet_operations mtcp_pm_proc_ops = {
