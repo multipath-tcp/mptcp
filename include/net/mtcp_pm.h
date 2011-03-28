@@ -51,15 +51,6 @@ struct path6 {
 	int               path_index;
 };
 
-struct mtcp_pm_ctx {
-	struct list_head    collide_token;
-
-/*token information*/
-	u32                 tk_local;
-
-	struct multipath_pcb *mpcb;
-};
-
 #define loc_token(mpcb)				\
 	(mpcb->tp.mtcp_loc_token)
 
