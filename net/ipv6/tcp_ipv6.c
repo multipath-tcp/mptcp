@@ -1726,10 +1726,25 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 	  segments could be understood as associated to some listening
 	  socket.*/
 
-	/*Is there a pending request sock for this segment ?*/
+	/*
+	 * Is there a pending request sock for this segment ?
+	 */
 	if (mtcp_syn_recv_sock(skb)) return 0;
-	/*Is this a new syn+join ?*/
-	if (th->syn && mtcp_lookup_join(skb)) return 0;
+
+	/*
+	 * Is this a new syn+join ?
+	 */
+	if (th->syn) {
+		switch(mtcp_lookup_join(skb)) {
+			/* The specified token can't be found
+			 * Send a reset and discard the packet.
+			 */
+			case -ENOKEY:
+				goto send_reset_and_discard_it;
+			case 1:
+				return 0;
+		}
+	}
 
 	/*OK, this segment is not related to subflow initiation,
 	  we can proceed to normal lookup*/
@@ -1789,6 +1804,7 @@ no_tcp_socket:
 bad_packet:
 		TCP_INC_STATS_BH(net, TCP_MIB_INERRS);
 	} else {
+send_reset_and_discard_it:
 		tcp_v6_send_reset(NULL, skb);
 	}
 

@@ -1686,7 +1686,18 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	   before the normal sock lookup, because otherwise subflow
 	   SYNs could be understood as associated to some listening
 	   socket. */
-	if (th->syn && mtcp_lookup_join(skb)) return 0;
+	if (th->syn) {
+		switch(mtcp_lookup_join(skb)) {
+			/* The specified token can't be found
+			 * Send a reset and discard the packet.
+			 */
+			case -ENOKEY:
+				goto send_reset_and_discard_it;
+			case 1:
+				return 0;
+		}
+	}
+
 #endif
 
 	sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source,
@@ -1784,6 +1795,7 @@ no_tcp_socket:
 bad_packet:
 		TCP_INC_STATS_BH(net, TCP_MIB_INERRS);
 	} else {
+send_reset_and_discard_it:
 		tcp_v4_send_reset(NULL, skb);
 	}
 
