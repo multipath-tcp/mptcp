@@ -421,6 +421,12 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
 	struct sock *meta_sk = (struct sock *) meta_tp;
 	struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
 
+	/* Memory allocation failed.
+	 * Stopping here.
+	 */
+	if (!mpcb)
+		return NULL;
+
 	memset(mpcb, 0, sizeof(struct multipath_pcb));
 	BUG_ON(mpcb->connection_list);
 

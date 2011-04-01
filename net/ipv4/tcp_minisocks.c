@@ -713,6 +713,15 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		child_tp->pending=1;
 		child_tp->mtcp_loc_token=req->mtcp_loc_token;
 		mpcb=mtcp_alloc_mpcb(child, GFP_ATOMIC);
+
+		/* The allocation of the mpcb failed!
+		 * Destoy the child and go to listen_overflow
+		 */
+		if (mpcb == NULL) {
+			tcp_done(child);
+			goto listen_overflow;
+		}
+
 		if (mopt.list_rcvd)
 			memcpy(&mpcb->received_options,&mopt,sizeof(mopt));
 		set_bit(MPCB_FLAG_SERVER_SIDE,&mpcb->flags);
