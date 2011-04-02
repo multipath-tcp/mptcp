@@ -6289,22 +6289,13 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 	struct multipath_pcb* mpcb;
 
 	mpcb = mpcb_from_tcpsock(tp);
-	if (mpcb==NULL){
+	if (unlikely(!mpcb)){
 		printk(KERN_ERR "MPCB null in synsent state process\n");
 		BUG();
 	}
 
 	tcp_parse_options(skb, &tp->rx_opt, &hash_location,
 			  &mpcb->received_options, 0);
-
-	if (unlikely(mpcb && tp->rx_opt.saw_mpc && is_master_sk(tp))) {
-		/*Transfer sndwnd control to the mpcb*/
-		mpcb->tp.snd_wnd=tp->snd_wnd;
-		mpcb->tp.max_window=tp->max_window;
-		/*We can do multipath with that socket*/
-		tp->mpc=1;
-		tp->rx_opt.saw_mpc=0; /*reset that field, it has been read*/
-	}
 
 	if (th->ack) {
 		/* rfc793:
@@ -6351,25 +6342,30 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		if (!th->syn)
 			goto discard_and_undo;
 
+		/* Everything is OK. Let's go!!! */
+		if (tp->rx_opt.saw_mpc && is_master_sk(tp)) {
+			tp->mpc = 1;
+			tp->rx_opt.saw_mpc = 0;
+		}
+
 		/* rfc793:
 		 *   "If the SYN bit is on ...
 		 *    are acceptable then ...
 		 *    (our SYN has been ACKed), change the connection
 		 *    state to ESTABLISHED..."
 		 */
-
 		TCP_ECN_rcv_synack(tp, th);
 
-		if (tp->mpc && tp->mpcb)
-			tp->mpcb->tp.snd_wl1 = TCP_SKB_CB(skb)->data_seq;
+		if (tp->mpc)
+			mpcb->tp.snd_wl1 = TCP_SKB_CB(skb)->data_seq;
 		else
-			tp->snd_wl1=TCP_SKB_CB(skb)->seq;
+			tp->snd_wl1 = TCP_SKB_CB(skb)->seq;
 		tcp_ack(sk, skb, FLAG_SLOWPATH);
 
 		/* Ok.. it's good. Set up sequence numbers and
 		 * move to established.
 		 */
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MTCP_PM
 		tp->rx_opt.rcv_isn = TCP_SKB_CB(skb)->seq;
 #endif
 		tp->rcv_nxt = TCP_SKB_CB(skb)->seq + 1;
@@ -6378,9 +6374,9 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		/* RFC1323: The window in SYN & SYN/ACK segments is
 		 * never scaled.
 		 */
-		if (tp->mpc && tp->mpcb) {
-			tp->mpcb->tp.snd_wnd = ntohs(th->window);
-			tcp_init_wl(&tp->mpcb->tp, tp->mpcb->tp.rcv_nxt);
+		if (tp->mpc) {
+			mpcb->tp.snd_wnd = ntohs(th->window);
+			tcp_init_wl(&mpcb->tp, mpcb->tp.rcv_nxt);
 		} else {
 			tp->snd_wnd = ntohs(th->window);
 			tcp_init_wl(tp, TCP_SKB_CB(skb)->seq);
@@ -6390,7 +6386,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			tp->rx_opt.snd_wscale = tp->rx_opt.rcv_wscale = 0;
 			tp->window_clamp = min(tp->window_clamp, 65535U);
 #ifdef CONFIG_MTCP
-			mtcp_update_window_clamp(tp->mpcb);
+			mtcp_update_window_clamp(mpcb);
 #endif
 		}
 
@@ -6464,9 +6460,8 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			inet_csk_reset_keepalive_timer(sk, keepalive_time_when(tp));
 
 		if (!tp->rx_opt.snd_wscale)
-			__tcp_fast_path_on(tp, (tp->mpc && tp->mpcb)?
-					   tp->mpcb->tp.snd_wnd:
-					   tp->snd_wnd);
+			__tcp_fast_path_on(tp, tp->mpc ? mpcb->tp.snd_wnd :
+					   	   	   	   tp->snd_wnd);
 		else
 			tp->pred_flags = 0;
 
@@ -6538,15 +6533,19 @@ discard:
 		tp->rcv_nxt = TCP_SKB_CB(skb)->seq + 1;
 		tp->rcv_wup = TCP_SKB_CB(skb)->seq + 1;
 
+		if (mpcb && tp->rx_opt.saw_mpc && is_master_sk(tp)) {
+			tp->mpc = 1;
+			tp->rx_opt.saw_mpc = 0;
+		}
+
 		/* RFC1323: The window in SYN & SYN/ACK segments is
 		 * never scaled.
 		 */
-		if (tp->mpc && tp->mpcb) {
-			tp->mpcb->tp.snd_wl1    = TCP_SKB_CB(skb)->data_seq;
-			tp->mpcb->tp.snd_wnd    = ntohs(th->window);
-			tp->mpcb->tp.max_window = tp->snd_wnd;
-		}
-		else {
+		if (tp->mpc) {
+			mpcb->tp.snd_wl1    = TCP_SKB_CB(skb)->data_seq;
+			mpcb->tp.snd_wnd    = ntohs(th->window);
+			mpcb->tp.max_window = tp->snd_wnd;
+		} else {
 			tp->snd_wl1    = TCP_SKB_CB(skb)->seq;
 			tp->snd_wnd    = ntohs(th->window);
 			tp->max_window = tp->snd_wnd;

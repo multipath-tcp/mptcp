@@ -80,8 +80,8 @@ struct tcp_options_received {
 	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
 #ifdef CONFIG_MTCP_PM
  	u32     mtcp_rem_token; /* Remote token, for mptcp */
-	u32     rcv_isn; /*Needed to retrieve abs subflow seqnum from the
-			   relative version.*/	
+	u32     rcv_isn; /* Needed to retrieve abs subflow seqnum from the
+			  * relative version. */
 #endif
 };
 
@@ -92,16 +92,16 @@ static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
 	rx_opt->cookie_plus = rx_opt->saw_mpc = 0;
 }
 
-struct multipath_options {	
+struct multipath_options {
 #ifdef CONFIG_MTCP_PM
-	int    num_addr4; 
+	int    num_addr4;
 	int    num_addr6;
 	struct mtcp_loc4 addr4[MTCP_MAX_ADDR];
 	struct mtcp_loc6 addr6[MTCP_MAX_ADDR];
 #endif
 	u8      list_rcvd:1, /*1 if IP list has been received (MTCP_PM)*/
 		dfin_rcvd:1;
-	u32     fin_dsn; /*DSN of the byte 
+	u32     fin_dsn; /*DSN of the byte
 			   FOLLOWING the Data FIN*/
 };
 
