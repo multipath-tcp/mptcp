@@ -190,13 +190,16 @@ struct path4 *find_path_mapping4(struct in_addr *loc, struct in_addr *rem,
 struct in_addr *mtcp_get_loc_addr(struct multipath_pcb *mpcb, int path_index)
 {
 	int i;
-	struct sock *mpcb_sk=(struct sock*)mpcb;
- 	if (path_index<=1)
-		return (struct in_addr*)&inet_sk(mpcb_sk)->inet_saddr;
-	for (i=0;i<mpcb->pa4_size;i++) {
-		if (mpcb->pa4[i].path_index==path_index)
+	struct sock *meta_sk = (struct sock *) mpcb;
+
+	if (path_index <= 1)
+		return (struct in_addr *) &inet_sk(meta_sk)->inet_saddr;
+
+	for (i = 0; i < mpcb->pa4_size; i++) {
+		if (mpcb->pa4[i].path_index == path_index)
 			return &mpcb->pa4[i].loc.addr;
 	}
+
 	BUG();
 	return NULL;
 }

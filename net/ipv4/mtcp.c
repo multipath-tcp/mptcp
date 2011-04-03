@@ -221,145 +221,121 @@ void mtcp_data_ready(struct sock *sk) {
  *      (further PMs are cascaded and use the depth attribute).
  */
 int mtcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
-	int i;
-	int retval;
+	int i, ret;
 	struct socket *sock;
-	struct tcp_sock *tp = mpcb->connection_list;
+	struct tcp_sock *tp;
 	struct sock *meta_sk = (struct sock *) mpcb;
-	struct tcp_sock *newtp;
 
 	BUG_ON(!tcp_sk(mpcb->master_sk)->mpc);
 
 	/* First, ensure that we keep existing path indices. */
-	while (tp != NULL) {
-		/* disable the corresponding bit */
+	mtcp_for_each_tp(mpcb, tp)
+		/* disable the corresponding bit of the existing subflow */
 		path_indices &= ~PI_TO_FLAG(tp->path_index);
-		tp = tp->next;
-	}
 
 	for (i = 0; i < sizeof(path_indices) * 8; i++) {
+		struct sockaddr *loculid, *remulid;
+		struct sockaddr_in loculid_in, remulid_in;
+		struct sockaddr_in6 loculid_in6, remulid_in6;
+		int ulid_size = 0, newpi = i + 1;
+
 		if (!((1 << i) & path_indices))
 			continue;
-		else {
-			struct sockaddr *loculid, *remulid = NULL;
-			int ulid_size = 0;
-			struct sockaddr_in loculid_in, remulid_in;
-			struct sockaddr_in6 loculid_in6, remulid_in6;
-			int newpi = i + 1;
-			/* A new socket must be created */
 
-			retval = sock_create_kern(meta_sk->sk_family,
-						  SOCK_STREAM, IPPROTO_MTCPSUB,
-						  &sock);
-			if (retval < 0) {
-				printk(KERN_ERR "%s:sock_create failed\n",
-						__FUNCTION__);
-				return retval;
-			}
-			newtp = tcp_sk(sock->sk);
+		/* A new socket must be created */
+		ret = sock_create_kern(meta_sk->sk_family, SOCK_STREAM,
+				IPPROTO_MTCPSUB, &sock);
+		if (ret < 0) {
+			printk(KERN_ERR "%s: sock_create failed\n",
+					__FUNCTION__);
+			return ret;
+		}
+		tp = tcp_sk(sock->sk);
 
-			/* Binding the new socket to the local ulid
-			   (except if we use the MPTCP default PM, in which
-			   case we bind the new socket, directly to its
-			   corresponding locators) */
-			switch (meta_sk->sk_family) {
-			case AF_INET:
-				memset(&loculid, 0, sizeof(loculid));
-				loculid_in.sin_family = meta_sk->sk_family;
+		/* Binding the new socket to the local ulid
+		 * (except if we use the MPTCP default PM, in which
+		 * case we bind the new socket, directly to its
+		 * corresponding locators)
+		 */
+		switch (meta_sk->sk_family) {
+		case AF_INET:
+			loculid_in.sin_family = meta_sk->sk_family;
+			remulid_in.sin_family = meta_sk->sk_family;
 
-				memcpy(&remulid_in, &loculid_in,
-				       sizeof(remulid_in));
+			/* let bind select an available port */
+			loculid_in.sin_port = 0;
+			remulid_in.sin_port = inet_sk(meta_sk)->inet_dport;
 
-				/*let bind select an available port*/
-				loculid_in.sin_port = 0;
-				remulid_in.sin_port =
-					inet_sk(meta_sk)->inet_dport;
-#ifdef CONFIG_MTCP_PM
-				/* If the MPTCP PM is used, we use the locators
-				   as subsock ids, while with other PMs, the
-				   ULIDs are those of the master subsock
-				   for all subsocks. */
-				memcpy(&loculid_in.sin_addr, mtcp_get_loc_addr(
-						mpcb, newpi),
-						sizeof(struct in_addr));
-				memcpy(&remulid_in.sin_addr, mtcp_get_rem_addr(
-						mpcb, newpi),
-						sizeof(struct in_addr));
-#else
-				memcpy(&loculid_in.sin_addr,
-						(struct in_addr*)&mpcb->local_ulid.a4,
-						sizeof(struct in_addr));
-				memcpy(&remulid_in.sin_addr,
-						(struct in_addr*)&mpcb->remote_ulid.a4,
-						sizeof(struct in_addr));
-#endif
-				loculid = (struct sockaddr *) &loculid_in;
-				remulid = (struct sockaddr *) &remulid_in;
-				ulid_size = sizeof(loculid_in);
-				break;
-			case AF_INET6:
-				memset(&loculid, 0, sizeof(loculid));
-				loculid_in6.sin6_family = meta_sk->sk_family;
+			memcpy(&loculid_in.sin_addr, mtcp_get_loc_addr(
+					mpcb, newpi), sizeof(struct in_addr));
+			memcpy(&remulid_in.sin_addr, mtcp_get_rem_addr(
+					mpcb, newpi), sizeof(struct in_addr));
 
-				memcpy(&remulid_in6, &loculid_in6,
-				       sizeof(remulid_in6));
+			loculid = (struct sockaddr *) &loculid_in;
+			remulid = (struct sockaddr *) &remulid_in;
+			ulid_size = sizeof(loculid_in);
 
-				loculid_in6.sin6_port = 0;
-				remulid_in6.sin6_port =
-					inet_sk(meta_sk)->inet_dport;
+			break;
+		case AF_INET6:
+			loculid_in6.sin6_family = meta_sk->sk_family;
+			remulid_in6.sin6_family = meta_sk->sk_family;
 
-				ipv6_addr_copy(&loculid_in6.sin6_addr,
-					       &inet6_sk(meta_sk)->saddr);
-				ipv6_addr_copy(&remulid_in6.sin6_addr,
-					       &inet6_sk(meta_sk)->daddr);
+			/* let bind select an available port */
+			loculid_in6.sin6_port = 0;
+			remulid_in6.sin6_port = inet_sk(meta_sk)->inet_dport;
 
-				loculid = (struct sockaddr *)&loculid_in6;
-				remulid = (struct sockaddr *)&remulid_in6;
-				ulid_size = sizeof(loculid_in6);
-				break;
-			default:
-				BUG();
-			}
-			newtp->path_index = newpi;
-			newtp->mpc = 1;
-			newtp->slave_sk = 1;
+			ipv6_addr_copy(&loculid_in6.sin6_addr,
+				       &inet6_sk(meta_sk)->saddr);
+			ipv6_addr_copy(&remulid_in6.sin6_addr,
+				       &inet6_sk(meta_sk)->daddr);
 
-			mtcp_add_sock(mpcb, newtp);
+			loculid = (struct sockaddr *) &loculid_in6;
+			remulid = (struct sockaddr *) &remulid_in6;
+			ulid_size = sizeof(loculid_in6);
 
-			/* Redefine the sk_data_ready function */
-			((struct sock*) newtp)->sk_data_ready
-					= mtcp_def_readable;
+			break;
+		default:
+			BUG();
+		}
+		tp->path_index = newpi;
+		tp->mpc = 1;
+		tp->slave_sk = 1;
 
-			retval = sock->ops->bind(sock, loculid, ulid_size);
-			if (retval < 0) {
-				printk(KERN_ERR "bind failed, af %d\n",
-						loculid->sa_family);
-				if (loculid->sa_family == AF_INET)
-					printk(KERN_ERR "addr:%pI4:%d\n",
-					       &loculid_in.sin_addr,
-					       loculid_in.sin_port) ;
-				goto fail_bind;
-			}
+		mtcp_add_sock(mpcb, tp);
 
-			retval = sock->ops->connect(sock, remulid, ulid_size,
-					O_NONBLOCK);
-			if (retval < 0 && retval != -EINPROGRESS)
-				goto fail_connect;
+		/* Redefine the sk_data_ready function */
+		((struct sock *) tp)->sk_data_ready = mtcp_def_readable;
 
+		ret = sock->ops->bind(sock, loculid, ulid_size);
+		if (ret < 0)
+			goto fail_bind;
+
+		ret = sock->ops->connect(sock, remulid, ulid_size, O_NONBLOCK);
+		if (ret < 0 && ret != -EINPROGRESS)
+			goto fail_connect;
+
+		if (meta_sk->sk_family == AF_INET)
 			mtcp_debug("%s: token %d pi %d src_addr:"
 				   "%pI4:%d dst_addr:%pI4:%d \n", __FUNCTION__,
 				   loc_token(mpcb), newpi, &loculid_in.sin_addr,
 				   loculid_in.sin_port, &remulid_in.sin_addr,
 				   remulid_in.sin_port);
-		}
+		else
+			mtcp_debug("%s: token %d pi %d src_addr:"
+				   "%pI6:%d dst_addr:%pI6:%d \n", __FUNCTION__,
+				   loc_token(mpcb), newpi, &loculid_in6.sin6_addr,
+				   loculid_in6.sin6_port, &remulid_in6.sin6_addr,
+				   remulid_in6.sin6_port);
 	}
 
 	return 0;
 
 fail_bind:
-	printk(KERN_ERR "MTCP subsocket bind() failed\n");
+	printk(KERN_ERR "%s: MTCP subsocket bind() failed, error %d\n",
+			__FUNCTION__, ret);
 fail_connect:
-	printk( KERN_ERR "MTCP subsocket connect() failed, error %d\n", retval);
+	printk(KERN_ERR "%s: MTCP subsocket connect() failed, error %d\n",
+			__FUNCTION__, ret);
 
 	/* sock_release will indirectly call mtcp_del_sock() */
 	sock_release(sock);
