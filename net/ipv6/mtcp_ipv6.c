@@ -90,7 +90,7 @@ static int mtcpsub_v6_init_sock(struct sock *sk)
          */
 	sk->sk_sndbuf = sysctl_tcp_wmem[1];
 	sk->sk_rcvbuf = sysctl_tcp_rmem[1];
-	
+
 	local_bh_disable();
         percpu_counter_inc(&tcp_sockets_allocated);
         local_bh_enable();
@@ -113,6 +113,7 @@ struct proto mtcpsubv6_prot = {
 	.shutdown		= tcp_shutdown,
 	.setsockopt		= tcp_setsockopt,
 	.getsockopt		= tcp_getsockopt,
+	.sendmsg		= mtcp_sendmsg,
 	.recvmsg		= tcp_recvmsg,
 	.backlog_rcv		= tcp_v6_do_rcv,
 	.hash			= tcp_v6_hash,
@@ -152,10 +153,10 @@ int __init mtcpv6_init(void)
 	int ret;
 	/* register inet6 protocol */
 	ret = inet6_register_protosw(&mtcpsubv6_protosw);
-	
+
 	/*Although the protocol is not used as such, it is necessary to register
 	  it, so that slab memory is allocated for it.*/
-	if (ret==0) 
+	if (ret==0)
 		ret=proto_register(&mtcpsubv6_prot, 1);
 	return ret;
 }

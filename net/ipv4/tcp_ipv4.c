@@ -1711,7 +1711,7 @@ int tcp_v4_rcv(struct sk_buff *skb)
 		return 0;
 	}
 #endif
-	
+
 	if (!sk)
 		goto no_tcp_socket;
 
@@ -1996,7 +1996,7 @@ static int tcp_v4_init_sock(struct sock *sk)
 #ifdef CONFIG_MTCP
 	/* Init the MPTCP mpcb */
 	{
-		struct multipath_pcb *mpcb;		
+		struct multipath_pcb *mpcb;
 		mpcb = mtcp_alloc_mpcb(sk, GFP_KERNEL);
 
 		if (!mpcb)
@@ -2699,7 +2699,11 @@ struct proto tcp_prot = {
 	.setsockopt		= tcp_setsockopt,
 	.getsockopt		= tcp_getsockopt,
 	.recvmsg		= tcp_recvmsg,
+#ifdef CONFIG_MTCP
+	.sendmsg		= mtcp_sendmsg,
+#else
 	.sendmsg		= tcp_sendmsg,
+#endif
 	.sendpage		= tcp_sendpage,
 	.backlog_rcv		= tcp_v4_do_rcv,
 	.hash			= inet_hash,

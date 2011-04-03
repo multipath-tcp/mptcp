@@ -768,9 +768,8 @@ out:
 	return bestsk;
 }
 
-int mtcp_sendmsg(struct kiocb *iocb, struct socket *sock,
+int mtcp_sendmsg(struct kiocb *iocb, struct sock *master_sk,
 		struct msghdr *msg, size_t size) {
-	struct sock *master_sk = sock->sk;
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tcp_sk(master_sk));
 	struct sock *meta_sk = (struct sock *) mpcb;
 	size_t copied = 0;

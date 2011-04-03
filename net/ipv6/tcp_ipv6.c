@@ -2205,7 +2205,11 @@ struct proto tcpv6_prot = {
 	.setsockopt		= tcp_setsockopt,
 	.getsockopt		= tcp_getsockopt,
 	.recvmsg		= tcp_recvmsg,
+#ifdef CONFIG_MTCP
+	.sendmsg		= mtcp_sendmsg,
+#else
 	.sendmsg		= tcp_sendmsg,
+#endif
 	.sendpage		= tcp_sendpage,
 	.backlog_rcv		= tcp_v6_do_rcv,
 	.hash			= tcp_v6_hash,

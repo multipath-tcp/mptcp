@@ -380,7 +380,7 @@ int inet6_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	inet->inet_daddr = 0;
 #ifdef CONFIG_MTCP
 	if (addr_type != IPV6_ADDR_ANY)
-		mtcp_update_metasocket(sk,mpcb_from_tcpsock(tcp_sk(sk)));
+		mtcp_update_metasocket(sk, mpcb_from_tcpsock(tcp_sk(sk)));
 #endif
 out:
 	release_sock(sk);
@@ -526,12 +526,8 @@ const struct proto_ops inet6_stream_ops = {
 	.shutdown	   = inet_shutdown,		/* ok		*/
 	.setsockopt	   = sock_common_setsockopt,	/* ok		*/
 	.getsockopt	   = sock_common_getsockopt,	/* ok		*/
-#ifdef CONFIG_MTCP
-	.sendmsg	   = mtcp_sendmsg,		/* ok		*/
-#else
 	.sendmsg	   = inet_sendmsg,		/* ok		*/
-#endif
-	.recvmsg	   = inet_recvmsg,	/* ok		*/
+	.recvmsg	   = inet_recvmsg,		/* ok		*/
 	.mmap		   = sock_no_mmap,
 	.sendpage	   = inet_sendpage,
 	.splice_read	   = tcp_splice_read,

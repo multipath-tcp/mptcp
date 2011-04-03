@@ -148,7 +148,7 @@ void inet_sock_destruct(struct sock *sk)
 	if ((sk->sk_protocol == IPPROTO_TCP || sk->sk_protocol == IPPROTO_MTCPSUB)
 	    && tcp_sk(sk)->mpcb)
 		mpcb_put(tcp_sk(sk)->mpcb); /* Taken by mtcp_add_sock */
-	
+
 	if (!sock_flag(sk, SOCK_DEAD)) {
 		pr_err("Attempt to release alive inet socket %p\n", sk);
 		return;
@@ -423,7 +423,7 @@ out_rcu_unlock:
 int inet_release(struct socket *sock)
 {
 	struct sock *sk = sock->sk;
-	
+
 	if (sk) {
 		long timeout;
 
@@ -530,7 +530,7 @@ int inet_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	sk_dst_reset(sk);
 #ifdef CONFIG_MTCP
 	if (addr->sin_addr.s_addr)
-		mtcp_update_metasocket(sk,mpcb_from_tcpsock(tcp_sk(sk)));
+		mtcp_update_metasocket(sk, mpcb_from_tcpsock(tcp_sk(sk)));
 #endif
 	err = 0;
 out_release_sock:
@@ -907,11 +907,7 @@ const struct proto_ops inet_stream_ops = {
 	.shutdown	   = inet_shutdown,
 	.setsockopt	   = sock_common_setsockopt,
 	.getsockopt	   = sock_common_getsockopt,
-#ifdef CONFIG_MTCP
-	.sendmsg	   = mtcp_sendmsg,
-#else
 	.sendmsg	   = inet_sendmsg,
-#endif
 	.recvmsg	   = inet_recvmsg,
 	.mmap		   = sock_no_mmap,
 	.sendpage	   = inet_sendpage,
@@ -1664,7 +1660,7 @@ static int __init inet_init(void)
 
 #ifdef CONFIG_MTCP
 	rc = proto_register(&mtcpsub_prot, 1);
-	if (rc) 
+	if (rc)
 		goto out_unregister_raw_proto;
 #endif
 

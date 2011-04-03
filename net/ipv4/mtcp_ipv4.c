@@ -77,14 +77,14 @@ static int mtcpsub_v4_init_sock(struct sock *sk)
          *      cookie_in_always, cookie_out_never,
          *      s_data_constant, s_data_in, s_data_out
          */
-	
+
 	sk->sk_sndbuf = sysctl_tcp_wmem[1];
 	sk->sk_rcvbuf = sysctl_tcp_rmem[1];
 
 	local_bh_disable();
         percpu_counter_inc(&tcp_sockets_allocated);
         local_bh_enable();
-	
+
 	return 0;
 }
 
@@ -105,6 +105,7 @@ struct proto mtcpsub_prot = {
 	.shutdown		= tcp_shutdown,
 	.setsockopt		= tcp_setsockopt,
 	.getsockopt		= tcp_getsockopt,
+	.sendmsg		= mtcp_sendmsg,
 	.recvmsg		= tcp_recvmsg,
 	.backlog_rcv		= tcp_v4_do_rcv,
 	.hash			= inet_hash,
