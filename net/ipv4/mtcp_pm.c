@@ -45,7 +45,7 @@ extern void __tcp_v4_send_check(struct sk_buff *skb,
 
 
 static struct list_head tk_hashtable[MTCP_HASH_SIZE];
-static rwlock_t tk_hash_lock; /*hashtable protection*/
+static rwlock_t tk_hash_lock; /* hashtable protection */
 
 /*This second hashtable is needed to retrieve request socks
   created as a result of a join request. While the SYN contains
@@ -53,6 +53,12 @@ static rwlock_t tk_hash_lock; /*hashtable protection*/
   to retrieve the mpcb.*/
 static struct list_head tuple_hashtable[MTCP_HASH_SIZE];
 static spinlock_t tuple_hash_lock; /*hashtable protection*/
+
+/* consumer of interface UP/DOWN events */
+static int mtcp_pm_inetaddr_event(struct notifier_block *this, unsigned long event, void *ptr);
+static struct notifier_block mtcp_pm_inetaddr_notifier = {
+        .notifier_call = mtcp_pm_inetaddr_event,
+};
 
 void mtcp_hash_insert(struct multipath_pcb *mpcb,u32 token)
 {
@@ -1314,6 +1320,82 @@ diffPorts:
 	return nb_new;
 }
 
+/**
+ * Reacts on Interface up/down events - scans all existing connections and
+ * flags/de-flags unavailable paths, so that they are not considered for packet
+ * scheduling. This will save us a couple of RTOs and helps to migrate traffic
+ * faster
+ */
+static int mtcp_pm_inetaddr_event(struct notifier_block *this, unsigned long event, void *ptr)
+{
+	unsigned int i;
+	struct multipath_pcb *mpcb;
+	struct in_ifaddr *ifa = (struct in_ifaddr *) ptr;
+
+	if (! (ifa->ifa_scope < RT_SCOPE_HOST) )  /* local */
+		return NOTIFY_DONE;
+
+	if (! (event == NETDEV_UP || event == NETDEV_DOWN) )
+		return NOTIFY_DONE;
+
+	read_lock_bh(&tk_hash_lock);
+
+	/* go through all mpcbs and check */
+	for (i = 0; i < MTCP_HASH_SIZE; i++) {
+		list_for_each_entry(mpcb, &tk_hashtable[i], collide_tk) {
+			int found = 0;
+			struct tcp_sock *tp;
+
+			spin_lock_bh(&mpcb->lock);
+
+			/* do we have this address already ? */
+			mtcp_for_each_tp(mpcb, tp) {
+				if (tp->inet_conn.icsk_inet.inet_saddr != ifa->ifa_local)
+					continue;
+
+				found = 1;
+				if (event == NETDEV_DOWN) {
+					printk(KERN_DEBUG "MTCP_PM: NETDEV_DOWN %x\n",
+							ifa->ifa_local);
+					tp->pf = 1;
+				} else if (event == NETDEV_UP) {
+					printk(KERN_DEBUG "MTCP_PM: NETDEV_UP %x\n",
+							ifa->ifa_local);
+					tp->pf = 0;
+				}
+			}
+
+			if (!found && event == NETDEV_UP) {
+				if (mpcb->num_addr4 >= MTCP_MAX_ADDR) {
+					printk(KERN_DEBUG "MTCP_PM: NETDEV_UP "
+						"Reached max number of local IPv4 addresses: %d\n",
+						MTCP_MAX_ADDR);
+					goto next;
+				}
+
+				printk(KERN_DEBUG "MTCP_PM: NETDEV_UP adding "
+					"address to existing connection %x\n",
+					ifa->ifa_local);
+				/* update this mpcb */
+				mpcb->addr4[mpcb->num_addr4].addr.s_addr = ifa->ifa_local;
+				mpcb->addr4[mpcb->num_addr4].id = mpcb->num_addr4 + 1;
+				smp_wmb();
+				mpcb->num_addr4++;
+				/* re-send addresses */
+				mpcb->addr_unsent++;
+				/* re-evaluate paths eventually */
+				mpcb->received_options.list_rcvd = 1;
+			}
+next:
+			spin_unlock_bh(&mpcb->lock);
+		}
+	}
+
+	read_unlock_bh(&tk_hash_lock);
+
+	return NOTIFY_DONE;
+}
+
 /*
  *	Output /proc/net/mtcp_pm
  */
@@ -1388,6 +1470,9 @@ static int __init mtcp_pm_init(void)
 
 	rwlock_init(&tk_hash_lock);
 	spin_lock_init(&tuple_hash_lock);
+
+        /* setup notification chain for interfaces */
+        register_inetaddr_notifier(&mtcp_pm_inetaddr_notifier);
 
 	return register_pernet_subsys(&mtcp_pm_proc_ops);
 }
