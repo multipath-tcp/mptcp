@@ -25,7 +25,6 @@
 #include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/net.h>
-#include <linux/notifier.h>
 #include <linux/skbuff.h>
 #include <linux/socket.h>
 #include <linux/tcp_options.h>
@@ -112,7 +111,6 @@ struct multipath_pcb {
 	spinlock_t lock;
 	struct mutex mutex;
 	struct kref kref;
-	struct notifier_block nb; /* For listening to PM events */
 	unsigned long flags; /* atomic, for bits see MPCB_FLAG_XXX */
 	u32 noneligible; /* Path mask of temporarily non eligible
 			    subflows by the scheduler */
@@ -333,7 +331,6 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb, struct msghdr *msg,
 #define MTCP_QUEUED 2 /* The skb has been queued in the mpcb ofo queue */
 
 struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags);
-void mtcp_ask_update(struct sock *sk);
 void mtcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp);
 void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp);
 void mtcp_update_metasocket(struct sock *sock, struct multipath_pcb *mpcb);

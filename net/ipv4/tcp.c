@@ -2311,9 +2311,6 @@ void tcp_set_state(struct sock *sk, int state)
 			BUG_ON(!tp->mpcb && !tp->pending);
 			if (tcp_sk(sk)->mpcb) {
 				struct sock *meta_sk = (struct sock*) (tcp_sk(sk)->mpcb);
-				if (tcp_sk(sk)->mpc &&
-				    is_master_sk(tcp_sk(sk)))
-					mtcp_ask_update(sk);
 				tcp_sk(sk)->mpcb->cnt_established++;
 				mtcp_update_sndbuf(tcp_sk(sk)->mpcb);
 				if ((1 << meta_sk->sk_state) &

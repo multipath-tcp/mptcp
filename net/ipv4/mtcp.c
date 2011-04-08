@@ -23,7 +23,6 @@
 #include <net/tcp_states.h>
 #include <net/mtcp.h>
 #include <net/mtcp_v6.h>
-#include <net/netevent.h>
 #include <net/ipv6.h>
 #include <net/tcp.h>
 #include <linux/list.h>
@@ -342,52 +341,6 @@ fail_connect:
 	return -1;
 }
 
-static int netevent_callback(struct notifier_block *self, unsigned long event,
-		void *ctx) {
-	struct multipath_pcb *mpcb;
-	struct sock *meta_sk;
-	struct ulid_pair *up;
-
-	switch (event) {
-	case NETEVENT_PATH_UPDATEV6:
-		mpcb = container_of(self, struct multipath_pcb, nb);
-		meta_sk = (struct sock *) mpcb;
-		up = ctx;
-		if (meta_sk->sk_family != AF_INET6) break;
-
-		if (ipv6_addr_equal(up->local,
-				    &inet6_sk(meta_sk)->saddr) &&
-		    ipv6_addr_equal(up->remote,
-				    &inet6_sk(meta_sk)->daddr))
-			mtcp_init_subsockets(mpcb,
-					     up->path_indices);
-		break;
-	}
-	return 0;
-}
-
-/* Ask to the PM to be updated about available path indices
- *
- * The argument must be any TCP socket in established state
- */
-void mtcp_ask_update(struct sock *sk) {
-	struct ulid_pair up;
-	struct tcp_sock *tp = tcp_sk(sk);
-
-	mtcp_debug("Entering %s\n",__FUNCTION__); /*TODEL*/
-
-	if (!is_master_sk(tp))
-		return;
-	/* Currently we only support AF_INET6 */
-	if (sk->sk_family != AF_INET6)
-		return;
-
-	up.local = &inet6_sk(sk)->saddr;
-	up.remote = &inet6_sk(sk)->daddr;
-	up.path_indices = 0; /* This is what we ask for */
-	call_netevent_notifiers(NETEVENT_MPS_UPDATEME, &up);
-}
-
 /* Defined in net/core/sock.c */
 void mtcp_inherit_sk(struct sock *sk, struct sock *newsk);
 
@@ -436,8 +389,6 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
 
 	spin_lock_init(&mpcb->lock);
 	mutex_init(&mpcb->mutex);
-	mpcb->nb.notifier_call = netevent_callback;
-	register_netevent_notifier(&mpcb->nb);
 	meta_tp->window_clamp = tcp_sk(master_sk)->window_clamp;
 	meta_tp->rcv_ssthresh = tcp_sk(master_sk)->rcv_ssthresh;
 
@@ -508,9 +459,6 @@ static void mtcp_destroy_mpcb(struct multipath_pcb *mpcb) {
 	   childs. */
 	mtcp_check_new_subflow(mpcb);
 #endif
-	/* Stop listening to PM events */
-	unregister_netevent_notifier(&mpcb->nb);
-
 	sock_set_flag((struct sock*)mpcb, SOCK_DEAD);
 
 	mpcb_put(mpcb); /* kref set to 1 by kref_init in mtcp_alloc_mpcb */
@@ -1936,7 +1884,6 @@ struct multipath_pcb *mtcp_attach_master_sk(struct sock *sk)
 				   (well, if it indeed improves security) */
 
 	meta_tp->copied_seq = 0; /* First byte of yet unread data */
-	mtcp_ask_update(sk);
 	mpcb_put(mpcb); /* Taken by mtcp_hash_find */
 	release_sock(sk);
 	return mpcb;
