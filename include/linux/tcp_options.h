@@ -38,22 +38,22 @@
 #define OPTION_MP_JOIN          (1 << 10)
 
 struct tcp_out_options {
-	u16 options;		/* bit field of OPTION_* */
-	u8 ws;			/* window scale, 0 to disable */
-	u8 num_sack_blocks;	/* number of SACK blocks to include */
-	u8 hash_size;           /* bytes in hash_location */
-	u16 mss;		/* 0 to disable */
-	__u32 tsval, tsecr;	/* need to include OPTION_TS */
-	__u8 *hash_location;    /* temporary pointer, overloaded */
-	__u32 data_seq;         /* data sequence number, for MPTCP */
-	__u32 data_ack;         /* data ack, for MPTCP */
-	__u16 data_len;         /* data level length, for MPTCP*/
-	__u32 sub_seq;          /* subflow seqnum, for MPTCP*/
+	u16	options;	/* bit field of OPTION_* */
+	u8	ws;		/* window scale, 0 to disable */
+	u8	num_sack_blocks;/* number of SACK blocks to include */
+	u8	hash_size;	/* bytes in hash_location */
+	u16	mss;		/* 0 to disable */
+	__u32	tsval, tsecr;	/* need to include OPTION_TS */
+	__u8	*hash_location;	/* temporary pointer, overloaded */
+	__u32	data_seq;	/* data sequence number, for MPTCP */
+	__u32	data_ack;	/* data ack, for MPTCP */
+	__u16	data_len;	/* data level length, for MPTCP*/
+	__u32	sub_seq;	/* subflow seqnum, for MPTCP*/
 #ifdef CONFIG_MTCP_PM
-	__u32 token;            /* token for mptcp */
-	struct mtcp_loc4 *addr4;  /* v4 addresses for MPTCP */
-	int num_addr4;          /* Number of addresses v4, MPTCP*/
-	u8      addr_id;        /* address id */
+	__u32	token;		/* token for mptcp */
+	struct mtcp_loc4 *addr4;/* v4 addresses for MPTCP */
+	int	num_addr4;	/* Number of addresses v4, MPTCP*/
+	u8	addr_id;	/* address id */
 #endif
 };
 
@@ -81,7 +81,8 @@ struct tcp_options_received {
 #ifdef CONFIG_MTCP_PM
  	u32     mtcp_rem_token; /* Remote token, for mptcp */
 	u32     rcv_isn; /* Needed to retrieve abs subflow seqnum from the
-			  * relative version. */
+			  * relative version.
+			  */
 #endif
 };
 
@@ -99,10 +100,11 @@ struct multipath_options {
 	struct mtcp_loc4 addr4[MTCP_MAX_ADDR];
 	struct mtcp_loc6 addr6[MTCP_MAX_ADDR];
 #endif
-	u8      list_rcvd:1, /*1 if IP list has been received (MTCP_PM)*/
+	u8      list_rcvd:1, /* 1 if IP list has been received (MTCP_PM) */
 		dfin_rcvd:1;
-	u32     fin_dsn; /*DSN of the byte
-			   FOLLOWING the Data FIN*/
+	u32     fin_dsn; /* DSN of the byte
+			  * FOLLOWING the Data FIN
+			  */
 };
 
 #endif /*_TCP_OPTIONS_H*/

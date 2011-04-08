@@ -3955,7 +3955,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 	unsigned char *ptr,*ptr8;
 	struct tcphdr *th = tcp_hdr(skb);
 	int length = (th->doff * 4) - sizeof(struct tcphdr);
-	int saw_dsn=0;
+	int saw_dsn = 0;
 
 	ptr = (unsigned char *)(th + 1);
 	opt_rx->saw_tstamp = 0;
@@ -4077,7 +4077,8 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 					           "size\n");
 					break;
 				}
-				mtcp_debug("recvd multipath opt\n");
+				mtcp_debug("%s: recvd multipath opt\n",
+						__FUNCTION__);
 				opt_rx->saw_mpc = 1;
 				if (mopt)
 					mopt->list_rcvd = 1;
@@ -4133,8 +4134,9 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				break;
 			case TCPOPT_DATA_FIN:
 				/* the dsn opt MUST be put
-				   before the dfin (to know
-				   its data seqnum */
+				 * before the dfin (to know
+				 * its data seqnum
+				 */
 				BUG_ON(!saw_dsn);
 				if (opsize != TCPOLEN_DATA_FIN) {
 					mtcp_debug("dfin opt:bad option "

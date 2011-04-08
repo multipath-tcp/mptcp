@@ -22,7 +22,7 @@ struct netevent_redirect {
 };
 
 /*For the moment this is only supported for IPv6
-  This indicates that new paths are available for the given 
+  This indicates that new paths are available for the given
   local and remote ulids. */
 struct ulid_pair {
 	struct in6_addr* local;
@@ -30,7 +30,7 @@ struct ulid_pair {
 	uint32_t         path_indices; /*bitmap of paths that can be used
 					 For example, if bit 3 is set, then
 					 3 is currently a valid path index
-					 that can be understood by a Path 
+					 that can be understood by a Path
 					 Manager*/
 };
 

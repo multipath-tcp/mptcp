@@ -537,7 +537,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 
 	tmp_opt.saw_tstamp = 0;
 	mtcp_init_addr_list(&mopt);
-	
+
 	if (th->doff > (sizeof(struct tcphdr)>>2)) {
 		tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
@@ -699,20 +699,22 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 
 #ifdef CONFIG_MTCP
 	{
-		/*Copy mptcp related info from req to child
-		  we do this here because this is shared between
-		  ipv4 and ipv6*/
+		/* Copy mptcp related info from req to child
+		 * we do this here because this is shared between
+		 * ipv4 and ipv6
+		 */
 		struct tcp_sock *child_tp = tcp_sk(child);
 		struct multipath_pcb *mpcb;
-		child_tp->rx_opt.saw_mpc=req->saw_mpc;
+
+		child_tp->rx_opt.saw_mpc = req->saw_mpc;
 		if (child_tp->rx_opt.saw_mpc)
-			child_tp->mpc=1;
+			child_tp->mpc = 1;
 #ifdef CONFIG_MTCP_PM
-		child_tp->rx_opt.mtcp_rem_token=req->mtcp_rem_token;
-		child_tp->mpcb=NULL;
-		child_tp->pending=1;
-		child_tp->mtcp_loc_token=req->mtcp_loc_token;
-		mpcb=mtcp_alloc_mpcb(child, GFP_ATOMIC);
+		child_tp->rx_opt.mtcp_rem_token = req->mtcp_rem_token;
+		child_tp->mpcb = NULL;
+		child_tp->pending = 1;
+		child_tp->mtcp_loc_token = req->mtcp_loc_token;
+		mpcb = mtcp_alloc_mpcb(child, GFP_ATOMIC);
 
 		/* The allocation of the mpcb failed!
 		 * Destoy the child and go to listen_overflow
@@ -723,27 +725,27 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		}
 
 		if (mopt.list_rcvd)
-			memcpy(&mpcb->received_options,&mopt,sizeof(mopt));
+			memcpy(&mpcb->received_options, &mopt, sizeof(mopt));
 		set_bit(MPCB_FLAG_SERVER_SIDE,&mpcb->flags);
-		/*Will be moved to ESTABLISHED by tcp_rcv_state_process()*/
-		((struct sock*)mpcb)->sk_state=TCP_SYN_RECV;
-		mtcp_update_metasocket(child,mpcb);
+		/* Will be moved to ESTABLISHED by tcp_rcv_state_process() */
+		((struct sock *)mpcb)->sk_state = TCP_SYN_RECV;
+		mtcp_update_metasocket(child, mpcb);
 #endif
 	}
 #endif
-	
+
 	inet_csk_reqsk_queue_unlink(sk, req, prev);
 	inet_csk_reqsk_queue_removed(sk, req);
-	
+
 	inet_csk_reqsk_queue_add(sk, req, child);
 	return child;
-	
+
 listen_overflow:
 	if (!sysctl_tcp_abort_on_overflow) {
 		inet_rsk(req)->acked = 1;
 		return NULL;
 	}
-	
+
 embryonic_reset:
 	NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_EMBRYONICRSTS);
 	if (!(flg & TCP_FLAG_RST))

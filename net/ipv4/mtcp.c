@@ -645,8 +645,9 @@ void mtcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	case AF_INET6:
 		/* For IPv6, we just point the meta_sk to the pinet6 struct
-		   of the master_sk, hence inheriting the ulids from there */
-		inet_sk(meta_sk)->pinet6=inet6_sk(sk);
+		 * of the master_sk, hence inheriting the ulids from there
+		 */
+		inet_sk(meta_sk)->pinet6 = inet6_sk(sk);
 		/* If the socket is v4 mapped, we continue with v4 operations */
 		if (!tcp_v6_is_v4_mapped(sk))
 			break;
@@ -658,8 +659,9 @@ void mtcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 	}
 #ifdef CONFIG_MTCP_PM
 	/* Searching for suitable local addresses,
-	   except is the socket is loopback, in which case we simply
-	   don't do multipath */
+	 * except is the socket is loopback, in which case we simply
+	 * don't do multipath
+	 */
 	if (!ipv4_is_loopback(inet_sk(sk)->inet_saddr) &&
 	    !ipv4_is_loopback(inet_sk(sk)->inet_daddr))
 		mtcp_set_addresses(mpcb);
@@ -1921,12 +1923,14 @@ struct multipath_pcb *mtcp_attach_master_sk(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct multipath_pcb *mpcb;
 	struct tcp_sock *meta_tp;
+
 	lock_sock(sk);
 	mpcb = mtcp_hash_find(tp->mtcp_loc_token);
 	BUG_ON(!mpcb);
 	meta_tp = (struct tcp_sock *)mpcb;
 	tp->path_index = 0;
 	mtcp_add_sock(mpcb, tp);
+
 	meta_tp->write_seq = 0; /* first byte is IDSN
 				   To be replaced later with a random IDSN
 				   (well, if it indeed improves security) */
@@ -1954,18 +1958,22 @@ void mtcp_detach_unused_child(struct sock *sk)
 	struct tcp_sock *child_tp;
 	if (!sk->sk_protocol == IPPROTO_TCP)
 		return;
-	mpcb=mtcp_attach_master_sk(sk);
+
+	mpcb = mtcp_attach_master_sk(sk);
 	mtcp_destroy_mpcb(mpcb);
-	/*Now all subflows of the mpcb are attached,
-	  so we can destroy them, being sure that the mpcb
-	  will be correctly destroyed last.*/
-	mtcp_for_each_sk(mpcb,child,child_tp) {
-		if (child==sk)
-			continue; /*master_sk will be freed last
-				    as part of the normal
-				    inet_csk_listen_stop() function*/
-		/*This section is copied from
-		  inet_csk_listen_stop()*/
+	/* Now all subflows of the mpcb are attached,
+	 * so we can destroy them, being sure that the mpcb
+	 * will be correctly destroyed last.
+	 */
+	mtcp_for_each_sk(mpcb, child, child_tp) {
+		if (child == sk)
+			continue; /* master_sk will be freed last
+				   * as part of the normal
+				   * net_csk_listen_stop() function
+				   */
+		/* This section is copied from
+		 * inet_csk_listen_stop()
+		 */
 		local_bh_disable();
 		bh_lock_sock(child);
 		WARN_ON(sock_owned_by_user(child));

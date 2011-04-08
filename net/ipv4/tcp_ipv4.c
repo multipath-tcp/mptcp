@@ -1589,7 +1589,7 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 
 	if (sk->sk_state == TCP_LISTEN) {
 		struct sock *nsk;
-		nsk= tcp_v4_hnd_req(sk, skb);
+		nsk = tcp_v4_hnd_req(sk, skb);
 		if (!nsk) {
 			goto discard;
 		}
