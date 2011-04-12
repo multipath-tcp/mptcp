@@ -1291,7 +1291,6 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 			p = find_path_mapping4((struct in_addr *) &ireq->loc_addr,
 					(struct in_addr *) &ireq->rmt_addr,
 					mpcb);
-			BUG_ON(!p);
 		}
 
 		if (p)
