@@ -1336,6 +1336,9 @@ static int mtcp_pm_inetaddr_event(struct notifier_block *this, unsigned long eve
 			int found = 0;
 			struct tcp_sock *tp;
 
+			if (!tcp_sk(mpcb->master_sk)->mpc)
+				continue;
+
 			spin_lock_bh(&mpcb->lock);
 
 			/* do we have this address already ? */
@@ -1364,8 +1367,8 @@ static int mtcp_pm_inetaddr_event(struct notifier_block *this, unsigned long eve
 				}
 
 				printk(KERN_DEBUG "MTCP_PM: NETDEV_UP adding "
-					"address to existing connection %x\n",
-					ifa->ifa_local);
+					"address %pI4 to existing connection with mpcb: %d\n",
+					&ifa->ifa_local, loc_token(mpcb));
 				/* update this mpcb */
 				mpcb->addr4[mpcb->num_addr4].addr.s_addr = ifa->ifa_local;
 				mpcb->addr4[mpcb->num_addr4].id = mpcb->num_addr4 + 1;
