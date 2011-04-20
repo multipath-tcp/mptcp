@@ -1430,6 +1430,32 @@ static int mtcp_check_dfin(struct sk_buff *skb) {
 	return 0;
 }
 
+void mtcp_parse_options(uint8_t *ptr, int opsize,
+		struct tcp_options_received *opt_rx,
+		struct multipath_options *mopt)
+{
+	struct mptcp_option *mp_opt = (struct mptcp_option *) ptr;
+
+	switch (mp_opt->sub) {
+	case MPTCP_SUB_CAPABLE:
+		if (opsize != MPTCP_SUB_LEN_CAPABLE) {
+			mtcp_debug("%s: mp_capable: bad option size %d\n",
+					__FUNCTION__, opsize);
+			break;
+		}
+
+		opt_rx->saw_mpc = 1;
+		if (mopt)
+			mopt->list_rcvd = 1;
+		opt_rx->mtcp_rem_token = ntohl(*((u32*)(ptr + 2)));
+		break;
+	default:
+		mtcp_debug("%s: Received unkown subtype: %d\n", __FUNCTION__,
+				mp_opt->sub);
+		break;
+	}
+}
+
 /**
  * To be called when a segment is in order. That is, either when it is received
  * and is immediately in subflow-order, or when it is stored in the ofo-queue

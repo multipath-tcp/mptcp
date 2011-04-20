@@ -138,6 +138,40 @@ struct multipath_pcb {
 #endif
 };
 
+#define	MPTCP_SUB_CAPABLE	0
+#define MPTCP_SUB_LEN_CAPABLE	8
+#define MPTCP_SUB_LEN_CAPABLE_ALIGN	8
+
+struct mptcp_option {
+#if defined(__LITTLE_ENDIAN_BITFIELD)
+	__u8	ver:4,
+		sub:4;
+#elif defined(__BIG_ENDIAN_BITFIELD)
+	__u8	sub:4,
+		ver:4;
+#else
+#error	"Adjust your <asm/byteorder.h> defines"
+#endif
+};
+
+struct mp_capable {
+#if defined(__LITTLE_ENDIAN_BITFIELD)
+	__u8	ver:4,
+		sub:4;
+	__u8	s:1,
+		rsv:7,
+		c:1;
+#elif defined(__BIG_ENDIAN_BITFIELD)
+	__u8	sub:4,
+		ver:4;
+	__u8	c:1,
+		rsv:7,
+		s:1;
+#else
+#error	"Adjust your <asm/byteorder.h> defines"
+#endif
+};
+
 #define mpcb_from_tcpsock(tp) ((tp)->mpcb)
 #define is_master_sk(tp) (!(tp)->slave_sk)
 #define is_meta_tp(__tp) ((__tp)->mpcb && &(__tp)->mpcb->tp == __tp)
@@ -358,6 +392,9 @@ struct sk_buff* mtcp_next_segment(struct sock *sk, int *reinject);
 void mpcb_release(struct kref* kref);
 void mtcp_clean_rtx_queue(struct sock *sk);
 void mtcp_send_fin(struct sock *mpcb_sk);
+void mtcp_parse_options(uint8_t *ptr, int opsize,
+		struct tcp_options_received *opt_rx,
+		struct multipath_options *mopt);
 void mtcp_close(struct sock *master_sk, long timeout);
 struct multipath_pcb *mtcp_attach_master_sk(struct sock *sk);
 void mtcp_detach_unused_child(struct sock *sk);

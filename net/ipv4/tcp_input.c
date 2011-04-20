@@ -4072,20 +4072,9 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				}
 				break;
 #ifdef CONFIG_MTCP
-			case TCPOPT_MP_CAPABLE:
-				if (opsize != TCPOLEN_MP_CAPABLE) {
-					mtcp_debug("multipath opt:bad option "
-					           "size\n");
-					break;
-				}
-				mtcp_debug("%s: recvd multipath opt\n",
-						__FUNCTION__);
-				opt_rx->saw_mpc = 1;
-				if (mopt)
-					mopt->list_rcvd = 1;
-				opt_rx->mtcp_rem_token = ntohl(*((u32*)(ptr + 1)));
+			case TCPOPT_MPTCP:
+				mtcp_parse_options(ptr, opsize, opt_rx, mopt);
 				break;
-
 #ifdef CONFIG_MTCP_PM
 			case TCPOPT_ADD_ADDR:
 				if (!mopt) {

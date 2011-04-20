@@ -576,9 +576,20 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	}
 #ifdef CONFIG_MTCP
 	if (unlikely(OPTION_MP_CAPABLE & opts->options)) {
-		*ptr++ = htonl((TCPOPT_NOP  << 24) |
-			       (TCPOPT_MP_CAPABLE << 16) |
-			       (TCPOLEN_MP_CAPABLE << 8));
+		struct mp_capable *mpc;
+		__u8 *p8 = (__u8 *) ptr;
+
+		*p8++ = TCPOPT_MPTCP;
+		*p8++ = MPTCP_SUB_LEN_CAPABLE;
+		mpc = (struct mp_capable *) p8;
+
+		mpc->sub = MPTCP_SUB_CAPABLE;
+		mpc->ver = 0;
+		mpc->c = 0;
+		mpc->rsv = 0;
+		mpc->s = 1;
+
+		ptr++;
 		*ptr++ = htonl(opts->token);
 	}
 
@@ -690,7 +701,7 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 
 		opts->options |= OPTION_MP_CAPABLE;
-		remaining -= TCPOLEN_MP_CAPABLE_ALIGNED;
+		remaining -= MPTCP_SUB_LEN_CAPABLE_ALIGN;
 		opts->token = loc_token(mpcb);
 
 		/* We arrive here either when sending a SYN or a
@@ -839,7 +850,7 @@ static unsigned tcp_synack_options(struct sock *sk,
 
 	if (unlikely(req->saw_mpc)) {
 		opts->options |= OPTION_MP_CAPABLE;
-		remaining -= TCPOLEN_MP_CAPABLE_ALIGNED;
+		remaining -= MPTCP_SUB_LEN_CAPABLE_ALIGN;
 		opts->token = req->mtcp_loc_token;
 
 		opts->options |= OPTION_DSN_MAP;
