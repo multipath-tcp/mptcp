@@ -80,6 +80,7 @@ struct tcp_options_received {
 	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
 #ifdef CONFIG_MTCP_PM
  	u32     mtcp_rem_token; /* Remote token, for mptcp */
+	u32     mtcp_recv_token; /* Received token, for mptcp */
 	u32     rcv_isn; /* Needed to retrieve abs subflow seqnum from the
 			  * relative version.
 			  */

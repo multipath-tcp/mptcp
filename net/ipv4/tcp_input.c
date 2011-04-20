@@ -4110,6 +4110,19 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				break;
 
 			case TCPOPT_MP_JOIN:
+				if (opsize != TCPOLEN_MP_JOIN) {
+					mtcp_debug("multipath join:bad option "
+									           "size\n");
+					break;
+				}
+				if (!th->syn) {
+					mtcp_debug("multipath join: not in a "
+							"SYN?\n");
+					break;
+				}
+#ifdef CONFIG_MTCP_PM
+				opt_rx->mtcp_recv_token = ntohl(*((u32*)(ptr)));
+#endif
 				break;
 #endif /*CONFIG_MTCP_PM*/
 			case TCPOPT_DSN_MAP:
@@ -6343,6 +6356,9 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		 */
 		if (!th->syn)
 			goto discard_and_undo;
+
+		if (!is_master_sk(tp) && tp->rx_opt.mtcp_recv_token != loc_token(mpcb))
+			goto reset_and_undo;
 
 		/* Everything is OK. Let's go!!! */
 		if (tp->rx_opt.saw_mpc && is_master_sk(tp)) {

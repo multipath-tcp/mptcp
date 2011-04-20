@@ -1686,7 +1686,7 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	   before the normal sock lookup, because otherwise subflow
 	   SYNs could be understood as associated to some listening
 	   socket. */
-	if (th->syn) {
+	if (th->syn && !th->ack) {
 		switch(mtcp_lookup_join(skb)) {
 			/* The specified token can't be found
 			 * Send a reset and discard the packet.

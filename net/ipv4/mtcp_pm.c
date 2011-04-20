@@ -544,6 +544,7 @@ static unsigned mtcp_synack_options(struct request_sock *req,
 {
 	struct inet_request_sock *ireq = inet_rsk(req);
 	unsigned remaining = MAX_TCP_OPTION_SPACE;
+	int i;
 
 	*md5 = NULL;
 
@@ -566,6 +567,21 @@ static unsigned mtcp_synack_options(struct request_sock *req,
 		if (unlikely(!ireq->tstamp_ok))
 			remaining -= TCPOLEN_SACKPERM_ALIGNED;
 	}
+
+	/* Send token in SYN/ACK */
+	opts->options |= OPTION_MP_JOIN;
+	remaining -= TCPOLEN_MP_JOIN_ALIGNED;
+
+	#ifdef CONFIG_MTCP_PM
+		opts->token = req->mtcp_rem_token;
+		opts->addr_id = 0;
+
+		/* Finding Address ID */
+		for (i = 0; i < req->mpcb->num_addr4; i++) {
+			if (req->mpcb->addr4[i].addr.s_addr == ireq->loc_addr)
+				opts->addr_id = req->mpcb->addr4[i].id;
+		}
+	#endif
 
 	return MAX_TCP_OPTION_SPACE - remaining;
 }
@@ -752,6 +768,7 @@ static int mtcp_v4_join_request(struct multipath_pcb *mpcb, struct sk_buff *skb)
 
 	req->mpcb=mpcb;
 	req->mtcp_loc_token = loc_token(mpcb);
+	req->mtcp_rem_token = tcp_sk(mpcb->master_sk)->rx_opt.mtcp_rem_token;
 	tcp_openreq_init(req, &tmp_opt, skb);
 
 	ireq = inet_rsk(req);
