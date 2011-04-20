@@ -191,10 +191,9 @@ void mtcp_data_ready(struct sock *sk) {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 
-	if (mpcb)
+	if (mpcb) {
 		mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
-#ifdef CONFIG_MTCP_PM
-	else {
+	} else {
 		/* This tp is not yet attached to the mpcb */
 		BUG_ON(!tp->pending);
 		mpcb = mtcp_hash_find(tp->mtcp_loc_token);
@@ -202,7 +201,6 @@ void mtcp_data_ready(struct sock *sk) {
 		mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
 		mpcb_put(mpcb); /* Taken by mtcp_hash_find */
 	}
-#endif
 }
 
 /**
@@ -363,8 +361,7 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
 	mtcp_inherit_sk(master_sk, meta_sk);
 	BUG_ON(mpcb->connection_list);
 
-	/* Will be replaced by the IDSN later. Currently the
-	   IDSN is zero */
+	/* Will be replaced by the IDSN later. Currently the IDSN is zero */
 	meta_tp->copied_seq = meta_tp->rcv_nxt = meta_tp->rcv_wup = 0;
 	meta_tp->snd_sml = meta_tp->snd_una = meta_tp->snd_nxt = 0;
 
@@ -392,28 +389,29 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
 	meta_tp->window_clamp = tcp_sk(master_sk)->window_clamp;
 	meta_tp->rcv_ssthresh = tcp_sk(master_sk)->rcv_ssthresh;
 
-#ifdef CONFIG_MTCP_PM
 	/* Init the accept_queue structure, we support a queue of 4 pending
-	   connections, it does not need to be huge, since we only store
-	   here pending subflow creations */
+	 * connections, it does not need to be huge, since we only store
+	 * here pending subflow creations
+	 */
 	reqsk_queue_alloc(&meta_icsk->icsk_accept_queue, 32, flags);
 	/* Pi 1 is reserved for the master subflow */
 	mpcb->next_unused_pi = 2;
 	/* For the server side, the local token has already been allocated.
-	   Later, we should replace this strange condition (quite a quick hack)
-	   with a test_bit on the server flag. But this requires passing
-	   the server flag in arg of mtcp_alloc_mpcb(), so that we know here if
-	   we are at server or client side. At the moment the only way to know
-	   that is to check for uninitialized token (see tcp_check_req()). */
+	 * Later, we should replace this strange condition (quite a quick hack)
+	 * with a test_bit on the server flag. But this requires passing
+	 * the server flag in arg of mtcp_alloc_mpcb(), so that we know here if
+	 * we are at server or client side. At the moment the only way to know
+	 * that is to check for uninitialized token (see tcp_check_req()).
+	 */
 	if (!tcp_sk(master_sk)->mtcp_loc_token) {
 		meta_tp->mtcp_loc_token = mtcp_new_token();
 		tcp_sk(master_sk)->mtcp_loc_token = loc_token(mpcb);
-	} else
+	} else {
 		meta_tp->mtcp_loc_token = tcp_sk(master_sk)->mtcp_loc_token;
+	}
 
 	/* Adding the mpcb in the token hashtable */
 	mtcp_hash_insert(mpcb, loc_token(mpcb));
-#endif
 
 	return mpcb;
 }
@@ -448,18 +446,20 @@ void mpcb_release(struct kref* kref) {
 static void mtcp_destroy_mpcb(struct multipath_pcb *mpcb) {
 	mtcp_debug("%s: Destroying mpcb with token:%d\n", __FUNCTION__,
 			loc_token(mpcb));
-#ifdef CONFIG_MTCP_PM
+
 	/* Detach the mpcb from the token hashtable */
 	mtcp_hash_remove(mpcb);
 	/* Accept any subsock waiting in the pending queue
-	   This is needed because those subsocks are established
-	   and still reachable by incoming packets. They will hence
-	   try to reference the mpcb, and need to take a ref
-	   to it to ensure the mpcb does not die before any of its
-	   childs. */
+	 * This is needed because those subsocks are established
+	 * and still reachable by incoming packets. They will hence
+	 * try to reference the mpcb, and need to take a ref
+	 * to it to ensure the mpcb does not die before any of its
+	 * childs.
+	 */
+#ifdef CONFIG_MTCP_PM
 	mtcp_check_new_subflow(mpcb);
 #endif
-	sock_set_flag((struct sock*)mpcb, SOCK_DEAD);
+	sock_set_flag((struct sock *) mpcb, SOCK_DEAD);
 
 	mpcb_put(mpcb); /* kref set to 1 by kref_init in mtcp_alloc_mpcb */
 }
@@ -483,17 +483,14 @@ void mtcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 	tp->next = mpcb->connection_list;
 	mpcb->connection_list = tp;
 
-#ifdef CONFIG_MTCP_PM
 	/* Same token for all subflows */
 	tp->rx_opt.mtcp_rem_token
 			= tcp_sk(mpcb->master_sk)->rx_opt.mtcp_rem_token;
 	tp->pending = 0;
-#endif
 
 	mpcb->cnt_subflows++;
 	mtcp_update_window_clamp(mpcb);
-	atomic_add(
-			atomic_read(&((struct sock *)tp)->sk_rmem_alloc),
+	atomic_add( atomic_read(&((struct sock *)tp)->sk_rmem_alloc),
 			&meta_sk->sk_rmem_alloc);
 
 	/* The socket is already established if it was in the
@@ -852,26 +849,27 @@ static int mtcp_rcv_check_subflows(struct multipath_pcb *mpcb, int flags) {
 	mutex_lock(&mpcb->mutex);
 #endif
 	/* We may have received data on a newly created
-	   subsocket, check if the list has grown */
+	 * subsocket, check if the list has grown
+	 */
 	if (cnt_subflows != mpcb->cnt_subflows) {
 		/* We must ensure that for each new tp,
-		  the seq pointer is correctly set. In
-		  particular we'll get a segfault if
-		  the pointer is NULL */
-		mtcp_for_each_newtp(mpcb,tp,
-				cnt_subflows) {
+		 * the seq pointer is correctly set. In
+		 * particular we'll get a segfault if
+		 * the pointer is NULL
+		 */
+		mtcp_for_each_newtp(mpcb, tp, cnt_subflows) {
 			if (flags & MSG_PEEK) {
 				tp->peek_seq = tp->copied_seq;
 				tp->seq = &tp->peek_seq;
-			} else
+			} else {
 				tp->seq = &tp->copied_seq;
+			}
 
-			BUG_ON(sock_owned_by_user(
-							(struct sock*)tp));
-			/* Here, all subsocks are locked
-			  so we must also lock
-			  new subsocks */
-			lock_sock((struct sock*) tp);
+			BUG_ON(sock_owned_by_user((struct sock *) tp));
+			/* Here, all subsocks are locked so we must also lock
+			 * new subsocks
+			 */
+			lock_sock((struct sock *) tp);
 		}
 	}
 	return new_subflows;

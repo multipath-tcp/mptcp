@@ -576,35 +576,30 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	}
 #ifdef CONFIG_MTCP
 	if (unlikely(OPTION_MP_CAPABLE & opts->options)) {
-#ifdef CONFIG_MTCP_PM
 		*ptr++ = htonl((TCPOPT_NOP  << 24) |
 			       (TCPOPT_MP_CAPABLE << 16) |
 			       (TCPOLEN_MP_CAPABLE << 8));
 		*ptr++ = htonl(opts->token);
-#else
-		*ptr++ = htonl((TCPOPT_MP_CAPABLE << 24) |
-			       (TCPOLEN_MP_CAPABLE << 16));
-#endif
 	}
 
 #ifdef CONFIG_MTCP_PM
 	if (unlikely((OPTION_ADD_ADDR & opts->options) && opts->num_addr4)) {
-		uint8_t *ptr8=(uint8_t*)ptr; /*We need a per-byte pointer here*/
+		uint8_t *ptr8 = (uint8_t *) ptr; /* We need a per-byte pointer here */
 		int i;
-		for (i=TCPOLEN_ADD_ADDR(opts->num_addr4);
-		     i<TCPOLEN_ADD_ADDR_ALIGNED(opts->num_addr4);i++)
+		for (i = TCPOLEN_ADD_ADDR(opts->num_addr4);
+		     i < TCPOLEN_ADD_ADDR_ALIGNED(opts->num_addr4); i++)
 			*ptr8++ = TCPOPT_NOP;
 		*ptr8++ = TCPOPT_ADD_ADDR;
 		*ptr8++ = TCPOLEN_ADD_ADDR(opts->num_addr4);
-		for (i=0;i<opts->num_addr4;i++) {
+		for (i = 0; i < opts->num_addr4; i++) {
 			*ptr8++ = opts->addr4[i].id;
 			*ptr8++ = 64;
-			*((__be32*)ptr8)=opts->addr4[i].addr.s_addr;
-			ptr8+=sizeof(struct in_addr);
+			*((__be32 *)ptr8) = opts->addr4[i].addr.s_addr;
+			ptr8 += sizeof(struct in_addr);
 		}
 		ptr = (__be32*)ptr8;
 	}
-
+#endif /* CONFIG_MTCP_PM */
 	if (unlikely(OPTION_MP_JOIN & opts->options)) {
 		*ptr++ = htonl((TCPOPT_NOP << 24) |
 			       (TCPOPT_MP_JOIN << 16) |
@@ -613,7 +608,6 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		*ptr++ = htonl((opts->token<<8) |
 			       opts->addr_id);
 	}
-#endif
 	if (OPTION_DSN_MAP & opts->options) {
 		*ptr++ = htonl((TCPOPT_DSN_MAP << 24) |
 			       (TCPOLEN_DSN_MAP << 16) |
@@ -696,32 +690,28 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 
 		opts->options |= OPTION_MP_CAPABLE;
-		remaining-=TCPOLEN_MP_CAPABLE_ALIGNED;
-#ifdef CONFIG_MTCP_PM
+		remaining -= TCPOLEN_MP_CAPABLE_ALIGNED;
 		opts->token = loc_token(mpcb);
-#endif
 
 		/* We arrive here either when sending a SYN or a
-		   SYN+ACK when in SYN_SENT state (that is, tcp_synack_options
-		   is only called for syn+ack replied by a server, while this
-		   function is called when SYNs are sent by both parties and
-		   are crossed)
-		   Due to this possibility, a slave subsocket may arrive here,
-		   and does not need to set the dataseq options, since
-		   there is no data in the segment */
+		 * SYN+ACK when in SYN_SENT state (that is, tcp_synack_options
+		 * is only called for syn+ack replied by a server, while this
+		 * function is called when SYNs are sent by both parties and
+		 * are crossed)
+		 * Due to this possibility, a slave subsocket may arrive here,
+		 * and does not need to set the dataseq options, since
+		 * there is no data in the segment
+		 */
 		BUG_ON(!mpcb);
-	}
-#ifdef CONFIG_MTCP_PM
-	else {
+	} else {
 		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 		opts->options |= OPTION_MP_JOIN;
 		remaining-=TCPOLEN_MP_JOIN_ALIGNED;
 		opts->token=tp->rx_opt.mtcp_rem_token;
 		opts->addr_id = mtcp_get_loc_addrid(mpcb, tp->path_index);
 	}
-#endif
 nomptcp:
-#endif
+#endif /* CONFIG_MTCP */
 
 	/* Note that timestamps are required by the specification.
 	 *
@@ -850,9 +840,8 @@ static unsigned tcp_synack_options(struct sock *sk,
 	if (unlikely(req->saw_mpc)) {
 		opts->options |= OPTION_MP_CAPABLE;
 		remaining -= TCPOLEN_MP_CAPABLE_ALIGNED;
-		#ifdef CONFIG_MTCP_PM
-			opts->token = req->mtcp_loc_token;
-		#endif
+		opts->token = req->mtcp_loc_token;
+
 		opts->options |= OPTION_DSN_MAP;
 		opts->data_seq = 0;
 		remaining -= TCPOLEN_DSN_MAP_ALIGNED;
@@ -956,7 +945,8 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 							TCPOLEN_ADD_ADDR_BASE) /
 							TCPOLEN_ADD_ADDR_PERBLOCK);
 			/* If no space to send the option, just wait next
-			   segment */
+			 * segment
+			 */
 			if (opts->num_addr4) {
 				opts->options |= OPTION_ADD_ADDR;
 				opts->addr4 = mpcb->addr4 + mpcb->num_addr4 -

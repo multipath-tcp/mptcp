@@ -570,10 +570,8 @@ static unsigned mtcp_synack_options(struct request_sock *req,
 
 	/* Send token in SYN/ACK */
 	opts->options |= OPTION_MP_JOIN;
-	remaining -= TCPOLEN_MP_JOIN_ALIGNED;
-
+	opts->token = req->mtcp_rem_token;
 	#ifdef CONFIG_MTCP_PM
-		opts->token = req->mtcp_rem_token;
 		opts->addr_id = 0;
 
 		/* Finding Address ID */
@@ -582,6 +580,7 @@ static unsigned mtcp_synack_options(struct request_sock *req,
 				opts->addr_id = req->mpcb->addr4[i].id;
 		}
 	#endif
+	remaining -= TCPOLEN_MP_JOIN_ALIGNED;
 
 	return MAX_TCP_OPTION_SPACE - remaining;
 }

@@ -47,14 +47,14 @@ struct tcp_out_options {
 	__u8	*hash_location;	/* temporary pointer, overloaded */
 	__u32	data_seq;	/* data sequence number, for MPTCP */
 	__u32	data_ack;	/* data ack, for MPTCP */
-	__u16	data_len;	/* data level length, for MPTCP*/
-	__u32	sub_seq;	/* subflow seqnum, for MPTCP*/
-#ifdef CONFIG_MTCP_PM
+	__u16	data_len;	/* data level length, for MPTCP */
+	__u32	sub_seq;	/* subflow seqnum, for MPTCP */
 	__u32	token;		/* token for mptcp */
+#ifdef CONFIG_MTCP_PM
 	struct mtcp_loc4 *addr4;/* v4 addresses for MPTCP */
-	int	num_addr4;	/* Number of addresses v4, MPTCP*/
+	int	num_addr4;	/* Number of addresses v4, MPTCP */
 	u8	addr_id;	/* address id */
-#endif
+#endif /* CONFIG_MTCP_PM */
 };
 
 struct tcp_options_received {
@@ -78,13 +78,13 @@ struct tcp_options_received {
 	u8	num_sacks;	/* Number of SACK blocks		*/
 	u16	user_mss;	/* mss requested by user in ioctl	*/
 	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
-#ifdef CONFIG_MTCP_PM
+#ifdef CONFIG_MTCP
  	u32     mtcp_rem_token; /* Remote token, for mptcp */
 	u32     mtcp_recv_token; /* Received token, for mptcp */
 	u32     rcv_isn; /* Needed to retrieve abs subflow seqnum from the
 			  * relative version.
 			  */
-#endif
+#endif /* CONFIG_MTCP */
 };
 
 static inline void tcp_clear_options(struct tcp_options_received *rx_opt)

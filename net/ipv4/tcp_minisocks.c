@@ -709,7 +709,6 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		child_tp->rx_opt.saw_mpc = req->saw_mpc;
 		if (child_tp->rx_opt.saw_mpc)
 			child_tp->mpc = 1;
-#ifdef CONFIG_MTCP_PM
 		child_tp->rx_opt.mtcp_rem_token = req->mtcp_rem_token;
 		child_tp->mpcb = NULL;
 		child_tp->pending = 1;
@@ -730,9 +729,8 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		/* Will be moved to ESTABLISHED by tcp_rcv_state_process() */
 		((struct sock *)mpcb)->sk_state = TCP_SYN_RECV;
 		mtcp_update_metasocket(child, mpcb);
-#endif
 	}
-#endif
+#endif /* CONFIG_MTCP */
 
 	inet_csk_reqsk_queue_unlink(sk, req, prev);
 	inet_csk_reqsk_queue_removed(sk, req);

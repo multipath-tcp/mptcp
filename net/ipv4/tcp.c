@@ -1980,41 +1980,45 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		return tcp_recvmsg_fallback(iocb,master_sk,msg,len,nonblock,
 					    flags,addr_len);
 #ifdef CONFIG_MTCP_PM
-	/*Received a new list of addresses recently ?
-	  announce corresponding path indices to the
-	  mpcb, and start new subflows*/
+	/* Received a new list of addresses recently ?
+	 * announce corresponding path indices to the
+	 * mpcb, and start new subflows
+	 */
 	mtcp_check_new_subflow(mpcb);
 #endif
 
-	/*We listen on every subflow.
+	/* We listen on every subflow.
 	 * Here we are awoken each time
 	 * any subflow wants to give work to tcp_recvmsg. To be more clear,
 	 * we behave here somewhat like doing a select, but as seen by bottom
 	 * halves we are expecting data from every subflow at once.
 	 */
 
-	/*Locking metasocket*/
+	/* Locking metasocket */
 	mutex_lock(&mpcb->mutex);
 
-	/*Locking all subsockets*/
-	mtcp_for_each_sk(mpcb,sk,tp) lock_sock(sk);
+	/* Locking all subsockets */
+	mtcp_for_each_sk(mpcb, sk, tp)
+		lock_sock(sk);
 
 	err = -ENOTCONN;
 	if (master_sk->sk_state == TCP_LISTEN)
 		goto out;
 
-	/*Receive timeout, set by application. This is the same for
-	  all subflows, and the real value is stored in the master socket.*/
+	/* Receive timeout, set by application. This is the same for
+	 * all subflows, and the real value is stored in the master socket.
+	 */
 	timeo = sock_rcvtimeo(master_sk, nonblock);
 
 	/* Urgent data needs to be handled specially. */
 	if (flags & MSG_OOB)
 		goto recv_urg;
 
-	/*Setting global and local seq pointer*/
+	/* Setting global and local seq pointer */
 	if (flags & MSG_PEEK) {
-		/*We put this because it is not sure at all that MSG_PEEK
-		  works correctly.*/
+		/* We put this because it is not sure at all that MSG_PEEK
+		 * works correctly.
+		 */
 		printk(KERN_ERR "Warning: MSG_PEEK is set...\n");
 		peek_data_seq = meta_tp->copied_seq;
 		data_seq = &peek_data_seq; /*global pointer*/

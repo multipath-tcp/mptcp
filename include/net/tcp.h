@@ -192,11 +192,7 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_COOKIE_MIN     (TCPOLEN_COOKIE_BASE+TCP_COOKIE_MIN)
 #define TCPOLEN_COOKIE_MAX     (TCPOLEN_COOKIE_BASE+TCP_COOKIE_MAX)
 
-#ifdef CONFIG_MTCP_PM
-	#define TCPOLEN_MP_CAPABLE	7
-#else
-	#define TCPOLEN_MP_CAPABLE	4
-#endif
+#define TCPOLEN_MP_CAPABLE	7
 #define TCPOLEN_DSN_MAP		12
 #define TCPOLEN_DATA_FIN	2
 #define TCPOLEN_DATA_ACK	6
@@ -218,11 +214,7 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_MD5SIG_ALIGNED		20
 #define TCPOLEN_MSS_ALIGNED		4
 
-#ifdef CONFIG_MTCP_PM
 #define TCPOLEN_MP_CAPABLE_ALIGNED	8
-#else
-#define TCPOLEN_MP_CAPABLE_ALIGNED	4
-#endif
 #define TCPOLEN_DSN_MAP_ALIGNED		12
 #define TCPOLEN_DATA_FIN_ALIGNED	4
 #define TCPOLEN_DATA_ACK_ALIGNED	8
@@ -1102,15 +1094,14 @@ static inline void tcp_openreq_init(struct request_sock *req,
 	req->ts_recent = rx_opt->saw_tstamp ? rx_opt->rcv_tsval : 0;
 #ifdef CONFIG_MTCP
 	req->saw_mpc = rx_opt->saw_mpc;
-#ifdef CONFIG_MTCP_PM
 	if (!req->mpcb) {
-		/*conn request, prepare a new token for the
-		  mpcb that will be created in tcp_check_req(),
-		  and store the received token.*/
+		/* conn request, prepare a new token for the
+		 * mpcb that will be created in tcp_check_req(),
+		 * and store the received token.
+		 */
 		req->mtcp_rem_token = rx_opt->mtcp_rem_token;
 		req->mtcp_loc_token = mtcp_new_token();
 	}
-#endif
 #endif
 	ireq->tstamp_ok = rx_opt->tstamp_ok;
 	ireq->sack_ok = rx_opt->sack_ok;

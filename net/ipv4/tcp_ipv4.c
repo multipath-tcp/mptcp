@@ -1323,13 +1323,11 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 
-
-#ifdef CONFIG_MTCP_PM
-	/*Must be set to NULL before calling openreq init.
-	  tcp_openreq_init() uses this to know whether the request
-	  is join request or a conn request.*/
-	req->mpcb=NULL;
-#endif
+	/* Must be set to NULL before calling openreq init.
+	 * tcp_openreq_init() uses this to know whether the request
+	 * is join request or a conn request.
+	 */
+	req->mpcb = NULL;
 	tcp_openreq_init(req, &tmp_opt, skb);
 
 	ireq = inet_rsk(req);
@@ -1684,9 +1682,10 @@ int tcp_v4_rcv(struct sk_buff *skb)
 
 #ifdef CONFIG_MTCP
 	/* We must absolutely check for subflow related SYNs+JOIN
-	   before the normal sock lookup, because otherwise subflow
-	   SYNs could be understood as associated to some listening
-	   socket. */
+	 * before the normal sock lookup, because otherwise subflow
+	 * SYNs could be understood as associated to some listening
+	 * socket.
+	 */
 	if (th->syn && !th->ack) {
 		switch(mtcp_lookup_join(skb)) {
 			/* The specified token can't be found

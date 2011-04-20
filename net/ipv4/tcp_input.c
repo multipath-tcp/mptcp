@@ -4083,9 +4083,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				opt_rx->saw_mpc = 1;
 				if (mopt)
 					mopt->list_rcvd = 1;
-#ifdef CONFIG_MTCP_PM
 				opt_rx->mtcp_rem_token = ntohl(*((u32*)(ptr + 1)));
-#endif
 				break;
 
 #ifdef CONFIG_MTCP_PM
@@ -4109,7 +4107,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 						break;
 				}
 				break;
-
+#endif /* CONFIG_MTCP_PM */
 			case TCPOPT_MP_JOIN:
 				if (opsize != TCPOLEN_MP_JOIN) {
 					mtcp_debug("multipath join:bad option "
@@ -4121,11 +4119,8 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 							"SYN?\n");
 					break;
 				}
-#ifdef CONFIG_MTCP_PM
 				opt_rx->mtcp_recv_token = ntohl(*((u32*)(ptr)));
-#endif
 				break;
-#endif /*CONFIG_MTCP_PM*/
 			case TCPOPT_DSN_MAP:
 				if (opsize != TCPOLEN_DSN_MAP) {
 					mtcp_debug("dataseq opt:bad option "

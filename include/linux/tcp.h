@@ -486,15 +486,14 @@ struct tcp_sock {
 	struct multipath_pcb    *mpcb;
 #ifdef CONFIG_MTCP
 	int                     path_index;
-	struct tcp_sock         *next; /*Next subflow socket*/
-#ifdef CONFIG_MTCP_PM
+	struct tcp_sock         *next; /* Next subflow socket */
 	u32                     mtcp_loc_token;
-	uint8_t                 pending:1, /*One if this is a pending subsock
-					     (established, but not yet
-					     attached to the mpcb)*/
+	uint8_t                 pending:1, /* One if this is a pending subsock
+					    * (established, but not yet
+					    * attached to the mpcb)
+					    */
 		                slave_sk:1;
-#endif
-#endif
+#endif /* CONFIG_MTCP */
 };
 
 static inline struct tcp_sock *tcp_sk(const struct sock *sk)

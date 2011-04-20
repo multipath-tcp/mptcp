@@ -1720,20 +1720,17 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->flags = ipv6_get_dsfield(hdr);
 	TCP_SKB_CB(skb)->sacked = 0;
 
-#ifdef CONFIG_MTCP_PM
-	/*We must absolutely check for subflow related segments
-	  before the normal sock lookup, because otherwise subflow
-	  segments could be understood as associated to some listening
-	  socket.*/
-
-	/*
-	 * Is there a pending request sock for this segment ?
+#ifdef CONFIG_MTCP
+	/* We must absolutely check for subflow related segments
+	 * before the normal sock lookup, because otherwise subflow
+	 * segments could be understood as associated to some listening
+	 * socket.
 	 */
+
+	/* Is there a pending request sock for this segment ? */
 	if (mtcp_syn_recv_sock(skb)) return 0;
 
-	/*
-	 * Is this a new syn+join ?
-	 */
+	/* Is this a new syn+join ? */
 	if (th->syn) {
 		switch(mtcp_lookup_join(skb)) {
 			/* The specified token can't be found
@@ -1746,9 +1743,10 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 		}
 	}
 
-	/*OK, this segment is not related to subflow initiation,
-	  we can proceed to normal lookup*/
-#endif
+	/* OK, this segment is not related to subflow initiation,
+	 * we can proceed to normal lookup
+	 */
+#endif /* CONFIG_MTCP */
 
 	sk = __inet6_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
 	if (!sk)
