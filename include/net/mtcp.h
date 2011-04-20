@@ -142,6 +142,10 @@ struct multipath_pcb {
 #define MPTCP_SUB_LEN_CAPABLE	8
 #define MPTCP_SUB_LEN_CAPABLE_ALIGN	8
 
+#define	MPTCP_SUB_JOIN		1
+#define MPTCP_SUB_LEN_JOIN	8
+#define MPTCP_SUB_LEN_JOIN_ALIGN	8
+
 struct mptcp_option {
 #if defined(__LITTLE_ENDIAN_BITFIELD)
 	__u8	ver:4,
@@ -170,6 +174,21 @@ struct mp_capable {
 #else
 #error	"Adjust your <asm/byteorder.h> defines"
 #endif
+};
+
+struct mp_join {
+#if defined(__LITTLE_ENDIAN_BITFIELD)
+	__u8	b:1,
+		rsv:3,
+		sub:4;
+#elif defined(__BIG_ENDIAN_BITFIELD)
+	__u8	sub:4,
+		rsv:3,
+		b:1;
+#else
+#error	"Adjust your <asm/byteorder.h> defines"
+#endif
+	__u8	addr_id;
 };
 
 #define mpcb_from_tcpsock(tp) ((tp)->mpcb)

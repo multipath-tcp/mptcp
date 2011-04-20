@@ -176,7 +176,6 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 
 #define TCPOPT_ADD_ADDR		60
 #define TCPOPT_REMOVE_ADDR	61
-#define TCPOPT_MP_JOIN		62
 
 /*
  *     TCP option lengths
@@ -201,7 +200,6 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 					 (num_addr))
 #define TCPOLEN_ADD_ADDR_BASE		2
 #define TCPOLEN_ADD_ADDR_PERBLOCK	6
-#define TCPOLEN_MP_JOIN		7
 
 /* But this is what stacks really send out. */
 #define TCPOLEN_TSTAMP_ALIGNED		12
@@ -220,7 +218,6 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_ADD_ADDR_ALIGNED(num_addr)	((TCPOLEN_ADD_ADDR_BASE +      \
 						  TCPOLEN_ADD_ADDR_PERBLOCK *  \
 						  (num_addr) + 3) & (~3))
-#define TCPOLEN_MP_JOIN_ALIGNED		8
 
 /* Flags in tp->nonagle */
 #define TCP_NAGLE_OFF		1	/* Nagle's algo is disabled */

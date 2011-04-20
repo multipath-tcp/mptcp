@@ -612,12 +612,20 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	}
 #endif /* CONFIG_MTCP_PM */
 	if (unlikely(OPTION_MP_JOIN & opts->options)) {
-		*ptr++ = htonl((TCPOPT_NOP << 24) |
-			       (TCPOPT_MP_JOIN << 16) |
-			       (TCPOLEN_MP_JOIN << 8) |
-			       (opts->token >> 24));
-		*ptr++ = htonl((opts->token<<8) |
-			       opts->addr_id);
+		struct mp_join *mpj;
+		__u8 *p8 = (__u8 *) ptr;
+
+		*p8++ = TCPOPT_MPTCP;
+		*p8++ = MPTCP_SUB_LEN_JOIN;
+		mpj = (struct mp_join *) p8;
+
+		mpj->sub = MPTCP_SUB_JOIN;
+		mpj->rsv = 0;
+		mpj->b = 0;
+		mpj->addr_id = opts->addr_id;
+
+		ptr++;
+		*ptr++ = htonl(opts->token);
 	}
 	if (OPTION_DSN_MAP & opts->options) {
 		*ptr++ = htonl((TCPOPT_DSN_MAP << 24) |
@@ -717,8 +725,8 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 	} else {
 		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 		opts->options |= OPTION_MP_JOIN;
-		remaining-=TCPOLEN_MP_JOIN_ALIGNED;
-		opts->token=tp->rx_opt.mtcp_rem_token;
+		remaining -= MPTCP_SUB_LEN_JOIN_ALIGN;
+		opts->token = tp->rx_opt.mtcp_rem_token;
 		opts->addr_id = mtcp_get_loc_addrid(mpcb, tp->path_index);
 	}
 nomptcp:

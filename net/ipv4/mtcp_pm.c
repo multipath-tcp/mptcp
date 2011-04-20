@@ -580,7 +580,7 @@ static unsigned mtcp_synack_options(struct request_sock *req,
 				opts->addr_id = req->mpcb->addr4[i].id;
 		}
 	#endif
-	remaining -= TCPOLEN_MP_JOIN_ALIGNED;
+	remaining -= MPTCP_SUB_LEN_JOIN_ALIGN;
 
 	return MAX_TCP_OPTION_SPACE - remaining;
 }
@@ -1186,8 +1186,13 @@ int mtcp_lookup_join(struct sk_buff *skb)
 				return 0;
 			if (opsize > length)
 				return 0; /* don't parse partial options */
-			if (opcode == TCPOPT_MP_JOIN) {
-				token = ntohl(*(u32*)ptr);
+			if (opcode == TCPOPT_MPTCP) {
+				struct mptcp_option *mp_opt = (struct mptcp_option *) ptr;
+
+				if (mp_opt->sub != MPTCP_SUB_JOIN)
+					goto next;
+				token = ntohl(*(u32*)(ptr + 2));
+
 				mpcb = mtcp_hash_find(token);
 				if (!mpcb) {
 					printk(KERN_ERR
@@ -1215,6 +1220,7 @@ int mtcp_lookup_join(struct sk_buff *skb)
 				mpcb_put(mpcb); /* Taken by mtcp_hash_find */
 				goto finished;
 			}
+next:
 			ptr += opsize-2;
 			length -= opsize;
 		}

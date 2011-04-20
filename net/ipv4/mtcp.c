@@ -1449,6 +1449,15 @@ void mtcp_parse_options(uint8_t *ptr, int opsize,
 			mopt->list_rcvd = 1;
 		opt_rx->mtcp_rem_token = ntohl(*((u32*)(ptr + 2)));
 		break;
+	case MPTCP_SUB_JOIN:
+		if (opsize != MPTCP_SUB_LEN_JOIN) {
+			mtcp_debug("%s: mp_join: bad option size %d\n",
+					__FUNCTION__, opsize);
+			break;
+		}
+
+		opt_rx->mtcp_recv_token = ntohl(*((u32*)(ptr + 2)));
+		break;
 	default:
 		mtcp_debug("%s: Received unkown subtype: %d\n", __FUNCTION__,
 				mp_opt->sub);
