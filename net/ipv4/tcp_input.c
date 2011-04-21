@@ -3956,7 +3956,6 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 	unsigned char *ptr,*ptr8;
 	struct tcphdr *th = tcp_hdr(skb);
 	int length = (th->doff * 4) - sizeof(struct tcphdr);
-	int saw_dsn = 0;
 
 	ptr = (unsigned char *)(th + 1);
 	opt_rx->saw_tstamp = 0;
@@ -4073,7 +4072,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				break;
 #ifdef CONFIG_MTCP
 			case TCPOPT_MPTCP:
-				mtcp_parse_options(ptr, opsize, opt_rx, mopt);
+				mtcp_parse_options(ptr, opsize, opt_rx, mopt, skb);
 				break;
 #ifdef CONFIG_MTCP_PM
 			case TCPOPT_ADD_ADDR:
@@ -4097,55 +4096,6 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				}
 				break;
 #endif /* CONFIG_MTCP_PM */
-				break;
-			case TCPOPT_DSN_MAP:
-				if (opsize != TCPOLEN_DSN_MAP) {
-					mtcp_debug("dataseq opt:bad option "
-					           "size\n");
-					break;
-				}
-
-				TCP_SKB_CB(skb)->data_len =
-					ntohs(*(uint16_t*)ptr);
-				TCP_SKB_CB(skb)->sub_seq =
-					ntohl(*(uint32_t*)(ptr+2))+
-					opt_rx->rcv_isn;
-				TCP_SKB_CB(skb)->data_seq =
-					ntohl(*(uint32_t*)(ptr+6));
-				TCP_SKB_CB(skb)->end_data_seq =
-					TCP_SKB_CB(skb)->data_seq +
-					TCP_SKB_CB(skb)->end_seq -
-					TCP_SKB_CB(skb)->seq;
-				saw_dsn = 1;
-				break;
-			case TCPOPT_DATA_FIN:
-				/* the dsn opt MUST be put
-				 * before the dfin (to know
-				 * its data seqnum
-				 */
-				BUG_ON(!saw_dsn);
-				if (opsize != TCPOLEN_DATA_FIN) {
-					mtcp_debug("dfin opt:bad option "
-						   "size\n");
-					break;
-				}
-				TCP_SKB_CB(skb)->end_data_seq++;
-				if (mopt) {
-					mopt->dfin_rcvd = opt_rx->saw_dfin = 1;
-					mopt->fin_dsn = TCP_SKB_CB(skb)->data_seq +
-							TCP_SKB_CB(skb)->data_len;
-				}
-				break;
-			case TCPOPT_DATA_ACK:
-				if (opsize != TCPOLEN_DATA_ACK) {
-					mtcp_debug("data_ack opt:bad option "
-					       "size\n");
-					break;
-				}
-				TCP_SKB_CB(skb)->data_ack =
-					ntohl(*(uint32_t*)ptr);
-				TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_ACK;
-				break;
 #endif /* CONFIG_MTCP */
 			}
 
@@ -4153,13 +4103,6 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 			length -= opsize;
 		}
 	}
-#ifdef CONFIG_MTCP
-	if (!saw_dsn) {
-		TCP_SKB_CB(skb)->data_len		=
-			TCP_SKB_CB(skb)->data_seq	=
-			TCP_SKB_CB(skb)->end_data_seq	= 0;
-	}
-#endif
 }
 EXPORT_SYMBOL(tcp_parse_options);
 

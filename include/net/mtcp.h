@@ -146,6 +146,20 @@ struct multipath_pcb {
 #define MPTCP_SUB_LEN_JOIN	8
 #define MPTCP_SUB_LEN_JOIN_ALIGN	8
 
+#define	MPTCP_SUB_DSS		2
+#define MPTCP_SUB_LEN_DSS	4
+#define MPTCP_SUB_LEN_DSS_ALIGN		4
+
+/* Lengths for seq and ack are the ones without the generic MPTCP-option header,
+ * as they are part of the DSS-option.
+ * To get the total length, just add the different options together.
+ */
+#define MPTCP_SUB_LEN_SEQ	10
+#define MPTCP_SUB_LEN_SEQ_ALIGN		12
+
+#define MPTCP_SUB_LEN_ACK	4
+#define MPTCP_SUB_LEN_ACK_ALIGN		4
+
 struct mptcp_option {
 #if defined(__LITTLE_ENDIAN_BITFIELD)
 	__u8	ver:4,
@@ -190,6 +204,31 @@ struct mp_join {
 #endif
 	__u8	addr_id;
 };
+
+struct mp_dss {
+#if defined(__LITTLE_ENDIAN_BITFIELD)
+	__u16	rsv1:4,
+		sub:4,
+		A:1,
+		a:1,
+		M:1,
+		m:1,
+		F:1,
+		rsv2:3;
+#elif defined(__BIG_ENDIAN_BITFIELD)
+	__u16	sub:4,
+		rsv1:4,
+		rsv2:3,
+		F:1,
+		m:1,
+		M:1,
+		a:1,
+		A:1;
+#else
+#error	"Adjust your <asm/byteorder.h> defines"
+#endif
+};
+
 
 #define mpcb_from_tcpsock(tp) ((tp)->mpcb)
 #define is_master_sk(tp) (!(tp)->slave_sk)
@@ -413,7 +452,8 @@ void mtcp_clean_rtx_queue(struct sock *sk);
 void mtcp_send_fin(struct sock *mpcb_sk);
 void mtcp_parse_options(uint8_t *ptr, int opsize,
 		struct tcp_options_received *opt_rx,
-		struct multipath_options *mopt);
+		struct multipath_options *mopt,
+		struct sk_buff *skb);
 void mtcp_close(struct sock *master_sk, long timeout);
 struct multipath_pcb *mtcp_attach_master_sk(struct sock *sk);
 void mtcp_detach_unused_child(struct sock *sk);

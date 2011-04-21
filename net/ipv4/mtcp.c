@@ -1395,9 +1395,10 @@ void mtcp_reinject_data(struct sock *orig_sk) {
 }
 
 /* We are short of flags at the moment in tcp_skb_cb to
-   remember that the dfin has been seen in this segment.
-   Hence, as a quick hack, we currently re-check manually.
-   Anyway, this only happens at the end of the communication. */
+ * remember that the dfin has been seen in this segment.
+ * Hence, as a quick hack, we currently re-check manually.
+ * Anyway, this only happens at the end of the communication.
+ */
 static int mtcp_check_dfin(struct sk_buff *skb) {
 	struct tcphdr *th = tcp_hdr(skb);
 	unsigned char *ptr;
@@ -1421,8 +1422,17 @@ static int mtcp_check_dfin(struct sk_buff *skb) {
 				return 0;
 			if (opsize > length)
 				return 0; /* don't parse partial options */
-			if (opcode == TCPOPT_DATA_FIN)
-				return 1;
+
+			if (opcode == TCPOPT_MPTCP) {
+				struct mptcp_option *mp_opt = (struct mptcp_option *) ptr;
+
+				if (mp_opt->sub == MPTCP_SUB_DSS) {
+					struct mp_dss *mdss = (struct mp_dss *) ptr;
+
+					if (mdss->F)
+						return 1;
+				}
+			}
 			ptr += opsize - 2;
 			length -= opsize;
 		}
@@ -1432,7 +1442,8 @@ static int mtcp_check_dfin(struct sk_buff *skb) {
 
 void mtcp_parse_options(uint8_t *ptr, int opsize,
 		struct tcp_options_received *opt_rx,
-		struct multipath_options *mopt)
+		struct multipath_options *mopt,
+		struct sk_buff *skb)
 {
 	struct mptcp_option *mp_opt = (struct mptcp_option *) ptr;
 
@@ -1458,6 +1469,41 @@ void mtcp_parse_options(uint8_t *ptr, int opsize,
 
 		opt_rx->mtcp_recv_token = ntohl(*((u32*)(ptr + 2)));
 		break;
+	case MPTCP_SUB_DSS:
+	{
+		struct mp_dss *mdss = (struct mp_dss *) ptr;
+
+		ptr += 2;
+
+		if (mdss->A) {
+			TCP_SKB_CB(skb)->data_ack = ntohl(*(uint32_t *)ptr);
+			TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_ACK;
+			ptr += MPTCP_SUB_LEN_ACK;
+		}
+
+		if (mdss->M) {
+			TCP_SKB_CB(skb)->data_seq = ntohl(*(uint32_t *) ptr);
+			TCP_SKB_CB(skb)->sub_seq = ntohl(*(uint32_t *)(ptr + 4)) +
+					opt_rx->rcv_isn;
+			TCP_SKB_CB(skb)->data_len = ntohs(*(uint16_t *)(ptr + 8));
+			TCP_SKB_CB(skb)->end_data_seq =
+				TCP_SKB_CB(skb)->data_seq +
+				TCP_SKB_CB(skb)->end_seq -
+				TCP_SKB_CB(skb)->seq;
+
+			ptr += MPTCP_SUB_LEN_SEQ;
+		}
+
+		if (mdss->F) {
+			TCP_SKB_CB(skb)->end_data_seq++;
+			if (mopt) {
+				mopt->dfin_rcvd = opt_rx->saw_dfin = 1;
+				mopt->fin_dsn = TCP_SKB_CB(skb)->data_seq +
+						TCP_SKB_CB(skb)->data_len;
+			}
+		}
+		break;
+	}
 	default:
 		mtcp_debug("%s: Received unkown subtype: %d\n", __FUNCTION__,
 				mp_opt->sub);

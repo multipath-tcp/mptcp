@@ -170,9 +170,6 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOPT_COOKIE		253	/* Cookie extension (experimental) */
 
 #define TCPOPT_MPTCP		30
-#define TCPOPT_DSN_MAP		31
-#define TCPOPT_DATA_FIN		32
-#define TCPOPT_DATA_ACK		33
 
 #define TCPOPT_ADD_ADDR		60
 #define TCPOPT_REMOVE_ADDR	61
@@ -191,10 +188,6 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_COOKIE_MIN     (TCPOLEN_COOKIE_BASE+TCP_COOKIE_MIN)
 #define TCPOLEN_COOKIE_MAX     (TCPOLEN_COOKIE_BASE+TCP_COOKIE_MAX)
 
-#define TCPOLEN_DSN_MAP		12
-#define TCPOLEN_DATA_FIN	2
-#define TCPOLEN_DATA_ACK	6
-
 #define TCPOLEN_ADD_ADDR(num_addr)	(TCPOLEN_ADD_ADDR_BASE +	\
 					 TCPOLEN_ADD_ADDR_PERBLOCK *	\
 					 (num_addr))
@@ -210,10 +203,6 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_SACK_PERBLOCK		8
 #define TCPOLEN_MD5SIG_ALIGNED		20
 #define TCPOLEN_MSS_ALIGNED		4
-
-#define TCPOLEN_DSN_MAP_ALIGNED		12
-#define TCPOLEN_DATA_FIN_ALIGNED	4
-#define TCPOLEN_DATA_ACK_ALIGNED	8
 
 #define TCPOLEN_ADD_ADDR_ALIGNED(num_addr)	((TCPOLEN_ADD_ADDR_BASE +      \
 						  TCPOLEN_ADD_ADDR_PERBLOCK *  \

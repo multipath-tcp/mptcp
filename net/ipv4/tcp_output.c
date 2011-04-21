@@ -627,25 +627,35 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		ptr++;
 		*ptr++ = htonl(opts->token);
 	}
-	if (OPTION_DSN_MAP & opts->options) {
-		*ptr++ = htonl((TCPOPT_DSN_MAP << 24) |
-			       (TCPOLEN_DSN_MAP << 16) |
-			       opts->data_len);
-		*ptr++ = htonl(opts->sub_seq);
-		*ptr++ = htonl(opts->data_seq);
-	}
-	if (OPTION_DATA_ACK & opts->options) {
-		*ptr++ = htonl((TCPOPT_NOP << 24) |
-			       (TCPOPT_NOP << 16) |
-			       (TCPOPT_DATA_ACK << 8) |
-			       (TCPOLEN_DATA_ACK));
-		*ptr++ = htonl(opts->data_ack);
-	}
-	if (OPTION_DATA_FIN & opts->options) {
-		*ptr++ = htonl((TCPOPT_NOP << 24) |
-			       (TCPOPT_NOP << 16) |
-			       (TCPOPT_DATA_FIN << 8) |
-			       (TCPOLEN_DATA_FIN));
+	if (OPTION_DSN_MAP & opts->options ||
+	    OPTION_DATA_ACK & opts->options ||
+	    OPTION_DATA_FIN & opts->options) {
+		struct mp_dss *mdss;
+		__u8 *p8 = (__u8 *) ptr;
+
+		*p8++ = TCPOPT_MPTCP;
+		*p8++ = MPTCP_SUB_LEN_DSS +
+			((OPTION_DSN_MAP & opts->options) ? MPTCP_SUB_LEN_SEQ : 0) +
+			((OPTION_DATA_ACK & opts->options) ? MPTCP_SUB_LEN_ACK : 0);
+		mdss = (struct mp_dss *) p8;
+
+		mdss->sub = MPTCP_SUB_DSS;
+		mdss->rsv1 = 0;
+		mdss->rsv2 = 0;
+		mdss->F = (OPTION_DATA_FIN & opts->options ? 1 : 0);
+		mdss->M = (OPTION_DSN_MAP & opts->options ? 1 : 0);
+		mdss->A = (OPTION_DATA_ACK & opts->options ? 1 : 0);
+
+		ptr++;
+		if (OPTION_DATA_ACK & opts->options)
+			*ptr++ = htonl(opts->data_ack);
+		if (OPTION_DSN_MAP & opts->options) {
+			*ptr++ = htonl(opts->data_seq);
+			*ptr++ = htonl(opts->sub_seq);
+			*ptr++ = htonl((opts->data_len << 16) |
+					(TCPOPT_NOP << 8) |
+					(TCPOPT_NOP));
+		}
 	}
 #endif
 }
@@ -860,10 +870,6 @@ static unsigned tcp_synack_options(struct sock *sk,
 		opts->options |= OPTION_MP_CAPABLE;
 		remaining -= MPTCP_SUB_LEN_CAPABLE_ALIGN;
 		opts->token = req->mtcp_loc_token;
-
-		opts->options |= OPTION_DSN_MAP;
-		opts->data_seq = 0;
-		remaining -= TCPOLEN_DSN_MAP_ALIGNED;
 	}
 
 	return MAX_TCP_OPTION_SPACE - remaining;
@@ -919,37 +925,40 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		}
 	}
 
-	if (tp->mpc && (!skb || skb->len!=0 ||
-			(tcb->flags & TCPHDR_FIN))) {
-		if (tcb && tcb->data_len) { /*Ignore dataseq if data_len is 0*/
-			opts->data_seq=tcb->data_seq;
-			opts->data_len=tcb->data_len;
-			opts->sub_seq=tcb->sub_seq-tp->snt_isn;
-		}
-		opts->options |= OPTION_DSN_MAP;
-		size += TCPOLEN_DSN_MAP_ALIGNED;
-	}
-	/*we can have mpc==1 and mpcb==NULL if tp is the master_sk
-	  and is established but not yet accepted.*/
-	if (tp->mpc && mpcb && test_bit(MPCB_FLAG_FIN_ENQUEUED,
-					&mpcb->flags) &&
-	    (!skb || TCP_SKB_CB(skb)->end_data_seq==mpcb->tp.write_seq)) {
-		opts->options |= OPTION_DATA_FIN;
-		size += TCPOLEN_DATA_FIN_ALIGNED;
-	}
 	if (tp->mpc) {
-		/*If we are at the server side, and the accept syscall has not
-		  yet been called, the received data is still enqueued in the
-		  subsock receive queue, but we must still
-		  send a data ack. The value of the ack is based on the
-		  subflow ack since at this step there is necessarily only
-		  one subflow.*/
-		u32 rcv_nxt=(tp->pending && is_master_sk(tp))?
-			tp->rcv_nxt-tp->rcv_isn-1:
-			mpcb->tp.rcv_nxt;
-		opts->data_ack=rcv_nxt;
-		opts->options |= OPTION_DATA_ACK;
-		size += TCPOLEN_DATA_ACK_ALIGNED;
+		int dss = 0;
+
+		if (1 /* && data to ack */) {
+			dss = 1;
+
+			opts->data_ack = (tp->pending && is_master_sk(tp))?
+						tp->rcv_nxt - tp->rcv_isn - 1 :
+						mpcb->tp.rcv_nxt;
+			opts->options |= OPTION_DATA_ACK;
+			size += MPTCP_SUB_LEN_ACK_ALIGN;
+		}
+
+		if (!skb || skb->len != 0 || tcb->flags & TCPHDR_FIN) {
+			dss = 1;
+
+			if (tcb && tcb->data_len) {
+				opts->data_seq = tcb->data_seq;
+				opts->data_len = tcb->data_len;
+				opts->sub_seq = tcb->sub_seq - tp->snt_isn;
+			}
+			opts->options |= OPTION_DSN_MAP;
+			size += MPTCP_SUB_LEN_SEQ_ALIGN;
+		}
+
+		if (test_bit(MPCB_FLAG_FIN_ENQUEUED, &mpcb->flags) &&
+			(!skb || tcb->end_data_seq == mpcb->tp.write_seq)) {
+			dss = 1;
+
+			opts->options |= OPTION_DATA_FIN;
+		}
+
+		if (dss)
+			size += MPTCP_SUB_LEN_DSS_ALIGN;
 	}
 #ifdef CONFIG_MTCP_PM
 	if (tp->mpc && mpcb) {
