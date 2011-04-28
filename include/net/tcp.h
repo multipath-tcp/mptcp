@@ -171,7 +171,6 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 
 #define TCPOPT_MPTCP		30
 
-#define TCPOPT_ADD_ADDR		60
 #define TCPOPT_REMOVE_ADDR	61
 
 /*
@@ -188,12 +187,6 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_COOKIE_MIN     (TCPOLEN_COOKIE_BASE+TCP_COOKIE_MIN)
 #define TCPOLEN_COOKIE_MAX     (TCPOLEN_COOKIE_BASE+TCP_COOKIE_MAX)
 
-#define TCPOLEN_ADD_ADDR(num_addr)	(TCPOLEN_ADD_ADDR_BASE +	\
-					 TCPOLEN_ADD_ADDR_PERBLOCK *	\
-					 (num_addr))
-#define TCPOLEN_ADD_ADDR_BASE		2
-#define TCPOLEN_ADD_ADDR_PERBLOCK	6
-
 /* But this is what stacks really send out. */
 #define TCPOLEN_TSTAMP_ALIGNED		12
 #define TCPOLEN_WSCALE_ALIGNED		4
@@ -203,10 +196,6 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_SACK_PERBLOCK		8
 #define TCPOLEN_MD5SIG_ALIGNED		20
 #define TCPOLEN_MSS_ALIGNED		4
-
-#define TCPOLEN_ADD_ADDR_ALIGNED(num_addr)	((TCPOLEN_ADD_ADDR_BASE +      \
-						  TCPOLEN_ADD_ADDR_PERBLOCK *  \
-						  (num_addr) + 3) & (~3))
 
 /* Flags in tp->nonagle */
 #define TCP_NAGLE_OFF		1	/* Nagle's algo is disabled */

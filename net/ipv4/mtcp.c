@@ -1504,6 +1504,25 @@ void mtcp_parse_options(uint8_t *ptr, int opsize,
 		}
 		break;
 	}
+	case MPTCP_SUB_ADD_ADDR:
+	{
+		struct mp_add_addr *mpadd = (struct mp_add_addr *) ptr;
+
+		if (opsize != MPTCP_SUB_LEN_ADD_ADDR) {
+			mtcp_debug("%s: mp_add_addr: bad option size %d\n",
+					__FUNCTION__, opsize);
+			break;
+		}
+
+		ptr += 2; /* Move the pointer to the addr */
+		if (mpadd->ipver == 4) {
+			mtcp_v4_add_raddress(mopt, (struct in_addr*) ptr,
+					mpadd->addr_id);
+		} else {
+			/* Add IPv6 stuff here */
+		}
+		break;
+	}
 	default:
 		mtcp_debug("%s: Received unkown subtype: %d\n", __FUNCTION__,
 				mp_opt->sub);

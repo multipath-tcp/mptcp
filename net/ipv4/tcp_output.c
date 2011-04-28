@@ -594,21 +594,22 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	}
 
 #ifdef CONFIG_MTCP_PM
-	if (unlikely((OPTION_ADD_ADDR & opts->options) && opts->num_addr4)) {
-		uint8_t *ptr8 = (uint8_t *) ptr; /* We need a per-byte pointer here */
-		int i;
-		for (i = TCPOLEN_ADD_ADDR(opts->num_addr4);
-		     i < TCPOLEN_ADD_ADDR_ALIGNED(opts->num_addr4); i++)
-			*ptr8++ = TCPOPT_NOP;
-		*ptr8++ = TCPOPT_ADD_ADDR;
-		*ptr8++ = TCPOLEN_ADD_ADDR(opts->num_addr4);
-		for (i = 0; i < opts->num_addr4; i++) {
-			*ptr8++ = opts->addr4[i].id;
-			*ptr8++ = 64;
-			*((__be32 *)ptr8) = opts->addr4[i].addr.s_addr;
-			ptr8 += sizeof(struct in_addr);
-		}
-		ptr = (__be32*)ptr8;
+	if (unlikely(OPTION_ADD_ADDR & opts->options)) {
+		struct mp_add_addr *mpadd;
+		__u8 *p8 = (__u8 *) ptr;
+
+		*p8++ = TCPOPT_MPTCP;
+		*p8++ = MPTCP_SUB_LEN_ADD_ADDR;
+		mpadd = (struct mp_add_addr *) p8;
+
+		mpadd->sub = MPTCP_SUB_ADD_ADDR;
+		mpadd->ipver = 4;
+		mpadd->addr_id = opts->addr4->id;
+		p8 += 2;
+		*((__be32 *) p8) = opts->addr4->addr.s_addr;
+		p8 += sizeof(struct in_addr);
+
+		ptr = (__be32 *) p8;
 	}
 #endif /* CONFIG_MTCP_PM */
 	if (unlikely(OPTION_MP_JOIN & opts->options)) {
@@ -962,26 +963,14 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	}
 #ifdef CONFIG_MTCP_PM
 	if (tp->mpc && mpcb) {
-		if (unlikely(mpcb->addr_unsent)) {
-			const unsigned remaining = MAX_TCP_OPTION_SPACE - size;
-			if (remaining < TCPOLEN_ADD_ADDR_BASE)
-				opts->num_addr4 = 0;
-			else
-				opts->num_addr4 = min_t(unsigned,
-							mpcb->addr_unsent,
-							(remaining -
-							TCPOLEN_ADD_ADDR_BASE) /
-							TCPOLEN_ADD_ADDR_PERBLOCK);
-			/* If no space to send the option, just wait next
-			 * segment
-			 */
-			if (opts->num_addr4) {
-				opts->options |= OPTION_ADD_ADDR;
-				opts->addr4 = mpcb->addr4 + mpcb->num_addr4 -
-						mpcb->addr_unsent;
-				if (skb) mpcb->addr_unsent -= opts->num_addr4;
-				size += TCPOLEN_ADD_ADDR_ALIGNED(opts->num_addr4);
-			}
+		if (unlikely(mpcb->addr_unsent) && MAX_TCP_OPTION_SPACE - size >
+						MPTCP_SUB_LEN_ADD_ADDR_ALIGN) {
+			opts->options |= OPTION_ADD_ADDR;
+			opts->addr4 = mpcb->addr4 + mpcb->num_addr4 -
+					mpcb->addr_unsent;
+			if (skb)
+				mpcb->addr_unsent--;
+			size += MPTCP_SUB_LEN_ADD_ADDR_ALIGN;
 		}
 	}
 	BUG_ON(!mpcb && !tp->pending);

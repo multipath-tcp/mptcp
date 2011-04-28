@@ -160,6 +160,10 @@ struct multipath_pcb {
 #define MPTCP_SUB_LEN_ACK	4
 #define MPTCP_SUB_LEN_ACK_ALIGN		4
 
+#define MPTCP_SUB_ADD_ADDR	3
+#define MPTCP_SUB_LEN_ADD_ADDR	8
+#define MPTCP_SUB_LEN_ADD_ADDR_ALIGN	8
+
 struct mptcp_option {
 #if defined(__LITTLE_ENDIAN_BITFIELD)
 	__u8	ver:4,
@@ -229,6 +233,18 @@ struct mp_dss {
 #endif
 };
 
+struct mp_add_addr {
+#if defined(__LITTLE_ENDIAN_BITFIELD)
+	__u8	ipver:4,
+		sub:4;
+#elif defined(__BIG_ENDIAN_BITFIELD)
+	__u8	sub:4,
+		ipver:4;
+#else
+#error	"Adjust your <asm/byteorder.h> defines"
+#endif
+	__u8	addr_id;
+};
 
 #define mpcb_from_tcpsock(tp) ((tp)->mpcb)
 #define is_master_sk(tp) (!(tp)->slave_sk)

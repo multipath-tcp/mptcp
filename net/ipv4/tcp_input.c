@@ -3953,7 +3953,7 @@ old_ack:
 void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 		       u8 **hvpp, struct multipath_options *mopt, int estab)
 {
-	unsigned char *ptr,*ptr8;
+	unsigned char *ptr;
 	struct tcphdr *th = tcp_hdr(skb);
 	int length = (th->doff * 4) - sizeof(struct tcphdr);
 
@@ -4074,28 +4074,6 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 			case TCPOPT_MPTCP:
 				mtcp_parse_options(ptr, opsize, opt_rx, mopt, skb);
 				break;
-#ifdef CONFIG_MTCP_PM
-			case TCPOPT_ADD_ADDR:
-				if (!mopt) {
-					printk(KERN_ERR "MPTCP addresses "
-					       "received, but no mptcp state"
-					       "found, using sock struct\n");
-					break;
-				}
-
-				for (ptr8 = ptr; ptr8 < ptr + opsize - 2;) {
-					if ((*(ptr8 + 1)) >> 4 == 4) {
-						mtcp_v4_add_raddress(
-							mopt, (struct in_addr*)
-							(ptr8 + 2), *ptr8 );
-						ptr8 += 2 + sizeof(struct in_addr);
-					}
-					/* Add IPv6 stuff here */
-					else
-						break;
-				}
-				break;
-#endif /* CONFIG_MTCP_PM */
 #endif /* CONFIG_MTCP */
 			}
 
