@@ -963,7 +963,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	}
 #ifdef CONFIG_MTCP_PM
 	if (tp->mpc && mpcb) {
-		if (unlikely(mpcb->addr_unsent) && MAX_TCP_OPTION_SPACE - size >
+		if (unlikely(mpcb->addr_unsent) && MAX_TCP_OPTION_SPACE - size >=
 						MPTCP_SUB_LEN_ADD_ADDR_ALIGN) {
 			opts->options |= OPTION_ADD_ADDR;
 			opts->addr4 = mpcb->addr4 + mpcb->num_addr4 -
