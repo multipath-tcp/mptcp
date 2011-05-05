@@ -913,10 +913,7 @@ static struct sock *mtcp_check_req(struct sk_buff *skb,
 	u8 *hash_location;
 	struct inet_connection_sock *meta_icsk = (struct inet_connection_sock*)mpcb;
 
-	if (!mpcb->master_sk)
-		mtcp_debug("%s: Debugging #54 - mpcb->master_sk == NULL\n", __FUNCTION__);
-	if (!inet_csk(mpcb->master_sk))
-		mtcp_debug("%s: Debugging #54 - !inet_csk(mpcb->master_sk)\n", __FUNCTION__);
+	BUG_ON(!mpcb->master_sk);
 
 	if (!inet_csk(mpcb->master_sk)->icsk_bind_hash) {
 		/*This cannot happen, because the bind hash must be inherited
