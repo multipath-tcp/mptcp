@@ -1694,7 +1694,7 @@ static void __lock_sock(struct sock *sk)
  *@meta_sk: used by MPCTP: if not NULL, it is the meta_sk to
  *          which @sk is attached.
  */
-static void __release_sock(struct sock *sk)
+static void __release_sock(struct sock *sk, struct sock *meta_sk)
 	__releases(&sk->sk_lock.slock)
 	__acquires(&sk->sk_lock.slock)
 {
