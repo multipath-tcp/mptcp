@@ -18,6 +18,7 @@
 #include <linux/tcp.h>
 #include <linux/wait.h>
 #include <net/sock.h>
+#include <linux/tcp_probe.h>
 
 /**
  * sk_stream_write_space - stream socket write_space callback.
@@ -27,8 +28,14 @@
  */
 void sk_stream_write_space(struct sock *sk)
 {
-	struct socket *sock = sk->sk_socket;
+	struct socket *sock;
 	struct socket_wq *wq;
+
+	if ((sk->sk_protocol==IPPROTO_TCP || sk->sk_protocol==IPPROTO_MTCPSUB)
+	    && tcp_sk(sk)->mpcb)
+		sock=((struct sock*)tcp_sk(sk)->mpcb)->sk_socket;
+	else
+		sock=sk->sk_socket;
 
 	if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk) && sock) {
 		clear_bit(SOCK_NOSPACE, &sock->flags);
@@ -37,7 +44,7 @@ void sk_stream_write_space(struct sock *sk)
 		wq = rcu_dereference(sk->sk_wq);
 		if (wq_has_sleeper(wq))
 			wake_up_interruptible_poll(&wq->wait, POLLOUT |
-						POLLWRNORM | POLLWRBAND);
+						   POLLWRNORM | POLLWRBAND);
 		if (wq && wq->fasync_list && !(sk->sk_shutdown & SEND_SHUTDOWN))
 			sock_wake_async(sock, SOCK_WAKE_SPACE, POLL_OUT);
 		rcu_read_unlock();
@@ -60,14 +67,21 @@ int sk_stream_wait_connect(struct sock *sk, long *timeo_p)
 
 	do {
 		int err = sock_error(sk);
-		if (err)
+		if (err) {
+			printk(KERN_ERR "line %d, err %d\n",__LINE__,err);
 			return err;
+		}
 		if ((1 << sk->sk_state) & ~(TCPF_SYN_SENT | TCPF_SYN_RECV))
 			return -EPIPE;
-		if (!*timeo_p)
+
+		if (!*timeo_p) {
+			printk(KERN_ERR "line %d\n",__LINE__);
 			return -EAGAIN;
-		if (signal_pending(tsk))
+		}
+		if (signal_pending(tsk)) {
+			printk(KERN_ERR "line %d\n",__LINE__);
 			return sock_intr_errno(*timeo_p);
+		}
 
 		prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
 		sk->sk_write_pending++;

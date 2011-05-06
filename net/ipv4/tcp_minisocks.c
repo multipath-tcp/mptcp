@@ -143,11 +143,14 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 	struct tcp_options_received tmp_opt;
 	u8 *hash_location;
 	struct tcp_timewait_sock *tcptw = tcp_twsk((struct sock *)tw);
+	struct multipath_options mopt;
 	int paws_reject = 0;
 
 	tmp_opt.saw_tstamp = 0;
+	mtcp_init_addr_list(&mopt);
+
 	if (th->doff > (sizeof(*th) >> 2) && tcptw->tw_ts_recent_stamp) {
-		tcp_parse_options(skb, &tmp_opt, &hash_location, 0);
+		tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
 		if (tmp_opt.saw_tstamp) {
 			tmp_opt.ts_recent	= tcptw->tw_ts_recent;
@@ -459,13 +462,17 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 
 		/* Now setup tcp_sock */
 		newtp->pred_flags = 0;
-
 		newtp->rcv_wup = newtp->copied_seq =
 		newtp->rcv_nxt = treq->rcv_isn + 1;
-
 		newtp->snd_sml = newtp->snd_una =
 		newtp->snd_nxt = newtp->snd_up =
 			treq->snt_isn + 1 + tcp_s_data_size(oldtp);
+#ifdef CONFIG_MTCP
+		newtp->rx_opt.rcv_isn=treq->rcv_isn;
+		newtp->snt_isn=treq->snt_isn;
+		newtp->rcv_isn=treq->rcv_isn;
+		memset(&newtp->rcvq_space,0,sizeof(newtp->rcvq_space));
+#endif
 
 		tcp_prequeue_init(newtp);
 
@@ -566,6 +573,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 			   struct request_sock **prev)
 {
 	struct tcp_options_received tmp_opt;
+	struct multipath_options mopt;
 	u8 *hash_location;
 	struct sock *child;
 	const struct tcphdr *th = tcp_hdr(skb);
@@ -573,8 +581,11 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	int paws_reject = 0;
 
 	tmp_opt.saw_tstamp = 0;
+	mtcp_init_addr_list(&mopt);
+
 	if (th->doff > (sizeof(struct tcphdr)>>2)) {
-		tcp_parse_options(skb, &tmp_opt, &hash_location, 0);
+		tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
+
 
 		if (tmp_opt.saw_tstamp) {
 			tmp_opt.ts_recent = req->ts_recent;
@@ -730,6 +741,41 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	child = inet_csk(sk)->icsk_af_ops->syn_recv_sock(sk, skb, req, NULL);
 	if (child == NULL)
 		goto listen_overflow;
+
+#ifdef CONFIG_MTCP
+	{
+		/* Copy mptcp related info from req to child
+		 * we do this here because this is shared between
+		 * ipv4 and ipv6
+		 */
+		struct tcp_sock *child_tp = tcp_sk(child);
+		struct multipath_pcb *mpcb;
+
+		child_tp->rx_opt.saw_mpc = req->saw_mpc;
+		if (child_tp->rx_opt.saw_mpc)
+			child_tp->mpc = 1;
+		child_tp->rx_opt.mtcp_rem_token = req->mtcp_rem_token;
+		child_tp->mpcb = NULL;
+		child_tp->pending = 1;
+		child_tp->mtcp_loc_token = req->mtcp_loc_token;
+		mpcb = mtcp_alloc_mpcb(child, GFP_ATOMIC);
+
+		/* The allocation of the mpcb failed!
+		 * Destoy the child and go to listen_overflow
+		 */
+		if (mpcb == NULL) {
+			tcp_done(child);
+			goto listen_overflow;
+		}
+
+		if (mopt.list_rcvd)
+			memcpy(&mpcb->received_options, &mopt, sizeof(mopt));
+		set_bit(MPCB_FLAG_SERVER_SIDE,&mpcb->flags);
+		/* Will be moved to ESTABLISHED by tcp_rcv_state_process() */
+		((struct sock *)mpcb)->sk_state = TCP_SYN_RECV;
+		mtcp_update_metasocket(child, mpcb);
+	}
+#endif /* CONFIG_MTCP */
 
 	inet_csk_reqsk_queue_unlink(sk, req, prev);
 	inet_csk_reqsk_queue_removed(sk, req);

@@ -325,6 +325,9 @@ struct sk_buff {
 
 	struct sock		*sk;
 	struct net_device	*dev;
+	unsigned int            path_index; /*Path index for multipath control*/
+	__u32                   path_mask; /*Mask of the path indices that
+					     have tried to send this skb*/
 
 	/*
 	 * This is the control buffer. It is free to use for every
@@ -332,7 +335,7 @@ struct sk_buff {
 	 * want to keep them across layers you have to do a skb_clone()
 	 * first. This is owned by whoever has the skb queued ATM.
 	 */
-	char			cb[48] __aligned(8);
+	char			cb[64] __aligned(8);
 
 	unsigned long		_skb_refdst;
 #ifdef CONFIG_XFRM

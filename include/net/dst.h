@@ -99,6 +99,7 @@ struct dst_entry {
 		struct rt6_info		*rt6_next;
 		struct dn_route __rcu	*dn_next;
 	};
+	unsigned int            path_index;
 };
 
 #ifdef __KERNEL__

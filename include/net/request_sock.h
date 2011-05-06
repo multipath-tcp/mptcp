@@ -1,7 +1,8 @@
+
 /*
  * NET		Generic infrastructure for Network protocols.
  *
- *		Definitions for request_sock 
+ *		Definitions for request_sock
  *
  * Authors:	Arnaldo Carvalho de Melo <acme@conectiva.com.br>
  *
@@ -65,6 +66,20 @@ struct request_sock {
 	struct sock			*sk;
 	u32				secid;
 	u32				peer_secid;
+#ifdef CONFIG_MTCP
+	u8                              saw_mpc:1;
+	u32                             mtcp_loc_token;
+	u32                             mtcp_rem_token;
+	struct multipath_pcb            *mpcb;
+	/* Collision list in the tuple hashtable. We need to find
+	 * the req sock when receiving the third msg of the 3-way handshake,
+	 * since that one does not contain the token. If this makes
+	 * the request sock too long, we can use kmalloc'ed specific entries for
+	 * that tuple hashtable. At the moment, though, I extend the
+	 * request_sock.
+	 */
+	struct list_head                collide_tuple;
+#endif /* CONFIG_MTCP */
 };
 
 static inline struct request_sock *reqsk_alloc(const struct request_sock_ops *ops)
@@ -131,7 +146,8 @@ struct request_sock_queue {
 };
 
 extern int reqsk_queue_alloc(struct request_sock_queue *queue,
-			     unsigned int nr_table_entries);
+			     unsigned int nr_table_entries,
+			     gfp_t flags);
 
 extern void __reqsk_queue_destroy(struct request_sock_queue *queue);
 extern void reqsk_queue_destroy(struct request_sock_queue *queue);

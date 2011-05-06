@@ -104,6 +104,21 @@ config INET6_IPCOMP
 
 	  If unsure, say Y.
 
+config IPV6_TCPPROBE
+	tristate "TCP connection probing over IPv6 (EXPERIMENTAL)"
+	depends on IPV6 && EXPERIMENTAL && PROC_FS
+	---help---
+	  This module allows for capturing the changes to TCP connection
+	  state in response to incoming packets. It is used for debugging
+	  TCP congestion avoidance modules. If you don't understand
+	  what was just said, you don't need it: say N.
+
+	  Documentation on how to use TCP connection probing can be found
+	  at http://linux-net.osdl.org/index.php/TcpProbe
+
+	  To compile this code as a module, choose M here: the
+	  module will be called tcp_probe.
+
 config IPV6_MIP6
 	tristate "IPv6: Mobility (EXPERIMENTAL)"
 	depends on EXPERIMENTAL

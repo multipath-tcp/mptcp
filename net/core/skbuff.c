@@ -206,6 +206,8 @@ struct sk_buff *__alloc_skb(unsigned int size, gfp_t gfp_mask,
 	skb->mac_header = ~0U;
 #endif
 
+	skb->path_index=0;
+	skb->path_mask=0;
 	/* make sure we initialize shinfo sequentially */
 	shinfo = skb_shinfo(skb);
 	memset(shinfo, 0, offsetof(struct skb_shared_info, dataref));
@@ -412,9 +414,10 @@ static void skb_release_all(struct sk_buff *skb)
  *	Clean the state. This is an internal helper function. Users should
  *	always call kfree_skb
  */
-
+#include <net/tcp.h>
 void __kfree_skb(struct sk_buff *skb)
 {
+	BUG_ON(atomic_read(&skb->users) > 1);
 	skb_release_all(skb);
 	kfree_skbmem(skb);
 }
@@ -542,6 +545,9 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 #endif
 #endif
 	new->vlan_tci		= old->vlan_tci;
+	
+	new->path_index         = old->path_index;
+	new->path_mask          = old->path_mask;
 
 	skb_copy_secmark(new, old);
 }
@@ -1026,8 +1032,11 @@ unsigned char *skb_push(struct sk_buff *skb, unsigned int len)
 {
 	skb->data -= len;
 	skb->len  += len;
-	if (unlikely(skb->data<skb->head))
+	if (unlikely(skb->data<skb->head)) {
 		skb_under_panic(skb, len, __builtin_return_address(0));
+		console_loglevel=8;
+		BUG();
+	}
 	return skb->data;
 }
 EXPORT_SYMBOL(skb_push);

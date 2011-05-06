@@ -67,6 +67,7 @@ static int tcp_out_of_resources(struct sock *sk, int do_reset)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	int shift = 0;
+	u32 snd_wnd=(tp->mpc && tp->mpcb)?tp->mpcb->tp.snd_wnd:tp->snd_wnd;
 
 	/* If peer does not open window for long time, or did not transmit
 	 * anything for long time, penalize it. */
@@ -85,7 +86,7 @@ static int tcp_out_of_resources(struct sock *sk, int do_reset)
 		 *      1. Last segment was sent recently. */
 		if ((s32)(tcp_time_stamp - tp->lsndtime) <= TCP_TIMEWAIT_LEN ||
 		    /*  2. Window is closed. */
-		    (!tp->snd_wnd && !tp->packets_out))
+		    (!snd_wnd && !tp->packets_out))
 			do_reset = 1;
 		if (do_reset)
 			tcp_send_active_reset(sk, GFP_ATOMIC);
@@ -322,13 +323,18 @@ void tcp_retransmit_timer(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
+	u32 snd_wnd=(tp->mpc && tp->mpcb)?tp->mpcb->tp.snd_wnd:tp->snd_wnd;
+
+	tcpprobe_logmsg(sk,"pi %d, RTO",tp->path_index);
+
 
 	if (!tp->packets_out)
 		goto out;
 
-	WARN_ON(tcp_write_queue_empty(sk));
+	BUG_ON(is_meta_sk(sk));
+	BUG_ON(tcp_write_queue_empty(sk));
 
-	if (!tp->snd_wnd && !sock_flag(sk, SOCK_DEAD) &&
+	if (!snd_wnd && !sock_flag(sk, SOCK_DEAD) &&
 	    !((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV))) {
 		/* Receiver dastardly shrinks window. Our retransmits
 		 * become zero probes, but we should not timeout this
@@ -451,17 +457,27 @@ out:;
 
 static void tcp_write_timer(unsigned long data)
 {
-	struct sock *sk = (struct sock *)data;
+	struct sock *sk = (struct sock*)data;
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct multipath_pcb *mpcb = tp->mpcb;
+	struct sock *meta_sk = mpcb ? ((struct sock *) tp->mpcb) : NULL;
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	int event;
+	
+	BUG_ON(is_meta_sk(sk));
 
+  	if (meta_sk) {
+		mpcb_get(tp->mpcb);
+		bh_lock_sock(meta_sk);
+	}
 	bh_lock_sock(sk);
-	if (sock_owned_by_user(sk)) {
+	if (sock_owned_by_user(sk) ||
+	    (meta_sk && sock_owned_by_user(meta_sk))) {
 		/* Try again later */
 		sk_reset_timer(sk, &icsk->icsk_retransmit_timer, jiffies + (HZ / 20));
 		goto out_unlock;
 	}
-
+	
 	if (sk->sk_state == TCP_CLOSE || !icsk->icsk_pending)
 		goto out;
 
@@ -482,12 +498,14 @@ static void tcp_write_timer(unsigned long data)
 		break;
 	}
 	TCP_CHECK_TIMER(sk);
-
+	
 out:
 	sk_mem_reclaim(sk);
 out_unlock:
 	bh_unlock_sock(sk);
+	if (meta_sk) bh_unlock_sock(meta_sk);
 	sock_put(sk);
+	if (mpcb) mpcb_put(mpcb); /* Taken by mpcb_get */
 }
 
 /*

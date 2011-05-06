@@ -21,6 +21,8 @@
 #include <asm/byteorder.h>
 #include <linux/socket.h>
 
+struct multipath_pcb;
+
 struct tcphdr {
 	__be16	source;
 	__be16	dest;
@@ -50,7 +52,7 @@ struct tcphdr {
 		fin:1;
 #else
 #error	"Adjust your <asm/byteorder.h> defines"
-#endif	
+#endif
 	__be16	window;
 	__sum16	check;
 	__be16	urg_ptr;
@@ -61,14 +63,14 @@ struct tcphdr {
  *  (union is compatible to any of its members)
  *  This means this part of the code is -fstrict-aliasing safe now.
  */
-union tcp_word_hdr { 
+union tcp_word_hdr {
 	struct tcphdr hdr;
 	__be32 		  words[5];
-}; 
+};
 
-#define tcp_flag_word(tp) ( ((union tcp_word_hdr *)(tp))->words [3]) 
+#define tcp_flag_word(tp) ( ((union tcp_word_hdr *)(tp))->words [3])
 
-enum { 
+enum {
 	TCP_FLAG_CWR = __cpu_to_be32(0x00800000),
 	TCP_FLAG_ECE = __cpu_to_be32(0x00400000),
 	TCP_FLAG_URG = __cpu_to_be32(0x00200000),
@@ -79,7 +81,7 @@ enum {
 	TCP_FLAG_FIN = __cpu_to_be32(0x00010000),
 	TCP_RESERVED_BITS = __cpu_to_be32(0x0F000000),
 	TCP_DATA_OFFSET = __cpu_to_be32(0xF0000000)
-}; 
+};
 
 /*
  * TCP general constants
@@ -210,6 +212,7 @@ struct tcp_cookie_transactions {
 #include <net/sock.h>
 #include <net/inet_connection_sock.h>
 #include <net/inet_timewait_sock.h>
+#include <linux/tcp_options.h>
 
 static inline struct tcphdr *tcp_hdr(const struct sk_buff *skb)
 {
@@ -236,34 +239,6 @@ struct tcp_sack_block {
 	u32	start_seq;
 	u32	end_seq;
 };
-
-struct tcp_options_received {
-/*	PAWS/RTTM data	*/
-	long	ts_recent_stamp;/* Time we stored ts_recent (for aging) */
-	u32	ts_recent;	/* Time stamp to echo next		*/
-	u32	rcv_tsval;	/* Time stamp value             	*/
-	u32	rcv_tsecr;	/* Time stamp echo reply        	*/
-	u16 	saw_tstamp : 1,	/* Saw TIMESTAMP on last packet		*/
-		tstamp_ok : 1,	/* TIMESTAMP seen on SYN packet		*/
-		dsack : 1,	/* D-SACK is scheduled			*/
-		wscale_ok : 1,	/* Wscale seen on SYN packet		*/
-		sack_ok : 4,	/* SACK seen on SYN packet		*/
-		snd_wscale : 4,	/* Window scaling received from sender	*/
-		rcv_wscale : 4;	/* Window scaling to send to receiver	*/
-	u8	cookie_plus:6,	/* bytes in authenticator/cookie option	*/
-		cookie_out_never:1,
-		cookie_in_always:1;
-	u8	num_sacks;	/* Number of SACK blocks		*/
-	u16	user_mss;	/* mss requested by user in ioctl	*/
-	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
-};
-
-static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
-{
-	rx_opt->tstamp_ok = rx_opt->sack_ok = 0;
-	rx_opt->wscale_ok = rx_opt->snd_wscale = 0;
-	rx_opt->cookie_plus = 0;
-}
 
 /* This is the max number of SACKS that we'll generate and process. It's safe
  * to increase this, although since:
@@ -308,6 +283,54 @@ struct tcp_sock {
  */
  	u32	rcv_nxt;	/* What we want to receive next 	*/
 	u32	copied_seq;	/* Head of yet unread data		*/
+#ifdef CONFIG_MTCP
+	/*data for the scheduler*/
+	struct {
+		int	space;
+		u32	seq;
+		u32	time;
+		short   shift; /*Shift to apply to the space field.
+				 It is increased when space bytes are
+				 flushed in less than a jiffie (can happen
+				 with gigabit ethernet), so as to use a larger
+				 basis for bw computation.*/
+	} bw_est;
+	u32    cur_bw_est;
+
+	/*per subflow data, for tcp_recvmsg*/
+	u32     peek_seq;       /* Peek seq, for use by MTCP            */
+	u32     *seq;
+	u32     copied;
+	u32    map_data_seq; /*Those three fields record the current mapping*/
+	u16    map_data_len;
+	u32    map_subseq;
+/*isn: needed to translate abs to relative subflow seqnums*/
+	u32    snt_isn;
+	u32    rcv_isn;
+	unsigned long last_snd_probe;
+	unsigned long last_rcv_probe;
+#endif
+/*We keep these flags even if CONFIG_MTCP is not checked, because it allows
+  checking MTPC capability just by checking the mpc flag, rather than adding
+  ifdefs everywhere.*/
+	u8      mpc:1,          /* Other end is multipath capable       */
+
+		wait_event_any_sk_released:1, /* 1 if mtcp_wait_event_any_sk()
+						 has released this sock, and
+						 must thus lock it again,
+						 so that to let everything
+						 equal. This is important
+						 because a new subsocket
+						 can appear during we sleep. */
+		wait_data_bit_set:1, /* Similar to previous, for wait_data */
+		push_frames:1, /* An other subsocket may liberate space in the
+				  sending window of this sock. Normally, a push
+				  is then done immediately, but if the socket is
+				  locked at that moment, push_frames is set, so
+				  that the push is done in the release_sock. */
+		pf:1; /* Potentially Failed state: when this flag is set, we
+			 stop using the subflow */
+
 	u32	rcv_wup;	/* rcv_nxt on last window update sent	*/
  	u32	snd_nxt;	/* Next sequence we send		*/
 
@@ -319,11 +342,12 @@ struct tcp_sock {
 	/* Data for direct copy to user */
 	struct {
 		struct sk_buff_head	prequeue;
+		int			memory;
 		struct task_struct	*task;
 		struct iovec		*iov;
-		int			memory;
-		int			len;
+		int                     len;
 #ifdef CONFIG_NET_DMA
+		int			copied;
 		/* members for async copy */
 		struct dma_chan		*dma_chan;
 		int			wakeup;
@@ -337,7 +361,7 @@ struct tcp_sock {
 	u32	max_window;	/* Maximal window ever seen from peer	*/
 	u32	mss_cache;	/* Cached effective mss, not including SACKS */
 
-	u32	window_clamp;	/* Maximal window to advertise		*/
+	u32     window_clamp;   /* Maximal window to advertise		*/
 	u32	rcv_ssthresh;	/* Current window clamp			*/
 
 	u32	frto_highmark;	/* snd_nxt when RTO occurred */
@@ -460,6 +484,17 @@ struct tcp_sock {
 	 * contains related tcp_cookie_transactions fields.
 	 */
 	struct tcp_cookie_values  *cookie_values;
+	struct multipath_pcb    *mpcb;
+#ifdef CONFIG_MTCP
+	int                     path_index;
+	struct tcp_sock         *next; /* Next subflow socket */
+	u32                     mtcp_loc_token;
+	uint8_t                 pending:1, /* One if this is a pending subsock
+					    * (established, but not yet
+					    * attached to the mpcb)
+					    */
+		                slave_sk:1;
+#endif /* CONFIG_MTCP */
 };
 
 static inline struct tcp_sock *tcp_sk(const struct sock *sk)

@@ -309,6 +309,28 @@ config ARPD
 
 	  If unsure, say N.
 
+config MTCP
+       bool "MTCP protocol (EXPERIMENTAL)"
+       depends on EXPERIMENTAL && !SYN_COOKIES && !NET_DMA && !TCP_MD5SIG
+       ---help---
+	This replaces the normal TCP stack with a Multipath TCP stack,
+	able to use several paths at once.
+
+config MTCP_PM
+       bool "built-in MTCP Path Manager"
+       depends on MTCP
+       ---help---
+       This is a built-in path manager for MTCP. It uses
+       TCP options to carry information about the multiple paths, and
+       assumes that several IPv4 addresses are available.
+
+config MTCP_DEBUG
+       bool "MTCP debug messages"
+       depends on MTCP
+       default y
+       ---help---
+       Enables logging of mtcp related debugging messages. Highly recommended.	
+
 config SYN_COOKIES
 	bool "IP: TCP syncookie support"
 	---help---
@@ -594,6 +616,14 @@ config TCP_CONG_ILLINOIS
 	For further details see:
 	  http://www.ews.uiuc.edu/~shaoliu/tcpillinois/index.html
 
+config TCP_CONG_COUPLED
+	tristate "MPTCP COUPLED CONGESTION CONTROL"
+	depends on EXPERIMENTAL && MTCP
+	default n
+	---help---
+	MultiPath TCP Coupled Congestion Control
+	To enable it, just put 'coupled' in tcp_congestion_control
+
 choice
 	prompt "Default TCP congestion control"
 	default DEFAULT_CUBIC
@@ -622,6 +652,9 @@ choice
 	config DEFAULT_WESTWOOD
 		bool "Westwood" if TCP_CONG_WESTWOOD=y
 
+	config DEFAULT_COUPLED
+		bool "Coupled" if TCP_CONG_COUPLED=y
+
 	config DEFAULT_RENO
 		bool "Reno"
 
@@ -643,6 +676,7 @@ config DEFAULT_TCP_CONG
 	default "vegas" if DEFAULT_VEGAS
 	default "westwood" if DEFAULT_WESTWOOD
 	default "veno" if DEFAULT_VENO
+	default "coupled" if DEFAULT_COUPLED
 	default "reno" if DEFAULT_RENO
 	default "cubic"
 
