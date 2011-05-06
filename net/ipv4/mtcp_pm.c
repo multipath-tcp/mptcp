@@ -617,7 +617,7 @@ static struct sk_buff *mtcp_make_synack(struct sock *master_sk,
 
 	skb_dst_set(skb, dst_clone(dst));
 
-	mss = dst_metric(dst, RTAX_ADVMSS);
+	mss = dst_metric_advmss(dst);
 	if (master_tp->rx_opt.user_mss && master_tp->rx_opt.user_mss < mss)
 		mss = master_tp->rx_opt.user_mss;
 
