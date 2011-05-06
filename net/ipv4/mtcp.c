@@ -315,14 +315,14 @@ int mtcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 			mtcp_debug("%s: token %d pi %d src_addr:"
 				   "%pI4:%d dst_addr:%pI4:%d \n", __FUNCTION__,
 				   loc_token(mpcb), newpi, &loculid_in.sin_addr,
-				   loculid_in.sin_port, &remulid_in.sin_addr,
-				   remulid_in.sin_port);
+				   ntohs(loculid_in.sin_port), &remulid_in.sin_addr,
+				   ntohs(remulid_in.sin_port));
 		else
 			mtcp_debug("%s: token %d pi %d src_addr:"
 				   "%pI6:%d dst_addr:%pI6:%d \n", __FUNCTION__,
 				   loc_token(mpcb), newpi, &loculid_in6.sin6_addr,
-				   loculid_in6.sin6_port, &remulid_in6.sin6_addr,
-				   remulid_in6.sin6_port);
+				   ntohs(loculid_in6.sin6_port), &remulid_in6.sin6_addr,
+				   ntohs(remulid_in6.sin6_port));
 	}
 
 	return 0;
@@ -523,9 +523,9 @@ void mtcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 	mtcp_debug("%s: token %d pi %d, src_addr:%pI4:%d dst_addr:%pI4:%d,"
 			" cnt_subflows now %d\n", __FUNCTION__ , loc_token(mpcb),
 			tp->path_index, &((struct inet_sock *) tp)->inet_saddr,
-			((struct inet_sock *) tp)->inet_sport,
+			ntohs(((struct inet_sock *) tp)->inet_sport),
 			&((struct inet_sock *) tp)->inet_daddr,
-			((struct inet_sock *) tp)->inet_dport,
+			ntohs(((struct inet_sock *) tp)->inet_dport),
 			mpcb->cnt_subflows);
 }
 
