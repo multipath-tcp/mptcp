@@ -1745,16 +1745,14 @@ process:
 		    !sock_owned_by_user(sk)) {
 			if (!tcp_prequeue(sk, skb))
 				ret = tcp_v4_do_rcv(sk, skb);
-		}
-		else if (unlikely(sk_add_backlog(sk, skb))) {
+		} else if (unlikely(sk_add_backlog(sk, skb))) {
 			if (meta_sk)
 				bh_unlock_sock(meta_sk);
 			bh_unlock_sock(sk);
 			NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
 			goto discard_and_relse;
 		}
-	}
-	else if (!sock_owned_by_user(sk)) {
+	} else if (!sock_owned_by_user(sk)) {
 #ifdef CONFIG_NET_DMA
 		struct tcp_sock *tp = tcp_sk(sk);
 		if (!tp->ucopy.dma_chan && tp->ucopy.pinned_list)
@@ -1779,7 +1777,8 @@ process:
 		bh_unlock_sock(meta_sk);
 	bh_unlock_sock(sk);
 	sock_put(sk);
-	if (mpcb) mpcb_put(mpcb); /* Taken by mpcb_get */
+	if (mpcb)
+		mpcb_put(mpcb); /* Taken by mpcb_get */
 
 	return ret;
 
@@ -1802,6 +1801,8 @@ discard_it:
 
 discard_and_relse:
 	sock_put(sk);
+	if (mpcb)
+		mpcb_put(mpcb); /* Taken by mpcb_get */
 	goto discard_it;
 
 do_time_wait:
