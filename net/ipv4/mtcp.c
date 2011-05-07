@@ -660,9 +660,11 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 	unsigned int min_time_to_peer = 0xffffffff;
 	int bh = in_interrupt();
 
-	if (!mpcb) return NULL;
+	if (!mpcb)
+		return NULL;
 
-	if (!bh) mutex_lock(&mpcb->mutex);
+	if (!bh)
+		mutex_lock(&mpcb->mutex);
 
 	/* if there is only one subflow, bypass the scheduling function */
 	if (mpcb->cnt_subflows == 1) {
@@ -682,13 +684,15 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 			continue;
 
 		/* If the skb has already been enqueued in this sk, try to find
-		   another one */
+		 * another one
+		 */
 		if (PI_TO_FLAG(tp->path_index) & skb->path_mask)
 			continue;
 
 		/* If there is no bw estimation available currently,
-		   we only give it data when it has available space in the
-		   cwnd (see above) */
+		 * we only give it data when it has available space in the
+		 * cwnd (see above)
+		 */
 		if (!tp->cur_bw_est) {
 			/* If a subflow is available, send immediately */
 			if (tcp_packets_in_flight(tp) < tp->snd_cwnd) {
@@ -710,7 +714,8 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 	}
 
 out:
-	if (!bh) mutex_unlock(&mpcb->mutex);
+	if (!bh)
+		mutex_unlock(&mpcb->mutex);
 
 	return bestsk;
 }
@@ -725,16 +730,18 @@ int mtcp_sendmsg(struct kiocb *iocb, struct sock *master_sk,
 	long timeo = sock_sndtimeo(master_sk, flags & MSG_DONTWAIT);
 
 	/* At the moment it should be sure 100% that the mpcb pointer is defined
-	   because at the client, alloc_mpcb is called in tcp_v4_init_sock(),
-	   at the server it is called in inet_csk_accept(). sendmsg() can be
-	   called before none of these functions. */
+	 * because at the client, alloc_mpcb is called in tcp_v4_init_sock(),
+	 * at the server it is called in inet_csk_accept(). sendmsg() can be
+	 * called before none of these functions.
+	 */
 	BUG_ON(!mpcb);
 
 	lock_sock(master_sk);
 
 	/* If the master sk is not yet established, we need to wait
-	   until the establishment, so as to know whether the mpc option
-	   is present. */
+	 * until the establishment, so as to know whether the mpc option
+	 * is present.
+	 */
 	if (!tcp_sk(master_sk)->mpc) {
 		if ((1 << master_sk->sk_state) & ~(TCPF_ESTABLISHED
 				| TCPF_CLOSE_WAIT)) {
@@ -745,7 +752,8 @@ int mtcp_sendmsg(struct kiocb *iocb, struct sock *master_sk,
 				goto out_err_nompc;
 			}
 			/* The flag must be re-checked, because it may have
-			   appeared during sk_stream_wait_connect */
+			 * appeared during sk_stream_wait_connect
+			 */
 			if (!tcp_sk(master_sk)->mpc) {
 				copied = subtcp_sendmsg(iocb, master_sk, msg,
 							size);
@@ -822,7 +830,7 @@ static int __mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
 					    &meta_sk->sk_receive_queue) ||
 				     !skb_queue_empty(&tp->ucopy.prequeue)));
 
-	mtcp_for_each_sk(mpcb,sk,tp)
+	mtcp_for_each_sk(mpcb, sk, tp)
 		if (tp->wait_data_bit_set) {
 			clear_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
 			tp->wait_data_bit_set = 0;
@@ -1108,7 +1116,8 @@ found_fin_ok:
 		break;
 	} while (*len > 0);
 	/* This checks whether an explicit window update is needed to unblock
-	   the receiver */
+	 * the receiver
+	 */
 exit:
 	mtcp_cleanup_rbuf(meta_sk, *copied);
 	return 0;
@@ -1293,8 +1302,9 @@ void mtcp_skb_entail(struct sock *sk, struct sk_buff *skb) {
 
 	tcb->seq = tcb->end_seq = tcb->sub_seq = tp->write_seq;
 	tcb->sacked = 0; /* reset the sacked field: from the point of view
-			    of this subflow, we are sending a brand new
-			    segment */
+			  * of this subflow, we are sending a brand new
+			  * segment
+			  */
 	tcp_add_write_queue_tail(sk, skb);
 	sk->sk_wmem_queued += skb->truesize;
 	sk_mem_charge(sk, skb->truesize);
@@ -1709,7 +1719,8 @@ void mtcp_push_frames(struct sock *sk) {
 	tcp_push_pending_frames(sk);
 	tcp_check_space(sk);
 	/* Note release sock can call us again, which is correct because
-	   it would mean that we received new acks while we were pushing. */
+	 * it would mean that we received new acks while we were pushing.
+	 */
 	release_sock(sk);
 }
 
@@ -1881,7 +1892,8 @@ void mtcp_send_fin(struct sock *meta_sk) {
 		TCP_SKB_CB(skb)->data_len = 1;
 		TCP_SKB_CB(skb)->end_data_seq = meta_tp->write_seq + 1;
 		/* FIN eats a sequence byte, write_seq advanced by
-		   tcp_queue_skb(). */
+		 * tcp_queue_skb().
+		 */
 		tcp_queue_skb(meta_sk, skb);
 	}
 	set_bit(MPCB_FLAG_FIN_ENQUEUED, &mpcb->flags);

@@ -1136,22 +1136,20 @@ int mtcp_syn_recv_sock(struct sk_buff *skb)
 	struct request_sock *req;
 	struct sock *child;
 
-	req = mtcp_search_req(th->source,iph->saddr,iph->daddr);
+	req = mtcp_search_req(th->source, iph->saddr, iph->daddr);
 	if (!req)
 		return 0;
 
 	/* If this is a valid ack, we can build a full socket */
-	child = mtcp_check_req(skb,req);
+	child = mtcp_check_req(skb, req);
 	if (child)
-		tcp_child_process(req->mpcb->master_sk,
-				  child,skb);
+		tcp_child_process(req->mpcb->master_sk, child, skb);
 
 	mpcb_put(req->mpcb); /* Taken by mtcp_search_req */
 	return 1;
 }
 
 /**
- *
  * Returns 1 if a join option has been found, and a new request_sock has been
  * created. Else returns 0.
  */

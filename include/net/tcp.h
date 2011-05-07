@@ -873,13 +873,16 @@ static __inline__ __u32 tcp_max_burst(const struct tcp_sock *tp)
  */
 static inline u32 tcp_wnd_end(const struct tcp_sock *tp, int data_seq)
 {
-	/*With MPTCP, we return the end DATASEQ number of the receiver's
-	  advertised window*/
-	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
-	struct tcp_sock *mpcb_tp=(struct tcp_sock *)mpcb;
+	/* With MPTCP, we return the end DATASEQ number of the receiver's
+	 * advertised window
+	 */
+	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
+	struct tcp_sock *meta_tp = (struct tcp_sock *) mpcb;
 
-	if (!data_seq || !tp->mpcb) return tp->snd_una + tp->snd_wnd;
-	else return mpcb_tp->snd_una+mpcb_tp->snd_wnd;
+	if (!data_seq || !tp->mpcb)
+		return tp->snd_una + tp->snd_wnd;
+	else
+		return meta_tp->snd_una + meta_tp->snd_wnd;
 }
 
 extern int tcp_is_cwnd_limited(const struct sock *sk, u32 in_flight);
@@ -964,15 +967,19 @@ static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 
 	/* If the socket is still in the accept queue of the mpcb,
-	   the mpcb prequeue is not yet available */
+	 * the mpcb prequeue is not yet available
+	 */
 	BUG_ON(!tp->mpcb && !tp->pending);
 
 	/* mpcb not yet initialized - should be removed, as soon as subflow-
-	 * establishment has been fixed and is entirely handled in softirq.*/
-	if (tp->mpc && !mpcb) return 0;
+	 * establishment has been fixed and is entirely handled in softirq.
+	 */
+	if (tp->mpc && !mpcb)
+		return 0;
 
 	/* We work on the meta-tp */
-	if (tp->mpc && mpcb) tp = &mpcb->tp;
+	if (tp->mpc && mpcb)
+		tp = &mpcb->tp;
 
 	if (sysctl_tcp_low_latency || !tp->ucopy.task)
 		return 0;

@@ -248,7 +248,7 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 							   inet->inet_sport,
 							   usin->sin_port);
 #ifdef CONFIG_MTCP
-	tp->snt_isn=tp->write_seq;
+	tp->snt_isn = tp->write_seq;
 #endif
 
 	inet->inet_id = tp->write_seq ^ jiffies;
@@ -259,7 +259,7 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 		goto failure;
 
 #ifdef CONFIG_MTCP
-	mtcp_update_metasocket(sk,mpcb_from_tcpsock(tp));
+	mtcp_update_metasocket(sk, mpcb_from_tcpsock(tp));
 #endif
 	return 0;
 
@@ -1656,7 +1656,8 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	/* An explanation is required here, I think.
 	 * Packet length and doff are validated by header prediction,
 	 * provided case of th->doff==0 is eliminated.
-	 * So, we defer the checks. */
+	 * So, we defer the checks.
+	 */
 	if (!skb_csum_unnecessary(skb) && tcp_v4_checksum_init(skb))
 		goto bad_packet;
 
@@ -1667,7 +1668,7 @@ int tcp_v4_rcv(struct sk_buff *skb)
 				    skb->len - th->doff * 4);
 	TCP_SKB_CB(skb)->ack_seq = ntohl(th->ack_seq);
 #ifdef CONFIG_MTCP
-	/*Init to zero, will be set upon option parsing.*/
+	/* Init to zero, will be set upon option parsing. */
 	TCP_SKB_CB(skb)->data_seq = 0;
 	TCP_SKB_CB(skb)->end_data_seq = 0;
 #endif
@@ -1693,7 +1694,6 @@ int tcp_v4_rcv(struct sk_buff *skb)
 				return 0;
 		}
 	}
-
 #endif
 
 	sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source,
@@ -1975,7 +1975,7 @@ static int tcp_v4_init_sock(struct sock *sk)
 			return -1;
 
 		tp->path_index = 0;
-		mtcp_add_sock(mpcb,tp);
+		mtcp_add_sock(mpcb, tp);
 	}
 #endif
 

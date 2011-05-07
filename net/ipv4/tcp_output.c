@@ -71,11 +71,11 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int prior_packets = tp->packets_out;
-	int meta_sk=is_meta_tp(tp);
+	int meta_sk = is_meta_tp(tp);
 
-	BUG_ON(tcp_send_head(sk)!=skb);
+	BUG_ON(tcp_send_head(sk) != skb);
 	tcp_advance_send_head(sk, skb);
-	tp->snd_nxt = meta_sk?TCP_SKB_CB(skb)->end_data_seq:
+	tp->snd_nxt = meta_sk ? TCP_SKB_CB(skb)->end_data_seq:
 		TCP_SKB_CB(skb)->end_seq;
 
 	/* Don't override Nagle indefinitely with F-RTO */
@@ -84,7 +84,7 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 
 	tp->packets_out += tcp_skb_pcount(skb);
 	if (!prior_packets && !meta_sk) {
-		tcpprobe_logmsg(sk,"setting RTO to %d ms",
+		tcpprobe_logmsg(sk, "setting RTO to %d ms",
 				inet_csk(sk)->icsk_rto*1000/HZ);
 		inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
 					  inet_csk(sk)->icsk_rto, TCP_RTO_MAX);
@@ -2047,7 +2047,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			  int push_one, gfp_t gfp)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *mpcb_sk = (struct sock*)tp->mpcb;
+	struct sock *meta_sk = (struct sock *) tp->mpcb;
 	struct sk_buff *skb;
 	unsigned int tso_segs, sent_pkts;
 	int cwnd_quota;
@@ -2055,14 +2055,15 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 	int result;
 
 	if (sk->sk_in_write_xmit) {
-		printk(KERN_ERR "sk in write xmit, meta_sk:%d\n",
+		printk(KERN_ERR "sk in write xmit, meta_sk: %d\n",
 		       is_meta_sk(sk));
 		BUG();
 	}
-	/*We can be recursively called only in TCP_FIN_WAIT1 state (because
-	  the very last segment calls tcp_send_fin() on all subflows)*/
-	if(tp->mpcb && mpcb_sk->sk_in_write_xmit
-	   && ((1<<mpcb_sk->sk_state) & ~(TCPF_FIN_WAIT1|TCPF_LAST_ACK))) {
+	/* We can be recursively called only in TCP_FIN_WAIT1 state (because
+	 * the very last segment calls tcp_send_fin() on all subflows)
+	 */
+	if(tp->mpcb && meta_sk->sk_in_write_xmit
+	   && ((1<<meta_sk->sk_state) & ~(TCPF_FIN_WAIT1|TCPF_LAST_ACK))) {
 		printk(KERN_ERR "meta-sk in write xmit, meta-sk:%d,"
 		       "state of mpcb_sk:%d, of subsk:%d\n",
 		       is_meta_sk(sk),((struct sock*)tp->mpcb)->sk_state,
@@ -2082,7 +2083,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 	 * will be happy.
 	 */
 	if (unlikely(sk->sk_state == TCP_CLOSE)) {
-		sk->sk_in_write_xmit=0;
+		sk->sk_in_write_xmit = 0;
 		return 0;
 	}
 
@@ -2092,7 +2093,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		/* Do MTU probing. */
 		result = tcp_mtu_probe(sk);
 		if (!result) {
-			sk->sk_in_write_xmit=0;
+			sk->sk_in_write_xmit = 0;
 			return 0;
 		} else if (result > 0) {
 			sent_pkts = 1;
@@ -2108,8 +2109,9 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 
 		if (reinject && !after(TCP_SKB_CB(skb)->end_data_seq,
 				       tp->snd_una)) {
-			/*another copy of the segment already reached
-			  the peer, just discard this one.*/
+			/* another copy of the segment already reached
+			 * the peer, just discard this one
+			 */
 			skb_unlink(skb,&tp->mpcb->reinject_queue);
 			kfree_skb(skb);
 			continue;
@@ -2127,22 +2129,26 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		}
 
 		/* Since all subsocks are locked before calling the scheduler,
-		   the tcp_send_head should not change. */
+		 * the tcp_send_head should not change.
+		 */
 		BUG_ON(!reinject && tcp_send_head(sk) != skb);
 
 		/* This must be invoked even if we don't want
-		   to support TSO at the moment */
+		 * to support TSO at the moment
+		 */
 		tso_segs = tcp_init_tso_segs(sk, skb, mss_now);
 		BUG_ON(!tso_segs);
 		/* At the moment we do not support tso, hence
-		   tso_segs must be 1 */
+		 * tso_segs must be 1
+		 */
 		BUG_ON(tp->mpc && tso_segs != 1);
 
 		/* decide to which subsocket we give the skb */
 		cwnd_quota = tcp_cwnd_test(subtp, skb);
 		if (!cwnd_quota) {
 			/* Should not happen, since mptcp must have
-			   chosen a subsock with open cwnd */
+			 * chosen a subsock with open cwnd
+			 */
 			if (sk != subsk) BUG();
 			break;
 		}
@@ -2157,7 +2163,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 				break;
 		} else {
 #ifdef CONFIG_MTCP
-			/*tso not supported in MPTCP*/
+			/* tso not supported in MPTCP */
 			BUG_ON(tp->mpc);
 #endif
 			if (!push_one && tcp_tso_should_defer(sk, skb))
@@ -2182,11 +2188,12 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			if (tp->path_index)
 				skb->path_mask |= PI_TO_FLAG(tp->path_index);
 			/* If the segment is reinjected, the clone is done
-			   already */
-			if (!reinject)
-				subskb = skb_clone(skb,GFP_ATOMIC);
-			else {
-				skb_unlink(skb,&tp->mpcb->reinject_queue);
+			 * already
+			 */
+			if (!reinject) {
+				subskb = skb_clone(skb, GFP_ATOMIC);
+			} else {
+				skb_unlink(skb, &tp->mpcb->reinject_queue);
 				subskb = skb;
 			}
 			if (!subskb)
@@ -2198,22 +2205,22 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		}
 
 		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
-		if (unlikely(err=tcp_transmit_skb(subsk, subskb, 1,
-						  GFP_ATOMIC))) {
- 			if (sk!=subsk) {
-				/*Remove the skb from the subsock*/
-				tcp_advance_send_head(subsk,subskb);
-				tcp_unlink_write_queue(subskb,subsk);
-				subtp->write_seq-=subskb->len;
+		if (unlikely(err = tcp_transmit_skb(subsk, subskb, 1, GFP_ATOMIC))) {
+ 			if (sk != subsk) {
+				/* Remove the skb from the subsock */
+				tcp_advance_send_head(subsk, subskb);
+				tcp_unlink_write_queue(subskb, subsk);
+				subtp->write_seq -= subskb->len;
 				mtcp_wmem_free_skb(subsk, subskb);
-				/*If we entered CWR, just try to give
-				  that same skb to another subflow,
-				  by querying again the scheduler,
-				  we need however to ensure that the
-				  same subflow is not selected again by
-				  the scheduler, to avoid looping*/
-				if (err>0 && tp->mpcb->cnt_subflows>1) {
-					tp->mpcb->noneligible|=
+				/* If we entered CWR, just try to give
+				 * that same skb to another subflow,
+				 * by querying again the scheduler,
+				 * we need however to ensure that the
+				 * same subflow is not selected again by
+				 * the scheduler, to avoid looping
+				 */
+				if (err > 0 && tp->mpcb->cnt_subflows > 1) {
+					tp->mpcb->noneligible |=
 						PI_TO_FLAG(subtp->path_index);
 					continue;
 				}
@@ -2225,34 +2232,35 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		/* Advance the send_head.  This one is sent out.
 		 * This call will increment packets_out.
 		 */
-		if(!reinject && tcp_send_head(sk)!=skb) {
+		if(!reinject && tcp_send_head(sk) != skb) {
 			printk(KERN_ERR "sock_owned_by_user:%d\n",
 			       sock_owned_by_user(sk));
 			BUG();
 
 		}
 		tcp_event_new_data_sent(subsk, subskb);
- 		if (sk!=subsk) BUG_ON(tcp_send_head(subsk));
-		if (sk!=subsk && !reinject) {
-			BUG_ON(tcp_send_head(sk)!=skb);
-			tcp_event_new_data_sent(sk,skb);
+ 		if (sk != subsk) BUG_ON(tcp_send_head(subsk));
+		if (sk != subsk && !reinject) {
+			BUG_ON(tcp_send_head(sk) != skb);
+			tcp_event_new_data_sent(sk, skb);
 		}
 
-		if (sk!=subsk &&
+		if (sk != subsk &&
 		    (TCP_SKB_CB(skb)->flags & TCPHDR_FIN)) {
 			struct sock *sk_it, *sk_tmp;
 			BUG_ON(!tcp_close_state(subsk));
-			/*App close: we have sent every app-level byte,
-			  send now the FIN on all subflows.
-			  if the FIN was triggered by mtcp_close(),
-			  then the SHUTDOWN_MASK is set and we call
-			  tcp_close() on all subsocks. Otherwise
-			  only sk_shutdown has been called, and
-			  we just send the fin on all subflows.*/
-			mtcp_for_each_sk_safe(tp->mpcb,sk_it,sk_tmp) {
+			/* App close: we have sent every app-level byte,
+			 * send now the FIN on all subflows.
+			 * if the FIN was triggered by mtcp_close(),
+			 * then the SHUTDOWN_MASK is set and we call
+			 * tcp_close() on all subsocks. Otherwise
+			 * only sk_shutdown has been called, and
+			 * we just send the fin on all subflows.
+			 */
+			mtcp_for_each_sk_safe(tp->mpcb, sk_it, sk_tmp) {
 				if (sk->sk_shutdown == SHUTDOWN_MASK)
-					tcp_close(sk_it,-1);
-				else if (sk_it!=subsk &&
+					tcp_close(sk_it, -1);
+				else if (sk_it != subsk &&
 					 tcp_close_state(sk_it)) {
 					tcp_send_fin(sk_it);
 				}
@@ -2263,7 +2271,6 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		sent_pkts++;
 
 #ifdef CONFIG_MTCP
-
 		tcp_cwnd_validate(subsk);
 #endif
 
@@ -2304,8 +2311,7 @@ void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
 		else {
 			struct sock *sk_it;
 			struct tcp_sock *tp_it;
-			mtcp_for_each_sk(tcp_sk(sk)->mpcb,sk_it,
-					 tp_it)
+			mtcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it, tp_it)
 				tcp_check_probe_timer(sk_it);
 		}
 	}
@@ -2320,16 +2326,17 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 	int reinject;
 	struct sk_buff *skb;
 
-	skb=mtcp_next_segment(sk,&reinject);
+	skb = mtcp_next_segment(sk,&reinject);
 	BUG_ON(!skb);
 
 	while (reinject && !after(TCP_SKB_CB(skb)->end_data_seq,
 				  tp->snd_una)) {
-		/*another copy of the segment already reached
-		  the peer, just discard this one.*/
+		/* another copy of the segment already reached
+		 * the peer, just discard this one.
+		 */
 		skb_unlink(skb,&tp->mpcb->reinject_queue);
 		kfree_skb(skb);
-		skb=mtcp_next_segment(sk,&reinject);
+		skb = mtcp_next_segment(sk, &reinject);
 	}
 
 	BUG_ON(!skb);
@@ -2666,9 +2673,9 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 
 	BUG_ON(!skb);
 
-	/*In case of RTO (loss state), we reinject data on another subflow*/
+	/* In case of RTO (loss state), we reinject data on another subflow */
 	if (icsk->icsk_ca_state == TCP_CA_Loss &&
-	    tp->mpc && sk->sk_state==TCP_ESTABLISHED &&
+	    tp->mpc && sk->sk_state == TCP_ESTABLISHED &&
 	    tp->path_index) {
 		mtcp_reinject_data(sk);
 	}
@@ -2924,8 +2931,9 @@ void tcp_send_fin(struct sock *sk)
 		tp->write_seq++;
 	} else {
 		/* Socket is locked, keep trying until memory is available.
-		   Due to the possible call from tcp_write_xmit, we might
-		   be called from interrupt context, hence the following cond.*/
+		 * Due to the possible call from tcp_write_xmit, we might
+		 * be called from interrupt context, hence the following cond.
+		 */
 		if (!in_interrupt())
 			for (;;) {
 				skb = alloc_skb_fclone(MAX_TCP_HEADER,
@@ -2941,7 +2949,8 @@ void tcp_send_fin(struct sock *sk)
 		/* Reserve space for headers and prepare control bits. */
 		skb_reserve(skb, MAX_TCP_HEADER);
 		/* FIN eats a sequence byte, write_seq advanced by
-		   tcp_queue_skb(). */
+		 * tcp_queue_skb().
+		 */
 		tcp_init_nondata_skb(skb, tp->write_seq,
 				     TCPHDR_ACK | TCPHDR_FIN);
 		tcp_queue_skb(sk, skb);

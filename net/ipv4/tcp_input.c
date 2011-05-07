@@ -4705,16 +4705,14 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 			}
 
 			return 0;
-		}
-		else if (!sk_rmem_schedule(sk,size)) {
+		} else if (!sk_rmem_schedule(sk, size)) {
 			printk(KERN_ERR "impossible to alloc memory\n");
 		}
 		if (atomic_read(&meta_sk->sk_rmem_alloc) <= meta_sk->sk_rcvbuf
 		    && sk_rmem_schedule(sk,size)) {
 			return 0;
 		}
-	}
-	else if (atomic_read(&sk->sk_rmem_alloc) <= sk->sk_rcvbuf &&
+	} else if (atomic_read(&sk->sk_rmem_alloc) <= sk->sk_rcvbuf &&
 		 sk_rmem_schedule(sk, size))
 		return 0;
 
@@ -5754,7 +5752,7 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	else
 		meta_tp = tp;
 
-	tcpprobe_rcv_established(sk,skb,th,len);
+	tcpprobe_rcv_established(sk, skb, th, len);
 
 	/*
 	 *	Header prediction.
@@ -5772,8 +5770,9 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	 */
 
 	tp->rx_opt.saw_tstamp = 0;
-	/*sbarre: force slowpath at the moment. Will carefully check
-	  fast path for mptcp later.*/
+	/* sbarre: force slowpath at the moment. Will carefully check
+	 * fast path for mptcp later.
+	 */
 	goto slow_path;
 
 	/*	pred_flags is 0xS?10 << 16 + snd_wnd

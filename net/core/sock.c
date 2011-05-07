@@ -1040,9 +1040,9 @@ void sk_prot_clear_portaddr_nulls(struct sock *sk, int size)
 }
 EXPORT_SYMBOL(sk_prot_clear_portaddr_nulls);
 /*Code inspired from sk_clone()*/
-void mtcp_inherit_sk(struct sock *sk,struct sock *newsk) 
+void mtcp_inherit_sk(struct sock *sk,struct sock *newsk)
 {
-	struct sk_filter *filter;		
+	struct sk_filter *filter;
 #ifdef CONFIG_SECURITY_NETWORK
 	void *sptr;
 	security_sk_alloc(newsk,sk->sk_family,GFP_KERNEL);
@@ -1055,7 +1055,7 @@ void mtcp_inherit_sk(struct sock *sk,struct sock *newsk)
 	newsk->sk_security = sptr;
 	security_sk_clone(sk, newsk);
 #endif
-	
+
 	/* SANITY */
 	get_net(sock_net(newsk));
 	sk_node_init(&newsk->sk_node);
@@ -1081,20 +1081,20 @@ void mtcp_inherit_sk(struct sock *sk,struct sock *newsk)
 	lockdep_set_class_and_name(&newsk->sk_callback_lock,
 				   af_callback_keys + newsk->sk_family,
 				   af_family_clock_key_strings[newsk->sk_family]);
-	
+
 	newsk->sk_dst_cache	= NULL;
 	newsk->sk_wmem_queued	= 0;
 	newsk->sk_forward_alloc = 0;
 	newsk->sk_send_head	= NULL;
 	newsk->sk_userlocks	= sk->sk_userlocks & ~SOCK_BINDPORT_LOCK;
-	
+
 	sock_reset_flag(newsk, SOCK_DONE);
 	skb_queue_head_init(&newsk->sk_error_queue);
-	
+
 	filter = newsk->sk_filter;
 	if (filter != NULL)
 		sk_filter_charge(newsk, filter);
-		
+
 	newsk->sk_err	   = 0;
 	newsk->sk_priority = 0;
 	/*
@@ -1103,7 +1103,7 @@ void mtcp_inherit_sk(struct sock *sk,struct sock *newsk)
 	 */
 	smp_wmb();
 	atomic_set(&newsk->sk_refcnt, 2);
-	
+
 	/*
 	 * Increment the counter in the same struct proto as the master
 	 * sock (sk_refcnt_debug_inc uses newsk->sk_prot->socks, that
@@ -1584,7 +1584,7 @@ struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 				 sk->sk_protocol == IPPROTO_MTCPSUB) &&
 				tcp_sk(sk)->mpcb)?
 		(struct sock*)tcp_sk(sk)->mpcb:
-		sk;			      
+		sk;
 	struct sk_buff *skb;
 	gfp_t gfp_mask;
 	long timeo;
@@ -1703,7 +1703,8 @@ static void __release_sock(struct sock *sk, struct sock *meta_sk)
 	do {
 		sk->sk_backlog.head = sk->sk_backlog.tail = NULL;
 		bh_unlock_sock(sk);
-		if (meta_sk) bh_unlock_sock(meta_sk);
+		if (meta_sk)
+			bh_unlock_sock(meta_sk);
 
 		do {
 			struct sk_buff *next = skb->next;
@@ -2141,9 +2142,7 @@ EXPORT_SYMBOL(lock_sock_nested);
 
 void release_sock(struct sock *sk)
 {
-	/*
-	 * The sk_lock has mutex_unlock() semantics:
-	 */
+	/* The sk_lock has mutex_unlock() semantics: */
 	mutex_release(&sk->sk_lock.dep_map, 1, _RET_IP_);
 
 	spin_lock_bh(&sk->sk_lock.slock);
@@ -2152,32 +2151,35 @@ void release_sock(struct sock *sk)
 	if (is_meta_sk(sk)) {
 		struct sock *sk_it;
 		struct tcp_sock *tp_it;
-		/*We need to do the following, because as far
-		  as the meta-socket is locked, every received segment is
-		  put into the backlog queue.*/
+		/* We need to do the following, because as far
+		 * as the meta-socket is locked, every received segment is
+		 * put into the backlog queue.
+		 */
 		do {
 			mtcp_for_each_sk((struct multipath_pcb *)sk,sk_it,
 					 tp_it) {
-				/*We do not use _bh here, since bh is already
-				  disabled by the previous spin_lock_bh*/
+				/* We do not use _bh here, since bh is already
+				 * disabled by the previous spin_lock_bh
+				 */
 				spin_lock(&sk_it->sk_lock.slock);
 				if (sk_it->sk_backlog.tail)
-					__release_sock(sk_it,sk);
+					__release_sock(sk_it, sk);
 				spin_unlock(&sk_it->sk_lock.slock);
 			}
 		}
 		while (mtcp_test_any_sk((struct multipath_pcb*)sk,sk_it,
 					sk_it->sk_backlog.head));
-		/*The while above is needed because, during we eat the content
-		  of the backlog for one subflow, the backlog for another one 
-		  can receive segments*/
+		/* The while above is needed because, during we eat the content
+		 * of the backlog for one subflow, the backlog for another one
+		 * can receive segments
+		 */
 	}
 	sk->sk_lock.owned = 0;
 	if (waitqueue_active(&sk->sk_lock.wq))
 		wake_up(&sk->sk_lock.wq);
 	spin_unlock_bh(&sk->sk_lock.slock);
 
-	if ((sk->sk_protocol==IPPROTO_TCP || sk->sk_protocol==IPPROTO_MTCPSUB)
+	if ((sk->sk_protocol == IPPROTO_TCP || sk->sk_protocol == IPPROTO_MTCPSUB)
 	    && tcp_sk(sk)->push_frames) {
 		mtcp_push_frames(sk);
 	}
@@ -2580,7 +2582,7 @@ void sk_wake_async(struct sock *sk, int how, int band)
 				 sk->sk_protocol==IPPROTO_MTCPSUB) &&
 				tcp_sk(sk)->mpcb)?
 		(struct sock*)tcp_sk(sk)->mpcb:
-		sk;	      
+		sk;
 	if (sock_flag(sk, SOCK_FASYNC))
 		sock_wake_async(meta_sk->sk_socket, how, band);
 }
