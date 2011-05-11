@@ -2178,11 +2178,6 @@ void release_sock(struct sock *sk)
 	if (waitqueue_active(&sk->sk_lock.wq))
 		wake_up(&sk->sk_lock.wq);
 	spin_unlock_bh(&sk->sk_lock.slock);
-
-	if ((sk->sk_protocol == IPPROTO_TCP || sk->sk_protocol == IPPROTO_MTCPSUB)
-	    && tcp_sk(sk)->push_frames) {
-		mtcp_push_frames(sk);
-	}
 }
 EXPORT_SYMBOL(release_sock);
 

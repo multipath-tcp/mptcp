@@ -455,7 +455,6 @@ void mtcp_update_sndbuf(struct multipath_pcb *mpcb);
 void mtcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end);
 int mtcpv6_init(void);
 void mtcp_data_ready(struct sock *sk);
-void mtcp_push_frames(struct sock *sk);
 int mtcp_v4_add_raddress(struct multipath_options *mopt, struct in_addr *addr,
 		u8 id);
 

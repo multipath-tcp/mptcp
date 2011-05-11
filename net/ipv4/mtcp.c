@@ -1711,19 +1711,6 @@ void mtcp_update_sndbuf(struct multipath_pcb *mpcb) {
 
 extern void tcp_check_space(struct sock *sk);
 
-void mtcp_push_frames(struct sock *sk) {
-	struct tcp_sock *tp = tcp_sk(sk);
-
-	tp->push_frames = 0;
-	lock_sock(sk);
-	tcp_push_pending_frames(sk);
-	tcp_check_space(sk);
-	/* Note release sock can call us again, which is correct because
-	 * it would mean that we received new acks while we were pushing.
-	 */
-	release_sock(sk);
-}
-
 #ifdef DEBUG_WQUEUES
 void verif_wqueues(struct multipath_pcb *mpcb)
 {
