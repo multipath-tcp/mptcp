@@ -27,10 +27,10 @@
 #define hash_tk(token) \
 	jhash_1word(token,0)%MTCP_HASH_SIZE
 
-
-/*This couple of extern functions should be replaced ASAP
-  with more modular things, because they become quickly a
-  nightmare when we want to upgrade to recent kernel versions.*/
+/* This couple of extern functions should be replaced ASAP
+ * with more modular things, because they become quickly a
+ * nightmare when we want to upgrade to recent kernel versions.
+ */
 extern struct ip_options *tcp_v4_save_options(struct sock *sk,
 					      struct sk_buff *skb);
 extern void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags);
@@ -38,46 +38,48 @@ extern void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			      struct tcp_out_options *opts);
 extern void tcp_v4_send_ack(struct sk_buff *skb, u32 seq, u32 ack,
 			    u32 win, u32 ts, int oif,
-			    struct tcp_md5sig_key *key,
-			    int reply_flags);
+			    struct tcp_md5sig_key *key, int reply_flags);
 extern void __tcp_v4_send_check(struct sk_buff *skb,
 				__be32 saddr, __be32 daddr);
-
 
 static struct list_head tk_hashtable[MTCP_HASH_SIZE];
 static rwlock_t tk_hash_lock; /* hashtable protection */
 
-/*This second hashtable is needed to retrieve request socks
-  created as a result of a join request. While the SYN contains
-  the token, the final ack does not, so we need a separate hashtable
-  to retrieve the mpcb.*/
+/* This second hashtable is needed to retrieve request socks
+ * created as a result of a join request. While the SYN contains
+ * the token, the final ack does not, so we need a separate hashtable
+ * to retrieve the mpcb.
+ */
 static struct list_head tuple_hashtable[MTCP_HASH_SIZE];
-static spinlock_t tuple_hash_lock; /*hashtable protection*/
+static spinlock_t tuple_hash_lock;	/* hashtable protection */
 
 /* consumer of interface UP/DOWN events */
-static int mtcp_pm_inetaddr_event(struct notifier_block *this, unsigned long event, void *ptr);
+static int mtcp_pm_inetaddr_event(struct notifier_block *this, 
+				unsigned long event, void *ptr);
 static struct notifier_block mtcp_pm_inetaddr_notifier = {
         .notifier_call = mtcp_pm_inetaddr_event,
 };
 
-void mtcp_hash_insert(struct multipath_pcb *mpcb,u32 token)
+void mtcp_hash_insert(struct multipath_pcb *mpcb, u32 token)
 {
-	int hash=hash_tk(token);
+	int hash = hash_tk(token);
 
 	mtcp_debug("%s: add mpcb to hash-table with loc_token %d\n",
-			__FUNCTION__, mpcb->tp.mtcp_loc_token);
+		   __FUNCTION__, mpcb->tp.mtcp_loc_token);
 
 	write_lock_bh(&tk_hash_lock);
-	list_add(&mpcb->collide_tk,&tk_hashtable[hash]);
+	list_add(&mpcb->collide_tk, &tk_hashtable[hash]);
 	write_unlock_bh(&tk_hash_lock);
 }
 
-/*This function increments the refcount of the mpcb struct.
-  It is the responsibility of the caller to decrement when releasing
-  the structure.*/
-struct multipath_pcb* mtcp_hash_find(u32 token)
+/**
+ * This function increments the refcount of the mpcb struct.
+ * It is the responsibility of the caller to decrement when releasing
+ * the structure.
+ */
+struct multipath_pcb *mtcp_hash_find(u32 token)
 {
-	int hash=hash_tk(token);
+	int hash = hash_tk(token);
 	struct multipath_pcb *mpcb;
 
 	read_lock(&tk_hash_lock);

@@ -50,18 +50,21 @@ void print_debug_array(void)
 	printk(KERN_ERR "debug array, path index 1:\n");
 	for (i = 0; i < 1000 && mtcp_debug_array1[i-1].end == 0; i++) {
 		printk(KERN_ERR "\t%s:skb %x, len %d\n",
-				mtcp_debug_array1[i].func_name,
-				mtcp_debug_array1[i].seq,
-				mtcp_debug_array1[i].len);
+			mtcp_debug_array1[i].func_name,
+			mtcp_debug_array1[i].seq,
+			mtcp_debug_array1[i].len);
 	}
 	printk(KERN_ERR "debug array, path index 2:\n");
+
 	for (i = 0; i < 1000 && mtcp_debug_array2[i-1].end == 0; i++) {
 		printk(KERN_ERR "\t%s:skb %x, len %d\n",
-				mtcp_debug_array2[i].func_name,
-				mtcp_debug_array2[i].seq,
-				mtcp_debug_array2[i].len);
+			mtcp_debug_array2[i].func_name,
+			mtcp_debug_array2[i].seq,
+			mtcp_debug_array2[i].len);
 	}
 }
+
+
 
 void freeze_rcv_queue(struct sock *sk, const char *func_name)
 {
@@ -391,7 +394,7 @@ struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
 
 	/* Init the accept_queue structure, we support a queue of 4 pending
 	 * connections, it does not need to be huge, since we only store
-	 * here pending subflow creations
+	 * here pending subflow creations.
 	 */
 	reqsk_queue_alloc(&meta_icsk->icsk_accept_queue, 32, flags);
 	/* Pi 1 is reserved for the master subflow */
@@ -473,7 +476,7 @@ void mtcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 	/* first subflow */
 	if (!tp->path_index)
 		tp->path_index = 1;
-
+	
 	/* Adding new node to head of connection_list */
 	mutex_lock(&mpcb->mutex); /* To protect against concurrency with
 	 	 		     mtcp_recvmsg and mtcp_sendmsg */
@@ -490,11 +493,13 @@ void mtcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 
 	mpcb->cnt_subflows++;
 	mtcp_update_window_clamp(mpcb);
-	atomic_add( atomic_read(&((struct sock *)tp)->sk_rmem_alloc),
-			&meta_sk->sk_rmem_alloc);
+	atomic_add(
+		atomic_read(&((struct sock *)tp)->sk_rmem_alloc),
+		&meta_sk->sk_rmem_alloc);
 
 	/* The socket is already established if it was in the
-	   accept queue of the mpcb */
+	 * accept queue of the mpcb
+	 */
 	if (((struct sock*) tp)->sk_state == TCP_ESTABLISHED) {
 		mpcb->cnt_established++;
 		mtcp_update_sndbuf(mpcb);
@@ -506,11 +511,12 @@ void mtcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 	mpcb_get(mpcb);
 
 	/* Empty the receive queue of the added new subsocket
-	   we do it with bh disabled, because before the mpcb is attached,
-	   all segs are received in subflow queue,and after the mpcb is
-	   attached, all segs are received in meta-queue. So moving segments
-	   from subflow to meta-queue must be done atomically with the
-	   setting of tp->mpcb. */
+	 * we do it with bh disabled, because before the mpcb is attached,
+	 * all segs are received in subflow queue,and after the mpcb is
+	 * attached, all segs are received in meta-queue. So moving segments
+	 * from subflow to meta-queue must be done atomically with the
+	 * setting of tp->mpcb.
+	 */
 	if (tp->mpc)
 		while ((skb = skb_peek(&sk->sk_receive_queue))) {
 			__skb_unlink(skb, &sk->sk_receive_queue);
@@ -521,12 +527,13 @@ void mtcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 	mutex_unlock(&mpcb->mutex);
 
 	mtcp_debug("%s: token %d pi %d, src_addr:%pI4:%d dst_addr:%pI4:%d,"
-			" cnt_subflows now %d\n", __FUNCTION__ , loc_token(mpcb),
-			tp->path_index, &((struct inet_sock *) tp)->inet_saddr,
-			ntohs(((struct inet_sock *) tp)->inet_sport),
-			&((struct inet_sock *) tp)->inet_daddr,
-			ntohs(((struct inet_sock *) tp)->inet_dport),
-			mpcb->cnt_subflows);
+			" cnt_subflows now %d\n", __FUNCTION__ ,
+		   loc_token(mpcb),
+		   tp->path_index, &((struct inet_sock *) tp)->inet_saddr,
+		   ntohs(((struct inet_sock *) tp)->inet_sport),
+		   &((struct inet_sock *) tp)->inet_daddr,
+		   ntohs(((struct inet_sock *) tp)->inet_dport),
+		   mpcb->cnt_subflows);
 }
 
 void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
@@ -1140,7 +1147,8 @@ int mtcp_queue_skb(struct sock *sk, struct sk_buff *skb) {
 	if (!tp->mpc || !mpcb) {
 		/* skb_set_owner_r may already have been called by
 		 * tcp_data_queue when the skb has been added to the ofo-queue,
-		 * and we are coming from tcp_ofo_queue */
+		 * and we are coming from tcp_ofo_queue
+		 */
                 if (skb->sk != sk)
                         skb_set_owner_r(skb, sk);
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
@@ -1160,14 +1168,16 @@ int mtcp_queue_skb(struct sock *sk, struct sk_buff *skb) {
 
 	if (!skb->len && tcp_hdr(skb)->fin && !tp->rx_opt.saw_dfin) {
 		/* Pure subflow FIN (without DFIN)
-		   just update subflow and return */
+		 * just update subflow and return
+		 */
 		++tp->copied_seq;
 		ans = MTCP_EATEN;
 		goto out;
 	}
 
 	/* In all cases, we remove it from the subsock, so copied_seq
-	   must be advanced */
+	 * must be advanced
+	 */
 	tp->copied_seq = TCP_SKB_CB(skb)->end_seq + fin;
 	tcp_rcv_space_adjust(sk);
 
@@ -1179,18 +1189,19 @@ int mtcp_queue_skb(struct sock *sk, struct sk_buff *skb) {
 	/* Is this a duplicate segment? */
 	if (!before(meta_tp->rcv_nxt, TCP_SKB_CB(skb)->end_data_seq)) {
 		/* Duplicate segment. We can arrive here only if a segment
-		   has been retransmitted by the sender on another subflow.
-		   Retransmissions on the same subflow are handled at the
-		   subflow level. */
+		 * has been retransmitted by the sender on another subflow.
+		 * Retransmissions on the same subflow are handled at the
+		 * subflow level.
+		 */
 
 		/* We do not read the skb, since it was already received on
-		   another subflow */
+		 * another subflow.
+		 */
 		ans = MTCP_EATEN;
 		goto out;
 	}
 
 	if (before(meta_tp->rcv_nxt, TCP_SKB_CB(skb)->data_seq)) {
-
 		if (!skb_peek(&meta_tp->out_of_order_queue)) {
 			/* Initial out of order segment */
 			__skb_queue_head(&meta_tp->out_of_order_queue, skb);
@@ -1204,38 +1215,42 @@ int mtcp_queue_skb(struct sock *sk, struct sk_buff *skb) {
 						TCP_SKB_CB(skb)->data_seq))
 					break;
 			} while ((skb1 = skb1->prev)
-					!= (struct sk_buff *) &meta_tp->out_of_order_queue);
-
+				!= (struct sk_buff *) 
+				&meta_tp->out_of_order_queue);
+			
 			/* Do skb overlap to previous one? */
-			if (skb1
-					!= (struct sk_buff *) &meta_tp->out_of_order_queue
-					&& before(TCP_SKB_CB(skb)->data_seq,
-						  TCP_SKB_CB(skb1)->end_data_seq)) {
+			if (skb1 != (struct sk_buff *) 
+				&meta_tp->out_of_order_queue
+				&& before(TCP_SKB_CB(skb)->data_seq,
+					TCP_SKB_CB(skb1)->end_data_seq)) {
 				if (!after(TCP_SKB_CB(skb)->end_data_seq,
-						TCP_SKB_CB(skb1)->end_data_seq)) {
+						TCP_SKB_CB(skb1)->
+						end_data_seq)) {
 					/* All the bits are present. Drop. */
 					/* We do not read the skb, since it was
-					   already received on
-					   another subflow */
+					 * already received on
+					 * another subflow
+					 */
 					ans = MTCP_EATEN;
 					goto out;
 				}
 				if (!after(TCP_SKB_CB(skb)->data_seq,
 						TCP_SKB_CB(skb1)->data_seq)) {
 					/* skb and skb1 have the same starting
-					   point, but skb terminates after skb1 */
+					 * point, but skb terminates after skb1
+					 */
 					printk(KERN_ERR "skb->data_seq:%x,"
-							"skb->end_data_seq:%x,"
-							"skb1->data_seq:%x,"
-							"skb1->end_data_seq:%x,"
-							"skb->seq:%x,"
-							"skb1->seq:%x""\n",
-							TCP_SKB_CB(skb)->data_seq,
-							TCP_SKB_CB(skb)->end_data_seq,
-							TCP_SKB_CB(skb1)->data_seq,
-							TCP_SKB_CB(skb1)->end_data_seq,
-							TCP_SKB_CB(skb)->seq,
-							TCP_SKB_CB(skb1)->seq);
+						"skb->end_data_seq:%x,"
+						"skb1->data_seq:%x,"
+						"skb1->end_data_seq:%x,"
+						"skb->seq:%x,"
+						"skb1->seq:%x""\n",
+						TCP_SKB_CB(skb)->data_seq,
+						TCP_SKB_CB(skb)->end_data_seq,
+						TCP_SKB_CB(skb1)->data_seq,
+						TCP_SKB_CB(skb1)->end_data_seq,
+						TCP_SKB_CB(skb)->seq,
+						TCP_SKB_CB(skb1)->seq);
 					BUG();
 					skb1 = skb1->prev;
 				}
@@ -1244,15 +1259,16 @@ int mtcp_queue_skb(struct sock *sk, struct sk_buff *skb) {
 					&meta_tp->out_of_order_queue);
 			/* And clean segments covered by new one as whole. */
 			while ((skb1 = skb->next)
-					!= (struct sk_buff *) &meta_tp->out_of_order_queue
-					&& after(TCP_SKB_CB(skb)->end_data_seq,
-							TCP_SKB_CB(skb1)->data_seq)) {
-				if (!before(
-						TCP_SKB_CB(skb)->end_data_seq,
-						TCP_SKB_CB(skb1)->end_data_seq)) {
+				!= (struct sk_buff *)
+				&meta_tp->out_of_order_queue
+				&& after(TCP_SKB_CB(skb)->end_data_seq,
+					TCP_SKB_CB(skb1)->data_seq)) {
+				if (!before(TCP_SKB_CB(skb)->end_data_seq,
+						TCP_SKB_CB(skb1)->
+						end_data_seq)) {
 					skb_unlink(
-							skb1,
-							&meta_tp-> out_of_order_queue);
+						skb1,
+						&meta_tp->out_of_order_queue);
 					__kfree_skb(skb1);
 				} else
 					break;
@@ -1263,10 +1279,10 @@ int mtcp_queue_skb(struct sock *sk, struct sk_buff *skb) {
 	} else {
 		__skb_queue_tail(&meta_sk->sk_receive_queue, skb);
 		meta_tp->rcv_nxt = TCP_SKB_CB(skb)->end_data_seq;
-
+		
 		if (fin)
 			mtcp_fin(skb, mpcb);
-
+		
 		/* Check if this fills a gap in the ofo queue */
 		if (!skb_queue_empty(&meta_tp->out_of_order_queue))
 			mtcp_ofo_queue(mpcb);
@@ -1932,8 +1948,9 @@ void mtcp_close(struct sock *master_sk, long timeout) {
 	else if (meta_tp->snd_nxt == meta_tp->write_seq) {
 		struct sock *sk_it, *sk_tmp;
 		/* The FIN has been sent already, we need to
-		   call tcp_close() on the subsocks
-		   ourselves. */
+		 * call tcp_close() on the subsocks
+		 * ourselves.
+		 */
 		mtcp_for_each_sk_safe(mpcb,sk_it,sk_tmp)
 			tcp_close(sk_it, timeout);
 	}
@@ -1945,8 +1962,9 @@ void mtcp_close(struct sock *master_sk, long timeout) {
 	percpu_counter_inc(meta_sk->sk_prot->orphan_count);
 
 	mtcp_for_each_sk(mpcb,subsk,subtp) {
-		/*The socket may have been orphaned by the tcp_close()
-		  above, in that case SOCK_DEAD is set already*/
+		/* The socket may have been orphaned by the tcp_close()
+		 * above, in that case SOCK_DEAD is set already
+		 */
 		if (!sock_flag(subsk, SOCK_DEAD)) {
 			sock_orphan(subsk);
 			percpu_counter_inc(subsk->sk_prot->orphan_count);
