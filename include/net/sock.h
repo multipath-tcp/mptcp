@@ -258,7 +258,6 @@ struct sock {
 #define sk_net			__sk_common.skc_net
 	socket_lock_t		sk_lock;
 	struct sk_buff_head	sk_receive_queue;
-	char                    sk_func[30]; /*TODEL*/
 	char                    sk_in_write_xmit; /*TODEL*/
 
 	/*
@@ -1062,17 +1061,10 @@ static inline void lock_sock(struct sock *sk)
 extern void release_sock(struct sock *sk);
 
 /* BH context may only use the following locking interface. */
-#define bh_lock_sock(__sk)	do {				\
-		sprintf((__sk)->sk_func,"%s",__FUNCTION__);	\
-		spin_lock(&((__sk)->sk_lock.slock));		\
-	} while(0)						\
-
-
-#define bh_lock_sock_nested(__sk) do {					\
-		sprintf((__sk)->sk_func,"%s",__FUNCTION__);		\
-		spin_lock_nested(&((__sk)->sk_lock.slock),		\
-				 SINGLE_DEPTH_NESTING);			\
-	} while(0)
+#define bh_lock_sock(__sk)   spin_lock(&((__sk)->sk_lock.slock))
+#define bh_lock_sock_nested(__sk)					\
+	spin_lock_nested(&((__sk)->sk_lock.slock),			\
+			SINGLE_DEPTH_NESTING)
 #define bh_unlock_sock(__sk)	spin_unlock(&((__sk)->sk_lock.slock))
 
 extern bool lock_sock_fast(struct sock *sk);
