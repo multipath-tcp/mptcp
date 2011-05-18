@@ -327,7 +327,6 @@ static u16 tcp_select_window(struct sock *sk)
 	if (new_win == 0)
 		tp->pred_flags = 0;
 
-	sk->sk_debug=0;
 	return new_win;
 }
 
@@ -885,7 +884,8 @@ static unsigned tcp_synack_options(struct sock *sk,
  * final wire format yet.
  *
  * If skb is NULL, then we are evaluating the MSS, thus, we take into account
- * ALL potential options. */
+ * ALL potential options.
+ */
 static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 					struct tcp_out_options *opts,
 					struct tcp_md5sig_key **md5) {

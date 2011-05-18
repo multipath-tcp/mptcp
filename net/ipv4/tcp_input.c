@@ -4648,7 +4648,8 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 	if (tp->mpc && tp->mpcb) {
 		struct tcp_sock *meta_tp = &tp->mpcb->tp;
 		struct sock *meta_sk = (struct sock *) meta_tp;
-		if (atomic_read(&meta_sk->sk_rmem_alloc) >  meta_sk->sk_rcvbuf) {
+		if (atomic_read(&meta_sk->sk_rmem_alloc) >
+			meta_sk->sk_rcvbuf) {
 			tcpprobe_logmsg(meta_sk, "PROBLEM NOW");
 			mtcp_debug("%s: not enough rcvbuf: mpcb rcvbuf:%d,"
 					"rmem_alloc:%d\n", __FUNCTION__,
@@ -4662,46 +4663,56 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 			mtcp_for_each_sk(tp->mpcb, sk, tp) {
 				if (sk->sk_state != TCP_ESTABLISHED)
 					continue;
-				mtcp_debug("%s: pi:%d, rcvbuf:%d, rmem_alloc:%d\n",
-						__FUNCTION__, tp->path_index,
-						sk->sk_rcvbuf, atomic_read(&sk->sk_rmem_alloc));
-				mtcp_debug("%s: used mss for wnd computation:%d\n",
-						__FUNCTION__, inet_csk(sk)->icsk_ack.rcv_mss);
-				mtcp_debug("%s: --- receive-queue:\n", __FUNCTION__);
+				mtcp_debug("%s: pi:%d, rcvbuf:%d, "
+					"rmem_alloc:%d\n",
+					__FUNCTION__, tp->path_index,
+					sk->sk_rcvbuf,
+					atomic_read(&sk->sk_rmem_alloc));
+				mtcp_debug("%s: used mss for wnd "
+					"computation:%d\n",
+					__FUNCTION__,
+					inet_csk(sk)->icsk_ack.rcv_mss);
+				mtcp_debug("%s: --- receive-queue:\n",
+					__FUNCTION__);
 				skb_queue_walk(&sk->sk_receive_queue, skb) {
-					mtcp_debug("%s: dsn:%#x, skb->len:%d, truesize:%d, "
-					       "prop:%d /1000\n", __FUNCTION__,
-					       TCP_SKB_CB(skb)->data_seq,
-					       skb->len, skb->truesize,
-					       skb->len * 1000 / skb->truesize);
+					mtcp_debug("%s: dsn:%#x, skb->len:%d,"
+						"truesize:%d, "
+						"prop:%d /1000\n", __FUNCTION__,
+						TCP_SKB_CB(skb)->data_seq,
+						skb->len, skb->truesize,
+						skb->len * 1000 /
+						skb->truesize);
 				}
-				mtcp_debug("%s: --- ofo-queue:\n", __FUNCTION__);
+				mtcp_debug("%s: --- ofo-queue:\n",
+					__FUNCTION__);
 				skb_queue_walk(&tp->out_of_order_queue, skb) {
 					mtcp_debug("%s: dsn:%#x, "
-					       "skb->len:%d, truesize:%d, "
-					       "prop:%d /1000\n", __FUNCTION__,
-					       TCP_SKB_CB(skb)->data_seq,
-					       skb->len, skb->truesize,
-					       skb->len * 1000 / skb->truesize);
+						"skb->len:%d, truesize:%d, "
+						"prop:%d /1000\n", __FUNCTION__,
+						TCP_SKB_CB(skb)->data_seq,
+						skb->len, skb->truesize,
+						skb->len * 1000 /
+						skb->truesize);
 				}
 			}
-			mtcp_debug("%s: --- meta-receive queue:\n", __FUNCTION__);
+			mtcp_debug("%s: --- meta-receive queue:\n",
+				__FUNCTION__);
 			skb_queue_walk(&meta_sk->sk_receive_queue, skb) {
 				mtcp_debug("%s: dsn:%#x, "
-				       "skb->len:%d, truesize:%d, "
-				       "prop:%d /1000\n", __FUNCTION__,
-				       TCP_SKB_CB(skb)->data_seq,
-				       skb->len, skb->truesize,
-				       skb->len * 1000 / skb->truesize);
+					"skb->len:%d, truesize:%d, "
+					"prop:%d /1000\n", __FUNCTION__,
+					TCP_SKB_CB(skb)->data_seq,
+					skb->len, skb->truesize,
+					skb->len * 1000 / skb->truesize);
 			}
 			mtcp_debug("%s: --- meta-ofo queue:\n", __FUNCTION__);
 			skb_queue_walk(&meta_tp->out_of_order_queue, skb) {
 				mtcp_debug("%s: dsn:%#x, "
-				       "skb->len:%d,truesize:%d,"
-				       "prop:%d /1000\n", __FUNCTION__,
-				       TCP_SKB_CB(skb)->data_seq,
-				       skb->len, skb->truesize,
-				       skb->len * 1000 / skb->truesize);
+					"skb->len:%d,truesize:%d,"
+					"prop:%d /1000\n", __FUNCTION__,
+					TCP_SKB_CB(skb)->data_seq,
+					skb->len, skb->truesize,
+					skb->len * 1000 / skb->truesize);
 			}
 
 			return 0;
@@ -5300,10 +5311,11 @@ static int tcp_should_expand_sndbuf(struct sock *sk, struct sock *mpcb_sk)
 		return 0;
 
 	/* If we filled the congestion window, do not expand.
-	   MPTCP note: at the moment, we do not take this case into account.
-	   In the future, if we want to do so, we'll need to maintain
-	   packet_out counter at the mpcb_tp level, as well as maintain a
-	   mpcb_tp->snd_cwnd=sum(sub_tp->snd_cwnd)*/
+	 * MPTCP note: at the moment, we do not take this case into account.
+	 * In the future, if we want to do so, we'll need to maintain
+	 * packet_out counter at the mpcb_tp level, as well as maintain a
+	 * mpcb_tp->snd_cwnd=sum(sub_tp->snd_cwnd)
+	 */
 	if (!tp->mpc && tp->packets_out >= tp->snd_cwnd)
 		return 0;
 
@@ -5536,7 +5548,7 @@ static void tcp_urg(struct sock *sk, struct sk_buff *skb, struct tcphdr *th)
 			  th->syn;
 
 		/* Not supported yet */
-		if (tp->mpc) BUG();
+		BUG_ON(tp->mpc);
 		/* Is the urgent pointer pointing into this packet? */
 		if (ptr < skb->len) {
 			u8 tmp;

@@ -258,9 +258,9 @@ struct sock {
 #define sk_net			__sk_common.skc_net
 	socket_lock_t		sk_lock;
 	struct sk_buff_head	sk_receive_queue;
-	int                     sk_debug; /*TODEL*/
 	char                    sk_func[30]; /*TODEL*/
-	int                     sk_in_write_xmit; /*TODEL*/
+	char                    sk_in_write_xmit; /*TODEL*/
+
 	/*
 	 * The backlog queue is special, it is always used with
 	 * the per-socket spinlock held and requires low latency
