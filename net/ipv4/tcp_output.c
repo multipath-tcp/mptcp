@@ -956,7 +956,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			size += MPTCP_SUB_LEN_SEQ_ALIGN;
 		}
 
-		if (test_bit(MPCB_FLAG_FIN_ENQUEUED, &mpcb->flags) &&
+		if (mpcb && test_bit(MPCB_FLAG_FIN_ENQUEUED, &mpcb->flags) &&
 			(!skb || tcb->end_data_seq == mpcb->tp.write_seq)) {
 			dss = 1;
 
