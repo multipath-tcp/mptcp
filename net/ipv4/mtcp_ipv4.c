@@ -88,10 +88,11 @@ static int mtcpsub_v4_init_sock(struct sock *sk)
 	return 0;
 }
 
-/*While the metasocket (seen by applications as a normal TCP socket) is
+/* While the metasocket (seen by applications as a normal TCP socket) is
  * dealt with as a TCP socket, we define a specific protocol for MTCP subflows.
  * The new protocol is mostly based on normal TCP functions, and mainly serves
- * for disambiguating whether we are inside a subflow or a metaflow.*/
+ * for disambiguating whether we are inside a subflow or a metaflow.
+ */
 struct proto mtcpsub_prot = {
 	.name			= "MTCPSUB",
 	.owner			= THIS_MODULE,

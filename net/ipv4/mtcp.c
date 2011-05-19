@@ -345,8 +345,9 @@ fail_connect:
 /* Defined in net/core/sock.c */
 void mtcp_inherit_sk(struct sock *sk, struct sock *newsk);
 
-struct multipath_pcb* mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
-	struct multipath_pcb * mpcb = kmalloc(sizeof(struct multipath_pcb), flags);
+struct multipath_pcb *mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
+	struct multipath_pcb *mpcb = kmalloc(sizeof(struct multipath_pcb),
+					     flags);
 	struct tcp_sock *meta_tp = &mpcb->tp;
 	struct sock *meta_sk = (struct sock *) meta_tp;
 	struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
@@ -427,7 +428,7 @@ void mpcb_release(struct kref* kref) {
         /*Must have been destroyed previously*/
 	if (!sock_flag((struct sock*)mpcb, SOCK_DEAD)) {
 		printk(KERN_ERR "Trying to free mpcb without having called "
-		       "mtcp_destroy_mpcb()\n");
+			"mtcp_destroy_mpcb()\n");
 		BUG();
 	}
 
@@ -476,7 +477,7 @@ void mtcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 	/* first subflow */
 	if (!tp->path_index)
 		tp->path_index = 1;
-	
+
 	/* Adding new node to head of connection_list */
 	mutex_lock(&mpcb->mutex); /* To protect against concurrency with
 	 	 		     mtcp_recvmsg and mtcp_sendmsg */
@@ -1215,11 +1216,11 @@ int mtcp_queue_skb(struct sock *sk, struct sk_buff *skb) {
 						TCP_SKB_CB(skb)->data_seq))
 					break;
 			} while ((skb1 = skb1->prev)
-				!= (struct sk_buff *) 
+				!= (struct sk_buff *)
 				&meta_tp->out_of_order_queue);
-			
+
 			/* Do skb overlap to previous one? */
-			if (skb1 != (struct sk_buff *) 
+			if (skb1 != (struct sk_buff *)
 				&meta_tp->out_of_order_queue
 				&& before(TCP_SKB_CB(skb)->data_seq,
 					TCP_SKB_CB(skb1)->end_data_seq)) {
@@ -1279,10 +1280,10 @@ int mtcp_queue_skb(struct sock *sk, struct sk_buff *skb) {
 	} else {
 		__skb_queue_tail(&meta_sk->sk_receive_queue, skb);
 		meta_tp->rcv_nxt = TCP_SKB_CB(skb)->end_data_seq;
-		
+
 		if (fin)
 			mtcp_fin(skb, mpcb);
-		
+
 		/* Check if this fills a gap in the ofo queue */
 		if (!skb_queue_empty(&meta_tp->out_of_order_queue))
 			mtcp_ofo_queue(mpcb);
