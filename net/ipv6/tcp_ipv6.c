@@ -1776,11 +1776,8 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 	 * socket.
 	 */
 
-	/* Is there a pending request sock for this segment ? */
-	if (mtcp_syn_recv_sock(skb)) return 0;
-
 	/* Is this a new syn+join ? */
-	if (th->syn) {
+	if (th->syn && !th->ack) {
 		switch(mtcp_lookup_join(skb)) {
 			/* The specified token can't be found
 			 * Send a reset and discard the packet.
@@ -1798,6 +1795,15 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 #endif /* CONFIG_MTCP */
 
 	sk = __inet6_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
+
+#ifdef CONFIG_MTCP
+	/* Is there a pending request sock for this segment ? */
+	if ((!sk || sk->sk_state == TCP_LISTEN) && mtcp_syn_recv_sock(skb))
+		if (sk)
+			sock_put(sk);
+		return 0;
+#endif
+
 	if (!sk)
 		goto no_tcp_socket;
 
