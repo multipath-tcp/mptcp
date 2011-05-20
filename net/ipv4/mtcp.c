@@ -348,7 +348,7 @@ void mtcp_inherit_sk(struct sock *sk, struct sock *newsk);
 struct multipath_pcb *mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
 	struct multipath_pcb *mpcb = kmalloc(sizeof(struct multipath_pcb),
 					     flags);
-	struct tcp_sock *meta_tp = &mpcb->tp;
+	struct tcp_sock *meta_tp = mpcb_meta_tp(mpcb);
 	struct sock *meta_sk = (struct sock *) meta_tp;
 	struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
 
@@ -1658,10 +1658,10 @@ int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb) {
 	   in meta-order if the next expected DSN is contained in the
 	   segment */
 
-	if (!before(mpcb->tp.copied_seq, TCP_SKB_CB(skb)->data_seq) &&
-	     before(mpcb->tp.copied_seq, TCP_SKB_CB(skb)->end_data_seq))
+	if (!before(mpcb_meta_tp(mpcb)->copied_seq, TCP_SKB_CB(skb)->data_seq) &&
+	     before(mpcb_meta_tp(mpcb)->copied_seq, TCP_SKB_CB(skb)->end_data_seq))
 		ans = 1;
-	else if (!before(mpcb->tp.copied_seq, TCP_SKB_CB(skb)->end_data_seq))
+	else if (!before(mpcb_meta_tp(mpcb)->copied_seq, TCP_SKB_CB(skb)->end_data_seq))
 		ans = 2;
 	else
 		ans = 0;

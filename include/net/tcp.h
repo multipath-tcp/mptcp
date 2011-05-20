@@ -979,7 +979,7 @@ static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 
 	/* We work on the meta-tp */
 	if (tp->mpc && mpcb)
-		tp = &mpcb->tp;
+		tp = mpcb_meta_tp(mpcb);
 
 	if (sysctl_tcp_low_latency || !tp->ucopy.task)
 		return 0;

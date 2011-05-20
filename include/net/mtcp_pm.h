@@ -52,7 +52,7 @@ struct path6 {
 };
 
 #define loc_token(mpcb)				\
-	(mpcb->tp.mtcp_loc_token)
+	(((struct tcp_sock *)mpcb)->mtcp_loc_token)
 
 u32 mtcp_new_token(void);
 void mtcp_hash_insert(struct multipath_pcb *mpcb,u32 token);

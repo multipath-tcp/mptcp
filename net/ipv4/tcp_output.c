@@ -930,7 +930,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 
 			opts->data_ack = (tp->pending && is_master_sk(tp))?
 						tp->rcv_nxt - tp->rcv_isn - 1 :
-						mpcb->tp.rcv_nxt;
+						mpcb_meta_tp(mpcb)->rcv_nxt;
 			opts->options |= OPTION_DATA_ACK;
 			size += MPTCP_SUB_LEN_ACK_ALIGN;
 		}
@@ -948,7 +948,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		}
 
 		if (mpcb && test_bit(MPCB_FLAG_FIN_ENQUEUED, &mpcb->flags) &&
-			(!skb || tcb->end_data_seq == mpcb->tp.write_seq)) {
+			(!skb || tcb->end_data_seq == mpcb_meta_tp(mpcb)->write_seq)) {
 			dss = 1;
 
 			opts->options |= OPTION_DATA_FIN;
@@ -1696,9 +1696,9 @@ static inline int tcp_snd_wnd_test(struct tcp_sock *tp, struct sk_buff *skb,
 			   "snd_wnd:%d, mpcb write_seq:%#x, "
 			   "mpcb queue len:%d, cur_mss:%d, skb->len:%d\n",
 			   end_seq, tcp_wnd_end(tp, tp->mpc),
-			   tp->mpc, tp->mpcb->tp.snd_una,
-			   tp->mpcb->tp.snd_wnd, tp->mpcb->tp.write_seq,
-			   ((struct sock *)&tp->mpcb->tp)->sk_write_queue.qlen,
+			   tp->mpc, mpcb_meta_tp(tp->mpcb)->snd_una,
+			   mpcb_meta_tp(tp->mpcb)->snd_wnd, mpcb_meta_tp(tp->mpcb)->write_seq,
+			   ((struct sock *) tp->mpcb)->sk_write_queue.qlen,
 			   cur_mss, skb->len);
 	}
 
@@ -1715,7 +1715,7 @@ static unsigned int tcp_snd_test(struct sock *subsk, struct sk_buff *skb,
 	struct tcp_sock *subtp = tcp_sk(subsk);
 	unsigned int cwnd_quota;
 	struct multipath_pcb *mpcb = subtp->mpcb;
-	struct tcp_sock *mpcb_tp = &mpcb->tp;
+	struct tcp_sock *mpcb_tp= mpcb_meta_tp(mpcb);
 
 	BUG_ON(subtp->mpc && tcp_skb_pcount(skb) > 1);
 	if (!mpcb)
@@ -1912,7 +1912,7 @@ static int tcp_mtu_probe(struct sock *sk)
 	int size_needed;
 	int copy;
 	int mss_now;
-	u32 snd_wnd = (tp->mpc) ? tp->mpcb->tp.snd_wnd : tp->snd_wnd;
+	u32 snd_wnd = (tp->mpc) ? mpcb_meta_tp(tp->mpcb)->snd_wnd : tp->snd_wnd;
 
 	/* Not currently probing/verifying,
 	 * not in recovery,
@@ -2489,7 +2489,7 @@ u32 __tcp_select_window(struct sock * sk)
 	 */
 	mss = icsk->icsk_ack.rcv_mss;
 	free_space = tcp_space(sk);
-	full_space = min_t(int, mpcb->tp.window_clamp, tcp_full_space(sk));
+	full_space = min_t(int, mpcb_meta_tp(mpcb)->window_clamp, tcp_full_space(sk));
 
 	if (mss > full_space)
 		mss = full_space;
@@ -2507,14 +2507,14 @@ u32 __tcp_select_window(struct sock * sk)
 			return 0;
 	}
 
-	if (free_space > mpcb->tp.rcv_ssthresh) {
-		free_space = mpcb->tp.rcv_ssthresh;
+	if (free_space > mpcb_meta_tp(mpcb)->rcv_ssthresh) {
+		free_space = mpcb_meta_tp(mpcb)->rcv_ssthresh;
 	}
 
 	/* Don't do rounding if we are using window scaling, since the
 	 * scaled window will not line up with the MSS boundary anyway.
 	 */
-	window = mpcb->tp.rcv_wnd;
+	window = mpcb_meta_tp(mpcb)->rcv_wnd;
 	if (tp->rx_opt.rcv_wscale) {
 		window = free_space;
 

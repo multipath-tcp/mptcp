@@ -252,9 +252,9 @@ struct mp_add_addr {
 
 #define mpcb_from_tcpsock(tp) ((tp)->mpcb)
 #define is_master_sk(tp) (!(tp)->slave_sk)
-#define is_meta_tp(__tp) ((__tp)->mpcb && &(__tp)->mpcb->tp == __tp)
-#define is_meta_sk(sk) ((tcp_sk(sk))->mpcb &&				\
-			&(tcp_sk(sk))->mpcb->tp == tcp_sk(sk))
+#define is_meta_tp(__tp) ((__tp)->mpcb && (struct tcp_sock *)((__tp)->mpcb) == __tp)
+#define is_meta_sk(sk) ((tcp_sk(sk))->mpcb && 				\
+			(struct tcp_sock *)((tcp_sk(sk))->mpcb) == tcp_sk(sk))
 #define is_dfin_seg(mpcb, skb) (mpcb->received_options.dfin_rcvd &&	\
 			       mpcb->received_options.fin_dsn ==	\
 			       TCP_SKB_CB(skb)->end_data_seq)
@@ -429,6 +429,11 @@ static inline int is_local_addr4(u32 addr)
 out:
 	read_unlock(&dev_base_lock);
 	return ans;
+}
+
+static inline struct tcp_sock *mpcb_meta_tp(const struct multipath_pcb *mpcb)
+{
+	return (struct tcp_sock *)mpcb;
 }
 
 int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,

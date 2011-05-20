@@ -67,7 +67,7 @@ static int tcp_out_of_resources(struct sock *sk, int do_reset)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	int shift = 0;
-	u32 snd_wnd=(tp->mpc && tp->mpcb)?tp->mpcb->tp.snd_wnd:tp->snd_wnd;
+	u32 snd_wnd=(tp->mpc && tp->mpcb)?mpcb_meta_tp(tp->mpcb)->snd_wnd:tp->snd_wnd;
 
 	/* If peer does not open window for long time, or did not transmit
 	 * anything for long time, penalize it. */
@@ -323,7 +323,7 @@ void tcp_retransmit_timer(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
-	u32 snd_wnd=(tp->mpc && tp->mpcb)?tp->mpcb->tp.snd_wnd:tp->snd_wnd;
+	u32 snd_wnd=(tp->mpc && tp->mpcb)?mpcb_meta_tp(tp->mpcb)->snd_wnd:tp->snd_wnd;
 
 	tcpprobe_logmsg(sk,"pi %d, RTO",tp->path_index);
 

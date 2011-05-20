@@ -3601,12 +3601,12 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 	struct tcp_sock *tp = tcp_sk(sk);
 	int flag = 0;
 	u32 nwin = ntohs(tcp_hdr(skb)->window);
-	u32 *snd_wnd = (tp->mpc && tp->mpcb) ? &tp->mpcb->tp.snd_wnd : &tp->snd_wnd;
+	u32 *snd_wnd = (tp->mpc && tp->mpcb) ? &mpcb_meta_tp(tp->mpcb)->snd_wnd : &tp->snd_wnd;
 	struct tcp_sock *meta_tp;
 	u32 data_ack,data_ack_seq;
 
 	if (tp->mpc && tp->mpcb) {
-		meta_tp = &tp->mpcb->tp;
+		meta_tp = mpcb_meta_tp(tp->mpcb);
 		data_ack = TCP_SKB_CB(skb)->data_ack;
 		data_ack_seq = TCP_SKB_CB(skb)->data_seq;
 	}
@@ -3620,7 +3620,7 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 		nwin <<= tp->rx_opt.snd_wscale;
 
 	if (tcp_may_update_window(meta_tp, data_ack, data_ack_seq, nwin)) {
-		u32 *max_window = (tp->mpc && tp->mpcb) ? &tp->mpcb->tp.max_window :
+		u32 *max_window = (tp->mpc && tp->mpcb) ? &mpcb_meta_tp(tp->mpcb)->max_window :
 			&tp->max_window;
 		flag |= FLAG_WIN_UPDATE;
 		tcp_update_wl(meta_tp, data_ack_seq);
@@ -3836,7 +3836,7 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 
 	if (!(flag & FLAG_SLOWPATH) && after(ack, prior_snd_una)) {
 		struct tcp_sock *meta_tp = (tp->mpc && tp->mpcb) ?
-					   &tp->mpcb->tp 	 :
+					   mpcb_meta_tp(tp->mpcb) 	 :
 					   tp;
 		/* Window is constant, pure forward advance.
 		 * No more checks are required.
@@ -4122,8 +4122,8 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 	tcp_parse_options(skb, &tp->rx_opt, hvpp, &mpcb->received_options, 1);
 	if (unlikely(mpcb && tp->rx_opt.saw_mpc && is_master_sk(tp))) {
 		/* Transfer sndwnd control to the mpcb */
-		mpcb->tp.snd_wnd = tp->snd_wnd;
-		mpcb->tp.max_window = tp->max_window;
+		mpcb_meta_tp(mpcb)->snd_wnd = tp->snd_wnd;
+		mpcb_meta_tp(mpcb)->max_window = tp->max_window;
 		tp->mpc = 1;
 		tp->rx_opt.saw_mpc = 0; /* reset that field, it has been read */
 	}
@@ -4224,7 +4224,7 @@ static int tcp_disordered_ack(const struct sock *sk, const struct sk_buff *skb)
 	u32 data_ack, data_seq;
 
 	if (tp->mpc && tp->mpcb) {
-		meta_tp =&tp->mpcb->tp;
+		meta_tp = mpcb_meta_tp(tp->mpcb);
 		data_ack = TCP_SKB_CB(skb)->data_ack;
 		data_seq = TCP_SKB_CB(skb)->data_seq;
 	} else {
@@ -4646,7 +4646,7 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 	struct sk_buff *skb;
 
 	if (tp->mpc && tp->mpcb) {
-		struct tcp_sock *meta_tp = &tp->mpcb->tp;
+		struct tcp_sock *meta_tp = mpcb_meta_tp(tp->mpcb);
 		struct sock *meta_sk = (struct sock *) meta_tp;
 		if (atomic_read(&meta_sk->sk_rmem_alloc) >
 			meta_sk->sk_rcvbuf) {
@@ -4753,7 +4753,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 	int eaten = -1;
 	int mtcp_eaten = 0;
 
-	if (tp->mpc && mpcb) meta_tp = &mpcb->tp;
+	if (tp->mpc && mpcb) meta_tp = mpcb_meta_tp(mpcb);
 
 	if (TCP_SKB_CB(skb)->seq == TCP_SKB_CB(skb)->end_seq)
 		goto drop;
@@ -5571,7 +5571,7 @@ static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 	mtcp_debug("Entering %s\n", __FUNCTION__);
 
 	if (tp->mpc && mpcb)
-		meta_tp = &mpcb->tp;
+		meta_tp = mpcb_meta_tp(mpcb);
 	else
 		meta_tp = tp;
 
@@ -5760,7 +5760,7 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	int mtcp_eaten = 0;
 
 	if (tp->mpc && mpcb)
-		meta_tp = &mpcb->tp;
+		meta_tp = mpcb_meta_tp(mpcb);
 	else
 		meta_tp = tp;
 
@@ -6275,7 +6275,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		TCP_ECN_rcv_synack(tp, th);
 
 		if (tp->mpc)
-			mpcb->tp.snd_wl1 = TCP_SKB_CB(skb)->data_seq;
+			mpcb_meta_tp(mpcb)->snd_wl1 = TCP_SKB_CB(skb)->data_seq;
 		else
 			tp->snd_wl1 = TCP_SKB_CB(skb)->seq;
 		tcp_ack(sk, skb, FLAG_SLOWPATH);
@@ -6293,8 +6293,8 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		 * never scaled.
 		 */
 		if (tp->mpc) {
-			mpcb->tp.snd_wnd = ntohs(th->window);
-			tcp_init_wl(&mpcb->tp, mpcb->tp.rcv_nxt);
+			mpcb_meta_tp(mpcb)->snd_wnd = ntohs(th->window);
+			tcp_init_wl(mpcb_meta_tp(mpcb), mpcb_meta_tp(mpcb)->rcv_nxt);
 		} else {
 			tp->snd_wnd = ntohs(th->window);
 			tcp_init_wl(tp, TCP_SKB_CB(skb)->seq);
@@ -6378,7 +6378,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			inet_csk_reset_keepalive_timer(sk, keepalive_time_when(tp));
 
 		if (!tp->rx_opt.snd_wscale)
-			__tcp_fast_path_on(tp, tp->mpc ? mpcb->tp.snd_wnd :
+			__tcp_fast_path_on(tp, tp->mpc ? mpcb_meta_tp(mpcb)->snd_wnd :
 					   	   	   	   tp->snd_wnd);
 		else
 			tp->pred_flags = 0;
@@ -6460,9 +6460,9 @@ discard:
 		 * never scaled.
 		 */
 		if (tp->mpc) {
-			mpcb->tp.snd_wl1    = TCP_SKB_CB(skb)->data_seq;
-			mpcb->tp.snd_wnd    = ntohs(th->window);
-			mpcb->tp.max_window = tp->snd_wnd;
+			mpcb_meta_tp(mpcb)->snd_wl1    = TCP_SKB_CB(skb)->data_seq;
+			mpcb_meta_tp(mpcb)->snd_wnd    = ntohs(th->window);
+			mpcb_meta_tp(mpcb)->max_window = tp->snd_wnd;
 		} else {
 			tp->snd_wl1    = TCP_SKB_CB(skb)->seq;
 			tp->snd_wnd    = ntohs(th->window);
@@ -6598,11 +6598,11 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 
 				tp->snd_una = TCP_SKB_CB(skb)->ack_seq;
 				if (tp->mpc && tp->mpcb) {
-					tp->mpcb->tp.snd_wnd =
+					mpcb_meta_tp(tp->mpcb)->snd_wnd =
 						ntohs(th->window) <<
 						tp->rx_opt.snd_wscale;
-					tcp_init_wl(&tp->mpcb->tp,
-						    tp->mpcb->tp.rcv_nxt);
+					tcp_init_wl(mpcb_meta_tp(tp->mpcb),
+						    mpcb_meta_tp(tp->mpcb)->rcv_nxt);
 				}
 				else {
 					tp->snd_wnd = ntohs(th->window) <<
