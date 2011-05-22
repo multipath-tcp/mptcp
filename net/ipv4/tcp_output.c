@@ -1715,15 +1715,15 @@ static unsigned int tcp_snd_test(struct sock *subsk, struct sk_buff *skb,
 	struct tcp_sock *subtp = tcp_sk(subsk);
 	unsigned int cwnd_quota;
 	struct multipath_pcb *mpcb = subtp->mpcb;
-	struct tcp_sock *mpcb_tp= mpcb_meta_tp(mpcb);
+	struct tcp_sock *meta_tp= mpcb_meta_tp(mpcb);
 
 	BUG_ON(subtp->mpc && tcp_skb_pcount(skb) > 1);
 	if (!mpcb)
-		mpcb_tp = subtp;
+		meta_tp = subtp;
 
 	tcp_init_tso_segs(subsk, skb, cur_mss);
 
-	if (!tcp_nagle_test(mpcb_tp, skb, cur_mss, nonagle))
+	if (!tcp_nagle_test(meta_tp, skb, cur_mss, nonagle))
 		return 0;
 
 	cwnd_quota = tcp_cwnd_test(subtp, skb);
