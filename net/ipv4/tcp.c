@@ -559,17 +559,17 @@ static inline int forced_push(struct tcp_sock *tp)
 static inline void skb_entail(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct multipath_pcb *mpcb=mpcb_from_tcpsock(tp);
+	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
-	struct tcp_sock *mpcb_tp=(struct tcp_sock*)mpcb;
+	struct tcp_sock *meta_tp = (struct tcp_sock *)mpcb;
 
-	skb->csum    = 0;
-	/*in MPTCP mode, the subflow seqnum is given later*/
+	skb->csum = 0;
+	/* in MPTCP mode, the subflow seqnum is given later */
 	if (tp->mpc)
 		tcb->seq      = tcb->end_seq = tcb->sub_seq = 0;
 	else
 		tcb->seq      = tcb->end_seq = tcb->sub_seq = tp->write_seq;
-	tcb->data_seq = tcb->end_data_seq = mpcb_tp->write_seq;
+	tcb->data_seq = tcb->end_data_seq = meta_tp->write_seq;
 	tcb->data_len = 0;
 	tcb->flags   = TCPHDR_ACK;
 	tcb->sacked  = 0;

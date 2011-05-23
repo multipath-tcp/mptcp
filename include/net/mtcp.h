@@ -95,7 +95,7 @@ struct multipath_pcb {
 	struct tcp_sock           *connection_list;
 
 	/* Master socket, also part of the connection_list, this
-	 * socket is the one that the application sees. 
+	 * socket is the one that the application sees.
 	 */
 	struct sock               *master_sk;
 	/* socket count in this connection */
@@ -118,7 +118,7 @@ struct multipath_pcb {
 	u32 noneligible; /* Path mask of temporarily non eligible
 			  * subflows by the scheduler
 			  */
-	
+
 #ifdef CONFIG_MTCP_PM
 	struct list_head collide_tk;
 	uint8_t addr_unsent;	/* num of addrs not yet sent to our peer */
@@ -455,7 +455,7 @@ int mtcp_sendmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		size_t size);
 int mtcp_is_available(struct sock *sk);
 struct sock *get_available_subflow(struct multipath_pcb *mpcb,
-				   struct sk_buff *skb, int *pf);
+				   struct sk_buff *skb);
 void mtcp_reinject_data(struct sock *orig_sk);
 int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb);
 int mtcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices);

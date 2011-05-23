@@ -659,8 +659,7 @@ int mtcp_is_available(struct sock *sk) {
  * All subsocked must be locked before calling this function.
  */
 struct sock* get_available_subflow(struct multipath_pcb *mpcb,
-				   struct sk_buff *skb,
-				   int *pf)
+				   struct sk_buff *skb)
 {
 	struct tcp_sock *tp;
 	struct sock *sk;
@@ -686,8 +685,6 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 	mtcp_for_each_sk(mpcb, sk, tp) {
 		unsigned int time_to_peer;
 
-		if (pf && tp->pf)
-			*pf |= PI_TO_FLAG(tp->path_index);
 		if (!mtcp_is_available(sk))
 			continue;
 
@@ -1849,11 +1846,11 @@ struct sk_buff* mtcp_next_segment(struct sock *sk, int *reinject) {
 		return tcp_send_head(sk);
 	if ((skb = skb_peek(&mpcb->reinject_queue))) {
 		if (reinject)
-			*reinject = 1; /* Segments in reinject queue are
-					  already cloned */
+			*reinject = 1;
 		return skb;
-	} else
+	} else {
 		return tcp_send_head(sk);
+	}
 }
 
 /* Sets the socket pointer of the meta_sk after an accept at the socket level

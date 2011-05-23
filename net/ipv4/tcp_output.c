@@ -2115,8 +2115,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		}
 
 		if (is_meta_tp(tp)) {
-			int pf = 0;
-			subsk = get_available_subflow(tp->mpcb, skb, &pf);
+			subsk = get_available_subflow(tp->mpcb, skb);
 			if (!subsk)
 				break;
 			subtp = tcp_sk(subsk);
