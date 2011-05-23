@@ -185,13 +185,13 @@ struct mp_capable {
 	__u8	ver:4,
 		sub:4;
 	__u8	s:1,
-		rsv:7,
+		rsv:6,
 		c:1;
 #elif defined(__BIG_ENDIAN_BITFIELD)
 	__u8	sub:4,
 		ver:4;
 	__u8	c:1,
-		rsv:7,
+		rsv:6,
 		s:1;
 #else
 #error	"Adjust your <asm/byteorder.h> defines"
