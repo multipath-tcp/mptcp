@@ -3578,13 +3578,14 @@ static inline int tcp_may_update_window(const struct tcp_sock *tp,
 					const u32 ack, const u32 ack_seq,
 					const u32 nwin)
 {
-/*the variable snd_wl1 tracks the
-  newest sequence number that we've seen.  It helps prevent snd_wnd from
-  being reopened on re-transmitted data.  If snd_wl1 is greater than
-  received sequence #, we skip it.*/
-/*MPTCP note: added check for ack_seq != 0, because the data seqnum can be 0
-  if the dataseq option is not present. This is the case if we received a pure
-  ack with no data. Since */
+/* The variable snd_wl1 tracks the
+ * newest sequence number that we've seen. It helps prevent snd_wnd from
+ * being reopened on re-transmitted data. If snd_wl1 is greater than
+ * received sequence #, we skip it.
+ * MPTCP note: added check for ack_seq != 0, because the data seqnum can be 0
+ * if the dataseq option is not present. This is the case if we received a pure
+ * ack with no data.
+ */
 	return after(ack, tp->snd_una) || !ack_seq ||
 		after(ack_seq, tp->snd_wl1) ||
 		(ack_seq == tp->snd_wl1 && nwin > tp->snd_wnd);

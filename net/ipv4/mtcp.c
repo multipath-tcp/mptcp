@@ -1418,7 +1418,8 @@ void mtcp_reinject_data(struct sock *orig_sk) {
 	verif_wqueues(mpcb);
 }
 
-/* We are short of flags at the moment in tcp_skb_cb to
+/**
+ * We are short of flags at the moment in tcp_skb_cb to
  * remember that the dfin has been seen in this segment.
  * Hence, as a quick hack, we currently re-check manually.
  * Anyway, this only happens at the end of the communication.
@@ -1608,52 +1609,59 @@ int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb) {
 	}
 
 	/* Even if we have received a mapping update, it may differ from
-	   the seqnum contained in the
-	   TCP header. In that case we must recompute the data_seq and
-	   end_data_seq accordingly. This is what happens in case of TSO, because
-	   the NIC keeps the option as is. */
+	 * the seqnum contained in the
+	 * TCP header. In that case we must recompute the data_seq and
+	 * end_data_seq accordingly. This is what happens in case of TSO,
+	 * because the NIC keeps the option as is.
+	 */
 
 	if (before(TCP_SKB_CB(skb)->seq, tp->map_subseq)
-			|| after(TCP_SKB_CB(skb)->end_seq,
-					tp->map_subseq+tp->map_data_len+tcp_hdr(skb)->fin)) {
+	    || after(TCP_SKB_CB(skb)->end_seq,
+		     tp->map_subseq+tp->map_data_len+tcp_hdr(skb)->fin)) {
 
 		printk(KERN_ERR "seq:%x,tp->map_subseq:%x,"
-		"end_seq:%x,tp->map_data_len:%d,changed:%d\n",
-				TCP_SKB_CB(skb)->seq, tp->map_subseq,
-				TCP_SKB_CB(skb)->end_seq,
-				tp->map_data_len, changed);
+		       "end_seq:%x,tp->map_data_len:%d,changed:%d\n",
+		       TCP_SKB_CB(skb)->seq, tp->map_subseq,
+		       TCP_SKB_CB(skb)->end_seq,
+		       tp->map_data_len, changed);
 		BUG(); /* If we only speak with our own implementation,
-			  reaching this point can only be a bug, later we
-			  can remove this. */
+			* reaching this point can only be a bug, later we
+			* can remove this.
+			*/
 		ans = 1;
 		goto out;
 	}
 	/* OK, the segment is inside the mapping, we can
-	   derive the dataseq. Note that we maintain
-	   TCP_SKB_CB(skb)->data_len to zero, so as not to mix
-	   received mappings and derived dataseqs. */
+	 * derive the dataseq. Note that we maintain
+	 * TCP_SKB_CB(skb)->data_len to zero, so as not to mix
+	 * received mappings and derived dataseqs.
+	 */
 	TCP_SKB_CB(skb)->data_seq = tp->map_data_seq
-			+ (TCP_SKB_CB(skb)->seq - tp->map_subseq);
+		+ (TCP_SKB_CB(skb)->seq - tp->map_subseq);
 	TCP_SKB_CB(skb)->end_data_seq = TCP_SKB_CB(skb)->data_seq
-			+ skb->len;
+		+ skb->len;
 	if (mpcb->received_options.dfin_rcvd &&
-	    TCP_SKB_CB(skb)->end_data_seq + 1 == mpcb->received_options.fin_dsn) {
+	    TCP_SKB_CB(skb)->end_data_seq + 1 ==
+	    mpcb->received_options.fin_dsn) {
 		/* This condition is not enough yet. It is possible that
-		   the skb is in fact the last data segment, and the dfin has
-		   been rcvd out of order separately. If this happens,
-		   we enter this conditional, while the end_data_seq must not
-		   be incremented because the dfin is not there.*/
+		 * the skb is in fact the last data segment, and the dfin has
+		 * been rcvd out of order separately. If this happens,
+		 * we enter this conditional, while the end_data_seq must not
+		 * be incremented because the dfin is not there.
+		 */
 		if (mtcp_check_dfin(skb))
 			TCP_SKB_CB(skb)->end_data_seq++;
 	}
 	TCP_SKB_CB(skb)->data_len = 0; /* To indicate that there is not anymore
-					  general mapping information in that
-					  segment (the mapping info is now
-					  consumed)*/
+					* general mapping information in that
+					* segment (the mapping info is now
+					* consumed)
+					*/
 
 	/* Check now if the segment is in meta-order, it is considered
-	   in meta-order if the next expected DSN is contained in the
-	   segment */
+	 * in meta-order if the next expected DSN is contained in the
+	 * segment
+	 */
 
 	if (!before(mpcb_meta_tp(mpcb)->copied_seq, TCP_SKB_CB(skb)->data_seq) &&
 	     before(mpcb_meta_tp(mpcb)->copied_seq, TCP_SKB_CB(skb)->end_data_seq))
@@ -1669,8 +1677,10 @@ out:
 	return ans;
 }
 
-/* Cleans the meta-socket retransmission queue.
-   @sk must be the metasocket. */
+/**
+ * Cleans the meta-socket retransmission queue.
+ * @sk must be the metasocket.
+ */
 void mtcp_clean_rtx_queue(struct sock *sk) {
 	struct sk_buff *skb;
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -1688,8 +1698,10 @@ void mtcp_clean_rtx_queue(struct sock *sk) {
 	}
 }
 
-/* At the moment we apply a simple addition algorithm.
-   We will complexify later */
+/**
+ * At the moment we apply a simple addition algorithm.
+ * We will complexify later
+ */
 void mtcp_update_window_clamp(struct multipath_pcb *mpcb) {
 	struct sock *sk;
 	struct tcp_sock *meta_tp = (struct tcp_sock *) mpcb, *tp;
@@ -1712,8 +1724,10 @@ void mtcp_update_window_clamp(struct multipath_pcb *mpcb) {
 	meta_sk->sk_rcvbuf = new_rcvbuf;
 }
 
-/* Update the mpcb send window, based on the contributions
-   of each subflow */
+/**
+ * Update the mpcb send window, based on the contributions
+ * of each subflow
+ */
 void mtcp_update_sndbuf(struct multipath_pcb *mpcb) {
 	struct sock *meta_sk = (struct sock*) mpcb, *sk;
 	struct tcp_sock *tp;
@@ -1802,13 +1816,14 @@ void verif_rqueues(struct multipath_pcb *mpcb) {
 }
 #endif
 
-/* Removes a segment received on one subflow, but containing DSNs
-   that were already received on another subflow
-   Note that if the segment is not the head of the receive queue,
-   we keep it in the list for future removal, because we cannot advance
-   the tcp counters.
-   WARNING: this may remove the skb, so no further reference to it
-   should happen after calling this function.
+/**
+ * Removes a segment received on one subflow, but containing DSNs
+ * that were already received on another subflow
+ * Note that if the segment is not the head of the receive queue,
+ * we keep it in the list for future removal, because we cannot advance
+ * the tcp counters.
+ * WARNING: this may remove the skb, so no further reference to it
+ * should happen after calling this function.
  */
 void mtcp_check_eat_old_seg(struct sock *sk, struct sk_buff *skb) {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -1837,7 +1852,7 @@ void mtcp_check_eat_old_seg(struct sock *sk, struct sk_buff *skb) {
  * Sets *@reinject to 1 if the returned segment comes from the
  * reinject queue. Otherwise sets @reinject to 0.
  */
-struct sk_buff* mtcp_next_segment(struct sock *sk, int *reinject) {
+struct sk_buff *mtcp_next_segment(struct sock *sk, int *reinject) {
 	struct multipath_pcb *mpcb = tcp_sk(sk)->mpcb;
 	struct sk_buff *skb;
 	if (reinject)
@@ -1853,9 +1868,11 @@ struct sk_buff* mtcp_next_segment(struct sock *sk, int *reinject) {
 	}
 }
 
-/* Sets the socket pointer of the meta_sk after an accept at the socket level
+/**
+ * Sets the socket pointer of the meta_sk after an accept at the socket level
  * Set also the sk_wq pointer, because it has just been copied by
- * sock_graft() */
+ * sock_graft()
+ */
 void mtcp_check_socket(struct sock *sk) {
 	if (sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpcb) {
 		struct sock *meta_sk = (struct sock*) (tcp_sk(sk)->mpcb);

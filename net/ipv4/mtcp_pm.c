@@ -54,7 +54,7 @@ static struct list_head tuple_hashtable[MTCP_HASH_SIZE];
 static spinlock_t tuple_hash_lock;	/* hashtable protection */
 
 /* consumer of interface UP/DOWN events */
-static int mtcp_pm_inetaddr_event(struct notifier_block *this, 
+static int mtcp_pm_inetaddr_event(struct notifier_block *this,
 				unsigned long event, void *ptr);
 static struct notifier_block mtcp_pm_inetaddr_notifier = {
         .notifier_call = mtcp_pm_inetaddr_event,
@@ -321,8 +321,8 @@ static void __mtcp_update_patharray(struct multipath_pcb *mpcb)
 				/* local addr */
 				new_pa4[newpa_idx].loc.addr.s_addr =
 					inet_sk(meta_sk)->inet_saddr;
-				new_pa4[newpa_idx].loc.id = 0; /* ulid has id 0 */
-
+				new_pa4[newpa_idx].loc.id = 0; /* ulid has id 0
+								*/
 				/* remote addr */
 				memcpy(&new_pa4[newpa_idx].rem,
 				       &mpcb->received_options.addr4[j],
@@ -407,7 +407,8 @@ void mtcp_set_addresses(struct multipath_pcb *mpcb)
 	int num_addr4 = 0;
 
 	/* if multiports is requested, we work with the main address
-	   and play only with the ports */
+	 * and play only with the ports
+	 */
 	if (sysctl_mptcp_ndiffports != 1)
 		return;
 
@@ -426,13 +427,18 @@ void mtcp_set_addresses(struct multipath_pcb *mpcb)
 				ifa_address = ifa->ifa_local;
 
 				if (num_addr4 == MTCP_MAX_ADDR) {
-					mtcp_debug("%s: At max num of local addresses: "
-						   "%d --- not adding address: %pI4\n",
-						   __FUNCTION__, MTCP_MAX_ADDR, &ifa_address);
+					mtcp_debug
+						("%s: At max num of local "
+						 "addresses: "
+						 "%d --- not adding address:"
+						 " %pI4\n",
+						 __FUNCTION__, MTCP_MAX_ADDR,
+						 &ifa_address);
 					goto out;
 				}
 
-				if (ifa_address == inet_sk(mpcb->master_sk)->inet_saddr)
+				if (ifa_address ==
+				    inet_sk(mpcb->master_sk)->inet_saddr)
 					continue;
 				if (ifa->ifa_scope == RT_SCOPE_HOST)
 					continue;
@@ -1312,11 +1318,12 @@ int mtcp_check_new_subflow(struct multipath_pcb *mpcb)
 					mpcb);
 		}
 
-		if (p)
+		if (p) {
 			tcp_sk(child)->path_index = p->path_index;
-		else
+		} else {
 diffPorts:
 			tcp_sk(child)->path_index = mpcb->next_unused_pi++;
+		}
 
 		/* Point it to the same struct socket and wq as the master */
 		sk_set_socket(child, mpcb->master_sk->sk_socket);
@@ -1325,6 +1332,7 @@ diffPorts:
 		mtcp_add_sock(mpcb, tcp_sk(child));
 		reqsk_free(req);
 		nb_new++;
+
 	}
 	return nb_new;
 }

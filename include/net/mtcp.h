@@ -286,8 +286,9 @@ struct mp_add_addr {
 	     __temp = __sk ? (struct sock *) tcp_sk(__sk)->next : NULL)
 
 /* Returns 1 if any subflow meets the condition @cond
-   Else return 0. Moreover, if 1 is returned, sk points to the
-   first subsocket that verified the condition */
+ * Else return 0. Moreover, if 1 is returned, sk points to the
+ * first subsocket that verified the condition
+ */
 #define mtcp_test_any_sk(mpcb, sk, cond)		\
 	({	int __ans = 0;				\
 		struct tcp_sock *__tp;			\
@@ -325,7 +326,8 @@ struct mp_add_addr {
 	})
 
 /* Returns 1 if all subflows meet the condition @cond
-   Else return 0. */
+ * Else return 0.
+ */
 #define mtcp_test_all_sk(mpcb, sk, cond)		\
 	({						\
 		int __ans = 1;				\
@@ -370,7 +372,8 @@ static inline int PI_TO_FLAG(int pi)
 #endif
 
 /* For debugging only. Verifies consistency between subsock seqnums
-   and metasock seqnums */
+ * and metasock seqnums
+ */
 #ifdef MTCP_DEBUG_SEQNUMS
 void mtcp_check_seqnums(struct multipath_pcb *mpcb, int before);
 #else
@@ -444,8 +447,10 @@ void mtcp_cleanup_rbuf(struct sock *meta_sk, int copied);
 int mtcp_check_rcv_queue(struct multipath_pcb *mpcb, struct msghdr *msg,
 			 size_t * len, u32 * data_seq, int *copied, int flags);
 /* Possible return values from mtcp_queue_skb */
-#define MTCP_EATEN 1		/* The skb has been (fully or partially) eaten by the app */
-#define MTCP_QUEUED 2		/* The skb has been queued in the mpcb ofo queue */
+#define MTCP_EATEN 1  /* The skb has been (fully or partially) eaten by
+		       * the app
+		       */
+#define MTCP_QUEUED 2 /* The skb has been queued in the mpcb ofo queue */
 
 struct multipath_pcb *mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags);
 void mtcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp);
