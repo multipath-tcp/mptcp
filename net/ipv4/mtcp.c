@@ -1817,35 +1817,6 @@ void verif_rqueues(struct multipath_pcb *mpcb) {
 #endif
 
 /**
- * Removes a segment received on one subflow, but containing DSNs
- * that were already received on another subflow
- * Note that if the segment is not the head of the receive queue,
- * we keep it in the list for future removal, because we cannot advance
- * the tcp counters.
- * WARNING: this may remove the skb, so no further reference to it
- * should happen after calling this function.
- */
-void mtcp_check_eat_old_seg(struct sock *sk, struct sk_buff *skb) {
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct tcphdr *th = tcp_hdr(skb);
-	if (skb != skb_peek(&sk->sk_receive_queue))
-		return;
-	BUG_ON(tp->copied_seq!=TCP_SKB_CB(skb)->seq);
-
-	/* OK, eat the segment, and advance tcp counters */
-	tp->copied_seq += skb->len;
-	tcp_rcv_space_adjust(sk);
-	if (tp->copied_seq != TCP_SKB_CB(skb)->end_seq && !th->fin) {
-		printk(KERN_ERR "corrupted seg: seq:%#x,end_seq:%#x,len:%d\n",
-				TCP_SKB_CB(skb)->seq,
-				TCP_SKB_CB(skb)->end_seq, skb->len);
-		BUG();
-	}
-	inet_csk_schedule_ack(sk);
-	sk_eat_skb(sk, skb, 0);
-}
-
-/**
  * Returns the next segment to be sent from the mptcp meta-queue.
  * (chooses the reinject queue if any segment is waiting in it, otherwise,
  * chooses the normal write queue).

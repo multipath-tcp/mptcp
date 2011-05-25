@@ -2415,8 +2415,9 @@ void tcp_shutdown(struct sock *sk, int how)
 	if (!(how & SEND_SHUTDOWN))
 		return;
 #ifdef CONFIG_MTCP
-	/*if this is the master subsocket, we must first close the
-	  slave subsockets*/
+	/* if this is the master subsocket, we must first close the
+	 * slave subsockets
+	 */
 	if (tcp_sk(sk)->mpc && is_master_sk(tcp_sk(sk))) {
 		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
 		struct sock *mpcb_sk=(struct sock*)mpcb;

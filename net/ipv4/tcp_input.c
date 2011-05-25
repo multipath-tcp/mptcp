@@ -4067,7 +4067,8 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				break;
 #ifdef CONFIG_MTCP
 			case TCPOPT_MPTCP:
-				mtcp_parse_options(ptr, opsize, opt_rx, mopt, skb);
+				mtcp_parse_options(ptr, opsize, opt_rx, mopt,
+						   skb);
 				break;
 #endif /* CONFIG_MTCP */
 			}
@@ -4846,16 +4847,18 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 		else if (!sock_flag(sk, SOCK_DEAD)) {
 #ifdef CONFIG_MTCP
 			/* If mapping is 1, we know that the segment is
-			   in order and in meta-order.
-			   So we can wake up the app. Further, we know that
-			   eaten is not >0, thus it has not been completely
-			   eaten by the prequeue (otherwise, no need to call
-			   mtcp_data_ready, the prequeue does it). */
+			 * in order and in meta-order.
+			 * So we can wake up the app. Further, we know that
+			 * eaten is not >0, thus it has not been completely
+			 * eaten by the prequeue (otherwise, no need to call
+			 * mtcp_data_ready, the prequeue does it).
+			 */
 			if (tp->mpc) {
 				if (mapping == 1)
 					mtcp_data_ready(sk);
+			} else {
+				sk->sk_data_ready(sk, 0);
 			}
-			else sk->sk_data_ready(sk, 0);
 #else
 			sk->sk_data_ready(sk, 0);
 #endif
