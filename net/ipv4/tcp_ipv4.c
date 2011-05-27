@@ -1688,10 +1688,10 @@ int tcp_v4_rcv(struct sk_buff *skb)
 			/* The specified token can't be found
 			 * Send a reset and discard the packet.
 			 */
-			case -ENOKEY:
-				goto send_reset_and_discard_it;
-			case 1:
-				return 0;
+		case -ENOKEY:
+			goto send_reset_and_discard_it;
+		case 1:
+			return 0;
 		}
 	}
 #endif

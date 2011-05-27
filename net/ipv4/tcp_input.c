@@ -5385,13 +5385,15 @@ static void tcp_new_space(struct sock *sk, struct sock *mpcb_sk)
 					 tp->reordering + 1);
 #endif
 		/* After this, sndmem is the new contribution of the
-		   current subflow to the aggregate sndbuf */
+		 * current subflow to the aggregate sndbuf
+		 */
 		sndmem *= 2 * demanded;
 		if (sndmem > sk->sk_sndbuf) {
 			int old_sndbuf = sk->sk_sndbuf;
 			sk->sk_sndbuf = min(sndmem, sysctl_tcp_wmem[2]);
 			/* ok, the subflow sndbuf has grown, reflect this in
-			   the aggregate buffer. */
+			 * the aggregate buffer.
+			 */
 			if (old_sndbuf != sk->sk_sndbuf && tp->mpcb)
 				mtcp_update_sndbuf(tp->mpcb);
 		}
@@ -5402,8 +5404,10 @@ static void tcp_new_space(struct sock *sk, struct sock *mpcb_sk)
 }
 
 
-/* If the flow is MPTCP, sk is the subsock, and mpcb_sk is the mpcb.
-   Otherwise both are the regular TCP socket. */
+/**
+ * If the flow is MPTCP, sk is the subsock, and mpcb_sk is the mpcb.
+ * Otherwise both are the regular TCP socket.
+ */
 void tcp_check_space(struct sock *sk, struct sock *meta_sk)
 {
 	if (sock_flag(meta_sk, SOCK_QUEUE_SHRUNK)) {

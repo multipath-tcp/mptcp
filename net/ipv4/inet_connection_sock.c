@@ -611,24 +611,26 @@ EXPORT_SYMBOL_GPL(inet_csk_clone);
  * try to jump onto it.
  */
 void inet_csk_destroy_sock(struct sock *sk)
-{	
+{
 #ifdef CONFIG_MTCP
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tcp_sk(sk));
 
 	mtcp_debug("%s: Removing subsocket - pi:%d\n",__FUNCTION__,
-			tcp_sk(sk)->path_index);
+		   tcp_sk(sk)->path_index);
 
 	BUG_ON(!mpcb && !tcp_sk(sk)->pending);
 	/* mpcb is NULL if the socket is the child subsocket
-	   waiting in the accept queue of the mpcb.
-	   Child subsockets are not yet attached to the mpcb.
-	   (they will be upon removal in mtcp_check_new_subflow()) */
-	if (mpcb) mtcp_del_sock(mpcb, tcp_sk(sk));
-#endif   
-	
+	 * waiting in the accept queue of the mpcb.
+	 * Child subsockets are not yet attached to the mpcb.
+	 * (they will be upon removal in mtcp_check_new_subflow())
+	 */
+	if (mpcb)
+		mtcp_del_sock(mpcb, tcp_sk(sk));
+#endif
+
 	WARN_ON(sk->sk_state != TCP_CLOSE);
 	WARN_ON(!sock_flag(sk, SOCK_DEAD));
-	
+
 	/* It cannot be in hash table! */
 	WARN_ON(!sk_unhashed(sk));
 
@@ -712,7 +714,7 @@ void inet_csk_listen_stop(struct sock *sk)
 		struct sock *child = req->sk;
 
 		acc_req = req->dl_next;
-		
+
 #ifdef CONFIG_MTCP
 		mtcp_detach_unused_child(child);
 #endif

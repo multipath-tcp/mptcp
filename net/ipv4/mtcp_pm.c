@@ -156,9 +156,10 @@ void mtcp_pm_release(struct multipath_pcb *mpcb)
 				       "Destroying request_sock\n");
 				lopt->qlen--;
 				todel = *cur_ref;
-				/* remove from local hashtable, it has
-				   been removed already from the global one by
-				   mtcp_hash_remove() */
+				/* Remove from local hashtable, it has
+				 * been removed already from the global one by
+				 * mtcp_hash_remove()
+				 */
 				*cur_ref = (*cur_ref)->dl_next;
 				reqsk_free(todel);
 			}
@@ -166,9 +167,10 @@ void mtcp_pm_release(struct multipath_pcb *mpcb)
 	}
 
 	/* Normally we should have
-	   accepted all the child socks in destroy_mpcb, after
-	   having removed the mpcb from the hashtable. So having this queue
-	   non-empty can only be a bug.*/
+	 * accepted all the child socks in destroy_mpcb, after
+	 * having removed the mpcb from the hashtable. So having this queue
+	 * non-empty can only be a bug.
+	 */
 	BUG_ON(!reqsk_queue_empty(&mpcb_icsk->icsk_accept_queue));
 }
 
@@ -1171,7 +1173,7 @@ int mtcp_lookup_join(struct sk_buff *skb)
 	struct multipath_pcb *mpcb;
 	int ans;
 
-	/*Jump through the options to check whether JOIN is there*/
+	/* Jump through the options to check whether JOIN is there */
 	ptr = (unsigned char *)(th + 1);
 	while (length > 0) {
 		int opcode = *ptr++;
