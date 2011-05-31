@@ -1798,10 +1798,11 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 
 #ifdef CONFIG_MTCP
 	/* Is there a pending request sock for this segment ? */
-	if ((!sk || sk->sk_state == TCP_LISTEN) && mtcp_syn_recv_sock(skb))
+	if ((!sk || sk->sk_state == TCP_LISTEN) && mtcp_syn_recv_sock(skb)) {
 		if (sk)
 			sock_put(sk);
 		return 0;
+	}
 #endif
 
 	if (!sk)
