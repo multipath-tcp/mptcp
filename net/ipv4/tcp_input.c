@@ -3588,7 +3588,7 @@ static inline int tcp_may_update_window(const struct tcp_sock *tp,
  */
 	return (after(ack, tp->snd_una) || !ack_seq ||
 		after(ack_seq, tp->snd_wl1) ||
-		(ack_seq == tp->snd_wl1 && nwin > tp->snd_wnd);
+		(ack_seq == tp->snd_wl1 && nwin > tp->snd_wnd));
 }
 
 /* Update our send window.
