@@ -3586,7 +3586,7 @@ static inline int tcp_may_update_window(const struct tcp_sock *tp,
  * if the dataseq option is not present. This is the case if we received a pure
  * ack with no data.
  */
-	return after(ack, tp->snd_una) || !ack_seq ||
+	return (after(ack, tp->snd_una) || !ack_seq ||
 		after(ack_seq, tp->snd_wl1) ||
 		(ack_seq == tp->snd_wl1 && nwin > tp->snd_wnd);
 }
