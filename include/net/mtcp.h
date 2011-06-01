@@ -21,9 +21,7 @@
 
 #include <linux/aio.h>
 #include <linux/inetdevice.h>
-#include <linux/kref.h>
 #include <linux/list.h>
-#include <linux/mutex.h>
 #include <linux/net.h>
 #include <linux/skbuff.h>
 #include <linux/socket.h>
@@ -69,7 +67,7 @@ static DEFINE_TIMER(mtcp_debug_timer, mtcp_debug_timeout, 0, 0);
 #define mtcp_start_debug_timer(delay)					\
 	do {								\
 		mtcp_debug_timer.expires = jiffies + delay * HZ;	\
-		mtcp_debug_timer.data=(unsigned long)__FUNCTION__;	\
+		mtcp_debug_timer.data = (unsigned long)__func_;		\
 		add_timer(&mtcp_debug_timer);				\
 	} while (0)
 
@@ -85,39 +83,39 @@ extern struct proto mtcpsub_prot;
 				    * connection. (obtained through a listen)
 				    */
 #define MPCB_FLAG_FIN_ENQUEUED  1  /* A dfin has been enqueued on the meta-send
-				     * queue.
-				     */
+				    * queue.
+				    */
 
 struct multipath_pcb {
-	struct tcp_sock           tp;
+	struct tcp_sock tp;
 
 	/* list of sockets in this multipath connection */
-	struct tcp_sock           *connection_list;
+	struct tcp_sock *connection_list;
 
 	/* Master socket, also part of the connection_list, this
 	 * socket is the one that the application sees.
 	 */
-	struct sock               *master_sk;
+	struct sock *master_sk;
 	/* socket count in this connection */
-	int                       cnt_subflows;
-	int                       syn_sent;
-	int                       cnt_established;
-	int                       err;
+	int cnt_subflows;
+	int syn_sent;
+	int cnt_established;
+	int err;
 
-	char                      done;
-	unsigned short            shutdown;
+	char done;
+	unsigned short shutdown;
 
 	struct multipath_options received_options;
 	struct tcp_options_received tcp_opt;
 
 	struct sk_buff_head reinject_queue;
-	spinlock_t lock;
-	struct mutex mutex;
-	struct kref kref;
-	unsigned long flags; /* atomic, for bits see MPCB_FLAG_XXX */
-	u32 noneligible; /* Path mask of temporarily non eligible
-			  * subflows by the scheduler
-			  */
+	unsigned long flags;	/* atomic, for bits see
+				 * MPCB_FLAG_XXX
+				 */
+	u32 noneligible;	/* Path mask of temporarily non
+				 * eligible subflows by the
+				 * scheduler
+				 */
 
 #ifdef CONFIG_MTCP_PM
 	struct list_head collide_tk;
@@ -250,28 +248,35 @@ struct mp_add_addr {
 	__u8	addr_id;
 };
 
-#define mpcb_from_tcpsock(tp) ((tp)->mpcb)
-#define is_master_sk(tp) (!(tp)->slave_sk)
+#define mpcb_from_tcpsock(__tp) ((__tp)->mpcb)
+#define mtcp_meta_sk(sk) ((struct sock *)tcp_sk(sk)->mpcb)
 #define is_meta_tp(__tp) ((__tp)->mpcb && (struct tcp_sock *)((__tp)->mpcb) == __tp)
-#define is_meta_sk(sk) ((tcp_sk(sk))->mpcb && 				\
-			(struct tcp_sock *)((tcp_sk(sk))->mpcb) == tcp_sk(sk))
+#define is_meta_sk(sk) (sk->sk_protocol == IPPROTO_TCP &&	\
+			(tcp_sk(sk))->mpcb &&			\
+			((struct tcp_sock *) tcp_sk(sk)->mpcb) == tcp_sk(sk))
+#define is_master_tp(__tp) (!(__tp)->slave_sk && !is_meta_tp(__tp))
+#define is_master_sk(__sk) (sk->sk_protocol == IPPROTO_TCP &&	\
+			is_master_tp(tcp_sk(__sk)))
+
 #define is_dfin_seg(mpcb, skb) (mpcb->received_options.dfin_rcvd &&	\
 			       mpcb->received_options.fin_dsn ==	\
 			       TCP_SKB_CB(skb)->end_data_seq)
-#define mtcp_meta_sk(sk) ((struct sock*)tcp_sk(sk)->mpcb)
+
+/* Two separate cases must be handled:
+ * -a mapping option has been received. Then data_seq and end_data_seq are
+ *  defined, and we disambiguate based on data_len (if not zero, the mapping
+ *  if received but not applied by get_dataseq_mapping().
+ * -no mapping option has been received. Then data_len is not defined, and we
+ *  disambiguate based on data_seq and end_data_seq (if they are still zero,
+ *  the stored mapping has not been applied by get_dataseq_mapping())
+ */
+#define is_mapping_applied(skb) BUG_ON(TCP_SKB_CB(skb)->data_len ||	\
+				       (!TCP_SKB_CB(skb)->data_seq &&	\
+					!TCP_SKB_CB(skb)->end_data_seq))
 
 /* Iterates overs all subflows */
 #define mtcp_for_each_tp(mpcb, tp)					\
 	for ((tp) = (mpcb)->connection_list; (tp); (tp) = (tp)->next)
-
-/* Iterates over new subflows. prevnum is the number
-   of flows already known by the caller.
-   Note that prevnum is altered by this macro */
-#define mtcp_for_each_newtp(mpcb, tp, prevnum)		\
-	for ((tp) = (mpcb)->connection_list,		\
-	     prevnum = (mpcb)->cnt_subflows-prevnum;	\
-	     prevnum;					\
-	     (tp) = (tp)->next, prevnum--)
 
 #define mtcp_for_each_sk(mpcb, sk, tp)					       \
 	for ((sk) = (struct sock *) (mpcb)->connection_list, (tp) = tcp_sk(sk);\
@@ -339,26 +344,6 @@ struct mp_add_addr {
 			}				\
 		}					\
 		__ans;					\
-	})
-
-/* Wait for event @__condition to happen on any subsocket,
-   or __timeo to expire
-   This is the MPTCP equivalent of sk_wait_event */
-#define mtcp_wait_event_any_sk(__mpcb, __sk, __tp, __timeo, __condition)\
-	({								\
-		int __rc;						\
-		mtcp_for_each_sk(__mpcb, __sk, __tp) {			\
-			release_sock(__sk);				\
-		}							\
-		__rc = mtcp_test_any_sk_tp(__mpcb, __sk, __tp,		\
-					   __condition);		\
-		if (!__rc)  						\
-			*(__timeo) = schedule_timeout(*(__timeo));	\
-		mtcp_for_each_sk(__mpcb, __sk, __tp)			\
-			lock_sock(__sk);				\
-		__rc = mtcp_test_any_sk_tp(__mpcb, __sk, __tp,		\
-					   __condition);		\
-		__rc;							\
 	})
 
 #ifdef DEBUG_PITOFLAG
@@ -439,8 +424,6 @@ static inline struct tcp_sock *mpcb_meta_tp(const struct multipath_pcb *mpcb)
 	return (struct tcp_sock *)mpcb;
 }
 
-int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
-			long *timeo, int flags);
 int mtcp_queue_skb(struct sock *sk, struct sk_buff *skb);
 void mtcp_ofo_queue(struct multipath_pcb *mpcb);
 void mtcp_cleanup_rbuf(struct sock *meta_sk, int copied);
@@ -469,14 +452,13 @@ void mtcp_update_sndbuf(struct multipath_pcb *mpcb);
 void mtcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end);
 int mtcpv6_init(void);
 void mtcp_data_ready(struct sock *sk);
-int mtcp_v4_add_raddress(struct multipath_options *mopt, struct in_addr *addr,
-		u8 id);
+void mtcp_push_frames(struct sock *sk);
 
 void verif_wqueues(struct multipath_pcb *mpcb);
 
 void mtcp_skb_entail(struct sock *sk, struct sk_buff *skb);
-void mpcb_release(struct kref* kref);
 struct sk_buff *mtcp_next_segment(struct sock *sk, int *reinject);
+void mpcb_release(struct multipath_pcb *mpcb);
 void mtcp_clean_rtx_queue(struct sock *sk);
 void mtcp_send_fin(struct sock *mpcb_sk);
 void mtcp_parse_options(uint8_t *ptr, int opsize,
@@ -484,16 +466,9 @@ void mtcp_parse_options(uint8_t *ptr, int opsize,
 		struct multipath_options *mopt,
 		struct sk_buff *skb);
 void mtcp_close(struct sock *master_sk, long timeout);
-struct multipath_pcb *mtcp_attach_master_sk(struct sock *sk);
 void mtcp_detach_unused_child(struct sock *sk);
 int do_mptcp(struct sock *sk);
 
-static void inline mpcb_get(struct multipath_pcb *mpcb) {
-	kref_get(&mpcb->kref);
-}
-
-static void inline mpcb_put(struct multipath_pcb *mpcb) {
-	kref_put(&mpcb->kref, mpcb_release);
-}
+void mptcp_fallback(struct sock *master_sk);
 
 #endif /* _MTCP_H */

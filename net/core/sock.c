@@ -1691,21 +1691,16 @@ static void __lock_sock(struct sock *sk)
 	finish_wait(&sk->sk_lock.wq, &wait);
 }
 
-/**
- *@meta_sk: used by MPCTP: if not NULL, it is the meta_sk to
- *          which @sk is attached.
- */
-static void __release_sock(struct sock *sk, struct sock *meta_sk)
-	__releases(&sk->sk_lock.slock)
-	__acquires(&sk->sk_lock.slock)
+static void __release_sock(struct sock *sk, struct multipath_pcb *mpcb)
 {
 	struct sk_buff *skb = sk->sk_backlog.head;
 
 	do {
 		sk->sk_backlog.head = sk->sk_backlog.tail = NULL;
-		bh_unlock_sock(sk);
-		if (meta_sk)
-			bh_unlock_sock(meta_sk);
+		if (mpcb)
+			bh_unlock_sock(mpcb->master_sk);
+		else
+			bh_unlock_sock(sk);
 
 		do {
 			struct sk_buff *next = skb->next;
@@ -1725,8 +1720,10 @@ static void __release_sock(struct sock *sk, struct sock *meta_sk)
 			skb = next;
 		} while (skb != NULL);
 
-		if (meta_sk) bh_lock_sock(meta_sk);
-		bh_lock_sock(sk);
+		if (mpcb)
+			bh_lock_sock(mpcb->master_sk);
+		else
+			bh_lock_sock(sk);
 	} while ((skb = sk->sk_backlog.head) != NULL);
 
 	/*
@@ -2127,6 +2124,9 @@ EXPORT_SYMBOL(sock_init_data);
 
 void lock_sock_nested(struct sock *sk, int subclass)
 {
+	if (is_meta_sk(sk)) /* necessary for sk_wait_event() */
+		sk = ((struct multipath_pcb *)sk)->master_sk;
+
 	might_sleep();
 	spin_lock_bh(&sk->sk_lock.slock);
 	if (sk->sk_lock.owned)
@@ -2143,38 +2143,35 @@ EXPORT_SYMBOL(lock_sock_nested);
 
 void release_sock(struct sock *sk)
 {
+	struct sock *sk_it;
+	struct tcp_sock *tp_it;
+
+	if (is_meta_sk(sk)) /* necessary for sk_wait_event() */
+		sk = ((struct multipath_pcb *)sk)->master_sk;
+
 	/* The sk_lock has mutex_unlock() semantics: */
 	mutex_release(&sk->sk_lock.dep_map, 1, _RET_IP_);
 
 	spin_lock_bh(&sk->sk_lock.slock);
-	if (sk->sk_backlog.tail)
-		__release_sock(sk, NULL);
-	if (is_meta_sk(sk)) {
-		struct sock *sk_it;
-		struct tcp_sock *tp_it;
+	if (sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpc) {
+		struct multipath_pcb *mpcb = tcp_sk(sk)->mpcb;
+		struct sock *meta_sk = (struct sock *)mpcb;
+
+		BUG_ON(!is_master_tp(tcp_sk(sk)));
+
+		/* process incoming join requests */
+		if (meta_sk->sk_backlog.tail)
+			__release_sock(meta_sk, mpcb);
 		/* We need to do the following, because as far
-		 * as the meta-socket is locked, every received segment is
+		 * as the master-socket is locked, every received segment is
 		 * put into the backlog queue.
 		 */
-		do {
-			mtcp_for_each_sk((struct multipath_pcb *)sk,sk_it,
-					 tp_it) {
-				/* We do not use _bh here, since bh is already
-				 * disabled by the previous spin_lock_bh
-				 */
-				spin_lock(&sk_it->sk_lock.slock);
-				if (sk_it->sk_backlog.tail)
-					__release_sock(sk_it, sk);
-				spin_unlock(&sk_it->sk_lock.slock);
-			}
+		mtcp_for_each_sk(mpcb, sk_it, tp_it) {
+			if (sk_it->sk_backlog.tail)
+				__release_sock(sk_it, mpcb);
 		}
-		while (mtcp_test_any_sk((struct multipath_pcb*)sk,sk_it,
-					sk_it->sk_backlog.head));
-		/* The while above is needed because, during we eat the content
-		 * of the backlog for one subflow, the backlog for another one
-		 * can receive segments
-		 */
-	}
+	} else if (sk->sk_backlog.tail)
+		__release_sock(sk, NULL);
 	sk->sk_lock.owned = 0;
 	if (waitqueue_active(&sk->sk_lock.wq))
 		wake_up(&sk->sk_lock.wq);
@@ -2574,11 +2571,11 @@ EXPORT_SYMBOL(proto_unregister);
 
 void sk_wake_async(struct sock *sk, int how, int band)
 {
-	struct sock *meta_sk = ((sk->sk_protocol==IPPROTO_TCP ||
-				 sk->sk_protocol==IPPROTO_MTCPSUB) &&
-				tcp_sk(sk)->mpcb)?
-		(struct sock*)tcp_sk(sk)->mpcb:
-		sk;
+	struct sock *meta_sk = ((sk->sk_protocol == IPPROTO_TCP ||
+				 sk->sk_protocol == IPPROTO_MTCPSUB) &&
+				tcp_sk(sk)->mpc) ?
+				(struct sock *)tcp_sk(sk)->mpcb :
+				sk;
 	if (sock_flag(sk, SOCK_FASYNC))
 		sock_wake_async(meta_sk->sk_socket, how, band);
 }

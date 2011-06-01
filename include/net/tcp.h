@@ -964,25 +964,11 @@ static inline void tcp_prequeue_init(struct tcp_sock *tp)
 static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
-
-	/* If the socket is still in the accept queue of the mpcb,
-	 * the mpcb prequeue is not yet available
-	 */
-	BUG_ON(!tp->mpcb && !tp->pending);
-
-	/* mpcb not yet initialized - should be removed, as soon as subflow-
-	 * establishment has been fixed and is entirely handled in softirq.
-	 */
-	if (tp->mpc && !mpcb)
-		return 0;
-
-	/* We work on the meta-tp */
-	if (tp->mpc && mpcb)
-		tp = mpcb_meta_tp(mpcb);
 
 	if (sysctl_tcp_low_latency || !tp->ucopy.task)
 		return 0;
+
+	BUG_ON(tp->mpc); /* Prequeues not yet supported in MPTCP */
 
 	__skb_queue_tail(&tp->ucopy.prequeue, skb);
 	tp->ucopy.memory += skb->truesize;
@@ -999,15 +985,9 @@ static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 
 		tp->ucopy.memory = 0;
 	} else if (skb_queue_len(&tp->ucopy.prequeue) == 1) {
-		/* mpcb exists, because it has been changed at the beginning */
-		if (tp->mpc)
-			wake_up_interruptible_sync_poll(
-				sk_sleep(mpcb->master_sk),
-				POLLIN | POLLRDNORM | POLLRDBAND);
-		else
-			wake_up_interruptible_sync_poll(
-				sk_sleep(sk),
-				POLLIN | POLLRDNORM | POLLRDBAND);
+		wake_up_interruptible_sync_poll(
+			sk_sleep(sk),
+			POLLIN | POLLRDNORM | POLLRDBAND);
 		if (!inet_csk_ack_scheduled(sk))
 			inet_csk_reset_xmit_timer(sk, ICSK_TIME_DACK,
 						  (3 * tcp_rto_min(sk)) / 4,

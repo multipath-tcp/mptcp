@@ -297,20 +297,6 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 
 	newsk = reqsk_queue_get_child(&icsk->icsk_accept_queue, sk);
 	WARN_ON(newsk->sk_state == TCP_SYN_RECV);
-
-#ifdef CONFIG_MTCP
-	/* We must have inherited our bind bucket form our father, otherwise
-	   Our slave subsockets will trigger a segfault when calling
-	   __inet_inherit_port */
-	BUG_ON(!inet_csk(newsk)->icsk_bind_hash);
-
-	/* Init the MTCP mpcb - we need this because when doing
-	   an accept the init function (e.g. tcp_v6_init_sock for tcp ipv6)
-	   is not called */
-	if (newsk->sk_protocol == IPPROTO_TCP)
-		mtcp_attach_master_sk(newsk);
-#endif
-
 out:
 	release_sock(sk);
 	return newsk;
@@ -613,19 +599,13 @@ EXPORT_SYMBOL_GPL(inet_csk_clone);
 void inet_csk_destroy_sock(struct sock *sk)
 {
 #ifdef CONFIG_MTCP
-	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tcp_sk(sk));
-
-	mtcp_debug("%s: Removing subsocket - pi:%d\n",__FUNCTION__,
-		   tcp_sk(sk)->path_index);
-
-	BUG_ON(!mpcb && !tcp_sk(sk)->pending);
-	/* mpcb is NULL if the socket is the child subsocket
-	 * waiting in the accept queue of the mpcb.
-	 * Child subsockets are not yet attached to the mpcb.
-	 * (they will be upon removal in mtcp_check_new_subflow())
-	 */
-	if (mpcb)
-		mtcp_del_sock(mpcb, tcp_sk(sk));
+	if ((sk->sk_protocol == IPPROTO_TCP ||
+	     sk->sk_protocol == IPPROTO_MTCPSUB) &&
+	    tcp_sk(sk)->mpc) {
+		mtcp_debug("%s: Removing subsocket - pi:%d\n", __func__,
+			   tcp_sk(sk)->path_index);
+		mtcp_del_sock(tcp_sk(sk)->mpcb, tcp_sk(sk));
+	}
 #endif
 
 	WARN_ON(sk->sk_state != TCP_CLOSE);
@@ -663,6 +643,8 @@ int inet_csk_listen_start(struct sock *sk, const int nr_table_entries)
 	sk->sk_max_ack_backlog = 0;
 	sk->sk_ack_backlog = 0;
 	inet_csk_delack_init(sk);
+
+	mptcp_fallback(sk); /* no mpcb needed for listening */
 
 	/* There is race window here: we announce ourselves listening,
 	 * but this transition is still not validated by get_port().
@@ -715,14 +697,14 @@ void inet_csk_listen_stop(struct sock *sk)
 
 		acc_req = req->dl_next;
 
-#ifdef CONFIG_MTCP
-		mtcp_detach_unused_child(child);
-#endif
-
 		local_bh_disable();
 		bh_lock_sock(child);
 		WARN_ON(sock_owned_by_user(child));
 		sock_hold(child);
+
+#ifdef CONFIG_MTCP
+		mtcp_detach_unused_child(child);
+#endif
 
 		sk->sk_prot->disconnect(child, O_NONBLOCK);
 

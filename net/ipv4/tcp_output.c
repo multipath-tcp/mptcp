@@ -295,7 +295,8 @@ static u16 tcp_select_window(struct sock *sk)
 		 */
 		new_win = ALIGN(cur_win, 1 << tp->rx_opt.rcv_wscale);
 	}
-	if (tp->mpcb && tp->mpc) {
+
+	if (tp->mpc) {
 		struct tcp_sock *meta_tp = (struct tcp_sock *)(tp->mpcb);
 		meta_tp->rcv_wnd = new_win;
 		meta_tp->rcv_wup = meta_tp->rcv_nxt;
@@ -715,7 +716,7 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 #ifdef CONFIG_MTCP
 	if (!do_mptcp(sk))
 		goto nomptcp;
-	if (is_master_sk(tp)) {
+	if (is_master_tp(tp)) {
 		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 
 		opts->options |= OPTION_MP_CAPABLE;
@@ -887,7 +888,6 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	unsigned int eff_sacks;
 #ifdef CONFIG_MTCP
 	struct multipath_pcb *mpcb;
-	int release_mpcb=0;
 #endif
 
 #ifdef CONFIG_TCP_MD5SIG
@@ -908,19 +908,6 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	}
 #ifdef CONFIG_MTCP
 	mpcb = tp->mpcb;
-	if (tp->pending && !is_master_sk(tp) && tp->mpc) {
-		mpcb = mtcp_hash_find(tp->mtcp_loc_token);
-		if (!mpcb) {
-			printk(KERN_ERR "mpcb not found, token %#x,"
-			       "master_sk:%d,pending:%d, %pI4->%pI4\n",
-			       tp->mtcp_loc_token,is_master_sk(tp),
-			       tp->pending, &inet_sk(sk)->inet_saddr,
-			       &inet_sk(sk)->inet_daddr);
-			BUG();
-		} else {
-			release_mpcb = 1;
-		}
-	}
 
 	if (tp->mpc) {
 		int dss = 0;
@@ -928,13 +915,10 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		if (1 /* && data to ack */) {
 			dss = 1;
 
-			opts->data_ack = (tp->pending && is_master_sk(tp))?
-						tp->rcv_nxt - tp->rcv_isn - 1 :
-						mpcb_meta_tp(mpcb)->rcv_nxt;
+			opts->data_ack = mpcb_meta_tp(mpcb)->rcv_nxt;
 			opts->options |= OPTION_DATA_ACK;
 			size += MPTCP_SUB_LEN_ACK_ALIGN;
 		}
-
 		if (!skb || skb->len != 0 || tcb->flags & TCPHDR_FIN) {
 			dss = 1;
 
@@ -947,7 +931,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			size += MPTCP_SUB_LEN_SEQ_ALIGN;
 		}
 
-		if (mpcb && test_bit(MPCB_FLAG_FIN_ENQUEUED, &mpcb->flags) &&
+		if (tp->mpc && test_bit(MPCB_FLAG_FIN_ENQUEUED, &mpcb->flags) &&
 			(!skb || tcb->end_data_seq == mpcb_meta_tp(mpcb)->write_seq)) {
 			dss = 1;
 
@@ -957,8 +941,9 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		if (dss)
 			size += MPTCP_SUB_LEN_DSS_ALIGN;
 	}
+
 #ifdef CONFIG_MTCP_PM
-	if (tp->mpc && mpcb) {
+	if (tp->mpc) {
 		if (unlikely(mpcb->addr_unsent) &&
 		    MAX_TCP_OPTION_SPACE - size >=
 		    MPTCP_SUB_LEN_ADD_ADDR_ALIGN) {
@@ -970,11 +955,8 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			size += MPTCP_SUB_LEN_ADD_ADDR_ALIGN;
 		}
 	}
-	BUG_ON(!mpcb && !tp->pending);
-#endif
-	if (release_mpcb)
-		mpcb_put(mpcb); /* Taken by mtcp_hash_find */
-#endif
+#endif /* CONFIG_MTCP_PM */
+#endif /* CONFIG_MTCP */
 
 	eff_sacks = tp->rx_opt.num_sacks + tp->rx_opt.dsack;
 	if (unlikely(eff_sacks)) {
@@ -991,7 +973,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			    opts->num_sack_blocks * TCPOLEN_SACK_PERBLOCK;
 	}
 
-	if (size>MAX_TCP_OPTION_SPACE) {
+	if (size > MAX_TCP_OPTION_SPACE) {
 		printk(KERN_ERR "exceeded option space, options:%#x\n",
 		       opts->options);
 		BUG();
@@ -1718,7 +1700,8 @@ static unsigned int tcp_snd_test(struct sock *subsk, struct sk_buff *skb,
 	struct tcp_sock *meta_tp= mpcb_meta_tp(mpcb);
 
 	BUG_ON(subtp->mpc && tcp_skb_pcount(skb) > 1);
-	if (!mpcb)
+
+	if (!subtp->mpc)
 		meta_tp = subtp;
 
 	tcp_init_tso_segs(subsk, skb, cur_mss);
@@ -2059,8 +2042,9 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 	/* We can be recursively called only in TCP_FIN_WAIT1 state (because
 	 * the very last segment calls tcp_send_fin() on all subflows)
 	 */
-	if(tp->mpcb && meta_sk->sk_in_write_xmit
-	   && ((1 << meta_sk->sk_state) & ~(TCPF_FIN_WAIT1 | TCPF_LAST_ACK))) {
+	if (tp->mpc && meta_sk->sk_in_write_xmit &&
+		((1 << meta_sk->sk_state) &
+				~(TCPF_FIN_WAIT1 | TCPF_LAST_ACK))) {
 		printk(KERN_ERR "meta-sk in write xmit, meta-sk:%d,"
 		       "state of mpcb_sk:%d, of subsk:%d\n",
 		       is_meta_sk(sk), ((struct sock *)tp->mpcb)->sk_state,
@@ -2259,9 +2243,9 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			 */
 			mtcp_for_each_sk_safe(tp->mpcb, sk_it, sk_tmp) {
 				if (sk->sk_shutdown == SHUTDOWN_MASK)
-					tcp_close(sk_it, -1);
+					tcp_close(sk_it, 0);
 				else if (sk_it != subsk &&
-					 tcp_close_state(sk_it)) {
+					tcp_close_state(sk_it)) {
 					tcp_send_fin(sk_it);
 				}
 			}
@@ -2278,7 +2262,8 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			break;
 	}
 
-	if (tp->mpcb) tp->mpcb->noneligible = 0;
+	if (tp->mpc)
+		tp->mpcb->noneligible = 0;
 
 	if (likely(sent_pkts)) {
 #ifndef CONFIG_MTCP
@@ -2476,8 +2461,7 @@ u32 __tcp_select_window(struct sock * sk)
 	struct multipath_pcb *mpcb = tp->mpcb;
 	int mss, free_space, full_space, window;
 
-	BUG_ON(!tp->mpcb && !tp->pending);
-	if (!tp->mpc || !tp->mpcb)
+	if (!tp->mpc)
 		return __tcp_select_window_fallback(sk);
 
 	/* MSS for the peer's data.  Previous versions used mss_clamp
@@ -2506,9 +2490,8 @@ u32 __tcp_select_window(struct sock * sk)
 			return 0;
 	}
 
-	if (free_space > mpcb_meta_tp(mpcb)->rcv_ssthresh) {
+	if (free_space > mpcb_meta_tp(mpcb)->rcv_ssthresh)
 		free_space = mpcb_meta_tp(mpcb)->rcv_ssthresh;
-	}
 
 	/* Don't do rounding if we are using window scaling, since the
 	 * scaled window will not line up with the MSS boundary anyway.

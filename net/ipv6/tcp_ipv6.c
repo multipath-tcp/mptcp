@@ -2076,7 +2076,7 @@ static int tcp_v6_init_sock(struct sock *sk)
 	local_bh_enable();
 
 #ifdef CONFIG_MTCP
-	/*Init the MTCP mpcb*/
+	/* Init the MTCP mpcb */
 	{
 		struct multipath_pcb *mpcb;
 		mpcb = mtcp_alloc_mpcb(sk, GFP_KERNEL);
@@ -2085,7 +2085,11 @@ static int tcp_v6_init_sock(struct sock *sk)
 			return -1;
 
 		tp->path_index = 0;
-		mtcp_add_sock(mpcb, tp);
+		tp->mpcb = mpcb;
+		/* the master_sk is not immediately attached (add_sock) to the
+		 * mpcb. It will be only when we receive the
+		 * MP_CAPABLE option from the peer.
+		 */
 	}
 #endif
 	return 0;

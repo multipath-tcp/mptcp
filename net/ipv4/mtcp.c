@@ -4,7 +4,7 @@
  *	Authors:
  *      Sébastien Barré		<sebastien.barre@uclouvain.be>
  *
- *      date : Feb 11
+ *      date : May 11
  *
  *      Important note:
  *            When one wants to add support for closing subsockets *during*
@@ -32,6 +32,7 @@
 #include <linux/in.h>
 #include <linux/random.h>
 #include <linux/inetdevice.h>
+#include <linux/workqueue.h>
 #include <asm/atomic.h>
 #ifdef CONFIG_SYSCTL
 #include <linux/sysctl.h>
@@ -191,19 +192,9 @@ static void mtcp_def_readable(struct sock *sk, int len) {
 }
 
 void mtcp_data_ready(struct sock *sk) {
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
-
-	if (mpcb) {
-		mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
-	} else {
-		/* This tp is not yet attached to the mpcb */
-		BUG_ON(!tp->pending);
-		mpcb = mtcp_hash_find(tp->mtcp_loc_token);
-		BUG_ON(!mpcb);
-		mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
-		mpcb_put(mpcb); /* Taken by mtcp_hash_find */
-	}
+	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tcp_sk(sk));
+	BUG_ON(!mpcb);
+	mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
 }
 
 /**
@@ -211,14 +202,10 @@ void mtcp_data_ready(struct sock *sk) {
  * The first path indices are (re)allocated to existing sockets.
  * New sockets are created if needed.
  * Note that this is called only at client side.
- * Server calls mtcp_check_new_subflow().
+ * Server calls mptcp_subflow_attach()
  *
  * WARNING: We make the assumption that this function is run in user context
  *      (we use sock_create_kern, that reserves ressources with GFP_KERNEL)
- *      AND only one user process can trigger the sending of a PATH_UPDATE
- *      notification. This is in conformance with the fact that only one PM
- *      can send messages to the MPS, according to our multipath arch.
- *      (further PMs are cascaded and use the depth attribute).
  */
 int mtcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 	int i, ret;
@@ -368,6 +355,7 @@ struct multipath_pcb *mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
 	/* Will be replaced by the IDSN later. Currently the IDSN is zero */
 	meta_tp->copied_seq = meta_tp->rcv_nxt = meta_tp->rcv_wup = 0;
 	meta_tp->snd_sml = meta_tp->snd_una = meta_tp->snd_nxt = 0;
+	meta_tp->write_seq = 0;
 
 	meta_tp->mpcb = mpcb;
 	meta_tp->mpc = 1;
@@ -385,11 +373,8 @@ struct multipath_pcb *mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
 	sock_put(meta_sk);
 
 	mpcb->master_sk = master_sk;
+	sock_hold(master_sk);
 
-	kref_init(&mpcb->kref);
-
-	spin_lock_init(&mpcb->lock);
-	mutex_init(&mpcb->mutex);
 	meta_tp->window_clamp = tcp_sk(master_sk)->window_clamp;
 	meta_tp->rcv_ssthresh = tcp_sk(master_sk)->rcv_ssthresh;
 
@@ -420,19 +405,17 @@ struct multipath_pcb *mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
 	return mpcb;
 }
 
-void mpcb_release(struct kref* kref) {
-	struct multipath_pcb *mpcb = container_of(kref,
-						  struct multipath_pcb,kref);
+void mpcb_release(struct multipath_pcb *mpcb)
+{
 	struct sock *meta_sk = (struct sock*) mpcb;
 
-        /*Must have been destroyed previously*/
+	/* Must have been destroyed previously */
 	if (!sock_flag((struct sock*)mpcb, SOCK_DEAD)) {
 		printk(KERN_ERR "Trying to free mpcb without having called "
 			"mtcp_destroy_mpcb()\n");
 		BUG();
 	}
 
-	mutex_destroy(&mpcb->mutex);
 #ifdef CONFIG_MTCP_PM
 	mtcp_pm_release(mpcb);
 #endif
@@ -445,8 +428,6 @@ void mpcb_release(struct kref* kref) {
 	kfree(mpcb);
 }
 
-/* Warning: can only be called in user context
-   (due to unregister_netevent_notifier) */
 static void mtcp_destroy_mpcb(struct multipath_pcb *mpcb) {
 	mtcp_debug("%s: Destroying mpcb with token:%d\n", __FUNCTION__,
 			loc_token(mpcb));
@@ -460,37 +441,47 @@ static void mtcp_destroy_mpcb(struct multipath_pcb *mpcb) {
 	 * to it to ensure the mpcb does not die before any of its
 	 * childs.
 	 */
-#ifdef CONFIG_MTCP_PM
-	mtcp_check_new_subflow(mpcb);
-#endif
-	sock_set_flag((struct sock *) mpcb, SOCK_DEAD);
+	release_sock(mpcb->master_sk);
+	lock_sock(mpcb->master_sk);
 
-	mpcb_put(mpcb); /* kref set to 1 by kref_init in mtcp_alloc_mpcb */
+	sock_set_flag((struct sock *)mpcb, SOCK_DEAD);
+
+	sock_put(mpcb->master_sk); /* grabbed by mtcp_alloc_mpcb */
 }
 
-/* MUST be called in user context */
 void mtcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 	struct sock *meta_sk = (struct sock*) mpcb;
 	struct sock *sk = (struct sock*) tp;
 	struct sk_buff *skb;
+
+	/* We should not add a non-mpc socket */
+	BUG_ON(!tp->mpc);
 
 	/* first subflow */
 	if (!tp->path_index)
 		tp->path_index = 1;
 
 	/* Adding new node to head of connection_list */
-	mutex_lock(&mpcb->mutex); /* To protect against concurrency with
-	 	 		     mtcp_recvmsg and mtcp_sendmsg */
-	local_bh_disable(); /* To protect against concurrency with
-			       mtcp_del_sock */
-	tp->mpcb = mpcb;
+	if (!tp->mpcb) {
+		tp->mpcb = mpcb;
+		if (!is_master_tp(tp)) {
+			/* The corresponding sock_put is in
+			 * inet_sock_destruct(). It cannot be included in
+			 * mtcp_del_sock(), because the mpcb must remain alive
+			 * until the last subsocket is completely destroyed.
+			 * The master_sk cannot sock_hold on itself,
+			 * otherwise it will never be released.
+			 */
+			sock_hold(mpcb->master_sk);
+		}
+	}
 	tp->next = mpcb->connection_list;
 	mpcb->connection_list = tp;
+	tp->attached = 1;
 
 	/* Same token for all subflows */
 	tp->rx_opt.mtcp_rem_token
 			= tcp_sk(mpcb->master_sk)->rx_opt.mtcp_rem_token;
-	tp->pending = 0;
 
 	mpcb->cnt_subflows++;
 	mtcp_update_window_clamp(mpcb);
@@ -509,8 +500,6 @@ void mtcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 			meta_sk->sk_state = TCP_ESTABLISHED;
 	}
 
-	mpcb_get(mpcb);
-
 	/* Empty the receive queue of the added new subsocket
 	 * we do it with bh disabled, because before the mpcb is attached,
 	 * all segs are received in subflow queue,and after the mpcb is
@@ -518,14 +507,23 @@ void mtcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 	 * from subflow to meta-queue must be done atomically with the
 	 * setting of tp->mpcb.
 	 */
-	if (tp->mpc)
-		while ((skb = skb_peek(&sk->sk_receive_queue))) {
-			__skb_unlink(skb, &sk->sk_receive_queue);
-			if (mtcp_queue_skb(sk, skb) == MTCP_EATEN)
-				__kfree_skb(skb);
+	while ((skb = skb_peek(&sk->sk_receive_queue))) {
+		int new_mapping;
+		__skb_unlink(skb, &sk->sk_receive_queue);
+
+		new_mapping = mtcp_get_dataseq_mapping(tp, skb);
+		if (new_mapping < 0) {
+			/* The sender manager to insert his segment
+			 * in the subrcv queue, but the mapping is invalid.
+			 * We should probably send a reset.
+			 */
+			BUG();
 		}
-	local_bh_enable();
-	mutex_unlock(&mpcb->mutex);
+		if (mtcp_queue_skb(sk, skb) == MTCP_EATEN)
+			__kfree_skb(skb);
+		if (new_mapping == 1)
+			mtcp_data_ready(sk);
+	}
 
 	mtcp_debug("%s: token %d pi %d, src_addr:%pI4:%d dst_addr:%pI4:%d,"
 			" cnt_subflows now %d\n", __FUNCTION__ ,
@@ -541,13 +539,9 @@ void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 	struct tcp_sock *tp_prev;
 	int done = 0;
 
-	if (!in_interrupt()) {
-		/* Then we must take the mutex to avoid racing
-		   with mtcp_add_sock */
-		mutex_lock(&mpcb->mutex);
-	}
-
 	tp_prev = mpcb->connection_list;
+	if (!tp->attached)
+		return;
 
 	if (tp_prev == tp) {
 		mpcb->connection_list = tp->next;
@@ -563,15 +557,9 @@ void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 			}
 		}
 
-	if ((struct sock *) tp == mpcb->master_sk) {
-		mtcp_debug("%s: Debugging #54 - setting master_sk == NULL\n",
-				__FUNCTION__);
-		mpcb->master_sk = NULL;
-	}
-
 	tp->next = NULL;
-	if (!in_interrupt())
-		mutex_unlock(&mpcb->mutex);
+	tp->attached = 0;
+
 	BUG_ON(!done);
 }
 
@@ -656,7 +644,6 @@ int mtcp_is_available(struct sock *sk) {
  * The flow is selected based on the estimation of how much time will be
  * needed to send the segment. If all paths have full cong windows, we
  * simply block. The flow able to send the segment the soonest get it.
- * All subsocked must be locked before calling this function.
  */
 struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 				   struct sk_buff *skb)
@@ -665,13 +652,9 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 	struct sock *sk;
 	struct sock *bestsk = NULL;
 	unsigned int min_time_to_peer = 0xffffffff;
-	int bh = in_interrupt();
 
 	if (!mpcb)
 		return NULL;
-
-	if (!bh)
-		mutex_lock(&mpcb->mutex);
 
 	/* if there is only one subflow, bypass the scheduling function */
 	if (mpcb->cnt_subflows == 1) {
@@ -719,14 +702,12 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 	}
 
 out:
-	if (!bh)
-		mutex_unlock(&mpcb->mutex);
-
 	return bestsk;
 }
 
 int mtcp_sendmsg(struct kiocb *iocb, struct sock *master_sk,
 		struct msghdr *msg, size_t size) {
+	struct tcp_sock *master_tp = tcp_sk(master_sk);
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tcp_sk(master_sk));
 	struct sock *meta_sk = (struct sock *) mpcb;
 	size_t copied = 0;
@@ -734,20 +715,13 @@ int mtcp_sendmsg(struct kiocb *iocb, struct sock *master_sk,
 	int flags = msg->msg_flags;
 	long timeo = sock_sndtimeo(master_sk, flags & MSG_DONTWAIT);
 
-	/* At the moment it should be sure 100% that the mpcb pointer is defined
-	 * because at the client, alloc_mpcb is called in tcp_v4_init_sock(),
-	 * at the server it is called in inet_csk_accept(). sendmsg() can be
-	 * called before none of these functions.
-	 */
-	BUG_ON(!mpcb);
-
 	lock_sock(master_sk);
 
 	/* If the master sk is not yet established, we need to wait
 	 * until the establishment, so as to know whether the mpc option
 	 * is present.
 	 */
-	if (!tcp_sk(master_sk)->mpc) {
+	if (!master_tp->mpc) {
 		if ((1 << master_sk->sk_state) & ~(TCPF_ESTABLISHED
 				| TCPF_CLOSE_WAIT)) {
 			err = sk_stream_wait_connect(master_sk, &timeo);
@@ -762,36 +736,25 @@ int mtcp_sendmsg(struct kiocb *iocb, struct sock *master_sk,
 			if (!tcp_sk(master_sk)->mpc) {
 				copied = subtcp_sendmsg(iocb, master_sk, msg,
 							size);
-				goto out_nompc;
+				goto out;
 			}
 
 		} else {
 			copied = subtcp_sendmsg(iocb, master_sk, msg, size);
-			goto out_nompc;
+			goto out;
 		}
 	}
 
-	release_sock(master_sk);
-	lock_sock(meta_sk);
-
 	verif_wqueues(mpcb);
 
-#ifdef CONFIG_MTCP_PM
-	/* Any new subsock we can use ? */
-	mtcp_check_new_subflow(mpcb);
-#endif
 	copied = subtcp_sendmsg(NULL, meta_sk, msg, 0);
 	if (copied < 0) {
 		printk(KERN_ERR "%s: returning error "
 		"to app:%d\n", __FUNCTION__, (int) copied);
-		goto out_mpc;
+		goto out;
 	}
 
-out_mpc:
-	release_sock(meta_sk);
-	return copied;
-
-out_nompc:
+out:
 	release_sock(master_sk);
 	return copied;
 
@@ -799,110 +762,7 @@ out_err_nompc:
 	err = sk_stream_error(master_sk, flags, err);
 	TCP_CHECK_TIMER(master_sk);
 	release_sock(master_sk);
-
 	return err;
-}
-
-/**
- * (from sk_wait_data())
- * mtcp_wait_data - wait for data to arrive at sk_receive_queue
- * on any of the subsockets attached to the mpcb
- * @mpcb:  the mpcb to wait on
- * @sk:    its master socket
- * @timeo: for how long
- *
- * Now socket state including sk->sk_err is changed only under lock,
- * hence we may omit checks after joining wait queue.
- * We check receive queue before schedule() only as optimization;
- * it is very likely that release_sock() added new data.
- */
-static int __mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
-		long *timeo) {
-	int rc;
-	struct sock *sk;
-	struct tcp_sock *tp;
-	struct sock *meta_sk = (struct sock*) mpcb;
-	DEFINE_WAIT(wait);
-
-	prepare_to_wait(sk_sleep(master_sk), &wait, TASK_INTERRUPTIBLE);
-
-	mtcp_for_each_sk(mpcb,sk,tp) {
-		set_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
-		tp->wait_data_bit_set = 1;
-	}
-	rc = mtcp_wait_event_any_sk(mpcb, sk, tp, timeo,
-				    (!skb_queue_empty(
-					    &meta_sk->sk_receive_queue) ||
-				     !skb_queue_empty(&tp->ucopy.prequeue)));
-
-	mtcp_for_each_sk(mpcb, sk, tp)
-		if (tp->wait_data_bit_set) {
-			clear_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
-			tp->wait_data_bit_set = 0;
-		}
-	finish_wait(sk_sleep(master_sk), &wait);
-	return rc;
-}
-
-/**
- * mtcp_rcv_check_subflows, check for arrival of new subflows
- * while waiting for arriving data
- * WARNING: that function assumes that the mutex lock is held.
- * @return: the number of newly added subflows
- */
-static int mtcp_rcv_check_subflows(struct multipath_pcb *mpcb, int flags) {
-	int cnt_subflows, new_subflows = 0;
-	struct tcp_sock *tp;
-
-	cnt_subflows = mpcb->cnt_subflows;
-#ifdef CONFIG_MTCP_PM
-	/* TODO: do something similar for other path managers */
-	mutex_unlock(&mpcb->mutex);
-	new_subflows = mtcp_check_new_subflow(mpcb);
-	mutex_lock(&mpcb->mutex);
-#endif
-	/* We may have received data on a newly created
-	 * subsocket, check if the list has grown
-	 */
-	if (cnt_subflows != mpcb->cnt_subflows) {
-		/* We must ensure that for each new tp,
-		 * the seq pointer is correctly set. In
-		 * particular we'll get a segfault if
-		 * the pointer is NULL
-		 */
-		mtcp_for_each_newtp(mpcb, tp, cnt_subflows) {
-			if (flags & MSG_PEEK) {
-				tp->peek_seq = tp->copied_seq;
-				tp->seq = &tp->peek_seq;
-			} else {
-				tp->seq = &tp->copied_seq;
-			}
-
-			BUG_ON(sock_owned_by_user((struct sock *) tp));
-			/* Here, all subsocks are locked so we must also lock
-			 * new subsocks
-			 */
-			lock_sock((struct sock *) tp);
-		}
-	}
-	return new_subflows;
-}
-
-int mtcp_wait_data(struct multipath_pcb *mpcb, struct sock *master_sk,
-		long *timeo, int flags) {
-	int rc;
-	int new_subflows = 0;
-
-	new_subflows = mtcp_rcv_check_subflows(mpcb, flags);
-	/* If no data is received but a new subflow appears,
-	   we attach the new subflow and wait again for data. */
-	do {
-		rc = __mtcp_wait_data(mpcb, master_sk, timeo);
-		new_subflows = mtcp_rcv_check_subflows(mpcb, flags);
-	} while (!rc && new_subflows); /* If a new subflow appeared, and no data,
-					  loop to check if data appeared in the
-					  newly arrived subsock. */
-	return rc;
 }
 
 void mtcp_ofo_queue(struct multipath_pcb *mpcb) {
@@ -1137,12 +997,10 @@ int mtcp_queue_skb(struct sock *sk, struct sk_buff *skb) {
 	int ans;
 
 	mpcb = mpcb_from_tcpsock(tp);
-	if (tp->pending)
-		mpcb = mtcp_hash_find(tp->mtcp_loc_token);
 	meta_sk = (struct sock *) mpcb;
 	meta_tp = tcp_sk(meta_sk);
 
-	if (!tp->mpc || !mpcb) {
+	if (!tp->mpc) {
 		/* skb_set_owner_r may already have been called by
 		 * tcp_data_queue when the skb has been added to the ofo-queue,
 		 * and we are coming from tcp_ofo_queue
@@ -1150,18 +1008,8 @@ int mtcp_queue_skb(struct sock *sk, struct sk_buff *skb) {
                 if (skb->sk != sk)
                         skb_set_owner_r(skb, sk);
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
-		/* This is the only case of MTCP_QUEUED where
-		  we can return directly, without goto queued or goto out.
-		  reason: ->we push to receive queue, so no need
-		  to charge mpcb (label queued).
-		  ->it would have been needed to call mpcb_put()
-		  only if tp->pending is set (meaning, server side),
-		  mpcb defined, and mpc not defined (meaning, one
-		  subflow only). server+first subflow means: no mpcb
-		  yet. This contradicts previous mpcb!=NULL requirement,
-		  so the "need mpcb_put()" situation is _impossible_ here.
-		 */
-		return MTCP_QUEUED;
+		ans = MTCP_QUEUED;
+		goto out;
 	}
 
 	if (!skb->len && tcp_hdr(skb)->fin && !tp->rx_opt.saw_dfin) {
@@ -1256,20 +1104,14 @@ int mtcp_queue_skb(struct sock *sk, struct sk_buff *skb) {
 			__skb_insert(skb, skb1, skb1->next,
 					&meta_tp->out_of_order_queue);
 			/* And clean segments covered by new one as whole. */
-			while ((skb1 = skb->next)
-				!= (struct sk_buff *)
-				&meta_tp->out_of_order_queue
-				&& after(TCP_SKB_CB(skb)->end_data_seq,
-					TCP_SKB_CB(skb1)->data_seq)) {
-				if (!before(TCP_SKB_CB(skb)->end_data_seq,
-						TCP_SKB_CB(skb1)->
-						end_data_seq)) {
-					skb_unlink(
-						skb1,
-						&meta_tp->out_of_order_queue);
-					__kfree_skb(skb1);
-				} else
-					break;
+			while ((skb1 = skb->next) != (struct sk_buff *)
+				&meta_tp->out_of_order_queue &&
+				after(TCP_SKB_CB(skb)->end_data_seq,
+					TCP_SKB_CB(skb1)->data_seq) &&
+				!before(TCP_SKB_CB(skb)->end_data_seq,
+					TCP_SKB_CB(skb1)->end_data_seq)) {
+				skb_unlink(skb1, &meta_tp->out_of_order_queue);
+				__kfree_skb(skb1);
 			}
 			ans = MTCP_QUEUED;
 			goto queued;
@@ -1293,8 +1135,6 @@ queued:
 	/* Reassign the skb to the meta-socket */
 	skb_set_owner_r(skb, meta_sk);
 out:
-	if (tp->pending)
-		mpcb_put(mpcb); /* Taken by mtcp_hash_find */
 	return ans;
 }
 
@@ -1569,32 +1409,17 @@ void mtcp_parse_options(uint8_t *ptr, int opsize,
  * - If the mapping has been correctly updated, or the skb has correctly
  *   been given its dataseq, we then check if the segment is in meta-order.
  *   i) if it is: we return 1
- *   ii) if its end_data_seq is older then mpcb->copied_seq, it is a
- *       reinjected segment arrived late. We return 2, to indicate to the
- *       caller that the segment can be eaten by the subflow immediately.
- *   iii) if it is not in meta-order (keep in mind that the precondition
+ *   ii) if it is not in meta-order (keep in mind that the precondition
  *        requires that it is in subflow order): we return 0
- *   iv) particular case: if the segment is a subflow-only segment
- *      (e.g. FIN without DFIN), we return 3.
  * - If the skb is faulty (does not contain a dataseq option, and seqnum
  *   not contained in currently stored mapping), we return -1
- * - If the tp is a pending tp, and the mpcb is destroyed (not anymore
- *   in the hashtable), we return -1.
  */
 int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb) {
 	int changed = 0;
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
-	int ans;
+	int ans = 0;
 
-	BUG_ON(!mpcb && !tp->pending);
-	/* We must be able to find the mapping even for a pending
-	   subsock, because that pending subsock can trigger the wake up of
-	   the application. (it is holds the next DSN) */
-	if (tp->pending) {
-		mpcb = mtcp_hash_find(tp->mtcp_loc_token);
-		if (!mpcb)
-			return -1;
-	}
+	BUG_ON(!mpcb);
 
 	if (TCP_SKB_CB(skb)->data_len) {
 		tp->map_data_seq = TCP_SKB_CB(skb)->data_seq;
@@ -1604,16 +1429,8 @@ int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb) {
 	}
 
 	/* Is it a subflow only FIN ? */
-	if (tcp_hdr(skb)->fin && !tp->rx_opt.saw_dfin) {
-		return 3;
-	}
-
-	/* Even if we have received a mapping update, it may differ from
-	 * the seqnum contained in the
-	 * TCP header. In that case we must recompute the data_seq and
-	 * end_data_seq accordingly. This is what happens in case of TSO,
-	 * because the NIC keeps the option as is.
-	 */
+	if (tcp_hdr(skb)->fin && !tp->rx_opt.saw_dfin && !skb->len)
+		return 0;
 
 	if (before(TCP_SKB_CB(skb)->seq, tp->map_subseq)
 	    || after(TCP_SKB_CB(skb)->end_seq,
@@ -1628,13 +1445,17 @@ int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb) {
 			* reaching this point can only be a bug, later we
 			* can remove this.
 			*/
-		ans = 1;
-		goto out;
+		return -1;
 	}
 	/* OK, the segment is inside the mapping, we can
-	 * derive the dataseq. Note that we maintain
-	 * TCP_SKB_CB(skb)->data_len to zero, so as not to mix
-	 * received mappings and derived dataseqs.
+	 * derive the dataseq. Note that:
+	 * -we maintain TCP_SKB_CB(skb)->data_len to zero, so as not to mix
+	 *  received mappings and derived dataseqs.
+	 * -Even if we have received a mapping update, it may differ from
+	 *  the seqnum contained in the
+	 *  TCP header. In that case we must recompute the data_seq and
+	 *  end_data_seq accordingly. This is what happens in case of TSO,
+	 *  because the NIC keeps the option as is.
 	 */
 	TCP_SKB_CB(skb)->data_seq = tp->map_data_seq
 		+ (TCP_SKB_CB(skb)->seq - tp->map_subseq);
@@ -1666,14 +1487,7 @@ int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb) {
 	if (!before(mpcb_meta_tp(mpcb)->copied_seq, TCP_SKB_CB(skb)->data_seq) &&
 	     before(mpcb_meta_tp(mpcb)->copied_seq, TCP_SKB_CB(skb)->end_data_seq))
 		ans = 1;
-	else if (!before(mpcb_meta_tp(mpcb)->copied_seq, TCP_SKB_CB(skb)->end_data_seq))
-		ans = 2;
-	else
-		ans = 0;
 
-out:
-	if (tp->pending)
-		mpcb_put(mpcb); /* Taken by mtcp_hash_find */
 	return ans;
 }
 
@@ -1891,9 +1705,9 @@ void mtcp_send_fin(struct sock *meta_sk) {
 
 extern int tcp_close_state(struct sock *sk);
 void mtcp_close(struct sock *master_sk, long timeout) {
-	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tcp_sk(master_sk));
-	struct sock *meta_sk = (struct sock*) mpcb;
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct multipath_pcb *mpcb;
+	struct sock *meta_sk = NULL;
+	struct tcp_sock *meta_tp = NULL;
 	struct sock *subsk;
 	struct tcp_sock *subtp;
 	struct sk_buff *skb;
@@ -1902,17 +1716,29 @@ void mtcp_close(struct sock *master_sk, long timeout) {
 
 	mtcp_debug("%s: Close of meta_sk\n",__FUNCTION__);
 
-	/* destroy the mpcb, it will really disappear when the last subsock
-	   is destroyed */
-	mpcb_get(mpcb);
-	mtcp_destroy_mpcb(mpcb);
+	lock_sock(master_sk);
+	mpcb = (tcp_sk(master_sk)->mpc) ? tcp_sk(master_sk)->mpcb : NULL;
 
-	if (!tcp_sk(master_sk)->mpc) {
-		mpcb_put(mpcb); /* Taken by mpcb_get */
-		return tcp_close(master_sk, timeout);
+	/* destroy the mpcb, it will really disappear when the last subsock
+	 * is destroyed
+	 */
+	if (mpcb) {
+		meta_sk = (struct sock *) mpcb;
+		meta_tp = tcp_sk(meta_sk);
+		sock_hold(master_sk);
+		mtcp_destroy_mpcb(mpcb);
+	} else {
+		sock_hold(master_sk); /* needed to keep the pointer until the
+				       * release_sock()
+				       */
+		tcp_close(master_sk, timeout);
+		release_sock(master_sk);
+		sock_put(master_sk);
+		return;
 	}
 
-	lock_sock(meta_sk);
+	BUG_ON(!mpcb);
+
 	meta_sk->sk_shutdown = SHUTDOWN_MASK;
 
 	/* We need to flush the recv. buffs.  We do this only on the
@@ -1938,7 +1764,7 @@ void mtcp_close(struct sock *master_sk, long timeout) {
 		 * ourselves.
 		 */
 		mtcp_for_each_sk_safe(mpcb,sk_it,sk_tmp)
-			tcp_close(sk_it, timeout);
+			tcp_close(sk_it, 0);
 	}
 
 	sk_stream_wait_close(meta_sk, timeout);
@@ -1958,36 +1784,8 @@ void mtcp_close(struct sock *master_sk, long timeout) {
 	}
 
 	/* It is the last release_sock in its life. It will remove backlog. */
-	release_sock(meta_sk);
-	mpcb_put(mpcb); /* Taken by mpcb_get */
-}
-
-/**
- * Used by inet_csk_accept() and mtcp_detach_child().
- * Attaches a new master_sk (child of a listening socket)
- * to its corresponding mpcb structure.
- */
-struct multipath_pcb *mtcp_attach_master_sk(struct sock *sk)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct multipath_pcb *mpcb;
-	struct tcp_sock *meta_tp;
-
-	lock_sock(sk);
-	mpcb = mtcp_hash_find(tp->mtcp_loc_token);
-	BUG_ON(!mpcb);
-	meta_tp = (struct tcp_sock *)mpcb;
-	tp->path_index = 0;
-	mtcp_add_sock(mpcb, tp);
-
-	meta_tp->write_seq = 0; /* first byte is IDSN
-				   To be replaced later with a random IDSN
-				   (well, if it indeed improves security) */
-
-	meta_tp->copied_seq = 0; /* First byte of yet unread data */
-	mpcb_put(mpcb); /* Taken by mtcp_hash_find */
-	release_sock(sk);
-	return mpcb;
+	release_sock(master_sk);
+	sock_put(master_sk); /* Taken by sock_hold */
 }
 
 /**
@@ -2006,8 +1804,9 @@ void mtcp_detach_unused_child(struct sock *sk)
 	struct tcp_sock *child_tp;
 	if (!sk->sk_protocol == IPPROTO_TCP)
 		return;
-
-	mpcb = mtcp_attach_master_sk(sk);
+	mpcb = tcp_sk(sk)->mpcb;
+	if (!mpcb)
+		return;
 	mtcp_destroy_mpcb(mpcb);
 	/* Now all subflows of the mpcb are attached,
 	 * so we can destroy them, being sure that the mpcb
@@ -2023,7 +1822,6 @@ void mtcp_detach_unused_child(struct sock *sk)
 		 * inet_csk_listen_stop()
 		 */
 		local_bh_disable();
-		bh_lock_sock(child);
 		WARN_ON(sock_owned_by_user(child));
 		sock_hold(child);
 
@@ -2035,7 +1833,6 @@ void mtcp_detach_unused_child(struct sock *sk)
 
 		inet_csk_destroy_sock(child);
 
-		bh_unlock_sock(child);
 		local_bh_enable();
 		sock_put(child);
 	}
@@ -2056,6 +1853,58 @@ int do_mptcp(struct sock *sk)
 	if (is_local_addr4(inet_sk(sk)->inet_daddr))
 		return 0;
 	return 1;
+}
+
+/**
+ * Prepares fallback to regular TCP.
+ * The master sk is detached and the mpcb structure is destroyed.
+ */
+static void __mptcp_fallback(struct sock *master_sk)
+{
+	struct tcp_sock *master_tp = tcp_sk(master_sk);
+	struct multipath_pcb *mpcb = mpcb_from_tcpsock(master_tp);
+	struct sock *meta_sk = (struct sock *)mpcb;
+
+	if (!mpcb)
+		return; /* Fallback is already done */
+
+	if (sock_flag(meta_sk, SOCK_DEAD))
+		return; /* mtcp_destroy_mpcb() already called. No need
+			 * to fallback.
+			 */
+
+	sock_hold(master_sk);
+	mtcp_destroy_mpcb(mpcb);
+	mpcb_release(mpcb);
+	master_tp->mpcb = NULL;
+	sock_put(master_sk);
+}
+
+void mptcp_fallback_wq(struct work_struct *work)
+{
+	struct sock *master_sk = *(struct sock **)(work + 1);
+	lock_sock(master_sk);
+	__mptcp_fallback(master_sk);
+	release_sock(master_sk);
+	sock_put(master_sk);
+	kfree(work);
+}
+
+void mptcp_fallback(struct sock *master_sk)
+{
+	if (in_interrupt()) {
+		struct work_struct *work = kmalloc(sizeof(*work) +
+						sizeof(struct sock *),
+						GFP_ATOMIC);
+		struct sock **sk = (struct sock **)(work + 1);
+
+		*sk = master_sk;
+		sock_hold(master_sk);
+		INIT_WORK(work, mptcp_fallback_wq);
+		schedule_work(work);
+	} else {
+		__mptcp_fallback(master_sk);
+	}
 }
 
 #ifdef MTCP_DEBUG_PKTS_OUT

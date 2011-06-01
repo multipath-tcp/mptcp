@@ -143,14 +143,12 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 	struct tcp_options_received tmp_opt;
 	u8 *hash_location;
 	struct tcp_timewait_sock *tcptw = tcp_twsk((struct sock *)tw);
-	struct multipath_options mopt;
 	int paws_reject = 0;
 
 	tmp_opt.saw_tstamp = 0;
-	mtcp_init_addr_list(&mopt);
 
 	if (th->doff > (sizeof(*th) >> 2) && tcptw->tw_ts_recent_stamp) {
-		tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
+		tcp_parse_options(skb, &tmp_opt, &hash_location, NULL, 0);
 
 		if (tmp_opt.saw_tstamp) {
 			tmp_opt.ts_recent	= tcptw->tw_ts_recent;
@@ -576,12 +574,17 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	struct multipath_options mopt;
 	u8 *hash_location;
 	struct sock *child;
+	struct tcp_sock *child_tp;
 	const struct tcphdr *th = tcp_hdr(skb);
 	__be32 flg = tcp_flag_word(th) & (TCP_FLAG_RST|TCP_FLAG_SYN|TCP_FLAG_ACK);
 	int paws_reject = 0;
 
 	tmp_opt.saw_tstamp = 0;
-	mtcp_init_addr_list(&mopt);
+
+	if (!is_meta_sk(sk))
+		mtcp_init_addr_list(&mopt);
+	else
+		mopt = tcp_sk(sk)->mpcb->received_options;
 
 	if (th->doff > (sizeof(struct tcphdr)>>2)) {
 		tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
@@ -741,39 +744,71 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	child = inet_csk(sk)->icsk_af_ops->syn_recv_sock(sk, skb, req, NULL);
 	if (child == NULL)
 		goto listen_overflow;
+	child_tp = tcp_sk(child);
 
 #ifdef CONFIG_MTCP
-	{
+	if (!is_meta_sk(sk)) { /* Regular TCP establishment */
+		struct multipath_pcb *mpcb;
 		/* Copy mptcp related info from req to child
 		 * we do this here because this is shared between
 		 * ipv4 and ipv6
 		 */
-		struct tcp_sock *child_tp = tcp_sk(child);
-		struct multipath_pcb *mpcb;
-
 		child_tp->rx_opt.saw_mpc = req->saw_mpc;
-		if (child_tp->rx_opt.saw_mpc)
+		if (child_tp->rx_opt.saw_mpc) {
+			child_tp->rx_opt.saw_mpc = 0;
 			child_tp->mpc = 1;
-		child_tp->rx_opt.mtcp_rem_token = req->mtcp_rem_token;
-		child_tp->mpcb = NULL;
-		child_tp->pending = 1;
-		child_tp->mtcp_loc_token = req->mtcp_loc_token;
-		mpcb = mtcp_alloc_mpcb(child, GFP_ATOMIC);
+			child_tp->rx_opt.mtcp_rem_token = req->mtcp_rem_token;
+			child_tp->path_index = 0;
+			child_tp->mtcp_loc_token = req->mtcp_loc_token;
+			child_tp->mpcb = mpcb =
+				mtcp_alloc_mpcb(child, GFP_ATOMIC);
 
-		/* The allocation of the mpcb failed!
-		 * Destoy the child and go to listen_overflow
-		 */
-		if (mpcb == NULL) {
-			tcp_done(child);
-			goto listen_overflow;
+			/* The allocation of the mpcb failed!
+			 * Destroy the child and go to listen_overflow
+			 */
+			if (mpcb == NULL) {
+				tcp_done(child);
+				goto listen_overflow;
+			}
+
+			mtcp_add_sock(mpcb, child_tp);
+
+			if (mopt.list_rcvd)
+				memcpy(&mpcb->received_options, &mopt,
+				       sizeof(mopt));
+			set_bit(MPCB_FLAG_SERVER_SIDE, &mpcb->flags);
+			/* Will be moved to ESTABLISHED by
+			 * tcp_rcv_state_process()
+			 */
+			((struct sock *)mpcb)->sk_state = TCP_SYN_RECV;
+			mtcp_update_metasocket(child, mpcb);
+		} else {
+			child_tp->mpcb = NULL;
 		}
+	} else { /* subflow establishment */
+		/* The child is a clone of the master socket, we must now reset
+		 * some of the fields
+		 */
+		child_tp->mpc = 1;
+		child_tp->slave_sk = 1;
+		child_tp->rx_opt.mtcp_rem_token = req->mtcp_rem_token;
+		child_tp->mtcp_loc_token = req->mtcp_loc_token;
+		child_tp->bw_est.time = 0;
+		child->sk_sndmsg_page = NULL;
 
-		if (mopt.list_rcvd)
-			memcpy(&mpcb->received_options, &mopt, sizeof(mopt));
-		set_bit(MPCB_FLAG_SERVER_SIDE,&mpcb->flags);
-		/* Will be moved to ESTABLISHED by tcp_rcv_state_process() */
-		((struct sock *)mpcb)->sk_state = TCP_SYN_RECV;
-		mtcp_update_metasocket(child, mpcb);
+		/* Child_tp->mpcb has been closed from the master_sk
+		 * We need to increase the master_sk refcount
+		 */
+		sock_hold(child_tp->mpcb->master_sk);
+
+		/* Deleting from global hashtable */
+		mtcp_hash_request_remove(req);
+
+		/* Subflows do not use the accept queue, as they
+		 * are attached immediately to the mpcb.
+		 */
+		inet_csk_reqsk_queue_drop(sk, req, prev);
+		return child;
 	}
 #endif /* CONFIG_MTCP */
 
@@ -793,7 +828,10 @@ embryonic_reset:
 	NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_EMBRYONICRSTS);
 	if (!(flg & TCP_FLAG_RST))
 		req->rsk_ops->send_reset(sk, skb);
-
+	if (is_meta_sk(sk)) {
+		/*Deleting from global hashtable */
+		mtcp_hash_request_remove(req);
+	}
 	inet_csk_reqsk_queue_drop(sk, req, prev);
 	return NULL;
 }

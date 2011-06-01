@@ -45,7 +45,7 @@
  *					escape still
  *		Alan Cox	:	Fixed another acking RST frame bug.
  *					Should stop LAN workplace lockups.
- *		Alan Cox	: 	Some tidyups using the new skb list
+ *		Alan Cox	:	Some tidyups using the new skb list
  *					facilities
  *		Alan Cox	:	sk->keepopen now seems to work
  *		Alan Cox	:	Pulls options out correctly on accepts
@@ -199,7 +199,7 @@
  *					tcp_do_sendmsg to avoid burstiness.
  *		Eric Schenk	:	Fix fast close down bug with
  *					shutdown() followed by close().
- *		Andi Kleen 	:	Make poll agree with SIGIO
+ *		Andi Kleen	:	Make poll agree with SIGIO
  *	Salvatore Sanfilippo	:	Support SO_LINGER with linger == 1 and
  *					lingertime == 0 (RFC 793 ABORT Call)
  *	Hirokazu Takahashi	:	Use copy_from_user() instead of
@@ -385,7 +385,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	struct tcp_sock *master_tp = tcp_sk(master_sk);
 #ifdef CONFIG_MTCP
 	struct multipath_pcb *mpcb=mpcb_from_tcpsock(master_tp);
-	struct sock *mpcb_sk = (master_tp->mpc)?(struct sock *) mpcb:
+	struct sock *mpcb_sk = (master_tp->mpc) ? (struct sock *)mpcb:
 		master_sk;
 	struct tcp_sock *mpcb_tp = tcp_sk(mpcb_sk);
 #else
@@ -394,11 +394,6 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 #endif
 
 	sock_poll_wait(file, sk_sleep(master_sk), wait);
-
-#ifdef CONFIG_MTCP_PM
-	if (master_tp->mpc)
-		mtcp_check_new_subflow(mpcb);
-#endif
 
 	if (master_sk->sk_state == TCP_LISTEN)
 		return inet_csk_listen_poll(master_sk);
@@ -559,18 +554,19 @@ static inline int forced_push(struct tcp_sock *tp)
 static inline void skb_entail(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
-	struct tcp_sock *meta_tp = (struct tcp_sock *)mpcb;
 
-	skb->csum = 0;
+	skb->csum    = 0;
 	/* in MPTCP mode, the subflow seqnum is given later */
-	if (tp->mpc)
+	if (tp->mpc) {
+		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
+		struct tcp_sock *meta_tp = (struct tcp_sock *)mpcb;
 		tcb->seq      = tcb->end_seq = tcb->sub_seq = 0;
-	else
+		tcb->data_seq = tcb->end_data_seq = meta_tp->write_seq;
+		tcb->data_len = 0;
+	} else {
 		tcb->seq      = tcb->end_seq = tcb->sub_seq = tp->write_seq;
-	tcb->data_seq = tcb->end_data_seq = meta_tp->write_seq;
-	tcb->data_len = 0;
+	}
 	tcb->flags   = TCPHDR_ACK;
 	tcb->sacked  = 0;
 	skb_header_release(skb);
@@ -924,7 +920,7 @@ int tcp_sendpage(struct sock *sk, struct page *page, int offset,
 	ssize_t res;
 
 	if (!(sk->sk_route_caps & NETIF_F_SG) ||
-	    !(sk->sk_route_caps & NETIF_F_ALL_CSUM) || tcp_sk(sk)->mpc)
+	    !(sk->sk_route_caps & NETIF_F_ALL_CSUM) || tcp_sk(sk)->mpcb)
 		return sock_no_sendpage(sk->sk_socket, page, offset, size,
 					flags);
 
@@ -1547,10 +1543,6 @@ int tcp_read_sock(struct sock *sk, read_descriptor_t *desc,
 }
 EXPORT_SYMBOL(tcp_read_sock);
 
-#ifndef CONFIG_MTCP
-#define tcp_recvmsg_fallback tcp_recvmsg
-#endif
-
 /*
  *	This routine copies from a sock struct into the user buffer.
  *
@@ -1559,9 +1551,9 @@ EXPORT_SYMBOL(tcp_read_sock);
  *	Probably, code can be easily improved even more.
  */
 
-int tcp_recvmsg_fallback(struct kiocb *iocb, struct sock *sk,
-			 struct msghdr *msg,
-			 size_t len, int nonblock, int flags, int *addr_len)
+int tcp_recvmsg(struct kiocb *iocb, struct sock *sk,
+		struct msghdr *msg,
+		size_t len, int nonblock, int flags, int *addr_len)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	int copied = 0;
@@ -1575,8 +1567,21 @@ int tcp_recvmsg_fallback(struct kiocb *iocb, struct sock *sk,
 	int copied_early = 0;
 	struct sk_buff *skb;
 	u32 urg_hole = 0;
+	/* MPTCP variables */
+	struct multipath_pcb *mpcb = NULL;
+	struct tcp_sock *tp_it, *meta_tp;
+	struct sock *sk_it, *meta_sk;
 
 	lock_sock(sk);
+
+	if (tp->mpc) {
+		meta_sk = (struct sock *)tp->mpcb;
+		meta_tp = tcp_sk(meta_sk);
+		mpcb = tp->mpcb;
+	} else {
+		meta_sk = sk;
+		meta_tp = tp;
+	}
 
 	TCP_CHECK_TIMER(sk);
 
@@ -1590,9 +1595,9 @@ int tcp_recvmsg_fallback(struct kiocb *iocb, struct sock *sk,
 	if (flags & MSG_OOB)
 		goto recv_urg;
 
-	seq = &tp->copied_seq;
+	seq = &meta_tp->copied_seq;
 	if (flags & MSG_PEEK) {
-		peek_seq = tp->copied_seq;
+		peek_seq = meta_tp->copied_seq;
 		seq = &peek_seq;
 	}
 
@@ -1623,18 +1628,51 @@ int tcp_recvmsg_fallback(struct kiocb *iocb, struct sock *sk,
 	do {
 		u32 offset;
 
-		/* Are we at urgent data? Stop if we have read anything or have SIGURG pending. */
+		/* The following happens if we entered the function without
+		 * being established, then received the mpc flag while
+		 * inside the function.
+		 */
+		if (!mpcb && tp->mpc) {
+			meta_sk = tp->mpcb->master_sk;
+			meta_tp = tcp_sk(meta_sk);
+			mpcb = tp->mpcb;
+		}
+
+		if (mpcb) {
+			/* Start by checking if skbs are waiting on the mpcb
+			 * receive queue
+			 */
+			if (mtcp_check_rcv_queue(mpcb, msg, &len, seq,
+						 &copied, flags) < 0) {
+				printk(KERN_ERR "error in "
+				       "mtcp_check_rcv_queue\n");
+				/* Exception. Bailout! */
+				if (!copied)
+					copied = -EFAULT;
+				break;
+			}
+		}
+
+		/* Are we at urgent data? Stop if we have read anything or
+		 * have SIGURG pending.
+		 */
 		if (tp->urg_data && tp->urg_seq == *seq) {
+			/* With tp->mpc, tp->urg_seq must be set to a DSN,
+			 * not a subseq number. This is not done yet.
+			 */
+			BUG_ON(mpcb);
 			if (copied)
 				break;
 			if (signal_pending(current)) {
-				copied = timeo ? sock_intr_errno(timeo) : -EAGAIN;
+				copied = timeo ? sock_intr_errno(timeo) :
+					-EAGAIN;
 				break;
 			}
 		}
 
 		/* Next get a buffer. */
-
+		if (mpcb)
+			goto no_subrcv_queue;
 		skb_queue_walk(&sk->sk_receive_queue, skb) {
 			/* Now that we have two receive queues this
 			 * shouldn't happen.
@@ -1656,33 +1694,37 @@ int tcp_recvmsg_fallback(struct kiocb *iocb, struct sock *sk,
 			     "recvmsg bug 2: copied %X seq %X rcvnxt %X fl %X\n",
 			     *seq, TCP_SKB_CB(skb)->seq, tp->rcv_nxt, flags);
 		}
-
+no_subrcv_queue:
 		/* Well, if we have backlog, try to process it now yet. */
 
-		if (copied >= target && !sk->sk_backlog.tail)
+		if (copied >= target && !sk->sk_backlog.tail &&
+			(!tp->mpc ||
+				!mtcp_test_any_sk(mpcb, sk_it,
+						sk_it->sk_backlog.tail)))
 			break;
 
 		if (copied) {
-			if (sk->sk_err ||
-			    sk->sk_state == TCP_CLOSE ||
-			    (sk->sk_shutdown & RCV_SHUTDOWN) ||
-			    !timeo ||
-			    signal_pending(current))
-				break;
-		} else {
-			if (sock_flag(sk, SOCK_DONE))
+			if (meta_sk->sk_err ||
+				meta_sk->sk_state == TCP_CLOSE ||
+				(meta_sk->sk_shutdown & RCV_SHUTDOWN) ||
+				!timeo ||
+				signal_pending(current))
 				break;
 
-			if (sk->sk_err) {
-				copied = sock_error(sk);
+		} else {
+			if (sock_flag(meta_sk, SOCK_DONE))
+				break;
+
+			if (meta_sk->sk_err) {
+				copied = sock_error(meta_sk);
 				break;
 			}
 
-			if (sk->sk_shutdown & RCV_SHUTDOWN)
+			if (meta_sk->sk_shutdown & RCV_SHUTDOWN)
 				break;
 
-			if (sk->sk_state == TCP_CLOSE) {
-				if (!sock_flag(sk, SOCK_DONE)) {
+			if (meta_sk->sk_state == TCP_CLOSE) {
+				if (!sock_flag(meta_sk, SOCK_DONE)) {
 					/* This occurs when user tries to read
 					 * from never connected socket.
 					 */
@@ -1703,21 +1745,32 @@ int tcp_recvmsg_fallback(struct kiocb *iocb, struct sock *sk,
 			}
 		}
 
-		tcp_cleanup_rbuf(sk, copied);
+		if (mpcb)
+			mtcp_cleanup_rbuf(meta_sk, copied);
+		else
+			tcp_cleanup_rbuf(meta_sk, copied);
 
-		if (!sysctl_tcp_low_latency && tp->ucopy.task == user_recv) {
+		if (!sysctl_tcp_low_latency &&
+			meta_tp->ucopy.task == user_recv) {
 
 			/* Install new reader */
 			if (!user_recv && !(flags & (MSG_TRUNC | MSG_PEEK))) {
 				user_recv = current;
-				tp->ucopy.task = user_recv;
-				tp->ucopy.iov = msg->msg_iov;
+				meta_tp->ucopy.task = user_recv;
+				meta_tp->ucopy.iov = msg->msg_iov;
 			}
 
-			tp->ucopy.len = len;
+			meta_tp->ucopy.len = len;
 
-			WARN_ON(tp->copied_seq != tp->rcv_nxt &&
-				!(flags & (MSG_PEEK | MSG_TRUNC)));
+			if (!(flags & (MSG_PEEK | MSG_TRUNC))) {
+				if (mpcb) {
+					mtcp_for_each_tp(mpcb, tp_it)
+						WARN_ON(tp_it->copied_seq !=
+							tp_it->rcv_nxt);
+				} else {
+					WARN_ON(tp->copied_seq != tp->rcv_nxt);
+				}
+			}
 
 			/* Ugly... If prequeue is not empty, we have to
 			 * process it before releasing socket, otherwise
@@ -1759,8 +1812,9 @@ int tcp_recvmsg_fallback(struct kiocb *iocb, struct sock *sk,
 			/* Do not sleep, just process backlog. */
 			release_sock(sk);
 			lock_sock(sk);
-		} else
-			sk_wait_data(sk, &timeo);
+		} else {
+			sk_wait_data(meta_sk, &timeo);
+		}
 
 #ifdef CONFIG_NET_DMA
 		tcp_service_net_dma(sk, false);  /* Don't block */
@@ -1771,8 +1825,8 @@ int tcp_recvmsg_fallback(struct kiocb *iocb, struct sock *sk,
 			int chunk;
 
 			/* __ Restore normal policy in scheduler __ */
-
-			if ((chunk = len - tp->ucopy.len) != 0) {
+			chunk = len - meta_tp->ucopy.len;
+			if (chunk) {
 				NET_ADD_STATS_USER(sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMBACKLOG, chunk);
 				len -= chunk;
 				copied += chunk;
@@ -1791,12 +1845,16 @@ do_prequeue:
 			}
 		}
 		if ((flags & MSG_PEEK) &&
-		    (peek_seq - copied - urg_hole != tp->copied_seq)) {
+			(peek_seq - copied - urg_hole != meta_tp->copied_seq)) {
 			if (net_ratelimit())
 				printk(KERN_DEBUG "TCP(%s:%d): Application bug, race in MSG_PEEK.\n",
-				       current->comm, task_pid_nr(current));
-			peek_seq = tp->copied_seq;
+					current->comm, task_pid_nr(current));
+			peek_seq = meta_tp->copied_seq;
 		}
+
+		if (mpcb && len <= 0)
+			break;
+
 		continue;
 
 	found_ok_skb:
@@ -1931,7 +1989,10 @@ skip_copy:
 	 */
 
 	/* Clean up data we have read: This will do ACK frames. */
-	tcp_cleanup_rbuf(sk, copied);
+	if (mpcb)
+		mtcp_cleanup_rbuf(meta_sk, copied);
+	else
+		tcp_cleanup_rbuf(meta_sk, copied);
 
 	TCP_CHECK_TIMER(sk);
 	release_sock(sk);
@@ -1948,366 +2009,6 @@ recv_urg:
 }
 EXPORT_SYMBOL(tcp_recvmsg);
 
-#ifdef CONFIG_MTCP
-
-/*
- *	This routine copies from a sock struct into the user buffer.
- *
- *	Technical note: in 2.3 we work on _locked_ socket, so that
- *	tricks with *seq access order and skb->users are not required.
- *	Probably, code can be easily improved even more.
- *
- *      Completely modified for MTCP: subflow demultiplexing is done here.
- *      Note that we have removed NET_DMA support at the moment.
- */
-
-int tcp_recvmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
-		size_t len, int nonblock, int flags, int *addr_len)
-{
-	struct tcp_sock *master_tp = tcp_sk(master_sk);
-	struct sock *sk;
-	struct tcp_sock *tp;
-	struct multipath_pcb *mpcb = mpcb_from_tcpsock(master_tp);
-	struct sock *meta_sk = (struct sock*) mpcb;
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	int copied = 0;
-	u32 peek_data_seq;
-	u32 *data_seq;
-	int err;
-	int target;		/* Read at least this many bytes */
-	long timeo;
-	struct task_struct *user_recv = NULL;
-
-	if (!master_tp->mpc)
-		return tcp_recvmsg_fallback(iocb,master_sk,msg,len,nonblock,
-					    flags,addr_len);
-#ifdef CONFIG_MTCP_PM
-	/* Received a new list of addresses recently ?
-	 * announce corresponding path indices to the
-	 * mpcb, and start new subflows
-	 */
-	mtcp_check_new_subflow(mpcb);
-#endif
-
-	/* We listen on every subflow.
-	 * Here we are awoken each time
-	 * any subflow wants to give work to tcp_recvmsg. To be more clear,
-	 * we behave here somewhat like doing a select, but as seen by bottom
-	 * halves we are expecting data from every subflow at once.
-	 */
-
-	/* Locking metasocket */
-	mutex_lock(&mpcb->mutex);
-
-	/* Locking all subsockets */
-	mtcp_for_each_sk(mpcb, sk, tp)
-		lock_sock(sk);
-
-	err = -ENOTCONN;
-	if (master_sk->sk_state == TCP_LISTEN)
-		goto out;
-
-	/* Receive timeout, set by application. This is the same for
-	 * all subflows, and the real value is stored in the master socket.
-	 */
-	timeo = sock_rcvtimeo(master_sk, nonblock);
-
-	/* Urgent data needs to be handled specially. */
-	if (flags & MSG_OOB)
-		goto recv_urg;
-
-	/* Setting global and local seq pointer */
-	if (flags & MSG_PEEK) {
-		/* We put this because it is not sure at all that MSG_PEEK
-		 * works correctly.
-		 */
-		printk(KERN_ERR "Warning: MSG_PEEK is set...\n");
-		peek_data_seq = meta_tp->copied_seq;
-		data_seq = &peek_data_seq; /*global pointer*/
-		mtcp_for_each_tp(mpcb,tp) {
-			tp->peek_seq=tp->copied_seq;
-			tp->seq=&tp->peek_seq; /*local pointer*/
-		}
-	}
-	else {
-		data_seq = &meta_tp->copied_seq; /*global pointer*/
-		mtcp_for_each_tp(mpcb,tp)
-			tp->seq=&tp->copied_seq; /*local pointer*/
-	}
-
-	/* low water test: minimal number of bytes that must be consumed before
-	 * tcp_recvmsg completes
-	 */
-	target = sock_rcvlowat(master_sk, flags & MSG_WAITALL, len);
-	if (target!=1) {
-		printk(KERN_ERR "SO_RCVLOWAT != 1 not yet supported\n");
-		BUG();
-	}
-
-	do {
-		int empty_prequeues = 0;
-
-		/* Start by checking if skbs are waiting on the mpcb
-		 * receive queue
-		 */
-		err = mtcp_check_rcv_queue(mpcb,msg, &len, data_seq, &copied, flags);
-		if (err < 0) {
-			printk(KERN_ERR "error in mtcp_check_rcv_queue\n");
-			/* Exception. Bailout! */
-			if (!copied)
-				copied = -EFAULT;
-			break;
-		}
-
-		/* Are we at urgent data ?
-		 * Stop if we have read anything
-		 * or have SIGURG pending. Note that we only accept Urgent
-		 * data on the master subflow at the moment
-		 */
-		if (master_tp->urg_data &&
-		    master_tp->urg_seq == master_tp->copied_seq) {
-			/* urg data not managed currently */
-			BUG();
-			if (copied)
-				break;
-			if (signal_pending(current)) {
-				BUG_ON(copied);
-				copied = timeo ?
-					sock_intr_errno(timeo) :
-					-EAGAIN;
-				break;
-			}
-		}
-
-		/* Well, if we have backlog, try to process it now yet. */
-		if (copied >= target &&
-		    !mtcp_test_any_sk(mpcb,sk,sk->sk_backlog.tail))
-			break;
-
-		/*Here we test a set of conditions to return immediately to
-		  the user*/
-		if (copied) {
-			/*Error on any subsocket, shutdown on all subsocks,
-			  timeout or pending signal*/
-			if (meta_sk->sk_err ||
-			    meta_sk->sk_state==TCP_CLOSE ||
-			    (meta_sk->sk_shutdown & RCV_SHUTDOWN) ||
-			    !timeo ||
-			    signal_pending(current))
-				break;
-		} else {
-			if (sock_flag(meta_sk,SOCK_DONE))
-				break;
-
-			if (meta_sk->sk_err) {
-				copied = sock_error(meta_sk);
-				break;
-			}
-
-			if (meta_sk->sk_shutdown & RCV_SHUTDOWN)
-				break;
-
-			if (meta_sk->sk_state == TCP_CLOSE) {
-				if (!sock_flag(meta_sk,SOCK_DONE)) {
-					/* This occurs when user tries to read
-                                         * from never connected socket.
-					 */
-					copied = -ENOTCONN;
-					break;
-				}
-				break;
-			}
-
-			if (!timeo) {
-				copied = -EAGAIN;
-				break;
-			}
-
-			if (signal_pending(current)) {
-				copied = sock_intr_errno(timeo);
-				break;
-			}
-		}
-
-		mtcp_cleanup_rbuf(meta_sk, copied);
-
-		if (!sysctl_tcp_low_latency && meta_tp->ucopy.task ==
-		    user_recv) {
-			/* Install new reader */
-			if (!user_recv && !(flags & (MSG_TRUNC | MSG_PEEK))) {
-				user_recv = current;
-				meta_tp->ucopy.task = user_recv;
-				meta_tp->ucopy.iov = msg->msg_iov;
-			}
-
-			meta_tp->ucopy.len = len;
-
-			mtcp_for_each_tp(mpcb, tp) {
-				WARN_ON(tp->copied_seq != tp->rcv_nxt &&
-					!(flags & (MSG_PEEK | MSG_TRUNC)));
-			}
-
-			/* Ugly... If prequeue is not empty, we have to
-			 * process it before releasing socket, otherwise
-			 * order will be broken at second iteration.
-			 * More elegant solution is required!!!
-			 *
-			 * Look: we have the following (pseudo)queues:
-			 *
-			 * 1. packets in flight
-			 * 2. backlog
-			 * 3. prequeue
-			 * 4. receive_queue
-			 *
-			 * Each queue can be processed only if the next ones
-			 * are empty. At this point we have empty receive_queue.
-			 * But prequeue _can_ be not empty after 2nd iteration,
-			 * when we jumped to start of loop because backlog
-			 * processing added something to receive_queue.
-			 * We cannot release_sock(), because backlog contains
-			 * packets arrived _after_ prequeued ones.
-			 *
-			 * Shortly, algorithm is clear --- to process all
-			 * the queues in order. We could make it more directly,
-			 * requeueing packets from backlog to prequeue, if
-			 * is not empty. It is more elegant, but eats cycles,
-			 * unfortunately.
-			 */
-			if (mtcp_test_any_tp(mpcb, tp, !skb_queue_empty(
-						     &tp->ucopy.prequeue))) {
-				empty_prequeues = 1;
-				goto do_prequeue;
-			}
-			/* __ Set realtime policy in scheduler __ */
-		}
-
-		if (copied >= target) {
-			/* Do not sleep, just process backlog. */
-			mtcp_for_each_sk(mpcb, sk, tp) {
-				release_sock(sk);
-				lock_sock(sk);
-			}
-		} else {
-			/* Wait for data arriving on any subsocket */
-			mtcp_wait_data(mpcb, master_sk, &timeo, flags);
-		}
-
-		if (user_recv) {
-			int chunk;
-			mtcp_debug("At line %d\n",__LINE__);
-
-			/* __ Restore normal policy in scheduler __ */
-
-			if ((chunk = len - meta_tp->ucopy.len) != 0) {
-				NET_ADD_STATS_USER(sock_net(master_sk), LINUX_MIB_TCPDIRECTCOPYFROMBACKLOG, chunk);
-				/*TODEL*/
-				mtcp_debug("backlog copy: %d\n",chunk);
-				len -= chunk;
-				copied += chunk;
-			}
-
-			/* TODO_cpaasch - prequeue mess with subflows */
-		do_prequeue:
-			mtcp_for_each_tp(mpcb,tp) {
-				mtcp_debug("Checking prequeue for pi %d,"
-				           "prequeue len:%d\n",
-				           tp->path_index,
-				           skb_queue_len(&tp->ucopy.prequeue));
-				if ((empty_prequeues ||
-				     (tp->rcv_nxt == tp->copied_seq)) &&
-				    !skb_queue_empty(
-					    &tp->ucopy.prequeue)) {
-
-					sk = (struct sock*) tp;
-					tcp_prequeue_process(sk);
-
-					if ((chunk = len - meta_tp->ucopy.len)
-					    != 0) {
-						mtcp_debug("prequeue "
-						           "copy :%d, len %d,"
-						           "ucopy.len %d\n",
-						           chunk,(int)len,
-						           meta_tp->ucopy.len);/*TODEL*/
-						NET_ADD_STATS_USER(
-							sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
-						BUG_ON(chunk<0);
-						len -= chunk;
-						copied += chunk;
-					}
-				}
-			}
-			empty_prequeues = 0;
-		}
-		mtcp_for_each_tp(mpcb, tp) {
-			if ((flags & MSG_PEEK) &&
-			    tp->peek_seq != tp->copied_seq) {
-				if (net_ratelimit())
-					printk(KERN_ERR "TCP(%s:%d): "
-					       "Application bug, race in "
-					       "MSG_PEEK.\n",
-					       current->comm,
-					       task_pid_nr(current));
-				tp->peek_seq = tp->copied_seq;
-			}
-		}
-	} while (len > 0);
-
-	/* TODO_cpaasch do we have a subflow-prequeue??? */
-	if (user_recv) {
-		mtcp_for_each_sk(mpcb,sk,tp)
-			if (!skb_queue_empty(&tp->ucopy.prequeue)) {
-				int chunk;
-
-				meta_tp->ucopy.len = copied > 0 ? len : 0;
-
-				tcp_prequeue_process(sk);
-
-				if (copied > 0 && (chunk = len -
-						meta_tp->ucopy.len) != 0) {
-					NET_ADD_STATS_USER(sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
-					mtcp_debug("prequeue2 copy :%d\n",
-					           chunk); /*TODEL*/
-					len -= chunk;
-					copied += chunk;
-				}
-			}
-
-		meta_tp->ucopy.task = NULL;
-		meta_tp->ucopy.len = 0;
-	}
-
-	/* According to UNIX98, msg_name/msg_namelen are ignored
-	 * on connected socket. I was just happy when found this 8) --ANK
-	 */
-
-	mtcp_cleanup_rbuf(meta_sk, copied);
-
-	mtcp_for_each_sk(mpcb,sk,tp) {
-		release_sock(sk);
-	}
-	mutex_unlock(&mpcb->mutex);
-
-	return copied;
-
-out:
-	mtcp_for_each_sk(mpcb, sk, tp) {
-		release_sock(sk);
-	}
-	mutex_unlock(&mpcb->mutex);
-	mtcp_debug("%s: At line %d\n", __FUNCTION__, __LINE__);
-	return err;
-
-recv_urg:
-	/* At the moment we only allow receiving urgent data on the master
-	 * subsocket. Makes sense ?
-	 */
-	err = tcp_recv_urg(master_sk, msg, len, flags);
-	mtcp_debug("%s: At line %d\n", __FUNCTION__, __LINE__);
-	goto out;
-}
-
-#endif /*CONFIG_MTCP*/
-
 void tcp_set_state(struct sock *sk, int state)
 {
 	int oldstate = sk->sk_state;
@@ -2318,16 +2019,13 @@ void tcp_set_state(struct sock *sk, int state)
 		if (oldstate != TCP_ESTABLISHED) {
 			TCP_INC_STATS(sock_net(sk), TCP_MIB_CURRESTAB);
 #ifdef CONFIG_MTCP
-			/* mpcb is NULL if the socket is in the accept
-			 * queue of the mpcb.
-			 */
-			BUG_ON(!tp->mpcb && !tp->pending);
-			if (tcp_sk(sk)->mpcb) {
-				struct sock *meta_sk = (struct sock*) (tcp_sk(sk)->mpcb);
+			if (tcp_sk(sk)->mpc) {
+				struct sock *meta_sk =
+					(struct sock *) (tcp_sk(sk)->mpcb);
 				tcp_sk(sk)->mpcb->cnt_established++;
 				mtcp_update_sndbuf(tcp_sk(sk)->mpcb);
 				if ((1 << meta_sk->sk_state) &
-				    (TCPF_SYN_SENT | TCPF_SYN_RECV))
+					(TCPF_SYN_SENT | TCPF_SYN_RECV))
 					meta_sk->sk_state = TCP_ESTABLISHED;
 			}
 #endif
@@ -2335,8 +2033,14 @@ void tcp_set_state(struct sock *sk, int state)
 		break;
 	case TCP_SYN_SENT:
 	case TCP_SYN_RECV:
-		if (is_master_sk(tp) && tcp_sk(sk)->mpcb)
+		/* We set the mpcb state to SYN_SENT even if the peer
+		 * has no support for MPTCP. This is the only option
+		 * as we don't know yet if he is MP_CAPABLE.
+		 */
+		if (tp->mpcb && is_master_tp(tp))
 			mtcp_meta_sk(sk)->sk_state=state;
+		if (oldstate == TCP_ESTABLISHED)
+			TCP_DEC_STATS(sock_net(sk), TCP_MIB_CURRESTAB);
 		break;
 	case TCP_CLOSE:
 		if (oldstate == TCP_CLOSE_WAIT || oldstate == TCP_ESTABLISHED)
@@ -2408,41 +2112,27 @@ int tcp_close_state(struct sock *sk)
 
 void tcp_shutdown(struct sock *sk, int how)
 {
+	if (tcp_sk(sk)->mpc)
+		sk = (struct sock *) mpcb_from_tcpsock(tcp_sk(sk));
+
 	/*	We need to grab some memory, and put together a FIN,
 	 *	and then put it into the queue to be sent.
 	 *		Tim MacKenzie(tym@dibbler.cs.monash.edu.au) 4 Dec '92.
 	 */
 	if (!(how & SEND_SHUTDOWN))
 		return;
-#ifdef CONFIG_MTCP
-	/* if this is the master subsocket, we must first close the
-	 * slave subsockets
-	 */
-	if (tcp_sk(sk)->mpc && is_master_sk(tcp_sk(sk))) {
-		struct multipath_pcb *mpcb=mpcb_from_tcpsock(tcp_sk(sk));
-		struct sock *mpcb_sk=(struct sock*)mpcb;
 
-		mtcp_debug("%s: Shutdown of master_sk\n",__FUNCTION__);
-
-		lock_sock(mpcb_sk);
-
-		if ((1 << mpcb_sk->sk_state) &
-		    (TCPF_ESTABLISHED | TCPF_SYN_SENT |
-		     TCPF_SYN_RECV | TCPF_CLOSE_WAIT)) {
-			if (tcp_close_state(mpcb_sk))
-				mtcp_send_fin(mpcb_sk);
-		}
-		release_sock(mpcb_sk);
-		return;
-	}
-#endif
 	/* If we've already sent a FIN, or it's a closed state, skip this. */
 	if ((1 << sk->sk_state) &
 	    (TCPF_ESTABLISHED | TCPF_SYN_SENT |
 	     TCPF_SYN_RECV | TCPF_CLOSE_WAIT)) {
 		/* Clear out any half completed packets.  FIN if needed. */
-		if (tcp_close_state(sk))
-			tcp_send_fin(sk);
+		if (tcp_close_state(sk)) {
+			if (!tcp_sk(sk)->mpc)
+				tcp_send_fin(sk);
+			else
+				mtcp_send_fin(sk);
+		}
 	}
 }
 EXPORT_SYMBOL(tcp_shutdown);
@@ -2460,10 +2150,10 @@ void tcp_close(struct sock *sk, long timeout)
 	struct sk_buff *skb;
 	int data_was_unread = 0;
 	int state;
-	int locked = (timeout == -1) ? 1 : 0;
 
-	if (!locked)
-		lock_sock(sk);
+#ifndef CONFIG_MTCP
+	lock_sock(sk);
+#endif
 
 	sk->sk_shutdown = SHUTDOWN_MASK;
 
@@ -2504,8 +2194,8 @@ void tcp_close(struct sock *sk, long timeout)
 		/* Unread data was tossed, zap the connection. */
 		NET_INC_STATS_USER(sock_net(sk), LINUX_MIB_TCPABORTONCLOSE);
 		tcp_set_state(sk, TCP_CLOSE);
-		tcp_send_active_reset(sk, (locked)?
-				      GFP_ATOMIC:sk->sk_allocation);
+		tcp_send_active_reset(sk, (in_interrupt()) ?
+				      GFP_ATOMIC : sk->sk_allocation);
 	} else if (sock_flag(sk, SOCK_LINGER) && !sk->sk_lingertime) {
 		/* Check zero linger _after_ checking for unread data. */
 		sk->sk_prot->disconnect(sk, 0);
@@ -2534,32 +2224,35 @@ void tcp_close(struct sock *sk, long timeout)
 		 * required by specs (TCP_ESTABLISHED, TCP_CLOSE_WAIT, when
 		 * they look as CLOSING or LAST_ACK for Linux)
 		 * Probably, I missed some more holelets.
-		 * 						--ANK
+		 *						--ANK
 		 */
 		tcp_send_fin(sk);
 	}
 
-	if (!locked) sk_stream_wait_close(sk, timeout);
+	if (!tcp_sk(sk)->mpc)
+		sk_stream_wait_close(sk, timeout);
 
 adjudge_to_death:
 	state = sk->sk_state;
 	sock_hold(sk);
-	/*The sock *may* have been orphaned by mtcp_close(), if
-	  we are called from tcp_write_xmit().*/
+	/* The sock *may* have been orphaned by mtcp_close(), if
+	 * we are called from tcp_write_xmit().
+	 */
 	if (!sock_flag(sk, SOCK_DEAD))
 		sock_orphan(sk);
 
-	if (!locked) {
-		/* It is the last release_sock in its life.
-		   It will remove backlog. */
-		release_sock(sk);
-		/* Now socket is owned by kernel and we acquire BH lock
-		   to finish close. No need to check for user refs.
-		*/
-		local_bh_disable();
-		bh_lock_sock(sk);
-	}
+#ifndef CONFIG_MTCP
+	/* It is the last release_sock in its life.
+	 * It will remove backlog.
+	 */
+	release_sock(sk);
+	/* Now socket is owned by kernel and we acquire BH lock
+	 * to finish close. No need to check for user refs.
+	 */
+	local_bh_disable();
+	bh_lock_sock(sk);
 	WARN_ON(sock_owned_by_user(sk));
+#endif
 
 	if (!sock_flag(sk, SOCK_DEAD))
 		percpu_counter_inc(sk->sk_prot->orphan_count);
@@ -2619,10 +2312,10 @@ adjudge_to_death:
 	/* Otherwise, socket is reprieved until protocol close. */
 
 out:
-	if (!locked){
-		bh_unlock_sock(sk);
-		local_bh_enable();
-	}
+#ifndef CONFIG_MTCP
+	bh_unlock_sock(sk);
+	local_bh_enable();
+#endif
 	sock_put(sk);
 }
 EXPORT_SYMBOL(tcp_close);
@@ -2656,10 +2349,7 @@ int tcp_disconnect(struct sock *sk, int flags)
 		/* The last check adjusts for discrepancy of Linux wrt. RFC
 		 * states
 		 */
-		/*MTCP: No need to reset half established slave subflows,
-		  since a reset on any flow resets everything*/
-		if (tp->mpc) BUG_ON(!tp->mpcb && !tp->pending);
-		if (!tp->mpc || tp->mpcb) tcp_send_active_reset(sk, gfp_any());
+		tcp_send_active_reset(sk, gfp_any());
 		sk->sk_err = ECONNRESET;
 	} else if (old_state == TCP_SYN_SENT)
 		sk->sk_err = ECONNRESET;

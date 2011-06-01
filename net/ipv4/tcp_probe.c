@@ -140,15 +140,15 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 		else if (jiffies - tp->last_rcv_probe <
 			 log_interval * HZ / 1000)
 			goto out;
-		tp->last_rcv_probe=jiffies;
+		tp->last_rcv_probe = jiffies;
 	}
 
 	/* Only update if port matches */
 	if ((port == 0 || ntohs(inet->inet_dport) == port
 	     || ntohs(inet->inet_sport) == port)
-	    && ((ntohl(inet->inet_saddr) & 0xffff0000)!=0xc0a80000) /*addr !=
+	    && ((ntohl(inet->inet_saddr) & 0xffff0000) != 0xc0a80000) /*addr !=
 							       192.168/16*/
-	    && ((ntohl(inet->inet_daddr) & 0xffff0000)!=0xc0a80000)
+	    && ((ntohl(inet->inet_daddr) & 0xffff0000) != 0xc0a80000)
 	    && ntohs(inet->inet_sport) != 9000
 	    && ntohs(inet->inet_dport) != 9000
 	    && (full || tp->snd_cwnd != tcp_probe.lastcwnd)) {
@@ -156,7 +156,6 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 		/* If log fills, just silently drop */
 		if (tcp_probe_avail() > 1) {
 			struct tcp_log *p = tcp_probe.log + tcp_probe.head;
-			if (tp->mpc) BUG_ON(!tp->mpcb && !tp->pending);
 			p->tstamp = ktime_get();
 			p->saddr = inet->inet_saddr;
 			p->sport = inet->inet_sport;
@@ -218,9 +217,9 @@ static int logmsg(struct sock *sk,char *fmt, va_list args)
 		= ktime_to_timespec(ktime_sub(ktime_get(), tcp_probe.start));
 
 	if (sk->sk_state == TCP_ESTABLISHED
-	    && ((ntohl(inet->inet_saddr) & 0xffff0000)!=0xc0a80000) /*addr !=
+	    && ((ntohl(inet->inet_saddr) & 0xffff0000) != 0xc0a80000) /*addr !=
 								 192.168/16*/
-	    && ((ntohl(inet->inet_daddr) & 0xffff0000)!=0xc0a80000)) {
+	    && ((ntohl(inet->inet_daddr) & 0xffff0000) != 0xc0a80000)) {
 		int len;
 		snprintf(msg,500,"LOG:%lu.%09lu ",(unsigned long) tv.tv_sec,
 			(unsigned long) tv.tv_nsec);
@@ -252,25 +251,25 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_sock *inet = inet_sk(sk);
-	struct sock *mpcb_sk=tp->mpcb?(struct sock*)tp->mpcb:sk;
-	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
+	struct sock *meta_sk = tp->mpcb ? (struct sock *)tp->mpcb : sk;
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
 	if (log_interval) {
 		if (!tp->last_snd_probe)
-			tp->last_snd_probe=jiffies;
+			tp->last_snd_probe = jiffies;
 		else if (jiffies-tp->last_snd_probe <
 			 log_interval * HZ / 1000)
 			goto out;
-		tp->last_snd_probe=jiffies;
+		tp->last_snd_probe = jiffies;
 	}
 
 	/* Only update if port matches and state is established*/
 	if (sk->sk_state == TCP_ESTABLISHED &&
 	    (port == 0 || ntohs(inet->inet_dport) == port ||
 	     ntohs(inet->inet_sport) == port)
-	    && ((ntohl(inet->inet_saddr) & 0xffff0000)!=0xc0a80000) /*addr !=
+	    && ((ntohl(inet->inet_saddr) & 0xffff0000) != 0xc0a80000) /*addr !=
 							       192.168/16*/
-	    && ((ntohl(inet->inet_daddr) & 0xffff0000)!=0xc0a80000)
+	    && ((ntohl(inet->inet_daddr) & 0xffff0000) != 0xc0a80000)
 	    && ntohs(inet->inet_sport) != 9000 && ntohs(inet->inet_dport) != 9000
 	    && (full || tp->snd_cwnd != tcp_probe.lastcwnd)) {
 
@@ -295,30 +294,31 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			p->snd_nxt = tp->snd_nxt;
 			p->snd_una = tp->snd_una;
 			p->snd_cwnd = tp->snd_cwnd;
-			p->snd_wnd = mpcb_tp->snd_wnd;
+			p->snd_wnd = meta_tp->snd_wnd;
 			p->ssthresh = tcp_current_ssthresh(sk);
 			p->srtt = tp->srtt >> 3;
-			p->rcv_nxt=mpcb_tp->rcv_nxt;
-			p->copied_seq=mpcb_tp->copied_seq;
-			p->rcv_wnd=mpcb_tp->rcv_wnd;
-			p->rcv_buf=sk->sk_rcvbuf;
-			p->rcv_ssthresh=tp->rcv_ssthresh;
-			p->window_clamp=tp->window_clamp;
-			p->send=1;
-			p->space=tp->rcvq_space.space;
-			p->rtt_est=tp->rcv_rtt_est.rtt;
-			p->in_flight=tp->packets_out;
-			p->mss_cache=tp->mss_cache;
-			p->snd_buf=mpcb_sk->sk_sndbuf;
-			p->wmem_queued=mpcb_sk->sk_wmem_queued;
-			p->rmem_alloc=atomic_read(&mpcb_sk->sk_rmem_alloc);
-			p->rmem_alloc_sub=atomic_read(&sk->sk_rmem_alloc);
-			p->dsn=TCP_SKB_CB(skb)->data_seq;
-			p->mtcp_snduna = tp->mpcb ? mpcb_meta_tp(tp->mpcb)->snd_una:0;
-			p->drs_seq=tp->rcvq_space.seq;
-			p->drs_time=tp->rcvq_space.time;
-			p->bw_est=tp->cur_bw_est;
-			p->mpcb_def=(tp->mpcb!=NULL);
+			p->rcv_nxt = meta_tp->rcv_nxt;
+			p->copied_seq = meta_tp->copied_seq;
+			p->rcv_wnd = meta_tp->rcv_wnd;
+			p->rcv_buf = sk->sk_rcvbuf;
+			p->rcv_ssthresh = tp->rcv_ssthresh;
+			p->window_clamp = tp->window_clamp;
+			p->send = 1;
+			p->space = tp->rcvq_space.space;
+			p->rtt_est = tp->rcv_rtt_est.rtt;
+			p->in_flight = tp->packets_out;
+			p->mss_cache = tp->mss_cache;
+			p->snd_buf = meta_sk->sk_sndbuf;
+			p->wmem_queued = meta_sk->sk_wmem_queued;
+			p->rmem_alloc = atomic_read(&meta_sk->sk_rmem_alloc);
+			p->rmem_alloc_sub = atomic_read(&sk->sk_rmem_alloc);
+			p->dsn = TCP_SKB_CB(skb)->data_seq;
+			p->mtcp_snduna = (tp->mpcb) ?
+					mpcb_meta_tp(tp->mpcb)->snd_una : 0;
+			p->drs_seq = tp->rcvq_space.seq;
+			p->drs_time = tp->rcvq_space.time;
+			p->bw_est = tp->cur_bw_est;
+			p->mpcb_def = (tp->mpcb != NULL);
 			if (tp->mpcb)
 				p->alpha = ((struct mtcp_ccc *) inet_csk_ca((struct sock *) tp->mpcb))->alpha;
 			else
@@ -399,14 +399,14 @@ static int tcpprobe_sprint(char *tbuf, int n)
 			&p->daddr, ntohs(p->dport),
 			p->path_index,p->length, p->snd_nxt, p->snd_una,
 			p->snd_cwnd, p->ssthresh, p->snd_wnd, p->srtt,
-			p->rcv_nxt,p->copied_seq,p->rcv_wnd,p->rcv_buf,
-			p->window_clamp,p->rcv_ssthresh, p->send,
-			p->space,p->rtt_est*1000/HZ,p->in_flight,
+			p->rcv_nxt, p->copied_seq, p->rcv_wnd, p->rcv_buf,
+			p->window_clamp, p->rcv_ssthresh, p->send,
+			p->space, p->rtt_est*1000/HZ, p->in_flight,
 			p->mss_cache,
-			p->snd_buf,p->wmem_queued, p->rmem_alloc,
+			p->snd_buf, p->wmem_queued, p->rmem_alloc,
 			p->rmem_alloc_sub, p->dsn,
-			p->mtcp_snduna,p->drs_seq,p->drs_time*1000/HZ,
-			((p->bw_est<<3)/1000)*HZ,p->mpcb_def, p->alpha);
+			p->mtcp_snduna, p->drs_seq, p->drs_time * 1000 / HZ,
+			((p->bw_est << 3) / 1000) * HZ, p->mpcb_def, p->alpha);
 }
 
 static ssize_t tcpprobe_read(struct file *file, char __user *buf,

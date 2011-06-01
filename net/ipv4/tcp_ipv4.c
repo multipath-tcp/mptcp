@@ -791,7 +791,14 @@ static int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req,
 			      struct request_values *rvp)
 {
 	TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_RETRANSSEGS);
-	return tcp_v4_send_synack(sk, NULL, req, rvp);
+	/* If the mpcb pointer is set, this is a join request.
+	 * If not, this is an initial connection request.
+	 */
+	if (req->mpcb)
+		return mtcp_v4_send_synack((struct sock *)req->mpcb,
+					   req, rvp);
+	else
+		return tcp_v4_send_synack(sk, NULL, req, rvp);
 }
 
 /*
@@ -1418,6 +1425,15 @@ struct sock *tcp_v4_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 	struct tcp_md5sig_key *key;
 #endif
 
+	/* TODO: we can probably use the meta_sk and it would be cleaner
+	 * I however keep this at the moment as it is what was
+	 * historically used. When changing, care is needed for
+	 * the cloning operation (inet_csk_clone()),
+	 * as we do not clone the same thing.
+	 */
+	if (is_meta_sk(sk))
+		sk = ((struct multipath_pcb *)sk)->master_sk;
+
 	if (sk_acceptq_is_full(sk))
 		goto exit_overflow;
 
@@ -1566,6 +1582,9 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 	if (tcp_v4_inbound_md5_hash(sk, skb))
 		goto discard;
 #endif
+
+	if (is_meta_sk(sk))
+		return mptcp_v4_do_rcv(sk, skb);
 
 	if (sk->sk_state == TCP_ESTABLISHED) { /* Fast path */
 		sock_rps_save_rxhash(sk, skb->rxhash);
@@ -1729,26 +1748,23 @@ process:
 
 	skb->dev = NULL;
 
-	if (tcp_sk(sk)->mpcb) {
+	if (tcp_sk(sk)->mpc) {
 		mpcb = tcp_sk(sk)->mpcb;
-		mpcb_get(mpcb);
 		meta_sk = (struct sock *) (tcp_sk(sk)->mpcb);
 	}
 
-	bh_lock_sock_nested(sk);
 	if (meta_sk)
-		bh_lock_sock(meta_sk);
+		bh_lock_sock_nested(mpcb->master_sk);
+	else
+		bh_lock_sock_nested(sk);
 	ret = 0;
 
 	if (meta_sk) {
-		if (!sock_owned_by_user(meta_sk) &&
-		    !sock_owned_by_user(sk)) {
+		if (!sock_owned_by_user(mpcb->master_sk)) {
 			if (!tcp_prequeue(sk, skb))
 				ret = tcp_v4_do_rcv(sk, skb);
 		} else if (unlikely(sk_add_backlog(sk, skb))) {
-			if (meta_sk)
-				bh_unlock_sock(meta_sk);
-			bh_unlock_sock(sk);
+			bh_unlock_sock(mpcb->master_sk);
 			NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
 			goto discard_and_relse;
 		}
@@ -1766,19 +1782,17 @@ process:
 				ret = tcp_v4_do_rcv(sk, skb);
 		}
 	} else if (unlikely(sk_add_backlog(sk, skb))) {
-		if (meta_sk)
-			bh_unlock_sock(meta_sk);
 		bh_unlock_sock(sk);
 		NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
 		goto discard_and_relse;
 	}
 
 	if (meta_sk)
-		bh_unlock_sock(meta_sk);
-	bh_unlock_sock(sk);
+		bh_unlock_sock(mpcb->master_sk);
+	else
+		bh_unlock_sock(sk);
+
 	sock_put(sk);
-	if (mpcb)
-		mpcb_put(mpcb); /* Taken by mpcb_get */
 
 	return ret;
 
@@ -1801,8 +1815,6 @@ discard_it:
 
 discard_and_relse:
 	sock_put(sk);
-	if (mpcb)
-		mpcb_put(mpcb); /* Taken by mpcb_get */
 	goto discard_it;
 
 do_time_wait:
@@ -1976,7 +1988,11 @@ static int tcp_v4_init_sock(struct sock *sk)
 			return -1;
 
 		tp->path_index = 0;
-		mtcp_add_sock(mpcb, tp);
+		tp->mpcb = mpcb;
+		/* the master_sk is not immediately attached (add_sock) to the
+		 * mpcb. It will be only when we receive the
+		 * MP_CAPABLE option from the peer.
+		 */
 	}
 #endif
 

@@ -459,20 +459,14 @@ static void tcp_write_timer(unsigned long data)
 {
 	struct sock *sk = (struct sock*)data;
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct multipath_pcb *mpcb = tp->mpcb;
-	struct sock *meta_sk = mpcb ? ((struct sock *) tp->mpcb) : NULL;
+	struct sock *master_sk = tp->mpcb ? tp->mpcb->master_sk : sk;
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	int event;
 	
 	BUG_ON(is_meta_sk(sk));
 
-  	if (meta_sk) {
-		mpcb_get(tp->mpcb);
-		bh_lock_sock(meta_sk);
-	}
-	bh_lock_sock(sk);
-	if (sock_owned_by_user(sk) ||
-	    (meta_sk && sock_owned_by_user(meta_sk))) {
+	bh_lock_sock(master_sk);
+	if (sock_owned_by_user(master_sk)) {
 		/* Try again later */
 		sk_reset_timer(sk, &icsk->icsk_retransmit_timer, jiffies + (HZ / 20));
 		goto out_unlock;
@@ -502,10 +496,8 @@ static void tcp_write_timer(unsigned long data)
 out:
 	sk_mem_reclaim(sk);
 out_unlock:
-	bh_unlock_sock(sk);
-	if (meta_sk) bh_unlock_sock(meta_sk);
+	bh_unlock_sock(master_sk);
 	sock_put(sk);
-	if (mpcb) mpcb_put(mpcb); /* Taken by mpcb_get */
 }
 
 /*

@@ -299,10 +299,7 @@ struct tcp_sock {
 	u32    cur_bw_est;
 
 	/* per subflow data, for tcp_recvmsg */
-	u32     peek_seq;       /* Peek seq, for use by MTCP */
-	u32     *seq;
-	u32     copied;
-	u32     map_data_seq; /* Those three fields record the current mapping */
+	u32    map_data_seq; /* Those three fields record the current mapping */
 	u16    map_data_len;
 	u32    map_subseq;
 	/* isn: needed to translate abs to relative subflow seqnums */
@@ -482,17 +479,14 @@ struct tcp_sock {
 	 * object holds a reference to them (cookie_values->kref).  Also
 	 * contains related tcp_cookie_transactions fields.
 	 */
-	struct tcp_cookie_values  *cookie_values;
-	struct multipath_pcb    *mpcb;
+	struct tcp_cookie_values	*cookie_values;
+	struct multipath_pcb		*mpcb;
 #ifdef CONFIG_MTCP
-	int                     path_index;
-	struct tcp_sock         *next; /* Next subflow socket */
-	u32                     mtcp_loc_token;
-	uint8_t                 pending:1, /* One if this is a pending subsock
-					    * (established, but not yet
-					    * attached to the mpcb)
-					    */
-		                slave_sk:1;
+	int				path_index;
+	struct tcp_sock			*next; /*Next subflow socket*/
+	u32				mtcp_loc_token;
+	uint8_t				slave_sk:1,
+					attached:1;
 #endif /* CONFIG_MTCP */
 };
 

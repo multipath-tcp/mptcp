@@ -24,10 +24,12 @@
 #include <linux/in.h>
 #include <linux/in6.h>
 #include <linux/skbuff.h>
+#include <net/request_sock.h>
 
 #define MTCP_MAX_ADDR 12 /* Max number of local or remote addresses we can store */
 
 struct multipath_pcb;
+struct multipath_options;
 
 struct mtcp_loc4 {
 	u8                id;
@@ -57,15 +59,22 @@ struct path6 {
 u32 mtcp_new_token(void);
 void mtcp_hash_insert(struct multipath_pcb *mpcb,u32 token);
 void mtcp_hash_remove(struct multipath_pcb *mpcb);
+void mtcp_hash_request_remove(struct request_sock *req);
 struct multipath_pcb* mtcp_hash_find(u32 token);
 void mtcp_set_addresses(struct multipath_pcb *mpcb);
+int mtcp_v4_add_raddress(struct multipath_options *mopt, struct in_addr *addr,
+			u8 id);
 void mtcp_update_patharray(struct multipath_pcb *mpcb);
 struct in_addr *mtcp_get_loc_addr(struct multipath_pcb *mpcb, int path_index);
 struct in_addr *mtcp_get_rem_addr(struct multipath_pcb *mpcb, int path_index);
 u8 mtcp_get_loc_addrid(struct multipath_pcb *mpcb, int path_index);
 int mtcp_lookup_join(struct sk_buff *skb);
 int mtcp_syn_recv_sock(struct sk_buff *skb);
-int mtcp_check_new_subflow(struct multipath_pcb *mpcb);
 void mtcp_pm_release(struct multipath_pcb *mpcb);
+int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb);
+int mtcp_v4_send_synack(struct sock *meta_sk,
+			struct request_sock *req,
+			struct request_values *rvp);
+void mtcp_send_updatenotif(struct multipath_pcb *mpcb);
 #endif /* CONFIG_MTCP_PM */
 #endif /*_MTCP_PM_H*/
