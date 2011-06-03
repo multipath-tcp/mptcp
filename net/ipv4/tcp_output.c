@@ -2641,6 +2641,12 @@ static void tcp_retrans_try_collapse(struct sock *sk, struct sk_buff *to,
 		if (tp->mpc &&
 		    after(TCP_SKB_CB(skb)->end_data_seq, tcp_wnd_end(tp, 1)))
 			break;
+		/* Collapsing segments with non-contiguous DSNs would
+		 * corrupt the meta-flow.
+		 */
+		if (tp->mpc &&
+		    TCP_SKB_CB(to)->end_data_seq != TCP_SKB_CB(skb)->data_seq)
+			break;
 
 		tcp_collapse_retrans(sk, to);
 	}
