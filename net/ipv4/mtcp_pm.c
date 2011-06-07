@@ -921,11 +921,7 @@ int mtcp_syn_recv_sock(struct sk_buff *skb)
 	return 1;
 }
 
-/**
- * Returns 1 if a join option has been found, and a new request_sock has been
- * created. Else returns 0.
- */
-static char *mtcp_find_join(struct sk_buff *skb)
+static struct mp_join *mtcp_find_join(struct sk_buff *skb)
 {
 	struct tcphdr *th = tcp_hdr(skb);
 	unsigned char *ptr;
@@ -953,8 +949,9 @@ static char *mtcp_find_join(struct sk_buff *skb)
 				struct mptcp_option *mp_opt = (struct mptcp_option *) ptr;
 
 				if (mp_opt->sub == MPTCP_SUB_JOIN)
-					return ptr;
+					return (struct mp_join *) ptr; /* + 2 to get the token */
 			}
+			ptr += opsize - 2;
 			length -= opsize;
 		}
 	}
@@ -966,9 +963,11 @@ int mtcp_lookup_join(struct sk_buff *skb)
 	struct multipath_pcb *mpcb;
 	struct sock *meta_sk;
 	u32 token;
-	char *join_opt = mtcp_find_join(skb);
+	struct mp_join *join_opt = mtcp_find_join(skb);
 	if (!join_opt)
 		return 0;
+
+	join_opt++; /* the token is at the end of struct mp_join */
 	token = ntohl(*(u32 *) join_opt);
 	mpcb = mtcp_hash_find(token);
 	meta_sk = (struct sock *)mpcb;
@@ -1102,7 +1101,7 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	const struct iphdr *iph = ip_hdr(skb);
 	struct multipath_pcb *mpcb = (struct multipath_pcb *)meta_sk;
 	if (tcp_hdr(skb)->syn) {
-		char *join_opt = mtcp_find_join(skb); /* Currently we make two
+		struct mp_join *join_opt = mtcp_find_join(skb); /* Currently we make two
 						       * calls to
 						       * mtcp_find_join(). This
 						       * can probably be
@@ -1110,7 +1109,7 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 						       */
 		if (mtcp_v4_add_raddress
 			(&mpcb->received_options, (struct in_addr *)
-				&iph->saddr, *(join_opt + 4)) < 0)
+				&iph->saddr, join_opt->addr_id) < 0)
 			goto discard;
 		if (unlikely(mpcb->received_options.list_rcvd)) {
 			mpcb->received_options.list_rcvd = 0;
