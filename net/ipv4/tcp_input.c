@@ -4105,7 +4105,6 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 
 	tcp_parse_options(skb, &tp->rx_opt, hvpp,
 			  mpcb ? &mpcb->received_options : NULL, 1);
-	BUG_ON(tp->rx_opt.saw_mpc);
 	if (unlikely(mpcb && mpcb->received_options.list_rcvd)) {
 		mpcb->received_options.list_rcvd = 0;
 		mtcp_update_patharray(mpcb);
