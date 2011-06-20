@@ -651,7 +651,7 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 	struct tcp_sock *tp;
 	struct sock *sk;
 	struct sock *bestsk = NULL;
-	unsigned int min_time_to_peer = 0xffffffff;
+	u32 min_time_to_peer = 0xffffffff;
 
 	if (!mpcb)
 		return NULL;
@@ -666,8 +666,6 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 
 	/* First, find the best subflow */
 	mtcp_for_each_sk(mpcb, sk, tp) {
-		unsigned int time_to_peer;
-
 		if (!mtcp_is_available(sk))
 			continue;
 
@@ -677,26 +675,8 @@ struct sock* get_available_subflow(struct multipath_pcb *mpcb,
 		if (PI_TO_FLAG(tp->path_index) & skb->path_mask)
 			continue;
 
-		/* If there is no bw estimation available currently,
-		 * we only give it data when it has available space in the
-		 * cwnd (see above)
-		 */
-		if (!tp->cur_bw_est) {
-			/* If a subflow is available, send immediately */
-			if (tcp_packets_in_flight(tp) < tp->snd_cwnd) {
-				bestsk = sk;
-				break;
-			} else {
-				continue;
-			}
-		}
-
-		/* Time to reach peer, estimated in units of jiffies */
-		time_to_peer = ((sk->sk_wmem_queued / tp->cur_bw_est) << tp->bw_est.shift) + /*time to reach network*/
-				(tp->srtt >> 3); /*Time to reach peer*/
-
-		if (time_to_peer < min_time_to_peer) {
-			min_time_to_peer = time_to_peer;
+		if (tp->srtt < min_time_to_peer) {
+			min_time_to_peer = tp->srtt;
 			bestsk = sk;
 		}
 	}
