@@ -863,11 +863,13 @@ static unsigned tcp_synack_options(struct sock *sk,
 		}
 	}
 
+#ifdef CONFIG_MTCP
 	if (unlikely(req->saw_mpc)) {
 		opts->options |= OPTION_MP_CAPABLE;
 		remaining -= MPTCP_SUB_LEN_CAPABLE_ALIGN;
 		opts->token = req->mtcp_loc_token;
 	}
+#endif /* CONFIG_MTCP */
 
 	return MAX_TCP_OPTION_SPACE - remaining;
 }

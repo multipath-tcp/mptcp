@@ -1300,6 +1300,9 @@ void mtcp_parse_options(uint8_t *ptr, int opsize,
 			break;
 		}
 
+		if (!sysctl_mptcp_enabled)
+			break;
+
 		opt_rx->saw_mpc = 1;
 		if (mopt)
 			mopt->list_rcvd = 1;

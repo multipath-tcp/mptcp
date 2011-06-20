@@ -1059,7 +1059,7 @@ static inline void tcp_openreq_init(struct request_sock *req,
 	req->ts_recent = rx_opt->saw_tstamp ? rx_opt->rcv_tsval : 0;
 #ifdef CONFIG_MTCP
 	req->saw_mpc = rx_opt->saw_mpc;
-	if (!req->mpcb) {
+	if (req->saw_mpc && !req->mpcb) {
 		/* conn request, prepare a new token for the
 		 * mpcb that will be created in tcp_check_req(),
 		 * and store the received token.
