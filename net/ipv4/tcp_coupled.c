@@ -196,6 +196,9 @@ static void mtcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 		return;
 	}
 
+	if (!tcp_is_cwnd_limited(sk, in_flight))
+		return;
+
 	if (tp->snd_cwnd <= tp->snd_ssthresh) {
 		/* In "safe" area, increase. */
 		tcp_slow_start(tp);
