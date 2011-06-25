@@ -255,8 +255,6 @@ struct mp_add_addr {
 			(tcp_sk(sk))->mpcb &&			\
 			((struct tcp_sock *) tcp_sk(sk)->mpcb) == tcp_sk(sk))
 #define is_master_tp(__tp) (!(__tp)->slave_sk && !is_meta_tp(__tp))
-#define is_master_sk(__sk) (sk->sk_protocol == IPPROTO_TCP &&	\
-			is_master_tp(tcp_sk(__sk)))
 
 #define is_dfin_seg(mpcb, skb) (mpcb->received_options.dfin_rcvd &&	\
 			       mpcb->received_options.fin_dsn ==	\
@@ -300,46 +298,6 @@ struct mp_add_addr {
 		mtcp_for_each_sk(mpcb, sk, __tp) {	\
 			if (cond) {			\
 				__ans = 1;		\
-				break;			\
-			}				\
-		}					\
-		__ans;					\
-	})
-
-/* Idem here with tp in lieu of sk */
-#define mtcp_test_any_tp(mpcb, tp, cond)		\
-	({      int __ans = 0;				\
-		mtcp_for_each_tp(mpcb, tp) {		\
-			if (cond){			\
-				__ans = 1;		\
-				break;			\
-			}				\
-		}					\
-		__ans;					\
-	})						\
-
-#define mtcp_test_any_sk_tp(mpcb, sk, tp, cond)		\
-	({						\
-		int __ans = 0;				\
-		mtcp_for_each_sk(mpcb, sk, tp) {	\
-			if (cond){			\
-				__ans = 1;		\
-				break;			\
-			}				\
-		}					\
-		__ans;					\
-	})
-
-/* Returns 1 if all subflows meet the condition @cond
- * Else return 0.
- */
-#define mtcp_test_all_sk(mpcb, sk, cond)		\
-	({						\
-		int __ans = 1;				\
-		struct tcp_sock *__tp;			\
-		mtcp_for_each_sk(mpcb, sk, __tp) {	\
-			if (!(cond)) {			\
-				__ans = 0;		\
 				break;			\
 			}				\
 		}					\

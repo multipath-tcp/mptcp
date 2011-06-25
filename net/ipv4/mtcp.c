@@ -907,8 +907,9 @@ int mtcp_check_rcv_queue(struct multipath_pcb *mpcb, struct msghdr *msg,
 			WARN_ON(!(flags & MSG_PEEK));
 			skb = skb->next;
 		} while (skb != (struct sk_buff *) &meta_sk->sk_receive_queue);
-		found_ok_skb: if (skb
-				== (struct sk_buff *) &meta_sk->sk_receive_queue)
+
+found_ok_skb:
+		if (skb == (struct sk_buff *) &meta_sk->sk_receive_queue)
 			goto exit;
 
 		used = skb->len - data_offset;
