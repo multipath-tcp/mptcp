@@ -187,7 +187,7 @@ static void mtcp_cwnd_event(struct sock *sk, enum tcp_ca_event event)
 
 static void mtcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *tp = tcp_sk(sk), *meta_tp;
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 	int snd_cwnd;
 
@@ -195,6 +195,8 @@ static void mtcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 		tcp_reno_cong_avoid(sk, ack, in_flight);
 		return;
 	}
+
+	meta_tp = mpcb_meta_tp(mpcb);
 
 	if (!tcp_is_cwnd_limited(sk, in_flight))
 		return;
@@ -205,9 +207,6 @@ static void mtcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 		mtcp_recalc_alpha(sk);
 		return;
 	}
-	/* In dangerous area, increase slowly.
-	 * In theory this is tp->snd_cwnd += 1 / tp->snd_cwnd
-	 */
 
 	if (mpcb->cnt_established > 1){
 		u64 alpha = mtcp_get_alpha(mpcb);
@@ -232,15 +231,25 @@ static void mtcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 		snd_cwnd = tp->snd_cwnd;
 	}
 
-	if (tp->snd_cwnd_cnt >= snd_cwnd) {
-		if (tp->snd_cwnd < tp->snd_cwnd_clamp){
-			tp->snd_cwnd++;
-			mtcp_recalc_alpha(sk);
+	if (sysctl_tcp_abc) {
+		if (tp->bytes_acked >= snd_cwnd * meta_tp->mss_cache) {
+			/* Only a single mss for all subflows - thus use the
+			 * one of the meta-tp */
+			tp->bytes_acked -= snd_cwnd * meta_tp->mss_cache;
+			if (tp->snd_cwnd < tp->snd_cwnd_clamp)
+				tp->snd_cwnd++;
 		}
-
-		tp->snd_cwnd_cnt = 0;
 	} else {
-		tp->snd_cwnd_cnt++;
+		if (tp->snd_cwnd_cnt >= snd_cwnd) {
+			if (tp->snd_cwnd < tp->snd_cwnd_clamp){
+				tp->snd_cwnd++;
+				mtcp_recalc_alpha(sk);
+			}
+
+			tp->snd_cwnd_cnt = 0;
+		} else {
+			tp->snd_cwnd_cnt++;
+		}
 	}
 }
 
