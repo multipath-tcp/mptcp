@@ -330,7 +330,7 @@ fail_connect:
 }
 
 /* Defined in net/core/sock.c */
-void mtcp_inherit_sk(struct sock *sk, struct sock *newsk);
+void mtcp_inherit_sk(struct sock *sk, struct sock *newsk, gfp_t flags);
 
 struct multipath_pcb *mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
 	struct multipath_pcb *mpcb = kmalloc(sizeof(struct multipath_pcb),
@@ -349,7 +349,7 @@ struct multipath_pcb *mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
 	BUG_ON(mpcb->connection_list);
 
 	/* meta_sk inherits master sk */
-	mtcp_inherit_sk(master_sk, meta_sk);
+	mtcp_inherit_sk(master_sk, meta_sk, flags);
 	BUG_ON(mpcb->connection_list);
 
 	/* Will be replaced by the IDSN later. Currently the IDSN is zero */
