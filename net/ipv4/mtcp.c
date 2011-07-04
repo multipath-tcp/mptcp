@@ -101,13 +101,70 @@ void freeze_rcv_queue(struct sock *sk, const char *func_name)
 #endif
 /*=====================================*/
 
+/**
+ * This is the scheduler. This function decides on which flow to send
+ * a given MSS. If all subflows are found to be busy, NULL is returned
+ * The flow is selected based on the estimation of how much time will be
+ * needed to send the segment. If all paths have full cong windows, we
+ * simply block. The flow able to send the segment the soonest get it.
+ */
+struct sock *get_available_subflow(struct multipath_pcb *mpcb,
+				   struct sk_buff *skb)
+{
+	struct tcp_sock *tp;
+	struct sock *sk;
+	struct sock *bestsk = NULL;
+	u32 min_time_to_peer = 0xffffffff;
+
+	if (!mpcb)
+		return NULL;
+
+	/* if there is only one subflow, bypass the scheduling function */
+	if (mpcb->cnt_subflows == 1) {
+		bestsk = (struct sock *) mpcb->connection_list;
+		if (!mtcp_is_available(bestsk))
+			bestsk = NULL;
+		goto out;
+	}
+
+	/* First, find the best subflow */
+	mtcp_for_each_sk(mpcb, sk, tp) {
+		if (!mtcp_is_available(sk))
+			continue;
+
+		/* If the skb has already been enqueued in this sk, try to find
+		 * another one
+		 */
+		if (PI_TO_FLAG(tp->path_index) & skb->path_mask)
+			continue;
+
+		if (tp->srtt < min_time_to_peer) {
+			min_time_to_peer = tp->srtt;
+			bestsk = sk;
+		}
+	}
+
+out:
+	return bestsk;
+}
+
+static int mptcp_sched_min = 1;
+static int mptcp_sched_max = MPTCP_SCHED_MAX;
+
+struct sock *(*mptcp_schedulers[MPTCP_SCHED_MAX])
+		(struct multipath_pcb *, struct sk_buff *) =
+		{
+				&get_available_subflow,
+		};
+
 /*Sysctl data*/
 
 #ifdef CONFIG_SYSCTL
 
-int sysctl_mptcp_mss = MPTCP_MSS;
-int sysctl_mptcp_ndiffports = 1;
-int sysctl_mptcp_enabled = 1;
+int sysctl_mptcp_mss __read_mostly = MPTCP_MSS;
+int sysctl_mptcp_ndiffports __read_mostly = 1;
+int sysctl_mptcp_enabled __read_mostly = 1;
+int sysctl_mptcp_scheduler __read_mostly = 1;
 
 static ctl_table mptcp_table[] = {
 	{
@@ -130,6 +187,15 @@ static ctl_table mptcp_table[] = {
 		.maxlen = sizeof(int),
 		.mode = 0644,
 		.proc_handler = &proc_dointvec
+	},
+	{
+		.procname	= "mptcp_scheduler",
+		.data		= &sysctl_mptcp_scheduler,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec_minmax,
+		.extra1		= &mptcp_sched_min,
+		.extra2		= &mptcp_sched_max
 	},
 	{ }
 };
@@ -636,53 +702,6 @@ int mtcp_is_available(struct sock *sk) {
 	if (tcp_cwnd_test(tcp_sk(sk)))
 		return 1;
 	return 0;
-}
-
-/**
- * This is the scheduler. This function decides on which flow to send
- * a given MSS. If all subflows are found to be busy, NULL is returned
- * The flow is selected based on the estimation of how much time will be
- * needed to send the segment. If all paths have full cong windows, we
- * simply block. The flow able to send the segment the soonest get it.
- */
-struct sock* get_available_subflow(struct multipath_pcb *mpcb,
-				   struct sk_buff *skb)
-{
-	struct tcp_sock *tp;
-	struct sock *sk;
-	struct sock *bestsk = NULL;
-	u32 min_time_to_peer = 0xffffffff;
-
-	if (!mpcb)
-		return NULL;
-
-	/* if there is only one subflow, bypass the scheduling function */
-	if (mpcb->cnt_subflows == 1) {
-		bestsk = (struct sock *) mpcb->connection_list;
-		if (!mtcp_is_available(bestsk))
-			bestsk = NULL;
-		goto out;
-	}
-
-	/* First, find the best subflow */
-	mtcp_for_each_sk(mpcb, sk, tp) {
-		if (!mtcp_is_available(sk))
-			continue;
-
-		/* If the skb has already been enqueued in this sk, try to find
-		 * another one
-		 */
-		if (PI_TO_FLAG(tp->path_index) & skb->path_mask)
-			continue;
-
-		if (tp->srtt < min_time_to_peer) {
-			min_time_to_peer = tp->srtt;
-			bestsk = sk;
-		}
-	}
-
-out:
-	return bestsk;
 }
 
 int mtcp_sendmsg(struct kiocb *iocb, struct sock *master_sk,

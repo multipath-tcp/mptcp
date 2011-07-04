@@ -2101,7 +2101,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		}
 
 		if (is_meta_tp(tp)) {
-			subsk = get_available_subflow(tp->mpcb, skb);
+			subsk = mptcp_schedulers[sysctl_mptcp_scheduler - 1](tp->mpcb, skb);
 			if (!subsk)
 				break;
 			subtp = tcp_sk(subsk);
