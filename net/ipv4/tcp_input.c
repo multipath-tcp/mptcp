@@ -3636,9 +3636,6 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 		meta_tp->snd_una = data_ack;
 		mtcp_clean_rtx_queue((struct sock *) meta_tp);
 	}
-	if (tp->pf == 1)
-		tcpprobe_logmsg(sk,"pi %d: leaving pf state",tp->path_index);
-	tp->pf = 0;
 
 	return flag;
 }
