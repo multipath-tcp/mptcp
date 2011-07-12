@@ -283,7 +283,7 @@ struct tcp_sock {
  */
  	u32	rcv_nxt;	/* What we want to receive next 	*/
 	u32	copied_seq;	/* Head of yet unread data		*/
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	/*data for the scheduler*/
 	struct {
 		int	space;
@@ -308,13 +308,13 @@ struct tcp_sock {
 	unsigned long last_snd_probe;
 	unsigned long last_rcv_probe;
 #endif
-	/* We keep these flags even if CONFIG_MTCP is not checked, because
+	/* We keep these flags even if CONFIG_MPTCP is not checked, because
 	 * it allowschecking MPTCP capability just by checking the mpc flag,
 	 * rather than adding ifdefs everywhere.
 	 */
 	u8      mpc:1,          /* Other end is multipath capable */
 
-		wait_event_any_sk_released:1, /* 1 if mtcp_wait_event_any_sk()
+		wait_event_any_sk_released:1, /* 1 if mptcp_wait_event_any_sk()
 					       * has released this sock, and
 					       * must thus lock it again,
 					       * so that to let everything
@@ -481,13 +481,13 @@ struct tcp_sock {
 	 */
 	struct tcp_cookie_values	*cookie_values;
 	struct multipath_pcb		*mpcb;
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	int				path_index;
 	struct tcp_sock			*next; /*Next subflow socket*/
-	u32				mtcp_loc_token;
+	u32				mptcp_loc_token;
 	uint8_t				slave_sk:1,
 					attached:1;
-#endif /* CONFIG_MTCP */
+#endif /* CONFIG_MPTCP */
 };
 
 static inline struct tcp_sock *tcp_sk(const struct sock *sk)

@@ -379,9 +379,9 @@ int inet6_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	inet->inet_sport = htons(inet->inet_num);
 	inet->inet_dport = 0;
 	inet->inet_daddr = 0;
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	if (addr_type != IPV6_ADDR_ANY)
-		mtcp_update_metasocket(sk, mpcb_from_tcpsock(tcp_sk(sk)));
+		mptcp_update_metasocket(sk, mpcb_from_tcpsock(tcp_sk(sk)));
 #endif
 out:
 	release_sock(sk);
@@ -1199,15 +1199,15 @@ static int __init inet6_init(void)
 	if (err)
 		goto sysctl_fail;
 #endif
-#ifdef CONFIG_MTCP
-	err = mtcpv6_init();
+#ifdef CONFIG_MPTCP
+	err = mptcpv6_init();
 	if (err)
-		goto mtcpsubv6_fail;
+		goto mptcpsubv6_fail;
 #endif
 
 out:
 	return err;
-mtcpsubv6_fail:
+mptcpsubv6_fail:
 #ifdef CONFIG_SYSCTL
 	ipv6_sysctl_unregister();
 #endif

@@ -103,7 +103,7 @@
 #include <net/ip_fib.h>
 #include <net/inet_connection_sock.h>
 #include <net/tcp.h>
-#include <net/mtcp.h>
+#include <net/mptcp.h>
 #include <net/udp.h>
 #include <net/udplite.h>
 #include <linux/skbuff.h>
@@ -146,7 +146,7 @@ void inet_sock_destruct(struct sock *sk)
 	}
 
 	if ((sk->sk_protocol == IPPROTO_TCP ||
-	     sk->sk_protocol == IPPROTO_MTCPSUB)
+	     sk->sk_protocol == IPPROTO_MPTCPSUB)
 	    && tcp_sk(sk)->mpcb) {
 		if (is_master_tp(tcp_sk(sk))) {
 			if (sk != tcp_sk(sk)->mpcb->master_sk) {
@@ -544,9 +544,9 @@ int inet_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	inet->inet_daddr = 0;
 	inet->inet_dport = 0;
 	sk_dst_reset(sk);
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	if (addr->sin_addr.s_addr)
-		mtcp_update_metasocket(sk, mpcb_from_tcpsock(tcp_sk(sk)));
+		mptcp_update_metasocket(sk, mpcb_from_tcpsock(tcp_sk(sk)));
 #endif
 	err = 0;
 out_release_sock:
@@ -1045,11 +1045,11 @@ static struct inet_protosw inetsw_array[] =
 	       .no_check =   UDP_CSUM_DEFAULT,
 	       .flags =      INET_PROTOSW_REUSE,
        },
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	{
 		.type =       SOCK_STREAM,
-		.protocol =   IPPROTO_MTCPSUB,
-		.prot =       &mtcpsub_prot,
+		.protocol =   IPPROTO_MPTCPSUB,
+		.prot =       &mptcpsub_prot,
 		.ops =        &inet_stream_ops,
 		.no_check =   0,
 		.flags =      INET_PROTOSW_PERMANENT |
@@ -1682,8 +1682,8 @@ static int __init inet_init(void)
 	if (rc)
 		goto out_unregister_udp_proto;
 
-#ifdef CONFIG_MTCP
-	rc = proto_register(&mtcpsub_prot, 1);
+#ifdef CONFIG_MPTCP
+	rc = proto_register(&mptcpsub_prot, 1);
 	if (rc)
 		goto out_unregister_raw_proto;
 #endif

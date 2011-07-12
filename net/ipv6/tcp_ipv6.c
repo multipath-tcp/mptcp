@@ -61,7 +61,7 @@
 #include <net/timewait_sock.h>
 #include <net/netdma.h>
 #include <net/inet_common.h>
-#include <net/mtcp_v6.h>
+#include <net/mptcp_v6.h>
 
 #include <asm/uaccess.h>
 
@@ -326,8 +326,8 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 	if (err)
 		goto late_failure;
 
-#ifdef CONFIG_MTCP
-	mtcp_update_metasocket(sk,mpcb_from_tcpsock(tp));
+#ifdef CONFIG_MPTCP
+	mptcp_update_metasocket(sk,mpcb_from_tcpsock(tp));
 #endif
 
 	return 0;
@@ -1760,7 +1760,7 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->end_seq = (TCP_SKB_CB(skb)->seq + th->syn + th->fin +
 				    skb->len - th->doff*4);
 	TCP_SKB_CB(skb)->ack_seq = ntohl(th->ack_seq);
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	/*Init to zero, will be set upon option parsing.*/
 	TCP_SKB_CB(skb)->data_seq = 0;
 	TCP_SKB_CB(skb)->end_data_seq = 0;
@@ -1769,7 +1769,7 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->flags = ipv6_get_dsfield(hdr);
 	TCP_SKB_CB(skb)->sacked = 0;
 
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	/* We must absolutely check for subflow related segments
 	 * before the normal sock lookup, because otherwise subflow
 	 * segments could be understood as associated to some listening
@@ -1778,7 +1778,7 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 
 	/* Is this a new syn+join ? */
 	if (th->syn && !th->ack) {
-		switch(mtcp_lookup_join(skb)) {
+		switch(mptcp_lookup_join(skb)) {
 			/* The specified token can't be found
 			 * Send a reset and discard the packet.
 			 */
@@ -1792,13 +1792,13 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 	/* OK, this segment is not related to subflow initiation,
 	 * we can proceed to normal lookup
 	 */
-#endif /* CONFIG_MTCP */
+#endif /* CONFIG_MPTCP */
 
 	sk = __inet6_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
 
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	/* Is there a pending request sock for this segment ? */
-	if ((!sk || sk->sk_state == TCP_LISTEN) && mtcp_syn_recv_sock(skb)) {
+	if ((!sk || sk->sk_state == TCP_LISTEN) && mptcp_syn_recv_sock(skb)) {
 		if (sk)
 			sock_put(sk);
 		return 0;
@@ -2075,11 +2075,11 @@ static int tcp_v6_init_sock(struct sock *sk)
 	percpu_counter_inc(&tcp_sockets_allocated);
 	local_bh_enable();
 
-#ifdef CONFIG_MTCP
-	/* Init the MTCP mpcb */
+#ifdef CONFIG_MPTCP
+	/* Init the MPTCP mpcb */
 	{
 		struct multipath_pcb *mpcb;
-		mpcb = mtcp_alloc_mpcb(sk, GFP_KERNEL);
+		mpcb = mptcp_alloc_mpcb(sk, GFP_KERNEL);
 
 		if (!mpcb)
 			return -1;
@@ -2280,8 +2280,8 @@ void tcp6_proc_exit(struct net *net)
 struct proto tcpv6_prot = {
 	.name			= "TCPv6",
 	.owner			= THIS_MODULE,
-#ifdef CONFIG_MTCP
-	.close			= mtcp_close,
+#ifdef CONFIG_MPTCP
+	.close			= mptcp_close,
 #else
 	.close			= tcp_close,
 #endif
@@ -2295,8 +2295,8 @@ struct proto tcpv6_prot = {
 	.setsockopt		= tcp_setsockopt,
 	.getsockopt		= tcp_getsockopt,
 	.recvmsg		= tcp_recvmsg,
-#ifdef CONFIG_MTCP
-	.sendmsg		= mtcp_sendmsg,
+#ifdef CONFIG_MPTCP
+	.sendmsg		= mptcp_sendmsg,
 #else
 	.sendmsg		= tcp_sendmsg,
 #endif

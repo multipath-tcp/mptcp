@@ -59,7 +59,7 @@ module_param(log_interval, int, 0);
 
 static const char procname[] = "tcpprobe";
 
-struct mtcp_ccc {
+struct mptcp_ccc {
 	u64 alpha;
 };
 
@@ -91,7 +91,7 @@ struct tcp_log {
 	int     rmem_alloc; /*number of ofo bytes received*/
 	int     rmem_alloc_sub; /*idem, but for subflow */
 	int     dsn;
-        u32     mtcp_snduna;
+        u32     mptcp_snduna;
 	u32     drs_seq;
 	u32     drs_time;
 	int     bw_est;
@@ -185,13 +185,13 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->rmem_alloc=atomic_read(&mpcb_sk->sk_rmem_alloc);
 			p->rmem_alloc_sub=atomic_read(&sk->sk_rmem_alloc);
 			p->dsn=TCP_SKB_CB(skb)->data_seq;
-			p->mtcp_snduna = tp->mpcb ? mpcb_meta_tp(tp->mpcb)->snd_una : 0;
+			p->mptcp_snduna = tp->mpcb ? mpcb_meta_tp(tp->mpcb)->snd_una : 0;
 			p->drs_seq=tp->rcvq_space.seq;
 			p->drs_time=tp->rcvq_space.time;
 			p->bw_est=tp->cur_bw_est;
 			p->mpcb_def=(tp->mpcb!=NULL);
 			if (tp->mpcb)
-				p->alpha = ((struct mtcp_ccc *) inet_csk_ca((struct sock *) tp->mpcb))->alpha;
+				p->alpha = ((struct mptcp_ccc *) inet_csk_ca((struct sock *) tp->mpcb))->alpha;
 			else
 				p->alpha = 0;
 			tcp_probe.head = (tcp_probe.head + 1) & (bufsize - 1);
@@ -313,14 +313,14 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			p->rmem_alloc = atomic_read(&meta_sk->sk_rmem_alloc);
 			p->rmem_alloc_sub = atomic_read(&sk->sk_rmem_alloc);
 			p->dsn = TCP_SKB_CB(skb)->data_seq;
-			p->mtcp_snduna = (tp->mpcb) ?
+			p->mptcp_snduna = (tp->mpcb) ?
 					mpcb_meta_tp(tp->mpcb)->snd_una : 0;
 			p->drs_seq = tp->rcvq_space.seq;
 			p->drs_time = tp->rcvq_space.time;
 			p->bw_est = tp->cur_bw_est;
 			p->mpcb_def = (tp->mpcb != NULL);
 			if (tp->mpcb)
-				p->alpha = ((struct mtcp_ccc *) inet_csk_ca((struct sock *) tp->mpcb))->alpha;
+				p->alpha = ((struct mptcp_ccc *) inet_csk_ca((struct sock *) tp->mpcb))->alpha;
 			else
 				p->alpha = 0;
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
@@ -405,7 +405,7 @@ static int tcpprobe_sprint(char *tbuf, int n)
 			p->mss_cache,
 			p->snd_buf, p->wmem_queued, p->rmem_alloc,
 			p->rmem_alloc_sub, p->dsn,
-			p->mtcp_snduna, p->drs_seq, p->drs_time * 1000 / HZ,
+			p->mptcp_snduna, p->drs_seq, p->drs_time * 1000 / HZ,
 			((p->bw_est << 3) / 1000) * HZ, p->mpcb_def, p->alpha);
 }
 

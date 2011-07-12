@@ -1,5 +1,5 @@
 /*
- *	MTCP implementation
+ *	MPTCP implementation
  *
  *	Authors:
  *      Sébastien Barré		<sebastien.barre@uclouvain.be>
@@ -16,8 +16,8 @@
  *      2 of the License, or (at your option) any later version.
  */
 
-#ifndef _MTCP_H
-#define _MTCP_H
+#ifndef _MPTCP_H
+#define _MPTCP_H
 
 #include <linux/aio.h>
 #include <linux/inetdevice.h>
@@ -28,12 +28,12 @@
 #include <linux/tcp_options.h>
 #include <linux/tcp.h>
 
-#include <net/mtcp_pm.h>
+#include <net/mptcp_pm.h>
 
-#ifdef CONFIG_MTCP_DEBUG
-#define mtcp_debug(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
+#ifdef CONFIG_MPTCP_DEBUG
+#define mptcp_debug(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
 #else
-#define mtcp_debug(fmt,args...)
+#define mptcp_debug(fmt,args...)
 #endif
 
 /* Default MSS for MPTCP
@@ -48,8 +48,8 @@ extern int sysctl_mptcp_scheduler;
 #define MPTCP_SCHED_MAX 1
 extern struct sock *(*mptcp_schedulers[MPTCP_SCHED_MAX]) (struct multipath_pcb *, struct sk_buff *);
 
-#ifdef MTCP_RCV_QUEUE_DEBUG
-struct mtcp_debug {
+#ifdef MPTCP_RCV_QUEUE_DEBUG
+struct mptcp_debug {
 	const char *func_name;
 	u32 seq;
 	int len;
@@ -60,28 +60,28 @@ void print_debug_array(void);
 void freeze_rcv_queue(struct sock *sk, const char *func_name);
 #endif
 
-#ifdef MTCP_DEBUG_TIMER
-static void mtcp_debug_timeout(unsigned long data)
+#ifdef MPTCP_DEBUG_TIMER
+static void mptcp_debug_timeout(unsigned long data)
 {
 	printk(KERN_ERR "MPTCP debug timeout ! Function %s\n", (char *)data);
 	BUG();
 }
 
-static DEFINE_TIMER(mtcp_debug_timer, mtcp_debug_timeout, 0, 0);
-#define mtcp_start_debug_timer(delay)					\
+static DEFINE_TIMER(mptcp_debug_timer, mptcp_debug_timeout, 0, 0);
+#define mptcp_start_debug_timer(delay)					\
 	do {								\
-		mtcp_debug_timer.expires = jiffies + delay * HZ;	\
-		mtcp_debug_timer.data = (unsigned long)__func_;		\
-		add_timer(&mtcp_debug_timer);				\
+		mptcp_debug_timer.expires = jiffies + delay * HZ;	\
+		mptcp_debug_timer.data = (unsigned long)__func_;		\
+		add_timer(&mptcp_debug_timer);				\
 	} while (0)
 
-static void mtcp_stop_debug_timer(void)
+static void mptcp_stop_debug_timer(void)
 {
-	del_timer(&mtcp_debug_timer);
+	del_timer(&mptcp_debug_timer);
 }
 #endif
 
-extern struct proto mtcpsub_prot;
+extern struct proto mptcpsub_prot;
 
 #define MPCB_FLAG_SERVER_SIDE	0  /* This mpcb belongs to a server side
 				    * connection. (obtained through a listen)
@@ -121,17 +121,17 @@ struct multipath_pcb {
 				 * scheduler
 				 */
 
-#ifdef CONFIG_MTCP_PM
+#ifdef CONFIG_MPTCP_PM
 	struct list_head collide_tk;
 	uint8_t addr_unsent;	/* num of addrs not yet sent to our peer */
 
 	/* We need to store the set of local addresses, so that we have a stable
 	   view of the available addresses. Playing with the addresses directly
 	   in the system would expose us to concurrency problems */
-	struct mtcp_loc4 addr4[MTCP_MAX_ADDR];
+	struct mptcp_loc4 addr4[MPTCP_MAX_ADDR];
 	int num_addr4;		/* num of addresses actually stored above. */
 
-	struct mtcp_loc6 addr6[MTCP_MAX_ADDR];
+	struct mptcp_loc6 addr6[MPTCP_MAX_ADDR];
 	int num_addr6;
 
 	struct path4 *pa4;
@@ -253,7 +253,7 @@ struct mp_add_addr {
 };
 
 #define mpcb_from_tcpsock(__tp) ((__tp)->mpcb)
-#define mtcp_meta_sk(sk) ((struct sock *)tcp_sk(sk)->mpcb)
+#define mptcp_meta_sk(sk) ((struct sock *)tcp_sk(sk)->mpcb)
 #define is_meta_tp(__tp) ((__tp)->mpcb && (struct tcp_sock *)((__tp)->mpcb) == __tp)
 #define is_meta_sk(sk) (sk->sk_protocol == IPPROTO_TCP &&	\
 			(tcp_sk(sk))->mpcb &&			\
@@ -277,15 +277,15 @@ struct mp_add_addr {
 					!TCP_SKB_CB(skb)->end_data_seq))
 
 /* Iterates overs all subflows */
-#define mtcp_for_each_tp(mpcb, tp)					\
+#define mptcp_for_each_tp(mpcb, tp)					\
 	for ((tp) = (mpcb)->connection_list; (tp); (tp) = (tp)->next)
 
-#define mtcp_for_each_sk(mpcb, sk, tp)					       \
+#define mptcp_for_each_sk(mpcb, sk, tp)					       \
 	for ((sk) = (struct sock *) (mpcb)->connection_list, (tp) = tcp_sk(sk);\
 	     sk;							       \
 	     sk = (struct sock *) tcp_sk(sk)->next, tp = tcp_sk(sk))
 
-#define mtcp_for_each_sk_safe(__mpcb, __sk, __temp)			\
+#define mptcp_for_each_sk_safe(__mpcb, __sk, __temp)			\
 	for (__sk = (struct sock *) (__mpcb)->connection_list,		\
 	     __temp = __sk ? (struct sock *) tcp_sk(__sk)->next : NULL;	\
 	     __sk;							\
@@ -296,10 +296,10 @@ struct mp_add_addr {
  * Else return 0. Moreover, if 1 is returned, sk points to the
  * first subsocket that verified the condition
  */
-#define mtcp_test_any_sk(mpcb, sk, cond)		\
+#define mptcp_test_any_sk(mpcb, sk, cond)		\
 	({	int __ans = 0;				\
 		struct tcp_sock *__tp;			\
-		mtcp_for_each_sk(mpcb, sk, __tp) {	\
+		mptcp_for_each_sk(mpcb, sk, __tp) {	\
 			if (cond) {			\
 				__ans = 1;		\
 				break;			\
@@ -321,21 +321,21 @@ static inline int PI_TO_FLAG(int pi)
 /* For debugging only. Verifies consistency between subsock seqnums
  * and metasock seqnums
  */
-#ifdef MTCP_DEBUG_SEQNUMS
-void mtcp_check_seqnums(struct multipath_pcb *mpcb, int before);
+#ifdef MPTCP_DEBUG_SEQNUMS
+void mptcp_check_seqnums(struct multipath_pcb *mpcb, int before);
 #else
-#define mtcp_check_seqnums(mpcb, before)
+#define mptcp_check_seqnums(mpcb, before)
 #endif
 
-#ifdef MTCP_DEBUG_PKTS_OUT
-int mtcp_check_pkts_out(struct sock* sk);
-void mtcp_check_send_head(struct sock *sk,int num);
+#ifdef MPTCP_DEBUG_PKTS_OUT
+int mptcp_check_pkts_out(struct sock* sk);
+void mptcp_check_send_head(struct sock *sk,int num);
 #else
-#define mtcp_check_pkts_out(sk)
-#define mtcp_check_send_head(sk,num)
+#define mptcp_check_pkts_out(sk)
+#define mptcp_check_send_head(sk,num)
 #endif
 
-static inline void mtcp_init_addr_list(struct multipath_options *mopt)
+static inline void mptcp_init_addr_list(struct multipath_options *mopt)
 {
 	mopt->list_rcvd = mopt->num_addr4 = mopt->num_addr6 = 0;
 }
@@ -346,7 +346,7 @@ static inline void mtcp_init_addr_list(struct multipath_options *mopt)
  * This is important because a subsock may want to remove an skb,
  * while the meta-sock still has a reference to it.
  */
-static inline void mtcp_wmem_free_skb(struct sock *sk, struct sk_buff *skb)
+static inline void mptcp_wmem_free_skb(struct sock *sk, struct sk_buff *skb)
 {
 	sock_set_flag(sk, SOCK_QUEUE_SHRUNK);
 	sk->sk_wmem_queued -= skb->truesize;
@@ -386,49 +386,49 @@ static inline struct tcp_sock *mpcb_meta_tp(const struct multipath_pcb *mpcb)
 	return (struct tcp_sock *)mpcb;
 }
 
-int mtcp_queue_skb(struct sock *sk, struct sk_buff *skb);
-void mtcp_ofo_queue(struct multipath_pcb *mpcb);
-void mtcp_cleanup_rbuf(struct sock *meta_sk, int copied);
-int mtcp_check_rcv_queue(struct multipath_pcb *mpcb, struct msghdr *msg,
+int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb);
+void mptcp_ofo_queue(struct multipath_pcb *mpcb);
+void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied);
+int mptcp_check_rcv_queue(struct multipath_pcb *mpcb, struct msghdr *msg,
 			 size_t * len, u32 * data_seq, int *copied, int flags);
-/* Possible return values from mtcp_queue_skb */
-#define MTCP_EATEN 1  /* The skb has been (fully or partially) eaten by
+/* Possible return values from mptcp_queue_skb */
+#define MPTCP_EATEN 1  /* The skb has been (fully or partially) eaten by
 		       * the app
 		       */
-#define MTCP_QUEUED 2 /* The skb has been queued in the mpcb ofo queue */
+#define MPTCP_QUEUED 2 /* The skb has been queued in the mpcb ofo queue */
 
-struct multipath_pcb *mtcp_alloc_mpcb(struct sock *master_sk, gfp_t flags);
-void mtcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp);
-void mtcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp);
-void mtcp_update_metasocket(struct sock *sock, struct multipath_pcb *mpcb);
-int mtcp_sendmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
+struct multipath_pcb *mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags);
+void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp);
+void mptcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp);
+void mptcp_update_metasocket(struct sock *sock, struct multipath_pcb *mpcb);
+int mptcp_sendmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		size_t size);
-int mtcp_is_available(struct sock *sk);
-void mtcp_reinject_data(struct sock *orig_sk);
-int mtcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb);
-int mtcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices);
-void mtcp_update_window_clamp(struct multipath_pcb *mpcb);
-void mtcp_update_sndbuf(struct multipath_pcb *mpcb);
-void mtcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end);
-int mtcpv6_init(void);
-void mtcp_data_ready(struct sock *sk);
-void mtcp_push_frames(struct sock *sk);
+int mptcp_is_available(struct sock *sk);
+void mptcp_reinject_data(struct sock *orig_sk);
+int mptcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb);
+int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices);
+void mptcp_update_window_clamp(struct multipath_pcb *mpcb);
+void mptcp_update_sndbuf(struct multipath_pcb *mpcb);
+void mptcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end);
+int mptcpv6_init(void);
+void mptcp_data_ready(struct sock *sk);
+void mptcp_push_frames(struct sock *sk);
 
 void verif_wqueues(struct multipath_pcb *mpcb);
 
-void mtcp_skb_entail(struct sock *sk, struct sk_buff *skb);
-struct sk_buff *mtcp_next_segment(struct sock *sk, int *reinject);
+void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb);
+struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject);
 void mpcb_release(struct multipath_pcb *mpcb);
-void mtcp_clean_rtx_queue(struct sock *sk);
-void mtcp_send_fin(struct sock *mpcb_sk);
-void mtcp_parse_options(uint8_t *ptr, int opsize,
+void mptcp_clean_rtx_queue(struct sock *sk);
+void mptcp_send_fin(struct sock *mpcb_sk);
+void mptcp_parse_options(uint8_t *ptr, int opsize,
 		struct tcp_options_received *opt_rx,
 		struct multipath_options *mopt,
 		struct sk_buff *skb);
-void mtcp_close(struct sock *master_sk, long timeout);
-void mtcp_detach_unused_child(struct sock *sk);
+void mptcp_close(struct sock *master_sk, long timeout);
+void mptcp_detach_unused_child(struct sock *sk);
 int do_mptcp(struct sock *sk);
 
 void mptcp_fallback(struct sock *master_sk);
 
-#endif /* _MTCP_H */
+#endif /* _MPTCP_H */

@@ -465,7 +465,7 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 		newtp->snd_sml = newtp->snd_una =
 		newtp->snd_nxt = newtp->snd_up =
 			treq->snt_isn + 1 + tcp_s_data_size(oldtp);
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 		newtp->rx_opt.rcv_isn=treq->rcv_isn;
 		newtp->snt_isn=treq->snt_isn;
 		newtp->rcv_isn=treq->rcv_isn;
@@ -582,7 +582,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	tmp_opt.saw_tstamp = 0;
 
 	if (!is_meta_sk(sk))
-		mtcp_init_addr_list(&mopt);
+		mptcp_init_addr_list(&mopt);
 	else
 		mopt = tcp_sk(sk)->mpcb->received_options;
 
@@ -746,7 +746,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		goto listen_overflow;
 	child_tp = tcp_sk(child);
 
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	if (!is_meta_sk(sk)) { /* Regular TCP establishment */
 		struct multipath_pcb *mpcb;
 		/* Copy mptcp related info from req to child
@@ -757,11 +757,11 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		if (child_tp->rx_opt.saw_mpc) {
 			child_tp->rx_opt.saw_mpc = 0;
 			child_tp->mpc = 1;
-			child_tp->rx_opt.mtcp_rem_token = req->mtcp_rem_token;
+			child_tp->rx_opt.mptcp_rem_token = req->mptcp_rem_token;
 			child_tp->path_index = 0;
-			child_tp->mtcp_loc_token = req->mtcp_loc_token;
+			child_tp->mptcp_loc_token = req->mptcp_loc_token;
 			child_tp->mpcb = mpcb =
-				mtcp_alloc_mpcb(child, GFP_ATOMIC);
+				mptcp_alloc_mpcb(child, GFP_ATOMIC);
 
 			/* The allocation of the mpcb failed!
 			 * Destroy the child and go to listen_overflow
@@ -771,7 +771,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 				goto listen_overflow;
 			}
 
-			mtcp_add_sock(mpcb, child_tp);
+			mptcp_add_sock(mpcb, child_tp);
 
 			if (mopt.list_rcvd)
 				memcpy(&mpcb->received_options, &mopt,
@@ -781,7 +781,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 			 * tcp_rcv_state_process()
 			 */
 			((struct sock *)mpcb)->sk_state = TCP_SYN_RECV;
-			mtcp_update_metasocket(child, mpcb);
+			mptcp_update_metasocket(child, mpcb);
 		} else {
 			child_tp->mpcb = NULL;
 		}
@@ -791,8 +791,8 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		 */
 		child_tp->mpc = 1;
 		child_tp->slave_sk = 1;
-		child_tp->rx_opt.mtcp_rem_token = req->mtcp_rem_token;
-		child_tp->mtcp_loc_token = req->mtcp_loc_token;
+		child_tp->rx_opt.mptcp_rem_token = req->mptcp_rem_token;
+		child_tp->mptcp_loc_token = req->mptcp_loc_token;
 		child_tp->bw_est.time = 0;
 		child->sk_sndmsg_page = NULL;
 
@@ -802,7 +802,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		sock_hold(child_tp->mpcb->master_sk);
 
 		/* Deleting from global hashtable */
-		mtcp_hash_request_remove(req);
+		mptcp_hash_request_remove(req);
 
 		/* Subflows do not use the accept queue, as they
 		 * are attached immediately to the mpcb.
@@ -810,7 +810,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		inet_csk_reqsk_queue_drop(sk, req, prev);
 		return child;
 	}
-#endif /* CONFIG_MTCP */
+#endif /* CONFIG_MPTCP */
 
 	inet_csk_reqsk_queue_unlink(sk, req, prev);
 	inet_csk_reqsk_queue_removed(sk, req);
@@ -830,7 +830,7 @@ embryonic_reset:
 		req->rsk_ops->send_reset(sk, skb);
 	if (is_meta_sk(sk)) {
 		/*Deleting from global hashtable */
-		mtcp_hash_request_remove(req);
+		mptcp_hash_request_remove(req);
 	}
 	inet_csk_reqsk_queue_drop(sk, req, prev);
 	return NULL;

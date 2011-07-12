@@ -10,7 +10,7 @@
  * Authors:	Ross Biro
  *		Fred N. van Kempen, <waltje@uWalt.NL.Mugnet.ORG>
  *              S. Barré: Added this file, to recuperate a portion
- *              of the previous tcp.h file, in order to support mtcp
+ *              of the previous tcp.h file, in order to support mptcp
  *              includes interdependence.
  *
  *		This program is free software; you can redistribute it and/or
@@ -23,7 +23,7 @@
 #define _TCP_OPTIONS_H
 
 #include <linux/types.h>
-#include <net/mtcp_pm.h>
+#include <net/mptcp_pm.h>
 
 #define OPTION_SACK_ADVERTISE	(1 << 0)
 #define OPTION_TS		(1 << 1)
@@ -50,10 +50,10 @@ struct tcp_out_options {
 	__u16	data_len;	/* data level length, for MPTCP */
 	__u32	sub_seq;	/* subflow seqnum, for MPTCP */
 	__u32	token;		/* token for mptcp */
-#ifdef CONFIG_MTCP_PM
-	struct mtcp_loc4 *addr4;/* v4 addresses for MPTCP */
+#ifdef CONFIG_MPTCP_PM
+	struct mptcp_loc4 *addr4;/* v4 addresses for MPTCP */
 	u8	addr_id;	/* address id */
-#endif /* CONFIG_MTCP_PM */
+#endif /* CONFIG_MPTCP_PM */
 };
 
 struct tcp_options_received {
@@ -77,13 +77,13 @@ struct tcp_options_received {
 	u8	num_sacks;	/* Number of SACK blocks		*/
 	u16	user_mss;	/* mss requested by user in ioctl	*/
 	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
-#ifdef CONFIG_MTCP
- 	u32     mtcp_rem_token; /* Remote token, for mptcp */
-	u32     mtcp_recv_token; /* Received token, for mptcp */
+#ifdef CONFIG_MPTCP
+ 	u32     mptcp_rem_token; /* Remote token, for mptcp */
+	u32     mptcp_recv_token; /* Received token, for mptcp */
 	u32     rcv_isn; /* Needed to retrieve abs subflow seqnum from the
 			  * relative version.
 			  */
-#endif /* CONFIG_MTCP */
+#endif /* CONFIG_MPTCP */
 };
 
 static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
@@ -94,13 +94,13 @@ static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
 }
 
 struct multipath_options {
-#ifdef CONFIG_MTCP_PM
+#ifdef CONFIG_MPTCP_PM
 	int    num_addr4;
 	int    num_addr6;
-	struct mtcp_loc4 addr4[MTCP_MAX_ADDR];
-	struct mtcp_loc6 addr6[MTCP_MAX_ADDR];
+	struct mptcp_loc4 addr4[MPTCP_MAX_ADDR];
+	struct mptcp_loc6 addr6[MPTCP_MAX_ADDR];
 #endif
-	u8      list_rcvd:1, /* 1 if IP list has been received (MTCP_PM) */
+	u8      list_rcvd:1, /* 1 if IP list has been received (MPTCP_PM) */
 		dfin_rcvd:1;
 	u32     fin_dsn; /* DSN of the byte
 			  * FOLLOWING the Data FIN

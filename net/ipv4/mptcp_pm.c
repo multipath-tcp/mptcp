@@ -1,5 +1,5 @@
 /*
- *	MTCP PM implementation
+ *	MPTCP PM implementation
  *
  *	Authors:
  *      Sébastien Barré		<sebastien.barre@uclouvain.be>
@@ -12,9 +12,9 @@
  *      2 of the License, or (at your option) any later version.
  */
 
-#include <net/mtcp.h>
-#include <net/mtcp_v6.h>
-#include <net/mtcp_pm.h>
+#include <net/mptcp.h>
+#include <net/mptcp_v6.h>
+#include <net/mptcp_pm.h>
 #include <linux/netdevice.h>
 #include <linux/inetdevice.h>
 #include <linux/list.h>
@@ -24,9 +24,9 @@
 #include <net/inet_sock.h>
 #include <net/tcp.h>
 
-#define MTCP_HASH_SIZE                16
+#define MPTCP_HASH_SIZE                16
 #define hash_tk(token) \
-	jhash_1word(token,0)%MTCP_HASH_SIZE
+	jhash_1word(token,0)%MPTCP_HASH_SIZE
 
 /* This couple of extern functions should be replaced ASAP
  * with more modular things, because they become quickly a
@@ -43,7 +43,7 @@ extern void tcp_v4_send_ack(struct sk_buff *skb, u32 seq, u32 ack,
 extern void __tcp_v4_send_check(struct sk_buff *skb,
 				__be32 saddr, __be32 daddr);
 
-static struct list_head tk_hashtable[MTCP_HASH_SIZE];
+static struct list_head tk_hashtable[MPTCP_HASH_SIZE];
 static rwlock_t tk_hash_lock;	/*hashtable protection */
 
 /* This second hashtable is needed to retrieve request socks
@@ -51,22 +51,22 @@ static rwlock_t tk_hash_lock;	/*hashtable protection */
  * the token, the final ack does not, so we need a separate hashtable
  * to retrieve the mpcb.
  */
-static struct list_head tuple_hashtable[MTCP_HASH_SIZE];
+static struct list_head tuple_hashtable[MPTCP_HASH_SIZE];
 static spinlock_t tuple_hash_lock;	/* hashtable protection */
 
 /* consumer of interface UP/DOWN events */
-static int mtcp_pm_inetaddr_event(struct notifier_block *this,
+static int mptcp_pm_inetaddr_event(struct notifier_block *this,
 				unsigned long event, void *ptr);
-static struct notifier_block mtcp_pm_inetaddr_notifier = {
-        .notifier_call = mtcp_pm_inetaddr_event,
+static struct notifier_block mptcp_pm_inetaddr_notifier = {
+        .notifier_call = mptcp_pm_inetaddr_event,
 };
 
-void mtcp_hash_insert(struct multipath_pcb *mpcb, u32 token)
+void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token)
 {
 	int hash = hash_tk(token);
 
-	mtcp_debug("%s: add mpcb to hash-table with loc_token %d\n",
-			__func__, mpcb_meta_tp(mpcb)->mtcp_loc_token);
+	mptcp_debug("%s: add mpcb to hash-table with loc_token %d\n",
+			__func__, mpcb_meta_tp(mpcb)->mptcp_loc_token);
 
 	write_lock_bh(&tk_hash_lock);
 	list_add(&mpcb->collide_tk, &tk_hashtable[hash]);
@@ -78,7 +78,7 @@ void mtcp_hash_insert(struct multipath_pcb *mpcb, u32 token)
  * It is the responsibility of the caller to decrement when releasing
  * the structure.
  */
-struct multipath_pcb *mtcp_hash_find(u32 token)
+struct multipath_pcb *mptcp_hash_find(u32 token)
 {
 	int hash = hash_tk(token);
 	struct multipath_pcb *mpcb;
@@ -95,14 +95,14 @@ struct multipath_pcb *mtcp_hash_find(u32 token)
 	return NULL;
 }
 
-void mtcp_hash_remove(struct multipath_pcb *mpcb)
+void mptcp_hash_remove(struct multipath_pcb *mpcb)
 {
 	struct inet_connection_sock *mpcb_icsk =
 	    (struct inet_connection_sock *)mpcb;
 	struct listen_sock *lopt = mpcb_icsk->icsk_accept_queue.listen_opt;
 
-	mtcp_debug("%s: remove mpcb from hash-table with loc_token %d\n",
-			__func__, mpcb_meta_tp(mpcb)->mtcp_loc_token);
+	mptcp_debug("%s: remove mpcb from hash-table with loc_token %d\n",
+			__func__, mpcb_meta_tp(mpcb)->mptcp_loc_token);
 
 	/*remove from the token hashtable */
 	write_lock_bh(&tk_hash_lock);
@@ -122,14 +122,14 @@ void mtcp_hash_remove(struct multipath_pcb *mpcb)
 				 * We use list_del_init because that
 				 * function supports multiple deletes, with
 				 * only the first one actually deleting.
-				 * This is useful since mtcp_check_req()
+				 * This is useful since mptcp_check_req()
 				 * might try to remove it as well
 				 */
 				list_del_init(&cur_ref->collide_tuple);
 				/* next element in collision list.
 				 * we don't remove yet the request_sock
 				 * from the local hashtable. This will be done
-				 * by mtcp_pm_release()
+				 * by mptcp_pm_release()
 				 */
 				cur_ref = cur_ref->dl_next;
 			}
@@ -138,15 +138,15 @@ void mtcp_hash_remove(struct multipath_pcb *mpcb)
 	spin_unlock_bh(&tuple_hash_lock);
 }
 
-void mtcp_hash_request_remove(struct request_sock *req)
+void mptcp_hash_request_remove(struct request_sock *req)
 {
 	spin_lock(&tuple_hash_lock);
-	/* list_del_init: see comment in mtcp_hash_remove() */
+	/* list_del_init: see comment in mptcp_hash_remove() */
 	list_del_init(&req->collide_tuple);
 	spin_unlock(&tuple_hash_lock);
 }
 
-void mtcp_pm_release(struct multipath_pcb *mpcb)
+void mptcp_pm_release(struct multipath_pcb *mpcb)
 {
 	struct inet_connection_sock *mpcb_icsk =
 	    (struct inet_connection_sock *)mpcb;
@@ -165,7 +165,7 @@ void mtcp_pm_release(struct multipath_pcb *mpcb)
 				todel = *cur_ref;
 				/* Remove from local hashtable, it has
 				 * been removed already from the global one by
-				 * mtcp_hash_remove()
+				 * mptcp_hash_remove()
 				 */
 				*cur_ref = (*cur_ref)->dl_next;
 				reqsk_free(todel);
@@ -187,7 +187,7 @@ void mtcp_pm_release(struct multipath_pcb *mpcb)
  * will need to define random tokens, while avoiding
  * collisions.
  */
-u32 mtcp_new_token(void)
+u32 mptcp_new_token(void)
 {
 	static atomic_t latest_token = {.counter = 0 };
 	return atomic_inc_return(&latest_token);
@@ -204,7 +204,7 @@ struct path4 *find_path_mapping4(struct in_addr *loc, struct in_addr *rem,
 	return NULL;
 }
 
-struct in_addr *mtcp_get_loc_addr(struct multipath_pcb *mpcb, int path_index)
+struct in_addr *mptcp_get_loc_addr(struct multipath_pcb *mpcb, int path_index)
 {
 	int i;
 	struct sock *meta_sk = (struct sock *)mpcb;
@@ -219,7 +219,7 @@ struct in_addr *mtcp_get_loc_addr(struct multipath_pcb *mpcb, int path_index)
 	return NULL;
 }
 
-struct in_addr *mtcp_get_rem_addr(struct multipath_pcb *mpcb, int path_index)
+struct in_addr *mptcp_get_rem_addr(struct multipath_pcb *mpcb, int path_index)
 {
 	int i;
 	struct sock *meta_sk = (struct sock *)mpcb;
@@ -239,7 +239,7 @@ struct in_addr *mtcp_get_rem_addr(struct multipath_pcb *mpcb, int path_index)
 	return NULL;
 }
 
-u8 mtcp_get_loc_addrid(struct multipath_pcb *mpcb, int path_index)
+u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, int path_index)
 {
 	int i;
 
@@ -271,7 +271,7 @@ void print_patharray(struct path4 *pa, int size)
 	}
 }
 
-static void __mtcp_update_patharray_ports(struct multipath_pcb *mpcb)
+static void __mptcp_update_patharray_ports(struct multipath_pcb *mpcb)
 {
 	int pa4_size = sysctl_mptcp_ndiffports - 1;  /* -1 because the initial
 						      * flow counts for one.
@@ -307,7 +307,7 @@ static void __mtcp_update_patharray_ports(struct multipath_pcb *mpcb)
 }
 
 /* This is the MPTCP PM mapping table */
-void mtcp_update_patharray(struct multipath_pcb *mpcb)
+void mptcp_update_patharray(struct multipath_pcb *mpcb)
 {
 	struct path4 *new_pa4, *old_pa4;
 	int i, j, newpa_idx = 0;
@@ -320,7 +320,7 @@ void mtcp_update_patharray(struct multipath_pcb *mpcb)
 	int pa4_size;
 
 	if (sysctl_mptcp_ndiffports > 1)
-		return __mtcp_update_patharray_ports(mpcb);
+		return __mptcp_update_patharray_ports(mpcb);
 
 	ulid_v4 = (meta_sk->sk_family == AF_INET ||
 		   (meta_sk->sk_family == AF_INET6 &&
@@ -350,7 +350,7 @@ void mtcp_update_patharray(struct multipath_pcb *mpcb)
 				/* remote addr */
 				memcpy(&new_pa4[newpa_idx].rem,
 				       &mpcb->received_options.addr4[j],
-				       sizeof(struct mtcp_loc4));
+				       sizeof(struct mptcp_loc4));
 
 				/* new path index to be given */
 				new_pa4[newpa_idx++].path_index =
@@ -372,7 +372,7 @@ void mtcp_update_patharray(struct multipath_pcb *mpcb)
 				/* local addr */
 				memcpy(&new_pa4[newpa_idx].loc,
 				       &mpcb->addr4[i],
-				       sizeof(struct mtcp_loc4));
+				       sizeof(struct mptcp_loc4));
 
 				/* remote addr */
 				new_pa4[newpa_idx].rem.addr.s_addr =
@@ -400,11 +400,11 @@ void mtcp_update_patharray(struct multipath_pcb *mpcb)
 				/* local addr */
 				memcpy(&new_pa4[newpa_idx].loc,
 				       &mpcb->addr4[i],
-				       sizeof(struct mtcp_loc4));
+				       sizeof(struct mptcp_loc4));
 				/* remote addr */
 				memcpy(&new_pa4[newpa_idx].rem,
 				       &mpcb->received_options.addr4[j],
-				       sizeof(struct mtcp_loc4));
+				       sizeof(struct mptcp_loc4));
 
 				/* new path index to be given */
 				new_pa4[newpa_idx++].path_index =
@@ -421,7 +421,7 @@ void mtcp_update_patharray(struct multipath_pcb *mpcb)
 		kfree(old_pa4);
 }
 
-void mtcp_set_addresses(struct multipath_pcb *mpcb)
+void mptcp_set_addresses(struct multipath_pcb *mpcb)
 {
 	struct net_device *dev;
 	int id = 1;
@@ -447,13 +447,13 @@ void mtcp_set_addresses(struct multipath_pcb *mpcb)
 			for (ifa = in_dev->ifa_list; ifa; ifa = ifa->ifa_next) {
 				ifa_address = ifa->ifa_local;
 
-				if (num_addr4 == MTCP_MAX_ADDR) {
-					mtcp_debug
+				if (num_addr4 == MPTCP_MAX_ADDR) {
+					mptcp_debug
 						("%s: At max num of local "
 						 "addresses: "
 						 "%d --- not adding address:"
 						 " %pI4\n",
-						 __func__, MTCP_MAX_ADDR,
+						 __func__, MPTCP_MAX_ADDR,
 						 &ifa_address);
 					goto out;
 				}
@@ -487,7 +487,7 @@ out:
  * Returns -1 if there is no space anymore to store an additional
  * address
  */
-int mtcp_v4_add_raddress(struct multipath_options *mopt,
+int mptcp_v4_add_raddress(struct multipath_options *mopt,
 			struct in_addr *addr, u8 id)
 {
 	int i;
@@ -497,7 +497,7 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 	if (!id)
 		return 0;
 
-	BUG_ON(num_addr4 > MTCP_MAX_ADDR);
+	BUG_ON(num_addr4 > MPTCP_MAX_ADDR);
 
 	for (i = 0; i < num_addr4; i++) {
 		/* Address is already in the list --- continue */
@@ -512,7 +512,7 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 		if (mopt->addr4[i].id == id &&
 		    mopt->addr4[i].addr.s_addr != addr->s_addr) {
 			/* update the address */
-			mtcp_debug("%s: updating old addr:%pI4"
+			mptcp_debug("%s: updating old addr:%pI4"
 				   " to addr %pi4 with id:%d\n",
 				   __func__,
 				   &mopt->addr4[i].addr.s_addr,
@@ -524,10 +524,10 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 	}
 
 	/* Do we have already the maximum number of local/remote addresses? */
-	if (num_addr4 == MTCP_MAX_ADDR) {
-		mtcp_debug("%s: At max num of remote addresses: %d --- not "
+	if (num_addr4 == MPTCP_MAX_ADDR) {
+		mptcp_debug("%s: At max num of remote addresses: %d --- not "
 			   "adding address: %pI4\n",
-			   __func__, MTCP_MAX_ADDR, &addr->s_addr);
+			   __func__, MPTCP_MAX_ADDR, &addr->s_addr);
 		return -1;
 	}
 
@@ -540,7 +540,7 @@ int mtcp_v4_add_raddress(struct multipath_options *mopt,
 	return 0;
 }
 
-static struct dst_entry *mtcp_route_req(const struct request_sock *req)
+static struct dst_entry *mptcp_route_req(const struct request_sock *req)
 {
 	struct rtable *rt;
 	const struct inet_request_sock *ireq = inet_rsk(req);
@@ -566,7 +566,7 @@ static struct dst_entry *mtcp_route_req(const struct request_sock *req)
 	return &rt->dst;
 }
 
-static unsigned mtcp_synack_options(struct request_sock *req,
+static unsigned mptcp_synack_options(struct request_sock *req,
 				    unsigned mss, struct sk_buff *skb,
 				    struct tcp_out_options *opts,
 				    struct tcp_md5sig_key **md5)
@@ -599,8 +599,8 @@ static unsigned mtcp_synack_options(struct request_sock *req,
 
 	/* Send token in SYN/ACK */
 	opts->options |= OPTION_MP_JOIN;
-	opts->token = req->mtcp_rem_token;
-	#ifdef CONFIG_MTCP_PM
+	opts->token = req->mptcp_rem_token;
+	#ifdef CONFIG_MPTCP_PM
 		opts->addr_id = 0;
 
 		/* Finding Address ID */
@@ -624,7 +624,7 @@ TCP_ECN_make_synack(struct request_sock *req, struct tcphdr *th)
 /*
  * Prepare a SYN-ACK, for JOINed subflows
  */
-static struct sk_buff *mtcp_make_synack(struct sock *master_sk,
+static struct sk_buff *mptcp_make_synack(struct sock *master_sk,
 					struct dst_entry *dst,
 					struct request_sock *req)
 {
@@ -670,7 +670,7 @@ static struct sk_buff *mtcp_make_synack(struct sock *master_sk,
 	memset(&opts, 0, sizeof(opts));
 
 	TCP_SKB_CB(skb)->when = tcp_time_stamp;
-	tcp_header_size = mtcp_synack_options(req, mss, skb, &opts, &md5)
+	tcp_header_size = mptcp_synack_options(req, mss, skb, &opts, &md5)
 	    + sizeof(*th);
 
 	skb_push(skb, tcp_header_size);
@@ -706,7 +706,7 @@ static struct sk_buff *mtcp_make_synack(struct sock *master_sk,
  * This still operates on a request_sock only, not on a big
  * socket.
  */
-int mtcp_v4_send_synack(struct sock *meta_sk,
+int mptcp_v4_send_synack(struct sock *meta_sk,
 			struct request_sock *req,
 			struct request_values *rvp)
 {
@@ -717,11 +717,11 @@ int mtcp_v4_send_synack(struct sock *meta_sk,
 	struct dst_entry *dst;
 
 	/* First, grab a route. */
-	dst = mtcp_route_req(req);
+	dst = mptcp_route_req(req);
 	if (!dst)
 		return -1;
 
-	skb = mtcp_make_synack(master_sk, dst, req);
+	skb = mptcp_make_synack(master_sk, dst, req);
 
 	if (skb) {
 		__tcp_v4_send_check(skb, ireq->loc_addr, ireq->rmt_addr);
@@ -743,7 +743,7 @@ static inline u32 inet_synq_hash(const __be32 raddr, const __be16 rport,
 			    rnd) & (synq_hsize - 1);
 }
 
-static void mtcp_reqsk_queue_hash_add(struct request_sock *req,
+static void mptcp_reqsk_queue_hash_add(struct request_sock *req,
 				      unsigned long timeout)
 {
 	struct inet_connection_sock *mpcb_icsk =
@@ -756,7 +756,7 @@ static void mtcp_reqsk_queue_hash_add(struct request_sock *req,
 	const u32 h_global = inet_synq_hash(inet_rsk(req)->rmt_addr,
 					    inet_rsk(req)->rmt_port,
 					    0,
-					    MTCP_HASH_SIZE);
+					    MPTCP_HASH_SIZE);
 	spin_lock_bh(&tuple_hash_lock);
 	reqsk_queue_hash_req(&mpcb_icsk->icsk_accept_queue,
 			     h_local, req, timeout);
@@ -774,7 +774,7 @@ static inline __u32 tcp_v4_init_sequence(struct sk_buff *skb)
 }
 
 /* from tcp_v4_conn_request() */
-static int mtcp_v4_join_request(struct multipath_pcb *mpcb, struct sk_buff *skb)
+static int mptcp_v4_join_request(struct multipath_pcb *mpcb, struct sk_buff *skb)
 {
 	struct inet_request_sock *ireq;
 	struct request_sock *req;
@@ -798,8 +798,8 @@ static int mtcp_v4_join_request(struct multipath_pcb *mpcb, struct sk_buff *skb)
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 
 	req->mpcb = mpcb;
-	req->mtcp_loc_token = loc_token(mpcb);
-	req->mtcp_rem_token = tcp_sk(mpcb->master_sk)->rx_opt.mtcp_rem_token;
+	req->mptcp_loc_token = loc_token(mpcb);
+	req->mptcp_rem_token = tcp_sk(mpcb->master_sk)->rx_opt.mptcp_rem_token;
 	tcp_openreq_init(req, &tmp_opt, skb);
 
 	ireq = inet_rsk(req);
@@ -813,11 +813,11 @@ static int mtcp_v4_join_request(struct multipath_pcb *mpcb, struct sk_buff *skb)
 
 	tcp_rsk(req)->snt_isn = isn;
 
-	if (mtcp_v4_send_synack((struct sock *)mpcb, req, NULL))
+	if (mptcp_v4_send_synack((struct sock *)mpcb, req, NULL))
 		goto drop_and_free;
 
 	/*Adding to request queue in metasocket */
-	mtcp_reqsk_queue_hash_add(req, TCP_TIMEOUT_INIT);
+	mptcp_reqsk_queue_hash_add(req, TCP_TIMEOUT_INIT);
 	return 0;
 
 drop_and_free:
@@ -837,7 +837,7 @@ drop_and_free:
  * is incremented. Thus it is the responsibility of the caller
  * to call sock_put() when the reference is not needed anymore.
  */
-static struct request_sock *mtcp_search_req(const __be16 rport,
+static struct request_sock *mptcp_search_req(const __be16 rport,
 					    const __be32 raddr,
 					    const __be32 laddr)
 {
@@ -847,7 +847,7 @@ static struct request_sock *mtcp_search_req(const __be16 rport,
 	spin_lock(&tuple_hash_lock);
 	list_for_each_entry(req,
 			    &tuple_hashtable[inet_synq_hash
-					     (raddr, rport, 0, MTCP_HASH_SIZE)],
+					     (raddr, rport, 0, MPTCP_HASH_SIZE)],
 			    collide_tuple) {
 		const struct inet_request_sock *ireq = inet_rsk(req);
 
@@ -890,14 +890,14 @@ static __inline__ int tcp_in_window(u32 seq, u32 end_seq, u32 s_win, u32 e_win)
 	return (seq == e_win && seq == end_seq);
 }
 
-int mtcp_syn_recv_sock(struct sk_buff *skb)
+int mptcp_syn_recv_sock(struct sk_buff *skb)
 {
 	struct tcphdr *th = tcp_hdr(skb);
 	struct iphdr *iph = ip_hdr(skb);
 	struct request_sock *req;
 	struct sock *meta_sk;
 
-	req = mtcp_search_req(th->source, iph->saddr, iph->daddr);
+	req = mptcp_search_req(th->source, iph->saddr, iph->daddr);
 	if (!req)
 		return 0;
 	meta_sk = (struct sock *)req->mpcb;
@@ -908,7 +908,7 @@ int mtcp_syn_recv_sock(struct sk_buff *skb)
 			NET_INC_STATS_BH(dev_net(skb->dev),
 					LINUX_MIB_TCPBACKLOGDROP);
 			sock_put(req->mpcb->master_sk); /* Taken by
-							 * mtcp_search_req
+							 * mptcp_search_req
 							 */
 			kfree_skb(skb);
 			return 1;
@@ -917,11 +917,11 @@ int mtcp_syn_recv_sock(struct sk_buff *skb)
 		tcp_v4_do_rcv(meta_sk, skb);
 	}
 	bh_unlock_sock(req->mpcb->master_sk);
-	sock_put(req->mpcb->master_sk); /* Taken by mtcp_search_req */
+	sock_put(req->mpcb->master_sk); /* Taken by mptcp_search_req */
 	return 1;
 }
 
-static struct mp_join *mtcp_find_join(struct sk_buff *skb)
+static struct mp_join *mptcp_find_join(struct sk_buff *skb)
 {
 	struct tcphdr *th = tcp_hdr(skb);
 	unsigned char *ptr;
@@ -958,18 +958,18 @@ static struct mp_join *mtcp_find_join(struct sk_buff *skb)
 	return NULL;
 }
 
-int mtcp_lookup_join(struct sk_buff *skb)
+int mptcp_lookup_join(struct sk_buff *skb)
 {
 	struct multipath_pcb *mpcb;
 	struct sock *meta_sk;
 	u32 token;
-	struct mp_join *join_opt = mtcp_find_join(skb);
+	struct mp_join *join_opt = mptcp_find_join(skb);
 	if (!join_opt)
 		return 0;
 
 	join_opt++; /* the token is at the end of struct mp_join */
 	token = ntohl(*(u32 *) join_opt);
-	mpcb = mtcp_hash_find(token);
+	mpcb = mptcp_hash_find(token);
 	meta_sk = (struct sock *)mpcb;
 	if (!mpcb) {
 		printk(KERN_ERR
@@ -989,7 +989,7 @@ int mtcp_lookup_join(struct sk_buff *skb)
 			bh_unlock_sock(mpcb->master_sk);
 			NET_INC_STATS_BH(dev_net(skb->dev),
 					LINUX_MIB_TCPBACKLOGDROP);
-			sock_put(mpcb->master_sk); /* Taken by mtcp_hash_find */
+			sock_put(mpcb->master_sk); /* Taken by mptcp_hash_find */
 			kfree_skb(skb);
 			return 1;
 		}
@@ -997,7 +997,7 @@ int mtcp_lookup_join(struct sk_buff *skb)
 		tcp_v4_do_rcv(meta_sk, skb);
 	}
 	bh_unlock_sock(mpcb->master_sk);
-	sock_put(mpcb->master_sk); /* Taken by mtcp_hash_find */
+	sock_put(mpcb->master_sk); /* Taken by mptcp_hash_find */
 	return 1;
 }
 
@@ -1008,27 +1008,27 @@ int mtcp_lookup_join(struct sk_buff *skb)
  * passing.
  * Warning: this can be called only from user context, not soft irq
  **/
-static void __mtcp_send_updatenotif(struct multipath_pcb *mpcb)
+static void __mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 {
 	int i;
 	u32 path_indices = 1;	/* Path index 1 is reserved for master sk. */
 	for (i = 0; i < mpcb->pa4_size; i++) {
 		path_indices |= PI_TO_FLAG(mpcb->pa4[i].path_index);
 	}
-	mtcp_init_subsockets(mpcb, path_indices);
+	mptcp_init_subsockets(mpcb, path_indices);
 }
 
-static void mtcp_send_updatenotif_wq(struct work_struct *work)
+static void mptcp_send_updatenotif_wq(struct work_struct *work)
 {
 	struct multipath_pcb *mpcb = *(struct multipath_pcb **)(work + 1);
 	lock_sock(mpcb->master_sk);
-	__mtcp_send_updatenotif(mpcb);
+	__mptcp_send_updatenotif(mpcb);
 	release_sock(mpcb->master_sk);
 	sock_put(mpcb->master_sk);
 	kfree(work);
 }
 
-void mtcp_send_updatenotif(struct multipath_pcb *mpcb)
+void mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 {
 	if (in_interrupt()) {
 		struct work_struct *work = kmalloc(sizeof(*work) +
@@ -1040,10 +1040,10 @@ void mtcp_send_updatenotif(struct multipath_pcb *mpcb)
 		sock_hold(mpcb->master_sk); /* Needed to ensure we can take
 					     * the lock
 					     */
-		INIT_WORK(work, mtcp_send_updatenotif_wq);
+		INIT_WORK(work, mptcp_send_updatenotif_wq);
 		schedule_work(work);
 	} else {
-		__mtcp_send_updatenotif(mpcb);
+		__mptcp_send_updatenotif(mpcb);
 	}
 }
 
@@ -1064,13 +1064,13 @@ static void mptcp_subflow_attach(struct multipath_pcb *mpcb, struct sock *subsk)
 		 * if we have not yet updated our set of local
 		 * addresses.
 		 */
-		mtcp_set_addresses(mpcb);
+		mptcp_set_addresses(mpcb);
 
 		/* If this added new local addresses, build new paths
 		 * with them
 		 */
 		if (mpcb->num_addr4 || mpcb->num_addr6)
-			mtcp_update_patharray(mpcb);
+			mptcp_update_patharray(mpcb);
 
 		/* ok, we are up to date, retry */
 		p = find_path_mapping4(
@@ -1089,7 +1089,7 @@ diffPorts:
 	sk_set_socket(subsk, mpcb->master_sk->sk_socket);
 	subsk->sk_wq = mpcb->master_sk->sk_wq;
 
-	mtcp_add_sock(mpcb, tcp_sk(subsk));
+	mptcp_add_sock(mpcb, tcp_sk(subsk));
 }
 
 /**
@@ -1101,21 +1101,21 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	const struct iphdr *iph = ip_hdr(skb);
 	struct multipath_pcb *mpcb = (struct multipath_pcb *)meta_sk;
 	if (tcp_hdr(skb)->syn) {
-		struct mp_join *join_opt = mtcp_find_join(skb); /* Currently we make two
+		struct mp_join *join_opt = mptcp_find_join(skb); /* Currently we make two
 						       * calls to
-						       * mtcp_find_join(). This
+						       * mptcp_find_join(). This
 						       * can probably be
 						       * optimized.
 						       */
-		if (mtcp_v4_add_raddress
+		if (mptcp_v4_add_raddress
 			(&mpcb->received_options, (struct in_addr *)
 				&iph->saddr, join_opt->addr_id) < 0)
 			goto discard;
 		if (unlikely(mpcb->received_options.list_rcvd)) {
 			mpcb->received_options.list_rcvd = 0;
-			mtcp_update_patharray(mpcb);
+			mptcp_update_patharray(mpcb);
 		}
-		mtcp_v4_join_request(mpcb, skb);
+		mptcp_v4_join_request(mpcb, skb);
 	} else { /* ack processing */
 		struct request_sock **prev;
 		struct tcphdr *th = tcp_hdr(skb);
@@ -1148,7 +1148,7 @@ discard:
  * scheduling. This will save us a couple of RTOs and helps to migrate traffic
  * faster
  */
-static int mtcp_pm_inetaddr_event(struct notifier_block *this, unsigned long event, void *ptr)
+static int mptcp_pm_inetaddr_event(struct notifier_block *this, unsigned long event, void *ptr)
 {
 	unsigned int i;
 	struct multipath_pcb *mpcb;
@@ -1163,7 +1163,7 @@ static int mtcp_pm_inetaddr_event(struct notifier_block *this, unsigned long eve
 	read_lock_bh(&tk_hash_lock);
 
 	/* go through all mpcbs and check */
-	for (i = 0; i < MTCP_HASH_SIZE; i++) {
+	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
 		list_for_each_entry(mpcb, &tk_hashtable[i], collide_tk) {
 			int found = 0;
 			struct tcp_sock *tp;
@@ -1174,31 +1174,31 @@ static int mtcp_pm_inetaddr_event(struct notifier_block *this, unsigned long eve
 			bh_lock_sock(mpcb->master_sk);
 
 			/* do we have this address already ? */
-			mtcp_for_each_tp(mpcb, tp) {
+			mptcp_for_each_tp(mpcb, tp) {
 				if (tp->inet_conn.icsk_inet.inet_saddr != ifa->ifa_local)
 					continue;
 
 				found = 1;
 				if (event == NETDEV_DOWN) {
-					printk(KERN_DEBUG "MTCP_PM: NETDEV_DOWN %x\n",
+					printk(KERN_DEBUG "MPTCP_PM: NETDEV_DOWN %x\n",
 							ifa->ifa_local);
 					tp->pf = 1;
 				} else if (event == NETDEV_UP) {
-					printk(KERN_DEBUG "MTCP_PM: NETDEV_UP %x\n",
+					printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP %x\n",
 							ifa->ifa_local);
 					tp->pf = 0;
 				}
 			}
 
 			if (!found && event == NETDEV_UP) {
-				if (mpcb->num_addr4 >= MTCP_MAX_ADDR) {
-					printk(KERN_DEBUG "MTCP_PM: NETDEV_UP "
+				if (mpcb->num_addr4 >= MPTCP_MAX_ADDR) {
+					printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP "
 						"Reached max number of local IPv4 addresses: %d\n",
-						MTCP_MAX_ADDR);
+						MPTCP_MAX_ADDR);
 					goto next;
 				}
 
-				printk(KERN_DEBUG "MTCP_PM: NETDEV_UP adding "
+				printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP adding "
 					"address %pI4 to existing connection with mpcb: %d\n",
 					&ifa->ifa_local, loc_token(mpcb));
 				/* update this mpcb */
@@ -1222,9 +1222,9 @@ next:
 }
 
 /*
- *	Output /proc/net/mtcp_pm
+ *	Output /proc/net/mptcp_pm
  */
-static int mtcp_pm_seq_show(struct seq_file *seq, void *v)
+static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 {
 	struct multipath_pcb *mpcb;
 	int i;
@@ -1232,7 +1232,7 @@ static int mtcp_pm_seq_show(struct seq_file *seq, void *v)
 	seq_puts(seq, "Multipath TCP (path manager):");
 	seq_putc(seq, '\n');
 
-	for (i = 0; i < MTCP_HASH_SIZE; i++) {
+	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
 		read_lock_bh(&tk_hash_lock);
 		list_for_each_entry(mpcb, &tk_hashtable[i], collide_tk) {
 			seq_printf(seq, "[%d] %d (%d): %d", loc_token(mpcb),
@@ -1246,43 +1246,43 @@ static int mtcp_pm_seq_show(struct seq_file *seq, void *v)
 	return 0;
 }
 
-static int mtcp_pm_seq_open(struct inode *inode, struct file *file)
+static int mptcp_pm_seq_open(struct inode *inode, struct file *file)
 {
-	return single_open_net(inode, file, mtcp_pm_seq_show);
+	return single_open_net(inode, file, mptcp_pm_seq_show);
 }
 
-static const struct file_operations mtcp_pm_seq_fops = {
+static const struct file_operations mptcp_pm_seq_fops = {
 	.owner = THIS_MODULE,
-	.open = mtcp_pm_seq_open,
+	.open = mptcp_pm_seq_open,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = single_release_net,
 };
 
-static __net_init int mtcp_pm_proc_init_net(struct net *net)
+static __net_init int mptcp_pm_proc_init_net(struct net *net)
 {
-	if (!proc_net_fops_create(net, "mptcp_pm", S_IRUGO, &mtcp_pm_seq_fops))
+	if (!proc_net_fops_create(net, "mptcp_pm", S_IRUGO, &mptcp_pm_seq_fops))
 		return -ENOMEM;
 
 	return 0;
 }
 
-static __net_exit void mtcp_pm_proc_exit_net(struct net *net)
+static __net_exit void mptcp_pm_proc_exit_net(struct net *net)
 {
 	proc_net_remove(net, "mptcp_pm");
 }
 
-static __net_initdata struct pernet_operations mtcp_pm_proc_ops = {
-	.init = mtcp_pm_proc_init_net,
-	.exit = mtcp_pm_proc_exit_net,
+static __net_initdata struct pernet_operations mptcp_pm_proc_ops = {
+	.init = mptcp_pm_proc_init_net,
+	.exit = mptcp_pm_proc_exit_net,
 };
 
-/* General initialization of MTCP_PM
+/* General initialization of MPTCP_PM
  */
-static int __init mtcp_pm_init(void)
+static int __init mptcp_pm_init(void)
 {
 	int i;
-	for (i = 0; i < MTCP_HASH_SIZE; i++) {
+	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
 		INIT_LIST_HEAD(&tk_hashtable[i]);
 		INIT_LIST_HEAD(&tuple_hashtable[i]);
 	}
@@ -1291,11 +1291,11 @@ static int __init mtcp_pm_init(void)
 	spin_lock_init(&tuple_hash_lock);
 
         /* setup notification chain for interfaces */
-        register_inetaddr_notifier(&mtcp_pm_inetaddr_notifier);
+        register_inetaddr_notifier(&mptcp_pm_inetaddr_notifier);
 
-	return register_pernet_subsys(&mtcp_pm_proc_ops);
+	return register_pernet_subsys(&mptcp_pm_proc_ops);
 }
 
-module_init(mtcp_pm_init);
+module_init(mptcp_pm_init);
 
 MODULE_LICENSE("GPL");

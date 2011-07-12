@@ -31,7 +31,7 @@ void sk_stream_write_space(struct sock *sk)
 	struct socket *sock;
 	struct socket_wq *wq;
 
-	if ((sk->sk_protocol==IPPROTO_TCP || sk->sk_protocol==IPPROTO_MTCPSUB)
+	if ((sk->sk_protocol==IPPROTO_TCP || sk->sk_protocol==IPPROTO_MPTCPSUB)
 	    && tcp_sk(sk)->mpcb)
 		sock=((struct sock*)tcp_sk(sk)->mpcb)->sk_socket;
 	else

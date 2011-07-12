@@ -44,7 +44,7 @@
 #include <net/tcp_states.h>
 #include <net/inet_ecn.h>
 #include <net/dst.h>
-#include <net/mtcp.h>
+#include <net/mptcp.h>
 
 #include <linux/seq_file.h>
 
@@ -320,7 +320,7 @@ extern void *tcp_v4_tw_get_peer(struct sock *sk);
 extern int tcp_v4_tw_remember_stamp(struct inet_timewait_sock *tw);
 extern int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		       size_t size);
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 extern int subtcp_sendmsg(struct kiocb *iocb,
 			  struct sock *sk,
 			  struct msghdr *msg, size_t size);
@@ -743,7 +743,7 @@ static inline void tcp_set_ca_state(struct sock *sk, const u8 ca_state)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	if (ca_state != icsk->icsk_ca_state) {
 		char buf[200];
 		snprintf(buf,sizeof(buf),
@@ -939,11 +939,11 @@ static inline int tcp_checksum_complete(struct sk_buff *skb)
 
 static inline void tcp_prequeue_init(struct tcp_sock *tp)
 {
-#ifndef CONFIG_MTCP
+#ifndef CONFIG_MPTCP
 	tp->ucopy.task = NULL;
 	tp->ucopy.len = 0;
 	tp->ucopy.memory = 0;
-#endif /*In MTCP, those fields are in the mpcb structure*/
+#endif /*In MPTCP, those fields are in the mpcb structure*/
 	skb_queue_head_init(&tp->ucopy.prequeue);
 #ifdef CONFIG_NET_DMA
 	tp->ucopy.dma_chan = NULL;
@@ -1057,15 +1057,15 @@ static inline void tcp_openreq_init(struct request_sock *req,
 	tcp_rsk(req)->rcv_isn = TCP_SKB_CB(skb)->seq;
 	req->mss = rx_opt->mss_clamp;
 	req->ts_recent = rx_opt->saw_tstamp ? rx_opt->rcv_tsval : 0;
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	req->saw_mpc = rx_opt->saw_mpc;
 	if (req->saw_mpc && !req->mpcb) {
 		/* conn request, prepare a new token for the
 		 * mpcb that will be created in tcp_check_req(),
 		 * and store the received token.
 		 */
-		req->mtcp_rem_token = rx_opt->mtcp_rem_token;
-		req->mtcp_loc_token = mtcp_new_token();
+		req->mptcp_rem_token = rx_opt->mptcp_rem_token;
+		req->mptcp_loc_token = mptcp_new_token();
 	}
 #endif
 	ireq->tstamp_ok = rx_opt->tstamp_ok;

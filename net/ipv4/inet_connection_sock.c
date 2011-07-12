@@ -24,7 +24,7 @@
 #include <net/tcp_states.h>
 #include <net/xfrm.h>
 #include <net/tcp.h>
-#include <net/mtcp.h>
+#include <net/mptcp.h>
 
 #ifdef INET_CSK_DEBUG
 const char inet_csk_timer_bug_msg[] = "inet_csk BUG: unknown timer value\n";
@@ -598,13 +598,13 @@ EXPORT_SYMBOL_GPL(inet_csk_clone);
  */
 void inet_csk_destroy_sock(struct sock *sk)
 {
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	if ((sk->sk_protocol == IPPROTO_TCP ||
-	     sk->sk_protocol == IPPROTO_MTCPSUB) &&
+	     sk->sk_protocol == IPPROTO_MPTCPSUB) &&
 	    tcp_sk(sk)->mpc) {
-		mtcp_debug("%s: Removing subsocket - pi:%d\n", __func__,
+		mptcp_debug("%s: Removing subsocket - pi:%d\n", __func__,
 			   tcp_sk(sk)->path_index);
-		mtcp_del_sock(tcp_sk(sk)->mpcb, tcp_sk(sk));
+		mptcp_del_sock(tcp_sk(sk)->mpcb, tcp_sk(sk));
 	}
 #endif
 
@@ -702,8 +702,8 @@ void inet_csk_listen_stop(struct sock *sk)
 		WARN_ON(sock_owned_by_user(child));
 		sock_hold(child);
 
-#ifdef CONFIG_MTCP
-		mtcp_detach_unused_child(child);
+#ifdef CONFIG_MPTCP
+		mptcp_detach_unused_child(child);
 #endif
 
 		sk->sk_prot->disconnect(child, O_NONBLOCK);

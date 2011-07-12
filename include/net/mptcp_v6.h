@@ -1,6 +1,6 @@
 /*
- *	MTCP implementation
- *      IPv6-related functions  
+ *	MPTCP implementation
+ *      IPv6-related functions
  *
  *	Authors:
  *      Sébastien Barré		<sebastien.barre@uclouvain.be>
@@ -15,8 +15,8 @@
  */
 
 
-#ifndef _MTCP_V6_H
-#define _MTCP_V6_H
+#ifndef _MPTCP_V6_H
+#define _MPTCP_V6_H
 
 /*TODO: make this part of the IPv6 module
   At the moment this will break if IPv6 is compiled as a module*/
@@ -26,4 +26,4 @@ extern int tcp_v6_is_v4_mapped(struct sock *sk);
 #define tcp_v6_is_v4_mapped(sk) (0)
 #endif
 
-#endif /* _MTCP_V6_H */
+#endif /* _MPTCP_V6_H */

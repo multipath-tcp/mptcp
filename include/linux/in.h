@@ -28,7 +28,7 @@ enum {
   IPPROTO_IGMP = 2,		/* Internet Group Management Protocol	*/
   IPPROTO_IPIP = 4,		/* IPIP tunnels (older KA9Q tunnels use 94) */
   IPPROTO_TCP = 6,		/* Transmission Control Protocol	*/
-  IPPROTO_MTCPSUB = 7,          /* MTCP subflow                         */
+  IPPROTO_MPTCPSUB = 7,         /* MPTCP subflow                        */
   IPPROTO_EGP = 8,		/* Exterior Gateway Protocol		*/
   IPPROTO_PUP = 12,		/* PUP protocol				*/
   IPPROTO_UDP = 17,		/* User Datagram Protocol		*/
@@ -247,7 +247,7 @@ struct sockaddr_in {
 
 
 /* <asm/byteorder.h> contains the htonl type stuff.. */
-#include <asm/byteorder.h> 
+#include <asm/byteorder.h>
 
 #ifdef __KERNEL__
 

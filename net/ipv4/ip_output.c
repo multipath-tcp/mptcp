@@ -163,9 +163,9 @@ int ip_build_and_send_pkt(struct sk_buff *skb, struct sock *sk,
 	iph->protocol = sk->sk_protocol;
 	ip_select_ident(iph, &rt->dst, sk);
 
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	/*MPTCP hack : see comment in ip6_xmit (ip6_output.c)*/
-	if (iph->protocol==IPPROTO_MTCPSUB)
+	if (iph->protocol==IPPROTO_MPTCPSUB)
 		iph->protocol=IPPROTO_TCP;
 #endif
 
@@ -228,7 +228,7 @@ static inline int ip_skb_dst_mtu(struct sk_buff *skb)
 	       skb_dst(skb)->dev->mtu : dst_mtu(skb_dst(skb));
 }
 
-#include <net/mtcp.h> /*TODEL*/
+#include <net/mptcp.h> /*TODEL*/
 
 static int ip_finish_output(struct sk_buff *skb)
 {
@@ -389,9 +389,9 @@ packet_routed:
 	iph->daddr    = rt->rt_dst;
 	/* Transport layer set skb->h.foo itself. */
 
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	/*MPTCP hack : see comment in ip6_xmit (ip6_output.c)*/
-	if (iph->protocol==IPPROTO_MTCPSUB)
+	if (iph->protocol==IPPROTO_MPTCPSUB)
 		iph->protocol=IPPROTO_TCP;
 #endif
 

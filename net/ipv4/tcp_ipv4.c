@@ -247,7 +247,7 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 							   inet->inet_daddr,
 							   inet->inet_sport,
 							   usin->sin_port);
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	tp->snt_isn = tp->write_seq;
 #endif
 
@@ -258,8 +258,8 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	if (err)
 		goto failure;
 
-#ifdef CONFIG_MTCP
-	mtcp_update_metasocket(sk, mpcb_from_tcpsock(tp));
+#ifdef CONFIG_MPTCP
+	mptcp_update_metasocket(sk, mpcb_from_tcpsock(tp));
 #endif
 	return 0;
 
@@ -795,7 +795,7 @@ static int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req,
 	 * If not, this is an initial connection request.
 	 */
 	if (req->mpcb)
-		return mtcp_v4_send_synack((struct sock *)req->mpcb,
+		return mptcp_v4_send_synack((struct sock *)req->mpcb,
 					   req, rvp);
 	else
 		return tcp_v4_send_synack(sk, NULL, req, rvp);
@@ -1686,7 +1686,7 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->end_seq = (TCP_SKB_CB(skb)->seq + th->syn + th->fin +
 				    skb->len - th->doff * 4);
 	TCP_SKB_CB(skb)->ack_seq = ntohl(th->ack_seq);
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	/* Init to zero, will be set upon option parsing. */
 	TCP_SKB_CB(skb)->data_seq = 0;
 	TCP_SKB_CB(skb)->end_data_seq = 0;
@@ -1696,14 +1696,14 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->mptcp_flags = 0;
 	TCP_SKB_CB(skb)->sacked	 = 0;
 
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	/* We must absolutely check for subflow related SYNs+JOIN
 	 * before the normal sock lookup, because otherwise subflow
 	 * SYNs could be understood as associated to some listening
 	 * socket.
 	 */
 	if (th->syn && !th->ack) {
-		switch(mtcp_lookup_join(skb)) {
+		switch(mptcp_lookup_join(skb)) {
 			/* The specified token can't be found
 			 * Send a reset and discard the packet.
 			 */
@@ -1718,9 +1718,9 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source,
 			       th->dest);
 
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	/* Is there a pending request sock for this segment ? */
-	if ((!sk || sk->sk_state == TCP_LISTEN) && mtcp_syn_recv_sock(skb)) {
+	if ((!sk || sk->sk_state == TCP_LISTEN) && mptcp_syn_recv_sock(skb)) {
 		if (sk)
 			sock_put(sk);
 		return 0;
@@ -1978,11 +1978,11 @@ static int tcp_v4_init_sock(struct sock *sk)
 	local_bh_disable();
 	percpu_counter_inc(&tcp_sockets_allocated);
 	local_bh_enable();
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	/* Init the MPTCP mpcb */
 	{
 		struct multipath_pcb *mpcb;
-		mpcb = mtcp_alloc_mpcb(sk, GFP_KERNEL);
+		mpcb = mptcp_alloc_mpcb(sk, GFP_KERNEL);
 
 		if (!mpcb)
 			return -1;
@@ -2672,8 +2672,8 @@ int tcp4_gro_complete(struct sk_buff *skb)
 struct proto tcp_prot = {
 	.name			= "TCP",
 	.owner			= THIS_MODULE,
-#ifdef CONFIG_MTCP
-	.close			= mtcp_close,
+#ifdef CONFIG_MPTCP
+	.close			= mptcp_close,
 #else
 	.close			= tcp_close,
 #endif
@@ -2687,8 +2687,8 @@ struct proto tcp_prot = {
 	.setsockopt		= tcp_setsockopt,
 	.getsockopt		= tcp_getsockopt,
 	.recvmsg		= tcp_recvmsg,
-#ifdef CONFIG_MTCP
-	.sendmsg		= mtcp_sendmsg,
+#ifdef CONFIG_MPTCP
+	.sendmsg		= mptcp_sendmsg,
 #else
 	.sendmsg		= tcp_sendmsg,
 #endif

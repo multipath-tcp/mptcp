@@ -302,7 +302,7 @@ static u16 tcp_select_window(struct sock *sk)
 		meta_tp->rcv_wup = meta_tp->rcv_nxt;
 
 		/* The receive-window is the same for all the subflows */
-		mtcp_for_each_sk(tp->mpcb, tmp_sk, tmp_tp) {
+		mptcp_for_each_sk(tp->mpcb, tmp_sk, tmp_tp) {
 			tmp_tp->rcv_wnd = new_win;
 		}
 		/* the subsock rcv_wup must still be updated,
@@ -574,7 +574,7 @@ void tcp_options_write(__be32 * ptr, struct tcp_sock *tp,
 
 		tp->rx_opt.dsack = 0;
 	}
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	if (unlikely(OPTION_MP_CAPABLE & opts->options)) {
 		struct mp_capable *mpc;
 		__u8 *p8 = (__u8 *)ptr;
@@ -592,7 +592,7 @@ void tcp_options_write(__be32 * ptr, struct tcp_sock *tp,
 		ptr++;
 		*ptr++ = htonl(opts->token);
 	}
-#ifdef CONFIG_MTCP_PM
+#ifdef CONFIG_MPTCP_PM
 	if (unlikely(OPTION_ADD_ADDR & opts->options)) {
 		struct mp_add_addr *mpadd;
 		__u8 *p8 = (__u8 *)ptr;
@@ -610,7 +610,7 @@ void tcp_options_write(__be32 * ptr, struct tcp_sock *tp,
 
 		ptr = (__be32 *)p8;
 	}
-#endif /* CONFIG_MTCP_PM */
+#endif /* CONFIG_MPTCP_PM */
 	if (unlikely(OPTION_MP_JOIN & opts->options)) {
 		struct mp_join *mpj;
 		__u8 *p8 = (__u8 *)ptr;
@@ -713,7 +713,7 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		if (unlikely(!(OPTION_TS & opts->options)))
 			remaining -= TCPOLEN_SACKPERM_ALIGNED;
 	}
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	if (!do_mptcp(sk))
 		goto nomptcp;
 	if (is_master_tp(tp)) {
@@ -737,11 +737,11 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 		opts->options |= OPTION_MP_JOIN;
 		remaining -= MPTCP_SUB_LEN_JOIN_ALIGN;
-		opts->token = tp->rx_opt.mtcp_rem_token;
-		opts->addr_id = mtcp_get_loc_addrid(mpcb, tp->path_index);
+		opts->token = tp->rx_opt.mptcp_rem_token;
+		opts->addr_id = mptcp_get_loc_addrid(mpcb, tp->path_index);
 	}
 nomptcp:
-#endif /* CONFIG_MTCP */
+#endif /* CONFIG_MPTCP */
 
 	/* Note that timestamps are required by the specification.
 	 *
@@ -863,13 +863,13 @@ static unsigned tcp_synack_options(struct sock *sk,
 		}
 	}
 
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	if (unlikely(req->saw_mpc)) {
 		opts->options |= OPTION_MP_CAPABLE;
 		remaining -= MPTCP_SUB_LEN_CAPABLE_ALIGN;
-		opts->token = req->mtcp_loc_token;
+		opts->token = req->mptcp_loc_token;
 	}
-#endif /* CONFIG_MTCP */
+#endif /* CONFIG_MPTCP */
 
 	return MAX_TCP_OPTION_SPACE - remaining;
 }
@@ -888,7 +888,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned size = 0;
 	unsigned int eff_sacks;
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	struct multipath_pcb *mpcb;
 #endif
 
@@ -908,7 +908,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		opts->tsecr = tp->rx_opt.ts_recent;
 		size += TCPOLEN_TSTAMP_ALIGNED;
 	}
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	mpcb = tp->mpcb;
 
 	if (tp->mpc) {
@@ -944,7 +944,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			size += MPTCP_SUB_LEN_DSS_ALIGN;
 	}
 
-#ifdef CONFIG_MTCP_PM
+#ifdef CONFIG_MPTCP_PM
 	if (tp->mpc) {
 		if (unlikely(mpcb->addr_unsent) &&
 		    MAX_TCP_OPTION_SPACE - size >=
@@ -957,8 +957,8 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			size += MPTCP_SUB_LEN_ADD_ADDR_ALIGN;
 		}
 	}
-#endif /* CONFIG_MTCP_PM */
-#endif /* CONFIG_MTCP */
+#endif /* CONFIG_MPTCP_PM */
+#endif /* CONFIG_MPTCP */
 
 	eff_sacks = tp->rx_opt.num_sacks + tp->rx_opt.dsack;
 	if (unlikely(eff_sacks)) {
@@ -1244,7 +1244,7 @@ int tcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	TCP_SKB_CB(buff)->seq = TCP_SKB_CB(skb)->seq + len;
 	TCP_SKB_CB(buff)->end_seq = TCP_SKB_CB(skb)->end_seq;
 	TCP_SKB_CB(skb)->end_seq = TCP_SKB_CB(buff)->seq;
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	TCP_SKB_CB(buff)->data_seq = TCP_SKB_CB(skb)->data_seq + len;
 	TCP_SKB_CB(buff)->end_data_seq = TCP_SKB_CB(skb)->end_data_seq;
 	TCP_SKB_CB(buff)->sub_seq = TCP_SKB_CB(skb)->sub_seq + len;
@@ -1349,7 +1349,7 @@ int tcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
 		__pskb_trim_head(skb, len - skb_headlen(skb));
 
 	TCP_SKB_CB(skb)->seq += len;
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	TCP_SKB_CB(skb)->data_seq += len;
 	TCP_SKB_CB(skb)->sub_seq += len;
 	TCP_SKB_CB(skb)->data_len -= len;
@@ -1675,7 +1675,7 @@ static inline int tcp_snd_wnd_test(struct tcp_sock *tp, struct sk_buff *skb,
 			   TCP_SKB_CB(skb)->seq) + cur_mss;
 	if (after(end_seq, tcp_wnd_end(tp, tp->mpc)) &&
 	    (TCP_SKB_CB(skb)->flags & TCPHDR_FIN)) {
-		mtcp_debug("FIN refused for sndwnd, fin end dsn %#x,"
+		mptcp_debug("FIN refused for sndwnd, fin end dsn %#x,"
 			   "tcp_wnd_end: %#x, mpc:%d, snd_una:%#x,"
 			   "snd_wnd:%d, mpcb write_seq:%#x, "
 			   "mpcb queue len:%d, cur_mss:%d, skb->len:%d\n",
@@ -1751,7 +1751,7 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	int nlen = skb->len - len;
 	u8 flags;
 
-	mtcp_debug("Entering %s\n", __FUNCTION__);
+	mptcp_debug("Entering %s\n", __FUNCTION__);
 
 	BUG_ON(len == 0);	/*This would create an empty segment */
 
@@ -1772,7 +1772,7 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	TCP_SKB_CB(buff)->seq = TCP_SKB_CB(skb)->seq + len;
 	TCP_SKB_CB(buff)->end_seq = TCP_SKB_CB(skb)->end_seq;
 	TCP_SKB_CB(skb)->end_seq = TCP_SKB_CB(buff)->seq;
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	TCP_SKB_CB(buff)->data_seq = TCP_SKB_CB(skb)->data_seq + len;
 	TCP_SKB_CB(buff)->end_data_seq = TCP_SKB_CB(skb)->end_data_seq;
 	TCP_SKB_CB(buff)->sub_seq = TCP_SKB_CB(skb)->sub_seq + len;
@@ -1981,7 +1981,7 @@ static int tcp_mtu_probe(struct sock *sk)
 				tcp_set_skb_tso_segs(sk, skb, mss_now);
 			}
 			TCP_SKB_CB(skb)->seq += copy;
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 			TCP_SKB_CB(skb)->data_seq += copy;
 #endif
 		}
@@ -2083,7 +2083,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		}
 	}
 
-	while ((skb = mtcp_next_segment(sk, &reinject))) {
+	while ((skb = mptcp_next_segment(sk, &reinject))) {
 		unsigned int limit;
 		int err;
 		struct sock *subsk;
@@ -2147,7 +2147,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 				break;
 			}
 		} else {
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 			/* tso not supported in MPTCP */
 			BUG_ON(tp->mpc);
 #endif
@@ -2164,7 +2164,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		    unlikely(tso_fragment(sk, skb, limit, mss_now, gfp)))
 			break;
 
-#ifndef CONFIG_MTCP
+#ifndef CONFIG_MPTCP
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
 		if (unlikely(tcp_transmit_skb(sk, skb, 1, gfp)))
 			break;
@@ -2184,7 +2184,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			if (!subskb)
 				break;
 			BUG_ON(tcp_send_head(subsk));
-			mtcp_skb_entail(subsk, subskb);
+			mptcp_skb_entail(subsk, subskb);
 		} else {
 			subskb = skb;
 		}
@@ -2197,7 +2197,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 				tcp_advance_send_head(subsk, subskb);
 				tcp_unlink_write_queue(subskb, subsk);
 				subtp->write_seq -= subskb->len;
-				mtcp_wmem_free_skb(subsk, subskb);
+				mptcp_wmem_free_skb(subsk, subskb);
 				/* If we entered CWR, just try to give
 				 * that same skb to another subflow,
 				 * by querying again the scheduler,
@@ -2237,13 +2237,13 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			BUG_ON(!tcp_close_state(subsk));
 			/* App close: we have sent every app-level byte,
 			 * send now the FIN on all subflows.
-			 * if the FIN was triggered by mtcp_close(),
+			 * if the FIN was triggered by mptcp_close(),
 			 * then the SHUTDOWN_MASK is set and we call
 			 * tcp_close() on all subsocks. Otherwise
 			 * only sk_shutdown has been called, and
 			 * we just send the fin on all subflows.
 			 */
-			mtcp_for_each_sk_safe(tp->mpcb, sk_it, sk_tmp) {
+			mptcp_for_each_sk_safe(tp->mpcb, sk_it, sk_tmp) {
 				if (sk->sk_shutdown == SHUTDOWN_MASK)
 					tcp_close(sk_it, 0);
 				else if (sk_it != subsk &&
@@ -2256,7 +2256,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		tcp_minshall_update(tp, mss_now, skb);
 		sent_pkts++;
 
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 		tcp_cwnd_validate(subsk);
 #endif
 
@@ -2268,7 +2268,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		tp->mpcb->noneligible = 0;
 
 	if (likely(sent_pkts)) {
-#ifndef CONFIG_MTCP
+#ifndef CONFIG_MPTCP
 		tcp_cwnd_validate(sk);
 #endif
 		sk->sk_in_write_xmit = 0;
@@ -2298,7 +2298,7 @@ void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
 		else {
 			struct sock *sk_it;
 			struct tcp_sock *tp_it;
-			mtcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it, tp_it)
+			mptcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it, tp_it)
 			    tcp_check_probe_timer(sk_it);
 		}
 	}
@@ -2313,7 +2313,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 	int reinject;
 	struct sk_buff *skb;
 
-	skb = mtcp_next_segment(sk, &reinject);
+	skb = mptcp_next_segment(sk, &reinject);
 	BUG_ON(!skb);
 
 	while (reinject && !after(TCP_SKB_CB(skb)->end_data_seq, tp->snd_una)) {
@@ -2322,7 +2322,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 		 */
 		skb_unlink(skb, &tp->mpcb->reinject_queue);
 		kfree_skb(skb);
-		skb = mtcp_next_segment(sk, &reinject);
+		skb = mptcp_next_segment(sk, &reinject);
 	}
 
 	BUG_ON(!skb);
@@ -2383,7 +2383,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
  * Regular options like TIMESTAMP are taken into account.
  */
 
-#ifndef CONFIG_MTCP
+#ifndef CONFIG_MPTCP
 #define __tcp_select_window_fallback __tcp_select_window
 #endif
 
@@ -2455,7 +2455,7 @@ u32 __tcp_select_window_fallback(struct sock *sk)
 	return window;
 }
 
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 u32 __tcp_select_window(struct sock * sk)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
@@ -2485,7 +2485,7 @@ u32 __tcp_select_window(struct sock * sk)
 		if (tcp_memory_pressure) {
 			tp->rcv_ssthresh = min(tp->rcv_ssthresh,
 					       4U * tp->advmss);
-			mtcp_update_window_clamp(mpcb);
+			mptcp_update_window_clamp(mpcb);
 		}
 
 		if (free_space < mss)
@@ -2670,7 +2670,7 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 	/* In case of RTO (loss state), we reinject data on another subflow */
 	if (icsk->icsk_ca_state == TCP_CA_Loss &&
 	    tp->mpc && sk->sk_state == TCP_ESTABLISHED && tp->path_index) {
-		mtcp_reinject_data(sk);
+		mptcp_reinject_data(sk);
 	}
 
 	/* Inconclusive MTU probe */
@@ -3068,7 +3068,7 @@ struct sk_buff *tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 			req->window_clamp = tcp_full_space(sk);
 
 		/* tcp_full_space because it is guaranteed to be the first packet */
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 		tcp_select_initial_window(tcp_full_space(sk),
 					  mss - (ireq->tstamp_ok ?
 						 TCPOLEN_TSTAMP_ALIGNED : 0),
@@ -3200,7 +3200,7 @@ static void tcp_connect_init(struct sock *sk)
 
 	if (!tp->window_clamp)
 		tp->window_clamp = dst_metric(dst, RTAX_WINDOW);
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	if (do_mptcp(sk)) {
 		tp->advmss = sysctl_mptcp_mss;
 	} else
@@ -3219,7 +3219,7 @@ static void tcp_connect_init(struct sock *sk)
 	    (tp->window_clamp > tcp_full_space(sk) || tp->window_clamp == 0))
 		tp->window_clamp = tcp_full_space(sk);
 
-#ifdef CONFIG_MTCP
+#ifdef CONFIG_MPTCP
 	tcp_select_initial_window(tcp_full_space(sk),
 				  tp->advmss -
 				  (tp->rx_opt.
@@ -3228,7 +3228,7 @@ static void tcp_connect_init(struct sock *sk)
 				  &tp->window_clamp, sysctl_tcp_window_scaling,
 				  &rcv_wscale, dst_metric(dst, RTAX_INITRWND));
 
-	mtcp_update_window_clamp(tp->mpcb);
+	mptcp_update_window_clamp(tp->mpcb);
 #else
 	tcp_select_initial_window(tcp_full_space(sk),
 				  tp->advmss - (tp->rx_opt.ts_recent_stamp

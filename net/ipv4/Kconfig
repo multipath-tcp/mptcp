@@ -309,27 +309,27 @@ config ARPD
 
 	  If unsure, say N.
 
-config MTCP
-       bool "MTCP protocol (EXPERIMENTAL)"
+config MPTCP
+       bool "MPTCP protocol (EXPERIMENTAL)"
        depends on EXPERIMENTAL && !SYN_COOKIES && !NET_DMA && !TCP_MD5SIG
        ---help---
 	This replaces the normal TCP stack with a Multipath TCP stack,
 	able to use several paths at once.
 
-config MTCP_PM
-       bool "built-in MTCP Path Manager"
-       depends on MTCP
+config MPTCP_PM
+       bool "built-in MPTCP Path Manager"
+       depends on MPTCP
        ---help---
-       This is a built-in path manager for MTCP. It uses
+       This is a built-in path manager for MPTCP. It uses
        TCP options to carry information about the multiple paths, and
        assumes that several IPv4 addresses are available.
 
-config MTCP_DEBUG
-       bool "MTCP debug messages"
-       depends on MTCP
+config MPTCP_DEBUG
+       bool "MPTCP debug messages"
+       depends on MPTCP
        default y
        ---help---
-       Enables logging of mtcp related debugging messages. Highly recommended.	
+       Enables logging of mptcp related debugging messages. Highly recommended.
 
 config SYN_COOKIES
 	bool "IP: TCP syncookie support"
@@ -455,7 +455,7 @@ config INET_DIAG
 	  Support for INET (TCP, DCCP, etc) socket monitoring interface used by
 	  native Linux tools such as ss. ss is included in iproute2, currently
 	  downloadable at:
-	  
+
 	    http://www.linuxfoundation.org/collaborate/workgroups/networking/iproute2
 
 	  If unsure, say Y.
@@ -586,7 +586,7 @@ config TCP_CONG_VENO
 	distinguishing to circumvent the difficult judgment of the packet loss
 	type. TCP Veno cuts down less congestion window in response to random
 	loss packets.
-	See <http://ieeexplore.ieee.org/xpl/freeabs_all.jsp?arnumber=1177186> 
+	See <http://ieeexplore.ieee.org/xpl/freeabs_all.jsp?arnumber=1177186>
 
 config TCP_CONG_YEAH
 	tristate "YeAH TCP"
@@ -618,7 +618,7 @@ config TCP_CONG_ILLINOIS
 
 config TCP_CONG_COUPLED
 	tristate "MPTCP COUPLED CONGESTION CONTROL"
-	depends on EXPERIMENTAL && MTCP
+	depends on EXPERIMENTAL && MPTCP
 	default n
 	---help---
 	MultiPath TCP Coupled Congestion Control

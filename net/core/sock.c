@@ -1041,7 +1041,7 @@ void sk_prot_clear_portaddr_nulls(struct sock *sk, int size)
 EXPORT_SYMBOL(sk_prot_clear_portaddr_nulls);
 
 /* Code inspired from sk_clone() */
-void mtcp_inherit_sk(struct sock *sk,struct sock *newsk, gfp_t flags)
+void mptcp_inherit_sk(struct sock *sk,struct sock *newsk, gfp_t flags)
 {
 	struct sk_filter *filter;
 #ifdef CONFIG_SECURITY_NETWORK
@@ -1583,7 +1583,7 @@ struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 				     int *errcode)
 {
 	struct sock *meta_sk = ((sk->sk_protocol == IPPROTO_TCP ||
-				 sk->sk_protocol == IPPROTO_MTCPSUB) &&
+				 sk->sk_protocol == IPPROTO_MPTCPSUB) &&
 				tcp_sk(sk)->mpcb)?
 		(struct sock*)tcp_sk(sk)->mpcb:
 		sk;
@@ -2167,7 +2167,7 @@ void release_sock(struct sock *sk)
 		 * as the master-socket is locked, every received segment is
 		 * put into the backlog queue.
 		 */
-		mtcp_for_each_sk(mpcb, sk_it, tp_it) {
+		mptcp_for_each_sk(mpcb, sk_it, tp_it) {
 			if (sk_it->sk_backlog.tail)
 				__release_sock(sk_it, mpcb);
 		}
@@ -2573,7 +2573,7 @@ EXPORT_SYMBOL(proto_unregister);
 void sk_wake_async(struct sock *sk, int how, int band)
 {
 	struct sock *meta_sk = ((sk->sk_protocol == IPPROTO_TCP ||
-				 sk->sk_protocol == IPPROTO_MTCPSUB) &&
+				 sk->sk_protocol == IPPROTO_MPTCPSUB) &&
 				tcp_sk(sk)->mpc) ?
 				(struct sock *)tcp_sk(sk)->mpcb :
 				sk;
