@@ -38,8 +38,8 @@
 #include <linux/sysctl.h>
 #endif
 
-/*=====================================*/
-/*DEBUGGING*/
+/* ===================================== */
+/* DEBUGGING */
 
 #ifdef MPTCP_RCV_QUEUE_DEBUG
 struct mptcp_debug mptcp_debug_array1[1000];
@@ -90,16 +90,16 @@ void freeze_rcv_queue(struct sock *sk, const char *func_name)
 		BUG_ON(i >= 999);
 	}
 
-	if (i > 0)
+	if (i > 0) {
 		mptcp_debug_array[i-1].end = 1;
-	else {
+	} else {
 		mptcp_debug_array[0].func_name = "NO_FUNC";
 		mptcp_debug_array[0].end = 1;
 	}
 }
 
 #endif
-/*=====================================*/
+/* ===================================== */
 
 /**
  * This is the scheduler. This function decides on which flow to send
@@ -157,7 +157,7 @@ struct sock *(*mptcp_schedulers[MPTCP_SCHED_MAX])
 				&get_available_subflow,
 		};
 
-/*Sysctl data*/
+/* Sysctl data */
 
 #ifdef CONFIG_SYSCTL
 
@@ -236,7 +236,7 @@ static void mptcp_fin(struct sk_buff *skb, struct multipath_pcb *mpcb) {
 	}
 }
 
-/*From sock_def_readable(*/
+/* From sock_def_readable() */
 static void mptcp_def_readable(struct sock *sk, int len) {
 	struct socket_wq *wq;
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tcp_sk(sk));
@@ -249,7 +249,7 @@ static void mptcp_def_readable(struct sock *sk, int len) {
 
 	wq = rcu_dereference(master_sk->sk_wq);
 	if (wq_has_sleeper(wq))
-		wake_up_interruptible_sync_poll(&wq->wait,POLLIN |
+		wake_up_interruptible_sync_poll(&wq->wait, POLLIN |
 						POLLRDNORM | POLLRDBAND);
 
 	sk_wake_async(master_sk, SOCK_WAKE_WAITD, POLL_IN);
@@ -375,10 +375,12 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 				   ntohs(remulid_in.sin_port));
 		else
 			mptcp_debug("%s: token %d pi %d src_addr:"
-				   "%pI6:%d dst_addr:%pI6:%d \n", __FUNCTION__,
-				   loc_token(mpcb), newpi, &loculid_in6.sin6_addr,
-				   ntohs(loculid_in6.sin6_port), &remulid_in6.sin6_addr,
-				   ntohs(remulid_in6.sin6_port));
+				    "%pI6:%d dst_addr:%pI6:%d \n", __FUNCTION__,
+				    loc_token(mpcb), newpi,
+				    &loculid_in6.sin6_addr,
+				    ntohs(loculid_in6.sin6_port),
+				    &remulid_in6.sin6_addr,
+				    ntohs(remulid_in6.sin6_port));
 	}
 
 	return 0;
@@ -613,7 +615,7 @@ void mptcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 		mpcb->connection_list = tp->next;
 		mpcb->cnt_subflows--;
 		done = 1;
-	} else
+	} else {
 		for (; tp_prev && tp_prev->next; tp_prev = tp_prev->next) {
 			if (tp_prev->next == tp) {
 				tp_prev->next = tp->next;
@@ -622,6 +624,7 @@ void mptcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 				break;
 			}
 		}
+	}
 
 	tp->next = NULL;
 	tp->attached = 0;
@@ -640,7 +643,8 @@ void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 	struct tcp_sock *tp;
 	struct sock *meta_sk;
 
-	if (sk->sk_protocol != IPPROTO_TCP) return;
+	if (sk->sk_protocol != IPPROTO_TCP)
+		return;
 	tp = tcp_sk(sk);
 	meta_sk = (struct sock *) mpcb;
 
@@ -960,10 +964,10 @@ found_ok_skb:
 		if (dfin)
 			goto found_fin_ok;
 
-		if (*data_seq == TCP_SKB_CB(skb)->end_data_seq && !(flags
-				& MSG_PEEK))
+		if (*data_seq == TCP_SKB_CB(skb)->end_data_seq &&
+		    !(flags & MSG_PEEK)) {
 			sk_eat_skb(meta_sk, skb, 0);
-		else if (!(flags & MSG_PEEK) && *len != 0) {
+		} else if (!(flags & MSG_PEEK) && *len != 0) {
 			printk(KERN_ERR
 			"%s bug: copied %#x "
 			"dataseq %#x, *len %d, used:%d\n", __FUNCTION__,
@@ -1145,7 +1149,7 @@ out:
  * we do change the subflow seqnum.
  *
  * Note that we make the assumption that, within the local system, every
- * segment has tcb->sub_seq==tcb->seq, that is, the dataseq is not shifted
+ * segment has tcb->sub_seq == tcb->seq, that is, the dataseq is not shifted
  * compared to the subflow seqnum. Put another way, the dataseq referenced
  * is actually the number of the first data byte in the segment.
  */
@@ -1560,18 +1564,18 @@ extern void tcp_check_space(struct sock *sk);
 void verif_wqueues(struct multipath_pcb *mpcb)
 {
 	struct sock *sk;
-	struct sock *meta_sk=(struct sock*)mpcb;
+	struct sock *meta_sk = (struct sock *)mpcb;
 	struct tcp_sock *tp;
 	struct sk_buff *skb;
 	int sum;
 
 	local_bh_disable();
 	mptcp_for_each_sk(mpcb, sk, tp) {
-		sum=0;
+		sum = 0;
 		tcp_for_write_queue(skb, sk) {
-			sum+=skb->truesize;
+			sum += skb->truesize;
 		}
-		if (sum!=sk->sk_wmem_queued) {
+		if (sum != sk->sk_wmem_queued) {
 			printk(KERN_ERR "wqueue leak_1: enqueued:%d, recorded "
 					"value:%d\n",
 					sum,sk->sk_wmem_queued);
@@ -1751,16 +1755,16 @@ void mptcp_close(struct sock *master_sk, long timeout) {
 	while ((skb = __skb_dequeue(&meta_sk->sk_receive_queue)) != NULL) {
 		u32 len = TCP_SKB_CB(skb)->end_data_seq
 				- TCP_SKB_CB(skb)->data_seq
-				- (is_dfin_seg(mpcb,skb) ? 1 : 0);
+				- (is_dfin_seg(mpcb, skb) ? 1 : 0);
 		data_was_unread += len;
 		__kfree_skb(skb);
 	}
 
 	sk_mem_reclaim(meta_sk);
 
-	if (tcp_close_state(meta_sk))
+	if (tcp_close_state(meta_sk)) {
 		mptcp_send_fin(meta_sk);
-	else if (meta_tp->snd_nxt == meta_tp->write_seq) {
+	} else if (meta_tp->snd_nxt == meta_tp->write_seq) {
 		struct sock *sk_it, *sk_tmp;
 		/* The FIN has been sent already, we need to
 		 * call tcp_close() on the subsocks
@@ -1912,19 +1916,21 @@ void mptcp_fallback(struct sock *master_sk)
 
 #ifdef MPTCP_DEBUG_PKTS_OUT
 int check_pkts_out(struct sock* sk) {
-	int cnt=0;
+	int cnt = 0;
 	struct sk_buff *skb;
 	struct tcp_sock *tp = tcp_sk(sk);
 	/* TODEL: sanity check on packets_out */
 	if (tp->mpc && !is_meta_tp(tp)) {
-		tcp_for_write_queue(skb,sk) {
+		tcp_for_write_queue(skb, sk) {
 			if (skb == tcp_send_head(sk))
-			break;
-			else cnt+=tcp_skb_pcount(skb);
+				break;
+			else
+				cnt += tcp_skb_pcount(skb);
 		}
-		BUG_ON(tp->packets_out!=cnt);
+		BUG_ON(tp->packets_out != cnt);
+	} else {
+		cnt = -10;
 	}
-	else cnt=-10;
 
 	return cnt;
 }

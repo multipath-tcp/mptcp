@@ -42,7 +42,7 @@ MODULE_LICENSE("GPL");
 MODULE_VERSION("1.1");
 
 static int port __read_mostly = 0;
-MODULE_PARM_DESC(port, "Port to match (0=all)");
+MODULE_PARM_DESC(port, "Port to match (0 = all)");
 module_param(port, int, 0);
 
 static unsigned int bufsize __read_mostly = 4096;
@@ -50,11 +50,13 @@ MODULE_PARM_DESC(bufsize, "Log buffer size in packets (4096)");
 module_param(bufsize, uint, 0);
 
 static int full __read_mostly = 1;
-MODULE_PARM_DESC(full, "Full log (1=every ack packet received,  0=only cwnd changes)");
+MODULE_PARM_DESC(full, "Full log (1 = every ack packet received,  "
+		 "0 = only cwnd changes)");
 module_param(full, int, 0);
 
 static int log_interval __read_mostly = 100;
-MODULE_PARM_DESC(log_interval, "Log interval (0=log every event, n=log at most every n milliseconds)");
+MODULE_PARM_DESC(log_interval, "Log interval (0 = log every event, "
+		 "n = log at most every n milliseconds)");
 module_param(log_interval, int, 0);
 
 static const char procname[] = "tcpprobe";
@@ -78,18 +80,18 @@ struct tcp_log {
 	u32     rcv_nxt;
 	u32     copied_seq;
 	u32     rcv_wnd;
-	u32     rcv_buf;  /*N*/
-	u32     rcv_ssthresh; /*N*/
-	u32     window_clamp; /*N*/
-	char    send; /*1 if sending side, 0 if receive*/
+	u32     rcv_buf;
+	u32     rcv_ssthresh;
+	u32     window_clamp;
+	char    send; /* 1 if sending side, 0 if receive */
 	int     space;
 	u32     rtt_est;
 	u32     in_flight;
 	u32     mss_cache;
 	int     snd_buf;
 	int     wmem_queued;
-	int     rmem_alloc; /*number of ofo bytes received*/
-	int     rmem_alloc_sub; /*idem, but for subflow */
+	int     rmem_alloc; /* number of ofo bytes received */
+	int     rmem_alloc_sub; /* idem, but for subflow */
 	int     dsn;
         u32     mptcp_snduna;
 	u32     drs_seq;
@@ -131,12 +133,12 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_sock *inet = inet_sk(sk);
-	struct sock *mpcb_sk=tp->mpcb?(struct sock*)tp->mpcb:sk;
-	struct tcp_sock *mpcb_tp=tcp_sk(mpcb_sk);
+	struct sock *mpcb_sk = tp->mpcb ? (struct sock *)tp->mpcb : sk;
+	struct tcp_sock *mpcb_tp = tcp_sk(mpcb_sk);
 
 	if (log_interval) {
 		if (!tp->last_rcv_probe)
-			tp->last_rcv_probe=jiffies;
+			tp->last_rcv_probe = jiffies;
 		else if (jiffies - tp->last_rcv_probe <
 			 log_interval * HZ / 1000)
 			goto out;
@@ -146,8 +148,8 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	/* Only update if port matches */
 	if ((port == 0 || ntohs(inet->inet_dport) == port
 	     || ntohs(inet->inet_sport) == port)
-	    && ((ntohl(inet->inet_saddr) & 0xffff0000) != 0xc0a80000) /*addr !=
-							       192.168/16*/
+	    /* addr != 192.168/16 */
+	    && ((ntohl(inet->inet_saddr) & 0xffff0000) != 0xc0a80000)
 	    && ((ntohl(inet->inet_daddr) & 0xffff0000) != 0xc0a80000)
 	    && ntohs(inet->inet_sport) != 9000
 	    && ntohs(inet->inet_dport) != 9000
@@ -169,29 +171,32 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->snd_wnd = mpcb_tp->snd_wnd;
 			p->ssthresh = tcp_current_ssthresh(sk);
 			p->srtt = tp->srtt >> 3;
-			p->rcv_nxt=mpcb_tp->rcv_nxt;
-			p->copied_seq=mpcb_tp->copied_seq;
-			p->rcv_wnd=mpcb_tp->rcv_wnd;
-			p->rcv_buf=sk->sk_rcvbuf;
-			p->rcv_ssthresh=tp->rcv_ssthresh;
-			p->window_clamp=tp->window_clamp;
-			p->send=0;
-			p->space=tp->rcvq_space.space;
-			p->rtt_est=tp->rcv_rtt_est.rtt;
-			p->in_flight=tp->packets_out;
-			p->mss_cache=tp->mss_cache;
-			p->snd_buf=mpcb_sk->sk_sndbuf;
-			p->wmem_queued=mpcb_sk->sk_wmem_queued;
-			p->rmem_alloc=atomic_read(&mpcb_sk->sk_rmem_alloc);
-			p->rmem_alloc_sub=atomic_read(&sk->sk_rmem_alloc);
-			p->dsn=TCP_SKB_CB(skb)->data_seq;
-			p->mptcp_snduna = tp->mpcb ? mpcb_meta_tp(tp->mpcb)->snd_una : 0;
-			p->drs_seq=tp->rcvq_space.seq;
-			p->drs_time=tp->rcvq_space.time;
-			p->bw_est=tp->cur_bw_est;
-			p->mpcb_def=(tp->mpcb!=NULL);
+			p->rcv_nxt = mpcb_tp->rcv_nxt;
+			p->copied_seq = mpcb_tp->copied_seq;
+			p->rcv_wnd = mpcb_tp->rcv_wnd;
+			p->rcv_buf = sk->sk_rcvbuf;
+			p->rcv_ssthresh = tp->rcv_ssthresh;
+			p->window_clamp = tp->window_clamp;
+			p->send = 0;
+			p->space = tp->rcvq_space.space;
+			p->rtt_est = tp->rcv_rtt_est.rtt;
+			p->in_flight = tp->packets_out;
+			p->mss_cache = tp->mss_cache;
+			p->snd_buf = mpcb_sk->sk_sndbuf;
+			p->wmem_queued = mpcb_sk->sk_wmem_queued;
+			p->rmem_alloc = atomic_read(&mpcb_sk->sk_rmem_alloc);
+			p->rmem_alloc_sub = atomic_read(&sk->sk_rmem_alloc);
+			p->dsn = TCP_SKB_CB(skb)->data_seq;
+			p->mptcp_snduna = tp->mpcb ?
+				mpcb_meta_tp(tp->mpcb)->snd_una : 0;
+			p->drs_seq = tp->rcvq_space.seq;
+			p->drs_time = tp->rcvq_space.time;
+			p->bw_est = tp->cur_bw_est;
+			p->mpcb_def = (tp->mpcb != NULL);
 			if (tp->mpcb)
-				p->alpha = ((struct mptcp_ccc *) inet_csk_ca((struct sock *) tp->mpcb))->alpha;
+				p->alpha = ((struct mptcp_ccc *)
+					    inet_csk_ca((struct sock *)
+							tp->mpcb))->alpha;
 			else
 				p->alpha = 0;
 			tcp_probe.head = (tcp_probe.head + 1) & (bufsize - 1);
@@ -217,8 +222,8 @@ static int logmsg(struct sock *sk,char *fmt, va_list args)
 		= ktime_to_timespec(ktime_sub(ktime_get(), tcp_probe.start));
 
 	if (sk->sk_state == TCP_ESTABLISHED
-	    && ((ntohl(inet->inet_saddr) & 0xffff0000) != 0xc0a80000) /*addr !=
-								 192.168/16*/
+	    /* addr != 192.168/16 */
+	    && ((ntohl(inet->inet_saddr) & 0xffff0000) != 0xc0a80000)
 	    && ((ntohl(inet->inet_daddr) & 0xffff0000) != 0xc0a80000)) {
 		int len;
 		snprintf(msg,500,"LOG:%lu.%09lu ",(unsigned long) tv.tv_sec,
@@ -230,9 +235,9 @@ static int logmsg(struct sock *sk,char *fmt, va_list args)
 		/* If log fills, just silently drop */
 		if (tcp_probe_avail() > 1) {
 			struct tcp_log *p = tcp_probe.log + tcp_probe.head;
-			p->path_index=-1;
-			strncpy((char*)((&p->path_index)+1),msg,
-				sizeof(*p)-sizeof(p->path_index));
+			p->path_index = -1;
+			strncpy((char *)((&p->path_index) + 1), msg,
+				sizeof(*p) - sizeof(p->path_index));
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
 		spin_unlock_bh(&tcp_probe.lock);
@@ -242,7 +247,7 @@ static int logmsg(struct sock *sk,char *fmt, va_list args)
 }
 #endif
 
-/*
+/**
  * Hook inserted to be called before each packet transmission.
  * Note: arguments must match tcp_transmit_skb()!
  */
@@ -267,15 +272,16 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	if (sk->sk_state == TCP_ESTABLISHED &&
 	    (port == 0 || ntohs(inet->inet_dport) == port ||
 	     ntohs(inet->inet_sport) == port)
-	    && ((ntohl(inet->inet_saddr) & 0xffff0000) != 0xc0a80000) /*addr !=
-							       192.168/16*/
+	    /* addr != 192.168/16*/
+	    && ((ntohl(inet->inet_saddr) & 0xffff0000) != 0xc0a80000)
 	    && ((ntohl(inet->inet_daddr) & 0xffff0000) != 0xc0a80000)
 	    && ntohs(inet->inet_sport) != 9000 && ntohs(inet->inet_dport) != 9000
 	    && (full || tp->snd_cwnd != tcp_probe.lastcwnd)) {
 
 #ifdef CONFIG_KPROBES
-		/*kprobes disables irqs before to call this function.
-		  So we cannot use the _bh flavour of spin_lock*/
+		/* kprobes disables irqs before to call this function.
+		 * So we cannot use the _bh flavour of spin_lock
+		 */
 		spin_lock(&tcp_probe.lock);
 #else
 		spin_lock_bh(&tcp_probe.lock);
@@ -357,15 +363,15 @@ static struct jprobe tcp_jprobe_send = {
 	};
 #else
 static struct tcpprobe_ops tcpprobe_fcts = {
-	.rcv_established=jtcp_rcv_established,
-	.transmit_skb=jtcp_transmit_skb,
-	.logmsg=logmsg,
+	.rcv_established = jtcp_rcv_established,
+	.transmit_skb = jtcp_transmit_skb,
+	.logmsg = logmsg,
 };
 #endif
 
 
 
-static int tcpprobe_open(struct inode * inode, struct file * file)
+static int tcpprobe_open(struct inode *inode, struct file *file)
 {
 	/* Reset (empty) log */
 	spin_lock_bh(&tcp_probe.lock);
@@ -378,35 +384,33 @@ static int tcpprobe_open(struct inode * inode, struct file * file)
 
 static int tcpprobe_sprint(char *tbuf, int n)
 {
-	const struct tcp_log *p
-		= tcp_probe.log + tcp_probe.tail;
-	struct timespec tv
-		= ktime_to_timespec(ktime_sub(p->tstamp, tcp_probe.start));
+	const struct tcp_log *p = tcp_probe.log + tcp_probe.tail;
+	struct timespec tv =
+		ktime_to_timespec(ktime_sub(p->tstamp, tcp_probe.start));
 
-	if (p->path_index==-1) {
-		return scnprintf(tbuf,n,
-				"%s\n",(char*)((&p->path_index)+1));
-	}
+	if (p->path_index == -1)
+		return scnprintf(tbuf, n,
+				 "%s\n", (char*)((&p->path_index) + 1));
 
-	return scnprintf(tbuf, n,
-			"%lu.%09lu %pI4:%u %pI4:%u %d %d %#x %#x %u %u %u "
-			"%u %#x %#x %u %u %u %u %d"
-			" %d %u %u %u %d %d %d %d %#x "
-			"%#x %#x %#x %d %d %llu\n",
-			(unsigned long) tv.tv_sec,
-			(unsigned long) tv.tv_nsec,
-			&p->saddr, ntohs(p->sport),
-			&p->daddr, ntohs(p->dport),
-			p->path_index,p->length, p->snd_nxt, p->snd_una,
-			p->snd_cwnd, p->ssthresh, p->snd_wnd, p->srtt,
-			p->rcv_nxt, p->copied_seq, p->rcv_wnd, p->rcv_buf,
-			p->window_clamp, p->rcv_ssthresh, p->send,
-			p->space, p->rtt_est*1000/HZ, p->in_flight,
-			p->mss_cache,
-			p->snd_buf, p->wmem_queued, p->rmem_alloc,
-			p->rmem_alloc_sub, p->dsn,
-			p->mptcp_snduna, p->drs_seq, p->drs_time * 1000 / HZ,
-			((p->bw_est << 3) / 1000) * HZ, p->mpcb_def, p->alpha);
+	return scnprintf(tbuf, n, t
+			 "%lu.%09lu %pI4:%u %pI4:%u %d %d %#x %#x %u %u %u "
+			 "%u %#x %#x %u %u %u %u %d"
+			 " %d %u %u %u %d %d %d %d %#x "
+			 "%#x %#x %#x %d %d %llu\n",
+			 (unsigned long) tv.tv_sec,
+			 (unsigned long) tv.tv_nsec,
+			 &p->saddr, ntohs(p->sport),
+			 &p->daddr, ntohs(p->dport),
+			 p->path_index, p->length, p->snd_nxt, p->snd_una,
+			 p->snd_cwnd, p->ssthresh, p->snd_wnd, p->srtt,
+			 p->rcv_nxt, p->copied_seq, p->rcv_wnd, p->rcv_buf,
+			 p->window_clamp, p->rcv_ssthresh, p->send,
+			 p->space, p->rtt_est*1000/HZ, p->in_flight,
+			 p->mss_cache,
+			 p->snd_buf, p->wmem_queued, p->rmem_alloc,
+			 p->rmem_alloc_sub, p->dsn,
+			 p->mptcp_snduna, p->drs_seq, p->drs_time * 1000 / HZ,
+			 ((p->bw_est << 3) / 1000) * HZ, p->mpcb_def, p->alpha);
 }
 
 static ssize_t tcpprobe_read(struct file *file, char __user *buf,
@@ -484,14 +488,16 @@ static __init int tcpprobe_init(void)
 
 #ifdef CONFIG_KPROBES
 	ret = register_jprobe(&tcp_jprobe_rcv);
-	if (!ret) ret = register_jprobe(&tcp_jprobe_send);
+	if (!ret)
+		ret = register_jprobe(&tcp_jprobe_send);
 #else
-	ret=register_probe(&tcpprobe_fcts, 4);
+	ret = register_probe(&tcpprobe_fcts, 4);
 #endif
 	if (ret)
 		goto err1;
 
-	pr_info("TCP probe registered (port=%d) bufsize=%u, log_interval=%d\n",
+	pr_info("TCP probe registered (port = %d) bufsize = %u, "
+		"log_interval = %d\n",
 		port, bufsize, log_interval);
 	return 0;
  err1:

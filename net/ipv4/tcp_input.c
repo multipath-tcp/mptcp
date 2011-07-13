@@ -498,13 +498,15 @@ static void tcp_rcv_rtt_update(struct tcp_sock *tp, u32 sample, int win_dep)
 
 static inline void tcp_rcv_rtt_measure(struct tcp_sock *tp)
 {
-	/*If MPTCP is used, timestamps are mandatory. Hence,
-	  we can use always tcp_rcv_rtt_measure_ts. Moreover,
-	  this simply CANNOT be used with MPTCP, since
-	  this function uses tp->rcv_wnd, which is NOT updated
-	  at all. Using that function with MPTCP, would lead
-	  to underestimate the RTT, and hence undersize the receive window.*/
-	if (tp->mpc) return;
+	/* If MPTCP is used, timestamps are mandatory. Hence,
+	 * we can use always tcp_rcv_rtt_measure_ts. Moreover,
+	 * this simply CANNOT be used with MPTCP, since
+	 * this function uses tp->rcv_wnd, which is NOT updated
+	 * at all. Using that function with MPTCP, would lead
+	 * to underestimate the RTT, and hence undersize the receive window.
+	 */
+	if (tp->mpc)
+		return;
 	if (tp->rcv_rtt_est.time == 0)
 		goto new_measure;
 	if (before(tp->rcv_nxt, tp->rcv_rtt_est.seq))
@@ -549,8 +551,9 @@ void tcp_rcv_space_adjust(struct sock *sk)
 		struct tcp_sock *tp_tmp;
 		u32 rtt_max = 0;
 
-		/*In MPTCP, we take the max delay across all flows,
-		  in order to take into account meta-reordering buffers.*/
+		/* In MPTCP, we take the max delay across all flows,
+		 * in order to take into account meta-reordering buffers.
+		 */
 		mptcp_for_each_tp(mpcb, tp_tmp) {
 			if (rtt_max < (tp_tmp->rcv_rtt_est.rtt >> 3))
 				rtt_max = (tp_tmp->rcv_rtt_est.rtt >> 3);
@@ -3296,8 +3299,9 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 	BUG_ON(is_meta_sk(sk));
 
 #ifdef MPTCP_DEBUG_PKTS_OUT
-	/*Cannot have more packets in flight than packets in the
-	  rexmit queue (if tso disabled)*/
+	/* Cannot have more packets in flight than packets in the
+	 * rexmit queue (if tso disabled)
+	 */
 	BUG_ON(tp->mpc && tp->packets_out>skb_queue_len(&sk->sk_write_queue));
 #endif
 
@@ -3375,17 +3379,19 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		/* Before we remove the skb, we update the meta-ack count */
 #ifdef CONFIG_MPTCP
 		{
-			if (!tp->mpc || !skb->len) goto no_mptcp_update;
+			if (!tp->mpc || !skb->len)
+				goto no_mptcp_update;
 
 			if (!tp->bw_est.time) {
 				/* bootstrap bw estimation */
-				tp->bw_est.space = (tp->snd_cwnd * tp->mss_cache) <<
-							tp->bw_est.shift;
+				tp->bw_est.space =
+					(tp->snd_cwnd * tp->mss_cache) <<
+					tp->bw_est.shift;
 				tp->bw_est.seq = tp->snd_una + tp->bw_est.space;
 				tp->bw_est.time = tcp_time_stamp;
 			} else if (after(tp->snd_una, tp->bw_est.seq)) {
 				/* update the bw estimate for this
-				   subflow */
+				 * subflow */
 				if (tcp_time_stamp-tp->bw_est.time == 0) {
 					tp->bw_est.shift++;
 				} else {
@@ -3405,8 +3411,9 @@ no_mptcp_update:
 		tcp_unlink_write_queue(skb, sk);
 
 #ifdef MPTCP_DEBUG_PKTS_OUT
-		/*Cannot have more packets in flight than packets in the
-		  rexmit queue (if tso disabled)*/
+		/* Cannot have more packets in flight than packets in the
+		 * rexmit queue (if tso disabled)
+		 */
 		if(tp->mpc &&
 		   tp->packets_out>skb_queue_len(&sk->sk_write_queue)) {
 			printk(KERN_ERR "acked_pcount:%d\n", acked_pcount);
@@ -5308,7 +5315,7 @@ static int tcp_should_expand_sndbuf(struct sock *sk, struct sock *mpcb_sk)
 	 * MPTCP note: at the moment, we do not take this case into account.
 	 * In the future, if we want to do so, we'll need to maintain
 	 * packet_out counter at the mpcb_tp level, as well as maintain a
-	 * mpcb_tp->snd_cwnd=sum(sub_tp->snd_cwnd)
+	 * mpcb_tp->snd_cwnd = sum(sub_tp->snd_cwnd)
 	 */
 	if (!tp->mpc && tp->packets_out >= tp->snd_cwnd)
 		return 0;
@@ -5540,7 +5547,7 @@ static void tcp_urg(struct sock *sk, struct sk_buff *skb, struct tcphdr *th)
 
 	/* Check if we get a new urgent pointer - normally not. */
 	if (tp->mpc && th->urg) {
-		/*Not supported yet*/
+		/* Not supported yet */
 		BUG();
 		tcp_check_urg(sk, th);
 	}
@@ -5857,19 +5864,20 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			    len - tcp_header_len <= meta_tp->ucopy.len) {
 				if (meta_tp->ucopy.task == current &&
 				    sock_owned_by_user(sk)) {
-					/*We have not yet finished to adapt
-					  the code for the fast path, thus
-					  we put this BUG to ensure that it
-					  is not accidentally taken.
-					  When we implement this, we must
-					  ensure that this iovec copy is
-					  replaced with a call to
-					  mptcp_queue_skb, and that the skb is
-					  only destroyed when that function
-					  returns MPTCP_EATEN (here, the
-					  skb is always destroyed if eaten
-					  is 1, which is no longer
-					  correct with MPTCP)*/
+					/* We have not yet finished to adapt
+					 * the code for the fast path, thus
+					 * we put this BUG to ensure that it
+					 * is not accidentally taken.
+					 * When we implement this, we must
+					 * ensure that this iovec copy is
+					 * replaced with a call to
+					 * mptcp_queue_skb, and that the skb is
+					 * only destroyed when that function
+					 * returns MPTCP_EATEN (here, the
+					 * skb is always destroyed if eaten
+					 * is 1, which is no longer
+					 * correct with MPTCP)
+					 */
 					BUG_ON(tp->mpc);
 					__set_current_state(TASK_RUNNING);
 
@@ -6191,7 +6199,7 @@ discard:
 	__kfree_skb(skb);
 	return 0;
 }
-#endif /*CONFIG_MPTCP*/
+#endif /* CONFIG_MPTCP */
 EXPORT_SYMBOL(tcp_rcv_established);
 
 static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,

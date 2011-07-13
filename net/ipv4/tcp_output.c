@@ -1490,7 +1490,7 @@ unsigned int tcp_current_mss(struct sock *sk)
 	struct tcp_out_options opts;
 	struct tcp_md5sig_key *md5;
 
-	/*if sk is the meta-socket, return the common MSS */
+	/* if sk is the meta-socket, return the common MSS */
 	if (is_meta_tp(tp))
 		return sysctl_mptcp_mss;
 
@@ -1753,9 +1753,9 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 
 	mptcp_debug("Entering %s\n", __FUNCTION__);
 
-	BUG_ON(len == 0);	/*This would create an empty segment */
+	BUG_ON(len == 0);	/* This would create an empty segment */
 
-	/* All of a TSO frame must be composed of paged data.  */
+	/* All of a TSO frame must be composed of paged data. */
 	if (skb->len != skb->data_len)
 		return tcp_fragment(sk, skb, len, mss_now);
 
@@ -1815,7 +1815,7 @@ static int tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb)
 	u32 send_win, cong_win, limit, in_flight;
 	int win_divisor;
 
-	/*TSO not supported at the moment in MPTCP */
+	/* TSO not supported at the moment in MPTCP */
 	BUG_ON(tp->mpc);
 
 	if (TCP_SKB_CB(skb)->flags & TCPHDR_FIN)
@@ -2557,11 +2557,12 @@ static void tcp_collapse_retrans(struct sock *sk, struct sk_buff *skb)
 
 	/* Update sequence range on original skb. */
 	TCP_SKB_CB(skb)->end_seq = TCP_SKB_CB(next_skb)->end_seq;
-	/*For the dsn space, we need to make an addition and not just
-	   copy the end_seq, because if the next_skb is a pure FIN (with
-	   no data), the len is 1 and the data_len is 0, as well as
-	   the end_data_seq of the FIN. Using an addition takes this
-	   difference into account */
+	/* For the dsn space, we need to make an addition and not just
+	 * copy the end_seq, because if the next_skb is a pure FIN (with
+	 * no data), the len is 1 and the data_len is 0, as well as
+	 * the end_data_seq of the FIN. Using an addition takes this
+	 * difference into account.
+	 */
 	TCP_SKB_CB(skb)->end_data_seq += TCP_SKB_CB(next_skb)->data_len;
 	TCP_SKB_CB(skb)->data_len += TCP_SKB_CB(next_skb)->data_len;
 

@@ -44,7 +44,7 @@ extern void __tcp_v4_send_check(struct sk_buff *skb,
 				__be32 saddr, __be32 daddr);
 
 static struct list_head tk_hashtable[MPTCP_HASH_SIZE];
-static rwlock_t tk_hash_lock;	/*hashtable protection */
+static rwlock_t tk_hash_lock;	/* hashtable protection */
 
 /* This second hashtable is needed to retrieve request socks
  * created as a result of a join request. While the SYN contains
@@ -104,7 +104,7 @@ void mptcp_hash_remove(struct multipath_pcb *mpcb)
 	mptcp_debug("%s: remove mpcb from hash-table with loc_token %d\n",
 			__func__, mpcb_meta_tp(mpcb)->mptcp_loc_token);
 
-	/*remove from the token hashtable */
+	/* remove from the token hashtable */
 	write_lock_bh(&tk_hash_lock);
 	list_del(&mpcb->collide_tk);
 	write_unlock_bh(&tk_hash_lock);
@@ -243,14 +243,14 @@ u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, int path_index)
 {
 	int i;
 
-	/*master subsocket has both addresses with id 0 */
+	/* master subsocket has both addresses with id 0 */
 	if (path_index <= 1)
 		return 0;
 	for (i = 0; i < mpcb->pa4_size; i++) {
 		if (mpcb->pa4[i].path_index == path_index)
 			return mpcb->pa4[i].loc.id;
 	}
-	/*should not arrive here */
+	/* should not arrive here */
 	printk(KERN_ERR "pa4_size:%d,pi:%d\n", mpcb->pa4_size, path_index);
 	for (i = 0; i < mpcb->pa4_size; i++)
 		printk(KERN_ERR "existing pi:%d\n", mpcb->pa4[i].path_index);
@@ -259,7 +259,7 @@ u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, int path_index)
 	return -1;
 }
 
-/*For debugging*/
+/* For debugging */
 void print_patharray(struct path4 *pa, int size)
 {
 	int i;
@@ -531,7 +531,7 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 		return -1;
 	}
 
-	/*Address is not known yet, store it */
+	/* Address is not known yet, store it */
 	mopt->addr4[num_addr4].addr.s_addr = addr->s_addr;
 	mopt->addr4[num_addr4].id = id;
 	mopt->list_rcvd = 1;
@@ -735,7 +735,7 @@ int mptcp_v4_send_synack(struct sock *meta_sk,
 	return err;
 }
 
-/*Copied from net/ipv4/inet_connection_sock.c*/
+/* Copied from net/ipv4/inet_connection_sock.c */
 static inline u32 inet_synq_hash(const __be32 raddr, const __be16 rport,
 				 const u32 rnd, const u32 synq_hsize)
 {
@@ -807,7 +807,7 @@ static int mptcp_v4_join_request(struct multipath_pcb *mpcb, struct sk_buff *skb
 	ireq->rmt_addr = saddr;
 	ireq->opt = tcp_v4_save_options(NULL, skb);
 
-	/*Todo: add the sanity checks here. See tcp_v4_conn_request */
+	/* Todo: add the sanity checks here. See tcp_v4_conn_request */
 
 	isn = tcp_v4_init_sequence(skb);
 
@@ -816,7 +816,7 @@ static int mptcp_v4_join_request(struct multipath_pcb *mpcb, struct sk_buff *skb
 	if (mptcp_v4_send_synack((struct sock *)mpcb, req, NULL))
 		goto drop_and_free;
 
-	/*Adding to request queue in metasocket */
+	/* Adding to request queue in metasocket */
 	mptcp_reqsk_queue_hash_add(req, TCP_TIMEOUT_INIT);
 	return 0;
 

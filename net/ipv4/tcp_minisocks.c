@@ -466,10 +466,10 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 		newtp->snd_nxt = newtp->snd_up =
 			treq->snt_isn + 1 + tcp_s_data_size(oldtp);
 #ifdef CONFIG_MPTCP
-		newtp->rx_opt.rcv_isn=treq->rcv_isn;
-		newtp->snt_isn=treq->snt_isn;
-		newtp->rcv_isn=treq->rcv_isn;
-		memset(&newtp->rcvq_space,0,sizeof(newtp->rcvq_space));
+		newtp->rx_opt.rcv_isn = treq->rcv_isn;
+		newtp->snt_isn = treq->snt_isn;
+		newtp->rcv_isn = treq->rcv_isn;
+		memset(&newtp->rcvq_space, 0, sizeof(newtp->rcvq_space));
 #endif
 
 		tcp_prequeue_init(newtp);
@@ -829,7 +829,7 @@ embryonic_reset:
 	if (!(flg & TCP_FLAG_RST))
 		req->rsk_ops->send_reset(sk, skb);
 	if (is_meta_sk(sk)) {
-		/*Deleting from global hashtable */
+		/* Deleting from global hashtable */
 		mptcp_hash_request_remove(req);
 	}
 	inet_csk_reqsk_queue_drop(sk, req, prev);

@@ -67,7 +67,8 @@ static int tcp_out_of_resources(struct sock *sk, int do_reset)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	int shift = 0;
-	u32 snd_wnd=(tp->mpc && tp->mpcb)?mpcb_meta_tp(tp->mpcb)->snd_wnd:tp->snd_wnd;
+	u32 snd_wnd = (tp->mpc && tp->mpcb) ?
+		mpcb_meta_tp(tp->mpcb)->snd_wnd : tp->snd_wnd;
 
 	/* If peer does not open window for long time, or did not transmit
 	 * anything for long time, penalize it. */
@@ -323,9 +324,10 @@ void tcp_retransmit_timer(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
-	u32 snd_wnd=(tp->mpc && tp->mpcb)?mpcb_meta_tp(tp->mpcb)->snd_wnd:tp->snd_wnd;
+	u32 snd_wnd = (tp->mpc && tp->mpcb) ?
+		mpcb_meta_tp(tp->mpcb)->snd_wnd:tp->snd_wnd;
 
-	tcpprobe_logmsg(sk,"pi %d, RTO",tp->path_index);
+	tcpprobe_logmsg(sk, "pi %d, RTO", tp->path_index);
 
 
 	if (!tp->packets_out)
@@ -462,7 +464,7 @@ static void tcp_write_timer(unsigned long data)
 	struct sock *master_sk = tp->mpcb ? tp->mpcb->master_sk : sk;
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	int event;
-	
+
 	BUG_ON(is_meta_sk(sk));
 
 	bh_lock_sock(master_sk);
@@ -471,7 +473,7 @@ static void tcp_write_timer(unsigned long data)
 		sk_reset_timer(sk, &icsk->icsk_retransmit_timer, jiffies + (HZ / 20));
 		goto out_unlock;
 	}
-	
+
 	if (sk->sk_state == TCP_CLOSE || !icsk->icsk_pending)
 		goto out;
 
@@ -492,7 +494,7 @@ static void tcp_write_timer(unsigned long data)
 		break;
 	}
 	TCP_CHECK_TIMER(sk);
-	
+
 out:
 	sk_mem_reclaim(sk);
 out_unlock:

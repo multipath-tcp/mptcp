@@ -277,13 +277,13 @@
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
 
-#undef DEBUG_TCP /*set to define if you want debugging messages*/
+#undef DEBUG_TCP /* set to define if you want debugging messages */
 
 #ifdef DEBUG_TCP
-#define PDEBUG_SEND(fmt,args...) printk( KERN_ERR __FILE__ ": " fmt,##args)
+#define PDEBUG_SEND(fmt, args...) printk( KERN_ERR __FILE__ ": " fmt, ##args)
 #else
-#define PDEBUG_SEND(fmt,args...)
-#endif /*DEBUG_TCP*/
+#define PDEBUG_SEND(fmt, args...)
+#endif /* DEBUG_TCP */
 
 int sysctl_tcp_fin_timeout __read_mostly = TCP_FIN_TIMEOUT;
 
@@ -384,7 +384,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	struct sock *master_sk = sock->sk;
 	struct tcp_sock *master_tp = tcp_sk(master_sk);
 #ifdef CONFIG_MPTCP
-	struct multipath_pcb *mpcb=mpcb_from_tcpsock(master_tp);
+	struct multipath_pcb *mpcb = mpcb_from_tcpsock(master_tp);
 	struct sock *mpcb_sk = (master_tp->mpc) ? (struct sock *)mpcb:
 		master_sk;
 	struct tcp_sock *mpcb_tp = tcp_sk(mpcb_sk);
@@ -482,8 +482,9 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	/* This barrier is coupled with smp_wmb() in tcp_reset() */
 	smp_rmb();
 
-	/*The subsocks are responsible for transferring their errors
-	  here, so that they become visible to the mpcb.*/
+	/* The subsocks are responsible for transferring their errors
+	 * here, so that they become visible to the mpcb.
+	 */
 	if (mpcb_sk->sk_err)
 		mask |= POLLERR;
 
@@ -1043,8 +1044,8 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 #ifdef CONFIG_MPTCP
 		/* Skipping the offset (stored in the size argument) */
 		if (tp->mpc) {
-			PDEBUG_SEND("seglen:%d\n",seglen);
-			if (seglen>=size) {
+			PDEBUG_SEND("seglen:%d\n", seglen);
+			if (seglen >= size) {
 				seglen -= size;
 				from += size;
 				size = 0;
@@ -2038,7 +2039,7 @@ void tcp_set_state(struct sock *sk, int state)
 		 * as we don't know yet if he is MP_CAPABLE.
 		 */
 		if (tp->mpcb && is_master_tp(tp))
-			mptcp_meta_sk(sk)->sk_state=state;
+			mptcp_meta_sk(sk)->sk_state = state;
 		if (oldstate == TCP_ESTABLISHED)
 			TCP_DEC_STATS(sock_net(sk), TCP_MIB_CURRESTAB);
 		break;
