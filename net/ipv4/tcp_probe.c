@@ -392,7 +392,7 @@ static int tcpprobe_sprint(char *tbuf, int n)
 		return scnprintf(tbuf, n,
 				 "%s\n", (char*)((&p->path_index) + 1));
 
-	return scnprintf(tbuf, n, t
+	return scnprintf(tbuf, n,
 			 "%lu.%09lu %pI4:%u %pI4:%u %d %d %#x %#x %u %u %u "
 			 "%u %#x %#x %u %u %u %u %d"
 			 " %d %u %u %u %d %d %d %d %#x "
