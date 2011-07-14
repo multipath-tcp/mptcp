@@ -473,7 +473,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 			}
 		} else {
 			mask |= POLLOUT | POLLWRNORM;
-			printk(KERN_ERR "mpcb is in shutdown state\n");
+			mptcp_debug(KERN_ERR "mpcb is in shutdown state\n");
 		}
 
 		if (mpcb_tp->urg_data & TCP_URG_VALID)
