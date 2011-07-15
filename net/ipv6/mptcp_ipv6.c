@@ -140,7 +140,7 @@ struct proto mptcpsubv6_prot = {
 
 static struct inet_protosw mptcpsubv6_protosw = {
 	.type		=	SOCK_STREAM,
-	.protocol	=	IPPROTO_MPTCPSUB,
+	.protocol	=	IPPROTO_MPTCPSUBv6,
 	.prot		=	&mptcpsubv6_prot,
 	.ops		=	&inet6_stream_ops,
 	.no_check	=	0,

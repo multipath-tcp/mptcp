@@ -38,6 +38,14 @@
 #include <linux/sysctl.h>
 #endif
 
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#define AF_INET_FAMILY(fam) ((fam) == AF_INET)
+#define AF_INET6_FAMILY(fam) ((fam) == AF_INET6)
+#else
+#define AF_INET_FAMILY(fam) 1
+#define AF_INET6_FAMILY(fam) 0
+#endif
+
 /* ===================================== */
 /* DEBUGGING */
 
@@ -290,14 +298,25 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 		struct sockaddr *loculid, *remulid;
 		struct sockaddr_in loculid_in, remulid_in;
 		struct sockaddr_in6 loculid_in6, remulid_in6;
-		int ulid_size = 0, newpi = i + 1;
+		int ulid_size = 0, newpi = i + 1, family;
 
 		if (!((1 << i) & path_indices))
 			continue;
 
 		/* A new socket must be created */
-		ret = sock_create_kern(meta_sk->sk_family, SOCK_STREAM,
-				IPPROTO_MPTCPSUB, &sock);
+		family = mptcp_get_path_family(mpcb, newpi);
+
+		/* A new socket must be created */
+		if(family == AF_INET)
+			ret = sock_create_kern(family,
+					  SOCK_STREAM,
+					  IPPROTO_MPTCPSUB, &sock);
+		else if(family == AF_INET6) /* IPv6 */
+			ret = sock_create_kern(family,
+					  SOCK_STREAM,
+					  IPPROTO_MPTCPSUBv6, &sock);
+		else
+			BUG();
 		if (ret < 0) {
 			printk(KERN_ERR "%s: sock_create failed\n",
 					__FUNCTION__);
@@ -310,18 +329,18 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 		 * case we bind the new socket, directly to its
 		 * corresponding locators)
 		 */
-		switch (meta_sk->sk_family) {
+		switch (family) {
 		case AF_INET:
-			loculid_in.sin_family = meta_sk->sk_family;
-			remulid_in.sin_family = meta_sk->sk_family;
+			loculid_in.sin_family = family;
+			remulid_in.sin_family = family;
 
 			/* let bind select an available port */
 			loculid_in.sin_port = 0;
 			remulid_in.sin_port = inet_sk(meta_sk)->inet_dport;
 
-			memcpy(&loculid_in.sin_addr, mptcp_get_loc_addr(
+			memcpy(&loculid_in.sin_addr, mptcp_get_loc_addr4(
 					mpcb, newpi), sizeof(struct in_addr));
-			memcpy(&remulid_in.sin_addr, mptcp_get_rem_addr(
+			memcpy(&remulid_in.sin_addr, mptcp_get_rem_addr4(
 					mpcb, newpi), sizeof(struct in_addr));
 
 			loculid = (struct sockaddr *) &loculid_in;
@@ -330,21 +349,23 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 
 			break;
 		case AF_INET6:
-			loculid_in6.sin6_family = meta_sk->sk_family;
-			remulid_in6.sin6_family = meta_sk->sk_family;
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+			loculid_in6.sin6_family = family;
+			remulid_in6.sin6_family = family;
 
 			/* let bind select an available port */
 			loculid_in6.sin6_port = 0;
 			remulid_in6.sin6_port = inet_sk(meta_sk)->inet_dport;
 
 			ipv6_addr_copy(&loculid_in6.sin6_addr,
-				       &inet6_sk(meta_sk)->saddr);
+			       mptcp_get_loc_addr6(mpcb,newpi));
 			ipv6_addr_copy(&remulid_in6.sin6_addr,
-				       &inet6_sk(meta_sk)->daddr);
+			       mptcp_get_rem_addr6(mpcb,newpi));
 
 			loculid = (struct sockaddr *) &loculid_in6;
 			remulid = (struct sockaddr *) &remulid_in6;
 			ulid_size = sizeof(loculid_in6);
+#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 
 			break;
 		default:
@@ -398,7 +419,24 @@ fail_connect:
 }
 
 /* Defined in net/core/sock.c */
-void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, gfp_t flags);
+void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
+		gfp_t flags);
+
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+
+/* Defined in net/ipv4/tcp_ipv4.c */
+extern const struct inet_connection_sock_af_ops ipv4_specific;
+
+/* Defined in net/ipv6/tcp_ipv6.c */
+extern const struct inet_connection_sock_af_ops ipv6_specific;
+
+/* Defined in net/ipv4/mptcp_ipv4.c */
+extern struct proto mptcpsub_prot;
+
+/* Defined in net/ipv6/mptcp_ipv6.c */
+extern struct proto mptcpsubv6_prot;
+
+#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 
 struct multipath_pcb *mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
 	struct multipath_pcb *mpcb = kmalloc(sizeof(struct multipath_pcb),
@@ -417,8 +455,24 @@ struct multipath_pcb *mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
 	BUG_ON(mpcb->connection_list);
 
 	/* meta_sk inherits master sk */
-	mptcp_inherit_sk(master_sk, meta_sk, flags);
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+	mptcp_inherit_sk(master_sk, meta_sk, AF_INET6, flags);
+#else
+	mptcp_inherit_sk(master_sk, meta_sk, AF_INET, flags);
+#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
+
 	BUG_ON(mpcb->connection_list);
+
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+	if(AF_INET_FAMILY(master_sk->sk_family)) {
+		mpcb->icsk_af_ops_alt = &ipv6_specific;
+		mpcb->sk_prot_alt = &mptcpsubv6_prot;
+	}
+	else {
+		mpcb->icsk_af_ops_alt = &ipv4_specific;
+		mpcb->sk_prot_alt = &mptcpsub_prot;
+	}
+#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 
 	/* Will be replaced by the IDSN later. Currently the IDSN is zero */
 	meta_tp->copied_seq = meta_tp->rcv_nxt = meta_tp->rcv_wup = 0;
@@ -488,9 +542,7 @@ void mpcb_release(struct multipath_pcb *mpcb)
 	mptcp_pm_release(mpcb);
 #endif
 	mptcp_debug("%s: Will free mpcb\n", __FUNCTION__);
-#ifdef CONFIG_SECURITY_NETWORK
 	security_sk_free((struct sock *)mpcb);
-#endif
 	percpu_counter_dec(meta_sk->sk_prot->orphan_count);
 
 	kfree(mpcb);
@@ -593,14 +645,24 @@ void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 			mptcp_data_ready(sk);
 	}
 
-	mptcp_debug("%s: token %d pi %d, src_addr:%pI4:%d dst_addr:%pI4:%d,"
-			" cnt_subflows now %d\n", __FUNCTION__ ,
-		   loc_token(mpcb),
-		   tp->path_index, &((struct inet_sock *) tp)->inet_saddr,
-		   ntohs(((struct inet_sock *) tp)->inet_sport),
-		   &((struct inet_sock *) tp)->inet_daddr,
-		   ntohs(((struct inet_sock *) tp)->inet_dport),
-		   mpcb->cnt_subflows);
+	if(sk->sk_family == AF_INET)
+		mptcp_debug("%s: token %d pi %d, src_addr:%pI4:%d dst_addr:%pI4:%d,"
+				" cnt_subflows now %d\n", __FUNCTION__ ,
+				loc_token(mpcb),
+				tp->path_index, &((struct inet_sock *) tp)->inet_saddr,
+				ntohs(((struct inet_sock *) tp)->inet_sport),
+				&((struct inet_sock *) tp)->inet_daddr,
+				ntohs(((struct inet_sock *) tp)->inet_dport),
+				mpcb->cnt_subflows);
+	else
+		mptcp_debug("%s: token %d pi %d, src_addr:%pI6:%d dst_addr:%pI6:%d,"
+				" cnt_subflows now %d\n", __FUNCTION__ ,
+				loc_token(mpcb),
+				tp->path_index, &inet6_sk(sk)->saddr,
+				ntohs(((struct inet_sock *) tp)->inet_sport),
+				&inet6_sk(sk)->daddr,
+				ntohs(((struct inet_sock *) tp)->inet_dport),
+				mpcb->cnt_subflows);
 }
 
 void mptcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
@@ -648,17 +710,13 @@ void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 	tp = tcp_sk(sk);
 	meta_sk = (struct sock *) mpcb;
 
-	meta_sk->sk_family = sk->sk_family;
-	inet_sk(meta_sk)->inet_dport = inet_sk(sk)->inet_dport;
-	inet_sk(meta_sk)->inet_sport = inet_sk(sk)->inet_sport;
-
 	switch (sk->sk_family) {
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	case AF_INET6:
-		/* For IPv6, we just point the meta_sk to the pinet6 struct
-		 * of the master_sk, hence inheriting the ulids from there
-		 */
-		inet_sk(meta_sk)->pinet6 = inet6_sk(sk);
+		if(!ipv6_addr_loopback(&(inet6_sk(sk))->saddr) &&
+				!ipv6_addr_loopback(&(inet6_sk(sk))->daddr)) {
+			mptcp_set_addresses(mpcb);
+		}
 		/* If the socket is v4 mapped, we continue with v4 operations */
 		if (!tcp_v6_is_v4_mapped(sk))
 			break;
@@ -666,16 +724,17 @@ void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 	case AF_INET:
 		inet_sk(meta_sk)->inet_daddr = inet_sk(sk)->inet_daddr;
 		inet_sk(meta_sk)->inet_saddr = inet_sk(sk)->inet_saddr;
+
+		/* Searching for suitable local addresses,
+		except is the socket is loopback, in which case we simply
+		don't do multipath */
+
+		if (!ipv4_is_loopback(inet_sk(sk)->inet_saddr) &&
+			!ipv4_is_loopback(inet_sk(sk)->inet_daddr))
+			mptcp_set_addresses(mpcb);
 		break;
 	}
 #ifdef CONFIG_MPTCP_PM
-	/* Searching for suitable local addresses,
-	 * except is the socket is loopback, in which case we simply
-	 * don't do multipath
-	 */
-	if (!ipv4_is_loopback(inet_sk(sk)->inet_saddr) &&
-	    !ipv4_is_loopback(inet_sk(sk)->inet_daddr))
-		mptcp_set_addresses(mpcb);
 
 	/* If this added new local addresses, build new paths with them */
 	if (mpcb->num_addr4 || mpcb->num_addr6)
@@ -1380,7 +1439,12 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 	{
 		struct mp_add_addr *mpadd = (struct mp_add_addr *) ptr;
 
-		if (opsize != MPTCP_SUB_LEN_ADD_ADDR) {
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+		if ((mpadd->ipver == 4 && opsize != MPTCP_SUB_LEN_ADD_ADDR4) ||
+		    (mpadd->ipver == 6 && opsize != MPTCP_SUB_LEN_ADD_ADDR6)) {
+#else
+		if (opsize != MPTCP_SUB_LEN_ADD_ADDR4) {
+#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 			mptcp_debug("%s: mp_add_addr: bad option size %d\n",
 					__FUNCTION__, opsize);
 			break;
@@ -1390,8 +1454,11 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		if (mpadd->ipver == 4) {
 			mptcp_v4_add_raddress(mopt, (struct in_addr*) ptr,
 					mpadd->addr_id);
-		} else {
-			/* Add IPv6 stuff here */
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+		} else if (mpadd->ipver == 6) {
+			mptcp_v6_add_raddress(mopt, (struct in6_addr *) ptr,
+					mpadd->addr_id);
+#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 		}
 		break;
 	}

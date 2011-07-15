@@ -28,8 +28,9 @@ enum {
   IPPROTO_IGMP = 2,		/* Internet Group Management Protocol	*/
   IPPROTO_IPIP = 4,		/* IPIP tunnels (older KA9Q tunnels use 94) */
   IPPROTO_TCP = 6,		/* Transmission Control Protocol	*/
-  IPPROTO_MPTCPSUB = 7,         /* MPTCP subflow                        */
+  IPPROTO_MPTCPSUB = 7,         /* MPTCP IPv4 subflow			*/
   IPPROTO_EGP = 8,		/* Exterior Gateway Protocol		*/
+  IPPROTO_MPTCPSUBv6 = 9,	/* MPTCP IPv6 subflow			*/
   IPPROTO_PUP = 12,		/* PUP protocol				*/
   IPPROTO_UDP = 17,		/* User Datagram Protocol		*/
   IPPROTO_IDP = 22,		/* XNS IDP protocol			*/

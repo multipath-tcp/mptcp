@@ -130,6 +130,9 @@
 
 #ifdef CONFIG_INET
 #include <net/tcp.h>
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#include <linux/ipv6.h>
+#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 #endif
 
 /*
@@ -1041,21 +1044,48 @@ void sk_prot_clear_portaddr_nulls(struct sock *sk, int size)
 EXPORT_SYMBOL(sk_prot_clear_portaddr_nulls);
 
 /* Code inspired from sk_clone() */
-void mptcp_inherit_sk(struct sock *sk,struct sock *newsk, gfp_t flags)
+void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
+		gfp_t flags)
 {
 	struct sk_filter *filter;
-#ifdef CONFIG_SECURITY_NETWORK
-	void *sptr;
-	security_sk_alloc(newsk, sk->sk_family, flags);
-	sptr = newsk->sk_security;
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+	struct ipv6_pinfo *np;
 #endif
+#ifdef CONFIG_SECURITY_NETWORK
+	void *sptr = newsk->sk_security;
+#endif
+
 	/* We cannot call sock_copy here, because obj_size may be the size
 	 * of tcp6_sock if the app is loading an ipv6 socket. */
-	memcpy(newsk, sk, sizeof(struct tcp_sock));
+	if((is_meta_sk(sk) && family == AF_INET6) ||
+			(sk->sk_family == AF_INET6 && family == AF_INET6))
+		memcpy(newsk,sk,sizeof(struct tcp6_sock));
+	else
+		memcpy(newsk,sk,sizeof(struct tcp_sock));
+
 #ifdef CONFIG_SECURITY_NETWORK
-	newsk->sk_security = sptr;
+	if(!is_meta_sk(sk))
+		security_sk_alloc(newsk, family, flags);
+	else
+		newsk->sk_security = sptr;
 	security_sk_clone(sk, newsk);
 #endif
+
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+	if(is_meta_sk(sk) && sk->sk_family != family) {
+		/* Meta sock is not of the same family as the sub sock. */
+		if(sk->sk_family == AF_INET) {
+			newsk->sk_family = AF_INET6;
+			newsk->sk_protocol = IPPROTO_MPTCPSUBv6;
+		} else {
+			newsk->sk_family = AF_INET;
+			newsk->sk_protocol = IPPROTO_MPTCPSUB;
+		}
+		newsk->sk_prot = newsk->sk_prot_creator = tcp_sk(sk)->mpcb->sk_prot_alt;
+	}
+	else
+#endif
+		newsk->sk_prot = newsk->sk_prot_creator = sk->sk_prot;
 
 	/* SANITY */
 	get_net(sock_net(newsk));
@@ -1117,16 +1147,45 @@ void mptcp_inherit_sk(struct sock *sk,struct sock *newsk, gfp_t flags)
 	 * to be taken into account in all callers. -acme
 	 */
 	sk_refcnt_debug_inc(newsk);
-	/* MPTCP: make the mpcb_sk point to the same struct socket
-	 * as the master subsocket. Same for sk_wq
-	 */
-	sk_set_socket(newsk, sk->sk_socket);
-	newsk->sk_wq = sk->sk_wq;
+
+	if(!is_meta_sk(sk)) {
+		/* MPTCP: make the meta sk point to the same struct socket
+		 * as the master subsocket. Same for sk_wq */
+		sk_set_socket(newsk, sk->sk_socket);
+		newsk->sk_wq = sk->sk_wq;
+
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+		if(sk->sk_family == AF_INET) {
+			/* Master is IPv4. Initialize pinet6 for the meta sk. */
+			inet_sk(newsk)->pinet6 = np = &((struct tcp6_sock *)newsk)->inet6;
+			np->hop_limit	= -1;
+			np->mcast_hops	= IPV6_DEFAULT_MCASTHOPS;
+			np->mc_loop	= 1;
+			np->pmtudisc	= IPV6_PMTUDISC_WANT;
+			np->ipv6only	= sock_net(newsk)->ipv6.sysctl.bindv6only;
+		}
+#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
+	} else {
+		/* Sub sk */
+		sk_set_socket(newsk, NULL);
+		newsk->sk_wq = NULL;
+
+		if (sock_flag(newsk, SOCK_TIMESTAMP) ||
+			sock_flag(newsk, SOCK_TIMESTAMPING_RX_SOFTWARE))
+			net_enable_timestamp();
+
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+		if(newsk->sk_family == AF_INET6)
+			inet_sk(newsk)->pinet6 = &((struct tcp6_sock *)newsk)->inet6;
+#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
+	}
+
+
 	if (newsk->sk_prot->sockets_allocated)
 		percpu_counter_inc(newsk->sk_prot->sockets_allocated);
 }
 
-static struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
+struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
 		int family)
 {
 	struct sock *sk;
@@ -1583,10 +1642,10 @@ struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 				     int *errcode)
 {
 	struct sock *meta_sk = ((sk->sk_protocol == IPPROTO_TCP ||
-				 sk->sk_protocol == IPPROTO_MPTCPSUB) &&
-				tcp_sk(sk)->mpcb)?
-		(struct sock*)tcp_sk(sk)->mpcb:
-		sk;
+				 sk->sk_protocol == IPPROTO_MPTCPSUB ||
+				 sk->sk_protocol == IPPROTO_MPTCPSUBv6) &&
+				 tcp_sk(sk)->mpcb) ?
+				 (struct sock*)tcp_sk(sk)->mpcb : sk;
 	struct sk_buff *skb;
 	gfp_t gfp_mask;
 	long timeo;
@@ -2573,10 +2632,10 @@ EXPORT_SYMBOL(proto_unregister);
 void sk_wake_async(struct sock *sk, int how, int band)
 {
 	struct sock *meta_sk = ((sk->sk_protocol == IPPROTO_TCP ||
-				 sk->sk_protocol == IPPROTO_MPTCPSUB) &&
-				tcp_sk(sk)->mpc) ?
-				(struct sock *)tcp_sk(sk)->mpcb :
-				sk;
+				 sk->sk_protocol == IPPROTO_MPTCPSUB ||
+				 sk->sk_protocol == IPPROTO_MPTCPSUBv6) &&
+				 tcp_sk(sk)->mpc) ?
+				 (struct sock *)tcp_sk(sk)->mpcb : sk;
 	if (sock_flag(sk, SOCK_FASYNC))
 		sock_wake_async(meta_sk->sk_socket, how, band);
 }

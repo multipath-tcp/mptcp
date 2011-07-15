@@ -27,6 +27,7 @@
 #include <linux/socket.h>
 #include <linux/tcp_options.h>
 #include <linux/tcp.h>
+#include <linux/ipv6.h>
 
 #include <net/mptcp_pm.h>
 
@@ -91,7 +92,16 @@ extern struct proto mptcpsub_prot;
 				    */
 
 struct multipath_pcb {
+
+	/* The meta socket is used to create the subflow sockets. Thus, if we need
+	 * to support IPv6 socket creation, the meta socket should be a tcp6_sock.
+	 * The function pointers are set specifically. */
+
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+	struct tcp6_sock tp;
+#else
 	struct tcp_sock tp;
+#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 
 	/* list of sockets in this multipath connection */
 	struct tcp_sock *connection_list;
@@ -121,9 +131,19 @@ struct multipath_pcb {
 				 * scheduler
 				 */
 
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+	/* Alternative option pointers. If master sk is IPv4 these are IPv6 and
+	 * vice versa. Used to setup correct function pointers for sub sks of
+	 * different address family than the master socket.
+	 */
+	const struct inet_connection_sock_af_ops *icsk_af_ops_alt;
+	struct proto *sk_prot_alt;
+#endif
+
 #ifdef CONFIG_MPTCP_PM
 	struct list_head collide_tk;
-	uint8_t addr_unsent;	/* num of addrs not yet sent to our peer */
+	uint8_t addr4_unsent;	/* num of IPv4 addrs not yet sent to our peer */
+	uint8_t addr6_unsent;	/* num of IPv6 addrs not yet sent to our peer */
 
 	/* We need to store the set of local addresses, so that we have a stable
 	   view of the available addresses. Playing with the addresses directly
@@ -167,8 +187,11 @@ struct multipath_pcb {
 #define MPTCP_SUB_LEN_ACK_ALIGN		4
 
 #define MPTCP_SUB_ADD_ADDR	3
-#define MPTCP_SUB_LEN_ADD_ADDR	8
-#define MPTCP_SUB_LEN_ADD_ADDR_ALIGN	8
+#define MPTCP_SUB_LEN_ADD_ADDR4	8
+#define MPTCP_SUB_LEN_ADD_ADDR6	20
+#define MPTCP_SUB_LEN_ADD_ADDR4_ALIGN	8
+#define MPTCP_SUB_LEN_ADD_ADDR6_ALIGN	20
+
 
 struct mptcp_option {
 #if defined(__LITTLE_ENDIAN_BITFIELD)
@@ -317,6 +340,28 @@ static inline int PI_TO_FLAG(int pi)
 #else
 #define PI_TO_FLAG(pi) (1 << (pi - 1))
 #endif
+
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+static inline int mptcp_get_path_family(struct multipath_pcb *mpcb, int path_index) {
+
+	int i;
+
+	for (i=0;i<mpcb->pa4_size;i++) {
+		if(mpcb->pa4[i].path_index == path_index)
+			return AF_INET;
+	}
+	for (i=0;i<mpcb->pa6_size;i++) {
+		if(mpcb->pa6[i].path_index == path_index)
+			return AF_INET6;
+	}
+	return -1;
+
+}
+#else
+static inline int mptcp_get_path_family(struct multipath_pcb *mpcb, int path_index) {
+	return AF_INET;
+}
+#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 
 /* For debugging only. Verifies consistency between subsock seqnums
  * and metasock seqnums

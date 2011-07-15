@@ -1425,15 +1425,6 @@ struct sock *tcp_v4_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 	struct tcp_md5sig_key *key;
 #endif
 
-	/* TODO: we can probably use the meta_sk and it would be cleaner
-	 * I however keep this at the moment as it is what was
-	 * historically used. When changing, care is needed for
-	 * the cloning operation (inet_csk_clone()),
-	 * as we do not clone the same thing.
-	 */
-	if (is_meta_sk(sk))
-		sk = ((struct multipath_pcb *)sk)->master_sk;
-
 	if (sk_acceptq_is_full(sk))
 		goto exit_overflow;
 

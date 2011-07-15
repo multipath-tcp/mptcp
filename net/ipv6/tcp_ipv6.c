@@ -76,7 +76,7 @@ static void	tcp_v6_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 				      struct request_sock *req);
 
 int	tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
-static void	__tcp_v6_send_check(struct sk_buff *skb,
+void	__tcp_v6_send_check(struct sk_buff *skb,
 				    struct in6_addr *saddr,
 				    struct in6_addr *daddr);
 
@@ -322,6 +322,10 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 							     inet->inet_sport,
 							     inet->inet_dport);
 
+#ifdef CONFIG_MPTCP
+	tp->snt_isn=tp->write_seq;
+#endif
+
 	err = tcp_connect(sk);
 	if (err)
 		goto late_failure;
@@ -545,7 +549,13 @@ static int tcp_v6_rtx_synack(struct sock *sk, struct request_sock *req,
 			     struct request_values *rvp)
 {
 	TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_RETRANSSEGS);
-	return tcp_v6_send_synack(sk, req, rvp);
+	/* If the mpcb pointer is set, this is a join request.
+	 * If not, this is an initial connection request.
+	 */
+	if (req->mpcb)
+		return mptcp_v6_send_synack((struct sock *)req->mpcb, req);
+	else
+		return tcp_v6_send_synack(sk, req, rvp);
 }
 
 static inline void syn_flood_warning(struct sk_buff *skb)
@@ -932,7 +942,7 @@ static const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops = {
 };
 #endif
 
-static void __tcp_v6_send_check(struct sk_buff *skb,
+void __tcp_v6_send_check(struct sk_buff *skb,
 				struct in6_addr *saddr, struct in6_addr *daddr)
 {
 	struct tcphdr *th = tcp_hdr(skb);
@@ -1124,7 +1134,7 @@ static void tcp_v6_send_reset(struct sock *sk, struct sk_buff *skb)
 	tcp_v6_send_response(skb, seq, ack_seq, 0, 0, key, 1);
 }
 
-static void tcp_v6_send_ack(struct sk_buff *skb, u32 seq, u32 ack, u32 win, u32 ts,
+void tcp_v6_send_ack(struct sk_buff *skb, u32 seq, u32 ack, u32 win, u32 ts,
 			    struct tcp_md5sig_key *key)
 {
 	tcp_v6_send_response(skb, seq, ack, win, ts, key, 0);
@@ -1285,6 +1295,13 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 		tcp_clear_options(&tmp_opt);
 
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
+
+#ifdef CONFIG_MPTCP_PM
+	/*Must be set to NULL before calling openreq init.
+	  tcp_openreq_init() uses this to know whether the request
+	  is join request or a conn request.*/
+	req->mpcb = NULL;
+#endif
 	tcp_openreq_init(req, &tmp_opt, skb);
 
 	treq = inet6_rsk(req);
@@ -1384,7 +1401,7 @@ int tcp_v6_is_v4_mapped(struct sock *sk)
 	return (inet_csk(sk)->icsk_af_ops == &ipv6_mapped);
 }
 
-static struct sock * tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
+struct sock * tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 					  struct request_sock *req,
 					  struct dst_entry *dst)
 {
@@ -1621,6 +1638,9 @@ int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 		goto discard;
 #endif
 
+	if (is_meta_sk(sk))
+		return mptcp_v6_do_rcv(sk, skb);
+
 	if (sk_filter(sk, skb))
 		goto discard;
 
@@ -1729,9 +1749,10 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 {
 	struct tcphdr *th;
 	struct ipv6hdr *hdr;
-	struct sock *sk;
+	struct sock *sk, *meta_sk = NULL;
 	int ret;
 	struct net *net = dev_net(skb->dev);
+	struct multipath_pcb *mpcb = NULL;
 
 	if (skb->pkt_type != PACKET_HOST)
 		goto discard_it;
@@ -1767,6 +1788,7 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 #endif
 	TCP_SKB_CB(skb)->when = 0;
 	TCP_SKB_CB(skb)->flags = ipv6_get_dsfield(hdr);
+	TCP_SKB_CB(skb)->mptcp_flags = 0;
 	TCP_SKB_CB(skb)->sacked = 0;
 
 #ifdef CONFIG_MPTCP
@@ -1789,9 +1811,6 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 		}
 	}
 
-	/* OK, this segment is not related to subflow initiation,
-	 * we can proceed to normal lookup
-	 */
 #endif /* CONFIG_MPTCP */
 
 	sk = __inet6_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
@@ -1825,9 +1844,28 @@ process:
 
 	skb->dev = NULL;
 
-	bh_lock_sock_nested(sk);
+	if (tcp_sk(sk)->mpc) {
+		mpcb = tcp_sk(sk)->mpcb;
+		meta_sk = (struct sock *) (tcp_sk(sk)->mpcb);
+	}
+
+	if (meta_sk)
+		bh_lock_sock_nested(mpcb->master_sk);
+	else
+		bh_lock_sock_nested(sk);
 	ret = 0;
-	if (!sock_owned_by_user(sk)) {
+
+	if (meta_sk) {
+		if (!sock_owned_by_user(mpcb->master_sk)) {
+			if (!tcp_prequeue(sk, skb))
+				ret = tcp_v6_do_rcv(sk, skb);
+		}
+		else if (unlikely(sk_add_backlog(sk, skb))) {
+			bh_unlock_sock(mpcb->master_sk);
+			NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
+			goto discard_and_relse;
+		}
+	} else if (!sock_owned_by_user(sk)) {
 #ifdef CONFIG_NET_DMA
 		struct tcp_sock *tp = tcp_sk(sk);
 		if (!tp->ucopy.dma_chan && tp->ucopy.pinned_list)
@@ -1845,7 +1883,11 @@ process:
 		NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
 		goto discard_and_relse;
 	}
-	bh_unlock_sock(sk);
+
+	if (meta_sk)
+		bh_unlock_sock(mpcb->master_sk);
+	else
+		bh_unlock_sock(sk);
 
 	sock_put(sk);
 	return ret ? -1 : 0;

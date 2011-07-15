@@ -323,9 +323,12 @@ struct tcp_sock {
 					       * can appear during we sleep.
 					       */
 		wait_data_bit_set:1, /* Similar to previous, for wait_data */
-		pf:1; /* Potentially Failed state: when this flag is set, we
+		pf:1, /* Potentially Failed state: when this flag is set, we
 		       * stop using the subflow
 		       */
+		mptcp_add_addr_ack:1;	/* Tell tcp_send_ack to return in case
+		 	 	 	 	 		 * alloc_skb fails.
+								 */
 
 	u32	rcv_wup;	/* rcv_nxt on last window update sent	*/
  	u32	snd_nxt;	/* Next sequence we send		*/

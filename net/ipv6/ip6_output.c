@@ -188,6 +188,7 @@ int ip6_xmit(struct sock *sk, struct sk_buff *skb, struct flowi *fl,
 	int tclass = 0;
 	u32 mtu;
 
+#ifdef CONFIG_MPTCP
 	/*MPTCP hack: We need to distinguish the creation of a TCP
 	  master subsocket, from TCP slave subsockets created by the
 	  kernel. The only way we found to do that was to define a specific
@@ -202,7 +203,8 @@ int ip6_xmit(struct sock *sk, struct sk_buff *skb, struct flowi *fl,
 	  in case we find it to be IPPROTO_MPTCPSUB, and replace it with
 	  IPPROTO_TCP. Of course it would be nice to find a less intrusive
 	  design in the future.*/
-	if (proto==IPPROTO_MPTCPSUB) proto=IPPROTO_TCP;
+	if (proto==IPPROTO_MPTCPSUBv6) proto=IPPROTO_TCP;
+#endif
 
 	if (opt) {
 		unsigned int head_room;

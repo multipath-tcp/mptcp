@@ -52,6 +52,7 @@ struct tcp_out_options {
 	__u32	token;		/* token for mptcp */
 #ifdef CONFIG_MPTCP_PM
 	struct mptcp_loc4 *addr4;/* v4 addresses for MPTCP */
+	struct mptcp_loc6 *addr6;/* v6 addresses for MPTCP */
 	u8	addr_id;	/* address id */
 #endif /* CONFIG_MPTCP_PM */
 };

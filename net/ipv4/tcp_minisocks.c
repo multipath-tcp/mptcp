@@ -741,7 +741,14 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	 * ESTABLISHED STATE. If it will be dropped after
 	 * socket is created, wait for troubles.
 	 */
-	child = inet_csk(sk)->icsk_af_ops->syn_recv_sock(sk, skb, req, NULL);
+#if defined(CONFIG_MPTCP) && (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))
+	if (sk->sk_family != req->rsk_ops->family)
+		/* MPTCP: sub sock address family differs from meta sock */
+		child = tcp_sk(sk)->mpcb->icsk_af_ops_alt->syn_recv_sock(sk, skb, req, NULL);
+	else
+#endif
+		child = inet_csk(sk)->icsk_af_ops->syn_recv_sock(sk, skb, req, NULL);
+
 	if (child == NULL)
 		goto listen_overflow;
 	child_tp = tcp_sk(child);
@@ -786,7 +793,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 			child_tp->mpcb = NULL;
 		}
 	} else { /* subflow establishment */
-		/* The child is a clone of the master socket, we must now reset
+		/* The child is a clone of the meta socket, we must now reset
 		 * some of the fields
 		 */
 		child_tp->mpc = 1;
@@ -796,7 +803,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		child_tp->bw_est.time = 0;
 		child->sk_sndmsg_page = NULL;
 
-		/* Child_tp->mpcb has been closed from the master_sk
+		/* Child_tp->mpcb has been cloned from the master_sk
 		 * We need to increase the master_sk refcount
 		 */
 		sock_hold(child_tp->mpcb->master_sk);
