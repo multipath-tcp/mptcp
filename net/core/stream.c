@@ -31,12 +31,13 @@ void sk_stream_write_space(struct sock *sk)
 	struct socket *sock;
 	struct socket_wq *wq;
 
-	if ((sk->sk_protocol==IPPROTO_TCP || sk->sk_protocol==IPPROTO_MPTCPSUB ||
-			sk->sk_protocol == IPPROTO_MPTCPSUBv6)
-	    && tcp_sk(sk)->mpcb)
-		sock=((struct sock*)tcp_sk(sk)->mpcb)->sk_socket;
+	if ((sk->sk_protocol == IPPROTO_TCP ||
+	     sk->sk_protocol == IPPROTO_MPTCPSUB ||
+	     sk->sk_protocol == IPPROTO_MPTCPSUBv6) &&
+	    tcp_sk(sk)->mpcb)
+		sock = ((struct sock *)tcp_sk(sk)->mpcb)->sk_socket;
 	else
-		sock=sk->sk_socket;
+		sock = sk->sk_socket;
 
 	if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk) && sock) {
 		clear_bit(SOCK_NOSPACE, &sock->flags);

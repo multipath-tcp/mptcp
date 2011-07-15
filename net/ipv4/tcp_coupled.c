@@ -110,7 +110,7 @@ static void mptcp_recalc_alpha(struct sock *sk)
 		else
 			mptcp_debug("%s: estimated rtt == 0, mpcb_token"
 				   ":%d, pi:%d, sub_sk->state:%d\n",
-				   __FUNCTION__, loc_token(mpcb),
+				   __func__, loc_token(mpcb),
 				   sub_tp->path_index, sub_sk->sk_state);
 
 		/* We need to look for the path, that provides the max-value.
@@ -144,7 +144,7 @@ static void mptcp_recalc_alpha(struct sock *sk)
 		else
 			mptcp_debug("%s: estimated rtt == 0, mpcb_token"
 				   ":%d, pi:%d, sub_sk->state:%d\n",
-				   __FUNCTION__, loc_token(mpcb),
+				   __func__, loc_token(mpcb),
 				   sub_tp->path_index, sub_sk->sk_state);
 
 		sum_denominator += div_u64(
@@ -154,10 +154,10 @@ static void mptcp_recalc_alpha(struct sock *sk)
 	sum_denominator *= sum_denominator;
 	if (unlikely(!sum_denominator)) {
 		mptcp_debug("%s: sum_denominator == 0, cnt_established:%d\n",
-				__FUNCTION__, mpcb->cnt_established);
+				__func__, mpcb->cnt_established);
 		mptcp_for_each_sk(mpcb, sub_sk, sub_tp)
 			mptcp_debug("%s: pi:%d, state:%d\n, rtt:%u, cwnd: %u",
-					__FUNCTION__, sub_tp->path_index,
+					__func__, sub_tp->path_index,
 					sub_sk->sk_state, sub_tp->srtt,
 					sub_tp->snd_cwnd);
 	}

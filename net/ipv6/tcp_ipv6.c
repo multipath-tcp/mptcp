@@ -323,7 +323,7 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 							     inet->inet_dport);
 
 #ifdef CONFIG_MPTCP
-	tp->snt_isn=tp->write_seq;
+	tp->snt_isn = tp->write_seq;
 #endif
 
 	err = tcp_connect(sk);
@@ -1297,9 +1297,9 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 
 #ifdef CONFIG_MPTCP_PM
-	/*Must be set to NULL before calling openreq init.
-	  tcp_openreq_init() uses this to know whether the request
-	  is join request or a conn request.*/
+	/* Must be set to NULL before calling openreq init.
+	 * tcp_openreq_init() uses this to know whether the request
+	 * is join request or a conn request. */
 	req->mpcb = NULL;
 #endif
 	tcp_openreq_init(req, &tmp_opt, skb);
@@ -1401,7 +1401,7 @@ int tcp_v6_is_v4_mapped(struct sock *sk)
 	return (inet_csk(sk)->icsk_af_ops == &ipv6_mapped);
 }
 
-struct sock * tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
+struct sock *tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 					  struct request_sock *req,
 					  struct dst_entry *dst)
 {
@@ -1859,8 +1859,7 @@ process:
 		if (!sock_owned_by_user(mpcb->master_sk)) {
 			if (!tcp_prequeue(sk, skb))
 				ret = tcp_v6_do_rcv(sk, skb);
-		}
-		else if (unlikely(sk_add_backlog(sk, skb))) {
+		} else if (unlikely(sk_add_backlog(sk, skb))) {
 			bh_unlock_sock(mpcb->master_sk);
 			NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
 			goto discard_and_relse;

@@ -93,8 +93,9 @@ extern struct proto mptcpsub_prot;
 
 struct multipath_pcb {
 
-	/* The meta socket is used to create the subflow sockets. Thus, if we need
-	 * to support IPv6 socket creation, the meta socket should be a tcp6_sock.
+	/* The meta socket is used to create the subflow sockets. Thus, if we
+	 * need to support IPv6 socket creation, the meta socket should be a
+	 * tcp6_sock.
 	 * The function pointers are set specifically. */
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
@@ -342,23 +343,26 @@ static inline int PI_TO_FLAG(int pi)
 #endif
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-static inline int mptcp_get_path_family(struct multipath_pcb *mpcb, int path_index) {
+static inline int mptcp_get_path_family(struct multipath_pcb *mpcb,
+					int path_index)
+{
 
 	int i;
 
-	for (i=0;i<mpcb->pa4_size;i++) {
-		if(mpcb->pa4[i].path_index == path_index)
+	for (i = 0; i < mpcb->pa4_size; i++) {
+		if (mpcb->pa4[i].path_index == path_index)
 			return AF_INET;
 	}
-	for (i=0;i<mpcb->pa6_size;i++) {
-		if(mpcb->pa6[i].path_index == path_index)
+	for (i = 0; i < mpcb->pa6_size; i++) {
+		if (mpcb->pa6[i].path_index == path_index)
 			return AF_INET6;
 	}
 	return -1;
-
 }
 #else
-static inline int mptcp_get_path_family(struct multipath_pcb *mpcb, int path_index) {
+static inline int mptcp_get_path_family(struct multipath_pcb *mpcb,
+					int path_index)
+{
 	return AF_INET;
 }
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
@@ -465,7 +469,7 @@ void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb);
 struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject);
 void mpcb_release(struct multipath_pcb *mpcb);
 void mptcp_clean_rtx_queue(struct sock *sk);
-void mptcp_send_fin(struct sock *mpcb_sk);
+void mptcp_send_fin(struct sock *meta_sk);
 void mptcp_parse_options(uint8_t *ptr, int opsize,
 		struct tcp_options_received *opt_rx,
 		struct multipath_options *mopt,

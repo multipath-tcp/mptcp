@@ -545,7 +545,7 @@ ok:
 	tb  = inet_csk(sk)->icsk_bind_hash;
 	spin_lock_bh(&head->lock);
 	if (sk->sk_protocol == IPPROTO_MPTCPSUB ||
-		sk->sk_protocol==IPPROTO_MPTCPSUBv6 ||
+	    sk->sk_protocol == IPPROTO_MPTCPSUBv6 ||
 	    (sk_head(&tb->owners) == sk && !sk->sk_bind_node.next)) {
 		hash(sk, NULL);
 		spin_unlock_bh(&head->lock);

@@ -569,8 +569,8 @@ struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
 		int family);
 
 /* Defined in net/core/sock.c */
-void mptcp_inherit_sk(struct sock *sk, struct sock *newsk,
-			int family, gfp_t flags);
+void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
+			gfp_t flags);
 #endif
 
 struct sock *inet_csk_clone(struct sock *sk, const struct request_sock *req,
@@ -579,11 +579,12 @@ struct sock *inet_csk_clone(struct sock *sk, const struct request_sock *req,
 #if defined(CONFIG_MPTCP) && (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))
 	struct sock *newsk;
 
-	if(is_meta_sk(sk) && sk->sk_family != req->rsk_ops->family) {
+	if (is_meta_sk(sk) && sk->sk_family != req->rsk_ops->family) {
 		struct multipath_pcb *mpcb = (struct multipath_pcb *) sk;
-		newsk = sk_prot_alloc(mpcb->sk_prot_alt, priority, req->rsk_ops->family);
+		newsk = sk_prot_alloc(mpcb->sk_prot_alt, priority,
+					req->rsk_ops->family);
 
-		if(newsk != NULL) {
+		if (newsk != NULL) {
 			mptcp_inherit_sk(sk, newsk,
 					req->rsk_ops->family, priority);
 			inet_csk(newsk)->icsk_af_ops = mpcb->icsk_af_ops_alt;

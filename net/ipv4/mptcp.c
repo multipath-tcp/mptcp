@@ -307,11 +307,11 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 		family = mptcp_get_path_family(mpcb, newpi);
 
 		/* A new socket must be created */
-		if(family == AF_INET)
+		if (family == AF_INET)
 			ret = sock_create_kern(family,
 					  SOCK_STREAM,
 					  IPPROTO_MPTCPSUB, &sock);
-		else if(family == AF_INET6) /* IPv6 */
+		else if (family == AF_INET6) /* IPv6 */
 			ret = sock_create_kern(family,
 					  SOCK_STREAM,
 					  IPPROTO_MPTCPSUBv6, &sock);
@@ -319,7 +319,7 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 			BUG();
 		if (ret < 0) {
 			printk(KERN_ERR "%s: sock_create failed\n",
-					__FUNCTION__);
+					__func__);
 			return ret;
 		}
 		tp = tcp_sk(sock->sk);
@@ -358,9 +358,9 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 			remulid_in6.sin6_port = inet_sk(meta_sk)->inet_dport;
 
 			ipv6_addr_copy(&loculid_in6.sin6_addr,
-			       mptcp_get_loc_addr6(mpcb,newpi));
+					mptcp_get_loc_addr6(mpcb, newpi));
 			ipv6_addr_copy(&remulid_in6.sin6_addr,
-			       mptcp_get_rem_addr6(mpcb,newpi));
+					mptcp_get_rem_addr6(mpcb, newpi));
 
 			loculid = (struct sockaddr *) &loculid_in6;
 			remulid = (struct sockaddr *) &remulid_in6;
@@ -390,28 +390,30 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 
 		if (meta_sk->sk_family == AF_INET)
 			mptcp_debug("%s: token %d pi %d src_addr:"
-				   "%pI4:%d dst_addr:%pI4:%d \n", __FUNCTION__,
-				   loc_token(mpcb), newpi, &loculid_in.sin_addr,
-				   ntohs(loculid_in.sin_port), &remulid_in.sin_addr,
-				   ntohs(remulid_in.sin_port));
+				"%pI4:%d dst_addr:%pI4:%d \n", __func__,
+				loc_token(mpcb), newpi,
+				&loculid_in.sin_addr,
+				ntohs(loculid_in.sin_port),
+				&remulid_in.sin_addr,
+				ntohs(remulid_in.sin_port));
 		else
 			mptcp_debug("%s: token %d pi %d src_addr:"
-				    "%pI6:%d dst_addr:%pI6:%d \n", __FUNCTION__,
-				    loc_token(mpcb), newpi,
-				    &loculid_in6.sin6_addr,
-				    ntohs(loculid_in6.sin6_port),
-				    &remulid_in6.sin6_addr,
-				    ntohs(remulid_in6.sin6_port));
+				"%pI6:%d dst_addr:%pI6:%d \n", __func__,
+				loc_token(mpcb), newpi,
+				&loculid_in6.sin6_addr,
+				ntohs(loculid_in6.sin6_port),
+				&remulid_in6.sin6_addr,
+				ntohs(remulid_in6.sin6_port));
 	}
 
 	return 0;
 
 fail_bind:
 	printk(KERN_ERR "%s: MPTCP subsocket bind() failed, error %d\n",
-			__FUNCTION__, ret);
+			__func__, ret);
 fail_connect:
 	printk(KERN_ERR "%s: MPTCP subsocket connect() failed, error %d\n",
-			__FUNCTION__, ret);
+			__func__, ret);
 
 	/* sock_release will indirectly call mptcp_del_sock() */
 	sock_release(sock);
@@ -464,11 +466,10 @@ struct multipath_pcb *mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
 	BUG_ON(mpcb->connection_list);
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-	if(AF_INET_FAMILY(master_sk->sk_family)) {
+	if (AF_INET_FAMILY(master_sk->sk_family)) {
 		mpcb->icsk_af_ops_alt = &ipv6_specific;
 		mpcb->sk_prot_alt = &mptcpsubv6_prot;
-	}
-	else {
+	} else {
 		mpcb->icsk_af_ops_alt = &ipv4_specific;
 		mpcb->sk_prot_alt = &mptcpsub_prot;
 	}
@@ -541,7 +542,7 @@ void mpcb_release(struct multipath_pcb *mpcb)
 #ifdef CONFIG_MPTCP_PM
 	mptcp_pm_release(mpcb);
 #endif
-	mptcp_debug("%s: Will free mpcb\n", __FUNCTION__);
+	mptcp_debug("%s: Will free mpcb\n", __func__);
 	security_sk_free((struct sock *)mpcb);
 	percpu_counter_dec(meta_sk->sk_prot->orphan_count);
 
@@ -549,7 +550,7 @@ void mpcb_release(struct multipath_pcb *mpcb)
 }
 
 static void mptcp_destroy_mpcb(struct multipath_pcb *mpcb) {
-	mptcp_debug("%s: Destroying mpcb with token:%d\n", __FUNCTION__,
+	mptcp_debug("%s: Destroying mpcb with token:%d\n", __func__,
 			loc_token(mpcb));
 
 	/* Detach the mpcb from the token hashtable */
@@ -645,18 +646,19 @@ void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 			mptcp_data_ready(sk);
 	}
 
-	if(sk->sk_family == AF_INET)
-		mptcp_debug("%s: token %d pi %d, src_addr:%pI4:%d dst_addr:%pI4:%d,"
-				" cnt_subflows now %d\n", __FUNCTION__ ,
+	if (sk->sk_family == AF_INET)
+		mptcp_debug("%s: token %d pi %d, src_addr:%pI4:%d dst_addr:"
+				"%pI4:%d, cnt_subflows now %d\n", __func__ ,
 				loc_token(mpcb),
-				tp->path_index, &((struct inet_sock *) tp)->inet_saddr,
+				tp->path_index,
+				&((struct inet_sock *) tp)->inet_saddr,
 				ntohs(((struct inet_sock *) tp)->inet_sport),
 				&((struct inet_sock *) tp)->inet_daddr,
 				ntohs(((struct inet_sock *) tp)->inet_dport),
 				mpcb->cnt_subflows);
 	else
-		mptcp_debug("%s: token %d pi %d, src_addr:%pI6:%d dst_addr:%pI6:%d,"
-				" cnt_subflows now %d\n", __FUNCTION__ ,
+		mptcp_debug("%s: token %d pi %d, src_addr:%pI6:%d dst_addr:"
+				"%pI6:%d, cnt_subflows now %d\n", __func__ ,
 				loc_token(mpcb),
 				tp->path_index, &inet6_sk(sk)->saddr,
 				ntohs(((struct inet_sock *) tp)->inet_sport),
@@ -713,7 +715,7 @@ void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 	switch (sk->sk_family) {
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	case AF_INET6:
-		if(!ipv6_addr_loopback(&(inet6_sk(sk))->saddr) &&
+		if (!ipv6_addr_loopback(&(inet6_sk(sk))->saddr) &&
 				!ipv6_addr_loopback(&(inet6_sk(sk))->daddr)) {
 			mptcp_set_addresses(mpcb);
 		}
@@ -812,7 +814,7 @@ int mptcp_sendmsg(struct kiocb *iocb, struct sock *master_sk,
 	copied = subtcp_sendmsg(NULL, meta_sk, msg, 0);
 	if (copied < 0) {
 		printk(KERN_ERR "%s: returning error "
-		"to app:%d\n", __FUNCTION__, (int) copied);
+		"to app:%d\n", __func__, (int) copied);
 		goto out;
 	}
 
@@ -967,7 +969,7 @@ int mptcp_check_rcv_queue(struct multipath_pcb *mpcb, struct msghdr *msg,
 
 			if (before(*data_seq, TCP_SKB_CB(skb)->data_seq)) {
 				printk(KERN_ERR "%s bug: copied %X "
-				"dataseq %X\n", __FUNCTION__, *data_seq,
+				"dataseq %X\n", __func__, *data_seq,
 						TCP_SKB_CB(skb)->data_seq);
 				BUG();
 			}
@@ -979,11 +981,10 @@ int mptcp_check_rcv_queue(struct multipath_pcb *mpcb, struct msghdr *msg,
 
 			if (skb->len + dfin != TCP_SKB_CB(skb)->end_data_seq
 					- TCP_SKB_CB(skb)->data_seq) {
-				printk(
-						KERN_ERR "skb->len:%d, should be %d\n",
+				printk(KERN_ERR "skb->len:%d, should be %d\n",
 						skb->len,
 						TCP_SKB_CB(skb)->end_data_seq
-								- TCP_SKB_CB(skb)->data_seq);
+						- TCP_SKB_CB(skb)->data_seq);
 				BUG();
 			}
 			WARN_ON(!(flags & MSG_PEEK));
@@ -1029,7 +1030,7 @@ found_ok_skb:
 		} else if (!(flags & MSG_PEEK) && *len != 0) {
 			printk(KERN_ERR
 			"%s bug: copied %#x "
-			"dataseq %#x, *len %d, used:%d\n", __FUNCTION__,
+			"dataseq %#x, *len %d, used:%d\n", __func__,
 			       *data_seq, TCP_SKB_CB(skb)->data_seq,
 			       (int) *len, (int) used);
 			BUG();
@@ -1379,7 +1380,7 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 	case MPTCP_SUB_CAPABLE:
 		if (opsize != MPTCP_SUB_LEN_CAPABLE) {
 			mptcp_debug("%s: mp_capable: bad option size %d\n",
-					__FUNCTION__, opsize);
+					__func__, opsize);
 			break;
 		}
 
@@ -1394,7 +1395,7 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 	case MPTCP_SUB_JOIN:
 		if (opsize != MPTCP_SUB_LEN_JOIN) {
 			mptcp_debug("%s: mp_join: bad option size %d\n",
-					__FUNCTION__, opsize);
+					__func__, opsize);
 			break;
 		}
 
@@ -1446,7 +1447,7 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		if (opsize != MPTCP_SUB_LEN_ADD_ADDR4) {
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 			mptcp_debug("%s: mp_add_addr: bad option size %d\n",
-					__FUNCTION__, opsize);
+					__func__, opsize);
 			break;
 		}
 
@@ -1463,7 +1464,7 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		break;
 	}
 	default:
-		mptcp_debug("%s: Received unkown subtype: %d\n", __FUNCTION__,
+		mptcp_debug("%s: Received unkown subtype: %d\n", __func__,
 				mp_opt->sub);
 		break;
 	}
@@ -1788,7 +1789,7 @@ void mptcp_close(struct sock *master_sk, long timeout) {
 	int data_was_unread = 0;
 	int state;
 
-	mptcp_debug("%s: Close of meta_sk\n",__FUNCTION__);
+	mptcp_debug("%s: Close of meta_sk\n", __func__);
 
 	lock_sock(master_sk);
 	mpcb = (tcp_sk(master_sk)->mpc) ? tcp_sk(master_sk)->mpcb : NULL;

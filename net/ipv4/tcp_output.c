@@ -598,7 +598,7 @@ void tcp_options_write(__be32 * ptr, struct tcp_sock *tp,
 		__u8 *p8 = (__u8 *)ptr;
 
 		*p8++ = TCPOPT_MPTCP;
-		if(opts->addr4) {
+		if (opts->addr4) {
 			*p8++ = MPTCP_SUB_LEN_ADD_ADDR4;
 			mpadd = (struct mp_add_addr *) p8;
 
@@ -608,8 +608,7 @@ void tcp_options_write(__be32 * ptr, struct tcp_sock *tp,
 			p8 += 2;
 			*((__be32 *) p8) = opts->addr4->addr.s_addr;
 			p8 += sizeof(struct in_addr);
-		}
-		else if(opts->addr6) {
+		} else if (opts->addr6) {
 			*p8++ = MPTCP_SUB_LEN_ADD_ADDR6;
 			mpadd = (struct mp_add_addr *) p8;
 
@@ -617,11 +616,12 @@ void tcp_options_write(__be32 * ptr, struct tcp_sock *tp,
 			mpadd->ipver = 6;
 			mpadd->addr_id = opts->addr6->id;
 			p8 += 2;
-			memcpy((char *)p8,&(opts->addr6->addr), sizeof(struct in6_addr));
+			memcpy((char *)p8, &(opts->addr6->addr),
+					sizeof(struct in6_addr));
 			p8 += sizeof(struct in6_addr);
-		}
-		else
+		} else {
 			BUG();
+		}
 
 		ptr = (__be32 *) p8;
 	}
@@ -971,9 +971,9 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			if (skb)
 				mpcb->addr4_unsent--;
 			size += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN;
-		}
-		else if(unlikely(mpcb->addr6_unsent) && MAX_TCP_OPTION_SPACE - size >=
-						MPTCP_SUB_LEN_ADD_ADDR6_ALIGN) {
+		} else if (unlikely(mpcb->addr6_unsent) &&
+			 MAX_TCP_OPTION_SPACE - size >=
+			 MPTCP_SUB_LEN_ADD_ADDR6_ALIGN) {
 			opts->options |= OPTION_ADD_ADDR;
 			opts->addr6 = mpcb->addr6 + mpcb->num_addr6 -
 					mpcb->addr6_unsent;
@@ -981,11 +981,12 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			if (skb)
 				mpcb->addr6_unsent--;
 			size += MPTCP_SUB_LEN_ADD_ADDR6_ALIGN;
-		}
-		else if((unlikely(mpcb->addr6_unsent) && MAX_TCP_OPTION_SPACE - size <=
-				MPTCP_SUB_LEN_ADD_ADDR6_ALIGN) ||
-				(unlikely(mpcb->addr4_unsent) && MAX_TCP_OPTION_SPACE - size >=
-				MPTCP_SUB_LEN_ADD_ADDR4_ALIGN)) {
+		} else if ((unlikely(mpcb->addr6_unsent) &&
+			    MAX_TCP_OPTION_SPACE - size <=
+			    MPTCP_SUB_LEN_ADD_ADDR6_ALIGN) ||
+			    (unlikely(mpcb->addr4_unsent) &&
+			     MAX_TCP_OPTION_SPACE - size >=
+			     MPTCP_SUB_LEN_ADD_ADDR4_ALIGN)) {
 			mptcp_debug("no space for add addr. unsent IPv4: %d, IPv6: %d\n",
 					mpcb->addr4_unsent, mpcb->addr6_unsent);
 			tcp_sk(sk)->mptcp_add_addr_ack = 1;
@@ -1787,7 +1788,7 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	int nlen = skb->len - len;
 	u8 flags;
 
-	mptcp_debug("Entering %s\n", __FUNCTION__);
+	mptcp_debug("Entering %s\n", __func__);
 
 	BUG_ON(len == 0);	/* This would create an empty segment */
 
@@ -2084,7 +2085,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		((1 << meta_sk->sk_state) &
 				~(TCPF_FIN_WAIT1 | TCPF_LAST_ACK))) {
 		printk(KERN_ERR "meta-sk in write xmit, meta-sk:%d,"
-		       "state of mpcb_sk:%d, of subsk:%d\n",
+		       "state of meta_sk:%d, of subsk:%d\n",
 		       is_meta_sk(sk), ((struct sock *)tp->mpcb)->sk_state,
 		       sk->sk_state);
 		BUG();
@@ -3415,10 +3416,10 @@ void tcp_send_ack(struct sock *sk)
 	buff = alloc_skb(MAX_TCP_HEADER, GFP_ATOMIC);
 	if (buff == NULL) {
 
-		/* MPTCP: We don't send a delayed ack if we are sending a mptcp ADD_ADDR ack
-		 * to avoid sending multiple ADD_ADDR acks for the same address.
-		 */
-		if(tcp_sk(sk)->mptcp_add_addr_ack == 1)
+		/* MPTCP: We don't send a delayed ack if we are sending a mptcp
+		 * ADD_ADDR ack to avoid sending multiple ADD_ADDR acks for the
+		 * same address. */
+		if (tcp_sk(sk)->mptcp_add_addr_ack == 1)
 			return;
 
 		inet_csk_schedule_ack(sk);

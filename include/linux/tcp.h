@@ -327,8 +327,7 @@ struct tcp_sock {
 		       * stop using the subflow
 		       */
 		mptcp_add_addr_ack:1;	/* Tell tcp_send_ack to return in case
-		 	 	 	 	 		 * alloc_skb fails.
-								 */
+					 * alloc_skb fails. */
 
 	u32	rcv_wup;	/* rcv_nxt on last window update sent	*/
  	u32	snd_nxt;	/* Next sequence we send		*/

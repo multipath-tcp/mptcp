@@ -146,9 +146,9 @@ void inet_sock_destruct(struct sock *sk)
 	}
 
 	if ((sk->sk_protocol == IPPROTO_TCP ||
-	    sk->sk_protocol == IPPROTO_MPTCPSUB ||
-	    sk->sk_protocol==IPPROTO_MPTCPSUBv6)
-	    && tcp_sk(sk)->mpcb) {
+	     sk->sk_protocol == IPPROTO_MPTCPSUB ||
+	     sk->sk_protocol == IPPROTO_MPTCPSUBv6) &&
+	    tcp_sk(sk)->mpcb) {
 		if (is_master_tp(tcp_sk(sk))) {
 			if (sk != tcp_sk(sk)->mpcb->master_sk) {
 				printk(KERN_ERR "sk %p, master_sk %p\n",

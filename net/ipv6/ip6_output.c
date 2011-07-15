@@ -189,29 +189,29 @@ int ip6_xmit(struct sock *sk, struct sk_buff *skb, struct flowi *fl,
 	u32 mtu;
 
 #ifdef CONFIG_MPTCP
-	/*MPTCP hack: We need to distinguish the creation of a TCP
-	  master subsocket, from TCP slave subsockets created by the
-	  kernel. The only way we found to do that was to define a specific
-	  "MPTCPSUB" protocol, so that some of the TCP functions (in particular
-	  socket creation can be made MPTCP slave specific, while the majority
-	  of functions are taken from TCP. But The protocol cannot be used
-	  without being registered at the IPv6 layer, so we needed to define
-	  a new unused protocol number for MPTCPSUB: IPPROTO_MPTCPSUB. This
-	  protocol number MUST NOT be used to send packets to the network,
-	  and is only used inside the kernel, as a workaround to the socket
-	  system. The consequence is that we need to fix here the proto field
-	  in case we find it to be IPPROTO_MPTCPSUB, and replace it with
-	  IPPROTO_TCP. Of course it would be nice to find a less intrusive
-	  design in the future.*/
-	if (proto==IPPROTO_MPTCPSUBv6) proto=IPPROTO_TCP;
+	/* MPTCP hack: We need to distinguish the creation of a TCP
+	 * master subsocket, from TCP slave subsockets created by the
+	 * kernel. The only way we found to do that was to define a specific
+	 * "MPTCPSUB" protocol, so that some of the TCP functions (in particular
+	 * socket creation can be made MPTCP slave specific, while the majority
+	 * of functions are taken from TCP. But The protocol cannot be used
+	 * without being registered at the IPv6 layer, so we needed to define
+	 * a new unused protocol number for MPTCPSUB: IPPROTO_MPTCPSUB. This
+	 * protocol number MUST NOT be used to send packets to the network,
+	 * and is only used inside the kernel, as a workaround to the socket
+	 * system. The consequence is that we need to fix here the proto field
+	 * in case we find it to be IPPROTO_MPTCPSUB, and replace it with
+	 * IPPROTO_TCP. Of course it would be nice to find a less intrusive
+	 * design in the future. */
+	if (proto == IPPROTO_MPTCPSUBv6)
+		proto = IPPROTO_TCP;
 #endif
 
 	if (opt) {
 		unsigned int head_room;
 
 		/* First: exthdrs may take lots of space (~8K for now)
-		   MAX_HEADER is not enough.
-		 */
+		 * MAX_HEADER is not enough. */
 		head_room = opt->opt_nflen + opt->opt_flen;
 		seg_len += head_room;
 		head_room += sizeof(struct ipv6hdr) + LL_RESERVED_SPACE(dst->dev);

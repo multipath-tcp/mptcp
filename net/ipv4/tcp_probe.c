@@ -133,8 +133,8 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_sock *inet = inet_sk(sk);
-	struct sock *mpcb_sk = tp->mpcb ? (struct sock *)tp->mpcb : sk;
-	struct tcp_sock *mpcb_tp = tcp_sk(mpcb_sk);
+	struct sock *meta_sk = tp->mpcb ? (struct sock *)tp->mpcb : sk;
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
 	if (log_interval) {
 		if (!tp->last_rcv_probe)
@@ -168,12 +168,12 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->snd_nxt = tp->snd_nxt;
 			p->snd_una = tp->snd_una;
 			p->snd_cwnd = tp->snd_cwnd;
-			p->snd_wnd = mpcb_tp->snd_wnd;
+			p->snd_wnd = meta_tp->snd_wnd;
 			p->ssthresh = tcp_current_ssthresh(sk);
 			p->srtt = tp->srtt >> 3;
-			p->rcv_nxt = mpcb_tp->rcv_nxt;
-			p->copied_seq = mpcb_tp->copied_seq;
-			p->rcv_wnd = mpcb_tp->rcv_wnd;
+			p->rcv_nxt = meta_tp->rcv_nxt;
+			p->copied_seq = meta_tp->copied_seq;
+			p->rcv_wnd = meta_tp->rcv_wnd;
 			p->rcv_buf = sk->sk_rcvbuf;
 			p->rcv_ssthresh = tp->rcv_ssthresh;
 			p->window_clamp = tp->window_clamp;
@@ -182,9 +182,9 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->rtt_est = tp->rcv_rtt_est.rtt;
 			p->in_flight = tp->packets_out;
 			p->mss_cache = tp->mss_cache;
-			p->snd_buf = mpcb_sk->sk_sndbuf;
-			p->wmem_queued = mpcb_sk->sk_wmem_queued;
-			p->rmem_alloc = atomic_read(&mpcb_sk->sk_rmem_alloc);
+			p->snd_buf = meta_sk->sk_sndbuf;
+			p->wmem_queued = meta_sk->sk_wmem_queued;
+			p->rmem_alloc = atomic_read(&meta_sk->sk_rmem_alloc);
 			p->rmem_alloc_sub = atomic_read(&sk->sk_rmem_alloc);
 			p->dsn = TCP_SKB_CB(skb)->data_seq;
 			p->mptcp_snduna = tp->mpcb ?

@@ -385,12 +385,12 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	struct tcp_sock *master_tp = tcp_sk(master_sk);
 #ifdef CONFIG_MPTCP
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(master_tp);
-	struct sock *mpcb_sk = (master_tp->mpc) ? (struct sock *)mpcb:
+	struct sock *meta_sk = (master_tp->mpc) ? (struct sock *)mpcb :
 		master_sk;
-	struct tcp_sock *mpcb_tp = tcp_sk(mpcb_sk);
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 #else
-	struct sock *mpcb_sk = master_sk;
-	struct tcp_sock *mpcb_tp = master_tp;
+	struct sock *meta_sk = master_sk;
+	struct tcp_sock *meta_tp = master_tp;
 #endif
 
 	sock_poll_wait(file, sk_sleep(master_sk), wait);
@@ -432,43 +432,43 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	 * NOTE. Check for TCP_CLOSE is added. The goal is to prevent
 	 * blocking on fresh not-connected or disconnected socket. --ANK
 	 */
-	if (mpcb_sk->sk_shutdown == SHUTDOWN_MASK ||
-	    mpcb_sk->sk_state == TCP_CLOSE)
+	if (meta_sk->sk_shutdown == SHUTDOWN_MASK ||
+	    meta_sk->sk_state == TCP_CLOSE)
 		mask |= POLLHUP;
-	if (mpcb_sk->sk_shutdown & RCV_SHUTDOWN)
+	if (meta_sk->sk_shutdown & RCV_SHUTDOWN)
 		mask |= POLLIN | POLLRDNORM | POLLRDHUP;
 
 	/* Connected? */
 	if ((1 << master_sk->sk_state) & ~(TCPF_SYN_SENT | TCPF_SYN_RECV)) {
 		int target = sock_rcvlowat(master_sk, 0, INT_MAX);
 
-		if (mpcb_tp->urg_seq == mpcb_tp->copied_seq &&
+		if (meta_tp->urg_seq == meta_tp->copied_seq &&
 		    !sock_flag(master_sk, SOCK_URGINLINE) &&
-		    mpcb_tp->urg_data)
+		    meta_tp->urg_data)
 			target++;
 
 		/* Potential race condition. If read of tp below will
 		 * escape above sk->sk_state, we can be illegally awaken
 		 * in SYN_* states. */
-		if (mpcb_tp->rcv_nxt - mpcb_tp->copied_seq >= target)
+		if (meta_tp->rcv_nxt - meta_tp->copied_seq >= target)
 			mask |= POLLIN | POLLRDNORM;
 
-		if (!(mpcb_sk->sk_shutdown & SEND_SHUTDOWN)) {
-			if (sk_stream_wspace(mpcb_sk)
-			    >= sk_stream_min_wspace(mpcb_sk))
+		if (!(meta_sk->sk_shutdown & SEND_SHUTDOWN)) {
+			if (sk_stream_wspace(meta_sk)
+			    >= sk_stream_min_wspace(meta_sk))
 				mask |= POLLOUT | POLLWRNORM;
 			else {  /* send SIGIO later */
 				set_bit(SOCK_ASYNC_NOSPACE,
-					&mpcb_sk->sk_socket->flags);
+					&meta_sk->sk_socket->flags);
 				set_bit(SOCK_NOSPACE,
-					&mpcb_sk->sk_socket->flags);
+					&meta_sk->sk_socket->flags);
 
 				/* Race breaker. If space is freed after
 				 * wspace test but before the flags are set,
 				 * IO signal will be lost.
 				 */
-				if (sk_stream_wspace(mpcb_sk) >=
-				    sk_stream_min_wspace(mpcb_sk))
+				if (sk_stream_wspace(meta_sk) >=
+				    sk_stream_min_wspace(meta_sk))
 					mask |= POLLOUT | POLLWRNORM;
 			}
 		} else {
@@ -476,7 +476,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 			mptcp_debug(KERN_ERR "mpcb is in shutdown state\n");
 		}
 
-		if (mpcb_tp->urg_data & TCP_URG_VALID)
+		if (meta_tp->urg_data & TCP_URG_VALID)
 			mask |= POLLPRI;
 	}
 	/* This barrier is coupled with smp_wmb() in tcp_reset() */
@@ -485,7 +485,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	/* The subsocks are responsible for transferring their errors
 	 * here, so that they become visible to the mpcb.
 	 */
-	if (mpcb_sk->sk_err)
+	if (meta_sk->sk_err)
 		mask |= POLLERR;
 
 	return mask;
@@ -656,7 +656,7 @@ ssize_t tcp_splice_read(struct socket *sock, loff_t *ppos,
 	int ret;
 
 #ifdef CONFIG_MPTCP
-	printk(KERN_ERR "%s not supported yet\n",__FUNCTION__);
+	printk(KERN_ERR "%s not supported yet\n", __func__);
 	BUG();
 #endif
 	sock_rps_record_flow(sk);
@@ -806,8 +806,7 @@ static ssize_t do_tcp_sendpages(struct sock *sk, struct page **pages, int poffse
 	long timeo = sock_sndtimeo(sk, flags & MSG_DONTWAIT);
 
 	if (tp->mpc) {
-		printk(KERN_ERR "%s: function not yet supported\n",
-		       __FUNCTION__);
+		printk(KERN_ERR "%s: function not yet supported\n", __func__);
 		BUG();
 	}
 
@@ -1033,8 +1032,8 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 #endif
 
 
-	PDEBUG_SEND("%s:line %d, size %d,iovlen %d\n",__FUNCTION__,
-	       __LINE__,(int)size,(int)iovlen);
+	PDEBUG_SEND("%s:line %d, size %d,iovlen %d\n", __func__,
+	       __LINE__, (int) size, (int) iovlen);
 	while (--iovlen >= 0) {
 		size_t seglen = iov->iov_len;
 		unsigned char __user *from = iov->iov_base;
@@ -1112,10 +1111,10 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 				/* We have some space in skb head. Superb! */
 				if (copy > skb_tailroom(skb))
 					copy = skb_tailroom(skb);
-				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
+				PDEBUG_SEND("%s:line %d\n", __func__, __LINE__);
 				if ((err = skb_add_data(skb, from, copy)) != 0)
 					goto do_fault;
-				PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
+				PDEBUG_SEND("%s:line %d\n", __func__, __LINE__);
 			} else {
 				int merge = 0;
 				int i = skb_shinfo(skb)->nr_frags;
@@ -1200,17 +1199,17 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 				TCP_SKB_CB(skb)->end_data_seq += copy;
 			}
 #endif
-			PDEBUG_SEND("%s: line %d\n",__FUNCTION__, __LINE__);
+			PDEBUG_SEND("%s: line %d\n", __func__, __LINE__);
 			from += copy;
 			copied += copy;
 			if ((seglen -= copy) == 0 && iovlen == 0)
 				goto out;
-			PDEBUG_SEND("%s:line %d\n",__FUNCTION__, __LINE__);
+			PDEBUG_SEND("%s:line %d\n", __func__, __LINE__);
 
 			if (skb->len < max || (flags & MSG_OOB))
 				continue;
 
-			PDEBUG_SEND("%s:line %d\n",__FUNCTION__, __LINE__);
+			PDEBUG_SEND("%s:line %d\n", __func__, __LINE__);
 
 			if (forced_push(tp)) {
 				tcp_mark_push(tp, skb);
@@ -1231,7 +1230,7 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
 				goto do_error;
 			BUG_ON(!sk_stream_memory_free(sk));
-			PDEBUG_SEND("%s:line %d\n",__FUNCTION__,__LINE__);
+			PDEBUG_SEND("%s:line %d\n", __func__, __LINE__);
 
 #ifndef CONFIG_MPTCP
 			mss_now = tcp_send_mss(sk, &size_goal, flags);
@@ -1247,7 +1246,7 @@ out:
 #ifndef CONFIG_MPTCP
 	release_sock(sk);
 #endif
-	PDEBUG_SEND("%s:line %d, copied %d\n", __FUNCTION__, __LINE__, copied);
+	PDEBUG_SEND("%s:line %d, copied %d\n", __func__, __LINE__, copied);
 	return copied;
 
 do_fault:
@@ -1396,8 +1395,7 @@ static void tcp_prequeue_process(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	/* TODO_cpaasch - tp should be set to mpcb->tp in case of mptcp */
-	mptcp_debug("Entering %s for pi %d\n",__FUNCTION__,
-	           tp->path_index);
+	mptcp_debug("Entering %s for pi %d\n", __func__, tp->path_index);
 
 	NET_INC_STATS_USER(sock_net(sk), LINUX_MIB_TCPPREQUEUED);
 
@@ -2052,8 +2050,11 @@ void tcp_set_state(struct sock *sk, int state)
 		    !(sk->sk_userlocks & SOCK_BINDPORT_LOCK))
 			inet_put_port(sk);
 		if (tcp_sk(sk)->mpcb && oldstate != TCP_SYN_SENT &&
-				oldstate != TCP_SYN_RECV && oldstate != TCP_LISTEN) {
-			mptcp_debug("%s - before minus --- tcp_sk(sk)->mpcb->cnt_established:%d pi:%d\n",__FUNCTION__,tcp_sk(sk)->mpcb->cnt_established, tp->path_index);
+			oldstate != TCP_SYN_RECV && oldstate != TCP_LISTEN) {
+			mptcp_debug("%s - before minus --- tcp_sk(sk)->mpcb->"
+					"cnt_established:%d pi:%d\n", __func__,
+					tcp_sk(sk)->mpcb->cnt_established,
+					tp->path_index);
 			tcp_sk(sk)->mpcb->cnt_established--;
 		}
 		/* fall through */

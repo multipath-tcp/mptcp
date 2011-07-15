@@ -4652,12 +4652,12 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 			meta_sk->sk_rcvbuf) {
 			tcpprobe_logmsg(meta_sk, "PROBLEM NOW");
 			mptcp_debug("%s: not enough rcvbuf: mpcb rcvbuf:%d,"
-					"rmem_alloc:%d\n", __FUNCTION__,
+					"rmem_alloc:%d\n", __func__,
 					meta_sk->sk_rcvbuf,
 					atomic_read( &meta_sk->sk_rmem_alloc));
 
 			check_buffers(tp->mpcb);
-			mptcp_debug("%s: mpcb copied seq:%#x\n", __FUNCTION__,
+			mptcp_debug("%s: mpcb copied seq:%#x\n", __func__,
 					meta_tp->copied_seq);
 
 			mptcp_for_each_sk(tp->mpcb, sk, tp) {
@@ -4665,30 +4665,30 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 					continue;
 				mptcp_debug("%s: pi:%d, rcvbuf:%d, "
 					"rmem_alloc:%d\n",
-					__FUNCTION__, tp->path_index,
+					__func__, tp->path_index,
 					sk->sk_rcvbuf,
 					atomic_read(&sk->sk_rmem_alloc));
 				mptcp_debug("%s: used mss for wnd "
 					"computation:%d\n",
-					__FUNCTION__,
+					__func__,
 					inet_csk(sk)->icsk_ack.rcv_mss);
 				mptcp_debug("%s: --- receive-queue:\n",
-					__FUNCTION__);
+					__func__);
 				skb_queue_walk(&sk->sk_receive_queue, skb) {
 					mptcp_debug("%s: dsn:%#x, skb->len:%d,"
 						"truesize:%d, "
-						"prop:%d /1000\n", __FUNCTION__,
+						"prop:%d /1000\n", __func__,
 						TCP_SKB_CB(skb)->data_seq,
 						skb->len, skb->truesize,
 						skb->len * 1000 /
 						skb->truesize);
 				}
 				mptcp_debug("%s: --- ofo-queue:\n",
-					__FUNCTION__);
+					__func__);
 				skb_queue_walk(&tp->out_of_order_queue, skb) {
 					mptcp_debug("%s: dsn:%#x, "
 						"skb->len:%d, truesize:%d, "
-						"prop:%d /1000\n", __FUNCTION__,
+						"prop:%d /1000\n", __func__,
 						TCP_SKB_CB(skb)->data_seq,
 						skb->len, skb->truesize,
 						skb->len * 1000 /
@@ -4696,20 +4696,20 @@ static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 				}
 			}
 			mptcp_debug("%s: --- meta-receive queue:\n",
-				__FUNCTION__);
+				__func__);
 			skb_queue_walk(&meta_sk->sk_receive_queue, skb) {
 				mptcp_debug("%s: dsn:%#x, "
 					"skb->len:%d, truesize:%d, "
-					"prop:%d /1000\n", __FUNCTION__,
+					"prop:%d /1000\n", __func__,
 					TCP_SKB_CB(skb)->data_seq,
 					skb->len, skb->truesize,
 					skb->len * 1000 / skb->truesize);
 			}
-			mptcp_debug("%s: --- meta-ofo queue:\n", __FUNCTION__);
+			mptcp_debug("%s: --- meta-ofo queue:\n", __func__);
 			skb_queue_walk(&meta_tp->out_of_order_queue, skb) {
 				mptcp_debug("%s: dsn:%#x, "
 					"skb->len:%d,truesize:%d,"
-					"prop:%d /1000\n", __FUNCTION__,
+					"prop:%d /1000\n", __func__,
 					TCP_SKB_CB(skb)->data_seq,
 					skb->len, skb->truesize,
 					skb->len * 1000 / skb->truesize);
@@ -5293,14 +5293,14 @@ void tcp_cwnd_application_limited(struct sock *sk)
 	tp->snd_cwnd_stamp = tcp_time_stamp;
 }
 
-static int tcp_should_expand_sndbuf(struct sock *sk, struct sock *mpcb_sk)
+static int tcp_should_expand_sndbuf(struct sock *sk, struct sock *meta_sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	/* If the user specified a specific send buffer setting, do
 	 * not modify it.
 	 */
-	if (mpcb_sk->sk_userlocks & SOCK_SNDBUF_LOCK)
+	if (meta_sk->sk_userlocks & SOCK_SNDBUF_LOCK)
 		return 0;
 
 	/* If we are under global TCP memory pressure, do not expand.  */
@@ -5314,8 +5314,8 @@ static int tcp_should_expand_sndbuf(struct sock *sk, struct sock *mpcb_sk)
 	/* If we filled the congestion window, do not expand.
 	 * MPTCP note: at the moment, we do not take this case into account.
 	 * In the future, if we want to do so, we'll need to maintain
-	 * packet_out counter at the mpcb_tp level, as well as maintain a
-	 * mpcb_tp->snd_cwnd = sum(sub_tp->snd_cwnd)
+	 * packet_out counter at the meta_tp level, as well as maintain a
+	 * meta_tp->snd_cwnd = sum(sub_tp->snd_cwnd)
 	 */
 	if (!tp->mpc && tp->packets_out >= tp->snd_cwnd)
 		return 0;
@@ -5329,11 +5329,11 @@ static int tcp_should_expand_sndbuf(struct sock *sk, struct sock *mpcb_sk)
  *
  * PROBLEM: sndbuf expansion does not work well with largesend.
  */
-static void tcp_new_space(struct sock *sk, struct sock *mpcb_sk)
+static void tcp_new_space(struct sock *sk, struct sock *meta_sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	if (tcp_should_expand_sndbuf(sk,mpcb_sk)) {
+	if (tcp_should_expand_sndbuf(sk, meta_sk)) {
 		int sndmem = max_t(u32, tp->rx_opt.mss_clamp, tp->mss_cache) +
 			MAX_TCP_HEADER + 16 + sizeof(struct sk_buff);
 		int demanded;
@@ -5402,12 +5402,12 @@ static void tcp_new_space(struct sock *sk, struct sock *mpcb_sk)
 		tp->snd_cwnd_stamp = tcp_time_stamp;
 	}
 
-	sk->sk_write_space(mpcb_sk);
+	sk->sk_write_space(meta_sk);
 }
 
 
 /**
- * If the flow is MPTCP, sk is the subsock, and mpcb_sk is the mpcb.
+ * If the flow is MPTCP, sk is the subsock, and meta_sk is the mpcb.
  * Otherwise both are the regular TCP socket.
  */
 void tcp_check_space(struct sock *sk, struct sock *meta_sk)
@@ -5578,7 +5578,7 @@ static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 	int chunk = skb->len - hlen;
 	int err;
 
-	mptcp_debug("Entering %s\n", __FUNCTION__);
+	mptcp_debug("Entering %s\n", __func__);
 
 	if (tp->mpc)
 		meta_tp = mpcb_meta_tp(mpcb);
