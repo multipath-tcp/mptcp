@@ -286,7 +286,7 @@ struct tcp_sock {
 #ifdef CONFIG_MPTCP
 	/*data for the scheduler*/
 	struct {
-		int	space;
+		u32	space;
 		u32	seq;
 		u32	time;
 		short   shift; /* Shift to apply to the space field.

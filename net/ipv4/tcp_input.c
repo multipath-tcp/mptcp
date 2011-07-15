@@ -3376,38 +3376,6 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		if (!fully_acked)
 			break;
 
-		/* Before we remove the skb, we update the meta-ack count */
-#ifdef CONFIG_MPTCP
-		{
-			if (!tp->mpc || !skb->len)
-				goto no_mptcp_update;
-
-			if (!tp->bw_est.time) {
-				/* bootstrap bw estimation */
-				tp->bw_est.space =
-					(tp->snd_cwnd * tp->mss_cache) <<
-					tp->bw_est.shift;
-				tp->bw_est.seq = tp->snd_una + tp->bw_est.space;
-				tp->bw_est.time = tcp_time_stamp;
-			} else if (after(tp->snd_una, tp->bw_est.seq)) {
-				/* update the bw estimate for this
-				 * subflow */
-				if (tcp_time_stamp-tp->bw_est.time == 0) {
-					tp->bw_est.shift++;
-				} else {
-					tp->cur_bw_est = tp->bw_est.space /
-							(tcp_time_stamp -
-							tp->bw_est.time);
-				}
-				tp->bw_est.space = (tp->snd_cwnd * tp->mss_cache) <<
-							tp->bw_est.shift;
-				tp->bw_est.seq = tp->snd_una + tp->bw_est.space;
-				tp->bw_est.time = tcp_time_stamp;
-			}
-		}
-no_mptcp_update:
-#endif
-
 		tcp_unlink_write_queue(skb, sk);
 
 #ifdef MPTCP_DEBUG_PKTS_OUT
@@ -3434,6 +3402,34 @@ no_mptcp_update:
 		if (skb == tp->lost_skb_hint)
 			tp->lost_skb_hint = NULL;
 	}
+
+#ifdef CONFIG_MPTCP
+	if (!tp->mpc)
+		goto continue_exec;
+
+	if (!tp->bw_est.time)
+		goto new_bw_est;
+
+	if (after(tp->snd_una, tp->bw_est.seq)) {
+		if (tcp_time_stamp - tp->bw_est.time == 0) {
+			/* The interval was to small - shift one more */
+			tp->bw_est.shift++;
+		} else {
+			tp->cur_bw_est =
+				tp->snd_una - (tp->bw_est.seq - tp->bw_est.space) /
+				(tcp_time_stamp - tp->bw_est.time);
+		}
+		goto new_bw_est;
+	}
+	goto continue_exec;
+
+new_bw_est:
+	tp->bw_est.space = (tp->snd_cwnd * tp->mss_cache) << tp->bw_est.shift;
+	tp->bw_est.seq = tp->snd_una + tp->bw_est.space;
+	tp->bw_est.time = tcp_time_stamp;
+
+continue_exec:
+#endif /* CONFIG_MPTCP */
 
 	if (likely(between(tp->snd_up, prior_snd_una, tp->snd_una)))
 		tp->snd_up = tp->snd_una;
