@@ -340,12 +340,11 @@ struct tcp_sock {
 	/* Data for direct copy to user */
 	struct {
 		struct sk_buff_head	prequeue;
-		int			memory;
 		struct task_struct	*task;
 		struct iovec		*iov;
-		int                     len;
+		int			memory;
+		int			len;
 #ifdef CONFIG_NET_DMA
-		int			copied;
 		/* members for async copy */
 		struct dma_chan		*dma_chan;
 		int			wakeup;
@@ -359,7 +358,7 @@ struct tcp_sock {
 	u32	max_window;	/* Maximal window ever seen from peer	*/
 	u32	mss_cache;	/* Cached effective mss, not including SACKS */
 
-	u32     window_clamp;   /* Maximal window to advertise		*/
+	u32	window_clamp;	/* Maximal window to advertise		*/
 	u32	rcv_ssthresh;	/* Current window clamp			*/
 
 	u32	frto_highmark;	/* snd_nxt when RTO occurred */

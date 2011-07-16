@@ -1,4 +1,3 @@
-
 /*
  * NET		Generic infrastructure for Network protocols.
  *

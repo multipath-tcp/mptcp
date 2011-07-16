@@ -345,7 +345,7 @@ struct sock {
 	void			(*sk_write_space)(struct sock *sk);
 	void			(*sk_error_report)(struct sock *sk);
   	int			(*sk_backlog_rcv)(struct sock *sk,
-						  struct sk_buff *skb);
+						struct sk_buff *skb);
 	void                    (*sk_destruct)(struct sock *sk);
 };
 
