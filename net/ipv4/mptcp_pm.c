@@ -519,7 +519,7 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 		for (j = 0; j < mpcb->received_options.num_addr6; j++) {
 			struct path6 *p = find_path_mapping6(
 				(struct in6_addr *)&inet6_sk(meta_sk)->saddr,
-				&mpcb->received_options.addr6[j].addr,mpcb);
+				&mpcb->received_options.addr6[j].addr, mpcb);
 			if (p) {
 				memcpy(&new_pa6[newpa_idx++], p,
 				       sizeof(struct path6));

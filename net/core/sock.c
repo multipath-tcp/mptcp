@@ -1048,9 +1048,6 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 		gfp_t flags)
 {
 	struct sk_filter *filter;
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-	struct ipv6_pinfo *np;
-#endif
 #ifdef CONFIG_SECURITY_NETWORK
 	void *sptr = newsk->sk_security;
 #endif
@@ -1156,6 +1153,8 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 		if (sk->sk_family == AF_INET) {
+			struct ipv6_pinfo *np;
+
 			/* Master is IPv4. Initialize pinet6 for the meta sk. */
 			inet_sk(newsk)->pinet6 = np =
 					&((struct tcp6_sock *)newsk)->inet6;
@@ -1180,7 +1179,6 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 			inet_sk(newsk)->pinet6 = &((struct tcp6_sock *)newsk)->inet6;
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 	}
-
 
 	if (newsk->sk_prot->sockets_allocated)
 		percpu_counter_inc(newsk->sk_prot->sockets_allocated);

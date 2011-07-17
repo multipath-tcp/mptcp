@@ -380,15 +380,7 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 		/* Redefine the sk_data_ready function */
 		((struct sock *) tp)->sk_data_ready = mptcp_def_readable;
 
-		ret = sock->ops->bind(sock, loculid, ulid_size);
-		if (ret < 0)
-			goto fail_bind;
-
-		ret = sock->ops->connect(sock, remulid, ulid_size, O_NONBLOCK);
-		if (ret < 0 && ret != -EINPROGRESS)
-			goto fail_connect;
-
-		if (meta_sk->sk_family == AF_INET)
+		if (family == AF_INET)
 			mptcp_debug("%s: token %d pi %d src_addr:"
 				"%pI4:%d dst_addr:%pI4:%d \n", __func__,
 				loc_token(mpcb), newpi,
@@ -404,20 +396,25 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 				ntohs(loculid_in6.sin6_port),
 				&remulid_in6.sin6_addr,
 				ntohs(remulid_in6.sin6_port));
+
+		ret = sock->ops->bind(sock, loculid, ulid_size);
+		if (ret < 0) {
+			printk(KERN_ERR "%s: MPTCP subsocket bind() failed, "
+					"error %d\n", __func__, ret);
+			sock_release(sock);
+			continue;
+		}
+
+		ret = sock->ops->connect(sock, remulid, ulid_size, O_NONBLOCK);
+		if (ret < 0 && ret != -EINPROGRESS) {
+			printk(KERN_ERR "%s: MPTCP subsocket connect() failed, "
+					"error %d\n", __func__, ret);
+			sock_release(sock);
+			continue;
+		}
 	}
 
 	return 0;
-
-fail_bind:
-	printk(KERN_ERR "%s: MPTCP subsocket bind() failed, error %d\n",
-			__func__, ret);
-fail_connect:
-	printk(KERN_ERR "%s: MPTCP subsocket connect() failed, error %d\n",
-			__func__, ret);
-
-	/* sock_release will indirectly call mptcp_del_sock() */
-	sock_release(sock);
-	return -1;
 }
 
 /* Defined in net/core/sock.c */
@@ -712,6 +709,9 @@ void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 	tp = tcp_sk(sk);
 	meta_sk = (struct sock *) mpcb;
 
+	inet_sk(meta_sk)->inet_dport = inet_sk(sk)->inet_dport;
+	inet_sk(meta_sk)->inet_sport = inet_sk(sk)->inet_sport;
+
 	switch (sk->sk_family) {
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	case AF_INET6:
@@ -728,9 +728,8 @@ void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 		inet_sk(meta_sk)->inet_saddr = inet_sk(sk)->inet_saddr;
 
 		/* Searching for suitable local addresses,
-		except is the socket is loopback, in which case we simply
-		don't do multipath */
-
+		 * except is the socket is loopback, in which case we simply
+		 * don't do multipath */
 		if (!ipv4_is_loopback(inet_sk(sk)->inet_saddr) &&
 			!ipv4_is_loopback(inet_sk(sk)->inet_daddr))
 			mptcp_set_addresses(mpcb);
