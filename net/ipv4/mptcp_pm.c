@@ -1416,7 +1416,7 @@ int mptcp_syn_recv_sock(struct sk_buff *skb)
 {
 	struct tcphdr *th = tcp_hdr(skb);
 	struct request_sock *req = NULL;
-	struct sock *meta_sk;
+	struct sock *meta_sk, *master_sk;
 
 	if (skb->protocol == htons(ETH_P_IP))
 		req = mptcp_v4_search_req(th->source, ip_hdr(skb)->saddr,
@@ -1430,13 +1430,14 @@ int mptcp_syn_recv_sock(struct sk_buff *skb)
 	if (!req)
 		return 0;
 	meta_sk = (struct sock *)req->mpcb;
-	bh_lock_sock(req->mpcb->master_sk);
-	if (sock_owned_by_user(req->mpcb->master_sk)) {
+	master_sk = req->mpcb->master_sk;
+	bh_lock_sock(master_sk);
+	if (sock_owned_by_user(master_sk)) {
 		if (unlikely(sk_add_backlog(meta_sk, skb))) {
-			bh_unlock_sock(req->mpcb->master_sk);
+			bh_unlock_sock(master_sk);
 			NET_INC_STATS_BH(dev_net(skb->dev),
 					LINUX_MIB_TCPBACKLOGDROP);
-			sock_put(req->mpcb->master_sk); /* Taken by
+			sock_put(master_sk); /* Taken by
 							 * mptcp_search_req */
 			kfree_skb(skb);
 			return 1;
@@ -1447,8 +1448,8 @@ int mptcp_syn_recv_sock(struct sk_buff *skb)
 	else /* IPv6 */
 		tcp_v6_do_rcv(meta_sk, skb);
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
-	bh_unlock_sock(req->mpcb->master_sk);
-	sock_put(req->mpcb->master_sk); /* Taken by mptcp_search_req */
+	bh_unlock_sock(master_sk);
+	sock_put(master_sk); /* Taken by mptcp_search_req */
 	return 1;
 }
 
