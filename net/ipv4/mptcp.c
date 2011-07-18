@@ -1432,10 +1432,13 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		struct mp_add_addr *mpadd = (struct mp_add_addr *) ptr;
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-		if ((mpadd->ipver == 4 && opsize != MPTCP_SUB_LEN_ADD_ADDR4) ||
-		    (mpadd->ipver == 6 && opsize != MPTCP_SUB_LEN_ADD_ADDR6)) {
+		if ((mpadd->ipver == 4 && opsize != MPTCP_SUB_LEN_ADD_ADDR4 &&
+		     opsize != MPTCP_SUB_LEN_ADD_ADDR4 + 2) ||
+		    (mpadd->ipver == 6 && opsize != MPTCP_SUB_LEN_ADD_ADDR6 &&
+		     opsize != MPTCP_SUB_LEN_ADD_ADDR6 + 2)) {
 #else
-		if (opsize != MPTCP_SUB_LEN_ADD_ADDR4) {
+		if (opsize != MPTCP_SUB_LEN_ADD_ADDR4 &&
+		    opsize != MPTCP_SUB_LEN_ADD_ADDR4 + 2) {
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 			mptcp_debug("%s: mp_add_addr: bad option size %d\n",
 					__func__, opsize);
@@ -1444,12 +1447,20 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 
 		ptr += 2; /* Move the pointer to the addr */
 		if (mpadd->ipver == 4) {
+			__be16 port = 0;
+			if (opsize == MPTCP_SUB_LEN_ADD_ADDR4 + 2)
+				port = (__be16) *(ptr + 4);
+
 			mptcp_v4_add_raddress(mopt, (struct in_addr*) ptr,
-					mpadd->addr_id);
+					port, mpadd->addr_id);
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 		} else if (mpadd->ipver == 6) {
+			__be16 port = 0;
+			if (opsize == MPTCP_SUB_LEN_ADD_ADDR6 + 2)
+				port = (__be16) *(ptr + 4);
+
 			mptcp_v6_add_raddress(mopt, (struct in6_addr *) ptr,
-					mpadd->addr_id);
+					port, mpadd->addr_id);
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 		}
 		break;

@@ -641,6 +641,7 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 					continue;
 				mpcb->addr4[num_addr4].addr.s_addr =
 				    ifa_address;
+				mpcb->addr4[num_addr4].port = 0;
 				mpcb->addr4[num_addr4++].id = id++;
 			}
 
@@ -663,6 +664,7 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 					continue;
 				ipv6_addr_copy(&(mpcb->addr6[num_addr6].addr),
 					&(ifa6->addr));
+				mpcb->addr6[num_addr6].port = 0;
 				mpcb->addr6[num_addr6++].id = id++;
 			}
 #endif
@@ -690,10 +692,11 @@ out:
  * address
  */
 int mptcp_v4_add_raddress(struct multipath_options *mopt,
-			struct in_addr *addr, u8 id)
+			struct in_addr *addr, __be16 port, u8 id)
 {
 	int i;
 	int num_addr4 = mopt->num_addr4;
+	struct mptcp_loc4 *loc4 = &mopt->addr4[0];
 
 	/* If the id is zero, this is the ULID, do not add it. */
 	if (!id)
@@ -702,8 +705,10 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 	BUG_ON(num_addr4 > MPTCP_MAX_ADDR);
 
 	for (i = 0; i < num_addr4; i++) {
+		loc4 = &mopt->addr4[i];
+
 		/* Address is already in the list --- continue */
-		if (mopt->addr4[i].addr.s_addr == addr->s_addr)
+		if (loc4->addr.s_addr == addr->s_addr && loc4->port == port)
 			return 0;
 
 		/* This may be the case, when the peer is behind a NAT. He is
@@ -711,15 +716,14 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 		 * However the src_addr of the IP-packet has been changed. We
 		 * update the addr in the list, because this is the address as
 		 * OUR BOX sees it. */
-		if (mopt->addr4[i].id == id &&
-		    mopt->addr4[i].addr.s_addr != addr->s_addr) {
+		if (loc4->id == id && loc4->addr.s_addr != addr->s_addr) {
 			/* update the address */
 			mptcp_debug("%s: updating old addr:%pI4"
 				   " to addr %pi4 with id:%d\n",
-				   __func__,
-				   &mopt->addr4[i].addr.s_addr,
+				   __FUNCTION__, &loc4->addr.s_addr,
 				   &addr->s_addr, id);
-			mopt->addr4[i].addr.s_addr = addr->s_addr;
+			loc4->addr.s_addr = addr->s_addr;
+			loc4->port = port;
 			mopt->list_rcvd = 1;
 			return 0;
 		}
@@ -734,8 +738,9 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 	}
 
 	/* Address is not known yet, store it */
-	mopt->addr4[num_addr4].addr.s_addr = addr->s_addr;
-	mopt->addr4[num_addr4].id = id;
+	loc4->addr.s_addr = addr->s_addr;
+	loc4->port = port;
+	loc4->id = id;
 	mopt->list_rcvd = 1;
 	mopt->num_addr4++;
 
@@ -750,10 +755,11 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
  *
  */
 int mptcp_v6_add_raddress(struct multipath_options *mopt,
-			 struct in6_addr *addr, u8 id)
+			 struct in6_addr *addr, __be16 port, u8 id)
 {
 	int i;
 	int num_addr6 = mopt->num_addr6;
+	struct mptcp_loc6 *loc6 = &mopt->addr6[0];
 
 	/* If the id is zero, this is the ULID, do not add it. */
 	if (!id)
@@ -762,8 +768,10 @@ int mptcp_v6_add_raddress(struct multipath_options *mopt,
 	BUG_ON(num_addr6 > MPTCP_MAX_ADDR);
 
 	for (i = 0; i < num_addr6; i++) {
+		loc6 = &mopt->addr6[i];
+
 		/* Address is already in the list --- continue */
-		if (ipv6_addr_equal(&mopt->addr6[i].addr, addr))
+		if (ipv6_addr_equal(&loc6->addr, addr))
 			return 0;
 
 		/* This may be the case, when the peer is behind a NAT. He is
@@ -771,14 +779,15 @@ int mptcp_v6_add_raddress(struct multipath_options *mopt,
 		 * However the src_addr of the IP-packet has been changed. We
 		 * update the addr in the list, because this is the address as
 		 * OUR BOX sees it. */
-		if (mopt->addr6[i].id == id &&
-			!ipv6_addr_equal(&mopt->addr6[i].addr, addr)) {
+		if (loc6->id == id &&
+			!ipv6_addr_equal(&loc6->addr, addr)) {
 			/* update the address */
-			mptcp_debug("%s: updating old addr: %pI6 "
-					"to addr %pI6 with id:%d\n",
-					__func__, &mopt->addr6[i].addr,
+			mptcp_debug("%s: updating old addr: %pI6 \
+					to addr %pI6 with id:%d\n",
+					__func__, &loc6->addr,
 					addr, id);
-			ipv6_addr_copy(&mopt->addr6[i].addr, addr);
+			ipv6_addr_copy(&loc6->addr, addr);
+			loc6->port = port;
 			mopt->list_rcvd = 1;
 			return 0;
 		}
@@ -793,8 +802,9 @@ int mptcp_v6_add_raddress(struct multipath_options *mopt,
 	}
 
 	/* Address is not known yet, store it */
-	ipv6_addr_copy(&mopt->addr6[num_addr6].addr, addr);
-	mopt->addr6[num_addr6].id = id;
+	ipv6_addr_copy(&loc6->addr, addr);
+	loc6->port = port;
+	loc6->id = id;
 	mopt->list_rcvd = 1;
 	mopt->num_addr6++;
 
@@ -1642,9 +1652,9 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 						       * can probably be
 						       * optimized.
 						       */
-		if (mptcp_v4_add_raddress
-			(&mpcb->received_options, (struct in_addr *)
-				&iph->saddr, join_opt->addr_id) < 0)
+		if (mptcp_v4_add_raddress (&mpcb->received_options,
+				(struct in_addr *)&iph->saddr, 0,
+				join_opt->addr_id) < 0)
 			goto discard;
 		if (unlikely(mpcb->received_options.list_rcvd)) {
 			mpcb->received_options.list_rcvd = 0;
@@ -1693,9 +1703,9 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 						       * can probably be
 						       * optimized.
 						       */
-		if (mptcp_v6_add_raddress
-			(&mpcb->received_options, (struct in6_addr *)
-				&iph->saddr, join_opt->addr_id) < 0)
+		if (mptcp_v6_add_raddress(&mpcb->received_options,
+				(struct in6_addr *)&iph->saddr, 0,
+				join_opt->addr_id) < 0)
 			goto discard;
 		if (unlikely(mpcb->received_options.list_rcvd)) {
 			mpcb->received_options.list_rcvd = 0;
