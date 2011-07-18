@@ -206,13 +206,27 @@ u32 mptcp_new_token(void)
 	return atomic_inc_return(&latest_token);
 }
 
-struct path4 *find_path_mapping4(u8 locId, u8 remId, struct multipath_pcb *mpcb)
+struct path4 *find_path_mapping4(struct mptcp_loc4 *loc, struct mptcp_loc4 *rem,
+				 struct multipath_pcb *mpcb)
 {
 	int i;
-	for (i = 0; i < mpcb->pa4_size; i++)
-		if (mpcb->pa4[i].loc_id == locId &&
-		    mpcb->pa4[i].rem_id == remId)
- 			return &mpcb->pa4[i];
+	for (i = 0; i < mpcb->pa4_size; i++) {
+		if (mpcb->pa4[i].loc_id != loc->id ||
+		    mpcb->pa4[i].rem_id != rem->id)
+			continue;
+
+		/* Addresses are equal - now check the port numbers
+		 * (0 means wildcard) */
+		if (mpcb->pa4[i].loc.sin_port && loc->port &&
+		    mpcb->pa4[i].loc.sin_port != loc->port)
+			continue;
+
+		if (mpcb->pa4[i].rem.sin_port && rem->port &&
+		    mpcb->pa4[i].rem.sin_port != rem->port)
+			continue;
+
+		return &mpcb->pa4[i];
+	}
 	return NULL;
 }
 
@@ -255,13 +269,27 @@ struct path6 *mptcp_get_path6(struct multipath_pcb *mpcb, int path_index)
 	return NULL;
 }
 
-struct path6 *find_path_mapping6(u8 locId, u8 remId, struct multipath_pcb *mpcb)
+struct path6 *find_path_mapping6(struct mptcp_loc6 *loc, struct mptcp_loc6 *rem,
+				 struct multipath_pcb *mpcb)
 {
 	int i;
-	for (i = 0; i < mpcb->pa6_size; i++)
-		if (mpcb->pa6[i].loc_id == locId &&
-		    mpcb->pa6[i].rem_id == remId)
-			return &mpcb->pa6[i];
+	for (i = 0; i < mpcb->pa6_size; i++) {
+		if (mpcb->pa6[i].loc_id != loc->id ||
+		    mpcb->pa6[i].rem_id != rem->id)
+			continue;
+
+		/* Addresses are equal - now check the port numbers
+		 * (0 means wildcard) */
+		if (mpcb->pa6[i].loc.sin6_port && loc->port &&
+		    mpcb->pa6[i].loc.sin6_port != loc->port)
+			continue;
+
+		if (mpcb->pa6[i].rem.sin6_port && rem->port &&
+		    mpcb->pa6[i].rem.sin6_port!= rem->port)
+			continue;
+
+		return &mpcb->pa6[i];
+	}
 	return NULL;
 }
 
@@ -388,10 +416,15 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 	new_pa4 = kmalloc(pa4_size * sizeof(struct path4), GFP_ATOMIC);
 
 	if (ulid_v4) {
+		struct mptcp_loc4 loc_ulid, rem_ulid;
+		loc_ulid.id = 0;
+		loc_ulid.port = 0;
+		rem_ulid.id = 0;
+		rem_ulid.port = 0;
 		/* ULID src with other dest */
 		for (j = 0; j < mpcb->received_options.num_addr4; j++) {
-			struct path4 *p = find_path_mapping4(0,
-				mpcb->received_options.addr4[j].id, mpcb);
+			struct path4 *p = find_path_mapping4(&loc_ulid,
+				&mpcb->received_options.addr4[j], mpcb);
 			if (p) {
 				memcpy(&new_pa4[newpa_idx++], p,
 				       sizeof(struct path4));
@@ -416,8 +449,8 @@ mptcp_debug("%s: ulid with dst %d\n", __func__, ntohs(p->rem.sin_port));
 
 		/* ULID dest with other src */
 		for (i = 0; i < mpcb->num_addr4; i++) {
-			struct path4 *p = find_path_mapping4(mpcb->addr4[i].id,
-					0, mpcb);
+			struct path4 *p = find_path_mapping4(&mpcb->addr4[i],
+					&rem_ulid, mpcb);
 			if (p) {
 				memcpy(&new_pa4[newpa_idx++], p,
 				       sizeof(struct path4));
@@ -445,8 +478,8 @@ mptcp_debug("%s: ulid with src %d\n", __func__, ntohs(p->rem.sin_port));
 	for (i = 0; i < mpcb->num_addr4; i++)
 		for (j = 0; j < mpcb->received_options.num_addr4; j++) {
 			struct path4 *p =
-			    find_path_mapping4(mpcb->addr4[i].id,
-					    mpcb->received_options.addr4[j].id,
+			    find_path_mapping4(&mpcb->addr4[i],
+					    &mpcb->received_options.addr4[j],
 					    mpcb);
 			if (p) {
 				memcpy(&new_pa4[newpa_idx++], p,
@@ -494,10 +527,15 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 	new_pa6 = kmalloc(pa6_size * sizeof(struct path6), GFP_ATOMIC);
 
 	if (ulid_v6) {
+		struct mptcp_loc6 loc_ulid, rem_ulid;
+		loc_ulid.id = 0;
+		loc_ulid.port = 0;
+		rem_ulid.id = 0;
+		rem_ulid.port = 0;
 		/* ULID src with other dest */
 		for (j = 0; j < mpcb->received_options.num_addr6; j++) {
-			struct path6 *p = find_path_mapping6(0,
-				mpcb->received_options.addr6[j].id, mpcb);
+			struct path6 *p = find_path_mapping6(&loc_ulid,
+				&mpcb->received_options.addr6[j], mpcb);
 			if (p) {
 				memcpy(&new_pa6[newpa_idx++], p,
 				       sizeof(struct path6));
@@ -519,8 +557,8 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 		}
 		/* ULID dest with other src */
 		for (i = 0; i < mpcb->num_addr6; i++) {
-			struct path6 *p = find_path_mapping6(mpcb->addr6[i].id,
-					0, mpcb);
+			struct path6 *p = find_path_mapping6(&mpcb->addr6[i],
+					&rem_ulid, mpcb);
 			if (p) {
 				memcpy(&new_pa6[newpa_idx++], p,
 				       sizeof(struct path6));
@@ -545,8 +583,8 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 	for (i = 0; i < mpcb->num_addr6; i++)
 		for (j = 0; j < mpcb->received_options.num_addr6; j++) {
 			struct path6 *p =
-			    find_path_mapping6(mpcb->addr6[i].id,
-					    mpcb->received_options.addr6[j].id,
+			    find_path_mapping6(&mpcb->addr6[i],
+					    &mpcb->received_options.addr6[j],
 					    mpcb);
 			if (p) {
 				memcpy(&new_pa6[newpa_idx++], p,
@@ -1579,6 +1617,16 @@ static void mptcp_subflow_attach(struct multipath_pcb *mpcb, struct sock *subsk)
 {
 	struct path4 *p4 = NULL;
 	struct path6 *p6 = NULL;
+	struct mptcp_loc4 loc, rem;
+	struct mptcp_loc6 loc6, rem6;
+	loc.id = inet_sk(subsk)->loc_id;
+	loc.port = inet_sk(subsk)->inet_sport;
+	rem.id = inet_sk(subsk)->rem_id;
+	rem.port = inet_sk(subsk)->inet_dport;
+	loc6.id = inet_sk(subsk)->loc_id;
+	loc6.port = inet_sk(subsk)->inet_sport;
+	rem6.id = inet_sk(subsk)->rem_id;
+	rem6.port = inet_sk(subsk)->inet_dport;
 	/* Apply correct path index to that subflow
 	 * (we bypass the patharray if in multiports mode)
 	 */
@@ -1586,12 +1634,10 @@ static void mptcp_subflow_attach(struct multipath_pcb *mpcb, struct sock *subsk)
 		goto diffPorts;
 
 	if (subsk->sk_family == AF_INET)
-		p4 = find_path_mapping4(inet_sk(subsk)->loc_id,
-				inet_sk(subsk)->rem_id, mpcb);
+		p4 = find_path_mapping4(&loc, &rem, mpcb);
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-	else /* IPv6 */
-		p6 = find_path_mapping6(inet_sk(subsk)->loc_id,
-				inet_sk(subsk)->rem_id, mpcb);
+	else
+		p6 = find_path_mapping6(&loc6, &rem6, mpcb);
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 
 	if (!p4 && !p6) {
@@ -1609,21 +1655,24 @@ static void mptcp_subflow_attach(struct multipath_pcb *mpcb, struct sock *subsk)
 
 
 		if (subsk->sk_family == AF_INET)
-			p4 = find_path_mapping4(inet_sk(subsk)->loc_id,
-					inet_sk(subsk)->rem_id, mpcb);
+			p4 = find_path_mapping4(&loc, &rem, mpcb);
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-		else /* IPv6 */
-			p6 = find_path_mapping6(inet_sk(subsk)->loc_id,
-					inet_sk(subsk)->rem_id, mpcb);
+		else
+			p6 = find_path_mapping6(&loc6, &rem6, mpcb);
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 	}
 
 	if (p4 || p6) {
-		if (subsk->sk_family == AF_INET)
+		if (subsk->sk_family == AF_INET) {
 			tcp_sk(subsk)->path_index = p4->path_index;
+			p4->loc.sin_port = loc.port;
+			p4->rem.sin_port = rem.port;
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-		else
+		} else {
 			tcp_sk(subsk)->path_index = p6->path_index;
+			p6->loc.sin6_port = loc6.port;
+			p6->rem.sin6_port = rem6.port;
+		}
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 	} else {
 diffPorts:

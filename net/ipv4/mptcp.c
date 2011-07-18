@@ -404,6 +404,11 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 			sock_release(sock);
 			continue;
 		}
+
+		if (family == AF_INET)
+			pa4->loc.sin_port = inet_sk(sock->sk)->inet_sport;
+		else
+			pa6->loc.sin6_port = inet_sk(sock->sk)->inet_sport;
 	}
 
 	return 0;
