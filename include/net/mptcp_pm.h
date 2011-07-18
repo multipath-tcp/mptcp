@@ -42,22 +42,26 @@ struct mptcp_loc6 {
 };
 
 struct path4 {
-	struct mptcp_loc4  loc; /*local address*/
-	struct mptcp_loc4  rem; /*remote address*/
-	int               path_index;
+	struct sockaddr_in	loc; /* local address */
+	u8			loc_id;
+	struct sockaddr_in	rem; /* remote address */
+	u8			rem_id;
+	int			path_index;
 };
 
 struct path6 {
-	struct mptcp_loc6  loc; /*local address*/
-	struct mptcp_loc6  rem; /*remote address*/
-	int               path_index;
+	struct sockaddr_in6	loc; /* local address */
+	u8			loc_id;
+	struct sockaddr_in6	rem; /* remote address */
+	u8			rem_id;
+	int			path_index;
 };
 
 #define loc_token(mpcb)				\
 	(((struct tcp_sock *)mpcb)->mptcp_loc_token)
 
 u32 mptcp_new_token(void);
-void mptcp_hash_insert(struct multipath_pcb *mpcb,u32 token);
+void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token);
 void mptcp_hash_remove(struct multipath_pcb *mpcb);
 void mptcp_hash_request_remove(struct request_sock *req);
 struct multipath_pcb* mptcp_hash_find(u32 token);
@@ -65,8 +69,7 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb);
 int mptcp_v4_add_raddress(struct multipath_options *mopt, struct in_addr *addr,
 			u8 id);
 void mptcp_update_patharray(struct multipath_pcb *mpcb);
-struct in_addr *mptcp_get_loc_addr4(struct multipath_pcb *mpcb, int path_index);
-struct in_addr *mptcp_get_rem_addr4(struct multipath_pcb *mpcb, int path_index);
+struct path4 *mptcp_get_path4(struct multipath_pcb *mpcb, int path_index);
 u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, int path_index);
 int mptcp_lookup_join(struct sk_buff *skb);
 int mptcp_syn_recv_sock(struct sk_buff *skb);
@@ -78,10 +81,7 @@ int mptcp_v4_send_synack(struct sock *meta_sk,
 void mptcp_send_updatenotif(struct multipath_pcb *mpcb);
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-struct in6_addr *mptcp_get_loc_addr6(struct multipath_pcb *mpcb,
-				int path_index);
-struct in6_addr *mptcp_get_rem_addr6(struct multipath_pcb *mpcb,
-				int path_index);
+struct path6 *mptcp_get_path6(struct multipath_pcb *mpcb, int path_index);
 int mptcp_v6_add_raddress(struct multipath_options *mopt, struct in6_addr *addr,
 			u8 id);
 int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb);

@@ -296,8 +296,8 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 
 	for (i = 0; i < sizeof(path_indices) * 8; i++) {
 		struct sockaddr *loculid, *remulid;
-		struct sockaddr_in loculid_in, remulid_in;
-		struct sockaddr_in6 loculid_in6, remulid_in6;
+		struct path4 *pa4;
+		struct path6 *pa6;
 		int ulid_size = 0, newpi = i + 1, family;
 
 		if (!((1 << i) & path_indices))
@@ -331,42 +331,24 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 		 */
 		switch (family) {
 		case AF_INET:
-			loculid_in.sin_family = family;
-			remulid_in.sin_family = family;
+			pa4 = mptcp_get_path4(mpcb, newpi);
 
-			/* let bind select an available port */
-			loculid_in.sin_port = 0;
-			remulid_in.sin_port = inet_sk(meta_sk)->inet_dport;
+			BUG_ON(!pa4);
 
-			memcpy(&loculid_in.sin_addr, mptcp_get_loc_addr4(
-					mpcb, newpi), sizeof(struct in_addr));
-			memcpy(&remulid_in.sin_addr, mptcp_get_rem_addr4(
-					mpcb, newpi), sizeof(struct in_addr));
-
-			loculid = (struct sockaddr *) &loculid_in;
-			remulid = (struct sockaddr *) &remulid_in;
-			ulid_size = sizeof(loculid_in);
-
+			loculid = (struct sockaddr *) &pa4->loc;
+			remulid = (struct sockaddr *) &pa4->rem;
+			ulid_size = sizeof(pa4->loc);
 			break;
 		case AF_INET6:
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-			loculid_in6.sin6_family = family;
-			remulid_in6.sin6_family = family;
+			pa6 = mptcp_get_path6(mpcb, newpi);
 
-			/* let bind select an available port */
-			loculid_in6.sin6_port = 0;
-			remulid_in6.sin6_port = inet_sk(meta_sk)->inet_dport;
+			BUG_ON(!pa6);
 
-			ipv6_addr_copy(&loculid_in6.sin6_addr,
-					mptcp_get_loc_addr6(mpcb, newpi));
-			ipv6_addr_copy(&remulid_in6.sin6_addr,
-					mptcp_get_rem_addr6(mpcb, newpi));
-
-			loculid = (struct sockaddr *) &loculid_in6;
-			remulid = (struct sockaddr *) &remulid_in6;
-			ulid_size = sizeof(loculid_in6);
+			loculid = (struct sockaddr *) &pa6->loc;
+			remulid = (struct sockaddr *) &pa6->rem;
+			ulid_size = sizeof(pa6->loc);
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
-
 			break;
 		default:
 			BUG();
@@ -380,22 +362,29 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 		/* Redefine the sk_data_ready function */
 		((struct sock *) tp)->sk_data_ready = mptcp_def_readable;
 
-		if (family == AF_INET)
+		if (family == AF_INET) {
+			struct sockaddr_in *loc, *rem;
+			loc = (struct sockaddr_in *) loculid;
+			rem = (struct sockaddr_in *) remulid;
 			mptcp_debug("%s: token %d pi %d src_addr:"
 				"%pI4:%d dst_addr:%pI4:%d \n", __func__,
 				loc_token(mpcb), newpi,
-				&loculid_in.sin_addr,
-				ntohs(loculid_in.sin_port),
-				&remulid_in.sin_addr,
-				ntohs(remulid_in.sin_port));
-		else
+				&loc->sin_addr,
+				ntohs(loc->sin_port),
+				&rem->sin_addr,
+				ntohs(rem->sin_port));
+		} else {
+			struct sockaddr_in6 *loc, *rem;
+			loc = (struct sockaddr_in6 *) loculid;
+			rem = (struct sockaddr_in6 *) remulid;
 			mptcp_debug("%s: token %d pi %d src_addr:"
 				"%pI6:%d dst_addr:%pI6:%d \n", __func__,
 				loc_token(mpcb), newpi,
-				&loculid_in6.sin6_addr,
-				ntohs(loculid_in6.sin6_port),
-				&remulid_in6.sin6_addr,
-				ntohs(remulid_in6.sin6_port));
+				&loc->sin6_addr,
+				ntohs(loc->sin6_port),
+				&rem->sin6_addr,
+				ntohs(rem->sin6_port));
+		}
 
 		ret = sock->ops->bind(sock, loculid, ulid_size);
 		if (ret < 0) {

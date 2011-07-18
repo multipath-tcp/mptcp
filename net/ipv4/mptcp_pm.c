@@ -211,60 +211,20 @@ struct path4 *find_path_mapping4(struct in_addr *loc, struct in_addr *rem,
 {
 	int i;
 	for (i = 0; i < mpcb->pa4_size; i++)
-		if (mpcb->pa4[i].loc.addr.s_addr == loc->s_addr &&
-		    mpcb->pa4[i].rem.addr.s_addr == rem->s_addr)
+		if (mpcb->pa4[i].loc.sin_addr.s_addr == loc->s_addr &&
+		    mpcb->pa4[i].rem.sin_addr.s_addr == rem->s_addr)
+ 			return &mpcb->pa4[i];
+	return NULL;
+}
+
+struct path4 *mptcp_get_path4(struct multipath_pcb *mpcb, int path_index)
+{
+	int i;
+	for (i = 0; i < mpcb->pa4_size; i++)
+		if (mpcb->pa4[i].path_index == path_index)
 			return &mpcb->pa4[i];
 	return NULL;
 }
-
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-
-struct path6 *find_path_mapping6(struct in6_addr *loc, struct in6_addr *rem,
-				 struct multipath_pcb *mpcb)
-{
-	int i;
-
-	for (i = 0; i < mpcb->pa6_size; i++)
-		if (ipv6_addr_equal(&mpcb->pa6[i].loc.addr, loc) &&
-			ipv6_addr_equal(&mpcb->pa6[i].rem.addr, rem))
-			return &mpcb->pa6[i];
-	return NULL;
-}
-
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
-
-struct in_addr *mptcp_get_loc_addr4(struct multipath_pcb *mpcb, int path_index)
-{
-	int i;
-	struct sock *meta_sk = (struct sock *)mpcb;
-	if (path_index <= 1)
-		return (struct in_addr *)&inet_sk(meta_sk)->inet_saddr;
-	for (i = 0; i < mpcb->pa4_size; i++) {
-		if (mpcb->pa4[i].path_index == path_index)
-			return &mpcb->pa4[i].loc.addr;
-	}
-
-	BUG();
-	return NULL;
-}
-
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-struct in6_addr *mptcp_get_loc_addr6(struct multipath_pcb *mpcb, int path_index)
-{
-	int i;
-	struct sock *meta_sk = (struct sock *)mpcb;
-	if (path_index <= 1)
-		return (struct in6_addr *)&inet6_sk(meta_sk)->saddr;
-	for (i = 0; i < mpcb->pa6_size; i++) {
-		if (mpcb->pa6[i].path_index == path_index)
-			return &mpcb->pa6[i].loc.addr;
-	}
-
-	BUG();
-	return NULL;
-}
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
-
 
 struct in_addr *mptcp_get_rem_addr4(struct multipath_pcb *mpcb, int path_index)
 {
@@ -274,7 +234,7 @@ struct in_addr *mptcp_get_rem_addr4(struct multipath_pcb *mpcb, int path_index)
 		return (struct in_addr *)&inet_sk(meta_sk)->inet_daddr;
 	for (i = 0; i < mpcb->pa4_size; i++) {
 		if (mpcb->pa4[i].path_index == path_index)
-			return &mpcb->pa4[i].rem.addr;
+			return &mpcb->pa4[i].rem.sin_addr;
 	}
 
 	/* should not arrive here */
@@ -287,6 +247,26 @@ struct in_addr *mptcp_get_rem_addr4(struct multipath_pcb *mpcb, int path_index)
 }
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+struct path6 *mptcp_get_path6(struct multipath_pcb *mpcb, int path_index)
+{
+	int i;
+	for (i = 0; i < mpcb->pa6_size; i++)
+		if (mpcb->pa6[i].path_index == path_index)
+			return &mpcb->pa6[i];
+	return NULL;
+}
+
+struct path6 *find_path_mapping6(struct in6_addr *loc, struct in6_addr *rem,
+				 struct multipath_pcb *mpcb)
+{
+	int i;
+	for (i = 0; i < mpcb->pa6_size; i++)
+		if (ipv6_addr_equal(&mpcb->pa6[i].loc.sin6_addr, loc) &&
+		    ipv6_addr_equal(&mpcb->pa6[i].rem.sin6_addr, rem))
+			return &mpcb->pa6[i];
+	return NULL;
+}
+
 struct in6_addr *mptcp_get_rem_addr6(struct multipath_pcb *mpcb, int path_index)
 {
 	struct sock *meta_sk = (struct sock *)mpcb;
@@ -295,7 +275,7 @@ struct in6_addr *mptcp_get_rem_addr6(struct multipath_pcb *mpcb, int path_index)
 		return (struct in6_addr *)&inet6_sk(meta_sk)->daddr;
 	for (i = 0; i < mpcb->pa6_size; i++) {
 		if (mpcb->pa6[i].path_index == path_index)
-			return &mpcb->pa6[i].rem.addr;
+			return &mpcb->pa6[i].rem.sin6_addr;
 	}
 
 	/* should not arrive here */
@@ -306,7 +286,6 @@ struct in6_addr *mptcp_get_rem_addr6(struct multipath_pcb *mpcb, int path_index)
 	BUG();
 	return NULL;
 }
-
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 
 u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, int path_index)
@@ -318,69 +297,50 @@ u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, int path_index)
 		return 0;
 	for (i = 0; i < mpcb->pa4_size; i++) {
 		if (mpcb->pa4[i].path_index == path_index)
-			return mpcb->pa4[i].loc.id;
+			return mpcb->pa4[i].loc_id;
 	}
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	for (i = 0; i < mpcb->pa6_size; i++) {
 		if (mpcb->pa6[i].path_index == path_index)
-			return mpcb->pa6[i].loc.id;
+			return mpcb->pa6[i].loc_id;
 	}
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
-
-	/* should not arrive here */
-	printk(KERN_ERR "pa4_size:%d,pi:%d\n", mpcb->pa4_size, path_index);
-	for (i = 0; i < mpcb->pa4_size; i++)
-		printk(KERN_ERR "existing pi:%d\n", mpcb->pa4[i].path_index);
 
 	BUG();
 	return -1;
 }
 
-/* For debugging */
-void print_patharray(struct path4 *pa, int size)
-{
-	int i;
-	printk(KERN_ERR "==================\n");
-	for (i = 0; i < size; i++) {
-		printk(KERN_ERR "%pI4/%d->%pI4/%d, pi %d\n",
-		       &pa[i].loc.addr, pa[i].loc.id,
-		       &pa[i].rem.addr, pa[i].rem.id, pa[i].path_index);
-	}
-}
-
 static void __mptcp_update_patharray_ports(struct multipath_pcb *mpcb)
 {
-	int pa4_size = sysctl_mptcp_ndiffports - 1;  /* -1 because the initial
-						      * flow counts for one.
-						      */
-	struct path4 *new_pa4, *old_pa4;
+	int pa4_size = sysctl_mptcp_ndiffports - 1; /* -1 because the initial
+						     * flow counts for one.
+						     */
+	struct path4 *new_pa4;
 	int newpa_idx = 0;
 	struct sock *meta_sk = (struct sock *)mpcb;
 
 	if (mpcb->pa4)
-		return;		/* path allocation already done */
+		return; /* path allocation already done */
 
 	new_pa4 = kmalloc(pa4_size * sizeof(struct path4), GFP_ATOMIC);
 
 	for (newpa_idx = 0; newpa_idx < pa4_size; newpa_idx++) {
-		new_pa4[newpa_idx].loc.addr.s_addr =
-		    inet_sk(meta_sk)->inet_saddr;
-		new_pa4[newpa_idx].loc.id = 0;	/* ulid has id 0 */
-		new_pa4[newpa_idx].rem.addr.s_addr =
-		    inet_sk(meta_sk)->inet_daddr;
-		new_pa4[newpa_idx].rem.id = 0;	/* ulid has id 0 */
+		new_pa4[newpa_idx].loc.sin_family = AF_INET;
+		new_pa4[newpa_idx].loc.sin_addr.s_addr =
+				inet_sk(meta_sk)->inet_saddr;
+		new_pa4[newpa_idx].loc.sin_port = 0;
+		new_pa4[newpa_idx].loc_id = 0; /* ulid has id 0 */
+		new_pa4[newpa_idx].rem.sin_family = AF_INET;
+		new_pa4[newpa_idx].rem.sin_addr.s_addr =
+			inet_sk(meta_sk)->inet_daddr;
+		new_pa4[newpa_idx].rem.sin_port = inet_sk(meta_sk)->inet_dport;
+		new_pa4[newpa_idx].rem_id = 0; /* ulid has id 0 */
 
-		/* new path index to be given */
 		new_pa4[newpa_idx].path_index = mpcb->next_unused_pi++;
 	}
 
-	/* Replacing the mapping table */
-	old_pa4 = mpcb->pa4;
 	mpcb->pa4 = new_pa4;
 	mpcb->pa4_size = pa4_size;
-
-	if (old_pa4)
-		kfree(old_pa4);
 }
 
 /* This is the MPTCP PM mapping table */
@@ -411,54 +371,55 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 		/* ULID src with other dest */
 		for (j = 0; j < mpcb->received_options.num_addr4; j++) {
 			struct path4 *p = find_path_mapping4(
-				(struct in_addr *)
-				&inet_sk(meta_sk)->inet_saddr,
-				&mpcb->received_options.addr4[j].addr,
-				mpcb);
+				(struct in_addr *)&inet_sk(meta_sk)->inet_saddr,
+				&mpcb->received_options.addr4[j].addr, mpcb);
 			if (p) {
 				memcpy(&new_pa4[newpa_idx++], p,
 				       sizeof(struct path4));
 			} else {
-				/* local addr */
-				new_pa4[newpa_idx].loc.addr.s_addr =
-					inet_sk(meta_sk)->inet_saddr;
-				new_pa4[newpa_idx].loc.id = 0;	/* ulid has id 0
-								 */
-				/* remote addr */
-				memcpy(&new_pa4[newpa_idx].rem,
-				       &mpcb->received_options.addr4[j],
-				       sizeof(struct mptcp_loc4));
+				p = &new_pa4[newpa_idx++];
 
-				/* new path index to be given */
-				new_pa4[newpa_idx++].path_index =
-				    mpcb->next_unused_pi++;
+				p->loc.sin_family = AF_INET;
+				p->loc.sin_addr.s_addr =
+						inet_sk(meta_sk)->inet_saddr;
+				p->loc.sin_port = 0;
+				p->loc_id = 0;
+
+				p->rem.sin_family = AF_INET;
+				p->rem.sin_addr = mpcb->received_options.addr4[j].addr;
+				p->rem.sin_port = inet_sk(meta_sk)->inet_dport;
+mptcp_debug("%s: ulid with dst %d\n", __func__, ntohs(p->rem.sin_port));
+				p->rem_id = mpcb->received_options.addr4[j].id;
+
+				p->path_index = mpcb->next_unused_pi++;
 			}
 		}
 
 		/* ULID dest with other src */
 		for (i = 0; i < mpcb->num_addr4; i++) {
-			struct path4 *p =
-			    find_path_mapping4(&mpcb->addr4[i].addr,
-					       (struct in_addr *)
-					       &inet_sk(meta_sk)->inet_daddr,
-					       mpcb);
+			struct path4 *p = find_path_mapping4(
+				&mpcb->addr4[i].addr,
+				(struct in_addr *)&inet_sk(meta_sk)->inet_daddr,
+				mpcb);
 			if (p) {
 				memcpy(&new_pa4[newpa_idx++], p,
 				       sizeof(struct path4));
 			} else {
-				/* local addr */
-				memcpy(&new_pa4[newpa_idx].loc,
-				       &mpcb->addr4[i],
-				       sizeof(struct mptcp_loc4));
+				p = &new_pa4[newpa_idx++];
 
-				/* remote addr */
-				new_pa4[newpa_idx].rem.addr.s_addr =
-				    inet_sk(meta_sk)->inet_daddr;
-				new_pa4[newpa_idx].rem.id = 0;	/* ulid has id 0
-								 */
-				/* new path index to be given */
-				new_pa4[newpa_idx++].path_index =
-				    mpcb->next_unused_pi++;
+				p->loc.sin_family = AF_INET;
+				p->loc.sin_addr = mpcb->addr4[i].addr;
+				p->loc.sin_port = 0;
+				p->loc_id = mpcb->addr4[i].id;
+
+				p->rem.sin_family = AF_INET;
+				p->rem.sin_addr.s_addr =
+						inet_sk(meta_sk)->inet_daddr;
+				p->rem.sin_port = inet_sk(meta_sk)->inet_dport;
+mptcp_debug("%s: ulid with src %d\n", __func__, ntohs(p->rem.sin_port));
+				p->rem_id = 0;
+
+				p->path_index = mpcb->next_unused_pi++;
 			}
 		}
 	}
@@ -474,18 +435,20 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 				memcpy(&new_pa4[newpa_idx++], p,
 				       sizeof(struct path4));
 			} else {
-				/* local addr */
-				memcpy(&new_pa4[newpa_idx].loc,
-				       &mpcb->addr4[i],
-				       sizeof(struct mptcp_loc4));
-				/* remote addr */
-				memcpy(&new_pa4[newpa_idx].rem,
-				       &mpcb->received_options.addr4[j],
-				       sizeof(struct mptcp_loc4));
+				p = &new_pa4[newpa_idx++];
 
-				/* new path index to be given */
-				new_pa4[newpa_idx++].path_index =
-				    mpcb->next_unused_pi++;
+				p->loc.sin_family = AF_INET;
+				p->loc.sin_addr = mpcb->addr4[i].addr;
+				p->loc.sin_port = 0;
+				p->loc_id = mpcb->addr4[i].id;
+
+				p->rem.sin_family = AF_INET;
+				p->rem.sin_addr = mpcb->received_options.addr4[j].addr;
+				p->rem.sin_port = inet_sk(meta_sk)->inet_dport;
+mptcp_debug("%s: all other with port %d\n", __func__, ntohs(p->rem.sin_port));
+				p->rem_id = mpcb->received_options.addr4[j].id;
+
+				p->path_index = mpcb->next_unused_pi++;
 			}
 		}
 
@@ -498,7 +461,6 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 /*This is the MPTCP PM IPV6 mapping table*/
-/* TODO bug checking... */
 void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 {
 	struct path6 *new_pa6, *old_pa6;
@@ -524,19 +486,19 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 				memcpy(&new_pa6[newpa_idx++], p,
 				       sizeof(struct path6));
 			} else {
-				/* local addr */
-				ipv6_addr_copy(&new_pa6[newpa_idx].loc.addr,
-					(struct in6_addr *)
-					&inet6_sk(meta_sk)->saddr);
-				/* ulid has id 0 */
-				new_pa6[newpa_idx].loc.id = 0;
-				/* remote addr */
-				memcpy(&new_pa6[newpa_idx].rem,
-				       &mpcb->received_options.addr6[j],
-				       sizeof(struct mptcp_loc6));
-				/* new path index to be given */
-				new_pa6[newpa_idx++].path_index =
-					mpcb->next_unused_pi++;
+				p = &new_pa6[newpa_idx++];
+
+				p->loc.sin6_family = AF_INET6;
+				ipv6_addr_copy(&p->loc.sin6_addr, &inet6_sk(meta_sk)->saddr);
+				p->loc.sin6_port = 0;
+				p->loc_id = 0;
+
+				p->rem.sin6_family = AF_INET6;
+				ipv6_addr_copy(&p->rem.sin6_addr, &mpcb->received_options.addr6[j].addr);
+				p->rem.sin6_port = inet_sk(meta_sk)->inet_dport;
+				p->rem_id = mpcb->received_options.addr6[j].id;
+
+				p->path_index = mpcb->next_unused_pi++;
 			}
 		}
 		/* ULID dest with other src */
@@ -546,48 +508,49 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 				(struct in6_addr *)&inet6_sk(meta_sk)->daddr,
 				mpcb);
 			if (p) {
-				memcpy(&new_pa6[newpa_idx++],p,
+				memcpy(&new_pa6[newpa_idx++], p,
 				       sizeof(struct path6));
 			} else {
-				/* local addr */
-				memcpy(&new_pa6[newpa_idx].loc,
-				       &mpcb->addr6[i],
-				       sizeof(struct mptcp_loc6));
+				p = &new_pa6[newpa_idx++];
 
-				/* remote addr */
-				ipv6_addr_copy(&new_pa6[newpa_idx].rem.addr,
-					(struct in6_addr *)
-					&inet6_sk(meta_sk)->daddr);
-				/* ulid has id 0 */
-				new_pa6[newpa_idx].rem.id = 0;
-				/* new path index to be given */
-				new_pa6[newpa_idx++].path_index =
-					mpcb->next_unused_pi++;
+				p->loc.sin6_family = AF_INET6;
+				ipv6_addr_copy(&p->loc.sin6_addr, &mpcb->addr6[i].addr);
+				p->loc.sin6_port = 0;
+				p->loc_id = mpcb->addr6[i].id;
+
+				p->rem.sin6_family = AF_INET6;
+				ipv6_addr_copy(&p->rem.sin6_addr, &inet6_sk(meta_sk)->daddr);
+				p->rem.sin6_port = inet_sk(meta_sk)->inet_dport;
+				p->rem_id = 0;
+
+				p->path_index = mpcb->next_unused_pi++;
 			}
 		}
 	}
 	/* Try all other combinations now */
 	for (i = 0; i < mpcb->num_addr6; i++)
 		for (j = 0; j < mpcb->received_options.num_addr6; j++) {
-			struct path6 *p = find_path_mapping6(
-				&mpcb->addr6[i].addr,
-				&mpcb->received_options.addr6[j].addr,mpcb);
+			struct path6 *p =
+			    find_path_mapping6(&mpcb->addr6[i].addr,
+					       &mpcb->received_options.
+					       addr6[j].addr, mpcb);
 			if (p) {
-				memcpy(&new_pa6[newpa_idx++],p,
+				memcpy(&new_pa6[newpa_idx++], p,
 				       sizeof(struct path6));
 			} else {
-				/* local addr */
-				memcpy(&new_pa6[newpa_idx].loc,
-				       &mpcb->addr6[i],
-				       sizeof(struct mptcp_loc6));
-				/* remote addr */
-				memcpy(&new_pa6[newpa_idx].rem,
-				       &mpcb->received_options.addr6[j],
-				       sizeof(struct mptcp_loc6));
+				p = &new_pa6[newpa_idx++];
 
-				/* new path index to be given */
-				new_pa6[newpa_idx++].path_index=
-					mpcb->next_unused_pi++;
+				p->loc.sin6_family = AF_INET6;
+				ipv6_addr_copy(&p->loc.sin6_addr, &mpcb->addr6[i].addr);
+				p->loc.sin6_port = 0;
+				p->loc_id = mpcb->addr6[i].id;
+
+				p->rem.sin6_family = AF_INET6;
+				ipv6_addr_copy(&p->rem.sin6_addr, &mpcb->received_options.addr6[j].addr);
+				p->rem.sin6_port = inet_sk(meta_sk)->inet_dport;
+				p->rem_id = mpcb->received_options.addr6[j].id;
+
+				p->path_index = mpcb->next_unused_pi++;
 			}
 		}
 
