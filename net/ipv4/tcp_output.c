@@ -753,7 +753,7 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		opts->options |= OPTION_MP_JOIN;
 		remaining -= MPTCP_SUB_LEN_JOIN_ALIGN;
 		opts->token = tp->rx_opt.mptcp_rem_token;
-		opts->addr_id = mptcp_get_loc_addrid(mpcb, tp->path_index);
+		opts->addr_id = mptcp_get_loc_addrid(mpcb, sk);
 	}
 nomptcp:
 #endif /* CONFIG_MPTCP */

@@ -285,7 +285,6 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 	int i, ret;
 	struct socket *sock;
 	struct tcp_sock *tp;
-	struct sock *meta_sk = (struct sock *) mpcb;
 
 	BUG_ON(!tcp_sk(mpcb->master_sk)->mpc);
 
@@ -338,6 +337,8 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 			loculid = (struct sockaddr *) &pa4->loc;
 			remulid = (struct sockaddr *) &pa4->rem;
 			ulid_size = sizeof(pa4->loc);
+			inet_sk(sock->sk)->loc_id = pa4->loc_id;
+			inet_sk(sock->sk)->rem_id = pa4->rem_id;
 			break;
 		case AF_INET6:
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
@@ -348,6 +349,8 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 			loculid = (struct sockaddr *) &pa6->loc;
 			remulid = (struct sockaddr *) &pa6->rem;
 			ulid_size = sizeof(pa6->loc);
+			inet_sk(sock->sk)->loc_id = pa6->loc_id;
+			inet_sk(sock->sk)->rem_id = pa6->rem_id;
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 			break;
 		default:

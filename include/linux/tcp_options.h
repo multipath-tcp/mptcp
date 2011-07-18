@@ -79,6 +79,7 @@ struct tcp_options_received {
 	u16	user_mss;	/* mss requested by user in ioctl	*/
 	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
 #ifdef CONFIG_MPTCP
+	__u8	rem_id; /* Address-id in the MP_JOIN */
  	u32     mptcp_rem_token; /* Remote token, for mptcp */
 	u32     mptcp_recv_token; /* Received token, for mptcp */
 	u32     rcv_isn; /* Needed to retrieve abs subflow seqnum from the

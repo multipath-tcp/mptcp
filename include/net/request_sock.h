@@ -67,6 +67,7 @@ struct request_sock {
 	u32				peer_secid;
 #ifdef CONFIG_MPTCP
 	u8                              saw_mpc:1;
+	__u8				rem_id; /* Address-id in the MP_JOIN */
 	u32                             mptcp_loc_token;
 	u32                             mptcp_rem_token;
 	struct multipath_pcb            *mpcb;

@@ -770,6 +770,9 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 			child_tp->mpcb = mpcb =
 				mptcp_alloc_mpcb(child, GFP_ATOMIC);
 
+			inet_sk(child)->loc_id = 0;
+			inet_sk(child)->rem_id = 0;
+
 			/* The allocation of the mpcb failed!
 			 * Destroy the child and go to listen_overflow
 			 */
@@ -802,6 +805,11 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		child_tp->mptcp_loc_token = req->mptcp_loc_token;
 		child_tp->bw_est.time = 0;
 		child->sk_sndmsg_page = NULL;
+
+		BUG_ON(!req->mpcb);
+		inet_sk(child)->loc_id = mptcp_get_loc_addrid(req->mpcb, child);
+		inet_sk(child)->rem_id = req->rem_id;
+
 
 		/* Child_tp->mpcb has been cloned from the master_sk
 		 * We need to increase the master_sk refcount

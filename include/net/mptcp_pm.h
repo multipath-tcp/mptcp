@@ -70,7 +70,7 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt, struct in_addr *addr,
 			u8 id);
 void mptcp_update_patharray(struct multipath_pcb *mpcb);
 struct path4 *mptcp_get_path4(struct multipath_pcb *mpcb, int path_index);
-u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, int path_index);
+u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock *sk);
 int mptcp_lookup_join(struct sk_buff *skb);
 int mptcp_syn_recv_sock(struct sk_buff *skb);
 void mptcp_pm_release(struct multipath_pcb *mpcb);
