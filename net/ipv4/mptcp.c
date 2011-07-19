@@ -295,8 +295,8 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 
 	for (i = 0; i < sizeof(path_indices) * 8; i++) {
 		struct sockaddr *loculid, *remulid;
-		struct path4 *pa4;
-		struct path6 *pa6;
+		struct path4 *pa4 = NULL;
+		struct path6 *pa6 = NULL;
 		int ulid_size = 0, newpi = i + 1, family;
 
 		if (!((1 << i) & path_indices))
