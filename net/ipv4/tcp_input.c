@@ -54,7 +54,7 @@
  *		Andi Kleen:		Process packets with PSH set in the
  *					fast path.
  *		J Hadi Salim:		ECN support
- *		Andrei Gurtov,
+ *	 	Andrei Gurtov,
  *		Pasi Sarolahti,
  *		Panu Kuhlberg:		Experimental audit of TCP (re)transmission
  *					engine. Lots of bugs are found.
@@ -484,8 +484,8 @@ static void tcp_rcv_rtt_update(struct tcp_sock *tp, u32 sample, int win_dep)
 		 */
 		if (!win_dep) {
 			m -= (new_sample >> 3);
-			new_sample += m; /* new=old*7/8+new*1/8 */
-		} else if (m < new_sample) /* if new < 8*old */
+			new_sample += m;
+		} else if (m < new_sample)
 			new_sample = m << 3;
 	} else {
 		/* No previous measure. */
@@ -540,6 +540,7 @@ void tcp_rcv_space_adjust(struct sock *sk)
 #ifdef CONFIG_MPTCP
 	struct multipath_pcb *mpcb = tp->mpcb;
 #endif
+
 	if (tp->rcvq_space.time == 0)
 		goto new_measure;
 
@@ -561,8 +562,7 @@ void tcp_rcv_space_adjust(struct sock *sk)
 		if (time < rtt_max || !rtt_max)
 			return;
 #endif
-	}
-	else if (time < (tp->rcv_rtt_est.rtt >> 3) || tp->rcv_rtt_est.rtt == 0)
+	} else if (time < (tp->rcv_rtt_est.rtt >> 3) || tp->rcv_rtt_est.rtt == 0)
 		return;
 
 	space = 2 * (tp->copied_seq - tp->rcvq_space.seq);
@@ -599,7 +599,6 @@ void tcp_rcv_space_adjust(struct sock *sk)
 #ifdef CONFIG_MPTCP
 				mptcp_update_window_clamp(mpcb);
 #endif
-
 			}
 		}
 	}
@@ -716,7 +715,7 @@ static void tcp_rtt_estimator(struct sock *sk, const __u32 mrtt)
 		} else {
 			m -= (tp->mdev >> 2);   /* similar update on mdev */
 		}
-		tp->mdev += m;		/* mdev = 3/4 mdev + 1/4 new */
+		tp->mdev += m;	    	/* mdev = 3/4 mdev + 1/4 new */
 		if (tp->mdev > tp->mdev_max) {
 			tp->mdev_max = tp->mdev;
 			if (tp->mdev_max > tp->rttvar)
@@ -3196,9 +3195,10 @@ static void tcp_ack_saw_tstamp(struct sock *sk, int flag)
 	 * samples are accepted even from very old segments: f.e., when rtt=1
 	 * increases to 8, we retransmit 5 times and after 8 seconds delayed
 	 * answer arrives rto becomes 120 seconds! If at least one of segments
-	 * in window is lost... Voila.				--ANK (010210)
+	 * in window is lost... Voila.	 			--ANK (010210)
 	 */
 	struct tcp_sock *tp = tcp_sk(sk);
+
 	tcp_valid_rtt_meas(sk, tcp_time_stamp - tp->rx_opt.rcv_tsecr);
 }
 
@@ -3244,11 +3244,12 @@ static void tcp_rearm_rto(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	if (!tp->packets_out)
+	if (!tp->packets_out) {
 		inet_csk_clear_xmit_timer(sk, ICSK_TIME_RETRANS);
-	else
+	} else {
 		inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
 					  inet_csk(sk)->icsk_rto, TCP_RTO_MAX);
+	}
 }
 
 /* If we get here, the whole TSO packet has not been acked. */
@@ -3260,7 +3261,6 @@ static u32 tcp_tso_acked(struct sock *sk, struct sk_buff *skb)
 	BUG_ON(!after(TCP_SKB_CB(skb)->end_seq, tp->snd_una));
 
 	packets_acked = tcp_skb_pcount(skb);
-
 	if (tcp_trim_head(sk, skb, tp->snd_una - TCP_SKB_CB(skb)->seq))
 		return 0;
 	packets_acked -= tcp_skb_pcount(skb);
@@ -3438,7 +3438,8 @@ continue_exec:
 		flag |= FLAG_SACK_RENEGING;
 
 	if (flag & FLAG_ACKED) {
-		const struct tcp_congestion_ops *ca_ops = inet_csk(sk)->icsk_ca_ops;
+		const struct tcp_congestion_ops *ca_ops
+			= inet_csk(sk)->icsk_ca_ops;
 
 		if (unlikely(icsk->icsk_mtup.probe_size &&
 			     !after(tp->mtu_probe.probe_seq_end, tp->snd_una))) {
@@ -3524,7 +3525,6 @@ static void tcp_ack_probe(struct sock *sk)
 	int usable_wopen;
 
 	/* Was it a usable window open? */
-
 	if (tp->mpc)
 		usable_wopen=(!after(
 				      TCP_SKB_CB(
@@ -3532,8 +3532,8 @@ static void tcp_ack_probe(struct sock *sk)
 				      tcp_wnd_end(tp,1)));
 	else
 		usable_wopen=(!after(TCP_SKB_CB(
-					     tcp_send_head(sk))->end_seq,
-				     tcp_wnd_end(tp,0)));
+				tcp_send_head(sk))->end_seq,
+				tcp_wnd_end(tp,0)));
 
 	if (usable_wopen) {
 		icsk->icsk_backoff = 0;
@@ -3619,7 +3619,7 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 		if (*snd_wnd != nwin) {
 			*snd_wnd = nwin;
 
-			/* Note, it is the only place where
+			/* Note, it is the only place, where
 			 * fast path is recovered for sending TCP.
 			 */
 			tp->pred_flags = 0;
@@ -3960,8 +3960,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				return;	/* don't parse partial options */
 			switch (opcode) {
 			case TCPOPT_MSS:
-				if (opsize == TCPOLEN_MSS &&
-				    th->syn && !estab) {
+				if (opsize == TCPOLEN_MSS && th->syn && !estab) {
 					u16 in_mss = get_unaligned_be16(ptr);
 					if (in_mss) {
 						if (opt_rx->user_mss &&
@@ -3978,13 +3977,8 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 					opt_rx->wscale_ok = 1;
 					if (snd_wscale > 14) {
 						if (net_ratelimit())
-							printk(KERN_INFO
-							       "tcp_parse_"
-							       "options: "
-							       "Illegal window "
-							       "scaling value "
-							       "%d >14 "
-							       "received.\n",
+							printk(KERN_INFO "tcp_parse_options: Illegal window "
+							       "scaling value %d >14 received.\n",
 							       snd_wscale);
 						snd_wscale = 14;
 					}
@@ -4009,15 +4003,10 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				break;
 
 			case TCPOPT_SACK:
-				if ((opsize >=
-				     (TCPOLEN_SACK_BASE +
-				      TCPOLEN_SACK_PERBLOCK)) &&
-				    !((opsize - TCPOLEN_SACK_BASE) %
-				      TCPOLEN_SACK_PERBLOCK) &&
-				    opt_rx->sack_ok) {
-
-					TCP_SKB_CB(skb)->sacked =
-						(ptr - 2) - (unsigned char *)th;
+				if ((opsize >= (TCPOLEN_SACK_BASE + TCPOLEN_SACK_PERBLOCK)) &&
+				   !((opsize - TCPOLEN_SACK_BASE) % TCPOLEN_SACK_PERBLOCK) &&
+				   opt_rx->sack_ok) {
+					TCP_SKB_CB(skb)->sacked = (ptr - 2) - (unsigned char *)th;
 				}
 				break;
 #ifdef CONFIG_TCP_MD5SIG
@@ -4286,7 +4275,7 @@ static void tcp_reset(struct sock *sk)
 }
 
 /*
- *	Process the FIN bit. This now behaves as it is supposed to work
+ * 	Process the FIN bit. This now behaves as it is supposed to work
  *	and the FIN takes effect when it is validly part of sequence
  *	space. Not before when we get holes.
  *
@@ -4579,7 +4568,6 @@ static void tcp_ofo_queue(struct sock *sk)
 		}
 
 		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
-
 		if (tcp_hdr(skb)->fin)
 			tcp_fin(skb, sk, tcp_hdr(skb));
 #ifdef CONFIG_MPTCP
@@ -4781,16 +4769,14 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 		    tp->copied_seq == tp->rcv_nxt && tp->ucopy.len &&
 		    sock_owned_by_user(sk) && !tp->urg_data) {
 			int chunk = min_t(unsigned int, skb->len,
-					tp->ucopy.len);
+					  tp->ucopy.len);
 			/* MPTCP does not support prequeues yet */
 			BUG_ON(tp->mpc);
 
 			__set_current_state(TASK_RUNNING);
 
 			local_bh_enable();
-			if (!skb_copy_datagram_iovec(skb, 0, tp->ucopy.iov,
-							chunk)) {
-
+			if (!skb_copy_datagram_iovec(skb, 0, tp->ucopy.iov, chunk)) {
 				tp->ucopy.len -= chunk;
 				tp->copied_seq += chunk;
 				eaten = (chunk == skb->len && !th->fin);
@@ -4798,6 +4784,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 			}
 			local_bh_disable();
 		}
+
 		if (eaten <= 0) {
 queue_and_out:
 			if (eaten < 0 &&
@@ -4856,7 +4843,6 @@ queue_and_out:
 			sk->sk_data_ready(sk, 0);
 #endif
 		}
-
 		return;
 	}
 
@@ -5117,7 +5103,6 @@ restart:
 				if (skb_copy_bits(skb, offset, skb_put(nskb, size), size))
 					BUG();
 				TCP_SKB_CB(nskb)->end_seq += size;
-				TCP_SKB_CB(nskb)->end_data_seq += size;
 				copy -= size;
 				start += size;
 			}
@@ -5173,17 +5158,14 @@ static void tcp_collapse_ofo_queue(struct sock *sk)
 			start = TCP_SKB_CB(skb)->seq;
 			end = TCP_SKB_CB(skb)->end_seq;
 		} else {
-			if (before(TCP_SKB_CB(skb)->seq, start)) {
+			if (before(TCP_SKB_CB(skb)->seq, start))
 				start = TCP_SKB_CB(skb)->seq;
-			}
-			if (after(TCP_SKB_CB(skb)->end_seq, end)) {
+			if (after(TCP_SKB_CB(skb)->end_seq, end))
 				end = TCP_SKB_CB(skb)->end_seq;
-			}
 		}
 	}
 }
 #endif
-
 
 /*
  * Purge the out-of-order queue.
@@ -5511,7 +5493,7 @@ static void tcp_check_urg(struct sock *sk, struct tcphdr *th)
 	 * or we break the semantics of SIOCATMARK (and thus sockatmark())
 	 *
 	 * NOTE. Double Dutch. Rendering to plain English: author of comment
-	 * above did something sort of	send("A", MSG_OOB); send("B", MSG_OOB);
+	 * above did something sort of 	send("A", MSG_OOB); send("B", MSG_OOB);
 	 * and expect that both A and B disappear from stream. This is _wrong_.
 	 * Though this happens in BSD with high probability, this is occasional.
 	 * Any application relying on this is buggy. Note also, that fix "works"
@@ -5542,9 +5524,8 @@ static void tcp_urg(struct sock *sk, struct sk_buff *skb, struct tcphdr *th)
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	/* Check if we get a new urgent pointer - normally not. */
-	if (tp->mpc && th->urg) {
-		/* Not supported yet */
-		BUG();
+	if (th->urg) {
+		BUG_ON(tp->mpc);
 		tcp_check_urg(sk, th);
 	}
 
@@ -5737,7 +5718,7 @@ discard:
  *	TCP receive function for the ESTABLISHED state.
  *
  *	It is split into a fast path and a slow path. The fast path is
- *	disabled when:
+ * 	disabled when:
  *	- A zero window was announced from us - zero window probing
  *        is only handled properly in the slow path.
  *	- Out of order segments arrived.
@@ -6289,6 +6270,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		 *    (our SYN has been ACKed), change the connection
 		 *    state to ESTABLISHED..."
 		 */
+
 		TCP_ECN_rcv_synack(tp, th);
 
 		if (tp->mpc)
@@ -6373,7 +6355,6 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		}
 
 		smp_mb();
-
 		tcp_set_state(sk, TCP_ESTABLISHED);
 
 		security_inet_conn_established(sk, skb);
@@ -6474,9 +6455,8 @@ discard:
 			tp->mpc = 1;
 			tp->rx_opt.saw_mpc = 0;
 			mptcp_add_sock(tp->mpcb, tp);
-		} else {
+		} else
 			mptcp_fallback(sk);
-		}
 
 		/* RFC1323: The window in SYN & SYN/ACK segments is
 		 * never scaled.
@@ -6486,8 +6466,8 @@ discard:
 			mpcb_meta_tp(mpcb)->snd_wnd    = ntohs(th->window);
 			mpcb_meta_tp(mpcb)->max_window = tp->snd_wnd;
 		} else {
-			tp->snd_wl1    = TCP_SKB_CB(skb)->seq;
 			tp->snd_wnd    = ntohs(th->window);
+			tp->snd_wl1    = TCP_SKB_CB(skb)->seq;
 			tp->max_window = tp->snd_wnd;
 		}
 
@@ -6534,6 +6514,7 @@ reset_and_undo:
  *	It's called from both tcp_v4_rcv and tcp_v6_rcv and should be
  *	address independent.
  */
+
 int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 			  struct tcphdr *th, unsigned len)
 {
@@ -6615,8 +6596,8 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 				 * NULL and sk->sk_socket == NULL.
 				 */
 				if (sk->sk_socket)
-					sk_wake_async(sk, SOCK_WAKE_IO,
-							POLL_OUT);
+					sk_wake_async(sk,
+						      SOCK_WAKE_IO, POLL_OUT);
 
 				tp->snd_una = TCP_SKB_CB(skb)->ack_seq;
 				if (tp->mpc) {
@@ -6628,7 +6609,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 							tp->mpcb)->rcv_nxt);
 				} else {
 					tp->snd_wnd = ntohs(th->window) <<
-						tp->rx_opt.snd_wscale;
+					      tp->rx_opt.snd_wscale;
 					tcp_init_wl(tp, TCP_SKB_CB(skb)->seq);
 				}
 
@@ -6677,38 +6658,26 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 					int tmo;
 
 					if (tp->linger2 < 0 ||
-					    (TCP_SKB_CB(skb)->end_seq !=
-					     TCP_SKB_CB(skb)->seq &&
-					     after(TCP_SKB_CB(skb)->end_seq -
-						   th->fin, tp->rcv_nxt))) {
+					    (TCP_SKB_CB(skb)->end_seq != TCP_SKB_CB(skb)->seq &&
+					     after(TCP_SKB_CB(skb)->end_seq - th->fin, tp->rcv_nxt))) {
 						tcp_done(sk);
-						NET_INC_STATS_BH(sock_net(sk),
-								 LINUX_MIB_TCPABORTONDATA);
+						NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPABORTONDATA);
 						return 1;
 					}
 
 					tmo = tcp_fin_time(sk);
 					if (tmo > TCP_TIMEWAIT_LEN) {
-						inet_csk_reset_keepalive_timer(
-							sk, tmo -
-							TCP_TIMEWAIT_LEN);
-					} else if (th->fin ||
-						   sock_owned_by_user(sk)) {
-						/* Bad case. We could lose
-						 * such FIN otherwise.
-						 * It is not a big problem,
-						 * but it looks confusing
-						 * and not so rare event. We
-						 * still can lose it now,
-						 * if it spins in
-						 * bh_lock_sock(), but it is
-						 * really marginal case.
+						inet_csk_reset_keepalive_timer(sk, tmo - TCP_TIMEWAIT_LEN);
+					} else if (th->fin || sock_owned_by_user(sk)) {
+						/* Bad case. We could lose such FIN otherwise.
+						 * It is not a big problem, but it looks confusing
+						 * and not so rare event. We still can lose it now,
+						 * if it spins in bh_lock_sock(), but it is really
+						 * marginal case.
 						 */
-						inet_csk_reset_keepalive_timer(
-							sk, tmo);
+						inet_csk_reset_keepalive_timer(sk, tmo);
 					} else {
-						tcp_time_wait(sk, TCP_FIN_WAIT2,
-							      tmo);
+						tcp_time_wait(sk, TCP_FIN_WAIT2, tmo);
 						goto discard;
 					}
 				}

@@ -87,6 +87,7 @@ int sysctl_tcp_tw_reuse __read_mostly;
 int sysctl_tcp_low_latency __read_mostly = 1;
 EXPORT_SYMBOL(sysctl_tcp_low_latency);
 
+
 #ifdef CONFIG_TCP_MD5SIG
 static struct tcp_md5sig_key *tcp_v4_md5_do_lookup(struct sock *sk,
 						   __be32 addr);
@@ -528,7 +529,7 @@ out:
 }
 
 void __tcp_v4_send_check(struct sk_buff *skb,
-			 __be32 saddr, __be32 daddr)
+				__be32 saddr, __be32 daddr)
 {
 	struct tcphdr *th = tcp_hdr(skb);
 
@@ -659,9 +660,9 @@ static void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
  */
 
 void tcp_v4_send_ack(struct sk_buff *skb, u32 seq, u32 ack,
-		     u32 win, u32 ts, int oif,
-		     struct tcp_md5sig_key *key,
-		     int reply_flags)
+			    u32 win, u32 ts, int oif,
+			    struct tcp_md5sig_key *key,
+			    int reply_flags)
 {
 	struct tcphdr *th = tcp_hdr(skb);
 	struct {
@@ -828,7 +829,7 @@ static void syn_flood_warning(const struct sk_buff *skb)
  * Save and compile IPv4 options into the request_sock if needed.
  */
 struct ip_options *tcp_v4_save_options(struct sock *sk,
-				       struct sk_buff *skb)
+					      struct sk_buff *skb)
 {
 	struct ip_options *opt = &(IPCB(skb)->opt);
 	struct ip_options *dopt = NULL;
@@ -1511,8 +1512,7 @@ static struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb)
 		return tcp_check_req(sk, skb, req, prev);
 
 	nsk = inet_lookup_established(sock_net(sk), &tcp_hashinfo, iph->saddr,
-				      th->source, iph->daddr, th->dest,
-				      inet_iif(skb));
+			th->source, iph->daddr, th->dest, inet_iif(skb));
 
 	if (nsk) {
 		if (nsk->sk_state != TCP_TIME_WAIT) {
@@ -1592,11 +1592,9 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 		goto csum_err;
 
 	if (sk->sk_state == TCP_LISTEN) {
-		struct sock *nsk;
-		nsk = tcp_v4_hnd_req(sk, skb);
-		if (!nsk) {
+		struct sock *nsk = tcp_v4_hnd_req(sk, skb);
+		if (!nsk)
 			goto discard;
-		}
 
 		if (nsk != sk) {
 			if (tcp_child_process(sk, nsk, skb)) {
@@ -1666,8 +1664,7 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	/* An explanation is required here, I think.
 	 * Packet length and doff are validated by header prediction,
 	 * provided case of th->doff==0 is eliminated.
-	 * So, we defer the checks.
-	 */
+	 * So, we defer the checks. */
 	if (!skb_csum_unnecessary(skb) && tcp_v4_checksum_init(skb))
 		goto bad_packet;
 
@@ -1706,8 +1703,7 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	}
 #endif
 
-	sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source,
-			       th->dest);
+	sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
 
 #ifdef CONFIG_MPTCP
 	/* Is there a pending request sock for this segment ? */
@@ -1717,7 +1713,6 @@ int tcp_v4_rcv(struct sk_buff *skb)
 		return 0;
 	}
 #endif
-
 	if (!sk)
 		goto no_tcp_socket;
 

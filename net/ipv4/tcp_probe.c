@@ -42,7 +42,7 @@ MODULE_LICENSE("GPL");
 MODULE_VERSION("1.1");
 
 static int port __read_mostly = 0;
-MODULE_PARM_DESC(port, "Port to match (0 = all)");
+MODULE_PARM_DESC(port, "Port to match (0=all)");
 module_param(port, int, 0);
 
 static unsigned int bufsize __read_mostly = 4096;
@@ -129,7 +129,7 @@ static inline int tcp_probe_avail(void)
  * Note: arguments must match tcp_rcv_established()!
  */
 static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
-				struct tcphdr *th, unsigned len)
+			       struct tcphdr *th, unsigned len)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_sock *inet = inet_sk(sk);
@@ -158,6 +158,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 		/* If log fills, just silently drop */
 		if (tcp_probe_avail() > 1) {
 			struct tcp_log *p = tcp_probe.log + tcp_probe.head;
+
 			p->tstamp = ktime_get();
 			p->saddr = inet->inet_saddr;
 			p->sport = inet->inet_sport;
@@ -368,8 +369,6 @@ static struct tcpprobe_ops tcpprobe_fcts = {
 	.logmsg = logmsg,
 };
 #endif
-
-
 
 static int tcpprobe_open(struct inode *inode, struct file *file)
 {

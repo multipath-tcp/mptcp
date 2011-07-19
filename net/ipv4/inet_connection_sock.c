@@ -561,7 +561,6 @@ void inet_csk_reqsk_queue_prune(struct sock *parent,
 }
 EXPORT_SYMBOL_GPL(inet_csk_reqsk_queue_prune);
 
-
 #if defined(CONFIG_MPTCP) && (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))
 
 /* Defined in net/core/sock.c */

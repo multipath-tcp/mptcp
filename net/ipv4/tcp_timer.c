@@ -459,7 +459,7 @@ out:;
 
 static void tcp_write_timer(unsigned long data)
 {
-	struct sock *sk = (struct sock*)data;
+	struct sock *sk = (struct sock *)data;
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sock *master_sk = tp->mpcb ? tp->mpcb->master_sk : sk;
 	struct inet_connection_sock *icsk = inet_csk(sk);

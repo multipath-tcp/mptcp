@@ -146,7 +146,6 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 	int paws_reject = 0;
 
 	tmp_opt.saw_tstamp = 0;
-
 	if (th->doff > (sizeof(*th) >> 2) && tcptw->tw_ts_recent_stamp) {
 		tcp_parse_options(skb, &tmp_opt, &hash_location, NULL, 0);
 
@@ -460,8 +459,10 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 
 		/* Now setup tcp_sock */
 		newtp->pred_flags = 0;
+
 		newtp->rcv_wup = newtp->copied_seq =
 		newtp->rcv_nxt = treq->rcv_isn + 1;
+
 		newtp->snd_sml = newtp->snd_una =
 		newtp->snd_nxt = newtp->snd_up =
 			treq->snt_isn + 1 + tcp_s_data_size(oldtp);
@@ -588,7 +589,6 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 
 	if (th->doff > (sizeof(struct tcphdr)>>2)) {
 		tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
-
 
 		if (tmp_opt.saw_tstamp) {
 			tmp_opt.ts_recent = req->ts_recent;
@@ -847,6 +847,7 @@ embryonic_reset:
 		/* Deleting from global hashtable */
 		mptcp_hash_request_remove(req);
 	}
+
 	inet_csk_reqsk_queue_drop(sk, req, prev);
 	return NULL;
 }
@@ -865,7 +866,8 @@ int tcp_child_process(struct sock *parent, struct sock *child,
 	int state = child->sk_state;
 
 	if (!sock_owned_by_user(child)) {
-		ret = tcp_rcv_state_process(child, skb, tcp_hdr(skb), skb->len);
+		ret = tcp_rcv_state_process(child, skb, tcp_hdr(skb),
+					    skb->len);
 		/* Wakeup parent, send SIGIO */
 		if (state == TCP_SYN_RECV && child->sk_state != state)
 			parent->sk_data_ready(parent, 0);

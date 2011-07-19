@@ -45,7 +45,7 @@
  *					escape still
  *		Alan Cox	:	Fixed another acking RST frame bug.
  *					Should stop LAN workplace lockups.
- *		Alan Cox	:	Some tidyups using the new skb list
+ *		Alan Cox	: 	Some tidyups using the new skb list
  *					facilities
  *		Alan Cox	:	sk->keepopen now seems to work
  *		Alan Cox	:	Pulls options out correctly on accepts
@@ -199,7 +199,7 @@
  *					tcp_do_sendmsg to avoid burstiness.
  *		Eric Schenk	:	Fix fast close down bug with
  *					shutdown() followed by close().
- *		Andi Kleen	:	Make poll agree with SIGIO
+ *		Andi Kleen 	:	Make poll agree with SIGIO
  *	Salvatore Sanfilippo	:	Support SO_LINGER with linger == 1 and
  *					lingertime == 0 (RFC 793 ABORT Call)
  *	Hirokazu Takahashi	:	Use copy_from_user() instead of
@@ -660,7 +660,6 @@ ssize_t tcp_splice_read(struct socket *sock, loff_t *ppos,
 	BUG();
 #endif
 	sock_rps_record_flow(sk);
-
 	/*
 	 * We can't seek on a socket input
 	 */
@@ -896,6 +895,7 @@ wait_for_sndbuf:
 wait_for_memory:
 		if (copied)
 			tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
+
 		if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
 			goto do_error;
 
@@ -1023,6 +1023,7 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 #ifndef CONFIG_MPTCP
 	if (sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN))
 		goto out_err;
+
 	sg = sk->sk_route_caps & NETIF_F_SG;
 #else
 	/* At the moment we assume sg is unavailable on any interface.
@@ -1030,7 +1031,6 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	 */
 	sg = 0;
 #endif
-
 
 	PDEBUG_SEND("%s:line %d, size %d,iovlen %d\n", __func__,
 	       __LINE__, (int) size, (int) iovlen);
@@ -1077,7 +1077,7 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			BUG_ON(!skb && tcp_send_head(sk));
 
 			if (copy <= 0) {
-			new_segment:
+new_segment:
 				/* Allocate new segment. If the interface is SG,
 				 * allocate skb fitting to single page.
 				 */
@@ -1193,6 +1193,7 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			tp->write_seq += copy;
 			TCP_SKB_CB(skb)->end_seq += copy;
 			skb_shinfo(skb)->gso_segs = 0;
+
 #ifdef CONFIG_MPTCP
 			if (tp->mpc) {
 				TCP_SKB_CB(skb)->data_len += copy;
@@ -1219,14 +1220,14 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			}
 			continue;
 
-		wait_for_sndbuf:
+wait_for_sndbuf:
 			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 			tcpprobe_logmsg(sk, "wait_for_sndbuf");
 
-		wait_for_memory:
+wait_for_memory:
 			if (copied)
-				tcp_push(sk, flags & ~MSG_MORE, mss_now,
-					 TCP_NAGLE_PUSH);
+				tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
+
 			if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
 				goto do_error;
 			BUG_ON(!sk_stream_memory_free(sk));
@@ -1550,8 +1551,7 @@ EXPORT_SYMBOL(tcp_read_sock);
  *	Probably, code can be easily improved even more.
  */
 
-int tcp_recvmsg(struct kiocb *iocb, struct sock *sk,
-		struct msghdr *msg,
+int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		size_t len, int nonblock, int flags, int *addr_len)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -1652,9 +1652,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk,
 			}
 		}
 
-		/* Are we at urgent data? Stop if we have read anything or
-		 * have SIGURG pending.
-		 */
+		/* Are we at urgent data? Stop if we have read anything or have SIGURG pending. */
 		if (tp->urg_data && tp->urg_seq == *seq) {
 			/* With tp->mpc, tp->urg_seq must be set to a DSN,
 			 * not a subseq number. This is not done yet.
@@ -1663,8 +1661,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk,
 			if (copied)
 				break;
 			if (signal_pending(current)) {
-				copied = timeo ? sock_intr_errno(timeo) :
-					-EAGAIN;
+				copied = timeo ? sock_intr_errno(timeo) : -EAGAIN;
 				break;
 			}
 		}
@@ -1672,6 +1669,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk,
 		/* Next get a buffer. */
 		if (mpcb)
 			goto no_subrcv_queue;
+
 		skb_queue_walk(&sk->sk_receive_queue, skb) {
 			/* Now that we have two receive queues this
 			 * shouldn't happen.
@@ -1693,6 +1691,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk,
 			     "recvmsg bug 2: copied %X seq %X rcvnxt %X fl %X\n",
 			     *seq, TCP_SKB_CB(skb)->seq, tp->rcv_nxt, flags);
 		}
+
 no_subrcv_queue:
 		/* Well, if we have backlog, try to process it now yet. */
 
@@ -1709,7 +1708,6 @@ no_subrcv_queue:
 				!timeo ||
 				signal_pending(current))
 				break;
-
 		} else {
 			if (sock_flag(meta_sk, SOCK_DONE))
 				break;
@@ -1811,9 +1809,8 @@ no_subrcv_queue:
 			/* Do not sleep, just process backlog. */
 			release_sock(sk);
 			lock_sock(sk);
-		} else {
+		} else
 			sk_wait_data(meta_sk, &timeo);
-		}
 
 #ifdef CONFIG_NET_DMA
 		tcp_service_net_dma(sk, false);  /* Don't block */
@@ -1847,13 +1844,11 @@ do_prequeue:
 			(peek_seq - copied - urg_hole != meta_tp->copied_seq)) {
 			if (net_ratelimit())
 				printk(KERN_DEBUG "TCP(%s:%d): Application bug, race in MSG_PEEK.\n",
-					current->comm, task_pid_nr(current));
+				       current->comm, task_pid_nr(current));
 			peek_seq = meta_tp->copied_seq;
 		}
-
 		if (mpcb && len <= 0)
 			break;
-
 		continue;
 
 	found_ok_skb:
@@ -1910,8 +1905,7 @@ do_prequeue:
 #endif
 			{
 				err = skb_copy_datagram_iovec(skb, offset,
-							      msg->msg_iov,
-							      used);
+						msg->msg_iov, used);
 				if (err) {
 					/* Exception. Bailout! */
 					if (!copied)
@@ -1961,8 +1955,7 @@ skip_copy:
 
 			tcp_prequeue_process(sk);
 
-			if (copied > 0 && (chunk = len - tp->ucopy.len)
-			    != 0) {
+			if (copied > 0 && (chunk = len - tp->ucopy.len) != 0) {
 				NET_ADD_STATS_USER(sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
 				len -= chunk;
 				copied += chunk;
@@ -2226,7 +2219,7 @@ void tcp_close(struct sock *sk, long timeout)
 		 * required by specs (TCP_ESTABLISHED, TCP_CLOSE_WAIT, when
 		 * they look as CLOSING or LAST_ACK for Linux)
 		 * Probably, I missed some more holelets.
-		 *						--ANK
+		 * 						--ANK
 		 */
 		tcp_send_fin(sk);
 	}
@@ -2244,12 +2237,12 @@ adjudge_to_death:
 		sock_orphan(sk);
 
 #ifndef CONFIG_MPTCP
-	/* It is the last release_sock in its life.
-	 * It will remove backlog.
-	 */
+	/* It is the last release_sock in its life. It will remove backlog. */
 	release_sock(sk);
+
+
 	/* Now socket is owned by kernel and we acquire BH lock
-	 * to finish close. No need to check for user refs.
+	   to finish close. No need to check for user refs.
 	 */
 	local_bh_disable();
 	bh_lock_sock(sk);

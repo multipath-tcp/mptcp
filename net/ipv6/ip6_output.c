@@ -211,7 +211,8 @@ int ip6_xmit(struct sock *sk, struct sk_buff *skb, struct flowi *fl,
 		unsigned int head_room;
 
 		/* First: exthdrs may take lots of space (~8K for now)
-		 * MAX_HEADER is not enough. */
+		   MAX_HEADER is not enough.
+		 */
 		head_room = opt->opt_nflen + opt->opt_flen;
 		seg_len += head_room;
 		head_room += sizeof(struct ipv6hdr) + LL_RESERVED_SPACE(dst->dev);
@@ -271,7 +272,6 @@ int ip6_xmit(struct sock *sk, struct sk_buff *skb, struct flowi *fl,
 	if (net_ratelimit())
 		printk(KERN_DEBUG "IPv6: sending pkt_too_big to self\n");
 	skb->dev = dst->dev;
-
 	icmpv6_send(skb, ICMPV6_PKT_TOOBIG, 0, mtu);
 	IP6_INC_STATS(net, ip6_dst_idev(skb_dst(skb)), IPSTATS_MIB_FRAGFAILS);
 	kfree_skb(skb);

@@ -1688,7 +1688,6 @@ static int __init inet_init(void)
 	if (rc)
 		goto out_unregister_raw_proto;
 #endif
-
 	/*
 	 *	Tell SOCKET that we are alive...
 	 */

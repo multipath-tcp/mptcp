@@ -1,7 +1,7 @@
 /*
  * NET		Generic infrastructure for Network protocols.
  *
- *		Definitions for request_sock
+ *		Definitions for request_sock 
  *
  * Authors:	Arnaldo Carvalho de Melo <acme@conectiva.com.br>
  *

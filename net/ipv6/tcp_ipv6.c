@@ -1810,7 +1810,6 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 				return 0;
 		}
 	}
-
 #endif /* CONFIG_MPTCP */
 
 	sk = __inet6_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
@@ -2425,7 +2424,6 @@ int __init tcpv6_init(void)
 	ret = register_pernet_subsys(&tcpv6_net_ops);
 	if (ret)
 		goto out_tcpv6_protosw;
-
 out:
 	return ret;
 

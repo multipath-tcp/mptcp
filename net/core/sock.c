@@ -2207,8 +2207,9 @@ void release_sock(struct sock *sk)
 
 	if (is_meta_sk(sk)) /* necessary for sk_wait_event() */
 		sk = ((struct multipath_pcb *)sk)->master_sk;
-
-	/* The sk_lock has mutex_unlock() semantics: */
+	/*
+	 * The sk_lock has mutex_unlock() semantics:
+	 */
 	mutex_release(&sk->sk_lock.dep_map, 1, _RET_IP_);
 
 	spin_lock_bh(&sk->sk_lock.slock);
