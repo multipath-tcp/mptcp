@@ -540,8 +540,7 @@ void tcp_rcv_space_adjust(struct sock *sk)
 	if (tp->mpc) {
 		if (mptcp_check_rtt(tp, time))
 			return;
-	} else if (time < (tp->rcv_rtt_est.rtt >> 3) ||
-		   tp->rcv_rtt_est.rtt == 0)
+	} else if (time < (tp->rcv_rtt_est.rtt >> 3) || tp->rcv_rtt_est.rtt == 0)
 		return;
 
 	space = 2 * (tp->copied_seq - tp->rcvq_space.seq);
@@ -3496,9 +3495,9 @@ static void tcp_ack_probe(struct sock *sk)
 				mptcp_skb_end_data_seq(tcp_send_head(sk)),
 				tcp_wnd_end(tp, 1)));
 	else
-		usable_wopen = (!after(TCP_SKB_CB(
+		usable_wopen=(!after(TCP_SKB_CB(
 				tcp_send_head(sk))->end_seq,
-				tcp_wnd_end(tp, 0)));
+				tcp_wnd_end(tp,0)));
 
 	if (usable_wopen) {
 		icsk->icsk_backoff = 0;
@@ -4591,8 +4590,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 			__set_current_state(TASK_RUNNING);
 
 			local_bh_enable();
-			if (!skb_copy_datagram_iovec(skb, 0, tp->ucopy.iov,
-						     chunk)) {
+			if (!skb_copy_datagram_iovec(skb, 0, tp->ucopy.iov, chunk)) {
 				tp->ucopy.len -= chunk;
 				tp->copied_seq += chunk;
 				eaten = (chunk == skb->len && !th->fin);

@@ -872,7 +872,7 @@ static void syn_flood_warning(const struct sk_buff *skb)
  * Save and compile IPv4 options into the request_sock if needed.
  */
 struct ip_options_rcu *tcp_v4_save_options(struct sock *sk,
-					  struct sk_buff *skb)
+					   struct sk_buff *skb)
 {
 	const struct ip_options *opt = &(IPCB(skb)->opt);
 	struct ip_options_rcu *dopt = NULL;

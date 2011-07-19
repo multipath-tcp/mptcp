@@ -79,7 +79,7 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 	tp->snd_nxt = is_meta_tp(tp) ? mptcp_skb_end_data_seq(skb) :
 	    TCP_SKB_CB(skb)->end_seq;
 
-	/* Don't override Nagle indefinitely with F-RTO */
+	/* Don't override Nagle indefinately with F-RTO */
 	if (tp->frto_counter == 2)
 		tp->frto_counter = 3;
 
@@ -2331,6 +2331,7 @@ retry:
 		/* This must be invoked even if we don't want
 		 * to support TSO at the moment
 		 */
+
 		tso_segs = tcp_init_tso_segs(sk, skb, mss_now);
 		BUG_ON(!tso_segs);
 		/* At the moment we do not support tso, hence

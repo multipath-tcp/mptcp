@@ -223,7 +223,6 @@ static struct jprobe tcp_jprobe_snd = {
 	.entry	= jtcp_transmit_skb,
 };
 
-
 static int tcpprobe_open(struct inode * inode, struct file * file)
 {
 	/* Reset (empty) log */
