@@ -16,8 +16,6 @@
 #ifndef _MPTCP_PM_H
 #define _MPTCP_PM_H
 
-#ifdef CONFIG_MPTCP_PM
-
 #include <linux/list.h>
 #include <linux/jhash.h>
 #include <linux/types.h>
@@ -30,6 +28,8 @@
 
 struct multipath_pcb;
 struct multipath_options;
+
+#ifdef CONFIG_MPTCP_PM
 
 struct mptcp_loc4 {
 	u8		id;
@@ -83,13 +83,124 @@ int mptcp_v4_send_synack(struct sock *meta_sk,
 			struct request_sock *req,
 			struct request_values *rvp);
 
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))
 int mptcp_v6_add_raddress(struct multipath_options *mopt, struct in6_addr *addr,
 			__be16 port, u8 id);
 struct path6 *mptcp_get_path6(struct multipath_pcb *mpcb, int path_index);
 int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb);
 int mptcp_v6_send_synack(struct sock *meta_sk, struct request_sock *req);
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
+#endif /* (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)) */
+
+#else /* CONFIG_MPTCP_PM */
+
+#define loc_token(mpcb) (0)
+
+static inline void mptcp_update_patharray(struct multipath_pcb *mpcb)
+{
+}
+
+static inline u32 mptcp_new_token(void)
+{
+	return 0;
+}
+
+static inline void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token)
+{
+}
+
+static inline void mptcp_hash_remove(struct multipath_pcb *mpcb)
+{
+}
+
+static inline void mptcp_hash_request_remove(struct request_sock *req)
+{
+}
+
+static inline struct multipath_pcb *mptcp_hash_find(u32 token)
+{
+	return NULL;
+}
+
+static inline void mptcp_set_addresses(struct multipath_pcb *mpcb)
+{
+}
+
+static inline struct in_addr *mptcp_get_loc_addr4(struct multipath_pcb *mpcb,
+		int path_index)
+{
+	return NULL;
+}
+
+static inline struct in_addr *mptcp_get_rem_addr4(struct multipath_pcb *mpcb,
+		int path_index)
+{
+	return NULL;
+}
+
+static inline u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb,
+		struct sock *sk)
+{
+	return 0;
+}
+
+static inline int mptcp_lookup_join(struct sk_buff *skb)
+{
+	return 0;
+}
+
+static inline int mptcp_syn_recv_sock(struct sk_buff *skb)
+{
+	return 0;
+}
+
+static inline void mptcp_pm_release(struct multipath_pcb *mpcb)
+{
+}
+
+
+static inline void mptcp_send_updatenotif(struct multipath_pcb *mpcb)
+{
+}
+
+
+static inline int mptcp_v4_add_raddress(struct multipath_options *mopt,
+		struct in_addr *addr, __be16 port, u8 id)
+{
+	return 0;
+}
+
+static inline struct path4 *mptcp_get_path4(struct multipath_pcb *mpcb,
+		int path_index)
+{
+	return NULL;
+}
+
+static inline int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
+{
+	return 0;
+}
+
+static inline int mptcp_v4_send_synack(struct sock *meta_sk,
+			struct request_sock *req,
+			struct request_values *rvp)
+{
+	return 0;
+}
+
+
+#if (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))
+static inline int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
+{
+	return 0;
+}
+
+static inline int mptcp_v6_send_synack(struct sock *meta_sk,
+		struct request_sock *req)
+{
+	return 0;
+}
+#endif /* (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)) */
 
 #endif /* CONFIG_MPTCP_PM */
+
 #endif /*_MPTCP_PM_H*/

@@ -72,7 +72,7 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int prior_packets = tp->packets_out;
 	int meta_sk = is_meta_tp(tp);
-	
+
 	BUG_ON(tcp_send_head(sk) != skb);
 	tcp_advance_send_head(sk, skb);
 	tp->snd_nxt = meta_sk ? TCP_SKB_CB(skb)->end_data_seq :
@@ -1535,7 +1535,7 @@ unsigned int tcp_current_mss(struct sock *sk)
 
 	/* if sk is the meta-socket, return the common MSS */
 	if (is_meta_tp(tp))
-		return sysctl_mptcp_mss;
+		return mptcp_sysctl_mss();
 
 	mss_now = tp->mss_cache;
 
@@ -3083,7 +3083,7 @@ struct sk_buff *tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 	skb_dst_set(skb, dst_clone(dst));
 
 	if (req->saw_mpc)
-		mss = sysctl_mptcp_mss;
+		mss = mptcp_sysctl_mss();
 	else
 		mss = dst_metric_advmss(dst);
 
@@ -3222,7 +3222,7 @@ static void tcp_connect_init(struct sock *sk)
 		tp->window_clamp = dst_metric(dst, RTAX_WINDOW);
 #ifdef CONFIG_MPTCP
 	if (do_mptcp(sk))
-		tp->advmss = sysctl_mptcp_mss;
+		tp->advmss = mptcp_sysctl_mss();
 	else
 #endif
 		tp->advmss = dst_metric_advmss(dst);

@@ -476,7 +476,7 @@ struct multipath_pcb *mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
 
 	meta_tp->mpcb = mpcb;
 	meta_tp->mpc = 1;
-	meta_tp->mss_cache = sysctl_mptcp_mss;
+	meta_tp->mss_cache = mptcp_sysctl_mss();
 
 	skb_queue_head_init(&meta_tp->out_of_order_queue);
 	skb_queue_head_init(&mpcb->reinject_queue);
@@ -1308,7 +1308,7 @@ void mptcp_reinject_data(struct sock *orig_sk) {
 	tcpprobe_logmsg(orig_sk, "after reinj, reinj queue size:%d",
 			skb_queue_len(&mpcb->reinject_queue));
 
-	tcp_push(meta_sk, 0, sysctl_mptcp_mss, TCP_NAGLE_PUSH);
+	tcp_push(meta_sk, 0, mptcp_sysctl_mss(), TCP_NAGLE_PUSH);
 
 	if (orig_tp->pf == 0)
 		tcpprobe_logmsg(orig_sk, "pi %d: entering pf state",
@@ -1782,7 +1782,7 @@ void mptcp_send_fin(struct sock *meta_sk) {
 		tcp_queue_skb(meta_sk, skb);
 	}
 	set_bit(MPCB_FLAG_FIN_ENQUEUED, &mpcb->flags);
-	__tcp_push_pending_frames(meta_sk, sysctl_mptcp_mss, TCP_NAGLE_OFF);
+	__tcp_push_pending_frames(meta_sk, mptcp_sysctl_mss(), TCP_NAGLE_OFF);
 }
 
 extern int tcp_close_state(struct sock *sk);
