@@ -160,7 +160,7 @@ void inet_sock_destruct(struct sock *sk)
 			/* It must have been detached by
 			 * inet_csk_destroy_sock()
 			 */
-			BUG_ON(tcp_sk(sk)->attached);
+			BUG_ON(mptcp_sk_attached(sk));
 			sock_put(tcp_sk(sk)->mpcb->master_sk); /* Taken when
 								* mpcb pointer
 								* was set
@@ -1773,8 +1773,10 @@ static int __init inet_init(void)
 	rc = 0;
 out:
 	return rc;
+#ifdef CONFIG_MPTCP
 out_unregister_raw_proto:
 	proto_unregister(&raw_prot);
+#endif
 out_unregister_udp_proto:
 	proto_unregister(&udp_prot);
 out_unregister_tcp_proto:

@@ -370,8 +370,8 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 			loc = (struct sockaddr_in *) loculid;
 			rem = (struct sockaddr_in *) remulid;
 			mptcp_debug("%s: token %d pi %d src_addr:"
-				"%pI4:%d dst_addr:%pI4:%d \n", __func__,
-				loc_token(mpcb), newpi,
+				"%pI4:%d dst_addr:%pI4:%d\n", __func__,
+				mptcp_loc_token(mpcb), newpi,
 				&loc->sin_addr,
 				ntohs(loc->sin_port),
 				&rem->sin_addr,
@@ -381,8 +381,8 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 			loc = (struct sockaddr_in6 *) loculid;
 			rem = (struct sockaddr_in6 *) remulid;
 			mptcp_debug("%s: token %d pi %d src_addr:"
-				"%pI6:%d dst_addr:%pI6:%d \n", __func__,
-				loc_token(mpcb), newpi,
+				"%pI6:%d dst_addr:%pI6:%d\n", __func__,
+				mptcp_loc_token(mpcb), newpi,
 				&loc->sin6_addr,
 				ntohs(loc->sin6_port),
 				&rem->sin6_addr,
@@ -511,13 +511,13 @@ struct multipath_pcb *mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags) {
 	 */
 	if (!tcp_sk(master_sk)->mptcp_loc_token) {
 		meta_tp->mptcp_loc_token = mptcp_new_token();
-		tcp_sk(master_sk)->mptcp_loc_token = loc_token(mpcb);
+		tcp_sk(master_sk)->mptcp_loc_token = mptcp_loc_token(mpcb);
 	} else {
 		meta_tp->mptcp_loc_token = tcp_sk(master_sk)->mptcp_loc_token;
 	}
 
 	/* Adding the mpcb in the token hashtable */
-	mptcp_hash_insert(mpcb, loc_token(mpcb));
+	mptcp_hash_insert(mpcb, mptcp_loc_token(mpcb));
 
 	return mpcb;
 }
@@ -545,7 +545,7 @@ void mpcb_release(struct multipath_pcb *mpcb)
 
 static void mptcp_destroy_mpcb(struct multipath_pcb *mpcb) {
 	mptcp_debug("%s: Destroying mpcb with token:%d\n", __func__,
-			loc_token(mpcb));
+			mptcp_loc_token(mpcb));
 
 	/* Detach the mpcb from the token hashtable */
 	mptcp_hash_remove(mpcb);
@@ -643,7 +643,7 @@ void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 	if (sk->sk_family == AF_INET)
 		mptcp_debug("%s: token %d pi %d, src_addr:%pI4:%d dst_addr:"
 				"%pI4:%d, cnt_subflows now %d\n", __func__ ,
-				loc_token(mpcb),
+				mptcp_loc_token(mpcb),
 				tp->path_index,
 				&((struct inet_sock *) tp)->inet_saddr,
 				ntohs(((struct inet_sock *) tp)->inet_sport),
@@ -653,7 +653,7 @@ void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 	else
 		mptcp_debug("%s: token %d pi %d, src_addr:%pI6:%d dst_addr:"
 				"%pI6:%d, cnt_subflows now %d\n", __func__ ,
-				loc_token(mpcb),
+				mptcp_loc_token(mpcb),
 				tp->path_index, &inet6_sk(sk)->saddr,
 				ntohs(((struct inet_sock *) tp)->inet_sport),
 				&inet6_sk(sk)->daddr,

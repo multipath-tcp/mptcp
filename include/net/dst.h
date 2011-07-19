@@ -99,7 +99,9 @@ struct dst_entry {
 		struct rt6_info		*rt6_next;
 		struct dn_route __rcu	*dn_next;
 	};
+#ifdef CONFIG_MPTCP
 	unsigned int            path_index;
+#endif
 };
 
 #ifdef __KERNEL__

@@ -14,7 +14,9 @@ struct flowi {
 	int	oif;
 	int	iif;
 	__u32	mark;
+#ifdef CONFIG_MPTCP
 	unsigned int path_index;
+#endif
 
 	union {
 		struct {

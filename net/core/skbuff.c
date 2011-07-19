@@ -206,8 +206,6 @@ struct sk_buff *__alloc_skb(unsigned int size, gfp_t gfp_mask,
 	skb->mac_header = ~0U;
 #endif
 
-	skb->path_index=0;
-	skb->path_mask=0;
 	/* make sure we initialize shinfo sequentially */
 	shinfo = skb_shinfo(skb);
 	memset(shinfo, 0, offsetof(struct skb_shared_info, dataref));
@@ -414,10 +412,12 @@ static void skb_release_all(struct sk_buff *skb)
  *	Clean the state. This is an internal helper function. Users should
  *	always call kfree_skb
  */
-#include <net/tcp.h>
+
 void __kfree_skb(struct sk_buff *skb)
 {
+#ifdef CONFIG_MPTCP
 	BUG_ON(atomic_read(&skb->users) > 1);
+#endif
 	skb_release_all(skb);
 	kfree_skbmem(skb);
 }
@@ -545,9 +545,10 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 #endif
 #endif
 	new->vlan_tci		= old->vlan_tci;
-	
+#ifdef CONFIG_MPTCP
 	new->path_index         = old->path_index;
 	new->path_mask          = old->path_mask;
+#endif
 
 	skb_copy_secmark(new, old);
 }

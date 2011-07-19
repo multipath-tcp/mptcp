@@ -558,6 +558,9 @@ static inline void skb_entail(struct sock *sk, struct sk_buff *skb)
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 
 	skb->csum    = 0;
+#ifndef CONFIG_MPTCP
+	tcb->seq     = tcb->end_seq = tp->write_seq;
+#else
 	/* in MPTCP mode, the subflow seqnum is given later */
 	if (tp->mpc) {
 		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
@@ -568,6 +571,7 @@ static inline void skb_entail(struct sock *sk, struct sk_buff *skb)
 	} else {
 		tcb->seq      = tcb->end_seq = tcb->sub_seq = tp->write_seq;
 	}
+#endif
 	tcb->flags   = TCPHDR_ACK;
 	tcb->sacked  = 0;
 	skb_header_release(skb);
@@ -584,9 +588,10 @@ static inline void tcp_mark_urg(struct tcp_sock *tp, int flags)
 		tp->snd_up = tp->write_seq;
 }
 
-void tcp_push(struct sock *sk, int flags, int mss_now,
-	      int nonagle)
+inline void tcp_push(struct sock *sk, int flags, int mss_now,
+			    int nonagle)
 {
+#ifdef CONFIG_MPTCP
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sock *meta_sk = (tp->mpc) ? (struct sock *) (tp->mpcb) : sk;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
@@ -603,6 +608,18 @@ void tcp_push(struct sock *sk, int flags, int mss_now,
 					  (flags & MSG_MORE) ?
 					  TCP_NAGLE_CORK : nonagle);
 	}
+#else
+	if (tcp_send_head(sk)) {
+		struct tcp_sock *tp = tcp_sk(sk);
+
+		if (!(flags & MSG_MORE) || forced_push(tp))
+			tcp_mark_push(tp, tcp_write_queue_tail(sk));
+
+		tcp_mark_urg(tp, flags);
+		__tcp_push_pending_frames(sk, mss_now,
+					  (flags & MSG_MORE) ? TCP_NAGLE_CORK : nonagle);
+	}
+#endif /* CONFIG_MPTCP */
 }
 
 static int tcp_splice_data_recv(read_descriptor_t *rd_desc, struct sk_buff *skb,
@@ -1010,7 +1027,7 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	 * to define xmit_size_goal to something much larger
 	 */
 	if (tp->mpc)
-		mss_now = size_goal = sysctl_mptcp_mss;
+		mss_now = size_goal = mptcp_sysctl_mss();
 	else
 		mss_now = tcp_send_mss(sk, &size_goal, flags);
 
@@ -1065,6 +1082,7 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 				copy = max - skb->len;
 			}
 
+#ifdef CONFIG_MPTCP
 			/* If this happens, the write queue has been emptied
 			 * without setting the send_head to NULL.
 			 * Normally the send_head is set to NULL with
@@ -1075,7 +1093,7 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			 * head will still point to it.
 			 */
 			BUG_ON(!skb && tcp_send_head(sk));
-
+#endif
 			if (copy <= 0) {
 new_segment:
 				/* Allocate new segment. If the interface is SG,
@@ -1215,9 +1233,8 @@ new_segment:
 			if (forced_push(tp)) {
 				tcp_mark_push(tp, skb);
 				__tcp_push_pending_frames(sk, mss_now, TCP_NAGLE_PUSH);
-			} else if (skb == tcp_send_head(sk)) {
+			} else if (skb == tcp_send_head(sk))
 				tcp_push_one(sk, mss_now);
-			}
 			continue;
 
 wait_for_sndbuf:
@@ -1230,10 +1247,11 @@ wait_for_memory:
 
 			if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
 				goto do_error;
+#ifdef CONFIG_MPTCP
 			BUG_ON(!sk_stream_memory_free(sk));
 			PDEBUG_SEND("%s:line %d\n", __func__, __LINE__);
 
-#ifndef CONFIG_MPTCP
+#else
 			mss_now = tcp_send_mss(sk, &size_goal, flags);
 #endif
 		}
@@ -1242,7 +1260,6 @@ wait_for_memory:
 out:
 	if (copied)
 		tcp_push(sk, flags, mss_now, tp->nonagle);
-
 	TCP_CHECK_TIMER(sk);
 #ifndef CONFIG_MPTCP
 	release_sock(sk);
@@ -1256,6 +1273,9 @@ do_fault:
 		/* It is the one place in all of TCP, except connection
 		 * reset, where we can be unlinking the send_head.
 		 */
+#ifndef CONFIG_MPTCP
+		tcp_check_send_head(sk, skb);
+#endif
 		sk_wmem_free_skb(sk, skb);
 	}
 
@@ -1567,20 +1587,11 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	struct sk_buff *skb;
 	u32 urg_hole = 0;
 	/* MPTCP variables */
-	struct multipath_pcb *mpcb = NULL;
-	struct tcp_sock *tp_it, *meta_tp;
-	struct sock *sk_it, *meta_sk;
+	struct multipath_pcb *mpcb = tp->mpc ? tp->mpcb : NULL;
+	struct sock *sk_it, *meta_sk = tp->mpc ? (struct sock *)tp->mpcb : sk;
+	struct tcp_sock *tp_it, *meta_tp = tp->mpc ? tcp_sk(meta_sk) : tp;
 
 	lock_sock(sk);
-
-	if (tp->mpc) {
-		meta_sk = (struct sock *)tp->mpcb;
-		meta_tp = tcp_sk(meta_sk);
-		mpcb = tp->mpcb;
-	} else {
-		meta_sk = sk;
-		meta_tp = tp;
-	}
 
 	TCP_CHECK_TIMER(sk);
 
@@ -2004,7 +2015,9 @@ EXPORT_SYMBOL(tcp_recvmsg);
 void tcp_set_state(struct sock *sk, int state)
 {
 	int oldstate = sk->sk_state;
+#ifdef CONFIG_MPTCP
 	struct tcp_sock *tp = tcp_sk(sk);
+#endif
 
 	switch (state) {
 	case TCP_ESTABLISHED:
@@ -2023,6 +2036,7 @@ void tcp_set_state(struct sock *sk, int state)
 #endif
 		}
 		break;
+#ifdef CONFIG_MPTCP
 	case TCP_SYN_SENT:
 	case TCP_SYN_RECV:
 		/* We set the mpcb state to SYN_SENT even if the peer
@@ -2034,6 +2048,8 @@ void tcp_set_state(struct sock *sk, int state)
 		if (oldstate == TCP_ESTABLISHED)
 			TCP_DEC_STATS(sock_net(sk), TCP_MIB_CURRESTAB);
 		break;
+#endif
+
 	case TCP_CLOSE:
 		if (oldstate == TCP_CLOSE_WAIT || oldstate == TCP_ESTABLISHED)
 			TCP_INC_STATS(sock_net(sk), TCP_MIB_ESTABRESETS);
@@ -2042,6 +2058,7 @@ void tcp_set_state(struct sock *sk, int state)
 		if (inet_csk(sk)->icsk_bind_hash &&
 		    !(sk->sk_userlocks & SOCK_BINDPORT_LOCK))
 			inet_put_port(sk);
+#ifdef CONFIG_MPTCP
 		if (tcp_sk(sk)->mpcb && oldstate != TCP_SYN_SENT &&
 			oldstate != TCP_SYN_RECV && oldstate != TCP_LISTEN) {
 			mptcp_debug("%s - before minus --- tcp_sk(sk)->mpcb->"
@@ -2050,6 +2067,7 @@ void tcp_set_state(struct sock *sk, int state)
 					tp->path_index);
 			tcp_sk(sk)->mpcb->cnt_established--;
 		}
+#endif
 		/* fall through */
 	default:
 		if (oldstate == TCP_ESTABLISHED)
@@ -2149,7 +2167,6 @@ void tcp_close(struct sock *sk, long timeout)
 #ifndef CONFIG_MPTCP
 	lock_sock(sk);
 #endif
-
 	sk->sk_shutdown = SHUTDOWN_MASK;
 
 	if (sk->sk_state == TCP_LISTEN) {
@@ -2230,10 +2247,12 @@ void tcp_close(struct sock *sk, long timeout)
 adjudge_to_death:
 	state = sk->sk_state;
 	sock_hold(sk);
+#ifdef CONFIG_MPTCP
 	/* The sock *may* have been orphaned by mptcp_close(), if
 	 * we are called from tcp_write_xmit().
 	 */
 	if (!sock_flag(sk, SOCK_DEAD))
+#endif
 		sock_orphan(sk);
 
 #ifndef CONFIG_MPTCP
@@ -2247,10 +2266,11 @@ adjudge_to_death:
 	local_bh_disable();
 	bh_lock_sock(sk);
 	WARN_ON(sock_owned_by_user(sk));
-#endif
-
+	percpu_counter_inc(sk->sk_prot->orphan_count);
+#else
 	if (!sock_flag(sk, SOCK_DEAD))
 		percpu_counter_inc(sk->sk_prot->orphan_count);
+#endif
 
 	/* Have we already been destroyed by a softirq or backlog? */
 	if (state != TCP_CLOSE && sk->sk_state == TCP_CLOSE)

@@ -59,8 +59,9 @@ struct path6 {
 	int			path_index;
 };
 
-#define loc_token(mpcb)				\
+#define mptcp_loc_token(mpcb)				\
 	(((struct tcp_sock *)mpcb)->mptcp_loc_token)
+#define mptcp_tp_recv_token(__tp) (__tp->rx_opt.mptcp_recv_token)
 
 u32 mptcp_new_token(void);
 void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token);
@@ -93,7 +94,8 @@ int mptcp_v6_send_synack(struct sock *meta_sk, struct request_sock *req);
 
 #else /* CONFIG_MPTCP_PM */
 
-#define loc_token(mpcb) (0)
+#define mptcp_loc_token(mpcb) (0)
+#define mptcp_tp_recv_token(__tp) (0)
 
 static inline void mptcp_update_patharray(struct multipath_pcb *mpcb)
 {

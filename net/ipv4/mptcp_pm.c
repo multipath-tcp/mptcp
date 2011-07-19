@@ -98,7 +98,7 @@ struct multipath_pcb *mptcp_hash_find(u32 token)
 
 	read_lock(&tk_hash_lock);
 	list_for_each_entry(mpcb, &tk_hashtable[hash], collide_tk) {
-		if (token == loc_token(mpcb)) {
+		if (token == mptcp_loc_token(mpcb)) {
 			sock_hold(mpcb->master_sk);
 			read_unlock(&tk_hash_lock);
 			return mpcb;
@@ -1237,7 +1237,7 @@ static int mptcp_v4_join_request(struct multipath_pcb *mpcb,
 
 	req->mpcb = mpcb;
 	req->rem_id = tmp_opt.rem_id;
-	req->mptcp_loc_token = loc_token(mpcb);
+	req->mptcp_loc_token = mptcp_loc_token(mpcb);
 	req->mptcp_rem_token = tcp_sk(mpcb->master_sk)->rx_opt.mptcp_rem_token;
 	tcp_openreq_init(req, &tmp_opt, skb);
 
@@ -1294,7 +1294,7 @@ static int mptcp_v6_join_request(struct multipath_pcb *mpcb,
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 
 	req->mpcb = mpcb;
-	req->mptcp_loc_token = loc_token(mpcb);
+	req->mptcp_loc_token = mptcp_loc_token(mpcb);
 	req->mptcp_rem_token = tcp_sk(mpcb->master_sk)->rx_opt.mptcp_rem_token;
 	tcp_openreq_init(req, &tmp_opt, skb);
 
@@ -1846,7 +1846,7 @@ static int mptcp_pm_inetaddr_event(struct notifier_block *this, unsigned long ev
 
 				printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP adding "
 					"address %pI4 to existing connection with mpcb: %d\n",
-					&ifa->ifa_local, loc_token(mpcb));
+					&ifa->ifa_local, mptcp_loc_token(mpcb));
 				/* update this mpcb */
 				mpcb->addr4[mpcb->num_addr4].addr.s_addr = ifa->ifa_local;
 				mpcb->addr4[mpcb->num_addr4].id = mpcb->num_addr4 + 1;
@@ -1881,9 +1881,10 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
 		read_lock_bh(&tk_hash_lock);
 		list_for_each_entry(mpcb, &tk_hashtable[i], collide_tk) {
-			seq_printf(seq, "[%d] %d (%d): %d", loc_token(mpcb),
-				   mpcb->num_addr4, mpcb->pa4_size,
-				   mpcb->cnt_subflows);
+			seq_printf(seq, "[%d] %d (%d): %d",
+					mptcp_loc_token(mpcb),
+					mpcb->num_addr4, mpcb->pa4_size,
+					mpcb->cnt_subflows);
 			seq_putc(seq, '\n');
 		}
 		read_unlock_bh(&tk_hash_lock);

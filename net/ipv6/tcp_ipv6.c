@@ -61,7 +61,9 @@
 #include <net/timewait_sock.h>
 #include <net/netdma.h>
 #include <net/inet_common.h>
+#ifdef CONFIG_MPTCP
 #include <net/mptcp_v6.h>
+#endif
 
 #include <asm/uaccess.h>
 
@@ -552,8 +554,9 @@ static int tcp_v6_rtx_synack(struct sock *sk, struct request_sock *req,
 	/* If the mpcb pointer is set, this is a join request.
 	 * If not, this is an initial connection request.
 	 */
-	if (req->mpcb)
-		return mptcp_v6_send_synack((struct sock *)req->mpcb, req);
+	if (mptcp_mpcb_from_req_sk(req))
+		return mptcp_v6_send_synack((struct sock *)
+				mptcp_mpcb_from_req_sk(req), req);
 	else
 		return tcp_v6_send_synack(sk, req, rvp);
 }
@@ -1785,10 +1788,10 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 	/*Init to zero, will be set upon option parsing.*/
 	TCP_SKB_CB(skb)->data_seq = 0;
 	TCP_SKB_CB(skb)->end_data_seq = 0;
+	TCP_SKB_CB(skb)->mptcp_flags = 0;
 #endif
 	TCP_SKB_CB(skb)->when = 0;
 	TCP_SKB_CB(skb)->flags = ipv6_get_dsfield(hdr);
-	TCP_SKB_CB(skb)->mptcp_flags = 0;
 	TCP_SKB_CB(skb)->sacked = 0;
 
 #ifdef CONFIG_MPTCP
@@ -1805,7 +1808,8 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 			 * Send a reset and discard the packet.
 			 */
 			case -ENOKEY:
-				goto send_reset_and_discard_it;
+				tcp_v6_send_reset(NULL, skb);
+				goto discard_it;
 			case 1:
 				return 0;
 		}
@@ -1898,7 +1902,6 @@ no_tcp_socket:
 bad_packet:
 		TCP_INC_STATS_BH(net, TCP_MIB_INERRS);
 	} else {
-send_reset_and_discard_it:
 		tcp_v6_send_reset(NULL, skb);
 	}
 

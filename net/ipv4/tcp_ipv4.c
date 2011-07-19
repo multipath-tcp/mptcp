@@ -83,8 +83,12 @@
 #include <linux/scatterlist.h>
 
 int sysctl_tcp_tw_reuse __read_mostly;
+#ifdef CONFIG_MPTCP
 /* TODO_cpaasch - enable prequeue here */
 int sysctl_tcp_low_latency __read_mostly = 1;
+#else
+int sysctl_tcp_low_latency __read_mostly;
+#endif
 EXPORT_SYMBOL(sysctl_tcp_low_latency);
 
 
@@ -795,9 +799,10 @@ static int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req,
 	/* If the mpcb pointer is set, this is a join request.
 	 * If not, this is an initial connection request.
 	 */
-	if (req->mpcb)
-		return mptcp_v4_send_synack((struct sock *)req->mpcb,
-					   req, rvp);
+	if (mptcp_mpcb_from_req_sk(req))
+		return mptcp_v4_send_synack(
+				(struct sock *)mptcp_mpcb_from_req_sk(req),
+				req, rvp);
 	else
 		return tcp_v4_send_synack(sk, NULL, req, rvp);
 }
@@ -1323,11 +1328,13 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 
+#ifdef CONFIG_MPTCP
 	/* Must be set to NULL before calling openreq init.
 	 * tcp_openreq_init() uses this to know whether the request
 	 * is a join request or a conn request.
 	 */
 	req->mpcb = NULL;
+#endif
 	tcp_openreq_init(req, &tmp_opt, skb);
 
 	ireq = inet_rsk(req);
@@ -1678,10 +1685,10 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	/* Init to zero, will be set upon option parsing. */
 	TCP_SKB_CB(skb)->data_seq = 0;
 	TCP_SKB_CB(skb)->end_data_seq = 0;
+	TCP_SKB_CB(skb)->mptcp_flags = 0;
 #endif
 	TCP_SKB_CB(skb)->when	 = 0;
 	TCP_SKB_CB(skb)->flags	 = iph->tos;
-	TCP_SKB_CB(skb)->mptcp_flags = 0;
 	TCP_SKB_CB(skb)->sacked	 = 0;
 
 #ifdef CONFIG_MPTCP
@@ -1696,7 +1703,8 @@ int tcp_v4_rcv(struct sk_buff *skb)
 			 * Send a reset and discard the packet.
 			 */
 		case -ENOKEY:
-			goto send_reset_and_discard_it;
+			tcp_v4_send_reset(NULL, skb);
+			goto discard_it;
 		case 1:
 			return 0;
 		}
@@ -1790,7 +1798,6 @@ no_tcp_socket:
 bad_packet:
 		TCP_INC_STATS_BH(net, TCP_MIB_INERRS);
 	} else {
-send_reset_and_discard_it:
 		tcp_v4_send_reset(NULL, skb);
 	}
 

@@ -1207,7 +1207,9 @@ static int __init inet6_init(void)
 
 out:
 	return err;
+#ifdef CONFIG_MPTCP
 mptcpsubv6_fail:
+#endif
 #ifdef CONFIG_SYSCTL
 	ipv6_sysctl_unregister();
 #endif

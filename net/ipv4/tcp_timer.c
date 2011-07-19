@@ -327,14 +327,16 @@ void tcp_retransmit_timer(struct sock *sk)
 	u32 snd_wnd = (tp->mpc && tp->mpcb) ?
 		mpcb_meta_tp(tp->mpcb)->snd_wnd:tp->snd_wnd;
 
-	tcpprobe_logmsg(sk, "pi %d, RTO", tp->path_index);
+	tcpprobe_logmsg(sk, "pi %d, RTO", tp_path_index(tp));
 
 
 	if (!tp->packets_out)
 		goto out;
 
 	BUG_ON(is_meta_sk(sk));
+#ifdef CONFIG_MPTCP
 	BUG_ON(tcp_write_queue_empty(sk));
+#endif
 
 	if (!snd_wnd && !sock_flag(sk, SOCK_DEAD) &&
 	    !((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV))) {

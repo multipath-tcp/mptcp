@@ -320,11 +320,9 @@ extern void *tcp_v4_tw_get_peer(struct sock *sk);
 extern int tcp_v4_tw_remember_stamp(struct inet_timewait_sock *tw);
 extern int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		       size_t size);
-#ifdef CONFIG_MPTCP
 extern int subtcp_sendmsg(struct kiocb *iocb,
 			  struct sock *sk,
 			  struct msghdr *msg, size_t size);
-#endif
 extern int tcp_sendpage(struct sock *sk, struct page *page, int offset,
 			size_t size, int flags);
 extern int tcp_ioctl(struct sock *sk, int cmd, unsigned long arg);
@@ -629,6 +627,8 @@ struct tcp_skb_cb {
 	} header;	/* For incoming frames		*/
 	__u32		seq;		/* Starting sequence number	*/
 	__u32		end_seq;	/* SEQ + FIN + SYN + datalen	*/
+	__u32		when;		/* used to compute rtt's	*/
+#ifdef CONFIG_MPTCP
 	__u32           data_seq;       /* Starting data seq            */
 	__u32           data_ack;       /* Data level ack (MPTCP)       */
 	__u32           end_data_seq;   /* DATA_SEQ + DFIN + SYN + datalen*/
@@ -637,9 +637,9 @@ struct tcp_skb_cb {
 					 * option is attached to that segment
 					 */
 	__u32           sub_seq;        /* subflow seqnum (MPTCP)       */
-	__u32		when;		/* used to compute rtt's	*/
-	__u8		flags;		/* TCP header flags.		*/
 	__u8            mptcp_flags;    /* flags for the MPTCP layer    */
+#endif
+	__u8		flags;		/* TCP header flags.		*/
 	__u8		sacked;		/* State flags for SACK/FACK.	*/
 #define TCPCB_SACKED_ACKED	0x01	/* SKB ACK'd by a SACK block	*/
 #define TCPCB_SACKED_RETRANS	0x02	/* SKB retransmitted		*/
@@ -910,7 +910,9 @@ static inline void tcp_init_wl(struct tcp_sock *tp, u32 seq)
 
 static inline void tcp_update_wl(struct tcp_sock *tp, u32 seq)
 {
+#ifdef CONFIG_MPTCP
 	if (seq)
+#endif
 		tp->snd_wl1 = seq;
 }
 
