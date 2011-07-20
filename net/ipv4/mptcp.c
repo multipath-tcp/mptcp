@@ -1245,20 +1245,20 @@ static inline int count_bits(unsigned int v) {
  *
  * @pre : @sk must be the meta_sk
  */
-int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk) {
+int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk)
+{
 	struct sk_buff *skb;
-	struct tcp_sock *tp = tcp_sk(sk), *tmp_tp;
-	struct tcphdr *th;
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *tmp_tp;
 	struct sock *sk_it;
 
 	/* A segment can be added to the reinject queue only if
-	   there is at least one working subflow that has never sent
-	   this data */
-	mptcp_for_each_sk(tp->mpcb, sk_it, tmp_tp) {
+	 * there is at least one working subflow that has never sent
+	 * this data */
+	mptcp_for_each_sk(meta_tp->mpcb, sk_it, tmp_tp) {
 		if (sk_it->sk_state != TCP_ESTABLISHED)
 			continue;
 		/* If the skb has already been enqueued in this sk, try to find
-		   another one */
+		 * another one */
 		if (PI_TO_FLAG(tmp_tp->path_index) & orig_skb->path_mask)
 			continue;
 
@@ -1267,24 +1267,17 @@ int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *sk) {
 	}
 
 	if (!sk_it) {
-		if ((PI_TO_FLAG(1) & orig_skb->path_mask) && (PI_TO_FLAG(9)
-				& orig_skb->path_mask))
-			tcpprobe_logmsg(sk, "skb already injected to all "
-					"paths");
-		return 0; /* no candidate found */
+		mptcp_debug("%s: skb already injected to all paths\n",
+				__func__);
+		return 1; /* no candidate found */
 	}
 
 	skb = skb_clone(orig_skb, GFP_ATOMIC);
 	if (unlikely(!skb))
 		return -ENOBUFS;
-	skb->sk = sk;
+	skb->sk = meta_sk;
 
-	th = tcp_hdr(skb);
-
-	BUG_ON(!skb);
-	BUG_ON(skb->path_mask!=orig_skb->path_mask);
-
-	skb_queue_tail(&tp->mpcb->reinject_queue, skb);
+	skb_queue_tail(&meta_tp->mpcb->reinject_queue, skb);
 	return 0;
 }
 
@@ -1299,9 +1292,9 @@ void mptcp_reinject_data(struct sock *orig_sk) {
 
 	verif_wqueues(mpcb);
 
-	tcp_for_write_queue(skb_it,orig_sk) {
+	tcp_for_write_queue(skb_it, orig_sk) {
 		skb_it->path_mask |= PI_TO_FLAG(orig_tp->path_index);
-		if (unlikely(__mptcp_reinject_data(skb_it,meta_sk)<0))
+		if (unlikely(__mptcp_reinject_data(skb_it, meta_sk) < 0))
 			break;
 	}
 
