@@ -1667,8 +1667,9 @@ static void mptcp_subflow_attach(struct multipath_pcb *mpcb, struct sock *subsk)
 			tcp_sk(subsk)->path_index = p4->path_index;
 			p4->loc.sin_port = loc.port;
 			p4->rem.sin_port = rem.port;
+		}
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-		} else {
+		else {
 			tcp_sk(subsk)->path_index = p6->path_index;
 			p6->loc.sin6_port = loc6.port;
 			p6->rem.sin6_port = rem6.port;
