@@ -2260,28 +2260,47 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		}
 
 		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
-		if (unlikely
-		    (err = tcp_transmit_skb(subsk, subskb, 1, GFP_ATOMIC))) {
-			if (sk != subsk) {
-				/* Remove the skb from the subsock */
-				tcp_advance_send_head(subsk, subskb);
-				tcp_unlink_write_queue(subskb, subsk);
-				subtp->write_seq -= subskb->len;
-				mptcp_wmem_free_skb(subsk, subskb);
-				/* If we entered CWR, just try to give
-				 * that same skb to another subflow,
-				 * by querying again the scheduler,
-				 * we need however to ensure that the
-				 * same subflow is not selected again by
-				 * the scheduler, to avoid looping
-				 */
-				if (err > 0 && tp->mpcb->cnt_subflows > 1) {
-					tp->mpcb->noneligible |=
-					    PI_TO_FLAG(subtp->path_index);
-					continue;
-				}
-			}
-			break;
+		err = tcp_transmit_skb(subsk, subskb, 1, GFP_ATOMIC);
+		if (unlikely(err)) {
+			/* Regular TCP? Stop tcp_write_xmit */
+			if (sk == subsk)
+				break;
+
+			/* there are two cases of failure of
+			 * tcp_transmit_skb:
+			 * 1. err != -ENOBUFS
+			 *    Thus, the failure is due to ip_write_xmit and may
+			 *    be a routing-issue. We should not immediatly
+			 *    schedule again this subflow and reinject the skb
+			 *    on another subflow.
+			 *
+			 * 2. err == -ENOBUFS
+			 *    Thus, the failure is due to a failed skb_clone due
+			 *    to GFP_ATOMIC. The subflow is not really broken,
+			 *    and we can reschedule on this subflow.
+			 *
+			 * Thus, just removing the skb from this subflow's
+			 * send-queue, and adding it to the because
+			 * skb->path_mask ensures that we do not or do schedule
+			 * again on this subflow.
+			 */
+
+			/* First, reinject to get the path_index */
+			if (err != -ENOBUFS)
+				subskb->path_mask |=
+					PI_TO_FLAG(tcp_sk(subsk)->path_index);
+			__mptcp_reinject_data(subskb, meta_sk);
+
+			/* Then, remove the skb from the subsock */
+			tcp_advance_send_head(subsk, subskb);
+			tcp_unlink_write_queue(subskb, subsk);
+			subtp->write_seq -= subskb->len;
+			mptcp_wmem_free_skb(subsk, subskb);
+
+			if (!reinject)
+				tcp_event_new_data_sent(sk, skb);
+
+			continue;
 		}
 #endif
 
