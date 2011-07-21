@@ -2581,7 +2581,7 @@ u32 __tcp_select_window(struct sock * sk)
 		if (tcp_memory_pressure) {
 			tp->rcv_ssthresh = min(tp->rcv_ssthresh,
 					       4U * tp->advmss);
-			mptcp_update_window_clamp(mpcb);
+			mptcp_update_window_clamp(tp);
 		}
 
 		if (free_space < mss)
@@ -3310,7 +3310,7 @@ static void tcp_connect_init(struct sock *sk)
 				  &tp->window_clamp, sysctl_tcp_window_scaling,
 				  &rcv_wscale, dst_metric(dst, RTAX_INITRWND));
 
-	mptcp_update_window_clamp(tp->mpcb);
+	mptcp_update_window_clamp(tp);
 #else
 	tcp_select_initial_window(tcp_full_space(sk),
 				  tp->advmss - (tp->rx_opt.ts_recent_stamp ? tp->tcp_header_len - sizeof(struct tcphdr) : 0),

@@ -2259,9 +2259,8 @@ adjudge_to_death:
 	/* It is the last release_sock in its life. It will remove backlog. */
 	release_sock(sk);
 
-
-	/* Now socket is owned by kernel and we acquire BH lock
-	   to finish close. No need to check for user refs.
+	/* Now socket is owned by kernel and we acquire BH lock to finish close.
+	 * No need to check for user refs.
 	 */
 	local_bh_disable();
 	bh_lock_sock(sk);

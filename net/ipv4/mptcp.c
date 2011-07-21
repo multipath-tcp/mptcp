@@ -617,7 +617,7 @@ void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 			= tcp_sk(mpcb->master_sk)->rx_opt.mptcp_rem_token;
 
 	mpcb->cnt_subflows++;
-	mptcp_update_window_clamp(mpcb);
+	mptcp_update_window_clamp(tcp_sk(meta_sk));
 	atomic_add(
 		atomic_read(&((struct sock *)tp)->sk_rmem_alloc),
 		&meta_sk->sk_rmem_alloc);
@@ -679,9 +679,15 @@ void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
 				mpcb->cnt_subflows);
 }
 
-void mptcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp) {
-	struct tcp_sock *tp_prev;
+void mptcp_del_sock(struct sock *sk) {
+	struct tcp_sock *tp = tcp_sk(sk), *tp_prev;
+	struct multipath_pcb *mpcb = tp->mpcb;
 	int done = 0;
+
+	if (!tp->mpc)
+		return;
+
+	mptcp_debug("%s: Removing subsocket - pi:%d\n", __func__, tp->path_index);
 
 	tp_prev = mpcb->connection_list;
 	if (!tp->attached)
@@ -1609,22 +1615,24 @@ void mptcp_clean_rtx_queue(struct sock *sk) {
  * At the moment we apply a simple addition algorithm.
  * We will complexify later
  */
-void mptcp_update_window_clamp(struct multipath_pcb *mpcb) {
-	struct sock *sk;
-	struct tcp_sock *meta_tp = (struct tcp_sock *) mpcb, *tp;
-	struct sock *meta_sk = (struct sock *) mpcb;
-	u32 new_clamp = 0;
-	u32 new_rcv_ssthresh = 0;
-	u32 new_rcvbuf = 0;
+void mptcp_update_window_clamp(struct tcp_sock *tp) {
+	struct sock *meta_sk, *tmpsk;
+	struct tcp_sock *meta_tp, *tmptp;
+	struct multipath_pcb *mpcb;
+	u32 new_clamp = 0, new_rcv_ssthresh = 0, new_rcvbuf = 0;
 
 	/* Can happen if called from non mpcb sock. */
-	if (!mpcb)
+	if (!tp->mpc)
 		return;
 
-	mptcp_for_each_sk(mpcb, sk, tp) {
-		new_clamp += tp->window_clamp;
-		new_rcv_ssthresh += tp->rcv_ssthresh;
-		new_rcvbuf += sk->sk_rcvbuf;
+	mpcb = tp->mpcb;
+	meta_tp = mpcb_meta_tp(mpcb);
+	meta_sk = (struct sock *)mpcb;
+
+	mptcp_for_each_sk(mpcb, tmpsk, tmptp) {
+		new_clamp += tmptp->window_clamp;
+		new_rcv_ssthresh += tmptp->rcv_ssthresh;
+		new_rcvbuf += tmpsk->sk_rcvbuf;
 	}
 	meta_tp->window_clamp = new_clamp;
 	meta_tp->rcv_ssthresh = new_rcv_ssthresh;
@@ -1830,8 +1838,6 @@ void mptcp_close(struct sock *master_sk, long timeout) {
 		return;
 	}
 
-	BUG_ON(!mpcb);
-
 	meta_sk->sk_shutdown = SHUTDOWN_MASK;
 
 	/* We need to flush the recv. buffs.  We do this only on the
@@ -1901,9 +1907,8 @@ void mptcp_detach_unused_child(struct sock *sk)
 	if (!mpcb)
 		return;
 	mptcp_destroy_mpcb(mpcb);
-	/* Now all subflows of the mpcb are attached,
-	 * so we can destroy them, being sure that the mpcb
-	 * will be correctly destroyed last.
+	/* Now all subflows of the mpcb are attached, so we can destroy them,
+	 * being sure that the mpcb will be correctly destroyed last.
 	 */
 	mptcp_for_each_sk(mpcb, child, child_tp) {
 		if (child == sk)
@@ -1962,9 +1967,8 @@ static void __mptcp_fallback(struct sock *master_sk)
 		return; /* Fallback is already done */
 
 	if (sock_flag(meta_sk, SOCK_DEAD))
-		return; /* mptcp_destroy_mpcb() already called. No need
-			 * to fallback.
-			 */
+		/* mptcp_destroy_mpcb() already called. No need to fallback. */
+		return;
 
 	sock_hold(master_sk);
 	mptcp_destroy_mpcb(mpcb);

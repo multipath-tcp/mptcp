@@ -94,11 +94,11 @@ int sysctl_tcp_rfc1337 __read_mostly;
 int sysctl_tcp_max_orphans __read_mostly = NR_FILE;
 #ifdef CONFIG_MPTCP
 /* At the moment we disable frto, because it creates problems
-   with failure recovery: It waits for the next ack before to decide
-   whether it enters the Loss state. But in case of failure,
-   the next ack never arrives of course. When we have several paths this is
-   a problem because we do want to retransmit on another working subflow
-   in that case. */
+ * with failure recovery: It waits for the next ack before to decide
+ * whether it enters the Loss state. But in case of failure,
+ * the next ack never arrives of course. When we have several paths this is
+ * a problem because we do want to retransmit on another working subflow
+ * in that case. */
 int sysctl_tcp_frto __read_mostly = 0;
 #else
 int sysctl_tcp_frto __read_mostly = 2;
@@ -344,9 +344,7 @@ static void tcp_grow_window(struct sock *sk, struct sk_buff *skb)
 			tp->rcv_ssthresh = min(tp->rcv_ssthresh + incr,
 					       tp->window_clamp);
 			inet_csk(sk)->icsk_ack.quick |= 1;
-#ifdef CONFIG_MPTCP
-			mptcp_update_window_clamp(tp->mpcb);
-#endif
+			mptcp_update_window_clamp(tp);
 		}
 	}
 }
@@ -403,10 +401,7 @@ static void tcp_init_buffer_space(struct sock *sk)
 	tp->rcv_ssthresh = min(tp->rcv_ssthresh, tp->window_clamp);
 	tp->snd_cwnd_stamp = tcp_time_stamp;
 
-#ifdef CONFIG_MPTCP
-	if (tp->mpc)
-		mptcp_update_window_clamp(tp->mpcb);
-#endif
+	mptcp_update_window_clamp(tp);
 }
 
 /* 5. Recalculate window clamp after socket hit its memory bounds. */
@@ -427,9 +422,7 @@ static void tcp_clamp_window(struct sock *sk)
 	if (atomic_read(&sk->sk_rmem_alloc) > sk->sk_rcvbuf)
 		tp->rcv_ssthresh = min(tp->window_clamp, 2U * tp->advmss);
 
-#ifdef CONFIG_MPTCP
-	mptcp_update_window_clamp(tp->mpcb);
-#endif
+	mptcp_update_window_clamp(tp);
 }
 
 /* Initialize RCV_MSS value.
@@ -595,9 +588,7 @@ void tcp_rcv_space_adjust(struct sock *sk)
 
 				/* Make the window clamp follow along.  */
 				tp->window_clamp = new_clamp;
-#ifdef CONFIG_MPTCP
-				mptcp_update_window_clamp(mpcb);
-#endif
+				mptcp_update_window_clamp(tp);
 			}
 		}
 	}
@@ -2938,9 +2929,8 @@ static void tcp_mtup_probe_success(struct sock *sk)
 	tp->snd_cwnd_cnt = 0;
 	tp->snd_cwnd_stamp = tcp_time_stamp;
 	tp->snd_ssthresh = tcp_current_ssthresh(sk);
-#ifdef CONFIG_MPTCP
-	mptcp_update_window_clamp(tp->mpcb);
-#endif
+
+	mptcp_update_window_clamp(tp);
 
 	icsk->icsk_mtup.search_low = icsk->icsk_mtup.probe_size;
 	icsk->icsk_mtup.probe_size = 0;
@@ -4045,8 +4035,7 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				break;
 #ifdef CONFIG_MPTCP
 			case TCPOPT_MPTCP:
-				mptcp_parse_options(ptr, opsize, opt_rx, mopt,
-						   skb);
+				mptcp_parse_options(ptr, opsize, opt_rx, mopt, skb);
 				break;
 #endif /* CONFIG_MPTCP */
 			}
@@ -4795,11 +4784,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 			if (!skb_copy_datagram_iovec(skb, 0, tp->ucopy.iov, chunk)) {
 				tp->ucopy.len -= chunk;
 				tp->copied_seq += chunk;
-#ifdef CONFIG_MPTCP
-				eaten = (chunk == skb->len && !th->fin);
-#else
 				eaten = (chunk == skb->len);
-#endif
 				tcp_rcv_space_adjust(sk);
 			}
 			local_bh_disable();
@@ -5245,7 +5230,7 @@ static int tcp_prune_queue(struct sock *sk)
 			     NULL,
 			     tp->copied_seq, tp->rcv_nxt);
 #else
-	mptcp_update_window_clamp(tp->mpcb);
+	mptcp_update_window_clamp(tp);
 #endif
 	sk_mem_reclaim(sk);
 
@@ -6332,10 +6317,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		if (!tp->rx_opt.wscale_ok) {
 			tp->rx_opt.snd_wscale = tp->rx_opt.rcv_wscale = 0;
 			tp->window_clamp = min(tp->window_clamp, 65535U);
-#ifdef CONFIG_MPTCP
-			if (tp->mpc)
-				mptcp_update_window_clamp(mpcb);
-#endif
+			mptcp_update_window_clamp(tp);
 		}
 
 		if (tp->rx_opt.saw_tstamp) {
@@ -6407,7 +6389,6 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			inet_csk_reset_keepalive_timer(sk, keepalive_time_when(tp));
 
 		if (!tp->rx_opt.snd_wscale)
-
 			__tcp_fast_path_on(tp, tp->mpc ? mpcb_meta_tp(mpcb)->snd_wnd :
 					   tp->snd_wnd);
 		else
@@ -6481,12 +6462,14 @@ discard:
 		tp->rcv_nxt = TCP_SKB_CB(skb)->seq + 1;
 		tp->rcv_wup = TCP_SKB_CB(skb)->seq + 1;
 
+#ifdef CONFIG_MPTCP
 		if (mpcb && tp->rx_opt.saw_mpc && is_master_tp(tp)) {
 			tp->mpc = 1;
 			tp->rx_opt.saw_mpc = 0;
 			mptcp_add_sock(tp->mpcb, tp);
 		} else
 			mptcp_fallback(sk);
+#endif
 
 		/* RFC1323: The window in SYN & SYN/ACK segments is
 		 * never scaled.

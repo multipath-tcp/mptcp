@@ -626,16 +626,7 @@ EXPORT_SYMBOL_GPL(inet_csk_clone);
  */
 void inet_csk_destroy_sock(struct sock *sk)
 {
-#ifdef CONFIG_MPTCP
-	if ((sk->sk_protocol == IPPROTO_TCP ||
-	     sk->sk_protocol == IPPROTO_MPTCPSUB ||
-	     sk->sk_protocol == IPPROTO_MPTCPSUBv6) &&
-	    tcp_sk(sk)->mpc) {
-		mptcp_debug("%s: Removing subsocket - pi:%d\n", __func__,
-			   tcp_sk(sk)->path_index);
-		mptcp_del_sock(tcp_sk(sk)->mpcb, tcp_sk(sk));
-	}
-#endif
+	mptcp_del_sock(sk);
 
 	WARN_ON(sk->sk_state != TCP_CLOSE);
 	WARN_ON(!sock_flag(sk, SOCK_DEAD));
@@ -731,9 +722,7 @@ void inet_csk_listen_stop(struct sock *sk)
 		WARN_ON(sock_owned_by_user(child));
 		sock_hold(child);
 
-#ifdef CONFIG_MPTCP
 		mptcp_detach_unused_child(child);
-#endif
 
 		sk->sk_prot->disconnect(child, O_NONBLOCK);
 

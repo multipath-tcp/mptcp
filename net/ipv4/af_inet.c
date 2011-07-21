@@ -161,10 +161,9 @@ void inet_sock_destruct(struct sock *sk)
 			 * inet_csk_destroy_sock()
 			 */
 			BUG_ON(mptcp_sk_attached(sk));
-			sock_put(tcp_sk(sk)->mpcb->master_sk); /* Taken when
-								* mpcb pointer
-								* was set
-								*/
+
+			/* Taken when mpcb pointer was set */
+			sock_put(tcp_sk(sk)->mpcb->master_sk);
 		}
 	}
 

@@ -463,7 +463,7 @@ int mptcp_check_rcv_queue(struct multipath_pcb *mpcb, struct msghdr *msg,
 
 struct multipath_pcb *mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags);
 void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp);
-void mptcp_del_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp);
+void mptcp_del_sock(struct sock *sk);
 void mptcp_update_metasocket(struct sock *sock, struct multipath_pcb *mpcb);
 int mptcp_sendmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
 		size_t size);
@@ -472,7 +472,7 @@ int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk);
 void mptcp_reinject_data(struct sock *orig_sk);
 int mptcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb);
 int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices);
-void mptcp_update_window_clamp(struct multipath_pcb *mpcb);
+void mptcp_update_window_clamp(struct tcp_sock *tp);
 void mptcp_update_sndbuf(struct multipath_pcb *mpcb);
 void mptcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end);
 int mptcpv6_init(void);
@@ -589,8 +589,7 @@ static inline void mptcp_add_sock(struct multipath_pcb *mpcb,
 {
 }
 
-static inline void mptcp_del_sock(struct multipath_pcb *mpcb,
-		struct tcp_sock *tp)
+static inline void mptcp_del_sock(struct sock *sk)
 {
 }
 
@@ -638,7 +637,7 @@ static inline int mptcp_init_subsockets(struct multipath_pcb *mpcb,
 	return 0;
 }
 
-static inline void mptcp_update_window_clamp(struct multipath_pcb *mpcb)
+static inline void mptcp_update_window_clamp(struct tcp_sock *tp)
 {
 }
 

@@ -45,6 +45,7 @@ struct tcp_out_options {
 	u16	mss;		/* 0 to disable */
 	__u32	tsval, tsecr;	/* need to include OPTION_TS */
 	__u8	*hash_location;	/* temporary pointer, overloaded */
+#ifdef CONFIG_MPTCP
 	__u32	data_seq;	/* data sequence number, for MPTCP */
 	__u32	data_ack;	/* data ack, for MPTCP */
 	__u16	data_len;	/* data level length, for MPTCP */
@@ -55,6 +56,7 @@ struct tcp_out_options {
 	struct mptcp_loc6 *addr6;/* v6 addresses for MPTCP */
 	u8	addr_id;	/* address id */
 #endif /* CONFIG_MPTCP_PM */
+#endif /* CONFIG_MPTCP */
 };
 
 struct tcp_options_received {
