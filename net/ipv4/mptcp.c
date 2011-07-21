@@ -271,6 +271,12 @@ void mptcp_data_ready(struct sock *sk) {
 	mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
 }
 
+int inet_create(struct net *net, struct socket *sock, int protocol, int kern);
+
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+int inet6_create(struct net *net, struct socket *sock, int protocol, int kern);
+#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
+
 /**
  * Creates as many sockets as path indices announced by the Path Manager.
  * The first path indices are (re)allocated to existing sockets.
@@ -282,8 +288,7 @@ void mptcp_data_ready(struct sock *sk) {
  *      (we use sock_create_kern, that reserves ressources with GFP_KERNEL)
  */
 int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
-	int i, ret;
-	struct socket *sock;
+	int i;
 	struct tcp_sock *tp;
 
 	BUG_ON(!tcp_sk(mpcb->master_sk)->mpc);
@@ -294,34 +299,40 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 		path_indices &= ~PI_TO_FLAG(tp->path_index);
 
 	for (i = 0; i < sizeof(path_indices) * 8; i++) {
+		struct sock *sk;
+		struct socket sock;
 		struct sockaddr *loculid, *remulid;
 		struct path4 *pa4 = NULL;
 		struct path6 *pa6 = NULL;
-		int ulid_size = 0, newpi = i + 1, family;
+		int ulid_size = 0, newpi = i + 1, family, ret;
 
 		if (!((1 << i) & path_indices))
 			continue;
 
-		/* A new socket must be created */
 		family = mptcp_get_path_family(mpcb, newpi);
 
-		/* A new socket must be created */
-		if (family == AF_INET)
-			ret = sock_create_kern(family,
-					  SOCK_STREAM,
-					  IPPROTO_MPTCPSUB, &sock);
-		else if (family == AF_INET6) /* IPv6 */
-			ret = sock_create_kern(family,
-					  SOCK_STREAM,
-					  IPPROTO_MPTCPSUBv6, &sock);
-		else
-			BUG();
-		if (ret < 0) {
-			printk(KERN_ERR "%s: sock_create failed\n",
-					__func__);
-			return ret;
+		sock.type = mpcb->master_sk->sk_socket->type;
+		sock.state = SS_UNCONNECTED;
+		sock.wq = mpcb->master_sk->sk_socket->wq;
+		sock.file = mpcb->master_sk->sk_socket->file;
+		sock.ops = NULL;
+		if (family == AF_INET) {
+			ret = inet_create(&init_net, &sock,
+					IPPROTO_MPTCPSUB, 1);
+		} else {
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+			ret = inet6_create(&init_net, &sock,
+					IPPROTO_MPTCPSUBv6, 1);
+#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 		}
-		tp = tcp_sk(sock->sk);
+
+		if (ret < 0) {
+			mptcp_debug("%s inet_create failed ret: %d, "
+					"family %d\n", __func__, ret, family);
+			goto cont_error;
+		}
+
+		sk = sock.sk;
 
 		/* Binding the new socket to the local ulid
 		 * (except if we use the MPTCP default PM, in which
@@ -337,8 +348,8 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 			loculid = (struct sockaddr *) &pa4->loc;
 			remulid = (struct sockaddr *) &pa4->rem;
 			ulid_size = sizeof(pa4->loc);
-			inet_sk(sock->sk)->loc_id = pa4->loc_id;
-			inet_sk(sock->sk)->rem_id = pa4->rem_id;
+			inet_sk(sk)->loc_id = pa4->loc_id;
+			inet_sk(sk)->rem_id = pa4->rem_id;
 			break;
 		case AF_INET6:
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
@@ -349,13 +360,14 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 			loculid = (struct sockaddr *) &pa6->loc;
 			remulid = (struct sockaddr *) &pa6->rem;
 			ulid_size = sizeof(pa6->loc);
-			inet_sk(sock->sk)->loc_id = pa6->loc_id;
-			inet_sk(sock->sk)->rem_id = pa6->rem_id;
+			inet_sk(sk)->loc_id = pa6->loc_id;
+			inet_sk(sk)->rem_id = pa6->rem_id;
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 			break;
 		default:
 			BUG();
 		}
+		tp = tcp_sk(sk);
 		tp->path_index = newpi;
 		tp->mpc = 1;
 		tp->slave_sk = 1;
@@ -363,7 +375,7 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 		mptcp_add_sock(mpcb, tp);
 
 		/* Redefine the sk_data_ready function */
-		((struct sock *) tp)->sk_data_ready = mptcp_def_readable;
+		sk->sk_data_ready = mptcp_def_readable;
 
 		if (family == AF_INET) {
 			struct sockaddr_in *loc, *rem;
@@ -389,26 +401,32 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices) {
 				ntohs(rem->sin6_port));
 		}
 
-		ret = sock->ops->bind(sock, loculid, ulid_size);
+		ret = sock.ops->bind(&sock, loculid, ulid_size);
 		if (ret < 0) {
 			printk(KERN_ERR "%s: MPTCP subsocket bind() failed, "
 					"error %d\n", __func__, ret);
-			sock_release(sock);
-			continue;
+			goto cont_error;
 		}
 
-		ret = sock->ops->connect(sock, remulid, ulid_size, O_NONBLOCK);
+		ret = sock.ops->connect(&sock, remulid, ulid_size, O_NONBLOCK);
 		if (ret < 0 && ret != -EINPROGRESS) {
 			printk(KERN_ERR "%s: MPTCP subsocket connect() failed, "
 					"error %d\n", __func__, ret);
-			sock_release(sock);
-			continue;
+			goto cont_error;
 		}
 
+		sk_set_socket(sk, mpcb->master_sk->sk_socket);
+		sk->sk_wq = mpcb->master_sk->sk_wq;
+
 		if (family == AF_INET)
-			pa4->loc.sin_port = inet_sk(sock->sk)->inet_sport;
+			pa4->loc.sin_port = inet_sk(sk)->inet_sport;
 		else
-			pa6->loc.sin6_port = inet_sk(sock->sk)->inet_sport;
+			pa6->loc.sin6_port = inet_sk(sk)->inet_sport;
+
+		continue;
+
+cont_error:
+		sock.ops->release(&sock);
 	}
 
 	return 0;
