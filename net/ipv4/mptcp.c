@@ -1479,7 +1479,7 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		} else if (mpadd->ipver == 6) {
 			__be16 port = 0;
 			if (opsize == MPTCP_SUB_LEN_ADD_ADDR6 + 2)
-				port = (__be16) *(ptr + 4);
+				port = (__be16) *(ptr + 16);
 
 			mptcp_v6_add_raddress(mopt, (struct in6_addr *) ptr,
 					port, mpadd->addr_id);
