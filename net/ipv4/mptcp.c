@@ -684,7 +684,12 @@ void mptcp_del_sock(struct sock *sk) {
 	struct multipath_pcb *mpcb = tp->mpcb;
 	int done = 0;
 
-	if (!tp->mpc)
+	/* Need to check for protocol here, because we may enter here for
+	 * non-tcp sockets. (coming from inet_csk_destroy_sock) */
+	if ((sk->sk_protocol != IPPROTO_TCP &&
+	     sk->sk_protocol != IPPROTO_MPTCPSUB &&
+	     sk->sk_protocol != IPPROTO_MPTCPSUBv6) ||
+	    !tp->mpc)
 		return;
 
 	mptcp_debug("%s: Removing subsocket - pi:%d\n", __func__, tp->path_index);
