@@ -1195,17 +1195,10 @@ static int __init inet6_init(void)
 	if (err)
 		goto sysctl_fail;
 #endif
-#ifdef CONFIG_MPTCP
-	err = mptcpv6_init();
-	if (err)
-		goto mptcpsubv6_fail;
-#endif
 
 out:
 	return err;
-#ifdef CONFIG_MPTCP
-mptcpsubv6_fail:
-#endif
+
 #ifdef CONFIG_SYSCTL
 	ipv6_sysctl_unregister();
 #endif

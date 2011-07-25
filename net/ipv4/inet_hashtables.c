@@ -544,8 +544,8 @@ ok:
 	head = &hinfo->bhash[inet_bhashfn(net, snum, hinfo->bhash_size)];
 	tb  = inet_csk(sk)->icsk_bind_hash;
 	spin_lock_bh(&head->lock);
-	if (sk->sk_protocol == IPPROTO_MPTCPSUB ||
-	    sk->sk_protocol == IPPROTO_MPTCPSUBv6 ||
+	/* TODO_cpaasch - check if the test for slave_sk is really necessary */
+	if (tcp_sk(sk)->slave_sk ||
 	    (sk_head(&tb->owners) == sk && !sk->sk_bind_node.next)) {
 		hash(sk, NULL);
 		spin_unlock_bh(&head->lock);

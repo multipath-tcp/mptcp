@@ -24,6 +24,7 @@
 #include <net/mptcp.h>
 #include <net/mptcp_v6.h>
 #include <net/ipv6.h>
+#include <net/transp_v6.h>
 #include <net/tcp.h>
 #include <linux/list.h>
 #include <linux/jhash.h>
@@ -314,12 +315,10 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 		sock.file = mpcb->master_sk->sk_socket->file;
 		sock.ops = NULL;
 		if (family == AF_INET) {
-			ret = inet_create(&init_net, &sock,
-					IPPROTO_MPTCPSUB, 1);
+			ret = inet_create(&init_net, &sock, IPPROTO_TCP, 1);
 		} else {
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-			ret = inet6_create(&init_net, &sock,
-					IPPROTO_MPTCPSUBv6, 1);
+			ret = inet6_create(&init_net, &sock, IPPROTO_TCP, 1);
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 		}
 
@@ -464,10 +463,10 @@ int mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags)
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	if (AF_INET_FAMILY(master_sk->sk_family)) {
 		mpcb->icsk_af_ops_alt = &ipv6_specific;
-		mpcb->sk_prot_alt = &mptcpsubv6_prot;
+		mpcb->sk_prot_alt = &tcpv6_prot;
 	} else {
 		mpcb->icsk_af_ops_alt = &ipv4_specific;
-		mpcb->sk_prot_alt = &mptcpsub_prot;
+		mpcb->sk_prot_alt = &tcp_prot;
 	}
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 
@@ -676,10 +675,7 @@ void mptcp_del_sock(struct sock *sk)
 
 	/* Need to check for protocol here, because we may enter here for
 	 * non-tcp sockets. (coming from inet_csk_destroy_sock) */
-	if ((sk->sk_protocol != IPPROTO_TCP &&
-	     sk->sk_protocol != IPPROTO_MPTCPSUB &&
-	     sk->sk_protocol != IPPROTO_MPTCPSUBv6) ||
-	    !tp->mpc)
+	if (sk->sk_protocol != IPPROTO_TCP || !tp->mpc)
 		return;
 
 	mptcp_debug("%s: Removing subsocket - pi:%d\n", __func__,

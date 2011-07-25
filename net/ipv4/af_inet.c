@@ -145,10 +145,7 @@ void inet_sock_destruct(struct sock *sk)
 		return;
 	}
 
-	if ((sk->sk_protocol == IPPROTO_TCP ||
-	     sk->sk_protocol == IPPROTO_MPTCPSUB ||
-	     sk->sk_protocol == IPPROTO_MPTCPSUBv6) &&
-	    tcp_sk(sk)->mpcb) {
+	if (sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpcb) {
 		if (is_master_tp(tcp_sk(sk))) {
 			if (sk != tcp_sk(sk)->mpcb->master_sk) {
 				printk(KERN_ERR "sk %p, master_sk %p\n",
@@ -1041,17 +1038,6 @@ static struct inet_protosw inetsw_array[] =
 	       .no_check =   UDP_CSUM_DEFAULT,
 	       .flags =      INET_PROTOSW_REUSE,
        },
-#ifdef CONFIG_MPTCP
-	{
-		.type =		SOCK_STREAM,
-		.protocol =	IPPROTO_MPTCPSUB,
-		.prot =		&mptcpsub_prot,
-		.ops =		&inet_stream_ops,
-		.no_check =	0,
-		.flags =	INET_PROTOSW_PERMANENT |
-				INET_PROTOSW_ICSK,
-	},
-#endif
 };
 
 #define INETSW_ARRAY_LEN ARRAY_SIZE(inetsw_array)
@@ -1678,11 +1664,6 @@ static int __init inet_init(void)
 	if (rc)
 		goto out_unregister_udp_proto;
 
-#ifdef CONFIG_MPTCP
-	rc = proto_register(&mptcpsub_prot, 1);
-	if (rc)
-		goto out_unregister_raw_proto;
-#endif
 	/*
 	 *	Tell SOCKET that we are alive...
 	 */
@@ -1768,10 +1749,6 @@ static int __init inet_init(void)
 	rc = 0;
 out:
 	return rc;
-#ifdef CONFIG_MPTCP
-out_unregister_raw_proto:
-	proto_unregister(&raw_prot);
-#endif
 out_unregister_udp_proto:
 	proto_unregister(&udp_prot);
 out_unregister_tcp_proto:

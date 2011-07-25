@@ -163,12 +163,6 @@ int ip_build_and_send_pkt(struct sk_buff *skb, struct sock *sk,
 	iph->protocol = sk->sk_protocol;
 	ip_select_ident(iph, &rt->dst, sk);
 
-#ifdef CONFIG_MPTCP
-	/* MPTCP hack : see comment in ip6_xmit (ip6_output.c) */
-	if (iph->protocol == IPPROTO_MPTCPSUB)
-		iph->protocol = IPPROTO_TCP;
-#endif
-
 	if (opt && opt->optlen) {
 		iph->ihl += opt->optlen>>2;
 		ip_options_build(skb, opt, daddr, rt, 0);
@@ -386,12 +380,6 @@ packet_routed:
 	iph->saddr    = rt->rt_src;
 	iph->daddr    = rt->rt_dst;
 	/* Transport layer set skb->h.foo itself. */
-
-#ifdef CONFIG_MPTCP
-	/*MPTCP hack : see comment in ip6_xmit (ip6_output.c)*/
-	if (iph->protocol == IPPROTO_MPTCPSUB)
-		iph->protocol = IPPROTO_TCP;
-#endif
 
 	if (opt && opt->optlen) {
 		iph->ihl += opt->optlen >> 2;

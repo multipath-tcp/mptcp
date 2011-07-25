@@ -769,6 +769,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 			child_tp->mpc = 1;
 			child_tp->rx_opt.mptcp_rem_token = req->mptcp_rem_token;
 			child_tp->mptcp_loc_token = req->mptcp_loc_token;
+			child_tp->slave_sk = 0;
 
 			if (mptcp_alloc_mpcb(child, GFP_ATOMIC)) {
 				/* The allocation of the mpcb failed!

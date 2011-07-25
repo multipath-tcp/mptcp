@@ -1070,19 +1070,10 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	if (is_meta_sk(sk) && sk->sk_family != family) {
-		/* Meta sock is not of the same family as the sub sock. */
-		if (sk->sk_family == AF_INET) {
-			newsk->sk_family = AF_INET6;
-			newsk->sk_protocol = IPPROTO_MPTCPSUBv6;
-		} else {
-			newsk->sk_family = AF_INET;
-			newsk->sk_protocol = IPPROTO_MPTCPSUB;
-		}
-		newsk->sk_prot = newsk->sk_prot_creator =
-					tcp_sk(sk)->mpcb->sk_prot_alt;
-	} else
+		newsk->sk_family = family;
+		newsk->sk_prot = tcp_sk(sk)->mpcb->sk_prot_alt;
+	}
 #endif
-		newsk->sk_prot = newsk->sk_prot_creator = sk->sk_prot;
 
 	/* SANITY */
 	get_net(sock_net(newsk));
@@ -1641,11 +1632,9 @@ struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 				     unsigned long data_len, int noblock,
 				     int *errcode)
 {
-	struct sock *meta_sk = ((sk->sk_protocol == IPPROTO_TCP ||
-				 sk->sk_protocol == IPPROTO_MPTCPSUB ||
-				 sk->sk_protocol == IPPROTO_MPTCPSUBv6) &&
-				 tcp_sk(sk)->mpcb) ?
-				 (struct sock *)tcp_sk(sk)->mpcb : sk;
+	struct sock *meta_sk = (sk->sk_protocol == IPPROTO_TCP &&
+				tcp_sk(sk)->mpcb) ?
+				(struct sock *)tcp_sk(sk)->mpcb : sk;
 	struct sk_buff *skb;
 	gfp_t gfp_mask;
 	long timeo;
@@ -2214,11 +2203,10 @@ void release_sock(struct sock *sk)
 	mutex_release(&sk->sk_lock.dep_map, 1, _RET_IP_);
 
 	spin_lock_bh(&sk->sk_lock.slock);
-	if (sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpc) {
+	if (sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpc &&
+			is_master_tp(tcp_sk(sk))) {
 		struct multipath_pcb *mpcb = tcp_sk(sk)->mpcb;
 		struct sock *meta_sk = (struct sock *)mpcb;
-
-		BUG_ON(!is_master_tp(tcp_sk(sk)));
 
 		/* process incoming join requests */
 		if (meta_sk->sk_backlog.tail)
@@ -2632,9 +2620,7 @@ EXPORT_SYMBOL(proto_unregister);
 
 void sk_wake_async(struct sock *sk, int how, int band)
 {
-	struct sock *meta_sk = ((sk->sk_protocol == IPPROTO_TCP ||
-				 sk->sk_protocol == IPPROTO_MPTCPSUB ||
-				 sk->sk_protocol == IPPROTO_MPTCPSUBv6) &&
+	struct sock *meta_sk = (sk->sk_protocol == IPPROTO_TCP &&
 				 tcp_sk(sk)->mpc) ?
 				 (struct sock *)tcp_sk(sk)->mpcb : sk;
 	if (sock_flag(sk, SOCK_FASYNC))
