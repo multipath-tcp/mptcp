@@ -431,17 +431,23 @@ cont_error:
 
 int mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags)
 {
-	struct multipath_pcb *mpcb = kmalloc(sizeof(struct multipath_pcb),
-					     flags);
-	struct tcp_sock *meta_tp = mpcb_meta_tp(mpcb);
-	struct sock *meta_sk = (struct sock *) meta_tp;
-	struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
+	struct multipath_pcb *mpcb;
+	struct tcp_sock *meta_tp;
+	struct sock *meta_sk;
+	struct inet_connection_sock *meta_icsk;
 
-	/* Memory allocation failed.
-	 * Stopping here.
-	 */
+	/* May happen, when coming from mptcp_init_subsockets */
+	if (tcp_sk(master_sk)->slave_sk)
+		return 0;
+
+	mpcb = kmalloc(sizeof(struct multipath_pcb), flags);
+	/* Memory allocation failed. Stopping here. */
 	if (!mpcb)
-		return 1;
+		return -ENOBUFS;
+
+	meta_tp = mpcb_meta_tp(mpcb);
+	meta_sk = (struct sock *)meta_tp;
+	meta_icsk = inet_csk(meta_sk);
 
 	memset(mpcb, 0, sizeof(struct multipath_pcb));
 	BUG_ON(mpcb->connection_list);
@@ -479,7 +485,7 @@ int mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags)
 
 	meta_sk->sk_rcvbuf = sysctl_rmem_default;
 	meta_sk->sk_sndbuf = sysctl_wmem_default;
-	meta_sk->sk_state = TCP_CLOSE;
+	meta_sk->sk_state = TCP_SYN_SENT;
 
 	/* Inherit locks the meta_sk, so we must release it here. */
 	bh_unlock_sock(meta_sk);
@@ -715,7 +721,7 @@ void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 	struct tcp_sock *tp;
 	struct sock *meta_sk;
 
-	if (sk->sk_protocol != IPPROTO_TCP)
+	if (sk->sk_protocol != IPPROTO_TCP || !is_master_tp(tcp_sk(sk)))
 		return;
 	tp = tcp_sk(sk);
 	meta_sk = (struct sock *) mpcb;

@@ -654,8 +654,6 @@ int inet_csk_listen_start(struct sock *sk, const int nr_table_entries)
 	sk->sk_ack_backlog = 0;
 	inet_csk_delack_init(sk);
 
-	mptcp_fallback(sk); /* no mpcb needed for listening */
-
 	/* There is race window here: we announce ourselves listening,
 	 * but this transition is still not validated by get_port().
 	 * It is OK, because this socket enters to hash table only

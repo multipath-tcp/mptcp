@@ -379,9 +379,6 @@ int inet6_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	inet->inet_dport = 0;
 	inet->inet_daddr = 0;
 
-	if (addr_type != IPV6_ADDR_ANY)
-		mptcp_update_metasocket(sk, mpcb_from_tcpsock(tcp_sk(sk)));
-
 out:
 	release_sock(sk);
 	return err;

@@ -484,7 +484,7 @@ struct tcp_sock {
 	struct multipath_pcb		*mpcb;
 #ifdef CONFIG_MPTCP
 	int				path_index;
-	struct tcp_sock			*next; /*Next subflow socket*/
+	struct tcp_sock			*next; /* Next subflow socket */
 	u32				mptcp_loc_token;
 	uint8_t				slave_sk:1,
 					attached:1,

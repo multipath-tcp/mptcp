@@ -327,12 +327,15 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 #ifdef CONFIG_MPTCP
 	tp->snt_isn = tp->write_seq;
 #endif
+	err = mptcp_alloc_mpcb(sk, GFP_KERNEL);
+	if (err)
+		goto failure;
+	mptcp_update_metasocket(sk, mpcb_from_tcpsock(tp));
 
 	err = tcp_connect(sk);
 	if (err)
 		goto late_failure;
 
-	mptcp_update_metasocket(sk, mpcb_from_tcpsock(tp));
 
 	return 0;
 
@@ -2142,9 +2145,6 @@ static int tcp_v6_init_sock(struct sock *sk)
 	local_bh_disable();
 	percpu_counter_inc(&tcp_sockets_allocated);
 	local_bh_enable();
-
-	if (mptcp_alloc_mpcb(sk, GFP_KERNEL))
-		return -1;
 
 	return 0;
 }

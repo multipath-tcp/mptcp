@@ -544,9 +544,6 @@ int inet_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	inet->inet_dport = 0;
 	sk_dst_reset(sk);
 
-	if (addr->sin_addr.s_addr)
-		mptcp_update_metasocket(sk, mpcb_from_tcpsock(tcp_sk(sk)));
-
 	err = 0;
 out_release_sock:
 	release_sock(sk);
