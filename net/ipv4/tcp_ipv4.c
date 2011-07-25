@@ -1992,23 +1992,9 @@ static int tcp_v4_init_sock(struct sock *sk)
 	local_bh_disable();
 	percpu_counter_inc(&tcp_sockets_allocated);
 	local_bh_enable();
-#ifdef CONFIG_MPTCP
-	/* Init the MPTCP mpcb */
-	{
-		struct multipath_pcb *mpcb;
-		mpcb = mptcp_alloc_mpcb(sk, GFP_KERNEL);
 
-		if (!mpcb)
-			return -1;
-
-		tp->path_index = 0;
-		tp->mpcb = mpcb;
-		/* the master_sk is not immediately attached (add_sock) to the
-		 * mpcb. It will be only when we receive the
-		 * MP_CAPABLE option from the peer.
-		 */
-	}
-#endif
+	if (mptcp_alloc_mpcb(sk, GFP_KERNEL))
+		return -1;
 
 	return 0;
 }

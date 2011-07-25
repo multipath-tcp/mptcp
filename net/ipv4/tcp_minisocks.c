@@ -768,21 +768,19 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 			child_tp->rx_opt.saw_mpc = 0;
 			child_tp->mpc = 1;
 			child_tp->rx_opt.mptcp_rem_token = req->mptcp_rem_token;
-			child_tp->path_index = 0;
 			child_tp->mptcp_loc_token = req->mptcp_loc_token;
-			child_tp->mpcb = mpcb =
-				mptcp_alloc_mpcb(child, GFP_ATOMIC);
 
-			inet_sk(child)->loc_id = 0;
-			inet_sk(child)->rem_id = 0;
-
-			/* The allocation of the mpcb failed!
-			 * Destroy the child and go to listen_overflow
-			 */
-			if (mpcb == NULL) {
+			if (mptcp_alloc_mpcb(child, GFP_ATOMIC)) {
+				/* The allocation of the mpcb failed!
+				 * Destroy the child and go to listen_overflow
+				 */
 				tcp_done(child);
 				goto listen_overflow;
 			}
+			mpcb = child_tp->mpcb;
+
+			inet_sk(child)->loc_id = 0;
+			inet_sk(child)->rem_id = 0;
 
 			mptcp_add_sock(mpcb, child_tp);
 

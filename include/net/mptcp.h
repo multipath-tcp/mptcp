@@ -502,7 +502,7 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied);
 int mptcp_check_rcv_queue(struct multipath_pcb *mpcb, struct msghdr *msg,
 			size_t *len, u32 *data_seq, int *copied, int flags);
 
-struct multipath_pcb *mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags);
+extern int mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags);
 void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp);
 void mptcp_del_sock(struct sock *sk);
 void mptcp_update_metasocket(struct sock *sock, struct multipath_pcb *mpcb);
@@ -619,10 +619,9 @@ static inline int mptcp_check_rcv_queue(struct multipath_pcb *mpcb,
 	return 0;
 }
 
-static inline struct multipath_pcb *mptcp_alloc_mpcb(struct sock *master_sk,
-		gfp_t flags)
+static inline int mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags)
 {
-	return NULL;
+	return 0;
 }
 
 static inline void mptcp_add_sock(struct multipath_pcb *mpcb,

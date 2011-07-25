@@ -429,7 +429,7 @@ cont_error:
 	return 0;
 }
 
-struct multipath_pcb *mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags)
+int mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags)
 {
 	struct multipath_pcb *mpcb = kmalloc(sizeof(struct multipath_pcb),
 					     flags);
@@ -441,7 +441,7 @@ struct multipath_pcb *mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags)
 	 * Stopping here.
 	 */
 	if (!mpcb)
-		return NULL;
+		return 1;
 
 	memset(mpcb, 0, sizeof(struct multipath_pcb));
 	BUG_ON(mpcb->connection_list);
@@ -515,7 +515,10 @@ struct multipath_pcb *mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags)
 	/* Adding the mpcb in the token hashtable */
 	mptcp_hash_insert(mpcb, mptcp_loc_token(mpcb));
 
-	return mpcb;
+	tcp_sk(master_sk)->path_index = 0;
+	tcp_sk(master_sk)->mpcb = mpcb;
+
+	return 0;
 }
 
 void mpcb_release(struct multipath_pcb *mpcb)
