@@ -593,7 +593,7 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 
 		mpc->sub = MPTCP_SUB_CAPABLE;
 		mpc->ver = 0;
-		mpc->c = 0;
+		mpc->c = 1;
 		mpc->rsv = 0;
 		mpc->s = 1;
 
@@ -675,11 +675,21 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		if (OPTION_DATA_ACK & opts->options)
 			*ptr++ = htonl(opts->data_ack);
 		if (OPTION_DSN_MAP & opts->options) {
+			u_int16_t *csum;
+			void *csum_start = ptr;
+
 			*ptr++ = htonl(opts->data_seq);
 			*ptr++ = htonl(opts->sub_seq);
+			p8 = (__u8 *)ptr;
+			csum = (uint16_t *)(p8 + 2); /* After data_len */
+			/* Temporarily put TCPOPT_EOL (=0) at csum-field of the
+			 * dss to compute the correct checksum. */
 			*ptr++ = htonl((opts->data_len << 16) |
-					(TCPOPT_NOP << 8) |
-					(TCPOPT_NOP));
+					(TCPOPT_EOL << 8) |
+					(TCPOPT_EOL));
+			*csum = csum_fold(csum_partial(csum_start,
+							MPTCP_SUB_LEN_SEQ,
+							skb->csum));
 		}
 	}
 #endif

@@ -174,7 +174,7 @@ struct multipath_pcb {
  * as they are part of the DSS-option.
  * To get the total length, just add the different options together.
  */
-#define MPTCP_SUB_LEN_SEQ	10
+#define MPTCP_SUB_LEN_SEQ	12
 #define MPTCP_SUB_LEN_SEQ_ALIGN		12
 
 #define MPTCP_SUB_LEN_ACK	4
