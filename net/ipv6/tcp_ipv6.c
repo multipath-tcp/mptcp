@@ -332,9 +332,7 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 	if (err)
 		goto late_failure;
 
-#ifdef CONFIG_MPTCP
 	mptcp_update_metasocket(sk, mpcb_from_tcpsock(tp));
-#endif
 
 	return 0;
 

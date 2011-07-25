@@ -378,10 +378,10 @@ int inet6_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	inet->inet_sport = htons(inet->inet_num);
 	inet->inet_dport = 0;
 	inet->inet_daddr = 0;
-#ifdef CONFIG_MPTCP
+
 	if (addr_type != IPV6_ADDR_ANY)
 		mptcp_update_metasocket(sk, mpcb_from_tcpsock(tcp_sk(sk)));
-#endif
+
 out:
 	release_sock(sk);
 	return err;

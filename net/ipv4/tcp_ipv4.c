@@ -263,9 +263,8 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	if (err)
 		goto failure;
 
-#ifdef CONFIG_MPTCP
 	mptcp_update_metasocket(sk, mpcb_from_tcpsock(tp));
-#endif
+
 	return 0;
 
 failure:
