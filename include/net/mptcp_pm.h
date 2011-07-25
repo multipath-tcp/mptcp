@@ -40,7 +40,7 @@ struct multipath_options;
 struct tcp_out_options;
 struct tcp_sock;
 extern void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
-		struct tcp_out_options *opts);
+		struct tcp_out_options *opts, struct sk_buff *skb);
 extern void __tcp_v4_send_check(struct sk_buff *skb,
 		__be32 saddr, __be32 daddr);
 extern struct ip_options *tcp_v4_save_options(struct sock *sk,

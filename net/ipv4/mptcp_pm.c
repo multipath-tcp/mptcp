@@ -34,8 +34,6 @@
 #define hash_tk(token) \
 	(jhash_1word(token, 0) % MPTCP_HASH_SIZE)
 
-
-
 static struct list_head tk_hashtable[MPTCP_HASH_SIZE];
 static rwlock_t tk_hash_lock;	/* hashtable protection */
 
@@ -997,7 +995,7 @@ static struct sk_buff *mptcp_make_synack(struct sock *master_sk,
 
 	/* RFC1323: The window in SYN & SYN/ACK segments is never scaled. */
 	th->window = htons(min(req->rcv_wnd, 65535U));
-	tcp_options_write((__be32 *) (th + 1), NULL, &opts);
+	tcp_options_write((__be32 *) (th + 1), NULL, &opts, skb);
 	th->doff = (tcp_header_size >> 2);
 
 	return skb;

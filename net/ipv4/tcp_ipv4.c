@@ -588,7 +588,7 @@ int tcp_v4_gso_send_check(struct sk_buff *skb)
  *	Exception: precedence violation. We do not implement it in any case.
  */
 
-static void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
+void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcphdr *th = tcp_hdr(skb);
 	struct {

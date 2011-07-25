@@ -318,6 +318,8 @@ extern int tcp_v4_rcv(struct sk_buff *skb);
 extern struct inet_peer *tcp_v4_get_peer(struct sock *sk, bool *release_it);
 extern void *tcp_v4_tw_get_peer(struct sock *sk);
 extern int tcp_v4_tw_remember_stamp(struct inet_timewait_sock *tw);
+extern void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb);
+extern void tcp_v6_send_reset(struct sock *sk, struct sk_buff *skb);
 extern int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		       size_t size);
 extern int subtcp_sendmsg(struct kiocb *iocb,
