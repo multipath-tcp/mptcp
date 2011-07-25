@@ -1125,6 +1125,26 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 		goto out;
 	}
 
+	/* Verify the checksum and act appropiately */
+	if (TCP_SKB_CB(skb)->dss_off) {
+		__wsum csum = 0;
+
+		csum = skb_checksum(skb, 0, skb->len, csum);
+
+		/* skb->data is at this stage pointing to the payload. Thus, we
+		 * need to create a negative offset, going up into the header.
+		 * skb_transport_offset() gives this negative offset to the
+		 * start of the TCP header.
+		 */
+		csum = skb_checksum(skb,
+				skb_transport_offset(skb)
+					+ (TCP_SKB_CB(skb)->dss_off << 2),
+				MPTCP_SUB_LEN_SEQ, csum);
+
+		if (unlikely(csum_fold(csum)))
+			mptcp_debug("%s Checksum is wrong: csum %d\n", __func__, csum_fold(csum));
+	}
+
 	if (before(meta_tp->rcv_nxt, TCP_SKB_CB(skb)->data_seq)) {
 		if (!skb_peek(&meta_tp->out_of_order_queue)) {
 			/* Initial out of order segment */
@@ -1426,6 +1446,8 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		}
 
 		if (mdss->M) {
+			TCP_SKB_CB(skb)->dss_off =
+					(ptr - skb_transport_header(skb)) >> 2;
 			TCP_SKB_CB(skb)->data_seq = ntohl(*(uint32_t *) ptr);
 			TCP_SKB_CB(skb)->sub_seq =
 					ntohl(*(uint32_t *)(ptr + 4)) +
