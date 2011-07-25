@@ -561,21 +561,11 @@ void inet_csk_reqsk_queue_prune(struct sock *parent,
 }
 EXPORT_SYMBOL_GPL(inet_csk_reqsk_queue_prune);
 
-#if defined(CONFIG_MPTCP) && (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))
-
-/* Defined in net/core/sock.c */
-struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
-		int family);
-
-/* Defined in net/core/sock.c */
-void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
-			gfp_t flags);
-#endif
-
 struct sock *inet_csk_clone(struct sock *sk, const struct request_sock *req,
 			    const gfp_t priority)
 {
-#if defined(CONFIG_MPTCP) && (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))
+#if defined(CONFIG_MPTCP) && (defined(CONFIG_IPV6) \
+		|| defined(CONFIG_IPV6_MODULE))
 	struct sock *newsk;
 
 	if (is_meta_sk(sk) && sk->sk_family != req->rsk_ops->family) {

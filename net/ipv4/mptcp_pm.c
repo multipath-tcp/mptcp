@@ -32,29 +32,9 @@
 
 #define MPTCP_HASH_SIZE                16
 #define hash_tk(token) \
-	jhash_1word(token,0)%MPTCP_HASH_SIZE
+	(jhash_1word(token, 0) % MPTCP_HASH_SIZE)
 
-/* This couple of extern functions should be replaced ASAP
- * with more modular things, because they become quickly a
- * nightmare when we want to upgrade to recent kernel versions.
- */
-extern struct ip_options *tcp_v4_save_options(struct sock *sk,
-					      struct sk_buff *skb);
-extern void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags);
-extern void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
-			      struct tcp_out_options *opts);
-extern void tcp_v4_send_ack(struct sk_buff *skb, u32 seq, u32 ack,
-			    u32 win, u32 ts, int oif,
-			    struct tcp_md5sig_key *key, int reply_flags);
-extern void __tcp_v4_send_check(struct sk_buff *skb,
-				__be32 saddr, __be32 daddr);
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-extern void tcp_v6_send_ack(struct sk_buff *skb, u32 seq, u32 ack, u32 win,
-		u32 ts, struct tcp_md5sig_key *key);
-extern void	__tcp_v6_send_check(struct sk_buff *skb, struct in6_addr *saddr,
-		struct in6_addr *daddr);
-extern int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
-#endif
+
 
 static struct list_head tk_hashtable[MPTCP_HASH_SIZE];
 static rwlock_t tk_hash_lock;	/* hashtable protection */
@@ -278,7 +258,7 @@ struct path6 *find_path_mapping6(struct mptcp_loc6 *loc, struct mptcp_loc6 *rem,
 			continue;
 
 		if (mpcb->pa6[i].rem.sin6_port && rem->port &&
-		    mpcb->pa6[i].rem.sin6_port!= rem->port)
+		    mpcb->pa6[i].rem.sin6_port != rem->port)
 			continue;
 
 		return &mpcb->pa6[i];
@@ -298,9 +278,9 @@ struct in6_addr *mptcp_get_rem_addr6(struct multipath_pcb *mpcb, int path_index)
 	}
 
 	/* should not arrive here */
-	printk(KERN_ERR "pa6_size:%d,pi:%d\n",mpcb->pa6_size,path_index);
+	printk(KERN_ERR "pa6_size:%d, pi:%d\n", mpcb->pa6_size, path_index);
 	for (i = 0; i < mpcb->pa6_size; i++)
-		printk(KERN_ERR "existing pi:%d\n",mpcb->pa6[i].path_index);
+		printk(KERN_ERR "existing pi:%d\n", mpcb->pa6[i].path_index);
 
 	BUG();
 	return NULL;
@@ -431,9 +411,9 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 				p->loc_id = 0;
 
 				p->rem.sin_family = AF_INET;
-				p->rem.sin_addr = mpcb->received_options.addr4[j].addr;
+				p->rem.sin_addr =
+					mpcb->received_options.addr4[j].addr;
 				p->rem.sin_port = inet_sk(meta_sk)->inet_dport;
-mptcp_debug("%s: ulid with dst %d\n", __func__, ntohs(p->rem.sin_port));
 				p->rem_id = mpcb->received_options.addr4[j].id;
 
 				p->path_index = mpcb->next_unused_pi++;
@@ -459,7 +439,6 @@ mptcp_debug("%s: ulid with dst %d\n", __func__, ntohs(p->rem.sin_port));
 				p->rem.sin_addr.s_addr =
 						inet_sk(meta_sk)->inet_daddr;
 				p->rem.sin_port = inet_sk(meta_sk)->inet_dport;
-mptcp_debug("%s: ulid with src %d\n", __func__, ntohs(p->rem.sin_port));
 				p->rem_id = 0;
 
 				p->path_index = mpcb->next_unused_pi++;
@@ -486,9 +465,9 @@ mptcp_debug("%s: ulid with src %d\n", __func__, ntohs(p->rem.sin_port));
 				p->loc_id = mpcb->addr4[i].id;
 
 				p->rem.sin_family = AF_INET;
-				p->rem.sin_addr = mpcb->received_options.addr4[j].addr;
+				p->rem.sin_addr =
+					mpcb->received_options.addr4[j].addr;
 				p->rem.sin_port = inet_sk(meta_sk)->inet_dport;
-mptcp_debug("%s: all other with port %d\n", __func__, ntohs(p->rem.sin_port));
 				p->rem_id = mpcb->received_options.addr4[j].id;
 
 				p->path_index = mpcb->next_unused_pi++;
@@ -536,13 +515,16 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 				p = &new_pa6[newpa_idx++];
 
 				p->loc.sin6_family = AF_INET6;
-				ipv6_addr_copy(&p->loc.sin6_addr, &inet6_sk(meta_sk)->saddr);
+				ipv6_addr_copy(&p->loc.sin6_addr,
+						&inet6_sk(meta_sk)->saddr);
 				p->loc.sin6_port = 0;
 				p->loc_id = 0;
 
 				p->rem.sin6_family = AF_INET6;
-				ipv6_addr_copy(&p->rem.sin6_addr, &mpcb->received_options.addr6[j].addr);
-				p->rem.sin6_port = inet_sk(meta_sk)->inet_dport;
+				ipv6_addr_copy(&p->rem.sin6_addr,
+					&mpcb->received_options.addr6[j].addr);
+				p->rem.sin6_port =
+					inet_sk(meta_sk)->inet_dport;
 				p->rem_id = mpcb->received_options.addr6[j].id;
 
 				p->path_index = mpcb->next_unused_pi++;
@@ -559,13 +541,16 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 				p = &new_pa6[newpa_idx++];
 
 				p->loc.sin6_family = AF_INET6;
-				ipv6_addr_copy(&p->loc.sin6_addr, &mpcb->addr6[i].addr);
+				ipv6_addr_copy(&p->loc.sin6_addr,
+						&mpcb->addr6[i].addr);
 				p->loc.sin6_port = 0;
 				p->loc_id = mpcb->addr6[i].id;
 
 				p->rem.sin6_family = AF_INET6;
-				ipv6_addr_copy(&p->rem.sin6_addr, &inet6_sk(meta_sk)->daddr);
-				p->rem.sin6_port = inet_sk(meta_sk)->inet_dport;
+				ipv6_addr_copy(&p->rem.sin6_addr,
+						&inet6_sk(meta_sk)->daddr);
+				p->rem.sin6_port =
+						inet_sk(meta_sk)->inet_dport;
 				p->rem_id = 0;
 
 				p->path_index = mpcb->next_unused_pi++;
@@ -586,13 +571,16 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 				p = &new_pa6[newpa_idx++];
 
 				p->loc.sin6_family = AF_INET6;
-				ipv6_addr_copy(&p->loc.sin6_addr, &mpcb->addr6[i].addr);
+				ipv6_addr_copy(&p->loc.sin6_addr,
+						&mpcb->addr6[i].addr);
 				p->loc.sin6_port = 0;
 				p->loc_id = mpcb->addr6[i].id;
 
 				p->rem.sin6_family = AF_INET6;
-				ipv6_addr_copy(&p->rem.sin6_addr, &mpcb->received_options.addr6[j].addr);
-				p->rem.sin6_port = inet_sk(meta_sk)->inet_dport;
+				ipv6_addr_copy(&p->rem.sin6_addr,
+					&mpcb->received_options.addr6[j].addr);
+				p->rem.sin6_port =
+						inet_sk(meta_sk)->inet_dport;
 				p->rem_id = mpcb->received_options.addr6[j].id;
 
 				p->path_index = mpcb->next_unused_pi++;
@@ -678,10 +666,12 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 
-			list_for_each_entry(ifa6, &in6_dev->addr_list, if_list) {
+			list_for_each_entry(ifa6, &in6_dev->addr_list,
+					if_list) {
 				if (num_addr6 == MPTCP_MAX_ADDR) {
-					mptcp_debug("%s: At max num of local addresses:"
-						"%d --- not adding address: %pI6\n",
+					mptcp_debug("%s: At max num of local"
+						"addresses: %d --- not adding"
+						"address: %pI6\n",
 						__func__,
 						MPTCP_MAX_ADDR, &ifa6->addr);
 					goto out;
@@ -691,7 +681,8 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 					ipv6_addr_equal(&(ifa6->addr),
 					&(inet6_sk(mpcb->master_sk)->saddr)))
 					continue;
-				if (ipv6_addr_scope(&ifa6->addr) == IPV6_ADDR_LINKLOCAL)
+				if (ipv6_addr_scope(&ifa6->addr) ==
+						IPV6_ADDR_LINKLOCAL)
 					continue;
 				ipv6_addr_copy(&(mpcb->addr6[num_addr6].addr),
 					&(ifa6->addr));
@@ -751,7 +742,7 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 			/* update the address */
 			mptcp_debug("%s: updating old addr:%pI4"
 				   " to addr %pi4 with id:%d\n",
-				   __FUNCTION__, &loc4->addr.s_addr,
+				   __func__, &loc4->addr.s_addr,
 				   &addr->s_addr, id);
 			loc4->addr.s_addr = addr->s_addr;
 			loc4->port = port;
@@ -916,7 +907,8 @@ static unsigned mptcp_synack_options(struct request_sock *req,
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	else /* IPv6 */
 		for (i = 0; i < req->mpcb->num_addr6; i++) {
-			if (ipv6_addr_equal(&req->mpcb->addr6[i].addr, &inet6_rsk(req)->loc_addr))
+			if (ipv6_addr_equal(&req->mpcb->addr6[i].addr,
+					&inet6_rsk(req)->loc_addr))
 				opts->addr_id = req->mpcb->addr6[i].id;
 		}
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
@@ -926,7 +918,7 @@ static unsigned mptcp_synack_options(struct request_sock *req,
 	return MAX_TCP_OPTION_SPACE - remaining;
 }
 
-static __inline__ void
+static inline void
 TCP_ECN_make_synack(struct request_sock *req, struct tcphdr *th)
 {
 	if (inet_rsk(req)->ecn_ok)
@@ -1345,7 +1337,7 @@ static struct request_sock *mptcp_v4_search_req(const __be16 rport,
 	spin_lock(&tuple_hash_lock);
 	list_for_each_entry(req,
 			    &tuple_hashtable[inet_synq_hash
-					     (raddr, rport, 0, MPTCP_HASH_SIZE)],
+					(raddr, rport, 0, MPTCP_HASH_SIZE)],
 			    collide_tuple) {
 		const struct inet_request_sock *ireq = inet_rsk(req);
 
@@ -1423,7 +1415,7 @@ static struct request_sock *mptcp_v6_search_req(const __be16 rport,
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 
 /*copied from net/ipv4/tcp_minisocks.c*/
-static __inline__ int tcp_in_window(u32 seq, u32 end_seq, u32 s_win, u32 e_win)
+static inline int tcp_in_window(u32 seq, u32 end_seq, u32 s_win, u32 e_win)
 {
 	if (seq == s_win)
 		return 1;
@@ -1496,12 +1488,13 @@ static struct mp_join *mptcp_find_join(struct sk_buff *skb)
 			if (opsize < 2)	/* "silly options" */
 				return NULL;
 			if (opsize > length)
-				return NULL;   /* don't parse partial options */
+				return NULL;  /* don't parse partial options */
 			if (opcode == TCPOPT_MPTCP) {
-				struct mptcp_option *mp_opt = (struct mptcp_option *) ptr;
+				struct mptcp_option *mp_opt =
+						(struct mptcp_option *) ptr;
 
 				if (mp_opt->sub == MPTCP_SUB_JOIN)
-					return (struct mp_join *) ptr; /* + 2 to get the token */
+					return (struct mp_join *) ptr;
 			}
 			ptr += opsize - 2;
 			length -= opsize;
@@ -1541,7 +1534,7 @@ int mptcp_lookup_join(struct sk_buff *skb)
 			bh_unlock_sock(mpcb->master_sk);
 			NET_INC_STATS_BH(dev_net(skb->dev),
 					LINUX_MIB_TCPBACKLOGDROP);
-			sock_put(mpcb->master_sk); /* Taken by mptcp_hash_find */
+			sock_put(mpcb->master_sk); /*Taken by mptcp_hash_find*/
 			kfree_skb(skb);
 			return 1;
 		}
@@ -1606,7 +1599,8 @@ void mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 	}
 }
 
-static void mptcp_subflow_attach(struct multipath_pcb *mpcb, struct sock *subsk)
+static void mptcp_subflow_attach(struct multipath_pcb *mpcb,
+		struct sock *subsk)
 {
 	struct path4 *p4 = NULL;
 	struct path6 *p6 = NULL;
@@ -1689,13 +1683,10 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	const struct iphdr *iph = ip_hdr(skb);
 	struct multipath_pcb *mpcb = (struct multipath_pcb *)meta_sk;
 	if (tcp_hdr(skb)->syn) {
-		struct mp_join *join_opt = mptcp_find_join(skb); /* Currently we make two
-						       * calls to
-						       * mptcp_find_join(). This
-						       * can probably be
-						       * optimized.
-						       */
-		if (mptcp_v4_add_raddress (&mpcb->received_options,
+		struct mp_join *join_opt = mptcp_find_join(skb);
+		/* Currently we make two calls to mptcp_find_join(). This
+		 * can probably be optimized. */
+		if (mptcp_v4_add_raddress(&mpcb->received_options,
 				(struct in_addr *)&iph->saddr, 0,
 				join_opt->addr_id) < 0)
 			goto discard;
@@ -1740,12 +1731,9 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	const struct ipv6hdr *iph = ipv6_hdr(skb);
 	struct multipath_pcb *mpcb = (struct multipath_pcb *)meta_sk;
 	if (tcp_hdr(skb)->syn) {
-		struct mp_join *join_opt = mptcp_find_join(skb); /* Currently we make two
-						       * calls to
-						       * mptcp_find_join(). This
-						       * can probably be
-						       * optimized.
-						       */
+		struct mp_join *join_opt = mptcp_find_join(skb);
+		/* Currently we make two calls to mptcp_find_join(). This
+		 * can probably be optimized. */
 		if (mptcp_v6_add_raddress(&mpcb->received_options,
 				(struct in6_addr *)&iph->saddr, 0,
 				join_opt->addr_id) < 0)
@@ -1993,7 +1981,7 @@ static int __init mptcp_pm_init(void)
 	rwlock_init(&tk_hash_lock);
 	spin_lock_init(&tuple_hash_lock);
 
-        /* setup notification chain for interfaces */
+	/* setup notification chain for interfaces */
 	register_inetaddr_notifier(&mptcp_pm_inetaddr_notifier);
 	register_netdevice_notifier(&mptcp_pm_netdev_notifier);
 

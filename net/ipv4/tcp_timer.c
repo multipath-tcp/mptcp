@@ -325,7 +325,7 @@ void tcp_retransmit_timer(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	u32 snd_wnd = (tp->mpc && tp->mpcb) ?
-		mpcb_meta_tp(tp->mpcb)->snd_wnd:tp->snd_wnd;
+		mpcb_meta_tp(tp->mpcb)->snd_wnd : tp->snd_wnd;
 
 	tcpprobe_logmsg(sk, "pi %d, RTO", tp_path_index(tp));
 

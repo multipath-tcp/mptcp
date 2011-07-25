@@ -22,14 +22,35 @@
 #include <linux/in.h>
 #include <linux/in6.h>
 #include <linux/skbuff.h>
+#include <linux/tcp_options.h>
 #include <net/request_sock.h>
+#include <net/sock.h>
 
-#define MPTCP_MAX_ADDR 12 /* Max number of local or remote addresses we can store */
+#define MPTCP_MAX_ADDR 12	/* Max number of local or remote addresses we
+				 * can store.
+				 */
 
 struct multipath_pcb;
 struct multipath_options;
 
 #ifdef CONFIG_MPTCP_PM
+
+
+/* Functions and structures defined elsewhere but needed in mptcp_pm.c */
+struct tcp_out_options;
+struct tcp_sock;
+extern void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
+		struct tcp_out_options *opts);
+extern void __tcp_v4_send_check(struct sk_buff *skb,
+		__be32 saddr, __be32 daddr);
+extern struct ip_options *tcp_v4_save_options(struct sock *sk,
+		struct sk_buff *skb);
+
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+extern void	__tcp_v6_send_check(struct sk_buff *skb, struct in6_addr *saddr,
+		struct in6_addr *daddr);
+extern int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
+#endif
 
 struct mptcp_loc4 {
 	u8		id;
@@ -67,7 +88,7 @@ u32 mptcp_new_token(void);
 void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token);
 void mptcp_hash_remove(struct multipath_pcb *mpcb);
 void mptcp_hash_request_remove(struct request_sock *req);
-struct multipath_pcb* mptcp_hash_find(u32 token);
+struct multipath_pcb *mptcp_hash_find(u32 token);
 void mptcp_set_addresses(struct multipath_pcb *mpcb);
 void mptcp_update_patharray(struct multipath_pcb *mpcb);
 u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock *sk);

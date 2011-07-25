@@ -1046,13 +1046,13 @@ static struct inet_protosw inetsw_array[] =
        },
 #ifdef CONFIG_MPTCP
 	{
-		.type =       SOCK_STREAM,
-		.protocol =   IPPROTO_MPTCPSUB,
-		.prot =       &mptcpsub_prot,
-		.ops =        &inet_stream_ops,
-		.no_check =   0,
-		.flags =      INET_PROTOSW_PERMANENT |
-		              INET_PROTOSW_ICSK,
+		.type =		SOCK_STREAM,
+		.protocol =	IPPROTO_MPTCPSUB,
+		.prot =		&mptcpsub_prot,
+		.ops =		&inet_stream_ops,
+		.no_check =	0,
+		.flags =	INET_PROTOSW_PERMANENT |
+				INET_PROTOSW_ICSK,
 	},
 #endif
 };

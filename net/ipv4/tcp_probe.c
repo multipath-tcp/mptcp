@@ -93,7 +93,7 @@ struct tcp_log {
 	int     rmem_alloc; /* number of ofo bytes received */
 	int     rmem_alloc_sub; /* idem, but for subflow */
 	int     dsn;
-        u32     mptcp_snduna;
+	u32     mptcp_snduna;
 	u32     drs_seq;
 	u32     drs_time;
 	int     bw_est;
@@ -164,7 +164,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->sport = inet->inet_sport;
 			p->daddr = inet->inet_daddr;
 			p->dport = inet->inet_dport;
-			p->path_index = sk?tcp_sk(sk)->path_index:0;
+			p->path_index = sk ? tcp_sk(sk)->path_index : 0;
 			p->length = skb->len;
 			p->snd_nxt = tp->snd_nxt;
 			p->snd_una = tp->snd_una;
@@ -215,7 +215,7 @@ out:
 }
 
 #ifndef CONFIG_KPROBES
-static int logmsg(struct sock *sk,char *fmt, va_list args)
+static int logmsg(struct sock *sk, char *fmt, va_list args)
 {
 	const struct inet_sock *inet = inet_sk(sk);
 	char msg[500];
@@ -227,10 +227,10 @@ static int logmsg(struct sock *sk,char *fmt, va_list args)
 	    && ((ntohl(inet->inet_saddr) & 0xffff0000) != 0xc0a80000)
 	    && ((ntohl(inet->inet_daddr) & 0xffff0000) != 0xc0a80000)) {
 		int len;
-		snprintf(msg,500,"LOG:%lu.%09lu ",(unsigned long) tv.tv_sec,
+		snprintf(msg, 500, "LOG:%lu.%09lu ", (unsigned long) tv.tv_sec,
 			(unsigned long) tv.tv_nsec);
-		len=strlen(msg);
-		vsnprintf(msg+len,500-len,fmt,args);
+		len = strlen(msg);
+		vsnprintf(msg + len, 500 - len, fmt, args);
 
 		spin_lock_bh(&tcp_probe.lock);
 		/* If log fills, just silently drop */
@@ -276,7 +276,8 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	    /* addr != 192.168/16*/
 	    && ((ntohl(inet->inet_saddr) & 0xffff0000) != 0xc0a80000)
 	    && ((ntohl(inet->inet_daddr) & 0xffff0000) != 0xc0a80000)
-	    && ntohs(inet->inet_sport) != 9000 && ntohs(inet->inet_dport) != 9000
+	    && ntohs(inet->inet_sport) != 9000 && ntohs(inet->inet_dport)
+			!= 9000
 	    && (full || tp->snd_cwnd != tcp_probe.lastcwnd)) {
 
 #ifdef CONFIG_KPROBES
@@ -327,7 +328,9 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			p->bw_est = tp->cur_bw_est;
 			p->mpcb_def = (tp->mpcb != NULL);
 			if (tp->mpcb)
-				p->alpha = ((struct mptcp_ccc *) inet_csk_ca((struct sock *) tp->mpcb))->alpha;
+				p->alpha = ((struct mptcp_ccc *)
+						inet_csk_ca((struct sock *)
+							tp->mpcb))->alpha;
 			else
 				p->alpha = 0;
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
@@ -389,7 +392,7 @@ static int tcpprobe_sprint(char *tbuf, int n)
 
 	if (p->path_index == -1)
 		return scnprintf(tbuf, n,
-				 "%s\n", (char*)((&p->path_index) + 1));
+				 "%s\n", (char *)((&p->path_index) + 1));
 
 	return scnprintf(tbuf, n,
 			 "%lu.%09lu %pI4:%u %pI4:%u %d %d %#x %#x %u %u %u "
@@ -514,7 +517,7 @@ static __exit void tcpprobe_exit(void)
 	unregister_jprobe(&tcp_jprobe_rcv);
 	unregister_jprobe(&tcp_jprobe_send);
 #else
-	unregister_probe(&tcpprobe_fcts,4);
+	unregister_probe(&tcpprobe_fcts, 4);
 #endif
 	kfree(tcp_probe.log);
 }

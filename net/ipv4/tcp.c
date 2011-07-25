@@ -280,7 +280,7 @@
 #undef DEBUG_TCP /* set to define if you want debugging messages */
 
 #ifdef DEBUG_TCP
-#define PDEBUG_SEND(fmt, args...) printk( KERN_ERR __FILE__ ": " fmt, ##args)
+#define PDEBUG_SEND(fmt, args...) printk(KERN_ERR __FILE__ ": " fmt, ##args)
 #else
 #define PDEBUG_SEND(fmt, args...)
 #endif /* DEBUG_TCP */
@@ -976,7 +976,7 @@ static inline int select_size(struct sock *sk, int sg)
 int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		size_t size)
 {
-	return subtcp_sendmsg(iocb,sk,msg,size);
+	return subtcp_sendmsg(iocb, sk, msg, size);
 }
 
 /**
@@ -1013,7 +1013,7 @@ int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		BUG();
 #endif
 		if ((err = sk_stream_wait_connect(
-			     is_meta_sk(sk)?tp->mpcb->master_sk:sk,
+			     is_meta_sk(sk) ? tp->mpcb->master_sk : sk,
 			     &timeo)) != 0) {
 			goto out_err;
 		}

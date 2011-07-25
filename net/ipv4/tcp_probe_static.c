@@ -19,7 +19,7 @@ static struct tcpprobe_ops **select_family(unsigned short family)
 /**
  * @ipversion is 4 or 6
  */
-int register_probe(struct tcpprobe_ops* ops, unsigned char ipversion)
+int register_probe(struct tcpprobe_ops *ops, unsigned char ipversion)
 {
 	struct tcpprobe_ops **vops = select_family(ipversion);
 	/* return -1 if incorrect family, or ops already registered */
@@ -30,7 +30,7 @@ int register_probe(struct tcpprobe_ops* ops, unsigned char ipversion)
 }
 EXPORT_SYMBOL(register_probe);
 
-int unregister_probe(struct tcpprobe_ops* ops, unsigned char ipversion)
+int unregister_probe(struct tcpprobe_ops *ops, unsigned char ipversion)
 {
 	struct tcpprobe_ops **vops = select_family(ipversion);
 	/* return -1 if incorrect family */
@@ -73,7 +73,7 @@ int tcpprobe_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	return (*vops)->transmit_skb(sk, skb, clone_it, gfp_mask);
 }
 
-int tcpprobe_logmsg(struct sock *sk,char *fmt,...)
+int tcpprobe_logmsg(struct sock *sk, char *fmt, ...)
 {
 	int ipversion = (sk->sk_family == AF_INET6) ? 6 : 4;
 	struct tcpprobe_ops **vops = select_family(ipversion);

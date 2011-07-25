@@ -1107,8 +1107,8 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 	spin_lock_init(&newsk->sk_dst_lock);
 	rwlock_init(&newsk->sk_callback_lock);
 	lockdep_set_class_and_name(&newsk->sk_callback_lock,
-				   af_callback_keys + newsk->sk_family,
-				   af_family_clock_key_strings[newsk->sk_family]);
+				af_callback_keys + newsk->sk_family,
+				af_family_clock_key_strings[newsk->sk_family]);
 
 	newsk->sk_dst_cache	= NULL;
 	newsk->sk_wmem_queued	= 0;
@@ -1176,7 +1176,8 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 		if (newsk->sk_family == AF_INET6)
-			inet_sk(newsk)->pinet6 = &((struct tcp6_sock *)newsk)->inet6;
+			inet_sk(newsk)->pinet6 =
+					&((struct tcp6_sock *)newsk)->inet6;
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 	}
 

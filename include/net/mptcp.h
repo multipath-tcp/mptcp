@@ -32,14 +32,15 @@
 #include <net/mptcp_pm.h>
 
 #ifdef CONFIG_MPTCP_DEBUG
-#define mptcp_debug(fmt,args...) printk( KERN_DEBUG __FILE__ ": " fmt,##args)
+#define mptcp_debug(fmt, args...) printk(KERN_DEBUG __FILE__ ": " fmt, ##args)
 #else
-#define mptcp_debug(fmt,args...)
+#define mptcp_debug(fmt, args...)
 #endif
 
 extern int sysctl_mptcp_scheduler;
 #define MPTCP_SCHED_MAX 1
-extern struct sock *(*mptcp_schedulers[MPTCP_SCHED_MAX]) (struct multipath_pcb *, struct sk_buff *);
+extern struct sock *(*mptcp_schedulers[MPTCP_SCHED_MAX])
+		(struct multipath_pcb *, struct sk_buff *);
 
 #ifdef MPTCP_RCV_QUEUE_DEBUG
 struct mptcp_debug {
@@ -64,7 +65,7 @@ static DEFINE_TIMER(mptcp_debug_timer, mptcp_debug_timeout, 0, 0);
 #define mptcp_start_debug_timer(delay)					\
 	do {								\
 		mptcp_debug_timer.expires = jiffies + delay * HZ;	\
-		mptcp_debug_timer.data = (unsigned long)__func_;		\
+		mptcp_debug_timer.data = (unsigned long)__func_;	\
 		add_timer(&mptcp_debug_timer);				\
 	} while (0)
 
@@ -202,6 +203,29 @@ static inline int PI_TO_FLAG(int pi)
 #define MPTCP_QUEUED 2 /* The skb has been queued in the mpcb ofo queue */
 
 #ifdef CONFIG_MPTCP
+
+
+/* Functions and structures defined elsewhere but needed in mptcp.c */
+extern int inet_create(struct net *net, struct socket *sock, int protocol,
+		int kern);
+extern void tcp_queue_skb(struct sock *sk, struct sk_buff *skb);
+extern void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags);
+extern int tcp_close_state(struct sock *sk);
+extern struct timewait_sock_ops tcp_timewait_sock_ops;
+
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+extern int inet6_create(struct net *net, struct socket *sock, int protocol,
+		int kern);
+extern const struct inet_connection_sock_af_ops ipv4_specific;
+extern const struct inet_connection_sock_af_ops ipv6_specific;
+extern struct proto mptcpsub_prot;
+extern int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
+			  int addr_len);
+extern void tcp_v6_hash(struct sock *sk);
+extern void tcp_v6_destroy_sock(struct sock *sk);
+extern struct timewait_sock_ops tcp6_timewait_sock_ops;
+
+#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 
 struct mptcp_option {
 #if defined(__LITTLE_ENDIAN_BITFIELD)
@@ -459,14 +483,14 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb);
 void mptcp_ofo_queue(struct multipath_pcb *mpcb);
 void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied);
 int mptcp_check_rcv_queue(struct multipath_pcb *mpcb, struct msghdr *msg,
-			 size_t * len, u32 * data_seq, int *copied, int flags);
+			size_t *len, u32 *data_seq, int *copied, int flags);
 
 struct multipath_pcb *mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags);
 void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp);
 void mptcp_del_sock(struct sock *sk);
 void mptcp_update_metasocket(struct sock *sock, struct multipath_pcb *mpcb);
-int mptcp_sendmsg(struct kiocb *iocb, struct sock *master_sk, struct msghdr *msg,
-		size_t size);
+int mptcp_sendmsg(struct kiocb *iocb, struct sock *master_sk,
+		struct msghdr *msg, size_t size);
 int mptcp_is_available(struct sock *sk);
 int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk);
 void mptcp_reinject_data(struct sock *orig_sk);

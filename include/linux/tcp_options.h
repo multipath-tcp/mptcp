@@ -63,28 +63,30 @@ struct tcp_options_received {
 /*	PAWS/RTTM data	*/
 	long	ts_recent_stamp;/* Time we stored ts_recent (for aging) */
 	u32	ts_recent;	/* Time stamp to echo next		*/
-	u32	rcv_tsval;	/* Time stamp value             	*/
-	u32	rcv_tsecr;	/* Time stamp echo reply        	*/
-	u16 	saw_tstamp : 1,	/* Saw TIMESTAMP on last packet		*/
-		tstamp_ok : 1,	/* TIMESTAMP seen on SYN packet		*/
-		dsack : 1,	/* D-SACK is scheduled			*/
-		wscale_ok : 1,	/* Wscale seen on SYN packet		*/
-		sack_ok : 4,	/* SACK seen on SYN packet		*/
-		snd_wscale : 4,	/* Window scaling received from sender	*/
-		rcv_wscale : 4,	/* Window scaling to send to receiver	*/
-		saw_mpc : 1,    /* MPC option seen, for MPTCP */
-		saw_dfin :1;    /* DFIN option seen, for MPTCP */
+	u32	rcv_tsval;	/* Time stamp value			*/
+	u32	rcv_tsecr;	/* Time stamp echo reply		*/
+	u16	saw_tstamp:1,	/* Saw TIMESTAMP on last packet		*/
+		tstamp_ok:1,	/* TIMESTAMP seen on SYN packet		*/
+		dsack:1,	/* D-SACK is scheduled			*/
+		wscale_ok:1,	/* Wscale seen on SYN packet		*/
+		sack_ok:4,	/* SACK seen on SYN packet		*/
+		snd_wscale:4,	/* Window scaling received from sender	*/
+		rcv_wscale:4,	/* Window scaling to send to receiver	*/
+		saw_mpc:1,    /* MPC option seen, for MPTCP */
+		saw_dfin:1;    /* DFIN option seen, for MPTCP */
 	u8	cookie_plus:6,	/* bytes in authenticator/cookie option	*/
 		cookie_out_never:1,
 		cookie_in_always:1;
 	u8	num_sacks;	/* Number of SACK blocks		*/
 	u16	user_mss;	/* mss requested by user in ioctl	*/
-	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
+	u16	mss_clamp;	/* Maximal mss, negotiated at
+				 * connection setup
+				 */
 #ifdef CONFIG_MPTCP
 	__u8	rem_id; /* Address-id in the MP_JOIN */
- 	u32     mptcp_rem_token; /* Remote token, for mptcp */
-	u32     mptcp_recv_token; /* Received token, for mptcp */
-	u32     rcv_isn; /* Needed to retrieve abs subflow seqnum from the
+	u32	mptcp_rem_token; /* Remote token, for mptcp */
+	u32	mptcp_recv_token; /* Received token, for mptcp */
+	u32	rcv_isn; /* Needed to retrieve abs subflow seqnum from the
 			  * relative version.
 			  */
 #endif /* CONFIG_MPTCP */
@@ -99,16 +101,16 @@ static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
 
 struct multipath_options {
 #ifdef CONFIG_MPTCP_PM
-	int    num_addr4;
-	int    num_addr6;
-	struct mptcp_loc4 addr4[MPTCP_MAX_ADDR];
-	struct mptcp_loc6 addr6[MPTCP_MAX_ADDR];
+	int	num_addr4;
+	int	num_addr6;
+	struct	mptcp_loc4 addr4[MPTCP_MAX_ADDR];
+	struct	mptcp_loc6 addr6[MPTCP_MAX_ADDR];
 #endif
-	u8      list_rcvd:1, /* 1 if IP list has been received (MPTCP_PM) */
+	u8	list_rcvd:1, /* 1 if IP list has been received (MPTCP_PM) */
 		dfin_rcvd:1;
-	u32     fin_dsn; /* DSN of the byte
-			  * FOLLOWING the Data FIN
-			  */
+	u32	fin_dsn;	/* DSN of the byte
+				 * FOLLOWING the Data FIN
+				 */
 };
 
 #endif /*_TCP_OPTIONS_H*/

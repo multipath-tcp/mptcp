@@ -333,7 +333,7 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 		goto late_failure;
 
 #ifdef CONFIG_MPTCP
-	mptcp_update_metasocket(sk,mpcb_from_tcpsock(tp));
+	mptcp_update_metasocket(sk, mpcb_from_tcpsock(tp));
 #endif
 
 	return 0;
@@ -1137,7 +1137,7 @@ static void tcp_v6_send_reset(struct sock *sk, struct sk_buff *skb)
 	tcp_v6_send_response(skb, seq, ack_seq, 0, 0, key, 1);
 }
 
-void tcp_v6_send_ack(struct sk_buff *skb, u32 seq, u32 ack, u32 win, u32 ts,
+static void tcp_v6_send_ack(struct sk_buff *skb, u32 seq, u32 ack, u32 win, u32 ts,
 			    struct tcp_md5sig_key *key)
 {
 	tcp_v6_send_response(skb, seq, ack, win, ts, key, 0);
@@ -1401,7 +1401,7 @@ drop:
 
 int tcp_v6_is_v4_mapped(struct sock *sk)
 {
-	return (inet_csk(sk)->icsk_af_ops == &ipv6_mapped);
+	return inet_csk(sk)->icsk_af_ops == &ipv6_mapped;
 }
 
 struct sock *tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
@@ -1803,15 +1803,15 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 
 	/* Is this a new syn+join ? */
 	if (th->syn && !th->ack) {
-		switch(mptcp_lookup_join(skb)) {
-			/* The specified token can't be found
-			 * Send a reset and discard the packet.
-			 */
-			case -ENOKEY:
-				tcp_v6_send_reset(NULL, skb);
-				goto discard_it;
-			case 1:
-				return 0;
+		switch (mptcp_lookup_join(skb)) {
+		/* The specified token can't be found
+		 * Send a reset and discard the packet.
+		 */
+		case -ENOKEY:
+			tcp_v6_send_reset(NULL, skb);
+			goto discard_it;
+		case 1:
+			return 0;
 		}
 	}
 #endif /* CONFIG_MPTCP */

@@ -1698,7 +1698,7 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	 * socket.
 	 */
 	if (th->syn && !th->ack) {
-		switch(mptcp_lookup_join(skb)) {
+		switch (mptcp_lookup_join(skb)) {
 			/* The specified token can't be found
 			 * Send a reset and discard the packet.
 			 */

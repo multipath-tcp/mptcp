@@ -960,7 +960,8 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		}
 
 		if (tp->mpc && test_bit(MPCB_FLAG_FIN_ENQUEUED, &mpcb->flags) &&
-			(!skb || tcb->end_data_seq == mpcb_meta_tp(mpcb)->write_seq)) {
+			(!skb || tcb->end_data_seq ==
+					mpcb_meta_tp(mpcb)->write_seq)) {
 			dss = 1;
 
 			opts->options |= OPTION_DATA_FIN;
@@ -998,7 +999,8 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			    (unlikely(mpcb->addr4_unsent) &&
 			     MAX_TCP_OPTION_SPACE - size >=
 			     MPTCP_SUB_LEN_ADD_ADDR4_ALIGN)) {
-			mptcp_debug("no space for add addr. unsent IPv4: %d, IPv6: %d\n",
+			mptcp_debug("no space for add addr. unsent IPv4: %d,"
+					"IPv6: %d\n",
 					mpcb->addr4_unsent, mpcb->addr6_unsent);
 			tcp_sk(sk)->mptcp_add_addr_ack = 1;
 			tcp_send_ack(sk);
@@ -1729,16 +1731,17 @@ static inline int tcp_snd_wnd_test(struct tcp_sock *tp, struct sk_buff *skb,
 		end_seq = (tp->mpc ? mptcp_skb_data_seq(skb) :
 			   TCP_SKB_CB(skb)->seq) + cur_mss;
 	if (after(end_seq, tcp_wnd_end(tp, tp->mpc)) &&
-	    (TCP_SKB_CB(skb)->flags & TCPHDR_FIN)) {
+			(TCP_SKB_CB(skb)->flags & TCPHDR_FIN)) {
 		mptcp_debug("FIN refused for sndwnd, fin end dsn %#x,"
-			   "tcp_wnd_end: %#x, mpc:%d, snd_una:%#x,"
-			   "snd_wnd:%d, mpcb write_seq:%#x, "
-			   "mpcb queue len:%d, cur_mss:%d, skb->len:%d\n",
-			   end_seq, tcp_wnd_end(tp, tp->mpc),
-			   tp->mpc, mpcb_meta_tp(tp->mpcb)->snd_una,
-			   mpcb_meta_tp(tp->mpcb)->snd_wnd, mpcb_meta_tp(tp->mpcb)->write_seq,
-			   ((struct sock *) tp->mpcb)->sk_write_queue.qlen,
-			   cur_mss, skb->len);
+			"tcp_wnd_end: %#x, mpc:%d, snd_una:%#x,"
+			"snd_wnd:%d, mpcb write_seq:%#x, "
+			"mpcb queue len:%d, cur_mss:%d, skb->len:%d\n",
+			end_seq, tcp_wnd_end(tp, tp->mpc),
+			tp->mpc, mpcb_meta_tp(tp->mpcb)->snd_una,
+			mpcb_meta_tp(tp->mpcb)->snd_wnd,
+			mpcb_meta_tp(tp->mpcb)->write_seq,
+			((struct sock *) tp->mpcb)->sk_write_queue.qlen,
+			cur_mss, skb->len);
 	}
 
 	return !after(end_seq, tcp_wnd_end(tp, tp->mpc));
@@ -2067,10 +2070,6 @@ static int tcp_mtu_probe(struct sock *sk)
 	return -1;
 }
 
-#ifdef CONFIG_MPTCP
-extern int tcp_close_state(struct sock *sk);
-#endif
-
 /* This routine writes packets to the network.  It advances the
  * send_head.  This happens as incoming acks open up the remote
  * window for us.
@@ -2169,7 +2168,8 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 #endif
 
 		if (is_meta_tp(tp)) {
-			subsk = mptcp_schedulers[sysctl_mptcp_scheduler - 1](tp->mpcb, skb);
+			subsk = mptcp_schedulers[sysctl_mptcp_scheduler - 1]
+					(tp->mpcb, skb);
 			if (!subsk)
 				break;
 			subtp = tcp_sk(subsk);
@@ -2552,7 +2552,7 @@ u32 __tcp_select_window_fallback(struct sock *sk)
 }
 
 #ifdef CONFIG_MPTCP
-u32 __tcp_select_window(struct sock * sk)
+u32 __tcp_select_window(struct sock *sk)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -2570,7 +2570,8 @@ u32 __tcp_select_window(struct sock * sk)
 	 */
 	mss = icsk->icsk_ack.rcv_mss;
 	free_space = tcp_space(sk);
-	full_space = min_t(int, mpcb_meta_tp(mpcb)->window_clamp, tcp_full_space(sk));
+	full_space = min_t(int, mpcb_meta_tp(mpcb)->window_clamp,
+			tcp_full_space(sk));
 
 	if (mss > full_space)
 		mss = full_space;

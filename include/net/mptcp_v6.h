@@ -22,6 +22,7 @@
  * At the moment this will break if IPv6 is compiled as a module */
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 extern int tcp_v6_is_v4_mapped(struct sock *sk);
+extern struct proto mptcpsubv6_prot;
 #else
 #define tcp_v6_is_v4_mapped(sk) (0)
 #endif

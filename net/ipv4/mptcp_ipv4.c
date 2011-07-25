@@ -19,8 +19,6 @@
 #include <net/tcp.h>
 #include <net/transp_v6.h>
 
-extern struct timewait_sock_ops tcp_timewait_sock_ops;
-
 /* NOTE: A lot of things set to zero explicitly by call to
  *       sk_alloc() so need not be done here.
  */
@@ -65,25 +63,25 @@ static int mptcpsub_v4_init_sock(struct sock *sk)
 #endif
 
 	/* TCP Cookie Transactions */
-        if (sysctl_tcp_cookie_size > 0) {
-                /* Default, cookies without s_data_payload. */
-                tp->cookie_values =
-                        kzalloc(sizeof(*tp->cookie_values),
-                                sk->sk_allocation);
-                if (tp->cookie_values != NULL)
-                        kref_init(&tp->cookie_values->kref);
-        }
-        /* Presumed zeroed, in order of appearance:
-         *      cookie_in_always, cookie_out_never,
-         *      s_data_constant, s_data_in, s_data_out
-         */
+	if (sysctl_tcp_cookie_size > 0) {
+		/* Default, cookies without s_data_payload. */
+		tp->cookie_values =
+			kzalloc(sizeof(*tp->cookie_values),
+					sk->sk_allocation);
+		if (tp->cookie_values != NULL)
+			kref_init(&tp->cookie_values->kref);
+	}
+	/* Presumed zeroed, in order of appearance:
+	 *      cookie_in_always, cookie_out_never,
+	 *      s_data_constant, s_data_in, s_data_out
+	 */
 
 	sk->sk_sndbuf = sysctl_tcp_wmem[1];
 	sk->sk_rcvbuf = sysctl_tcp_rmem[1];
 
 	local_bh_disable();
-        percpu_counter_inc(&tcp_sockets_allocated);
-        local_bh_enable();
+	percpu_counter_inc(&tcp_sockets_allocated);
+	local_bh_enable();
 
 	return 0;
 }
@@ -130,6 +128,4 @@ struct proto mptcpsub_prot = {
 	.compat_getsockopt	= compat_tcp_getsockopt,
 #endif
 };
-
-
 EXPORT_SYMBOL(mptcpsub_prot);

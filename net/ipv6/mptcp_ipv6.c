@@ -22,17 +22,6 @@
 #include <net/transp_v6.h>
 #include <net/addrconf.h>
 
-/*Functions and structures defined in tcp_ipv6.c*/
-extern struct inet_connection_sock_af_ops ipv6_specific;
-extern int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
-			  int addr_len);
-extern int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
-extern void tcp_v6_hash(struct sock *sk);
-extern void tcp_v6_destroy_sock(struct sock *sk);
-extern struct timewait_sock_ops tcp6_timewait_sock_ops;
-extern struct request_sock_ops tcp6_request_sock_ops;
-
-
 /* NOTE: A lot of things set to zero explicitly by call to
  *       sk_alloc() so need not be done here.
  */
@@ -76,24 +65,23 @@ static int mptcpsub_v6_init_sock(struct sock *sk)
 	tp->af_specific = &tcp_sock_ipv6_specific;
 #endif
 	/* TCP Cookie Transactions */
-        if (sysctl_tcp_cookie_size > 0) {
-                /* Default, cookies without s_data_payload. */
-                tp->cookie_values =
-                        kzalloc(sizeof(*tp->cookie_values),
-                                sk->sk_allocation);
-                if (tp->cookie_values != NULL)
-                        kref_init(&tp->cookie_values->kref);
-        }
-        /* Presumed zeroed, in order of appearance:
-         *      cookie_in_always, cookie_out_never,
-         *      s_data_constant, s_data_in, s_data_out
-         */
+	if (sysctl_tcp_cookie_size > 0) {
+		/* Default, cookies without s_data_payload. */
+		tp->cookie_values =
+			kzalloc(sizeof(*tp->cookie_values), sk->sk_allocation);
+		if (tp->cookie_values != NULL)
+			kref_init(&tp->cookie_values->kref);
+	}
+	/* Presumed zeroed, in order of appearance:
+	 *      cookie_in_always, cookie_out_never,
+	 *      s_data_constant, s_data_in, s_data_out
+	 */
 	sk->sk_sndbuf = sysctl_tcp_wmem[1];
 	sk->sk_rcvbuf = sysctl_tcp_rmem[1];
 
 	local_bh_disable();
-        percpu_counter_inc(&tcp_sockets_allocated);
-        local_bh_enable();
+	percpu_counter_inc(&tcp_sockets_allocated);
+	local_bh_enable();
 
 	return 0;
 }
@@ -156,8 +144,8 @@ int __init mptcpv6_init(void)
 
 	/*Although the protocol is not used as such, it is necessary to register
 	  it, so that slab memory is allocated for it.*/
-	if (ret==0)
-		ret=proto_register(&mptcpsubv6_prot, 1);
+	if (ret == 0)
+		ret = proto_register(&mptcpsubv6_prot, 1);
 	return ret;
 }
 

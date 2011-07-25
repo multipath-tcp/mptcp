@@ -29,25 +29,26 @@ static inline int mptcp_sk_can_send(struct sock *sk)
 	       sk->sk_state == TCP_CLOSE_WAIT;
 }
 
-u32 mptcp_get_crt_cwnd(struct tcp_sock* tp)
+u32 mptcp_get_crt_cwnd(struct tcp_sock *tp)
 {
 	struct inet_connection_sock *icsk = inet_csk((struct sock *) tp);
 
-	/* If we are in fast-retransmit, the cwnd is "artificially inflated" (see
-	 * RFC5681), thus we use ssthresh as an indication of the cwnd. */
+	/* If we are in fast-retransmit, the cwnd is "artificially inflated"
+	 * (see RFC5681), thus we use ssthresh as an indication of the cwnd. */
 	if (icsk->icsk_ca_state == TCP_CA_Recovery)
 		return min(tcp_packets_in_flight(tp), tp->snd_ssthresh);
 	else
 		return min(tcp_packets_in_flight(tp), tp->snd_cwnd);
 }
 
-u32 mptcp_get_total_cwnd(struct multipath_pcb* mpcb) {
+u32 mptcp_get_total_cwnd(struct multipath_pcb *mpcb)
+{
 	struct tcp_sock *tp;
 	struct sock *sub_sk;
 	u32 cwnd = 0;
 	tp = mpcb->connection_list;
 
-	mptcp_for_each_sk(mpcb,sub_sk,tp) {
+	mptcp_for_each_sk(mpcb, sub_sk, tp) {
 		if (!mptcp_sk_can_send(sub_sk))
 			continue;
 		cwnd += mptcp_get_crt_cwnd(tp);
@@ -91,7 +92,8 @@ static void mptcp_recalc_alpha(struct sock *sk)
 	/* Do regular alpha-calculation for multiple subflows */
 
 	/* The total congestion window might be zero, if the flighsize is 0 */
-	if (!(tot_cwnd = mptcp_get_total_cwnd(mpcb)))
+	tot_cwnd = mptcp_get_total_cwnd(mpcb);
+	if (!tot_cwnd)
 		tot_cwnd = 1;
 
 	/* Find the max numerator of the alpha-calculation */
@@ -117,8 +119,8 @@ static void mptcp_recalc_alpha(struct sock *sk)
 		 * Integer-overflow is not possible here, because
 		 * tmp will be in u64.
 		 */
-		tmp = div64_u64 (mptcp_ccc_scale(sub_tp->snd_cwnd, alpha_scale_num),
-				 rtt * rtt);
+		tmp = div64_u64 (mptcp_ccc_scale(sub_tp->snd_cwnd,
+				alpha_scale_num), rtt * rtt);
 
 		if (tmp >= max_numerator) {
 			max_numerator = tmp;
@@ -148,8 +150,9 @@ static void mptcp_recalc_alpha(struct sock *sk)
 				   sub_tp->path_index, sub_sk->sk_state);
 
 		sum_denominator += div_u64(
-				mptcp_ccc_scale(sub_tp->snd_cwnd, alpha_scale_den) *
-				best_rtt, rtt);
+				mptcp_ccc_scale(sub_tp->snd_cwnd,
+						alpha_scale_den) * best_rtt,
+						rtt);
 	}
 	sum_denominator *= sum_denominator;
 	if (unlikely(!sum_denominator)) {
@@ -174,9 +177,9 @@ exit:
 
 static void mptcp_cc_init(struct sock *sk)
 {
-	if (mpcb_from_tcpsock(tcp_sk(sk))) {
+	if (mpcb_from_tcpsock(tcp_sk(sk)))
 		mptcp_set_alpha(mpcb_from_tcpsock(tcp_sk(sk)), 1);
-	} /* If we do not mptcp, behave like reno: return */
+	/* If we do not mptcp, behave like reno: return */
 }
 
 static void mptcp_cwnd_event(struct sock *sk, enum tcp_ca_event event)
@@ -208,7 +211,7 @@ static void mptcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 		return;
 	}
 
-	if (mpcb->cnt_established > 1){
+	if (mpcb->cnt_established > 1) {
 		u64 alpha = mptcp_get_alpha(mpcb);
 
 		/* This may happen, if at the initialization, the mpcb
@@ -241,7 +244,7 @@ static void mptcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 		}
 	} else {
 		if (tp->snd_cwnd_cnt >= snd_cwnd) {
-			if (tp->snd_cwnd < tp->snd_cwnd_clamp){
+			if (tp->snd_cwnd < tp->snd_cwnd_clamp) {
 				tp->snd_cwnd++;
 				mptcp_recalc_alpha(sk);
 			}
