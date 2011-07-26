@@ -596,6 +596,10 @@ void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 #ifdef CONFIG_TCP_MD5SIG
 		__be32 opt[(TCPOLEN_MD5SIG_ALIGNED >> 2)];
 #endif
+#ifdef CONFIG_MPTCP
+		__u8 fail_opt[2]; /* For option-type and length */
+		struct mp_fail mpfail;
+#endif
 	} rep;
 	struct ip_reply_arg arg;
 #ifdef CONFIG_TCP_MD5SIG
@@ -645,6 +649,15 @@ void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 				     ip_hdr(skb)->daddr, &rep.th);
 	}
 #endif
+#ifdef CONFIG_MPTCP
+	if (sk && tcp_sk(sk)->csum_error) {
+		/* We had a checksum-error? -> Include MP_FAIL */
+		rep.fail_opt[0] = TCPOPT_MPTCP;
+		rep.fail_opt[1] = MPTCP_SUB_LEN_FAIL;
+		rep.mpfail.sub = MPTCP_SUB_FAIL;
+		rep.mpfail.data_seq = htonl(TCP_SKB_CB(skb)->data_seq);
+	}
+#endif /* CONFIG_MPTCP */
 	arg.csum = csum_tcpudp_nofold(ip_hdr(skb)->daddr,
 				      ip_hdr(skb)->saddr, /* XXX */
 				      arg.iov[0].iov_len, IPPROTO_TCP, 0);
@@ -657,6 +670,14 @@ void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 
 	TCP_INC_STATS_BH(net, TCP_MIB_OUTSEGS);
 	TCP_INC_STATS_BH(net, TCP_MIB_OUTRSTS);
+
+#ifdef CONFIG_MPTCP
+	if (sk && tcp_sk(sk)->csum_error &&
+			tcp_sk(sk)->mpcb->cnt_established > 1) {
+		sock_set_flag(sk, SOCK_DEAD);
+		tcp_done(sk);
+	}
+#endif
 }
 
 /* The code following below sending ACKs in SYN-RECV and TIME-WAIT states

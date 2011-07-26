@@ -487,7 +487,8 @@ struct tcp_sock {
 	struct tcp_sock			*next; /*Next subflow socket*/
 	u32				mptcp_loc_token;
 	uint8_t				slave_sk:1,
-					attached:1;
+					attached:1,
+					csum_error:1;
 #endif /* CONFIG_MPTCP */
 };
 

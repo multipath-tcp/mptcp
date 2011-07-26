@@ -186,6 +186,9 @@ struct multipath_pcb {
 #define MPTCP_SUB_LEN_ADD_ADDR4_ALIGN	8
 #define MPTCP_SUB_LEN_ADD_ADDR6_ALIGN	20
 
+#define MPTCP_SUB_FAIL		6
+#define MPTCP_SUB_LEN_FAIL	12
+
 #ifdef DEBUG_PITOFLAG
 static inline int PI_TO_FLAG(int pi)
 {
@@ -309,6 +312,20 @@ struct mp_add_addr {
 	__u8	addr_id;
 };
 
+struct mp_fail {
+#if defined(__LITTLE_ENDIAN_BITFIELD)
+	__u16	rsv1:4,
+		sub:4,
+		rsv2:8;
+#elif defined(__BIG_ENDIAN_BITFIELD)
+	__u16	sub:4,
+		rsv1:4,
+		rsv2:8;
+#else
+#error	"Adjust your <asm/byteorder.h> defines"
+#endif
+	__u32	data_seq;
+};
 
 /* Two separate cases must be handled:
  * -a mapping option has been received. Then data_seq and end_data_seq are

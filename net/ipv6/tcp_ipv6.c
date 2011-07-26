@@ -62,6 +62,7 @@
 #include <net/netdma.h>
 #include <net/inet_common.h>
 #ifdef CONFIG_MPTCP
+#include <net/mptcp.h>
 #include <net/mptcp_v6.h>
 #endif
 
@@ -1029,6 +1030,9 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack, u32 win,
 	unsigned int tot_len = sizeof(struct tcphdr);
 	struct dst_entry *dst;
 	__be32 *topt;
+#ifdef CONFIG_MPTCP
+	struct sock *sk = skb->sk;
+#endif
 
 	if (ts)
 		tot_len += TCPOLEN_TSTAMP_ALIGNED;
@@ -1036,7 +1040,10 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack, u32 win,
 	if (key)
 		tot_len += TCPOLEN_MD5SIG_ALIGNED;
 #endif
-
+#ifdef CONFIG_MPTCP
+	if (rst && sk && tcp_sk(sk)->csum_error)
+		tot_len += MPTCP_SUB_LEN_FAIL;
+#endif
 	buff = alloc_skb(MAX_HEADER + sizeof(struct ipv6hdr) + tot_len,
 			 GFP_ATOMIC);
 	if (buff == NULL)
@@ -1074,6 +1081,19 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack, u32 win,
 		tcp_v6_md5_hash_hdr((__u8 *)topt, key,
 				    &ipv6_hdr(skb)->saddr,
 				    &ipv6_hdr(skb)->daddr, t1);
+		topt += 4;
+	}
+#endif
+#ifdef CONFIG_MPTCP
+	if (rst && sk && tcp_sk(sk)->csum_error) {
+		__u8 *p8 = (__u8 *)topt;
+		struct mp_fail *mpfail;
+
+		*p8++ = TCPOPT_MPTCP;
+		*p8++ = MPTCP_SUB_LEN_FAIL;
+		mpfail = (struct mp_fail *)p8;
+		mpfail->sub = MPTCP_SUB_FAIL;
+		mpfail->data_seq = htonl(TCP_SKB_CB(skb)->data_seq);
 	}
 #endif
 
@@ -1108,6 +1128,14 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack, u32 win,
 	}
 
 	kfree_skb(buff);
+
+#ifdef CONFIG_MPTCP
+	if (rst && sk && tcp_sk(sk)->csum_error &&
+			tcp_sk(sk)->mpcb->cnt_established > 1) {
+		sock_set_flag(sk, SOCK_DEAD);
+		tcp_done(sk);
+	}
+#endif
 }
 
 void tcp_v6_send_reset(struct sock *sk, struct sk_buff *skb)

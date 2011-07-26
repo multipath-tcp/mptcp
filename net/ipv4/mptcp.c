@@ -1141,8 +1141,19 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 					+ (TCP_SKB_CB(skb)->dss_off << 2),
 				MPTCP_SUB_LEN_SEQ, csum);
 
-		if (unlikely(csum_fold(csum)))
-			mptcp_debug("%s Checksum is wrong: csum %d\n", __func__, csum_fold(csum));
+		if (unlikely(csum_fold(csum))) {
+			mptcp_debug("%s Checksum is wrong: csum %d\n", __func__,
+					csum_fold(csum));
+			tp->csum_error = 1;
+			if (sk->sk_family == AF_INET)
+				tcp_v4_send_reset(sk, skb);
+#if defined(CONFIG_IPV6) || defined(CONFIG_MODULE_IPV6)
+			else if (sk->sk_family == AF_INET6)
+				tcp_v6_send_reset(sk, skb);
+			else
+				BUG();
+#endif
+		}
 	}
 
 	if (before(meta_tp->rcv_nxt, TCP_SKB_CB(skb)->data_seq)) {
