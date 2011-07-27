@@ -305,7 +305,7 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 		path_indices &= ~PI_TO_FLAG(tp->path_index);
 
 	for (i = 0; i < sizeof(path_indices) * 8; i++) {
-		struct sock *sk;
+		struct sock *sk, *meta_sk = (struct sock *)mpcb;
 		struct socket sock;
 		struct sockaddr *loculid, *remulid;
 		struct path4 *pa4 = NULL;
@@ -350,6 +350,10 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 			BUG_ON(!pa4);
 
 			loculid = (struct sockaddr *) &pa4->loc;
+
+			if (!pa4->rem.sin_port)
+				pa4->rem.sin_port =
+						inet_sk(meta_sk)->inet_dport;
 			remulid = (struct sockaddr *) &pa4->rem;
 			ulid_size = sizeof(pa4->loc);
 			inet_sk(sk)->loc_id = pa4->loc_id;
@@ -362,6 +366,10 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 			BUG_ON(!pa6);
 
 			loculid = (struct sockaddr *) &pa6->loc;
+
+			if (!pa6->rem.sin6_port)
+				pa6->rem.sin6_port =
+						inet_sk(meta_sk)->inet_dport;
 			remulid = (struct sockaddr *) &pa6->rem;
 			ulid_size = sizeof(pa6->loc);
 			inet_sk(sk)->loc_id = pa6->loc_id;

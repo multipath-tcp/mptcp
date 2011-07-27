@@ -411,7 +411,7 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 				p->rem.sin_family = AF_INET;
 				p->rem.sin_addr =
 					mpcb->received_options.addr4[j].addr;
-				p->rem.sin_port = inet_sk(meta_sk)->inet_dport;
+				p->rem.sin_port = 0;
 				p->rem_id = mpcb->received_options.addr4[j].id;
 
 				p->path_index = mpcb->next_unused_pi++;
@@ -436,7 +436,7 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 				p->rem.sin_family = AF_INET;
 				p->rem.sin_addr.s_addr =
 						inet_sk(meta_sk)->inet_daddr;
-				p->rem.sin_port = inet_sk(meta_sk)->inet_dport;
+				p->rem.sin_port = 0;
 				p->rem_id = 0;
 
 				p->path_index = mpcb->next_unused_pi++;
@@ -465,7 +465,8 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 				p->rem.sin_family = AF_INET;
 				p->rem.sin_addr =
 					mpcb->received_options.addr4[j].addr;
-				p->rem.sin_port = inet_sk(meta_sk)->inet_dport;
+				p->rem.sin_port =
+					mpcb->received_options.addr4[j].port;
 				p->rem_id = mpcb->received_options.addr4[j].id;
 
 				p->path_index = mpcb->next_unused_pi++;
@@ -521,8 +522,7 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 				p->rem.sin6_family = AF_INET6;
 				ipv6_addr_copy(&p->rem.sin6_addr,
 					&mpcb->received_options.addr6[j].addr);
-				p->rem.sin6_port =
-					inet_sk(meta_sk)->inet_dport;
+				p->rem.sin6_port = 0;
 				p->rem_id = mpcb->received_options.addr6[j].id;
 
 				p->path_index = mpcb->next_unused_pi++;
@@ -547,8 +547,7 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 				p->rem.sin6_family = AF_INET6;
 				ipv6_addr_copy(&p->rem.sin6_addr,
 						&inet6_sk(meta_sk)->daddr);
-				p->rem.sin6_port =
-						inet_sk(meta_sk)->inet_dport;
+				p->rem.sin6_port = 0;
 				p->rem_id = 0;
 
 				p->path_index = mpcb->next_unused_pi++;
@@ -578,7 +577,7 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 				ipv6_addr_copy(&p->rem.sin6_addr,
 					&mpcb->received_options.addr6[j].addr);
 				p->rem.sin6_port =
-						inet_sk(meta_sk)->inet_dport;
+					mpcb->received_options.addr6[j].port;
 				p->rem_id = mpcb->received_options.addr6[j].id;
 
 				p->path_index = mpcb->next_unused_pi++;
