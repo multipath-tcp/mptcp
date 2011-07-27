@@ -1,4 +1,4 @@
-/*
+ /*
  * INET		An implementation of the TCP/IP protocol suite for the LINUX
  *		operating system.  INET is implemented using the  BSD Socket
  *		interface as the means of communication with the user level.
@@ -541,7 +541,7 @@ void tcp_rcv_space_adjust(struct sock *sk)
 		if (mptcp_check_rtt(tp, time))
 			return;
 	} else if (time < (tp->rcv_rtt_est.rtt >> 3) ||
-			tp->rcv_rtt_est.rtt == 0)
+		   tp->rcv_rtt_est.rtt == 0)
 		return;
 
 	space = 2 * (tp->copied_seq - tp->rcvq_space.seq);
@@ -4579,16 +4579,15 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 		    sock_owned_by_user(sk) && !tp->urg_data) {
 			int chunk = min_t(unsigned int, skb->len,
 					  tp->ucopy.len);
-			/* MPTCP does not support prequeues yet */
-			BUG_ON(tp->mpc);
 
 			__set_current_state(TASK_RUNNING);
 
 			local_bh_enable();
-			if (!skb_copy_datagram_iovec(skb, 0, tp->ucopy.iov, chunk)) {
+			if (!skb_copy_datagram_iovec(skb, 0, tp->ucopy.iov,
+						     chunk)) {
 				tp->ucopy.len -= chunk;
 				tp->copied_seq += chunk;
-				eaten = (chunk == skb->len);
+				eaten = (chunk == skb->len && !th->fin);
 				tcp_rcv_space_adjust(sk);
 			}
 			local_bh_disable();
@@ -4633,18 +4632,8 @@ queue_and_out:
 
 		if (eaten > 0)
 			__kfree_skb(skb);
-		else if (!sock_flag(sk, SOCK_DEAD)) {
-			/* If mapping is set, we know that the segment is
-			 * in order and in meta-order.
-			 * So we can wake up the app. Further, we know that
-			 * eaten is not > 0, thus it has not been completely
-			 * eaten by the prequeue (otherwise, no need to call
-			 * sk_data_ready, we are already in the process
-			 * context).
-			 */
-			if (!tp->mpc)
-				sk->sk_data_ready(sk, 0);
-		}
+		else if (!sock_flag(sk, SOCK_DEAD) && !tp->mpc)
+			sk->sk_data_ready(sk, 0);
 		return;
 	}
 

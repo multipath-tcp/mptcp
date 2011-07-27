@@ -84,12 +84,7 @@
 #include <linux/scatterlist.h>
 
 int sysctl_tcp_tw_reuse __read_mostly;
-#ifdef CONFIG_MPTCP
-/* TODO_cpaasch - enable prequeue here */
-int sysctl_tcp_low_latency __read_mostly = 1;
-#else
 int sysctl_tcp_low_latency __read_mostly;
-#endif
 EXPORT_SYMBOL(sysctl_tcp_low_latency);
 
 
@@ -1775,7 +1770,7 @@ process:
 
 	if (tcp_sk(sk)->mpc) {
 		mpcb = tcp_sk(sk)->mpcb;
-		meta_sk = (struct sock *) (tcp_sk(sk)->mpcb);
+		meta_sk = (struct sock *)(tcp_sk(sk)->mpcb);
 	}
 
 	if (meta_sk)

@@ -4,7 +4,7 @@
  *	Authors:
  *      Sébastien Barré		<sebastien.barre@uclouvain.be>
  *
- *      date : May 11
+ *      date : Aug 11
  *
  *      Important note:
  *            When one wants to add support for closing subsockets *during*
@@ -76,8 +76,6 @@ void print_debug_array(void)
 			mptcp_debug_array2[i].len);
 	}
 }
-
-
 
 void freeze_rcv_queue(struct sock *sk, const char *func_name)
 {
@@ -1152,8 +1150,8 @@ int mptcp_check_rcv_queue(struct multipath_pcb *mpcb, struct msghdr *msg,
 
 			if (before(*data_seq, TCP_SKB_CB(skb)->data_seq)) {
 				printk(KERN_ERR "%s bug: copied %X "
-				"dataseq %X\n", __func__, *data_seq,
-						TCP_SKB_CB(skb)->data_seq);
+				       "dataseq %X\n", __func__, *data_seq,
+				       TCP_SKB_CB(skb)->data_seq);
 				BUG();
 			}
 			data_offset = *data_seq - TCP_SKB_CB(skb)->data_seq;
@@ -1321,7 +1319,8 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb, struct tcp_sock *tp)
 	/* Adapt data-seq's to the packet itself. We kinda transform the
 	 * dss-mapping to a per-packet granularity. This is necessary to
 	 * correctly handle overlapping mappings coming from different
-	 * subflows. Otherwise it would be a complete mess. */
+	 * subflows. Otherwise it would be a complete mess.
+	 */
 	tcb->data_seq = tp->map_data_seq + tcb->seq - tp->map_subseq;
 	tcb->data_len = tcb->end_seq - tcb->seq;
 	tcb->sub_seq = tcb->seq;
@@ -1362,7 +1361,8 @@ static int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct tcp_sock *tp,
 		if (skb1 && before(TCP_SKB_CB(skb)->data_seq,
 				   TCP_SKB_CB(skb1)->end_data_seq)) {
 			/* skb->end_data_seq <= old_skb->end_data_seq ->
-			 * All bits already present */
+			 * All bits already present
+			 */
 			if (!after(TCP_SKB_CB(skb)->end_data_seq,
 				   TCP_SKB_CB(skb1)->end_data_seq)) {
 				/* All the bits are present. Drop. */
@@ -1405,6 +1405,28 @@ static int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct tcp_sock *tp,
 }
 
 /**
+ * @return: 1 if the segment has been eaten and can be suppressed,
+ *          otherwise 0.
+ */
+inline int direct_copy(struct sk_buff *skb, struct tcp_sock *tp,
+		       struct tcp_sock *meta_tp)
+{
+	int chunk = min_t(unsigned int, skb->len, meta_tp->ucopy.len);
+	int eaten = 0;
+
+	__set_current_state(TASK_RUNNING);
+
+	local_bh_enable();
+	if (!skb_copy_datagram_iovec(skb, 0, meta_tp->ucopy.iov, chunk)) {
+		meta_tp->ucopy.len -= chunk;
+		meta_tp->copied_seq += chunk;
+		eaten = (chunk == skb->len);
+	}
+	local_bh_disable();
+	return eaten;
+}
+
+/**
  * @return:
  *  i) 1: the segment can be destroyed by the caller
  *  ii) -1: A reset has been sent on the subflow
@@ -1437,7 +1459,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 		    (tcb->data_seq != tp->map_data_seq ||
 		     tcb->sub_seq != tp->map_subseq ||
 		     tcb->data_len != tp->map_data_len)) {
-			/* Mapping on packet is different from what we want */
+			/* Mapping in packet is different from what we want */
 			mptcp_debug("%s destroying subflow with pi %d from mpcb "
 				    "with token %u\n", __func__,
 				    tp->path_index, mptcp_loc_token(mpcb));
@@ -1476,13 +1498,18 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 			tp->map_subseq = tcb->sub_seq;
 		}
 	}
+
+	/* The skb goes into the sub-rcv queue in all cases.
+	 * This allows more generic skb management in the next lines although
+	 * it may be removed in few lines (direct copy to the app).
+	 */
 	__skb_queue_tail(&sk->sk_receive_queue, skb);
 	skb_set_owner_r(skb, sk);
 	tp->rcv_nxt = tcb->end_seq;
 
 	/* Now, remove old sk_buff's from the receive-queue.
-	 * This may happen if the mapping has been lost for these segments and the
-	 * next mapping has already been received.
+	 * This may happen if the mapping has been lost for these segments and
+	 * the next mapping has already been received.
 	 */
 	if (tp->map_data_len && before(tp->copied_seq, tp->map_subseq)) {
 		mptcp_debug("%s remove packets not covered by mapping: "
@@ -1512,7 +1539,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 		}
 	}
 
-	/* Have we received the full mapping? Then push further */
+	/* Have we received the full mapping ? Then push further */
 	if (tp->map_data_len &&
 	    !before(tp->rcv_nxt, tp->map_subseq + tp->map_data_len)) {
 		/* Verify the checksum first */
@@ -1568,6 +1595,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 				}
 			}
 		} else {
+			int eaten = 0;
 			/* Ready for the meta-rcv-queue */
 			skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
 				if (after(TCP_SKB_CB(tmp1)->end_seq,
@@ -1576,8 +1604,20 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 
 				mptcp_prepare_skb(tmp1, tp);
 				__skb_unlink(tmp1, &sk->sk_receive_queue);
-				__skb_queue_tail(&meta_sk->sk_receive_queue,
-						 tmp1);
+
+				/* Is direct copy possible ? */
+				if (TCP_SKB_CB(tmp1)->data_seq ==
+				    meta_tp->rcv_nxt &&
+				    meta_tp->ucopy.task == current &&
+				    meta_tp->copied_seq == meta_tp->rcv_nxt &&
+				    meta_tp->ucopy.len &&
+				    sock_owned_by_user(mpcb->master_sk)) {
+					eaten = direct_copy(tmp1, tp, meta_tp);
+				}
+				if (!eaten)
+					__skb_queue_tail(
+						&meta_sk->sk_receive_queue,
+						tmp1);
 				meta_tp->rcv_nxt =
 					TCP_SKB_CB(tmp1)->end_data_seq;
 
@@ -1589,8 +1629,14 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 					    &meta_tp->out_of_order_queue))
 					mptcp_ofo_queue(mpcb);
 
-				tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
-				skb_set_owner_r(tmp1, meta_sk);
+				tp->copied_seq =
+					TCP_SKB_CB(tmp1)->end_seq;
+				if (!eaten)
+					skb_set_owner_r(tmp1, meta_sk);
+				else if (tmp1 != skb)
+					__kfree_skb(tmp1);
+				else
+					ans = 1;
 			}
 			if (!sock_flag(meta_sk, SOCK_DEAD))
 				sk->sk_data_ready(sk, 0);
@@ -1601,9 +1647,6 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 		tp->map_subseq = 0;
 	}
 
-	/* In all cases, we remove it from the subsock, so copied_seq
-	 * must be advanced
-	 */
 	if (old_copied != tp->copied_seq)
 		tcp_rcv_space_adjust(sk);
 
@@ -2320,7 +2363,6 @@ new_bw_est:
 	tp->bw_est.space = (tp->snd_cwnd * tp->mss_cache) << tp->bw_est.shift;
 	tp->bw_est.seq = tp->snd_una + tp->bw_est.space;
 	tp->bw_est.time = now;
-
 }
 
 /**

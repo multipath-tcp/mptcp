@@ -56,9 +56,9 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define MAX_TCP_HEADER	(128 + MAX_HEADER)
 #define MAX_TCP_OPTION_SPACE 40
 
-/* 
+/*
  * Never offer a window over 32767 without using window scaling. Some
- * poor stacks do signed 16bit maths! 
+ * poor stacks do signed 16bit maths!
  */
 #define MAX_TCP_WINDOW		32767U
 
@@ -155,7 +155,7 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 /*
  *	TCP option
  */
- 
+
 #define TCPOPT_NOP		1	/* Padding */
 #define TCPOPT_EOL		0	/* End of options */
 #define TCPOPT_MSS		2	/* Segment size negotiating */
@@ -430,9 +430,9 @@ extern void tcp_push(struct sock *sk, int flags, int mss_now,
 
 /* From syncookies.c */
 extern __u32 syncookie_secret[2][16-4+SHA_DIGEST_WORDS];
-extern struct sock *cookie_v4_check(struct sock *sk, struct sk_buff *skb, 
+extern struct sock *cookie_v4_check(struct sock *sk, struct sk_buff *skb,
 				    struct ip_options *opt);
-extern __u32 cookie_v4_init_sequence(struct sock *sk, struct sk_buff *skb, 
+extern __u32 cookie_v4_init_sequence(struct sock *sk, struct sk_buff *skb,
 				     __u16 *mss);
 
 extern __u32 cookie_init_timestamp(struct request_sock *req);
@@ -928,11 +928,9 @@ static inline int tcp_checksum_complete(struct sk_buff *skb)
 
 static inline void tcp_prequeue_init(struct tcp_sock *tp)
 {
-#ifndef CONFIG_MPTCP
 	tp->ucopy.task = NULL;
 	tp->ucopy.len = 0;
 	tp->ucopy.memory = 0;
-#endif /*In MPTCP, those fields are in the mpcb structure*/
 	skb_queue_head_init(&tp->ucopy.prequeue);
 #ifdef CONFIG_NET_DMA
 	tp->ucopy.dma_chan = NULL;
@@ -953,18 +951,18 @@ static inline void tcp_prequeue_init(struct tcp_sock *tp)
 static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *meta_tp = tp->mpc ? mpcb_meta_tp(tp->mpcb) : tp;
+	struct sock *master_sk = tp->mpc ? tp->mpcb->master_sk : sk;
 
-	if (sysctl_tcp_low_latency || !tp->ucopy.task)
+	if (sysctl_tcp_low_latency || !meta_tp->ucopy.task)
 		return 0;
-
-	BUG_ON(tp->mpc); /* Prequeues not yet supported in MPTCP */
 
 	__skb_queue_tail(&tp->ucopy.prequeue, skb);
 	tp->ucopy.memory += skb->truesize;
 	if (tp->ucopy.memory > sk->sk_rcvbuf) {
 		struct sk_buff *skb1;
 
-		BUG_ON(sock_owned_by_user(sk));
+		BUG_ON(sock_owned_by_user(master_sk));
 
 		while ((skb1 = __skb_dequeue(&tp->ucopy.prequeue)) != NULL) {
 			sk_backlog_rcv(sk, skb1);
@@ -974,8 +972,20 @@ static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 
 		tp->ucopy.memory = 0;
 	} else if (skb_queue_len(&tp->ucopy.prequeue) == 1) {
-		wake_up_interruptible_sync_poll(sk_sleep(sk),
-					   POLLIN | POLLRDNORM | POLLRDBAND);
+		struct sock *sk_it = tp->mpc ? NULL : sk;
+		struct multipath_pcb *mpcb = tp->mpc ? tp->mpcb : NULL;
+
+		/* Here we test if in case of mptcp the sum of packets in the
+		 * prequeues in the subflows == 1.
+		 * Thus, the condition
+		 * "is there another subflow with queue-len > 0 ? "
+		 */
+		if (!mptcp_test_any_sk(mpcb, sk_it,
+				(sk_it != sk &&
+				skb_queue_len(&tcp_sk(sk_it)->ucopy.prequeue)))) {
+			wake_up_interruptible_sync_poll(sk_sleep(sk),
+					POLLIN | POLLRDNORM | POLLRDBAND);
+		}
 		if (!inet_csk_ack_scheduled(sk))
 			inet_csk_reset_xmit_timer(sk, ICSK_TIME_DACK,
 						  (3 * tcp_rto_min(sk)) / 4,
@@ -1017,7 +1027,7 @@ static inline int tcp_win_from_space(int space)
 		space - (space>>sysctl_tcp_adv_win_scale);
 }
 
-/* Note: caller must be prepared to deal with negative returns */ 
+/* Note: caller must be prepared to deal with negative returns */
 static inline int tcp_space(const struct sock *sk)
 {
 	if (tcp_sk(sk)->mpc)
@@ -1025,14 +1035,14 @@ static inline int tcp_space(const struct sock *sk)
 
 	return tcp_win_from_space(sk->sk_rcvbuf -
 				  atomic_read(&sk->sk_rmem_alloc));
-} 
+}
 
 static inline int tcp_full_space(const struct sock *sk)
 {
 	if (tcp_sk(sk)->mpc)
 		sk = (struct sock *) (tcp_sk(sk)->mpcb);
 
-	return tcp_win_from_space(sk->sk_rcvbuf); 
+	return tcp_win_from_space(sk->sk_rcvbuf);
 }
 
 static inline void tcp_openreq_init(struct request_sock *req,

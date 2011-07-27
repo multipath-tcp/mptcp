@@ -1361,8 +1361,8 @@ static void tcp_prequeue_process(struct sock *sk)
 	struct sk_buff *skb;
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	/* TODO_cpaasch - tp should be set to mpcb->tp in case of mptcp */
-	mptcp_debug("Entering %s for pi %d\n", __func__, tp->path_index);
+	if (tp->mpc && skb_queue_empty(&tp->ucopy.prequeue))
+		return;
 
 	NET_INC_STATS_USER(sock_net(sk), LINUX_MIB_TCPPREQUEUED);
 
@@ -1534,8 +1534,10 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	u32 urg_hole = 0;
 	/* MPTCP variables */
 	struct multipath_pcb *mpcb = tp->mpc ? tp->mpcb : NULL;
-	struct sock *sk_it, *meta_sk = tp->mpc ? (struct sock *)tp->mpcb : sk;
-	struct tcp_sock *tp_it, *meta_tp = tp->mpc ? tcp_sk(meta_sk) : tp;
+	struct sock *meta_sk = tp->mpc ? (struct sock *)tp->mpcb : sk;
+	struct sock *sk_it = tp->mpc ? NULL : sk;
+	struct tcp_sock *meta_tp = tp->mpc ? tcp_sk(meta_sk) : tp;
+	struct tcp_sock *tp_it = tcp_sk(sk_it);
 
 	lock_sock(sk);
 
@@ -1591,7 +1593,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			 * receive queue
 			 */
 			if (mptcp_check_rcv_queue(mpcb, msg, &len, seq,
-						 &copied, flags) < 0) {
+						  &copied, flags) < 0) {
 				printk(KERN_ERR "error in "
 				       "mptcp_check_rcv_queue\n");
 				/* Exception. Bailout! */
@@ -1696,7 +1698,7 @@ no_subrcv_queue:
 			tcp_cleanup_rbuf(meta_sk, copied);
 
 		if (!sysctl_tcp_low_latency &&
-			meta_tp->ucopy.task == user_recv) {
+		    meta_tp->ucopy.task == user_recv) {
 
 			/* Install new reader */
 			if (!user_recv && !(flags & (MSG_TRUNC | MSG_PEEK))) {
@@ -1743,7 +1745,9 @@ no_subrcv_queue:
 			 * is not empty. It is more elegant, but eats cycles,
 			 * unfortunately.
 			 */
-			if (!skb_queue_empty(&tp->ucopy.prequeue))
+			if(mptcp_test_any_sk(mpcb, sk_it,
+					     !skb_queue_empty(&tcp_sk(sk_it)->
+							      ucopy.prequeue)))
 				goto do_prequeue;
 
 			/* __ Set realtime policy in scheduler __ */
@@ -1776,13 +1780,21 @@ no_subrcv_queue:
 				copied += chunk;
 			}
 
-			if (tp->rcv_nxt == tp->copied_seq &&
-			    !skb_queue_empty(&tp->ucopy.prequeue)) {
+			if (meta_tp->rcv_nxt == meta_tp->copied_seq &&
+			    mptcp_test_any_sk(mpcb, sk_it,
+					    !skb_queue_empty(&tcp_sk(sk_it)->
+							    ucopy.prequeue))) {
 do_prequeue:
-				tcp_prequeue_process(sk);
+				if (mpcb) {
+					mptcp_for_each_sk(mpcb, sk_it, tp_it)
+						tcp_prequeue_process(sk_it);
+				} else {
+					tcp_prequeue_process(sk);
+				}
 
-				if ((chunk = len - tp->ucopy.len) != 0) {
-					NET_ADD_STATS_USER(sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
+				if ((chunk = len - meta_tp->ucopy.len) != 0) {
+					NET_ADD_STATS_USER(
+						sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
 					len -= chunk;
 					copied += chunk;
 				}
@@ -1896,22 +1908,28 @@ found_fin_ok:
 	} while (len > 0);
 
 	if (user_recv) {
-		if (!skb_queue_empty(&tp->ucopy.prequeue)) {
+		if (mptcp_test_any_sk(mpcb, sk_it,
+				!skb_queue_empty(&tcp_sk(sk_it)->
+						ucopy.prequeue))) {
 			int chunk;
+			meta_tp->ucopy.len = copied > 0 ? len : 0;
+			if (!mpcb) {
+				mptcp_for_each_sk(mpcb, sk_it, tp_it)
+					tcp_prequeue_process(sk_it);
+			} else {
+				tcp_prequeue_process(sk);
+			}
 
-			tp->ucopy.len = copied > 0 ? len : 0;
-
-			tcp_prequeue_process(sk);
-
-			if (copied > 0 && (chunk = len - tp->ucopy.len) != 0) {
+			if (copied > 0 &&
+			    (chunk = len - meta_tp->ucopy.len) != 0) {
 				NET_ADD_STATS_USER(sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
 				len -= chunk;
 				copied += chunk;
 			}
 		}
 
-		tp->ucopy.task = NULL;
-		tp->ucopy.len = 0;
+		meta_tp->ucopy.task = NULL;
+		meta_tp->ucopy.len = 0;
 	}
 
 #ifdef CONFIG_NET_DMA

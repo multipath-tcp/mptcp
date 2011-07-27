@@ -357,55 +357,65 @@ static inline int mptcp_sysctl_mss(void)
 #define mptcp_mpcb_from_req_sk(__req) ((__req)->mpcb)
 #define mptcp_meta_sk(sk) ((struct sock *)tcp_sk(sk)->mpcb)
 #define is_meta_tp(__tp) ((__tp)->mpcb && (struct tcp_sock *)((__tp)->mpcb) \
-		== __tp)
+			  == __tp)
 #define is_meta_sk(sk) (sk->sk_protocol == IPPROTO_TCP &&	\
 			(tcp_sk(sk))->mpcb &&			\
-			((struct tcp_sock *) tcp_sk(sk)->mpcb) == tcp_sk(sk))
+			((struct tcp_sock *)tcp_sk(sk)->mpcb) == tcp_sk(sk))
 #define is_master_tp(__tp) (!(__tp)->slave_sk && !is_meta_tp(__tp))
 #define mptcp_req_sk_saw_mpc(__req) (req->saw_mpc)
 #define mptcp_sk_attached(__sk) (tcp_sk(sk)->attached)
 
 #define is_dfin_seg(mpcb, skb) (mpcb->received_options.dfin_rcvd &&	\
-			       mpcb->received_options.fin_dsn ==	\
-			       TCP_SKB_CB(skb)->end_data_seq)
+				mpcb->received_options.fin_dsn ==	\
+				TCP_SKB_CB(skb)->end_data_seq)
 
 #define is_dfin_seg(mpcb, skb) (mpcb->received_options.dfin_rcvd &&	\
-			       mpcb->received_options.fin_dsn ==	\
-			       TCP_SKB_CB(skb)->end_data_seq)
+				mpcb->received_options.fin_dsn ==	\
+				TCP_SKB_CB(skb)->end_data_seq)
 #define mptcp_skb_data_ack(skb) (TCP_SKB_CB(skb)->data_ack)
 #define mptcp_skb_data_seq(skb) (TCP_SKB_CB(skb)->data_seq)
 #define mptcp_skb_end_data_seq(skb) (TCP_SKB_CB(skb)->end_data_seq)
 
-/* Iterates overs all subflows */
+/* Iterates over all subflows */
 #define mptcp_for_each_tp(mpcb, tp)					\
 	for ((tp) = (mpcb)->connection_list; (tp); (tp) = (tp)->next)
 
-#define mptcp_for_each_sk(mpcb, sk, tp)					       \
-	for ((sk) = (struct sock *) (mpcb)->connection_list, (tp) = tcp_sk(sk);\
-	     sk;							       \
+#define mptcp_for_each_sk(mpcb, sk, tp)					\
+	for ((sk) = (struct sock *)(mpcb)->connection_list,		\
+		     (tp) = tcp_sk(sk);					\
+	     sk;							\
 	     sk = (struct sock *) tcp_sk(sk)->next, tp = tcp_sk(sk))
 
 #define mptcp_for_each_sk_safe(__mpcb, __sk, __temp)			\
-	for (__sk = (struct sock *) (__mpcb)->connection_list,		\
-	     __temp = __sk ? (struct sock *) tcp_sk(__sk)->next : NULL;	\
+	for (__sk = (struct sock *)(__mpcb)->connection_list,		\
+		     __temp = __sk ? (struct sock *)tcp_sk(__sk)->next : NULL; \
 	     __sk;							\
 	     __sk = __temp,						\
-	     __temp = __sk ? (struct sock *) tcp_sk(__sk)->next : NULL)
+		     __temp = __sk ? (struct sock *)tcp_sk(__sk)->next : NULL)
 
-/* Returns 1 if any subflow meets the condition @cond
- * Else return 0. Moreover, if 1 is returned, sk points to the
- * first subsocket that verified the condition
+/**
+ * Returns 1 if any subflow meets the condition @cond,
+ * else return 0. Moreover, if 1 is returned, sk points to the
+ * first subsocket that verified the condition.
+ * - non MPTCP behaviour: If MPTCP is NOT supported for this connection,
+ *   @mpcb must be set to NULL and sk to the struct sock. In that
+ *   case the condition is tested against this unique socket.
  */
-#define mptcp_test_any_sk(mpcb, sk, cond)		\
-	({	int __ans = 0;				\
-		struct tcp_sock *__tp;			\
-		mptcp_for_each_sk(mpcb, sk, __tp) {	\
-			if (cond) {			\
-				__ans = 1;		\
-				break;			\
-			}				\
-		}					\
-		__ans;					\
+#define mptcp_test_any_sk(mpcb, sk, cond)			\
+	({	int __ans = 0;					\
+		struct tcp_sock *__tp;				\
+		if (!mpcb) {					\
+			if (cond)				\
+				__ans = 1;			\
+		} else {					\
+			mptcp_for_each_sk(mpcb, sk, __tp) {	\
+				if (cond) {			\
+					__ans = 1;		\
+					break;			\
+				}				\
+			}					\
+		}						\
+		__ans;						\
 	})
 
 int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb);
@@ -727,14 +737,24 @@ static inline int mptcp_sysctl_mss(void)
 #define mptcp_skb_data_ack(skb) (0)
 #define mptcp_skb_data_seq(skb) (0)
 #define mptcp_skb_end_data_seq(skb) (0)
-#define mptcp_for_each_tp(mpcb, tp) for ((tp) = NULL; 0;)
-#define mptcp_for_each_sk(mpcb, sk, tp) for ((sk) = NULL, (tp) = NULL; 0;)
-#define mptcp_for_each_sk_safe(__mpcb, __sk, __temp)			\
-	for (__sk = NULL, __temp = NULL; 0;)
-#define mptcp_test_any_sk(mpcb, sk, cond)		\
+
+/* Without MPTCP, we just do one iteration
+ * over the only socket available. This assumes that
+ * the sk/tp arg is the socket in that case.
+ */
+#define mptcp_for_each_tp(mpcb, tp)
+#define mptcp_for_each_sk(mpcb, sk, tp)
+#define mptcp_for_each_sk_safe(__mpcb, __sk, __temp)
+
+/* If MPTCP is not supported, we just need to evaluate the condition
+ * against sk, which is the single socket in use.
+ */
+#define mptcp_test_any_sk(mpcb, sk, cond)				\
 	({								\
-		sk = NULL;					\
-		0;							\
+		int __ans = 0;						\
+		if (cond)						\
+			__ans = 1;					\
+		__ans;							\
 	})
 
 static inline int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
