@@ -593,7 +593,7 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 
 		mpc->sub = MPTCP_SUB_CAPABLE;
 		mpc->ver = 0;
-		mpc->c = 1;
+		mpc->c = opts->dss_csum;
 		mpc->rsv = 0;
 		mpc->s = 1;
 
@@ -658,10 +658,11 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 
 		*p8++ = TCPOPT_MPTCP;
 		*p8++ = MPTCP_SUB_LEN_DSS +
-			((OPTION_DSN_MAP & opts->options) ?
-			 MPTCP_SUB_LEN_SEQ : 0) +
 			((OPTION_DATA_ACK & opts->options) ?
-			 MPTCP_SUB_LEN_ACK : 0);
+			 MPTCP_SUB_LEN_ACK : 0) +
+			((OPTION_DSN_MAP & opts->options) ?
+			 (opts->dss_csum ?
+			  MPTCP_SUB_LEN_SEQ_CSUM :MPTCP_SUB_LEN_SEQ) : 0);
 		mdss = (struct mp_dss *)p8;
 
 		mdss->sub = MPTCP_SUB_DSS;
@@ -675,21 +676,28 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		if (OPTION_DATA_ACK & opts->options)
 			*ptr++ = htonl(opts->data_ack);
 		if (OPTION_DSN_MAP & opts->options) {
-			u_int16_t *csum;
 			void *csum_start = ptr;
 
 			*ptr++ = htonl(opts->data_seq);
 			*ptr++ = htonl(opts->sub_seq);
 			p8 = (__u8 *)ptr;
-			csum = (uint16_t *)(p8 + 2); /* After data_len */
-			/* Temporarily put TCPOPT_EOL (=0) at csum-field of the
-			 * dss to compute the correct checksum. */
-			*ptr++ = htonl((opts->data_len << 16) |
-					(TCPOPT_EOL << 8) |
-					(TCPOPT_EOL));
-			*csum = csum_fold(csum_partial(csum_start,
-							MPTCP_SUB_LEN_SEQ,
+			if (opts->dss_csum) {
+				/* After data_len */
+				u_int16_t *csum = (uint16_t *)(p8 + 2);
+				/* Temporarily put TCPOPT_EOL (=0) at csum-field
+				 * of the dss to compute the correct checksum.
+				 */
+				*ptr++ = htonl((opts->data_len << 16) |
+						(TCPOPT_EOL << 8) |
+						(TCPOPT_EOL));
+				*csum = csum_fold(csum_partial(csum_start,
+							MPTCP_SUB_LEN_SEQ_CSUM,
 							skb->csum));
+			} else {
+				*ptr++ = htonl((opts->data_len << 16) |
+						(TCPOPT_NOP << 8) |
+						(TCPOPT_NOP));
+			}
 		}
 	}
 #endif
@@ -755,6 +763,7 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		opts->options |= OPTION_MP_CAPABLE;
 		remaining -= MPTCP_SUB_LEN_CAPABLE_ALIGN;
 		opts->token = mptcp_loc_token(mpcb);
+		opts->dss_csum = mpcb->received_options.dss_csum;
 
 		/* We arrive here either when sending a SYN or a
 		 * SYN+ACK when in SYN_SENT state (that is, tcp_synack_options
@@ -901,10 +910,11 @@ static unsigned tcp_synack_options(struct sock *sk,
 	}
 
 #ifdef CONFIG_MPTCP
-	if (unlikely(req->saw_mpc)) {
+	if (req->saw_mpc) {
 		opts->options |= OPTION_MP_CAPABLE;
 		remaining -= MPTCP_SUB_LEN_CAPABLE_ALIGN;
 		opts->token = req->mptcp_loc_token;
+		opts->dss_csum = sysctl_mptcp_checksum || req->dss_csum;
 	}
 #endif /* CONFIG_MPTCP */
 
@@ -964,8 +974,12 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 				opts->data_seq = tcb->data_seq;
 				opts->data_len = tcb->data_len;
 				opts->sub_seq = tcb->sub_seq - tp->snt_isn;
+				opts->dss_csum = sysctl_mptcp_checksum ||
+						mpcb->received_options.dss_csum;
 			}
 			opts->options |= OPTION_DSN_MAP;
+			/* Doesn't matter, if csum included or not. It will be
+			 * either 10 or 12, and thus aligned = 12 */
 			size += MPTCP_SUB_LEN_SEQ_ALIGN;
 		}
 

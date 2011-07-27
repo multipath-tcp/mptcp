@@ -106,12 +106,7 @@ struct multipath_pcb {
 	struct sock *master_sk;
 	/* socket count in this connection */
 	int cnt_subflows;
-	int syn_sent;
 	int cnt_established;
-	int err;
-
-	char done;
-	unsigned short shutdown;
 
 	struct multipath_options received_options;
 	struct tcp_options_received tcp_opt;
@@ -174,7 +169,8 @@ struct multipath_pcb {
  * as they are part of the DSS-option.
  * To get the total length, just add the different options together.
  */
-#define MPTCP_SUB_LEN_SEQ	12
+#define MPTCP_SUB_LEN_SEQ	10
+#define MPTCP_SUB_LEN_SEQ_CSUM	12
 #define MPTCP_SUB_LEN_SEQ_ALIGN		12
 
 #define MPTCP_SUB_LEN_ACK	4
@@ -346,6 +342,7 @@ struct mp_fail {
 extern int sysctl_mptcp_mss;
 extern int sysctl_mptcp_ndiffports;
 extern int sysctl_mptcp_enabled;
+extern int sysctl_mptcp_checksum;
 
 static inline int mptcp_sysctl_mss(void)
 {

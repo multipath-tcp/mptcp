@@ -758,13 +758,14 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 
 #ifdef CONFIG_MPTCP
 	if (!is_meta_sk(sk)) { /* Regular TCP establishment */
-		struct multipath_pcb *mpcb;
 		/* Copy mptcp related info from req to child
 		 * we do this here because this is shared between
 		 * ipv4 and ipv6
 		 */
 		child_tp->rx_opt.saw_mpc = req->saw_mpc;
 		if (child_tp->rx_opt.saw_mpc) {
+			struct multipath_pcb *mpcb;
+
 			child_tp->rx_opt.saw_mpc = 0;
 			child_tp->mpc = 1;
 			child_tp->rx_opt.mptcp_rem_token = req->mptcp_rem_token;
@@ -788,6 +789,10 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 			if (mopt.list_rcvd)
 				memcpy(&mpcb->received_options, &mopt,
 				       sizeof(mopt));
+
+			mpcb->received_options.dss_csum =
+					sysctl_mptcp_checksum || req->dss_csum;
+
 			set_bit(MPCB_FLAG_SERVER_SIDE, &mpcb->flags);
 			/* Will be moved to ESTABLISHED by
 			 * tcp_rcv_state_process()

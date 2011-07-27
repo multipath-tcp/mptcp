@@ -51,6 +51,7 @@ struct tcp_out_options {
 	__u16	data_len;	/* data level length, for MPTCP */
 	__u32	sub_seq;	/* subflow seqnum, for MPTCP */
 	__u32	token;		/* token for mptcp */
+	u8	dss_csum:1;	/* Checksum required? */
 #ifdef CONFIG_MPTCP_PM
 	struct mptcp_loc4 *addr4;/* v4 addresses for MPTCP */
 	struct mptcp_loc6 *addr6;/* v6 addresses for MPTCP */
@@ -107,7 +108,8 @@ struct multipath_options {
 	struct	mptcp_loc6 addr6[MPTCP_MAX_ADDR];
 #endif
 	u8	list_rcvd:1, /* 1 if IP list has been received (MPTCP_PM) */
-		dfin_rcvd:1;
+		dfin_rcvd:1,
+		dss_csum:1;
 	u32	fin_dsn;	/* DSN of the byte
 				 * FOLLOWING the Data FIN
 				 */

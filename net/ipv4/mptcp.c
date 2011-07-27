@@ -173,6 +173,7 @@ int sysctl_mptcp_mss __read_mostly = MPTCP_MSS;
 int sysctl_mptcp_ndiffports __read_mostly = 1;
 int sysctl_mptcp_enabled __read_mostly = 1;
 int sysctl_mptcp_scheduler __read_mostly = 1;
+int sysctl_mptcp_checksum __read_mostly = 1;
 
 static ctl_table mptcp_table[] = {
 	{
@@ -192,6 +193,13 @@ static ctl_table mptcp_table[] = {
 	{
 		.procname = "mptcp_enabled",
 		.data = &sysctl_mptcp_enabled,
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.proc_handler = &proc_dointvec
+	},
+	{
+		.procname = "mptcp_checksum",
+		.data = &sysctl_mptcp_checksum,
 		.maxlen = sizeof(int),
 		.mode = 0644,
 		.proc_handler = &proc_dointvec
@@ -522,6 +530,8 @@ int mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags)
 
 	tcp_sk(master_sk)->path_index = 0;
 	tcp_sk(master_sk)->mpcb = mpcb;
+
+	mpcb->received_options.dss_csum = sysctl_mptcp_checksum;
 
 	return 0;
 }
@@ -1144,7 +1154,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 		csum = skb_checksum(skb,
 				skb_transport_offset(skb)
 					+ (TCP_SKB_CB(skb)->dss_off << 2),
-				MPTCP_SUB_LEN_SEQ, csum);
+				MPTCP_SUB_LEN_SEQ_CSUM, csum);
 
 		if (unlikely(csum_fold(csum))) {
 			mptcp_debug("%s Checksum is wrong: csum %d\n", __func__,
@@ -1426,6 +1436,9 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 
 	switch (mp_opt->sub) {
 	case MPTCP_SUB_CAPABLE:
+	{
+		struct mp_capable *mpcapable = (struct mp_capable *) ptr;
+
 		if (opsize != MPTCP_SUB_LEN_CAPABLE) {
 			mptcp_debug("%s: mp_capable: bad option size %d\n",
 					__func__, opsize);
@@ -1436,10 +1449,13 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 			break;
 
 		opt_rx->saw_mpc = 1;
-		if (mopt)
+		if (mopt) {
 			mopt->list_rcvd = 1;
+			mopt->dss_csum = sysctl_mptcp_checksum || mpcapable->c;
+		}
 		opt_rx->mptcp_rem_token = ntohl(*((u32 *)(ptr + 2)));
 		break;
+	}
 	case MPTCP_SUB_JOIN:
 		if (opsize != MPTCP_SUB_LEN_JOIN) {
 			mptcp_debug("%s: mp_join: bad option size %d\n",
@@ -1462,7 +1478,10 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		}
 
 		if (mdss->M) {
-			TCP_SKB_CB(skb)->dss_off =
+			/* TODO_cpaasch check for the correct length of the DSS
+			 * option */
+			if (mopt && mopt->dss_csum)
+				TCP_SKB_CB(skb)->dss_off =
 					(ptr - skb_transport_header(skb)) >> 2;
 			TCP_SKB_CB(skb)->data_seq = ntohl(*(uint32_t *) ptr);
 			TCP_SKB_CB(skb)->sub_seq =

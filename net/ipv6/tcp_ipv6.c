@@ -1231,6 +1231,7 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_extend_values tmp_ext;
 	struct tcp_options_received tmp_opt;
+	struct multipath_options mopt;
 	u8 *hash_location;
 	struct request_sock *req;
 	struct inet6_request_sock *treq;
@@ -1275,7 +1276,8 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	tcp_clear_options(&tmp_opt);
 	tmp_opt.mss_clamp = IPV6_MIN_MTU - sizeof(struct tcphdr) - sizeof(struct ipv6hdr);
 	tmp_opt.user_mss = tp->rx_opt.user_mss;
-	tcp_parse_options(skb, &tmp_opt, &hash_location, NULL, 0);
+	mopt.dss_csum = 0;
+	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
 	if (tmp_opt.cookie_plus > 0 &&
 	    tmp_opt.saw_tstamp &&
@@ -1332,6 +1334,7 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	 * tcp_openreq_init() uses this to know whether the request
 	 * is join request or a conn request. */
 	req->mpcb = NULL;
+	req->dss_csum = mopt.dss_csum;
 #endif
 	tcp_openreq_init(req, &tmp_opt, skb);
 

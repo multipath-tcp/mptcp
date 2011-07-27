@@ -1256,6 +1256,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_extend_values tmp_ext;
 	struct tcp_options_received tmp_opt;
+	struct multipath_options mopt;
 	u8 *hash_location;
 	struct request_sock *req;
 	struct inet_request_sock *ireq;
@@ -1308,7 +1309,8 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	tcp_clear_options(&tmp_opt);
 	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
 	tmp_opt.user_mss  = tp->rx_opt.user_mss;
-	tcp_parse_options(skb, &tmp_opt, &hash_location, NULL, 0);
+	mopt.dss_csum = 0;
+	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
 	if (tmp_opt.cookie_plus > 0 &&
 	    tmp_opt.saw_tstamp &&
@@ -1357,6 +1359,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	 * is a join request or a conn request.
 	 */
 	req->mpcb = NULL;
+	req->dss_csum = mopt.dss_csum;
 #endif
 	tcp_openreq_init(req, &tmp_opt, skb);
 
