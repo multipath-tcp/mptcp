@@ -1643,7 +1643,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		 * inside the function.
 		 */
 		if (!mpcb && tp->mpc) {
-			meta_sk = tp->mpcb->master_sk;
+			meta_sk = (struct sock *)tp->mpcb;
 			meta_tp = tcp_sk(meta_sk);
 			mpcb = tp->mpcb;
 		}
@@ -1707,17 +1707,17 @@ no_subrcv_queue:
 		/* Well, if we have backlog, try to process it now yet. */
 
 		if (copied >= target && !sk->sk_backlog.tail &&
-			(!tp->mpc ||
-				!mptcp_test_any_sk(mpcb, sk_it,
-						sk_it->sk_backlog.tail)))
+		    (!tp->mpc ||
+		     !mptcp_test_any_sk(mpcb, sk_it,
+					sk_it->sk_backlog.tail)))
 			break;
 
 		if (copied) {
 			if (meta_sk->sk_err ||
-				meta_sk->sk_state == TCP_CLOSE ||
-				(meta_sk->sk_shutdown & RCV_SHUTDOWN) ||
-				!timeo ||
-				signal_pending(current))
+			    meta_sk->sk_state == TCP_CLOSE ||
+			    (meta_sk->sk_shutdown & RCV_SHUTDOWN) ||
+			    !timeo ||
+			    signal_pending(current))
 				break;
 		} else {
 			if (sock_flag(meta_sk, SOCK_DONE))
