@@ -1460,6 +1460,9 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		break;
 	}
 	case MPTCP_SUB_JOIN:
+	{
+		struct mp_join *mpjoin = (struct mp_join *) ptr;
+
 		if (opsize != MPTCP_SUB_LEN_JOIN) {
 			mptcp_debug("%s: mp_join: bad option size %d\n",
 					__func__, opsize);
@@ -1467,7 +1470,9 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		}
 
 		opt_rx->mptcp_recv_token = ntohl(*((u32 *)(ptr + 2)));
+		opt_rx->rem_id = mpjoin->addr_id;
 		break;
+	}
 	case MPTCP_SUB_DSS:
 	{
 		struct mp_dss *mdss = (struct mp_dss *) ptr;

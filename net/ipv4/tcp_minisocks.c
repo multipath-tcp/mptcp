@@ -817,7 +817,6 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		inet_sk(child)->loc_id = mptcp_get_loc_addrid(req->mpcb, child);
 		inet_sk(child)->rem_id = req->rem_id;
 
-
 		/* Child_tp->mpcb has been cloned from the master_sk
 		 * We need to increase the master_sk refcount
 		 */
