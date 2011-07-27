@@ -1171,6 +1171,9 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 		}
 	}
 
+	/* We would have needed the rtable entry for sending the reset */
+	skb_dst_drop(skb);
+
 	if (before(meta_tp->rcv_nxt, TCP_SKB_CB(skb)->data_seq)) {
 		if (!skb_peek(&meta_tp->out_of_order_queue)) {
 			/* Initial out of order segment */
