@@ -3900,8 +3900,8 @@ no_queue:
 	return 1;
 
 invalid_ack:
-	printk(KERN_ERR "received invalid ack\n");
-	printk(KERN_ERR "pi %d:Ack %#x after %#x:%#x, addr %pI4->%pI4\n",
+	mptcp_debug(KERN_ERR "received invalid ack\n");
+	mptcp_debug(KERN_ERR "pi %d:Ack %#x after %#x:%#x, addr %pI4->%pI4\n",
 		tp_path_index(tp), ack, tp->snd_una, tp->snd_nxt,
 		&inet_sk(sk)->inet_saddr, &inet_sk(sk)->inet_daddr);
 	SOCK_DEBUG(sk, "Ack %u after %u:%u\n", ack, tp->snd_una, tp->snd_nxt);
@@ -3914,8 +3914,8 @@ old_ack:
 			tcp_try_keep_open(sk);
 	}
 
-	printk(KERN_ERR "received old ack\n");
-	printk(KERN_ERR "pi %d:Ack %#x before %#x:%#x, addr %pI4->%pI4\n",
+	mptcp_debug("received old ack\n");
+	mptcp_debug("pi %d:Ack %#x before %#x:%#x, addr %pI4->%pI4\n",
 			tp_path_index(tp), ack, tp->snd_una, tp->snd_nxt,
 	       &inet_sk(sk)->inet_saddr, &inet_sk(sk)->inet_daddr);
 	SOCK_DEBUG(sk, "Ack %u before %u:%u\n", ack, tp->snd_una, tp->snd_nxt);
