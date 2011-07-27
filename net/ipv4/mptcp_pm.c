@@ -756,6 +756,8 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 		return -1;
 	}
 
+	loc4 = &mopt->addr4[i];
+
 	/* Address is not known yet, store it */
 	loc4->addr.s_addr = addr->s_addr;
 	loc4->port = port;
@@ -819,6 +821,8 @@ int mptcp_v6_add_raddress(struct multipath_options *mopt,
 				__func__, MPTCP_MAX_ADDR, addr);
 		return -1;
 	}
+
+	loc6 = &mopt->addr6[i];
 
 	/* Address is not known yet, store it */
 	ipv6_addr_copy(&loc6->addr, addr);
