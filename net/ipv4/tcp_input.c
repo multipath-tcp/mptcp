@@ -4612,7 +4612,7 @@ static void check_buffers(struct multipath_pcb *mpcb)
 			ofo_size += skb->truesize;
 
 		skb = skb_peek(&meta_sk->sk_receive_queue);
-		printk(KERN_ERR "pi %d, ofo_size:%d,meta_ofo_size:%d,"
+		mptcp_debug("pi %d, ofo_size:%d,meta_ofo_size:%d,"
 			"rcv_size:%d, waiting:%d,next dsn:%#x\n",
 			tp_path_index(tp), ofo_size, meta_ofo_size, rcv_size,
 			tp->wait_data_bit_set,
