@@ -1499,6 +1499,8 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 			if (mopt && mopt->dss_csum)
 				TCP_SKB_CB(skb)->dss_off =
 					(ptr - skb_transport_header(skb)) >> 2;
+			else
+				TCP_SKB_CB(skb)->dss_off = 0;
 			TCP_SKB_CB(skb)->data_seq = ntohl(*(uint32_t *) ptr);
 			TCP_SKB_CB(skb)->sub_seq =
 					ntohl(*(uint32_t *)(ptr + 4)) +
