@@ -2215,9 +2215,11 @@ void release_sock(struct sock *sk)
 		 * as the master-socket is locked, every received segment is
 		 * put into the backlog queue.
 		 */
-		mptcp_for_each_sk(mpcb, sk_it, tp_it) {
-			if (sk_it->sk_backlog.tail)
-				__release_sock(sk_it, mpcb);
+		while (mptcp_test_any_sk(mpcb, sk_it, sk_it->sk_backlog.tail)) {
+			mptcp_for_each_sk(mpcb, sk_it, tp_it) {
+				if (sk_it->sk_backlog.tail)
+					__release_sock(sk_it, mpcb);
+			}
 		}
 	} else if (sk->sk_backlog.tail)
 		__release_sock(sk, NULL);
