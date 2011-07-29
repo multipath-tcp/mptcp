@@ -14,9 +14,13 @@
  *      2 of the License, or (at your option) any later version.
  */
 
-
 #ifndef _MPTCP_V6_H
 #define _MPTCP_V6_H
+
+#include <linux/in6.h>
+
+#include <net/mptcp.h>
+#include <net/mptcp_pm.h>
 
 /* TODO: make this part of the IPv6 module
  * At the moment this will break if IPv6 is compiled as a module */
@@ -26,5 +30,17 @@ extern struct proto mptcpsubv6_prot;
 #else
 #define tcp_v6_is_v4_mapped(sk) (0)
 #endif
+
+int mptcp_v6_add_raddress(struct multipath_options *mopt, struct in6_addr *addr,
+			__be16 port, u8 id);
+int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb);
+struct path6 *mptcp_v6_find_path(struct mptcp_loc6 *loc, struct mptcp_loc6 *rem,
+				 struct multipath_pcb *mpcb);
+struct path6 *mptcp_get_path6(struct multipath_pcb *mpcb, int path_index);
+struct request_sock *mptcp_v6_search_req(const __be16 rport,
+					const struct in6_addr *raddr,
+					const struct in6_addr *laddr);
+int mptcp_v6_send_synack(struct sock *meta_sk, struct request_sock *req);
+void mptcp_v6_update_patharray(struct multipath_pcb *mpcb);
 
 #endif /* _MPTCP_V6_H */

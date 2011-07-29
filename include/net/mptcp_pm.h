@@ -115,14 +115,6 @@ int mptcp_syn_recv_sock(struct sk_buff *skb);
 void mptcp_update_patharray(struct multipath_pcb *mpcb);
 void __mptcp_update_patharray_ports(struct multipath_pcb *mpcb);
 
-#if (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))
-int mptcp_v6_add_raddress(struct multipath_options *mopt, struct in6_addr *addr,
-			__be16 port, u8 id);
-struct path6 *mptcp_get_path6(struct multipath_pcb *mpcb, int path_index);
-int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb);
-int mptcp_v6_send_synack(struct sock *meta_sk, struct request_sock *req);
-#endif /* (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)) */
-
 #else /* CONFIG_MPTCP_PM */
 
 #define mptcp_loc_token(mpcb) (0)
