@@ -1150,9 +1150,14 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 
 	/* Verify the checksum and act appropiately */
 	if (TCP_SKB_CB(skb)->dss_off) {
+		struct iphdr *ip = ip_hdr(skb);
+		struct tcphdr *th = tcp_hdr(skb);
 		__wsum csum = 0;
 
-		csum = skb_checksum(skb, 0, skb->len, csum);
+		csum = csum_tcpudp_nofold(ip->saddr, ip->daddr,
+				skb->len + (th->doff << 2), ip->protocol, 0);
+		csum = ~skb_checksum(skb, skb_transport_offset(skb),
+				th->doff << 2, csum);
 
 		/* skb->data is at this stage pointing to the payload. Thus, we
 		 * need to create a negative offset, going up into the header.
