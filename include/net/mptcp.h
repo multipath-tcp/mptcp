@@ -558,10 +558,10 @@ static inline int mptcp_sysctl_mss(void)
 #define mptcp_skb_data_seq(skb) (0)
 #define mptcp_skb_end_data_seq(skb) (0)
 
-#define mptcp_for_each_tp(mpcb, tp) for ((tp) = NULL; -1;)
-#define mptcp_for_each_sk(mpcb, sk, tp) for ((sk) = NULL, (tp) = NULL; -1;)
+#define mptcp_for_each_tp(mpcb, tp) for ((tp) = NULL; 0;)
+#define mptcp_for_each_sk(mpcb, sk, tp) for ((sk) = NULL, (tp) = NULL; 0;)
 #define mptcp_for_each_sk_safe(__mpcb, __sk, __temp)			\
-	for (__sk = NULL, __temp = NULL; -1;)
+	for (__sk = NULL, __temp = NULL; 0;)
 
 /* Returns 1 if any subflow meets the condition @cond
  * Else return 0. Moreover, if 1 is returned, sk points to the
