@@ -16,13 +16,15 @@
 #ifndef _MPTCP_PM_H
 #define _MPTCP_PM_H
 
-#include <linux/list.h>
-#include <linux/jhash.h>
-#include <linux/types.h>
 #include <linux/in.h>
 #include <linux/in6.h>
+#include <linux/jhash.h>
+#include <linux/list.h>
 #include <linux/skbuff.h>
+#include <linux/spinlock_types.h>
 #include <linux/tcp_options.h>
+#include <linux/types.h>
+
 #include <net/request_sock.h>
 #include <net/sock.h>
 
@@ -35,6 +37,15 @@ struct multipath_options;
 
 #ifdef CONFIG_MPTCP_PM
 
+#define MPTCP_HASH_SIZE                16
+
+/* This second hashtable is needed to retrieve request socks
+ * created as a result of a join request. While the SYN contains
+ * the token, the final ack does not, so we need a separate hashtable
+ * to retrieve the mpcb.
+ */
+extern struct list_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
+extern spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
 
 /* Functions and structures defined elsewhere but needed in mptcp_pm.c */
 struct tcp_out_options;
@@ -84,26 +95,25 @@ struct path6 {
 	(((struct tcp_sock *)mpcb)->mptcp_loc_token)
 #define mptcp_tp_recv_token(__tp) (__tp->rx_opt.mptcp_recv_token)
 
-u32 mptcp_new_token(void);
+struct mp_join *mptcp_find_join(struct sk_buff *skb);
+u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock *sk);
 void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token);
 void mptcp_hash_remove(struct multipath_pcb *mpcb);
 void mptcp_hash_request_remove(struct request_sock *req);
 struct multipath_pcb *mptcp_hash_find(u32 token);
-void mptcp_set_addresses(struct multipath_pcb *mpcb);
-void mptcp_update_patharray(struct multipath_pcb *mpcb);
-u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock *sk);
 int mptcp_lookup_join(struct sk_buff *skb);
-int mptcp_syn_recv_sock(struct sk_buff *skb);
+struct sk_buff *mptcp_make_synack(struct sock *master_sk,
+					struct dst_entry *dst,
+					struct request_sock *req);
+u32 mptcp_new_token(void);
 void mptcp_pm_release(struct multipath_pcb *mpcb);
+struct dst_entry *mptcp_route_req(const struct request_sock *req);
 void mptcp_send_updatenotif(struct multipath_pcb *mpcb);
-
-int mptcp_v4_add_raddress(struct multipath_options *mopt, struct in_addr *addr,
-			__be16 port, u8 id);
-struct path4 *mptcp_get_path4(struct multipath_pcb *mpcb, int path_index);
-int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb);
-int mptcp_v4_send_synack(struct sock *meta_sk,
-			struct request_sock *req,
-			struct request_values *rvp);
+void mptcp_set_addresses(struct multipath_pcb *mpcb);
+void mptcp_subflow_attach(struct multipath_pcb *mpcb, struct sock *subsk);
+int mptcp_syn_recv_sock(struct sk_buff *skb);
+void mptcp_update_patharray(struct multipath_pcb *mpcb);
+void __mptcp_update_patharray_ports(struct multipath_pcb *mpcb);
 
 #if (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))
 int mptcp_v6_add_raddress(struct multipath_options *mopt, struct in6_addr *addr,
@@ -154,12 +164,6 @@ static inline struct in_addr *mptcp_get_loc_addr4(struct multipath_pcb *mpcb,
 	return NULL;
 }
 
-static inline struct in_addr *mptcp_get_rem_addr4(struct multipath_pcb *mpcb,
-		int path_index)
-{
-	return NULL;
-}
-
 static inline u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb,
 		struct sock *sk)
 {
@@ -184,32 +188,6 @@ static inline void mptcp_pm_release(struct multipath_pcb *mpcb)
 static inline void mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 {
 }
-
-
-static inline int mptcp_v4_add_raddress(struct multipath_options *mopt,
-		struct in_addr *addr, __be16 port, u8 id)
-{
-	return 0;
-}
-
-static inline struct path4 *mptcp_get_path4(struct multipath_pcb *mpcb,
-		int path_index)
-{
-	return NULL;
-}
-
-static inline int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
-{
-	return 0;
-}
-
-static inline int mptcp_v4_send_synack(struct sock *meta_sk,
-			struct request_sock *req,
-			struct request_values *rvp)
-{
-	return 0;
-}
-
 
 #if (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))
 static inline int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)

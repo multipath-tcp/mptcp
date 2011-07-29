@@ -22,6 +22,7 @@
 #include <net/sock.h>
 #include <net/tcp_states.h>
 #include <net/mptcp.h>
+#include <net/mptcp_v4.h>
 #include <net/mptcp_v6.h>
 #include <net/ipv6.h>
 #include <net/transp_v6.h>
@@ -345,7 +346,7 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 		 */
 		switch (family) {
 		case AF_INET:
-			pa4 = mptcp_get_path4(mpcb, newpi);
+			pa4 = mptcp_v4_get_path(mpcb, newpi);
 
 			BUG_ON(!pa4);
 
