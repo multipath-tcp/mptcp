@@ -19,14 +19,16 @@
  *      2 of the License, or (at your option) any later version.
  */
 
-#include <net/sock.h>
-#include <net/tcp_states.h>
+#include <net/ipv6.h>
+#include <net/ip6_checksum.h>
 #include <net/mptcp.h>
 #include <net/mptcp_v4.h>
 #include <net/mptcp_v6.h>
-#include <net/ipv6.h>
-#include <net/transp_v6.h>
+#include <net/sock.h>
 #include <net/tcp.h>
+#include <net/tcp_states.h>
+#include <net/transp_v6.h>
+
 #include <linux/list.h>
 #include <linux/jhash.h>
 #include <linux/tcp.h>
@@ -1151,12 +1153,10 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 
 	/* Verify the checksum and act appropiately */
 	if (TCP_SKB_CB(skb)->dss_off) {
-		struct iphdr *ip = ip_hdr(skb);
 		struct tcphdr *th = tcp_hdr(skb);
 		__wsum csum = 0;
+		__sum16 csum16;
 
-		csum = csum_tcpudp_nofold(ip->saddr, ip->daddr,
-				skb->len + (th->doff << 2), ip->protocol, 0);
 		csum = ~skb_checksum(skb, skb_transport_offset(skb),
 				th->doff << 2, csum);
 
@@ -1170,7 +1170,18 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 					+ (TCP_SKB_CB(skb)->dss_off << 2),
 				MPTCP_SUB_LEN_SEQ_CSUM, csum);
 
-		if (unlikely(csum_fold(csum))) {
+		if (sk->sk_family == AF_INET) {
+			struct iphdr *ip = ip_hdr(skb);
+			csum16 = csum_tcpudp_magic(ip->saddr, ip->daddr,
+				skb->len + (th->doff << 2), IPPROTO_TCP, 0);
+		} else {
+			struct ipv6hdr *ip6 = ipv6_hdr(skb);
+			csum16 = csum_ipv6_magic(&ip6->saddr, &ip6->daddr,
+				skb->len + (th->doff << 2), IPPROTO_TCP, 0);
+
+		}
+
+		if (unlikely(csum_fold(csum) != csum16)) {
 			mptcp_debug("%s Checksum is wrong: csum %d\n", __func__,
 					csum_fold(csum));
 			tp->csum_error = 1;
