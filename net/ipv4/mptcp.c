@@ -256,6 +256,21 @@ static void mptcp_fin(struct sk_buff *skb, struct multipath_pcb *mpcb)
 	}
 }
 
+static void mptcp_sock_def_error_report(struct sock *sk)
+{
+	/* If there exists more than one working subflow, we don't wake up the
+	 * application, as the mptcp-connection is still alive */
+	if (tcp_sk(sk)->mpc &&
+	    tcp_sk(sk)->mpcb->cnt_established >
+				((sk->sk_state == TCP_ESTABLISHED) ? 1 : 0)) {
+		sk->sk_err = 0;
+		sock_orphan(sk);
+		return;
+	}
+
+	sock_def_error_report(sk);
+}
+
 /**
  * Creates as many sockets as path indices announced by the Path Manager.
  * The first path indices are (re)allocated to existing sockets.
@@ -358,6 +373,8 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 		tp->mpc = 1;
 		tp->slave_sk = 1;
 
+		sk->sk_error_report = mptcp_sock_def_error_report;
+
 		mptcp_add_sock(mpcb, tp);
 
 		if (family == AF_INET) {
@@ -409,7 +426,8 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 		continue;
 
 cont_error:
-		sock.ops->release(&sock);
+		sock_orphan(sk);
+		tcp_done(sk);
 	}
 
 	return 0;
@@ -482,6 +500,10 @@ int mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags)
 
 	meta_tp->window_clamp = tcp_sk(master_sk)->window_clamp;
 	meta_tp->rcv_ssthresh = tcp_sk(master_sk)->rcv_ssthresh;
+
+	/* Redefine function-pointers to wake up application */
+	master_sk->sk_error_report = mptcp_sock_def_error_report;
+	meta_sk->sk_error_report = mptcp_sock_def_error_report;
 
 	/* Init the accept_queue structure, we support a queue of 4 pending
 	 * connections, it does not need to be huge, since we only store
@@ -2038,6 +2060,7 @@ static void __mptcp_fallback(struct sock *master_sk)
 		return;
 
 	sock_hold(master_sk);
+	master_sk->sk_error_report = sock_def_error_report;
 	mptcp_destroy_mpcb(mpcb);
 	mpcb_release(mpcb);
 	master_tp->mpcb = NULL;
