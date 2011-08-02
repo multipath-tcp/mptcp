@@ -714,6 +714,10 @@ void mptcp_del_sock(struct sock *sk)
 	tp->next = NULL;
 	tp->attached = 0;
 
+	/* Is there still data to be sent and more subflows available? */
+	if (tcp_send_head(sk) && mpcb->cnt_established > 0)
+		mptcp_reinject_data(sk, 0);
+
 	BUG_ON(!done);
 }
 
@@ -1328,7 +1332,8 @@ static inline int count_bits(unsigned int v)
  *
  * @pre : @sk must be the meta_sk
  */
-int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk)
+static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
+		int clone_it)
 {
 	struct sk_buff *skb;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *tmp_tp;
@@ -1355,7 +1360,13 @@ int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk)
 		return 1; /* no candidate found */
 	}
 
-	skb = skb_clone(orig_skb, GFP_ATOMIC);
+	if (clone_it)
+		skb = skb_clone(orig_skb, GFP_ATOMIC);
+	else {
+		skb_unlink(orig_skb, &orig_skb->sk->sk_write_queue);
+		mptcp_wmem_free_skb(orig_skb->sk, orig_skb);
+		skb = orig_skb;
+	}
 	if (unlikely(!skb))
 		return -ENOBUFS;
 	skb->sk = meta_sk;
@@ -1365,7 +1376,7 @@ int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk)
 }
 
 /* Inserts data into the reinject queue */
-void mptcp_reinject_data(struct sock *orig_sk)
+void mptcp_reinject_data(struct sock *orig_sk, int clone_it)
 {
 	struct sk_buff *skb_it;
 	struct tcp_sock *orig_tp = tcp_sk(orig_sk);
@@ -1378,7 +1389,7 @@ void mptcp_reinject_data(struct sock *orig_sk)
 
 	tcp_for_write_queue(skb_it, orig_sk) {
 		skb_it->path_mask |= PI_TO_FLAG(orig_tp->path_index);
-		if (unlikely(__mptcp_reinject_data(skb_it, meta_sk) < 0))
+		if (__mptcp_reinject_data(skb_it, meta_sk, clone_it) < 0)
 			break;
 	}
 

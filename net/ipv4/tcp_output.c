@@ -2793,7 +2793,7 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 	/* In case of RTO (loss state), we reinject data on another subflow */
 	if (icsk->icsk_ca_state == TCP_CA_Loss &&
 	    tp->mpc && sk->sk_state == TCP_ESTABLISHED && tp_path_index(tp)) {
-		mptcp_reinject_data(sk);
+		mptcp_reinject_data(sk, 1);
 	}
 #endif
 	/* Inconslusive MTU probe */
