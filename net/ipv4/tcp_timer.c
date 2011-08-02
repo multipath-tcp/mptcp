@@ -331,7 +331,6 @@ void tcp_retransmit_timer(struct sock *sk)
 
 	tcpprobe_logmsg(sk, "pi %d, RTO", tp_path_index(tp));
 
-
 	if (!tp->packets_out)
 		goto out;
 

@@ -1817,6 +1817,7 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->data_seq = 0;
 	TCP_SKB_CB(skb)->end_data_seq = 0;
 	TCP_SKB_CB(skb)->mptcp_flags = 0;
+	TCP_SKB_CB(skb)->dss_off = 0;
 #endif
 	TCP_SKB_CB(skb)->when = 0;
 	TCP_SKB_CB(skb)->flags = ipv6_get_dsfield(hdr);

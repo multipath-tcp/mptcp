@@ -581,7 +581,7 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 
 		mpc->sub = MPTCP_SUB_CAPABLE;
 		mpc->ver = 0;
-		mpc->c = opts->dss_csum;
+		mpc->c = opts->dss_csum ? 1 : 0;
 		mpc->rsv = 0;
 		mpc->s = 1;
 
@@ -649,8 +649,8 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			((OPTION_DATA_ACK & opts->options) ?
 			 MPTCP_SUB_LEN_ACK : 0) +
 			((OPTION_DSN_MAP & opts->options) ?
-			 (opts->dss_csum ?
-			  MPTCP_SUB_LEN_SEQ_CSUM :MPTCP_SUB_LEN_SEQ) : 0);
+			 (tp->mpcb->received_options.dss_csum ?
+			  MPTCP_SUB_LEN_SEQ_CSUM : MPTCP_SUB_LEN_SEQ) : 0);
 		mdss = (struct mp_dss *)p8;
 
 		mdss->sub = MPTCP_SUB_DSS;
@@ -664,23 +664,13 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		if (OPTION_DATA_ACK & opts->options)
 			*ptr++ = htonl(opts->data_ack);
 		if (OPTION_DSN_MAP & opts->options) {
-			void *csum_start = ptr;
-
 			*ptr++ = htonl(opts->data_seq);
 			*ptr++ = htonl(opts->sub_seq);
-			p8 = (__u8 *)ptr;
-			if (opts->dss_csum) {
-				/* After data_len */
-				u_int16_t *csum = (uint16_t *)(p8 + 2);
-				/* Temporarily put TCPOPT_EOL (=0) at csum-field
-				 * of the dss to compute the correct checksum.
-				 */
-				*ptr++ = htonl((opts->data_len << 16) |
-						(TCPOPT_EOL << 8) |
-						(TCPOPT_EOL));
-				*csum = csum_fold(csum_partial(csum_start,
-							MPTCP_SUB_LEN_SEQ_CSUM,
-							skb->csum));
+			if (tp->mpcb->received_options.dss_csum) {
+				__u16 *p16 = (__u16 *)ptr;
+				*p16++ = htons(opts->data_len);
+				*p16++ = opts->dss_csum;
+				ptr++;
 			} else {
 				*ptr++ = htonl((opts->data_len << 16) |
 						(TCPOPT_NOP << 8) |
@@ -961,9 +951,11 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			if (tcb && tcb->data_len) {
 				opts->data_seq = tcb->data_seq;
 				opts->data_len = tcb->data_len;
-				opts->sub_seq = tcb->sub_seq - tp->snt_isn;
-				opts->dss_csum = sysctl_mptcp_checksum ||
-						mpcb->received_options.dss_csum;
+				opts->sub_seq = tcb->sub_seq;
+				if (mpcb->received_options.dss_csum)
+					opts->dss_csum = tcb->dss_csum;
+				else
+					opts->dss_csum = 0;
 			}
 			opts->options |= OPTION_DSN_MAP;
 			/* Doesn't matter, if csum included or not. It will be
@@ -1421,11 +1413,6 @@ int tcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
 		__pskb_trim_head(skb, len - skb_headlen(skb));
 
 	TCP_SKB_CB(skb)->seq += len;
-#ifdef CONFIG_MPTCP
-	TCP_SKB_CB(skb)->data_seq += len;
-	TCP_SKB_CB(skb)->sub_seq += len;
-	TCP_SKB_CB(skb)->data_len -= len;
-#endif
 
 	skb->ip_summed = CHECKSUM_PARTIAL;
 

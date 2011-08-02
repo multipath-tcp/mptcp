@@ -4463,11 +4463,9 @@ static void tcp_ofo_queue(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	__u32 dsack_high = tp->rcv_nxt;
 	struct sk_buff *skb;
+	int eaten = 0;
 
 	while ((skb = skb_peek(&tp->out_of_order_queue)) != NULL) {
-#ifdef CONFIG_MPTCP
-		int mptcp_eaten, new_mapping;
-#endif
 		if (after(TCP_SKB_CB(skb)->seq, tp->rcv_nxt))
 			break;
 
@@ -4489,28 +4487,21 @@ static void tcp_ofo_queue(struct sock *sk)
 			   TCP_SKB_CB(skb)->end_seq);
 
 		__skb_unlink(skb, &tp->out_of_order_queue);
-#ifdef CONFIG_MPTCP
-		new_mapping = (tp->mpc) ? mptcp_get_dataseq_mapping(tp, skb)
-				: 0;
 
-		if (new_mapping >= 0) {
-			mptcp_eaten = mptcp_queue_skb(sk, skb);
+		if (tp->mpc) {
+			eaten = mptcp_queue_skb(sk, skb);
+			if (eaten < 0)
+				return;
 		} else {
-			__kfree_skb(skb); /* invalid mapping */
-			continue;
+			__skb_queue_tail(&sk->sk_receive_queue, skb);
 		}
-#else
-		__skb_queue_tail(&sk->sk_receive_queue, skb);
-#endif
+
 		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 		if (tcp_hdr(skb)->fin)
 			tcp_fin(skb, sk, tcp_hdr(skb));
-#ifdef CONFIG_MPTCP
-		if (mptcp_eaten == MPTCP_EATEN)
+		if (eaten > 0)
 			__kfree_skb(skb);
-		if (new_mapping == 1)
-			sk->sk_data_ready(sk, 0);
-#endif
+
 	}
 }
 
@@ -4546,11 +4537,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 	struct tcp_sock *meta_tp = tp;
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 
-	int mapping = 0;
 	int eaten = -1;
-#ifdef CONFIG_MPTCP
-	int mptcp_eaten = 0;
-#endif
 
 	if (tp->mpc)
 		meta_tp = mpcb_meta_tp(mpcb);
@@ -4577,12 +4564,6 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 			goto out_of_window;
 
 		/* Ok. In sequence. In window. */
-		if (tp->mpc) {
-			mapping = mptcp_get_dataseq_mapping(tp, skb);
-			if (mapping == -1)
-				goto drop;
-		}
-
 		if (tp->ucopy.task == current &&
 		    tp->copied_seq == tp->rcv_nxt && tp->ucopy.len &&
 		    sock_owned_by_user(sk) && !tp->urg_data) {
@@ -4606,17 +4587,18 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 		if (eaten <= 0) {
 queue_and_out:
 			if (eaten < 0 &&
-				tcp_try_rmem_schedule(sk, skb->truesize)) {
-				printk(KERN_ERR "dropping seg after"
-				       " tcp_try_rmem_schedule\n");
+			    tcp_try_rmem_schedule(sk, skb->truesize))
 				goto drop;
+
+			if (tp->mpc) {
+				eaten = mptcp_queue_skb(sk, skb);
+				/* Subflow is being destroyed */
+				if (eaten < 0)
+					return;
+			} else {
+				skb_set_owner_r(skb, sk);
+				__skb_queue_tail(&sk->sk_receive_queue, skb);
 			}
-#ifdef CONFIG_MPTCP
-			mptcp_eaten = mptcp_queue_skb(sk, skb);
-#else
-			skb_set_owner_r(skb, sk);
-			__skb_queue_tail(&sk->sk_receive_queue, skb);
-#endif
 		}
 		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 		if (skb->len)
@@ -4624,10 +4606,6 @@ queue_and_out:
 		if (th->fin)
 			tcp_fin(skb, sk, th);
 
-#ifdef CONFIG_MPTCP
-		if (mptcp_eaten == MPTCP_EATEN)
-			__kfree_skb(skb);
-#endif
 		if (!skb_queue_empty(&tp->out_of_order_queue)) {
 			tcp_ofo_queue(sk);
 
@@ -4654,7 +4632,7 @@ queue_and_out:
 			 * sk_data_ready, we are already in the process
 			 * context).
 			 */
-			if (!tp->mpc || (tp->mpc && mapping == 1))
+			if (!tp->mpc)
 				sk->sk_data_ready(sk, 0);
 		}
 		return;

@@ -304,7 +304,6 @@ struct tcp_sock {
 	u32    map_subseq;
 	/* isn: needed to translate abs to relative subflow seqnums */
 	u32    snt_isn;
-	u32    rcv_isn;
 	unsigned long last_snd_probe;
 	unsigned long last_rcv_probe;
 #endif

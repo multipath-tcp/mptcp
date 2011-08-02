@@ -610,6 +610,7 @@ extern u32 __tcp_select_window(struct sock *sk);
  * This will allow using one flags field only, and spare 8 bits.
  */
 #define MPTCPHDR_ACK 0x10
+#define MPTCPHDR_SEQ 0x20
 
 /* This is what the send packet queuing engine uses to pass
  * TCP per-packet control information to the transmission code.
@@ -628,6 +629,9 @@ struct tcp_skb_cb {
 	__u32		end_seq;	/* SEQ + FIN + SYN + datalen	*/
 	__u32		when;		/* used to compute rtt's	*/
 #ifdef CONFIG_MPTCP
+	/* IMPORTANT!!! Absolutly maintain this order here:
+	 * data_seq, sub_seq, data_len. This is necessary for dss-csum in
+	 * mptcp_skb_entail */
 	__u32           data_seq;       /* Starting data seq            */
 	__u32           sub_seq;        /* subflow seqnum (MPTCP)       */
 	__u16           data_len;       /* Data-level length (MPTCP)
@@ -635,8 +639,9 @@ struct tcp_skb_cb {
 					 * option is attached to that segment */
 	__u8		dss_off;	/* Number of 4-byte words until
 					 * seq-number */
+	__sum16		dss_csum;	/* DSS-csum */
 	__u32           data_ack;       /* Data level ack (MPTCP)       */
-	__u32           end_data_seq;   /* DATA_SEQ + DFIN + SYN + datalen*/
+	__u32           end_data_seq;   /* DATA_SEQ + DFIN + SYN + datalen */
 	__u8            mptcp_flags;    /* flags for the MPTCP layer    */
 #endif
 	__u8		flags;		/* TCP header flags.		*/

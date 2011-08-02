@@ -244,16 +244,14 @@ static ctl_table mptcp_root_table[] = {
  * Can be called only when the FIN is validly part
  * of the data seqnum space. Not before when we get holes.
  */
-static void mptcp_fin(struct sk_buff *skb, struct multipath_pcb *mpcb)
+static inline void mptcp_fin(struct multipath_pcb *mpcb)
 {
 	struct sock *meta_sk = (struct sock *) mpcb;
 
-	if (is_dfin_seg(mpcb, skb)) {
-		meta_sk->sk_shutdown |= RCV_SHUTDOWN;
-		sock_set_flag(meta_sk, SOCK_DONE);
-		if (meta_sk->sk_state == TCP_ESTABLISHED)
-			tcp_set_state(meta_sk, TCP_CLOSE_WAIT);
-	}
+	meta_sk->sk_shutdown |= RCV_SHUTDOWN;
+	sock_set_flag(meta_sk, SOCK_DONE);
+	if (meta_sk->sk_state == TCP_ESTABLISHED)
+		tcp_set_state(meta_sk, TCP_CLOSE_WAIT);
 }
 
 static void mptcp_sock_def_error_report(struct sock *sk)
@@ -613,7 +611,6 @@ void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 {
 	struct sock *meta_sk = (struct sock *) mpcb;
 	struct sock *sk = (struct sock *) tp;
-	struct sk_buff *skb;
 
 	/* We should not add a non-mpc socket */
 	BUG_ON(!tp->mpc);
@@ -659,31 +656,6 @@ void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 		if ((1 << meta_sk->sk_state) &
 		    (TCPF_SYN_SENT | TCPF_SYN_RECV))
 			meta_sk->sk_state = TCP_ESTABLISHED;
-	}
-
-	/* Empty the receive queue of the added new subsocket
-	 * we do it with bh disabled, because before the mpcb is attached,
-	 * all segs are received in subflow queue,and after the mpcb is
-	 * attached, all segs are received in meta-queue. So moving segments
-	 * from subflow to meta-queue must be done atomically with the
-	 * setting of tp->mpcb.
-	 */
-	while ((skb = skb_peek(&sk->sk_receive_queue))) {
-		int new_mapping;
-		__skb_unlink(skb, &sk->sk_receive_queue);
-
-		new_mapping = mptcp_get_dataseq_mapping(tp, skb);
-		if (new_mapping < 0) {
-			/* The sender manager to insert his segment
-			 * in the subrcv queue, but the mapping is invalid.
-			 * We should probably send a reset.
-			 */
-			BUG();
-		}
-		if (mptcp_queue_skb(sk, skb) == MPTCP_EATEN)
-			__kfree_skb(skb);
-		if (new_mapping == 1)
-			sk->sk_data_ready(sk, 0);
 	}
 
 	if (sk->sk_family == AF_INET)
@@ -1073,8 +1045,8 @@ void mptcp_ofo_queue(struct multipath_pcb *mpcb)
 		__skb_queue_tail(&meta_sk->sk_receive_queue, skb);
 		meta_tp->rcv_nxt = TCP_SKB_CB(skb)->end_data_seq;
 
-		if (tcp_hdr(skb)->fin)
-			mptcp_fin(skb, mpcb);
+		if (is_dfin_seg(mpcb, skb))
+			mptcp_fin(mpcb);
 	}
 }
 
@@ -1264,202 +1236,357 @@ exit:
 	return 0;
 }
 
+static inline void mptcp_send_reset(struct sock *sk, struct sk_buff *skb)
+{
+	if (sk->sk_family == AF_INET)
+		tcp_v4_send_reset(sk, skb);
+#if defined(CONFIG_IPV6) || defined(CONFIG_MODULE_IPV6)
+	else if (sk->sk_family == AF_INET6)
+		tcp_v6_send_reset(sk, skb);
+	else
+		BUG();
+#endif
+}
+
+static int mptcp_verif_dss_csum(struct sock *sk)
+{
+	struct sk_buff *tmp, *last = NULL;
+	__wsum csum_tcp = 0; /* cumulative checksum of pld + mptcp-header */
+	int ans = 0, overflowed = 0, offset = 0, dss_csum_added = 0;
+	char last_byte = 0; /* byte to be added to the next csum */
+
+	skb_queue_walk(&sk->sk_receive_queue, tmp) {
+		unsigned int csum_len = tmp->len;
+		unsigned int len;
+
+		offset = 0;
+		if (overflowed) {
+			char first_word[4];
+			first_word[0] = 0;
+			first_word[1] = 0;
+			first_word[2] = last_byte;
+			first_word[3] = *(tmp->data);
+			csum_tcp = csum_partial(first_word, 4, csum_tcp);
+			offset = 1;
+			csum_len--;
+			overflowed = 0;
+		}
+
+		len = csum_len & (~1); /* len is tmp->len but even */
+
+		csum_tcp = skb_checksum(tmp, offset, len, csum_tcp);
+
+		if (len != csum_len) {
+			last_byte = *(tmp->data + tmp->len - 1);
+			overflowed = 1;
+		}
+
+		if (TCP_SKB_CB(tmp)->dss_off && !dss_csum_added) {
+			csum_tcp = skb_checksum(tmp, skb_transport_offset(tmp)
+					+ (TCP_SKB_CB(tmp)->dss_off << 2),
+					MPTCP_SUB_LEN_SEQ_CSUM, csum_tcp);
+			dss_csum_added = 1; /* Just do it once */
+		}
+		last = tmp;
+	}
+	if (overflowed) {
+		char first_word[4];
+		first_word[0] = 0;
+		first_word[1] = 0;
+		first_word[2] = last_byte;
+		first_word[3] = 0;
+		csum_tcp = csum_partial(first_word, 4, csum_tcp);
+	}
+
+	/* Now, checksum must be 0 */
+	if (unlikely(csum_fold(csum_tcp))) {
+		mptcp_debug("%s csum is wrong: %#x data_seq %u\n", __func__,
+				csum_fold(csum_tcp), TCP_SKB_CB(last)->data_seq);
+		tcp_sk(sk)->csum_error = 1;
+		sock_orphan(sk);
+		mptcp_send_reset(sk, last);
+		ans = 1;
+	}
+
+	/* We would have needed the rtable entry for sending the reset */
+	if (last)
+		skb_dst_drop(last);
+
+	return ans;
+}
+
+static inline void mptcp_prepare_skb(struct sk_buff *skb, struct tcp_sock *tp)
+{
+	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
+	/* Adapt data-seq's to the packet itself. We kinda transform the
+	 * dss-mapping to a per-packet granularity. This is necessary to
+	 * correctly handle overlapping mappings coming from different
+	 * subflows. Otherwise it would be a complete mess. */
+	tcb->data_seq = tp->map_data_seq + tcb->seq - tp->map_subseq;
+	tcb->data_len = tcb->end_seq - tcb->seq;
+	tcb->sub_seq = tcb->seq;
+	tcb->end_data_seq = tcb->data_seq + tcb->data_len;
+}
+
+static int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct tcp_sock *tp,
+		struct sk_buff *skb)
+{
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+
+	if (!skb_peek(&meta_tp->out_of_order_queue)) {
+		/* Initial out of order segment */
+		__skb_queue_head(&meta_tp->out_of_order_queue, skb);
+	} else {
+		/* TODO_cpaasch - this code is heavily copied from tcp_input.c,
+		 * tcp_data_queue(). Maybe it could get merged. */
+		struct sk_buff *skb1 = skb_peek_tail(&meta_tp->out_of_order_queue);
+
+		/* Find place to insert this segment. */
+		while (1) {
+			/* skb1->data_seq <= skb->data_seq -- found place */
+			if (!after(TCP_SKB_CB(skb1)->data_seq,
+					TCP_SKB_CB(skb)->data_seq))
+				break;
+			/* Reached end */
+			if (skb_queue_is_first(&meta_tp->out_of_order_queue, skb1)) {
+				skb1 = NULL;
+				break;
+			}
+			skb1 = skb_queue_prev(&meta_tp->out_of_order_queue, skb1);
+		}
+
+		/* Do skb overlap to previous one? */
+		if (skb1 && before(TCP_SKB_CB(skb)->data_seq,
+				TCP_SKB_CB(skb1)->end_data_seq)) {
+			/* skb->end_data_seq <= old_skb->end_data_seq ->
+			 * All bits already present */
+			if (!after(TCP_SKB_CB(skb)->end_data_seq,
+				   TCP_SKB_CB(skb1)->end_data_seq)) {
+				/* All the bits are present. Drop. */
+				return 1;
+			}
+			/* Is the new skb before or after skb1? */
+			if (!after(TCP_SKB_CB(skb)->data_seq,
+				   TCP_SKB_CB(skb1)->data_seq)) {
+				/* It's before, thus update skb1 */
+				if (skb_queue_is_first(&meta_tp->out_of_order_queue,
+						       skb1))
+					skb1 = NULL;
+				else
+					skb1 = skb_queue_prev(
+						&meta_tp->out_of_order_queue,
+						skb1);
+			}
+		}
+
+		if (!skb1)
+			__skb_queue_head(&meta_tp->out_of_order_queue, skb);
+		else
+			__skb_queue_after(&meta_tp->out_of_order_queue, skb1, skb);
+
+
+		/* And clean segments covered by new one as whole. */
+		while (!skb_queue_is_last(&meta_tp->out_of_order_queue, skb)) {
+			skb1 = skb_queue_next(&meta_tp->out_of_order_queue, skb);
+
+			if (!after(TCP_SKB_CB(skb)->end_data_seq,
+					TCP_SKB_CB(skb1)->data_seq))
+				break;
+			if (before(TCP_SKB_CB(skb)->end_data_seq,
+					TCP_SKB_CB(skb1)->end_data_seq))
+				break;
+
+			__skb_unlink(skb1, &meta_tp->out_of_order_queue);
+			__kfree_skb(skb1);
+		}
+	}
+
+	return 0;
+}
+
 int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct multipath_pcb *mpcb;
-	int fin = tcp_hdr(skb)->fin;
-	struct sock *meta_sk;
-	struct tcp_sock *meta_tp;
-	int ans;
-
-	mpcb = mpcb_from_tcpsock(tp);
-	meta_sk = (struct sock *) mpcb;
-	meta_tp = tcp_sk(meta_sk);
-
-	if (!tp->mpc) {
-		/* skb_set_owner_r may already have been called by
-		 * tcp_data_queue when the skb has been added to the ofo-queue,
-		 * and we are coming from tcp_ofo_queue
-		 */
-		if (skb->sk != sk)
-			skb_set_owner_r(skb, sk);
-		__skb_queue_tail(&sk->sk_receive_queue, skb);
-		ans = MPTCP_QUEUED;
-		goto out;
-	}
+	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tcp_sk(sk));
+	struct sock *meta_sk = (struct sock *) mpcb;
+	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = tcp_sk(meta_sk);
+	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
+	struct sk_buff *tmp, *tmp1;
+	u32 old_copied = tp->copied_seq;
+	int ans = 0;
 
 	if (!skb->len && tcp_hdr(skb)->fin && !tp->rx_opt.saw_dfin) {
 		/* Pure subflow FIN (without DFIN)
 		 * just update subflow and return
 		 */
-		++tp->copied_seq;
-		ans = MPTCP_EATEN;
-		goto out;
+		tp->copied_seq++;
+		return 0;
+	}
+
+	/* If there is a DSS-mapping, check if it is ok with the current
+	 * expected mapping. If anything is wrong, reset the subflow */
+	if (tcb->mptcp_flags & MPTCPHDR_SEQ) {
+		if (tp->map_data_len &&
+		    (tcb->data_seq != tp->map_data_seq ||
+		     tcb->sub_seq != tp->map_subseq ||
+		     tcb->data_len != tp->map_data_len)) {
+			/* Mapping on packet is different from what we want */
+			mptcp_debug("%s destroying subflow with pi %d from mpcb "
+					"with token %u\n", __func__,
+					tp->path_index, mptcp_loc_token(mpcb));
+			mptcp_debug("%s missing rest of the already present mapping: "
+				"data_seq %u, subseq %u, data_len %u - new mapping: "
+				"data_seq %u, subseq %u, data_len %u\n", __func__,
+				tp->map_data_seq, tp->map_subseq, tp->map_data_len,
+				tcb->data_seq, tcb->sub_seq, tcb->data_len);
+			mptcp_send_reset(sk, skb);
+			return -1;
+		}
+
+		if (!tp->map_data_len) {
+			if (!before(tcb->sub_seq, tcb->end_seq) ||
+			    before(tcb->sub_seq + tcb->data_len, tcb->seq)) {
+				/* Subflow-sequences of packet is different from
+				 * what is in the packet's dss-mapping.
+				 * The peer is misbehaving - reset */
+				mptcp_debug("%s destroying subflow with pi %d "
+						"from mpcb with token %u\n",
+						__func__, tp->path_index,
+						mptcp_loc_token(mpcb));
+				mptcp_debug("%s seq %u end_seq %u, sub_seq %u "
+						"data_len %u\n", __func__,
+						tcb->seq, tcb->end_seq,
+						tcb->sub_seq, tcb->data_len);
+				mptcp_send_reset(sk, skb);
+				return 1;
+			}
+
+			tp->map_data_seq = tcb->data_seq;
+			tp->map_data_len = tcb->data_len;
+			tp->map_subseq = tcb->sub_seq;
+		}
+	}
+	__skb_queue_tail(&sk->sk_receive_queue, skb);
+	skb_set_owner_r(skb, sk);
+	tp->rcv_nxt = tcb->end_seq;
+
+	/* Now, empty the receive-queue from old sk_buff's
+	 * This may happen, if the mapping got lost for these segments but the
+	 * next mapping already has been received. */
+	if (tp->map_data_len && before(tp->copied_seq, tp->map_subseq)) {
+		mptcp_debug("%s remove packets not covered by mapping: "
+				"data_len %u, tp->copied_seq %u, "
+				"tp->map_subseq %u\n", __func__,
+				tp->map_data_len, tp->copied_seq,
+				tp->map_subseq);
+		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
+			if (after(TCP_SKB_CB(tmp1)->end_seq, tp->map_subseq)) {
+				mptcp_debug("%s Not removing packet seq %u, "
+						"end_seq %u\n", __func__,
+						TCP_SKB_CB(tmp1)->seq,
+						TCP_SKB_CB(tmp1)->end_seq);
+				break;
+			}
+			mptcp_debug("%s remove packet seq %u, end_seq %u\n",
+					__func__, TCP_SKB_CB(tmp1)->seq,
+					TCP_SKB_CB(tmp1)->end_seq);
+			__skb_unlink(tmp1, &sk->sk_receive_queue);
+
+			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
+
+			/* Impossible that we could free skb here, because his
+			 * mapping is known to be valid from previous checks */
+			__kfree_skb(tmp1);
+		}
+	}
+
+	/* Do we have received the full mapping? Then push further */
+	if (tp->map_data_len &&
+	    !before(tp->rcv_nxt, tp->map_subseq + tp->map_data_len)) {
+		/* Verify the checksum first */
+		if (mptcp_verif_dss_csum(sk))
+			return -1;
+
+		/* Is this an overlapping mapping? rcv_next >= end_data_seq */
+		if (!before(meta_tp->rcv_nxt, tp->map_data_seq + tp->map_data_len)) {
+			skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
+				/* seq >= end_sub_mapping */
+				if (!before(TCP_SKB_CB(tmp1)->seq,
+					    tp->map_subseq + tp->map_data_len))
+					break;
+				__skb_unlink(tmp1, &sk->sk_receive_queue);
+
+				tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
+
+				/* the callers of mptcp_queue_skb still
+				 * need the skb */
+				if (skb != tmp1)
+					__kfree_skb(tmp1);
+			}
+
+			tp->map_data_len = 0;
+			tp->map_data_seq = 0;
+			tp->map_subseq = 0;
+
+			/* We want tcp_data(/ofo)_queue to free skb. */
+			return 1;
+		}
+
+		if (before(meta_tp->rcv_nxt, tp->map_data_seq)) {
+			/* Seg's have to go to the meta-ofo-queue */
+			skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
+				if (!before(TCP_SKB_CB(tmp1)->seq, tp->map_subseq)) {
+					if (after(TCP_SKB_CB(tmp1)->end_seq,
+						  tp->map_subseq + tp->map_data_len))
+						break;
+
+					mptcp_prepare_skb(tmp1, tp);
+
+					__skb_unlink(tmp1, &sk->sk_receive_queue);
+					tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
+					skb_set_owner_r(tmp1, meta_sk);
+
+					ans = mptcp_add_meta_ofo_queue(meta_sk, tp, tmp1);
+				}
+			}
+		} else {
+			/* Ready for the meta-rcv-queue */
+			skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
+				if (!before(TCP_SKB_CB(tmp1)->seq, tp->map_subseq)) {
+					if (after(TCP_SKB_CB(tmp1)->end_seq,
+						  tp->map_subseq + tp->map_data_len))
+						break;
+
+					mptcp_prepare_skb(tmp1, tp);
+					__skb_unlink(tmp1, &sk->sk_receive_queue);
+					__skb_queue_tail(&meta_sk->sk_receive_queue, tmp1);
+					meta_tp->rcv_nxt = TCP_SKB_CB(tmp1)->end_data_seq;
+
+					if (is_dfin_seg(mpcb, tmp1))
+						mptcp_fin(mpcb);
+
+					/* Check if this fills a gap in the ofo queue */
+					if (!skb_queue_empty(&meta_tp->out_of_order_queue))
+						mptcp_ofo_queue(mpcb);
+
+					tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
+					skb_set_owner_r(tmp1, meta_sk);
+				}
+			}
+
+			sk->sk_data_ready(sk, 0);
+		}
+
+		tp->map_data_len = 0;
+		tp->map_data_seq = 0;
+		tp->map_subseq = 0;
 	}
 
 	/* In all cases, we remove it from the subsock, so copied_seq
 	 * must be advanced
 	 */
-	tp->copied_seq = TCP_SKB_CB(skb)->end_seq + fin;
-	tcp_rcv_space_adjust(sk);
+	if (old_copied != tp->copied_seq)
+		tcp_rcv_space_adjust(sk);
 
-	/* Verify that the mapping info has been read */
-	if (TCP_SKB_CB(skb)->data_len)
-		mptcp_get_dataseq_mapping(tp, skb);
-
-	/* Is this a duplicate segment? */
-	if (!before(meta_tp->rcv_nxt, TCP_SKB_CB(skb)->end_data_seq)) {
-		/* Duplicate segment. We can arrive here only if a segment
-		 * has been retransmitted by the sender on another subflow.
-		 * Retransmissions on the same subflow are handled at the
-		 * subflow level.
-		 */
-
-		/* We do not read the skb, since it was already received on
-		 * another subflow.
-		 */
-		ans = MPTCP_EATEN;
-		goto out;
-	}
-
-	/* Verify the checksum and act appropiately */
-	if (TCP_SKB_CB(skb)->dss_off) {
-		struct tcphdr *th = tcp_hdr(skb);
-		__wsum csum = 0;
-		__sum16 csum16;
-
-		csum = ~skb_checksum(skb, skb_transport_offset(skb),
-				th->doff << 2, csum);
-
-		/* skb->data is at this stage pointing to the payload. Thus, we
-		 * need to create a negative offset, going up into the header.
-		 * skb_transport_offset() gives this negative offset to the
-		 * start of the TCP header.
-		 */
-		csum = skb_checksum(skb,
-				skb_transport_offset(skb)
-					+ (TCP_SKB_CB(skb)->dss_off << 2),
-				MPTCP_SUB_LEN_SEQ_CSUM, csum);
-
-		if (sk->sk_family == AF_INET) {
-			struct iphdr *ip = ip_hdr(skb);
-			csum16 = csum_tcpudp_magic(ip->saddr, ip->daddr,
-				skb->len + (th->doff << 2), IPPROTO_TCP, 0);
-		} else {
-			struct ipv6hdr *ip6 = ipv6_hdr(skb);
-			csum16 = csum_ipv6_magic(&ip6->saddr, &ip6->daddr,
-				skb->len + (th->doff << 2), IPPROTO_TCP, 0);
-
-		}
-
-		if (unlikely(csum_fold(csum) != csum16)) {
-			mptcp_debug("%s Checksum is wrong: csum %d\n", __func__,
-					csum_fold(csum));
-			tp->csum_error = 1;
-			sock_orphan(sk);
-			if (sk->sk_family == AF_INET)
-				tcp_v4_send_reset(sk, skb);
-#if defined(CONFIG_IPV6) || defined(CONFIG_MODULE_IPV6)
-			else if (sk->sk_family == AF_INET6)
-				tcp_v6_send_reset(sk, skb);
-			else
-				BUG();
-#endif
-		}
-	}
-
-	/* We would have needed the rtable entry for sending the reset */
-	skb_dst_drop(skb);
-
-	if (before(meta_tp->rcv_nxt, TCP_SKB_CB(skb)->data_seq)) {
-		if (!skb_peek(&meta_tp->out_of_order_queue)) {
-			/* Initial out of order segment */
-			__skb_queue_head(&meta_tp->out_of_order_queue, skb);
-			ans = MPTCP_QUEUED;
-			goto queued;
-		} else {
-			struct sk_buff *skb1 = meta_tp->out_of_order_queue.prev;
-			/* Find place to insert this segment. */
-			do {
-				if (!after(TCP_SKB_CB(skb1)->data_seq,
-						TCP_SKB_CB(skb)->data_seq))
-					break;
-			} while ((skb1 = skb1->prev)
-				!= (struct sk_buff *)
-				&meta_tp->out_of_order_queue);
-
-			/* Do skb overlap to previous one? */
-			if (skb1 != (struct sk_buff *)
-				&meta_tp->out_of_order_queue
-				&& before(TCP_SKB_CB(skb)->data_seq,
-					TCP_SKB_CB(skb1)->end_data_seq)) {
-				if (!after(TCP_SKB_CB(skb)->end_data_seq,
-						TCP_SKB_CB(skb1)->
-						end_data_seq)) {
-					/* All the bits are present. Drop. */
-					/* We do not read the skb, since it was
-					 * already received on
-					 * another subflow
-					 */
-					ans = MPTCP_EATEN;
-					goto out;
-				}
-				if (!after(TCP_SKB_CB(skb)->data_seq,
-						TCP_SKB_CB(skb1)->data_seq)) {
-					/* skb and skb1 have the same starting
-					 * point, but skb terminates after skb1
-					 */
-					printk(KERN_ERR "skb->data_seq:%x,"
-						"skb->end_data_seq:%x,"
-						"skb1->data_seq:%x,"
-						"skb1->end_data_seq:%x,"
-						"skb->seq:%x,"
-						"skb1->seq:%x""\n",
-						TCP_SKB_CB(skb)->data_seq,
-						TCP_SKB_CB(skb)->end_data_seq,
-						TCP_SKB_CB(skb1)->data_seq,
-						TCP_SKB_CB(skb1)->end_data_seq,
-						TCP_SKB_CB(skb)->seq,
-						TCP_SKB_CB(skb1)->seq);
-					BUG();
-					skb1 = skb1->prev;
-				}
-			}
-			__skb_insert(skb, skb1, skb1->next,
-					&meta_tp->out_of_order_queue);
-			/* And clean segments covered by new one as whole. */
-			while ((skb1 = skb->next) != (struct sk_buff *)
-				&meta_tp->out_of_order_queue &&
-				after(TCP_SKB_CB(skb)->end_data_seq,
-					TCP_SKB_CB(skb1)->data_seq) &&
-				!before(TCP_SKB_CB(skb)->end_data_seq,
-					TCP_SKB_CB(skb1)->end_data_seq)) {
-				skb_unlink(skb1, &meta_tp->out_of_order_queue);
-				__kfree_skb(skb1);
-			}
-			ans = MPTCP_QUEUED;
-			goto queued;
-		}
-	} else {
-		__skb_queue_tail(&meta_sk->sk_receive_queue, skb);
-		meta_tp->rcv_nxt = TCP_SKB_CB(skb)->end_data_seq;
-
-		if (fin)
-			mptcp_fin(skb, mpcb);
-
-		/* Check if this fills a gap in the ofo queue */
-		if (!skb_queue_empty(&meta_tp->out_of_order_queue))
-			mptcp_ofo_queue(mpcb);
-
-		ans = MPTCP_QUEUED;
-		goto queued;
-	}
-
-queued:
-	/* Reassign the skb to the meta-socket */
-	skb_set_owner_r(skb, meta_sk);
-out:
 	return ans;
 }
 
@@ -1494,7 +1621,8 @@ void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb)
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 	int fin = (tcb->flags & TCPHDR_FIN) ? 1 : 0;
 
-	tcb->seq = tcb->end_seq = tcb->sub_seq = tp->write_seq;
+	tcb->seq = tp->write_seq;
+	tcb->sub_seq = tcb->seq - tp->snt_isn;
 	tcb->sacked = 0; /* reset the sacked field: from the point of view
 			  * of this subflow, we are sending a brand new
 			  * segment
@@ -1503,9 +1631,26 @@ void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb)
 	sk->sk_wmem_queued += skb->truesize;
 	sk_mem_charge(sk, skb->truesize);
 
+	/* Calculate dss-csum */
+	if (tp->mpc && tp->mpcb->received_options.dss_csum) {
+		char mptcp_pshdr[MPTCP_SUB_LEN_SEQ_CSUM];
+		__be32 data_seq = htonl(tcb->data_seq);
+		__be32 sub_seq = htonl(tcb->sub_seq);
+		__be16 data_len = htons(tcb->data_len);
+
+		memcpy(&mptcp_pshdr[0], &data_seq, 4);
+		memcpy(&mptcp_pshdr[4], &sub_seq, 4);
+		memcpy(&mptcp_pshdr[8], &data_len, 2);
+		memset(&mptcp_pshdr[10], 0, 2);
+
+		tcb->dss_csum = csum_fold(csum_partial(mptcp_pshdr,
+					     MPTCP_SUB_LEN_SEQ_CSUM,
+					     skb->csum));
+	}
+
 	/* Take into account seg len */
 	tp->write_seq += skb->len + fin;
-	tcb->end_seq += skb->len + fin;
+	tcb->end_seq = tp->write_seq;
 }
 
 void mptcp_set_data_size(struct tcp_sock *tp, struct sk_buff *skb, int copy)
@@ -1648,56 +1793,6 @@ void mptcp_reinject_data(struct sock *orig_sk, int clone_it)
 	verif_wqueues(mpcb);
 }
 
-/**
- * We are short of flags at the moment in tcp_skb_cb to
- * remember that the dfin has been seen in this segment.
- * Hence, as a quick hack, we currently re-check manually.
- * Anyway, this only happens at the end of the communication.
- */
-static int mptcp_check_dfin(struct sk_buff *skb)
-{
-	struct tcphdr *th = tcp_hdr(skb);
-	unsigned char *ptr;
-	int length = (th->doff * 4) - sizeof(struct tcphdr);
-
-	/* Jump through the options to check whether JOIN is there */
-	ptr = (unsigned char *) (th + 1);
-	while (length > 0) {
-		int opcode = *ptr++;
-		int opsize;
-
-		switch (opcode) {
-		case TCPOPT_EOL:
-			return 0;
-		case TCPOPT_NOP: /* Ref: RFC 793 section 3.1 */
-			length--;
-			continue;
-		default:
-			opsize = *ptr++;
-			if (opsize < 2) /* "silly options" */
-				return 0;
-			if (opsize > length)
-				return 0; /* don't parse partial options */
-
-			if (opcode == TCPOPT_MPTCP) {
-				struct mptcp_option *mp_opt =
-						(struct mptcp_option *) ptr;
-
-				if (mp_opt->sub == MPTCP_SUB_DSS) {
-					struct mp_dss *mdss =
-							(struct mp_dss *) ptr;
-
-					if (mdss->F)
-						return 1;
-				}
-			}
-			ptr += opsize - 2;
-			length -= opsize;
-		}
-	}
-	return 0;
-}
-
 void mptcp_parse_options(uint8_t *ptr, int opsize,
 		struct tcp_options_received *opt_rx,
 		struct multipath_options *mopt,
@@ -1756,11 +1851,12 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		if (mdss->M) {
 			/* TODO_cpaasch check for the correct length of the DSS
 			 * option */
-			if (mopt && mopt->dss_csum)
+			if (mopt && mopt->dss_csum) {
 				TCP_SKB_CB(skb)->dss_off =
 					(ptr - skb_transport_header(skb)) >> 2;
-			else
+			} else {
 				TCP_SKB_CB(skb)->dss_off = 0;
+			}
 			TCP_SKB_CB(skb)->data_seq = ntohl(*(uint32_t *) ptr);
 			TCP_SKB_CB(skb)->sub_seq =
 					ntohl(*(uint32_t *)(ptr + 4)) +
@@ -1771,6 +1867,7 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 				TCP_SKB_CB(skb)->data_seq +
 				TCP_SKB_CB(skb)->end_seq -
 				TCP_SKB_CB(skb)->seq;
+			TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_SEQ;
 
 			ptr += MPTCP_SUB_LEN_SEQ;
 		}
@@ -1828,105 +1925,6 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 				mp_opt->sub);
 		break;
 	}
-}
-
-/**
- * To be called when a segment is in order. That is, either when it is received
- * and is immediately in subflow-order, or when it is stored in the ofo-queue
- * and becomes in-order. This function retrieves the data_seq and end_data_seq
- * values, needed for that segment to be transmitted to the meta-flow.
- * *If the segment already holds a mapping, the current mapping is replaced
- *  with the one provided in the segment.
- * *If the segment contains no mapping, we check if its dataseq can be derived
- *  from the currently stored mapping. If it cannot, then there is an error,
- *  and it must be dropped.
- *
- * - If the mapping has been correctly updated, or the skb has correctly
- *   been given its dataseq, we then check if the segment is in meta-order.
- *   i) if it is: we return 1
- *   ii) if it is not in meta-order (keep in mind that the precondition
- *        requires that it is in subflow order): we return 0
- * - If the skb is faulty (does not contain a dataseq option, and seqnum
- *   not contained in currently stored mapping), we return -1
- */
-int mptcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb)
-{
-	int changed = 0;
-	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
-	int ans = 0;
-
-	BUG_ON(!mpcb);
-
-	if (TCP_SKB_CB(skb)->data_len) {
-		tp->map_data_seq = TCP_SKB_CB(skb)->data_seq;
-		tp->map_data_len = TCP_SKB_CB(skb)->data_len;
-		tp->map_subseq = TCP_SKB_CB(skb)->sub_seq;
-		changed = 1;
-	}
-
-	/* Is it a subflow only FIN ? */
-	if (tcp_hdr(skb)->fin && !tp->rx_opt.saw_dfin && !skb->len)
-		return 0;
-
-	if (before(TCP_SKB_CB(skb)->seq, tp->map_subseq)
-	    || after(TCP_SKB_CB(skb)->end_seq,
-		     tp->map_subseq+tp->map_data_len+tcp_hdr(skb)->fin)) {
-
-		printk(KERN_ERR "seq:%x,tp->map_subseq:%x,"
-		       "end_seq:%x,tp->map_data_len:%d,changed:%d\n",
-		       TCP_SKB_CB(skb)->seq, tp->map_subseq,
-		       TCP_SKB_CB(skb)->end_seq,
-		       tp->map_data_len, changed);
-		BUG(); /* If we only speak with our own implementation,
-			* reaching this point can only be a bug, later we
-			* can remove this.
-			*/
-		return -1;
-	}
-	/* OK, the segment is inside the mapping, we can
-	 * derive the dataseq. Note that:
-	 * -we maintain TCP_SKB_CB(skb)->data_len to zero, so as not to mix
-	 *  received mappings and derived dataseqs.
-	 * -Even if we have received a mapping update, it may differ from
-	 *  the seqnum contained in the
-	 *  TCP header. In that case we must recompute the data_seq and
-	 *  end_data_seq accordingly. This is what happens in case of TSO,
-	 *  because the NIC keeps the option as is.
-	 */
-	TCP_SKB_CB(skb)->data_seq = tp->map_data_seq
-		+ (TCP_SKB_CB(skb)->seq - tp->map_subseq);
-	TCP_SKB_CB(skb)->end_data_seq = TCP_SKB_CB(skb)->data_seq
-		+ skb->len;
-	if (mpcb->received_options.dfin_rcvd &&
-	    TCP_SKB_CB(skb)->end_data_seq + 1 ==
-	    mpcb->received_options.fin_dsn) {
-		/* This condition is not enough yet. It is possible that
-		 * the skb is in fact the last data segment, and the dfin has
-		 * been rcvd out of order separately. If this happens,
-		 * we enter this conditional, while the end_data_seq must not
-		 * be incremented because the dfin is not there.
-		 */
-		if (mptcp_check_dfin(skb))
-			TCP_SKB_CB(skb)->end_data_seq++;
-	}
-	TCP_SKB_CB(skb)->data_len = 0; /* To indicate that there is not anymore
-					* general mapping information in that
-					* segment (the mapping info is now
-					* consumed)
-					*/
-
-	/* Check now if the segment is in meta-order, it is considered
-	 * in meta-order if the next expected DSN is contained in the
-	 * segment
-	 */
-
-	if (!before(mpcb_meta_tp(mpcb)->copied_seq,
-			TCP_SKB_CB(skb)->data_seq) &&
-			before(mpcb_meta_tp(mpcb)->copied_seq,
-			TCP_SKB_CB(skb)->end_data_seq))
-		ans = 1;
-
-	return ans;
 }
 
 /**
