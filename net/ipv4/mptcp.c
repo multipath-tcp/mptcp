@@ -256,35 +256,6 @@ static void mptcp_fin(struct sk_buff *skb, struct multipath_pcb *mpcb)
 	}
 }
 
-/* From sock_def_readable() */
-static void mptcp_def_readable(struct sock *sk, int len)
-{
-	struct socket_wq *wq;
-	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tcp_sk(sk));
-	struct sock *master_sk = mpcb->master_sk;
-
-	BUG_ON(!mpcb);
-
-	mptcp_debug("Waking up master subsock...\n");
-	rcu_read_lock();
-
-	wq = rcu_dereference(master_sk->sk_wq);
-	if (wq_has_sleeper(wq))
-		wake_up_interruptible_sync_poll(&wq->wait, POLLIN |
-						POLLRDNORM | POLLRDBAND);
-
-	sk_wake_async(master_sk, SOCK_WAKE_WAITD, POLL_IN);
-
-	rcu_read_unlock();
-}
-
-void mptcp_data_ready(struct sock *sk)
-{
-	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tcp_sk(sk));
-	BUG_ON(!mpcb);
-	mpcb->master_sk->sk_data_ready(mpcb->master_sk, 0);
-}
-
 /**
  * Creates as many sockets as path indices announced by the Path Manager.
  * The first path indices are (re)allocated to existing sockets.
@@ -388,9 +359,6 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 		tp->slave_sk = 1;
 
 		mptcp_add_sock(mpcb, tp);
-
-		/* Redefine the sk_data_ready function */
-		sk->sk_data_ready = mptcp_def_readable;
 
 		if (family == AF_INET) {
 			struct sockaddr_in *loc, *rem;
@@ -664,7 +632,7 @@ void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 		if (mptcp_queue_skb(sk, skb) == MPTCP_EATEN)
 			__kfree_skb(skb);
 		if (new_mapping == 1)
-			mptcp_data_ready(sk);
+			sk->sk_data_ready(sk, 0);
 	}
 
 	if (sk->sk_family == AF_INET)

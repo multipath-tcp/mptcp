@@ -514,7 +514,6 @@ void mptcp_update_window_clamp(struct tcp_sock *tp);
 void mptcp_update_sndbuf(struct multipath_pcb *mpcb);
 void mptcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end);
 int mptcpv6_init(void);
-void mptcp_data_ready(struct sock *sk);
 void mptcp_push_frames(struct sock *sk);
 
 void verif_wqueues(struct multipath_pcb *mpcb);
@@ -690,10 +689,6 @@ static inline void mptcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start,
 static inline int mptcpv6_init(void)
 {
 	return 0;
-}
-
-static inline void mptcp_data_ready(struct sock *sk)
-{
 }
 
 static inline void mptcp_push_frames(struct sock *sk)

@@ -4566,7 +4566,7 @@ static void tcp_ofo_queue(struct sock *sk)
 		if (mptcp_eaten == MPTCP_EATEN)
 			__kfree_skb(skb);
 		if (new_mapping == 1)
-			mptcp_data_ready(sk);
+			sk->sk_data_ready(sk, 0);
 #endif
 	}
 }
@@ -4846,24 +4846,16 @@ queue_and_out:
 		if (eaten > 0)
 			__kfree_skb(skb);
 		else if (!sock_flag(sk, SOCK_DEAD)) {
-#ifdef CONFIG_MPTCP
 			/* If mapping is set, we know that the segment is
 			 * in order and in meta-order.
 			 * So we can wake up the app. Further, we know that
 			 * eaten is not > 0, thus it has not been completely
 			 * eaten by the prequeue (otherwise, no need to call
-			 * mptcp_data_ready, we are already in the process
+			 * sk_data_ready, we are already in the process
 			 * context).
 			 */
-			if (tp->mpc) {
-				if (mapping == 1)
-					mptcp_data_ready(sk);
-			} else {
+			if (!tp->mpc || (tp->mpc && mapping == 1))
 				sk->sk_data_ready(sk, 0);
-			}
-#else
-			sk->sk_data_ready(sk, 0);
-#endif
 		}
 		return;
 	}
