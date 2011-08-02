@@ -322,7 +322,7 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 		if (ret < 0) {
 			mptcp_debug("%s inet_create failed ret: %d, "
 					"family %d\n", __func__, ret, family);
-			goto cont_error;
+			continue;
 		}
 
 		sk = sock.sk;
@@ -1179,6 +1179,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 			mptcp_debug("%s Checksum is wrong: csum %d\n", __func__,
 					csum_fold(csum));
 			tp->csum_error = 1;
+			sock_orphan(sk);
 			if (sk->sk_family == AF_INET)
 				tcp_v4_send_reset(sk, skb);
 #if defined(CONFIG_IPV6) || defined(CONFIG_MODULE_IPV6)

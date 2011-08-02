@@ -6045,9 +6045,11 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 
 #ifdef CONFIG_MPTCP
 		if (!is_master_tp(tp) &&
-				mptcp_tp_recv_token(tp) !=
-						mptcp_loc_token(mpcb))
+		    mptcp_tp_recv_token(tp) != mptcp_loc_token(mpcb)) {
+			sock_orphan(sk);
+			tp->teardown = 1;
 			goto reset_and_undo;
+		}
 
 		if (is_master_tp(tp)) {
 			if (tp->rx_opt.saw_mpc) {

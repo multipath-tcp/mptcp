@@ -659,6 +659,7 @@ void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 		rep.fail_opt[1] = MPTCP_SUB_LEN_FAIL;
 		rep.mpfail.sub = MPTCP_SUB_FAIL;
 		rep.mpfail.data_seq = htonl(TCP_SKB_CB(skb)->data_seq);
+		tcp_sk(sk)->teardown = 1;
 	}
 #endif /* CONFIG_MPTCP */
 	arg.csum = csum_tcpudp_nofold(ip_hdr(skb)->daddr,
@@ -675,11 +676,8 @@ void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 	TCP_INC_STATS_BH(net, TCP_MIB_OUTRSTS);
 
 #ifdef CONFIG_MPTCP
-	if (sk && tcp_sk(sk)->csum_error &&
-			tcp_sk(sk)->mpcb->cnt_established > 1) {
-		sock_set_flag(sk, SOCK_DEAD);
+	if (sk && tcp_sk(sk)->teardown)
 		tcp_done(sk);
-	}
 #endif
 }
 

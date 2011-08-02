@@ -1095,6 +1095,7 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack, u32 win,
 		mpfail = (struct mp_fail *)p8;
 		mpfail->sub = MPTCP_SUB_FAIL;
 		mpfail->data_seq = htonl(TCP_SKB_CB(skb)->data_seq);
+		tcp_sk(sk)->teardown = 1;
 	}
 #endif
 
@@ -1131,11 +1132,8 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack, u32 win,
 	kfree_skb(buff);
 
 #ifdef CONFIG_MPTCP
-	if (rst && sk && tcp_sk(sk)->csum_error &&
-			tcp_sk(sk)->mpcb->cnt_established > 1) {
-		sock_set_flag(sk, SOCK_DEAD);
+	if (rst && sk && tcp_sk(sk)->teardown)
 		tcp_done(sk);
-	}
 #endif
 }
 
