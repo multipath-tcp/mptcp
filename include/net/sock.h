@@ -725,6 +725,8 @@ extern void sk_stream_kill_queues(struct sock *sk);
 
 extern int sk_wait_data(struct sock *sk, long *timeo);
 
+extern void sock_def_error_report(struct sock *sk);
+
 struct request_sock_ops;
 struct timewait_sock_ops;
 struct inet_hashinfo;
