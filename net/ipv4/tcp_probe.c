@@ -136,6 +136,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	struct sock *meta_sk = tp->mpcb ? (struct sock *)tp->mpcb : sk;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
+#ifdef CONFIG_MPTCP
 	if (log_interval) {
 		if (!tp->last_rcv_probe)
 			tp->last_rcv_probe = jiffies;
@@ -144,6 +145,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			goto out;
 		tp->last_rcv_probe = jiffies;
 	}
+#endif
 
 	/* Only update if port matches */
 	if ((port == 0 || ntohs(inet->inet_dport) == port
@@ -164,7 +166,6 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->sport = inet->inet_sport;
 			p->daddr = inet->inet_daddr;
 			p->dport = inet->inet_dport;
-			p->path_index = sk ? tcp_sk(sk)->path_index : 0;
 			p->length = skb->len;
 			p->snd_nxt = tp->snd_nxt;
 			p->snd_una = tp->snd_una;
@@ -187,6 +188,8 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->wmem_queued = meta_sk->sk_wmem_queued;
 			p->rmem_alloc = atomic_read(&meta_sk->sk_rmem_alloc);
 			p->rmem_alloc_sub = atomic_read(&sk->sk_rmem_alloc);
+#ifdef CONFIG_MPTCP
+			p->path_index = sk ? tcp_sk(sk)->path_index : 0;
 			p->dsn = TCP_SKB_CB(skb)->data_seq;
 			p->mptcp_snduna = tp->mpcb ?
 				mpcb_meta_tp(tp->mpcb)->snd_una : 0;
@@ -194,12 +197,15 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->drs_time = tp->rcvq_space.time;
 			p->bw_est = tp->cur_bw_est;
 			p->mpcb_def = (tp->mpcb != NULL);
+#ifdef CONFIG_CONG_COUPLED
 			if (tp->mpcb)
 				p->alpha = ((struct mptcp_ccc *)
 					    inet_csk_ca((struct sock *)
 							tp->mpcb))->alpha;
 			else
 				p->alpha = 0;
+#endif /* CONFIG_CONG_COUPLED */
+#endif /* CONFIG_MPTCP */
 			tcp_probe.head = (tcp_probe.head + 1) & (bufsize - 1);
 		}
 		tcp_probe.lastcwnd = tp->snd_cwnd;
@@ -207,7 +213,9 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 
 		wake_up(&tcp_probe.wait);
 	}
+#ifdef CONFIG_MPTCP
 out:
+#endif
 #ifdef CONFIG_KPROBES
 	jprobe_return();
 #endif
@@ -260,6 +268,7 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	struct sock *meta_sk = tp->mpcb ? (struct sock *)tp->mpcb : sk;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
+#ifdef CONFIG_MPTCP
 	if (log_interval) {
 		if (!tp->last_snd_probe)
 			tp->last_snd_probe = jiffies;
@@ -268,6 +277,7 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			goto out;
 		tp->last_snd_probe = jiffies;
 	}
+#endif
 
 	/* Only update if port matches and state is established*/
 	if (sk->sk_state == TCP_ESTABLISHED &&
@@ -297,7 +307,6 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			p->sport = inet->inet_sport;
 			p->daddr = inet->inet_daddr;
 			p->dport = inet->inet_dport;
-			p->path_index = tp->path_index;
 			p->length = skb->len;
 			p->snd_nxt = tp->snd_nxt;
 			p->snd_una = tp->snd_una;
@@ -320,6 +329,8 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			p->wmem_queued = meta_sk->sk_wmem_queued;
 			p->rmem_alloc = atomic_read(&meta_sk->sk_rmem_alloc);
 			p->rmem_alloc_sub = atomic_read(&sk->sk_rmem_alloc);
+#ifdef CONFIG_MPTCP
+			p->path_index = tp->path_index;
 			p->dsn = TCP_SKB_CB(skb)->data_seq;
 			p->mptcp_snduna = (tp->mpcb) ?
 					mpcb_meta_tp(tp->mpcb)->snd_una : 0;
@@ -327,12 +338,15 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			p->drs_time = tp->rcvq_space.time;
 			p->bw_est = tp->cur_bw_est;
 			p->mpcb_def = (tp->mpcb != NULL);
+#ifdef CONFIG_CONG_COUPLED
 			if (tp->mpcb)
 				p->alpha = ((struct mptcp_ccc *)
 						inet_csk_ca((struct sock *)
 							tp->mpcb))->alpha;
 			else
 				p->alpha = 0;
+#endif /* CONFIG_CONG_COUPLED */
+#endif /* CONFIG_MPTCP */
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
 		tcp_probe.lastcwnd = tp->snd_cwnd;
@@ -344,8 +358,9 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 
 		wake_up(&tcp_probe.wait);
 	}
-
+#ifdef CONFIG_MPTCP
 out:
+#endif
 #ifdef CONFIG_KPROBES
 	jprobe_return();
 #endif

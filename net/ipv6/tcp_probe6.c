@@ -125,7 +125,6 @@ static int rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->sport = inet->inet_sport;
 			ipv6_addr_copy(&p->daddr, &np->daddr);
 			p->dport = inet->inet_dport;
-			p->path_index = skb->path_index;
 			p->length = skb->len;
 			p->snd_nxt = tp->snd_nxt;
 			p->snd_una = tp->snd_una;
@@ -144,7 +143,9 @@ static int rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->rtt_est = tp->rcv_rtt_est.rtt;
 			p->in_flight = tp->packets_out;
 			p->mss_cache = tp->mss_cache;
-
+#ifdef CONFIG_MPTCP
+			p->path_index = skb->path_index;
+#endif
 			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 		}
 		tcp_probe.lastcwnd = tp->snd_cwnd;
@@ -178,7 +179,6 @@ static int transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		p->sport = inet->inet_sport;
 		ipv6_addr_copy(&p->daddr, &np->daddr);
 		p->dport = inet->inet_dport;
-		p->path_index = tp->path_index;
 		p->length = skb->len;
 		p->snd_nxt = tp->snd_nxt;
 		p->snd_una = tp->snd_una;
@@ -197,7 +197,9 @@ static int transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		p->rtt_est = tp->rcv_rtt_est.rtt;
 		p->in_flight = tp->packets_out;
 		p->mss_cache = tp->mss_cache;
-
+#ifdef CONFIG_MPTCP
+		p->path_index = tp->path_index;
+#endif
 		tcp_probe.head = (tcp_probe.head + 1) % bufsize;
 	}
 	tcp_probe.lastcwnd = tp->snd_cwnd;
