@@ -644,12 +644,6 @@ static inline int mptcp_is_available(struct sock *sk)
 	return 0;
 }
 
-static inline struct sock *get_available_subflow(struct multipath_pcb *mpcb,
-				   struct sk_buff *skb)
-{
-	return NULL;
-}
-
 static inline void mptcp_reinject_data(struct sock *orig_sk, int clone_it)
 {
 }
