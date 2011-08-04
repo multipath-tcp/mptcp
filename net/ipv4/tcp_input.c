@@ -3409,8 +3409,8 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			/* The interval was to small - shift one more */
 			tp->bw_est.shift++;
 		} else {
-			tp->cur_bw_est = tp->snd_una -
-				(tp->bw_est.seq - tp->bw_est.space) /
+			tp->cur_bw_est = (tp->snd_una -
+				(tp->bw_est.seq - tp->bw_est.space)) /
 				(tcp_time_stamp - tp->bw_est.time);
 		}
 		goto new_bw_est;
