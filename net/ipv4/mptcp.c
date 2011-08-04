@@ -2271,6 +2271,94 @@ void mptcp_set_state(struct sock *sk, int state)
 	}
 }
 
+int mptcp_check_req_master(struct sock *child, struct request_sock *req,
+		struct multipath_options *mopt)
+{
+	struct tcp_sock *child_tp = tcp_sk(child);
+
+
+	/* Copy mptcp related info from req to child
+	 * we do this here because this is shared between
+	 * ipv4 and ipv6
+	 */
+	child_tp->rx_opt.saw_mpc = req->saw_mpc;
+	if (child_tp->rx_opt.saw_mpc) {
+		struct multipath_pcb *mpcb;
+
+		child_tp->rx_opt.saw_mpc = 0;
+		child_tp->mpc = 1;
+		child_tp->rx_opt.mptcp_rem_token = req->mptcp_rem_token;
+		child_tp->mptcp_loc_token = req->mptcp_loc_token;
+		child_tp->slave_sk = 0;
+
+		if (mptcp_alloc_mpcb(child, GFP_ATOMIC)) {
+			/* The allocation of the mpcb failed!
+			 * Destroy the child and go to listen_overflow
+			 */
+			tcp_done(child);
+			return -ENOBUFS;
+		}
+		mpcb = child_tp->mpcb;
+
+		inet_sk(child)->loc_id = 0;
+		inet_sk(child)->rem_id = 0;
+
+		mptcp_add_sock(mpcb, child_tp);
+
+		if (mopt->list_rcvd)
+			memcpy(&mpcb->received_options, mopt,
+			       sizeof(struct multipath_options));
+
+		mpcb->received_options.dss_csum =
+				sysctl_mptcp_checksum || req->dss_csum;
+
+		set_bit(MPCB_FLAG_SERVER_SIDE, &mpcb->flags);
+		/* Will be moved to ESTABLISHED by
+		 * tcp_rcv_state_process()
+		 */
+		((struct sock *)mpcb)->sk_state = TCP_SYN_RECV;
+		mptcp_update_metasocket(child, mpcb);
+		return 0;
+	} else {
+		child_tp->mpcb = NULL;
+		return 0;
+	}
+}
+
+int mptcp_check_req_child(struct sock *sk, struct sock *child,
+		struct request_sock *req, struct request_sock **prev)
+{
+	/* subflow establishment */
+	/* The child is a clone of the meta socket, we must now reset
+	 * some of the fields
+	 */
+	struct tcp_sock *child_tp = tcp_sk(child);
+	child_tp->mpc = 1;
+	child_tp->slave_sk = 1;
+	child_tp->rx_opt.mptcp_rem_token = req->mptcp_rem_token;
+	child_tp->mptcp_loc_token = req->mptcp_loc_token;
+	child_tp->bw_est.time = 0;
+	child->sk_sndmsg_page = NULL;
+
+	BUG_ON(!req->mpcb);
+	inet_sk(child)->loc_id = mptcp_get_loc_addrid(req->mpcb, child);
+	inet_sk(child)->rem_id = req->rem_id;
+
+	/* Child_tp->mpcb has been cloned from the master_sk
+	 * We need to increase the master_sk refcount
+	 */
+	sock_hold(child_tp->mpcb->master_sk);
+
+	/* Deleting from global hashtable */
+	mptcp_hash_request_remove(req);
+
+	/* Subflows do not use the accept queue, as they
+	 * are attached immediately to the mpcb.
+	 */
+	inet_csk_reqsk_queue_drop(sk, req, prev);
+	return 0;
+}
+
 void mptcp_select_window(struct tcp_sock *tp, u32 new_win)
 {
 	struct sock *tmp_sk;
