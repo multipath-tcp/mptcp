@@ -2106,6 +2106,43 @@ void mptcp_fallback(struct sock *master_sk)
 	}
 }
 
+void mptcp_set_state(struct sock *sk, int state)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	int oldstate = sk->sk_state;
+
+	switch (state) {
+	case TCP_ESTABLISHED:
+		if (oldstate != TCP_ESTABLISHED && tp->mpc) {
+			struct sock *meta_sk = mptcp_meta_sk(sk);
+			tcp_sk(sk)->mpcb->cnt_established++;
+			mptcp_update_sndbuf(tp->mpcb);
+			if ((1 << meta_sk->sk_state) &
+				(TCPF_SYN_SENT | TCPF_SYN_RECV))
+				meta_sk->sk_state = TCP_ESTABLISHED;
+		}
+		break;
+	case TCP_SYN_SENT:
+	case TCP_SYN_RECV:
+		/* We set the mpcb state to SYN_SENT even if the peer
+		 * has no support for MPTCP. This is the only option
+		 * as we don't know yet if he is MP_CAPABLE.
+		 */
+		if (tp->mpcb && is_master_tp(tp))
+			mptcp_meta_sk(sk)->sk_state = state;
+		break;
+	case TCP_CLOSE:
+		if (tcp_sk(sk)->mpcb && oldstate != TCP_SYN_SENT &&
+			oldstate != TCP_SYN_RECV && oldstate != TCP_LISTEN) {
+			mptcp_debug("%s - before minus --- tcp_sk(sk)->mpcb->"
+					"cnt_established:%d pi:%d\n", __func__,
+					tcp_sk(sk)->mpcb->cnt_established,
+					tp->path_index);
+			tcp_sk(sk)->mpcb->cnt_established--;
+		}
+	}
+}
+
 #ifdef MPTCP_DEBUG_PKTS_OUT
 int check_pkts_out(struct sock *sk)
 {

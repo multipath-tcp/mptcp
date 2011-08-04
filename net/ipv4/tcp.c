@@ -2004,40 +2004,12 @@ EXPORT_SYMBOL(tcp_recvmsg);
 void tcp_set_state(struct sock *sk, int state)
 {
 	int oldstate = sk->sk_state;
-#ifdef CONFIG_MPTCP
-	struct tcp_sock *tp = tcp_sk(sk);
-#endif
 
 	switch (state) {
 	case TCP_ESTABLISHED:
-		if (oldstate != TCP_ESTABLISHED) {
+		if (oldstate != TCP_ESTABLISHED)
 			TCP_INC_STATS(sock_net(sk), TCP_MIB_CURRESTAB);
-#ifdef CONFIG_MPTCP
-			if (tcp_sk(sk)->mpc) {
-				struct sock *meta_sk =
-					(struct sock *) (tcp_sk(sk)->mpcb);
-				tcp_sk(sk)->mpcb->cnt_established++;
-				mptcp_update_sndbuf(tcp_sk(sk)->mpcb);
-				if ((1 << meta_sk->sk_state) &
-					(TCPF_SYN_SENT | TCPF_SYN_RECV))
-					meta_sk->sk_state = TCP_ESTABLISHED;
-			}
-#endif
-		}
 		break;
-#ifdef CONFIG_MPTCP
-	case TCP_SYN_SENT:
-	case TCP_SYN_RECV:
-		/* We set the mpcb state to SYN_SENT even if the peer
-		 * has no support for MPTCP. This is the only option
-		 * as we don't know yet if he is MP_CAPABLE.
-		 */
-		if (tp->mpcb && is_master_tp(tp))
-			mptcp_meta_sk(sk)->sk_state = state;
-		if (oldstate == TCP_ESTABLISHED)
-			TCP_DEC_STATS(sock_net(sk), TCP_MIB_CURRESTAB);
-		break;
-#endif
 
 	case TCP_CLOSE:
 		if (oldstate == TCP_CLOSE_WAIT || oldstate == TCP_ESTABLISHED)
@@ -2047,21 +2019,13 @@ void tcp_set_state(struct sock *sk, int state)
 		if (inet_csk(sk)->icsk_bind_hash &&
 		    !(sk->sk_userlocks & SOCK_BINDPORT_LOCK))
 			inet_put_port(sk);
-#ifdef CONFIG_MPTCP
-		if (tcp_sk(sk)->mpcb && oldstate != TCP_SYN_SENT &&
-			oldstate != TCP_SYN_RECV && oldstate != TCP_LISTEN) {
-			mptcp_debug("%s - before minus --- tcp_sk(sk)->mpcb->"
-					"cnt_established:%d pi:%d\n", __func__,
-					tcp_sk(sk)->mpcb->cnt_established,
-					tp->path_index);
-			tcp_sk(sk)->mpcb->cnt_established--;
-		}
-#endif
 		/* fall through */
 	default:
 		if (oldstate == TCP_ESTABLISHED)
 			TCP_DEC_STATS(sock_net(sk), TCP_MIB_CURRESTAB);
 	}
+
+	mptcp_set_state(sk, state);
 
 	/* Change state AFTER socket is unhashed to avoid closed
 	 * socket sitting in hash tables.
