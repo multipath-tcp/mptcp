@@ -1740,7 +1740,7 @@ static void __lock_sock(struct sock *sk)
 	finish_wait(&sk->sk_lock.wq, &wait);
 }
 
-static void __release_sock(struct sock *sk, struct multipath_pcb *mpcb)
+void __release_sock(struct sock *sk, struct multipath_pcb *mpcb)
 {
 	struct sk_buff *skb = sk->sk_backlog.head;
 
@@ -2192,9 +2192,6 @@ EXPORT_SYMBOL(lock_sock_nested);
 
 void release_sock(struct sock *sk)
 {
-	struct sock *sk_it;
-	struct tcp_sock *tp_it;
-
 	if (is_meta_sk(sk)) /* necessary for sk_wait_event() */
 		sk = ((struct multipath_pcb *)sk)->master_sk;
 	/*
@@ -2204,24 +2201,9 @@ void release_sock(struct sock *sk)
 
 	spin_lock_bh(&sk->sk_lock.slock);
 	if (sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpc &&
-			is_master_tp(tcp_sk(sk))) {
-		struct multipath_pcb *mpcb = tcp_sk(sk)->mpcb;
-		struct sock *meta_sk = (struct sock *)mpcb;
-
-		/* process incoming join requests */
-		if (meta_sk->sk_backlog.tail)
-			__release_sock(meta_sk, mpcb);
-		/* We need to do the following, because as far
-		 * as the master-socket is locked, every received segment is
-		 * put into the backlog queue.
-		 */
-		while (mptcp_test_any_sk(mpcb, sk_it, sk_it->sk_backlog.tail)) {
-			mptcp_for_each_sk(mpcb, sk_it, tp_it) {
-				if (sk_it->sk_backlog.tail)
-					__release_sock(sk_it, mpcb);
-			}
-		}
-	} else if (sk->sk_backlog.tail)
+			is_master_tp(tcp_sk(sk)))
+		mptcp_release_sock(sk);
+	else if (sk->sk_backlog.tail)
 		__release_sock(sk, NULL);
 	sk->sk_lock.owned = 0;
 	if (waitqueue_active(&sk->sk_lock.wq))

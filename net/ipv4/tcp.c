@@ -550,22 +550,10 @@ static inline void skb_entail(struct sock *sk, struct sk_buff *skb)
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 
 	skb->csum    = 0;
-#ifndef CONFIG_MPTCP
 	tcb->seq     = tcb->end_seq = tp->write_seq;
-#else
-	/* in MPTCP mode, the subflow seqnum is given later */
-	if (tp->mpc) {
-		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
-		struct tcp_sock *meta_tp = (struct tcp_sock *)mpcb;
-		tcb->seq      = tcb->end_seq = tcb->sub_seq = 0;
-		tcb->data_seq = tcb->end_data_seq = meta_tp->write_seq;
-		tcb->data_len = 0;
-	} else {
-		tcb->seq      = tcb->end_seq = tcb->sub_seq = tp->write_seq;
-	}
-#endif
 	tcb->flags   = TCPHDR_ACK;
 	tcb->sacked  = 0;
+	mptcp_skb_entail_init(sk, skb);
 	skb_header_release(skb);
 	tcp_add_write_queue_tail(sk, skb);
 	sk->sk_wmem_queued += skb->truesize;
@@ -583,24 +571,9 @@ static inline void tcp_mark_urg(struct tcp_sock *tp, int flags)
 inline void tcp_push(struct sock *sk, int flags, int mss_now,
 			    int nonagle)
 {
-#ifdef CONFIG_MPTCP
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *meta_sk = (tp->mpc) ? (struct sock *) (tp->mpcb) : sk;
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	if (mptcp_push(sk, flags, mss_now, nonagle))
+		return;
 
-	if (mptcp_next_segment(meta_sk, NULL)) {
-		struct sk_buff *skb = tcp_write_queue_tail(meta_sk);
-		if (!skb)
-			skb = skb_peek_tail(&tp->mpcb->reinject_queue);
-
-		if (!(flags & MSG_MORE) || forced_push(meta_tp))
-			tcp_mark_push(meta_tp, skb);
-		tcp_mark_urg(meta_tp, flags);
-		__tcp_push_pending_frames(meta_sk, mss_now,
-					  (flags & MSG_MORE) ?
-					  TCP_NAGLE_CORK : nonagle);
-	}
-#else
 	if (tcp_send_head(sk)) {
 		struct tcp_sock *tp = tcp_sk(sk);
 
@@ -611,7 +584,6 @@ inline void tcp_push(struct sock *sk, int flags, int mss_now,
 		__tcp_push_pending_frames(sk, mss_now,
 					  (flags & MSG_MORE) ? TCP_NAGLE_CORK : nonagle);
 	}
-#endif /* CONFIG_MPTCP */
 }
 
 static int tcp_splice_data_recv(read_descriptor_t *rd_desc, struct sk_buff *skb,
@@ -1043,20 +1015,9 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 		iov++;
 
-#ifdef CONFIG_MPTCP
-		/* Skipping the offset (stored in the size argument) */
-		if (tp->mpc) {
-			PDEBUG_SEND("seglen:%d\n", seglen);
-			if (seglen >= size) {
-				seglen -= size;
-				from += size;
-				size = 0;
-			} else {
-				size -= seglen;
-				continue;
-			}
-		}
-#endif
+		if (mptcp_skip_offset(tp, from, &seglen, &size))
+			continue;
+
 		while (seglen > 0) {
 			int copy = 0;
 			int max = size_goal;
@@ -1202,12 +1163,7 @@ new_segment:
 			TCP_SKB_CB(skb)->end_seq += copy;
 			skb_shinfo(skb)->gso_segs = 0;
 
-#ifdef CONFIG_MPTCP
-			if (tp->mpc) {
-				TCP_SKB_CB(skb)->data_len += copy;
-				TCP_SKB_CB(skb)->end_data_seq += copy;
-			}
-#endif
+			mptcp_set_data_size(tp, skb, copy);
 			PDEBUG_SEND("%s: line %d\n", __func__, __LINE__);
 
 			from += copy;
@@ -1628,15 +1584,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	do {
 		u32 offset;
 
-		/* The following happens if we entered the function without
-		 * being established, then received the mpc flag while
-		 * inside the function.
-		 */
-		if (!mpcb && tp->mpc) {
-			meta_sk = (struct sock *)tp->mpcb;
-			meta_tp = tcp_sk(meta_sk);
-			mpcb = tp->mpcb;
-		}
+		mptcp_update_pointers(tp, &meta_sk, &meta_tp, &mpcb);
 
 		if (mpcb) {
 			/* Start by checking if skbs are waiting on the mpcb

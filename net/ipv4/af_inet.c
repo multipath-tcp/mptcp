@@ -145,24 +145,7 @@ void inet_sock_destruct(struct sock *sk)
 		return;
 	}
 
-	if (sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpcb) {
-		if (is_master_tp(tcp_sk(sk))) {
-			if (sk != tcp_sk(sk)->mpcb->master_sk) {
-				printk(KERN_ERR "sk %p, master_sk %p\n",
-				       sk, tcp_sk(sk)->mpcb->master_sk);
-				BUG();
-			}
-			mpcb_release(tcp_sk(sk)->mpcb);
-		} else {
-			/* It must have been detached by
-			 * inet_csk_destroy_sock()
-			 */
-			BUG_ON(mptcp_sk_attached(sk));
-
-			/* Taken when mpcb pointer was set */
-			sock_put(tcp_sk(sk)->mpcb->master_sk);
-		}
-	}
+	mptcp_sock_destruct(sk);
 
 	if (!sock_flag(sk, SOCK_DEAD)) {
 		pr_err("Attempt to release alive inet socket %p\n", sk);

@@ -558,6 +558,33 @@ void mpcb_release(struct multipath_pcb *mpcb)
 	kfree(mpcb);
 }
 
+void mptcp_release_sock(struct sock *sk)
+{
+
+	struct sock *sk_it;
+	struct tcp_sock *tp_it;
+	struct multipath_pcb *mpcb = tcp_sk(sk)->mpcb;
+	struct sock *meta_sk = (struct sock *)mpcb;
+
+	BUG_ON(!is_master_tp(tcp_sk(sk)));
+
+	/* process incoming join requests */
+	if (meta_sk->sk_backlog.tail)
+		__release_sock(meta_sk, mpcb);
+	/* We need to do the following, because as far
+	 * as the master-socket is locked, every received segment is
+	 * put into the backlog queue.
+	 */
+	while (mptcp_test_any_sk(mpcb, sk_it, sk_it->sk_backlog.tail)) {
+		mptcp_for_each_sk(mpcb, sk_it, tp_it) {
+			if (sk_it->sk_backlog.tail)
+				__release_sock(sk_it, mpcb);
+			}
+	}
+
+
+}
+
 static void mptcp_destroy_mpcb(struct multipath_pcb *mpcb)
 {
 	mptcp_debug("%s: Destroying mpcb with token:%d\n", __func__,
@@ -769,6 +796,16 @@ void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 	if (mpcb->num_addr4 || mpcb->num_addr6)
 		mptcp_update_patharray(mpcb);
 #endif
+}
+
+void mptcp_update_window_check(struct tcp_sock *meta_tp, struct sk_buff *skb,
+		u32 data_ack, u32 data_ack_seq)
+{
+	if (meta_tp->mpc && (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_ACK) &&
+		after(data_ack, meta_tp->snd_una)) {
+		meta_tp->snd_una = data_ack;
+		mptcp_clean_rtx_queue((struct sock *) meta_tp);
+	}
 }
 
 /* copied from tcp_output.c */
@@ -1285,6 +1322,20 @@ out:
 	return ans;
 }
 
+void mptcp_skb_entail_init(struct sock *sk, struct sk_buff *skb)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	/* in MPTCP mode, the subflow seqnum is given later */
+	if (tp->mpc) {
+		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
+		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
+		struct tcp_sock *meta_tp = (struct tcp_sock *)mpcb;
+		tcb->seq      = tcb->end_seq = tcb->sub_seq = 0;
+		tcb->data_seq = tcb->end_data_seq = meta_tp->write_seq;
+		tcb->data_len = 0;
+	}
+}
+
 /**
  * specific version of skb_entail (tcp.c),that allows appending to any
  * subflow.
@@ -1314,6 +1365,55 @@ void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb)
 	/* Take into account seg len */
 	tp->write_seq += skb->len + fin;
 	tcb->end_seq += skb->len + fin;
+}
+
+void mptcp_set_data_size(struct tcp_sock *tp, struct sk_buff *skb, int copy)
+{
+	if (tp->mpc) {
+		TCP_SKB_CB(skb)->data_len += copy;
+		TCP_SKB_CB(skb)->end_data_seq += copy;
+	}
+}
+
+/* From net/ipv4/tcp.c */
+static inline void tcp_mark_push(struct tcp_sock *tp, struct sk_buff *skb)
+{
+	TCP_SKB_CB(skb)->flags |= TCPHDR_PSH;
+	tp->pushed_seq = tp->write_seq;
+}
+
+/* From net/ipv4/tcp.c */
+static inline int forced_push(struct tcp_sock *tp)
+{
+	return after(tp->write_seq, tp->pushed_seq + (tp->max_window >> 1));
+}
+
+/* From net/ipv4/tcp.c */
+static inline void tcp_mark_urg(struct tcp_sock *tp, int flags)
+{
+	if (flags & MSG_OOB)
+		tp->snd_up = tp->write_seq;
+}
+
+int mptcp_push(struct sock *sk, int flags, int mss_now, int nonagle)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct sock *meta_sk = (tp->mpc) ? (struct sock *) (tp->mpcb) : sk;
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+
+	if (mptcp_next_segment(meta_sk, NULL)) {
+		struct sk_buff *skb = tcp_write_queue_tail(meta_sk);
+		if (!skb)
+			skb = skb_peek_tail(&tp->mpcb->reinject_queue);
+
+		if (!(flags & MSG_MORE) || forced_push(meta_tp))
+			tcp_mark_push(meta_tp, skb);
+		tcp_mark_urg(meta_tp, flags);
+		__tcp_push_pending_frames(meta_sk, mss_now,
+					  (flags & MSG_MORE) ?
+					  TCP_NAGLE_CORK : nonagle);
+	}
+	return 1;
 }
 
 /* Algorithm by Bryan Kernighan to count bits in a word */
@@ -2037,6 +2137,34 @@ void mptcp_detach_unused_child(struct sock *sk)
 	}
 }
 
+void mptcp_set_bw_est(struct tcp_sock *tp, u32 now)
+{
+	if (!tp->mpc)
+		return;
+
+	if (!tp->bw_est.time)
+		goto new_bw_est;
+
+	if (after(tp->snd_una, tp->bw_est.seq)) {
+		if (now - tp->bw_est.time == 0) {
+			/* The interval was to small - shift one more */
+			tp->bw_est.shift++;
+		} else {
+			tp->cur_bw_est = (tp->snd_una -
+				(tp->bw_est.seq - tp->bw_est.space)) /
+				(now - tp->bw_est.time);
+		}
+		goto new_bw_est;
+	}
+	return;
+
+new_bw_est:
+	tp->bw_est.space = (tp->snd_cwnd * tp->mss_cache) << tp->bw_est.shift;
+	tp->bw_est.seq = tp->snd_una + tp->bw_est.space;
+	tp->bw_est.time = now;
+
+}
+
 /**
  * Returns 1 if we should enable MPTCP for that socket.
  */
@@ -2141,6 +2269,23 @@ void mptcp_set_state(struct sock *sk, int state)
 			tcp_sk(sk)->mpcb->cnt_established--;
 		}
 	}
+}
+
+void mptcp_select_window(struct tcp_sock *tp, u32 new_win)
+{
+	struct sock *tmp_sk;
+	struct tcp_sock *tmp_tp, *meta_tp = (struct tcp_sock *)(tp->mpcb);
+	meta_tp->rcv_wnd = new_win;
+	meta_tp->rcv_wup = meta_tp->rcv_nxt;
+
+	/* The receive-window is the same for all the subflows */
+	mptcp_for_each_sk(tp->mpcb, tmp_sk, tmp_tp) {
+		tmp_tp->rcv_wnd = new_win;
+	}
+	/* the subsock rcv_wup must still be updated,
+	 * because it is used to decide when to echo the timestamp
+	 * and when to delay the acks */
+	tp->rcv_wup = tp->rcv_nxt;
 }
 
 #ifdef MPTCP_DEBUG_PKTS_OUT

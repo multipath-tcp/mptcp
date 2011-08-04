@@ -531,9 +531,6 @@ void tcp_rcv_space_adjust(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	int time;
 	int space;
-#ifdef CONFIG_MPTCP
-	struct multipath_pcb *mpcb = tp->mpcb;
-#endif
 
 	if (tp->rcvq_space.time == 0)
 		goto new_measure;
@@ -541,20 +538,8 @@ void tcp_rcv_space_adjust(struct sock *sk)
 	time = tcp_time_stamp - tp->rcvq_space.time;
 
 	if (tp->mpc) {
-#ifdef CONFIG_MPTCP
-		struct tcp_sock *tp_tmp;
-		u32 rtt_max = 0;
-
-		/* In MPTCP, we take the max delay across all flows,
-		 * in order to take into account meta-reordering buffers.
-		 */
-		mptcp_for_each_tp(mpcb, tp_tmp) {
-			if (rtt_max < (tp_tmp->rcv_rtt_est.rtt >> 3))
-				rtt_max = (tp_tmp->rcv_rtt_est.rtt >> 3);
-		}
-		if (time < rtt_max || !rtt_max)
+		if (mptcp_check_rtt(tp, time))
 			return;
-#endif
 	} else if (time < (tp->rcv_rtt_est.rtt >> 3) ||
 			tp->rcv_rtt_est.rtt == 0)
 		return;
@@ -3397,33 +3382,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			tp->lost_skb_hint = NULL;
 	}
 
-#ifdef CONFIG_MPTCP
-	if (!tp->mpc)
-		goto continue_exec;
-
-	if (!tp->bw_est.time)
-		goto new_bw_est;
-
-	if (after(tp->snd_una, tp->bw_est.seq)) {
-		if (tcp_time_stamp - tp->bw_est.time == 0) {
-			/* The interval was to small - shift one more */
-			tp->bw_est.shift++;
-		} else {
-			tp->cur_bw_est = (tp->snd_una -
-				(tp->bw_est.seq - tp->bw_est.space)) /
-				(tcp_time_stamp - tp->bw_est.time);
-		}
-		goto new_bw_est;
-	}
-	goto continue_exec;
-
-new_bw_est:
-	tp->bw_est.space = (tp->snd_cwnd * tp->mss_cache) << tp->bw_est.shift;
-	tp->bw_est.seq = tp->snd_una + tp->bw_est.space;
-	tp->bw_est.time = tcp_time_stamp;
-
-continue_exec:
-#endif /* CONFIG_MPTCP */
+	mptcp_set_bw_est(tp, now);
 
 	if (likely(between(tp->snd_up, prior_snd_una, tp->snd_una)))
 		tp->snd_up = tp->snd_una;
@@ -3624,14 +3583,7 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 	}
 
 	tp->snd_una = ack;
-#ifdef CONFIG_MPTCP
-	if ((TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_ACK) &&
-		tp->mpc &&
-		after(data_ack, meta_tp->snd_una)) {
-		meta_tp->snd_una = data_ack;
-		mptcp_clean_rtx_queue((struct sock *) meta_tp);
-	}
-#endif
+	mptcp_update_window_check(meta_tp, skb, data_ack, data_ack_seq);
 
 	return flag;
 }
@@ -4088,16 +4040,8 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 
 	tcp_parse_options(skb, &tp->rx_opt, hvpp,
 			  mpcb ? &mpcb->received_options : NULL, 1);
-	if (unlikely(mpcb && mpcb->received_options.list_rcvd)) {
-		mpcb->received_options.list_rcvd = 0;
-		mptcp_update_patharray(mpcb);
-		/* The server uses additional subflows
-		 * only on request
-		 * from the client.
-		 */
-		if (!test_bit(MPCB_FLAG_SERVER_SIDE, &mpcb->flags))
-			mptcp_send_updatenotif(mpcb);
-	}
+
+	mptcp_path_array_check(mpcb);
 	return 1;
 }
 
@@ -5331,42 +5275,10 @@ static void tcp_new_space(struct sock *sk)
 		int sndmem = max_t(u32, tp->rx_opt.mss_clamp, tp->mss_cache) +
 			MAX_TCP_HEADER + 16 + sizeof(struct sk_buff);
 		int demanded;
-		struct multipath_pcb *mpcb = (tp->mpc) ? tp->mpcb : NULL;
-		struct tcp_sock *tp_it;
-		u32 rtt_max = tp->srtt;
-		if (mpcb) {
-			mptcp_for_each_tp(mpcb, tp_it)
-				if (rtt_max < tp_it->srtt)
-					rtt_max = tp_it->srtt;
 
-			/* Normally the send buffer is computed as twice the BDP
-			 * However in multipath, a fast path may need more
-			 * buffer for the following reason:
-			 * Imagine 2 flows with same bw b, and delay 10 and 100,
-			 * resp. Normally flow 10 will have send buffer 2*b*10
-			 *                     100 will have send buffer 2*b*100
-			 * In order to minimize reordering at the receiver,
-			 * the sender must ensure that all consecutive packets
-			 * are sent as close to each other as possible, even
-			 * when spread across several subflows. If we represent
-			 * a buffer as having a "height" in time units, and a
-			 * "width" in bandwidth units, we must ensure
-			 * that each segment is sent on the buffer with smallest
-			 * "current height". (lowest filling related to his
-			 * height). The subflow max height, given that its
-			 * width is its bw, is computed as 2d traditionnally,
-			 * thus 20 and 200 resp. here.
-			 * The problem is that if buffer with delay 10 is kept
-			 * at size 2*b*10, the scheduler will be able to
-			 * schedule segments until height=20 maximum. In
-			 * summary, the use of all buffers is reduced to the
-			 * hight of the smallest one. This is why all buffers
-			 * must be arranged to have equal height, that height
-			 * being the highest height needed by the network, that
-			 * is 2*max(delays).
-			 */
-			demanded = mptcp_snd_buf_demand(tp, rtt_max);
-		} else
+		if (tp->mpc)
+			demanded = mptcp_check_snd_buf(tp);
+		else
 			demanded = max_t(unsigned int, tp->snd_cwnd,
 					 tp->reordering + 1);
 
@@ -5380,8 +5292,8 @@ static void tcp_new_space(struct sock *sk)
 			/* MPTCP: ok, the subflow sndbuf has grown, reflect
 			 * this in the aggregate buffer.
 			 */
-			if (mpcb && old_sndbuf != sk->sk_sndbuf)
-				mptcp_update_sndbuf(mpcb);
+			if (tp->mpc && old_sndbuf != sk->sk_sndbuf)
+				mptcp_update_sndbuf(tp->mpcb);
 		}
 		tp->snd_cwnd_stamp = tcp_time_stamp;
 	}

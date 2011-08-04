@@ -211,6 +211,7 @@ extern void tcp_queue_skb(struct sock *sk, struct sk_buff *skb);
 extern void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags);
 extern int tcp_close_state(struct sock *sk);
 extern struct timewait_sock_ops tcp_timewait_sock_ops;
+extern void __release_sock(struct sock *sk, struct multipath_pcb *mpcb);
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 extern int inet6_create(struct net *net, struct socket *sock, int protocol,
@@ -426,9 +427,11 @@ void mptcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end);
 void mptcp_set_state(struct sock *sk, int state);
 void mptcp_push_frames(struct sock *sk);
 void verif_wqueues(struct multipath_pcb *mpcb);
+void mptcp_skb_entail_init(struct sock *sk, struct sk_buff *skb);
 void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb);
 struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject);
 void mpcb_release(struct multipath_pcb *mpcb);
+void mptcp_release_sock(struct sock *sk);
 void mptcp_clean_rtx_queue(struct sock *sk);
 void mptcp_send_fin(struct sock *meta_sk);
 void mptcp_parse_options(uint8_t *ptr, int opsize,
@@ -437,7 +440,13 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		struct sk_buff *skb);
 void mptcp_close(struct sock *master_sk, long timeout);
 void mptcp_detach_unused_child(struct sock *sk);
+void mptcp_set_bw_est(struct tcp_sock *tp, u32 now);
 int do_mptcp(struct sock *sk);
+void mptcp_select_window(struct tcp_sock *tp, u32 new_win);
+void mptcp_update_window_check(struct tcp_sock *meta_tp, struct sk_buff *skb,
+		u32 data_ack, u32 data_ack_seq);
+void mptcp_set_data_size(struct tcp_sock *tp, struct sk_buff *skb, int copy);
+int mptcp_push(struct sock *sk, int flags, int mss_now, int nonagle);
 void mptcp_fallback(struct sock *master_sk);
 
 static inline int mptcp_snd_buf_demand(struct tcp_sock *tp, u32 rtt_max)
@@ -501,6 +510,131 @@ out:
 static inline struct tcp_sock *mpcb_meta_tp(const struct multipath_pcb *mpcb)
 {
 	return (struct tcp_sock *)mpcb;
+}
+
+static inline void mptcp_sock_destruct(struct sock *sk)
+{
+	if (sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpcb) {
+		if (is_master_tp(tcp_sk(sk)))
+			mpcb_release(tcp_sk(sk)->mpcb);
+		else {
+			/* It must have been detached by
+			 * inet_csk_destroy_sock()
+			 */
+			BUG_ON(mptcp_sk_attached(sk));
+			sock_put(tcp_sk(sk)->mpcb->master_sk); /* Taken when
+								* mpcb pointer
+								* was set
+								*/
+		}
+	}
+}
+
+static inline int mptcp_skip_offset(struct tcp_sock *tp,
+		unsigned char __user *from, size_t *seglen, size_t *size)
+{
+	/* Skipping the offset (stored in the size argument) */
+	if (tp->mpc) {
+#ifdef DEBUG_TCP
+		printk(KERN_ERR __FILE__ "seglen:%d\n", *seglen);
+#endif
+		if (*seglen >= *size) {
+			*seglen -= *size;
+			*from += *size;
+			*size = 0;
+			return 0;
+		} else {
+			*size -= *seglen;
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static inline void mptcp_update_pointers(struct tcp_sock *tp,
+		struct sock **meta_sk, struct tcp_sock **meta_tp,
+		struct multipath_pcb **mpcb)
+{
+	/* The following happens if we entered the function without
+	 * being established, then received the mpc flag while
+	 * inside the function.
+	 */
+	if (!(*mpcb) && tp->mpc) {
+		*meta_sk = (struct sock *)tp->mpcb;
+		*meta_tp = tcp_sk(*meta_sk);
+		*mpcb = tp->mpcb;
+	}
+}
+
+static inline int mptcp_check_rtt(struct tcp_sock *tp, int time)
+{
+	struct multipath_pcb *mpcb = tp->mpcb;
+	struct tcp_sock *tp_tmp;
+	u32 rtt_max = 0;
+
+	/* In MPTCP, we take the max delay across all flows,
+	 * in order to take into account meta-reordering buffers.
+	 */
+	mptcp_for_each_tp(mpcb, tp_tmp) {
+		if (rtt_max < (tp_tmp->rcv_rtt_est.rtt >> 3))
+			rtt_max = (tp_tmp->rcv_rtt_est.rtt >> 3);
+	}
+	if (time < rtt_max || !rtt_max)
+		return 1;
+
+	return 0;
+}
+
+static inline void mptcp_path_array_check(struct multipath_pcb *mpcb)
+{
+	if (unlikely(mpcb && mpcb->received_options.list_rcvd)) {
+		mpcb->received_options.list_rcvd = 0;
+		mptcp_update_patharray(mpcb);
+		/* The server uses additional subflows
+		 * only on request
+		 * from the client.
+		 */
+		if (!test_bit(MPCB_FLAG_SERVER_SIDE, &mpcb->flags))
+			mptcp_send_updatenotif(mpcb);
+	}
+}
+
+static inline int mptcp_check_snd_buf(struct tcp_sock *tp)
+{
+	struct multipath_pcb *mpcb = (tp->mpc) ? tp->mpcb : NULL;
+	struct tcp_sock *tp_it;
+	u32 rtt_max = tp->srtt;
+	mptcp_for_each_tp(mpcb, tp_it)
+		if (rtt_max < tp_it->srtt)
+			rtt_max = tp_it->srtt;
+
+	/* Normally the send buffer is computed as twice the BDP
+	 * However in multipath, a fast path may need more
+	 * buffer for the following reason:
+	 * Imagine 2 flows with same bw b, and delay 10 and 100,
+	 * resp. Normally flow 10 will have send buffer 2*b*10
+	 *                     100 will have send buffer 2*b*100
+	 * In order to minimize reordering at the receiver,
+	 * the sender must ensure that all consecutive packets
+	 * are sent as close to each other as possible, even
+	 * when spread across several subflows. If we represent
+	 * a buffer as having a "height" in time units, and a
+	 * "width" in bandwidth units, we must ensure
+	 * that each segment is sent on the buffer with smallest
+	 * "current height". (lowest filling related to his
+	 * height). The subflow max height, given that its
+	 * width is its bw, is computed as 2d traditionnally,
+	 * thus 20 and 200 resp. here.
+	 * The problem is that if buffer with delay 10 is kept
+	 * at size 2*b*10, the scheduler will be able to
+	 * schedule segments until height=20 maximum. In
+	 * summary, the use of all buffers is reduced to the
+	 * hight of the smallest one. This is why all buffers
+	 * must be arranged to have equal height, that height
+	 * being the highest height needed by the network, that
+	 * is 2*max(delays).
+	 */
+	return mptcp_snd_buf_demand(tp, rtt_max);
 }
 
 #if (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))
@@ -611,6 +745,8 @@ static inline void mptcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start,
 static inline void mptcp_set_state(struct sock *sk, int state) {}
 static inline void mptcp_push_frames(struct sock *sk) {}
 static inline void verif_wqueues(struct multipath_pcb *mpcb) {}
+static inline void mptcp_skb_entail_init(struct sock *sk,
+		struct sk_buff *skb) {}
 static inline void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb) {}
 static inline struct sk_buff *mptcp_next_segment(struct sock *sk,
 		int *reinject)
@@ -618,6 +754,7 @@ static inline struct sk_buff *mptcp_next_segment(struct sock *sk,
 	return NULL;
 }
 static inline void mpcb_release(struct multipath_pcb *mpcb) {}
+static inline void mptcp_release_sock(struct sock *sk) {}
 static inline void mptcp_clean_rtx_queue(struct sock *sk) {}
 static inline void mptcp_send_fin(struct sock *meta_sk) {}
 static inline void mptcp_parse_options(uint8_t *ptr, int opsize,
@@ -626,7 +763,18 @@ static inline void mptcp_parse_options(uint8_t *ptr, int opsize,
 		struct sk_buff *skb) {}
 static inline void mptcp_close(struct sock *master_sk, long timeout) {}
 static inline void mptcp_detach_unused_child(struct sock *sk) {}
+static inline void mptcp_set_bw_est(struct tcp_sock *tp, u32 now) {}
 static inline int do_mptcp(struct sock *sk)
+{
+	return 0;
+}
+static inline void mptcp_select_window(struct tcp_sock *tp, u32 new_win) {}
+static inline void mptcp_update_window_check(struct tcp_sock *meta_tp,
+		struct sk_buff *skb, u32 data_ack, u32 data_ack_seq) {}
+static inline void mptcp_set_data_size(struct tcp_sock *tp,
+		struct sk_buff *skb, int copy) {}
+static inline int mptcp_push(struct sock *sk, int flags, int mss_now,
+		int nonagle)
 {
 	return 0;
 }
@@ -644,6 +792,24 @@ static inline int is_local_addr4(u32 addr)
 static inline struct tcp_sock *mpcb_meta_tp(const struct multipath_pcb *mpcb)
 {
 	return NULL;
+}
+static inline void mptcp_sock_destruct(struct sock *sk) {}
+static inline int mptcp_skip_offset(struct tcp_sock *tp,
+		unsigned char __user *from, size_t *seglen, size_t *size)
+{
+	return 0;
+}
+static inline void mptcp_update_pointers(struct tcp_sock **tp,
+		struct sock **meta_sk, struct tcp_sock **meta_tp,
+		struct multipath_pcb **mpcb) {}
+static inline int mptcp_check_rtt(struct tcp_sock *tp, int time)
+{
+	return 0;
+}
+static inline void mptcp_path_array_check(struct multipath_pcb *mpcb) {}
+static inline int mptcp_check_snd_buf(struct tcp_sock *tp)
+{
+	return 0;
 }
 #endif /* CONFIG_MPTCP */
 
