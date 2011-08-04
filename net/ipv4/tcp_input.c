@@ -5283,18 +5283,16 @@ void tcp_cwnd_application_limited(struct sock *sk)
 	tp->snd_cwnd_stamp = tcp_time_stamp;
 }
 
-static int tcp_should_expand_sndbuf(struct sock *sk, struct sock *meta_sk)
+static int tcp_should_expand_sndbuf(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct sock *meta_sk = (tcp_sk(sk)->mpc) ?
+			((struct sock *)tcp_sk(sk)->mpcb) : sk;
 
 	/* If the user specified a specific send buffer setting, do
 	 * not modify it.
 	 */
-#ifdef CONFIG_MPTCP
 	if (meta_sk->sk_userlocks & SOCK_SNDBUF_LOCK)
-#else
-	if (sk->sk_userlocks & SOCK_SNDBUF_LOCK)
-#endif
 		return 0;
 
 	/* If we are under global TCP memory pressure, do not expand.  */
@@ -5323,11 +5321,13 @@ static int tcp_should_expand_sndbuf(struct sock *sk, struct sock *meta_sk)
  *
  * PROBLEM: sndbuf expansion does not work well with largesend.
  */
-static void tcp_new_space(struct sock *sk, struct sock *meta_sk)
+static void tcp_new_space(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct sock *meta_sk = (tcp_sk(sk)->mpc) ?
+					((struct sock *)tcp_sk(sk)->mpcb) : sk;
 
-	if (tcp_should_expand_sndbuf(sk, meta_sk)) {
+	if (tcp_should_expand_sndbuf(sk)) {
 		int sndmem = max_t(u32, tp->rx_opt.mss_clamp, tp->mss_cache) +
 			MAX_TCP_HEADER + 16 + sizeof(struct sk_buff);
 		int demanded;
@@ -5386,11 +5386,7 @@ static void tcp_new_space(struct sock *sk, struct sock *meta_sk)
 		tp->snd_cwnd_stamp = tcp_time_stamp;
 	}
 
-#ifdef CONFIG_MPTCP
 	sk->sk_write_space(meta_sk);
-#else
-	sk->sk_write_space(sk);
-#endif
 }
 
 
@@ -5398,16 +5394,16 @@ static void tcp_new_space(struct sock *sk, struct sock *meta_sk)
  * If the flow is MPTCP, sk is the subsock, and meta_sk is the mpcb.
  * Otherwise both are the regular TCP socket.
  */
-void tcp_check_space(struct sock *sk, struct sock *meta_sk)
+void tcp_check_space(struct sock *sk)
 {
-#ifndef CONFIG_MPTCP
-	meta_sk = sk;
-#endif
+	struct sock *meta_sk = (tcp_sk(sk)->mpc) ?
+				((struct sock *)tcp_sk(sk)->mpcb) : sk;
+
 	if (sock_flag(meta_sk, SOCK_QUEUE_SHRUNK)) {
 		sock_reset_flag(meta_sk, SOCK_QUEUE_SHRUNK);
 		if (meta_sk->sk_socket &&
 			test_bit(SOCK_NOSPACE, &meta_sk->sk_socket->flags))
-			tcp_new_space(sk, meta_sk);
+			tcp_new_space(sk);
 	}
 }
 
@@ -5419,7 +5415,7 @@ static inline void tcp_data_snd_check(struct sock *sk)
 	BUG_ON(is_meta_sk(sk));
 
 	tcp_push_pending_frames(meta_sk);
-	tcp_check_space(sk, meta_sk);
+	tcp_check_space(sk);
 }
 
 /*
