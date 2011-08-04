@@ -322,9 +322,6 @@ extern void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb);
 extern void tcp_v6_send_reset(struct sock *sk, struct sk_buff *skb);
 extern int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		       size_t size);
-extern int subtcp_sendmsg(struct kiocb *iocb,
-			  struct sock *sk,
-			  struct msghdr *msg, size_t size);
 extern int tcp_sendpage(struct sock *sk, struct page *page, int offset,
 			size_t size, int flags);
 extern int tcp_ioctl(struct sock *sk, int cmd, unsigned long arg);

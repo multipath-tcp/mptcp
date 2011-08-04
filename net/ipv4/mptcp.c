@@ -828,20 +828,20 @@ int mptcp_sendmsg(struct kiocb *iocb, struct sock *master_sk,
 			 * appeared during sk_stream_wait_connect
 			 */
 			if (!tcp_sk(master_sk)->mpc) {
-				copied = subtcp_sendmsg(iocb, master_sk, msg,
+				copied = tcp_sendmsg(iocb, master_sk, msg,
 							size);
 				goto out;
 			}
 
 		} else {
-			copied = subtcp_sendmsg(iocb, master_sk, msg, size);
+			copied = tcp_sendmsg(iocb, master_sk, msg, size);
 			goto out;
 		}
 	}
 
 	verif_wqueues(mpcb);
 
-	copied = subtcp_sendmsg(NULL, meta_sk, msg, 0);
+	copied = tcp_sendmsg(NULL, meta_sk, msg, 0);
 	if (copied < 0) {
 		printk(KERN_ERR "%s: returning error "
 		"to app:%d\n", __func__, (int) copied);

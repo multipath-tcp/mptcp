@@ -965,20 +965,14 @@ static inline int select_size(struct sock *sk, int sg)
 	return tmp;
 }
 
-int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
-		size_t size)
-{
-	return subtcp_sendmsg(iocb, sk, msg, size);
-}
-
 /**
  * In the original version of tcp_sendmsg, size is not used.
  * If CONFIG_MPTCP is set, size is interpreted as the offset inside the message
  * to copy from. (that is, byte 0 to size-1 are simply ignored.
  * With mptcp, @sk must be the master subsocket.
  */
-int subtcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
-		   size_t size)
+int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
+		size_t size)
 {
 	struct iovec *iov;
 	struct tcp_sock *tp = tcp_sk(sk);
