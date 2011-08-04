@@ -224,6 +224,10 @@ extern int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 extern void tcp_v6_hash(struct sock *sk);
 extern void tcp_v6_destroy_sock(struct sock *sk);
 extern struct timewait_sock_ops tcp6_timewait_sock_ops;
+extern struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
+		int family);
+extern void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
+		gfp_t flags);
 
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 
@@ -655,6 +659,22 @@ static inline int mptcp_get_path_family(struct multipath_pcb *mpcb,
 	return -1;
 }
 
+static inline struct sock *mptcp_sk_clone(struct sock *sk, int family,
+		int priority)
+{
+	struct sock *newsk;
+
+	struct multipath_pcb *mpcb = (struct multipath_pcb *) sk;
+	newsk = sk_prot_alloc(mpcb->sk_prot_alt, priority, family);
+
+	if (newsk != NULL) {
+		mptcp_inherit_sk(sk, newsk, family, priority);
+		inet_csk(newsk)->icsk_af_ops = mpcb->icsk_af_ops_alt;
+	}
+
+	return newsk;
+}
+
 #else /* (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)) */
 
 static inline int mptcp_get_path_family(struct multipath_pcb *mpcb,
@@ -662,6 +682,12 @@ static inline int mptcp_get_path_family(struct multipath_pcb *mpcb,
 {
 	return AF_INET;
 }
+static inline struct sock *mptcp_sk_clone(struct sock *sk, int family,
+		int priority)
+{
+	return sk_clone(sk, priority);
+}
+
 #endif /* (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)) */
 #else /* CONFIG_MPTCP */
 
@@ -810,6 +836,16 @@ static inline void mptcp_path_array_check(struct multipath_pcb *mpcb) {}
 static inline int mptcp_check_snd_buf(struct tcp_sock *tp)
 {
 	return 0;
+}
+static inline int mptcp_get_path_family(struct multipath_pcb *mpcb,
+					int path_index)
+{
+	return 0;
+}
+static inline struct sock *mptcp_sk_clone(struct sock *sk, int family,
+		int priority)
+{
+	return NULL;
 }
 #endif /* CONFIG_MPTCP */
 

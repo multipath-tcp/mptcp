@@ -564,25 +564,12 @@ EXPORT_SYMBOL_GPL(inet_csk_reqsk_queue_prune);
 struct sock *inet_csk_clone(struct sock *sk, const struct request_sock *req,
 			    const gfp_t priority)
 {
-#if defined(CONFIG_MPTCP) && (defined(CONFIG_IPV6) \
-		|| defined(CONFIG_IPV6_MODULE))
 	struct sock *newsk;
 
-	if (is_meta_sk(sk) && sk->sk_family != req->rsk_ops->family) {
-		struct multipath_pcb *mpcb = (struct multipath_pcb *) sk;
-		newsk = sk_prot_alloc(mpcb->sk_prot_alt, priority,
-					req->rsk_ops->family);
-
-		if (newsk != NULL) {
-			mptcp_inherit_sk(sk, newsk,
-					req->rsk_ops->family, priority);
-			inet_csk(newsk)->icsk_af_ops = mpcb->icsk_af_ops_alt;
-		}
-	} else
+	if (is_meta_sk(sk) && sk->sk_family != req->rsk_ops->family)
+		newsk = mptcp_sk_clone(sk, req->rsk_ops->family, priority);
+	else
 		newsk = sk_clone(sk, priority);
-#else
-	struct sock *newsk = sk_clone(sk, priority);
-#endif
 
 	if (newsk != NULL) {
 		struct inet_connection_sock *newicsk = inet_csk(newsk);
