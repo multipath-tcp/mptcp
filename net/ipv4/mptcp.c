@@ -821,6 +821,145 @@ static inline unsigned int tcp_cwnd_test(struct tcp_sock *tp)
 	return 0;
 }
 
+void mptcp_check_buffers(struct multipath_pcb *mpcb)
+{
+	struct sock *sk, *meta_sk = (struct sock *) mpcb;
+	struct tcp_sock *tp, *meta_tp = (struct tcp_sock *) mpcb;
+	struct sk_buff *skb;
+	int rcv_size = 0, meta_ofo_size = 0;
+
+	for (skb = skb_peek(&meta_tp->out_of_order_queue);
+			skb;
+			skb =
+			(skb_queue_is_last(&meta_tp->out_of_order_queue, skb) ?
+					NULL :
+				skb_queue_next(&meta_tp->out_of_order_queue,
+						skb)))
+		meta_ofo_size += skb->truesize;
+
+	for (skb = skb_peek(&meta_sk->sk_receive_queue);
+			skb;
+			skb =
+			(skb_queue_is_last(&meta_sk->sk_receive_queue, skb) ?
+				NULL :
+				skb_queue_next(&meta_sk->sk_receive_queue,
+					skb)))
+		rcv_size += skb->truesize;
+
+	mptcp_for_each_sk(mpcb, sk, tp) {
+		int ofo_size = 0;
+
+		if (sk->sk_state != TCP_ESTABLISHED)
+			continue;
+		for (skb = skb_peek(&tp->out_of_order_queue);
+			skb;
+			skb = (skb_queue_is_last(&tp->out_of_order_queue,
+				skb) ? NULL :
+				skb_queue_next(&tp->out_of_order_queue, skb)))
+			ofo_size += skb->truesize;
+
+		skb = skb_peek(&meta_sk->sk_receive_queue);
+		mptcp_debug("pi %d, ofo_size:%d,meta_ofo_size:%d,"
+			"rcv_size:%d, waiting:%d,next dsn:%#x\n",
+			tp_path_index(tp), ofo_size, meta_ofo_size, rcv_size,
+			tp->wait_data_bit_set,
+			(skb ? mptcp_skb_data_seq(skb) : 0));
+	}
+}
+
+int mptcp_try_rmem_schedule(struct sock *sk, unsigned int size)
+{
+	struct sk_buff *skb;
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *meta_tp = mpcb_meta_tp(tp->mpcb);
+	struct sock *meta_sk = (struct sock *) meta_tp;
+	if (atomic_read(&meta_sk->sk_rmem_alloc) >
+			meta_sk->sk_rcvbuf) {
+		tcpprobe_logmsg(meta_sk, "PROBLEM NOW");
+		mptcp_debug("%s: not enough rcvbuf: mpcb rcvbuf:%d,"
+				"rmem_alloc:%d\n", __func__,
+				meta_sk->sk_rcvbuf,
+				atomic_read(&meta_sk->sk_rmem_alloc));
+
+		mptcp_check_buffers(tp->mpcb);
+		mptcp_debug("%s: mpcb copied seq:%#x\n", __func__,
+				meta_tp->copied_seq);
+
+		mptcp_for_each_sk(tp->mpcb, sk, tp) {
+			if (sk->sk_state != TCP_ESTABLISHED)
+				continue;
+			mptcp_debug("%s: pi:%d, rcvbuf:%d, "
+				"rmem_alloc:%d\n",
+				__func__, tp->path_index,
+				sk->sk_rcvbuf,
+				atomic_read(&sk->sk_rmem_alloc));
+			mptcp_debug("%s: used mss for wnd "
+				"computation:%d\n",
+				__func__,
+				inet_csk(sk)->icsk_ack.rcv_mss);
+			mptcp_debug("%s: --- receive-queue:\n",
+				__func__);
+			skb_queue_walk(&sk->sk_receive_queue, skb) {
+				mptcp_debug("%s: dsn:%#x, skb->len:%d,"
+					"truesize:%d, "
+					"prop:%d /1000\n", __func__,
+					TCP_SKB_CB(skb)->data_seq,
+					skb->len, skb->truesize,
+					skb->len * 1000 /
+					skb->truesize);
+			}
+			mptcp_debug("%s: --- ofo-queue:\n",
+				__func__);
+			skb_queue_walk(&tp->out_of_order_queue, skb) {
+				mptcp_debug("%s: dsn:%#x, "
+					"skb->len:%d, truesize:%d, "
+					"prop:%d /1000\n", __func__,
+					TCP_SKB_CB(skb)->data_seq,
+					skb->len, skb->truesize,
+					skb->len * 1000 /
+					skb->truesize);
+			}
+		}
+		mptcp_debug("%s: --- meta-receive queue:\n",
+			__func__);
+		skb_queue_walk(&meta_sk->sk_receive_queue, skb) {
+			mptcp_debug("%s: dsn:%#x, "
+				"skb->len:%d, truesize:%d, "
+				"prop:%d /1000\n", __func__,
+				TCP_SKB_CB(skb)->data_seq,
+				skb->len, skb->truesize,
+				skb->len * 1000 / skb->truesize);
+		}
+		mptcp_debug("%s: --- meta-ofo queue:\n", __func__);
+		skb_queue_walk(&meta_tp->out_of_order_queue, skb) {
+			mptcp_debug("%s: dsn:%#x, "
+				"skb->len:%d,truesize:%d,"
+				"prop:%d /1000\n", __func__,
+				TCP_SKB_CB(skb)->data_seq,
+				skb->len, skb->truesize,
+				skb->len * 1000 / skb->truesize);
+		}
+		return 0;
+	} else if (!sk_rmem_schedule(sk, size)) {
+		printk(KERN_ERR "impossible to alloc memory\n");
+	}
+	if (atomic_read(&meta_sk->sk_rmem_alloc) <= meta_sk->sk_rcvbuf
+			&& sk_rmem_schedule(sk, size)) {
+		return 0;
+	}
+	if (tcp_prune_queue(sk) < 0)
+		return -1;
+
+	if (!sk_rmem_schedule(sk, size)) {
+		if (!tcp_prune_ofo_queue(sk))
+			return -1;
+
+		if (!sk_rmem_schedule(sk, size))
+			return -1;
+	}
+	return 0;
+}
+
 int mptcp_is_available(struct sock *sk)
 {
 	/* Set of states for which we are allowed to send data */

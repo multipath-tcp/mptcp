@@ -212,6 +212,8 @@ extern void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags);
 extern int tcp_close_state(struct sock *sk);
 extern struct timewait_sock_ops tcp_timewait_sock_ops;
 extern void __release_sock(struct sock *sk, struct multipath_pcb *mpcb);
+extern int tcp_prune_queue(struct sock *sk);
+extern int tcp_prune_ofo_queue(struct sock *sk);
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 extern int inet6_create(struct net *net, struct socket *sock, int protocol,
@@ -451,6 +453,8 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 int mptcp_check_req_child(struct sock *sk, struct sock *child,
 		struct request_sock *req, struct request_sock **prev);
 void mptcp_select_window(struct tcp_sock *tp, u32 new_win);
+int mptcp_try_rmem_schedule(struct sock *tp, unsigned int size);
+void mptcp_check_buffers(struct multipath_pcb *mpcb);
 void mptcp_update_window_check(struct tcp_sock *meta_tp, struct sk_buff *skb,
 		u32 data_ack, u32 data_ack_seq);
 void mptcp_set_data_size(struct tcp_sock *tp, struct sk_buff *skb, int copy);
@@ -809,6 +813,11 @@ static inline int mptcp_check_req_child(struct sock *sk, struct sock *child,
 	return 0;
 }
 static inline void mptcp_select_window(struct tcp_sock *tp, u32 new_win) {}
+static inline int mptcp_try_rmem_schedule(struct sock *tp, unsigned int size)
+{
+	return 0;
+}
+static inline void mptcp_check_buffers(struct multipath_pcb *mpcb) {}
 static inline void mptcp_update_window_check(struct tcp_sock *meta_tp,
 		struct sk_buff *skb, u32 data_ack, u32 data_ack_seq) {}
 static inline void mptcp_set_data_size(struct tcp_sock *tp,
