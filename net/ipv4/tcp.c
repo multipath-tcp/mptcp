@@ -381,22 +381,14 @@ static int retrans_to_secs(u8 retrans, int timeout, int rto_max)
 unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 {
 	unsigned int mask;
-	struct sock *master_sk = sock->sk;
-	struct tcp_sock *master_tp = tcp_sk(master_sk);
-#ifdef CONFIG_MPTCP
-	struct multipath_pcb *mpcb = mpcb_from_tcpsock(master_tp);
-	struct sock *meta_sk = (master_tp->mpc) ? (struct sock *)mpcb :
-		master_sk;
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-#else
-	struct sock *meta_sk = master_sk;
-	struct tcp_sock *meta_tp = master_tp;
-#endif
+	struct sock *sk = sock->sk;
+	struct tcp_sock *tp = (tcp_sk(sk)->mpc) ?
+		mpcb_meta_tp(tcp_sk(sk)->mpcb) : tcp_sk(sk);
+	struct sock *meta_sk = (tp->mpc) ? mptcp_meta_sk(sk) : sk;
 
-	sock_poll_wait(file, sk_sleep(master_sk), wait);
-
-	if (master_sk->sk_state == TCP_LISTEN)
-		return inet_csk_listen_poll(master_sk);
+	sock_poll_wait(file, sk_sleep(sk), wait);
+	if (sk->sk_state == TCP_LISTEN)
+		return inet_csk_listen_poll(sk);
 
 	/* Socket is not locked. We are protected from async events
 	 * by poll logic and correct handling of state changes
@@ -439,18 +431,18 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 		mask |= POLLIN | POLLRDNORM | POLLRDHUP;
 
 	/* Connected? */
-	if ((1 << master_sk->sk_state) & ~(TCPF_SYN_SENT | TCPF_SYN_RECV)) {
-		int target = sock_rcvlowat(master_sk, 0, INT_MAX);
+	if ((1 << meta_sk->sk_state) & ~(TCPF_SYN_SENT | TCPF_SYN_RECV)) {
+		int target = sock_rcvlowat(sk, 0, INT_MAX);
 
-		if (meta_tp->urg_seq == meta_tp->copied_seq &&
-		    !sock_flag(master_sk, SOCK_URGINLINE) &&
-		    meta_tp->urg_data)
+		if (tp->urg_seq == tp->copied_seq &&
+		    !sock_flag(sk, SOCK_URGINLINE) &&
+		    tp->urg_data)
 			target++;
 
 		/* Potential race condition. If read of tp below will
 		 * escape above sk->sk_state, we can be illegally awaken
 		 * in SYN_* states. */
-		if (meta_tp->rcv_nxt - meta_tp->copied_seq >= target)
+		if (tp->rcv_nxt - tp->copied_seq >= target)
 			mask |= POLLIN | POLLRDNORM;
 
 		if (!(meta_sk->sk_shutdown & SEND_SHUTDOWN)) {
@@ -476,7 +468,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 			mptcp_debug(KERN_ERR "mpcb is in shutdown state\n");
 		}
 
-		if (meta_tp->urg_data & TCP_URG_VALID)
+		if (tp->urg_data & TCP_URG_VALID)
 			mask |= POLLPRI;
 	}
 	/* This barrier is coupled with smp_wmb() in tcp_reset() */
@@ -1223,6 +1215,7 @@ new_segment:
 			}
 #endif
 			PDEBUG_SEND("%s: line %d\n", __func__, __LINE__);
+
 			from += copy;
 			copied += copy;
 			if ((seglen -= copy) == 0 && iovlen == 0)
@@ -1254,7 +1247,6 @@ wait_for_memory:
 #ifdef CONFIG_MPTCP
 			BUG_ON(!sk_stream_memory_free(sk));
 			PDEBUG_SEND("%s:line %d\n", __func__, __LINE__);
-
 #else
 			mss_now = tcp_send_mss(sk, &size_goal, flags);
 #endif
@@ -1711,9 +1703,8 @@ no_subrcv_queue:
 		/* Well, if we have backlog, try to process it now yet. */
 
 		if (copied >= target && !sk->sk_backlog.tail &&
-		    (!tp->mpc ||
-		     !mptcp_test_any_sk(mpcb, sk_it,
-					sk_it->sk_backlog.tail)))
+			(!tp->mpc || !mptcp_test_any_sk(mpcb, sk_it,
+						sk_it->sk_backlog.tail)))
 			break;
 
 		if (copied) {
@@ -2263,12 +2254,14 @@ adjudge_to_death:
 	/* It is the last release_sock in its life. It will remove backlog. */
 	release_sock(sk);
 
-	/* Now socket is owned by kernel and we acquire BH lock to finish close.
-	 * No need to check for user refs.
+
+	/* Now socket is owned by kernel and we acquire BH lock
+	   to finish close. No need to check for user refs.
 	 */
 	local_bh_disable();
 	bh_lock_sock(sk);
 	WARN_ON(sock_owned_by_user(sk));
+
 	percpu_counter_inc(sk->sk_prot->orphan_count);
 #else
 	if (!sock_flag(sk, SOCK_DEAD))

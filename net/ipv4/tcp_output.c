@@ -3324,17 +3324,6 @@ static void tcp_connect_init(struct sock *sk)
 	    (tp->window_clamp > tcp_full_space(sk) || tp->window_clamp == 0))
 		tp->window_clamp = tcp_full_space(sk);
 
-#ifdef CONFIG_MPTCP
-	tcp_select_initial_window(tcp_full_space(sk),
-				  tp->advmss -
-				  (tp->rx_opt.
-				   ts_recent_stamp ? tp->tcp_header_len -
-				   sizeof(struct tcphdr) : 0), &tp->rcv_wnd,
-				  &tp->window_clamp, sysctl_tcp_window_scaling,
-				  &rcv_wscale, dst_metric(dst, RTAX_INITRWND));
-
-	mptcp_update_window_clamp(tp);
-#else
 	tcp_select_initial_window(tcp_full_space(sk),
 				  tp->advmss - (tp->rx_opt.ts_recent_stamp ? tp->tcp_header_len - sizeof(struct tcphdr) : 0),
 				  &tp->rcv_wnd,
@@ -3342,7 +3331,8 @@ static void tcp_connect_init(struct sock *sk)
 				  sysctl_tcp_window_scaling,
 				  &rcv_wscale,
 				  dst_metric(dst, RTAX_INITRWND));
-#endif
+
+	mptcp_update_window_clamp(tp);
 
 	tp->rx_opt.rcv_wscale = rcv_wscale;
 	tp->rcv_ssthresh = tp->rcv_wnd;

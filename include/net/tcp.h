@@ -572,7 +572,7 @@ static inline u32 tcp_receive_window(const struct tcp_sock *tp)
 {
 	s32 win;
 
-	if (tp->mpcb && tp->mpc) /* The window is at the meta-level */
+	if (tp->mpc) /* The window is at the meta-level */
 		tp = (struct tcp_sock *) tp->mpcb;
 
 	win = tp->rcv_wup + tp->rcv_wnd - tp->rcv_nxt;
@@ -879,13 +879,9 @@ static inline u32 tcp_wnd_end(const struct tcp_sock *tp, int data_seq)
 	/* With MPTCP, we return the end DATASEQ number of the receiver's
 	 * advertised window
 	 */
-	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
-	struct tcp_sock *meta_tp = (struct tcp_sock *) mpcb;
+	tp = (data_seq && tp->mpcb) ? mpcb_meta_tp(tp->mpcb) : tp;
 
-	if (!data_seq || !tp->mpcb)
-		return tp->snd_una + tp->snd_wnd;
-	else
-		return meta_tp->snd_una + meta_tp->snd_wnd;
+	return tp->snd_una + tp->snd_wnd;
 }
 extern int tcp_is_cwnd_limited(const struct sock *sk, u32 in_flight);
 
@@ -913,10 +909,10 @@ static inline void tcp_init_wl(struct tcp_sock *tp, u32 seq)
 
 static inline void tcp_update_wl(struct tcp_sock *tp, u32 seq)
 {
-#ifdef CONFIG_MPTCP
-	if (seq)
-#endif
-		tp->snd_wl1 = seq;
+	if (tp->mpc && !seq)
+		return;
+
+	tp->snd_wl1 = seq;
 }
 
 /*
@@ -1035,7 +1031,7 @@ static inline int tcp_win_from_space(int space)
 /* Note: caller must be prepared to deal with negative returns */ 
 static inline int tcp_space(const struct sock *sk)
 {
-	if (tcp_sk(sk)->mpc && tcp_sk(sk)->mpcb)
+	if (tcp_sk(sk)->mpc)
 		sk = (struct sock *) (tcp_sk(sk)->mpcb);
 
 	return tcp_win_from_space(sk->sk_rcvbuf -
@@ -1044,7 +1040,7 @@ static inline int tcp_space(const struct sock *sk)
 
 static inline int tcp_full_space(const struct sock *sk)
 {
-	if (tcp_sk(sk)->mpc && tcp_sk(sk)->mpcb)
+	if (tcp_sk(sk)->mpc)
 		sk = (struct sock *) (tcp_sk(sk)->mpcb);
 
 	return tcp_win_from_space(sk->sk_rcvbuf); 

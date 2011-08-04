@@ -336,7 +336,6 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 	if (err)
 		goto late_failure;
 
-
 	return 0;
 
 late_failure:

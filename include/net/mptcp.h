@@ -519,7 +519,9 @@ static inline int mptcp_get_path_family(struct multipath_pcb *mpcb,
 	}
 	return -1;
 }
-#else
+
+#else /* (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)) */
+
 static inline int mptcp_get_path_family(struct multipath_pcb *mpcb,
 					int path_index)
 {
@@ -550,16 +552,10 @@ static inline int mptcp_sysctl_mss(void)
 #define mptcp_skb_data_ack(skb) (0)
 #define mptcp_skb_data_seq(skb) (0)
 #define mptcp_skb_end_data_seq(skb) (0)
-
 #define mptcp_for_each_tp(mpcb, tp) for ((tp) = NULL; 0;)
 #define mptcp_for_each_sk(mpcb, sk, tp) for ((sk) = NULL, (tp) = NULL; 0;)
 #define mptcp_for_each_sk_safe(__mpcb, __sk, __temp)			\
 	for (__sk = NULL, __temp = NULL; 0;)
-
-/* Returns 1 if any subflow meets the condition @cond
- * Else return 0. Moreover, if 1 is returned, sk points to the
- * first subsocket that verified the condition
- */
 #define mptcp_test_any_sk(mpcb, sk, cond)		\
 	({								\
 		sk = NULL;					\
@@ -621,7 +617,7 @@ static inline struct sk_buff *mptcp_next_segment(struct sock *sk,
 }
 static inline void mpcb_release(struct multipath_pcb *mpcb) {}
 static inline void mptcp_clean_rtx_queue(struct sock *sk) {}
-static inline void mptcp_send_fin(struct sock *mpcb_sk) {}
+static inline void mptcp_send_fin(struct sock *meta_sk) {}
 static inline void mptcp_parse_options(uint8_t *ptr, int opsize,
 		struct tcp_options_received *opt_rx,
 		struct multipath_options *mopt,

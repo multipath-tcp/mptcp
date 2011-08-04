@@ -3564,23 +3564,22 @@ static inline int tcp_may_update_window(const struct tcp_sock *tp,
 					const u32 ack, const u32 ack_seq,
 					const u32 nwin)
 {
-#ifndef CONFIG_MPTCP
-	return	after(ack, tp->snd_una) ||
-		after(ack_seq, tp->snd_wl1) ||
-		(ack_seq == tp->snd_wl1 && nwin > tp->snd_wnd);
-#else
-/* The variable snd_wl1 tracks the
- * newest sequence number that we've seen. It helps prevent snd_wnd from
- * being reopened on re-transmitted data. If snd_wl1 is greater than
- * received sequence #, we skip it.
- * MPTCP note: added check for ack_seq != 0, because the data seqnum can be 0
- * if the dataseq option is not present. This is the case if we received a pure
- * ack with no data.
- */
-	return (after(ack, tp->snd_una) || !ack_seq ||
-		after(ack_seq, tp->snd_wl1) ||
-		(ack_seq == tp->snd_wl1 && nwin > tp->snd_wnd));
-#endif
+	if (tp->mpc)
+		/* The variable snd_wl1 tracks the
+		 * newest sequence number that we've seen. It helps prevent
+		 * snd_wnd from being reopened on re-transmitted data. If
+		 * snd_wl1 is greater than received sequence #, we skip it.
+		 * MPTCP note: added check for ack_seq != 0, because the data
+		 * seqnum can be 0 if the dataseq option is not present. This
+		 * is the case if we received a pure ack with no data.
+		 */
+		return (after(ack, tp->snd_una) || !ack_seq ||
+			after(ack_seq, tp->snd_wl1) ||
+			(ack_seq == tp->snd_wl1 && nwin > tp->snd_wnd));
+	else
+		return	after(ack, tp->snd_una) ||
+			after(ack_seq, tp->snd_wl1) ||
+			(ack_seq == tp->snd_wl1 && nwin > tp->snd_wnd);
 }
 
 /* Update our send window.
@@ -5234,9 +5233,8 @@ static int tcp_prune_queue(struct sock *sk)
 			     skb_peek(&sk->sk_receive_queue),
 			     NULL,
 			     tp->copied_seq, tp->rcv_nxt);
-#else
-	mptcp_update_window_clamp(tp);
 #endif
+	mptcp_update_window_clamp(tp);
 	sk_mem_reclaim(sk);
 
 	if (atomic_read(&sk->sk_rmem_alloc) <= sk->sk_rcvbuf)
@@ -5368,20 +5366,19 @@ static void tcp_new_space(struct sock *sk, struct sock *meta_sk)
 			 * is 2*max(delays).
 			 */
 			demanded = mptcp_snd_buf_demand(tp, rtt_max);
-		} else {
+		} else
 			demanded = max_t(unsigned int, tp->snd_cwnd,
 					 tp->reordering + 1);
-		}
 
-		/* After this, sndmem is the new contribution of the
+		/* MPTCP: After this, sndmem is the new contribution of the
 		 * current subflow to the aggregate sndbuf
 		 */
 		sndmem *= 2 * demanded;
 		if (sndmem > sk->sk_sndbuf) {
 			int old_sndbuf = sk->sk_sndbuf;
 			sk->sk_sndbuf = min(sndmem, sysctl_tcp_wmem[2]);
-			/* ok, the subflow sndbuf has grown, reflect this in
-			 * the aggregate buffer.
+			/* MPTCP: ok, the subflow sndbuf has grown, reflect
+			 * this in the aggregate buffer.
 			 */
 			if (mpcb && old_sndbuf != sk->sk_sndbuf)
 				mptcp_update_sndbuf(mpcb);
@@ -5416,13 +5413,11 @@ void tcp_check_space(struct sock *sk, struct sock *meta_sk)
 
 static inline void tcp_data_snd_check(struct sock *sk)
 {
-	struct sock *meta_sk;
+	struct sock *meta_sk = (tcp_sk(sk)->mpc) ?
+			((struct sock *)tcp_sk(sk)->mpcb) : sk;
 
 	BUG_ON(is_meta_sk(sk));
-	if (tcp_sk(sk)->mpc)
-		meta_sk = ((struct sock *)tcp_sk(sk)->mpcb);
-	else
-		meta_sk = sk;
+
 	tcp_push_pending_frames(meta_sk);
 	tcp_check_space(sk, meta_sk);
 }
@@ -6246,14 +6241,12 @@ discard:
 		tp->rcv_nxt = TCP_SKB_CB(skb)->seq + 1;
 		tp->rcv_wup = TCP_SKB_CB(skb)->seq + 1;
 
-#ifdef CONFIG_MPTCP
 		if (mpcb && tp->rx_opt.saw_mpc && is_master_tp(tp)) {
 			tp->mpc = 1;
 			tp->rx_opt.saw_mpc = 0;
 			mptcp_add_sock(tp->mpcb, tp);
 		} else
 			mptcp_fallback(sk);
-#endif
 
 		/* RFC1323: The window in SYN & SYN/ACK segments is
 		 * never scaled.
