@@ -543,7 +543,7 @@ static inline void mptcp_sock_destruct(struct sock *sk)
 }
 
 static inline int mptcp_skip_offset(struct tcp_sock *tp,
-		unsigned char __user *from, size_t *seglen, size_t *size)
+		unsigned char __user **from, size_t *seglen, size_t *size)
 {
 	/* Skipping the offset (stored in the size argument) */
 	if (tp->mpc) {
@@ -844,7 +844,7 @@ static inline struct tcp_sock *mpcb_meta_tp(const struct multipath_pcb *mpcb)
 }
 static inline void mptcp_sock_destruct(struct sock *sk) {}
 static inline int mptcp_skip_offset(struct tcp_sock *tp,
-		unsigned char __user *from, size_t *seglen, size_t *size)
+		unsigned char __user **from, size_t *seglen, size_t *size)
 {
 	return 0;
 }
