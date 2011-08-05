@@ -799,7 +799,7 @@ void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 }
 
 void mptcp_update_window_check(struct tcp_sock *meta_tp, struct sk_buff *skb,
-		u32 data_ack, u32 data_ack_seq)
+		u32 data_ack)
 {
 	if (meta_tp->mpc && (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_ACK) &&
 		after(data_ack, meta_tp->snd_una)) {

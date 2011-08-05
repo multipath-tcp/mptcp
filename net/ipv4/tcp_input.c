@@ -3583,7 +3583,7 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 	}
 
 	tp->snd_una = ack;
-	mptcp_update_window_check(meta_tp, skb, data_ack, data_ack_seq);
+	mptcp_update_window_check(meta_tp, skb, data_ack);
 
 	return flag;
 }

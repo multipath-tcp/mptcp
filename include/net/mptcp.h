@@ -456,7 +456,7 @@ void mptcp_select_window(struct tcp_sock *tp, u32 new_win);
 int mptcp_try_rmem_schedule(struct sock *tp, unsigned int size);
 void mptcp_check_buffers(struct multipath_pcb *mpcb);
 void mptcp_update_window_check(struct tcp_sock *meta_tp, struct sk_buff *skb,
-		u32 data_ack, u32 data_ack_seq);
+		u32 data_ack);
 void mptcp_set_data_size(struct tcp_sock *tp, struct sk_buff *skb, int copy);
 int mptcp_push(struct sock *sk, int flags, int mss_now, int nonagle);
 void mptcp_fallback(struct sock *master_sk);
@@ -819,7 +819,7 @@ static inline int mptcp_try_rmem_schedule(struct sock *tp, unsigned int size)
 }
 static inline void mptcp_check_buffers(struct multipath_pcb *mpcb) {}
 static inline void mptcp_update_window_check(struct tcp_sock *meta_tp,
-		struct sk_buff *skb, u32 data_ack, u32 data_ack_seq) {}
+		struct sk_buff *skb, u32 data_ack) {}
 static inline void mptcp_set_data_size(struct tcp_sock *tp,
 		struct sk_buff *skb, int copy) {}
 static inline int mptcp_push(struct sock *sk, int flags, int mss_now,
