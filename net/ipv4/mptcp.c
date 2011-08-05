@@ -980,7 +980,7 @@ int mptcp_sendmsg(struct kiocb *iocb, struct sock *master_sk,
 	struct tcp_sock *master_tp = tcp_sk(master_sk);
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tcp_sk(master_sk));
 	struct sock *meta_sk = (struct sock *) mpcb;
-	size_t copied = 0;
+	int copied = 0;
 	int err;
 	int flags = msg->msg_flags;
 	long timeo = sock_sndtimeo(master_sk, flags & MSG_DONTWAIT);
