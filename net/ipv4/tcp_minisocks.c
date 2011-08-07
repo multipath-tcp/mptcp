@@ -755,8 +755,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		goto listen_overflow;
 
 	if (!is_meta_sk(sk)) {
-		if (mptcp_check_req_master(child, req, &mopt) ==
-				-ENOBUFS)
+		if (mptcp_check_req_master(child, req, &mopt) == -ENOBUFS)
 			goto listen_overflow;
 	} else {
 		mptcp_check_req_child(sk, child, req, prev);
