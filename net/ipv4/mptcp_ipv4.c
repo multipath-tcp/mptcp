@@ -260,6 +260,7 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 			mptcp_subflow_attach(mpcb, child);
 			tcp_child_process(meta_sk, child, skb);
 		} else {
+			mptcp_debug("%s Sending reset upon ack.\n", __func__);
 			req->rsk_ops->send_reset(NULL, skb);
 			goto discard;
 		}

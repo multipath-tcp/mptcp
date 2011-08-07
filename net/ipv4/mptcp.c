@@ -568,14 +568,16 @@ void mptcp_release_sock(struct sock *sk)
 
 	BUG_ON(!is_master_tp(tcp_sk(sk)));
 
-	/* process incoming join requests */
-	if (meta_sk->sk_backlog.tail)
-		__release_sock(meta_sk, mpcb);
 	/* We need to do the following, because as far
 	 * as the master-socket is locked, every received segment is
 	 * put into the backlog queue.
 	 */
-	while (mptcp_test_any_sk(mpcb, sk_it, sk_it->sk_backlog.tail)) {
+	while (meta_sk->sk_backlog.tail ||
+			mptcp_test_any_sk(mpcb, sk_it, sk_it->sk_backlog.tail)) {
+		/* process incoming join requests */
+		if (meta_sk->sk_backlog.tail)
+			__release_sock(meta_sk, mpcb);
+
 		mptcp_for_each_sk(mpcb, sk_it, tp_it) {
 			if (sk_it->sk_backlog.tail)
 				__release_sock(sk_it, mpcb);
