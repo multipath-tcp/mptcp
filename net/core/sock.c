@@ -1071,7 +1071,8 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	if (is_meta_sk(sk) && sk->sk_family != family) {
 		newsk->sk_family = family;
-		newsk->sk_prot = tcp_sk(sk)->mpcb->sk_prot_alt;
+		newsk->sk_prot = newsk->sk_prot_creator =
+				tcp_sk(sk)->mpcb->sk_prot_alt;
 	}
 #endif
 
