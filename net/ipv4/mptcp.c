@@ -573,7 +573,7 @@ void mptcp_release_sock(struct sock *sk)
 	 * put into the backlog queue.
 	 */
 	while (meta_sk->sk_backlog.tail ||
-			mptcp_test_any_sk(mpcb, sk_it, sk_it->sk_backlog.tail)) {
+	       mptcp_test_any_sk(mpcb, sk_it, sk_it->sk_backlog.tail)) {
 		/* process incoming join requests */
 		if (meta_sk->sk_backlog.tail)
 			__release_sock(meta_sk, mpcb);

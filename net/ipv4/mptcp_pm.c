@@ -569,8 +569,7 @@ int mptcp_syn_recv_sock(struct sk_buff *skb)
 			bh_unlock_sock(master_sk);
 			NET_INC_STATS_BH(dev_net(skb->dev),
 					LINUX_MIB_TCPBACKLOGDROP);
-			sock_put(master_sk); /* Taken by
-							 * mptcp_search_req */
+			sock_put(master_sk); /* Taken by mptcp_search_req */
 			kfree_skb(skb);
 			return 1;
 		}
