@@ -229,45 +229,49 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
  */
 int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {
-	const struct iphdr *iph = ip_hdr(skb);
+	struct iphdr *iph = ip_hdr(skb);
+	struct tcphdr *th = tcp_hdr(skb);
 	struct multipath_pcb *mpcb = (struct multipath_pcb *)meta_sk;
-	if (tcp_hdr(skb)->syn) {
-		struct mp_join *join_opt = mptcp_find_join(skb);
-		/* Currently we make two calls to mptcp_find_join(). This
-		 * can probably be optimized. */
-		if (mptcp_v4_add_raddress(&mpcb->received_options,
-				(struct in_addr *)&iph->saddr, 0,
-				join_opt->addr_id) < 0)
-			goto discard;
-		if (unlikely(mpcb->received_options.list_rcvd)) {
-			mpcb->received_options.list_rcvd = 0;
-			mptcp_update_patharray(mpcb);
+	struct request_sock **prev;
+	struct sock *child;
+	struct request_sock *req;
+
+	req = inet_csk_search_req(meta_sk, &prev, th->source,
+			iph->saddr, iph->daddr);
+
+	if (!req) {
+		if (th->syn) {
+			struct mp_join *join_opt = mptcp_find_join(skb);
+			/* Currently we make two calls to mptcp_find_join(). This
+			 * can probably be optimized. */
+			if (mptcp_v4_add_raddress(&mpcb->received_options,
+					(struct in_addr *)&iph->saddr, 0,
+					join_opt->addr_id) < 0)
+				goto discard;
+			if (unlikely(mpcb->received_options.list_rcvd)) {
+				mpcb->received_options.list_rcvd = 0;
+				mptcp_update_patharray(mpcb);
+			}
+			mptcp_v4_join_request(mpcb, skb);
 		}
-		mptcp_v4_join_request(mpcb, skb);
-	} else { /* ack processing */
-		struct request_sock **prev;
-		struct tcphdr *th = tcp_hdr(skb);
-		struct sock *child;
-		struct request_sock *req =
-			inet_csk_search_req(meta_sk, &prev, th->source,
-					iph->saddr, iph->daddr);
-		if (!req)
-			goto discard;
-		child = tcp_check_req(meta_sk, skb, req, prev);
-		if (!child)
-			goto discard;
-		if (child != meta_sk) {
-			mptcp_subflow_attach(mpcb, child);
-			tcp_child_process(meta_sk, child, skb);
-		} else {
-			mptcp_debug("%s Sending reset upon ack. ack_seq %u, snd_isn %u\n", __func__,
-					TCP_SKB_CB(skb)->ack_seq,
-					tcp_rsk(req)->snt_isn);
-			req->rsk_ops->send_reset(NULL, skb);
-			goto discard;
-		}
-		return 0;
+		goto discard;
 	}
+
+	child = tcp_check_req(meta_sk, skb, req, prev);
+	if (!child)
+		goto discard;
+
+	if (child != meta_sk) {
+		mptcp_subflow_attach(mpcb, child);
+		tcp_child_process(meta_sk, child, skb);
+	} else {
+		mptcp_debug("%s Sending reset upon ack. ack_seq %u, snd_isn %u\n", __func__,
+				TCP_SKB_CB(skb)->ack_seq, tcp_rsk(req)->snt_isn);
+		req->rsk_ops->send_reset(NULL, skb);
+		goto discard;
+	}
+	return 0;
+
 discard:
 	kfree_skb(skb);
 	return 0;

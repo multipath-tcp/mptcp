@@ -169,6 +169,217 @@ struct path6 *mptcp_v6_find_path(struct mptcp_loc6 *loc, struct mptcp_loc6 *rem,
 	return NULL;
 }
 
+/**
+ * Based on function tcp_v4_conn_request (tcp_ipv4.c)
+ * Returns -1 if there is no space anymore to store an additional
+ * address
+ *
+ */
+int mptcp_v6_add_raddress(struct multipath_options *mopt,
+			 struct in6_addr *addr, __be16 port, u8 id)
+{
+	int i;
+	int num_addr6 = mopt->num_addr6;
+	struct mptcp_loc6 *loc6 = &mopt->addr6[0];
+
+	/* If the id is zero, this is the ULID, do not add it. */
+	if (!id)
+		return 0;
+
+	BUG_ON(num_addr6 > MPTCP_MAX_ADDR);
+
+	for (i = 0; i < num_addr6; i++) {
+		loc6 = &mopt->addr6[i];
+
+		/* Address is already in the list --- continue */
+		if (ipv6_addr_equal(&loc6->addr, addr))
+			return 0;
+
+		/* This may be the case, when the peer is behind a NAT. He is
+		 * trying to JOIN, thus sending the JOIN with a certain ID.
+		 * However the src_addr of the IP-packet has been changed. We
+		 * update the addr in the list, because this is the address as
+		 * OUR BOX sees it. */
+		if (loc6->id == id &&
+			!ipv6_addr_equal(&loc6->addr, addr)) {
+			/* update the address */
+			mptcp_debug("%s: updating old addr: %pI6 \
+					to addr %pI6 with id:%d\n",
+					__func__, &loc6->addr,
+					addr, id);
+			ipv6_addr_copy(&loc6->addr, addr);
+			loc6->port = port;
+			mopt->list_rcvd = 1;
+			return 0;
+		}
+	}
+
+	/* Do we have already the maximum number of local/remote addresses? */
+	if (num_addr6 == MPTCP_MAX_ADDR) {
+		mptcp_debug("%s: At max num of remote addresses: %d --- not "
+				"adding address: %pI6\n",
+				__func__, MPTCP_MAX_ADDR, addr);
+		return -1;
+	}
+
+	loc6 = &mopt->addr6[i];
+
+	/* Address is not known yet, store it */
+	ipv6_addr_copy(&loc6->addr, addr);
+	loc6->port = port;
+	loc6->id = id;
+	mopt->list_rcvd = 1;
+	mopt->num_addr6++;
+
+	return 0;
+}
+
+/**
+ * Currently we can only process join requests here.
+ * (either the SYN or the final ACK)
+ */
+int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
+{
+	struct ipv6hdr *iph = ipv6_hdr(skb);
+	struct tcphdr *th = tcp_hdr(skb);
+	struct multipath_pcb *mpcb = (struct multipath_pcb *)meta_sk;
+	struct request_sock **prev;
+	struct sock *child;
+	struct request_sock *req;
+
+	req = inet_csk_search_req(meta_sk, &prev, th->source,
+			iph->saddr, iph->daddr);
+
+	if (!req) {
+		if (th->syn) {
+			struct mp_join *join_opt = mptcp_find_join(skb);
+			/* Currently we make two calls to mptcp_find_join(). This
+			 * can probably be optimized. */
+			if (mptcp_v6_add_raddress(&mpcb->received_options,
+					(struct in6_addr *)&iph->saddr, 0,
+					join_opt->addr_id) < 0)
+				goto discard;
+			if (unlikely(mpcb->received_options.list_rcvd)) {
+				mpcb->received_options.list_rcvd = 0;
+				mptcp_update_patharray(mpcb);
+			}
+			mptcp_v6_join_request(mpcb, skb);
+		}
+		goto discard;
+	}
+
+	child = tcp_check_req(meta_sk, skb, req, prev);
+	if (!child)
+		goto discard;
+
+	if (child != meta_sk) {
+		mptcp_subflow_attach(mpcb, child);
+		tcp_child_process(meta_sk, child, skb);
+	} else {
+		mptcp_debug("%s Sending reset upon ack. ack_seq %u, snd_isn %u\n", __func__,
+				TCP_SKB_CB(skb)->ack_seq, tcp_rsk(req)->snt_isn);
+		req->rsk_ops->send_reset(NULL, skb);
+		goto discard;
+	}
+	return 0;
+
+discard:
+	kfree_skb(skb);
+	return 0;
+}
+
+/*inspired from inet_csk_search_req
+ * After this, the kref count of the mpcb associated with the request_sock
+ * is incremented. Thus it is the responsibility of the caller
+ * to call mpcb_put() when the reference is not needed anymore.
+ */
+struct request_sock *mptcp_v6_search_req(const __be16 rport,
+					const struct in6_addr *raddr,
+					const struct in6_addr *laddr)
+{
+	struct request_sock *req;
+	int found = 0;
+
+	spin_lock(&mptcp_reqsk_hlock);
+	list_for_each_entry(req, &mptcp_reqsk_htb[
+				inet6_synq_hash(raddr, rport, 0,
+				MPTCP_HASH_SIZE)],
+				collide_tuple) {
+		const struct inet6_request_sock *treq = inet6_rsk(req);
+
+		if (inet_rsk(req)->rmt_port == rport &&
+			AF_INET6_FAMILY(req->rsk_ops->family) &&
+			ipv6_addr_equal(&treq->rmt_addr, raddr) &&
+			ipv6_addr_equal(&treq->loc_addr, laddr)) {
+			WARN_ON(req->sk);
+			found = 1;
+			break;
+		}
+	}
+
+	if (found)
+		sock_hold(req->mpcb->master_sk);
+	spin_unlock(&mptcp_reqsk_hlock);
+
+	if (!found)
+		return NULL;
+
+	return req;
+}
+
+int mptcp_v6_send_synack(struct sock *meta_sk,
+				 struct request_sock *req)
+{
+	struct sock *master_sk = ((struct multipath_pcb *)meta_sk)->master_sk;
+	struct inet6_request_sock *treq = inet6_rsk(req);
+	struct ipv6_pinfo *np = inet6_sk(meta_sk);
+	struct sk_buff *skb;
+	struct ipv6_txoptions *opt = NULL;
+	struct in6_addr *final_p, final;
+	struct flowi fl;
+	struct dst_entry *dst;
+	int err = -1;
+
+	memset(&fl, 0, sizeof(fl));
+	fl.proto = IPPROTO_TCP;
+	ipv6_addr_copy(&fl.fl6_dst, &treq->rmt_addr);
+	ipv6_addr_copy(&fl.fl6_src, &treq->loc_addr);
+	fl.fl6_flowlabel = 0;
+	fl.oif = treq->iif;
+	fl.mark = meta_sk->sk_mark;
+	fl.fl_ip_dport = inet_rsk(req)->rmt_port;
+	fl.fl_ip_sport = inet_rsk(req)->loc_port;
+	security_req_classify_flow(req, &fl);
+
+	opt = np->opt;
+	final_p = fl6_update_dst(&fl, opt, &final);
+
+	err = ip6_dst_lookup(meta_sk, &dst, &fl);
+	if (err)
+		goto done;
+	if (final_p)
+		ipv6_addr_copy(&fl.fl6_dst, final_p);
+	err = xfrm_lookup(sock_net(meta_sk), &dst, &fl, meta_sk, 0);
+	if (err < 0)
+		goto done;
+
+	skb = mptcp_make_synack(master_sk, dst, req);
+
+	if (skb) {
+		__tcp_v6_send_check(skb, &treq->loc_addr, &treq->rmt_addr);
+
+		ipv6_addr_copy(&fl.fl6_dst, &treq->rmt_addr);
+		err = ip6_xmit(meta_sk, skb, &fl, opt);
+		err = net_xmit_eval(err);
+	}
+
+done:
+	if (opt && opt != np->opt)
+		sock_kfree_s(meta_sk, opt, opt->tot_len);
+	dst_release(dst);
+	return err;
+}
+
 /*This is the MPTCP PM IPV6 mapping table*/
 void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 {
@@ -277,208 +488,4 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 	mpcb->pa6 = new_pa6;
 	mpcb->pa6_size = pa6_size;
 	kfree(old_pa6);
-}
-
-/**
- * Based on function tcp_v4_conn_request (tcp_ipv4.c)
- * Returns -1 if there is no space anymore to store an additional
- * address
- *
- */
-int mptcp_v6_add_raddress(struct multipath_options *mopt,
-			 struct in6_addr *addr, __be16 port, u8 id)
-{
-	int i;
-	int num_addr6 = mopt->num_addr6;
-	struct mptcp_loc6 *loc6 = &mopt->addr6[0];
-
-	/* If the id is zero, this is the ULID, do not add it. */
-	if (!id)
-		return 0;
-
-	BUG_ON(num_addr6 > MPTCP_MAX_ADDR);
-
-	for (i = 0; i < num_addr6; i++) {
-		loc6 = &mopt->addr6[i];
-
-		/* Address is already in the list --- continue */
-		if (ipv6_addr_equal(&loc6->addr, addr))
-			return 0;
-
-		/* This may be the case, when the peer is behind a NAT. He is
-		 * trying to JOIN, thus sending the JOIN with a certain ID.
-		 * However the src_addr of the IP-packet has been changed. We
-		 * update the addr in the list, because this is the address as
-		 * OUR BOX sees it. */
-		if (loc6->id == id &&
-			!ipv6_addr_equal(&loc6->addr, addr)) {
-			/* update the address */
-			mptcp_debug("%s: updating old addr: %pI6 \
-					to addr %pI6 with id:%d\n",
-					__func__, &loc6->addr,
-					addr, id);
-			ipv6_addr_copy(&loc6->addr, addr);
-			loc6->port = port;
-			mopt->list_rcvd = 1;
-			return 0;
-		}
-	}
-
-	/* Do we have already the maximum number of local/remote addresses? */
-	if (num_addr6 == MPTCP_MAX_ADDR) {
-		mptcp_debug("%s: At max num of remote addresses: %d --- not "
-				"adding address: %pI6\n",
-				__func__, MPTCP_MAX_ADDR, addr);
-		return -1;
-	}
-
-	loc6 = &mopt->addr6[i];
-
-	/* Address is not known yet, store it */
-	ipv6_addr_copy(&loc6->addr, addr);
-	loc6->port = port;
-	loc6->id = id;
-	mopt->list_rcvd = 1;
-	mopt->num_addr6++;
-
-	return 0;
-}
-
-/*inspired from inet_csk_search_req
- * After this, the kref count of the mpcb associated with the request_sock
- * is incremented. Thus it is the responsibility of the caller
- * to call mpcb_put() when the reference is not needed anymore.
- */
-struct request_sock *mptcp_v6_search_req(const __be16 rport,
-					const struct in6_addr *raddr,
-					const struct in6_addr *laddr)
-{
-	struct request_sock *req;
-	int found = 0;
-
-	spin_lock(&mptcp_reqsk_hlock);
-	list_for_each_entry(req, &mptcp_reqsk_htb[
-				inet6_synq_hash(raddr, rport, 0,
-				MPTCP_HASH_SIZE)],
-				collide_tuple) {
-		const struct inet6_request_sock *treq = inet6_rsk(req);
-
-		if (inet_rsk(req)->rmt_port == rport &&
-			AF_INET6_FAMILY(req->rsk_ops->family) &&
-			ipv6_addr_equal(&treq->rmt_addr, raddr) &&
-			ipv6_addr_equal(&treq->loc_addr, laddr)) {
-			WARN_ON(req->sk);
-			found = 1;
-			break;
-		}
-	}
-
-	if (found)
-		sock_hold(req->mpcb->master_sk);
-	spin_unlock(&mptcp_reqsk_hlock);
-
-	if (!found)
-		return NULL;
-
-	return req;
-}
-
-int mptcp_v6_send_synack(struct sock *meta_sk,
-				 struct request_sock *req)
-{
-	struct sock *master_sk = ((struct multipath_pcb *)meta_sk)->master_sk;
-	struct inet6_request_sock *treq = inet6_rsk(req);
-	struct ipv6_pinfo *np = inet6_sk(meta_sk);
-	struct sk_buff *skb;
-	struct ipv6_txoptions *opt = NULL;
-	struct in6_addr *final_p, final;
-	struct flowi fl;
-	struct dst_entry *dst;
-	int err = -1;
-
-	memset(&fl, 0, sizeof(fl));
-	fl.proto = IPPROTO_TCP;
-	ipv6_addr_copy(&fl.fl6_dst, &treq->rmt_addr);
-	ipv6_addr_copy(&fl.fl6_src, &treq->loc_addr);
-	fl.fl6_flowlabel = 0;
-	fl.oif = treq->iif;
-	fl.mark = meta_sk->sk_mark;
-	fl.fl_ip_dport = inet_rsk(req)->rmt_port;
-	fl.fl_ip_sport = inet_rsk(req)->loc_port;
-	security_req_classify_flow(req, &fl);
-
-	opt = np->opt;
-	final_p = fl6_update_dst(&fl, opt, &final);
-
-	err = ip6_dst_lookup(meta_sk, &dst, &fl);
-	if (err)
-		goto done;
-	if (final_p)
-		ipv6_addr_copy(&fl.fl6_dst, final_p);
-	err = xfrm_lookup(sock_net(meta_sk), &dst, &fl, meta_sk, 0);
-	if (err < 0)
-		goto done;
-
-	skb = mptcp_make_synack(master_sk, dst, req);
-
-	if (skb) {
-		__tcp_v6_send_check(skb, &treq->loc_addr, &treq->rmt_addr);
-
-		ipv6_addr_copy(&fl.fl6_dst, &treq->rmt_addr);
-		err = ip6_xmit(meta_sk, skb, &fl, opt);
-		err = net_xmit_eval(err);
-	}
-
-done:
-	if (opt && opt != np->opt)
-		sock_kfree_s(meta_sk, opt, opt->tot_len);
-	dst_release(dst);
-	return err;
-}
-
-/**
- * Currently we can only process join requests here.
- * (either the SYN or the final ACK)
- */
-int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
-{
-	const struct ipv6hdr *iph = ipv6_hdr(skb);
-	struct multipath_pcb *mpcb = (struct multipath_pcb *)meta_sk;
-	if (tcp_hdr(skb)->syn) {
-		struct mp_join *join_opt = mptcp_find_join(skb);
-		/* Currently we make two calls to mptcp_find_join(). This
-		 * can probably be optimized. */
-		if (mptcp_v6_add_raddress(&mpcb->received_options,
-				(struct in6_addr *)&iph->saddr, 0,
-				join_opt->addr_id) < 0)
-			goto discard;
-		if (unlikely(mpcb->received_options.list_rcvd)) {
-			mpcb->received_options.list_rcvd = 0;
-			mptcp_update_patharray(mpcb);
-		}
-		mptcp_v6_join_request(mpcb, skb);
-	} else { /* ack processing */
-		struct request_sock **prev;
-		struct tcphdr *th = tcp_hdr(skb);
-		struct sock *child;
-		struct request_sock *req =
-			inet6_csk_search_req(meta_sk, &prev, th->source,
-					&iph->saddr, &iph->daddr, skb->skb_iif);
-		if (!req)
-			goto discard;
-		child = tcp_check_req(meta_sk, skb, req, prev);
-		if (!child)
-			goto discard;
-		if (child != meta_sk) {
-			mptcp_subflow_attach(mpcb, child);
-			tcp_child_process(meta_sk, child, skb);
-		} else {
-			req->rsk_ops->send_reset(NULL, skb);
-			goto discard;
-		}
-		return 0;
-	}
-discard:
-	kfree_skb(skb);
-	return 0;
 }
