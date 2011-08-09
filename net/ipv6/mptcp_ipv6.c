@@ -248,7 +248,7 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	struct request_sock *req;
 
 	req = inet6_csk_search_req(meta_sk, &prev, th->source,
-			iph->saddr, iph->daddr);
+			&iph->saddr, &iph->daddr, inet6_iif(skb));
 
 	if (!req) {
 		if (th->syn) {
