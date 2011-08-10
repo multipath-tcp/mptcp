@@ -2605,11 +2605,10 @@ EXPORT_SYMBOL(proto_unregister);
 
 void sk_wake_async(struct sock *sk, int how, int band)
 {
-	struct sock *meta_sk = (sk->sk_protocol == IPPROTO_TCP &&
-				 tcp_sk(sk)->mpc) ?
-				 (struct sock *)tcp_sk(sk)->mpcb : sk;
+	sk = (sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpc) ?
+					tcp_sk(sk)->mpcb->master_sk : sk;
 	if (sock_flag(sk, SOCK_FASYNC))
-		sock_wake_async(meta_sk->sk_socket, how, band);
+		sock_wake_async(sk->sk_socket, how, band);
 }
 EXPORT_SYMBOL(sk_wake_async);
 
