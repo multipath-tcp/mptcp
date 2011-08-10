@@ -80,9 +80,6 @@ extern struct proto mptcpsub_prot;
 #define MPCB_FLAG_SERVER_SIDE	0  /* This mpcb belongs to a server side
 				    * connection. (obtained through a listen)
 				    */
-#define MPCB_FLAG_FIN_ENQUEUED  1  /* A dfin has been enqueued on the meta-send
-				    * queue.
-				    */
 
 struct multipath_pcb {
 

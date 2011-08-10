@@ -1045,7 +1045,7 @@ void mptcp_ofo_queue(struct multipath_pcb *mpcb)
 		__skb_queue_tail(&meta_sk->sk_receive_queue, skb);
 		meta_tp->rcv_nxt = TCP_SKB_CB(skb)->end_data_seq;
 
-		if (is_dfin_seg(mpcb, skb))
+		if (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN)
 			mptcp_fin(mpcb);
 	}
 }
@@ -1148,7 +1148,7 @@ int mptcp_check_rcv_queue(struct multipath_pcb *mpcb, struct msghdr *msg,
 
 			tp = tcp_sk(skb->sk);
 
-			if (is_dfin_seg(mpcb, skb))
+			if (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN)
 				dfin = 1;
 
 			if (before(*data_seq, TCP_SKB_CB(skb)->data_seq)) {
@@ -1414,12 +1414,13 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	u32 old_copied = tp->copied_seq;
 	int ans = 0;
 
-	if (!skb->len && tcp_hdr(skb)->fin && !tp->rx_opt.saw_dfin) {
+	if (!skb->len && tcp_hdr(skb)->fin &&
+			!(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN)) {
 		/* Pure subflow FIN (without DFIN)
 		 * just update subflow and return
 		 */
 		tp->copied_seq++;
-		return 0;
+		return 1;
 	}
 
 	/* If there is a DSS-mapping, check if it is ok with the current
@@ -1561,7 +1562,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 					__skb_queue_tail(&meta_sk->sk_receive_queue, tmp1);
 					meta_tp->rcv_nxt = TCP_SKB_CB(tmp1)->end_data_seq;
 
-					if (is_dfin_seg(mpcb, tmp1))
+					if (TCP_SKB_CB(tmp1)->mptcp_flags & MPTCPHDR_FIN)
 						mptcp_fin(mpcb);
 
 					/* Check if this fills a gap in the ofo queue */
@@ -1865,21 +1866,15 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 					ntohs(*(uint16_t *)(ptr + 8));
 			TCP_SKB_CB(skb)->end_data_seq =
 				TCP_SKB_CB(skb)->data_seq +
-				TCP_SKB_CB(skb)->end_seq -
-				TCP_SKB_CB(skb)->seq;
+				TCP_SKB_CB(skb)->data_len;
 			TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_SEQ;
 
 			ptr += MPTCP_SUB_LEN_SEQ;
 		}
 
-		if (mdss->F) {
-			TCP_SKB_CB(skb)->end_data_seq++;
-			if (mopt) {
-				mopt->dfin_rcvd = opt_rx->saw_dfin = 1;
-				mopt->fin_dsn = TCP_SKB_CB(skb)->data_seq +
-						TCP_SKB_CB(skb)->data_len;
-			}
-		}
+		if (mdss->F)
+			TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_FIN;
+
 		break;
 	}
 	case MPTCP_SUB_ADD_ADDR:
@@ -2115,13 +2110,13 @@ EXPORT_SYMBOL(mptcp_check_socket);
 void mptcp_send_fin(struct sock *meta_sk)
 {
 	struct sk_buff *skb;
-	struct multipath_pcb *mpcb = (struct multipath_pcb *) meta_sk;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	if (tcp_send_head(meta_sk)) {
 		skb = tcp_write_queue_tail(meta_sk);
 		TCP_SKB_CB(skb)->flags |= TCPHDR_FIN;
 		TCP_SKB_CB(skb)->data_len++;
 		TCP_SKB_CB(skb)->end_data_seq++;
+		TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_FIN;
 		meta_tp->write_seq++;
 	} else {
 		for (;;) {
@@ -2136,12 +2131,12 @@ void mptcp_send_fin(struct sock *meta_sk)
 		TCP_SKB_CB(skb)->data_seq = meta_tp->write_seq;
 		TCP_SKB_CB(skb)->data_len = 1;
 		TCP_SKB_CB(skb)->end_data_seq = meta_tp->write_seq + 1;
+		TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_FIN;
 		/* FIN eats a sequence byte, write_seq advanced by
 		 * tcp_queue_skb().
 		 */
 		tcp_queue_skb(meta_sk, skb);
 	}
-	set_bit(MPCB_FLAG_FIN_ENQUEUED, &mpcb->flags);
 	__tcp_push_pending_frames(meta_sk, mptcp_sysctl_mss(), TCP_NAGLE_OFF);
 }
 
@@ -2188,7 +2183,7 @@ void mptcp_close(struct sock *master_sk, long timeout)
 	while ((skb = __skb_dequeue(&meta_sk->sk_receive_queue)) != NULL) {
 		u32 len = TCP_SKB_CB(skb)->end_data_seq
 				- TCP_SKB_CB(skb)->data_seq
-				- (is_dfin_seg(mpcb, skb) ? 1 : 0);
+				- ((TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN) ? 1 : 0);
 		data_was_unread += len;
 		__kfree_skb(skb);
 	}

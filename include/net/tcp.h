@@ -609,8 +609,9 @@ extern u32 __tcp_select_window(struct sock *sk);
  * TCP flags will be rewritten with MPTCP flags when changing the layer.
  * This will allow using one flags field only, and spare 8 bits.
  */
-#define MPTCPHDR_ACK 0x10
-#define MPTCPHDR_SEQ 0x20
+#define MPTCPHDR_ACK 0x01
+#define MPTCPHDR_SEQ 0x02
+#define MPTCPHDR_FIN 0x04
 
 /* This is what the send packet queuing engine uses to pass
  * TCP per-packet control information to the transmission code.

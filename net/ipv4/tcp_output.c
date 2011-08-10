@@ -945,7 +945,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			opts->options |= OPTION_DATA_ACK;
 			size += MPTCP_SUB_LEN_ACK_ALIGN;
 		}
-		if (!skb || skb->len != 0 || tcb->flags & TCPHDR_FIN) {
+		if (!skb || skb->len != 0 || (tcb->mptcp_flags & MPTCPHDR_FIN)) {
 			dss = 1;
 
 			if (tcb && tcb->data_len) {
@@ -963,11 +963,8 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			size += MPTCP_SUB_LEN_SEQ_ALIGN;
 		}
 
-		if (tp->mpc && test_bit(MPCB_FLAG_FIN_ENQUEUED, &mpcb->flags) &&
-			(!skb || tcb->end_data_seq ==
-					mpcb_meta_tp(mpcb)->write_seq)) {
+		if (tp->mpc && skb && (tcb->mptcp_flags & MPTCPHDR_FIN)) {
 			dss = 1;
-
 			opts->options |= OPTION_DATA_FIN;
 		}
 
