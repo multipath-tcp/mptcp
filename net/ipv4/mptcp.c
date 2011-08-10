@@ -1573,8 +1573,8 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 					skb_set_owner_r(tmp1, meta_sk);
 				}
 			}
-
-			sk->sk_data_ready(sk, 0);
+			if (!sock_flag(meta_sk, SOCK_DEAD))
+				sk->sk_data_ready(sk, 0);
 		}
 
 		tp->map_data_len = 0;
