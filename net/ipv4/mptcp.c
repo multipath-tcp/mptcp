@@ -1479,32 +1479,33 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	 */
 	if (tp->map_data_len && before(tp->copied_seq, tp->map_subseq)) {
 		mptcp_debug("%s remove packets not covered by mapping: "
-				"data_len %u, tp->copied_seq %u, "
-				"tp->map_subseq %u\n", __func__,
-				tp->map_data_len, tp->copied_seq,
-				tp->map_subseq);
+			    "data_len %u, tp->copied_seq %u, "
+			    "tp->map_subseq %u\n", __func__,
+			    tp->map_data_len, tp->copied_seq,
+			    tp->map_subseq);
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
 			if (after(TCP_SKB_CB(tmp1)->end_seq, tp->map_subseq)) {
 				mptcp_debug("%s Not removing packet seq %u, "
-						"end_seq %u\n", __func__,
-						TCP_SKB_CB(tmp1)->seq,
-						TCP_SKB_CB(tmp1)->end_seq);
+					    "end_seq %u\n", __func__,
+					    TCP_SKB_CB(tmp1)->seq,
+					    TCP_SKB_CB(tmp1)->end_seq);
 				break;
 			}
 			mptcp_debug("%s remove packet seq %u, end_seq %u\n",
-					__func__, TCP_SKB_CB(tmp1)->seq,
-					TCP_SKB_CB(tmp1)->end_seq);
+				    __func__, TCP_SKB_CB(tmp1)->seq,
+				    TCP_SKB_CB(tmp1)->end_seq);
 			__skb_unlink(tmp1, &sk->sk_receive_queue);
 
 			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 
 			/* Impossible that we could free skb here, because his
-			 * mapping is known to be valid from previous checks */
+			 * mapping is known to be valid from previous checks
+			 */
 			__kfree_skb(tmp1);
 		}
 	}
 
-	/* Do we have received the full mapping? Then push further */
+	/* Have we received the full mapping? Then push further */
 	if (tp->map_data_len &&
 	    !before(tp->rcv_nxt, tp->map_subseq + tp->map_data_len)) {
 		/* Verify the checksum first */
@@ -1541,43 +1542,53 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 		if (before(meta_tp->rcv_nxt, tp->map_data_seq)) {
 			/* Seg's have to go to the meta-ofo-queue */
 			skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
-				if (!before(TCP_SKB_CB(tmp1)->seq, tp->map_subseq)) {
-					if (after(TCP_SKB_CB(tmp1)->end_seq,
-						  tp->map_subseq + tp->map_data_len))
-						break;
+				/* Policy: we keep the segment until it is fully
+				 * covered or fully uncovered by the mapping.
+				 */
+				if (before(TCP_SKB_CB(tmp1)->seq,
+					   tp->map_subseq))
+					continue;
+				if (after(TCP_SKB_CB(tmp1)->end_seq,
+					  tp->map_subseq + tp->map_data_len))
+					break;
 
-					mptcp_prepare_skb(tmp1, tp);
+				mptcp_prepare_skb(tmp1, tp);
 
-					__skb_unlink(tmp1, &sk->sk_receive_queue);
-					tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
-					skb_set_owner_r(tmp1, meta_sk);
+				__skb_unlink(tmp1, &sk->sk_receive_queue);
+				tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
+				skb_set_owner_r(tmp1, meta_sk);
 
-					ans = mptcp_add_meta_ofo_queue(meta_sk, tp, tmp1);
-				}
+				ans = mptcp_add_meta_ofo_queue(meta_sk, tp,
+							       tmp1);
 			}
 		} else {
 			/* Ready for the meta-rcv-queue */
 			skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
-				if (!before(TCP_SKB_CB(tmp1)->seq, tp->map_subseq)) {
-					if (after(TCP_SKB_CB(tmp1)->end_seq,
-						  tp->map_subseq + tp->map_data_len))
-						break;
+				/* Policy: see above */
+				if (before(TCP_SKB_CB(tmp1)->seq,
+					   tp->map_subseq))
+					continue;
+				if (after(TCP_SKB_CB(tmp1)->end_seq,
+					  tp->map_subseq + tp->map_data_len))
+					break;
 
-					mptcp_prepare_skb(tmp1, tp);
-					__skb_unlink(tmp1, &sk->sk_receive_queue);
-					__skb_queue_tail(&meta_sk->sk_receive_queue, tmp1);
-					meta_tp->rcv_nxt = TCP_SKB_CB(tmp1)->end_data_seq;
+				mptcp_prepare_skb(tmp1, tp);
+				__skb_unlink(tmp1, &sk->sk_receive_queue);
+				__skb_queue_tail(&meta_sk->sk_receive_queue,
+						 tmp1);
+				meta_tp->rcv_nxt =
+					TCP_SKB_CB(tmp1)->end_data_seq;
 
-					if (TCP_SKB_CB(tmp1)->mptcp_flags & MPTCPHDR_FIN)
-						mptcp_fin(mpcb);
+				if (TCP_SKB_CB(tmp1)->mptcp_flags & MPTCPHDR_FIN)
+					mptcp_fin(mpcb);
 
-					/* Check if this fills a gap in the ofo queue */
-					if (!skb_queue_empty(&meta_tp->out_of_order_queue))
-						mptcp_ofo_queue(mpcb);
+				/* Check if this fills a gap in the ofo queue */
+				if (!skb_queue_empty(
+					    &meta_tp->out_of_order_queue))
+					mptcp_ofo_queue(mpcb);
 
-					tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
-					skb_set_owner_r(tmp1, meta_sk);
-				}
+				tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
+				skb_set_owner_r(tmp1, meta_sk);
 			}
 			if (!sock_flag(meta_sk, SOCK_DEAD))
 				sk->sk_data_ready(sk, 0);
