@@ -362,7 +362,6 @@ static inline int mptcp_sysctl_mss(void)
 			(tcp_sk(sk))->mpcb &&			\
 			((struct tcp_sock *) tcp_sk(sk)->mpcb) == tcp_sk(sk))
 #define is_master_tp(__tp) (!(__tp)->slave_sk && !is_meta_tp(__tp))
-#define tp_path_index(__tp) (tp->path_index)
 #define mptcp_req_sk_saw_mpc(__req) (req->saw_mpc)
 #define mptcp_sk_attached(__sk) (tcp_sk(sk)->attached)
 

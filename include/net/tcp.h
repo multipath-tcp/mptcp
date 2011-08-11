@@ -749,17 +749,6 @@ static inline void tcp_set_ca_state(struct sock *sk, const u8 ca_state)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
-#ifdef CONFIG_MPTCP
-	if (ca_state != icsk->icsk_ca_state) {
-		char buf[200];
-		snprintf(buf, sizeof(buf),
-			 "pi %d: changed ca state : %d -> %d",
-			 tcp_sk(sk)->path_index,
-			 icsk->icsk_ca_state, ca_state);
-		tcpprobe_logmsg(sk, buf);
-	}
-#endif
-
 	if (icsk->icsk_ca_ops->set_state)
 		icsk->icsk_ca_ops->set_state(sk, ca_state);
 	icsk->icsk_ca_state = ca_state;

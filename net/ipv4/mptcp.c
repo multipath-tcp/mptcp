@@ -835,7 +835,7 @@ void mptcp_check_buffers(struct multipath_pcb *mpcb)
 		skb = skb_peek(&meta_sk->sk_receive_queue);
 		mptcp_debug("pi %d, ofo_size:%d,meta_ofo_size:%d,"
 			"rcv_size:%d, waiting:%d,next dsn:%#x\n",
-			tp_path_index(tp), ofo_size, meta_ofo_size, rcv_size,
+			tp->path_index, ofo_size, meta_ofo_size, rcv_size,
 			tp->wait_data_bit_set,
 			(skb ? mptcp_skb_data_seq(skb) : 0));
 	}

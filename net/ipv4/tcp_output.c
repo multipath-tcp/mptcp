@@ -1170,7 +1170,7 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			      tcp_skb_pcount(skb));
 
 #ifdef CONFIG_MPTCP
-	skb->path_index = tp_path_index(tp);
+	skb->path_index = tp->path_index;
 #endif
 	err = icsk->icsk_af_ops->queue_xmit(skb);
 	if (likely(err <= 0))
@@ -1640,7 +1640,7 @@ static inline unsigned int tcp_cwnd_test(struct tcp_sock *tp,
 
 	in_flight = tcp_packets_in_flight(tp);
 	if (icsk->icsk_ca_state == TCP_CA_Loss)
-		tcpprobe_logmsg(sk, "tp %d: in_flight is %d", tp_path_index(tp),
+		tcpprobe_logmsg(sk, "tp %d: in_flight is %d", tp->path_index,
 				in_flight);
 	cwnd = tp->snd_cwnd;
 	if (in_flight < cwnd)
@@ -2764,9 +2764,8 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 
 	/* In case of RTO (loss state), we reinject data on another subflow */
 	if (icsk->icsk_ca_state == TCP_CA_Loss &&
-	    tp->mpc && sk->sk_state == TCP_ESTABLISHED && tp_path_index(tp)) {
+	    tp->mpc && sk->sk_state == TCP_ESTABLISHED && tp->path_index)
 		mptcp_reinject_data(sk, 1);
-	}
 #endif
 	/* Inconslusive MTU probe */
 	if (icsk->icsk_mtup.probe_size) {
