@@ -326,6 +326,7 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 
 #ifdef CONFIG_MPTCP
 	tp->snt_isn = tp->write_seq;
+	tp->reinjected_seq = tp->write_seq;
 #endif
 	err = mptcp_alloc_mpcb(sk, GFP_KERNEL);
 	if (err)

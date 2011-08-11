@@ -645,6 +645,16 @@ static inline int mptcp_check_snd_buf(struct tcp_sock *tp)
 	return mptcp_snd_buf_demand(tp, rtt_max);
 }
 
+static inline void mptcp_retransmit_queue(struct sock *sk)
+{
+	/* Do not reinject, if tp->pf == 1, because this means we have already
+	 * reinjected the packets. And as long as tp->pf == 1, no new data could
+	 * have gone on the send-queue. */
+	if (tcp_sk(sk)->mpc && !tcp_sk(sk)->pf &&
+	    sk->sk_state == TCP_ESTABLISHED)
+		mptcp_reinject_data(sk, 1);
+}
+
 #if (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))
 static inline int mptcp_get_path_family(struct multipath_pcb *mpcb,
 					int path_index)
@@ -856,6 +866,7 @@ static inline int mptcp_check_snd_buf(struct tcp_sock *tp)
 {
 	return 0;
 }
+static inline void mptcp_retransmit_queue(struct sock *sk) {}
 static inline int mptcp_get_path_family(struct multipath_pcb *mpcb,
 					int path_index)
 {

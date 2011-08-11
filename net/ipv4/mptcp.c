@@ -1781,32 +1781,37 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 }
 
 /* Inserts data into the reinject queue */
-void mptcp_reinject_data(struct sock *orig_sk, int clone_it)
+void mptcp_reinject_data(struct sock *sk, int clone_it)
 {
 	struct sk_buff *skb_it;
-	struct tcp_sock *orig_tp = tcp_sk(orig_sk);
-	struct multipath_pcb *mpcb = orig_tp->mpcb;
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct multipath_pcb *mpcb = tp->mpcb;
 	struct sock *meta_sk = (struct sock *) mpcb;
 
-	BUG_ON(is_meta_sk(orig_sk));
+	BUG_ON(is_meta_sk(sk));
 
 	verif_wqueues(mpcb);
 
-	tcp_for_write_queue(skb_it, orig_sk) {
-		skb_it->path_mask |= PI_TO_FLAG(orig_tp->path_index);
+	tcp_for_write_queue(skb_it, sk) {
+		/* seq > reinjected_seq , to avoid reinjecting several times
+		 * the same segment */
+		if (!after(TCP_SKB_CB(skb_it)->seq, tp->reinjected_seq))
+			continue;
+		skb_it->path_mask |= PI_TO_FLAG(tp->path_index);
 		if (__mptcp_reinject_data(skb_it, meta_sk, clone_it) < 0)
 			break;
+		tp->reinjected_seq = TCP_SKB_CB(skb_it)->seq;
 	}
 
-	tcpprobe_logmsg(orig_sk, "after reinj, reinj queue size:%d",
+	tcpprobe_logmsg(sk, "after reinj, reinj queue size:%d",
 			skb_queue_len(&mpcb->reinject_queue));
 
 	tcp_push(meta_sk, 0, mptcp_sysctl_mss(), TCP_NAGLE_PUSH);
 
-	if (orig_tp->pf == 0)
-		tcpprobe_logmsg(orig_sk, "pi %d: entering pf state",
-				orig_tp->path_index);
-	orig_tp->pf = 1;
+	if (tp->pf == 0)
+		tcpprobe_logmsg(sk, "pi %d: entering pf state",
+				tp->path_index);
+	tp->pf = 1;
 
 	verif_wqueues(mpcb);
 }

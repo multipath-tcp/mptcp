@@ -2759,14 +2759,6 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 	unsigned int cur_mss;
 	int err;
 
-#ifdef CONFIG_MPTCP
-	BUG_ON(!skb);
-
-	/* In case of RTO (loss state), we reinject data on another subflow */
-	if (icsk->icsk_ca_state == TCP_CA_Loss &&
-	    tp->mpc && sk->sk_state == TCP_ESTABLISHED && tp->path_index)
-		mptcp_reinject_data(sk, 1);
-#endif
 	/* Inconslusive MTU probe */
 	if (icsk->icsk_mtup.probe_size) {
 		icsk->icsk_mtup.probe_size = 0;

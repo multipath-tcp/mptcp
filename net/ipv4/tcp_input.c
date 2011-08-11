@@ -2204,6 +2204,7 @@ static void tcp_enter_frto_loss(struct sock *sk, int allowed_segments, int flag)
 	tp->reordering = min_t(unsigned int, tp->reordering,
 			       sysctl_tcp_reordering);
 	tcp_set_ca_state(sk, TCP_CA_Loss);
+	mptcp_retransmit_queue(sk);
 	tp->high_seq = tp->snd_nxt;
 	TCP_ECN_queue_cwr(tp);
 
@@ -2283,6 +2284,7 @@ void tcp_enter_loss(struct sock *sk, int how)
 	tp->reordering = min_t(unsigned int, tp->reordering,
 			       sysctl_tcp_reordering);
 	tcp_set_ca_state(sk, TCP_CA_Loss);
+	mptcp_retransmit_queue(sk);
 	tp->high_seq = tp->snd_nxt;
 	TCP_ECN_queue_cwr(tp);
 	/* Abort F-RTO algorithm if one is in progress */
@@ -2970,6 +2972,7 @@ void tcp_simple_retransmit(struct sock *sk)
 		tp->prior_ssthresh = 0;
 		tp->undo_marker = 0;
 		tcp_set_ca_state(sk, TCP_CA_Loss);
+		mptcp_retransmit_queue(sk);
 	}
 	tcp_xmit_retransmit_queue(sk);
 }
@@ -3583,6 +3586,8 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 	}
 
 	tp->snd_una = ack;
+	if (tp->mpc && after(tp->snd_una, tp->reinjected_seq))
+		tp->reinjected_seq = tp->snd_una;
 	mptcp_update_window_check(meta_tp, skb, data_ack);
 
 	return flag;
@@ -3778,6 +3783,8 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 		tcp_update_wl(meta_tp, (tp->mpc) ? mptcp_skb_data_seq(skb) :
 			      ack_seq);
 		tp->snd_una = ack;
+		if (tp->mpc && after(tp->snd_una, tp->reinjected_seq))
+			tp->reinjected_seq = tp->snd_una;
 		flag |= FLAG_WIN_UPDATE;
 
 		tcp_ca_event(sk, CA_EVENT_FAST_ACK);
@@ -6133,6 +6140,8 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 						      SOCK_WAKE_IO, POLL_OUT);
 
 				tp->snd_una = TCP_SKB_CB(skb)->ack_seq;
+				if (tp->mpc && after(tp->snd_una, tp->reinjected_seq))
+					tp->reinjected_seq = tp->snd_una;
 				if (tp->mpc) {
 					mpcb_meta_tp(tp->mpcb)->snd_wnd =
 						ntohs(th->window) <<
