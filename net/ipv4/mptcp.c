@@ -1415,7 +1415,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	int ans = 0;
 
 	if (!skb->len && tcp_hdr(skb)->fin &&
-			!(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN)) {
+	    !(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN)) {
 		/* Pure subflow FIN (without DFIN)
 		 * just update subflow and return
 		 */
@@ -1424,7 +1424,8 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	}
 
 	/* If there is a DSS-mapping, check if it is ok with the current
-	 * expected mapping. If anything is wrong, reset the subflow */
+	 * expected mapping. If anything is wrong, reset the subflow
+	 */
 	if (tcb->mptcp_flags & MPTCPHDR_SEQ) {
 		if (tp->map_data_len &&
 		    (tcb->data_seq != tp->map_data_seq ||
@@ -1432,13 +1433,14 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 		     tcb->data_len != tp->map_data_len)) {
 			/* Mapping on packet is different from what we want */
 			mptcp_debug("%s destroying subflow with pi %d from mpcb "
-					"with token %u\n", __func__,
-					tp->path_index, mptcp_loc_token(mpcb));
-			mptcp_debug("%s missing rest of the already present mapping: "
-				"data_seq %u, subseq %u, data_len %u - new mapping: "
-				"data_seq %u, subseq %u, data_len %u\n", __func__,
-				tp->map_data_seq, tp->map_subseq, tp->map_data_len,
-				tcb->data_seq, tcb->sub_seq, tcb->data_len);
+				    "with token %u\n", __func__,
+				    tp->path_index, mptcp_loc_token(mpcb));
+			mptcp_debug("%s missing rest of the already present "
+				    "mapping: data_seq %u, subseq %u, data_len "
+				    "%u - new mapping: data_seq %u, subseq %u, "
+				    "data_len %u\n", __func__, tp->map_data_seq,
+				    tp->map_subseq, tp->map_data_len,
+				    tcb->data_seq, tcb->sub_seq, tcb->data_len);
 			mptcp_send_reset(sk, skb);
 			return -1;
 		}
@@ -1448,15 +1450,16 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 			    before(tcb->sub_seq + tcb->data_len, tcb->seq)) {
 				/* Subflow-sequences of packet is different from
 				 * what is in the packet's dss-mapping.
-				 * The peer is misbehaving - reset */
+				 * The peer is misbehaving - reset
+				 */
 				mptcp_debug("%s destroying subflow with pi %d "
-						"from mpcb with token %u\n",
-						__func__, tp->path_index,
-						mptcp_loc_token(mpcb));
+					    "from mpcb with token %u\n",
+					    __func__, tp->path_index,
+					    mptcp_loc_token(mpcb));
 				mptcp_debug("%s seq %u end_seq %u, sub_seq %u "
-						"data_len %u\n", __func__,
-						tcb->seq, tcb->end_seq,
-						tcb->sub_seq, tcb->data_len);
+					    "data_len %u\n", __func__,
+					    tcb->seq, tcb->end_seq,
+					    tcb->sub_seq, tcb->data_len);
 				mptcp_send_reset(sk, skb);
 				return 1;
 			}
@@ -1472,7 +1475,8 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 
 	/* Now, empty the receive-queue from old sk_buff's
 	 * This may happen, if the mapping got lost for these segments but the
-	 * next mapping already has been received. */
+	 * next mapping already has been received.
+	 */
 	if (tp->map_data_len && before(tp->copied_seq, tp->map_subseq)) {
 		mptcp_debug("%s remove packets not covered by mapping: "
 				"data_len %u, tp->copied_seq %u, "
@@ -1507,8 +1511,9 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 		if (mptcp_verif_dss_csum(sk))
 			return -1;
 
-		/* Is this an overlapping mapping? rcv_next >= end_data_seq */
-		if (!before(meta_tp->rcv_nxt, tp->map_data_seq + tp->map_data_len)) {
+		/* Is this an overlapping mapping? rcv_nxt >= end_data_seq */
+		if (!before(meta_tp->rcv_nxt, tp->map_data_seq +
+			    tp->map_data_len)) {
 			skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
 				/* seq >= end_sub_mapping */
 				if (!before(TCP_SKB_CB(tmp1)->seq,
@@ -1519,7 +1524,8 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 				tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 
 				/* the callers of mptcp_queue_skb still
-				 * need the skb */
+				 * need the skb
+				 */
 				if (skb != tmp1)
 					__kfree_skb(tmp1);
 			}
