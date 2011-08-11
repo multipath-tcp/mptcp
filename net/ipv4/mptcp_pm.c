@@ -208,7 +208,7 @@ u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock* sk)
 		}
 		/* thus it must be the master-socket - id = 0 */
 		if (mpcb->master_sk->sk_family != AF_INET6 ||
-		    ipv6_addr_equal(&inet6_sk(mpcb->master_sk)->saddr,
+		    !ipv6_addr_equal(&inet6_sk(mpcb->master_sk)->saddr,
 				&inet6_sk(sk)->saddr)) {
 			mptcp_debug("%s %pI6 not locally found\n", __func__,
 					&inet6_sk(sk)->saddr);
