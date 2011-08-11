@@ -650,7 +650,7 @@ void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 	/* The socket is already established if it was in the
 	 * accept queue of the mpcb
 	 */
-	if (((struct sock *) tp)->sk_state == TCP_ESTABLISHED) {
+	if (sk->sk_state == TCP_ESTABLISHED) {
 		mpcb->cnt_established++;
 		mptcp_update_sndbuf(mpcb);
 		if ((1 << meta_sk->sk_state) &

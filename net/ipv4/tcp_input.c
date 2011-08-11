@@ -3803,12 +3803,11 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 	/* We passed data and got it acked, remove any soft error
 	 * log. Something worked...
 	 */
-	#ifdef CONFIG_MPTCP
+#ifdef CONFIG_MPTCP
 	if (tp->pf == 1)
-		tcpprobe_logmsg(sk, "pi %d: leaving pf state",
-				tp_path_index(tp));
+		tcpprobe_logmsg(sk, "pi %d: leaving pf state", tp->path_index);
 	tp->pf = 0;
-	#endif
+#endif
 	sk->sk_err_soft = 0;
 	icsk->icsk_probes_out = 0;
 	tp->rcv_tstamp = tcp_time_stamp;
