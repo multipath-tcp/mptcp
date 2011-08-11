@@ -659,6 +659,10 @@ void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 		rep.fail_opt[1] = MPTCP_SUB_LEN_FAIL;
 		rep.mpfail.sub = MPTCP_SUB_FAIL;
 		rep.mpfail.data_seq = htonl(TCP_SKB_CB(skb)->data_seq);
+
+		arg.iov[0].iov_len += MPTCP_SUB_LEN_FAIL;
+		rep.th.doff = arg.iov[0].iov_len / 4;
+
 		tcp_sk(sk)->teardown = 1;
 	}
 #endif /* CONFIG_MPTCP */
