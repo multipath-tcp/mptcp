@@ -1473,9 +1473,9 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	skb_set_owner_r(skb, sk);
 	tp->rcv_nxt = tcb->end_seq;
 
-	/* Now, empty the receive-queue from old sk_buff's
-	 * This may happen, if the mapping got lost for these segments but the
-	 * next mapping already has been received.
+	/* Now, remove old sk_buff's from the receive-queue.
+	 * This may happen if the mapping has been lost for these segments and the
+	 * next mapping has already been received.
 	 */
 	if (tp->map_data_len && before(tp->copied_seq, tp->map_subseq)) {
 		mptcp_debug("%s remove packets not covered by mapping: "
@@ -1484,7 +1484,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 			    tp->map_data_len, tp->copied_seq,
 			    tp->map_subseq);
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
-			if (after(TCP_SKB_CB(tmp1)->end_seq, tp->map_subseq)) {
+			if (!before(TCP_SKB_CB(tmp1)->seq, tp->map_subseq)) {
 				mptcp_debug("%s Not removing packet seq %u, "
 					    "end_seq %u\n", __func__,
 					    TCP_SKB_CB(tmp1)->seq,
@@ -1542,12 +1542,6 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 		if (before(meta_tp->rcv_nxt, tp->map_data_seq)) {
 			/* Seg's have to go to the meta-ofo-queue */
 			skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
-				/* Policy: we keep the segment until it is fully
-				 * covered or fully uncovered by the mapping.
-				 */
-				if (before(TCP_SKB_CB(tmp1)->seq,
-					   tp->map_subseq))
-					continue;
 				if (after(TCP_SKB_CB(tmp1)->end_seq,
 					  tp->map_subseq + tp->map_data_len))
 					break;
@@ -1564,10 +1558,6 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 		} else {
 			/* Ready for the meta-rcv-queue */
 			skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
-				/* Policy: see above */
-				if (before(TCP_SKB_CB(tmp1)->seq,
-					   tp->map_subseq))
-					continue;
 				if (after(TCP_SKB_CB(tmp1)->end_seq,
 					  tp->map_subseq + tp->map_data_len))
 					break;
