@@ -1282,9 +1282,10 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 		}
 
 		if (TCP_SKB_CB(tmp)->dss_off && !dss_csum_added) {
-			csum_tcp = skb_checksum(tmp, skb_transport_offset(tmp)
-					+ (TCP_SKB_CB(tmp)->dss_off << 2),
-					MPTCP_SUB_LEN_SEQ_CSUM, csum_tcp);
+			csum_tcp = skb_checksum(tmp, skb_transport_offset(tmp) +
+						(TCP_SKB_CB(tmp)->dss_off << 2),
+						MPTCP_SUB_LEN_SEQ_CSUM,
+						csum_tcp);
 			dss_csum_added = 1; /* Just do it once */
 		}
 		last = tmp;
@@ -1301,7 +1302,7 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 	/* Now, checksum must be 0 */
 	if (unlikely(csum_fold(csum_tcp))) {
 		mptcp_debug("%s csum is wrong: %#x data_seq %u\n", __func__,
-				csum_fold(csum_tcp), TCP_SKB_CB(last)->data_seq);
+			    csum_fold(csum_tcp), TCP_SKB_CB(last)->data_seq);
 		tcp_sk(sk)->csum_error = 1;
 		sock_orphan(sk);
 		mptcp_send_reset(sk, last);
@@ -1328,8 +1329,11 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb, struct tcp_sock *tp)
 	tcb->end_data_seq = tcb->data_seq + tcb->data_len;
 }
 
+/**
+ * @return: 1 if the skb must be dropped by the caller, otherwise 0
+ */
 static int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct tcp_sock *tp,
-		struct sk_buff *skb)
+				    struct sk_buff *skb)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
@@ -1345,7 +1349,7 @@ static int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct tcp_sock *tp,
 		while (1) {
 			/* skb1->data_seq <= skb->data_seq -- found place */
 			if (!after(TCP_SKB_CB(skb1)->data_seq,
-					TCP_SKB_CB(skb)->data_seq))
+				   TCP_SKB_CB(skb)->data_seq))
 				break;
 			/* Reached end */
 			if (skb_queue_is_first(&meta_tp->out_of_order_queue, skb1)) {
@@ -1357,7 +1361,7 @@ static int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct tcp_sock *tp,
 
 		/* Do skb overlap to previous one? */
 		if (skb1 && before(TCP_SKB_CB(skb)->data_seq,
-				TCP_SKB_CB(skb1)->end_data_seq)) {
+				   TCP_SKB_CB(skb1)->end_data_seq)) {
 			/* skb->end_data_seq <= old_skb->end_data_seq ->
 			 * All bits already present */
 			if (!after(TCP_SKB_CB(skb)->end_data_seq,
@@ -1369,13 +1373,10 @@ static int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct tcp_sock *tp,
 			if (!after(TCP_SKB_CB(skb)->data_seq,
 				   TCP_SKB_CB(skb1)->data_seq)) {
 				/* It's before, thus update skb1 */
-				if (skb_queue_is_first(&meta_tp->out_of_order_queue,
-						       skb1))
+				if (skb_queue_is_first(&meta_tp->out_of_order_queue, skb1))
 					skb1 = NULL;
 				else
-					skb1 = skb_queue_prev(
-						&meta_tp->out_of_order_queue,
-						skb1);
+					skb1 = skb_queue_prev(&meta_tp->out_of_order_queue, skb1);
 			}
 		}
 
@@ -1390,10 +1391,10 @@ static int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct tcp_sock *tp,
 			skb1 = skb_queue_next(&meta_tp->out_of_order_queue, skb);
 
 			if (!after(TCP_SKB_CB(skb)->end_data_seq,
-					TCP_SKB_CB(skb1)->data_seq))
+				   TCP_SKB_CB(skb1)->data_seq))
 				break;
 			if (before(TCP_SKB_CB(skb)->end_data_seq,
-					TCP_SKB_CB(skb1)->end_data_seq))
+				   TCP_SKB_CB(skb1)->end_data_seq))
 				break;
 
 			__skb_unlink(skb1, &meta_tp->out_of_order_queue);
@@ -1404,6 +1405,12 @@ static int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct tcp_sock *tp,
 	return 0;
 }
 
+/**
+ * @return:
+ *  i) 1: the segment can be destroyed by the caller
+ *  ii) -1: A reset has been sent on the subflow
+ *  iii) 0: The segment has been enqueued.
+ */
 int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 {
 	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tcp_sk(sk));
@@ -1442,6 +1449,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 				    tp->map_subseq, tp->map_data_len,
 				    tcb->data_seq, tcb->sub_seq, tcb->data_len);
 			mptcp_send_reset(sk, skb);
+			__kfree_skb(skb);
 			return -1;
 		}
 
@@ -1552,8 +1560,13 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 				tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 				skb_set_owner_r(tmp1, meta_sk);
 
-				ans = mptcp_add_meta_ofo_queue(meta_sk, tp,
-							       tmp1);
+				if (mptcp_add_meta_ofo_queue(meta_sk, tp,
+							     tmp1)) {
+					if (tmp1 == skb)
+						ans = 1;
+					else
+						__kfree_skb(tmp1);
+				}
 			}
 		} else {
 			/* Ready for the meta-rcv-queue */
