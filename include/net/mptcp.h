@@ -844,7 +844,7 @@ static inline int mptcp_skip_offset(struct tcp_sock *tp,
 {
 	return 0;
 }
-static inline void mptcp_update_pointers(struct tcp_sock **tp,
+static inline void mptcp_update_pointers(struct tcp_sock *tp,
 		struct sock **meta_sk, struct tcp_sock **meta_tp,
 		struct multipath_pcb **mpcb) {}
 static inline int mptcp_check_rtt(struct tcp_sock *tp, int time)
