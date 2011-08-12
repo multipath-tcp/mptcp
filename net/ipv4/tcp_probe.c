@@ -133,7 +133,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_sock *inet = inet_sk(sk);
-	struct sock *meta_sk = tp->mpcb ? (struct sock *)tp->mpcb : sk;
+	struct sock *meta_sk = tp->mpc ? (struct sock *)tp->mpcb : sk;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
 #ifdef CONFIG_MPTCP
@@ -191,7 +191,7 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 #ifdef CONFIG_MPTCP
 			p->path_index = sk ? tcp_sk(sk)->path_index : 0;
 			p->dsn = TCP_SKB_CB(skb)->data_seq;
-			p->mptcp_snduna = tp->mpcb ?
+			p->mptcp_snduna = tp->mpc ?
 				mpcb_meta_tp(tp->mpcb)->snd_una : 0;
 			p->drs_seq = tp->rcvq_space.seq;
 			p->drs_time = tp->rcvq_space.time;
@@ -265,7 +265,7 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_sock *inet = inet_sk(sk);
-	struct sock *meta_sk = tp->mpcb ? (struct sock *)tp->mpcb : sk;
+	struct sock *meta_sk = tp->mpc ? (struct sock *)tp->mpcb : sk;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
 #ifdef CONFIG_MPTCP
