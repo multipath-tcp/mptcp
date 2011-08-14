@@ -3586,8 +3586,10 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 	}
 
 	tp->snd_una = ack;
+#ifdef CONFIG_MPTCP
 	if (tp->mpc && after(tp->snd_una, tp->reinjected_seq))
 		tp->reinjected_seq = tp->snd_una;
+#endif
 	mptcp_update_window_check(meta_tp, skb, data_ack);
 
 	return flag;
@@ -3783,8 +3785,10 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 		tcp_update_wl(meta_tp, (tp->mpc) ? mptcp_skb_data_seq(skb) :
 			      ack_seq);
 		tp->snd_una = ack;
+#ifdef CONFIG_MPTCP
 		if (tp->mpc && after(tp->snd_una, tp->reinjected_seq))
 			tp->reinjected_seq = tp->snd_una;
+#endif
 		flag |= FLAG_WIN_UPDATE;
 
 		tcp_ca_event(sk, CA_EVENT_FAST_ACK);
@@ -6140,8 +6144,10 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 						      SOCK_WAKE_IO, POLL_OUT);
 
 				tp->snd_una = TCP_SKB_CB(skb)->ack_seq;
+#ifdef CONFIG_MPTCP
 				if (tp->mpc && after(tp->snd_una, tp->reinjected_seq))
 					tp->reinjected_seq = tp->snd_una;
+#endif
 				if (tp->mpc) {
 					mpcb_meta_tp(tp->mpcb)->snd_wnd =
 						ntohs(th->window) <<
