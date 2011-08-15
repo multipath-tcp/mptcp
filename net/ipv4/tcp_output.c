@@ -1639,9 +1639,7 @@ static inline unsigned int tcp_cwnd_test(struct tcp_sock *tp,
 		return 1;
 
 	in_flight = tcp_packets_in_flight(tp);
-	if (icsk->icsk_ca_state == TCP_CA_Loss)
-		tcpprobe_logmsg(sk, "tp %d: in_flight is %d", tp->path_index,
-				in_flight);
+
 	cwnd = tp->snd_cwnd;
 	if (in_flight < cwnd)
 		return (cwnd - in_flight);
