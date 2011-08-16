@@ -283,52 +283,6 @@ struct tcp_sock {
  */
  	u32	rcv_nxt;	/* What we want to receive next 	*/
 	u32	copied_seq;	/* Head of yet unread data		*/
-#ifdef CONFIG_MPTCP
-	/*data for the scheduler*/
-	struct {
-		u32	space;
-		u32	seq;
-		u32	time;
-		short   shift; /* Shift to apply to the space field.
-				* It is increased when space bytes are
-				* flushed in less than a jiffie (can happen
-				* with gigabit ethernet), so as to use a larger
-				* basis for bw computation.
-				*/
-	} bw_est;
-	u32    cur_bw_est;
-
-	/* per subflow data, for tcp_recvmsg */
-	u32    map_data_seq; /* Those three fields record the current mapping */
-	u16    map_data_len;
-	u32    map_subseq;
-	/* isn: needed to translate abs to relative subflow seqnums */
-	u32    snt_isn;
-	u32    reinjected_seq;
-	unsigned long last_snd_probe;
-	unsigned long last_rcv_probe;
-#endif
-	/* We keep these flags even if CONFIG_MPTCP is not checked, because
-	 * it allowschecking MPTCP capability just by checking the mpc flag,
-	 * rather than adding ifdefs everywhere.
-	 */
-	u8      mpc:1,          /* Other end is multipath capable */
-
-		wait_event_any_sk_released:1, /* 1 if mptcp_wait_event_any_sk()
-					       * has released this sock, and
-					       * must thus lock it again,
-					       * so that to let everything
-					       * equal. This is important
-					       * because a new subsocket
-					       * can appear during we sleep.
-					       */
-		wait_data_bit_set:1, /* Similar to previous, for wait_data */
-		pf:1, /* Potentially Failed state: when this flag is set, we
-		       * stop using the subflow
-		       */
-		mptcp_add_addr_ack:1;	/* Tell tcp_send_ack to return in case
-					 * alloc_skb fails. */
-
 	u32	rcv_wup;	/* rcv_nxt on last window update sent	*/
  	u32	snd_nxt;	/* Next sequence we send		*/
 
@@ -481,8 +435,45 @@ struct tcp_sock {
 	 * contains related tcp_cookie_transactions fields.
 	 */
 	struct tcp_cookie_values  *cookie_values;
+
+	/* We keep these flags even if CONFIG_MPTCP is not checked, because
+	 * it allowschecking MPTCP capability just by checking the mpc flag,
+	 * rather than adding ifdefs everywhere.
+	 */
+	u8      mpc:1,          /* Other end is multipath capable */
+		pf:1, /* Potentially Failed state: when this flag is set, we
+		       * stop using the subflow
+		       */
+		mptcp_add_addr_ack:1;	/* Tell tcp_send_ack to return in case
+					 * alloc_skb fails. */
+
 	struct multipath_pcb		*mpcb;
 #ifdef CONFIG_MPTCP
+	/* data for the scheduler */
+	struct {
+		u32	space;
+		u32	seq;
+		u32	time;
+		short   shift; /* Shift to apply to the space field.
+				* It is increased when space bytes are
+				* flushed in less than a jiffie (can happen
+				* with gigabit ethernet), so as to use a larger
+				* basis for bw computation.
+				*/
+	} bw_est;
+	u32    cur_bw_est;
+
+	/* per subflow data, for tcp_recvmsg */
+	u32    map_data_seq; /* Those three fields record the current mapping */
+	u16    map_data_len;
+	u32    map_subseq;
+
+	/* isn: needed to translate abs to relative subflow seqnums */
+	u32    snt_isn;
+	u32    reinjected_seq;
+	unsigned long last_snd_probe;
+	unsigned long last_rcv_probe;
+
 	int				path_index;
 	struct tcp_sock			*next; /* Next subflow socket */
 	u32				mptcp_loc_token;
