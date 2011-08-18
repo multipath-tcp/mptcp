@@ -1543,7 +1543,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	if (tp->map_data_len &&
 	    !before(tp->rcv_nxt, tp->map_subseq + tp->map_data_len)) {
 		/* Verify the checksum first */
-		if (mptcp_verif_dss_csum(sk))
+		if (mpcb->received_options.dss_csum && mptcp_verif_dss_csum(sk))
 			return -1;
 
 		/* Is this an overlapping mapping? rcv_nxt >= end_data_seq */
