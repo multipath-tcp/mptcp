@@ -973,7 +973,9 @@ static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 		tp->ucopy.memory = 0;
 	} else if (skb_queue_len(&tp->ucopy.prequeue) == 1) {
 		struct sock *sk_it = tp->mpc ? NULL : sk;
+#ifdef CONFIG_MPTCP
 		struct multipath_pcb *mpcb = tp->mpc ? tp->mpcb : NULL;
+#endif
 
 		/* Here we test if in case of mptcp the sum of packets in the
 		 * prequeues in the subflows == 1.
