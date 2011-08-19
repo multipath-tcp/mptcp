@@ -535,14 +535,23 @@ int mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags)
 
 void mpcb_release(struct multipath_pcb *mpcb)
 {
-	struct sock *meta_sk = (struct sock *) mpcb;
+	struct sock *meta_sk = (struct sock *)mpcb;
 
 	/* Must have been destroyed previously */
 	if (!sock_flag((struct sock *)mpcb, SOCK_DEAD)) {
 		printk(KERN_ERR "Trying to free mpcb without having called "
-			"mptcp_destroy_mpcb()\n");
+		       "mptcp_destroy_mpcb()\n");
 		BUG();
 	}
+
+	/* Ensure that all queues are empty. Later, we can find more
+	 * appropriate places to do this, maybe reusing existing code.
+	 * But this at least ensures that we are safe when destroying
+	 * the mpcb.
+	 */
+	sk_stream_kill_queues(meta_sk);
+	__skb_queue_purge(&tcp_sk(meta_sk)->out_of_order_queue);
+
 
 #ifdef CONFIG_MPTCP_PM
 	mptcp_pm_release(mpcb);
