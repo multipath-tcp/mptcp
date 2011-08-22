@@ -1781,9 +1781,10 @@ no_subrcv_queue:
 			}
 
 			if (meta_tp->rcv_nxt == meta_tp->copied_seq &&
-			    mptcp_test_any_sk(mpcb, sk_it,
-					    !skb_queue_empty(&tcp_sk(sk_it)->
-							    ucopy.prequeue))) {
+			    mptcp_test_any_sk(
+				    mpcb, sk_it,
+				    !skb_queue_empty(&tcp_sk(sk_it)->
+						     ucopy.prequeue))) {
 do_prequeue:
 				if (mpcb) {
 					mptcp_for_each_sk(mpcb, sk_it, tp_it)
@@ -1909,11 +1910,11 @@ found_fin_ok:
 
 	if (user_recv) {
 		if (mptcp_test_any_sk(mpcb, sk_it,
-				!skb_queue_empty(&tcp_sk(sk_it)->
-						ucopy.prequeue))) {
+				      !skb_queue_empty(&tcp_sk(sk_it)->
+						       ucopy.prequeue))) {
 			int chunk;
 			meta_tp->ucopy.len = copied > 0 ? len : 0;
-			if (!mpcb) {
+			if (mpcb) {
 				mptcp_for_each_sk(mpcb, sk_it, tp_it)
 					tcp_prequeue_process(sk_it);
 			} else {
