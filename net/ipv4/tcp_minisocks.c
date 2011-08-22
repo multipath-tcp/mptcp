@@ -742,7 +742,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	 */
 #if defined(CONFIG_MPTCP) && \
 		(defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))
-	if (sk->sk_family != req->rsk_ops->family)
+	if (tcp_sk(sk)->mpc && sk->sk_family != req->rsk_ops->family)
 		/* MPTCP: sub sock address family differs from meta sock */
 		child = tcp_sk(sk)->mpcb->icsk_af_ops_alt->syn_recv_sock(sk,
 				skb, req, NULL);
