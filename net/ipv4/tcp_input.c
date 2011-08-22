@@ -5310,8 +5310,6 @@ static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 	int chunk = skb->len - hlen;
 	int err;
 
-	mptcp_debug("Entering %s\n", __func__);
-
 	if (tp->mpc)
 		meta_tp = mpcb_meta_tp(mpcb);
 	else
