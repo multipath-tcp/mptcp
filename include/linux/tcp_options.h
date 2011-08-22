@@ -53,6 +53,13 @@ struct tcp_out_options {
 	__u32	token;		/* token for mptcp */
 	__sum16	dss_csum;	/* Overloaded field: dss-checksum required
 				 * (for SYN-packets)? Or dss-csum itself */
+	__u64	sender_key;	/* sender's key for mptcp */
+	__u64	receiver_key;	/* sender's key for mptcp */
+	__u32	sender_random_number;	/* random number of the sender */
+	__u32	receiver_random_number;	/* random number of the receiver */
+	__u64	sender_truncated_mac;
+	char	sender_mac[20];
+	__u8	mp_join_type;	/* SYN/SYNACK/ACK */
 #ifdef CONFIG_MPTCP_PM
 	struct mptcp_loc4 *addr4;/* v4 addresses for MPTCP */
 	struct mptcp_loc6 *addr6;/* v6 addresses for MPTCP */
@@ -85,9 +92,14 @@ struct tcp_options_received {
 				 * connection setup
 				 */
 #ifdef CONFIG_MPTCP
-	__u8	rem_id; /* Address-id in the MP_JOIN */
-	u32	mptcp_rem_token; /* Remote token, for mptcp */
-	u32	mptcp_recv_token; /* Received token, for mptcp */
+	__u8	rem_id;			/* Address-id in the MP_JOIN */
+	u32	mptcp_rem_token;	/* Remote token */
+	u32	mptcp_recv_token;	/* Received token */
+	u64     mptcp_rem_key;		/* Remote key */
+	u64     mptcp_recv_key;		/* Received key */
+	u32	mptcp_recv_random_number;
+	u64	mptcp_recv_tmac;
+	char	mptcp_recv_mac[20];
 	u32	rcv_isn; /* Needed to retrieve abs subflow seqnum from the
 			  * relative version.
 			  */

@@ -140,6 +140,9 @@
 #define htons(x) ___htons(x)
 #define ntohs(x) ___ntohs(x)
 
+#define ntohll(x) ( ( (uint64_t)(ntohl( (uint32_t)((x << 32) >> 32) )) << 32) | ntohl( ((uint32_t)(x >> 32)) ) )
+#define htonll(x) ntohll(x)
+
 static inline void le16_add_cpu(__le16 *var, u16 val)
 {
 	*var = cpu_to_le16(le16_to_cpu(*var) + val);

@@ -50,12 +50,27 @@ void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token)
 {
 	int hash = hash_tk(token);
 
-	mptcp_debug("%s: add mpcb to hash-table with loc_token %d\n",
+	mptcp_debug("%s: add mpcb to hash-table with loc_token %08x\n",
 			__func__, mpcb_meta_tp(mpcb)->mptcp_loc_token);
 
 	write_lock_bh(&tk_hash_lock);
 	list_add(&mpcb->collide_tk, &tk_hashtable[hash]);
 	write_unlock_bh(&tk_hash_lock);
+}
+
+int mptcp_find_token(u32 token) {
+       int hash = hash_tk(token);
+       struct multipath_pcb *mpcb;
+
+       read_lock(&tk_hash_lock);
+       list_for_each_entry(mpcb, &tk_hashtable[hash], collide_tk) {
+               if (token == mptcp_loc_token(mpcb)) {
+                       read_unlock(&tk_hash_lock);
+                       return 1;
+               }
+       }
+       read_unlock(&tk_hash_lock);
+       return 0;
 }
 
 /**
@@ -86,7 +101,7 @@ void mptcp_hash_remove(struct multipath_pcb *mpcb)
 	    (struct inet_connection_sock *)mpcb;
 	struct listen_sock *lopt = meta_icsk->icsk_accept_queue.listen_opt;
 
-	mptcp_debug("%s: remove mpcb from hash-table with loc_token %d\n",
+	mptcp_debug("%s: remove mpcb from hash-table with loc_token %08x\n",
 			__func__, mpcb_meta_tp(mpcb)->mptcp_loc_token);
 
 	/* remove from the token hashtable */
@@ -172,10 +187,16 @@ void mptcp_pm_release(struct multipath_pcb *mpcb)
  * will need to define random tokens, while avoiding
  * collisions.
  */
-u32 mptcp_new_token(void)
+u32 mptcp_new_token(char *hashkey)
 {
-	static atomic_t latest_token = {.counter = 0 };
-	return atomic_inc_return(&latest_token);
+	return *(u32*)(hashkey);
+	//static atomic_t latest_token={.counter=0};
+	//return atomic_inc_return(&latest_token);
+}
+
+void mptcp_new_key(void *buf)
+{
+	get_random_bytes(buf, 8);
 }
 
 u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock* sk)
@@ -425,7 +446,9 @@ static unsigned mptcp_synack_options(struct request_sock *req,
 
 	/* Send token in SYN/ACK */
 	opts->options |= OPTION_MP_JOIN;
-	opts->token = req->mptcp_rem_token;
+	opts->sender_truncated_mac = *(u64*)(req->mptcp_hash_mac);
+	opts->sender_random_number = req->mptcp_loc_random_number;
+	opts->mp_join_type = MPTCP_MP_JOIN_TYPE_SYNACK;
 #ifdef CONFIG_MPTCP_PM
 	opts->addr_id = 0;
 
@@ -444,7 +467,7 @@ static unsigned mptcp_synack_options(struct request_sock *req,
 		}
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 #endif /* CONFIG_MPTCP_PM */
-	remaining -= MPTCP_SUB_LEN_JOIN_ALIGN;
+	remaining -= MPTCP_SUB_LEN_JOIN_ALIGN_SYNACK;
 
 	return MAX_TCP_OPTION_SPACE - remaining;
 }

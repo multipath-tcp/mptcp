@@ -29,6 +29,12 @@
 #include <linux/tcp.h>
 #include <linux/ipv6.h>
 
+#include <linux/crypto.h>
+#include <linux/err.h>
+#include <linux/scatterlist.h>
+#include <linux/gfp.h>
+#include <crypto/hash.h>
+
 #include <net/mptcp_pm.h>
 
 #ifdef CONFIG_MPTCP_DEBUG
@@ -150,13 +156,22 @@ struct multipath_pcb {
 #endif
 };
 
-#define	MPTCP_SUB_CAPABLE	0
-#define MPTCP_SUB_LEN_CAPABLE	8
-#define MPTCP_SUB_LEN_CAPABLE_ALIGN	8
+#define	MPTCP_SUB_CAPABLE		0
+#define MPTCP_SUB_LEN_CAPABLE		12
+#define MPTCP_SUB_LEN_CAPABLE_ALIGN	12
+#define MPTCP_SUB_LEN_CAPABLE_ACK	20
+#define MPTCP_SUB_LEN_CAPABLE_ALIGN_ACK	20
 
-#define	MPTCP_SUB_JOIN		1
-#define MPTCP_SUB_LEN_JOIN	8
-#define MPTCP_SUB_LEN_JOIN_ALIGN	8
+#define	MPTCP_SUB_JOIN			1
+#define MPTCP_SUB_LEN_JOIN_SYN		12
+#define MPTCP_SUB_LEN_JOIN_ALIGN_SYN	12
+#define MPTCP_SUB_LEN_JOIN_SYNACK	16
+#define MPTCP_SUB_LEN_JOIN_ALIGN_SYNACK	16
+#define MPTCP_SUB_LEN_JOIN_ACK		24
+#define MPTCP_SUB_LEN_JOIN_ALIGN_ACK	24
+#define MPTCP_MP_JOIN_TYPE_SYN		1
+#define MPTCP_MP_JOIN_TYPE_SYNACK	2
+#define MPTCP_MP_JOIN_TYPE_ACK		3
 
 #define	MPTCP_SUB_DSS		2
 #define MPTCP_SUB_LEN_DSS	4
@@ -327,6 +342,11 @@ struct mp_fail {
 	__u32	data_seq;
 };
 
+struct mptcp_crypt_result {
+	struct completion completion;
+	int err;
+};
+
 /* Two separate cases must be handled:
  * -a mapping option has been received. Then data_seq and end_data_seq are
  *  defined, and we disambiguate based on data_len (if not zero, the mapping
@@ -465,6 +485,10 @@ void mptcp_update_window_check(struct tcp_sock *meta_tp, struct sk_buff *skb,
 		u32 data_ack);
 void mptcp_set_data_size(struct tcp_sock *tp, struct sk_buff *skb, int copy);
 int mptcp_push(struct sock *sk, int flags, int mss_now, int nonagle);
+int hash_key_sha1(u64 key, char *hash_out, size_t outlen);
+int mptcp_hmac_sha1(char *key, size_t klen,char *data_in, size_t dlen,
+		char *hash_out, size_t outlen);
+void mptcp_crypt_complete(struct crypto_async_request *req, int err);
 void mptcp_fallback(struct sock *master_sk);
 
 static inline int mptcp_snd_buf_demand(struct tcp_sock *tp, u32 rtt_max)

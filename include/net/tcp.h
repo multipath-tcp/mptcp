@@ -463,6 +463,7 @@ extern void tcp_send_active_reset(struct sock *sk, gfp_t priority);
 extern int tcp_send_synack(struct sock *);
 extern void tcp_push_one(struct sock *, unsigned int mss_now);
 extern void tcp_send_ack(struct sock *sk);
+extern void tcp_send_first_ack(struct sock *sk);
 extern void tcp_send_delayed_ack(struct sock *sk);
 
 /* tcp_input.c */
@@ -609,9 +610,10 @@ extern u32 __tcp_select_window(struct sock *sk);
  * TCP flags will be rewritten with MPTCP flags when changing the layer.
  * This will allow using one flags field only, and spare 8 bits.
  */
-#define MPTCPHDR_ACK 0x01
-#define MPTCPHDR_SEQ 0x02
-#define MPTCPHDR_FIN 0x04
+#define MPTCPHDR_ACK		0x01
+#define MPTCPHDR_SEQ		0x02
+#define MPTCPHDR_FIN		0x04
+#define MPTCPHDR_FIRST_ACK	0x08
 
 /* This is what the send packet queuing engine uses to pass
  * TCP per-packet control information to the transmission code.
@@ -1065,8 +1067,14 @@ static inline void tcp_openreq_init(struct request_sock *req,
 		 * mpcb that will be created in tcp_check_req(),
 		 * and store the received token.
 		 */
-		req->mptcp_rem_token = rx_opt->mptcp_rem_token;
-		req->mptcp_loc_token = mptcp_new_token();
+		do {
+			mptcp_new_key(&req->mptcp_loc_key);
+			hash_key_sha1(req->mptcp_loc_key,
+					req->mptcp_hashed_loc_key,
+					sizeof(req->mptcp_hashed_loc_key));
+			req->mptcp_rem_key = rx_opt->mptcp_rem_key;
+			req->mptcp_loc_token = mptcp_new_token(req->mptcp_hashed_loc_key);
+		} while (mptcp_find_token(req->mptcp_loc_token));
 	}
 #endif
 	ireq->tstamp_ok = rx_opt->tstamp_ok;

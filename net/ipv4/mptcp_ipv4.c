@@ -80,6 +80,8 @@ static int mptcp_v4_join_request(struct multipath_pcb *mpcb,
 	struct inet_request_sock *ireq;
 	struct request_sock *req;
 	struct tcp_options_received tmp_opt;
+	char hash_key[16];
+	char message [8];
 	u8 *hash_location;
 	__be32 saddr = ip_hdr(skb)->saddr;
 	__be32 daddr = ip_hdr(skb)->daddr;
@@ -99,6 +101,26 @@ static int mptcp_v4_join_request(struct multipath_pcb *mpcb,
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 
 	req->mpcb = mpcb;
+	req->mptcp_rem_random_number = tmp_opt.mptcp_recv_random_number;
+	req->mptcp_rem_key = tcp_sk(mpcb->master_sk)->rx_opt.mptcp_rem_key;
+	req->mptcp_loc_key = tcp_sk(mpcb->master_sk)->mptcp_loc_key;
+
+	get_random_bytes(&req->mptcp_loc_random_number, 4);
+
+	mptcp_debug("Here i need to generated the first HMAC with (%llu + %llu) and (%08x + %08x)",
+			req->mptcp_loc_key, req->mptcp_rem_key,
+			req->mptcp_loc_random_number,
+			req->mptcp_rem_random_number);
+
+	memcpy(hash_key, &req->mptcp_loc_key, 8);
+	memcpy(hash_key + 8, &req->mptcp_rem_key, 8);
+
+	memcpy(message, &req->mptcp_loc_random_number, 4);
+	memcpy(message + 4, &req->mptcp_rem_random_number, 4);
+
+	mptcp_hmac_sha1(hash_key, sizeof(hash_key), message, sizeof(message),
+			req->mptcp_hash_mac, sizeof(req->mptcp_hash_mac));
+
 	req->rem_id = tmp_opt.rem_id;
 	req->mptcp_loc_token = mptcp_loc_token(mpcb);
 	req->mptcp_rem_token = tcp_sk(mpcb->master_sk)->rx_opt.mptcp_rem_token;

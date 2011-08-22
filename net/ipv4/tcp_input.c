@@ -5715,7 +5715,12 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_cookie_values *cvp = tp->cookie_values;
 	int saved_clamp = tp->rx_opt.mss_clamp;
-	struct multipath_pcb *mpcb;
+	struct multipath_pcb* mpcb;
+#ifdef CONFIG_MPTCP
+	char hash_mac_check[20];
+	char hash_key[16];
+	char message[8];
+#endif
 
 	mpcb = mpcb_from_tcpsock(tp);
 
@@ -5778,12 +5783,22 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		if (!th->syn)
 			goto discard_and_undo;
 
-#ifdef CONFIG_MPTCP
-		if (!is_master_tp(tp) &&
-		    mptcp_tp_recv_token(tp) != mptcp_loc_token(mpcb)) {
-			sock_orphan(sk);
-			tp->teardown = 1;
-			goto reset_and_undo;
+		if (!is_master_tp(tp)) {
+			memcpy(hash_key, &tcp_sk(mpcb->master_sk)->rx_opt.mptcp_rem_key, 8);
+			memcpy(hash_key + 8, &tcp_sk(mpcb->master_sk)->mptcp_loc_key, 8);
+
+			memcpy(message, &tp->rx_opt.mptcp_recv_random_number, 4);
+			memcpy(message + 4, &tp->mptcp_loc_random_number, 4);
+
+			mptcp_hmac_sha1(hash_key, sizeof(hash_key),
+					message, sizeof(message),
+					hash_mac_check, sizeof(hash_mac_check));
+
+			if (*(u64*)(hash_mac_check) != tp->rx_opt.mptcp_recv_tmac) {
+				sock_orphan(sk);
+				tp->teardown = 1;
+				goto reset_and_undo;
+			}
 		}
 
 		if (is_master_tp(tp)) {
@@ -5795,7 +5810,6 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 				mptcp_fallback(sk);
 			}
 		}
-#endif
 		/* rfc793:
 		 *   "If the SYN bit is on ...
 		 *    are acceptable then ...
@@ -5940,7 +5954,7 @@ discard:
 			__kfree_skb(skb);
 			return 0;
 		} else {
-			tcp_send_ack(sk);
+			tcp_send_first_ack(sk);
 		}
 		return -1;
 	}

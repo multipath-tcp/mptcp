@@ -576,7 +576,12 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		__u8 *p8 = (__u8 *)ptr;
 
 		*p8++ = TCPOPT_MPTCP;
-		*p8++ = MPTCP_SUB_LEN_CAPABLE;
+
+		if (!opts->receiver_key)
+			*p8++ = MPTCP_SUB_LEN_CAPABLE;
+		else
+			*p8++ = MPTCP_SUB_LEN_CAPABLE_ACK;
+
 		mpc = (struct mp_capable *)p8;
 
 		mpc->sub = MPTCP_SUB_CAPABLE;
@@ -586,7 +591,13 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		mpc->s = 1;
 
 		ptr++;
-		*ptr++ = htonl(opts->token);
+		*ptr++ = htonll(opts->sender_key);
+		*ptr++ = htonll(opts->sender_key<<32);
+
+		if (opts->receiver_key) {
+			*ptr++ = htonll(opts->receiver_key);
+			*ptr++ = htonll(opts->receiver_key<<32);
+		}
 	}
 #ifdef CONFIG_MPTCP_PM
 	if (unlikely(OPTION_ADD_ADDR & opts->options)) {
@@ -627,7 +638,22 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		__u8 *p8 = (__u8 *)ptr;
 
 		*p8++ = TCPOPT_MPTCP;
-		*p8++ = MPTCP_SUB_LEN_JOIN;
+
+		switch (opts->mp_join_type) {
+			case MPTCP_MP_JOIN_TYPE_SYN:
+				*p8++ = MPTCP_SUB_LEN_JOIN_SYN;
+				break;
+			case MPTCP_MP_JOIN_TYPE_SYNACK:
+				*p8++ = MPTCP_SUB_LEN_JOIN_SYNACK;
+				break;
+			case MPTCP_MP_JOIN_TYPE_ACK:
+				*p8++ = MPTCP_SUB_LEN_JOIN_ACK;
+				break;
+			default:
+				*p8++ = MPTCP_SUB_LEN_JOIN_ACK;
+				break;
+		}
+
 		mpj = (struct mp_join *)p8;
 
 		mpj->sub = MPTCP_SUB_JOIN;
@@ -635,8 +661,35 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		mpj->b = 0;
 		mpj->addr_id = opts->addr_id;
 
-		ptr++;
-		*ptr++ = htonl(opts->token);
+		switch (opts->mp_join_type) {
+			case MPTCP_MP_JOIN_TYPE_SYN:
+				ptr++;
+				*ptr++ = htonl(opts->token);
+				*ptr++ = htonl(opts->sender_random_number);
+				break;
+			case MPTCP_MP_JOIN_TYPE_SYNACK:
+				ptr++;
+				*ptr++ = htonll(opts->sender_truncated_mac);
+				*ptr++ = htonll(opts->sender_truncated_mac<<32);
+				*ptr++ = htonl(opts->sender_random_number);
+				break;
+			case MPTCP_MP_JOIN_TYPE_ACK:
+				ptr++;
+				memcpy(ptr, opts->sender_mac, 20);
+
+				/*printk( KERN_DEBUG "Mac to parse: ");
+
+				for (i=0; i < 20; i++)
+					 printk( KERN_DEBUG "%02x ", opts->sender_mac[i]);*/
+
+				ptr+=5;
+				break;
+			default:
+				ptr++;
+				*ptr++ = htonl(opts->token);
+				break;
+		}
+
 	}
 	if (OPTION_DSN_MAP & opts->options ||
 	    OPTION_DATA_ACK & opts->options ||
@@ -740,7 +793,7 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 
 		opts->options |= OPTION_MP_CAPABLE;
 		remaining -= MPTCP_SUB_LEN_CAPABLE_ALIGN;
-		opts->token = mptcp_loc_token(mpcb);
+		opts->sender_key = mptcp_loc_key(mpcb);
 		opts->dss_csum = mpcb->received_options.dss_csum;
 
 		/* We arrive here either when sending a SYN or a
@@ -756,9 +809,17 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 	} else {
 		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 		opts->options |= OPTION_MP_JOIN;
-		remaining -= MPTCP_SUB_LEN_JOIN_ALIGN;
+		remaining -= MPTCP_SUB_LEN_JOIN_ALIGN_SYN;
 		opts->token = tp->rx_opt.mptcp_rem_token;
 		opts->addr_id = mptcp_get_loc_addrid(mpcb, sk);
+
+		if (!tp->mptcp_loc_random_number)
+			get_random_bytes(&tp->mptcp_loc_random_number, 4);
+
+		opts->sender_random_number = tp->mptcp_loc_random_number;
+		opts->mp_join_type = MPTCP_MP_JOIN_TYPE_SYN;
+		mptcp_debug("Formated: token: %08x, random number: %08x",
+				opts->token, opts->sender_random_number);
 	}
 nomptcp:
 #endif /* CONFIG_MPTCP */
@@ -891,7 +952,7 @@ static unsigned tcp_synack_options(struct sock *sk,
 	if (req->saw_mpc) {
 		opts->options |= OPTION_MP_CAPABLE;
 		remaining -= MPTCP_SUB_LEN_CAPABLE_ALIGN;
-		opts->token = req->mptcp_loc_token;
+		opts->sender_key = req->mptcp_loc_key;
 		opts->dss_csum = sysctl_mptcp_checksum || req->dss_csum;
 	}
 #endif /* CONFIG_MPTCP */
@@ -914,6 +975,8 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	unsigned int eff_sacks;
 #ifdef CONFIG_MPTCP
 	struct multipath_pcb *mpcb;
+	char hash_key[16];
+	char message [8];
 #endif
 
 #ifdef CONFIG_TCP_MD5SIG
@@ -938,7 +1001,36 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	if (tp->mpc && !tcp_sk(sk)->mptcp_add_addr_ack) {
 		int dss = 0;
 
-		if (1 /* && data to ack */) {
+		if (tcb && unlikely(tcb->mptcp_flags & MPTCPHDR_FIRST_ACK)) {
+			if (is_master_tp(tp)) {
+				opts->options |= OPTION_MP_CAPABLE;
+				size += MPTCP_SUB_LEN_CAPABLE_ALIGN_ACK;
+				opts->sender_key = tp->mptcp_loc_key;
+				opts->receiver_key = tp->rx_opt.mptcp_rem_key;
+			} else {
+				opts->options |= OPTION_MP_JOIN;
+				size += MPTCP_SUB_LEN_JOIN_ALIGN_ACK;
+				opts->mp_join_type = MPTCP_MP_JOIN_TYPE_ACK;
+
+				memcpy(hash_key, &tcp_sk(mpcb->master_sk)->mptcp_loc_key, 8);
+				memcpy(hash_key+8, &tcp_sk(mpcb->master_sk)->rx_opt.mptcp_rem_key, 8);
+
+				memcpy(message, &tp->mptcp_loc_random_number, 4);
+				memcpy(message+4, &tp->rx_opt.mptcp_recv_random_number, 4);
+
+				mptcp_debug("ACK: Generating the full HMAC with "
+						"(%llu + %llu) and (%08x + %08x)",
+						tcp_sk(mpcb->master_sk)->mptcp_loc_key,
+						tcp_sk(mpcb->master_sk)->rx_opt.mptcp_rem_key,
+						tp->mptcp_loc_random_number,
+						tp->rx_opt.mptcp_recv_random_number);
+
+				mptcp_hmac_sha1(hash_key, sizeof(hash_key),
+						message, sizeof(message),
+						opts->sender_mac,
+						sizeof(opts->sender_mac));
+			}
+		} else {
 			dss = 1;
 
 			opts->data_ack = mpcb_meta_tp(mpcb)->rcv_nxt;
@@ -1096,11 +1188,12 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	tcb = TCP_SKB_CB(skb);
 	memset(&opts, 0, sizeof(opts));
 
-	if (unlikely(tcb->flags & TCPHDR_SYN))
+	if (unlikely(tcb->flags & TCPHDR_SYN)) {
 		tcp_options_size = tcp_syn_options(sk, skb, &opts, &md5);
-	else
+	} else {
 		tcp_options_size = tcp_established_options(sk, skb, &opts,
 							   &md5);
+	}
 	tcp_header_size = tcp_options_size + sizeof(struct tcphdr);
 
 	if (tcp_packets_in_flight(tp) == 0) {
@@ -3447,6 +3540,40 @@ void tcp_send_ack(struct sock *sk)
 	/* Reserve space for headers and prepare control bits. */
 	skb_reserve(buff, MAX_TCP_HEADER);
 	tcp_init_nondata_skb(buff, tcp_acceptable_seq(sk), TCPHDR_ACK);
+
+	/* Send it off, this clears delayed acks for us. */
+	TCP_SKB_CB(buff)->when = tcp_time_stamp;
+	tcp_transmit_skb(sk, buff, 0, GFP_ATOMIC);
+}
+
+void tcp_send_first_ack(struct sock *sk)
+{
+	struct sk_buff *buff;
+
+	/* If we have been reset, we may not send again. */
+	if (sk->sk_state == TCP_CLOSE)
+		return;
+
+	/* We are not putting this on the write queue, so
+	 * tcp_transmit_skb() will set the ownership to this
+	 * sock.
+	 */
+	buff = alloc_skb(MAX_TCP_HEADER, GFP_ATOMIC);
+	if (buff == NULL) {
+		inet_csk_schedule_ack(sk);
+		inet_csk(sk)->icsk_ack.ato = TCP_ATO_MIN;
+		inet_csk_reset_xmit_timer(sk, ICSK_TIME_DACK,
+					  TCP_DELACK_MAX, TCP_RTO_MAX);
+		return;
+	}
+
+	/* Reserve space for headers and prepare control bits. */
+	skb_reserve(buff, MAX_TCP_HEADER);
+	tcp_init_nondata_skb(buff, tcp_acceptable_seq(sk), TCPHDR_ACK);
+
+#ifdef CONFIG_MPTCP
+	TCP_SKB_CB(buff)->mptcp_flags |= MPTCPHDR_FIRST_ACK;
+#endif
 
 	/* Send it off, this clears delayed acks for us. */
 	TCP_SKB_CB(buff)->when = tcp_time_stamp;
