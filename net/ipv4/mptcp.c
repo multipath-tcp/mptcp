@@ -550,9 +550,8 @@ void mpcb_release(struct multipath_pcb *mpcb)
 	 * the mpcb.
 	 */
 	tcp_write_queue_purge(meta_sk);
-	sk_stream_kill_queues(meta_sk);
 	__skb_queue_purge(&tcp_sk(meta_sk)->out_of_order_queue);
-
+	sk_stream_kill_queues(meta_sk);
 
 #ifdef CONFIG_MPTCP_PM
 	mptcp_pm_release(mpcb);
