@@ -572,7 +572,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 			   struct request_sock **prev)
 {
 	struct tcp_options_received tmp_opt;
-	struct multipath_options mopt;
+	struct multipath_options *mopt = NULL;
 	u8 *hash_location;
 	struct sock *child;
 	const struct tcphdr *th = tcp_hdr(skb);
@@ -581,13 +581,17 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 
 	tmp_opt.saw_tstamp = 0;
 
-	if (!is_meta_sk(sk))
-		mptcp_init_addr_list(&mopt);
-	else
-		mopt = tcp_sk(sk)->mpcb->received_options;
+	if (!is_meta_sk(sk)) {
+		mopt = kmalloc(sizeof(struct multipath_options), GFP_ATOMIC);
+		if (!mopt)
+			goto listen_overflow;
+		mptcp_init_addr_list(mopt);
+	} else {
+		mopt = &(tcp_sk(sk)->mpcb->rx_opt);
+	}
 
 	if (th->doff > (sizeof(struct tcphdr)>>2)) {
-		tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
+		tcp_parse_options(skb, &tmp_opt, &hash_location, mopt, 0);
 
 		if (tmp_opt.saw_tstamp) {
 			tmp_opt.ts_recent = req->ts_recent;
@@ -755,11 +759,10 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		goto listen_overflow;
 
 	if (!is_meta_sk(sk)) {
-		if (mptcp_check_req_master(child, req, &mopt) == -ENOBUFS)
+		if (mptcp_check_req_master(child, req, mopt) == -ENOBUFS)
 			goto listen_overflow;
 	} else {
-		mptcp_check_req_child(sk, child, req, prev);
-		return child;
+		return mptcp_check_req_child(sk, child, req, prev);
 	}
 	inet_csk_reqsk_queue_unlink(sk, req, prev);
 	inet_csk_reqsk_queue_removed(sk, req);

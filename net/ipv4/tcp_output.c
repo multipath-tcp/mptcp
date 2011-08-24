@@ -574,11 +574,14 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	if (unlikely(OPTION_MP_CAPABLE & opts->options)) {
 		struct mp_capable *mpc;
 		__u8 *p8 = (__u8 *)ptr;
+		__u64 *p64;
 
 		*p8++ = TCPOPT_MPTCP;
 
-		if (!opts->receiver_key)
-			*p8++ = MPTCP_SUB_LEN_CAPABLE;
+		if (!opts->receiver_key && !opts->sender_key)
+			*p8++ = MPTCP_SUB_LEN_CAPABLE_SYN;
+		else if (!opts->receiver_key)
+			*p8++ = MPTCP_SUB_LEN_CAPABLE_SYNACK;
 		else
 			*p8++ = MPTCP_SUB_LEN_CAPABLE_ACK;
 
@@ -591,13 +594,75 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		mpc->s = 1;
 
 		ptr++;
-		*ptr++ = htonll(opts->sender_key);
-		*ptr++ = htonll(opts->sender_key<<32);
+		p64 = (__u64 *)ptr;
+
+		if (opts->sender_key) {
+			*p64++ = opts->sender_key;
+			ptr += 2;
+		}
 
 		if (opts->receiver_key) {
-			*ptr++ = htonll(opts->receiver_key);
-			*ptr++ = htonll(opts->receiver_key<<32);
+			*p64 = opts->receiver_key;
+			ptr += 2;
 		}
+	}
+
+	if (unlikely(OPTION_MP_JOIN & opts->options)) {
+		struct mp_join *mpj;
+		__u8 *p8 = (__u8 *)ptr;
+
+		*p8++ = TCPOPT_MPTCP;
+
+		switch (opts->mp_join_type) {
+			case MPTCP_MP_JOIN_TYPE_SYN:
+				*p8++ = MPTCP_SUB_LEN_JOIN_SYN;
+				break;
+			case MPTCP_MP_JOIN_TYPE_SYNACK:
+				*p8++ = MPTCP_SUB_LEN_JOIN_SYNACK;
+				break;
+			case MPTCP_MP_JOIN_TYPE_ACK:
+				*p8++ = MPTCP_SUB_LEN_JOIN_ACK;
+				break;
+			default:
+				*p8++ = MPTCP_SUB_LEN_JOIN_ACK;
+				break;
+		}
+
+		mpj = (struct mp_join *)p8;
+
+		mpj->sub = MPTCP_SUB_JOIN;
+		mpj->rsv = 0;
+		mpj->b = 0;
+		mpj->addr_id = opts->addr_id;
+
+		switch (opts->mp_join_type) {
+			case MPTCP_MP_JOIN_TYPE_SYN:
+				ptr++;
+				*ptr++ = opts->token;
+				*ptr++ = opts->sender_random_number;
+				break;
+			case MPTCP_MP_JOIN_TYPE_SYNACK:
+			{
+				__u64 *p64;
+				ptr++;
+				p64 = (__u64 *) ptr;
+				*p64 = opts->sender_truncated_mac;
+				ptr += 2;
+				*ptr++ = opts->sender_random_number;
+				break;
+			}
+			case MPTCP_MP_JOIN_TYPE_ACK:
+				ptr++;
+				memcpy(ptr, opts->sender_mac, 20);
+
+				ptr+=5;
+				break;
+			default:
+				ptr++;
+				*ptr++ = opts->token;
+				break;
+		}
+
 	}
 #ifdef CONFIG_MPTCP_PM
 	if (unlikely(OPTION_ADD_ADDR & opts->options)) {
@@ -633,64 +698,6 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		ptr = (__be32 *) p8;
 	}
 #endif /* CONFIG_MPTCP_PM */
-	if (unlikely(OPTION_MP_JOIN & opts->options)) {
-		struct mp_join *mpj;
-		__u8 *p8 = (__u8 *)ptr;
-
-		*p8++ = TCPOPT_MPTCP;
-
-		switch (opts->mp_join_type) {
-			case MPTCP_MP_JOIN_TYPE_SYN:
-				*p8++ = MPTCP_SUB_LEN_JOIN_SYN;
-				break;
-			case MPTCP_MP_JOIN_TYPE_SYNACK:
-				*p8++ = MPTCP_SUB_LEN_JOIN_SYNACK;
-				break;
-			case MPTCP_MP_JOIN_TYPE_ACK:
-				*p8++ = MPTCP_SUB_LEN_JOIN_ACK;
-				break;
-			default:
-				*p8++ = MPTCP_SUB_LEN_JOIN_ACK;
-				break;
-		}
-
-		mpj = (struct mp_join *)p8;
-
-		mpj->sub = MPTCP_SUB_JOIN;
-		mpj->rsv = 0;
-		mpj->b = 0;
-		mpj->addr_id = opts->addr_id;
-
-		switch (opts->mp_join_type) {
-			case MPTCP_MP_JOIN_TYPE_SYN:
-				ptr++;
-				*ptr++ = htonl(opts->token);
-				*ptr++ = htonl(opts->sender_random_number);
-				break;
-			case MPTCP_MP_JOIN_TYPE_SYNACK:
-				ptr++;
-				*ptr++ = htonll(opts->sender_truncated_mac);
-				*ptr++ = htonll(opts->sender_truncated_mac<<32);
-				*ptr++ = htonl(opts->sender_random_number);
-				break;
-			case MPTCP_MP_JOIN_TYPE_ACK:
-				ptr++;
-				memcpy(ptr, opts->sender_mac, 20);
-
-				/*printk( KERN_DEBUG "Mac to parse: ");
-
-				for (i=0; i < 20; i++)
-					 printk( KERN_DEBUG "%02x ", opts->sender_mac[i]);*/
-
-				ptr+=5;
-				break;
-			default:
-				ptr++;
-				*ptr++ = htonl(opts->token);
-				break;
-		}
-
-	}
 	if (OPTION_DSN_MAP & opts->options ||
 	    OPTION_DATA_ACK & opts->options ||
 	    OPTION_DATA_FIN & opts->options) {
@@ -702,7 +709,7 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			((OPTION_DATA_ACK & opts->options) ?
 			 MPTCP_SUB_LEN_ACK : 0) +
 			((OPTION_DSN_MAP & opts->options) ?
-			 (tp->mpcb->received_options.dss_csum ?
+			 (tp->mpcb->rx_opt.dss_csum ?
 			  MPTCP_SUB_LEN_SEQ_CSUM : MPTCP_SUB_LEN_SEQ) : 0);
 		mdss = (struct mp_dss *)p8;
 
@@ -719,7 +726,7 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		if (OPTION_DSN_MAP & opts->options) {
 			*ptr++ = htonl(opts->data_seq);
 			*ptr++ = htonl(opts->sub_seq);
-			if (tp->mpcb->received_options.dss_csum) {
+			if (tp->mpcb->rx_opt.dss_csum) {
 				__u16 *p16 = (__u16 *)ptr;
 				*p16++ = htons(opts->data_len);
 				*p16++ = opts->dss_csum;
@@ -792,9 +799,9 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 
 		opts->options |= OPTION_MP_CAPABLE;
-		remaining -= MPTCP_SUB_LEN_CAPABLE_ALIGN;
-		opts->sender_key = mptcp_loc_key(mpcb);
-		opts->dss_csum = mpcb->received_options.dss_csum;
+		remaining -= MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN;
+		opts->sender_key = 0;
+		opts->dss_csum = mpcb->rx_opt.dss_csum;
 
 		/* We arrive here either when sending a SYN or a
 		 * SYN+ACK when in SYN_SENT state (that is, tcp_synack_options
@@ -805,12 +812,11 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		 * and does not need to set the dataseq options, since
 		 * there is no data in the segment
 		 */
-		BUG_ON(!mpcb);
 	} else {
 		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 		opts->options |= OPTION_MP_JOIN;
 		remaining -= MPTCP_SUB_LEN_JOIN_ALIGN_SYN;
-		opts->token = tp->rx_opt.mptcp_rem_token;
+		opts->token = mpcb->rx_opt.mptcp_rem_token;
 		opts->addr_id = mptcp_get_loc_addrid(mpcb, sk);
 
 		if (!tp->mptcp_loc_random_number)
@@ -818,8 +824,6 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 
 		opts->sender_random_number = tp->mptcp_loc_random_number;
 		opts->mp_join_type = MPTCP_MP_JOIN_TYPE_SYN;
-		mptcp_debug("Formated: token: %08x, random number: %08x",
-				opts->token, opts->sender_random_number);
 	}
 nomptcp:
 #endif /* CONFIG_MPTCP */
@@ -951,7 +955,7 @@ static unsigned tcp_synack_options(struct sock *sk,
 #ifdef CONFIG_MPTCP
 	if (req->saw_mpc) {
 		opts->options |= OPTION_MP_CAPABLE;
-		remaining -= MPTCP_SUB_LEN_CAPABLE_ALIGN;
+		remaining -= MPTCP_SUB_LEN_CAPABLE_SYNACK_ALIGN;
 		opts->sender_key = req->mptcp_loc_key;
 		opts->dss_csum = sysctl_mptcp_checksum || req->dss_csum;
 	}
@@ -975,8 +979,6 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	unsigned int eff_sacks;
 #ifdef CONFIG_MPTCP
 	struct multipath_pcb *mpcb;
-	char hash_key[16];
-	char message [8];
 #endif
 
 #ifdef CONFIG_TCP_MD5SIG
@@ -998,45 +1000,18 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 #ifdef CONFIG_MPTCP
 	mpcb = tp->mpcb;
 
-	if (tp->mpc && !tcp_sk(sk)->mptcp_add_addr_ack) {
+	if (tp->mpc && !tcp_sk(sk)->mptcp_add_addr_ack &&
+	    !tcp_sk(sk)->include_mpc) {
 		int dss = 0;
 
-		if (tcb && unlikely(tcb->mptcp_flags & MPTCPHDR_FIRST_ACK)) {
-			if (is_master_tp(tp)) {
-				opts->options |= OPTION_MP_CAPABLE;
-				size += MPTCP_SUB_LEN_CAPABLE_ALIGN_ACK;
-				opts->sender_key = tp->mptcp_loc_key;
-				opts->receiver_key = tp->rx_opt.mptcp_rem_key;
-			} else {
-				opts->options |= OPTION_MP_JOIN;
-				size += MPTCP_SUB_LEN_JOIN_ALIGN_ACK;
-				opts->mp_join_type = MPTCP_MP_JOIN_TYPE_ACK;
-
-				memcpy(hash_key, &tcp_sk(mpcb->master_sk)->mptcp_loc_key, 8);
-				memcpy(hash_key+8, &tcp_sk(mpcb->master_sk)->rx_opt.mptcp_rem_key, 8);
-
-				memcpy(message, &tp->mptcp_loc_random_number, 4);
-				memcpy(message+4, &tp->rx_opt.mptcp_recv_random_number, 4);
-
-				mptcp_debug("ACK: Generating the full HMAC with "
-						"(%llu + %llu) and (%08x + %08x)",
-						tcp_sk(mpcb->master_sk)->mptcp_loc_key,
-						tcp_sk(mpcb->master_sk)->rx_opt.mptcp_rem_key,
-						tp->mptcp_loc_random_number,
-						tp->rx_opt.mptcp_recv_random_number);
-
-				mptcp_hmac_sha1(hash_key, sizeof(hash_key),
-						message, sizeof(message),
-						opts->sender_mac,
-						sizeof(opts->sender_mac));
-			}
-		} else {
+		if (1/* data_to_ack */ ) {
 			dss = 1;
 
 			opts->data_ack = mpcb_meta_tp(mpcb)->rcv_nxt;
 			opts->options |= OPTION_DATA_ACK;
 			size += MPTCP_SUB_LEN_ACK_ALIGN;
 		}
+
 		if (!skb || skb->len != 0 || (tcb->mptcp_flags & MPTCPHDR_FIN)) {
 			dss = 1;
 
@@ -1044,7 +1019,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 				opts->data_seq = tcb->data_seq;
 				opts->data_len = tcb->data_len;
 				opts->sub_seq = tcb->sub_seq;
-				if (mpcb->received_options.dss_csum)
+				if (mpcb->rx_opt.dss_csum)
 					opts->dss_csum = tcb->dss_csum;
 				else
 					opts->dss_csum = 0;
@@ -1062,6 +1037,27 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 
 		if (dss)
 			size += MPTCP_SUB_LEN_DSS_ALIGN;
+	}
+
+	if (tcb && unlikely(tcp_sk(sk)->include_mpc)) {
+		if (is_master_tp(tp)) {
+			opts->options |= OPTION_MP_CAPABLE;
+			size += MPTCP_SUB_LEN_CAPABLE_ALIGN_ACK;
+			opts->sender_key = mpcb->mptcp_loc_key;
+			opts->receiver_key = mpcb->rx_opt.mptcp_rem_key;
+			opts->dss_csum = mpcb->rx_opt.dss_csum;
+		} else {
+			opts->options |= OPTION_MP_JOIN;
+			size += MPTCP_SUB_LEN_JOIN_ALIGN_ACK;
+			opts->mp_join_type = MPTCP_MP_JOIN_TYPE_ACK;
+
+			mptcp_hmac_sha1((u8 *)&mpcb->mptcp_loc_key,
+					(u8 *)&mpcb->rx_opt.mptcp_rem_key,
+					(u8 *)&tp->mptcp_loc_random_number,
+					(u8 *)&mpcb->rx_opt.mptcp_recv_random_number,
+					(u32 *)opts->sender_mac);
+		}
+		tcp_sk(sk)->include_mpc = 0;
 	}
 
 #ifdef CONFIG_MPTCP_PM
@@ -1086,12 +1082,14 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			if (skb)
 				mpcb->addr6_unsent--;
 			size += MPTCP_SUB_LEN_ADD_ADDR6_ALIGN;
-		} else if ((unlikely(mpcb->addr6_unsent) &&
+		} else if (!(opts->options & OPTION_MP_CAPABLE) &&
+			    !(opts->options & OPTION_MP_JOIN) &&
+			    ((unlikely(mpcb->addr6_unsent) &&
 			    MAX_TCP_OPTION_SPACE - size <=
 			    MPTCP_SUB_LEN_ADD_ADDR6_ALIGN) ||
 			    (unlikely(mpcb->addr4_unsent) &&
-			     MAX_TCP_OPTION_SPACE - size >=
-			     MPTCP_SUB_LEN_ADD_ADDR4_ALIGN)) {
+			    MAX_TCP_OPTION_SPACE - size >=
+			    MPTCP_SUB_LEN_ADD_ADDR4_ALIGN))) {
 			mptcp_debug("no space for add addr. unsent IPv4: %d,"
 					"IPv6: %d\n",
 					mpcb->addr4_unsent, mpcb->addr6_unsent);
@@ -1188,12 +1186,11 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	tcb = TCP_SKB_CB(skb);
 	memset(&opts, 0, sizeof(opts));
 
-	if (unlikely(tcb->flags & TCPHDR_SYN)) {
+	if (unlikely(tcb->flags & TCPHDR_SYN))
 		tcp_options_size = tcp_syn_options(sk, skb, &opts, &md5);
-	} else {
+	else
 		tcp_options_size = tcp_established_options(sk, skb, &opts,
 							   &md5);
-	}
 	tcp_header_size = tcp_options_size + sizeof(struct tcphdr);
 
 	if (tcp_packets_in_flight(tp) == 0) {
@@ -3523,7 +3520,7 @@ void tcp_send_ack(struct sock *sk)
 	if (buff == NULL) {
 
 #ifdef CONFIG_MPTCP
-		/* MPTCP: We don't send a delayed ack if we are sending a mptcp
+		/* MPTCP: We don't send a delayed ack if we are sending an mptcp
 		 * ADD_ADDR ack to avoid sending multiple ADD_ADDR acks for the
 		 * same address. */
 		if (tcp_sk(sk)->mptcp_add_addr_ack == 1)
@@ -3540,40 +3537,6 @@ void tcp_send_ack(struct sock *sk)
 	/* Reserve space for headers and prepare control bits. */
 	skb_reserve(buff, MAX_TCP_HEADER);
 	tcp_init_nondata_skb(buff, tcp_acceptable_seq(sk), TCPHDR_ACK);
-
-	/* Send it off, this clears delayed acks for us. */
-	TCP_SKB_CB(buff)->when = tcp_time_stamp;
-	tcp_transmit_skb(sk, buff, 0, GFP_ATOMIC);
-}
-
-void tcp_send_first_ack(struct sock *sk)
-{
-	struct sk_buff *buff;
-
-	/* If we have been reset, we may not send again. */
-	if (sk->sk_state == TCP_CLOSE)
-		return;
-
-	/* We are not putting this on the write queue, so
-	 * tcp_transmit_skb() will set the ownership to this
-	 * sock.
-	 */
-	buff = alloc_skb(MAX_TCP_HEADER, GFP_ATOMIC);
-	if (buff == NULL) {
-		inet_csk_schedule_ack(sk);
-		inet_csk(sk)->icsk_ack.ato = TCP_ATO_MIN;
-		inet_csk_reset_xmit_timer(sk, ICSK_TIME_DACK,
-					  TCP_DELACK_MAX, TCP_RTO_MAX);
-		return;
-	}
-
-	/* Reserve space for headers and prepare control bits. */
-	skb_reserve(buff, MAX_TCP_HEADER);
-	tcp_init_nondata_skb(buff, tcp_acceptable_seq(sk), TCPHDR_ACK);
-
-#ifdef CONFIG_MPTCP
-	TCP_SKB_CB(buff)->mptcp_flags |= MPTCPHDR_FIRST_ACK;
-#endif
 
 	/* Send it off, this clears delayed acks for us. */
 	TCP_SKB_CB(buff)->when = tcp_time_stamp;

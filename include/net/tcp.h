@@ -463,7 +463,6 @@ extern void tcp_send_active_reset(struct sock *sk, gfp_t priority);
 extern int tcp_send_synack(struct sock *);
 extern void tcp_push_one(struct sock *, unsigned int mss_now);
 extern void tcp_send_ack(struct sock *sk);
-extern void tcp_send_first_ack(struct sock *sk);
 extern void tcp_send_delayed_ack(struct sock *sk);
 
 /* tcp_input.c */
@@ -1051,6 +1050,7 @@ static inline int tcp_full_space(const struct sock *sk)
 
 static inline void tcp_openreq_init(struct request_sock *req,
 				    struct tcp_options_received *rx_opt,
+				    struct multipath_options *mopt,
 				    struct sk_buff *skb)
 {
 	struct inet_request_sock *ireq = inet_rsk(req);
@@ -1068,12 +1068,13 @@ static inline void tcp_openreq_init(struct request_sock *req,
 		 * and store the received token.
 		 */
 		do {
-			mptcp_new_key(&req->mptcp_loc_key);
-			hash_key_sha1(req->mptcp_loc_key,
-					req->mptcp_hashed_loc_key,
-					sizeof(req->mptcp_hashed_loc_key));
-			req->mptcp_rem_key = rx_opt->mptcp_rem_key;
-			req->mptcp_loc_token = mptcp_new_token(req->mptcp_hashed_loc_key);
+			do {
+				get_random_bytes(&req->mptcp_loc_key,
+						sizeof(req->mptcp_loc_key));
+			} while (!req->mptcp_loc_key);
+
+			mptcp_key_sha1(req->mptcp_loc_key,
+				       &req->mptcp_loc_token);
 		} while (mptcp_find_token(req->mptcp_loc_token));
 	}
 #endif

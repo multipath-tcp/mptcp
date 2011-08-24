@@ -54,7 +54,7 @@ struct tcp_out_options {
 	__sum16	dss_csum;	/* Overloaded field: dss-checksum required
 				 * (for SYN-packets)? Or dss-csum itself */
 	__u64	sender_key;	/* sender's key for mptcp */
-	__u64	receiver_key;	/* sender's key for mptcp */
+	__u64	receiver_key;	/* receiver's key for mptcp */
 	__u32	sender_random_number;	/* random number of the sender */
 	__u32	receiver_random_number;	/* random number of the receiver */
 	__u64	sender_truncated_mac;
@@ -93,13 +93,6 @@ struct tcp_options_received {
 				 */
 #ifdef CONFIG_MPTCP
 	__u8	rem_id;			/* Address-id in the MP_JOIN */
-	u32	mptcp_rem_token;	/* Remote token */
-	u32	mptcp_recv_token;	/* Received token */
-	u64     mptcp_rem_key;		/* Remote key */
-	u64     mptcp_recv_key;		/* Received key */
-	u32	mptcp_recv_random_number;
-	u64	mptcp_recv_tmac;
-	char	mptcp_recv_mac[20];
 	u32	rcv_isn; /* Needed to retrieve abs subflow seqnum from the
 			  * relative version.
 			  */
@@ -120,12 +113,15 @@ struct multipath_options {
 	struct	mptcp_loc4 addr4[MPTCP_MAX_ADDR];
 	struct	mptcp_loc6 addr6[MPTCP_MAX_ADDR];
 #endif
+	__u32	mptcp_rem_token;	/* Received token */
+	__u64	mptcp_rem_key;	/* Remote key */
+	__u32	mptcp_recv_random_number;
+	__u64	mptcp_recv_tmac;
+	__u8	mptcp_recv_mac[20];
 	u8	list_rcvd:1, /* 1 if IP list has been received (MPTCP_PM) */
 		dfin_rcvd:1,
 		dss_csum:1;
-	u32	fin_dsn;	/* DSN of the byte
-				 * FOLLOWING the Data FIN
-				 */
+	u32	fin_dsn; /* DSN of the byte  FOLLOWING the Data FIN */
 };
 
 #endif /*_TCP_OPTIONS_H*/

@@ -91,25 +91,17 @@ struct path6 {
 	int			path_index;
 };
 
-#define mptcp_loc_token(mpcb)				\
-	(((struct tcp_sock *)mpcb)->mptcp_loc_token)
-#define mptcp_tp_recv_token(__tp) (__tp->rx_opt.mptcp_recv_token)
-#define mptcp_loc_key(mpcb) (((struct tcp_sock *)mpcb)->mptcp_loc_key)
-#define hashed_loc_key(mpcb) (((struct tcp_sock *)mpcb)->mptcp_hashed_loc_key)
-
 struct mp_join *mptcp_find_join(struct sk_buff *skb);
 u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock *sk);
 void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token);
 void mptcp_hash_remove(struct multipath_pcb *mpcb);
 void mptcp_hash_request_remove(struct request_sock *req);
 struct multipath_pcb *mptcp_hash_find(u32 token);
-int mptcp_find_token(u32 token);
 int mptcp_lookup_join(struct sk_buff *skb);
 struct sk_buff *mptcp_make_synack(struct sock *master_sk,
 					struct dst_entry *dst,
 					struct request_sock *req);
-u32 mptcp_new_token(char *hashkey);
-void mptcp_new_key(void *buf);
+int mptcp_find_token(u32 token);
 void mptcp_pm_release(struct multipath_pcb *mpcb);
 struct dst_entry *mptcp_route_req(const struct request_sock *req);
 void mptcp_send_updatenotif(struct multipath_pcb *mpcb);
@@ -121,16 +113,10 @@ void __mptcp_update_patharray_ports(struct multipath_pcb *mpcb);
 
 #else /* CONFIG_MPTCP_PM */
 
-#define mptcp_loc_token(mpcb) (0)
 #define mptcp_tp_recv_token(__tp) (0)
 
 static inline void mptcp_update_patharray(struct multipath_pcb *mpcb)
 {
-}
-
-static inline u32 mptcp_new_token(void)
-{
-	return 0;
 }
 
 static inline void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token)

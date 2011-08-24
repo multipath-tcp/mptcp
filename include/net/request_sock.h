@@ -70,13 +70,11 @@ struct request_sock {
 					dss_csum:1;
 	__u8				rem_id; /* Address-id in the MP_JOIN */
 	u32                             mptcp_loc_token;
-	u32                             mptcp_rem_token;
 	u64				mptcp_loc_key;
-	char				mptcp_hashed_loc_key[20];
 	u64				mptcp_rem_key;
 	u32				mptcp_rem_random_number;
 	u32				mptcp_loc_random_number;
-	char				mptcp_hash_mac[20];
+	u64				mptcp_hash_tmac;
 	struct multipath_pcb            *mpcb;
 	/* Collision list in the tuple hashtable. We need to find
 	 * the req sock when receiving the third msg of the 3-way handshake,

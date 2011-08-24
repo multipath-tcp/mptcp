@@ -80,8 +80,7 @@ static int mptcp_v4_join_request(struct multipath_pcb *mpcb,
 	struct inet_request_sock *ireq;
 	struct request_sock *req;
 	struct tcp_options_received tmp_opt;
-	char hash_key[16];
-	char message [8];
+	u8 mptcp_hash_mac[20];
 	u8 *hash_location;
 	__be32 saddr = ip_hdr(skb)->saddr;
 	__be32 daddr = ip_hdr(skb)->daddr;
@@ -94,37 +93,27 @@ static int mptcp_v4_join_request(struct multipath_pcb *mpcb,
 	tcp_clear_options(&tmp_opt);
 	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
 	tmp_opt.user_mss = tcp_sk(mpcb->master_sk)->rx_opt.user_mss;
-
 	tcp_parse_options(skb, &tmp_opt, &hash_location,
-			  &mpcb->received_options, 0);
+			  &mpcb->rx_opt, 0);
 
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 
 	req->mpcb = mpcb;
-	req->mptcp_rem_random_number = tmp_opt.mptcp_recv_random_number;
-	req->mptcp_rem_key = tcp_sk(mpcb->master_sk)->rx_opt.mptcp_rem_key;
-	req->mptcp_loc_key = tcp_sk(mpcb->master_sk)->mptcp_loc_key;
+	req->mptcp_rem_random_number = mpcb->rx_opt.mptcp_recv_random_number;
+	req->mptcp_rem_key = mpcb->rx_opt.mptcp_rem_key;
+	req->mptcp_loc_key = mpcb->mptcp_loc_key;
 
-	get_random_bytes(&req->mptcp_loc_random_number, 4);
+	get_random_bytes(&req->mptcp_loc_random_number,
+			sizeof(req->mptcp_loc_random_number));
 
-	mptcp_debug("Here i need to generated the first HMAC with (%llu + %llu) and (%08x + %08x)",
-			req->mptcp_loc_key, req->mptcp_rem_key,
-			req->mptcp_loc_random_number,
-			req->mptcp_rem_random_number);
-
-	memcpy(hash_key, &req->mptcp_loc_key, 8);
-	memcpy(hash_key + 8, &req->mptcp_rem_key, 8);
-
-	memcpy(message, &req->mptcp_loc_random_number, 4);
-	memcpy(message + 4, &req->mptcp_rem_random_number, 4);
-
-	mptcp_hmac_sha1(hash_key, sizeof(hash_key), message, sizeof(message),
-			req->mptcp_hash_mac, sizeof(req->mptcp_hash_mac));
+	mptcp_hmac_sha1((u8 *)&req->mptcp_loc_key, (u8 *)&req->mptcp_rem_key,
+			(u8 *)&req->mptcp_loc_random_number,
+			(u8 *)&req->mptcp_rem_random_number,
+			(u32 *)mptcp_hash_mac);
+	req->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
 
 	req->rem_id = tmp_opt.rem_id;
-	req->mptcp_loc_token = mptcp_loc_token(mpcb);
-	req->mptcp_rem_token = tcp_sk(mpcb->master_sk)->rx_opt.mptcp_rem_token;
-	tcp_openreq_init(req, &tmp_opt, skb);
+	tcp_openreq_init(req, &tmp_opt, NULL, skb);
 
 	ireq = inet_rsk(req);
 	ireq->loc_addr = daddr;
@@ -266,12 +255,12 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 			struct mp_join *join_opt = mptcp_find_join(skb);
 			/* Currently we make two calls to mptcp_find_join(). This
 			 * can probably be optimized. */
-			if (mptcp_v4_add_raddress(&mpcb->received_options,
+			if (mptcp_v4_add_raddress(&mpcb->rx_opt,
 					(struct in_addr *)&iph->saddr, 0,
 					join_opt->addr_id) < 0)
 				goto discard;
-			if (unlikely(mpcb->received_options.list_rcvd)) {
-				mpcb->received_options.list_rcvd = 0;
+			if (unlikely(mpcb->rx_opt.list_rcvd)) {
+				mpcb->rx_opt.list_rcvd = 0;
 				mptcp_update_patharray(mpcb);
 			}
 			mptcp_v4_join_request(mpcb, skb);
@@ -287,8 +276,6 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 		mptcp_subflow_attach(mpcb, child);
 		tcp_child_process(meta_sk, child, skb);
 	} else {
-		mptcp_debug("%s Sending reset upon ack. ack_seq %u, snd_isn %u\n", __func__,
-				TCP_SKB_CB(skb)->ack_seq, tcp_rsk(req)->snt_isn);
 		req->rsk_ops->send_reset(NULL, skb);
 		goto discard;
 	}
@@ -404,7 +391,7 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 		   (meta_sk->sk_family == AF_INET6 &&
 		    tcp_v6_is_v4_mapped(meta_sk))) ? 1 : 0;
 	pa4_size = (mpcb->num_addr4 + ulid_v4) *
-	    (mpcb->received_options.num_addr4 + ulid_v4) - ulid_v4;
+	    (mpcb->rx_opt.num_addr4 + ulid_v4) - ulid_v4;
 
 	new_pa4 = kmalloc(pa4_size * sizeof(struct path4), GFP_ATOMIC);
 
@@ -415,9 +402,9 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 		rem_ulid.id = 0;
 		rem_ulid.port = 0;
 		/* ULID src with other dest */
-		for (j = 0; j < mpcb->received_options.num_addr4; j++) {
+		for (j = 0; j < mpcb->rx_opt.num_addr4; j++) {
 			struct path4 *p = mptcp_v4_find_path(&loc_ulid,
-				&mpcb->received_options.addr4[j], mpcb);
+				&mpcb->rx_opt.addr4[j], mpcb);
 			if (p) {
 				memcpy(&new_pa4[newpa_idx++], p,
 				       sizeof(struct path4));
@@ -432,9 +419,9 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 
 				p->rem.sin_family = AF_INET;
 				p->rem.sin_addr =
-					mpcb->received_options.addr4[j].addr;
+					mpcb->rx_opt.addr4[j].addr;
 				p->rem.sin_port = 0;
-				p->rem_id = mpcb->received_options.addr4[j].id;
+				p->rem_id = mpcb->rx_opt.addr4[j].id;
 
 				p->path_index = mpcb->next_unused_pi++;
 			}
@@ -468,10 +455,10 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 
 	/* Try all other combinations now */
 	for (i = 0; i < mpcb->num_addr4; i++)
-		for (j = 0; j < mpcb->received_options.num_addr4; j++) {
+		for (j = 0; j < mpcb->rx_opt.num_addr4; j++) {
 			struct path4 *p =
 			    mptcp_v4_find_path(&mpcb->addr4[i],
-					    &mpcb->received_options.addr4[j],
+					    &mpcb->rx_opt.addr4[j],
 					    mpcb);
 			if (p) {
 				memcpy(&new_pa4[newpa_idx++], p,
@@ -486,10 +473,10 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 
 				p->rem.sin_family = AF_INET;
 				p->rem.sin_addr =
-					mpcb->received_options.addr4[j].addr;
+					mpcb->rx_opt.addr4[j].addr;
 				p->rem.sin_port =
-					mpcb->received_options.addr4[j].port;
-				p->rem_id = mpcb->received_options.addr4[j].id;
+					mpcb->rx_opt.addr4[j].port;
+				p->rem_id = mpcb->rx_opt.addr4[j].id;
 
 				p->path_index = mpcb->next_unused_pi++;
 			}

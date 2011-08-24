@@ -51,7 +51,7 @@ void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token)
 	int hash = hash_tk(token);
 
 	mptcp_debug("%s: add mpcb to hash-table with loc_token %08x\n",
-			__func__, mpcb_meta_tp(mpcb)->mptcp_loc_token);
+			__func__, mpcb->mptcp_loc_token);
 
 	write_lock_bh(&tk_hash_lock);
 	list_add(&mpcb->collide_tk, &tk_hashtable[hash]);
@@ -64,7 +64,7 @@ int mptcp_find_token(u32 token) {
 
        read_lock(&tk_hash_lock);
        list_for_each_entry(mpcb, &tk_hashtable[hash], collide_tk) {
-               if (token == mptcp_loc_token(mpcb)) {
+               if (token == mpcb->mptcp_loc_token) {
                        read_unlock(&tk_hash_lock);
                        return 1;
                }
@@ -80,12 +80,12 @@ int mptcp_find_token(u32 token) {
  */
 struct multipath_pcb *mptcp_hash_find(u32 token)
 {
-	int hash = hash_tk(token);
+	u32 hash = hash_tk(token);
 	struct multipath_pcb *mpcb;
 
 	read_lock(&tk_hash_lock);
 	list_for_each_entry(mpcb, &tk_hashtable[hash], collide_tk) {
-		if (token == mptcp_loc_token(mpcb)) {
+		if (token == mpcb->mptcp_loc_token) {
 			sock_hold(mpcb->master_sk);
 			read_unlock(&tk_hash_lock);
 			return mpcb;
@@ -102,7 +102,7 @@ void mptcp_hash_remove(struct multipath_pcb *mpcb)
 	struct listen_sock *lopt = meta_icsk->icsk_accept_queue.listen_opt;
 
 	mptcp_debug("%s: remove mpcb from hash-table with loc_token %08x\n",
-			__func__, mpcb_meta_tp(mpcb)->mptcp_loc_token);
+			__func__, mpcb->mptcp_loc_token);
 
 	/* remove from the token hashtable */
 	write_lock_bh(&tk_hash_lock);
@@ -179,24 +179,6 @@ void mptcp_pm_release(struct multipath_pcb *mpcb)
 	 * non-empty can only be a bug.
 	 */
 	BUG_ON(!reqsk_queue_empty(&meta_icsk->icsk_accept_queue));
-}
-
-/* Generates a token for a new MPTCP connection
- * Currently we assign sequential tokens to
- * successive MPTCP connections. In the future we
- * will need to define random tokens, while avoiding
- * collisions.
- */
-u32 mptcp_new_token(char *hashkey)
-{
-	return *(u32*)(hashkey);
-	//static atomic_t latest_token={.counter=0};
-	//return atomic_inc_return(&latest_token);
-}
-
-void mptcp_new_key(void *buf)
-{
-	get_random_bytes(buf, 8);
 }
 
 u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock* sk)
@@ -446,7 +428,7 @@ static unsigned mptcp_synack_options(struct request_sock *req,
 
 	/* Send token in SYN/ACK */
 	opts->options |= OPTION_MP_JOIN;
-	opts->sender_truncated_mac = *(u64*)(req->mptcp_hash_mac);
+	opts->sender_truncated_mac = req->mptcp_hash_tmac;
 	opts->sender_random_number = req->mptcp_loc_random_number;
 	opts->mp_join_type = MPTCP_MP_JOIN_TYPE_SYNACK;
 #ifdef CONFIG_MPTCP_PM
@@ -655,7 +637,7 @@ int mptcp_lookup_join(struct sk_buff *skb)
 		return 0;
 
 	join_opt++; /* the token is at the end of struct mp_join */
-	token = ntohl(*(u32 *) join_opt);
+	token = *(u32 *) join_opt;
 	mpcb = mptcp_hash_find(token);
 	meta_sk = (struct sock *)mpcb;
 	if (!mpcb) {
@@ -859,7 +841,7 @@ static void mptcp_addr_event_handler(struct in_ifaddr *ifa, unsigned long event)
 
 				printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP adding "
 					"address %pI4 to existing connection with mpcb: %d\n",
-					&ifa->ifa_local, mptcp_loc_token(mpcb));
+					&ifa->ifa_local, mpcb->mptcp_loc_token);
 				/* update this mpcb */
 				mpcb->addr4[mpcb->num_addr4].addr.s_addr =
 						ifa->ifa_local;
@@ -870,7 +852,7 @@ static void mptcp_addr_event_handler(struct in_ifaddr *ifa, unsigned long event)
 				/* re-send addresses */
 				mpcb->addr4_unsent++;
 				/* re-evaluate paths eventually */
-				mpcb->received_options.list_rcvd = 1;
+				mpcb->rx_opt.list_rcvd = 1;
 			}
 
 			goto next;
@@ -971,7 +953,7 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 		read_lock_bh(&tk_hash_lock);
 		list_for_each_entry(mpcb, &tk_hashtable[i], collide_tk) {
 			seq_printf(seq, "[%d] %d (%d): %d",
-					mptcp_loc_token(mpcb),
+					mpcb->mptcp_loc_token,
 					mpcb->num_addr4, mpcb->pa4_size,
 					mpcb->cnt_subflows);
 			seq_putc(seq, '\n');

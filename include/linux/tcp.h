@@ -474,16 +474,14 @@ struct tcp_sock {
 	unsigned long last_snd_probe;
 	unsigned long last_rcv_probe;
 
-	int				path_index;
-	struct tcp_sock			*next; /* Next subflow socket */
-	u32				mptcp_loc_token;
-	u64				mptcp_loc_key;	/* Local key */
-	char				mptcp_hashed_loc_key[20]; /* SHA-1 hash of the local key */
-	u32				mptcp_loc_random_number;
-	uint8_t				slave_sk:1,
-					attached:1,
-					csum_error:1,
-					teardown:1;
+	int		path_index;
+	struct tcp_sock	*next;		/* Next subflow socket */
+	__u32		mptcp_loc_random_number;
+	uint8_t		slave_sk:1,
+			attached:1,
+			csum_error:1,
+			teardown:1,
+			include_mpc:1;
 #endif /* CONFIG_MPTCP */
 };
 

@@ -1060,7 +1060,7 @@ new_segment:
 				 * Either, dss-checksums are not required, or
 				 * mptcp is disabled.
 				 */
-				if (((tp->mpcb && !tp->mpcb->received_options.dss_csum) ||
+				if (((tp->mpcb && !tp->mpcb->rx_opt.dss_csum) ||
 				    !tp->mpc) &&
 				    sk->sk_route_caps & NETIF_F_ALL_CSUM)
 					skb->ip_summed = CHECKSUM_PARTIAL;

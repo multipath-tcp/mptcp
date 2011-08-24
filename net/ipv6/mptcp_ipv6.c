@@ -82,6 +82,7 @@ static int mptcp_v6_join_request(struct multipath_pcb *mpcb,
 	struct inet6_request_sock *treq;
 	struct request_sock *req;
 	struct tcp_options_received tmp_opt;
+	u8 mptcp_hash_mac[20];
 	struct in6_addr saddr;
 	struct in6_addr daddr;
 	u8 *hash_location;
@@ -97,16 +98,27 @@ static int mptcp_v6_join_request(struct multipath_pcb *mpcb,
 	tcp_clear_options(&tmp_opt);
 	tmp_opt.mss_clamp = 536;
 	tmp_opt.user_mss  = tcp_sk(mpcb->master_sk)->rx_opt.user_mss;
-
 	tcp_parse_options(skb, &tmp_opt, &hash_location,
-				  &mpcb->received_options, 0);
+				  &mpcb->rx_opt, 0);
 
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 
 	req->mpcb = mpcb;
-	req->mptcp_loc_token = mptcp_loc_token(mpcb);
-	req->mptcp_rem_token = tcp_sk(mpcb->master_sk)->rx_opt.mptcp_rem_token;
-	tcp_openreq_init(req, &tmp_opt, skb);
+	req->mptcp_rem_random_number = mpcb->rx_opt.mptcp_recv_random_number;
+	req->mptcp_rem_key = mpcb->rx_opt.mptcp_rem_key;
+	req->mptcp_loc_key = mpcb->mptcp_loc_key;
+
+	get_random_bytes(&req->mptcp_loc_random_number,
+			sizeof(req->mptcp_loc_random_number));
+
+	mptcp_hmac_sha1((u8 *)&req->mptcp_loc_key, (u8 *)&req->mptcp_rem_key,
+			(u8 *)&req->mptcp_loc_random_number,
+			(u8 *)&req->mptcp_rem_random_number,
+			(u32 *)mptcp_hash_mac);
+	req->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
+
+	req->rem_id = tmp_opt.rem_id;
+	tcp_openreq_init(req, &tmp_opt, NULL, skb);
 
 	treq = inet6_rsk(req);
 	ipv6_addr_copy(&treq->loc_addr, &daddr);
@@ -255,12 +267,12 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 			struct mp_join *join_opt = mptcp_find_join(skb);
 			/* Currently we make two calls to mptcp_find_join(). This
 			 * can probably be optimized. */
-			if (mptcp_v6_add_raddress(&mpcb->received_options,
+			if (mptcp_v6_add_raddress(&mpcb->rx_opt,
 					(struct in6_addr *)&iph->saddr, 0,
 					join_opt->addr_id) < 0)
 				goto discard;
-			if (unlikely(mpcb->received_options.list_rcvd)) {
-				mpcb->received_options.list_rcvd = 0;
+			if (unlikely(mpcb->rx_opt.list_rcvd)) {
+				mpcb->rx_opt.list_rcvd = 0;
 				mptcp_update_patharray(mpcb);
 			}
 			mptcp_v6_join_request(mpcb, skb);
@@ -276,8 +288,6 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 		mptcp_subflow_attach(mpcb, child);
 		tcp_child_process(meta_sk, child, skb);
 	} else {
-		mptcp_debug("%s Sending reset upon ack. ack_seq %u, snd_isn %u\n", __func__,
-				TCP_SKB_CB(skb)->ack_seq, tcp_rsk(req)->snt_isn);
 		req->rsk_ops->send_reset(NULL, skb);
 		goto discard;
 	}
@@ -392,7 +402,7 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 	 * ULID */
 	int ulid_v6 = (meta_sk->sk_family == AF_INET6) ? 1 : 0;
 	int pa6_size = (mpcb->num_addr6 + ulid_v6) *
-		(mpcb->received_options.num_addr6 + ulid_v6) - ulid_v6;
+		(mpcb->rx_opt.num_addr6 + ulid_v6) - ulid_v6;
 
 	new_pa6 = kmalloc(pa6_size * sizeof(struct path6), GFP_ATOMIC);
 
@@ -403,9 +413,9 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 		rem_ulid.id = 0;
 		rem_ulid.port = 0;
 		/* ULID src with other dest */
-		for (j = 0; j < mpcb->received_options.num_addr6; j++) {
+		for (j = 0; j < mpcb->rx_opt.num_addr6; j++) {
 			struct path6 *p = mptcp_v6_find_path(&loc_ulid,
-				&mpcb->received_options.addr6[j], mpcb);
+				&mpcb->rx_opt.addr6[j], mpcb);
 			if (p) {
 				memcpy(&new_pa6[newpa_idx++], p,
 				       sizeof(struct path6));
@@ -420,9 +430,9 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 
 				p->rem.sin6_family = AF_INET6;
 				ipv6_addr_copy(&p->rem.sin6_addr,
-					&mpcb->received_options.addr6[j].addr);
+					&mpcb->rx_opt.addr6[j].addr);
 				p->rem.sin6_port = 0;
-				p->rem_id = mpcb->received_options.addr6[j].id;
+				p->rem_id = mpcb->rx_opt.addr6[j].id;
 
 				p->path_index = mpcb->next_unused_pi++;
 			}
@@ -455,10 +465,10 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 	}
 	/* Try all other combinations now */
 	for (i = 0; i < mpcb->num_addr6; i++)
-		for (j = 0; j < mpcb->received_options.num_addr6; j++) {
+		for (j = 0; j < mpcb->rx_opt.num_addr6; j++) {
 			struct path6 *p =
 			    mptcp_v6_find_path(&mpcb->addr6[i],
-					    &mpcb->received_options.addr6[j],
+					    &mpcb->rx_opt.addr6[j],
 					    mpcb);
 			if (p) {
 				memcpy(&new_pa6[newpa_idx++], p,
@@ -474,10 +484,10 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 
 				p->rem.sin6_family = AF_INET6;
 				ipv6_addr_copy(&p->rem.sin6_addr,
-					&mpcb->received_options.addr6[j].addr);
+					&mpcb->rx_opt.addr6[j].addr);
 				p->rem.sin6_port =
-					mpcb->received_options.addr6[j].port;
-				p->rem_id = mpcb->received_options.addr6[j].id;
+					mpcb->rx_opt.addr6[j].port;
+				p->rem_id = mpcb->rx_opt.addr6[j].id;
 
 				p->path_index = mpcb->next_unused_pi++;
 			}

@@ -19,6 +19,8 @@
  *      2 of the License, or (at your option) any later version.
  */
 
+#include <crypto/sha.h>
+
 #include <net/ipv6.h>
 #include <net/ip6_checksum.h>
 #include <net/mptcp.h>
@@ -379,7 +381,7 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 			rem = (struct sockaddr_in *) remulid;
 			mptcp_debug("%s: token %08x pi %d src_addr:"
 				"%pI4:%d dst_addr:%pI4:%d\n", __func__,
-				mptcp_loc_token(mpcb), newpi,
+				mpcb->mptcp_loc_token, newpi,
 				&loc->sin_addr,
 				ntohs(loc->sin_port),
 				&rem->sin_addr,
@@ -390,7 +392,7 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 			rem = (struct sockaddr_in6 *) remulid;
 			mptcp_debug("%s: token %08x pi %d src_addr:"
 				"%pI6:%d dst_addr:%pI6:%d\n", __func__,
-				mptcp_loc_token(mpcb), newpi,
+				mpcb->mptcp_loc_token, newpi,
 				&loc->sin6_addr,
 				ntohs(loc->sin6_port),
 				&rem->sin6_addr,
@@ -429,262 +431,81 @@ cont_error:
 	return 0;
 }
 
-void mptcp_crypt_complete(struct crypto_async_request *req, int err)
+void mptcp_key_sha1(u64 key, u32 *token) {
+	u32 workspace[SHA_WORKSPACE_WORDS];
+	u32 mptcp_hashed_key[SHA_DIGEST_WORDS];
+	u8 input[64];
+
+	memset(workspace, 0, SHA_WORKSPACE_WORDS * sizeof(u32));
+
+	/* Initialize input with appropriate padding */
+	memset(input, 0, 64);
+	memcpy(input, &key, sizeof(key)); /* Copy key to the msg beginning */
+	input[8] = 0x80; /* Padding: First bit after message = 1 */
+	input[63] = 0x40; /* Padding: Length of the message = 64 bits */
+
+	sha_init(mptcp_hashed_key);
+	sha_transform(mptcp_hashed_key, input, workspace);
+
+	*token = mptcp_hashed_key[0];
+}
+
+void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
+		     u32 *hash_out)
 {
-	struct mptcp_crypt_result *res = req->data;
+	u32 workspace[SHA_WORKSPACE_WORDS];
+	u8 input[128]; /* 2 512-bit blocks */
+	int i;
 
-	if (err == -EINPROGRESS)
-		return;
+	memset(workspace, 0, SHA_WORKSPACE_WORDS * sizeof(u32));
 
-	res->err = err;
-	complete(&res->completion);
-}
+	/* Generate key xored with ipad */
+	memset(input, 0x36, 64);
+	for (i = 0; i < 8; i++)
+		input[i] ^= key_1[i];
+	for (i = 0; i < 8; i++)
+		input[i + 8] ^= key_2[i];
 
-int hash_key_sha1(u64 key, char *hash_out, size_t outlen) {
-	int rc = 0;
-	struct crypto_ahash *tfm;
-	struct scatterlist sg;
-	struct ahash_request *req;
-	struct mptcp_crypt_result tresult;
-	void *hash_buf;
+	memcpy(&input[64], rand_1, 4);
+	memcpy(&input[68], rand_2, 4);
+	input[72] = 0x80; /* Padding: First bit after message = 1 */
+	memset(&input[73], 0, 53);
 
-	int len = 20;
-	char hash_tmp[20];
-	char *hash_res = hash_tmp;
+	/* Padding: Length of the message = 512 + 64 bits */
+	input[126] = 0x02;
+	input[127] = 0x40;
 
-	/* Set hash output to 0 initially */
-	memset(hash_out, 0, outlen);
+	sha_init(hash_out);
+	sha_transform(hash_out, input, workspace);
+	memset(workspace, 0, SHA_WORKSPACE_WORDS * sizeof(u32));
 
-	init_completion(&tresult.completion);
+	sha_transform(hash_out, &input[64], workspace);
+	memset(workspace, 0, SHA_WORKSPACE_WORDS * sizeof(u32));
 
-	/* Alloc hash SHA-1 */
-	tfm = crypto_alloc_ahash("sha1",0,0);
+	/* Prepare second hmac */
+	memset(input, 0x5C, 64);
+	for (i = 0; i < 8; i++)
+		input[i] ^= key_1[i];
+	for (i = 0; i < 8; i++)
+		input[i + 8] ^= key_2[i];
 
-	if(IS_ERR(tfm)) {
-		printk(KERN_ERR "sha1: crypto_alloc_ahash failed.\n");
-		rc=PTR_ERR(tfm);
-		goto err_tfm;
-	}
+	memcpy(&input[64], hash_out, 20);
+	input[84] = 0x80;
+	memset(&input[85], 0, 41);
 
-	if(!(req = ahash_request_alloc(tfm,GFP_ATOMIC))) {
-		printk(KERN_ERR "sha1: failed to allocate request for sha1\n");
-		rc = -ENOMEM;
-		goto err_req;
-	}
+	/* Padding: Length of the message = 512 + 64 bits */
+	input[126] = 0x02;
+	input[127] = 0xA0;
 
-	ahash_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG,
-			mptcp_crypt_complete, &tresult);
+	sha_transform(hash_out, input, workspace);
+	memset(workspace, 0, SHA_WORKSPACE_WORDS * sizeof(u32));
 
-	if(!(hash_buf = kzalloc(sizeof(key), GFP_ATOMIC))) {
-		printk(KERN_ERR "sha1: failed to kzalloc hash_buf");
-		rc = -ENOMEM;
-		goto err_hash_buf;
-	}
-
-	memcpy(hash_buf, &key, sizeof(key));
-	sg_init_one(&sg, hash_buf, sizeof(key));
-
-	crypto_ahash_clear_flags(tfm, -0);
-
-	ahash_request_set_crypt(req, &sg, hash_res, sizeof(key));
-
-	rc=crypto_ahash_digest(req);
-
-	switch(rc) {
-		case 0:
-			memcpy(hash_out, hash_res, len);
-		    break;
-		case -EINPROGRESS:
-		case -EBUSY:
-			rc = wait_for_completion_interruptible(&tresult.completion);
-			if(!rc && !(rc = tresult.err)) {
-				INIT_COMPLETION(tresult.completion);
-				break;
-			} else {
-				printk(KERN_ERR "sha1: wait_for_completion_interruptible failed\n");
-				goto out;
-			}
-		default:
-			goto out;
-	}
-
-	out:
-	err_hash_buf:
-		ahash_request_free(req);
-	err_req:
-		crypto_free_ahash(tfm);
-	err_tfm:
-		return rc;
-}
-
-int mptcp_hmac_sha1(char *key, size_t klen, /* key and key length */
-			char *data_in, size_t dlen, /* data in and length */
-			char *hash_out, size_t outlen) /* hash buffer and length */
-{
-
-	int rc = 0;
-	struct crypto_ahash *tfm;
-	struct scatterlist sg;
-	struct ahash_request *req;
-	struct mptcp_crypt_result tresult;
-	void *hash_buf;
-
-	int len = 20;
-	char hash_tmp[20];
-	char *hash_res = hash_tmp;
-
-	/* Set hash output to 0 initially */
-	memset(hash_out, 0, outlen);
-
-	init_completion(&tresult.completion);
-
-	/* Alloc hash SHA-1 */
-	tfm = crypto_alloc_ahash("sha1", 0, 0);
-
-	if(IS_ERR(tfm)) {
-		printk(KERN_ERR "sha1: crypto_alloc_ahash failed.\n");
-		rc = PTR_ERR(tfm);
-		goto err_tfm;
-	}
-
-	if(!(req = ahash_request_alloc(tfm, GFP_ATOMIC))) {
-		printk(KERN_ERR "sha1: failed to allocate request for sha1\n");
-		rc = -ENOMEM;
-		goto err_req;
-	}
-
-	ahash_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG,
-			mptcp_crypt_complete, &tresult);
-
-	if (!(hash_buf = kzalloc(klen + dlen, GFP_ATOMIC))) {
-		printk(KERN_ERR "sha1: failed to kzalloc hash_buf");
-		rc = -ENOMEM;
-		goto err_hash_buf;
-	}
-
-	memcpy(hash_buf, key, klen);
-	memcpy(hash_buf+klen, data_in, dlen);
-	sg_init_one(&sg, hash_buf, klen + dlen);
-
-	crypto_ahash_clear_flags(tfm, -0);
-
-	ahash_request_set_crypt(req, &sg, hash_res, klen + dlen);
-
-	rc = crypto_ahash_digest(req);
-
-	switch(rc) {
-		case 0:
-			memcpy(hash_out, hash_res, len);
-		    break;
-		case -EINPROGRESS:
-		case -EBUSY:
-			rc = wait_for_completion_interruptible(&tresult.completion);
-			if(!rc && !(rc = tresult.err)) {
-				INIT_COMPLETION(tresult.completion);
-				break;
-			} else {
-				printk(KERN_ERR "sha1: wait_for_completion_interruptible failed\n");
-				goto out;
-			}
-		default:
-			goto out;
-	}
-
-	out:
-	err_hash_buf:
-		ahash_request_free(req);
-	err_req:
-		crypto_free_ahash(tfm);
-	err_tfm:
-		return rc;
-
-
-/*	int rc=0;
-	struct crypto_ahash *tfm;
-	struct scatterlist sg;
-	struct ahash_request *req;
-	struct mtcp_crypt_result tresult;
-	void *hash_buf;
-
-	int len = 20;
-	char hash_tmp[20];
-	char *hash_res = hash_tmp;
-
-	memset(hash_out, 0, outlen);
-
-	init_completion(&tresult.completion);
-
-	tfm=crypto_alloc_ahash("hmac(sha1)",0,0);
-
-	if(IS_ERR(tfm)) {
-		printk(KERN_ERR "hmac_sha1: crypto_alloc_ahash failed.\n");
-		rc=PTR_ERR(tfm);
-		goto err_tfm;
-	}
-
-	if(!(req=ahash_request_alloc(tfm,GFP_ATOMIC))) {
-		printk(KERN_ERR "hmac_sha1: failed to allocate request for hmac(sha1)\n");
-		rc=-ENOMEM;
-		goto err_req;
-	}
-
-	if(crypto_ahash_digestsize(tfm)>len) {
-		printk(KERN_ERR "hmac_sha1: tfm size > result buffer.\n");
-		rc=-EINVAL;
-		goto err_req;
-	}
-	ahash_request_set_callback(req,CRYPTO_TFM_REQ_MAY_BACKLOG,
-			mtcp_crypt_complete,&tresult);
-
-	if(!(hash_buf=kzalloc(dlen,GFP_ATOMIC))) {
-		printk(KERN_ERR "hmac_sha1: failed to kzalloc hash_buf");
-		rc=-ENOMEM;
-		goto err_hash_buf;
-	}
-	memcpy(hash_buf,data_in,dlen);
-	sg_init_one(&sg,hash_buf,dlen);
-
-	crypto_ahash_clear_flags(tfm,-0);
-	if((rc=crypto_ahash_setkey(tfm,key,klen))){
-		printk(KERN_ERR "hmac_sha1: crypto_ahash_setkey failed\n");
-		goto err_setkey;
-	}
-	ahash_request_set_crypt(req,&sg,hash_res,dlen);
-	rc=crypto_ahash_digest(req);
-	switch(rc) {
-		case 0:
-			while (len--) {
-				snprintf(hash_out, outlen, "%02x", (*hash_res++ & 0x0FF));
-				hash_out += 2;
-			}
-		       	break;
-		case -EINPROGRESS:
-		case -EBUSY:
-			rc=wait_for_completion_interruptible(&tresult.completion);
-			if(!rc && !(rc=tresult.err)) {
-				INIT_COMPLETION(tresult.completion);
-				break;
-			} else {
-				printk(KERN_ERR "hmac_sha1: wait_for_completion_interruptible failed\n");
-				goto out;
-			}
-		default:
-			goto out;
-	}
-
-	out:
-	err_setkey:
-		kfree(hash_buf);
-	err_hash_buf:
-		ahash_request_free(req);
-	err_req:
-		crypto_free_ahash(tfm);
-	err_tfm:
-		return rc;*/
+	sha_transform(hash_out, &input[64], workspace);
 }
 
 
-int mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags)
+int mptcp_alloc_mpcb(struct sock *master_sk, struct request_sock *req,
+		gfp_t flags)
 {
 	struct multipath_pcb *mpcb;
 	struct tcp_sock *meta_tp;
@@ -771,44 +592,33 @@ int mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags)
 	 * we are at server or client side. At the moment the only way to know
 	 * that is to check for uninitialized token (see tcp_check_req()).
 	 */
-	if (!tcp_sk(master_sk)->mptcp_loc_key) {
+	if (!req) {
 		do {
 			/* Creating a new key for the server */
-			mptcp_new_key(&meta_tp->mptcp_loc_key);
+			do {
+				get_random_bytes(&mpcb->mptcp_loc_key,
+						sizeof(mpcb->mptcp_loc_key));
+			} while (!mpcb->mptcp_loc_key);
 
-			/* Hashing the key */
-			hash_key_sha1(meta_tp->mptcp_loc_key,
-					meta_tp->mptcp_hashed_loc_key,
-					sizeof(meta_tp->mptcp_hashed_loc_key));
-
-			/* Generating the token */
-			meta_tp->mptcp_loc_token = mptcp_new_token(meta_tp->mptcp_hashed_loc_key);
-		} while (mptcp_find_token(meta_tp->mptcp_loc_token));
-
-		/* Copying infos into the master socket */
-		tcp_sk(master_sk)->mptcp_loc_token = mptcp_loc_token(mpcb);
-		tcp_sk(master_sk)->mptcp_loc_key = mptcp_loc_key(mpcb);
-		memcpy(tcp_sk(master_sk)->mptcp_hashed_loc_key,
-				meta_tp->mptcp_hashed_loc_key, 20);
-		mptcp_debug("Values created from a ALLOC!: %llu, %08x",
-				meta_tp->mptcp_loc_key,
-				meta_tp->mptcp_loc_token);
+			mptcp_key_sha1(mpcb->mptcp_loc_key,
+				       &mpcb->mptcp_loc_token);
+		} while (mptcp_find_token(mpcb->mptcp_loc_token));
 	} else {
-		meta_tp->mptcp_loc_key = tcp_sk(master_sk)->mptcp_loc_key;
-		memcpy(meta_tp->mptcp_hashed_loc_key,
-				tcp_sk(master_sk)->mptcp_hashed_loc_key, 20);
-		meta_tp->mptcp_loc_token = tcp_sk(master_sk)->mptcp_loc_token;
-		mptcp_debug("Values created from a ACCEPT!: %llu, %08x",
-				meta_tp->mptcp_loc_key, meta_tp->mptcp_loc_token);
+		mpcb->mptcp_loc_key = req->mptcp_loc_key;
+		mpcb->mptcp_loc_token = req->mptcp_loc_token;
+
+		mpcb->rx_opt.mptcp_rem_key = req->mptcp_rem_key;
+		mptcp_key_sha1(mpcb->rx_opt.mptcp_rem_key,
+			       &mpcb->rx_opt.mptcp_rem_token);
 	}
 
 	/* Adding the mpcb in the token hashtable */
-	mptcp_hash_insert(mpcb, mptcp_loc_token(mpcb));
+	mptcp_hash_insert(mpcb, mpcb->mptcp_loc_token);
 
 	tcp_sk(master_sk)->path_index = 0;
 	tcp_sk(master_sk)->mpcb = mpcb;
 
-	mpcb->received_options.dss_csum = sysctl_mptcp_checksum;
+	mpcb->rx_opt.dss_csum = sysctl_mptcp_checksum;
 
 	return 0;
 }
@@ -875,7 +685,7 @@ void mptcp_release_sock(struct sock *sk)
 static void mptcp_destroy_mpcb(struct multipath_pcb *mpcb)
 {
 	mptcp_debug("%s: Destroying mpcb with token:%08x\n", __func__,
-			mptcp_loc_token(mpcb));
+			mpcb->mptcp_loc_token);
 
 	/* Detach the mpcb from the token hashtable */
 	mptcp_hash_remove(mpcb);
@@ -898,7 +708,6 @@ void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 {
 	struct sock *meta_sk = (struct sock *) mpcb;
 	struct sock *sk = (struct sock *) tp;
-	char remote_hashkey[20];
 
 	/* We should not add a non-mpc socket */
 	BUG_ON(!tp->mpc);
@@ -925,11 +734,6 @@ void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 	mpcb->connection_list = tp;
 	tp->attached = 1;
 
-	/* Same token for all subflows */
-	hash_key_sha1(tcp_sk(mpcb->master_sk)->rx_opt.mptcp_rem_key,
-			remote_hashkey, sizeof(remote_hashkey));
-	tp->rx_opt.mptcp_rem_token = mptcp_new_token(remote_hashkey);
-
 	mpcb->cnt_subflows++;
 	mptcp_update_window_clamp(tcp_sk(meta_sk));
 	atomic_add(
@@ -950,7 +754,7 @@ void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 	if (sk->sk_family == AF_INET)
 		mptcp_debug("%s: token %08x pi %d, src_addr:%pI4:%d dst_addr:"
 				"%pI4:%d, cnt_subflows now %d\n", __func__ ,
-				mptcp_loc_token(mpcb),
+				mpcb->mptcp_loc_token,
 				tp->path_index,
 				&((struct inet_sock *) tp)->inet_saddr,
 				ntohs(((struct inet_sock *) tp)->inet_sport),
@@ -960,7 +764,7 @@ void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 	else
 		mptcp_debug("%s: token %08x pi %d, src_addr:%pI6:%d dst_addr:"
 				"%pI6:%d, cnt_subflows now %d\n", __func__ ,
-				mptcp_loc_token(mpcb),
+				mpcb->mptcp_loc_token,
 				tp->path_index, &inet6_sk(sk)->saddr,
 				ntohs(((struct inet_sock *) tp)->inet_sport),
 				&inet6_sk(sk)->daddr,
@@ -1752,8 +1556,8 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 		     tcb->data_len != tp->map_data_len)) {
 			/* Mapping in packet is different from what we want */
 			mptcp_debug("%s destroying subflow with pi %d from mpcb "
-				    "with token %u\n", __func__,
-				    tp->path_index, mptcp_loc_token(mpcb));
+				    "with token %08x\n", __func__,
+				    tp->path_index, mpcb->mptcp_loc_token);
 			mptcp_debug("%s missing rest of the already present "
 				    "mapping: data_seq %u, subseq %u, data_len "
 				    "%u - new mapping: data_seq %u, subseq %u, "
@@ -1773,9 +1577,9 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 				 * The peer is misbehaving - reset
 				 */
 				mptcp_debug("%s destroying subflow with pi %d "
-					    "from mpcb with token %u\n",
+					    "from mpcb with token %08x\n",
 					    __func__, tp->path_index,
-					    mptcp_loc_token(mpcb));
+					    mpcb->mptcp_loc_token);
 				mptcp_debug("%s seq %u end_seq %u, sub_seq %u "
 					    "data_len %u\n", __func__,
 					    tcb->seq, tcb->end_seq,
@@ -1834,7 +1638,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	if (tp->map_data_len &&
 	    !before(tp->rcv_nxt, tp->map_subseq + tp->map_data_len)) {
 		/* Verify the checksum first */
-		if (mpcb->received_options.dss_csum && mptcp_verif_dss_csum(sk))
+		if (mpcb->rx_opt.dss_csum && mptcp_verif_dss_csum(sk))
 			return -1;
 
 		/* Is this an overlapping mapping? rcv_nxt >= end_data_seq */
@@ -1986,7 +1790,7 @@ void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb)
 	sk_mem_charge(sk, skb->truesize);
 
 	/* Calculate dss-csum */
-	if (tp->mpc && tp->mpcb->received_options.dss_csum) {
+	if (tp->mpc && tp->mpcb->rx_opt.dss_csum) {
 		char mptcp_pshdr[MPTCP_SUB_LEN_SEQ_CSUM];
 		__be32 data_seq = htonl(tcb->data_seq);
 		__be32 sub_seq = htonl(tcb->sub_seq);
@@ -2164,7 +1968,8 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 	{
 		struct mp_capable *mpcapable = (struct mp_capable *) ptr;
 
-		if (opsize != MPTCP_SUB_LEN_CAPABLE &&
+		if (opsize != MPTCP_SUB_LEN_CAPABLE_SYN &&
+		    opsize != MPTCP_SUB_LEN_CAPABLE_SYNACK &&
 		    opsize != MPTCP_SUB_LEN_CAPABLE_ACK) {
 			mptcp_debug("%s: mp_capable: bad option size %d\n",
 					__func__, opsize);
@@ -2174,15 +1979,25 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		if (!sysctl_mptcp_enabled)
 			break;
 
-		opt_rx->saw_mpc = 1;
-		if (mopt) {
-			mopt->list_rcvd = 1;
-			mopt->dss_csum = sysctl_mptcp_checksum || mpcapable->c;
+		if (!mopt) {
+			mptcp_debug("%s Saw MP_CAPABLE but no mopt provided\n",
+					__func__);
+			break;
 		}
-		opt_rx->mptcp_rem_key = ntohll(*((u64*)(ptr + 2)));
 
-		if (opsize == MPTCP_SUB_LEN_CAPABLE_ACK)
-			opt_rx->mptcp_recv_key = ntohll(*((u64*)(ptr + 10)));
+		opt_rx->saw_mpc = 1;
+		mopt->list_rcvd = 1;
+		mopt->dss_csum = sysctl_mptcp_checksum || mpcapable->c;
+
+		if (opsize >= MPTCP_SUB_LEN_CAPABLE_SYNACK) {
+			ptr += 2;
+			mopt->mptcp_rem_key = *((__u64*)ptr);
+		}
+
+		if (opsize == MPTCP_SUB_LEN_CAPABLE_ACK) {
+			/* This only necessary for SYN-cookies */
+		}
+
 		break;
 	}
 	case MPTCP_SUB_JOIN:
@@ -2197,23 +2012,26 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 			break;
 		}
 
+		if (!mopt) {
+			mptcp_debug("%s Saw MP_JOIN but no mopt provided\n",
+					__func__);
+			break;
+		}
+
 		switch (opsize) {
 			case MPTCP_SUB_LEN_JOIN_SYN:
-				opt_rx->mptcp_recv_token = ntohl(*((u32*)(ptr + 2)));
-				opt_rx->mptcp_recv_random_number = ntohl(*((u32*)(ptr + 6)));
-				mptcp_debug("SYN-JOIN Received! Token: %08x Random Number: %08x",
-						opt_rx->mptcp_recv_token,
-						opt_rx->mptcp_recv_random_number);
+				mopt->mptcp_rem_token = *((u32*)(ptr + 2));
+				mopt->mptcp_recv_random_number = *((u32*)(ptr + 6));
 				break;
 			case MPTCP_SUB_LEN_JOIN_SYNACK:
-				opt_rx->mptcp_recv_tmac = ntohll(*((u64*)(ptr + 2)));
-				opt_rx->mptcp_recv_random_number = ntohl(*((u32*)(ptr + 10)));
-				mptcp_debug("SYNACK-JOIN Received! Tmac: %llu Random Number: %08x",
-						opt_rx->mptcp_recv_tmac,
-						opt_rx->mptcp_recv_random_number);
+				ptr += 2;
+				mopt->mptcp_recv_tmac = *((__u64 *)ptr);
+				ptr += 8;
+				mopt->mptcp_recv_random_number = *((u32 *)ptr);
 				break;
 			case MPTCP_SUB_LEN_JOIN_ACK:
-				memcpy(opt_rx->mptcp_recv_mac, ptr + 2, 20);
+				ptr += 2;
+				memcpy(mopt->mptcp_recv_mac, ptr, 20);
 				break;
 		}
 		opt_rx->rem_id = mpjoin->addr_id;
@@ -2801,14 +2619,11 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 
 		child_tp->rx_opt.saw_mpc = 0;
 		child_tp->mpc = 1;
-		child_tp->rx_opt.mptcp_rem_token = req->mptcp_rem_token;
-		child_tp->mptcp_loc_token = req->mptcp_loc_token;
-		child_tp->mptcp_loc_key = req->mptcp_loc_key;
-		memcpy(child_tp->mptcp_hashed_loc_key,
-				req->mptcp_hashed_loc_key, 20);
 		child_tp->slave_sk = 0;
 
-		if (mptcp_alloc_mpcb(child, GFP_ATOMIC)) {
+		req->mptcp_rem_key = mopt->mptcp_rem_key;
+
+		if (mptcp_alloc_mpcb(child, req, GFP_ATOMIC)) {
 			/* The allocation of the mpcb failed!
 			 * Destroy the child and go to listen_overflow
 			 */
@@ -2823,10 +2638,9 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 		mptcp_add_sock(mpcb, child_tp);
 
 		if (mopt->list_rcvd)
-			memcpy(&mpcb->received_options, &mopt,
-			       sizeof(mopt));
+			memcpy(&mpcb->rx_opt, mopt, sizeof(*mopt));
 
-		mpcb->received_options.dss_csum =
+		mpcb->rx_opt.dss_csum =
 				sysctl_mptcp_checksum || req->dss_csum;
 
 		set_bit(MPCB_FLAG_SERVER_SIDE, &mpcb->flags);
@@ -2835,36 +2649,48 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 		 */
 		((struct sock *)mpcb)->sk_state = TCP_SYN_RECV;
 		mptcp_update_metasocket(child, mpcb);
-	} else {
+	} else
 		child_tp->mpcb = NULL;
-	}
 
 	return 0;
 }
 
-int mptcp_check_req_child(struct sock *sk, struct sock *child,
+struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
 		struct request_sock *req, struct request_sock **prev)
 {
 	struct tcp_sock *child_tp = tcp_sk(child);
+	struct multipath_pcb *mpcb = req->mpcb;
+	u8 hash_mac_check[20];
+
+	BUG_ON(!mpcb);
+
+	mptcp_hmac_sha1((u8 *)&mpcb->rx_opt.mptcp_rem_key,
+			(u8 *)&mpcb->mptcp_loc_key,
+			(u8 *)&req->mptcp_rem_random_number,
+			(u8 *)&req->mptcp_loc_random_number,
+			(u32 *)hash_mac_check);
+
+	if (memcmp(hash_mac_check, (char *)&mpcb->rx_opt.mptcp_recv_mac, 20)) {
+		sock_orphan(child);
+		child_tp->teardown = 1;
+		return sk;
+	}
 
 	/* The child is a clone of the meta socket, we must now reset
 	 * some of the fields
 	 */
 	child_tp->mpc = 1;
 	child_tp->slave_sk = 1;
-	child_tp->rx_opt.mptcp_rem_token = req->mptcp_rem_token;
-	child_tp->mptcp_loc_token = req->mptcp_loc_token;
 	child_tp->bw_est.time = 0;
 	child->sk_sndmsg_page = NULL;
 
-	BUG_ON(!req->mpcb);
-	inet_sk(child)->loc_id = mptcp_get_loc_addrid(req->mpcb, child);
+	inet_sk(child)->loc_id = mptcp_get_loc_addrid(mpcb, child);
 	inet_sk(child)->rem_id = req->rem_id;
 
 	/* Child_tp->mpcb has been cloned from the master_sk
 	 * We need to increase the master_sk refcount
 	 */
-	sock_hold(child_tp->mpcb->master_sk);
+	sock_hold(mpcb->master_sk);
 
 	/* Deleting from global hashtable */
 	mptcp_hash_request_remove(req);
@@ -2873,7 +2699,7 @@ int mptcp_check_req_child(struct sock *sk, struct sock *child,
 	 * are attached immediately to the mpcb.
 	 */
 	inet_csk_reqsk_queue_drop(sk, req, prev);
-	return 0;
+	return child;
 }
 
 void mptcp_select_window(struct tcp_sock *tp, u32 new_win)

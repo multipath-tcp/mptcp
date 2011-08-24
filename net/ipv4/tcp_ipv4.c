@@ -252,7 +252,7 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	tp->snt_isn = tp->write_seq;
 	tp->reinjected_seq = tp->write_seq;
 #endif
-	err = mptcp_alloc_mpcb(sk, GFP_KERNEL);
+	err = mptcp_alloc_mpcb(sk, NULL, GFP_KERNEL);
 	if (err)
 		goto failure;
 	mptcp_update_metasocket(sk, mpcb_from_tcpsock(tp));
@@ -1309,6 +1309,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
 	tmp_opt.user_mss  = tp->rx_opt.user_mss;
 	mopt.dss_csum = 0;
+	mptcp_init_addr_list(&mopt);
 	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
 	if (tmp_opt.cookie_plus > 0 &&
@@ -1360,7 +1361,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	req->mpcb = NULL;
 	req->dss_csum = mopt.dss_csum;
 #endif
-	tcp_openreq_init(req, &tmp_opt, skb);
+	tcp_openreq_init(req, &tmp_opt, &mopt, skb);
 
 	ireq = inet_rsk(req);
 	ireq->loc_addr = daddr;

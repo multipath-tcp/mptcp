@@ -4049,7 +4049,7 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 	mpcb = mpcb_from_tcpsock(tp);
 
 	tcp_parse_options(skb, &tp->rx_opt, hvpp,
-			  mpcb ? &mpcb->received_options : NULL, 1);
+			mpcb ? &mpcb->rx_opt : NULL, 1);
 
 	mptcp_path_array_check(mpcb);
 	return 1;
@@ -5715,20 +5715,15 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_cookie_values *cvp = tp->cookie_values;
 	int saved_clamp = tp->rx_opt.mss_clamp;
-	struct multipath_pcb* mpcb;
-#ifdef CONFIG_MPTCP
-	char hash_mac_check[20];
-	char hash_key[16];
-	char message[8];
-#endif
+	struct multipath_pcb *mpcb;
 
 	mpcb = mpcb_from_tcpsock(tp);
 
 	tcp_parse_options(skb, &tp->rx_opt, &hash_location,
-			  mpcb ? &mpcb->received_options : NULL, 0);
+			  mpcb ? &mpcb->rx_opt : NULL, 0);
 
-	if (unlikely(mpcb && mpcb->received_options.list_rcvd)) {
-		mpcb->received_options.list_rcvd = 0;
+	if (unlikely(mpcb && mpcb->rx_opt.list_rcvd)) {
+		mpcb->rx_opt.list_rcvd = 0;
 		mptcp_update_patharray(mpcb);
 		/* The server uses additional subflows
 		 * only on request
@@ -5783,18 +5778,16 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		if (!th->syn)
 			goto discard_and_undo;
 
+#ifdef CONFIG_MPTCP
 		if (!is_master_tp(tp)) {
-			memcpy(hash_key, &tcp_sk(mpcb->master_sk)->rx_opt.mptcp_rem_key, 8);
-			memcpy(hash_key + 8, &tcp_sk(mpcb->master_sk)->mptcp_loc_key, 8);
+			u8 hash_mac_check[20];
 
-			memcpy(message, &tp->rx_opt.mptcp_recv_random_number, 4);
-			memcpy(message + 4, &tp->mptcp_loc_random_number, 4);
-
-			mptcp_hmac_sha1(hash_key, sizeof(hash_key),
-					message, sizeof(message),
-					hash_mac_check, sizeof(hash_mac_check));
-
-			if (*(u64*)(hash_mac_check) != tp->rx_opt.mptcp_recv_tmac) {
+			mptcp_hmac_sha1((u8 *)&mpcb->rx_opt.mptcp_rem_key,
+					(u8 *)&mpcb->mptcp_loc_key,
+					(u8 *)&mpcb->rx_opt.mptcp_recv_random_number,
+					(u8 *)&tp->mptcp_loc_random_number,
+					(u32 *)hash_mac_check);
+			if (memcmp(hash_mac_check, (char *)&mpcb->rx_opt.mptcp_recv_tmac, 8)) {
 				sock_orphan(sk);
 				tp->teardown = 1;
 				goto reset_and_undo;
@@ -5805,11 +5798,18 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			if (tp->rx_opt.saw_mpc) {
 				tp->mpc = 1;
 				tp->rx_opt.saw_mpc = 0;
+
+				mptcp_key_sha1(mpcb->rx_opt.mptcp_rem_key,
+					       &mpcb->rx_opt.mptcp_rem_token);
+
 				mptcp_add_sock(tp->mpcb, tp);
 			} else {
 				mptcp_fallback(sk);
 			}
 		}
+		mptcp_include_mpc(tp);
+#endif
+
 		/* rfc793:
 		 *   "If the SYN bit is on ...
 		 *    are acceptable then ...
@@ -5932,7 +5932,9 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			sk_wake_async(sk, SOCK_WAKE_IO, POLL_OUT);
 		}
 
-		if (sk->sk_write_pending ||
+		/* With MPTCP we cannot send data on the third ack due to the
+		 * lack of option-space */
+		if ((sk->sk_write_pending && !tp->mpc) ||
 		    icsk->icsk_accept_queue.rskq_defer_accept ||
 		    icsk->icsk_ack.pingpong) {
 			/* Save one ACK. Data will be ready after
@@ -5954,7 +5956,7 @@ discard:
 			__kfree_skb(skb);
 			return 0;
 		} else {
-			tcp_send_first_ack(sk);
+			tcp_send_ack(sk);
 		}
 		return -1;
 	}

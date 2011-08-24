@@ -19,22 +19,16 @@
 #ifndef _MPTCP_H
 #define _MPTCP_H
 
-#include <linux/aio.h>
 #include <linux/inetdevice.h>
+#include <linux/ipv6.h>
 #include <linux/list.h>
 #include <linux/net.h>
 #include <linux/skbuff.h>
 #include <linux/socket.h>
 #include <linux/tcp_options.h>
 #include <linux/tcp.h>
-#include <linux/ipv6.h>
 
-#include <linux/crypto.h>
-#include <linux/err.h>
-#include <linux/scatterlist.h>
-#include <linux/gfp.h>
 #include <crypto/hash.h>
-
 #include <net/mptcp_pm.h>
 
 #ifdef CONFIG_MPTCP_DEBUG
@@ -111,8 +105,7 @@ struct multipath_pcb {
 	int cnt_subflows;
 	int cnt_established;
 
-	struct multipath_options received_options;
-	struct tcp_options_received tcp_opt;
+	struct multipath_options rx_opt;
 
 	struct sk_buff_head reinject_queue;
 	unsigned long flags;	/* atomic, for bits see
@@ -122,6 +115,9 @@ struct multipath_pcb {
 				 * eligible subflows by the
 				 * scheduler
 				 */
+
+	__u32	mptcp_loc_token;
+	__u64	mptcp_loc_key;
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	/* Alternative option pointers. If master sk is IPv4 these are IPv6 and
@@ -156,13 +152,15 @@ struct multipath_pcb {
 #endif
 };
 
-#define	MPTCP_SUB_CAPABLE		0
-#define MPTCP_SUB_LEN_CAPABLE		12
-#define MPTCP_SUB_LEN_CAPABLE_ALIGN	12
-#define MPTCP_SUB_LEN_CAPABLE_ACK	20
-#define MPTCP_SUB_LEN_CAPABLE_ALIGN_ACK	20
+#define MPTCP_SUB_CAPABLE			0
+#define MPTCP_SUB_LEN_CAPABLE_SYN		4
+#define MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN		4
+#define MPTCP_SUB_LEN_CAPABLE_SYNACK		12
+#define MPTCP_SUB_LEN_CAPABLE_SYNACK_ALIGN	12
+#define MPTCP_SUB_LEN_CAPABLE_ACK		20
+#define MPTCP_SUB_LEN_CAPABLE_ALIGN_ACK		20
 
-#define	MPTCP_SUB_JOIN			1
+#define MPTCP_SUB_JOIN			1
 #define MPTCP_SUB_LEN_JOIN_SYN		12
 #define MPTCP_SUB_LEN_JOIN_ALIGN_SYN	12
 #define MPTCP_SUB_LEN_JOIN_SYNACK	16
@@ -173,9 +171,9 @@ struct multipath_pcb {
 #define MPTCP_MP_JOIN_TYPE_SYNACK	2
 #define MPTCP_MP_JOIN_TYPE_ACK		3
 
-#define	MPTCP_SUB_DSS		2
+#define MPTCP_SUB_DSS		2
 #define MPTCP_SUB_LEN_DSS	4
-#define MPTCP_SUB_LEN_DSS_ALIGN		4
+#define MPTCP_SUB_LEN_DSS_ALIGN	4
 
 /* Lengths for seq and ack are the ones without the generic MPTCP-option header,
  * as they are part of the DSS-option.
@@ -183,14 +181,14 @@ struct multipath_pcb {
  */
 #define MPTCP_SUB_LEN_SEQ	10
 #define MPTCP_SUB_LEN_SEQ_CSUM	12
-#define MPTCP_SUB_LEN_SEQ_ALIGN		12
+#define MPTCP_SUB_LEN_SEQ_ALIGN	12
 
 #define MPTCP_SUB_LEN_ACK	4
-#define MPTCP_SUB_LEN_ACK_ALIGN		4
+#define MPTCP_SUB_LEN_ACK_ALIGN	4
 
-#define MPTCP_SUB_ADD_ADDR	3
-#define MPTCP_SUB_LEN_ADD_ADDR4	8
-#define MPTCP_SUB_LEN_ADD_ADDR6	20
+#define MPTCP_SUB_ADD_ADDR		3
+#define MPTCP_SUB_LEN_ADD_ADDR4		8
+#define MPTCP_SUB_LEN_ADD_ADDR6		20
 #define MPTCP_SUB_LEN_ADD_ADDR4_ALIGN	8
 #define MPTCP_SUB_LEN_ADD_ADDR6_ALIGN	20
 
@@ -342,11 +340,6 @@ struct mp_fail {
 	__u32	data_seq;
 };
 
-struct mptcp_crypt_result {
-	struct completion completion;
-	int err;
-};
-
 /* Two separate cases must be handled:
  * -a mapping option has been received. Then data_seq and end_data_seq are
  *  defined, and we disambiguate based on data_len (if not zero, the mapping
@@ -443,7 +436,8 @@ void mptcp_ofo_queue(struct multipath_pcb *mpcb);
 void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied);
 int mptcp_check_rcv_queue(struct multipath_pcb *mpcb, struct msghdr *msg,
 			size_t *len, u32 *data_seq, int *copied, int flags);
-int mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags);
+int mptcp_alloc_mpcb(struct sock *master_sk, struct request_sock *req,
+		gfp_t flags);
 void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp);
 void mptcp_del_sock(struct sock *sk);
 void mptcp_update_metasocket(struct sock *sock, struct multipath_pcb *mpcb);
@@ -476,7 +470,7 @@ void mptcp_set_bw_est(struct tcp_sock *tp, u32 now);
 int do_mptcp(struct sock *sk);
 int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 		struct multipath_options *mopt);
-int mptcp_check_req_child(struct sock *sk, struct sock *child,
+struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
 		struct request_sock *req, struct request_sock **prev);
 void mptcp_select_window(struct tcp_sock *tp, u32 new_win);
 int mptcp_try_rmem_schedule(struct sock *tp, unsigned int size);
@@ -485,10 +479,9 @@ void mptcp_update_window_check(struct tcp_sock *meta_tp, struct sk_buff *skb,
 		u32 data_ack);
 void mptcp_set_data_size(struct tcp_sock *tp, struct sk_buff *skb, int copy);
 int mptcp_push(struct sock *sk, int flags, int mss_now, int nonagle);
-int hash_key_sha1(u64 key, char *hash_out, size_t outlen);
-int mptcp_hmac_sha1(char *key, size_t klen,char *data_in, size_t dlen,
-		char *hash_out, size_t outlen);
-void mptcp_crypt_complete(struct crypto_async_request *req, int err);
+void mptcp_key_sha1(u64 key, u32 *token);
+void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
+		     u32 *hash_out);
 void mptcp_fallback(struct sock *master_sk);
 
 static inline int mptcp_snd_buf_demand(struct tcp_sock *tp, u32 rtt_max)
@@ -629,8 +622,8 @@ static inline int mptcp_check_rtt(struct tcp_sock *tp, int time)
 
 static inline void mptcp_path_array_check(struct multipath_pcb *mpcb)
 {
-	if (unlikely(mpcb && mpcb->received_options.list_rcvd)) {
-		mpcb->received_options.list_rcvd = 0;
+	if (unlikely(mpcb && mpcb->rx_opt.list_rcvd)) {
+		mpcb->rx_opt.list_rcvd = 0;
 		mptcp_update_patharray(mpcb);
 		/* The server uses additional subflows
 		 * only on request
@@ -689,11 +682,17 @@ static inline void mptcp_retransmit_queue(struct sock *sk)
 		mptcp_reinject_data(sk, 1);
 }
 
+static inline void mptcp_include_mpc(struct tcp_sock *tp)
+{
+	if (tp->mpc) {
+		tp->include_mpc = 1;
+	}
+}
+
 #if (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))
 static inline int mptcp_get_path_family(struct multipath_pcb *mpcb,
 					int path_index)
 {
-
 	int i;
 
 	for (i = 0; i < mpcb->pa4_size; i++) {
@@ -793,7 +792,9 @@ static inline int mptcp_check_rcv_queue(struct multipath_pcb *mpcb,
 {
 	return 0;
 }
-static inline int mptcp_alloc_mpcb(struct sock *master_sk, gfp_t flags)
+
+static inline int mptcp_alloc_mpcb(struct sock *master_sk,
+		struct request_sock *req, gfp_t flags)
 {
 	return 0;
 }
@@ -857,8 +858,9 @@ static inline int mptcp_check_req_master(struct sock *child,
 {
 	return 0;
 }
-static inline int mptcp_check_req_child(struct sock *sk, struct sock *child,
-		struct request_sock *req, struct request_sock **prev)
+static inline struct sock *mptcp_check_req_child(struct sock *sk,
+		struct sock *child, struct request_sock *req,
+		struct request_sock **prev)
 {
 	return 0;
 }
@@ -911,6 +913,7 @@ static inline int mptcp_check_snd_buf(struct tcp_sock *tp)
 	return 0;
 }
 static inline void mptcp_retransmit_queue(struct sock *sk) {}
+static inline void mptcp_include_mpc(struct tcp_sock *tp) {}
 static inline int mptcp_get_path_family(struct multipath_pcb *mpcb,
 					int path_index)
 {
