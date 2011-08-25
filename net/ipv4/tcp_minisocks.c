@@ -469,7 +469,7 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 #ifdef CONFIG_MPTCP
 		newtp->rx_opt.rcv_isn = treq->rcv_isn;
 		newtp->snt_isn = treq->snt_isn;
-		newtp->reinjected_seq = treq->snt_isn;
+		newtp->reinjected_seq = newtp->snd_una;
 		memset(&newtp->rcvq_space, 0, sizeof(newtp->rcvq_space));
 #endif
 

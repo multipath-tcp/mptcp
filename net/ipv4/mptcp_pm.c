@@ -868,6 +868,7 @@ found:
 					printk(KERN_DEBUG "MPTCP_PM: NETDEV_DOWN %pI4, path %d\n",
 							&ifa->ifa_local,
 							tp->path_index);
+					mptcp_retransmit_queue(sk);
 					tp->pf = 1;
 				} else if (netif_running(ifa->ifa_dev->dev)) {
 					printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP %pI4, path %d\n",

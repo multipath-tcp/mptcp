@@ -1888,7 +1888,7 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 	 * there is at least one working subflow that has never sent
 	 * this data */
 	mptcp_for_each_sk(meta_tp->mpcb, sk_it, tmp_tp) {
-		if (sk_it->sk_state != TCP_ESTABLISHED)
+		if (sk_it->sk_state != TCP_ESTABLISHED || tmp_tp->pf)
 			continue;
 		/* If the skb has already been enqueued in this sk, try to find
 		 * another one */
@@ -1935,12 +1935,12 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 	tcp_for_write_queue(skb_it, sk) {
 		/* seq > reinjected_seq , to avoid reinjecting several times
 		 * the same segment */
-		if (!after(TCP_SKB_CB(skb_it)->seq, tp->reinjected_seq))
+		if (before(TCP_SKB_CB(skb_it)->seq, tp->reinjected_seq))
 			continue;
 		skb_it->path_mask |= PI_TO_FLAG(tp->path_index);
 		if (__mptcp_reinject_data(skb_it, meta_sk, clone_it) < 0)
 			break;
-		tp->reinjected_seq = TCP_SKB_CB(skb_it)->seq;
+		tp->reinjected_seq = TCP_SKB_CB(skb_it)->end_seq;
 	}
 
 	tcpprobe_logmsg(sk, "after reinj, reinj queue size:%d",
