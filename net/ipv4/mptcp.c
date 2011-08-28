@@ -482,7 +482,7 @@ void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 	sha_transform(hash_out, &input[64], workspace);
 	memset(workspace, 0, SHA_WORKSPACE_WORDS * sizeof(u32));
 
-	/* Prepare second hmac */
+	/* Prepare second part of hmac */
 	memset(input, 0x5C, 64);
 	for (i = 0; i < 8; i++)
 		input[i] ^= key_1[i];
@@ -493,7 +493,7 @@ void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 	input[84] = 0x80;
 	memset(&input[85], 0, 41);
 
-	/* Padding: Length of the message = 512 + 64 bits */
+	/* Padding: Length of the message = 512 + 160 bits */
 	input[126] = 0x02;
 	input[127] = 0xA0;
 
