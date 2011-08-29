@@ -329,6 +329,7 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 
 			list_for_each_entry(ifa6, &in6_dev->addr_list,
 					if_list) {
+				int addr_type = ipv6_addr_type(&ifa6->addr);
 				if (num_addr6 == MPTCP_MAX_ADDR) {
 					mptcp_debug("%s: At max num of local"
 						"addresses: %d --- not adding"
@@ -337,13 +338,13 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 						MPTCP_MAX_ADDR, &ifa6->addr);
 					goto out;
 				}
-
 				if (mpcb->master_sk->sk_family == AF_INET6 &&
 					ipv6_addr_equal(&(ifa6->addr),
 					&(inet6_sk(mpcb->master_sk)->saddr)))
 					continue;
-				if (ipv6_addr_scope(&ifa6->addr) ==
-						IPV6_ADDR_LINKLOCAL)
+				if (addr_type == IPV6_ADDR_ANY ||
+				    addr_type & IPV6_ADDR_LOOPBACK ||
+				    addr_type & IPV6_ADDR_LINKLOCAL)
 					continue;
 				ipv6_addr_copy(&(mpcb->addr6[num_addr6].addr),
 					&(ifa6->addr));
