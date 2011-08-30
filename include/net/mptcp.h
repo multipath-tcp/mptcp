@@ -7,7 +7,7 @@
  *      Part of this code is inspired from an early version for linux 2.4 by
  *      Costin Raiciu.
  *
- *      date : May 10
+ *      date : Aug 10
  *
  *
  *	This program is free software; you can redistribute it and/or
@@ -237,10 +237,9 @@ extern void tcp_v6_hash(struct sock *sk);
 extern void tcp_v6_destroy_sock(struct sock *sk);
 extern struct timewait_sock_ops tcp6_timewait_sock_ops;
 extern struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
-		int family);
+				  int family);
 extern void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
-		gfp_t flags);
-
+			     gfp_t flags);
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 
 struct mptcp_option {
@@ -413,7 +412,9 @@ static inline int mptcp_sysctl_mss(void)
 	})
 
 int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb);
+int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb);
 void mptcp_ofo_queue(struct multipath_pcb *mpcb);
+void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp);
 void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied);
 int mptcp_check_rcv_queue(struct multipath_pcb *mpcb, struct msghdr *msg,
 			size_t *len, u32 *data_seq, int *copied, int flags);
@@ -464,6 +465,18 @@ void mptcp_key_sha1(u64 key, u32 *token);
 void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 		     u32 *hash_out);
 void mptcp_fallback(struct sock *master_sk);
+void mptcp_fin(struct multipath_pcb *mpcb);
+
+static inline int mptcp_is_ofo_queue_empty(struct tcp_sock *meta_tp)
+{
+	return (!meta_tp->out_of_order_queue.next);
+}
+
+static inline void mptcp_init_ofo_queue(struct tcp_sock *meta_tp)
+{
+	meta_tp->out_of_order_queue.prev =
+		meta_tp->out_of_order_queue.next = NULL;
+}
 
 static inline struct multipath_pcb *mpcb_from_tcpsock(struct tcp_sock *tp)
 {

@@ -320,7 +320,9 @@ struct sk_buff {
 	/* These two members must be first. */
 	struct sk_buff		*next;
 	struct sk_buff		*prev;
-
+#ifdef CONFIG_MPTCP
+	struct sk_buff          *up;
+#endif
 	ktime_t			tstamp;
 
 	struct sock		*sk;

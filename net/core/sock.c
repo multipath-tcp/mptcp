@@ -1045,7 +1045,7 @@ EXPORT_SYMBOL(sk_prot_clear_portaddr_nulls);
 
 /* Code inspired from sk_clone() */
 void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
-		gfp_t flags)
+		      gfp_t flags)
 {
 	struct sk_filter *filter;
 #ifdef CONFIG_SECURITY_NETWORK
@@ -1055,7 +1055,7 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 	/* We cannot call sock_copy here, because obj_size may be the size
 	 * of tcp6_sock if the app is loading an ipv6 socket. */
 	if ((is_meta_sk(sk) && family == AF_INET6) ||
-			(sk->sk_family == AF_INET6 && family == AF_INET6))
+	    (sk->sk_family == AF_INET6 && family == AF_INET6))
 		memcpy(newsk, sk, sizeof(struct tcp6_sock));
 	else
 		memcpy(newsk, sk, sizeof(struct tcp_sock));
@@ -1072,7 +1072,7 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 	if (is_meta_sk(sk) && sk->sk_family != family) {
 		newsk->sk_family = family;
 		newsk->sk_prot = newsk->sk_prot_creator =
-				tcp_sk(sk)->mpcb->sk_prot_alt;
+			tcp_sk(sk)->mpcb->sk_prot_alt;
 	}
 #endif
 
@@ -1099,9 +1099,9 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 	spin_lock_init(&newsk->sk_dst_lock);
 	rwlock_init(&newsk->sk_callback_lock);
 	lockdep_set_class_and_name(&newsk->sk_callback_lock,
-				af_callback_keys + newsk->sk_family,
-				af_family_clock_key_strings[newsk->sk_family]);
-
+				   af_callback_keys + newsk->sk_family,
+				   af_family_clock_key_strings[
+					   newsk->sk_family]);
 	newsk->sk_dst_cache	= NULL;
 	newsk->sk_wmem_queued	= 0;
 	newsk->sk_forward_alloc = 0;
@@ -2606,7 +2606,7 @@ EXPORT_SYMBOL(proto_unregister);
 void sk_wake_async(struct sock *sk, int how, int band)
 {
 	sk = (sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpc) ?
-					tcp_sk(sk)->mpcb->master_sk : sk;
+		tcp_sk(sk)->mpcb->master_sk : sk;
 	if (sock_flag(sk, SOCK_FASYNC))
 		sock_wake_async(sk->sk_socket, how, band);
 }

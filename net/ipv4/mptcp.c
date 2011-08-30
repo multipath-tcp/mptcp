@@ -244,9 +244,9 @@ static ctl_table mptcp_root_table[] = {
  * Can be called only when the FIN is validly part
  * of the data seqnum space. Not before when we get holes.
  */
-static inline void mptcp_fin(struct multipath_pcb *mpcb)
+void mptcp_fin(struct multipath_pcb *mpcb)
 {
-	struct sock *meta_sk = (struct sock *) mpcb;
+	struct sock *meta_sk = (struct sock *)mpcb;
 
 	meta_sk->sk_shutdown |= RCV_SHUTDOWN;
 	sock_set_flag(meta_sk, SOCK_DONE);
@@ -535,8 +535,6 @@ int mptcp_alloc_mpcb(struct sock *master_sk, struct request_sock *req,
 	mptcp_inherit_sk(master_sk, meta_sk, AF_INET, flags);
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 
-	BUG_ON(mpcb->connection_list);
-
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	if (AF_INET_FAMILY(master_sk->sk_family)) {
 		mpcb->icsk_af_ops_alt = &ipv6_specific;
@@ -556,8 +554,8 @@ int mptcp_alloc_mpcb(struct sock *master_sk, struct request_sock *req,
 	meta_tp->mpc = 1;
 	meta_tp->mss_cache = mptcp_sysctl_mss();
 
-	skb_queue_head_init(&meta_tp->out_of_order_queue);
 	skb_queue_head_init(&mpcb->reinject_queue);
+	mptcp_init_ofo_queue(meta_tp);
 
 	meta_sk->sk_rcvbuf = sysctl_rmem_default;
 	meta_sk->sk_sndbuf = sysctl_wmem_default;
@@ -640,7 +638,7 @@ void mpcb_release(struct multipath_pcb *mpcb)
 	 * the mpcb.
 	 */
 	tcp_write_queue_purge(meta_sk);
-	__skb_queue_purge(&tcp_sk(meta_sk)->out_of_order_queue);
+	mptcp_purge_ofo_queue(tcp_sk(meta_sk));
 	sk_stream_kill_queues(meta_sk);
 
 #ifdef CONFIG_MPTCP_PM
@@ -891,45 +889,24 @@ static inline unsigned int tcp_cwnd_test(struct tcp_sock *tp)
 void mptcp_check_buffers(struct multipath_pcb *mpcb)
 {
 	struct sock *sk, *meta_sk = (struct sock *) mpcb;
-	struct tcp_sock *tp, *meta_tp = (struct tcp_sock *) mpcb;
+	struct tcp_sock *tp;
 	struct sk_buff *skb;
-	int rcv_size = 0, meta_ofo_size = 0;
+	int rcv_size = 0;
 
-	for (skb = skb_peek(&meta_tp->out_of_order_queue);
-			skb;
-			skb =
-			(skb_queue_is_last(&meta_tp->out_of_order_queue, skb) ?
-					NULL :
-				skb_queue_next(&meta_tp->out_of_order_queue,
-						skb)))
-		meta_ofo_size += skb->truesize;
-
-	for (skb = skb_peek(&meta_sk->sk_receive_queue);
-			skb;
-			skb =
-			(skb_queue_is_last(&meta_sk->sk_receive_queue, skb) ?
-				NULL :
-				skb_queue_next(&meta_sk->sk_receive_queue,
-					skb)))
+	for (skb = skb_peek(&meta_sk->sk_receive_queue); skb;
+	     skb = (skb_queue_is_last(&meta_sk->sk_receive_queue, skb) ?
+		    NULL :
+		    skb_queue_next(&meta_sk->sk_receive_queue, skb)))
 		rcv_size += skb->truesize;
 
 	mptcp_for_each_sk(mpcb, sk, tp) {
-		int ofo_size = 0;
-
 		if (sk->sk_state != TCP_ESTABLISHED)
 			continue;
-		for (skb = skb_peek(&tp->out_of_order_queue);
-			skb;
-			skb = (skb_queue_is_last(&tp->out_of_order_queue,
-				skb) ? NULL :
-				skb_queue_next(&tp->out_of_order_queue, skb)))
-			ofo_size += skb->truesize;
 
 		skb = skb_peek(&meta_sk->sk_receive_queue);
-		mptcp_debug("pi %d, ofo_size:%d,meta_ofo_size:%d,"
-			"rcv_size:%d, next dsn:%#x\n",
-			tp->path_index, ofo_size, meta_ofo_size, rcv_size,
-			(skb ? mptcp_skb_data_seq(skb) : 0));
+		mptcp_debug("pi %d, rcv_size:%d, next dsn:%#x\n",
+			    tp->path_index, rcv_size,
+			    (skb ? mptcp_skb_data_seq(skb) : 0));
 	}
 }
 
@@ -967,43 +944,23 @@ int mptcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 				__func__);
 			skb_queue_walk(&sk->sk_receive_queue, skb) {
 				mptcp_debug("%s: dsn:%#x, skb->len:%d,"
-					"truesize:%d, "
-					"prop:%d /1000\n", __func__,
-					TCP_SKB_CB(skb)->data_seq,
-					skb->len, skb->truesize,
-					skb->len * 1000 /
-					skb->truesize);
-			}
-			mptcp_debug("%s: --- ofo-queue:\n",
-				__func__);
-			skb_queue_walk(&tp->out_of_order_queue, skb) {
-				mptcp_debug("%s: dsn:%#x, "
-					"skb->len:%d, truesize:%d, "
-					"prop:%d /1000\n", __func__,
-					TCP_SKB_CB(skb)->data_seq,
-					skb->len, skb->truesize,
-					skb->len * 1000 /
-					skb->truesize);
+					    "truesize:%d, "
+					    "prop:%d /1000\n", __func__,
+					    TCP_SKB_CB(skb)->data_seq,
+					    skb->len, skb->truesize,
+					    skb->len * 1000 /
+					    skb->truesize);
 			}
 		}
 		mptcp_debug("%s: --- meta-receive queue:\n",
 			__func__);
 		skb_queue_walk(&meta_sk->sk_receive_queue, skb) {
 			mptcp_debug("%s: dsn:%#x, "
-				"skb->len:%d, truesize:%d, "
-				"prop:%d /1000\n", __func__,
-				TCP_SKB_CB(skb)->data_seq,
-				skb->len, skb->truesize,
-				skb->len * 1000 / skb->truesize);
-		}
-		mptcp_debug("%s: --- meta-ofo queue:\n", __func__);
-		skb_queue_walk(&meta_tp->out_of_order_queue, skb) {
-			mptcp_debug("%s: dsn:%#x, "
-				"skb->len:%d,truesize:%d,"
-				"prop:%d /1000\n", __func__,
-				TCP_SKB_CB(skb)->data_seq,
-				skb->len, skb->truesize,
-				skb->len * 1000 / skb->truesize);
+				    "skb->len:%d, truesize:%d, "
+				    "prop:%d /1000\n", __func__,
+				    TCP_SKB_CB(skb)->data_seq,
+				    skb->len, skb->truesize,
+				    skb->len * 1000 / skb->truesize);
 		}
 		return 0;
 	} else if (!sk_rmem_schedule(sk, size)) {
@@ -1101,46 +1058,6 @@ out_err_nompc:
 	return err;
 }
 EXPORT_SYMBOL(mptcp_sendmsg);
-
-void mptcp_ofo_queue(struct multipath_pcb *mpcb)
-{
-	struct sk_buff *skb = NULL;
-	struct sock *meta_sk = (struct sock *) mpcb;
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-
-	while ((skb = skb_peek(&meta_tp->out_of_order_queue)) != NULL) {
-		if (after(TCP_SKB_CB(skb)->data_seq, meta_tp->rcv_nxt))
-			break;
-
-		if (!after(TCP_SKB_CB(skb)->end_data_seq, meta_tp->rcv_nxt)) {
-			struct sk_buff *skb_tail = skb_peek_tail(
-					&meta_sk->sk_receive_queue);
-			printk(KERN_ERR "ofo packet was already received."
-					"skb->end_data_seq:%#x,exp. rcv_nxt:%#x, "
-					"skb->dsn:%#x,skb->len:%d\n",
-					TCP_SKB_CB(skb)->end_data_seq,
-					meta_tp->rcv_nxt,
-					TCP_SKB_CB(skb)->data_seq,
-					skb->len);
-			if (skb_tail)
-				printk(KERN_ERR "last packet of the rcv queue:"
-					"dsn %#x, last dsn %#x, len %d\n",
-					TCP_SKB_CB(skb_tail)->data_seq,
-					TCP_SKB_CB(skb_tail)->end_data_seq,
-					skb_tail->len);
-			/* Should not happen in the current design */
-			BUG();
-		}
-
-		__skb_unlink(skb, &meta_tp->out_of_order_queue);
-
-		__skb_queue_tail(&meta_sk->sk_receive_queue, skb);
-		meta_tp->rcv_nxt = TCP_SKB_CB(skb)->end_data_seq;
-
-		if (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN)
-			mptcp_fin(mpcb);
-	}
-}
 
 /* Clean up the receive buffer for full frames taken by the user,
  * then send an ACK if necessary.  COPIED is the number of bytes
@@ -1423,83 +1340,6 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb, struct tcp_sock *tp)
 }
 
 /**
- * @return: 1 if the skb must be dropped by the caller, otherwise 0
- */
-static int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct tcp_sock *tp,
-				    struct sk_buff *skb)
-{
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-
-	if (!skb_peek(&meta_tp->out_of_order_queue)) {
-		/* Initial out of order segment */
-		__skb_queue_head(&meta_tp->out_of_order_queue, skb);
-	} else {
-		/* TODO_cpaasch - this code is heavily copied from tcp_input.c,
-		 * tcp_data_queue(). Maybe it could get merged. */
-		struct sk_buff *skb1 = skb_peek_tail(&meta_tp->out_of_order_queue);
-
-		/* Find place to insert this segment. */
-		while (1) {
-			/* skb1->data_seq <= skb->data_seq -- found place */
-			if (!after(TCP_SKB_CB(skb1)->data_seq,
-				   TCP_SKB_CB(skb)->data_seq))
-				break;
-			/* Reached end */
-			if (skb_queue_is_first(&meta_tp->out_of_order_queue, skb1)) {
-				skb1 = NULL;
-				break;
-			}
-			skb1 = skb_queue_prev(&meta_tp->out_of_order_queue, skb1);
-		}
-
-		/* Do skb overlap to previous one? */
-		if (skb1 && before(TCP_SKB_CB(skb)->data_seq,
-				   TCP_SKB_CB(skb1)->end_data_seq)) {
-			/* skb->end_data_seq <= old_skb->end_data_seq ->
-			 * All bits already present
-			 */
-			if (!after(TCP_SKB_CB(skb)->end_data_seq,
-				   TCP_SKB_CB(skb1)->end_data_seq)) {
-				/* All the bits are present. Drop. */
-				return 1;
-			}
-			/* Is the new skb before or after skb1? */
-			if (!after(TCP_SKB_CB(skb)->data_seq,
-				   TCP_SKB_CB(skb1)->data_seq)) {
-				/* It's before, thus update skb1 */
-				if (skb_queue_is_first(&meta_tp->out_of_order_queue, skb1))
-					skb1 = NULL;
-				else
-					skb1 = skb_queue_prev(&meta_tp->out_of_order_queue, skb1);
-			}
-		}
-
-		if (!skb1)
-			__skb_queue_head(&meta_tp->out_of_order_queue, skb);
-		else
-			__skb_queue_after(&meta_tp->out_of_order_queue, skb1, skb);
-
-
-		/* And clean segments covered by new one as whole. */
-		while (!skb_queue_is_last(&meta_tp->out_of_order_queue, skb)) {
-			skb1 = skb_queue_next(&meta_tp->out_of_order_queue, skb);
-
-			if (!after(TCP_SKB_CB(skb)->end_data_seq,
-				   TCP_SKB_CB(skb1)->data_seq))
-				break;
-			if (before(TCP_SKB_CB(skb)->end_data_seq,
-				   TCP_SKB_CB(skb1)->end_data_seq))
-				break;
-
-			__skb_unlink(skb1, &meta_tp->out_of_order_queue);
-			__kfree_skb(skb1);
-		}
-	}
-
-	return 0;
-}
-
-/**
  * @return: 1 if the segment has been eaten and can be suppressed,
  *          otherwise 0.
  */
@@ -1681,8 +1521,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 				tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 				skb_set_owner_r(tmp1, meta_sk);
 
-				if (mptcp_add_meta_ofo_queue(meta_sk, tp,
-							     tmp1)) {
+				if (mptcp_add_meta_ofo_queue(meta_sk, tmp1)) {
 					if (tmp1 == skb)
 						ans = 1;
 					else
@@ -1720,8 +1559,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 					mptcp_fin(mpcb);
 
 				/* Check if this fills a gap in the ofo queue */
-				if (!skb_queue_empty(
-					    &meta_tp->out_of_order_queue))
+				if (!mptcp_is_ofo_queue_empty(meta_tp))
 					mptcp_ofo_queue(mpcb);
 
 				tp->copied_seq =
@@ -2244,9 +2082,6 @@ void verif_rqueues(struct multipath_pcb *mpcb)
 		skb_queue_walk(&sk->sk_receive_queue, skb) {
 			sum += skb->truesize;
 		}
-		skb_queue_walk(&tp->out_of_order_queue, skb) {
-			sum += skb->truesize;
-		}
 		/* TODO: add meta-rcv and meta-ofo-queues */
 		if (sum != atomic_read(&sk->sk_rmem_alloc)) {
 			printk(KERN_ERR "rqueue leak: enqueued:%d, recorded "
@@ -2382,8 +2217,8 @@ void mptcp_close(struct sock *master_sk, long timeout)
 	 */
 	while ((skb = __skb_dequeue(&meta_sk->sk_receive_queue)) != NULL) {
 		u32 len = TCP_SKB_CB(skb)->end_data_seq
-				- TCP_SKB_CB(skb)->data_seq
-				- ((TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN) ? 1 : 0);
+			- TCP_SKB_CB(skb)->data_seq
+			- ((TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN) ? 1 : 0);
 		data_was_unread += len;
 		__kfree_skb(skb);
 	}
