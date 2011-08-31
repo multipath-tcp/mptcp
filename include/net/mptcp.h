@@ -366,25 +366,6 @@ static inline int mptcp_sysctl_mss(void)
 	return sysctl_mptcp_mss;
 }
 
-#define mpcb_from_tcpsock(__tp) ((__tp)->mpcb)
-#define mptcp_mpcb_from_req_sk(__req) ((__req)->mpcb)
-#define mptcp_meta_sk(sk) ((struct sock *)tcp_sk(sk)->mpcb)
-#define is_meta_tp(__tp) ((__tp)->mpcb && (struct tcp_sock *)((__tp)->mpcb) \
-			  == __tp)
-#define is_meta_sk(sk) (sk->sk_protocol == IPPROTO_TCP &&	\
-			(tcp_sk(sk))->mpcb &&			\
-			((struct tcp_sock *)tcp_sk(sk)->mpcb) == tcp_sk(sk))
-#define is_master_tp(__tp) (!(__tp)->slave_sk && !is_meta_tp(__tp))
-#define mptcp_req_sk_saw_mpc(__req) (req->saw_mpc)
-#define mptcp_sk_attached(__sk) (tcp_sk(sk)->attached)
-
-#define is_dfin_seg(mpcb, skb) (mpcb->received_options.dfin_rcvd &&	\
-				mpcb->received_options.fin_dsn ==	\
-				TCP_SKB_CB(skb)->end_data_seq)
-
-#define is_dfin_seg(mpcb, skb) (mpcb->received_options.dfin_rcvd &&	\
-				mpcb->received_options.fin_dsn ==	\
-				TCP_SKB_CB(skb)->end_data_seq)
 #define mptcp_skb_data_ack(skb) (TCP_SKB_CB(skb)->data_ack)
 #define mptcp_skb_data_seq(skb) (TCP_SKB_CB(skb)->data_seq)
 #define mptcp_skb_end_data_seq(skb) (TCP_SKB_CB(skb)->end_data_seq)
@@ -484,6 +465,53 @@ void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 		     u32 *hash_out);
 void mptcp_fallback(struct sock *master_sk);
 
+static inline struct multipath_pcb *mpcb_from_tcpsock(struct tcp_sock *tp)
+{
+	return tp->mpcb;
+}
+
+static inline struct tcp_sock *mpcb_meta_tp(const struct multipath_pcb *mpcb)
+{
+	return (struct tcp_sock *)mpcb;
+}
+
+static inline struct sock *mptcp_meta_sk(struct sock *sk)
+{
+	return (struct sock *)tcp_sk(sk)->mpcb;
+}
+
+static inline
+struct multipath_pcb *mptcp_mpcb_from_req_sk(struct request_sock *req)
+{
+	return req->mpcb;
+}
+
+static inline int is_meta_tp(struct tcp_sock *tp)
+{
+	return tp->mpcb && mpcb_meta_tp(mpcb_from_tcpsock(tp)) == tp;
+}
+
+static inline int is_meta_sk(struct sock *sk)
+{
+	return sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpcb &&
+	       (struct tcp_sock *)tcp_sk(sk)->mpcb == tcp_sk(sk);
+}
+
+static inline int is_master_tp(struct tcp_sock *tp)
+{
+	return !tp->slave_sk && !is_meta_tp(tp);
+}
+
+static inline int mptcp_req_sk_saw_mpc(struct request_sock *req)
+{
+	return req->saw_mpc;
+}
+
+static inline int mptcp_sk_attached(struct sock *sk)
+{
+	return tcp_sk(sk)->attached;
+}
+
 static inline int mptcp_snd_buf_demand(struct tcp_sock *tp, u32 rtt_max)
 {
 	if (!tp->cur_bw_est)
@@ -540,11 +568,6 @@ static inline int is_local_addr4(u32 addr)
 out:
 	read_unlock(&dev_base_lock);
 	return ans;
-}
-
-static inline struct tcp_sock *mpcb_meta_tp(const struct multipath_pcb *mpcb)
-{
-	return (struct tcp_sock *)mpcb;
 }
 
 static inline void mptcp_sock_destruct(struct sock *sk)
@@ -745,18 +768,6 @@ static inline int mptcp_sysctl_mss(void)
 	return 0;
 }
 
-#define mpcb_from_tcpsock(__tp) (NULL)
-#define mptcp_mpcb_from_req_sk(__req) (NULL)
-#define mptcp_meta_sk(sk) (NULL)
-#define is_meta_tp(__tp) (0)
-#define is_meta_sk(sk) (0)
-#define is_master_tp(__tp) (0)
-#define tp_path_index(__tp) (0)
-#define tp_cur_bw_est(__tp) (0)
-#define tp_bw_est(__tp) (0)
-#define mptcp_req_sk_saw_mpc(__req) (0)
-#define mptcp_sk_attached(__sk) (0)
-#define is_dfin_seg(mpcb, skb) (0)
 #define mptcp_skb_data_ack(skb) (0)
 #define mptcp_skb_data_seq(skb) (0)
 #define mptcp_skb_end_data_seq(skb) (0)
@@ -780,6 +791,37 @@ static inline int mptcp_sysctl_mss(void)
 		__ans;							\
 	})
 
+
+static inline struct multipath_pcb *mpcb_from_tcpsock(struct tcp_sock *tp)
+{
+	return NULL;
+}
+
+static inline
+struct multipath_pcb *mptcp_mpcb_from_req_sk(struct request_sock *req)
+{
+	return NULL;
+}
+static inline int is_meta_tp(struct tcp_sock *tp)
+{
+	return 0;
+}
+static inline int is_meta_sk(struct sock *tp)
+{
+	return 0;
+}
+static inline int is_master_tp(struct tcp_sock *tp)
+{
+	return 0;
+}
+static inline int mptcp_req_sk_saw_mpc(struct request_sock *req)
+{
+	return 0;
+}
+static inline int mptcp_sk_attached(struct sock *sk)
+{
+	return 0;
+}
 static inline int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 {
 	return 0;
