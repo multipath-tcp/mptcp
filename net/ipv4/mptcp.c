@@ -1801,6 +1801,10 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 {
 	struct mptcp_option *mp_opt = (struct mptcp_option *) ptr;
 
+	/* If the socket is mp-capable we would have a mopt. */
+	if (!mopt)
+		return;
+
 	switch (mp_opt->sub) {
 	case MPTCP_SUB_CAPABLE:
 	{
@@ -1816,12 +1820,6 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 
 		if (!sysctl_mptcp_enabled)
 			break;
-
-		if (!mopt) {
-			mptcp_debug("%s Saw MP_CAPABLE but no mopt provided\n",
-					__func__);
-			break;
-		}
 
 		opt_rx->saw_mpc = 1;
 		mopt->list_rcvd = 1;
@@ -1847,12 +1845,6 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		    opsize != MPTCP_SUB_LEN_JOIN_ACK) {
 			mptcp_debug("%s: mp_join: bad option size %d\n",
 					__func__, opsize);
-			break;
-		}
-
-		if (!mopt) {
-			mptcp_debug("%s Saw MP_JOIN but no mopt provided\n",
-					__func__);
 			break;
 		}
 
