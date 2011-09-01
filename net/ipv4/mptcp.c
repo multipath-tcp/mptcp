@@ -1824,14 +1824,17 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		opt_rx->saw_mpc = 1;
 		mopt->list_rcvd = 1;
 		mopt->dss_csum = sysctl_mptcp_checksum || mpcapable->c;
+		mopt->mptcp_opt_type = MPTCP_MP_CAPABLE_TYPE_SYN;
 
 		if (opsize >= MPTCP_SUB_LEN_CAPABLE_SYNACK) {
 			ptr += 2;
 			mopt->mptcp_rem_key = *((__u64*)ptr);
+			mopt->mptcp_opt_type = MPTCP_MP_CAPABLE_TYPE_SYNACK;
 		}
 
 		if (opsize == MPTCP_SUB_LEN_CAPABLE_ACK) {
 			/* This only necessary for SYN-cookies */
+			mopt->mptcp_opt_type = MPTCP_MP_CAPABLE_TYPE_ACK;
 		}
 
 		break;
@@ -1852,16 +1855,19 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 			case MPTCP_SUB_LEN_JOIN_SYN:
 				mopt->mptcp_rem_token = *((u32*)(ptr + 2));
 				mopt->mptcp_recv_random_number = *((u32*)(ptr + 6));
+				mopt->mptcp_opt_type = MPTCP_MP_JOIN_TYPE_SYN;
 				break;
 			case MPTCP_SUB_LEN_JOIN_SYNACK:
 				ptr += 2;
 				mopt->mptcp_recv_tmac = *((__u64 *)ptr);
 				ptr += 8;
 				mopt->mptcp_recv_random_number = *((u32 *)ptr);
+				mopt->mptcp_opt_type = MPTCP_MP_JOIN_TYPE_SYNACK;
 				break;
 			case MPTCP_SUB_LEN_JOIN_ACK:
 				ptr += 2;
 				memcpy(mopt->mptcp_recv_mac, ptr, 20);
+				mopt->mptcp_opt_type = MPTCP_MP_JOIN_TYPE_ACK;
 				break;
 		}
 		opt_rx->rem_id = mpjoin->addr_id;
@@ -2441,7 +2447,8 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 	 * ipv4 and ipv6
 	 */
 	child_tp->rx_opt.saw_mpc = req->saw_mpc;
-	if (child_tp->rx_opt.saw_mpc) {
+	if (child_tp->rx_opt.saw_mpc &&
+	    mopt->mptcp_opt_type == MPTCP_MP_CAPABLE_TYPE_ACK) {
 		struct multipath_pcb *mpcb;
 
 		child_tp->rx_opt.saw_mpc = 0;
@@ -2491,17 +2498,17 @@ struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
 
 	BUG_ON(!mpcb);
 
+	if (!mpcb->rx_opt.mptcp_opt_type == MPTCP_MP_JOIN_TYPE_ACK)
+		goto teardown;
+
 	mptcp_hmac_sha1((u8 *)&mpcb->rx_opt.mptcp_rem_key,
 			(u8 *)&mpcb->mptcp_loc_key,
 			(u8 *)&req->mptcp_rem_random_number,
 			(u8 *)&req->mptcp_loc_random_number,
 			(u32 *)hash_mac_check);
 
-	if (memcmp(hash_mac_check, (char *)&mpcb->rx_opt.mptcp_recv_mac, 20)) {
-		sock_orphan(child);
-		child_tp->teardown = 1;
-		return sk;
-	}
+	if (memcmp(hash_mac_check, (char *)&mpcb->rx_opt.mptcp_recv_mac, 20))
+		goto teardown;
 
 	/* The child is a clone of the meta socket, we must now reset
 	 * some of the fields
@@ -2527,6 +2534,11 @@ struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
 	 */
 	inet_csk_reqsk_queue_drop(sk, req, prev);
 	return child;
+
+teardown:
+	sock_orphan(child);
+	child_tp->teardown = 1;
+	return sk;
 }
 
 void mptcp_select_window(struct tcp_sock *tp, u32 new_win)

@@ -1275,7 +1275,7 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	tmp_opt.mss_clamp = IPV6_MIN_MTU - sizeof(struct tcphdr) - sizeof(struct ipv6hdr);
 	tmp_opt.user_mss = tp->rx_opt.user_mss;
 	mopt.dss_csum = 0;
-	mptcp_init_addr_list(&mopt);
+	mptcp_init_mp_opt(&mopt);
 	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
 	if (tmp_opt.cookie_plus > 0 &&

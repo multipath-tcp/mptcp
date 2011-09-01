@@ -1309,7 +1309,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
 	tmp_opt.user_mss  = tp->rx_opt.user_mss;
 	mopt.dss_csum = 0;
-	mptcp_init_addr_list(&mopt);
+	mptcp_init_mp_opt(&mopt);
 	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
 	if (tmp_opt.cookie_plus > 0 &&
@@ -1638,7 +1638,6 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 		}
 	} else
 		sock_rps_save_rxhash(sk, skb->rxhash);
-
 
 	TCP_CHECK_TIMER(sk);
 	if (tcp_rcv_state_process(sk, skb, tcp_hdr(skb), skb->len)) {

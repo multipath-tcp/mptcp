@@ -113,6 +113,7 @@ struct multipath_options {
 	struct	mptcp_loc4 addr4[MPTCP_MAX_ADDR];
 	struct	mptcp_loc6 addr6[MPTCP_MAX_ADDR];
 #endif
+	__u8	mptcp_opt_type;
 	__u32	mptcp_rem_token;	/* Received token */
 	__u64	mptcp_rem_key;	/* Remote key */
 	__u32	mptcp_recv_random_number;

@@ -159,6 +159,9 @@ struct multipath_pcb {
 #define MPTCP_SUB_LEN_CAPABLE_SYNACK_ALIGN	12
 #define MPTCP_SUB_LEN_CAPABLE_ACK		20
 #define MPTCP_SUB_LEN_CAPABLE_ALIGN_ACK		20
+#define MPTCP_MP_CAPABLE_TYPE_SYN		1
+#define MPTCP_MP_CAPABLE_TYPE_SYNACK		2
+#define MPTCP_MP_CAPABLE_TYPE_ACK		3
 
 #define MPTCP_SUB_JOIN			1
 #define MPTCP_SUB_LEN_JOIN_SYN		12
@@ -537,9 +540,10 @@ static inline int mptcp_snd_buf_demand(struct tcp_sock *tp, u32 rtt_max)
 				 tp->reordering + 1);
 }
 
-static inline void mptcp_init_addr_list(struct multipath_options *mopt)
+static inline void mptcp_init_mp_opt(struct multipath_options *mopt)
 {
 	mopt->list_rcvd = mopt->num_addr4 = mopt->num_addr6 = 0;
+	mopt->mptcp_opt_type = 0;
 }
 
 /**
@@ -942,7 +946,7 @@ static inline int mptcp_snd_buf_demand(struct tcp_sock *tp, u32 rtt_max)
 {
 	return 0;
 }
-static inline void mptcp_init_addr_list(struct multipath_options *mopt) {}
+static inline void mptcp_init_mp_opt(struct multipath_options *mopt) {}
 static inline void mptcp_wmem_free_skb(struct sock *sk, struct sk_buff *skb) {}
 static inline int is_local_addr4(u32 addr)
 {

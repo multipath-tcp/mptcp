@@ -585,7 +585,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		mopt = kmalloc(sizeof(struct multipath_options), GFP_ATOMIC);
 		if (!mopt)
 			goto listen_overflow;
-		mptcp_init_addr_list(mopt);
+		mptcp_init_mp_opt(mopt);
 	} else {
 		mopt = &(tcp_sk(sk)->mpcb->rx_opt);
 	}
