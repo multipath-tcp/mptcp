@@ -796,7 +796,10 @@ static inline struct multipath_pcb *mpcb_from_tcpsock(struct tcp_sock *tp)
 {
 	return NULL;
 }
-
+static inline struct sock *mptcp_meta_sk(struct sock *sk)
+{
+	return NULL;
+}
 static inline
 struct multipath_pcb *mptcp_mpcb_from_req_sk(struct request_sock *req)
 {
