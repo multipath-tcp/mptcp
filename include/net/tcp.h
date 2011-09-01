@@ -613,6 +613,7 @@ extern u32 __tcp_select_window(struct sock *sk);
 #define MPTCPHDR_SEQ		0x02
 #define MPTCPHDR_FIN		0x04
 #define MPTCPHDR_FIRST_ACK	0x08
+#define MPTCPHDR_INF		0x10
 
 /* This is what the send packet queuing engine uses to pass
  * TCP per-packet control information to the transmission code.

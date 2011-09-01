@@ -658,8 +658,6 @@ void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 
 		arg.iov[0].iov_len += MPTCP_SUB_LEN_FAIL;
 		rep.th.doff = arg.iov[0].iov_len / 4;
-
-		tcp_sk(sk)->teardown = 1;
 	}
 #endif /* CONFIG_MPTCP */
 	arg.csum = csum_tcpudp_nofold(ip_hdr(skb)->daddr,
@@ -1724,16 +1722,18 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	 * socket.
 	 */
 	if (th->syn && !th->ack) {
-		switch (mptcp_lookup_join(skb)) {
-			/* The specified token can't be found
-			 * Send a reset and discard the packet.
-			 */
-		case -ENOKEY:
-			tcp_v4_send_reset(NULL, skb);
-			goto discard_it;
-		case 1:
-			return 0;
+		int ret;
+
+		ret = mptcp_lookup_join(skb);
+		if (ret) {
+			if (ret < 0) {
+				tcp_v4_send_reset(NULL, skb);
+				goto discard_it;
+			} else {
+				return 0;
+			}
 		}
+
 	}
 #endif
 

@@ -126,6 +126,7 @@ EXPORT_SYMBOL(sysctl_tcp_abc);
 #define FLAG_DSACKING_ACK	0x800 /* SACK blocks contained D-SACK info */
 #define FLAG_NONHEAD_RETRANS_ACKED	0x1000 /* Non-head rexmitted data was ACKed */
 #define FLAG_SACK_RENEGING	0x2000 /* snd_una advanced to a sacked seq */
+/* Before adding a new flag, please check mptcp.h */
 
 #define FLAG_ACKED		(FLAG_DATA_ACKED|FLAG_SYN_ACKED)
 #define FLAG_NOT_DUP		(FLAG_DATA|FLAG_WIN_UPDATE|FLAG_ACKED)
@@ -3359,7 +3360,11 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		if (!fully_acked)
 			break;
 
+		mptcp_clean_rtx_infinite(skb, sk);
 		tcp_unlink_write_queue(skb, sk);
+
+		if (tp->mpc)
+			flag |= mptcp_fallback_infinite(tp, skb);
 
 #ifdef MPTCP_DEBUG_PKTS_OUT
 		/* Cannot have more packets in flight than packets in the
@@ -3590,7 +3595,7 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 	if (tp->mpc && after(tp->snd_una, tp->reinjected_seq))
 		tp->reinjected_seq = tp->snd_una;
 #endif
-	mptcp_update_window_check(meta_tp, skb, data_ack);
+	mptcp_update_window_check(tp, skb, data_ack);
 
 	return flag;
 }
@@ -3828,6 +3833,11 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 
 	/* See if we can take anything off of the retransmit queue. */
 	flag |= tcp_clean_rtx_queue(sk, prior_fackets, prior_snd_una);
+
+	if (flag & MPTCP_FLAG_SEND_RESET) {
+		mptcp_send_reset(sk, skb);
+		goto invalid_ack;
+	}
 
 	if (tp->frto_counter)
 		frto_cwnd = tcp_process_frto(sk, flag);
@@ -5722,15 +5732,10 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 	tcp_parse_options(skb, &tp->rx_opt, &hash_location,
 			  mpcb ? &mpcb->rx_opt : NULL, 0);
 
-	if (unlikely(mpcb && mpcb->rx_opt.list_rcvd)) {
+	if (mpcb && mpcb->rx_opt.list_rcvd) {
 		mpcb->rx_opt.list_rcvd = 0;
 		mptcp_update_patharray(mpcb);
-		/* The server uses additional subflows
-		 * only on request
-		 * from the client.
-		 */
-		if (!test_bit(MPCB_FLAG_SERVER_SIDE, &mpcb->flags))
-			mptcp_send_updatenotif(mpcb);
+		mptcp_send_updatenotif(mpcb);
 	}
 
 	if (th->ack) {

@@ -999,6 +999,18 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	}
 #ifdef CONFIG_MPTCP
 	mpcb = tp->mpcb;
+	/* Need the MPTCPHDR_INF-flag, because a retransmission of the
+	 * infinite-announcment still needs the mptcp-option.
+	 * And we need infinite_cutoff_seq, because retransmissions from before
+	 * the infinite-cutoff-moment still need the MPTCP-signalling to stay
+	 * consistent.
+	 *
+	 * I know, the whole infinite-mapping stuff is ugly...
+	 */
+	if (tp->mpc && mpcb->infinite_mapping && tp->fully_established &&
+	    !(tcb->mptcp_flags & MPTCPHDR_INF) &&
+	    !(tcb->data_seq < mpcb->infinite_cutoff_seq))
+		goto no_mptcp;
 
 	if (tp->mpc && !tcp_sk(sk)->mptcp_add_addr_ack &&
 	    !tcp_sk(sk)->include_mpc) {
@@ -1015,7 +1027,18 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		if (!skb || skb->len != 0 || (tcb->mptcp_flags & MPTCPHDR_FIN)) {
 			dss = 1;
 
-			if (tcb && tcb->data_len) {
+			/* Send infinite mapping only on "new" data,
+			 * not for retransmissions */
+			if (mpcb->send_infinite_mapping &&
+			    tcb->seq >= tp->snd_nxt) {
+				tp->fully_established = 1;
+				mpcb->infinite_mapping = 1;
+				mpcb->infinite_cutoff_seq = tcb->data_seq;
+				tcb->mptcp_flags |= MPTCPHDR_INF;
+				tcb->data_len = 0;
+			}
+
+			if (tcb) {
 				opts->data_seq = tcb->data_seq;
 				opts->data_len = tcb->data_len;
 				opts->sub_seq = tcb->sub_seq;
@@ -1098,6 +1121,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			tcp_sk(sk)->mptcp_add_addr_ack = 0;
 		}
 	}
+no_mptcp:
 #endif /* CONFIG_MPTCP_PM */
 #endif /* CONFIG_MPTCP */
 
@@ -3381,6 +3405,9 @@ static void tcp_connect_init(struct sock *sk)
 				  dst_metric(dst, RTAX_INITRWND));
 
 	mptcp_update_window_clamp(tp);
+#ifdef CONFIG_MPTCP
+	tp->init_rcv_wnd = tp->rcv_wnd;
+#endif
 
 	tp->rx_opt.rcv_wscale = rcv_wscale;
 	tp->rcv_ssthresh = tp->rcv_wnd;

@@ -115,6 +115,9 @@ struct multipath_pcb {
 				 * eligible subflows by the
 				 * scheduler
 				 */
+	u8	send_infinite_mapping:1,
+		infinite_mapping:1;
+	u32	infinite_cutoff_seq;
 
 	__u32	mptcp_loc_token;
 	__u64	mptcp_loc_key;
@@ -213,6 +216,11 @@ static inline int PI_TO_FLAG(int pi)
 		       * the app
 		       */
 #define MPTCP_QUEUED 2 /* The skb has been queued in the mpcb ofo queue */
+
+/* Another flag as in tcp_input.c - put it here because otherwise we need to
+ * export all the flags from tcp_input.c to a header file.
+ */
+#define MPTCP_FLAG_SEND_RESET	0x4000
 
 #ifdef CONFIG_MPTCP
 
@@ -443,8 +451,9 @@ void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb);
 struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject);
 void mpcb_release(struct multipath_pcb *mpcb);
 void mptcp_release_sock(struct sock *sk);
-void mptcp_clean_rtx_queue(struct sock *sk);
+void mptcp_clean_rtx_queue(struct sock *meta_sk);
 void mptcp_send_fin(struct sock *meta_sk);
+void mptcp_send_reset(struct sock *sk, struct sk_buff *skb);
 void mptcp_parse_options(uint8_t *ptr, int opsize,
 		struct tcp_options_received *opt_rx,
 		struct multipath_options *mopt,
@@ -468,6 +477,8 @@ void mptcp_key_sha1(u64 key, u32 *token);
 void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 		     u32 *hash_out);
 void mptcp_fallback(struct sock *master_sk);
+int mptcp_fallback_infinite(struct tcp_sock *tp, struct sk_buff *skb);
+void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk);
 void mptcp_fin(struct multipath_pcb *mpcb);
 
 static inline int mptcp_is_ofo_queue_empty(struct tcp_sock *meta_tp)
@@ -665,12 +676,7 @@ static inline void mptcp_path_array_check(struct multipath_pcb *mpcb)
 	if (unlikely(mpcb && mpcb->rx_opt.list_rcvd)) {
 		mpcb->rx_opt.list_rcvd = 0;
 		mptcp_update_patharray(mpcb);
-		/* The server uses additional subflows
-		 * only on request
-		 * from the client.
-		 */
-		if (!test_bit(MPCB_FLAG_SERVER_SIDE, &mpcb->flags))
-			mptcp_send_updatenotif(mpcb);
+		mptcp_send_updatenotif(mpcb);
 	}
 }
 
@@ -902,7 +908,7 @@ static inline struct sk_buff *mptcp_next_segment(struct sock *sk,
 }
 static inline void mpcb_release(struct multipath_pcb *mpcb) {}
 static inline void mptcp_release_sock(struct sock *sk) {}
-static inline void mptcp_clean_rtx_queue(struct sock *sk) {}
+static inline void mptcp_clean_rtx_queue(struct sock *meta_sk) {}
 static inline void mptcp_send_fin(struct sock *meta_sk) {}
 static inline void mptcp_parse_options(uint8_t *ptr, int opsize,
 		struct tcp_options_received *opt_rx,
@@ -941,7 +947,11 @@ static inline int mptcp_push(struct sock *sk, int flags, int mss_now,
 {
 	return 0;
 }
-static inline void mptcp_fallback(struct sock *master_sk) {}
+static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
+		struct sk_buff *skb)
+{
+	return 0;
+}
 static inline int mptcp_snd_buf_demand(struct tcp_sock *tp, u32 rtt_max)
 {
 	return 0;
@@ -976,6 +986,7 @@ static inline int mptcp_check_snd_buf(struct tcp_sock *tp)
 }
 static inline void mptcp_retransmit_queue(struct sock *sk) {}
 static inline void mptcp_include_mpc(struct tcp_sock *tp) {}
+static inline void mptcp_send_reset(struct sock *sk, struct sk_buff *skb) {}
 static inline int mptcp_get_path_family(struct multipath_pcb *mpcb,
 					int path_index)
 {

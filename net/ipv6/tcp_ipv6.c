@@ -1095,7 +1095,6 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack, u32 win,
 		mpfail = (struct mp_fail *)p8;
 		mpfail->sub = MPTCP_SUB_FAIL;
 		mpfail->data_seq = htonl(TCP_SKB_CB(skb)->data_seq);
-		tcp_sk(sk)->teardown = 1;
 	}
 #endif
 
@@ -1835,15 +1834,16 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 
 	/* Is this a new syn+join ? */
 	if (th->syn && !th->ack) {
-		switch (mptcp_lookup_join(skb)) {
-		/* The specified token can't be found
-		 * Send a reset and discard the packet.
-		 */
-		case -ENOKEY:
-			tcp_v6_send_reset(NULL, skb);
-			goto discard_it;
-		case 1:
-			return 0;
+		int ret;
+
+		ret = mptcp_lookup_join(skb);
+		if (ret) {
+			if (ret < 0) {
+				tcp_v6_send_reset(NULL, skb);
+				goto discard_it;
+			} else {
+				return 0;
+			}
 		}
 	}
 #endif /* CONFIG_MPTCP */

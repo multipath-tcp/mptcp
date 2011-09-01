@@ -549,6 +549,7 @@ int mptcp_alloc_mpcb(struct sock *master_sk, struct request_sock *req,
 	meta_tp->copied_seq = meta_tp->rcv_nxt = meta_tp->rcv_wup = 0;
 	meta_tp->snd_sml = meta_tp->snd_una = meta_tp->snd_nxt = 0;
 	meta_tp->write_seq = 0;
+	meta_tp->snt_isn = meta_tp->write_seq; /* Initial data-sequence-number */
 
 	meta_tp->mpcb = mpcb;
 	meta_tp->mpc = 1;
@@ -806,8 +807,7 @@ void mptcp_del_sock(struct sock *sk)
 	tp->next = NULL;
 	tp->attached = 0;
 
-	/* Is there still data to be sent and more subflows available? */
-	if (tcp_send_head(sk) && mpcb->cnt_established > 0)
+	if (!skb_queue_empty(&sk->sk_write_queue) && mpcb->cnt_established > 0)
 		mptcp_reinject_data(sk, 0);
 
 	BUG_ON(!done);
@@ -863,13 +863,40 @@ void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 #endif
 }
 
-void mptcp_update_window_check(struct tcp_sock *meta_tp, struct sk_buff *skb,
+static inline void mptcp_become_fully_estab(struct tcp_sock *tp)
+{
+	tp->fully_established = 1;
+	mptcp_debug("%s: pi %d becoming fully established - master? %d\n",
+			__func__, tp->path_index, is_master_tp(tp));
+
+	if (is_master_tp(tp))
+		mptcp_send_updatenotif(tp->mpcb);
+}
+
+void mptcp_update_window_check(struct tcp_sock *tp, struct sk_buff *skb,
 		u32 data_ack)
 {
-	if (meta_tp->mpc && (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_ACK) &&
-		after(data_ack, meta_tp->snd_una)) {
+	struct tcp_sock *meta_tp;
+
+	if (!tp->mpc)
+		return;
+
+	meta_tp = mpcb_meta_tp(tp->mpcb);
+
+	if (unlikely(!tp->fully_established) &&
+	    (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_ACK) &&
+	    data_ack != meta_tp->snt_isn &&
+	    tp->snt_isn + 1 != tp->snd_una)
+		/* As soon as data has been data-acked,
+		 * or a subflow-data-ack (not acking syn - thus snt_isn + 1)
+		 * includes a data-ack, we are fully established
+		 */
+		mptcp_become_fully_estab(tp);
+
+	if ((TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_ACK) &&
+	    after(data_ack, meta_tp->snd_una)) {
 		meta_tp->snd_una = data_ack;
-		mptcp_clean_rtx_queue((struct sock *) meta_tp);
+		mptcp_clean_rtx_queue((struct sock *)meta_tp);
 	}
 }
 
@@ -1245,18 +1272,6 @@ exit:
 	return 0;
 }
 
-static inline void mptcp_send_reset(struct sock *sk, struct sk_buff *skb)
-{
-	if (sk->sk_family == AF_INET)
-		tcp_v4_send_reset(sk, skb);
-#if defined(CONFIG_IPV6) || defined(CONFIG_MODULE_IPV6)
-	else if (sk->sk_family == AF_INET6)
-		tcp_v6_send_reset(sk, skb);
-	else
-		BUG();
-#endif
-}
-
 static int mptcp_verif_dss_csum(struct sock *sk)
 {
 	struct sk_buff *tmp, *last = NULL;
@@ -1313,7 +1328,6 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 		mptcp_debug("%s csum is wrong: %#x data_seq %u\n", __func__,
 			    csum_fold(csum_tcp), TCP_SKB_CB(last)->data_seq);
 		tcp_sk(sk)->csum_error = 1;
-		sock_orphan(sk);
 		mptcp_send_reset(sk, last);
 		ans = 1;
 	}
@@ -1386,10 +1400,56 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 		return 1;
 	}
 
+	/* If we are not yet fully established and do not know the mapping for
+	 * this segment, this path has to fallback to infinite or be torn down.
+	 */
+	if (!tp->fully_established && !(tcb->mptcp_flags & MPTCPHDR_SEQ) &&
+	    !tp->map_data_len) {
+		int ret = mptcp_fallback_infinite(tp, skb);
+
+		if (ret & MPTCP_FLAG_SEND_RESET) {
+			mptcp_send_reset(sk, skb);
+			return -1;
+		} else {
+			mpcb->infinite_mapping = 1;
+			tp->fully_established = 1;
+		}
+	}
+
+	/* Receiver-side becomes fully established when a whole rcv-window has
+	 * been received without the need to fallback due to the previous
+	 * condition. */
+	if (!tp->fully_established) {
+		tp->init_rcv_wnd -= skb->len;
+		if (tp->init_rcv_wnd < 0)
+			mptcp_become_fully_estab(tp);
+	}
+
+	/* If we are in infinite-mapping-mode, the subflow is guaranteed to be
+	 * in-order at the data-level. Thus data-seq-numbers can be inferred
+	 * from what is expected at the data-level.
+	 *
+	 * draft v04, Section 3.5
+	 */
+	if (mpcb->infinite_mapping) {
+		tp->map_data_seq = tcb->data_seq = meta_tp->rcv_nxt;
+		tp->map_subseq = tcb->sub_seq = tcb->seq;
+		tp->map_data_len = tcb->data_len =
+			skb->len + (tcb->mptcp_flags & MPTCPHDR_FIN ? 1 : 0);
+		tcb->end_data_seq = tcb->data_seq + tcb->data_len;
+	}
+
 	/* If there is a DSS-mapping, check if it is ok with the current
 	 * expected mapping. If anything is wrong, reset the subflow
 	 */
 	if (tcb->mptcp_flags & MPTCPHDR_SEQ) {
+		if (!tcb->data_len) {
+			mpcb->infinite_mapping = 1;
+			tcb->data_len = skb->len;
+			/* TODO kill all other subflows than this one */
+			/* data_seq and so on are set correctly */
+		}
+
 		if (tp->map_data_len &&
 		    (tcb->data_seq != tp->map_data_seq ||
 		     tcb->sub_seq != tp->map_subseq ||
@@ -1478,7 +1538,8 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	if (tp->map_data_len &&
 	    !before(tp->rcv_nxt, tp->map_subseq + tp->map_data_len)) {
 		/* Verify the checksum first */
-		if (mpcb->rx_opt.dss_csum && mptcp_verif_dss_csum(sk))
+		if (mpcb->rx_opt.dss_csum && !mpcb->infinite_mapping &&
+		    mptcp_verif_dss_csum(sk))
 			return -1;
 
 		/* Is this an overlapping mapping? rcv_nxt >= end_data_seq */
@@ -1564,6 +1625,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 
 				tp->copied_seq =
 					TCP_SKB_CB(tmp1)->end_seq;
+
 				if (!eaten)
 					skb_set_owner_r(tmp1, meta_sk);
 				else if (tmp1 != skb)
@@ -1716,7 +1778,7 @@ static inline int count_bits(unsigned int v)
  * @pre : @sk must be the meta_sk
  */
 static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
-		int clone_it)
+		struct sock *sk, int clone_it)
 {
 	struct sk_buff *skb;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *tmp_tp;
@@ -1743,11 +1805,12 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 		return 1; /* no candidate found */
 	}
 
-	if (clone_it)
+	if (clone_it) {
 		skb = skb_clone(orig_skb, GFP_ATOMIC);
-	else {
-		skb_unlink(orig_skb, &orig_skb->sk->sk_write_queue);
-		mptcp_wmem_free_skb(orig_skb->sk, orig_skb);
+	} else {
+		skb_unlink(orig_skb, &sk->sk_write_queue);
+		skb_get(orig_skb);
+		mptcp_wmem_free_skb(sk, orig_skb);
 		skb = orig_skb;
 	}
 	if (unlikely(!skb))
@@ -1761,7 +1824,7 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 /* Inserts data into the reinject queue */
 void mptcp_reinject_data(struct sock *sk, int clone_it)
 {
-	struct sk_buff *skb_it;
+	struct sk_buff *skb_it, *tmp;
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct multipath_pcb *mpcb = tp->mpcb;
 	struct sock *meta_sk = (struct sock *) mpcb;
@@ -1770,13 +1833,13 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 
 	verif_wqueues(mpcb);
 
-	tcp_for_write_queue(skb_it, sk) {
+	skb_queue_walk_safe(&sk->sk_write_queue, skb_it, tmp) {
 		/* seq > reinjected_seq , to avoid reinjecting several times
 		 * the same segment */
 		if (before(TCP_SKB_CB(skb_it)->seq, tp->reinjected_seq))
 			continue;
 		skb_it->path_mask |= PI_TO_FLAG(tp->path_index);
-		if (__mptcp_reinject_data(skb_it, meta_sk, clone_it) < 0)
+		if (__mptcp_reinject_data(skb_it, meta_sk, sk, clone_it) < 0)
 			break;
 		tp->reinjected_seq = TCP_SKB_CB(skb_it)->end_seq;
 	}
@@ -1962,22 +2025,39 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
  * Cleans the meta-socket retransmission queue.
  * @sk must be the metasocket.
  */
-void mptcp_clean_rtx_queue(struct sock *sk)
+void mptcp_clean_rtx_queue(struct sock *meta_sk)
 {
 	struct sk_buff *skb;
-	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
-	BUG_ON(!is_meta_tp(tp));
+	BUG_ON(!is_meta_tp(meta_tp));
 
-	while ((skb = tcp_write_queue_head(sk)) && skb != tcp_send_head(sk)) {
+	while ((skb = tcp_write_queue_head(meta_sk)) &&
+	       skb != tcp_send_head(meta_sk)) {
 		struct tcp_skb_cb *scb = TCP_SKB_CB(skb);
-		if (before(tp->snd_una, scb->end_data_seq))
+		if (before(meta_tp->snd_una, scb->end_data_seq))
 			break;
 
-		tcp_unlink_write_queue(skb, sk);
-		tp->packets_out -= tcp_skb_pcount(skb);
-		sk_wmem_free_skb(sk, skb);
+		tcp_unlink_write_queue(skb, meta_sk);
+		meta_tp->packets_out -= tcp_skb_pcount(skb);
+		sk_wmem_free_skb(meta_sk, skb);
 	}
+}
+
+void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk)
+{
+	struct multipath_pcb *mpcb;
+
+	if (!tcp_sk(sk)->mpc)
+		return;
+
+	mpcb = tcp_sk(sk)->mpcb;
+
+	if (!mpcb->infinite_mapping)
+		return;
+
+	mpcb_meta_tp(mpcb)->snd_una = TCP_SKB_CB(skb)->end_data_seq;
+	mptcp_clean_rtx_queue((struct sock *)mpcb_meta_tp(mpcb));
 }
 
 /**
@@ -2173,6 +2253,21 @@ void mptcp_send_fin(struct sock *meta_sk)
 	__tcp_push_pending_frames(meta_sk, mptcp_sysctl_mss(), TCP_NAGLE_OFF);
 }
 
+void mptcp_send_reset(struct sock *sk, struct sk_buff *skb)
+{
+	sock_orphan(sk);
+	tcp_sk(sk)->teardown = 1;
+
+	if (sk->sk_family == AF_INET)
+		tcp_v4_send_reset(sk, skb);
+#if defined(CONFIG_IPV6) || defined(CONFIG_MODULE_IPV6)
+	else if (sk->sk_family == AF_INET6)
+		tcp_v6_send_reset(sk, skb);
+	else
+		BUG();
+#endif
+}
+
 void mptcp_close(struct sock *master_sk, long timeout)
 {
 	struct multipath_pcb *mpcb;
@@ -2366,9 +2461,10 @@ static void __mptcp_fallback(struct sock *master_sk)
 		return;
 
 	sock_hold(master_sk);
-	master_sk->sk_error_report = sock_def_error_report;
 	mptcp_destroy_mpcb(mpcb);
 	mpcb_release(mpcb);
+	master_sk->sk_error_report = sock_def_error_report;
+	master_tp->mpc = 0;
 	master_tp->mpcb = NULL;
 	sock_put(master_sk);
 }
@@ -2398,6 +2494,27 @@ void mptcp_fallback(struct sock *master_sk)
 	} else {
 		__mptcp_fallback(master_sk);
 	}
+}
+
+int mptcp_fallback_infinite(struct tcp_sock *tp, struct sk_buff *skb)
+{
+	struct multipath_pcb *mpcb = tp->mpcb;
+
+	/* If data has been acknowleged on the meta-level, fully_established
+	 * will have been set before and thus we will not fall back to infinite
+	 * mapping. */
+	if (likely(tp->fully_established))
+		return 0;
+
+	if (TCP_SKB_CB(skb)->flags & (TCPHDR_SYN | TCPHDR_FIN))
+		return 0;
+
+	if (is_master_tp(tp))
+		mpcb->send_infinite_mapping = 1;
+	else
+		return MPTCP_FLAG_SEND_RESET;
+
+	return 0;
 }
 
 void mptcp_set_state(struct sock *sk, int state)
@@ -2537,7 +2654,7 @@ struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
 
 teardown:
 	sock_orphan(child);
-	child_tp->teardown = 1;
+	tcp_done(child);
 	return sk;
 }
 

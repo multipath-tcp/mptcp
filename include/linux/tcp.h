@@ -461,16 +461,17 @@ struct tcp_sock {
 				* basis for bw computation.
 				*/
 	} bw_est;
-	u32    cur_bw_est;
+	u32	cur_bw_est;
 
 	/* per subflow data, for tcp_recvmsg */
-	u32    map_data_seq; /* Those three fields record the current mapping */
-	u16    map_data_len;
-	u32    map_subseq;
+	u32	map_data_seq; /* Those three fields record the current mapping */
+	u16	map_data_len;
+	u32	map_subseq;
 
 	/* isn: needed to translate abs to relative subflow seqnums */
-	u32    snt_isn;
-	u32    reinjected_seq;
+	u32	snt_isn;
+	u32	reinjected_seq;
+	int	init_rcv_wnd;
 	unsigned long last_snd_probe;
 	unsigned long last_rcv_probe;
 
@@ -478,6 +479,7 @@ struct tcp_sock {
 	struct tcp_sock	*next;		/* Next subflow socket */
 	__u32		mptcp_loc_random_number;
 	uint8_t		slave_sk:1,
+			fully_established:1,
 			attached:1,
 			csum_error:1,
 			teardown:1,

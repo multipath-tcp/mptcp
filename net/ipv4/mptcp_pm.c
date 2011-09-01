@@ -628,6 +628,9 @@ struct mp_join *mptcp_find_join(struct sk_buff *skb)
 	return NULL;
 }
 
+/*
+ * @return:
+ */
 int mptcp_lookup_join(struct sk_buff *skb)
 {
 	struct multipath_pcb *mpcb;
@@ -642,14 +645,14 @@ int mptcp_lookup_join(struct sk_buff *skb)
 	mpcb = mptcp_hash_find(token);
 	meta_sk = (struct sock *)mpcb;
 	if (!mpcb) {
-		printk(KERN_ERR
-			"%s:mpcb not found:%x\n",
-			__func__, token);
-		/* Sending "Required key not available" error message meaning
-		 * "mpcb with this token does not exist".
-		 */
-		return -ENOKEY;
+		printk(KERN_ERR"%s:mpcb not found:%x\n", __func__, token);
+		return -1;
 	}
+
+	if (mpcb->infinite_mapping)
+		/* We are in fallback-mode - thus no new subflows!!! */
+		return -1;
+
 	/* OK, this is a new syn/join, let's create a new open request and
 	 * send syn+ack
 	 */
@@ -707,6 +710,11 @@ static void mptcp_send_updatenotif_wq(struct work_struct *work)
 
 void mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 {
+	if (!tcp_sk(mpcb->master_sk)->fully_established ||
+	    mpcb->infinite_mapping ||
+	    test_bit(MPCB_FLAG_SERVER_SIDE, &mpcb->flags))
+		return;
+
 	if (in_interrupt()) {
 		struct work_struct *work = kmalloc(sizeof(*work) +
 						sizeof(struct multipath_pcb *),
@@ -815,7 +823,8 @@ static void mptcp_addr_event_handler(struct in_ifaddr *ifa, unsigned long event)
 			struct sock *sk;
 			struct tcp_sock *tp;
 
-			if (!tcp_sk(mpcb->master_sk)->mpc)
+			if (!tcp_sk(mpcb->master_sk)->mpc ||
+			    mpcb->infinite_mapping)
 				continue;
 
 			bh_lock_sock(mpcb->master_sk);
