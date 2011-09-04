@@ -1829,27 +1829,30 @@ static inline int tcp_nagle_test(struct tcp_sock *tp, struct sk_buff *skb,
 static inline int tcp_snd_wnd_test(struct tcp_sock *tp, struct sk_buff *skb,
 				   unsigned int cur_mss)
 {
-	u32 end_seq = tp->mpc ? mptcp_skb_end_data_seq(skb) :
-		TCP_SKB_CB(skb)->end_seq;
+	int mptcp_wnd_end = tp->mpc &&
+			(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ);
+	u32 end_seq = mptcp_wnd_end ? mptcp_skb_end_data_seq(skb) :
+					TCP_SKB_CB(skb)->end_seq;
 
 	if (skb->len > cur_mss)
-		end_seq = (tp->mpc ? mptcp_skb_data_seq(skb) :
+		end_seq = (mptcp_wnd_end ? mptcp_skb_data_seq(skb) :
 			   TCP_SKB_CB(skb)->seq) + cur_mss;
-	if (after(end_seq, tcp_wnd_end(tp, tp->mpc)) &&
+
+	if (after(end_seq, tcp_wnd_end(tp, mptcp_wnd_end)) &&
 			(TCP_SKB_CB(skb)->flags & TCPHDR_FIN)) {
 		mptcp_debug("FIN refused for sndwnd, fin end dsn %#x,"
-			"tcp_wnd_end: %#x, mpc:%d, snd_una:%#x,"
+			"tcp_wnd_end: %u, mpc:%d, snd_una:%u,"
 			"snd_wnd:%d, mpcb write_seq:%#x, "
-			"mpcb queue len:%d, cur_mss:%d, skb->len:%d\n",
-			end_seq, tcp_wnd_end(tp, tp->mpc),
+			"mpcb queue len:%d, cur_mss:%d, skb->len:%d seq	%u\n",
+			end_seq, tcp_wnd_end(tp, mptcp_wnd_end),
 			tp->mpc, mpcb_meta_tp(tp->mpcb)->snd_una,
 			mpcb_meta_tp(tp->mpcb)->snd_wnd,
 			mpcb_meta_tp(tp->mpcb)->write_seq,
 			((struct sock *) tp->mpcb)->sk_write_queue.qlen,
-			cur_mss, skb->len);
+			cur_mss, skb->len, TCP_SKB_CB(skb)->seq);
 	}
 
-	return !after(end_seq, tcp_wnd_end(tp, tp->mpc));
+	return !after(end_seq, tcp_wnd_end(tp, mptcp_wnd_end));
 }
 
 /* This checks if the data bearing packet SKB (usually tcp_send_head(sk))
@@ -2442,9 +2445,8 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 				if (sk->sk_shutdown == SHUTDOWN_MASK)
 					tcp_close(sk_it, 0);
 				else if (sk_it != subsk &&
-					tcp_close_state(sk_it)) {
+					 tcp_close_state(sk_it))
 					tcp_send_fin(sk_it);
-				}
 			}
 		}
 #endif /* CONFIG_MPTCP */

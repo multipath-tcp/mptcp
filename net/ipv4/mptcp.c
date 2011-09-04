@@ -782,8 +782,8 @@ void mptcp_del_sock(struct sock *sk)
 	if (sk->sk_protocol != IPPROTO_TCP || !tp->mpc)
 		return;
 
-	mptcp_debug("%s: Removing subsocket - pi:%d\n", __func__,
-			tp->path_index);
+	mptcp_debug("%s: Removing subsocket - pi:%d state %d\n", __func__,
+			tp->path_index, sk->sk_state);
 
 	tp_prev = mpcb->connection_list;
 	if (!tp->attached)
@@ -1659,6 +1659,7 @@ void mptcp_skb_entail_init(struct sock *sk, struct sk_buff *skb)
 		tcb->seq      = tcb->end_seq = tcb->sub_seq = 0;
 		tcb->data_seq = tcb->end_data_seq = meta_tp->write_seq;
 		tcb->data_len = 0;
+		tcb->mptcp_flags = MPTCPHDR_SEQ;
 	}
 }
 
@@ -2234,7 +2235,7 @@ void mptcp_send_fin(struct sock *meta_sk)
 		TCP_SKB_CB(skb)->flags |= TCPHDR_FIN;
 		TCP_SKB_CB(skb)->data_len++;
 		TCP_SKB_CB(skb)->end_data_seq++;
-		TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_FIN;
+		TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_FIN | MPTCPHDR_SEQ;
 		meta_tp->write_seq++;
 	} else {
 		for (;;) {
@@ -2249,7 +2250,7 @@ void mptcp_send_fin(struct sock *meta_sk)
 		TCP_SKB_CB(skb)->data_seq = meta_tp->write_seq;
 		TCP_SKB_CB(skb)->data_len = 1;
 		TCP_SKB_CB(skb)->end_data_seq = meta_tp->write_seq + 1;
-		TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_FIN;
+		TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_FIN | MPTCPHDR_SEQ;
 		/* FIN eats a sequence byte, write_seq advanced by
 		 * tcp_queue_skb().
 		 */
