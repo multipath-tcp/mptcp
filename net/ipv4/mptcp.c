@@ -1834,14 +1834,19 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 	verif_wqueues(mpcb);
 
 	skb_queue_walk_safe(&sk->sk_write_queue, skb_it, tmp) {
+		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb_it);
 		/* seq > reinjected_seq , to avoid reinjecting several times
-		 * the same segment */
-		if (before(TCP_SKB_CB(skb_it)->seq, tp->reinjected_seq))
+		 * the same segment.
+		 * Also, subflow syn's and fin's are not reinjected */
+		if (before(tcb->seq, tp->reinjected_seq) ||
+		    tcb->flags & TCPHDR_SYN ||
+		    (tcb->flags & TCPHDR_FIN &&
+		     !(tcb->mptcp_flags & MPTCPHDR_FIN)))
 			continue;
 		skb_it->path_mask |= PI_TO_FLAG(tp->path_index);
 		if (__mptcp_reinject_data(skb_it, meta_sk, sk, clone_it) < 0)
 			break;
-		tp->reinjected_seq = TCP_SKB_CB(skb_it)->end_seq;
+		tp->reinjected_seq = tcb->end_seq;
 	}
 
 	tcpprobe_logmsg(sk, "after reinj, reinj queue size:%d",
