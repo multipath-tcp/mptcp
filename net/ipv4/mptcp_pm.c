@@ -712,7 +712,8 @@ void mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 {
 	if (!tcp_sk(mpcb->master_sk)->fully_established ||
 	    mpcb->infinite_mapping ||
-	    test_bit(MPCB_FLAG_SERVER_SIDE, &mpcb->flags))
+	    test_bit(MPCB_FLAG_SERVER_SIDE, &mpcb->flags) ||
+	    sock_flag((struct sock*)mpcb, SOCK_DEAD))
 		return;
 
 	if (in_interrupt()) {
