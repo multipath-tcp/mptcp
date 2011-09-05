@@ -539,18 +539,6 @@ static inline int mptcp_sk_attached(struct sock *sk)
 	return tcp_sk(sk)->attached;
 }
 
-static inline int mptcp_snd_buf_demand(struct tcp_sock *tp, u32 rtt_max)
-{
-	if (!tp->cur_bw_est)
-		return 0;
-	else
-		return max_t(unsigned int,
-				 (tp->cur_bw_est >>
-				  tp->bw_est.shift) *
-				 (rtt_max >> 3),
-				 tp->reordering + 1);
-}
-
 static inline void mptcp_init_mp_opt(struct multipath_options *mopt)
 {
 	mopt->list_rcvd = mopt->num_addr4 = mopt->num_addr6 = 0;
@@ -685,37 +673,13 @@ static inline int mptcp_check_snd_buf(struct tcp_sock *tp)
 	struct multipath_pcb *mpcb = (tp->mpc) ? tp->mpcb : NULL;
 	struct tcp_sock *tp_it;
 	u32 rtt_max = tp->srtt;
+
 	mptcp_for_each_tp(mpcb, tp_it)
 		if (rtt_max < tp_it->srtt)
 			rtt_max = tp_it->srtt;
 
-	/* Normally the send buffer is computed as twice the BDP
-	 * However in multipath, a fast path may need more
-	 * buffer for the following reason:
-	 * Imagine 2 flows with same bw b, and delay 10 and 100,
-	 * resp. Normally flow 10 will have send buffer 2*b*10
-	 *                     100 will have send buffer 2*b*100
-	 * In order to minimize reordering at the receiver,
-	 * the sender must ensure that all consecutive packets
-	 * are sent as close to each other as possible, even
-	 * when spread across several subflows. If we represent
-	 * a buffer as having a "height" in time units, and a
-	 * "width" in bandwidth units, we must ensure
-	 * that each segment is sent on the buffer with smallest
-	 * "current height". (lowest filling related to his
-	 * height). The subflow max height, given that its
-	 * width is its bw, is computed as 2d traditionnally,
-	 * thus 20 and 200 resp. here.
-	 * The problem is that if buffer with delay 10 is kept
-	 * at size 2*b*10, the scheduler will be able to
-	 * schedule segments until height=20 maximum. In
-	 * summary, the use of all buffers is reduced to the
-	 * hight of the smallest one. This is why all buffers
-	 * must be arranged to have equal height, that height
-	 * being the highest height needed by the network, that
-	 * is 2*max(delays).
-	 */
-	return mptcp_snd_buf_demand(tp, rtt_max);
+	return max_t(unsigned int, tp->cur_bw_est * (rtt_max >> 3),
+			tp->reordering + 1);
 }
 
 static inline void mptcp_retransmit_queue(struct sock *sk)
@@ -949,10 +913,6 @@ static inline int mptcp_push(struct sock *sk, int flags, int mss_now,
 }
 static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
 		struct sk_buff *skb)
-{
-	return 0;
-}
-static inline int mptcp_snd_buf_demand(struct tcp_sock *tp, u32 rtt_max)
 {
 	return 0;
 }
