@@ -873,6 +873,8 @@ static inline struct sk_buff *mptcp_next_segment(struct sock *sk,
 static inline void mpcb_release(struct multipath_pcb *mpcb) {}
 static inline void mptcp_release_sock(struct sock *sk) {}
 static inline void mptcp_clean_rtx_queue(struct sock *meta_sk) {}
+static inline void mptcp_clean_rtx_infinite(struct sk_buff *skb,
+		struct sock *sk) {}
 static inline void mptcp_send_fin(struct sock *meta_sk) {}
 static inline void mptcp_parse_options(uint8_t *ptr, int opsize,
 		struct tcp_options_received *opt_rx,
@@ -911,6 +913,7 @@ static inline int mptcp_push(struct sock *sk, int flags, int mss_now,
 {
 	return 0;
 }
+static inline void mptcp_fallback(struct sock *master_sk) {}
 static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
 		struct sk_buff *skb)
 {
