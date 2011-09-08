@@ -34,6 +34,7 @@
  *
  */
 
+#include <net/mptcp.h>
 #include <net/tcp.h>
 #include <net/ipv6.h>
 

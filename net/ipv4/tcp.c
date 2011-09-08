@@ -268,6 +268,7 @@
 #include <linux/slab.h>
 
 #include <net/icmp.h>
+#include <net/mptcp.h>
 #include <net/tcp.h>
 #include <net/xfrm.h>
 #include <net/ip.h>
@@ -1354,6 +1355,60 @@ void tcp_cleanup_rbuf(struct sock *sk, int copied)
 	}
 	if (time_to_ack)
 		tcp_send_ack(sk);
+}
+
+/* Packet is added to VJ-style prequeue for processing in process
+ * context, if a reader task is waiting. Apparently, this exciting
+ * idea (VJ's mail "Re: query about TCP header on tcp-ip" of 07 Sep 93)
+ * failed somewhere. Latency? Burstiness? Well, at least now we will
+ * see, why it failed. 8)8)				  --ANK
+ */
+int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *meta_tp = tp->mpc ? mpcb_meta_tp(tp->mpcb) : tp;
+	struct sock *master_sk = tp->mpc ? tp->mpcb->master_sk : sk;
+
+	if (sysctl_tcp_low_latency || !meta_tp->ucopy.task)
+		return 0;
+
+	__skb_queue_tail(&tp->ucopy.prequeue, skb);
+	tp->ucopy.memory += skb->truesize;
+	if (tp->ucopy.memory > sk->sk_rcvbuf) {
+		struct sk_buff *skb1;
+
+		BUG_ON(sock_owned_by_user(master_sk));
+
+		while ((skb1 = __skb_dequeue(&tp->ucopy.prequeue)) != NULL) {
+			sk_backlog_rcv(sk, skb1);
+			NET_INC_STATS_BH(sock_net(sk),
+					 LINUX_MIB_TCPPREQUEUEDROPPED);
+		}
+
+		tp->ucopy.memory = 0;
+	} else if (skb_queue_len(&tp->ucopy.prequeue) == 1) {
+		struct sock *sk_it = tp->mpc ? NULL : sk;
+#ifdef CONFIG_MPTCP
+		struct multipath_pcb *mpcb = tp->mpc ? tp->mpcb : NULL;
+#endif
+
+		/* Here we test if in case of mptcp the sum of packets in the
+		 * prequeues in the subflows == 1.
+		 * Thus, the condition
+		 * "is there another subflow with queue-len > 0 ? "
+		 */
+		if (!mptcp_test_any_sk(mpcb, sk_it,
+				(sk_it != sk &&
+				skb_queue_len(&tcp_sk(sk_it)->ucopy.prequeue)))) {
+			wake_up_interruptible_sync_poll(sk_sleep(sk),
+					POLLIN | POLLRDNORM | POLLRDBAND);
+		}
+		if (!inet_csk_ack_scheduled(sk))
+			inet_csk_reset_xmit_timer(sk, ICSK_TIME_DACK,
+						  (3 * tcp_rto_min(sk)) / 4,
+						  TCP_RTO_MAX);
+	}
+	return 1;
 }
 
 static void tcp_prequeue_process(struct sock *sk)

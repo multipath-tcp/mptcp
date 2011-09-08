@@ -30,6 +30,7 @@
 
 #include <crypto/hash.h>
 #include <net/mptcp_pm.h>
+#include <net/tcp.h>
 
 #ifdef CONFIG_MPTCP_DEBUG
 #define mptcp_debug(fmt, args...) printk(KERN_DEBUG __FILE__ ": " fmt, ##args)
@@ -497,11 +498,6 @@ static inline struct multipath_pcb *mpcb_from_tcpsock(struct tcp_sock *tp)
 	return tp->mpcb;
 }
 
-static inline struct tcp_sock *mpcb_meta_tp(const struct multipath_pcb *mpcb)
-{
-	return (struct tcp_sock *)mpcb;
-}
-
 static inline struct sock *mptcp_meta_sk(struct sock *sk)
 {
 	return (struct sock *)tcp_sk(sk)->mpcb;
@@ -924,10 +920,6 @@ static inline void mptcp_wmem_free_skb(struct sock *sk, struct sk_buff *skb) {}
 static inline int is_local_addr4(u32 addr)
 {
 	return 0;
-}
-static inline struct tcp_sock *mpcb_meta_tp(const struct multipath_pcb *mpcb)
-{
-	return NULL;
 }
 static inline void mptcp_sock_destruct(struct sock *sk) {}
 static inline int mptcp_skip_offset(struct tcp_sock *tp,

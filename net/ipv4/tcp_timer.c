@@ -20,6 +20,7 @@
 
 #include <linux/module.h>
 #include <linux/gfp.h>
+#include <net/mptcp.h>
 #include <net/tcp.h>
 
 int sysctl_tcp_syn_retries __read_mostly = TCP_SYN_RETRIES;

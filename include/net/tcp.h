@@ -44,7 +44,6 @@
 #include <net/tcp_states.h>
 #include <net/inet_ecn.h>
 #include <net/dst.h>
-#include <net/mptcp.h>
 
 #include <linux/seq_file.h>
 
@@ -948,62 +947,7 @@ static inline void tcp_prequeue_init(struct tcp_sock *tp)
 #endif
 }
 
-/* Packet is added to VJ-style prequeue for processing in process
- * context, if a reader task is waiting. Apparently, this exciting
- * idea (VJ's mail "Re: query about TCP header on tcp-ip" of 07 Sep 93)
- * failed somewhere. Latency? Burstiness? Well, at least now we will
- * see, why it failed. 8)8)				  --ANK
- *
- * NOTE: is this not too big to inline?
- */
-static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct tcp_sock *meta_tp = tp->mpc ? mpcb_meta_tp(tp->mpcb) : tp;
-	struct sock *master_sk = tp->mpc ? tp->mpcb->master_sk : sk;
-
-	if (sysctl_tcp_low_latency || !meta_tp->ucopy.task)
-		return 0;
-
-	__skb_queue_tail(&tp->ucopy.prequeue, skb);
-	tp->ucopy.memory += skb->truesize;
-	if (tp->ucopy.memory > sk->sk_rcvbuf) {
-		struct sk_buff *skb1;
-
-		BUG_ON(sock_owned_by_user(master_sk));
-
-		while ((skb1 = __skb_dequeue(&tp->ucopy.prequeue)) != NULL) {
-			sk_backlog_rcv(sk, skb1);
-			NET_INC_STATS_BH(sock_net(sk),
-					 LINUX_MIB_TCPPREQUEUEDROPPED);
-		}
-
-		tp->ucopy.memory = 0;
-	} else if (skb_queue_len(&tp->ucopy.prequeue) == 1) {
-		struct sock *sk_it = tp->mpc ? NULL : sk;
-#ifdef CONFIG_MPTCP
-		struct multipath_pcb *mpcb = tp->mpc ? tp->mpcb : NULL;
-#endif
-
-		/* Here we test if in case of mptcp the sum of packets in the
-		 * prequeues in the subflows == 1.
-		 * Thus, the condition
-		 * "is there another subflow with queue-len > 0 ? "
-		 */
-		if (!mptcp_test_any_sk(mpcb, sk_it,
-				(sk_it != sk &&
-				skb_queue_len(&tcp_sk(sk_it)->ucopy.prequeue)))) {
-			wake_up_interruptible_sync_poll(sk_sleep(sk),
-					POLLIN | POLLRDNORM | POLLRDBAND);
-		}
-		if (!inet_csk_ack_scheduled(sk))
-			inet_csk_reset_xmit_timer(sk, ICSK_TIME_DACK,
-						  (3 * tcp_rto_min(sk)) / 4,
-						  TCP_RTO_MAX);
-	}
-	return 1;
-}
-
+int tcp_prequeue(struct sock *sk, struct sk_buff *skb);
 
 #undef STATE_TRACE
 
@@ -1055,45 +999,10 @@ static inline int tcp_full_space(const struct sock *sk)
 	return tcp_win_from_space(sk->sk_rcvbuf);
 }
 
-static inline void tcp_openreq_init(struct request_sock *req,
-				    struct tcp_options_received *rx_opt,
-				    struct multipath_options *mopt,
-				    struct sk_buff *skb)
-{
-	struct inet_request_sock *ireq = inet_rsk(req);
-
-	req->rcv_wnd = 0;		/* So that tcp_send_synack() knows! */
-	req->cookie_ts = 0;
-	tcp_rsk(req)->rcv_isn = TCP_SKB_CB(skb)->seq;
-	req->mss = rx_opt->mss_clamp;
-	req->ts_recent = rx_opt->saw_tstamp ? rx_opt->rcv_tsval : 0;
-#ifdef CONFIG_MPTCP
-	req->saw_mpc = rx_opt->saw_mpc;
-	if (req->saw_mpc && !req->mpcb) {
-		/* conn request, prepare a new token for the
-		 * mpcb that will be created in tcp_check_req(),
-		 * and store the received token.
-		 */
-		do {
-			do {
-				get_random_bytes(&req->mptcp_loc_key,
-						sizeof(req->mptcp_loc_key));
-			} while (!req->mptcp_loc_key);
-
-			mptcp_key_sha1(req->mptcp_loc_key,
-				       &req->mptcp_loc_token);
-		} while (mptcp_find_token(req->mptcp_loc_token));
-	}
-#endif
-	ireq->tstamp_ok = rx_opt->tstamp_ok;
-	ireq->sack_ok = rx_opt->sack_ok;
-	ireq->snd_wscale = rx_opt->snd_wscale;
-	ireq->wscale_ok = rx_opt->wscale_ok;
-	ireq->acked = 0;
-	ireq->ecn_ok = 0;
-	ireq->rmt_port = tcp_hdr(skb)->source;
-	ireq->loc_port = tcp_hdr(skb)->dest;
-}
+void tcp_openreq_init(struct request_sock *req,
+		      struct tcp_options_received *rx_opt,
+		      struct multipath_options *mopt,
+		      struct sk_buff *skb);
 
 extern void tcp_enter_memory_pressure(struct sock *sk);
 
