@@ -1829,8 +1829,12 @@ static inline int tcp_nagle_test(struct tcp_sock *tp, struct sk_buff *skb,
 static inline int tcp_snd_wnd_test(struct tcp_sock *tp, struct sk_buff *skb,
 				   unsigned int cur_mss)
 {
+#ifdef CONFIG_MPTCP
 	int mptcp_wnd_end = tp->mpc &&
-			(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ);
+			    TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ;
+#else
+	int mptcp_wnd__end = 0;
+#endif
 	u32 end_seq = mptcp_wnd_end ? mptcp_skb_end_data_seq(skb) :
 					TCP_SKB_CB(skb)->end_seq;
 
