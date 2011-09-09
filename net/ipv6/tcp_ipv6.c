@@ -1278,7 +1278,6 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	tmp_opt.mss_clamp = IPV6_MIN_MTU - sizeof(struct tcphdr) - sizeof(struct ipv6hdr);
 	tmp_opt.user_mss = tp->rx_opt.user_mss;
 	mopt.dss_csum = 0;
-	mopt.mp_enabled = tp->mptcp_enabled;
 	mptcp_init_mp_opt(&mopt);
 	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
@@ -1333,6 +1332,11 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 
 #ifdef CONFIG_MPTCP
+	/* Even if the peer requested mptcp, if the application disabled it,
+	 * we should not do it.
+	 */
+	req->saw_mpc = req->saw_mpc && tp->mptcp_enabled;
+
 	/* Must be set to NULL before calling openreq init.
 	 * tcp_openreq_init() uses this to know whether the request
 	 * is a join request or a conn request.

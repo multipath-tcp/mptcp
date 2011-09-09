@@ -1895,8 +1895,6 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 
 		if (!sysctl_mptcp_enabled)
 			break;
-		if (!mopt->mp_enabled)
-			break;
 
 		opt_rx->saw_mpc = 1;
 		mopt->list_rcvd = 1;

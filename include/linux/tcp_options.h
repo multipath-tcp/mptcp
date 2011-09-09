@@ -121,9 +121,7 @@ struct multipath_options {
 	__u8	mptcp_recv_mac[20];
 	u8	list_rcvd:1, /* 1 if IP list has been received (MPTCP_PM) */
 		dfin_rcvd:1,
-		dss_csum:1,
-		/* checking the value of the tcp_sock->mptcp_enabled */
-		mp_enabled:1;
+		dss_csum:1;
 	u32	fin_dsn; /* DSN of the byte  FOLLOWING the Data FIN */
 };
 
