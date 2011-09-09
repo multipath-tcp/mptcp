@@ -252,10 +252,14 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	tp->snt_isn = tp->write_seq;
 	tp->reinjected_seq = tp->write_seq;
 #endif
-	err = mptcp_alloc_mpcb(sk, NULL, GFP_KERNEL);
-	if (err)
-		goto failure;
-	mptcp_update_metasocket(sk, mpcb_from_tcpsock(tp));
+	if (tp->mptcp_enabled) {
+		err = mptcp_alloc_mpcb(sk, NULL, GFP_KERNEL);
+		if (err)
+			goto failure;
+		mptcp_update_metasocket(sk, mpcb_from_tcpsock(tp));
+	} else {
+		tp->mpcb = NULL;
+	}
 
 	inet->inet_id = tp->write_seq ^ jiffies;
 
@@ -1307,6 +1311,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
 	tmp_opt.user_mss  = tp->rx_opt.user_mss;
 	mopt.dss_csum = 0;
+	mopt.mp_enabled = tp->mptcp_enabled;
 	mptcp_init_mp_opt(&mopt);
 	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
@@ -1977,6 +1982,8 @@ static int tcp_v4_init_sock(struct sock *sk)
 #ifdef CONFIG_TCP_MD5SIG
 	tp->af_specific = &tcp_sock_ipv4_specific;
 #endif
+
+	tp->mptcp_enabled = 1;
 
 	/* TCP Cookie Transactions */
 	if (sysctl_tcp_cookie_size > 0) {

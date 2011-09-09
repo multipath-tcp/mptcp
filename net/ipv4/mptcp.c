@@ -1895,6 +1895,8 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 
 		if (!sysctl_mptcp_enabled)
 			break;
+		if (!mopt->mp_enabled)
+			break;
 
 		opt_rx->saw_mpc = 1;
 		mopt->list_rcvd = 1;
@@ -2445,6 +2447,9 @@ int do_mptcp(struct sock *sk)
 {
 	if (!sysctl_mptcp_enabled)
 		return 0;
+	if (!tcp_sk(sk)->mptcp_enabled)
+		return 0;
+
 	if ((sk->sk_family == AF_INET &&
 	     ipv4_is_loopback(inet_sk(sk)->inet_daddr)) ||
 	    (sk->sk_family == AF_INET6 &&

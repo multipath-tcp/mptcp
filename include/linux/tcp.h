@@ -109,6 +109,9 @@ enum {
 #define TCP_THIN_DUPACK         17      /* Fast retrans. after 1 dupack */
 #define TCP_USER_TIMEOUT	18	/* How long for loss retry before timeout */
 
+/* MPTCP options */
+#define MPTCP_ENABLE		19
+
 /* for TCP_INFO socket option */
 #define TCPI_OPT_TIMESTAMPS	1
 #define TCPI_OPT_SACK		2
@@ -441,6 +444,7 @@ struct tcp_sock {
 	 * rather than adding ifdefs everywhere.
 	 */
 	u8      mpc:1,          /* Other end is multipath capable */
+		mptcp_enabled:1, /* Is MPTCP enabled from the application ? */
 		pf:1, /* Potentially Failed state: when this flag is set, we
 		       * stop using the subflow
 		       */
