@@ -2365,6 +2365,13 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			}
 			if (!subskb)
 				break;
+
+			if (!(subsk->sk_route_caps & NETIF_F_ALL_CSUM) &&
+			    skb->ip_summed == CHECKSUM_PARTIAL) {
+				skb->csum = skb_checksum_complete(subskb);
+				skb->ip_summed = CHECKSUM_NONE;
+			}
+
 			BUG_ON(tcp_send_head(subsk));
 			mptcp_skb_entail(subsk, subskb);
 		} else {
