@@ -1410,6 +1410,7 @@ int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 	}
 	return 1;
 }
+EXPORT_SYMBOL(tcp_prequeue);
 
 static void tcp_prequeue_process(struct sock *sk)
 {

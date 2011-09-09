@@ -455,6 +455,7 @@ void tcp_openreq_init(struct request_sock *req,
 	ireq->rmt_port = tcp_hdr(skb)->source;
 	ireq->loc_port = tcp_hdr(skb)->dest;
 }
+EXPORT_SYMBOL(tcp_openreq_init);
 
 /* This is not only more efficient than what we used to do, it eliminates
  * a lot of code duplication between IPv4/IPv6 SYN recv processing. -DaveM

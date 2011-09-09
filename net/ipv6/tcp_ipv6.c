@@ -62,7 +62,9 @@
 #include <net/netdma.h>
 #include <net/inet_common.h>
 #include <net/mptcp.h>
+#ifdef CONFIG_MPTCP
 #include <net/mptcp_v6.h>
+#endif
 
 #include <asm/uaccess.h>
 
