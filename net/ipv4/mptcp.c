@@ -939,13 +939,13 @@ void mptcp_check_buffers(struct multipath_pcb *mpcb)
 
 int mptcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 {
-	struct sk_buff *skb;
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_sock *meta_tp = mpcb_meta_tp(tp->mpcb);
 	struct sock *meta_sk = (struct sock *) meta_tp;
 	if (atomic_read(&meta_sk->sk_rmem_alloc) >
 			meta_sk->sk_rcvbuf) {
 #ifdef CONFIG_MPTCP_DEBUG
+		struct sk_buff *skb;
 		tcpprobe_logmsg(meta_sk, "PROBLEM NOW");
 		mptcp_debug("%s: not enough rcvbuf: mpcb rcvbuf:%d,"
 				"rmem_alloc:%d\n", __func__,
