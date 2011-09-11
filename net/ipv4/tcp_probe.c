@@ -19,6 +19,7 @@
  */
 
 #include <linux/kernel.h>
+#include <linux/kprobes.h>
 #include <linux/socket.h>
 #include <linux/tcp.h>
 #include <linux/slab.h>
@@ -27,12 +28,6 @@
 #include <linux/ktime.h>
 #include <linux/time.h>
 #include <net/net_namespace.h>
-
-#ifdef CONFIG_KPROBES
-#include <linux/kprobes.h>
-#else
-#include <linux/tcp_probe.h>
-#endif
 
 #include <net/tcp.h>
 
@@ -49,24 +44,20 @@ static unsigned int bufsize __read_mostly = 4096;
 MODULE_PARM_DESC(bufsize, "Log buffer size in packets (4096)");
 module_param(bufsize, uint, 0);
 
-static int full __read_mostly = 1;
-MODULE_PARM_DESC(full, "Full log (1 = every ack packet received,  "
-		 "0 = only cwnd changes)");
-module_param(full, int, 0);
-
+#ifdef CONFIG_MPTCP
 static int log_interval __read_mostly = 100;
 MODULE_PARM_DESC(log_interval, "Log interval (0 = log every event, "
 		 "n = log at most every n milliseconds)");
 module_param(log_interval, int, 0);
+#endif
+
+static int full __read_mostly;
+MODULE_PARM_DESC(full, "Full log (1=every ack packet received,  0=only cwnd changes)");
+module_param(full, int, 0);
 
 static const char procname[] = "tcpprobe";
 
-struct mptcp_ccc {
-	u64 alpha;
-};
-
 struct tcp_log {
-	int     path_index;
 	ktime_t tstamp;
 	__be32	saddr, daddr;
 	__be16	sport, dport;
@@ -77,28 +68,6 @@ struct tcp_log {
 	u32	snd_cwnd;
 	u32	ssthresh;
 	u32	srtt;
-	u32     rcv_nxt;
-	u32     copied_seq;
-	u32     rcv_wnd;
-	u32     rcv_buf;
-	u32     rcv_ssthresh;
-	u32     window_clamp;
-	char    send; /* 1 if sending side, 0 if receive */
-	int     space;
-	u32     rtt_est;
-	u32     in_flight;
-	u32     mss_cache;
-	int     snd_buf;
-	int     wmem_queued;
-	int     rmem_alloc; /* number of ofo bytes received */
-	int     rmem_alloc_sub; /* idem, but for subflow */
-	int     dsn;
-	u32     mptcp_snduna;
-	u32     drs_seq;
-	u32     drs_time;
-	int     bw_est;
-	char    mpcb_def;
-	u64	alpha;
 };
 
 static struct {
@@ -119,8 +88,6 @@ static inline int tcp_probe_used(void)
 
 static inline int tcp_probe_avail(void)
 {
-	if (!(bufsize-tcp_probe_used()-1))
-		printk(KERN_ERR "No log space anymore\n");
 	return bufsize - tcp_probe_used() - 1;
 }
 
@@ -133,8 +100,6 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_sock *inet = inet_sk(sk);
-	struct sock *meta_sk = tp->mpc ? (struct sock *)tp->mpcb : sk;
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
 #ifdef CONFIG_MPTCP
 	if (log_interval) {
@@ -148,14 +113,10 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 #endif
 
 	/* Only update if port matches */
-	if ((port == 0 || ntohs(inet->inet_dport) == port
-	     || ntohs(inet->inet_sport) == port)
-	    /* addr != 192.168/16 */
-	    && ((ntohl(inet->inet_saddr) & 0xffff0000) != 0xc0a80000)
-	    && ((ntohl(inet->inet_daddr) & 0xffff0000) != 0xc0a80000)
-	    && ntohs(inet->inet_sport) != 9000
-	    && ntohs(inet->inet_dport) != 9000
-	    && (full || tp->snd_cwnd != tcp_probe.lastcwnd)) {
+	if ((port == 0 || ntohs(inet->inet_dport) == port ||
+	     ntohs(inet->inet_sport) == port) &&
+	    (full || tp->snd_cwnd != tcp_probe.lastcwnd)) {
+
 		spin_lock(&tcp_probe.lock);
 		/* If log fills, just silently drop */
 		if (tcp_probe_avail() > 1) {
@@ -170,42 +131,10 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			p->snd_nxt = tp->snd_nxt;
 			p->snd_una = tp->snd_una;
 			p->snd_cwnd = tp->snd_cwnd;
-			p->snd_wnd = meta_tp->snd_wnd;
+			p->snd_wnd = tp->snd_wnd;
 			p->ssthresh = tcp_current_ssthresh(sk);
 			p->srtt = tp->srtt >> 3;
-			p->rcv_nxt = meta_tp->rcv_nxt;
-			p->copied_seq = meta_tp->copied_seq;
-			p->rcv_wnd = meta_tp->rcv_wnd;
-			p->rcv_buf = sk->sk_rcvbuf;
-			p->rcv_ssthresh = tp->rcv_ssthresh;
-			p->window_clamp = tp->window_clamp;
-			p->send = 0;
-			p->space = tp->rcvq_space.space;
-			p->rtt_est = tp->rcv_rtt_est.rtt;
-			p->in_flight = tp->packets_out;
-			p->mss_cache = tp->mss_cache;
-			p->snd_buf = meta_sk->sk_sndbuf;
-			p->wmem_queued = meta_sk->sk_wmem_queued;
-			p->rmem_alloc = atomic_read(&meta_sk->sk_rmem_alloc);
-			p->rmem_alloc_sub = atomic_read(&sk->sk_rmem_alloc);
-#ifdef CONFIG_MPTCP
-			p->path_index = sk ? tcp_sk(sk)->path_index : 0;
-			p->dsn = TCP_SKB_CB(skb)->data_seq;
-			p->mptcp_snduna = tp->mpc ?
-				mpcb_meta_tp(tp->mpcb)->snd_una : 0;
-			p->drs_seq = tp->rcvq_space.seq;
-			p->drs_time = tp->rcvq_space.time;
-			p->bw_est = tp->cur_bw_est;
-			p->mpcb_def = (tp->mpcb != NULL);
-#ifdef CONFIG_CONG_COUPLED
-			if (tp->mpcb)
-				p->alpha = ((struct mptcp_ccc *)
-					    inet_csk_ca((struct sock *)
-							tp->mpcb))->alpha;
-			else
-				p->alpha = 0;
-#endif /* CONFIG_CONG_COUPLED */
-#endif /* CONFIG_MPTCP */
+
 			tcp_probe.head = (tcp_probe.head + 1) & (bufsize - 1);
 		}
 		tcp_probe.lastcwnd = tp->snd_cwnd;
@@ -213,91 +142,39 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 
 		wake_up(&tcp_probe.wait);
 	}
-#ifdef CONFIG_MPTCP
+
 out:
-#endif
-#ifdef CONFIG_KPROBES
 	jprobe_return();
-#endif
 	return 0;
 }
 
-#ifndef CONFIG_KPROBES
-static int logmsg(struct sock *sk, char *fmt, va_list args)
-{
-	const struct inet_sock *inet = inet_sk(sk);
-	char msg[500];
-	struct timespec tv
-		= ktime_to_timespec(ktime_sub(ktime_get(), tcp_probe.start));
-
-	if (sk->sk_state == TCP_ESTABLISHED
-	    /* addr != 192.168/16 */
-	    && ((ntohl(inet->inet_saddr) & 0xffff0000) != 0xc0a80000)
-	    && ((ntohl(inet->inet_daddr) & 0xffff0000) != 0xc0a80000)) {
-		int len;
-		snprintf(msg, 500, "LOG:%lu.%09lu ", (unsigned long) tv.tv_sec,
-			(unsigned long) tv.tv_nsec);
-		len = strlen(msg);
-		vsnprintf(msg + len, 500 - len, fmt, args);
-
-		spin_lock_bh(&tcp_probe.lock);
-		/* If log fills, just silently drop */
-		if (tcp_probe_avail() > 1) {
-			struct tcp_log *p = tcp_probe.log + tcp_probe.head;
-			p->path_index = -1;
-			strncpy((char *)((&p->path_index) + 1), msg,
-				sizeof(*p) - sizeof(p->path_index));
-			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
-		}
-		spin_unlock_bh(&tcp_probe.lock);
-		wake_up(&tcp_probe.wait);
-	}
-	return 0;
-}
-#endif
-
-/**
- * Hook inserted to be called before each packet transmission.
+/*
+ * Hook inserted to be called before each receive packet.
  * Note: arguments must match tcp_transmit_skb()!
  */
 static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
-			     gfp_t gfp_mask)
+		    gfp_t gfp_mask)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_sock *inet = inet_sk(sk);
-	struct sock *meta_sk = tp->mpc ? (struct sock *)tp->mpcb : sk;
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
 #ifdef CONFIG_MPTCP
 	if (log_interval) {
-		if (!tp->last_snd_probe)
-			tp->last_snd_probe = jiffies;
-		else if (jiffies-tp->last_snd_probe <
+		if (!tp->last_rcv_probe)
+			tp->last_rcv_probe = jiffies;
+		else if (jiffies - tp->last_rcv_probe <
 			 log_interval * HZ / 1000)
 			goto out;
-		tp->last_snd_probe = jiffies;
+		tp->last_rcv_probe = jiffies;
 	}
 #endif
 
-	/* Only update if port matches and state is established*/
-	if (sk->sk_state == TCP_ESTABLISHED &&
-	    (port == 0 || ntohs(inet->inet_dport) == port ||
-	     ntohs(inet->inet_sport) == port)
-	    /* addr != 192.168/16*/
-	    && ((ntohl(inet->inet_saddr) & 0xffff0000) != 0xc0a80000)
-	    && ((ntohl(inet->inet_daddr) & 0xffff0000) != 0xc0a80000)
-	    && ntohs(inet->inet_sport) != 9000 && ntohs(inet->inet_dport)
-			!= 9000
-	    && (full || tp->snd_cwnd != tcp_probe.lastcwnd)) {
+	/* Only update if port matches */
+	if ((port == 0 || ntohs(inet->inet_dport) == port ||
+	     ntohs(inet->inet_sport) == port) &&
+	    (full || tp->snd_cwnd != tcp_probe.lastcwnd)) {
 
-#ifdef CONFIG_KPROBES
-		/* kprobes disables irqs before to call this function.
-		 * So we cannot use the _bh flavour of spin_lock
-		 */
 		spin_lock(&tcp_probe.lock);
-#else
-		spin_lock_bh(&tcp_probe.lock);
-#endif
 		/* If log fills, just silently drop */
 		if (tcp_probe_avail() > 1) {
 			struct tcp_log *p = tcp_probe.log + tcp_probe.head;
@@ -311,84 +188,39 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			p->snd_nxt = tp->snd_nxt;
 			p->snd_una = tp->snd_una;
 			p->snd_cwnd = tp->snd_cwnd;
-			p->snd_wnd = meta_tp->snd_wnd;
+			p->snd_wnd = tp->snd_wnd;
 			p->ssthresh = tcp_current_ssthresh(sk);
 			p->srtt = tp->srtt >> 3;
-			p->rcv_nxt = meta_tp->rcv_nxt;
-			p->copied_seq = meta_tp->copied_seq;
-			p->rcv_wnd = meta_tp->rcv_wnd;
-			p->rcv_buf = sk->sk_rcvbuf;
-			p->rcv_ssthresh = tp->rcv_ssthresh;
-			p->window_clamp = tp->window_clamp;
-			p->send = 1;
-			p->space = tp->rcvq_space.space;
-			p->rtt_est = tp->rcv_rtt_est.rtt;
-			p->in_flight = tp->packets_out;
-			p->mss_cache = tp->mss_cache;
-			p->snd_buf = meta_sk->sk_sndbuf;
-			p->wmem_queued = meta_sk->sk_wmem_queued;
-			p->rmem_alloc = atomic_read(&meta_sk->sk_rmem_alloc);
-			p->rmem_alloc_sub = atomic_read(&sk->sk_rmem_alloc);
-#ifdef CONFIG_MPTCP
-			p->path_index = tp->path_index;
-			p->dsn = TCP_SKB_CB(skb)->data_seq;
-			p->mptcp_snduna = (tp->mpcb) ?
-					mpcb_meta_tp(tp->mpcb)->snd_una : 0;
-			p->drs_seq = tp->rcvq_space.seq;
-			p->drs_time = tp->rcvq_space.time;
-			p->bw_est = tp->cur_bw_est;
-			p->mpcb_def = (tp->mpcb != NULL);
-#ifdef CONFIG_CONG_COUPLED
-			if (tp->mpcb)
-				p->alpha = ((struct mptcp_ccc *)
-						inet_csk_ca((struct sock *)
-							tp->mpcb))->alpha;
-			else
-				p->alpha = 0;
-#endif /* CONFIG_CONG_COUPLED */
-#endif /* CONFIG_MPTCP */
-			tcp_probe.head = (tcp_probe.head + 1) % bufsize;
+
+			tcp_probe.head = (tcp_probe.head + 1) & (bufsize - 1);
 		}
 		tcp_probe.lastcwnd = tp->snd_cwnd;
-#ifdef CONFIG_KPROBES
 		spin_unlock(&tcp_probe.lock);
-#else
-		spin_unlock_bh(&tcp_probe.lock);
-#endif
 
 		wake_up(&tcp_probe.wait);
 	}
-#ifdef CONFIG_MPTCP
+
 out:
-#endif
-#ifdef CONFIG_KPROBES
 	jprobe_return();
-#endif
 	return 0;
 }
 
-#ifdef CONFIG_KPROBES
 static struct jprobe tcp_jprobe_rcv = {
 	.kp = {
 		.symbol_name	= "tcp_rcv_established",
 	},
 	.entry	= jtcp_rcv_established,
-	};
-static struct jprobe tcp_jprobe_send = {
+};
+
+static struct jprobe tcp_jprobe_snd = {
 	.kp = {
 		.symbol_name	= "tcp_transmit_skb",
 	},
 	.entry	= jtcp_transmit_skb,
-	};
-#else
-static struct tcpprobe_ops tcpprobe_fcts = {
-	.rcv_established = jtcp_rcv_established,
-	.transmit_skb = jtcp_transmit_skb,
-	.logmsg = logmsg,
 };
-#endif
 
-static int tcpprobe_open(struct inode *inode, struct file *file)
+
+static int tcpprobe_open(struct inode * inode, struct file * file)
 {
 	/* Reset (empty) log */
 	spin_lock_bh(&tcp_probe.lock);
@@ -401,33 +233,19 @@ static int tcpprobe_open(struct inode *inode, struct file *file)
 
 static int tcpprobe_sprint(char *tbuf, int n)
 {
-	const struct tcp_log *p = tcp_probe.log + tcp_probe.tail;
-	struct timespec tv =
-		ktime_to_timespec(ktime_sub(p->tstamp, tcp_probe.start));
-
-	if (p->path_index == -1)
-		return scnprintf(tbuf, n,
-				 "%s\n", (char *)((&p->path_index) + 1));
+	const struct tcp_log *p
+		= tcp_probe.log + tcp_probe.tail;
+	struct timespec tv
+		= ktime_to_timespec(ktime_sub(p->tstamp, tcp_probe.start));
 
 	return scnprintf(tbuf, n,
-			 "%lu.%09lu %pI4:%u %pI4:%u %d %d %#x %#x %u %u %u "
-			 "%u %#x %#x %u %u %u %u %d"
-			 " %d %u %u %u %d %d %d %d %#x "
-			 "%#x %#x %#x %d %d %llu\n",
-			 (unsigned long) tv.tv_sec,
-			 (unsigned long) tv.tv_nsec,
-			 &p->saddr, ntohs(p->sport),
-			 &p->daddr, ntohs(p->dport),
-			 p->path_index, p->length, p->snd_nxt, p->snd_una,
-			 p->snd_cwnd, p->ssthresh, p->snd_wnd, p->srtt,
-			 p->rcv_nxt, p->copied_seq, p->rcv_wnd, p->rcv_buf,
-			 p->window_clamp, p->rcv_ssthresh, p->send,
-			 p->space, p->rtt_est*1000/HZ, p->in_flight,
-			 p->mss_cache,
-			 p->snd_buf, p->wmem_queued, p->rmem_alloc,
-			 p->rmem_alloc_sub, p->dsn,
-			 p->mptcp_snduna, p->drs_seq, p->drs_time * 1000 / HZ,
-			 ((p->bw_est << 3) / 1000) * HZ, p->mpcb_def, p->alpha);
+			"%lu.%09lu %pI4:%u %pI4:%u %d %#x %#x %u %u %u %u\n",
+			(unsigned long) tv.tv_sec,
+			(unsigned long) tv.tv_nsec,
+			&p->saddr, ntohs(p->sport),
+			&p->daddr, ntohs(p->dport),
+			p->length, p->snd_nxt, p->snd_una,
+			p->snd_cwnd, p->ssthresh, p->snd_wnd, p->srtt);
 }
 
 static ssize_t tcpprobe_read(struct file *file, char __user *buf,
@@ -440,20 +258,18 @@ static ssize_t tcpprobe_read(struct file *file, char __user *buf,
 		return -EINVAL;
 
 	while (cnt < len) {
-		char tbuf[512];
+		char tbuf[164];
 		int width;
 
 		/* Wait for data in buffer */
-		error = wait_event_interruptible_timeout(tcp_probe.wait,
-							 tcp_probe_used() > 0,
-							 3*HZ);
-		if (error == -ERESTARTSYS)
+		error = wait_event_interruptible(tcp_probe.wait,
+						 tcp_probe_used() > 0);
+		if (error)
 			break;
 
 		spin_lock_bh(&tcp_probe.lock);
 		if (tcp_probe.head == tcp_probe.tail) {
-			/* multiple readers race?
-			   (or timeout and nothing arrived) */
+			/* multiple readers race? */
 			spin_unlock_bh(&tcp_probe.lock);
 			continue;
 		}
@@ -503,20 +319,18 @@ static __init int tcpprobe_init(void)
 	if (!proc_net_fops_create(&init_net, procname, S_IRUSR, &tcpprobe_fops))
 		goto err0;
 
-#ifdef CONFIG_KPROBES
 	ret = register_jprobe(&tcp_jprobe_rcv);
-	if (!ret)
-		ret = register_jprobe(&tcp_jprobe_send);
-#else
-	ret = register_probe(&tcpprobe_fcts, 4);
-#endif
 	if (ret)
 		goto err1;
 
-	pr_info("TCP probe registered (port = %d) bufsize = %u, "
-		"log_interval = %d\n",
-		port, bufsize, log_interval);
+	ret = register_jprobe(&tcp_jprobe_snd);
+	if (ret)
+		goto err2;
+
+	pr_info("TCP probe registered (port=%d) bufsize=%u\n", port, bufsize);
 	return 0;
+ err2:
+	unregister_jprobe(&tcp_jprobe_snd);
  err1:
 	proc_net_remove(&init_net, procname);
  err0:
@@ -528,12 +342,8 @@ module_init(tcpprobe_init);
 static __exit void tcpprobe_exit(void)
 {
 	proc_net_remove(&init_net, procname);
-#ifdef CONFIG_KPROBES
+	unregister_jprobe(&tcp_jprobe_snd);
 	unregister_jprobe(&tcp_jprobe_rcv);
-	unregister_jprobe(&tcp_jprobe_send);
-#else
-	unregister_probe(&tcpprobe_fcts, 4);
-#endif
 	kfree(tcp_probe.log);
 }
 module_exit(tcpprobe_exit);

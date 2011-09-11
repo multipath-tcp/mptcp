@@ -963,7 +963,6 @@ int mptcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 			meta_sk->sk_rcvbuf) {
 #ifdef CONFIG_MPTCP_DEBUG
 		struct sk_buff *skb;
-		tcpprobe_logmsg(meta_sk, "PROBLEM NOW");
 		mptcp_debug("%s: not enough rcvbuf: mpcb rcvbuf:%d,"
 				"rmem_alloc:%d\n", __func__,
 				meta_sk->sk_rcvbuf,
@@ -1861,14 +1860,8 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 		tp->reinjected_seq = tcb->end_seq;
 	}
 
-	tcpprobe_logmsg(sk, "after reinj, reinj queue size:%d",
-			skb_queue_len(&mpcb->reinject_queue));
-
 	tcp_push(meta_sk, 0, mptcp_sysctl_mss(), TCP_NAGLE_PUSH);
 
-	if (tp->pf == 0)
-		tcpprobe_logmsg(sk, "pi %d: entering pf state",
-				tp->path_index);
 	tp->pf = 1;
 
 	verif_wqueues(mpcb);

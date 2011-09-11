@@ -73,7 +73,6 @@
 #include <asm/unaligned.h>
 #include <net/netdma.h>
 #include <net/mptcp.h>
-#include <linux/tcp_probe.h>
 #include <linux/completion.h>
 
 int sysctl_tcp_timestamps __read_mostly = 1;
@@ -3820,8 +3819,6 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 	 * log. Something worked...
 	 */
 #ifdef CONFIG_MPTCP
-	if (tp->pf == 1)
-		tcpprobe_logmsg(sk, "pi %d: leaving pf state", tp->path_index);
 	tp->pf = 0;
 #endif
 	sk->sk_err_soft = 0;

@@ -1191,8 +1191,6 @@ new_segment:
 
 wait_for_sndbuf:
 			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
-			tcpprobe_logmsg(sk, "wait_for_sndbuf");
-
 wait_for_memory:
 			if (copied)
 				tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
@@ -1231,7 +1229,6 @@ do_fault:
 	}
 
 do_error:
-	tcpprobe_logmsg(sk, "error in subtcp_sendmsg");
 	if (copied)
 		goto out;
 out_err:

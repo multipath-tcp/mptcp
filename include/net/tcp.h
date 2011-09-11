@@ -31,7 +31,6 @@
 #include <linux/crypto.h>
 #include <linux/cryptohash.h>
 #include <linux/kref.h>
-#include <linux/tcp_probe.h>
 
 #include <net/inet_connection_sock.h>
 #include <net/inet_timewait_sock.h>

@@ -18,7 +18,6 @@
 #include <linux/tcp.h>
 #include <linux/wait.h>
 #include <net/sock.h>
-#include <linux/tcp_probe.h>
 
 /**
  * sk_stream_write_space - stream socket write_space callback.

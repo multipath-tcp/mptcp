@@ -41,7 +41,6 @@
 #include <linux/compiler.h>
 #include <linux/gfp.h>
 #include <linux/module.h>
-#include <linux/tcp_probe.h>
 
 /* People can turn this off for buggy TCP's found in printers etc. */
 int sysctl_tcp_retrans_collapse __read_mostly = 1;
@@ -87,8 +86,6 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 
 	tp->packets_out += tcp_skb_pcount(skb);
 	if (!prior_packets && !meta_sk) {
-		tcpprobe_logmsg(sk, "setting RTO to %d ms",
-				inet_csk(sk)->icsk_rto * 1000 / HZ);
 		inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
 					  inet_csk(sk)->icsk_rto, TCP_RTO_MAX);
 	}
@@ -1186,8 +1183,6 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		       tcp_skb_pcount(skb), skb->len);
 		BUG();
 	}
-
-	tcpprobe_transmit_skb(sk, skb, clone_it, gfp_mask);
 
 	/* If congestion control is doing timestamping, we must
 	 * take such a timestamp before we potentially clone/copy.
