@@ -477,7 +477,6 @@ void mptcp_key_sha1(u64 key, u32 *token);
 void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 		     u32 *hash_out);
 void mptcp_fallback(struct sock *master_sk);
-int mptcp_fallback_infinite(struct tcp_sock *tp, struct sk_buff *skb);
 void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk);
 void mptcp_fin(struct multipath_pcb *mpcb);
 
@@ -692,6 +691,26 @@ static inline void mptcp_include_mpc(struct tcp_sock *tp)
 	if (tp->mpc) {
 		tp->include_mpc = 1;
 	}
+}
+
+static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
+		struct sk_buff *skb)
+{
+	/* If data has been acknowleged on the meta-level, fully_established
+	 * will have been set before and thus we will not fall back to infinite
+	 * mapping. */
+	if (likely(tp->fully_established))
+		return 0;
+
+	if (TCP_SKB_CB(skb)->flags & (TCPHDR_SYN | TCPHDR_FIN))
+		return 0;
+
+	if (is_master_tp(tp))
+		tp->mpcb->send_infinite_mapping = 1;
+	else
+		return MPTCP_FLAG_SEND_RESET;
+
+	return 0;
 }
 
 #if (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))

@@ -2509,27 +2509,6 @@ void mptcp_fallback(struct sock *master_sk)
 	}
 }
 
-int mptcp_fallback_infinite(struct tcp_sock *tp, struct sk_buff *skb)
-{
-	struct multipath_pcb *mpcb = tp->mpcb;
-
-	/* If data has been acknowleged on the meta-level, fully_established
-	 * will have been set before and thus we will not fall back to infinite
-	 * mapping. */
-	if (likely(tp->fully_established))
-		return 0;
-
-	if (TCP_SKB_CB(skb)->flags & (TCPHDR_SYN | TCPHDR_FIN))
-		return 0;
-
-	if (is_master_tp(tp))
-		mpcb->send_infinite_mapping = 1;
-	else
-		return MPTCP_FLAG_SEND_RESET;
-
-	return 0;
-}
-
 void mptcp_set_state(struct sock *sk, int state)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
