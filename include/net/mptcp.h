@@ -437,7 +437,6 @@ void mptcp_del_sock(struct sock *sk);
 void mptcp_update_metasocket(struct sock *sock, struct multipath_pcb *mpcb);
 int mptcp_sendmsg(struct kiocb *iocb, struct sock *master_sk,
 		struct msghdr *msg, size_t size);
-int mptcp_is_available(struct sock *sk);
 void mptcp_reinject_data(struct sock *orig_sk, int clone_it);
 int mptcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb);
 int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices);
@@ -833,10 +832,6 @@ static inline void mptcp_update_metasocket(struct sock *sock,
 		struct multipath_pcb *mpcb) {}
 static inline int mptcp_sendmsg(struct kiocb *iocb, struct sock *master_sk,
 		struct msghdr *msg, size_t size)
-{
-	return 0;
-}
-static inline int mptcp_is_available(struct sock *sk)
 {
 	return 0;
 }

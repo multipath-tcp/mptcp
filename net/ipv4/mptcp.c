@@ -113,6 +113,36 @@ void freeze_rcv_queue(struct sock *sk, const char *func_name)
 #endif
 /* ===================================== */
 
+/* copied from tcp_output.c */
+static inline unsigned int tcp_cwnd_test(struct tcp_sock *tp)
+{
+	u32 in_flight, cwnd;
+
+	in_flight = tcp_packets_in_flight(tp);
+	cwnd = tp->snd_cwnd;
+	if (in_flight < cwnd)
+		return cwnd - in_flight;
+
+	return 0;
+}
+
+static inline int mptcp_is_available(struct sock *sk)
+{
+	struct tcp_sock *tp;
+
+	/* Set of states for which we are allowed to send data */
+	if ((1 << sk->sk_state) & ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT))
+		return 0;
+
+	tp = tcp_sk(sk);
+	if (tp->pf || (tp->mpcb->noneligible & PI_TO_FLAG(tp->path_index)) ||
+	    inet_csk(sk)->icsk_ca_state == TCP_CA_Loss)
+		return 0;
+	if (tcp_cwnd_test(tp))
+		return 1;
+	return 0;
+}
+
 /**
  * This is the scheduler. This function decides on which flow to send
  * a given MSS. If all subflows are found to be busy, NULL is returned
@@ -141,13 +171,13 @@ struct sock *get_available_subflow(struct multipath_pcb *mpcb,
 
 	/* First, find the best subflow */
 	mptcp_for_each_sk(mpcb, sk, tp) {
-		if (!mptcp_is_available(sk))
-			continue;
-
 		/* If the skb has already been enqueued in this sk, try to find
 		 * another one
 		 */
 		if (PI_TO_FLAG(tp->path_index) & skb->path_mask)
+			continue;
+
+		if (!mptcp_is_available(sk))
 			continue;
 
 		if (tp->srtt < min_time_to_peer) {
@@ -900,19 +930,6 @@ void mptcp_update_window_check(struct tcp_sock *tp, struct sk_buff *skb,
 	}
 }
 
-/* copied from tcp_output.c */
-static inline unsigned int tcp_cwnd_test(struct tcp_sock *tp)
-{
-	u32 in_flight, cwnd;
-
-	in_flight = tcp_packets_in_flight(tp);
-	cwnd = tp->snd_cwnd;
-	if (in_flight < cwnd)
-		return cwnd - in_flight;
-
-	return 0;
-}
-
 void mptcp_check_buffers(struct multipath_pcb *mpcb)
 {
 	struct sock *sk, *meta_sk = (struct sock *) mpcb;
@@ -1009,20 +1026,6 @@ int mptcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 		if (!sk_rmem_schedule(sk, size))
 			return -1;
 	}
-	return 0;
-}
-
-int mptcp_is_available(struct sock *sk)
-{
-	/* Set of states for which we are allowed to send data */
-	if ((1 << sk->sk_state) & ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT))
-		return 0;
-	if (tcp_sk(sk)->pf || (tcp_sk(sk)->mpcb->noneligible
-			& PI_TO_FLAG(tcp_sk(sk)->path_index))
-			|| inet_csk(sk)->icsk_ca_state == TCP_CA_Loss)
-		return 0;
-	if (tcp_cwnd_test(tcp_sk(sk)))
-		return 1;
 	return 0;
 }
 
