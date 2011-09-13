@@ -445,7 +445,6 @@ void mptcp_update_sndbuf(struct multipath_pcb *mpcb);
 void mptcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end);
 void mptcp_set_state(struct sock *sk, int state);
 void mptcp_push_frames(struct sock *sk);
-void verif_wqueues(struct multipath_pcb *mpcb);
 void mptcp_skb_entail_init(struct sock *sk, struct sk_buff *skb);
 void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb);
 struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject);
@@ -468,7 +467,6 @@ struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
 		struct request_sock *req, struct request_sock **prev);
 void mptcp_select_window(struct tcp_sock *tp, u32 new_win);
 int mptcp_try_rmem_schedule(struct sock *tp, unsigned int size);
-void mptcp_check_buffers(struct multipath_pcb *mpcb);
 void mptcp_update_window_check(struct tcp_sock *meta_tp, struct sk_buff *skb,
 		u32 data_ack);
 void mptcp_set_data_size(struct tcp_sock *tp, struct sk_buff *skb, int copy);
@@ -888,7 +886,6 @@ static inline void mptcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start,
 		u32 end) {}
 static inline void mptcp_set_state(struct sock *sk, int state) {}
 static inline void mptcp_push_frames(struct sock *sk) {}
-static inline void verif_wqueues(struct multipath_pcb *mpcb) {}
 static inline void mptcp_skb_entail_init(struct sock *sk,
 		struct sk_buff *skb) {}
 static inline void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb) {}
@@ -930,7 +927,6 @@ static inline int mptcp_try_rmem_schedule(struct sock *tp, unsigned int size)
 {
 	return 0;
 }
-static inline void mptcp_check_buffers(struct multipath_pcb *mpcb) {}
 static inline void mptcp_update_window_check(struct tcp_sock *meta_tp,
 		struct sk_buff *skb, u32 data_ack) {}
 static inline void mptcp_set_data_size(struct tcp_sock *tp,

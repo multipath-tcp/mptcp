@@ -111,6 +111,79 @@ void freeze_rcv_queue(struct sock *sk, const char *func_name)
 }
 
 #endif
+
+#ifdef DEBUG_WQUEUES
+void verif_wqueues(struct multipath_pcb *mpcb)
+{
+	struct sock *sk;
+	struct sock *meta_sk = (struct sock *)mpcb;
+	struct tcp_sock *tp;
+	struct sk_buff *skb;
+	int sum;
+
+	local_bh_disable();
+	mptcp_for_each_sk(mpcb, sk, tp) {
+		sum = 0;
+		tcp_for_write_queue(skb, sk) {
+			sum += skb->truesize;
+		}
+		if (sum != sk->sk_wmem_queued) {
+			printk(KERN_ERR "wqueue leak_1: enqueued:%d, recorded "
+					"value:%d\n",
+					sum, sk->sk_wmem_queued);
+
+			tcp_for_write_queue(skb, sk) {
+				printk(KERN_ERR "skb truesize:%d\n",
+						skb->truesize);
+			}
+
+			local_bh_enable();
+			BUG();
+		}
+	}
+	sum = 0;
+	tcp_for_write_queue(skb, meta_sk)
+	sum += skb->truesize;
+	BUG_ON(sum != meta_sk->sk_wmem_queued);
+	local_bh_enable();
+}
+#else
+static inline void verif_wqueues(struct multipath_pcb *mpcb)
+{
+	return;
+}
+#endif
+
+#ifdef DEBUG_RQUEUES
+void verif_rqueues(struct multipath_pcb *mpcb)
+{
+	struct sock *sk;
+	struct sock *meta_sk = (struct sock *)mpcb;
+	struct tcp_sock *tp;
+	struct sk_buff *skb;
+	int sum;
+
+	local_bh_disable();
+	mptcp_for_each_sk(mpcb, sk, tp) {
+		sum = 0;
+		skb_queue_walk(&sk->sk_receive_queue, skb) {
+			sum += skb->truesize;
+		}
+		/* TODO: add meta-rcv and meta-ofo-queues */
+		if (sum != atomic_read(&sk->sk_rmem_alloc)) {
+			printk(KERN_ERR "rqueue leak: enqueued:%d, recorded "
+					"value:%d\n",
+					sum, sk->sk_rmem_alloc);
+
+			local_bh_enable();
+			BUG();
+		}
+	}
+	local_bh_enable();
+}
+#endif
+
+
 /* ===================================== */
 
 /* copied from tcp_output.c */
@@ -174,7 +247,7 @@ struct sock *get_available_subflow(struct multipath_pcb *mpcb,
 		/* If the skb has already been enqueued in this sk, try to find
 		 * another one
 		 */
-		if (PI_TO_FLAG(tp->path_index) & skb->path_mask)
+		if (unlikely(PI_TO_FLAG(tp->path_index) & skb->path_mask))
 			continue;
 
 		if (!mptcp_is_available(sk))
@@ -804,7 +877,7 @@ void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 void mptcp_del_sock(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk), *tp_prev;
-	struct multipath_pcb *mpcb = tp->mpcb;
+	struct multipath_pcb *mpcb;
 	int done = 0;
 
 	/* Need to check for protocol here, because we may enter here for
@@ -815,9 +888,11 @@ void mptcp_del_sock(struct sock *sk)
 	mptcp_debug("%s: Removing subsocket - pi:%d state %d\n", __func__,
 			tp->path_index, sk->sk_state);
 
-	tp_prev = mpcb->connection_list;
 	if (!tp->attached)
 		return;
+
+	mpcb = tp->mpcb;
+	tp_prev = mpcb->connection_list;
 
 	if (tp_prev == tp) {
 		mpcb->connection_list = tp->next;
@@ -851,12 +926,11 @@ void mptcp_del_sock(struct sock *sk)
  */
 void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 {
-	struct tcp_sock *tp;
 	struct sock *meta_sk;
 
 	if (sk->sk_protocol != IPPROTO_TCP || !is_master_tp(tcp_sk(sk)))
 		return;
-	tp = tcp_sk(sk);
+
 	meta_sk = (struct sock *) mpcb;
 
 	inet_sk(meta_sk)->inet_dport = inet_sk(sk)->inet_dport;
@@ -930,7 +1004,7 @@ void mptcp_update_window_check(struct tcp_sock *tp, struct sk_buff *skb,
 	}
 }
 
-void mptcp_check_buffers(struct multipath_pcb *mpcb)
+static void mptcp_check_buffers(struct multipath_pcb *mpcb)
 {
 	struct sock *sk, *meta_sk = (struct sock *) mpcb;
 	struct tcp_sock *tp;
@@ -1032,12 +1106,11 @@ int mptcp_sendmsg(struct kiocb *iocb, struct sock *master_sk,
 		struct msghdr *msg, size_t size)
 {
 	struct tcp_sock *master_tp = tcp_sk(master_sk);
-	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tcp_sk(master_sk));
-	struct sock *meta_sk = (struct sock *) mpcb;
+	struct multipath_pcb *mpcb;
+	struct sock *meta_sk;
 	int copied = 0;
 	int err;
 	int flags = msg->msg_flags;
-	long timeo = sock_sndtimeo(master_sk, flags & MSG_DONTWAIT);
 
 	lock_sock(master_sk);
 
@@ -1048,6 +1121,7 @@ int mptcp_sendmsg(struct kiocb *iocb, struct sock *master_sk,
 	if (!master_tp->mpc) {
 		if ((1 << master_sk->sk_state) & ~(TCPF_ESTABLISHED
 				| TCPF_CLOSE_WAIT)) {
+			long timeo = sock_sndtimeo(master_sk, flags & MSG_DONTWAIT);
 			err = sk_stream_wait_connect(master_sk, &timeo);
 			if (err) {
 				printk(KERN_ERR "err is %d, state %d\n", err,
@@ -1057,7 +1131,7 @@ int mptcp_sendmsg(struct kiocb *iocb, struct sock *master_sk,
 			/* The flag must be re-checked, because it may have
 			 * appeared during sk_stream_wait_connect
 			 */
-			if (!tcp_sk(master_sk)->mpc) {
+			if (!master_tp->mpc) {
 				copied = tcp_sendmsg(iocb, master_sk, msg,
 							size);
 				goto out;
@@ -1068,6 +1142,9 @@ int mptcp_sendmsg(struct kiocb *iocb, struct sock *master_sk,
 			goto out;
 		}
 	}
+
+	mpcb = mpcb_from_tcpsock(master_tp);
+	meta_sk = (struct sock *) mpcb;
 
 	verif_wqueues(mpcb);
 
@@ -2116,82 +2193,6 @@ void mptcp_update_sndbuf(struct multipath_pcb *mpcb)
 		new_sndbuf += sk->sk_sndbuf;
 	meta_sk->sk_sndbuf = new_sndbuf;
 }
-
-#ifdef DEBUG_WQUEUES
-void verif_wqueues(struct multipath_pcb *mpcb)
-{
-	struct sock *sk;
-	struct sock *meta_sk = (struct sock *)mpcb;
-	struct tcp_sock *tp;
-	struct sk_buff *skb;
-	int sum;
-
-	local_bh_disable();
-	mptcp_for_each_sk(mpcb, sk, tp) {
-		sum = 0;
-		tcp_for_write_queue(skb, sk) {
-			sum += skb->truesize;
-		}
-		if (sum != sk->sk_wmem_queued) {
-			printk(KERN_ERR "wqueue leak_1: enqueued:%d, recorded "
-					"value:%d\n",
-					sum, sk->sk_wmem_queued);
-
-			tcp_for_write_queue(skb, sk) {
-				printk(KERN_ERR "skb truesize:%d\n",
-						skb->truesize);
-			}
-
-			local_bh_enable();
-			BUG();
-		}
-	}
-	sum = 0;
-	tcp_for_write_queue(skb, meta_sk)
-	sum += skb->truesize;
-	BUG_ON(sum != meta_sk->sk_wmem_queued);
-	local_bh_enable();
-}
-#else
-void verif_wqueues(struct multipath_pcb *mpcb)
-{
-	return;
-}
-#endif
-
-#ifdef DEBUG_RQUEUES
-void verif_rqueues(struct multipath_pcb *mpcb)
-{
-	struct sock *sk;
-	struct sock *meta_sk = (struct sock *)mpcb;
-	struct tcp_sock *tp;
-	struct sk_buff *skb;
-	int sum;
-
-	local_bh_disable();
-	mptcp_for_each_sk(mpcb, sk, tp) {
-		sum = 0;
-		skb_queue_walk(&sk->sk_receive_queue, skb) {
-			sum += skb->truesize;
-		}
-		/* TODO: add meta-rcv and meta-ofo-queues */
-		if (sum != atomic_read(&sk->sk_rmem_alloc)) {
-			printk(KERN_ERR "rqueue leak: enqueued:%d, recorded "
-					"value:%d\n",
-					sum, sk->sk_rmem_alloc);
-
-			local_bh_enable();
-			BUG();
-		}
-	}
-	local_bh_enable();
-}
-#else
-void verif_rqueues(struct multipath_pcb *mpcb)
-{
-	return;
-}
-#endif
 
 /**
  * Returns the next segment to be sent from the mptcp meta-queue.
