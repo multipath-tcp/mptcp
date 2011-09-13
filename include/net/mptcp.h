@@ -480,6 +480,19 @@ void mptcp_fallback(struct sock *master_sk);
 void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk);
 void mptcp_fin(struct multipath_pcb *mpcb);
 
+static inline int mptcp_skb_cloned(const struct sk_buff *skb,
+		const struct tcp_sock *tp)
+{
+	/* If it does not has a DSS-mapping (MPTCPHDR_SEQ), it does not come
+	 * from the meta-level send-queue and thus dataref is as usual.
+	 * If it has a DSS-mapping dataref is at least 2
+	 */
+	return tp->mpc &&
+	       ((!(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ) && skb_cloned(skb)) ||
+		((TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ) && skb->cloned &&
+		 (atomic_read(&skb_shinfo(skb)->dataref) & SKB_DATAREF_MASK) > 2));
+}
+
 static inline int mptcp_is_ofo_queue_empty(struct tcp_sock *meta_tp)
 {
 	return (!meta_tp->out_of_order_queue.next);
@@ -792,7 +805,11 @@ static inline int mptcp_sysctl_mss(void)
 		__ans;							\
 	})
 
-
+static inline int mptcp_skb_cloned(const struct sk_buff *skb,
+		const struct tcp_sock *tp)
+{
+	return 0;
+}
 static inline struct multipath_pcb *mpcb_from_tcpsock(struct tcp_sock *tp)
 {
 	return NULL;

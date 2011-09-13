@@ -1190,8 +1190,10 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	if (icsk->icsk_ca_ops->flags & TCP_CONG_RTT_STAMP)
 		__net_timestamp(skb);
 
+	tp = tcp_sk(sk);
+
 	if (likely(clone_it)) {
-		if (unlikely(skb_cloned(skb)))
+		if (unlikely((!tp->mpc && skb_cloned(skb)) || mptcp_skb_cloned(skb, tp)))
 			skb = pskb_copy(skb, gfp_mask);
 		else
 			skb = skb_clone(skb, gfp_mask);
@@ -1202,7 +1204,6 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	}
 
 	inet = inet_sk(sk);
-	tp = tcp_sk(sk);
 	tcb = TCP_SKB_CB(skb);
 	memset(&opts, 0, sizeof(opts));
 
@@ -2353,8 +2354,27 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			 * already
 			 */
 			if (!reinject) {
-				subskb = skb_clone(skb, GFP_ATOMIC);
+				/* The segment may be a meta-level
+				 * retransmission. In this case, we also have to
+				 * copy the TCP/IP-headers. (pskb_copy)
+				 */
+				if (unlikely(skb->path_mask & ~PI_TO_FLAG(tp->path_index)))
+					subskb = pskb_copy(skb, GFP_ATOMIC);
+				else
+					subskb = skb_clone(skb, GFP_ATOMIC);
 			} else {
+				if (!skb->cloned)
+					/* pskb_copy has been called in
+					 * __mptcp_reinject_data -
+					 * the dataref == 1 now, but we need to
+					 * increase it, because for mptcp
+					 * dataref is always == 2 when entering
+					 * tcp_transmit_skb (only if the packet
+					 * is still in the lower-layer
+					 * transmit-queue it may be > 2
+					 */
+					atomic_inc(&(skb_shinfo(skb)->dataref));
+
 				skb_unlink(skb, &tp->mpcb->reinject_queue);
 				subskb = skb;
 			}

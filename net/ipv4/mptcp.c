@@ -1811,7 +1811,11 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 	}
 
 	if (clone_it) {
-		skb = skb_clone(orig_skb, GFP_ATOMIC);
+		/* pskb_copy is necessary here, because the TCP/IP-headers
+		 * will be changed when it's going to be reinjected on another
+		 * subflow.
+		 */
+		skb = pskb_copy(orig_skb, GFP_ATOMIC);
 	} else {
 		skb_unlink(orig_skb, &sk->sk_write_queue);
 		skb_get(orig_skb);
