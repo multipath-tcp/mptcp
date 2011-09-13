@@ -688,6 +688,10 @@ static void __mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 {
 	int i;
 	u32 path_indices = 1;	/* Path index 1 is reserved for master sk. */
+
+	if (sock_flag((struct sock*)mpcb, SOCK_DEAD))
+		return;
+
 	for (i = 0; i < mpcb->pa4_size; i++)
 		path_indices |= PI_TO_FLAG(mpcb->pa4[i].path_index);
 
