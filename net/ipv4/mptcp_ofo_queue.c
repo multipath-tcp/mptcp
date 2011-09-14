@@ -10,6 +10,42 @@
  *      This is a binary tree of subqueues. The nodes are wrappers
  *      for either one skb or a sequence of contiguous skbuffs.
  *
+ *      Goals:
+ *      -We want to minimize the number of required pointers
+ *      -We want to minimize the number of memory allocations
+ *
+ *      How this is achieved:
+ *      -skb and nodes can be used interchangeably, the first three
+ *       fields (next,prev,up) are the same in skb and nodes
+ *      -A node needs to be alloc'ed. This is done only when we need
+ *       to store several skbuffs in it. Otherwise the node is the skbuff
+ *      -Sometimes we need to know whether a node is a struct node or
+ *       an skbuff, but we don't want an additional pointer:
+ *       ==a node is a struct node iff its up pointer is NULL==
+ *       In that case the node _always_ contains at least two skbuffs,
+ *       and the parent pointer (up) is stored in the up field of the
+ *       first skbuff in the list. The up() macro hides that complexity.
+ *      -Since this is a binary search tree, the semantics of next/prev pointers
+ *       is changed:
+ *       (i) when an skbuff is in the list of a struct node, its up pointer can
+ *       be anything, and has meaning only for the head skb of the list.
+ *       next/prev have the usual meaning and normal list handling functions
+ *       are used.
+ *       (ii) when an skbuff is used as a tree node, up is the parent node,
+ *       prev is the left child, and next is the right child.
+ *      -When moving inside the tree, we use double pointers. This allows
+ *       easy replacement of child pointer. Should we use simple pointers,
+ *       we would need to figure out whether we need to update the right or left
+ *       pointer of the parent, and that would cost additional if statements.
+ *
+ *      WARNING: when touching this file, there is one thing to be careful with:
+ *      Any modification to a struct node (that is, containing a list of
+ *      skbuffs), must be done in a way that ensures the _head_ of the list has
+ *      an up pointer to the correct parent. That is, any change of the head
+ *      must ensure that the new head holds the correct pointer.
+ *      Note that sometimes no up update is needed, i.e. when the skb set as the
+ *      new head is known to already have the correct up pointer.
+ *
  *	This program is free software; you can redistribute it and/or
  *      modify it under the terms of the GNU General Public License
  *      as published by the Free Software Foundation; either version
@@ -43,9 +79,9 @@ struct node {
 #define high_dsn(n)							\
 	((n)->up ? TCP_SKB_CB((struct sk_buff*)(n))->end_data_seq :	\
 	 TCP_SKB_CB(skb_peek_tail(&(n)->queue))->end_data_seq)
-#define up(n)						\
+#define up(n)								\
 	((n)->up ? (n)->up : (struct node *)skb_peek(&(n)->queue)->up)
-#define up_ptr(n)						\
+#define up_ptr(n)							\
 	((n)->up ? &(n)->up : (struct node **)&skb_peek(&(n)->queue)->up)
 
 #ifdef DEBUG_MPTCP_OFO_TREE
@@ -92,8 +128,7 @@ static void free_node(struct node *n)
 }
 
 /**
- * if @free_old != 0, the memory of old and any skbuff inside is released.
- * @post: @new has replaced @old in the tree. WARNING: @new->up is NOT set
+ * @post: @new has replaced @old in the tree. WARNING: @new->up is NOT set.
  *       It is the responsability of the caller to set it.
  *       (reason: replace_node() may be called on a list that is still empty,
  *       which implies that the normal up pointer for the list, in the first
