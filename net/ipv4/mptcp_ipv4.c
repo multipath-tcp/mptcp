@@ -489,3 +489,133 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 	kfree(old_pa4);
 }
 
+/****** IPv4-Address event handler ******/
+
+/**
+ * React on IP-addr add/rem-events
+ */
+static int mptcp_pm_inetaddr_event(struct notifier_block *this,
+		unsigned long event, void *ptr)
+{
+	return mptcp_pm_addr_event_handler(event, ptr, AF_INET);
+}
+
+/**
+ * React on ifup/down-events
+ */
+static int mptcp_pm_netdev_event(struct notifier_block *this,
+		unsigned long event, void *ptr)
+{
+	struct net_device *dev = ptr;
+	struct in_device *in_dev;
+
+	if (!(event == NETDEV_UP || event == NETDEV_DOWN))
+		return NOTIFY_DONE;
+
+	/* Iterate over the addresses of the interface, then we go over the
+	 * mpcb's to modify them - that way we take tk_hash_lock for a shorter
+	 * time at each iteration. - otherwise we would need to take it from the
+	 * beginning till the end.
+	 */
+	rcu_read_lock();
+	in_dev = __in_dev_get_rcu(dev);
+
+	if (in_dev) {
+		for_primary_ifa(in_dev) {
+			mptcp_pm_inetaddr_event(NULL, event, ifa);
+		} endfor_ifa(in_dev);
+	}
+
+	rcu_read_unlock();
+	return NOTIFY_DONE;
+}
+
+void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
+		struct multipath_pcb *mpcb)
+{
+	int i;
+	struct sock *sk;
+	struct tcp_sock *tp;
+
+	if (ifa->ifa_scope > RT_SCOPE_LINK)
+		return;
+
+	/* Look for the address among the local addresses */
+	for (i = 0; i < mpcb->num_addr4; i++) {
+		if (mpcb->addr4[i].addr.s_addr ==
+			ifa->ifa_local)
+			goto found;
+	}
+	if (mpcb->master_sk->sk_family == AF_INET &&
+			inet_sk(mpcb->master_sk)->inet_saddr ==
+			ifa->ifa_local)
+		goto found;
+
+	/* Not yet in address-list */
+	if (event == NETDEV_UP &&
+	    netif_running(ifa->ifa_dev->dev)) {
+		if (mpcb->num_addr4 >= MPTCP_MAX_ADDR) {
+			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP "
+				"Reached max number of local IPv4 addresses: %d\n",
+				MPTCP_MAX_ADDR);
+			return;
+		}
+
+		printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP adding "
+			"address %pI4 to existing connection with mpcb: %d\n",
+			&ifa->ifa_local, mpcb->mptcp_loc_token);
+		/* update this mpcb */
+		mpcb->addr4[mpcb->num_addr4].addr.s_addr =
+				ifa->ifa_local;
+		mpcb->addr4[mpcb->num_addr4].id =
+				mpcb->num_addr4 + 1;
+		smp_wmb();
+		mpcb->num_addr4++;
+		/* re-send addresses */
+		mpcb->addr4_unsent++;
+		/* re-evaluate paths eventually */
+		mpcb->rx_opt.list_rcvd = 1;
+	}
+	return;
+found:
+	/* Address already in list. Reactivate/Deactivate the
+	 * concerned paths. */
+	mptcp_for_each_sk(mpcb, sk, tp) {
+		if (sk->sk_family != AF_INET ||
+				inet_sk(sk)->inet_saddr != ifa->ifa_local)
+			continue;
+
+		if (event == NETDEV_DOWN) {
+			printk(KERN_DEBUG "MPTCP_PM: NETDEV_DOWN %pI4, path %d\n",
+					&ifa->ifa_local,
+					tp->path_index);
+			mptcp_retransmit_queue(sk);
+			tp->pf = 1;
+		} else if (netif_running(ifa->ifa_dev->dev)) {
+			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP %pI4, path %d\n",
+					&ifa->ifa_local,
+					tp->path_index);
+			tp->pf = 0;
+		}
+	}
+}
+
+static struct notifier_block mptcp_pm_inetaddr_notifier = {
+		.notifier_call = mptcp_pm_inetaddr_event,
+};
+
+static struct notifier_block mptcp_pm_netdev_notifier = {
+		.notifier_call = mptcp_pm_netdev_event,
+};
+
+/****** End of IPv4-Address event handler ******/
+
+/*
+ * General initialization of IPv4 for MPTCP
+ */
+void mptcp_pm_v4_init(void)
+{
+	register_inetaddr_notifier(&mptcp_pm_inetaddr_notifier);
+	register_netdevice_notifier(&mptcp_pm_netdev_notifier);
+}
+

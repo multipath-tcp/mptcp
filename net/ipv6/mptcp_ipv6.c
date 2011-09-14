@@ -22,6 +22,7 @@
 #include <net/mptcp_pm.h>
 #include <net/mptcp_v6.h>
 #include <net/tcp.h>
+#include <net/addrconf.h>
 
 #define AF_INET6_FAMILY(fam) ((fam) == AF_INET6)
 
@@ -498,4 +499,208 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 	mpcb->pa6 = new_pa6;
 	mpcb->pa6_size = pa6_size;
 	kfree(old_pa6);
+}
+
+/****** IPv6-Address event handler ******/
+
+struct dad_waiter_data {
+	struct multipath_pcb *mpcb;
+	struct inet6_ifaddr *ifa;
+};
+
+/**
+ * React on IPv6-addr add/rem-events
+ */
+static int mptcp_pm_inet6_addr_event(struct notifier_block *this,
+		unsigned long event, void *ptr)
+{
+	return mptcp_pm_addr_event_handler(event, ptr, AF_INET6);
+}
+
+static int mptcp_ipv6_is_in_dad_state(struct inet6_ifaddr *ifa)
+{
+	if ((ifa->flags&IFA_F_TENTATIVE) &&
+			ifa->state == INET6_IFADDR_STATE_DAD)
+		return 1;
+	else
+		return 0;
+}
+
+static void dad_wait_timer(unsigned long data);
+
+static void mptcp_ipv6_setup_dad_timer(struct multipath_pcb *mpcb,
+	struct inet6_ifaddr *ifa)
+{
+	struct dad_waiter_data *data;
+
+	if (timer_pending(&mpcb->dad_waiter))
+		return;
+
+	data = kmalloc(sizeof(struct dad_waiter_data), GFP_ATOMIC);
+
+	if (!data)
+		return;
+
+	data->mpcb = mpcb;
+	data->ifa = ifa;
+
+	mpcb->dad_waiter.data = (unsigned long)data;
+	mpcb->dad_waiter.function = dad_wait_timer;
+	if (ifa->idev->cnf.rtr_solicit_delay)
+		mpcb->dad_waiter.expires = jiffies +
+			ifa->idev->cnf.rtr_solicit_delay;
+	else
+		mpcb->dad_waiter.expires = jiffies +
+			MPTCP_IPV6_DEFAULT_DAD_WAIT;
+
+	/* In order not to lose mpcb before the timer expires. */
+	sock_hold(mpcb->master_sk);
+
+	add_timer(&mpcb->dad_waiter);
+}
+
+static void dad_wait_timer(unsigned long arg_data)
+{
+
+	struct dad_waiter_data *data = (struct dad_waiter_data *)arg_data;
+
+	if (!mptcp_ipv6_is_in_dad_state(data->ifa))
+		mptcp_pm_inet6_addr_event(NULL, NETDEV_UP, (void *)data->ifa);
+	else
+		mptcp_ipv6_setup_dad_timer(data->mpcb, data->ifa);
+
+	sock_put(data->mpcb->master_sk);
+	kfree(data);
+}
+
+/**
+ * React on ifup/down-events
+ */
+static int mptcp_pm_v6_netdev_event(struct notifier_block *this,
+		unsigned long event, void *ptr)
+{
+	struct net_device *dev = ptr;
+	struct inet6_dev *in6_dev = NULL;
+
+	if (!(event == NETDEV_UP || event == NETDEV_DOWN))
+		return NOTIFY_DONE;
+
+	/* Iterate over the addresses of the interface, then we go over the
+	 * mpcb's to modify them - that way we take tk_hash_lock for a shorter
+	 * time at each iteration. - otherwise we would need to take it from the
+	 * beginning till the end.
+	 */
+	rcu_read_lock();
+	in6_dev = __in6_dev_get(dev);
+
+	if (in6_dev) {
+		struct inet6_ifaddr *ifa6;
+		list_for_each_entry(ifa6, &in6_dev->addr_list, if_list)
+			mptcp_pm_inet6_addr_event(NULL, event, ifa6);
+	}
+
+	rcu_read_unlock();
+	return NOTIFY_DONE;
+}
+
+void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
+		struct multipath_pcb *mpcb)
+{
+	int i;
+	struct sock *sk;
+	struct tcp_sock *tp;
+	int addr_type = ipv6_addr_type(&ifa->addr);
+
+	if (ifa->scope > RT_SCOPE_LINK)
+		return;
+
+	if (addr_type == IPV6_ADDR_ANY ||
+			addr_type & IPV6_ADDR_LOOPBACK ||
+			addr_type & IPV6_ADDR_LINKLOCAL)
+		return;
+
+	if (mptcp_ipv6_is_in_dad_state(ifa)) {
+		mptcp_ipv6_setup_dad_timer(mpcb, ifa);
+		return;
+	}
+
+	/* Look for the address among the local addresses */
+	for (i = 0; i < mpcb->num_addr6; i++) {
+		if (ipv6_addr_equal(&mpcb->addr6[i].addr,
+				&ifa->addr))
+			goto found;
+	}
+	if (mpcb->master_sk->sk_family == AF_INET6 &&
+			ipv6_addr_equal(&inet6_sk(mpcb->master_sk)->saddr,
+			&ifa->addr))
+		goto found;
+
+	/* Not yet in address-list */
+	if (event == NETDEV_UP &&
+	    netif_running(ifa->idev->dev)) {
+		if (mpcb->num_addr6 >= MPTCP_MAX_ADDR) {
+			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP "
+				"Reached max number of local IPv6 addresses: %d\n",
+				MPTCP_MAX_ADDR);
+			return;
+		}
+
+		printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP adding "
+			"address %pI6 to existing connection with mpcb: %d\n",
+			&ifa->addr, mpcb->mptcp_loc_token);
+		/* update this mpcb */
+		ipv6_addr_copy(&mpcb->addr6[mpcb->num_addr6].addr,
+				&ifa->addr);
+		mpcb->addr6[mpcb->num_addr6].id =
+				mpcb->num_addr6 + 1;
+		smp_wmb();
+		mpcb->num_addr6++;
+		/* re-send addresses */
+		mpcb->addr6_unsent++;
+		/* re-evaluate paths eventually */
+		mpcb->rx_opt.list_rcvd = 1;
+	}
+	return;
+found:
+	/* Address already in list. Reactivate/Deactivate the
+	 * concerned paths. */
+	mptcp_for_each_sk(mpcb, sk, tp) {
+		if (sk->sk_family != AF_INET6 ||
+				!ipv6_addr_equal(&inet6_sk(sk)->saddr,
+						&ifa->addr))
+			continue;
+
+		if (event == NETDEV_DOWN) {
+			printk(KERN_DEBUG "MPTCP_PM: NETDEV_DOWN %pI6, path %d\n",
+					&ifa->addr,
+					tp->path_index);
+			mptcp_retransmit_queue(sk);
+			tp->pf = 1;
+		} else if (netif_running(ifa->idev->dev)) {
+			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP %pI6, path %d\n",
+					&ifa->addr,
+					tp->path_index);
+			tp->pf = 0;
+		}
+	}
+
+}
+
+static struct notifier_block mptcp_pm_inet6_addr_notifier = {
+		.notifier_call = mptcp_pm_inet6_addr_event,
+};
+
+static struct notifier_block mptcp_pm_v6_netdev_notifier = {
+		.notifier_call = mptcp_pm_v6_netdev_event,
+};
+
+/****** End of IPv6-Address event handler ******/
+
+/*
+ * General initialization of IPv6 for MPTCP
+ */
+void mptcp_pm_v6_init(void)
+{
+	register_inet6addr_notifier(&mptcp_pm_inet6_addr_notifier);
+	register_netdevice_notifier(&mptcp_pm_v6_netdev_notifier);
 }

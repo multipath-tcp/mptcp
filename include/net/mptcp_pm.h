@@ -110,6 +110,7 @@ void mptcp_subflow_attach(struct multipath_pcb *mpcb, struct sock *subsk);
 int mptcp_syn_recv_sock(struct sk_buff *skb);
 void mptcp_update_patharray(struct multipath_pcb *mpcb);
 void __mptcp_update_patharray_ports(struct multipath_pcb *mpcb);
+int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family);
 
 #else /* CONFIG_MPTCP_PM */
 

@@ -29,6 +29,7 @@
 #include <net/ip6_checksum.h>
 #include <net/inet6_connection_sock.h>
 #include <net/mptcp_v6.h>
+#include <net/addrconf.h>
 #endif
 
 #define hash_tk(token) \
@@ -811,148 +812,39 @@ diffPorts:
 	mptcp_add_sock(mpcb, tcp_sk(subsk));
 }
 
-static void mptcp_addr_event_handler(struct in_ifaddr *ifa, unsigned long event)
+/**
+ * React on IPv4+IPv6-addr add/rem-events
+ */
+int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 {
-	int i;
 	struct multipath_pcb *mpcb;
+	int i;
 
-	if (ifa->ifa_scope > RT_SCOPE_LINK)
-		return;
+	if (!(event == NETDEV_UP || event == NETDEV_DOWN))
+		return NOTIFY_DONE;
 
 	/* Now we iterate over the mpcb's */
 	read_lock_bh(&tk_hash_lock);
 
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
 		list_for_each_entry(mpcb, &tk_hashtable[i], collide_tk) {
-			int i;
-			struct sock *sk;
-			struct tcp_sock *tp;
-
 			if (!tcp_sk(mpcb->master_sk)->mpc ||
 			    mpcb->infinite_mapping)
 				continue;
 
 			bh_lock_sock(mpcb->master_sk);
 
-			/* Look for the address among the local addresses */
-			for (i = 0; i < mpcb->num_addr4; i++) {
-				if (mpcb->addr4[i].addr.s_addr ==
-					ifa->ifa_local)
-					goto found;
-			}
-			if (inet_sk(mpcb->master_sk)->inet_saddr ==
-					ifa->ifa_local)
-				goto found;
+			if (family == AF_INET)
+				mptcp_pm_addr4_event_handler((struct in_ifaddr *)ptr, event, mpcb);
+			else
+				mptcp_pm_addr6_event_handler((struct inet6_ifaddr *)ptr, event, mpcb);
 
-			/* Not yet in address-list */
-			if (event == NETDEV_UP &&
-			    netif_running(ifa->ifa_dev->dev)) {
-				if (mpcb->num_addr4 >= MPTCP_MAX_ADDR) {
-					printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP "
-						"Reached max number of local IPv4 addresses: %d\n",
-						MPTCP_MAX_ADDR);
-					goto next;
-				}
-
-				printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP adding "
-					"address %pI4 to existing connection with mpcb: %d\n",
-					&ifa->ifa_local, mpcb->mptcp_loc_token);
-				/* update this mpcb */
-				mpcb->addr4[mpcb->num_addr4].addr.s_addr =
-						ifa->ifa_local;
-				mpcb->addr4[mpcb->num_addr4].id =
-						mpcb->num_addr4 + 1;
-				smp_wmb();
-				mpcb->num_addr4++;
-				/* re-send addresses */
-				mpcb->addr4_unsent++;
-				/* re-evaluate paths eventually */
-				mpcb->rx_opt.list_rcvd = 1;
-			}
-
-			goto next;
-
-found:
-			/* Address already in list. Reactivate/Deactivate the
-			 * concerned paths. */
-			mptcp_for_each_sk(mpcb, sk, tp) {
-				if (inet_sk(sk)->inet_saddr != ifa->ifa_local)
-					continue;
-
-				if (event == NETDEV_DOWN) {
-					printk(KERN_DEBUG "MPTCP_PM: NETDEV_DOWN %pI4, path %d\n",
-							&ifa->ifa_local,
-							tp->path_index);
-					mptcp_retransmit_queue(sk);
-					tp->pf = 1;
-				} else if (netif_running(ifa->ifa_dev->dev)) {
-					printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP %pI4, path %d\n",
-							&ifa->ifa_local,
-							tp->path_index);
-					tp->pf = 0;
-				}
-			}
-next:
 			bh_unlock_sock(mpcb->master_sk);
 		}
 	}
 	read_unlock_bh(&tk_hash_lock);
-}
-
-/**
- * React on ifup/down-events
- */
-static int mptcp_pm_netdev_event(struct notifier_block *this,
-		unsigned long event, void *ptr)
-{
-	struct net_device *dev = ptr;
-	struct in_device *in_dev;
-
-	if (!(event == NETDEV_UP || event == NETDEV_DOWN))
-		return NOTIFY_DONE;
-
-	/* Iterate over the addresses of the interface, then we go over the
-	 * mpcb's to modify them - that way we take tk_hash_lock for a shorter
-	 * time at each iteration. - otherwise we would need to take it from the
-	 * beginning till the end.
-	 */
-	rcu_read_lock();
-	in_dev = __in_dev_get_rcu(dev);
-	if (!in_dev)
-		goto out_unlock;
-
-	for_primary_ifa(in_dev) {
-		mptcp_addr_event_handler(ifa, event);
-	} endfor_ifa(in_dev);
-
-out_unlock:
-	rcu_read_unlock();
 	return NOTIFY_DONE;
 }
-
-/**
- * React on IP-addr add/rem-events
- */
-static int mptcp_pm_inetaddr_event(struct notifier_block *this,
-		unsigned long event, void *ptr)
-{
-	struct in_ifaddr *ifa = (struct in_ifaddr *) ptr;
-
-	if (!(event == NETDEV_UP || event == NETDEV_DOWN))
-		return NOTIFY_DONE;
-
-	mptcp_addr_event_handler(ifa, event);
-
-	return NOTIFY_DONE;
-}
-
-static struct notifier_block mptcp_pm_inetaddr_notifier = {
-		.notifier_call = mptcp_pm_inetaddr_event,
-};
-
-static struct notifier_block mptcp_pm_netdev_notifier = {
-		.notifier_call = mptcp_pm_netdev_event,
-};
 
 /*
  *	Output /proc/net/mptcp_pm
@@ -1024,9 +916,8 @@ static int __init mptcp_pm_init(void)
 	rwlock_init(&tk_hash_lock);
 	spin_lock_init(&mptcp_reqsk_hlock);
 
-	/* setup notification chain for interfaces */
-	register_inetaddr_notifier(&mptcp_pm_inetaddr_notifier);
-	register_netdevice_notifier(&mptcp_pm_netdev_notifier);
+	mptcp_pm_v6_init();
+	mptcp_pm_v4_init();
 
 	return register_pernet_subsys(&mptcp_pm_proc_ops);
 }

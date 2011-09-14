@@ -40,6 +40,9 @@ int mptcp_v4_send_synack(struct sock *meta_sk,
 			struct request_sock *req,
 			struct request_values *rvp);
 void mptcp_v4_update_patharray(struct multipath_pcb *mpcb);
+void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
+		struct multipath_pcb *mpcb);
+void mptcp_pm_v4_init(void);
 
 #else
 
