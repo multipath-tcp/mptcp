@@ -128,7 +128,7 @@ static void free_node(struct node *n)
 }
 
 /**
- * @post: @new has replaced @old in the tree. WARNING: @new->up is NOT set.
+ * @post: @new has replaced @old in the tree. WARNING: up_ptr(@new) is NOT set.
  *       It is the responsability of the caller to set it.
  *       (reason: replace_node() may be called on a list that is still empty,
  *       which implies that the normal up pointer for the list, in the first
@@ -160,7 +160,12 @@ static struct node *concat(struct node *n1, struct node *n2,
 			   struct node **aggreg)
 {
 	struct node *old = *aggreg;
-	/* Note: segment enqueing _must_ be done after replace_node()
+	/* Concatenating necessarily results in using a sequence of skbuffs.
+	 * If one of n1 or n2 is already a sequence, we reuse the allocated
+	 * memory. If both are a sequence, we drop one. If none is a sequence,
+	 * we alloc one.
+	 *
+	 * Note: segment enqueing _must_ be done after replace_node()
 	 * in any case, otherwise replace_node sets wrong pointers.
 	 */
 	if (n1->up && n2->up) {
@@ -316,6 +321,9 @@ static void compact_tree(struct node **root)
 static int mptcp_ofo_insert(struct node **root, struct sk_buff *skb,
 			    struct node *parent)
 {
+	/* Find the insertion point, as the root of the correct subtree.
+	 * Once this is found, only the subtree rooted at root will be modified.
+	 */
 	while(*root) {
 		if (before(TCP_SKB_CB(skb)->end_data_seq, low_dsn(*root))) {
 			parent = *root;
@@ -342,6 +350,7 @@ static int mptcp_ofo_insert(struct node **root, struct sk_buff *skb,
 	}
 	if (!after(TCP_SKB_CB(skb)->data_seq, low_dsn(*root)) &&
 	    !before(TCP_SKB_CB(skb)->end_data_seq, high_dsn(*root))) {
+		/* Current root fully covered by new segment */
 		struct node *old = *root;
 		replace_node(root, (struct node *)skb);
 		skb->up = (struct sk_buff *)up(old);
@@ -350,12 +359,13 @@ static int mptcp_ofo_insert(struct node **root, struct sk_buff *skb,
 		return 0;
 	}
 	if (before(TCP_SKB_CB(skb)->data_seq, low_dsn(*root))) {
+		/* left-merge */
 		if (!concat((struct node *)skb, *root, root))
 			BUG();
 		compact_tree(root);
 		return 0;
 	}
-	/* Last option, right merge */
+	/* Last option, right-merge */
 	if (!concat(*root, (struct node *)skb, root))
 		BUG();
 	compact_tree(root);
@@ -394,6 +404,10 @@ void mptcp_ofo_queue(struct multipath_pcb *mpcb)
 	while (left_most->prev)
 		left_most = left_most->prev;
 
+	/* In the normal case we do just one iteration.
+	 * Only when the new rcv_nxt covers several nodes do we
+	 * need to iterate.
+	 */
 	while(left_most != head) {
 		struct node *parent = up(left_most);
 
@@ -407,7 +421,9 @@ void mptcp_ofo_queue(struct multipath_pcb *mpcb)
 			if (left_most->next)
 				*up_ptr(left_most->next) = parent;
 			left_most = parent;
-
+			/* If tofree had a right child with itself aleft child,
+			 * the new left_most may be far away now.
+			 */
 			while (left_most->prev)
 				left_most = left_most->prev;
 			free_node(tofree);
