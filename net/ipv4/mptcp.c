@@ -1004,6 +1004,7 @@ void mptcp_update_window_check(struct tcp_sock *tp, struct sk_buff *skb,
 	}
 }
 
+#ifdef CONFIG_MPTCP_DEBUG
 static void mptcp_check_buffers(struct multipath_pcb *mpcb)
 {
 	struct sock *sk, *meta_sk = (struct sock *) mpcb;
@@ -1027,6 +1028,7 @@ static void mptcp_check_buffers(struct multipath_pcb *mpcb)
 			    (skb ? mptcp_skb_data_seq(skb) : 0));
 	}
 }
+#endif
 
 int mptcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 {
