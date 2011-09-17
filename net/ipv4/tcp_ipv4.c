@@ -653,14 +653,16 @@ void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 #endif
 #ifdef CONFIG_MPTCP
 	if (sk && tcp_sk(sk)->csum_error) {
-		struct mp_fail *mpfail = (struct mp_fail *)&rep.fail_opt[2];
+		struct mp_fail *mpfail = (struct mp_fail *)&(rep.fail_opt[2]);
+		mptcp_debug("%s Debugging BUG#82 - add MP_FAIL to reset on pi %d\n",
+				__func__, tcp_sk(sk)->path_index);
 		/* We had a checksum-error? -> Include MP_FAIL */
 		rep.fail_opt[0] = TCPOPT_MPTCP;
 		rep.fail_opt[1] = MPTCP_SUB_LEN_FAIL;
 		mpfail->sub = MPTCP_SUB_FAIL;
 		mpfail->data_seq = htonl(TCP_SKB_CB(skb)->data_seq);
 
-		arg.iov[0].iov_len += MPTCP_SUB_LEN_FAIL;
+		arg.iov[0].iov_len += MPTCP_SUB_LEN_FAIL_ALIGN;
 		rep.th.doff = arg.iov[0].iov_len / 4;
 	}
 #endif /* CONFIG_MPTCP */

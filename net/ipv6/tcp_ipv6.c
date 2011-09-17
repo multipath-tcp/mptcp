@@ -1047,7 +1047,7 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack, u32 win,
 #endif
 #ifdef CONFIG_MPTCP
 	if (rst && sk && tcp_sk(sk)->csum_error)
-		tot_len += MPTCP_SUB_LEN_FAIL;
+		tot_len += MPTCP_SUB_LEN_FAIL_ALIGN;
 #endif
 	buff = alloc_skb(MAX_HEADER + sizeof(struct ipv6hdr) + tot_len,
 			 GFP_ATOMIC);

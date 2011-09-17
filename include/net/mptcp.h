@@ -201,6 +201,7 @@ struct multipath_pcb {
 
 #define MPTCP_SUB_FAIL		6
 #define MPTCP_SUB_LEN_FAIL	8
+#define MPTCP_SUB_LEN_FAIL_ALIGN	8
 
 #ifdef DEBUG_PITOFLAG
 static inline int PI_TO_FLAG(int pi)
