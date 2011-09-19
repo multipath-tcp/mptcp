@@ -23,12 +23,6 @@ struct mptcp_ccc {
 	u64 alpha;
 };
 
-static inline int mptcp_sk_can_send(struct sock *sk)
-{
-	return sk->sk_state == TCP_ESTABLISHED ||
-	       sk->sk_state == TCP_CLOSE_WAIT;
-}
-
 u32 mptcp_get_crt_cwnd(struct tcp_sock *tp)
 {
 	struct inet_connection_sock *icsk = inet_csk((struct sock *) tp);

@@ -741,6 +741,7 @@ static inline void tcp_set_rto(struct sock *sk)
 	 * guarantees that rto is higher.
 	 */
 	tcp_bound_rto(sk);
+	mptcp_set_rto(sk);
 }
 
 /* Save metrics learned by this TCP session.
@@ -4515,7 +4516,11 @@ static void tcp_ofo_queue(struct sock *sk)
 			__skb_queue_tail(&sk->sk_receive_queue, skb);
 		}
 
-		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
+		if (!tp->mpc)
+			tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
+		else if (before(tp->rcv_nxt, TCP_SKB_CB(skb)->end_seq))
+			tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
+
 		if (tcp_hdr(skb)->fin)
 			tcp_fin(skb, sk, tcp_hdr(skb));
 		if (eaten > 0)
@@ -4618,7 +4623,9 @@ queue_and_out:
 				__skb_queue_tail(&sk->sk_receive_queue, skb);
 			}
 		}
-		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
+		if (!tp->mpc || before(tp->rcv_nxt, TCP_SKB_CB(skb)->end_seq))
+			tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
+
 		if (skb->len)
 			tcp_event_data_recv(sk, skb);
 		if (th->fin)

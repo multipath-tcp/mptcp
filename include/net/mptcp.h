@@ -480,6 +480,7 @@ void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 void mptcp_fallback(struct sock *master_sk);
 void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk);
 void mptcp_fin(struct multipath_pcb *mpcb);
+void mptcp_retransmit_timer(struct sock *meta_sk);
 
 static inline int mptcp_skb_cloned(const struct sk_buff *skb,
 		const struct tcp_sock *tp)
@@ -705,6 +706,39 @@ static inline void mptcp_retransmit_queue(struct sock *sk)
 		mptcp_reinject_data(sk, 1);
 }
 
+static inline void mptcp_set_rto(struct sock *sk)
+{
+	struct tcp_sock *tp = tcp_sk(sk), *tp_it;
+	struct sock *sk_it;
+	__u32 max_rto = 0;
+
+	if (!tp->mpc || !tp->mpcb)
+		return;
+
+	mptcp_for_each_sk(tp->mpcb, sk_it, tp_it) {
+		if (sk_it->sk_state == TCP_ESTABLISHED &&
+		    inet_csk(sk_it)->icsk_rto > max_rto)
+			max_rto = inet_csk(sk_it)->icsk_rto;
+	}
+
+	inet_csk((struct sock *)tp->mpcb)->icsk_rto = max_rto * 2;
+}
+
+/* Maybe we could merge this with tcp_rearm_rto().
+ * But then we will have to add if's in the tcp-stack.
+ */
+static inline void mptcp_reset_xmit_timer(struct sock *meta_sk)
+{
+	if (!is_meta_sk(meta_sk))
+		return;
+
+	if (!tcp_sk(meta_sk)->packets_out)
+		inet_csk_clear_xmit_timer(meta_sk, ICSK_TIME_RETRANS);
+	else
+		inet_csk_reset_xmit_timer(meta_sk, ICSK_TIME_RETRANS,
+				  inet_csk(meta_sk)->icsk_rto, TCP_RTO_MAX);
+}
+
 static inline void mptcp_include_mpc(struct tcp_sock *tp)
 {
 	if (tp->mpc) {
@@ -730,6 +764,12 @@ static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
 		return MPTCP_FLAG_SEND_RESET;
 
 	return 0;
+}
+
+static inline int mptcp_sk_can_send(struct sock *sk)
+{
+	return sk->sk_state == TCP_ESTABLISHED ||
+	       sk->sk_state == TCP_CLOSE_WAIT;
 }
 
 static inline void mptcp_mp_fail_rcvd(struct multipath_pcb *mpcb,
@@ -924,6 +964,9 @@ static inline void mptcp_release_sock(struct sock *sk) {}
 static inline void mptcp_clean_rtx_queue(struct sock *meta_sk) {}
 static inline void mptcp_clean_rtx_infinite(struct sk_buff *skb,
 		struct sock *sk) {}
+static inline void mptcp_retransmit_timer(struct sock *meta_sk) {}
+static inline void mptcp_set_rto(struct sock *sk) {}
+static inline void mptcp_reset_xmit_timer(struct sock *meta_sk) {}
 static inline void mptcp_send_fin(struct sock *meta_sk) {}
 static inline void mptcp_parse_options(uint8_t *ptr, int opsize,
 		struct tcp_options_received *opt_rx,

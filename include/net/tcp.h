@@ -460,6 +460,7 @@ extern int tcp_send_synack(struct sock *);
 extern void tcp_push_one(struct sock *, unsigned int mss_now);
 extern void tcp_send_ack(struct sock *sk);
 extern void tcp_send_delayed_ack(struct sock *sk);
+extern void __pskb_trim_head(struct sk_buff *skb, int len);
 
 /* tcp_input.c */
 extern void tcp_cwnd_application_limited(struct sock *sk);
@@ -470,6 +471,7 @@ static inline void tcp_clear_xmit_timers(struct sock *sk)
 {
 	inet_csk_clear_xmit_timers(sk);
 }
+extern void tcp_write_timer(unsigned long data);
 
 extern unsigned int tcp_sync_mss(struct sock *sk, u32 pmtu);
 extern unsigned int tcp_current_mss(struct sock *sk);

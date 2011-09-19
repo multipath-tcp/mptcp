@@ -33,7 +33,6 @@ int sysctl_tcp_retries2 __read_mostly = TCP_RETR2;
 int sysctl_tcp_orphan_retries __read_mostly;
 int sysctl_tcp_thin_linear_timeouts __read_mostly;
 
-static void tcp_write_timer(unsigned long);
 static void tcp_delack_timer(unsigned long);
 static void tcp_keepalive_timer (unsigned long data);
 
@@ -460,15 +459,13 @@ out_reset_timer:
 out:;
 }
 
-static void tcp_write_timer(unsigned long data)
+void tcp_write_timer(unsigned long data)
 {
 	struct sock *sk = (struct sock *)data;
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sock *master_sk = tp->mpcb ? tp->mpcb->master_sk : sk;
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	int event;
-
-	BUG_ON(is_meta_sk(sk));
 
 	bh_lock_sock(master_sk);
 	if (sock_owned_by_user(master_sk)) {
@@ -490,7 +487,10 @@ static void tcp_write_timer(unsigned long data)
 
 	switch (event) {
 	case ICSK_TIME_RETRANS:
-		tcp_retransmit_timer(sk);
+		if (is_meta_sk(sk))
+			mptcp_retransmit_timer(sk);
+		else
+			tcp_retransmit_timer(sk);
 		break;
 	case ICSK_TIME_PROBE0:
 		tcp_probe_timer(sk);

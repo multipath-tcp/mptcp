@@ -432,8 +432,7 @@ static void mptcp_sock_def_error_report(struct sock *sk)
 	/* If there exists more than one working subflow, we don't wake up the
 	 * application, as the mptcp-connection is still alive */
 	if (tcp_sk(sk)->mpc &&
-	    tcp_sk(sk)->mpcb->cnt_established >
-				((sk->sk_state == TCP_ESTABLISHED) ? 1 : 0)) {
+	    tcp_sk(sk)->mpcb->cnt_established > mptcp_sk_can_send(sk) ? 1 : 0) {
 		sk->sk_err = 0;
 		sock_orphan(sk);
 		return;
@@ -677,6 +676,119 @@ void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 }
 
 
+/**
+ * Reinject data from one TCP subflow to the meta_sk
+ * The @skb given pertains to the original tp, that keeps it
+ * because the skb is still sent on the original tp. But additionnally,
+ * it is sent on the other subflow.
+ *
+ * @pre : @sk must be the meta_sk
+ */
+static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
+		struct sock *sk, int clone_it)
+{
+	struct sk_buff *skb;
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *tmp_tp;
+	struct sock *sk_it;
+
+	/* A segment can be added to the reinject queue only if
+	 * there is at least one working subflow that has never sent
+	 * this data */
+	mptcp_for_each_sk(meta_tp->mpcb, sk_it, tmp_tp) {
+		if (sk_it->sk_state != TCP_ESTABLISHED || tmp_tp->pf)
+			continue;
+		/* If the skb has already been enqueued in this sk, try to find
+		 * another one */
+		if (PI_TO_FLAG(tmp_tp->path_index) & orig_skb->path_mask)
+			continue;
+
+		/* candidate subflow found, we can reinject */
+		break;
+	}
+
+	if (!sk_it) {
+		mptcp_debug("%s: skb already injected to all paths\n",
+				__func__);
+		return 1; /* no candidate found */
+	}
+
+	if (clone_it) {
+		/* pskb_copy is necessary here, because the TCP/IP-headers
+		 * will be changed when it's going to be reinjected on another
+		 * subflow.
+		 */
+		skb = pskb_copy(orig_skb, GFP_ATOMIC);
+	} else {
+		skb_unlink(orig_skb, &sk->sk_write_queue);
+		skb_get(orig_skb);
+		mptcp_wmem_free_skb(sk, orig_skb);
+		skb = orig_skb;
+	}
+	if (unlikely(!skb))
+		return -ENOBUFS;
+	skb->sk = meta_sk;
+
+	skb_queue_tail(&meta_tp->mpcb->reinject_queue, skb);
+	return 0;
+}
+
+/* Inserts data into the reinject queue */
+void mptcp_reinject_data(struct sock *sk, int clone_it)
+{
+	struct sk_buff *skb_it, *tmp;
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct multipath_pcb *mpcb = tp->mpcb;
+	struct sock *meta_sk = (struct sock *) mpcb;
+
+	BUG_ON(is_meta_sk(sk));
+
+	verif_wqueues(mpcb);
+
+	skb_queue_walk_safe(&sk->sk_write_queue, skb_it, tmp) {
+		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb_it);
+		/* seq > reinjected_seq , to avoid reinjecting several times
+		 * the same segment. This does not duplicate functionality with
+		 * skb->path_mask, because the path_mask ensures the skb is not
+		 * scheduled twice to the same subflow. OTOH, the seq
+		 * check ensures that at any time, _one_ subflow exactly
+		 * is allowed to reinject it, not all of them. That one
+		 * subflow is the one that received it last.
+		 * Also, subflow syn's and fin's are not reinjected
+		 */
+		if (before(tcb->seq, tp->reinjected_seq) ||
+		    tcb->flags & TCPHDR_SYN ||
+		    (tcb->flags & TCPHDR_FIN &&
+		     !(tcb->mptcp_flags & MPTCPHDR_FIN)))
+			continue;
+		skb_it->path_mask |= PI_TO_FLAG(tp->path_index);
+		if (__mptcp_reinject_data(skb_it, meta_sk, sk, clone_it) < 0)
+			break;
+		tp->reinjected_seq = tcb->end_seq;
+	}
+
+	tcp_push(meta_sk, 0, mptcp_sysctl_mss(), TCP_NAGLE_PUSH);
+
+	tp->pf = 1;
+
+	verif_wqueues(mpcb);
+}
+
+void mptcp_retransmit_timer(struct sock *meta_sk)
+{
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
+
+	if (!meta_tp->packets_out)
+		return;
+
+	__mptcp_reinject_data(tcp_write_queue_head(meta_sk), meta_sk, NULL, 1);
+	tcp_push(meta_sk, 0, mptcp_sysctl_mss(), TCP_NAGLE_PUSH);
+
+	inet_csk_reset_xmit_timer(meta_sk, ICSK_TIME_RETRANS,
+			meta_icsk->icsk_rto, TCP_RTO_MAX);
+}
+
+
 int mptcp_alloc_mpcb(struct sock *master_sk, struct request_sock *req,
 		gfp_t flags)
 {
@@ -785,6 +897,11 @@ int mptcp_alloc_mpcb(struct sock *master_sk, struct request_sock *req,
 			       &mpcb->rx_opt.mptcp_rem_token);
 	}
 
+	setup_timer(&meta_icsk->icsk_retransmit_timer, tcp_write_timer,
+			(unsigned long)meta_sk);
+	inet_csk_reset_xmit_timer(meta_sk, ICSK_TIME_RETRANS,
+				  inet_csk(meta_sk)->icsk_rto, TCP_RTO_MAX);
+
 	/* Adding the mpcb in the token hashtable */
 	mptcp_hash_insert(mpcb, mpcb->mptcp_loc_token);
 
@@ -815,6 +932,9 @@ void mpcb_release(struct multipath_pcb *mpcb)
 	tcp_write_queue_purge(meta_sk);
 	mptcp_purge_ofo_queue(tcp_sk(meta_sk));
 	sk_stream_kill_queues(meta_sk);
+
+	inet_csk(meta_sk)->icsk_pending = 0;
+	sk_stop_timer(meta_sk, &inet_csk(meta_sk)->icsk_retransmit_timer);
 
 #ifdef CONFIG_MPTCP_PM
 	mptcp_pm_release(mpcb);
@@ -1326,14 +1446,26 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
  */
 static int mptcp_verif_dss_csum(struct sock *sk)
 {
+	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *tmp, *last = NULL;
 	__wsum csum_tcp = 0; /* cumulative checksum of pld + mptcp-header */
 	int ans = 1, overflowed = 0, offset = 0, dss_csum_added = 0;
 	char last_byte = 0; /* byte to be added to the next csum */
 
 	skb_queue_walk(&sk->sk_receive_queue, tmp) {
-		unsigned int csum_len = tmp->len;
+		unsigned int csum_len;
 		unsigned int len;
+
+		if (!after(tp->map_subseq + tp->map_data_len, TCP_SKB_CB(tmp)->seq))
+			break;
+
+		if (before(tp->map_subseq + tp->map_data_len, TCP_SKB_CB(tmp)->end_seq))
+			/* Mapping ends in the middle of the packet -
+			 * csum only these bytes */
+			csum_len = tp->map_subseq + tp->map_data_len -
+					TCP_SKB_CB(tmp)->seq;
+		else
+			csum_len = tmp->len;
 
 		offset = 0;
 		if (overflowed) {
@@ -1377,7 +1509,6 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 
 	/* Now, checksum must be 0 */
 	if (unlikely(csum_fold(csum_tcp))) {
-		struct tcp_sock *tp = tcp_sk(sk);
 		mptcp_debug("%s csum is wrong: %#x data_seq %u\n", __func__,
 			    csum_fold(csum_tcp), TCP_SKB_CB(last)->data_seq);
 		tp->csum_error = 1;
@@ -1448,6 +1579,82 @@ static inline void mptcp_reset_mapping(struct tcp_sock *tp)
 	tp->map_data_len = 0;
 	tp->map_data_seq = 0;
 	tp->map_subseq = 0;
+}
+
+/* The DSS-mapping received on the sk only covers the second half of the skb
+ * (cut at seq). We trim the head from the skb.
+ * Data will be freed upon kfree().
+ *
+ * Inspired by tcp_trim_head().
+ */
+static void mptcp_skb_trim_head(struct sk_buff *skb, struct sock *sk, u32 seq)
+{
+	int len = seq - TCP_SKB_CB(skb)->seq;
+
+	if (len < skb_headlen(skb))
+		__skb_pull(skb, len);
+	else
+		__pskb_trim_head(skb, len - skb_headlen(skb));
+
+	TCP_SKB_CB(skb)->seq += len;
+
+	skb->truesize -= len;
+	atomic_sub(len, &sk->sk_rmem_alloc);
+	sk_mem_uncharge(sk, len);
+}
+
+/* The DSS-mapping received on the sk only covers the first half of the skb
+ * (cut at seq). We create a second skb (@return), and queue it in the rcv-queue
+ * as further packets may resolve the mapping of the second half of data.
+ *
+ * Inspired by tcp_fragment().
+ */
+static int mptcp_skb_split_tail(struct sk_buff *skb, struct sock *sk, u32 seq)
+{
+	struct sk_buff *buff;
+	int nsize;
+	int nlen, len;
+	u8 flags;
+
+	len = seq - TCP_SKB_CB(skb)->seq;
+	nsize = skb_headlen(skb) - len;
+	if (nsize < 0)
+		nsize = 0;
+
+	/* Get a new skb... force flag on. */
+	buff = alloc_skb(nsize, GFP_ATOMIC);
+	if (buff == NULL)
+		return -ENOMEM;
+
+	/* We absolutly need to call skb_set_owner_r before refreshing the
+	 * truesize of buff, otherwise the moved data will account twice.
+	 */
+	skb_set_owner_r(buff, sk);
+	nlen = skb->len - len - nsize;
+	buff->truesize += nlen;
+	skb->truesize -= nlen;
+
+	/* Correct the sequence numbers. */
+	TCP_SKB_CB(buff)->seq = TCP_SKB_CB(skb)->seq + len;
+	TCP_SKB_CB(buff)->end_seq = TCP_SKB_CB(skb)->end_seq;
+	TCP_SKB_CB(skb)->end_seq = TCP_SKB_CB(buff)->seq;
+
+	/* PSH and FIN should only be set in the second packet. */
+	flags = TCP_SKB_CB(skb)->flags;
+	TCP_SKB_CB(skb)->flags = flags & ~(TCPHDR_FIN | TCPHDR_PSH);
+	TCP_SKB_CB(buff)->flags = flags;
+
+	skb_split(skb, buff, len);
+
+	/* buff has no TCP/IP-header - thus drop the reference */
+	skb_header_release(buff);
+
+	/* It is guaranteed that skb is the last packet in the rcv-queue.
+	 * Thus, it is safe to enqueue buff just at the end.
+	 */
+	__skb_queue_tail(&sk->sk_receive_queue, buff);
+
+	return 0;
 }
 
 /**
@@ -1522,8 +1729,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 			mpcb->infinite_mapping = 1;
 			tp->fully_established = 1;
 			/* We need to repeat mp_fail's until the sender felt
-			 * back to infinite-mapping - here we stop repeating
-			 * it.
+			 * back to infinite-mapping - here we stop repeating it.
 			 */
 			mpcb->send_mp_fail = 0;
 			tcb->data_len = skb->len;
@@ -1583,13 +1789,47 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	 */
 	__skb_queue_tail(&sk->sk_receive_queue, skb);
 	skb_set_owner_r(skb, sk);
-	tp->rcv_nxt = tcb->end_seq;
+
+	/* If the mapping is known, we have to split coalesced segments */
+	if (tp->map_data_len) {
+		/* either, the new skb gave us the mapping and the first segment
+		 * in the sub-rcv-queue has to be split, or the new skb (tail)
+		 * has to be split at the end.
+		 */
+		tmp = skb_peek(&sk->sk_receive_queue);
+		if (before(TCP_SKB_CB(tmp)->seq, tp->map_subseq) &&
+		    after(TCP_SKB_CB(tmp)->end_seq, tp->map_subseq)) {
+			mptcp_skb_trim_head(tmp, sk, tp->map_subseq);
+		}
+
+		if (after(TCP_SKB_CB(skb)->end_seq,
+			  tp->map_subseq + tp->map_data_len)) {
+			int ret;
+			ret = mptcp_skb_split_tail(skb, sk,
+					tp->map_subseq + tp->map_data_len);
+			if (ret) { /* Allocation failed */
+
+				/* TODO : maybe handle this here better.
+				 * We now just force retransmission, as rcv_nxt
+				 * is only advanced after this here.
+				 *
+				 * How could we do it more cleanly?
+				 */
+				__skb_unlink(skb, &sk->sk_receive_queue);
+				__kfree_skb(skb);
+				return -1;
+			}
+		}
+	}
+
+	tp->rcv_nxt = TCP_SKB_CB(skb_peek_tail(&sk->sk_receive_queue))->end_seq;
 
 	/* Now, remove old sk_buff's from the receive-queue.
 	 * This may happen if the mapping has been lost for these segments and
 	 * the next mapping has already been received.
 	 */
-	if (tp->map_data_len && before(tp->copied_seq, tp->map_subseq)) {
+	if (tp->map_data_len &&
+	    before(TCP_SKB_CB(skb_peek(&sk->sk_receive_queue))->seq, tp->map_subseq)) {
 		mptcp_debug("%s remove packets not covered by mapping: "
 			    "data_len %u, tp->copied_seq %u, "
 			    "tp->map_subseq %u\n", __func__,
@@ -1856,103 +2096,6 @@ static inline int count_bits(unsigned int v)
 	return c;
 }
 
-/**
- * Reinject data from one TCP subflow to the meta_sk
- * The @skb given pertains to the original tp, that keeps it
- * because the skb is still sent on the original tp. But additionnally,
- * it is sent on the other subflow.
- *
- * @pre : @sk must be the meta_sk
- */
-static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
-		struct sock *sk, int clone_it)
-{
-	struct sk_buff *skb;
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *tmp_tp;
-	struct sock *sk_it;
-
-	/* A segment can be added to the reinject queue only if
-	 * there is at least one working subflow that has never sent
-	 * this data */
-	mptcp_for_each_sk(meta_tp->mpcb, sk_it, tmp_tp) {
-		if (sk_it->sk_state != TCP_ESTABLISHED || tmp_tp->pf)
-			continue;
-		/* If the skb has already been enqueued in this sk, try to find
-		 * another one */
-		if (PI_TO_FLAG(tmp_tp->path_index) & orig_skb->path_mask)
-			continue;
-
-		/* candidate subflow found, we can reinject */
-		break;
-	}
-
-	if (!sk_it) {
-		mptcp_debug("%s: skb already injected to all paths\n",
-				__func__);
-		return 1; /* no candidate found */
-	}
-
-	if (clone_it) {
-		/* pskb_copy is necessary here, because the TCP/IP-headers
-		 * will be changed when it's going to be reinjected on another
-		 * subflow.
-		 */
-		skb = pskb_copy(orig_skb, GFP_ATOMIC);
-	} else {
-		skb_unlink(orig_skb, &sk->sk_write_queue);
-		skb_get(orig_skb);
-		mptcp_wmem_free_skb(sk, orig_skb);
-		skb = orig_skb;
-	}
-	if (unlikely(!skb))
-		return -ENOBUFS;
-	skb->sk = meta_sk;
-
-	skb_queue_tail(&meta_tp->mpcb->reinject_queue, skb);
-	return 0;
-}
-
-/* Inserts data into the reinject queue */
-void mptcp_reinject_data(struct sock *sk, int clone_it)
-{
-	struct sk_buff *skb_it, *tmp;
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct multipath_pcb *mpcb = tp->mpcb;
-	struct sock *meta_sk = (struct sock *) mpcb;
-
-	BUG_ON(is_meta_sk(sk));
-
-	verif_wqueues(mpcb);
-
-	skb_queue_walk_safe(&sk->sk_write_queue, skb_it, tmp) {
-		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb_it);
-		/* seq > reinjected_seq , to avoid reinjecting several times
-		 * the same segment. This does not duplicate functionality with
-		 * skb->path_mask, because the path_mask ensures the skb is not
-		 * scheduled twice to the same subflow. OTOH, the seq
-		 * check ensures that at any time, _one_ subflow exactly
-		 * is allowed to reinject it, not all of them. That one
-		 * subflow is the one that received it last.
-		 * Also, subflow syn's and fin's are not reinjected
-		 */
-		if (before(tcb->seq, tp->reinjected_seq) ||
-		    tcb->flags & TCPHDR_SYN ||
-		    (tcb->flags & TCPHDR_FIN &&
-		     !(tcb->mptcp_flags & MPTCPHDR_FIN)))
-			continue;
-		skb_it->path_mask |= PI_TO_FLAG(tp->path_index);
-		if (__mptcp_reinject_data(skb_it, meta_sk, sk, clone_it) < 0)
-			break;
-		tp->reinjected_seq = tcb->end_seq;
-	}
-
-	tcp_push(meta_sk, 0, mptcp_sysctl_mss(), TCP_NAGLE_PUSH);
-
-	tp->pf = 1;
-
-	verif_wqueues(mpcb);
-}
-
 void mptcp_parse_options(uint8_t *ptr, int opsize,
 		struct tcp_options_received *opt_rx,
 		struct multipath_options *mopt,
@@ -2128,6 +2271,7 @@ void mptcp_clean_rtx_queue(struct sock *meta_sk)
 {
 	struct sk_buff *skb;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	int acked = 0;
 
 	BUG_ON(!is_meta_tp(meta_tp));
 
@@ -2140,7 +2284,10 @@ void mptcp_clean_rtx_queue(struct sock *meta_sk)
 		tcp_unlink_write_queue(skb, meta_sk);
 		meta_tp->packets_out -= tcp_skb_pcount(skb);
 		sk_wmem_free_skb(meta_sk, skb);
+		acked = 1;
 	}
+	if (acked)
+		mptcp_reset_xmit_timer(meta_sk);
 }
 
 void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk)

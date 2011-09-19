@@ -71,13 +71,12 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int prior_packets = tp->packets_out;
-	int meta_sk = is_meta_tp(tp);
 
 #ifdef CONFIG_MPTCP
 	BUG_ON(tcp_send_head(sk) != skb);
 #endif
 	tcp_advance_send_head(sk, skb);
-	tp->snd_nxt = meta_sk ? mptcp_skb_end_data_seq(skb) :
+	tp->snd_nxt = is_meta_tp(tp) ? mptcp_skb_end_data_seq(skb) :
 	    TCP_SKB_CB(skb)->end_seq;
 
 	/* Don't override Nagle indefinately with F-RTO */
@@ -85,9 +84,10 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 		tp->frto_counter = 3;
 
 	tp->packets_out += tcp_skb_pcount(skb);
-	if (!prior_packets && !meta_sk) {
+	if (!prior_packets) {
 		inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
 					  inet_csk(sk)->icsk_rto, TCP_RTO_MAX);
+		mptcp_reset_xmit_timer(sk);
 	}
 }
 
@@ -1517,7 +1517,7 @@ int tcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
  * eventually). The difference is that pulled data not copied, but
  * immediately discarded.
  */
-static void __pskb_trim_head(struct sk_buff *skb, int len)
+void __pskb_trim_head(struct sk_buff *skb, int len)
 {
 	int i, k, eat;
 
