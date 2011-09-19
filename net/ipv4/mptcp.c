@@ -1246,11 +1246,19 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 	}
 }
 
+/**
+ * @return:
+ *  i) 1: Everything's fine.
+ *  ii) -1: A reset has been sent on the subflow - csum-failure
+ *  iii) 0: csum-failure but no reset sent, because it's the last subflow.
+ *	 Last packet should not be destroyed by the caller because it has
+ *	 been done here.
+ */
 static int mptcp_verif_dss_csum(struct sock *sk)
 {
 	struct sk_buff *tmp, *last = NULL;
 	__wsum csum_tcp = 0; /* cumulative checksum of pld + mptcp-header */
-	int ans = 0, overflowed = 0, offset = 0, dss_csum_added = 0;
+	int ans = 1, overflowed = 0, offset = 0, dss_csum_added = 0;
 	char last_byte = 0; /* byte to be added to the next csum */
 
 	skb_queue_walk(&sk->sk_receive_queue, tmp) {
@@ -1299,11 +1307,27 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 
 	/* Now, checksum must be 0 */
 	if (unlikely(csum_fold(csum_tcp))) {
+		struct tcp_sock *tp = tcp_sk(sk);
 		mptcp_debug("%s csum is wrong: %#x data_seq %u\n", __func__,
 			    csum_fold(csum_tcp), TCP_SKB_CB(last)->data_seq);
-		tcp_sk(sk)->csum_error = 1;
-		mptcp_send_reset(sk, last);
-		ans = 1;
+		tp->csum_error = 1;
+		/* map_data_seq is the data-seq number of the
+		 * mapping we are currently checking
+		 */
+		tp->mpcb->csum_cutoff_seq = tp->map_data_seq;
+
+		if (tp->mpcb->cnt_established > 1) {
+			mptcp_send_reset(sk, last);
+			ans = -1;
+		} else {
+			tp->mpcb->send_mp_fail = 1;
+			tp->copied_seq = TCP_SKB_CB(last)->end_seq;
+			/* Need to purge the rcv-queue as it's no more valid */
+			__skb_queue_purge(&sk->sk_receive_queue);
+
+			last = NULL; /* prevent skb_dst_drop later in here */
+			ans = 0;
+		}
 	}
 
 	/* We would have needed the rtable entry for sending the reset */
@@ -1331,8 +1355,8 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb, struct tcp_sock *tp)
  * @return: 1 if the segment has been eaten and can be suppressed,
  *          otherwise 0.
  */
-inline int direct_copy(struct sk_buff *skb, struct tcp_sock *tp,
-		       struct tcp_sock *meta_tp)
+static inline int direct_copy(struct sk_buff *skb, struct tcp_sock *tp,
+			      struct tcp_sock *meta_tp)
 {
 	int chunk = min_t(unsigned int, skb->len, meta_tp->ucopy.len);
 	int eaten = 0;
@@ -1347,6 +1371,13 @@ inline int direct_copy(struct sk_buff *skb, struct tcp_sock *tp,
 	}
 	local_bh_disable();
 	return eaten;
+}
+
+static inline void mptcp_reset_mapping(struct tcp_sock *tp)
+{
+	tp->map_data_len = 0;
+	tp->map_data_seq = 0;
+	tp->map_subseq = 0;
 }
 
 /**
@@ -1419,7 +1450,15 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	if (tcb->mptcp_flags & MPTCPHDR_SEQ) {
 		if (!tcb->data_len) {
 			mpcb->infinite_mapping = 1;
+			tp->fully_established = 1;
+			/* We need to repeat mp_fail's until the sender felt
+			 * back to infinite-mapping - here we stop repeating
+			 * it.
+			 */
+			mpcb->send_mp_fail = 0;
 			tcb->data_len = skb->len;
+			tcb->sub_seq = tcb->seq;
+			mpcb->infinite_cutoff_seq = tcb->data_seq;
 			/* TODO kill all other subflows than this one */
 			/* data_seq and so on are set correctly */
 		}
@@ -1512,9 +1551,15 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	if (tp->map_data_len &&
 	    !before(tp->rcv_nxt, tp->map_subseq + tp->map_data_len)) {
 		/* Verify the checksum first */
-		if (mpcb->rx_opt.dss_csum && !mpcb->infinite_mapping &&
-		    mptcp_verif_dss_csum(sk))
-			return -1;
+		if (mpcb->rx_opt.dss_csum && !mpcb->infinite_mapping) {
+			int ret = mptcp_verif_dss_csum(sk);
+
+			if (ret <= 0) {
+				mptcp_reset_mapping(tp);
+				ans = ret;
+				goto exit;
+			}
+		}
 
 		/* Is this an overlapping mapping? rcv_nxt >= end_data_seq */
 		if (!before(meta_tp->rcv_nxt, tp->map_data_seq +
@@ -1535,9 +1580,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 					__kfree_skb(tmp1);
 			}
 
-			tp->map_data_len = 0;
-			tp->map_data_seq = 0;
-			tp->map_subseq = 0;
+			mptcp_reset_mapping(tp);
 
 			/* We want tcp_data(/ofo)_queue to free skb. */
 			return 1;
@@ -1611,11 +1654,10 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 				sk->sk_data_ready(sk, 0);
 		}
 
-		tp->map_data_len = 0;
-		tp->map_data_seq = 0;
-		tp->map_subseq = 0;
+		mptcp_reset_mapping(tp);
 	}
 
+exit:
 	if (old_copied != tp->copied_seq)
 		tcp_rcv_space_adjust(sk);
 
@@ -1998,6 +2040,9 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		}
 		break;
 	}
+	case MPTCP_SUB_FAIL:
+		mopt->mp_fail = 1;
+		break;
 	default:
 		mptcp_debug("%s: Received unkown subtype: %d\n", __func__,
 				mp_opt->sub);

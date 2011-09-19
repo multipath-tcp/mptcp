@@ -1098,7 +1098,7 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack, u32 win,
 		*p8++ = MPTCP_SUB_LEN_FAIL;
 		mpfail = (struct mp_fail *)p8;
 		mpfail->sub = MPTCP_SUB_FAIL;
-		mpfail->data_seq = htonl(TCP_SKB_CB(skb)->data_seq);
+		mpfail->data_seq = htonl(tcp_sk(sk)->mpcb->csum_cutoff_seq);
 	}
 #endif
 

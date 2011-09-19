@@ -4059,6 +4059,8 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 			mpcb ? &mpcb->rx_opt : NULL, 1);
 
 	mptcp_path_array_check(mpcb);
+	mptcp_mp_fail_rcvd(mpcb, th);
+
 	return 1;
 }
 

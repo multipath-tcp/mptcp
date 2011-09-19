@@ -36,6 +36,7 @@
 #define OPTION_DATA_ACK         (1 << 8)
 #define OPTION_ADD_ADDR         (1 << 9)
 #define OPTION_MP_JOIN          (1 << 10)
+#define OPTION_MP_FAIL		(1 << 11)
 
 struct tcp_out_options {
 	u16	options;	/* bit field of OPTION_* */
@@ -121,6 +122,7 @@ struct multipath_options {
 	__u8	mptcp_recv_mac[20];
 	u8	list_rcvd:1, /* 1 if IP list has been received (MPTCP_PM) */
 		dfin_rcvd:1,
+		mp_fail:1,
 		dss_csum:1;
 	u32	fin_dsn; /* DSN of the byte  FOLLOWING the Data FIN */
 };

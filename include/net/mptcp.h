@@ -117,8 +117,10 @@ struct multipath_pcb {
 				 * scheduler
 				 */
 	u8	send_infinite_mapping:1,
-		infinite_mapping:1;
+		infinite_mapping:1,
+		send_mp_fail:1;
 	u32	infinite_cutoff_seq;
+	u32	csum_cutoff_seq;
 
 	__u32	mptcp_loc_token;
 	__u64	mptcp_loc_key;
@@ -729,6 +731,25 @@ static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
 	return 0;
 }
 
+static inline void mptcp_mp_fail_rcvd(struct multipath_pcb *mpcb,
+				      struct tcphdr *th)
+{
+	if (!mpcb)
+		return;
+
+	if (unlikely(mpcb->rx_opt.mp_fail)) {
+		struct sock *meta_sk = (struct sock *)mpcb;
+
+		mpcb->rx_opt.mp_fail = 0;
+
+		if (!th->rst) {
+			mpcb->send_infinite_mapping = 1;
+			/* We resend everything that has not been acknowledged */
+			meta_sk->sk_send_head = tcp_write_queue_head(meta_sk);
+		}
+	}
+}
+
 #if (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))
 static inline int mptcp_get_path_family(struct multipath_pcb *mpcb,
 					int path_index)
@@ -945,6 +966,8 @@ static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
 {
 	return 0;
 }
+static inline void mptcp_mp_fail_rcvd(struct multipath_pcb *mpcb,
+		struct tcphdr *th) {}
 static inline void mptcp_init_mp_opt(struct multipath_options *mopt) {}
 static inline void mptcp_wmem_free_skb(struct sock *sk, struct sk_buff *skb) {}
 static inline int is_local_addr4(u32 addr)

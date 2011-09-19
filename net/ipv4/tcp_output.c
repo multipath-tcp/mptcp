@@ -696,6 +696,19 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		ptr = (__be32 *) p8;
 	}
 #endif /* CONFIG_MPTCP_PM */
+	if (OPTION_MP_FAIL & opts->options) {
+		struct mp_fail *mpfail;
+		__u8 *p8 = (__u8 *)ptr;
+
+		*p8++ = TCPOPT_MPTCP;
+		*p8++ = MPTCP_SUB_LEN_FAIL;
+
+		mpfail = (struct mp_fail *)p8;
+
+		mpfail->sub = MPTCP_SUB_FAIL;
+		mpfail->data_seq = opts->data_ack;
+	}
+
 	if (OPTION_DSN_MAP & opts->options ||
 	    OPTION_DATA_ACK & opts->options ||
 	    OPTION_DATA_FIN & opts->options) {
@@ -997,18 +1010,41 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	}
 #ifdef CONFIG_MPTCP
 	mpcb = tp->mpcb;
-	/* Need the MPTCPHDR_INF-flag, because a retransmission of the
-	 * infinite-announcment still needs the mptcp-option.
-	 * And we need infinite_cutoff_seq, because retransmissions from before
-	 * the infinite-cutoff-moment still need the MPTCP-signalling to stay
-	 * consistent.
+
+	/* In fallback mp_fail-mode, we have to repeat it until the fallback
+	 * has been done by the sender
+	 */
+	if (tp->mpc && mpcb->send_mp_fail) {
+		opts->options |= OPTION_MP_FAIL;
+		opts->data_ack = mpcb->csum_cutoff_seq;
+		size += MPTCP_SUB_LEN_FAIL;
+		goto no_mptcp;
+	}
+
+	/* 1. If we are the sender of the infinite-mapping, we need the
+	 *    MPTCPHDR_INF-flag, because a retransmission of the
+	 *    infinite-announcment still needs the mptcp-option.
+	 *
+	 *    We need infinite_cutoff_seq, because retransmissions from before
+	 *    the infinite-cutoff-moment still need the MPTCP-signalling to stay
+	 *    consistent.
+	 *
+	 * 2. If we are the receiver of the infinite-mapping, we need to check,
+	 *    if acknowledgments are from before or after the infinite-mapping
+	 *    cutoff-point. Those before, still need the mptcp-signalling.
 	 *
 	 * I know, the whole infinite-mapping stuff is ugly...
+	 *
+	 * TODO: Handle wrapped data-sequence numbers
+	 *       (even if it's very unlikely)
 	 */
 	if (tp->mpc && mpcb->infinite_mapping && tp->fully_established &&
-	    !(tcb->mptcp_flags & MPTCPHDR_INF) &&
-	    !(tcb->data_seq < mpcb->infinite_cutoff_seq))
+	    ((mpcb->send_infinite_mapping && !(tcb->mptcp_flags & MPTCPHDR_INF) &&
+	      !before(tcb->data_seq, mpcb->infinite_cutoff_seq)) ||
+	     (!mpcb->send_infinite_mapping &&
+	      !before(mpcb_meta_tp(mpcb)->rcv_nxt, mpcb->infinite_cutoff_seq)))) {
 		goto no_mptcp;
+	}
 
 	if (tp->mpc && !tcp_sk(sk)->mptcp_add_addr_ack &&
 	    !tcp_sk(sk)->include_mpc) {
