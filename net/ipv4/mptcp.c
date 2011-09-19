@@ -223,7 +223,7 @@ static inline int mptcp_is_available(struct sock *sk)
  * needed to send the segment. If all paths have full cong windows, we
  * simply block. The flow able to send the segment the soonest get it.
  */
-struct sock *get_available_subflow(struct multipath_pcb *mpcb,
+static struct sock *get_available_subflow(struct multipath_pcb *mpcb,
 				   struct sk_buff *skb)
 {
 	struct tcp_sock *tp;
@@ -263,12 +263,82 @@ out:
 	return bestsk;
 }
 
+/**
+ * Round-robin scheduler (if flow is available)
+ */
+static struct sock *rr_scheduler(struct multipath_pcb *mpcb,
+				   struct sk_buff *skb)
+{
+	struct tcp_sock *tp;
+	struct sock *sk, *bestsk = NULL;
+	int found = 0;
+
+	if (!mpcb)
+		return NULL;
+
+	/* if there is only one subflow, bypass the scheduling function */
+	if (mpcb->cnt_subflows == 1) {
+		bestsk = (struct sock *) mpcb->connection_list;
+		if (!mptcp_is_available(bestsk))
+			bestsk = NULL;
+		goto out;
+	}
+
+	/* First, find the best subflow */
+	mptcp_for_each_sk(mpcb, sk, tp) {
+		/* Looking for the last pi that has been selected. */
+		if (!found && mpcb->last_pi_selected != tp->path_index) {
+			continue;
+		} else {
+			found = 1;
+			/* Go one further */
+			if (mpcb->last_pi_selected == tp->path_index)
+				continue;
+		}
+
+		/* If the skb has already been enqueued in this sk, try to find
+		 * another one
+		 */
+		if (unlikely(PI_TO_FLAG(tp->path_index) & skb->path_mask))
+			continue;
+
+		if (!mptcp_is_available(sk))
+			continue;
+
+		bestsk = sk;
+		mpcb->last_pi_selected = tp->path_index;
+		break;
+	}
+
+	if (!bestsk) {
+		/* We may need to restart from the beginning to find a subflow */
+		mptcp_for_each_sk(mpcb, sk, tp)	{
+			/* If the skb has already been enqueued in this sk,
+			 * try to find another one.
+			 */
+			if (unlikely(PI_TO_FLAG(tp->path_index) & skb->path_mask))
+				continue;
+
+			if (!mptcp_is_available(sk))
+				continue;
+
+			bestsk = sk;
+			mpcb->last_pi_selected = tp->path_index;
+			break;
+		}
+	}
+
+out:
+	return bestsk;
+}
+
 static int mptcp_sched_min = 1;
 static int mptcp_sched_max = MPTCP_SCHED_MAX;
 
 struct sock *(*mptcp_schedulers[MPTCP_SCHED_MAX])
 		(struct multipath_pcb *, struct sk_buff *) = {
 				&get_available_subflow,
+				&rr_scheduler,
 		};
 
 /* Sysctl data */

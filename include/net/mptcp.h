@@ -39,7 +39,7 @@
 #endif
 
 extern int sysctl_mptcp_scheduler;
-#define MPTCP_SCHED_MAX 1
+#define MPTCP_SCHED_MAX 2
 extern struct sock *(*mptcp_schedulers[MPTCP_SCHED_MAX])
 		(struct multipath_pcb *, struct sk_buff *);
 
@@ -105,6 +105,7 @@ struct multipath_pcb {
 	/* socket count in this connection */
 	int cnt_subflows;
 	int cnt_established;
+	int last_pi_selected;
 
 	struct multipath_options rx_opt;
 
