@@ -836,8 +836,10 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 
 			if (family == AF_INET)
 				mptcp_pm_addr4_event_handler((struct in_ifaddr *)ptr, event, mpcb);
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 			else
 				mptcp_pm_addr6_event_handler((struct inet6_ifaddr *)ptr, event, mpcb);
+#endif
 
 			bh_unlock_sock(mpcb->master_sk);
 		}
@@ -916,7 +918,9 @@ static int __init mptcp_pm_init(void)
 	rwlock_init(&tk_hash_lock);
 	spin_lock_init(&mptcp_reqsk_hlock);
 
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	mptcp_pm_v6_init();
+#endif
 	mptcp_pm_v4_init();
 
 	return register_pernet_subsys(&mptcp_pm_proc_ops);
