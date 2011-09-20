@@ -518,16 +518,6 @@ static __inline__ void sk_add_bind_node(struct sock *sk,
 	hlist_add_head(&sk->sk_bind_node, list);
 }
 
-static inline struct sock *__sk_bind_head(const struct hlist_head *head)
-{
-	return hlist_entry(head->first, struct sock, sk_bind_node);
-}
-
-static inline struct sock *sk_bind_head(const struct hlist_head *head)
-{
-	return hlist_empty(head) ? NULL : __sk_bind_head(head);
-}
-
 #define sk_for_each(__sk, node, list) \
 	hlist_for_each_entry(__sk, node, list, sk_node)
 #define sk_for_each_rcu(__sk, node, list) \
