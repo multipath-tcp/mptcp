@@ -166,8 +166,6 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 
 #define TCPOPT_MPTCP		30
 
-#define TCPOPT_REMOVE_ADDR	61
-
 /*
  *     TCP option lengths
  */
