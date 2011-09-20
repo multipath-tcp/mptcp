@@ -430,8 +430,6 @@ int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb);
 void mptcp_ofo_queue(struct multipath_pcb *mpcb);
 void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp);
 void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied);
-int mptcp_check_rcv_queue(struct multipath_pcb *mpcb, struct msghdr *msg,
-			size_t *len, u32 *data_seq, int *copied, int flags);
 int mptcp_alloc_mpcb(struct sock *master_sk, struct request_sock *req,
 		gfp_t flags);
 void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp);
@@ -491,6 +489,11 @@ static inline int mptcp_skb_cloned(const struct sk_buff *skb,
 	       ((!(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ) && skb_cloned(skb)) ||
 		((TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ) && skb->cloned &&
 		 (atomic_read(&skb_shinfo(skb)->dataref) & SKB_DATAREF_MASK) > 2));
+}
+
+static inline int mptcp_is_data_fin(struct sk_buff *skb)
+{
+	return TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN;
 }
 
 static inline int mptcp_is_ofo_queue_empty(struct tcp_sock *meta_tp)
@@ -810,6 +813,10 @@ static inline int mptcp_skb_cloned(const struct sk_buff *skb,
 {
 	return 0;
 }
+static inline int mptcp_is_data_fin(struct sk_buff *skb)
+{
+	return 0;
+}
 static inline struct multipath_pcb *mpcb_from_tcpsock(struct tcp_sock *tp)
 {
 	return NULL;
@@ -849,12 +856,6 @@ static inline int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 }
 static inline void mptcp_ofo_queue(struct multipath_pcb *mpcb) {}
 static inline void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied) {}
-static inline int mptcp_check_rcv_queue(struct multipath_pcb *mpcb,
-		struct msghdr *msg, size_t *len, u32 *data_seq, int *copied,
-		int flags)
-{
-	return 0;
-}
 
 static inline int mptcp_alloc_mpcb(struct sock *master_sk,
 		struct request_sock *req, gfp_t flags)

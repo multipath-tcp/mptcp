@@ -1645,23 +1645,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 		mptcp_update_pointers(tp, &meta_sk, &meta_tp, &mpcb);
 
-		if (mpcb) {
-			/* Start by checking if skbs are waiting on the mpcb
-			 * receive queue
-			 */
-			if (mptcp_check_rcv_queue(mpcb, msg, &len, seq,
-						  &copied, flags) < 0) {
-				printk(KERN_ERR "error in "
-				       "mptcp_check_rcv_queue\n");
-				/* Exception. Bailout! */
-				if (!copied)
-					copied = -EFAULT;
-				break;
-			}
-		}
-
 		/* Are we at urgent data? Stop if we have read anything or have SIGURG pending. */
-		if (tp->urg_data && tp->urg_seq == *seq) {
+		if (!mpcb && tp->urg_data && tp->urg_seq == *seq) {
 			/* With tp->mpc, tp->urg_seq must be set to a DSN,
 			 * not a subseq number. This is not done yet.
 			 */
@@ -1674,33 +1659,39 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			}
 		}
 
-		/* Next get a buffer. */
-		if (mpcb)
-			goto no_subrcv_queue;
-
-		skb_queue_walk(&sk->sk_receive_queue, skb) {
+		skb_queue_walk(&meta_sk->sk_receive_queue, skb) {
 			/* Now that we have two receive queues this
 			 * shouldn't happen.
 			 */
-			if (WARN(before(*seq, TCP_SKB_CB(skb)->seq),
+			if (!mpcb && WARN(before(*seq, TCP_SKB_CB(skb)->seq),
 				 "recvmsg bug: copied %X seq %X rcvnxt %X fl %X\n",
 				 *seq, TCP_SKB_CB(skb)->seq, tp->rcv_nxt,
 				 flags))
 				break;
 
-			offset = *seq - TCP_SKB_CB(skb)->seq;
+			if (mpcb && WARN(before(*seq, mptcp_skb_data_seq(skb)),
+				 "recvmsg bug: copied %X seq %X rcvnxt %X fl %X\n",
+				 *seq, mptcp_skb_data_seq(skb), meta_tp->rcv_nxt,
+				 flags))
+				break;
+
+			if (!mpcb)
+				offset = *seq - TCP_SKB_CB(skb)->seq;
+			else
+				offset = *seq - mptcp_skb_data_seq(skb);
+
 			if (tcp_hdr(skb)->syn)
 				offset--;
 			if (offset < skb->len)
 				goto found_ok_skb;
-			if (tcp_hdr(skb)->fin)
+			if ((!mpcb && tcp_hdr(skb)->fin) ||
+			    (mpcb && mptcp_is_data_fin(skb)))
 				goto found_fin_ok;
 			WARN(!(flags & MSG_PEEK),
 			     "recvmsg bug 2: copied %X seq %X rcvnxt %X fl %X\n",
 			     *seq, TCP_SKB_CB(skb)->seq, tp->rcv_nxt, flags);
 		}
 
-no_subrcv_queue:
 		/* Well, if we have backlog, try to process it now yet. */
 
 		if (copied >= target && !sk->sk_backlog.tail &&
@@ -1766,15 +1757,8 @@ no_subrcv_queue:
 
 			meta_tp->ucopy.len = len;
 
-			if (!(flags & (MSG_PEEK | MSG_TRUNC))) {
-				if (mpcb) {
-					mptcp_for_each_tp(mpcb, tp_it)
-						WARN_ON(tp_it->copied_seq !=
-							tp_it->rcv_nxt);
-				} else {
-					WARN_ON(tp->copied_seq != tp->rcv_nxt);
-				}
-			}
+			if (!(flags & (MSG_PEEK | MSG_TRUNC)))
+				WARN_ON(meta_tp->copied_seq != meta_tp->rcv_nxt);
 
 			/* Ugly... If prequeue is not empty, we have to
 			 * process it before releasing socket, otherwise
@@ -1876,7 +1860,7 @@ do_prequeue:
 			used = len;
 
 		/* Do we have urgent data here? */
-		if (tp->urg_data) {
+		if (!mpcb && tp->urg_data) {
 			u32 urg_offset = tp->urg_seq - *seq;
 			if (urg_offset < used) {
 				if (!urg_offset) {
@@ -1937,20 +1921,26 @@ do_prequeue:
 		copied += used;
 		len -= used;
 
-		tcp_rcv_space_adjust(sk);
+		if (mpcb) {
+			mptcp_for_each_sk(mpcb,sk_it, tp_it)
+				tcp_rcv_space_adjust(sk_it);
+		} else {
+			tcp_rcv_space_adjust(sk);
+		}
 
 skip_copy:
-		if (tp->urg_data && after(tp->copied_seq, tp->urg_seq)) {
+		if (mpcb && tp->urg_data && after(tp->copied_seq, tp->urg_seq)) {
 			tp->urg_data = 0;
 			tcp_fast_path_check(sk);
 		}
 		if (used + offset < skb->len)
 			continue;
 
-		if (tcp_hdr(skb)->fin)
+		if ((!mpcb && tcp_hdr(skb)->fin) ||
+		    (mpcb && mptcp_is_data_fin(skb)))
 			goto found_fin_ok;
 		if (!(flags & MSG_PEEK)) {
-			sk_eat_skb(sk, skb, copied_early);
+			sk_eat_skb(meta_sk, skb, copied_early);
 			copied_early = 0;
 		}
 		continue;
@@ -1959,7 +1949,7 @@ found_fin_ok:
 		/* Process the FIN. */
 		++*seq;
 		if (!(flags & MSG_PEEK)) {
-			sk_eat_skb(sk, skb, copied_early);
+			sk_eat_skb(meta_sk, skb, copied_early);
 			copied_early = 0;
 		}
 		break;
