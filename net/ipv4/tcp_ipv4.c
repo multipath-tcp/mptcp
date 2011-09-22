@@ -436,6 +436,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 		inet_csk(sk)->icsk_rto = __tcp_set_rto(tp) <<
 					 icsk->icsk_backoff;
 		tcp_bound_rto(sk);
+		mptcp_set_rto(sk);
 
 		skb = tcp_write_queue_head(sk);
 		BUG_ON(!skb);

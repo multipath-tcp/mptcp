@@ -702,8 +702,14 @@ static inline void mptcp_retransmit_queue(struct sock *sk)
 	 * reinjected the packets. And as long as tp->pf == 1, no new data could
 	 * have gone on the send-queue. */
 	if (tcp_sk(sk)->mpc && !tcp_sk(sk)->pf &&
-	    sk->sk_state == TCP_ESTABLISHED)
+	    sk->sk_state == TCP_ESTABLISHED && tcp_sk(sk)->mpcb->cnt_established > 0)
 		mptcp_reinject_data(sk, 1);
+}
+
+static inline int mptcp_sk_can_send(struct sock *sk)
+{
+	return sk->sk_state == TCP_ESTABLISHED ||
+	       sk->sk_state == TCP_CLOSE_WAIT;
 }
 
 static inline void mptcp_set_rto(struct sock *sk)
@@ -716,12 +722,12 @@ static inline void mptcp_set_rto(struct sock *sk)
 		return;
 
 	mptcp_for_each_sk(tp->mpcb, sk_it, tp_it) {
-		if (sk_it->sk_state == TCP_ESTABLISHED &&
+		if (mptcp_sk_can_send(sk_it) &&
 		    inet_csk(sk_it)->icsk_rto > max_rto)
 			max_rto = inet_csk(sk_it)->icsk_rto;
 	}
-
-	inet_csk((struct sock *)tp->mpcb)->icsk_rto = max_rto * 2;
+	if(max_rto)
+		inet_csk((struct sock *)tp->mpcb)->icsk_rto = max_rto * 2;
 }
 
 /* Maybe we could merge this with tcp_rearm_rto().
@@ -764,12 +770,6 @@ static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
 		return MPTCP_FLAG_SEND_RESET;
 
 	return 0;
-}
-
-static inline int mptcp_sk_can_send(struct sock *sk)
-{
-	return sk->sk_state == TCP_ESTABLISHED ||
-	       sk->sk_state == TCP_CLOSE_WAIT;
 }
 
 static inline void mptcp_mp_fail_rcvd(struct multipath_pcb *mpcb,
