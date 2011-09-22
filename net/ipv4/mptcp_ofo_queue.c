@@ -136,14 +136,18 @@ static void free_node(struct node *n)
  */
 static void replace_node(struct node **old, struct node *new)
 {
+	/* We need to keep a simple pointer, because the double one
+	 * may be changed by new->next and new->prev assignments.
+	 */
+	struct node *old_node = *old;
 	/* set references in new */
-	new->next = (*old)->next;
-	new->prev = (*old)->prev;
+	new->next = old_node->next;
+	new->prev = old_node->prev;
 	/* set references in childs */
-	if ((*old)->prev)
-		*up_ptr((*old)->prev) = new;
-	if ((*old)->next)
-		*up_ptr((*old)->next) = new;
+	if (old_node->prev)
+		*up_ptr(old_node->prev) = new;
+	if (old_node->next)
+		*up_ptr(old_node->next) = new;
 	/* set reference in parent */
 	*old = new;
 }
