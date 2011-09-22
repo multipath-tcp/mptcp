@@ -476,6 +476,7 @@ struct tcp_sock {
 	u32	snt_isn;
 	u32	reinjected_seq;
 	int	init_rcv_wnd;
+	u32	infinite_cutoff_seq;
 	unsigned long last_snd_probe;
 	unsigned long last_rcv_probe;
 

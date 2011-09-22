@@ -706,6 +706,8 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		mpfail = (struct mp_fail *)p8;
 
 		mpfail->sub = MPTCP_SUB_FAIL;
+		mpfail->rsv1 = 0;
+		mpfail->rsv2 = 0;
 		mpfail->data_seq = opts->data_ack;
 	}
 
@@ -1029,9 +1031,9 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	 *    the infinite-cutoff-moment still need the MPTCP-signalling to stay
 	 *    consistent.
 	 *
-	 * 2. If we are the receiver of the infinite-mapping, we need to check,
-	 *    if acknowledgments are from before or after the infinite-mapping
-	 *    cutoff-point. Those before, still need the mptcp-signalling.
+	 * 2. If we are the receiver of the infinite-mapping, we always skip
+	 *    mptcp-options, because acknowledgments from before the
+	 *    infinite-mapping point have already been sent out.
 	 *
 	 * I know, the whole infinite-mapping stuff is ugly...
 	 *
@@ -1040,9 +1042,8 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 	 */
 	if (tp->mpc && mpcb->infinite_mapping && tp->fully_established &&
 	    ((mpcb->send_infinite_mapping && !(tcb->mptcp_flags & MPTCPHDR_INF) &&
-	      !before(tcb->data_seq, mpcb->infinite_cutoff_seq)) ||
-	     (!mpcb->send_infinite_mapping &&
-	      !before(mpcb_meta_tp(mpcb)->rcv_nxt, mpcb->infinite_cutoff_seq)))) {
+	      !before(tcb->seq, tp->infinite_cutoff_seq)) ||
+	     !mpcb->send_infinite_mapping)) {
 		goto no_mptcp;
 	}
 
@@ -1067,7 +1068,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			    tcb->seq >= tp->snd_nxt) {
 				tp->fully_established = 1;
 				mpcb->infinite_mapping = 1;
-				mpcb->infinite_cutoff_seq = tcb->data_seq;
+				tp->infinite_cutoff_seq = tcb->seq;
 				tcb->mptcp_flags |= MPTCPHDR_INF;
 				tcb->data_len = 0;
 			}

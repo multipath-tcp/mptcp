@@ -1725,7 +1725,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	/* If there is a DSS-mapping, check if it is ok with the current
 	 * expected mapping. If anything is wrong, reset the subflow
 	 */
-	if (tcb->mptcp_flags & MPTCPHDR_SEQ) {
+	if (tcb->mptcp_flags & MPTCPHDR_SEQ && !mpcb->infinite_mapping) {
 		if (!tcb->data_len) {
 			mpcb->infinite_mapping = 1;
 			tp->fully_established = 1;
@@ -1735,10 +1735,22 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 			mpcb->send_mp_fail = 0;
 			tcb->data_len = skb->len;
 			tcb->sub_seq = tcb->seq;
-			mpcb->infinite_cutoff_seq = tcb->data_seq;
 			/* TODO kill all other subflows than this one */
 			/* data_seq and so on are set correctly */
+
+			/* At this point, the meta-ofo-queue has to be emptied,
+			 * as the following data is guaranteed to be in-order at
+			 * the data and subflow-level
+			 */
+			mptcp_purge_ofo_queue(meta_tp);
 		}
+
+		/* We are sending mp-fail's and thus are in fallback mode.
+		 * Ignore packets which do not announce the fallback and still
+		 * want to provide a mapping.
+		 */
+		if (mpcb->send_mp_fail)
+			return 1;
 
 		if (tp->map_data_len &&
 		    (tcb->data_seq != tp->map_data_seq ||
