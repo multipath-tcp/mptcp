@@ -67,7 +67,8 @@ struct request_sock {
 	u32				peer_secid;
 #ifdef CONFIG_MPTCP
 	u8                              saw_mpc:1,
-					dss_csum:1;
+					dss_csum:1,
+					ack_defered:1;
 	__u8				rem_id; /* Address-id in the MP_JOIN */
 	u32                             mptcp_loc_token;
 	u64				mptcp_loc_key;

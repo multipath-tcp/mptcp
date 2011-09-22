@@ -1343,11 +1343,6 @@ int mptcp_sendmsg(struct kiocb *iocb, struct sock *master_sk,
 	verif_wqueues(mpcb);
 
 	copied = tcp_sendmsg(NULL, meta_sk, msg, 0);
-	if (copied < 0) {
-		printk(KERN_ERR "%s: returning error "
-		"to app:%d\n", __func__, (int) copied);
-		goto out;
-	}
 
 out:
 	release_sock(master_sk);
@@ -2730,14 +2725,16 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 	 */
 	child_tp->rx_opt.saw_mpc = req->saw_mpc;
 	if (child_tp->rx_opt.saw_mpc &&
-	    mopt->mptcp_opt_type == MPTCP_MP_CAPABLE_TYPE_ACK) {
+	    (mopt->mptcp_opt_type == MPTCP_MP_CAPABLE_TYPE_ACK ||
+	     req->ack_defered)) {
 		struct multipath_pcb *mpcb;
 
 		child_tp->rx_opt.saw_mpc = 0;
 		child_tp->mpc = 1;
 		child_tp->slave_sk = 0;
 
-		req->mptcp_rem_key = mopt->mptcp_rem_key;
+		if (!req->ack_defered)
+			req->mptcp_rem_key = mopt->mptcp_rem_key;
 
 		if (mptcp_alloc_mpcb(child, req, GFP_ATOMIC)) {
 			/* The allocation of the mpcb failed!
