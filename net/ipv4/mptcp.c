@@ -1800,6 +1800,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 
 	/* If the mapping is known, we have to split coalesced segments */
 	if (tp->map_data_len) {
+		int sub_end_seq;
 		/* either, the new skb gave us the mapping and the first segment
 		 * in the sub-rcv-queue has to be split, or the new skb (tail)
 		 * has to be split at the end.
@@ -1810,8 +1811,10 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 			mptcp_skb_trim_head(tmp, sk, tp->map_subseq);
 		}
 
-		if (after(TCP_SKB_CB(skb)->end_seq,
-			  tp->map_subseq + tp->map_data_len)) {
+		sub_end_seq = TCP_SKB_CB(skb)->end_seq -
+				(tcp_hdr(skb)->fin ? 1 : 0);
+
+		if (after(sub_end_seq, tp->map_subseq + tp->map_data_len)) {
 			int ret;
 			ret = mptcp_skb_split_tail(skb, sk,
 					tp->map_subseq + tp->map_data_len);
