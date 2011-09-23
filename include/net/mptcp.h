@@ -206,15 +206,11 @@ struct multipath_pcb {
 #define MPTCP_SUB_LEN_FAIL	8
 #define MPTCP_SUB_LEN_FAIL_ALIGN	8
 
-#ifdef DEBUG_PITOFLAG
-static inline int PI_TO_FLAG(int pi)
+static inline int mptcp_pi_to_flag(int pi)
 {
 	BUG_ON(!pi);
 	return 1 << (pi - 1);
 }
-#else
-#define PI_TO_FLAG(pi) (1 << (pi - 1))
-#endif
 
 /* Possible return values from mptcp_queue_skb */
 #define MPTCP_EATEN 1  /* The skb has been (fully or partially) eaten by
@@ -481,6 +477,7 @@ void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk);
 void mptcp_fin(struct multipath_pcb *mpcb);
 void mptcp_retransmit_timer(struct sock *meta_sk);
 void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb);
+struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk);
 
 static inline int mptcp_skb_cloned(const struct sk_buff *skb,
 		const struct tcp_sock *tp)
@@ -966,6 +963,10 @@ static inline void mptcp_clean_rtx_infinite(struct sk_buff *skb,
 		struct sock *sk) {}
 static inline void mptcp_retransmit_timer(struct sock *meta_sk) {}
 static inline void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb) {}
+static inline struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk)
+{
+	return NULL;
+}
 static inline void mptcp_set_rto(struct sock *sk) {}
 static inline void mptcp_reset_xmit_timer(struct sock *meta_sk) {}
 static inline void mptcp_send_fin(struct sock *meta_sk) {}

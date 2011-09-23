@@ -208,7 +208,7 @@ static inline int mptcp_is_available(struct sock *sk)
 		return 0;
 
 	tp = tcp_sk(sk);
-	if (tp->pf || (tp->mpcb->noneligible & PI_TO_FLAG(tp->path_index)) ||
+	if (tp->pf || (tp->mpcb->noneligible & mptcp_pi_to_flag(tp->path_index)) ||
 	    inet_csk(sk)->icsk_ca_state == TCP_CA_Loss)
 		return 0;
 	if (tcp_cwnd_test(tp))
@@ -247,7 +247,7 @@ static struct sock *get_available_subflow(struct multipath_pcb *mpcb,
 		/* If the skb has already been enqueued in this sk, try to find
 		 * another one
 		 */
-		if (unlikely(PI_TO_FLAG(tp->path_index) & skb->path_mask))
+		if (skb && unlikely(mptcp_pi_to_flag(tp->path_index) & skb->path_mask))
 			continue;
 
 		if (!mptcp_is_available(sk))
@@ -299,7 +299,7 @@ static struct sock *rr_scheduler(struct multipath_pcb *mpcb,
 		/* If the skb has already been enqueued in this sk, try to find
 		 * another one
 		 */
-		if (unlikely(PI_TO_FLAG(tp->path_index) & skb->path_mask))
+		if (unlikely(mptcp_pi_to_flag(tp->path_index) & skb->path_mask))
 			continue;
 
 		if (!mptcp_is_available(sk))
@@ -316,7 +316,7 @@ static struct sock *rr_scheduler(struct multipath_pcb *mpcb,
 			/* If the skb has already been enqueued in this sk,
 			 * try to find another one.
 			 */
-			if (unlikely(PI_TO_FLAG(tp->path_index) & skb->path_mask))
+			if (unlikely(mptcp_pi_to_flag(tp->path_index) & skb->path_mask))
 				continue;
 
 			if (!mptcp_is_available(sk))
@@ -350,6 +350,7 @@ int sysctl_mptcp_ndiffports __read_mostly = 1;
 int sysctl_mptcp_enabled __read_mostly = 1;
 int sysctl_mptcp_scheduler __read_mostly = 1;
 int sysctl_mptcp_checksum __read_mostly = 1;
+int sysctl_mptcp_rbuf_opti __read_mostly = 0;
 
 static ctl_table mptcp_table[] = {
 	{
@@ -388,6 +389,13 @@ static ctl_table mptcp_table[] = {
 		.proc_handler	= &proc_dointvec_minmax,
 		.extra1		= &mptcp_sched_min,
 		.extra2		= &mptcp_sched_max
+	},
+	{
+		.procname = "mptcp_rbuf_opti",
+		.data = &sysctl_mptcp_rbuf_opti,
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.proc_handler = &proc_dointvec
 	},
 	{ }
 };
@@ -461,7 +469,7 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 	/* First, ensure that we keep existing path indices. */
 	mptcp_for_each_tp(mpcb, tp)
 		/* disable the corresponding bit of the existing subflow */
-		path_indices &= ~PI_TO_FLAG(tp->path_index);
+		path_indices &= ~mptcp_pi_to_flag(tp->path_index);
 
 	for (i = 0; i < sizeof(path_indices) * 8; i++) {
 		struct sock *sk, *meta_sk = (struct sock *)mpcb;
@@ -699,7 +707,7 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 			continue;
 		/* If the skb has already been enqueued in this sk, try to find
 		 * another one */
-		if (PI_TO_FLAG(tmp_tp->path_index) & orig_skb->path_mask)
+		if (mptcp_pi_to_flag(tmp_tp->path_index) & orig_skb->path_mask)
 			continue;
 
 		/* candidate subflow found, we can reinject */
@@ -760,7 +768,7 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 		    (tcb->flags & TCPHDR_FIN &&
 		     !(tcb->mptcp_flags & MPTCPHDR_FIN)))
 			continue;
-		skb_it->path_mask |= PI_TO_FLAG(tp->path_index);
+		skb_it->path_mask |= mptcp_pi_to_flag(tp->path_index);
 		if (__mptcp_reinject_data(skb_it, meta_sk, sk, clone_it) < 0)
 			break;
 		tp->reinjected_seq = tcb->end_seq;
@@ -789,7 +797,8 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 			meta_icsk->icsk_rto, TCP_RTO_MAX * 2);
 }
 
-void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb) {
+void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb)
+{
 	struct sock *meta_sk;
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *skb_it;
@@ -800,13 +809,65 @@ void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb) {
 	meta_sk = mptcp_meta_sk(sk);
 	skb_it = tcp_write_queue_head(meta_sk);
 
-	while (skb_it && skb_it != tcp_send_head(meta_sk)) {
+	tcp_for_write_queue_from(skb_it, meta_sk) {
+		if (skb_it == tcp_send_head(meta_sk))
+			break;
+
 		if (TCP_SKB_CB(skb_it)->data_seq == TCP_SKB_CB(skb)->data_seq) {
-			skb_it->path_mask |= PI_TO_FLAG(tp->path_index);
+			skb_it->path_mask |= mptcp_pi_to_flag(tp->path_index);
 			break;
 		}
-		skb_it = tcp_write_queue_next(meta_sk, skb_it);
 	}
+}
+
+struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk)
+{
+	struct sock *meta_sk, *sk_it;
+	struct tcp_sock *tp = tcp_sk(sk), *tp_it;
+	struct sk_buff *skb_it;
+
+	if (!tp->mpc || !sysctl_mptcp_rbuf_opti)
+		return NULL;
+
+	meta_sk = mptcp_meta_sk(sk);
+	skb_it = tcp_write_queue_head(meta_sk);
+
+	if (!skb_it)
+		return NULL;
+
+	/* Half the cwnd of the slow flow */
+	mptcp_for_each_sk(tp->mpcb, sk_it, tp_it) {
+		if (skb_it->path_mask & mptcp_pi_to_flag(tp_it->path_index)) {
+			u64 bw1, bw2;
+
+			/* Don't half our own cwnd */
+			if (tp_it == tp)
+				continue;
+
+			bw1 = (u64) tp_it->snd_cwnd << 32;
+			bw1 = div64_u64(bw1, tp_it->srtt);
+			bw2 = (u64) tp->snd_cwnd << 32;
+			bw2 = div64_u64(bw2, tp->srtt);
+
+			if (bw1 < bw2) {
+				tp_it->snd_cwnd = max(tp_it->snd_cwnd >> 1U, 1U);
+				tp_it->snd_ssthresh = max(tp_it->snd_cwnd, 2U);
+			}
+			break;
+		}
+	}
+
+	/* Now, find a segment to reinject */
+	tcp_for_write_queue_from(skb_it, meta_sk) {
+		if (skb_it == tcp_send_head(meta_sk))
+			break;
+
+		/* Segment not yet injected into this path? Take it!!! */
+		if (!(skb_it->path_mask & mptcp_pi_to_flag(tp->path_index)))
+			return skb_it;
+	}
+
+	return NULL;
 }
 
 
@@ -2385,7 +2446,9 @@ void mptcp_update_sndbuf(struct multipath_pcb *mpcb)
  * (chooses the reinject queue if any segment is waiting in it, otherwise,
  * chooses the normal write queue).
  * Sets *@reinject to 1 if the returned segment comes from the
- * reinject queue. Otherwise sets @reinject to 0.
+ * reinject queue. Sets it to 0 if it is the regular send-head of the meta-sk,
+ * and sets it to -1 if it is a meta-level retransmission to optimize the
+ * receive-buffer.
  */
 struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject)
 {
@@ -2401,7 +2464,22 @@ struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject)
 			*reinject = 1;
 		return skb;
 	} else {
-		return tcp_send_head(sk);
+		skb = tcp_send_head(sk);
+
+		if (!skb && !sk_stream_memory_free(sk)) {
+			struct sock *subsk;
+			subsk = mptcp_schedulers[sysctl_mptcp_scheduler - 1](mpcb, NULL);
+
+			if (!subsk)
+				return NULL;
+
+			skb = mptcp_rcv_buf_optimization(subsk);
+			if (skb) {
+				if (reinject)
+					*reinject = -1;
+			}
+		}
+		return skb;
 	}
 }
 

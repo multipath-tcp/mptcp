@@ -694,11 +694,11 @@ static void __mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 		return;
 
 	for (i = 0; i < mpcb->pa4_size; i++)
-		path_indices |= PI_TO_FLAG(mpcb->pa4[i].path_index);
+		path_indices |= mptcp_pi_to_flag(mpcb->pa4[i].path_index);
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	for (i = 0; i < mpcb->pa6_size; i++)
-		path_indices |= PI_TO_FLAG(mpcb->pa6[i].path_index);
+		path_indices |= mptcp_pi_to_flag(mpcb->pa6[i].path_index);
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 	mptcp_init_subsockets(mpcb, path_indices);
 }

@@ -113,7 +113,7 @@ static void mptcp_recalc_alpha(struct sock *sk)
 		 * Integer-overflow is not possible here, because
 		 * tmp will be in u64.
 		 */
-		tmp = div64_u64 (mptcp_ccc_scale(sub_tp->snd_cwnd,
+		tmp = div64_u64(mptcp_ccc_scale(sub_tp->snd_cwnd,
 				alpha_scale_num), rtt * rtt);
 
 		if (tmp >= max_numerator) {

@@ -2301,7 +2301,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		struct sk_buff *subskb = NULL;
 		int err;
 
-		if (reinject && !after(mptcp_skb_end_data_seq(skb),
+		if (reinject > 0 && !after(mptcp_skb_end_data_seq(skb),
 				       tp->snd_una)) {
 			/* another copy of the segment already reached
 			 * the peer, just discard this one
@@ -2333,7 +2333,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		/* This must be invoked even if we don't want
 		 * to support TSO at the moment
 		 */
-
+retry:
 		tso_segs = tcp_init_tso_segs(sk, skb, mss_now);
 		BUG_ON(!tso_segs);
 		/* At the moment we do not support tso, hence
@@ -2354,8 +2354,14 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			break;
 		}
 
-		if (unlikely(!tcp_snd_wnd_test(subtp, skb, mss_now)))
+		if (unlikely(!tcp_snd_wnd_test(subtp, skb, mss_now))) {
+			skb = mptcp_rcv_buf_optimization(subsk);
+			if (skb) {
+				reinject = -1;
+				goto retry;
+			}
 			break;
+		}
 
 		if (tso_segs == 1) {
 			if (unlikely(!tcp_nagle_test(tp, skb, mss_now,
@@ -2385,17 +2391,17 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			break;
 #else
 		if (sk != subsk) {
-			if (tp->path_index)
-				skb->path_mask |= PI_TO_FLAG(tp->path_index);
+			if (subtp->path_index)
+				skb->path_mask |= mptcp_pi_to_flag(subtp->path_index);
 			/* If the segment is reinjected, the clone is done
 			 * already
 			 */
-			if (!reinject) {
+			if (reinject <= 0) {
 				/* The segment may be a meta-level
 				 * retransmission. In this case, we also have to
 				 * copy the TCP/IP-headers. (pskb_copy)
 				 */
-				if (unlikely(skb->path_mask & ~PI_TO_FLAG(tp->path_index)))
+				if (unlikely(skb->path_mask & ~mptcp_pi_to_flag(subtp->path_index)))
 					subskb = pskb_copy(skb, GFP_ATOMIC);
 				else
 					subskb = skb_clone(skb, GFP_ATOMIC);
@@ -2468,7 +2474,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			subtp->write_seq -= subskb->len;
 			mptcp_wmem_free_skb(subsk, subskb);
 
-			tp->mpcb->noneligible |= PI_TO_FLAG(subtp->path_index);
+			tp->mpcb->noneligible |= mptcp_pi_to_flag(subtp->path_index);
 
 			continue;
 		}
@@ -2493,7 +2499,7 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			BUG_ON(tcp_send_head(sk) != skb);
 			tcp_event_new_data_sent(sk, skb);
 		}
-		if (sk!= subsk && reinject) {
+		if (sk!= subsk && reinject > 0) {
 			mptcp_mark_reinjected(subsk, skb);
 		}
 
@@ -2583,7 +2589,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 	skb = mptcp_next_segment(sk, &reinject);
 	BUG_ON(!skb);
 
-	while (reinject && !after(TCP_SKB_CB(skb)->end_data_seq, tp->snd_una)) {
+	while (reinject > 0&& !after(TCP_SKB_CB(skb)->end_data_seq, tp->snd_una)) {
 		/* another copy of the segment already reached
 		 * the peer, just discard this one.
 		 */
