@@ -789,6 +789,26 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 			meta_icsk->icsk_rto, TCP_RTO_MAX * 2);
 }
 
+void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb) {
+	struct sock *meta_sk;
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct sk_buff *skb_it;
+
+	if (!tp->mpc)
+		return;
+
+	meta_sk = mptcp_meta_sk(sk);
+	skb_it = tcp_write_queue_head(meta_sk);
+
+	while (skb_it && skb_it != tcp_send_head(meta_sk)) {
+		if (TCP_SKB_CB(skb_it)->data_seq == TCP_SKB_CB(skb)->data_seq) {
+			skb_it->path_mask |= PI_TO_FLAG(tp->path_index);
+			break;
+		}
+		skb_it = tcp_write_queue_next(meta_sk, skb_it);
+	}
+}
+
 
 int mptcp_alloc_mpcb(struct sock *master_sk, struct request_sock *req,
 		gfp_t flags)

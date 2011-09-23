@@ -2493,6 +2493,9 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			BUG_ON(tcp_send_head(sk) != skb);
 			tcp_event_new_data_sent(sk, skb);
 		}
+		if (sk!= subsk && reinject) {
+			mptcp_mark_reinjected(subsk, skb);
+		}
 
 		if (sk != subsk && (TCP_SKB_CB(skb)->flags & TCPHDR_FIN)) {
 			struct sock *sk_it, *sk_tmp;

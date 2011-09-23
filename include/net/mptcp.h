@@ -480,6 +480,7 @@ void mptcp_fallback(struct sock *master_sk);
 void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk);
 void mptcp_fin(struct multipath_pcb *mpcb);
 void mptcp_retransmit_timer(struct sock *meta_sk);
+void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb);
 
 static inline int mptcp_skb_cloned(const struct sk_buff *skb,
 		const struct tcp_sock *tp)
@@ -964,6 +965,7 @@ static inline void mptcp_clean_rtx_queue(struct sock *meta_sk) {}
 static inline void mptcp_clean_rtx_infinite(struct sk_buff *skb,
 		struct sock *sk) {}
 static inline void mptcp_retransmit_timer(struct sock *meta_sk) {}
+static inline void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb) {}
 static inline void mptcp_set_rto(struct sock *sk) {}
 static inline void mptcp_reset_xmit_timer(struct sock *meta_sk) {}
 static inline void mptcp_send_fin(struct sock *meta_sk) {}
