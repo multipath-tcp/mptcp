@@ -514,6 +514,7 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 		newtp->snt_isn = treq->snt_isn;
 		newtp->reinjected_seq = newtp->snd_una;
 		newtp->init_rcv_wnd = req->rcv_wnd;
+		newtp->last_rbuf_opti = 0;
 		memset(&newtp->rcvq_space, 0, sizeof(newtp->rcvq_space));
 #endif
 
