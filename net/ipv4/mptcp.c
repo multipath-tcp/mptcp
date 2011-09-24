@@ -844,6 +844,10 @@ struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk)
 			if (tp_it == tp)
 				continue;
 
+			/* Only update every subflow rtt */
+			if (tcp_time_stamp - tp_it->last_rbuf_opti < tp_it->srtt >> 3)
+				break;
+
 			bw1 = (u64) tp_it->snd_cwnd << 32;
 			bw1 = div64_u64(bw1, tp_it->srtt);
 			bw2 = (u64) tp->snd_cwnd << 32;
@@ -852,6 +856,7 @@ struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk)
 			if (bw1 < bw2) {
 				tp_it->snd_cwnd = max(tp_it->snd_cwnd >> 1U, 1U);
 				tp_it->snd_ssthresh = max(tp_it->snd_cwnd, 2U);
+				tp_it->last_rbuf_opti = tcp_time_stamp;
 			}
 			break;
 		}

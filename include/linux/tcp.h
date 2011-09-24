@@ -477,6 +477,7 @@ struct tcp_sock {
 	u32	reinjected_seq;
 	int	init_rcv_wnd;
 	u32	infinite_cutoff_seq;
+	u32	last_rbuf_opti;	/* Timestamp of last rbuf optimization */
 	unsigned long last_snd_probe;
 	unsigned long last_rcv_probe;
 
