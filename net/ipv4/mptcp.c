@@ -2429,7 +2429,7 @@ void mptcp_update_window_clamp(struct tcp_sock *tp)
 	}
 	meta_tp->window_clamp = new_clamp;
 	meta_tp->rcv_ssthresh = new_rcv_ssthresh;
-	meta_sk->sk_rcvbuf = new_rcvbuf;
+	meta_sk->sk_rcvbuf = min(new_rcvbuf, sysctl_tcp_rmem[2]);
 }
 
 /**
@@ -2443,7 +2443,7 @@ void mptcp_update_sndbuf(struct multipath_pcb *mpcb)
 	int new_sndbuf = 0;
 	mptcp_for_each_sk(mpcb, sk, tp)
 		new_sndbuf += sk->sk_sndbuf;
-	meta_sk->sk_sndbuf = new_sndbuf;
+	meta_sk->sk_sndbuf = min(new_sndbuf, sysctl_tcp_wmem[2]);
 }
 
 /**
