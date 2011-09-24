@@ -2412,7 +2412,8 @@ void mptcp_update_window_clamp(struct tcp_sock *tp)
 	struct sock *meta_sk, *tmpsk;
 	struct tcp_sock *meta_tp, *tmptp;
 	struct multipath_pcb *mpcb;
-	u32 new_clamp = 0, new_rcv_ssthresh = 0, new_rcvbuf = 0;
+	u32 new_clamp = 0, new_rcv_ssthresh = 0;
+	int new_rcvbuf = 0;
 
 	/* Can happen if called from non mpcb sock. */
 	if (!tp->mpc)
