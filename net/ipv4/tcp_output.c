@@ -2355,11 +2355,13 @@ retry:
 		}
 
 		if (unlikely(!tcp_snd_wnd_test(subtp, skb, mss_now))) {
+#ifdef CONFIG_MPTCP
 			skb = mptcp_rcv_buf_optimization(subsk);
 			if (skb) {
 				reinject = -1;
 				goto retry;
 			}
+#endif
 			break;
 		}
 
@@ -2565,13 +2567,15 @@ void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
 	if (unlikely(sk->sk_state == TCP_CLOSE))
 		return;
 	if (tcp_write_xmit(sk, cur_mss, nonagle, 0, GFP_ATOMIC)) {
-		if (!is_meta_sk(sk))
+		if (!is_meta_sk(sk)) {
 			tcp_check_probe_timer(sk);
-		else {
+		} else {
+#ifdef CONFIG_MPTCP
 			struct sock *sk_it;
 			struct tcp_sock *tp_it;
 			mptcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it, tp_it)
 			    tcp_check_probe_timer(sk_it);
+#endif
 		}
 	}
 }

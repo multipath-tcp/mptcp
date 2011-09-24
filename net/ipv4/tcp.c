@@ -1594,7 +1594,9 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	struct sock *meta_sk = tp->mpc ? (struct sock *)tp->mpcb : sk;
 	struct sock *sk_it = tp->mpc ? NULL : sk;
 	struct tcp_sock *meta_tp = tp->mpc ? tcp_sk(meta_sk) : tp;
+#ifdef CONFIG_MPTCP
 	struct tcp_sock *tp_it = tcp_sk(sk_it);
+#endif
 
 	lock_sock(sk);
 
