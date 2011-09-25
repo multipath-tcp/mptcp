@@ -862,15 +862,9 @@ struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk)
 		}
 	}
 
-	/* Now, find a segment to reinject */
-	tcp_for_write_queue_from(skb_it, meta_sk) {
-		if (skb_it == tcp_send_head(meta_sk))
-			break;
-
-		/* Segment not yet injected into this path? Take it!!! */
-		if (!(skb_it->path_mask & mptcp_pi_to_flag(tp->path_index)))
-			return skb_it;
-	}
+	/* Segment not yet injected into this path? Take it!!! */
+	if (!(skb_it->path_mask & mptcp_pi_to_flag(tp->path_index)))
+		return skb_it;
 
 	return NULL;
 }
