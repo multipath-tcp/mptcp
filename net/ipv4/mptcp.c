@@ -835,17 +835,14 @@ struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk)
 	meta_sk = mptcp_meta_sk(sk);
 	skb_it = tcp_write_queue_head(meta_sk);
 
-	if (!skb_it)
+	if (!skb_it || skb_it == tcp_send_head(meta_sk))
 		return NULL;
 
 	/* Half the cwnd of the slow flow */
 	mptcp_for_each_sk(tp->mpcb, sk_it, tp_it) {
-		if (skb_it->path_mask & mptcp_pi_to_flag(tp_it->path_index)) {
+		if (tp_it != tp &&
+		    skb_it->path_mask & mptcp_pi_to_flag(tp_it->path_index)) {
 			u64 bw1, bw2;
-
-			/* Don't half our own cwnd */
-			if (tp_it == tp)
-				continue;
 
 			/* Only update every subflow rtt */
 			if (tcp_time_stamp - tp_it->last_rbuf_opti < tp_it->srtt >> 3)
