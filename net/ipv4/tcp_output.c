@@ -2234,8 +2234,8 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 	unsigned int tso_segs, sent_pkts;
 	int cwnd_quota;
 	int result;
-#ifdef CONFIG_MPTCP
 	int reinject = 0;
+#ifdef CONFIG_MPTCP
 
 	struct sock *meta_sk = (struct sock *)tp->mpcb;
 
@@ -2354,7 +2354,7 @@ retry:
 			break;
 		}
 
-		if (unlikely(!tcp_snd_wnd_test(subtp, skb, mss_now))) {
+		if (!reinject && unlikely(!tcp_snd_wnd_test(subtp, skb, mss_now))) {
 #ifdef CONFIG_MPTCP
 			skb = mptcp_rcv_buf_optimization(subsk);
 			if (skb) {

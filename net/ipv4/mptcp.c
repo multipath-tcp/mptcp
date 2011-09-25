@@ -829,6 +829,9 @@ struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk)
 	if (!tp->mpc || !sysctl_mptcp_rbuf_opti)
 		return NULL;
 
+	if (tp->mpcb->cnt_established == 1)
+		return NULL;
+
 	meta_sk = mptcp_meta_sk(sk);
 	skb_it = tcp_write_queue_head(meta_sk);
 
