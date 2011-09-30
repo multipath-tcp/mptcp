@@ -102,12 +102,14 @@ struct multipath_pcb {
 	 * socket is the one that the application sees.
 	 */
 	struct sock *master_sk;
+
+	struct multipath_options rx_opt;
+
 	/* socket count in this connection */
 	int cnt_subflows;
 	int cnt_established;
 	int last_pi_selected;
 
-	struct multipath_options rx_opt;
 
 	struct sk_buff_head reinject_queue;
 	unsigned long flags;	/* atomic, for bits see

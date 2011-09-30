@@ -49,23 +49,23 @@ struct tcp_out_options {
 #ifdef CONFIG_MPTCP
 	__u32	data_seq;	/* data sequence number, for MPTCP */
 	__u32	data_ack;	/* data ack, for MPTCP */
-	__u16	data_len;	/* data level length, for MPTCP */
 	__u32	sub_seq;	/* subflow seqnum, for MPTCP */
-	__u32	token;		/* token for mptcp */
+	__u16	data_len;	/* data level length, for MPTCP */
 	__sum16	dss_csum;	/* Overloaded field: dss-checksum required
 				 * (for SYN-packets)? Or dss-csum itself */
 	__u64	sender_key;	/* sender's key for mptcp */
 	__u64	receiver_key;	/* receiver's key for mptcp */
+	__u64	sender_truncated_mac;
 	__u32	sender_random_number;	/* random number of the sender */
 	__u32	receiver_random_number;	/* random number of the receiver */
-	__u64	sender_truncated_mac;
+	__u32	token;		/* token for mptcp */
 	char	sender_mac[20];
-	__u8	mp_join_type;	/* SYN/SYNACK/ACK */
 #ifdef CONFIG_MPTCP_PM
 	struct mptcp_loc4 *addr4;/* v4 addresses for MPTCP */
 	struct mptcp_loc6 *addr6;/* v6 addresses for MPTCP */
 	u8	addr_id;	/* address id */
 #endif /* CONFIG_MPTCP_PM */
+	__u8	mp_join_type;	/* SYN/SYNACK/ACK */
 #endif /* CONFIG_MPTCP */
 };
 
@@ -114,17 +114,17 @@ struct multipath_options {
 	struct	mptcp_loc4 addr4[MPTCP_MAX_ADDR];
 	struct	mptcp_loc6 addr6[MPTCP_MAX_ADDR];
 #endif
-	__u8	mptcp_opt_type;
 	__u32	mptcp_rem_token;	/* Received token */
-	__u64	mptcp_rem_key;	/* Remote key */
 	__u32	mptcp_recv_random_number;
+	__u64	mptcp_rem_key;	/* Remote key */
 	__u64	mptcp_recv_tmac;
+	u32	fin_dsn; /* DSN of the byte  FOLLOWING the Data FIN */
 	__u8	mptcp_recv_mac[20];
+	__u8	mptcp_opt_type;
 	u8	list_rcvd:1, /* 1 if IP list has been received (MPTCP_PM) */
 		dfin_rcvd:1,
 		mp_fail:1,
 		dss_csum:1;
-	u32	fin_dsn; /* DSN of the byte  FOLLOWING the Data FIN */
 };
 
 #endif /*_TCP_OPTIONS_H*/

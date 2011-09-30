@@ -439,6 +439,7 @@ struct tcp_sock {
 	 */
 	struct tcp_cookie_values  *cookie_values;
 
+	struct multipath_pcb		*mpcb;
 	/* We keep these flags even if CONFIG_MPTCP is not checked, because
 	 * it allowschecking MPTCP capability just by checking the mpc flag,
 	 * rather than adding ifdefs everywhere.
@@ -451,7 +452,6 @@ struct tcp_sock {
 		mptcp_add_addr_ack:1;	/* Tell tcp_send_ack to return in case
 					 * alloc_skb fails. */
 
-	struct multipath_pcb		*mpcb;
 #ifdef CONFIG_MPTCP
 	/* data for the scheduler */
 	struct {
@@ -469,8 +469,8 @@ struct tcp_sock {
 
 	/* per subflow data, for tcp_recvmsg */
 	u32	map_data_seq; /* Those three fields record the current mapping */
-	u16	map_data_len;
 	u32	map_subseq;
+	u16	map_data_len;
 
 	/* isn: needed to translate abs to relative subflow seqnums */
 	u32	snt_isn;

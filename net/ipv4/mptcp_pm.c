@@ -110,8 +110,7 @@ void mptcp_hash_remove(struct multipath_pcb *mpcb)
 	list_del(&mpcb->collide_tk);
 	write_unlock_bh(&tk_hash_lock);
 
-	/* Remove all pending request socks.
-	 */
+	/* Remove all pending request socks. */
 	spin_lock_bh(&mptcp_reqsk_hlock);
 	if (lopt->qlen != 0) {
 		unsigned int i;

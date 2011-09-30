@@ -632,15 +632,15 @@ struct tcp_skb_cb {
 #ifdef CONFIG_MPTCP
 	__u32		data_seq;	/* Starting data seq            */
 	__u32		sub_seq;	/* subflow seqnum (MPTCP)       */
+	__u32		data_ack;	/* Data level ack (MPTCP)       */
+	__u32		end_data_seq;	/* DATA_SEQ + DFIN + SYN + datalen */
 	__u16		data_len;	/* Data-level length (MPTCP)
 					 * a value of 0 indicates that no DSN
 					 * option is attached to that segment */
+	__sum16		dss_csum;	/* DSS-csum */
+	__u8		mptcp_flags;	/* flags for the MPTCP layer    */
 	__u8		dss_off;	/* Number of 4-byte words until
 					 * seq-number */
-	__sum16		dss_csum;	/* DSS-csum */
-	__u32		data_ack;	/* Data level ack (MPTCP)       */
-	__u32		end_data_seq;	/* DATA_SEQ + DFIN + SYN + datalen */
-	__u8		mptcp_flags;	/* flags for the MPTCP layer    */
 #endif
 	__u8		flags;		/* TCP header flags.		*/
 	__u8		sacked;		/* State flags for SACK/FACK.	*/

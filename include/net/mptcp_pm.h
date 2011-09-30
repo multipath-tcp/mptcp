@@ -65,30 +65,30 @@ extern int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
 
 struct mptcp_loc4 {
 	u8		id;
-	struct in_addr	addr;
 	__be16		port;
+	struct in_addr	addr;
 };
 
 struct mptcp_loc6 {
 	u8		id;
-	struct in6_addr	addr;
 	__be16		port;
+	struct in6_addr	addr;
 };
 
 struct path4 {
 	struct sockaddr_in	loc; /* local address */
-	u8			loc_id;
 	struct sockaddr_in	rem; /* remote address */
-	u8			rem_id;
 	int			path_index;
+	u8			loc_id;
+	u8			rem_id;
 };
 
 struct path6 {
 	struct sockaddr_in6	loc; /* local address */
-	u8			loc_id;
 	struct sockaddr_in6	rem; /* remote address */
-	u8			rem_id;
 	int			path_index;
+	u8			loc_id;
+	u8			rem_id;
 };
 
 struct mp_join *mptcp_find_join(struct sk_buff *skb);
