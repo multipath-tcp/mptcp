@@ -63,14 +63,14 @@ int mptcp_find_token(u32 token) {
        int hash = hash_tk(token);
        struct multipath_pcb *mpcb;
 
-       read_lock(&tk_hash_lock);
+       read_lock_bh(&tk_hash_lock);
        list_for_each_entry(mpcb, &tk_hashtable[hash], collide_tk) {
                if (token == mpcb->mptcp_loc_token) {
                        read_unlock(&tk_hash_lock);
                        return 1;
                }
        }
-       read_unlock(&tk_hash_lock);
+       read_unlock_bh(&tk_hash_lock);
        return 0;
 }
 
