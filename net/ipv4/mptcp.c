@@ -447,6 +447,13 @@ static void mptcp_sock_def_error_report(struct sock *sk)
 	}
 
 	sock_def_error_report(sk);
+
+	/* Always orphan a mptcp-subsocket, because we are allowed to destroy
+	 * it, as the master will still stay alive and thus be accessible for
+	 * the application.
+	 */
+	if (tcp_sk(sk)->mpc)
+		sock_orphan(sk);
 }
 
 /**

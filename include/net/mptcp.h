@@ -602,9 +602,9 @@ out:
 static inline void mptcp_sock_destruct(struct sock *sk)
 {
 	if (sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpcb) {
-		if (is_master_tp(tcp_sk(sk)))
+		if (is_master_tp(tcp_sk(sk))) {
 			mpcb_release(tcp_sk(sk)->mpcb);
-		else {
+		} else {
 			/* It must have been detached by
 			 * inet_csk_destroy_sock()
 			 */
