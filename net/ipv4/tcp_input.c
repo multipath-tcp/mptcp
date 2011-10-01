@@ -3531,22 +3531,9 @@ static inline int tcp_may_update_window(const struct tcp_sock *tp,
 					const u32 ack, const u32 ack_seq,
 					const u32 nwin)
 {
-	if (tp->mpc)
-		/* The variable snd_wl1 tracks the
-		 * newest sequence number that we've seen. It helps prevent
-		 * snd_wnd from being reopened on re-transmitted data. If
-		 * snd_wl1 is greater than received sequence #, we skip it.
-		 * MPTCP note: added check for ack_seq != 0, because the data
-		 * seqnum can be 0 if the dataseq option is not present. This
-		 * is the case if we received a pure ack with no data.
-		 */
-		return (after(ack, tp->snd_una) || !ack_seq ||
-			after(ack_seq, tp->snd_wl1) ||
-			(ack_seq == tp->snd_wl1 && nwin > tp->snd_wnd));
-	else
-		return	after(ack, tp->snd_una) ||
-			after(ack_seq, tp->snd_wl1) ||
-			(ack_seq == tp->snd_wl1 && nwin > tp->snd_wnd);
+	return	after(ack, tp->snd_una) ||
+		after(ack_seq, tp->snd_wl1) ||
+		(ack_seq == tp->snd_wl1 && nwin > tp->snd_wnd);
 }
 
 /* Update our send window.
@@ -3560,20 +3547,28 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 	struct tcp_sock *tp = tcp_sk(sk);
 	int flag = 0;
 	u32 nwin = ntohs(tcp_hdr(skb)->window);
-	u32 *snd_wnd = (tp->mpc) ?
-			&mpcb_meta_tp(tp->mpcb)->snd_wnd : &tp->snd_wnd;
 	struct tcp_sock *meta_tp = (tp->mpc) ? mpcb_meta_tp(tp->mpcb) : tp;
-	u32 data_ack = (tp->mpc) ? mptcp_skb_data_ack(skb) : ack;
-	u32 data_ack_seq = (tp->mpc) ? mptcp_skb_data_seq(skb) : ack_seq;
+	u32 *snd_wnd = &meta_tp->snd_wnd;
+	u32 data_ack = ack;
+	u32 data_seq = ack_seq;
+
+#ifdef CONFIG_MPTCP
+	if (tp->mpc) {
+		data_ack = (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_ACK) ?
+				mptcp_skb_data_ack(skb) : meta_tp->snd_una;
+		data_seq = (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ) ?
+				mptcp_skb_data_seq(skb) : meta_tp->snd_wl1;
+	}
+#endif
 
 	if (likely(!tcp_hdr(skb)->syn))
 		nwin <<= tp->rx_opt.snd_wscale;
 
-	if (tcp_may_update_window(meta_tp, data_ack, data_ack_seq, nwin)) {
+	if (tcp_may_update_window(meta_tp, data_ack, data_seq, nwin)) {
 		u32 *max_window = (tp->mpc) ?
 			&mpcb_meta_tp(tp->mpcb)->max_window : &tp->max_window;
 		flag |= FLAG_WIN_UPDATE;
-		tcp_update_wl(meta_tp, data_ack_seq);
+		tcp_update_wl(meta_tp, data_seq);
 		if (*snd_wnd != nwin) {
 			*snd_wnd = nwin;
 

@@ -904,9 +904,6 @@ static inline void tcp_init_wl(struct tcp_sock *tp, u32 seq)
 
 static inline void tcp_update_wl(struct tcp_sock *tp, u32 seq)
 {
-	if (tp->mpc && !seq)
-		return;
-
 	tp->snd_wl1 = seq;
 }
 
