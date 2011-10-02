@@ -2593,7 +2593,7 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 	skb = mptcp_next_segment(sk, &reinject);
 	BUG_ON(!skb);
 
-	while (reinject > 0&& !after(TCP_SKB_CB(skb)->end_data_seq, tp->snd_una)) {
+	while (reinject > 0 && !after(TCP_SKB_CB(skb)->end_data_seq, tp->snd_una)) {
 		/* another copy of the segment already reached
 		 * the peer, just discard this one.
 		 */

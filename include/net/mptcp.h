@@ -556,6 +556,7 @@ static inline void mptcp_init_mp_opt(struct multipath_options *mopt)
 {
 	mopt->list_rcvd = mopt->num_addr4 = mopt->num_addr6 = 0;
 	mopt->mptcp_opt_type = 0;
+	mopt->mp_fail = 0;
 }
 
 /**
