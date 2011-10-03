@@ -812,9 +812,15 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 	if (!meta_tp->packets_out)
 		return;
 
+	if (!tcp_write_queue_head(meta_sk)) {
+		printk(KERN_ERR"%s no skb in meta write queue but packets_out: %u\n",__func__,meta_tp->packets_out);
+		goto out;		
+	}
+
 	__mptcp_reinject_data(tcp_write_queue_head(meta_sk), meta_sk, NULL, 1);
 	tcp_push(meta_sk, 0, mptcp_sysctl_mss(), TCP_NAGLE_PUSH);
 
+out:
 	meta_icsk->icsk_rto = min(meta_icsk->icsk_rto << 1, TCP_RTO_MAX * 2);
 	inet_csk_reset_xmit_timer(meta_sk, ICSK_TIME_RETRANS,
 			meta_icsk->icsk_rto, TCP_RTO_MAX * 2);
