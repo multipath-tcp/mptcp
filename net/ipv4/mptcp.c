@@ -351,6 +351,8 @@ int sysctl_mptcp_enabled __read_mostly = 1;
 int sysctl_mptcp_scheduler __read_mostly = 1;
 int sysctl_mptcp_checksum __read_mostly = 1;
 int sysctl_mptcp_rbuf_opti __read_mostly = 0;
+int sysctl_mptcp_rbuf_retr __read_mostly = 1;
+int sysctl_mptcp_rbuf_penal __read_mostly = 1;
 
 static ctl_table mptcp_table[] = {
 	{
@@ -393,6 +395,20 @@ static ctl_table mptcp_table[] = {
 	{
 		.procname = "mptcp_rbuf_opti",
 		.data = &sysctl_mptcp_rbuf_opti,
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.proc_handler = &proc_dointvec
+	},
+	{
+		.procname = "mptcp_rbuf_retr",
+		.data = &sysctl_mptcp_rbuf_retr,
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.proc_handler = &proc_dointvec
+	},
+	{
+		.procname = "mptcp_rbuf_penal",
+		.data = &sysctl_mptcp_rbuf_penal,
 		.maxlen = sizeof(int),
 		.mode = 0644,
 		.proc_handler = &proc_dointvec
@@ -845,6 +861,9 @@ struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk)
 	if (!skb_it || skb_it == tcp_send_head(meta_sk))
 		return NULL;
 
+	if (!sysctl_mptcp_rbuf_penal)
+		goto retrans;
+
 	/* Half the cwnd of the slow flow */
 	mptcp_for_each_sk(tp->mpcb, sk_it, tp_it) {
 		if (tp_it != tp &&
@@ -869,10 +888,33 @@ struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk)
 		}
 	}
 
-	/* Segment not yet injected into this path? Take it!!! */
-	if (!(skb_it->path_mask & mptcp_pi_to_flag(tp->path_index)))
-		return skb_it;
+retrans:
+	if (!sysctl_mptcp_rbuf_retr)
+		return NULL;
 
+	/* Segment not yet injected into this path? Take it!!! */
+	if (!(skb_it->path_mask & mptcp_pi_to_flag(tp->path_index))) {
+		int do_retrans = 0;
+		mptcp_for_each_sk(tp->mpcb, sk_it, tp_it) {
+			if (tp_it != tp && skb_it->path_mask & mptcp_pi_to_flag(tp_it->path_index)) {
+				if (tp_it->snd_cwnd <= 4) {
+					do_retrans = 1;
+					break;
+				}
+
+				if (4 * tp->srtt >= tp_it->srtt) {
+					do_retrans = 0;
+					break;	
+				} else {
+					do_retrans = 1;
+				}
+			}
+		}
+
+		if (do_retrans) {
+			return skb_it;
+		}
+	}
 	return NULL;
 }
 
