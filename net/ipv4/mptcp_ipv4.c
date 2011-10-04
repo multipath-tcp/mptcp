@@ -70,6 +70,7 @@ static void mptcp_v4_reqsk_queue_hash_add(struct request_sock *req,
 	reqsk_queue_hash_req(&meta_icsk->icsk_accept_queue,
 			     h_local, req, timeout);
 	list_add(&req->collide_tuple, &mptcp_reqsk_htb[h_global]);
+	lopt->qlen++;
 	spin_unlock_bh(&mptcp_reqsk_hlock);
 }
 
@@ -129,7 +130,7 @@ static int mptcp_v4_join_request(struct multipath_pcb *mpcb,
 	if (mptcp_v4_send_synack((struct sock *)mpcb, req, NULL))
 		goto drop_and_free;
 
-	/*Adding to request queue in metasocket */
+	/* Adding to request queue in metasocket */
 	mptcp_v4_reqsk_queue_hash_add(req, TCP_TIMEOUT_INIT);
 	return 0;
 
