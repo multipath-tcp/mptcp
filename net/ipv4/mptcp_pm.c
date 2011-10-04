@@ -645,7 +645,7 @@ int mptcp_lookup_join(struct sk_buff *skb)
 	mpcb = mptcp_hash_find(token);
 	meta_sk = (struct sock *)mpcb;
 	if (!mpcb) {
-		printk(KERN_ERR"%s:mpcb not found:%x\n", __func__, token);
+		mptcp_debug("%s:mpcb not found:%x\n", __func__, token);
 		return -1;
 	}
 
