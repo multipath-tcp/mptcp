@@ -160,7 +160,7 @@ void mptcp_pm_release(struct multipath_pcb *mpcb)
 			cur_ref = &lopt->syn_table[i];
 			while (*cur_ref) {
 				struct request_sock *todel;
-				printk(KERN_ERR "Destroying request_sock\n");
+
 				lopt->qlen--;
 				todel = *cur_ref;
 				/* Remove from local hashtable, it has
