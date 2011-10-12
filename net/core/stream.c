@@ -27,10 +27,8 @@
  */
 void sk_stream_write_space(struct sock *sk)
 {
-	struct socket *sock;
+	struct socket *sock = sk->sk_socket;
 	struct socket_wq *wq;
-
-	sock = sk->sk_socket;
 
 	if (sk_stream_wspace(sk) >= sk_stream_min_wspace(sk) && sock) {
 		clear_bit(SOCK_NOSPACE, &sock->flags);
