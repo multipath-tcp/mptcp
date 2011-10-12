@@ -215,7 +215,6 @@ struct tcp_cookie_transactions {
 #include <net/sock.h>
 #include <net/inet_connection_sock.h>
 #include <net/inet_timewait_sock.h>
-#include <linux/tcp_options.h>
 
 static inline struct tcphdr *tcp_hdr(const struct sk_buff *skb)
 {
@@ -242,6 +241,89 @@ struct tcp_sack_block {
 	u32	start_seq;
 	u32	end_seq;
 };
+
+#define OPTION_SACK_ADVERTISE	(1 << 0)
+#define OPTION_TS		(1 << 1)
+#define OPTION_MD5		(1 << 2)
+#define OPTION_WSCALE		(1 << 3)
+#define OPTION_COOKIE_EXTENSION	(1 << 4)
+#define OPTION_MP_CAPABLE       (1 << 5)
+#define OPTION_DSN_MAP          (1 << 6)
+#define OPTION_DATA_FIN         (1 << 7)
+#define OPTION_DATA_ACK         (1 << 8)
+#define OPTION_ADD_ADDR         (1 << 9)
+#define OPTION_MP_JOIN          (1 << 10)
+#define OPTION_MP_FAIL		(1 << 11)
+
+struct tcp_out_options {
+	u16	options;	/* bit field of OPTION_* */
+	u8	ws;		/* window scale, 0 to disable */
+	u8	num_sack_blocks;/* number of SACK blocks to include */
+	u8	hash_size;	/* bytes in hash_location */
+	u16	mss;		/* 0 to disable */
+	__u32	tsval, tsecr;	/* need to include OPTION_TS */
+	__u8	*hash_location;	/* temporary pointer, overloaded */
+#ifdef CONFIG_MPTCP
+	__u32	data_seq;	/* data sequence number, for MPTCP */
+	__u32	data_ack;	/* data ack, for MPTCP */
+	__u32	sub_seq;	/* subflow seqnum, for MPTCP */
+	__u16	data_len;	/* data level length, for MPTCP */
+	__sum16	dss_csum;	/* Overloaded field: dss-checksum required
+				 * (for SYN-packets)? Or dss-csum itself */
+	__u64	sender_key;	/* sender's key for mptcp */
+	__u64	receiver_key;	/* receiver's key for mptcp */
+	__u64	sender_truncated_mac;
+	__u32	sender_random_number;	/* random number of the sender */
+	__u32	receiver_random_number;	/* random number of the receiver */
+	__u32	token;		/* token for mptcp */
+	char	sender_mac[20];
+#ifdef CONFIG_MPTCP_PM
+	struct mptcp_loc4 *addr4;/* v4 addresses for MPTCP */
+	struct mptcp_loc6 *addr6;/* v6 addresses for MPTCP */
+	u8	addr_id;	/* address id */
+#endif /* CONFIG_MPTCP_PM */
+	__u8	mp_join_type;	/* SYN/SYNACK/ACK */
+#endif /* CONFIG_MPTCP */
+};
+
+struct tcp_options_received {
+/*	PAWS/RTTM data	*/
+	long	ts_recent_stamp;/* Time we stored ts_recent (for aging) */
+	u32	ts_recent;	/* Time stamp to echo next		*/
+	u32	rcv_tsval;	/* Time stamp value			*/
+	u32	rcv_tsecr;	/* Time stamp echo reply		*/
+	u16	saw_tstamp : 1,	/* Saw TIMESTAMP on last packet		*/
+		tstamp_ok : 1,	/* TIMESTAMP seen on SYN packet		*/
+		dsack : 1,	/* D-SACK is scheduled			*/
+		wscale_ok : 1,	/* Wscale seen on SYN packet		*/
+		sack_ok : 4,	/* SACK seen on SYN packet		*/
+		snd_wscale : 4,	/* Window scaling received from sender	*/
+		rcv_wscale : 4;	/* Window scaling to send to receiver	*/
+	u8	saw_mpc : 1,	/* MPC option seen, for MPTCP		*/
+		saw_dfin : 1;	/* DFIN option seen, for MPTCP		*/
+	u8	cookie_plus:6,	/* bytes in authenticator/cookie option	*/
+		cookie_out_never:1,
+		cookie_in_always:1;
+	u8	num_sacks;	/* Number of SACK blocks		*/
+	u16	user_mss;	/* mss requested by user in ioctl	*/
+	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
+#ifdef CONFIG_MPTCP
+	__u8	rem_id;		/* Address-id in the MP_JOIN		*/
+	u32	rcv_isn; 	/* Needed to retrieve abs subflow seqnum
+				 * from the relative version.
+				 */
+#endif /* CONFIG_MPTCP */
+};
+
+struct multipath_options;
+
+static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
+{
+	rx_opt->tstamp_ok = rx_opt->sack_ok = 0;
+	rx_opt->wscale_ok = rx_opt->snd_wscale = 0;
+	rx_opt->cookie_plus = 0;
+	rx_opt->saw_mpc = 0;
+}
 
 /* This is the max number of SACKS that we'll generate and process. It's safe
  * to increase this, although since:

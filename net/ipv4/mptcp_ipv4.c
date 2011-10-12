@@ -18,7 +18,6 @@
 #include <linux/list.h>
 #include <linux/skbuff.h>
 #include <linux/spinlock.h>
-#include <linux/tcp_options.h>
 #include <linux/tcp.h>
 
 #include <net/inet_connection_sock.h>

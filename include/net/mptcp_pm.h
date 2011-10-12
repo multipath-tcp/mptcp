@@ -22,7 +22,6 @@
 #include <linux/list.h>
 #include <linux/skbuff.h>
 #include <linux/spinlock_types.h>
-#include <linux/tcp_options.h>
 #include <linux/types.h>
 
 #include <net/request_sock.h>
@@ -33,7 +32,6 @@
 				 */
 
 struct multipath_pcb;
-struct multipath_options;
 
 #ifdef CONFIG_MPTCP_PM
 
@@ -50,8 +48,6 @@ extern spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
 /* Functions and structures defined elsewhere but needed in mptcp_pm.c */
 struct tcp_out_options;
 struct tcp_sock;
-extern void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
-		struct tcp_out_options *opts, struct sk_buff *skb);
 extern void __tcp_v4_send_check(struct sk_buff *skb,
 		__be32 saddr, __be32 daddr);
 extern struct ip_options *tcp_v4_save_options(struct sock *sk,

@@ -25,7 +25,6 @@
 #include <linux/net.h>
 #include <linux/skbuff.h>
 #include <linux/socket.h>
-#include <linux/tcp_options.h>
 #include <linux/tcp.h>
 
 #include <crypto/hash.h>
@@ -81,6 +80,28 @@ extern struct proto mptcpsub_prot;
 #define MPCB_FLAG_SERVER_SIDE	0  /* This mpcb belongs to a server side
 				    * connection. (obtained through a listen)
 				    */
+
+struct multipath_options {
+#ifdef CONFIG_MPTCP_PM
+	int	num_addr4;
+	int	num_addr6;
+	struct	mptcp_loc4 addr4[MPTCP_MAX_ADDR];
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+	struct	mptcp_loc6 addr6[MPTCP_MAX_ADDR];
+#endif
+#endif
+	__u32	mptcp_rem_token;	/* Received token */
+	__u32	mptcp_recv_random_number;
+	__u64	mptcp_rem_key;	/* Remote key */
+	__u64	mptcp_recv_tmac;
+	u32	fin_dsn; /* DSN of the byte  FOLLOWING the Data FIN */
+	__u8	mptcp_recv_mac[20];
+	__u8	mptcp_opt_type;
+	u8	list_rcvd:1, /* 1 if IP list has been received (MPTCP_PM) */
+		dfin_rcvd:1,
+		mp_fail:1,
+		dss_csum:1;
+};
 
 struct multipath_pcb {
 
