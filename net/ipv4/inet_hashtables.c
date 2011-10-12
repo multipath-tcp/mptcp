@@ -544,16 +544,11 @@ ok:
 	head = &hinfo->bhash[inet_bhashfn(net, snum, hinfo->bhash_size)];
 	tb  = inet_csk(sk)->icsk_bind_hash;
 	spin_lock_bh(&head->lock);
-#ifdef CONFIG_MPTCP
-	/* TODO_cpaasch - check if the test for slave_sk is really necessary */
-	if (tcp_sk(sk)->slave_sk ||
-	    (sk_head(&tb->owners) == sk && !sk->sk_bind_node.next)) {
+	if (sk_head(&tb->owners) == sk && !sk->sk_bind_node.next) {
 		hash(sk, NULL);
 		spin_unlock_bh(&head->lock);
 		return 0;
-	} else
-#endif /* CONFIG_MPTCP */
-	{
+	} else {
 		spin_unlock(&head->lock);
 		/* No definite answer... Walk to established hash table */
 		ret = check_established(death_row, sk, snum, NULL);
