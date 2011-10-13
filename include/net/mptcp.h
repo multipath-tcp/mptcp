@@ -644,9 +644,6 @@ static inline int mptcp_skip_offset(struct tcp_sock *tp,
 {
 	/* Skipping the offset (stored in the size argument) */
 	if (tp->mpc) {
-#ifdef DEBUG_TCP
-		printk(KERN_ERR __FILE__ "seglen:%d\n", *seglen);
-#endif
 		if (*seglen >= *size) {
 			*seglen -= *size;
 			*from += *size;

@@ -278,14 +278,6 @@
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
 
-#undef DEBUG_TCP /* set to define if you want debugging messages */
-
-#ifdef DEBUG_TCP
-#define PDEBUG_SEND(fmt, args...) printk(KERN_ERR __FILE__ ": " fmt, ##args)
-#else
-#define PDEBUG_SEND(fmt, args...)
-#endif /* DEBUG_TCP */
-
 int sysctl_tcp_fin_timeout __read_mostly = TCP_FIN_TIMEOUT;
 
 struct percpu_counter tcp_orphan_count;
@@ -1004,8 +996,6 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	sg = 0;
 #endif
 
-	PDEBUG_SEND("%s:line %d, size %d,iovlen %d\n", __func__,
-	       __LINE__, (int) size, (int) iovlen);
 	while (--iovlen >= 0) {
 		size_t seglen = iov->iov_len;
 		unsigned char __user *from = iov->iov_base;
@@ -1077,20 +1067,16 @@ new_segment:
 
 			/* Where to copy to? */
 			if (skb_tailroom(skb) > 0) {
-				PDEBUG_SEND("to tail room\n");
 				/* We have some space in skb head. Superb! */
 				if (copy > skb_tailroom(skb))
 					copy = skb_tailroom(skb);
-				PDEBUG_SEND("%s:line %d\n", __func__, __LINE__);
 				if ((err = skb_add_data(skb, from, copy)) != 0)
 					goto do_fault;
-				PDEBUG_SEND("%s:line %d\n", __func__, __LINE__);
 			} else {
 				int merge = 0;
 				int i = skb_shinfo(skb)->nr_frags;
 				struct page *page = TCP_PAGE(sk);
 				int off = TCP_OFF(sk);
-				PDEBUG_SEND("coalesce\n");
 
 				if (skb_can_coalesce(skb, i, page, off) &&
 				    off != PAGE_SIZE) {
@@ -1165,18 +1151,14 @@ new_segment:
 			skb_shinfo(skb)->gso_segs = 0;
 
 			mptcp_set_data_size(tp, skb, copy);
-			PDEBUG_SEND("%s: line %d\n", __func__, __LINE__);
 
 			from += copy;
 			copied += copy;
 			if ((seglen -= copy) == 0 && iovlen == 0)
 				goto out;
-			PDEBUG_SEND("%s:line %d\n", __func__, __LINE__);
 
 			if (skb->len < max || (flags & MSG_OOB))
 				continue;
-
-			PDEBUG_SEND("%s:line %d\n", __func__, __LINE__);
 
 			if (forced_push(tp)) {
 				tcp_mark_push(tp, skb);
@@ -1195,7 +1177,6 @@ wait_for_memory:
 				goto do_error;
 #ifdef CONFIG_MPTCP
 			BUG_ON(!sk_stream_memory_free(sk));
-			PDEBUG_SEND("%s:line %d\n", __func__, __LINE__);
 #else
 			mss_now = tcp_send_mss(sk, &size_goal, flags);
 #endif
@@ -1209,7 +1190,6 @@ out:
 #ifndef CONFIG_MPTCP
 	release_sock(sk);
 #endif
-	PDEBUG_SEND("%s:line %d, copied %d\n", __func__, __LINE__, copied);
 	return copied;
 
 do_fault:
