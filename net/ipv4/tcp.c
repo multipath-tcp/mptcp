@@ -383,9 +383,9 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 {
 	unsigned int mask;
 	struct sock *sk = sock->sk;
-	struct tcp_sock *tp = (tcp_sk(sk)->mpc) ?
+	struct tcp_sock *meta_tp = (tcp_sk(sk)->mpc) ?
 		mpcb_meta_tp(tcp_sk(sk)->mpcb) : tcp_sk(sk);
-	struct sock *meta_sk = (tp->mpc) ? mptcp_meta_sk(sk) : sk;
+	struct sock *meta_sk = (meta_tp->mpc) ? mptcp_meta_sk(sk) : sk;
 
 	sock_poll_wait(file, sk_sleep(sk), wait);
 	if (sk->sk_state == TCP_LISTEN)
@@ -435,22 +435,21 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	if ((1 << meta_sk->sk_state) & ~(TCPF_SYN_SENT | TCPF_SYN_RECV)) {
 		int target = sock_rcvlowat(sk, 0, INT_MAX);
 
-		if (tp->urg_seq == tp->copied_seq &&
+		if (meta_tp->urg_seq == meta_tp->copied_seq &&
 		    !sock_flag(sk, SOCK_URGINLINE) &&
-		    tp->urg_data)
+		    meta_tp->urg_data)
 			target++;
 
 		/* Potential race condition. If read of tp below will
 		 * escape above sk->sk_state, we can be illegally awaken
 		 * in SYN_* states. */
-		if (tp->rcv_nxt - tp->copied_seq >= target)
+		if (meta_tp->rcv_nxt - meta_tp->copied_seq >= target)
 			mask |= POLLIN | POLLRDNORM;
 
 		if (!(meta_sk->sk_shutdown & SEND_SHUTDOWN)) {
-			if (sk_stream_wspace(meta_sk)
-			    >= sk_stream_min_wspace(meta_sk))
+			if (sk_stream_wspace(meta_sk) >= sk_stream_min_wspace(meta_sk)) {
 				mask |= POLLOUT | POLLWRNORM;
-			else {  /* send SIGIO later */
+			} else {  /* send SIGIO later */
 				set_bit(SOCK_ASYNC_NOSPACE,
 					&meta_sk->sk_socket->flags);
 				set_bit(SOCK_NOSPACE,
@@ -460,16 +459,13 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 				 * wspace test but before the flags are set,
 				 * IO signal will be lost.
 				 */
-				if (sk_stream_wspace(meta_sk) >=
-				    sk_stream_min_wspace(meta_sk))
+				if (sk_stream_wspace(meta_sk) >= sk_stream_min_wspace(meta_sk))
 					mask |= POLLOUT | POLLWRNORM;
 			}
-		} else {
+		} else
 			mask |= POLLOUT | POLLWRNORM;
-			mptcp_debug(KERN_ERR "mpcb is in shutdown state\n");
-		}
 
-		if (tp->urg_data & TCP_URG_VALID)
+		if (meta_tp->urg_data & TCP_URG_VALID)
 			mask |= POLLPRI;
 	}
 	/* This barrier is coupled with smp_wmb() in tcp_reset() */
