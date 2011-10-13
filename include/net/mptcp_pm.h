@@ -97,6 +97,9 @@ int mptcp_lookup_join(struct sk_buff *skb);
 struct sk_buff *mptcp_make_synack(struct sock *master_sk,
 					struct dst_entry *dst,
 					struct request_sock *req);
+void mptcp_synack_options(struct request_sock *req,
+			  struct tcp_out_options *opts,
+			  unsigned *remaining);
 int mptcp_find_token(u32 token);
 void mptcp_pm_release(struct multipath_pcb *mpcb);
 struct dst_entry *mptcp_route_req(const struct request_sock *req);
@@ -153,6 +156,11 @@ static inline int mptcp_lookup_join(struct sk_buff *skb)
 {
 	return 0;
 }
+
+static void mptcp_synack_options(struct request_sock *req,
+				 struct tcp_out_options *opts,
+				 unsigned *remaining)
+{}
 
 static inline int mptcp_syn_recv_sock(struct sk_buff *skb)
 {

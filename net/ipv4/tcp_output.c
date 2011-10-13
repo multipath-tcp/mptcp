@@ -891,7 +891,7 @@ nomptcp:
 }
 
 /* Set up TCP options for SYN-ACKs. */
-static unsigned tcp_synack_options(struct sock *sk,
+unsigned tcp_synack_options(struct sock *sk,
 				   struct request_sock *req,
 				   unsigned mss, struct sk_buff *skb,
 				   struct tcp_out_options *opts,
@@ -965,14 +965,7 @@ static unsigned tcp_synack_options(struct sock *sk,
 		}
 	}
 
-#ifdef CONFIG_MPTCP
-	if (req->saw_mpc) {
-		opts->options |= OPTION_MP_CAPABLE;
-		remaining -= MPTCP_SUB_LEN_CAPABLE_SYNACK_ALIGN;
-		opts->sender_key = req->mptcp_loc_key;
-		opts->dss_csum = sysctl_mptcp_checksum || req->dss_csum;
-	}
-#endif /* CONFIG_MPTCP */
+	mptcp_synack_options(req, opts, &remaining);
 
 	return MAX_TCP_OPTION_SPACE - remaining;
 }

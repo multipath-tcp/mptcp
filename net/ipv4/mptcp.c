@@ -2304,6 +2304,7 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 				mopt->mptcp_rem_token = *((u32*)(ptr + 2));
 				mopt->mptcp_recv_random_number = *((u32*)(ptr + 6));
 				mopt->mptcp_opt_type = MPTCP_MP_JOIN_TYPE_SYN;
+				opt_rx->saw_mpc = 1;
 				break;
 			case MPTCP_SUB_LEN_JOIN_SYNACK:
 				ptr += 2;

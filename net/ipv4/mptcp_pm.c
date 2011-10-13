@@ -396,63 +396,46 @@ struct dst_entry *mptcp_route_req(const struct request_sock *req)
 	return &rt->dst;
 }
 
-static unsigned mptcp_synack_options(struct request_sock *req,
-				    unsigned mss, struct sk_buff *skb,
-				    struct tcp_out_options *opts,
-				    struct tcp_md5sig_key **md5)
+void mptcp_synack_options(struct request_sock *req,
+			  struct tcp_out_options *opts,
+			  unsigned *remaining)
 {
 	struct inet_request_sock *ireq = inet_rsk(req);
-	unsigned remaining = MAX_TCP_OPTION_SPACE;
-	int i;
 
-	*md5 = NULL;
-
-	opts->mss = mss;
-	remaining -= TCPOLEN_MSS_ALIGNED;
-
-	if (likely(ireq->wscale_ok)) {
-		opts->ws = ireq->rcv_wscale;
-		opts->options |= OPTION_WSCALE;
-		remaining -= TCPOLEN_WSCALE_ALIGNED;
-	}
-	if (likely(ireq->tstamp_ok)) {
-		opts->options |= OPTION_TS;
-		opts->tsval = TCP_SKB_CB(skb)->when;
-		opts->tsecr = req->ts_recent;
-		remaining -= TCPOLEN_TSTAMP_ALIGNED;
-	}
-	if (likely(ireq->sack_ok)) {
-		opts->options |= OPTION_SACK_ADVERTISE;
-		if (unlikely(!ireq->tstamp_ok))
-			remaining -= TCPOLEN_SACKPERM_ALIGNED;
+	if (req->saw_mpc && !req->mpcb) {
+		opts->options |= OPTION_MP_CAPABLE;
+		*remaining -= MPTCP_SUB_LEN_CAPABLE_SYNACK_ALIGN;
+		opts->sender_key = req->mptcp_loc_key;
+		opts->dss_csum = sysctl_mptcp_checksum || req->dss_csum;
 	}
 
-	/* Send token in SYN/ACK */
-	opts->options |= OPTION_MP_JOIN;
-	opts->sender_truncated_mac = req->mptcp_hash_tmac;
-	opts->sender_random_number = req->mptcp_loc_random_number;
-	opts->mp_join_type = MPTCP_MP_JOIN_TYPE_SYNACK;
-#ifdef CONFIG_MPTCP_PM
-	opts->addr_id = 0;
+	if (req->saw_mpc && req->mpcb) {
+		int i;
 
-	/* Finding Address ID */
-	if (req->rsk_ops->family == AF_INET)
-		for (i = 0; i < req->mpcb->num_addr4; i++) {
-			if (req->mpcb->addr4[i].addr.s_addr == ireq->loc_addr)
-				opts->addr_id = req->mpcb->addr4[i].id;
-		}
+		opts->options |= OPTION_MP_JOIN;
+		opts->sender_truncated_mac = req->mptcp_hash_tmac;
+		opts->sender_random_number = req->mptcp_loc_random_number;
+		opts->mp_join_type = MPTCP_MP_JOIN_TYPE_SYNACK;
+		opts->addr_id = 0;
+
+		mptcp_debug("%s adding mp_join-option\n", __func__);
+
+		/* Finding Address ID */
+		if (req->rsk_ops->family == AF_INET)
+			for (i = 0; i < req->mpcb->num_addr4; i++) {
+				if (req->mpcb->addr4[i].addr.s_addr == ireq->loc_addr)
+					opts->addr_id = req->mpcb->addr4[i].id;
+			}
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-	else /* IPv6 */
-		for (i = 0; i < req->mpcb->num_addr6; i++) {
-			if (ipv6_addr_equal(&req->mpcb->addr6[i].addr,
-					&inet6_rsk(req)->loc_addr))
-				opts->addr_id = req->mpcb->addr6[i].id;
-		}
+		else /* IPv6 */
+			for (i = 0; i < req->mpcb->num_addr6; i++) {
+				if (ipv6_addr_equal(&req->mpcb->addr6[i].addr,
+						&inet6_rsk(req)->loc_addr))
+					opts->addr_id = req->mpcb->addr6[i].id;
+			}
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
-#endif /* CONFIG_MPTCP_PM */
-	remaining -= MPTCP_SUB_LEN_JOIN_ALIGN_SYNACK;
-
-	return MAX_TCP_OPTION_SPACE - remaining;
+		*remaining -= MPTCP_SUB_LEN_JOIN_ALIGN_SYNACK;
+	}
 }
 
 static inline void
@@ -511,7 +494,7 @@ struct sk_buff *mptcp_make_synack(struct sock *master_sk,
 	memset(&opts, 0, sizeof(opts));
 
 	TCP_SKB_CB(skb)->when = tcp_time_stamp;
-	tcp_header_size = mptcp_synack_options(req, mss, skb, &opts, &md5)
+	tcp_header_size = tcp_synack_options(master_sk, req, mss, skb, &opts, &md5, NULL)
 	    + sizeof(*th);
 
 	skb_push(skb, tcp_header_size);

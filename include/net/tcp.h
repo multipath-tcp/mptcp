@@ -1533,6 +1533,13 @@ struct tcp_extend_values {
 					cookie_in_always:1;
 };
 
+extern unsigned tcp_synack_options(struct sock *sk,
+				   struct request_sock *req,
+				   unsigned mss, struct sk_buff *skb,
+				   struct tcp_out_options *opts,
+				   struct tcp_md5sig_key **md5,
+				   struct tcp_extend_values *xvp);
+
 static inline struct tcp_extend_values *tcp_xv(struct request_values *rvp)
 {
 	return (struct tcp_extend_values *)rvp;
