@@ -984,10 +984,11 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	copied = 0;
 
 	err = -EPIPE;
-#ifndef CONFIG_MPTCP
+
 	if (sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN))
 		goto out_err;
 
+#ifndef CONFIG_MPTCP
 	sg = sk->sk_route_caps & NETIF_F_SG;
 #else
 	/* At the moment we assume sg is unavailable on any interface.
@@ -1198,9 +1199,7 @@ do_fault:
 		/* It is the one place in all of TCP, except connection
 		 * reset, where we can be unlinking the send_head.
 		 */
-#ifndef CONFIG_MPTCP
 		tcp_check_send_head(sk, skb);
-#endif
 		sk_wmem_free_skb(sk, skb);
 	}
 
