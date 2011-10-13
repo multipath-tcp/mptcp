@@ -358,7 +358,7 @@ int mptcp_v4_send_synack(struct sock *meta_sk,
 	if (!dst)
 		return -1;
 
-	skb = mptcp_make_synack(master_sk, dst, req);
+	skb = tcp_make_synack(master_sk, dst, req, rvp);
 
 	if (skb) {
 		__tcp_v4_send_check(skb, ireq->loc_addr, ireq->rmt_addr);

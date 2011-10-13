@@ -3324,15 +3324,26 @@ struct sk_buff *tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 	if (req->rcv_wnd == 0) { /* ignored for retransmitted syns */
 		__u8 rcv_wscale;
 		/* Set this up on the first call only */
-		req->window_clamp = tp->window_clamp ? : dst_metric(dst, RTAX_WINDOW);
+		if (mptcp_mpcb_from_req_sk(req))
+			req->window_clamp = dst_metric(dst, RTAX_WINDOW);
+		else
+			req->window_clamp = tp->window_clamp ? :
+						dst_metric(dst, RTAX_WINDOW);
 
 		/* limit the window selection if the user enforce a smaller rx buffer */
 		if (sk->sk_userlocks & SOCK_RCVBUF_LOCK &&
 		    (req->window_clamp > tcp_full_space(sk) || req->window_clamp == 0))
 			req->window_clamp = tcp_full_space(sk);
 
-		/* tcp_full_space because it is guaranteed to be the first packet */
-		tcp_select_initial_window(tcp_full_space(sk),
+		/* tcp_space because results in the same as tcp_full_space, as
+		 * no packets can be queued in a listening-sock's receive-queue,
+		 * thus sk_rmem_alloc == 0.
+		 *
+		 * In case of MPTCP it is important to use tcp_space, because
+		 * for additional subflows tcp_space will give the space
+		 * available in the meta-socket.
+		 */
+		tcp_select_initial_window(tcp_space(sk),
 			mss - (ireq->tstamp_ok ? TCPOLEN_TSTAMP_ALIGNED : 0),
 			&req->rcv_wnd,
 			&req->window_clamp,

@@ -375,7 +375,7 @@ int mptcp_v6_send_synack(struct sock *meta_sk,
 	if (err < 0)
 		goto done;
 
-	skb = mptcp_make_synack(master_sk, dst, req);
+	skb = tcp_make_synack(master_sk, dst, req, NULL);
 
 	if (skb) {
 		__tcp_v6_send_check(skb, &treq->loc_addr, &treq->rmt_addr);
