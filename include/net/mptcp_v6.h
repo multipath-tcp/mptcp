@@ -33,6 +33,10 @@
  * At the moment this will break if IPv6 is compiled as a module */
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 extern int tcp_v6_is_v4_mapped(struct sock *sk);
+extern void __tcp_v6_send_check(struct sk_buff *skb,
+				const struct in6_addr *saddr,
+				const struct in6_addr *daddr);
+extern int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
 extern struct proto mptcpsubv6_prot;
 #else
 #define tcp_v6_is_v4_mapped(sk) (0)

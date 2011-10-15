@@ -27,6 +27,9 @@
 
 #ifdef CONFIG_MPTCP_PM
 
+extern void __tcp_v4_send_check(struct sk_buff *skb,
+		__be32 saddr, __be32 daddr);
+
 int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb);
 struct path4 *mptcp_v4_find_path(struct mptcp_loc4 *loc, struct mptcp_loc4 *rem,
 				 struct multipath_pcb *mpcb);

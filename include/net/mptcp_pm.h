@@ -48,15 +48,6 @@ extern spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
 /* Functions and structures defined elsewhere but needed in mptcp_pm.c */
 struct tcp_out_options;
 struct tcp_sock;
-extern void __tcp_v4_send_check(struct sk_buff *skb,
-		__be32 saddr, __be32 daddr);
-
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-extern void __tcp_v6_send_check(struct sk_buff *skb,
-				const struct in6_addr *saddr,
-				const struct in6_addr *daddr);
-extern int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
-#endif
 
 struct mptcp_loc4 {
 	u8		id;
