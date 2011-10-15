@@ -143,7 +143,9 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 		wake_up(&tcp_probe.wait);
 	}
 
+#ifdef CONFIG_MPTCP
 out:
+#endif
 	jprobe_return();
 	return 0;
 }
@@ -200,7 +202,9 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		wake_up(&tcp_probe.wait);
 	}
 
+#ifdef CONFIG_MPTCP
 out:
+#endif
 	jprobe_return();
 	return 0;
 }

@@ -2322,12 +2322,12 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		 * the tcp_send_head should not change.
 		 */
 		BUG_ON(!reinject && tcp_send_head(sk) != skb);
+retry:
 #endif
 
 		/* This must be invoked even if we don't want
 		 * to support TSO at the moment
 		 */
-retry:
 		tso_segs = tcp_init_tso_segs(sk, skb, mss_now);
 		BUG_ON(!tso_segs);
 		/* At the moment we do not support tso, hence

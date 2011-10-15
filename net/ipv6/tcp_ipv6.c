@@ -77,6 +77,7 @@
 static void	tcp_v6_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 				      struct request_sock *req);
 
+int     tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
 void	__tcp_v6_send_check(struct sk_buff *skb,
 			    const struct in6_addr *saddr,
 			    const struct in6_addr *daddr);
