@@ -1181,7 +1181,7 @@ void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 	}
 
 	if (sk->sk_family == AF_INET)
-		mptcp_debug("%s: token %08x pi %d, src_addr:%pI4:%d dst_addr:"
+		mptcp_debug("%s: token %#x pi %d, src_addr:%pI4:%d dst_addr:"
 				"%pI4:%d, cnt_subflows now %d\n", __func__ ,
 				mpcb->mptcp_loc_token,
 				tp->path_index,
@@ -1191,7 +1191,7 @@ void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 				ntohs(((struct inet_sock *) tp)->inet_dport),
 				mpcb->cnt_subflows);
 	else
-		mptcp_debug("%s: token %08x pi %d, src_addr:%pI6:%d dst_addr:"
+		mptcp_debug("%s: token %#x pi %d, src_addr:%pI6:%d dst_addr:"
 				"%pI6:%d, cnt_subflows now %d\n", __func__ ,
 				mpcb->mptcp_loc_token,
 				tp->path_index, &inet6_sk(sk)->saddr,
@@ -2614,8 +2614,6 @@ void mptcp_close(struct sock *master_sk, long timeout)
 	int data_was_unread = 0;
 	int state;
 
-	mptcp_debug("%s: Close of meta_sk\n", __func__);
-
 	lock_sock(master_sk);
 	mpcb = (tcp_sk(master_sk)->mpc) ? tcp_sk(master_sk)->mpcb : NULL;
 
@@ -2623,6 +2621,9 @@ void mptcp_close(struct sock *master_sk, long timeout)
 	 * is destroyed
 	 */
 	if (mpcb) {
+		mptcp_debug("%s: Close of meta_sk with tok %#x\n", __func__,
+				mpcb->mptcp_loc_token);
+
 		meta_sk = (struct sock *) mpcb;
 		meta_tp = tcp_sk(meta_sk);
 		sock_hold(master_sk);

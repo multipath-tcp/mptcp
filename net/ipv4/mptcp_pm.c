@@ -51,7 +51,7 @@ void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token)
 {
 	int hash = hash_tk(token);
 
-	mptcp_debug("%s: add mpcb to hash-table with loc_token %08x\n",
+	mptcp_debug("%s: add mpcb to hash-table with loc_token %#x\n",
 			__func__, mpcb->mptcp_loc_token);
 
 	write_lock_bh(&tk_hash_lock);
@@ -417,8 +417,6 @@ void mptcp_synack_options(struct request_sock *req,
 		opts->sender_random_number = req->mptcp_loc_random_number;
 		opts->mp_join_type = MPTCP_MP_JOIN_TYPE_SYNACK;
 		opts->addr_id = 0;
-
-		mptcp_debug("%s adding mp_join-option\n", __func__);
 
 		/* Finding Address ID */
 		if (req->rsk_ops->family == AF_INET)
