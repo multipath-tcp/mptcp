@@ -698,12 +698,7 @@ int __init detect_intel_iommu(void)
 	{
 #ifdef CONFIG_INTR_REMAP
 		struct acpi_table_dmar *dmar;
-		/*
-		 * for now we will disable dma-remapping when interrupt
-		 * remapping is enabled.
-		 * When support for queued invalidation for IOTLB invalidation
-		 * is added, we will not need this any more.
-		 */
+
 		dmar = (struct acpi_table_dmar *) dmar_tbl;
 		if (ret && cpu_has_x2apic && dmar->flags & 0x1)
 			printk(KERN_INFO
@@ -1226,7 +1221,7 @@ const char *dmar_get_fault_reason(u8 fault_reason, int *fault_type)
 
 void dmar_msi_unmask(struct irq_data *data)
 {
-	struct intel_iommu *iommu = irq_data_get_irq_data(data);
+	struct intel_iommu *iommu = irq_data_get_irq_handler_data(data);
 	unsigned long flag;
 
 	/* unmask it */
@@ -1240,7 +1235,7 @@ void dmar_msi_unmask(struct irq_data *data)
 void dmar_msi_mask(struct irq_data *data)
 {
 	unsigned long flag;
-	struct intel_iommu *iommu = irq_data_get_irq_data(data);
+	struct intel_iommu *iommu = irq_data_get_irq_handler_data(data);
 
 	/* mask it */
 	spin_lock_irqsave(&iommu->register_lock, flag);
@@ -1252,7 +1247,7 @@ void dmar_msi_mask(struct irq_data *data)
 
 void dmar_msi_write(int irq, struct msi_msg *msg)
 {
-	struct intel_iommu *iommu = get_irq_data(irq);
+	struct intel_iommu *iommu = irq_get_handler_data(irq);
 	unsigned long flag;
 
 	spin_lock_irqsave(&iommu->register_lock, flag);
@@ -1264,7 +1259,7 @@ void dmar_msi_write(int irq, struct msi_msg *msg)
 
 void dmar_msi_read(int irq, struct msi_msg *msg)
 {
-	struct intel_iommu *iommu = get_irq_data(irq);
+	struct intel_iommu *iommu = irq_get_handler_data(irq);
 	unsigned long flag;
 
 	spin_lock_irqsave(&iommu->register_lock, flag);
@@ -1382,12 +1377,12 @@ int dmar_set_interrupt(struct intel_iommu *iommu)
 		return -EINVAL;
 	}
 
-	set_irq_data(irq, iommu);
+	irq_set_handler_data(irq, iommu);
 	iommu->irq = irq;
 
 	ret = arch_setup_dmar_msi(irq);
 	if (ret) {
-		set_irq_data(irq, NULL);
+		irq_set_handler_data(irq, NULL);
 		iommu->irq = 0;
 		destroy_irq(irq);
 		return ret;

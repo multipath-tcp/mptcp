@@ -2,7 +2,7 @@
  *
  * GPL LICENSE SUMMARY
  *
- * Copyright(c) 2008 - 2010 Intel Corporation. All rights reserved.
+ * Copyright(c) 2008 - 2011 Intel Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -172,6 +172,7 @@ static void iwlagn_count_agg_tx_err_status(struct iwl_priv *priv, u16 status)
 
 static void iwlagn_set_tx_status(struct iwl_priv *priv,
 				 struct ieee80211_tx_info *info,
+				 struct iwl_rxon_context *ctx,
 				 struct iwlagn_tx_resp *tx_resp,
 				 int txq_id, bool is_agg)
 {
@@ -185,6 +186,13 @@ static void iwlagn_set_tx_status(struct iwl_priv *priv,
 				    info);
 	if (!iwl_is_tx_success(status))
 		iwlagn_count_tx_err_status(priv, status);
+
+	if (status == TX_STATUS_FAIL_PASSIVE_NO_RX &&
+	    iwl_is_associated_ctx(ctx) && ctx->vif &&
+	    ctx->vif->type == NL80211_IFTYPE_STATION) {
+		ctx->last_tx_rejected = true;
+		iwl_stop_queue(priv, &priv->txq[txq_id]);
+	}
 
 	IWL_DEBUG_TX_REPLY(priv, "TXQ %d status %s (0x%08x) rate_n_flags "
 			   "0x%x retries %d\n",
@@ -242,15 +250,16 @@ static int iwlagn_tx_status_reply_tx(struct iwl_priv *priv,
 
 	/* # frames attempted by Tx command */
 	if (agg->frame_count == 1) {
+		struct iwl_tx_info *txb;
+
 		/* Only one frame was attempted; no block-ack will arrive */
 		idx = start_idx;
 
 		IWL_DEBUG_TX_REPLY(priv, "FrameCnt = %d, StartIdx=%d idx=%d\n",
 				   agg->frame_count, agg->start_idx, idx);
-		iwlagn_set_tx_status(priv,
-				     IEEE80211_SKB_CB(
-					priv->txq[txq_id].txb[idx].skb),
-				     tx_resp, txq_id, true);
+		txb = &priv->txq[txq_id].txb[idx];
+		iwlagn_set_tx_status(priv, IEEE80211_SKB_CB(txb->skb),
+				     txb->ctx, tx_resp, txq_id, true);
 		agg->wait_for_ba = 0;
 	} else {
 		/* Two or more frames were attempted; expect block-ack */
@@ -391,7 +400,8 @@ static void iwlagn_rx_reply_tx(struct iwl_priv *priv,
 	struct iwl_tx_queue *txq = &priv->txq[txq_id];
 	struct ieee80211_tx_info *info;
 	struct iwlagn_tx_resp *tx_resp = (void *)&pkt->u.raw[0];
-	u32  status = le16_to_cpu(tx_resp->status.status);
+	struct iwl_tx_info *txb;
+	u32 status = le16_to_cpu(tx_resp->status.status);
 	int tid;
 	int sta_id;
 	int freed;
@@ -406,7 +416,8 @@ static void iwlagn_rx_reply_tx(struct iwl_priv *priv,
 	}
 
 	txq->time_stamp = jiffies;
-	info = IEEE80211_SKB_CB(txq->txb[txq->q.read_ptr].skb);
+	txb = &txq->txb[txq->q.read_ptr];
+	info = IEEE80211_SKB_CB(txb->skb);
 	memset(&info->status, 0, sizeof(info->status));
 
 	tid = (tx_resp->ra_tid & IWLAGN_TX_RES_TID_MSK) >>
@@ -450,12 +461,14 @@ static void iwlagn_rx_reply_tx(struct iwl_priv *priv,
 				iwl_wake_queue(priv, txq);
 		}
 	} else {
-		iwlagn_set_tx_status(priv, info, tx_resp, txq_id, false);
+		iwlagn_set_tx_status(priv, info, txb->ctx, tx_resp,
+				     txq_id, false);
 		freed = iwlagn_tx_queue_reclaim(priv, txq_id, index);
 		iwl_free_tfds_in_queue(priv, sta_id, tid, freed);
 
 		if (priv->mac80211_registered &&
-		    (iwl_queue_space(&txq->q) > txq->q.low_mark))
+		    iwl_queue_space(&txq->q) > txq->q.low_mark &&
+		    status != TX_STATUS_FAIL_PASSIVE_NO_RX)
 			iwl_wake_queue(priv, txq);
 	}
 
@@ -470,15 +483,20 @@ void iwlagn_rx_handler_setup(struct iwl_priv *priv)
 	/* init calibration handlers */
 	priv->rx_handlers[CALIBRATION_RES_NOTIFICATION] =
 					iwlagn_rx_calib_result;
-	priv->rx_handlers[CALIBRATION_COMPLETE_NOTIFICATION] =
-					iwlagn_rx_calib_complete;
 	priv->rx_handlers[REPLY_TX] = iwlagn_rx_reply_tx;
+
+	/* set up notification wait support */
+	spin_lock_init(&priv->_agn.notif_wait_lock);
+	INIT_LIST_HEAD(&priv->_agn.notif_waits);
+	init_waitqueue_head(&priv->_agn.notif_waitq);
 }
 
 void iwlagn_setup_deferred_work(struct iwl_priv *priv)
 {
-	/* in agn, the tx power calibration is done in uCode */
-	priv->disable_tx_power_cal = 1;
+	/*
+	 * nothing need to be done here anymore
+	 * still keep for future use if needed
+	 */
 }
 
 int iwlagn_hw_valid_rtc_data_addr(u32 addr)
@@ -528,9 +546,8 @@ int iwlagn_send_tx_power(struct iwl_priv *priv)
 
 void iwlagn_temperature(struct iwl_priv *priv)
 {
-	/* store temperature from statistics (in Celsius) */
-	priv->temperature =
-		le32_to_cpu(priv->_agn.statistics.general.common.temperature);
+	/* store temperature from correct statistics (in Celsius) */
+	priv->temperature = le32_to_cpu(priv->statistics.common.temperature);
 	iwl_tt_handler(priv);
 }
 
@@ -604,6 +621,7 @@ const u8 *iwlagn_eeprom_query_addr(const struct iwl_priv *priv,
 struct iwl_mod_params iwlagn_mod_params = {
 	.amsdu_size_8K = 1,
 	.restart_fw = 1,
+	.plcp_check = true,
 	/* the rest are 0 by default */
 };
 
@@ -645,10 +663,9 @@ int iwlagn_rx_init(struct iwl_priv *priv, struct iwl_rx_queue *rxq)
 	const u32 rfdnlog = RX_QUEUE_SIZE_LOG; /* 256 RBDs */
 	u32 rb_timeout = 0; /* FIXME: RX_RB_TIMEOUT for all devices? */
 
-	if (!priv->cfg->base_params->use_isr_legacy)
-		rb_timeout = RX_RB_TIMEOUT;
+	rb_timeout = RX_RB_TIMEOUT;
 
-	if (priv->cfg->mod_params->amsdu_size_8K)
+	if (iwlagn_mod_params.amsdu_size_8K)
 		rb_size = FH_RCSR_RX_CONFIG_REG_VAL_RB_SIZE_8K;
 	else
 		rb_size = FH_RCSR_RX_CONFIG_REG_VAL_RB_SIZE_4K;
@@ -906,7 +923,6 @@ void iwlagn_rx_allocate(struct iwl_priv *priv, gfp_t priority)
 
 		list_add_tail(&rxb->list, &rxq->rx_free);
 		rxq->free_count++;
-		priv->alloc_rxb_page++;
 
 		spin_unlock_irqrestore(&rxq->lock, flags);
 	}
@@ -986,240 +1002,6 @@ int iwlagn_hwrate_to_mac80211_idx(u32 rate_n_flags, enum ieee80211_band band)
 	}
 
 	return -1;
-}
-
-/* Calc max signal level (dBm) among 3 possible receivers */
-static inline int iwlagn_calc_rssi(struct iwl_priv *priv,
-				struct iwl_rx_phy_res *rx_resp)
-{
-	return priv->cfg->ops->utils->calc_rssi(priv, rx_resp);
-}
-
-static u32 iwlagn_translate_rx_status(struct iwl_priv *priv, u32 decrypt_in)
-{
-	u32 decrypt_out = 0;
-
-	if ((decrypt_in & RX_RES_STATUS_STATION_FOUND) ==
-					RX_RES_STATUS_STATION_FOUND)
-		decrypt_out |= (RX_RES_STATUS_STATION_FOUND |
-				RX_RES_STATUS_NO_STATION_INFO_MISMATCH);
-
-	decrypt_out |= (decrypt_in & RX_RES_STATUS_SEC_TYPE_MSK);
-
-	/* packet was not encrypted */
-	if ((decrypt_in & RX_RES_STATUS_SEC_TYPE_MSK) ==
-					RX_RES_STATUS_SEC_TYPE_NONE)
-		return decrypt_out;
-
-	/* packet was encrypted with unknown alg */
-	if ((decrypt_in & RX_RES_STATUS_SEC_TYPE_MSK) ==
-					RX_RES_STATUS_SEC_TYPE_ERR)
-		return decrypt_out;
-
-	/* decryption was not done in HW */
-	if ((decrypt_in & RX_MPDU_RES_STATUS_DEC_DONE_MSK) !=
-					RX_MPDU_RES_STATUS_DEC_DONE_MSK)
-		return decrypt_out;
-
-	switch (decrypt_in & RX_RES_STATUS_SEC_TYPE_MSK) {
-
-	case RX_RES_STATUS_SEC_TYPE_CCMP:
-		/* alg is CCM: check MIC only */
-		if (!(decrypt_in & RX_MPDU_RES_STATUS_MIC_OK))
-			/* Bad MIC */
-			decrypt_out |= RX_RES_STATUS_BAD_ICV_MIC;
-		else
-			decrypt_out |= RX_RES_STATUS_DECRYPT_OK;
-
-		break;
-
-	case RX_RES_STATUS_SEC_TYPE_TKIP:
-		if (!(decrypt_in & RX_MPDU_RES_STATUS_TTAK_OK)) {
-			/* Bad TTAK */
-			decrypt_out |= RX_RES_STATUS_BAD_KEY_TTAK;
-			break;
-		}
-		/* fall through if TTAK OK */
-	default:
-		if (!(decrypt_in & RX_MPDU_RES_STATUS_ICV_OK))
-			decrypt_out |= RX_RES_STATUS_BAD_ICV_MIC;
-		else
-			decrypt_out |= RX_RES_STATUS_DECRYPT_OK;
-		break;
-	}
-
-	IWL_DEBUG_RX(priv, "decrypt_in:0x%x  decrypt_out = 0x%x\n",
-					decrypt_in, decrypt_out);
-
-	return decrypt_out;
-}
-
-static void iwlagn_pass_packet_to_mac80211(struct iwl_priv *priv,
-					struct ieee80211_hdr *hdr,
-					u16 len,
-					u32 ampdu_status,
-					struct iwl_rx_mem_buffer *rxb,
-					struct ieee80211_rx_status *stats)
-{
-	struct sk_buff *skb;
-	__le16 fc = hdr->frame_control;
-
-	/* We only process data packets if the interface is open */
-	if (unlikely(!priv->is_open)) {
-		IWL_DEBUG_DROP_LIMIT(priv,
-		    "Dropping packet while interface is not open.\n");
-		return;
-	}
-
-	/* In case of HW accelerated crypto and bad decryption, drop */
-	if (!priv->cfg->mod_params->sw_crypto &&
-	    iwl_set_decrypted_flag(priv, hdr, ampdu_status, stats))
-		return;
-
-	skb = dev_alloc_skb(128);
-	if (!skb) {
-		IWL_ERR(priv, "dev_alloc_skb failed\n");
-		return;
-	}
-
-	skb_add_rx_frag(skb, 0, rxb->page, (void *)hdr - rxb_addr(rxb), len);
-
-	iwl_update_stats(priv, false, fc, len);
-	memcpy(IEEE80211_SKB_RXCB(skb), stats, sizeof(*stats));
-
-	ieee80211_rx(priv->hw, skb);
-	priv->alloc_rxb_page--;
-	rxb->page = NULL;
-}
-
-/* Called for REPLY_RX (legacy ABG frames), or
- * REPLY_RX_MPDU_CMD (HT high-throughput N frames). */
-void iwlagn_rx_reply_rx(struct iwl_priv *priv,
-				struct iwl_rx_mem_buffer *rxb)
-{
-	struct ieee80211_hdr *header;
-	struct ieee80211_rx_status rx_status;
-	struct iwl_rx_packet *pkt = rxb_addr(rxb);
-	struct iwl_rx_phy_res *phy_res;
-	__le32 rx_pkt_status;
-	struct iwl_rx_mpdu_res_start *amsdu;
-	u32 len;
-	u32 ampdu_status;
-	u32 rate_n_flags;
-
-	/**
-	 * REPLY_RX and REPLY_RX_MPDU_CMD are handled differently.
-	 *	REPLY_RX: physical layer info is in this buffer
-	 *	REPLY_RX_MPDU_CMD: physical layer info was sent in separate
-	 *		command and cached in priv->last_phy_res
-	 *
-	 * Here we set up local variables depending on which command is
-	 * received.
-	 */
-	if (pkt->hdr.cmd == REPLY_RX) {
-		phy_res = (struct iwl_rx_phy_res *)pkt->u.raw;
-		header = (struct ieee80211_hdr *)(pkt->u.raw + sizeof(*phy_res)
-				+ phy_res->cfg_phy_cnt);
-
-		len = le16_to_cpu(phy_res->byte_count);
-		rx_pkt_status = *(__le32 *)(pkt->u.raw + sizeof(*phy_res) +
-				phy_res->cfg_phy_cnt + len);
-		ampdu_status = le32_to_cpu(rx_pkt_status);
-	} else {
-		if (!priv->_agn.last_phy_res_valid) {
-			IWL_ERR(priv, "MPDU frame without cached PHY data\n");
-			return;
-		}
-		phy_res = &priv->_agn.last_phy_res;
-		amsdu = (struct iwl_rx_mpdu_res_start *)pkt->u.raw;
-		header = (struct ieee80211_hdr *)(pkt->u.raw + sizeof(*amsdu));
-		len = le16_to_cpu(amsdu->byte_count);
-		rx_pkt_status = *(__le32 *)(pkt->u.raw + sizeof(*amsdu) + len);
-		ampdu_status = iwlagn_translate_rx_status(priv,
-				le32_to_cpu(rx_pkt_status));
-	}
-
-	if ((unlikely(phy_res->cfg_phy_cnt > 20))) {
-		IWL_DEBUG_DROP(priv, "dsp size out of range [0,20]: %d/n",
-				phy_res->cfg_phy_cnt);
-		return;
-	}
-
-	if (!(rx_pkt_status & RX_RES_STATUS_NO_CRC32_ERROR) ||
-	    !(rx_pkt_status & RX_RES_STATUS_NO_RXE_OVERFLOW)) {
-		IWL_DEBUG_RX(priv, "Bad CRC or FIFO: 0x%08X.\n",
-				le32_to_cpu(rx_pkt_status));
-		return;
-	}
-
-	/* This will be used in several places later */
-	rate_n_flags = le32_to_cpu(phy_res->rate_n_flags);
-
-	/* rx_status carries information about the packet to mac80211 */
-	rx_status.mactime = le64_to_cpu(phy_res->timestamp);
-	rx_status.freq =
-		ieee80211_channel_to_frequency(le16_to_cpu(phy_res->channel));
-	rx_status.band = (phy_res->phy_flags & RX_RES_PHY_FLAGS_BAND_24_MSK) ?
-				IEEE80211_BAND_2GHZ : IEEE80211_BAND_5GHZ;
-	rx_status.rate_idx =
-		iwlagn_hwrate_to_mac80211_idx(rate_n_flags, rx_status.band);
-	rx_status.flag = 0;
-
-	/* TSF isn't reliable. In order to allow smooth user experience,
-	 * this W/A doesn't propagate it to the mac80211 */
-	/*rx_status.flag |= RX_FLAG_TSFT;*/
-
-	priv->ucode_beacon_time = le32_to_cpu(phy_res->beacon_time_stamp);
-
-	/* Find max signal strength (dBm) among 3 antenna/receiver chains */
-	rx_status.signal = iwlagn_calc_rssi(priv, phy_res);
-
-	iwl_dbg_log_rx_data_frame(priv, len, header);
-	IWL_DEBUG_STATS_LIMIT(priv, "Rssi %d, TSF %llu\n",
-		rx_status.signal, (unsigned long long)rx_status.mactime);
-
-	/*
-	 * "antenna number"
-	 *
-	 * It seems that the antenna field in the phy flags value
-	 * is actually a bit field. This is undefined by radiotap,
-	 * it wants an actual antenna number but I always get "7"
-	 * for most legacy frames I receive indicating that the
-	 * same frame was received on all three RX chains.
-	 *
-	 * I think this field should be removed in favor of a
-	 * new 802.11n radiotap field "RX chains" that is defined
-	 * as a bitmask.
-	 */
-	rx_status.antenna =
-		(le16_to_cpu(phy_res->phy_flags) & RX_RES_PHY_FLAGS_ANTENNA_MSK)
-		>> RX_RES_PHY_FLAGS_ANTENNA_POS;
-
-	/* set the preamble flag if appropriate */
-	if (phy_res->phy_flags & RX_RES_PHY_FLAGS_SHORT_PREAMBLE_MSK)
-		rx_status.flag |= RX_FLAG_SHORTPRE;
-
-	/* Set up the HT phy flags */
-	if (rate_n_flags & RATE_MCS_HT_MSK)
-		rx_status.flag |= RX_FLAG_HT;
-	if (rate_n_flags & RATE_MCS_HT40_MSK)
-		rx_status.flag |= RX_FLAG_40MHZ;
-	if (rate_n_flags & RATE_MCS_SGI_MSK)
-		rx_status.flag |= RX_FLAG_SHORT_GI;
-
-	iwlagn_pass_packet_to_mac80211(priv, header, len, ampdu_status,
-				    rxb, &rx_status);
-}
-
-/* Cache phy data (Rx signal strength, etc) for HT frame (REPLY_RX_PHY_CMD).
- * This will be used later in iwl_rx_reply_rx() for REPLY_RX_MPDU_CMD. */
-void iwlagn_rx_reply_rx_phy(struct iwl_priv *priv,
-			    struct iwl_rx_mem_buffer *rxb)
-{
-	struct iwl_rx_packet *pkt = rxb_addr(rxb);
-	priv->_agn.last_phy_res_valid = true;
-	memcpy(&priv->_agn.last_phy_res, pkt->u.raw,
-	       sizeof(struct iwl_rx_phy_res));
 }
 
 static int iwl_get_single_channel_for_scan(struct iwl_priv *priv,
@@ -1342,12 +1124,23 @@ static int iwl_get_channels_for_scan(struct iwl_priv *priv,
 	return added;
 }
 
+static int iwl_fill_offch_tx(struct iwl_priv *priv, void *data, size_t maxlen)
+{
+	struct sk_buff *skb = priv->_agn.offchan_tx_skb;
+
+	if (skb->len < maxlen)
+		maxlen = skb->len;
+
+	memcpy(data, skb->data, maxlen);
+
+	return maxlen;
+}
+
 int iwlagn_request_scan(struct iwl_priv *priv, struct ieee80211_vif *vif)
 {
 	struct iwl_host_cmd cmd = {
 		.id = REPLY_SCAN_CMD,
-		.len = sizeof(struct iwl_scan_cmd),
-		.flags = CMD_SIZE_HUGE,
+		.len = { sizeof(struct iwl_scan_cmd), },
 	};
 	struct iwl_scan_cmd *scan;
 	struct iwl_rxon_context *ctx = &priv->contexts[IWL_RXON_CTX_BSS];
@@ -1384,20 +1177,25 @@ int iwlagn_request_scan(struct iwl_priv *priv, struct ieee80211_vif *vif)
 	scan->quiet_plcp_th = IWL_PLCP_QUIET_THRESH;
 	scan->quiet_time = IWL_ACTIVE_QUIET_TIME;
 
-	if (iwl_is_any_associated(priv)) {
+	if (priv->scan_type != IWL_SCAN_OFFCH_TX &&
+	    iwl_is_any_associated(priv)) {
 		u16 interval = 0;
 		u32 extra;
 		u32 suspend_time = 100;
 		u32 scan_suspend_time = 100;
-		unsigned long flags;
 
 		IWL_DEBUG_INFO(priv, "Scanning while associated...\n");
-		spin_lock_irqsave(&priv->lock, flags);
-		if (priv->is_internal_short_scan)
+		switch (priv->scan_type) {
+		case IWL_SCAN_OFFCH_TX:
+			WARN_ON(1);
+			break;
+		case IWL_SCAN_RADIO_RESET:
 			interval = 0;
-		else
+			break;
+		case IWL_SCAN_NORMAL:
 			interval = vif->bss_conf.beacon_int;
-		spin_unlock_irqrestore(&priv->lock, flags);
+			break;
+		}
 
 		scan->suspend_time = 0;
 		scan->max_out_time = cpu_to_le32(200 * 1024);
@@ -1410,29 +1208,41 @@ int iwlagn_request_scan(struct iwl_priv *priv, struct ieee80211_vif *vif)
 		scan->suspend_time = cpu_to_le32(scan_suspend_time);
 		IWL_DEBUG_SCAN(priv, "suspend_time 0x%X beacon interval %d\n",
 			       scan_suspend_time, interval);
+	} else if (priv->scan_type == IWL_SCAN_OFFCH_TX) {
+		scan->suspend_time = 0;
+		scan->max_out_time =
+			cpu_to_le32(1024 * priv->_agn.offchan_tx_timeout);
 	}
 
-	if (priv->is_internal_short_scan) {
+	switch (priv->scan_type) {
+	case IWL_SCAN_RADIO_RESET:
 		IWL_DEBUG_SCAN(priv, "Start internal passive scan.\n");
-	} else if (priv->scan_request->n_ssids) {
-		int i, p = 0;
-		IWL_DEBUG_SCAN(priv, "Kicking off active scan\n");
-		for (i = 0; i < priv->scan_request->n_ssids; i++) {
-			/* always does wildcard anyway */
-			if (!priv->scan_request->ssids[i].ssid_len)
-				continue;
-			scan->direct_scan[p].id = WLAN_EID_SSID;
-			scan->direct_scan[p].len =
-				priv->scan_request->ssids[i].ssid_len;
-			memcpy(scan->direct_scan[p].ssid,
-			       priv->scan_request->ssids[i].ssid,
-			       priv->scan_request->ssids[i].ssid_len);
-			n_probes++;
-			p++;
-		}
-		is_active = true;
-	} else
-		IWL_DEBUG_SCAN(priv, "Start passive scan.\n");
+		break;
+	case IWL_SCAN_NORMAL:
+		if (priv->scan_request->n_ssids) {
+			int i, p = 0;
+			IWL_DEBUG_SCAN(priv, "Kicking off active scan\n");
+			for (i = 0; i < priv->scan_request->n_ssids; i++) {
+				/* always does wildcard anyway */
+				if (!priv->scan_request->ssids[i].ssid_len)
+					continue;
+				scan->direct_scan[p].id = WLAN_EID_SSID;
+				scan->direct_scan[p].len =
+					priv->scan_request->ssids[i].ssid_len;
+				memcpy(scan->direct_scan[p].ssid,
+				       priv->scan_request->ssids[i].ssid,
+				       priv->scan_request->ssids[i].ssid_len);
+				n_probes++;
+				p++;
+			}
+			is_active = true;
+		} else
+			IWL_DEBUG_SCAN(priv, "Start passive scan.\n");
+		break;
+	case IWL_SCAN_OFFCH_TX:
+		IWL_DEBUG_SCAN(priv, "Start offchannel TX scan.\n");
+		break;
+	}
 
 	scan->tx_cmd.tx_flags = TX_CMD_FLG_SEQ_CTL_MSK;
 	scan->tx_cmd.sta_id = ctx->bcast_sta_id;
@@ -1483,9 +1293,17 @@ int iwlagn_request_scan(struct iwl_priv *priv, struct ieee80211_vif *vif)
 	 * mean we never reach it, but at the same time work around
 	 * the aforementioned issue. Thus use IWL_GOOD_CRC_TH_NEVER
 	 * here instead of IWL_GOOD_CRC_TH_DISABLED.
+	 *
+	 * This was fixed in later versions along with some other
+	 * scan changes, and the threshold behaves as a flag in those
+	 * versions.
 	 */
-	scan->good_CRC_th = is_active ? IWL_GOOD_CRC_TH_DEFAULT :
-					IWL_GOOD_CRC_TH_NEVER;
+	if (priv->new_scan_threshold_behaviour)
+		scan->good_CRC_th = is_active ? IWL_GOOD_CRC_TH_DEFAULT :
+						IWL_GOOD_CRC_TH_DISABLED;
+	else
+		scan->good_CRC_th = is_active ? IWL_GOOD_CRC_TH_DEFAULT :
+						IWL_GOOD_CRC_TH_NEVER;
 
 	band = priv->scan_band;
 
@@ -1530,47 +1348,87 @@ int iwlagn_request_scan(struct iwl_priv *priv, struct ieee80211_vif *vif)
 	rx_chain |= rx_ant << RXON_RX_CHAIN_FORCE_SEL_POS;
 	rx_chain |= 0x1 << RXON_RX_CHAIN_DRIVER_FORCE_POS;
 	scan->rx_chain = cpu_to_le16(rx_chain);
-	if (!priv->is_internal_short_scan) {
+	switch (priv->scan_type) {
+	case IWL_SCAN_NORMAL:
 		cmd_len = iwl_fill_probe_req(priv,
 					(struct ieee80211_mgmt *)scan->data,
 					vif->addr,
 					priv->scan_request->ie,
 					priv->scan_request->ie_len,
 					IWL_MAX_SCAN_SIZE - sizeof(*scan));
-	} else {
+		break;
+	case IWL_SCAN_RADIO_RESET:
 		/* use bcast addr, will not be transmitted but must be valid */
 		cmd_len = iwl_fill_probe_req(priv,
 					(struct ieee80211_mgmt *)scan->data,
 					iwl_bcast_addr, NULL, 0,
 					IWL_MAX_SCAN_SIZE - sizeof(*scan));
-
+		break;
+	case IWL_SCAN_OFFCH_TX:
+		cmd_len = iwl_fill_offch_tx(priv, scan->data,
+					    IWL_MAX_SCAN_SIZE
+					     - sizeof(*scan)
+					     - sizeof(struct iwl_scan_channel));
+		scan->scan_flags |= IWL_SCAN_FLAGS_ACTION_FRAME_TX;
+		break;
+	default:
+		BUG();
 	}
 	scan->tx_cmd.len = cpu_to_le16(cmd_len);
 
 	scan->filter_flags |= (RXON_FILTER_ACCEPT_GRP_MSK |
 			       RXON_FILTER_BCON_AWARE_MSK);
 
-	if (priv->is_internal_short_scan) {
+	switch (priv->scan_type) {
+	case IWL_SCAN_RADIO_RESET:
 		scan->channel_count =
 			iwl_get_single_channel_for_scan(priv, vif, band,
-				(void *)&scan->data[le16_to_cpu(
-				scan->tx_cmd.len)]);
-	} else {
+				(void *)&scan->data[cmd_len]);
+		break;
+	case IWL_SCAN_NORMAL:
 		scan->channel_count =
 			iwl_get_channels_for_scan(priv, vif, band,
 				is_active, n_probes,
-				(void *)&scan->data[le16_to_cpu(
-				scan->tx_cmd.len)]);
+				(void *)&scan->data[cmd_len]);
+		break;
+	case IWL_SCAN_OFFCH_TX: {
+		struct iwl_scan_channel *scan_ch;
+
+		scan->channel_count = 1;
+
+		scan_ch = (void *)&scan->data[cmd_len];
+		scan_ch->type = SCAN_CHANNEL_TYPE_ACTIVE;
+		scan_ch->channel =
+			cpu_to_le16(priv->_agn.offchan_tx_chan->hw_value);
+		scan_ch->active_dwell =
+			cpu_to_le16(priv->_agn.offchan_tx_timeout);
+		scan_ch->passive_dwell = 0;
+
+		/* Set txpower levels to defaults */
+		scan_ch->dsp_atten = 110;
+
+		/* NOTE: if we were doing 6Mb OFDM for scans we'd use
+		 * power level:
+		 * scan_ch->tx_gain = ((1 << 5) | (2 << 3)) | 3;
+		 */
+		if (priv->_agn.offchan_tx_chan->band == IEEE80211_BAND_5GHZ)
+			scan_ch->tx_gain = ((1 << 5) | (3 << 3)) | 3;
+		else
+			scan_ch->tx_gain = ((1 << 5) | (5 << 3));
+		}
+		break;
 	}
+
 	if (scan->channel_count == 0) {
 		IWL_DEBUG_SCAN(priv, "channel count %d\n", scan->channel_count);
 		return -EIO;
 	}
 
-	cmd.len += le16_to_cpu(scan->tx_cmd.len) +
+	cmd.len[0] += le16_to_cpu(scan->tx_cmd.len) +
 	    scan->channel_count * sizeof(struct iwl_scan_channel);
-	cmd.data = scan;
-	scan->len = cpu_to_le16(cmd.len);
+	cmd.data[0] = scan;
+	cmd.dataflags[0] = IWL_HCMD_DFL_NOCOPY;
+	scan->len = cpu_to_le16(cmd.len[0]);
 
 	/* set scan bit here for PAN params */
 	set_bit(STATUS_SCAN_HW, &priv->status);
@@ -1662,9 +1520,9 @@ int iwlagn_txfifo_flush(struct iwl_priv *priv, u16 flush_control)
 	struct iwl_txfifo_flush_cmd flush_cmd;
 	struct iwl_host_cmd cmd = {
 		.id = REPLY_TXFIFO_FLUSH,
-		.len = sizeof(struct iwl_txfifo_flush_cmd),
+		.len = { sizeof(struct iwl_txfifo_flush_cmd), },
 		.flags = CMD_SYNC,
-		.data = &flush_cmd,
+		.data = { &flush_cmd, },
 	};
 
 	might_sleep();
@@ -1801,26 +1659,39 @@ static const __le32 iwlagn_concurrent_lookup[12] = {
 
 void iwlagn_send_advance_bt_config(struct iwl_priv *priv)
 {
-	struct iwlagn_bt_cmd bt_cmd = {
+	struct iwl_basic_bt_cmd basic = {
 		.max_kill = IWLAGN_BT_MAX_KILL_DEFAULT,
 		.bt3_timer_t7_value = IWLAGN_BT3_T7_DEFAULT,
 		.bt3_prio_sample_time = IWLAGN_BT3_PRIO_SAMPLE_DEFAULT,
 		.bt3_timer_t2_value = IWLAGN_BT3_T2_DEFAULT,
 	};
+	struct iwl6000_bt_cmd bt_cmd_6000;
+	struct iwl2000_bt_cmd bt_cmd_2000;
+	int ret;
 
 	BUILD_BUG_ON(sizeof(iwlagn_def_3w_lookup) !=
-			sizeof(bt_cmd.bt3_lookup_table));
+			sizeof(basic.bt3_lookup_table));
 
-	if (priv->cfg->bt_params)
-		bt_cmd.prio_boost = priv->cfg->bt_params->bt_prio_boost;
-	else
-		bt_cmd.prio_boost = 0;
-	bt_cmd.kill_ack_mask = priv->kill_ack_mask;
-	bt_cmd.kill_cts_mask = priv->kill_cts_mask;
+	if (priv->cfg->bt_params) {
+		if (priv->cfg->bt_params->bt_session_2) {
+			bt_cmd_2000.prio_boost = cpu_to_le32(
+				priv->cfg->bt_params->bt_prio_boost);
+			bt_cmd_2000.tx_prio_boost = 0;
+			bt_cmd_2000.rx_prio_boost = 0;
+		} else {
+			bt_cmd_6000.prio_boost =
+				priv->cfg->bt_params->bt_prio_boost;
+			bt_cmd_6000.tx_prio_boost = 0;
+			bt_cmd_6000.rx_prio_boost = 0;
+		}
+	} else {
+		IWL_ERR(priv, "failed to construct BT Coex Config\n");
+		return;
+	}
 
-	bt_cmd.valid = priv->bt_valid;
-	bt_cmd.tx_prio_boost = 0;
-	bt_cmd.rx_prio_boost = 0;
+	basic.kill_ack_mask = priv->kill_ack_mask;
+	basic.kill_cts_mask = priv->kill_cts_mask;
+	basic.valid = priv->bt_valid;
 
 	/*
 	 * Configure BT coex mode to "no coexistence" when the
@@ -1829,49 +1700,45 @@ void iwlagn_send_advance_bt_config(struct iwl_priv *priv)
 	 * IBSS mode (no proper uCode support for coex then).
 	 */
 	if (!bt_coex_active || priv->iw_mode == NL80211_IFTYPE_ADHOC) {
-		bt_cmd.flags = 0;
+		basic.flags = IWLAGN_BT_FLAG_COEX_MODE_DISABLED;
 	} else {
-		bt_cmd.flags = IWLAGN_BT_FLAG_COEX_MODE_3W <<
+		basic.flags = IWLAGN_BT_FLAG_COEX_MODE_3W <<
 					IWLAGN_BT_FLAG_COEX_MODE_SHIFT;
 		if (priv->cfg->bt_params &&
 		    priv->cfg->bt_params->bt_sco_disable)
-			bt_cmd.flags |= IWLAGN_BT_FLAG_SYNC_2_BT_DISABLE;
+			basic.flags |= IWLAGN_BT_FLAG_SYNC_2_BT_DISABLE;
 
 		if (priv->bt_ch_announce)
-			bt_cmd.flags |= IWLAGN_BT_FLAG_CHANNEL_INHIBITION;
-		IWL_DEBUG_INFO(priv, "BT coex flag: 0X%x\n", bt_cmd.flags);
+			basic.flags |= IWLAGN_BT_FLAG_CHANNEL_INHIBITION;
+		IWL_DEBUG_INFO(priv, "BT coex flag: 0X%x\n", basic.flags);
 	}
-	priv->bt_enable_flag = bt_cmd.flags;
+	priv->bt_enable_flag = basic.flags;
 	if (priv->bt_full_concurrent)
-		memcpy(bt_cmd.bt3_lookup_table, iwlagn_concurrent_lookup,
+		memcpy(basic.bt3_lookup_table, iwlagn_concurrent_lookup,
 			sizeof(iwlagn_concurrent_lookup));
 	else
-		memcpy(bt_cmd.bt3_lookup_table, iwlagn_def_3w_lookup,
+		memcpy(basic.bt3_lookup_table, iwlagn_def_3w_lookup,
 			sizeof(iwlagn_def_3w_lookup));
 
 	IWL_DEBUG_INFO(priv, "BT coex %s in %s mode\n",
-		       bt_cmd.flags ? "active" : "disabled",
+		       basic.flags ? "active" : "disabled",
 		       priv->bt_full_concurrent ?
 		       "full concurrency" : "3-wire");
 
-	if (iwl_send_cmd_pdu(priv, REPLY_BT_CONFIG, sizeof(bt_cmd), &bt_cmd))
+	if (priv->cfg->bt_params->bt_session_2) {
+		memcpy(&bt_cmd_2000.basic, &basic,
+			sizeof(basic));
+		ret = iwl_send_cmd_pdu(priv, REPLY_BT_CONFIG,
+			sizeof(bt_cmd_2000), &bt_cmd_2000);
+	} else {
+		memcpy(&bt_cmd_6000.basic, &basic,
+			sizeof(basic));
+		ret = iwl_send_cmd_pdu(priv, REPLY_BT_CONFIG,
+			sizeof(bt_cmd_6000), &bt_cmd_6000);
+	}
+	if (ret)
 		IWL_ERR(priv, "failed to send BT Coex Config\n");
 
-	/*
-	 * When we are doing a restart, need to also reconfigure BT
-	 * SCO to the device. If not doing a restart, bt_sco_active
-	 * will always be false, so there's no need to have an extra
-	 * variable to check for it.
-	 */
-	if (priv->bt_sco_active) {
-		struct iwlagn_bt_sco_cmd sco_cmd = { .flags = 0 };
-
-		if (priv->bt_sco_active)
-			sco_cmd.flags |= IWLAGN_BT_SCO_ACTIVE;
-		if (iwl_send_cmd_pdu(priv, REPLY_BT_COEX_SCO,
-				     sizeof(sco_cmd), &sco_cmd))
-			IWL_ERR(priv, "failed to send BT SCO command\n");
-	}
 }
 
 static void iwlagn_bt_traffic_change_work(struct work_struct *work)
@@ -1880,6 +1747,11 @@ static void iwlagn_bt_traffic_change_work(struct work_struct *work)
 		container_of(work, struct iwl_priv, bt_traffic_change_work);
 	struct iwl_rxon_context *ctx;
 	int smps_request = -1;
+
+	if (priv->bt_enable_flag == IWLAGN_BT_FLAG_COEX_MODE_DISABLED) {
+		/* bt coex disabled */
+		return;
+	}
 
 	/*
 	 * Note: bt_traffic_load can be overridden by scan complete and
@@ -1991,12 +1863,14 @@ static void iwlagn_print_uartmsg(struct iwl_priv *priv,
 		(BT_UART_MSG_FRAME6DISCOVERABLE_MSK & uart_msg->frame6) >>
 			BT_UART_MSG_FRAME6DISCOVERABLE_POS);
 
-	IWL_DEBUG_NOTIF(priv, "Sniff Activity = 0x%X, Inquiry/Page SR Mode = "
-			"0x%X, Connectable = 0x%X",
+	IWL_DEBUG_NOTIF(priv, "Sniff Activity = 0x%X, Page = "
+			"0x%X, Inquiry = 0x%X, Connectable = 0x%X",
 		(BT_UART_MSG_FRAME7SNIFFACTIVITY_MSK & uart_msg->frame7) >>
 			BT_UART_MSG_FRAME7SNIFFACTIVITY_POS,
-		(BT_UART_MSG_FRAME7INQUIRYPAGESRMODE_MSK & uart_msg->frame7) >>
-			BT_UART_MSG_FRAME7INQUIRYPAGESRMODE_POS,
+		(BT_UART_MSG_FRAME7PAGE_MSK & uart_msg->frame7) >>
+			BT_UART_MSG_FRAME7PAGE_POS,
+		(BT_UART_MSG_FRAME7INQUIRY_MSK & uart_msg->frame7) >>
+			BT_UART_MSG_FRAME7INQUIRY_POS,
 		(BT_UART_MSG_FRAME7CONNECTABLE_MSK & uart_msg->frame7) >>
 			BT_UART_MSG_FRAME7CONNECTABLE_POS);
 }
@@ -2032,8 +1906,12 @@ void iwlagn_bt_coex_profile_notif(struct iwl_priv *priv,
 	unsigned long flags;
 	struct iwl_rx_packet *pkt = rxb_addr(rxb);
 	struct iwl_bt_coex_profile_notif *coex = &pkt->u.bt_coex_profile_notif;
-	struct iwlagn_bt_sco_cmd sco_cmd = { .flags = 0 };
 	struct iwl_bt_uart_msg *uart_msg = &coex->last_bt_uart_msg;
+
+	if (priv->bt_enable_flag == IWLAGN_BT_FLAG_COEX_MODE_DISABLED) {
+		/* bt coex disabled */
+		return;
+	}
 
 	IWL_DEBUG_NOTIF(priv, "BT Coex notification:\n");
 	IWL_DEBUG_NOTIF(priv, "    status: %d\n", coex->bt_status);
@@ -2062,15 +1940,6 @@ void iwlagn_bt_coex_profile_notif(struct iwl_priv *priv,
 			priv->bt_status = coex->bt_status;
 			queue_work(priv->workqueue,
 				   &priv->bt_traffic_change_work);
-		}
-		if (priv->bt_sco_active !=
-		    (uart_msg->frame3 & BT_UART_MSG_FRAME3SCOESCO_MSK)) {
-			priv->bt_sco_active = uart_msg->frame3 &
-				BT_UART_MSG_FRAME3SCOESCO_MSK;
-			if (priv->bt_sco_active)
-				sco_cmd.flags |= IWLAGN_BT_SCO_ACTIVE;
-			iwl_send_cmd_pdu_async(priv, REPLY_BT_COEX_SCO,
-				       sizeof(sco_cmd), &sco_cmd, NULL);
 		}
 	}
 
@@ -2388,4 +2257,139 @@ int iwl_dump_fh(struct iwl_priv *priv, char **buf, bool display)
 			iwl_read_direct32(priv, fh_tbl[i]));
 	}
 	return 0;
+}
+
+/* notification wait support */
+void iwlagn_init_notification_wait(struct iwl_priv *priv,
+				   struct iwl_notification_wait *wait_entry,
+				   u8 cmd,
+				   void (*fn)(struct iwl_priv *priv,
+					      struct iwl_rx_packet *pkt,
+					      void *data),
+				   void *fn_data)
+{
+	wait_entry->fn = fn;
+	wait_entry->fn_data = fn_data;
+	wait_entry->cmd = cmd;
+	wait_entry->triggered = false;
+	wait_entry->aborted = false;
+
+	spin_lock_bh(&priv->_agn.notif_wait_lock);
+	list_add(&wait_entry->list, &priv->_agn.notif_waits);
+	spin_unlock_bh(&priv->_agn.notif_wait_lock);
+}
+
+int iwlagn_wait_notification(struct iwl_priv *priv,
+			     struct iwl_notification_wait *wait_entry,
+			     unsigned long timeout)
+{
+	int ret;
+
+	ret = wait_event_timeout(priv->_agn.notif_waitq,
+				 wait_entry->triggered || wait_entry->aborted,
+				 timeout);
+
+	spin_lock_bh(&priv->_agn.notif_wait_lock);
+	list_del(&wait_entry->list);
+	spin_unlock_bh(&priv->_agn.notif_wait_lock);
+
+	if (wait_entry->aborted)
+		return -EIO;
+
+	/* return value is always >= 0 */
+	if (ret <= 0)
+		return -ETIMEDOUT;
+	return 0;
+}
+
+void iwlagn_remove_notification(struct iwl_priv *priv,
+				struct iwl_notification_wait *wait_entry)
+{
+	spin_lock_bh(&priv->_agn.notif_wait_lock);
+	list_del(&wait_entry->list);
+	spin_unlock_bh(&priv->_agn.notif_wait_lock);
+}
+
+int iwlagn_start_device(struct iwl_priv *priv)
+{
+	int ret;
+
+	if (iwl_prepare_card_hw(priv)) {
+		IWL_WARN(priv, "Exit HW not ready\n");
+		return -EIO;
+	}
+
+	/* If platform's RF_KILL switch is NOT set to KILL */
+	if (iwl_read32(priv, CSR_GP_CNTRL) & CSR_GP_CNTRL_REG_FLAG_HW_RF_KILL_SW)
+		clear_bit(STATUS_RF_KILL_HW, &priv->status);
+	else
+		set_bit(STATUS_RF_KILL_HW, &priv->status);
+
+	if (iwl_is_rfkill(priv)) {
+		wiphy_rfkill_set_hw_state(priv->hw->wiphy, true);
+		iwl_enable_interrupts(priv);
+		return -ERFKILL;
+	}
+
+	iwl_write32(priv, CSR_INT, 0xFFFFFFFF);
+
+	ret = iwlagn_hw_nic_init(priv);
+	if (ret) {
+		IWL_ERR(priv, "Unable to init nic\n");
+		return ret;
+	}
+
+	/* make sure rfkill handshake bits are cleared */
+	iwl_write32(priv, CSR_UCODE_DRV_GP1_CLR, CSR_UCODE_SW_BIT_RFKILL);
+	iwl_write32(priv, CSR_UCODE_DRV_GP1_CLR,
+		    CSR_UCODE_DRV_GP1_BIT_CMD_BLOCKED);
+
+	/* clear (again), then enable host interrupts */
+	iwl_write32(priv, CSR_INT, 0xFFFFFFFF);
+	iwl_enable_interrupts(priv);
+
+	/* really make sure rfkill handshake bits are cleared */
+	iwl_write32(priv, CSR_UCODE_DRV_GP1_CLR, CSR_UCODE_SW_BIT_RFKILL);
+	iwl_write32(priv, CSR_UCODE_DRV_GP1_CLR, CSR_UCODE_SW_BIT_RFKILL);
+
+	return 0;
+}
+
+void iwlagn_stop_device(struct iwl_priv *priv)
+{
+	unsigned long flags;
+
+	/* stop and reset the on-board processor */
+	iwl_write32(priv, CSR_RESET, CSR_RESET_REG_FLAG_NEVO_RESET);
+
+	/* tell the device to stop sending interrupts */
+	spin_lock_irqsave(&priv->lock, flags);
+	iwl_disable_interrupts(priv);
+	spin_unlock_irqrestore(&priv->lock, flags);
+	iwl_synchronize_irq(priv);
+
+	/* device going down, Stop using ICT table */
+	iwl_disable_ict(priv);
+
+	/*
+	 * If a HW restart happens during firmware loading,
+	 * then the firmware loading might call this function
+	 * and later it might be called again due to the
+	 * restart. So don't process again if the device is
+	 * already dead.
+	 */
+	if (test_bit(STATUS_DEVICE_ENABLED, &priv->status)) {
+                iwlagn_txq_ctx_stop(priv);
+                iwlagn_rxq_stop(priv);
+
+                /* Power-down device's busmaster DMA clocks */
+                iwl_write_prph(priv, APMG_CLK_DIS_REG, APMG_CLK_VAL_DMA_CLK_RQT);
+                udelay(5);
+        }
+
+	/* Make sure (redundant) we've released our request to stay awake */
+	iwl_clear_bit(priv, CSR_GP_CNTRL, CSR_GP_CNTRL_REG_FLAG_MAC_ACCESS_REQ);
+
+	/* Stop the device, and put it in low power state */
+	iwl_apm_stop(priv);
 }

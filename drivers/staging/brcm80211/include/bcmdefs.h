@@ -36,12 +36,6 @@
 
 #define	AUTO	(-1)		/* Auto = -1 */
 
-#ifdef mips
-#define BCMFASTPATH		__attribute__ ((__section__(".text.fastpath")))
-#else
-#define BCMFASTPATH
-#endif
-
 /* Bus types */
 #define	SI_BUS			0	/* SOC Interconnect */
 #define	PCI_BUS			1	/* PCI target */
@@ -114,12 +108,6 @@ typedef struct {
 
 #define BCMEXTRAHDROOM 172
 
-#ifdef BCMDBG
-#ifndef BCMDBG_ASSERT
-#define BCMDBG_ASSERT
-#endif	/* BCMDBG_ASSERT */
-#endif	/* BCMDBG */
-
 /* Macros for doing definition and get/set of bitfields
  * Usage example, e.g. a three-bit field (bits 4-6):
  *    #define <NAME>_M	BITFIELD_MASK(3)
@@ -138,10 +126,25 @@ typedef struct {
 		(((val) & (~(field ## _M << field ## _S))) | \
 		 ((unsigned)(bits) << field ## _S))
 
+/*
+ * Priority definitions according 802.1D
+ */
+#define	PRIO_8021D_NONE		2
+#define	PRIO_8021D_BK		1
+#define	PRIO_8021D_BE		0
+#define	PRIO_8021D_EE		3
+#define	PRIO_8021D_CL		4
+#define	PRIO_8021D_VI		5
+#define	PRIO_8021D_VO		6
+#define	PRIO_8021D_NC		7
+#define	MAXPRIO			7
+#define NUMPRIO			(MAXPRIO + 1)
+
 /* Max. nvram variable table size */
 #define	MAXSZ_NVRAM_VARS	4096
 
 /* handle forward declaration */
 struct wl_info;
+struct wlc_bsscfg;
 
 #endif				/* _bcmdefs_h_ */

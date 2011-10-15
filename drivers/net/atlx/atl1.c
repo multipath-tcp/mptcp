@@ -83,8 +83,9 @@
 #include "atl1.h"
 
 #define ATLX_DRIVER_VERSION "2.1.3"
-MODULE_AUTHOR("Xiong Huang <xiong.huang@atheros.com>, \
-Chris Snook <csnook@redhat.com>, Jay Cliburn <jcliburn@gmail.com>");
+MODULE_AUTHOR("Xiong Huang <xiong.huang@atheros.com>, "
+	      "Chris Snook <csnook@redhat.com>, "
+	      "Jay Cliburn <jcliburn@gmail.com>");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(ATLX_DRIVER_VERSION);
 
@@ -950,6 +951,7 @@ static int __devinit atl1_sw_init(struct atl1_adapter *adapter)
 	hw->min_frame_size = ETH_ZLEN + ETH_FCS_LEN;
 
 	adapter->wol = 0;
+	device_set_wakeup_enable(&adapter->pdev->dev, false);
 	adapter->rx_buffer_len = (hw->max_frame_size + 7) & ~7;
 	adapter->ict = 50000;		/* 100ms */
 	adapter->link_speed = SPEED_0;	/* hardware init */
@@ -2073,9 +2075,6 @@ static void atl1_intr_tx(struct atl1_adapter *adapter)
 	cmb_tpd_next_to_clean = le16_to_cpu(adapter->cmb.cmb->tpd_cons_idx);
 
 	while (cmb_tpd_next_to_clean != sw_tpd_next_to_clean) {
-		struct tx_packet_desc *tpd;
-
-		tpd = ATL1_TPD_DESC(tpd_ring, sw_tpd_next_to_clean);
 		buffer_info = &tpd_ring->buffer_info[sw_tpd_next_to_clean];
 		if (buffer_info->dma) {
 			pci_unmap_page(adapter->pdev, buffer_info->dma,
@@ -2571,7 +2570,7 @@ static s32 atl1_up(struct atl1_adapter *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
 	int err;
-	int irq_flags = IRQF_SAMPLE_RANDOM;
+	int irq_flags = 0;
 
 	/* hardware has been reset, we need to reload some things */
 	atlx_set_multi(netdev);
@@ -2735,15 +2734,15 @@ static int atl1_close(struct net_device *netdev)
 }
 
 #ifdef CONFIG_PM
-static int atl1_suspend(struct pci_dev *pdev, pm_message_t state)
+static int atl1_suspend(struct device *dev)
 {
+	struct pci_dev *pdev = to_pci_dev(dev);
 	struct net_device *netdev = pci_get_drvdata(pdev);
 	struct atl1_adapter *adapter = netdev_priv(netdev);
 	struct atl1_hw *hw = &adapter->hw;
 	u32 ctrl = 0;
 	u32 wufc = adapter->wol;
 	u32 val;
-	int retval;
 	u16 speed;
 	u16 duplex;
 
@@ -2751,17 +2750,15 @@ static int atl1_suspend(struct pci_dev *pdev, pm_message_t state)
 	if (netif_running(netdev))
 		atl1_down(adapter);
 
-	retval = pci_save_state(pdev);
-	if (retval)
-		return retval;
-
 	atl1_read_phy_reg(hw, MII_BMSR, (u16 *) & ctrl);
 	atl1_read_phy_reg(hw, MII_BMSR, (u16 *) & ctrl);
 	val = ctrl & BMSR_LSTATUS;
 	if (val)
 		wufc &= ~ATLX_WUFC_LNKC;
+	if (!wufc)
+		goto disable_wol;
 
-	if (val && wufc) {
+	if (val) {
 		val = atl1_get_speed_and_duplex(hw, &speed, &duplex);
 		if (val) {
 			if (netif_msg_ifdown(adapter))
@@ -2798,23 +2795,18 @@ static int atl1_suspend(struct pci_dev *pdev, pm_message_t state)
 		ctrl |= PCIE_PHYMISC_FORCE_RCV_DET;
 		iowrite32(ctrl, hw->hw_addr + REG_PCIE_PHYMISC);
 		ioread32(hw->hw_addr + REG_PCIE_PHYMISC);
-
-		pci_enable_wake(pdev, pci_choose_state(pdev, state), 1);
-		goto exit;
-	}
-
-	if (!val && wufc) {
+	} else {
 		ctrl |= (WOL_LINK_CHG_EN | WOL_LINK_CHG_PME_EN);
 		iowrite32(ctrl, hw->hw_addr + REG_WOL_CTRL);
 		ioread32(hw->hw_addr + REG_WOL_CTRL);
 		iowrite32(0, hw->hw_addr + REG_MAC_CTRL);
 		ioread32(hw->hw_addr + REG_MAC_CTRL);
 		hw->phy_configured = false;
-		pci_enable_wake(pdev, pci_choose_state(pdev, state), 1);
-		goto exit;
 	}
 
-disable_wol:
+	return 0;
+
+ disable_wol:
 	iowrite32(0, hw->hw_addr + REG_WOL_CTRL);
 	ioread32(hw->hw_addr + REG_WOL_CTRL);
 	ctrl = ioread32(hw->hw_addr + REG_PCIE_PHYMISC);
@@ -2822,37 +2814,17 @@ disable_wol:
 	iowrite32(ctrl, hw->hw_addr + REG_PCIE_PHYMISC);
 	ioread32(hw->hw_addr + REG_PCIE_PHYMISC);
 	hw->phy_configured = false;
-	pci_enable_wake(pdev, pci_choose_state(pdev, state), 0);
-exit:
-	if (netif_running(netdev))
-		pci_disable_msi(adapter->pdev);
-	pci_disable_device(pdev);
-	pci_set_power_state(pdev, pci_choose_state(pdev, state));
 
 	return 0;
 }
 
-static int atl1_resume(struct pci_dev *pdev)
+static int atl1_resume(struct device *dev)
 {
+	struct pci_dev *pdev = to_pci_dev(dev);
 	struct net_device *netdev = pci_get_drvdata(pdev);
 	struct atl1_adapter *adapter = netdev_priv(netdev);
-	u32 err;
 
-	pci_set_power_state(pdev, PCI_D0);
-	pci_restore_state(pdev);
-
-	err = pci_enable_device(pdev);
-	if (err) {
-		if (netif_msg_ifup(adapter))
-			dev_printk(KERN_DEBUG, &pdev->dev,
-				"error enabling pci device\n");
-		return err;
-	}
-
-	pci_set_master(pdev);
 	iowrite32(0, adapter->hw.hw_addr + REG_WOL_CTRL);
-	pci_enable_wake(pdev, PCI_D3hot, 0);
-	pci_enable_wake(pdev, PCI_D3cold, 0);
 
 	atl1_reset_hw(&adapter->hw);
 
@@ -2864,16 +2836,25 @@ static int atl1_resume(struct pci_dev *pdev)
 
 	return 0;
 }
+
+static SIMPLE_DEV_PM_OPS(atl1_pm_ops, atl1_suspend, atl1_resume);
+#define ATL1_PM_OPS	(&atl1_pm_ops)
+
 #else
-#define atl1_suspend NULL
-#define atl1_resume NULL
+
+static int atl1_suspend(struct device *dev) { return 0; }
+
+#define ATL1_PM_OPS	NULL
 #endif
 
 static void atl1_shutdown(struct pci_dev *pdev)
 {
-#ifdef CONFIG_PM
-	atl1_suspend(pdev, PMSG_SUSPEND);
-#endif
+	struct net_device *netdev = pci_get_drvdata(pdev);
+	struct atl1_adapter *adapter = netdev_priv(netdev);
+
+	atl1_suspend(&pdev->dev);
+	pci_wake_from_d3(pdev, adapter->wol);
+	pci_set_power_state(pdev, PCI_D3hot);
 }
 
 #ifdef CONFIG_NET_POLL_CONTROLLER
@@ -3003,6 +2984,11 @@ static int __devinit atl1_probe(struct pci_dev *pdev,
 	netdev->features |= NETIF_F_SG;
 	netdev->features |= (NETIF_F_HW_VLAN_TX | NETIF_F_HW_VLAN_RX);
 
+	netdev->hw_features = NETIF_F_HW_CSUM | NETIF_F_SG | NETIF_F_TSO;
+
+	/* is this valid? see atl1_setup_mac_ctrl() */
+	netdev->features |= NETIF_F_RXCSUM;
+
 	/*
 	 * patch for some L1 of old version,
 	 * the final version of L1 may not need these
@@ -3117,9 +3103,8 @@ static struct pci_driver atl1_driver = {
 	.id_table = atl1_pci_tbl,
 	.probe = atl1_probe,
 	.remove = __devexit_p(atl1_remove),
-	.suspend = atl1_suspend,
-	.resume = atl1_resume,
-	.shutdown = atl1_shutdown
+	.shutdown = atl1_shutdown,
+	.driver.pm = ATL1_PM_OPS,
 };
 
 /*
@@ -3247,13 +3232,13 @@ static int atl1_get_settings(struct net_device *netdev,
 	if (netif_carrier_ok(adapter->netdev)) {
 		u16 link_speed, link_duplex;
 		atl1_get_speed_and_duplex(hw, &link_speed, &link_duplex);
-		ecmd->speed = link_speed;
+		ethtool_cmd_speed_set(ecmd, link_speed);
 		if (link_duplex == FULL_DUPLEX)
 			ecmd->duplex = DUPLEX_FULL;
 		else
 			ecmd->duplex = DUPLEX_HALF;
 	} else {
-		ecmd->speed = -1;
+		ethtool_cmd_speed_set(ecmd, -1);
 		ecmd->duplex = -1;
 	}
 	if (hw->media_type == MEDIA_TYPE_AUTO_SENSOR ||
@@ -3284,7 +3269,8 @@ static int atl1_set_settings(struct net_device *netdev,
 	if (ecmd->autoneg == AUTONEG_ENABLE)
 		hw->media_type = MEDIA_TYPE_AUTO_SENSOR;
 	else {
-		if (ecmd->speed == SPEED_1000) {
+		u32 speed = ethtool_cmd_speed(ecmd);
+		if (speed == SPEED_1000) {
 			if (ecmd->duplex != DUPLEX_FULL) {
 				if (netif_msg_link(adapter))
 					dev_warn(&adapter->pdev->dev,
@@ -3293,7 +3279,7 @@ static int atl1_set_settings(struct net_device *netdev,
 				goto exit_sset;
 			}
 			hw->media_type = MEDIA_TYPE_1000M_FULL;
-		} else if (ecmd->speed == SPEED_100) {
+		} else if (speed == SPEED_100) {
 			if (ecmd->duplex == DUPLEX_FULL)
 				hw->media_type = MEDIA_TYPE_100M_FULL;
 			else
@@ -3409,6 +3395,9 @@ static int atl1_set_wol(struct net_device *netdev,
 	adapter->wol = 0;
 	if (wol->wolopts & WAKE_MAGIC)
 		adapter->wol |= ATLX_WUFC_MAG;
+
+	device_set_wakeup_enable(&adapter->pdev->dev, adapter->wol);
+
 	return 0;
 }
 
@@ -3610,12 +3599,6 @@ static int atl1_set_pauseparam(struct net_device *netdev,
 	return 0;
 }
 
-/* FIXME: is this right? -- CHS */
-static u32 atl1_get_rx_csum(struct net_device *netdev)
-{
-	return 1;
-}
-
 static void atl1_get_strings(struct net_device *netdev, u32 stringset,
 	u8 *data)
 {
@@ -3683,13 +3666,9 @@ static const struct ethtool_ops atl1_ethtool_ops = {
 	.set_ringparam		= atl1_set_ringparam,
 	.get_pauseparam		= atl1_get_pauseparam,
 	.set_pauseparam		= atl1_set_pauseparam,
-	.get_rx_csum		= atl1_get_rx_csum,
-	.set_tx_csum		= ethtool_op_set_tx_hw_csum,
 	.get_link		= ethtool_op_get_link,
-	.set_sg			= ethtool_op_set_sg,
 	.get_strings		= atl1_get_strings,
 	.nway_reset		= atl1_nway_reset,
 	.get_ethtool_stats	= atl1_get_ethtool_stats,
 	.get_sset_count		= atl1_get_sset_count,
-	.set_tso		= ethtool_op_set_tso,
 };

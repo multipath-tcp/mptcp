@@ -40,6 +40,7 @@
 #include <linux/notifier.h>
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/ubi.h>
+#include <asm/pgtable.h>
 
 #include "ubi-media.h"
 #include "scan.h"
@@ -340,8 +341,8 @@ struct ubi_wl_entry;
  *      protected from the wear-leveling worker)
  * @pq_head: protection queue head
  * @wl_lock: protects the @used, @free, @pq, @pq_head, @lookuptbl, @move_from,
- * 	     @move_to, @move_to_put @erase_pending, @wl_scheduled, @works,
- * 	     @erroneous, and @erroneous_peb_count fields
+ *	     @move_to, @move_to_put @erase_pending, @wl_scheduled, @works,
+ *	     @erroneous, and @erroneous_peb_count fields
  * @move_mutex: serializes eraseblock moves
  * @work_sem: synchronizes the WL worker with use tasks
  * @wl_scheduled: non-zero if the wear-leveling was scheduled
@@ -381,14 +382,14 @@ struct ubi_wl_entry;
  * @bad_allowed: whether the MTD device admits of bad physical eraseblocks or
  *               not
  * @nor_flash: non-zero if working on top of NOR flash
+ * @max_write_size: maximum amount of bytes the underlying flash can write at a
+ *                  time (MTD write buffer size)
  * @mtd: MTD device descriptor
  *
  * @peb_buf1: a buffer of PEB size used for different purposes
  * @peb_buf2: another buffer of PEB size used for different purposes
  * @buf_mutex: protects @peb_buf1 and @peb_buf2
  * @ckvol_mutex: serializes static volume checking when opening
- * @dbg_peb_buf: buffer of PEB size used for debugging
- * @dbg_buf_mutex: protects @dbg_peb_buf
  */
 struct ubi_device {
 	struct cdev cdev;
@@ -464,16 +465,13 @@ struct ubi_device {
 	int vid_hdr_shift;
 	unsigned int bad_allowed:1;
 	unsigned int nor_flash:1;
+	int max_write_size;
 	struct mtd_info *mtd;
 
 	void *peb_buf1;
 	void *peb_buf2;
 	struct mutex buf_mutex;
 	struct mutex ckvol_mutex;
-#ifdef CONFIG_MTD_UBI_DEBUG_PARANOID
-	void *dbg_peb_buf;
-	struct mutex dbg_buf_mutex;
-#endif
 };
 
 extern struct kmem_cache *ubi_wl_entry_slab;

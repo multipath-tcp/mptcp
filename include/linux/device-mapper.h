@@ -191,13 +191,18 @@ struct dm_target {
 
 	/* Used to provide an error string from the ctr */
 	char *error;
+
+	/*
+	 * Set if this target needs to receive discards regardless of
+	 * whether or not its underlying devices have support.
+	 */
+	unsigned discards_supported:1;
 };
 
 /* Each target can link one of these into the table */
 struct dm_target_callbacks {
 	struct list_head list;
 	int (*congested_fn) (struct dm_target_callbacks *, int);
-	void (*unplug_fn)(struct dm_target_callbacks *);
 };
 
 int dm_register_target(struct target_type *t);
@@ -284,11 +289,6 @@ void dm_table_add_target_callbacks(struct dm_table *t, struct dm_target_callback
  * Finally call this to make the table ready for use.
  */
 int dm_table_complete(struct dm_table *t);
-
-/*
- * Unplug all devices in a table.
- */
-void dm_table_unplug_all(struct dm_table *t);
 
 /*
  * Table reference counting.

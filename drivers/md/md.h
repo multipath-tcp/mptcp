@@ -29,26 +29,6 @@
 typedef struct mddev_s mddev_t;
 typedef struct mdk_rdev_s mdk_rdev_t;
 
-/* generic plugging support - like that provided with request_queue,
- * but does not require a request_queue
- */
-struct plug_handle {
-	void			(*unplug_fn)(struct plug_handle *);
-	struct timer_list	unplug_timer;
-	struct work_struct	unplug_work;
-	unsigned long		unplug_flag;
-};
-#define	PLUGGED_FLAG 1
-void plugger_init(struct plug_handle *plug,
-		  void (*unplug_fn)(struct plug_handle *));
-void plugger_set_plug(struct plug_handle *plug);
-int plugger_remove_plug(struct plug_handle *plug);
-static inline void plugger_flush(struct plug_handle *plug)
-{
-	del_timer_sync(&plug->unplug_timer);
-	cancel_work_sync(&plug->unplug_work);
-}
-
 /*
  * MD's 'extended' device
  */
@@ -94,7 +74,7 @@ struct mdk_rdev_s
 #define	In_sync		2		/* device is in_sync with rest of array */
 #define	WriteMostly	4		/* Avoid reading if at all possible */
 #define	AutoDetected	7		/* added by auto-detect */
-#define Blocked		8		/* An error occured on an externally
+#define Blocked		8		/* An error occurred on an externally
 					 * managed array, don't allow writes
 					 * until it is cleared */
 	wait_queue_head_t blocked_wait;
@@ -144,6 +124,7 @@ struct mddev_s
 #define MD_CHANGE_DEVS	0	/* Some device status has changed */
 #define MD_CHANGE_CLEAN 1	/* transition to or from 'clean' */
 #define MD_CHANGE_PENDING 2	/* switch from 'clean' to 'active' in progress */
+#define MD_ARRAY_FIRST_USE 3    /* First use of array, needs initialization */
 
 	int				suspended;
 	atomic_t			active_io;
@@ -199,6 +180,9 @@ struct mddev_s
 	int				delta_disks, new_level, new_layout;
 	int				new_chunk_sectors;
 
+	atomic_t			plug_cnt;	/* If device is expecting
+							 * more bios soon.
+							 */
 	struct mdk_thread_s		*thread;	/* management thread */
 	struct mdk_thread_s		*sync_thread;	/* doing resync or reconstruct */
 	sector_t			curr_resync;	/* last block scheduled */
@@ -336,7 +320,6 @@ struct mddev_s
 	struct list_head		all_mddevs;
 
 	struct attribute_group		*to_remove;
-	struct plug_handle		*plug; /* if used by personality */
 
 	struct bio_set			*bio_set;
 
@@ -348,6 +331,7 @@ struct mddev_s
 	atomic_t flush_pending;
 	struct work_struct flush_work;
 	struct work_struct event_work;	/* used by dm to report failure event */
+	void (*sync_super)(mddev_t *mddev, mdk_rdev_t *rdev);
 };
 
 
@@ -516,7 +500,6 @@ extern int md_integrity_register(mddev_t *mddev);
 extern void md_integrity_add_rdev(mdk_rdev_t *rdev, mddev_t *mddev);
 extern int strict_strtoul_scaled(const char *cp, unsigned long *res, int scale);
 extern void restore_bitmap_write_access(struct file *file);
-extern void md_unplug(mddev_t *mddev);
 
 extern void mddev_init(mddev_t *mddev);
 extern int md_run(mddev_t *mddev);
@@ -530,4 +513,5 @@ extern struct bio *bio_clone_mddev(struct bio *bio, gfp_t gfp_mask,
 				   mddev_t *mddev);
 extern struct bio *bio_alloc_mddev(gfp_t gfp_mask, int nr_iovecs,
 				   mddev_t *mddev);
+extern int mddev_check_plugged(mddev_t *mddev);
 #endif /* _MD_MD_H */

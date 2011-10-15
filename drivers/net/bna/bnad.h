@@ -181,7 +181,7 @@ struct bnad_rx_info {
 /* Unmap queues for Tx / Rx cleanup */
 struct bnad_skb_unmap {
 	struct sk_buff		*skb;
-	DECLARE_PCI_UNMAP_ADDR(dma_addr)
+	DEFINE_DMA_UNMAP_ADDR(dma_addr);
 };
 
 struct bnad_unmap_q {
@@ -236,8 +236,6 @@ struct bnad {
 
 	struct bna_rx_config rx_config[BNAD_MAX_RXS];
 	struct bna_tx_config tx_config[BNAD_MAX_TXS];
-
-	u32		rx_csum;
 
 	void __iomem		*bar0;	/* BAR0 address */
 

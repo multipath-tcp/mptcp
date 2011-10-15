@@ -62,7 +62,7 @@ MODULE_PARM_DESC(fake_hw_scan, "Install fake (no-op) hw-scan handler");
  * 	an intersection to occur but each device will still use their
  * 	respective regulatory requested domains. Subsequent radios will
  * 	use the resulting intersection.
- * @HWSIM_REGTEST_WORLD_ROAM: Used for testing the world roaming. We acomplish
+ * @HWSIM_REGTEST_WORLD_ROAM: Used for testing the world roaming. We accomplish
  *	this by using a custom beacon-capable regulatory domain for the first
  *	radio. All other device world roam.
  * @HWSIM_REGTEST_CUSTOM_WORLD: Used for testing the custom world regulatory
@@ -541,7 +541,7 @@ static bool mac80211_hwsim_tx_frame(struct ieee80211_hw *hw,
 }
 
 
-static int mac80211_hwsim_tx(struct ieee80211_hw *hw, struct sk_buff *skb)
+static void mac80211_hwsim_tx(struct ieee80211_hw *hw, struct sk_buff *skb)
 {
 	bool ack;
 	struct ieee80211_tx_info *txi;
@@ -551,7 +551,7 @@ static int mac80211_hwsim_tx(struct ieee80211_hw *hw, struct sk_buff *skb)
 	if (skb->len < 10) {
 		/* Should not happen; just a sanity check for addr1 use */
 		dev_kfree_skb(skb);
-		return NETDEV_TX_OK;
+		return;
 	}
 
 	ack = mac80211_hwsim_tx_frame(hw, skb);
@@ -571,7 +571,6 @@ static int mac80211_hwsim_tx(struct ieee80211_hw *hw, struct sk_buff *skb)
 	if (!(txi->flags & IEEE80211_TX_CTL_NO_ACK) && ack)
 		txi->flags |= IEEE80211_TX_STAT_ACK;
 	ieee80211_tx_status_irqsafe(hw, skb);
-	return NETDEV_TX_OK;
 }
 
 
@@ -943,7 +942,8 @@ static int mac80211_hwsim_testmode_cmd(struct ieee80211_hw *hw,
 static int mac80211_hwsim_ampdu_action(struct ieee80211_hw *hw,
 				       struct ieee80211_vif *vif,
 				       enum ieee80211_ampdu_mlme_action action,
-				       struct ieee80211_sta *sta, u16 tid, u16 *ssn)
+				       struct ieee80211_sta *sta, u16 tid, u16 *ssn,
+				       u8 buf_size)
 {
 	switch (action) {
 	case IEEE80211_AMPDU_TX_START:
@@ -1515,18 +1515,9 @@ static int __init init_mac80211_hwsim(void)
 	if (hwsim_mon == NULL)
 		goto failed;
 
-	rtnl_lock();
-
-	err = dev_alloc_name(hwsim_mon, hwsim_mon->name);
+	err = register_netdev(hwsim_mon);
 	if (err < 0)
 		goto failed_mon;
-
-
-	err = register_netdevice(hwsim_mon);
-	if (err < 0)
-		goto failed_mon;
-
-	rtnl_unlock();
 
 	return 0;
 

@@ -55,11 +55,13 @@ EXPORT_SYMBOL(I_BDEV);
 static void bdev_inode_switch_bdi(struct inode *inode,
 			struct backing_dev_info *dst)
 {
-	spin_lock(&inode_lock);
+	spin_lock(&inode_wb_list_lock);
+	spin_lock(&inode->i_lock);
 	inode->i_data.backing_dev_info = dst;
 	if (inode->i_state & I_DIRTY)
 		list_move(&inode->i_wb_list, &dst->wb.b_dirty);
-	spin_unlock(&inode_lock);
+	spin_unlock(&inode->i_lock);
+	spin_unlock(&inode_wb_list_lock);
 }
 
 static sector_t max_block(struct block_device *bdev)
@@ -651,7 +653,7 @@ void bd_forget(struct inode *inode)
  * @whole: whole block device containing @bdev, may equal @bdev
  * @holder: holder trying to claim @bdev
  *
- * Test whther @bdev can be claimed by @holder.
+ * Test whether @bdev can be claimed by @holder.
  *
  * CONTEXT:
  * spin_lock(&bdev_lock).
@@ -760,7 +762,19 @@ static struct block_device *bd_start_claiming(struct block_device *bdev,
 	if (!disk)
 		return ERR_PTR(-ENXIO);
 
-	whole = bdget_disk(disk, 0);
+	/*
+	 * Normally, @bdev should equal what's returned from bdget_disk()
+	 * if partno is 0; however, some drivers (floppy) use multiple
+	 * bdev's for the same physical device and @bdev may be one of the
+	 * aliases.  Keep @bdev if partno is 0.  This means claimer
+	 * tracking is broken for those devices but it has always been that
+	 * way.
+	 */
+	if (partno)
+		whole = bdget_disk(disk, 0);
+	else
+		whole = bdgrab(bdev);
+
 	module_put(disk->fops->owner);
 	put_disk(disk);
 	if (!whole)
@@ -1087,6 +1101,7 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 	if (!disk)
 		goto out;
 
+	disk_block_events(disk);
 	mutex_lock_nested(&bdev->bd_mutex, for_part);
 	if (!bdev->bd_openers) {
 		bdev->bd_disk = disk;
@@ -1099,6 +1114,7 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 			if (!bdev->bd_part)
 				goto out_clear;
 
+			ret = 0;
 			if (disk->fops->open) {
 				ret = disk->fops->open(bdev, mode);
 				if (ret == -ERESTARTSYS) {
@@ -1108,24 +1124,33 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 					 */
 					disk_put_part(bdev->bd_part);
 					bdev->bd_part = NULL;
-					module_put(disk->fops->owner);
-					put_disk(disk);
 					bdev->bd_disk = NULL;
 					mutex_unlock(&bdev->bd_mutex);
+					disk_unblock_events(disk);
+					module_put(disk->fops->owner);
+					put_disk(disk);
 					goto restart;
 				}
-				if (ret)
-					goto out_clear;
 			}
-			if (!bdev->bd_openers) {
+
+			if (!ret && !bdev->bd_openers) {
 				bd_set_size(bdev,(loff_t)get_capacity(disk)<<9);
 				bdi = blk_get_backing_dev_info(bdev);
 				if (bdi == NULL)
 					bdi = &default_backing_dev_info;
 				bdev_inode_switch_bdi(bdev->bd_inode, bdi);
 			}
-			if (bdev->bd_invalidated)
+
+			/*
+			 * If the device is invalidated, rescan partition
+			 * if open succeeded or failed with -ENOMEDIUM.
+			 * The latter is necessary to prevent ghost
+			 * partitions on a removed medium.
+			 */
+			if (bdev->bd_invalidated && (!ret || ret == -ENOMEDIUM))
 				rescan_partitions(disk, bdev);
+			if (ret)
+				goto out_clear;
 		} else {
 			struct block_device *whole;
 			whole = bdget_disk(disk, 0);
@@ -1148,23 +1173,25 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 			bd_set_size(bdev, (loff_t)bdev->bd_part->nr_sects << 9);
 		}
 	} else {
+		if (bdev->bd_contains == bdev) {
+			ret = 0;
+			if (bdev->bd_disk->fops->open)
+				ret = bdev->bd_disk->fops->open(bdev, mode);
+			/* the same as first opener case, read comment there */
+			if (bdev->bd_invalidated && (!ret || ret == -ENOMEDIUM))
+				rescan_partitions(bdev->bd_disk, bdev);
+			if (ret)
+				goto out_unlock_bdev;
+		}
+		/* only one opener holds refs to the module and disk */
 		module_put(disk->fops->owner);
 		put_disk(disk);
-		disk = NULL;
-		if (bdev->bd_contains == bdev) {
-			if (bdev->bd_disk->fops->open) {
-				ret = bdev->bd_disk->fops->open(bdev, mode);
-				if (ret)
-					goto out_unlock_bdev;
-			}
-			if (bdev->bd_invalidated)
-				rescan_partitions(bdev->bd_disk, bdev);
-		}
 	}
 	bdev->bd_openers++;
 	if (for_part)
 		bdev->bd_part_count++;
 	mutex_unlock(&bdev->bd_mutex);
+	disk_unblock_events(disk);
 	return 0;
 
  out_clear:
@@ -1177,10 +1204,10 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 	bdev->bd_contains = NULL;
  out_unlock_bdev:
 	mutex_unlock(&bdev->bd_mutex);
- out:
-	if (disk)
-		module_put(disk->fops->owner);
+	disk_unblock_events(disk);
+	module_put(disk->fops->owner);
 	put_disk(disk);
+ out:
 	bdput(bdev);
 
 	return ret;
@@ -1223,6 +1250,8 @@ int blkdev_get(struct block_device *bdev, fmode_t mode, void *holder)
 	res = __blkdev_get(bdev, mode, 0);
 
 	if (whole) {
+		struct gendisk *disk = whole->bd_disk;
+
 		/* finish claiming */
 		mutex_lock(&bdev->bd_mutex);
 		spin_lock(&bdev_lock);
@@ -1249,15 +1278,16 @@ int blkdev_get(struct block_device *bdev, fmode_t mode, void *holder)
 		spin_unlock(&bdev_lock);
 
 		/*
-		 * Block event polling for write claims.  Any write
-		 * holder makes the write_holder state stick until all
-		 * are released.  This is good enough and tracking
-		 * individual writeable reference is too fragile given
-		 * the way @mode is used in blkdev_get/put().
+		 * Block event polling for write claims if requested.  Any
+		 * write holder makes the write_holder state stick until
+		 * all are released.  This is good enough and tracking
+		 * individual writeable reference is too fragile given the
+		 * way @mode is used in blkdev_get/put().
 		 */
-		if (!res && (mode & FMODE_WRITE) && !bdev->bd_write_holder) {
+		if (!res && (mode & FMODE_WRITE) && !bdev->bd_write_holder &&
+		    (disk->flags & GENHD_FL_BLOCK_EVENTS_ON_EXCL_WRITE)) {
 			bdev->bd_write_holder = true;
-			disk_block_events(bdev->bd_disk);
+			disk_block_events(disk);
 		}
 
 		mutex_unlock(&bdev->bd_mutex);
@@ -1446,14 +1476,13 @@ int blkdev_put(struct block_device *bdev, fmode_t mode)
 		if (bdev_free) {
 			if (bdev->bd_write_holder) {
 				disk_unblock_events(bdev->bd_disk);
-				bdev->bd_write_holder = false;
-			} else
 				disk_check_events(bdev->bd_disk);
+				bdev->bd_write_holder = false;
+			}
 		}
 
 		mutex_unlock(&bdev->bd_mutex);
-	} else
-		disk_check_events(bdev->bd_disk);
+	}
 
 	return __blkdev_put(bdev, mode, 0);
 }
@@ -1527,7 +1556,6 @@ static int blkdev_releasepage(struct page *page, gfp_t wait)
 static const struct address_space_operations def_blk_aops = {
 	.readpage	= blkdev_readpage,
 	.writepage	= blkdev_writepage,
-	.sync_page	= block_sync_page,
 	.write_begin	= blkdev_write_begin,
 	.write_end	= blkdev_write_end,
 	.writepages	= generic_writepages,

@@ -7,7 +7,7 @@
  * kernel and insert a module (lg.ko) which allows us to run other Linux
  * kernels the same way we'd run processes.  We call the first kernel the Host,
  * and the others the Guests.  The program which sets up and configures Guests
- * (such as the example in Documentation/lguest/lguest.c) is called the
+ * (such as the example in Documentation/virtual/lguest/lguest.c) is called the
  * Launcher.
  *
  * Secondly, we only run specially modified Guests, not normal kernels: setting
@@ -397,7 +397,7 @@ static void lguest_load_tr_desc(void)
  * instead we just use the real "cpuid" instruction.  Then I pretty much turned
  * off feature bits until the Guest booted.  (Don't say that: you'll damage
  * lguest sales!)  Shut up, inner voice!  (Hey, just pointing out that this is
- * hardly future proof.)  Noone's listening!  They don't like you anyway,
+ * hardly future proof.)  No one's listening!  They don't like you anyway,
  * parenthetic weirdo!
  *
  * Replacing the cpuid so we can turn features off is great for the kernel, but
@@ -847,7 +847,7 @@ static void __init lguest_init_IRQ(void)
 void lguest_setup_irq(unsigned int irq)
 {
 	irq_alloc_desc_at(irq, 0);
-	set_irq_chip_and_handler_name(irq, &lguest_irq_controller,
+	irq_set_chip_and_handler_name(irq, &lguest_irq_controller,
 				      handle_level_irq, "level");
 }
 
@@ -913,8 +913,6 @@ static struct clocksource lguest_clock = {
 	.rating		= 200,
 	.read		= lguest_clock_read,
 	.mask		= CLOCKSOURCE_MASK(64),
-	.mult		= 1 << 22,
-	.shift		= 22,
 	.flags		= CLOCK_SOURCE_IS_CONTINUOUS,
 };
 
@@ -995,9 +993,10 @@ static void lguest_time_irq(unsigned int irq, struct irq_desc *desc)
 static void lguest_time_init(void)
 {
 	/* Set up the timer interrupt (0) to go to our simple timer routine */
-	set_irq_handler(0, lguest_time_irq);
+	lguest_setup_irq(0);
+	irq_set_handler(0, lguest_time_irq);
 
-	clocksource_register(&lguest_clock);
+	clocksource_register_hz(&lguest_clock, NSEC_PER_SEC);
 
 	/* We can't set cpumask in the initializer: damn C limitations!  Set it
 	 * here and register our timer device. */

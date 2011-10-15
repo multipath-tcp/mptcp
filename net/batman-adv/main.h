@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007-2010 B.A.T.M.A.N. contributors:
+ * Copyright (C) 2007-2011 B.A.T.M.A.N. contributors:
  *
  * Marek Lindner, Simon Wunderlich
  *
@@ -22,9 +22,6 @@
 #ifndef _NET_BATMAN_ADV_MAIN_H_
 #define _NET_BATMAN_ADV_MAIN_H_
 
-/* Kernel Programming */
-#define LINUX
-
 #define DRIVER_AUTHOR "Marek Lindner <lindner_marek@yahoo.de>, " \
 		      "Simon Wunderlich <siwu@hrz.tu-chemnitz.de>"
 #define DRIVER_DESC   "B.A.T.M.A.N. advanced"
@@ -37,16 +34,18 @@
 
 #define TQ_MAX_VALUE 255
 #define JITTER 20
-#define TTL 50			  /* Time To Live of broadcast messages */
 
-#define PURGE_TIMEOUT 200	/* purge originators after time in seconds if no
-				   * valid packet comes in -> TODO: check
-				   * influence on TQ_LOCAL_WINDOW_SIZE */
-#define LOCAL_HNA_TIMEOUT 3600 /* in seconds */
+ /* Time To Live of broadcast messages */
+#define TTL 50
 
-#define TQ_LOCAL_WINDOW_SIZE 64	  /* sliding packet range of received originator
-				   * messages in squence numbers (should be a
-				   * multiple of our word size) */
+/* purge originators after time in seconds if no valid packet comes in
+ * -> TODO: check influence on TQ_LOCAL_WINDOW_SIZE */
+#define PURGE_TIMEOUT 200
+#define TT_LOCAL_TIMEOUT 3600 /* in seconds */
+
+/* sliding packet range of received originator messages in squence numbers
+ * (should be a multiple of our word size) */
+#define TQ_LOCAL_WINDOW_SIZE 64
 #define TQ_GLOBAL_WINDOW_SIZE 5
 #define TQ_LOCAL_BIDRECT_SEND_MINIMUM 1
 #define TQ_LOCAL_BIDRECT_RECV_MINIMUM 1
@@ -54,26 +53,24 @@
 
 #define NUM_WORDS (TQ_LOCAL_WINDOW_SIZE / WORD_BIT_SIZE)
 
-#define PACKBUFF_SIZE 2000
 #define LOG_BUF_LEN 8192	  /* has to be a power of 2 */
 
 #define VIS_INTERVAL 5000	/* 5 seconds */
 
-/* how much worse secondary interfaces may be to
- * to be considered as bonding candidates */
-
+/* how much worse secondary interfaces may be to be considered as bonding
+ * candidates */
 #define BONDING_TQ_THRESHOLD	50
 
-#define MAX_AGGREGATION_BYTES 512 /* should not be bigger than 512 bytes or
-				   * change the size of
-				   * forw_packet->direct_link_flags */
+/* should not be bigger than 512 bytes or change the size of
+ * forw_packet->direct_link_flags */
+#define MAX_AGGREGATION_BYTES 512
 #define MAX_AGGREGATION_MS 100
 
 #define SOFTIF_NEIGH_TIMEOUT 180000 /* 3 minutes */
 
+/* don't reset again within 30 seconds */
 #define RESET_PROTECTION_MS 30000
 #define EXPECTED_SEQNO_RANGE	65536
-/* don't reset again within 30 seconds */
 
 #define MESH_INACTIVE 0
 #define MESH_ACTIVE 1
@@ -88,22 +85,19 @@
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt /* Append 'batman-adv: ' before
-					     * kernel messages */
+/* Append 'batman-adv: ' before kernel messages */
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
-#define DBG_BATMAN 1	/* all messages related to routing / flooding /
-			 * broadcasting / etc */
-#define DBG_ROUTES 2	/* route or hna added / changed / deleted */
+/* all messages related to routing / flooding / broadcasting / etc */
+#define DBG_BATMAN 1
+/* route or tt entry added / changed / deleted */
+#define DBG_ROUTES 2
 #define DBG_ALL 3
-
-#define LOG_BUF_LEN 8192          /* has to be a power of 2 */
 
 
 /*
  *  Vis
  */
-
-/* #define VIS_SUBCLUSTERS_DISABLED */
 
 /*
  * Kernel headers
@@ -130,7 +124,7 @@
 #define REVISION_VERSION_STR " "REVISION_VERSION
 #endif
 
-extern struct list_head if_list;
+extern struct list_head hardif_list;
 
 extern unsigned char broadcast_addr[];
 extern struct workqueue_struct *bat_event_workqueue;
@@ -158,13 +152,6 @@ static inline void bat_dbg(char type __always_unused,
 }
 #endif
 
-#define bat_warning(net_dev, fmt, arg...)				\
-	do {								\
-		struct net_device *_netdev = (net_dev);                 \
-		struct bat_priv *_batpriv = netdev_priv(_netdev);       \
-		bat_dbg(DBG_ALL, _batpriv, fmt, ## arg);		\
-		pr_warning("%s: " fmt, _netdev->name, ## arg);		\
-	} while (0)
 #define bat_info(net_dev, fmt, arg...)					\
 	do {								\
 		struct net_device *_netdev = (net_dev);                 \
@@ -179,5 +166,17 @@ static inline void bat_dbg(char type __always_unused,
 		bat_dbg(DBG_ALL, _batpriv, fmt, ## arg);		\
 		pr_err("%s: " fmt, _netdev->name, ## arg);		\
 	} while (0)
+
+/**
+ * returns 1 if they are the same ethernet addr
+ *
+ * note: can't use compare_ether_addr() as it requires aligned memory
+ */
+static inline int compare_eth(void *data1, void *data2)
+{
+	return (memcmp(data1, data2, ETH_ALEN) == 0 ? 1 : 0);
+}
+
+#define atomic_dec_not_zero(v)	atomic_add_unless((v), -1, 0)
 
 #endif /* _NET_BATMAN_ADV_MAIN_H_ */

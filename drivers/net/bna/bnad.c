@@ -23,6 +23,7 @@
 #include <linux/if_vlan.h>
 #include <linux/if_ether.h>
 #include <linux/ip.h>
+#include <linux/prefetch.h>
 
 #include "bnad.h"
 #include "bna.h"
@@ -126,22 +127,22 @@ bnad_free_all_txbufs(struct bnad *bnad,
 		}
 		unmap_array[unmap_cons].skb = NULL;
 
-		pci_unmap_single(bnad->pcidev,
-				 pci_unmap_addr(&unmap_array[unmap_cons],
+		dma_unmap_single(&bnad->pcidev->dev,
+				 dma_unmap_addr(&unmap_array[unmap_cons],
 						dma_addr), skb_headlen(skb),
-						PCI_DMA_TODEVICE);
+						DMA_TO_DEVICE);
 
-		pci_unmap_addr_set(&unmap_array[unmap_cons], dma_addr, 0);
+		dma_unmap_addr_set(&unmap_array[unmap_cons], dma_addr, 0);
 		if (++unmap_cons >= unmap_q->q_depth)
 			break;
 
 		for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
-			pci_unmap_page(bnad->pcidev,
-				       pci_unmap_addr(&unmap_array[unmap_cons],
+			dma_unmap_page(&bnad->pcidev->dev,
+				       dma_unmap_addr(&unmap_array[unmap_cons],
 						      dma_addr),
 				       skb_shinfo(skb)->frags[i].size,
-				       PCI_DMA_TODEVICE);
-			pci_unmap_addr_set(&unmap_array[unmap_cons], dma_addr,
+				       DMA_TO_DEVICE);
+			dma_unmap_addr_set(&unmap_array[unmap_cons], dma_addr,
 					   0);
 			if (++unmap_cons >= unmap_q->q_depth)
 				break;
@@ -199,23 +200,23 @@ bnad_free_txbufs(struct bnad *bnad,
 		sent_bytes += skb->len;
 		wis -= BNA_TXQ_WI_NEEDED(1 + skb_shinfo(skb)->nr_frags);
 
-		pci_unmap_single(bnad->pcidev,
-				 pci_unmap_addr(&unmap_array[unmap_cons],
+		dma_unmap_single(&bnad->pcidev->dev,
+				 dma_unmap_addr(&unmap_array[unmap_cons],
 						dma_addr), skb_headlen(skb),
-				 PCI_DMA_TODEVICE);
-		pci_unmap_addr_set(&unmap_array[unmap_cons], dma_addr, 0);
+				 DMA_TO_DEVICE);
+		dma_unmap_addr_set(&unmap_array[unmap_cons], dma_addr, 0);
 		BNA_QE_INDX_ADD(unmap_cons, 1, unmap_q->q_depth);
 
 		prefetch(&unmap_array[unmap_cons + 1]);
 		for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
 			prefetch(&unmap_array[unmap_cons + 1]);
 
-			pci_unmap_page(bnad->pcidev,
-				       pci_unmap_addr(&unmap_array[unmap_cons],
+			dma_unmap_page(&bnad->pcidev->dev,
+				       dma_unmap_addr(&unmap_array[unmap_cons],
 						      dma_addr),
 				       skb_shinfo(skb)->frags[i].size,
-				       PCI_DMA_TODEVICE);
-			pci_unmap_addr_set(&unmap_array[unmap_cons], dma_addr,
+				       DMA_TO_DEVICE);
+			dma_unmap_addr_set(&unmap_array[unmap_cons], dma_addr,
 					   0);
 			BNA_QE_INDX_ADD(unmap_cons, 1, unmap_q->q_depth);
 		}
@@ -340,19 +341,22 @@ static void
 bnad_free_all_rxbufs(struct bnad *bnad, struct bna_rcb *rcb)
 {
 	struct bnad_unmap_q *unmap_q;
+	struct bnad_skb_unmap *unmap_array;
 	struct sk_buff *skb;
 	int unmap_cons;
 
 	unmap_q = rcb->unmap_q;
+	unmap_array = unmap_q->unmap_array;
 	for (unmap_cons = 0; unmap_cons < unmap_q->q_depth; unmap_cons++) {
-		skb = unmap_q->unmap_array[unmap_cons].skb;
+		skb = unmap_array[unmap_cons].skb;
 		if (!skb)
 			continue;
-		unmap_q->unmap_array[unmap_cons].skb = NULL;
-		pci_unmap_single(bnad->pcidev, pci_unmap_addr(&unmap_q->
-					unmap_array[unmap_cons],
-					dma_addr), rcb->rxq->buffer_size,
-					PCI_DMA_FROMDEVICE);
+		unmap_array[unmap_cons].skb = NULL;
+		dma_unmap_single(&bnad->pcidev->dev,
+				 dma_unmap_addr(&unmap_array[unmap_cons],
+						dma_addr),
+				 rcb->rxq->buffer_size,
+				 DMA_FROM_DEVICE);
 		dev_kfree_skb(skb);
 	}
 	bnad_reset_rcb(bnad, rcb);
@@ -391,9 +395,10 @@ bnad_alloc_n_post_rxbufs(struct bnad *bnad, struct bna_rcb *rcb)
 		skb->dev = bnad->netdev;
 		skb_reserve(skb, NET_IP_ALIGN);
 		unmap_array[unmap_prod].skb = skb;
-		dma_addr = pci_map_single(bnad->pcidev, skb->data,
-			rcb->rxq->buffer_size, PCI_DMA_FROMDEVICE);
-		pci_unmap_addr_set(&unmap_array[unmap_prod], dma_addr,
+		dma_addr = dma_map_single(&bnad->pcidev->dev, skb->data,
+					  rcb->rxq->buffer_size,
+					  DMA_FROM_DEVICE);
+		dma_unmap_addr_set(&unmap_array[unmap_prod], dma_addr,
 				   dma_addr);
 		BNA_SET_DMA_ADDR(dma_addr, &rxent->host_addr);
 		BNA_QE_INDX_ADD(unmap_prod, 1, unmap_q->q_depth);
@@ -434,8 +439,9 @@ bnad_poll_cq(struct bnad *bnad, struct bna_ccb *ccb, int budget)
 	struct bna_rcb *rcb = NULL;
 	unsigned int wi_range, packets = 0, wis = 0;
 	struct bnad_unmap_q *unmap_q;
+	struct bnad_skb_unmap *unmap_array;
 	struct sk_buff *skb;
-	u32 flags;
+	u32 flags, unmap_cons;
 	u32 qid0 = ccb->rcb[0]->rxq->rxq_id;
 	struct bna_pkt_rate *pkt_rt = &ccb->pkt_rate;
 
@@ -456,17 +462,17 @@ bnad_poll_cq(struct bnad *bnad, struct bna_ccb *ccb, int budget)
 			rcb = ccb->rcb[1];
 
 		unmap_q = rcb->unmap_q;
+		unmap_array = unmap_q->unmap_array;
+		unmap_cons = unmap_q->consumer_index;
 
-		skb = unmap_q->unmap_array[unmap_q->consumer_index].skb;
+		skb = unmap_array[unmap_cons].skb;
 		BUG_ON(!(skb));
-		unmap_q->unmap_array[unmap_q->consumer_index].skb = NULL;
-		pci_unmap_single(bnad->pcidev,
-				 pci_unmap_addr(&unmap_q->
-						unmap_array[unmap_q->
-							    consumer_index],
+		unmap_array[unmap_cons].skb = NULL;
+		dma_unmap_single(&bnad->pcidev->dev,
+				 dma_unmap_addr(&unmap_array[unmap_cons],
 						dma_addr),
-						rcb->rxq->buffer_size,
-						PCI_DMA_FROMDEVICE);
+				 rcb->rxq->buffer_size,
+				 DMA_FROM_DEVICE);
 		BNA_QE_INDX_ADD(unmap_q->consumer_index, 1, unmap_q->q_depth);
 
 		/* Should be more efficient ? Performance ? */
@@ -496,7 +502,7 @@ bnad_poll_cq(struct bnad *bnad, struct bna_ccb *ccb, int budget)
 
 		skb_put(skb, ntohs(cmpl->length));
 		if (likely
-		    (bnad->rx_csum &&
+		    ((bnad->netdev->features & NETIF_F_RXCSUM) &&
 		     (((flags & BNA_CQ_EF_IPV4) &&
 		      (flags & BNA_CQ_EF_L3_CKSUM_OK)) ||
 		      (flags & BNA_CQ_EF_IPV6)) &&
@@ -1015,9 +1021,9 @@ bnad_mem_free(struct bnad *bnad,
 			if (mem_info->mem_type == BNA_MEM_T_DMA) {
 				BNA_GET_DMA_ADDR(&(mem_info->mdl[i].dma),
 						dma_pa);
-				pci_free_consistent(bnad->pcidev,
-						mem_info->mdl[i].len,
-						mem_info->mdl[i].kva, dma_pa);
+				dma_free_coherent(&bnad->pcidev->dev,
+						  mem_info->mdl[i].len,
+						  mem_info->mdl[i].kva, dma_pa);
 			} else
 				kfree(mem_info->mdl[i].kva);
 		}
@@ -1047,8 +1053,9 @@ bnad_mem_alloc(struct bnad *bnad,
 		for (i = 0; i < mem_info->num; i++) {
 			mem_info->mdl[i].len = mem_info->len;
 			mem_info->mdl[i].kva =
-				pci_alloc_consistent(bnad->pcidev,
-						mem_info->len, &dma_pa);
+				dma_alloc_coherent(&bnad->pcidev->dev,
+						mem_info->len, &dma_pa,
+						GFP_KERNEL);
 
 			if (mem_info->mdl[i].kva == NULL)
 				goto err_return;
@@ -1104,7 +1111,7 @@ bnad_mbox_irq_alloc(struct bnad *bnad,
 		    struct bna_intr_info *intr_info)
 {
 	int 		err = 0;
-	unsigned long 	flags;
+	unsigned long 	irq_flags = 0, flags;
 	u32	irq;
 	irq_handler_t 	irq_handler;
 
@@ -1118,18 +1125,17 @@ bnad_mbox_irq_alloc(struct bnad *bnad,
 	if (bnad->cfg_flags & BNAD_CF_MSIX) {
 		irq_handler = (irq_handler_t)bnad_msix_mbox_handler;
 		irq = bnad->msix_table[bnad->msix_num - 1].vector;
-		flags = 0;
 		intr_info->intr_type = BNA_INTR_T_MSIX;
 		intr_info->idl[0].vector = bnad->msix_num - 1;
 	} else {
 		irq_handler = (irq_handler_t)bnad_isr;
 		irq = bnad->pcidev->irq;
-		flags = IRQF_SHARED;
+		irq_flags = IRQF_SHARED;
 		intr_info->intr_type = BNA_INTR_T_INTX;
 		/* intr_info->idl.vector = 0 ? */
 	}
 	spin_unlock_irqrestore(&bnad->bna_lock, flags);
-
+	flags = irq_flags;
 	sprintf(bnad->mbox_irq_name, "%s", BNAD_NAME);
 
 	/*
@@ -1831,7 +1837,6 @@ bnad_setup_rx(struct bnad *bnad, uint rx_id)
 	/* Initialize the Rx event handlers */
 	rx_cbfn.rcb_setup_cbfn = bnad_cb_rcb_setup;
 	rx_cbfn.rcb_destroy_cbfn = bnad_cb_rcb_destroy;
-	rx_cbfn.rcb_destroy_cbfn = NULL;
 	rx_cbfn.ccb_setup_cbfn = bnad_cb_ccb_setup;
 	rx_cbfn.ccb_destroy_cbfn = bnad_cb_ccb_destroy;
 	rx_cbfn.rx_cleanup_cbfn = bnad_cb_rx_cleanup;
@@ -2600,9 +2605,9 @@ bnad_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	unmap_q->unmap_array[unmap_prod].skb = skb;
 	BUG_ON(!(skb_headlen(skb) <= BFI_TX_MAX_DATA_PER_VECTOR));
 	txqent->vector[vect_id].length = htons(skb_headlen(skb));
-	dma_addr = pci_map_single(bnad->pcidev, skb->data, skb_headlen(skb),
-		PCI_DMA_TODEVICE);
-	pci_unmap_addr_set(&unmap_q->unmap_array[unmap_prod], dma_addr,
+	dma_addr = dma_map_single(&bnad->pcidev->dev, skb->data,
+				  skb_headlen(skb), DMA_TO_DEVICE);
+	dma_unmap_addr_set(&unmap_q->unmap_array[unmap_prod], dma_addr,
 			   dma_addr);
 
 	BNA_SET_DMA_ADDR(dma_addr, &txqent->vector[vect_id].host_addr);
@@ -2630,11 +2635,9 @@ bnad_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 
 		BUG_ON(!(size <= BFI_TX_MAX_DATA_PER_VECTOR));
 		txqent->vector[vect_id].length = htons(size);
-		dma_addr =
-			pci_map_page(bnad->pcidev, frag->page,
-				     frag->page_offset, size,
-				     PCI_DMA_TODEVICE);
-		pci_unmap_addr_set(&unmap_q->unmap_array[unmap_prod], dma_addr,
+		dma_addr = dma_map_page(&bnad->pcidev->dev, frag->page,
+					frag->page_offset, size, DMA_TO_DEVICE);
+		dma_unmap_addr_set(&unmap_q->unmap_array[unmap_prod], dma_addr,
 				   dma_addr);
 		BNA_SET_DMA_ADDR(dma_addr, &txqent->vector[vect_id].host_addr);
 		BNA_QE_INDX_ADD(unmap_prod, 1, unmap_q->q_depth);
@@ -2899,23 +2902,20 @@ bnad_netdev_init(struct bnad *bnad, bool using_dac)
 {
 	struct net_device *netdev = bnad->netdev;
 
-	netdev->features |= NETIF_F_IPV6_CSUM;
-	netdev->features |= NETIF_F_TSO;
-	netdev->features |= NETIF_F_TSO6;
+	netdev->hw_features = NETIF_F_SG | NETIF_F_RXCSUM |
+		NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM |
+		NETIF_F_TSO | NETIF_F_TSO6 | NETIF_F_HW_VLAN_TX;
 
-	netdev->features |= NETIF_F_GRO;
-	pr_warn("bna: GRO enabled, using kernel stack GRO\n");
+	netdev->vlan_features = NETIF_F_SG | NETIF_F_HIGHDMA |
+		NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM |
+		NETIF_F_TSO | NETIF_F_TSO6;
 
-	netdev->features |= NETIF_F_SG | NETIF_F_IP_CSUM;
+	netdev->features |= netdev->hw_features |
+		NETIF_F_HW_VLAN_RX | NETIF_F_HW_VLAN_FILTER;
 
 	if (using_dac)
 		netdev->features |= NETIF_F_HIGHDMA;
 
-	netdev->features |=
-		NETIF_F_HW_VLAN_TX | NETIF_F_HW_VLAN_RX |
-		NETIF_F_HW_VLAN_FILTER;
-
-	netdev->vlan_features = netdev->features;
 	netdev->mem_start = bnad->mmio_start;
 	netdev->mem_end = bnad->mmio_start + bnad->mmio_len - 1;
 
@@ -2966,7 +2966,6 @@ bnad_init(struct bnad *bnad,
 
 	bnad->txq_depth = BNAD_TXQ_DEPTH;
 	bnad->rxq_depth = BNAD_RXQ_DEPTH;
-	bnad->rx_csum = true;
 
 	bnad->tx_coalescing_timeo = BFI_TX_COALESCING_TIMEO;
 	bnad->rx_coalescing_timeo = BFI_RX_COALESCING_TIMEO;
@@ -3022,14 +3021,14 @@ bnad_pci_init(struct bnad *bnad,
 	err = pci_request_regions(pdev, BNAD_NAME);
 	if (err)
 		goto disable_device;
-	if (!pci_set_dma_mask(pdev, DMA_BIT_MASK(64)) &&
-	    !pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(64))) {
+	if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(64)) &&
+	    !dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(64))) {
 		*using_dac = 1;
 	} else {
-		err = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
+		err = dma_set_mask(&pdev->dev, DMA_BIT_MASK(32));
 		if (err) {
-			err = pci_set_consistent_dma_mask(pdev,
-						DMA_BIT_MASK(32));
+			err = dma_set_coherent_mask(&pdev->dev,
+						    DMA_BIT_MASK(32));
 			if (err)
 				goto release_regions;
 		}

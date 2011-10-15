@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Copywrite 2010 - Steven Rostedt <srostedt@redhat.com>, Red Hat Inc.
+# Copyright 2010 - Steven Rostedt <srostedt@redhat.com>, Red Hat Inc.
 # Licensed under the terms of the GNU GPL License version 2
 #
 
@@ -36,7 +36,10 @@ $default{"REBOOT_ON_SUCCESS"}	= 1;
 $default{"POWEROFF_ON_SUCCESS"}	= 0;
 $default{"BUILD_OPTIONS"}	= "";
 $default{"BISECT_SLEEP_TIME"}	= 60;   # sleep time between bisects
+$default{"PATCHCHECK_SLEEP_TIME"} = 60; # sleep time between patch checks
 $default{"CLEAR_LOG"}		= 0;
+$default{"BISECT_MANUAL"}	= 0;
+$default{"BISECT_SKIP"}		= 1;
 $default{"SUCCESS_LINE"}	= "login:";
 $default{"BOOTED_TIMEOUT"}	= 1;
 $default{"DIE_ON_FAILURE"}	= 1;
@@ -45,6 +48,7 @@ $default{"SCP_TO_TARGET"}	= "scp \$SRC_FILE \$SSH_USER\@\$MACHINE:\$DST_FILE";
 $default{"REBOOT"}		= "ssh \$SSH_USER\@\$MACHINE reboot";
 $default{"STOP_AFTER_SUCCESS"}	= 10;
 $default{"STOP_AFTER_FAILURE"}	= 60;
+$default{"STOP_TEST_AFTER"}	= 600;
 $default{"LOCALVERSION"}	= "-test";
 
 my $ktest_config;
@@ -81,6 +85,8 @@ my $addconfig;
 my $in_bisect = 0;
 my $bisect_bad = "";
 my $reverse_bisect;
+my $bisect_manual;
+my $bisect_skip;
 my $in_patchcheck = 0;
 my $run_test;
 my $redirect;
@@ -91,6 +97,7 @@ my $monitor_pid;
 my $monitor_cnt = 0;
 my $sleep_time;
 my $bisect_sleep_time;
+my $patchcheck_sleep_time;
 my $store_failures;
 my $timeout;
 my $booted_timeout;
@@ -98,6 +105,7 @@ my $console;
 my $success_line;
 my $stop_after_success;
 my $stop_after_failure;
+my $stop_test_after;
 my $build_target;
 my $target_image;
 my $localversion;
@@ -106,6 +114,7 @@ my $successes = 0;
 
 my %entered_configs;
 my %config_help;
+my %variable;
 
 $config_help{"MACHINE"} = << "EOF"
  The machine hostname that you will test.
@@ -254,6 +263,39 @@ sub get_ktest_configs {
     }
 }
 
+sub process_variables {
+    my ($value) = @_;
+    my $retval = "";
+
+    # We want to check for '\', and it is just easier
+    # to check the previous characet of '$' and not need
+    # to worry if '$' is the first character. By adding
+    # a space to $value, we can just check [^\\]\$ and
+    # it will still work.
+    $value = " $value";
+
+    while ($value =~ /(.*?[^\\])\$\{(.*?)\}(.*)/) {
+	my $begin = $1;
+	my $var = $2;
+	my $end = $3;
+	# append beginning of value to retval
+	$retval = "$retval$begin";
+	if (defined($variable{$var})) {
+	    $retval = "$retval$variable{$var}";
+	} else {
+	    # put back the origin piece.
+	    $retval = "$retval\$\{$var\}";
+	}
+	$value = $end;
+    }
+    $retval = "$retval$value";
+
+    # remove the space added in the beginning
+    $retval =~ s/ //;
+
+    return "$retval"
+}
+
 sub set_value {
     my ($lvalue, $rvalue) = @_;
 
@@ -263,7 +305,19 @@ sub set_value {
     if ($rvalue =~ /^\s*$/) {
 	delete $opt{$lvalue};
     } else {
+	$rvalue = process_variables($rvalue);
 	$opt{$lvalue} = $rvalue;
+    }
+}
+
+sub set_variable {
+    my ($lvalue, $rvalue) = @_;
+
+    if ($rvalue =~ /^\s*$/) {
+	delete $variable{$lvalue};
+    } else {
+	$rvalue = process_variables($rvalue);
+	$variable{$lvalue} = $rvalue;
     }
 }
 
@@ -379,6 +433,22 @@ sub read_config {
 		    $repeats{$val} = $repeat;
 		}
 	    }
+	} elsif (/^\s*([A-Z_\[\]\d]+)\s*:=\s*(.*?)\s*$/) {
+	    next if ($skip);
+
+	    my $lvalue = $1;
+	    my $rvalue = $2;
+
+	    # process config variables.
+	    # Config variables are only active while reading the
+	    # config and can be defined anywhere. They also ignore
+	    # TEST_START and DEFAULTS, but are skipped if they are in
+	    # on of these sections that have SKIP defined.
+	    # The save variable can be
+	    # defined multiple times and the new one simply overrides
+	    # the prevous one.
+	    set_variable($lvalue, $rvalue);
+
 	} else {
 	    die "$name: $.: Garbage found in config\n$_";
 	}
@@ -460,6 +530,10 @@ sub dodie {
     } elsif ($poweroff_on_error && defined($power_off)) {
 	doprint "POWERING OFF\n";
 	`$power_off`;
+    }
+
+    if (defined($opt{"LOG_FILE"})) {
+	print " See $opt{LOG_FILE} for more info.\n";
     }
 
     die @_, "\n";
@@ -714,7 +788,7 @@ sub wait_for_input
 
 sub reboot_to {
     if ($reboot_type eq "grub") {
-	run_ssh "'(echo \"savedefault --default=$grub_number --once\" | grub --batch; reboot)'";
+	run_ssh "'(echo \"savedefault --default=$grub_number --once\" | grub --batch && reboot)'";
 	return;
     }
 
@@ -760,8 +834,10 @@ sub monitor {
 
     my $success_start;
     my $failure_start;
+    my $monitor_start = time;
+    my $done = 0;
 
-    for (;;) {
+    while (!$done) {
 
 	if ($booted) {
 	    $line = wait_for_input($monitor_fp, $booted_timeout);
@@ -796,7 +872,7 @@ sub monitor {
 	}
 
 	if ($full_line =~ /call trace:/i) {
-	    if (!$skip_call_trace) {
+	    if (!$bug && !$skip_call_trace) {
 		$bug = 1;
 		$failure_start = time;
 	    }
@@ -816,11 +892,19 @@ sub monitor {
 	}
 
 	if ($full_line =~ /Kernel panic -/) {
+	    $failure_start = time;
 	    $bug = 1;
 	}
 
 	if ($line =~ /\n/) {
 	    $full_line = "";
+	}
+
+	if ($stop_test_after > 0 && !$booted && !$bug) {
+	    if (time - $monitor_start > $stop_test_after) {
+		doprint "STOP_TEST_AFTER ($stop_test_after seconds) timed out\n";
+		$done = 1;
+	    }
 	}
     }
 
@@ -888,7 +972,7 @@ sub install {
     return if (!defined($post_install));
 
     my $cp_post_install = $post_install;
-    $cp_post_install = s/\$KERNEL_VERSION/$version/g;
+    $cp_post_install =~ s/\$KERNEL_VERSION/$version/g;
     run_command "$cp_post_install" or
 	dodie "Failed to run post install";
 }
@@ -923,6 +1007,18 @@ sub check_buildlog {
     close(IN);
 
     return 1;
+}
+
+sub make_oldconfig {
+    my ($defconfig) = @_;
+
+    if (!run_command "$defconfig $make oldnoconfig") {
+	# Perhaps oldnoconfig doesn't exist in this version of the kernel
+	# try a yes '' | oldconfig
+	doprint "oldnoconfig failed, trying yes '' | make oldconfig\n";
+	run_command "yes '' | $defconfig $make oldconfig" or
+	    dodie "failed make config oldconfig";
+    }
 }
 
 sub build {
@@ -970,8 +1066,12 @@ sub build {
 	$defconfig = "KCONFIG_ALLCONFIG=$minconfig";
     }
 
-    run_command "$defconfig $make $type" or
-	dodie "failed make config";
+    if ($type eq "oldnoconfig") {
+	make_oldconfig $defconfig;
+    } else {
+	run_command "$defconfig $make $type" or
+	    dodie "failed make config";
+    }
 
     $redirect = "$buildlog";
     if (!run_command "$make $build_options") {
@@ -1025,6 +1125,21 @@ sub get_version {
     doprint "$version\n";
 }
 
+sub answer_bisect {
+    for (;;) {
+	doprint "Pass or fail? [p/f]";
+	my $ans = <STDIN>;
+	chomp $ans;
+	if ($ans eq "p" || $ans eq "P") {
+	    return 1;
+	} elsif ($ans eq "f" || $ans eq "F") {
+	    return 0;
+	} else {
+	    print "Please answer 'P' or 'F'\n";
+	}
+    }
+}
+
 sub child_run_test {
     my $failed = 0;
 
@@ -1070,6 +1185,7 @@ sub do_run_test {
 
 	    # we are not guaranteed to get a full line
 	    $full_line .= $line;
+	    doprint $line;
 
 	    if ($full_line =~ /call trace:/i) {
 		$bug = 1;
@@ -1086,6 +1202,19 @@ sub do_run_test {
     } while (!$child_done && !$bug);
 
     if ($bug) {
+	my $failure_start = time;
+	my $now;
+	do {
+	    $line = wait_for_input($monitor_fp, 1);
+	    if (defined($line)) {
+		doprint $line;
+	    }
+	    $now = time;
+	    if ($now - $failure_start >= $stop_after_failure) {
+		last;
+	    }
+	} while (defined($line));
+
 	doprint "Detected kernel crash!\n";
 	# kill the child with extreme prejudice
 	kill 9, $child_pid;
@@ -1131,7 +1260,15 @@ sub run_git_bisect {
     return 1;
 }
 
-# returns 1 on success, 0 on failure
+sub bisect_reboot {
+    doprint "Reboot and sleep $bisect_sleep_time seconds\n";
+    reboot;
+    start_monitor;
+    wait_for_monitor $bisect_sleep_time;
+    end_monitor;
+}
+
+# returns 1 on success, 0 on failure, -1 on skip
 sub run_bisect_test {
     my ($type, $buildtype) = @_;
 
@@ -1145,6 +1282,10 @@ sub run_bisect_test {
     build $buildtype or $failed = 1;
 
     if ($type ne "build") {
+	if ($failed && $bisect_skip) {
+	    $in_bisect = 0;
+	    return -1;
+	}
 	dodie "Failed on build" if $failed;
 
 	# Now boot the box
@@ -1156,6 +1297,12 @@ sub run_bisect_test {
 	monitor or $failed = 1;
 
 	if ($type ne "boot") {
+	    if ($failed && $bisect_skip) {
+		end_monitor;
+		bisect_reboot;
+		$in_bisect = 0;
+		return -1;
+	    }
 	    dodie "Failed on boot" if $failed;
 
 	    do_run_test or $failed = 1;
@@ -1165,17 +1312,13 @@ sub run_bisect_test {
 
     if ($failed) {
 	$result = 0;
-
-	# reboot the box to a good kernel
-	if ($type ne "build") {
-	    doprint "Reboot and sleep $bisect_sleep_time seconds\n";
-	    reboot;
-	    start_monitor;
-	    wait_for_monitor $bisect_sleep_time;
-	    end_monitor;
-	}
     } else {
 	$result = 1;
+    }
+
+    # reboot the box to a kernel we can ssh to
+    if ($type ne "build") {
+	bisect_reboot;
     }
     $in_bisect = 0;
 
@@ -1193,16 +1336,22 @@ sub run_bisect {
 
     my $ret = run_bisect_test $type, $buildtype;
 
+    if ($bisect_manual) {
+	$ret = answer_bisect;
+    }
 
     # Are we looking for where it worked, not failed?
     if ($reverse_bisect) {
 	$ret = !$ret;
     }
 
-    if ($ret) {
+    if ($ret > 0) {
 	return "good";
-    } else {
+    } elsif ($ret == 0) {
 	return  "bad";
+    } elsif ($bisect_skip) {
+	doprint "HIT A BAD COMMIT ... SKIPPING\n";
+	return "skip";
     }
 }
 
@@ -1220,6 +1369,13 @@ sub bisect {
     my $type = $opt{"BISECT_TYPE[$i]"};
     my $start = $opt{"BISECT_START[$i]"};
     my $replay = $opt{"BISECT_REPLAY[$i]"};
+    my $start_files = $opt{"BISECT_FILES[$i]"};
+
+    if (defined($start_files)) {
+	$start_files = " -- " . $start_files;
+    } else {
+	$start_files = "";
+    }
 
     # convert to true sha1's
     $good = get_sha1($good);
@@ -1273,7 +1429,7 @@ sub bisect {
 	    die "Failed to checkout $head";
     }
 
-    run_command "git bisect start" or
+    run_command "git bisect start$start_files" or
 	dodie "could not start bisect";
 
     run_command "git bisect good $good" or
@@ -1324,7 +1480,7 @@ sub process_config_ignore {
 	or dodie "Failed to read $config";
 
     while (<IN>) {
-	if (/^(.*?(CONFIG\S*)(=.*| is not set))/) {
+	if (/^((CONFIG\S*)=.*)/) {
 	    $config_ignore{$2} = $1;
 	}
     }
@@ -1390,9 +1546,7 @@ sub create_config {
     close(OUT);
 
 #    exit;
-    run_command "$make oldnoconfig" or
-	dodie "failed make config oldconfig";
-
+    make_oldconfig "";
 }
 
 sub compare_configs {
@@ -1484,7 +1638,7 @@ sub run_config_bisect {
 	if (!$found) {
 	    # try the other half
 	    doprint "Top half produced no set configs, trying bottom half\n";
-	    @tophalf = @start_list[$half .. $#start_list];
+	    @tophalf = @start_list[$half + 1 .. $#start_list];
 	    create_config @tophalf;
 	    read_current_config \%current_config;
 	    foreach my $config (@tophalf) {
@@ -1505,7 +1659,9 @@ sub run_config_bisect {
 	}
 
 	$ret = run_config_bisect_test $type;
-
+	if ($bisect_manual) {
+	    $ret = answer_bisect;
+	}
 	if ($ret) {
 	    process_passed %current_config;
 	    return 0;
@@ -1534,9 +1690,15 @@ sub run_config_bisect {
 	# remove half the configs we are looking at and see if
 	# they are good.
 	$half = int($#start_list / 2);
-    } while ($half > 0);
+    } while ($#start_list > 0);
 
-    # we found a single config, try it again
+    # we found a single config, try it again unless we are running manually
+
+    if ($bisect_manual) {
+	process_failed $start_list[0];
+	return 1;
+    }
+
     my @tophalf = @start_list[0 .. 0];
 
     $ret = run_config_bisect_test $type;
@@ -1594,8 +1756,7 @@ sub config_bisect {
     close(IN);
 
     # Now run oldconfig with the minconfig (and addconfigs)
-    run_command "$defconfig $make oldnoconfig" or
-	dodie "failed make config oldconfig";
+    make_oldconfig $defconfig;
 
     # check to see what we lost (or gained)
     open (IN, $output_config)
@@ -1665,6 +1826,14 @@ sub config_bisect {
     return $ret if ($ret < 0);
 
     success $i;
+}
+
+sub patchcheck_reboot {
+    doprint "Reboot and sleep $patchcheck_sleep_time seconds\n";
+    reboot;
+    start_monitor;
+    wait_for_monitor $patchcheck_sleep_time;
+    end_monitor;
 }
 
 sub patchcheck {
@@ -1758,6 +1927,8 @@ sub patchcheck {
 	end_monitor;
 	return 0 if ($failed);
 
+	patchcheck_reboot;
+
     }
     $in_patchcheck = 0;
     success $i;
@@ -1848,7 +2019,7 @@ for (my $i = 0, my $repeat = 1; $i <= $opt{"NUM_TESTS"}; $i += $repeat) {
     }
 }
 
-sub set_test_option {
+sub __set_test_option {
     my ($name, $i) = @_;
 
     my $option = "$name\[$i\]";
@@ -1872,6 +2043,72 @@ sub set_test_option {
     }
 
     return undef;
+}
+
+sub eval_option {
+    my ($option, $i) = @_;
+
+    # Add space to evaluate the character before $
+    $option = " $option";
+    my $retval = "";
+
+    while ($option =~ /(.*?[^\\])\$\{(.*?)\}(.*)/) {
+	my $start = $1;
+	my $var = $2;
+	my $end = $3;
+
+	# Append beginning of line
+	$retval = "$retval$start";
+
+	# If the iteration option OPT[$i] exists, then use that.
+	# otherwise see if the default OPT (without [$i]) exists.
+
+	my $o = "$var\[$i\]";
+
+	if (defined($opt{$o})) {
+	    $o = $opt{$o};
+	    $retval = "$retval$o";
+	} elsif (defined($opt{$var})) {
+	    $o = $opt{$var};
+	    $retval = "$retval$o";
+	} else {
+	    $retval = "$retval\$\{$var\}";
+	}
+
+	$option = $end;
+    }
+
+    $retval = "$retval$option";
+
+    $retval =~ s/^ //;
+
+    return $retval;
+}
+
+sub set_test_option {
+    my ($name, $i) = @_;
+
+    my $option = __set_test_option($name, $i);
+    return $option if (!defined($option));
+
+    my $prev = "";
+
+    # Since an option can evaluate to another option,
+    # keep iterating until we do not evaluate any more
+    # options.
+    my $r = 0;
+    while ($prev ne $option) {
+	# Check for recursive evaluations.
+	# 100 deep should be more than enough.
+	if ($r++ > 100) {
+	    die "Over 100 evaluations accurred with $name\n" .
+		"Check for recursive variables\n";
+	}
+	$prev = $option;
+	$option = eval_option($option, $i);
+    }
+
+    return $option;
 }
 
 # First we need to do is the builds
@@ -1907,6 +2144,9 @@ for (my $i = 1; $i <= $opt{"NUM_TESTS"}; $i++) {
     $poweroff_after_halt = set_test_option("POWEROFF_AFTER_HALT", $i);
     $sleep_time = set_test_option("SLEEP_TIME", $i);
     $bisect_sleep_time = set_test_option("BISECT_SLEEP_TIME", $i);
+    $patchcheck_sleep_time = set_test_option("PATCHCHECK_SLEEP_TIME", $i);
+    $bisect_manual = set_test_option("BISECT_MANUAL", $i);
+    $bisect_skip = set_test_option("BISECT_SKIP", $i);
     $store_failures = set_test_option("STORE_FAILURES", $i);
     $timeout = set_test_option("TIMEOUT", $i);
     $booted_timeout = set_test_option("BOOTED_TIMEOUT", $i);
@@ -1914,6 +2154,7 @@ for (my $i = 1; $i <= $opt{"NUM_TESTS"}; $i++) {
     $success_line = set_test_option("SUCCESS_LINE", $i);
     $stop_after_success = set_test_option("STOP_AFTER_SUCCESS", $i);
     $stop_after_failure = set_test_option("STOP_AFTER_FAILURE", $i);
+    $stop_test_after = set_test_option("STOP_TEST_AFTER", $i);
     $build_target = set_test_option("BUILD_TARGET", $i);
     $ssh_exec = set_test_option("SSH_EXEC", $i);
     $scp_to_target = set_test_option("SCP_TO_TARGET", $i);

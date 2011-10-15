@@ -162,11 +162,10 @@ nouveau_pci_suspend(struct pci_dev *pdev, pm_message_t pm_state)
 	struct drm_device *dev = pci_get_drvdata(pdev);
 	struct drm_nouveau_private *dev_priv = dev->dev_private;
 	struct nouveau_instmem_engine *pinstmem = &dev_priv->engine.instmem;
-	struct nouveau_pgraph_engine *pgraph = &dev_priv->engine.graph;
 	struct nouveau_fifo_engine *pfifo = &dev_priv->engine.fifo;
 	struct nouveau_channel *chan;
 	struct drm_crtc *crtc;
-	int ret, i;
+	int ret, i, e;
 
 	if (pm_state.event == PM_EVENT_PRETHAW)
 		return 0;
@@ -206,12 +205,17 @@ nouveau_pci_suspend(struct pci_dev *pdev, pm_message_t pm_state)
 			nouveau_channel_idle(chan);
 	}
 
-	pgraph->fifo_access(dev, false);
-	nouveau_wait_for_idle(dev);
 	pfifo->reassign(dev, false);
 	pfifo->disable(dev);
 	pfifo->unload_context(dev);
-	pgraph->unload_context(dev);
+
+	for (e = NVOBJ_ENGINE_NR - 1; e >= 0; e--) {
+		if (dev_priv->eng[e]) {
+			ret = dev_priv->eng[e]->fini(dev, e);
+			if (ret)
+				goto out_abort;
+		}
+	}
 
 	ret = pinstmem->suspend(dev);
 	if (ret) {
@@ -242,9 +246,12 @@ nouveau_pci_suspend(struct pci_dev *pdev, pm_message_t pm_state)
 
 out_abort:
 	NV_INFO(dev, "Re-enabling acceleration..\n");
+	for (e = e + 1; e < NVOBJ_ENGINE_NR; e++) {
+		if (dev_priv->eng[e])
+			dev_priv->eng[e]->init(dev, e);
+	}
 	pfifo->enable(dev);
 	pfifo->reassign(dev, true);
-	pgraph->fifo_access(dev, true);
 	return ret;
 }
 
@@ -299,8 +306,10 @@ nouveau_pci_resume(struct pci_dev *pdev)
 	engine->mc.init(dev);
 	engine->timer.init(dev);
 	engine->fb.init(dev);
-	engine->graph.init(dev);
-	engine->crypt.init(dev);
+	for (i = 0; i < NVOBJ_ENGINE_NR; i++) {
+		if (dev_priv->eng[i])
+			dev_priv->eng[i]->init(dev, i);
+	}
 	engine->fifo.init(dev);
 
 	nouveau_irq_postinstall(dev);
@@ -408,14 +417,6 @@ static struct drm_driver driver = {
 #endif
 		.llseek = noop_llseek,
 	},
-	.pci_driver = {
-		.name = DRIVER_NAME,
-		.id_table = pciidlist,
-		.probe = nouveau_pci_probe,
-		.remove = nouveau_pci_remove,
-		.suspend = nouveau_pci_suspend,
-		.resume = nouveau_pci_resume
-	},
 
 	.gem_init_object = nouveau_gem_object_new,
 	.gem_free_object = nouveau_gem_object_del,
@@ -430,6 +431,15 @@ static struct drm_driver driver = {
 	.major = DRIVER_MAJOR,
 	.minor = DRIVER_MINOR,
 	.patchlevel = DRIVER_PATCHLEVEL,
+};
+
+static struct pci_driver nouveau_pci_driver = {
+		.name = DRIVER_NAME,
+		.id_table = pciidlist,
+		.probe = nouveau_pci_probe,
+		.remove = nouveau_pci_remove,
+		.suspend = nouveau_pci_suspend,
+		.resume = nouveau_pci_resume
 };
 
 static int __init nouveau_init(void)
@@ -449,7 +459,7 @@ static int __init nouveau_init(void)
 		return 0;
 
 	nouveau_register_dsm_handler();
-	return drm_init(&driver);
+	return drm_pci_init(&driver, &nouveau_pci_driver);
 }
 
 static void __exit nouveau_exit(void)
@@ -457,7 +467,7 @@ static void __exit nouveau_exit(void)
 	if (!nouveau_modeset)
 		return;
 
-	drm_exit(&driver);
+	drm_pci_exit(&driver, &nouveau_pci_driver);
 	nouveau_unregister_dsm_handler();
 }
 

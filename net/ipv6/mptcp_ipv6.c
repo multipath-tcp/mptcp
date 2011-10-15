@@ -15,7 +15,9 @@
  */
 
 #include <linux/in6.h>
+#include <linux/kernel.h>
 
+#include <net/flow.h>
 #include <net/inet6_connection_sock.h>
 #include <net/ipv6.h>
 #include <net/mptcp.h>
@@ -348,40 +350,37 @@ int mptcp_v6_send_synack(struct sock *meta_sk,
 	struct sk_buff *skb;
 	struct ipv6_txoptions *opt = NULL;
 	struct in6_addr *final_p, final;
-	struct flowi fl;
+	struct flowi6 fl6;
 	struct dst_entry *dst;
 	int err = -1;
 
-	memset(&fl, 0, sizeof(fl));
-	fl.proto = IPPROTO_TCP;
-	ipv6_addr_copy(&fl.fl6_dst, &treq->rmt_addr);
-	ipv6_addr_copy(&fl.fl6_src, &treq->loc_addr);
-	fl.fl6_flowlabel = 0;
-	fl.oif = treq->iif;
-	fl.mark = meta_sk->sk_mark;
-	fl.fl_ip_dport = inet_rsk(req)->rmt_port;
-	fl.fl_ip_sport = inet_rsk(req)->loc_port;
-	security_req_classify_flow(req, &fl);
+	memset(&fl6, 0, sizeof(fl6));
+	fl6.flowi6_proto = IPPROTO_TCP;
+	ipv6_addr_copy(&fl6.daddr, &treq->rmt_addr);
+	ipv6_addr_copy(&fl6.saddr, &treq->loc_addr);
+	fl6.flowlabel = 0;
+	fl6.flowi6_oif = treq->iif;
+	fl6.flowi6_mark = meta_sk->sk_mark;
+	fl6.fl6_dport = inet_rsk(req)->rmt_port;
+	fl6.fl6_sport = inet_rsk(req)->loc_port;
+	security_req_classify_flow(req, flowi6_to_flowi(&fl6));
 
 	opt = np->opt;
-	final_p = fl6_update_dst(&fl, opt, &final);
+	final_p = fl6_update_dst(&fl6, opt, &final);
 
-	err = ip6_dst_lookup(meta_sk, &dst, &fl);
-	if (err)
+	dst = ip6_dst_lookup_flow(meta_sk, &fl6, final_p, false);
+	if (IS_ERR(dst)) {
+		err = PTR_ERR(dst);
+		dst = NULL;
 		goto done;
-	if (final_p)
-		ipv6_addr_copy(&fl.fl6_dst, final_p);
-	err = xfrm_lookup(sock_net(meta_sk), &dst, &fl, meta_sk, 0);
-	if (err < 0)
-		goto done;
-
+	}
 	skb = tcp_make_synack(master_sk, dst, req, NULL);
-
+	err = -ENOMEM;
 	if (skb) {
 		__tcp_v6_send_check(skb, &treq->loc_addr, &treq->rmt_addr);
 
-		ipv6_addr_copy(&fl.fl6_dst, &treq->rmt_addr);
-		err = ip6_xmit(meta_sk, skb, &fl, opt);
+		ipv6_addr_copy(&fl6.daddr, &treq->rmt_addr);
+		err = ip6_xmit(meta_sk, skb, &fl6, opt);
 		err = net_xmit_eval(err);
 	}
 

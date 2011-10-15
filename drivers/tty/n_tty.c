@@ -95,6 +95,7 @@ static void n_tty_set_room(struct tty_struct *tty)
 {
 	/* tty->read_cnt is not read locked ? */
 	int	left = N_TTY_BUF_SIZE - tty->read_cnt - 1;
+	int old_left;
 
 	/*
 	 * If we are doing input canonicalization, and there are no
@@ -104,7 +105,12 @@ static void n_tty_set_room(struct tty_struct *tty)
 	 */
 	if (left <= 0)
 		left = tty->icanon && !tty->canon_data;
+	old_left = tty->receive_room;
 	tty->receive_room = left;
+
+	/* Did this open up the receive buffer? We may need to flip */
+	if (left && !old_left)
+		schedule_work(&tty->buf.work);
 }
 
 static void put_tty_queue_nolock(unsigned char c, struct tty_struct *tty)
@@ -1809,6 +1815,7 @@ do_it_again:
 			/* FIXME: does n_tty_set_room need locking ? */
 			n_tty_set_room(tty);
 			timeout = schedule_timeout(timeout);
+			BUG_ON(!tty->read_buf);
 			continue;
 		}
 		__set_current_state(TASK_RUNNING);

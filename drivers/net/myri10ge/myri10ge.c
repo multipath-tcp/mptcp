@@ -65,6 +65,7 @@
 #include <linux/io.h>
 #include <linux/log2.h>
 #include <linux/slab.h>
+#include <linux/prefetch.h>
 #include <net/checksum.h>
 #include <net/ip.h>
 #include <net/tcp.h>
@@ -205,7 +206,6 @@ struct myri10ge_priv {
 	int tx_boundary;	/* boundary transmits cannot cross */
 	int num_slices;
 	int running;		/* running?             */
-	int csum_flag;		/* rx_csums?            */
 	int small_bytes;
 	int big_bytes;
 	int max_intr_slots;
@@ -253,7 +253,7 @@ struct myri10ge_priv {
 	unsigned long serial_number;
 	int vendor_specific_offset;
 	int fw_multicast_support;
-	unsigned long features;
+	u32 features;
 	u32 max_tso6;
 	u32 read_dma;
 	u32 write_dma;
@@ -1312,16 +1312,25 @@ myri10ge_unmap_rx_page(struct pci_dev *pdev,
 				 * page into an skb */
 
 static inline int
-myri10ge_rx_done(struct myri10ge_slice_state *ss, struct myri10ge_rx_buf *rx,
-		 int bytes, int len, __wsum csum)
+myri10ge_rx_done(struct myri10ge_slice_state *ss, int len, __wsum csum,
+		 int lro_enabled)
 {
 	struct myri10ge_priv *mgp = ss->mgp;
 	struct sk_buff *skb;
 	struct skb_frag_struct rx_frags[MYRI10GE_MAX_FRAGS_PER_FRAME];
-	int i, idx, hlen, remainder;
+	struct myri10ge_rx_buf *rx;
+	int i, idx, hlen, remainder, bytes;
 	struct pci_dev *pdev = mgp->pdev;
 	struct net_device *dev = mgp->dev;
 	u8 *va;
+
+	if (len <= mgp->small_bytes) {
+		rx = &ss->rx_small;
+		bytes = mgp->small_bytes;
+	} else {
+		rx = &ss->rx_big;
+		bytes = mgp->big_bytes;
+	}
 
 	len += MXGEFW_PAD;
 	idx = rx->cnt & rx->mask;
@@ -1341,7 +1350,7 @@ myri10ge_rx_done(struct myri10ge_slice_state *ss, struct myri10ge_rx_buf *rx,
 		remainder -= MYRI10GE_ALLOC_SIZE;
 	}
 
-	if (dev->features & NETIF_F_LRO) {
+	if (lro_enabled) {
 		rx_frags[0].page_offset += MXGEFW_PAD;
 		rx_frags[0].size -= MXGEFW_PAD;
 		len -= MXGEFW_PAD;
@@ -1377,7 +1386,7 @@ myri10ge_rx_done(struct myri10ge_slice_state *ss, struct myri10ge_rx_buf *rx,
 	skb->protocol = eth_type_trans(skb, dev);
 	skb_record_rx_queue(skb, ss - &mgp->ss[0]);
 
-	if (mgp->csum_flag) {
+	if (dev->features & NETIF_F_RXCSUM) {
 		if ((skb->protocol == htons(ETH_P_IP)) ||
 		    (skb->protocol == htons(ETH_P_IPV6))) {
 			skb->csum = csum;
@@ -1463,7 +1472,7 @@ myri10ge_clean_rx_done(struct myri10ge_slice_state *ss, int budget)
 {
 	struct myri10ge_rx_done *rx_done = &ss->rx_done;
 	struct myri10ge_priv *mgp = ss->mgp;
-	struct net_device *netdev = mgp->dev;
+
 	unsigned long rx_bytes = 0;
 	unsigned long rx_packets = 0;
 	unsigned long rx_ok;
@@ -1474,18 +1483,18 @@ myri10ge_clean_rx_done(struct myri10ge_slice_state *ss, int budget)
 	u16 length;
 	__wsum checksum;
 
+	/*
+	 * Prevent compiler from generating more than one ->features memory
+	 * access to avoid theoretical race condition with functions that
+	 * change NETIF_F_LRO flag at runtime.
+	 */
+	bool lro_enabled = ACCESS_ONCE(mgp->dev->features) & NETIF_F_LRO;
+
 	while (rx_done->entry[idx].length != 0 && work_done < budget) {
 		length = ntohs(rx_done->entry[idx].length);
 		rx_done->entry[idx].length = 0;
 		checksum = csum_unfold(rx_done->entry[idx].checksum);
-		if (length <= mgp->small_bytes)
-			rx_ok = myri10ge_rx_done(ss, &ss->rx_small,
-						 mgp->small_bytes,
-						 length, checksum);
-		else
-			rx_ok = myri10ge_rx_done(ss, &ss->rx_big,
-						 mgp->big_bytes,
-						 length, checksum);
+		rx_ok = myri10ge_rx_done(ss, length, checksum, lro_enabled);
 		rx_packets += rx_ok;
 		rx_bytes += rx_ok * (unsigned long)length;
 		cnt++;
@@ -1497,7 +1506,7 @@ myri10ge_clean_rx_done(struct myri10ge_slice_state *ss, int budget)
 	ss->stats.rx_packets += rx_packets;
 	ss->stats.rx_bytes += rx_bytes;
 
-	if (netdev->features & NETIF_F_LRO)
+	if (lro_enabled)
 		lro_flush_all(&rx_done->lro_mgr);
 
 	/* restock receive rings if needed */
@@ -1636,7 +1645,7 @@ myri10ge_get_settings(struct net_device *netdev, struct ethtool_cmd *cmd)
 	int i;
 
 	cmd->autoneg = AUTONEG_DISABLE;
-	cmd->speed = SPEED_10000;
+	ethtool_cmd_speed_set(cmd, SPEED_10000);
 	cmd->duplex = DUPLEX_FULL;
 
 	/*
@@ -1746,43 +1755,6 @@ myri10ge_get_ringparam(struct net_device *netdev,
 	ring->rx_pending = ring->rx_max_pending;
 	ring->rx_jumbo_pending = ring->rx_jumbo_max_pending;
 	ring->tx_pending = ring->tx_max_pending;
-}
-
-static u32 myri10ge_get_rx_csum(struct net_device *netdev)
-{
-	struct myri10ge_priv *mgp = netdev_priv(netdev);
-
-	if (mgp->csum_flag)
-		return 1;
-	else
-		return 0;
-}
-
-static int myri10ge_set_rx_csum(struct net_device *netdev, u32 csum_enabled)
-{
-	struct myri10ge_priv *mgp = netdev_priv(netdev);
-	int err = 0;
-
-	if (csum_enabled)
-		mgp->csum_flag = MXGEFW_FLAGS_CKSUM;
-	else {
-		netdev->features &= ~NETIF_F_LRO;
-		mgp->csum_flag = 0;
-
-	}
-	return err;
-}
-
-static int myri10ge_set_tso(struct net_device *netdev, u32 tso_enabled)
-{
-	struct myri10ge_priv *mgp = netdev_priv(netdev);
-	unsigned long flags = mgp->features & (NETIF_F_TSO6 | NETIF_F_TSO);
-
-	if (tso_enabled)
-		netdev->features |= flags;
-	else
-		netdev->features &= ~flags;
-	return 0;
 }
 
 static const char myri10ge_gstrings_main_stats[][ETH_GSTRING_LEN] = {
@@ -1935,11 +1907,6 @@ static u32 myri10ge_get_msglevel(struct net_device *netdev)
 	return mgp->msg_enable;
 }
 
-static int myri10ge_set_flags(struct net_device *netdev, u32 value)
-{
-	return ethtool_op_set_flags(netdev, value, ETH_FLAG_LRO);
-}
-
 static const struct ethtool_ops myri10ge_ethtool_ops = {
 	.get_settings = myri10ge_get_settings,
 	.get_drvinfo = myri10ge_get_drvinfo,
@@ -1948,19 +1915,12 @@ static const struct ethtool_ops myri10ge_ethtool_ops = {
 	.get_pauseparam = myri10ge_get_pauseparam,
 	.set_pauseparam = myri10ge_set_pauseparam,
 	.get_ringparam = myri10ge_get_ringparam,
-	.get_rx_csum = myri10ge_get_rx_csum,
-	.set_rx_csum = myri10ge_set_rx_csum,
-	.set_tx_csum = ethtool_op_set_tx_hw_csum,
-	.set_sg = ethtool_op_set_sg,
-	.set_tso = myri10ge_set_tso,
 	.get_link = ethtool_op_get_link,
 	.get_strings = myri10ge_get_strings,
 	.get_sset_count = myri10ge_get_sset_count,
 	.get_ethtool_stats = myri10ge_get_ethtool_stats,
 	.set_msglevel = myri10ge_set_msglevel,
 	.get_msglevel = myri10ge_get_msglevel,
-	.get_flags = ethtool_op_get_flags,
-	.set_flags = myri10ge_set_flags
 };
 
 static int myri10ge_allocate_rings(struct myri10ge_slice_state *ss)
@@ -3127,6 +3087,14 @@ static int myri10ge_set_mac_address(struct net_device *dev, void *addr)
 	return 0;
 }
 
+static u32 myri10ge_fix_features(struct net_device *dev, u32 features)
+{
+	if (!(features & NETIF_F_RXCSUM))
+		features &= ~NETIF_F_LRO;
+
+	return features;
+}
+
 static int myri10ge_change_mtu(struct net_device *dev, int new_mtu)
 {
 	struct myri10ge_priv *mgp = netdev_priv(dev);
@@ -3645,6 +3613,7 @@ static void myri10ge_free_slices(struct myri10ge_priv *mgp)
 			dma_free_coherent(&pdev->dev, bytes,
 					  ss->fw_stats, ss->fw_stats_bus);
 			ss->fw_stats = NULL;
+			netif_napi_del(&ss->napi);
 		}
 	}
 	kfree(mgp->ss);
@@ -3692,7 +3661,7 @@ abort:
 
 /*
  * This function determines the number of slices supported.
- * The number slices is the minumum of the number of CPUS,
+ * The number slices is the minimum of the number of CPUS,
  * the number of MSI-X irqs supported, the number of slices
  * supported by the firmware
  */
@@ -3824,6 +3793,7 @@ static const struct net_device_ops myri10ge_netdev_ops = {
 	.ndo_get_stats		= myri10ge_get_stats,
 	.ndo_validate_addr	= eth_validate_addr,
 	.ndo_change_mtu		= myri10ge_change_mtu,
+	.ndo_fix_features	= myri10ge_fix_features,
 	.ndo_set_multicast_list = myri10ge_set_multicast_list,
 	.ndo_set_mac_address	= myri10ge_set_mac_address,
 };
@@ -3850,7 +3820,6 @@ static int myri10ge_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	mgp = netdev_priv(netdev);
 	mgp->dev = netdev;
 	mgp->pdev = pdev;
-	mgp->csum_flag = MXGEFW_FLAGS_CKSUM;
 	mgp->pause = myri10ge_flow_control;
 	mgp->intr_coal_delay = myri10ge_intr_coal_delay;
 	mgp->msg_enable = netif_msg_init(myri10ge_debug, MYRI10GE_MSG_DEFAULT);
@@ -3966,11 +3935,11 @@ static int myri10ge_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	netdev->netdev_ops = &myri10ge_netdev_ops;
 	netdev->mtu = myri10ge_initial_mtu;
 	netdev->base_addr = mgp->iomem_base;
-	netdev->features = mgp->features;
+	netdev->hw_features = mgp->features | NETIF_F_LRO | NETIF_F_RXCSUM;
+	netdev->features = netdev->hw_features;
 
 	if (dac_enabled)
 		netdev->features |= NETIF_F_HIGHDMA;
-	netdev->features |= NETIF_F_LRO;
 
 	netdev->vlan_features |= mgp->features;
 	if (mgp->fw_ver_tiny < 37)

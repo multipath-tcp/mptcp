@@ -94,14 +94,14 @@ MODULE_VERSION(EMAC_MODULE_VERSION);
 static const char emac_version_string[] = "TI DaVinci EMAC Linux v6.1";
 
 /* Configuration items */
-#define EMAC_DEF_PASS_CRC		(0) /* Do not pass CRC upto frames */
+#define EMAC_DEF_PASS_CRC		(0) /* Do not pass CRC up to frames */
 #define EMAC_DEF_QOS_EN			(0) /* EMAC proprietary QoS disabled */
 #define EMAC_DEF_NO_BUFF_CHAIN		(0) /* No buffer chain */
 #define EMAC_DEF_MACCTRL_FRAME_EN	(0) /* Discard Maccontrol frames */
 #define EMAC_DEF_SHORT_FRAME_EN		(0) /* Discard short frames */
 #define EMAC_DEF_ERROR_FRAME_EN		(0) /* Discard error frames */
-#define EMAC_DEF_PROM_EN		(0) /* Promiscous disabled */
-#define EMAC_DEF_PROM_CH		(0) /* Promiscous channel is 0 */
+#define EMAC_DEF_PROM_EN		(0) /* Promiscuous disabled */
+#define EMAC_DEF_PROM_CH		(0) /* Promiscuous channel is 0 */
 #define EMAC_DEF_BCAST_EN		(1) /* Broadcast enabled */
 #define EMAC_DEF_BCAST_CH		(0) /* Broadcast channel is 0 */
 #define EMAC_DEF_MCAST_EN		(1) /* Multicast enabled */
@@ -1013,7 +1013,7 @@ static void emac_rx_handler(void *token, int len, int status)
 		return;
 	}
 
-	/* recycle on recieve error */
+	/* recycle on receive error */
 	if (status < 0) {
 		ndev->stats.rx_errors++;
 		goto recycle;
@@ -1730,7 +1730,7 @@ static struct net_device_stats *emac_dev_getnetstats(struct net_device *ndev)
 		emac_read(EMAC_TXCARRIERSENSE);
 	emac_write(EMAC_TXCARRIERSENSE, stats_clear_mask);
 
-	ndev->stats.tx_fifo_errors = emac_read(EMAC_TXUNDERRUN);
+	ndev->stats.tx_fifo_errors += emac_read(EMAC_TXUNDERRUN);
 	emac_write(EMAC_TXUNDERRUN, stats_clear_mask);
 
 	return &ndev->stats;
@@ -1772,7 +1772,7 @@ static int __devinit davinci_emac_probe(struct platform_device *pdev)
 	/* obtain emac clock from kernel */
 	emac_clk = clk_get(&pdev->dev, NULL);
 	if (IS_ERR(emac_clk)) {
-		printk(KERN_ERR "DaVinci EMAC: Failed to get EMAC clock\n");
+		dev_err(&pdev->dev, "failed to get EMAC clock\n");
 		return -EBUSY;
 	}
 	emac_bus_frequency = clk_get_rate(emac_clk);
@@ -1780,9 +1780,9 @@ static int __devinit davinci_emac_probe(struct platform_device *pdev)
 
 	ndev = alloc_etherdev(sizeof(struct emac_priv));
 	if (!ndev) {
-		printk(KERN_ERR "DaVinci EMAC: Error allocating net_device\n");
-		clk_put(emac_clk);
-		return -ENOMEM;
+		dev_err(&pdev->dev, "error allocating net_device\n");
+		rc = -ENOMEM;
+		goto free_clk;
 	}
 
 	platform_set_drvdata(pdev, ndev);
@@ -1795,8 +1795,9 @@ static int __devinit davinci_emac_probe(struct platform_device *pdev)
 
 	pdata = pdev->dev.platform_data;
 	if (!pdata) {
-		printk(KERN_ERR "DaVinci EMAC: No platform data\n");
-		return -ENODEV;
+		dev_err(&pdev->dev, "no platform data\n");
+		rc = -ENODEV;
+		goto probe_quit;
 	}
 
 	/* MAC addr and PHY mask , RMII enable info from platform_data */
@@ -1814,7 +1815,7 @@ static int __devinit davinci_emac_probe(struct platform_device *pdev)
 	/* Get EMAC platform data */
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
-		dev_err(emac_dev, "DaVinci EMAC: Error getting res\n");
+		dev_err(&pdev->dev,"error getting res\n");
 		rc = -ENOENT;
 		goto probe_quit;
 	}
@@ -1822,14 +1823,14 @@ static int __devinit davinci_emac_probe(struct platform_device *pdev)
 	priv->emac_base_phys = res->start + pdata->ctrl_reg_offset;
 	size = res->end - res->start + 1;
 	if (!request_mem_region(res->start, size, ndev->name)) {
-		dev_err(emac_dev, "DaVinci EMAC: failed request_mem_region() for regs\n");
+		dev_err(&pdev->dev, "failed request_mem_region() for regs\n");
 		rc = -ENXIO;
 		goto probe_quit;
 	}
 
 	priv->remap_addr = ioremap(res->start, size);
 	if (!priv->remap_addr) {
-		dev_err(emac_dev, "Unable to map IO\n");
+		dev_err(&pdev->dev, "unable to map IO\n");
 		rc = -ENOMEM;
 		release_mem_region(res->start, size);
 		goto probe_quit;
@@ -1854,13 +1855,16 @@ static int __devinit davinci_emac_probe(struct platform_device *pdev)
 	dma_params.rxcp			= priv->emac_base + 0x660;
 	dma_params.num_chan		= EMAC_MAX_TXRX_CHANNELS;
 	dma_params.min_packet_size	= EMAC_DEF_MIN_ETHPKTSIZE;
-	dma_params.desc_mem_phys	= hw_ram_addr;
+	dma_params.desc_hw_addr		= hw_ram_addr;
 	dma_params.desc_mem_size	= pdata->ctrl_ram_size;
 	dma_params.desc_align		= 16;
 
+	dma_params.desc_mem_phys = pdata->no_bd_ram ? 0 :
+			(u32 __force)res->start + pdata->ctrl_ram_offset;
+
 	priv->dma = cpdma_ctlr_create(&dma_params);
 	if (!priv->dma) {
-		dev_err(emac_dev, "DaVinci EMAC: Error initializing DMA\n");
+		dev_err(&pdev->dev, "error initializing DMA\n");
 		rc = -ENOMEM;
 		goto no_dma;
 	}
@@ -1876,7 +1880,7 @@ static int __devinit davinci_emac_probe(struct platform_device *pdev)
 
 	res = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
 	if (!res) {
-		dev_err(emac_dev, "DaVinci EMAC: Error getting irq res\n");
+		dev_err(&pdev->dev, "error getting irq res\n");
 		rc = -ENOENT;
 		goto no_irq_res;
 	}
@@ -1885,8 +1889,8 @@ static int __devinit davinci_emac_probe(struct platform_device *pdev)
 	if (!is_valid_ether_addr(priv->mac_addr)) {
 		/* Use random MAC if none passed */
 		random_ether_addr(priv->mac_addr);
-		printk(KERN_WARNING "%s: using random MAC addr: %pM\n",
-				__func__, priv->mac_addr);
+		dev_warn(&pdev->dev, "using random MAC addr: %pM\n",
+							priv->mac_addr);
 	}
 
 	ndev->netdev_ops = &emac_netdev_ops;
@@ -1899,7 +1903,7 @@ static int __devinit davinci_emac_probe(struct platform_device *pdev)
 	SET_NETDEV_DEV(ndev, &pdev->dev);
 	rc = register_netdev(ndev);
 	if (rc) {
-		dev_err(emac_dev, "DaVinci EMAC: Error in register_netdev\n");
+		dev_err(&pdev->dev, "error in register_netdev\n");
 		rc = -ENODEV;
 		goto netdev_reg_err;
 	}
@@ -1926,8 +1930,9 @@ no_dma:
 	iounmap(priv->remap_addr);
 
 probe_quit:
-	clk_put(emac_clk);
 	free_netdev(ndev);
+free_clk:
+	clk_put(emac_clk);
 	return rc;
 }
 

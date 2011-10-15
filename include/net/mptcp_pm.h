@@ -50,12 +50,11 @@ struct tcp_out_options;
 struct tcp_sock;
 extern void __tcp_v4_send_check(struct sk_buff *skb,
 		__be32 saddr, __be32 daddr);
-extern struct ip_options *tcp_v4_save_options(struct sock *sk,
-		struct sk_buff *skb);
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-extern void	__tcp_v6_send_check(struct sk_buff *skb, struct in6_addr *saddr,
-		struct in6_addr *daddr);
+extern void __tcp_v6_send_check(struct sk_buff *skb,
+				const struct in6_addr *saddr,
+				const struct in6_addr *daddr);
 extern int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
 #endif
 
@@ -99,7 +98,8 @@ void mptcp_synack_options(struct request_sock *req,
 			  unsigned *remaining);
 int mptcp_find_token(u32 token);
 void mptcp_pm_release(struct multipath_pcb *mpcb);
-struct dst_entry *mptcp_route_req(const struct request_sock *req);
+struct dst_entry *mptcp_route_req(const struct request_sock *req,
+				  struct sock *meta_sk);
 void mptcp_send_updatenotif(struct multipath_pcb *mpcb);
 void mptcp_set_addresses(struct multipath_pcb *mpcb);
 void mptcp_subflow_attach(struct multipath_pcb *mpcb, struct sock *subsk);

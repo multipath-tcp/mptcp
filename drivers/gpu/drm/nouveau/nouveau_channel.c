@@ -35,7 +35,7 @@ nouveau_channel_pushbuf_ctxdma_init(struct nouveau_channel *chan)
 	struct drm_nouveau_private *dev_priv = dev->dev_private;
 	struct nouveau_bo *pb = chan->pushbuf_bo;
 	struct nouveau_gpuobj *pushbuf = NULL;
-	int ret;
+	int ret = 0;
 
 	if (dev_priv->card_type >= NV_50) {
 		if (dev_priv->card_type < NV_C0) {
@@ -90,8 +90,7 @@ nouveau_channel_user_pushbuf_alloc(struct drm_device *dev)
 	else
 		location = TTM_PL_FLAG_TT;
 
-	ret = nouveau_bo_new(dev, NULL, 65536, 0, location, 0, 0x0000, false,
-			     true, &pushbuf);
+	ret = nouveau_bo_new(dev, NULL, 65536, 0, location, 0, 0x0000, &pushbuf);
 	if (ret) {
 		NV_ERROR(dev, "error allocating DMA push buffer: %d\n", ret);
 		return NULL;
@@ -201,7 +200,7 @@ nouveau_channel_alloc(struct drm_device *dev, struct nouveau_channel **chan_ret,
 	/* disable the fifo caches */
 	pfifo->reassign(dev, false);
 
-	/* Construct inital RAMFC for new channel */
+	/* Construct initial RAMFC for new channel */
 	ret = pfifo->create_context(chan);
 	if (ret) {
 		nouveau_channel_put(&chan);
@@ -269,9 +268,8 @@ nouveau_channel_put_unlocked(struct nouveau_channel **pchan)
 	struct drm_device *dev = chan->dev;
 	struct drm_nouveau_private *dev_priv = dev->dev_private;
 	struct nouveau_fifo_engine *pfifo = &dev_priv->engine.fifo;
-	struct nouveau_pgraph_engine *pgraph = &dev_priv->engine.graph;
-	struct nouveau_crypt_engine *pcrypt = &dev_priv->engine.crypt;
 	unsigned long flags;
+	int i;
 
 	/* decrement the refcount, and we're done if there's still refs */
 	if (likely(!atomic_dec_and_test(&chan->users))) {
@@ -279,7 +277,7 @@ nouveau_channel_put_unlocked(struct nouveau_channel **pchan)
 		return;
 	}
 
-	/* noone wants the channel anymore */
+	/* no one wants the channel anymore */
 	NV_DEBUG(dev, "freeing channel %d\n", chan->id);
 	nouveau_debugfs_channel_fini(chan);
 
@@ -295,19 +293,12 @@ nouveau_channel_put_unlocked(struct nouveau_channel **pchan)
 	/* boot it off the hardware */
 	pfifo->reassign(dev, false);
 
-	/* We want to give pgraph a chance to idle and get rid of all
-	 * potential errors. We need to do this without the context
-	 * switch lock held, otherwise the irq handler is unable to
-	 * process them.
-	 */
-	if (pgraph->channel(dev) == chan)
-		nouveau_wait_for_idle(dev);
-
 	/* destroy the engine specific contexts */
 	pfifo->destroy_context(chan);
-	pgraph->destroy_context(chan);
-	if (pcrypt->destroy_context)
-		pcrypt->destroy_context(chan);
+	for (i = 0; i < NVOBJ_ENGINE_NR; i++) {
+		if (chan->engctx[i])
+			dev_priv->eng[i]->context_del(chan, i);
+	}
 
 	pfifo->reassign(dev, true);
 
@@ -415,7 +406,7 @@ nouveau_ioctl_fifo_alloc(struct drm_device *dev, void *data,
 	struct nouveau_channel *chan;
 	int ret;
 
-	if (dev_priv->engine.graph.accel_blocked)
+	if (!dev_priv->eng[NVOBJ_ENGINE_GR])
 		return -ENODEV;
 
 	if (init->fb_ctxdma_handle == ~0 || init->tt_ctxdma_handle == ~0)

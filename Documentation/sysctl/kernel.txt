@@ -161,7 +161,8 @@ core_pattern is used to specify a core dumpfile pattern name.
 	%s	signal number
 	%t	UNIX time of dump
 	%h	hostname
-	%e	executable filename
+	%e	executable filename (may be shortened)
+	%E	executable path
 	%<OTHER> both are dropped
 . If the first character of the pattern is a '|', the kernel will treat
   the rest of the pattern as a command to run.  The core dump will be
@@ -367,7 +368,7 @@ the different loglevels.
 
 - console_loglevel: messages with a higher priority than
   this will be printed to the console
-- default_message_level: messages without an explicit priority
+- default_message_loglevel: messages without an explicit priority
   will be printed with this priority
 - minimum_console_loglevel: minimum (highest) value to which
   console_loglevel can be set

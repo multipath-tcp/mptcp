@@ -33,12 +33,12 @@
 #include <linux/timer.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
-#include <linux/smp_lock.h>
 #include <linux/kthread.h>
 #include <linux/in.h>
 #include <net/sock.h>
 #include <net/tcp.h>
 #include <scsi/scsi.h>
+#include <scsi/scsi_device.h>
 
 #include <target/target_core_base.h>
 #include <target/target_core_device.h>
@@ -151,13 +151,13 @@ out:
 
 	{
 	struct se_device *dev = se_lun->lun_se_dev;
-	spin_lock(&dev->stats_lock);
+	spin_lock_irq(&dev->stats_lock);
 	dev->num_cmds++;
 	if (se_cmd->data_direction == DMA_TO_DEVICE)
 		dev->write_bytes += se_cmd->data_length;
 	else if (se_cmd->data_direction == DMA_FROM_DEVICE)
 		dev->read_bytes += se_cmd->data_length;
-	spin_unlock(&dev->stats_lock);
+	spin_unlock_irq(&dev->stats_lock);
 	}
 
 	/*
@@ -192,7 +192,7 @@ int transport_get_lun_for_tmr(
 			&SE_NODE_ACL(se_sess)->device_list[unpacked_lun];
 	if (deve->lun_flags & TRANSPORT_LUNFLAGS_INITIATOR_ACCESS) {
 		se_lun = se_cmd->se_lun = se_tmr->tmr_lun = deve->se_lun;
-		dev = se_tmr->tmr_dev = se_lun->lun_se_dev;
+		dev = se_lun->lun_se_dev;
 		se_cmd->pr_res_key = deve->pr_res_key;
 		se_cmd->orig_fe_lun = unpacked_lun;
 		se_cmd->se_orig_obj_ptr = SE_LUN(se_cmd)->lun_se_dev;
@@ -216,6 +216,7 @@ int transport_get_lun_for_tmr(
 		se_cmd->se_cmd_flags |= SCF_SCSI_CDB_EXCEPTION;
 		return -1;
 	}
+	se_tmr->tmr_dev = dev;
 
 	spin_lock(&dev->se_tmr_lock);
 	list_add_tail(&se_tmr->tmr_list, &dev->dev_tmr_list);
@@ -372,7 +373,7 @@ int core_update_device_list_for_node(
 	if (!(enable)) {
 		/*
 		 * deve->se_lun_acl will be NULL for demo-mode created LUNs
-		 * that have not been explictly concerted to MappedLUNs ->
+		 * that have not been explicitly concerted to MappedLUNs ->
 		 * struct se_lun_acl, but we remove deve->alua_port_list from
 		 * port->sep_alua_list. This also means that active UAs and
 		 * NodeACL context specific PR metadata for demo-mode
@@ -590,6 +591,7 @@ static void core_export_port(
  *	Called with struct se_device->se_port_lock spinlock held.
  */
 static void core_release_port(struct se_device *dev, struct se_port *port)
+	__releases(&dev->se_port_lock) __acquires(&dev->se_port_lock)
 {
 	/*
 	 * Wait for any port reference for PR ALL_TG_PT=1 operation
@@ -658,8 +660,7 @@ int transport_core_report_lun_response(struct se_cmd *se_cmd)
 	struct se_session *se_sess = SE_SESS(se_cmd);
 	struct se_task *se_task;
 	unsigned char *buf = (unsigned char *)T_TASK(se_cmd)->t_task_buf;
-	u32 cdb_offset = 0, lun_count = 0, offset = 8;
-	u64 i, lun;
+	u32 cdb_offset = 0, lun_count = 0, offset = 8, i;
 
 	list_for_each_entry(se_task, &T_TASK(se_cmd)->t_task_list, t_list)
 		break;
@@ -675,15 +676,7 @@ int transport_core_report_lun_response(struct se_cmd *se_cmd)
 	 * a $FABRIC_MOD.  In that case, report LUN=0 only.
 	 */
 	if (!(se_sess)) {
-		lun = 0;
-		buf[offset++] = ((lun >> 56) & 0xff);
-		buf[offset++] = ((lun >> 48) & 0xff);
-		buf[offset++] = ((lun >> 40) & 0xff);
-		buf[offset++] = ((lun >> 32) & 0xff);
-		buf[offset++] = ((lun >> 24) & 0xff);
-		buf[offset++] = ((lun >> 16) & 0xff);
-		buf[offset++] = ((lun >> 8) & 0xff);
-		buf[offset++] = (lun & 0xff);
+		int_to_scsilun(0, (struct scsi_lun *)&buf[offset]);
 		lun_count = 1;
 		goto done;
 	}
@@ -703,15 +696,8 @@ int transport_core_report_lun_response(struct se_cmd *se_cmd)
 		if ((cdb_offset + 8) >= se_cmd->data_length)
 			continue;
 
-		lun = cpu_to_be64(CMD_TFO(se_cmd)->pack_lun(deve->mapped_lun));
-		buf[offset++] = ((lun >> 56) & 0xff);
-		buf[offset++] = ((lun >> 48) & 0xff);
-		buf[offset++] = ((lun >> 40) & 0xff);
-		buf[offset++] = ((lun >> 32) & 0xff);
-		buf[offset++] = ((lun >> 24) & 0xff);
-		buf[offset++] = ((lun >> 16) & 0xff);
-		buf[offset++] = ((lun >> 8) & 0xff);
-		buf[offset++] = (lun & 0xff);
+		int_to_scsilun(deve->mapped_lun, (struct scsi_lun *)&buf[offset]);
+		offset += 8;
 		cdb_offset += 8;
 	}
 	spin_unlock_irq(&SE_NODE_ACL(se_sess)->device_list_lock);
@@ -780,49 +766,14 @@ void se_release_vpd_for_dev(struct se_device *dev)
 	return;
 }
 
-/*
- * Called with struct se_hba->device_lock held.
- */
-void se_clear_dev_ports(struct se_device *dev)
-{
-	struct se_hba *hba = dev->se_hba;
-	struct se_lun *lun;
-	struct se_portal_group *tpg;
-	struct se_port *sep, *sep_tmp;
-
-	spin_lock(&dev->se_port_lock);
-	list_for_each_entry_safe(sep, sep_tmp, &dev->dev_sep_list, sep_list) {
-		spin_unlock(&dev->se_port_lock);
-		spin_unlock(&hba->device_lock);
-
-		lun = sep->sep_lun;
-		tpg = sep->sep_tpg;
-		spin_lock(&lun->lun_sep_lock);
-		if (lun->lun_se_dev == NULL) {
-			spin_unlock(&lun->lun_sep_lock);
-			continue;
-		}
-		spin_unlock(&lun->lun_sep_lock);
-
-		core_dev_del_lun(tpg, lun->unpacked_lun);
-
-		spin_lock(&hba->device_lock);
-		spin_lock(&dev->se_port_lock);
-	}
-	spin_unlock(&dev->se_port_lock);
-
-	return;
-}
-
 /*	se_free_virtual_device():
  *
  *	Used for IBLOCK, RAMDISK, and FILEIO Transport Drivers.
  */
 int se_free_virtual_device(struct se_device *dev, struct se_hba *hba)
 {
-	spin_lock(&hba->device_lock);
-	se_clear_dev_ports(dev);
-	spin_unlock(&hba->device_lock);
+	if (!list_empty(&dev->dev_sep_list))
+		dump_stack();
 
 	core_alua_free_lu_gp_mem(dev);
 	se_release_device_for_hba(dev);
@@ -1480,7 +1431,7 @@ struct se_lun_acl *core_dev_init_initiator_node_lun_acl(
 	struct se_lun_acl *lacl;
 	struct se_node_acl *nacl;
 
-	if (strlen(initiatorname) > TRANSPORT_IQN_LEN) {
+	if (strlen(initiatorname) >= TRANSPORT_IQN_LEN) {
 		printk(KERN_ERR "%s InitiatorName exceeds maximum size.\n",
 			TPG_TFO(tpg)->get_fabric_name());
 		*ret = -EOVERFLOW;

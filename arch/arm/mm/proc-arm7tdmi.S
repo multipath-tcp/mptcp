@@ -70,6 +70,9 @@ ENTRY(arm7tdmi_processor_functions)
 		.word	cpu_arm7tdmi_dcache_clean_area
 		.word	cpu_arm7tdmi_switch_mm
 		.word	0		@ cpu_*_set_pte
+		.word	0
+		.word	0
+		.word	0
 		.size	arm7tdmi_processor_functions, . - arm7tdmi_processor_functions
 
 		.section ".rodata"
@@ -143,7 +146,7 @@ __arm7tdmi_proc_info:
 		.long	0
 		.long	0
 		.long	v4_cache_fns
-		.size	__arm7tdmi_proc_info, . - __arm7dmi_proc_info
+		.size	__arm7tdmi_proc_info, . - __arm7tdmi_proc_info
 
 		.type	__triscenda7_proc_info, #object
 __triscenda7_proc_info:

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007-2010 B.A.T.M.A.N. contributors:
+ * Copyright (C) 2007-2011 B.A.T.M.A.N. contributors:
  *
  * Marek Lindner, Simon Wunderlich
  *
@@ -30,11 +30,13 @@
 #include "translation-table.h"
 #include "hard-interface.h"
 #include "gateway_client.h"
-#include "types.h"
 #include "vis.h"
 #include "hash.h"
 
-struct list_head if_list;
+
+/* List manipulations on hardif_list have to be rtnl_lock()'ed,
+ * list traversals just rcu-locked */
+struct list_head hardif_list;
 
 unsigned char broadcast_addr[] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
@@ -42,7 +44,7 @@ struct workqueue_struct *bat_event_workqueue;
 
 static int __init batman_init(void)
 {
-	INIT_LIST_HEAD(&if_list);
+	INIT_LIST_HEAD(&hardif_list);
 
 	/* the name should not be longer than 10 chars - see
 	 * http://lwn.net/Articles/23634/ */
@@ -80,31 +82,31 @@ int mesh_init(struct net_device *soft_iface)
 {
 	struct bat_priv *bat_priv = netdev_priv(soft_iface);
 
-	spin_lock_init(&bat_priv->orig_hash_lock);
 	spin_lock_init(&bat_priv->forw_bat_list_lock);
 	spin_lock_init(&bat_priv->forw_bcast_list_lock);
-	spin_lock_init(&bat_priv->hna_lhash_lock);
-	spin_lock_init(&bat_priv->hna_ghash_lock);
+	spin_lock_init(&bat_priv->tt_lhash_lock);
+	spin_lock_init(&bat_priv->tt_ghash_lock);
 	spin_lock_init(&bat_priv->gw_list_lock);
 	spin_lock_init(&bat_priv->vis_hash_lock);
 	spin_lock_init(&bat_priv->vis_list_lock);
 	spin_lock_init(&bat_priv->softif_neigh_lock);
+	spin_lock_init(&bat_priv->softif_neigh_vid_lock);
 
 	INIT_HLIST_HEAD(&bat_priv->forw_bat_list);
 	INIT_HLIST_HEAD(&bat_priv->forw_bcast_list);
 	INIT_HLIST_HEAD(&bat_priv->gw_list);
-	INIT_HLIST_HEAD(&bat_priv->softif_neigh_list);
+	INIT_HLIST_HEAD(&bat_priv->softif_neigh_vids);
 
 	if (originator_init(bat_priv) < 1)
 		goto err;
 
-	if (hna_local_init(bat_priv) < 1)
+	if (tt_local_init(bat_priv) < 1)
 		goto err;
 
-	if (hna_global_init(bat_priv) < 1)
+	if (tt_global_init(bat_priv) < 1)
 		goto err;
 
-	hna_local_add(soft_iface, soft_iface->dev_addr);
+	tt_local_add(soft_iface, soft_iface->dev_addr);
 
 	if (vis_init(bat_priv) < 1)
 		goto err;
@@ -135,8 +137,8 @@ void mesh_free(struct net_device *soft_iface)
 	gw_node_purge(bat_priv);
 	originator_free(bat_priv);
 
-	hna_local_free(bat_priv);
-	hna_global_free(bat_priv);
+	tt_local_free(bat_priv);
+	tt_global_free(bat_priv);
 
 	softif_neigh_purge(bat_priv);
 
@@ -155,14 +157,14 @@ void dec_module_count(void)
 
 int is_my_mac(uint8_t *addr)
 {
-	struct batman_if *batman_if;
+	struct hard_iface *hard_iface;
 
 	rcu_read_lock();
-	list_for_each_entry_rcu(batman_if, &if_list, list) {
-		if (batman_if->if_status != IF_ACTIVE)
+	list_for_each_entry_rcu(hard_iface, &hardif_list, list) {
+		if (hard_iface->if_status != IF_ACTIVE)
 			continue;
 
-		if (compare_orig(batman_if->net_dev->dev_addr, addr)) {
+		if (compare_eth(hard_iface->net_dev->dev_addr, addr)) {
 			rcu_read_unlock();
 			return 1;
 		}

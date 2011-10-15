@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2009 Atheros Communications Inc.
+ * Copyright (c) 2008-2011 Atheros Communications Inc.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -27,19 +27,13 @@ static int ath9k_hw_4k_get_eeprom_rev(struct ath_hw *ah)
 	return ((ah->eeprom.map4k.baseEepHeader.version) & 0xFFF);
 }
 
-static bool ath9k_hw_4k_fill_eeprom(struct ath_hw *ah)
-{
 #define SIZE_EEPROM_4K (sizeof(struct ar5416_eeprom_4k) / sizeof(u16))
+
+static bool __ath9k_hw_4k_fill_eeprom(struct ath_hw *ah)
+{
 	struct ath_common *common = ath9k_hw_common(ah);
 	u16 *eep_data = (u16 *)&ah->eeprom.map4k;
-	int addr, eep_start_loc = 0;
-
-	eep_start_loc = 64;
-
-	if (!ath9k_hw_use_flash(ah)) {
-		ath_dbg(common, ATH_DBG_EEPROM,
-			"Reading from EEPROM, not flash\n");
-	}
+	int addr, eep_start_loc = 64;
 
 	for (addr = 0; addr < SIZE_EEPROM_4K; addr++) {
 		if (!ath9k_hw_nvram_read(common, addr + eep_start_loc, eep_data)) {
@@ -51,8 +45,33 @@ static bool ath9k_hw_4k_fill_eeprom(struct ath_hw *ah)
 	}
 
 	return true;
-#undef SIZE_EEPROM_4K
 }
+
+static bool __ath9k_hw_usb_4k_fill_eeprom(struct ath_hw *ah)
+{
+	u16 *eep_data = (u16 *)&ah->eeprom.map4k;
+
+	ath9k_hw_usb_gen_fill_eeprom(ah, eep_data, 64, SIZE_EEPROM_4K);
+
+	return true;
+}
+
+static bool ath9k_hw_4k_fill_eeprom(struct ath_hw *ah)
+{
+	struct ath_common *common = ath9k_hw_common(ah);
+
+	if (!ath9k_hw_use_flash(ah)) {
+		ath_dbg(common, ATH_DBG_EEPROM,
+			"Reading from EEPROM, not flash\n");
+	}
+
+	if (common->bus_ops->ath_bus_type == ATH_USB)
+		return __ath9k_hw_usb_4k_fill_eeprom(ah);
+	else
+		return __ath9k_hw_4k_fill_eeprom(ah);
+}
+
+#undef SIZE_EEPROM_4K
 
 static int ath9k_hw_4k_check_eeprom(struct ath_hw *ah)
 {
@@ -762,6 +781,7 @@ static void ath9k_hw_4k_set_board_values(struct ath_hw *ah,
 {
 	struct modal_eep_4k_header *pModal;
 	struct ar5416_eeprom_4k *eep = &ah->eeprom.map4k;
+	struct base_eep_header_4k *pBase = &eep->baseEepHeader;
 	u8 txRxAttenLocal;
 	u8 ob[5], db1[5], db2[5];
 	u8 ant_div_control1, ant_div_control2;
@@ -983,6 +1003,31 @@ static void ath9k_hw_4k_set_board_values(struct ath_hw *ah,
 			REG_RMW_FIELD(ah, AR_PHY_SETTLING,
 				      AR_PHY_SETTLING_SWITCH,
 				      pModal->swSettleHt40);
+	}
+	if (AR_SREV_9271(ah) || AR_SREV_9285(ah)) {
+		u8 bb_desired_scale = (pModal->bb_scale_smrt_antenna &
+				EEP_4K_BB_DESIRED_SCALE_MASK);
+		if ((pBase->txGainType == 0) && (bb_desired_scale != 0)) {
+			u32 pwrctrl, mask, clr;
+
+			mask = BIT(0)|BIT(5)|BIT(10)|BIT(15)|BIT(20)|BIT(25);
+			pwrctrl = mask * bb_desired_scale;
+			clr = mask * 0x1f;
+			REG_RMW(ah, AR_PHY_TX_PWRCTRL8, pwrctrl, clr);
+			REG_RMW(ah, AR_PHY_TX_PWRCTRL10, pwrctrl, clr);
+			REG_RMW(ah, AR_PHY_CH0_TX_PWRCTRL12, pwrctrl, clr);
+
+			mask = BIT(0)|BIT(5)|BIT(15);
+			pwrctrl = mask * bb_desired_scale;
+			clr = mask * 0x1f;
+			REG_RMW(ah, AR_PHY_TX_PWRCTRL9, pwrctrl, clr);
+
+			mask = BIT(0)|BIT(5);
+			pwrctrl = mask * bb_desired_scale;
+			clr = mask * 0x1f;
+			REG_RMW(ah, AR_PHY_CH0_TX_PWRCTRL11, pwrctrl, clr);
+			REG_RMW(ah, AR_PHY_CH0_TX_PWRCTRL13, pwrctrl, clr);
+		}
 	}
 }
 

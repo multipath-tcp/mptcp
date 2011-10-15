@@ -29,7 +29,6 @@
 
 #include <linux/time.h>
 #include <linux/fs.h>
-#include <linux/smp_lock.h>
 
 #include "ufs_fs.h"
 #include "ufs.h"
@@ -55,18 +54,14 @@ static struct dentry *ufs_lookup(struct inode * dir, struct dentry *dentry, stru
 	if (dentry->d_name.len > UFS_MAXNAMLEN)
 		return ERR_PTR(-ENAMETOOLONG);
 
-	lock_kernel();
+	lock_ufs(dir->i_sb);
 	ino = ufs_inode_by_name(dir, &dentry->d_name);
-	if (ino) {
+	if (ino)
 		inode = ufs_iget(dir->i_sb, ino);
-		if (IS_ERR(inode)) {
-			unlock_kernel();
-			return ERR_CAST(inode);
-		}
-	}
-	unlock_kernel();
-	d_add(dentry, inode);
-	return NULL;
+	unlock_ufs(dir->i_sb);
+	if (IS_ERR(inode))
+		return ERR_CAST(inode);
+	return d_splice_alias(inode, dentry);
 }
 
 /*
@@ -93,9 +88,9 @@ static int ufs_create (struct inode * dir, struct dentry * dentry, int mode,
 		inode->i_fop = &ufs_file_operations;
 		inode->i_mapping->a_ops = &ufs_aops;
 		mark_inode_dirty(inode);
-		lock_kernel();
+		lock_ufs(dir->i_sb);
 		err = ufs_add_nondir(dentry, inode);
-		unlock_kernel();
+		unlock_ufs(dir->i_sb);
 	}
 	UFSD("END: err=%d\n", err);
 	return err;
@@ -115,9 +110,9 @@ static int ufs_mknod (struct inode * dir, struct dentry *dentry, int mode, dev_t
 		init_special_inode(inode, mode, rdev);
 		ufs_set_inode_dev(inode->i_sb, UFS_I(inode), rdev);
 		mark_inode_dirty(inode);
-		lock_kernel();
+		lock_ufs(dir->i_sb);
 		err = ufs_add_nondir(dentry, inode);
-		unlock_kernel();
+		unlock_ufs(dir->i_sb);
 	}
 	return err;
 }
@@ -133,7 +128,7 @@ static int ufs_symlink (struct inode * dir, struct dentry * dentry,
 	if (l > sb->s_blocksize)
 		goto out_notlocked;
 
-	lock_kernel();
+	lock_ufs(dir->i_sb);
 	inode = ufs_new_inode(dir, S_IFLNK | S_IRWXUGO);
 	err = PTR_ERR(inode);
 	if (IS_ERR(inode))
@@ -156,7 +151,7 @@ static int ufs_symlink (struct inode * dir, struct dentry * dentry,
 
 	err = ufs_add_nondir(dentry, inode);
 out:
-	unlock_kernel();
+	unlock_ufs(dir->i_sb);
 out_notlocked:
 	return err;
 
@@ -172,9 +167,9 @@ static int ufs_link (struct dentry * old_dentry, struct inode * dir,
 	struct inode *inode = old_dentry->d_inode;
 	int error;
 
-	lock_kernel();
+	lock_ufs(dir->i_sb);
 	if (inode->i_nlink >= UFS_LINK_MAX) {
-		unlock_kernel();
+		unlock_ufs(dir->i_sb);
 		return -EMLINK;
 	}
 
@@ -183,7 +178,7 @@ static int ufs_link (struct dentry * old_dentry, struct inode * dir,
 	ihold(inode);
 
 	error = ufs_add_nondir(dentry, inode);
-	unlock_kernel();
+	unlock_ufs(dir->i_sb);
 	return error;
 }
 
@@ -195,7 +190,7 @@ static int ufs_mkdir(struct inode * dir, struct dentry * dentry, int mode)
 	if (dir->i_nlink >= UFS_LINK_MAX)
 		goto out;
 
-	lock_kernel();
+	lock_ufs(dir->i_sb);
 	inode_inc_link_count(dir);
 
 	inode = ufs_new_inode(dir, S_IFDIR|mode);
@@ -216,7 +211,7 @@ static int ufs_mkdir(struct inode * dir, struct dentry * dentry, int mode)
 	err = ufs_add_link(dentry, inode);
 	if (err)
 		goto out_fail;
-	unlock_kernel();
+	unlock_ufs(dir->i_sb);
 
 	d_instantiate(dentry, inode);
 out:
@@ -228,7 +223,7 @@ out_fail:
 	iput (inode);
 out_dir:
 	inode_dec_link_count(dir);
-	unlock_kernel();
+	unlock_ufs(dir->i_sb);
 	goto out;
 }
 
@@ -259,7 +254,7 @@ static int ufs_rmdir (struct inode * dir, struct dentry *dentry)
 	struct inode * inode = dentry->d_inode;
 	int err= -ENOTEMPTY;
 
-	lock_kernel();
+	lock_ufs(dir->i_sb);
 	if (ufs_empty_dir (inode)) {
 		err = ufs_unlink(dir, dentry);
 		if (!err) {
@@ -268,7 +263,7 @@ static int ufs_rmdir (struct inode * dir, struct dentry *dentry)
 			inode_dec_link_count(dir);
 		}
 	}
-	unlock_kernel();
+	unlock_ufs(dir->i_sb);
 	return err;
 }
 

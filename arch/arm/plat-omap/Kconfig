@@ -12,12 +12,14 @@ choice
 config ARCH_OMAP1
 	bool "TI OMAP1"
 	select CLKDEV_LOOKUP
+	select CLKSRC_MMIO
 	help
 	  "Systems based on omap7xx, omap15xx or omap16xx"
 
 config ARCH_OMAP2PLUS
 	bool "TI OMAP2/3/4"
 	select CLKDEV_LOOKUP
+	select GENERIC_IRQ_CHIP
 	select OMAP_DM_TIMER
 	help
 	  "Systems based on OMAP2, OMAP3 or OMAP4"
@@ -54,7 +56,7 @@ config OMAP_SMARTREFLEX
 	  user must write 1 to
 		/debug/voltage/vdd_<X>/smartreflex/autocomp,
 	  where X is mpu or core for OMAP3.
-	  Optionallly autocompensation can be enabled in the kernel
+	  Optionally autocompensation can be enabled in the kernel
 	  by default during system init via the enable_on_init flag
 	  which an be passed as platform data to the smartreflex driver.
 

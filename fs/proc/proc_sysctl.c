@@ -32,7 +32,6 @@ static struct inode *proc_sys_make_inode(struct super_block *sb,
 	ei->sysctl_entry = table;
 
 	inode->i_mtime = inode->i_atime = inode->i_ctime = CURRENT_TIME;
-	inode->i_flags |= S_PRIVATE; /* tell selinux to ignore this inode */
 	inode->i_mode = table->mode;
 	if (!table->child) {
 		inode->i_mode |= S_IFREG;
@@ -304,9 +303,6 @@ static int proc_sys_permission(struct inode *inode, int mask,unsigned int flags)
 	struct ctl_table_header *head;
 	struct ctl_table *table;
 	int error;
-
-	if (flags & IPERM_FLAG_RCU)
-		return -ECHILD;
 
 	/* Executable files are not allowed under /proc/sys/ */
 	if ((mask & MAY_EXEC) && S_ISREG(inode->i_mode))

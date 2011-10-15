@@ -529,7 +529,7 @@ static void coh901318_pause(struct dma_chan *chan)
 	val = readl(virtbase + COH901318_CX_CFG +
 		    COH901318_CX_CFG_SPACING * channel);
 
-	/* Stopping infinit transfer */
+	/* Stopping infinite transfer */
 	if ((val & COH901318_CX_CTRL_TC_ENABLE) == 0 &&
 	    (val & COH901318_CX_CFG_CH_ENABLE))
 		cohc->stopped = 1;
@@ -849,7 +849,7 @@ static irqreturn_t dma_irq_handler(int irq, void *dev_id)
 
 				/* Must clear TC interrupt before calling
 				 * dma_tc_handle
-				 * in case tc_handle initate a new dma job
+				 * in case tc_handle initiate a new dma job
 				 */
 				__set_bit(i, virtbase + COH901318_TC_INT_CLEAR1);
 
@@ -894,7 +894,7 @@ static irqreturn_t dma_irq_handler(int irq, void *dev_id)
 				}
 				/* Must clear TC interrupt before calling
 				 * dma_tc_handle
-				 * in case tc_handle initate a new dma job
+				 * in case tc_handle initiate a new dma job
 				 */
 				__set_bit(i, virtbase + COH901318_TC_INT_CLEAR2);
 
@@ -1610,7 +1610,7 @@ int __init coh901318_init(void)
 {
 	return platform_driver_probe(&coh901318_driver, coh901318_probe);
 }
-arch_initcall(coh901318_init);
+subsys_initcall(coh901318_init);
 
 void __exit coh901318_exit(void)
 {

@@ -354,7 +354,7 @@ int mptcp_v4_send_synack(struct sock *meta_sk,
 	struct dst_entry *dst;
 
 	/* First, grab a route. */
-	dst = mptcp_route_req(req);
+	dst = mptcp_route_req(req, meta_sk);
 	if (!dst)
 		return -1;
 

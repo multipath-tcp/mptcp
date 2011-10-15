@@ -1485,7 +1485,6 @@ out:
 
 out_err_nompc:
 	err = sk_stream_error(master_sk, flags, err);
-	TCP_CHECK_TIMER(master_sk);
 	release_sock(master_sk);
 	return err;
 }

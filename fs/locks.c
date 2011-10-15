@@ -145,7 +145,6 @@ static DEFINE_SPINLOCK(file_lock_lock);
 
 /*
  * Protects the two list heads above, plus the inode->i_flock list
- * FIXME: should use a spinlock, once lockd and ceph are ready.
  */
 void lock_flocks(void)
 {
@@ -161,10 +160,28 @@ EXPORT_SYMBOL_GPL(unlock_flocks);
 
 static struct kmem_cache *filelock_cache __read_mostly;
 
+static void locks_init_lock_always(struct file_lock *fl)
+{
+	fl->fl_next = NULL;
+	fl->fl_fasync = NULL;
+	fl->fl_owner = NULL;
+	fl->fl_pid = 0;
+	fl->fl_nspid = NULL;
+	fl->fl_file = NULL;
+	fl->fl_flags = 0;
+	fl->fl_type = 0;
+	fl->fl_start = fl->fl_end = 0;
+}
+
 /* Allocate an empty lock structure. */
 struct file_lock *locks_alloc_lock(void)
 {
-	return kmem_cache_alloc(filelock_cache, GFP_KERNEL);
+	struct file_lock *fl = kmem_cache_alloc(filelock_cache, GFP_KERNEL);
+
+	if (fl)
+		locks_init_lock_always(fl);
+
+	return fl;
 }
 EXPORT_SYMBOL_GPL(locks_alloc_lock);
 
@@ -201,17 +218,9 @@ void locks_init_lock(struct file_lock *fl)
 	INIT_LIST_HEAD(&fl->fl_link);
 	INIT_LIST_HEAD(&fl->fl_block);
 	init_waitqueue_head(&fl->fl_wait);
-	fl->fl_next = NULL;
-	fl->fl_fasync = NULL;
-	fl->fl_owner = NULL;
-	fl->fl_pid = 0;
-	fl->fl_nspid = NULL;
-	fl->fl_file = NULL;
-	fl->fl_flags = 0;
-	fl->fl_type = 0;
-	fl->fl_start = fl->fl_end = 0;
 	fl->fl_ops = NULL;
 	fl->fl_lmops = NULL;
+	locks_init_lock_always(fl);
 }
 
 EXPORT_SYMBOL(locks_init_lock);
@@ -415,17 +424,7 @@ static int flock64_to_posix_lock(struct file *filp, struct file_lock *fl,
 	fl->fl_ops = NULL;
 	fl->fl_lmops = NULL;
 
-	switch (l->l_type) {
-	case F_RDLCK:
-	case F_WRLCK:
-	case F_UNLCK:
-		fl->fl_type = l->l_type;
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	return (0);
+	return assign_type(fl, l->l_type);
 }
 #endif
 

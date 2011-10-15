@@ -236,7 +236,7 @@ void kvmppc_core_queue_dec(struct kvm_vcpu *vcpu)
 
 int kvmppc_core_pending_dec(struct kvm_vcpu *vcpu)
 {
-	return test_bit(BOOK3S_INTERRUPT_DECREMENTER >> 7, &vcpu->arch.pending_exceptions);
+	return test_bit(BOOK3S_IRQPRIO_DECREMENTER, &vcpu->arch.pending_exceptions);
 }
 
 void kvmppc_core_dequeue_dec(struct kvm_vcpu *vcpu)
@@ -1141,9 +1141,10 @@ int kvm_arch_vcpu_ioctl_get_regs(struct kvm_vcpu *vcpu, struct kvm_regs *regs)
 	regs->sprg1 = vcpu->arch.shared->sprg1;
 	regs->sprg2 = vcpu->arch.shared->sprg2;
 	regs->sprg3 = vcpu->arch.shared->sprg3;
-	regs->sprg5 = vcpu->arch.sprg4;
-	regs->sprg6 = vcpu->arch.sprg5;
-	regs->sprg7 = vcpu->arch.sprg6;
+	regs->sprg4 = vcpu->arch.sprg4;
+	regs->sprg5 = vcpu->arch.sprg5;
+	regs->sprg6 = vcpu->arch.sprg6;
+	regs->sprg7 = vcpu->arch.sprg7;
 
 	for (i = 0; i < ARRAY_SIZE(regs->gpr); i++)
 		regs->gpr[i] = kvmppc_get_gpr(vcpu, i);
@@ -1167,9 +1168,10 @@ int kvm_arch_vcpu_ioctl_set_regs(struct kvm_vcpu *vcpu, struct kvm_regs *regs)
 	vcpu->arch.shared->sprg1 = regs->sprg1;
 	vcpu->arch.shared->sprg2 = regs->sprg2;
 	vcpu->arch.shared->sprg3 = regs->sprg3;
-	vcpu->arch.sprg5 = regs->sprg4;
-	vcpu->arch.sprg6 = regs->sprg5;
-	vcpu->arch.sprg7 = regs->sprg6;
+	vcpu->arch.sprg4 = regs->sprg4;
+	vcpu->arch.sprg5 = regs->sprg5;
+	vcpu->arch.sprg6 = regs->sprg6;
+	vcpu->arch.sprg7 = regs->sprg7;
 
 	for (i = 0; i < ARRAY_SIZE(regs->gpr); i++)
 		kvmppc_set_gpr(vcpu, i, regs->gpr[i]);

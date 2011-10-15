@@ -79,7 +79,7 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 	tp->snd_nxt = is_meta_tp(tp) ? mptcp_skb_end_data_seq(skb) :
 	    TCP_SKB_CB(skb)->end_seq;
 
-	/* Don't override Nagle indefinately with F-RTO */
+	/* Don't override Nagle indefinitely with F-RTO */
 	if (tp->frto_counter == 2)
 		tp->frto_counter = 3;
 
@@ -1313,7 +1313,7 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 #ifdef CONFIG_MPTCP
 	skb->path_index = tp->path_index;
 #endif
-	err = icsk->icsk_af_ops->queue_xmit(skb);
+	err = icsk->icsk_af_ops->queue_xmit(skb, &inet->cork.fl);
 	if (likely(err <= 0))
 		return err;
 
@@ -1420,7 +1420,8 @@ int tcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	int nlen;
 	u8 flags;
 
-	BUG_ON(len > skb->len);
+	if (WARN_ON(len > skb->len))
+		return -EINVAL;
 
 	nsize = skb_headlen(skb) - len;
 	if (nsize < 0)

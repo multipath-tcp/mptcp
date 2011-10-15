@@ -37,6 +37,7 @@
 #include "hsmmc.h"
 #include "timer-gp.h"
 #include "control.h"
+#include "common-board-devices.h"
 
 #include <plat/mux.h>
 #include <plat/board.h>
@@ -93,19 +94,9 @@ static struct twl4030_platform_data omap3logic_twldata = {
 	.vmmc1		= &omap3logic_vmmc1,
 };
 
-static struct i2c_board_info __initdata omap3logic_i2c_boardinfo[] = {
-	{
-		I2C_BOARD_INFO("twl4030", 0x48),
-		.flags = I2C_CLIENT_WAKE,
-		.irq = INT_34XX_SYS_NIRQ,
-		.platform_data = &omap3logic_twldata,
-	},
-};
-
 static int __init omap3logic_i2c_init(void)
 {
-	omap_register_i2c_bus(1, 2600, omap3logic_i2c_boardinfo,
-				ARRAY_SIZE(omap3logic_i2c_boardinfo));
+	omap3_pmic_init("twl4030", &omap3logic_twldata);
 	return 0;
 }
 
@@ -147,7 +138,6 @@ static struct omap_smsc911x_platform_data __initdata board_smsc911x_data = {
 	.cs             = OMAP3LOGIC_SMSC911X_CS,
 	.gpio_irq       = -EINVAL,
 	.gpio_reset     = -EINVAL,
-	.flags          = IORESOURCE_IRQ_LOWLEVEL,
 };
 
 /* TODO/FIXME (comment by Peter Barada, LogicPD):
@@ -195,11 +185,10 @@ static inline void __init board_smsc911x_init(void)
 	gpmc_smsc911x_init(&board_smsc911x_data);
 }
 
-static void __init omap3logic_init_irq(void)
+static void __init omap3logic_init_early(void)
 {
 	omap2_init_common_infrastructure();
 	omap2_init_common_devices(NULL, NULL);
-	omap_init_irq();
 }
 
 #ifdef CONFIG_OMAP_MUX
@@ -225,7 +214,8 @@ static void __init omap3logic_init(void)
 MACHINE_START(OMAP3_TORPEDO, "Logic OMAP3 Torpedo board")
 	.boot_params	= 0x80000100,
 	.map_io		= omap3_map_io,
-	.init_irq	= omap3logic_init_irq,
+	.init_early	= omap3logic_init_early,
+	.init_irq	= omap_init_irq,
 	.init_machine	= omap3logic_init,
 	.timer		= &omap_timer,
 MACHINE_END
@@ -233,7 +223,8 @@ MACHINE_END
 MACHINE_START(OMAP3530_LV_SOM, "OMAP Logic 3530 LV SOM board")
 	.boot_params	= 0x80000100,
 	.map_io		= omap3_map_io,
-	.init_irq	= omap3logic_init_irq,
+	.init_early	= omap3logic_init_early,
+	.init_irq	= omap_init_irq,
 	.init_machine	= omap3logic_init,
 	.timer		= &omap_timer,
 MACHINE_END

@@ -74,7 +74,7 @@ module_param(debug, int, 0600);
 #endif
 
 /*
- * Semi-arbitary buffer size limits. 0710 is normally run with 32-64 byte
+ * Semi-arbitrary buffer size limits. 0710 is normally run with 32-64 byte
  * limits so this is plenty
  */
 #define MAX_MRU 512
@@ -82,7 +82,7 @@ module_param(debug, int, 0600);
 
 /*
  *	Each block of data we have queued to go out is in the form of
- *	a gsm_msg which holds everything we need in a link layer independant
+ *	a gsm_msg which holds everything we need in a link layer independent
  *	format
  */
 
@@ -526,19 +526,6 @@ static int gsm_stuff_frame(const u8 *input, u8 *output, int len)
 	return olen;
 }
 
-static void hex_packet(const unsigned char *p, int len)
-{
-	int i;
-	for (i = 0; i < len; i++) {
-		if (i && (i % 16) == 0) {
-			pr_cont("\n");
-			pr_debug("");
-		}
-		pr_cont("%02X ", *p++);
-	}
-	pr_cont("\n");
-}
-
 /**
  *	gsm_send	-	send a control frame
  *	@gsm: our GSM mux
@@ -685,10 +672,10 @@ static void gsm_data_kick(struct gsm_mux *gsm)
 			len = msg->len + 2;
 		}
 
-		if (debug & 4) {
-			pr_debug("gsm_data_kick:\n");
-			hex_packet(gsm->txframe, len);
-		}
+		if (debug & 4)
+			print_hex_dump_bytes("gsm_data_kick: ",
+					     DUMP_PREFIX_OFFSET,
+					     gsm->txframe, len);
 
 		if (gsm->output(gsm, gsm->txframe + skip_sof,
 						len - skip_sof) < 0)
@@ -888,7 +875,8 @@ static int gsm_dlci_data_output_framed(struct gsm_mux *gsm,
 		*dp++ = last << 7 | first << 6 | 1;	/* EA */
 		len--;
 	}
-	memcpy(dp, skb_pull(dlci->skb, len), len);
+	memcpy(dp, dlci->skb->data, len);
+	skb_pull(dlci->skb, len);
 	__gsm_data_queue(dlci, msg);
 	if (last)
 		dlci->skb = NULL;
@@ -997,10 +985,22 @@ static void gsm_control_reply(struct gsm_mux *gsm, int cmd, u8 *data,
  */
 
 static void gsm_process_modem(struct tty_struct *tty, struct gsm_dlci *dlci,
-							u32 modem)
+							u32 modem, int clen)
 {
 	int  mlines = 0;
-	u8 brk = modem >> 6;
+	u8 brk = 0;
+
+	/* The modem status command can either contain one octet (v.24 signals)
+	   or two octets (v.24 signals + break signals). The length field will
+	   either be 2 or 3 respectively. This is specified in section
+	   5.4.6.3.7 of the  27.010 mux spec. */
+
+	if (clen == 2)
+		modem = modem & 0x7f;
+	else {
+		brk = modem & 0x7f;
+		modem = (modem >> 7) & 0x7f;
+	};
 
 	/* Flow control/ready to communicate */
 	if (modem & MDM_FC) {
@@ -1074,7 +1074,7 @@ static void gsm_control_modem(struct gsm_mux *gsm, u8 *data, int clen)
 			return;
 	}
 	tty = tty_port_tty_get(&dlci->port);
-	gsm_process_modem(tty, dlci, modem);
+	gsm_process_modem(tty, dlci, modem, clen);
 	if (tty) {
 		tty_wakeup(tty);
 		tty_kref_put(tty);
@@ -1193,8 +1193,8 @@ static void gsm_control_message(struct gsm_mux *gsm, unsigned int command,
 		break;
 		/* Optional unsupported commands */
 	case CMD_PN:	/* Parameter negotiation */
-	case CMD_RPN:	/* Remote port negotation */
-	case CMD_SNC:	/* Service negotation command */
+	case CMD_RPN:	/* Remote port negotiation */
+	case CMD_SNC:	/* Service negotiation command */
 	default:
 		/* Reply to bad commands with an NSC */
 		buf[0] = command;
@@ -1250,8 +1250,7 @@ static void gsm_control_response(struct gsm_mux *gsm, unsigned int command,
 
 static void gsm_control_transmit(struct gsm_mux *gsm, struct gsm_control *ctrl)
 {
-	struct gsm_msg *msg = gsm_data_alloc(gsm, 0, ctrl->len + 1,
-							gsm->ftype|PF);
+	struct gsm_msg *msg = gsm_data_alloc(gsm, 0, ctrl->len + 1, gsm->ftype);
 	if (msg == NULL)
 		return;
 	msg->data[0] = (ctrl->cmd << 1) | 2 | EA;	/* command */
@@ -1496,12 +1495,13 @@ static void gsm_dlci_begin_close(struct gsm_dlci *dlci)
  *	open we shovel the bits down it, if not we drop them.
  */
 
-static void gsm_dlci_data(struct gsm_dlci *dlci, u8 *data, int len)
+static void gsm_dlci_data(struct gsm_dlci *dlci, u8 *data, int clen)
 {
 	/* krefs .. */
 	struct tty_port *port = &dlci->port;
 	struct tty_struct *tty = tty_port_tty_get(port);
 	unsigned int modem = 0;
+	int len = clen;
 
 	if (debug & 16)
 		pr_debug("%d bytes for tty %p\n", len, tty);
@@ -1521,7 +1521,7 @@ static void gsm_dlci_data(struct gsm_dlci *dlci, u8 *data, int len)
 				if (len == 0)
 					return;
 			}
-			gsm_process_modem(tty, dlci, modem);
+			gsm_process_modem(tty, dlci, modem, clen);
 		/* Line state will go via DLCI 0 controls only */
 		case 1:
 		default:
@@ -1659,8 +1659,12 @@ static void gsm_queue(struct gsm_mux *gsm)
 
 	if ((gsm->control & ~PF) == UI)
 		gsm->fcs = gsm_fcs_add_block(gsm->fcs, gsm->buf, gsm->len);
-	/* generate final CRC with received FCS */
-	gsm->fcs = gsm_fcs_add(gsm->fcs, gsm->received_fcs);
+	if (gsm->encoding == 0){
+		/* WARNING: gsm->received_fcs is used for gsm->encoding = 0 only.
+		            In this case it contain the last piece of data
+		            required to generate final CRC */
+		gsm->fcs = gsm_fcs_add(gsm->fcs, gsm->received_fcs);
+	}
 	if (gsm->fcs != GOOD_FCS) {
 		gsm->bad_fcs++;
 		if (debug & 4)
@@ -2027,7 +2031,7 @@ EXPORT_SYMBOL_GPL(gsm_activate_mux);
  *	@mux: mux to free
  *
  *	Dispose of allocated resources for a dead mux. No refcounting
- *	at present so the mux must be truely dead.
+ *	at present so the mux must be truly dead.
  */
 void gsm_free_mux(struct gsm_mux *gsm)
 {
@@ -2092,10 +2096,9 @@ static int gsmld_output(struct gsm_mux *gsm, u8 *data, int len)
 		set_bit(TTY_DO_WRITE_WAKEUP, &gsm->tty->flags);
 		return -ENOSPC;
 	}
-	if (debug & 4) {
-		pr_debug("-->%d bytes out\n", len);
-		hex_packet(data, len);
-	}
+	if (debug & 4)
+		print_hex_dump_bytes("gsmld_output: ", DUMP_PREFIX_OFFSET,
+				     data, len);
 	gsm->tty->ops->write(gsm->tty, data, len);
 	return len;
 }
@@ -2125,7 +2128,7 @@ static int gsmld_attach_gsm(struct tty_struct *tty, struct gsm_mux *gsm)
 
 /**
  *	gsmld_detach_gsm	-	stop doing 0710 mux
- *	@tty: tty atttached to the mux
+ *	@tty: tty attached to the mux
  *	@gsm: mux
  *
  *	Shutdown and then clean up the resources used by the line discipline
@@ -2149,10 +2152,9 @@ static void gsmld_receive_buf(struct tty_struct *tty, const unsigned char *cp,
 	char buf[64];
 	char flags;
 
-	if (debug & 4) {
-		pr_debug("Inbytes %dd\n", count);
-		hex_packet(cp, count);
-	}
+	if (debug & 4)
+		print_hex_dump_bytes("gsmld_receive: ", DUMP_PREFIX_OFFSET,
+				     cp, count);
 
 	for (i = count, dp = cp, f = fp; i; i--, dp++) {
 		flags = *f++;
@@ -2649,13 +2651,13 @@ static void gsmtty_wait_until_sent(struct tty_struct *tty, int timeout)
 	   to do here */
 }
 
-static int gsmtty_tiocmget(struct tty_struct *tty, struct file *filp)
+static int gsmtty_tiocmget(struct tty_struct *tty)
 {
 	struct gsm_dlci *dlci = tty->driver_data;
 	return dlci->modem_rx;
 }
 
-static int gsmtty_tiocmset(struct tty_struct *tty, struct file *filp,
+static int gsmtty_tiocmset(struct tty_struct *tty,
 	unsigned int set, unsigned int clear)
 {
 	struct gsm_dlci *dlci = tty->driver_data;
@@ -2672,7 +2674,7 @@ static int gsmtty_tiocmset(struct tty_struct *tty, struct file *filp,
 }
 
 
-static int gsmtty_ioctl(struct tty_struct *tty, struct file *filp,
+static int gsmtty_ioctl(struct tty_struct *tty,
 			unsigned int cmd, unsigned long arg)
 {
 	return -ENOIOCTLCMD;

@@ -41,10 +41,10 @@ struct intel_hdmi {
 	struct intel_encoder base;
 	u32 sdvox_reg;
 	int ddc_bus;
+	uint32_t color_range;
 	bool has_hdmi_sink;
 	bool has_audio;
 	int force_audio;
-	struct drm_property *force_audio_property;
 };
 
 static struct intel_hdmi *enc_to_intel_hdmi(struct drm_encoder *encoder)
@@ -124,6 +124,7 @@ static void intel_hdmi_mode_set(struct drm_encoder *encoder,
 	u32 sdvox;
 
 	sdvox = SDVO_ENCODING_HDMI | SDVO_BORDER_ENABLE;
+	sdvox |= intel_hdmi->color_range;
 	if (adjusted_mode->flags & DRM_MODE_FLAG_PVSYNC)
 		sdvox |= SDVO_VSYNC_ACTIVE_HIGH;
 	if (adjusted_mode->flags & DRM_MODE_FLAG_PHSYNC)
@@ -192,7 +193,7 @@ static int intel_hdmi_mode_valid(struct drm_connector *connector,
 	if (mode->clock > 165000)
 		return MODE_CLOCK_HIGH;
 	if (mode->clock < 20000)
-		return MODE_CLOCK_HIGH;
+		return MODE_CLOCK_LOW;
 
 	if (mode->flags & DRM_MODE_FLAG_DBLSCAN)
 		return MODE_NO_DBLESCAN;
@@ -278,13 +279,14 @@ intel_hdmi_set_property(struct drm_connector *connector,
 		      uint64_t val)
 {
 	struct intel_hdmi *intel_hdmi = intel_attached_hdmi(connector);
+	struct drm_i915_private *dev_priv = connector->dev->dev_private;
 	int ret;
 
 	ret = drm_connector_property_set_value(connector, property, val);
 	if (ret)
 		return ret;
 
-	if (property == intel_hdmi->force_audio_property) {
+	if (property == dev_priv->force_audio_property) {
 		int i = val;
 		bool has_audio;
 
@@ -302,6 +304,14 @@ intel_hdmi_set_property(struct drm_connector *connector,
 			return 0;
 
 		intel_hdmi->has_audio = has_audio;
+		goto done;
+	}
+
+	if (property == dev_priv->broadcast_rgb_property) {
+		if (val == !!intel_hdmi->color_range)
+			return 0;
+
+		intel_hdmi->color_range = val ? SDVO_COLOR_RANGE_16_235 : 0;
 		goto done;
 	}
 
@@ -354,15 +364,8 @@ static const struct drm_encoder_funcs intel_hdmi_enc_funcs = {
 static void
 intel_hdmi_add_properties(struct intel_hdmi *intel_hdmi, struct drm_connector *connector)
 {
-	struct drm_device *dev = connector->dev;
-
-	intel_hdmi->force_audio_property =
-		drm_property_create(dev, DRM_MODE_PROP_RANGE, "force_audio", 2);
-	if (intel_hdmi->force_audio_property) {
-		intel_hdmi->force_audio_property->values[0] = -1;
-		intel_hdmi->force_audio_property->values[1] = 1;
-		drm_connector_attach_property(connector, intel_hdmi->force_audio_property, 0);
-	}
+	intel_attach_force_audio_property(connector);
+	intel_attach_broadcast_rgb_property(connector);
 }
 
 void intel_hdmi_init(struct drm_device *dev, int sdvox_reg)

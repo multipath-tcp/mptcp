@@ -310,7 +310,7 @@ static int fsl_dma_new(struct snd_card *card, struct snd_soc_dai *dai,
 	 * should allocate a DMA buffer only for the streams that are valid.
 	 */
 
-	if (dai->driver->playback.channels_min) {
+	if (pcm->streams[0].substream) {
 		ret = snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV, card->dev,
 			fsl_dma_hardware.buffer_bytes_max,
 			&pcm->streams[0].substream->dma_buffer);
@@ -320,13 +320,13 @@ static int fsl_dma_new(struct snd_card *card, struct snd_soc_dai *dai,
 		}
 	}
 
-	if (dai->driver->capture.channels_min) {
+	if (pcm->streams[1].substream) {
 		ret = snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV, card->dev,
 			fsl_dma_hardware.buffer_bytes_max,
 			&pcm->streams[1].substream->dma_buffer);
 		if (ret) {
-			snd_dma_free_pages(&pcm->streams[0].substream->dma_buffer);
 			dev_err(card->dev, "can't alloc capture dma buffer\n");
+			snd_dma_free_pages(&pcm->streams[0].substream->dma_buffer);
 			return ret;
 		}
 	}
@@ -449,7 +449,8 @@ static int fsl_dma_open(struct snd_pcm_substream *substream)
 	dma_private->ld_buf_phys = ld_buf_phys;
 	dma_private->dma_buf_phys = substream->dma_buffer.addr;
 
-	ret = request_irq(dma_private->irq, fsl_dma_isr, 0, "DMA", dma_private);
+	ret = request_irq(dma_private->irq, fsl_dma_isr, 0, "fsldma-audio",
+			  dma_private);
 	if (ret) {
 		dev_err(dev, "can't register ISR for IRQ %u (ret=%i)\n",
 			dma_private->irq, ret);
@@ -896,8 +897,7 @@ static struct snd_pcm_ops fsl_dma_ops = {
 	.pointer	= fsl_dma_pointer,
 };
 
-static int __devinit fsl_soc_dma_probe(struct platform_device *pdev,
-				       const struct of_device_id *match)
+static int __devinit fsl_soc_dma_probe(struct platform_device *pdev)
  {
 	struct dma_object *dma;
 	struct device_node *np = pdev->dev.of_node;
@@ -979,7 +979,7 @@ static const struct of_device_id fsl_soc_dma_ids[] = {
 };
 MODULE_DEVICE_TABLE(of, fsl_soc_dma_ids);
 
-static struct of_platform_driver fsl_soc_dma_driver = {
+static struct platform_driver fsl_soc_dma_driver = {
 	.driver = {
 		.name = "fsl-pcm-audio",
 		.owner = THIS_MODULE,
@@ -993,12 +993,12 @@ static int __init fsl_soc_dma_init(void)
 {
 	pr_info("Freescale Elo DMA ASoC PCM Driver\n");
 
-	return of_register_platform_driver(&fsl_soc_dma_driver);
+	return platform_driver_register(&fsl_soc_dma_driver);
 }
 
 static void __exit fsl_soc_dma_exit(void)
 {
-	of_unregister_platform_driver(&fsl_soc_dma_driver);
+	platform_driver_unregister(&fsl_soc_dma_driver);
 }
 
 module_init(fsl_soc_dma_init);

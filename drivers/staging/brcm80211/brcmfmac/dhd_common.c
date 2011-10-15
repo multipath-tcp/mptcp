@@ -17,9 +17,7 @@
 #include <linux/string.h>
 #include <bcmdefs.h>
 #include <linux/netdevice.h>
-#include <osl.h>
 #include <bcmutils.h>
-#include <bcmendian.h>
 #include <dngl_stats.h>
 #include <dhd.h>
 #include <dhd_bus.h>
@@ -37,11 +35,6 @@ u32 dhd_conn_event;
 u32 dhd_conn_status;
 u32 dhd_conn_reason;
 
-#define htod32(i) i
-#define htod16(i) i
-#define dtoh32(i) i
-#define dtoh16(i) i
-
 extern int dhdcdc_set_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf,
 			    uint len);
 extern void dhd_ind_scan_confirm(void *h, bool status);
@@ -57,8 +50,8 @@ void dhd_iscan_unlock(void);
 #error DHD_SDALIGN is not a power of 2!
 #endif
 
-#ifdef DHD_DEBUG
 #define EPI_VERSION_STR         "4.218.248.5"
+#ifdef DHD_DEBUG
 const char dhd_version[] =
 "Dongle Host Driver, version " EPI_VERSION_STR "\nCompiled on " __DATE__
 " at " __TIME__;
@@ -196,7 +189,7 @@ static int dhd_dump(dhd_pub_t *dhdp, char *buf, int buflen)
 	/* Add any bus info */
 	dhd_bus_dump(dhdp, strbuf);
 
-	return !strbuf->size ? BCME_BUFTOOSHORT : 0;
+	return !strbuf->size ? -EOVERFLOW : 0;
 }
 
 static int
@@ -214,7 +207,7 @@ dhd_doiovar(dhd_pub_t *dhd_pub, const bcm_iovar_t *vi, u32 actionid,
 		goto exit;
 
 	if (plen >= (int)sizeof(int_val))
-		bcopy(params, &int_val, sizeof(int_val));
+		memcpy(&int_val, params, sizeof(int_val));
 
 	switch (actionid) {
 	case IOV_GVAL(IOV_VERSION):
@@ -224,7 +217,7 @@ dhd_doiovar(dhd_pub_t *dhd_pub, const bcm_iovar_t *vi, u32 actionid,
 
 	case IOV_GVAL(IOV_MSGLEVEL):
 		int_val = (s32) dhd_msg_level;
-		bcopy(&int_val, arg, val_size);
+		memcpy(arg, &int_val, val_size);
 		break;
 
 	case IOV_SVAL(IOV_MSGLEVEL):
@@ -232,24 +225,24 @@ dhd_doiovar(dhd_pub_t *dhd_pub, const bcm_iovar_t *vi, u32 actionid,
 		break;
 
 	case IOV_GVAL(IOV_BCMERRORSTR):
-		strncpy((char *)arg, bcmerrorstr(dhd_pub->bcmerror),
+		strncpy((char *)arg, "bcm_error",
 			BCME_STRLEN);
 		((char *)arg)[BCME_STRLEN - 1] = 0x00;
 		break;
 
 	case IOV_GVAL(IOV_BCMERROR):
 		int_val = (s32) dhd_pub->bcmerror;
-		bcopy(&int_val, arg, val_size);
+		memcpy(arg, &int_val, val_size);
 		break;
 
 	case IOV_GVAL(IOV_WDTICK):
 		int_val = (s32) dhd_watchdog_ms;
-		bcopy(&int_val, arg, val_size);
+		memcpy(arg, &int_val, val_size);
 		break;
 
 	case IOV_SVAL(IOV_WDTICK):
 		if (!dhd_pub->up) {
-			bcmerror = BCME_NOTUP;
+			bcmerror = -ENOLINK;
 			break;
 		}
 		dhd_os_wd_timer(dhd_pub, (uint) int_val);
@@ -262,7 +255,7 @@ dhd_doiovar(dhd_pub_t *dhd_pub, const bcm_iovar_t *vi, u32 actionid,
 #ifdef DHD_DEBUG
 	case IOV_GVAL(IOV_DCONSOLE_POLL):
 		int_val = (s32) dhd_console_ms;
-		bcopy(&int_val, arg, val_size);
+		memcpy(arg, &int_val, val_size);
 		break;
 
 	case IOV_SVAL(IOV_DCONSOLE_POLL):
@@ -290,13 +283,13 @@ dhd_doiovar(dhd_pub_t *dhd_pub, const bcm_iovar_t *vi, u32 actionid,
 
 	case IOV_GVAL(IOV_IOCTLTIMEOUT):{
 			int_val = (s32) dhd_os_get_ioctl_resp_timeout();
-			bcopy(&int_val, arg, sizeof(int_val));
+			memcpy(arg, &int_val, sizeof(int_val));
 			break;
 		}
 
 	case IOV_SVAL(IOV_IOCTLTIMEOUT):{
 			if (int_val <= 0)
-				bcmerror = BCME_BADARG;
+				bcmerror = -EINVAL;
 			else
 				dhd_os_set_ioctl_resp_timeout((unsigned int)
 							      int_val);
@@ -304,27 +297,12 @@ dhd_doiovar(dhd_pub_t *dhd_pub, const bcm_iovar_t *vi, u32 actionid,
 		}
 
 	default:
-		bcmerror = BCME_UNSUPPORTED;
+		bcmerror = -ENOTSUPP;
 		break;
 	}
 
 exit:
 	return bcmerror;
-}
-
-/* Store the status of a connection attempt for later retrieval by an iovar */
-void dhd_store_conn_status(u32 event, u32 status, u32 reason)
-{
-	/* Do not overwrite a WLC_E_PRUNE with a WLC_E_SET_SSID
-	 * because an encryption/rsn mismatch results in both events, and
-	 * the important information is in the WLC_E_PRUNE.
-	 */
-	if (!(event == WLC_E_SET_SSID && status == WLC_E_STATUS_FAIL &&
-	      dhd_conn_event == WLC_E_PRUNE)) {
-		dhd_conn_event = event;
-		dhd_conn_status = status;
-		dhd_conn_reason = reason;
-	}
 }
 
 bool dhd_prec_enq(dhd_pub_t *dhdp, struct pktq *q, struct sk_buff *pkt,
@@ -338,7 +316,7 @@ bool dhd_prec_enq(dhd_pub_t *dhdp, struct pktq *q, struct sk_buff *pkt,
 	 * exceeding total queue length
 	 */
 	if (!pktq_pfull(q, prec) && !pktq_full(q)) {
-		pktq_penq(q, prec, pkt);
+		bcm_pktq_penq(q, prec, pkt);
 		return true;
 	}
 
@@ -346,7 +324,7 @@ bool dhd_prec_enq(dhd_pub_t *dhdp, struct pktq *q, struct sk_buff *pkt,
 	if (pktq_pfull(q, prec))
 		eprec = prec;
 	else if (pktq_full(q)) {
-		p = pktq_peek_tail(q, &eprec);
+		p = bcm_pktq_peek_tail(q, &eprec);
 		ASSERT(p);
 		if (eprec > prec)
 			return false;
@@ -360,21 +338,21 @@ bool dhd_prec_enq(dhd_pub_t *dhdp, struct pktq *q, struct sk_buff *pkt,
 		if (eprec == prec && !discard_oldest)
 			return false;	/* refuse newer (incoming) packet */
 		/* Evict packet according to discard policy */
-		p = discard_oldest ? pktq_pdeq(q, eprec) : pktq_pdeq_tail(q,
-						  eprec);
+		p = discard_oldest ? bcm_pktq_pdeq(q, eprec) :
+			bcm_pktq_pdeq_tail(q, eprec);
 		if (p == NULL) {
-			DHD_ERROR(("%s: pktq_penq() failed, oldest %d.",
+			DHD_ERROR(("%s: bcm_pktq_penq() failed, oldest %d.",
 				   __func__, discard_oldest));
 			ASSERT(p);
 		}
 
-		pkt_buf_free_skb(dhdp->osh, p, true);
+		bcm_pkt_buf_free_skb(p);
 	}
 
 	/* Enqueue */
-	p = pktq_penq(q, prec, pkt);
+	p = bcm_pktq_penq(q, prec, pkt);
 	if (p == NULL) {
-		DHD_ERROR(("%s: pktq_penq() failed.", __func__));
+		DHD_ERROR(("%s: bcm_pktq_penq() failed.", __func__));
 		ASSERT(p);
 	}
 
@@ -403,7 +381,7 @@ dhd_iovar_op(dhd_pub_t *dhd_pub, const char *name,
 
 	vi = bcm_iovar_lookup(dhd_iovars, name);
 	if (vi == NULL) {
-		bcmerror = BCME_UNSUPPORTED;
+		bcmerror = -ENOTSUPP;
 		goto exit;
 	}
 
@@ -442,19 +420,19 @@ int dhd_ioctl(dhd_pub_t *dhd_pub, dhd_ioctl_t *ioc, void *buf, uint buflen)
 	DHD_TRACE(("%s: Enter\n", __func__));
 
 	if (!buf)
-		return BCME_BADARG;
+		return -EINVAL;
 
 	switch (ioc->cmd) {
 	case DHD_GET_MAGIC:
 		if (buflen < sizeof(int))
-			bcmerror = BCME_BUFTOOSHORT;
+			bcmerror = -EOVERFLOW;
 		else
 			*(int *)buf = DHD_IOCTL_MAGIC;
 		break;
 
 	case DHD_GET_VERSION:
 		if (buflen < sizeof(int))
-			bcmerror = -BCME_BUFTOOSHORT;
+			bcmerror = -EOVERFLOW;
 		else
 			*(int *)buf = DHD_IOCTL_VERSION;
 		break;
@@ -470,7 +448,7 @@ int dhd_ioctl(dhd_pub_t *dhd_pub, dhd_ioctl_t *ioc, void *buf, uint buflen)
 				;
 
 			if (*arg) {
-				bcmerror = BCME_BUFTOOSHORT;
+				bcmerror = -EOVERFLOW;
 				break;
 			}
 
@@ -486,7 +464,7 @@ int dhd_ioctl(dhd_pub_t *dhd_pub, dhd_ioctl_t *ioc, void *buf, uint buflen)
 				bcmerror =
 				    dhd_iovar_op(dhd_pub, buf, NULL, 0, arg,
 						 arglen, IOV_SET);
-			if (bcmerror != BCME_UNSUPPORTED)
+			if (bcmerror != -ENOTSUPP)
 				break;
 
 			/* not in generic table, try protocol module */
@@ -498,7 +476,7 @@ int dhd_ioctl(dhd_pub_t *dhd_pub, dhd_ioctl_t *ioc, void *buf, uint buflen)
 				bcmerror = dhd_prot_iovar_op(dhd_pub, buf,
 							     NULL, 0, arg,
 							     arglen, IOV_SET);
-			if (bcmerror != BCME_UNSUPPORTED)
+			if (bcmerror != -ENOTSUPP)
 				break;
 
 			/* if still not found, try bus module */
@@ -515,7 +493,7 @@ int dhd_ioctl(dhd_pub_t *dhd_pub, dhd_ioctl_t *ioc, void *buf, uint buflen)
 		}
 
 	default:
-		bcmerror = BCME_UNSUPPORTED;
+		bcmerror = -ENOTSUPP;
 	}
 
 	return bcmerror;
@@ -592,14 +570,14 @@ static void wl_show_host_event(wl_event_msg_t *event, void *event_data)
 		WLC_E_PFN_SCAN_COMPLETE, "SCAN_COMPLETE"}
 	};
 	uint event_type, flags, auth_type, datalen;
-	event_type = ntoh32(event->event_type);
-	flags = ntoh16(event->flags);
-	status = ntoh32(event->status);
-	reason = ntoh32(event->reason);
-	auth_type = ntoh32(event->auth_type);
-	datalen = ntoh32(event->datalen);
+	event_type = be32_to_cpu(event->event_type);
+	flags = be16_to_cpu(event->flags);
+	status = be32_to_cpu(event->status);
+	reason = be32_to_cpu(event->reason);
+	auth_type = be32_to_cpu(event->auth_type);
+	datalen = be32_to_cpu(event->datalen);
 	/* debug dump of event messages */
-	sprintf(eabuf, "%pM", event->addr.octet);
+	sprintf(eabuf, "%pM", event->addr);
 
 	event_name = "UNKNOWN";
 	for (i = 0; i < ARRAY_SIZE(event_names); i++) {
@@ -608,6 +586,8 @@ static void wl_show_host_event(wl_event_msg_t *event, void *event_data)
 	}
 
 	DHD_EVENT(("EVENT: %s, event ID = %d\n", event_name, event_type));
+	DHD_EVENT(("flags 0x%04x, status %d, reason %d, auth_type %d MAC %s\n",
+				flags, status, reason, auth_type, eabuf));
 
 	if (flags & WLC_EVENT_MSG_LINK)
 		link = true;
@@ -653,9 +633,9 @@ static void wl_show_host_event(wl_event_msg_t *event, void *event_data)
 
 	case WLC_E_AUTH:
 	case WLC_E_AUTH_IND:
-		if (auth_type == DOT11_OPEN_SYSTEM)
+		if (auth_type == WLAN_AUTH_OPEN)
 			auth_str = "Open System";
-		else if (auth_type == DOT11_SHARED_KEY)
+		else if (auth_type == WLAN_AUTH_SHARED_KEY)
 			auth_str = "Shared Key";
 		else {
 			sprintf(err_msg, "AUTH unknown: %d", (int)auth_type);
@@ -754,34 +734,35 @@ static void wl_show_host_event(wl_event_msg_t *event, void *event_data)
 			memcpy(&hdr, buf, MSGTRACE_HDRLEN);
 
 			if (hdr.version != MSGTRACE_VERSION) {
-				printf
+				DHD_ERROR(
 				    ("\nMACEVENT: %s [unsupported version --> "
 				     "dhd version:%d dongle version:%d]\n",
-				     event_name, MSGTRACE_VERSION, hdr.version);
+				     event_name, MSGTRACE_VERSION, hdr.version)
+				);
 				/* Reset datalen to avoid display below */
 				datalen = 0;
 				break;
 			}
 
 			/* There are 2 bytes available at the end of data */
-			buf[MSGTRACE_HDRLEN + ntoh16(hdr.len)] = '\0';
+			buf[MSGTRACE_HDRLEN + be16_to_cpu(hdr.len)] = '\0';
 
-			if (ntoh32(hdr.discarded_bytes)
-			    || ntoh32(hdr.discarded_printf)) {
-				printf
+			if (be32_to_cpu(hdr.discarded_bytes)
+			    || be32_to_cpu(hdr.discarded_printf)) {
+				DHD_ERROR(
 				    ("\nWLC_E_TRACE: [Discarded traces in dongle -->"
 				     "discarded_bytes %d discarded_printf %d]\n",
-				     ntoh32(hdr.discarded_bytes),
-				     ntoh32(hdr.discarded_printf));
+				     be32_to_cpu(hdr.discarded_bytes),
+				     be32_to_cpu(hdr.discarded_printf)));
 			}
 
-			nblost = ntoh32(hdr.seqnum) - seqnum_prev - 1;
+			nblost = be32_to_cpu(hdr.seqnum) - seqnum_prev - 1;
 			if (nblost > 0) {
-				printf
+				DHD_ERROR(
 				    ("\nWLC_E_TRACE: [Event lost --> seqnum %d nblost %d\n",
-				     ntoh32(hdr.seqnum), nblost);
+				     be32_to_cpu(hdr.seqnum), nblost));
 			}
-			seqnum_prev = ntoh32(hdr.seqnum);
+			seqnum_prev = be32_to_cpu(hdr.seqnum);
 
 			/* Display the trace buffer. Advance from \n to \n to
 			 * avoid display big
@@ -790,10 +771,10 @@ static void wl_show_host_event(wl_event_msg_t *event, void *event_data)
 			p = (char *)&buf[MSGTRACE_HDRLEN];
 			while ((s = strstr(p, "\n")) != NULL) {
 				*s = '\0';
-				printf("%s\n", p);
+				printk(KERN_DEBUG"%s\n", p);
 				p = s + 1;
 			}
-			printf("%s\n", p);
+			printk(KERN_DEBUG "%s\n", p);
 
 			/* Reset datalen to avoid display below */
 			datalen = 0;
@@ -802,7 +783,7 @@ static void wl_show_host_event(wl_event_msg_t *event, void *event_data)
 
 	case WLC_E_RSSI:
 		DHD_EVENT(("MACEVENT: %s %d\n", event_name,
-			   ntoh32(*((int *)event_data))));
+			   be32_to_cpu(*((int *)event_data))));
 		break;
 
 	default:
@@ -836,14 +817,14 @@ wl_host_event(struct dhd_info *dhd, int *ifidx, void *pktdata,
 
 	if (memcmp(BRCM_OUI, &pvt_data->bcm_hdr.oui[0], DOT11_OUI_LEN)) {
 		DHD_ERROR(("%s: mismatched OUI, bailing\n", __func__));
-		return BCME_ERROR;
+		return -EBADE;
 	}
 
 	/* BRCM event pkt may be unaligned - use xxx_ua to load user_subtype. */
-	if (ntoh16_ua((void *)&pvt_data->bcm_hdr.usr_subtype) !=
+	if (get_unaligned_be16(&pvt_data->bcm_hdr.usr_subtype) !=
 	    BCMILCP_BCM_SUBTYPE_EVENT) {
 		DHD_ERROR(("%s: mismatched subtype, bailing\n", __func__));
-		return BCME_ERROR;
+		return -EBADE;
 	}
 
 	*data_ptr = &pvt_data[1];
@@ -852,10 +833,10 @@ wl_host_event(struct dhd_info *dhd, int *ifidx, void *pktdata,
 	/* memcpy since BRCM event pkt may be unaligned. */
 	memcpy(event, &pvt_data->event, sizeof(wl_event_msg_t));
 
-	type = ntoh32_ua((void *)&event->event_type);
-	flags = ntoh16_ua((void *)&event->flags);
-	status = ntoh32_ua((void *)&event->status);
-	evlen = ntoh32_ua((void *)&event->datalen) + sizeof(bcm_event_t);
+	type = get_unaligned_be32(&event->event_type);
+	flags = get_unaligned_be16(&event->flags);
+	status = get_unaligned_be32(&event->status);
+	evlen = get_unaligned_be32(&event->datalen) + sizeof(bcm_event_t);
 
 	switch (type) {
 	case WLC_E_IF:
@@ -868,7 +849,7 @@ wl_host_event(struct dhd_info *dhd, int *ifidx, void *pktdata,
 				if (ifevent->action == WLC_E_IF_ADD)
 					dhd_add_if(dhd, ifevent->ifidx,
 						   NULL, event->ifname,
-						   pvt_data->eth.ether_dhost,
+						   pvt_data->eth.h_dest,
 						   ifevent->flags,
 						   ifevent->bssidx);
 				else
@@ -909,10 +890,10 @@ wl_host_event(struct dhd_info *dhd, int *ifidx, void *pktdata,
 		if (type == WLC_E_NDIS_LINK) {
 			u32 temp;
 
-			temp = ntoh32_ua((void *)&event->event_type);
+			temp = get_unaligned_be32(&event->event_type);
 			DHD_TRACE(("Converted to WLC_E_LINK type %d\n", temp));
 
-			temp = ntoh32(WLC_E_NDIS_LINK);
+			temp = be32_to_cpu(WLC_E_NDIS_LINK);
 			memcpy((void *)(&pvt_data->event.event_type), &temp,
 			       sizeof(pvt_data->event.event_type));
 		}
@@ -923,43 +904,7 @@ wl_host_event(struct dhd_info *dhd, int *ifidx, void *pktdata,
 	wl_show_host_event(event, event_data);
 #endif				/* SHOW_EVENTS */
 
-	return BCME_OK;
-}
-
-void wl_event_to_host_order(wl_event_msg_t *evt)
-{
-	/* Event struct members passed from dongle to host are stored
-	 * in network
-	 * byte order. Convert all members to host-order.
-	 */
-	evt->event_type = ntoh32(evt->event_type);
-	evt->flags = ntoh16(evt->flags);
-	evt->status = ntoh32(evt->status);
-	evt->reason = ntoh32(evt->reason);
-	evt->auth_type = ntoh32(evt->auth_type);
-	evt->datalen = ntoh32(evt->datalen);
-	evt->version = ntoh16(evt->version);
-}
-
-void print_buf(void *pbuf, int len, int bytes_per_line)
-{
-	int i, j = 0;
-	unsigned char *buf = pbuf;
-
-	if (bytes_per_line == 0)
-		bytes_per_line = len;
-
-	for (i = 0; i < len; i++) {
-		printf("%2.2x", *buf++);
-		j++;
-		if (j == bytes_per_line) {
-			printf("\n");
-			j = 0;
-		} else {
-			printf(":");
-		}
-	}
-	printf("\n");
+	return 0;
 }
 
 /* Convert user's input in hex pattern to byte-size mask */
@@ -1025,10 +970,10 @@ dhd_pktfilter_offload_enable(dhd_pub_t *dhd, char *arg, int enable,
 	pkt_filterp = (wl_pkt_filter_enable_t *) (buf + str_len + 1);
 
 	/* Parse packet filter id. */
-	enable_parm.id = htod32(simple_strtoul(argv[i], NULL, 0));
+	enable_parm.id = simple_strtoul(argv[i], NULL, 0);
 
 	/* Parse enable/disable value. */
-	enable_parm.enable = htod32(enable);
+	enable_parm.enable = enable;
 
 	buf_len += sizeof(enable_parm);
 	memcpy((char *)pkt_filterp, &enable_parm, sizeof(enable_parm));
@@ -1053,8 +998,7 @@ dhd_pktfilter_offload_enable(dhd_pub_t *dhd, char *arg, int enable,
 			   __func__, arg, rc));
 
 fail:
-	if (arg_org)
-		kfree(arg_org);
+	kfree(arg_org);
 }
 
 void dhd_pktfilter_offload_set(dhd_pub_t *dhd, char *arg)
@@ -1113,7 +1057,7 @@ void dhd_pktfilter_offload_set(dhd_pub_t *dhd, char *arg)
 	pkt_filterp = (wl_pkt_filter_t *) (buf + str_len + 1);
 
 	/* Parse packet filter id. */
-	pkt_filter.id = htod32(simple_strtoul(argv[i], NULL, 0));
+	pkt_filter.id = simple_strtoul(argv[i], NULL, 0);
 
 	if (NULL == argv[++i]) {
 		DHD_ERROR(("Polarity not provided\n"));
@@ -1121,7 +1065,7 @@ void dhd_pktfilter_offload_set(dhd_pub_t *dhd, char *arg)
 	}
 
 	/* Parse filter polarity. */
-	pkt_filter.negate_match = htod32(simple_strtoul(argv[i], NULL, 0));
+	pkt_filter.negate_match = simple_strtoul(argv[i], NULL, 0);
 
 	if (NULL == argv[++i]) {
 		DHD_ERROR(("Filter type not provided\n"));
@@ -1129,7 +1073,7 @@ void dhd_pktfilter_offload_set(dhd_pub_t *dhd, char *arg)
 	}
 
 	/* Parse filter type. */
-	pkt_filter.type = htod32(simple_strtoul(argv[i], NULL, 0));
+	pkt_filter.type = simple_strtoul(argv[i], NULL, 0);
 
 	if (NULL == argv[++i]) {
 		DHD_ERROR(("Offset not provided\n"));
@@ -1137,7 +1081,7 @@ void dhd_pktfilter_offload_set(dhd_pub_t *dhd, char *arg)
 	}
 
 	/* Parse pattern filter offset. */
-	pkt_filter.u.pattern.offset = htod32(simple_strtoul(argv[i], NULL, 0));
+	pkt_filter.u.pattern.offset = simple_strtoul(argv[i], NULL, 0);
 
 	if (NULL == argv[++i]) {
 		DHD_ERROR(("Bitmask not provided\n"));
@@ -1146,8 +1090,8 @@ void dhd_pktfilter_offload_set(dhd_pub_t *dhd, char *arg)
 
 	/* Parse pattern filter mask. */
 	mask_size =
-	    htod32(wl_pattern_atoh
-		   (argv[i], (char *)pkt_filterp->u.pattern.mask_and_pattern));
+	    wl_pattern_atoh
+		   (argv[i], (char *)pkt_filterp->u.pattern.mask_and_pattern);
 
 	if (NULL == argv[++i]) {
 		DHD_ERROR(("Pattern not provided\n"));
@@ -1156,9 +1100,9 @@ void dhd_pktfilter_offload_set(dhd_pub_t *dhd, char *arg)
 
 	/* Parse pattern filter pattern. */
 	pattern_size =
-	    htod32(wl_pattern_atoh(argv[i],
+	    wl_pattern_atoh(argv[i],
 				   (char *)&pkt_filterp->u.pattern.
-				   mask_and_pattern[mask_size]));
+				   mask_and_pattern[mask_size]);
 
 	if (mask_size != pattern_size) {
 		DHD_ERROR(("Mask and pattern not the same size\n"));
@@ -1189,11 +1133,9 @@ void dhd_pktfilter_offload_set(dhd_pub_t *dhd, char *arg)
 			   __func__, arg));
 
 fail:
-	if (arg_org)
-		kfree(arg_org);
+	kfree(arg_org);
 
-	if (buf)
-		kfree(buf);
+	kfree(buf);
 }
 
 void dhd_arp_offload_set(dhd_pub_t *dhd, int arp_mode)
@@ -1242,7 +1184,7 @@ int dhd_preinit_ioctls(dhd_pub_t *dhd)
 	int scan_unassoc_time = 40;
 #ifdef GET_CUSTOM_MAC_ENABLE
 	int ret = 0;
-	struct ether_addr ea_addr;
+	u8 ea_addr[ETH_ALEN];
 #endif				/* GET_CUSTOM_MAC_ENABLE */
 
 	dhd_os_proto_block(dhd);
@@ -1254,9 +1196,9 @@ int dhd_preinit_ioctls(dhd_pub_t *dhd)
 	 ** firmware but unique per board mac address maybe provided by
 	 ** customer code
 	 */
-	ret = dhd_custom_get_mac_address(ea_addr.octet);
+	ret = dhd_custom_get_mac_address(ea_addr);
 	if (!ret) {
-		bcm_mkiovar("cur_etheraddr", (void *)&ea_addr, ETH_ALEN,
+		bcm_mkiovar("cur_etheraddr", (void *)ea_addr, ETH_ALEN,
 			    buf, sizeof(buf));
 		ret = dhdcdc_set_ioctl(dhd, 0, WLC_SET_VAR, buf, sizeof(buf));
 		if (ret < 0) {
@@ -1478,8 +1420,7 @@ int dhd_iscan_print_cache(iscan_buf_t *iscan_skip)
 				   bi->BSSID.octet[2], bi->BSSID.octet[3],
 				   bi->BSSID.octet[4], bi->BSSID.octet[5]));
 
-			bi = (wl_bss_info_t *)((unsigned long)bi +
-						dtoh32(bi->length));
+			bi = (wl_bss_info_t *)((unsigned long)bi + bi->length);
 		}
 		iscan_cur = iscan_cur->next;
 		l++;
@@ -1543,18 +1484,16 @@ int dhd_iscan_delete_bss(void *dhdp, void *addr, iscan_buf_t *iscan_skip)
 					bi->BSSID.octet[5]));
 
 					bi_new = bi;
-					bi = (wl_bss_info_t *)((unsigned long)bi +
-								dtoh32
-								(bi->length));
+					bi = (wl_bss_info_t *)((unsigned long)
+							       bi + bi->length);
 /*
 			if(bi && bi_new) {
-				bcopy(bi, bi_new, results->buflen -
-				dtoh32(bi_new->length));
-				results->buflen -= dtoh32(bi_new->length);
+				memcpy(bi_new, bi, results->buflen -
+				bi_new->length);
+				results->buflen -= bi_new->length;
 			}
 */
-					results->buflen -=
-					    dtoh32(bi_new->length);
+					results->buflen -= bi_new->length;
 					results->count--;
 
 					for (j = i; j < results->count; j++) {
@@ -1570,16 +1509,13 @@ int dhd_iscan_delete_bss(void *dhdp, void *addr, iscan_buf_t *iscan_skip)
 
 							bi_next =
 							    (wl_bss_info_t *)((unsigned long)bi +
-								 dtoh32
-								 (bi->length));
-							bcopy(bi, bi_new,
-							      dtoh32
-							      (bi->length));
+								 bi->length);
+							memcpy(bi_new, bi,
+							      bi->length);
 							bi_new =
 							    (wl_bss_info_t *)((unsigned long)bi_new +
-								 dtoh32
-								 (bi_new->
-								  length));
+								 bi_new->
+								  length);
 							bi = bi_next;
 						}
 					}
@@ -1594,7 +1530,7 @@ int dhd_iscan_delete_bss(void *dhdp, void *addr, iscan_buf_t *iscan_skip)
 					break;
 				}
 				bi = (wl_bss_info_t *)((unsigned long)bi +
-							dtoh32(bi->length));
+							bi->length);
 			}
 		}
 		iscan_cur = iscan_cur->next;
@@ -1648,7 +1584,7 @@ int dhd_iscan_remove_duplicates(void *dhdp, iscan_buf_t *iscan_cur)
 
 		dhd_iscan_delete_bss(dhdp, bi->BSSID.octet, iscan_cur);
 
-		bi = (wl_bss_info_t *)((unsigned long)bi + dtoh32(bi->length));
+		bi = (wl_bss_info_t *)((unsigned long)bi + bi->length);
 	}
 
 done:
@@ -1677,15 +1613,15 @@ int dhd_iscan_request(void *dhdp, u16 action)
 	params.params.bss_type = DOT11_BSSTYPE_ANY;
 	params.params.scan_type = DOT11_SCANTYPE_ACTIVE;
 
-	params.params.nprobes = htod32(-1);
-	params.params.active_time = htod32(-1);
-	params.params.passive_time = htod32(-1);
-	params.params.home_time = htod32(-1);
-	params.params.channel_num = htod32(0);
+	params.params.nprobes = -1;
+	params.params.active_time = -1;
+	params.params.passive_time = -1;
+	params.params.home_time = -1;
+	params.params.channel_num = 0;
 
-	params.version = htod32(ISCAN_REQ_VERSION);
-	params.action = htod16(action);
-	params.scan_duration = htod16(0);
+	params.version = ISCAN_REQ_VERSION;
+	params.action = action;
+	params.scan_duration = 0;
 
 	bcm_mkiovar("iscan", (char *)&params, sizeof(wl_iscan_params_t), buf,
 		    WLC_IOCTL_SMLEN);
@@ -1722,16 +1658,16 @@ static int dhd_iscan_get_partial_result(void *dhdp, uint *scan_count)
 	results->count = 0;
 
 	memset(&list, 0, sizeof(list));
-	list.results.buflen = htod32(WLC_IW_ISCAN_MAXLEN);
+	list.results.buflen = WLC_IW_ISCAN_MAXLEN;
 	bcm_mkiovar("iscanresults", (char *)&list, WL_ISCAN_RESULTS_FIXED_SIZE,
 		    iscan_cur->iscan_buf, WLC_IW_ISCAN_MAXLEN);
 	rc = dhd_wl_ioctl(dhdp, WLC_GET_VAR, iscan_cur->iscan_buf,
 			  WLC_IW_ISCAN_MAXLEN);
 
-	results->buflen = dtoh32(results->buflen);
-	results->version = dtoh32(results->version);
-	*scan_count = results->count = dtoh32(results->count);
-	status = dtoh32(list_buf->status);
+	results->buflen = results->buflen;
+	results->version = results->version;
+	*scan_count = results->count = results->count;
+	status = list_buf->status;
 
 	dhd_iscan_unlock();
 
@@ -1854,12 +1790,12 @@ dhd_pno_set(dhd_pub_t *dhd, wlc_ssid_t *ssids_local, int nssid, unsigned char sc
 	memset(&pfn_element, 0, sizeof(pfn_element));
 
 	/* set pfn parameters */
-	pfn_param.version = htod32(PFN_VERSION);
-	pfn_param.flags = htod16((PFN_LIST_ORDER << SORT_CRITERIA_BIT));
+	pfn_param.version = PFN_VERSION;
+	pfn_param.flags = (PFN_LIST_ORDER << SORT_CRITERIA_BIT);
 
 	/* set up pno scan fr */
 	if (scan_fr != 0)
-		pfn_param.scan_freq = htod32(scan_fr);
+		pfn_param.scan_freq = scan_fr;
 
 	bcm_mkiovar("pfn_set", (char *)&pfn_param, sizeof(pfn_param), iovbuf,
 		    sizeof(iovbuf));
@@ -1868,11 +1804,11 @@ dhd_pno_set(dhd_pub_t *dhd, wlc_ssid_t *ssids_local, int nssid, unsigned char sc
 	/* set all pfn ssid */
 	for (i = 0; i < nssid; i++) {
 
-		pfn_element.bss_type = htod32(DOT11_BSSTYPE_INFRASTRUCTURE);
-		pfn_element.auth = (DOT11_OPEN_SYSTEM);
-		pfn_element.wpa_auth = htod32(WPA_AUTH_PFN_ANY);
-		pfn_element.wsec = htod32(0);
-		pfn_element.infra = htod32(1);
+		pfn_element.bss_type = DOT11_BSSTYPE_INFRASTRUCTURE;
+		pfn_element.auth = WLAN_AUTH_OPEN;
+		pfn_element.wpa_auth = WPA_AUTH_PFN_ANY;
+		pfn_element.wsec = 0;
+		pfn_element.infra = 1;
 
 		memcpy((char *)pfn_element.ssid.SSID, ssids_local[i].SSID,
 		       ssids_local[i].SSID_len);

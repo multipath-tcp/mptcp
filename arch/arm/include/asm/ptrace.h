@@ -128,9 +128,13 @@ struct pt_regs {
 #define ARM_r0		uregs[0]
 #define ARM_ORIG_r0	uregs[17]
 
-#ifdef __KERNEL__
+/*
+ * The size of the user-visible VFP state as seen by PTRACE_GET/SETVFPREGS
+ * and core dumps.
+ */
+#define ARM_VFPREGS_SIZE ( 32 * 8 /*fpregs*/ + 4 /*fpscr*/ )
 
-#define arch_has_single_step()	(1)
+#ifdef __KERNEL__
 
 #define user_mode(regs)	\
 	(((regs)->ARM_cpsr & 0xf) == 0)

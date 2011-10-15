@@ -33,6 +33,7 @@
 #include <linux/io.h>
 #include <linux/gpio.h>
 #include <linux/slab.h>
+#include <linux/pm_runtime.h>
 
 /*
  * Langwell chip has 64 pins and thus there are 2 32bit registers to control
@@ -63,6 +64,7 @@ struct lnw_gpio {
 	void				*reg_base;
 	spinlock_t			lock;
 	unsigned			irq_base;
+	struct pci_dev			*pdev;
 };
 
 static void __iomem *gpio_reg(struct gpio_chip *chip, unsigned offset,
@@ -104,11 +106,18 @@ static int lnw_gpio_direction_input(struct gpio_chip *chip, unsigned offset)
 	u32 value;
 	unsigned long flags;
 
+	if (lnw->pdev)
+		pm_runtime_get(&lnw->pdev->dev);
+
 	spin_lock_irqsave(&lnw->lock, flags);
 	value = readl(gpdr);
 	value &= ~BIT(offset % 32);
 	writel(value, gpdr);
 	spin_unlock_irqrestore(&lnw->lock, flags);
+
+	if (lnw->pdev)
+		pm_runtime_put(&lnw->pdev->dev);
+
 	return 0;
 }
 
@@ -120,11 +129,19 @@ static int lnw_gpio_direction_output(struct gpio_chip *chip,
 	unsigned long flags;
 
 	lnw_gpio_set(chip, offset, value);
+
+	if (lnw->pdev)
+		pm_runtime_get(&lnw->pdev->dev);
+
 	spin_lock_irqsave(&lnw->lock, flags);
 	value = readl(gpdr);
-	value |= BIT(offset % 32);;
+	value |= BIT(offset % 32);
 	writel(value, gpdr);
 	spin_unlock_irqrestore(&lnw->lock, flags);
+
+	if (lnw->pdev)
+		pm_runtime_put(&lnw->pdev->dev);
+
 	return 0;
 }
 
@@ -145,6 +162,10 @@ static int lnw_irq_type(struct irq_data *d, unsigned type)
 
 	if (gpio >= lnw->chip.ngpio)
 		return -EINVAL;
+
+	if (lnw->pdev)
+		pm_runtime_get(&lnw->pdev->dev);
+
 	spin_lock_irqsave(&lnw->lock, flags);
 	if (type & IRQ_TYPE_EDGE_RISING)
 		value = readl(grer) | BIT(gpio % 32);
@@ -158,6 +179,9 @@ static int lnw_irq_type(struct irq_data *d, unsigned type)
 		value = readl(gfer) & (~BIT(gpio % 32));
 	writel(value, gfer);
 	spin_unlock_irqrestore(&lnw->lock, flags);
+
+	if (lnw->pdev)
+		pm_runtime_put(&lnw->pdev->dev);
 
 	return 0;
 }
@@ -187,32 +211,62 @@ MODULE_DEVICE_TABLE(pci, lnw_gpio_ids);
 
 static void lnw_irq_handler(unsigned irq, struct irq_desc *desc)
 {
-	struct lnw_gpio *lnw = get_irq_data(irq);
-	u32 base, gpio;
+	struct irq_data *data = irq_desc_get_irq_data(desc);
+	struct lnw_gpio *lnw = irq_data_get_irq_handler_data(data);
+	struct irq_chip *chip = irq_data_get_irq_chip(data);
+	u32 base, gpio, mask;
+	unsigned long pending;
 	void __iomem *gedr;
-	u32 gedr_v;
 
 	/* check GPIO controller to check which pin triggered the interrupt */
 	for (base = 0; base < lnw->chip.ngpio; base += 32) {
 		gedr = gpio_reg(&lnw->chip, base, GEDR);
-		gedr_v = readl(gedr);
-		if (!gedr_v)
-			continue;
-		for (gpio = base; gpio < base + 32; gpio++)
-			if (gedr_v & BIT(gpio % 32)) {
-				pr_debug("pin %d triggered\n", gpio);
-				generic_handle_irq(lnw->irq_base + gpio);
-			}
-		/* clear the edge detect status bit */
-		writel(gedr_v, gedr);
+		pending = readl(gedr);
+		while (pending) {
+			gpio = __ffs(pending);
+			mask = BIT(gpio);
+			pending &= ~mask;
+			/* Clear before handling so we can't lose an edge */
+			writel(mask, gedr);
+			generic_handle_irq(lnw->irq_base + base + gpio);
+		}
 	}
 
-	if (desc->chip->irq_eoi)
-		desc->chip->irq_eoi(irq_get_irq_data(irq));
-	else
-		dev_warn(lnw->chip.dev, "missing EOI handler for irq %d\n", irq);
-
+	chip->irq_eoi(data);
 }
+
+#ifdef CONFIG_PM
+static int lnw_gpio_runtime_resume(struct device *dev)
+{
+	return 0;
+}
+
+static int lnw_gpio_runtime_suspend(struct device *dev)
+{
+	return 0;
+}
+
+static int lnw_gpio_runtime_idle(struct device *dev)
+{
+	int err = pm_schedule_suspend(dev, 500);
+
+	if (!err)
+		return 0;
+
+	return -EBUSY;
+}
+
+#else
+#define lnw_gpio_runtime_suspend	NULL
+#define lnw_gpio_runtime_resume		NULL
+#define lnw_gpio_runtime_idle		NULL
+#endif
+
+static const struct dev_pm_ops lnw_gpio_pm_ops = {
+	.runtime_suspend = lnw_gpio_runtime_suspend,
+	.runtime_resume = lnw_gpio_runtime_resume,
+	.runtime_idle = lnw_gpio_runtime_idle,
+};
 
 static int __devinit lnw_gpio_probe(struct pci_dev *pdev,
 			const struct pci_device_id *id)
@@ -273,21 +327,26 @@ static int __devinit lnw_gpio_probe(struct pci_dev *pdev,
 	lnw->chip.base = gpio_base;
 	lnw->chip.ngpio = id->driver_data;
 	lnw->chip.can_sleep = 0;
+	lnw->pdev = pdev;
 	pci_set_drvdata(pdev, lnw);
 	retval = gpiochip_add(&lnw->chip);
 	if (retval) {
 		dev_err(&pdev->dev, "langwell gpiochip_add error %d\n", retval);
 		goto err5;
 	}
-	set_irq_data(pdev->irq, lnw);
-	set_irq_chained_handler(pdev->irq, lnw_irq_handler);
+	irq_set_handler_data(pdev->irq, lnw);
+	irq_set_chained_handler(pdev->irq, lnw_irq_handler);
 	for (i = 0; i < lnw->chip.ngpio; i++) {
-		set_irq_chip_and_handler_name(i + lnw->irq_base, &lnw_irqchip,
-					handle_simple_irq, "demux");
-		set_irq_chip_data(i + lnw->irq_base, lnw);
+		irq_set_chip_and_handler_name(i + lnw->irq_base, &lnw_irqchip,
+					      handle_simple_irq, "demux");
+		irq_set_chip_data(i + lnw->irq_base, lnw);
 	}
 
 	spin_lock_init(&lnw->lock);
+
+	pm_runtime_put_noidle(&pdev->dev);
+	pm_runtime_allow(&pdev->dev);
+
 	goto done;
 err5:
 	kfree(lnw);
@@ -305,6 +364,9 @@ static struct pci_driver lnw_gpio_driver = {
 	.name		= "langwell_gpio",
 	.id_table	= lnw_gpio_ids,
 	.probe		= lnw_gpio_probe,
+	.driver		= {
+		.pm	= &lnw_gpio_pm_ops,
+	},
 };
 
 

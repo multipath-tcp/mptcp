@@ -17,13 +17,11 @@
 
 ccflags-y :=			\
 	-DARP_OFFLOAD_SUPPORT	\
-	-DBCMDBG		\
 	-DBCMLXSDMMC		\
 	-DBCMPLATFORM_BUS	\
 	-DBCMSDIO		\
 	-DBDC			\
 	-DBRCM_FULLMAC		\
-	-DDHD_DEBUG		\
 	-DDHD_FIRSTREAD=64	\
 	-DDHD_SCHED		\
 	-DDHD_SDALIGN=64	\
@@ -32,16 +30,27 @@ ccflags-y :=			\
 	-DMMC_SDIO_ABORT	\
 	-DPKT_FILTER_SUPPORT	\
 	-DSHOW_EVENTS		\
-	-DTOE			\
-	-Idrivers/staging/brcm80211/brcmfmac		\
-	-Idrivers/staging/brcm80211/include		\
-	-Idrivers/staging/brcm80211/util
+	-DTOE
 
-DHDOFILES = dhd_linux.o ../util/linux_osl.o ../util/bcmutils.o dhd_common.o dhd_custom_gpio.o	\
-	wl_iw.o wl_cfg80211.o ../util/siutils.o ../util/sbutils.o ../util/aiutils.o ../util/hndpmu.o ../util/bcmwifi.o dhd_sdio.o	\
-	dhd_linux_sched.o dhd_cdc.o bcmsdh_sdmmc.o bcmsdh.o bcmsdh_linux.o	\
+ccflags-$(CONFIG_BRCMDBG)	+= -DDHD_DEBUG
+
+ccflags-y += \
+	-Idrivers/staging/brcm80211/brcmfmac	\
+	-Idrivers/staging/brcm80211/include
+
+DHDOFILES = \
+	wl_cfg80211.o \
+	wl_iw.o \
+	dhd_cdc.o \
+	dhd_common.o \
+	dhd_custom_gpio.o \
+	dhd_sdio.o	\
+	dhd_linux.o \
+	dhd_linux_sched.o \
+	bcmsdh.o \
+	bcmsdh_linux.o	\
+	bcmsdh_sdmmc.o \
 	bcmsdh_sdmmc_linux.o
 
-obj-m += brcmfmac.o
+obj-$(CONFIG_BRCMFMAC) += brcmfmac.o
 brcmfmac-objs += $(DHDOFILES)
-

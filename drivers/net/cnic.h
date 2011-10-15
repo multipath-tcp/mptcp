@@ -220,12 +220,13 @@ struct cnic_local {
 #define ULP_F_INIT	0
 #define ULP_F_START	1
 #define ULP_F_CALL_PENDING	2
-	struct cnic_ulp_ops *ulp_ops[MAX_CNIC_ULP_TYPE];
+	struct cnic_ulp_ops __rcu *ulp_ops[MAX_CNIC_ULP_TYPE];
 
 	unsigned long cnic_local_flags;
 #define	CNIC_LCL_FL_KWQ_INIT		0x0
 #define	CNIC_LCL_FL_L2_WAIT		0x1
 #define	CNIC_LCL_FL_RINGS_INITED	0x2
+#define	CNIC_LCL_FL_STOP_ISCSI		0x4
 
 	struct cnic_dev *dev;
 

@@ -36,6 +36,13 @@ static void ceph_vmtruncate_work(struct work_struct *work);
 /*
  * find or create an inode, given the ceph ino number
  */
+static int ceph_set_ino_cb(struct inode *inode, void *data)
+{
+	ceph_inode(inode)->i_vino = *(struct ceph_vino *)data;
+	inode->i_ino = ceph_vino_to_ino(*(struct ceph_vino *)data);
+	return 0;
+}
+
 struct inode *ceph_get_inode(struct super_block *sb, struct ceph_vino vino)
 {
 	struct inode *inode;
@@ -348,6 +355,7 @@ struct inode *ceph_alloc_inode(struct super_block *sb)
 	ci->i_rd_ref = 0;
 	ci->i_rdcache_ref = 0;
 	ci->i_wr_ref = 0;
+	ci->i_wb_ref = 0;
 	ci->i_wrbuffer_ref = 0;
 	ci->i_wrbuffer_ref_head = 0;
 	ci->i_shared_gen = 0;
@@ -1030,9 +1038,6 @@ int ceph_fill_trace(struct super_block *sb, struct ceph_mds_request *req,
 			dout("fill_trace doing d_move %p -> %p\n",
 			     req->r_old_dentry, dn);
 
-			/* d_move screws up d_subdirs order */
-			ceph_i_clear(dir, CEPH_I_COMPLETE);
-
 			d_move(req->r_old_dentry, dn);
 			dout(" src %p '%.*s' dst %p '%.*s'\n",
 			     req->r_old_dentry,
@@ -1044,12 +1049,15 @@ int ceph_fill_trace(struct super_block *sb, struct ceph_mds_request *req,
 			   rehashing bug in vfs_rename_dir */
 			ceph_invalidate_dentry_lease(dn);
 
-			/* take overwritten dentry's readdir offset */
-			dout("dn %p gets %p offset %lld (old offset %lld)\n",
-			     req->r_old_dentry, dn, ceph_dentry(dn)->offset,
+			/*
+			 * d_move() puts the renamed dentry at the end of
+			 * d_subdirs.  We need to assign it an appropriate
+			 * directory offset so we can behave when holding
+			 * I_COMPLETE.
+			 */
+			ceph_set_dentry_offset(req->r_old_dentry);
+			dout("dn %p gets new offset %lld\n", req->r_old_dentry, 
 			     ceph_dentry(req->r_old_dentry)->offset);
-			ceph_dentry(req->r_old_dentry)->offset =
-				ceph_dentry(dn)->offset;
 
 			dn = req->r_old_dentry;  /* use old_dentry */
 			in = dn->d_inode;
@@ -1093,10 +1101,10 @@ int ceph_fill_trace(struct super_block *sb, struct ceph_mds_request *req,
 				goto done;
 			}
 			req->r_dentry = dn;  /* may have spliced */
-			igrab(in);
+			ihold(in);
 		} else if (ceph_ino(in) == vino.ino &&
 			   ceph_snap(in) == vino.snap) {
-			igrab(in);
+			ihold(in);
 		} else {
 			dout(" %p links to %p %llx.%llx, not %llx.%llx\n",
 			     dn, in, ceph_ino(in), ceph_snap(in),
@@ -1136,7 +1144,7 @@ int ceph_fill_trace(struct super_block *sb, struct ceph_mds_request *req,
 			goto done;
 		}
 		req->r_dentry = dn;  /* may have spliced */
-		igrab(in);
+		ihold(in);
 		rinfo->head->is_dentry = 1;  /* fool notrace handlers */
 	}
 
@@ -1320,7 +1328,7 @@ void ceph_queue_writeback(struct inode *inode)
 	if (queue_work(ceph_inode_to_client(inode)->wb_wq,
 		       &ceph_inode(inode)->i_wb_work)) {
 		dout("ceph_queue_writeback %p\n", inode);
-		igrab(inode);
+		ihold(inode);
 	} else {
 		dout("ceph_queue_writeback %p failed\n", inode);
 	}
@@ -1345,7 +1353,7 @@ void ceph_queue_invalidate(struct inode *inode)
 	if (queue_work(ceph_inode_to_client(inode)->pg_inv_wq,
 		       &ceph_inode(inode)->i_pg_inv_work)) {
 		dout("ceph_queue_invalidate %p\n", inode);
-		igrab(inode);
+		ihold(inode);
 	} else {
 		dout("ceph_queue_invalidate %p failed\n", inode);
 	}
@@ -1469,7 +1477,7 @@ void ceph_queue_vmtruncate(struct inode *inode)
 	if (queue_work(ceph_sb_to_client(inode->i_sb)->trunc_wq,
 		       &ci->i_vmtruncate_work)) {
 		dout("ceph_queue_vmtruncate %p\n", inode);
-		igrab(inode);
+		ihold(inode);
 	} else {
 		dout("ceph_queue_vmtruncate %p failed, pending=%d\n",
 		     inode, ci->i_truncate_pending);
@@ -1560,6 +1568,7 @@ int ceph_setattr(struct dentry *dentry, struct iattr *attr)
 	int release = 0, dirtied = 0;
 	int mask = 0;
 	int err = 0;
+	int inode_dirty_flags = 0;
 
 	if (ceph_snap(inode) != CEPH_NOSNAP)
 		return -EROFS;
@@ -1718,15 +1727,19 @@ int ceph_setattr(struct dentry *dentry, struct iattr *attr)
 		dout("setattr %p ATTR_FILE ... hrm!\n", inode);
 
 	if (dirtied) {
-		__ceph_mark_dirty_caps(ci, dirtied);
+		inode_dirty_flags = __ceph_mark_dirty_caps(ci, dirtied);
 		inode->i_ctime = CURRENT_TIME;
 	}
 
 	release &= issued;
 	spin_unlock(&inode->i_lock);
 
+	if (inode_dirty_flags)
+		__mark_inode_dirty(inode, inode_dirty_flags);
+
 	if (mask) {
-		req->r_inode = igrab(inode);
+		req->r_inode = inode;
+		ihold(inode);
 		req->r_inode_drop = release;
 		req->r_args.setattr.mask = cpu_to_le32(mask);
 		req->r_num_caps = 1;
@@ -1767,7 +1780,8 @@ int ceph_do_getattr(struct inode *inode, int mask)
 	req = ceph_mdsc_create_request(mdsc, CEPH_MDS_OP_GETATTR, USE_ANY_MDS);
 	if (IS_ERR(req))
 		return PTR_ERR(req);
-	req->r_inode = igrab(inode);
+	req->r_inode = inode;
+	ihold(inode);
 	req->r_num_caps = 1;
 	req->r_args.getattr.mask = cpu_to_le32(mask);
 	err = ceph_mdsc_do_request(mdsc, NULL, req);
@@ -1809,7 +1823,7 @@ int ceph_getattr(struct vfsmount *mnt, struct dentry *dentry,
 	err = ceph_do_getattr(inode, CEPH_STAT_CAP_INODE_ALL);
 	if (!err) {
 		generic_fillattr(inode, stat);
-		stat->ino = inode->i_ino;
+		stat->ino = ceph_translate_ino(inode->i_sb, inode->i_ino);
 		if (ceph_snap(inode) != CEPH_NOSNAP)
 			stat->dev = ceph_snap(inode);
 		else

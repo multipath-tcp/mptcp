@@ -210,14 +210,9 @@
 /* Initial values */
 #define	AR5K_INIT_CYCRSSI_THR1			2
 
-/* Tx retry limits */
-#define AR5K_INIT_SH_RETRY			10
-#define AR5K_INIT_LG_RETRY			AR5K_INIT_SH_RETRY
-/* For station mode */
-#define AR5K_INIT_SSH_RETRY			32
-#define AR5K_INIT_SLG_RETRY			AR5K_INIT_SSH_RETRY
-#define AR5K_INIT_TX_RETRY			10
-
+/* Tx retry limit defaults from standard */
+#define AR5K_INIT_RETRY_SHORT			7
+#define AR5K_INIT_RETRY_LONG			4
 
 /* Slot time */
 #define AR5K_INIT_SLOT_TIME_TURBO		6
@@ -229,8 +224,7 @@
 
 /* SIFS */
 #define	AR5K_INIT_SIFS_TURBO			6
-/* XXX: 8 from initvals 10 from standard */
-#define	AR5K_INIT_SIFS_DEFAULT_BG		8
+#define	AR5K_INIT_SIFS_DEFAULT_BG		10
 #define	AR5K_INIT_SIFS_DEFAULT_A		16
 #define	AR5K_INIT_SIFS_HALF_RATE		32
 #define AR5K_INIT_SIFS_QUARTER_RATE		64
@@ -458,12 +452,10 @@ struct ath5k_tx_status {
 	u16	ts_seqnum;
 	u16	ts_tstamp;
 	u8	ts_status;
-	u8	ts_rate[4];
-	u8	ts_retry[4];
 	u8	ts_final_idx;
+	u8	ts_final_retry;
 	s8	ts_rssi;
 	u8	ts_shortretry;
-	u8	ts_longretry;
 	u8	ts_virtcol;
 	u8	ts_antenna;
 };
@@ -518,7 +510,7 @@ enum ath5k_tx_queue_id {
 	AR5K_TX_QUEUE_ID_NOQCU_DATA	= 0,
 	AR5K_TX_QUEUE_ID_NOQCU_BEACON	= 1,
 	AR5K_TX_QUEUE_ID_DATA_MIN	= 0, /*IEEE80211_TX_QUEUE_DATA0*/
-	AR5K_TX_QUEUE_ID_DATA_MAX	= 4, /*IEEE80211_TX_QUEUE_DATA4*/
+	AR5K_TX_QUEUE_ID_DATA_MAX	= 3, /*IEEE80211_TX_QUEUE_DATA3*/
 	AR5K_TX_QUEUE_ID_DATA_SVP	= 5, /*IEEE80211_TX_QUEUE_SVP - Spectralink Voice Protocol*/
 	AR5K_TX_QUEUE_ID_CAB		= 6, /*IEEE80211_TX_QUEUE_AFTER_BEACON*/
 	AR5K_TX_QUEUE_ID_BEACON		= 7, /*IEEE80211_TX_QUEUE_BEACON*/
@@ -880,6 +872,19 @@ enum ath5k_int {
 	AR5K_INT_QTRIG	=	0x40000000, /* Non common */
 	AR5K_INT_GLOBAL =	0x80000000,
 
+	AR5K_INT_TX_ALL = AR5K_INT_TXOK
+		| AR5K_INT_TXDESC
+		| AR5K_INT_TXERR
+		| AR5K_INT_TXEOL
+		| AR5K_INT_TXURN,
+
+	AR5K_INT_RX_ALL = AR5K_INT_RXOK
+		| AR5K_INT_RXDESC
+		| AR5K_INT_RXERR
+		| AR5K_INT_RXNOFRM
+		| AR5K_INT_RXEOL
+		| AR5K_INT_RXORN,
+
 	AR5K_INT_COMMON  = AR5K_INT_RXOK
 		| AR5K_INT_RXDESC
 		| AR5K_INT_RXERR
@@ -1057,17 +1062,19 @@ struct ath5k_hw {
 #define ah_modes		ah_capabilities.cap_mode
 #define ah_ee_version		ah_capabilities.cap_eeprom.ee_version
 
-	u32			ah_limit_tx_retries;
+	u8			ah_retry_long;
+	u8			ah_retry_short;
+
 	u8			ah_coverage_class;
 	bool			ah_ack_bitrate_high;
 	u8			ah_bwmode;
+	bool			ah_short_slot;
 
 	/* Antenna Control */
 	u32			ah_ant_ctl[AR5K_EEPROM_N_MODES][AR5K_ANT_MAX];
 	u8			ah_ant_mode;
 	u8			ah_tx_ant;
 	u8			ah_def_ant;
-	bool			ah_software_retry;
 
 	struct ath5k_capabilities ah_capabilities;
 
@@ -1148,6 +1155,13 @@ struct ath5k_hw {
 		struct ath5k_rx_status *);
 };
 
+struct ath_bus_ops {
+	enum ath_bus_type ath_bus_type;
+	void (*read_cachesize)(struct ath_common *common, int *csz);
+	bool (*eeprom_read)(struct ath_common *common, u32 off, u16 *data);
+	int (*eeprom_read_mac)(struct ath5k_hw *ah, u8 *mac);
+};
+
 /*
  * Prototypes
  */
@@ -1161,6 +1175,26 @@ void ath5k_hw_deinit(struct ath5k_hw *ah);
 
 int ath5k_sysfs_register(struct ath5k_softc *sc);
 void ath5k_sysfs_unregister(struct ath5k_softc *sc);
+
+/* base.c */
+struct ath5k_buf;
+struct ath5k_txq;
+
+void set_beacon_filter(struct ieee80211_hw *hw, bool enable);
+bool ath_any_vif_assoc(struct ath5k_softc *sc);
+void ath5k_tx_queue(struct ieee80211_hw *hw, struct sk_buff *skb,
+		    struct ath5k_txq *txq);
+int ath5k_init_hw(struct ath5k_softc *sc);
+int ath5k_stop_hw(struct ath5k_softc *sc);
+void ath5k_mode_setup(struct ath5k_softc *sc, struct ieee80211_vif *vif);
+void ath5k_update_bssid_mask_and_opmode(struct ath5k_softc *sc,
+					struct ieee80211_vif *vif);
+int ath5k_chan_set(struct ath5k_softc *sc, struct ieee80211_channel *chan);
+void ath5k_beacon_update_timers(struct ath5k_softc *sc, u64 bc_tsf);
+int ath5k_beacon_update(struct ieee80211_hw *hw, struct ieee80211_vif *vif);
+void ath5k_beacon_config(struct ath5k_softc *sc);
+void ath5k_txbuf_free_skb(struct ath5k_softc *sc, struct ath5k_buf *bf);
+void ath5k_rxbuf_free_skb(struct ath5k_softc *sc, struct ath5k_buf *bf);
 
 /*Chip id helper functions */
 const char *ath5k_chip_name(enum ath5k_srev_type type, u_int16_t val);
@@ -1211,13 +1245,12 @@ int ath5k_hw_dma_stop(struct ath5k_hw *ah);
 /* EEPROM access functions */
 int ath5k_eeprom_init(struct ath5k_hw *ah);
 void ath5k_eeprom_detach(struct ath5k_hw *ah);
-int ath5k_eeprom_read_mac(struct ath5k_hw *ah, u8 *mac);
 
 
 /* Protocol Control Unit Functions */
 /* Helpers */
 int ath5k_hw_get_frame_duration(struct ath5k_hw *ah,
-		int len, struct ieee80211_rate *rate);
+		int len, struct ieee80211_rate *rate, bool shortpre);
 unsigned int ath5k_hw_get_default_slottime(struct ath5k_hw *ah);
 unsigned int ath5k_hw_get_default_sifs(struct ath5k_hw *ah);
 extern int ath5k_hw_set_opmode(struct ath5k_hw *ah, enum nl80211_iftype opmode);
@@ -1250,6 +1283,8 @@ int ath5k_hw_set_tx_queueprops(struct ath5k_hw *ah, int queue,
 int ath5k_hw_setup_tx_queue(struct ath5k_hw *ah,
 			    enum ath5k_tx_queue queue_type,
 			    struct ath5k_txq_info *queue_info);
+void ath5k_hw_set_tx_retry_limits(struct ath5k_hw *ah,
+				  unsigned int queue);
 u32 ath5k_hw_num_tx_pending(struct ath5k_hw *ah, unsigned int queue);
 void ath5k_hw_release_tx_queue(struct ath5k_hw *ah, unsigned int queue);
 int ath5k_hw_reset_tx_queue(struct ath5k_hw *ah, unsigned int queue);

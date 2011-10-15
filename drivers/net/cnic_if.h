@@ -12,8 +12,8 @@
 #ifndef CNIC_IF_H
 #define CNIC_IF_H
 
-#define CNIC_MODULE_VERSION	"2.2.12"
-#define CNIC_MODULE_RELDATE	"Jan 03, 2011"
+#define CNIC_MODULE_VERSION	"2.2.14"
+#define CNIC_MODULE_RELDATE	"Mar 30, 2011"
 
 #define CNIC_ULP_RDMA		0
 #define CNIC_ULP_ISCSI		1
@@ -85,6 +85,7 @@ struct kcqe {
 #define CNIC_CTL_STOP_CMD		1
 #define CNIC_CTL_START_CMD		2
 #define CNIC_CTL_COMPLETION_CMD		3
+#define CNIC_CTL_STOP_ISCSI_CMD		4
 
 #define DRV_CTL_IO_WR_CMD		0x101
 #define DRV_CTL_IO_RD_CMD		0x102
@@ -94,6 +95,7 @@ struct kcqe {
 #define DRV_CTL_START_L2_CMD		0x106
 #define DRV_CTL_STOP_L2_CMD		0x107
 #define DRV_CTL_RET_L2_SPQ_CREDIT_CMD	0x10c
+#define DRV_CTL_ISCSI_STOPPED_CMD	0x10d
 
 struct cnic_ctl_completion {
 	u32	cid;
@@ -159,6 +161,9 @@ struct cnic_eth_dev {
 	u32		drv_state;
 #define CNIC_DRV_STATE_REGD		0x00000001
 #define CNIC_DRV_STATE_USING_MSIX	0x00000002
+#define CNIC_DRV_STATE_NO_ISCSI_OOO	0x00000004
+#define CNIC_DRV_STATE_NO_ISCSI		0x00000008
+#define CNIC_DRV_STATE_NO_FCOE		0x00000010
 	u32		chip_id;
 	u32		max_kwqe_pending;
 	struct pci_dev	*pdev;
@@ -176,6 +181,7 @@ struct cnic_eth_dev {
 	u32		fcoe_init_cid;
 	u16		iscsi_l2_client_id;
 	u16		iscsi_l2_cid;
+	u8		iscsi_mac[ETH_ALEN];
 
 	int		num_irq;
 	struct cnic_irq	irq_arr[MAX_CNIC_VEC];

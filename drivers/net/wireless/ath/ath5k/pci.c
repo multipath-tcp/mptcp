@@ -17,6 +17,7 @@
 #include <linux/nl80211.h>
 #include <linux/pci.h>
 #include <linux/pci-aspm.h>
+#include <linux/etherdevice.h>
 #include "../ath.h"
 #include "ath5k.h"
 #include "debug.h"
@@ -57,7 +58,7 @@ static void ath5k_pci_read_cachesize(struct ath_common *common, int *csz)
 	*csz = (int)u8tmp;
 
 	/*
-	 * This check was put in to avoid "unplesant" consequences if
+	 * This check was put in to avoid "unpleasant" consequences if
 	 * the bootrom has not fully initialized all PCI devices.
 	 * Sometimes the cache line size register is not set
 	 */
@@ -69,7 +70,8 @@ static void ath5k_pci_read_cachesize(struct ath_common *common, int *csz)
 /*
  * Read from eeprom
  */
-bool ath5k_pci_eeprom_read(struct ath_common *common, u32 offset, u16 *data)
+static bool
+ath5k_pci_eeprom_read(struct ath_common *common, u32 offset, u16 *data)
 {
 	struct ath5k_hw *ah = (struct ath5k_hw *) common->ah;
 	u32 status, timeout;
@@ -90,15 +92,15 @@ bool ath5k_pci_eeprom_read(struct ath_common *common, u32 offset, u16 *data)
 		status = ath5k_hw_reg_read(ah, AR5K_EEPROM_STATUS);
 		if (status & AR5K_EEPROM_STAT_RDDONE) {
 			if (status & AR5K_EEPROM_STAT_RDERR)
-				return -EIO;
+				return false;
 			*data = (u16)(ath5k_hw_reg_read(ah, AR5K_EEPROM_DATA) &
 					0xffff);
-			return 0;
+			return true;
 		}
 		udelay(15);
 	}
 
-	return -ETIMEDOUT;
+	return false;
 }
 
 int ath5k_hw_read_srev(struct ath5k_hw *ah)
@@ -107,11 +109,42 @@ int ath5k_hw_read_srev(struct ath5k_hw *ah)
 	return 0;
 }
 
+/*
+ * Read the MAC address from eeprom or platform_data
+ */
+static int ath5k_pci_eeprom_read_mac(struct ath5k_hw *ah, u8 *mac)
+{
+	u8 mac_d[ETH_ALEN] = {};
+	u32 total, offset;
+	u16 data;
+	int octet;
+
+	AR5K_EEPROM_READ(0x20, data);
+
+	for (offset = 0x1f, octet = 0, total = 0; offset >= 0x1d; offset--) {
+		AR5K_EEPROM_READ(offset, data);
+
+		total += data;
+		mac_d[octet + 1] = data & 0xff;
+		mac_d[octet] = data >> 8;
+		octet += 2;
+	}
+
+	if (!total || total == 3 * 0xffff)
+		return -EINVAL;
+
+	memcpy(mac, mac_d, ETH_ALEN);
+
+	return 0;
+}
+
+
 /* Common ath_bus_opts structure */
 static const struct ath_bus_ops ath_pci_bus_ops = {
 	.ath_bus_type = ATH_PCI,
 	.read_cachesize = ath5k_pci_read_cachesize,
 	.eeprom_read = ath5k_pci_eeprom_read,
+	.eeprom_read_mac = ath5k_pci_eeprom_read_mac,
 };
 
 /********************\
@@ -264,7 +297,9 @@ ath5k_pci_remove(struct pci_dev *pdev)
 #ifdef CONFIG_PM_SLEEP
 static int ath5k_pci_suspend(struct device *dev)
 {
-	struct ath5k_softc *sc = pci_get_drvdata(to_pci_dev(dev));
+	struct pci_dev *pdev = to_pci_dev(dev);
+	struct ieee80211_hw *hw = pci_get_drvdata(pdev);
+	struct ath5k_softc *sc = hw->priv;
 
 	ath5k_led_off(sc);
 	return 0;
@@ -273,7 +308,8 @@ static int ath5k_pci_suspend(struct device *dev)
 static int ath5k_pci_resume(struct device *dev)
 {
 	struct pci_dev *pdev = to_pci_dev(dev);
-	struct ath5k_softc *sc = pci_get_drvdata(pdev);
+	struct ieee80211_hw *hw = pci_get_drvdata(pdev);
+	struct ath5k_softc *sc = hw->priv;
 
 	/*
 	 * Suspend/Resume resets the PCI configuration space, so we have to

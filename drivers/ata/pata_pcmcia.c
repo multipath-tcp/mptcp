@@ -124,7 +124,7 @@ static unsigned int ata_data_xfer_8bit(struct ata_device *dev,
  *	reset will recover the device.
  *
  */
- 
+
 static void pcmcia_8bit_drain_fifo(struct ata_queued_cmd *qc)
 {
 	int count;
@@ -309,7 +309,7 @@ static void pcmcia_remove_one(struct pcmcia_device *pdev)
 	pcmcia_disable_device(pdev);
 }
 
-static struct pcmcia_device_id pcmcia_devices[] = {
+static const struct pcmcia_device_id pcmcia_devices[] = {
 	PCMCIA_DEVICE_FUNC_ID(4),
 	PCMCIA_DEVICE_MANF_CARD(0x0000, 0x0000),	/* Corsair */
 	PCMCIA_DEVICE_MANF_CARD(0x0007, 0x0000),	/* Hitachi */

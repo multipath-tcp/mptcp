@@ -159,16 +159,15 @@ vxge_hw_vpath_fw_api(struct __vxge_hw_virtualpath *vpath, u32 action,
 		     u32 fw_memo, u32 offset, u64 *data0, u64 *data1,
 		     u64 *steer_ctrl)
 {
-	struct vxge_hw_vpath_reg __iomem *vp_reg;
+	struct vxge_hw_vpath_reg __iomem *vp_reg = vpath->vp_reg;
 	enum vxge_hw_status status;
 	u64 val64;
-	u32 retry = 0, max_retry = 100;
+	u32 retry = 0, max_retry = 3;
 
-	vp_reg = vpath->vp_reg;
-
-	if (vpath->vp_open) {
-		max_retry = 3;
-		spin_lock(&vpath->lock);
+	spin_lock(&vpath->lock);
+	if (!vpath->vp_open) {
+		spin_unlock(&vpath->lock);
+		max_retry = 100;
 	}
 
 	writeq(*data0, &vp_reg->rts_access_steer_data0);
@@ -187,7 +186,7 @@ vxge_hw_vpath_fw_api(struct __vxge_hw_virtualpath *vpath, u32 action,
 					   VXGE_HW_DEF_DEVICE_POLL_MILLIS);
 
 	/* The __vxge_hw_device_register_poll can udelay for a significant
-	 * amount of time, blocking other proccess from the CPU.  If it delays
+	 * amount of time, blocking other process from the CPU.  If it delays
 	 * for ~5secs, a NMI error can occur.  A way around this is to give up
 	 * the processor via msleep, but this is not allowed is under lock.
 	 * So, only allow it to sleep for ~4secs if open.  Otherwise, delay for
@@ -387,8 +386,8 @@ vxge_hw_vpath_eprom_img_ver_get(struct __vxge_hw_device *hldev,
 		data1 = steer_ctrl = 0;
 
 		status = vxge_hw_vpath_fw_api(vpath,
-			VXGE_HW_RTS_ACCESS_STEER_CTRL_DATA_STRUCT_SEL_FW_MEMO,
 			VXGE_HW_FW_API_GET_EPROM_REV,
+			VXGE_HW_RTS_ACCESS_STEER_CTRL_DATA_STRUCT_SEL_FW_MEMO,
 			0, &data0, &data1, &steer_ctrl);
 		if (status != VXGE_HW_OK)
 			break;
@@ -1000,7 +999,7 @@ exit:
 /**
  * vxge_hw_device_hw_info_get - Get the hw information
  * Returns the vpath mask that has the bits set for each vpath allocated
- * for the driver, FW version information and the first mac addresse for
+ * for the driver, FW version information, and the first mac address for
  * each vpath
  */
 enum vxge_hw_status __devinit
@@ -1064,9 +1063,10 @@ vxge_hw_device_hw_info_get(void __iomem *bar0,
 
 		val64 = readq(&toc->toc_vpath_pointer[i]);
 
+		spin_lock_init(&vpath.lock);
 		vpath.vp_reg = (struct vxge_hw_vpath_reg __iomem *)
 			       (bar0 + val64);
-		vpath.vp_open = 0;
+		vpath.vp_open = VXGE_HW_VP_NOT_OPEN;
 
 		status = __vxge_hw_vpath_pci_func_mode_get(&vpath, hw_info);
 		if (status != VXGE_HW_OK)
@@ -1090,7 +1090,7 @@ vxge_hw_device_hw_info_get(void __iomem *bar0,
 		val64 = readq(&toc->toc_vpath_pointer[i]);
 		vpath.vp_reg = (struct vxge_hw_vpath_reg __iomem *)
 			       (bar0 + val64);
-		vpath.vp_open = 0;
+		vpath.vp_open = VXGE_HW_VP_NOT_OPEN;
 
 		status =  __vxge_hw_vpath_addr_get(&vpath,
 				hw_info->mac_addrs[i],
@@ -2868,6 +2868,8 @@ __vxge_hw_ring_create(struct __vxge_hw_vpath_handle *vp,
 	ring->rxd_init = attr->rxd_init;
 	ring->rxd_term = attr->rxd_term;
 	ring->buffer_mode = config->buffer_mode;
+	ring->tim_rti_cfg1_saved = vp->vpath->tim_rti_cfg1_saved;
+	ring->tim_rti_cfg3_saved = vp->vpath->tim_rti_cfg3_saved;
 	ring->rxds_limit = config->rxds_limit;
 
 	ring->rxd_size = vxge_hw_ring_rxd_size_get(config->buffer_mode);
@@ -3511,6 +3513,8 @@ __vxge_hw_fifo_create(struct __vxge_hw_vpath_handle *vp,
 
 	/* apply "interrupts per txdl" attribute */
 	fifo->interrupt_type = VXGE_HW_FIFO_TXD_INT_TYPE_UTILZ;
+	fifo->tim_tti_cfg1_saved = vpath->tim_tti_cfg1_saved;
+	fifo->tim_tti_cfg3_saved = vpath->tim_tti_cfg3_saved;
 
 	if (fifo->config->intr)
 		fifo->interrupt_type = VXGE_HW_FIFO_TXD_INT_TYPE_PER_LIST;
@@ -4377,6 +4381,8 @@ __vxge_hw_vpath_tim_configure(struct __vxge_hw_device *hldev, u32 vp_id)
 		}
 
 		writeq(val64, &vp_reg->tim_cfg1_int_num[VXGE_HW_VPATH_INTR_TX]);
+		vpath->tim_tti_cfg1_saved = val64;
+
 		val64 = readq(&vp_reg->tim_cfg2_int_num[VXGE_HW_VPATH_INTR_TX]);
 
 		if (config->tti.uec_a != VXGE_HW_USE_FLASH_DEFAULT) {
@@ -4433,6 +4439,7 @@ __vxge_hw_vpath_tim_configure(struct __vxge_hw_device *hldev, u32 vp_id)
 		}
 
 		writeq(val64, &vp_reg->tim_cfg3_int_num[VXGE_HW_VPATH_INTR_TX]);
+		vpath->tim_tti_cfg3_saved = val64;
 	}
 
 	if (config->ring.enable == VXGE_HW_RING_ENABLE) {
@@ -4481,6 +4488,8 @@ __vxge_hw_vpath_tim_configure(struct __vxge_hw_device *hldev, u32 vp_id)
 		}
 
 		writeq(val64, &vp_reg->tim_cfg1_int_num[VXGE_HW_VPATH_INTR_RX]);
+		vpath->tim_rti_cfg1_saved = val64;
+
 		val64 = readq(&vp_reg->tim_cfg2_int_num[VXGE_HW_VPATH_INTR_RX]);
 
 		if (config->rti.uec_a != VXGE_HW_USE_FLASH_DEFAULT) {
@@ -4537,6 +4546,7 @@ __vxge_hw_vpath_tim_configure(struct __vxge_hw_device *hldev, u32 vp_id)
 		}
 
 		writeq(val64, &vp_reg->tim_cfg3_int_num[VXGE_HW_VPATH_INTR_RX]);
+		vpath->tim_rti_cfg3_saved = val64;
 	}
 
 	val64 = 0;
@@ -4553,26 +4563,6 @@ __vxge_hw_vpath_tim_configure(struct __vxge_hw_device *hldev, u32 vp_id)
 	writeq(val64, &vp_reg->tim_wrkld_clc);
 
 	return status;
-}
-
-void vxge_hw_vpath_tti_ci_set(struct __vxge_hw_device *hldev, u32 vp_id)
-{
-	struct __vxge_hw_virtualpath *vpath;
-	struct vxge_hw_vpath_reg __iomem *vp_reg;
-	struct vxge_hw_vp_config *config;
-	u64 val64;
-
-	vpath = &hldev->virtual_paths[vp_id];
-	vp_reg = vpath->vp_reg;
-	config = vpath->vp_config;
-
-	if (config->fifo.enable == VXGE_HW_FIFO_ENABLE &&
-	    config->tti.timer_ci_en != VXGE_HW_TIM_TIMER_CI_ENABLE) {
-		config->tti.timer_ci_en = VXGE_HW_TIM_TIMER_CI_ENABLE;
-		val64 = readq(&vp_reg->tim_cfg1_int_num[VXGE_HW_VPATH_INTR_TX]);
-		val64 |= VXGE_HW_TIM_CFG1_INT_NUM_TIMER_CI;
-		writeq(val64, &vp_reg->tim_cfg1_int_num[VXGE_HW_VPATH_INTR_TX]);
-	}
 }
 
 /*
@@ -4656,7 +4646,27 @@ static void __vxge_hw_vp_terminate(struct __vxge_hw_device *hldev, u32 vp_id)
 		vpath->hldev->tim_int_mask1, vpath->vp_id);
 	hldev->stats.hw_dev_info_stats.vpath_info[vpath->vp_id] = NULL;
 
-	memset(vpath, 0, sizeof(struct __vxge_hw_virtualpath));
+	/* If the whole struct __vxge_hw_virtualpath is zeroed, nothing will
+	 * work after the interface is brought down.
+	 */
+	spin_lock(&vpath->lock);
+	vpath->vp_open = VXGE_HW_VP_NOT_OPEN;
+	spin_unlock(&vpath->lock);
+
+	vpath->vpmgmt_reg = NULL;
+	vpath->nofl_db = NULL;
+	vpath->max_mtu = 0;
+	vpath->vsport_number = 0;
+	vpath->max_kdfc_db = 0;
+	vpath->max_nofl_db = 0;
+	vpath->ringh = NULL;
+	vpath->fifoh = NULL;
+	memset(&vpath->vpath_handles, 0, sizeof(struct list_head));
+	vpath->stats_block = 0;
+	vpath->hw_stats = NULL;
+	vpath->hw_stats_sav = NULL;
+	vpath->sw_stats = NULL;
+
 exit:
 	return;
 }
@@ -4680,7 +4690,7 @@ __vxge_hw_vp_initialize(struct __vxge_hw_device *hldev, u32 vp_id,
 
 	vpath = &hldev->virtual_paths[vp_id];
 
-	spin_lock_init(&hldev->virtual_paths[vp_id].lock);
+	spin_lock_init(&vpath->lock);
 	vpath->vp_id = vp_id;
 	vpath->vp_open = VXGE_HW_VP_OPEN;
 	vpath->hldev = hldev;
@@ -5028,10 +5038,6 @@ enum vxge_hw_status vxge_hw_vpath_close(struct __vxge_hw_vpath_handle *vp)
 	vfree(vp);
 
 	__vxge_hw_vp_terminate(devh, vp_id);
-
-	spin_lock(&vpath->lock);
-	vpath->vp_open = VXGE_HW_VP_NOT_OPEN;
-	spin_unlock(&vpath->lock);
 
 vpath_close_exit:
 	return status;

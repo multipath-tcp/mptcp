@@ -184,9 +184,9 @@ drm_edid_block_valid(u8 *raw_edid)
 
 bad:
 	if (raw_edid) {
-		DRM_ERROR("Raw EDID:\n");
+		printk(KERN_ERR "Raw EDID:\n");
 		print_hex_dump_bytes(KERN_ERR, DUMP_PREFIX_NONE, raw_edid, EDID_LENGTH);
-		printk("\n");
+		printk(KERN_ERR "\n");
 	}
 	return 0;
 }
@@ -230,24 +230,43 @@ drm_do_probe_ddc_edid(struct i2c_adapter *adapter, unsigned char *buf,
 		      int block, int len)
 {
 	unsigned char start = block * EDID_LENGTH;
-	struct i2c_msg msgs[] = {
-		{
-			.addr	= DDC_ADDR,
-			.flags	= 0,
-			.len	= 1,
-			.buf	= &start,
-		}, {
-			.addr	= DDC_ADDR,
-			.flags	= I2C_M_RD,
-			.len	= len,
-			.buf	= buf,
-		}
-	};
+	int ret, retries = 5;
 
-	if (i2c_transfer(adapter, msgs, 2) == 2)
-		return 0;
+	/* The core i2c driver will automatically retry the transfer if the
+	 * adapter reports EAGAIN. However, we find that bit-banging transfers
+	 * are susceptible to errors under a heavily loaded machine and
+	 * generate spurious NAKs and timeouts. Retrying the transfer
+	 * of the individual block a few times seems to overcome this.
+	 */
+	do {
+		struct i2c_msg msgs[] = {
+			{
+				.addr	= DDC_ADDR,
+				.flags	= 0,
+				.len	= 1,
+				.buf	= &start,
+			}, {
+				.addr	= DDC_ADDR,
+				.flags	= I2C_M_RD,
+				.len	= len,
+				.buf	= buf,
+			}
+		};
+		ret = i2c_transfer(adapter, msgs, 2);
+	} while (ret != 2 && --retries);
 
-	return -1;
+	return ret == 2 ? 0 : -1;
+}
+
+static bool drm_edid_is_zero(u8 *in_edid, int length)
+{
+	int i;
+	u32 *raw_edid = (u32 *)in_edid;
+
+	for (i = 0; i < length / 4; i++)
+		if (*(raw_edid + i) != 0)
+			return false;
+	return true;
 }
 
 static u8 *
@@ -265,6 +284,10 @@ drm_do_get_edid(struct drm_connector *connector, struct i2c_adapter *adapter)
 			goto out;
 		if (drm_edid_block_valid(block))
 			break;
+		if (i == 0 && drm_edid_is_zero(block, EDID_LENGTH)) {
+			connector->null_edid_counter++;
+			goto carp;
+		}
 	}
 	if (i == 4)
 		goto carp;
@@ -449,12 +472,11 @@ static void edid_fixup_preferred(struct drm_connector *connector,
 struct drm_display_mode *drm_mode_find_dmt(struct drm_device *dev,
 					   int hsize, int vsize, int fresh)
 {
+	struct drm_display_mode *mode = NULL;
 	int i;
-	struct drm_display_mode *ptr, *mode;
 
-	mode = NULL;
 	for (i = 0; i < drm_num_dmt_modes; i++) {
-		ptr = &drm_dmt_modes[i];
+		const struct drm_display_mode *ptr = &drm_dmt_modes[i];
 		if (hsize == ptr->hdisplay &&
 			vsize == ptr->vdisplay &&
 			fresh == drm_mode_vrefresh(ptr)) {
@@ -885,7 +907,7 @@ static struct drm_display_mode *drm_mode_detailed(struct drm_device *dev,
 }
 
 static bool
-mode_is_rb(struct drm_display_mode *mode)
+mode_is_rb(const struct drm_display_mode *mode)
 {
 	return (mode->htotal - mode->hdisplay == 160) &&
 	       (mode->hsync_end - mode->hdisplay == 80) &&
@@ -894,7 +916,8 @@ mode_is_rb(struct drm_display_mode *mode)
 }
 
 static bool
-mode_in_hsync_range(struct drm_display_mode *mode, struct edid *edid, u8 *t)
+mode_in_hsync_range(const struct drm_display_mode *mode,
+		    struct edid *edid, u8 *t)
 {
 	int hsync, hmin, hmax;
 
@@ -910,7 +933,8 @@ mode_in_hsync_range(struct drm_display_mode *mode, struct edid *edid, u8 *t)
 }
 
 static bool
-mode_in_vsync_range(struct drm_display_mode *mode, struct edid *edid, u8 *t)
+mode_in_vsync_range(const struct drm_display_mode *mode,
+		    struct edid *edid, u8 *t)
 {
 	int vsync, vmin, vmax;
 
@@ -941,7 +965,7 @@ range_pixel_clock(struct edid *edid, u8 *t)
 }
 
 static bool
-mode_in_range(struct drm_display_mode *mode, struct edid *edid,
+mode_in_range(const struct drm_display_mode *mode, struct edid *edid,
 	      struct detailed_timing *timing)
 {
 	u32 max_clock;
@@ -1288,7 +1312,7 @@ add_detailed_modes(struct drm_connector *connector, struct edid *edid,
 /**
  * Search EDID for CEA extension block.
  */
-static u8 *drm_find_cea_extension(struct edid *edid)
+u8 *drm_find_cea_extension(struct edid *edid)
 {
 	u8 *edid_ext = NULL;
 	int i;
@@ -1309,6 +1333,7 @@ static u8 *drm_find_cea_extension(struct edid *edid)
 
 	return edid_ext;
 }
+EXPORT_SYMBOL(drm_find_cea_extension);
 
 /**
  * drm_detect_hdmi_monitor - detect whether monitor is hdmi.
@@ -1403,6 +1428,64 @@ end:
 EXPORT_SYMBOL(drm_detect_monitor_audio);
 
 /**
+ * drm_add_display_info - pull display info out if present
+ * @edid: EDID data
+ * @info: display info (attached to connector)
+ *
+ * Grab any available display info and stuff it into the drm_display_info
+ * structure that's part of the connector.  Useful for tracking bpp and
+ * color spaces.
+ */
+static void drm_add_display_info(struct edid *edid,
+				 struct drm_display_info *info)
+{
+	info->width_mm = edid->width_cm * 10;
+	info->height_mm = edid->height_cm * 10;
+
+	/* driver figures it out in this case */
+	info->bpc = 0;
+	info->color_formats = 0;
+
+	/* Only defined for 1.4 with digital displays */
+	if (edid->revision < 4)
+		return;
+
+	if (!(edid->input & DRM_EDID_INPUT_DIGITAL))
+		return;
+
+	switch (edid->input & DRM_EDID_DIGITAL_DEPTH_MASK) {
+	case DRM_EDID_DIGITAL_DEPTH_6:
+		info->bpc = 6;
+		break;
+	case DRM_EDID_DIGITAL_DEPTH_8:
+		info->bpc = 8;
+		break;
+	case DRM_EDID_DIGITAL_DEPTH_10:
+		info->bpc = 10;
+		break;
+	case DRM_EDID_DIGITAL_DEPTH_12:
+		info->bpc = 12;
+		break;
+	case DRM_EDID_DIGITAL_DEPTH_14:
+		info->bpc = 14;
+		break;
+	case DRM_EDID_DIGITAL_DEPTH_16:
+		info->bpc = 16;
+		break;
+	case DRM_EDID_DIGITAL_DEPTH_UNDEF:
+	default:
+		info->bpc = 0;
+		break;
+	}
+
+	info->color_formats = DRM_COLOR_FORMAT_RGB444;
+	if (info->color_formats & DRM_EDID_FEATURE_RGB_YCRCB444)
+		info->color_formats = DRM_COLOR_FORMAT_YCRCB444;
+	if (info->color_formats & DRM_EDID_FEATURE_RGB_YCRCB422)
+		info->color_formats = DRM_COLOR_FORMAT_YCRCB422;
+}
+
+/**
  * drm_add_edid_modes - add modes from EDID data, if available
  * @connector: connector we're probing
  * @edid: edid data
@@ -1450,8 +1533,7 @@ int drm_add_edid_modes(struct drm_connector *connector, struct edid *edid)
 	if (quirks & (EDID_QUIRK_PREFER_LARGE_60 | EDID_QUIRK_PREFER_LARGE_75))
 		edid_fixup_preferred(connector, quirks);
 
-	connector->display_info.width_mm = edid->width_cm * 10;
-	connector->display_info.height_mm = edid->height_cm * 10;
+	drm_add_display_info(edid, &connector->display_info);
 
 	return num_modes;
 }
@@ -1472,7 +1554,7 @@ int drm_add_modes_noedid(struct drm_connector *connector,
 			int hdisplay, int vdisplay)
 {
 	int i, count, num_modes = 0;
-	struct drm_display_mode *mode, *ptr;
+	struct drm_display_mode *mode;
 	struct drm_device *dev = connector->dev;
 
 	count = sizeof(drm_dmt_modes) / sizeof(struct drm_display_mode);
@@ -1482,7 +1564,7 @@ int drm_add_modes_noedid(struct drm_connector *connector,
 		vdisplay = 0;
 
 	for (i = 0; i < count; i++) {
-		ptr = &drm_dmt_modes[i];
+		const struct drm_display_mode *ptr = &drm_dmt_modes[i];
 		if (hdisplay && vdisplay) {
 			/*
 			 * Only when two are valid, they will be used to check

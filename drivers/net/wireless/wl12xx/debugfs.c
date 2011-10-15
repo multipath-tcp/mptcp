@@ -99,7 +99,7 @@ static void wl1271_debugfs_update_stats(struct wl1271 *wl)
 
 	mutex_lock(&wl->mutex);
 
-	ret = wl1271_ps_elp_wakeup(wl, false);
+	ret = wl1271_ps_elp_wakeup(wl);
 	if (ret < 0)
 		goto out;
 
@@ -261,27 +261,25 @@ static ssize_t gpio_power_write(struct file *file,
 	unsigned long value;
 	int ret;
 
-	mutex_lock(&wl->mutex);
-
 	len = min(count, sizeof(buf) - 1);
 	if (copy_from_user(buf, user_buf, len)) {
-		ret = -EFAULT;
-		goto out;
+		return -EFAULT;
 	}
 	buf[len] = '\0';
 
-	ret = strict_strtoul(buf, 0, &value);
+	ret = kstrtoul(buf, 0, &value);
 	if (ret < 0) {
 		wl1271_warning("illegal value in gpio_power");
-		goto out;
+		return -EINVAL;
 	}
+
+	mutex_lock(&wl->mutex);
 
 	if (value)
 		wl1271_power_on(wl);
 	else
 		wl1271_power_off(wl);
 
-out:
 	mutex_unlock(&wl->mutex);
 	return count;
 }
@@ -293,12 +291,249 @@ static const struct file_operations gpio_power_ops = {
 	.llseek = default_llseek,
 };
 
-static int wl1271_debugfs_add_files(struct wl1271 *wl)
+static ssize_t start_recovery_write(struct file *file,
+				    const char __user *user_buf,
+				    size_t count, loff_t *ppos)
+{
+	struct wl1271 *wl = file->private_data;
+
+	mutex_lock(&wl->mutex);
+	ieee80211_queue_work(wl->hw, &wl->recovery_work);
+	mutex_unlock(&wl->mutex);
+
+	return count;
+}
+
+static const struct file_operations start_recovery_ops = {
+	.write = start_recovery_write,
+	.open = wl1271_open_file_generic,
+	.llseek = default_llseek,
+};
+
+static ssize_t driver_state_read(struct file *file, char __user *user_buf,
+				 size_t count, loff_t *ppos)
+{
+	struct wl1271 *wl = file->private_data;
+	int res = 0;
+	char buf[1024];
+
+	mutex_lock(&wl->mutex);
+
+#define DRIVER_STATE_PRINT(x, fmt)   \
+	(res += scnprintf(buf + res, sizeof(buf) - res,\
+			  #x " = " fmt "\n", wl->x))
+
+#define DRIVER_STATE_PRINT_LONG(x) DRIVER_STATE_PRINT(x, "%ld")
+#define DRIVER_STATE_PRINT_INT(x)  DRIVER_STATE_PRINT(x, "%d")
+#define DRIVER_STATE_PRINT_STR(x)  DRIVER_STATE_PRINT(x, "%s")
+#define DRIVER_STATE_PRINT_LHEX(x) DRIVER_STATE_PRINT(x, "0x%lx")
+#define DRIVER_STATE_PRINT_HEX(x)  DRIVER_STATE_PRINT(x, "0x%x")
+
+	DRIVER_STATE_PRINT_INT(tx_blocks_available);
+	DRIVER_STATE_PRINT_INT(tx_allocated_blocks);
+	DRIVER_STATE_PRINT_INT(tx_frames_cnt);
+	DRIVER_STATE_PRINT_LHEX(tx_frames_map[0]);
+	DRIVER_STATE_PRINT_INT(tx_queue_count);
+	DRIVER_STATE_PRINT_INT(tx_packets_count);
+	DRIVER_STATE_PRINT_INT(tx_results_count);
+	DRIVER_STATE_PRINT_LHEX(flags);
+	DRIVER_STATE_PRINT_INT(tx_blocks_freed[0]);
+	DRIVER_STATE_PRINT_INT(tx_blocks_freed[1]);
+	DRIVER_STATE_PRINT_INT(tx_blocks_freed[2]);
+	DRIVER_STATE_PRINT_INT(tx_blocks_freed[3]);
+	DRIVER_STATE_PRINT_INT(tx_security_last_seq);
+	DRIVER_STATE_PRINT_INT(rx_counter);
+	DRIVER_STATE_PRINT_INT(session_counter);
+	DRIVER_STATE_PRINT_INT(state);
+	DRIVER_STATE_PRINT_INT(bss_type);
+	DRIVER_STATE_PRINT_INT(channel);
+	DRIVER_STATE_PRINT_HEX(rate_set);
+	DRIVER_STATE_PRINT_HEX(basic_rate_set);
+	DRIVER_STATE_PRINT_HEX(basic_rate);
+	DRIVER_STATE_PRINT_INT(band);
+	DRIVER_STATE_PRINT_INT(beacon_int);
+	DRIVER_STATE_PRINT_INT(psm_entry_retry);
+	DRIVER_STATE_PRINT_INT(ps_poll_failures);
+	DRIVER_STATE_PRINT_HEX(filters);
+	DRIVER_STATE_PRINT_HEX(rx_config);
+	DRIVER_STATE_PRINT_HEX(rx_filter);
+	DRIVER_STATE_PRINT_INT(power_level);
+	DRIVER_STATE_PRINT_INT(rssi_thold);
+	DRIVER_STATE_PRINT_INT(last_rssi_event);
+	DRIVER_STATE_PRINT_INT(sg_enabled);
+	DRIVER_STATE_PRINT_INT(enable_11a);
+	DRIVER_STATE_PRINT_INT(noise);
+	DRIVER_STATE_PRINT_LHEX(ap_hlid_map[0]);
+	DRIVER_STATE_PRINT_INT(last_tx_hlid);
+	DRIVER_STATE_PRINT_INT(ba_support);
+	DRIVER_STATE_PRINT_HEX(ba_rx_bitmap);
+	DRIVER_STATE_PRINT_HEX(ap_fw_ps_map);
+	DRIVER_STATE_PRINT_LHEX(ap_ps_map);
+	DRIVER_STATE_PRINT_HEX(quirks);
+	DRIVER_STATE_PRINT_HEX(irq);
+	DRIVER_STATE_PRINT_HEX(ref_clock);
+	DRIVER_STATE_PRINT_HEX(tcxo_clock);
+	DRIVER_STATE_PRINT_HEX(hw_pg_ver);
+	DRIVER_STATE_PRINT_HEX(platform_quirks);
+	DRIVER_STATE_PRINT_HEX(chip.id);
+	DRIVER_STATE_PRINT_STR(chip.fw_ver_str);
+	DRIVER_STATE_PRINT_INT(sched_scanning);
+
+#undef DRIVER_STATE_PRINT_INT
+#undef DRIVER_STATE_PRINT_LONG
+#undef DRIVER_STATE_PRINT_HEX
+#undef DRIVER_STATE_PRINT_LHEX
+#undef DRIVER_STATE_PRINT_STR
+#undef DRIVER_STATE_PRINT
+
+	mutex_unlock(&wl->mutex);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, res);
+}
+
+static const struct file_operations driver_state_ops = {
+	.read = driver_state_read,
+	.open = wl1271_open_file_generic,
+	.llseek = default_llseek,
+};
+
+static ssize_t dtim_interval_read(struct file *file, char __user *user_buf,
+				  size_t count, loff_t *ppos)
+{
+	struct wl1271 *wl = file->private_data;
+	u8 value;
+
+	if (wl->conf.conn.wake_up_event == CONF_WAKE_UP_EVENT_DTIM ||
+	    wl->conf.conn.wake_up_event == CONF_WAKE_UP_EVENT_N_DTIM)
+		value = wl->conf.conn.listen_interval;
+	else
+		value = 0;
+
+	return wl1271_format_buffer(user_buf, count, ppos, "%d\n", value);
+}
+
+static ssize_t dtim_interval_write(struct file *file,
+				   const char __user *user_buf,
+				   size_t count, loff_t *ppos)
+{
+	struct wl1271 *wl = file->private_data;
+	char buf[10];
+	size_t len;
+	unsigned long value;
+	int ret;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+	buf[len] = '\0';
+
+	ret = kstrtoul(buf, 0, &value);
+	if (ret < 0) {
+		wl1271_warning("illegal value for dtim_interval");
+		return -EINVAL;
+	}
+
+	if (value < 1 || value > 10) {
+		wl1271_warning("dtim value is not in valid range");
+		return -ERANGE;
+	}
+
+	mutex_lock(&wl->mutex);
+
+	wl->conf.conn.listen_interval = value;
+	/* for some reason there are different event types for 1 and >1 */
+	if (value == 1)
+		wl->conf.conn.wake_up_event = CONF_WAKE_UP_EVENT_DTIM;
+	else
+		wl->conf.conn.wake_up_event = CONF_WAKE_UP_EVENT_N_DTIM;
+
+	/*
+	 * we don't reconfigure ACX_WAKE_UP_CONDITIONS now, so it will only
+	 * take effect on the next time we enter psm.
+	 */
+	mutex_unlock(&wl->mutex);
+	return count;
+}
+
+static const struct file_operations dtim_interval_ops = {
+	.read = dtim_interval_read,
+	.write = dtim_interval_write,
+	.open = wl1271_open_file_generic,
+	.llseek = default_llseek,
+};
+
+static ssize_t beacon_interval_read(struct file *file, char __user *user_buf,
+				    size_t count, loff_t *ppos)
+{
+	struct wl1271 *wl = file->private_data;
+	u8 value;
+
+	if (wl->conf.conn.wake_up_event == CONF_WAKE_UP_EVENT_BEACON ||
+	    wl->conf.conn.wake_up_event == CONF_WAKE_UP_EVENT_N_BEACONS)
+		value = wl->conf.conn.listen_interval;
+	else
+		value = 0;
+
+	return wl1271_format_buffer(user_buf, count, ppos, "%d\n", value);
+}
+
+static ssize_t beacon_interval_write(struct file *file,
+				     const char __user *user_buf,
+				     size_t count, loff_t *ppos)
+{
+	struct wl1271 *wl = file->private_data;
+	char buf[10];
+	size_t len;
+	unsigned long value;
+	int ret;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+	buf[len] = '\0';
+
+	ret = kstrtoul(buf, 0, &value);
+	if (ret < 0) {
+		wl1271_warning("illegal value for beacon_interval");
+		return -EINVAL;
+	}
+
+	if (value < 1 || value > 255) {
+		wl1271_warning("beacon interval value is not in valid range");
+		return -ERANGE;
+	}
+
+	mutex_lock(&wl->mutex);
+
+	wl->conf.conn.listen_interval = value;
+	/* for some reason there are different event types for 1 and >1 */
+	if (value == 1)
+		wl->conf.conn.wake_up_event = CONF_WAKE_UP_EVENT_BEACON;
+	else
+		wl->conf.conn.wake_up_event = CONF_WAKE_UP_EVENT_N_BEACONS;
+
+	/*
+	 * we don't reconfigure ACX_WAKE_UP_CONDITIONS now, so it will only
+	 * take effect on the next time we enter psm.
+	 */
+	mutex_unlock(&wl->mutex);
+	return count;
+}
+
+static const struct file_operations beacon_interval_ops = {
+	.read = beacon_interval_read,
+	.write = beacon_interval_write,
+	.open = wl1271_open_file_generic,
+	.llseek = default_llseek,
+};
+
+static int wl1271_debugfs_add_files(struct wl1271 *wl,
+				     struct dentry *rootdir)
 {
 	int ret = 0;
 	struct dentry *entry, *stats;
 
-	stats = debugfs_create_dir("fw-statistics", wl->rootdir);
+	stats = debugfs_create_dir("fw-statistics", rootdir);
 	if (!stats || IS_ERR(stats)) {
 		entry = stats;
 		goto err;
@@ -395,16 +630,15 @@ static int wl1271_debugfs_add_files(struct wl1271 *wl)
 	DEBUGFS_FWSTATS_ADD(rxpipe, missed_beacon_host_int_trig_rx_data);
 	DEBUGFS_FWSTATS_ADD(rxpipe, tx_xfr_host_int_trig_rx_data);
 
-	DEBUGFS_ADD(tx_queue_len, wl->rootdir);
-	DEBUGFS_ADD(retry_count, wl->rootdir);
-	DEBUGFS_ADD(excessive_retries, wl->rootdir);
+	DEBUGFS_ADD(tx_queue_len, rootdir);
+	DEBUGFS_ADD(retry_count, rootdir);
+	DEBUGFS_ADD(excessive_retries, rootdir);
 
-	DEBUGFS_ADD(gpio_power, wl->rootdir);
-
-	entry = debugfs_create_x32("debug_level", 0600, wl->rootdir,
-				   &wl12xx_debug_level);
-	if (!entry || IS_ERR(entry))
-		goto err;
+	DEBUGFS_ADD(gpio_power, rootdir);
+	DEBUGFS_ADD(start_recovery, rootdir);
+	DEBUGFS_ADD(driver_state, rootdir);
+	DEBUGFS_ADD(dtim_interval, rootdir);
+	DEBUGFS_ADD(beacon_interval, rootdir);
 
 	return 0;
 
@@ -419,7 +653,7 @@ err:
 
 void wl1271_debugfs_reset(struct wl1271 *wl)
 {
-	if (!wl->rootdir)
+	if (!wl->stats.fw_stats)
 		return;
 
 	memset(wl->stats.fw_stats, 0, sizeof(*wl->stats.fw_stats));
@@ -430,13 +664,13 @@ void wl1271_debugfs_reset(struct wl1271 *wl)
 int wl1271_debugfs_init(struct wl1271 *wl)
 {
 	int ret;
+	struct dentry *rootdir;
 
-	wl->rootdir = debugfs_create_dir(KBUILD_MODNAME,
-					 wl->hw->wiphy->debugfsdir);
+	rootdir = debugfs_create_dir(KBUILD_MODNAME,
+				     wl->hw->wiphy->debugfsdir);
 
-	if (IS_ERR(wl->rootdir)) {
-		ret = PTR_ERR(wl->rootdir);
-		wl->rootdir = NULL;
+	if (IS_ERR(rootdir)) {
+		ret = PTR_ERR(rootdir);
 		goto err;
 	}
 
@@ -450,7 +684,7 @@ int wl1271_debugfs_init(struct wl1271 *wl)
 
 	wl->stats.fw_stats_update = jiffies;
 
-	ret = wl1271_debugfs_add_files(wl);
+	ret = wl1271_debugfs_add_files(wl, rootdir);
 
 	if (ret < 0)
 		goto err_file;
@@ -462,8 +696,7 @@ err_file:
 	wl->stats.fw_stats = NULL;
 
 err_fw:
-	debugfs_remove_recursive(wl->rootdir);
-	wl->rootdir = NULL;
+	debugfs_remove_recursive(rootdir);
 
 err:
 	return ret;
@@ -473,8 +706,4 @@ void wl1271_debugfs_exit(struct wl1271 *wl)
 {
 	kfree(wl->stats.fw_stats);
 	wl->stats.fw_stats = NULL;
-
-	debugfs_remove_recursive(wl->rootdir);
-	wl->rootdir = NULL;
-
 }

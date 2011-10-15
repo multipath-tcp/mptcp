@@ -370,30 +370,34 @@ out:
 #endif
 }
 
-struct dst_entry *mptcp_route_req(const struct request_sock *req)
+struct dst_entry *mptcp_route_req(const struct request_sock *req,
+				  struct sock *meta_sk)
 {
 	struct rtable *rt;
-	const struct inet_request_sock *ireq = inet_rsk(req);
-	struct ip_options *opt = inet_rsk(req)->opt;
-	struct flowi fl = {.nl_u = {.ip4_u = {.daddr = ((opt && opt->srr) ?
-					       opt->faddr : ireq->rmt_addr),
-				     .saddr = ireq->loc_addr} },
-	.proto = IPPROTO_TCP,
-	.flags = 0,
-	.uli_u = {.ports = {.sport = ireq->loc_port,
-			    .dport = ireq->rmt_port} }
-	};
-	security_req_classify_flow(req, &fl);
-	if (ip_route_output_flow(&init_net, &rt, &fl, NULL, 0)) {
-		IP_INC_STATS_BH(&init_net, IPSTATS_MIB_OUTNOROUTES);
-		return NULL;
-	}
-	if (opt && opt->is_strictroute && rt->rt_dst != rt->rt_gateway) {
-		ip_rt_put(rt);
-		IP_INC_STATS_BH(&init_net, IPSTATS_MIB_OUTNOROUTES);
-		return NULL;
-	}
+	struct inet_request_sock *ireq = inet_rsk(req);
+	struct ip_options_rcu *opt = inet_rsk(req)->opt;
+	struct flowi4 fl4;
+
+	flowi4_init_output(&fl4, 0, meta_sk->sk_mark,
+			   RT_CONN_FLAGS(meta_sk), RT_SCOPE_UNIVERSE,
+			   meta_sk->sk_protocol, inet_sk_flowi_flags(meta_sk),
+			   (opt && opt->opt.srr) ? opt->opt.faddr : ireq->rmt_addr,
+			   ireq->loc_addr, ireq->rmt_port, inet_sk(meta_sk)->inet_sport);
+
+	security_req_classify_flow(req, flowi4_to_flowi(&fl4));
+	rt = ip_route_output_flow(&init_net, &fl4, NULL);
+
+	if (IS_ERR(rt))
+		goto no_route;
+	if (opt && opt->opt.is_strictroute && fl4.daddr != rt->rt_gateway)
+		goto route_err;
 	return &rt->dst;
+
+route_err:
+	ip_rt_put(rt);
+no_route:
+	IP_INC_STATS_BH(&init_net, IPSTATS_MIB_OUTNOROUTES);
+	return NULL;
 }
 
 void mptcp_synack_options(struct request_sock *req,

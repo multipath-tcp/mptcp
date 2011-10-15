@@ -92,7 +92,7 @@ i915_gem_detect_bit_6_swizzle(struct drm_device *dev)
 	uint32_t swizzle_x = I915_BIT_6_SWIZZLE_UNKNOWN;
 	uint32_t swizzle_y = I915_BIT_6_SWIZZLE_UNKNOWN;
 
-	if (IS_GEN5(dev) || IS_GEN6(dev)) {
+	if (INTEL_INFO(dev)->gen >= 5) {
 		/* On Ironlake whatever DRAM config, GPU always do
 		 * same swizzling setup.
 		 */
@@ -284,14 +284,10 @@ i915_gem_set_tiling(struct drm_device *dev, void *data,
 	struct drm_i915_gem_set_tiling *args = data;
 	drm_i915_private_t *dev_priv = dev->dev_private;
 	struct drm_i915_gem_object *obj;
-	int ret;
-
-	ret = i915_gem_check_is_wedged(dev);
-	if (ret)
-		return ret;
+	int ret = 0;
 
 	obj = to_intel_bo(drm_gem_object_lookup(dev, file, args->handle));
-	if (obj == NULL)
+	if (&obj->base == NULL)
 		return -ENOENT;
 
 	if (!i915_tiling_ok(dev,
@@ -352,7 +348,9 @@ i915_gem_set_tiling(struct drm_device *dev, void *data,
 		/* Rebind if we need a change of alignment */
 		if (!obj->map_and_fenceable) {
 			u32 unfenced_alignment =
-				i915_gem_get_unfenced_gtt_alignment(obj);
+				i915_gem_get_unfenced_gtt_alignment(dev,
+								    obj->base.size,
+								    args->tiling_mode);
 			if (obj->gtt_offset & (unfenced_alignment - 1))
 				ret = i915_gem_object_unbind(obj);
 		}
@@ -384,7 +382,7 @@ i915_gem_get_tiling(struct drm_device *dev, void *data,
 	struct drm_i915_gem_object *obj;
 
 	obj = to_intel_bo(drm_gem_object_lookup(dev, file, args->handle));
-	if (obj == NULL)
+	if (&obj->base == NULL)
 		return -ENOENT;
 
 	mutex_lock(&dev->struct_mutex);

@@ -33,6 +33,7 @@ void wl1271_pspoll_work(struct work_struct *work)
 {
 	struct delayed_work *dwork;
 	struct wl1271 *wl;
+	int ret;
 
 	dwork = container_of(work, struct delayed_work, work);
 	wl = container_of(dwork, struct wl1271, pspoll_work);
@@ -55,8 +56,13 @@ void wl1271_pspoll_work(struct work_struct *work)
 	 * delivery failure occurred, and no-one changed state since, so
 	 * we should go back to powersave.
 	 */
+	ret = wl1271_ps_elp_wakeup(wl);
+	if (ret < 0)
+		goto out;
+
 	wl1271_ps_set_mode(wl, STATION_POWER_SAVE_MODE, wl->basic_rate, true);
 
+	wl1271_ps_elp_sleep(wl);
 out:
 	mutex_unlock(&wl->mutex);
 };
@@ -132,23 +138,11 @@ static int wl1271_event_ps_report(struct wl1271 *wl,
 		if (ret < 0)
 			break;
 
-		/* go to extremely low power mode */
-		wl1271_ps_elp_sleep(wl);
-		break;
-	case EVENT_EXIT_POWER_SAVE_FAIL:
-		wl1271_debug(DEBUG_PSM, "PSM exit failed");
-
-		if (test_bit(WL1271_FLAG_PSM, &wl->flags)) {
-			wl->psm_entry_retry = 0;
-			break;
+		if (wl->ps_compl) {
+			complete(wl->ps_compl);
+			wl->ps_compl = NULL;
 		}
-
-		/* make sure the firmware goes to active mode - the frame to
-		   be sent next will indicate to the AP, that we are active. */
-		ret = wl1271_ps_set_mode(wl, STATION_ACTIVE_MODE,
-					 wl->basic_rate, false);
 		break;
-	case EVENT_EXIT_POWER_SAVE_SUCCESS:
 	default:
 		break;
 	}
@@ -186,6 +180,7 @@ static int wl1271_event_process(struct wl1271 *wl, struct event_mailbox *mbox)
 	int ret;
 	u32 vector;
 	bool beacon_loss = false;
+	bool is_ap = (wl->bss_type == BSS_TYPE_AP_BSS);
 
 	wl1271_event_mbox_dump(mbox);
 
@@ -198,6 +193,22 @@ static int wl1271_event_process(struct wl1271 *wl, struct event_mailbox *mbox)
 			     mbox->scheduled_scan_status);
 
 		wl1271_scan_stm(wl);
+	}
+
+	if (vector & PERIODIC_SCAN_REPORT_EVENT_ID) {
+		wl1271_debug(DEBUG_EVENT, "PERIODIC_SCAN_REPORT_EVENT "
+			     "(status 0x%0x)", mbox->scheduled_scan_status);
+
+		wl1271_scan_sched_scan_results(wl);
+	}
+
+	if (vector & PERIODIC_SCAN_COMPLETE_EVENT_ID) {
+		wl1271_debug(DEBUG_EVENT, "PERIODIC_SCAN_COMPLETE_EVENT "
+			     "(status 0x%0x)", mbox->scheduled_scan_status);
+		if (wl->sched_scanning) {
+			wl1271_scan_sched_scan_stop(wl);
+			ieee80211_sched_scan_stopped(wl->hw);
+		}
 	}
 
 	/* disable dynamic PS when requested by the firmware */
@@ -218,27 +229,33 @@ static int wl1271_event_process(struct wl1271 *wl, struct event_mailbox *mbox)
 	 * BSS_LOSE_EVENT, beacon loss has to be reported to the stack.
 	 *
 	 */
-	if (vector & BSS_LOSE_EVENT_ID) {
+	if ((vector & BSS_LOSE_EVENT_ID) && !is_ap) {
 		wl1271_info("Beacon loss detected.");
 
 		/* indicate to the stack, that beacons have been lost */
 		beacon_loss = true;
 	}
 
-	if (vector & PS_REPORT_EVENT_ID) {
+	if ((vector & PS_REPORT_EVENT_ID) && !is_ap) {
 		wl1271_debug(DEBUG_EVENT, "PS_REPORT_EVENT");
 		ret = wl1271_event_ps_report(wl, mbox, &beacon_loss);
 		if (ret < 0)
 			return ret;
 	}
 
-	if (vector & PSPOLL_DELIVERY_FAILURE_EVENT_ID)
+	if ((vector & PSPOLL_DELIVERY_FAILURE_EVENT_ID) && !is_ap)
 		wl1271_event_pspoll_delivery_fail(wl);
 
 	if (vector & RSSI_SNR_TRIGGER_0_EVENT_ID) {
 		wl1271_debug(DEBUG_EVENT, "RSSI_SNR_TRIGGER_0_EVENT");
 		if (wl->vif)
 			wl1271_event_rssi_trigger(wl, mbox);
+	}
+
+	if ((vector & DUMMY_PACKET_EVENT_ID) && !is_ap) {
+		wl1271_debug(DEBUG_EVENT, "DUMMY_PACKET_ID_EVENT_ID");
+		if (wl->vif)
+			wl1271_tx_dummy_packet(wl);
 	}
 
 	if (wl->vif && beacon_loss)
