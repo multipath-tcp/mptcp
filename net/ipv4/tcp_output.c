@@ -662,7 +662,6 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		}
 
 	}
-#ifdef CONFIG_MPTCP_PM
 	if (unlikely(OPTION_ADD_ADDR & opts->options)) {
 		struct mp_add_addr *mpadd;
 		__u8 *p8 = (__u8 *)ptr;
@@ -695,7 +694,6 @@ void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 
 		ptr = (__be32 *) p8;
 	}
-#endif /* CONFIG_MPTCP_PM */
 	if (OPTION_MP_FAIL & opts->options) {
 		struct mp_fail *mpfail;
 		__u8 *p8 = (__u8 *)ptr;
@@ -1111,7 +1109,6 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		tcp_sk(sk)->include_mpc = 0;
 	}
 
-#ifdef CONFIG_MPTCP_PM
 	if (tp->mpc) {
 		if (unlikely(mpcb->addr4_unsent) &&
 				MAX_TCP_OPTION_SPACE - size >=
@@ -1150,7 +1147,6 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 		}
 	}
 no_mptcp:
-#endif /* CONFIG_MPTCP_PM */
 #endif /* CONFIG_MPTCP */
 
 	eff_sacks = tp->rx_opt.num_sacks + tp->rx_opt.dsack;

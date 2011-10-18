@@ -277,11 +277,9 @@ struct tcp_out_options {
 	__u32	receiver_random_number;	/* random number of the receiver */
 	__u32	token;		/* token for mptcp */
 	char	sender_mac[20];
-#ifdef CONFIG_MPTCP_PM
 	struct mptcp_loc4 *addr4;/* v4 addresses for MPTCP */
 	struct mptcp_loc6 *addr6;/* v6 addresses for MPTCP */
 	u8	addr_id;	/* address id */
-#endif /* CONFIG_MPTCP_PM */
 	__u8	mp_join_type;	/* SYN/SYNACK/ACK */
 #endif /* CONFIG_MPTCP */
 };

@@ -33,7 +33,7 @@
 
 struct multipath_pcb;
 
-#ifdef CONFIG_MPTCP_PM
+#ifdef CONFIG_MPTCP
 
 #define MPTCP_HASH_SIZE                16
 
@@ -99,7 +99,7 @@ void mptcp_update_patharray(struct multipath_pcb *mpcb);
 void __mptcp_update_patharray_ports(struct multipath_pcb *mpcb);
 int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family);
 
-#else /* CONFIG_MPTCP_PM */
+#else /* CONFIG_MPTCP */
 
 #define mptcp_tp_recv_token(__tp) (0)
 
@@ -177,6 +177,6 @@ static inline int mptcp_v6_send_synack(struct sock *meta_sk,
 }
 #endif /* (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)) */
 
-#endif /* CONFIG_MPTCP_PM */
+#endif /* CONFIG_MPTCP */
 
 #endif /*_MPTCP_PM_H*/

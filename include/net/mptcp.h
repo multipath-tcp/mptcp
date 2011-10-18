@@ -82,13 +82,11 @@ extern struct proto mptcpsub_prot;
 				    */
 
 struct multipath_options {
-#ifdef CONFIG_MPTCP_PM
 	int	num_addr4;
 	int	num_addr6;
 	struct	mptcp_loc4 addr4[MPTCP_MAX_ADDR];
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	struct	mptcp_loc6 addr6[MPTCP_MAX_ADDR];
-#endif
 #endif
 	__u32	mptcp_rem_token;	/* Received token */
 	__u32	mptcp_recv_random_number;
@@ -97,7 +95,7 @@ struct multipath_options {
 	u32	fin_dsn; /* DSN of the byte  FOLLOWING the Data FIN */
 	__u8	mptcp_recv_mac[20];
 	__u8	mptcp_opt_type;
-	u8	list_rcvd:1, /* 1 if IP list has been received (MPTCP_PM) */
+	u8	list_rcvd:1, /* 1 if IP list has been received */
 		dfin_rcvd:1,
 		mp_fail:1,
 		dss_csum:1;
@@ -158,7 +156,6 @@ struct multipath_pcb {
 	struct timer_list dad_waiter;
 #endif
 
-#ifdef CONFIG_MPTCP_PM
 	struct list_head collide_tk;
 	uint8_t addr4_unsent;	/* num of IPv4 addrs not yet sent to our peer */
 	uint8_t addr6_unsent;	/* num of IPv6 addrs not yet sent to our peer */
@@ -179,7 +176,6 @@ struct multipath_pcb {
 
 	/* Next pi to pick up in case a new path becomes available */
 	int next_unused_pi;
-#endif
 };
 
 #define MPTCP_SUB_CAPABLE			0

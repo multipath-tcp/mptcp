@@ -5836,7 +5836,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		/* Ok.. it's good. Set up sequence numbers and
 		 * move to established.
 		 */
-#ifdef CONFIG_MPTCP_PM
+#ifdef CONFIG_MPTCP
 		tp->rx_opt.rcv_isn = TCP_SKB_CB(skb)->seq;
 #endif
 		tp->rcv_nxt = TCP_SKB_CB(skb)->seq + 1;

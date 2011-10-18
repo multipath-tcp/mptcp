@@ -1072,9 +1072,7 @@ void mpcb_release(struct multipath_pcb *mpcb)
 	inet_csk(meta_sk)->icsk_pending = 0;
 	sk_stop_timer(meta_sk, &inet_csk(meta_sk)->icsk_retransmit_timer);
 
-#ifdef CONFIG_MPTCP_PM
 	mptcp_pm_release(mpcb);
-#endif
 	mptcp_debug("%s: Will free mpcb\n", __func__);
 	security_sk_free((struct sock *)mpcb);
 	percpu_counter_dec(meta_sk->sk_prot->orphan_count);
@@ -1286,12 +1284,10 @@ void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 			mptcp_set_addresses(mpcb);
 		break;
 	}
-#ifdef CONFIG_MPTCP_PM
 
 	/* If this added new local addresses, build new paths with them */
 	if (mpcb->num_addr4 || mpcb->num_addr6)
 		mptcp_update_patharray(mpcb);
-#endif
 }
 
 static inline void mptcp_become_fully_estab(struct tcp_sock *tp)

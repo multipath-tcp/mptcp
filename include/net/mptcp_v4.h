@@ -25,7 +25,7 @@
 #include <net/request_sock.h>
 #include <net/sock.h>
 
-#ifdef CONFIG_MPTCP_PM
+#ifdef CONFIG_MPTCP
 
 extern void __tcp_v4_send_check(struct sk_buff *skb,
 		__be32 saddr, __be32 daddr);
@@ -84,6 +84,6 @@ static inline void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 {
 }
 
-#endif /* CONFIG_MPTCP_PM */
+#endif /* CONFIG_MPTCP */
 
 #endif /* MPTCP_V4_H_ */
