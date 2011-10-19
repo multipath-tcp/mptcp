@@ -984,8 +984,7 @@ int mptcp_alloc_mpcb(struct sock *master_sk, struct request_sock *req,
 	meta_sk->sk_sndbuf = sysctl_wmem_default;
 	meta_sk->sk_state = TCP_SYN_SENT;
 
-	/* Inherit locks the meta_sk, so we must release it here. */
-	bh_unlock_sock(meta_sk);
+	/* Inherit takes a reference to meta_sk, so we release it here. */
 	sock_put(meta_sk);
 
 	mpcb->master_sk = master_sk;
