@@ -62,9 +62,7 @@
 #include <net/netdma.h>
 #include <net/inet_common.h>
 #include <net/mptcp.h>
-#ifdef CONFIG_MPTCP
 #include <net/mptcp_v6.h>
-#endif
 
 #include <asm/uaccess.h>
 
@@ -82,7 +80,6 @@ void	__tcp_v6_send_check(struct sk_buff *skb,
 			    const struct in6_addr *saddr,
 			    const struct in6_addr *daddr);
 
-static const struct inet_connection_sock_af_ops ipv6_mapped;
 const struct inet_connection_sock_af_ops ipv6_specific;
 #ifdef CONFIG_TCP_MD5SIG
 static const struct tcp_sock_af_ops tcp_sock_ipv6_specific;
@@ -95,7 +92,7 @@ static struct tcp_md5sig_key *tcp_v6_md5_do_lookup(struct sock *sk,
 }
 #endif
 
-void tcp_v6_hash(struct sock *sk)
+static void tcp_v6_hash(struct sock *sk)
 {
 	if (sk->sk_state != TCP_CLOSE) {
 		if (inet_csk(sk)->icsk_af_ops == &ipv6_mapped) {
@@ -1424,11 +1421,6 @@ drop:
 	return 0; /* don't send reset */
 }
 
-int tcp_v6_is_v4_mapped(struct sock *sk)
-{
-	return inet_csk(sk)->icsk_af_ops == &ipv6_mapped;
-}
-
 struct sock *tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 					  struct request_sock *req,
 					  struct dst_entry *dst)
@@ -2053,7 +2045,7 @@ static const struct tcp_sock_af_ops tcp_sock_ipv6_specific = {
  *	TCP over IPv4 via INET6 API
  */
 
-static const struct inet_connection_sock_af_ops ipv6_mapped = {
+const struct inet_connection_sock_af_ops ipv6_mapped = {
 	.queue_xmit	   = ip_queue_xmit,
 	.send_check	   = tcp_v4_send_check,
 	.rebuild_header	   = inet_sk_rebuild_header,

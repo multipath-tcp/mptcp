@@ -242,19 +242,6 @@ struct tcp_sack_block {
 	u32	end_seq;
 };
 
-#define OPTION_SACK_ADVERTISE	(1 << 0)
-#define OPTION_TS		(1 << 1)
-#define OPTION_MD5		(1 << 2)
-#define OPTION_WSCALE		(1 << 3)
-#define OPTION_COOKIE_EXTENSION	(1 << 4)
-#define OPTION_MP_CAPABLE       (1 << 5)
-#define OPTION_DSN_MAP          (1 << 6)
-#define OPTION_DATA_FIN         (1 << 7)
-#define OPTION_DATA_ACK         (1 << 8)
-#define OPTION_ADD_ADDR         (1 << 9)
-#define OPTION_MP_JOIN          (1 << 10)
-#define OPTION_MP_FAIL		(1 << 11)
-
 struct tcp_out_options {
 	u16	options;	/* bit field of OPTION_* */
 	u8	ws;		/* window scale, 0 to disable */
@@ -288,9 +275,9 @@ struct tcp_options_received {
 /*	PAWS/RTTM data	*/
 	long	ts_recent_stamp;/* Time we stored ts_recent (for aging) */
 	u32	ts_recent;	/* Time stamp to echo next		*/
-	u32	rcv_tsval;	/* Time stamp value			*/
-	u32	rcv_tsecr;	/* Time stamp echo reply		*/
-	u16	saw_tstamp : 1,	/* Saw TIMESTAMP on last packet		*/
+	u32	rcv_tsval;	/* Time stamp value             	*/
+	u32	rcv_tsecr;	/* Time stamp echo reply        	*/
+	u16 	saw_tstamp : 1,	/* Saw TIMESTAMP on last packet		*/
 		tstamp_ok : 1,	/* TIMESTAMP seen on SYN packet		*/
 		dsack : 1,	/* D-SACK is scheduled			*/
 		wscale_ok : 1,	/* Wscale seen on SYN packet		*/

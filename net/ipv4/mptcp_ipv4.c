@@ -390,7 +390,7 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 
 	ulid_v4 = (meta_sk->sk_family == AF_INET ||
 		   (meta_sk->sk_family == AF_INET6 &&
-		    tcp_v6_is_v4_mapped(meta_sk))) ? 1 : 0;
+		    mptcp_v6_is_v4_mapped(meta_sk))) ? 1 : 0;
 	pa4_size = (mpcb->num_addr4 + ulid_v4) *
 	    (mpcb->rx_opt.num_addr4 + ulid_v4) - ulid_v4;
 

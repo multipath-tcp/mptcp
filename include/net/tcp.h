@@ -301,6 +301,9 @@ static inline int tcp_synq_no_recent_overflow(const struct sock *sk)
 }
 
 extern struct proto tcp_prot;
+extern const struct inet_connection_sock_af_ops ipv4_specific;
+extern const struct inet_connection_sock_af_ops ipv6_specific;
+extern const struct inet_connection_sock_af_ops ipv6_mapped;
 
 #define TCP_INC_STATS(net, field)	SNMP_INC_STATS((net)->mib.tcp_statistics, field)
 #define TCP_INC_STATS_BH(net, field)	SNMP_INC_STATS_BH((net)->mib.tcp_statistics, field)
@@ -311,6 +314,13 @@ extern struct proto tcp_prot;
 extern void tcp_v4_err(struct sk_buff *skb, u32);
 
 extern void tcp_shutdown (struct sock *sk, int how);
+extern int tcp_close_state(struct sock *sk);
+
+extern void __tcp_v4_send_check(struct sk_buff *skb,
+				__be32 saddr, __be32 daddr);
+extern void __tcp_v6_send_check(struct sk_buff *skb,
+				const struct in6_addr *saddr,
+				const struct in6_addr *daddr);
 
 extern int tcp_v4_rcv(struct sk_buff *skb);
 
@@ -443,8 +453,6 @@ extern __u32 cookie_v6_init_sequence(struct sock *sk, struct sk_buff *skb,
 				     __u16 *mss);
 
 /* tcp_output.c */
-extern void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
-		struct tcp_out_options *opts, struct sk_buff *skb);
 extern void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
 				      int nonagle);
 extern int tcp_may_send_now(struct sock *sk);
@@ -465,8 +473,12 @@ extern void tcp_push_one(struct sock *, unsigned int mss_now);
 extern void tcp_send_ack(struct sock *sk);
 extern void tcp_send_delayed_ack(struct sock *sk);
 extern void __pskb_trim_head(struct sk_buff *skb, int len);
+extern void tcp_queue_skb(struct sock *sk, struct sk_buff *skb);
+extern void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags);
 
 /* tcp_input.c */
+extern int tcp_prune_queue(struct sock *sk);
+extern int tcp_prune_ofo_queue(struct sock *sk);
 extern void tcp_cwnd_application_limited(struct sock *sk);
 
 /* tcp_timer.c */
@@ -1524,13 +1536,6 @@ struct tcp_extend_values {
 					cookie_out_never:1,
 					cookie_in_always:1;
 };
-
-extern unsigned tcp_synack_options(struct sock *sk,
-				   struct request_sock *req,
-				   unsigned mss, struct sk_buff *skb,
-				   struct tcp_out_options *opts,
-				   struct tcp_md5sig_key **md5,
-				   struct tcp_extend_values *xvp);
 
 static inline struct tcp_extend_values *tcp_xv(struct request_values *rvp)
 {

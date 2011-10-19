@@ -84,9 +84,6 @@ struct dst_entry {
 		struct rt6_info		*rt6_next;
 		struct dn_route __rcu	*dn_next;
 	};
-#ifdef CONFIG_MPTCP
-	unsigned int            path_index;
-#endif
 };
 
 extern u32 *dst_cow_metrics_generic(struct dst_entry *dst, unsigned long old);

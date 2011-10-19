@@ -178,6 +178,25 @@ struct multipath_pcb {
 	int next_unused_pi;
 };
 
+static inline int mptcp_pi_to_flag(int pi)
+{
+	BUG_ON(!pi);
+	return 1 << (pi - 1);
+}
+
+/* Possible return values from mptcp_queue_skb */
+#define MPTCP_EATEN 1  /* The skb has been (fully or partially) eaten by
+		       * the app
+		       */
+#define MPTCP_QUEUED 2 /* The skb has been queued in the mpcb ofo queue */
+
+/* Another flag as in tcp_input.c - put it here because otherwise we need to
+ * export all the flags from tcp_input.c to a header file.
+ */
+#define MPTCP_FLAG_SEND_RESET	0x4000
+
+#ifdef CONFIG_MPTCP
+
 #define MPTCP_SUB_CAPABLE			0
 #define MPTCP_SUB_LEN_CAPABLE_SYN		4
 #define MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN		4
@@ -225,53 +244,13 @@ struct multipath_pcb {
 #define MPTCP_SUB_LEN_FAIL	8
 #define MPTCP_SUB_LEN_FAIL_ALIGN	8
 
-static inline int mptcp_pi_to_flag(int pi)
-{
-	BUG_ON(!pi);
-	return 1 << (pi - 1);
-}
-
-/* Possible return values from mptcp_queue_skb */
-#define MPTCP_EATEN 1  /* The skb has been (fully or partially) eaten by
-		       * the app
-		       */
-#define MPTCP_QUEUED 2 /* The skb has been queued in the mpcb ofo queue */
-
-/* Another flag as in tcp_input.c - put it here because otherwise we need to
- * export all the flags from tcp_input.c to a header file.
- */
-#define MPTCP_FLAG_SEND_RESET	0x4000
-
-#ifdef CONFIG_MPTCP
-
-
-/* Functions and structures defined elsewhere but needed in mptcp.c */
-extern int inet_create(struct net *net, struct socket *sock, int protocol,
-		int kern);
-extern void tcp_queue_skb(struct sock *sk, struct sk_buff *skb);
-extern void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags);
-extern int tcp_close_state(struct sock *sk);
-extern struct timewait_sock_ops tcp_timewait_sock_ops;
-extern void __release_sock(struct sock *sk, struct multipath_pcb *mpcb);
-extern int tcp_prune_queue(struct sock *sk);
-extern int tcp_prune_ofo_queue(struct sock *sk);
-
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-extern int inet6_create(struct net *net, struct socket *sock, int protocol,
-		int kern);
-extern const struct inet_connection_sock_af_ops ipv4_specific;
-extern const struct inet_connection_sock_af_ops ipv6_specific;
-extern struct proto mptcpsub_prot;
-extern int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
-			  int addr_len);
-extern void tcp_v6_hash(struct sock *sk);
-extern void tcp_v6_destroy_sock(struct sock *sk);
-extern struct timewait_sock_ops tcp6_timewait_sock_ops;
-extern struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
-				  int family);
-extern void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
-			     gfp_t flags);
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
+#define OPTION_MP_CAPABLE       (1 << 5)
+#define OPTION_DSN_MAP          (1 << 6)
+#define OPTION_DATA_FIN         (1 << 7)
+#define OPTION_DATA_ACK         (1 << 8)
+#define OPTION_ADD_ADDR         (1 << 9)
+#define OPTION_MP_JOIN          (1 << 10)
+#define OPTION_MP_FAIL		(1 << 11)
 
 struct mptcp_option {
 #if defined(__LITTLE_ENDIAN_BITFIELD)
@@ -483,6 +462,7 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
 		struct request_sock *req, struct request_sock **prev);
 void mptcp_select_window(struct tcp_sock *tp, u32 new_win);
+u32 __mptcp_select_window(struct sock *sk);
 int mptcp_try_rmem_schedule(struct sock *tp, unsigned int size);
 void mptcp_update_window_check(struct tcp_sock *meta_tp, struct sk_buff *skb,
 		u32 data_ack);
@@ -838,6 +818,11 @@ static inline struct sock *mptcp_sk_clone(struct sock *sk, int family,
 	return newsk;
 }
 
+static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
+{
+	return inet_csk(sk)->icsk_af_ops == &ipv6_mapped;
+}
+
 #else /* (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)) */
 
 static inline int mptcp_get_path_family(struct multipath_pcb *mpcb,
@@ -849,6 +834,11 @@ static inline struct sock *mptcp_sk_clone(struct sock *sk, int family,
 		int priority)
 {
 	return sk_clone(sk, priority);
+}
+
+static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
+{
+	return 0;
 }
 
 #endif /* (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)) */
@@ -1010,6 +1000,7 @@ static inline struct sock *mptcp_check_req_child(struct sock *sk,
 	return 0;
 }
 static inline void mptcp_select_window(struct tcp_sock *tp, u32 new_win) {}
+static inline u32 __mptcp_select_window(struct sock *sk) {}
 static inline int mptcp_try_rmem_schedule(struct sock *tp, unsigned int size)
 {
 	return 0;

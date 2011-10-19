@@ -1050,6 +1050,9 @@ static inline void lock_sock(struct sock *sk)
 }
 
 extern void release_sock(struct sock *sk);
+struct multipath_pcb;
+extern void __release_sock(struct sock *sk, struct multipath_pcb *mpcb);
+
 
 /* BH context may only use the following locking interface. */
 #define bh_lock_sock(__sk)	spin_lock(&((__sk)->sk_lock.slock))

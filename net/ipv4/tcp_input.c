@@ -3567,11 +3567,11 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 		nwin <<= tp->rx_opt.snd_wscale;
 
 	if (tcp_may_update_window(meta_tp, data_ack, data_seq, nwin)) {
-		u32 *max_window = (tp->mpc) ?
-			&mpcb_meta_tp(tp->mpcb)->max_window : &tp->max_window;
 		flag |= FLAG_WIN_UPDATE;
 		tcp_update_wl(meta_tp, data_seq);
 		if (*snd_wnd != nwin) {
+			u32 *max_window = (tp->mpc) ?
+				&mpcb_meta_tp(tp->mpcb)->max_window : &tp->max_window;
 			*snd_wnd = nwin;
 
 			/* Note, it is the only place, where
@@ -4525,9 +4525,6 @@ static void tcp_ofo_queue(struct sock *sk)
 
 	}
 }
-
-int tcp_prune_ofo_queue(struct sock *sk);
-int tcp_prune_queue(struct sock *sk);
 
 static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 {

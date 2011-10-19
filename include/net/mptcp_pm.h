@@ -26,6 +26,7 @@
 
 #include <net/request_sock.h>
 #include <net/sock.h>
+#include <net/tcp.h>
 
 #define MPTCP_MAX_ADDR 12	/* Max number of local or remote addresses we
 				 * can store.
@@ -56,10 +57,6 @@ struct mptcp_loc6 {
  */
 extern struct list_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
 extern spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
-
-/* Functions and structures defined elsewhere but needed in mptcp_pm.c */
-struct tcp_out_options;
-struct tcp_sock;
 
 struct path4 {
 	struct sockaddr_in	loc; /* local address */

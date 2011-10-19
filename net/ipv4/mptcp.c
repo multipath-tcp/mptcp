@@ -21,6 +21,7 @@
 
 #include <crypto/sha.h>
 
+#include <net/inet_common.h>
 #include <net/ipv6.h>
 #include <net/ip6_checksum.h>
 #include <net/mptcp.h>
@@ -1268,7 +1269,7 @@ void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 			mptcp_set_addresses(mpcb);
 		}
 		/* If the socket is v4 mapped, we continue with v4 operations */
-		if (!tcp_v6_is_v4_mapped(sk))
+		if (!mptcp_v6_is_v4_mapped(sk))
 			break;
 #endif
 	case AF_INET:
@@ -1324,6 +1325,77 @@ void mptcp_update_window_check(struct tcp_sock *tp, struct sk_buff *skb,
 		meta_tp->snd_una = data_ack;
 		mptcp_clean_rtx_queue((struct sock *)meta_tp);
 	}
+}
+
+u32 __mptcp_select_window(struct sock *sk)
+{
+	struct inet_connection_sock *icsk = inet_csk(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct multipath_pcb *mpcb = tp->mpcb;
+	int mss, free_space, full_space, window;
+
+	/* MSS for the peer's data.  Previous versions used mss_clamp
+	 * here.  I don't know if the value based on our guesses
+	 * of peer's MSS is better for the performance.  It's more correct
+	 * but may be worse for the performance because of rcv_mss
+	 * fluctuations.  --SAW  1998/11/1
+	 */
+	mss = icsk->icsk_ack.rcv_mss;
+	free_space = tcp_space(sk);
+	full_space = min_t(int, mpcb_meta_tp(mpcb)->window_clamp,
+			tcp_full_space(sk));
+
+	if (mss > full_space)
+		mss = full_space;
+
+	if (free_space < (full_space >> 1)) {
+		icsk->icsk_ack.quick = 0;
+
+		if (tcp_memory_pressure) {
+			tp->rcv_ssthresh = min(tp->rcv_ssthresh,
+					       4U * tp->advmss);
+			mptcp_update_window_clamp(tp);
+		}
+
+		if (free_space < mss)
+			return 0;
+	}
+
+	if (free_space > mpcb_meta_tp(mpcb)->rcv_ssthresh)
+		free_space = mpcb_meta_tp(mpcb)->rcv_ssthresh;
+
+	/* Don't do rounding if we are using window scaling, since the
+	 * scaled window will not line up with the MSS boundary anyway.
+	 */
+	window = mpcb_meta_tp(mpcb)->rcv_wnd;
+	if (tp->rx_opt.rcv_wscale) {
+		window = free_space;
+
+		/* Advertise enough space so that it won't get scaled away.
+		 * Import case: prevent zero window announcement if
+		 * 1<<rcv_wscale > mss.
+		 */
+		if (((window >> tp->rx_opt.rcv_wscale) << tp->
+		     rx_opt.rcv_wscale) != window)
+			window = (((window >> tp->rx_opt.rcv_wscale) + 1)
+				  << tp->rx_opt.rcv_wscale);
+	} else {
+		/* Get the largest window that is a nice multiple of mss.
+		 * Window clamp already applied above.
+		 * If our current window offering is within 1 mss of the
+		 * free space we just keep it. This prevents the divide
+		 * and multiply from happening most of the time.
+		 * We also don't do any window rounding when the free space
+		 * is too small.
+		 */
+		if (window <= free_space - mss || window > free_space)
+			window = (free_space / mss) * mss;
+		else if (mss == full_space &&
+			 free_space > window + (full_space >> 1))
+			window = free_space;
+	}
+
+	return window;
 }
 
 #ifdef CONFIG_MPTCP_DEBUG

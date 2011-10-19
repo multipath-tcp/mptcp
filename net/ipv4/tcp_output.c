@@ -400,6 +400,13 @@ static inline int tcp_urg_mode(const struct tcp_sock *tp)
 	return tp->snd_una != tp->snd_up;
 }
 
+#define OPTION_SACK_ADVERTISE	(1 << 0)
+#define OPTION_TS		(1 << 1)
+#define OPTION_MD5		(1 << 2)
+#define OPTION_WSCALE		(1 << 3)
+#define OPTION_COOKIE_EXTENSION	(1 << 4)
+/* WARN: Before adding here, consider the MPTCP-options in net/mptcp.h */
+
 /* The sysctl int routines are generic, so check consistency here.
  */
 static u8 tcp_cookie_size_check(u8 desired)
@@ -443,7 +450,7 @@ static u8 tcp_cookie_size_check(u8 desired)
  * At least SACK_PERM as the first option is known to lead to a disaster
  * (but it may well be that other scenarios fail similarly).
  */
-void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
+static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			      struct tcp_out_options *opts, struct sk_buff *skb)
 {
 	u8 options = opts->options;	/* mungable copy */
@@ -889,7 +896,7 @@ nomptcp:
 }
 
 /* Set up TCP options for SYN-ACKs. */
-unsigned tcp_synack_options(struct sock *sk,
+static unsigned tcp_synack_options(struct sock *sk,
 				   struct request_sock *req,
 				   unsigned mss, struct sk_buff *skb,
 				   struct tcp_out_options *opts,
@@ -2653,25 +2660,24 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
  * Note, we don't "adjust" for TIMESTAMP or SACK option bytes.
  * Regular options like TIMESTAMP are taken into account.
  */
-
-#ifndef CONFIG_MPTCP
-#define __tcp_select_window_fallback __tcp_select_window
-#endif
-
-u32 __tcp_select_window_fallback(struct sock *sk)
+u32 __tcp_select_window(struct sock *sk)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
+	int mss, free_space, full_space, window;
+
+	if (tp->mpc)
+		return __mptcp_select_window(sk);
+
 	/* MSS for the peer's data.  Previous versions used mss_clamp
 	 * here.  I don't know if the value based on our guesses
 	 * of peer's MSS is better for the performance.  It's more correct
 	 * but may be worse for the performance because of rcv_mss
 	 * fluctuations.  --SAW  1998/11/1
 	 */
-	int mss = icsk->icsk_ack.rcv_mss;
-	int free_space = tcp_space(sk);
-	int full_space = min_t(int, tp->window_clamp, tcp_full_space(sk));
-	int window;
+	mss = icsk->icsk_ack.rcv_mss;
+	free_space = tcp_space(sk);
+	full_space = min_t(int, tp->window_clamp, tcp_full_space(sk));
 
 	if (mss > full_space)
 		mss = full_space;
@@ -2722,82 +2728,6 @@ u32 __tcp_select_window_fallback(struct sock *sk)
 
 	return window;
 }
-
-#ifdef CONFIG_MPTCP
-u32 __tcp_select_window(struct sock *sk)
-{
-	struct inet_connection_sock *icsk = inet_csk(sk);
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct multipath_pcb *mpcb = tp->mpcb;
-	int mss, free_space, full_space, window;
-
-	if (!tp->mpc)
-		return __tcp_select_window_fallback(sk);
-
-	/* MSS for the peer's data.  Previous versions used mss_clamp
-	 * here.  I don't know if the value based on our guesses
-	 * of peer's MSS is better for the performance.  It's more correct
-	 * but may be worse for the performance because of rcv_mss
-	 * fluctuations.  --SAW  1998/11/1
-	 */
-	mss = icsk->icsk_ack.rcv_mss;
-	free_space = tcp_space(sk);
-	full_space = min_t(int, mpcb_meta_tp(mpcb)->window_clamp,
-			tcp_full_space(sk));
-
-	if (mss > full_space)
-		mss = full_space;
-
-	if (free_space < (full_space >> 1)) {
-		icsk->icsk_ack.quick = 0;
-
-		if (tcp_memory_pressure) {
-			tp->rcv_ssthresh = min(tp->rcv_ssthresh,
-					       4U * tp->advmss);
-			mptcp_update_window_clamp(tp);
-		}
-
-		if (free_space < mss)
-			return 0;
-	}
-
-	if (free_space > mpcb_meta_tp(mpcb)->rcv_ssthresh)
-		free_space = mpcb_meta_tp(mpcb)->rcv_ssthresh;
-
-	/* Don't do rounding if we are using window scaling, since the
-	 * scaled window will not line up with the MSS boundary anyway.
-	 */
-	window = mpcb_meta_tp(mpcb)->rcv_wnd;
-	if (tp->rx_opt.rcv_wscale) {
-		window = free_space;
-
-		/* Advertise enough space so that it won't get scaled away.
-		 * Import case: prevent zero window announcement if
-		 * 1<<rcv_wscale > mss.
-		 */
-		if (((window >> tp->rx_opt.rcv_wscale) << tp->
-		     rx_opt.rcv_wscale) != window)
-			window = (((window >> tp->rx_opt.rcv_wscale) + 1)
-				  << tp->rx_opt.rcv_wscale);
-	} else {
-		/* Get the largest window that is a nice multiple of mss.
-		 * Window clamp already applied above.
-		 * If our current window offering is within 1 mss of the
-		 * free space we just keep it. This prevents the divide
-		 * and multiply from happening most of the time.
-		 * We also don't do any window rounding when the free space
-		 * is too small.
-		 */
-		if (window <= free_space - mss || window > free_space)
-			window = (free_space / mss) * mss;
-		else if (mss == full_space &&
-			 free_space > window + (full_space >> 1))
-			window = free_space;
-	}
-
-	return window;
-}
-#endif
 
 /* Collapses two adjacent SKB's during retransmission. */
 static void tcp_collapse_retrans(struct sock *sk, struct sk_buff *skb)

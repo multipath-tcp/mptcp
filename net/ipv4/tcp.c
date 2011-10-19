@@ -937,7 +937,6 @@ static inline int select_size(struct sock *sk, int sg)
  * In the original version of tcp_sendmsg, size is not used.
  * If CONFIG_MPTCP is set, size is interpreted as the offset inside the message
  * to copy from. (that is, byte 0 to size-1 are simply ignored.
- * With mptcp, @sk must be the master subsocket.
  */
 int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		size_t size)
@@ -1925,7 +1924,7 @@ skip_copy:
 		}
 		continue;
 
-found_fin_ok:
+		found_fin_ok:
 		/* Process the FIN. */
 		++*seq;
 		if (!(flags & MSG_PEEK)) {
