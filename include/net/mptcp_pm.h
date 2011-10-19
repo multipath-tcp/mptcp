@@ -33,6 +33,18 @@
 
 struct multipath_pcb;
 
+struct mptcp_loc4 {
+	u8		id;
+	__be16		port;
+	struct in_addr	addr;
+};
+
+struct mptcp_loc6 {
+	u8		id;
+	__be16		port;
+	struct in6_addr	addr;
+};
+
 #ifdef CONFIG_MPTCP
 
 #define MPTCP_HASH_SIZE                16
@@ -48,18 +60,6 @@ extern spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
 /* Functions and structures defined elsewhere but needed in mptcp_pm.c */
 struct tcp_out_options;
 struct tcp_sock;
-
-struct mptcp_loc4 {
-	u8		id;
-	__be16		port;
-	struct in_addr	addr;
-};
-
-struct mptcp_loc6 {
-	u8		id;
-	__be16		port;
-	struct in6_addr	addr;
-};
 
 struct path4 {
 	struct sockaddr_in	loc; /* local address */
