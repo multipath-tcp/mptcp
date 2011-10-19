@@ -1056,10 +1056,16 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 	/* We cannot call sock_copy here, because obj_size may be the size
 	 * of tcp6_sock if the app is loading an ipv6 socket. */
 	if ((is_meta_sk(sk) && family == AF_INET6) ||
-	    (sk->sk_family == AF_INET6 && family == AF_INET6))
-		memcpy(newsk, sk, sizeof(struct tcp6_sock));
-	else
-		memcpy(newsk, sk, sizeof(struct tcp_sock));
+	    (sk->sk_family == AF_INET6 && family == AF_INET6)) {
+		memcpy(newsk, sk, offsetof(struct sock, sk_dontcopy_begin));
+		memcpy(&newsk->sk_dontcopy_end, &sk->sk_dontcopy_end,
+			sizeof(struct tcp6_sock) - offsetof(struct sock, sk_dontcopy_end));
+	}
+	else {
+		memcpy(newsk, sk, offsetof(struct sock, sk_dontcopy_begin));
+		memcpy(&newsk->sk_dontcopy_end, &sk->sk_dontcopy_end,
+			sizeof(struct tcp_sock) - offsetof(struct sock, sk_dontcopy_end));
+	}
 
 #ifdef CONFIG_SECURITY_NETWORK
 	if (!is_meta_sk(sk))
