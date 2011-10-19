@@ -469,7 +469,7 @@ int mptcp_syn_recv_sock(struct sk_buff *skb)
 		return 0;
 	meta_sk = (struct sock *)req->mpcb;
 	master_sk = req->mpcb->master_sk;
-	bh_lock_sock(master_sk);
+	bh_lock_sock_nested(master_sk);
 	if (sock_owned_by_user(master_sk)) {
 		if (unlikely(sk_add_backlog(meta_sk, skb))) {
 			bh_unlock_sock(master_sk);
@@ -605,7 +605,7 @@ static void __mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 static void mptcp_send_updatenotif_wq(struct work_struct *work)
 {
 	struct multipath_pcb *mpcb = *(struct multipath_pcb **)(work + 1);
-	lock_sock(mpcb->master_sk);
+	lock_sock_nested(mpcb->master_sk, SINGLE_DEPTH_NESTING);
 	__mptcp_send_updatenotif(mpcb);
 	release_sock(mpcb->master_sk);
 	sock_put(mpcb->master_sk);
