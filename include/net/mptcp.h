@@ -375,9 +375,20 @@ static inline int mptcp_sysctl_mss(void)
 	return sysctl_mptcp_mss;
 }
 
-#define mptcp_skb_data_ack(skb) (TCP_SKB_CB(skb)->data_ack)
-#define mptcp_skb_data_seq(skb) (TCP_SKB_CB(skb)->data_seq)
-#define mptcp_skb_end_data_seq(skb) (TCP_SKB_CB(skb)->end_data_seq)
+static inline __u32 mptcp_skb_data_ack(const struct sk_buff *skb)
+{
+	return TCP_SKB_CB(skb)->data_ack;
+}
+
+static inline __u32 mptcp_skb_data_seq(const struct sk_buff *skb)
+{
+	return TCP_SKB_CB(skb)->data_seq;
+}
+
+static inline __u32 mptcp_skb_end_data_seq(const struct sk_buff *skb)
+{
+	return TCP_SKB_CB(skb)->end_data_seq;
+}
 
 /* Iterates over all subflows */
 #define mptcp_for_each_tp(mpcb, tp)					\
@@ -851,9 +862,21 @@ static inline int mptcp_sysctl_mss(void)
 	return 0;
 }
 
-#define mptcp_skb_data_ack(skb) (0)
-#define mptcp_skb_data_seq(skb) (0)
-#define mptcp_skb_end_data_seq(skb) (0)
+static inline __u32 mptcp_skb_data_ack(const struct sk_buff *skb)
+{
+	return 0;
+}
+
+static inline __u32 mptcp_skb_data_seq(const struct sk_buff *skb)
+{
+	return 0;
+}
+
+static inline __u32 mptcp_skb_end_data_seq(const struct sk_buff *skb)
+{
+	return 0;
+}
+
 
 /* Without MPTCP, we just do one iteration
  * over the only socket available. This assumes that
