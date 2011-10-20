@@ -950,7 +950,7 @@ static inline void tcp_prequeue_init(struct tcp_sock *tp)
 #endif
 }
 
-int tcp_prequeue(struct sock *sk, struct sk_buff *skb);
+extern int tcp_prequeue(struct sock *sk, struct sk_buff *skb);
 
 #undef STATE_TRACE
 
@@ -1002,10 +1002,10 @@ static inline int tcp_full_space(const struct sock *sk)
 	return tcp_win_from_space(sk->sk_rcvbuf); 
 }
 
-void tcp_openreq_init(struct request_sock *req,
-		      struct tcp_options_received *rx_opt,
-		      struct multipath_options *mopt,
-		      struct sk_buff *skb);
+extern void tcp_openreq_init(struct request_sock *req,
+			     struct tcp_options_received *rx_opt,
+			     struct multipath_options *mopt,
+			     struct sk_buff *skb);
 
 extern void tcp_enter_memory_pressure(struct sock *sk);
 

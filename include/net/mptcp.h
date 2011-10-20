@@ -1000,7 +1000,10 @@ static inline struct sock *mptcp_check_req_child(struct sock *sk,
 	return 0;
 }
 static inline void mptcp_select_window(struct tcp_sock *tp, u32 new_win) {}
-static inline u32 __mptcp_select_window(struct sock *sk) {}
+static inline u32 __mptcp_select_window(struct sock *sk)
+{
+	return 0;
+}
 static inline int mptcp_try_rmem_schedule(struct sock *tp, unsigned int size)
 {
 	return 0;

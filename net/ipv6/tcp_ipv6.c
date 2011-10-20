@@ -75,12 +75,6 @@
 static void	tcp_v6_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 				      struct request_sock *req);
 
-int     tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
-void	__tcp_v6_send_check(struct sk_buff *skb,
-			    const struct in6_addr *saddr,
-			    const struct in6_addr *daddr);
-
-const struct inet_connection_sock_af_ops ipv6_specific;
 #ifdef CONFIG_TCP_MD5SIG
 static const struct tcp_sock_af_ops tcp_sock_ipv6_specific;
 static const struct tcp_sock_af_ops tcp_sock_ipv6_mapped_specific;
