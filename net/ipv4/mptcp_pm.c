@@ -317,6 +317,12 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 					ifa->ifa_address ==
 					inet_sk(mpcb->master_sk)->inet_saddr)
 					continue;
+				/* master is IPv4 mapped IPv6 sk */
+				if (mpcb->master_sk->sk_family == AF_INET6 &&
+					mptcp_v6_is_v4_mapped(mpcb->master_sk) &&
+					ifa->ifa_address == 
+					inet_sk(mpcb->master_sk)->inet_saddr)
+					continue;
 				if (ifa->ifa_scope == RT_SCOPE_HOST)
 					continue;
 				mpcb->addr4[num_addr4].addr.s_addr =
@@ -339,6 +345,7 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 					goto out;
 				}
 				if (mpcb->master_sk->sk_family == AF_INET6 &&
+					!mptcp_v6_is_v4_mapped(mpcb->master_sk) &&
 					ipv6_addr_equal(&(ifa6->addr),
 					&(inet6_sk(mpcb->master_sk)->saddr)))
 					continue;

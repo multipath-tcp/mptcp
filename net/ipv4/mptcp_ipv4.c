@@ -552,6 +552,12 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 			ifa->ifa_local)
 		goto found;
 
+	if (mpcb->master_sk->sk_family == AF_INET6 &&
+			mptcp_v6_is_v4_mapped(mpcb->master_sk) &&
+			inet_sk(mpcb->master_sk)->inet_saddr ==
+			ifa->ifa_local)
+		goto found;
+
 	/* Not yet in address-list */
 	if (event == NETDEV_UP &&
 	    netif_running(ifa->ifa_dev->dev)) {

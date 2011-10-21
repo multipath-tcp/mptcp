@@ -1044,6 +1044,10 @@ void sk_prot_clear_portaddr_nulls(struct sock *sk, int size)
 }
 EXPORT_SYMBOL(sk_prot_clear_portaddr_nulls);
 
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+extern int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
+#endif
+
 /* Code inspired from sk_clone() */
 void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 		      gfp_t flags)
@@ -1163,6 +1167,13 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 			np->mc_loop	= 1;
 			np->pmtudisc	= IPV6_PMTUDISC_WANT;
 			np->ipv6only	= sock_net(newsk)->ipv6.sysctl.bindv6only;
+		} else if (inet_csk(sk)->icsk_af_ops == &ipv6_mapped) {
+			struct inet_connection_sock *icsk = inet_csk(newsk);
+			icsk->icsk_af_ops = &ipv6_specific;
+			newsk->sk_backlog_rcv = tcp_v6_do_rcv;
+#ifdef CONFIG_TCP_MD5SIG
+			tcp_sk(newsk)->af_specific = &tcp_sock_ipv6_specific;
+#endif
 		}
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 	} else {
