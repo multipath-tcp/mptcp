@@ -29,13 +29,6 @@
  */
 #define MPTCP_IPV6_DEFAULT_DAD_WAIT (HZ/10)
 
-/* TODO: make this part of the IPv6 module
- * At the moment this will break if IPv6 is compiled as a module */
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-extern int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
-extern struct proto mptcpsubv6_prot;
-#endif
-
 int mptcp_v6_add_raddress(struct multipath_options *mopt, struct in6_addr *addr,
 			__be16 port, u8 id);
 int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb);

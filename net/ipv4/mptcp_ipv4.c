@@ -548,14 +548,12 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 			goto found;
 	}
 	if (mpcb->master_sk->sk_family == AF_INET &&
-			inet_sk(mpcb->master_sk)->inet_saddr ==
-			ifa->ifa_local)
+	    inet_sk(mpcb->master_sk)->inet_saddr == ifa->ifa_local)
 		goto found;
 
 	if (mpcb->master_sk->sk_family == AF_INET6 &&
-			mptcp_v6_is_v4_mapped(mpcb->master_sk) &&
-			inet_sk(mpcb->master_sk)->inet_saddr ==
-			ifa->ifa_local)
+	    mptcp_v6_is_v4_mapped(mpcb->master_sk) &&
+	    inet_sk(mpcb->master_sk)->inet_saddr == ifa->ifa_local)
 		goto found;
 
 	/* Not yet in address-list */
@@ -572,10 +570,8 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 			"address %pI4 to existing connection with mpcb: %d\n",
 			&ifa->ifa_local, mpcb->mptcp_loc_token);
 		/* update this mpcb */
-		mpcb->addr4[mpcb->num_addr4].addr.s_addr =
-				ifa->ifa_local;
-		mpcb->addr4[mpcb->num_addr4].id =
-				mpcb->num_addr4 + 1;
+		mpcb->addr4[mpcb->num_addr4].addr.s_addr = ifa->ifa_local;
+		mpcb->addr4[mpcb->num_addr4].id = mpcb->num_addr4 + 1;
 		smp_wmb();
 		mpcb->num_addr4++;
 		/* re-send addresses */
@@ -594,14 +590,12 @@ found:
 
 		if (event == NETDEV_DOWN) {
 			printk(KERN_DEBUG "MPTCP_PM: NETDEV_DOWN %pI4, path %d\n",
-					&ifa->ifa_local,
-					tp->path_index);
+					&ifa->ifa_local, tp->path_index);
 			mptcp_retransmit_queue(sk);
 			tp->pf = 1;
 		} else if (netif_running(ifa->ifa_dev->dev)) {
 			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP %pI4, path %d\n",
-					&ifa->ifa_local,
-					tp->path_index);
+					&ifa->ifa_local, tp->path_index);
 			tp->pf = 0;
 		}
 	}

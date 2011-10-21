@@ -1044,10 +1044,6 @@ void sk_prot_clear_portaddr_nulls(struct sock *sk, int size)
 }
 EXPORT_SYMBOL(sk_prot_clear_portaddr_nulls);
 
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-extern int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
-#endif
-
 /* Code inspired from sk_clone() */
 void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 		      gfp_t flags)

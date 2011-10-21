@@ -303,25 +303,21 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 				ifa_address = ifa->ifa_local;
 
 				if (num_addr4 == MPTCP_MAX_ADDR) {
-					mptcp_debug
-						("%s: At max num of local "
-						 "addresses: "
-						 "%d --- not adding address:"
-						 " %pI4\n",
-						 __func__, MPTCP_MAX_ADDR,
-						 &ifa_address);
+					mptcp_debug ("%s: At max num of local "
+						"addresses: %d --- not adding "
+						"address: %pI4\n",
+						__func__, MPTCP_MAX_ADDR,
+						&ifa_address);
 					goto out;
 				}
 
 				if (mpcb->master_sk->sk_family == AF_INET &&
-					ifa->ifa_address ==
-					inet_sk(mpcb->master_sk)->inet_saddr)
+				    inet_sk(mpcb->master_sk)->inet_saddr == ifa->ifa_address)
 					continue;
 				/* master is IPv4 mapped IPv6 sk */
 				if (mpcb->master_sk->sk_family == AF_INET6 &&
-					mptcp_v6_is_v4_mapped(mpcb->master_sk) &&
-					ifa->ifa_address == 
-					inet_sk(mpcb->master_sk)->inet_saddr)
+				    mptcp_v6_is_v4_mapped(mpcb->master_sk) &&
+				    inet_sk(mpcb->master_sk)->inet_saddr == ifa->ifa_address )
 					continue;
 				if (ifa->ifa_scope == RT_SCOPE_HOST)
 					continue;

@@ -426,6 +426,7 @@ extern struct sock * tcp_v4_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 					  struct request_sock *req,
 					  struct dst_entry *dst);
 extern int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb);
+extern int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
 extern int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr,
 			  int addr_len);
 extern int tcp_connect(struct sock *sk);
