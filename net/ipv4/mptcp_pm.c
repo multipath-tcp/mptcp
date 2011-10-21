@@ -192,15 +192,22 @@ u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock* sk)
 				return mpcb->addr4[i].id;
 		}
 		/* thus it must be the master-socket */
-		if (mpcb->master_sk->sk_family != AF_INET ||
-		    inet_sk(mpcb->master_sk)->inet_saddr !=
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+		if (mpcb->master_sk->sk_family == AF_INET6 &&
+		    mptcp_v6_is_v4_mapped(mpcb->master_sk) &&
+		    inet_sk(mpcb->master_sk)->inet_saddr ==
+				    inet_sk(sk)->inet_saddr)
+			return 0;
+#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
+		if (mpcb->master_sk->sk_family == AF_INET &&
+		    inet_sk(mpcb->master_sk)->inet_saddr ==
 				    inet_sk(sk)->inet_saddr) {
-			mptcp_debug("%s %pI4 not locally found\n", __func__,
-					&inet_sk(sk)->inet_saddr);
-			BUG();
+			return 0;
 		}
 
-		return 0;
+		mptcp_debug("%s %pI4 not locally found\n", __func__,
+					&inet_sk(sk)->inet_saddr);
+		BUG();
 	}
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	if (sk->sk_family == AF_INET6) {
@@ -210,15 +217,14 @@ u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock* sk)
 				return mpcb->addr6[i].id;
 		}
 		/* thus it must be the master-socket - id = 0 */
-		if (mpcb->master_sk->sk_family != AF_INET6 ||
-		    !ipv6_addr_equal(&inet6_sk(mpcb->master_sk)->saddr,
-				&inet6_sk(sk)->saddr)) {
-			mptcp_debug("%s %pI6 not locally found\n", __func__,
-					&inet6_sk(sk)->saddr);
-			BUG();
-		}
+		if (mpcb->master_sk->sk_family == AF_INET6 &&
+		    ipv6_addr_equal(&inet6_sk(mpcb->master_sk)->saddr,
+				&inet6_sk(sk)->saddr))
+			return 0;
 
-		return 0;
+		mptcp_debug("%s %pI6 not locally found\n", __func__,
+				&inet6_sk(sk)->saddr);
+		BUG();
 	}
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 
