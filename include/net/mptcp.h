@@ -517,7 +517,7 @@ static inline void mptcp_init_ofo_queue(struct tcp_sock *meta_tp)
 		meta_tp->out_of_order_queue.next = NULL;
 }
 
-static inline struct multipath_pcb *mpcb_from_tcpsock(struct tcp_sock *tp)
+static inline struct multipath_pcb *mpcb_from_tcpsock(const struct tcp_sock *tp)
 {
 	return tp->mpcb;
 }

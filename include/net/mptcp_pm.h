@@ -161,19 +161,6 @@ static inline void mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 {
 }
 
-#if (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))
-static inline int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
-{
-	return 0;
-}
-
-static inline int mptcp_v6_send_synack(struct sock *meta_sk,
-		struct request_sock *req)
-{
-	return 0;
-}
-#endif /* (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)) */
-
 #endif /* CONFIG_MPTCP */
 
 #endif /*_MPTCP_PM_H*/

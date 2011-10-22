@@ -2027,7 +2027,7 @@ const struct inet_connection_sock_af_ops ipv6_specific = {
 };
 
 #ifdef CONFIG_TCP_MD5SIG
-static const struct tcp_sock_af_ops tcp_sock_ipv6_specific = {
+const struct tcp_sock_af_ops tcp_sock_ipv6_specific = {
 	.md5_lookup	=	tcp_v6_md5_lookup,
 	.calc_md5_hash	=	tcp_v6_md5_hash_skb,
 	.md5_add	=	tcp_v6_md5_add_func,

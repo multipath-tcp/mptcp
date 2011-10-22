@@ -1035,7 +1035,7 @@ static struct inet_protosw inetsw_array[] =
 	       .ops =        &inet_sockraw_ops,
 	       .no_check =   UDP_CSUM_DEFAULT,
 	       .flags =      INET_PROTOSW_REUSE,
-       },
+       }
 };
 
 #define INETSW_ARRAY_LEN ARRAY_SIZE(inetsw_array)

@@ -23,6 +23,7 @@
 #include <net/mptcp.h>
 #include <net/mptcp_pm.h>
 
+#ifdef CONFIG_MPTCP
 /*
  * Used to wait for DAD to finish. If rtr_solicit_delay is set, we use it
  * instead
@@ -43,5 +44,18 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb);
 void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 		struct multipath_pcb *mpcb);
 void mptcp_pm_v6_init(void);
+
+#else /* CONFIG_MPTCP */
+
+static inline int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
+{
+	return 0;
+}
+int mptcp_v6_send_synack(struct sock *meta_sk, struct request_sock *req)
+{
+	return 0;
+}
+
+#endif /* CONFIG_MPTCP */
 
 #endif /* _MPTCP_V6_H */
