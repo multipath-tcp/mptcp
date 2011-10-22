@@ -1044,6 +1044,7 @@ void sk_prot_clear_portaddr_nulls(struct sock *sk, int size)
 }
 EXPORT_SYMBOL(sk_prot_clear_portaddr_nulls);
 
+#ifdef CONFIG_MPTCP
 /* Code inspired from sk_clone() */
 void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 		      gfp_t flags)
@@ -1191,6 +1192,7 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 	if (newsk->sk_prot->sockets_allocated)
 		percpu_counter_inc(newsk->sk_prot->sockets_allocated);
 }
+#endif /* CONFIG_MPTCP */
 
 struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
 		int family)
