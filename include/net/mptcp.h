@@ -449,7 +449,6 @@ int mptcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb);
 int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices);
 void mptcp_update_window_clamp(struct tcp_sock *tp);
 void mptcp_update_sndbuf(struct multipath_pcb *mpcb);
-void mptcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start, u32 end);
 void mptcp_set_state(struct sock *sk, int state);
 void mptcp_push_frames(struct sock *sk);
 void mptcp_skb_entail_init(struct sock *sk, struct sk_buff *skb);
@@ -490,7 +489,7 @@ void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb);
 struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk);
 
 static inline int mptcp_skb_cloned(const struct sk_buff *skb,
-		const struct tcp_sock *tp)
+				   const struct tcp_sock *tp)
 {
 	/* If it does not has a DSS-mapping (MPTCPHDR_SEQ), it does not come
 	 * from the meta-level send-queue and thus dataref is as usual.
@@ -529,33 +528,33 @@ static inline struct sock *mptcp_meta_sk(struct sock *sk)
 }
 
 static inline
-struct multipath_pcb *mptcp_mpcb_from_req_sk(struct request_sock *req)
+struct multipath_pcb *mptcp_mpcb_from_req_sk(const struct request_sock *req)
 {
 	return req->mpcb;
 }
 
-static inline int is_meta_tp(struct tcp_sock *tp)
+static inline int is_meta_tp(const struct tcp_sock *tp)
 {
 	return tp->mpcb && mpcb_meta_tp(mpcb_from_tcpsock(tp)) == tp;
 }
 
-static inline int is_meta_sk(struct sock *sk)
+static inline int is_meta_sk(const struct sock *sk)
 {
 	return sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpcb &&
 	       (struct tcp_sock *)tcp_sk(sk)->mpcb == tcp_sk(sk);
 }
 
-static inline int is_master_tp(struct tcp_sock *tp)
+static inline int is_master_tp(const struct tcp_sock *tp)
 {
 	return !tp->slave_sk && !is_meta_tp(tp);
 }
 
-static inline int mptcp_req_sk_saw_mpc(struct request_sock *req)
+static inline int mptcp_req_sk_saw_mpc(const struct request_sock *req)
 {
 	return req->saw_mpc;
 }
 
-static inline int mptcp_sk_attached(struct sock *sk)
+static inline int mptcp_sk_attached(const struct sock *sk)
 {
 	return tcp_sk(sk)->attached;
 }
@@ -581,7 +580,7 @@ static inline void mptcp_wmem_free_skb(struct sock *sk, struct sk_buff *skb)
 	kfree_skb(skb);
 }
 
-static inline int is_local_addr4(u32 addr)
+static inline int is_local_addr4(const u32 addr)
 {
 	struct net_device *dev;
 	int ans = 0;
@@ -626,7 +625,7 @@ static inline void mptcp_sock_destruct(struct sock *sk)
 	}
 }
 
-static inline int mptcp_skip_offset(struct tcp_sock *tp,
+static inline int mptcp_skip_offset(const struct tcp_sock *tp,
 		unsigned char __user **from, size_t *seglen, size_t *size)
 {
 	/* Skipping the offset (stored in the size argument) */
@@ -898,190 +897,200 @@ static inline __u32 mptcp_skb_end_data_seq(const struct sk_buff *skb)
 	})
 
 static inline int mptcp_skb_cloned(const struct sk_buff *skb,
-		const struct tcp_sock *tp)
+				   const struct tcp_sock *tp)
 {
 	return 0;
 }
-static inline int mptcp_is_data_fin(struct sk_buff *skb)
+static inline int mptcp_is_data_fin(const struct sk_buff *skb)
 {
 	return 0;
 }
-static inline struct multipath_pcb *mpcb_from_tcpsock(struct tcp_sock *tp)
+static inline struct multipath_pcb *mpcb_from_tcpsock(const struct tcp_sock *tp)
 {
 	return NULL;
 }
-static inline struct sock *mptcp_meta_sk(struct sock *sk)
+static inline struct sock *mptcp_meta_sk(const struct sock *sk)
 {
 	return NULL;
 }
 static inline
-struct multipath_pcb *mptcp_mpcb_from_req_sk(struct request_sock *req)
+struct multipath_pcb *mptcp_mpcb_from_req_sk(const struct request_sock *req)
 {
 	return NULL;
 }
-static inline int is_meta_tp(struct tcp_sock *tp)
+static inline int is_meta_tp(const struct tcp_sock *tp)
 {
 	return 0;
 }
-static inline int is_meta_sk(struct sock *tp)
+static inline int is_meta_sk(const struct sock *tp)
 {
 	return 0;
 }
-static inline int is_master_tp(struct tcp_sock *tp)
+static inline int is_master_tp(const struct tcp_sock *tp)
 {
 	return 0;
 }
-static inline int mptcp_req_sk_saw_mpc(struct request_sock *req)
+static inline int mptcp_req_sk_saw_mpc(const struct request_sock *req)
 {
 	return 0;
 }
-static inline int mptcp_sk_attached(struct sock *sk)
+static inline int mptcp_sk_attached(const struct sock *sk)
 {
 	return 0;
 }
-static inline int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
+static inline int mptcp_queue_skb(const struct sock *sk,
+				  const struct sk_buff *skb)
 {
 	return 0;
 }
-static inline void mptcp_ofo_queue(struct multipath_pcb *mpcb) {}
-static inline void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied) {}
+static inline void mptcp_ofo_queue(const struct multipath_pcb *mpcb) {}
+static inline void mptcp_cleanup_rbuf(const struct sock *meta_sk, int copied) {}
 
-static inline int mptcp_alloc_mpcb(struct sock *master_sk,
-		struct request_sock *req, gfp_t flags)
+static inline int mptcp_alloc_mpcb(const struct sock *master_sk,
+				   const struct request_sock *req, gfp_t flags)
 {
 	return 0;
 }
-static inline void mptcp_add_sock(struct multipath_pcb *mpcb,
-		struct tcp_sock *tp) {}
-static inline void mptcp_del_sock(struct sock *sk) {}
-static inline void mptcp_update_metasocket(struct sock *sock,
-		struct multipath_pcb *mpcb) {}
+static inline void mptcp_add_sock(const struct multipath_pcb *mpcb,
+				  const struct tcp_sock *tp) {}
+static inline void mptcp_del_sock(const struct sock *sk) {}
+static inline void mptcp_update_metasocket(const struct sock *sock,
+					   const struct multipath_pcb *mpcb) {}
 static inline int mptcp_sendmsg(struct kiocb *iocb, struct sock *master_sk,
 		struct msghdr *msg, size_t size)
 {
 	return 0;
 }
-static inline void mptcp_reinject_data(struct sock *orig_sk, int clone_it) {}
-static inline int mptcp_get_dataseq_mapping(struct tcp_sock *tp,
-		struct sk_buff *skb)
+static inline void mptcp_reinject_data(const struct sock *orig_sk,
+				       int clone_it) {}
+static inline int mptcp_get_dataseq_mapping(const struct tcp_sock *tp,
+					    const struct sk_buff *skb)
 {
 	return 0;
 }
-static inline int mptcp_init_subsockets(struct multipath_pcb *mpcb,
-		u32 path_indices)
+static inline int mptcp_init_subsockets(const struct multipath_pcb *mpcb,
+					u32 path_indices)
 {
 	return 0;
 }
-static inline void mptcp_update_window_clamp(struct tcp_sock *tp) {}
-static inline void mptcp_update_sndbuf(struct multipath_pcb *mpcb) {}
-static inline void mptcp_update_dsn_ack(struct multipath_pcb *mpcb, u32 start,
-		u32 end) {}
-static inline void mptcp_set_state(struct sock *sk, int state) {}
-static inline void mptcp_push_frames(struct sock *sk) {}
-static inline void mptcp_skb_entail_init(struct sock *sk,
-		struct sk_buff *skb) {}
-static inline void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb) {}
-static inline struct sk_buff *mptcp_next_segment(struct sock *sk,
-		int *reinject)
+static inline void mptcp_update_window_clamp(const struct tcp_sock *tp) {}
+static inline void mptcp_update_sndbuf(const struct multipath_pcb *mpcb) {}
+static inline void mptcp_set_state(const struct sock *sk, int state) {}
+static inline void mptcp_push_frames(const struct sock *sk) {}
+static inline void mptcp_skb_entail_init(const struct sock *sk,
+					 const struct sk_buff *skb) {}
+static inline void mptcp_skb_entail(const struct sock *sk,
+				    const struct sk_buff *skb) {}
+static inline struct sk_buff *mptcp_next_segment(const struct sock *sk,
+						 const int *reinject)
 {
 	return NULL;
 }
-static inline void mpcb_release(struct multipath_pcb *mpcb) {}
-static inline void mptcp_release_sock(struct sock *sk) {}
-static inline void mptcp_clean_rtx_queue(struct sock *meta_sk) {}
-static inline void mptcp_clean_rtx_infinite(struct sk_buff *skb,
-		struct sock *sk) {}
-static inline void mptcp_retransmit_timer(struct sock *meta_sk) {}
-static inline void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb) {}
-static inline struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk)
+static inline void mpcb_release(const struct multipath_pcb *mpcb) {}
+static inline void mptcp_release_sock(const struct sock *sk) {}
+static inline void mptcp_clean_rtx_queue(const struct sock *meta_sk) {}
+static inline void mptcp_clean_rtx_infinite(const struct sk_buff *skb,
+					    const struct sock *sk) {}
+static inline void mptcp_retransmit_timer(const struct sock *meta_sk) {}
+static inline void mptcp_mark_reinjected(const struct sock *sk,
+					 const struct sk_buff *skb) {}
+static inline struct sk_buff *mptcp_rcv_buf_optimization(const struct sock *sk)
 {
 	return NULL;
 }
-static inline void mptcp_set_rto(struct sock *sk) {}
-static inline void mptcp_reset_xmit_timer(struct sock *meta_sk) {}
-static inline void mptcp_send_fin(struct sock *meta_sk) {}
-static inline void mptcp_parse_options(uint8_t *ptr, int opsize,
-		struct tcp_options_received *opt_rx,
-		struct multipath_options *mopt,
-		struct sk_buff *skb) {}
-static inline void mptcp_close(struct sock *master_sk, long timeout) {}
-static inline void mptcp_detach_unused_child(struct sock *sk) {}
-static inline void mptcp_set_bw_est(struct tcp_sock *tp, u32 now) {}
-static inline int do_mptcp(struct sock *sk)
+static inline void mptcp_set_rto(const struct sock *sk) {}
+static inline void mptcp_reset_xmit_timer(const struct sock *meta_sk) {}
+static inline void mptcp_send_fin(const struct sock *meta_sk) {}
+static inline void mptcp_parse_options(const uint8_t *ptr, const int opsize,
+				       const struct tcp_options_received *opt_rx,
+				       const struct multipath_options *mopt,
+				       const struct sk_buff *skb) {}
+static inline void mptcp_close(const struct sock *master_sk, long timeout) {}
+static inline void mptcp_detach_unused_child(const struct sock *sk) {}
+static inline void mptcp_set_bw_est(const struct tcp_sock *tp, u32 now) {}
+static inline int do_mptcp(const struct sock *sk)
 {
 	return 0;
 }
-static inline int mptcp_check_req_master(struct sock *child,
-		struct request_sock *req, struct multipath_options *mopt)
+static inline int mptcp_check_req_master(const struct sock *child,
+					 const struct request_sock *req,
+					 const struct multipath_options *mopt)
 {
 	return 0;
 }
-static inline struct sock *mptcp_check_req_child(struct sock *sk,
-		struct sock *child, struct request_sock *req,
-		struct request_sock **prev)
+static inline struct sock *mptcp_check_req_child(const struct sock *sk,
+						 const struct sock *child,
+						 const struct request_sock *req,
+						 const struct request_sock **prev)
 {
 	return 0;
 }
-static inline void mptcp_select_window(struct tcp_sock *tp, u32 new_win) {}
-static inline u32 __mptcp_select_window(struct sock *sk)
+static inline void mptcp_select_window(const struct tcp_sock *tp, u32 new_win) {}
+static inline u32 __mptcp_select_window(const struct sock *sk)
 {
 	return 0;
 }
-static inline int mptcp_try_rmem_schedule(struct sock *tp, unsigned int size)
+static inline int mptcp_try_rmem_schedule(const struct sock *tp,
+					  unsigned int size)
 {
 	return 0;
 }
-static inline void mptcp_update_window_check(struct tcp_sock *meta_tp,
-		struct sk_buff *skb, u32 data_ack) {}
-static inline void mptcp_set_data_size(struct tcp_sock *tp,
-		struct sk_buff *skb, int copy) {}
-static inline int mptcp_push(struct sock *sk, int flags, int mss_now,
-		int nonagle)
+static inline void mptcp_update_window_check(const struct tcp_sock *meta_tp,
+					     const struct sk_buff *skb,
+					     u32 data_ack) {}
+static inline void mptcp_set_data_size(const struct tcp_sock *tp,
+				       const struct sk_buff *skb, int copy) {}
+static inline int mptcp_push(const struct sock *sk, int flags,
+			     int mss_now, int nonagle)
 {
 	return 0;
 }
-static inline void mptcp_fallback(struct sock *master_sk) {}
-static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
-		struct sk_buff *skb)
+static inline void mptcp_fallback(const struct sock *master_sk) {}
+static inline int mptcp_fallback_infinite(const struct tcp_sock *tp,
+					  const struct sk_buff *skb)
 {
 	return 0;
 }
-static inline void mptcp_mp_fail_rcvd(struct multipath_pcb *mpcb,
-		struct tcphdr *th) {}
-static inline void mptcp_init_mp_opt(struct multipath_options *mopt) {}
-static inline void mptcp_wmem_free_skb(struct sock *sk, struct sk_buff *skb) {}
+static inline void mptcp_mp_fail_rcvd(const struct multipath_pcb *mpcb,
+				      const struct tcphdr *th) {}
+static inline void mptcp_init_mp_opt(const struct multipath_options *mopt) {}
+static inline void mptcp_wmem_free_skb(const struct sock *sk,
+				       const struct sk_buff *skb) {}
 static inline int is_local_addr4(u32 addr)
 {
 	return 0;
 }
-static inline void mptcp_sock_destruct(struct sock *sk) {}
-static inline int mptcp_skip_offset(struct tcp_sock *tp,
-		unsigned char __user **from, size_t *seglen, size_t *size)
+static inline void mptcp_sock_destruct(const struct sock *sk) {}
+static inline int mptcp_skip_offset(const struct tcp_sock *tp,
+				    const unsigned char __user **from,
+				    const size_t *seglen, const size_t *size)
 {
 	return 0;
 }
-static inline void mptcp_update_pointers(struct tcp_sock *tp,
-		struct sock **meta_sk, struct tcp_sock **meta_tp,
-		struct multipath_pcb **mpcb) {}
-static inline int mptcp_check_rtt(struct tcp_sock *tp, int time)
+static inline void mptcp_update_pointers(const struct tcp_sock *tp,
+					 const struct sock **meta_sk,
+					 const struct tcp_sock **meta_tp,
+					 const struct multipath_pcb **mpcb) {}
+static inline int mptcp_check_rtt(const struct tcp_sock *tp, int time)
 {
 	return 0;
 }
-static inline void mptcp_path_array_check(struct multipath_pcb *mpcb) {}
-static inline int mptcp_check_snd_buf(struct tcp_sock *tp)
+static inline void mptcp_path_array_check(const struct multipath_pcb *mpcb) {}
+static inline int mptcp_check_snd_buf(const struct tcp_sock *tp)
 {
 	return 0;
 }
-static inline void mptcp_retransmit_queue(struct sock *sk) {}
-static inline void mptcp_include_mpc(struct tcp_sock *tp) {}
-static inline void mptcp_send_reset(struct sock *sk, struct sk_buff *skb) {}
-static inline int mptcp_get_path_family(struct multipath_pcb *mpcb,
+static inline void mptcp_retransmit_queue(const struct sock *sk) {}
+static inline void mptcp_include_mpc(const struct tcp_sock *tp) {}
+static inline void mptcp_send_reset(const struct sock *sk,
+				    const struct sk_buff *skb) {}
+static inline int mptcp_get_path_family(const struct multipath_pcb *mpcb,
 					int path_index)
 {
 	return 0;
 }
-static inline struct sock *mptcp_sk_clone(struct sock *sk, int family,
-		int priority)
+static inline struct sock *mptcp_sk_clone(const struct sock *sk,
+					  int family, int priority)
 {
 	return NULL;
 }
