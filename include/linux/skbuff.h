@@ -334,9 +334,6 @@ struct sk_buff {
 	struct sock		*sk;
 	struct net_device	*dev;
 #ifdef CONFIG_MPTCP
-	unsigned int            path_index; /* Path index for multipath
-					     * control
-					     */
 	__u32                   path_mask; /* Mask of the path indices that
 					    * have tried to send this skb
 					    */

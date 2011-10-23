@@ -566,7 +566,7 @@ static inline void tcp_mark_urg(struct tcp_sock *tp, int flags)
 		tp->snd_up = tp->write_seq;
 }
 
-inline void tcp_push(struct sock *sk, int flags, int mss_now,
+void tcp_push(struct sock *sk, int flags, int mss_now,
 			    int nonagle)
 {
 	if (mptcp_push(sk, flags, mss_now, nonagle))
@@ -1638,6 +1638,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			}
 		}
 
+		/* Next get a buffer. */
+
 		skb_queue_walk(&meta_sk->sk_receive_queue, skb) {
 			/* Now that we have two receive queues this
 			 * shouldn't happen.
@@ -1924,7 +1926,7 @@ skip_copy:
 		}
 		continue;
 
-		found_fin_ok:
+	found_fin_ok:
 		/* Process the FIN. */
 		++*seq;
 		if (!(flags & MSG_PEEK)) {

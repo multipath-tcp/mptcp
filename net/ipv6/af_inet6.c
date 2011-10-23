@@ -382,7 +382,6 @@ int inet6_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	inet->inet_sport = htons(inet->inet_num);
 	inet->inet_dport = 0;
 	inet->inet_daddr = 0;
-
 out:
 	release_sock(sk);
 	return err;
@@ -1192,15 +1191,13 @@ static int __init inet6_init(void)
 	if (err)
 		goto sysctl_fail;
 #endif
-
 out:
 	return err;
 
 #ifdef CONFIG_SYSCTL
-	ipv6_sysctl_unregister();
-#endif
 sysctl_fail:
 	ipv6_packet_cleanup();
+#endif
 ipv6_packet_fail:
 	tcpv6_exit();
 tcpv6_fail:

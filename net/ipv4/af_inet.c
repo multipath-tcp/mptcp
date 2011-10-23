@@ -529,7 +529,6 @@ int inet_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	inet->inet_daddr = 0;
 	inet->inet_dport = 0;
 	sk_dst_reset(sk);
-
 	err = 0;
 out_release_sock:
 	release_sock(sk);

@@ -546,7 +546,6 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 #endif
 	new->vlan_tci		= old->vlan_tci;
 #ifdef CONFIG_MPTCP
-	new->path_index         = old->path_index;
 	new->path_mask          = old->path_mask;
 #endif
 
@@ -1033,7 +1032,7 @@ unsigned char *skb_push(struct sk_buff *skb, unsigned int len)
 {
 	skb->data -= len;
 	skb->len  += len;
-	if (unlikely(skb->data < skb->head)) {
+	if (unlikely(skb->data<skb->head)) {
 		skb_under_panic(skb, len, __builtin_return_address(0));
 		console_loglevel = 8;
 		BUG();
