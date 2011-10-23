@@ -852,6 +852,7 @@ static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
 }
 
 #endif /* (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)) */
+
 #else /* CONFIG_MPTCP */
 
 #define is_mapping_applied(skb) (0))
