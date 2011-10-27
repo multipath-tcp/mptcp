@@ -53,6 +53,7 @@
  */
 
 #include <linux/skbuff.h>
+#include <linux/slab.h>
 #include <net/tcp.h>
 #include <net/mptcp.h>
 
@@ -69,53 +70,114 @@
 struct node {
 	struct node          *next;
 	struct node          *prev;
-	struct node          *up;
+	short                is_node;
+	struct sock          *shortcut_owner; /* Owner of a shortcut pointer
+					       * to this skb. Used by the
+					       * out-of-order BST
+					       */
 	struct sk_buff_head  queue;
 };
 
-#define low_dsn(n)						\
-	((n)->up ? TCP_SKB_CB((struct sk_buff*)(n))->data_seq :	\
-	 TCP_SKB_CB(skb_peek(&(n)->queue))->data_seq)
+struct kmem_cache *node_cache;
+
+#define low_dsn(n)							\
+	((n)->is_node ? TCP_SKB_CB(skb_peek(&(n)->queue))->data_seq :	\
+	 TCP_SKB_CB((struct sk_buff*)(n))->data_seq)
 #define high_dsn(n)							\
-	((n)->up ? TCP_SKB_CB((struct sk_buff*)(n))->end_data_seq :	\
-	 TCP_SKB_CB(skb_peek_tail(&(n)->queue))->end_data_seq)
-#define up(n)								\
-	((n)->up ? (n)->up : (struct node *)skb_peek(&(n)->queue)->up)
-#define up_ptr(n)							\
-	((n)->up ? &(n)->up : (struct node **)&skb_peek(&(n)->queue)->up)
+	((n)->is_node ? TCP_SKB_CB(skb_peek_tail(&(n)->queue))->end_data_seq : \
+	 TCP_SKB_CB((struct sk_buff*)(n))->end_data_seq)
 
 #ifdef DEBUG_MPTCP_OFO_TREE
 /**
- * Debugging print of the ofo tree.
- * Note that this function is recursive and may fill the stack.
- * Use with caution and _never_ enable in a production environment.
+ * Debugging print of the ofo queue.
  */
-void print_ofo_tree(struct node *root, int offset)
+void print_ofo_queue(struct sk_buff_head *head)
 {
-	char spaces[30];
-	int i;
+	struct sk_buff *skb;
 
-	if (!root)
-		return;
-	BUG_ON(offset >= sizeof(spaces));
-	for (i=0; i < offset; i++)
-		spaces[i]=' ';
-	spaces[i]='\0';
-	printk(KERN_ERR "%s [%x,%x], queue_node: %d, up: %p\n",
-	       spaces, low_dsn(root),
-	       high_dsn(root), (root->up ? 0 : 1), up(root));
-	printk(KERN_ERR "%s left:\n", spaces);
-	if (root->prev)
-		print_ofo_tree(root->prev, offset+1);
-	printk(KERN_ERR "%s right:\n", spaces);
-	if (root->next)
-		print_ofo_tree(root->next, offset+1);
+	skb_queue_walk(head, skb) {
+		struct node *n = (struct node *)skb;
+		printk(KERN_ERR " [%x,%x], queue_node: %d\n",
+		       low_dsn(n), high_dsn(n), n->is_node);
+	}
+}
+
+static int find_node(struct node *n, struct sk_buff_head *head)
+{
+	struct sk_buff *skb;
+
+	skb_queue_walk(head, skb) {
+		struct node *n_it = (struct node *)skb;
+		if (n == n_it) return 1;
+	}
+	return 0;
+}
+
+static int find_node_mpcb(struct multipath_pcb *mpcb)
+{
+	struct tcp_sock *tp_it;
+	mptcp_for_each_tp(mpcb, tp_it) {
+		if (tp_it->shortcut_ofoqueue &&
+		    !find_node((struct node *)tp_it->shortcut_ofoqueue,
+			       &mpcb->tp.out_of_order_queue)) {
+			printk(KERN_ERR "find_node_mpcb() failed\n");
+			BUG();
+		}
+	}
 }
 #endif
 
+/* shortcut operations
+ * invariant1: There is always a one-one relationship between
+ *       a shortcut and its owner.
+ * invariant2: An skb located in a node sequence is _never_ involved in a
+ *      shortcut relationship (its container node is involved instead).
+ * Policy: The case we optimize here is when a sequence of segments from
+ *      a given sock arrive at the same node. For this reason, when we come
+ *      to merging nodes, we just drop the shortcut.
+ */
+
+static void move_shortcut(struct node *n_src, struct node *n_dst)
+{
+	/* if n_dst has a shortcut, drop it */
+	if (n_dst->shortcut_owner)
+		tcp_sk(n_dst->shortcut_owner)->shortcut_ofoqueue = NULL;
+	if (n_src->shortcut_owner) {
+		tcp_sk(n_src->shortcut_owner)->shortcut_ofoqueue =
+			(struct sk_buff *)n_dst;
+		n_dst->shortcut_owner = n_src->shortcut_owner;
+		n_src->shortcut_owner = NULL;
+	} else {
+		n_dst->shortcut_owner = NULL;
+	}
+}
+
+static void drop_shortcut(struct node *n)
+{
+	if (n->shortcut_owner) {
+		tcp_sk(n->shortcut_owner)->shortcut_ofoqueue = NULL;
+		n->shortcut_owner = NULL;
+	}
+}
+
+static void add_shortcut(struct tcp_sock *tp, struct node *n)
+{
+	if ((struct node *)tp->shortcut_ofoqueue == n)
+		return;
+	/* remove any previous shortcut in the sock */
+	if (tp->shortcut_ofoqueue)
+		tp->shortcut_ofoqueue->shortcut_owner = NULL;
+	/* remove any shortcut attachment in n */
+	drop_shortcut(n);
+	/* attach */
+	n->shortcut_owner = (struct sock *)tp;
+	tp->shortcut_ofoqueue = (struct sk_buff *)n;
+}
+
 static void free_node(struct node *n)
 {
-	if (n->up) {
+	if (!n->is_node) {
+		drop_shortcut(n);
 		__kfree_skb((struct sk_buff *)n);
 	} else {
 		struct sk_buff *skb, *tmp;
@@ -123,47 +185,42 @@ static void free_node(struct node *n)
 			__skb_unlink(skb, &n->queue);
 			__kfree_skb(skb);
 		}
-		kfree(n);
+		drop_shortcut(n);
+		kmem_cache_free(node_cache, n);
 	}
 }
 
 /**
- * @post: @new has replaced @old in the tree. WARNING: up_ptr(@new) is NOT set.
- *       It is the responsability of the caller to set it.
- *       (reason: replace_node() may be called on a list that is still empty,
- *       which implies that the normal up pointer for the list, in the first
- *       skb cannot be set yet).
+ * @post: @new has replaced @old in the queue.
  */
-static void replace_node(struct node **old, struct node *new)
+static void replace_node(struct node *old, struct node *new)
 {
-	/* We need to keep a simple pointer, because the double one
-	 * may be changed by new->next and new->prev assignments.
-	 */
-	struct node *old_node = *old;
 	/* set references in new */
-	new->next = old_node->next;
-	new->prev = old_node->prev;
-	/* set references in childs */
-	if (old_node->prev)
-		*up_ptr(old_node->prev) = new;
-	if (old_node->next)
-		*up_ptr(old_node->next) = new;
-	/* set reference in parent */
-	*old = new;
+	new->next = old->next;
+	new->prev = old->prev;
+
+	/* set reference in the neighbours */
+	new->next->prev = new;
+	new->prev->next = new;
+
+	/* move shortcut pointer to new node */
+	move_shortcut(old, new);
 }
 
 /**
- * @pre: n1 must be before n2, and one cannot fully overlap the other, but
+ * @pre: @n1 must be before @n2, and one cannot fully overlap the other, but
  *       they must be contiguous or partially overlapping.
- * @aggreg: either n1 or n2, depending on which one aggregates the other.
- *          the merged node will inherit the next,prev and up pointers from
+ *       Only @aggreg is assumed to be
+ *       in the queue. Should the other node be in the queue as well, it must
+ *       have been removed by the caller before calling.
+ * @aggreg: either @n1 or @n2, depending on which one aggregates the other.
+ *          the merged node will inherit the next and prev pointers from
  *          @aggreg.
- * @return: The node that contains the concatenation of n1 and n2.
+ * @return: The node that contains the concatenation of @n1 and @n2.
  */
 static struct node *concat(struct node *n1, struct node *n2,
-			   struct node **aggreg)
+			   struct node *aggreg)
 {
-	struct node *old = *aggreg;
 	/* Concatenating necessarily results in using a sequence of skbuffs.
 	 * If one of n1 or n2 is already a sequence, we reuse the allocated
 	 * memory. If both are a sequence, we drop one. If none is a sequence,
@@ -172,39 +229,41 @@ static struct node *concat(struct node *n1, struct node *n2,
 	 * Note: segment enqueing _must_ be done after replace_node()
 	 * in any case, otherwise replace_node sets wrong pointers.
 	 */
-	if (n1->up && n2->up) {
+	if (!n1->is_node && !n2->is_node) {
 		struct node *n;
 		/* No queue yet, create one */
-		n = kmalloc(sizeof(struct node), GFP_ATOMIC);
+		n = kmem_cache_alloc(node_cache, GFP_ATOMIC);
 		if (!n)
 			return NULL;
-		n->up = NULL;
+		n->is_node = 1;
+		n->shortcut_owner = NULL;
 		__skb_queue_head_init(&n->queue);
 		replace_node(aggreg, n);
+		/* Enforce invariant 2
+		 * (shortcut inherited by node in replace_node)
+		 */
+		drop_shortcut(n1);
+		drop_shortcut(n2);
 		__skb_queue_head(&n->queue, (struct sk_buff *)n2);
 		__skb_queue_head(&n->queue, (struct sk_buff *)n1);
-		n1->up = up(old);
 		return n;
-	} else if (n1->up && !n2->up) {
+	} else if (!n1->is_node && n2->is_node) {
 		/* expand n2 queue */
-		if (old == n1)
+		if (aggreg == n1)
 			replace_node(aggreg, n2);
 		else
-			n1->up = up(n2);
+			drop_shortcut(n1); /* invariant 2 */
 		__skb_queue_head(&n2->queue, (struct sk_buff *)n1);
 		return n2;
-	} else if (!n1->up && n2->up) {
+	} else if (n1->is_node && !n2->is_node) {
 		/* expand n1 queue */
-		if (old == n2) {
+		if (aggreg == n2)
 			replace_node(aggreg, n1);
-			*up_ptr(n1) = n2->up;
-		}
-		/* no need to update n2->up as it is not put on the head
-		 * of the queue.
-		 */
+		else
+			drop_shortcut(n2); /* invariant 2 */
 		__skb_queue_tail(&n1->queue, (struct sk_buff *)n2);
 		return n1;
-	} else { /* both n1 and n2 are queues */
+	} else { /* both n1 and n2 are nodes with a queue inside */
 		struct sk_buff *skb;
 		/* Prune duplicated segments */
 		for (skb = skb_peek_tail(&n1->queue);
@@ -215,278 +274,199 @@ static struct node *concat(struct node *n1, struct node *n2,
 			__kfree_skb(skb);
 		}
 
-		if (old == n1)
+		if (aggreg == n1)
 			replace_node(aggreg, n2);
 		else
-			*up_ptr(n1) = up(n2);
+			drop_shortcut(n1); /* invariant 2 */
 
 		/* Concat the queues and store in n2.
 		 */
 		skb_queue_splice(&n1->queue, &n2->queue);
-		kfree(n1);
+		kmem_cache_free(node_cache, n1);
 		return n2;
 	}
 }
 
 /**
- * After a node has been replaced in the tree, this function is called
- * to remove any node that is covered by the new one, and merge nodes that
- * are now contiguous.
- * @pre: @root must be a valid node, that is, not the absolute root
- *       of the binary tree.
- * @root: The root of the tree to be considered. Merging is considered
- *        with the child branches of @root.
+ * @head: The parent of the absolute root, which is not a real node and
+ *        has both prev and next pointers pointing to the absolute root.
+ *        used to fill the up pointer of the root if needed.
+ * @container: Used to return the node in which the skb has been inserted
+ *             (either the skb itself of its containing node)
  */
-static void compact_tree(struct node **root)
+static inline int try_shortcut(struct node *shortcut, struct sk_buff *skb,
+			       struct sk_buff_head *head,
+			       struct node **container)
 {
-	struct node *left_cand = (*root)->prev;
-	struct node *right_cand = (*root)->next;
-	/* Left candidate : right-most child in the left branch */
-	if (left_cand) {
-		while(left_cand->next)
-			left_cand = left_cand->next;
-	}
-	/* Right candidate : left-most child in the right branch */
-	if (right_cand) {
-		while(right_cand->prev)
-			right_cand = right_cand->prev;
-	}
+	struct node *n = (struct node*) skb;
+	struct sk_buff *skb1;
+	struct node *n1;
+	u32 seq = TCP_SKB_CB(skb)->data_seq;
+	u32 end_seq = TCP_SKB_CB(skb)->end_data_seq;
 
-	/* Can left candidate be merged ? */
-	while (left_cand &&
-	       !before(high_dsn(left_cand), low_dsn(*root))) {
-		struct node *parent = up(left_cand);
-		if (parent == *root)
-			parent->prev = left_cand->prev;
-		else
-			parent->next = left_cand->prev;
-		if (left_cand->prev)
-			*up_ptr(left_cand->prev) = parent;
-		if (!before(low_dsn(left_cand), low_dsn(*root))) {
-			struct node *tofree;
-			/* The root fully covers the child */
-			tofree = left_cand;
-			left_cand = parent;
-			while (left_cand->next)
-				left_cand = left_cand->next;
-			free_node(tofree);
-			if (left_cand == *root)
-				break;
-		} else {
-			/* TODO: Graceful exit in case of failed
-			 * kmalloc, we cannot just stop here, as the tree
-			 * is not anymore consistent. Probably we need to freeze
-			 * the tree and delay the operation for a workqueue,
-			 * or we are more aggressive and we reset the meta-flow.
-			 */
-			if (!concat(left_cand, *root, root))
-				BUG();
-			break;
-		}
-
-	}
-	/* Can right candidate be merged ? */
-	while (right_cand &&
-	       !before(high_dsn(*root), low_dsn(right_cand))) {
-		struct node *tofree;
-		struct node *parent = up(right_cand);
-		if (parent == *root)
-			parent->next = right_cand->next;
-		else
-			parent->prev = right_cand->next;
-		if (right_cand->next)
-			*up_ptr(right_cand->next) = parent;
-		if (!before(high_dsn(*root), high_dsn(right_cand))) {
-			/* The root fully covers the child */
-			tofree = right_cand;
-			right_cand = parent;
-			while (right_cand->prev)
-				right_cand = right_cand->prev;
-			free_node(tofree);
-			if (right_cand == *root)
-				break;
-		} else {
-			/* TODO: Graceful exit in case of failed
-			 * kmalloc.
-			 */
-			if (!concat(*root, right_cand, root))
-				BUG();
-			break;
-		}
-	}
-}
-
-/**
- * @parent: The parent of the current node being considered. It is
- *          used to fill the up pointer of the root if needed.
- * @root: The address of the current root being considered, that is,
- *        either the next or prev pointer of the parent.
- */
-static int mptcp_ofo_insert(struct node **root, struct sk_buff *skb,
-			    struct node *parent)
-{
-	/* Find the insertion point, as the root of the correct subtree.
-	 * Once this is found, only the subtree rooted at root will be modified.
+	/* If there is no overlap with the shortcut, we need
+	 * to examine the full tree
 	 */
-	while(*root) {
-		if (before(TCP_SKB_CB(skb)->end_data_seq, low_dsn(*root))) {
-			parent = *root;
-			root = &((*root)->prev);
-		} else if (after(TCP_SKB_CB(skb)->data_seq, high_dsn(*root))) {
-			parent = *root;
-			root = &((*root)->next);
-		} else {
-			break;
+
+	if (!shortcut) {
+		n1 = (struct node *)(skb1 = skb_peek_tail(head));
+		if (!skb1) {
+			__skb_queue_head(head, skb);
+			*container = (struct node *)skb;
+			return 0;
+		}
+	} else {
+		/* fast path */
+		if (seq == high_dsn(shortcut)) {
+			*container = concat(shortcut, n, shortcut);
+			skb = (struct sk_buff *)(n = *container);
+			goto clean_covered;
+		}
+		skb1 = (struct sk_buff *)(n1 = shortcut);
+		/* If the shortcut is _before_ skb1, we need to
+		 * traverse the list from shortcut to right, which is the
+		 * reverse compared to the default
+		 */
+		while (!skb_queue_is_last(head, skb1) &&
+		       before(high_dsn(n1), seq)) {
+			n1 = (struct node *)(skb1 = skb_queue_next(head, skb1));
 		}
 	}
 
-	if (!*root) {
-		*root = (struct node *)skb;
-		skb->up = (struct sk_buff *)parent;
-		skb->next = skb->prev = NULL;
-		return 0;
+	/* Find the insertion point */
+	while (1) {
+		if (!after(low_dsn(n1), seq))
+			break;
+		if (skb_queue_is_first(head, skb1)) {
+			n1 = (struct node *)(skb1 = NULL);
+			break;
+		}
+		n1 = (struct node *)(skb1 = skb_queue_prev(head, skb1));
 	}
+	/* Do skb overlap to previous one? */
+	if (n1 && !after(seq, high_dsn(n1))) {
+		if (!after(end_seq, high_dsn(n1))) {
+			/* All the bits are present. Drop. */
+			*container = NULL;
+			return 1;
+		}
+		if (seq == low_dsn(n1)) {
+			/* Here, n1 is fully covered by skb1,
+			 * we add n1 before skb1 so that code later
+			 * eats n1 and maybe subsequent segments that
+			 * are also covered.
+			 */
+			if (skb_queue_is_first(head, skb1))
+				n1 = (struct node *)(skb1 = NULL);
+			else
+				n1 = (struct node *)(skb1 =
+						     skb_queue_prev(head, skb1));
+		} else {
+			/* We can concat them */
+			*container = concat(n1, n, n1);
+			skb = (struct sk_buff *)(n = *container);
+			goto clean_covered;
+		}
+	}
+	if (!skb1)
+		__skb_queue_head(head, skb);
+	else
+		__skb_queue_after(head, skb1, skb);
+	*container = n;
+clean_covered:
+	/* And clean segments covered by new one as whole. */
+	while (!skb_queue_is_last(head, skb)) {
+		n1 = (struct node *)(skb1 = skb_queue_next(head, skb));
 
-	if (!before(TCP_SKB_CB(skb)->data_seq, low_dsn(*root)) &&
-	    !after(TCP_SKB_CB(skb)->end_data_seq, high_dsn(*root))) {
-		/* No new information */
-		return 1;
+		if (before(end_seq, low_dsn(n1)))
+			break;
+		if (before(end_seq, high_dsn(n1))) {
+			/* We can concat them */
+			__skb_unlink(skb1, head);
+			*container = concat(n, n1, n);
+			break;
+		}
+		__skb_unlink(skb1, head);
+		free_node(n1);
 	}
-	if (!after(TCP_SKB_CB(skb)->data_seq, low_dsn(*root)) &&
-	    !before(TCP_SKB_CB(skb)->end_data_seq, high_dsn(*root))) {
-		/* Current root fully covered by new segment */
-		struct node *old = *root;
-		replace_node(root, (struct node *)skb);
-		skb->up = (struct sk_buff *)up(old);
-		free_node(old);
-		compact_tree(root);
-		return 0;
-	}
-	if (before(TCP_SKB_CB(skb)->data_seq, low_dsn(*root))) {
-		/* left-merge */
-		if (!concat((struct node *)skb, *root, root))
-			BUG();
-		compact_tree(root);
-		return 0;
-	}
-	/* Last option, right-merge */
-	if (!concat(*root, (struct node *)skb, root))
-		BUG();
-	compact_tree(root);
 	return 0;
 }
 
-
 /**
+ * @sk: the subflow that received this skb.
  * @return: 1 if the skb must be dropped by the caller, otherwise 0
  */
-int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb)
+int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
+			     struct sock *sk)
 {
 	int ans;
 	struct sk_buff_head *head = &tcp_sk(meta_sk)->out_of_order_queue;
-	skb->up = (struct sk_buff *)1; /* Otherwise it is mistaken for a
-					* container.
-					*/
-	ans = mptcp_ofo_insert(
-		(struct node **)&head->next, skb, (struct node *)head);
-	/* set the prev pointer as well, for easier management in
-	 * mptcp_ofo_queue
-	 */
-	head->prev = head->next;
+	struct node *container = NULL;
+	struct tcp_sock *tp = tcp_sk(sk);
+	skb->is_node = 0;
+	ans = try_shortcut((struct node *)tp->shortcut_ofoqueue, skb,
+			   head, &container);
+	/* update the shortcut pointer in @sk */
+	if (container)
+		add_shortcut(tp,container);
+
 	return ans;
 }
 
 void mptcp_ofo_queue(struct multipath_pcb *mpcb)
 {
-	struct node *head =
-		(struct node *)&((struct tcp_sock *)mpcb)->out_of_order_queue;
-	struct node *left_most = head;
-	struct sk_buff *skb;
 	struct sock *meta_sk = (struct sock *)mpcb;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct sk_buff *skb;
+	struct node *n;
 
-	while (left_most->prev)
-		left_most = left_most->prev;
-
-	/* In the normal case we do just one iteration.
-	 * Only when the new rcv_nxt covers several nodes do we
-	 * need to iterate.
-	 */
-	while(left_most != head) {
-		struct node *parent = up(left_most);
-
-		if (after(low_dsn(left_most), meta_tp->rcv_nxt))
+	while ((n = (struct node *)(skb =
+				    skb_peek(&meta_tp->out_of_order_queue)))
+	       != NULL) {
+		if (after(low_dsn(n), meta_tp->rcv_nxt))
 			break;
 
-		if (!after(high_dsn(left_most), meta_tp->rcv_nxt)) {
-			struct node *tofree = left_most;
-			/* Already received, can be dropped */
-			parent->prev = left_most->next;
-			if (left_most->next)
-				*up_ptr(left_most->next) = parent;
-			left_most = parent;
-			/* If tofree had a right child with itself aleft child,
-			 * the new left_most may be far away now.
-			 */
-			while (left_most->prev)
-				left_most = left_most->prev;
-			free_node(tofree);
+		if (!after(high_dsn(n), meta_tp->rcv_nxt)) {
+			__skb_unlink(skb, &meta_tp->out_of_order_queue);
+			free_node(n);
 			continue;
 		}
 
-		parent->prev = left_most->next;
-		if (left_most->next)
-			*up_ptr(left_most->next) = parent;
+		__skb_unlink(skb, &meta_tp->out_of_order_queue);
+		drop_shortcut(n);
 
-		if (left_most->up) { /* simple skb */
-			skb = (struct sk_buff *)left_most;
+		if (!n->is_node) { /* simple skb */
 			__skb_queue_tail(&meta_sk->sk_receive_queue, skb);
 			meta_tp->rcv_nxt = TCP_SKB_CB(skb)->end_data_seq;
 		} else { /* queue of skbuffs */
-			skb = skb_peek_tail(&left_most->queue);
-			meta_tp->rcv_nxt = high_dsn(left_most);
-			__skb_queue_splice(
-				&left_most->queue,
-				meta_sk->sk_receive_queue.prev,
-				(struct sk_buff *)&meta_sk->sk_receive_queue);
-			meta_sk->sk_receive_queue.qlen += left_most->queue.qlen;
-			kfree(left_most);
+			skb = skb_peek_tail(&n->queue);
+			meta_tp->rcv_nxt = high_dsn(n);
+			__skb_queue_splice(&n->queue,
+					   meta_sk->sk_receive_queue.prev,
+					   (struct sk_buff *)
+					   &meta_sk->sk_receive_queue);
+			meta_sk->sk_receive_queue.qlen += n->queue.qlen;
+			kmem_cache_free(node_cache, n);
 		}
+
 		if (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN)
 			mptcp_fin(mpcb);
-		break;
 	}
-	/* update the right member of the head as it may have changed */
-	head->next = head->prev;
 }
 
 void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp)
 {
 	struct sk_buff_head *head = &meta_tp->out_of_order_queue;
-	struct node *root = (struct node *)head->next;
-	struct node *parent;
-
-	/* Slighty strange flushing algorithm, but we do so
-	 * to avoid recursion
-	 */
-	while(head->next) {
-		while (root->prev || root->next) {
-			if (root->prev)
-				root = root->prev;
-			if (root->next)
-				root = root->next;
-		}
-		parent = up(root);
-		if (root == parent->next)
-			parent->next = NULL;
-		else
-			parent->prev = NULL;
-		free_node(root);
-		root = parent;
+	struct sk_buff *skb, *tmp;
+	skb_queue_walk_safe(head, skb, tmp) {
+		__skb_unlink(skb, head);
+		free_node((struct node *)skb);
 	}
-
-	/* set the prev pointer as well, for easier management in
-	 * mptcp_ofo_queue
-	 */
-	head->prev = NULL;
 }
+
+void mptcp_ofo_queue_init()
+{
+	node_cache = kmem_cache_create("mptcp_ofo_queue", sizeof(struct node),
+				       0, 0, NULL);
+}
+

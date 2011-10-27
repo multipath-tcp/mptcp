@@ -327,7 +327,11 @@ struct sk_buff {
 	struct sk_buff		*next;
 	struct sk_buff		*prev;
 #ifdef CONFIG_MPTCP
-	struct sk_buff          *up;
+	short                   is_node;
+	struct sock             *shortcut_owner; /* Owner of a shortcut pointer
+						  * to this skb. Used by the
+						  * out-of-order BST
+						  */
 #endif
 	ktime_t			tstamp;
 

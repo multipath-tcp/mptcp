@@ -547,7 +547,9 @@ struct tcp_sock {
 	u32	last_rbuf_opti;	/* Timestamp of last rbuf optimization */
 	unsigned long last_snd_probe;
 	unsigned long last_rcv_probe;
-
+	struct sk_buff  *shortcut_ofoqueue; /* Shortcut to the current modified
+					     * node in the ofo BST
+					     */
 	int		path_index;
 	struct tcp_sock	*next;		/* Next subflow socket */
 	__u32		mptcp_loc_random_number;

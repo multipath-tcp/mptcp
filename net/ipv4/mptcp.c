@@ -979,7 +979,7 @@ int mptcp_alloc_mpcb(struct sock *master_sk, struct request_sock *req,
 	meta_tp->mss_cache = mptcp_sysctl_mss();
 
 	skb_queue_head_init(&mpcb->reinject_queue);
-	mptcp_init_ofo_queue(meta_tp);
+	skb_queue_head_init(&meta_tp->out_of_order_queue);
 
 	meta_sk->sk_rcvbuf = sysctl_rmem_default;
 	meta_sk->sk_sndbuf = sysctl_wmem_default;
@@ -2121,7 +2121,8 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 				tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 				skb_set_owner_r(tmp1, meta_sk);
 
-				if (mptcp_add_meta_ofo_queue(meta_sk, tmp1)) {
+				if (mptcp_add_meta_ofo_queue(meta_sk, tmp1,
+							     sk)) {
 					if (tmp1 == skb)
 						ans = 1;
 					else
@@ -2159,7 +2160,8 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 					mptcp_fin(mpcb);
 
 				/* Check if this fills a gap in the ofo queue */
-				if (!mptcp_is_ofo_queue_empty(meta_tp))
+				if (!skb_queue_empty(
+					    &meta_tp->out_of_order_queue))
 					mptcp_ofo_queue(mpcb);
 
 				tp->copied_seq =
@@ -3112,6 +3114,7 @@ static int __init mptcp_init(void)
 #ifdef CONFIG_SYSCTL
 	register_sysctl_table(mptcp_root_table);
 #endif
+	mptcp_ofo_queue_init();
 	return 0;
 }
 module_init(mptcp_init);
