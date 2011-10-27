@@ -1022,7 +1022,7 @@ static inline int mptcp_check_req_master(const struct sock *child,
 static inline struct sock *mptcp_check_req_child(const struct sock *sk,
 						 const struct sock *child,
 						 const struct request_sock *req,
-						 const struct request_sock **prev)
+						 struct request_sock **prev)
 {
 	return 0;
 }
@@ -1063,15 +1063,15 @@ static inline int is_local_addr4(u32 addr)
 }
 static inline void mptcp_sock_destruct(const struct sock *sk) {}
 static inline int mptcp_skip_offset(const struct tcp_sock *tp,
-				    const unsigned char __user **from,
+				    unsigned char __user **from,
 				    const size_t *seglen, const size_t *size)
 {
 	return 0;
 }
 static inline void mptcp_update_pointers(const struct tcp_sock *tp,
-					 const struct sock **meta_sk,
-					 const struct tcp_sock **meta_tp,
-					 const struct multipath_pcb **mpcb) {}
+					 struct sock **meta_sk,
+					 struct tcp_sock **meta_tp,
+					 struct multipath_pcb **mpcb) {}
 static inline int mptcp_check_rtt(const struct tcp_sock *tp, int time)
 {
 	return 0;
