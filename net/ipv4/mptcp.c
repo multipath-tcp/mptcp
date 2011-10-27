@@ -1591,8 +1591,12 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 				&& !icsk->icsk_ack.pingpong))
 				&& !atomic_read(&meta_sk->sk_rmem_alloc))) {
 			time_to_ack = 1;
+			tcp_send_ack(sk);
 		}
 	}
+
+	if (time_to_ack)
+		return;
 
 	/* We send an ACK if we can now advertise a non-zero window
 	 * which has been raised "significantly".
@@ -1618,18 +1622,53 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 				time_to_ack = 1;
 		}
 	}
-	/* If we need to send an explicit window update, we need to choose
-	   some subflow to send it. At the moment, we use the master subsock
-	   for this. */
+
 	if (time_to_ack) {
-		/* We send it on all the subflows
-		 * that are able to receive data.*/
+		struct sock *subsk = NULL;
+		u32 max_data_seq = 0; /* Also a flag to indicate which one to use */
+		u32 min_time = 0xffffffff;
+
+		/* How do we select the subflow to send the window-update on?
+		 *
+		 * 1. He has to be in a state where he can receive data
+		 * 2. He has to be one of those subflow who recently
+		 *    contributed to the received stream
+		 *    (this guarantees a working subflow)
+		 *    a) its latest data_seq received is after the original
+		 *       copied_seq.
+		 *       We select the one with the lowest rtt, so that the
+		 *       window-update reaches our peer the fastest.
+		 *    b) if no subflow has this kind of data_seq (e.g., very
+		 *       strange meta-level retransmissions going on), we take
+		 *       the subflow who last sent the highest data_seq.
+		 */
 		mptcp_for_each_sk(mpcb, sk, tp) {
-			if (sk->sk_state == TCP_ESTABLISHED ||
-			    sk->sk_state == TCP_FIN_WAIT1 ||
-			    sk->sk_state == TCP_FIN_WAIT2)
-				tcp_send_ack(sk);
+			if (sk->sk_state != TCP_ESTABLISHED &&
+			    sk->sk_state != TCP_FIN_WAIT1 &&
+			    sk->sk_state != TCP_FIN_WAIT2)
+				continue;
+
+			/* Select among those who contributed to the
+			 * current receive-queue. */
+			if (after(tp->last_data_seq, meta_tp->copied_seq - copied)) {
+				if (tp->srtt < min_time) {
+					min_time = tp->srtt;
+					max_data_seq = 0;
+					subsk = sk;
+				}
+				continue;
+			}
+
+			/* Otherwise, take the one with the highest data_seq */
+			if ((!subsk || max_data_seq) &&
+			    after(tp->last_data_seq, max_data_seq)) {
+				max_data_seq = tp->last_data_seq;
+				subsk = sk;
+			}
 		}
+
+		if (subsk)
+			tcp_send_ack(subsk);
 	}
 }
 
@@ -2164,8 +2203,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 					    &meta_tp->out_of_order_queue))
 					mptcp_ofo_queue(mpcb);
 
-				tp->copied_seq =
-					TCP_SKB_CB(tmp1)->end_seq;
+				tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 
 				if (!eaten)
 					skb_set_owner_r(tmp1, meta_sk);
@@ -2178,6 +2216,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 				sk->sk_data_ready(sk, 0);
 		}
 
+		tp->last_data_seq = tp->map_data_seq;
 		mptcp_reset_mapping(tp);
 	}
 

@@ -539,6 +539,8 @@ struct tcp_sock {
 	u32	map_subseq;
 	u16	map_data_len;
 
+	u32	last_data_seq;
+
 	/* isn: needed to translate abs to relative subflow seqnums */
 	u32	snt_isn;
 	u32	reinjected_seq;
