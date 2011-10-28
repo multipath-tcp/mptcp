@@ -1187,7 +1187,7 @@ extern int tcp_v4_md5_do_del(struct sock *sk, __be32 addr);
 					.keylen = (twsk)->tw_md5_keylen, \
 				} : NULL)
 
-extern struct tcp_sock_af_ops tcp_sock_ipv6_specific;
+extern const struct tcp_sock_af_ops tcp_sock_ipv6_specific;
 #else
 #define tcp_twsk_md5_key(twsk)	NULL
 #endif
