@@ -1343,7 +1343,7 @@ void tcp_cleanup_rbuf(struct sock *sk, int copied)
  * failed somewhere. Latency? Burstiness? Well, at least now we will
  * see, why it failed. 8)8)				  --ANK
  */
-int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
+inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_sock *meta_tp = tp->mpc ? mpcb_meta_tp(tp->mpcb) : tp;

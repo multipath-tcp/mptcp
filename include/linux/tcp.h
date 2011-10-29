@@ -576,7 +576,6 @@ static inline struct tcp_sock *mpcb_meta_tp(const struct multipath_pcb *mpcb)
 }
 #endif
 
-
 static inline struct tcp_sock *tcp_sk(const struct sock *sk)
 {
 	return (struct tcp_sock *)sk;

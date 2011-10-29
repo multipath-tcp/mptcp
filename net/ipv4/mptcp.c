@@ -1300,7 +1300,7 @@ static inline void mptcp_become_fully_estab(struct tcp_sock *tp)
 		mptcp_send_updatenotif(tp->mpcb);
 }
 
-void mptcp_update_window_check(struct tcp_sock *tp, struct sk_buff *skb,
+void mptcp_update_window_check(struct tcp_sock *tp, const struct sk_buff *skb,
 		u32 data_ack)
 {
 	struct tcp_sock *meta_tp;
