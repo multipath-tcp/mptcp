@@ -88,7 +88,7 @@ static int mptcp_v6_join_request(struct multipath_pcb *mpcb,
 	u8 mptcp_hash_mac[20];
 	struct in6_addr saddr;
 	struct in6_addr daddr;
-	const u8 *hash_location;
+	u8 *hash_location;
 	__u32 isn = TCP_SKB_CB(skb)->when;
 
 	ipv6_addr_copy(&saddr, &ipv6_hdr(skb)->saddr);

@@ -1625,7 +1625,9 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 
 	if (time_to_ack) {
 		struct sock *subsk = NULL;
-		u32 max_data_seq;
+		u32 max_data_seq = 0;
+		/* max_data_seq initialized to correct compiler-warning.
+		 * But the initialization is handled by max_data_seq_set */
 		short max_data_seq_set = 0;
 		u32 min_time = 0xffffffff;
 
