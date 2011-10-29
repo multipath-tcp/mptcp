@@ -1625,7 +1625,8 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 
 	if (time_to_ack) {
 		struct sock *subsk = NULL;
-		u32 max_data_seq = 0; /* Also a flag to indicate which one to use */
+		u32 max_data_seq;
+		short max_data_seq_set = 0;
 		u32 min_time = 0xffffffff;
 
 		/* How do we select the subflow to send the window-update on?
@@ -1653,14 +1654,20 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 			if (after(tp->last_data_seq, meta_tp->copied_seq - copied)) {
 				if (tp->srtt < min_time) {
 					min_time = tp->srtt;
-					max_data_seq = 0;
 					subsk = sk;
+					max_data_seq_set = 0;
 				}
 				continue;
 			}
 
+			if (!subsk && !max_data_seq_set) {
+				max_data_seq = tp->last_data_seq;
+				max_data_seq_set = 1;
+				subsk = sk;
+			}
+
 			/* Otherwise, take the one with the highest data_seq */
-			if ((!subsk || max_data_seq) &&
+			if ((!subsk || max_data_seq_set) &&
 			    after(tp->last_data_seq, max_data_seq)) {
 				max_data_seq = tp->last_data_seq;
 				subsk = sk;
@@ -1669,6 +1676,9 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 
 		if (subsk)
 			tcp_send_ack(subsk);
+		else
+			printk(KERN_ERR "%s did not find a subsk! "
+					"Should not happen.\n", __func__);
 	}
 }
 
