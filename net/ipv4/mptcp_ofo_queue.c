@@ -449,7 +449,7 @@ void mptcp_ofo_queue(struct multipath_pcb *mpcb)
 			kmem_cache_free(node_cache, n);
 		}
 
-		if (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN)
+		if (mptcp_is_data_fin(skb))
 			mptcp_fin(mpcb);
 	}
 }

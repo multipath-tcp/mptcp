@@ -503,7 +503,7 @@ static inline int mptcp_skb_cloned(const struct sk_buff *skb,
 		 (atomic_read(&skb_shinfo(skb)->dataref) & SKB_DATAREF_MASK) > 2));
 }
 
-static inline int mptcp_is_data_fin(struct sk_buff *skb)
+static inline int mptcp_is_data_fin(const struct sk_buff *skb)
 {
 	return TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN;
 }

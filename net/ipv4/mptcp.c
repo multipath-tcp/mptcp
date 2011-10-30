@@ -789,8 +789,7 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 		 */
 		if (before(tcb->seq, tp->reinjected_seq) ||
 		    tcb->flags & TCPHDR_SYN ||
-		    (tcb->flags & TCPHDR_FIN &&
-		     !(tcb->mptcp_flags & MPTCPHDR_FIN)))
+		    (tcb->flags & TCPHDR_FIN && !mptcp_is_data_fin(skb_it)))
 			continue;
 		skb_it->path_mask |= mptcp_pi_to_flag(tp->path_index);
 		if (__mptcp_reinject_data(skb_it, meta_sk, sk, clone_it) < 0)
@@ -1921,8 +1920,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	u32 old_copied = tp->copied_seq;
 	int ans = 0;
 
-	if (!skb->len && tcp_hdr(skb)->fin &&
-	    !(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN)) {
+	if (!skb->len && tcp_hdr(skb)->fin && !mptcp_is_data_fin(skb)) {
 		/* Pure subflow FIN (without DFIN)
 		 * just update subflow and return
 		 */
@@ -1965,7 +1963,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 		tp->map_data_seq = tcb->data_seq = meta_tp->rcv_nxt;
 		tp->map_subseq = tcb->sub_seq = tcb->seq;
 		tp->map_data_len = tcb->data_len =
-			skb->len + (tcb->mptcp_flags & MPTCPHDR_FIN ? 1 : 0);
+			skb->len + (mptcp_is_data_fin(skb) ? 1 : 0);
 		tcb->end_data_seq = tcb->data_seq + tcb->data_len;
 	}
 
@@ -2207,7 +2205,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 				meta_tp->rcv_nxt =
 					TCP_SKB_CB(tmp1)->end_data_seq;
 
-				if (TCP_SKB_CB(tmp1)->mptcp_flags & MPTCPHDR_FIN)
+				if (mptcp_is_data_fin(tmp1))
 					mptcp_fin(mpcb);
 
 				/* Check if this fills a gap in the ofo queue */
@@ -2766,7 +2764,7 @@ void mptcp_close(struct sock *master_sk, long timeout)
 	while ((skb = __skb_dequeue(&meta_sk->sk_receive_queue)) != NULL) {
 		u32 len = TCP_SKB_CB(skb)->end_data_seq
 			- TCP_SKB_CB(skb)->data_seq
-			- ((TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN) ? 1 : 0);
+			- (mptcp_is_data_fin(skb) ? 1 : 0);
 		data_was_unread += len;
 		__kfree_skb(skb);
 	}

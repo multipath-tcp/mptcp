@@ -1057,7 +1057,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			size += MPTCP_SUB_LEN_ACK_ALIGN;
 		}
 
-		if (!skb || skb->len != 0 || (tcb->mptcp_flags & MPTCPHDR_FIN)) {
+		if (!skb || skb->len != 0 || mptcp_is_data_fin(skb)) {
 			dss = 1;
 
 			/* Send infinite mapping only on "new" data,
@@ -1086,7 +1086,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			size += MPTCP_SUB_LEN_SEQ_ALIGN;
 		}
 
-		if (tp->mpc && skb && (tcb->mptcp_flags & MPTCPHDR_FIN)) {
+		if (tp->mpc && skb && mptcp_is_data_fin(skb)) {
 			dss = 1;
 			opts->options |= OPTION_DATA_FIN;
 		}
