@@ -4558,6 +4558,20 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 	if (tp->mpc)
 		meta_tp = mpcb_meta_tp(mpcb);
 
+	if (mptcp_is_data_fin(skb) && TCP_SKB_CB(skb)->seq == TCP_SKB_CB(skb)->end_seq) {
+		__skb_pull(skb, th->doff * 4);
+
+		eaten = mptcp_queue_skb(sk, skb);
+		if (eaten < 0)
+			return;
+
+		if (eaten > 0)
+			__kfree_skb(skb);
+		else if (!sock_flag(sk, SOCK_DEAD) && !tp->mpc)
+			sk->sk_data_ready(sk, 0);
+		return;
+	}
+
 	if (TCP_SKB_CB(skb)->seq == TCP_SKB_CB(skb)->end_seq)
 		goto drop;
 
@@ -6221,7 +6235,8 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 					tmo = tcp_fin_time(sk);
 					if (tmo > TCP_TIMEWAIT_LEN) {
 						inet_csk_reset_keepalive_timer(sk, tmo - TCP_TIMEWAIT_LEN);
-					} else if (th->fin || sock_owned_by_user(sk)) {
+					} else if (th->fin || mptcp_is_data_fin(skb) ||
+						   sock_owned_by_user(sk)) {
 						/* Bad case. We could lose such FIN otherwise.
 						 * It is not a big problem, but it looks confusing
 						 * and not so rare event. We still can lose it now,

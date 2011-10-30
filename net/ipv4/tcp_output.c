@@ -2501,26 +2501,6 @@ retry:
 		if (sk!= subsk && reinject > 0) {
 			mptcp_mark_reinjected(subsk, skb);
 		}
-
-		if (sk != subsk && (TCP_SKB_CB(skb)->flags & TCPHDR_FIN)) {
-			struct sock *sk_it, *sk_tmp;
-			BUG_ON(!tcp_close_state(subsk));
-			/* App close: we have sent every app-level byte,
-			 * send now the FIN on all subflows.
-			 * if the FIN was triggered by mptcp_close(),
-			 * then the SHUTDOWN_MASK is set and we call
-			 * tcp_close() on all subsocks. Otherwise
-			 * only sk_shutdown has been called, and
-			 * we just send the fin on all subflows.
-			 */
-			mptcp_for_each_sk_safe(tp->mpcb, sk_it, sk_tmp) {
-				if (sk->sk_shutdown == SHUTDOWN_MASK)
-					tcp_close(sk_it, 0);
-				else if (sk_it != subsk &&
-					 tcp_close_state(sk_it))
-					tcp_send_fin(sk_it);
-			}
-		}
 #endif /* CONFIG_MPTCP */
 
 		tcp_minshall_update(tp, mss_now, skb);

@@ -2018,7 +2018,8 @@ void tcp_set_state(struct sock *sk, int state)
 			TCP_DEC_STATS(sock_net(sk), TCP_MIB_CURRESTAB);
 	}
 
-	mptcp_set_state(sk, state);
+	if (!is_meta_sk(sk))
+		mptcp_set_state(sk, state);
 
 	/* Change state AFTER socket is unhashed to avoid closed
 	 * socket sitting in hash tables.
