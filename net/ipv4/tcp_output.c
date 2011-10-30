@@ -735,7 +735,9 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		mdss->rsv1 = 0;
 		mdss->rsv2 = 0;
 		mdss->F = (OPTION_DATA_FIN & opts->options ? 1 : 0);
+		mdss->m = 0;
 		mdss->M = (OPTION_DSN_MAP & opts->options ? 1 : 0);
+		mdss->a = 0;
 		mdss->A = (OPTION_DATA_ACK & opts->options ? 1 : 0);
 
 		ptr++;
