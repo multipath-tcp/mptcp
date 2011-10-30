@@ -478,6 +478,8 @@ u32 __mptcp_select_window(struct sock *sk);
 int mptcp_try_rmem_schedule(struct sock *tp, unsigned int size);
 void mptcp_update_window_check(struct tcp_sock *meta_tp,
 			       const struct sk_buff *skb, u32 data_ack);
+void mptcp_combine_dfin(struct sk_buff *skb, struct tcp_sock *meta_tp,
+			struct sock *subsk);
 void mptcp_set_data_size(struct tcp_sock *tp, struct sk_buff *skb, int copy);
 int mptcp_push(struct sock *sk, int flags, int mss_now, int nonagle);
 void mptcp_key_sha1(u64 key, u32 *token);

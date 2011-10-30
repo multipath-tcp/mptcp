@@ -2429,6 +2429,8 @@ retry:
 				skb->ip_summed = CHECKSUM_NONE;
 			}
 
+			if (mptcp_is_data_fin(subskb))
+				mptcp_combine_dfin(subskb, tp, subsk);
 			BUG_ON(tcp_send_head(subsk));
 			mptcp_skb_entail(subsk, subskb);
 		} else {

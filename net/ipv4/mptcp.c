@@ -1887,7 +1887,7 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb, struct sk_buff *next,
 	 * subflows. Otherwise it would be a complete mess.
 	 */
 	tcb->data_seq = tp->map_data_seq + tcb->seq - tp->map_subseq;
-	tcb->data_len = tcb->end_seq - tcb->seq;
+	tcb->data_len = tcb->end_seq - tcb->seq - (tcp_hdr(skb)->fin ? 1: 0);
 	tcb->sub_seq = tcb->seq;
 	tcb->end_data_seq = tcb->data_seq + tcb->data_len;
 
@@ -2281,6 +2281,9 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 
 				tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 
+				if (mptcp_is_data_fin(tmp1))
+					mptcp_fin(mpcb, sk);
+
 				/* the callers of mptcp_queue_skb still
 				 * need the skb
 				 */
@@ -2298,7 +2301,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 			/* Seg's have to go to the meta-ofo-queue */
 			skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
 				if (after(TCP_SKB_CB(tmp1)->end_seq,
-					  tp->map_subseq + tp->map_data_len))
+					  tp->map_subseq + tp->map_data_len + tp->map_data_fin))
 					break;
 
 				mptcp_prepare_skb(tmp1, tmp, sk);
@@ -2320,8 +2323,9 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 			/* Ready for the meta-rcv-queue */
 			skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
 				if (after(TCP_SKB_CB(tmp1)->end_seq,
-					  tp->map_subseq + tp->map_data_len))
+					  tp->map_subseq + tp->map_data_len + tp->map_data_fin)) {
 					break;
+				}
 
 				mptcp_prepare_skb(tmp1, tmp, sk);
 				__skb_unlink(tmp1, &sk->sk_receive_queue);
@@ -2436,6 +2440,30 @@ void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb)
 	/* Take into account seg len */
 	tp->write_seq += skb->len + fin;
 	tcb->end_seq = tp->write_seq;
+}
+
+void mptcp_combine_dfin(struct sk_buff *skb, struct tcp_sock *meta_tp,
+			struct sock *subsk)
+{
+	struct sock *sk_it;
+	struct tcp_sock *tp_it;
+	int all_empty = 1, all_acked = 1;
+
+	/* If no other subflow still has data to send, we can combine */
+	mptcp_for_each_sk(meta_tp->mpcb, sk_it, tp_it) {
+		if (!tcp_write_queue_empty(sk_it))
+			all_empty = 0;
+	}
+
+	/* If all data has been DATA_ACKed, we can combine
+	 * -1, because the data_fin consumed one byte
+	 */
+	if (meta_tp->snd_una != meta_tp->write_seq - 1)
+		all_acked = 0;
+
+	if ((all_empty || all_acked) && tcp_close_state(subsk)) {
+		TCP_SKB_CB(skb)->flags |= TCPHDR_FIN;
+	}
 }
 
 void mptcp_set_data_size(struct tcp_sock *tp, struct sk_buff *skb, int copy)
