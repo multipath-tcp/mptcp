@@ -560,7 +560,9 @@ struct tcp_sock {
 			attached:1,
 			csum_error:1,
 			teardown:1,
-			include_mpc:1;
+			include_mpc:1,
+			mapping_present:1,
+			map_data_fin:1;
 #endif /* CONFIG_MPTCP */
 };
 

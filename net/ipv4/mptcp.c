@@ -521,7 +521,7 @@ static struct sock *mptcp_select_ack_sock(const struct multipath_pcb *mpcb,
  * Can be called only when the FIN is validly part
  * of the data seqnum space. Not before when we get holes.
  */
-void mptcp_fin(struct multipath_pcb *mpcb)
+void mptcp_fin(struct multipath_pcb *mpcb, struct sock *sk)
 {
 	struct sock *meta_sk = (struct sock *)mpcb;
 
@@ -1813,8 +1813,10 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 	return ans;
 }
 
-static inline void mptcp_prepare_skb(struct sk_buff *skb, struct tcp_sock *tp)
+static inline void mptcp_prepare_skb(struct sk_buff *skb, struct sk_buff *next,
+				     struct sock *sk)
 {
+	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 	/* Adapt data-seq's to the packet itself. We kinda transform the
 	 * dss-mapping to a per-packet granularity. This is necessary to
@@ -2192,7 +2194,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 					  tp->map_subseq + tp->map_data_len))
 					break;
 
-				mptcp_prepare_skb(tmp1, tp);
+				mptcp_prepare_skb(tmp1, tmp, sk);
 
 				__skb_unlink(tmp1, &sk->sk_receive_queue);
 				tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
@@ -2214,7 +2216,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 					  tp->map_subseq + tp->map_data_len))
 					break;
 
-				mptcp_prepare_skb(tmp1, tp);
+				mptcp_prepare_skb(tmp1, tmp, sk);
 				__skb_unlink(tmp1, &sk->sk_receive_queue);
 
 				/* Is direct copy possible ? */
@@ -2234,7 +2236,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 					TCP_SKB_CB(tmp1)->end_data_seq;
 
 				if (mptcp_is_data_fin(tmp1))
-					mptcp_fin(mpcb);
+					mptcp_fin(mpcb, sk);
 
 				/* Check if this fills a gap in the ofo queue */
 				if (!skb_queue_empty(

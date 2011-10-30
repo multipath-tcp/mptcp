@@ -485,7 +485,7 @@ void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 		     u32 *hash_out);
 void mptcp_fallback(struct sock *master_sk);
 void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk);
-void mptcp_fin(struct multipath_pcb *mpcb);
+void mptcp_fin(struct multipath_pcb *mpcb, struct sock *sk);
 void mptcp_retransmit_timer(struct sock *meta_sk);
 void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb);
 struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk);
