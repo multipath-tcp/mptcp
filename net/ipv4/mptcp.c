@@ -786,8 +786,9 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 	 * there is at least one working subflow that has never sent
 	 * this data */
 	mptcp_for_each_sk(meta_tp->mpcb, sk_it, tmp_tp) {
-		if (sk_it->sk_state != TCP_ESTABLISHED || tmp_tp->pf)
+		if (!mptcp_sk_can_send(sk_it) || tmp_tp->pf)
 			continue;
+
 		/* If the skb has already been enqueued in this sk, try to find
 		 * another one */
 		if (mptcp_pi_to_flag(tmp_tp->path_index) & orig_skb->path_mask)
