@@ -437,6 +437,65 @@ static ctl_table mptcp_root_table[] = {
 };
 #endif
 
+static struct sock *mptcp_select_ack_sock(const struct multipath_pcb *mpcb,
+					  int copied)
+{
+	struct sock *sk, *subsk = NULL;
+	struct tcp_sock *tp, *meta_tp = mpcb_meta_tp(mpcb);
+	u32 max_data_seq = 0;
+	/* max_data_seq initialized to correct compiler-warning.
+	 * But the initialization is handled by max_data_seq_set */
+	short max_data_seq_set = 0;
+	u32 min_time = 0xffffffff;
+
+	/* How do we select the subflow to send the window-update on?
+	 *
+	 * 1. He has to be in a state where he can receive data
+	 * 2. He has to be one of those subflow who recently
+	 *    contributed to the received stream
+	 *    (this guarantees a working subflow)
+	 *    a) its latest data_seq received is after the original
+	 *       copied_seq.
+	 *       We select the one with the lowest rtt, so that the
+	 *       window-update reaches our peer the fastest.
+	 *    b) if no subflow has this kind of data_seq (e.g., very
+	 *       strange meta-level retransmissions going on), we take
+	 *       the subflow who last sent the highest data_seq.
+	 */
+	mptcp_for_each_sk(mpcb, sk, tp) {
+		if (sk->sk_state != TCP_ESTABLISHED &&
+		    sk->sk_state != TCP_FIN_WAIT1 &&
+		    sk->sk_state != TCP_FIN_WAIT2)
+			continue;
+
+		/* Select among those who contributed to the
+		 * current receive-queue. */
+		if (copied && after(tp->last_data_seq, meta_tp->copied_seq - copied)) {
+			if (tp->srtt < min_time) {
+				min_time = tp->srtt;
+				subsk = sk;
+				max_data_seq_set = 0;
+			}
+			continue;
+		}
+
+		if (!subsk && !max_data_seq_set) {
+			max_data_seq = tp->last_data_seq;
+			max_data_seq_set = 1;
+			subsk = sk;
+		}
+
+		/* Otherwise, take the one with the highest data_seq */
+		if ((!subsk || max_data_seq_set) &&
+		    after(tp->last_data_seq, max_data_seq)) {
+			max_data_seq = tp->last_data_seq;
+			subsk = sk;
+		}
+	}
+
+	return subsk;
+}
+
 /**
  * Equivalent of tcp_fin() for MPTCP
  * Can be called only when the FIN is validly part
@@ -1623,57 +1682,7 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 	}
 
 	if (time_to_ack) {
-		struct sock *subsk = NULL;
-		u32 max_data_seq = 0;
-		/* max_data_seq initialized to correct compiler-warning.
-		 * But the initialization is handled by max_data_seq_set */
-		short max_data_seq_set = 0;
-		u32 min_time = 0xffffffff;
-
-		/* How do we select the subflow to send the window-update on?
-		 *
-		 * 1. He has to be in a state where he can receive data
-		 * 2. He has to be one of those subflow who recently
-		 *    contributed to the received stream
-		 *    (this guarantees a working subflow)
-		 *    a) its latest data_seq received is after the original
-		 *       copied_seq.
-		 *       We select the one with the lowest rtt, so that the
-		 *       window-update reaches our peer the fastest.
-		 *    b) if no subflow has this kind of data_seq (e.g., very
-		 *       strange meta-level retransmissions going on), we take
-		 *       the subflow who last sent the highest data_seq.
-		 */
-		mptcp_for_each_sk(mpcb, sk, tp) {
-			if (sk->sk_state != TCP_ESTABLISHED &&
-			    sk->sk_state != TCP_FIN_WAIT1 &&
-			    sk->sk_state != TCP_FIN_WAIT2)
-				continue;
-
-			/* Select among those who contributed to the
-			 * current receive-queue. */
-			if (after(tp->last_data_seq, meta_tp->copied_seq - copied)) {
-				if (tp->srtt < min_time) {
-					min_time = tp->srtt;
-					subsk = sk;
-					max_data_seq_set = 0;
-				}
-				continue;
-			}
-
-			if (!subsk && !max_data_seq_set) {
-				max_data_seq = tp->last_data_seq;
-				max_data_seq_set = 1;
-				subsk = sk;
-			}
-
-			/* Otherwise, take the one with the highest data_seq */
-			if ((!subsk || max_data_seq_set) &&
-			    after(tp->last_data_seq, max_data_seq)) {
-				max_data_seq = tp->last_data_seq;
-				subsk = sk;
-			}
-		}
+		struct sock *subsk = mptcp_select_ack_sock(mpcb, copied);
 
 		if (subsk)
 			tcp_send_ack(subsk);
