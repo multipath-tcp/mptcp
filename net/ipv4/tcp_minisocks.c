@@ -148,7 +148,10 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 
 	tmp_opt.saw_tstamp = 0;
 	if (th->doff > (sizeof(*th) >> 2) && tcptw->tw_ts_recent_stamp) {
-		tcp_parse_options(skb, &tmp_opt, &hash_location, NULL, 0);
+		struct multipath_options mopt;
+		mptcp_init_mp_opt(&mopt);
+
+		tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
 		if (tmp_opt.saw_tstamp) {
 			tmp_opt.ts_recent	= tcptw->tw_ts_recent;
@@ -178,6 +181,8 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 		    !after(TCP_SKB_CB(skb)->end_seq, tcptw->tw_rcv_nxt) ||
 		    TCP_SKB_CB(skb)->end_seq == TCP_SKB_CB(skb)->seq) {
 			inet_twsk_put(tw);
+			if (mptcp_is_data_fin(skb))
+				return TCP_TW_ACK;
 			return TCP_TW_SUCCESS;
 		}
 

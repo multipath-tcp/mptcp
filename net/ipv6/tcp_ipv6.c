@@ -1001,8 +1001,9 @@ static int tcp6_gro_complete(struct sk_buff *skb)
 	return tcp_gro_complete(skb);
 }
 
-static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack, u32 win,
-				 u32 ts, struct tcp_md5sig_key *key, int rst)
+static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack,
+				 u32 data_ack, u32 win, u32 ts,
+				 struct tcp_md5sig_key *key, int rst, int mptcp)
 {
 	struct tcphdr *th = tcp_hdr(skb), *t1;
 	struct sk_buff *buff;
@@ -1025,6 +1026,8 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack, u32 win,
 #ifdef CONFIG_MPTCP
 	if (rst && sk && tcp_sk(sk)->csum_error)
 		tot_len += MPTCP_SUB_LEN_FAIL_ALIGN;
+	if (mptcp)
+		tot_len += MPTCP_SUB_LEN_DSS + MPTCP_SUB_LEN_ACK;
 #endif
 	buff = alloc_skb(MAX_HEADER + sizeof(struct ipv6hdr) + tot_len,
 			 GFP_ATOMIC);
@@ -1075,7 +1078,18 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack, u32 win,
 		*p8++ = MPTCP_SUB_LEN_FAIL;
 		mpfail = (struct mp_fail *)p8;
 		mpfail->sub = MPTCP_SUB_FAIL;
+		mpfail->rsv1 = 0;
+		mpfail->rsv2 = 0;
 		mpfail->data_seq = htonl(tcp_sk(sk)->mpcb->csum_cutoff_seq);
+		topt += 2;
+	}
+	if (mptcp) {
+		/* Construction of 32-bit data_ack */
+		*topt++ = htonl((TCPOPT_MPTCP << 24) |
+				((MPTCP_SUB_LEN_DSS + MPTCP_SUB_LEN_ACK) << 16) |
+				(0x20 << 8) |
+				(0x01));
+		*topt++ = htonl(data_ack);
 	}
 #endif
 
@@ -1139,13 +1153,14 @@ void tcp_v6_send_reset(struct sock *sk, struct sk_buff *skb)
 		ack_seq = ntohl(th->seq) + th->syn + th->fin + skb->len -
 			  (th->doff << 2);
 
-	tcp_v6_send_response(skb, seq, ack_seq, 0, 0, key, 1);
+	tcp_v6_send_response(skb, seq, ack_seq, 0, 0, 0, key, 1, 0);
 }
 
-static void tcp_v6_send_ack(struct sk_buff *skb, u32 seq, u32 ack, u32 win, u32 ts,
-			    struct tcp_md5sig_key *key)
+static void tcp_v6_send_ack(struct sk_buff *skb, u32 seq, u32 ack, u32 data_ack,
+			    u32 win, u32 ts, struct tcp_md5sig_key *key,
+			    int mptcp)
 {
-	tcp_v6_send_response(skb, seq, ack, win, ts, key, 0);
+	tcp_v6_send_response(skb, seq, ack, data_ack, win, ts, key, 0, mptcp);
 }
 
 static void tcp_v6_timewait_ack(struct sock *sk, struct sk_buff *skb)
@@ -1154,8 +1169,10 @@ static void tcp_v6_timewait_ack(struct sock *sk, struct sk_buff *skb)
 	struct tcp_timewait_sock *tcptw = tcp_twsk(sk);
 
 	tcp_v6_send_ack(skb, tcptw->tw_snd_nxt, tcptw->tw_rcv_nxt,
+			mptcp_skb_data_seq(skb) + 1,
 			tcptw->tw_rcv_wnd >> tw->tw_rcv_wscale,
-			tcptw->tw_ts_recent, tcp_twsk_md5_key(tcptw));
+			tcptw->tw_ts_recent, tcp_twsk_md5_key(tcptw),
+			mptcp_is_data_fin(skb));
 
 	inet_twsk_put(tw);
 }
@@ -1163,8 +1180,9 @@ static void tcp_v6_timewait_ack(struct sock *sk, struct sk_buff *skb)
 static void tcp_v6_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 				  struct request_sock *req)
 {
-	tcp_v6_send_ack(skb, tcp_rsk(req)->snt_isn + 1, tcp_rsk(req)->rcv_isn + 1, req->rcv_wnd, req->ts_recent,
-			tcp_v6_md5_do_lookup(sk, &ipv6_hdr(skb)->daddr));
+	tcp_v6_send_ack(skb, tcp_rsk(req)->snt_isn + 1, tcp_rsk(req)->rcv_isn + 1,
+			0, req->rcv_wnd, req->ts_recent,
+			tcp_v6_md5_do_lookup(sk, &ipv6_hdr(skb)->daddr), 0);
 }
 
 
