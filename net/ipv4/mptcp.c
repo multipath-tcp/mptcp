@@ -217,6 +217,22 @@ static inline int mptcp_is_available(struct sock *sk)
 	return 0;
 }
 
+static inline int mptcp_dont_reinject_skb(struct tcp_sock *tp, struct sk_buff *skb)
+{
+	/* If the skb has already been enqueued in this sk, try to find
+	 * another one.
+	 * An exception is a DATA_FIN without data. These ones are not
+	 * retransmitted at the subflow-level as they do not consume
+	 * subflow-sequence-number space.
+	 */
+	return skb &&
+		/* We either have a data_fin with data or not a data_fin */
+		((mptcp_is_data_fin(skb) && TCP_SKB_CB(skb)->data_len > 1) ||
+		!mptcp_is_data_fin(skb))&&
+		/* Has the skb already been enqueued into this subsocket? */
+		mptcp_pi_to_flag(tp->path_index) & skb->path_mask;
+}
+
 /**
  * This is the scheduler. This function decides on which flow to send
  * a given MSS. If all subflows are found to be busy, NULL is returned
@@ -229,7 +245,7 @@ static struct sock *get_available_subflow(struct multipath_pcb *mpcb,
 {
 	struct tcp_sock *tp;
 	struct sock *sk;
-	struct sock *bestsk = NULL;
+	struct sock *bestsk = NULL, *backup = NULL;
 	u32 min_time_to_peer = 0xffffffff;
 
 	if (!mpcb)
@@ -245,22 +261,26 @@ static struct sock *get_available_subflow(struct multipath_pcb *mpcb,
 
 	/* First, find the best subflow */
 	mptcp_for_each_sk(mpcb, sk, tp) {
-		/* If the skb has already been enqueued in this sk, try to find
-		 * another one
-		 */
-		if (skb && unlikely(mptcp_pi_to_flag(tp->path_index) & skb->path_mask))
+		if (mptcp_dont_reinject_skb(tp, skb))
 			continue;
 
 		if (!mptcp_is_available(sk))
 			continue;
 
-		if (tp->srtt < min_time_to_peer) {
+		if (tp->srtt < min_time_to_peer &&
+		    !(skb && mptcp_pi_to_flag(tp->path_index) & skb->path_mask)) {
 			min_time_to_peer = tp->srtt;
 			bestsk = sk;
 		}
+
+		if (skb && mptcp_pi_to_flag(tp->path_index) & skb->path_mask)
+			backup = sk;
 	}
 
 out:
+	if (!bestsk)
+		return backup;
+
 	return bestsk;
 }
 
@@ -779,19 +799,17 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 		struct sock *sk, int clone_it)
 {
 	struct sk_buff *skb;
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *tmp_tp;
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *tp_it;
 	struct sock *sk_it;
 
 	/* A segment can be added to the reinject queue only if
 	 * there is at least one working subflow that has never sent
 	 * this data */
-	mptcp_for_each_sk(meta_tp->mpcb, sk_it, tmp_tp) {
-		if (!mptcp_sk_can_send(sk_it) || tmp_tp->pf)
+	mptcp_for_each_sk(meta_tp->mpcb, sk_it, tp_it) {
+		if (!mptcp_sk_can_send(sk_it) || tp_it->pf)
 			continue;
 
-		/* If the skb has already been enqueued in this sk, try to find
-		 * another one */
-		if (mptcp_pi_to_flag(tmp_tp->path_index) & orig_skb->path_mask)
+		if (mptcp_dont_reinject_skb(tp_it, orig_skb))
 			continue;
 
 		/* candidate subflow found, we can reinject */
