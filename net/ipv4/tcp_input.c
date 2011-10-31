@@ -5813,6 +5813,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		if (is_master_tp(tp)) {
 			if (tp->rx_opt.saw_mpc) {
 				tp->mpc = 1;
+				mpcb_meta_tp(tp->mpcb)->mpc = 1;
 				tp->rx_opt.saw_mpc = 0;
 
 				mptcp_key_sha1(mpcb->rx_opt.mptcp_rem_key,

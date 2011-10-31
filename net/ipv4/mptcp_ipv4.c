@@ -536,6 +536,7 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 {
 	int i;
 	struct sock *sk;
+	struct sock *meta_sk = mpcb_meta_sk(mpcb);
 	struct tcp_sock *tp;
 
 	if (ifa->ifa_scope > RT_SCOPE_LINK)

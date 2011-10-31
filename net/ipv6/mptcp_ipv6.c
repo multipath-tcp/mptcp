@@ -609,6 +609,7 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 {
 	int i;
 	struct sock *sk;
+	struct sock *meta_sk = mpcb_meta_sk(mpcb);
 	struct tcp_sock *tp;
 	int addr_type = ipv6_addr_type(&ifa->addr);
 

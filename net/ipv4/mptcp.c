@@ -627,8 +627,6 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 	int i;
 	struct tcp_sock *tp;
 
-	BUG_ON(!tcp_sk(mpcb->master_sk)->mpc);
-
 	/* First, ensure that we keep existing path indices. */
 	mptcp_for_each_tp(mpcb, tp)
 		/* disable the corresponding bit of the existing subflow */
@@ -1112,7 +1110,6 @@ int mptcp_alloc_mpcb(struct sock *master_sk, struct request_sock *req,
 	meta_tp->snt_isn = meta_tp->write_seq; /* Initial data-sequence-number */
 
 	meta_tp->mpcb = mpcb;
-	meta_tp->mpc = 1;
 	meta_tp->mss_cache = mptcp_sysctl_mss();
 
 	skb_queue_head_init(&mpcb->reinject_queue);
@@ -1225,8 +1222,6 @@ void mptcp_release_sock(struct sock *sk)
 	struct multipath_pcb *mpcb = tcp_sk(sk)->mpcb;
 	struct sock *meta_sk = (struct sock *)mpcb;
 
-	BUG_ON(!is_master_tp(tcp_sk(sk)));
-
 	/* We need to do the following, because as far
 	 * as the master-socket is locked, every received segment is
 	 * put into the backlog queue.
@@ -1248,6 +1243,8 @@ void mptcp_release_sock(struct sock *sk)
 
 static void mptcp_destroy_mpcb(struct multipath_pcb *mpcb)
 {
+	struct sock * meta_sk = mpcb_meta_sk(mpcb);
+
 	mptcp_debug("%s: Destroying mpcb with token:%08x\n", __func__,
 			mpcb->mptcp_loc_token);
 
@@ -1263,14 +1260,14 @@ static void mptcp_destroy_mpcb(struct multipath_pcb *mpcb)
 	release_sock(mpcb->master_sk);
 	lock_sock(mpcb->master_sk);
 
-	sock_set_flag((struct sock *)mpcb, SOCK_DEAD);
+	sock_set_flag(mpcb_meta_sk(mpcb), SOCK_DEAD);
 
 	sock_put(mpcb->master_sk); /* grabbed by mptcp_alloc_mpcb */
 }
 
 void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 {
-	struct sock *meta_sk = (struct sock *) mpcb;
+	struct sock *meta_sk = mpcb_meta_sk(mpcb);
 	struct sock *sk = (struct sock *) tp;
 
 	/* We should not add a non-mpc socket */
@@ -2842,7 +2839,7 @@ struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject)
 void mptcp_check_socket(struct sock *sk)
 {
 	if (sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpcb) {
-		struct sock *meta_sk = (struct sock *) (tcp_sk(sk)->mpcb);
+		struct sock *meta_sk = mpcb_meta_sk(tcp_sk(sk)->mpcb);
 		sk_set_socket(meta_sk, sk->sk_socket);
 		meta_sk->sk_wq = sk->sk_wq;
 	}

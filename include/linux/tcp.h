@@ -571,8 +571,16 @@ static inline struct tcp_sock *mpcb_meta_tp(const struct multipath_pcb *mpcb)
 {
 	return (struct tcp_sock *)mpcb;
 }
+static inline struct sock *mpcb_meta_sk(const struct multipath_pcb *mpcb)
+{
+	return (struct sock *)mpcb;
+}
 #else
 static inline struct tcp_sock *mpcb_meta_tp(const struct multipath_pcb *mpcb)
+{
+	return NULL;
+}
+static inline struct sock *mpcb_meta_sk(const struct multipath_pcb *mpcb)
 {
 	return NULL;
 }

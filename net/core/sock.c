@@ -1061,8 +1061,7 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 		memcpy(newsk, sk, offsetof(struct sock, sk_dontcopy_begin));
 		memcpy(&newsk->sk_dontcopy_end, &sk->sk_dontcopy_end,
 			sizeof(struct tcp6_sock) - offsetof(struct sock, sk_dontcopy_end));
-	}
-	else {
+	} else {
 		memcpy(newsk, sk, offsetof(struct sock, sk_dontcopy_begin));
 		memcpy(&newsk->sk_dontcopy_end, &sk->sk_dontcopy_end,
 			sizeof(struct tcp_sock) - offsetof(struct sock, sk_dontcopy_end));

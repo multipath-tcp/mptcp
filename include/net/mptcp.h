@@ -600,11 +600,12 @@ out:
 	return ans;
 }
 
-static inline void mptcp_sock_destruct(struct sock *sk)
+static inline int mptcp_sock_destruct(struct sock *sk)
 {
 	if (sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpcb) {
 		if (is_master_tp(tcp_sk(sk))) {
 			mpcb_release(tcp_sk(sk)->mpcb);
+			return 1;
 		} else {
 			/* It must have been detached by
 			 * inet_csk_destroy_sock()
@@ -616,6 +617,7 @@ static inline void mptcp_sock_destruct(struct sock *sk)
 								*/
 		}
 	}
+	return 0;
 }
 
 static inline int mptcp_skip_offset(const struct tcp_sock *tp,

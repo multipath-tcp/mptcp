@@ -183,6 +183,7 @@ void mptcp_pm_release(struct multipath_pcb *mpcb)
 
 u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock* sk)
 {
+	struct sock *meta_sk = mpcb_meta_sk(mpcb);
 	int i;
 
 	if (sk->sk_family == AF_INET) {
@@ -276,6 +277,7 @@ void mptcp_update_patharray(struct multipath_pcb *mpcb)
 void mptcp_set_addresses(struct multipath_pcb *mpcb)
 {
 	struct net_device *dev;
+	struct sock *meta_sk = mpcb_meta_sk(mpcb);
 	int id = 1;
 	int num_addr4 = 0;
 
@@ -552,7 +554,7 @@ int mptcp_lookup_join(struct sk_buff *skb)
 	join_opt++; /* the token is at the end of struct mp_join */
 	token = *(u32 *) join_opt;
 	mpcb = mptcp_hash_find(token);
-	meta_sk = (struct sock *)mpcb;
+	meta_sk = mpcb_meta_sk(mpcb);
 	if (!mpcb) {
 		mptcp_debug("%s:mpcb not found:%x\n", __func__, token);
 		return -1;
@@ -598,7 +600,7 @@ static void __mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 	int i;
 	u32 path_indices = 1;	/* Path index 1 is reserved for master sk. */
 
-	if (sock_flag((struct sock*)mpcb, SOCK_DEAD))
+	if (sock_flag(mpcb_meta_sk(mpcb), SOCK_DEAD))
 		return;
 
 	for (i = 0; i < mpcb->pa4_size; i++)
@@ -626,7 +628,7 @@ void mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 	if (!tcp_sk(mpcb->master_sk)->fully_established ||
 	    mpcb->infinite_mapping ||
 	    test_bit(MPCB_FLAG_SERVER_SIDE, &mpcb->flags) ||
-	    sock_flag((struct sock*)mpcb, SOCK_DEAD))
+	    sock_flag(mpcb_meta_sk(mpcb), SOCK_DEAD))
 		return;
 
 	if (in_interrupt()) {
