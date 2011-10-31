@@ -184,6 +184,7 @@ void verif_rqueues(struct multipath_pcb *mpcb)
 }
 #endif
 
+static struct kmem_cache *mpcb_cache __read_mostly;
 
 /* ===================================== */
 
@@ -1073,7 +1074,7 @@ int mptcp_alloc_mpcb(struct sock *master_sk, struct request_sock *req,
 	if (tcp_sk(master_sk)->slave_sk)
 		return 0;
 
-	mpcb = kmalloc(sizeof(struct multipath_pcb), flags);
+	mpcb = kmem_cache_alloc(mpcb_cache, flags);;
 	/* Memory allocation failed. Stopping here. */
 	if (!mpcb)
 		return -ENOBUFS;
@@ -1211,7 +1212,7 @@ void mpcb_release(struct multipath_pcb *mpcb)
 	security_sk_free((struct sock *)mpcb);
 	percpu_counter_dec(meta_sk->sk_prot->orphan_count);
 
-	kfree(mpcb);
+	kmem_cache_free(mpcb_cache, mpcb);
 }
 
 void mptcp_release_sock(struct sock *sk)
@@ -3335,6 +3336,8 @@ static int __init mptcp_init(void)
 #ifdef CONFIG_SYSCTL
 	register_sysctl_table(mptcp_root_table);
 #endif
+	mpcb_cache = kmem_cache_create("mptcp_mpcb", sizeof(struct multipath_pcb),
+				       0, SLAB_HWCACHE_ALIGN|SLAB_PANIC, NULL);
 	mptcp_ofo_queue_init();
 	return 0;
 }
