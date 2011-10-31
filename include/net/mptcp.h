@@ -620,24 +620,6 @@ static inline int mptcp_sock_destruct(struct sock *sk)
 	return 0;
 }
 
-static inline int mptcp_skip_offset(const struct tcp_sock *tp,
-		unsigned char __user **from, size_t *seglen, size_t *size)
-{
-	/* Skipping the offset (stored in the size argument) */
-	if (tp->mpc) {
-		if (*seglen >= *size) {
-			*seglen -= *size;
-			*from += *size;
-			*size = 0;
-			return 0;
-		} else {
-			*size -= *seglen;
-			return 1;
-		}
-	}
-	return 0;
-}
-
 static inline void mptcp_update_pointers(struct tcp_sock *tp,
 		struct sock **meta_sk, struct tcp_sock **meta_tp,
 		struct multipath_pcb **mpcb)
@@ -1057,12 +1039,6 @@ static inline int is_local_addr4(u32 addr)
 	return 0;
 }
 static inline void mptcp_sock_destruct(const struct sock *sk) {}
-static inline int mptcp_skip_offset(const struct tcp_sock *tp,
-				    unsigned char __user **from,
-				    const size_t *seglen, const size_t *size)
-{
-	return 0;
-}
 static inline void mptcp_update_pointers(const struct tcp_sock *tp,
 					 struct sock **meta_sk,
 					 struct tcp_sock **meta_tp,

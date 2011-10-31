@@ -1008,9 +1008,6 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 		iov++;
 
-		if (mptcp_skip_offset(tp, &from, &seglen, &size))
-			continue;
-
 		while (seglen > 0) {
 			int copy = 0;
 			int max = size_goal;
