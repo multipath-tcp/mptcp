@@ -258,18 +258,6 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 							   inet->inet_daddr,
 							   inet->inet_sport,
 							   usin->sin_port);
-#ifdef CONFIG_MPTCP
-	tp->snt_isn = tp->write_seq;
-	tp->reinjected_seq = tp->write_seq;
-#endif
-	if (tp->mptcp_enabled) {
-		err = mptcp_alloc_mpcb(sk, NULL, GFP_KERNEL);
-		if (err)
-			goto failure;
-		mptcp_update_metasocket(sk, mpcb_from_tcpsock(tp));
-	} else {
-		tp->mpcb = NULL;
-	}
 
 	inet->inet_id = tp->write_seq ^ jiffies;
 

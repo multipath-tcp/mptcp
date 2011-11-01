@@ -5736,12 +5736,12 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_cookie_values *cvp = tp->cookie_values;
 	int saved_clamp = tp->rx_opt.mss_clamp;
-	struct multipath_pcb *mpcb;
-
-	mpcb = mpcb_from_tcpsock(tp);
+	struct multipath_options mopt;
+	struct multipath_pcb *mpcb = tp->mpc ? tp->mpcb : NULL;
+	mptcp_init_mp_opt(&mopt);
 
 	tcp_parse_options(skb, &tp->rx_opt, &hash_location,
-			  mpcb ? &mpcb->rx_opt : NULL, 0);
+			  mpcb ? &tp->mpcb->rx_opt : &mopt, 0);
 
 	if (mpcb && mpcb->rx_opt.list_rcvd) {
 		mpcb->rx_opt.list_rcvd = 0;
@@ -5813,17 +5813,25 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		if (is_master_tp(tp)) {
 			if (tp->rx_opt.saw_mpc) {
 				tp->mpc = 1;
-				mpcb_meta_tp(tp->mpcb)->mpc = 1;
 				tp->rx_opt.saw_mpc = 0;
+				tp->mptcp_rem_key = mopt.mptcp_rem_key;
 
-				mptcp_key_sha1(mpcb->rx_opt.mptcp_rem_key,
-					       &mpcb->rx_opt.mptcp_rem_token);
+				if (mptcp_alloc_mpcb(sk)) {
+					/* If alloc failed - fall back to regular TCP */
+					tp->mpc = 0;
+					goto cont_mptcp;
+				}
 
 				mptcp_add_sock(tp->mpcb, tp);
-			} else {
-				mptcp_fallback(sk);
+				mpcb = tp->mpcb;
+
+				mpcb->rx_opt.dss_csum = mopt.dss_csum;
+				mpcb->rx_opt.list_rcvd = 1;
+
+				mptcp_update_metasocket(sk, mpcb);
 			}
 		}
+cont_mptcp:
 		mptcp_include_mpc(tp);
 #endif
 
@@ -6018,8 +6026,7 @@ discard:
 			tp->mpc = 1;
 			tp->rx_opt.saw_mpc = 0;
 			mptcp_add_sock(tp->mpcb, tp);
-		} else
-			mptcp_fallback(sk);
+		}
 
 		/* RFC1323: The window in SYN & SYN/ACK segments is
 		 * never scaled.

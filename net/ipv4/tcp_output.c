@@ -814,12 +814,10 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 	if (!do_mptcp(sk))
 		goto nomptcp;
 	if (is_master_tp(tp)) {
-		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
-
 		opts->options |= OPTION_MP_CAPABLE;
 		remaining -= MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN;
-		opts->sender_key = mpcb->mptcp_loc_key;
-		opts->dss_csum = mpcb->rx_opt.dss_csum;
+		opts->sender_key = tp->mptcp_loc_key;
+		opts->dss_csum = sysctl_mptcp_checksum;
 
 		/* We arrive here either when sending a SYN or a
 		 * SYN+ACK when in SYN_SENT state (that is, tcp_synack_options
@@ -2388,8 +2386,6 @@ retry:
 			break;
 #else
 		if (sk != subsk) {
-			if (subtp->path_index)
-				skb->path_mask |= mptcp_pi_to_flag(subtp->path_index);
 			/* If the segment is reinjected, the clone is done
 			 * already
 			 */
@@ -3394,11 +3390,6 @@ static void tcp_connect_init(struct sock *sk)
 				  &rcv_wscale,
 				  dst_metric(dst, RTAX_INITRWND));
 
-	mptcp_update_window_clamp(tp);
-#ifdef CONFIG_MPTCP
-	tp->init_rcv_wnd = tp->rcv_wnd;
-#endif
-
 	tp->rx_opt.rcv_wscale = rcv_wscale;
 	tp->rcv_ssthresh = tp->rcv_wnd;
 
@@ -3416,6 +3407,28 @@ static void tcp_connect_init(struct sock *sk)
 	inet_csk(sk)->icsk_rto = TCP_TIMEOUT_INIT;
 	inet_csk(sk)->icsk_retransmits = 0;
 	tcp_clear_retrans(tp);
+
+#ifdef CONFIG_MPTCP
+	if (do_mptcp(sk)) {
+		tp->snt_isn = tp->write_seq;
+		tp->reinjected_seq = tp->write_seq;
+		tp->init_rcv_wnd = tp->rcv_wnd;
+
+		if (is_master_tp(tp)) {
+			tp->path_index = 1;
+
+			do {
+				do {
+					get_random_bytes(&tp->mptcp_loc_key,
+							 sizeof(tp->mptcp_loc_key));
+				} while (!tp->mptcp_loc_key);
+
+				mptcp_key_sha1(tp->mptcp_loc_key,
+					       &tp->mptcp_loc_token);
+			} while (mptcp_find_token(tp->mptcp_loc_token));
+		}
+	}
+#endif
 }
 
 /* Build a SYN and send it off. */

@@ -950,7 +950,8 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 		return;
 
 	if (!tcp_write_queue_head(meta_sk)) {
-		printk(KERN_ERR"%s no skb in meta write queue but packets_out: %u\n",__func__,meta_tp->packets_out);
+		printk(KERN_ERR"%s no skb in meta write queue but packets_out: %u\n",
+				__func__,meta_tp->packets_out);
 		goto out;		
 	}
 
@@ -1061,20 +1062,14 @@ retrans:
 	return NULL;
 }
 
-
-int mptcp_alloc_mpcb(struct sock *master_sk, struct request_sock *req,
-		gfp_t flags)
+int mptcp_alloc_mpcb(struct sock *master_sk)
 {
 	struct multipath_pcb *mpcb;
-	struct tcp_sock *meta_tp;
+	struct tcp_sock *meta_tp, *master_tp = tcp_sk(master_sk);
 	struct sock *meta_sk;
 	struct inet_connection_sock *meta_icsk;
 
-	/* May happen, when coming from mptcp_init_subsockets */
-	if (tcp_sk(master_sk)->slave_sk)
-		return 0;
-
-	mpcb = kmem_cache_alloc(mpcb_cache, flags);;
+	mpcb = kmem_cache_alloc(mpcb_cache, GFP_ATOMIC);
 	/* Memory allocation failed. Stopping here. */
 	if (!mpcb)
 		return -ENOBUFS;
@@ -1084,13 +1079,12 @@ int mptcp_alloc_mpcb(struct sock *master_sk, struct request_sock *req,
 	meta_icsk = inet_csk(meta_sk);
 
 	memset(mpcb, 0, sizeof(struct multipath_pcb));
-	BUG_ON(mpcb->connection_list);
 
 	/* meta_sk inherits master sk */
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-	mptcp_inherit_sk(master_sk, meta_sk, AF_INET6, flags);
+	mptcp_inherit_sk(master_sk, meta_sk, AF_INET6, GFP_ATOMIC);
 #else
-	mptcp_inherit_sk(master_sk, meta_sk, AF_INET, flags);
+	mptcp_inherit_sk(master_sk, meta_sk, AF_INET, GFP_ATOMIC);
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
@@ -1108,22 +1102,20 @@ int mptcp_alloc_mpcb(struct sock *master_sk, struct request_sock *req,
 	meta_tp->copied_seq = meta_tp->rcv_nxt = meta_tp->rcv_wup = 0;
 	meta_tp->snd_sml = meta_tp->snd_una = meta_tp->snd_nxt = 0;
 	meta_tp->write_seq = 0;
+	meta_tp->packets_out = 0;
 	meta_tp->snt_isn = meta_tp->write_seq; /* Initial data-sequence-number */
 
-	meta_tp->mpcb = mpcb;
 	meta_tp->mss_cache = mptcp_sysctl_mss();
+
+	meta_tp->mpcb = mpcb;
+	meta_tp->mpc = 1;
+	meta_tp->attached = 0;
 
 	skb_queue_head_init(&mpcb->reinject_queue);
 	skb_queue_head_init(&meta_tp->out_of_order_queue);
 
-	meta_sk->sk_rcvbuf = sysctl_rmem_default;
-	meta_sk->sk_sndbuf = sysctl_wmem_default;
-	meta_sk->sk_state = TCP_SYN_SENT;
-
 	/* Inherit takes a reference to meta_sk, so we release it here. */
 	sock_put(meta_sk);
-
-	mpcb->master_sk = master_sk;
 	sock_hold(master_sk);
 
 	meta_tp->window_clamp = tcp_sk(master_sk)->window_clamp;
@@ -1137,49 +1129,28 @@ int mptcp_alloc_mpcb(struct sock *master_sk, struct request_sock *req,
 	 * connections, it does not need to be huge, since we only store
 	 * here pending subflow creations.
 	 */
-	reqsk_queue_alloc(&meta_icsk->icsk_accept_queue, 32, flags);
+	reqsk_queue_alloc(&meta_icsk->icsk_accept_queue, 32, GFP_ATOMIC);
+
+	/* Store the keys and generate the peer's token */
+	mpcb->mptcp_loc_key = master_tp->mptcp_loc_key;
+	mpcb->mptcp_loc_token = master_tp->mptcp_loc_token;
+
+	mpcb->rx_opt.mptcp_rem_key = meta_tp->mptcp_rem_key;
+	mptcp_key_sha1(mpcb->rx_opt.mptcp_rem_key, &mpcb->rx_opt.mptcp_rem_token);
+
 	/* Pi 1 is reserved for the master subflow */
 	mpcb->next_unused_pi = 2;
+	master_tp->path_index = 1;
+	master_tp->mpcb = mpcb;
+	mpcb->master_sk = master_sk;
 
-	/* For the server side, the local token has already been allocated.
-	 * Later, we should replace this strange condition (quite a quick hack)
-	 * with a test_bit on the server flag. But this requires passing
-	 * the server flag in arg of mptcp_alloc_mpcb(), so that we know here if
-	 * we are at server or client side. At the moment the only way to know
-	 * that is to check for uninitialized token (see tcp_check_req()).
-	 */
-	if (!req) {
-		do {
-			/* Creating a new key for the server */
-			do {
-				get_random_bytes(&mpcb->mptcp_loc_key,
-						sizeof(mpcb->mptcp_loc_key));
-			} while (!mpcb->mptcp_loc_key);
-
-			mptcp_key_sha1(mpcb->mptcp_loc_key,
-				       &mpcb->mptcp_loc_token);
-		} while (mptcp_find_token(mpcb->mptcp_loc_token));
-	} else {
-		mpcb->mptcp_loc_key = req->mptcp_loc_key;
-		mpcb->mptcp_loc_token = req->mptcp_loc_token;
-
-		mpcb->rx_opt.mptcp_rem_key = req->mptcp_rem_key;
-		mptcp_key_sha1(mpcb->rx_opt.mptcp_rem_key,
-			       &mpcb->rx_opt.mptcp_rem_token);
-	}
-
+	/* Meta-level retransmit timer */
+	meta_icsk->icsk_rto *= 2; /* Double of master - rto */
 	setup_timer(&meta_icsk->icsk_retransmit_timer, tcp_write_timer,
-			(unsigned long)meta_sk);
-	inet_csk_reset_xmit_timer(meta_sk, ICSK_TIME_RETRANS,
-				  inet_csk(meta_sk)->icsk_rto, TCP_RTO_MAX);
+		    (unsigned long)meta_sk);
 
 	/* Adding the mpcb in the token hashtable */
 	mptcp_hash_insert(mpcb, mpcb->mptcp_loc_token);
-
-	tcp_sk(master_sk)->path_index = 0;
-	tcp_sk(master_sk)->mpcb = mpcb;
-
-	mpcb->rx_opt.dss_csum = sysctl_mptcp_checksum;
 
 	return 0;
 }
@@ -1274,10 +1245,6 @@ void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 	/* We should not add a non-mpc socket */
 	BUG_ON(!tp->mpc);
 
-	/* first subflow */
-	if (!tp->path_index)
-		tp->path_index = 1;
-
 	/* Adding new node to head of connection_list */
 	if (!tp->mpcb) {
 		tp->mpcb = mpcb;
@@ -1298,9 +1265,8 @@ void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 
 	mpcb->cnt_subflows++;
 	mptcp_update_window_clamp(tcp_sk(meta_sk));
-	atomic_add(
-		atomic_read(&((struct sock *)tp)->sk_rmem_alloc),
-		&meta_sk->sk_rmem_alloc);
+	atomic_add(atomic_read(&((struct sock *)tp)->sk_rmem_alloc),
+		   &meta_sk->sk_rmem_alloc);
 
 	/* The socket is already established if it was in the
 	 * accept queue of the mpcb
@@ -1342,15 +1308,11 @@ void mptcp_del_sock(struct sock *sk)
 
 	/* Need to check for protocol here, because we may enter here for
 	 * non-tcp sockets. (coming from inet_csk_destroy_sock) */
-	if (sk->sk_protocol != IPPROTO_TCP || !tp->mpc)
+	if (sk->sk_protocol != IPPROTO_TCP || !tp->mpc || !tp->attached)
 		return;
 
-	mptcp_debug("%s: Removing subsocket - pi:%d state %d\n", __func__,
-			tp->path_index, sk->sk_state);
-
-	if (!tp->attached)
-		return;
-
+	mptcp_debug("%s: Removing subsocket - pi:%d state %d is_meta? %d\n", __func__,
+			tp->path_index, sk->sk_state, is_meta_sk(sk));
 	mpcb = tp->mpcb;
 	tp_prev = mpcb->connection_list;
 
@@ -3071,59 +3033,6 @@ int do_mptcp(struct sock *sk)
 	return 1;
 }
 
-/**
- * Prepares fallback to regular TCP.
- * The master sk is detached and the mpcb structure is destroyed.
- */
-static void __mptcp_fallback(struct sock *master_sk)
-{
-	struct tcp_sock *master_tp = tcp_sk(master_sk);
-	struct multipath_pcb *mpcb = mpcb_from_tcpsock(master_tp);
-	struct sock *meta_sk = (struct sock *)mpcb;
-
-	if (!mpcb)
-		return; /* Fallback is already done */
-
-	if (sock_flag(meta_sk, SOCK_DEAD))
-		/* mptcp_destroy_mpcb() already called. No need to fallback. */
-		return;
-
-	sock_hold(master_sk);
-	mptcp_destroy_mpcb(mpcb);
-	mpcb_release(mpcb);
-	master_sk->sk_error_report = sock_def_error_report;
-	master_tp->mpc = 0;
-	master_tp->mpcb = NULL;
-	sock_put(master_sk);
-}
-
-void mptcp_fallback_wq(struct work_struct *work)
-{
-	struct sock *master_sk = *(struct sock **)(work + 1);
-	lock_sock(master_sk);
-	__mptcp_fallback(master_sk);
-	release_sock(master_sk);
-	sock_put(master_sk);
-	kfree(work);
-}
-
-void mptcp_fallback(struct sock *master_sk)
-{
-	if (in_interrupt()) {
-		struct work_struct *work = kmalloc(sizeof(*work) +
-						sizeof(struct sock *),
-						GFP_ATOMIC);
-		struct sock **sk = (struct sock **)(work + 1);
-
-		*sk = master_sk;
-		sock_hold(master_sk);
-		INIT_WORK(work, mptcp_fallback_wq);
-		schedule_work(work);
-	} else {
-		__mptcp_fallback(master_sk);
-	}
-}
-
 void mptcp_set_state(struct sock *sk, int state)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -3179,8 +3088,14 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 		child_tp->rx_opt.saw_mpc = 0;
 		child_tp->mpc = 1;
 		child_tp->slave_sk = 0;
+		child_tp->path_index = 1;
 
-		if (mptcp_alloc_mpcb(child, req, GFP_ATOMIC)) {
+		/* Just set this values to pass them to mptcp_alloc_mpcb */
+		child_tp->mptcp_loc_key = req->mptcp_loc_key;
+		child_tp->mptcp_loc_token = req->mptcp_loc_token;
+		child_tp->mptcp_rem_key = req->mptcp_rem_key;
+
+		if (mptcp_alloc_mpcb(child)) {
 			/* The allocation of the mpcb failed!
 			 * Destroy the child and go to listen_overflow
 			 */

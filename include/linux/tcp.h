@@ -21,8 +21,6 @@
 #include <asm/byteorder.h>
 #include <linux/socket.h>
 
-struct multipath_pcb;
-
 struct tcphdr {
 	__be16	source;
 	__be16	dest;
@@ -300,7 +298,12 @@ struct tcp_options_received {
 #endif /* CONFIG_MPTCP */
 };
 
+struct multipath_pcb;
+
+#ifdef CONFIG_MPTCP
 struct multipath_options;
+struct mptcp_auth_info;
+#endif
 
 static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
 {
@@ -552,6 +555,10 @@ struct tcp_sock {
 	struct sk_buff  *shortcut_ofoqueue; /* Shortcut to the current modified
 					     * node in the ofo BST
 					     */
+	u32		mptcp_loc_token;
+	u64		mptcp_loc_key;
+	u64		mptcp_rem_key;
+
 	int		path_index;
 	struct tcp_sock	*next;		/* Next subflow socket */
 	__u32		mptcp_loc_random_number;

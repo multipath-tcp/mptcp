@@ -436,8 +436,7 @@ void mptcp_ofo_queue(struct multipath_pcb *mpcb);
 void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp);
 void mptcp_ofo_queue_init(void);
 void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied);
-int mptcp_alloc_mpcb(struct sock *master_sk, struct request_sock *req,
-		gfp_t flags);
+int mptcp_alloc_mpcb(struct sock *master_sk);
 void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp);
 void mptcp_del_sock(struct sock *sk);
 void mptcp_update_metasocket(struct sock *sock, struct multipath_pcb *mpcb);
@@ -482,7 +481,6 @@ int mptcp_push(struct sock *sk, int flags, int mss_now, int nonagle);
 void mptcp_key_sha1(u64 key, u32 *token);
 void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 		     u32 *hash_out);
-void mptcp_fallback(struct sock *master_sk);
 void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk);
 void mptcp_fin(struct multipath_pcb *mpcb, struct sock *sk);
 void mptcp_retransmit_timer(struct sock *meta_sk);
@@ -554,6 +552,7 @@ static inline void mptcp_init_mp_opt(struct multipath_options *mopt)
 	mopt->list_rcvd = mopt->num_addr4 = mopt->num_addr6 = 0;
 	mopt->mptcp_opt_type = 0;
 	mopt->mp_fail = 0;
+	mopt->mptcp_rem_key = 0;
 }
 
 /**
@@ -921,12 +920,6 @@ static inline int mptcp_queue_skb(const struct sock *sk,
 }
 static inline void mptcp_ofo_queue(const struct multipath_pcb *mpcb) {}
 static inline void mptcp_cleanup_rbuf(const struct sock *meta_sk, int copied) {}
-
-static inline int mptcp_alloc_mpcb(const struct sock *master_sk,
-				   const struct request_sock *req, gfp_t flags)
-{
-	return 0;
-}
 static inline void mptcp_add_sock(const struct multipath_pcb *mpcb,
 				  const struct tcp_sock *tp) {}
 static inline void mptcp_del_sock(const struct sock *sk) {}

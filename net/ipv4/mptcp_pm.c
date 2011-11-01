@@ -684,7 +684,6 @@ void mptcp_subflow_attach(struct multipath_pcb *mpcb, struct sock *subsk)
 		if (mpcb->num_addr4 || mpcb->num_addr6)
 			mptcp_update_patharray(mpcb);
 
-
 		if (subsk->sk_family == AF_INET)
 			p4 = mptcp_v4_find_path(&loc, &rem, mpcb);
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)

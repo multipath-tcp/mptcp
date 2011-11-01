@@ -75,8 +75,8 @@ struct request_sock {
 	 * request_sock.
 	 */
 	struct list_head                collide_tuple;
-	u32                             mptcp_loc_token;
 	u32				mptcp_rem_random_number;
+	u32				mptcp_loc_token;
 	u64				mptcp_loc_key;
 	u64				mptcp_rem_key;
 	u64				mptcp_hash_tmac;
