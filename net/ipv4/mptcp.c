@@ -1702,7 +1702,7 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct multipath_pcb *mpcb = meta_tp->mpcb;
-	struct sock *sk;
+	struct sock *sk, *subsk;
 	struct tcp_sock *tp;
 	int time_to_ack = 0;
 
@@ -1745,7 +1745,9 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 
 		/* Optimize, __tcp_select_window() is not cheap. */
 		if (2 * rcv_window_now <= meta_tp->window_clamp) {
-			__u32 new_window = __tcp_select_window(mpcb->master_sk);
+			__u32 new_window;
+			subsk = mptcp_select_ack_sock(mpcb, copied);
+			new_window = __tcp_select_window(subsk);
 
 			/* Send ACK now, if this read freed lots of space
 			 * in our buffer. Certainly, new_window is new window.
@@ -1759,8 +1761,6 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 	}
 
 	if (time_to_ack) {
-		struct sock *subsk = mptcp_select_ack_sock(mpcb, copied);
-
 		if (subsk)
 			tcp_send_ack(subsk);
 		else

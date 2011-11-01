@@ -194,15 +194,13 @@ u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock* sk)
 		}
 		/* thus it must be the master-socket */
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-		if (mpcb->master_sk->sk_family == AF_INET6 &&
-		    mptcp_v6_is_v4_mapped(mpcb->master_sk) &&
-		    inet_sk(mpcb->master_sk)->inet_saddr ==
-				    inet_sk(sk)->inet_saddr)
+		if (meta_sk->sk_family == AF_INET6 &&
+		    mptcp_v6_is_v4_mapped(meta_sk) &&
+		    inet_sk(meta_sk)->inet_saddr == inet_sk(sk)->inet_saddr)
 			return 0;
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
-		if (mpcb->master_sk->sk_family == AF_INET &&
-		    inet_sk(mpcb->master_sk)->inet_saddr ==
-				    inet_sk(sk)->inet_saddr) {
+		if (meta_sk->sk_family == AF_INET &&
+		    inet_sk(meta_sk)->inet_saddr == inet_sk(sk)->inet_saddr) {
 			return 0;
 		}
 
@@ -218,9 +216,8 @@ u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock* sk)
 				return mpcb->addr6[i].id;
 		}
 		/* thus it must be the master-socket - id = 0 */
-		if (mpcb->master_sk->sk_family == AF_INET6 &&
-		    ipv6_addr_equal(&inet6_sk(mpcb->master_sk)->saddr,
-				&inet6_sk(sk)->saddr))
+		if (meta_sk->sk_family == AF_INET6 &&
+		    ipv6_addr_equal(&inet6_sk(meta_sk)->saddr, &inet6_sk(sk)->saddr))
 			return 0;
 
 		mptcp_debug("%s %pI6 not locally found\n", __func__,
@@ -319,13 +316,13 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 					goto out;
 				}
 
-				if (mpcb->master_sk->sk_family == AF_INET &&
-				    inet_sk(mpcb->master_sk)->inet_saddr == ifa->ifa_address)
+				if (meta_sk->sk_family == AF_INET &&
+				    inet_sk(meta_sk)->inet_saddr == ifa->ifa_address)
 					continue;
 				/* master is IPv4 mapped IPv6 sk */
-				if (mpcb->master_sk->sk_family == AF_INET6 &&
-				    mptcp_v6_is_v4_mapped(mpcb->master_sk) &&
-				    inet_sk(mpcb->master_sk)->inet_saddr == ifa->ifa_address )
+				if (meta_sk->sk_family == AF_INET6 &&
+				    mptcp_v6_is_v4_mapped(meta_sk) &&
+				    inet_sk(meta_sk)->inet_saddr == ifa->ifa_address )
 					continue;
 				if (ifa->ifa_scope == RT_SCOPE_HOST)
 					continue;
@@ -348,10 +345,9 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 						MPTCP_MAX_ADDR, &ifa6->addr);
 					goto out;
 				}
-				if (mpcb->master_sk->sk_family == AF_INET6 &&
-					!mptcp_v6_is_v4_mapped(mpcb->master_sk) &&
-					ipv6_addr_equal(&(ifa6->addr),
-					&(inet6_sk(mpcb->master_sk)->saddr)))
+				if (meta_sk && meta_sk->sk_family == AF_INET6 &&
+				    !mptcp_v6_is_v4_mapped(meta_sk) &&
+				    ipv6_addr_equal(&(ifa6->addr), &(inet6_sk(meta_sk)->saddr)))
 					continue;
 				if (addr_type == IPV6_ADDR_ANY ||
 				    addr_type & IPV6_ADDR_LOOPBACK ||

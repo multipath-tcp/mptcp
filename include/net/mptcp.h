@@ -807,7 +807,8 @@ static inline struct sock *mptcp_sk_clone(struct sock *sk, int family,
 
 static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
 {
-	return inet_csk(sk)->icsk_af_ops == &ipv6_mapped;
+	return sk->sk_family == AF_INET6 &&
+		ipv6_addr_type(&inet6_sk(sk)->saddr) == IPV6_ADDR_MAPPED;
 }
 
 #else /* (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)) */

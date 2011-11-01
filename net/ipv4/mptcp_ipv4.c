@@ -390,7 +390,7 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 
 	ulid_v4 = (meta_sk->sk_family == AF_INET ||
 		   (meta_sk->sk_family == AF_INET6 &&
-		    mptcp_v6_is_v4_mapped(mpcb->master_sk))) ? 1 : 0;
+		    mptcp_v6_is_v4_mapped(meta_sk))) ? 1 : 0;
 	pa4_size = (mpcb->num_addr4 + ulid_v4) *
 	    (mpcb->rx_opt.num_addr4 + ulid_v4) - ulid_v4;
 
@@ -548,13 +548,14 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 			ifa->ifa_local)
 			goto found;
 	}
-	if (mpcb->master_sk->sk_family == AF_INET &&
-	    inet_sk(mpcb->master_sk)->inet_saddr == ifa->ifa_local)
+
+	if (meta_sk->sk_family == AF_INET &&
+	    inet_sk(meta_sk)->inet_saddr == ifa->ifa_local)
 		goto found;
 
-	if (mpcb->master_sk->sk_family == AF_INET6 &&
-	    mptcp_v6_is_v4_mapped(mpcb->master_sk) &&
-	    inet_sk(mpcb->master_sk)->inet_saddr == ifa->ifa_local)
+	if (meta_sk->sk_family == AF_INET6 &&
+	    mptcp_v6_is_v4_mapped(meta_sk) &&
+	    inet_sk(meta_sk)->inet_saddr == ifa->ifa_local)
 		goto found;
 
 	/* Not yet in address-list */
