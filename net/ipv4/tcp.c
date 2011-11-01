@@ -2089,23 +2089,18 @@ void tcp_shutdown(struct sock *sk, int how)
 }
 EXPORT_SYMBOL(tcp_shutdown);
 
-
-/**
- * MPTCP modif: tcp_close can now be called from tcp_write_xmit()
- * In that case, timeout must be set to -1.
- * This prevents the locks from being taken, and enforces atomic operation
- * everywhere, because in tcp_write_xmit, the sk is already locked, and
- * and we may be in soft interrupt context.
- */
 void tcp_close(struct sock *sk, long timeout)
 {
 	struct sk_buff *skb;
 	int data_was_unread = 0;
 	int state;
 
-#ifndef CONFIG_MPTCP
+	if (tcp_sk(sk)->mpc) {
+		mptcp_close(sk, timeout);
+		return;
+	}
+
 	lock_sock(sk);
-#endif
 	sk->sk_shutdown = SHUTDOWN_MASK;
 
 	if (sk->sk_state == TCP_LISTEN) {
@@ -2145,8 +2140,7 @@ void tcp_close(struct sock *sk, long timeout)
 		/* Unread data was tossed, zap the connection. */
 		NET_INC_STATS_USER(sock_net(sk), LINUX_MIB_TCPABORTONCLOSE);
 		tcp_set_state(sk, TCP_CLOSE);
-		tcp_send_active_reset(sk, (in_interrupt()) ?
-				      GFP_ATOMIC : sk->sk_allocation);
+		tcp_send_active_reset(sk, sk->sk_allocation);
 	} else if (sock_flag(sk, SOCK_LINGER) && !sk->sk_lingertime) {
 		/* Check zero linger _after_ checking for unread data. */
 		sk->sk_prot->disconnect(sk, 0);
@@ -2180,21 +2174,13 @@ void tcp_close(struct sock *sk, long timeout)
 		tcp_send_fin(sk);
 	}
 
-	if (!tcp_sk(sk)->mpc)
-		sk_stream_wait_close(sk, timeout);
+	sk_stream_wait_close(sk, timeout);
 
 adjudge_to_death:
 	state = sk->sk_state;
 	sock_hold(sk);
-#ifdef CONFIG_MPTCP
-	/* The sock *may* have been orphaned by mptcp_close(), if
-	 * we are called from tcp_write_xmit().
-	 */
-	if (!sock_flag(sk, SOCK_DEAD))
-#endif
-		sock_orphan(sk);
+	sock_orphan(sk);
 
-#ifndef CONFIG_MPTCP
 	/* It is the last release_sock in its life. It will remove backlog. */
 	release_sock(sk);
 
@@ -2207,10 +2193,6 @@ adjudge_to_death:
 	WARN_ON(sock_owned_by_user(sk));
 
 	percpu_counter_inc(sk->sk_prot->orphan_count);
-#else
-	if (!sock_flag(sk, SOCK_DEAD))
-		percpu_counter_inc(sk->sk_prot->orphan_count);
-#endif
 
 	/* Have we already been destroyed by a softirq or backlog? */
 	if (state != TCP_CLOSE && sk->sk_state == TCP_CLOSE)
@@ -2267,10 +2249,8 @@ adjudge_to_death:
 	/* Otherwise, socket is reprieved until protocol close. */
 
 out:
-#ifndef CONFIG_MPTCP
 	bh_unlock_sock(sk);
 	local_bh_enable();
-#endif
 	sock_put(sk);
 }
 EXPORT_SYMBOL(tcp_close);

@@ -458,7 +458,7 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		struct tcp_options_received *opt_rx,
 		struct multipath_options *mopt,
 		struct sk_buff *skb);
-void mptcp_close(struct sock *master_sk, long timeout);
+void mptcp_close(struct sock *meta_sk, long timeout);
 void mptcp_detach_unused_child(struct sock *sk);
 void mptcp_set_bw_est(struct tcp_sock *tp, u32 now);
 int do_mptcp(struct sock *sk);
@@ -959,7 +959,7 @@ static inline void mptcp_parse_options(const uint8_t *ptr, const int opsize,
 				       const struct tcp_options_received *opt_rx,
 				       const struct multipath_options *mopt,
 				       const struct sk_buff *skb) {}
-static inline void mptcp_close(const struct sock *master_sk, long timeout) {}
+static inline void mptcp_close(const struct sock *meta_sk, long timeout) {}
 static inline void mptcp_detach_unused_child(const struct sock *sk) {}
 static inline void mptcp_set_bw_est(const struct tcp_sock *tp, u32 now) {}
 static inline int do_mptcp(const struct sock *sk)
