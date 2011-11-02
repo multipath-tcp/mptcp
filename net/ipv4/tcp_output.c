@@ -583,10 +583,8 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 
 		*p8++ = TCPOPT_MPTCP;
 
-		if (!opts->receiver_key && !opts->sender_key)
+		if (!opts->receiver_key)
 			*p8++ = MPTCP_SUB_LEN_CAPABLE_SYN;
-		else if (!opts->receiver_key)
-			*p8++ = MPTCP_SUB_LEN_CAPABLE_SYNACK;
 		else
 			*p8++ = MPTCP_SUB_LEN_CAPABLE_ACK;
 
@@ -820,7 +818,7 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 
 		opts->options |= OPTION_MP_CAPABLE;
 		remaining -= MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN;
-		opts->sender_key = 0;
+		opts->sender_key = mpcb->mptcp_loc_key;
 		opts->dss_csum = mpcb->rx_opt.dss_csum;
 
 		/* We arrive here either when sending a SYN or a

@@ -2539,7 +2539,6 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		struct mp_capable *mpcapable = (struct mp_capable *) ptr;
 
 		if (opsize != MPTCP_SUB_LEN_CAPABLE_SYN &&
-		    opsize != MPTCP_SUB_LEN_CAPABLE_SYNACK &&
 		    opsize != MPTCP_SUB_LEN_CAPABLE_ACK) {
 			mptcp_debug("%s: mp_capable: bad option size %d\n",
 					__func__, opsize);
@@ -2554,10 +2553,10 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		mopt->dss_csum = sysctl_mptcp_checksum || mpcapable->c;
 		mopt->mptcp_opt_type = MPTCP_MP_CAPABLE_TYPE_SYN;
 
-		if (opsize >= MPTCP_SUB_LEN_CAPABLE_SYNACK) {
+		if (opsize >= MPTCP_SUB_LEN_CAPABLE_SYN) {
 			ptr += 2;
 			mopt->mptcp_rem_key = *((__u64*)ptr);
-			mopt->mptcp_opt_type = MPTCP_MP_CAPABLE_TYPE_SYNACK;
+			mopt->mptcp_opt_type = MPTCP_MP_CAPABLE_TYPE_SYN;
 		}
 
 		if (opsize == MPTCP_SUB_LEN_CAPABLE_ACK) {
@@ -3180,9 +3179,6 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 		child_tp->rx_opt.saw_mpc = 0;
 		child_tp->mpc = 1;
 		child_tp->slave_sk = 0;
-
-		if (!req->ack_defered)
-			req->mptcp_rem_key = mopt->mptcp_rem_key;
 
 		if (mptcp_alloc_mpcb(child, req, GFP_ATOMIC)) {
 			/* The allocation of the mpcb failed!

@@ -415,7 +415,7 @@ void mptcp_synack_options(struct request_sock *req,
 
 	if (req->saw_mpc && !req->mpcb) {
 		opts->options |= OPTION_MP_CAPABLE;
-		*remaining -= MPTCP_SUB_LEN_CAPABLE_SYNACK_ALIGN;
+		*remaining -= MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN;
 		opts->sender_key = req->mptcp_loc_key;
 		opts->dss_csum = sysctl_mptcp_checksum || req->dss_csum;
 	}

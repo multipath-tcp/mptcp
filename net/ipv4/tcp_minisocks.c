@@ -449,6 +449,8 @@ void tcp_openreq_init(struct request_sock *req,
 			mptcp_key_sha1(req->mptcp_loc_key,
 				       &req->mptcp_loc_token);
 		} while (mptcp_find_token(req->mptcp_loc_token));
+
+		req->mptcp_rem_key = mopt->mptcp_rem_key;
 	}
 #endif
 	ireq->tstamp_ok = rx_opt->tstamp_ok;
@@ -784,7 +786,6 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	    TCP_SKB_CB(skb)->end_seq == tcp_rsk(req)->rcv_isn + 1) {
 #ifdef CONFIG_MPTCP
 		req->ack_defered = (mopt->mptcp_opt_type == MPTCP_MP_CAPABLE_TYPE_ACK);
-		req->mptcp_rem_key = mopt->mptcp_rem_key;
 #endif
 		inet_rsk(req)->acked = 1;
 		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPDEFERACCEPTDROP);
