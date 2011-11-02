@@ -1873,7 +1873,7 @@ static inline int tcp_snd_wnd_test(struct tcp_sock *tp, struct sk_buff *skb,
 			   TCP_SKB_CB(skb)->seq) + cur_mss;
 
 	if (after(end_seq, tcp_wnd_end(tp, mptcp_wnd_end)) &&
-			(TCP_SKB_CB(skb)->flags & TCPHDR_FIN)) {
+	    (TCP_SKB_CB(skb)->flags & TCPHDR_FIN) && tp->mpc) {
 		mptcp_debug("FIN refused for sndwnd, fin end dsn %#x,"
 			"tcp_wnd_end: %u, mpc:%d, snd_una:%u,"
 			"snd_wnd:%d, mpcb write_seq:%#x, "
