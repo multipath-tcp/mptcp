@@ -1119,7 +1119,7 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 	sock_reset_flag(newsk, SOCK_DONE);
 	skb_queue_head_init(&newsk->sk_error_queue);
 
-	filter = newsk->sk_filter;
+	filter = rcu_dereference_protected(newsk->sk_filter, 1);
 	if (filter != NULL)
 		sk_filter_charge(newsk, filter);
 
@@ -1151,6 +1151,7 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 		sk_set_socket(newsk, sk->sk_socket);
 		newsk->sk_wq = sk->sk_wq;
 
+		__inet_inherit_port(sk, newsk);
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 		if (sk->sk_family == AF_INET) {
 			struct ipv6_pinfo *np;
@@ -1301,8 +1302,19 @@ static void __sk_free(struct sock *sk)
 {
 	struct sk_filter *filter;
 
-	if (sk->sk_destruct)
+	if (sk->sk_destruct) {
+		/* Ugly hack at the moment - sk_destruct (inet_sock_destruct)
+		 * called mpcb_release who destroyed the mpcb.
+		 * Thus, we have to stop here. */
+		if (sk->sk_type == SOCK_STREAM &&
+		    sk->sk_protocol == IPPROTO_TCP &&
+		    tcp_sk(sk)->mpc && is_meta_sk(sk)) {
+			sk->sk_destruct(sk);
+			return;
+		}
+
 		sk->sk_destruct(sk);
+	}
 
 	filter = rcu_dereference_check(sk->sk_filter,
 				       atomic_read(&sk->sk_wmem_alloc) == 0);
@@ -1764,7 +1776,7 @@ void __release_sock(struct sock *sk, struct multipath_pcb *mpcb)
 	do {
 		sk->sk_backlog.head = sk->sk_backlog.tail = NULL;
 		if (mpcb)
-			bh_unlock_sock(mpcb->master_sk);
+			bh_unlock_sock(mpcb_meta_sk(mpcb));
 		else
 			bh_unlock_sock(sk);
 
@@ -1787,7 +1799,7 @@ void __release_sock(struct sock *sk, struct multipath_pcb *mpcb)
 		} while (skb != NULL);
 
 		if (mpcb)
-			bh_lock_sock(mpcb->master_sk);
+			bh_lock_sock(mpcb_meta_sk(mpcb));
 		else
 			bh_lock_sock(sk);
 	} while ((skb = sk->sk_backlog.head) != NULL);
@@ -2189,9 +2201,6 @@ EXPORT_SYMBOL(sock_init_data);
 
 void lock_sock_nested(struct sock *sk, int subclass)
 {
-	if (is_meta_sk(sk)) /* necessary for sk_wait_event() */
-		sk = ((struct multipath_pcb *)sk)->master_sk;
-
 	might_sleep();
 	spin_lock_bh(&sk->sk_lock.slock);
 	if (sk->sk_lock.owned)
@@ -2208,16 +2217,13 @@ EXPORT_SYMBOL(lock_sock_nested);
 
 void release_sock(struct sock *sk)
 {
-	if (is_meta_sk(sk)) /* necessary for sk_wait_event() */
-		sk = ((struct multipath_pcb *)sk)->master_sk;
 	/*
 	 * The sk_lock has mutex_unlock() semantics:
 	 */
 	mutex_release(&sk->sk_lock.dep_map, 1, _RET_IP_);
 
 	spin_lock_bh(&sk->sk_lock.slock);
-	if (sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpc &&
-			is_master_tp(tcp_sk(sk)))
+	if (sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpc && is_meta_sk(sk))
 		mptcp_release_sock(sk);
 	else if (sk->sk_backlog.tail)
 		__release_sock(sk, NULL);
@@ -2622,7 +2628,7 @@ void sk_wake_async(struct sock *sk, int how, int band)
 {
 	if (sk->sk_type == SOCK_STREAM && sk->sk_protocol == IPPROTO_TCP &&
 	    tcp_sk(sk)->mpc) {
-		sk = tcp_sk(sk)->mpcb->master_sk;
+		sk = mptcp_meta_sk(sk);
 	}
 
 	if (sock_flag(sk, SOCK_FASYNC))

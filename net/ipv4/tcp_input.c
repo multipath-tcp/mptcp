@@ -5828,7 +5828,12 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 				mpcb->rx_opt.dss_csum = mopt.dss_csum;
 				mpcb->rx_opt.list_rcvd = 1;
 
+				sk->sk_socket->sk = mptcp_meta_sk(sk);
+
 				mptcp_update_metasocket(sk, mpcb);
+
+				 /* hold in mptcp_inherit_sk due to initialization to 2 */
+				sock_put(mpcb_meta_sk(mpcb));
 			}
 		}
 cont_mptcp:

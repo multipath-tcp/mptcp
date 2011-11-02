@@ -87,7 +87,7 @@ struct multipath_pcb *mptcp_hash_find(u32 token)
 	read_lock(&tk_hash_lock);
 	list_for_each_entry(mpcb, &tk_hashtable[hash], collide_tk) {
 		if (token == mpcb->mptcp_loc_token) {
-			sock_hold(mpcb->master_sk);
+			sock_hold(mpcb_meta_sk(mpcb));
 			read_unlock(&tk_hash_lock);
 			return mpcb;
 		}
@@ -461,7 +461,7 @@ int mptcp_syn_recv_sock(struct sk_buff *skb)
 {
 	struct tcphdr *th = tcp_hdr(skb);
 	struct request_sock *req = NULL;
-	struct sock *meta_sk, *master_sk;
+	struct sock *meta_sk;
 
 	if (skb->protocol == htons(ETH_P_IP))
 		req = mptcp_v4_search_req(th->source, ip_hdr(skb)->saddr,
@@ -474,15 +474,14 @@ int mptcp_syn_recv_sock(struct sk_buff *skb)
 
 	if (!req)
 		return 0;
-	meta_sk = (struct sock *)req->mpcb;
-	master_sk = req->mpcb->master_sk;
-	bh_lock_sock_nested(master_sk);
-	if (sock_owned_by_user(master_sk)) {
+	meta_sk = mpcb_meta_sk(req->mpcb);
+	bh_lock_sock_nested(meta_sk);
+	if (sock_owned_by_user(meta_sk)) {
 		if (unlikely(sk_add_backlog(meta_sk, skb))) {
-			bh_unlock_sock(master_sk);
+			bh_unlock_sock(meta_sk);
 			NET_INC_STATS_BH(dev_net(skb->dev),
 					LINUX_MIB_TCPBACKLOGDROP);
-			sock_put(master_sk); /* Taken by mptcp_search_req */
+			sock_put(meta_sk); /* Taken by mptcp_search_req */
 			kfree_skb(skb);
 			return 1;
 		}
@@ -492,8 +491,8 @@ int mptcp_syn_recv_sock(struct sk_buff *skb)
 	else /* IPv6 */
 		tcp_v6_do_rcv(meta_sk, skb);
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
-	bh_unlock_sock(master_sk);
-	sock_put(master_sk); /* Taken by mptcp_search_req */
+	bh_unlock_sock(meta_sk);
+	sock_put(meta_sk); /* Taken by mptcp_search_req */
 	return 1;
 }
 
@@ -563,13 +562,13 @@ int mptcp_lookup_join(struct sk_buff *skb)
 	/* OK, this is a new syn/join, let's create a new open request and
 	 * send syn+ack
 	 */
-	bh_lock_sock(mpcb->master_sk);
-	if (sock_owned_by_user(mpcb->master_sk)) {
+	bh_lock_sock(meta_sk);
+	if (sock_owned_by_user(meta_sk)) {
 		if (unlikely(sk_add_backlog(meta_sk, skb))) {
-			bh_unlock_sock(mpcb->master_sk);
+			bh_unlock_sock(meta_sk);
 			NET_INC_STATS_BH(dev_net(skb->dev),
 					LINUX_MIB_TCPBACKLOGDROP);
-			sock_put(mpcb->master_sk); /*Taken by mptcp_hash_find*/
+			sock_put(meta_sk); /*Taken by mptcp_hash_find*/
 			kfree_skb(skb);
 			return 1;
 		}
@@ -579,8 +578,8 @@ int mptcp_lookup_join(struct sk_buff *skb)
 	else /* IPv6 */
 		tcp_v6_do_rcv(meta_sk, skb);
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
-	bh_unlock_sock(mpcb->master_sk);
-	sock_put(mpcb->master_sk); /* Taken by mptcp_hash_find */
+	bh_unlock_sock(meta_sk);
+	sock_put(meta_sk); /* Taken by mptcp_hash_find */
 	return 1;
 }
 
@@ -612,16 +611,17 @@ static void __mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 static void mptcp_send_updatenotif_wq(struct work_struct *work)
 {
 	struct multipath_pcb *mpcb = *(struct multipath_pcb **)(work + 1);
-	lock_sock_nested(mpcb->master_sk, SINGLE_DEPTH_NESTING);
+	struct sock *meta_sk = mpcb_meta_sk(mpcb);
+	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
 	__mptcp_send_updatenotif(mpcb);
-	release_sock(mpcb->master_sk);
-	sock_put(mpcb->master_sk);
+	release_sock(meta_sk);
+	sock_put(meta_sk);
 	kfree(work);
 }
 
 void mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 {
-	if (!tcp_sk(mpcb->master_sk)->fully_established ||
+	if ((mpcb->master_sk && !tcp_sk(mpcb->master_sk)->fully_established) ||
 	    mpcb->infinite_mapping ||
 	    test_bit(MPCB_FLAG_SERVER_SIDE, &mpcb->flags) ||
 	    sock_flag(mpcb_meta_sk(mpcb), SOCK_DEAD))
@@ -634,7 +634,7 @@ void mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 		struct multipath_pcb **mpcbp = (struct multipath_pcb **)
 			(work + 1);
 		*mpcbp = mpcb;
-		sock_hold(mpcb->master_sk); /* Needed to ensure we can take
+		sock_hold(mpcb_meta_sk(mpcb)); /* Needed to ensure we can take
 					     * the lock
 					     */
 		INIT_WORK(work, mptcp_send_updatenotif_wq);
@@ -710,9 +710,9 @@ diffPorts:
 		tcp_sk(subsk)->path_index = mpcb->next_unused_pi++;
 	}
 
-	/* Point it to the same struct socket and wq as the master */
-	sk_set_socket(subsk, mpcb->master_sk->sk_socket);
-	subsk->sk_wq = mpcb->master_sk->sk_wq;
+	/* Point it to the same struct socket and wq as the meta_sk */
+	sk_set_socket(subsk, mpcb_meta_sk(mpcb)->sk_socket);
+	subsk->sk_wq = mpcb_meta_sk(mpcb)->sk_wq;
 
 	mptcp_add_sock(mpcb, tcp_sk(subsk));
 }
@@ -733,11 +733,11 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
 		list_for_each_entry(mpcb, &tk_hashtable[i], collide_tk) {
-			if (!tcp_sk(mpcb->master_sk)->mpc ||
+			if (!mpcb_meta_tp(mpcb)->mpc ||
 			    mpcb->infinite_mapping)
 				continue;
 
-			bh_lock_sock(mpcb->master_sk);
+			bh_lock_sock(mpcb_meta_sk(mpcb));
 
 			if (family == AF_INET)
 				mptcp_pm_addr4_event_handler((struct in_ifaddr *)ptr, event, mpcb);
@@ -746,7 +746,7 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 				mptcp_pm_addr6_event_handler((struct inet6_ifaddr *)ptr, event, mpcb);
 #endif
 
-			bh_unlock_sock(mpcb->master_sk);
+			bh_unlock_sock(mpcb_meta_sk(mpcb));
 		}
 	}
 	read_unlock_bh(&tk_hash_lock);

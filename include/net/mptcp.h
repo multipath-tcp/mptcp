@@ -129,7 +129,6 @@ struct multipath_pcb {
 	int cnt_established;
 	int last_pi_selected;
 
-
 	struct sk_buff_head reinject_queue;
 	unsigned long flags;	/* atomic, for bits see
 				 * MPCB_FLAG_XXX
@@ -440,8 +439,6 @@ int mptcp_alloc_mpcb(struct sock *master_sk);
 void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp);
 void mptcp_del_sock(struct sock *sk);
 void mptcp_update_metasocket(struct sock *sock, struct multipath_pcb *mpcb);
-int mptcp_sendmsg(struct kiocb *iocb, struct sock *master_sk,
-		struct msghdr *msg, size_t size);
 void mptcp_reinject_data(struct sock *orig_sk, int clone_it);
 int mptcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb);
 int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices);
@@ -482,7 +479,7 @@ void mptcp_key_sha1(u64 key, u32 *token);
 void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 		     u32 *hash_out);
 void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk);
-void mptcp_fin(struct multipath_pcb *mpcb, struct sock *sk);
+int mptcp_fin(struct multipath_pcb *mpcb, struct sock *sk);
 void mptcp_retransmit_timer(struct sock *meta_sk);
 void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb);
 struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk);
@@ -524,12 +521,6 @@ struct multipath_pcb *mptcp_mpcb_from_req_sk(const struct request_sock *req)
 static inline int is_meta_tp(const struct tcp_sock *tp)
 {
 	return tp->mpcb && mpcb_meta_tp(mpcb_from_tcpsock(tp)) == tp;
-}
-
-static inline int is_meta_sk(const struct sock *sk)
-{
-	return sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpcb &&
-	       (struct tcp_sock *)tcp_sk(sk)->mpcb == tcp_sk(sk);
 }
 
 static inline int is_master_tp(const struct tcp_sock *tp)
@@ -599,7 +590,7 @@ out:
 static inline int mptcp_sock_destruct(struct sock *sk)
 {
 	if (sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpcb) {
-		if (is_master_tp(tcp_sk(sk))) {
+		if (is_meta_sk(sk)) {
 			mpcb_release(tcp_sk(sk)->mpcb);
 			return 1;
 		} else {
@@ -607,27 +598,26 @@ static inline int mptcp_sock_destruct(struct sock *sk)
 			 * inet_csk_destroy_sock()
 			 */
 			BUG_ON(mptcp_sk_attached(sk));
-			sock_put(tcp_sk(sk)->mpcb->master_sk); /* Taken when
-								* mpcb pointer
-								* was set
-								*/
+			/* Taken when mpcb pointer was set */
+			sock_put(mpcb_meta_sk(tcp_sk(sk)->mpcb));
 		}
 	}
 	return 0;
 }
 
-static inline void mptcp_update_pointers(struct tcp_sock *tp,
-		struct sock **meta_sk, struct tcp_sock **meta_tp,
-		struct multipath_pcb **mpcb)
+static inline void mptcp_update_pointers(struct sock **sk,
+		struct tcp_sock **tp, struct multipath_pcb **mpcb)
 {
 	/* The following happens if we entered the function without
 	 * being established, then received the mpc flag while
 	 * inside the function.
 	 */
-	if (!(*mpcb) && tp->mpc) {
-		*meta_sk = (struct sock *)tp->mpcb;
-		*meta_tp = tcp_sk(*meta_sk);
-		*mpcb = tp->mpcb;
+	if (((mpcb && !(*mpcb)) || !is_meta_sk(*sk)) && (*tp)->mpc) {
+		*sk = mptcp_meta_sk(*sk);
+		*tp = tcp_sk(*sk);
+
+		if (mpcb)
+			*mpcb = (*tp)->mpcb;
 	}
 }
 
@@ -789,8 +779,8 @@ static inline struct sock *mptcp_sk_clone(struct sock *sk, int family,
 		int priority)
 {
 	struct sock *newsk;
-
 	struct multipath_pcb *mpcb = (struct multipath_pcb *) sk;
+
 	newsk = sk_prot_alloc(mpcb->sk_prot_alt, priority, family);
 
 	if (newsk != NULL) {
@@ -925,11 +915,6 @@ static inline void mptcp_add_sock(const struct multipath_pcb *mpcb,
 static inline void mptcp_del_sock(const struct sock *sk) {}
 static inline void mptcp_update_metasocket(const struct sock *sock,
 					   const struct multipath_pcb *mpcb) {}
-static inline int mptcp_sendmsg(struct kiocb *iocb, struct sock *master_sk,
-		struct msghdr *msg, size_t size)
-{
-	return 0;
-}
 static inline void mptcp_reinject_data(const struct sock *orig_sk,
 				       int clone_it) {}
 static inline int mptcp_get_dataseq_mapping(const struct tcp_sock *tp,
@@ -1030,10 +1015,9 @@ static inline int is_local_addr4(u32 addr)
 	return 0;
 }
 static inline void mptcp_sock_destruct(const struct sock *sk) {}
-static inline void mptcp_update_pointers(const struct tcp_sock *tp,
-					 struct sock **meta_sk,
-					 struct tcp_sock **meta_tp,
-					 struct multipath_pcb **mpcb) {}
+static inline void mptcp_update_pointers(const struct sock **sk,
+					 const struct tcp_sock **tp,
+					 const struct multipath_pcb **mpcb) {}
 static inline int mptcp_check_rtt(const struct tcp_sock *tp, int time)
 {
 	return 0;

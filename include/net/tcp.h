@@ -1203,7 +1203,11 @@ extern int tcp_md5_hash_skb_data(struct tcp_md5sig_pool *, struct sk_buff *,
 				 unsigned header_len);
 extern int tcp_md5_hash_key(struct tcp_md5sig_pool *hp,
 			    struct tcp_md5sig_key *key);
-
+static inline int is_meta_sk(const struct sock *sk)
+{
+	return sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpcb &&
+	       (struct tcp_sock *)tcp_sk(sk)->mpcb == tcp_sk(sk);
+}
 /* write queue abstraction */
 static inline void tcp_write_queue_purge(struct sock *sk)
 {

@@ -146,7 +146,8 @@ void inet_sock_destruct(struct sock *sk)
 		return;
 	}
 
-	mptcp_sock_destruct(sk);
+	if (mptcp_sock_destruct(sk))
+		return;
 
 	if (!sock_flag(sk, SOCK_DEAD)) {
 		pr_err("Attempt to release alive inet socket %p\n", sk);

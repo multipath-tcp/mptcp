@@ -1865,21 +1865,21 @@ process:
 
 	if (tcp_sk(sk)->mpc) {
 		mpcb = tcp_sk(sk)->mpcb;
-		meta_sk = (struct sock *) (tcp_sk(sk)->mpcb);
+		meta_sk = mpcb_meta_sk(tcp_sk(sk)->mpcb);
 	}
 
 	if (meta_sk)
-		bh_lock_sock_nested(mpcb->master_sk);
+		bh_lock_sock_nested(meta_sk);
 	else
 		bh_lock_sock_nested(sk);
 	ret = 0;
 
 	if (meta_sk) {
-		if (!sock_owned_by_user(mpcb->master_sk)) {
+		if (!sock_owned_by_user(meta_sk)) {
 			if (!tcp_prequeue(sk, skb))
 				ret = tcp_v6_do_rcv(sk, skb);
 		} else if (unlikely(sk_add_backlog(sk, skb))) {
-			bh_unlock_sock(mpcb->master_sk);
+			bh_unlock_sock(meta_sk);
 			NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
 			goto discard_and_relse;
 		}
@@ -1903,7 +1903,7 @@ process:
 	}
 
 	if (meta_sk)
-		bh_unlock_sock(mpcb->master_sk);
+		bh_unlock_sock(meta_sk);
 	else
 		bh_unlock_sock(sk);
 
@@ -2339,11 +2339,7 @@ struct proto tcpv6_prot = {
 	.setsockopt		= tcp_setsockopt,
 	.getsockopt		= tcp_getsockopt,
 	.recvmsg		= tcp_recvmsg,
-#ifdef CONFIG_MPTCP
-	.sendmsg		= mptcp_sendmsg,
-#else
 	.sendmsg		= tcp_sendmsg,
-#endif
 	.sendpage		= tcp_sendpage,
 	.backlog_rcv		= tcp_v6_do_rcv,
 	.hash			= tcp_v6_hash,

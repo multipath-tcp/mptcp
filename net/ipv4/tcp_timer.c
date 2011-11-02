@@ -214,11 +214,11 @@ static void tcp_delack_timer(unsigned long data)
 {
 	struct sock *sk = (struct sock *)data;
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *master_sk = tp->mpcb ? tp->mpcb->master_sk : sk;
+	struct sock *meta_sk = tp->mpc ? mpcb_meta_sk(tp->mpcb) : sk;
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
-	bh_lock_sock(master_sk);
-	if (sock_owned_by_user(master_sk)) {
+	bh_lock_sock(meta_sk);
+	if (sock_owned_by_user(meta_sk)) {
 		/* Try again later. */
 		icsk->icsk_ack.blocked = 1;
 		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_DELAYEDACKLOCKED);
@@ -267,7 +267,7 @@ out:
 	if (tcp_memory_pressure)
 		sk_mem_reclaim(sk);
 out_unlock:
-	bh_unlock_sock(master_sk);
+	bh_unlock_sock(meta_sk);
 	sock_put(sk);
 }
 
@@ -463,12 +463,12 @@ void tcp_write_timer(unsigned long data)
 {
 	struct sock *sk = (struct sock *)data;
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *master_sk = tp->mpcb ? tp->mpcb->master_sk : sk;
+	struct sock *meta_sk = tp->mpc ? mpcb_meta_sk(tp->mpcb) : sk;
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	int event;
 
-	bh_lock_sock(master_sk);
-	if (sock_owned_by_user(master_sk)) {
+	bh_lock_sock(meta_sk);
+	if (sock_owned_by_user(meta_sk)) {
 		/* Try again later */
 		sk_reset_timer(sk, &icsk->icsk_retransmit_timer, jiffies + (HZ / 20));
 		goto out_unlock;
@@ -500,7 +500,7 @@ void tcp_write_timer(unsigned long data)
 out:
 	sk_mem_reclaim(sk);
 out_unlock:
-	bh_unlock_sock(master_sk);
+	bh_unlock_sock(meta_sk);
 	sock_put(sk);
 }
 
@@ -537,12 +537,12 @@ static void tcp_keepalive_timer (unsigned long data)
 	struct sock *sk = (struct sock *) data;
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *master_sk = tp->mpcb ? tp->mpcb->master_sk : sk;
+	struct sock *meta_sk = tp->mpc ? mpcb_meta_sk(tp->mpcb) : sk;
 	u32 elapsed;
 
 	/* Only process if socket is not in use. */
-	bh_lock_sock(master_sk);
-	if (sock_owned_by_user(master_sk)) {
+	bh_lock_sock(meta_sk);
+	if (sock_owned_by_user(meta_sk)) {
 		/* Try again later. */
 		inet_csk_reset_keepalive_timer (sk, HZ/20);
 		goto out;
@@ -614,6 +614,6 @@ death:
 	tcp_done(sk);
 
 out:
-	bh_unlock_sock(master_sk);
+	bh_unlock_sock(meta_sk);
 	sock_put(sk);
 }

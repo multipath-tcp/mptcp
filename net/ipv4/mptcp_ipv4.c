@@ -92,7 +92,7 @@ static int mptcp_v4_join_request(struct multipath_pcb *mpcb,
 
 	tcp_clear_options(&tmp_opt);
 	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
-	tmp_opt.user_mss = tcp_sk(mpcb->master_sk)->rx_opt.user_mss;
+	tmp_opt.user_mss = mpcb_meta_tp(mpcb)->rx_opt.user_mss;
 	tcp_parse_options(skb, &tmp_opt, &hash_location,
 			  &mpcb->rx_opt, 0);
 
@@ -327,7 +327,7 @@ struct request_sock *mptcp_v4_search_req(const __be16 rport,
 	}
 
 	if (found)
-		sock_hold(req->mpcb->master_sk);
+		sock_hold(mpcb_meta_sk(req->mpcb));
 	spin_unlock(&mptcp_reqsk_hlock);
 
 	if (!found)
@@ -348,7 +348,6 @@ int mptcp_v4_send_synack(struct sock *meta_sk,
 			struct request_values *rvp)
 {
 	const struct inet_request_sock *ireq = inet_rsk(req);
-	struct sock *master_sk = ((struct multipath_pcb *)meta_sk)->master_sk;
 	int err = -1;
 	struct sk_buff *skb;
 	struct dst_entry *dst;
@@ -358,7 +357,7 @@ int mptcp_v4_send_synack(struct sock *meta_sk,
 	if (!dst)
 		return -1;
 
-	skb = tcp_make_synack(master_sk, dst, req, rvp);
+	skb = tcp_make_synack(meta_sk, dst, req, rvp);
 
 	if (skb) {
 		__tcp_v4_send_check(skb, ireq->loc_addr, ireq->rmt_addr);

@@ -100,7 +100,7 @@ static int mptcp_v6_join_request(struct multipath_pcb *mpcb,
 
 	tcp_clear_options(&tmp_opt);
 	tmp_opt.mss_clamp = 536;
-	tmp_opt.user_mss  = tcp_sk(mpcb->master_sk)->rx_opt.user_mss;
+	tmp_opt.user_mss  = mpcb_meta_tp(mpcb)->rx_opt.user_mss;
 	tcp_parse_options(skb, &tmp_opt, &hash_location,
 				  &mpcb->rx_opt, 0);
 
@@ -332,7 +332,7 @@ struct request_sock *mptcp_v6_search_req(const __be16 rport,
 	}
 
 	if (found)
-		sock_hold(req->mpcb->master_sk);
+		sock_hold(mpcb_meta_sk(req->mpcb));
 	spin_unlock(&mptcp_reqsk_hlock);
 
 	if (!found)
@@ -344,7 +344,6 @@ struct request_sock *mptcp_v6_search_req(const __be16 rport,
 int mptcp_v6_send_synack(struct sock *meta_sk,
 				 struct request_sock *req)
 {
-	struct sock *master_sk = ((struct multipath_pcb *)meta_sk)->master_sk;
 	struct inet6_request_sock *treq = inet6_rsk(req);
 	struct ipv6_pinfo *np = inet6_sk(meta_sk);
 	struct sk_buff *skb;
@@ -374,7 +373,7 @@ int mptcp_v6_send_synack(struct sock *meta_sk,
 		dst = NULL;
 		goto done;
 	}
-	skb = tcp_make_synack(master_sk, dst, req, NULL);
+	skb = tcp_make_synack(meta_sk, dst, req, NULL);
 	err = -ENOMEM;
 	if (skb) {
 		__tcp_v6_send_check(skb, &treq->loc_addr, &treq->rmt_addr);
@@ -555,7 +554,7 @@ static void mptcp_ipv6_setup_dad_timer(struct multipath_pcb *mpcb,
 			MPTCP_IPV6_DEFAULT_DAD_WAIT;
 
 	/* In order not to lose mpcb before the timer expires. */
-	sock_hold(mpcb->master_sk);
+	sock_hold(mpcb_meta_sk(mpcb));
 
 	add_timer(&mpcb->dad_waiter);
 }
@@ -570,7 +569,7 @@ static void dad_wait_timer(unsigned long arg_data)
 	else
 		mptcp_ipv6_setup_dad_timer(data->mpcb, data->ifa);
 
-	sock_put(data->mpcb->master_sk);
+	sock_put(mpcb_meta_sk(data->mpcb));
 	kfree(data);
 }
 
@@ -632,8 +631,8 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 				&ifa->addr))
 			goto found;
 	}
-	if (mpcb->master_sk->sk_family == AF_INET6 &&
-			ipv6_addr_equal(&inet6_sk(mpcb->master_sk)->saddr,
+	if (meta_sk->sk_family == AF_INET6 &&
+			ipv6_addr_equal(&inet6_sk(meta_sk)->saddr,
 			&ifa->addr))
 		goto found;
 
