@@ -3761,7 +3761,8 @@ void mptcp_send_reset(struct sock *sk, struct sk_buff *skb)
 
 void mptcp_close(struct sock *meta_sk, long timeout)
 {
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *tp_it;
+	struct sock *sk_it, *sk_tmp;
 	struct multipath_pcb *mpcb = meta_tp->mpcb;
 	struct sk_buff *skb;
 	int data_was_unread = 0;
@@ -3769,6 +3770,11 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 
 	mptcp_debug("%s: Close of meta_sk with tok %#x\n", __func__,
 			mpcb->mptcp_loc_token);
+
+	mptcp_for_each_sk(mpcb, sk_it, tp_it) {
+		if (!is_master_tp(tp_it))
+			sock_rps_reset_flow(sk_it);
+	}
 
 	mutex_lock(&mpcb->mutex);
 
@@ -3792,7 +3798,6 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 
 	/* If socket has been already reset (e.g. in tcp_reset()) - kill it. */
 	if (meta_sk->sk_state == TCP_CLOSE) {
-		struct sock *sk_it, *sk_tmp;
 		mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp)
 			tcp_close(sk_it, 0);
 		goto adjudge_to_death;
@@ -3806,7 +3811,6 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 	} else if (tcp_close_state(meta_sk)) {
 		mptcp_send_fin(meta_sk);
 	} else if (meta_tp->snd_una == meta_tp->write_seq) {
-		struct sock *sk_it, *sk_tmp;
 		/* The DATA_FIN has been sent and acknowledged
 		 * (e.g., by sk_shutdown). Close all the other subflows */
 		mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp) {

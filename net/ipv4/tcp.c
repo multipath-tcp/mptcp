@@ -914,11 +914,20 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 {
 	struct iovec *iov;
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct sock *sk_it;
+	struct tcp_sock *tp_it;
 	struct sk_buff *skb;
 	int iovlen, flags;
 	int mss_now, size_goal;
 	int sg, err, copied;
 	long timeo;
+
+	if (tp->mpc) {
+		mptcp_for_each_sk(tp->mpcb, sk_it, tp_it) {
+			if (!is_master_tp(tp_it))
+				sock_rps_record_flow(sk_it);
+		}
+	}
 
 	lock_sock(sk);
 
@@ -934,6 +943,12 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		if (tp->mpc && !is_meta_sk(sk)) {
 			release_sock(sk);
 			mptcp_update_pointers(&sk, &tp, NULL);
+
+		        mptcp_for_each_sk(tp->mpcb, sk_it, tp_it) {
+				if (!is_master_tp(tp_it))
+		                        sock_rps_record_flow(sk_it);
+		        }
+
 			lock_sock(sk);
 		}
 	}
@@ -1536,6 +1551,14 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 #ifdef CONFIG_MPTCP
 	struct tcp_sock *tp_it = tcp_sk(sk_it);
 #endif
+
+	if (mpcb) {
+		mptcp_for_each_sk(mpcb, sk_it, tp_it) {
+			if (!is_master_tp(tp_it))
+				sock_rps_record_flow(sk_it);
+		}
+	}
+
 	lock_sock(sk);
 
 	err = -ENOTCONN;
