@@ -1147,8 +1147,7 @@ int mptcp_alloc_mpcb(struct sock *master_sk)
 
 	/* Meta-level retransmit timer */
 	meta_icsk->icsk_rto *= 2; /* Double of master - rto */
-	setup_timer(&meta_icsk->icsk_retransmit_timer, tcp_write_timer,
-		    (unsigned long)meta_sk);
+	tcp_init_xmit_timers(meta_sk);
 
 	/* Adding the mpcb in the token hashtable */
 	mptcp_hash_insert(mpcb, mpcb->mptcp_loc_token);
@@ -1161,7 +1160,7 @@ void mpcb_release(struct multipath_pcb *mpcb)
 	struct sock *meta_sk = (struct sock *)mpcb;
 
 	/* Must have been destroyed previously */
-	if (!sock_flag((struct sock *)mpcb, SOCK_DEAD)) {
+	if (!sock_flag(meta_sk, SOCK_DEAD)) {
 		printk(KERN_ERR "Trying to free mpcb without having called "
 		       "mptcp_destroy_mpcb()\n");
 		BUG();
@@ -1213,24 +1212,11 @@ void mptcp_release_sock(struct sock *sk)
 
 static void mptcp_destroy_mpcb(struct multipath_pcb *mpcb)
 {
-	struct sock * meta_sk = mpcb_meta_sk(mpcb);
-
 	mptcp_debug("%s: Destroying mpcb with token:%08x\n", __func__,
 			mpcb->mptcp_loc_token);
 
 	/* Detach the mpcb from the token hashtable */
 	mptcp_hash_remove(mpcb);
-	/* Accept any subsock waiting in the pending queue
-	 * This is needed because those subsocks are established
-	 * and still reachable by incoming packets. They will hence
-	 * try to reference the mpcb, and need to take a ref
-	 * to it to ensure the mpcb does not die before any of its
-	 * childs.
-	 */
-	release_sock(meta_sk);
-	lock_sock(meta_sk);
-
-	sock_set_flag(meta_sk, SOCK_DEAD);
 }
 
 void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
@@ -2264,7 +2250,6 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 				}
 
 				mptcp_prepare_skb(tmp1, tmp, sk);
-				__skb_unlink(tmp1, &sk->sk_receive_queue);
 
 				/* Is direct copy possible ? */
 				if (TCP_SKB_CB(tmp1)->data_seq ==
@@ -2289,10 +2274,17 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 					 * mptcp_queue_skb and exit.
 					 */
 					if (mptcp_fin(mpcb, sk)) {
-						ans = 1;
+						ans = 0;
 						goto rcvd_fin;
 					}
 				}
+
+				/* It is important that we unlink after mptcp_fin.
+				 * Otherwise, if mptcp_fin returns 1, and tcp_fin
+				 * will later also call tcp_done, we have a problem,
+				 * because sk_forward_alloc will be wrong.
+				 */
+				__skb_unlink(tmp1, &sk->sk_receive_queue);
 
 				if (!eaten)
 					__skb_queue_tail(
@@ -3015,12 +3007,12 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 	struct tcp_sock *subtp;
 	struct sk_buff *skb;
 	int data_was_unread = 0;
+	int state;
 
 	mptcp_debug("%s: Close of meta_sk with tok %#x\n", __func__,
 			mpcb->mptcp_loc_token);
 
 	lock_sock(meta_sk);
-	sock_hold(meta_sk);
 
 	mptcp_destroy_mpcb(mpcb);
 
@@ -3039,6 +3031,10 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 
 	sk_mem_reclaim(meta_sk);
 
+	/* If socket has been already reset (e.g. in tcp_reset()) - kill it. */
+	if (meta_sk->sk_state == TCP_CLOSE)
+		goto adjudge_to_death;
+
 	if (tcp_close_state(meta_sk)) {
 		mptcp_send_fin(meta_sk);
 	} else if (meta_tp->snd_una == meta_tp->write_seq) {
@@ -3051,7 +3047,21 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 
 	sk_stream_wait_close(meta_sk, timeout);
 
+adjudge_to_death:
+	state = meta_sk->sk_state;
+	sock_hold(meta_sk);
 	sock_orphan(meta_sk);
+
+	/* It is the last release_sock in its life. It will remove backlog. */
+	release_sock(meta_sk);
+
+	/* Now socket is owned by kernel and we acquire BH lock
+	   to finish close. No need to check for user refs.
+	 */
+	local_bh_disable();
+	bh_lock_sock(meta_sk);
+	WARN_ON(sock_owned_by_user(meta_sk));
+
 	percpu_counter_inc(meta_sk->sk_prot->orphan_count);
 
 	mptcp_for_each_sk(mpcb, subsk, subtp) {
@@ -3064,8 +3074,17 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 		}
 	}
 
-	/* It is the last release_sock in its life. It will remove backlog. */
-	release_sock(meta_sk);
+	/* Have we already been destroyed by a softirq or backlog? */
+	if (state != TCP_CLOSE && meta_sk->sk_state == TCP_CLOSE)
+		goto out;
+
+	if (meta_sk->sk_state == TCP_CLOSE)
+		inet_csk_destroy_sock(meta_sk);
+	/* Otherwise, socket is reprieved until protocol close. */
+
+out:
+	bh_unlock_sock(meta_sk);
+	local_bh_enable();
 	sock_put(meta_sk); /* Taken by sock_hold */
 }
 
@@ -3261,7 +3280,7 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 	return 0;
 }
 
-struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
+struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 		struct request_sock *req, struct request_sock **prev)
 {
 	struct tcp_sock *child_tp = tcp_sk(child);
@@ -3299,13 +3318,13 @@ struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
 	/* Subflows do not use the accept queue, as they
 	 * are attached immediately to the mpcb.
 	 */
-	inet_csk_reqsk_queue_drop(sk, req, prev);
+	inet_csk_reqsk_queue_drop(meta_sk, req, prev);
 	return child;
 
 teardown:
 	sock_orphan(child);
 	tcp_done(child);
-	return sk;
+	return meta_sk;
 }
 
 void mptcp_select_window(struct tcp_sock *tp, u32 new_win)
