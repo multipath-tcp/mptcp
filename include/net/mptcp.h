@@ -593,7 +593,8 @@ out:
 
 static inline int mptcp_sock_destruct(struct sock *sk)
 {
-	if (sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpcb) {
+	if (sk->sk_type == SOCK_STREAM && sk->sk_protocol == IPPROTO_TCP &&
+	    tcp_sk(sk)->mpcb) {
 		if (is_meta_sk(sk)) {
 			mpcb_release(tcp_sk(sk)->mpcb);
 			return 1;

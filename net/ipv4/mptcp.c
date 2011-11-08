@@ -956,8 +956,8 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 
 	if (!tcp_write_queue_head(meta_sk)) {
 		printk(KERN_ERR"%s no skb in meta write queue but packets_out: %u\n",
-				__func__,meta_tp->packets_out);
-		goto out;		
+				__func__, meta_tp->packets_out);
+		goto out;
 	}
 
 	__mptcp_reinject_data(tcp_write_queue_head(meta_sk), meta_sk, NULL, 1);
@@ -1283,7 +1283,8 @@ void mptcp_del_sock(struct sock *sk)
 
 	/* Need to check for protocol here, because we may enter here for
 	 * non-tcp sockets. (coming from inet_csk_destroy_sock) */
-	if (sk->sk_protocol != IPPROTO_TCP || !tp->mpc || !tp->attached)
+	if (sk->sk_type != SOCK_STREAM || sk->sk_protocol != IPPROTO_TCP ||
+	    !tp->mpc || !tp->attached)
 		return;
 
 	mptcp_debug("%s: Removing subsocket - pi:%d state %d is_meta? %d\n", __func__,
