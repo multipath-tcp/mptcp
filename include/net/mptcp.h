@@ -75,8 +75,6 @@ static void mptcp_stop_debug_timer(void)
 }
 #endif
 
-extern struct proto mptcpsub_prot;
-
 #define MPCB_FLAG_SERVER_SIDE	0  /* This mpcb belongs to a server side
 				    * connection. (obtained through a listen)
 				    */
@@ -523,6 +521,12 @@ static inline int is_meta_tp(const struct tcp_sock *tp)
 	return tp->mpcb && mpcb_meta_tp(mpcb_from_tcpsock(tp)) == tp;
 }
 
+static inline int is_meta_sk(const struct sock *sk)
+{
+	return sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpcb &&
+	       (struct tcp_sock *)tcp_sk(sk)->mpcb == tcp_sk(sk);
+}
+
 static inline int is_master_tp(const struct tcp_sock *tp)
 {
 	return !tp->slave_sk && !is_meta_tp(tp);
@@ -909,6 +913,7 @@ static inline int mptcp_queue_skb(const struct sock *sk,
 	return 0;
 }
 static inline void mptcp_ofo_queue(const struct multipath_pcb *mpcb) {}
+static inline void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp) {}
 static inline void mptcp_cleanup_rbuf(const struct sock *meta_sk, int copied) {}
 static inline void mptcp_add_sock(const struct multipath_pcb *mpcb,
 				  const struct tcp_sock *tp) {}
@@ -1014,10 +1019,13 @@ static inline int is_local_addr4(u32 addr)
 {
 	return 0;
 }
-static inline void mptcp_sock_destruct(const struct sock *sk) {}
-static inline void mptcp_update_pointers(const struct sock **sk,
-					 const struct tcp_sock **tp,
-					 const struct multipath_pcb **mpcb) {}
+static inline int mptcp_sock_destruct(const struct sock *sk)
+{
+	return 0;
+}
+static inline void mptcp_update_pointers(struct sock **sk,
+					 struct tcp_sock **tp,
+					 struct multipath_pcb **mpcb) {}
 static inline int mptcp_check_rtt(const struct tcp_sock *tp, int time)
 {
 	return 0;

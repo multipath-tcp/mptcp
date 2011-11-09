@@ -411,16 +411,14 @@ void mptcp_synack_options(struct request_sock *req,
 			  struct tcp_out_options *opts,
 			  unsigned *remaining)
 {
-	struct inet_request_sock *ireq = inet_rsk(req);
-
-	if (req->saw_mpc && !req->mpcb) {
+	/* MPCB not yet set - thus it's a new MPTCP-session */
+	if (!req->mpcb) {
 		opts->options |= OPTION_MP_CAPABLE;
 		*remaining -= MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN;
 		opts->sender_key = req->mptcp_loc_key;
 		opts->dss_csum = sysctl_mptcp_checksum || req->dss_csum;
-	}
-
-	if (req->saw_mpc && req->mpcb) {
+	} else {
+		struct inet_request_sock *ireq = inet_rsk(req);
 		int i;
 
 		opts->options |= OPTION_MP_JOIN;

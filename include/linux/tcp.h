@@ -300,11 +300,6 @@ struct tcp_options_received {
 
 struct multipath_pcb;
 
-#ifdef CONFIG_MPTCP
-struct multipath_options;
-struct mptcp_auth_info;
-#endif
-
 static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
 {
 	rx_opt->tstamp_ok = rx_opt->sack_ok = 0;

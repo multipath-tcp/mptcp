@@ -125,12 +125,12 @@
 #include <net/xfrm.h>
 #include <linux/ipsec.h>
 #include <net/cls_cgroup.h>
-#include <net/mptcp.h>
 
 #include <linux/filter.h>
 
 #ifdef CONFIG_INET
 #include <net/tcp.h>
+#include <net/mptcp.h>
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 #include <linux/ipv6.h>
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */

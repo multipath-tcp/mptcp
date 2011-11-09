@@ -968,7 +968,10 @@ static unsigned tcp_synack_options(struct sock *sk,
 		}
 	}
 
-	mptcp_synack_options(req, opts, &remaining);
+#ifdef CONFIG_MPTCP
+	if (req->saw_mpc)
+		mptcp_synack_options(req, opts, &remaining);
+#endif
 
 	return MAX_TCP_OPTION_SPACE - remaining;
 }
