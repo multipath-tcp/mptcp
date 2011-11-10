@@ -2198,6 +2198,9 @@ static int tcp_mtu_probe(struct sock *sk)
 		/* Decrement cwnd here because we are sending
 		 * effectively two packets. */
 		tp->snd_cwnd--;
+		if (is_meta_sk(sk))
+			mptcp_debug("%s DEBUG BUG#107 calling tcp_event_new_data_sent"
+				    " from meta-socket\n", __func__);
 		tcp_event_new_data_sent(sk, nskb);
 
 		icsk->icsk_mtup.probe_size = tcp_mss_to_mtu(sk, nskb->len);
