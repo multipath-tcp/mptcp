@@ -3169,6 +3169,10 @@ new_bw_est:
  */
 int do_mptcp(struct sock *sk)
 {
+	/* Socket may already be established (e.g., called from tcp_recvmsg) */
+	if (tcp_sk(sk)->mpc || tcp_sk(sk)->request_mptcp)
+		return 1;
+
 	if (!sysctl_mptcp_enabled)
 		return 0;
 	if (!tcp_sk(sk)->mptcp_enabled)

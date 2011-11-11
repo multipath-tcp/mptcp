@@ -5834,6 +5834,8 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 
 				 /* hold in mptcp_inherit_sk due to initialization to 2 */
 				sock_put(mpcb_meta_sk(mpcb));
+			} else {
+				tp->request_mptcp = 0;
 			}
 		}
 cont_mptcp:

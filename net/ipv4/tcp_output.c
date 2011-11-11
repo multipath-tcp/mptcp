@@ -811,7 +811,7 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 			remaining -= TCPOLEN_SACKPERM_ALIGNED;
 	}
 #ifdef CONFIG_MPTCP
-	if (!do_mptcp(sk))
+	if (!tp->request_mptcp)
 		goto nomptcp;
 	if (is_master_tp(tp)) {
 		opts->options |= OPTION_MP_CAPABLE;
@@ -3419,6 +3419,7 @@ static void tcp_connect_init(struct sock *sk)
 		tp->snt_isn = tp->write_seq;
 		tp->reinjected_seq = tp->write_seq;
 		tp->init_rcv_wnd = tp->rcv_wnd;
+		tp->request_mptcp = 1;
 
 		if (is_master_tp(tp)) {
 			tp->path_index = 1;

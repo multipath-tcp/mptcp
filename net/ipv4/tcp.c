@@ -1573,7 +1573,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 #ifdef CONFIG_MPTCP
 	/* Wait for the mptcp connection to establish. */
-	if (do_mptcp(sk) && !is_meta_sk(sk) &&
+	if (tp->request_mptcp && !is_meta_sk(sk) &&
 	    (1 << sk->sk_state) & ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT)) {
 		if ((err = sk_stream_wait_connect(sk, &timeo)) != 0) {
 			goto out;
