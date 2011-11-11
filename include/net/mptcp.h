@@ -574,9 +574,6 @@ static inline int is_local_addr4(const u32 addr)
 			struct in_device *in_dev = dev->ip_ptr;
 			struct in_ifaddr *ifa;
 
-			if (dev->flags & IFF_LOOPBACK)
-				continue;
-
 			for (ifa = in_dev->ifa_list; ifa; ifa = ifa->ifa_next) {
 				if (ifa->ifa_address == addr) {
 					ans = 1;

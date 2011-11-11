@@ -3178,11 +3178,17 @@ int do_mptcp(struct sock *sk)
 	if (!tcp_sk(sk)->mptcp_enabled)
 		return 0;
 
-	if ((sk->sk_family == AF_INET &&
-	     ipv4_is_loopback(inet_sk(sk)->inet_daddr)) ||
-	    (sk->sk_family == AF_INET6 &&
-	     ipv6_addr_loopback(&inet6_sk(sk)->daddr)))
+	/* Don't do mptcp over loopback or local addresses */
+	if (sk->sk_family == AF_INET && ipv4_is_loopback(inet_sk(sk)->inet_daddr))
 		return 0;
+	if (sk->sk_family == AF_INET6 && ipv6_addr_loopback(&inet6_sk(sk)->daddr))
+		return 0;
+	if (mptcp_v6_is_v4_mapped(sk) && ipv4_is_loopback(inet_sk(sk)->inet_saddr))
+		return 0;
+
+	/* We should try to speed this up - is_local_addr4 takes a read_lock and
+	 * iterates over all devices and addresses
+	 * May we allow mptcp over local addresses? */
 	if (is_local_addr4(inet_sk(sk)->inet_daddr))
 		return 0;
 	return 1;
