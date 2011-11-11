@@ -401,9 +401,9 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 	 * We add 1 to size of local and remote set, to include the
 	 * ULID */
 	int ulid_v6 = (meta_sk->sk_family == AF_INET6 &&
-		!mptcp_v6_is_v4_mapped(meta_sk)) ? 1 : 0;
+		       !mptcp_v6_is_v4_mapped(meta_sk)) ? 1 : 0;
 	int pa6_size = (mpcb->num_addr6 + ulid_v6) *
-		(mpcb->rx_opt.num_addr6 + ulid_v6) - ulid_v6;
+		       (mpcb->rx_opt.num_addr6 + ulid_v6) - ulid_v6;
 
 	new_pa6 = kmalloc(pa6_size * sizeof(struct path6), GFP_ATOMIC);
 
