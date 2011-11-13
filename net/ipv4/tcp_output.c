@@ -1865,45 +1865,11 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 	unsigned int tso_segs, sent_pkts;
 	int cwnd_quota;
 	int result;
-	int reinject = 0;
+
 #ifdef CONFIG_MPTCP
-
-	struct sock *meta_sk = (struct sock *)tp->mpcb;
-
-	if (sk->sk_in_write_xmit) {
-		printk(KERN_ERR "sk in write xmit, meta_sk: %d\n",
-		       is_meta_sk(sk));
-		BUG();
-	}
-	/* We can be recursively called only in TCP_FIN_WAIT1 state (because
-	 * the very last segment calls tcp_send_fin() on all subflows)
-	 */
-	if (tp->mpc && meta_sk->sk_in_write_xmit &&
-		((1 << meta_sk->sk_state) &
-				~(TCPF_FIN_WAIT1 | TCPF_LAST_ACK))) {
-		printk(KERN_ERR "meta-sk in write xmit, meta-sk:%d,"
-		       "state of meta_sk:%d, of subsk:%d\n",
-		       is_meta_sk(sk), ((struct sock *)tp->mpcb)->sk_state,
-		       sk->sk_state);
-		BUG();
-	}
-
-	sk->sk_in_write_xmit = 1;
-
-	if (tp->mpc && mss_now != mptcp_sysctl_mss()) {
-		printk(KERN_ERR "write xmit-mss_now %d, mptcp mss:%d\n",
-		       mss_now, mptcp_sysctl_mss());
-		BUG();
-	}
-	/* If we are closed, the bytes will have to remain here.
-	 * In time closedown will finish, we empty the write queue and all
-	 * will be happy.
-	 */
-	if (unlikely(sk->sk_state == TCP_CLOSE)) {
-		sk->sk_in_write_xmit = 0;
-		return 0;
-	}
-#endif /* CONFIG_MPTCP */
+	if (is_meta_sk(sk))
+		return mptcp_write_xmit(sk, mss_now, nonagle, push_one, gfp);
+#endif
 
 	sent_pkts = 0;
 
@@ -1911,91 +1877,24 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		/* Do MTU probing. */
 		result = tcp_mtu_probe(sk);
 		if (!result) {
-#ifdef CONFIG_MPTCP
-			sk->sk_in_write_xmit = 0;
-#endif
 			return 0;
 		} else if (result > 0) {
 			sent_pkts = 1;
 		}
 	}
 
-#ifdef CONFIG_MPTCP
-	while ((skb = mptcp_next_segment(sk, &reinject))) {
-#else
 	while ((skb = tcp_send_head(sk))) {
-#endif
 		unsigned int limit;
-		struct sock *subsk;
-		struct tcp_sock *subtp;
-#ifdef CONFIG_MPTCP
-		struct sk_buff *subskb = NULL;
-		int err;
-
-		if (reinject > 0 && !after(mptcp_skb_end_data_seq(skb),
-				       tp->snd_una)) {
-			/* another copy of the segment already reached
-			 * the peer, just discard this one
-			 */
-			skb_unlink(skb, &tp->mpcb->reinject_queue);
-			kfree_skb(skb);
-			continue;
-		}
-#endif
-
-		if (is_meta_tp(tp)) {
-			subsk = mptcp_schedulers[sysctl_mptcp_scheduler - 1]
-					(tp->mpcb, skb);
-			if (!subsk)
-				break;
-			subtp = tcp_sk(subsk);
-		} else {
-			subsk = sk;
-			subtp = tp;
-		}
-
-#ifdef CONFIG_MPTCP
-		/* Since all subsocks are locked before calling the scheduler,
-		 * the tcp_send_head should not change.
-		 */
-		BUG_ON(!reinject && tcp_send_head(sk) != skb);
-retry:
-#endif
-
-		/* This must be invoked even if we don't want
-		 * to support TSO at the moment
-		 */
 
 		tso_segs = tcp_init_tso_segs(sk, skb, mss_now);
 		BUG_ON(!tso_segs);
-		/* At the moment we do not support tso, hence
-		 * tso_segs must be 1
-		 */
-		BUG_ON(tp->mpc && tso_segs != 1);
 
-		/* decide to which subsocket we give the skb */
-		cwnd_quota = tcp_cwnd_test(subtp, skb);
-		if (!cwnd_quota) {
-#ifdef CONFIG_MPTCP
-			/* Should not happen, since mptcp must have
-			 * chosen a subsock with open cwnd
-			 */
-			if (sk != subsk)
-				BUG();
-#endif
+		cwnd_quota = tcp_cwnd_test(tp, skb);
+		if (!cwnd_quota)
 			break;
-		}
 
-		if (!reinject && unlikely(!tcp_snd_wnd_test(subtp, skb, mss_now))) {
-#ifdef CONFIG_MPTCP
-			skb = mptcp_rcv_buf_optimization(subsk);
-			if (skb) {
-				reinject = -1;
-				goto retry;
-			}
-#endif
+		if (unlikely(!tcp_snd_wnd_test(tp, skb, mss_now)))
 			break;
-		}
 
 		if (tso_segs == 1) {
 			if (unlikely(!tcp_nagle_test(tp, skb, mss_now,
@@ -2003,14 +1902,12 @@ retry:
 						      nonagle : TCP_NAGLE_PUSH))))
 				break;
 		} else {
-			/* tso not supported in MPTCP */
-			BUG_ON(tp->mpc);
 			if (!push_one && tcp_tso_should_defer(sk, skb))
 				break;
 		}
 
 		limit = mss_now;
-		if (!tp->mpc && tso_segs > 1 && !tcp_urg_mode(tp))
+		if (tso_segs > 1 && !tcp_urg_mode(tp))
 			limit = tcp_mss_split_point(sk, skb, mss_now,
 						    cwnd_quota);
 
@@ -2018,150 +1915,27 @@ retry:
 		    unlikely(tso_fragment(sk, skb, limit, mss_now, gfp)))
 			break;
 
-#ifndef CONFIG_MPTCP
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
 
 		if (unlikely(tcp_transmit_skb(sk, skb, 1, gfp)))
 			break;
-#else
-		if (sk != subsk) {
-			/* If the segment is reinjected, the clone is done
-			 * already
-			 */
-			if (reinject <= 0) {
-				/* The segment may be a meta-level
-				 * retransmission. In this case, we also have to
-				 * copy the TCP/IP-headers. (pskb_copy)
-				 */
-				if (unlikely(skb->path_mask & ~mptcp_pi_to_flag(subtp->path_index)))
-					subskb = pskb_copy(skb, GFP_ATOMIC);
-				else
-					subskb = skb_clone(skb, GFP_ATOMIC);
-			} else {
-				if (!skb->cloned)
-					/* pskb_copy has been called in
-					 * __mptcp_reinject_data -
-					 * the dataref == 1 now, but we need to
-					 * increase it, because for mptcp
-					 * dataref is always == 2 when entering
-					 * tcp_transmit_skb (only if the packet
-					 * is still in the lower-layer
-					 * transmit-queue it may be > 2
-					 */
-					atomic_inc(&(skb_shinfo(skb)->dataref));
-
-				skb_unlink(skb, &tp->mpcb->reinject_queue);
-				subskb = skb;
-			}
-			if (!subskb)
-				break;
-
-			if (!(subsk->sk_route_caps & NETIF_F_ALL_CSUM) &&
-			    skb->ip_summed == CHECKSUM_PARTIAL) {
-				skb->csum = skb_checksum_complete(subskb);
-				skb->ip_summed = CHECKSUM_NONE;
-			}
-
-			if (mptcp_is_data_fin(subskb))
-				mptcp_combine_dfin(subskb, tp, subsk);
-			BUG_ON(tcp_send_head(subsk));
-			mptcp_skb_entail(subsk, subskb);
-		} else {
-			subskb = skb;
-		}
-
-		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
-		err = tcp_transmit_skb(subsk, subskb, 1, gfp);
-		if (unlikely(err)) {
-			/* Regular TCP? Stop tcp_write_xmit */
-			if (sk == subsk)
-				break;
-
-			/* there are three cases of failure of
-			 * tcp_transmit_skb:
-			 * 1. err != -ENOBUFS && err < 0
-			 *    Thus, the failure is due to ip_write_xmit and may
-			 *    be a routing-issue. We should not immediatly
-			 *    schedule again this subflow and reinject the skb
-			 *    on another subflow.
-			 *
-			 * 2. err == -ENOBUFS && err < 0
-			 *    Thus, the failure is due to a failed skb_clone due
-			 *    to GFP_ATOMIC.
-			 *
-			 * 3. err > 0
-			 *    The device has not enough space in the queues.
-			 *    Select another subflow and mark
-			 *    the current subflow as non-eligible.
-			 *    When exiting tcp_write_xmit, he will become
-			 *    eligible again and we may try him again.
-			 *
-			 * All this can correctly be handled, by setting
-			 * mpcb->noneligible. If all the subflows have become
-			 * non-eligible, we just exit tcp_write_xmit in
-			 * get_available_subflow. Later, we will try again.
-			 */
-
-			/* Remove the skb from the subsock */
-			tcp_advance_send_head(subsk, subskb);
-			tcp_unlink_write_queue(subskb, subsk);
-			subtp->write_seq -= subskb->len;
-			mptcp_wmem_free_skb(subsk, subskb);
-
-			tp->mpcb->noneligible |= mptcp_pi_to_flag(subtp->path_index);
-
-			continue;
-		}
-#endif
 
 		/* Advance the send_head.  This one is sent out.
 		 * This call will increment packets_out.
 		 */
-#ifndef CONFIG_MPTCP
 		tcp_event_new_data_sent(sk, skb);
-#else
-		if (!reinject && tcp_send_head(sk) != skb) {
-			printk(KERN_ERR "sock_owned_by_user:%d\n",
-			       sock_owned_by_user(sk));
-			BUG();
-
-		}
-		tcp_event_new_data_sent(subsk, subskb);
-		if (sk != subsk)
-			BUG_ON(tcp_send_head(subsk));
-		if (sk != subsk && !reinject) {
-			BUG_ON(tcp_send_head(sk) != skb);
-			tcp_event_new_data_sent(sk, skb);
-		}
-		if (sk!= subsk && reinject > 0) {
-			mptcp_mark_reinjected(subsk, skb);
-		}
-#endif /* CONFIG_MPTCP */
 
 		tcp_minshall_update(tp, mss_now, skb);
 		sent_pkts++;
 
-#ifdef CONFIG_MPTCP
-		tcp_cwnd_validate(subsk);
-#endif
 		if (push_one)
 			break;
 	}
 
-	if (tp->mpc)
-		tp->mpcb->noneligible = 0;
-
 	if (likely(sent_pkts)) {
-#ifndef CONFIG_MPTCP
 		tcp_cwnd_validate(sk);
-#else
-		sk->sk_in_write_xmit = 0;
-#endif
 		return 0;
 	}
-#ifdef CONFIG_MPTCP
-	sk->sk_in_write_xmit = 0;
-#endif
 	return !tp->packets_out && tcp_send_head(sk);
 }
 

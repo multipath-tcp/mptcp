@@ -452,6 +452,8 @@ void mptcp_release_sock(struct sock *sk);
 void mptcp_clean_rtx_queue(struct sock *meta_sk);
 void mptcp_send_fin(struct sock *meta_sk);
 void mptcp_send_reset(struct sock *sk, struct sk_buff *skb);
+int mptcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
+		     int push_one, gfp_t gfp);
 void mptcp_parse_options(uint8_t *ptr, int opsize,
 		struct tcp_options_received *opt_rx,
 		struct multipath_options *mopt,
@@ -489,7 +491,6 @@ void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk);
 int mptcp_fin(struct multipath_pcb *mpcb, struct sock *sk);
 void mptcp_retransmit_timer(struct sock *meta_sk);
 void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb);
-struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk);
 
 static inline int mptcp_skb_cloned(const struct sk_buff *skb,
 				   const struct tcp_sock *tp)
@@ -532,8 +533,8 @@ static inline int is_meta_tp(const struct tcp_sock *tp)
 
 static inline int is_meta_sk(const struct sock *sk)
 {
-	return sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpcb &&
-	       (struct tcp_sock *)tcp_sk(sk)->mpcb == tcp_sk(sk);
+	return sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpc &&
+	       mpcb_meta_sk(tcp_sk(sk)->mpcb) == sk;
 }
 
 static inline int is_master_tp(const struct tcp_sock *tp)
@@ -966,10 +967,6 @@ static inline void mptcp_clean_rtx_infinite(const struct sk_buff *skb,
 static inline void mptcp_retransmit_timer(const struct sock *meta_sk) {}
 static inline void mptcp_mark_reinjected(const struct sock *sk,
 					 const struct sk_buff *skb) {}
-static inline struct sk_buff *mptcp_rcv_buf_optimization(const struct sock *sk)
-{
-	return NULL;
-}
 static inline void mptcp_set_rto(const struct sock *sk) {}
 static inline void mptcp_reset_xmit_timer(const struct sock *meta_sk) {}
 static inline void mptcp_send_fin(const struct sock *meta_sk) {}
