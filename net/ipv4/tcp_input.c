@@ -4558,7 +4558,10 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 	if (tp->mpc)
 		meta_tp = mpcb_meta_tp(mpcb);
 
-	if (mptcp_is_data_fin(skb) && TCP_SKB_CB(skb)->seq == TCP_SKB_CB(skb)->end_seq) {
+	/* If no data is present, but a data_fin is in the options, we still
+	 * have to call mptcp_queue_skb. */
+	if (tp->mpc && mptcp_is_data_fin(skb) &&
+	    TCP_SKB_CB(skb)->seq == TCP_SKB_CB(skb)->end_seq) {
 		__skb_pull(skb, th->doff * 4);
 
 		eaten = mptcp_queue_skb(sk, skb);

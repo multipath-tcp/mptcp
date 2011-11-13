@@ -3260,9 +3260,7 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 	 * ipv4 and ipv6
 	 */
 	child_tp->rx_opt.saw_mpc = req->saw_mpc;
-	if (child_tp->rx_opt.saw_mpc &&
-	    (mopt->mptcp_opt_type == MPTCP_MP_CAPABLE_TYPE_ACK ||
-	     req->ack_defered)) {
+	if (child_tp->rx_opt.saw_mpc) {
 		struct multipath_pcb *mpcb;
 
 		child_tp->rx_opt.saw_mpc = 0;

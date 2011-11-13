@@ -434,7 +434,6 @@ void tcp_openreq_init(struct request_sock *req,
 	req->mss = rx_opt->mss_clamp;
 	req->ts_recent = rx_opt->saw_tstamp ? rx_opt->rcv_tsval : 0;
 #ifdef CONFIG_MPTCP
-	req->ack_defered = 0;
 	if (req->saw_mpc && !req->mpcb) {
 		/* conn request, prepare a new token for the
 		 * mpcb that will be created in tcp_check_req(),
@@ -784,9 +783,6 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	/* While TCP_DEFER_ACCEPT is active, drop bare ACK. */
 	if (req->retrans < inet_csk(sk)->icsk_accept_queue.rskq_defer_accept &&
 	    TCP_SKB_CB(skb)->end_seq == tcp_rsk(req)->rcv_isn + 1) {
-#ifdef CONFIG_MPTCP
-		req->ack_defered = (mopt->mptcp_opt_type == MPTCP_MP_CAPABLE_TYPE_ACK);
-#endif
 		inet_rsk(req)->acked = 1;
 		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPDEFERACCEPTDROP);
 		return NULL;
