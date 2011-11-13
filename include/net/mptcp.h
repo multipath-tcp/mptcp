@@ -456,6 +456,15 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		struct tcp_options_received *opt_rx,
 		struct multipath_options *mopt,
 		struct sk_buff *skb);
+void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
+		       unsigned *remaining);
+void mptcp_synack_options(struct request_sock *req,
+			  struct tcp_out_options *opts,
+			  unsigned *remaining);
+void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
+			       struct tcp_out_options *opts, unsigned *size);
+void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
+			 struct tcp_out_options *opts);
 void mptcp_close(struct sock *meta_sk, long timeout);
 void mptcp_detach_unused_child(struct sock *sk);
 void mptcp_set_bw_est(struct tcp_sock *tp, u32 now);

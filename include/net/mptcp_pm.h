@@ -81,9 +81,6 @@ void mptcp_hash_remove(struct multipath_pcb *mpcb);
 void mptcp_hash_request_remove(struct request_sock *req);
 struct multipath_pcb *mptcp_hash_find(u32 token);
 int mptcp_lookup_join(struct sk_buff *skb);
-void mptcp_synack_options(struct request_sock *req,
-			  struct tcp_out_options *opts,
-			  unsigned *remaining);
 int mptcp_find_token(u32 token);
 void mptcp_pm_release(struct multipath_pcb *mpcb);
 struct dst_entry *mptcp_route_req(const struct request_sock *req,

@@ -402,54 +402,6 @@ no_route:
 	return NULL;
 }
 
-void mptcp_synack_options(struct request_sock *req,
-			  struct tcp_out_options *opts,
-			  unsigned *remaining)
-{
-	/* MPCB not yet set - thus it's a new MPTCP-session */
-	if (!req->mpcb) {
-		opts->options |= OPTION_MP_CAPABLE;
-		*remaining -= MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN;
-		opts->sender_key = req->mptcp_loc_key;
-		opts->dss_csum = sysctl_mptcp_checksum || req->dss_csum;
-	} else {
-		struct inet_request_sock *ireq = inet_rsk(req);
-		int i;
-
-		opts->options |= OPTION_MP_JOIN;
-		opts->sender_truncated_mac = req->mptcp_hash_tmac;
-		opts->sender_random_number = req->mptcp_loc_random_number;
-		opts->mp_join_type = MPTCP_MP_JOIN_TYPE_SYNACK;
-		opts->addr_id = 0;
-
-		/* Finding Address ID */
-		if (req->rsk_ops->family == AF_INET)
-			for (i = 0; i < req->mpcb->num_addr4; i++) {
-				if (req->mpcb->addr4[i].addr.s_addr == ireq->loc_addr)
-					opts->addr_id = req->mpcb->addr4[i].id;
-			}
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-		else /* IPv6 */
-			for (i = 0; i < req->mpcb->num_addr6; i++) {
-				if (ipv6_addr_equal(&req->mpcb->addr6[i].addr,
-						&inet6_rsk(req)->loc_addr))
-					opts->addr_id = req->mpcb->addr6[i].id;
-			}
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
-		*remaining -= MPTCP_SUB_LEN_JOIN_ALIGN_SYNACK;
-	}
-}
-
-/*copied from net/ipv4/tcp_minisocks.c*/
-static inline int tcp_in_window(u32 seq, u32 end_seq, u32 s_win, u32 e_win)
-{
-	if (seq == s_win)
-		return 1;
-	if (after(end_seq, s_win) && before(seq, e_win))
-		return 1;
-	return (seq == e_win && seq == end_seq);
-}
-
 int mptcp_syn_recv_sock(struct sk_buff *skb)
 {
 	struct tcphdr *th = tcp_hdr(skb);
