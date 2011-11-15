@@ -2961,7 +2961,8 @@ struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject)
  */
 void mptcp_check_socket(struct sock *sk)
 {
-	if (sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpcb) {
+	if (sk->sk_type == SOCK_STREAM && sk->sk_protocol == IPPROTO_TCP &&
+	    tcp_sk(sk)->mpc) {
 		struct sock *meta_sk = mpcb_meta_sk(tcp_sk(sk)->mpcb);
 		sk_set_socket(meta_sk, sk->sk_socket);
 		meta_sk->sk_wq = sk->sk_wq;
