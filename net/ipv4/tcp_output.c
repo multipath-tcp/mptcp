@@ -87,7 +87,6 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 	if (!prior_packets) {
 		inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
 					  inet_csk(sk)->icsk_rto, TCP_RTO_MAX);
-		mptcp_reset_xmit_timer(sk);
 	}
 }
 

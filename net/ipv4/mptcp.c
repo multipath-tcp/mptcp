@@ -958,9 +958,12 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 void mptcp_retransmit_timer(struct sock *meta_sk)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct multipath_pcb *mpcb = meta_tp->mpcb;
 	struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
 
-	if (!meta_tp->packets_out)
+	/* In fallback, retransmission is handled at the subflow-level */
+	if (!meta_tp->packets_out ||
+	    mpcb->infinite_mapping || mpcb->send_infinite_mapping)
 		return;
 
 	if (!tcp_write_queue_head(meta_sk)) {
@@ -2915,12 +2918,18 @@ void mptcp_update_sndbuf(struct multipath_pcb *mpcb)
 struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject)
 {
 	struct multipath_pcb *mpcb = tcp_sk(sk)->mpcb;
-	struct sk_buff *skb;
+	struct sk_buff *skb = NULL;
 	if (reinject)
 		*reinject = 0;
-	if (!is_meta_sk(sk))
+
+	/* If it is the meta-sk and we are in fallback-mode, just take from
+	 * the meta-send-queue */
+	if (!is_meta_sk(sk) ||
+	    mpcb->infinite_mapping || mpcb->send_infinite_mapping)
 		return tcp_send_head(sk);
+
 	skb = skb_peek(&mpcb->reinject_queue);
+
 	if (skb) {
 		if (reinject)
 			*reinject = 1;

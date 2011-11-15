@@ -756,6 +756,10 @@ static inline void mptcp_mp_fail_rcvd(struct multipath_pcb *mpcb,
 			mpcb->send_infinite_mapping = 1;
 			/* We resend everything that has not been acknowledged */
 			meta_sk->sk_send_head = tcp_write_queue_head(meta_sk);
+
+			/* We artificially restart the whole send-queue. Thus,
+			 * it is as if no packets are in flight */
+			tcp_sk(meta_sk)->packets_out = 0;
 		}
 	}
 }
