@@ -471,7 +471,7 @@ static struct sock *mptcp_select_ack_sock(const struct multipath_pcb *mpcb,
 
 	/* How do we select the subflow to send the window-update on?
 	 *
-	 * 1. He has to be in a state where he can receive data
+	 * 1. He has to be in a state where he can send an ack.
 	 * 2. He has to be one of those subflow who recently
 	 *    contributed to the received stream
 	 *    (this guarantees a working subflow)
@@ -484,9 +484,8 @@ static struct sock *mptcp_select_ack_sock(const struct multipath_pcb *mpcb,
 	 *       the subflow who last sent the highest data_seq.
 	 */
 	mptcp_for_each_sk(mpcb, sk, tp) {
-		if (sk->sk_state != TCP_ESTABLISHED &&
-		    sk->sk_state != TCP_FIN_WAIT1 &&
-		    sk->sk_state != TCP_FIN_WAIT2)
+		if ((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV |
+					   TCPF_CLOSE | TCPF_LISTEN))
 			continue;
 
 		/* Select among those who contributed to the
@@ -511,6 +510,16 @@ static struct sock *mptcp_select_ack_sock(const struct multipath_pcb *mpcb,
 		    after(tp->last_data_seq, max_data_seq)) {
 			max_data_seq = tp->last_data_seq;
 			subsk = sk;
+		}
+	}
+
+	if (!subsk) {
+		mptcp_debug("%s subsk is null, copied %d, cseq %u\n", __func__,
+			    copied, meta_tp->copied_seq);
+		mptcp_for_each_sk(mpcb, sk, tp) {
+			mptcp_debug("%s pi %d state %u last_dseq %u\n",
+				    __func__, tp->path_index, sk->sk_state,
+				    tp->last_data_seq);
 		}
 	}
 
