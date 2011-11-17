@@ -890,8 +890,15 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 	}
 
 	if (!sk_it) {
-		mptcp_debug("%s: skb already injected to all paths\n",
-				__func__);
+		mptcp_debug("%s: skb already injected to all paths - dseq %u "
+			    "dlen %u pi %d reinjseq %u mptcp_flags %#x tcp_flags %#x\n",
+			    __func__,
+			    TCP_SKB_CB(orig_skb)->data_seq,
+			    TCP_SKB_CB(orig_skb)->data_len,
+			    sk ? tcp_sk(sk)->path_index : -1,
+			    sk ? tcp_sk(sk)->reinjected_seq : 0xFFFFFFFF,
+			    TCP_SKB_CB(orig_skb)->mptcp_flags,
+			    TCP_SKB_CB(orig_skb)->flags);
 		return 1; /* no candidate found */
 	}
 
