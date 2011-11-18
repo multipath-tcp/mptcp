@@ -102,9 +102,6 @@ void mptcp_hash_remove(struct multipath_pcb *mpcb)
 	    (struct inet_connection_sock *)mpcb;
 	struct listen_sock *lopt = meta_icsk->icsk_accept_queue.listen_opt;
 
-	mptcp_debug("%s: remove mpcb from hash-table with loc_token %08x\n",
-			__func__, mpcb->mptcp_loc_token);
-
 	/* remove from the token hashtable */
 	write_lock_bh(&tk_hash_lock);
 	list_del(&mpcb->collide_tk);

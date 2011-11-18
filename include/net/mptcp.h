@@ -733,6 +733,8 @@ static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
 	if (TCP_SKB_CB(skb)->flags & (TCPHDR_SYN | TCPHDR_FIN))
 		return 0;
 
+	mptcp_debug("%s %#x will fallback - pi %d\n", __func__,
+		    tp->mpcb->mptcp_loc_token, tp->path_index);
 	if (is_master_tp(tp))
 		tp->mpcb->send_infinite_mapping = 1;
 	else

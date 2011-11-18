@@ -735,7 +735,7 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 			struct sockaddr_in *loc, *rem;
 			loc = (struct sockaddr_in *) loculid;
 			rem = (struct sockaddr_in *) remulid;
-			mptcp_debug("%s: token %08x pi %d src_addr:"
+			mptcp_debug("%s: token %#x pi %d src_addr:"
 				"%pI4:%d dst_addr:%pI4:%d\n", __func__,
 				mpcb->mptcp_loc_token, newpi,
 				&loc->sin_addr,
@@ -746,7 +746,7 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 			struct sockaddr_in6 *loc, *rem;
 			loc = (struct sockaddr_in6 *) loculid;
 			rem = (struct sockaddr_in6 *) remulid;
-			mptcp_debug("%s: token %08x pi %d src_addr:"
+			mptcp_debug("%s: token %#x pi %d src_addr:"
 				"%pI6:%d dst_addr:%pI6:%d\n", __func__,
 				mpcb->mptcp_loc_token, newpi,
 				&loc->sin6_addr,
@@ -1180,8 +1180,9 @@ void mpcb_release(struct multipath_pcb *mpcb)
 
 	/* Must have been destroyed previously */
 	if (!sock_flag(meta_sk, SOCK_DEAD)) {
-		printk(KERN_ERR "Trying to free mpcb without having called "
-		       "mptcp_destroy_mpcb()\n");
+		printk(KERN_ERR "%s Trying to free mpcb %#x without having "
+		       "called mptcp_destroy_mpcb()\n",
+		       __func__, mpcb->mptcp_loc_token);
 		BUG();
 	}
 
@@ -1201,7 +1202,7 @@ void mpcb_release(struct multipath_pcb *mpcb)
 	security_sk_free(meta_sk);
 	percpu_counter_dec(meta_sk->sk_prot->orphan_count);
 
-	mptcp_debug("%s: Will free mpcb\n", __func__);
+	mptcp_debug("%s: Will free mpcb %#x\n", __func__, mpcb->mptcp_loc_token);
 	kmem_cache_free(mpcb_cache, mpcb);
 }
 
@@ -1231,9 +1232,6 @@ void mptcp_release_sock(struct sock *sk)
 
 static void mptcp_destroy_mpcb(struct multipath_pcb *mpcb)
 {
-	mptcp_debug("%s: Destroying mpcb with token:%08x\n", __func__,
-			mpcb->mptcp_loc_token);
-
 	/* Detach the mpcb from the token hashtable */
 	mptcp_hash_remove(mpcb);
 }
@@ -1306,10 +1304,12 @@ void mptcp_del_sock(struct sock *sk)
 	    !tp->mpc || !tp->attached)
 		return;
 
-	mptcp_debug("%s: Removing subsocket - pi:%d state %d is_meta? %d\n", __func__,
-			tp->path_index, sk->sk_state, is_meta_sk(sk));
 	mpcb = tp->mpcb;
 	tp_prev = mpcb->connection_list;
+
+	mptcp_debug("%s: Removing subsock tok %#x pi:%d state %d is_meta? %d\n",
+		    __func__, mpcb->mptcp_loc_token, tp->path_index,
+		    sk->sk_state, is_meta_sk(sk));
 
 	if (tp_prev == tp) {
 		mpcb->connection_list = tp->next;
@@ -1388,8 +1388,6 @@ void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 static inline void mptcp_become_fully_estab(struct tcp_sock *tp)
 {
 	tp->fully_established = 1;
-	mptcp_debug("%s: pi %d becoming fully established - master? %d\n",
-			__func__, tp->path_index, is_master_tp(tp));
 
 	if (is_master_tp(tp))
 		mptcp_send_updatenotif(tp->mpcb);
@@ -1725,6 +1723,7 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 	__wsum csum_tcp = 0; /* cumulative checksum of pld + mptcp-header */
 	int ans = 1, overflowed = 0, offset = 0, dss_csum_added = 0;
 	char last_byte = 0; /* byte to be added to the next csum */
+	int iter = 0;
 
 	skb_queue_walk(&sk->sk_receive_queue, tmp) {
 		unsigned int csum_len;
@@ -1774,6 +1773,7 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 			dss_csum_added = 1; /* Just do it once */
 		}
 		last = tmp;
+		iter++;
 	}
 	if (overflowed) {
 		char first_word[4];
@@ -1786,8 +1786,11 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 
 	/* Now, checksum must be 0 */
 	if (unlikely(csum_fold(csum_tcp))) {
-		mptcp_debug("%s csum is wrong: %#x data_seq %u\n", __func__,
-			    csum_fold(csum_tcp), TCP_SKB_CB(last)->data_seq);
+		mptcp_debug("%s csum is wrong: %#x data_seq %u "
+			    "dss_csum_added %d overflowed %d iterations %d\n",
+			    __func__, csum_fold(csum_tcp),
+			    TCP_SKB_CB(last)->data_seq, dss_csum_added,
+			    overflowed, iter);
 		tp->csum_error = 1;
 		/* map_data_seq is the data-seq number of the
 		 * mapping we are currently checking
@@ -2050,7 +2053,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 		     tcb->data_len != tp->map_data_len)) {
 			/* Mapping in packet is different from what we want */
 			mptcp_debug("%s destroying subflow with pi %d from mpcb "
-				    "with token %08x\n", __func__,
+				    "with token %#x\n", __func__,
 				    tp->path_index, mpcb->mptcp_loc_token);
 			mptcp_debug("%s missing rest of the already present "
 				    "mapping: data_seq %u, subseq %u, data_len "
@@ -2096,7 +2099,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 				 * The peer is misbehaving - reset
 				 */
 				mptcp_debug("%s destroying subflow with pi %d "
-					    "from mpcb with token %08x\n",
+					    "from mpcb with token %#x\n",
 					    __func__, tp->path_index,
 					    mpcb->mptcp_loc_token);
 				mptcp_debug("%s seq %u end_seq %u, sub_seq %u "
@@ -3247,13 +3250,8 @@ void mptcp_set_state(struct sock *sk, int state)
 		break;
 	case TCP_CLOSE:
 		if (tcp_sk(sk)->mpcb && oldstate != TCP_SYN_SENT &&
-			oldstate != TCP_SYN_RECV && oldstate != TCP_LISTEN) {
-			mptcp_debug("%s - before minus --- tcp_sk(sk)->mpcb->"
-					"cnt_established:%d pi:%d\n", __func__,
-					tcp_sk(sk)->mpcb->cnt_established,
-					tp->path_index);
+		    oldstate != TCP_SYN_RECV && oldstate != TCP_LISTEN)
 			tcp_sk(sk)->mpcb->cnt_established--;
-		}
 	}
 }
 
