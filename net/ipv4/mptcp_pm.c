@@ -760,10 +760,11 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
 		read_lock_bh(&tk_hash_lock);
 		list_for_each_entry(mpcb, &tk_hashtable[i], collide_tk) {
-			seq_printf(seq, "[%d] %d (%d): %d",
+			seq_printf(seq, "Loc_Tok: [%#x] Rem_tok %#x cnt_est %d meta-state %d",
 					mpcb->mptcp_loc_token,
-					mpcb->num_addr4, mpcb->pa4_size,
-					mpcb->cnt_subflows);
+					mpcb->rx_opt.mptcp_rem_token,
+					mpcb->cnt_established,
+					mpcb_meta_sk(mpcb)->sk_state);
 			seq_putc(seq, '\n');
 		}
 		read_unlock_bh(&tk_hash_lock);
