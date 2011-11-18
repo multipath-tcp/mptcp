@@ -540,6 +540,10 @@ static void tcp_keepalive_timer (unsigned long data)
 	struct sock *meta_sk = tp->mpc ? mpcb_meta_sk(tp->mpcb) : sk;
 	u32 elapsed;
 
+	if (is_meta_sk(sk)) {
+		mptcp_debug("%s inside tcp_keepalive_timer with meta_sk\n", __func__);
+	}
+
 	/* Only process if socket is not in use. */
 	bh_lock_sock(meta_sk);
 	if (sock_owned_by_user(meta_sk)) {
