@@ -1,4 +1,4 @@
- /*
+/*
  * INET		An implementation of the TCP/IP protocol suite for the LINUX
  *		operating system.  INET is implemented using the  BSD Socket
  *		interface as the means of communication with the user level.
@@ -535,7 +535,6 @@ void tcp_rcv_space_adjust(struct sock *sk)
 		goto new_measure;
 
 	time = tcp_time_stamp - tp->rcvq_space.time;
-
 	if (tp->mpc) {
 		if (mptcp_check_rtt(tp, time))
 			return;

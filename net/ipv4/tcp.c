@@ -375,7 +375,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 {
 	unsigned int mask;
 	struct sock *sk = sock->sk;
-	struct tcp_sock *tp = tcp_sk(sk);
+	const struct tcp_sock *tp = tcp_sk(sk);
 
 	sock_poll_wait(file, sk_sleep(sk), wait);
 	if (sk->sk_state == TCP_LISTEN)
@@ -415,8 +415,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	 * NOTE. Check for TCP_CLOSE is added. The goal is to prevent
 	 * blocking on fresh not-connected or disconnected socket. --ANK
 	 */
-	if (sk->sk_shutdown == SHUTDOWN_MASK ||
-	    sk->sk_state == TCP_CLOSE)
+	if (sk->sk_shutdown == SHUTDOWN_MASK || sk->sk_state == TCP_CLOSE)
 		mask |= POLLHUP;
 	if (sk->sk_shutdown & RCV_SHUTDOWN)
 		mask |= POLLIN | POLLRDNORM | POLLRDHUP;
@@ -442,8 +441,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 			} else {  /* send SIGIO later */
 				set_bit(SOCK_ASYNC_NOSPACE,
 					&sk->sk_socket->flags);
-				set_bit(SOCK_NOSPACE,
-					&sk->sk_socket->flags);
+				set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 
 				/* Race breaker. If space is freed after
 				 * wspace test but before the flags are set,
@@ -461,9 +459,6 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	/* This barrier is coupled with smp_wmb() in tcp_reset() */
 	smp_rmb();
 
-	/* The subsocks are responsible for transferring their errors
-	 * here, so that they become visible to the mpcb.
-	 */
 	if (sk->sk_err)
 		mask |= POLLERR;
 
@@ -931,11 +926,6 @@ static inline int select_size(struct sock *sk, int sg)
 	return tmp;
 }
 
-/**
- * In the original version of tcp_sendmsg, size is not used.
- * If CONFIG_MPTCP is set, size is interpreted as the offset inside the message
- * to copy from. (that is, byte 0 to size-1 are simply ignored.
- */
 int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		size_t size)
 {
