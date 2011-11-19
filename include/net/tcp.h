@@ -457,6 +457,23 @@ extern __u32 cookie_v6_init_sequence(struct sock *sk, struct sk_buff *skb,
 
 /* tcp_output.c */
 
+extern void tcp_cwnd_validate(struct sock *sk);
+extern void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb);
+extern int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
+			    gfp_t gfp_mask);
+extern int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
+			unsigned int mss_now, gfp_t gfp);
+extern unsigned int tcp_mss_split_point(struct sock *sk, struct sk_buff *skb,
+					unsigned int mss_now, unsigned int cwnd);
+extern int tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb);
+extern int tcp_nagle_test(struct tcp_sock *tp, struct sk_buff *skb,
+			  unsigned int cur_mss, int nonagle);
+extern int tcp_snd_wnd_test(struct tcp_sock *tp, struct sk_buff *skb,
+			    unsigned int cur_mss);
+extern unsigned int tcp_cwnd_test(struct tcp_sock *tp, struct sk_buff *skb);
+extern int tcp_mtu_probe(struct sock *sk);
+extern int tcp_init_tso_segs(struct sock *sk, struct sk_buff *skb,
+			     unsigned int mss_now);
 extern void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
 				      int nonagle);
 extern int tcp_may_send_now(struct sock *sk);
@@ -479,6 +496,11 @@ extern void tcp_send_delayed_ack(struct sock *sk);
 extern void __pskb_trim_head(struct sk_buff *skb, int len);
 extern void tcp_queue_skb(struct sock *sk, struct sk_buff *skb);
 extern void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags);
+
+static inline int tcp_urg_mode(const struct tcp_sock *tp)
+{
+	return tp->snd_una != tp->snd_up;
+}
 
 /* tcp_input.c */
 extern int tcp_prune_queue(struct sock *sk);
