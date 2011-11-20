@@ -1340,8 +1340,8 @@ int mptcp_alloc_mpcb(struct sock *master_sk)
 	if (!mpcb)
 		return -ENOBUFS;
 
+	meta_sk = mpcb_meta_sk(mpcb);
 	meta_tp = mpcb_meta_tp(mpcb);
-	meta_sk = (struct sock *)meta_tp;
 	meta_icsk = inet_csk(meta_sk);
 
 	memset(mpcb, 0, sizeof(struct multipath_pcb));
@@ -1370,6 +1370,8 @@ int mptcp_alloc_mpcb(struct sock *master_sk)
 	meta_tp->write_seq = 0;
 	meta_tp->packets_out = 0;
 	meta_tp->snt_isn = meta_tp->write_seq; /* Initial data-sequence-number */
+	meta_tp->window_clamp = tcp_sk(master_sk)->window_clamp;
+	meta_tp->rcv_ssthresh = tcp_sk(master_sk)->rcv_ssthresh;
 
 	meta_tp->mss_cache = mptcp_sysctl_mss();
 
@@ -1379,9 +1381,6 @@ int mptcp_alloc_mpcb(struct sock *master_sk)
 
 	skb_queue_head_init(&mpcb->reinject_queue);
 	skb_queue_head_init(&meta_tp->out_of_order_queue);
-
-	meta_tp->window_clamp = tcp_sk(master_sk)->window_clamp;
-	meta_tp->rcv_ssthresh = tcp_sk(master_sk)->rcv_ssthresh;
 
 	/* Redefine function-pointers to wake up application */
 	master_sk->sk_error_report = mptcp_sock_def_error_report;
@@ -1413,12 +1412,15 @@ int mptcp_alloc_mpcb(struct sock *master_sk)
 	/* Adding the mpcb in the token hashtable */
 	mptcp_hash_insert(mpcb, mpcb->mptcp_loc_token);
 
+	mptcp_debug("%s: created mpcb with token %#x\n",
+		    __func__, mpcb->mptcp_loc_token);
+
 	return 0;
 }
 
-void mpcb_release(struct multipath_pcb *mpcb)
+void mptcp_release_mpcb(struct multipath_pcb *mpcb)
 {
-	struct sock *meta_sk = (struct sock *)mpcb;
+	struct sock *meta_sk = mpcb_meta_sk(mpcb);
 
 	/* Must have been destroyed previously */
 	if (!sock_flag(meta_sk, SOCK_DEAD)) {

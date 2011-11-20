@@ -51,9 +51,6 @@ void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token)
 {
 	int hash = hash_tk(token);
 
-	mptcp_debug("%s: add mpcb to hash-table with loc_token %#x\n",
-			__func__, mpcb->mptcp_loc_token);
-
 	write_lock_bh(&tk_hash_lock);
 	list_add(&mpcb->collide_tk, &tk_hashtable[hash]);
 	write_unlock_bh(&tk_hash_lock);

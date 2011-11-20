@@ -146,8 +146,11 @@ void inet_sock_destruct(struct sock *sk)
 		return;
 	}
 
-	if (mptcp_sock_destruct(sk))
-		return;
+	if (sk->sk_type == SOCK_STREAM && sk->sk_protocol == IPPROTO_TCP &&
+	    tcp_sk(sk)->mpc) {
+		if (mptcp_sock_destruct(sk))
+			return;
+	}
 
 	if (!sock_flag(sk, SOCK_DEAD)) {
 		pr_err("Attempt to release alive inet socket %p\n", sk);

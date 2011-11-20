@@ -447,7 +447,7 @@ void mptcp_push_frames(struct sock *sk);
 void mptcp_skb_entail_init(struct sock *sk, struct sk_buff *skb);
 void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb);
 struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject);
-void mpcb_release(struct multipath_pcb *mpcb);
+void mptcp_release_mpcb(struct multipath_pcb *mpcb);
 void mptcp_release_sock(struct sock *sk);
 void mptcp_clean_rtx_queue(struct sock *meta_sk);
 void mptcp_send_fin(struct sock *meta_sk);
@@ -600,19 +600,16 @@ out:
 
 static inline int mptcp_sock_destruct(struct sock *sk)
 {
-	if (sk->sk_type == SOCK_STREAM && sk->sk_protocol == IPPROTO_TCP &&
-	    tcp_sk(sk)->mpcb) {
-		if (is_meta_sk(sk)) {
-			mpcb_release(tcp_sk(sk)->mpcb);
-			return 1;
-		} else {
-			/* It must have been detached by
-			 * inet_csk_destroy_sock()
-			 */
-			BUG_ON(mptcp_sk_attached(sk));
-			/* Taken when mpcb pointer was set */
-			sock_put(mpcb_meta_sk(tcp_sk(sk)->mpcb));
-		}
+	if (is_meta_sk(sk)) {
+		mptcp_release_mpcb(tcp_sk(sk)->mpcb);
+		return 1;
+	} else {
+		/* It must have been detached by
+		 * inet_csk_destroy_sock() */
+		BUG_ON(mptcp_sk_attached(sk));
+
+		/* Taken when mpcb pointer was set */
+		sock_put(mptcp_meta_sk(sk));
 	}
 	return 0;
 }
@@ -959,7 +956,6 @@ static inline struct sk_buff *mptcp_next_segment(const struct sock *sk,
 {
 	return NULL;
 }
-static inline void mpcb_release(const struct multipath_pcb *mpcb) {}
 static inline void mptcp_release_sock(const struct sock *sk) {}
 static inline void mptcp_clean_rtx_queue(const struct sock *meta_sk) {}
 static inline void mptcp_clean_rtx_infinite(const struct sk_buff *skb,
