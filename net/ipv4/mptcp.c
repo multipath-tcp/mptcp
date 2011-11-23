@@ -3238,7 +3238,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		mpfail->sub = MPTCP_SUB_FAIL;
 		mpfail->rsv1 = 0;
 		mpfail->rsv2 = 0;
-		mpfail->data_seq = opts->data_ack;
+		mpfail->data_seq = htonl(opts->data_ack);
 	}
 
 	if (OPTION_DSN_MAP & opts->options ||
