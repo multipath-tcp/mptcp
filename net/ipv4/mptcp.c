@@ -1328,6 +1328,51 @@ retry:
 	return !meta_tp->packets_out && tcp_send_head(meta_sk);
 }
 
+static void mptcp_mpcb_inherit_sockopts(struct sock *meta_sk, struct sock *master_sk) {
+	/* Socket-options handled by mptcp_inherit_sk while creating the meta-sk.
+	 * ======
+	 * SO_SNDBUF, SO_SNDBUFFORCE, SO_RCVBUF, SO_RCVBUFFORCE, SO_RCVLOWAT,
+	 * SO_RCVTIMEO, SO_SNDTIMEO, SO_ATTACH_FILTER, SO_DETACH_FILTER,
+	 * TCP_NODELAY, TCP_CORK
+	 *
+	 * Socket-options handled in this function here
+	 * ======
+	 * SO_KEEPALIVE
+	 * TCP_KEEP*
+	 *
+	 * Socket-options on the todo-list
+	 * ======
+	 * SO_BINDTODEVICE - should probably prevent creation of new subsocks
+	 * 		     across other devices. - what about the api-draft?
+	 * SO_DEBUG
+	 * SO_REUSEADDR - probably we don't care about this
+	 * SO_DONTROUTE, SO_BROADCAST
+	 * SO_OOBINLINE
+	 * SO_LINGER
+	 * SO_TIMESTAMP* - I don't think this is of concern for a SOCK_STREAM
+	 * SO_PASSSEC - I don't think this is of concern for a SOCK_STREAM
+	 * SO_RXQ_OVFL
+	 * TCP_COOKIE_TRANSACTIONS
+	 * TCP_MAXSEG
+	 * TCP_THIN_* - Handled by mptcp_inherit_sk, but we need to support this
+	 * 		in mptcp_retransmit_timer. AND we need to check what is
+	 * 		about the subsockets.
+	 * TCP_LINGER2
+	 * TCP_WINDOW_CLAMP
+	 * TCP_USER_TIMEOUT
+	 * TCP_MD5SIG
+	 *
+	 * Socket-options of no concern for the meta-socket (but for the subsocket)
+	 * ======
+	 * SO_PRIORITY
+	 * SO_MARK
+	 * TCP_CONGESTION
+	 * TCP_SYNCNT
+	 * TCP_DEFER_ACCEPT
+	 * TCP_QUICKACK
+	 */
+}
+
 int mptcp_alloc_mpcb(struct sock *master_sk)
 {
 	struct multipath_pcb *mpcb;
@@ -1411,6 +1456,8 @@ int mptcp_alloc_mpcb(struct sock *master_sk)
 
 	/* Adding the mpcb in the token hashtable */
 	mptcp_hash_insert(mpcb, mpcb->mptcp_loc_token);
+
+	mptcp_mpcb_inherit_sockopts(meta_sk, master_sk);
 
 	mptcp_debug("%s: created mpcb with token %#x\n",
 		    __func__, mpcb->mptcp_loc_token);
