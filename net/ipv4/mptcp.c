@@ -2033,6 +2033,12 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 			    __func__, csum_fold(csum_tcp),
 			    TCP_SKB_CB(last)->data_seq, dss_csum_added,
 			    overflowed, iter);
+
+		if (last)
+			mptcp_debug("%s last->len %u last->data_len %u nr_frags %u\n",
+				    __func__, last->len, last->data_len,
+				    skb_shinfo(last)->nr_frags);
+
 		tp->csum_error = 1;
 		/* map_data_seq is the data-seq number of the
 		 * mapping we are currently checking
