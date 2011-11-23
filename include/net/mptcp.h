@@ -478,8 +478,7 @@ struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
 void mptcp_select_window(struct tcp_sock *tp, u32 new_win);
 u32 __mptcp_select_window(struct sock *sk);
 int mptcp_try_rmem_schedule(struct sock *tp, unsigned int size);
-void mptcp_update_window_check(struct tcp_sock *meta_tp,
-			       const struct sk_buff *skb, u32 data_ack);
+void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb);
 void mptcp_combine_dfin(struct sk_buff *skb, struct tcp_sock *meta_tp,
 			struct sock *subsk);
 void mptcp_set_data_size(struct tcp_sock *tp, struct sk_buff *skb, int copy);
@@ -1000,9 +999,6 @@ static inline int mptcp_try_rmem_schedule(const struct sock *tp,
 {
 	return 0;
 }
-static inline void mptcp_update_window_check(const struct tcp_sock *meta_tp,
-					     const struct sk_buff *skb,
-					     u32 data_ack) {}
 static inline void mptcp_set_data_size(const struct tcp_sock *tp,
 				       const struct sk_buff *skb, int copy) {}
 static inline int mptcp_push(const struct sock *sk, int flags,

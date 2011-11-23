@@ -3589,7 +3589,6 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 	if (tp->mpc && after(tp->snd_una, tp->reinjected_seq))
 		tp->reinjected_seq = tp->snd_una;
 #endif
-	mptcp_update_window_check(tp, skb, data_ack);
 
 	return flag;
 }
@@ -3810,12 +3809,14 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 		tcp_ca_event(sk, CA_EVENT_SLOW_ACK);
 	}
 
+#ifdef CONFIG_MPTCP
+	if (tp->mpc)
+		mptcp_data_ack(sk, skb);
+#endif
+
 	/* We passed data and got it acked, remove any soft error
 	 * log. Something worked...
 	 */
-#ifdef CONFIG_MPTCP
-	tp->pf = 0;
-#endif
 	sk->sk_err_soft = 0;
 	icsk->icsk_probes_out = 0;
 	tp->rcv_tstamp = tcp_time_stamp;
