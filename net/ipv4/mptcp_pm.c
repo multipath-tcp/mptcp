@@ -32,8 +32,10 @@
 #include <net/addrconf.h>
 #endif
 
-#define hash_tk(token) \
-	(jhash_1word(token, 0) % MPTCP_HASH_SIZE)
+static inline u32 mptcp_hash_tk(u32 token)
+{
+	return token % MPTCP_HASH_SIZE;
+}
 
 static struct list_head tk_hashtable[MPTCP_HASH_SIZE];
 static rwlock_t tk_hash_lock;	/* hashtable protection */
@@ -49,7 +51,7 @@ spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
 
 void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token)
 {
-	int hash = hash_tk(token);
+	u32 hash = mptcp_hash_tk(token);
 
 	write_lock_bh(&tk_hash_lock);
 	list_add(&mpcb->collide_tk, &tk_hashtable[hash]);
@@ -57,7 +59,7 @@ void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token)
 }
 
 int mptcp_find_token(u32 token) {
-       int hash = hash_tk(token);
+       u32 hash = mptcp_hash_tk(token);
        struct multipath_pcb *mpcb;
 
        read_lock_bh(&tk_hash_lock);
@@ -78,7 +80,7 @@ int mptcp_find_token(u32 token) {
  */
 struct multipath_pcb *mptcp_hash_find(u32 token)
 {
-	u32 hash = hash_tk(token);
+	u32 hash = mptcp_hash_tk(token);
 	struct multipath_pcb *mpcb;
 
 	read_lock(&tk_hash_lock);
