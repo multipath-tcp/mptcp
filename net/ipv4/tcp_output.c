@@ -2998,7 +2998,7 @@ void tcp_send_ack(struct sock *sk)
  * one is with SEG.SEQ=SND.UNA to deliver urgent pointer, another is
  * out-of-date with SND.UNA-1 to probe window.
  */
-static int tcp_xmit_probe_skb(struct sock *sk, int urgent)
+int tcp_xmit_probe_skb(struct sock *sk, int urgent)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *skb;
@@ -3027,6 +3027,11 @@ int tcp_write_wakeup(struct sock *sk)
 
 	if (sk->sk_state == TCP_CLOSE)
 		return -1;
+
+#ifdef CONFIG_MPTCP
+	if (is_meta_sk(sk))
+		return mptcp_write_wakeup(sk);
+#endif
 
 	if ((skb = tcp_send_head(sk)) != NULL &&
 	    before((tp->mpc) ? mptcp_skb_data_seq(skb) :

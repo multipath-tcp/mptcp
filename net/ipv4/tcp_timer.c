@@ -537,24 +537,21 @@ static void tcp_keepalive_timer (unsigned long data)
 	struct sock *sk = (struct sock *) data;
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *meta_sk = tp->mpc ? mpcb_meta_sk(tp->mpcb) : sk;
 	u32 elapsed;
 
-	if (is_meta_sk(sk)) {
-		mptcp_debug("%s inside tcp_keepalive_timer with meta_sk\n", __func__);
-	}
-
 	/* Only process if socket is not in use. */
-	bh_lock_sock(meta_sk);
-	if (sock_owned_by_user(meta_sk)) {
+	bh_lock_sock(sk);
+	if (sock_owned_by_user(sk)) {
 		/* Try again later. */
 		inet_csk_reset_keepalive_timer (sk, HZ/20);
 		goto out;
 	}
 
-	if (sk->sk_state == TCP_LISTEN) {
+	/* MPTCP-note: this will also be the case for meta-sk !!!! */
+	if (sk->sk_state == TCP_LISTEN || is_meta_sk(sk)) {
 		tcp_synack_timer(sk);
-		goto out;
+		if (!is_meta_sk(sk))
+			goto out;
 	}
 
 	if (sk->sk_state == TCP_FIN_WAIT2 && sock_flag(sk, SOCK_DEAD)) {
@@ -566,7 +563,10 @@ static void tcp_keepalive_timer (unsigned long data)
 				goto out;
 			}
 		}
-		tcp_send_active_reset(sk, GFP_ATOMIC);
+		if (is_meta_sk(sk))
+			mptcp_send_active_reset(sk, GFP_ATOMIC);
+		else
+			tcp_send_active_reset(sk, GFP_ATOMIC);
 		goto death;
 	}
 
@@ -590,7 +590,10 @@ static void tcp_keepalive_timer (unsigned long data)
 		    icsk->icsk_probes_out > 0) ||
 		    (icsk->icsk_user_timeout == 0 &&
 		    icsk->icsk_probes_out >= keepalive_probes(tp))) {
-			tcp_send_active_reset(sk, GFP_ATOMIC);
+			if (tp->mpc)
+				mptcp_send_active_reset(sk, GFP_ATOMIC);
+			else
+				tcp_send_active_reset(sk, GFP_ATOMIC);
 			tcp_write_err(sk);
 			goto out;
 		}
@@ -618,6 +621,6 @@ death:
 	tcp_done(sk);
 
 out:
-	bh_unlock_sock(meta_sk);
+	bh_unlock_sock(sk);
 	sock_put(sk);
 }

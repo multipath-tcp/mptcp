@@ -457,6 +457,7 @@ extern __u32 cookie_v6_init_sequence(struct sock *sk, struct sk_buff *skb,
 
 /* tcp_output.c */
 
+extern int tcp_xmit_probe_skb(struct sock *sk, int urgent);
 extern void tcp_cwnd_validate(struct sock *sk);
 extern void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb);
 extern int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,

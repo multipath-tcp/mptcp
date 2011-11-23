@@ -975,6 +975,41 @@ out:
 			meta_icsk->icsk_rto, TCP_RTO_MAX * 2);
 }
 
+/* Inspired by tcp_write_wakeup */
+int mptcp_write_wakeup(struct sock *meta_sk)
+{
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct sk_buff *skb;
+
+	if ((skb = tcp_send_head(meta_sk)) != NULL &&
+	    before(mptcp_skb_data_seq(skb), tcp_wnd_end(meta_tp, 1))) {
+		/* Currently, zero-window-probes are still handled on a
+		 * subflow-level */
+		mptcp_debug("%s INSIDE - zero-window-probes on the meta-sk\n",
+				__func__);
+		BUG();
+	} else {
+		struct sock *sk_it;
+		struct tcp_sock *tp_it;
+		int ans = 0;
+
+		if (between(meta_tp->snd_up, meta_tp->snd_una + 1,
+			    meta_tp->snd_una + 0xFFFF)) {
+			mptcp_for_each_sk(meta_tp->mpcb, sk_it, tp_it)
+					tcp_xmit_probe_skb(sk_it, 1);
+		}
+
+		/* At least on of the tcp_xmit_probe_skb's has to succeed */
+		mptcp_for_each_sk(meta_tp->mpcb, sk_it, tp_it) {
+			int ret = tcp_xmit_probe_skb(sk_it, 0);
+			if (unlikely(ret > 0))
+				ans = ret;
+		}
+		return ans;
+	}
+}
+
+
 void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb)
 {
 	struct sock *meta_sk;
@@ -1371,6 +1406,25 @@ static void mptcp_mpcb_inherit_sockopts(struct sock *meta_sk, struct sock *maste
 	 * TCP_DEFER_ACCEPT
 	 * TCP_QUICKACK
 	 */
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+
+	/****** KEEPALIVE-handler ******/
+
+	/* Keepalive-timer has been started in tcp_rcv_synsent_state_process or
+	 * tcp_create_openreq_child */
+	if (sock_flag(meta_sk, SOCK_KEEPOPEN)) {
+		inet_csk_reset_keepalive_timer(meta_sk, keepalive_time_when(meta_tp));
+
+		/* Prevent keepalive-reset in tcp_rcv_synsent_state_process */
+		sock_reset_flag(master_sk, SOCK_KEEPOPEN);
+	}
+}
+
+static void mptcp_sub_inherit_sockopts(struct sock *meta_sk, struct sock *sub_sk) {
+	/* Keepalive is handled at the meta-level */
+	if (sock_flag(meta_sk, SOCK_KEEPOPEN)) {
+		inet_csk_delete_keepalive_timer(sub_sk);
+	}
 }
 
 int mptcp_alloc_mpcb(struct sock *master_sk)
@@ -1417,6 +1471,7 @@ int mptcp_alloc_mpcb(struct sock *master_sk)
 	meta_tp->snt_isn = meta_tp->write_seq; /* Initial data-sequence-number */
 	meta_tp->window_clamp = tcp_sk(master_sk)->window_clamp;
 	meta_tp->rcv_ssthresh = tcp_sk(master_sk)->rcv_ssthresh;
+	meta_icsk->icsk_probes_out = 0;
 
 	meta_tp->mss_cache = mptcp_sysctl_mss();
 
@@ -1561,6 +1616,8 @@ void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 		    (TCPF_SYN_SENT | TCPF_SYN_RECV))
 			meta_sk->sk_state = TCP_ESTABLISHED;
 	}
+
+	mptcp_sub_inherit_sockopts(meta_sk, sk);
 
 	if (sk->sk_family == AF_INET)
 		mptcp_debug("%s: token %#x pi %d, src_addr:%pI4:%d dst_addr:"
@@ -2650,6 +2707,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 		}
 
 rcvd_fin:
+		inet_csk(meta_sk)->icsk_ack.lrcvtime = tcp_time_stamp;
 		tp->last_data_seq = tp->map_data_seq;
 		mptcp_reset_mapping(tp);
 	}
@@ -3707,6 +3765,15 @@ void mptcp_send_fin(struct sock *meta_sk)
 		tcp_queue_skb(meta_sk, skb);
 	}
 	__tcp_push_pending_frames(meta_sk, mptcp_sysctl_mss(), TCP_NAGLE_OFF);
+}
+
+void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
+{
+	/* NOTE: here will come the MPTCP-specific DATA_RST of the upcoming
+	 * draft v05.
+	 *
+	 * Left empty for now, as a subflow-RST on all subflows will anyways not
+	 * really close the MPTCP-connection.*/
 }
 
 void mptcp_send_reset(struct sock *sk, struct sk_buff *skb)

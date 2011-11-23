@@ -452,6 +452,7 @@ void mptcp_release_sock(struct sock *sk);
 void mptcp_clean_rtx_queue(struct sock *meta_sk);
 void mptcp_send_fin(struct sock *meta_sk);
 void mptcp_send_reset(struct sock *sk, struct sk_buff *skb);
+void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority);
 int mptcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		     int push_one, gfp_t gfp);
 void mptcp_parse_options(uint8_t *ptr, int opsize,
@@ -489,6 +490,7 @@ void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk);
 int mptcp_fin(struct multipath_pcb *mpcb, struct sock *sk);
 void mptcp_retransmit_timer(struct sock *meta_sk);
+int mptcp_write_wakeup(struct sock *meta_sk);
 void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb);
 
 static inline int mptcp_skb_cloned(const struct sk_buff *skb,
@@ -1041,6 +1043,8 @@ static inline void mptcp_retransmit_queue(const struct sock *sk) {}
 static inline void mptcp_include_mpc(const struct tcp_sock *tp) {}
 static inline void mptcp_send_reset(const struct sock *sk,
 				    const struct sk_buff *skb) {}
+static inline void mptcp_send_active_reset(struct sock *meta_sk,
+					   gfp_t priority) {}
 static inline int mptcp_get_path_family(const struct multipath_pcb *mpcb,
 					int path_index)
 {
