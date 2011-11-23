@@ -134,10 +134,10 @@ void mptcp_hash_remove(struct multipath_pcb *mpcb)
 
 void mptcp_hash_request_remove(struct request_sock *req)
 {
-	spin_lock_bh(&mptcp_reqsk_hlock);
+	spin_lock(&mptcp_reqsk_hlock);
 	/* list_del_init: see comment in mptcp_hash_remove() */
 	list_del_init(&req->collide_tuple);
-	spin_unlock_bh(&mptcp_reqsk_hlock);
+	spin_unlock(&mptcp_reqsk_hlock);
 }
 
 void mptcp_pm_release(struct multipath_pcb *mpcb)
