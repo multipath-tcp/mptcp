@@ -524,17 +524,6 @@ int tcp_ioctl(struct sock *sk, int cmd, unsigned long arg)
 }
 EXPORT_SYMBOL(tcp_ioctl);
 
-static inline void tcp_mark_push(struct tcp_sock *tp, struct sk_buff *skb)
-{
-	TCP_SKB_CB(skb)->flags |= TCPHDR_PSH;
-	tp->pushed_seq = tp->write_seq;
-}
-
-static inline int forced_push(struct tcp_sock *tp)
-{
-	return after(tp->write_seq, tp->pushed_seq + (tp->max_window >> 1));
-}
-
 static inline void skb_entail(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -551,12 +540,6 @@ static inline void skb_entail(struct sock *sk, struct sk_buff *skb)
 	sk_mem_charge(sk, skb->truesize);
 	if (tp->nonagle & TCP_NAGLE_PUSH)
 		tp->nonagle &= ~TCP_NAGLE_PUSH;
-}
-
-static inline void tcp_mark_urg(struct tcp_sock *tp, int flags)
-{
-	if (flags & MSG_OOB)
-		tp->snd_up = tp->write_seq;
 }
 
 void tcp_push(struct sock *sk, int flags, int mss_now,

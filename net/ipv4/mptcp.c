@@ -2689,26 +2689,6 @@ void mptcp_set_data_size(struct tcp_sock *tp, struct sk_buff *skb, int copy)
 	}
 }
 
-/* From net/ipv4/tcp.c */
-static inline void tcp_mark_push(struct tcp_sock *tp, struct sk_buff *skb)
-{
-	TCP_SKB_CB(skb)->flags |= TCPHDR_PSH;
-	tp->pushed_seq = tp->write_seq;
-}
-
-/* From net/ipv4/tcp.c */
-static inline int forced_push(struct tcp_sock *tp)
-{
-	return after(tp->write_seq, tp->pushed_seq + (tp->max_window >> 1));
-}
-
-/* From net/ipv4/tcp.c */
-static inline void tcp_mark_urg(struct tcp_sock *tp, int flags)
-{
-	if (flags & MSG_OOB)
-		tp->snd_up = tp->write_seq;
-}
-
 int mptcp_push(struct sock *sk, int flags, int mss_now, int nonagle)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -2728,15 +2708,6 @@ int mptcp_push(struct sock *sk, int flags, int mss_now, int nonagle)
 					  TCP_NAGLE_CORK : nonagle);
 	}
 	return 1;
-}
-
-/* Algorithm by Bryan Kernighan to count bits in a word */
-static inline int count_bits(unsigned int v)
-{
-	unsigned int c; /* c accumulates the total bits set in v */
-	for (c = 0; v; c++)
-		v &= v - 1; /* clear the least significant bit set */
-	return c;
 }
 
 void mptcp_parse_options(uint8_t *ptr, int opsize,

@@ -699,6 +699,23 @@ struct tcp_skb_cb {
 
 #define TCP_SKB_CB(__skb)	((struct tcp_skb_cb *)&((__skb)->cb[0]))
 
+static inline void tcp_mark_push(struct tcp_sock *tp, struct sk_buff *skb)
+{
+	TCP_SKB_CB(skb)->flags |= TCPHDR_PSH;
+	tp->pushed_seq = tp->write_seq;
+}
+
+static inline int forced_push(struct tcp_sock *tp)
+{
+	return after(tp->write_seq, tp->pushed_seq + (tp->max_window >> 1));
+}
+
+static inline void tcp_mark_urg(struct tcp_sock *tp, int flags)
+{
+	if (flags & MSG_OOB)
+		tp->snd_up = tp->write_seq;
+}
+
 /* Due to TSO, an SKB can be composed of multiple actual
  * packets.  To keep these tracked properly, we use this.
  */
