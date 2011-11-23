@@ -562,7 +562,7 @@ int mptcp_fin(struct multipath_pcb *mpcb, struct sock *sk)
 		/* Received a FIN -- send ACK and enter TIME_WAIT. */
 		tcp_send_ack(sk);
 		ans = sock_flag(sk, SOCK_DEAD);
-		tcp_done(meta_sk);
+		tcp_time_wait(meta_sk, TCP_TIME_WAIT, 0);
 		break;
 	default:
 		/* Only TCP_LISTEN and TCP_CLOSE are left, in these
