@@ -2089,7 +2089,6 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 	struct sk_buff *tmp, *last = NULL;
 	__wsum csum_tcp = 0; /* cumulative checksum of pld + mptcp-header */
 	int ans = 1, overflowed = 0, offset = 0, dss_csum_added = 0;
-	char last_byte = 0; /* byte to be added to the next csum */
 	int iter = 0;
 
 	skb_queue_walk(&sk->sk_receive_queue, tmp) {
@@ -2115,7 +2114,7 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 			char first_word[4];
 			first_word[0] = 0;
 			first_word[1] = 0;
-			first_word[2] = last_byte;
+			first_word[2] = 0;
 			first_word[3] = *(tmp->data);
 			csum_tcp = csum_partial(first_word, 4, csum_tcp);
 			offset = 1;
@@ -2123,14 +2122,12 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 			overflowed = 0;
 		}
 
-		len = csum_len & (~1); /* len is tmp->len but even */
+		csum_tcp = skb_checksum(tmp, offset, csum_len, csum_tcp);
 
-		csum_tcp = skb_checksum(tmp, offset, len, csum_tcp);
-
-		if (len != csum_len) {
-			last_byte = *(tmp->data + tmp->len - 1);
+		/* Was it on an odd-length?  Then we have to merge the next byte
+		 * correctly (see above)*/
+		if (csum_len != (csum_len & (~1)))
 			overflowed = 1;
-		}
 
 		if (TCP_SKB_CB(tmp)->dss_off && !dss_csum_added) {
 			csum_tcp = skb_checksum(tmp, skb_transport_offset(tmp) +
@@ -2142,14 +2139,6 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 		last = tmp;
 		iter++;
 	}
-	if (overflowed) {
-		char first_word[4];
-		first_word[0] = 0;
-		first_word[1] = 0;
-		first_word[2] = last_byte;
-		first_word[3] = 0;
-		csum_tcp = csum_partial(first_word, 4, csum_tcp);
-	}
 
 	/* Now, checksum must be 0 */
 	if (unlikely(csum_fold(csum_tcp))) {
@@ -2158,11 +2147,6 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 			    __func__, csum_fold(csum_tcp),
 			    TCP_SKB_CB(last)->data_seq, dss_csum_added,
 			    overflowed, iter);
-
-		if (last)
-			mptcp_debug("%s last->len %u last->data_len %u nr_frags %u\n",
-				    __func__, last->len, last->data_len,
-				    skb_shinfo(last)->nr_frags);
 
 		tp->csum_error = 1;
 		/* map_data_seq is the data-seq number of the
