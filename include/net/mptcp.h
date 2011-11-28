@@ -166,9 +166,9 @@ struct multipath_pcb {
 	struct mptcp_loc6 addr6[MPTCP_MAX_ADDR];
 	int num_addr6;
 
-	struct path4 *pa4;
+	struct mptcp_path4 *pa4;
 	int pa4_size;
-	struct path6 *pa6;
+	struct mptcp_path6 *pa6;
 	int pa6_size;
 
 	/* Next pi to pick up in case a new path becomes available */
@@ -685,8 +685,7 @@ static inline void mptcp_retransmit_queue(struct sock *sk)
 
 static inline int mptcp_sk_can_send(struct sock *sk)
 {
-	return sk->sk_state == TCP_ESTABLISHED ||
-	       sk->sk_state == TCP_CLOSE_WAIT;
+	return (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCPF_CLOSE_WAIT);
 }
 
 static inline void mptcp_set_rto(struct sock *sk)
@@ -703,8 +702,8 @@ static inline void mptcp_set_rto(struct sock *sk)
 		    inet_csk(sk_it)->icsk_rto > max_rto)
 			max_rto = inet_csk(sk_it)->icsk_rto;
 	}
-	if(max_rto)
-		inet_csk((struct sock *)tp->mpcb)->icsk_rto = max_rto * 2;
+	if (max_rto)
+		inet_csk(mpcb_meta_sk(tp->mpcb))->icsk_rto = max_rto * 2;
 }
 
 /* Maybe we could merge this with tcp_rearm_rto().

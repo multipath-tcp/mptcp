@@ -229,14 +229,14 @@ void __mptcp_update_patharray_ports(struct multipath_pcb *mpcb)
 	int pa4_size = sysctl_mptcp_ndiffports - 1; /* -1 because the initial
 						     * flow counts for one.
 						     */
-	struct path4 *new_pa4;
+	struct mptcp_path4 *new_pa4;
 	int newpa_idx = 0;
 	struct sock *meta_sk = (struct sock *)mpcb;
 
 	if (mpcb->pa4)
 		return; /* path allocation already done */
 
-	new_pa4 = kmalloc(pa4_size * sizeof(struct path4), GFP_ATOMIC);
+	new_pa4 = kmalloc(pa4_size * sizeof(struct mptcp_path4), GFP_ATOMIC);
 
 	for (newpa_idx = 0; newpa_idx < pa4_size; newpa_idx++) {
 		new_pa4[newpa_idx].loc.sin_family = AF_INET;
@@ -590,8 +590,8 @@ void mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 
 void mptcp_subflow_attach(struct multipath_pcb *mpcb, struct sock *subsk)
 {
-	struct path4 *p4 = NULL;
-	struct path6 *p6 = NULL;
+	struct mptcp_path4 *p4 = NULL;
+	struct mptcp_path6 *p6 = NULL;
 	struct mptcp_loc4 loc, rem;
 	struct mptcp_loc6 loc6, rem6;
 	loc.id = inet_sk(subsk)->loc_id;

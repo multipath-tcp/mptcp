@@ -99,7 +99,7 @@ static int mptcp_v6_join_request(struct multipath_pcb *mpcb,
 		return -1;
 
 	tcp_clear_options(&tmp_opt);
-	tmp_opt.mss_clamp = 536;
+	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
 	tmp_opt.user_mss  = mpcb_meta_tp(mpcb)->rx_opt.user_mss;
 	tcp_parse_options(skb, &tmp_opt, &hash_location,
 				  &mpcb->rx_opt, 0);
@@ -152,7 +152,7 @@ drop_and_free:
 	return -1;
 }
 
-struct path6 *mptcp_get_path6(struct multipath_pcb *mpcb, int path_index)
+struct mptcp_path6 *mptcp_get_path6(struct multipath_pcb *mpcb, int path_index)
 {
 	int i;
 	for (i = 0; i < mpcb->pa6_size; i++)
@@ -161,7 +161,7 @@ struct path6 *mptcp_get_path6(struct multipath_pcb *mpcb, int path_index)
 	return NULL;
 }
 
-struct path6 *mptcp_v6_find_path(struct mptcp_loc6 *loc, struct mptcp_loc6 *rem,
+struct mptcp_path6 *mptcp_v6_find_path(struct mptcp_loc6 *loc, struct mptcp_loc6 *rem,
 				 struct multipath_pcb *mpcb)
 {
 	int i;
@@ -393,7 +393,7 @@ done:
 /*This is the MPTCP PM IPV6 mapping table*/
 void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 {
-	struct path6 *new_pa6, *old_pa6;
+	struct mptcp_path6 *new_pa6, *old_pa6;
 	int i, j, newpa_idx = 0;
 	struct sock *meta_sk = (struct sock *)mpcb;
 
@@ -405,7 +405,7 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 	int pa6_size = (mpcb->num_addr6 + ulid_v6) *
 		       (mpcb->rx_opt.num_addr6 + ulid_v6) - ulid_v6;
 
-	new_pa6 = kmalloc(pa6_size * sizeof(struct path6), GFP_ATOMIC);
+	new_pa6 = kmalloc(pa6_size * sizeof(struct mptcp_path6), GFP_ATOMIC);
 
 	if (ulid_v6) {
 		struct mptcp_loc6 loc_ulid, rem_ulid;
@@ -415,11 +415,11 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 		rem_ulid.port = 0;
 		/* ULID src with other dest */
 		for (j = 0; j < mpcb->rx_opt.num_addr6; j++) {
-			struct path6 *p = mptcp_v6_find_path(&loc_ulid,
+			struct mptcp_path6 *p = mptcp_v6_find_path(&loc_ulid,
 				&mpcb->rx_opt.addr6[j], mpcb);
 			if (p) {
 				memcpy(&new_pa6[newpa_idx++], p,
-				       sizeof(struct path6));
+				       sizeof(struct mptcp_path6));
 			} else {
 				p = &new_pa6[newpa_idx++];
 
@@ -440,11 +440,11 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 		}
 		/* ULID dest with other src */
 		for (i = 0; i < mpcb->num_addr6; i++) {
-			struct path6 *p = mptcp_v6_find_path(&mpcb->addr6[i],
+			struct mptcp_path6 *p = mptcp_v6_find_path(&mpcb->addr6[i],
 					&rem_ulid, mpcb);
 			if (p) {
 				memcpy(&new_pa6[newpa_idx++], p,
-				       sizeof(struct path6));
+				       sizeof(struct mptcp_path6));
 			} else {
 				p = &new_pa6[newpa_idx++];
 
@@ -467,13 +467,13 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 	/* Try all other combinations now */
 	for (i = 0; i < mpcb->num_addr6; i++)
 		for (j = 0; j < mpcb->rx_opt.num_addr6; j++) {
-			struct path6 *p =
+			struct mptcp_path6 *p =
 			    mptcp_v6_find_path(&mpcb->addr6[i],
 					    &mpcb->rx_opt.addr6[j],
 					    mpcb);
 			if (p) {
 				memcpy(&new_pa6[newpa_idx++], p,
-				       sizeof(struct path6));
+				       sizeof(struct mptcp_path6));
 			} else {
 				p = &new_pa6[newpa_idx++];
 

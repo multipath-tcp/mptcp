@@ -139,7 +139,7 @@ drop_and_free:
 	return -1;
 }
 
-struct path4 *mptcp_v4_find_path(struct mptcp_loc4 *loc, struct mptcp_loc4 *rem,
+struct mptcp_path4 *mptcp_v4_find_path(struct mptcp_loc4 *loc, struct mptcp_loc4 *rem,
 				 struct multipath_pcb *mpcb)
 {
 	int i;
@@ -163,7 +163,7 @@ struct path4 *mptcp_v4_find_path(struct mptcp_loc4 *loc, struct mptcp_loc4 *rem,
 	return NULL;
 }
 
-struct path4 *mptcp_v4_get_path(struct multipath_pcb *mpcb, int path_index)
+struct mptcp_path4 *mptcp_v4_get_path(struct multipath_pcb *mpcb, int path_index)
 {
 	int i;
 	for (i = 0; i < mpcb->pa4_size; i++)
@@ -307,15 +307,6 @@ struct request_sock *mptcp_v4_search_req(const __be16 rport,
 			    collide_tuple) {
 		const struct inet_request_sock *ireq = inet_rsk(req);
 
-		if (!req->collide_tuple.next) {
-			printk(KERN_ERR
-			       "tuple hashtable corrupted! (bug 66)\n");
-			printk("bad node %pI4:%d->%pI4:%d\n", &ireq->loc_addr,
-			       ntohs(ireq->loc_port), &ireq->rmt_addr,
-			       ntohs(ireq->rmt_port));
-			BUG();
-		}
-
 		if (ireq->rmt_port == rport &&
 		    ireq->rmt_addr == raddr &&
 		    ireq->loc_addr == laddr &&
@@ -374,7 +365,7 @@ int mptcp_v4_send_synack(struct sock *meta_sk,
 /* This is the MPTCP PM mapping table */
 void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 {
-	struct path4 *new_pa4, *old_pa4;
+	struct mptcp_path4 *new_pa4, *old_pa4;
 	int i, j, newpa_idx = 0;
 	struct sock *meta_sk = (struct sock *)mpcb;
 	/* Count how many paths are available
@@ -392,7 +383,7 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 	pa4_size = (mpcb->num_addr4 + ulid_v4) *
 	    (mpcb->rx_opt.num_addr4 + ulid_v4) - ulid_v4;
 
-	new_pa4 = kmalloc(pa4_size * sizeof(struct path4), GFP_ATOMIC);
+	new_pa4 = kmalloc(pa4_size * sizeof(struct mptcp_path4), GFP_ATOMIC);
 
 	if (ulid_v4) {
 		struct mptcp_loc4 loc_ulid, rem_ulid;
@@ -402,11 +393,11 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 		rem_ulid.port = 0;
 		/* ULID src with other dest */
 		for (j = 0; j < mpcb->rx_opt.num_addr4; j++) {
-			struct path4 *p = mptcp_v4_find_path(&loc_ulid,
+			struct mptcp_path4 *p = mptcp_v4_find_path(&loc_ulid,
 				&mpcb->rx_opt.addr4[j], mpcb);
 			if (p) {
 				memcpy(&new_pa4[newpa_idx++], p,
-				       sizeof(struct path4));
+				       sizeof(struct mptcp_path4));
 			} else {
 				p = &new_pa4[newpa_idx++];
 
@@ -428,11 +419,11 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 
 		/* ULID dest with other src */
 		for (i = 0; i < mpcb->num_addr4; i++) {
-			struct path4 *p = mptcp_v4_find_path(&mpcb->addr4[i],
+			struct mptcp_path4 *p = mptcp_v4_find_path(&mpcb->addr4[i],
 					&rem_ulid, mpcb);
 			if (p) {
 				memcpy(&new_pa4[newpa_idx++], p,
-				       sizeof(struct path4));
+				       sizeof(struct mptcp_path4));
 			} else {
 				p = &new_pa4[newpa_idx++];
 
@@ -455,13 +446,13 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 	/* Try all other combinations now */
 	for (i = 0; i < mpcb->num_addr4; i++)
 		for (j = 0; j < mpcb->rx_opt.num_addr4; j++) {
-			struct path4 *p =
+			struct mptcp_path4 *p =
 			    mptcp_v4_find_path(&mpcb->addr4[i],
 					    &mpcb->rx_opt.addr4[j],
 					    mpcb);
 			if (p) {
 				memcpy(&new_pa4[newpa_idx++], p,
-				       sizeof(struct path4));
+				       sizeof(struct mptcp_path4));
 			} else {
 				p = &new_pa4[newpa_idx++];
 

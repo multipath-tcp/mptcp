@@ -28,9 +28,9 @@
 #ifdef CONFIG_MPTCP
 
 int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb);
-struct path4 *mptcp_v4_find_path(struct mptcp_loc4 *loc, struct mptcp_loc4 *rem,
+struct mptcp_path4 *mptcp_v4_find_path(struct mptcp_loc4 *loc, struct mptcp_loc4 *rem,
 				 struct multipath_pcb *mpcb);
-struct path4 *mptcp_v4_get_path(struct multipath_pcb *mpcb, int path_index);
+struct mptcp_path4 *mptcp_v4_get_path(struct multipath_pcb *mpcb, int path_index);
 int mptcp_v4_add_raddress(struct multipath_options *mopt, struct in_addr *addr,
 			__be16 port, u8 id);
 struct request_sock *mptcp_v4_search_req(const __be16 rport,
@@ -51,7 +51,7 @@ static inline int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	return 0;
 }
 
-static inline struct path4 *mptcp_v4_get_path(struct multipath_pcb *mpcb,
+static inline struct mptcp_path4 *mptcp_v4_get_path(struct multipath_pcb *mpcb,
 		int path_index)
 {
 	return NULL;

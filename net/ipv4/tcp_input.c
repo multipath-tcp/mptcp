@@ -3865,8 +3865,8 @@ no_queue:
 	return 1;
 
 invalid_ack:
-	mptcp_debug(KERN_ERR "received invalid ack\n");
-	mptcp_debug(KERN_ERR "pi %d:Ack %#x after %#x:%#x, addr %pI4->%pI4\n",
+	mptcp_debug("received invalid ack\n");
+	mptcp_debug("pi %d:Ack %#x after %#x:%#x, addr %pI4->%pI4\n",
 		tp->path_index, ack, tp->snd_una, tp->snd_nxt,
 		&inet_sk(sk)->inet_saddr, &inet_sk(sk)->inet_daddr);
 	SOCK_DEBUG(sk, "Ack %u after %u:%u\n", ack, tp->snd_una, tp->snd_nxt);

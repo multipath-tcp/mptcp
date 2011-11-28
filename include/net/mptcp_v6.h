@@ -33,9 +33,9 @@
 int mptcp_v6_add_raddress(struct multipath_options *mopt, struct in6_addr *addr,
 			__be16 port, u8 id);
 int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb);
-struct path6 *mptcp_v6_find_path(struct mptcp_loc6 *loc, struct mptcp_loc6 *rem,
+struct mptcp_path6 *mptcp_v6_find_path(struct mptcp_loc6 *loc, struct mptcp_loc6 *rem,
 				 struct multipath_pcb *mpcb);
-struct path6 *mptcp_get_path6(struct multipath_pcb *mpcb, int path_index);
+struct mptcp_path6 *mptcp_get_path6(struct multipath_pcb *mpcb, int path_index);
 struct request_sock *mptcp_v6_search_req(const __be16 rport,
 					const struct in6_addr *raddr,
 					const struct in6_addr *laddr);

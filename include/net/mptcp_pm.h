@@ -58,7 +58,7 @@ struct mptcp_loc6 {
 extern struct list_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
 extern spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
 
-struct path4 {
+struct mptcp_path4 {
 	struct sockaddr_in	loc; /* local address */
 	struct sockaddr_in	rem; /* remote address */
 	int			path_index;
@@ -66,7 +66,7 @@ struct path4 {
 	u8			rem_id;
 };
 
-struct path6 {
+struct mptcp_path6 {
 	struct sockaddr_in6	loc; /* local address */
 	struct sockaddr_in6	rem; /* remote address */
 	int			path_index;

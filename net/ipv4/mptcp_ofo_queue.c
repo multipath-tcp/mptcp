@@ -67,9 +67,9 @@
  * In tree mode, the next and prev pointers mean resp. the right and left
  * child.
  */
-struct node {
-	struct node          *next;
-	struct node          *prev;
+struct mptcp_node {
+	struct mptcp_node          *next;
+	struct mptcp_node          *prev;
 	short                is_node;
 	struct sock          *shortcut_owner; /* Owner of a shortcut pointer
 					       * to this skb. Used by the
@@ -96,18 +96,18 @@ void print_ofo_queue(struct sk_buff_head *head)
 	struct sk_buff *skb;
 
 	skb_queue_walk(head, skb) {
-		struct node *n = (struct node *)skb;
+		struct mptcp_node *n = (struct mptcp_node *)skb;
 		printk(KERN_ERR " [%x,%x], queue_node: %d\n",
 		       low_dsn(n), high_dsn(n), n->is_node);
 	}
 }
 
-static int find_node(struct node *n, struct sk_buff_head *head)
+static int find_node(struct mptcp_node *n, struct sk_buff_head *head)
 {
 	struct sk_buff *skb;
 
 	skb_queue_walk(head, skb) {
-		struct node *n_it = (struct node *)skb;
+		struct mptcp_node *n_it = (struct mptcp_node *)skb;
 		if (n == n_it) return 1;
 	}
 	return 0;
@@ -118,7 +118,7 @@ static int find_node_mpcb(struct multipath_pcb *mpcb)
 	struct tcp_sock *tp_it;
 	mptcp_for_each_tp(mpcb, tp_it) {
 		if (tp_it->shortcut_ofoqueue &&
-		    !find_node((struct node *)tp_it->shortcut_ofoqueue,
+		    !find_node((struct mptcp_node *)tp_it->shortcut_ofoqueue,
 			       &mpcb->tp.out_of_order_queue)) {
 			printk(KERN_ERR "find_node_mpcb() failed\n");
 			BUG();
@@ -137,7 +137,7 @@ static int find_node_mpcb(struct multipath_pcb *mpcb)
  *      to merging nodes, we just drop the shortcut.
  */
 
-static void move_shortcut(struct node *n_src, struct node *n_dst)
+static void move_shortcut(struct mptcp_node *n_src, struct mptcp_node *n_dst)
 {
 	/* if n_dst has a shortcut, drop it */
 	if (n_dst->shortcut_owner)
@@ -152,7 +152,7 @@ static void move_shortcut(struct node *n_src, struct node *n_dst)
 	}
 }
 
-static void drop_shortcut(struct node *n)
+static void drop_shortcut(struct mptcp_node *n)
 {
 	if (n->shortcut_owner) {
 		tcp_sk(n->shortcut_owner)->shortcut_ofoqueue = NULL;
@@ -160,9 +160,9 @@ static void drop_shortcut(struct node *n)
 	}
 }
 
-static void add_shortcut(struct tcp_sock *tp, struct node *n)
+static void add_shortcut(struct tcp_sock *tp, struct mptcp_node *n)
 {
-	if ((struct node *)tp->shortcut_ofoqueue == n)
+	if ((struct mptcp_node *)tp->shortcut_ofoqueue == n)
 		return;
 	/* remove any previous shortcut in the sock */
 	if (tp->shortcut_ofoqueue)
@@ -174,7 +174,7 @@ static void add_shortcut(struct tcp_sock *tp, struct node *n)
 	tp->shortcut_ofoqueue = (struct sk_buff *)n;
 }
 
-static void free_node(struct node *n)
+static void free_node(struct mptcp_node *n)
 {
 	if (!n->is_node) {
 		drop_shortcut(n);
@@ -193,7 +193,7 @@ static void free_node(struct node *n)
 /**
  * @post: @new has replaced @old in the queue.
  */
-static void replace_node(struct node *old, struct node *new)
+static void replace_node(struct mptcp_node *old, struct mptcp_node *new)
 {
 	/* set references in new */
 	new->next = old->next;
@@ -218,8 +218,8 @@ static void replace_node(struct node *old, struct node *new)
  *          @aggreg.
  * @return: The node that contains the concatenation of @n1 and @n2.
  */
-static struct node *concat(struct node *n1, struct node *n2,
-			   struct node *aggreg)
+static struct mptcp_node *concat(struct mptcp_node *n1, struct mptcp_node *n2,
+			   struct mptcp_node *aggreg)
 {
 	/* Concatenating necessarily results in using a sequence of skbuffs.
 	 * If one of n1 or n2 is already a sequence, we reuse the allocated
@@ -230,7 +230,7 @@ static struct node *concat(struct node *n1, struct node *n2,
 	 * in any case, otherwise replace_node sets wrong pointers.
 	 */
 	if (!n1->is_node && !n2->is_node) {
-		struct node *n;
+		struct mptcp_node *n;
 		/* No queue yet, create one */
 		n = kmem_cache_alloc(node_cache, GFP_ATOMIC);
 		if (!n)
@@ -294,25 +294,25 @@ static struct node *concat(struct node *n1, struct node *n2,
  * @container: Used to return the node in which the skb has been inserted
  *             (either the skb itself of its containing node)
  */
-static inline int try_shortcut(struct node *shortcut, struct sk_buff *skb,
-			       struct sk_buff_head *head,
-			       struct node **container)
+static int try_shortcut(struct mptcp_node *shortcut, struct sk_buff *skb,
+			struct sk_buff_head *head,
+			struct mptcp_node **container)
 {
-	struct node *n = (struct node*) skb;
+	struct mptcp_node *n = (struct mptcp_node*) skb;
 	struct sk_buff *skb1;
-	struct node *n1;
+	struct mptcp_node *n1;
 	u32 seq = TCP_SKB_CB(skb)->data_seq;
 	u32 end_seq = TCP_SKB_CB(skb)->end_data_seq;
 
 	/* If there is no overlap with the shortcut, we need
-	 * to examine the full tree
+	 * to examine the full queue
 	 */
 
 	if (!shortcut) {
-		n1 = (struct node *)(skb1 = skb_peek_tail(head));
+		n1 = (struct mptcp_node *)(skb1 = skb_peek_tail(head));
 		if (!skb1) {
 			__skb_queue_head(head, skb);
-			*container = (struct node *)skb;
+			*container = (struct mptcp_node *)skb;
 			return 0;
 		}
 	} else {
@@ -329,7 +329,7 @@ static inline int try_shortcut(struct node *shortcut, struct sk_buff *skb,
 		 */
 		while (!skb_queue_is_last(head, skb1) &&
 		       before(high_dsn(n1), seq)) {
-			n1 = (struct node *)(skb1 = skb_queue_next(head, skb1));
+			n1 = (struct mptcp_node *)(skb1 = skb_queue_next(head, skb1));
 		}
 	}
 
@@ -338,10 +338,10 @@ static inline int try_shortcut(struct node *shortcut, struct sk_buff *skb,
 		if (!after(low_dsn(n1), seq))
 			break;
 		if (skb_queue_is_first(head, skb1)) {
-			n1 = (struct node *)(skb1 = NULL);
+			n1 = (struct mptcp_node *)(skb1 = NULL);
 			break;
 		}
-		n1 = (struct node *)(skb1 = skb_queue_prev(head, skb1));
+		n1 = (struct mptcp_node *)(skb1 = skb_queue_prev(head, skb1));
 	}
 	/* Do skb overlap to previous one? */
 	if (n1 && !after(seq, high_dsn(n1))) {
@@ -357,9 +357,9 @@ static inline int try_shortcut(struct node *shortcut, struct sk_buff *skb,
 			 * are also covered.
 			 */
 			if (skb_queue_is_first(head, skb1))
-				n1 = (struct node *)(skb1 = NULL);
+				n1 = (struct mptcp_node *)(skb1 = NULL);
 			else
-				n1 = (struct node *)(skb1 =
+				n1 = (struct mptcp_node *)(skb1 =
 						     skb_queue_prev(head, skb1));
 		} else {
 			/* We can concat them */
@@ -376,7 +376,7 @@ static inline int try_shortcut(struct node *shortcut, struct sk_buff *skb,
 clean_covered:
 	/* And clean segments covered by new one as whole. */
 	while (!skb_queue_is_last(head, skb)) {
-		n1 = (struct node *)(skb1 = skb_queue_next(head, skb));
+		n1 = (struct mptcp_node *)(skb1 = skb_queue_next(head, skb));
 
 		if (before(end_seq, low_dsn(n1)))
 			break;
@@ -400,15 +400,16 @@ int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
 			     struct sock *sk)
 {
 	int ans;
-	struct sk_buff_head *head = &tcp_sk(meta_sk)->out_of_order_queue;
-	struct node *container = NULL;
+	struct mptcp_node *container = NULL;
 	struct tcp_sock *tp = tcp_sk(sk);
+
 	skb->is_node = 0;
-	ans = try_shortcut((struct node *)tp->shortcut_ofoqueue, skb,
-			   head, &container);
+	ans = try_shortcut((struct mptcp_node *)tp->shortcut_ofoqueue, skb,
+			   &tcp_sk(meta_sk)->out_of_order_queue, &container);
+
 	/* update the shortcut pointer in @sk */
 	if (container)
-		add_shortcut(tp,container);
+		add_shortcut(tp, container);
 
 	return ans;
 }
@@ -418,9 +419,9 @@ void mptcp_ofo_queue(struct multipath_pcb *mpcb)
 	struct sock *meta_sk = (struct sock *)mpcb;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct sk_buff *skb;
-	struct node *n;
+	struct mptcp_node *n;
 
-	while ((n = (struct node *)(skb =
+	while ((n = (struct mptcp_node *)(skb =
 				    skb_peek(&meta_tp->out_of_order_queue)))
 	       != NULL) {
 		if (after(low_dsn(n), meta_tp->rcv_nxt))
@@ -460,13 +461,13 @@ void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp)
 	struct sk_buff *skb, *tmp;
 	skb_queue_walk_safe(head, skb, tmp) {
 		__skb_unlink(skb, head);
-		free_node((struct node *)skb);
+		free_node((struct mptcp_node *)skb);
 	}
 }
 
 void mptcp_ofo_queue_init()
 {
-	node_cache = kmem_cache_create("mptcp_ofo_queue", sizeof(struct node),
+	node_cache = kmem_cache_create("mptcp_ofo_queue", sizeof(struct mptcp_node),
 				       0, 0, NULL);
 }
 
