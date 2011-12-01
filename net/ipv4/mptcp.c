@@ -3335,7 +3335,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 
 		ptr = (__be32 *) p8;
 	}
-	if (OPTION_MP_FAIL & opts->options) {
+	if (unlikely(OPTION_MP_FAIL & opts->options)) {
 		struct mp_fail *mpfail;
 		__u8 *p8 = (__u8 *)ptr;
 
