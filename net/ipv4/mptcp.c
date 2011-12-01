@@ -779,10 +779,11 @@ void mptcp_key_sha1(u64 key, u32 *token) {
 	u32 mptcp_hashed_key[SHA_DIGEST_WORDS];
 	u8 input[64];
 
-	memset(workspace, 0, SHA_WORKSPACE_WORDS * sizeof(u32));
+	memset(workspace, 0, sizeof(workspace));
 
 	/* Initialize input with appropriate padding */
-	memset(input, 0, 64);
+	memset(&input[9], 0, sizeof(input) - 10); /* -10, because the last byte
+						   * is explicitly set too */
 	memcpy(input, &key, sizeof(key)); /* Copy key to the msg beginning */
 	input[8] = 0x80; /* Padding: First bit after message = 1 */
 	input[63] = 0x40; /* Padding: Length of the message = 64 bits */
@@ -800,7 +801,7 @@ void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 	u8 input[128]; /* 2 512-bit blocks */
 	int i;
 
-	memset(workspace, 0, SHA_WORKSPACE_WORDS * sizeof(u32));
+	memset(workspace, 0, sizeof(workspace));
 
 	/* Generate key xored with ipad */
 	memset(input, 0x36, 64);
@@ -820,10 +821,10 @@ void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 
 	sha_init(hash_out);
 	sha_transform(hash_out, input, workspace);
-	memset(workspace, 0, SHA_WORKSPACE_WORDS * sizeof(u32));
+	memset(workspace, 0, sizeof(workspace));
 
 	sha_transform(hash_out, &input[64], workspace);
-	memset(workspace, 0, SHA_WORKSPACE_WORDS * sizeof(u32));
+	memset(workspace, 0, sizeof(workspace));
 
 	/* Prepare second part of hmac */
 	memset(input, 0x5C, 64);
@@ -841,7 +842,7 @@ void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 	input[127] = 0xA0;
 
 	sha_transform(hash_out, input, workspace);
-	memset(workspace, 0, SHA_WORKSPACE_WORDS * sizeof(u32));
+	memset(workspace, 0, sizeof(workspace));
 
 	sha_transform(hash_out, &input[64], workspace);
 }
@@ -2093,7 +2094,6 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 
 	skb_queue_walk(&sk->sk_receive_queue, tmp) {
 		unsigned int csum_len;
-		unsigned int len;
 
 		/* tp->map_data_len may be 0 in case of a data-fin */
 		if ((tp->map_data_len &&
@@ -2703,9 +2703,8 @@ exit:
 	return ans;
 }
 
-void mptcp_skb_entail_init(struct sock *sk, struct sk_buff *skb)
+void mptcp_skb_entail_init(struct tcp_sock *tp, struct sk_buff *skb)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
 	/* in MPTCP mode, the subflow seqnum is given later */
 	if (tp->mpc) {
 		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
