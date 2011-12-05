@@ -112,6 +112,10 @@ struct multipath_pcb {
 	struct tcp_sock tp;
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 
+	u8	send_infinite_mapping:1,
+		infinite_mapping:1,
+		send_mp_fail:1;
+
 	/* list of sockets in this multipath connection */
 	struct tcp_sock *connection_list;
 
@@ -135,9 +139,6 @@ struct multipath_pcb {
 				 * eligible subflows by the
 				 * scheduler
 				 */
-	u8	send_infinite_mapping:1,
-		infinite_mapping:1,
-		send_mp_fail:1;
 	u32	csum_cutoff_seq;
 
 	__u32	mptcp_loc_token;
@@ -855,7 +856,6 @@ static inline __u32 mptcp_skb_end_data_seq(const struct sk_buff *skb)
 {
 	return 0;
 }
-
 
 /* Without MPTCP, we just do one iteration
  * over the only socket available. This assumes that

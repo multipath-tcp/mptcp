@@ -1113,6 +1113,7 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		     int push_one, gfp_t gfp)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct multipath_pcb *mpcb = meta_tp->mpcb;
 	struct sk_buff *skb;
 	unsigned int tso_segs, sent_pkts;
 	int cwnd_quota;
@@ -1130,10 +1131,8 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 	 */
 	if (meta_sk->sk_in_write_xmit &&
 	    ((1 << meta_sk->sk_state) & ~(TCPF_FIN_WAIT1 | TCPF_LAST_ACK))) {
-		printk(KERN_ERR "meta-sk in write xmit, meta-sk:%d,"
-		       "state of meta_sk:%d, of subsk:%d\n",
-		       is_meta_sk(meta_sk), ((struct sock *)meta_tp->mpcb)->sk_state,
-		       meta_sk->sk_state);
+		printk(KERN_ERR "meta-sk in write xmit, meta-sk:%d, state of "
+		       "meta_sk:%d\n", is_meta_sk(meta_sk), meta_sk->sk_state);
 		BUG();
 	}
 
@@ -1178,13 +1177,12 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 			/* another copy of the segment already reached
 			 * the peer, just discard this one
 			 */
-			skb_unlink(skb, &meta_tp->mpcb->reinject_queue);
+			skb_unlink(skb, &mpcb->reinject_queue);
 			kfree_skb(skb);
 			continue;
 		}
 
-		subsk = mptcp_schedulers[sysctl_mptcp_scheduler - 1]
-				(meta_tp->mpcb, skb);
+		subsk = mptcp_schedulers[sysctl_mptcp_scheduler - 1](mpcb, skb);
 		if (!subsk)
 			break;
 		subtp = tcp_sk(subsk);
@@ -1270,7 +1268,7 @@ retry:
 				 */
 				atomic_inc(&(skb_shinfo(skb)->dataref));
 
-			skb_unlink(skb, &meta_tp->mpcb->reinject_queue);
+			skb_unlink(skb, &mpcb->reinject_queue);
 			subskb = skb;
 		}
 		if (!subskb)
@@ -1285,6 +1283,7 @@ retry:
 		if (mptcp_is_data_fin(subskb))
 			mptcp_combine_dfin(subskb, meta_tp, subsk);
 		BUG_ON(tcp_send_head(subsk));
+
 		mptcp_skb_entail(subsk, subskb);
 
 		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
@@ -1321,7 +1320,7 @@ retry:
 			subtp->write_seq -= subskb->len;
 			mptcp_wmem_free_skb(subsk, subskb);
 
-			meta_tp->mpcb->noneligible |= mptcp_pi_to_flag(subtp->path_index);
+			mpcb->noneligible |= mptcp_pi_to_flag(subtp->path_index);
 
 			continue;
 		}
@@ -1354,7 +1353,7 @@ retry:
 			break;
 	}
 
-	meta_tp->mpcb->noneligible = 0;
+	mpcb->noneligible = 0;
 
 	if (likely(sent_pkts)) {
 		meta_sk->sk_in_write_xmit = 0;
