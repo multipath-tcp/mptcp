@@ -1795,6 +1795,15 @@ void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 
 	data_ack = TCP_SKB_CB(skb)->data_ack;
 
+	if (unlikely(!tp->fully_established) &&
+	    data_ack != meta_tp->snt_isn &&
+	    tp->snt_isn + 1 != tp->snd_una)
+		/* As soon as data has been data-acked,
+		 * or a subflow-data-ack (not acking syn - thus snt_isn + 1)
+		 * includes a data-ack, we are fully established
+		 */
+		mptcp_become_fully_estab(tp);
+
 	/* If the ack is older than previous acks
 	 * then we can probably ignore it.
 	 */
@@ -1806,15 +1815,6 @@ void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	 */
 	if (after(data_ack, meta_tp->snd_nxt))
 		return;
-
-	if (unlikely(!tp->fully_established) &&
-	    data_ack != meta_tp->snt_isn &&
-	    tp->snt_isn + 1 != tp->snd_una)
-		/* As soon as data has been data-acked,
-		 * or a subflow-data-ack (not acking syn - thus snt_isn + 1)
-		 * includes a data-ack, we are fully established
-		 */
-		mptcp_become_fully_estab(tp);
 
 	if (after(data_ack, meta_tp->snd_una)) {
 		meta_tp->snd_una = data_ack;
