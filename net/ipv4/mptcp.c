@@ -2557,17 +2557,6 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	/* Have we received the full mapping ? Then push further */
 	if (tp->mapping_present &&
 	    !before(tp->rcv_nxt, tp->map_subseq + tp->map_data_len)) {
-		/* Verify the checksum first */
-		if (mpcb->rx_opt.dss_csum && !mpcb->infinite_mapping) {
-			int ret = mptcp_verif_dss_csum(sk);
-
-			if (ret <= 0) {
-				mptcp_reset_mapping(tp);
-				ans = ret;
-				goto exit;
-			}
-		}
-
 		/* Is this an overlapping mapping? rcv_nxt >= end_data_seq */
 		if (!before(meta_tp->rcv_nxt, tp->map_data_seq +
 			    tp->map_data_len + tp->map_data_fin)) {
@@ -2599,6 +2588,17 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 
 			/* We want tcp_data(/ofo)_queue to free skb. */
 			return 1;
+		}
+
+		/* Verify the checksum */
+		if (mpcb->rx_opt.dss_csum && !mpcb->infinite_mapping) {
+			int ret = mptcp_verif_dss_csum(sk);
+
+			if (ret <= 0) {
+				mptcp_reset_mapping(tp);
+				ans = ret;
+				goto exit;
+			}
 		}
 
 		if (before(meta_tp->rcv_nxt, tp->map_data_seq)) {
