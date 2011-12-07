@@ -19,6 +19,8 @@
  *      2 of the License, or (at your option) any later version.
  */
 
+#include <asm/unaligned.h>
+
 #include <crypto/sha.h>
 
 #include <net/inet_common.h>
@@ -2907,7 +2909,7 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		ptr += 2;
 
 		if (mdss->A) {
-			TCP_SKB_CB(skb)->data_ack = ntohl(*(uint32_t *)ptr);
+			TCP_SKB_CB(skb)->data_ack = get_unaligned_be32(ptr);
 			TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_ACK;
 			ptr += MPTCP_SUB_LEN_ACK;
 		}
@@ -2921,12 +2923,10 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 			} else {
 				TCP_SKB_CB(skb)->dss_off = 0;
 			}
-			TCP_SKB_CB(skb)->data_seq = ntohl(*(uint32_t *) ptr);
-			TCP_SKB_CB(skb)->sub_seq =
-					ntohl(*(uint32_t *)(ptr + 4)) +
-					opt_rx->rcv_isn;
-			TCP_SKB_CB(skb)->data_len =
-					ntohs(*(uint16_t *)(ptr + 8));
+			TCP_SKB_CB(skb)->data_seq = get_unaligned_be32(ptr);
+			TCP_SKB_CB(skb)->sub_seq = get_unaligned_be32(ptr + 4) +
+						   opt_rx->rcv_isn;
+			TCP_SKB_CB(skb)->data_len = get_unaligned_be16(ptr + 8);
 			TCP_SKB_CB(skb)->end_data_seq =
 				TCP_SKB_CB(skb)->data_seq +
 				TCP_SKB_CB(skb)->data_len;
