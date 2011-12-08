@@ -1492,8 +1492,7 @@ int tcp_snd_wnd_test(struct tcp_sock *tp, struct sk_buff *skb,
 		     unsigned int cur_mss)
 {
 #ifdef CONFIG_MPTCP
-	int mptcp_wnd_end = tp->mpc &&
-			    TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ;
+	int mptcp_wnd_end = tp->mpc && (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ);
 #else
 	int mptcp_wnd_end = 0;
 #endif
@@ -1514,7 +1513,7 @@ int tcp_snd_wnd_test(struct tcp_sock *tp, struct sk_buff *skb,
 			tp->mpc, mpcb_meta_tp(tp->mpcb)->snd_una,
 			mpcb_meta_tp(tp->mpcb)->snd_wnd,
 			mpcb_meta_tp(tp->mpcb)->write_seq,
-			((struct sock *) tp->mpcb)->sk_write_queue.qlen,
+			mpcb_meta_sk(tp->mpcb)->sk_write_queue.qlen,
 			cur_mss, skb->len, TCP_SKB_CB(skb)->seq);
 	}
 

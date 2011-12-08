@@ -4108,7 +4108,7 @@ teardown:
 void mptcp_select_window(struct tcp_sock *tp, u32 new_win)
 {
 	struct sock *tmp_sk;
-	struct tcp_sock *tmp_tp, *meta_tp = (struct tcp_sock *)(tp->mpcb);
+	struct tcp_sock *tmp_tp, *meta_tp = mpcb_meta_tp(tp->mpcb);
 	meta_tp->rcv_wnd = new_win;
 	meta_tp->rcv_wup = meta_tp->rcv_nxt;
 

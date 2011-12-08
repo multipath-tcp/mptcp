@@ -916,16 +916,11 @@ static __inline__ __u32 tcp_max_burst(const struct tcp_sock *tp)
  */
 static inline u32 tcp_wnd_end(const struct tcp_sock *tp, int data_seq)
 {
-	/* Need to check also for mpcb, because we may come from
-	 * tcp_retransmit_timer on the client-side and tp-mpcb is not yet set
-	 * at this stage.
-	 */
-	u32 snd_wnd = tp->mpc && tp->mpcb ?
-			mpcb_meta_tp(tp->mpcb)->snd_wnd : tp->snd_wnd;
+	u32 snd_wnd = tp->mpc ? mpcb_meta_tp(tp->mpcb)->snd_wnd : tp->snd_wnd;
 	/* With MPTCP, we return the end DATASEQ number of the receiver's
 	 * advertised window
 	 */
-	tp = (data_seq && tp->mpcb) ? mpcb_meta_tp(tp->mpcb) : tp;
+	tp = (tp->mpc && data_seq) ? mpcb_meta_tp(tp->mpcb) : tp;
 
 	return tp->snd_una + snd_wnd;
 }
