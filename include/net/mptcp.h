@@ -188,11 +188,6 @@ static inline int mptcp_pi_to_flag(int pi)
 		       */
 #define MPTCP_QUEUED 2 /* The skb has been queued in the mpcb ofo queue */
 
-/* Another flag as in tcp_input.c - put it here because otherwise we need to
- * export all the flags from tcp_input.c to a header file.
- */
-#define MPTCP_FLAG_SEND_RESET	0x4000
-
 #ifdef CONFIG_MPTCP
 
 #define MPTCP_SUB_CAPABLE			0
@@ -480,7 +475,7 @@ struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
 void mptcp_select_window(struct tcp_sock *tp, u32 new_win);
 u32 __mptcp_select_window(struct sock *sk);
 int mptcp_try_rmem_schedule(struct sock *tp, unsigned int size);
-void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb);
+int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb);
 void mptcp_combine_dfin(struct sk_buff *skb, struct tcp_sock *meta_tp,
 			struct sock *subsk);
 void mptcp_set_data_size(struct tcp_sock *tp, struct sk_buff *skb, int copy);
@@ -997,6 +992,10 @@ static inline u32 __mptcp_select_window(const struct sock *sk)
 }
 static inline int mptcp_try_rmem_schedule(const struct sock *tp,
 					  unsigned int size)
+{
+	return 0;
+}
+int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 {
 	return 0;
 }

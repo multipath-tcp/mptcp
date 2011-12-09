@@ -110,28 +110,6 @@ int sysctl_tcp_moderate_rcvbuf __read_mostly = 1;
 int sysctl_tcp_abc __read_mostly;
 EXPORT_SYMBOL(sysctl_tcp_abc);
 
-#define FLAG_DATA		0x01 /* Incoming frame contained data.		*/
-#define FLAG_WIN_UPDATE		0x02 /* Incoming ACK was a window update.	*/
-#define FLAG_DATA_ACKED		0x04 /* This ACK acknowledged new data.		*/
-#define FLAG_RETRANS_DATA_ACKED	0x08 /* "" "" some of which was retransmitted.	*/
-#define FLAG_SYN_ACKED		0x10 /* This ACK acknowledged SYN.		*/
-#define FLAG_DATA_SACKED	0x20 /* New SACK.				*/
-#define FLAG_ECE		0x40 /* ECE in this ACK				*/
-#define FLAG_DATA_LOST		0x80 /* SACK detected data lossage.		*/
-#define FLAG_SLOWPATH		0x100 /* Do not skip RFC checks for window update.*/
-#define FLAG_ONLY_ORIG_SACKED	0x200 /* SACKs only non-rexmit sent before RTO */
-#define FLAG_SND_UNA_ADVANCED	0x400 /* Snd_una was changed (!= FLAG_DATA_ACKED) */
-#define FLAG_DSACKING_ACK	0x800 /* SACK blocks contained D-SACK info */
-#define FLAG_NONHEAD_RETRANS_ACKED	0x1000 /* Non-head rexmitted data was ACKed */
-#define FLAG_SACK_RENEGING	0x2000 /* snd_una advanced to a sacked seq */
-/* Before adding a new flag, please check mptcp.h */
-
-#define FLAG_ACKED		(FLAG_DATA_ACKED|FLAG_SYN_ACKED)
-#define FLAG_NOT_DUP		(FLAG_DATA|FLAG_WIN_UPDATE|FLAG_ACKED)
-#define FLAG_CA_ALERT		(FLAG_DATA_SACKED|FLAG_ECE)
-#define FLAG_FORWARD_PROGRESS	(FLAG_ACKED|FLAG_DATA_SACKED)
-#define FLAG_ANY_PROGRESS	(FLAG_FORWARD_PROGRESS|FLAG_SND_UNA_ADVANCED)
-
 #define TCP_REMNANT (TCP_FLAG_FIN|TCP_FLAG_URG|TCP_FLAG_SYN|TCP_FLAG_PSH)
 #define TCP_HP_BITS (~(TCP_RESERVED_BITS|TCP_FLAG_PSH))
 
@@ -3523,18 +3501,6 @@ static inline int tcp_may_raise_cwnd(const struct sock *sk, const int flag)
 		!((1 << inet_csk(sk)->icsk_ca_state) & (TCPF_CA_Recovery | TCPF_CA_CWR));
 }
 
-/* Check that window update is acceptable.
- * The function assumes that snd_una<=ack<=snd_next.
- */
-static inline int tcp_may_update_window(const struct tcp_sock *tp,
-					const u32 ack, const u32 ack_seq,
-					const u32 nwin)
-{
-	return	after(ack, tp->snd_una) ||
-		after(ack_seq, tp->snd_wl1) ||
-		(ack_seq == tp->snd_wl1 && nwin > tp->snd_wnd);
-}
-
 /* Update our send window.
  *
  * Window update algorithm, described in RFC793/RFC1122 (used in linux-2.2
@@ -3546,30 +3512,20 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 	struct tcp_sock *tp = tcp_sk(sk);
 	int flag = 0;
 	u32 nwin = ntohs(tcp_hdr(skb)->window);
-	struct tcp_sock *meta_tp = (tp->mpc) ? mpcb_meta_tp(tp->mpcb) : tp;
-	u32 *snd_wnd = &meta_tp->snd_wnd;
-	u32 data_ack = ack;
-	u32 data_seq = ack_seq;
 
-#ifdef CONFIG_MPTCP
-	if (tp->mpc) {
-		data_ack = (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_ACK) ?
-				mptcp_skb_data_ack(skb) : meta_tp->snd_una;
-		data_seq = (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ) ?
-				mptcp_skb_data_seq(skb) : meta_tp->snd_wl1;
-	}
-#endif
+	/* Window-updates are handled in mptcp_data_ack */
+	if (tp->mpc)
+		goto no_window_update;
 
 	if (likely(!tcp_hdr(skb)->syn))
 		nwin <<= tp->rx_opt.snd_wscale;
 
-	if (tcp_may_update_window(meta_tp, data_ack, data_seq, nwin)) {
+	if (tcp_may_update_window(tp, ack, ack_seq, nwin)) {
 		flag |= FLAG_WIN_UPDATE;
-		tcp_update_wl(meta_tp, data_seq);
-		if (*snd_wnd != nwin) {
-			u32 *max_window = (tp->mpc) ?
-				&mpcb_meta_tp(tp->mpcb)->max_window : &tp->max_window;
-			*snd_wnd = nwin;
+		tcp_update_wl(tp, ack_seq);
+
+		if (tp->snd_wnd != nwin) {
+			tp->snd_wnd = nwin;
 
 			/* Note, it is the only place, where
 			 * fast path is recovered for sending TCP.
@@ -3577,13 +3533,14 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 			tp->pred_flags = 0;
 			tcp_fast_path_check(sk);
 
-			if (nwin > *max_window) {
-				*max_window = nwin;
+			if (nwin > tp->max_window) {
+				tp->max_window = nwin;
 				tcp_sync_mss(sk, inet_csk(sk)->icsk_pmtu_cookie);
 			}
 		}
 	}
 
+no_window_update:
 	tp->snd_una = ack;
 #ifdef CONFIG_MPTCP
 	if (tp->mpc && after(tp->snd_una, tp->reinjected_seq))
@@ -3809,10 +3766,7 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 		tcp_ca_event(sk, CA_EVENT_SLOW_ACK);
 	}
 
-#ifdef CONFIG_MPTCP
-	if (tp->mpc)
-		mptcp_data_ack(sk, skb);
-#endif
+	flag |= mptcp_data_ack(sk, skb);
 
 	/* We passed data and got it acked, remove any soft error
 	 * log. Something worked...

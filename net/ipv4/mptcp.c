@@ -1793,41 +1793,74 @@ static void mptcp_rcv_state_process(struct sock *meta_sk,
 	}
 }
 
-void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
+int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sock *meta_sk = mpcb_meta_sk(tp->mpcb);
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	u32 data_ack;
+	int flag = 0;
+	u32 nwin;
+	u32 *snd_wnd = &meta_tp->snd_wnd;
+	u32 data_ack, data_seq;
+
+	if (!tp->mpc)
+		return 0;
 
 	/* Something got acked - subflow is operational again */
 	tp->pf = 0;
 
-	if (!(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_ACK))
-		return;
+	if (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_ACK) {
+		data_ack = TCP_SKB_CB(skb)->data_ack;
 
-	data_ack = TCP_SKB_CB(skb)->data_ack;
-
-	if (unlikely(!tp->fully_established) &&
-	    data_ack != meta_tp->snt_isn &&
-	    tp->snt_isn + 1 != tp->snd_una)
-		/* As soon as data has been data-acked,
-		 * or a subflow-data-ack (not acking syn - thus snt_isn + 1)
-		 * includes a data-ack, we are fully established
-		 */
-		mptcp_become_fully_estab(tp);
+		if (unlikely(!tp->fully_established) &&
+		    data_ack != meta_tp->snt_isn &&
+		    tp->snt_isn + 1 != tp->snd_una)
+			/* As soon as data has been data-acked,
+			 * or a subflow-data-ack (not acking syn - thus snt_isn + 1)
+			 * includes a data-ack, we are fully established
+			 */
+			mptcp_become_fully_estab(tp);
+	} else {
+		/* This is needed to still correctly handle window-updates */
+		data_ack = meta_tp->snd_una;
+	}
 
 	/* If the ack is older than previous acks
 	 * then we can probably ignore it.
 	 */
 	if (before(data_ack, meta_tp->snd_una))
-		return;
+		return 0;
 
 	/* If the ack includes data we haven't sent yet, discard
 	 * this segment (RFC793 Section 3.9).
 	 */
 	if (after(data_ack, meta_tp->snd_nxt))
-		return;
+		return 0;
+
+	/*** Now, update the window  - inspired by tcp_ack_update_window ***/
+	data_seq = (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ) ?
+			mptcp_skb_data_seq(skb) : meta_tp->snd_wl1;
+	nwin = ntohs(tcp_hdr(skb)->window);
+
+	if (likely(!tcp_hdr(skb)->syn))
+		nwin <<= tp->rx_opt.snd_wscale;
+
+	if (tcp_may_update_window(meta_tp, data_ack, data_seq, nwin)) {
+		flag |= FLAG_WIN_UPDATE;
+		tcp_update_wl(meta_tp, data_seq);
+		if (*snd_wnd != nwin) {
+			u32 *max_window = &meta_tp->max_window;
+			*snd_wnd = nwin;
+
+			/* Diff to tcp_ack_update_window - fast_path */
+
+			if (nwin > *max_window) {
+				*max_window = nwin;
+				/* Diff to tcp_ack_update_window - mss */
+			}
+		}
+	}
+	/*** Done, update the window ***/
 
 	if (after(data_ack, meta_tp->snd_una)) {
 		meta_tp->snd_una = data_ack;
@@ -1838,6 +1871,8 @@ void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 
 	meta_tp->rcv_tstamp = tcp_time_stamp;
 	inet_csk(meta_sk)->icsk_probes_out = 0;
+
+	return flag;
 }
 
 u32 __mptcp_select_window(struct sock *sk)
