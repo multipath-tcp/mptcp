@@ -776,10 +776,12 @@ cont_error:
 	return 0;
 }
 
-void mptcp_key_sha1(u64 key, u32 *token) {
+void mptcp_key_sha1(u64 key, u32 *token)
+{
 	u32 workspace[SHA_WORKSPACE_WORDS];
 	u32 mptcp_hashed_key[SHA_DIGEST_WORDS];
 	u8 input[64];
+	int i;
 
 	memset(workspace, 0, sizeof(workspace));
 
@@ -792,6 +794,9 @@ void mptcp_key_sha1(u64 key, u32 *token) {
 
 	sha_init(mptcp_hashed_key);
 	sha_transform(mptcp_hashed_key, input, workspace);
+
+	for (i = 0; i < 5; i++)
+		mptcp_hashed_key[i] = cpu_to_be32(mptcp_hashed_key[i]);
 
 	*token = mptcp_hashed_key[0];
 }
@@ -847,6 +852,9 @@ void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 	memset(workspace, 0, sizeof(workspace));
 
 	sha_transform(hash_out, &input[64], workspace);
+
+	for (i = 0; i < 5; i++)
+		hash_out[i] = cpu_to_be32(hash_out[i]);
 }
 
 
