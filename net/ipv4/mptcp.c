@@ -3724,25 +3724,22 @@ struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject)
 	if (skb) {
 		if (reinject)
 			*reinject = 1;
-		return skb;
 	} else {
 		skb = tcp_send_head(sk);
 
-		if (!skb && !sk_stream_memory_free(sk)) {
-			struct sock *subsk;
-			subsk = mptcp_schedulers[sysctl_mptcp_scheduler - 1](mpcb, NULL);
-
+		if (!skb && sk->sk_write_pending &&
+		    sk_stream_wspace(sk) < sk_stream_min_wspace(sk)) {
+			struct sock *subsk = mptcp_schedulers
+					[sysctl_mptcp_scheduler - 1](mpcb, NULL);
 			if (!subsk)
 				return NULL;
 
 			skb = mptcp_rcv_buf_optimization(subsk);
-			if (skb) {
-				if (reinject)
-					*reinject = -1;
-			}
+			if (skb && reinject)
+				*reinject = -1;
 		}
-		return skb;
 	}
+	return skb;
 }
 
 /**
