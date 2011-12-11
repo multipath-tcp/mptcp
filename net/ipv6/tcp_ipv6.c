@@ -1067,7 +1067,7 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack,
 		mpfail->sub = MPTCP_SUB_FAIL;
 		mpfail->rsv1 = 0;
 		mpfail->rsv2 = 0;
-		mpfail->data_seq = htonl(tcp_sk(sk)->mpcb->csum_cutoff_seq);
+		mpfail->data_seq = htonll(tcp_sk(sk)->mpcb->csum_cutoff_seq);
 		topt += 2;
 	}
 	if (mptcp) {

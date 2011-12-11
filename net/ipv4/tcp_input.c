@@ -5783,6 +5783,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 				mpcb = tp->mpcb;
 
 				mpcb->rx_opt.dss_csum = mopt.dss_csum;
+				mpcb->rx_opt.mpcb = mpcb;
 				mpcb->rx_opt.list_rcvd = 1;
 
 				sk->sk_socket->sk = mptcp_meta_sk(sk);

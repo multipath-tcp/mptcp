@@ -438,9 +438,14 @@ void mptcp_ofo_queue(struct multipath_pcb *mpcb)
 
 		if (!n->is_node) { /* simple skb */
 			__skb_queue_tail(&meta_sk->sk_receive_queue, skb);
+			mptcp_check_rcvseq_wrap(meta_tp,
+						TCP_SKB_CB(skb)->end_data_seq -
+						meta_tp->rcv_nxt);
 			meta_tp->rcv_nxt = TCP_SKB_CB(skb)->end_data_seq;
 		} else { /* queue of skbuffs */
 			skb = skb_peek_tail(&n->queue);
+			mptcp_check_rcvseq_wrap(meta_tp,
+						high_dsn(n) - meta_tp->rcv_nxt);
 			meta_tp->rcv_nxt = high_dsn(n);
 			__skb_queue_splice(&n->queue,
 					   meta_sk->sk_receive_queue.prev,

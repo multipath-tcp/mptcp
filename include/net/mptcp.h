@@ -27,6 +27,7 @@
 #include <linux/socket.h>
 #include <linux/tcp.h>
 
+#include <asm/byteorder.h>
 #include <crypto/hash.h>
 #include <net/mptcp_pm.h>
 #include <net/tcp.h>
@@ -36,6 +37,25 @@
 #else
 #define mptcp_debug(fmt, args...)
 #endif
+
+#if defined(__LITTLE_ENDIAN_BITFIELD)
+	#define ntohll(x)  be64_to_cpu(x)
+	#define htonll(x)  cpu_to_be64(x)
+#elif defined(__BIG_ENDIAN_BITFIELD)
+	#define ntohll(x) (x)
+	#define htonll(x) (x)
+#else
+	#error "Could not determine byte order"
+#endif
+
+/* is seq1 < seq2 ? */
+static inline int before64(const u64 seq1, const u64 seq2)
+{
+	return (s64)(seq1 - seq2) < 0;
+}
+
+/* is seq1 > seq2 ? */
+#define after64(seq1, seq2)	before64(seq2, seq1)
 
 extern int sysctl_mptcp_scheduler;
 #define MPTCP_SCHED_MAX 2
@@ -80,6 +100,7 @@ static void mptcp_stop_debug_timer(void)
 				    */
 
 struct multipath_options {
+	struct multipath_pcb *mpcb;
 	int	num_addr4;
 	int	num_addr6;
 	struct	mptcp_loc4 addr4[MPTCP_MAX_ADDR];
@@ -112,9 +133,15 @@ struct multipath_pcb {
 	struct tcp_sock tp;
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 
+	/* High-order bits of 64-bit sequence numbers */
+	u32 snd_high_order[2];
+	u32 rcv_high_order[2];
+
 	u8	send_infinite_mapping:1,
 		infinite_mapping:1,
-		send_mp_fail:1;
+		send_mp_fail:1,
+		snd_hiseq_index:1, /* Index in snd_high_order of snd_nxt */
+		rcv_hiseq_index:1; /* Index in rcv_high_order of rcv_nxt */
 
 	/* list of sockets in this multipath connection */
 	struct tcp_sock *connection_list;
@@ -139,7 +166,7 @@ struct multipath_pcb {
 				 * eligible subflows by the
 				 * scheduler
 				 */
-	u32	csum_cutoff_seq;
+	u64	csum_cutoff_seq;
 
 	__u32	mptcp_loc_token;
 	__u64	mptcp_loc_key;
@@ -221,8 +248,15 @@ static inline int mptcp_pi_to_flag(int pi)
 #define MPTCP_SUB_LEN_SEQ_CSUM	12
 #define MPTCP_SUB_LEN_SEQ_ALIGN	12
 
+#define MPTCP_SUB_LEN_SEQ_64		14
+#define MPTCP_SUB_LEN_SEQ_CSUM_64	16
+#define MPTCP_SUB_LEN_SEQ_64_ALIGN	16
+
 #define MPTCP_SUB_LEN_ACK	4
 #define MPTCP_SUB_LEN_ACK_ALIGN	4
+
+#define MPTCP_SUB_LEN_ACK_64		8
+#define MPTCP_SUB_LEN_ACK_64_ALIGN	8
 
 #define MPTCP_SUB_ADD_ADDR		3
 #define MPTCP_SUB_LEN_ADD_ADDR4		8
@@ -336,7 +370,7 @@ struct mp_fail {
 #else
 #error	"Adjust your <asm/byteorder.h> defines"
 #endif
-	__u32	data_seq;
+	__be64	data_seq;
 };
 
 /* Two separate cases must be handled:
@@ -555,6 +589,7 @@ static inline void mptcp_init_mp_opt(struct multipath_options *mopt)
 	mopt->mptcp_opt_type = 0;
 	mopt->mp_fail = 0;
 	mopt->mptcp_rem_key = 0;
+	mopt->mpcb = NULL;
 }
 
 /**
@@ -644,6 +679,64 @@ static inline int mptcp_check_rtt(struct tcp_sock *tp, int time)
 		return 1;
 
 	return 0;
+}
+
+static inline __be32 mptcp_get_highorder_sndbits(struct sk_buff *skb,
+						 struct multipath_pcb *mpcb)
+{
+	return htonl(mpcb->snd_high_order[(TCP_SKB_CB(skb)->mptcp_flags &
+			MPTCPHDR_SEQ64_INDEX) ? 1 : 0]);
+}
+
+static inline u64 mptcp_get_data_seq_64(struct multipath_pcb *mpcb, int index,
+					u32 data_seq_32)
+{
+	return ((u64)mpcb->rcv_high_order[index] << 32) | data_seq_32;
+}
+
+static inline u64 mptcp_get_rcv_nxt_64(struct multipath_pcb *mpcb)
+{
+	return mptcp_get_data_seq_64(mpcb, mpcb->rcv_hiseq_index,
+				     mpcb_meta_tp(mpcb)->rcv_nxt);
+}
+
+/* Similar to tcp_sequence(...) */
+static inline int mptcp_sequence(struct tcp_sock *meta_tp,
+				 u64 data_seq, u64 end_data_seq)
+{
+	struct multipath_pcb *mpcb = meta_tp->mpcb;
+	u64 rcv_wup64;
+
+	/* Wrap-around? */
+	if (meta_tp->rcv_wup > meta_tp->rcv_nxt) {
+		rcv_wup64 = ((u64)(mpcb->rcv_high_order[mpcb->rcv_hiseq_index] - 1) << 32) |
+				meta_tp->rcv_wup;
+	} else {
+		rcv_wup64 = mptcp_get_data_seq_64(meta_tp->mpcb,
+						  meta_tp->mpcb->rcv_hiseq_index,
+						  meta_tp->rcv_wup);
+	}
+
+	return	!before64(end_data_seq, rcv_wup64) &&
+		!after64(data_seq, mptcp_get_rcv_nxt_64(mpcb) + tcp_receive_window(meta_tp));
+}
+
+static inline void mptcp_check_sndseq_wrap(struct tcp_sock *meta_tp, int inc)
+{
+	if (unlikely(meta_tp->snd_nxt > meta_tp->snd_nxt + inc)) {
+		struct multipath_pcb *mpcb = (struct multipath_pcb *)meta_tp;
+		mpcb->snd_hiseq_index = mpcb->snd_hiseq_index ? 0 : 1;
+		mpcb->snd_high_order[mpcb->snd_hiseq_index] += 2;
+	}
+}
+
+static inline void mptcp_check_rcvseq_wrap(struct tcp_sock *meta_tp, int inc)
+{
+	if (unlikely(meta_tp->rcv_nxt > meta_tp->rcv_nxt + inc)) {
+		struct multipath_pcb *mpcb = (struct multipath_pcb *)meta_tp;
+		mpcb->rcv_high_order[mpcb->rcv_hiseq_index] += 2;
+		mpcb->rcv_hiseq_index = mpcb->rcv_hiseq_index ? 0 : 1;
+	}
 }
 
 static inline void mptcp_path_array_check(struct multipath_pcb *mpcb)

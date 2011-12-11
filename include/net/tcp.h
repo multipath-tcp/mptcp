@@ -647,7 +647,7 @@ static inline u32 tcp_receive_window(const struct tcp_sock *tp)
 	s32 win;
 
 	if (tp->mpc) /* The window is at the meta-level */
-		tp = (struct tcp_sock *) tp->mpcb;
+		tp = mpcb_meta_tp(tp->mpcb);
 
 	win = tp->rcv_wup + tp->rcv_wnd - tp->rcv_nxt;
 
@@ -691,6 +691,9 @@ extern u32 __tcp_select_window(struct sock *sk);
 #define MPTCPHDR_FIN		0x04
 #define MPTCPHDR_FIRST_ACK	0x08
 #define MPTCPHDR_INF		0x10
+#define MPTCPHDR_SEQ64_SET	0x20 /* Did we received a 64-bit seq number */
+#define MPTCPHDR_SEQ64_OFO	0x40 /* Is it not in our circular array? */
+#define MPTCPHDR_SEQ64_INDEX	0x80 /* Index of seq in mpcb->snd_high_order */
 
 /* This is what the send packet queuing engine uses to pass
  * TCP per-packet control information to the transmission code.
@@ -712,7 +715,7 @@ struct tcp_skb_cb {
 	__u32		data_seq;	/* Starting data seq            */
 	__u32		sub_seq;	/* subflow seqnum (MPTCP)       */
 	__u32		data_ack;	/* Data level ack (MPTCP)       */
-	__u32		end_data_seq;	/* DATA_SEQ + DFIN + SYN + datalen */
+	__u32		end_data_seq;	/* DATA_SEQ + DFIN + datalen */
 	__u16		data_len;	/* Data-level length (MPTCP)
 					 * a value of 0 indicates that no DSN
 					 * option is attached to that segment */

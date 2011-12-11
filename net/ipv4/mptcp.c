@@ -1257,6 +1257,11 @@ retry:
 		 * already
 		 */
 		if (reinject <= 0) {
+			if (!reinject) {
+				TCP_SKB_CB(skb)->mptcp_flags |=
+						(mpcb->snd_hiseq_index ?
+						 MPTCPHDR_SEQ64_INDEX : 0);
+			}
 			/* The segment may be a meta-level
 			 * retransmission. In this case, we also have to
 			 * copy the TCP/IP-headers. (pskb_copy)
@@ -1352,6 +1357,7 @@ retry:
 		BUG_ON(tcp_send_head(subsk));
 		if (!reinject) {
 			BUG_ON(tcp_send_head(meta_sk) != skb);
+			mptcp_check_sndseq_wrap(meta_tp, TCP_SKB_CB(skb)->data_len);
 			tcp_event_new_data_sent(meta_sk, skb);
 		}
 		if (reinject > 0) {
@@ -1504,6 +1510,10 @@ int mptcp_alloc_mpcb(struct sock *master_sk)
 	 * here pending subflow creations.
 	 */
 	reqsk_queue_alloc(&meta_icsk->icsk_accept_queue, 32, GFP_ATOMIC);
+
+	/* Reinit so that the circular sequences are correct */
+	mpcb->snd_high_order[1]--;
+	mpcb->rcv_high_order[1]++;
 
 	/* Store the keys and generate the peer's token */
 	mpcb->mptcp_loc_key = master_tp->mptcp_loc_key;
@@ -2177,10 +2187,13 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 			overflowed = 1;
 
 		if (TCP_SKB_CB(tmp)->dss_off && !dss_csum_added) {
+			__be32 data_seq = htonl((u32)(tp->map_data_seq >> 32));
 			csum_tcp = skb_checksum(tmp, skb_transport_offset(tmp) +
 						(TCP_SKB_CB(tmp)->dss_off << 2),
 						MPTCP_SUB_LEN_SEQ_CSUM,
 						csum_tcp);
+			csum_tcp = csum_partial(&data_seq, sizeof(data_seq), csum_tcp);
+
 			dss_csum_added = 1; /* Just do it once */
 		}
 		last = tmp;
@@ -2232,7 +2245,7 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb, struct sk_buff *next,
 	 * correctly handle overlapping mappings coming from different
 	 * subflows. Otherwise it would be a complete mess.
 	 */
-	tcb->data_seq = tp->map_data_seq + tcb->seq - tp->map_subseq;
+	tcb->data_seq = ((u32)tp->map_data_seq) + tcb->seq - tp->map_subseq;
 	tcb->data_len = tcb->end_seq - tcb->seq - (tcp_hdr(skb)->fin ? 1: 0);
 	tcb->sub_seq = tcb->seq;
 	tcb->end_data_seq = tcb->data_seq + tcb->data_len;
@@ -2410,7 +2423,8 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	 * draft v04, Section 3.5
 	 */
 	if (mpcb->infinite_mapping) {
-		tp->map_data_seq = tcb->data_seq = meta_tp->rcv_nxt;
+		tcb->data_seq = meta_tp->rcv_nxt;
+		tp->map_data_seq = mptcp_get_rcv_nxt_64(mpcb);
 		tp->map_subseq = tcb->sub_seq = tcb->seq;
 		tp->map_data_len = tcb->data_len = skb->len;
 		tp->mapping_present = 1;
@@ -2452,7 +2466,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 			tcb->data_len--;
 
 		if (tp->mapping_present &&
-		    (tcb->data_seq != tp->map_data_seq ||
+		    (tcb->data_seq != (u32)tp->map_data_seq ||
 		     tcb->sub_seq != tp->map_subseq ||
 		     tcb->data_len != tp->map_data_len)) {
 			/* Mapping in packet is different from what we want */
@@ -2460,7 +2474,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 				    "with token %#x\n", __func__,
 				    tp->path_index, mpcb->mptcp_loc_token);
 			mptcp_debug("%s missing rest of the already present "
-				    "mapping: data_seq %u, subseq %u, data_len "
+				    "mapping: data_seq %llu, subseq %u, data_len "
 				    "%u - new mapping: data_seq %u, subseq %u, "
 				    "data_len %u\n", __func__, tp->map_data_seq,
 				    tp->map_subseq, tp->map_data_len,
@@ -2514,7 +2528,28 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 				return 1;
 			}
 
-			tp->map_data_seq = tcb->data_seq;
+			/* Does the DSS had 64-bit seqnum's ? */
+			if (!(tcb->mptcp_flags & MPTCPHDR_SEQ64_SET)) {
+				/* Wrapped around? */
+				if (unlikely(after(tcb->data_seq, meta_tp->rcv_nxt) &&
+					     tcb->data_seq < meta_tp->rcv_nxt)) {
+					tp->map_data_seq = mptcp_get_data_seq_64(mpcb, !mpcb->rcv_hiseq_index, tcb->data_seq);
+				} else {
+					/* Else, access the default high-order bits */
+					tp->map_data_seq = mptcp_get_data_seq_64(mpcb, mpcb->rcv_hiseq_index, tcb->data_seq);
+				}
+			} else {
+				tp->map_data_seq = mptcp_get_data_seq_64(mpcb, (tcb->mptcp_flags & MPTCPHDR_SEQ64_INDEX) ? 1 : 0, tcb->data_seq);
+
+				if (unlikely(tcb->mptcp_flags & MPTCPHDR_SEQ64_OFO)) {
+					/* We make sure that the data_seq is invalid.
+					 * It will be dropped later.
+					 */
+					tp->map_data_seq += 0xFFFFFFFF;
+					tp->map_data_seq += 0xFFFFFFFF;
+				}
+			}
+
 			tp->map_data_len = tcb->data_len;
 			tp->map_subseq = tcb->sub_seq;
 			tp->map_data_fin = mptcp_is_data_fin(skb) ? 1 : 0;
@@ -2602,9 +2637,15 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	/* Have we received the full mapping ? Then push further */
 	if (tp->mapping_present &&
 	    !before(tp->rcv_nxt, tp->map_subseq + tp->map_data_len)) {
-		/* Is this an overlapping mapping? rcv_nxt >= end_data_seq */
-		if (!before(meta_tp->rcv_nxt, tp->map_data_seq +
-			    tp->map_data_len + tp->map_data_fin)) {
+		u64 rcv_nxt64 = mptcp_get_rcv_nxt_64(mpcb);
+
+		/* Is this an overlapping mapping? rcv_nxt >= end_data_seq
+		 * OR
+		 * This mapping is out of window */
+		if (!before64(rcv_nxt64,
+			      tp->map_data_seq + tp->map_data_len + tp->map_data_fin) ||
+		    !mptcp_sequence(meta_tp, tp->map_data_seq,
+				    tp->map_data_seq + tp->map_data_len + tp->map_data_fin)) {
 			skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
 				/* seq >= end_sub_mapping if data_len OR
 				 * seq > end_sub_mapping if not data_len
@@ -2646,7 +2687,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 			}
 		}
 
-		if (before(meta_tp->rcv_nxt, tp->map_data_seq)) {
+		if (before64(rcv_nxt64, tp->map_data_seq)) {
 			/* Seg's have to go to the meta-ofo-queue */
 			skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
 				if (after(TCP_SKB_CB(tmp1)->end_seq,
@@ -2687,6 +2728,9 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 				    sock_owned_by_user(meta_sk)) {
 					eaten = direct_copy(tmp1, tp, meta_tp);
 				}
+				mptcp_check_rcvseq_wrap(meta_tp,
+							TCP_SKB_CB(tmp1)->end_data_seq -
+							meta_tp->rcv_nxt);
 				meta_tp->rcv_nxt =
 					TCP_SKB_CB(tmp1)->end_data_seq;
 
@@ -2778,6 +2822,7 @@ void mptcp_skb_entail_init(struct tcp_sock *tp, struct sk_buff *skb)
 void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct multipath_pcb *mpcb = tp->mpcb;
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 	int fin = (tcb->flags & TCPHDR_FIN) ? 1 : 0;
 
@@ -2792,20 +2837,21 @@ void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb)
 	sk_mem_charge(sk, skb->truesize);
 
 	/* Calculate dss-csum */
-	if (tp->mpc && tp->mpcb->rx_opt.dss_csum) {
-		char mptcp_pshdr[MPTCP_SUB_LEN_SEQ_CSUM];
-		__be32 data_seq = htonl(tcb->data_seq);
+	if (mpcb->rx_opt.dss_csum) {
+		char mptcp_pshdr[MPTCP_SUB_LEN_SEQ_CSUM_64];
+		__be64 data_seq = (((__be64)mptcp_get_highorder_sndbits(skb, mpcb)) << 32) |
+				  htonl(tcb->data_seq);
 		__be32 sub_seq = htonl(tcb->sub_seq);
 		__be16 data_len = htons(tcb->data_len);
 
-		memcpy(&mptcp_pshdr[0], &data_seq, 4);
-		memcpy(&mptcp_pshdr[4], &sub_seq, 4);
-		memcpy(&mptcp_pshdr[8], &data_len, 2);
-		memset(&mptcp_pshdr[10], 0, 2);
+		memcpy(&mptcp_pshdr[0], &data_seq, sizeof(data_seq));
+		memcpy(&mptcp_pshdr[8], &sub_seq, sizeof(sub_seq));
+		memcpy(&mptcp_pshdr[12], &data_len, sizeof(data_len));
+		memset(&mptcp_pshdr[14], 0, 2);
 
 		tcb->dss_csum = csum_fold(csum_partial(mptcp_pshdr,
-					     MPTCP_SUB_LEN_SEQ_CSUM,
-					     skb->csum));
+						       sizeof(mptcp_pshdr),
+						       skb->csum));
 	}
 
 	/* Take into account seg len */
@@ -2866,10 +2912,28 @@ int mptcp_push(struct sock *sk, int flags, int mss_now, int nonagle)
 	return 1;
 }
 
+static inline u8 mptcp_get_64_bit(u64 data_seq, struct multipath_options *mopt)
+{
+	u8 ret = 0;
+	u64 data_seq_high = (u32)(data_seq >> 32);
+
+	if (!mopt->mpcb)
+		return 0;
+
+	ret |= MPTCPHDR_SEQ64_SET;
+
+	if (mopt->mpcb->rcv_high_order[0] == data_seq_high)
+		return ret;
+	else if(mopt->mpcb->rcv_high_order[1] == data_seq_high)
+		return ret | MPTCPHDR_SEQ64_INDEX;
+	else
+		return ret | MPTCPHDR_SEQ64_OFO;
+}
+
 void mptcp_parse_options(uint8_t *ptr, int opsize,
-		struct tcp_options_received *opt_rx,
-		struct multipath_options *mopt,
-		struct sk_buff *skb)
+			 struct tcp_options_received *opt_rx,
+			 struct multipath_options *mopt,
+			 struct sk_buff *skb)
 {
 	struct mptcp_option *mp_opt = (struct mptcp_option *) ptr;
 
@@ -2948,38 +3012,57 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 	case MPTCP_SUB_DSS:
 	{
 		struct mp_dss *mdss = (struct mp_dss *) ptr;
+		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 
 		ptr += 2;
 
 		if (mdss->A) {
-			TCP_SKB_CB(skb)->data_ack = get_unaligned_be32(ptr);
-			TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_ACK;
-			ptr += MPTCP_SUB_LEN_ACK;
+			tcb->mptcp_flags |= MPTCPHDR_ACK;
+
+			if (mdss->a) {
+				tcb->data_ack = (u32) get_unaligned_be64(ptr);
+				ptr += MPTCP_SUB_LEN_ACK_64;
+			} else {
+				TCP_SKB_CB(skb)->data_ack = get_unaligned_be32(ptr);
+				ptr += MPTCP_SUB_LEN_ACK;
+			}
 		}
 
 		if (mdss->M) {
 			/* TODO_cpaasch check for the correct length of the DSS
 			 * option */
 			if (mopt && mopt->dss_csum) {
-				TCP_SKB_CB(skb)->dss_off =
-					(ptr - skb_transport_header(skb)) >> 2;
+				tcb->dss_off = (ptr - skb_transport_header(skb)) >> 2;
 			} else {
-				TCP_SKB_CB(skb)->dss_off = 0;
+				tcb->dss_off = 0;
 			}
-			TCP_SKB_CB(skb)->data_seq = get_unaligned_be32(ptr);
-			TCP_SKB_CB(skb)->sub_seq = get_unaligned_be32(ptr + 4) +
-						   opt_rx->rcv_isn;
-			TCP_SKB_CB(skb)->data_len = get_unaligned_be16(ptr + 8);
-			TCP_SKB_CB(skb)->end_data_seq =
-				TCP_SKB_CB(skb)->data_seq +
-				TCP_SKB_CB(skb)->data_len;
-			TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_SEQ;
 
-			ptr += MPTCP_SUB_LEN_SEQ;
+			if (mdss->m) {
+				u64 data_seq64 = get_unaligned_be64(ptr);
+
+				tcb->mptcp_flags |= mptcp_get_64_bit(data_seq64, mopt);
+
+				tcb->data_seq = (u32) data_seq64;
+				tcb->sub_seq = get_unaligned_be32(ptr + 8) +
+							   opt_rx->rcv_isn;
+				tcb->data_len = get_unaligned_be16(ptr + 12);
+
+				ptr += MPTCP_SUB_LEN_SEQ_64;
+			} else {
+				tcb->data_seq = get_unaligned_be32(ptr);
+				tcb->sub_seq = get_unaligned_be32(ptr + 4) +
+						opt_rx->rcv_isn;
+				tcb->data_len = get_unaligned_be16(ptr + 8);
+
+				ptr += MPTCP_SUB_LEN_SEQ;
+			}
+
+			tcb->end_data_seq = tcb->data_seq + tcb->data_len;
+			tcb->mptcp_flags |= MPTCPHDR_SEQ;
 		}
 
 		if (mdss->F)
-			TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_FIN;
+			tcb->mptcp_flags |= MPTCPHDR_FIN;
 
 		break;
 	}
@@ -3117,7 +3200,8 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 	 */
 	if (mpcb->send_mp_fail) {
 		opts->options |= OPTION_MP_FAIL;
-		opts->data_ack = mpcb->csum_cutoff_seq;
+		opts->data_ack = (__u32)(mpcb->csum_cutoff_seq >> 32);
+		opts->data_seq = (__u32)mpcb->csum_cutoff_seq;
 		*size += MPTCP_SUB_LEN_FAIL;
 		return;
 	}
@@ -3392,7 +3476,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		mpfail->sub = MPTCP_SUB_FAIL;
 		mpfail->rsv1 = 0;
 		mpfail->rsv2 = 0;
-		mpfail->data_seq = htonl(opts->data_ack);
+		mpfail->data_seq = htonll(((u64)opts->data_ack << 32) | opts->data_seq);
 	}
 
 	if (OPTION_DSN_MAP & opts->options ||
@@ -4081,6 +4165,7 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 			memcpy(&mpcb->rx_opt, mopt, sizeof(*mopt));
 
 		mpcb->rx_opt.dss_csum = sysctl_mptcp_checksum || req->dss_csum;
+		mpcb->rx_opt.mpcb = mpcb;
 
 		set_bit(MPCB_FLAG_SERVER_SIDE, &mpcb->flags);
 		/* Will be moved to ESTABLISHED by

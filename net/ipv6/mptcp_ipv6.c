@@ -101,8 +101,7 @@ static int mptcp_v6_join_request(struct multipath_pcb *mpcb,
 	tcp_clear_options(&tmp_opt);
 	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
 	tmp_opt.user_mss  = mpcb_meta_tp(mpcb)->rx_opt.user_mss;
-	tcp_parse_options(skb, &tmp_opt, &hash_location,
-				  &mpcb->rx_opt, 0);
+	tcp_parse_options(skb, &tmp_opt, &hash_location, &mpcb->rx_opt, 0);
 
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 
