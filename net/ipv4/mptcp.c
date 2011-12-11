@@ -1050,10 +1050,7 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk), *tp_it;
 	struct sk_buff *skb_it;
 
-	if (!tp->mpc || !sysctl_mptcp_rbuf_opti)
-		return NULL;
-
-	if (tp->mpcb->cnt_established == 1)
+	if (!sysctl_mptcp_rbuf_opti || tp->mpcb->cnt_established == 1)
 		return NULL;
 
 	meta_sk = mptcp_meta_sk(sk);
@@ -3790,18 +3787,18 @@ void mptcp_update_sndbuf(struct multipath_pcb *mpcb)
  * and sets it to -1 if it is a meta-level retransmission to optimize the
  * receive-buffer.
  */
-struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject)
+struct sk_buff *mptcp_next_segment(struct sock *meta_sk, int *reinject)
 {
-	struct multipath_pcb *mpcb = tcp_sk(sk)->mpcb;
+	struct multipath_pcb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct sk_buff *skb = NULL;
 	if (reinject)
 		*reinject = 0;
 
 	/* If it is the meta-sk and we are in fallback-mode, just take from
 	 * the meta-send-queue */
-	if (!is_meta_sk(sk) ||
+	if (!is_meta_sk(meta_sk) ||
 	    mpcb->infinite_mapping || mpcb->send_infinite_mapping)
-		return tcp_send_head(sk);
+		return tcp_send_head(meta_sk);
 
 	skb = skb_peek(&mpcb->reinject_queue);
 
@@ -3809,10 +3806,10 @@ struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject)
 		if (reinject)
 			*reinject = 1;
 	} else {
-		skb = tcp_send_head(sk);
+		skb = tcp_send_head(meta_sk);
 
-		if (!skb && sk->sk_write_pending &&
-		    sk_stream_wspace(sk) < sk_stream_min_wspace(sk)) {
+		if (!skb && meta_sk->sk_write_pending &&
+		    sk_stream_wspace(meta_sk) < sk_stream_min_wspace(meta_sk)) {
 			struct sock *subsk = mptcp_schedulers
 					[sysctl_mptcp_scheduler - 1](mpcb, NULL);
 			if (!subsk)
