@@ -1274,6 +1274,9 @@ retry:
 		if (!subskb)
 			break;
 
+		if (subtp->path_index)
+			skb->path_mask |= mptcp_pi_to_flag(subtp->path_index);
+
 		if (!(subsk->sk_route_caps & NETIF_F_ALL_CSUM) &&
 		    skb->ip_summed == CHECKSUM_PARTIAL) {
 			skb->csum = skb_checksum_complete(subskb);
