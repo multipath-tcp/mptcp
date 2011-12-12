@@ -20,7 +20,8 @@ static int alpha_scale_num = 32;
 static int alpha_scale = 12;
 
 struct mptcp_ccc {
-	u64 alpha;
+	u64	alpha;
+	bool	forced_update;
 };
 
 u32 mptcp_get_crt_cwnd(struct tcp_sock *tp)
@@ -52,19 +53,31 @@ u32 mptcp_get_total_cwnd(struct multipath_pcb *mpcb)
 
 static inline u64 mptcp_get_alpha(struct multipath_pcb *mpcb)
 {
-	struct mptcp_ccc * mptcp_ccc = inet_csk_ca((struct sock *) mpcb);
+	struct mptcp_ccc *mptcp_ccc = inet_csk_ca(mpcb_meta_sk(mpcb));
 	return mptcp_ccc->alpha;
 }
 
 static inline void mptcp_set_alpha(struct multipath_pcb *mpcb, u64 alpha)
 {
-	struct mptcp_ccc * mptcp_ccc = inet_csk_ca((struct sock *) mpcb);
+	struct mptcp_ccc *mptcp_ccc = inet_csk_ca(mpcb_meta_sk(mpcb));
 	mptcp_ccc->alpha = alpha;
 }
 
 static inline u64 mptcp_ccc_scale(u32 val, int scale)
 {
 	return (u64) val << scale;
+}
+
+static inline bool mptcp_get_forced(struct multipath_pcb *mpcb)
+{
+	struct mptcp_ccc *mptcp_ccc = inet_csk_ca(mpcb_meta_sk(mpcb));
+	return mptcp_ccc->forced_update;
+}
+
+static inline void mptcp_set_forced(struct multipath_pcb *mpcb, bool force)
+{
+	struct mptcp_ccc *mptcp_ccc = inet_csk_ca(mpcb_meta_sk(mpcb));
+	mptcp_ccc->forced_update = force;
 }
 
 static void mptcp_recalc_alpha(struct sock *sk)
@@ -171,8 +184,11 @@ exit:
 
 static void mptcp_cc_init(struct sock *sk)
 {
-	if (mpcb_from_tcpsock(tcp_sk(sk)))
-		mptcp_set_alpha(mpcb_from_tcpsock(tcp_sk(sk)), 1);
+	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tcp_sk(sk));
+	if (tcp_sk(sk)->mpc) {
+		mptcp_set_forced(mpcb, 0);
+		mptcp_set_alpha(mpcb, 1);
+	}
 	/* If we do not mptcp, behave like reno: return */
 }
 
@@ -180,6 +196,16 @@ static void mptcp_cwnd_event(struct sock *sk, enum tcp_ca_event event)
 {
 	if (event == CA_EVENT_LOSS)
 		mptcp_recalc_alpha(sk);
+}
+
+static void mptcp_ccc_set_state(struct sock *sk, u8 ca_state)
+{
+	if (!tcp_sk(sk)->mpc)
+		return;
+
+	if (ca_state == TCP_CA_Recovery) {
+		mptcp_set_forced(mpcb_from_tcpsock(tcp_sk(sk)), 1);
+	}
 }
 
 static void mptcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
@@ -203,6 +229,11 @@ static void mptcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 		tcp_slow_start(tp);
 		mptcp_recalc_alpha(sk);
 		return;
+	}
+
+	if (mptcp_get_forced(mpcb)) {
+		mptcp_recalc_alpha(sk);
+		mptcp_set_forced(mpcb, 0);
 	}
 
 	if (mpcb->cnt_established > 1) {
@@ -255,6 +286,7 @@ static struct tcp_congestion_ops mptcp_fc = {
 	.ssthresh	= tcp_reno_ssthresh,
 	.cong_avoid	= mptcp_fc_cong_avoid,
 	.cwnd_event	= mptcp_cwnd_event,
+	.set_state	= mptcp_ccc_set_state,
 	.min_cwnd	= tcp_reno_min_cwnd,
 	.owner		= THIS_MODULE,
 	.name		= "coupled",
