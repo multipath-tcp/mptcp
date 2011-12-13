@@ -597,23 +597,13 @@ int mptcp_fin(struct multipath_pcb *mpcb, struct sock *sk)
 
 static void mptcp_sock_def_error_report(struct sock *sk)
 {
-	/* If there exists more than one working subflow, we don't wake up the
-	 * application, as the mptcp-connection is still alive */
-	if (tcp_sk(sk)->mpc &&
-	    tcp_sk(sk)->mpcb->cnt_established > mptcp_sk_can_send(sk) ? 1 : 0) {
+	if (tcp_sk(sk)->mpc && !is_meta_sk(sk)) {
 		sk->sk_err = 0;
 		sock_orphan(sk);
 		return;
 	}
 
 	sock_def_error_report(sk);
-
-	/* Always orphan a mptcp-subsocket, because we are allowed to destroy
-	 * it, as the master will still stay alive and thus be accessible for
-	 * the application.
-	 */
-	if (tcp_sk(sk)->mpc)
-		sock_orphan(sk);
 }
 
 /**
@@ -1780,10 +1770,12 @@ static inline void mptcp_become_fully_estab(struct tcp_sock *tp)
 		mptcp_send_updatenotif(tp->mpcb);
 }
 
-static void mptcp_rcv_state_process(struct sock *meta_sk,
+/* Inspired by tcp_rcv_state_process */
+static void mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 				    const struct sk_buff *skb)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct tcphdr *th = tcp_hdr(skb);
 
 	/* State-machine handling if FIN has been enqueued and he has
 	 * been acked (snd_una == write_seq) - it's important that this
@@ -1800,14 +1792,6 @@ static void mptcp_rcv_state_process(struct sock *meta_sk,
 			if (!sock_flag(meta_sk, SOCK_DEAD)) {
 				/* Wake up lingering close() */
 				meta_sk->sk_state_change(meta_sk);
-			} else if (!mptcp_is_data_fin(skb)) {
-				/* TODO - here we will have to move the
-				 * meta-sk into TIME-WAIT. Let's wait
-				 * for draft v05.
-				 *
-				 * In case of data-fin mptcp_fin will
-				 * move the socket to tcp_done(). */
-				tcp_done(meta_sk);
 			}
 		}
 		break;
@@ -1816,6 +1800,25 @@ static void mptcp_rcv_state_process(struct sock *meta_sk,
 		if (meta_tp->snd_una == meta_tp->write_seq)
 			tcp_done(meta_sk);
 		break;
+	}
+
+	/* step 7: process the segment text */
+	switch (meta_sk->sk_state) {
+	case TCP_FIN_WAIT1:
+	case TCP_FIN_WAIT2:
+		/* RFC 793 says to queue data in these states,
+		 * RFC 1122 says we MUST send a reset.
+		 * BSD 4.4 also does reset.
+		 */
+		if (meta_sk->sk_shutdown & RCV_SHUTDOWN) {
+			if (TCP_SKB_CB(skb)->end_seq != TCP_SKB_CB(skb)->seq &&
+			    after(TCP_SKB_CB(skb)->end_seq - th->fin, tcp_sk(sk)->rcv_nxt) &&
+			    !mptcp_is_data_fin(skb)) {
+				NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_TCPABORTONDATA);
+
+				mptcp_send_active_reset(meta_sk, GFP_ATOMIC);
+			}
+		}
 	}
 }
 
@@ -1892,8 +1895,9 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 		meta_tp->snd_una = data_ack;
 
 		mptcp_clean_rtx_queue(meta_sk);
-		mptcp_rcv_state_process(mpcb_meta_sk(tp->mpcb), skb);
 	}
+	if (meta_sk->sk_state != TCP_ESTABLISHED)
+		mptcp_rcv_state_process(meta_sk, sk, skb);
 
 	meta_tp->rcv_tstamp = tcp_time_stamp;
 	inet_csk(meta_sk)->icsk_probes_out = 0;
@@ -3776,18 +3780,21 @@ void mptcp_clean_rtx_queue(struct sock *meta_sk)
 void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk)
 {
 	struct multipath_pcb *mpcb;
+	struct sock *meta_sk;
 
 	if (!tcp_sk(sk)->mpc)
 		return;
 
 	mpcb = tcp_sk(sk)->mpcb;
+	meta_sk = mpcb_meta_sk(mpcb);
 
 	if (!mpcb->infinite_mapping)
 		return;
 
-	mpcb_meta_tp(mpcb)->snd_una = TCP_SKB_CB(skb)->end_data_seq;
-	mptcp_clean_rtx_queue(mpcb_meta_sk(mpcb));
-	mptcp_rcv_state_process(mpcb_meta_sk(mpcb), skb);
+	tcp_sk(meta_sk)->snd_una = TCP_SKB_CB(skb)->end_data_seq;
+	mptcp_clean_rtx_queue(meta_sk);
+	if (meta_sk->sk_state != TCP_ESTABLISHED)
+		mptcp_rcv_state_process(meta_sk, sk, skb);
 }
 
 /**
@@ -4017,7 +4024,12 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 	if (meta_sk->sk_state == TCP_CLOSE)
 		goto adjudge_to_death;
 
-	if (tcp_close_state(meta_sk)) {
+	if (data_was_unread) {
+		/* Unread data was tossed, zap the connection. */
+		NET_INC_STATS_USER(sock_net(meta_sk), LINUX_MIB_TCPABORTONCLOSE);
+		tcp_set_state(meta_sk, TCP_CLOSE);
+		tcp_send_active_reset(meta_sk, meta_sk->sk_allocation);
+	} else if (tcp_close_state(meta_sk)) {
 		mptcp_send_fin(meta_sk);
 	} else if (meta_tp->snd_una == meta_tp->write_seq) {
 		struct sock *sk_it, *sk_tmp;
@@ -4059,6 +4071,52 @@ adjudge_to_death:
 	/* Have we already been destroyed by a softirq or backlog? */
 	if (state != TCP_CLOSE && meta_sk->sk_state == TCP_CLOSE)
 		goto out;
+
+	/*	This is a (useful) BSD violating of the RFC. There is a
+	 *	problem with TCP as specified in that the other end could
+	 *	keep a socket open forever with no application left this end.
+	 *	We use a 3 minute timeout (about the same as BSD) then kill
+	 *	our end. If they send after that then tough - BUT: long enough
+	 *	that we won't make the old 4*rto = almost no time - whoops
+	 *	reset mistake.
+	 *
+	 *	Nope, it was not mistake. It is really desired behaviour
+	 *	f.e. on http servers, when such sockets are useless, but
+	 *	consume significant resources. Let's do it with special
+	 *	linger2	option.					--ANK
+	 */
+
+	if (meta_sk->sk_state == TCP_FIN_WAIT2) {
+		if (meta_tp->linger2 < 0) {
+			tcp_set_state(meta_sk, TCP_CLOSE);
+			tcp_send_active_reset(meta_sk, GFP_ATOMIC);
+			NET_INC_STATS_BH(sock_net(meta_sk),
+					LINUX_MIB_TCPABORTONLINGER);
+		} else {
+			const int tmo = tcp_fin_time(meta_sk);
+
+			if (tmo > TCP_TIMEWAIT_LEN) {
+				inet_csk_reset_keepalive_timer(meta_sk,
+						tmo - TCP_TIMEWAIT_LEN);
+			} else {
+				tcp_time_wait(meta_sk, TCP_FIN_WAIT2, tmo);
+				goto out;
+			}
+		}
+	}
+	if (meta_sk->sk_state != TCP_CLOSE) {
+		sk_mem_reclaim(meta_sk);
+		if (tcp_too_many_orphans(meta_sk, 0)) {
+			if (net_ratelimit())
+				printk(KERN_INFO "TCP: too many of orphaned "
+				       "sockets\n");
+			tcp_set_state(meta_sk, TCP_CLOSE);
+			tcp_send_active_reset(meta_sk, GFP_ATOMIC);
+			NET_INC_STATS_BH(sock_net(meta_sk),
+					LINUX_MIB_TCPABORTONMEMORY);
+		}
+	}
+
 
 	if (meta_sk->sk_state == TCP_CLOSE)
 		inet_csk_destroy_sock(meta_sk);

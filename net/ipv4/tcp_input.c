@@ -6217,8 +6217,10 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 						 */
 						inet_csk_reset_keepalive_timer(sk, tmo);
 					} else {
-						tcp_time_wait(sk, TCP_FIN_WAIT2, tmo);
-						goto discard;
+						if (!tp->mpc) {
+							tcp_time_wait(sk, TCP_FIN_WAIT2, tmo);
+							goto discard;
+						}
 					}
 				}
 			}
@@ -6260,10 +6262,17 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 		 */
 		if (sk->sk_shutdown & RCV_SHUTDOWN) {
 			if (TCP_SKB_CB(skb)->end_seq != TCP_SKB_CB(skb)->seq &&
-			    after(TCP_SKB_CB(skb)->end_seq - th->fin, tp->rcv_nxt)) {
-				NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPABORTONDATA);
-				tcp_reset(sk);
-				return 1;
+			    after(TCP_SKB_CB(skb)->end_seq - th->fin, tp->rcv_nxt) &&
+			    !tp->mpc) {
+				/* In case of mptcp, the reset is handled by
+				 * mptcp_rcv_state_process */
+				if (!tp->mpc) {
+					NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPABORTONDATA);
+					tcp_reset(sk);
+					return 1;
+				} else {
+					return 0;
+				}
 			}
 		}
 		/* Fall through */
