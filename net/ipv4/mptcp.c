@@ -969,6 +969,9 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 	struct multipath_pcb *mpcb = meta_tp->mpcb;
 	struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
 
+	if (unlikely(meta_tp->send_mp_rst))
+		goto send_mp_rst;
+
 	/* In fallback, retransmission is handled at the subflow-level */
 	if (!meta_tp->packets_out ||
 	    mpcb->infinite_mapping || mpcb->send_infinite_mapping)
@@ -984,9 +987,16 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 	tcp_push(meta_sk, 0, mptcp_sysctl_mss(), TCP_NAGLE_PUSH);
 
 out:
-	meta_icsk->icsk_rto = min(meta_icsk->icsk_rto << 1, TCP_RTO_MAX * 2);
+	meta_icsk->icsk_rto = min(meta_icsk->icsk_rto << 1, TCP_RTO_MAX);
 	inet_csk_reset_xmit_timer(meta_sk, ICSK_TIME_RETRANS,
-			meta_icsk->icsk_rto, TCP_RTO_MAX * 2);
+			meta_icsk->icsk_rto, TCP_RTO_MAX);
+
+	return;
+
+send_mp_rst:
+	mptcp_send_active_reset(meta_sk, GFP_ATOMIC);
+
+	goto out;
 }
 
 /* Inspired by tcp_write_wakeup */
@@ -3113,6 +3123,16 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 	case MPTCP_SUB_FAIL:
 		mopt->mp_fail = 1;
 		break;
+	case MPTCP_SUB_RST:
+		if (!mopt->mpcb)
+			return;
+
+		ptr += 2;
+
+		if (mopt->mpcb->mptcp_loc_key == *((__u64 *)ptr))
+			mopt->mp_rst = 1;
+
+		break;
 	default:
 		mptcp_debug("%s: Received unkown subtype: %d\n", __func__,
 				mp_opt->sub);
@@ -3204,11 +3224,18 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 	/* In fallback mp_fail-mode, we have to repeat it until the fallback
 	 * has been done by the sender
 	 */
-	if (mpcb->send_mp_fail) {
+	if (unlikely(mpcb->send_mp_fail)) {
 		opts->options |= OPTION_MP_FAIL;
 		opts->data_ack = (__u32)(mpcb->csum_cutoff_seq >> 32);
 		opts->data_seq = (__u32)mpcb->csum_cutoff_seq;
 		*size += MPTCP_SUB_LEN_FAIL;
+		return;
+	}
+
+	if (unlikely(tp->send_mp_rst)) {
+		opts->options |= OPTION_MP_RST;
+		opts->receiver_key = mpcb->rx_opt.mptcp_rem_key;
+		*size += MPTCP_SUB_LEN_RST_ALIGN;
 		return;
 	}
 
@@ -3483,6 +3510,26 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		mpfail->rsv1 = 0;
 		mpfail->rsv2 = 0;
 		mpfail->data_seq = htonll(((u64)opts->data_ack << 32) | opts->data_seq);
+		ptr += 2;
+	}
+	if (unlikely(OPTION_MP_RST & opts->options)) {
+		struct mp_rst *mprst;
+		__u8 *p8 = (__u8 *)ptr;
+		__u64 *p64;
+
+		*p8++ = TCPOPT_MPTCP;
+		*p8++ = MPTCP_SUB_LEN_RST;
+
+		mprst = (struct mp_rst *)p8;
+
+		mprst->sub = MPTCP_SUB_RST;
+		mprst->rsv1 = 0;
+		mprst->rsv2 = 0;
+		ptr++;
+
+		p64 = (__u64 *)ptr;
+		*p64 = opts->receiver_key;
+		ptr += 2;
 	}
 
 	if (OPTION_DSN_MAP & opts->options ||
@@ -3884,11 +3931,42 @@ void mptcp_send_fin(struct sock *meta_sk)
 
 void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 {
-	/* NOTE: here will come the MPTCP-specific DATA_RST of the upcoming
-	 * draft v05.
-	 *
-	 * Left empty for now, as a subflow-RST on all subflows will anyways not
-	 * really close the MPTCP-connection.*/
+	struct multipath_pcb *mpcb = tcp_sk(meta_sk)->mpcb;
+	struct sock *sk = NULL, *sk_it = NULL, *sk_tmp;
+
+	if (!mpcb->cnt_subflows)
+		return;
+
+	/* First - select a socket */
+	if (!mptcp_test_any_sk(mpcb, sk_it, tcp_sk(sk_it)->send_mp_rst)) {
+		sk = mptcp_select_ack_sock(mpcb, 0);
+
+		tcp_sk(sk)->send_mp_rst = 1;
+	}
+
+	/* Reset all other subflows */
+	mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp) {
+		if (tcp_sk(sk_it)->send_mp_rst) {
+			sk = sk_it;
+			continue;
+		}
+
+		tcp_send_active_reset(sk_it, priority);
+		sock_orphan(sk_it);
+		tcp_done(sk_it);
+	}
+
+	tcp_send_ack(sk);
+
+	if (!mpcb_meta_tp(mpcb)->send_mp_rst) {
+		struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
+
+		meta_icsk->icsk_rto = min(inet_csk(sk)->icsk_rto, TCP_RTO_MAX);
+		inet_csk_reset_xmit_timer(meta_sk, ICSK_TIME_RETRANS,
+					  meta_icsk->icsk_rto, TCP_RTO_MAX);
+	}
+
+	mpcb_meta_tp(mpcb)->send_mp_rst = 1;
 }
 
 void mptcp_send_reset(struct sock *sk, struct sk_buff *skb)
@@ -3927,9 +4005,8 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 	 * reader process may not have drained the data yet!
 	 */
 	while ((skb = __skb_dequeue(&meta_sk->sk_receive_queue)) != NULL) {
-		u32 len = TCP_SKB_CB(skb)->end_data_seq
-			- TCP_SKB_CB(skb)->data_seq
-			- (mptcp_is_data_fin(skb) ? 1 : 0);
+		u32 len = TCP_SKB_CB(skb)->end_data_seq - TCP_SKB_CB(skb)->data_seq -
+			  (mptcp_is_data_fin(skb) ? 1 : 0);
 		data_was_unread += len;
 		__kfree_skb(skb);
 	}

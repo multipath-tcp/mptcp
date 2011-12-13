@@ -2545,6 +2545,11 @@ void tcp_send_active_reset(struct sock *sk, gfp_t priority)
 {
 	struct sk_buff *skb;
 
+	if (is_meta_sk(sk)) {
+		mptcp_send_active_reset(sk, priority);
+		return;
+	}
+
 	/* NOTE: No TCP options attached and we never retransmit this. */
 	skb = alloc_skb(MAX_TCP_HEADER, priority);
 	if (!skb) {

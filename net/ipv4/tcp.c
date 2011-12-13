@@ -3411,7 +3411,11 @@ void tcp_done(struct sock *sk)
 		TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_ATTEMPTFAILS);
 
 	tcp_set_state(sk, TCP_CLOSE);
-	tcp_clear_xmit_timers(sk);
+
+	/* If it is a meta-sk sending mp_rst we have to maintain the
+	 * rexmit-timer for retransmitting the MP_RST */
+	if (!tcp_sk(sk)->mpc || !is_meta_sk(sk) || !tcp_sk(sk)->send_mp_rst)
+		tcp_clear_xmit_timers(sk);
 
 	sk->sk_shutdown = SHUTDOWN_MASK;
 

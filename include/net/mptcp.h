@@ -863,12 +863,14 @@ static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
 static inline void mptcp_mp_fail_rcvd(struct multipath_pcb *mpcb,
 				      struct sock *sk, struct tcphdr *th)
 {
+	struct sock *meta_sk;
+
 	if (!mpcb)
 		return;
 
-	if (unlikely(mpcb->rx_opt.mp_fail)) {
-		struct sock *meta_sk = (struct sock *)mpcb;
+	meta_sk = mpcb_meta_sk(mpcb);
 
+	if (unlikely(mpcb->rx_opt.mp_fail)) {
 		mpcb->rx_opt.mp_fail = 0;
 
 		if (!th->rst && !mpcb->infinite_mapping) {
@@ -880,6 +882,27 @@ static inline void mptcp_mp_fail_rcvd(struct multipath_pcb *mpcb,
 			 * it is as if no packets are in flight */
 			tcp_sk(meta_sk)->packets_out = 0;
 		}
+	}
+
+	if (unlikely(mpcb->rx_opt.mp_rst)) {
+		struct sock *sk_it, *sk_tmp;
+
+		tcp_send_active_reset(sk, GFP_ATOMIC);
+
+		sock_orphan(sk);
+		/* Set rst-bit and the socket will be tcp_done'd by
+		 * tcp_validate_incoming */
+		th->rst = 1;
+
+		mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp) {
+			if (sk_it == sk)
+				continue;
+
+			sock_orphan(sk_it);
+			tcp_done(sk_it);
+		}
+
+		tcp_reset(meta_sk);
 	}
 }
 

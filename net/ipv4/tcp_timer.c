@@ -563,10 +563,7 @@ static void tcp_keepalive_timer (unsigned long data)
 				goto out;
 			}
 		}
-		if (is_meta_sk(sk))
-			mptcp_send_active_reset(sk, GFP_ATOMIC);
-		else
-			tcp_send_active_reset(sk, GFP_ATOMIC);
+		tcp_send_active_reset(sk, GFP_ATOMIC);
 		goto death;
 	}
 
@@ -590,10 +587,7 @@ static void tcp_keepalive_timer (unsigned long data)
 		    icsk->icsk_probes_out > 0) ||
 		    (icsk->icsk_user_timeout == 0 &&
 		    icsk->icsk_probes_out >= keepalive_probes(tp))) {
-			if (tp->mpc)
-				mptcp_send_active_reset(sk, GFP_ATOMIC);
-			else
-				tcp_send_active_reset(sk, GFP_ATOMIC);
+			tcp_send_active_reset(sk, GFP_ATOMIC);
 			tcp_write_err(sk);
 			goto out;
 		}
