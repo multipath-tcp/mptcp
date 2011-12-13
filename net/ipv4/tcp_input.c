@@ -4009,7 +4009,7 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 			mpcb ? &mpcb->rx_opt : NULL, 1);
 
 	mptcp_path_array_check(mpcb);
-	mptcp_mp_fail_rcvd(mpcb, th);
+	mptcp_mp_fail_rcvd(mpcb, (struct sock *)tp, th);
 
 	return 1;
 }
@@ -4149,7 +4149,7 @@ static inline int tcp_sequence(struct tcp_sock *tp, u32 seq, u32 end_seq)
 }
 
 /* When we get a reset we do this. */
-static void tcp_reset(struct sock *sk)
+void tcp_reset(struct sock *sk)
 {
 	/* We want the right error as BSD sees it (and indeed as we do). */
 	switch (sk->sk_state) {

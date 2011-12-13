@@ -117,6 +117,7 @@ struct multipath_options {
 	u8	list_rcvd:1, /* 1 if IP list has been received */
 		dfin_rcvd:1,
 		mp_fail:1,
+		mp_rst:1,
 		dss_csum:1;
 };
 
@@ -268,6 +269,10 @@ static inline int mptcp_pi_to_flag(int pi)
 #define MPTCP_SUB_LEN_FAIL	8
 #define MPTCP_SUB_LEN_FAIL_ALIGN	8
 
+#define MPTCP_SUB_RST		7
+#define MPTCP_SUB_LEN_RST	12
+#define MPTCP_SUB_LEN_RST_ALIGN	12
+
 #define OPTION_MP_CAPABLE       (1 << 5)
 #define OPTION_DSN_MAP          (1 << 6)
 #define OPTION_DATA_FIN         (1 << 7)
@@ -275,6 +280,7 @@ static inline int mptcp_pi_to_flag(int pi)
 #define OPTION_ADD_ADDR         (1 << 9)
 #define OPTION_MP_JOIN          (1 << 10)
 #define OPTION_MP_FAIL		(1 << 11)
+#define OPTION_MP_RST		(1 << 12)
 
 struct mptcp_option {
 #if defined(__LITTLE_ENDIAN_BITFIELD)
@@ -371,6 +377,20 @@ struct mp_fail {
 #error	"Adjust your <asm/byteorder.h> defines"
 #endif
 	__be64	data_seq;
+};
+
+struct mp_rst {
+#if defined(__LITTLE_ENDIAN_BITFIELD)
+	__u16	rsv1:4,
+		sub:4,
+		rsv2:8;
+#elif defined(__BIG_ENDIAN_BITFIELD)
+	__u16	sub:4,
+		rsv1:4,
+		rsv2:8;
+#else
+#error	"Adjust your <asm/byteorder.h> defines"
+#endif
 };
 
 /* Two separate cases must be handled:
@@ -588,6 +608,7 @@ static inline void mptcp_init_mp_opt(struct multipath_options *mopt)
 	mopt->list_rcvd = mopt->num_addr4 = mopt->num_addr6 = 0;
 	mopt->mptcp_opt_type = 0;
 	mopt->mp_fail = 0;
+	mopt->mp_rst = 0;
 	mopt->mptcp_rem_key = 0;
 	mopt->mpcb = NULL;
 }
@@ -840,7 +861,7 @@ static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
 }
 
 static inline void mptcp_mp_fail_rcvd(struct multipath_pcb *mpcb,
-				      struct tcphdr *th)
+				      struct sock *sk, struct tcphdr *th)
 {
 	if (!mpcb)
 		return;
@@ -1106,6 +1127,7 @@ static inline int mptcp_fallback_infinite(const struct tcp_sock *tp,
 	return 0;
 }
 static inline void mptcp_mp_fail_rcvd(const struct multipath_pcb *mpcb,
+				      const struct sock *sk,
 				      const struct tcphdr *th) {}
 static inline void mptcp_init_mp_opt(const struct multipath_options *mopt) {}
 static inline void mptcp_wmem_free_skb(const struct sock *sk,

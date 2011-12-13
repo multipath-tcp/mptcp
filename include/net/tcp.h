@@ -531,6 +531,8 @@ static inline int tcp_urg_mode(const struct tcp_sock *tp)
 extern int tcp_prune_queue(struct sock *sk);
 extern int tcp_prune_ofo_queue(struct sock *sk);
 extern void tcp_cwnd_application_limited(struct sock *sk);
+extern void tcp_reset(struct sock *sk);
+
 
 /* Check that window update is acceptable.
  * The function assumes that snd_una<=ack<=snd_next.
