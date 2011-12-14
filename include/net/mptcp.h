@@ -514,7 +514,7 @@ void mptcp_combine_dfin(struct sk_buff *skb, struct tcp_sock *meta_tp,
 			struct sock *subsk);
 void mptcp_set_data_size(struct tcp_sock *tp, struct sk_buff *skb, int copy);
 int mptcp_push(struct sock *sk, int flags, int mss_now, int nonagle);
-void mptcp_key_sha1(u64 key, u32 *token);
+void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn);
 void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 		     u32 *hash_out);
 void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk);

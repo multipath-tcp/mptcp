@@ -5997,8 +5997,7 @@ discard:
 		 * never scaled.
 		 */
 		if (tp->mpc) {
-			mpcb_meta_tp(mpcb)->snd_wl1    =
-					mptcp_skb_data_seq(skb);
+			mpcb_meta_tp(mpcb)->snd_wl1    = mpcb_meta_tp(mpcb)->rcv_nxt - 1;
 			mpcb_meta_tp(mpcb)->snd_wnd    = ntohs(th->window);
 			mpcb_meta_tp(mpcb)->max_window = tp->snd_wnd;
 		} else {

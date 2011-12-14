@@ -2837,7 +2837,7 @@ static void tcp_connect_init(struct sock *sk)
 				} while (!tp->mptcp_loc_key);
 
 				mptcp_key_sha1(tp->mptcp_loc_key,
-					       &tp->mptcp_loc_token);
+					       &tp->mptcp_loc_token, NULL);
 			} while (mptcp_find_token(tp->mptcp_loc_token));
 		}
 	}

@@ -450,7 +450,7 @@ void tcp_openreq_init(struct request_sock *req,
 			} while (!req->mptcp_loc_key);
 
 			mptcp_key_sha1(req->mptcp_loc_key,
-				       &req->mptcp_loc_token);
+				       &req->mptcp_loc_token, NULL);
 		} while (mptcp_find_token(req->mptcp_loc_token));
 
 		req->mptcp_rem_key = mopt->mptcp_rem_key;

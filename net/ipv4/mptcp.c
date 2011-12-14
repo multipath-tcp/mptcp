@@ -776,7 +776,7 @@ cont_error:
 	return 0;
 }
 
-void mptcp_key_sha1(u64 key, u32 *token)
+void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn)
 {
 	u32 workspace[SHA_WORKSPACE_WORDS];
 	u32 mptcp_hashed_key[SHA_DIGEST_WORDS];
@@ -798,7 +798,10 @@ void mptcp_key_sha1(u64 key, u32 *token)
 	for (i = 0; i < 5; i++)
 		mptcp_hashed_key[i] = cpu_to_be32(mptcp_hashed_key[i]);
 
-	*token = mptcp_hashed_key[0];
+	if (token)
+		*token = mptcp_hashed_key[0];
+	if (idsn)
+		*idsn = ((u64)mptcp_hashed_key[3] << 32) | mptcp_hashed_key[4];
 }
 
 void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
@@ -1449,6 +1452,7 @@ int mptcp_alloc_mpcb(struct sock *master_sk)
 	struct tcp_sock *meta_tp, *master_tp = tcp_sk(master_sk);
 	struct sock *meta_sk;
 	struct inet_connection_sock *meta_icsk;
+	u64 idsn;
 
 	mpcb = kmem_cache_alloc(mpcb_cache, GFP_ATOMIC);
 	/* Memory allocation failed. Stopping here. */
@@ -1479,10 +1483,26 @@ int mptcp_alloc_mpcb(struct sock *master_sk)
 	init_timer(&mpcb->dad_waiter);
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 
-	/* Will be replaced by the IDSN later. Currently the IDSN is zero */
-	meta_tp->copied_seq = meta_tp->rcv_nxt = meta_tp->rcv_wup = 0;
-	meta_tp->snd_sml = meta_tp->snd_una = meta_tp->snd_nxt = 0;
-	meta_tp->write_seq = 0;
+	/* Store the keys and generate the peer's token */
+	mpcb->mptcp_loc_key = master_tp->mptcp_loc_key;
+	mpcb->mptcp_loc_token = master_tp->mptcp_loc_token;
+
+	/* Generate Initial data-sequence-numbers */
+	mptcp_key_sha1(mpcb->mptcp_loc_key, NULL, &idsn);
+	idsn = ntohll(idsn) + 1;
+	mpcb->snd_high_order[0] = idsn >> 32;
+	mpcb->snd_high_order[1] = mpcb->snd_high_order[0] - 1;
+	meta_tp->write_seq = (u32)idsn;
+	meta_tp->snd_sml = meta_tp->snd_una = meta_tp->snd_nxt = meta_tp->write_seq;
+
+
+	mpcb->rx_opt.mptcp_rem_key = meta_tp->mptcp_rem_key;
+	mptcp_key_sha1(mpcb->rx_opt.mptcp_rem_key, &mpcb->rx_opt.mptcp_rem_token, &idsn);
+	idsn = ntohll(idsn) + 1;
+	mpcb->rcv_high_order[0] = idsn >> 32;
+	mpcb->rcv_high_order[1] = mpcb->rcv_high_order[0] + 1;
+	meta_tp->copied_seq = meta_tp->rcv_nxt = meta_tp->rcv_wup = (u32) idsn;
+
 	meta_tp->packets_out = 0;
 	meta_tp->snt_isn = meta_tp->write_seq; /* Initial data-sequence-number */
 	meta_tp->window_clamp = tcp_sk(master_sk)->window_clamp;
@@ -1507,17 +1527,6 @@ int mptcp_alloc_mpcb(struct sock *master_sk)
 	 * here pending subflow creations.
 	 */
 	reqsk_queue_alloc(&meta_icsk->icsk_accept_queue, 32, GFP_ATOMIC);
-
-	/* Reinit so that the circular sequences are correct */
-	mpcb->snd_high_order[1]--;
-	mpcb->rcv_high_order[1]++;
-
-	/* Store the keys and generate the peer's token */
-	mpcb->mptcp_loc_key = master_tp->mptcp_loc_key;
-	mpcb->mptcp_loc_token = master_tp->mptcp_loc_token;
-
-	mpcb->rx_opt.mptcp_rem_key = meta_tp->mptcp_rem_key;
-	mptcp_key_sha1(mpcb->rx_opt.mptcp_rem_key, &mpcb->rx_opt.mptcp_rem_token);
 
 	/* Pi 1 is reserved for the master subflow */
 	mpcb->next_unused_pi = 2;
