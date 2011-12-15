@@ -204,7 +204,7 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 		if (loc4->id == id && loc4->addr.s_addr != addr->s_addr) {
 			/* update the address */
 			mptcp_debug("%s: updating old addr:%pI4"
-				   " to addr %pi4 with id:%d\n",
+				   " to addr %pI4 with id:%d\n",
 				   __func__, &loc4->addr.s_addr,
 				   &addr->s_addr, id);
 			loc4->addr.s_addr = addr->s_addr;
