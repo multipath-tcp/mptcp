@@ -3793,8 +3793,6 @@ void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk)
 
 	tcp_sk(meta_sk)->snd_una = TCP_SKB_CB(skb)->end_data_seq;
 	mptcp_clean_rtx_queue(meta_sk);
-	if (meta_sk->sk_state != TCP_ESTABLISHED)
-		mptcp_rcv_state_process(meta_sk, sk, skb);
 }
 
 /**
