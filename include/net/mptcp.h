@@ -1132,7 +1132,7 @@ static inline int mptcp_try_rmem_schedule(const struct sock *tp,
 {
 	return 0;
 }
-int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
+static inline int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 {
 	return 0;
 }
