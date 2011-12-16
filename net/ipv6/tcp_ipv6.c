@@ -327,7 +327,7 @@ static void tcp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 	const struct ipv6hdr *hdr = (const struct ipv6hdr*)skb->data;
 	const struct tcphdr *th = (struct tcphdr *)(skb->data+offset);
 	struct ipv6_pinfo *np;
-	struct sock *sk;
+	struct sock *sk, *meta_sk;
 	int err;
 	struct tcp_sock *tp;
 	__u32 seq;
@@ -347,8 +347,14 @@ static void tcp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 		return;
 	}
 
-	bh_lock_sock(sk);
-	if (sock_owned_by_user(sk))
+	tp = tcp_sk(sk);
+	if (tp->mpc)
+		meta_sk = mpcb_meta_sk(tp->mpcb);
+	else
+		meta_sk = sk;
+
+	bh_lock_sock(meta_sk);
+	if (sock_owned_by_user(meta_sk))
 		NET_INC_STATS_BH(net, LINUX_MIB_LOCKDROPPEDICMPS);
 
 	if (sk->sk_state == TCP_CLOSE)
@@ -359,7 +365,6 @@ static void tcp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 		goto out;
 	}
 
-	tp = tcp_sk(sk);
 	seq = ntohl(th->seq);
 	if (sk->sk_state != TCP_LISTEN &&
 	    !between(seq, tp->snd_una, tp->snd_nxt)) {
@@ -372,7 +377,7 @@ static void tcp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 	if (type == ICMPV6_PKT_TOOBIG) {
 		struct dst_entry *dst;
 
-		if (sock_owned_by_user(sk))
+		if (sock_owned_by_user(meta_sk))
 			goto out;
 		if ((1 << sk->sk_state) & (TCPF_LISTEN | TCPF_CLOSE))
 			goto out;
@@ -421,7 +426,7 @@ static void tcp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 	switch (sk->sk_state) {
 		struct request_sock *req, **prev;
 	case TCP_LISTEN:
-		if (sock_owned_by_user(sk))
+		if (sock_owned_by_user(meta_sk))
 			goto out;
 
 		req = inet6_csk_search_req(sk, &prev, th->dest, &hdr->daddr,
@@ -445,7 +450,7 @@ static void tcp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 	case TCP_SYN_SENT:
 	case TCP_SYN_RECV:  /* Cannot happen.
 			       It can, it SYNs are crossed. --ANK */
-		if (!sock_owned_by_user(sk)) {
+		if (!sock_owned_by_user(meta_sk)) {
 			sk->sk_err = err;
 			sk->sk_error_report(sk);		/* Wake people up to see the error (see connect in sock.c) */
 
@@ -455,14 +460,14 @@ static void tcp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 		goto out;
 	}
 
-	if (!sock_owned_by_user(sk) && np->recverr) {
+	if (!sock_owned_by_user(meta_sk) && np->recverr) {
 		sk->sk_err = err;
 		sk->sk_error_report(sk);
 	} else
 		sk->sk_err_soft = err;
 
 out:
-	bh_unlock_sock(sk);
+	bh_unlock_sock(meta_sk);
 	sock_put(sk);
 }
 

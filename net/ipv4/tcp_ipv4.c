@@ -354,7 +354,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 	struct inet_sock *inet;
 	const int type = icmp_hdr(icmp_skb)->type;
 	const int code = icmp_hdr(icmp_skb)->code;
-	struct sock *sk;
+	struct sock *sk, *meta_sk;
 	struct sk_buff *skb;
 	__u32 seq;
 	__u32 remaining;
@@ -377,11 +377,17 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 		return;
 	}
 
-	bh_lock_sock(sk);
+	tp = tcp_sk(sk);
+	if (tp->mpc)
+		meta_sk = mpcb_meta_sk(tcp_sk(sk)->mpcb);
+	else
+		meta_sk = sk;
+
+	bh_lock_sock(meta_sk);
 	/* If too many ICMPs get dropped on busy
 	 * servers this needs to be solved differently.
 	 */
-	if (sock_owned_by_user(sk))
+	if (sock_owned_by_user(meta_sk))
 		NET_INC_STATS_BH(net, LINUX_MIB_LOCKDROPPEDICMPS);
 
 	if (sk->sk_state == TCP_CLOSE)
@@ -393,7 +399,6 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 	}
 
 	icsk = inet_csk(sk);
-	tp = tcp_sk(sk);
 	seq = ntohl(th->seq);
 	if (sk->sk_state != TCP_LISTEN &&
 	    !between(seq, tp->snd_una, tp->snd_nxt)) {
@@ -413,7 +418,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 			goto out;
 
 		if (code == ICMP_FRAG_NEEDED) { /* PMTU discovery (RFC1191) */
-			if (!sock_owned_by_user(sk))
+			if (!sock_owned_by_user(meta_sk))
 				do_pmtu_discovery(sk, iph, info);
 			goto out;
 		}
@@ -427,14 +432,13 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 		    !icsk->icsk_backoff)
 			break;
 
-		if (sock_owned_by_user(sk))
+		if (sock_owned_by_user(meta_sk))
 			break;
 
 		icsk->icsk_backoff--;
 		inet_csk(sk)->icsk_rto = __tcp_set_rto(tp) <<
 					 icsk->icsk_backoff;
 		tcp_bound_rto(sk);
-		mptcp_set_rto(sk);
 
 		skb = tcp_write_queue_head(sk);
 		BUG_ON(!skb);
@@ -462,7 +466,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 	switch (sk->sk_state) {
 		struct request_sock *req, **prev;
 	case TCP_LISTEN:
-		if (sock_owned_by_user(sk))
+		if (sock_owned_by_user(meta_sk))
 			goto out;
 
 		req = inet_csk_search_req(sk, &prev, th->dest,
@@ -493,7 +497,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 	case TCP_SYN_RECV:  /* Cannot happen.
 			       It can f.e. if SYNs crossed.
 			     */
-		if (!sock_owned_by_user(sk)) {
+		if (!sock_owned_by_user(meta_sk)) {
 			sk->sk_err = err;
 
 			sk->sk_error_report(sk);
@@ -522,7 +526,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 	 */
 
 	inet = inet_sk(sk);
-	if (!sock_owned_by_user(sk) && inet->recverr) {
+	if (!sock_owned_by_user(meta_sk) && inet->recverr) {
 		sk->sk_err = err;
 		sk->sk_error_report(sk);
 	} else	{ /* Only an error on timeout */
@@ -530,7 +534,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 	}
 
 out:
-	bh_unlock_sock(sk);
+	bh_unlock_sock(meta_sk);
 	sock_put(sk);
 }
 
