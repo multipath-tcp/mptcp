@@ -4264,7 +4264,7 @@ void mptcp_set_state(struct sock *sk, int state)
 }
 
 int mptcp_check_req_master(struct sock *child, struct request_sock *req,
-		struct multipath_options *mopt)
+			   struct multipath_options *mopt)
 {
 	struct tcp_sock *child_tp = tcp_sk(child);
 

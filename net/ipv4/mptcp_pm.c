@@ -572,15 +572,12 @@ void mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 		return;
 
 	if (in_interrupt()) {
-		struct work_struct *work = kmalloc(sizeof(*work) +
-						sizeof(struct multipath_pcb *),
-						GFP_ATOMIC);
-		struct multipath_pcb **mpcbp = (struct multipath_pcb **)
-			(work + 1);
+		struct work_struct *work = kmalloc(sizeof(*work) + sizeof(mpcb),
+						   GFP_ATOMIC);
+		struct multipath_pcb **mpcbp = (struct multipath_pcb **)(work + 1);
 		*mpcbp = mpcb;
 		sock_hold(mpcb_meta_sk(mpcb)); /* Needed to ensure we can take
-					     * the lock
-					     */
+					        * the lock */
 		INIT_WORK(work, mptcp_send_updatenotif_wq);
 		schedule_work(work);
 	} else {

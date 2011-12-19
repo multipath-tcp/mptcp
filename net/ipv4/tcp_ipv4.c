@@ -1712,7 +1712,6 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	struct sock *sk, *meta_sk = NULL;
 	int ret;
 	struct net *net = dev_net(skb->dev);
-	struct multipath_pcb *mpcb = NULL;
 
 	if (skb->pkt_type != PACKET_HOST)
 		goto discard_it;
@@ -1807,10 +1806,8 @@ process:
 
 	skb->dev = NULL;
 
-	if (tcp_sk(sk)->mpc) {
-		mpcb = tcp_sk(sk)->mpcb;
+	if (tcp_sk(sk)->mpc)
 		meta_sk = mpcb_meta_sk(tcp_sk(sk)->mpcb);
-	}
 
 	if (meta_sk)
 		bh_lock_sock_nested(meta_sk);

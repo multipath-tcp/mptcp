@@ -5022,7 +5022,7 @@ int tcp_prune_queue(struct sock *sk)
 void tcp_cwnd_application_limited(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *meta_sk = (tp->mpc) ? (struct sock *) tp->mpcb : sk;
+	struct sock *meta_sk = tp->mpc ? mpcb_meta_sk(tp->mpcb) : sk;
 
 	if (inet_csk(sk)->icsk_ca_state == TCP_CA_Open &&
 	    meta_sk->sk_socket && !test_bit(SOCK_NOSPACE,
@@ -5042,8 +5042,7 @@ void tcp_cwnd_application_limited(struct sock *sk)
 static int tcp_should_expand_sndbuf(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *meta_sk = (tcp_sk(sk)->mpc) ?
-			((struct sock *)tcp_sk(sk)->mpcb) : sk;
+	struct sock *meta_sk = tp->mpc ? mpcb_meta_sk(tp->mpcb) : sk;
 
 	/* If the user specified a specific send buffer setting, do
 	 * not modify it.
@@ -5080,8 +5079,7 @@ static int tcp_should_expand_sndbuf(struct sock *sk)
 static void tcp_new_space(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *meta_sk = (tcp_sk(sk)->mpc) ?
-					((struct sock *)tcp_sk(sk)->mpcb) : sk;
+	struct sock *meta_sk = tp->mpc ? mpcb_meta_sk(tp->mpcb) : sk;
 
 	if (tcp_should_expand_sndbuf(sk)) {
 		int sndmem = max_t(u32, tp->rx_opt.mss_clamp, tp->mss_cache) +
@@ -5120,8 +5118,7 @@ static void tcp_new_space(struct sock *sk)
  */
 void tcp_check_space(struct sock *sk)
 {
-	struct sock *meta_sk = (tcp_sk(sk)->mpc) ?
-				((struct sock *)tcp_sk(sk)->mpcb) : sk;
+	struct sock *meta_sk = tcp_sk(sk)->mpc ? mpcb_meta_sk(tcp_sk(sk)->mpcb) : sk;
 
 	if (sock_flag(meta_sk, SOCK_QUEUE_SHRUNK)) {
 		sock_reset_flag(meta_sk, SOCK_QUEUE_SHRUNK);
@@ -5133,8 +5130,7 @@ void tcp_check_space(struct sock *sk)
 
 static inline void tcp_data_snd_check(struct sock *sk)
 {
-	struct sock *meta_sk = (tcp_sk(sk)->mpc) ?
-			((struct sock *)tcp_sk(sk)->mpcb) : sk;
+	struct sock *meta_sk = tcp_sk(sk)->mpc ? mpcb_meta_sk(tcp_sk(sk)->mpcb) : sk;
 
 	BUG_ON(is_meta_sk(sk));
 
@@ -5491,7 +5487,7 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 
 	tp->rx_opt.saw_tstamp = 0;
 
-	/* sbarre: force slowpath at the moment. Will carefully check
+	/* MPTCP: force slowpath at the moment. Will carefully check
 	 * fast path for mptcp later.
 	 */
 	if (tp->mpc)
@@ -5796,8 +5792,8 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 				tp->request_mptcp = 0;
 			}
 		}
-cont_mptcp:
 		mptcp_include_mpc(tp);
+cont_mptcp:
 #endif
 
 		/* rfc793:
