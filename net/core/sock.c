@@ -1087,8 +1087,15 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 	get_net(sock_net(newsk));
 	sk_node_init(&newsk->sk_node);
 	sock_lock_init(newsk);
-	if (is_meta_sk(sk))
+	/* either it's a creation of a new subflow,
+	 * or we are on the client-side (syn-sent state).
+	 *
+	 * If we are on the client-side we lock the meta-sk to prevent
+	 * simultaneous access to the meta-sk due to tcp_data_snd_check
+	 */
+	if (is_meta_sk(sk) || sk->sk_state == TCP_SYN_SENT)
 		bh_lock_sock(newsk);
+
 	newsk->sk_backlog.head	= newsk->sk_backlog.tail = NULL;
 	newsk->sk_backlog.len = 0;
 

@@ -6096,13 +6096,18 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 	case TCP_SYN_SENT:
 		queued = tcp_rcv_synsent_state_process(sk, skb, th, len);
 		if (queued >= 0)
-			return queued;
+			goto out_syn_sent;
+		else
+			queued = 0;
 
 		/* Do step6 onward by hand. */
 		tcp_urg(sk, skb, th);
 		__kfree_skb(skb);
 		tcp_data_snd_check(sk);
-		return 0;
+out_syn_sent:
+		if (tp->mpc && is_master_tp(tp))
+			bh_unlock_sock(mpcb_meta_sk(tp->mpcb));
+		return queued;
 	}
 
 	res = tcp_validate_incoming(sk, skb, th, 0);
