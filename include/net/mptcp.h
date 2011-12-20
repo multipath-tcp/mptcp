@@ -152,6 +152,8 @@ struct multipath_pcb {
 	 */
 	struct sock *master_sk;
 
+	struct mutex mutex;
+
 	struct multipath_options rx_opt;
 
 	/* socket count in this connection */

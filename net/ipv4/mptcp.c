@@ -1518,6 +1518,8 @@ int mptcp_alloc_mpcb(struct sock *master_sk)
 	skb_queue_head_init(&mpcb->reinject_queue);
 	skb_queue_head_init(&meta_tp->out_of_order_queue);
 
+	mutex_init(&mpcb->mutex);
+
 	/* Redefine function-pointers to wake up application */
 	master_sk->sk_error_report = mptcp_sock_def_error_report;
 	meta_sk->sk_error_report = mptcp_sock_def_error_report;
@@ -4000,6 +4002,8 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 	mptcp_debug("%s: Close of meta_sk with tok %#x\n", __func__,
 			mpcb->mptcp_loc_token);
 
+	mutex_lock(&mpcb->mutex);
+
 	lock_sock(meta_sk);
 
 	mptcp_destroy_mpcb(mpcb);
@@ -4123,6 +4127,7 @@ adjudge_to_death:
 out:
 	bh_unlock_sock(meta_sk);
 	local_bh_enable();
+	mutex_unlock(&mpcb->mutex);
 	sock_put(meta_sk); /* Taken by sock_hold */
 }
 

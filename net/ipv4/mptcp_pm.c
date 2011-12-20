@@ -556,9 +556,11 @@ static void mptcp_send_updatenotif_wq(struct work_struct *work)
 {
 	struct multipath_pcb *mpcb = *(struct multipath_pcb **)(work + 1);
 	struct sock *meta_sk = mpcb_meta_sk(mpcb);
+	mutex_lock(&mpcb->mutex);
 	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
 	__mptcp_send_updatenotif(mpcb);
 	release_sock(meta_sk);
+	mutex_unlock(&mpcb->mutex);
 	sock_put(meta_sk);
 	kfree(work);
 }
