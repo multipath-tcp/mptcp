@@ -404,7 +404,7 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 	int pa6_size = (mpcb->num_addr6 + ulid_v6) *
 		       (mpcb->rx_opt.num_addr6 + ulid_v6) - ulid_v6;
 
-	new_pa6 = kmalloc(pa6_size * sizeof(struct mptcp_path6), GFP_ATOMIC);
+	new_pa6 = kzalloc(pa6_size * sizeof(struct mptcp_path6), GFP_ATOMIC);
 
 	if (ulid_v6) {
 		struct mptcp_loc6 loc_ulid, rem_ulid;
@@ -425,13 +425,10 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 				p->loc.sin6_family = AF_INET6;
 				ipv6_addr_copy(&p->loc.sin6_addr,
 						&inet6_sk(meta_sk)->saddr);
-				p->loc.sin6_port = 0;
-				p->loc_id = 0;
 
 				p->rem.sin6_family = AF_INET6;
 				ipv6_addr_copy(&p->rem.sin6_addr,
 					&mpcb->rx_opt.addr6[j].addr);
-				p->rem.sin6_port = 0;
 				p->rem_id = mpcb->rx_opt.addr6[j].id;
 
 				p->path_index = mpcb->next_unused_pi++;
@@ -450,14 +447,11 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 				p->loc.sin6_family = AF_INET6;
 				ipv6_addr_copy(&p->loc.sin6_addr,
 						&mpcb->addr6[i].addr);
-				p->loc.sin6_port = 0;
 				p->loc_id = mpcb->addr6[i].id;
 
 				p->rem.sin6_family = AF_INET6;
 				ipv6_addr_copy(&p->rem.sin6_addr,
 						&inet6_sk(meta_sk)->daddr);
-				p->rem.sin6_port = 0;
-				p->rem_id = 0;
 
 				p->path_index = mpcb->next_unused_pi++;
 			}
@@ -479,7 +473,6 @@ void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
 				p->loc.sin6_family = AF_INET6;
 				ipv6_addr_copy(&p->loc.sin6_addr,
 						&mpcb->addr6[i].addr);
-				p->loc.sin6_port = 0;
 				p->loc_id = mpcb->addr6[i].id;
 
 				p->rem.sin6_family = AF_INET6;

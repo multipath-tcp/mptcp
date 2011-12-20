@@ -382,7 +382,7 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 	pa4_size = (mpcb->num_addr4 + ulid_v4) *
 	    (mpcb->rx_opt.num_addr4 + ulid_v4) - ulid_v4;
 
-	new_pa4 = kmalloc(pa4_size * sizeof(struct mptcp_path4), GFP_ATOMIC);
+	new_pa4 = kzalloc(pa4_size * sizeof(struct mptcp_path4), GFP_ATOMIC);
 
 	if (ulid_v4) {
 		struct mptcp_loc4 loc_ulid, rem_ulid;
@@ -403,13 +403,10 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 				p->loc.sin_family = AF_INET;
 				p->loc.sin_addr.s_addr =
 						inet_sk(meta_sk)->inet_saddr;
-				p->loc.sin_port = 0;
-				p->loc_id = 0;
 
 				p->rem.sin_family = AF_INET;
 				p->rem.sin_addr =
 					mpcb->rx_opt.addr4[j].addr;
-				p->rem.sin_port = 0;
 				p->rem_id = mpcb->rx_opt.addr4[j].id;
 
 				p->path_index = mpcb->next_unused_pi++;
@@ -428,14 +425,11 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 
 				p->loc.sin_family = AF_INET;
 				p->loc.sin_addr = mpcb->addr4[i].addr;
-				p->loc.sin_port = 0;
 				p->loc_id = mpcb->addr4[i].id;
 
 				p->rem.sin_family = AF_INET;
 				p->rem.sin_addr.s_addr =
 						inet_sk(meta_sk)->inet_daddr;
-				p->rem.sin_port = 0;
-				p->rem_id = 0;
 
 				p->path_index = mpcb->next_unused_pi++;
 			}
@@ -457,7 +451,6 @@ void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
 
 				p->loc.sin_family = AF_INET;
 				p->loc.sin_addr = mpcb->addr4[i].addr;
-				p->loc.sin_port = 0;
 				p->loc_id = mpcb->addr4[i].id;
 
 				p->rem.sin_family = AF_INET;

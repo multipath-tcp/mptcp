@@ -639,6 +639,39 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 
 		family = mptcp_get_path_family(mpcb, newpi);
 
+		switch (family) {
+		case AF_INET:
+			pa4 = mptcp_v4_get_path(mpcb, newpi);
+
+			if (pa4->tried)
+				continue;
+
+			loculid = (struct sockaddr *)&pa4->loc;
+
+			if (!pa4->rem.sin_port)
+				pa4->rem.sin_port =
+						inet_sk(meta_sk)->inet_dport;
+			remulid = (struct sockaddr *) &pa4->rem;
+			ulid_size = sizeof(pa4->loc);
+			break;
+		case AF_INET6:
+			pa6 = mptcp_get_path6(mpcb, newpi);
+
+			if (pa6->tried)
+				continue;
+
+			loculid = (struct sockaddr *)&pa6->loc;
+
+			if (!pa6->rem.sin6_port)
+				pa6->rem.sin6_port =
+						inet_sk(meta_sk)->inet_dport;
+			remulid = (struct sockaddr *) &pa6->rem;
+			ulid_size = sizeof(pa6->loc);
+			break;
+		default:
+			BUG();
+		}
+
 		sock.type = meta_sk->sk_socket->type;
 		sock.state = SS_UNCONNECTED;
 		sock.wq = meta_sk->sk_socket->wq;
@@ -660,47 +693,14 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 
 		sk = sock.sk;
 
-		/* Binding the new socket to the local ulid
-		 * (except if we use the MPTCP default PM, in which
-		 * case we bind the new socket, directly to its
-		 * corresponding locators)
-		 */
-		switch (family) {
-		case AF_INET:
-			pa4 = mptcp_v4_get_path(mpcb, newpi);
-
-			BUG_ON(!pa4);
-
-			loculid = (struct sockaddr *) &pa4->loc;
-
-			if (!pa4->rem.sin_port)
-				pa4->rem.sin_port =
-						inet_sk(meta_sk)->inet_dport;
-			remulid = (struct sockaddr *) &pa4->rem;
-			ulid_size = sizeof(pa4->loc);
+		if (family == AF_INET) {
 			inet_sk(sk)->loc_id = pa4->loc_id;
 			inet_sk(sk)->rem_id = pa4->rem_id;
-			break;
-		case AF_INET6:
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-			pa6 = mptcp_get_path6(mpcb, newpi);
-
-			BUG_ON(!pa6);
-
-			loculid = (struct sockaddr *) &pa6->loc;
-
-			if (!pa6->rem.sin6_port)
-				pa6->rem.sin6_port =
-						inet_sk(meta_sk)->inet_dport;
-			remulid = (struct sockaddr *) &pa6->rem;
-			ulid_size = sizeof(pa6->loc);
+		} else {
 			inet_sk(sk)->loc_id = pa6->loc_id;
 			inet_sk(sk)->rem_id = pa6->rem_id;
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
-			break;
-		default:
-			BUG();
 		}
+
 		tp = tcp_sk(sk);
 		tp->path_index = newpi;
 		tp->mpc = 1;
@@ -751,10 +751,13 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 		sk_set_socket(sk, meta_sk->sk_socket);
 		sk->sk_wq = meta_sk->sk_wq;
 
-		if (family == AF_INET)
+		if (family == AF_INET) {
 			pa4->loc.sin_port = inet_sk(sk)->inet_sport;
-		else
+			pa4->tried = 1;
+		} else {
 			pa6->loc.sin6_port = inet_sk(sk)->inet_sport;
+			pa6->tried = 1;
+		}
 
 		continue;
 

@@ -64,6 +64,7 @@ struct mptcp_path4 {
 	int			path_index;
 	u8			loc_id;
 	u8			rem_id;
+	u8			tried:1;
 };
 
 struct mptcp_path6 {
@@ -72,6 +73,7 @@ struct mptcp_path6 {
 	int			path_index;
 	u8			loc_id;
 	u8			rem_id;
+	u8			tried:1;
 };
 
 struct mp_join *mptcp_find_join(struct sk_buff *skb);
