@@ -48,7 +48,7 @@ struct mptcp_loc6 {
 
 #ifdef CONFIG_MPTCP
 
-#define MPTCP_HASH_SIZE                16
+#define MPTCP_HASH_SIZE                1024
 
 /* This second hashtable is needed to retrieve request socks
  * created as a result of a join request. While the SYN contains
