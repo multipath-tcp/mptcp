@@ -3272,13 +3272,14 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 	 *       (even if it's very unlikely)
 	 */
 	if (mpcb->infinite_mapping && tp->fully_established &&
-	    ((mpcb->send_infinite_mapping && !(tcb->mptcp_flags & MPTCPHDR_INF) &&
+	    ((mpcb->send_infinite_mapping && tcb &&
+	      !(tcb->mptcp_flags & MPTCPHDR_INF) &&
 	      !before(tcb->seq, tp->infinite_cutoff_seq)) ||
 	     !mpcb->send_infinite_mapping)) {
 		return;
 	}
 
-	if (tcb && unlikely(tp->include_mpc)) {
+	if (unlikely(tp->include_mpc)) {
 		if (is_master_tp(tp)) {
 			opts->options |= OPTION_MP_CAPABLE;
 			*size += MPTCP_SUB_LEN_CAPABLE_ALIGN_ACK;
@@ -3316,7 +3317,7 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 
 			/* Send infinite mapping only on "new" data,
 			 * not for retransmissions */
-			if (mpcb->send_infinite_mapping &&
+			if (mpcb->send_infinite_mapping && tcb &&
 			    tcb->seq >= tp->snd_nxt) {
 				tp->fully_established = 1;
 				mpcb->infinite_mapping = 1;
