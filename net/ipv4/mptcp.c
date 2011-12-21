@@ -3682,13 +3682,8 @@ adjudge_to_death:
 	state = sk->sk_state;
 	sock_hold(sk);
 
-	/* The sock *may* have been orphaned by mptcp_close(), if
-	 * we are called from mptcp_clean__rtx_queue().
-	 */
-	if (!sock_flag(sk, SOCK_DEAD)) {
-		sock_orphan(sk);
-		percpu_counter_inc(sk->sk_prot->orphan_count);
-	}
+	sock_orphan(sk);
+	percpu_counter_inc(sk->sk_prot->orphan_count);
 
 	/* Have we already been destroyed by a softirq or backlog? */
 	if (state != TCP_CLOSE && sk->sk_state == TCP_CLOSE)
@@ -4003,8 +3998,6 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct multipath_pcb *mpcb = meta_tp->mpcb;
-	struct sock *subsk;
-	struct tcp_sock *subtp;
 	struct sk_buff *skb;
 	int data_was_unread = 0;
 	int state;
@@ -4069,16 +4062,6 @@ adjudge_to_death:
 	WARN_ON(sock_owned_by_user(meta_sk));
 
 	percpu_counter_inc(meta_sk->sk_prot->orphan_count);
-
-	mptcp_for_each_sk(mpcb, subsk, subtp) {
-		/* The socket may have been orphaned by the tcp_close()
-		 * above, in that case SOCK_DEAD is set already
-		 */
-		if (!sock_flag(subsk, SOCK_DEAD)) {
-			sock_orphan(subsk);
-			percpu_counter_inc(subsk->sk_prot->orphan_count);
-		}
-	}
 
 	/* Have we already been destroyed by a softirq or backlog? */
 	if (state != TCP_CLOSE && meta_sk->sk_state == TCP_CLOSE)
