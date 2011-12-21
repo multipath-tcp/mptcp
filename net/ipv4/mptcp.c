@@ -4314,8 +4314,10 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 
 		mptcp_add_sock(mpcb, child_tp);
 
-		if (mopt->list_rcvd)
+		if (mopt->list_rcvd) {
 			memcpy(&mpcb->rx_opt, mopt, sizeof(*mopt));
+			mpcb->rx_opt.mptcp_rem_key = req->mptcp_rem_key;
+		}
 
 		mpcb->rx_opt.dss_csum = sysctl_mptcp_checksum || req->dss_csum;
 		mpcb->rx_opt.mpcb = mpcb;
