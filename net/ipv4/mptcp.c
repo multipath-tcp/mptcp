@@ -1396,6 +1396,7 @@ static void mptcp_mpcb_inherit_sockopts(struct sock *meta_sk, struct sock *maste
 	 * ======
 	 * SO_KEEPALIVE
 	 * TCP_KEEP*
+	 * TCP_DEFER_ACCEPT
 	 *
 	 * Socket-options on the todo-list
 	 * ======
@@ -1425,7 +1426,6 @@ static void mptcp_mpcb_inherit_sockopts(struct sock *meta_sk, struct sock *maste
 	 * SO_MARK
 	 * TCP_CONGESTION
 	 * TCP_SYNCNT
-	 * TCP_DEFER_ACCEPT
 	 * TCP_QUICKACK
 	 */
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
@@ -1440,6 +1440,12 @@ static void mptcp_mpcb_inherit_sockopts(struct sock *meta_sk, struct sock *maste
 		/* Prevent keepalive-reset in tcp_rcv_synsent_state_process */
 		sock_reset_flag(master_sk, SOCK_KEEPOPEN);
 	}
+
+	/****** DEFER_ACCEPT-handler ******/
+
+	/* DEFER_ACCEPT is not of concern for new subflows - we always accept
+	 * them */
+	inet_csk(meta_sk)->icsk_accept_queue.rskq_defer_accept = 0;
 }
 
 static void mptcp_sub_inherit_sockopts(struct sock *meta_sk, struct sock *sub_sk) {
