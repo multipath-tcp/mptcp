@@ -142,41 +142,6 @@ void mptcp_hash_request_remove(struct request_sock *req)
 	spin_unlock(&mptcp_reqsk_hlock);
 }
 
-void mptcp_pm_release(struct multipath_pcb *mpcb)
-{
-	struct inet_connection_sock *meta_icsk =
-	    (struct inet_connection_sock *)mpcb;
-	struct listen_sock *lopt = meta_icsk->icsk_accept_queue.listen_opt;
-
-	/* Remove all pending request socks. */
-	if (lopt->qlen != 0) {
-		unsigned int i;
-		for (i = 0; i < lopt->nr_table_entries; i++) {
-			struct request_sock **cur_ref;
-			cur_ref = &lopt->syn_table[i];
-			while (*cur_ref) {
-				struct request_sock *todel;
-
-				lopt->qlen--;
-				todel = *cur_ref;
-				/* Remove from local hashtable, it has
-				 * been removed already from the global one by
-				 * mptcp_hash_remove()
-				 */
-				*cur_ref = (*cur_ref)->dl_next;
-				reqsk_free(todel);
-			}
-		}
-	}
-
-	/* Normally we should have
-	 * accepted all the child socks in destroy_mpcb, after
-	 * having removed the mpcb from the hashtable. So having this queue
-	 * non-empty can only be a bug.
-	 */
-	BUG_ON(!reqsk_queue_empty(&meta_icsk->icsk_accept_queue));
-}
-
 u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock* sk)
 {
 	struct sock *meta_sk = mpcb_meta_sk(mpcb);

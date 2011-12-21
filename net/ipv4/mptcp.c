@@ -1584,7 +1584,6 @@ void mptcp_release_mpcb(struct multipath_pcb *mpcb)
 	inet_csk(meta_sk)->icsk_pending = 0;
 	sk_stop_timer(meta_sk, &inet_csk(meta_sk)->icsk_retransmit_timer);
 
-	mptcp_pm_release(mpcb);
 	security_sk_free(meta_sk);
 	percpu_counter_dec(meta_sk->sk_prot->orphan_count);
 
@@ -1620,6 +1619,7 @@ static void mptcp_destroy_mpcb(struct multipath_pcb *mpcb)
 {
 	/* Detach the mpcb from the token hashtable */
 	mptcp_hash_remove(mpcb);
+	reqsk_queue_destroy(&((struct inet_connection_sock *)mpcb)->icsk_accept_queue);
 }
 
 void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)

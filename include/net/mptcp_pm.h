@@ -84,7 +84,6 @@ void mptcp_hash_request_remove(struct request_sock *req);
 struct multipath_pcb *mptcp_hash_find(u32 token);
 int mptcp_lookup_join(struct sk_buff *skb);
 int mptcp_find_token(u32 token);
-void mptcp_pm_release(struct multipath_pcb *mpcb);
 struct dst_entry *mptcp_route_req(const struct request_sock *req,
 				  struct sock *meta_sk);
 void mptcp_send_updatenotif(struct multipath_pcb *mpcb);
@@ -144,10 +143,6 @@ static inline int mptcp_lookup_join(struct sk_buff *skb)
 static inline int mptcp_syn_recv_sock(struct sk_buff *skb)
 {
 	return 0;
-}
-
-static inline void mptcp_pm_release(struct multipath_pcb *mpcb)
-{
 }
 
 

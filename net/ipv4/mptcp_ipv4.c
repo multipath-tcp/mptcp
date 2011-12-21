@@ -247,6 +247,11 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	struct sock *child;
 	struct request_sock *req;
 
+	/* Socket is in the process of destruction - we don't accept
+	 * new subflows */
+	if (sock_flag(meta_sk, SOCK_DEAD) || meta_sk->sk_state == TCP_CLOSE)
+		goto discard;
+
 	req = inet_csk_search_req(meta_sk, &prev, th->source,
 			iph->saddr, iph->daddr);
 
