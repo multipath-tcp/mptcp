@@ -1355,7 +1355,13 @@ retry:
 			BUG();
 
 		}
-		tcp_event_new_data_sent(subsk, subskb);
+
+		/* If it's a non-payload DATA_FIN (also no subflow-fin), the
+		 * segment is not part of the subflow but on a meta-only-level
+		 */
+		if (!mptcp_is_data_fin(subskb) ||
+		    (TCP_SKB_CB(subskb)->end_seq != TCP_SKB_CB(subskb)->seq))
+			tcp_event_new_data_sent(subsk, subskb);
 
 		BUG_ON(tcp_send_head(subsk));
 		if (!reinject) {
@@ -2861,11 +2867,20 @@ void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb)
 	tcb->sub_seq = tcb->seq - tp->snt_isn;
 	tcb->sacked = 0; /* reset the sacked field: from the point of view
 			  * of this subflow, we are sending a brand new
-			  * segment
-			  */
-	tcp_add_write_queue_tail(sk, skb);
-	sk->sk_wmem_queued += skb->truesize;
-	sk_mem_charge(sk, skb->truesize);
+			  * segment */
+	/* Take into account seg len */
+	tp->write_seq += skb->len + fin;
+	tcb->end_seq = tp->write_seq;
+
+	/* If it's a non-payload DATA_FIN (also no subflow-fin), the
+	 * segment is not part of the subflow but on a meta-only-level
+	 */
+	if (!mptcp_is_data_fin(skb) ||
+	    (TCP_SKB_CB(skb)->end_seq != TCP_SKB_CB(skb)->seq)) {
+		tcp_add_write_queue_tail(sk, skb);
+		sk->sk_wmem_queued += skb->truesize;
+		sk_mem_charge(sk, skb->truesize);
+	}
 
 	/* Calculate dss-csum */
 	if (mpcb->rx_opt.dss_csum) {
@@ -2884,10 +2899,6 @@ void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb)
 						       sizeof(mptcp_pshdr),
 						       skb->csum));
 	}
-
-	/* Take into account seg len */
-	tp->write_seq += skb->len + fin;
-	tcb->end_seq = tp->write_seq;
 }
 
 void mptcp_combine_dfin(struct sk_buff *skb, struct tcp_sock *meta_tp,
