@@ -3407,6 +3407,8 @@ EXPORT_SYMBOL(tcp_cookie_generator);
 
 void tcp_done(struct sock *sk)
 {
+	struct tcp_sock *tp = tcp_sk(sk);
+
 	if (sk->sk_state == TCP_SYN_SENT || sk->sk_state == TCP_SYN_RECV)
 		TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_ATTEMPTFAILS);
 
@@ -3414,15 +3416,18 @@ void tcp_done(struct sock *sk)
 
 	/* If it is a meta-sk sending mp_rst we have to maintain the
 	 * rexmit-timer for retransmitting the MP_RST */
-	if (!tcp_sk(sk)->mpc || !is_meta_sk(sk) || !tcp_sk(sk)->send_mp_rst)
+	if (!tp->mpc || !is_meta_sk(sk) || !tp->send_mp_rst)
 		tcp_clear_xmit_timers(sk);
 
 	sk->sk_shutdown = SHUTDOWN_MASK;
 
-	if (!sock_flag(sk, SOCK_DEAD))
-		sk->sk_state_change(sk);
-	else
+	if (!sock_flag(sk, SOCK_DEAD)) {
+		/* In case of mptcp, only wake up if it's the meta-sk */
+		if ((tp->mpc && is_meta_sk(sk)) || !tp->mpc)
+			sk->sk_state_change(sk);
+	} else {
 		inet_csk_destroy_sock(sk);
+	}
 }
 EXPORT_SYMBOL_GPL(tcp_done);
 
