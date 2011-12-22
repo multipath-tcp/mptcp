@@ -889,6 +889,7 @@ static inline void mptcp_mp_fail_rcvd(struct multipath_pcb *mpcb,
 
 	if (unlikely(mpcb->rx_opt.mp_rst)) {
 		struct sock *sk_it, *sk_tmp;
+		mpcb->rx_opt.mp_rst = 0;
 
 		tcp_send_active_reset(sk, GFP_ATOMIC);
 
