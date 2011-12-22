@@ -3150,13 +3150,12 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		mopt->mp_fail = 1;
 		break;
 	case MPTCP_SUB_RST:
-		if (!mopt->mpcb)
-			return;
+		mopt->mp_rst = 1;
 
 		ptr += 2;
 
-		if (mopt->mpcb->mptcp_loc_key == *((__u64 *)ptr))
-			mopt->mp_rst = 1;
+		if (mopt->mpcb && mopt->mpcb->mptcp_loc_key != *((__u64 *)ptr))
+			mopt->mp_rst = 0;
 
 		break;
 	default:

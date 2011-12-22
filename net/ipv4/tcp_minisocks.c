@@ -158,6 +158,10 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 			tmp_opt.ts_recent_stamp	= tcptw->tw_ts_recent_stamp;
 			paws_reject = tcp_paws_reject(&tmp_opt, th->rst);
 		}
+
+		/* TODO MPTCP: No key-verification here!!! */
+		if (mopt.mp_rst)
+			goto kill_with_rst;
 	}
 
 	if (tw->tw_substate == TCP_FIN_WAIT2) {
