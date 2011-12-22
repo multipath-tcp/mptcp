@@ -645,6 +645,7 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 
 			if (pa4->tried)
 				continue;
+			pa4->tried = 1;
 
 			loculid = (struct sockaddr *)&pa4->loc;
 
@@ -659,6 +660,7 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 
 			if (pa6->tried)
 				continue;
+			pa6->tried = 1;
 
 			loculid = (struct sockaddr *)&pa6->loc;
 
@@ -751,13 +753,10 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 		sk_set_socket(sk, meta_sk->sk_socket);
 		sk->sk_wq = meta_sk->sk_wq;
 
-		if (family == AF_INET) {
+		if (family == AF_INET)
 			pa4->loc.sin_port = inet_sk(sk)->inet_sport;
-			pa4->tried = 1;
-		} else {
+		else
 			pa6->loc.sin6_port = inet_sk(sk)->inet_sport;
-			pa6->tried = 1;
-		}
 
 		continue;
 
