@@ -738,15 +738,15 @@ int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
 
 		ret = sock.ops->bind(&sock, loculid, ulid_size);
 		if (ret < 0) {
-			printk(KERN_ERR "%s: MPTCP subsocket bind() failed, "
-					"error %d\n", __func__, ret);
+			mptcp_debug(KERN_ERR "%s: MPTCP subsocket bind() "
+					"failed, error %d\n", __func__, ret);
 			goto cont_error;
 		}
 
 		ret = sock.ops->connect(&sock, remulid, ulid_size, O_NONBLOCK);
 		if (ret < 0 && ret != -EINPROGRESS) {
-			printk(KERN_ERR "%s: MPTCP subsocket connect() failed, "
-					"error %d\n", __func__, ret);
+			mptcp_debug(KERN_ERR "%s: MPTCP subsocket connect() "
+					"failed, error %d\n", __func__, ret);
 			goto cont_error;
 		}
 
@@ -3684,9 +3684,6 @@ static void mptcp_sub_close(struct sock *sk)
 		tcp_send_fin(sk);
 	}
 
-	if (!tcp_sk(sk)->mpc)
-		sk_stream_wait_close(sk, 0);
-
 adjudge_to_death:
 	state = sk->sk_state;
 	sock_hold(sk);
@@ -3772,7 +3769,7 @@ void mptcp_clean_rtx_queue(struct sock *meta_sk)
 
 		tcp_unlink_write_queue(skb, meta_sk);
 
-		if (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN) {
+		if (mptcp_is_data_fin(skb)) {
 			struct sock *sk_it, *sk_tmp;
 			/* DATA_FIN has been acknowledged - now we can close
 			 * the subflows */
