@@ -5117,7 +5117,7 @@ static void tcp_new_space(struct sock *sk)
  * If the flow is MPTCP, sk is the subsock, and meta_sk is the mpcb.
  * Otherwise both are the regular TCP socket.
  */
-void tcp_check_space(struct sock *sk)
+static void tcp_check_space(struct sock *sk)
 {
 	struct sock *meta_sk = tcp_sk(sk)->mpc ? mpcb_meta_sk(tcp_sk(sk)->mpcb) : sk;
 

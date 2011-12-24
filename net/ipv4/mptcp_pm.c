@@ -419,7 +419,7 @@ struct mp_join *mptcp_find_join(struct sk_buff *skb)
 
 		switch (opcode) {
 		case TCPOPT_EOL:
-			return 0;
+			return NULL;
 		case TCPOPT_NOP:	/* Ref: RFC 793 section 3.1 */
 			length--;
 			continue;

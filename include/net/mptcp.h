@@ -928,7 +928,7 @@ static inline int mptcp_get_path_family(struct multipath_pcb *mpcb,
 }
 
 static inline struct sock *mptcp_sk_clone(struct sock *sk, int family,
-		int priority)
+					  const gfp_t priority)
 {
 	struct sock *newsk;
 	struct multipath_pcb *mpcb = (struct multipath_pcb *) sk;
@@ -956,8 +956,8 @@ static inline int mptcp_get_path_family(struct multipath_pcb *mpcb,
 {
 	return AF_INET;
 }
-static inline struct sock *mptcp_sk_clone(struct sock *sk, int family,
-		int priority)
+static inline struct sock *mptcp_sk_clone(const struct sock *sk, int family,
+					  const gfp_t priority)
 {
 	return sk_clone(sk, priority);
 }

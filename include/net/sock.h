@@ -1087,7 +1087,7 @@ extern void			sk_release_kernel(struct sock *sk);
 extern struct sock		*sk_clone(const struct sock *sk,
 					  const gfp_t priority);
 extern void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
-			gfp_t flags);
+			     const gfp_t flags);
 extern struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
 		int family);
 extern struct sk_buff		*sock_wmalloc(struct sock *sk,

@@ -1047,7 +1047,7 @@ EXPORT_SYMBOL(sk_prot_clear_portaddr_nulls);
 #ifdef CONFIG_MPTCP
 /* Code inspired from sk_clone() */
 void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
-		      gfp_t flags)
+		      const gfp_t flags)
 {
 	struct sk_filter *filter;
 #ifdef CONFIG_SECURITY_NETWORK

@@ -361,9 +361,9 @@ int sysctl_mptcp_ndiffports __read_mostly = 1;
 int sysctl_mptcp_enabled __read_mostly = 1;
 int sysctl_mptcp_scheduler __read_mostly = 1;
 int sysctl_mptcp_checksum __read_mostly = 1;
-int sysctl_mptcp_rbuf_opti __read_mostly = 1;
-int sysctl_mptcp_rbuf_retr __read_mostly = 1;
-int sysctl_mptcp_rbuf_penal __read_mostly = 1;
+static int sysctl_mptcp_rbuf_opti __read_mostly = 1;
+static int sysctl_mptcp_rbuf_retr __read_mostly = 1;
+static int sysctl_mptcp_rbuf_penal __read_mostly = 1;
 
 static ctl_table mptcp_table[] = {
 	{
