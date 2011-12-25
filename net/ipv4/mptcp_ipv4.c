@@ -499,6 +499,9 @@ static int mptcp_pm_netdev_event(struct notifier_block *this,
 	if (!(event == NETDEV_UP || event == NETDEV_DOWN))
 		return NOTIFY_DONE;
 
+	if (dev->flags & IFF_NOMULTIPATH)
+		return NOTIFY_DONE;
+
 	/* Iterate over the addresses of the interface, then we go over the
 	 * mpcb's to modify them - that way we take tk_hash_lock for a shorter
 	 * time at each iteration. - otherwise we would need to take it from the
@@ -526,6 +529,9 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 	struct tcp_sock *tp;
 
 	if (ifa->ifa_scope > RT_SCOPE_LINK)
+		return;
+
+	if (ifa->ifa_dev->dev->flags & IFF_NOMULTIPATH)
 		return;
 
 	/* Look for the address among the local addresses */

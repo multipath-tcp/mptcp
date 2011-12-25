@@ -607,6 +607,9 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 	if (ifa->scope > RT_SCOPE_LINK)
 		return;
 
+	if (ifa->idev->dev->flags & IFF_NOMULTIPATH)
+		return;
+
 	if (addr_type == IPV6_ADDR_ANY ||
 			addr_type & IPV6_ADDR_LOOPBACK ||
 			addr_type & IPV6_ADDR_LINKLOCAL)

@@ -261,7 +261,7 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 			struct inet6_ifaddr *ifa6;
 #endif
 
-			if (dev->flags & IFF_LOOPBACK)
+			if (dev->flags & (IFF_LOOPBACK | IFF_NOMULTIPATH))
 				continue;
 
 			for (ifa = in_dev->ifa_list; ifa; ifa = ifa->ifa_next) {
