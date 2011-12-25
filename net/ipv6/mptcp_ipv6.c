@@ -191,7 +191,7 @@ struct mptcp_path6 *mptcp_v6_find_path(struct mptcp_loc6 *loc, struct mptcp_loc6
  *
  */
 int mptcp_v6_add_raddress(struct multipath_options *mopt,
-			 struct in6_addr *addr, __be16 port, u8 id)
+			  const struct in6_addr *addr, __be16 port, u8 id)
 {
 	int i;
 	int num_addr6 = mopt->num_addr6;

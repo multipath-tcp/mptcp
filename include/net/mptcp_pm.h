@@ -76,75 +76,34 @@ struct mptcp_path6 {
 	u8			tried:1;
 };
 
+void mptcp_update_patharray(struct multipath_pcb *mpcb);
+void mptcp_hash_request_remove(struct request_sock *req);
+void mptcp_send_updatenotif(struct multipath_pcb *mpcb);
+
 struct mp_join *mptcp_find_join(struct sk_buff *skb);
 u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock *sk);
 void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token);
 void mptcp_hash_remove(struct multipath_pcb *mpcb);
-void mptcp_hash_request_remove(struct request_sock *req);
 struct multipath_pcb *mptcp_hash_find(u32 token);
 int mptcp_lookup_join(struct sk_buff *skb);
 int mptcp_find_token(u32 token);
 struct dst_entry *mptcp_route_req(const struct request_sock *req,
 				  struct sock *meta_sk);
-void mptcp_send_updatenotif(struct multipath_pcb *mpcb);
 void mptcp_set_addresses(struct multipath_pcb *mpcb);
 void mptcp_subflow_attach(struct multipath_pcb *mpcb, struct sock *subsk);
 int mptcp_syn_recv_sock(struct sk_buff *skb);
-void mptcp_update_patharray(struct multipath_pcb *mpcb);
 void __mptcp_update_patharray_ports(struct multipath_pcb *mpcb);
 int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family);
 
 #else /* CONFIG_MPTCP */
 
-#define mptcp_tp_recv_token(__tp) (0)
-
 static inline void mptcp_update_patharray(struct multipath_pcb *mpcb)
-{
-}
-
-static inline void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token)
-{
-}
-
-static inline void mptcp_hash_remove(struct multipath_pcb *mpcb)
 {
 }
 
 static inline void mptcp_hash_request_remove(struct request_sock *req)
 {
 }
-
-static inline struct multipath_pcb *mptcp_hash_find(u32 token)
-{
-	return NULL;
-}
-
-static inline void mptcp_set_addresses(struct multipath_pcb *mpcb)
-{
-}
-
-static inline struct in_addr *mptcp_get_loc_addr4(struct multipath_pcb *mpcb,
-		int path_index)
-{
-	return NULL;
-}
-
-static inline u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb,
-		struct sock *sk)
-{
-	return 0;
-}
-
-static inline int mptcp_lookup_join(struct sk_buff *skb)
-{
-	return 0;
-}
-
-static inline int mptcp_syn_recv_sock(struct sk_buff *skb)
-{
-	return 0;
-}
-
 
 static inline void mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 {

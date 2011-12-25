@@ -3131,8 +3131,8 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 			if (opsize == MPTCP_SUB_LEN_ADD_ADDR4 + 2)
 				port = (__be16) *(ptr + 4);
 
-			mptcp_v4_add_raddress(mopt, (struct in_addr *) ptr,
-					port, mpadd->addr_id);
+			mptcp_v4_add_raddress(mopt, (struct in_addr *)ptr,
+					      port, mpadd->addr_id);
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 		} else if (mpadd->ipver == 6) {
 			__be16 port = 0;
@@ -3140,7 +3140,7 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 				port = (__be16) *(ptr + 16);
 
 			mptcp_v6_add_raddress(mopt, (struct in6_addr *) ptr,
-					port, mpadd->addr_id);
+					      port, mpadd->addr_id);
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 		}
 		break;

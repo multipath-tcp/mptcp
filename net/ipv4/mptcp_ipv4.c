@@ -177,7 +177,7 @@ struct mptcp_path4 *mptcp_v4_get_path(struct multipath_pcb *mpcb, int path_index
  * address
  */
 int mptcp_v4_add_raddress(struct multipath_options *mopt,
-			struct in_addr *addr, __be16 port, u8 id)
+			  const struct in_addr *addr, __be16 port, u8 id)
 {
 	int i;
 	int num_addr4 = mopt->num_addr4;

@@ -28,57 +28,37 @@
 #ifdef CONFIG_MPTCP
 
 int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb);
-struct mptcp_path4 *mptcp_v4_find_path(struct mptcp_loc4 *loc, struct mptcp_loc4 *rem,
-				 struct multipath_pcb *mpcb);
-struct mptcp_path4 *mptcp_v4_get_path(struct multipath_pcb *mpcb, int path_index);
-int mptcp_v4_add_raddress(struct multipath_options *mopt, struct in_addr *addr,
-			__be16 port, u8 id);
+int mptcp_v4_send_synack(struct sock *meta_sk, struct request_sock *req,
+			 struct request_values *rvp);
+
+struct mptcp_path4 *mptcp_v4_find_path(struct mptcp_loc4 *loc,
+				       struct mptcp_loc4 *rem,
+				       struct multipath_pcb *mpcb);
+struct mptcp_path4 *mptcp_v4_get_path(struct multipath_pcb *mpcb,
+				      int path_index);
+int mptcp_v4_add_raddress(struct multipath_options *mopt,
+			  const struct in_addr *addr, __be16 port, u8 id)
 struct request_sock *mptcp_v4_search_req(const __be16 rport,
-					const __be32 raddr,
-					const __be32 laddr);
-int mptcp_v4_send_synack(struct sock *meta_sk,
-			struct request_sock *req,
-			struct request_values *rvp);
+					 const __be32 raddr,
+					 const __be32 laddr);
 void mptcp_v4_update_patharray(struct multipath_pcb *mpcb);
 void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
-		struct multipath_pcb *mpcb);
+				  struct multipath_pcb *mpcb);
 void mptcp_pm_v4_init(void);
 
 #else
 
-static inline int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
+static inline int mptcp_v4_do_rcv(const struct sock *meta_sk,
+				  const struct sk_buff *skb)
 {
 	return 0;
 }
 
-static inline struct mptcp_path4 *mptcp_v4_get_path(struct multipath_pcb *mpcb,
-		int path_index)
-{
-	return NULL;
-}
-
-static inline int mptcp_v4_add_raddress(struct multipath_options *mopt,
-		struct in_addr *addr, __be16 port, u8 id)
+static inline int mptcp_v4_send_synack(const struct sock *meta_sk,
+				       const struct request_sock *req,
+				       const struct request_values *rvp)
 {
 	return 0;
-}
-
-struct request_sock *mptcp_v4_search_req(const __be16 rport,
-					const __be32 raddr,
-					const __be32 laddr)
-{
-	return NULL;
-}
-
-static inline int mptcp_v4_send_synack(struct sock *meta_sk,
-			struct request_sock *req,
-			struct request_values *rvp)
-{
-	return 0;
-}
-
-static inline void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
-{
 }
 
 #endif /* CONFIG_MPTCP */
