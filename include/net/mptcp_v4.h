@@ -31,17 +31,15 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb);
 int mptcp_v4_send_synack(struct sock *meta_sk, struct request_sock *req,
 			 struct request_values *rvp);
 
-struct mptcp_path4 *mptcp_v4_find_path(struct mptcp_loc4 *loc,
-				       struct mptcp_loc4 *rem,
-				       struct multipath_pcb *mpcb);
-struct mptcp_path4 *mptcp_v4_get_path(struct multipath_pcb *mpcb,
-				      int path_index);
 int mptcp_v4_add_raddress(struct multipath_options *mopt,
-			  const struct in_addr *addr, __be16 port, u8 id)
+			  const struct in_addr *addr, __be16 port, u8 id);
+void mptcp_v4_set_init_addr_bit(struct multipath_pcb *mpcb, __be32 daddr);
 struct request_sock *mptcp_v4_search_req(const __be16 rport,
 					 const __be32 raddr,
 					 const __be32 laddr);
-void mptcp_v4_update_patharray(struct multipath_pcb *mpcb);
+void mptcp_init4_subsockets(struct multipath_pcb *mpcb,
+			    const struct mptcp_loc4 *loc,
+			    struct mptcp_loc4 *rem);
 void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 				  struct multipath_pcb *mpcb);
 void mptcp_pm_v4_init(void);

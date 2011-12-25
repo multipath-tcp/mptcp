@@ -144,44 +144,35 @@ void mptcp_hash_request_remove(struct request_sock *req)
 
 u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock* sk)
 {
-	struct sock *meta_sk = mpcb_meta_sk(mpcb);
 	int i;
 
 	if (sk->sk_family == AF_INET) {
-		for (i = 0; i < mpcb->num_addr4; i++) {
+		for (i = 0; i < MPTCP_MAX_ADDR; i++) {
+			if (!((1 << i) & mpcb->loc4_bits))
+				continue;
+
 			if (mpcb->addr4[i].addr.s_addr ==
 					inet_sk(sk)->inet_saddr)
 				return mpcb->addr4[i].id;
 		}
-		/* thus it must be the master-socket */
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-		if (mptcp_v6_is_v4_mapped(meta_sk) &&
-		    inet_sk(meta_sk)->inet_saddr == inet_sk(sk)->inet_saddr)
-			return 0;
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
-		if (meta_sk->sk_family == AF_INET &&
-		    inet_sk(meta_sk)->inet_saddr == inet_sk(sk)->inet_saddr) {
-			return 0;
-		}
 
-		mptcp_debug("%s %pI4 not locally found\n", __func__,
-					&inet_sk(sk)->inet_saddr);
+		mptcp_debug("%s %pI4 not locally found\n",
+				__func__, &inet_sk(sk)->inet_saddr);
 		BUG();
 	}
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	if (sk->sk_family == AF_INET6) {
-		for (i = 0; i < mpcb->num_addr6; i++) {
+		for (i = 0; i < MPTCP_MAX_ADDR; i++) {
+			if (!((1 << i) & mpcb->loc6_bits))
+				continue;
+
 			if (ipv6_addr_equal(&mpcb->addr6[i].addr,
-					&inet6_sk(sk)->saddr))
+					    &inet6_sk(sk)->saddr))
 				return mpcb->addr6[i].id;
 		}
-		/* thus it must be the master-socket - id = 0 */
-		if (meta_sk->sk_family == AF_INET6 &&
-		    ipv6_addr_equal(&inet6_sk(meta_sk)->saddr, &inet6_sk(sk)->saddr))
-			return 0;
 
-		mptcp_debug("%s %pI6 not locally found\n", __func__,
-				&inet6_sk(sk)->saddr);
+		mptcp_debug("%s %pI6 not locally found\n",
+				__func__, &inet6_sk(sk)->saddr);
 		BUG();
 	}
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
@@ -189,63 +180,15 @@ u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock* sk)
 	BUG();
 }
 
-void __mptcp_update_patharray_ports(struct multipath_pcb *mpcb)
-{
-	int pa4_size = sysctl_mptcp_ndiffports - 1; /* -1 because the initial
-						     * flow counts for one.
-						     */
-	struct mptcp_path4 *new_pa4;
-	int newpa_idx = 0;
-	struct sock *meta_sk = (struct sock *)mpcb;
-
-	if (mpcb->pa4)
-		return; /* path allocation already done */
-
-	new_pa4 = kmalloc(pa4_size * sizeof(struct mptcp_path4), GFP_ATOMIC);
-
-	for (newpa_idx = 0; newpa_idx < pa4_size; newpa_idx++) {
-		new_pa4[newpa_idx].loc.sin_family = AF_INET;
-		new_pa4[newpa_idx].loc.sin_addr.s_addr =
-				inet_sk(meta_sk)->inet_saddr;
-		new_pa4[newpa_idx].loc.sin_port = 0;
-		new_pa4[newpa_idx].loc_id = 0; /* ulid has id 0 */
-		new_pa4[newpa_idx].rem.sin_family = AF_INET;
-		new_pa4[newpa_idx].rem.sin_addr.s_addr =
-			inet_sk(meta_sk)->inet_daddr;
-		new_pa4[newpa_idx].rem.sin_port = inet_sk(meta_sk)->inet_dport;
-		new_pa4[newpa_idx].rem_id = 0; /* ulid has id 0 */
-
-		new_pa4[newpa_idx].path_index = mpcb->next_unused_pi++;
-	}
-
-	mpcb->pa4 = new_pa4;
-	mpcb->pa4_size = pa4_size;
-}
-void mptcp_update_patharray(struct multipath_pcb *mpcb)
-{
-	mptcp_v4_update_patharray(mpcb);
-
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-	mptcp_v6_update_patharray(mpcb);
-#endif
-
-}
-
 void mptcp_set_addresses(struct multipath_pcb *mpcb)
 {
-	struct net_device *dev;
 	struct sock *meta_sk = mpcb_meta_sk(mpcb);
-	int id = 1;
-	int num_addr4 = 0;
-
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-	int num_addr6 = 0;
-#endif
+	struct net_device *dev;
 
 	/* if multiports is requested, we work with the main address
 	 * and play only with the ports
 	 */
-	if (sysctl_mptcp_ndiffports != 1)
+	if (sysctl_mptcp_ndiffports > 1)
 		return;
 
 	read_lock_bh(&dev_base_lock);
@@ -265,57 +208,65 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 				continue;
 
 			for (ifa = in_dev->ifa_list; ifa; ifa = ifa->ifa_next) {
+				int i;
 				ifa_address = ifa->ifa_local;
 
-				if (num_addr4 == MPTCP_MAX_ADDR) {
-					mptcp_debug ("%s: At max num of local "
-						"addresses: %d --- not adding "
-						"address: %pI4\n",
-						__func__, MPTCP_MAX_ADDR,
-						&ifa_address);
-					goto out;
-				}
-
-				if (meta_sk->sk_family == AF_INET &&
-				    inet_sk(meta_sk)->inet_saddr == ifa->ifa_address)
-					continue;
-				/* master is IPv4 mapped IPv6 sk */
-				if (mptcp_v6_is_v4_mapped(meta_sk) &&
-				    inet_sk(meta_sk)->inet_saddr == ifa->ifa_address )
-					continue;
 				if (ifa->ifa_scope == RT_SCOPE_HOST)
 					continue;
-				mpcb->addr4[num_addr4].addr.s_addr =
-				    ifa_address;
-				mpcb->addr4[num_addr4].port = 0;
-				mpcb->addr4[num_addr4++].id = id++;
+
+				if ((meta_sk->sk_family == AF_INET ||
+				     mptcp_v6_is_v4_mapped(meta_sk)) &&
+				    inet_sk(meta_sk)->inet_saddr == ifa_address)
+					continue;
+
+				i = mptcp_find_addrindex(mpcb->loc4_bits);
+				if (i < 0) {
+					mptcp_debug ("%s: At max num of local "
+						"addresses: %d --- not adding "
+						"address: %pI4\n", __func__,
+						MPTCP_MAX_ADDR, &ifa_address);
+					goto out;
+				}
+				mpcb->addr4[i].addr.s_addr = ifa_address;
+				mpcb->addr4[i].port = 0;
+				mpcb->addr4[i].bitfield = 0;
+				mpcb->addr4[i].id = i;
+				mpcb->loc4_bits |= (1 << i);
+				mpcb->add_addr4 |= (1 << i);
 			}
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 
-			list_for_each_entry(ifa6, &in6_dev->addr_list,
-					if_list) {
+			list_for_each_entry(ifa6, &in6_dev->addr_list, if_list) {
 				int addr_type = ipv6_addr_type(&ifa6->addr);
-				if (num_addr6 == MPTCP_MAX_ADDR) {
-					mptcp_debug("%s: At max num of local"
-						"addresses: %d --- not adding"
-						"address: %pI6\n",
-						__func__,
-						MPTCP_MAX_ADDR, &ifa6->addr);
-					goto out;
-				}
-				if (meta_sk->sk_family == AF_INET6 &&
-				    !mptcp_v6_is_v4_mapped(meta_sk) &&
-				    ipv6_addr_equal(&(ifa6->addr), &(inet6_sk(meta_sk)->saddr)))
-					continue;
+				int i;
+
 				if (addr_type == IPV6_ADDR_ANY ||
 				    addr_type & IPV6_ADDR_LOOPBACK ||
 				    addr_type & IPV6_ADDR_LINKLOCAL)
 					continue;
-				ipv6_addr_copy(&(mpcb->addr6[num_addr6].addr),
+
+				if (meta_sk->sk_family == AF_INET6 &&
+				    ipv6_addr_equal(&inet6_sk(meta_sk)->saddr,
+						    &(ifa6->addr)))
+					continue;
+
+				i = mptcp_find_addrindex(mpcb->loc6_bits);
+				if (i < 0) {
+					mptcp_debug("%s: At max num of local"
+						"addresses: %d --- not adding"
+						"address: %pI6\n", __func__,
+						MPTCP_MAX_ADDR, &ifa6->addr);
+					goto out;
+				}
+
+				ipv6_addr_copy(&(mpcb->addr6[i].addr),
 					&(ifa6->addr));
-				mpcb->addr6[num_addr6].port = 0;
-				mpcb->addr6[num_addr6++].id = id++;
+				mpcb->addr6[i].port = 0;
+				mpcb->addr6[i].bitfield = 0;
+				mpcb->addr6[i].id = i;
+				mpcb->loc6_bits |= (1 << i);
+				mpcb->add_addr6 |= (1 << i);
 			}
 #endif
 		}
@@ -323,17 +274,6 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 
 out:
 	read_unlock_bh(&dev_base_lock);
-
-	/* We update num_addr4 at the end to avoid racing with the ADDR option
-	 * trigger (in tcp_established_options()),
-	 * which can interrupt us in the middle of this function,
-	 * and decide to already send the set of addresses, even though all
-	 * addresses have not yet been read.
-	 */
-	mpcb->num_addr4 = mpcb->addr4_unsent = num_addr4;
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-	mpcb->num_addr6 = mpcb->addr6_unsent = num_addr6;
-#endif
 }
 
 struct dst_entry *mptcp_route_req(const struct request_sock *req,
@@ -456,7 +396,7 @@ int mptcp_lookup_join(struct sk_buff *skb)
 		return 0;
 
 	join_opt++; /* the token is at the end of struct mp_join */
-	token = *(u32 *) join_opt;
+	token = *(u32 *)join_opt;
 	mpcb = mptcp_hash_find(token);
 	meta_sk = mpcb_meta_sk(mpcb);
 	if (!mpcb) {
@@ -493,37 +433,90 @@ int mptcp_lookup_join(struct sk_buff *skb)
 }
 
 /**
- * Sends an update notification to the MPS
- * Since this particular PM works in the TCP layer, that is, the same
- * as the MPS, we "send" the notif through function call, not message
- * passing.
- * Warning: this can be called only from user context, not soft irq
+ * Create all new subflows, by doing calls to mptcp_initX_subsockets
+ *
+ * This function uses a goto next_subflow, to allow releasing the lock between
+ * new subflows and giving other processes a chance to do some work on the
+ * socket and potentially finishing the communication.
  **/
-static void __mptcp_send_updatenotif(struct multipath_pcb *mpcb)
-{
-	int i;
-	u32 path_indices = 1;	/* Path index 1 is reserved for master sk. */
-
-	if (sock_flag(mpcb_meta_sk(mpcb), SOCK_DEAD))
-		return;
-
-	for (i = 0; i < mpcb->pa4_size; i++)
-		path_indices |= mptcp_pi_to_flag(mpcb->pa4[i].path_index);
-
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-	for (i = 0; i < mpcb->pa6_size; i++)
-		path_indices |= mptcp_pi_to_flag(mpcb->pa6[i].path_index);
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
-	mptcp_init_subsockets(mpcb, path_indices);
-}
-
 static void mptcp_send_updatenotif_wq(struct work_struct *work)
 {
 	struct multipath_pcb *mpcb = *(struct multipath_pcb **)(work + 1);
 	struct sock *meta_sk = mpcb_meta_sk(mpcb);
+	int iter = 0;
+	int i;
+
+next_subflow:
+	if (iter) {
+		release_sock(meta_sk);
+		mutex_unlock(&mpcb->mutex);
+
+		yield();
+	}
 	mutex_lock(&mpcb->mutex);
 	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
-	__mptcp_send_updatenotif(mpcb);
+
+	iter++;
+
+	if (sock_flag(meta_sk, SOCK_DEAD))
+		goto exit;
+
+	if (sysctl_mptcp_ndiffports > iter) {
+		if (meta_sk->sk_family == AF_INET ||
+		    mptcp_v6_is_v4_mapped(meta_sk)) {
+			mptcp_init4_subsockets(mpcb, &mpcb->addr4[0],
+					       &mpcb->rx_opt.addr4[0]);
+		} else {
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+			mptcp_init6_subsockets(mpcb, &mpcb->addr6[0],
+					       &mpcb->rx_opt.addr6[0]);
+#endif
+		}
+		goto next_subflow;
+	}
+	if (sysctl_mptcp_ndiffports > 1 && sysctl_mptcp_ndiffports == iter)
+		goto exit;
+
+	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
+		struct mptcp_loc4 *rem;
+		u8 remaining_bits;
+
+		if (!((1 << i) & mpcb->rx_opt.rem4_bits))
+			continue;
+
+		rem = &mpcb->rx_opt.addr4[i];
+
+		remaining_bits = ~(rem->bitfield) & mpcb->loc4_bits;
+
+		/* Are there still combinations to handle? */
+		if (remaining_bits) {
+			int i = mptcp_find_addrindex(~remaining_bits);
+			mptcp_init4_subsockets(mpcb, &mpcb->addr4[i], rem);
+			goto next_subflow;
+		}
+	}
+
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
+		struct mptcp_loc6 *rem;
+		u8 remaining_bits;
+
+		if (!((1 << i) & mpcb->rx_opt.rem6_bits))
+			continue;
+
+		rem = &mpcb->rx_opt.addr6[i];
+		remaining_bits = ~(rem->bitfield) & mpcb->loc6_bits;
+
+		/* Are there still combinations to handle? */
+		if (remaining_bits) {
+			int i = mptcp_find_addrindex(~remaining_bits);
+			mptcp_init6_subsockets(mpcb, &mpcb->addr6[i], rem);
+			goto next_subflow;
+		}
+	}
+#endif
+
+exit:
 	release_sock(meta_sk);
 	mutex_unlock(&mpcb->mutex);
 	sock_put(meta_sk);
@@ -532,97 +525,23 @@ static void mptcp_send_updatenotif_wq(struct work_struct *work)
 
 void mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 {
+	struct work_struct *work;
+	struct multipath_pcb **mpcbp;
+
 	if ((mpcb->master_sk && !tcp_sk(mpcb->master_sk)->fully_established) ||
 	    mpcb->infinite_mapping ||
 	    test_bit(MPCB_FLAG_SERVER_SIDE, &mpcb->flags) ||
 	    sock_flag(mpcb_meta_sk(mpcb), SOCK_DEAD))
 		return;
 
-	if (in_interrupt()) {
-		struct work_struct *work = kmalloc(sizeof(*work) + sizeof(mpcb),
-						   GFP_ATOMIC);
-		struct multipath_pcb **mpcbp = (struct multipath_pcb **)(work + 1);
-		*mpcbp = mpcb;
-		sock_hold(mpcb_meta_sk(mpcb)); /* Needed to ensure we can take
-					        * the lock */
-		INIT_WORK(work, mptcp_send_updatenotif_wq);
-		schedule_work(work);
-	} else {
-		__mptcp_send_updatenotif(mpcb);
-	}
-}
+	work = kmalloc(sizeof(*work) + sizeof(mpcb),
+					   GFP_ATOMIC);
+	mpcbp = (struct multipath_pcb **)(work + 1);
+	*mpcbp = mpcb;
 
-void mptcp_subflow_attach(struct multipath_pcb *mpcb, struct sock *subsk)
-{
-	struct mptcp_path4 *p4 = NULL;
-	struct mptcp_path6 *p6 = NULL;
-	struct mptcp_loc4 loc, rem;
-	struct mptcp_loc6 loc6, rem6;
-	loc.id = inet_sk(subsk)->loc_id;
-	loc.port = inet_sk(subsk)->inet_sport;
-	rem.id = inet_sk(subsk)->rem_id;
-	rem.port = inet_sk(subsk)->inet_dport;
-	loc6.id = inet_sk(subsk)->loc_id;
-	loc6.port = inet_sk(subsk)->inet_sport;
-	rem6.id = inet_sk(subsk)->rem_id;
-	rem6.port = inet_sk(subsk)->inet_dport;
-	/* Apply correct path index to that subflow
-	 * (we bypass the patharray if in multiports mode)
-	 */
-	if (sysctl_mptcp_ndiffports > 1)
-		goto diffPorts;
-
-	if (subsk->sk_family == AF_INET)
-		p4 = mptcp_v4_find_path(&loc, &rem, mpcb);
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-	else
-		p6 = mptcp_v6_find_path(&loc6, &rem6, mpcb);
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
-
-	if (!p4 && !p6) {
-		/* It is possible that we don't find the mapping,
-		 * if we have not yet updated our set of local
-		 * addresses.
-		 */
-		mptcp_set_addresses(mpcb);
-
-		/* If this added new local addresses, build new paths
-		 * with them
-		 */
-		if (mpcb->num_addr4 || mpcb->num_addr6)
-			mptcp_update_patharray(mpcb);
-
-		if (subsk->sk_family == AF_INET)
-			p4 = mptcp_v4_find_path(&loc, &rem, mpcb);
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-		else
-			p6 = mptcp_v6_find_path(&loc6, &rem6, mpcb);
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
-	}
-
-	if (p4 || p6) {
-		if (subsk->sk_family == AF_INET) {
-			tcp_sk(subsk)->path_index = p4->path_index;
-			p4->loc.sin_port = loc.port;
-			p4->rem.sin_port = rem.port;
-		}
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-		else {
-			tcp_sk(subsk)->path_index = p6->path_index;
-			p6->loc.sin6_port = loc6.port;
-			p6->rem.sin6_port = rem6.port;
-		}
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
-	} else {
-diffPorts:
-		tcp_sk(subsk)->path_index = mpcb->next_unused_pi++;
-	}
-
-	/* Point it to the same struct socket and wq as the meta_sk */
-	sk_set_socket(subsk, mpcb_meta_sk(mpcb)->sk_socket);
-	subsk->sk_wq = mpcb_meta_sk(mpcb)->sk_wq;
-
-	mptcp_add_sock(mpcb, tcp_sk(subsk));
+	sock_hold(mpcb_meta_sk(mpcb));
+	INIT_WORK(work, mptcp_send_updatenotif_wq);
+	schedule_work(work);
 }
 
 /**
@@ -634,6 +553,9 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 	int i;
 
 	if (!(event == NETDEV_UP || event == NETDEV_DOWN))
+		return NOTIFY_DONE;
+
+	if (sysctl_mptcp_ndiffports > 1)
 		return NOTIFY_DONE;
 
 	/* Now we iterate over the mpcb's */

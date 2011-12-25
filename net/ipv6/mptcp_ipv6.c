@@ -19,6 +19,7 @@
 
 #include <net/flow.h>
 #include <net/inet6_connection_sock.h>
+#include <net/inet_common.h>
 #include <net/ipv6.h>
 #include <net/mptcp.h>
 #include <net/mptcp_pm.h>
@@ -151,39 +152,6 @@ drop_and_free:
 	return -1;
 }
 
-struct mptcp_path6 *mptcp_get_path6(struct multipath_pcb *mpcb, int path_index)
-{
-	int i;
-	for (i = 0; i < mpcb->pa6_size; i++)
-		if (mpcb->pa6[i].path_index == path_index)
-			return &mpcb->pa6[i];
-	return NULL;
-}
-
-struct mptcp_path6 *mptcp_v6_find_path(struct mptcp_loc6 *loc, struct mptcp_loc6 *rem,
-				 struct multipath_pcb *mpcb)
-{
-	int i;
-	for (i = 0; i < mpcb->pa6_size; i++) {
-		if (mpcb->pa6[i].loc_id != loc->id ||
-		    mpcb->pa6[i].rem_id != rem->id)
-			continue;
-
-		/* Addresses are equal - now check the port numbers
-		 * (0 means wildcard) */
-		if (mpcb->pa6[i].loc.sin6_port && loc->port &&
-		    mpcb->pa6[i].loc.sin6_port != loc->port)
-			continue;
-
-		if (mpcb->pa6[i].rem.sin6_port && rem->port &&
-		    mpcb->pa6[i].rem.sin6_port != rem->port)
-			continue;
-
-		return &mpcb->pa6[i];
-	}
-	return NULL;
-}
-
 /**
  * Based on function tcp_v4_conn_request (tcp_ipv4.c)
  * Returns -1 if there is no space anymore to store an additional
@@ -194,16 +162,12 @@ int mptcp_v6_add_raddress(struct multipath_options *mopt,
 			  const struct in6_addr *addr, __be16 port, u8 id)
 {
 	int i;
-	int num_addr6 = mopt->num_addr6;
 	struct mptcp_loc6 *loc6 = &mopt->addr6[0];
 
-	/* If the id is zero, this is the ULID, do not add it. */
-	if (!id)
-		return 0;
+	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
+		if (!((1 << i) & mopt->rem6_bits))
+			continue;
 
-	BUG_ON(num_addr6 > MPTCP_MAX_ADDR);
-
-	for (i = 0; i < num_addr6; i++) {
 		loc6 = &mopt->addr6[i];
 
 		/* Address is already in the list --- continue */
@@ -215,8 +179,7 @@ int mptcp_v6_add_raddress(struct multipath_options *mopt,
 		 * However the src_addr of the IP-packet has been changed. We
 		 * update the addr in the list, because this is the address as
 		 * OUR BOX sees it. */
-		if (loc6->id == id &&
-			!ipv6_addr_equal(&loc6->addr, addr)) {
+		if (loc6->id == id && !ipv6_addr_equal(&loc6->addr, addr)) {
 			/* update the address */
 			mptcp_debug("%s: updating old addr: %pI6 \
 					to addr %pI6 with id:%d\n",
@@ -229,8 +192,9 @@ int mptcp_v6_add_raddress(struct multipath_options *mopt,
 		}
 	}
 
+	i = mptcp_find_addrindex(mopt->rem4_bits);
 	/* Do we have already the maximum number of local/remote addresses? */
-	if (num_addr6 == MPTCP_MAX_ADDR) {
+	if (i < 0) {
 		mptcp_debug("%s: At max num of remote addresses: %d --- not "
 				"adding address: %pI6\n",
 				__func__, MPTCP_MAX_ADDR, addr);
@@ -242,11 +206,31 @@ int mptcp_v6_add_raddress(struct multipath_options *mopt,
 	/* Address is not known yet, store it */
 	ipv6_addr_copy(&loc6->addr, addr);
 	loc6->port = port;
+	loc6->bitfield = 0;
 	loc6->id = id;
 	mopt->list_rcvd = 1;
-	mopt->num_addr6++;
+	mopt->rem6_bits |= (1 << i);
 
 	return 0;
+}
+
+/* Sets the bitfield of the remote-address field
+ * local address is not set as it will disappear with the global address-list */
+void mptcp_v6_set_init_addr_bit(struct multipath_pcb *mpcb,
+				const struct in6_addr *daddr)
+{
+	int i;
+	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
+		if (!((1 << i) & mpcb->rx_opt.rem6_bits))
+			continue;
+
+		if (ipv6_addr_equal(&mpcb->rx_opt.addr6[i].addr, daddr)) {
+			/* It's the initial flow - thus local index == 0 */
+			mpcb->rx_opt.addr6[i].bitfield |= 1;
+			return;
+		}
+	}
+
 }
 
 /**
@@ -268,15 +252,13 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	if (!req) {
 		if (th->syn) {
 			struct mp_join *join_opt = mptcp_find_join(skb);
-			/* Currently we make two calls to mptcp_find_join(). This
-			 * can probably be optimized. */
+
 			if (mptcp_v6_add_raddress(&mpcb->rx_opt,
 					(struct in6_addr *)&iph->saddr, 0,
 					join_opt->addr_id) < 0)
 				goto discard;
 			if (unlikely(mpcb->rx_opt.list_rcvd)) {
 				mpcb->rx_opt.list_rcvd = 0;
-				mptcp_update_patharray(mpcb);
 			}
 			mptcp_v6_join_request(mpcb, skb);
 		}
@@ -288,7 +270,6 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 		goto discard;
 
 	if (child != meta_sk) {
-		mptcp_subflow_attach(mpcb, child);
 		tcp_child_process(meta_sk, child, skb);
 	} else {
 		req->rsk_ops->send_reset(NULL, skb);
@@ -389,108 +370,99 @@ done:
 	return err;
 }
 
-/*This is the MPTCP PM IPV6 mapping table*/
-void mptcp_v6_update_patharray(struct multipath_pcb *mpcb)
+/**
+ * Create a new IPv6 subflow.
+ *
+ * We are in user-context and meta-sock-lock is hold.
+ */
+void mptcp_init6_subsockets(struct multipath_pcb *mpcb,
+			    const struct mptcp_loc6 *loc,
+			    struct mptcp_loc6 *rem)
 {
-	struct mptcp_path6 *new_pa6, *old_pa6;
-	int i, j, newpa_idx = 0;
-	struct sock *meta_sk = (struct sock *)mpcb;
+	struct tcp_sock *tp;
+	struct sock *sk, *meta_sk = mpcb_meta_sk(mpcb);
+	struct sockaddr_in6 loc_in, rem_in;
+	struct socket sock;
+	int ulid_size = 0, ret, newpi;
 
-	/* Count how many paths are available
-	 * We add 1 to size of local and remote set, to include the
-	 * ULID */
-	int ulid_v6 = (meta_sk->sk_family == AF_INET6 &&
-		       !mptcp_v6_is_v4_mapped(meta_sk)) ? 1 : 0;
-	int pa6_size = (mpcb->num_addr6 + ulid_v6) *
-		       (mpcb->rx_opt.num_addr6 + ulid_v6) - ulid_v6;
+	/* Don't try again - even if it fails */
+	rem->bitfield |= (1 << loc->id);
 
-	new_pa6 = kzalloc(pa6_size * sizeof(struct mptcp_path6), GFP_ATOMIC);
+	newpi = mptcp_set_new_pathindex(mpcb);
+	if (!newpi)
+		return;
 
-	if (ulid_v6) {
-		struct mptcp_loc6 loc_ulid, rem_ulid;
-		loc_ulid.id = 0;
-		loc_ulid.port = 0;
-		rem_ulid.id = 0;
-		rem_ulid.port = 0;
-		/* ULID src with other dest */
-		for (j = 0; j < mpcb->rx_opt.num_addr6; j++) {
-			struct mptcp_path6 *p = mptcp_v6_find_path(&loc_ulid,
-				&mpcb->rx_opt.addr6[j], mpcb);
-			if (p) {
-				memcpy(&new_pa6[newpa_idx++], p,
-				       sizeof(struct mptcp_path6));
-			} else {
-				p = &new_pa6[newpa_idx++];
+	/** First, create and prepare the new socket */
 
-				p->loc.sin6_family = AF_INET6;
-				ipv6_addr_copy(&p->loc.sin6_addr,
-						&inet6_sk(meta_sk)->saddr);
+	sock.type = meta_sk->sk_socket->type;
+	sock.state = SS_UNCONNECTED;
+	sock.wq = meta_sk->sk_socket->wq;
+	sock.file = meta_sk->sk_socket->file;
+	sock.ops = NULL;
+	ret = inet6_create(&init_net, &sock, IPPROTO_TCP, 1);
 
-				p->rem.sin6_family = AF_INET6;
-				ipv6_addr_copy(&p->rem.sin6_addr,
-					&mpcb->rx_opt.addr6[j].addr);
-				p->rem_id = mpcb->rx_opt.addr6[j].id;
-
-				p->path_index = mpcb->next_unused_pi++;
-			}
-		}
-		/* ULID dest with other src */
-		for (i = 0; i < mpcb->num_addr6; i++) {
-			struct mptcp_path6 *p = mptcp_v6_find_path(&mpcb->addr6[i],
-					&rem_ulid, mpcb);
-			if (p) {
-				memcpy(&new_pa6[newpa_idx++], p,
-				       sizeof(struct mptcp_path6));
-			} else {
-				p = &new_pa6[newpa_idx++];
-
-				p->loc.sin6_family = AF_INET6;
-				ipv6_addr_copy(&p->loc.sin6_addr,
-						&mpcb->addr6[i].addr);
-				p->loc_id = mpcb->addr6[i].id;
-
-				p->rem.sin6_family = AF_INET6;
-				ipv6_addr_copy(&p->rem.sin6_addr,
-						&inet6_sk(meta_sk)->daddr);
-
-				p->path_index = mpcb->next_unused_pi++;
-			}
-		}
+	if (unlikely(ret < 0)) {
+		mptcp_debug("%s inet6_create failed ret: %d\n", __func__, ret);
+		return;
 	}
-	/* Try all other combinations now */
-	for (i = 0; i < mpcb->num_addr6; i++)
-		for (j = 0; j < mpcb->rx_opt.num_addr6; j++) {
-			struct mptcp_path6 *p =
-			    mptcp_v6_find_path(&mpcb->addr6[i],
-					    &mpcb->rx_opt.addr6[j],
-					    mpcb);
-			if (p) {
-				memcpy(&new_pa6[newpa_idx++], p,
-				       sizeof(struct mptcp_path6));
-			} else {
-				p = &new_pa6[newpa_idx++];
 
-				p->loc.sin6_family = AF_INET6;
-				ipv6_addr_copy(&p->loc.sin6_addr,
-						&mpcb->addr6[i].addr);
-				p->loc_id = mpcb->addr6[i].id;
+	sk = sock.sk;
 
-				p->rem.sin6_family = AF_INET6;
-				ipv6_addr_copy(&p->rem.sin6_addr,
-					&mpcb->rx_opt.addr6[j].addr);
-				p->rem.sin6_port =
-					mpcb->rx_opt.addr6[j].port;
-				p->rem_id = mpcb->rx_opt.addr6[j].id;
+	inet_sk(sk)->loc_id = loc->id;
+	inet_sk(sk)->rem_id = rem->id;
 
-				p->path_index = mpcb->next_unused_pi++;
-			}
-		}
+	tp = tcp_sk(sk);
+	tp->path_index = newpi;
+	tp->mpc = 1;
+	tp->slave_sk = 1;
 
-	/* Replacing the mapping table */
-	old_pa6 = mpcb->pa6;
-	mpcb->pa6 = new_pa6;
-	mpcb->pa6_size = pa6_size;
-	kfree(old_pa6);
+	sk->sk_error_report = mptcp_sock_def_error_report;
+
+	mptcp_add_sock(mpcb, tp);
+
+	/** Then, connect the socket to the peer */
+
+	ulid_size = sizeof(struct sockaddr_in6);
+	loc_in.sin6_family= AF_INET6;
+	rem_in.sin6_family = AF_INET6;
+	loc_in.sin6_port = 0;
+	if (rem->port)
+		rem_in.sin6_port = rem->port;
+	else
+		rem_in.sin6_port = inet_sk(meta_sk)->inet_dport;
+	loc_in.sin6_addr = loc->addr;
+	rem_in.sin6_addr = rem->addr;
+
+	mptcp_debug("%s: token %#x pi %d src_addr:%pI6:%d dst_addr:%pI6:%d\n",
+		    __func__, mpcb->mptcp_loc_token, newpi, &loc_in.sin6_addr,
+		    ntohs(loc_in.sin6_port), &rem_in.sin6_addr,
+		    ntohs(rem_in.sin6_port));
+
+	ret = sock.ops->bind(&sock, (struct sockaddr *)&loc_in, ulid_size);
+	if (ret < 0) {
+		mptcp_debug(KERN_ERR "%s: MPTCP subsocket bind() "
+				"failed, error %d\n", __func__, ret);
+		goto error;
+	}
+
+	ret = sock.ops->connect(&sock, (struct sockaddr *)&rem_in,
+				ulid_size, O_NONBLOCK);
+	if (ret < 0 && ret != -EINPROGRESS) {
+		mptcp_debug(KERN_ERR "%s: MPTCP subsocket connect() "
+				"failed, error %d\n", __func__, ret);
+		goto error;
+	}
+
+	sk_set_socket(sk, meta_sk->sk_socket);
+	sk->sk_wq = meta_sk->sk_wq;
+
+	return;
+
+error:
+	sock_orphan(sk);
+	tcp_done(sk);
+
+	return;
 }
 
 /****** IPv6-Address event handler ******/
@@ -600,19 +572,15 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 {
 	int i;
 	struct sock *sk;
-	struct sock *meta_sk = mpcb_meta_sk(mpcb);
 	struct tcp_sock *tp;
 	int addr_type = ipv6_addr_type(&ifa->addr);
 
-	if (ifa->scope > RT_SCOPE_LINK)
-		return;
-
-	if (ifa->idev->dev->flags & IFF_NOMULTIPATH)
-		return;
-
-	if (addr_type == IPV6_ADDR_ANY ||
-			addr_type & IPV6_ADDR_LOOPBACK ||
-			addr_type & IPV6_ADDR_LINKLOCAL)
+	/* Checks on interface and address-type */
+	if (ifa->scope > RT_SCOPE_LINK ||
+	    (ifa->idev->dev->flags & IFF_NOMULTIPATH) ||
+	    addr_type == IPV6_ADDR_ANY ||
+	    (addr_type & IPV6_ADDR_LOOPBACK) ||
+	    (addr_type & IPV6_ADDR_LINKLOCAL))
 		return;
 
 	if (mptcp_ipv6_is_in_dad_state(ifa)) {
@@ -621,38 +589,34 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 	}
 
 	/* Look for the address among the local addresses */
-	for (i = 0; i < mpcb->num_addr6; i++) {
-		if (ipv6_addr_equal(&mpcb->addr6[i].addr,
-				&ifa->addr))
+	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
+		if (!((1 << i) & mpcb->loc6_bits))
+			continue;
+
+		if (ipv6_addr_equal(&mpcb->addr6[i].addr, &ifa->addr))
 			goto found;
 	}
-	if (meta_sk->sk_family == AF_INET6 &&
-			ipv6_addr_equal(&inet6_sk(meta_sk)->saddr,
-			&ifa->addr))
-		goto found;
 
 	/* Not yet in address-list */
-	if (event == NETDEV_UP &&
-	    netif_running(ifa->idev->dev)) {
-		if (mpcb->num_addr6 >= MPTCP_MAX_ADDR) {
-			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP "
-				"Reached max number of local IPv6 addresses: %d\n",
-				MPTCP_MAX_ADDR);
+	if (event == NETDEV_UP && netif_running(ifa->idev->dev)) {
+		i = mptcp_find_addrindex(mpcb->loc4_bits);
+		if (i < 0) {
+			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP Reached max "
+					"number of local IPv6 addresses: %d\n",
+					MPTCP_MAX_ADDR);
 			return;
 		}
 
 		printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP adding "
 			"address %pI6 to existing connection with mpcb: %d\n",
 			&ifa->addr, mpcb->mptcp_loc_token);
+
 		/* update this mpcb */
-		ipv6_addr_copy(&mpcb->addr6[mpcb->num_addr6].addr,
-				&ifa->addr);
-		mpcb->addr6[mpcb->num_addr6].id =
-				mpcb->num_addr6 + 1;
-		smp_wmb();
-		mpcb->num_addr6++;
+		ipv6_addr_copy(&mpcb->addr6[i].addr, &ifa->addr);
+		mpcb->addr6[i].id = i;
+		mpcb->loc6_bits |= (1 << i);
 		/* re-send addresses */
-		mpcb->addr6_unsent++;
+		mpcb->add_addr6 |= (1 << i);
 		/* re-evaluate paths eventually */
 		mpcb->rx_opt.list_rcvd = 1;
 	}
@@ -662,8 +626,7 @@ found:
 	 * concerned paths. */
 	mptcp_for_each_sk(mpcb, sk, tp) {
 		if (sk->sk_family != AF_INET6 ||
-				!ipv6_addr_equal(&inet6_sk(sk)->saddr,
-						&ifa->addr))
+		    !ipv6_addr_equal(&inet6_sk(sk)->saddr, &ifa->addr))
 			continue;
 
 		if (event == NETDEV_DOWN) {

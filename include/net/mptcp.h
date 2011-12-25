@@ -101,8 +101,8 @@ static void mptcp_stop_debug_timer(void)
 
 struct multipath_options {
 	struct multipath_pcb *mpcb;
-	int	num_addr4;
-	int	num_addr6;
+	u8	rem4_bits;
+	u8	rem6_bits;
 	struct	mptcp_loc4 addr4[MPTCP_MAX_ADDR];
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	struct	mptcp_loc6 addr6[MPTCP_MAX_ADDR];
@@ -185,25 +185,18 @@ struct multipath_pcb {
 #endif
 
 	struct list_head collide_tk;
-	uint8_t addr4_unsent;	/* num of IPv4 addrs not yet sent to our peer */
-	uint8_t addr6_unsent;	/* num of IPv6 addrs not yet sent to our peer */
 
-	/* We need to store the set of local addresses, so that we have a stable
-	   view of the available addresses. Playing with the addresses directly
-	   in the system would expose us to concurrency problems */
+	/* Local addresses */
 	struct mptcp_loc4 addr4[MPTCP_MAX_ADDR];
-	int num_addr4;		/* num of addresses actually stored above. */
+	u8 loc4_bits; /* Bitfield, indicating which of the above indexes are set */
+	u8 add_addr4; /* bit-field of addrs not yet sent to our peer */
 
 	struct mptcp_loc6 addr6[MPTCP_MAX_ADDR];
-	int num_addr6;
-
-	struct mptcp_path4 *pa4;
-	int pa4_size;
-	struct mptcp_path6 *pa6;
-	int pa6_size;
+	u8 loc6_bits;
+	u8 add_addr6;
 
 	/* Next pi to pick up in case a new path becomes available */
-	int next_unused_pi;
+	u32 path_index_bits;
 };
 
 static inline int mptcp_pi_to_flag(int pi)
@@ -491,7 +484,6 @@ void mptcp_del_sock(struct sock *sk);
 void mptcp_update_metasocket(struct sock *sock, struct multipath_pcb *mpcb);
 void mptcp_reinject_data(struct sock *orig_sk, int clone_it);
 int mptcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb);
-int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices);
 void mptcp_update_window_clamp(struct tcp_sock *tp);
 void mptcp_update_sndbuf(struct multipath_pcb *mpcb);
 void mptcp_set_state(struct sock *sk, int state);
@@ -544,6 +536,7 @@ int mptcp_fin(struct multipath_pcb *mpcb, struct sock *sk);
 void mptcp_retransmit_timer(struct sock *meta_sk);
 int mptcp_write_wakeup(struct sock *meta_sk);
 void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb);
+void mptcp_sock_def_error_report(struct sock *sk);
 
 static inline int mptcp_skb_cloned(const struct sk_buff *skb,
 				   const struct tcp_sock *tp)
@@ -607,7 +600,8 @@ static inline int mptcp_sk_attached(const struct sock *sk)
 
 static inline void mptcp_init_mp_opt(struct multipath_options *mopt)
 {
-	mopt->list_rcvd = mopt->num_addr4 = mopt->num_addr6 = 0;
+	mopt->list_rcvd = 0;
+	mopt->rem4_bits = mopt->rem6_bits = 0;
 	mopt->mptcp_opt_type = 0;
 	mopt->mp_fail = 0;
 	mopt->mp_rst = 0;
@@ -766,7 +760,6 @@ static inline void mptcp_path_array_check(struct multipath_pcb *mpcb)
 {
 	if (unlikely(mpcb && mpcb->rx_opt.list_rcvd)) {
 		mpcb->rx_opt.list_rcvd = 0;
-		mptcp_update_patharray(mpcb);
 		mptcp_send_updatenotif(mpcb);
 	}
 }
@@ -910,23 +903,38 @@ static inline void mptcp_mp_fail_rcvd(struct multipath_pcb *mpcb,
 	}
 }
 
-#if (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))
-static inline int mptcp_get_path_family(struct multipath_pcb *mpcb,
-					int path_index)
+/* Find the first index whose bit in the bit-field == 0 */
+static inline int mptcp_find_addrindex(u8 bitfield)
 {
 	int i;
+	/* Start at 1, because index 0 is for the initial subflow */
+	for (i = 0; i < MPTCP_MAX_ADDR; i++)
+	{
+		if (!((1 << i) & bitfield))
+			return i;
+	}
 
-	for (i = 0; i < mpcb->pa4_size; i++) {
-		if (mpcb->pa4[i].path_index == path_index)
-			return AF_INET;
-	}
-	for (i = 0; i < mpcb->pa6_size; i++) {
-		if (mpcb->pa6[i].path_index == path_index)
-			return AF_INET6;
-	}
 	return -1;
 }
 
+/* Find the first index whose bit in the bit-field == 0 */
+static inline u8 mptcp_set_new_pathindex(struct multipath_pcb *mpcb)
+{
+	u8 i;
+
+	/* Start at 2, because index 1 is for the initial subflow */
+	for (i = 2; i < sizeof(mpcb->path_index_bits) * 8; i++)
+	{
+		if (!((1 << i) & mpcb->path_index_bits)) {
+			mpcb->path_index_bits |= (1 << i);
+			return i;
+		}
+	}
+
+	return 0;
+}
+
+#if (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))
 static inline struct sock *mptcp_sk_clone(struct sock *sk, int family,
 					  const gfp_t priority)
 {
@@ -951,11 +959,6 @@ static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
 
 #else /* (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)) */
 
-static inline int mptcp_get_path_family(struct multipath_pcb *mpcb,
-					int path_index)
-{
-	return AF_INET;
-}
 static inline struct sock *mptcp_sk_clone(const struct sock *sk, int family,
 					  const gfp_t priority)
 {
@@ -1071,11 +1074,6 @@ static inline void mptcp_reinject_data(const struct sock *orig_sk,
 				       int clone_it) {}
 static inline int mptcp_get_dataseq_mapping(const struct tcp_sock *tp,
 					    const struct sk_buff *skb)
-{
-	return 0;
-}
-static inline int mptcp_init_subsockets(const struct multipath_pcb *mpcb,
-					u32 path_indices)
 {
 	return 0;
 }

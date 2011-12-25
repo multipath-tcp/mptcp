@@ -558,7 +558,7 @@ struct tcp_sock {
 	u64		mptcp_loc_key;
 	u64		mptcp_rem_key;
 
-	int		path_index;
+	u8		path_index;
 	struct tcp_sock	*next;		/* Next subflow socket */
 	__u32		mptcp_loc_random_number;
 	u8		slave_sk:1,

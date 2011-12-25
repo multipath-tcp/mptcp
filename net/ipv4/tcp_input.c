@@ -5697,12 +5697,6 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 	tcp_parse_options(skb, &tp->rx_opt, &hash_location,
 			  mpcb ? &tp->mpcb->rx_opt : &mopt, 0);
 
-	if (mpcb && mpcb->rx_opt.list_rcvd) {
-		mpcb->rx_opt.list_rcvd = 0;
-		mptcp_update_patharray(mpcb);
-		mptcp_send_updatenotif(mpcb);
-	}
-
 	if (th->ack) {
 		/* rfc793:
 		 * "If the state is SYN-SENT then
@@ -5786,6 +5780,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 				sk->sk_socket->sk = mptcp_meta_sk(sk);
 
 				mptcp_update_metasocket(sk, mpcb);
+				mptcp_path_array_check(mpcb);
 
 				 /* hold in mptcp_inherit_sk due to initialization to 2 */
 				sock_put(mpcb_meta_sk(mpcb));

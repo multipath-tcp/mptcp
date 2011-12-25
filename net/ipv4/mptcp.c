@@ -595,7 +595,7 @@ int mptcp_fin(struct multipath_pcb *mpcb, struct sock *sk)
 	return ans;
 }
 
-static void mptcp_sock_def_error_report(struct sock *sk)
+void mptcp_sock_def_error_report(struct sock *sk)
 {
 	if (tcp_sk(sk)->mpc && !is_meta_sk(sk)) {
 		sk->sk_err = 0;
@@ -604,168 +604,6 @@ static void mptcp_sock_def_error_report(struct sock *sk)
 	}
 
 	sock_def_error_report(sk);
-}
-
-/**
- * Creates as many sockets as path indices announced by the Path Manager.
- * The first path indices are (re)allocated to existing sockets.
- * New sockets are created if needed.
- * Note that this is called only at client side.
- * Server calls mptcp_subflow_attach()
- *
- * WARNING: We make the assumption that this function is run in user context
- *      (we use sock_create_kern, that reserves ressources with GFP_KERNEL)
- */
-int mptcp_init_subsockets(struct multipath_pcb *mpcb, u32 path_indices)
-{
-	int i;
-	struct tcp_sock *tp;
-
-	/* First, ensure that we keep existing path indices. */
-	mptcp_for_each_tp(mpcb, tp)
-		/* disable the corresponding bit of the existing subflow */
-		path_indices &= ~mptcp_pi_to_flag(tp->path_index);
-
-	for (i = 0; i < sizeof(path_indices) * 8; i++) {
-		struct sock *sk, *meta_sk = (struct sock *)mpcb;
-		struct socket sock;
-		struct sockaddr *loculid, *remulid;
-		struct mptcp_path4 *pa4 = NULL;
-		struct mptcp_path6 *pa6 = NULL;
-		int ulid_size = 0, newpi = i + 1, family, ret;
-
-		if (!((1 << i) & path_indices))
-			continue;
-
-		family = mptcp_get_path_family(mpcb, newpi);
-
-		switch (family) {
-		case AF_INET:
-			pa4 = mptcp_v4_get_path(mpcb, newpi);
-
-			if (pa4->tried)
-				continue;
-			pa4->tried = 1;
-
-			loculid = (struct sockaddr *)&pa4->loc;
-
-			if (!pa4->rem.sin_port)
-				pa4->rem.sin_port =
-						inet_sk(meta_sk)->inet_dport;
-			remulid = (struct sockaddr *) &pa4->rem;
-			ulid_size = sizeof(pa4->loc);
-			break;
-		case AF_INET6:
-			pa6 = mptcp_get_path6(mpcb, newpi);
-
-			if (pa6->tried)
-				continue;
-			pa6->tried = 1;
-
-			loculid = (struct sockaddr *)&pa6->loc;
-
-			if (!pa6->rem.sin6_port)
-				pa6->rem.sin6_port =
-						inet_sk(meta_sk)->inet_dport;
-			remulid = (struct sockaddr *) &pa6->rem;
-			ulid_size = sizeof(pa6->loc);
-			break;
-		default:
-			BUG();
-		}
-
-		sock.type = meta_sk->sk_socket->type;
-		sock.state = SS_UNCONNECTED;
-		sock.wq = meta_sk->sk_socket->wq;
-		sock.file = meta_sk->sk_socket->file;
-		sock.ops = NULL;
-		if (family == AF_INET) {
-			ret = inet_create(&init_net, &sock, IPPROTO_TCP, 1);
-		} else {
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-			ret = inet6_create(&init_net, &sock, IPPROTO_TCP, 1);
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
-		}
-
-		if (ret < 0) {
-			mptcp_debug("%s inet_create failed ret: %d, "
-					"family %d\n", __func__, ret, family);
-			continue;
-		}
-
-		sk = sock.sk;
-
-		if (family == AF_INET) {
-			inet_sk(sk)->loc_id = pa4->loc_id;
-			inet_sk(sk)->rem_id = pa4->rem_id;
-		} else {
-			inet_sk(sk)->loc_id = pa6->loc_id;
-			inet_sk(sk)->rem_id = pa6->rem_id;
-		}
-
-		tp = tcp_sk(sk);
-		tp->path_index = newpi;
-		tp->mpc = 1;
-		tp->slave_sk = 1;
-
-		sk->sk_error_report = mptcp_sock_def_error_report;
-
-		mptcp_add_sock(mpcb, tp);
-
-		if (family == AF_INET) {
-			struct sockaddr_in *loc, *rem;
-			loc = (struct sockaddr_in *) loculid;
-			rem = (struct sockaddr_in *) remulid;
-			mptcp_debug("%s: token %#x pi %d src_addr:"
-				"%pI4:%d dst_addr:%pI4:%d\n", __func__,
-				mpcb->mptcp_loc_token, newpi,
-				&loc->sin_addr,
-				ntohs(loc->sin_port),
-				&rem->sin_addr,
-				ntohs(rem->sin_port));
-		} else {
-			struct sockaddr_in6 *loc, *rem;
-			loc = (struct sockaddr_in6 *) loculid;
-			rem = (struct sockaddr_in6 *) remulid;
-			mptcp_debug("%s: token %#x pi %d src_addr:"
-				"%pI6:%d dst_addr:%pI6:%d\n", __func__,
-				mpcb->mptcp_loc_token, newpi,
-				&loc->sin6_addr,
-				ntohs(loc->sin6_port),
-				&rem->sin6_addr,
-				ntohs(rem->sin6_port));
-		}
-
-		ret = sock.ops->bind(&sock, loculid, ulid_size);
-		if (ret < 0) {
-			mptcp_debug(KERN_ERR "%s: MPTCP subsocket bind() "
-					"failed, error %d\n", __func__, ret);
-			goto cont_error;
-		}
-
-		ret = sock.ops->connect(&sock, remulid, ulid_size, O_NONBLOCK);
-		if (ret < 0 && ret != -EINPROGRESS) {
-			mptcp_debug(KERN_ERR "%s: MPTCP subsocket connect() "
-					"failed, error %d\n", __func__, ret);
-			goto cont_error;
-		}
-
-		sk_set_socket(sk, meta_sk->sk_socket);
-		sk->sk_wq = meta_sk->sk_wq;
-
-		if (family == AF_INET)
-			pa4->loc.sin_port = inet_sk(sk)->inet_sport;
-		else
-			pa6->loc.sin6_port = inet_sk(sk)->inet_sport;
-
-		continue;
-
-cont_error:
-		sock_orphan(sk);
-		tcp_done(sk);
-	}
-
-	return 0;
 }
 
 void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn)
@@ -1544,9 +1382,6 @@ int mptcp_alloc_mpcb(struct sock *master_sk)
 	 */
 	reqsk_queue_alloc(&meta_icsk->icsk_accept_queue, 32, GFP_ATOMIC);
 
-	/* Pi 1 is reserved for the master subflow */
-	mpcb->next_unused_pi = 2;
-	master_tp->path_index = 1;
 	master_tp->mpcb = mpcb;
 	mpcb->master_sk = master_sk;
 
@@ -1739,36 +1574,40 @@ void mptcp_del_sock(struct sock *sk)
  */
 void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 {
-	struct sock *meta_sk;
-
-	if (sk->sk_protocol != IPPROTO_TCP || !is_master_tp(tcp_sk(sk)))
-		return;
-
-	meta_sk = (struct sock *) mpcb;
-
-	inet_sk(meta_sk)->inet_dport = inet_sk(sk)->inet_dport;
-	inet_sk(meta_sk)->inet_sport = inet_sk(sk)->inet_sport;
 
 	switch (sk->sk_family) {
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	case AF_INET6:
-		mptcp_set_addresses(mpcb);
-
 		/* If the socket is v4 mapped, we continue with v4 operations */
-		if (!mptcp_v6_is_v4_mapped(sk))
+		if (!mptcp_v6_is_v4_mapped(sk)) {
+			mpcb->addr6[0].addr = inet6_sk(sk)->saddr;
+			mpcb->addr6[0].bitfield = 0;
+			mpcb->addr6[0].id = 0;
+			mpcb->addr6[0].port = 0;
+			mpcb->loc6_bits |= 1;
+
+			mptcp_v6_add_raddress(&mpcb->rx_opt,
+					      &inet6_sk(sk)->daddr,
+					      inet_sk(sk)->inet_dport, 0);
+			mptcp_v6_set_init_addr_bit(mpcb, &inet6_sk(sk)->daddr);
 			break;
+		}
 #endif
 	case AF_INET:
-		inet_sk(meta_sk)->inet_daddr = inet_sk(sk)->inet_daddr;
-		inet_sk(meta_sk)->inet_saddr = inet_sk(sk)->inet_saddr;
+		mpcb->addr4[0].addr.s_addr = inet_sk(sk)->inet_saddr;
+		mpcb->addr4[0].bitfield = 0;
+		mpcb->addr4[0].id = 0;
+		mpcb->addr4[0].port = 0;
+		mpcb->loc4_bits |= 1;
 
-		mptcp_set_addresses(mpcb);
+		mptcp_v4_add_raddress(&mpcb->rx_opt,
+				      (struct in_addr*)&inet_sk(sk)->inet_daddr,
+				      inet_sk(sk)->inet_dport, 0);
+		mptcp_v4_set_init_addr_bit(mpcb, inet_sk(sk)->inet_daddr);
 		break;
 	}
 
-	/* If this added new local addresses, build new paths with them */
-	if (mpcb->num_addr4 || mpcb->num_addr6)
-		mptcp_update_patharray(mpcb);
+	mptcp_set_addresses(mpcb);
 }
 
 static inline void mptcp_become_fully_estab(struct tcp_sock *tp)
@@ -3215,15 +3054,21 @@ void mptcp_synack_options(struct request_sock *req,
 
 		/* Finding Address ID */
 		if (req->rsk_ops->family == AF_INET)
-			for (i = 0; i < req->mpcb->num_addr4; i++) {
+			for (i = 0; i < MPTCP_MAX_ADDR; i++) {
+				if (!((1 << i) & req->mpcb->loc4_bits))
+					continue;
+
 				if (req->mpcb->addr4[i].addr.s_addr == ireq->loc_addr)
 					opts->addr_id = req->mpcb->addr4[i].id;
 			}
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 		else /* IPv6 */
-			for (i = 0; i < req->mpcb->num_addr6; i++) {
+			for (i = 0; i < MPTCP_MAX_ADDR; i++) {
+				if (!((1 << i) & req->mpcb->loc6_bits))
+					continue;
+
 				if (ipv6_addr_equal(&req->mpcb->addr6[i].addr,
-						&inet6_rsk(req)->loc_addr))
+						    &inet6_rsk(req)->loc_addr))
 					opts->addr_id = req->mpcb->addr6[i].id;
 			}
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
@@ -3352,37 +3197,38 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 			*size += MPTCP_SUB_LEN_DSS_ALIGN;
 	}
 
-	if (unlikely(mpcb->addr4_unsent) &&
+	if (unlikely(mpcb->add_addr4) &&
 			MAX_TCP_OPTION_SPACE - *size >=
 			MPTCP_SUB_LEN_ADD_ADDR4_ALIGN) {
+		int ind = mptcp_find_addrindex(~(mpcb->add_addr4));
+
 		opts->options |= OPTION_ADD_ADDR;
-		opts->addr4 = mpcb->addr4 + mpcb->num_addr4 -
-				mpcb->addr4_unsent;
+		opts->addr4 = &mpcb->addr4[ind];
 		opts->addr6 = NULL;
 		if (skb)
-			mpcb->addr4_unsent--;
+			mpcb->add_addr4 &= ~(1 << ind);
 		*size += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN;
-	} else if (unlikely(mpcb->addr6_unsent) &&
+	} else if (unlikely(mpcb->add_addr6) &&
 		 MAX_TCP_OPTION_SPACE - *size >=
 		 MPTCP_SUB_LEN_ADD_ADDR6_ALIGN) {
+		int ind = mptcp_find_addrindex(~(mpcb->add_addr6));
+
 		opts->options |= OPTION_ADD_ADDR;
-		opts->addr6 = mpcb->addr6 + mpcb->num_addr6 -
-				mpcb->addr6_unsent;
+		opts->addr6 = &mpcb->addr6[ind];
 		opts->addr4 = NULL;
 		if (skb)
-			mpcb->addr6_unsent--;
+			mpcb->add_addr6 &= ~(1 << ind);
 		*size += MPTCP_SUB_LEN_ADD_ADDR6_ALIGN;
 	} else if (!(opts->options & OPTION_MP_CAPABLE) &&
-		    !(opts->options & OPTION_MP_JOIN) &&
-		    ((unlikely(mpcb->addr6_unsent) &&
-		    MAX_TCP_OPTION_SPACE - *size <=
-		    MPTCP_SUB_LEN_ADD_ADDR6_ALIGN) ||
-		    (unlikely(mpcb->addr4_unsent) &&
-		    MAX_TCP_OPTION_SPACE - *size >=
-		    MPTCP_SUB_LEN_ADD_ADDR4_ALIGN))) {
-		mptcp_debug("no space for add addr. unsent IPv4: %d,"
-				"IPv6: %d\n",
-				mpcb->addr4_unsent, mpcb->addr6_unsent);
+		   !(opts->options & OPTION_MP_JOIN) &&
+		   ((unlikely(mpcb->add_addr6) &&
+		     MAX_TCP_OPTION_SPACE - *size <=
+		     MPTCP_SUB_LEN_ADD_ADDR6_ALIGN) ||
+		    (unlikely(mpcb->add_addr4) &&
+		     MAX_TCP_OPTION_SPACE - *size >=
+		     MPTCP_SUB_LEN_ADD_ADDR4_ALIGN))) {
+		mptcp_debug("no space for add addr. unsent IPv4: %#x,IPv6: %#x\n",
+				mpcb->add_addr4, mpcb->add_addr6);
 		tp->mptcp_add_addr_ack = 1;
 		tcp_send_ack(sk);
 		tp->mptcp_add_addr_ack = 0;
@@ -4346,6 +4192,11 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	if (memcmp(hash_mac_check, (char *)&mpcb->rx_opt.mptcp_recv_mac, 20))
 		goto teardown;
 
+	child_tp->path_index = mptcp_set_new_pathindex(mpcb);
+	/* No more space for more subflows? */
+	if (!child_tp->path_index)
+		goto teardown;
+
 	/* The child is a clone of the meta socket, we must now reset
 	 * some of the fields
 	 */
@@ -4356,6 +4207,12 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 
 	inet_sk(child)->loc_id = mptcp_get_loc_addrid(mpcb, child);
 	inet_sk(child)->rem_id = req->rem_id;
+
+	/* Point it to the same struct socket and wq as the meta_sk */
+	sk_set_socket(child, mpcb_meta_sk(mpcb)->sk_socket);
+	child->sk_wq = mpcb_meta_sk(mpcb)->sk_wq;
+
+	mptcp_add_sock(mpcb, child_tp);
 
 	/* Deleting from global hashtable */
 	mptcp_hash_request_remove(req);

@@ -20,6 +20,7 @@
 #include <linux/spinlock.h>
 #include <linux/tcp.h>
 
+#include <net/inet_common.h>
 #include <net/inet_connection_sock.h>
 #include <net/mptcp.h>
 #include <net/mptcp_pm.h>
@@ -138,39 +139,6 @@ drop_and_free:
 	return -1;
 }
 
-struct mptcp_path4 *mptcp_v4_find_path(struct mptcp_loc4 *loc, struct mptcp_loc4 *rem,
-				 struct multipath_pcb *mpcb)
-{
-	int i;
-	for (i = 0; i < mpcb->pa4_size; i++) {
-		if (mpcb->pa4[i].loc_id != loc->id ||
-		    mpcb->pa4[i].rem_id != rem->id)
-			continue;
-
-		/* Addresses are equal - now check the port numbers
-		 * (0 means wildcard) */
-		if (mpcb->pa4[i].loc.sin_port && loc->port &&
-		    mpcb->pa4[i].loc.sin_port != loc->port)
-			continue;
-
-		if (mpcb->pa4[i].rem.sin_port && rem->port &&
-		    mpcb->pa4[i].rem.sin_port != rem->port)
-			continue;
-
-		return &mpcb->pa4[i];
-	}
-	return NULL;
-}
-
-struct mptcp_path4 *mptcp_v4_get_path(struct multipath_pcb *mpcb, int path_index)
-{
-	int i;
-	for (i = 0; i < mpcb->pa4_size; i++)
-		if (mpcb->pa4[i].path_index == path_index)
-			return &mpcb->pa4[i];
-	return NULL;
-}
-
 /**
  * Based on function tcp_v4_conn_request (tcp_ipv4.c)
  * Returns -1 if there is no space anymore to store an additional
@@ -180,16 +148,12 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 			  const struct in_addr *addr, __be16 port, u8 id)
 {
 	int i;
-	int num_addr4 = mopt->num_addr4;
 	struct mptcp_loc4 *loc4 = &mopt->addr4[0];
 
-	/* If the id is zero, this is the ULID, do not add it. */
-	if (!id)
-		return 0;
+	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
+		if (!((1 << i) & mopt->rem4_bits))
+			continue;
 
-	BUG_ON(num_addr4 > MPTCP_MAX_ADDR);
-
-	for (i = 0; i < num_addr4; i++) {
 		loc4 = &mopt->addr4[i];
 
 		/* Address is already in the list --- continue */
@@ -214,8 +178,9 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 		}
 	}
 
+	i = mptcp_find_addrindex(mopt->rem4_bits);
 	/* Do we have already the maximum number of local/remote addresses? */
-	if (num_addr4 == MPTCP_MAX_ADDR) {
+	if (i < 0) {
 		mptcp_debug("%s: At max num of remote addresses: %d --- not "
 			   "adding address: %pI4\n",
 			   __func__, MPTCP_MAX_ADDR, &addr->s_addr);
@@ -227,11 +192,31 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 	/* Address is not known yet, store it */
 	loc4->addr.s_addr = addr->s_addr;
 	loc4->port = port;
+	loc4->bitfield = 0;
 	loc4->id = id;
 	mopt->list_rcvd = 1;
-	mopt->num_addr4++;
+	mopt->rem4_bits |= (1 << i);
 
 	return 0;
+}
+
+/* Sets the bitfield of the remote-address field
+ * local address is not set as it will disappear with the global address-list */
+void mptcp_v4_set_init_addr_bit(struct multipath_pcb *mpcb, __be32 daddr)
+{
+	int i;
+
+	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
+		if (!((1 << i) & mpcb->rx_opt.rem4_bits))
+			continue;
+
+		if (mpcb->rx_opt.addr4[i].addr.s_addr == daddr) {
+			/* It's the initial flow - thus local index == 0 */
+			mpcb->rx_opt.addr4[i].bitfield |= 1;
+			return;
+		}
+	}
+
 }
 
 /**
@@ -266,7 +251,6 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 				goto discard;
 			if (unlikely(mpcb->rx_opt.list_rcvd)) {
 				mpcb->rx_opt.list_rcvd = 0;
-				mptcp_update_patharray(mpcb);
 			}
 			mptcp_v4_join_request(mpcb, skb);
 		}
@@ -278,7 +262,6 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 		goto discard;
 
 	if (child != meta_sk) {
-		mptcp_subflow_attach(mpcb, child);
 		tcp_child_process(meta_sk, child, skb);
 	} else {
 		req->rsk_ops->send_reset(NULL, skb);
@@ -366,114 +349,99 @@ int mptcp_v4_send_synack(struct sock *meta_sk,
 	return err;
 }
 
-/* This is the MPTCP PM mapping table */
-void mptcp_v4_update_patharray(struct multipath_pcb *mpcb)
+/**
+ * Create a new IPv4 subflow.
+ *
+ * We are in user-context and meta-sock-lock is hold.
+ */
+void mptcp_init4_subsockets(struct multipath_pcb *mpcb,
+			    const struct mptcp_loc4 *loc,
+			    struct mptcp_loc4 *rem)
 {
-	struct mptcp_path4 *new_pa4, *old_pa4;
-	int i, j, newpa_idx = 0;
-	struct sock *meta_sk = (struct sock *)mpcb;
-	/* Count how many paths are available
-	 * We add 1 to size of local and remote set, to include the
-	 * ULID
-	 */
-	int ulid_v4;
-	int pa4_size;
+	struct tcp_sock *tp;
+	struct sock *sk, *meta_sk = mpcb_meta_sk(mpcb);
+	struct sockaddr_in loc_in, rem_in;
+	struct socket sock;
+	int ulid_size = 0, ret, newpi;
 
-	if (sysctl_mptcp_ndiffports > 1)
-		return __mptcp_update_patharray_ports(mpcb);
+	/* Don't try again - even if it fails */
+	rem->bitfield |= (1 << loc->id);
 
-	ulid_v4 = (meta_sk->sk_family == AF_INET ||
-		   mptcp_v6_is_v4_mapped(meta_sk)) ? 1 : 0;
-	pa4_size = (mpcb->num_addr4 + ulid_v4) *
-	    (mpcb->rx_opt.num_addr4 + ulid_v4) - ulid_v4;
+	newpi = mptcp_set_new_pathindex(mpcb);
+	if (!newpi)
+		return;
 
-	new_pa4 = kzalloc(pa4_size * sizeof(struct mptcp_path4), GFP_ATOMIC);
+	/** First, create and prepare the new socket */
 
-	if (ulid_v4) {
-		struct mptcp_loc4 loc_ulid, rem_ulid;
-		loc_ulid.id = 0;
-		loc_ulid.port = 0;
-		rem_ulid.id = 0;
-		rem_ulid.port = 0;
-		/* ULID src with other dest */
-		for (j = 0; j < mpcb->rx_opt.num_addr4; j++) {
-			struct mptcp_path4 *p = mptcp_v4_find_path(&loc_ulid,
-				&mpcb->rx_opt.addr4[j], mpcb);
-			if (p) {
-				memcpy(&new_pa4[newpa_idx++], p,
-				       sizeof(struct mptcp_path4));
-			} else {
-				p = &new_pa4[newpa_idx++];
+	sock.type = meta_sk->sk_socket->type;
+	sock.state = SS_UNCONNECTED;
+	sock.wq = meta_sk->sk_socket->wq;
+	sock.file = meta_sk->sk_socket->file;
+	sock.ops = NULL;
+	ret = inet_create(&init_net, &sock, IPPROTO_TCP, 1);
 
-				p->loc.sin_family = AF_INET;
-				p->loc.sin_addr.s_addr =
-						inet_sk(meta_sk)->inet_saddr;
-
-				p->rem.sin_family = AF_INET;
-				p->rem.sin_addr =
-					mpcb->rx_opt.addr4[j].addr;
-				p->rem_id = mpcb->rx_opt.addr4[j].id;
-
-				p->path_index = mpcb->next_unused_pi++;
-			}
-		}
-
-		/* ULID dest with other src */
-		for (i = 0; i < mpcb->num_addr4; i++) {
-			struct mptcp_path4 *p = mptcp_v4_find_path(&mpcb->addr4[i],
-					&rem_ulid, mpcb);
-			if (p) {
-				memcpy(&new_pa4[newpa_idx++], p,
-				       sizeof(struct mptcp_path4));
-			} else {
-				p = &new_pa4[newpa_idx++];
-
-				p->loc.sin_family = AF_INET;
-				p->loc.sin_addr = mpcb->addr4[i].addr;
-				p->loc_id = mpcb->addr4[i].id;
-
-				p->rem.sin_family = AF_INET;
-				p->rem.sin_addr.s_addr =
-						inet_sk(meta_sk)->inet_daddr;
-
-				p->path_index = mpcb->next_unused_pi++;
-			}
-		}
+	if (unlikely(ret < 0)) {
+		mptcp_debug("%s inet_create failed ret: %d\n", __func__, ret);
+		return;
 	}
 
-	/* Try all other combinations now */
-	for (i = 0; i < mpcb->num_addr4; i++)
-		for (j = 0; j < mpcb->rx_opt.num_addr4; j++) {
-			struct mptcp_path4 *p =
-			    mptcp_v4_find_path(&mpcb->addr4[i],
-					    &mpcb->rx_opt.addr4[j],
-					    mpcb);
-			if (p) {
-				memcpy(&new_pa4[newpa_idx++], p,
-				       sizeof(struct mptcp_path4));
-			} else {
-				p = &new_pa4[newpa_idx++];
+	sk = sock.sk;
 
-				p->loc.sin_family = AF_INET;
-				p->loc.sin_addr = mpcb->addr4[i].addr;
-				p->loc_id = mpcb->addr4[i].id;
+	inet_sk(sk)->loc_id = loc->id;
+	inet_sk(sk)->rem_id = rem->id;
 
-				p->rem.sin_family = AF_INET;
-				p->rem.sin_addr =
-					mpcb->rx_opt.addr4[j].addr;
-				p->rem.sin_port =
-					mpcb->rx_opt.addr4[j].port;
-				p->rem_id = mpcb->rx_opt.addr4[j].id;
+	tp = tcp_sk(sk);
+	tp->path_index = newpi;
+	tp->mpc = 1;
+	tp->slave_sk = 1;
 
-				p->path_index = mpcb->next_unused_pi++;
-			}
-		}
+	sk->sk_error_report = mptcp_sock_def_error_report;
 
-	/* Replacing the mapping table */
-	old_pa4 = mpcb->pa4;
-	mpcb->pa4 = new_pa4;
-	mpcb->pa4_size = pa4_size;
-	kfree(old_pa4);
+	mptcp_add_sock(mpcb, tp);
+
+	/** Then, connect the socket to the peer */
+
+	ulid_size = sizeof(struct sockaddr_in);
+	loc_in.sin_family = AF_INET;
+	rem_in.sin_family = AF_INET;
+	loc_in.sin_port = 0;
+	if (rem->port)
+		rem_in.sin_port = rem->port;
+	else
+		rem_in.sin_port = inet_sk(meta_sk)->inet_dport;
+	loc_in.sin_addr = loc->addr;
+	rem_in.sin_addr = rem->addr;
+
+	mptcp_debug("%s: token %#x pi %d src_addr:%pI4:%d dst_addr:%pI4:%d\n",
+		    __func__, mpcb->mptcp_loc_token, newpi, &loc_in.sin_addr,
+		    ntohs(loc_in.sin_port), &rem_in.sin_addr,
+		    ntohs(rem_in.sin_port));
+
+	ret = sock.ops->bind(&sock, (struct sockaddr *)&loc_in, ulid_size);
+	if (ret < 0) {
+		mptcp_debug(KERN_ERR "%s: MPTCP subsocket bind() "
+				"failed, error %d\n", __func__, ret);
+		goto error;
+	}
+
+	ret = sock.ops->connect(&sock, (struct sockaddr *)&rem_in,
+				ulid_size, O_NONBLOCK);
+	if (ret < 0 && ret != -EINPROGRESS) {
+		mptcp_debug(KERN_ERR "%s: MPTCP subsocket connect() "
+				"failed, error %d\n", __func__, ret);
+		goto error;
+	}
+
+	sk_set_socket(sk, meta_sk->sk_socket);
+	sk->sk_wq = meta_sk->sk_wq;
+
+	return;
+
+error:
+	sock_orphan(sk);
+	tcp_done(sk);
+
+	return;
 }
 
 /****** IPv4-Address event handler ******/
@@ -525,50 +493,41 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 {
 	int i;
 	struct sock *sk;
-	struct sock *meta_sk = mpcb_meta_sk(mpcb);
 	struct tcp_sock *tp;
 
-	if (ifa->ifa_scope > RT_SCOPE_LINK)
-		return;
-
-	if (ifa->ifa_dev->dev->flags & IFF_NOMULTIPATH)
+	if (ifa->ifa_scope > RT_SCOPE_LINK ||
+	    (ifa->ifa_dev->dev->flags & IFF_NOMULTIPATH))
 		return;
 
 	/* Look for the address among the local addresses */
-	for (i = 0; i < mpcb->num_addr4; i++) {
-		if (mpcb->addr4[i].addr.s_addr ==
-			ifa->ifa_local)
+	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
+		if (!((1 << i) & mpcb->loc4_bits))
+			continue;
+
+		if (mpcb->addr4[i].addr.s_addr == ifa->ifa_local)
 			goto found;
 	}
 
-	if (meta_sk->sk_family == AF_INET &&
-	    inet_sk(meta_sk)->inet_saddr == ifa->ifa_local)
-		goto found;
-
-	if (mptcp_v6_is_v4_mapped(meta_sk) &&
-	    inet_sk(meta_sk)->inet_saddr == ifa->ifa_local)
-		goto found;
-
 	/* Not yet in address-list */
-	if (event == NETDEV_UP &&
-	    netif_running(ifa->ifa_dev->dev)) {
-		if (mpcb->num_addr4 >= MPTCP_MAX_ADDR) {
-			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP "
-				"Reached max number of local IPv4 addresses: %d\n",
-				MPTCP_MAX_ADDR);
+	if (event == NETDEV_UP && netif_running(ifa->ifa_dev->dev)) {
+		i = mptcp_find_addrindex(mpcb->loc4_bits);
+		if (i < 0) {
+			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP Reached max "
+					"number of local IPv4 addresses: %d\n",
+					MPTCP_MAX_ADDR);
 			return;
 		}
 
 		printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP adding "
 			"address %pI4 to existing connection with mpcb: %d\n",
 			&ifa->ifa_local, mpcb->mptcp_loc_token);
+
 		/* update this mpcb */
-		mpcb->addr4[mpcb->num_addr4].addr.s_addr = ifa->ifa_local;
-		mpcb->addr4[mpcb->num_addr4].id = mpcb->num_addr4 + 1;
-		smp_wmb();
-		mpcb->num_addr4++;
+		mpcb->addr4[i].addr.s_addr = ifa->ifa_local;
+		mpcb->addr4[i].id =  i;
+		mpcb->loc4_bits |= (1 << i);
 		/* re-send addresses */
-		mpcb->addr4_unsent++;
+		mpcb->add_addr4 |= (1 << i);
 		/* re-evaluate paths eventually */
 		mpcb->rx_opt.list_rcvd = 1;
 	}
@@ -578,7 +537,7 @@ found:
 	 * concerned paths. */
 	mptcp_for_each_sk(mpcb, sk, tp) {
 		if (sk->sk_family != AF_INET ||
-				inet_sk(sk)->inet_saddr != ifa->ifa_local)
+		    inet_sk(sk)->inet_saddr != ifa->ifa_local)
 			continue;
 
 		if (event == NETDEV_DOWN) {

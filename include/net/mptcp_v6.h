@@ -36,14 +36,14 @@ int mptcp_v6_send_synack(struct sock *meta_sk, struct request_sock *req);
 
 int mptcp_v6_add_raddress(struct multipath_options *mopt,
 			  const struct in6_addr *addr, __be16 port, u8 id);
-struct mptcp_path6 *mptcp_v6_find_path(struct mptcp_loc6 *loc,
-				       struct mptcp_loc6 *rem,
-				       struct multipath_pcb *mpcb);
-struct mptcp_path6 *mptcp_get_path6(struct multipath_pcb *mpcb, int path_index);
+void mptcp_v6_set_init_addr_bit(struct multipath_pcb *mpcb,
+				const struct in6_addr *daddr);
 struct request_sock *mptcp_v6_search_req(const __be16 rport,
 					 const struct in6_addr *raddr,
 					 const struct in6_addr *laddr);
-void mptcp_v6_update_patharray(struct multipath_pcb *mpcb);
+void mptcp_init6_subsockets(struct multipath_pcb *mpcb,
+			    const struct mptcp_loc6 *loc,
+			    struct mptcp_loc6 *rem);
 void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 				  struct multipath_pcb *mpcb);
 void mptcp_pm_v6_init(void);

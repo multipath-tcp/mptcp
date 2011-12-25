@@ -28,24 +28,25 @@
 #include <net/sock.h>
 #include <net/tcp.h>
 
-#define MPTCP_MAX_ADDR 12	/* Max number of local or remote addresses we
-				 * can store.
-				 */
-
-struct multipath_pcb;
+/* Max number of local or remote addresses we can store.
+ * When changing, see the bitfield below in mptcp_loc4/6. */
+#define MPTCP_MAX_ADDR 8
 
 struct mptcp_loc4 {
 	u8		id;
+	u8		bitfield;
 	__be16		port;
 	struct in_addr	addr;
 };
 
 struct mptcp_loc6 {
 	u8		id;
+	u8		bitfield;
 	__be16		port;
 	struct in6_addr	addr;
 };
 
+struct multipath_pcb;
 #ifdef CONFIG_MPTCP
 
 #define MPTCP_HASH_SIZE                1024
@@ -58,25 +59,6 @@ struct mptcp_loc6 {
 extern struct list_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
 extern spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
 
-struct mptcp_path4 {
-	struct sockaddr_in	loc; /* local address */
-	struct sockaddr_in	rem; /* remote address */
-	int			path_index;
-	u8			loc_id;
-	u8			rem_id;
-	u8			tried:1;
-};
-
-struct mptcp_path6 {
-	struct sockaddr_in6	loc; /* local address */
-	struct sockaddr_in6	rem; /* remote address */
-	int			path_index;
-	u8			loc_id;
-	u8			rem_id;
-	u8			tried:1;
-};
-
-void mptcp_update_patharray(struct multipath_pcb *mpcb);
 void mptcp_hash_request_remove(struct request_sock *req);
 void mptcp_send_updatenotif(struct multipath_pcb *mpcb);
 
@@ -90,7 +72,6 @@ int mptcp_find_token(u32 token);
 struct dst_entry *mptcp_route_req(const struct request_sock *req,
 				  struct sock *meta_sk);
 void mptcp_set_addresses(struct multipath_pcb *mpcb);
-void mptcp_subflow_attach(struct multipath_pcb *mpcb, struct sock *subsk);
 int mptcp_syn_recv_sock(struct sk_buff *skb);
 void __mptcp_update_patharray_ports(struct multipath_pcb *mpcb);
 int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family);
