@@ -512,7 +512,7 @@ struct tcp_sock {
 	u8      mpc:1,          /* Other end is multipath capable */
 		send_mp_rst:1,
 		request_mptcp:1, /* Did we send out an MP_CAPABLE?
-				    * (this speeds up do_mptcp() in tcp_recvmsg)
+				    * (this speeds up mptcp_doit() in tcp_recvmsg)
 				    */
 		mptcp_enabled:1, /* Is MPTCP enabled from the application ? */
 		pf:1, /* Potentially Failed state: when this flag is set, we

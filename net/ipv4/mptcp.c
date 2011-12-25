@@ -1752,10 +1752,8 @@ void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 	switch (sk->sk_family) {
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	case AF_INET6:
-		if (!ipv6_addr_loopback(&(inet6_sk(sk))->saddr) &&
-				!ipv6_addr_loopback(&(inet6_sk(sk))->daddr)) {
-			mptcp_set_addresses(mpcb);
-		}
+		mptcp_set_addresses(mpcb);
+
 		/* If the socket is v4 mapped, we continue with v4 operations */
 		if (!mptcp_v6_is_v4_mapped(sk))
 			break;
@@ -1764,12 +1762,7 @@ void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 		inet_sk(meta_sk)->inet_daddr = inet_sk(sk)->inet_daddr;
 		inet_sk(meta_sk)->inet_saddr = inet_sk(sk)->inet_saddr;
 
-		/* Searching for suitable local addresses,
-		 * except is the socket is loopback, in which case we simply
-		 * don't do multipath */
-		if (!ipv4_is_loopback(inet_sk(sk)->inet_saddr) &&
-			!ipv4_is_loopback(inet_sk(sk)->inet_daddr))
-			mptcp_set_addresses(mpcb);
+		mptcp_set_addresses(mpcb);
 		break;
 	}
 
@@ -4208,7 +4201,7 @@ new_bw_est:
 /**
  * Returns 1 if we should enable MPTCP for that socket.
  */
-int do_mptcp(struct sock *sk)
+int mptcp_doit(struct sock *sk)
 {
 	/* Socket may already be established (e.g., called from tcp_recvmsg) */
 	if (tcp_sk(sk)->mpc || tcp_sk(sk)->request_mptcp)
@@ -4220,9 +4213,13 @@ int do_mptcp(struct sock *sk)
 		return 0;
 
 	/* Don't do mptcp over loopback or local addresses */
-	if (sk->sk_family == AF_INET && ipv4_is_loopback(inet_sk(sk)->inet_daddr))
+	if (sk->sk_family == AF_INET &&
+	    (ipv4_is_loopback(inet_sk(sk)->inet_daddr) ||
+	     ipv4_is_loopback(inet_sk(sk)->inet_saddr)))
 		return 0;
-	if (sk->sk_family == AF_INET6 && ipv6_addr_loopback(&inet6_sk(sk)->daddr))
+	if (sk->sk_family == AF_INET6 &&
+	    (ipv6_addr_loopback(&inet6_sk(sk)->daddr) ||
+	     ipv6_addr_loopback(&inet6_sk(sk)->saddr)))
 		return 0;
 	if (mptcp_v6_is_v4_mapped(sk) && ipv4_is_loopback(inet_sk(sk)->inet_saddr))
 		return 0;

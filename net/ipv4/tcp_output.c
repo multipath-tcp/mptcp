@@ -2783,7 +2783,7 @@ static void tcp_connect_init(struct sock *sk)
 	if (!tp->window_clamp)
 		tp->window_clamp = dst_metric(dst, RTAX_WINDOW);
 #ifdef CONFIG_MPTCP
-	if (do_mptcp(sk))
+	if (mptcp_doit(sk))
 		tp->advmss = mptcp_sysctl_mss();
 	else
 #endif
@@ -2826,7 +2826,7 @@ static void tcp_connect_init(struct sock *sk)
 	tcp_clear_retrans(tp);
 
 #ifdef CONFIG_MPTCP
-	if (do_mptcp(sk)) {
+	if (mptcp_doit(sk)) {
 		tp->snt_isn = tp->write_seq;
 		tp->reinjected_seq = tp->write_seq;
 		tp->init_rcv_wnd = tp->rcv_wnd;
