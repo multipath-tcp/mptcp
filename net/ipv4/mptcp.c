@@ -3871,8 +3871,12 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 	sk_mem_reclaim(meta_sk);
 
 	/* If socket has been already reset (e.g. in tcp_reset()) - kill it. */
-	if (meta_sk->sk_state == TCP_CLOSE)
+	if (meta_sk->sk_state == TCP_CLOSE) {
+		struct sock *sk_it, *sk_tmp;
+		mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp)
+			mptcp_sub_close(sk_it);
 		goto adjudge_to_death;
+	}
 
 	if (data_was_unread) {
 		/* Unread data was tossed, zap the connection. */
