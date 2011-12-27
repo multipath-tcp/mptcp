@@ -4141,6 +4141,7 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 			/* The allocation of the mpcb failed!
 			 * Destroy the child and go to listen_overflow
 			 */
+			sock_orphan(child);
 			tcp_done(child);
 			return -ENOBUFS;
 		}

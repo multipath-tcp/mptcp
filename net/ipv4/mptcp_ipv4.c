@@ -276,7 +276,7 @@ discard:
 
 /**
  * Inspired from inet_csk_search_req
- * After this, the ref count of the master_sk associated with the request_sock
+ * After this, the ref count of the meta_sk associated with the request_sock
  * is incremented. Thus it is the responsibility of the caller
  * to call sock_put() when the reference is not needed anymore.
  */
