@@ -1753,12 +1753,13 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->flags	 = iph->tos;
 	TCP_SKB_CB(skb)->sacked	 = 0;
 
+	sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
+
+process:
+	if (sk && sk->sk_state == TCP_TIME_WAIT)
+		goto do_time_wait;
+
 #ifdef CONFIG_MPTCP
-	/* We must absolutely check for subflow related SYNs+JOIN
-	 * before the normal sock lookup, because otherwise subflow
-	 * SYNs could be understood as associated to some listening
-	 * socket.
-	 */
 	if (th->syn && !th->ack) {
 		int ret;
 
@@ -1766,18 +1767,18 @@ int tcp_v4_rcv(struct sk_buff *skb)
 		if (ret) {
 			if (ret < 0) {
 				tcp_v4_send_reset(NULL, skb);
+				if (sk)
+					sock_put(sk);
 				goto discard_it;
 			} else {
+				if (sk)
+					sock_put(sk);
 				return 0;
 			}
 		}
 
 	}
-#endif
 
-	sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
-
-#ifdef CONFIG_MPTCP
 	/* Is there a pending request sock for this segment ? */
 	if ((!sk || sk->sk_state == TCP_LISTEN) && mptcp_syn_recv_sock(skb)) {
 		if (sk)
@@ -1787,10 +1788,6 @@ int tcp_v4_rcv(struct sk_buff *skb)
 #endif
 	if (!sk)
 		goto no_tcp_socket;
-
-process:
-	if (sk->sk_state == TCP_TIME_WAIT)
-		goto do_time_wait;
 
 	if (unlikely(iph->ttl < inet_sk(sk)->min_ttl)) {
 		NET_INC_STATS_BH(net, LINUX_MIB_TCPMINTTLDROP);
@@ -1894,6 +1891,24 @@ do_time_wait:
 			inet_twsk_put(inet_twsk(sk));
 			sk = sk2;
 			goto process;
+		}
+		if (th->syn && !th->ack) {
+			int ret;
+
+			ret = mptcp_lookup_join(skb);
+			if (ret) {
+				if (ret < 0) {
+					tcp_v4_send_reset(NULL, skb);
+					if (sk)
+						sock_put(sk);
+					goto discard_it;
+				} else {
+					if (sk)
+						sock_put(sk);
+					return 0;
+				}
+			}
+
 		}
 		/* Fall through to ACK */
 	}
