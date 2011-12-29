@@ -1048,17 +1048,6 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 			continue;
 		}
 
-		subsk = mptcp_schedulers[sysctl_mptcp_scheduler - 1](mpcb, skb);
-		if (!subsk)
-			break;
-		subtp = tcp_sk(subsk);
-
-		/* Since all subsocks are locked before calling the scheduler,
-		 * the tcp_send_head should not change.
-		 */
-		BUG_ON(!reinject && tcp_send_head(meta_sk) != skb);
-retry:
-
 		/* This must be invoked even if we don't want
 		 * to support TSO at the moment
 		 */
@@ -1069,6 +1058,16 @@ retry:
 		 */
 		BUG_ON(tso_segs != 1);
 
+		subsk = mptcp_schedulers[sysctl_mptcp_scheduler - 1](mpcb, skb);
+		if (!subsk)
+			break;
+		subtp = tcp_sk(subsk);
+
+		/* Since all subsocks are locked before calling the scheduler,
+		 * the tcp_send_head should not change.
+		 */
+		BUG_ON(!reinject && tcp_send_head(meta_sk) != skb);
+retry:
 		/* decide to which subsocket we give the skb */
 		cwnd_quota = tcp_cwnd_test(subtp, skb);
 		if (!cwnd_quota) {
