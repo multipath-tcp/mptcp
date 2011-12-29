@@ -3516,8 +3516,7 @@ void mptcp_sub_close(struct sock *sk)
 		/* Unread data was tossed, zap the connection. */
 		NET_INC_STATS_USER(sock_net(sk), LINUX_MIB_TCPABORTONCLOSE);
 		tcp_set_state(sk, TCP_CLOSE);
-		tcp_send_active_reset(sk, (in_interrupt()) ?
-				      GFP_ATOMIC : sk->sk_allocation);
+		tcp_send_active_reset(sk, gfp_any());
 	} else if (sock_flag(sk, SOCK_LINGER) && !sk->sk_lingertime) {
 		/* Check zero linger _after_ checking for unread data. */
 		sk->sk_prot->disconnect(sk, 0);
