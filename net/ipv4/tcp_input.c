@@ -4201,6 +4201,14 @@ static void tcp_fin(struct sk_buff *skb, struct sock *sk, struct tcphdr *th)
 	case TCP_ESTABLISHED:
 		/* Move to CLOSE_WAIT */
 		tcp_set_state(sk, TCP_CLOSE_WAIT);
+#ifdef CONFIG_MPTCP
+		if (tp->mpc && tp->mpcb->passive_close) {
+			if (mpcb_meta_sk(tp->mpcb)->sk_shutdown == SHUTDOWN_MASK)
+				mptcp_sub_close(sk);
+			else if (tcp_close_state(sk))
+				tcp_send_fin(sk);
+		}
+#endif
 		inet_csk(sk)->icsk_ack.pingpong = 1;
 		break;
 

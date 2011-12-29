@@ -456,7 +456,7 @@ void mptcp_ofo_queue(struct multipath_pcb *mpcb)
 		}
 
 		if (mptcp_is_data_fin(skb))
-			mptcp_fin(mpcb, NULL);
+			mptcp_fin(mpcb);
 	}
 }
 

@@ -249,6 +249,15 @@ static struct sock *get_available_subflow(struct multipath_pcb *mpcb,
 		goto out;
 	}
 
+	/* Answer data_fin on same subflow!!! */
+	if (mpcb_meta_sk(mpcb)->sk_shutdown & RCV_SHUTDOWN &&
+	    mptcp_is_data_fin(skb)) {
+		mptcp_for_each_sk(mpcb, sk, tp) {
+			if (tp->path_index == mpcb->dfin_path_index)
+				return sk;
+		}
+	}
+
 	/* First, find the best subflow */
 	mptcp_for_each_sk(mpcb, sk, tp) {
 		if (mptcp_dont_reinject_skb(tp, skb))
@@ -520,11 +529,18 @@ static struct sock *mptcp_select_ack_sock(const struct multipath_pcb *mpcb,
  * Can be called only when the FIN is validly part
  * of the data seqnum space. Not before when we get holes.
  */
-int mptcp_fin(struct multipath_pcb *mpcb, struct sock *sk)
+int mptcp_fin(struct multipath_pcb *mpcb)
 {
-	struct sock *meta_sk = (struct sock*)mpcb;
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct sock *meta_sk = mpcb_meta_sk(mpcb), *sk = NULL, *sk_it;
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *tp_it;
 	int ans = 0;
+
+	mptcp_for_each_sk(mpcb, sk_it, tp_it) {
+		if (tp_it->path_index == mpcb->dfin_path_index) {
+			sk = sk_it;
+			break;
+		}
+	}
 
 	if (!sk)
 		sk = mptcp_select_ack_sock(mpcb, 0);
@@ -1139,7 +1155,7 @@ retry:
 		}
 
 		if (mptcp_is_data_fin(subskb))
-			mptcp_combine_dfin(subskb, meta_tp, subsk);
+			mptcp_combine_dfin(subskb, mpcb, subsk);
 		BUG_ON(tcp_send_head(subsk));
 
 		mptcp_skb_entail(subsk, subskb);
@@ -2259,6 +2275,12 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 		return 1;
 	}
 
+	/* Record it, because we want to send our data_fin on the same path */
+	if (mptcp_is_data_fin(skb)) {
+		mpcb->dfin_path_index = tp->path_index;
+		mpcb->dfin_combined = tcp_hdr(skb)->fin ? 1 : 0;
+	}
+
 	/* If we are not yet fully established and do not know the mapping for
 	 * this segment, this path has to fallback to infinite or be torn down.
 	 */
@@ -2529,7 +2551,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 				tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 
 				if (mptcp_is_data_fin(tmp1))
-					mptcp_fin(mpcb, sk);
+					mptcp_fin(mpcb);
 
 				/* the callers of mptcp_queue_skb still
 				 * need the skb
@@ -2612,7 +2634,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 					 * Thus, we skip the rest of
 					 * mptcp_queue_skb and exit.
 					 */
-					if (mptcp_fin(mpcb, sk)) {
+					if (mptcp_fin(mpcb)) {
 						ans = 0;
 						goto rcvd_fin;
 					}
@@ -2732,15 +2754,22 @@ void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb)
 	}
 }
 
-void mptcp_combine_dfin(struct sk_buff *skb, struct tcp_sock *meta_tp,
+void mptcp_combine_dfin(struct sk_buff *skb, struct multipath_pcb *mpcb,
 			struct sock *subsk)
 {
-	struct sock *sk_it;
-	struct tcp_sock *tp_it;
+	struct sock *sk_it, *meta_sk = mpcb_meta_sk(mpcb);
+	struct tcp_sock *tp_it, *meta_tp = mpcb_meta_tp(mpcb);
 	int all_empty = 1, all_acked = 1;
 
+	/* Don't combine, if they didn't combine - otherwise we end up in
+	 * TIME_WAIT, even if our app is smart enough to avoid it */
+	if (meta_sk->sk_shutdown & RCV_SHUTDOWN) {
+		if (!mpcb->dfin_combined)
+			return;
+	}
+
 	/* If no other subflow still has data to send, we can combine */
-	mptcp_for_each_sk(meta_tp->mpcb, sk_it, tp_it) {
+	mptcp_for_each_sk(mpcb, sk_it, tp_it) {
 		if (!tcp_write_queue_empty(sk_it))
 			all_empty = 0;
 	}
@@ -3443,7 +3472,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 /* Inspired by tcp_close - specific for subflows as mptcp_sub_close may get
  * called from softirq (mptcp_clean_rtx_queue) and/or already has been orphaned
  * (by mptcp_close) */
-static void mptcp_sub_close(struct sock *sk)
+void mptcp_sub_close(struct sock *sk)
 {
 	struct sk_buff *skb;
 	int data_was_unread = 0;
@@ -3596,6 +3625,7 @@ void mptcp_clean_rtx_queue(struct sock *meta_sk)
 {
 	struct sk_buff *skb;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct multipath_pcb *mpcb = meta_tp->mpcb;
 	int acked = 0;
 
 	BUG_ON(!is_meta_tp(meta_tp));
@@ -3613,6 +3643,15 @@ void mptcp_clean_rtx_queue(struct sock *meta_sk)
 			/* DATA_FIN has been acknowledged - now we can close
 			 * the subflows */
 			mptcp_for_each_sk_safe(meta_tp->mpcb, sk_it, sk_tmp) {
+				/* If we are the passive closer, don't trigger
+				 * subflow-fin until the subflow has been finned
+				 * by the peer. */
+				if (mpcb->passive_close && sk_it->sk_state == TCP_ESTABLISHED) {
+					inet_csk_reset_xmit_timer(sk_it, ICSK_TIME_CLOSE,
+							  inet_csk(sk_it)->icsk_rto, TCP_RTO_MAX);
+					continue;
+				}
+
 				if (meta_sk->sk_shutdown == SHUTDOWN_MASK)
 					mptcp_sub_close(sk_it);
 				else if (tcp_close_state(sk_it))
@@ -3758,6 +3797,10 @@ void mptcp_send_fin(struct sock *meta_sk)
 {
 	struct sk_buff *skb;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+
+	if ((1 << meta_sk->sk_state) & (TCPF_CLOSE_WAIT | TCPF_LAST_ACK))
+		meta_tp->mpcb->passive_close = 1;
+
 	if (tcp_send_head(meta_sk)) {
 		skb = tcp_write_queue_tail(meta_sk);
 		TCP_SKB_CB(skb)->data_len++;
@@ -3889,8 +3932,18 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 		struct sock *sk_it, *sk_tmp;
 		/* The DATA_FIN has been sent and acknowledged
 		 * (e.g., by sk_shutdown). Close all the other subflows */
-		mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp)
+		mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp) {
+			/* If we are the passive closer, don't trigger
+			 * subflow-fin until the subflow has been finned
+			 * by the peer. */
+			if (mpcb->passive_close && sk_it->sk_state == TCP_ESTABLISHED) {
+				inet_csk_reset_xmit_timer(sk_it, ICSK_TIME_CLOSE,
+						 inet_csk(sk_it)->icsk_rto, TCP_RTO_MAX);
+				continue;
+			}
+
 			mptcp_sub_close(sk_it);
+		}
 	}
 
 	sk_stream_wait_close(meta_sk, timeout);

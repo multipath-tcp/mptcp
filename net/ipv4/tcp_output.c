@@ -1409,7 +1409,9 @@ unsigned int tcp_cwnd_test(struct tcp_sock *tp, struct sk_buff *skb)
 	BUG_ON(is_meta_tp(tp));
 
 	/* Don't be strict about the congestion window for the final FIN.  */
-	if (skb && (TCP_SKB_CB(skb)->flags & TCPHDR_FIN) && tcp_skb_pcount(skb) == 1)
+	if (skb &&
+	    ((TCP_SKB_CB(skb)->flags & TCPHDR_FIN) || mptcp_is_data_fin(skb)) &&
+	    tcp_skb_pcount(skb) == 1)
 		return 1;
 
 	in_flight = tcp_packets_in_flight(tp);

@@ -141,6 +141,8 @@ struct multipath_pcb {
 	u8	send_infinite_mapping:1,
 		infinite_mapping:1,
 		send_mp_fail:1,
+		dfin_combined:1,   /* Does the DFIN received was combined with a subflow-fin? */
+		passive_close:1,
 		snd_hiseq_index:1, /* Index in snd_high_order of snd_nxt */
 		rcv_hiseq_index:1; /* Index in rcv_high_order of rcv_nxt */
 
@@ -157,9 +159,11 @@ struct multipath_pcb {
 	struct multipath_options rx_opt;
 
 	/* socket count in this connection */
-	int cnt_subflows;
-	int cnt_established;
-	int last_pi_selected;
+	u8 cnt_subflows;
+	u8 cnt_established;
+	u8 last_pi_selected;
+
+	u8 dfin_path_index;
 
 	struct sk_buff_head reinject_queue;
 	unsigned long flags;	/* atomic, for bits see
@@ -524,7 +528,7 @@ void mptcp_select_window(struct tcp_sock *tp, u32 new_win);
 u32 __mptcp_select_window(struct sock *sk);
 int mptcp_try_rmem_schedule(struct sock *tp, unsigned int size);
 int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb);
-void mptcp_combine_dfin(struct sk_buff *skb, struct tcp_sock *meta_tp,
+void mptcp_combine_dfin(struct sk_buff *skb, struct multipath_pcb *mpcb,
 			struct sock *subsk);
 void mptcp_set_data_size(struct tcp_sock *tp, struct sk_buff *skb, int copy);
 int mptcp_push(struct sock *sk, int flags, int mss_now, int nonagle);
@@ -532,11 +536,12 @@ void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn);
 void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 		     u32 *hash_out);
 void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk);
-int mptcp_fin(struct multipath_pcb *mpcb, struct sock *sk);
+int mptcp_fin(struct multipath_pcb *mpcb);
 void mptcp_retransmit_timer(struct sock *meta_sk);
 int mptcp_write_wakeup(struct sock *meta_sk);
 void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb);
 void mptcp_sock_def_error_report(struct sock *sk);
+void mptcp_sub_close(struct sock *sk);
 
 static inline int mptcp_skb_cloned(const struct sk_buff *skb,
 				   const struct tcp_sock *tp)
