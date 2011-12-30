@@ -3834,17 +3834,23 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 		tcp_sk(sk)->send_mp_rst = 1;
 	}
 
-	/* Reset all other subflows */
+	/** Reset all other subflows */
+
+	/* tcp_done must be handled with bh disabled */
+	if (!in_serving_softirq())
+		local_bh_disable();
 	mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp) {
 		if (tcp_sk(sk_it)->send_mp_rst) {
 			sk = sk_it;
 			continue;
 		}
 
-		tcp_send_active_reset(sk_it, priority);
+		tcp_send_active_reset(sk_it, GFP_ATOMIC);
 		sock_orphan(sk_it);
 		tcp_done(sk_it);
 	}
+	if (!in_serving_softirq())
+		local_bh_enable();
 
 	tcp_send_ack(sk);
 

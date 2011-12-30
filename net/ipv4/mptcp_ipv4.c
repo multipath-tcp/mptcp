@@ -439,7 +439,11 @@ void mptcp_init4_subsockets(struct multipath_pcb *mpcb,
 
 error:
 	sock_orphan(sk);
+
+	/* tcp_done must be handled with bh disabled */
+	local_bh_disable();
 	tcp_done(sk);
+	local_bh_enable();
 
 	return;
 }
