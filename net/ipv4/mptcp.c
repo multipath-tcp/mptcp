@@ -1427,20 +1427,7 @@ void mptcp_release_mpcb(struct multipath_pcb *mpcb)
 		BUG();
 	}
 
-	/* Ensure that all queues are empty. Later, we can find more
-	 * appropriate places to do this, maybe reusing existing code.
-	 * But this at least ensures that we are safe when destroying
-	 * the mpcb.
-	 */
-	tcp_write_queue_purge(meta_sk);
-	mptcp_purge_ofo_queue(tcp_sk(meta_sk));
-	sk_stream_kill_queues(meta_sk);
-
-	inet_csk(meta_sk)->icsk_pending = 0;
-	sk_stop_timer(meta_sk, &inet_csk(meta_sk)->icsk_retransmit_timer);
-
 	security_sk_free(meta_sk);
-	percpu_counter_dec(meta_sk->sk_prot->orphan_count);
 
 	mptcp_debug("%s: Will free mpcb %#x\n", __func__, mpcb->mptcp_loc_token);
 	kmem_cache_free(mpcb_cache, mpcb);
