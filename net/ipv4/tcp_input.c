@@ -4203,6 +4203,9 @@ static void tcp_fin(struct sk_buff *skb, struct sock *sk, struct tcphdr *th)
 		tcp_set_state(sk, TCP_CLOSE_WAIT);
 #ifdef CONFIG_MPTCP
 		if (tp->mpc && tp->mpcb->passive_close) {
+			if (inet_csk(sk)->icsk_pending == ICSK_TIME_CLOSE)
+				inet_csk(sk)->icsk_pending = 0;
+
 			if (mpcb_meta_sk(tp->mpcb)->sk_shutdown == SHUTDOWN_MASK)
 				mptcp_sub_close(sk);
 			else if (tcp_close_state(sk))
