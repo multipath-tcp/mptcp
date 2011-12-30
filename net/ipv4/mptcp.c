@@ -3553,8 +3553,11 @@ void mptcp_sub_close(struct sock *sk)
 adjudge_to_death:
 	state = sk->sk_state;
 	sock_hold(sk);
-
 	sock_orphan(sk);
+
+	if (!in_serving_softirq())
+		local_bh_disable();
+
 	percpu_counter_inc(sk->sk_prot->orphan_count);
 
 	/* Have we already been destroyed by a softirq or backlog? */
@@ -3612,6 +3615,8 @@ adjudge_to_death:
 	/* Otherwise, socket is reprieved until protocol close. */
 
 out:
+	if (!in_serving_softirq())
+		local_bh_enable();
 	sock_put(sk);
 }
 
