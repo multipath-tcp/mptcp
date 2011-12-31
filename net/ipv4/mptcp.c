@@ -1189,10 +1189,15 @@ retry:
 			 */
 
 			/* Remove the skb from the subsock */
-			tcp_advance_send_head(subsk, subskb);
-			tcp_unlink_write_queue(subskb, subsk);
-			subtp->write_seq -= subskb->len;
-			mptcp_wmem_free_skb(subsk, subskb);
+			if (!mptcp_is_data_fin(subskb) ||
+			    (TCP_SKB_CB(subskb)->end_seq != TCP_SKB_CB(subskb)->seq)) {
+				tcp_advance_send_head(subsk, subskb);
+				tcp_unlink_write_queue(subskb, subsk);
+				subtp->write_seq -= subskb->len;
+				mptcp_wmem_free_skb(subsk, subskb);
+			} else {
+				kfree_skb(subskb);
+			}
 
 			mpcb->noneligible |= mptcp_pi_to_flag(subtp->path_index);
 
@@ -1211,10 +1216,14 @@ retry:
 
 		/* If it's a non-payload DATA_FIN (also no subflow-fin), the
 		 * segment is not part of the subflow but on a meta-only-level
+		 *
+		 * We free it, because it has been queued nowhere.
 		 */
 		if (!mptcp_is_data_fin(subskb) ||
 		    (TCP_SKB_CB(subskb)->end_seq != TCP_SKB_CB(subskb)->seq))
 			tcp_event_new_data_sent(subsk, subskb);
+		else
+			kfree_skb(subskb);
 
 		BUG_ON(tcp_send_head(subsk));
 		if (!reinject) {
