@@ -534,8 +534,7 @@ void mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 	    sock_flag(mpcb_meta_sk(mpcb), SOCK_DEAD))
 		return;
 
-	work = kmalloc(sizeof(*work) + sizeof(mpcb),
-					   GFP_ATOMIC);
+	work = kmalloc(sizeof(*work) + sizeof(mpcb), GFP_ATOMIC);
 	mpcbp = (struct multipath_pcb **)(work + 1);
 	*mpcbp = mpcb;
 

@@ -2068,7 +2068,7 @@ void tcp_close(struct sock *sk, long timeout)
 	int data_was_unread = 0;
 	int state;
 
-	if (tcp_sk(sk)->mpc) {
+	if (is_meta_sk(sk)) {
 		mptcp_close(sk, timeout);
 		return;
 	}

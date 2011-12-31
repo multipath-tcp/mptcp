@@ -4206,10 +4206,7 @@ static void tcp_fin(struct sk_buff *skb, struct sock *sk, struct tcphdr *th)
 			if (inet_csk(sk)->icsk_pending == ICSK_TIME_CLOSE)
 				inet_csk(sk)->icsk_pending = 0;
 
-			if (mpcb_meta_sk(tp->mpcb)->sk_shutdown == SHUTDOWN_MASK)
-				mptcp_sub_close(sk);
-			else if (tcp_close_state(sk))
-				tcp_send_fin(sk);
+			mptcp_sub_close(sk);
 		}
 #endif
 		inet_csk(sk)->icsk_ack.pingpong = 1;

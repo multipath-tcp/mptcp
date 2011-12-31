@@ -496,12 +496,8 @@ void tcp_write_timer(unsigned long data)
 		tcp_probe_timer(sk);
 		break;
 	case ICSK_TIME_CLOSE:
-		if (!tp->mpc)
-			goto out;
-		if (meta_sk->sk_shutdown == SHUTDOWN_MASK)
+		if (tp->mpc)
 			mptcp_sub_close(sk);
-		else if(tcp_close_state(sk))
-			tcp_send_fin(sk);
 	}
 
 out:

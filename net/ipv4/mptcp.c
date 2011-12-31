@@ -3455,156 +3455,40 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	}
 }
 
-/* Inspired by tcp_close - specific for subflows as mptcp_sub_close may get
- * called from softirq (mptcp_clean_rtx_queue) and/or already has been orphaned
- * (by mptcp_close) */
+static void mptcp_sub_close_wq(struct work_struct *work)
+{
+	struct sock *sk = *(struct sock **)(work + 1);
+	struct sock *meta_sk = mptcp_meta_sk(sk);
+
+	mutex_lock(&tcp_sk(sk)->mpcb->mutex);
+	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
+
+	if (sock_flag(sk, SOCK_DEAD))
+		goto exit;
+
+	if (meta_sk->sk_shutdown == SHUTDOWN_MASK)
+		tcp_close(sk, 0);
+	else if (tcp_close_state(sk))
+		tcp_send_fin(sk);
+
+exit:
+	release_sock(meta_sk);
+	sock_put(sk);
+	kfree(work);
+}
+
 void mptcp_sub_close(struct sock *sk)
 {
-	struct sk_buff *skb;
-	int data_was_unread = 0;
-	int state;
+	struct work_struct *work;
+	struct sock **skp;
 
-	sk->sk_shutdown = SHUTDOWN_MASK;
+	work = kmalloc(sizeof(*work) + sizeof(sk), GFP_ATOMIC);
+	skp = (struct sock **)(work + 1);
+	*skp = sk;
 
-	if (sk->sk_state == TCP_LISTEN) {
-		tcp_set_state(sk, TCP_CLOSE);
-
-		/* Special case. */
-		inet_csk_listen_stop(sk);
-
-		goto adjudge_to_death;
-	}
-
-	/*  We need to flush the recv. buffs.  We do this only on the
-	 *  descriptor close, not protocol-sourced closes, because the
-	 *  reader process may not have drained the data yet!
-	 */
-	while ((skb = __skb_dequeue(&sk->sk_receive_queue)) != NULL) {
-		u32 len = TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq -
-			  tcp_hdr(skb)->fin;
-		data_was_unread += len;
-		__kfree_skb(skb);
-	}
-
-	sk_mem_reclaim(sk);
-
-	/* If socket has been already reset (e.g. in tcp_reset()) - kill it. */
-	if (sk->sk_state == TCP_CLOSE)
-		goto adjudge_to_death;
-
-	/* As outlined in RFC 2525, section 2.17, we send a RST here because
-	 * data was lost. To witness the awful effects of the old behavior of
-	 * always doing a FIN, run an older 2.1.x kernel or 2.0.x, start a bulk
-	 * GET in an FTP client, suspend the process, wait for the client to
-	 * advertise a zero window, then kill -9 the FTP client, wheee...
-	 * Note: timeout is always zero in such a case.
-	 */
-	if (data_was_unread) {
-		/* Unread data was tossed, zap the connection. */
-		NET_INC_STATS_USER(sock_net(sk), LINUX_MIB_TCPABORTONCLOSE);
-		tcp_set_state(sk, TCP_CLOSE);
-		tcp_send_active_reset(sk, gfp_any());
-	} else if (sock_flag(sk, SOCK_LINGER) && !sk->sk_lingertime) {
-		/* Check zero linger _after_ checking for unread data. */
-		sk->sk_prot->disconnect(sk, 0);
-		NET_INC_STATS_USER(sock_net(sk), LINUX_MIB_TCPABORTONDATA);
-	} else if (tcp_close_state(sk)) {
-		/* We FIN if the application ate all the data before
-		 * zapping the connection.
-		 */
-
-		/* RED-PEN. Formally speaking, we have broken TCP state
-		 * machine. State transitions:
-		 *
-		 * TCP_ESTABLISHED -> TCP_FIN_WAIT1
-		 * TCP_SYN_RECV	-> TCP_FIN_WAIT1 (forget it, it's impossible)
-		 * TCP_CLOSE_WAIT -> TCP_LAST_ACK
-		 *
-		 * are legal only when FIN has been sent (i.e. in window),
-		 * rather than queued out of window. Purists blame.
-		 *
-		 * F.e. "RFC state" is ESTABLISHED,
-		 * if Linux state is FIN-WAIT-1, but FIN is still not sent.
-		 *
-		 * The visible declinations are that sometimes
-		 * we enter time-wait state, when it is not required really
-		 * (harmless), do not send active resets, when they are
-		 * required by specs (TCP_ESTABLISHED, TCP_CLOSE_WAIT, when
-		 * they look as CLOSING or LAST_ACK for Linux)
-		 * Probably, I missed some more holelets.
-		 * 						--ANK
-		 */
-		tcp_send_fin(sk);
-	}
-
-adjudge_to_death:
-	state = sk->sk_state;
 	sock_hold(sk);
-	sock_orphan(sk);
-
-	if (!in_serving_softirq())
-		local_bh_disable();
-
-	percpu_counter_inc(sk->sk_prot->orphan_count);
-
-	/* Have we already been destroyed by a softirq or backlog? */
-	if (state != TCP_CLOSE && sk->sk_state == TCP_CLOSE)
-		goto out;
-
-	/*	This is a (useful) BSD violating of the RFC. There is a
-	 *	problem with TCP as specified in that the other end could
-	 *	keep a socket open forever with no application left this end.
-	 *	We use a 3 minute timeout (about the same as BSD) then kill
-	 *	our end. If they send after that then tough - BUT: long enough
-	 *	that we won't make the old 4*rto = almost no time - whoops
-	 *	reset mistake.
-	 *
-	 *	Nope, it was not mistake. It is really desired behaviour
-	 *	f.e. on http servers, when such sockets are useless, but
-	 *	consume significant resources. Let's do it with special
-	 *	linger2	option.					--ANK
-	 */
-
-	if (sk->sk_state == TCP_FIN_WAIT2) {
-		struct tcp_sock *tp = tcp_sk(sk);
-		if (tp->linger2 < 0) {
-			tcp_set_state(sk, TCP_CLOSE);
-			tcp_send_active_reset(sk, GFP_ATOMIC);
-			NET_INC_STATS_BH(sock_net(sk),
-					LINUX_MIB_TCPABORTONLINGER);
-		} else {
-			const int tmo = tcp_fin_time(sk);
-
-			if (tmo > TCP_TIMEWAIT_LEN) {
-				inet_csk_reset_keepalive_timer(sk,
-						tmo - TCP_TIMEWAIT_LEN);
-			} else {
-				tcp_time_wait(sk, TCP_FIN_WAIT2, tmo);
-				goto out;
-			}
-		}
-	}
-	if (sk->sk_state != TCP_CLOSE) {
-		sk_mem_reclaim(sk);
-		if (tcp_too_many_orphans(sk, 0)) {
-			if (net_ratelimit())
-				printk(KERN_INFO "TCP: too many of orphaned "
-				       "sockets\n");
-			tcp_set_state(sk, TCP_CLOSE);
-			tcp_send_active_reset(sk, GFP_ATOMIC);
-			NET_INC_STATS_BH(sock_net(sk),
-					LINUX_MIB_TCPABORTONMEMORY);
-		}
-	}
-
-	if (sk->sk_state == TCP_CLOSE)
-		inet_csk_destroy_sock(sk);
-	/* Otherwise, socket is reprieved until protocol close. */
-
-out:
-	if (!in_serving_softirq())
-		local_bh_enable();
-	sock_put(sk);
+	INIT_WORK(work, mptcp_sub_close_wq);
+	schedule_work(work);
 }
 
 /**
@@ -3642,10 +3526,7 @@ void mptcp_clean_rtx_queue(struct sock *meta_sk)
 					continue;
 				}
 
-				if (meta_sk->sk_shutdown == SHUTDOWN_MASK)
-					mptcp_sub_close(sk_it);
-				else if (tcp_close_state(sk_it))
-					tcp_send_fin(sk_it);
+				mptcp_sub_close(sk_it);
 			}
 		}
 
@@ -3913,7 +3794,7 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 	if (meta_sk->sk_state == TCP_CLOSE) {
 		struct sock *sk_it, *sk_tmp;
 		mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp)
-			mptcp_sub_close(sk_it);
+			tcp_close(sk_it, 0);
 		goto adjudge_to_death;
 	}
 
@@ -3938,7 +3819,7 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 				continue;
 			}
 
-			mptcp_sub_close(sk_it);
+			tcp_close(sk_it, 0);
 		}
 	}
 
