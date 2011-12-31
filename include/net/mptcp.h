@@ -392,6 +392,12 @@ struct mp_rst {
 #endif
 };
 
+extern struct kmem_cache *mptcp_work_cache;
+struct mptcp_work {
+	struct work_struct work;
+	struct sock *sk;
+};
+
 /* Two separate cases must be handled:
  * -a mapping option has been received. Then data_seq and end_data_seq are
  *  defined, and we disambiguate based on data_len (if not zero, the mapping

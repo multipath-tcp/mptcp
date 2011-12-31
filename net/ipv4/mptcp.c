@@ -187,6 +187,7 @@ void verif_rqueues(struct multipath_pcb *mpcb)
 #endif
 
 static struct kmem_cache *mpcb_cache __read_mostly;
+struct kmem_cache *mptcp_work_cache __read_mostly;
 
 /* ===================================== */
 
@@ -3457,7 +3458,8 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 
 static void mptcp_sub_close_wq(struct work_struct *work)
 {
-	struct sock *sk = *(struct sock **)(work + 1);
+	struct mptcp_work *mwork = (struct mptcp_work *)work;
+	struct sock *sk = mwork->sk;
 	struct sock *meta_sk = mptcp_meta_sk(sk);
 
 	mutex_lock(&tcp_sk(sk)->mpcb->mutex);
@@ -3473,22 +3475,23 @@ static void mptcp_sub_close_wq(struct work_struct *work)
 
 exit:
 	release_sock(meta_sk);
+	mutex_unlock(&tcp_sk(sk)->mpcb->mutex);
 	sock_put(sk);
-	kfree(work);
+	kmem_cache_free(mptcp_work_cache, mwork);
 }
 
 void mptcp_sub_close(struct sock *sk)
 {
-	struct work_struct *work;
-	struct sock **skp;
+	struct mptcp_work *mwork;
 
-	work = kmalloc(sizeof(*work) + sizeof(sk), GFP_ATOMIC);
-	skp = (struct sock **)(work + 1);
-	*skp = sk;
+	mwork = kmem_cache_alloc(mptcp_work_cache, GFP_ATOMIC);
+	if (!mwork)
+		return;
+	mwork->sk = sk;
 
 	sock_hold(sk);
-	INIT_WORK(work, mptcp_sub_close_wq);
-	schedule_work(work);
+	INIT_WORK((struct work_struct *)mwork, mptcp_sub_close_wq);
+	schedule_work((struct work_struct *)mwork);
 }
 
 /**
@@ -4233,6 +4236,8 @@ static int __init mptcp_init(void)
 	register_sysctl_table(mptcp_root_table);
 #endif
 	mpcb_cache = kmem_cache_create("mptcp_mpcb", sizeof(struct multipath_pcb),
+				       0, SLAB_HWCACHE_ALIGN|SLAB_PANIC, NULL);
+	mptcp_work_cache = kmem_cache_create("mptcp_work", sizeof(struct mptcp_work),
 				       0, SLAB_HWCACHE_ALIGN|SLAB_PANIC, NULL);
 	mptcp_ofo_queue_init();
 	return 0;
