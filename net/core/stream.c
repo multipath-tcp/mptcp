@@ -60,20 +60,14 @@ int sk_stream_wait_connect(struct sock *sk, long *timeo_p)
 
 	do {
 		int err = sock_error(sk);
-		if (err) {
-			printk(KERN_ERR "line %d, err %d\n", __LINE__, err);
+		if (err)
 			return err;
-		}
 		if ((1 << sk->sk_state) & ~(TCPF_SYN_SENT | TCPF_SYN_RECV))
 			return -EPIPE;
-		if (!*timeo_p) {
-			printk(KERN_ERR "line %d\n", __LINE__);
+		if (!*timeo_p)
 			return -EAGAIN;
-		}
-		if (signal_pending(tsk)) {
-			printk(KERN_ERR "line %d\n", __LINE__);
+		if (signal_pending(tsk))
 			return sock_intr_errno(*timeo_p);
-		}
 
 		prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
 		sk->sk_write_pending++;

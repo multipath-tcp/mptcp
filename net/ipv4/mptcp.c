@@ -239,9 +239,6 @@ static struct sock *get_available_subflow(struct multipath_pcb *mpcb,
 	struct sock *bestsk = NULL, *backup = NULL;
 	u32 min_time_to_peer = 0xffffffff;
 
-	if (!mpcb)
-		return NULL;
-
 	/* if there is only one subflow, bypass the scheduling function */
 	if (mpcb->cnt_subflows == 1) {
 		bestsk = (struct sock *) mpcb->connection_list;
@@ -294,8 +291,6 @@ static struct sock *rr_scheduler(struct multipath_pcb *mpcb,
 	struct sock *sk, *bestsk = NULL;
 	int found = 0;
 
-	if (!mpcb)
-		return NULL;
 
 	/* if there is only one subflow, bypass the scheduling function */
 	if (mpcb->cnt_subflows == 1) {
@@ -987,19 +982,9 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 	int result;
 	int reinject = 0;
 
-	if (meta_sk->sk_in_write_xmit) {
+	if (unlikely(meta_sk->sk_in_write_xmit)) {
 		printk(KERN_ERR "sk in write xmit, meta_sk: %d\n",
 		       is_meta_sk(meta_sk));
-		BUG();
-	}
-
-	/* We can be recursively called only in TCP_FIN_WAIT1 state (because
-	 * the very last segment calls tcp_send_fin() on all subflows)
-	 */
-	if (meta_sk->sk_in_write_xmit &&
-	    ((1 << meta_sk->sk_state) & ~(TCPF_FIN_WAIT1 | TCPF_LAST_ACK))) {
-		printk(KERN_ERR "meta-sk in write xmit, meta-sk:%d, state of "
-		       "meta_sk:%d\n", is_meta_sk(meta_sk), meta_sk->sk_state);
 		BUG();
 	}
 
@@ -1443,12 +1428,11 @@ void mptcp_release_mpcb(struct multipath_pcb *mpcb)
 	kmem_cache_free(mpcb_cache, mpcb);
 }
 
-void mptcp_release_sock(struct sock *sk)
+void mptcp_release_sock(struct sock *meta_sk)
 {
+	struct multipath_pcb *mpcb = (struct multipath_pcb *)meta_sk;
 	struct sock *sk_it;
 	struct tcp_sock *tp_it;
-	struct multipath_pcb *mpcb = tcp_sk(sk)->mpcb;
-	struct sock *meta_sk = (struct sock *)mpcb;
 
 	/* We need to do the following, because as far
 	 * as the master-socket is locked, every received segment is
@@ -1679,6 +1663,7 @@ static void mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 				mptcp_send_active_reset(meta_sk, GFP_ATOMIC);
 			}
 		}
+		break;
 	}
 }
 

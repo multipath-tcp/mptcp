@@ -502,7 +502,7 @@ void mptcp_skb_entail_init(struct tcp_sock *tp, struct sk_buff *skb);
 void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb);
 struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject);
 void mptcp_release_mpcb(struct multipath_pcb *mpcb);
-void mptcp_release_sock(struct sock *sk);
+void mptcp_release_sock(struct sock *meta_sk);
 void mptcp_clean_rtx_queue(struct sock *meta_sk);
 void mptcp_send_fin(struct sock *meta_sk);
 void mptcp_send_reset(struct sock *sk, struct sk_buff *skb);
@@ -574,7 +574,7 @@ static inline struct multipath_pcb *mpcb_from_tcpsock(const struct tcp_sock *tp)
 
 static inline struct sock *mptcp_meta_sk(struct sock *sk)
 {
-	return (struct sock *)tcp_sk(sk)->mpcb;
+	return mpcb_meta_sk(tcp_sk(sk)->mpcb);
 }
 
 static inline
@@ -590,8 +590,8 @@ static inline int is_meta_tp(const struct tcp_sock *tp)
 
 static inline int is_meta_sk(const struct sock *sk)
 {
-	return sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpc &&
-	       mpcb_meta_sk(tcp_sk(sk)->mpcb) == sk;
+	return sk->sk_type == SOCK_STREAM  && sk->sk_protocol == IPPROTO_TCP &&
+	       tcp_sk(sk)->mpc && mpcb_meta_sk(tcp_sk(sk)->mpcb) == sk;
 }
 
 static inline int is_master_tp(const struct tcp_sock *tp)
@@ -1101,7 +1101,7 @@ static inline struct sk_buff *mptcp_next_segment(const struct sock *sk,
 {
 	return NULL;
 }
-static inline void mptcp_release_sock(const struct sock *sk) {}
+static inline void mptcp_release_sock(const struct sock *meta_sk) {}
 static inline void mptcp_clean_rtx_queue(const struct sock *meta_sk) {}
 static inline void mptcp_clean_rtx_infinite(const struct sk_buff *skb,
 					    const struct sock *sk) {}

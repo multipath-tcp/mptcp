@@ -1313,9 +1313,7 @@ static void __sk_free(struct sock *sk)
 		/* Ugly hack at the moment - sk_destruct (inet_sock_destruct)
 		 * called mpcb_release who destroyed the mpcb.
 		 * Thus, we have to stop here. */
-		if (sk->sk_type == SOCK_STREAM &&
-		    sk->sk_protocol == IPPROTO_TCP &&
-		    tcp_sk(sk)->mpc && is_meta_sk(sk)) {
+		if (is_meta_sk(sk)) {
 			sk->sk_destruct(sk);
 			return;
 		}
@@ -2230,8 +2228,7 @@ void release_sock(struct sock *sk)
 	mutex_release(&sk->sk_lock.dep_map, 1, _RET_IP_);
 
 	spin_lock_bh(&sk->sk_lock.slock);
-	if (sk->sk_type == SOCK_STREAM && sk->sk_protocol == IPPROTO_TCP &&
-	    tcp_sk(sk)->mpc && is_meta_sk(sk))
+	if (is_meta_sk(sk))
 		mptcp_release_sock(sk);
 	else if (sk->sk_backlog.tail)
 		__release_sock(sk, NULL);
