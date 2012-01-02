@@ -1813,14 +1813,13 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->flags = ipv6_get_dsfield(hdr);
 	TCP_SKB_CB(skb)->sacked = 0;
 
-#ifdef CONFIG_MPTCP
-	/* We must absolutely check for subflow related segments
-	 * before the normal sock lookup, because otherwise subflow
-	 * segments could be understood as associated to some listening
-	 * socket.
-	 */
+	sk = __inet6_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
 
-	/* Is this a new syn+join ? */
+	process:
+		if (sk->sk_state == TCP_TIME_WAIT)
+			goto do_time_wait;
+
+#ifdef CONFIG_MPTCP
 	if (th->syn && !th->ack) {
 		int ret;
 
@@ -1828,17 +1827,17 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 		if (ret) {
 			if (ret < 0) {
 				tcp_v6_send_reset(NULL, skb);
+				if (sk)
+					sock_put(sk);
 				goto discard_it;
 			} else {
+				if (sk)
+					sock_put(sk);
 				return 0;
 			}
 		}
 	}
-#endif /* CONFIG_MPTCP */
 
-	sk = __inet6_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
-
-#ifdef CONFIG_MPTCP
 	/* Is there a pending request sock for this segment ? */
 	if ((!sk || sk->sk_state == TCP_LISTEN) && mptcp_syn_recv_sock(skb)) {
 		if (sk)
@@ -1849,10 +1848,6 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 
 	if (!sk)
 		goto no_tcp_socket;
-
-process:
-	if (sk->sk_state == TCP_TIME_WAIT)
-		goto do_time_wait;
 
 	if (hdr->hop_limit < inet6_sk(sk)->min_hopcount) {
 		NET_INC_STATS_BH(net, LINUX_MIB_TCPMINTTLDROP);
