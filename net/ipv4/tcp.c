@@ -2073,7 +2073,8 @@ void tcp_close(struct sock *sk, long timeout)
 		return;
 	}
 
-	lock_sock(sk);
+	if (!tcp_sk(sk)->mpc)
+		lock_sock(sk);
 	sk->sk_shutdown = SHUTDOWN_MASK;
 
 	if (sk->sk_state == TCP_LISTEN) {
@@ -2155,14 +2156,15 @@ adjudge_to_death:
 	sock_orphan(sk);
 
 	/* It is the last release_sock in its life. It will remove backlog. */
-	release_sock(sk);
-
+	if (!tcp_sk(sk)->mpc)
+		release_sock(sk);
 
 	/* Now socket is owned by kernel and we acquire BH lock
 	   to finish close. No need to check for user refs.
 	 */
 	local_bh_disable();
-	bh_lock_sock(sk);
+	if (!tcp_sk(sk)->mpc)
+		bh_lock_sock(sk);
 	WARN_ON(sock_owned_by_user(sk));
 
 	percpu_counter_inc(sk->sk_prot->orphan_count);
@@ -2222,7 +2224,8 @@ adjudge_to_death:
 	/* Otherwise, socket is reprieved until protocol close. */
 
 out:
-	bh_unlock_sock(sk);
+	if (!tcp_sk(sk)->mpc)
+		bh_unlock_sock(sk);
 	local_bh_enable();
 	sock_put(sk);
 }
