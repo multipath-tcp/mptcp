@@ -1057,6 +1057,9 @@ retry:
 		/* decide to which subsocket we give the skb */
 		cwnd_quota = tcp_cwnd_test(subtp, skb);
 		if (!cwnd_quota) {
+			printk(KERN_ERR"%s pi %d dfin %d fin %d tso %d\n", __func__,subtp->path_index,
+					(TCP_SKB_CB(skb)->flags & TCPHDR_FIN), mptcp_is_data_fin(skb),
+						    tcp_skb_pcount(skb));
 			/* Should not happen, since mptcp must have
 			 * chosen a subsock with open cwnd
 			 */
