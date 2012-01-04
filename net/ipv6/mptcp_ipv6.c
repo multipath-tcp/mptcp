@@ -193,7 +193,7 @@ int mptcp_v6_add_raddress(struct multipath_options *mopt,
 		}
 	}
 
-	i = mptcp_find_addrindex(mopt->rem4_bits);
+	i = mptcp_find_addrindex(mopt->rem6_bits);
 	/* Do we have already the maximum number of local/remote addresses? */
 	if (i < 0) {
 		mptcp_debug("%s: At max num of remote addresses: %d --- not "
