@@ -5768,15 +5768,14 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 
 		if (is_master_tp(tp)) {
 			if (tp->rx_opt.saw_mpc) {
-				tp->mpc = 1;
 				tp->rx_opt.saw_mpc = 0;
 				tp->mptcp_rem_key = mopt.mptcp_rem_key;
 
-				if (mptcp_alloc_mpcb(sk)) {
-					/* If alloc failed - fall back to regular TCP */
-					tp->mpc = 0;
+				/* If alloc failed - fall back to regular TCP */
+				if (unlikely(mptcp_alloc_mpcb(sk)))
 					goto cont_mptcp;
-				}
+
+				tp->mpc = 1;
 
 				mptcp_add_sock(tp->mpcb, tp);
 				mpcb = tp->mpcb;

@@ -859,8 +859,9 @@ int tcp_child_process(struct sock *parent, struct sock *child,
 {
 	int ret = 0;
 	int state = child->sk_state;
+	struct sock *meta_sk = tcp_sk(child)->mpc ? mptcp_meta_sk(child) : child;
 
-	if (!sock_owned_by_user(child)) {
+	if (!sock_owned_by_user(meta_sk)) {
 		ret = tcp_rcv_state_process(child, skb, tcp_hdr(skb),
 					    skb->len);
 		/* Wakeup parent, send SIGIO */

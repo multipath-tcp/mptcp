@@ -4058,7 +4058,6 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 		struct multipath_pcb *mpcb;
 
 		child_tp->rx_opt.saw_mpc = 0;
-		child_tp->mpc = 1;
 		child_tp->slave_sk = 0;
 		child_tp->path_index = 1;
 
@@ -4075,6 +4074,7 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 			tcp_done(child);
 			return -ENOBUFS;
 		}
+		child_tp->mpc = 1;
 		mpcb = child_tp->mpcb;
 
 		inet_sk(child)->loc_id = 0;
