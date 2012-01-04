@@ -1108,6 +1108,7 @@ static inline void mptcp_clean_rtx_infinite(const struct sk_buff *skb,
 static inline void mptcp_retransmit_timer(const struct sock *meta_sk) {}
 static inline void mptcp_mark_reinjected(const struct sock *sk,
 					 const struct sk_buff *skb) {}
+void mptcp_sub_close(struct sock *sk) {}
 static inline void mptcp_set_rto(const struct sock *sk) {}
 static inline void mptcp_reset_xmit_timer(const struct sock *meta_sk) {}
 static inline void mptcp_send_fin(const struct sock *meta_sk) {}
