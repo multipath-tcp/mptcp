@@ -1892,6 +1892,7 @@ do_time_wait:
 			sk = sk2;
 			goto process;
 		}
+#ifdef CONFIG_MPTCP
 		if (th->syn && !th->ack) {
 			int ret;
 
@@ -1910,6 +1911,7 @@ do_time_wait:
 			}
 
 		}
+#endif
 		/* Fall through to ACK */
 	}
 	case TCP_TW_ACK:

@@ -1963,6 +1963,26 @@ do_time_wait:
 			sk = sk2;
 			goto process;
 		}
+#ifdef CONFIG_MPTCP
+		if (th->syn && !th->ack) {
+			int ret;
+
+			ret = mptcp_lookup_join(skb);
+			if (ret) {
+				if (ret < 0) {
+					tcp_v6_send_reset(NULL, skb);
+					if (sk)
+						sock_put(sk);
+					goto discard_it;
+				} else {
+					if (sk)
+						sock_put(sk);
+					return 0;
+				}
+			}
+
+		}
+#endif
 		/* Fall through to ACK */
 	}
 	case TCP_TW_ACK:
