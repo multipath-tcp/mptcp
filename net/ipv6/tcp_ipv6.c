@@ -1815,9 +1815,9 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 
 	sk = __inet6_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
 
-	process:
-		if (sk->sk_state == TCP_TIME_WAIT)
-			goto do_time_wait;
+process:
+	if (sk && sk->sk_state == TCP_TIME_WAIT)
+		goto do_time_wait;
 
 #ifdef CONFIG_MPTCP
 	if (th->syn && !th->ack) {
