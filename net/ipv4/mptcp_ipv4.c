@@ -532,8 +532,8 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 		mpcb->loc4_bits |= (1 << i);
 		/* re-send addresses */
 		mpcb->add_addr4 |= (1 << i);
-		/* re-evaluate paths eventually */
-		mpcb->rx_opt.list_rcvd = 1;
+		/* re-evaluate paths */
+		mptcp_send_updatenotif(mpcb);
 	}
 	return;
 found:

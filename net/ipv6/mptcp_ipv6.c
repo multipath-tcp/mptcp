@@ -622,8 +622,8 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 		mpcb->loc6_bits |= (1 << i);
 		/* re-send addresses */
 		mpcb->add_addr6 |= (1 << i);
-		/* re-evaluate paths eventually */
-		mpcb->rx_opt.list_rcvd = 1;
+		/* re-evaluate paths */
+		mptcp_send_updatenotif(mpcb);
 	}
 	return;
 found:
