@@ -187,7 +187,6 @@ void verif_rqueues(struct multipath_pcb *mpcb)
 #endif
 
 static struct kmem_cache *mpcb_cache __read_mostly;
-struct kmem_cache *mptcp_work_cache __read_mostly;
 
 /* ===================================== */
 
@@ -1385,6 +1384,9 @@ int mptcp_alloc_mpcb(struct sock *master_sk)
 
 	mutex_init(&mpcb->mutex);
 
+	/* Initialize workqueue-struct */
+	INIT_WORK(&mpcb->work, mptcp_send_updatenotif_wq);
+
 	/* Redefine function-pointers to wake up application */
 	master_sk->sk_error_report = mptcp_sock_def_error_report;
 	meta_sk->sk_error_report = mptcp_sock_def_error_report;
@@ -1498,6 +1500,7 @@ void mptcp_add_sock(struct multipath_pcb *mpcb, struct tcp_sock *tp)
 	}
 
 	mptcp_sub_inherit_sockopts(meta_sk, sk);
+	INIT_DELAYED_WORK(&tp->work, mptcp_sub_close_wq);
 
 	if (sk->sk_family == AF_INET)
 		mptcp_debug("%s: token %#x pi %d, src_addr:%pI4:%d dst_addr:"
@@ -3454,14 +3457,14 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	}
 }
 
-static void mptcp_sub_close_wq(struct work_struct *work)
+void mptcp_sub_close_wq(struct work_struct *work)
 {
-	struct mptcp_work *mwork = (struct mptcp_work *)work;
-	struct sock *sk = mwork->sk;
+	struct tcp_sock *tp = container_of(work, struct tcp_sock, work.work);
+	struct sock *sk = (struct sock *)tp;
 	struct sock *meta_sk = mptcp_meta_sk(sk);
 
-	mutex_lock(&tcp_sk(sk)->mpcb->mutex);
-	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
+	mutex_lock(&tp->mpcb->mutex);
+	lock_sock(meta_sk);
 
 	if (sock_flag(sk, SOCK_DEAD))
 		goto exit;
@@ -3473,23 +3476,27 @@ static void mptcp_sub_close_wq(struct work_struct *work)
 
 exit:
 	release_sock(meta_sk);
-	mutex_unlock(&tcp_sk(sk)->mpcb->mutex);
+	mutex_unlock(&tp->mpcb->mutex);
 	sock_put(sk);
-	kmem_cache_free(mptcp_work_cache, mwork);
 }
 
-void mptcp_sub_close(struct sock *sk)
+void mptcp_sub_close(struct sock *sk, unsigned long delay)
 {
-	struct mptcp_work *mwork;
+	struct delayed_work *work = &tcp_sk(sk)->work;
 
-	mwork = kmem_cache_alloc(mptcp_work_cache, GFP_ATOMIC);
-	if (!mwork)
-		return;
-	mwork->sk = sk;
+	/* Work already scheduled ? */
+	if (work_pending(&work->work)) {
+		/* Work present - who will be first ? */
+		if (jiffies + delay > work->timer.expires)
+			return;
+
+		/* Try canceling - if it fails, work will be executed soon */
+		if (!cancel_delayed_work(work))
+			return;
+	}
 
 	sock_hold(sk);
-	INIT_WORK((struct work_struct *)mwork, mptcp_sub_close_wq);
-	schedule_work((struct work_struct *)mwork);
+	schedule_delayed_work(work, delay);
 }
 
 /**
@@ -3518,16 +3525,15 @@ void mptcp_clean_rtx_queue(struct sock *meta_sk)
 			/* DATA_FIN has been acknowledged - now we can close
 			 * the subflows */
 			mptcp_for_each_sk_safe(meta_tp->mpcb, sk_it, sk_tmp) {
+				unsigned long delay = 0;
+
 				/* If we are the passive closer, don't trigger
 				 * subflow-fin until the subflow has been finned
-				 * by the peer. */
-				if (mpcb->passive_close && sk_it->sk_state == TCP_ESTABLISHED) {
-					inet_csk_reset_xmit_timer(sk_it, ICSK_TIME_CLOSE,
-							  inet_csk(sk_it)->icsk_rto, TCP_RTO_MAX);
-					continue;
-				}
+				 * by the peer - thus we add a delay. */
+				if (mpcb->passive_close && sk_it->sk_state == TCP_ESTABLISHED)
+					delay = inet_csk(sk_it)->icsk_rto;
 
-				mptcp_sub_close(sk_it);
+				mptcp_sub_close(sk_it, delay);
 			}
 		}
 
@@ -3800,7 +3806,7 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 	/* If socket has been already reset (e.g. in tcp_reset()) - kill it. */
 	if (meta_sk->sk_state == TCP_CLOSE) {
 		mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp)
-			tcp_close(sk_it, 0);
+			mptcp_sub_close(sk_it, 0);
 		goto adjudge_to_death;
 	}
 
@@ -3815,16 +3821,14 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 		/* The DATA_FIN has been sent and acknowledged
 		 * (e.g., by sk_shutdown). Close all the other subflows */
 		mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp) {
+			unsigned long delay = 0;
 			/* If we are the passive closer, don't trigger
 			 * subflow-fin until the subflow has been finned
-			 * by the peer. */
-			if (mpcb->passive_close && sk_it->sk_state == TCP_ESTABLISHED) {
-				inet_csk_reset_xmit_timer(sk_it, ICSK_TIME_CLOSE,
-						 inet_csk(sk_it)->icsk_rto, TCP_RTO_MAX);
-				continue;
-			}
+			 * by the peer. - thus we add a delay */
+			if (mpcb->passive_close && sk_it->sk_state == TCP_ESTABLISHED)
+				delay = inet_csk(sk_it)->icsk_rto;
 
-			tcp_close(sk_it, 0);
+			mptcp_sub_close(sk_it, delay);
 		}
 	}
 
@@ -4238,8 +4242,6 @@ static int __init mptcp_init(void)
 	register_sysctl_table(mptcp_root_table);
 #endif
 	mpcb_cache = kmem_cache_create("mptcp_mpcb", sizeof(struct multipath_pcb),
-				       0, SLAB_HWCACHE_ALIGN|SLAB_PANIC, NULL);
-	mptcp_work_cache = kmem_cache_create("mptcp_work", sizeof(struct mptcp_work),
 				       0, SLAB_HWCACHE_ALIGN|SLAB_PANIC, NULL);
 	mptcp_ofo_queue_init();
 	return 0;

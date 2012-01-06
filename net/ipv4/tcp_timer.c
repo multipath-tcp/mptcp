@@ -495,9 +495,6 @@ void tcp_write_timer(unsigned long data)
 	case ICSK_TIME_PROBE0:
 		tcp_probe_timer(sk);
 		break;
-	case ICSK_TIME_CLOSE:
-		if (tp->mpc)
-			mptcp_sub_close(sk);
 	}
 
 out:

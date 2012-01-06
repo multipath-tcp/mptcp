@@ -439,11 +439,10 @@ int mptcp_lookup_join(struct sk_buff *skb)
  * new subflows and giving other processes a chance to do some work on the
  * socket and potentially finishing the communication.
  **/
-static void mptcp_send_updatenotif_wq(struct work_struct *work)
+void mptcp_send_updatenotif_wq(struct work_struct *work)
 {
-	struct mptcp_work *mwork = (struct mptcp_work *)work;
-	struct sock *meta_sk = mwork->sk;
-	struct multipath_pcb *mpcb = (struct multipath_pcb *)meta_sk;
+	struct multipath_pcb *mpcb = container_of(work, struct multipath_pcb, work);
+	struct sock *meta_sk = mpcb_meta_sk(mpcb);
 	int iter = 0;
 	int i;
 
@@ -521,27 +520,20 @@ exit:
 	release_sock(meta_sk);
 	mutex_unlock(&mpcb->mutex);
 	sock_put(meta_sk);
-	kmem_cache_free(mptcp_work_cache, mwork);
 }
 
 void mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 {
-	struct mptcp_work *mwork;
-
 	if ((mpcb->master_sk && !tcp_sk(mpcb->master_sk)->fully_established) ||
 	    mpcb->infinite_mapping ||
 	    test_bit(MPCB_FLAG_SERVER_SIDE, &mpcb->flags) ||
 	    sock_flag(mpcb_meta_sk(mpcb), SOCK_DEAD))
 		return;
 
-	mwork = kmem_cache_alloc(mptcp_work_cache, GFP_ATOMIC);
-	if (!mwork)
-		return;
-	mwork->sk = mpcb_meta_sk(mpcb);
-
-	sock_hold(mpcb_meta_sk(mpcb));
-	INIT_WORK((struct work_struct *)mwork, mptcp_send_updatenotif_wq);
-	schedule_work((struct work_struct *)mwork);
+	if (!work_pending(&mpcb->work)) {
+		sock_hold(mpcb_meta_sk(mpcb));
+		schedule_work(&mpcb->work);
+	}
 }
 
 /**

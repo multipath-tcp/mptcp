@@ -554,6 +554,7 @@ struct tcp_sock {
 	struct sk_buff  *shortcut_ofoqueue; /* Shortcut to the current modified
 					     * node in the ofo BST
 					     */
+	struct delayed_work work;
 	u32		mptcp_loc_token;
 	u64		mptcp_loc_key;
 	u64		mptcp_rem_key;

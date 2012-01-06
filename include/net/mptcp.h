@@ -190,6 +190,9 @@ struct multipath_pcb {
 
 	struct list_head collide_tk;
 
+	/* Worker struct for update-notification */
+	struct work_struct work;
+
 	/* Local addresses */
 	struct mptcp_loc4 addr4[MPTCP_MAX_ADDR];
 	u8 loc4_bits; /* Bitfield, indicating which of the above indexes are set */
@@ -392,12 +395,6 @@ struct mp_rst {
 #endif
 };
 
-extern struct kmem_cache *mptcp_work_cache;
-struct mptcp_work {
-	struct work_struct work;
-	struct sock *sk;
-};
-
 /* Two separate cases must be handled:
  * -a mapping option has been received. Then data_seq and end_data_seq are
  *  defined, and we disambiguate based on data_len (if not zero, the mapping
@@ -547,7 +544,8 @@ void mptcp_retransmit_timer(struct sock *meta_sk);
 int mptcp_write_wakeup(struct sock *meta_sk);
 void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb);
 void mptcp_sock_def_error_report(struct sock *sk);
-void mptcp_sub_close(struct sock *sk);
+void mptcp_sub_close_wq(struct work_struct *work);
+void mptcp_sub_close(struct sock *sk, unsigned long delay);
 
 static inline int mptcp_skb_cloned(const struct sk_buff *skb,
 				   const struct tcp_sock *tp)
@@ -1108,7 +1106,7 @@ static inline void mptcp_clean_rtx_infinite(const struct sk_buff *skb,
 static inline void mptcp_retransmit_timer(const struct sock *meta_sk) {}
 static inline void mptcp_mark_reinjected(const struct sock *sk,
 					 const struct sk_buff *skb) {}
-static inline void mptcp_sub_close(struct sock *sk) {}
+static inline void mptcp_sub_close(struct sock *sk, unsigned long delay) {}
 static inline void mptcp_set_rto(const struct sock *sk) {}
 static inline void mptcp_reset_xmit_timer(const struct sock *meta_sk) {}
 static inline void mptcp_send_fin(const struct sock *meta_sk) {}

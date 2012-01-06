@@ -62,6 +62,7 @@ extern spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
 void mptcp_hash_request_remove(struct request_sock *req);
 void mptcp_send_updatenotif(struct multipath_pcb *mpcb);
 
+void mptcp_send_updatenotif_wq(struct work_struct *work);
 struct mp_join *mptcp_find_join(struct sk_buff *skb);
 u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock *sk);
 void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token);
@@ -73,7 +74,6 @@ struct dst_entry *mptcp_route_req(const struct request_sock *req,
 				  struct sock *meta_sk);
 void mptcp_set_addresses(struct multipath_pcb *mpcb);
 int mptcp_syn_recv_sock(struct sk_buff *skb);
-void __mptcp_update_patharray_ports(struct multipath_pcb *mpcb);
 int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family);
 
 #else /* CONFIG_MPTCP */
