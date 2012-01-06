@@ -1393,7 +1393,8 @@ int mptcp_alloc_mpcb(struct sock *master_sk)
 	 * connections, it does not need to be huge, since we only store
 	 * here pending subflow creations.
 	 */
-	reqsk_queue_alloc(&meta_icsk->icsk_accept_queue, 32, GFP_ATOMIC);
+	if (reqsk_queue_alloc(&meta_icsk->icsk_accept_queue, 32, GFP_ATOMIC))
+		return -ENOMEM;
 
 	master_tp->mpcb = mpcb;
 	mpcb->master_sk = master_sk;

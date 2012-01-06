@@ -216,7 +216,6 @@ void mptcp_v4_set_init_addr_bit(struct multipath_pcb *mpcb, __be32 daddr)
 			return;
 		}
 	}
-
 }
 
 /**
@@ -228,9 +227,8 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	struct iphdr *iph = ip_hdr(skb);
 	struct tcphdr *th = tcp_hdr(skb);
 	struct multipath_pcb *mpcb = (struct multipath_pcb *)meta_sk;
-	struct request_sock **prev;
+	struct request_sock **prev, *req;
 	struct sock *child;
-	struct request_sock *req;
 
 	/* Socket is in the process of destruction - we don't accept
 	 * new subflows */
@@ -238,7 +236,7 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 		goto discard;
 
 	req = inet_csk_search_req(meta_sk, &prev, th->source,
-			iph->saddr, iph->daddr);
+				  iph->saddr, iph->daddr);
 
 	if (!req) {
 		if (th->syn) {
@@ -249,9 +247,9 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 					(struct in_addr *)&iph->saddr, 0,
 					join_opt->addr_id) < 0)
 				goto discard;
-			if (unlikely(mpcb->rx_opt.list_rcvd)) {
+			if (mpcb->rx_opt.list_rcvd)
 				mpcb->rx_opt.list_rcvd = 0;
-			}
+
 			mptcp_v4_join_request(mpcb, skb);
 		}
 		goto discard;
@@ -280,9 +278,8 @@ discard:
  * is incremented. Thus it is the responsibility of the caller
  * to call sock_put() when the reference is not needed anymore.
  */
-struct request_sock *mptcp_v4_search_req(const __be16 rport,
-					    const __be32 raddr,
-					    const __be32 laddr)
+struct request_sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
+					 const __be32 laddr)
 {
 	struct request_sock *req;
 	int found = 0;
@@ -317,13 +314,9 @@ struct request_sock *mptcp_v4_search_req(const __be16 rport,
 /**
  * Send a SYN-ACK after having received a SYN.
  * This is to be used for JOIN subflows only.
- * Initial subflows use the regular tcp_v4_rtx_synack() function.
- * This still operates on a request_sock only, not on a big
- * socket.
  */
-int mptcp_v4_send_synack(struct sock *meta_sk,
-			struct request_sock *req,
-			struct request_values *rvp)
+int mptcp_v4_send_synack(struct sock *meta_sk, struct request_sock *req,
+			 struct request_values *rvp)
 {
 	const struct inet_request_sock *ireq = inet_rsk(req);
 	int err = -1;
@@ -336,7 +329,6 @@ int mptcp_v4_send_synack(struct sock *meta_sk,
 		return -1;
 
 	skb = tcp_make_synack(meta_sk, dst, req, rvp);
-
 	if (skb) {
 		__tcp_v4_send_check(skb, ireq->loc_addr, ireq->rmt_addr);
 
@@ -454,7 +446,7 @@ error:
  * React on IP-addr add/rem-events
  */
 static int mptcp_pm_inetaddr_event(struct notifier_block *this,
-		unsigned long event, void *ptr)
+				   unsigned long event, void *ptr)
 {
 	return mptcp_pm_addr_event_handler(event, ptr, AF_INET);
 }
@@ -463,7 +455,7 @@ static int mptcp_pm_inetaddr_event(struct notifier_block *this,
  * React on ifup/down-events
  */
 static int mptcp_pm_netdev_event(struct notifier_block *this,
-		unsigned long event, void *ptr)
+				 unsigned long event, void *ptr)
 {
 	struct net_device *dev = ptr;
 	struct in_device *in_dev;
@@ -493,7 +485,7 @@ static int mptcp_pm_netdev_event(struct notifier_block *this,
 }
 
 void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
-		struct multipath_pcb *mpcb)
+				  struct multipath_pcb *mpcb)
 {
 	int i;
 	struct sock *sk;

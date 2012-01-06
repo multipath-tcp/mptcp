@@ -231,7 +231,6 @@ void mptcp_v6_set_init_addr_bit(struct multipath_pcb *mpcb,
 			return;
 		}
 	}
-
 }
 
 /**
@@ -243,9 +242,8 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	struct ipv6hdr *iph = ipv6_hdr(skb);
 	struct tcphdr *th = tcp_hdr(skb);
 	struct multipath_pcb *mpcb = (struct multipath_pcb *)meta_sk;
-	struct request_sock **prev;
+	struct request_sock **prev, *req;
 	struct sock *child;
-	struct request_sock *req;
 
 	req = inet6_csk_search_req(meta_sk, &prev, th->source,
 			&iph->saddr, &iph->daddr, inet6_iif(skb));
@@ -258,9 +256,9 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 					(struct in6_addr *)&iph->saddr, 0,
 					join_opt->addr_id) < 0)
 				goto discard;
-			if (unlikely(mpcb->rx_opt.list_rcvd)) {
+			if (mpcb->rx_opt.list_rcvd)
 				mpcb->rx_opt.list_rcvd = 0;
-			}
+
 			mptcp_v6_join_request(mpcb, skb);
 		}
 		goto discard;
