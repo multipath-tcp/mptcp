@@ -4006,7 +4006,7 @@ static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 	mpcb = mpcb_from_tcpsock(tp);
 
 	tcp_parse_options(skb, &tp->rx_opt, hvpp,
-			mpcb ? &mpcb->rx_opt : NULL, 1);
+			  mpcb ? &mpcb->rx_opt : NULL, 1);
 
 	mptcp_path_array_check(mpcb);
 	mptcp_mp_fail_rcvd(mpcb, (struct sock *)tp, th);
@@ -6269,13 +6269,9 @@ out_syn_sent:
 			    !tp->mpc) {
 				/* In case of mptcp, the reset is handled by
 				 * mptcp_rcv_state_process */
-				if (!tp->mpc) {
-					NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPABORTONDATA);
-					tcp_reset(sk);
-					return 1;
-				} else {
-					return 0;
-				}
+				NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPABORTONDATA);
+				tcp_reset(sk);
+				return 1;
 			}
 		}
 		/* Fall through */

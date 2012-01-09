@@ -2921,7 +2921,7 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		if (mdss->M) {
 			/* TODO_cpaasch check for the correct length of the DSS
 			 * option */
-			if (mopt && mopt->dss_csum) {
+			if (mopt->dss_csum) {
 				tcb->dss_off = (ptr - skb_transport_header(skb)) >> 2;
 			} else {
 				tcb->dss_off = 0;
