@@ -1550,7 +1550,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	struct sock *sk_it = tp->mpc ? NULL : sk;
 #ifdef CONFIG_MPTCP
 	struct tcp_sock *tp_it = tcp_sk(sk_it);
-#endif
 
 	if (mpcb) {
 		mptcp_for_each_sk(mpcb, sk_it, tp_it) {
@@ -1558,6 +1557,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 				sock_rps_record_flow(sk_it);
 		}
 	}
+#endif
 
 	lock_sock(sk);
 
