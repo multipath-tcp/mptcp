@@ -1171,6 +1171,7 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 			np->mc_loop	= 1;
 			np->pmtudisc	= IPV6_PMTUDISC_WANT;
 			np->ipv6only	= sock_net(newsk)->ipv6.sysctl.bindv6only;
+			np->ipv6_fl_list = NULL;
 		} else if (inet_csk(sk)->icsk_af_ops == &ipv6_mapped) {
 			struct inet_connection_sock *icsk = inet_csk(newsk);
 			icsk->icsk_af_ops = &ipv6_specific;
