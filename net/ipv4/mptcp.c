@@ -3493,6 +3493,7 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 		/* Try canceling - if it fails, work will be executed soon */
 		if (!cancel_delayed_work(work))
 			return;
+		sock_put(sk);
 	}
 
 	sock_hold(sk);
