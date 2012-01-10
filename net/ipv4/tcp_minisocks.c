@@ -630,7 +630,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 			   struct request_sock **prev)
 {
 	struct tcp_options_received tmp_opt;
-	struct multipath_options *mopt = NULL;
+	struct multipath_options stat_mopt, *mopt = NULL;
 	u8 *hash_location;
 	struct sock *child;
 	const struct tcphdr *th = tcp_hdr(skb);
@@ -640,9 +640,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	tmp_opt.saw_tstamp = 0;
 
 	if (!is_meta_sk(sk)) {
-		mopt = kmalloc(sizeof(struct multipath_options), GFP_ATOMIC);
-		if (!mopt)
-			goto listen_overflow;
+		mopt = &stat_mopt;
 		mptcp_init_mp_opt(mopt);
 	} else {
 		mopt = &(tcp_sk(sk)->mpcb->rx_opt);
