@@ -461,7 +461,8 @@ next_subflow:
 	if (sock_flag(meta_sk, SOCK_DEAD))
 		goto exit;
 
-	if (sysctl_mptcp_ndiffports > iter) {
+	if (sysctl_mptcp_ndiffports > iter &&
+	    sysctl_mptcp_ndiffports > mpcb->cnt_subflows) {
 		if (meta_sk->sk_family == AF_INET ||
 		    mptcp_v6_is_v4_mapped(meta_sk)) {
 			mptcp_init4_subsockets(mpcb, &mpcb->addr4[0],
@@ -474,7 +475,8 @@ next_subflow:
 		}
 		goto next_subflow;
 	}
-	if (sysctl_mptcp_ndiffports > 1 && sysctl_mptcp_ndiffports == iter)
+	if (sysctl_mptcp_ndiffports > 1 &&
+	    sysctl_mptcp_ndiffports == mpcb->cnt_subflows)
 		goto exit;
 
 	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
