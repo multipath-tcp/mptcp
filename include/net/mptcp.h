@@ -108,7 +108,7 @@ struct multipath_options {
 	struct	mptcp_loc6 addr6[MPTCP_MAX_ADDR];
 #endif
 	__u32	mptcp_rem_token;	/* Received token */
-	__u32	mptcp_recv_random_number;
+	__u32	mptcp_recv_nonce;
 	__u64	mptcp_rem_key;	/* Remote key */
 	__u64	mptcp_recv_tmac;
 	u32	fin_dsn; /* DSN of the byte  FOLLOWING the Data FIN */

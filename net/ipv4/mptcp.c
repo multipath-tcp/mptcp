@@ -2884,7 +2884,7 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		switch (opsize) {
 			case MPTCP_SUB_LEN_JOIN_SYN:
 				mopt->mptcp_rem_token = *((u32*)(ptr + 2));
-				mopt->mptcp_recv_random_number = *((u32*)(ptr + 6));
+				mopt->mptcp_recv_nonce = *((u32*)(ptr + 6));
 				mopt->mptcp_opt_type = MPTCP_MP_JOIN_TYPE_SYN;
 				opt_rx->saw_mpc = 1;
 				break;
@@ -2892,7 +2892,7 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 				ptr += 2;
 				mopt->mptcp_recv_tmac = *((__u64 *)ptr);
 				ptr += 8;
-				mopt->mptcp_recv_random_number = *((u32 *)ptr);
+				mopt->mptcp_recv_nonce = *((u32 *)ptr);
 				mopt->mptcp_opt_type = MPTCP_MP_JOIN_TYPE_SYNACK;
 				break;
 			case MPTCP_SUB_LEN_JOIN_ACK:
@@ -3046,10 +3046,10 @@ void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 		opts->token = mpcb->rx_opt.mptcp_rem_token;
 		opts->addr_id = mptcp_get_loc_addrid(mpcb, sk);
 
-		if (!tp->mptcp_loc_random_number)
-			get_random_bytes(&tp->mptcp_loc_random_number, 4);
+		if (!tp->mptcp_loc_nonce)
+			get_random_bytes(&tp->mptcp_loc_nonce, 4);
 
-		opts->sender_random_number = tp->mptcp_loc_random_number;
+		opts->sender_nonce = tp->mptcp_loc_nonce;
 		opts->mp_join_type = MPTCP_MP_JOIN_TYPE_SYN;
 	}
 }
@@ -3070,7 +3070,7 @@ void mptcp_synack_options(struct request_sock *req,
 
 		opts->options |= OPTION_MP_JOIN;
 		opts->sender_truncated_mac = req->mptcp_hash_tmac;
-		opts->sender_random_number = req->mptcp_loc_random_number;
+		opts->sender_nonce = req->mptcp_loc_nonce;
 		opts->mp_join_type = MPTCP_MP_JOIN_TYPE_SYNACK;
 		opts->addr_id = 0;
 
@@ -3162,8 +3162,8 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 
 			mptcp_hmac_sha1((u8 *)&mpcb->mptcp_loc_key,
 					(u8 *)&mpcb->rx_opt.mptcp_rem_key,
-					(u8 *)&tp->mptcp_loc_random_number,
-					(u8 *)&mpcb->rx_opt.mptcp_recv_random_number,
+					(u8 *)&tp->mptcp_loc_nonce,
+					(u8 *)&mpcb->rx_opt.mptcp_recv_nonce,
 					(u32 *)opts->sender_mac);
 		}
 		tp->include_mpc = 0;
@@ -3326,7 +3326,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			case MPTCP_MP_JOIN_TYPE_SYN:
 				ptr++;
 				*ptr++ = opts->token;
-				*ptr++ = opts->sender_random_number;
+				*ptr++ = opts->sender_nonce;
 				break;
 			case MPTCP_MP_JOIN_TYPE_SYNACK:
 			{
@@ -3335,7 +3335,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 				p64 = (__u64 *) ptr;
 				*p64 = opts->sender_truncated_mac;
 				ptr += 2;
-				*ptr++ = opts->sender_random_number;
+				*ptr++ = opts->sender_nonce;
 				break;
 			}
 			case MPTCP_MP_JOIN_TYPE_ACK:
@@ -4135,8 +4135,8 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 
 	mptcp_hmac_sha1((u8 *)&mpcb->rx_opt.mptcp_rem_key,
 			(u8 *)&mpcb->mptcp_loc_key,
-			(u8 *)&req->mptcp_rem_random_number,
-			(u8 *)&req->mptcp_loc_random_number,
+			(u8 *)&req->mptcp_rem_nonce,
+			(u8 *)&req->mptcp_loc_nonce,
 			(u32 *)hash_mac_check);
 
 	if (memcmp(hash_mac_check, (char *)&mpcb->rx_opt.mptcp_recv_mac, 20))

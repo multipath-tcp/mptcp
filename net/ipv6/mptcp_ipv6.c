@@ -108,16 +108,16 @@ static int mptcp_v6_join_request(struct multipath_pcb *mpcb,
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 
 	req->mpcb = mpcb;
-	req->mptcp_rem_random_number = mpcb->rx_opt.mptcp_recv_random_number;
+	req->mptcp_rem_nonce = mpcb->rx_opt.mptcp_recv_nonce;
 	req->mptcp_rem_key = mpcb->rx_opt.mptcp_rem_key;
 	req->mptcp_loc_key = mpcb->mptcp_loc_key;
 
-	get_random_bytes(&req->mptcp_loc_random_number,
-			sizeof(req->mptcp_loc_random_number));
+	get_random_bytes(&req->mptcp_loc_nonce,
+			sizeof(req->mptcp_loc_nonce));
 
 	mptcp_hmac_sha1((u8 *)&req->mptcp_loc_key, (u8 *)&req->mptcp_rem_key,
-			(u8 *)&req->mptcp_loc_random_number,
-			(u8 *)&req->mptcp_rem_random_number,
+			(u8 *)&req->mptcp_loc_nonce,
+			(u8 *)&req->mptcp_rem_nonce,
 			(u32 *)mptcp_hash_mac);
 	req->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
 

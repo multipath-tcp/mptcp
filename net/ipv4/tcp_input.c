@@ -5752,8 +5752,8 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 
 			mptcp_hmac_sha1((u8 *)&mpcb->rx_opt.mptcp_rem_key,
 					(u8 *)&mpcb->mptcp_loc_key,
-					(u8 *)&mpcb->rx_opt.mptcp_recv_random_number,
-					(u8 *)&tp->mptcp_loc_random_number,
+					(u8 *)&mpcb->rx_opt.mptcp_recv_nonce,
+					(u8 *)&tp->mptcp_loc_nonce,
 					(u32 *)hash_mac_check);
 			if (memcmp(hash_mac_check, (char *)&mpcb->rx_opt.mptcp_recv_tmac, 8)) {
 				sock_orphan(sk);

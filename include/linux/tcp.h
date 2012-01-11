@@ -258,8 +258,8 @@ struct tcp_out_options {
 	__u64	sender_key;	/* sender's key for mptcp */
 	__u64	receiver_key;	/* receiver's key for mptcp */
 	__u64	sender_truncated_mac;
-	__u32	sender_random_number;	/* random number of the sender */
-	__u32	receiver_random_number;	/* random number of the receiver */
+	__u32	sender_nonce;	/* random number of the sender */
+	__u32	receiver_nonce;	/* random number of the receiver */
 	__u32	token;		/* token for mptcp */
 	char	sender_mac[20];
 	struct mptcp_loc4 *addr4;/* v4 addresses for MPTCP */
@@ -561,7 +561,7 @@ struct tcp_sock {
 
 	u8		path_index;
 	struct tcp_sock	*next;		/* Next subflow socket */
-	__u32		mptcp_loc_random_number;
+	__u32		mptcp_loc_nonce;
 	u8		slave_sk:1,
 			fully_established:1,
 			attached:1,
