@@ -899,7 +899,7 @@ void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb)
 	}
 }
 
-static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk)
+static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 {
 	struct sock *meta_sk, *sk_it;
 	struct tcp_sock *tp = tcp_sk(sk), *tp_it;
@@ -913,6 +913,14 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk)
 
 	if (!skb_it || skb_it == tcp_send_head(meta_sk))
 		return NULL;
+
+	/* If penalization is optional (coming from mptcp_next_segment() and
+	 * We are not send-buffer-limited we do not penalize. The retransmission
+	 * is just an optimization to fix the idle-time due to the delay before
+	 * we wake up the application.
+	 */
+	if (!penal && sk_stream_memory_free(meta_sk))
+		goto retrans;
 
 	if (!sysctl_mptcp_rbuf_penal)
 		goto retrans;
@@ -1068,7 +1076,7 @@ retry:
 		}
 
 		if (!reinject && unlikely(!tcp_snd_wnd_test(subtp, skb, mss_now))) {
-			skb = mptcp_rcv_buf_optimization(subsk);
+			skb = mptcp_rcv_buf_optimization(subsk, 1);
 			if (skb) {
 				reinject = -1;
 				goto retry;
@@ -3647,7 +3655,7 @@ struct sk_buff *mptcp_next_segment(struct sock *meta_sk, int *reinject)
 			if (!subsk)
 				return NULL;
 
-			skb = mptcp_rcv_buf_optimization(subsk);
+			skb = mptcp_rcv_buf_optimization(subsk, 0);
 			if (skb && reinject)
 				*reinject = -1;
 		}
