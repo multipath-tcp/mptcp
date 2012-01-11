@@ -248,9 +248,10 @@ static struct sock *get_available_subflow(struct multipath_pcb *mpcb,
 
 	/* Answer data_fin on same subflow!!! */
 	if (mpcb_meta_sk(mpcb)->sk_shutdown & RCV_SHUTDOWN &&
-	    mptcp_is_data_fin(skb)) {
+	    skb && mptcp_is_data_fin(skb)) {
 		mptcp_for_each_sk(mpcb, sk, tp) {
-			if (tp->path_index == mpcb->dfin_path_index)
+			if (tp->path_index == mpcb->dfin_path_index &&
+			    mptcp_is_available(sk, skb))
 				return sk;
 		}
 	}
