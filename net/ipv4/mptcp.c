@@ -192,13 +192,12 @@ static struct kmem_cache *mpcb_cache __read_mostly;
 
 static inline int mptcp_is_available(struct sock *sk, struct sk_buff *skb)
 {
-	struct tcp_sock *tp;
+	struct tcp_sock *tp = tcp_sk(sk);;
 
 	/* Set of states for which we are allowed to send data */
-	if ((1 << sk->sk_state) & ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT))
+	if (!mptcp_sk_can_send(sk))
 		return 0;
 
-	tp = tcp_sk(sk);
 	if (tp->pf || (tp->mpcb->noneligible & mptcp_pi_to_flag(tp->path_index)) ||
 	    inet_csk(sk)->icsk_ca_state == TCP_CA_Loss)
 		return 0;
