@@ -1874,7 +1874,7 @@ process:
 	} else {
 		bh_lock_sock_nested(sk);
 
-		/* Socket becampe mp-capable while waiting for the lock */
+		/* Socket became mp-capable while waiting for the lock */
 		if (unlikely(tcp_sk(sk)->mpc)) {
 			meta_sk = mptcp_meta_sk(sk);
 
