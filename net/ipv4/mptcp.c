@@ -609,7 +609,9 @@ void mptcp_sock_def_error_report(struct sock *sk)
 {
 	if (tcp_sk(sk)->mpc && !is_meta_sk(sk)) {
 		sk->sk_err = 0;
-		sock_orphan(sk);
+
+		if (!sock_flag(sk, SOCK_DEAD))
+			mptcp_sub_close(sk, 0);
 		return;
 	}
 
@@ -3728,7 +3730,12 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 		}
 
 		tcp_send_active_reset(sk_it, GFP_ATOMIC);
-		sock_orphan(sk_it);
+
+		if (!sock_flag(sk_it, SOCK_DEAD))
+			mptcp_sub_close(sk_it, 0);
+		else
+			tcp_sk(sk_it)->mp_killed = 1;
+
 		tcp_done(sk_it);
 	}
 	if (!in_serving_softirq())
@@ -3749,7 +3756,8 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 
 void mptcp_send_reset(struct sock *sk, struct sk_buff *skb)
 {
-	sock_orphan(sk);
+	if (!sock_flag(sk, SOCK_DEAD))
+		mptcp_sub_close(sk, 0);
 	tcp_sk(sk)->teardown = 1;
 
 	if (sk->sk_family == AF_INET)

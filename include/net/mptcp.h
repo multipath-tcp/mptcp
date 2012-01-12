@@ -914,7 +914,11 @@ static inline void mptcp_mp_fail_rcvd(struct multipath_pcb *mpcb,
 
 		tcp_send_active_reset(sk, GFP_ATOMIC);
 
-		sock_orphan(sk);
+		if (!sock_flag(sk, SOCK_DEAD))
+			mptcp_sub_close(sk, 0);
+		else
+			tp->mp_killed = 1;
+
 		/* Set rst-bit and the socket will be tcp_done'd by
 		 * tcp_validate_incoming */
 		th->rst = 1;
@@ -923,7 +927,9 @@ static inline void mptcp_mp_fail_rcvd(struct multipath_pcb *mpcb,
 			if (sk_it == sk)
 				continue;
 
-			sock_orphan(sk_it);
+			if (!sock_flag(sk_it, SOCK_DEAD))
+				mptcp_sub_close(sk_it, 0);
+
 			tcp_done(sk_it);
 		}
 

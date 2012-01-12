@@ -518,6 +518,7 @@ struct tcp_sock {
 		pf:1, /* Potentially Failed state: when this flag is set, we
 		       * stop using the subflow
 		       */
+		mp_killed:1, /* Killed with a tcp_done in mptcp? */
 		mptcp_add_addr_ack:1;	/* Tell tcp_send_ack to return in case
 					 * alloc_skb fails. */
 

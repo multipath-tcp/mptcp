@@ -3767,6 +3767,8 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 	}
 
 	flag |= mptcp_data_ack(sk, skb);
+	if (unlikely(tp->mp_killed))
+		return -1;
 
 	/* We passed data and got it acked, remove any soft error
 	 * log. Something worked...
@@ -5809,6 +5811,8 @@ cont_mptcp:
 		else
 			tp->snd_wl1 = TCP_SKB_CB(skb)->seq;
 		tcp_ack(sk, skb, FLAG_SLOWPATH);
+		if (unlikely(tp->mp_killed))
+			goto discard;
 
 		/* Ok.. it's good. Set up sequence numbers and
 		 * move to established.
@@ -6243,6 +6247,9 @@ out_syn_sent:
 				goto discard;
 			}
 			break;
+		case TCP_CLOSE:
+			if (tp->mp_killed)
+				goto discard;
 		}
 	} else
 		goto discard;
