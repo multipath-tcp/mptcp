@@ -2918,7 +2918,7 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 				tcb->data_ack = (u32) get_unaligned_be64(ptr);
 				ptr += MPTCP_SUB_LEN_ACK_64;
 			} else {
-				TCP_SKB_CB(skb)->data_ack = get_unaligned_be32(ptr);
+				tcb->data_ack = get_unaligned_be32(ptr);
 				ptr += MPTCP_SUB_LEN_ACK;
 			}
 		}
