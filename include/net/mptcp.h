@@ -534,7 +534,7 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb);
 void mptcp_combine_dfin(struct sk_buff *skb, struct multipath_pcb *mpcb,
 			struct sock *subsk);
 void mptcp_set_data_size(struct tcp_sock *tp, struct sk_buff *skb, int copy);
-int mptcp_push(struct sock *sk, int flags, int mss_now, int nonagle);
+void mptcp_push(struct sock *sk, int flags, int mss_now, int nonagle);
 void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn);
 void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 		     u32 *hash_out);
@@ -1146,11 +1146,8 @@ static inline int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 }
 static inline void mptcp_set_data_size(const struct tcp_sock *tp,
 				       const struct sk_buff *skb, int copy) {}
-static inline int mptcp_push(const struct sock *sk, int flags,
-			     int mss_now, int nonagle)
-{
-	return 0;
-}
+static inline void mptcp_push(const struct sock *sk, int flags,
+			      int mss_now, int nonagle) {}
 static inline void mptcp_fallback(const struct sock *master_sk) {}
 static inline int mptcp_fallback_infinite(const struct tcp_sock *tp,
 					  const struct sk_buff *skb)

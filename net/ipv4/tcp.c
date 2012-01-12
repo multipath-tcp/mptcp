@@ -545,8 +545,10 @@ static inline void skb_entail(struct sock *sk, struct sk_buff *skb)
 void tcp_push(struct sock *sk, int flags, int mss_now,
 			    int nonagle)
 {
-	if (mptcp_push(sk, flags, mss_now, nonagle))
+	if (tcp_sk(sk)->mpc) {
+		mptcp_push(sk, flags, mss_now, nonagle);
 		return;
+	}
 
 	if (tcp_send_head(sk)) {
 		struct tcp_sock *tp = tcp_sk(sk);

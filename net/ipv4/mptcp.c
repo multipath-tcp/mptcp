@@ -290,7 +290,6 @@ static struct sock *rr_scheduler(struct multipath_pcb *mpcb,
 	struct sock *sk, *bestsk = NULL;
 	int found = 0;
 
-
 	/* if there is only one subflow, bypass the scheduling function */
 	if (mpcb->cnt_subflows == 1) {
 		bestsk = (struct sock *) mpcb->connection_list;
@@ -2789,25 +2788,23 @@ void mptcp_set_data_size(struct tcp_sock *tp, struct sk_buff *skb, int copy)
 	}
 }
 
-int mptcp_push(struct sock *sk, int flags, int mss_now, int nonagle)
+void mptcp_push(struct sock *sk, int flags, int mss_now, int nonagle)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *meta_sk = (tp->mpc) ? (struct sock *) (tp->mpcb) : sk;
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct sock *meta_sk = tcp_sk(sk)->mpc ? mptcp_meta_sk(sk) : sk;
 
 	if (mptcp_next_segment(meta_sk, NULL)) {
-		struct sk_buff *skb = tcp_write_queue_tail(meta_sk);
-		if (!skb)
-			skb = skb_peek_tail(&tp->mpcb->reinject_queue);
+		struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
 		if (!(flags & MSG_MORE) || forced_push(meta_tp))
-			tcp_mark_push(meta_tp, skb);
+			if (tcp_write_queue_tail(meta_sk))
+				tcp_mark_push(meta_tp,
+					      tcp_write_queue_tail(meta_sk));
+
 		tcp_mark_urg(meta_tp, flags);
 		__tcp_push_pending_frames(meta_sk, mss_now,
 					  (flags & MSG_MORE) ?
 					  TCP_NAGLE_CORK : nonagle);
 	}
-	return 1;
 }
 
 static inline u8 mptcp_get_64_bit(u64 data_seq, struct multipath_options *mopt)
