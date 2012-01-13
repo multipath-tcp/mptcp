@@ -148,16 +148,16 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 			  const struct in_addr *addr, __be16 port, u8 id)
 {
 	int i;
-	struct mptcp_loc4 *loc4 = &mopt->addr4[0];
+	struct mptcp_loc4 *rem4;
 
 	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
 		if (!((1 << i) & mopt->rem4_bits))
 			continue;
 
-		loc4 = &mopt->addr4[i];
+		rem4 = &mopt->addr4[i];
 
 		/* Address is already in the list --- continue */
-		if (loc4->addr.s_addr == addr->s_addr && loc4->port == port)
+		if (rem4->addr.s_addr == addr->s_addr && rem4->port == port)
 			return 0;
 
 		/* This may be the case, when the peer is behind a NAT. He is
@@ -165,14 +165,14 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 		 * However the src_addr of the IP-packet has been changed. We
 		 * update the addr in the list, because this is the address as
 		 * OUR BOX sees it. */
-		if (loc4->id == id && loc4->addr.s_addr != addr->s_addr) {
+		if (rem4->id == id && rem4->addr.s_addr != addr->s_addr) {
 			/* update the address */
 			mptcp_debug("%s: updating old addr:%pI4"
 				   " to addr %pI4 with id:%d\n",
-				   __func__, &loc4->addr.s_addr,
+				   __func__, &rem4->addr.s_addr,
 				   &addr->s_addr, id);
-			loc4->addr.s_addr = addr->s_addr;
-			loc4->port = port;
+			rem4->addr.s_addr = addr->s_addr;
+			rem4->port = port;
 			mopt->list_rcvd = 1;
 			return 0;
 		}
@@ -187,13 +187,13 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 		return -1;
 	}
 
-	loc4 = &mopt->addr4[i];
+	rem4 = &mopt->addr4[i];
 
 	/* Address is not known yet, store it */
-	loc4->addr.s_addr = addr->s_addr;
-	loc4->port = port;
-	loc4->bitfield = 0;
-	loc4->id = id;
+	rem4->addr.s_addr = addr->s_addr;
+	rem4->port = port;
+	rem4->bitfield = 0;
+	rem4->id = id;
 	mopt->list_rcvd = 1;
 	mopt->rem4_bits |= (1 << i);
 

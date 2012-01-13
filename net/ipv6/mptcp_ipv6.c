@@ -163,16 +163,16 @@ int mptcp_v6_add_raddress(struct multipath_options *mopt,
 			  const struct in6_addr *addr, __be16 port, u8 id)
 {
 	int i;
-	struct mptcp_loc6 *loc6 = &mopt->addr6[0];
+	struct mptcp_loc6 *rem6;
 
 	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
 		if (!((1 << i) & mopt->rem6_bits))
 			continue;
 
-		loc6 = &mopt->addr6[i];
+		rem6 = &mopt->addr6[i];
 
 		/* Address is already in the list --- continue */
-		if (ipv6_addr_equal(&loc6->addr, addr))
+		if (ipv6_addr_equal(&rem6->addr, addr))
 			return 0;
 
 		/* This may be the case, when the peer is behind a NAT. He is
@@ -180,14 +180,14 @@ int mptcp_v6_add_raddress(struct multipath_options *mopt,
 		 * However the src_addr of the IP-packet has been changed. We
 		 * update the addr in the list, because this is the address as
 		 * OUR BOX sees it. */
-		if (loc6->id == id && !ipv6_addr_equal(&loc6->addr, addr)) {
+		if (rem6->id == id && !ipv6_addr_equal(&rem6->addr, addr)) {
 			/* update the address */
 			mptcp_debug("%s: updating old addr: %pI6 \
 					to addr %pI6 with id:%d\n",
-					__func__, &loc6->addr,
+					__func__, &rem6->addr,
 					addr, id);
-			ipv6_addr_copy(&loc6->addr, addr);
-			loc6->port = port;
+			ipv6_addr_copy(&rem6->addr, addr);
+			rem6->port = port;
 			mopt->list_rcvd = 1;
 			return 0;
 		}
@@ -202,13 +202,13 @@ int mptcp_v6_add_raddress(struct multipath_options *mopt,
 		return -1;
 	}
 
-	loc6 = &mopt->addr6[i];
+	rem6 = &mopt->addr6[i];
 
 	/* Address is not known yet, store it */
-	ipv6_addr_copy(&loc6->addr, addr);
-	loc6->port = port;
-	loc6->bitfield = 0;
-	loc6->id = id;
+	ipv6_addr_copy(&rem6->addr, addr);
+	rem6->port = port;
+	rem6->bitfield = 0;
+	rem6->id = id;
 	mopt->list_rcvd = 1;
 	mopt->rem6_bits |= (1 << i);
 
