@@ -3396,7 +3396,6 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		mpfail->rsv1 = 0;
 		mpfail->rsv2 = 0;
 		mpfail->data_seq = htonll(((u64)opts->data_ack << 32) | opts->data_seq);
-		ptr += 2;
 	}
 	if (unlikely(OPTION_MP_RST & opts->options)) {
 		struct mp_rst *mprst;
