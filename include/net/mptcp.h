@@ -285,6 +285,8 @@ static inline int mptcp_pi_to_flag(int pi)
 #define OPTION_MP_RST		(1 << 12)
 
 struct mptcp_option {
+	__u8	kind;
+	__u8	len;
 #if defined(__LITTLE_ENDIAN_BITFIELD)
 	__u8	ver:4,
 		sub:4;
@@ -297,6 +299,8 @@ struct mptcp_option {
 };
 
 struct mp_capable {
+	__u8	kind;
+	__u8	len;
 #if defined(__LITTLE_ENDIAN_BITFIELD)
 	__u8	ver:4,
 		sub:4;
@@ -315,6 +319,8 @@ struct mp_capable {
 };
 
 struct mp_join {
+	__u8	kind;
+	__u8	len;
 #if defined(__LITTLE_ENDIAN_BITFIELD)
 	__u8	b:1,
 		rsv:3,
@@ -330,6 +336,8 @@ struct mp_join {
 };
 
 struct mp_dss {
+	__u8	kind;
+	__u8	len;
 #if defined(__LITTLE_ENDIAN_BITFIELD)
 	__u16	rsv1:4,
 		sub:4,
@@ -354,6 +362,8 @@ struct mp_dss {
 };
 
 struct mp_add_addr {
+	__u8	kind;
+	__u8	len;
 #if defined(__LITTLE_ENDIAN_BITFIELD)
 	__u8	ipver:4,
 		sub:4;
@@ -367,6 +377,8 @@ struct mp_add_addr {
 };
 
 struct mp_fail {
+	__u8	kind;
+	__u8	len;
 #if defined(__LITTLE_ENDIAN_BITFIELD)
 	__u16	rsv1:4,
 		sub:4,
@@ -382,6 +394,8 @@ struct mp_fail {
 };
 
 struct mp_rst {
+	__u8	kind;
+	__u8	len;
 #if defined(__LITTLE_ENDIAN_BITFIELD)
 	__u16	rsv1:4,
 		sub:4,

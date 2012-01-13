@@ -369,12 +369,9 @@ struct mp_join *mptcp_find_join(struct sk_buff *skb)
 				return NULL;
 			if (opsize > length)
 				return NULL;  /* don't parse partial options */
-			if (opcode == TCPOPT_MPTCP) {
-				struct mptcp_option *mp_opt =
-						(struct mptcp_option *) ptr;
-
-				if (mp_opt->sub == MPTCP_SUB_JOIN)
-					return (struct mp_join *) ptr;
+			if (opcode == TCPOPT_MPTCP &&
+			    ((struct mptcp_option *)(ptr - 2))->sub == MPTCP_SUB_JOIN) {
+				return (struct mp_join *)(ptr - 2);
 			}
 			ptr += opsize - 2;
 			length -= opsize;

@@ -3956,8 +3956,8 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_options_received *opt_rx,
 				break;
 #ifdef CONFIG_MPTCP
 			case TCPOPT_MPTCP:
-				mptcp_parse_options(ptr, opsize, opt_rx, mopt,
-						skb);
+				mptcp_parse_options(ptr - 2, opsize, opt_rx,
+						    mopt, skb);
 				break;
 #endif
 			}

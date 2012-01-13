@@ -2857,7 +2857,7 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		mopt->mptcp_opt_type = MPTCP_MP_CAPABLE_TYPE_SYN;
 
 		if (opsize >= MPTCP_SUB_LEN_CAPABLE_SYN) {
-			ptr += 2;
+			ptr += 4;
 			mopt->mptcp_rem_key = *((__u64*)ptr);
 			mopt->mptcp_opt_type = MPTCP_MP_CAPABLE_TYPE_SYN;
 		}
@@ -2883,20 +2883,20 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 
 		switch (opsize) {
 			case MPTCP_SUB_LEN_JOIN_SYN:
-				mopt->mptcp_rem_token = *((u32*)(ptr + 2));
-				mopt->mptcp_recv_nonce = *((u32*)(ptr + 6));
+				mopt->mptcp_rem_token = *((u32*)(ptr + 4));
+				mopt->mptcp_recv_nonce = *((u32*)(ptr + 8));
 				mopt->mptcp_opt_type = MPTCP_MP_JOIN_TYPE_SYN;
 				opt_rx->saw_mpc = 1;
 				break;
 			case MPTCP_SUB_LEN_JOIN_SYNACK:
-				ptr += 2;
+				ptr += 4;
 				mopt->mptcp_recv_tmac = *((__u64 *)ptr);
 				ptr += 8;
 				mopt->mptcp_recv_nonce = *((u32 *)ptr);
 				mopt->mptcp_opt_type = MPTCP_MP_JOIN_TYPE_SYNACK;
 				break;
 			case MPTCP_SUB_LEN_JOIN_ACK:
-				ptr += 2;
+				ptr += 4;
 				memcpy(mopt->mptcp_recv_mac, ptr, 20);
 				mopt->mptcp_opt_type = MPTCP_MP_JOIN_TYPE_ACK;
 				break;
@@ -2909,7 +2909,7 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		struct mp_dss *mdss = (struct mp_dss *) ptr;
 		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 
-		ptr += 2;
+		ptr += 4;
 
 		if (mdss->A) {
 			tcb->mptcp_flags |= MPTCPHDR_ACK;
@@ -2979,7 +2979,7 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 			break;
 		}
 
-		ptr += 2; /* Move the pointer to the addr */
+		ptr += 4; /* Move the pointer to the addr */
 		if (mpadd->ipver == 4) {
 			__be16 port = 0;
 			if (opsize == MPTCP_SUB_LEN_ADD_ADDR4 + 2)
@@ -3016,7 +3016,7 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 
 		mopt->mp_rst = 1;
 
-		ptr += 2;
+		ptr += 4;
 
 		if (mopt->mpcb && mopt->mpcb->mptcp_loc_key != *((__u64 *)ptr))
 			mopt->mp_rst = 0;
@@ -3272,18 +3272,15 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			 struct tcp_out_options *opts)
 {
 	if (unlikely(OPTION_MP_CAPABLE & opts->options)) {
-		struct mp_capable *mpc;
-		__u8 *p8 = (__u8 *)ptr;
+		struct mp_capable *mpc = (struct mp_capable *) ptr;
 		__u64 *p64;
 
-		*p8++ = TCPOPT_MPTCP;
+		mpc->kind = TCPOPT_MPTCP;
 
 		if (!opts->receiver_key)
-			*p8++ = MPTCP_SUB_LEN_CAPABLE_SYN;
+			mpc->len = MPTCP_SUB_LEN_CAPABLE_SYN;
 		else
-			*p8++ = MPTCP_SUB_LEN_CAPABLE_ACK;
-
-		mpc = (struct mp_capable *)p8;
+			mpc->len = MPTCP_SUB_LEN_CAPABLE_ACK;
 
 		mpc->sub = MPTCP_SUB_CAPABLE;
 		mpc->ver = 0;
@@ -3306,27 +3303,24 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	}
 
 	if (unlikely(OPTION_MP_JOIN & opts->options)) {
-		struct mp_join *mpj;
-		__u8 *p8 = (__u8 *)ptr;
+		struct mp_join *mpj = (struct mp_join *) ptr;
 
-		*p8++ = TCPOPT_MPTCP;
+		mpj->kind = TCPOPT_MPTCP;
 
 		switch (opts->mp_join_type) {
 			case MPTCP_MP_JOIN_TYPE_SYN:
-				*p8++ = MPTCP_SUB_LEN_JOIN_SYN;
+				mpj->len = MPTCP_SUB_LEN_JOIN_SYN;
 				break;
 			case MPTCP_MP_JOIN_TYPE_SYNACK:
-				*p8++ = MPTCP_SUB_LEN_JOIN_SYNACK;
+				mpj->len = MPTCP_SUB_LEN_JOIN_SYNACK;
 				break;
 			case MPTCP_MP_JOIN_TYPE_ACK:
-				*p8++ = MPTCP_SUB_LEN_JOIN_ACK;
+				mpj->len = MPTCP_SUB_LEN_JOIN_ACK;
 				break;
 			default:
-				*p8++ = MPTCP_SUB_LEN_JOIN_ACK;
+				mpj->len = MPTCP_SUB_LEN_JOIN_ACK;
 				break;
 		}
-
-		mpj = (struct mp_join *)p8;
 
 		mpj->sub = MPTCP_SUB_JOIN;
 		mpj->rsv = 0;
@@ -3363,28 +3357,24 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 
 	}
 	if (unlikely(OPTION_ADD_ADDR & opts->options)) {
-		struct mp_add_addr *mpadd;
+		struct mp_add_addr *mpadd = (struct mp_add_addr *) ptr;
 		__u8 *p8 = (__u8 *)ptr;
 
-		*p8++ = TCPOPT_MPTCP;
+		mpadd->kind = TCPOPT_MPTCP;
 		if (opts->addr4) {
-			*p8++ = MPTCP_SUB_LEN_ADD_ADDR4;
-			mpadd = (struct mp_add_addr *) p8;
-
+			mpadd->len = MPTCP_SUB_LEN_ADD_ADDR4;
 			mpadd->sub = MPTCP_SUB_ADD_ADDR;
 			mpadd->ipver = 4;
 			mpadd->addr_id = opts->addr4->id;
-			p8 += 2;
+			p8 += 4;
 			*((__be32 *) p8) = opts->addr4->addr.s_addr;
 			p8 += sizeof(struct in_addr);
 		} else if (opts->addr6) {
-			*p8++ = MPTCP_SUB_LEN_ADD_ADDR6;
-			mpadd = (struct mp_add_addr *) p8;
-
+			mpadd->len = MPTCP_SUB_LEN_ADD_ADDR6;
 			mpadd->sub = MPTCP_SUB_ADD_ADDR;
 			mpadd->ipver = 6;
 			mpadd->addr_id = opts->addr6->id;
-			p8 += 2;
+			p8 += 4;
 			memcpy((char *)p8, &(opts->addr6->addr),
 					sizeof(struct in6_addr));
 			p8 += sizeof(struct in6_addr);
@@ -3395,29 +3385,21 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		ptr = (__be32 *) p8;
 	}
 	if (unlikely(OPTION_MP_FAIL & opts->options)) {
-		struct mp_fail *mpfail;
-		__u8 *p8 = (__u8 *)ptr;
+		struct mp_fail *mpfail = (struct mp_fail *) ptr;
 
-		*p8++ = TCPOPT_MPTCP;
-		*p8++ = MPTCP_SUB_LEN_FAIL;
-
-		mpfail = (struct mp_fail *)p8;
-
+		mpfail->kind = TCPOPT_MPTCP;
+		mpfail->len = MPTCP_SUB_LEN_FAIL;
 		mpfail->sub = MPTCP_SUB_FAIL;
 		mpfail->rsv1 = 0;
 		mpfail->rsv2 = 0;
 		mpfail->data_seq = htonll(((u64)opts->data_ack << 32) | opts->data_seq);
 	}
 	if (unlikely(OPTION_MP_RST & opts->options)) {
-		struct mp_rst *mprst;
-		__u8 *p8 = (__u8 *)ptr;
+		struct mp_rst *mprst = (struct mp_rst *) ptr;
 		__u64 *p64;
 
-		*p8++ = TCPOPT_MPTCP;
-		*p8++ = MPTCP_SUB_LEN_RST;
-
-		mprst = (struct mp_rst *)p8;
-
+		mprst->kind = TCPOPT_MPTCP;
+		mprst->len = MPTCP_SUB_LEN_RST;
 		mprst->sub = MPTCP_SUB_RST;
 		mprst->rsv1 = 0;
 		mprst->rsv2 = 0;
@@ -3431,18 +3413,15 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	if (OPTION_DSN_MAP & opts->options ||
 	    OPTION_DATA_ACK & opts->options ||
 	    OPTION_DATA_FIN & opts->options) {
-		struct mp_dss *mdss;
-		__u8 *p8 = (__u8 *)ptr;
-
-		*p8++ = TCPOPT_MPTCP;
-		*p8++ = MPTCP_SUB_LEN_DSS +
+		struct mp_dss *mdss = (struct mp_dss *) ptr;
+		
+		mdss->kind = TCPOPT_MPTCP;
+		mdss->len = MPTCP_SUB_LEN_DSS +
 			((OPTION_DATA_ACK & opts->options) ?
 			 MPTCP_SUB_LEN_ACK : 0) +
 			((OPTION_DSN_MAP & opts->options) ?
 			 (tp->mpcb->rx_opt.dss_csum ?
 			  MPTCP_SUB_LEN_SEQ_CSUM : MPTCP_SUB_LEN_SEQ) : 0);
-		mdss = (struct mp_dss *)p8;
-
 		mdss->sub = MPTCP_SUB_DSS;
 		mdss->rsv1 = 0;
 		mdss->rsv2 = 0;
