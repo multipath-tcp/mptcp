@@ -268,8 +268,8 @@ static inline int mptcp_pi_to_flag(int pi)
 #define MPTCP_SUB_LEN_ADD_ADDR6_ALIGN	20
 
 #define MPTCP_SUB_FAIL		6
-#define MPTCP_SUB_LEN_FAIL	8
-#define MPTCP_SUB_LEN_FAIL_ALIGN	8
+#define MPTCP_SUB_LEN_FAIL	12
+#define MPTCP_SUB_LEN_FAIL_ALIGN	12
 
 #define MPTCP_SUB_RST		7
 #define MPTCP_SUB_LEN_RST	12
