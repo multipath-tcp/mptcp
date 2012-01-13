@@ -3003,6 +3003,12 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		mopt->mp_fail = 1;
 		break;
 	case MPTCP_SUB_RST:
+		if (opsize != MPTCP_SUB_LEN_RST) {
+			mptcp_debug("%s: mp_rst: bad option size %d\n",
+					__func__, opsize);
+			break;
+		}
+
 		mopt->mp_rst = 1;
 
 		ptr += 2;
