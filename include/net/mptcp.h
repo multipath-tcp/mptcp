@@ -409,6 +409,11 @@ struct mp_rst {
 #endif
 };
 
+static inline int mptcp_sub_len_dss(struct mp_dss *m, int csum)
+{
+	return 4 + m->A * (4 + m->a * 4) + m->M * (6 + csum * 2 + m->m * 4);
+}
+
 /* Two separate cases must be handled:
  * -a mapping option has been received. Then data_seq and end_data_seq are
  *  defined, and we disambiguate based on data_len (if not zero, the mapping

@@ -2908,6 +2908,12 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 	{
 		struct mp_dss *mdss = (struct mp_dss *) ptr;
 		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
+		
+		if (opsize != mptcp_sub_len_dss(mdss, mopt->dss_csum)) {
+			mptcp_debug("%s: mp_dss: bad option size %d\n",
+					__func__, opsize);
+			break;
+		}
 
 		ptr += 4;
 
@@ -2924,8 +2930,6 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		}
 
 		if (mdss->M) {
-			/* TODO_cpaasch check for the correct length of the DSS
-			 * option */
 			if (mopt->dss_csum) {
 				tcb->dss_off = (ptr - skb_transport_header(skb)) >> 2;
 			} else {
@@ -3416,12 +3420,6 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		struct mp_dss *mdss = (struct mp_dss *) ptr;
 		
 		mdss->kind = TCPOPT_MPTCP;
-		mdss->len = MPTCP_SUB_LEN_DSS +
-			((OPTION_DATA_ACK & opts->options) ?
-			 MPTCP_SUB_LEN_ACK : 0) +
-			((OPTION_DSN_MAP & opts->options) ?
-			 (tp->mpcb->rx_opt.dss_csum ?
-			  MPTCP_SUB_LEN_SEQ_CSUM : MPTCP_SUB_LEN_SEQ) : 0);
 		mdss->sub = MPTCP_SUB_DSS;
 		mdss->rsv1 = 0;
 		mdss->rsv2 = 0;
@@ -3430,6 +3428,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		mdss->M = (OPTION_DSN_MAP & opts->options ? 1 : 0);
 		mdss->a = 0;
 		mdss->A = (OPTION_DATA_ACK & opts->options ? 1 : 0);
+		mdss->len = mptcp_sub_len_dss(mdss, tp->mpcb->rx_opt.dss_csum);
 
 		ptr++;
 		if (OPTION_DATA_ACK & opts->options)
