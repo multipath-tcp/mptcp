@@ -931,16 +931,13 @@ static inline void mptcp_mp_fail_rcvd(struct multipath_pcb *mpcb,
 	}
 }
 
-/* Find the first index whose bit in the bit-field == 0 */
-static inline int mptcp_find_addrindex(u8 bitfield)
+/* Find the first free index in the bitfield */
+static inline int mptcp_find_free_index(u8 bitfield)
 {
 	int i;
-	/* Start at 1, because index 0 is for the initial subflow */
 	for (i = 0; i < MPTCP_MAX_ADDR; i++)
-	{
 		if (!((1 << i) & bitfield))
 			return i;
-	}
 
 	return -1;
 }

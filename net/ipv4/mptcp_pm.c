@@ -219,7 +219,7 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 				    inet_sk(meta_sk)->inet_saddr == ifa_address)
 					continue;
 
-				i = mptcp_find_addrindex(mpcb->loc4_bits);
+				i = mptcp_find_free_index(mpcb->loc4_bits);
 				if (i < 0) {
 					mptcp_debug ("%s: At max num of local "
 						"addresses: %d --- not adding "
@@ -251,7 +251,7 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 						    &(ifa6->addr)))
 					continue;
 
-				i = mptcp_find_addrindex(mpcb->loc6_bits);
+				i = mptcp_find_free_index(mpcb->loc6_bits);
 				if (i < 0) {
 					mptcp_debug("%s: At max num of local"
 						"addresses: %d --- not adding"
@@ -489,7 +489,7 @@ next_subflow:
 
 		/* Are there still combinations to handle? */
 		if (remaining_bits) {
-			int i = mptcp_find_addrindex(~remaining_bits);
+			int i = mptcp_find_free_index(~remaining_bits);
 			mptcp_init4_subsockets(mpcb, &mpcb->addr4[i], rem);
 			goto next_subflow;
 		}
@@ -508,7 +508,7 @@ next_subflow:
 
 		/* Are there still combinations to handle? */
 		if (remaining_bits) {
-			int i = mptcp_find_addrindex(~remaining_bits);
+			int i = mptcp_find_free_index(~remaining_bits);
 			mptcp_init6_subsockets(mpcb, &mpcb->addr6[i], rem);
 			goto next_subflow;
 		}

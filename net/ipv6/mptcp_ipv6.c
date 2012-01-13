@@ -193,7 +193,7 @@ int mptcp_v6_add_raddress(struct multipath_options *mopt,
 		}
 	}
 
-	i = mptcp_find_addrindex(mopt->rem6_bits);
+	i = mptcp_find_free_index(mopt->rem6_bits);
 	/* Do we have already the maximum number of local/remote addresses? */
 	if (i < 0) {
 		mptcp_debug("%s: At max num of remote addresses: %d --- not "
@@ -602,7 +602,7 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 
 	/* Not yet in address-list */
 	if (event == NETDEV_UP && netif_running(ifa->idev->dev)) {
-		i = mptcp_find_addrindex(mpcb->loc4_bits);
+		i = mptcp_find_free_index(mpcb->loc4_bits);
 		if (i < 0) {
 			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP Reached max "
 					"number of local IPv6 addresses: %d\n",

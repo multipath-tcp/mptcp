@@ -178,7 +178,7 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 		}
 	}
 
-	i = mptcp_find_addrindex(mopt->rem4_bits);
+	i = mptcp_find_free_index(mopt->rem4_bits);
 	/* Do we have already the maximum number of local/remote addresses? */
 	if (i < 0) {
 		mptcp_debug("%s: At max num of remote addresses: %d --- not "
@@ -506,7 +506,7 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 
 	/* Not yet in address-list */
 	if (event == NETDEV_UP && netif_running(ifa->ifa_dev->dev)) {
-		i = mptcp_find_addrindex(mpcb->loc4_bits);
+		i = mptcp_find_free_index(mpcb->loc4_bits);
 		if (i < 0) {
 			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP Reached max "
 					"number of local IPv4 addresses: %d\n",
