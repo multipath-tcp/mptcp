@@ -1159,23 +1159,38 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 		newsk->sk_wq = sk->sk_wq;
 
 		__inet_inherit_port(sk, newsk);
+
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 		if (sk->sk_family == AF_INET) {
-			struct ipv6_pinfo *np;
+			struct ipv6_pinfo *newnp;
 
 			/* Master is IPv4. Initialize pinet6 for the meta sk. */
-			inet_sk(newsk)->pinet6 = np =
+			inet_sk(newsk)->pinet6 = newnp =
 					&((struct tcp6_sock *)newsk)->inet6;
-			np->hop_limit	= -1;
-			np->mcast_hops	= IPV6_DEFAULT_MCASTHOPS;
-			np->mc_loop	= 1;
-			np->pmtudisc	= IPV6_PMTUDISC_WANT;
-			np->ipv6only	= sock_net(newsk)->ipv6.sysctl.bindv6only;
-			np->ipv6_fl_list = NULL;
+
+			newnp->hop_limit	= -1;
+			newnp->mcast_hops	= IPV6_DEFAULT_MCASTHOPS;
+			newnp->mc_loop	= 1;
+			newnp->pmtudisc	= IPV6_PMTUDISC_WANT;
+			newnp->ipv6only	= sock_net(newsk)->ipv6.sysctl.bindv6only;
 		} else if (inet_csk(sk)->icsk_af_ops == &ipv6_mapped) {
+			struct ipv6_pinfo *newnp, *np = inet6_sk(sk);
 			struct inet_connection_sock *icsk = inet_csk(newsk);
+
 			icsk->icsk_af_ops = &ipv6_specific;
 			newsk->sk_backlog_rcv = tcp_v6_do_rcv;
+
+			inet_sk(newsk)->pinet6 = &((struct tcp6_sock *)newsk)->inet6;
+
+			newnp = inet6_sk(newsk);
+			memcpy(newnp, np, sizeof(struct ipv6_pinfo));
+
+			newnp->ipv6_mc_list = NULL;
+			newnp->ipv6_ac_list = NULL;
+			newnp->ipv6_fl_list = NULL;
+			newnp->opt = NULL;
+			newnp->pktoptions = NULL;
+			newnp->rxpmtu = NULL;
 #ifdef CONFIG_TCP_MD5SIG
 			tcp_sk(newsk)->af_specific = &tcp_sock_ipv6_specific;
 #endif
