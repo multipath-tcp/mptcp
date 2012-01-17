@@ -917,7 +917,7 @@ static inline void mptcp_mp_fail_rcvd(struct multipath_pcb *mpcb,
 		if (!sock_flag(sk, SOCK_DEAD))
 			mptcp_sub_close(sk, 0);
 		else
-			tp->mp_killed = 1;
+			tcp_sk(sk)->mp_killed = 1;
 
 		/* Set rst-bit and the socket will be tcp_done'd by
 		 * tcp_validate_incoming */
