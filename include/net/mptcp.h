@@ -224,7 +224,7 @@ static inline int mptcp_pi_to_flag(int pi)
 #define MPTCP_SUB_LEN_CAPABLE_SYN		12
 #define MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN		12
 #define MPTCP_SUB_LEN_CAPABLE_ACK		20
-#define MPTCP_SUB_LEN_CAPABLE_ALIGN_ACK		20
+#define MPTCP_SUB_LEN_CAPABLE_ACK_ALIGN		20
 #define MPTCP_MP_CAPABLE_TYPE_SYN		1
 #define MPTCP_MP_CAPABLE_TYPE_ACK		2
 
@@ -316,7 +316,9 @@ struct mp_capable {
 #else
 #error	"Adjust your <asm/byteorder.h> defines"
 #endif
-};
+	__u64	sender_key;
+	__u64	receiver_key;
+} __attribute__((__packed__));
 
 struct mp_join {
 	__u8	kind;

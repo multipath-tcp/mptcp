@@ -2859,8 +2859,7 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		mopt->mptcp_opt_type = MPTCP_MP_CAPABLE_TYPE_SYN;
 
 		if (opsize >= MPTCP_SUB_LEN_CAPABLE_SYN) {
-			ptr += 4;
-			mopt->mptcp_rem_key = *((__u64*)ptr);
+			mopt->mptcp_rem_key = mpcapable->sender_key;
 			mopt->mptcp_opt_type = MPTCP_MP_CAPABLE_TYPE_SYN;
 		}
 
@@ -3168,7 +3167,7 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 	if (unlikely(tp->include_mpc)) {
 		if (is_master_tp(tp)) {
 			opts->options |= OPTION_MP_CAPABLE;
-			*size += MPTCP_SUB_LEN_CAPABLE_ALIGN_ACK;
+			*size += MPTCP_SUB_LEN_CAPABLE_ACK_ALIGN;
 			opts->sender_key = mpcb->mptcp_loc_key;
 			opts->receiver_key = mpcb->rx_opt.mptcp_rem_key;
 			opts->dss_csum = mpcb->rx_opt.dss_csum;
@@ -3279,33 +3278,26 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 {
 	if (unlikely(OPTION_MP_CAPABLE & opts->options)) {
 		struct mp_capable *mpc = (struct mp_capable *) ptr;
-		__u64 *p64;
 
 		mpc->kind = TCPOPT_MPTCP;
 
-		if (!opts->receiver_key)
+		if (!opts->receiver_key) {
 			mpc->len = MPTCP_SUB_LEN_CAPABLE_SYN;
-		else
+			ptr += MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN >> 2;
+		} else {
 			mpc->len = MPTCP_SUB_LEN_CAPABLE_ACK;
+			ptr += MPTCP_SUB_LEN_CAPABLE_ACK_ALIGN >> 2;
+		}
 
 		mpc->sub = MPTCP_SUB_CAPABLE;
 		mpc->ver = 0;
 		mpc->c = opts->dss_csum ? 1 : 0;
 		mpc->rsv = 0;
 		mpc->s = 1;
-
-		ptr++;
-		p64 = (__u64 *)ptr;
-
-		if (opts->sender_key) {
-			*p64++ = opts->sender_key;
-			ptr += 2;
-		}
-
-		if (opts->receiver_key) {
-			*p64 = opts->receiver_key;
-			ptr += 2;
-		}
+		if (opts->sender_key)
+			mpc->sender_key = opts->sender_key;
+		if (opts->receiver_key)
+			mpc->receiver_key = opts->receiver_key;
 	}
 
 	if (unlikely(OPTION_MP_JOIN & opts->options)) {
