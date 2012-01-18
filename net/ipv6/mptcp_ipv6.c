@@ -616,7 +616,7 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 
 		/* update this mpcb */
 		ipv6_addr_copy(&mpcb->addr6[i].addr, &ifa->addr);
-		mpcb->addr6[i].id = i;
+		mpcb->addr6[i].id = i + MPTCP_MAX_ADDR;
 		mpcb->loc6_bits |= (1 << i);
 		/* re-send addresses */
 		mpcb->add_addr6 |= (1 << i);
