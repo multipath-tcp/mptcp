@@ -3020,10 +3020,8 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		}
 
 		mopt->mp_rst = 1;
-
-		ptr += 4;
-
-		if (mopt->mpcb && mopt->mpcb->mptcp_loc_key != *((__u64 *)ptr))
+		if (mopt->mpcb &&
+		    mopt->mpcb->mptcp_loc_key != ((struct mp_rst *)ptr)->key)
 			mopt->mp_rst = 0;
 
 		break;
@@ -3394,18 +3392,15 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	}
 	if (unlikely(OPTION_MP_RST & opts->options)) {
 		struct mp_rst *mprst = (struct mp_rst *) ptr;
-		__u64 *p64;
 
 		mprst->kind = TCPOPT_MPTCP;
 		mprst->len = MPTCP_SUB_LEN_RST;
 		mprst->sub = MPTCP_SUB_RST;
 		mprst->rsv1 = 0;
 		mprst->rsv2 = 0;
-		ptr++;
+		mprst->key = opts->receiver_key;
 
-		p64 = (__u64 *)ptr;
-		*p64 = opts->receiver_key;
-		ptr += 2;
+		ptr += MPTCP_SUB_LEN_RST_ALIGN >> 2;
 	}
 
 	if (OPTION_DSN_MAP & opts->options ||

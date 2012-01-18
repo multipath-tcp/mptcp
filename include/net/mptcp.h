@@ -409,7 +409,8 @@ struct mp_rst {
 #else
 #error	"Adjust your <asm/byteorder.h> defines"
 #endif
-};
+	__u64	key;
+} __attribute__((__packed__));
 
 static inline int mptcp_sub_len_dss(struct mp_dss *m, int csum)
 {
