@@ -2984,22 +2984,21 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 			break;
 		}
 
-		ptr += 4; /* Move the pointer to the addr */
 		if (mpadd->ipver == 4) {
 			__be16 port = 0;
 			if (opsize == MPTCP_SUB_LEN_ADD_ADDR4 + 2)
-				port = (__be16) *(ptr + 4);
+				port = mpadd->u.v4.port;
 
-			mptcp_v4_add_raddress(mopt, (struct in_addr *)ptr,
-					      port, mpadd->addr_id);
+			mptcp_v4_add_raddress(mopt, &mpadd->u.v4.addr, port,
+					      mpadd->addr_id);
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 		} else if (mpadd->ipver == 6) {
 			__be16 port = 0;
 			if (opsize == MPTCP_SUB_LEN_ADD_ADDR6 + 2)
-				port = (__be16) *(ptr + 16);
+				port = mpadd->u.v6.port;
 
-			mptcp_v6_add_raddress(mopt, (struct in6_addr *) ptr,
-					      port, mpadd->addr_id);
+			mptcp_v6_add_raddress(mopt, &mpadd->u.v6.addr, port,
+					      mpadd->addr_id);
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 		}
 		break;
@@ -3354,7 +3353,6 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	}
 	if (unlikely(OPTION_ADD_ADDR & opts->options)) {
 		struct mp_add_addr *mpadd = (struct mp_add_addr *) ptr;
-		__u8 *p8 = (__u8 *)ptr;
 
 		mpadd->kind = TCPOPT_MPTCP;
 		if (opts->addr4) {
@@ -3362,23 +3360,19 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			mpadd->sub = MPTCP_SUB_ADD_ADDR;
 			mpadd->ipver = 4;
 			mpadd->addr_id = opts->addr4->id;
-			p8 += 4;
-			*((__be32 *) p8) = opts->addr4->addr.s_addr;
-			p8 += sizeof(struct in_addr);
+			mpadd->u.v4.addr = opts->addr4->addr;
+			ptr += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN >> 2;
 		} else if (opts->addr6) {
 			mpadd->len = MPTCP_SUB_LEN_ADD_ADDR6;
 			mpadd->sub = MPTCP_SUB_ADD_ADDR;
 			mpadd->ipver = 6;
 			mpadd->addr_id = opts->addr6->id;
-			p8 += 4;
-			memcpy((char *)p8, &(opts->addr6->addr),
-					sizeof(struct in6_addr));
-			p8 += sizeof(struct in6_addr);
+			memcpy(&mpadd->u.v6.addr, &opts->addr6->addr,
+			       sizeof(mpadd->u.v6.addr));
+			ptr += MPTCP_SUB_LEN_ADD_ADDR6_ALIGN >> 2;
 		} else {
 			BUG();
 		}
-
-		ptr = (__be32 *) p8;
 	}
 	if (unlikely(OPTION_MP_FAIL & opts->options)) {
 		struct mp_fail *mpfail = (struct mp_fail *) ptr;

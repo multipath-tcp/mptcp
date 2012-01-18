@@ -376,7 +376,17 @@ struct mp_add_addr {
 #error	"Adjust your <asm/byteorder.h> defines"
 #endif
 	__u8	addr_id;
-};
+	union {
+		struct {
+			struct in_addr	addr;
+			__be16		port;
+		} v4;
+		struct {
+			struct in6_addr	addr;
+			__be16		port;
+		} v6;
+	} u;
+} __attribute__((__packed__));
 
 struct mp_fail {
 	__u8	kind;
