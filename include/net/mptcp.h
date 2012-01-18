@@ -401,6 +401,20 @@ struct mp_add_addr {
 	} u;
 } __attribute__((__packed__));
 
+struct mp_remove_addr {
+#if defined(__LITTLE_ENDIAN_BITFIELD)
+	__u8	res:4,
+		sub:4;
+#elif defined(__BIG_ENDIAN_BITFIELD)
+	__u8	sub:4,
+		res:4;
+#else
+#error "Adjust your <asm/byteorder.h> defines"
+#endif
+	/* list of addr_id */
+	__u8	addrs_id;
+};
+
 struct mp_fail {
 	__u8	kind;
 	__u8	len;
