@@ -2884,21 +2884,18 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 
 		switch (opsize) {
 			case MPTCP_SUB_LEN_JOIN_SYN:
-				mopt->mptcp_rem_token = *((u32*)(ptr + 4));
-				mopt->mptcp_recv_nonce = *((u32*)(ptr + 8));
+				mopt->mptcp_rem_token = mpjoin->u.syn.token;
+				mopt->mptcp_recv_nonce = mpjoin->u.syn.nonce;
 				mopt->mptcp_opt_type = MPTCP_MP_JOIN_TYPE_SYN;
 				opt_rx->saw_mpc = 1;
 				break;
 			case MPTCP_SUB_LEN_JOIN_SYNACK:
-				ptr += 4;
-				mopt->mptcp_recv_tmac = *((__u64 *)ptr);
-				ptr += 8;
-				mopt->mptcp_recv_nonce = *((u32 *)ptr);
+				mopt->mptcp_recv_tmac = mpjoin->u.synack.mac;
+				mopt->mptcp_recv_nonce = mpjoin->u.synack.nonce;
 				mopt->mptcp_opt_type = MPTCP_MP_JOIN_TYPE_SYNACK;
 				break;
 			case MPTCP_SUB_LEN_JOIN_ACK:
-				ptr += 4;
-				memcpy(mopt->mptcp_recv_mac, ptr, 20);
+				memcpy(mopt->mptcp_recv_mac, mpjoin->u.ack.mac, 20);
 				mopt->mptcp_opt_type = MPTCP_MP_JOIN_TYPE_ACK;
 				break;
 		}
@@ -3055,7 +3052,7 @@ void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 		struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
 
 		opts->options |= OPTION_MP_JOIN;
-		*remaining -= MPTCP_SUB_LEN_JOIN_ALIGN_SYN;
+		*remaining -= MPTCP_SUB_LEN_JOIN_SYN_ALIGN;
 		opts->token = mpcb->rx_opt.mptcp_rem_token;
 		opts->addr_id = mptcp_get_loc_addrid(mpcb, sk);
 
@@ -3107,7 +3104,7 @@ void mptcp_synack_options(struct request_sock *req,
 					opts->addr_id = req->mpcb->addr6[i].id;
 			}
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
-		*remaining -= MPTCP_SUB_LEN_JOIN_ALIGN_SYNACK;
+		*remaining -= MPTCP_SUB_LEN_JOIN_SYNACK_ALIGN;
 	}
 }
 
@@ -3170,7 +3167,7 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 			opts->dss_csum = mpcb->rx_opt.dss_csum;
 		} else {
 			opts->options |= OPTION_MP_JOIN;
-			*size += MPTCP_SUB_LEN_JOIN_ALIGN_ACK;
+			*size += MPTCP_SUB_LEN_JOIN_ACK_ALIGN;
 			opts->mp_join_type = MPTCP_MP_JOIN_TYPE_ACK;
 
 			mptcp_hmac_sha1((u8 *)&mpcb->mptcp_loc_key,
@@ -3301,22 +3298,6 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		struct mp_join *mpj = (struct mp_join *) ptr;
 
 		mpj->kind = TCPOPT_MPTCP;
-
-		switch (opts->mp_join_type) {
-			case MPTCP_MP_JOIN_TYPE_SYN:
-				mpj->len = MPTCP_SUB_LEN_JOIN_SYN;
-				break;
-			case MPTCP_MP_JOIN_TYPE_SYNACK:
-				mpj->len = MPTCP_SUB_LEN_JOIN_SYNACK;
-				break;
-			case MPTCP_MP_JOIN_TYPE_ACK:
-				mpj->len = MPTCP_SUB_LEN_JOIN_ACK;
-				break;
-			default:
-				mpj->len = MPTCP_SUB_LEN_JOIN_ACK;
-				break;
-		}
-
 		mpj->sub = MPTCP_SUB_JOIN;
 		mpj->rsv = 0;
 		mpj->b = 0;
@@ -3324,32 +3305,23 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 
 		switch (opts->mp_join_type) {
 			case MPTCP_MP_JOIN_TYPE_SYN:
-				ptr++;
-				*ptr++ = opts->token;
-				*ptr++ = opts->sender_nonce;
+				mpj->len = MPTCP_SUB_LEN_JOIN_SYN;
+				mpj->u.syn.token = opts->token;
+				mpj->u.syn.nonce = opts->sender_nonce;
+				ptr += MPTCP_SUB_LEN_JOIN_SYN_ALIGN >> 2;
 				break;
 			case MPTCP_MP_JOIN_TYPE_SYNACK:
-			{
-				__u64 *p64;
-				ptr++;
-				p64 = (__u64 *) ptr;
-				*p64 = opts->sender_truncated_mac;
-				ptr += 2;
-				*ptr++ = opts->sender_nonce;
+				mpj->len = MPTCP_SUB_LEN_JOIN_SYNACK;
+				mpj->u.synack.mac = opts->sender_truncated_mac;
+				mpj->u.synack.nonce = opts->sender_nonce;
+				ptr += MPTCP_SUB_LEN_JOIN_SYNACK_ALIGN >> 2;
 				break;
-			}
 			case MPTCP_MP_JOIN_TYPE_ACK:
-				ptr++;
-				memcpy(ptr, opts->sender_mac, 20);
-
-				ptr+=5;
-				break;
-			default:
-				ptr++;
-				*ptr++ = opts->token;
+				mpj->len = MPTCP_SUB_LEN_JOIN_ACK;
+				memcpy(mpj->u.ack.mac, opts->sender_mac, 20);
+				ptr += MPTCP_SUB_LEN_JOIN_ACK_ALIGN >> 2;
 				break;
 		}
-
 	}
 	if (unlikely(OPTION_ADD_ADDR & opts->options)) {
 		struct mp_add_addr *mpadd = (struct mp_add_addr *) ptr;

@@ -230,11 +230,11 @@ static inline int mptcp_pi_to_flag(int pi)
 
 #define MPTCP_SUB_JOIN			1
 #define MPTCP_SUB_LEN_JOIN_SYN		12
-#define MPTCP_SUB_LEN_JOIN_ALIGN_SYN	12
+#define MPTCP_SUB_LEN_JOIN_SYN_ALIGN	12
 #define MPTCP_SUB_LEN_JOIN_SYNACK	16
-#define MPTCP_SUB_LEN_JOIN_ALIGN_SYNACK	16
+#define MPTCP_SUB_LEN_JOIN_SYNACK_ALIGN	16
 #define MPTCP_SUB_LEN_JOIN_ACK		24
-#define MPTCP_SUB_LEN_JOIN_ALIGN_ACK	24
+#define MPTCP_SUB_LEN_JOIN_ACK_ALIGN	24
 #define MPTCP_MP_JOIN_TYPE_SYN		1
 #define MPTCP_MP_JOIN_TYPE_SYNACK	2
 #define MPTCP_MP_JOIN_TYPE_ACK		3
@@ -335,7 +335,20 @@ struct mp_join {
 #error	"Adjust your <asm/byteorder.h> defines"
 #endif
 	__u8	addr_id;
-};
+	union {
+		struct {
+			u32	token;
+			u32	nonce;
+		} syn;
+		struct {
+			__u64	mac;
+			u32	nonce;
+		} synack;
+		struct {
+			__u8	mac[20];
+		} ack;
+	} u;
+} __attribute__((__packed__));
 
 struct mp_dss {
 	__u8	kind;

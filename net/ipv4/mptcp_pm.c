@@ -392,8 +392,7 @@ int mptcp_lookup_join(struct sk_buff *skb)
 	if (!join_opt)
 		return 0;
 
-	join_opt++; /* the token is at the end of struct mp_join */
-	token = *(u32 *)join_opt;
+	token = join_opt->u.syn.token;
 	mpcb = mptcp_hash_find(token);
 	meta_sk = mpcb_meta_sk(mpcb);
 	if (!mpcb) {
