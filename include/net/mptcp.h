@@ -411,7 +411,7 @@ struct mp_rst {
 
 static inline int mptcp_sub_len_dss(struct mp_dss *m, int csum)
 {
-	return 4 + m->A * (4 + m->a * 4) + m->M * (8 + csum * 2 + m->m * 4);
+	return 4 + m->A * (4 + m->a * 4) + m->M * (10  +m->m * 4 + csum * 2);
 }
 
 /* Two separate cases must be handled:
