@@ -172,10 +172,7 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 	int i;
 	struct mptcp_loc4 *rem4;
 
-	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
-		if (!((1 << i) & mopt->rem4_bits))
-			continue;
-
+	mptcp_for_each_bit_set(mopt->rem4_bits, i) {
 		rem4 = &mopt->addr4[i];
 
 		/* Address is already in the list --- continue */
@@ -228,10 +225,7 @@ void mptcp_v4_set_init_addr_bit(struct multipath_pcb *mpcb, __be32 daddr)
 {
 	int i;
 
-	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
-		if (!((1 << i) & mpcb->rx_opt.rem4_bits))
-			continue;
-
+	mptcp_for_each_bit_set(mpcb->rx_opt.rem4_bits, i) {
 		if (mpcb->rx_opt.addr4[i].addr.s_addr == daddr) {
 			/* It's the initial flow - thus local index == 0 */
 			mpcb->rx_opt.addr4[i].bitfield |= 1;
@@ -518,10 +512,7 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 		return;
 
 	/* Look for the address among the local addresses */
-	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
-		if (!((1 << i) & mpcb->loc4_bits))
-			continue;
-
+	mptcp_for_each_bit_set(mpcb->loc4_bits, i) {
 		if (mpcb->addr4[i].addr.s_addr == ifa->ifa_local)
 			goto found;
 	}

@@ -187,10 +187,7 @@ int mptcp_v6_add_raddress(struct multipath_options *mopt,
 	int i;
 	struct mptcp_loc6 *rem6;
 
-	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
-		if (!((1 << i) & mopt->rem6_bits))
-			continue;
-
+	mptcp_for_each_bit_set(mopt->rem6_bits, i) {
 		rem6 = &mopt->addr6[i];
 
 		/* Address is already in the list --- continue */
@@ -243,10 +240,7 @@ void mptcp_v6_set_init_addr_bit(struct multipath_pcb *mpcb,
 				const struct in6_addr *daddr)
 {
 	int i;
-	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
-		if (!((1 << i) & mpcb->rx_opt.rem6_bits))
-			continue;
-
+	mptcp_for_each_bit_set(mpcb->rx_opt.rem6_bits, i) {
 		if (ipv6_addr_equal(&mpcb->rx_opt.addr6[i].addr, daddr)) {
 			/* It's the initial flow - thus local index == 0 */
 			mpcb->rx_opt.addr6[i].bitfield |= 1;
@@ -614,10 +608,7 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 	}
 
 	/* Look for the address among the local addresses */
-	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
-		if (!((1 << i) & mpcb->loc6_bits))
-			continue;
-
+	mptcp_for_each_bit_set(mpcb->loc6_bits, i) {
 		if (ipv6_addr_equal(&mpcb->addr6[i].addr, &ifa->addr))
 			goto found;
 	}

@@ -534,6 +534,13 @@ static inline __u32 mptcp_skb_end_data_seq(const struct sk_buff *skb)
 	     __sk = __temp,						\
 		     __temp = __sk ? (struct sock *)tcp_sk(__sk)->next : NULL)
 
+/* Iterates over all bit set to 1 in a bitset */
+#define mptcp_for_each_bit_set(b, i)					\
+	for (i = __ffs(b); b >> i; i += __ffs(b >> (i + 1)) + 1)
+
+#define mptcp_for_each_bit_unset(b, i)					\
+	for (i = ffz(b); i < sizeof(b) * 8; i += ffz(b >> (i + 1)) + 1)
+
 /**
  * Returns 1 if any subflow meets the condition @cond,
  * else return 0. Moreover, if 1 is returned, sk points to the
@@ -1009,10 +1016,8 @@ static inline void mptcp_mp_fail_rcvd(struct multipath_pcb *mpcb,
 static inline int mptcp_find_free_index(u8 bitfield)
 {
 	int i;
-	for (i = 0; i < MPTCP_MAX_ADDR; i++)
-		if (!((1 << i) & bitfield))
-			return i;
-
+	mptcp_for_each_bit_unset(bitfield, i)
+		return i;
 	return -1;
 }
 
@@ -1022,12 +1027,11 @@ static inline u8 mptcp_set_new_pathindex(struct multipath_pcb *mpcb)
 	u8 i;
 
 	/* Start at 2, because index 1 is for the initial subflow */
-	for (i = 2; i < sizeof(mpcb->path_index_bits) * 8; i++)
-	{
-		if (!((1 << i) & mpcb->path_index_bits)) {
-			mpcb->path_index_bits |= (1 << i);
-			return i;
-		}
+	mptcp_for_each_bit_unset(mpcb->path_index_bits, i) {
+		if (i < 2)
+			continue;
+		mpcb->path_index_bits |= (1 << i);
+		return i;
 	}
 
 	return 0;

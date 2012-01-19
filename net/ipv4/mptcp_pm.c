@@ -147,10 +147,7 @@ u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock* sk)
 	int i;
 
 	if (sk->sk_family == AF_INET) {
-		for (i = 0; i < MPTCP_MAX_ADDR; i++) {
-			if (!((1 << i) & mpcb->loc4_bits))
-				continue;
-
+		mptcp_for_each_bit_set(mpcb->loc4_bits, i) {
 			if (mpcb->addr4[i].addr.s_addr ==
 					inet_sk(sk)->inet_saddr)
 				return mpcb->addr4[i].id;
@@ -162,10 +159,7 @@ u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock* sk)
 	}
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	if (sk->sk_family == AF_INET6) {
-		for (i = 0; i < MPTCP_MAX_ADDR; i++) {
-			if (!((1 << i) & mpcb->loc6_bits))
-				continue;
-
+		mptcp_for_each_bit_set(mpcb->loc6_bits, i) {
 			if (ipv6_addr_equal(&mpcb->addr6[i].addr,
 					    &inet6_sk(sk)->saddr))
 				return mpcb->addr6[i].id;
@@ -475,12 +469,9 @@ next_subflow:
 	    sysctl_mptcp_ndiffports == mpcb->cnt_subflows)
 		goto exit;
 
-	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
+	mptcp_for_each_bit_set(mpcb->rx_opt.rem4_bits, i) {
 		struct mptcp_loc4 *rem;
 		u8 remaining_bits;
-
-		if (!((1 << i) & mpcb->rx_opt.rem4_bits))
-			continue;
 
 		rem = &mpcb->rx_opt.addr4[i];
 
@@ -495,12 +486,9 @@ next_subflow:
 	}
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
+	mptcp_for_each_bit_set(mpcb->rx_opt.rem6_bits, i) {
 		struct mptcp_loc6 *rem;
 		u8 remaining_bits;
-
-		if (!((1 << i) & mpcb->rx_opt.rem6_bits))
-			continue;
 
 		rem = &mpcb->rx_opt.addr6[i];
 		remaining_bits = ~(rem->bitfield) & mpcb->loc6_bits;

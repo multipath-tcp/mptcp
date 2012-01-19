@@ -3137,19 +3137,13 @@ void mptcp_synack_options(struct request_sock *req,
 
 		/* Finding Address ID */
 		if (req->rsk_ops->family == AF_INET)
-			for (i = 0; i < MPTCP_MAX_ADDR; i++) {
-				if (!((1 << i) & req->mpcb->loc4_bits))
-					continue;
-
+			mptcp_for_each_bit_set(req->mpcb->loc4_bits, i) {
 				if (req->mpcb->addr4[i].addr.s_addr == ireq->loc_addr)
 					opts->addr_id = req->mpcb->addr4[i].id;
 			}
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 		else /* IPv6 */
-			for (i = 0; i < MPTCP_MAX_ADDR; i++) {
-				if (!((1 << i) & req->mpcb->loc6_bits))
-					continue;
-
+			mptcp_for_each_bit_set(req->mpcb->loc6_bits, i) {
 				if (ipv6_addr_equal(&req->mpcb->addr6[i].addr,
 						    &inet6_rsk(req)->loc_addr))
 					opts->addr_id = req->mpcb->addr6[i].id;
