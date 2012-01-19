@@ -534,6 +534,26 @@ void mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 	}
 }
 
+struct sock *mptcp_select_loc_sock(const struct multipath_pcb *mpcb, u16 ids)
+{
+	struct sock *sk;
+	struct tcp_sock *tp;
+
+	mptcp_for_each_sk(mpcb, sk, tp) {
+		if ((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_CLOSE |
+					   TCPF_TIME_WAIT))
+			continue;
+
+		if (tp->pf == 1)
+			continue;
+
+		if (!((1 << inet_sk(sk)->loc_id) & ids))
+			return sk;
+	}
+
+	return NULL;
+}
+
 /**
  * React on IPv4+IPv6-addr add/rem-events
  */

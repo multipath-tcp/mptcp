@@ -3251,6 +3251,14 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		if (skb)
 			mpcb->add_addr6 &= ~(1 << ind);
 		*size += MPTCP_SUB_LEN_ADD_ADDR6_ALIGN;
+	} else if (unlikely(mpcb->remove_addrs) &&
+		   MAX_TCP_OPTION_SPACE - *size >=
+		   mptcp_sub_len_remove_addr_align(mpcb->remove_addrs)) {
+		opts->options |= OPTION_REMOVE_ADDR;
+		opts->remove_addrs = mpcb->remove_addrs;
+		if (skb)
+			mpcb->remove_addrs = 0;
+		*size += mptcp_sub_len_remove_addr_align(opts->remove_addrs);
 	} else if (!(opts->options & OPTION_MP_CAPABLE) &&
 		   !(opts->options & OPTION_MP_JOIN) &&
 		   ((unlikely(mpcb->add_addr6) &&
@@ -3345,6 +3353,22 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		} else {
 			BUG();
 		}
+	}
+	if (unlikely(OPTION_REMOVE_ADDR & opts->options)) {
+		struct mp_remove_addr *mprem = (struct mp_remove_addr *) ptr;
+		u8 *addrs_id, id;
+
+		mprem->kind = TCPOPT_MPTCP;
+		mprem->len = mptcp_sub_len_remove_addr(opts->remove_addrs);
+		mprem->sub = MPTCP_SUB_REMOVE_ADDR;
+		mprem->rsv = 0;
+		addrs_id = &mprem->addrs_id;
+
+		for (id = 0; id < MPTCP_MAX_LOC; id++)
+			if ((opts->remove_addrs & (1 << id)))
+				*(addrs_id++) = id;
+
+		ptr += mptcp_sub_len_remove_addr_align(opts->remove_addrs) >> 2;
 	}
 	if (unlikely(OPTION_MP_FAIL & opts->options)) {
 		struct mp_fail *mpfail = (struct mp_fail *) ptr;

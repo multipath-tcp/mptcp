@@ -30,7 +30,8 @@
 
 /* Max number of local or remote addresses we can store.
  * When changing, see the bitfield below in mptcp_loc4/6. */
-#define MPTCP_MAX_ADDR 8
+#define MPTCP_MAX_ADDR	8
+#define MPTCP_MAX_LOC	16
 
 struct mptcp_loc4 {
 	u8		id;
@@ -75,6 +76,7 @@ struct dst_entry *mptcp_route_req(const struct request_sock *req,
 void mptcp_set_addresses(struct multipath_pcb *mpcb);
 int mptcp_syn_recv_sock(struct sk_buff *skb);
 int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family);
+struct sock *mptcp_select_loc_sock(const struct multipath_pcb *mpcb, u16 ids);
 
 #else /* CONFIG_MPTCP */
 

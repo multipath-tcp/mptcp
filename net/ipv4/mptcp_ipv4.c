@@ -520,7 +520,7 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 
 		/* update this mpcb */
 		mpcb->addr4[i].addr.s_addr = ifa->ifa_local;
-		mpcb->addr4[i].id =  i;
+		mpcb->addr4[i].id = i;
 		mpcb->loc4_bits |= (1 << i);
 		/* re-send addresses */
 		mpcb->add_addr4 |= (1 << i);
@@ -529,6 +529,11 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 	}
 	return;
 found:
+	/* remove this address id from loc_id */
+	mpcb->loc4_bits &= ~(1 << i);
+	/* send a remove_addr */
+	mpcb->remove_addrs |= (1 << i);
+
 	/* Address already in list. Reactivate/Deactivate the
 	 * concerned paths. */
 	mptcp_for_each_sk(mpcb, sk, tp) {
@@ -537,15 +542,25 @@ found:
 			continue;
 
 		if (event == NETDEV_DOWN) {
-			printk(KERN_DEBUG "MPTCP_PM: NETDEV_DOWN %pI4, path %d\n",
-					&ifa->ifa_local, tp->path_index);
+			printk(KERN_DEBUG "MPTCP_PM: NETDEV_DOWN %pI4, "
+					"path %d, id %u\n", &ifa->ifa_local,
+					tp->path_index, inet_sk(sk)->loc_id);
 			mptcp_retransmit_queue(sk);
-			tp->pf = 1;
-		} else if (netif_running(ifa->ifa_dev->dev)) {
+
+			mptcp_sub_force_close(sk);
+
+		} else {
 			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP %pI4, path %d\n",
 					&ifa->ifa_local, tp->path_index);
-			tp->pf = 0;
+			BUG();
 		}
+	}
+
+	if (mpcb->remove_addrs) {
+		/* force sending an ACK */
+		struct sock *ssk = mptcp_select_loc_sock(mpcb, mpcb->remove_addrs);
+		if (ssk != NULL)
+			tcp_send_ack(ssk);
 	}
 }
 

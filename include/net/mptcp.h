@@ -26,6 +26,7 @@
 #include <linux/skbuff.h>
 #include <linux/socket.h>
 #include <linux/tcp.h>
+#include <linux/kernel.h>
 
 #include <asm/byteorder.h>
 #include <crypto/hash.h>
@@ -202,6 +203,8 @@ struct multipath_pcb {
 	u8 loc6_bits;
 	u8 add_addr6;
 
+	u16 remove_addrs;
+
 	/* Next pi to pick up in case a new path becomes available */
 	u32 path_index_bits;
 };
@@ -275,6 +278,9 @@ static inline int mptcp_pi_to_flag(int pi)
 #define MPTCP_SUB_LEN_RST	12
 #define MPTCP_SUB_LEN_RST_ALIGN	12
 
+#define MPTCP_SUB_REMOVE_ADDR	8
+#define MPTCP_SUB_LEN_REMOVE_ADDR	4
+
 #define OPTION_MP_CAPABLE       (1 << 5)
 #define OPTION_DSN_MAP          (1 << 6)
 #define OPTION_DATA_FIN         (1 << 7)
@@ -283,6 +289,7 @@ static inline int mptcp_pi_to_flag(int pi)
 #define OPTION_MP_JOIN          (1 << 10)
 #define OPTION_MP_FAIL		(1 << 11)
 #define OPTION_MP_RST		(1 << 12)
+#define OPTION_REMOVE_ADDR	(1 << 13)
 
 struct mptcp_option {
 	__u8	kind;
@@ -402,12 +409,14 @@ struct mp_add_addr {
 } __attribute__((__packed__));
 
 struct mp_remove_addr {
+	__u8	kind;
+	__u8	len;
 #if defined(__LITTLE_ENDIAN_BITFIELD)
-	__u8	res:4,
+	__u8	rsv:4,
 		sub:4;
 #elif defined(__BIG_ENDIAN_BITFIELD)
 	__u8	sub:4,
-		res:4;
+		rsv:4;
 #else
 #error "Adjust your <asm/byteorder.h> defines"
 #endif
@@ -448,6 +457,19 @@ struct mp_rst {
 #endif
 	__u64	key;
 } __attribute__((__packed__));
+
+static inline int mptcp_sub_len_remove_addr(u8 bitfield)
+{
+	unsigned int c;
+	for (c = 0; bitfield; c++)
+		bitfield &= bitfield - 1;
+	return MPTCP_SUB_LEN_REMOVE_ADDR + c - 1;
+}
+
+static inline int mptcp_sub_len_remove_addr_align(u8 bitfield)
+{
+	return ALIGN(mptcp_sub_len_remove_addr(bitfield), 4);
+}
 
 static inline int mptcp_sub_len_dss(struct mp_dss *m, int csum)
 {

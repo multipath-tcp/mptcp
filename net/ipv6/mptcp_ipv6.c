@@ -625,6 +625,11 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 	}
 	return;
 found:
+	/* remove this address id from loc_id */
+	mpcb->loc6_bits &= ~(1 << i);
+	/* send a remove_addr */
+	mpcb->remove_addrs |= (1 << i);
+
 	/* Address already in list. Reactivate/Deactivate the
 	 * concerned paths. */
 	mptcp_for_each_sk(mpcb, sk, tp) {
@@ -633,17 +638,26 @@ found:
 			continue;
 
 		if (event == NETDEV_DOWN) {
-			printk(KERN_DEBUG "MPTCP_PM: NETDEV_DOWN %pI6, path %d\n",
-					&ifa->addr,
-					tp->path_index);
+			printk(KERN_DEBUG "MPTCP_PM: NETDEV_DOWN %pI6, "
+					"path %d, id %u\n", &ifa->addr,
+					tp->path_index, inet_sk(sk)->loc_id);
 			mptcp_retransmit_queue(sk);
-			tp->pf = 1;
-		} else if (netif_running(ifa->idev->dev)) {
+
+			mptcp_sub_force_close(sk);
+
+		} else {
 			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP %pI6, path %d\n",
 					&ifa->addr,
 					tp->path_index);
-			tp->pf = 0;
+			BUG();
 		}
+	}
+
+	if (mpcb->remove_addrs) {
+		/* force sending an ACK */
+		struct sock *ssk = mptcp_select_loc_sock(mpcb, mpcb->remove_addrs);
+		if (ssk != NULL)
+			tcp_send_ack(ssk);
 	}
 
 }

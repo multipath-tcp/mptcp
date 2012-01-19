@@ -265,6 +265,7 @@ struct tcp_out_options {
 	struct mptcp_loc4 *addr4;/* v4 addresses for MPTCP */
 	struct mptcp_loc6 *addr6;/* v6 addresses for MPTCP */
 	u8	addr_id;	/* address id */
+	u16	remove_addrs;	/* list of address id */
 	__u8	mp_join_type;	/* SYN/SYNACK/ACK */
 #endif /* CONFIG_MPTCP */
 };
