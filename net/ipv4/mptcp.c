@@ -3048,7 +3048,27 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 						rem_id);
 			}
 		}
+		break;
+	}
+	case MPTCP_SUB_PRIO:
+	{
+		struct mp_prio *mpprio = (struct mp_prio *) ptr;
 
+		if (opsize == MPTCP_SUB_LEN_PRIO) {
+			/* change priority of this subflow */
+			opt_rx->backup = mpprio->b;
+		} else if (opsize == MPTCP_SUB_LEN_PRIO_ADDR) {
+			struct sock *sk;
+			struct tcp_sock *tp;
+			/* change priority of all subflow using this addr_id */
+			mptcp_for_each_sk(mopt->mpcb, sk, tp) {
+				if (inet_sk(sk)->rem_id == mpprio->addr_id)
+					tp->rx_opt.backup = mpprio->b;
+			}
+		} else {
+			mptcp_debug("%s: mp_prio: bad option size %d\n",
+					__func__, opsize);
+		}
 		break;
 	}
 	case MPTCP_SUB_FAIL:

@@ -281,6 +281,11 @@ static inline int mptcp_pi_to_flag(int pi)
 #define MPTCP_SUB_REMOVE_ADDR	8
 #define MPTCP_SUB_LEN_REMOVE_ADDR	4
 
+#define MPTCP_SUB_PRIO		9
+#define MPTCP_SUB_LEN_PRIO	3
+#define MPTCP_SUB_LEN_PRIO_ADDR	4
+#define MPTCP_SUB_LEN_PRIO_ALIGN	4
+
 #define OPTION_MP_CAPABLE       (1 << 5)
 #define OPTION_DSN_MAP          (1 << 6)
 #define OPTION_DATA_FIN         (1 << 7)
@@ -456,6 +461,23 @@ struct mp_rst {
 #error	"Adjust your <asm/byteorder.h> defines"
 #endif
 	__u64	key;
+} __attribute__((__packed__));
+
+struct mp_prio {
+	__u8	kind;
+	__u8	len;
+#if defined(__LITTLE_ENDIAN_BITFIELD)
+	__u8	b:1,
+		rsv:3,
+		sub:4;
+#elif defined(__BIG_ENDIAN_BITFIELD)
+	__u8	sub:4,
+		rsv:3,
+		b:1;
+#else
+#error	"Adjust your <asm/byteorder.h> defines"
+#endif
+	__u8	addr_id;
 } __attribute__((__packed__));
 
 static inline int mptcp_sub_len_remove_addr(u8 bitfield)
