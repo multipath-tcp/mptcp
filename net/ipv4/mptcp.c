@@ -234,7 +234,7 @@ static struct sock *get_available_subflow(struct multipath_pcb *mpcb,
 {
 	struct tcp_sock *tp;
 	struct sock *sk;
-	struct sock *bestsk = NULL, *backup = NULL;
+	struct sock *bestsk = NULL, *backupsk = NULL, *backup = NULL;
 	u32 min_time_to_peer = 0xffffffff;
 
 	/* if there is only one subflow, bypass the scheduling function */
@@ -266,7 +266,10 @@ static struct sock *get_available_subflow(struct multipath_pcb *mpcb,
 		if (tp->srtt < min_time_to_peer &&
 		    !(skb && mptcp_pi_to_flag(tp->path_index) & skb->path_mask)) {
 			min_time_to_peer = tp->srtt;
-			bestsk = sk;
+			if (tp->rx_opt.backup)
+				backupsk = sk;
+			else
+				bestsk = sk;
 		}
 
 		if (skb && mptcp_pi_to_flag(tp->path_index) & skb->path_mask)
@@ -274,9 +277,11 @@ static struct sock *get_available_subflow(struct multipath_pcb *mpcb,
 	}
 
 out:
-	if (!bestsk)
-		return backup;
-
+	if (!bestsk) {
+		if (!backupsk)
+			return backup;
+		return backupsk;
+	}
 	return bestsk;
 }
 
