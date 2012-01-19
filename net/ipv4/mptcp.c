@@ -2913,11 +2913,13 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 				mopt->mptcp_recv_nonce = mpjoin->u.syn.nonce;
 				mopt->mptcp_opt_type = MPTCP_MP_JOIN_TYPE_SYN;
 				opt_rx->saw_mpc = 1;
+				opt_rx->backup = mpjoin->b;
 				break;
 			case MPTCP_SUB_LEN_JOIN_SYNACK:
 				mopt->mptcp_recv_tmac = mpjoin->u.synack.mac;
 				mopt->mptcp_recv_nonce = mpjoin->u.synack.nonce;
 				mopt->mptcp_opt_type = MPTCP_MP_JOIN_TYPE_SYNACK;
+				opt_rx->backup = mpjoin->b;
 				break;
 			case MPTCP_SUB_LEN_JOIN_ACK:
 				memcpy(mopt->mptcp_recv_mac, mpjoin->u.ack.mac, 20);
