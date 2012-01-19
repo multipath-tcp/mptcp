@@ -2827,6 +2827,31 @@ static inline u8 mptcp_get_64_bit(u64 data_seq, struct multipath_options *mopt)
 		return ret | MPTCPHDR_SEQ64_OFO;
 }
 
+static inline int mptcp_rem_raddress(struct multipath_options *mopt, u8 rem_id)
+{
+	if (mptcp_v4_rem_raddress(mopt, rem_id) < 0) {
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+		if (mptcp_v6_rem_raddress(mopt, rem_id) < 0)
+			return -1;
+#else
+		return -1;
+#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
+	}
+	return 0;
+}
+
+static void mptcp_send_reset_rem_id(const struct multipath_pcb *mpcb, u8 rem_id)
+{
+	struct sock *sk_it, *sk_tmp;
+
+	mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp) {
+		if (inet_sk(sk_it)->rem_id == rem_id) {
+			tcp_send_active_reset(sk_it, GFP_ATOMIC);
+			mptcp_sub_force_close(sk_it);
+		}
+	}
+}
+
 void mptcp_parse_options(uint8_t *ptr, int opsize,
 			 struct tcp_options_received *opt_rx,
 			 struct multipath_options *mopt,
@@ -2998,6 +3023,32 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 					      mpadd->addr_id);
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 		}
+		break;
+	}
+	case MPTCP_SUB_REMOVE_ADDR:
+	{
+		struct mp_remove_addr *mprem = (struct mp_remove_addr *) ptr;
+		u8 rem_id;
+		int i;
+
+		if ((opsize - MPTCP_SUB_LEN_REMOVE_ADDR) < 0) {
+			mptcp_debug("%s: mp_remove_addr: bad option size %d\n",
+					__func__, opsize);
+			break;
+		}
+
+		for (i = 0; i <= opsize - MPTCP_SUB_LEN_REMOVE_ADDR; i++) {
+			rem_id = (&mprem->addrs_id)[i];
+
+			if (mptcp_rem_raddress(mopt, rem_id) < 0) {
+				mptcp_send_reset_rem_id(mopt->mpcb, rem_id);
+			} else {
+				mptcp_debug("%s: mp_remove_addr: unknown "
+						"addr_id %d\n", __func__,
+						rem_id);
+			}
+		}
+
 		break;
 	}
 	case MPTCP_SUB_FAIL:
@@ -3443,7 +3494,8 @@ void mptcp_sub_close_wq(struct work_struct *work)
 	if (sock_flag(sk, SOCK_DEAD))
 		goto exit;
 
-	if (meta_sk->sk_shutdown == SHUTDOWN_MASK)
+	if (meta_sk->sk_shutdown == SHUTDOWN_MASK ||
+	    sk->sk_state == TCP_CLOSE)
 		tcp_close(sk, 0);
 	else if (tcp_close_state(sk))
 		tcp_send_fin(sk);

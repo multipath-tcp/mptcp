@@ -153,6 +153,28 @@ drop_and_free:
 	return -1;
 }
 
+int mptcp_v6_rem_raddress(struct multipath_options *mopt, u8 id)
+{
+	int i;
+	struct mptcp_loc6 *rem6;
+
+	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
+		if (!((1 << i) & mopt->rem6_bits))
+			continue;
+
+		rem6 = &mopt->addr6[i];
+
+		if (rem6->id == id) {
+			/* remove address from bitfield */
+			mopt->rem6_bits &= ~(1 << i);
+
+			return 0;
+		}
+	}
+
+	return -1;
+}
+
 /**
  * Based on function tcp_v4_conn_request (tcp_ipv4.c)
  * Returns -1 if there is no space anymore to store an additional
