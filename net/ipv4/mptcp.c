@@ -3782,13 +3782,7 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 		}
 
 		tcp_send_active_reset(sk_it, GFP_ATOMIC);
-
-		if (!sock_flag(sk_it, SOCK_DEAD))
-			mptcp_sub_close(sk_it, 0);
-		else
-			tcp_sk(sk_it)->mp_killed = 1;
-
-		tcp_done(sk_it);
+		mptcp_sub_force_close(sk_it);
 	}
 	if (!in_serving_softirq())
 		local_bh_enable();
