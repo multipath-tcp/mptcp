@@ -70,6 +70,9 @@ void mptcp_hash_remove(struct multipath_pcb *mpcb);
 struct multipath_pcb *mptcp_hash_find(u32 token);
 int mptcp_lookup_join(struct sk_buff *skb);
 int mptcp_find_token(u32 token);
+int mptcp_reqsk_find_tk(u32 token);
+void mptcp_reqsk_insert_tk(struct request_sock *reqsk, u32 token);
+void mptcp_reqsk_remove_tk(struct request_sock *reqsk);
 struct dst_entry *mptcp_route_req(const struct request_sock *req,
 				  struct sock *meta_sk);
 void mptcp_set_addresses(struct multipath_pcb *mpcb);

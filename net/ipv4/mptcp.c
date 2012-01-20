@@ -4123,6 +4123,9 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 		child_tp->mptcp_loc_token = req->mptcp_loc_token;
 		child_tp->mptcp_rem_key = req->mptcp_rem_key;
 
+		/* Remove the request sock token from the hash table */
+		mptcp_reqsk_remove_tk(req);
+
 		if (mptcp_alloc_mpcb(child)) {
 			/* The allocation of the mpcb failed!
 			 * Destroy the child and go to listen_overflow

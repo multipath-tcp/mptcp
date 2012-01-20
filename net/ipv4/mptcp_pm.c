@@ -48,6 +48,41 @@ static rwlock_t tk_hash_lock;	/* hashtable protection */
 struct list_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
 spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
 
+/* The following hash table is used to avoid collision of token */
+struct list_head mptcp_reqsk_tk_htb[MPTCP_HASH_SIZE];
+spinlock_t mptcp_reqsk_tk_hlock;	/* hashtable protection */
+
+int mptcp_reqsk_find_tk(u32 token)
+{
+	u32 hash = mptcp_hash_tk(token);
+	struct request_sock *reqsk;
+
+	spin_lock(&mptcp_reqsk_tk_hlock);
+	list_for_each_entry(reqsk, &mptcp_reqsk_tk_htb[hash], collide_tk) {
+		if (token == reqsk->mptcp_loc_token) {
+			spin_unlock(&mptcp_reqsk_tk_hlock);
+			return 1;
+		}
+	}
+	spin_unlock(&mptcp_reqsk_tk_hlock);
+	return 0;
+}
+
+void mptcp_reqsk_insert_tk(struct request_sock *reqsk, u32 token)
+{
+	u32 hash = mptcp_hash_tk(token);
+
+	spin_lock(&mptcp_reqsk_tk_hlock);
+	list_add(&reqsk->collide_tk, &mptcp_reqsk_tk_htb[hash]);
+	spin_unlock(&mptcp_reqsk_tk_hlock);
+}
+
+void mptcp_reqsk_remove_tk(struct request_sock *reqsk)
+{
+	spin_lock(&mptcp_reqsk_tk_hlock);
+	list_del_init(&reqsk->collide_tk);
+	spin_unlock(&mptcp_reqsk_tk_hlock);
+}
 
 void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token)
 {
@@ -109,6 +144,7 @@ void mptcp_hash_remove(struct multipath_pcb *mpcb)
 
 	/* Remove all pending request socks. */
 	spin_lock_bh(&mptcp_reqsk_hlock);
+	spin_lock_bh(&mptcp_reqsk_tk_hlock);
 	if (lopt->qlen != 0) {
 		unsigned int i;
 		for (i = 0; i < lopt->nr_table_entries; i++) {
@@ -123,6 +159,7 @@ void mptcp_hash_remove(struct multipath_pcb *mpcb)
 				 * might try to remove it as well
 				 */
 				list_del_init(&cur_ref->collide_tuple);
+				list_del_init(&cur_ref->collide_tk);
 				/* next element in collision list.
 				 * we don't remove yet the request_sock
 				 * from the local hashtable. This will be done
@@ -132,6 +169,7 @@ void mptcp_hash_remove(struct multipath_pcb *mpcb)
 			}
 		}
 	}
+	spin_unlock_bh(&mptcp_reqsk_tk_hlock);
 	spin_unlock_bh(&mptcp_reqsk_hlock);
 }
 
@@ -649,10 +687,12 @@ static int __init mptcp_pm_init(void)
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
 		INIT_LIST_HEAD(&tk_hashtable[i]);
 		INIT_LIST_HEAD(&mptcp_reqsk_htb[i]);
+		INIT_LIST_HEAD(&mptcp_reqsk_tk_htb[i]);
 	}
 
 	rwlock_init(&tk_hash_lock);
 	spin_lock_init(&mptcp_reqsk_hlock);
+	spin_lock_init(&mptcp_reqsk_tk_hlock);
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	mptcp_pm_v6_init();
