@@ -498,18 +498,6 @@ static inline int mptcp_sub_len_dss(struct mp_dss *m, int csum)
 	return 4 + m->A * (4 + m->a * 4) + m->M * (10  +m->m * 4 + csum * 2);
 }
 
-/* Two separate cases must be handled:
- * -a mapping option has been received. Then data_seq and end_data_seq are
- *  defined, and we disambiguate based on data_len (if not zero, the mapping
- *  if received but not applied by get_dataseq_mapping().
- * -no mapping option has been received. Then data_len is not defined, and we
- *  disambiguate based on data_seq and end_data_seq (if they are still zero,
- *  the stored mapping has not been applied by get_dataseq_mapping())
- */
-#define is_mapping_applied(skb) BUG_ON(TCP_SKB_CB(skb)->data_len ||	\
-				       (!TCP_SKB_CB(skb)->data_seq &&	\
-					!TCP_SKB_CB(skb)->end_data_seq))
-
 /* Default MSS for MPTCP
  * All subflows will be using that MSS. If any subflow has a lower MSS, it is
  * just not used. */
