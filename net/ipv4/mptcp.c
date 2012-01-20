@@ -1573,6 +1573,7 @@ void mptcp_del_sock(struct sock *sk)
 
 	tp->next = NULL;
 	tp->attached = 0;
+	mpcb->path_index_bits &= ~(1 << tp->path_index);
 
 	if (!skb_queue_empty(&sk->sk_write_queue) && mpcb->cnt_established > 0)
 		mptcp_reinject_data(sk, 0);
