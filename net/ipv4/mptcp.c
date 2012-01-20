@@ -3436,9 +3436,8 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		mprem->rsv = 0;
 		addrs_id = &mprem->addrs_id;
 
-		for (id = 0; id < MPTCP_MAX_LOC; id++)
-			if ((opts->remove_addrs & (1 << id)))
-				*(addrs_id++) = id;
+		mptcp_for_each_bit_set(opts->remove_addrs, id)
+			*(addrs_id++) = id;
 
 		ptr += mptcp_sub_len_remove_addr_align(opts->remove_addrs) >> 2;
 	}

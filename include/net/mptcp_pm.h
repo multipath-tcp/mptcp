@@ -31,7 +31,6 @@
 /* Max number of local or remote addresses we can store.
  * When changing, see the bitfield below in mptcp_loc4/6. */
 #define MPTCP_MAX_ADDR	8
-#define MPTCP_MAX_LOC	16
 
 struct mptcp_loc4 {
 	u8		id;
