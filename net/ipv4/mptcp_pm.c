@@ -58,19 +58,20 @@ void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token)
 	write_unlock_bh(&tk_hash_lock);
 }
 
-int mptcp_find_token(u32 token) {
-       u32 hash = mptcp_hash_tk(token);
-       struct multipath_pcb *mpcb;
-
-       read_lock_bh(&tk_hash_lock);
-       list_for_each_entry(mpcb, &tk_hashtable[hash], collide_tk) {
-               if (token == mpcb->mptcp_loc_token) {
-                       read_unlock(&tk_hash_lock);
-                       return 1;
-               }
-       }
-       read_unlock_bh(&tk_hash_lock);
-       return 0;
+int mptcp_find_token(u32 token)
+{
+	u32 hash = mptcp_hash_tk(token);
+	struct multipath_pcb *mpcb;
+	
+	read_lock_bh(&tk_hash_lock);
+	list_for_each_entry(mpcb, &tk_hashtable[hash], collide_tk) {
+		if (token == mpcb->mptcp_loc_token) {
+			read_unlock(&tk_hash_lock);
+			return 1;
+		}
+	}
+	read_unlock_bh(&tk_hash_lock);
+	return 0;
 }
 
 /**
