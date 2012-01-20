@@ -3048,11 +3048,11 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 			rem_id = (&mprem->addrs_id)[i];
 
 			if (mptcp_rem_raddress(mopt, rem_id) < 0) {
-				mptcp_send_reset_rem_id(mopt->mpcb, rem_id);
-			} else {
 				mptcp_debug("%s: mp_remove_addr: unknown "
 						"addr_id %d\n", __func__,
 						rem_id);
+			} else {
+				mptcp_send_reset_rem_id(mopt->mpcb, rem_id);
 			}
 		}
 		break;
