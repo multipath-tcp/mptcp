@@ -1998,6 +1998,8 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 		if (2 * rcv_window_now <= meta_tp->window_clamp) {
 			__u32 new_window;
 			subsk = mptcp_select_ack_sock(mpcb, copied);
+			if (!subsk)
+				return;
 			new_window = __tcp_select_window(subsk);
 
 			/* Send ACK now, if this read freed lots of space
