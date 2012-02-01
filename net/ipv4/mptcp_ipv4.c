@@ -561,13 +561,15 @@ found:
 			mptcp_retransmit_queue(sk);
 
 			mptcp_sub_force_close(sk);
-
 		} else {
 			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP %pI4, path %d\n",
 					&ifa->ifa_local, tp->path_index);
 			BUG();
 		}
 	}
+
+	mptcp_for_each_bit_set(mpcb->rx_opt.rem4_bits, i)
+		mpcb->rx_opt.addr4[i].bitfield &= mpcb->loc4_bits;
 
 	if (mpcb->remove_addrs) {
 		/* force sending an ACK */

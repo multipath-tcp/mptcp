@@ -666,6 +666,9 @@ found:
 		}
 	}
 
+	mptcp_for_each_bit_set(mpcb->rx_opt.rem6_bits, i)
+		mpcb->rx_opt.addr6[i].bitfield &= mpcb->loc6_bits;
+
 	if (mpcb->remove_addrs) {
 		/* force sending an ACK */
 		struct sock *ssk = mptcp_select_loc_sock(mpcb, mpcb->remove_addrs);
