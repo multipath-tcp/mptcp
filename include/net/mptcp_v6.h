@@ -43,7 +43,7 @@ struct request_sock *mptcp_v6_search_req(const __be16 rport,
 					 const struct in6_addr *laddr);
 void mptcp_init6_subsockets(struct multipath_pcb *mpcb,
 			    const struct mptcp_loc6 *loc,
-			    struct mptcp_loc6 *rem);
+			    struct mptcp_rem6 *rem);
 void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 				  struct multipath_pcb *mpcb);
 void mptcp_pm_v6_init(void);

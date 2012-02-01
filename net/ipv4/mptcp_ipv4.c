@@ -142,7 +142,7 @@ drop_and_free:
 int mptcp_v4_rem_raddress(struct multipath_options *mopt, u8 id)
 {
 	int i;
-	struct mptcp_loc4 *rem4;
+	struct mptcp_rem4 *rem4;
 
 	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
 		if (!((1 << i) & mopt->rem4_bits))
@@ -170,7 +170,7 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 			  const struct in_addr *addr, __be16 port, u8 id)
 {
 	int i;
-	struct mptcp_loc4 *rem4;
+	struct mptcp_rem4 *rem4;
 
 	mptcp_for_each_bit_set(mopt->rem4_bits, i) {
 		rem4 = &mopt->addr4[i];
@@ -364,7 +364,7 @@ int mptcp_v4_send_synack(struct sock *meta_sk, struct request_sock *req,
  */
 void mptcp_init4_subsockets(struct multipath_pcb *mpcb,
 			    const struct mptcp_loc4 *loc,
-			    struct mptcp_loc4 *rem)
+			    struct mptcp_rem4 *rem)
 {
 	struct tcp_sock *tp;
 	struct sock *sk, *meta_sk = mpcb_meta_sk(mpcb);

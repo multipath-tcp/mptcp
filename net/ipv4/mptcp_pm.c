@@ -262,7 +262,6 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 				}
 				mpcb->addr4[i].addr.s_addr = ifa_address;
 				mpcb->addr4[i].port = 0;
-				mpcb->addr4[i].bitfield = 0;
 				mpcb->addr4[i].id = i;
 				mpcb->loc4_bits |= (1 << i);
 				mpcb->add_addr4 |= (1 << i);
@@ -296,7 +295,6 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 				ipv6_addr_copy(&(mpcb->addr6[i].addr),
 					&(ifa6->addr));
 				mpcb->addr6[i].port = 0;
-				mpcb->addr6[i].bitfield = 0;
 				mpcb->addr6[i].id = i;
 				mpcb->loc6_bits |= (1 << i);
 				mpcb->add_addr6 |= (1 << i);
@@ -509,7 +507,7 @@ next_subflow:
 		goto exit;
 
 	mptcp_for_each_bit_set(mpcb->rx_opt.rem4_bits, i) {
-		struct mptcp_loc4 *rem;
+		struct mptcp_rem4 *rem;
 		u8 remaining_bits;
 
 		rem = &mpcb->rx_opt.addr4[i];
@@ -526,7 +524,7 @@ next_subflow:
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	mptcp_for_each_bit_set(mpcb->rx_opt.rem6_bits, i) {
-		struct mptcp_loc6 *rem;
+		struct mptcp_rem6 *rem;
 		u8 remaining_bits;
 
 		rem = &mpcb->rx_opt.addr6[i];

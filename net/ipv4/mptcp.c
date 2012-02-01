@@ -1599,7 +1599,6 @@ void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 		/* If the socket is v4 mapped, we continue with v4 operations */
 		if (!mptcp_v6_is_v4_mapped(sk)) {
 			ipv6_addr_copy(&mpcb->addr6[0].addr, &inet6_sk(sk)->saddr);
-			mpcb->addr6[0].bitfield = 0;
 			mpcb->addr6[0].id = 0;
 			mpcb->addr6[0].port = 0;
 			mpcb->loc6_bits |= 1;
@@ -1613,7 +1612,6 @@ void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 #endif
 	case AF_INET:
 		mpcb->addr4[0].addr.s_addr = inet_sk(sk)->inet_saddr;
-		mpcb->addr4[0].bitfield = 0;
 		mpcb->addr4[0].id = 0;
 		mpcb->addr4[0].port = 0;
 		mpcb->loc4_bits |= 1;

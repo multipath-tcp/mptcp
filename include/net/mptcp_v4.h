@@ -39,7 +39,7 @@ struct request_sock *mptcp_v4_search_req(const __be16 rport,
 					 const __be32 laddr);
 void mptcp_init4_subsockets(struct multipath_pcb *mpcb,
 			    const struct mptcp_loc4 *loc,
-			    struct mptcp_loc4 *rem);
+			    struct mptcp_rem4 *rem);
 void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 				  struct multipath_pcb *mpcb);
 void mptcp_pm_v4_init(void);

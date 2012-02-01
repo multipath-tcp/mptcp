@@ -104,9 +104,9 @@ struct multipath_options {
 	struct multipath_pcb *mpcb;
 	u8	rem4_bits;
 	u8	rem6_bits;
-	struct	mptcp_loc4 addr4[MPTCP_MAX_ADDR];
+	struct	mptcp_rem4 addr4[MPTCP_MAX_ADDR];
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-	struct	mptcp_loc6 addr6[MPTCP_MAX_ADDR];
+	struct	mptcp_rem6 addr6[MPTCP_MAX_ADDR];
 #endif
 	__u32	mptcp_rem_token;	/* Received token */
 	__u32	mptcp_recv_nonce;

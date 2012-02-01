@@ -156,7 +156,7 @@ drop_and_free:
 int mptcp_v6_rem_raddress(struct multipath_options *mopt, u8 id)
 {
 	int i;
-	struct mptcp_loc6 *rem6;
+	struct mptcp_rem6 *rem6;
 
 	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
 		if (!((1 << i) & mopt->rem6_bits))
@@ -185,7 +185,7 @@ int mptcp_v6_add_raddress(struct multipath_options *mopt,
 			  const struct in6_addr *addr, __be16 port, u8 id)
 {
 	int i;
-	struct mptcp_loc6 *rem6;
+	struct mptcp_rem6 *rem6;
 
 	mptcp_for_each_bit_set(mopt->rem6_bits, i) {
 		rem6 = &mopt->addr6[i];
@@ -392,7 +392,7 @@ done:
  */
 void mptcp_init6_subsockets(struct multipath_pcb *mpcb,
 			    const struct mptcp_loc6 *loc,
-			    struct mptcp_loc6 *rem)
+			    struct mptcp_rem6 *rem)
 {
 	struct tcp_sock *tp;
 	struct sock *sk, *meta_sk = mpcb_meta_sk(mpcb);
