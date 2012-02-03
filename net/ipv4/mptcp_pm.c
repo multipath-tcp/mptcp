@@ -249,8 +249,11 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 
 				if ((meta_sk->sk_family == AF_INET ||
 				     mptcp_v6_is_v4_mapped(meta_sk)) &&
-				    inet_sk(meta_sk)->inet_saddr == ifa_address)
+				    inet_sk(meta_sk)->inet_saddr == ifa_address) {
+					mpcb->addr4[0].low_prio = dev->flags &
+								IFF_MPBACKUP ? 1 : 0;
 					continue;
+				}
 
 				i = mptcp_find_free_index(mpcb->loc4_bits);
 				if (i < 0) {
@@ -282,8 +285,11 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 
 				if (meta_sk->sk_family == AF_INET6 &&
 				    ipv6_addr_equal(&inet6_sk(meta_sk)->saddr,
-						    &(ifa6->addr)))
+						    &(ifa6->addr))) {
+					mpcb->addr6[0].low_prio = dev->flags &
+								IFF_MPBACKUP ? 1 : 0;
 					continue;
+				}
 
 				i = mptcp_find_free_index(mpcb->loc6_bits);
 				if (i < 0) {

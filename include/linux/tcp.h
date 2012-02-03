@@ -521,9 +521,8 @@ struct tcp_sock {
 		       * stop using the subflow
 		       */
 		mp_killed:1, /* Killed with a tcp_done in mptcp? */
-		mptcp_add_addr_ack:1,	/* Tell tcp_send_ack to return in case
+		mptcp_add_addr_ack:1;	/* Tell tcp_send_ack to return in case
 					 * alloc_skb fails. */
-		low_prio:1; /* use this socket as backup */
 #ifdef CONFIG_MPTCP
 	/* data for the scheduler */
 	struct {
@@ -565,14 +564,16 @@ struct tcp_sock {
 	u8		path_index;
 	struct tcp_sock	*next;		/* Next subflow socket */
 	__u32		mptcp_loc_nonce;
-	u8		slave_sk:1,
+	u16		slave_sk:1,
 			fully_established:1,
 			attached:1,
 			csum_error:1,
 			teardown:1,
 			include_mpc:1,
 			mapping_present:1,
-			map_data_fin:1;
+			map_data_fin:1,
+			low_prio:1, /* use this socket as backup */
+			send_mp_prio:1; /* Trigger to send mp_prio on this socket */
 #endif /* CONFIG_MPTCP */
 };
 

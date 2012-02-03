@@ -1631,6 +1631,19 @@ void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 	}
 
 	mptcp_set_addresses(mpcb);
+
+	switch (sk->sk_family) {
+	case AF_INET:
+		tcp_sk(sk)->low_prio = mpcb->addr4[0].low_prio;
+		break;
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+	case AF_INET6:
+		tcp_sk(sk)->low_prio = mpcb->addr6[0].low_prio;
+		break;
+#endif
+	}
+
+	tcp_sk(sk)->send_mp_prio = tcp_sk(sk)->low_prio;
 }
 
 static inline void mptcp_become_fully_estab(struct tcp_sock *tp)
@@ -3353,6 +3366,14 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		tcp_send_ack(sk);
 		tp->mptcp_add_addr_ack = 0;
 	}
+
+	if (unlikely(tp->send_mp_prio) &&
+	    MAX_TCP_OPTION_SPACE - *size >= MPTCP_SUB_LEN_PRIO_ALIGN) {
+		opts->options |= OPTION_MP_PRIO;
+		if (skb)
+			tp->send_mp_prio = 0;
+		*size += MPTCP_SUB_LEN_PRIO_ALIGN;
+	}
 }
 
 void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
@@ -3508,6 +3529,18 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 						(TCPOPT_NOP));
 			}
 		}
+	}
+	if (unlikely(OPTION_MP_PRIO & opts->options)) {
+		struct mp_prio *mpprio = (struct mp_prio *)ptr;
+
+		mpprio->kind = TCPOPT_MPTCP;
+		mpprio->len = MPTCP_SUB_LEN_PRIO;
+		mpprio->sub = MPTCP_SUB_PRIO;
+		mpprio->rsv = 0;
+		mpprio->b = tp->low_prio;
+		mpprio->addr_id = TCPOPT_NOP;
+
+		ptr += MPTCP_SUB_LEN_PRIO_ALIGN >> 2;
 	}
 }
 

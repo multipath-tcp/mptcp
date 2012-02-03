@@ -295,6 +295,7 @@ static inline int mptcp_pi_to_flag(int pi)
 #define OPTION_MP_FAIL		(1 << 11)
 #define OPTION_MP_RST		(1 << 12)
 #define OPTION_REMOVE_ADDR	(1 << 13)
+#define OPTION_MP_PRIO		(1 << 14)
 
 struct mptcp_option {
 	__u8	kind;
