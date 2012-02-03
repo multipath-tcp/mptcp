@@ -478,7 +478,8 @@ static int mptcp_pm_netdev_event(struct notifier_block *this,
 	struct net_device *dev = ptr;
 	struct in_device *in_dev;
 
-	if (!(event == NETDEV_UP || event == NETDEV_DOWN))
+	if (!(event == NETDEV_UP || event == NETDEV_DOWN ||
+	      event == NETDEV_CHANGE))
 		return NOTIFY_DONE;
 
 	if (dev->flags & IFF_NOMULTIPATH)
@@ -544,11 +545,6 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 	}
 	return;
 found:
-	/* remove this address id from loc_id */
-	mpcb->loc4_bits &= ~(1 << i);
-	/* send a remove_addr */
-	mpcb->remove_addrs |= (1 << i);
-
 	/* Address already in list. Reactivate/Deactivate the
 	 * concerned paths. */
 	mptcp_for_each_sk(mpcb, sk, tp) {
@@ -563,6 +559,12 @@ found:
 			mptcp_retransmit_queue(sk);
 
 			mptcp_sub_force_close(sk);
+		} else if (event == NETDEV_CHANGE) {
+			int new_low_prio = (ifa->ifa_dev->dev->flags & IFF_MPBACKUP) ?
+						1 : 0;
+			if (new_low_prio != tp->low_prio)
+				tp->send_mp_prio = 1;
+			tp->low_prio = new_low_prio;
 		} else {
 			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP %pI4, path %d\n",
 					&ifa->ifa_local, tp->path_index);
@@ -570,14 +572,19 @@ found:
 		}
 	}
 
-	mptcp_for_each_bit_set(mpcb->rx_opt.rem4_bits, i)
-		mpcb->rx_opt.addr4[i].bitfield &= mpcb->loc4_bits;
+	if (event == NETDEV_DOWN) {
+		mpcb->loc4_bits &= ~(1 << i);
+		mpcb->remove_addrs |= (1 << i);
 
-	if (mpcb->remove_addrs) {
-		/* force sending an ACK */
-		struct sock *ssk = mptcp_select_loc_sock(mpcb, mpcb->remove_addrs);
-		if (ssk != NULL)
-			tcp_send_ack(ssk);
+		mptcp_for_each_bit_set(mpcb->rx_opt.rem4_bits, i)
+			mpcb->rx_opt.addr4[i].bitfield &= mpcb->loc4_bits;
+
+		if (mpcb->remove_addrs) {
+			/* force sending an ACK */
+			struct sock *ssk = mptcp_select_loc_sock(mpcb, mpcb->remove_addrs);
+			if (ssk != NULL)
+				tcp_send_ack(ssk);
+		}
 	}
 }
 

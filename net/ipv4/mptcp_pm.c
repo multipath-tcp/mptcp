@@ -597,7 +597,8 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 	struct multipath_pcb *mpcb;
 	int i;
 
-	if (!(event == NETDEV_UP || event == NETDEV_DOWN))
+	if (!(event == NETDEV_UP || event == NETDEV_DOWN ||
+	      event == NETDEV_CHANGE))
 		return NOTIFY_DONE;
 
 	if (sysctl_mptcp_ndiffports > 1)
