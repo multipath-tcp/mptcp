@@ -430,6 +430,7 @@ void mptcp_init6_subsockets(struct multipath_pcb *mpcb,
 	tp->path_index = newpi;
 	tp->mpc = 1;
 	tp->slave_sk = 1;
+	tp->low_prio = loc->low_prio;
 
 	sk->sk_error_report = mptcp_sock_def_error_report;
 

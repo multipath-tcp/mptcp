@@ -263,6 +263,8 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 				mpcb->addr4[i].addr.s_addr = ifa_address;
 				mpcb->addr4[i].port = 0;
 				mpcb->addr4[i].id = i;
+				mpcb->addr4[i].low_prio = (dev->flags & IFF_MPBACKUP) ?
+								1 : 0;
 				mpcb->loc4_bits |= (1 << i);
 				mpcb->add_addr4 |= (1 << i);
 			}
@@ -296,6 +298,8 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 					&(ifa6->addr));
 				mpcb->addr6[i].port = 0;
 				mpcb->addr6[i].id = i;
+				mpcb->addr6[i].low_prio = (dev->flags & IFF_MPBACKUP) ?
+								1 : 0;
 				mpcb->loc6_bits |= (1 << i);
 				mpcb->add_addr6 |= (1 << i);
 			}

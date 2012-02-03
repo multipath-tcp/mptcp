@@ -114,6 +114,7 @@ static int mptcp_v4_join_request(struct multipath_pcb *mpcb,
 
 	req->rem_id = tmp_opt.rem_id;
 	req->saw_mpc = tmp_opt.saw_mpc;
+	req->low_prio = tmp_opt.low_prio;
 	tcp_openreq_init(req, &tmp_opt, NULL, skb);
 
 	ireq = inet_rsk(req);
@@ -402,6 +403,7 @@ void mptcp_init4_subsockets(struct multipath_pcb *mpcb,
 	tp->path_index = newpi;
 	tp->mpc = 1;
 	tp->slave_sk = 1;
+	tp->low_prio = loc->low_prio;
 
 	sk->sk_error_report = mptcp_sock_def_error_report;
 

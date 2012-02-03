@@ -84,7 +84,8 @@ struct request_sock {
 	u32				mptcp_loc_nonce;
 	__u8				rem_id; /* Address-id in the MP_JOIN */
 	u8                              saw_mpc:1,
-					dss_csum:1;
+					dss_csum:1,
+					low_prio:1;
 #endif /* CONFIG_MPTCP */
 };
 

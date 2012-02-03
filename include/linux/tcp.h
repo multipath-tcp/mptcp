@@ -283,9 +283,9 @@ struct tcp_options_received {
 		sack_ok : 4,	/* SACK seen on SYN packet		*/
 		snd_wscale : 4,	/* Window scaling received from sender	*/
 		rcv_wscale : 4;	/* Window scaling to send to receiver	*/
-	u8	saw_mpc : 1,	/* MPC option seen, for MPTCP		*/
-		saw_dfin : 1,	/* DFIN option seen, for MPTCP		*/
-		backup : 1;	/* Backup flag, for MPTCP		*/
+	u8	saw_mpc:1,	/* MPC option seen, for MPTCP		*/
+		saw_dfin:1,	/* DFIN option seen, for MPTCP		*/
+		low_prio:1;	/* Backup flag, for MPTCP		*/
 	u8	cookie_plus:6,	/* bytes in authenticator/cookie option	*/
 		cookie_out_never:1,
 		cookie_in_always:1;
@@ -308,7 +308,6 @@ static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
 	rx_opt->wscale_ok = rx_opt->snd_wscale = 0;
 	rx_opt->cookie_plus = 0;
 	rx_opt->saw_mpc = 0;
-	rx_opt->backup = 0;
 }
 
 /* This is the max number of SACKS that we'll generate and process. It's safe
@@ -522,9 +521,9 @@ struct tcp_sock {
 		       * stop using the subflow
 		       */
 		mp_killed:1, /* Killed with a tcp_done in mptcp? */
-		mptcp_add_addr_ack:1;	/* Tell tcp_send_ack to return in case
+		mptcp_add_addr_ack:1,	/* Tell tcp_send_ack to return in case
 					 * alloc_skb fails. */
-
+		low_prio:1; /* use this socket as backup */
 #ifdef CONFIG_MPTCP
 	/* data for the scheduler */
 	struct {

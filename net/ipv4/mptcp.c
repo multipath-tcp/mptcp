@@ -234,15 +234,16 @@ static struct sock *get_available_subflow(struct multipath_pcb *mpcb,
 {
 	struct tcp_sock *tp;
 	struct sock *sk;
-	struct sock *bestsk = NULL, *backupsk = NULL, *backup = NULL;
-	u32 min_time_to_peer = 0xffffffff;
+	struct sock *bestsk = NULL, *lowpriosk = NULL, *backupsk = NULL;
+	u32 min_time_to_peer = 0xffffffff, lowprio_min_time_to_peer = 0xffffffff;
+	int cnt_backups = 0;
 
 	/* if there is only one subflow, bypass the scheduling function */
 	if (mpcb->cnt_subflows == 1) {
 		bestsk = (struct sock *) mpcb->connection_list;
 		if (!mptcp_is_available(bestsk, skb))
 			bestsk = NULL;
-		goto out;
+		return bestsk;
 	}
 
 	/* Answer data_fin on same subflow!!! */
@@ -257,32 +258,36 @@ static struct sock *get_available_subflow(struct multipath_pcb *mpcb,
 
 	/* First, find the best subflow */
 	mptcp_for_each_sk(mpcb, sk, tp) {
+		if (tp->rx_opt.low_prio || tp->low_prio)
+			cnt_backups++;
+
 		if (mptcp_dont_reinject_skb(tp, skb))
 			continue;
 
 		if (!mptcp_is_available(sk, skb))
 			continue;
 
-		if (tp->srtt < min_time_to_peer &&
+		if ((tp->rx_opt.low_prio || tp->low_prio) &&
+		    tp->srtt < lowprio_min_time_to_peer &&
+		    !(skb && mptcp_pi_to_flag(tp->path_index) & skb->path_mask)) {
+			lowprio_min_time_to_peer = tp->srtt;
+			lowpriosk = sk;
+		} else if (!(tp->rx_opt.low_prio || tp->low_prio) &&
+		    tp->srtt < min_time_to_peer &&
 		    !(skb && mptcp_pi_to_flag(tp->path_index) & skb->path_mask)) {
 			min_time_to_peer = tp->srtt;
-			if (tp->rx_opt.backup)
-				backupsk = sk;
-			else
-				bestsk = sk;
+			bestsk = sk;
 		}
 
 		if (skb && mptcp_pi_to_flag(tp->path_index) & skb->path_mask)
-			backup = sk;
+			backupsk = sk;
 	}
 
-out:
-	if (!bestsk) {
-		if (!backupsk)
-			return backup;
-		return backupsk;
-	}
-	return bestsk;
+	if (mpcb->cnt_subflows == cnt_backups && lowpriosk)
+		return lowpriosk;
+	if (bestsk)
+		return bestsk;
+	return backupsk;
 }
 
 /**
@@ -1601,6 +1606,7 @@ void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 			ipv6_addr_copy(&mpcb->addr6[0].addr, &inet6_sk(sk)->saddr);
 			mpcb->addr6[0].id = 0;
 			mpcb->addr6[0].port = 0;
+			mpcb->addr6[0].low_prio = 0;
 			mpcb->loc6_bits |= 1;
 
 			mptcp_v6_add_raddress(&mpcb->rx_opt,
@@ -1614,6 +1620,7 @@ void mptcp_update_metasocket(struct sock *sk, struct multipath_pcb *mpcb)
 		mpcb->addr4[0].addr.s_addr = inet_sk(sk)->inet_saddr;
 		mpcb->addr4[0].id = 0;
 		mpcb->addr4[0].port = 0;
+		mpcb->addr4[0].low_prio = 0;
 		mpcb->loc4_bits |= 1;
 
 		mptcp_v4_add_raddress(&mpcb->rx_opt,
@@ -2919,13 +2926,13 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 				mopt->mptcp_recv_nonce = mpjoin->u.syn.nonce;
 				mopt->mptcp_opt_type = MPTCP_MP_JOIN_TYPE_SYN;
 				opt_rx->saw_mpc = 1;
-				opt_rx->backup = mpjoin->b;
+				opt_rx->low_prio = mpjoin->b;
 				break;
 			case MPTCP_SUB_LEN_JOIN_SYNACK:
 				mopt->mptcp_recv_tmac = mpjoin->u.synack.mac;
 				mopt->mptcp_recv_nonce = mpjoin->u.synack.nonce;
 				mopt->mptcp_opt_type = MPTCP_MP_JOIN_TYPE_SYNACK;
-				opt_rx->backup = mpjoin->b;
+				opt_rx->low_prio = mpjoin->b;
 				break;
 			case MPTCP_SUB_LEN_JOIN_ACK:
 				memcpy(mopt->mptcp_recv_mac, mpjoin->u.ack.mac, 20);
@@ -3064,14 +3071,14 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 
 		if (opsize == MPTCP_SUB_LEN_PRIO) {
 			/* change priority of this subflow */
-			opt_rx->backup = mpprio->b;
+			opt_rx->low_prio = mpprio->b;
 		} else if (opsize == MPTCP_SUB_LEN_PRIO_ADDR) {
 			struct sock *sk;
 			struct tcp_sock *tp;
 			/* change priority of all subflow using this addr_id */
 			mptcp_for_each_sk(mopt->mpcb, sk, tp) {
 				if (inet_sk(sk)->rem_id == mpprio->addr_id)
-					tp->rx_opt.backup = mpprio->b;
+					tp->rx_opt.low_prio = mpprio->b;
 			}
 		} else {
 			mptcp_debug("%s: mp_prio: bad option size %d\n",
@@ -3381,7 +3388,6 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		mpj->kind = TCPOPT_MPTCP;
 		mpj->sub = MPTCP_SUB_JOIN;
 		mpj->rsv = 0;
-		mpj->b = 0;
 		mpj->addr_id = opts->addr_id;
 
 		switch (opts->mp_join_type) {
@@ -3389,12 +3395,14 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 				mpj->len = MPTCP_SUB_LEN_JOIN_SYN;
 				mpj->u.syn.token = opts->token;
 				mpj->u.syn.nonce = opts->sender_nonce;
+				mpj->b = tp->low_prio;
 				ptr += MPTCP_SUB_LEN_JOIN_SYN_ALIGN >> 2;
 				break;
 			case MPTCP_MP_JOIN_TYPE_SYNACK:
 				mpj->len = MPTCP_SUB_LEN_JOIN_SYNACK;
 				mpj->u.synack.mac = opts->sender_truncated_mac;
 				mpj->u.synack.nonce = opts->sender_nonce;
+				mpj->b = tp->low_prio;
 				ptr += MPTCP_SUB_LEN_JOIN_SYNACK_ALIGN >> 2;
 				break;
 			case MPTCP_MP_JOIN_TYPE_ACK:
@@ -4198,6 +4206,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	child_tp->mpc = 1;
 	child_tp->slave_sk = 1;
 	child_tp->bw_est.time = 0;
+	child_tp->rx_opt.low_prio = req->low_prio;
 	child->sk_sndmsg_page = NULL;
 
 	inet_sk(child)->loc_id = mptcp_get_loc_addrid(mpcb, child);
