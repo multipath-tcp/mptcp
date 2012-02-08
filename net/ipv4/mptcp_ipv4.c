@@ -53,7 +53,7 @@ static inline __u32 tcp_v4_init_sequence(struct sk_buff *skb)
 #endif
 
 static void mptcp_v4_reqsk_queue_hash_add(struct request_sock *req,
-				      unsigned long timeout)
+					  unsigned long timeout)
 {
 	struct inet_connection_sock *meta_icsk =
 	    (struct inet_connection_sock *)(req->mpcb);

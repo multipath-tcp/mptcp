@@ -144,7 +144,6 @@ void mptcp_hash_remove(struct multipath_pcb *mpcb)
 
 	/* Remove all pending request socks. */
 	spin_lock_bh(&mptcp_reqsk_hlock);
-	spin_lock_bh(&mptcp_reqsk_tk_hlock);
 	if (lopt->qlen != 0) {
 		unsigned int i;
 		for (i = 0; i < lopt->nr_table_entries; i++) {
@@ -159,7 +158,6 @@ void mptcp_hash_remove(struct multipath_pcb *mpcb)
 				 * might try to remove it as well
 				 */
 				list_del_init(&cur_ref->collide_tuple);
-				list_del_init(&cur_ref->collide_tk);
 				/* next element in collision list.
 				 * we don't remove yet the request_sock
 				 * from the local hashtable. This will be done
@@ -169,7 +167,6 @@ void mptcp_hash_remove(struct multipath_pcb *mpcb)
 			}
 		}
 	}
-	spin_unlock_bh(&mptcp_reqsk_tk_hlock);
 	spin_unlock_bh(&mptcp_reqsk_hlock);
 }
 
