@@ -481,7 +481,7 @@ struct mp_prio {
 	__u8	addr_id;
 } __attribute__((__packed__));
 
-static inline int mptcp_sub_len_remove_addr(u8 bitfield)
+static inline int mptcp_sub_len_remove_addr(u16 bitfield)
 {
 	unsigned int c;
 	for (c = 0; bitfield; c++)
@@ -489,7 +489,7 @@ static inline int mptcp_sub_len_remove_addr(u8 bitfield)
 	return MPTCP_SUB_LEN_REMOVE_ADDR + c - 1;
 }
 
-static inline int mptcp_sub_len_remove_addr_align(u8 bitfield)
+static inline int mptcp_sub_len_remove_addr_align(u16 bitfield)
 {
 	return ALIGN(mptcp_sub_len_remove_addr(bitfield), 4);
 }

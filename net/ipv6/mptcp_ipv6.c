@@ -400,7 +400,7 @@ void mptcp_init6_subsockets(struct multipath_pcb *mpcb,
 	int ulid_size = 0, ret, newpi;
 
 	/* Don't try again - even if it fails */
-	rem->bitfield |= (1 << loc->id);
+	rem->bitfield |= (1 << (loc->id - MPTCP_MAX_ADDR));
 
 	newpi = mptcp_set_new_pathindex(mpcb);
 	if (!newpi)
@@ -669,7 +669,7 @@ found:
 
 	if (event == NETDEV_DOWN) {
 		mpcb->loc6_bits &= ~(1 << i);
-		mpcb->remove_addrs |= (1 << i);
+		mpcb->remove_addrs |= (1 << mpcb->addr6[i].id);
 
 		mptcp_for_each_bit_set(mpcb->rx_opt.rem6_bits, i)
 			mpcb->rx_opt.addr6[i].bitfield &= mpcb->loc6_bits;

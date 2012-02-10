@@ -300,7 +300,7 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 				ipv6_addr_copy(&(mpcb->addr6[i].addr),
 					&(ifa6->addr));
 				mpcb->addr6[i].port = 0;
-				mpcb->addr6[i].id = i;
+				mpcb->addr6[i].id = i + MPTCP_MAX_ADDR;
 				mpcb->addr6[i].low_prio = (dev->flags & IFF_MPBACKUP) ?
 								1 : 0;
 				mpcb->loc6_bits |= (1 << i);
