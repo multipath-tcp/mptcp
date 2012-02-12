@@ -1318,11 +1318,6 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 
 #ifdef CONFIG_MPTCP
-	/* Even if the peer requested mptcp, if the application disabled it,
-	 * we should not do it.
-	 */
-	req->saw_mpc = tmp_opt.saw_mpc && tp->mptcp_enabled;
-
 	/* Must be set to NULL before calling openreq init.
 	 * tcp_openreq_init() uses this to know whether the request
 	 * is a join request or a conn request.
@@ -2149,8 +2144,6 @@ static int tcp_v6_init_sock(struct sock *sk)
 #ifdef CONFIG_TCP_MD5SIG
 	tp->af_specific = &tcp_sock_ipv6_specific;
 #endif
-
-	tp->mptcp_enabled = 1;
 
 	/* TCP Cookie Transactions */
 	if (sysctl_tcp_cookie_size > 0) {

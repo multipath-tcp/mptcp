@@ -4087,8 +4087,6 @@ int mptcp_doit(struct sock *sk)
 
 	if (!sysctl_mptcp_enabled)
 		return 0;
-	if (!tcp_sk(sk)->mptcp_enabled)
-		return 0;
 
 	/* Don't do mptcp over loopback or local addresses */
 	if (sk->sk_family == AF_INET &&

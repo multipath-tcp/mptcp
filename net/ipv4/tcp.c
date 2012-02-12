@@ -2616,19 +2616,6 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 		 */
 		icsk->icsk_user_timeout = msecs_to_jiffies(val);
 		break;
-#ifdef CONFIG_MPTCP
-	case MPTCP_ENABLE:
-		if (sk->sk_state == TCP_CLOSE || sk->sk_state == TCP_LISTEN) {
-			if (val)
-				tp->mptcp_enabled = 1;
-			else
-				tp->mptcp_enabled = 0;
-		} else {
-			err = -EPERM;
-		}
-
-		break;
-#endif
 	default:
 		err = -ENOPROTOOPT;
 		break;
@@ -2851,19 +2838,6 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 	case TCP_USER_TIMEOUT:
 		val = jiffies_to_msecs(icsk->icsk_user_timeout);
 		break;
-#ifdef CONFIG_MPTCP
-	case MPTCP_ENABLE:
-		if (sk->sk_state == TCP_CLOSE || sk->sk_state == TCP_SYN_SENT ||
-		    sk->sk_state == TCP_SYN_RECV || sk->sk_state == TCP_LISTEN)
-			return -EPERM;
-
-		if (tp->mpc && tp->mpcb->infinite_mapping)
-			val = INT_MAX;
-		else
-			val = tp->mpc;
-
-		break;
-#endif
 	default:
 		return -ENOPROTOOPT;
 	}
