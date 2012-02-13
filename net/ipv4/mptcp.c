@@ -2904,6 +2904,14 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 		if (!sysctl_mptcp_enabled)
 			break;
 
+		/* MPTCP-Draft v06:
+		 * "If none of these flags are set, the MP_CAPABLE option MUST
+		 * be treated as invalid and ignored (i.e. it must be treated
+		 * as a regular TCP handshake)."
+		 */
+		if (!mpcapable->s)
+			break;
+
 		opt_rx->saw_mpc = 1;
 		mopt->list_rcvd = 1;
 		mopt->dss_csum = sysctl_mptcp_checksum || mpcapable->c;
