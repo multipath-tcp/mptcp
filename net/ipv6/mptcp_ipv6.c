@@ -122,6 +122,7 @@ static int mptcp_v6_join_request(struct multipath_pcb *mpcb,
 	req->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
 
 	req->rem_id = tmp_opt.rem_id;
+	req->low_prio = tmp_opt.low_prio;
 	tcp_openreq_init(req, &tmp_opt, NULL, skb);
 
 	treq = inet6_rsk(req);
