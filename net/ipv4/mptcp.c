@@ -3304,6 +3304,13 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 				tp->infinite_cutoff_seq = tcb->seq;
 				tcb->mptcp_flags |= MPTCPHDR_INF;
 				tcb->data_len = 0;
+				/* MPTCP-Draft v06:
+				 * "This is achieved by setting the data-level
+				 * length field to the reserved value of 0.
+				 * The checksum, in such a case, will also be
+				 * set to zero."
+				 */
+				tcb->dss_csum = 0;
 			}
 
 			if (tcb) {
