@@ -2760,19 +2760,17 @@ void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb)
 
 	/* Calculate dss-csum */
 	if (mpcb->rx_opt.dss_csum) {
-		char mptcp_pshdr[MPTCP_SUB_LEN_SEQ_CSUM_64];
-		__be64 data_seq = (((__be64)mptcp_get_highorder_sndbits(skb, mpcb)) << 32) |
-				  htonl(tcb->data_seq);
-		__be32 sub_seq = htonl(tcb->sub_seq);
-		__be16 data_len = htons(tcb->data_len);
-
-		memcpy(&mptcp_pshdr[0], &data_seq, sizeof(data_seq));
-		memcpy(&mptcp_pshdr[8], &sub_seq, sizeof(sub_seq));
-		memcpy(&mptcp_pshdr[12], &data_len, sizeof(data_len));
-		memset(&mptcp_pshdr[14], 0, 2);
-
-		tcb->dss_csum = csum_fold(csum_partial(mptcp_pshdr,
-						       sizeof(mptcp_pshdr),
+		struct {
+			__be64 data_seq;
+			__be32 sub_seq;
+			__be16 data_len;
+			__u16 pad;
+		} psdhdr = {
+			(((__be64)mptcp_get_highorder_sndbits(skb, mpcb)) << 32) |
+			htonl(tcb->data_seq), htonl(tcb->sub_seq),
+			htons(tcb->data_len), 0
+		};
+		tcb->dss_csum = csum_fold(csum_partial(&psdhdr, sizeof(psdhdr),
 						       skb->csum));
 	}
 }
