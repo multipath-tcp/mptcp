@@ -3075,14 +3075,8 @@ void mptcp_parse_options(uint8_t *ptr, int opsize,
 
 		for (i = 0; i <= opsize - MPTCP_SUB_LEN_REMOVE_ADDR; i++) {
 			rem_id = (&mprem->addrs_id)[i];
-
-			if (mptcp_rem_raddress(mopt, rem_id) < 0) {
-				mptcp_debug("%s: mp_remove_addr: unknown "
-						"addr_id %d\n", __func__,
-						rem_id);
-			} else {
+			if (!mptcp_rem_raddress(mopt, rem_id))
 				mptcp_send_reset_rem_id(mopt->mpcb, rem_id);
-			}
 		}
 		break;
 	}
@@ -3337,46 +3331,42 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 			*size += MPTCP_SUB_LEN_DSS_ALIGN;
 	}
 
-	if (unlikely(mpcb->add_addr4) &&
+	if (unlikely(tp->add_addr4) &&
 			MAX_TCP_OPTION_SPACE - *size >=
 			MPTCP_SUB_LEN_ADD_ADDR4_ALIGN) {
-		int ind = mptcp_find_free_index(~(mpcb->add_addr4));
-
+		int ind = mptcp_find_free_index(~(tp->add_addr4));
 		opts->options |= OPTION_ADD_ADDR;
 		opts->addr4 = &mpcb->addr4[ind];
 		opts->addr6 = NULL;
 		if (skb)
-			mpcb->add_addr4 &= ~(1 << ind);
+			tp->add_addr4 &= ~(1 << ind);
 		*size += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN;
-	} else if (unlikely(mpcb->add_addr6) &&
+	} else if (unlikely(tp->add_addr6) &&
 		 MAX_TCP_OPTION_SPACE - *size >=
 		 MPTCP_SUB_LEN_ADD_ADDR6_ALIGN) {
-		int ind = mptcp_find_free_index(~(mpcb->add_addr6));
-
+		int ind = mptcp_find_free_index(~(tp->add_addr6));
 		opts->options |= OPTION_ADD_ADDR;
 		opts->addr6 = &mpcb->addr6[ind];
 		opts->addr4 = NULL;
 		if (skb)
-			mpcb->add_addr6 &= ~(1 << ind);
+			tp->add_addr6 &= ~(1 << ind);
 		*size += MPTCP_SUB_LEN_ADD_ADDR6_ALIGN;
 	} else if (unlikely(mpcb->remove_addrs) &&
 		   MAX_TCP_OPTION_SPACE - *size >=
 		   mptcp_sub_len_remove_addr_align(mpcb->remove_addrs)) {
 		opts->options |= OPTION_REMOVE_ADDR;
 		opts->remove_addrs = mpcb->remove_addrs;
-		if (skb)
-			mpcb->remove_addrs = 0;
 		*size += mptcp_sub_len_remove_addr_align(opts->remove_addrs);
 	} else if (!(opts->options & OPTION_MP_CAPABLE) &&
 		   !(opts->options & OPTION_MP_JOIN) &&
-		   ((unlikely(mpcb->add_addr6) &&
+		   ((unlikely(tp->add_addr6) &&
 		     MAX_TCP_OPTION_SPACE - *size <=
 		     MPTCP_SUB_LEN_ADD_ADDR6_ALIGN) ||
-		    (unlikely(mpcb->add_addr4) &&
+		    (unlikely(tp->add_addr4) &&
 		     MAX_TCP_OPTION_SPACE - *size >=
 		     MPTCP_SUB_LEN_ADD_ADDR4_ALIGN))) {
 		mptcp_debug("no space for add addr. unsent IPv4: %#x,IPv6: %#x\n",
-				mpcb->add_addr4, mpcb->add_addr6);
+				tp->add_addr4, tp->add_addr6);
 		tp->mptcp_add_addr_ack = 1;
 		tcp_send_ack(sk);
 		tp->mptcp_add_addr_ack = 0;

@@ -570,6 +570,8 @@ struct tcp_sock {
 			map_data_fin:1,
 			low_prio:1, /* use this socket as backup */
 			send_mp_prio:1; /* Trigger to send mp_prio on this socket */
+	u8 add_addr4; /* bit-field of addrs not yet sent to our peer */
+	u8 add_addr6;
 #endif /* CONFIG_MPTCP */
 };
 

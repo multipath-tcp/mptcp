@@ -197,11 +197,9 @@ struct multipath_pcb {
 	/* Local addresses */
 	struct mptcp_loc4 addr4[MPTCP_MAX_ADDR];
 	u8 loc4_bits; /* Bitfield, indicating which of the above indexes are set */
-	u8 add_addr4; /* bit-field of addrs not yet sent to our peer */
 
 	struct mptcp_loc6 addr6[MPTCP_MAX_ADDR];
 	u8 loc6_bits;
-	u8 add_addr6;
 
 	u16 remove_addrs;
 

@@ -43,6 +43,7 @@ void mptcp_init4_subsockets(struct multipath_pcb *mpcb,
 void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 				  struct multipath_pcb *mpcb);
 void mptcp_pm_v4_init(void);
+void mptcp_v4_send_add_addr(int loc_id, struct multipath_pcb *mpcb);
 
 #else
 

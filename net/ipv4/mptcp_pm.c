@@ -266,7 +266,7 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 				mpcb->addr4[i].low_prio = (dev->flags & IFF_MPBACKUP) ?
 								1 : 0;
 				mpcb->loc4_bits |= (1 << i);
-				mpcb->add_addr4 |= (1 << i);
+				mptcp_v4_send_add_addr(i, mpcb);
 			}
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
@@ -304,7 +304,7 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 				mpcb->addr6[i].low_prio = (dev->flags & IFF_MPBACKUP) ?
 								1 : 0;
 				mpcb->loc6_bits |= (1 << i);
-				mpcb->add_addr6 |= (1 << i);
+				mptcp_v6_send_add_addr(i, mpcb);
 			}
 #endif
 		}
@@ -564,26 +564,6 @@ void mptcp_send_updatenotif(struct multipath_pcb *mpcb)
 		sock_hold(mpcb_meta_sk(mpcb));
 		schedule_work(&mpcb->work);
 	}
-}
-
-struct sock *mptcp_select_loc_sock(const struct multipath_pcb *mpcb, u16 ids)
-{
-	struct sock *sk;
-	struct tcp_sock *tp;
-
-	mptcp_for_each_sk(mpcb, sk, tp) {
-		if ((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_CLOSE |
-					   TCPF_TIME_WAIT))
-			continue;
-
-		if (tp->pf == 1)
-			continue;
-
-		if (!((1 << inet_sk(sk)->loc_id) & ids))
-			return sk;
-	}
-
-	return NULL;
 }
 
 /**
