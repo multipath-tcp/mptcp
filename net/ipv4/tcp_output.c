@@ -570,9 +570,7 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		tp->rx_opt.dsack = 0;
 	}
 #ifdef CONFIG_MPTCP
-	if ((OPTION_MP_CAPABLE & opts->options) ||
-	    (OPTION_MP_JOIN & opts->options) ||
-	    tp->mpc)
+	if (unlikely(OPTION_MPTCP & opts->options))
 		mptcp_options_write(ptr, tp, opts);
 #endif
 }
@@ -2838,11 +2836,8 @@ static void tcp_connect_init(struct sock *sk)
 			tp->path_index = 1;
 
 			do {
-				do {
-					get_random_bytes(&tp->mptcp_loc_key,
-							 sizeof(tp->mptcp_loc_key));
-				} while (!tp->mptcp_loc_key);
-
+				get_random_bytes(&tp->mptcp_loc_key,
+						 sizeof(tp->mptcp_loc_key));
 				mptcp_key_sha1(tp->mptcp_loc_key,
 					       &tp->mptcp_loc_token, NULL);
 			} while (mptcp_find_token(tp->mptcp_loc_token));

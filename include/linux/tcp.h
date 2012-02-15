@@ -246,6 +246,7 @@ struct tcp_out_options {
 	__u32	tsval, tsecr;	/* need to include OPTION_TS */
 	__u8	*hash_location;	/* temporary pointer, overloaded */
 #ifdef CONFIG_MPTCP
+	u16	mptcp_options;	/* bit field of MPTCP related OPTION_* */
 	__u32	data_seq;	/* data sequence number, for MPTCP */
 	__u32	data_ack;	/* data ack, for MPTCP */
 	__u32	sub_seq;	/* subflow seqnum, for MPTCP */
@@ -263,7 +264,6 @@ struct tcp_out_options {
 	struct mptcp_loc6 *addr6;/* v6 addresses for MPTCP */
 	u8	addr_id;	/* address id */
 	u16	remove_addrs;	/* list of address id */
-	__u8	mp_join_type;	/* SYN/SYNACK/ACK */
 #endif /* CONFIG_MPTCP */
 };
 

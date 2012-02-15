@@ -449,11 +449,8 @@ void tcp_openreq_init(struct request_sock *req,
 		 * and store the received token.
 		 */
 		do {
-			do {
-				get_random_bytes(&req->mptcp_loc_key,
-						sizeof(req->mptcp_loc_key));
-			} while (!req->mptcp_loc_key);
-
+			get_random_bytes(&req->mptcp_loc_key,
+					 sizeof(req->mptcp_loc_key));
 			mptcp_key_sha1(req->mptcp_loc_key,
 				       &req->mptcp_loc_token, NULL);
 		} while (mptcp_reqsk_find_tk(req->mptcp_loc_token) ||
