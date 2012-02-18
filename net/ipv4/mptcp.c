@@ -1155,8 +1155,8 @@ retry:
 
 		if (!(subsk->sk_route_caps & NETIF_F_ALL_CSUM) &&
 		    skb->ip_summed == CHECKSUM_PARTIAL) {
-			skb->csum = skb_checksum_complete(subskb);
-			skb->ip_summed = CHECKSUM_NONE;
+			subskb->csum = skb->csum = skb_checksum(skb, 0, skb->len, 0);
+			subskb->ip_summed = skb->ip_summed = CHECKSUM_NONE;
 		}
 
 		if (mptcp_is_data_fin(subskb))
