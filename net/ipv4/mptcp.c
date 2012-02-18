@@ -1151,8 +1151,7 @@ retry:
 		if (!subskb)
 			break;
 
-		if (subtp->path_index)
-			skb->path_mask |= mptcp_pi_to_flag(subtp->path_index);
+		skb->path_mask |= mptcp_pi_to_flag(subtp->path_index);
 
 		if (!(subsk->sk_route_caps & NETIF_F_ALL_CSUM) &&
 		    skb->ip_summed == CHECKSUM_PARTIAL) {
@@ -1205,6 +1204,7 @@ retry:
 				kfree_skb(subskb);
 			}
 
+			skb->path_mask &= ~mptcp_pi_to_flag(subtp->path_index);
 			mpcb->noneligible |= mptcp_pi_to_flag(subtp->path_index);
 
 			continue;
