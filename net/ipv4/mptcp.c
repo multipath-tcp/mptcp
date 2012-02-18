@@ -211,7 +211,7 @@ static inline int mptcp_dont_reinject_skb(struct tcp_sock *tp, struct sk_buff *s
 	/* If the skb has already been enqueued in this sk, try to find
 	 * another one.
 	 * An exception is a DATA_FIN without data. These ones are not
-	 * retransmitted at the subflow-level as they do not consume
+	 * reinjected at the subflow-level as they do not consume
 	 * subflow-sequence-number space.
 	 */
 	return skb &&
@@ -722,7 +722,7 @@ void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
  * @pre : @sk must be the meta_sk
  */
 static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
-		struct sock *sk, int clone_it)
+				 struct sock *sk, int clone_it)
 {
 	struct sk_buff *skb;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *tp_it;
@@ -1217,7 +1217,6 @@ retry:
 			printk(KERN_ERR "sock_owned_by_user:%d\n",
 			       sock_owned_by_user(meta_sk));
 			BUG();
-
 		}
 
 		/* If it's a non-payload DATA_FIN (also no subflow-fin), the
