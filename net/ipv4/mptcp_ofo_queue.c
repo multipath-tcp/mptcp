@@ -404,6 +404,7 @@ int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	skb->is_node = 0;
+	skb->shortcut_owner = 0;
 	ans = try_shortcut((struct mptcp_node *)tp->shortcut_ofoqueue, skb,
 			   &tcp_sk(meta_sk)->out_of_order_queue, &container);
 
