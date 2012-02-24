@@ -530,7 +530,7 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 		}
 
 		printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP adding "
-			"address %pI4 to existing connection with mpcb: %d\n",
+			"address %pI4 to existing connection with mpcb: %#x\n",
 			&ifa->ifa_local, mpcb->mptcp_loc_token);
 
 		/* update this mpcb */
@@ -553,7 +553,7 @@ found:
 
 		if (event == NETDEV_DOWN) {
 			printk(KERN_DEBUG "MPTCP_PM: NETDEV_DOWN %pI4, "
-					"path %d, id %u\n", &ifa->ifa_local,
+					"pi %d, loc_id %u\n", &ifa->ifa_local,
 					tp->path_index, inet_sk(sk)->loc_id);
 			mptcp_retransmit_queue(sk);
 
@@ -565,7 +565,7 @@ found:
 				tp->send_mp_prio = 1;
 			tp->low_prio = new_low_prio;
 		} else {
-			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP %pI4, path %d\n",
+			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP %pI4, pi %d\n",
 					&ifa->ifa_local, tp->path_index);
 			BUG();
 		}
