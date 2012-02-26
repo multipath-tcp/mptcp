@@ -80,52 +80,21 @@ struct mptcp_node {
 
 struct kmem_cache *node_cache;
 
-#define low_dsn(n)							\
-	((n)->is_node ? TCP_SKB_CB(skb_peek(&(n)->queue))->data_seq :	\
-	 TCP_SKB_CB((struct sk_buff*)(n))->data_seq)
-#define high_dsn(n)							\
-	((n)->is_node ? TCP_SKB_CB(skb_peek_tail(&(n)->queue))->end_data_seq : \
-	 TCP_SKB_CB((struct sk_buff*)(n))->end_data_seq)
-
-#ifdef DEBUG_MPTCP_OFO_TREE
-/**
- * Debugging print of the ofo queue.
- */
-void print_ofo_queue(struct sk_buff_head *head)
+static u32 low_dsn(struct mptcp_node *n)
 {
-	struct sk_buff *skb;
-
-	skb_queue_walk(head, skb) {
-		struct mptcp_node *n = (struct mptcp_node *)skb;
-		printk(KERN_ERR " [%x,%x], queue_node: %d\n",
-		       low_dsn(n), high_dsn(n), n->is_node);
-	}
+	if (n->is_node)
+		return TCP_SKB_CB(skb_peek(&n->queue))->data_seq;
+	else
+		return TCP_SKB_CB((struct sk_buff *)n)->data_seq;
 }
 
-static int find_node(struct mptcp_node *n, struct sk_buff_head *head)
+static u32 high_dsn(struct mptcp_node *n)
 {
-	struct sk_buff *skb;
-
-	skb_queue_walk(head, skb) {
-		struct mptcp_node *n_it = (struct mptcp_node *)skb;
-		if (n == n_it) return 1;
-	}
-	return 0;
+	if (n->is_node)
+		return TCP_SKB_CB(skb_peek_tail(&n->queue))->end_data_seq;
+	else
+		return TCP_SKB_CB((struct sk_buff *)n)->end_data_seq;
 }
-
-static int find_node_mpcb(struct mptcp_cb *mpcb)
-{
-	struct tcp_sock *tp_it;
-	mptcp_for_each_tp(mpcb, tp_it) {
-		if (tp_it->shortcut_ofoqueue &&
-		    !find_node((struct mptcp_node *)tp_it->shortcut_ofoqueue,
-			       &mpcb->tp.out_of_order_queue)) {
-			printk(KERN_ERR "find_node_mpcb() failed\n");
-			BUG();
-		}
-	}
-}
-#endif
 
 /* shortcut operations
  * invariant1: There is always a one-one relationship between
