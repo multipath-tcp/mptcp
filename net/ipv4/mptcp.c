@@ -4109,7 +4109,7 @@ int mptcp_doit(struct sock *sk)
 	/* We should try to speed this up - is_local_addr4 takes a read_lock and
 	 * iterates over all devices and addresses
 	 * May we allow mptcp over local addresses? */
-	if (is_local_addr4(inet_sk(sk)->inet_daddr))
+	if (is_local_addr4(inet_sk(sk)->inet_daddr, sock_net(sk)))
 		return 0;
 	return 1;
 }

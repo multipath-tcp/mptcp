@@ -213,6 +213,7 @@ u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock* sk)
 void mptcp_set_addresses(struct multipath_pcb *mpcb)
 {
 	struct sock *meta_sk = mpcb_meta_sk(mpcb);
+	struct net *netns = sock_net(meta_sk);
 	struct net_device *dev;
 
 	/* if multiports is requested, we work with the main address
@@ -223,7 +224,7 @@ void mptcp_set_addresses(struct multipath_pcb *mpcb)
 
 	read_lock_bh(&dev_base_lock);
 
-	for_each_netdev(&init_net, dev) {
+	for_each_netdev(netns, dev) {
 		if (netif_running(dev)) {
 			struct in_device *in_dev = dev->ip_ptr;
 			struct in_ifaddr *ifa;
@@ -321,6 +322,7 @@ struct dst_entry *mptcp_route_req(const struct request_sock *req,
 	struct inet_request_sock *ireq = inet_rsk(req);
 	struct ip_options_rcu *opt = inet_rsk(req)->opt;
 	struct flowi4 fl4;
+	struct net *netns = sock_net(meta_sk);
 
 	flowi4_init_output(&fl4, 0, meta_sk->sk_mark,
 			   RT_CONN_FLAGS(meta_sk), RT_SCOPE_UNIVERSE,
@@ -329,7 +331,7 @@ struct dst_entry *mptcp_route_req(const struct request_sock *req,
 			   ireq->loc_addr, ireq->rmt_port, inet_sk(meta_sk)->inet_sport);
 
 	security_req_classify_flow(req, flowi4_to_flowi(&fl4));
-	rt = ip_route_output_flow(&init_net, &fl4, NULL);
+	rt = ip_route_output_flow(netns, &fl4, NULL);
 
 	if (IS_ERR(rt))
 		goto no_route;
@@ -340,7 +342,7 @@ struct dst_entry *mptcp_route_req(const struct request_sock *req,
 route_err:
 	ip_rt_put(rt);
 no_route:
-	IP_INC_STATS_BH(&init_net, IPSTATS_MIB_OUTNOROUTES);
+	IP_INC_STATS_BH(netns, IPSTATS_MIB_OUTNOROUTES);
 	return NULL;
 }
 

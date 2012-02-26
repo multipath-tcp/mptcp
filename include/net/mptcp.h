@@ -745,12 +745,12 @@ static inline void mptcp_wmem_free_skb(struct sock *sk, struct sk_buff *skb)
 	kfree_skb(skb);
 }
 
-static inline int is_local_addr4(const u32 addr)
+static inline int is_local_addr4(const u32 addr, struct net *netns)
 {
 	struct net_device *dev;
 	int ans = 0;
 	read_lock(&dev_base_lock);
-	for_each_netdev(&init_net, dev) {
+	for_each_netdev(netns, dev) {
 		if (netif_running(dev)) {
 			struct in_device *in_dev = dev->ip_ptr;
 			struct in_ifaddr *ifa;
@@ -1273,7 +1273,7 @@ static inline void mptcp_mp_fail_rcvd(const struct multipath_pcb *mpcb,
 static inline void mptcp_init_mp_opt(const struct multipath_options *mopt) {}
 static inline void mptcp_wmem_free_skb(const struct sock *sk,
 				       const struct sk_buff *skb) {}
-static inline int is_local_addr4(u32 addr)
+static inline int is_local_addr4(u32 addr, struct net *netns)
 {
 	return 0;
 }
