@@ -542,6 +542,7 @@ found:
 		/* force sending an ACK on each subflow */
 		mpcb->remove_addrs |= (1 << mpcb->addr4[i].id);
 		mptcp_for_each_sk(mpcb, sk) {
+			tcp_sk(sk)->add_addr4 &= mpcb->loc4_bits;
 			if ((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_CLOSE |
 						   TCPF_TIME_WAIT))
 				continue;
