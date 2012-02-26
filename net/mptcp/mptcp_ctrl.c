@@ -636,6 +636,7 @@ void mptcp_update_metasocket(struct sock *sk, struct mptcp_cb *mpcb)
 			mpcb->addr6[0].port = 0;
 			mpcb->addr6[0].low_prio = 0;
 			mpcb->loc6_bits |= 1;
+			mpcb->next_v6_index = 1;
 
 			mptcp_v6_add_raddress(&mpcb->rx_opt,
 					      &inet6_sk(sk)->daddr,
@@ -650,6 +651,7 @@ void mptcp_update_metasocket(struct sock *sk, struct mptcp_cb *mpcb)
 		mpcb->addr4[0].port = 0;
 		mpcb->addr4[0].low_prio = 0;
 		mpcb->loc4_bits |= 1;
+		mpcb->next_v4_index = 1;
 
 		mptcp_v4_add_raddress(&mpcb->rx_opt,
 				      (struct in_addr *)&inet_sk(sk)->inet_daddr,

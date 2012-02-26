@@ -232,7 +232,8 @@ void mptcp_set_addresses(struct mptcp_cb *mpcb)
 					continue;
 				}
 
-				i = mptcp_find_free_index(mpcb->loc4_bits);
+				i = __mptcp_find_free_index(mpcb->loc4_bits, -1,
+							    mpcb->next_v4_index);
 				if (i < 0) {
 					mptcp_debug("%s: At max num of local "
 						"addresses: %d --- not adding "
@@ -246,6 +247,7 @@ void mptcp_set_addresses(struct mptcp_cb *mpcb)
 				mpcb->addr4[i].low_prio = (dev->flags & IFF_MPBACKUP) ?
 								1 : 0;
 				mpcb->loc4_bits |= (1 << i);
+				mpcb->next_v4_index = i + 1;
 				mptcp_v4_send_add_addr(i, mpcb);
 			}
 
@@ -272,7 +274,8 @@ cont_ipv6:
 					continue;
 				}
 
-				i = mptcp_find_free_index(mpcb->loc6_bits);
+				i = __mptcp_find_free_index(mpcb->loc6_bits, -1,
+							    mpcb->next_v6_index);
 				if (i < 0) {
 					mptcp_debug("%s: At max num of local"
 						"addresses: %d --- not adding"
@@ -288,6 +291,7 @@ cont_ipv6:
 				mpcb->addr6[i].low_prio = (dev->flags & IFF_MPBACKUP) ?
 								1 : 0;
 				mpcb->loc6_bits |= (1 << i);
+				mpcb->next_v6_index = i + 1;
 				mptcp_v6_send_add_addr(i, mpcb);
 			}
 #endif

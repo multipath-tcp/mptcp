@@ -484,7 +484,7 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 
 	/* Not yet in address-list */
 	if (event == NETDEV_UP && netif_running(ifa->ifa_dev->dev)) {
-		i = __mptcp_find_free_index(mpcb->loc4_bits, 0);
+		i = __mptcp_find_free_index(mpcb->loc4_bits, 0, mpcb->next_v4_index);
 		if (i < 0) {
 			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP Reached max "
 					"number of local IPv4 addresses: %d\n",
@@ -500,6 +500,7 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 		mpcb->addr4[i].addr.s_addr = ifa->ifa_local;
 		mpcb->addr4[i].id = i;
 		mpcb->loc4_bits |= (1 << i);
+		mpcb->next_v4_index = i + 1;
 		/* re-send addresses */
 		mptcp_v4_send_add_addr(i, mpcb);
 		/* re-evaluate paths */
