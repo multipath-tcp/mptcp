@@ -276,21 +276,6 @@ config ARPD
 
 	  If unsure, say N.
 
-config MPTCP
-	bool "MPTCP protocol (EXPERIMENTAL)"
-	depends on EXPERIMENTAL && !SYN_COOKIES && !NET_DMA && !TCP_MD5SIG
-	---help---
-	  This replaces the normal TCP stack with a Multipath TCP stack,
-	  able to use several paths at once.
-
-config MPTCP_DEBUG
-	bool "MPTCP debug messages"
-	depends on MPTCP
-	default y
-	---help---
-	  Enables logging of mptcp related debugging messages. Highly
-	  recommended.
-
 config SYN_COOKIES
 	bool "IP: TCP syncookie support"
 	---help---

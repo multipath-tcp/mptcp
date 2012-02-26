@@ -1,10 +1,23 @@
 /*
- *	MPTCP PM implementation
+ *	MPTCP implementation - MPTCP-subflow-management
  *
- *	Authors:
- *      Sébastien Barré		<sebastien.barre@uclouvain.be>
+ *	Initial Design & Implementation:
+ *	Sébastien Barré <sebastien.barre@uclouvain.be>
  *
- *      date : May 11
+ *	Current Maintainer & Author:
+ *	Christoph Paasch <christoph.paasch@uclouvain.be>
+ *
+ *	Additional authors:
+ *	Jaakko Korkeaniemi <jaakko.korkeaniemi@aalto.fi>
+ *	Gregory Detal <gregory.detal@uclouvain.be>
+ *	Fabien Duchêne <fabien.duchene@uclouvain.be>
+ *	Andreas Seelinger <Andreas.Seelinger@rwth-aachen.de>
+ *	Andreas Ripke <ripke@neclab.eu>
+ *	Vlad Dogaru <vlad.dogaru@intel.com>
+ *	Lavkesh Lahngir <lavkesh51@gmail.com>
+ *	John Ronan <jronan@tssg.org>
+ *	Brandon Heller <brandonh@stanford.edu>
+ *
  *
  *	This program is free software; you can redistribute it and/or
  *      modify it under the terms of the GNU General Public License
@@ -91,7 +104,7 @@ int mptcp_find_token(u32 token)
 {
 	u32 hash = mptcp_hash_tk(token);
 	struct mptcp_cb *mpcb;
-	
+
 	read_lock_bh(&tk_hash_lock);
 	list_for_each_entry(mpcb, &tk_hashtable[hash], collide_tk) {
 		if (token == mpcb->mptcp_loc_token) {
@@ -217,7 +230,7 @@ void mptcp_set_addresses(struct mptcp_cb *mpcb)
 
 				i = mptcp_find_free_index(mpcb->loc4_bits);
 				if (i < 0) {
-					mptcp_debug ("%s: At max num of local "
+					mptcp_debug("%s: At max num of local "
 						"addresses: %d --- not adding "
 						"address: %pI4\n", __func__,
 						MPTCP_MAX_ADDR, &ifa_address);

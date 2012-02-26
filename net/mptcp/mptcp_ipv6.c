@@ -1,11 +1,22 @@
 /*
- *	MPTCP implementation
+ *	MPTCP implementation - IPv6-specific functions
  *
- *	Author:
- *      Sébastien Barré		<sebastien.barre@uclouvain.be>
+ *	Initial Design & Implementation:
+ *	Sébastien Barré <sebastien.barre@uclouvain.be>
  *
+ *	Current Maintainer:
+ *	Jaakko Korkeaniemi <jaakko.korkeaniemi@aalto.fi>
  *
- *      date : June 09
+ *	Additional authors:
+ *	Christoph Paasch <christoph.paasch@uclouvain.be>
+ *	Gregory Detal <gregory.detal@uclouvain.be>
+ *	Fabien Duchêne <fabien.duchene@uclouvain.be>
+ *	Andreas Seelinger <Andreas.Seelinger@rwth-aachen.de>
+ *	Andreas Ripke <ripke@neclab.eu>
+ *	Vlad Dogaru <vlad.dogaru@intel.com>
+ *	Lavkesh Lahngir <lavkesh51@gmail.com>
+ *	John Ronan <jronan@tssg.org>
+ *	Brandon Heller <brandonh@stanford.edu>
  *
  *
  *	This program is free software; you can redistribute it and/or
@@ -439,7 +450,7 @@ void mptcp_init6_subsockets(struct mptcp_cb *mpcb,
 	/** Then, connect the socket to the peer */
 
 	ulid_size = sizeof(struct sockaddr_in6);
-	loc_in.sin6_family= AF_INET6;
+	loc_in.sin6_family = AF_INET6;
 	rem_in.sin6_family = AF_INET6;
 	loc_in.sin6_port = 0;
 	if (rem->port)
@@ -485,22 +496,10 @@ error:
 	return;
 }
 
-static void mptcp_dad_setup_timer(struct inet6_ifaddr *ifa);
-static int mptcp_ipv6_is_in_dad_state(struct inet6_ifaddr *ifa);
-static void mptcp_dad_callback(unsigned long arg);
-
-/**
- * React on IPv6-addr add/rem-events
- */
-static int mptcp_pm_inet6_addr_event(struct notifier_block *this,
-		unsigned long event, void *ptr)
-{
-	if (mptcp_ipv6_is_in_dad_state((struct inet6_ifaddr *)ptr)) {
-		mptcp_dad_setup_timer((struct inet6_ifaddr *)ptr);
-		return NOTIFY_DONE;
-	} else
-		return mptcp_pm_addr_event_handler(event, ptr, AF_INET6);
-}
+struct mptcp_dad_data {
+	struct timer_list timer;
+	struct inet6_ifaddr *ifa;
+};
 
 static int mptcp_ipv6_is_in_dad_state(struct inet6_ifaddr *ifa)
 {
@@ -508,10 +507,9 @@ static int mptcp_ipv6_is_in_dad_state(struct inet6_ifaddr *ifa)
 		ifa->state == INET6_IFADDR_STATE_DAD);
 }
 
-struct mptcp_dad_data {
-	struct timer_list timer;
-	struct inet6_ifaddr *ifa;
-};
+static void mptcp_dad_callback(unsigned long arg);
+static int mptcp_pm_inet6_addr_event(struct notifier_block *this,
+				     unsigned long event, void *ptr);
 
 static inline void mptcp_dad_init_timer(struct mptcp_dad_data *data,
 					struct inet6_ifaddr *ifa)
@@ -551,6 +549,20 @@ static inline void mptcp_dad_setup_timer(struct inet6_ifaddr *ifa)
 	init_timer(&data->timer);
 	mptcp_dad_init_timer(data, ifa);
 	add_timer(&data->timer);
+}
+
+/**
+ * React on IPv6-addr add/rem-events
+ */
+static int mptcp_pm_inet6_addr_event(struct notifier_block *this,
+				     unsigned long event, void *ptr)
+{
+	if (mptcp_ipv6_is_in_dad_state((struct inet6_ifaddr *)ptr)) {
+		mptcp_dad_setup_timer((struct inet6_ifaddr *)ptr);
+		return NOTIFY_DONE;
+	} else {
+		return mptcp_pm_addr_event_handler(event, ptr, AF_INET6);
+	}
 }
 
 /**

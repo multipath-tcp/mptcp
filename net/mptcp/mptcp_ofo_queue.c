@@ -1,11 +1,25 @@
 /*
- *	MPTCP implementation
- *       Fast algorithm for MPTCP meta-reordering
+ *	MPTCP implementation - Fast algorithm for MPTCP meta-reordering
  *
- *	Authors:
- *      Sébastien Barré		<sebastien.barre@uclouvain.be>
+ *	Initial Design & Implementation:
+ *	Sébastien Barré <sebastien.barre@uclouvain.be>
  *
- *      date : Aug 11
+ *	Current Maintainer & Author:
+ *	Christoph Paasch <christoph.paasch@uclouvain.be>
+ *
+ *	Additional authors:
+ *	Jaakko Korkeaniemi <jaakko.korkeaniemi@aalto.fi>
+ *	Gregory Detal <gregory.detal@uclouvain.be>
+ *	Fabien Duchêne <fabien.duchene@uclouvain.be>
+ *	Andreas Seelinger <Andreas.Seelinger@rwth-aachen.de>
+ *	Andreas Ripke <ripke@neclab.eu>
+ *	Vlad Dogaru <vlad.dogaru@intel.com>
+ *	Lavkesh Lahngir <lavkesh51@gmail.com>
+ *	John Ronan <jronan@tssg.org>
+ *	Brandon Heller <brandonh@stanford.edu>
+ *
+ *
+ *	TODO - update these comments
  *
  *      This is a binary tree of subqueues. The nodes are wrappers
  *      for either one skb or a sequence of contiguous skbuffs.
@@ -267,7 +281,7 @@ static int try_shortcut(struct mptcp_node *shortcut, struct sk_buff *skb,
 			struct sk_buff_head *head,
 			struct mptcp_node **container)
 {
-	struct mptcp_node *n = (struct mptcp_node*) skb;
+	struct mptcp_node *n = (struct mptcp_node *) skb;
 	struct sk_buff *skb1;
 	struct mptcp_node *n1;
 	u32 seq = TCP_SKB_CB(skb)->data_seq;

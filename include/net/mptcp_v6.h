@@ -1,11 +1,22 @@
 /*
  *	MPTCP implementation
- *      IPv6-related functions
  *
- *	Authors:
- *      Sébastien Barré		<sebastien.barre@uclouvain.be>
+ *	Initial Design & Implementation:
+ *	Sébastien Barré <sebastien.barre@uclouvain.be>
  *
- *      date : June 09
+ *	Current Maintainer & Author:
+ *	Jaakko Korkeaniemi <jaakko.korkeaniemi@aalto.fi>
+ *
+ *	Additional authors:
+ *	Christoph Paasch <christoph.paasch@uclouvain.be>
+ *	Gregory Detal <gregory.detal@uclouvain.be>
+ *	Fabien Duchêne <fabien.duchene@uclouvain.be>
+ *	Andreas Seelinger <Andreas.Seelinger@rwth-aachen.de>
+ *	Andreas Ripke <ripke@neclab.eu>
+ *	Vlad Dogaru <vlad.dogaru@intel.com>
+ *	Lavkesh Lahngir <lavkesh51@gmail.com>
+ *	John Ronan <jronan@tssg.org>
+ *	Brandon Heller <brandonh@stanford.edu>
  *
  *
  *	This program is free software; you can redistribute it and/or

@@ -1,10 +1,29 @@
 /*
- * TCP COUPLED CONGESTION CONTROL:
+ *	MPTCP implementation - Coupled Congestion Control
  *
- * Algorithm: Costin Raiciu, Daemon Wischik, Mark Handley
- * Implementation: Christoph Paasch & Sébastien Barré, UCLouvain (Belgium)
+ *	Initial Design & Implementation:
+ *	Sébastien Barré <sebastien.barre@uclouvain.be>
+ *
+ *	Current Maintainer & Author:
+ *	Christoph Paasch <christoph.paasch@uclouvain.be>
+ *
+ *	Additional authors:
+ *	Jaakko Korkeaniemi <jaakko.korkeaniemi@aalto.fi>
+ *	Gregory Detal <gregory.detal@uclouvain.be>
+ *	Fabien Duchêne <fabien.duchene@uclouvain.be>
+ *	Andreas Seelinger <Andreas.Seelinger@rwth-aachen.de>
+ *	Andreas Ripke <ripke@neclab.eu>
+ *	Vlad Dogaru <vlad.dogaru@intel.com>
+ *	Lavkesh Lahngir <lavkesh51@gmail.com>
+ *	John Ronan <jronan@tssg.org>
+ *	Brandon Heller <brandonh@stanford.edu>
+ *
+ *
+ *	This program is free software; you can redistribute it and/or
+ *      modify it under the terms of the GNU General Public License
+ *      as published by the Free Software Foundation; either version
+ *      2 of the License, or (at your option) any later version.
  */
-
 #include <net/tcp.h>
 #include <net/mptcp.h>
 
@@ -203,9 +222,8 @@ static void mptcp_ccc_set_state(struct sock *sk, u8 ca_state)
 	if (!tcp_sk(sk)->mpc)
 		return;
 
-	if (ca_state == TCP_CA_Recovery) {
+	if (ca_state == TCP_CA_Recovery)
 		mptcp_set_forced(mpcb_from_tcpsock(tcp_sk(sk)), 1);
-	}
 }
 
 static void mptcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
