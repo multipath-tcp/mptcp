@@ -4082,6 +4082,30 @@ new_bw_est:
 	tp->bw_est.time = now;
 }
 
+static inline int is_local_addr4(const u32 addr, struct net *netns)
+{
+	struct net_device *dev;
+	int ans = 0;
+	read_lock(&dev_base_lock);
+	for_each_netdev(netns, dev) {
+		if (netif_running(dev)) {
+			struct in_device *in_dev = dev->ip_ptr;
+			struct in_ifaddr *ifa;
+
+			for (ifa = in_dev->ifa_list; ifa; ifa = ifa->ifa_next) {
+				if (ifa->ifa_address == addr) {
+					ans = 1;
+					goto out;
+				}
+			}
+		}
+	}
+
+out:
+	read_unlock(&dev_base_lock);
+	return ans;
+}
+
 /**
  * Returns 1 if we should enable MPTCP for that socket.
  */
