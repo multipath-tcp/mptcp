@@ -201,9 +201,8 @@ static inline int mptcp_is_available(struct sock *sk, struct sk_buff *skb)
 	if (tp->pf || (tp->mpcb->noneligible & mptcp_pi_to_flag(tp->path_index)) ||
 	    inet_csk(sk)->icsk_ca_state == TCP_CA_Loss)
 		return 0;
-	if (tcp_cwnd_test(tp, skb))
-		return 1;
-	return 0;
+
+	return tcp_cwnd_test(tp, skb);
 }
 
 static inline int mptcp_dont_reinject_skb(struct tcp_sock *tp, struct sk_buff *skb)
@@ -996,8 +995,8 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	struct sk_buff *skb;
 	unsigned int tso_segs, sent_pkts;
-	int cwnd_quota;
 	int result;
+	int cwnd_quota;
 	int reinject = 0;
 
 	if (unlikely(meta_sk->sk_in_write_xmit)) {
@@ -1072,16 +1071,14 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		 */
 		BUG_ON(!reinject && tcp_send_head(meta_sk) != skb);
 retry:
-		/* decide to which subsocket we give the skb */
 		cwnd_quota = tcp_cwnd_test(subtp, skb);
 		if (!cwnd_quota) {
-			printk(KERN_ERR"%s pi %d dfin %d fin %d tso %d\n", __func__,subtp->path_index,
-					(TCP_SKB_CB(skb)->flags & TCPHDR_FIN), mptcp_is_data_fin(skb),
-						    tcp_skb_pcount(skb));
-			/* Should not happen, since mptcp must have
-			 * chosen a subsock with open cwnd
+			/* May happen, if at the first selection we circumvented
+			 * the test due to a DATA_FIN (and got rejected at
+			 * tcp_snd_wnd_test), but the reinjected segment is not
+			 * a DATA_FIN.
 			 */
-			BUG();
+			BUG_ON(reinject != -1);
 			break;
 		}
 
