@@ -60,7 +60,7 @@ struct mptcp_rem6 {
 	struct in6_addr	addr;
 };
 
-struct multipath_pcb;
+struct mptcp_cb;
 #ifdef CONFIG_MPTCP
 
 #define MPTCP_HASH_SIZE                1024
@@ -74,14 +74,14 @@ extern struct list_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
 extern spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
 
 void mptcp_hash_request_remove(struct request_sock *req);
-void mptcp_send_updatenotif(struct multipath_pcb *mpcb);
+void mptcp_send_updatenotif(struct mptcp_cb *mpcb);
 
 void mptcp_send_updatenotif_wq(struct work_struct *work);
 struct mp_join *mptcp_find_join(struct sk_buff *skb);
-u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock *sk);
-void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token);
-void mptcp_hash_remove(struct multipath_pcb *mpcb);
-struct multipath_pcb *mptcp_hash_find(u32 token);
+u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock *sk);
+void mptcp_hash_insert(struct mptcp_cb *mpcb, u32 token);
+void mptcp_hash_remove(struct mptcp_cb *mpcb);
+struct mptcp_cb *mptcp_hash_find(u32 token);
 int mptcp_lookup_join(struct sk_buff *skb);
 int mptcp_find_token(u32 token);
 int mptcp_reqsk_find_tk(u32 token);
@@ -89,14 +89,14 @@ void mptcp_reqsk_insert_tk(struct request_sock *reqsk, u32 token);
 void mptcp_reqsk_remove_tk(struct request_sock *reqsk);
 struct dst_entry *mptcp_route_req(const struct request_sock *req,
 				  struct sock *meta_sk);
-void mptcp_set_addresses(struct multipath_pcb *mpcb);
+void mptcp_set_addresses(struct mptcp_cb *mpcb);
 int mptcp_syn_recv_sock(struct sk_buff *skb);
 int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family);
-struct sock *mptcp_select_loc_sock(const struct multipath_pcb *mpcb, u16 ids);
+struct sock *mptcp_select_loc_sock(const struct mptcp_cb *mpcb, u16 ids);
 
 #else /* CONFIG_MPTCP */
 
-static inline void mptcp_update_patharray(struct multipath_pcb *mpcb)
+static inline void mptcp_update_patharray(struct mptcp_cb *mpcb)
 {
 }
 
@@ -104,7 +104,7 @@ static inline void mptcp_hash_request_remove(struct request_sock *req)
 {
 }
 
-static inline void mptcp_send_updatenotif(struct multipath_pcb *mpcb)
+static inline void mptcp_send_updatenotif(struct mptcp_cb *mpcb)
 {
 }
 

@@ -297,7 +297,7 @@ struct tcp_options_received {
 #endif /* CONFIG_MPTCP */
 };
 
-struct multipath_pcb;
+struct mptcp_cb;
 
 static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
 {
@@ -503,7 +503,7 @@ struct tcp_sock {
 	 */
 	struct tcp_cookie_values  *cookie_values;
 
-	struct multipath_pcb		*mpcb;
+	struct mptcp_cb		*mpcb;
 	/* We keep these flags even if CONFIG_MPTCP is not checked, because
 	 * it allowschecking MPTCP capability just by checking the mpc flag,
 	 * rather than adding ifdefs everywhere.
@@ -576,20 +576,20 @@ struct tcp_sock {
 };
 
 #ifdef CONFIG_MPTCP
-static inline struct tcp_sock *mpcb_meta_tp(const struct multipath_pcb *mpcb)
+static inline struct tcp_sock *mpcb_meta_tp(const struct mptcp_cb *mpcb)
 {
 	return (struct tcp_sock *)mpcb;
 }
-static inline struct sock *mpcb_meta_sk(const struct multipath_pcb *mpcb)
+static inline struct sock *mpcb_meta_sk(const struct mptcp_cb *mpcb)
 {
 	return (struct sock *)mpcb;
 }
 #else
-static inline struct tcp_sock *mpcb_meta_tp(const struct multipath_pcb *mpcb)
+static inline struct tcp_sock *mpcb_meta_tp(const struct mptcp_cb *mpcb)
 {
 	return NULL;
 }
-static inline struct sock *mpcb_meta_sk(const struct multipath_pcb *mpcb)
+static inline struct sock *mpcb_meta_sk(const struct mptcp_cb *mpcb)
 {
 	return NULL;
 }

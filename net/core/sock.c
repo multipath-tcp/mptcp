@@ -1790,7 +1790,7 @@ static void __lock_sock(struct sock *sk)
 	finish_wait(&sk->sk_lock.wq, &wait);
 }
 
-void __release_sock(struct sock *sk, struct multipath_pcb *mpcb)
+void __release_sock(struct sock *sk, struct mptcp_cb *mpcb)
 {
 	struct sk_buff *skb = sk->sk_backlog.head;
 

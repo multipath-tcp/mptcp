@@ -113,7 +113,7 @@ static int find_node(struct mptcp_node *n, struct sk_buff_head *head)
 	return 0;
 }
 
-static int find_node_mpcb(struct multipath_pcb *mpcb)
+static int find_node_mpcb(struct mptcp_cb *mpcb)
 {
 	struct tcp_sock *tp_it;
 	mptcp_for_each_tp(mpcb, tp_it) {
@@ -415,7 +415,7 @@ int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
 	return ans;
 }
 
-void mptcp_ofo_queue(struct multipath_pcb *mpcb)
+void mptcp_ofo_queue(struct mptcp_cb *mpcb)
 {
 	struct sock *meta_sk = (struct sock *)mpcb;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);

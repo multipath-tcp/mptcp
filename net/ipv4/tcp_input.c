@@ -3993,7 +3993,7 @@ static int tcp_parse_aligned_timestamp(struct tcp_sock *tp, struct tcphdr *th)
 static int tcp_fast_parse_options(struct sk_buff *skb, struct tcphdr *th,
 				struct tcp_sock *tp, u8 **hvpp)
 {
-	struct multipath_pcb *mpcb;
+	struct mptcp_cb *mpcb;
 	/* In the spirit of fast parsing, compare doff directly to constant
 	 * values.  Because equality is used, short doff can be ignored here.
 	 */
@@ -4512,7 +4512,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 	struct tcphdr *th = tcp_hdr(skb);
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_sock *meta_tp = tp;
-	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
+	struct mptcp_cb *mpcb = mpcb_from_tcpsock(tp);
 
 	int eaten = -1;
 
@@ -5287,7 +5287,7 @@ static void tcp_urg(struct sock *sk, struct sk_buff *skb, struct tcphdr *th)
 static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 {
 	struct tcp_sock *tp = tcp_sk(sk), *meta_tp;
-	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
+	struct mptcp_cb *mpcb = mpcb_from_tcpsock(tp);
 	int chunk = skb->len - hlen;
 	int err;
 
@@ -5697,7 +5697,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 	struct tcp_cookie_values *cvp = tp->cookie_values;
 	int saved_clamp = tp->rx_opt.mss_clamp;
 	struct multipath_options mopt;
-	struct multipath_pcb *mpcb = tp->mpc ? tp->mpcb : NULL;
+	struct mptcp_cb *mpcb = tp->mpc ? tp->mpcb : NULL;
 	mptcp_init_mp_opt(&mopt);
 
 	tcp_parse_options(skb, &tp->rx_opt, &hash_location,

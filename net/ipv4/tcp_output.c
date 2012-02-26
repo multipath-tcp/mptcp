@@ -1529,7 +1529,7 @@ static unsigned int tcp_snd_test(struct sock *sk, struct sk_buff *skb,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int cwnd_quota;
-	struct multipath_pcb *mpcb = tp->mpcb;
+	struct mptcp_cb *mpcb = tp->mpcb;
 	struct tcp_sock *meta_tp = mpcb_meta_tp(mpcb);
 
 	BUG_ON(tp->mpc && tcp_skb_pcount(skb) > 1);

@@ -75,7 +75,7 @@ static void mptcp_v4_reqsk_queue_hash_add(struct request_sock *req,
 }
 
 /* from tcp_v4_conn_request() */
-static int mptcp_v4_join_request(struct multipath_pcb *mpcb,
+static int mptcp_v4_join_request(struct mptcp_cb *mpcb,
 		struct sk_buff *skb)
 {
 	struct inet_request_sock *ireq;
@@ -221,7 +221,7 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 
 /* Sets the bitfield of the remote-address field
  * local address is not set as it will disappear with the global address-list */
-void mptcp_v4_set_init_addr_bit(struct multipath_pcb *mpcb, __be32 daddr)
+void mptcp_v4_set_init_addr_bit(struct mptcp_cb *mpcb, __be32 daddr)
 {
 	int i;
 
@@ -242,7 +242,7 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {
 	struct iphdr *iph = ip_hdr(skb);
 	struct tcphdr *th = tcp_hdr(skb);
-	struct multipath_pcb *mpcb = (struct multipath_pcb *)meta_sk;
+	struct mptcp_cb *mpcb = (struct mptcp_cb *)meta_sk;
 	struct request_sock **prev, *req;
 	struct sock *child;
 
@@ -362,7 +362,7 @@ int mptcp_v4_send_synack(struct sock *meta_sk, struct request_sock *req,
  *
  * We are in user-context and meta-sock-lock is hold.
  */
-void mptcp_init4_subsockets(struct multipath_pcb *mpcb,
+void mptcp_init4_subsockets(struct mptcp_cb *mpcb,
 			    const struct mptcp_loc4 *loc,
 			    struct mptcp_rem4 *rem)
 {
@@ -504,7 +504,7 @@ static int mptcp_pm_netdev_event(struct notifier_block *this,
 }
 
 void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
-				  struct multipath_pcb *mpcb)
+				  struct mptcp_cb *mpcb)
 {
 	int i;
 	struct sock *sk;
@@ -598,7 +598,7 @@ found:
 /*
  * Send ADD_ADDR for loc_id on all available subflows
  */
-void mptcp_v4_send_add_addr(int loc_id, struct multipath_pcb *mpcb)
+void mptcp_v4_send_add_addr(int loc_id, struct mptcp_cb *mpcb)
 {
 	struct sock *sk;
 	struct tcp_sock *tp;

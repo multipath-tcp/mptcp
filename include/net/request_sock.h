@@ -66,7 +66,7 @@ struct request_sock {
 	u32				secid;
 	u32				peer_secid;
 #ifdef CONFIG_MPTCP
-	struct multipath_pcb            *mpcb;
+	struct mptcp_cb            *mpcb;
 	/* Collision list in the tuple hashtable. We need to find
 	 * the req sock when receiving the third msg of the 3-way handshake,
 	 * since that one does not contain the token. If this makes

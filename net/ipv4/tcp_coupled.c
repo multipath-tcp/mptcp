@@ -36,7 +36,7 @@ u32 mptcp_get_crt_cwnd(struct tcp_sock *tp)
 		return min(tcp_packets_in_flight(tp), tp->snd_cwnd);
 }
 
-u32 mptcp_get_total_cwnd(struct multipath_pcb *mpcb)
+u32 mptcp_get_total_cwnd(struct mptcp_cb *mpcb)
 {
 	struct tcp_sock *tp;
 	struct sock *sub_sk;
@@ -51,13 +51,13 @@ u32 mptcp_get_total_cwnd(struct multipath_pcb *mpcb)
 	return cwnd;
 }
 
-static inline u64 mptcp_get_alpha(struct multipath_pcb *mpcb)
+static inline u64 mptcp_get_alpha(struct mptcp_cb *mpcb)
 {
 	struct mptcp_ccc *mptcp_ccc = inet_csk_ca(mpcb_meta_sk(mpcb));
 	return mptcp_ccc->alpha;
 }
 
-static inline void mptcp_set_alpha(struct multipath_pcb *mpcb, u64 alpha)
+static inline void mptcp_set_alpha(struct mptcp_cb *mpcb, u64 alpha)
 {
 	struct mptcp_ccc *mptcp_ccc = inet_csk_ca(mpcb_meta_sk(mpcb));
 	mptcp_ccc->alpha = alpha;
@@ -68,13 +68,13 @@ static inline u64 mptcp_ccc_scale(u32 val, int scale)
 	return (u64) val << scale;
 }
 
-static inline bool mptcp_get_forced(struct multipath_pcb *mpcb)
+static inline bool mptcp_get_forced(struct mptcp_cb *mpcb)
 {
 	struct mptcp_ccc *mptcp_ccc = inet_csk_ca(mpcb_meta_sk(mpcb));
 	return mptcp_ccc->forced_update;
 }
 
-static inline void mptcp_set_forced(struct multipath_pcb *mpcb, bool force)
+static inline void mptcp_set_forced(struct mptcp_cb *mpcb, bool force)
 {
 	struct mptcp_ccc *mptcp_ccc = inet_csk_ca(mpcb_meta_sk(mpcb));
 	mptcp_ccc->forced_update = force;
@@ -82,7 +82,7 @@ static inline void mptcp_set_forced(struct multipath_pcb *mpcb, bool force)
 
 static void mptcp_recalc_alpha(struct sock *sk)
 {
-	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tcp_sk(sk));
+	struct mptcp_cb *mpcb = mpcb_from_tcpsock(tcp_sk(sk));
 	struct tcp_sock *sub_tp;
 	struct sock *sub_sk;
 	int best_cwnd = 0, best_rtt = 0, tot_cwnd, can_send = 0;
@@ -184,7 +184,7 @@ exit:
 
 static void mptcp_cc_init(struct sock *sk)
 {
-	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tcp_sk(sk));
+	struct mptcp_cb *mpcb = mpcb_from_tcpsock(tcp_sk(sk));
 	if (tcp_sk(sk)->mpc) {
 		mptcp_set_forced(mpcb, 0);
 		mptcp_set_alpha(mpcb, 1);
@@ -211,7 +211,7 @@ static void mptcp_ccc_set_state(struct sock *sk, u8 ca_state)
 static void mptcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 {
 	struct tcp_sock *tp = tcp_sk(sk), *meta_tp;
-	struct multipath_pcb *mpcb = mpcb_from_tcpsock(tp);
+	struct mptcp_cb *mpcb = mpcb_from_tcpsock(tp);
 	int snd_cwnd;
 
 	if (!mpcb || !tp->mpc) {

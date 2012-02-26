@@ -84,7 +84,7 @@ void mptcp_reqsk_remove_tk(struct request_sock *reqsk)
 	spin_unlock(&mptcp_reqsk_tk_hlock);
 }
 
-void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token)
+void mptcp_hash_insert(struct mptcp_cb *mpcb, u32 token)
 {
 	u32 hash = mptcp_hash_tk(token);
 
@@ -96,7 +96,7 @@ void mptcp_hash_insert(struct multipath_pcb *mpcb, u32 token)
 int mptcp_find_token(u32 token)
 {
 	u32 hash = mptcp_hash_tk(token);
-	struct multipath_pcb *mpcb;
+	struct mptcp_cb *mpcb;
 	
 	read_lock_bh(&tk_hash_lock);
 	list_for_each_entry(mpcb, &tk_hashtable[hash], collide_tk) {
@@ -114,10 +114,10 @@ int mptcp_find_token(u32 token)
  * It is the responsibility of the caller to decrement when releasing
  * the structure.
  */
-struct multipath_pcb *mptcp_hash_find(u32 token)
+struct mptcp_cb *mptcp_hash_find(u32 token)
 {
 	u32 hash = mptcp_hash_tk(token);
-	struct multipath_pcb *mpcb;
+	struct mptcp_cb *mpcb;
 
 	read_lock(&tk_hash_lock);
 	list_for_each_entry(mpcb, &tk_hashtable[hash], collide_tk) {
@@ -131,7 +131,7 @@ struct multipath_pcb *mptcp_hash_find(u32 token)
 	return NULL;
 }
 
-void mptcp_hash_remove(struct multipath_pcb *mpcb)
+void mptcp_hash_remove(struct mptcp_cb *mpcb)
 {
 	struct inet_connection_sock *meta_icsk =
 	    (struct inet_connection_sock *)mpcb;
@@ -178,7 +178,7 @@ void mptcp_hash_request_remove(struct request_sock *req)
 	spin_unlock(&mptcp_reqsk_hlock);
 }
 
-u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock* sk)
+u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock* sk)
 {
 	int i;
 
@@ -210,7 +210,7 @@ u8 mptcp_get_loc_addrid(struct multipath_pcb *mpcb, struct sock* sk)
 	BUG();
 }
 
-void mptcp_set_addresses(struct multipath_pcb *mpcb)
+void mptcp_set_addresses(struct mptcp_cb *mpcb)
 {
 	struct sock *meta_sk = mpcb_meta_sk(mpcb);
 	struct net *netns = sock_net(meta_sk);
@@ -425,7 +425,7 @@ struct mp_join *mptcp_find_join(struct sk_buff *skb)
  */
 int mptcp_lookup_join(struct sk_buff *skb)
 {
-	struct multipath_pcb *mpcb;
+	struct mptcp_cb *mpcb;
 	struct sock *meta_sk;
 	u32 token;
 	struct mp_join *join_opt = mptcp_find_join(skb);
@@ -477,7 +477,7 @@ int mptcp_lookup_join(struct sk_buff *skb)
  **/
 void mptcp_send_updatenotif_wq(struct work_struct *work)
 {
-	struct multipath_pcb *mpcb = container_of(work, struct multipath_pcb, work);
+	struct mptcp_cb *mpcb = container_of(work, struct mptcp_cb, work);
 	struct sock *meta_sk = mpcb_meta_sk(mpcb);
 	int iter = 0;
 	int i;
@@ -554,7 +554,7 @@ exit:
 	sock_put(meta_sk);
 }
 
-void mptcp_send_updatenotif(struct multipath_pcb *mpcb)
+void mptcp_send_updatenotif(struct mptcp_cb *mpcb)
 {
 	if ((mpcb->master_sk && !tcp_sk(mpcb->master_sk)->fully_established) ||
 	    mpcb->infinite_mapping ||
@@ -573,7 +573,7 @@ void mptcp_send_updatenotif(struct multipath_pcb *mpcb)
  */
 int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 {
-	struct multipath_pcb *mpcb;
+	struct mptcp_cb *mpcb;
 	int i;
 
 	if (!(event == NETDEV_UP || event == NETDEV_DOWN ||
@@ -613,7 +613,7 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
  */
 static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 {
-	struct multipath_pcb *mpcb;
+	struct mptcp_cb *mpcb;
 	int i;
 
 	seq_puts(seq, "Multipath TCP (path manager):");
