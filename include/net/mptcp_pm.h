@@ -73,6 +73,8 @@ struct mptcp_cb;
 extern struct list_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
 extern spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
 
+extern spinlock_t mptcp_reqsk_tk_hlock;	/* hashtable protection */
+
 void mptcp_hash_request_remove(struct request_sock *req);
 void mptcp_send_updatenotif(struct mptcp_cb *mpcb);
 

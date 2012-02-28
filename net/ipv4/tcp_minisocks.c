@@ -445,9 +445,10 @@ void tcp_openreq_init(struct request_sock *req,
 	req->saw_mpc = rx_opt->saw_mpc;
 	if (req->saw_mpc && !req->mpcb) {
 		/* conn request, prepare a new token for the
-		 * mpcb that will be created in tcp_check_req(),
+		 * mpcb that will be created in mptcp_check_req_master(),
 		 * and store the received token.
 		 */
+		spin_lock(&mptcp_reqsk_tk_hlock);
 		do {
 			get_random_bytes(&req->mptcp_loc_key,
 					 sizeof(req->mptcp_loc_key));
@@ -457,6 +458,7 @@ void tcp_openreq_init(struct request_sock *req,
 			 mptcp_find_token(req->mptcp_loc_token));
 
 		mptcp_reqsk_insert_tk(req, req->mptcp_loc_token);
+		spin_unlock(&mptcp_reqsk_tk_hlock);
 		req->mptcp_rem_key = mopt->mptcp_rem_key;
 	}
 #endif

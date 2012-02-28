@@ -57,14 +57,10 @@ int mptcp_reqsk_find_tk(u32 token)
 	u32 hash = mptcp_hash_tk(token);
 	struct request_sock *reqsk;
 
-	spin_lock(&mptcp_reqsk_tk_hlock);
 	list_for_each_entry(reqsk, &mptcp_reqsk_tk_htb[hash], collide_tk) {
-		if (token == reqsk->mptcp_loc_token) {
-			spin_unlock(&mptcp_reqsk_tk_hlock);
+		if (token == reqsk->mptcp_loc_token)
 			return 1;
-		}
 	}
-	spin_unlock(&mptcp_reqsk_tk_hlock);
 	return 0;
 }
 
@@ -72,9 +68,7 @@ void mptcp_reqsk_insert_tk(struct request_sock *reqsk, u32 token)
 {
 	u32 hash = mptcp_hash_tk(token);
 
-	spin_lock(&mptcp_reqsk_tk_hlock);
 	list_add(&reqsk->collide_tk, &mptcp_reqsk_tk_htb[hash]);
-	spin_unlock(&mptcp_reqsk_tk_hlock);
 }
 
 void mptcp_reqsk_remove_tk(struct request_sock *reqsk)
