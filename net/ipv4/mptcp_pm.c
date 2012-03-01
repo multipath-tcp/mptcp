@@ -73,9 +73,9 @@ void mptcp_reqsk_insert_tk(struct request_sock *reqsk, u32 token)
 
 void mptcp_reqsk_remove_tk(struct request_sock *reqsk)
 {
-	spin_lock(&mptcp_reqsk_tk_hlock);
-	list_del_init(&reqsk->collide_tk);
-	spin_unlock(&mptcp_reqsk_tk_hlock);
+	spin_lock_bh(&mptcp_reqsk_tk_hlock);
+	list_del(&reqsk->collide_tk);
+	spin_unlock_bh(&mptcp_reqsk_tk_hlock);
 }
 
 void mptcp_hash_insert(struct mptcp_cb *mpcb, u32 token)
@@ -127,49 +127,17 @@ struct mptcp_cb *mptcp_hash_find(u32 token)
 
 void mptcp_hash_remove(struct mptcp_cb *mpcb)
 {
-	struct inet_connection_sock *meta_icsk =
-	    (struct inet_connection_sock *)mpcb;
-	struct listen_sock *lopt = meta_icsk->icsk_accept_queue.listen_opt;
-
 	/* remove from the token hashtable */
 	write_lock_bh(&tk_hash_lock);
 	list_del(&mpcb->collide_tk);
 	write_unlock_bh(&tk_hash_lock);
-
-	/* Remove all pending request socks. */
-	spin_lock_bh(&mptcp_reqsk_hlock);
-	if (lopt->qlen != 0) {
-		unsigned int i;
-		for (i = 0; i < lopt->nr_table_entries; i++) {
-			struct request_sock *cur_ref;
-			cur_ref = lopt->syn_table[i];
-			while (cur_ref) {
-				/* Remove from global tuple hashtable
-				 * We use list_del_init because that
-				 * function supports multiple deletes, with
-				 * only the first one actually deleting.
-				 * This is useful since mptcp_check_req()
-				 * might try to remove it as well
-				 */
-				list_del_init(&cur_ref->collide_tuple);
-				/* next element in collision list.
-				 * we don't remove yet the request_sock
-				 * from the local hashtable. This will be done
-				 * by mptcp_pm_release()
-				 */
-				cur_ref = cur_ref->dl_next;
-			}
-		}
-	}
-	spin_unlock_bh(&mptcp_reqsk_hlock);
 }
 
 void mptcp_hash_request_remove(struct request_sock *req)
 {
-	spin_lock(&mptcp_reqsk_hlock);
-	/* list_del_init: see comment in mptcp_hash_remove() */
-	list_del_init(&req->collide_tuple);
-	spin_unlock(&mptcp_reqsk_hlock);
+	spin_lock_bh(&mptcp_reqsk_hlock);
+	list_del(&req->collide_tuple);
+	spin_unlock_bh(&mptcp_reqsk_hlock);
 }
 
 u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock* sk)

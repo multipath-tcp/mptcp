@@ -4189,9 +4189,6 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 		child_tp->mptcp_loc_token = req->mptcp_loc_token;
 		child_tp->mptcp_rem_key = req->mptcp_rem_key;
 
-		/* Remove the request sock token from the hash table */
-		mptcp_reqsk_remove_tk(req);
-
 		if (mptcp_alloc_mpcb(child)) {
 			/* The allocation of the mpcb failed!
 			 * Destroy the child and go to listen_overflow
@@ -4222,6 +4219,11 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 		 */
 		mpcb_meta_sk(mpcb)->sk_state = TCP_SYN_RECV;
 		mptcp_update_metasocket(child, mpcb);
+
+		/* Needs to be done here additionally, because when accepting a
+		 * new connection we pass by __reqsk_free and not reqsk_free.
+		 */
+		mptcp_reqsk_remove_tk(req);
 
 		 /* hold in mptcp_inherit_sk due to initialization to 2 */
 		sock_put(mpcb_meta_sk(mpcb));
@@ -4275,9 +4277,6 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	child->sk_wq = mpcb_meta_sk(mpcb)->sk_wq;
 
 	mptcp_add_sock(mpcb, child_tp);
-
-	/* Deleting from global hashtable */
-	mptcp_hash_request_remove(req);
 
 	/* Subflows do not use the accept queue, as they
 	 * are attached immediately to the mpcb.

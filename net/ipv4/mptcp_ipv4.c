@@ -127,14 +127,16 @@ static int mptcp_v4_join_request(struct mptcp_cb *mpcb,
 
 	tcp_rsk(req)->snt_isn = isn;
 
-	if (mptcp_v4_send_synack((struct sock *)mpcb, req, NULL))
-		goto drop_and_free;
-
 	/* Adding to request queue in metasocket */
 	mptcp_v4_reqsk_queue_hash_add(req, TCP_TIMEOUT_INIT);
+
+	if (mptcp_v4_send_synack(mpcb_meta_sk(mpcb), req, NULL))
+		goto drop_and_free;
+
 	return 0;
 
 drop_and_free:
+	inet_csk_reqsk_queue_removed(mpcb_meta_sk(mpcb), req);
 	reqsk_free(req);
 	return -1;
 }

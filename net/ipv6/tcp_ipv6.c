@@ -529,8 +529,8 @@ static int tcp_v6_rtx_synack(struct sock *sk, struct request_sock *req,
 	 * If not, this is an initial connection request.
 	 */
 	if (mptcp_mpcb_from_req_sk(req))
-		return mptcp_v6_send_synack((struct sock *)
-				mptcp_mpcb_from_req_sk(req), req);
+		return mptcp_v6_send_synack(
+				mpcb_meta_sk(mptcp_mpcb_from_req_sk(req)), req);
 	else
 		return tcp_v6_send_synack(sk, req, rvp);
 }
@@ -551,6 +551,9 @@ static inline void syn_flood_warning(struct sk_buff *skb)
 
 static void tcp_v6_reqsk_destructor(struct request_sock *req)
 {
+	if (mptcp_req_sk_saw_mpc(req))
+		mptcp_reqsk_destructor(req);
+
 	kfree_skb(inet6_rsk(req)->pktopts);
 }
 

@@ -713,6 +713,14 @@ static inline int mptcp_req_sk_saw_mpc(const struct request_sock *req)
 	return req->saw_mpc;
 }
 
+static inline void mptcp_reqsk_destructor(struct request_sock *req)
+{
+	if (!req->mpcb)
+		mptcp_reqsk_remove_tk(req);
+	else
+		mptcp_hash_request_remove(req);
+}
+
 static inline int mptcp_sk_attached(const struct sock *sk)
 {
 	return tcp_sk(sk)->attached;
@@ -1149,6 +1157,7 @@ static inline int mptcp_req_sk_saw_mpc(const struct request_sock *req)
 {
 	return 0;
 }
+static inline void mptcp_reqsk_destructor(struct request_sock *req) {}
 static inline int mptcp_sk_attached(const struct sock *sk)
 {
 	return 0;

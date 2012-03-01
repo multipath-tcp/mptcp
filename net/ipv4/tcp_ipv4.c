@@ -852,7 +852,7 @@ static int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req,
 	 */
 	if (mptcp_mpcb_from_req_sk(req))
 		return mptcp_v4_send_synack(
-				(struct sock *)mptcp_mpcb_from_req_sk(req),
+				mpcb_meta_sk(mptcp_mpcb_from_req_sk(req)),
 				req, rvp);
 	else
 		return tcp_v4_send_synack(sk, NULL, req, rvp);
@@ -863,6 +863,9 @@ static int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req,
  */
 static void tcp_v4_reqsk_destructor(struct request_sock *req)
 {
+	if (mptcp_req_sk_saw_mpc(req))
+		mptcp_reqsk_destructor(req);
+
 	kfree(inet_rsk(req)->opt);
 }
 
