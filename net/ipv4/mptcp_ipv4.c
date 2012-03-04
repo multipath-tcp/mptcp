@@ -75,8 +75,7 @@ static void mptcp_v4_reqsk_queue_hash_add(struct request_sock *req,
 }
 
 /* from tcp_v4_conn_request() */
-static int mptcp_v4_join_request(struct mptcp_cb *mpcb,
-		struct sk_buff *skb)
+static void mptcp_v4_join_request(struct mptcp_cb *mpcb, struct sk_buff *skb)
 {
 	struct inet_request_sock *ireq;
 	struct request_sock *req;
@@ -89,7 +88,7 @@ static int mptcp_v4_join_request(struct mptcp_cb *mpcb,
 
 	req = inet_reqsk_alloc(&tcp_request_sock_ops);
 	if (!req)
-		return -1;
+		return;
 
 	tcp_clear_options(&tmp_opt);
 	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
@@ -103,13 +102,11 @@ static int mptcp_v4_join_request(struct mptcp_cb *mpcb,
 	req->mptcp_rem_key = mpcb->rx_opt.mptcp_rem_key;
 	req->mptcp_loc_key = mpcb->mptcp_loc_key;
 
-	get_random_bytes(&req->mptcp_loc_nonce,
-			sizeof(req->mptcp_loc_nonce));
+	get_random_bytes(&req->mptcp_loc_nonce, sizeof(req->mptcp_loc_nonce));
 
 	mptcp_hmac_sha1((u8 *)&req->mptcp_loc_key, (u8 *)&req->mptcp_rem_key,
 			(u8 *)&req->mptcp_loc_nonce,
-			(u8 *)&req->mptcp_rem_nonce,
-			(u32 *)mptcp_hash_mac);
+			(u8 *)&req->mptcp_rem_nonce, (u32 *)mptcp_hash_mac);
 	req->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
 
 	req->rem_id = tmp_opt.rem_id;
@@ -133,12 +130,12 @@ static int mptcp_v4_join_request(struct mptcp_cb *mpcb,
 	if (mptcp_v4_send_synack(mpcb_meta_sk(mpcb), req, NULL))
 		goto drop_and_free;
 
-	return 0;
+	return;
 
 drop_and_free:
 	inet_csk_reqsk_queue_removed(mpcb_meta_sk(mpcb), req);
 	reqsk_free(req);
-	return -1;
+	return;
 }
 
 int mptcp_v4_rem_raddress(struct multipath_options *mopt, u8 id)

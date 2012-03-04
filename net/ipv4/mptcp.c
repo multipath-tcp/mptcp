@@ -1406,7 +1406,7 @@ int mptcp_alloc_mpcb(struct sock *master_sk)
 	master_sk->sk_error_report = mptcp_sock_def_error_report;
 	meta_sk->sk_error_report = mptcp_sock_def_error_report;
 
-	/* Init the accept_queue structure, we support a queue of 4 pending
+	/* Init the accept_queue structure, we support a queue of 32 pending
 	 * connections, it does not need to be huge, since we only store
 	 * here pending subflow creations.
 	 */
