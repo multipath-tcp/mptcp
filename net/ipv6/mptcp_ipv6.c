@@ -482,12 +482,9 @@ error:
 	return;
 }
 
-/****** IPv6-Address event handler ******/
-
-struct dad_waiter_data {
-	struct mptcp_cb *mpcb;
-	struct inet6_ifaddr *ifa;
-};
+static void mptcp_dad_setup_timer(struct inet6_ifaddr *ifa);
+static int mptcp_ipv6_is_in_dad_state(struct inet6_ifaddr *ifa);
+static void mptcp_dad_callback(unsigned long arg);
 
 /**
  * React on IPv6-addr add/rem-events
@@ -495,63 +492,64 @@ struct dad_waiter_data {
 static int mptcp_pm_inet6_addr_event(struct notifier_block *this,
 		unsigned long event, void *ptr)
 {
-	return mptcp_pm_addr_event_handler(event, ptr, AF_INET6);
+	if (mptcp_ipv6_is_in_dad_state((struct inet6_ifaddr *)ptr)) {
+		mptcp_dad_setup_timer((struct inet6_ifaddr *)ptr);
+		return NOTIFY_DONE;
+	} else
+		return mptcp_pm_addr_event_handler(event, ptr, AF_INET6);
 }
 
 static int mptcp_ipv6_is_in_dad_state(struct inet6_ifaddr *ifa)
 {
-	if ((ifa->flags&IFA_F_TENTATIVE) &&
-			ifa->state == INET6_IFADDR_STATE_DAD)
-		return 1;
-	else
-		return 0;
+	return ((ifa->flags & IFA_F_TENTATIVE) &&
+		ifa->state == INET6_IFADDR_STATE_DAD);
 }
 
-static void dad_wait_timer(unsigned long data);
+struct mptcp_dad_data {
+	struct timer_list timer;
+	struct inet6_ifaddr *ifa;
+};
 
-static void mptcp_ipv6_setup_dad_timer(struct mptcp_cb *mpcb,
-	struct inet6_ifaddr *ifa)
+static inline void mptcp_dad_init_timer(struct mptcp_dad_data *data,
+					struct inet6_ifaddr *ifa)
 {
-	struct dad_waiter_data *data;
+	data->ifa = ifa;
+	data->timer.data = (unsigned long)data;
+	data->timer.function = mptcp_dad_callback;
+	if (ifa->idev->cnf.rtr_solicit_delay)
+		data->timer.expires = jiffies +
+			ifa->idev->cnf.rtr_solicit_delay;
+	else
+		data->timer.expires = jiffies +
+			MPTCP_IPV6_DEFAULT_DAD_WAIT;
+}
 
-	if (timer_pending(&mpcb->dad_waiter))
-		return;
+static void mptcp_dad_callback(unsigned long arg)
+{
+	struct mptcp_dad_data *data = (struct mptcp_dad_data *)arg;
 
-	data = kmalloc(sizeof(struct dad_waiter_data), GFP_ATOMIC);
+	if (mptcp_ipv6_is_in_dad_state(data->ifa)) {
+		mptcp_dad_init_timer(data, data->ifa);
+		add_timer(&data->timer);
+	} else {
+		del_timer_sync(&data->timer);
+		mptcp_pm_inet6_addr_event(NULL, NETDEV_UP, data->ifa);
+		kfree(data);
+	}
+}
+
+static inline void mptcp_dad_setup_timer(struct inet6_ifaddr *ifa)
+{
+	struct mptcp_dad_data *data;
+
+	data = kmalloc(sizeof(*data), GFP_ATOMIC);
 
 	if (!data)
 		return;
 
-	data->mpcb = mpcb;
-	data->ifa = ifa;
-
-	mpcb->dad_waiter.data = (unsigned long)data;
-	mpcb->dad_waiter.function = dad_wait_timer;
-	if (ifa->idev->cnf.rtr_solicit_delay)
-		mpcb->dad_waiter.expires = jiffies +
-			ifa->idev->cnf.rtr_solicit_delay;
-	else
-		mpcb->dad_waiter.expires = jiffies +
-			MPTCP_IPV6_DEFAULT_DAD_WAIT;
-
-	/* In order not to lose mpcb before the timer expires. */
-	sock_hold(mpcb_meta_sk(mpcb));
-
-	add_timer(&mpcb->dad_waiter);
-}
-
-static void dad_wait_timer(unsigned long arg_data)
-{
-
-	struct dad_waiter_data *data = (struct dad_waiter_data *)arg_data;
-
-	if (!mptcp_ipv6_is_in_dad_state(data->ifa))
-		mptcp_pm_inet6_addr_event(NULL, NETDEV_UP, (void *)data->ifa);
-	else
-		mptcp_ipv6_setup_dad_timer(data->mpcb, data->ifa);
-
-	sock_put(mpcb_meta_sk(data->mpcb));
-	kfree(data);
+	init_timer(&data->timer);
+	mptcp_dad_init_timer(data, ifa);
+	add_timer(&data->timer);
 }
 
 /**
@@ -578,7 +576,7 @@ static int mptcp_pm_v6_netdev_event(struct notifier_block *this,
 	if (in6_dev) {
 		struct inet6_ifaddr *ifa6;
 		list_for_each_entry(ifa6, &in6_dev->addr_list, if_list)
-			mptcp_pm_inet6_addr_event(NULL, event, ifa6);
+				mptcp_pm_inet6_addr_event(NULL, event, ifa6);
 	}
 
 	rcu_read_unlock();
@@ -600,11 +598,6 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 	    (addr_type & IPV6_ADDR_LOOPBACK) ||
 	    (addr_type & IPV6_ADDR_LINKLOCAL))
 		return;
-
-	if (mptcp_ipv6_is_in_dad_state(ifa)) {
-		mptcp_ipv6_setup_dad_timer(mpcb, ifa);
-		return;
-	}
 
 	/* Look for the address among the local addresses */
 	mptcp_for_each_bit_set(mpcb->loc6_bits, i) {

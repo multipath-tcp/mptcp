@@ -1359,7 +1359,6 @@ int mptcp_alloc_mpcb(struct sock *master_sk)
 		mpcb->icsk_af_ops_alt = &ipv4_specific;
 		mpcb->sk_prot_alt = &tcp_prot;
 	}
-	init_timer(&mpcb->dad_waiter);
 #endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 
 	/* Store the keys and generate the peer's token */
