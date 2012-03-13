@@ -4078,30 +4078,6 @@ new_bw_est:
 	tp->bw_est.time = now;
 }
 
-static inline int is_local_addr4(const u32 addr, struct net *netns)
-{
-	struct net_device *dev;
-	int ans = 0;
-	read_lock(&dev_base_lock);
-	for_each_netdev(netns, dev) {
-		if (netif_running(dev)) {
-			struct in_device *in_dev = dev->ip_ptr;
-			struct in_ifaddr *ifa;
-
-			for (ifa = in_dev->ifa_list; ifa; ifa = ifa->ifa_next) {
-				if (ifa->ifa_address == addr) {
-					ans = 1;
-					goto out;
-				}
-			}
-		}
-	}
-
-out:
-	read_unlock(&dev_base_lock);
-	return ans;
-}
-
 /**
  * Returns 1 if we should enable MPTCP for that socket.
  */
@@ -4126,11 +4102,6 @@ int mptcp_doit(struct sock *sk)
 	if (mptcp_v6_is_v4_mapped(sk) && ipv4_is_loopback(inet_sk(sk)->inet_saddr))
 		return 0;
 
-	/* We should try to speed this up - is_local_addr4 takes a read_lock and
-	 * iterates over all devices and addresses
-	 * May we allow mptcp over local addresses? */
-	if (is_local_addr4(inet_sk(sk)->inet_daddr, sock_net(sk)))
-		return 0;
 	return 1;
 }
 
