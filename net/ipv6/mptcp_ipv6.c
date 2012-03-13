@@ -396,8 +396,11 @@ void mptcp_init6_subsockets(struct mptcp_cb *mpcb,
 	struct socket sock;
 	int ulid_size = 0, ret, newpi;
 
-	/* Don't try again - even if it fails */
-	rem->bitfield |= (1 << (loc->id - MPTCP_MAX_ADDR));
+	/* Don't try again - even if it fails.
+	 * There is a special case as the IPv6 address of the initial subflow
+	 * has an id = 0. The other ones have id's in the range [8, 16[.
+	 */
+	rem->bitfield |= (1 << (loc->id - min(loc->id, (u8)MPTCP_MAX_ADDR)));
 
 	newpi = mptcp_set_new_pathindex(mpcb);
 	if (!newpi)
