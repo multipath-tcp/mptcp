@@ -214,9 +214,13 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 		    tcb->tcp_flags & TCPHDR_SYN ||
 		    (tcb->tcp_flags & TCPHDR_FIN && !mptcp_is_data_fin(skb_it)))
 			continue;
+
 		tcb->path_mask |= mptcp_pi_to_flag(tp->path_index);
-		if (__mptcp_reinject_data(skb_it, meta_sk, sk, clone_it) < 0)
-			break;
+
+		/* Go to next segment, if it failed */
+		if (__mptcp_reinject_data(skb_it, meta_sk, sk, clone_it))
+			continue;
+
 		tp->reinjected_seq = tcb->end_seq;
 	}
 
