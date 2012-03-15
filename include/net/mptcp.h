@@ -67,39 +67,6 @@ static inline int before64(const u64 seq1, const u64 seq2)
 /* is seq1 > seq2 ? */
 #define after64(seq1, seq2)	before64(seq2, seq1)
 
-#ifdef MPTCP_RCV_QUEUE_DEBUG
-struct mptcp_debug {
-	const char *func_name;
-	u32 seq;
-	int len;
-	int end;		/* 1 if this is the last debug info */
-};
-
-void print_debug_array(void);
-void freeze_rcv_queue(struct sock *sk, const char *func_name);
-#endif
-
-#ifdef MPTCP_DEBUG_TIMER
-static void mptcp_debug_timeout(unsigned long data)
-{
-	printk(KERN_ERR "MPTCP debug timeout ! Function %s\n", (char *)data);
-	BUG();
-}
-
-static DEFINE_TIMER(mptcp_debug_timer, mptcp_debug_timeout, 0, 0);
-#define mptcp_start_debug_timer(delay)					\
-	do {								\
-		mptcp_debug_timer.expires = jiffies + delay * HZ;	\
-		mptcp_debug_timer.data = (unsigned long)__func_;	\
-		add_timer(&mptcp_debug_timer);				\
-	} while (0)
-
-static void mptcp_stop_debug_timer(void)
-{
-	del_timer(&mptcp_debug_timer);
-}
-#endif
-
 #define MPCB_FLAG_SERVER_SIDE	0  /* This mpcb belongs to a server side
 				    * connection. (obtained through a listen)
 				    */

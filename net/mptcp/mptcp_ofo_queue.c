@@ -202,7 +202,7 @@ static void replace_node(struct mptcp_node *old, struct mptcp_node *new)
  * @return: The node that contains the concatenation of @n1 and @n2.
  */
 static struct mptcp_node *concat(struct mptcp_node *n1, struct mptcp_node *n2,
-			   struct mptcp_node *aggreg)
+				 struct mptcp_node *aggreg)
 {
 	/* Concatenating necessarily results in using a sequence of skbuffs.
 	 * If one of n1 or n2 is already a sequence, we reuse the allocated

@@ -197,8 +197,6 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 	struct mptcp_cb *mpcb = tp->mpcb;
 	struct sock *meta_sk = (struct sock *) mpcb;
 
-	BUG_ON(is_meta_sk(sk));
-
 	skb_queue_walk_safe(&sk->sk_write_queue, skb_it, tmp) {
 		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb_it);
 		/* seq > reinjected_seq , to avoid reinjecting several times
