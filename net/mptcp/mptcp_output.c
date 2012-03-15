@@ -891,8 +891,7 @@ void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 }
 
 void mptcp_synack_options(struct request_sock *req,
-			  struct tcp_out_options *opts,
-			  unsigned *remaining)
+			  struct tcp_out_options *opts, unsigned *remaining)
 {
 	opts->options |= OPTION_MPTCP;
 	/* MPCB not yet set - thus it's a new MPTCP-session */
