@@ -67,11 +67,6 @@ static inline int before64(const u64 seq1, const u64 seq2)
 /* is seq1 > seq2 ? */
 #define after64(seq1, seq2)	before64(seq2, seq1)
 
-extern int sysctl_mptcp_scheduler;
-#define MPTCP_SCHED_MAX 2
-extern struct sock *(*mptcp_schedulers[MPTCP_SCHED_MAX])
-		(struct mptcp_cb *, struct sk_buff *);
-
 #ifdef MPTCP_RCV_QUEUE_DEBUG
 struct mptcp_debug {
 	const char *func_name;

@@ -65,17 +65,10 @@ static struct kmem_cache *mpcb_cache __read_mostly;
 
 #ifdef CONFIG_SYSCTL
 
-static int mptcp_sched_min = 1;
-static int mptcp_sched_max = MPTCP_SCHED_MAX;
-
 int sysctl_mptcp_mss __read_mostly = MPTCP_MSS;
 int sysctl_mptcp_ndiffports __read_mostly = 1;
 int sysctl_mptcp_enabled __read_mostly = 1;
-int sysctl_mptcp_scheduler __read_mostly = 1;
 int sysctl_mptcp_checksum __read_mostly = 1;
-int sysctl_mptcp_rbuf_opti __read_mostly = 1;
-int sysctl_mptcp_rbuf_retr __read_mostly = 1;
-int sysctl_mptcp_rbuf_penal __read_mostly = 1;
 
 static ctl_table mptcp_table[] = {
 	{
@@ -102,36 +95,6 @@ static ctl_table mptcp_table[] = {
 	{
 		.procname = "mptcp_checksum",
 		.data = &sysctl_mptcp_checksum,
-		.maxlen = sizeof(int),
-		.mode = 0644,
-		.proc_handler = &proc_dointvec
-	},
-	{
-		.procname	= "mptcp_scheduler",
-		.data		= &sysctl_mptcp_scheduler,
-		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= &proc_dointvec_minmax,
-		.extra1		= &mptcp_sched_min,
-		.extra2		= &mptcp_sched_max
-	},
-	{
-		.procname = "mptcp_rbuf_opti",
-		.data = &sysctl_mptcp_rbuf_opti,
-		.maxlen = sizeof(int),
-		.mode = 0644,
-		.proc_handler = &proc_dointvec
-	},
-	{
-		.procname = "mptcp_rbuf_retr",
-		.data = &sysctl_mptcp_rbuf_retr,
-		.maxlen = sizeof(int),
-		.mode = 0644,
-		.proc_handler = &proc_dointvec
-	},
-	{
-		.procname = "mptcp_rbuf_penal",
-		.data = &sysctl_mptcp_rbuf_penal,
 		.maxlen = sizeof(int),
 		.mode = 0644,
 		.proc_handler = &proc_dointvec

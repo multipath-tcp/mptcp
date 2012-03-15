@@ -133,78 +133,6 @@ static struct sock *get_available_subflow(struct mptcp_cb *mpcb,
 	return backupsk;
 }
 
-/**
- * Round-robin scheduler (if flow is available)
- */
-static struct sock *rr_scheduler(struct mptcp_cb *mpcb, struct sk_buff *skb)
-{
-	struct tcp_sock *tp;
-	struct sock *sk, *bestsk = NULL;
-	int found = 0;
-
-	/* if there is only one subflow, bypass the scheduling function */
-	if (mpcb->cnt_subflows == 1) {
-		bestsk = (struct sock *) mpcb->connection_list;
-		if (!mptcp_is_available(bestsk, skb))
-			bestsk = NULL;
-		goto out;
-	}
-
-	/* First, find the best subflow */
-	mptcp_for_each_sk(mpcb, sk, tp) {
-		/* Looking for the last pi that has been selected. */
-		if (!found && mpcb->last_pi_selected != tp->path_index) {
-			continue;
-		} else {
-			found = 1;
-			/* Go one further */
-			if (mpcb->last_pi_selected == tp->path_index)
-				continue;
-		}
-
-		/* If the skb has already been enqueued in this sk, try to find
-		 * another one
-		 */
-		if (unlikely(mptcp_pi_to_flag(tp->path_index) & skb->path_mask))
-			continue;
-
-		if (!mptcp_is_available(sk, skb))
-			continue;
-
-		bestsk = sk;
-		mpcb->last_pi_selected = tp->path_index;
-		break;
-	}
-
-	if (!bestsk) {
-		/* We may need to restart from the beginning to find a subflow */
-		mptcp_for_each_sk(mpcb, sk, tp)	{
-			/* If the skb has already been enqueued in this sk,
-			 * try to find another one.
-			 */
-			if (unlikely(mptcp_pi_to_flag(tp->path_index) & skb->path_mask))
-				continue;
-
-			if (!mptcp_is_available(sk, skb))
-				continue;
-
-			bestsk = sk;
-			mpcb->last_pi_selected = tp->path_index;
-			break;
-		}
-	}
-
-out:
-	return bestsk;
-}
-
-/* Dynamic scheduler callbacks */
-struct sock *(*mptcp_schedulers[MPTCP_SCHED_MAX])
-		(struct mptcp_cb *, struct sk_buff *) = {
-				&get_available_subflow,
-				&rr_scheduler,
-		};
-
 /* Reinject data from one TCP subflow to the meta_sk
  */
 static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
@@ -398,7 +326,7 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 	struct tcp_sock *tp = tcp_sk(sk), *tp_it;
 	struct sk_buff *skb_it;
 
-	if (!sysctl_mptcp_rbuf_opti || tp->mpcb->cnt_established == 1)
+	if (tp->mpcb->cnt_established == 1)
 		return NULL;
 
 	meta_sk = mptcp_meta_sk(sk);
@@ -413,9 +341,6 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 	 * we wake up the application.
 	 */
 	if (!penal && sk_stream_memory_free(meta_sk))
-		goto retrans;
-
-	if (!sysctl_mptcp_rbuf_penal)
 		goto retrans;
 
 	/* Half the cwnd of the slow flow */
@@ -443,8 +368,6 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 	}
 
 retrans:
-	if (!sysctl_mptcp_rbuf_retr)
-		return NULL;
 
 	/* Segment not yet injected into this path? Take it!!! */
 	if (!(skb_it->path_mask & mptcp_pi_to_flag(tp->path_index))) {
@@ -628,7 +551,7 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		 */
 		BUG_ON(tso_segs != 1);
 
-		subsk = mptcp_schedulers[sysctl_mptcp_scheduler - 1](mpcb, skb);
+		subsk = get_available_subflow(mpcb, skb);
 		if (!subsk)
 			break;
 		subtp = tcp_sk(subsk);
@@ -1389,8 +1312,7 @@ struct sk_buff *mptcp_next_segment(struct sock *meta_sk, int *reinject)
 
 		if (!skb && meta_sk->sk_write_pending &&
 		    sk_stream_wspace(meta_sk) < sk_stream_min_wspace(meta_sk)) {
-			struct sock *subsk = mptcp_schedulers
-					[sysctl_mptcp_scheduler - 1](mpcb, NULL);
+			struct sock *subsk = get_available_subflow(mpcb, NULL);
 			if (!subsk)
 				return NULL;
 
