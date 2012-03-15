@@ -517,11 +517,9 @@ static inline void mptcp_dad_init_timer(struct mptcp_dad_data *data,
 	data->timer.data = (unsigned long)data;
 	data->timer.function = mptcp_dad_callback;
 	if (ifa->idev->cnf.rtr_solicit_delay)
-		data->timer.expires = jiffies +
-			ifa->idev->cnf.rtr_solicit_delay;
+		data->timer.expires = jiffies + ifa->idev->cnf.rtr_solicit_delay;
 	else
-		data->timer.expires = jiffies +
-			MPTCP_IPV6_DEFAULT_DAD_WAIT;
+		data->timer.expires = jiffies + MPTCP_IPV6_DEFAULT_DAD_WAIT;
 }
 
 static void mptcp_dad_callback(unsigned long arg)
