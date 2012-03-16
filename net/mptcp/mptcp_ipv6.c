@@ -531,7 +531,6 @@ static void mptcp_dad_callback(unsigned long arg)
 		mptcp_dad_init_timer(data, data->ifa);
 		add_timer(&data->timer);
 	} else {
-		del_timer_sync(&data->timer);
 		mptcp_pm_inet6_addr_event(NULL, NETDEV_UP, data->ifa);
 		kfree(data);
 	}
