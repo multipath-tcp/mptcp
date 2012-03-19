@@ -983,12 +983,18 @@ static inline void mptcp_mp_fail_rcvd(struct mptcp_cb *mpcb,
 }
 
 /* Find the first free index in the bitfield */
-static inline int mptcp_find_free_index(u8 bitfield)
+static inline int __mptcp_find_free_index(u8 bitfield, int j)
 {
 	int i;
 	mptcp_for_each_bit_unset(bitfield, i)
-		return i;
+		if (i != j)
+			return i;
 	return -1;
+}
+
+static inline int mptcp_find_free_index(u8 bitfield)
+{
+	return __mptcp_find_free_index(bitfield, -1);
 }
 
 /* Find the first index whose bit in the bit-field == 0 */

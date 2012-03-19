@@ -619,7 +619,7 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 
 	/* Not yet in address-list */
 	if (event == NETDEV_UP && netif_running(ifa->idev->dev)) {
-		i = mptcp_find_free_index(mpcb->loc6_bits);
+		i = __mptcp_find_free_index(mpcb->loc6_bits, 0);
 		if (i < 0) {
 			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP Reached max "
 					"number of local IPv6 addresses: %d\n",
