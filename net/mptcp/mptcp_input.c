@@ -40,12 +40,12 @@ static inline void mptcp_become_fully_estab(struct tcp_sock *tp)
 }
 
 /**
- * Cleans the meta-socket retransmission queue.
+ * Cleans the meta-socket retransmission queue and the reinject-queue.
  * @sk must be the metasocket.
  */
 static void mptcp_clean_rtx_queue(struct sock *meta_sk)
 {
-	struct sk_buff *skb;
+	struct sk_buff *skb, *tmp;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	int acked = 0;
@@ -81,6 +81,18 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk)
 
 		acked = 1;
 	}
+	/* Remove acknowledged data from the reinject queue */
+	skb_queue_walk_safe(&mpcb->reinject_queue, skb, tmp) {
+		struct tcp_skb_cb *scb = TCP_SKB_CB(skb);
+		if (before(meta_tp->snd_una, scb->end_seq))
+			/* continue, because the reinject-queue is not
+			 * necessarily ordered */
+			continue;
+
+		skb_unlink(skb, &mpcb->reinject_queue);
+		kfree_skb(skb);
+	}
+
 	if (acked)
 		mptcp_reset_xmit_timer(meta_sk);
 }

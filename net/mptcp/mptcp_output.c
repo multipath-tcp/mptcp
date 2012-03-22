@@ -132,44 +132,25 @@ static struct sock *get_available_subflow(struct mptcp_cb *mpcb,
 		return bestsk;
 	return backupsk;
 }
-/* TODO adapt for layer-switch */
 
-/* Reinject data from one TCP subflow to the meta_sk
+static struct mp_dss *mptcp_skb_find_dss(const struct sk_buff *skb)
+{
+	if (!(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ))
+		return NULL;
+
+	return (struct mp_dss *)(skb->data - (MPTCP_SUB_LEN_DSS_ALIGN +
+			      	      	      MPTCP_SUB_LEN_ACK_ALIGN +
+			      	      	      MPTCP_SUB_LEN_SEQ_ALIGN));
+}
+
+/* Reinject data from one TCP subflow to the meta_sk. If sk == NULL, we are
+ * coming from the meta-retransmit-timer
  */
 static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 				 struct sock *sk, int clone_it)
 {
 	struct sk_buff *skb;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct sock *sk_it;
-
-	/* A segment can be added to the reinject queue only if
-	 * there is at least one working subflow that has never sent
-	 * this data */
-	mptcp_for_each_sk(meta_tp->mpcb, sk_it) {
-		struct tcp_sock *tp_it = tcp_sk(sk_it);
-		if (!mptcp_sk_can_send(sk_it) || tp_it->pf)
-			continue;
-
-		if (mptcp_dont_reinject_skb(tp_it, orig_skb))
-			continue;
-
-		/* candidate subflow found, we can reinject */
-		break;
-	}
-
-	if (!sk_it) {
-		mptcp_debug("%s: skb already injected to all paths - seq %u "
-			    "dlen %u pi %d reinjseq %u mptcp_flags %#x tcp_flags %#x\n",
-			    __func__,
-			    TCP_SKB_CB(orig_skb)->seq,
-			    TCP_SKB_CB(orig_skb)->end_seq - TCP_SKB_CB(orig_skb)->seq,
-			    sk ? tcp_sk(sk)->path_index : -1,
-			    sk ? tcp_sk(sk)->reinjected_seq : 0xFFFFFFFF,
-			    TCP_SKB_CB(orig_skb)->mptcp_flags,
-			    TCP_SKB_CB(orig_skb)->tcp_flags);
-		return 1; /* no candidate found */
-	}
 
 	if (clone_it) {
 		/* pskb_copy is necessary here, because the TCP/IP-headers
@@ -185,9 +166,44 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 	}
 	if (unlikely(!skb))
 		return -ENOBUFS;
+
+	/* get the data-seq and end-data-seq and store them again in the
+	 * tcp_skb_cb
+	 */
+	if (sk) {
+		struct mp_dss *mpdss = mptcp_skb_find_dss(orig_skb);
+		u32 *p32;
+		u16 *p16;
+
+		if (!mpdss || !mpdss->M) {
+			if (clone_it)
+				__kfree_skb(skb);
+
+			return -1;
+		}
+
+		/* Move the pointer to the data-seq */
+		p32 = (u32 *)mpdss;
+		p32++;
+		if (mpdss->A) {
+			p32++;
+			if (mpdss->a)
+				p32++;
+		}
+
+		TCP_SKB_CB(skb)->seq = ntohl(*p32);
+
+		/* Get the data_len to calculate the end_data_seq */
+		p32++;
+		p32++;
+		p16 = (u16 *)p32;
+		TCP_SKB_CB(skb)->end_seq = ntohs(*p16) + TCP_SKB_CB(skb)->seq;
+	}
+
 	skb->sk = meta_sk;
 
 	skb_queue_tail(&meta_tp->mpcb->reinject_queue, skb);
+
 	return 0;
 }
 
