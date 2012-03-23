@@ -1031,8 +1031,6 @@ unsigned mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 					(u8 *)&mpcb->rx_opt.mptcp_recv_nonce,
 					(u32 *)opts->sender_mac);
 		}
-		tp->include_mpc = 0;
-		return ret;
 	}
 
 	if (!tp->mptcp_add_addr_ack && !tp->include_mpc) {
@@ -1114,6 +1112,7 @@ unsigned mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		*size += MPTCP_SUB_LEN_PRIO_ALIGN;
 	}
 
+	tp->include_mpc = 0;
 	return ret;
 }
 
