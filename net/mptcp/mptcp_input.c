@@ -1174,6 +1174,7 @@ static void mptcp_send_reset_rem_id(const struct mptcp_cb *mpcb, u8 rem_id)
 
 	mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp) {
 		if (inet_sk(sk_it)->rem_id == rem_id) {
+			mptcp_reinject_data(sk_it, 0);
 			tcp_send_active_reset(sk_it, GFP_ATOMIC);
 			mptcp_sub_force_close(sk_it);
 		}
