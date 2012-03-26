@@ -83,15 +83,6 @@ static void mptcp_v6_reqsk_queue_hash_add(struct request_sock *req,
 	spin_unlock_bh(&mptcp_reqsk_hlock);
 }
 
-/* Copied from tcp_ipv6.c */
-static __u32 tcp_v6_init_sequence(struct sk_buff *skb)
-{
-	return secure_tcpv6_sequence_number(ipv6_hdr(skb)->daddr.s6_addr32,
-					    ipv6_hdr(skb)->saddr.s6_addr32,
-					    tcp_hdr(skb)->dest,
-					    tcp_hdr(skb)->source);
-}
-
 static void mptcp_v6_join_request(struct mptcp_cb *mpcb, struct sk_buff *skb)
 {
 	struct inet6_request_sock *treq;

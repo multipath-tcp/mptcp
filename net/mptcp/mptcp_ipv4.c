@@ -48,15 +48,6 @@ static inline u32 inet_synq_hash(const __be32 raddr, const __be16 rport,
 			    rnd) & (synq_hsize - 1);
 }
 
-/* Copied from tcp_ipv4.c */
-static inline __u32 tcp_v4_init_sequence(struct sk_buff *skb)
-{
-	return secure_tcp_sequence_number(ip_hdr(skb)->daddr,
-					  ip_hdr(skb)->saddr,
-					  tcp_hdr(skb)->dest,
-					  tcp_hdr(skb)->source);
-}
-
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 #define AF_INET_FAMILY(fam) ((fam) == AF_INET)
 #else
