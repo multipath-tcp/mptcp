@@ -40,26 +40,6 @@
 
 #define AF_INET6_FAMILY(fam) ((fam) == AF_INET6)
 
-/*
- * Copied from net/ipv6/inet6_connection_sock.c
- */
-static u32 inet6_synq_hash(const struct in6_addr *raddr, const __be16 rport,
-			   const u32 rnd, const u16 synq_hsize)
-{
-	u32 c;
-
-	c = jhash_3words((__force u32)raddr->s6_addr32[0],
-			 (__force u32)raddr->s6_addr32[1],
-			 (__force u32)raddr->s6_addr32[2],
-			 rnd);
-
-	c = jhash_2words((__force u32)raddr->s6_addr32[3],
-			 (__force u32)rport,
-			 c);
-
-	return c & (synq_hsize - 1);
-}
-
 static void mptcp_v6_reqsk_queue_hash_add(struct request_sock *req,
 				      unsigned long timeout)
 {

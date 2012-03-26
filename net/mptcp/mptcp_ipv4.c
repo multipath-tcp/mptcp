@@ -40,14 +40,6 @@
 #include <net/request_sock.h>
 #include <net/tcp.h>
 
-/*Copied from net/ipv4/inet_connection_sock.c*/
-static inline u32 inet_synq_hash(const __be32 raddr, const __be16 rport,
-				 const u32 rnd, const u32 synq_hsize)
-{
-	return jhash_2words((__force u32) raddr, (__force u32) rport,
-			    rnd) & (synq_hsize - 1);
-}
-
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 #define AF_INET_FAMILY(fam) ((fam) == AF_INET)
 #else
