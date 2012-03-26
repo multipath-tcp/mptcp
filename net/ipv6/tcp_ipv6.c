@@ -471,9 +471,8 @@ out:
 	sock_put(sk);
 }
 
-
-static int tcp_v6_send_synack(struct sock *sk, struct request_sock *req,
-			      struct request_values *rvp)
+int tcp_v6_send_synack(struct sock *sk, struct request_sock *req,
+		       struct request_values *rvp)
 {
 	struct inet6_request_sock *treq = inet6_rsk(req);
 	struct ipv6_pinfo *np = inet6_sk(sk);
@@ -525,14 +524,8 @@ static int tcp_v6_rtx_synack(struct sock *sk, struct request_sock *req,
 			     struct request_values *rvp)
 {
 	TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_RETRANSSEGS);
-	/* If the mpcb pointer is set, this is a join request.
-	 * If not, this is an initial connection request.
-	 */
-	if (mptcp_mpcb_from_req_sk(req))
-		return mptcp_v6_send_synack(
-				mpcb_meta_sk(mptcp_mpcb_from_req_sk(req)), req);
-	else
-		return tcp_v6_send_synack(sk, req, rvp);
+
+	return tcp_v6_send_synack(sk, req, rvp);
 }
 
 static inline void syn_flood_warning(struct sk_buff *skb)

@@ -43,7 +43,6 @@
 #define MPTCP_IPV6_DEFAULT_DAD_WAIT (HZ/10)
 
 int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb);
-int mptcp_v6_send_synack(struct sock *meta_sk, struct request_sock *req);
 int mptcp_v6_rem_raddress(struct multipath_options *mopt, u8 id);
 int mptcp_v6_add_raddress(struct multipath_options *mopt,
 			  const struct in6_addr *addr, __be16 port, u8 id);

@@ -39,8 +39,6 @@
 #ifdef CONFIG_MPTCP
 
 int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb);
-int mptcp_v4_send_synack(struct sock *meta_sk, struct request_sock *req,
-			 struct request_values *rvp);
 int mptcp_v4_rem_raddress(struct multipath_options *mopt, u8 id);
 int mptcp_v4_add_raddress(struct multipath_options *mopt,
 			  const struct in_addr *addr, __be16 port, u8 id);

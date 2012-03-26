@@ -138,7 +138,7 @@ static void mptcp_v4_join_request(struct mptcp_cb *mpcb, struct sk_buff *skb)
 	/* Adding to request queue in metasocket */
 	mptcp_v4_reqsk_queue_hash_add(req, TCP_TIMEOUT_INIT);
 
-	if (mptcp_v4_send_synack(mpcb_meta_sk(mpcb), req, NULL))
+	if (tcp_v4_send_synack(mpcb_meta_sk(mpcb), NULL, req, NULL))
 		goto drop_and_free;
 
 	return;
@@ -335,37 +335,6 @@ struct request_sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
 		return NULL;
 
 	return req;
-}
-
-/**
- * Send a SYN-ACK after having received a SYN.
- * This is to be used for JOIN subflows only.
- */
-int mptcp_v4_send_synack(struct sock *meta_sk, struct request_sock *req,
-			 struct request_values *rvp)
-{
-	const struct inet_request_sock *ireq = inet_rsk(req);
-	int err = -1;
-	struct sk_buff *skb;
-	struct dst_entry *dst;
-	struct flowi4 fl4;
-
-	/* First, grab a route. */
-	dst = inet_csk_route_req(req, &fl4, meta_sk);
-	if (!dst)
-		return -1;
-
-	skb = tcp_make_synack(meta_sk, dst, req, rvp);
-	if (skb) {
-		__tcp_v4_send_check(skb, ireq->loc_addr, ireq->rmt_addr);
-
-		err = ip_build_and_send_pkt(skb, meta_sk, ireq->loc_addr,
-					    ireq->rmt_addr, ireq->opt);
-		err = net_xmit_eval(err);
-	}
-
-	dst_release(dst);
-	return err;
 }
 
 /**
