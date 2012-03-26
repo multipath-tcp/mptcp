@@ -348,9 +348,10 @@ int mptcp_v4_send_synack(struct sock *meta_sk, struct request_sock *req,
 	int err = -1;
 	struct sk_buff *skb;
 	struct dst_entry *dst;
+	struct flowi4 fl4;
 
 	/* First, grab a route. */
-	dst = mptcp_route_req(req, meta_sk);
+	dst = inet_csk_route_req(req, &fl4, meta_sk);
 	if (!dst)
 		return -1;
 

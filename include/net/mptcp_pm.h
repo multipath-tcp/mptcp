@@ -101,8 +101,6 @@ int mptcp_find_token(u32 token);
 int mptcp_reqsk_find_tk(u32 token);
 void mptcp_reqsk_insert_tk(struct request_sock *reqsk, u32 token);
 void mptcp_reqsk_remove_tk(struct request_sock *reqsk);
-struct dst_entry *mptcp_route_req(const struct request_sock *req,
-				  struct sock *meta_sk);
 void mptcp_set_addresses(struct mptcp_cb *mpcb);
 int mptcp_syn_recv_sock(struct sk_buff *skb);
 int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family);

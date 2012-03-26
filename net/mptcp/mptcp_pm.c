@@ -290,37 +290,6 @@ out:
 	read_unlock_bh(&dev_base_lock);
 }
 
-struct dst_entry *mptcp_route_req(const struct request_sock *req,
-				  struct sock *meta_sk)
-{
-	struct rtable *rt;
-	struct inet_request_sock *ireq = inet_rsk(req);
-	struct ip_options_rcu *opt = inet_rsk(req)->opt;
-	struct flowi4 fl4;
-	struct net *netns = sock_net(meta_sk);
-
-	flowi4_init_output(&fl4, 0, meta_sk->sk_mark,
-			   RT_CONN_FLAGS(meta_sk), RT_SCOPE_UNIVERSE,
-			   meta_sk->sk_protocol, inet_sk_flowi_flags(meta_sk),
-			   (opt && opt->opt.srr) ? opt->opt.faddr : ireq->rmt_addr,
-			   ireq->loc_addr, ireq->rmt_port, inet_sk(meta_sk)->inet_sport);
-
-	security_req_classify_flow(req, flowi4_to_flowi(&fl4));
-	rt = ip_route_output_flow(netns, &fl4, NULL);
-
-	if (IS_ERR(rt))
-		goto no_route;
-	if (opt && opt->opt.is_strictroute && fl4.daddr != rt->rt_gateway)
-		goto route_err;
-	return &rt->dst;
-
-route_err:
-	ip_rt_put(rt);
-no_route:
-	IP_INC_STATS_BH(netns, IPSTATS_MIB_OUTNOROUTES);
-	return NULL;
-}
-
 int mptcp_syn_recv_sock(struct sk_buff *skb)
 {
 	struct tcphdr *th = tcp_hdr(skb);
