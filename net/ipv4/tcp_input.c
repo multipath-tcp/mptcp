@@ -4104,7 +4104,7 @@ static int tcp_disordered_ack(const struct sock *sk, const struct sk_buff *skb)
 	struct tcphdr *th = tcp_hdr(skb);
 	u32 seq = TCP_SKB_CB(skb)->seq;
 	u32 ack = TCP_SKB_CB(skb)->ack_seq;
-	struct tcp_sock *meta_tp = (tp->mpc) ? mpcb_meta_tp(tp->mpcb) : tp;
+	const struct tcp_sock *meta_tp = (tp->mpc) ? mpcb_meta_tp(tp->mpcb) : tp;
 	u32 data_ack = (tp->mpc) ? mptcp_skb_data_ack(skb) : ack;
 	u32 data_seq = (tp->mpc) ? mptcp_skb_data_seq(skb) : seq;
 
@@ -5049,7 +5049,7 @@ void tcp_cwnd_application_limited(struct sock *sk)
 static int tcp_should_expand_sndbuf(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *meta_sk = tp->mpc ? mpcb_meta_sk(tp->mpcb) : sk;
+	const struct sock *meta_sk = tp->mpc ? mpcb_meta_sk(tp->mpcb) : sk;
 
 	/* If the user specified a specific send buffer setting, do
 	 * not modify it.

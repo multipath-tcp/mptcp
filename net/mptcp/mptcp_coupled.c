@@ -27,6 +27,8 @@
 #include <net/tcp.h>
 #include <net/mptcp.h>
 
+#include <linux/module.h>
+
 /* Scaling is done in the numerator with alpha_scale_num and in the denominator
  * with alpha_scale_den.
  *

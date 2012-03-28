@@ -25,6 +25,7 @@
  *      2 of the License, or (at your option) any later version.
  */
 
+#include <linux/module.h>
 #include <linux/netdevice.h>
 #include <linux/inetdevice.h>
 #include <linux/list.h>

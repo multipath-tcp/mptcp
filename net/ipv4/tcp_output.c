@@ -1530,12 +1530,9 @@ static unsigned int tcp_snd_test(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int cwnd_quota;
 	struct mptcp_cb *mpcb = tp->mpcb;
-	struct tcp_sock *meta_tp = mpcb_meta_tp(mpcb);
+	struct tcp_sock *meta_tp = tp->mpc ? mpcb_meta_tp(mpcb) : tp;
 
 	BUG_ON(tp->mpc && tcp_skb_pcount(skb) > 1);
-
-	if (!tp->mpc)
-		meta_tp = tp;
 
 	tcp_init_tso_segs(sk, skb, cur_mss);
 

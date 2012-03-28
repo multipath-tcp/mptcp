@@ -1114,10 +1114,10 @@ static void mptcp_send_reset_rem_id(const struct mptcp_cb *mpcb, u8 rem_id)
 	}
 }
 
-void mptcp_parse_options(uint8_t *ptr, int opsize,
+void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			 struct tcp_options_received *opt_rx,
 			 struct multipath_options *mopt,
-			 struct sk_buff *skb)
+			 const struct sk_buff *skb)
 {
 	struct mptcp_option *mp_opt = (struct mptcp_option *) ptr;
 
