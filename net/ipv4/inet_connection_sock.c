@@ -299,10 +299,9 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 
 	if (newsk->sk_protocol == IPPROTO_TCP && tcp_sk(newsk)->mpc) {
 		struct sock *sk_it;
-		struct tcp_sock *tp_it;
 
-		mptcp_for_each_sk(tcp_sk(newsk)->mpcb, sk_it, tp_it) {
-			if (!is_master_tp(tp_it))
+		mptcp_for_each_sk(tcp_sk(newsk)->mpcb, sk_it) {
+			if (!is_master_tp(tcp_sk(sk_it)))
 				sock_rps_record_flow(sk_it);
 		}
 	}

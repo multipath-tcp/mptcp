@@ -471,7 +471,6 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 {
 	int i;
 	struct sock *sk;
-	struct tcp_sock *tp;
 
 	if (ifa->ifa_scope > RT_SCOPE_LINK ||
 	    (ifa->ifa_dev->dev->flags & IFF_NOMULTIPATH))
@@ -510,7 +509,8 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 found:
 	/* Address already in list. Reactivate/Deactivate the
 	 * concerned paths. */
-	mptcp_for_each_sk(mpcb, sk, tp) {
+	mptcp_for_each_sk(mpcb, sk) {
+		struct tcp_sock *tp = tcp_sk(sk);
 		if (sk->sk_family != AF_INET ||
 		    inet_sk(sk)->inet_saddr != ifa->ifa_local)
 			continue;
@@ -540,12 +540,12 @@ found:
 
 		/* force sending an ACK on each subflow */
 		mpcb->remove_addrs |= (1 << mpcb->addr4[i].id);
-		mptcp_for_each_sk(mpcb, sk, tp) {
+		mptcp_for_each_sk(mpcb, sk) {
 			if ((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_CLOSE |
 						   TCPF_TIME_WAIT))
 				continue;
 
-			if (tp->pf == 1)
+			if (tcp_sk(sk)->pf == 1)
 				continue;
 
 			if (inet_sk(sk)->loc_id != mpcb->addr4[i].id)
@@ -563,10 +563,9 @@ found:
  */
 void mptcp_v4_send_add_addr(int loc_id, struct mptcp_cb *mpcb)
 {
-	struct sock *sk;
 	struct tcp_sock *tp;
 
-	mptcp_for_each_sk(mpcb, sk, tp)
+	mptcp_for_each_tp(mpcb, tp)
 		tp->add_addr4 |= (1 << loc_id);
 }
 

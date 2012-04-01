@@ -917,7 +917,6 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	struct iovec *iov;
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sock *sk_it;
-	struct tcp_sock *tp_it;
 	struct sk_buff *skb;
 	int iovlen, flags;
 	int mss_now, size_goal;
@@ -925,8 +924,8 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	long timeo;
 
 	if (tp->mpc) {
-		mptcp_for_each_sk(tp->mpcb, sk_it, tp_it) {
-			if (!is_master_tp(tp_it))
+		mptcp_for_each_sk(tp->mpcb, sk_it) {
+			if (!is_master_tp(tcp_sk(sk_it)))
 				sock_rps_record_flow(sk_it);
 		}
 	}
@@ -946,8 +945,8 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			release_sock(sk);
 			mptcp_update_pointers(&sk, &tp, NULL);
 
-		        mptcp_for_each_sk(tp->mpcb, sk_it, tp_it) {
-				if (!is_master_tp(tp_it))
+		        mptcp_for_each_sk(tp->mpcb, sk_it) {
+				if (!is_master_tp(tcp_sk(sk_it)))
 		                        sock_rps_record_flow(sk_it);
 		        }
 
@@ -1550,11 +1549,9 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	struct mptcp_cb *mpcb = tp->mpc ? tp->mpcb : NULL;
 	struct sock *sk_it = tp->mpc ? NULL : sk;
 #ifdef CONFIG_MPTCP
-	struct tcp_sock *tp_it = tcp_sk(sk_it);
-
 	if (mpcb) {
-		mptcp_for_each_sk(mpcb, sk_it, tp_it) {
-			if (!is_master_tp(tp_it))
+		mptcp_for_each_sk(mpcb, sk_it) {
+			if (!is_master_tp(tcp_sk(sk_it)))
 				sock_rps_record_flow(sk_it);
 		}
 	}
@@ -1800,7 +1797,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 						     ucopy.prequeue))) {
 do_prequeue:
 				if (mpcb) {
-					mptcp_for_each_sk(mpcb, sk_it, tp_it)
+					mptcp_for_each_sk(mpcb, sk_it)
 						tcp_prequeue_process(sk_it);
 				} else {
 					tcp_prequeue_process(sk);
@@ -1891,7 +1888,7 @@ do_prequeue:
 		len -= used;
 
 		if (mpcb) {
-			mptcp_for_each_sk(mpcb, sk_it, tp_it)
+			mptcp_for_each_sk(mpcb, sk_it)
 				tcp_rcv_space_adjust(sk_it);
 		} else {
 			tcp_rcv_space_adjust(sk);
@@ -1932,7 +1929,7 @@ skip_copy:
 
 			tp->ucopy.len = copied > 0 ? len : 0;
 			if (mpcb) {
-				mptcp_for_each_sk(mpcb, sk_it, tp_it)
+				mptcp_for_each_sk(mpcb, sk_it)
 					tcp_prequeue_process(sk_it);
 			} else {
 				tcp_prequeue_process(sk);

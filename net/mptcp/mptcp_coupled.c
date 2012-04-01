@@ -59,15 +59,13 @@ u32 mptcp_get_crt_cwnd(struct tcp_sock *tp)
 
 u32 mptcp_get_total_cwnd(struct mptcp_cb *mpcb)
 {
-	struct tcp_sock *tp;
 	struct sock *sub_sk;
 	u32 cwnd = 0;
-	tp = mpcb->connection_list;
 
-	mptcp_for_each_sk(mpcb, sub_sk, tp) {
+	mptcp_for_each_sk(mpcb, sub_sk) {
 		if (!mptcp_sk_can_send(sub_sk))
 			continue;
-		cwnd += mptcp_get_crt_cwnd(tp);
+		cwnd += mptcp_get_crt_cwnd(tcp_sk(sub_sk));
 	}
 	return cwnd;
 }
@@ -104,7 +102,6 @@ static inline void mptcp_set_forced(struct mptcp_cb *mpcb, bool force)
 static void mptcp_recalc_alpha(struct sock *sk)
 {
 	struct mptcp_cb *mpcb = mpcb_from_tcpsock(tcp_sk(sk));
-	struct tcp_sock *sub_tp;
 	struct sock *sub_sk;
 	int best_cwnd = 0, best_rtt = 0, tot_cwnd, can_send = 0;
 	u64 max_numerator = 0, sum_denominator = 0, alpha = 1;
@@ -125,7 +122,8 @@ static void mptcp_recalc_alpha(struct sock *sk)
 		tot_cwnd = 1;
 
 	/* Find the max numerator of the alpha-calculation */
-	mptcp_for_each_sk(mpcb, sub_sk, sub_tp) {
+	mptcp_for_each_sk(mpcb, sub_sk) {
+		struct tcp_sock *sub_tp = tcp_sk(sub_sk);
 		u64 rtt = 1; /* Minimum value is 1, to avoid dividing by 0
 			      * u64 - because anyway we later need it */
 		u64 tmp;
@@ -162,7 +160,8 @@ static void mptcp_recalc_alpha(struct sock *sk)
 		goto exit;
 
 	/* Calculate the denominator */
-	mptcp_for_each_sk(mpcb, sub_sk, sub_tp) {
+	mptcp_for_each_sk(mpcb, sub_sk) {
+		struct tcp_sock *sub_tp = tcp_sk(sub_sk);
 		u64 rtt = 1; /* Minimum value is 1, to avoid dividing by 0
 			      * u64 - because anyway we later need it */
 
@@ -186,11 +185,13 @@ static void mptcp_recalc_alpha(struct sock *sk)
 	if (unlikely(!sum_denominator)) {
 		mptcp_debug("%s: sum_denominator == 0, cnt_established:%d\n",
 				__func__, mpcb->cnt_established);
-		mptcp_for_each_sk(mpcb, sub_sk, sub_tp)
+		mptcp_for_each_sk(mpcb, sub_sk) {
+			struct tcp_sock *sub_tp = tcp_sk(sub_sk);
 			mptcp_debug("%s: pi:%d, state:%d\n, rtt:%u, cwnd: %u",
 					__func__, sub_tp->path_index,
 					sub_sk->sk_state, sub_tp->srtt,
 					sub_tp->snd_cwnd);
+		}
 	}
 
 	alpha = div64_u64(mptcp_ccc_scale(tot_cwnd, alpha_scale_num) *

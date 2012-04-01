@@ -126,7 +126,7 @@ static ctl_table mptcp_root_table[] = {
 struct sock *mptcp_select_ack_sock(const struct mptcp_cb *mpcb, int copied)
 {
 	struct sock *sk, *subsk = NULL;
-	struct tcp_sock *tp, *meta_tp = mpcb_meta_tp(mpcb);
+	struct tcp_sock *meta_tp = mpcb_meta_tp(mpcb);
 	u32 max_data_seq = 0;
 	/* max_data_seq initialized to correct compiler-warning.
 	 * But the initialization is handled by max_data_seq_set */
@@ -147,7 +147,9 @@ struct sock *mptcp_select_ack_sock(const struct mptcp_cb *mpcb, int copied)
 	 *       strange meta-level retransmissions going on), we take
 	 *       the subflow who last sent the highest data_seq.
 	 */
-	mptcp_for_each_sk(mpcb, sk, tp) {
+	mptcp_for_each_sk(mpcb, sk) {
+		struct tcp_sock *tp = tcp_sk(sk);
+
 		if ((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV |
 					   TCPF_CLOSE | TCPF_LISTEN))
 			continue;
@@ -180,7 +182,8 @@ struct sock *mptcp_select_ack_sock(const struct mptcp_cb *mpcb, int copied)
 	if (!subsk) {
 		mptcp_debug("%s subsk is null, copied %d, cseq %u\n", __func__,
 			    copied, meta_tp->copied_seq);
-		mptcp_for_each_sk(mpcb, sk, tp) {
+		mptcp_for_each_sk(mpcb, sk) {
+			struct tcp_sock *tp = tcp_sk(sk);
 			mptcp_debug("%s pi %d state %u last_dseq %u\n",
 				    __func__, tp->path_index, sk->sk_state,
 				    tp->last_data_seq);
@@ -485,7 +488,6 @@ void mptcp_release_sock(struct sock *meta_sk)
 {
 	struct mptcp_cb *mpcb = (struct mptcp_cb *)meta_sk;
 	struct sock *sk_it;
-	struct tcp_sock *tp_it;
 
 	/* We need to do the following, because as far
 	 * as the master-socket is locked, every received segment is
@@ -497,7 +499,7 @@ void mptcp_release_sock(struct sock *meta_sk)
 		if (meta_sk->sk_backlog.tail)
 			__release_sock(meta_sk, mpcb);
 
-		mptcp_for_each_sk(mpcb, sk_it, tp_it) {
+		mptcp_for_each_sk(mpcb, sk_it) {
 			if (sk_it->sk_backlog.tail)
 				__release_sock(sk_it, mpcb);
 		}
@@ -685,10 +687,10 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	struct sock *sk, *subsk;
-	struct tcp_sock *tp;
 	int time_to_ack = 0;
 
-	mptcp_for_each_sk(mpcb, sk, tp) {
+	mptcp_for_each_sk(mpcb, sk) {
+		struct tcp_sock *tp = tcp_sk(sk);
 		const struct inet_connection_sock *icsk = inet_csk(sk);
 		if (!inet_csk_ack_scheduled(sk))
 			continue;
@@ -803,7 +805,7 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
  */
 void mptcp_update_window_clamp(struct tcp_sock *tp)
 {
-	struct sock *meta_sk, *tmpsk;
+	struct sock *meta_sk;
 	struct tcp_sock *meta_tp, *tmptp;
 	struct mptcp_cb *mpcb;
 	u32 new_clamp = 0, new_rcv_ssthresh = 0;
@@ -817,10 +819,10 @@ void mptcp_update_window_clamp(struct tcp_sock *tp)
 	meta_tp = mpcb_meta_tp(mpcb);
 	meta_sk = (struct sock *)mpcb;
 
-	mptcp_for_each_sk(mpcb, tmpsk, tmptp) {
+	mptcp_for_each_tp(mpcb, tmptp) {
 		new_clamp += tmptp->window_clamp;
 		new_rcv_ssthresh += tmptp->rcv_ssthresh;
-		new_rcvbuf += tmpsk->sk_rcvbuf;
+		new_rcvbuf += ((struct sock*)tmptp)->sk_rcvbuf;
 	}
 	meta_tp->window_clamp = new_clamp;
 	meta_tp->rcv_ssthresh = new_rcv_ssthresh;
@@ -834,9 +836,8 @@ void mptcp_update_window_clamp(struct tcp_sock *tp)
 void mptcp_update_sndbuf(struct mptcp_cb *mpcb)
 {
 	struct sock *meta_sk = (struct sock *) mpcb, *sk;
-	struct tcp_sock *tp;
 	int new_sndbuf = 0;
-	mptcp_for_each_sk(mpcb, sk, tp)
+	mptcp_for_each_sk(mpcb, sk)
 		new_sndbuf += sk->sk_sndbuf;
 	meta_sk->sk_sndbuf = min(new_sndbuf, sysctl_tcp_wmem[2]);
 }
@@ -860,7 +861,7 @@ EXPORT_SYMBOL(mptcp_check_socket);
 
 void mptcp_close(struct sock *meta_sk, long timeout)
 {
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *tp_it;
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct sock *sk_it, *sk_tmp;
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	struct sk_buff *skb;
@@ -870,8 +871,8 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 	mptcp_debug("%s: Close of meta_sk with tok %#x\n", __func__,
 			mpcb->mptcp_loc_token);
 
-	mptcp_for_each_sk(mpcb, sk_it, tp_it) {
-		if (!is_master_tp(tp_it))
+	mptcp_for_each_sk(mpcb, sk_it) {
+		if (!is_master_tp(tcp_sk(sk_it)))
 			sock_rps_reset_flow(sk_it);
 	}
 
@@ -1016,7 +1017,6 @@ void mptcp_detach_unused_child(struct sock *sk)
 {
 	struct mptcp_cb *mpcb;
 	struct sock *child;
-	struct tcp_sock *child_tp;
 	if (!sk->sk_protocol == IPPROTO_TCP)
 		return;
 	mpcb = tcp_sk(sk)->mpcb;
@@ -1026,7 +1026,7 @@ void mptcp_detach_unused_child(struct sock *sk)
 	/* Now all subflows of the mpcb are attached, so we can destroy them,
 	 * being sure that the mpcb will be correctly destroyed last.
 	 */
-	mptcp_for_each_sk(mpcb, child, child_tp) {
+	mptcp_for_each_sk(mpcb, child) {
 		if (child == sk)
 			continue; /* master_sk will be freed last
 				   * as part of the normal

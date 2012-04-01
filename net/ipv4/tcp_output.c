@@ -1954,8 +1954,7 @@ void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
 		} else {
 #ifdef CONFIG_MPTCP
 			struct sock *sk_it;
-			struct tcp_sock *tp_it;
-			mptcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it, tp_it)
+			mptcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it)
 			    tcp_check_probe_timer(sk_it);
 #endif
 		}

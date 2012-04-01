@@ -815,11 +815,11 @@ exit:
 int mptcp_fin(struct mptcp_cb *mpcb)
 {
 	struct sock *meta_sk = mpcb_meta_sk(mpcb), *sk = NULL, *sk_it;
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *tp_it;
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	int ans = 0;
 
-	mptcp_for_each_sk(mpcb, sk_it, tp_it) {
-		if (tp_it->path_index == mpcb->dfin_path_index) {
+	mptcp_for_each_sk(mpcb, sk_it) {
+		if (tcp_sk(sk_it)->path_index == mpcb->dfin_path_index) {
 			sk = sk_it;
 			break;
 		}
@@ -1013,12 +1013,12 @@ int mptcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 		mptcp_debug("%s: mpcb copied seq:%#x\n", __func__,
 				meta_tp->copied_seq);
 
-		mptcp_for_each_sk(tp->mpcb, sk, tp) {
+		mptcp_for_each_sk(tp->mpcb, sk) {
 			if (sk->sk_state != TCP_ESTABLISHED)
 				continue;
 			mptcp_debug("%s: pi:%d, rcvbuf:%d, "
 				"rmem_alloc:%d\n",
-				__func__, tp->path_index,
+				__func__, tcp_sk(sk)->path_index,
 				sk->sk_rcvbuf,
 				atomic_read(&sk->sk_rmem_alloc));
 			mptcp_debug("%s: used mss for wnd "
@@ -1324,11 +1324,10 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			opt_rx->low_prio = mpprio->b;
 		} else if (opsize == MPTCP_SUB_LEN_PRIO_ADDR) {
 			struct sock *sk;
-			struct tcp_sock *tp;
 			/* change priority of all subflow using this addr_id */
-			mptcp_for_each_sk(mopt->mpcb, sk, tp) {
+			mptcp_for_each_sk(mopt->mpcb, sk) {
 				if (inet_sk(sk)->rem_id == mpprio->addr_id)
-					tp->rx_opt.low_prio = mpprio->b;
+					tcp_sk(sk)->rx_opt.low_prio = mpprio->b;
 			}
 		} else {
 			mptcp_debug("%s: mp_prio: bad option size %d\n",

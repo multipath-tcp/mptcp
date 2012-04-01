@@ -523,7 +523,6 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 {
 	int i;
 	struct sock *sk;
-	struct tcp_sock *tp;
 	int addr_type = ipv6_addr_type(&ifa->addr);
 
 	/* Checks on interface and address-type */
@@ -567,7 +566,8 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 found:
 	/* Address already in list. Reactivate/Deactivate the
 	 * concerned paths. */
-	mptcp_for_each_sk(mpcb, sk, tp) {
+	mptcp_for_each_sk(mpcb, sk) {
+		struct tcp_sock *tp = tcp_sk(sk);
 		if (sk->sk_family != AF_INET6 ||
 		    !ipv6_addr_equal(&inet6_sk(sk)->saddr, &ifa->addr))
 			continue;
@@ -597,12 +597,12 @@ found:
 
 		/* force sending an ACK on each subflow */
 		mpcb->remove_addrs |= (1 << mpcb->addr6[i].id);
-		mptcp_for_each_sk(mpcb, sk, tp) {
+		mptcp_for_each_sk(mpcb, sk) {
 			if ((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_CLOSE |
 						   TCPF_TIME_WAIT))
 				continue;
 
-			if (tp->pf == 1)
+			if (tcp_sk(sk)->pf == 1)
 				continue;
 
 			if (inet_sk(sk)->loc_id != mpcb->addr6[i].id)
@@ -621,10 +621,9 @@ found:
  */
 void mptcp_v6_send_add_addr(int loc_id, struct mptcp_cb *mpcb)
 {
-	struct sock *sk;
 	struct tcp_sock *tp;
 
-	mptcp_for_each_sk(mpcb, sk, tp)
+	mptcp_for_each_tp(mpcb, tp)
 		tp->add_addr6 |= (1 << loc_id);
 }
 

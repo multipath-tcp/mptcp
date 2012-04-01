@@ -508,11 +508,10 @@ static inline __u32 mptcp_skb_end_data_seq(const struct sk_buff *skb)
 #define mptcp_for_each_tp(mpcb, tp)					\
 	for ((tp) = (mpcb)->connection_list; (tp); (tp) = (tp)->next)
 
-#define mptcp_for_each_sk(mpcb, sk, tp)					\
-	for ((sk) = (struct sock *)(mpcb)->connection_list,		\
-		     (tp) = tcp_sk(sk);					\
+#define mptcp_for_each_sk(mpcb, sk)					\
+	for ((sk) = (struct sock *)(mpcb)->connection_list;		\
 	     sk;							\
-	     sk = (struct sock *) tcp_sk(sk)->next, tp = tcp_sk(sk))
+	     sk = (struct sock *) tcp_sk(sk)->next)
 
 #define mptcp_for_each_sk_safe(__mpcb, __sk, __temp)			\
 	for (__sk = (struct sock *)(__mpcb)->connection_list,		\
@@ -538,12 +537,11 @@ static inline __u32 mptcp_skb_end_data_seq(const struct sk_buff *skb)
  */
 #define mptcp_test_any_sk(mpcb, sk, cond)			\
 	({	int __ans = 0;					\
-		struct tcp_sock *__tp;				\
 		if (!mpcb) {					\
 			if (cond)				\
 				__ans = 1;			\
 		} else {					\
-			mptcp_for_each_sk(mpcb, sk, __tp) {	\
+			mptcp_for_each_sk(mpcb, sk) {	\
 				if (cond) {			\
 					__ans = 1;		\
 					break;			\
@@ -868,14 +866,14 @@ static inline int mptcp_sk_can_send(struct sock *sk)
 
 static inline void mptcp_set_rto(struct sock *sk)
 {
-	struct tcp_sock *tp = tcp_sk(sk), *tp_it;
+	struct tcp_sock *tp = tcp_sk(sk);
 	struct sock *sk_it;
 	__u32 max_rto = 0;
 
 	if (!tp->mpc || !tp->mpcb)
 		return;
 
-	mptcp_for_each_sk(tp->mpcb, sk_it, tp_it) {
+	mptcp_for_each_sk(tp->mpcb, sk_it) {
 		if (mptcp_sk_can_send(sk_it) &&
 		    inet_csk(sk_it)->icsk_rto > max_rto)
 			max_rto = inet_csk(sk_it)->icsk_rto;

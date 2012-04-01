@@ -75,7 +75,6 @@ static int mptcp_dont_reinject_skb(struct tcp_sock *tp, struct sk_buff *skb)
 static struct sock *get_available_subflow(struct mptcp_cb *mpcb,
 					  struct sk_buff *skb)
 {
-	struct tcp_sock *tp;
 	struct sock *sk;
 	struct sock *bestsk = NULL, *lowpriosk = NULL, *backupsk = NULL;
 	u32 min_time_to_peer = 0xffffffff, lowprio_min_time_to_peer = 0xffffffff;
@@ -92,15 +91,16 @@ static struct sock *get_available_subflow(struct mptcp_cb *mpcb,
 	/* Answer data_fin on same subflow!!! */
 	if (mpcb_meta_sk(mpcb)->sk_shutdown & RCV_SHUTDOWN &&
 	    skb && mptcp_is_data_fin(skb)) {
-		mptcp_for_each_sk(mpcb, sk, tp) {
-			if (tp->path_index == mpcb->dfin_path_index &&
+		mptcp_for_each_sk(mpcb, sk) {
+			if (tcp_sk(sk)->path_index == mpcb->dfin_path_index &&
 			    mptcp_is_available(sk, skb))
 				return sk;
 		}
 	}
 
 	/* First, find the best subflow */
-	mptcp_for_each_sk(mpcb, sk, tp) {
+	mptcp_for_each_sk(mpcb, sk) {
+		struct tcp_sock *tp = tcp_sk(sk);
 		if (tp->rx_opt.low_prio || tp->low_prio)
 			cnt_backups++;
 
@@ -139,13 +139,14 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 				 struct sock *sk, int clone_it)
 {
 	struct sk_buff *skb;
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *tp_it;
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct sock *sk_it;
 
 	/* A segment can be added to the reinject queue only if
 	 * there is at least one working subflow that has never sent
 	 * this data */
-	mptcp_for_each_sk(meta_tp->mpcb, sk_it, tp_it) {
+	mptcp_for_each_sk(meta_tp->mpcb, sk_it) {
+		struct tcp_sock *tp_it = tcp_sk(sk_it);
 		if (!mptcp_sk_can_send(sk_it) || tp_it->pf)
 			continue;
 
@@ -274,17 +275,16 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 		BUG();
 	} else {
 		struct sock *sk_it;
-		struct tcp_sock *tp_it;
 		int ans = 0;
 
 		if (between(meta_tp->snd_up, meta_tp->snd_una + 1,
 			    meta_tp->snd_una + 0xFFFF)) {
-			mptcp_for_each_sk(meta_tp->mpcb, sk_it, tp_it)
+			mptcp_for_each_sk(meta_tp->mpcb, sk_it)
 					tcp_xmit_probe_skb(sk_it, 1);
 		}
 
 		/* At least on of the tcp_xmit_probe_skb's has to succeed */
-		mptcp_for_each_sk(meta_tp->mpcb, sk_it, tp_it) {
+		mptcp_for_each_sk(meta_tp->mpcb, sk_it) {
 			int ret = tcp_xmit_probe_skb(sk_it, 0);
 			if (unlikely(ret > 0))
 				ans = ret;
@@ -320,7 +320,7 @@ static void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb)
 
 static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 {
-	struct sock *meta_sk, *sk_it;
+	struct sock *meta_sk;
 	struct tcp_sock *tp = tcp_sk(sk), *tp_it;
 	struct sk_buff *skb_it;
 
@@ -342,7 +342,7 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 		goto retrans;
 
 	/* Half the cwnd of the slow flow */
-	mptcp_for_each_sk(tp->mpcb, sk_it, tp_it) {
+	mptcp_for_each_tp(tp->mpcb, tp_it) {
 		if (tp_it != tp &&
 		    skb_it->path_mask & mptcp_pi_to_flag(tp_it->path_index)) {
 			/* Only update every subflow rtt */
@@ -364,7 +364,7 @@ retrans:
 	/* Segment not yet injected into this path? Take it!!! */
 	if (!(skb_it->path_mask & mptcp_pi_to_flag(tp->path_index))) {
 		int do_retrans = 0;
-		mptcp_for_each_sk(tp->mpcb, sk_it, tp_it) {
+		mptcp_for_each_tp(tp->mpcb, tp_it) {
 			if (tp_it != tp && skb_it->path_mask & mptcp_pi_to_flag(tp_it->path_index)) {
 				if (tp_it->snd_cwnd <= 4) {
 					do_retrans = 1;
@@ -444,7 +444,7 @@ static void mptcp_combine_dfin(struct sk_buff *skb, struct mptcp_cb *mpcb,
 			       struct sock *subsk)
 {
 	struct sock *sk_it, *meta_sk = mpcb_meta_sk(mpcb);
-	struct tcp_sock *tp_it, *meta_tp = mpcb_meta_tp(mpcb);
+	struct tcp_sock *meta_tp = mpcb_meta_tp(mpcb);
 	int all_empty = 1, all_acked = 1;
 
 	/* Don't combine, if they didn't combine - otherwise we end up in
@@ -455,7 +455,7 @@ static void mptcp_combine_dfin(struct sk_buff *skb, struct mptcp_cb *mpcb,
 	}
 
 	/* If no other subflow still has data to send, we can combine */
-	mptcp_for_each_sk(mpcb, sk_it, tp_it) {
+	mptcp_for_each_sk(mpcb, sk_it) {
 		if (!tcp_write_queue_empty(sk_it))
 			all_empty = 0;
 	}
@@ -1413,13 +1413,12 @@ void mptcp_send_reset(struct sock *sk, struct sk_buff *skb)
 
 void mptcp_select_window(struct tcp_sock *tp, u32 new_win)
 {
-	struct sock *tmp_sk;
-	struct tcp_sock *tmp_tp, *meta_tp = mpcb_meta_tp(tp->mpcb);
+	struct tcp_sock *meta_tp = mpcb_meta_tp(tp->mpcb), *tmp_tp;
 	meta_tp->rcv_wnd = new_win;
 	meta_tp->rcv_wup = meta_tp->rcv_nxt;
 
 	/* The receive-window is the same for all the subflows */
-	mptcp_for_each_sk(tp->mpcb, tmp_sk, tmp_tp) {
+	mptcp_for_each_tp(tp->mpcb, tmp_tp) {
 		tmp_tp->rcv_wnd = new_win;
 	}
 	/* the subsock rcv_wup must still be updated,
