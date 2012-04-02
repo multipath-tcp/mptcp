@@ -1078,7 +1078,7 @@ static inline __u32 mptcp_skb_end_data_seq(const struct sk_buff *skb)
  * the sk/tp arg is the socket in that case.
  */
 #define mptcp_for_each_tp(mpcb, tp)
-#define mptcp_for_each_sk(mpcb, sk, tp)
+#define mptcp_for_each_sk(mpcb, sk)
 #define mptcp_for_each_sk_safe(__mpcb, __sk, __temp)
 
 /* If MPTCP is not supported, we just need to evaluate the condition
