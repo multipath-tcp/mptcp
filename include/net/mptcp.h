@@ -828,7 +828,7 @@ static inline void mptcp_path_array_check(struct mptcp_cb *mpcb)
 
 static inline int mptcp_check_snd_buf(struct tcp_sock *tp)
 {
-	struct mptcp_cb *mpcb = (tp->mpc) ? tp->mpcb : NULL;
+	struct mptcp_cb *mpcb = tp->mpcb;
 	struct tcp_sock *tp_it;
 	u32 rtt_max = tp->srtt;
 

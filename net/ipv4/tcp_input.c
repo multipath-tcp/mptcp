@@ -5062,14 +5062,43 @@ static int tcp_should_expand_sndbuf(const struct sock *sk)
 	if (atomic_long_read(&tcp_memory_allocated) >= sysctl_tcp_mem[0])
 		return 0;
 
-	/* If we filled the congestion window, do not expand.
-	 * MPTCP note: at the moment, we do not take this case into account.
-	 * In the future, if we want to do so, we'll need to maintain
-	 * packet_out counter at the meta_tp level, as well as maintain a
-	 * meta_tp->snd_cwnd = sum(sub_tp->snd_cwnd)
-	 */
+	/* If we filled the congestion window, do not expand. */
 	if (!tp->mpc && tp->packets_out >= tp->snd_cwnd)
 		return 0;
+
+	if (tp->mpc) {
+		struct sock *sk_it;
+		int cnt_backups = 0;
+		int backup_available = 0;
+
+		/* For MPTCP we look for a subsocket that could send data.
+		 * If we found one, then we update the send-buffer.
+		 */
+		mptcp_for_each_sk(tp->mpcb, sk_it) {
+			struct tcp_sock *tp_it = tcp_sk(sk_it);
+
+			/* Backup-flows have to be counted - if there is no other
+			 * subflow we take the backup-flow into account. */
+			if (tp_it->rx_opt.low_prio || tp_it->low_prio) {
+				cnt_backups++;
+			}
+			if (!mptcp_sk_can_send(sk_it))
+				continue;
+
+			if (tp_it->packets_out < tp_it->snd_cwnd) {
+				if (tp_it->rx_opt.low_prio || tp_it->low_prio) {
+					backup_available = 1;
+					continue;
+				}
+				return 1;
+			}
+		}
+
+		/* Backup-flow is available for sending - update send-buffer */
+		if (cnt_backups == tp->mpcb->cnt_subflows && backup_available)
+			return 1;
+		return 0;
+	}
 
 	return 1;
 }
