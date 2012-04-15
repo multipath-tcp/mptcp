@@ -250,6 +250,7 @@ void mptcp_set_addresses(struct mptcp_cb *mpcb)
 			}
 
 cont_ipv6:
+; /* This ; is necessary to fix build-errors when IPv6 is disabled */
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 			if (!in6_dev)
 				continue;
