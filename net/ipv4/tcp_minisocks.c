@@ -23,6 +23,7 @@
 #include <linux/slab.h>
 #include <linux/sysctl.h>
 #include <linux/workqueue.h>
+#include <net/mptcp.h>
 #include <net/tcp.h>
 #include <net/inet_common.h>
 #include <net/xfrm.h>
@@ -147,13 +148,20 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 
 	tmp_opt.saw_tstamp = 0;
 	if (th->doff > (sizeof(*th) >> 2) && tcptw->tw_ts_recent_stamp) {
-		tcp_parse_options(skb, &tmp_opt, &hash_location, 0);
+		struct multipath_options mopt;
+		mptcp_init_mp_opt(&mopt);
+
+		tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
 		if (tmp_opt.saw_tstamp) {
 			tmp_opt.ts_recent	= tcptw->tw_ts_recent;
 			tmp_opt.ts_recent_stamp	= tcptw->tw_ts_recent_stamp;
 			paws_reject = tcp_paws_reject(&tmp_opt, th->rst);
 		}
+
+		/* TODO MPTCP: No key-verification here!!! */
+		if (unlikely(mopt.mp_rst))
+			goto kill_with_rst;
 	}
 
 	if (tw->tw_substate == TCP_FIN_WAIT2) {
@@ -177,6 +185,8 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 		    !after(TCP_SKB_CB(skb)->end_seq, tcptw->tw_rcv_nxt) ||
 		    TCP_SKB_CB(skb)->end_seq == TCP_SKB_CB(skb)->seq) {
 			inet_twsk_put(tw);
+			if (mptcp_is_data_fin(skb))
+				return TCP_TW_ACK;
 			return TCP_TW_SUCCESS;
 		}
 
@@ -318,6 +328,9 @@ void tcp_time_wait(struct sock *sk, int state, int timeo)
 	const struct tcp_sock *tp = tcp_sk(sk);
 	int recycle_ok = 0;
 
+	if (is_meta_sk(sk))
+		goto tcp_done;
+
 	if (tcp_death_row.sysctl_tw_recycle && tp->rx_opt.ts_recent_stamp)
 		recycle_ok = tcp_remember_stamp(sk);
 
@@ -398,6 +411,7 @@ void tcp_time_wait(struct sock *sk, int state, int timeo)
 	}
 
 	tcp_update_metrics(sk);
+tcp_done:
 	tcp_done(sk);
 }
 
@@ -416,6 +430,50 @@ static inline void TCP_ECN_openreq_child(struct tcp_sock *tp,
 {
 	tp->ecn_flags = inet_rsk(req)->ecn_ok ? TCP_ECN_OK : 0;
 }
+
+void tcp_openreq_init(struct request_sock *req,
+		      struct tcp_options_received *rx_opt,
+		      struct multipath_options *mopt,
+		      struct sk_buff *skb)
+{
+	struct inet_request_sock *ireq = inet_rsk(req);
+
+	req->rcv_wnd = 0;		/* So that tcp_send_synack() knows! */
+	req->cookie_ts = 0;
+	tcp_rsk(req)->rcv_isn = TCP_SKB_CB(skb)->seq;
+	req->mss = rx_opt->mss_clamp;
+	req->ts_recent = rx_opt->saw_tstamp ? rx_opt->rcv_tsval : 0;
+#ifdef CONFIG_MPTCP
+	req->saw_mpc = rx_opt->saw_mpc;
+	if (req->saw_mpc && !req->mpcb) {
+		/* conn request, prepare a new token for the
+		 * mpcb that will be created in mptcp_check_req_master(),
+		 * and store the received token.
+		 */
+		spin_lock(&mptcp_reqsk_tk_hlock);
+		do {
+			get_random_bytes(&req->mptcp_loc_key,
+					 sizeof(req->mptcp_loc_key));
+			mptcp_key_sha1(req->mptcp_loc_key,
+				       &req->mptcp_loc_token, NULL);
+		} while (mptcp_reqsk_find_tk(req->mptcp_loc_token) ||
+			 mptcp_find_token(req->mptcp_loc_token));
+
+		mptcp_reqsk_insert_tk(req, req->mptcp_loc_token);
+		spin_unlock(&mptcp_reqsk_tk_hlock);
+		req->mptcp_rem_key = mopt->mptcp_rem_key;
+	}
+#endif
+	ireq->tstamp_ok = rx_opt->tstamp_ok;
+	ireq->sack_ok = rx_opt->sack_ok;
+	ireq->snd_wscale = rx_opt->snd_wscale;
+	ireq->wscale_ok = rx_opt->wscale_ok;
+	ireq->acked = 0;
+	ireq->ecn_ok = 0;
+	ireq->rmt_port = tcp_hdr(skb)->source;
+	ireq->loc_port = tcp_hdr(skb)->dest;
+}
+EXPORT_SYMBOL(tcp_openreq_init);
 
 /* This is not only more efficient than what we used to do, it eliminates
  * a lot of code duplication between IPv4/IPv6 SYN recv processing. -DaveM
@@ -468,6 +526,14 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 		newtp->snd_sml = newtp->snd_una =
 		newtp->snd_nxt = newtp->snd_up =
 			treq->snt_isn + 1 + tcp_s_data_size(oldtp);
+#ifdef CONFIG_MPTCP
+		newtp->rx_opt.rcv_isn = treq->rcv_isn;
+		newtp->snt_isn = treq->snt_isn;
+		newtp->reinjected_seq = newtp->snd_una;
+		newtp->init_rcv_wnd = req->rcv_wnd;
+		newtp->last_rbuf_opti = 0;
+		memset(&newtp->rcvq_space, 0, sizeof(newtp->rcvq_space));
+#endif
 
 		tcp_prequeue_init(newtp);
 
@@ -569,14 +635,23 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 {
 	struct tcp_options_received tmp_opt;
 	const u8 *hash_location;
+	struct multipath_options stat_mopt, *mopt = NULL;
 	struct sock *child;
 	const struct tcphdr *th = tcp_hdr(skb);
 	__be32 flg = tcp_flag_word(th) & (TCP_FLAG_RST|TCP_FLAG_SYN|TCP_FLAG_ACK);
 	int paws_reject = 0;
 
 	tmp_opt.saw_tstamp = 0;
+
+	if (!is_meta_sk(sk)) {
+		mopt = &stat_mopt;
+		mptcp_init_mp_opt(mopt);
+	} else {
+		mopt = &(tcp_sk(sk)->mpcb->rx_opt);
+	}
+
 	if (th->doff > (sizeof(struct tcphdr)>>2)) {
-		tcp_parse_options(skb, &tmp_opt, &hash_location, 0);
+		tcp_parse_options(skb, &tmp_opt, &hash_location, mopt, 0);
 
 		if (tmp_opt.saw_tstamp) {
 			tmp_opt.ts_recent = req->ts_recent;
@@ -733,10 +808,26 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	 * ESTABLISHED STATE. If it will be dropped after
 	 * socket is created, wait for troubles.
 	 */
-	child = inet_csk(sk)->icsk_af_ops->syn_recv_sock(sk, skb, req, NULL);
+#if defined(CONFIG_MPTCP) && \
+		(defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))
+	if (tcp_sk(sk)->mpc && sk->sk_family != req->rsk_ops->family)
+		/* MPTCP: sub sock address family differs from meta sock */
+		child = tcp_sk(sk)->mpcb->icsk_af_ops_alt->syn_recv_sock(sk,
+				skb, req, NULL);
+	else
+#endif
+		child = inet_csk(sk)->icsk_af_ops->syn_recv_sock(sk, skb,
+				req, NULL);
+
 	if (child == NULL)
 		goto listen_overflow;
 
+	if (!is_meta_sk(sk)) {
+		if (mptcp_check_req_master(child, req, mopt) == -ENOBUFS)
+			goto listen_overflow;
+	} else {
+		return mptcp_check_req_child(sk, child, req, prev);
+	}
 	inet_csk_reqsk_queue_unlink(sk, req, prev);
 	inet_csk_reqsk_queue_removed(sk, req);
 
@@ -770,8 +861,9 @@ int tcp_child_process(struct sock *parent, struct sock *child,
 {
 	int ret = 0;
 	int state = child->sk_state;
+	struct sock *meta_sk = tcp_sk(child)->mpc ? mptcp_meta_sk(child) : child;
 
-	if (!sock_owned_by_user(child)) {
+	if (!sock_owned_by_user(meta_sk)) {
 		ret = tcp_rcv_state_process(child, skb, tcp_hdr(skb),
 					    skb->len);
 		/* Wakeup parent, send SIGIO */

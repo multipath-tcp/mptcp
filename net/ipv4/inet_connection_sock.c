@@ -23,6 +23,8 @@
 #include <net/route.h>
 #include <net/tcp_states.h>
 #include <net/xfrm.h>
+#include <net/tcp.h>
+#include <net/mptcp.h>
 
 #ifdef INET_CSK_DEBUG
 const char inet_csk_timer_bug_msg[] = "inet_csk BUG: unknown timer value\n";
@@ -201,7 +203,7 @@ tb_not_found:
 success:
 	if (!inet_csk(sk)->icsk_bind_hash)
 		inet_bind_hash(sk, tb, snum);
-	WARN_ON(inet_csk(sk)->icsk_bind_hash != tb);
+	BUG_ON(inet_csk(sk)->icsk_bind_hash != tb);
 	ret = 0;
 
 fail_unlock:
@@ -294,6 +296,15 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 
 	newsk = reqsk_queue_get_child(&icsk->icsk_accept_queue, sk);
 	WARN_ON(newsk->sk_state == TCP_SYN_RECV);
+
+	if (newsk->sk_protocol == IPPROTO_TCP && tcp_sk(newsk)->mpc) {
+		struct sock *sk_it;
+
+		mptcp_for_each_sk(tcp_sk(newsk)->mpcb, sk_it) {
+			if (!is_master_tp(tcp_sk(sk_it)))
+				sock_rps_record_flow(sk_it);
+		}
+	}
 out:
 	release_sock(sk);
 	return newsk;
@@ -412,8 +423,8 @@ no_route:
 }
 EXPORT_SYMBOL_GPL(inet_csk_route_child_sock);
 
-static inline u32 inet_synq_hash(const __be32 raddr, const __be16 rport,
-				 const u32 rnd, const u32 synq_hsize)
+u32 inet_synq_hash(const __be32 raddr, const __be16 rport, const u32 rnd,
+		   const u32 synq_hsize)
 {
 	return jhash_2words((__force u32)raddr, (__force u32)rport, rnd) & (synq_hsize - 1);
 }
@@ -591,7 +602,12 @@ EXPORT_SYMBOL_GPL(inet_csk_reqsk_queue_prune);
 struct sock *inet_csk_clone(struct sock *sk, const struct request_sock *req,
 			    const gfp_t priority)
 {
-	struct sock *newsk = sk_clone(sk, priority);
+	struct sock *newsk;
+
+	if (is_meta_sk(sk) && sk->sk_family != req->rsk_ops->family)
+		newsk = mptcp_sk_clone(sk, req->rsk_ops->family, priority);
+	else
+		newsk = sk_clone(sk, priority);
 
 	if (newsk != NULL) {
 		struct inet_connection_sock *newicsk = inet_csk(newsk);
@@ -625,6 +641,8 @@ EXPORT_SYMBOL_GPL(inet_csk_clone);
  */
 void inet_csk_destroy_sock(struct sock *sk)
 {
+	mptcp_del_sock(sk);
+
 	WARN_ON(sk->sk_state != TCP_CLOSE);
 	WARN_ON(!sock_flag(sk, SOCK_DEAD));
 
@@ -651,7 +669,8 @@ int inet_csk_listen_start(struct sock *sk, const int nr_table_entries)
 {
 	struct inet_sock *inet = inet_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
-	int rc = reqsk_queue_alloc(&icsk->icsk_accept_queue, nr_table_entries);
+	int rc = reqsk_queue_alloc(&icsk->icsk_accept_queue, nr_table_entries,
+			GFP_KERNEL);
 
 	if (rc != 0)
 		return rc;
@@ -715,6 +734,8 @@ void inet_csk_listen_stop(struct sock *sk)
 		bh_lock_sock(child);
 		WARN_ON(sock_owned_by_user(child));
 		sock_hold(child);
+
+		mptcp_detach_unused_child(child);
 
 		sk->sk_prot->disconnect(child, O_NONBLOCK);
 

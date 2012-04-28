@@ -53,6 +53,9 @@
 
 #define IFF_ECHO	0x40000		/* echo sent packets		*/
 
+#define IFF_NOMULTIPATH	0x80000		/* Disable for MPTCP 		*/
+#define IFF_MPBACKUP	0x100000	/* Use as backup path for MPTCP */
+
 #define IFF_VOLATILE	(IFF_LOOPBACK|IFF_POINTOPOINT|IFF_BROADCAST|IFF_ECHO|\
 		IFF_MASTER|IFF_SLAVE|IFF_RUNNING|IFF_LOWER_UP|IFF_DORMANT)
 

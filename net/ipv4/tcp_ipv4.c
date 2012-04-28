@@ -66,6 +66,7 @@
 #include <net/icmp.h>
 #include <net/inet_hashtables.h>
 #include <net/tcp.h>
+#include <net/mptcp_v4.h>
 #include <net/transp_v6.h>
 #include <net/ipv6.h>
 #include <net/inet_common.h>
@@ -104,7 +105,7 @@ struct tcp_md5sig_key *tcp_v4_md5_do_lookup(struct sock *sk, __be32 addr)
 struct inet_hashinfo tcp_hashinfo;
 EXPORT_SYMBOL(tcp_hashinfo);
 
-static inline __u32 tcp_v4_init_sequence(const struct sk_buff *skb)
+__u32 tcp_v4_init_sequence(const struct sk_buff *skb)
 {
 	return secure_tcp_sequence_number(ip_hdr(skb)->daddr,
 					  ip_hdr(skb)->saddr,
@@ -266,6 +267,7 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	if (err)
 		goto failure;
 
+
 	return 0;
 
 failure:
@@ -353,7 +355,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 	struct inet_sock *inet;
 	const int type = icmp_hdr(icmp_skb)->type;
 	const int code = icmp_hdr(icmp_skb)->code;
-	struct sock *sk;
+	struct sock *sk, *meta_sk;
 	struct sk_buff *skb;
 	__u32 seq;
 	__u32 remaining;
@@ -376,11 +378,17 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 		return;
 	}
 
-	bh_lock_sock(sk);
+	tp = tcp_sk(sk);
+	if (tp->mpc)
+		meta_sk = mpcb_meta_sk(tcp_sk(sk)->mpcb);
+	else
+		meta_sk = sk;
+
+	bh_lock_sock(meta_sk);
 	/* If too many ICMPs get dropped on busy
 	 * servers this needs to be solved differently.
 	 */
-	if (sock_owned_by_user(sk))
+	if (sock_owned_by_user(meta_sk))
 		NET_INC_STATS_BH(net, LINUX_MIB_LOCKDROPPEDICMPS);
 
 	if (sk->sk_state == TCP_CLOSE)
@@ -392,7 +400,6 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 	}
 
 	icsk = inet_csk(sk);
-	tp = tcp_sk(sk);
 	seq = ntohl(th->seq);
 	if (sk->sk_state != TCP_LISTEN &&
 	    !between(seq, tp->snd_una, tp->snd_nxt)) {
@@ -412,7 +419,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 			goto out;
 
 		if (code == ICMP_FRAG_NEEDED) { /* PMTU discovery (RFC1191) */
-			if (!sock_owned_by_user(sk))
+			if (!sock_owned_by_user(meta_sk))
 				do_pmtu_discovery(sk, iph, info);
 			goto out;
 		}
@@ -426,7 +433,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 		    !icsk->icsk_backoff)
 			break;
 
-		if (sock_owned_by_user(sk))
+		if (sock_owned_by_user(meta_sk))
 			break;
 
 		icsk->icsk_backoff--;
@@ -460,7 +467,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 	switch (sk->sk_state) {
 		struct request_sock *req, **prev;
 	case TCP_LISTEN:
-		if (sock_owned_by_user(sk))
+		if (sock_owned_by_user(meta_sk))
 			goto out;
 
 		req = inet_csk_search_req(sk, &prev, th->dest,
@@ -491,7 +498,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 	case TCP_SYN_RECV:  /* Cannot happen.
 			       It can f.e. if SYNs crossed.
 			     */
-		if (!sock_owned_by_user(sk)) {
+		if (!sock_owned_by_user(meta_sk)) {
 			sk->sk_err = err;
 
 			sk->sk_error_report(sk);
@@ -520,7 +527,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 	 */
 
 	inet = inet_sk(sk);
-	if (!sock_owned_by_user(sk) && inet->recverr) {
+	if (!sock_owned_by_user(meta_sk) && inet->recverr) {
 		sk->sk_err = err;
 		sk->sk_error_report(sk);
 	} else	{ /* Only an error on timeout */
@@ -528,11 +535,11 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 	}
 
 out:
-	bh_unlock_sock(sk);
+	bh_unlock_sock(meta_sk);
 	sock_put(sk);
 }
 
-static void __tcp_v4_send_check(struct sk_buff *skb,
+void __tcp_v4_send_check(struct sk_buff *skb,
 				__be32 saddr, __be32 daddr)
 {
 	struct tcphdr *th = tcp_hdr(skb);
@@ -588,13 +595,17 @@ int tcp_v4_gso_send_check(struct sk_buff *skb)
  *	Exception: precedence violation. We do not implement it in any case.
  */
 
-static void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
+void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 {
 	const struct tcphdr *th = tcp_hdr(skb);
 	struct {
 		struct tcphdr th;
 #ifdef CONFIG_TCP_MD5SIG
 		__be32 opt[(TCPOLEN_MD5SIG_ALIGNED >> 2)];
+#endif
+#ifdef CONFIG_MPTCP
+		__u8 fail_opt[2];
+		struct mp_fail mpfail;
 #endif
 	} rep;
 	struct ip_reply_arg arg;
@@ -645,6 +656,20 @@ static void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 				     ip_hdr(skb)->daddr, &rep.th);
 	}
 #endif
+#ifdef CONFIG_MPTCP
+	if (sk && tcp_sk(sk)->csum_error) {
+		/* We had a checksum-error? -> Include MP_FAIL */
+		rep.fail_opt[0] = TCPOPT_MPTCP;
+		rep.fail_opt[1] = MPTCP_SUB_LEN_FAIL;
+		rep.mpfail.sub = MPTCP_SUB_FAIL;
+		rep.mpfail.rsv1 = 0;
+		rep.mpfail.rsv2 = 0;
+		rep.mpfail.data_seq = htonll(tcp_sk(sk)->mpcb->csum_cutoff_seq);
+
+		arg.iov[0].iov_len += MPTCP_SUB_LEN_FAIL_ALIGN;
+		rep.th.doff = arg.iov[0].iov_len / 4;
+	}
+#endif /* CONFIG_MPTCP */
 	arg.csum = csum_tcpudp_nofold(ip_hdr(skb)->daddr,
 				      ip_hdr(skb)->saddr, /* XXX */
 				      arg.iov[0].iov_len, IPPROTO_TCP, 0);
@@ -658,16 +683,21 @@ static void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 
 	TCP_INC_STATS_BH(net, TCP_MIB_OUTSEGS);
 	TCP_INC_STATS_BH(net, TCP_MIB_OUTRSTS);
+
+#ifdef CONFIG_MPTCP
+	if (sk && tcp_sk(sk)->teardown)
+		tcp_done(sk);
+#endif
 }
 
 /* The code following below sending ACKs in SYN-RECV and TIME-WAIT states
    outside socket context is ugly, certainly. What can I do?
  */
 
-static void tcp_v4_send_ack(struct sk_buff *skb, u32 seq, u32 ack,
+static void tcp_v4_send_ack(struct sk_buff *skb, u32 seq, u32 ack, u32 data_ack,
 			    u32 win, u32 ts, int oif,
 			    struct tcp_md5sig_key *key,
-			    int reply_flags, u8 tos)
+			    int reply_flags, u8 tos, int mptcp)
 {
 	const struct tcphdr *th = tcp_hdr(skb);
 	struct {
@@ -675,6 +705,10 @@ static void tcp_v4_send_ack(struct sk_buff *skb, u32 seq, u32 ack,
 		__be32 opt[(TCPOLEN_TSTAMP_ALIGNED >> 2)
 #ifdef CONFIG_TCP_MD5SIG
 			   + (TCPOLEN_MD5SIG_ALIGNED >> 2)
+#endif
+#ifdef CONFIG_MPTCP
+			   + ((MPTCP_SUB_LEN_DSS >> 2) +
+			      (MPTCP_SUB_LEN_ACK >> 2))
 #endif
 			];
 	} rep;
@@ -720,6 +754,21 @@ static void tcp_v4_send_ack(struct sk_buff *skb, u32 seq, u32 ack,
 				    ip_hdr(skb)->daddr, &rep.th);
 	}
 #endif
+#ifdef CONFIG_MPTCP
+	if (mptcp) {
+		int offset = (ts) ? 3 : 0;
+		/* Construction of 32-bit data_ack */
+		rep.opt[offset++] = htonl((TCPOPT_MPTCP << 24) |
+					  ((MPTCP_SUB_LEN_DSS + MPTCP_SUB_LEN_ACK) << 16) |
+					  (0x20 << 8) |
+					  (0x01));
+		rep.opt[offset] = htonl(data_ack);
+
+		arg.iov[0].iov_len += MPTCP_SUB_LEN_DSS + MPTCP_SUB_LEN_ACK;
+		rep.th.doff = arg.iov[0].iov_len / 4;
+	}
+#endif /* CONFIG_MPTCP */
+
 	arg.flags = reply_flags;
 	arg.csum = csum_tcpudp_nofold(ip_hdr(skb)->daddr,
 				      ip_hdr(skb)->saddr, /* XXX */
@@ -740,12 +789,13 @@ static void tcp_v4_timewait_ack(struct sock *sk, struct sk_buff *skb)
 	struct tcp_timewait_sock *tcptw = tcp_twsk(sk);
 
 	tcp_v4_send_ack(skb, tcptw->tw_snd_nxt, tcptw->tw_rcv_nxt,
+			mptcp_skb_data_seq(skb) + 1,
 			tcptw->tw_rcv_wnd >> tw->tw_rcv_wscale,
 			tcptw->tw_ts_recent,
 			tw->tw_bound_dev_if,
 			tcp_twsk_md5_key(tcptw),
 			tw->tw_transparent ? IP_REPLY_ARG_NOSRCCHECK : 0,
-			tw->tw_tos
+			tw->tw_tos, mptcp_is_data_fin(skb)
 			);
 
 	inet_twsk_put(tw);
@@ -755,12 +805,12 @@ static void tcp_v4_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 				  struct request_sock *req)
 {
 	tcp_v4_send_ack(skb, tcp_rsk(req)->snt_isn + 1,
-			tcp_rsk(req)->rcv_isn + 1, req->rcv_wnd,
+			tcp_rsk(req)->rcv_isn + 1, 0, req->rcv_wnd,
 			req->ts_recent,
 			0,
 			tcp_v4_md5_do_lookup(sk, ip_hdr(skb)->daddr),
 			inet_rsk(req)->no_srccheck ? IP_REPLY_ARG_NOSRCCHECK : 0,
-			ip_hdr(skb)->tos);
+			ip_hdr(skb)->tos, 0);
 }
 
 /*
@@ -768,9 +818,8 @@ static void tcp_v4_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
  *	This still operates on a request_sock only, not on a big
  *	socket.
  */
-static int tcp_v4_send_synack(struct sock *sk, struct dst_entry *dst,
-			      struct request_sock *req,
-			      struct request_values *rvp)
+int tcp_v4_send_synack(struct sock *sk, struct dst_entry *dst,
+		       struct request_sock *req, struct request_values *rvp)
 {
 	const struct inet_request_sock *ireq = inet_rsk(req);
 	struct flowi4 fl4;
@@ -800,6 +849,7 @@ static int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req,
 			      struct request_values *rvp)
 {
 	TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_RETRANSSEGS);
+
 	return tcp_v4_send_synack(sk, NULL, req, rvp);
 }
 
@@ -808,6 +858,9 @@ static int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req,
  */
 static void tcp_v4_reqsk_destructor(struct request_sock *req)
 {
+	if (mptcp_req_sk_saw_mpc(req))
+		mptcp_reqsk_destructor(req);
+
 	kfree(inet_rsk(req)->opt);
 }
 
@@ -847,8 +900,8 @@ EXPORT_SYMBOL(tcp_syn_flood_action);
 /*
  * Save and compile IPv4 options into the request_sock if needed.
  */
-static struct ip_options_rcu *tcp_v4_save_options(struct sock *sk,
-						  struct sk_buff *skb)
+struct ip_options_rcu *tcp_v4_save_options(struct sock *sk,
+					   struct sk_buff *skb)
 {
 	const struct ip_options *opt = &(IPCB(skb)->opt);
 	struct ip_options_rcu *dopt = NULL;
@@ -1252,6 +1305,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	struct tcp_extend_values tmp_ext;
 	struct tcp_options_received tmp_opt;
 	const u8 *hash_location;
+	struct multipath_options mopt;
 	struct request_sock *req;
 	struct inet_request_sock *ireq;
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -1294,7 +1348,9 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	tcp_clear_options(&tmp_opt);
 	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
 	tmp_opt.user_mss  = tp->rx_opt.user_mss;
-	tcp_parse_options(skb, &tmp_opt, &hash_location, 0);
+	mopt.dss_csum = 0;
+	mptcp_init_mp_opt(&mopt);
+	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
 	if (tmp_opt.cookie_plus > 0 &&
 	    tmp_opt.saw_tstamp &&
@@ -1334,7 +1390,16 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 		tcp_clear_options(&tmp_opt);
 
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
-	tcp_openreq_init(req, &tmp_opt, skb);
+
+#ifdef CONFIG_MPTCP
+	/* Must be set to NULL before calling openreq init.
+	 * tcp_openreq_init() uses this to know whether the request
+	 * is a join request or a conn request.
+	 */
+	req->mpcb = NULL;
+	req->dss_csum = mopt.dss_csum;
+#endif
+	tcp_openreq_init(req, &tmp_opt, &mopt, skb);
 
 	ireq = inet_rsk(req);
 	ireq->loc_addr = daddr;
@@ -1592,6 +1657,9 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 		goto discard;
 #endif
 
+	if (is_meta_sk(sk))
+		return mptcp_v4_do_rcv(sk, skb);
+
 	if (sk->sk_state == TCP_ESTABLISHED) { /* Fast path */
 		sock_rps_save_rxhash(sk, skb);
 		if (tcp_rcv_established(sk, skb, tcp_hdr(skb), skb->len)) {
@@ -1651,7 +1719,7 @@ int tcp_v4_rcv(struct sk_buff *skb)
 {
 	const struct iphdr *iph;
 	const struct tcphdr *th;
-	struct sock *sk;
+	struct sock *sk, *meta_sk = NULL;
 	int ret;
 	struct net *net = dev_net(skb->dev);
 
@@ -1684,17 +1752,52 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->end_seq = (TCP_SKB_CB(skb)->seq + th->syn + th->fin +
 				    skb->len - th->doff * 4);
 	TCP_SKB_CB(skb)->ack_seq = ntohl(th->ack_seq);
+#ifdef CONFIG_MPTCP
+	/* Init to zero, will be set upon option parsing. */
+	TCP_SKB_CB(skb)->data_seq = 0;
+	TCP_SKB_CB(skb)->end_data_seq = 0;
+	TCP_SKB_CB(skb)->mptcp_flags = 0;
+	TCP_SKB_CB(skb)->dss_off = 0;
+#endif
 	TCP_SKB_CB(skb)->when	 = 0;
 	TCP_SKB_CB(skb)->ip_dsfield = ipv4_get_dsfield(iph);
 	TCP_SKB_CB(skb)->sacked	 = 0;
 
 	sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
-	if (!sk)
-		goto no_tcp_socket;
 
 process:
-	if (sk->sk_state == TCP_TIME_WAIT)
+	if (sk && sk->sk_state == TCP_TIME_WAIT)
 		goto do_time_wait;
+
+#ifdef CONFIG_MPTCP
+	if (th->syn && !th->ack) {
+		int ret;
+
+		ret = mptcp_lookup_join(skb);
+		if (ret) {
+			if (ret < 0) {
+				tcp_v4_send_reset(NULL, skb);
+				if (sk)
+					sock_put(sk);
+				goto discard_it;
+			} else {
+				if (sk)
+					sock_put(sk);
+				return 0;
+			}
+		}
+
+	}
+
+	/* Is there a pending request sock for this segment ? */
+	if ((!sk || sk->sk_state == TCP_LISTEN) && mptcp_syn_recv_sock(skb)) {
+		if (sk)
+			sock_put(sk);
+		return 0;
+	}
+#endif
+	if (!sk)
+		goto no_tcp_socket;
 
 	if (unlikely(iph->ttl < inet_sk(sk)->min_ttl)) {
 		NET_INC_STATS_BH(net, LINUX_MIB_TCPMINTTLDROP);
@@ -1710,9 +1813,44 @@ process:
 
 	skb->dev = NULL;
 
-	bh_lock_sock_nested(sk);
+	if (tcp_sk(sk)->mpc) {
+		meta_sk = mptcp_meta_sk(sk);
+
+		if (unlikely(!meta_sk)) {
+			printk(KERN_ERR"%s mpc set but no mpcb 1\n",__func__);
+			BUG();
+		}
+
+		bh_lock_sock_nested(meta_sk);
+	} else {
+		bh_lock_sock_nested(sk);
+
+		/* Socket became mp-capable while waiting for the lock */
+		if (unlikely(tcp_sk(sk)->mpc)) {
+			meta_sk = mptcp_meta_sk(sk);
+
+			if (unlikely(!meta_sk)) {
+				printk(KERN_ERR"%s mpc set but no mpcb 2\n",__func__);
+				BUG();
+			}
+
+			bh_unlock_sock(sk);
+			bh_lock_sock_nested(meta_sk);
+		}
+	}
+
 	ret = 0;
-	if (!sock_owned_by_user(sk)) {
+
+	if (meta_sk) {
+		if (!sock_owned_by_user(meta_sk)) {
+			if (!tcp_prequeue(sk, skb))
+				ret = tcp_v4_do_rcv(sk, skb);
+		} else if (unlikely(sk_add_backlog(sk, skb))) {
+			bh_unlock_sock(meta_sk);
+			NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
+			goto discard_and_relse;
+		}
+	} else if (!sock_owned_by_user(sk)) {
 #ifdef CONFIG_NET_DMA
 		struct tcp_sock *tp = tcp_sk(sk);
 		if (!tp->ucopy.dma_chan && tp->ucopy.pinned_list)
@@ -1730,7 +1868,11 @@ process:
 		NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
 		goto discard_and_relse;
 	}
-	bh_unlock_sock(sk);
+
+	if (meta_sk)
+		bh_unlock_sock(meta_sk);
+	else
+		bh_unlock_sock(sk);
 
 	sock_put(sk);
 
@@ -1779,6 +1921,26 @@ do_time_wait:
 			sk = sk2;
 			goto process;
 		}
+#ifdef CONFIG_MPTCP
+		if (th->syn && !th->ack) {
+			int ret;
+
+			ret = mptcp_lookup_join(skb);
+			if (ret) {
+				if (ret < 0) {
+					tcp_v4_send_reset(NULL, skb);
+					if (sk)
+						sock_put(sk);
+					goto discard_it;
+				} else {
+					if (sk)
+						sock_put(sk);
+					return 0;
+				}
+			}
+
+		}
+#endif
 		/* Fall through to ACK */
 	}
 	case TCP_TW_ACK:
@@ -1820,7 +1982,7 @@ void *tcp_v4_tw_get_peer(struct sock *sk)
 }
 EXPORT_SYMBOL(tcp_v4_tw_get_peer);
 
-static struct timewait_sock_ops tcp_timewait_sock_ops = {
+struct timewait_sock_ops tcp_timewait_sock_ops = {
 	.twsk_obj_size	= sizeof(struct tcp_timewait_sock),
 	.twsk_unique	= tcp_twsk_unique,
 	.twsk_destructor= tcp_twsk_destructor,
@@ -1934,7 +2096,10 @@ void tcp_v4_destroy_sock(struct sock *sk)
 	tcp_write_queue_purge(sk);
 
 	/* Cleans up our, hopefully empty, out_of_order_queue. */
-	__skb_queue_purge(&tp->out_of_order_queue);
+	if (is_meta_sk(sk))
+		mptcp_purge_ofo_queue(tp);
+	else
+		__skb_queue_purge(&tp->out_of_order_queue);
 
 #ifdef CONFIG_TCP_MD5SIG
 	/* Clean up the MD5 key list, if any */
@@ -1951,7 +2116,8 @@ void tcp_v4_destroy_sock(struct sock *sk)
 #endif
 
 	/* Clean prequeue, it must be empty really */
-	__skb_queue_purge(&tp->ucopy.prequeue);
+	if (!is_meta_sk(sk))
+		__skb_queue_purge(&tp->ucopy.prequeue);
 
 	/* Clean up a referenced TCP bind bucket. */
 	if (inet_csk(sk)->icsk_bind_hash)

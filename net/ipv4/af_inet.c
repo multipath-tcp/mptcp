@@ -103,6 +103,7 @@
 #include <net/ip_fib.h>
 #include <net/inet_connection_sock.h>
 #include <net/tcp.h>
+#include <net/mptcp.h>
 #include <net/udp.h>
 #include <net/udplite.h>
 #include <net/ping.h>
@@ -144,6 +145,13 @@ void inet_sock_destruct(struct sock *sk)
 		       sk->sk_state, sk);
 		return;
 	}
+
+	if (sk->sk_type == SOCK_STREAM && sk->sk_protocol == IPPROTO_TCP &&
+	    tcp_sk(sk)->mpc) {
+		if (mptcp_sock_destruct(sk))
+			return;
+	}
+
 	if (!sock_flag(sk, SOCK_DEAD)) {
 		pr_err("Attempt to release alive inet socket %p\n", sk);
 		return;
@@ -262,8 +270,7 @@ static inline int inet_netns_ok(struct net *net, int protocol)
  *	Create an inet socket.
  */
 
-static int inet_create(struct net *net, struct socket *sock, int protocol,
-		       int kern)
+int inet_create(struct net *net, struct socket *sock, int protocol, int kern)
 {
 	struct sock *sk;
 	struct inet_protosw *answer;

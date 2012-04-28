@@ -20,6 +20,7 @@
 
 #include <linux/module.h>
 #include <linux/gfp.h>
+#include <net/mptcp.h>
 #include <net/tcp.h>
 
 int sysctl_tcp_syn_retries __read_mostly = TCP_SYN_RETRIES;
@@ -32,7 +33,6 @@ int sysctl_tcp_retries2 __read_mostly = TCP_RETR2;
 int sysctl_tcp_orphan_retries __read_mostly;
 int sysctl_tcp_thin_linear_timeouts __read_mostly;
 
-static void tcp_write_timer(unsigned long);
 static void tcp_delack_timer(unsigned long);
 static void tcp_keepalive_timer (unsigned long data);
 
@@ -67,6 +67,8 @@ static int tcp_out_of_resources(struct sock *sk, int do_reset)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	int shift = 0;
+	u32 snd_wnd = (tp->mpc && tp->mpcb) ?
+		mpcb_meta_tp(tp->mpcb)->snd_wnd : tp->snd_wnd;
 
 	/* If peer does not open window for long time, or did not transmit
 	 * anything for long time, penalize it. */
@@ -85,7 +87,7 @@ static int tcp_out_of_resources(struct sock *sk, int do_reset)
 		 *      1. Last segment was sent recently. */
 		if ((s32)(tcp_time_stamp - tp->lsndtime) <= TCP_TIMEWAIT_LEN ||
 		    /*  2. Window is closed. */
-		    (!tp->snd_wnd && !tp->packets_out))
+		    (!snd_wnd && !tp->packets_out))
 			do_reset = 1;
 		if (do_reset)
 			tcp_send_active_reset(sk, GFP_ATOMIC);
@@ -212,10 +214,11 @@ static void tcp_delack_timer(unsigned long data)
 {
 	struct sock *sk = (struct sock *)data;
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct sock *meta_sk = tp->mpc ? mpcb_meta_sk(tp->mpcb) : sk;
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
-	bh_lock_sock(sk);
-	if (sock_owned_by_user(sk)) {
+	bh_lock_sock(meta_sk);
+	if (sock_owned_by_user(meta_sk)) {
 		/* Try again later. */
 		icsk->icsk_ack.blocked = 1;
 		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_DELAYEDACKLOCKED);
@@ -264,7 +267,7 @@ out:
 	if (tcp_memory_pressure)
 		sk_mem_reclaim(sk);
 out_unlock:
-	bh_unlock_sock(sk);
+	bh_unlock_sock(meta_sk);
 	sock_put(sk);
 }
 
@@ -274,7 +277,9 @@ static void tcp_probe_timer(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	int max_probes;
 
-	if (tp->packets_out || !tcp_send_head(sk)) {
+	 if (tp->packets_out || (!tp->mpc && !tcp_send_head(sk)) ||
+			(tp->mpc && !tcp_send_head(sk) &&
+			!tcp_send_head(mptcp_meta_sk(sk)))) {
 		icsk->icsk_probes_out = 0;
 		return;
 	}
@@ -321,13 +326,18 @@ void tcp_retransmit_timer(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
+	u32 snd_wnd = (tp->mpc && tp->mpcb) ?
+		mpcb_meta_tp(tp->mpcb)->snd_wnd : tp->snd_wnd;
 
 	if (!tp->packets_out)
 		goto out;
 
-	WARN_ON(tcp_write_queue_empty(sk));
+	BUG_ON(is_meta_sk(sk));
+#ifdef CONFIG_MPTCP
+	BUG_ON(tcp_write_queue_empty(sk));
+#endif
 
-	if (!tp->snd_wnd && !sock_flag(sk, SOCK_DEAD) &&
+	if (!snd_wnd && !sock_flag(sk, SOCK_DEAD) &&
 	    !((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV))) {
 		/* Receiver dastardly shrinks window. Our retransmits
 		 * become zero probes, but we should not timeout this
@@ -439,6 +449,7 @@ out_reset_timer:
 		/* Use normal (exponential) backoff */
 		icsk->icsk_rto = min(icsk->icsk_rto << 1, TCP_RTO_MAX);
 	}
+	mptcp_set_rto(sk);
 	inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS, icsk->icsk_rto, TCP_RTO_MAX);
 	if (retransmits_timed_out(sk, sysctl_tcp_retries1 + 1, 0, 0))
 		__sk_dst_reset(sk);
@@ -446,14 +457,16 @@ out_reset_timer:
 out:;
 }
 
-static void tcp_write_timer(unsigned long data)
+void tcp_write_timer(unsigned long data)
 {
 	struct sock *sk = (struct sock *)data;
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct sock *meta_sk = tp->mpc ? mpcb_meta_sk(tp->mpcb) : sk;
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	int event;
 
-	bh_lock_sock(sk);
-	if (sock_owned_by_user(sk)) {
+	bh_lock_sock(meta_sk);
+	if (sock_owned_by_user(meta_sk)) {
 		/* Try again later */
 		sk_reset_timer(sk, &icsk->icsk_retransmit_timer, jiffies + (HZ / 20));
 		goto out_unlock;
@@ -472,7 +485,10 @@ static void tcp_write_timer(unsigned long data)
 
 	switch (event) {
 	case ICSK_TIME_RETRANS:
-		tcp_retransmit_timer(sk);
+		if (is_meta_sk(sk))
+			mptcp_retransmit_timer(sk);
+		else
+			tcp_retransmit_timer(sk);
 		break;
 	case ICSK_TIME_PROBE0:
 		tcp_probe_timer(sk);
@@ -482,7 +498,7 @@ static void tcp_write_timer(unsigned long data)
 out:
 	sk_mem_reclaim(sk);
 out_unlock:
-	bh_unlock_sock(sk);
+	bh_unlock_sock(meta_sk);
 	sock_put(sk);
 }
 
@@ -529,9 +545,11 @@ static void tcp_keepalive_timer (unsigned long data)
 		goto out;
 	}
 
-	if (sk->sk_state == TCP_LISTEN) {
+	/* MPTCP-note: this will also be the case for meta-sk !!!! */
+	if (sk->sk_state == TCP_LISTEN || is_meta_sk(sk)) {
 		tcp_synack_timer(sk);
-		goto out;
+		if (!is_meta_sk(sk))
+			goto out;
 	}
 
 	if (sk->sk_state == TCP_FIN_WAIT2 && sock_flag(sk, SOCK_DEAD)) {

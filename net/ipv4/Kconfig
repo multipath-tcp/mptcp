@@ -561,6 +561,14 @@ config TCP_CONG_ILLINOIS
 	For further details see:
 	  http://www.ews.uiuc.edu/~shaoliu/tcpillinois/index.html
 
+config TCP_CONG_COUPLED
+	tristate "MPTCP COUPLED CONGESTION CONTROL"
+	depends on EXPERIMENTAL && MPTCP
+	default n
+	---help---
+	MultiPath TCP Coupled Congestion Control
+	To enable it, just put 'coupled' in tcp_congestion_control
+
 choice
 	prompt "Default TCP congestion control"
 	default DEFAULT_CUBIC
@@ -589,6 +597,9 @@ choice
 	config DEFAULT_WESTWOOD
 		bool "Westwood" if TCP_CONG_WESTWOOD=y
 
+	config DEFAULT_COUPLED
+		bool "Coupled" if TCP_CONG_COUPLED=y
+
 	config DEFAULT_RENO
 		bool "Reno"
 
@@ -610,6 +621,7 @@ config DEFAULT_TCP_CONG
 	default "vegas" if DEFAULT_VEGAS
 	default "westwood" if DEFAULT_WESTWOOD
 	default "veno" if DEFAULT_VENO
+	default "coupled" if DEFAULT_COUPLED
 	default "reno" if DEFAULT_RENO
 	default "cubic"
 
