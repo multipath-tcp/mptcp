@@ -396,7 +396,7 @@ struct sk_buff {
 	 * first. This is owned by whoever has the skb queued ATM.
 	 */
 #ifdef CONFIG_MPTCP
-	char			cb[64] __aligned(8);
+	char			cb[72] __aligned(8);
 #else
 	char			cb[48] __aligned(8);
 #endif
