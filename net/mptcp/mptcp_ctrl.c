@@ -235,7 +235,7 @@ void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn)
 }
 
 void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
-		     u32 *hash_out)
+		       u32 *hash_out)
 {
 	u32 workspace[SHA_WORKSPACE_WORDS];
 	u8 input[128]; /* 2 512-bit blocks */
@@ -266,6 +266,9 @@ void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 	sha_transform(hash_out, &input[64], workspace);
 	memset(workspace, 0, sizeof(workspace));
 
+	for (i = 0; i < 5; i++)
+		hash_out[i] = cpu_to_be32(hash_out[i]);
+
 	/* Prepare second part of hmac */
 	memset(input, 0x5C, 64);
 	for (i = 0; i < 8; i++)
@@ -281,6 +284,7 @@ void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 	input[126] = 0x02;
 	input[127] = 0xA0;
 
+	sha_init(hash_out);
 	sha_transform(hash_out, input, workspace);
 	memset(workspace, 0, sizeof(workspace));
 
