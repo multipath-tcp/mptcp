@@ -332,10 +332,7 @@ void tcp_retransmit_timer(struct sock *sk)
 	if (!tp->packets_out)
 		goto out;
 
-	BUG_ON(is_meta_sk(sk));
-#ifdef CONFIG_MPTCP
-	BUG_ON(tcp_write_queue_empty(sk));
-#endif
+	WARN_ON(tcp_write_queue_empty(sk));
 
 	if (!snd_wnd && !sock_flag(sk, SOCK_DEAD) &&
 	    !((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV))) {

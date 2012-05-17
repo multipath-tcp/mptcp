@@ -481,14 +481,6 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 	int result;
 	int reinject = 0;
 
-	if (unlikely(meta_sk->sk_in_write_xmit)) {
-		printk(KERN_ERR "sk in write xmit, meta_sk: %d\n",
-		       is_meta_sk(meta_sk));
-		BUG();
-	}
-
-	meta_sk->sk_in_write_xmit = 1;
-
 	if (mss_now != mptcp_sysctl_mss()) {
 		printk(KERN_ERR "write xmit-mss_now %d, mptcp mss:%d\n",
 		       mss_now, mptcp_sysctl_mss());
@@ -498,10 +490,8 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 	 * In time closedown will finish, we empty the write queue and all
 	 * will be happy.
 	 */
-	if (unlikely(meta_sk->sk_state == TCP_CLOSE)) {
-		meta_sk->sk_in_write_xmit = 0;
+	if (unlikely(meta_sk->sk_state == TCP_CLOSE))
 		return 0;
-	}
 
 	sent_pkts = 0;
 
@@ -509,7 +499,6 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		/* Do MTU probing. */
 		result = tcp_mtu_probe(meta_sk);
 		if (!result) {
-			meta_sk->sk_in_write_xmit = 0;
 			return 0;
 		} else if (result > 0) {
 			sent_pkts = 1;
@@ -579,8 +568,6 @@ retry:
 						      nonagle : TCP_NAGLE_PUSH))))
 				break;
 		} else {
-			/* tso not supported in MPTCP */
-			BUG();
 			if (!push_one && tcp_tso_should_defer(meta_sk, skb))
 				break;
 		}
@@ -728,11 +715,9 @@ retry:
 
 	mpcb->noneligible = 0;
 
-	if (likely(sent_pkts)) {
-		meta_sk->sk_in_write_xmit = 0;
+	if (likely(sent_pkts))
 		return 0;
-	}
-	meta_sk->sk_in_write_xmit = 0;
+
 	return !meta_tp->packets_out && tcp_send_head(meta_sk);
 }
 

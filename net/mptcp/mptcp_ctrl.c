@@ -474,14 +474,6 @@ void mptcp_release_mpcb(struct mptcp_cb *mpcb)
 {
 	struct sock *meta_sk = mpcb_meta_sk(mpcb);
 
-	/* Must have been destroyed previously */
-	if (!sock_flag(meta_sk, SOCK_DEAD)) {
-		printk(KERN_ERR "%s Trying to free mpcb %#x without having "
-		       "called mptcp_destroy_mpcb()\n",
-		       __func__, mpcb->mptcp_loc_token);
-		BUG();
-	}
-
 	security_sk_free(meta_sk);
 
 	mptcp_debug("%s: Will free mpcb %#x\n", __func__, mpcb->mptcp_loc_token);
@@ -521,9 +513,6 @@ void mptcp_add_sock(struct mptcp_cb *mpcb, struct tcp_sock *tp)
 {
 	struct sock *meta_sk = mpcb_meta_sk(mpcb);
 	struct sock *sk = (struct sock *) tp;
-
-	/* We should not add a non-mpc socket */
-	BUG_ON(!tp->mpc);
 
 	tp->mpcb = mpcb;
 
@@ -619,8 +608,6 @@ void mptcp_del_sock(struct sock *sk)
 
 	if (is_master_tp(tp))
 		mpcb->master_sk = NULL;
-
-	BUG_ON(!done);
 }
 
 /**
@@ -1210,13 +1197,12 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 }
 
 struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
-		struct request_sock *req, struct request_sock **prev)
+				   struct request_sock *req,
+				   struct request_sock **prev)
 {
 	struct tcp_sock *child_tp = tcp_sk(child);
 	struct mptcp_cb *mpcb = req->mpcb;
 	u8 hash_mac_check[20];
-
-	BUG_ON(!mpcb);
 
 	if (!mpcb->rx_opt.mptcp_opt_type == MPTCP_MP_JOIN_TYPE_ACK)
 		goto teardown;

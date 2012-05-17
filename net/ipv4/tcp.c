@@ -916,7 +916,6 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 {
 	struct iovec *iov;
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *sk_it;
 	struct sk_buff *skb;
 	int iovlen, flags;
 	int mss_now, size_goal;
@@ -924,6 +923,8 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	long timeo;
 
 	if (tp->mpc) {
+		struct sock *sk_it;
+
 		mptcp_for_each_sk(tp->mpcb, sk_it) {
 			if (!is_master_tp(tcp_sk(sk_it)))
 				sock_rps_record_flow(sk_it);
@@ -937,11 +938,12 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 	/* Wait for a connection to finish. */
 	if ((1 << sk->sk_state) & ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT)) {
-		if ((err = sk_stream_wait_connect(sk, &timeo)) != 0) {
+		if ((err = sk_stream_wait_connect(sk, &timeo)) != 0)
 			goto out_err;
-		}
 
 		if (tp->mpc && !is_meta_sk(sk)) {
+			struct sock *sk_it;
+
 			release_sock(sk);
 			mptcp_update_pointers(&sk, &tp, NULL);
 
@@ -972,20 +974,16 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	copied = 0;
 
 	err = -EPIPE;
-
-	if (sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN)) {
-		mptcp_debug("%s sk->sk_err %d\n", __func__, sk->sk_err);
+	if (sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN))
 		goto out_err;
-	}
 
-#ifndef CONFIG_MPTCP
-	sg = sk->sk_route_caps & NETIF_F_SG;
-#else
-	/* At the moment we assume sg is unavailable on any interface.
-	 * In the future we should set sg to 1 if *all* interfaces support sg
-	 */
-	sg = 0;
-#endif
+	if (tp->mpc)
+		/* At the moment we assume sg is unavailable on any interface.
+		 * In the future we should set sg to 1 if *all* interfaces support sg
+		 */
+		sg = 0;
+	else
+		sg = sk->sk_route_caps & NETIF_F_SG;
 
 	while (--iovlen >= 0) {
 		size_t seglen = iov->iov_len;
@@ -1004,18 +1002,6 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 				copy = max - skb->len;
 			}
 
-#ifdef CONFIG_MPTCP
-			/* If this happens, the write queue has been emptied
-			 * without setting the send_head to NULL.
-			 * Normally the send_head is set to NULL with
-			 * tcp_advance_send_head, called by
-			 * tcp_event_new_data_sent on the meta_sk.
-			 * If we transmit an skb without advancing the send
-			 * head, the skb will be suppressed, while the send
-			 * head will still point to it.
-			 */
-			BUG_ON(!skb && tcp_send_head(sk));
-#endif
 			if (copy <= 0) {
 new_segment:
 				/* Allocate new segment. If the interface is SG,
@@ -1162,11 +1148,9 @@ wait_for_memory:
 
 			if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
 				goto do_error;
-#ifdef CONFIG_MPTCP
-			BUG_ON(!sk_stream_memory_free(sk));
-#else
-			mss_now = tcp_send_mss(sk, &size_goal, flags);
-#endif
+
+			if (!tp->mpc)
+				mss_now = tcp_send_mss(sk, &size_goal, flags);
 		}
 	}
 
@@ -2056,7 +2040,7 @@ int tcp_close_state(struct sock *sk)
 void tcp_shutdown(struct sock *sk, int how)
 {
 	if (tcp_sk(sk)->mpc)
-		sk = (struct sock *) mpcb_from_tcpsock(tcp_sk(sk));
+		sk = mptcp_meta_sk(sk);
 
 	/*	We need to grab some memory, and put together a FIN,
 	 *	and then put it into the queue to be sent.

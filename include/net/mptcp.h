@@ -177,7 +177,6 @@ struct mptcp_cb {
 
 static inline int mptcp_pi_to_flag(int pi)
 {
-	BUG_ON(!pi);
 	return 1 << (pi - 1);
 }
 
@@ -724,10 +723,6 @@ static inline int mptcp_sock_destruct(struct sock *sk)
 		mptcp_release_mpcb(tcp_sk(sk)->mpcb);
 		return 1;
 	} else {
-		/* It must have been detached by
-		 * inet_csk_destroy_sock() */
-		BUG_ON(mptcp_sk_attached(sk));
-
 		/* Taken when mpcb pointer was set */
 		sock_put(mptcp_meta_sk(sk));
 	}

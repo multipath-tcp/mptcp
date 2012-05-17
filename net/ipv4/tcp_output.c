@@ -35,8 +35,8 @@
  */
 
 #include <net/mptcp.h>
-#include <net/tcp.h>
 #include <net/ipv6.h>
+#include <net/tcp.h>
 
 #include <linux/compiler.h>
 #include <linux/gfp.h>
@@ -72,22 +72,18 @@ void tcp_event_new_data_sent(struct sock *sk, const struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int prior_packets = tp->packets_out;
 
-#ifdef CONFIG_MPTCP
-	BUG_ON(tcp_send_head(sk) != skb);
-#endif
 	tcp_advance_send_head(sk, skb);
 	tp->snd_nxt = is_meta_tp(tp) ? mptcp_skb_end_data_seq(skb) :
 	    TCP_SKB_CB(skb)->end_seq;
 
-	/* Don't override Nagle indefinately with F-RTO */
+	/* Don't override Nagle indefinitely with F-RTO */
 	if (tp->frto_counter == 2)
 		tp->frto_counter = 3;
 
 	tp->packets_out += tcp_skb_pcount(skb);
-	if (!prior_packets) {
+	if (!prior_packets)
 		inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
 					  inet_csk(sk)->icsk_rto, TCP_RTO_MAX);
-	}
 }
 
 /* SND.NXT, if window was not shrunk.
@@ -280,8 +276,6 @@ static u16 tcp_select_window(struct sock *sk)
 	u32 cur_win = tcp_receive_window(tp);
 	u32 new_win = __tcp_select_window(sk);
 
-	BUG_ON(is_meta_sk(sk));
-
 	/* Never shrink the offered window */
 	if (new_win < cur_win) {
 		/* Danger Will Robinson!
@@ -399,7 +393,7 @@ void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags)
 #define OPTION_MD5		(1 << 2)
 #define OPTION_WSCALE		(1 << 3)
 #define OPTION_COOKIE_EXTENSION	(1 << 4)
-/* WARN: Before adding here, consider the MPTCP-options in net/mptcp.h */
+/* WARN: Before adding here, consider the MPTCP-option in include/net/mptcp.h */
 
 /* The sysctl int routines are generic, so check consistency here.
  */
@@ -815,11 +809,6 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 			    opts->num_sack_blocks * TCPOLEN_SACK_PERBLOCK;
 	}
 
-	if (size > MAX_TCP_OPTION_SPACE) {
-		printk(KERN_ERR "exceeded option space, options:%#x\n",
-		       opts->options);
-		BUG();
-	}
 	return size;
 }
 
@@ -835,7 +824,7 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
  * SKB, or a fresh unique copy made by the retransmit engine.
  */
 int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
-		     gfp_t gfp_mask)
+		        gfp_t gfp_mask)
 {
 	const struct inet_connection_sock *icsk = inet_csk(sk);
 	struct inet_sock *inet;
@@ -847,13 +836,7 @@ int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	struct tcphdr *th;
 	int err;
 
-	BUG_ON(is_meta_sk(sk));
-
-	if (!skb || !tcp_skb_pcount(skb)) {
-		printk(KERN_ERR "tcp_skb_pcount:%d,skb->len:%d\n",
-		       tcp_skb_pcount(skb), skb->len);
-		BUG();
-	}
+	BUG_ON(!skb || !tcp_skb_pcount(skb));
 
 	/* If congestion control is doing timestamping, we must
 	 * take such a timestamp before we potentially clone/copy.
@@ -868,10 +851,8 @@ int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			skb = pskb_copy(skb, gfp_mask);
 		else
 			skb = skb_clone(skb, gfp_mask);
-		if (unlikely(!skb)) {
-			printk(KERN_ERR "transmit_skb, clone failed\n");
+		if (unlikely(!skb))
 			return -ENOBUFS;
-		}
 	}
 
 	inet = inet_sk(sk);
@@ -1192,7 +1173,6 @@ int tcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
 		__pskb_trim_head(skb, len - skb_headlen(skb));
 
 	TCP_SKB_CB(skb)->seq += len;
-
 	skb->ip_summed = CHECKSUM_PARTIAL;
 
 	skb->truesize	     -= len;
@@ -1409,8 +1389,6 @@ unsigned int tcp_cwnd_test(const struct tcp_sock *tp,
 {
 	u32 in_flight, cwnd;
 
-	BUG_ON(is_meta_tp(tp));
-
 	/* Don't be strict about the congestion window for the final FIN.  */
 	if (skb &&
 	    ((TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN) || mptcp_is_data_fin(skb)) &&
@@ -1537,8 +1515,6 @@ static unsigned int tcp_snd_test(const struct sock *sk, struct sk_buff *skb,
 	struct mptcp_cb *mpcb = tp->mpcb;
 	const struct tcp_sock *meta_tp = tp->mpc ? mpcb_meta_tp(mpcb) : tp;
 
-	BUG_ON(tp->mpc && tcp_skb_pcount(skb) > 1);
-
 	tcp_init_tso_segs(sk, skb, cur_mss);
 
 	if (!tcp_nagle_test(meta_tp, skb, cur_mss, nonagle))
@@ -1583,9 +1559,6 @@ int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	int nlen = skb->len - len;
 	u8 flags;
 
-#ifdef CONFIG_MPTCP
-	BUG_ON(len == 0);	/* This would create an empty segment */
-#endif
 	/* All of a TSO frame must be composed of paged data.  */
 	if (skb->len != skb->data_len)
 		return tcp_fragment(sk, skb, len, mss_now);
@@ -1832,9 +1805,6 @@ int tcp_mtu_probe(struct sock *sk)
 		/* Decrement cwnd here because we are sending
 		 * effectively two packets. */
 		tp->snd_cwnd--;
-		if (is_meta_sk(sk))
-			mptcp_debug("%s DEBUG BUG#107 calling tcp_event_new_data_sent"
-				    " from meta-socket\n", __func__);
 		tcp_event_new_data_sent(sk, nskb);
 
 		icsk->icsk_mtup.probe_size = tcp_mss_to_mtu(sk, nskb->len);
@@ -1979,7 +1949,6 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 	int reinject = 0;
 
 	skb = mptcp_next_segment(sk, &reinject);
-	BUG_ON(!skb);
 
 	while (reinject > 0 && !after(TCP_SKB_CB(skb)->end_data_seq, tp->snd_una)) {
 		/* another copy of the segment already reached
@@ -2409,8 +2378,6 @@ void tcp_xmit_retransmit_queue(struct sock *sk)
 	u32 last_lost;
 	int mib_idx;
 	int fwd_rexmitting = 0;
-
-	BUG_ON(is_meta_sk(sk));
 
 	if (!tp->packets_out)
 		return;

@@ -50,8 +50,6 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk)
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	int acked = 0;
 
-	BUG_ON(!is_meta_tp(meta_tp));
-
 	while ((skb = tcp_write_queue_head(meta_sk)) &&
 	       skb != tcp_send_head(meta_sk)) {
 		struct tcp_skb_cb *scb = TCP_SKB_CB(skb);

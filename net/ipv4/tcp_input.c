@@ -3311,25 +3311,6 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 	s32 seq_rtt = -1;
 	s32 ca_seq_rtt = -1;
 	ktime_t last_ackt = net_invalid_timestamp();
-#ifdef MPTCP_DEBUG_PKTS_OUT
-	int orig_packets, orig_qsize, orig_outsize;
-#endif
-
-	BUG_ON(is_meta_sk(sk));
-
-#ifdef MPTCP_DEBUG_PKTS_OUT
-	/* Cannot have more packets in flight than packets in the
-	 * rexmit queue (if tso disabled)
-	 */
-	BUG_ON(tp->mpc && tp->packets_out >
-		skb_queue_len(&sk->sk_write_queue));
-#endif
-
-#ifdef CONFIG_MPTCP
-	if (tcp_write_queue_empty(sk) &&  icsk->icsk_pending ==
-			ICSK_TIME_RETRANS)
-		BUG();
-#endif
 
 	while ((skb = tcp_write_queue_head(sk)) && skb != tcp_send_head(sk)) {
 		struct tcp_skb_cb *scb = TCP_SKB_CB(skb);
@@ -3374,11 +3355,6 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		if (sacked & TCPCB_LOST)
 			tp->lost_out -= acked_pcount;
 
-#ifdef MPTCP_DEBUG_PKTS_OUT
-		orig_packets = tp->packets_out;
-		orig_qsize = skb_queue_len(&sk->sk_write_queue);
-#endif
-
 		tp->packets_out -= acked_pcount;
 		pkts_acked += acked_pcount;
 
@@ -3404,22 +3380,6 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 
 		if (tp->mpc)
 			flag |= mptcp_fallback_infinite(tp, skb);
-
-#ifdef MPTCP_DEBUG_PKTS_OUT
-		/* Cannot have more packets in flight than packets in the
-		 * rexmit queue (if tso disabled)
-		 */
-		if (tp->mpc &&
-		    tp->packets_out > skb_queue_len(&sk->sk_write_queue)) {
-			printk(KERN_ERR "acked_pcount:%d\n", acked_pcount);
-			printk(KERN_ERR "orig_packets:%d, orig_qsize:%d,"
-				"orig_outsize:%d\n"
-				"packets:%d,qsize:%d\n", orig_packets,
-				orig_qsize, orig_outsize, tp->packets_out,
-				skb_queue_len(&sk->sk_write_queue));
-			BUG();
-		}
-#endif
 
 		sk_wmem_free_skb(sk, skb);
 		tp->scoreboard_skb_hint = NULL;
@@ -3447,9 +3407,6 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		}
 
 		tcp_ack_update_rtt(sk, flag, seq_rtt);
-#ifdef CONFIG_MPTCP
-		BUG_ON(tcp_write_queue_empty(sk) && tp->packets_out);
-#endif
 		tcp_rearm_rto(sk);
 
 		if (tcp_is_reno(tp)) {
@@ -3488,9 +3445,9 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 	}
 
 #if FASTRETRANS_DEBUG > 0
-	BUG_ON((int)tp->sacked_out < 0);
-	BUG_ON((int)tp->lost_out < 0);
-	BUG_ON((int)tp->retrans_out < 0);
+	WARN_ON((int)tp->sacked_out < 0);
+	WARN_ON((int)tp->lost_out < 0);
+	WARN_ON((int)tp->retrans_out < 0);
 	if (!tp->packets_out && tcp_is_sack(tp)) {
 		icsk = inet_csk(sk);
 		if (tp->lost_out) {
@@ -3508,14 +3465,6 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			       tp->retrans_out, icsk->icsk_ca_state);
 			tp->retrans_out = 0;
 		}
-	}
-#endif
-#ifdef CONFIG_MPTCP
-	if (tcp_write_queue_empty(sk) &&
-			icsk->icsk_pending == ICSK_TIME_RETRANS) {
-		printk(KERN_ERR "packets_out:%d, flag_acked:%d,flag:%#x\n",
-			tp->packets_out, flag & FLAG_ACKED, flag);
-		BUG();
 	}
 #endif
 	return flag;
@@ -3888,10 +3837,6 @@ no_queue:
 	return 1;
 
 invalid_ack:
-	mptcp_debug("received invalid ack\n");
-	mptcp_debug("pi %d:Ack %#x after %#x:%#x, addr %pI4->%pI4\n",
-		tp->path_index, ack, tp->snd_una, tp->snd_nxt,
-		&inet_sk(sk)->inet_saddr, &inet_sk(sk)->inet_daddr);
 	SOCK_DEBUG(sk, "Ack %u after %u:%u\n", ack, tp->snd_una, tp->snd_nxt);
 	return -1;
 
@@ -3902,10 +3847,6 @@ old_ack:
 			tcp_try_keep_open(sk);
 	}
 
-	mptcp_debug("received old ack\n");
-	mptcp_debug("pi %d:Ack %#x before %#x:%#x, addr %pI4->%pI4\n",
-			tp->path_index, ack, tp->snd_una, tp->snd_nxt,
-	       &inet_sk(sk)->inet_saddr, &inet_sk(sk)->inet_daddr);
 	SOCK_DEBUG(sk, "Ack %u before %u:%u\n", ack, tp->snd_una, tp->snd_nxt);
 	return 0;
 }
@@ -5208,8 +5149,6 @@ static void tcp_check_space(struct sock *sk)
 static inline void tcp_data_snd_check(struct sock *sk)
 {
 	struct sock *meta_sk = tcp_sk(sk)->mpc ? mpcb_meta_sk(tcp_sk(sk)->mpcb) : sk;
-
-	BUG_ON(is_meta_sk(sk));
 
 	tcp_push_pending_frames(meta_sk);
 	tcp_check_space(sk);

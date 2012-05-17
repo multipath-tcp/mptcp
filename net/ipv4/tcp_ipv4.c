@@ -1816,11 +1816,6 @@ process:
 	if (tcp_sk(sk)->mpc) {
 		meta_sk = mptcp_meta_sk(sk);
 
-		if (unlikely(!meta_sk)) {
-			printk(KERN_ERR"%s mpc set but no mpcb 1\n",__func__);
-			BUG();
-		}
-
 		bh_lock_sock_nested(meta_sk);
 	} else {
 		bh_lock_sock_nested(sk);
@@ -1828,11 +1823,6 @@ process:
 		/* Socket became mp-capable while waiting for the lock */
 		if (unlikely(tcp_sk(sk)->mpc)) {
 			meta_sk = mptcp_meta_sk(sk);
-
-			if (unlikely(!meta_sk)) {
-				printk(KERN_ERR"%s mpc set but no mpcb 2\n",__func__);
-				BUG();
-			}
 
 			bh_unlock_sock(sk);
 			bh_lock_sock_nested(meta_sk);
