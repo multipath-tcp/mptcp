@@ -160,7 +160,7 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 		}
 
 		/* TODO MPTCP: No key-verification here!!! */
-		if (unlikely(mopt.mp_rst))
+		if (unlikely(mopt.mp_fclose))
 			goto kill_with_rst;
 	}
 

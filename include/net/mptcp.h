@@ -89,7 +89,7 @@ struct multipath_options {
 	u8	list_rcvd:1, /* 1 if IP list has been received */
 		dfin_rcvd:1,
 		mp_fail:1,
-		mp_rst:1,
+		mp_fclose:1,
 		dss_csum:1;
 };
 
@@ -236,21 +236,21 @@ static inline int mptcp_pi_to_flag(int pi)
 #define MPTCP_SUB_LEN_ADD_ADDR4_ALIGN	8
 #define MPTCP_SUB_LEN_ADD_ADDR6_ALIGN	20
 
+#define MPTCP_SUB_REMOVE_ADDR	4
+#define MPTCP_SUB_LEN_REMOVE_ADDR	4
+
+#define MPTCP_SUB_PRIO		5
+#define MPTCP_SUB_LEN_PRIO	3
+#define MPTCP_SUB_LEN_PRIO_ADDR	4
+#define MPTCP_SUB_LEN_PRIO_ALIGN	4
+
 #define MPTCP_SUB_FAIL		6
 #define MPTCP_SUB_LEN_FAIL	12
 #define MPTCP_SUB_LEN_FAIL_ALIGN	12
 
-#define MPTCP_SUB_RST		7
-#define MPTCP_SUB_LEN_RST	12
-#define MPTCP_SUB_LEN_RST_ALIGN	12
-
-#define MPTCP_SUB_REMOVE_ADDR	8
-#define MPTCP_SUB_LEN_REMOVE_ADDR	4
-
-#define MPTCP_SUB_PRIO		9
-#define MPTCP_SUB_LEN_PRIO	3
-#define MPTCP_SUB_LEN_PRIO_ADDR	4
-#define MPTCP_SUB_LEN_PRIO_ALIGN	4
+#define MPTCP_SUB_FCLOSE	7
+#define MPTCP_SUB_LEN_FCLOSE	12
+#define MPTCP_SUB_LEN_FCLOSE_ALIGN	12
 
 /* Only used for tcp_options_write */
 #define OPTION_MPTCP	(1 << 5)
@@ -266,7 +266,7 @@ static inline int mptcp_pi_to_flag(int pi)
 #define OPTION_ADD_ADDR		(1 << 7)
 #define OPTION_MP_JOIN		(1 << 8)
 #define OPTION_MP_FAIL		(1 << 9)
-#define OPTION_MP_RST		(1 << 10)
+#define OPTION_MP_FCLOSE	(1 << 10)
 #define OPTION_REMOVE_ADDR	(1 << 11)
 #define OPTION_MP_PRIO		(1 << 12)
 
@@ -420,7 +420,7 @@ struct mp_fail {
 	__be64	data_seq;
 };
 
-struct mp_rst {
+struct mp_fclose {
 	__u8	kind;
 	__u8	len;
 #if defined(__LITTLE_ENDIAN_BITFIELD)
@@ -699,7 +699,7 @@ static inline void mptcp_init_mp_opt(struct multipath_options *mopt)
 	mopt->rem4_bits = mopt->rem6_bits = 0;
 	mopt->mptcp_opt_type = 0;
 	mopt->mp_fail = 0;
-	mopt->mp_rst = 0;
+	mopt->mp_fclose = 0;
 	mopt->mptcp_rem_key = 0;
 	mopt->mpcb = NULL;
 }
@@ -951,9 +951,9 @@ static inline void mptcp_mp_fail_rcvd(struct mptcp_cb *mpcb,
 		}
 	}
 
-	if (unlikely(mpcb->rx_opt.mp_rst)) {
+	if (unlikely(mpcb->rx_opt.mp_fclose)) {
 		struct sock *sk_it, *sk_tmp;
-		mpcb->rx_opt.mp_rst = 0;
+		mpcb->rx_opt.mp_fclose = 0;
 
 		tcp_send_active_reset(sk, GFP_ATOMIC);
 

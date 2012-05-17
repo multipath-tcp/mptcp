@@ -515,7 +515,7 @@ struct tcp_sock {
 	 * rather than adding ifdefs everywhere.
 	 */
 	u8      mpc:1,          /* Other end is multipath capable */
-		send_mp_rst:1,
+		send_mp_fclose:1,
 		request_mptcp:1, /* Did we send out an MP_CAPABLE?
 				    * (this speeds up mptcp_doit() in tcp_recvmsg)
 				    */

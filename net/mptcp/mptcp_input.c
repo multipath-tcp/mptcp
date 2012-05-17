@@ -1343,17 +1343,17 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 		}
 		mopt->mp_fail = 1;
 		break;
-	case MPTCP_SUB_RST:
-		if (opsize != MPTCP_SUB_LEN_RST) {
-			mptcp_debug("%s: mp_rst: bad option size %d\n",
+	case MPTCP_SUB_FCLOSE:
+		if (opsize != MPTCP_SUB_LEN_FCLOSE) {
+			mptcp_debug("%s: mp_fclose: bad option size %d\n",
 					__func__, opsize);
 			break;
 		}
 
-		mopt->mp_rst = 1;
+		mopt->mp_fclose = 1;
 		if (mopt->mpcb &&
-		    mopt->mpcb->mptcp_loc_key != ((struct mp_rst *)ptr)->key)
-			mopt->mp_rst = 0;
+		    mopt->mpcb->mptcp_loc_key != ((struct mp_fclose *)ptr)->key)
+			mopt->mp_fclose = 0;
 
 		break;
 	default:

@@ -3407,9 +3407,9 @@ void tcp_done(struct sock *sk)
 
 	tcp_set_state(sk, TCP_CLOSE);
 
-	/* If it is a meta-sk sending mp_rst we have to maintain the
-	 * rexmit-timer for retransmitting the MP_RST */
-	if (!tp->mpc || !is_meta_sk(sk) || !tp->send_mp_rst)
+	/* If it is a meta-sk sending mp_fclose we have to maintain the
+	 * rexmit-timer for retransmitting the MP_FCLOSE */
+	if (!tp->mpc || !is_meta_sk(sk) || !tp->send_mp_fclose)
 		tcp_clear_xmit_timers(sk);
 
 	sk->sk_shutdown = SHUTDOWN_MASK;
