@@ -3480,11 +3480,11 @@ static void tcp_ack_probe(struct sock *sk)
 	if (tp->mpc)
 		usable_wopen = (!after(
 				mptcp_skb_end_data_seq(tcp_send_head(sk)),
-				tcp_wnd_end(tp, 1)));
+				tcp_wnd_end(tp)));
 	else
 		usable_wopen=(!after(TCP_SKB_CB(
 				tcp_send_head(sk))->end_seq,
-				tcp_wnd_end(tp,0)));
+				tcp_wnd_end(tp)));
 
 	if (usable_wopen) {
 		icsk->icsk_backoff = 0;

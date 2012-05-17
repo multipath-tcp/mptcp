@@ -1123,8 +1123,6 @@ new_segment:
 			TCP_SKB_CB(skb)->end_seq += copy;
 			skb_shinfo(skb)->gso_segs = 0;
 
-			mptcp_set_data_size(tp, skb, copy);
-
 			from += copy;
 			copied += copy;
 			if ((seglen -= copy) == 0 && iovlen == 0)

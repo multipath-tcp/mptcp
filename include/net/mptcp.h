@@ -259,15 +259,13 @@ static inline int mptcp_pi_to_flag(int pi)
 #define OPTION_TYPE_SYNACK	(1 << 1)
 #define OPTION_TYPE_ACK		(1 << 2)
 #define OPTION_MP_CAPABLE	(1 << 3)
-#define OPTION_DSN_MAP		(1 << 4)
-#define OPTION_DATA_FIN		(1 << 5)
-#define OPTION_DATA_ACK		(1 << 6)
-#define OPTION_ADD_ADDR		(1 << 7)
-#define OPTION_MP_JOIN		(1 << 8)
-#define OPTION_MP_FAIL		(1 << 9)
-#define OPTION_MP_FCLOSE	(1 << 10)
-#define OPTION_REMOVE_ADDR	(1 << 11)
-#define OPTION_MP_PRIO		(1 << 12)
+#define OPTION_DATA_ACK		(1 << 4)
+#define OPTION_ADD_ADDR		(1 << 5)
+#define OPTION_MP_JOIN		(1 << 6)
+#define OPTION_MP_FAIL		(1 << 7)
+#define OPTION_MP_FCLOSE	(1 << 8)
+#define OPTION_REMOVE_ADDR	(1 << 9)
+#define OPTION_MP_PRIO		(1 << 10)
 
 struct mptcp_option {
 	__u8	kind;
@@ -585,10 +583,12 @@ void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 void mptcp_synack_options(struct request_sock *req,
 			  struct tcp_out_options *opts,
 			  unsigned *remaining);
-void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
-			       struct tcp_out_options *opts, unsigned *size);
+unsigned mptcp_established_options(struct sock *sk, struct sk_buff *skb,
+				   struct tcp_out_options *opts,
+				   unsigned *size);
 void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
-			 struct tcp_out_options *opts);
+			 struct tcp_out_options *opts,
+			 struct sk_buff *skb);
 void mptcp_close(struct sock *meta_sk, long timeout);
 void mptcp_detach_unused_child(struct sock *sk);
 void mptcp_set_bw_est(struct tcp_sock *tp, u32 now);
@@ -601,7 +601,6 @@ void mptcp_select_window(struct tcp_sock *tp, u32 new_win);
 u32 __mptcp_select_window(struct sock *sk);
 int mptcp_try_rmem_schedule(struct sock *tp, unsigned int size);
 int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb);
-void mptcp_set_data_size(struct tcp_sock *tp, struct sk_buff *skb, int copy);
 void mptcp_push(struct sock *sk, int flags, int mss_now, int nonagle);
 void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn);
 void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
@@ -1203,8 +1202,6 @@ static inline int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 {
 	return 0;
 }
-static inline void mptcp_set_data_size(const struct tcp_sock *tp,
-				       const struct sk_buff *skb, int copy) {}
 static inline void mptcp_push(const struct sock *sk, int flags,
 			      int mss_now, int nonagle) {}
 static inline void mptcp_fallback(const struct sock *master_sk) {}

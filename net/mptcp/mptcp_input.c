@@ -53,13 +53,14 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk)
 	while ((skb = tcp_write_queue_head(meta_sk)) &&
 	       skb != tcp_send_head(meta_sk)) {
 		struct tcp_skb_cb *scb = TCP_SKB_CB(skb);
-		if (before(meta_tp->snd_una, scb->end_data_seq))
+		if (before(meta_tp->snd_una, scb->end_seq))
 			break;
 
 		tcp_unlink_write_queue(skb, meta_sk);
 
 		if (mptcp_is_data_fin(skb)) {
 			struct sock *sk_it, *sk_tmp;
+
 			/* DATA_FIN has been acknowledged - now we can close
 			 * the subflows */
 			mptcp_for_each_sk_safe(meta_tp->mpcb, sk_it, sk_tmp) {
@@ -949,13 +950,21 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 		flag |= FLAG_WIN_UPDATE;
 		tcp_update_wl(meta_tp, data_seq);
 		if (*snd_wnd != nwin) {
+			struct sock *sk_it;
 			u32 *max_window = &meta_tp->max_window;
 			*snd_wnd = nwin;
+
+			mptcp_for_each_sk(tp->mpcb, sk_it)
+				tcp_sk(sk_it)->snd_wnd = nwin;
 
 			/* Diff to tcp_ack_update_window - fast_path */
 
 			if (nwin > *max_window) {
 				*max_window = nwin;
+
+				mptcp_for_each_sk(tp->mpcb, sk_it)
+					tcp_sk(sk_it)->max_window = nwin;
+
 				/* Diff to tcp_ack_update_window - mss */
 			}
 		}
@@ -990,7 +999,13 @@ void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk)
 	if (!mpcb->infinite_mapping)
 		return;
 
-	tcp_sk(meta_sk)->snd_una = TCP_SKB_CB(skb)->end_data_seq;
+	/* skb->data is pointing to the head of the MPTCP-option. We still assume
+	 * 32-bit data-acks.
+	 *
+	 * 20 is MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_ACK_ALIGN + MPTCP_SUB_LEN_SEQ_ALIGN
+	 */
+	tcp_sk(meta_sk)->snd_una = ntohl(*(skb->data + 8)) + skb->len - 20 +
+				   mptcp_is_data_fin(skb) ? 1 : 0;
 	mptcp_clean_rtx_queue(meta_sk);
 }
 
