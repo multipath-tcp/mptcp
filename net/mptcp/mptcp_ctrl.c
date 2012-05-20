@@ -52,7 +52,7 @@
 #include <linux/sysctl.h>
 #endif
 
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 #define AF_INET_FAMILY(fam) ((fam) == AF_INET)
 #define AF_INET6_FAMILY(fam) ((fam) == AF_INET6)
 #else
@@ -385,13 +385,9 @@ int mptcp_alloc_mpcb(struct sock *master_sk)
 	memset(mpcb, 0, sizeof(struct mptcp_cb));
 
 	/* meta_sk inherits master sk */
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 	mptcp_inherit_sk(master_sk, meta_sk, AF_INET6, GFP_ATOMIC);
-#else
-	mptcp_inherit_sk(master_sk, meta_sk, AF_INET, GFP_ATOMIC);
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
 
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	if (AF_INET_FAMILY(master_sk->sk_family)) {
 		mpcb->icsk_af_ops_alt = &ipv6_specific;
 		mpcb->sk_prot_alt = &tcpv6_prot;
@@ -399,7 +395,9 @@ int mptcp_alloc_mpcb(struct sock *master_sk)
 		mpcb->icsk_af_ops_alt = &ipv4_specific;
 		mpcb->sk_prot_alt = &tcp_prot;
 	}
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
+#else
+	mptcp_inherit_sk(master_sk, meta_sk, AF_INET, GFP_ATOMIC);
+#endif /* CONFIG_IPV6 */
 
 	/* Store the keys and generate the peer's token */
 	mpcb->mptcp_loc_key = master_tp->mptcp_loc_key;
@@ -620,7 +618,7 @@ void mptcp_update_metasocket(struct sock *sk, struct mptcp_cb *mpcb)
 {
 
 	switch (sk->sk_family) {
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 	case AF_INET6:
 		/* If the socket is v4 mapped, we continue with v4 operations */
 		if (!mptcp_v6_is_v4_mapped(sk)) {
@@ -657,7 +655,7 @@ void mptcp_update_metasocket(struct sock *sk, struct mptcp_cb *mpcb)
 	case AF_INET:
 		tcp_sk(sk)->low_prio = mpcb->addr4[0].low_prio;
 		break;
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 	case AF_INET6:
 		tcp_sk(sk)->low_prio = mpcb->addr6[0].low_prio;
 		break;

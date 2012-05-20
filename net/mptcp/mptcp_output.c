@@ -894,14 +894,14 @@ void mptcp_synack_options(struct request_sock *req,
 				if (req->mpcb->addr4[i].addr.s_addr == ireq->loc_addr)
 					opts->addr_id = req->mpcb->addr4[i].id;
 			}
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 		else /* IPv6 */
 			mptcp_for_each_bit_set(req->mpcb->loc6_bits, i) {
 				if (ipv6_addr_equal(&req->mpcb->addr6[i].addr,
 						    &inet6_rsk(req)->loc_addr))
 					opts->addr_id = req->mpcb->addr6[i].id;
 			}
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
+#endif /* CONFIG_IPV6 */
 		*remaining -= MPTCP_SUB_LEN_JOIN_SYNACK_ALIGN;
 	}
 }
@@ -1390,7 +1390,7 @@ void mptcp_send_reset(struct sock *sk, struct sk_buff *skb)
 
 	if (sk->sk_family == AF_INET)
 		tcp_v4_send_reset(sk, skb);
-#if defined(CONFIG_IPV6) || defined(CONFIG_MODULE_IPV6)
+#if IS_ENABLED(CONFIG_IPV6)
 	else if (sk->sk_family == AF_INET6)
 		tcp_v6_send_reset(sk, skb);
 #endif

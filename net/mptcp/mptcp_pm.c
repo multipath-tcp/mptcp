@@ -37,7 +37,7 @@
 #include <net/mptcp.h>
 #include <net/mptcp_v4.h>
 #include <net/mptcp_pm.h>
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 #include <net/if_inet6.h>
 #include <net/ipv6.h>
 #include <net/ip6_checksum.h>
@@ -169,7 +169,7 @@ u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock* sk)
 				__func__, &inet_sk(sk)->inet_saddr);
 		BUG();
 	}
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 	if (sk->sk_family == AF_INET6) {
 		mptcp_for_each_bit_set(mpcb->loc6_bits, i) {
 			if (ipv6_addr_equal(&mpcb->addr6[i].addr,
@@ -181,7 +181,7 @@ u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock* sk)
 				__func__, &inet6_sk(sk)->saddr);
 		BUG();
 	}
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
+#endif /* CONFIG_IPV6 */
 
 	BUG();
 }
@@ -206,7 +206,7 @@ void mptcp_set_addresses(struct mptcp_cb *mpcb)
 			struct in_device *in_dev = __in_dev_get_rcu(dev);
 			struct in_ifaddr *ifa;
 			__be32 ifa_address;
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 			struct inet6_dev *in6_dev = __in6_dev_get(dev);
 			struct inet6_ifaddr *ifa6;
 #endif
@@ -251,7 +251,7 @@ void mptcp_set_addresses(struct mptcp_cb *mpcb)
 
 cont_ipv6:
 ; /* This ; is necessary to fix build-errors when IPv6 is disabled */
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 			if (!in6_dev)
 				continue;
 
@@ -308,11 +308,11 @@ int mptcp_syn_recv_sock(struct sk_buff *skb)
 	if (skb->protocol == htons(ETH_P_IP))
 		req = mptcp_v4_search_req(th->source, ip_hdr(skb)->saddr,
 						ip_hdr(skb)->daddr);
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 	else /* IPv6 */
 		req = mptcp_v6_search_req(th->source, &ipv6_hdr(skb)->saddr,
 						&ipv6_hdr(skb)->daddr);
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
+#endif /* CONFIG_IPV6 */
 
 	if (!req)
 		return 0;
@@ -329,10 +329,10 @@ int mptcp_syn_recv_sock(struct sk_buff *skb)
 		}
 	} else if (skb->protocol == htons(ETH_P_IP))
 		tcp_v4_do_rcv(meta_sk, skb);
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 	else /* IPv6 */
 		tcp_v6_do_rcv(meta_sk, skb);
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
+#endif /* CONFIG_IPV6 */
 	bh_unlock_sock(meta_sk);
 	sock_put(meta_sk); /* Taken by mptcp_search_req */
 	return 1;
@@ -412,10 +412,10 @@ int mptcp_lookup_join(struct sk_buff *skb)
 		}
 	} else if (skb->protocol == htons(ETH_P_IP))
 		tcp_v4_do_rcv(meta_sk, skb);
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 	else /* IPv6 */
 		tcp_v6_do_rcv(meta_sk, skb);
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
+#endif /* CONFIG_IPV6 */
 	bh_unlock_sock(meta_sk);
 	sock_put(meta_sk); /* Taken by mptcp_hash_find */
 	return 1;
@@ -457,7 +457,7 @@ next_subflow:
 			mptcp_init4_subsockets(mpcb, &mpcb->addr4[0],
 					       &mpcb->rx_opt.addr4[0]);
 		} else {
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 			mptcp_init6_subsockets(mpcb, &mpcb->addr6[0],
 					       &mpcb->rx_opt.addr6[0]);
 #endif
@@ -484,7 +484,7 @@ next_subflow:
 		}
 	}
 
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 	mptcp_for_each_bit_set(mpcb->rx_opt.rem6_bits, i) {
 		struct mptcp_rem6 *rem;
 		u8 remaining_bits;
@@ -549,7 +549,7 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 
 			if (family == AF_INET)
 				mptcp_pm_addr4_event_handler((struct in_ifaddr *)ptr, event, mpcb);
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 			else
 				mptcp_pm_addr6_event_handler((struct inet6_ifaddr *)ptr, event, mpcb);
 #endif
@@ -635,7 +635,7 @@ static int __init mptcp_pm_init(void)
 	spin_lock_init(&mptcp_reqsk_hlock);
 	spin_lock_init(&mptcp_reqsk_tk_hlock);
 
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 	mptcp_pm_v6_init();
 #endif
 	mptcp_pm_v4_init();

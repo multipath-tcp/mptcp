@@ -40,7 +40,7 @@
 #include <net/request_sock.h>
 #include <net/tcp.h>
 
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 #define AF_INET_FAMILY(fam) ((fam) == AF_INET)
 #else
 #define AF_INET_FAMILY(fam) 1

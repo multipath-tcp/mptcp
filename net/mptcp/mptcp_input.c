@@ -1090,12 +1090,12 @@ static inline u8 mptcp_get_64_bit(u64 data_seq, struct multipath_options *mopt)
 static inline int mptcp_rem_raddress(struct multipath_options *mopt, u8 rem_id)
 {
 	if (mptcp_v4_rem_raddress(mopt, rem_id) < 0) {
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 		if (mptcp_v6_rem_raddress(mopt, rem_id) < 0)
 			return -1;
 #else
 		return -1;
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
+#endif /* CONFIG_IPV6 */
 	}
 	return 0;
 }
@@ -1261,7 +1261,7 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 	{
 		struct mp_add_addr *mpadd = (struct mp_add_addr *) ptr;
 
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 		if ((mpadd->ipver == 4 && opsize != MPTCP_SUB_LEN_ADD_ADDR4 &&
 		     opsize != MPTCP_SUB_LEN_ADD_ADDR4 + 2) ||
 		    (mpadd->ipver == 6 && opsize != MPTCP_SUB_LEN_ADD_ADDR6 &&
@@ -1269,7 +1269,7 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 #else
 		if (opsize != MPTCP_SUB_LEN_ADD_ADDR4 &&
 		    opsize != MPTCP_SUB_LEN_ADD_ADDR4 + 2) {
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
+#endif /* CONFIG_IPV6 */
 			mptcp_debug("%s: mp_add_addr: bad option size %d\n",
 					__func__, opsize);
 			break;
@@ -1282,7 +1282,7 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 
 			mptcp_v4_add_raddress(mopt, &mpadd->u.v4.addr, port,
 					      mpadd->addr_id);
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 		} else if (mpadd->ipver == 6) {
 			__be16 port = 0;
 			if (opsize == MPTCP_SUB_LEN_ADD_ADDR6 + 2)
@@ -1290,7 +1290,7 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 
 			mptcp_v6_add_raddress(mopt, &mpadd->u.v6.addr, port,
 					      mpadd->addr_id);
-#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
+#endif /* CONFIG_IPV6 */
 		}
 		break;
 	}
