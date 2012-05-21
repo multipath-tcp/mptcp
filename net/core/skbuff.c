@@ -571,9 +571,6 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 #endif
 #endif
 	new->vlan_tci		= old->vlan_tci;
-#ifdef CONFIG_MPTCP
-	new->path_mask          = old->path_mask;
-#endif
 
 	skb_copy_secmark(new, old);
 }

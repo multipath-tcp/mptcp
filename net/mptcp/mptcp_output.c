@@ -61,7 +61,7 @@ static int mptcp_dont_reinject_skb(struct tcp_sock *tp, struct sk_buff *skb)
 		((mptcp_is_data_fin(skb) && TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq  > 1) ||
 		!mptcp_is_data_fin(skb)) &&
 		/* Has the skb already been enqueued into this subsocket? */
-		mptcp_pi_to_flag(tp->path_index) & skb->path_mask;
+		mptcp_pi_to_flag(tp->path_index) & TCP_SKB_CB(skb)->path_mask;
 }
 
 /**
@@ -112,17 +112,17 @@ static struct sock *get_available_subflow(struct mptcp_cb *mpcb,
 
 		if ((tp->rx_opt.low_prio || tp->low_prio) &&
 		    tp->srtt < lowprio_min_time_to_peer &&
-		    !(skb && mptcp_pi_to_flag(tp->path_index) & skb->path_mask)) {
+		    !(skb && mptcp_pi_to_flag(tp->path_index) & TCP_SKB_CB(skb)->path_mask)) {
 			lowprio_min_time_to_peer = tp->srtt;
 			lowpriosk = sk;
 		} else if (!(tp->rx_opt.low_prio || tp->low_prio) &&
 		    tp->srtt < min_time_to_peer &&
-		    !(skb && mptcp_pi_to_flag(tp->path_index) & skb->path_mask)) {
+		    !(skb && mptcp_pi_to_flag(tp->path_index) & TCP_SKB_CB(skb)->path_mask)) {
 			min_time_to_peer = tp->srtt;
 			bestsk = sk;
 		}
 
-		if (skb && mptcp_pi_to_flag(tp->path_index) & skb->path_mask)
+		if (skb && mptcp_pi_to_flag(tp->path_index) & TCP_SKB_CB(skb)->path_mask)
 			backupsk = sk;
 	}
 
@@ -203,7 +203,7 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb_it);
 		/* seq > reinjected_seq , to avoid reinjecting several times
 		 * the same segment. This does not duplicate functionality with
-		 * skb->path_mask, because the path_mask ensures the skb is not
+		 * TCP_SKB_CB(skb)->path_mask, because the path_mask ensures the skb is not
 		 * scheduled twice to the same subflow. OTOH, the seq
 		 * check ensures that at any time, _one_ subflow exactly
 		 * is allowed to reinject it, not all of them. That one
@@ -214,7 +214,7 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 		    tcb->tcp_flags & TCPHDR_SYN ||
 		    (tcb->tcp_flags & TCPHDR_FIN && !mptcp_is_data_fin(skb_it)))
 			continue;
-		skb_it->path_mask |= mptcp_pi_to_flag(tp->path_index);
+		tcb->path_mask |= mptcp_pi_to_flag(tp->path_index);
 		if (__mptcp_reinject_data(skb_it, meta_sk, sk, clone_it) < 0)
 			break;
 		tp->reinjected_seq = tcb->end_seq;
@@ -309,7 +309,7 @@ static void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb)
 			break;
 
 		if (TCP_SKB_CB(skb_it)->seq == TCP_SKB_CB(skb)->seq) {
-			skb_it->path_mask |= mptcp_pi_to_flag(tp->path_index);
+			TCP_SKB_CB(skb_it)->path_mask |= mptcp_pi_to_flag(tp->path_index);
 			break;
 		}
 	}
@@ -341,7 +341,7 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 	/* Half the cwnd of the slow flow */
 	mptcp_for_each_tp(tp->mpcb, tp_it) {
 		if (tp_it != tp &&
-		    skb_it->path_mask & mptcp_pi_to_flag(tp_it->path_index)) {
+		    TCP_SKB_CB(skb_it)->path_mask & mptcp_pi_to_flag(tp_it->path_index)) {
 			/* Only update every subflow rtt */
 			if (tcp_time_stamp - tp_it->last_rbuf_opti < tp_it->srtt >> 3)
 				break;
@@ -359,10 +359,10 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 retrans:
 
 	/* Segment not yet injected into this path? Take it!!! */
-	if (!(skb_it->path_mask & mptcp_pi_to_flag(tp->path_index))) {
+	if (!(TCP_SKB_CB(skb_it)->path_mask & mptcp_pi_to_flag(tp->path_index))) {
 		int do_retrans = 0;
 		mptcp_for_each_tp(tp->mpcb, tp_it) {
-			if (tp_it != tp && skb_it->path_mask & mptcp_pi_to_flag(tp_it->path_index)) {
+			if (tp_it != tp && TCP_SKB_CB(skb_it)->path_mask & mptcp_pi_to_flag(tp_it->path_index)) {
 				if (tp_it->snd_cwnd <= 4) {
 					do_retrans = 1;
 					break;
@@ -628,7 +628,7 @@ retry:
 			 * retransmission. In this case, we also have to
 			 * copy the TCP/IP-headers. (pskb_copy)
 			 */
-			if (unlikely(skb->path_mask & ~mptcp_pi_to_flag(subtp->path_index)))
+			if (unlikely(TCP_SKB_CB(skb)->path_mask & ~mptcp_pi_to_flag(subtp->path_index)))
 				subskb = pskb_copy(skb, GFP_ATOMIC);
 			else
 				subskb = skb_clone(skb, GFP_ATOMIC);
@@ -651,7 +651,7 @@ retry:
 		if (!subskb)
 			break;
 
-		skb->path_mask |= mptcp_pi_to_flag(subtp->path_index);
+		TCP_SKB_CB(skb)->path_mask |= mptcp_pi_to_flag(subtp->path_index);
 
 		if (!(subsk->sk_route_caps & NETIF_F_ALL_CSUM) &&
 		    skb->ip_summed == CHECKSUM_PARTIAL) {
@@ -704,7 +704,7 @@ retry:
 				kfree_skb(subskb);
 			}
 
-			skb->path_mask &= ~mptcp_pi_to_flag(subtp->path_index);
+			TCP_SKB_CB(skb)->path_mask &= ~mptcp_pi_to_flag(subtp->path_index);
 			mpcb->noneligible |= mptcp_pi_to_flag(subtp->path_index);
 
 			continue;

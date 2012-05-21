@@ -1146,9 +1146,15 @@ static void tcp_v6_timewait_ack(struct sock *sk, struct sk_buff *skb)
 {
 	struct inet_timewait_sock *tw = inet_twsk(sk);
 	struct tcp_timewait_sock *tcptw = tcp_twsk(sk);
+	u32 data_ack = 0;
 
+	if (mptcp_is_data_fin(skb)) {
+		/* As it's a data-fin we know that the data-seq is present */
+		mptcp_skb_set_data_seq(skb, &data_ack);
+		data_ack++;
+	}
 	tcp_v6_send_ack(skb, tcptw->tw_snd_nxt, tcptw->tw_rcv_nxt,
-			mptcp_skb_data_seq(skb) + 1,
+			data_ack,
 			tcptw->tw_rcv_wnd >> tw->tw_rcv_wscale,
 			tcptw->tw_ts_recent, tcp_twsk_md5_key(tcptw),
 			tw->tw_tclass, mptcp_is_data_fin(skb));
@@ -1783,8 +1789,6 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->ack_seq = ntohl(th->ack_seq);
 #ifdef CONFIG_MPTCP
 	/*Init to zero, will be set upon option parsing.*/
-	TCP_SKB_CB(skb)->data_seq = 0;
-	TCP_SKB_CB(skb)->end_data_seq = 0;
 	TCP_SKB_CB(skb)->mptcp_flags = 0;
 	TCP_SKB_CB(skb)->dss_off = 0;
 #endif

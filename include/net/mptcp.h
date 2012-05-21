@@ -38,6 +38,7 @@
 #include <linux/kernel.h>
 
 #include <asm/byteorder.h>
+#include <asm/unaligned.h>
 #include <crypto/hash.h>
 #include <net/mptcp_pm.h>
 #include <net/tcp.h>
@@ -486,21 +487,6 @@ static inline int mptcp_sysctl_mss(void)
 	return sysctl_mptcp_mss;
 }
 
-static inline __u32 mptcp_skb_data_ack(const struct sk_buff *skb)
-{
-	return TCP_SKB_CB(skb)->data_ack;
-}
-
-static inline __u32 mptcp_skb_data_seq(const struct sk_buff *skb)
-{
-	return TCP_SKB_CB(skb)->data_seq;
-}
-
-static inline __u32 mptcp_skb_end_data_seq(const struct sk_buff *skb)
-{
-	return TCP_SKB_CB(skb)->end_data_seq;
-}
-
 /* Iterates over all subflows */
 #define mptcp_for_each_tp(mpcb, tp)					\
 	for ((tp) = (mpcb)->connection_list; (tp); (tp) = (tp)->next)
@@ -634,6 +620,29 @@ static inline int mptcp_skb_cloned(const struct sk_buff *skb,
 	       ((!(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ) && skb_cloned(skb)) ||
 		((TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ) && skb->cloned &&
 		 (atomic_read(&skb_shinfo(skb)->dataref) & SKB_DATAREF_MASK) > 2));
+}
+
+static inline u32 mptcp_skb_sub_end_seq(const struct sk_buff *skb)
+{
+	return ntohl(tcp_hdr(skb)->seq) + skb->len + tcp_hdr(skb)->fin;
+}
+
+/* Sets the data_seq and returns pointer to the in-skb field of the data_seq.
+ * If the packet has a 64-bit dseq, the pointer points to the last 32 bits.
+ */
+static inline __u32 *mptcp_skb_set_data_seq(const struct sk_buff *skb,
+					    u32 *data_seq)
+{
+	__u32 *ptr = (__u32 *)(skb_transport_header(skb) + (TCP_SKB_CB(skb)->dss_off << 2));
+
+	if (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ64_SET) {
+		*data_seq = (u32)get_unaligned_be64(ptr);
+		ptr++;
+	} else {
+		*data_seq = get_unaligned_be32(ptr);
+	}
+
+	return ptr;
 }
 
 static inline int mptcp_is_data_fin(const struct sk_buff *skb)
@@ -1052,21 +1061,6 @@ static inline int mptcp_sysctl_mss(void)
 	return 0;
 }
 
-static inline __u32 mptcp_skb_data_ack(const struct sk_buff *skb)
-{
-	return 0;
-}
-
-static inline __u32 mptcp_skb_data_seq(const struct sk_buff *skb)
-{
-	return 0;
-}
-
-static inline __u32 mptcp_skb_end_data_seq(const struct sk_buff *skb)
-{
-	return 0;
-}
-
 /* Without MPTCP, we just do one iteration
  * over the only socket available. This assumes that
  * the sk/tp arg is the socket in that case.
@@ -1088,6 +1082,11 @@ static inline __u32 mptcp_skb_end_data_seq(const struct sk_buff *skb)
 
 static inline int mptcp_skb_cloned(const struct sk_buff *skb,
 				   const struct tcp_sock *tp)
+{
+	return 0;
+}
+static inline __u32 *mptcp_skb_set_data_seq(const struct sk_buff *skb,
+					    u32 *data_seq)
 {
 	return 0;
 }

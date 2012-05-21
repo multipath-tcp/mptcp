@@ -97,17 +97,17 @@ struct kmem_cache *node_cache;
 static u32 low_dsn(struct mptcp_node *n)
 {
 	if (n->is_node)
-		return TCP_SKB_CB(skb_peek(&n->queue))->data_seq;
+		return TCP_SKB_CB(skb_peek(&n->queue))->seq;
 	else
-		return TCP_SKB_CB((struct sk_buff *)n)->data_seq;
+		return TCP_SKB_CB((struct sk_buff *)n)->seq;
 }
 
 static u32 high_dsn(struct mptcp_node *n)
 {
 	if (n->is_node)
-		return TCP_SKB_CB(skb_peek_tail(&n->queue))->end_data_seq;
+		return TCP_SKB_CB(skb_peek_tail(&n->queue))->end_seq;
 	else
-		return TCP_SKB_CB((struct sk_buff *)n)->end_data_seq;
+		return TCP_SKB_CB((struct sk_buff *)n)->end_seq;
 }
 
 /* shortcut operations
@@ -250,8 +250,8 @@ static struct mptcp_node *concat(struct mptcp_node *n1, struct mptcp_node *n2,
 		struct sk_buff *skb;
 		/* Prune duplicated segments */
 		for (skb = skb_peek_tail(&n1->queue);
-		     !before(TCP_SKB_CB(skb)->data_seq,
-			     TCP_SKB_CB(skb_peek(&n2->queue))->end_data_seq);
+		     !before(TCP_SKB_CB(skb)->seq,
+			     TCP_SKB_CB(skb_peek(&n2->queue))->end_seq);
 		     skb = skb_peek_tail(&n1->queue)) {
 			__skb_unlink(skb, &n1->queue);
 			__kfree_skb(skb);
@@ -284,8 +284,8 @@ static int try_shortcut(struct mptcp_node *shortcut, struct sk_buff *skb,
 	struct mptcp_node *n = (struct mptcp_node *) skb;
 	struct sk_buff *skb1;
 	struct mptcp_node *n1;
-	u32 seq = TCP_SKB_CB(skb)->data_seq;
-	u32 end_seq = TCP_SKB_CB(skb)->end_data_seq;
+	u32 seq = TCP_SKB_CB(skb)->seq;
+	u32 end_seq = TCP_SKB_CB(skb)->end_seq;
 
 	/* If there is no overlap with the shortcut, we need
 	 * to examine the full queue
@@ -423,9 +423,9 @@ void mptcp_ofo_queue(struct mptcp_cb *mpcb)
 		if (!n->is_node) { /* simple skb */
 			__skb_queue_tail(&meta_sk->sk_receive_queue, skb);
 			mptcp_check_rcvseq_wrap(meta_tp,
-						TCP_SKB_CB(skb)->end_data_seq -
+						TCP_SKB_CB(skb)->end_seq -
 						meta_tp->rcv_nxt);
-			meta_tp->rcv_nxt = TCP_SKB_CB(skb)->end_data_seq;
+			meta_tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 		} else { /* queue of skbuffs */
 			skb = skb_peek_tail(&n->queue);
 			mptcp_check_rcvseq_wrap(meta_tp,

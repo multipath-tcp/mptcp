@@ -731,6 +731,7 @@ extern u32 __tcp_select_window(struct sock *sk);
 #define MPTCPHDR_SEQ64_SET	0x10 /* Did we received a 64-bit seq number */
 #define MPTCPHDR_SEQ64_OFO	0x20 /* Is it not in our circular array? */
 #define MPTCPHDR_SEQ64_INDEX	0x40 /* Index of seq in mpcb->snd_high_order */
+#define MPTCPHDR_ACK64_SET	0x80
 
 /* This is what the send packet queuing engine uses to pass
  * TCP per-packet control information to the transmission code.
@@ -749,13 +750,10 @@ struct tcp_skb_cb {
 	__u32		end_seq;	/* SEQ + FIN + SYN + datalen	*/
 	__u32		when;		/* used to compute rtt's	*/
 #ifdef CONFIG_MPTCP
-	__u32		data_seq;	/* Starting data seq            */
-	__u32		sub_seq;	/* subflow seqnum (MPTCP)       */
-	__u32		data_ack;	/* Data level ack (MPTCP)       */
-	__u32		end_data_seq;	/* DATA_SEQ + DFIN + datalen */
-	__u16		data_len;	/* Data-level length (MPTCP)
-					 * a value of 0 indicates that no DSN
-					 * option is attached to that segment */
+#define sub_seq		ack_seq
+#define	mp_data_len	when
+	__u32		path_mask; /* Mask of the path indices that have tried
+				    * to send this skb */
 	__u8		mptcp_flags;	/* flags for the MPTCP layer    */
 	__u8		dss_off;	/* Number of 4-byte words until
 					 * seq-number */

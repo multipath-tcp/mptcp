@@ -384,11 +384,6 @@ struct sk_buff {
 
 	struct sock		*sk;
 	struct net_device	*dev;
-#ifdef CONFIG_MPTCP
-	__u32                   path_mask; /* Mask of the path indices that
-					    * have tried to send this skb
-					    */
-#endif
 	/*
 	 * This is the control buffer. It is free to use for every
 	 * layer. Please put your private variables there. If you
@@ -396,7 +391,7 @@ struct sk_buff {
 	 * first. This is owned by whoever has the skb queued ATM.
 	 */
 #ifdef CONFIG_MPTCP
-	char			cb[64] __aligned(8);
+	char			cb[56] __aligned(8);
 #else
 	char			cb[48] __aligned(8);
 #endif

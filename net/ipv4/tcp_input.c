@@ -3477,12 +3477,7 @@ static void tcp_ack_probe(struct sock *sk)
 	int usable_wopen;
 
 	/* Was it a usable window open? */
-	if (tp->mpc)
-		usable_wopen = (!after(
-				mptcp_skb_end_data_seq(tcp_send_head(sk)),
-				tcp_wnd_end(tp)));
-	else
-		usable_wopen=(!after(TCP_SKB_CB(
+	usable_wopen=(!after(TCP_SKB_CB(
 				tcp_send_head(sk))->end_seq,
 				tcp_wnd_end(tp)));
 
@@ -3744,19 +3739,16 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 	prior_in_flight = tcp_packets_in_flight(tp);
 
 	if (!(flag & FLAG_SLOWPATH) && after(ack, prior_snd_una)) {
-		struct tcp_sock *meta_tp = (tp->mpc) ?
-				mpcb_meta_tp(tp->mpcb) : tp;
+		if (tp->mpc) {
+			mptcp_debug("%s FAST_PATH is not enabled for MPTCP!!!\n", __func__);
+			BUG();
+		}
 		/* Window is constant, pure forward advance.
 		 * No more checks are required.
 		 * Note, we use the fact that SND.UNA>=SND.WL2.
 		 */
-		tcp_update_wl(meta_tp, (tp->mpc) ? mptcp_skb_data_seq(skb) :
-			      ack_seq);
+		tcp_update_wl(tp, ack_seq);
 		tp->snd_una = ack;
-#ifdef CONFIG_MPTCP
-		if (tp->mpc && after(tp->snd_una, tp->reinjected_seq))
-			tp->reinjected_seq = tp->snd_una;
-#endif
 		flag |= FLAG_WIN_UPDATE;
 
 		tcp_ca_event(sk, CA_EVENT_FAST_ACK);
@@ -4113,9 +4105,6 @@ static int tcp_disordered_ack(const struct sock *sk, const struct sk_buff *skb)
 	const struct tcphdr *th = tcp_hdr(skb);
 	u32 seq = TCP_SKB_CB(skb)->seq;
 	u32 ack = TCP_SKB_CB(skb)->ack_seq;
-	const struct tcp_sock *meta_tp = (tp->mpc) ? mpcb_meta_tp(tp->mpcb) : tp;
-	u32 data_ack = (tp->mpc) ? mptcp_skb_data_ack(skb) : ack;
-	u32 data_seq = (tp->mpc) ? mptcp_skb_data_seq(skb) : seq;
 
 	return (/* 1. Pure ACK with correct sequence number. */
 		(th->ack && seq == TCP_SKB_CB(skb)->end_seq && seq == tp->rcv_nxt) &&
@@ -4124,7 +4113,7 @@ static int tcp_disordered_ack(const struct sock *sk, const struct sk_buff *skb)
 		ack == tp->snd_una &&
 
 		/* 3. ... and does not update window. */
-		!tcp_may_update_window(meta_tp, data_ack, data_seq,
+		!tcp_may_update_window(tp, ack, seq,
 				ntohs(th->window) << tp->rx_opt.snd_wscale) &&
 
 		/* 4. ... and sits in replay window. */
@@ -4483,8 +4472,6 @@ static void tcp_ofo_queue(struct sock *sk)
 
 		if (!tp->mpc)
 			tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
-		else if (before(tp->rcv_nxt, TCP_SKB_CB(skb)->end_seq))
-			tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 
 		if (tcp_hdr(skb)->fin)
 			tcp_fin(sk);
@@ -4601,7 +4588,8 @@ queue_and_out:
 				__skb_queue_tail(&sk->sk_receive_queue, skb);
 			}
 		}
-		if (!tp->mpc || before(tp->rcv_nxt, TCP_SKB_CB(skb)->end_seq))
+
+		if (!tp->mpc)
 			tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 
 		if (skb->len)
@@ -5816,7 +5804,8 @@ cont_mptcp:
 		TCP_ECN_rcv_synack(tp, th);
 
 		if (tp->mpc)
-			mpcb_meta_tp(mpcb)->snd_wl1 = mptcp_skb_data_seq(skb);
+			/* -1 because rcv_nxt is not the data-seq number of the SYN/ACK */
+			mpcb_meta_tp(mpcb)->snd_wl1 = mpcb_meta_tp(mpcb)->rcv_nxt - 1;
 		else
 			tp->snd_wl1 = TCP_SKB_CB(skb)->seq;
 		tcp_ack(sk, skb, FLAG_SLOWPATH);
