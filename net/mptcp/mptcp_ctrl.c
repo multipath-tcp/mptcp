@@ -70,6 +70,7 @@ int sysctl_mptcp_mss __read_mostly = MPTCP_MSS;
 int sysctl_mptcp_ndiffports __read_mostly = 1;
 int sysctl_mptcp_enabled __read_mostly = 1;
 int sysctl_mptcp_checksum __read_mostly = 1;
+int sysctl_mptcp_debug __read_mostly = 0;
 
 static ctl_table mptcp_table[] = {
 	{
@@ -96,6 +97,13 @@ static ctl_table mptcp_table[] = {
 	{
 		.procname = "mptcp_checksum",
 		.data = &sysctl_mptcp_checksum,
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.proc_handler = &proc_dointvec
+	},
+	{
+		.procname = "mptcp_debug",
+		.data = &sysctl_mptcp_debug,
 		.maxlen = sizeof(int),
 		.mode = 0644,
 		.proc_handler = &proc_dointvec

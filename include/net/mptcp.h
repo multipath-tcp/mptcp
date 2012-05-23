@@ -43,12 +43,6 @@
 #include <net/mptcp_pm.h>
 #include <net/tcp.h>
 
-#ifdef CONFIG_MPTCP_DEBUG
-#define mptcp_debug(fmt, args...) printk(KERN_DEBUG __FILE__ ": " fmt, ##args)
-#else
-#define mptcp_debug(fmt, args...)
-#endif
-
 #if defined(__LITTLE_ENDIAN_BITFIELD)
 	#define ntohll(x)  be64_to_cpu(x)
 	#define htonll(x)  cpu_to_be64(x)
@@ -478,9 +472,13 @@ extern int sysctl_mptcp_mss;
 extern int sysctl_mptcp_ndiffports;
 extern int sysctl_mptcp_enabled;
 extern int sysctl_mptcp_checksum;
-extern int sysctl_mptcp_rbuf_opti;
-extern int sysctl_mptcp_rbuf_penal;
-extern int sysctl_mptcp_rbuf_retr;
+extern int sysctl_mptcp_debug;
+
+#define mptcp_debug(fmt, args...)					\
+	do {								\
+		if (unlikely(sysctl_mptcp_debug))			\
+			printk(KERN_DEBUG __FILE__ ": " fmt, ##args);	\
+	} while (0)
 
 static inline int mptcp_sysctl_mss(void)
 {

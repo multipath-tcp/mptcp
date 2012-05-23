@@ -7,13 +7,3 @@ config MPTCP
         ---help---
           This replaces the normal TCP stack with a Multipath TCP stack,
           able to use several paths at once.
-
-config MPTCP_DEBUG
-        bool "MPTCP debug messages"
-        depends on MPTCP
-        default y
-        ---help---
-          Enables logging of mptcp related debugging messages. Highly
-          recommended.
-
-

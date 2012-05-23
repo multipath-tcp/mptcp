@@ -1049,7 +1049,7 @@ int mptcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 	struct sock *meta_sk = (struct sock *) meta_tp;
 	if (atomic_read(&meta_sk->sk_rmem_alloc) >
 			meta_sk->sk_rcvbuf) {
-#ifdef CONFIG_MPTCP_DEBUG
+if (unlikely(sysctl_mptcp_debug)) {
 		struct sk_buff *skb;
 		mptcp_debug("%s: not enough rcvbuf: mpcb rcvbuf:%d,"
 				"rmem_alloc:%d\n", __func__,
@@ -1093,7 +1093,7 @@ int mptcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 				    skb->len, skb->truesize,
 				    skb->len * 1000 / skb->truesize);
 		}
-#endif /* CONFIG_MPTCP_DEBUG */
+}
 		return 0;
 	} else if (!sk_rmem_schedule(sk, size)) {
 		printk(KERN_ERR "impossible to alloc memory\n");
