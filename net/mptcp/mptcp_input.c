@@ -59,11 +59,11 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk)
 		tcp_unlink_write_queue(skb, meta_sk);
 
 		if (mptcp_is_data_fin(skb)) {
-			struct sock *sk_it, *sk_tmp;
+			struct sock *sk_it;
 
 			/* DATA_FIN has been acknowledged - now we can close
 			 * the subflows */
-			mptcp_for_each_sk_safe(meta_tp->mpcb, sk_it, sk_tmp) {
+			mptcp_for_each_sk(meta_tp->mpcb, sk_it) {
 				unsigned long delay = 0;
 
 				/* If we are the passive closer, don't trigger

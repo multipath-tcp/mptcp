@@ -764,8 +764,7 @@ void mptcp_sub_close_wq(struct work_struct *work)
 	if (sock_flag(sk, SOCK_DEAD))
 		goto exit;
 
-	if (meta_sk->sk_shutdown == SHUTDOWN_MASK ||
-	    sk->sk_state == TCP_CLOSE)
+	if (meta_sk->sk_shutdown == SHUTDOWN_MASK || sk->sk_state == TCP_CLOSE)
 		tcp_close(sk, 0);
 	else if (tcp_close_state(sk))
 		tcp_send_fin(sk);
