@@ -373,9 +373,6 @@ struct mp_join *mptcp_find_join(struct sk_buff *skb)
 	return NULL;
 }
 
-/*
- * @return:
- */
 int mptcp_lookup_join(struct sk_buff *skb)
 {
 	struct mptcp_cb *mpcb;
@@ -511,7 +508,7 @@ void mptcp_send_updatenotif(struct mptcp_cb *mpcb)
 {
 	if ((mpcb->master_sk && !tcp_sk(mpcb->master_sk)->fully_established) ||
 	    mpcb->infinite_mapping ||
-	    test_bit(MPCB_FLAG_SERVER_SIDE, &mpcb->flags) ||
+	    mpcb->server_side ||
 	    sock_flag(mpcb_meta_sk(mpcb), SOCK_DEAD))
 		return;
 

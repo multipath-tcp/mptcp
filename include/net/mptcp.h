@@ -62,10 +62,6 @@ static inline int before64(const u64 seq1, const u64 seq2)
 /* is seq1 > seq2 ? */
 #define after64(seq1, seq2)	before64(seq2, seq1)
 
-#define MPCB_FLAG_SERVER_SIDE	0  /* This mpcb belongs to a server side
-				    * connection. (obtained through a listen)
-				    */
-
 struct multipath_options {
 	struct mptcp_cb *mpcb;
 	u8	rem4_bits;
@@ -78,7 +74,7 @@ struct multipath_options {
 	__u32	mptcp_recv_nonce;
 	__u64	mptcp_rem_key;	/* Remote key */
 	__u64	mptcp_recv_tmac;
-	u32	fin_dsn; /* DSN of the byte  FOLLOWING the Data FIN */
+	u32	fin_dsn; /* DSN of the byte FOLLOWING the Data FIN */
 	__u8	mptcp_recv_mac[20];
 	__u8	mptcp_opt_type;
 	u8	list_rcvd:1, /* 1 if IP list has been received */
@@ -104,6 +100,7 @@ struct mptcp_cb {
 	u32 rcv_high_order[2];
 
 	u8	send_infinite_mapping:1,
+		server_side:1,
 		infinite_mapping:1,
 		send_mp_fail:1,
 		dfin_combined:1,   /* Does the DFIN received was combined with a subflow-fin? */
@@ -131,12 +128,8 @@ struct mptcp_cb {
 	u8 dfin_path_index;
 
 	struct sk_buff_head reinject_queue;
-	unsigned long flags;	/* atomic, for bits see
-				 * MPCB_FLAG_XXX
-				 */
 	u32 noneligible;	/* Path mask of temporarily non
-				 * eligible subflows by the
-				 * scheduler
+				 * eligible subflows by the scheduler
 				 */
 	u64	csum_cutoff_seq;
 
@@ -174,12 +167,6 @@ static inline int mptcp_pi_to_flag(int pi)
 {
 	return 1 << (pi - 1);
 }
-
-/* Possible return values from mptcp_queue_skb */
-#define MPTCP_EATEN 1  /* The skb has been (fully or partially) eaten by
-		       * the app
-		       */
-#define MPTCP_QUEUED 2 /* The skb has been queued in the mpcb ofo queue */
 
 #ifdef CONFIG_MPTCP
 

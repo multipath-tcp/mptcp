@@ -1180,7 +1180,7 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 		mpcb->rx_opt.dss_csum = sysctl_mptcp_checksum || req->dss_csum;
 		mpcb->rx_opt.mpcb = mpcb;
 
-		set_bit(MPCB_FLAG_SERVER_SIDE, &mpcb->flags);
+		mpcb->server_side = 1;
 		/* Will be moved to ESTABLISHED by
 		 * tcp_rcv_state_process()
 		 */
