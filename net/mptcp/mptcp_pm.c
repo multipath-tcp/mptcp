@@ -323,6 +323,7 @@ int mptcp_syn_recv_sock(struct sk_buff *skb)
 	meta_sk = mpcb_meta_sk(req->mpcb);
 	bh_lock_sock_nested(meta_sk);
 	if (sock_owned_by_user(meta_sk)) {
+		skb->sk = meta_sk;
 		if (unlikely(sk_add_backlog(meta_sk, skb))) {
 			bh_unlock_sock(meta_sk);
 			NET_INC_STATS_BH(dev_net(skb->dev),
@@ -403,6 +404,7 @@ int mptcp_lookup_join(struct sk_buff *skb)
 	 */
 	bh_lock_sock(meta_sk);
 	if (sock_owned_by_user(meta_sk)) {
+		skb->sk = meta_sk;
 		if (unlikely(sk_add_backlog(meta_sk, skb))) {
 			bh_unlock_sock(meta_sk);
 			NET_INC_STATS_BH(dev_net(skb->dev),

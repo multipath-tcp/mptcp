@@ -1785,16 +1785,15 @@ static void __lock_sock(struct sock *sk)
 	finish_wait(&sk->sk_lock.wq, &wait);
 }
 
-void __release_sock(struct sock *sk, struct mptcp_cb *mpcb)
+static void __release_sock(struct sock *sk)
+	__releases(&sk->sk_lock.slock)
+	__acquires(&sk->sk_lock.slock)
 {
 	struct sk_buff *skb = sk->sk_backlog.head;
 
 	do {
 		sk->sk_backlog.head = sk->sk_backlog.tail = NULL;
-		if (mpcb)
-			bh_unlock_sock(mpcb_meta_sk(mpcb));
-		else
-			bh_unlock_sock(sk);
+		bh_unlock_sock(sk);
 
 		do {
 			struct sk_buff *next = skb->next;
@@ -1814,10 +1813,7 @@ void __release_sock(struct sock *sk, struct mptcp_cb *mpcb)
 			skb = next;
 		} while (skb != NULL);
 
-		if (mpcb)
-			bh_lock_sock(mpcb_meta_sk(mpcb));
-		else
-			bh_lock_sock(sk);
+		bh_lock_sock(sk);
 	} while ((skb = sk->sk_backlog.head) != NULL);
 
 	/*
@@ -2241,10 +2237,8 @@ void release_sock(struct sock *sk)
 	mutex_release(&sk->sk_lock.dep_map, 1, _RET_IP_);
 
 	spin_lock_bh(&sk->sk_lock.slock);
-	if (is_meta_sk(sk))
-		mptcp_release_sock(sk);
-	else if (sk->sk_backlog.tail)
-		__release_sock(sk, NULL);
+	if (sk->sk_backlog.tail)
+		__release_sock(sk);
 	sk->sk_lock.owned = 0;
 	if (waitqueue_active(&sk->sk_lock.wq))
 		wake_up(&sk->sk_lock.wq);

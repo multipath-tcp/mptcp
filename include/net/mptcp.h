@@ -596,7 +596,6 @@ void mptcp_push_frames(struct sock *sk);
 void mptcp_skb_entail_init(struct tcp_sock *tp, struct sk_buff *skb);
 struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject);
 void mptcp_release_mpcb(struct mptcp_cb *mpcb);
-void mptcp_release_sock(struct sock *meta_sk);
 void mptcp_send_fin(struct sock *meta_sk);
 void mptcp_send_reset(struct sock *sk, struct sk_buff *skb);
 void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority);
@@ -1207,7 +1206,6 @@ static inline struct sk_buff *mptcp_next_segment(const struct sock *sk,
 {
 	return NULL;
 }
-static inline void mptcp_release_sock(const struct sock *meta_sk) {}
 static inline void mptcp_clean_rtx_infinite(const struct sk_buff *skb,
 					    const struct sock *sk) {}
 static inline void mptcp_retransmit_timer(const struct sock *meta_sk) {}

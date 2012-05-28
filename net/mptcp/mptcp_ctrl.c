@@ -375,6 +375,20 @@ static void mptcp_sub_inherit_sockopts(struct sock *meta_sk, struct sock *sub_sk
 		inet_csk_delete_keepalive_timer(sub_sk);
 }
 
+static int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb)
+{
+	struct sock *sk = skb->sk;
+
+	if (sk->sk_family == AF_INET)
+		return tcp_v4_do_rcv(sk, skb);
+#if IS_ENABLED(CONFIG_IPV6)
+	else
+		return tcp_v6_do_rcv(sk, skb);
+#endif
+
+	return 0;
+}
+
 int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key)
 {
 	struct mptcp_cb *mpcb;
@@ -458,6 +472,7 @@ int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key)
 	/* Redefine function-pointers to wake up application */
 	master_sk->sk_error_report = mptcp_sock_def_error_report;
 	meta_sk->sk_error_report = mptcp_sock_def_error_report;
+	meta_sk->sk_backlog_rcv = mptcp_backlog_rcv;
 
 	/* Init the accept_queue structure, we support a queue of 32 pending
 	 * connections, it does not need to be huge, since we only store
@@ -495,30 +510,6 @@ void mptcp_release_mpcb(struct mptcp_cb *mpcb)
 
 	mptcp_debug("%s: Will free mpcb %#x\n", __func__, mpcb->mptcp_loc_token);
 	kmem_cache_free(mpcb_cache, mpcb);
-}
-
-void mptcp_release_sock(struct sock *meta_sk)
-{
-	struct mptcp_cb *mpcb = (struct mptcp_cb *)meta_sk;
-	struct sock *sk_it, *sk_tmp;
-
-	/* We need to do the following, because as far
-	 * as the master-socket is locked, every received segment is
-	 * put into the backlog queue.
-	 */
-	while (meta_sk->sk_backlog.tail ||
-	       mptcp_test_any_sk(mpcb, sk_it, sk_it->sk_backlog.tail)) {
-		/* process incoming join requests */
-		if (meta_sk->sk_backlog.tail)
-			__release_sock(meta_sk, mpcb);
-
-		mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp) {
-			if (sk_it->sk_backlog.tail)
-				__release_sock(sk_it, mpcb);
-
-
-		}
-	}
 }
 
 void mptcp_destroy_mpcb(struct mptcp_cb *mpcb)
