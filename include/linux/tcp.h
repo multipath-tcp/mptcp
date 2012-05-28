@@ -511,7 +511,7 @@ struct tcp_sock {
 
 	struct mptcp_cb		*mpcb;
 	/* We keep these flags even if CONFIG_MPTCP is not checked, because
-	 * it allowschecking MPTCP capability just by checking the mpc flag,
+	 * it allows checking MPTCP capability just by checking the mpc flag,
 	 * rather than adding ifdefs everywhere.
 	 */
 	u8      mpc:1,          /* Other end is multipath capable */
@@ -561,7 +561,6 @@ struct tcp_sock {
 	struct delayed_work work;
 	u32		mptcp_loc_token;
 	u64		mptcp_loc_key;
-	u64		mptcp_rem_key;
 
 	u8		path_index;
 	struct tcp_sock	*next;		/* Next subflow socket */

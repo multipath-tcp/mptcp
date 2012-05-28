@@ -374,7 +374,7 @@ static void mptcp_sub_inherit_sockopts(struct sock *meta_sk, struct sock *sub_sk
 		inet_csk_delete_keepalive_timer(sub_sk);
 }
 
-int mptcp_alloc_mpcb(struct sock *master_sk)
+int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key)
 {
 	struct mptcp_cb *mpcb;
 	struct tcp_sock *meta_tp, *master_tp = tcp_sk(master_sk);
@@ -420,7 +420,7 @@ int mptcp_alloc_mpcb(struct sock *master_sk)
 	meta_tp->write_seq = (u32)idsn;
 	meta_tp->snd_sml = meta_tp->snd_una = meta_tp->snd_nxt = meta_tp->write_seq;
 
-	mpcb->rx_opt.mptcp_rem_key = meta_tp->mptcp_rem_key;
+	mpcb->rx_opt.mptcp_rem_key = remote_key;
 	mptcp_key_sha1(mpcb->rx_opt.mptcp_rem_key,
 		       &mpcb->rx_opt.mptcp_rem_token, &idsn);
 	idsn = ntohll(idsn) + 1;
@@ -1175,9 +1175,8 @@ int mptcp_check_req_master(struct sock *child, struct request_sock *req,
 		/* Just set this values to pass them to mptcp_alloc_mpcb */
 		child_tp->mptcp_loc_key = req->mptcp_loc_key;
 		child_tp->mptcp_loc_token = req->mptcp_loc_token;
-		child_tp->mptcp_rem_key = req->mptcp_rem_key;
 
-		if (mptcp_alloc_mpcb(child)) {
+		if (mptcp_alloc_mpcb(child, req->mptcp_rem_key)) {
 			/* The allocation of the mpcb failed!
 			 * Destroy the child and go to listen_overflow
 			 */
