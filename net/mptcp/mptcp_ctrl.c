@@ -71,6 +71,7 @@ int sysctl_mptcp_ndiffports __read_mostly = 1;
 int sysctl_mptcp_enabled __read_mostly = 1;
 int sysctl_mptcp_checksum __read_mostly = 1;
 int sysctl_mptcp_debug __read_mostly = 0;
+EXPORT_SYMBOL(sysctl_mptcp_debug);
 
 static ctl_table mptcp_table[] = {
 	{

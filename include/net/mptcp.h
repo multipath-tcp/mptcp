@@ -1046,6 +1046,10 @@ static inline int mptcp_sysctl_mss(void)
 	return 0;
 }
 
+#define mptcp_debug(fmt, args...)	\
+	do {				\
+	} while(0);
+
 /* Without MPTCP, we just do one iteration
  * over the only socket available. This assumes that
  * the sk/tp arg is the socket in that case.
