@@ -1048,7 +1048,7 @@ static inline int mptcp_sysctl_mss(void)
 
 #define mptcp_debug(fmt, args...)	\
 	do {				\
-	} while(0);
+	} while(0)
 
 /* Without MPTCP, we just do one iteration
  * over the only socket available. This assumes that
