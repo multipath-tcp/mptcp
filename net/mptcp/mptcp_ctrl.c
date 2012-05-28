@@ -893,23 +893,6 @@ void mptcp_update_sndbuf(struct mptcp_cb *mpcb)
 	meta_sk->sk_sndbuf = min(new_sndbuf, sysctl_tcp_wmem[2]);
 }
 
-/**
- * Sets the socket pointer of the meta_sk after an accept at the socket level
- * Set also the sk_wq pointer, because it has just been copied by
- * sock_graft()
- */
-void mptcp_check_socket(struct sock *sk)
-{
-	if (sk->sk_type == SOCK_STREAM && sk->sk_protocol == IPPROTO_TCP &&
-	    tcp_sk(sk)->mpc) {
-		struct sock *meta_sk = mpcb_meta_sk(tcp_sk(sk)->mpcb);
-		sk_set_socket(meta_sk, sk->sk_socket);
-		meta_sk->sk_wq = sk->sk_wq;
-		sk->sk_socket->sk = meta_sk;
-	}
-}
-EXPORT_SYMBOL(mptcp_check_socket);
-
 void mptcp_close(struct sock *meta_sk, long timeout)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
@@ -1194,78 +1177,79 @@ void mptcp_set_state(struct sock *sk, int state)
 	}
 }
 
-int mptcp_check_req_master(struct sock *child, struct request_sock *req,
+int mptcp_check_req_master(struct sock *sk, struct sock *child,
+			   struct request_sock *req,
+			   struct request_sock **prev,
 			   struct multipath_options *mopt)
 {
 	struct tcp_sock *child_tp = tcp_sk(child);
+	struct mptcp_cb *mpcb;
 
-	/* Copy mptcp related info from req to child
-	 * we do this here because this is shared between
-	 * ipv4 and ipv6
-	 */
-	child_tp->rx_opt.saw_mpc = req->saw_mpc;
-	if (child_tp->rx_opt.saw_mpc) {
-		struct mptcp_cb *mpcb;
-
-		child_tp->rx_opt.saw_mpc = 0;
-
-		/* Just set this values to pass them to mptcp_alloc_mpcb */
-		child_tp->mptcp_loc_key = req->mptcp_loc_key;
-		child_tp->mptcp_loc_token = req->mptcp_loc_token;
-
-		if (mptcp_alloc_mpcb(child, req->mptcp_rem_key)) {
-			/* The allocation of the mpcb failed!
-			 * Destroy the child and go to listen_overflow
-			 */
-			sock_orphan(child);
-			tcp_done(child);
-			return -ENOBUFS;
-		}
-		child_tp->mpc = 1;
-		mpcb = child_tp->mpcb;
-
-		inet_sk(child)->loc_id = 0;
-		inet_sk(child)->rem_id = 0;
-
-		if (mptcp_add_sock(mpcb, child_tp, GFP_ATOMIC)) {
-			mptcp_destroy_mpcb(mpcb);
-			sock_orphan(child);
-			tcp_done(child);
-			return -ENOBUFS;
-		}
-
-		child_tp->mptcp->slave_sk = 0;
-		child_tp->mptcp->path_index = 1;
-		child_tp->mptcp->snt_isn = tcp_rsk(req)->snt_isn;
-		child_tp->mptcp->reinjected_seq = child_tp->snd_una;
-		child_tp->mptcp->init_rcv_wnd = req->rcv_wnd;
-		child_tp->mptcp->last_rbuf_opti = 0;
-
-		if (mopt->list_rcvd) {
-			memcpy(&mpcb->rx_opt, mopt, sizeof(*mopt));
-			mpcb->rx_opt.mptcp_rem_key = req->mptcp_rem_key;
-		}
-
-		mpcb->rx_opt.dss_csum = sysctl_mptcp_checksum || req->dss_csum;
-		mpcb->rx_opt.mpcb = mpcb;
-
-		mpcb->server_side = 1;
-		/* Will be moved to ESTABLISHED by
-		 * tcp_rcv_state_process()
-		 */
-		mpcb_meta_sk(mpcb)->sk_state = TCP_SYN_RECV;
-		mptcp_update_metasocket(child, mpcb);
-
-		/* Needs to be done here additionally, because when accepting a
-		 * new connection we pass by __reqsk_free and not reqsk_free.
-		 */
-		mptcp_reqsk_remove_tk(req);
-
-		 /* hold in mptcp_inherit_sk due to initialization to 2 */
-		sock_put(mpcb_meta_sk(mpcb));
-	} else {
+	if (!req->saw_mpc) {
 		child_tp->mpcb = NULL;
+		return 1;
 	}
+
+	/*** Copy mptcp related info from req to child ***/
+	child_tp->rx_opt.saw_mpc = 0;
+
+	/* Just set this values to pass them to mptcp_alloc_mpcb */
+	child_tp->mptcp_loc_key = req->mptcp_loc_key;
+	child_tp->mptcp_loc_token = req->mptcp_loc_token;
+
+	if (mptcp_alloc_mpcb(child, req->mptcp_rem_key)) {
+		/* The allocation of the mpcb failed!
+		 * Destroy the child and go to listen_overflow
+		 */
+		sock_orphan(child);
+		tcp_done(child);
+		return -ENOBUFS;
+	}
+	child_tp->mpc = 1;
+	mpcb = child_tp->mpcb;
+
+	inet_sk(child)->loc_id = 0;
+	inet_sk(child)->rem_id = 0;
+
+	if (mptcp_add_sock(mpcb, child_tp, GFP_ATOMIC)) {
+		mptcp_destroy_mpcb(mpcb);
+		sock_orphan(child);
+		tcp_done(child);
+		return -ENOBUFS;
+	}
+
+	child_tp->mptcp->slave_sk = 0;
+	child_tp->mptcp->path_index = 1;
+	child_tp->mptcp->snt_isn = tcp_rsk(req)->snt_isn;
+	child_tp->mptcp->reinjected_seq = child_tp->snd_una;
+	child_tp->mptcp->init_rcv_wnd = req->rcv_wnd;
+	child_tp->mptcp->last_rbuf_opti = 0;
+
+	if (mopt->list_rcvd) {
+		memcpy(&mpcb->rx_opt, mopt, sizeof(*mopt));
+		mpcb->rx_opt.mptcp_rem_key = req->mptcp_rem_key;
+	}
+
+	mpcb->rx_opt.dss_csum = sysctl_mptcp_checksum || req->dss_csum;
+	mpcb->rx_opt.mpcb = mpcb;
+
+	mpcb->server_side = 1;
+	/* Will be moved to ESTABLISHED by  tcp_rcv_state_process() */
+	mpcb_meta_sk(mpcb)->sk_state = TCP_SYN_RECV;
+	mptcp_update_metasocket(child, mpcb);
+
+	/* Needs to be done here additionally, because when accepting a
+	 * new connection we pass by __reqsk_free and not reqsk_free.
+	 */
+	mptcp_reqsk_remove_tk(req);
+
+	 /* hold in mptcp_inherit_sk due to initialization to 2 */
+	sock_put(mpcb_meta_sk(mpcb));
+
+	inet_csk_reqsk_queue_unlink(sk, req, prev);
+	inet_csk_reqsk_queue_removed(sk, req);
+
+	inet_csk_reqsk_queue_add(sk, req, mpcb_meta_sk(mpcb));
 
 	return 0;
 }

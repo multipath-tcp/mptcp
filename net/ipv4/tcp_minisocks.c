@@ -819,8 +819,13 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		goto listen_overflow;
 
 	if (!is_meta_sk(sk)) {
-		if (mptcp_check_req_master(child, req, mopt) == -ENOBUFS)
+		int ret = mptcp_check_req_master(sk, child, req, prev, mopt);
+		if (ret < 0)
 			goto listen_overflow;
+
+		/* MPTCP-supported */
+		if (!ret)
+			return child;
 	} else {
 		return mptcp_check_req_child(sk, child, req, prev);
 	}

@@ -621,8 +621,10 @@ void mptcp_close(struct sock *meta_sk, long timeout);
 void mptcp_detach_unused_child(struct sock *sk);
 void mptcp_set_bw_est(struct tcp_sock *tp, u32 now);
 int mptcp_doit(struct sock *sk);
-int mptcp_check_req_master(struct sock *child, struct request_sock *req,
-		struct multipath_options *mopt);
+int mptcp_check_req_master(struct sock *sk, struct sock *child,
+			   struct request_sock *req,
+			   struct request_sock **prev,
+			   struct multipath_options *mopt);
 struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
 		struct request_sock *req, struct request_sock **prev);
 void mptcp_select_window(struct tcp_sock *tp, u32 new_win);
@@ -1220,8 +1222,10 @@ static inline void mptcp_parse_options(const uint8_t *ptr, const int opsize,
 static inline void mptcp_close(const struct sock *meta_sk, long timeout) {}
 static inline void mptcp_detach_unused_child(const struct sock *sk) {}
 static inline void mptcp_set_bw_est(const struct tcp_sock *tp, u32 now) {}
-static inline int mptcp_check_req_master(const struct sock *child,
+static inline int mptcp_check_req_master(const struct sock *sk,
+					 const struct sock *child,
 					 const struct request_sock *req,
+					 const struct request_sock **prev,
 					 const struct multipath_options *mopt)
 {
 	return 0;

@@ -1308,21 +1308,12 @@ static inline void sock_orphan(struct sock *sk)
 	write_unlock_bh(&sk->sk_callback_lock);
 }
 
-#ifdef CONFIG_MPTCP
-void mptcp_check_socket(struct sock *sk);
-#else
-static inline void mptcp_check_socket(struct sock *sk)
-{
-}
-#endif
-
 static inline void sock_graft(struct sock *sk, struct socket *parent)
 {
 	write_lock_bh(&sk->sk_callback_lock);
 	sk->sk_wq = parent->wq;
 	parent->sk = sk;
 	sk_set_socket(sk, parent);
-	mptcp_check_socket(sk);
 	security_sock_graft(sk, parent);
 	write_unlock_bh(&sk->sk_callback_lock);
 }
