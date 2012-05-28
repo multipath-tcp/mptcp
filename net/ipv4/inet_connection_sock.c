@@ -727,8 +727,6 @@ void inet_csk_listen_stop(struct sock *sk)
 		WARN_ON(sock_owned_by_user(child));
 		sock_hold(child);
 
-		mptcp_detach_unused_child(child);
-
 		sk->sk_prot->disconnect(child, O_NONBLOCK);
 
 		sock_orphan(child);

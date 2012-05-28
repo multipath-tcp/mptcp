@@ -2324,6 +2324,29 @@ int tcp_disconnect(struct sock *sk, int flags)
 	if (!(sk->sk_userlocks & SOCK_BINDADDR_LOCK))
 		inet_reset_saddr(sk);
 
+#ifdef CONFIG_MPTCP
+	if (is_meta_sk(sk)) {
+		struct sock *current_sk;
+		struct tcp_sock *tp = tcp_sk(sk);
+
+		mptcp_hash_remove(tp->mpcb);
+		reqsk_queue_destroy(&((struct inet_connection_sock *)tp->mpcb)->icsk_accept_queue);
+
+		local_bh_disable();
+		mptcp_for_each_sk(tp->mpcb, current_sk) {
+			mptcp_del_sock(current_sk);
+			tcp_sk(current_sk)->mpc = 0;
+			tcp_sk(current_sk)->mpcb = NULL;
+			mptcp_sub_force_close(current_sk);
+		}
+		local_bh_enable();
+
+		tp->was_meta_sk = 1;
+		tp->mpc = 0;
+		tp->mpcb = NULL;
+	}
+#endif
+
 	sk->sk_shutdown = 0;
 	sock_reset_flag(sk, SOCK_DONE);
 	tp->srtt = 0;
@@ -3444,7 +3467,7 @@ void tcp_done(struct sock *sk)
 
 	if (!sock_flag(sk, SOCK_DEAD)) {
 		/* In case of mptcp, only wake up if it's the meta-sk */
-		if ((tp->mpc && is_meta_sk(sk)) || !tp->mpc)
+		if ((!tp->mpc && !tp->was_meta_sk) || is_meta_sk(sk))
 			sk->sk_state_change(sk);
 	} else {
 		inet_csk_destroy_sock(sk);

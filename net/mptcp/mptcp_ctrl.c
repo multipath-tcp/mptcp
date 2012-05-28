@@ -205,7 +205,7 @@ struct sock *mptcp_select_ack_sock(const struct mptcp_cb *mpcb, int copied)
 
 void mptcp_sock_def_error_report(struct sock *sk)
 {
-	if (tcp_sk(sk)->mpc && !is_meta_sk(sk)) {
+	if (!is_meta_sk(sk)) {
 		sk->sk_err = 0;
 
 		if (!sock_flag(sk, SOCK_DEAD))
@@ -629,9 +629,11 @@ int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key)
 	meta_tp->mpcb = mpcb;
 	meta_tp->mpc = 1;
 	meta_tp->mptcp->attached = 0;
+	meta_tp->was_meta_sk = 0;
 
 	skb_queue_head_init(&mpcb->reinject_queue);
 	skb_queue_head_init(&meta_tp->out_of_order_queue);
+	tcp_prequeue_init(meta_tp);
 
 	mutex_init(&mpcb->mutex);
 
@@ -706,7 +708,7 @@ void mptcp_destroy_mpcb(struct mptcp_cb *mpcb)
 
 int mptcp_sock_destruct(struct sock *sk)
 {
-	if (is_meta_sk(sk)) {
+	if (is_meta_sk(sk) || tcp_sk(sk)->was_meta_sk) {
 		mptcp_release_mpcb(tcp_sk(sk)->mpcb);
 		return 1;
 	} else {
@@ -1003,6 +1005,11 @@ void mptcp_sub_close_wq(struct work_struct *work)
 	struct sock *sk = (struct sock *)tp;
 	struct sock *meta_sk = mptcp_meta_sk(sk);
 
+	if (!tp->mpc) {
+		tcp_close(sk, 0);
+		return;
+	}
+
 	mutex_lock(&tp->mpcb->mutex);
 	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
 
@@ -1254,56 +1261,6 @@ out:
 	local_bh_enable();
 	mutex_unlock(&mpcb->mutex);
 	sock_put(meta_sk); /* Taken by sock_hold */
-}
-
-/**
- * When a listening sock is closed with established children still pending,
- * those children have created already an mpcb (tcp_check_req()).
- * Moreover, that mpcb has possibly received additional children,
- * from JOIN subflows. All this must be cleaned correctly, which is done
- * here. Later we should use a more generic approach, reusing more of
- * the regular TCP stack.
- */
-void mptcp_detach_unused_child(struct sock *sk)
-{
-	struct mptcp_cb *mpcb;
-	struct sock *child;
-	if (!sk->sk_protocol == IPPROTO_TCP)
-		return;
-	mpcb = tcp_sk(sk)->mpcb;
-	if (!mpcb)
-		return;
-	/* Detach the mpcb from the token hashtable */
-	mptcp_hash_remove(mpcb);
-	reqsk_queue_destroy(&((struct inet_connection_sock *)mpcb)->icsk_accept_queue);
-
-	/* Now all subflows of the mpcb are attached, so we can destroy them,
-	 * being sure that the mpcb will be correctly destroyed last.
-	 */
-	mptcp_for_each_sk(mpcb, child) {
-		if (child == sk)
-			continue; /* master_sk will be freed last
-				   * as part of the normal
-				   * net_csk_listen_stop() function
-				   */
-		/* This section is copied from
-		 * inet_csk_listen_stop()
-		 */
-		local_bh_disable();
-		WARN_ON(sock_owned_by_user(child));
-		sock_hold(child);
-
-		sk->sk_prot->disconnect(child, O_NONBLOCK);
-
-		sock_orphan(child);
-
-		percpu_counter_inc(sk->sk_prot->orphan_count);
-
-		inet_csk_destroy_sock(child);
-
-		local_bh_enable();
-		sock_put(child);
-	}
 }
 
 void mptcp_set_bw_est(struct tcp_sock *tp, u32 now)
