@@ -727,6 +727,11 @@ extern void sk_stream_kill_queues(struct sock *sk);
 extern int sk_wait_data(struct sock *sk, long *timeo);
 
 extern void sock_def_error_report(struct sock *sk);
+extern void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
+			     const gfp_t flags);
+extern struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
+				  int family);
+
 
 struct request_sock_ops;
 struct timewait_sock_ops;
@@ -1098,10 +1103,7 @@ extern void			sk_free(struct sock *sk);
 extern void			sk_release_kernel(struct sock *sk);
 extern struct sock		*sk_clone(const struct sock *sk,
 					  const gfp_t priority);
-extern void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
-			     const gfp_t flags);
-extern struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
-		int family);
+
 extern struct sk_buff		*sock_wmalloc(struct sock *sk,
 					      unsigned long size, int force,
 					      gfp_t priority);

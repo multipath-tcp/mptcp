@@ -656,7 +656,7 @@ void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 	}
 #endif
 #ifdef CONFIG_MPTCP
-	if (sk && tcp_sk(sk)->csum_error) {
+	if (sk && tcp_sk(sk)->mptcp && tcp_sk(sk)->mptcp->csum_error) {
 		/* We had a checksum-error? -> Include MP_FAIL */
 		rep.mpfail.kind = TCPOPT_MPTCP;
 		rep.mpfail.len = MPTCP_SUB_LEN_FAIL;
@@ -684,7 +684,7 @@ void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 	TCP_INC_STATS_BH(net, TCP_MIB_OUTRSTS);
 
 #ifdef CONFIG_MPTCP
-	if (sk && tcp_sk(sk)->teardown)
+	if (sk && tcp_sk(sk)->mptcp && tcp_sk(sk)->mptcp->teardown)
 		tcp_done(sk);
 #endif
 }

@@ -2736,14 +2736,15 @@ static void tcp_connect_init(struct sock *sk)
 
 #ifdef CONFIG_MPTCP
 	if (mptcp_doit(sk)) {
-		tp->snt_isn = tp->write_seq;
-		tp->reinjected_seq = tp->write_seq;
-		tp->init_rcv_wnd = tp->rcv_wnd;
+		if (tp->mptcp) {
+			tp->mptcp->snt_isn = tp->write_seq;
+			tp->mptcp->reinjected_seq = tp->write_seq;
+			tp->mptcp->init_rcv_wnd = tp->rcv_wnd;
+		}
+
 		tp->request_mptcp = 1;
 
 		if (is_master_tp(tp)) {
-			tp->path_index = 1;
-
 			do {
 				get_random_bytes(&tp->mptcp_loc_key,
 						 sizeof(tp->mptcp_loc_key));

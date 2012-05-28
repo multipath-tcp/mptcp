@@ -124,9 +124,9 @@ static void move_shortcut(struct mptcp_node *n_src, struct mptcp_node *n_dst)
 {
 	/* if n_dst has a shortcut, drop it */
 	if (n_dst->shortcut_owner)
-		tcp_sk(n_dst->shortcut_owner)->shortcut_ofoqueue = NULL;
+		tcp_sk(n_dst->shortcut_owner)->mptcp->shortcut_ofoqueue = NULL;
 	if (n_src->shortcut_owner) {
-		tcp_sk(n_src->shortcut_owner)->shortcut_ofoqueue =
+		tcp_sk(n_src->shortcut_owner)->mptcp->shortcut_ofoqueue =
 			(struct sk_buff *)n_dst;
 		n_dst->shortcut_owner = n_src->shortcut_owner;
 		n_src->shortcut_owner = NULL;
@@ -138,23 +138,23 @@ static void move_shortcut(struct mptcp_node *n_src, struct mptcp_node *n_dst)
 static void drop_shortcut(struct mptcp_node *n)
 {
 	if (n->shortcut_owner) {
-		tcp_sk(n->shortcut_owner)->shortcut_ofoqueue = NULL;
+		tcp_sk(n->shortcut_owner)->mptcp->shortcut_ofoqueue = NULL;
 		n->shortcut_owner = NULL;
 	}
 }
 
 static void add_shortcut(struct tcp_sock *tp, struct mptcp_node *n)
 {
-	if ((struct mptcp_node *)tp->shortcut_ofoqueue == n)
+	if ((struct mptcp_node *)tp->mptcp->shortcut_ofoqueue == n)
 		return;
 	/* remove any previous shortcut in the sock */
-	if (tp->shortcut_ofoqueue)
-		tp->shortcut_ofoqueue->shortcut_owner = NULL;
+	if (tp->mptcp->shortcut_ofoqueue)
+		tp->mptcp->shortcut_ofoqueue->shortcut_owner = NULL;
 	/* remove any shortcut attachment in n */
 	drop_shortcut(n);
 	/* attach */
 	n->shortcut_owner = (struct sock *)tp;
-	tp->shortcut_ofoqueue = (struct sk_buff *)n;
+	tp->mptcp->shortcut_ofoqueue = (struct sk_buff *)n;
 }
 
 static void free_node(struct mptcp_node *n)
@@ -388,7 +388,7 @@ int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
 
 	skb->is_node = 0;
 	skb->shortcut_owner = 0;
-	ans = try_shortcut((struct mptcp_node *)tp->shortcut_ofoqueue, skb,
+	ans = try_shortcut((struct mptcp_node *)tp->mptcp->shortcut_ofoqueue, skb,
 			   &tcp_sk(meta_sk)->out_of_order_queue, &container);
 
 	/* update the shortcut pointer in @sk */

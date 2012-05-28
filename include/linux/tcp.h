@@ -299,6 +299,7 @@ struct tcp_options_received {
 };
 
 struct mptcp_cb;
+struct mptcp_tcp_sock;
 
 static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
 {
@@ -525,58 +526,10 @@ struct tcp_sock {
 		mp_killed:1, /* Killed with a tcp_done in mptcp? */
 		mptcp_add_addr_ack:1;	/* Tell tcp_send_ack to return in case
 					 * alloc_skb fails. */
+	struct mptcp_tcp_sock *mptcp;
 #ifdef CONFIG_MPTCP
-	/* data for the scheduler */
-	struct {
-		u32	space;
-		u32	seq;
-		u32	time;
-		short   shift; /* Shift to apply to the space field.
-				* It is increased when space bytes are
-				* flushed in less than a jiffie (can happen
-				* with gigabit ethernet), so as to use a larger
-				* basis for bw computation.
-				*/
-	} bw_est;
-	u32	cur_bw_est;
-
-	 /* Those three fields record the current mapping */
-	u64	map_data_seq;
-	u32	map_subseq;
-	u16	map_data_len;
-
-	u32	last_data_seq;
-
-	/* isn: needed to translate abs to relative subflow seqnums */
-	u32	snt_isn;
-	u32	reinjected_seq;
-	int	init_rcv_wnd;
-	u32	infinite_cutoff_seq;
-	u32	last_rbuf_opti;	/* Timestamp of last rbuf optimization */
-	unsigned long last_snd_probe;
-	unsigned long last_rcv_probe;
-	struct sk_buff  *shortcut_ofoqueue; /* Shortcut to the current modified
-					     * node in the ofo BST
-					     */
-	struct delayed_work work;
 	u32		mptcp_loc_token;
 	u64		mptcp_loc_key;
-
-	u8		path_index;
-	struct tcp_sock	*next;		/* Next subflow socket */
-	__u32		mptcp_loc_nonce;
-	u16		slave_sk:1,
-			fully_established:1,
-			attached:1,
-			csum_error:1,
-			teardown:1,
-			include_mpc:1,
-			mapping_present:1,
-			map_data_fin:1,
-			low_prio:1, /* use this socket as backup */
-			send_mp_prio:1; /* Trigger to send mp_prio on this socket */
-	u8 add_addr4; /* bit-field of addrs not yet sent to our peer */
-	u8 add_addr6;
 #endif /* CONFIG_MPTCP */
 };
 

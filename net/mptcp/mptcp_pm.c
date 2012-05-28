@@ -510,7 +510,7 @@ exit:
 
 void mptcp_send_updatenotif(struct mptcp_cb *mpcb)
 {
-	if ((mpcb->master_sk && !tcp_sk(mpcb->master_sk)->fully_established) ||
+	if ((mpcb->master_sk && !tcp_sk(mpcb->master_sk)->mptcp->fully_established) ||
 	    mpcb->infinite_mapping ||
 	    mpcb->server_side ||
 	    sock_flag(mpcb_meta_sk(mpcb), SOCK_DEAD))

@@ -139,7 +139,7 @@ static void mptcp_recalc_alpha(struct sock *sk)
 			mptcp_debug("%s: estimated rtt == 0, mpcb_token"
 				   ":%d, pi:%d, sub_sk->state:%d\n",
 				   __func__, mpcb->mptcp_loc_token,
-				   sub_tp->path_index, sub_sk->sk_state);
+				   sub_tp->mptcp->path_index, sub_sk->sk_state);
 
 		/* We need to look for the path, that provides the max-value.
 		 * Integer-overflow is not possible here, because
@@ -174,7 +174,7 @@ static void mptcp_recalc_alpha(struct sock *sk)
 			mptcp_debug("%s: estimated rtt == 0, mpcb_token"
 				   ":%d, pi:%d, sub_sk->state:%d\n",
 				   __func__, mpcb->mptcp_loc_token,
-				   sub_tp->path_index, sub_sk->sk_state);
+				   sub_tp->mptcp->path_index, sub_sk->sk_state);
 
 		sum_denominator += div_u64(
 				mptcp_ccc_scale(sub_tp->snd_cwnd,
@@ -188,7 +188,7 @@ static void mptcp_recalc_alpha(struct sock *sk)
 		mptcp_for_each_sk(mpcb, sub_sk) {
 			struct tcp_sock *sub_tp = tcp_sk(sub_sk);
 			mptcp_debug("%s: pi:%d, state:%d\n, rtt:%u, cwnd: %u",
-					__func__, sub_tp->path_index,
+					__func__, sub_tp->mptcp->path_index,
 					sub_sk->sk_state, sub_tp->srtt,
 					sub_tp->snd_cwnd);
 		}

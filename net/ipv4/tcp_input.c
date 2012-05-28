@@ -517,7 +517,7 @@ void tcp_rcv_space_adjust(struct sock *sk)
 		goto new_measure;
 
 	time = tcp_time_stamp - tp->rcvq_space.time;
-	if (tp->mpc) {
+	if (tp->mptcp) {
 		if (mptcp_check_rtt(tp, time))
 			return;
 	} else if (time < (tp->rcv_rtt_est.rtt >> 3) || tp->rcv_rtt_est.rtt == 0)
@@ -3369,7 +3369,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		mptcp_clean_rtx_infinite(skb, sk);
 		tcp_unlink_write_queue(skb, sk);
 
-		if (tp->mpc)
+		if (tp->mptcp)
 			flag |= mptcp_fallback_infinite(tp, skb);
 
 		sk_wmem_free_skb(sk, skb);
@@ -3511,7 +3511,7 @@ static int tcp_ack_update_window(struct sock *sk, const struct sk_buff *skb, u32
 	u32 nwin = ntohs(tcp_hdr(skb)->window);
 
 	/* Window-updates are handled in mptcp_data_ack */
-	if (tp->mpc)
+	if (tp->mptcp)
 		goto no_window_update;
 
 	if (likely(!tcp_hdr(skb)->syn))
@@ -3540,8 +3540,8 @@ static int tcp_ack_update_window(struct sock *sk, const struct sk_buff *skb, u32
 no_window_update:
 	tp->snd_una = ack;
 #ifdef CONFIG_MPTCP
-	if (tp->mpc && after(tp->snd_una, tp->reinjected_seq))
-		tp->reinjected_seq = tp->snd_una;
+	if (tp->mptcp && after(tp->snd_una, tp->mptcp->reinjected_seq))
+		tp->mptcp->reinjected_seq = tp->snd_una;
 #endif
 
 	return flag;
@@ -5081,14 +5081,14 @@ static int tcp_should_expand_sndbuf(const struct sock *sk)
 
 			/* Backup-flows have to be counted - if there is no other
 			 * subflow we take the backup-flow into account. */
-			if (tp_it->rx_opt.low_prio || tp_it->low_prio) {
+			if (tp_it->rx_opt.low_prio || tp_it->mptcp->low_prio) {
 				cnt_backups++;
 			}
 			if (!mptcp_sk_can_send(sk_it))
 				continue;
 
 			if (tp_it->packets_out < tp_it->snd_cwnd) {
-				if (tp_it->rx_opt.low_prio || tp_it->low_prio) {
+				if (tp_it->rx_opt.low_prio || tp_it->mptcp->low_prio) {
 					backup_available = 1;
 					continue;
 				}
@@ -5124,7 +5124,7 @@ static void tcp_new_space(struct sock *sk)
 					  MAX_TCP_HEADER);
 		int demanded;
 
-		if (tp->mpc)
+		if (tp->mptcp)
 			demanded = mptcp_check_snd_buf(tp);
 		else
 			demanded = max_t(unsigned int, tp->snd_cwnd,
@@ -5784,11 +5784,11 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			mptcp_hmac_sha1((u8 *)&mpcb->rx_opt.mptcp_rem_key,
 					(u8 *)&mpcb->mptcp_loc_key,
 					(u8 *)&mpcb->rx_opt.mptcp_recv_nonce,
-					(u8 *)&tp->mptcp_loc_nonce,
+					(u8 *)&tp->mptcp->mptcp_loc_nonce,
 					(u32 *)hash_mac_check);
 			if (memcmp(hash_mac_check, (char *)&mpcb->rx_opt.mptcp_recv_tmac, 8)) {
 				sock_orphan(sk);
-				tp->teardown = 1;
+				tp->mptcp->teardown = 1;
 				goto reset_and_undo;
 			}
 		}
@@ -5803,7 +5803,21 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 
 				tp->mpc = 1;
 
-				mptcp_add_sock(tp->mpcb, tp);
+				if (mptcp_add_sock(tp->mpcb, tp, GFP_ATOMIC)) {
+					mptcp_destroy_mpcb(tp->mpcb);
+					tp->mpc = 0;
+					tp->mpcb = NULL;
+					goto cont_mptcp;
+				}
+
+				/* snd_nxt - 1, because it has been incremented
+				 * by tcp_connect for the SYN
+				 */
+				tp->mptcp->snt_isn = tp->snd_nxt - 1;
+				tp->mptcp->reinjected_seq = tp->snd_nxt - 1;
+				tp->mptcp->init_rcv_wnd = tp->rcv_wnd;
+				tp->mptcp->path_index = 1;
+
 				mpcb = tp->mpcb;
 
 				mpcb->rx_opt.dss_csum = mopt.dss_csum;
@@ -5998,6 +6012,7 @@ discard:
 	    tcp_paws_reject(&tp->rx_opt, 0))
 		goto discard_and_undo;
 
+	/* TODO - check this here for MPTCP */
 	if (th->syn) {
 		/* We see SYN without ACK. It is attempt of
 		 * simultaneous connect with crossed SYNs.
@@ -6016,12 +6031,6 @@ discard:
 
 		tp->rcv_nxt = TCP_SKB_CB(skb)->seq + 1;
 		tp->rcv_wup = TCP_SKB_CB(skb)->seq + 1;
-
-		if (mpcb && tp->rx_opt.saw_mpc && is_master_tp(tp)) {
-			tp->mpc = 1;
-			tp->rx_opt.saw_mpc = 0;
-			mptcp_add_sock(tp->mpcb, tp);
-		}
 
 		/* RFC1323: The window in SYN & SYN/ACK segments is
 		 * never scaled.
@@ -6171,10 +6180,10 @@ out_syn_sent:
 
 				tp->snd_una = TCP_SKB_CB(skb)->ack_seq;
 #ifdef CONFIG_MPTCP
-				if (tp->mpc && after(tp->snd_una, tp->reinjected_seq))
-					tp->reinjected_seq = tp->snd_una;
+				if (tp->mptcp && after(tp->snd_una, tp->mptcp->reinjected_seq))
+					tp->mptcp->reinjected_seq = tp->snd_una;
 #endif
-				if (tp->mpc) {
+				if (tp->mptcp) {
 					mpcb_meta_tp(tp->mpcb)->snd_wnd =
 						ntohs(th->window) <<
 						tp->rx_opt.snd_wscale;

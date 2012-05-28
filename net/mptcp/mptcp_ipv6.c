@@ -369,14 +369,16 @@ void mptcp_init6_subsockets(struct mptcp_cb *mpcb,
 	inet_sk(sk)->rem_id = rem->id;
 
 	tp = tcp_sk(sk);
-	tp->path_index = newpi;
-	tp->mpc = 1;
-	tp->slave_sk = 1;
-	tp->low_prio = loc->low_prio;
 
 	sk->sk_error_report = mptcp_sock_def_error_report;
 
-	mptcp_add_sock(mpcb, tp);
+	if (mptcp_add_sock(mpcb, tp, GFP_KERNEL))
+		goto error;
+
+	tp->mptcp->path_index = newpi;
+	tp->mpc = 1;
+	tp->mptcp->slave_sk = 1;
+	tp->mptcp->low_prio = loc->low_prio;
 
 	/** Then, connect the socket to the peer */
 
@@ -584,19 +586,19 @@ found:
 		if (event == NETDEV_DOWN) {
 			printk(KERN_DEBUG "MPTCP_PM: NETDEV_DOWN %pI6, "
 					"pi %d, loc_id %u\n", &ifa->addr,
-					tp->path_index, inet_sk(sk)->loc_id);
+					tp->mptcp->path_index, inet_sk(sk)->loc_id);
 			mptcp_retransmit_queue(sk);
 
 			mptcp_sub_force_close(sk);
 		} else if (event == NETDEV_CHANGE) {
 			int new_low_prio = (ifa->idev->dev->flags & IFF_MPBACKUP) ?
 						1 : 0;
-			if (new_low_prio != tp->low_prio)
-				tp->send_mp_prio = 1;
-			tp->low_prio = new_low_prio;
+			if (new_low_prio != tp->mptcp->low_prio)
+				tp->mptcp->send_mp_prio = 1;
+			tp->mptcp->low_prio = new_low_prio;
 		} else {
 			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP %pI6, pi %d\n",
-					&ifa->addr, tp->path_index);
+					&ifa->addr, tp->mptcp->path_index);
 			BUG();
 		}
 	}
@@ -624,7 +626,7 @@ void mptcp_v6_send_add_addr(int loc_id, struct mptcp_cb *mpcb)
 	struct tcp_sock *tp;
 
 	mptcp_for_each_tp(mpcb, tp)
-		tp->add_addr6 |= (1 << loc_id);
+		tp->mptcp->add_addr6 |= (1 << loc_id);
 }
 
 

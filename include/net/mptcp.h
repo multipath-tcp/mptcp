@@ -62,6 +62,60 @@ static inline int before64(const u64 seq1, const u64 seq2)
 /* is seq1 > seq2 ? */
 #define after64(seq1, seq2)	before64(seq2, seq1)
 
+struct mptcp_tcp_sock {
+	struct tcp_sock *tp; /* Where is my daddy? */
+
+	 /* Those three fields record the current mapping */
+	u64	map_data_seq;
+	u32	map_subseq;
+	u16	map_data_len;
+
+	/* data for the scheduler */
+	struct {
+		u32	space;
+		u32	seq;
+		u32	time;
+		short   shift; /* Shift to apply to the space field.
+				* It is increased when space bytes are
+				* flushed in less than a jiffie (can happen
+				* with gigabit ethernet), so as to use a larger
+				* basis for bw computation.
+				*/
+	} bw_est;
+	u32	cur_bw_est;
+
+	u32	last_data_seq;
+
+	/* isn: needed to translate abs to relative subflow seqnums */
+	u32	snt_isn;
+	u32	reinjected_seq;
+	int	init_rcv_wnd;
+	u32	infinite_cutoff_seq;
+	u32	last_rbuf_opti;	/* Timestamp of last rbuf optimization */
+	unsigned long last_snd_probe;
+	unsigned long last_rcv_probe;
+	struct sk_buff  *shortcut_ofoqueue; /* Shortcut to the current modified
+					     * node in the ofo BST
+					     */
+	struct delayed_work work;
+
+	u8		path_index;
+	struct tcp_sock	*next;		/* Next subflow socket */
+	__u32		mptcp_loc_nonce;
+	u16		slave_sk:1,
+			fully_established:1,
+			attached:1,
+			csum_error:1,
+			teardown:1,
+			include_mpc:1,
+			mapping_present:1,
+			map_data_fin:1,
+			low_prio:1, /* use this socket as backup */
+			send_mp_prio:1; /* Trigger to send mp_prio on this socket */
+	u8 add_addr4; /* bit-field of addrs not yet sent to our peer */
+	u8 add_addr6;
+};
+
 struct multipath_options {
 	struct mptcp_cb *mpcb;
 	u8	rem4_bits;
@@ -477,19 +531,19 @@ static inline int mptcp_sysctl_mss(void)
 
 /* Iterates over all subflows */
 #define mptcp_for_each_tp(mpcb, tp)					\
-	for ((tp) = (mpcb)->connection_list; (tp); (tp) = (tp)->next)
+	for ((tp) = (mpcb)->connection_list; (tp); (tp) = (tp)->mptcp->next)
 
 #define mptcp_for_each_sk(mpcb, sk)					\
 	for ((sk) = (struct sock *)(mpcb)->connection_list;		\
 	     sk;							\
-	     sk = (struct sock *) tcp_sk(sk)->next)
+	     sk = (struct sock *) tcp_sk(sk)->mptcp->next)
 
 #define mptcp_for_each_sk_safe(__mpcb, __sk, __temp)			\
 	for (__sk = (struct sock *)(__mpcb)->connection_list,		\
-		     __temp = __sk ? (struct sock *)tcp_sk(__sk)->next : NULL; \
+		     __temp = __sk ? (struct sock *)tcp_sk(__sk)->mptcp->next : NULL; \
 	     __sk;							\
 	     __sk = __temp,						\
-		     __temp = __sk ? (struct sock *)tcp_sk(__sk)->next : NULL)
+		     __temp = __sk ? (struct sock *)tcp_sk(__sk)->mptcp->next : NULL)
 
 /* Iterates over all bit set to 1 in a bitset */
 #define mptcp_for_each_bit_set(b, i)					\
@@ -530,7 +584,7 @@ void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp);
 void mptcp_ofo_queue_init(void);
 void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied);
 int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key);
-void mptcp_add_sock(struct mptcp_cb *mpcb, struct tcp_sock *tp);
+int mptcp_add_sock(struct mptcp_cb *mpcb, struct tcp_sock *tp, gfp_t flags);
 void mptcp_del_sock(struct sock *sk);
 void mptcp_update_metasocket(struct sock *sock, struct mptcp_cb *mpcb);
 void mptcp_reinject_data(struct sock *orig_sk, int clone_it);
@@ -586,6 +640,8 @@ void mptcp_sock_def_error_report(struct sock *sk);
 void mptcp_sub_close_wq(struct work_struct *work);
 void mptcp_sub_close(struct sock *sk, unsigned long delay);
 struct sock *mptcp_select_ack_sock(const struct mptcp_cb *mpcb, int copied);
+int mptcp_sock_destruct(struct sock *sk);
+void mptcp_destroy_mpcb(struct mptcp_cb *mpcb);
 
 static inline void mptcp_sub_force_close(struct sock *sk)
 {
@@ -666,7 +722,7 @@ static inline int is_meta_sk(const struct sock *sk)
 
 static inline int is_master_tp(const struct tcp_sock *tp)
 {
-	return !tp->slave_sk && !is_meta_tp(tp);
+	return !tp->mptcp || (!tp->mptcp->slave_sk && !is_meta_tp(tp));
 }
 
 static inline int mptcp_req_sk_saw_mpc(const struct request_sock *req)
@@ -680,11 +736,6 @@ static inline void mptcp_reqsk_destructor(struct request_sock *req)
 		mptcp_reqsk_remove_tk(req);
 	else
 		mptcp_hash_request_remove(req);
-}
-
-static inline int mptcp_sk_attached(const struct sock *sk)
-{
-	return tcp_sk(sk)->attached;
 }
 
 static inline void mptcp_init_mp_opt(struct multipath_options *mopt)
@@ -710,18 +761,6 @@ static inline void mptcp_wmem_free_skb(struct sock *sk, struct sk_buff *skb)
 	sk->sk_wmem_queued -= skb->truesize;
 	sk_mem_uncharge(sk, skb->truesize);
 	kfree_skb(skb);
-}
-
-static inline int mptcp_sock_destruct(struct sock *sk)
-{
-	if (is_meta_sk(sk)) {
-		mptcp_release_mpcb(tcp_sk(sk)->mpcb);
-		return 1;
-	} else {
-		/* Taken when mpcb pointer was set */
-		sock_put(mptcp_meta_sk(sk));
-	}
-	return 0;
 }
 
 static inline void mptcp_update_pointers(struct sock **sk,
@@ -836,7 +875,7 @@ static inline int mptcp_check_snd_buf(struct tcp_sock *tp)
 		if (rtt_max < tp_it->srtt)
 			rtt_max = tp_it->srtt;
 
-	return max_t(unsigned int, tp->cur_bw_est * (rtt_max >> 3),
+	return max_t(unsigned int, tp->mptcp->cur_bw_est * (rtt_max >> 3),
 			tp->reordering + 1);
 }
 
@@ -858,7 +897,7 @@ static inline void mptcp_set_rto(struct sock *sk)
 	struct sock *sk_it;
 	__u32 max_rto = 0;
 
-	if (!tp->mpc)
+	if (!tp->mptcp)
 		return;
 
 	mptcp_for_each_sk(tp->mpcb, sk_it) {
@@ -887,8 +926,8 @@ static inline void mptcp_reset_xmit_timer(struct sock *meta_sk)
 
 static inline void mptcp_include_mpc(struct tcp_sock *tp)
 {
-	if (tp->mpc) {
-		tp->include_mpc = 1;
+	if (tp->mptcp) {
+		tp->mptcp->include_mpc = 1;
 	}
 }
 
@@ -897,15 +936,16 @@ static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
 {
 	/* If data has been acknowleged on the meta-level, fully_established
 	 * will have been set before and thus we will not fall back to infinite
-	 * mapping. */
-	if (likely(tp->fully_established))
+	 * mapping.
+	 */
+	if (likely(tp->mptcp->fully_established))
 		return 0;
 
 	if (TCP_SKB_CB(skb)->tcp_flags & (TCPHDR_SYN | TCPHDR_FIN))
 		return 0;
 
 	mptcp_debug("%s %#x will fallback - pi %d from %pS\n", __func__,
-		    tp->mpcb->mptcp_loc_token, tp->path_index,
+		    tp->mpcb->mptcp_loc_token, tp->mptcp->path_index,
 		    __builtin_return_address(0));
 	if (is_master_tp(tp))
 		tp->mpcb->send_infinite_mapping = 1;
@@ -1136,10 +1176,6 @@ static inline int mptcp_req_sk_saw_mpc(const struct request_sock *req)
 	return 0;
 }
 static inline void mptcp_reqsk_destructor(struct request_sock *req) {}
-static inline int mptcp_sk_attached(const struct sock *sk)
-{
-	return 0;
-}
 static inline int mptcp_queue_skb(const struct sock *sk,
 				  const struct sk_buff *skb)
 {
@@ -1148,8 +1184,6 @@ static inline int mptcp_queue_skb(const struct sock *sk,
 static inline void mptcp_ofo_queue(const struct mptcp_cb *mpcb) {}
 static inline void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp) {}
 static inline void mptcp_cleanup_rbuf(const struct sock *meta_sk, int copied) {}
-static inline void mptcp_add_sock(const struct mptcp_cb *mpcb,
-				  const struct tcp_sock *tp) {}
 static inline void mptcp_del_sock(const struct sock *sk) {}
 static inline void mptcp_update_metasocket(const struct sock *sock,
 					   const struct mptcp_cb *mpcb) {}

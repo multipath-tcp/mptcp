@@ -946,7 +946,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	int sg, err, copied;
 	long timeo;
 
-	if (tp->mpc) {
+	if (tp->mptcp) {
 		struct sock *sk_it;
 
 		mptcp_for_each_sk(tp->mpcb, sk_it) {
@@ -965,7 +965,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		if ((err = sk_stream_wait_connect(sk, &timeo)) != 0)
 			goto out_err;
 
-		if (tp->mpc && !is_meta_sk(sk)) {
+		if (tp->mptcp && !is_meta_sk(sk)) {
 			struct sock *sk_it;
 
 			release_sock(sk);
@@ -1560,8 +1560,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	struct sk_buff *skb;
 	u32 urg_hole = 0;
 	/* MPTCP variables */
-	struct mptcp_cb *mpcb = tp->mpc ? tp->mpcb : NULL;
-	struct sock *sk_it = tp->mpc ? NULL : sk;
+	struct mptcp_cb *mpcb = tp->mptcp ? tp->mpcb : NULL;
+	struct sock *sk_it = tp->mptcp ? NULL : sk;
 #ifdef CONFIG_MPTCP
 	if (mpcb) {
 		mptcp_for_each_sk(mpcb, sk_it) {
@@ -1587,7 +1587,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			goto out;
 		}
 
-		if (tp->mpc && !is_meta_sk(sk)) {
+		if (tp->mptcp && !is_meta_sk(sk)) {
 			release_sock(sk);
 			mptcp_update_pointers(&sk, &tp, &mpcb);
 			lock_sock(sk);
@@ -1671,7 +1671,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		/* Well, if we have backlog, try to process it now yet. */
 
 		if (copied >= target && !sk->sk_backlog.tail &&
-			(!tp->mpc || !mptcp_test_any_sk(mpcb, sk_it,
+			(!tp->mptcp || !mptcp_test_any_sk(mpcb, sk_it,
 						sk_it->sk_backlog.tail)))
 			break;
 
