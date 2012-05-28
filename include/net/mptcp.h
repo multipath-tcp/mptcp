@@ -731,12 +731,13 @@ static inline void mptcp_update_pointers(struct sock **sk,
 	 * being established, then received the mpc flag while
 	 * inside the function.
 	 */
-	if (((mpcb && !(*mpcb)) || !is_meta_sk(*sk)) && (*tp)->mpc) {
+	if (((mpcb && !(*mpcb)) || !is_meta_sk(*sk)) && tcp_sk(*sk)->mpc) {
 		*sk = mptcp_meta_sk(*sk);
-		*tp = tcp_sk(*sk);
+		if (tp)
+			*tp = tcp_sk(*sk);
 
 		if (mpcb)
-			*mpcb = (*tp)->mpcb;
+			*mpcb = tcp_sk(*sk)->mpcb;
 	}
 }
 
