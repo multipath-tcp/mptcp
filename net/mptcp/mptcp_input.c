@@ -445,13 +445,21 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 		tp->map_data_len = tcb->mp_data_len = skb->len;
 		tp->mapping_present = 1;
 		tcb->end_seq = tcb->seq + tcb->mp_data_len;
-	} else {
+	} else if (tcb->mptcp_flags & MPTCPHDR_SEQ) {
 		__u32 *ptr = mptcp_skb_set_data_seq(skb, &tcb->seq);
 		ptr++;
 		tcb->sub_seq = get_unaligned_be32(ptr) + tp->rx_opt.rcv_isn;
 		ptr++;
 		tcb->mp_data_len = get_unaligned_be16(ptr);
 		tcb->end_seq = tcb->seq + tcb->mp_data_len;
+
+		/* If it's an empty skb with DATA_FIN, sub_seq must get fixed.
+		 * The draft sets it to 0, but we really would like to have the
+		 * real value, to have an easy handling afterwards here in this
+		 * function.
+		 */
+		if (mptcp_is_data_fin(skb) && skb->len == 0)
+			tcb->sub_seq = sub_seq;
 	}
 
 	/* If there is a DSS-mapping, check if it is ok with the current

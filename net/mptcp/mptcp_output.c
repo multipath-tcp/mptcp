@@ -437,7 +437,13 @@ static void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb)
 	ptr++;
 	ptr++; /* data_ack will be set in mptcp_options_write */
 	*ptr++ = htonl(tcb->seq); /* data_seq */
-	*ptr++ = htonl(tp->write_seq - tp->snt_isn); /* subseq */
+
+	/* If it's a non-data DATA_FIN, we set subseq to 0 (draft v7) */
+	if (mptcp_is_data_fin(skb) && skb->len == 0)
+		*ptr++ = 0; /* subseq */
+	else
+		*ptr++ = htonl(tp->write_seq - tp->snt_isn); /* subseq */
+
 	if (tp->mpcb->rx_opt.dss_csum && data_len) {
 		__be16 *p16 = (__be16 *)ptr;
 		__be32 hdseq = mptcp_get_highorder_sndbits(skb, tp->mpcb);
