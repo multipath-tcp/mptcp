@@ -400,7 +400,7 @@ struct mp_fail {
 #error	"Adjust your <asm/byteorder.h> defines"
 #endif
 	__be64	data_seq;
-};
+} __attribute__((__packed__));
 
 struct mp_fclose {
 	__u8	kind;

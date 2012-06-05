@@ -1050,12 +1050,10 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack,
 #endif
 #ifdef CONFIG_MPTCP
 	if (rst && sk && tcp_sk(sk)->csum_error) {
-		__u8 *p8 = (__u8 *)topt;
-		struct mp_fail *mpfail;
+		struct mp_fail *mpfail = (struct mp_fail *)topt;;
 
-		*p8++ = TCPOPT_MPTCP;
-		*p8++ = MPTCP_SUB_LEN_FAIL;
-		mpfail = (struct mp_fail *)p8;
+		mpfail->kind = TCPOPT_MPTCP;
+		mpfail->len = MPTCP_SUB_LEN_FAIL;
 		mpfail->sub = MPTCP_SUB_FAIL;
 		mpfail->rsv1 = 0;
 		mpfail->rsv2 = 0;

@@ -604,7 +604,6 @@ void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 		__be32 opt[(TCPOLEN_MD5SIG_ALIGNED >> 2)];
 #endif
 #ifdef CONFIG_MPTCP
-		__u8 fail_opt[2];
 		struct mp_fail mpfail;
 #endif
 	} rep;
@@ -659,8 +658,8 @@ void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 #ifdef CONFIG_MPTCP
 	if (sk && tcp_sk(sk)->csum_error) {
 		/* We had a checksum-error? -> Include MP_FAIL */
-		rep.fail_opt[0] = TCPOPT_MPTCP;
-		rep.fail_opt[1] = MPTCP_SUB_LEN_FAIL;
+		rep.mpfail.kind = TCPOPT_MPTCP;
+		rep.mpfail.len = MPTCP_SUB_LEN_FAIL;
 		rep.mpfail.sub = MPTCP_SUB_FAIL;
 		rep.mpfail.rsv1 = 0;
 		rep.mpfail.rsv2 = 0;
