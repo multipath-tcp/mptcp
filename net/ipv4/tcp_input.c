@@ -5114,7 +5114,7 @@ static void tcp_new_space(struct sock *sk)
 		tp->snd_cwnd_stamp = tcp_time_stamp;
 	}
 
-	sk->sk_write_space(meta_sk);
+	meta_sk->sk_write_space(meta_sk);
 }
 
 
