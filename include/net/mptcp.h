@@ -573,7 +573,6 @@ struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
 		struct request_sock *req, struct request_sock **prev);
 void mptcp_select_window(struct tcp_sock *tp, u32 new_win);
 u32 __mptcp_select_window(struct sock *sk);
-int mptcp_try_rmem_schedule(struct sock *tp, unsigned int size);
 int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb);
 void mptcp_push(struct sock *sk, int flags, int mss_now, int nonagle);
 void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn);
@@ -1201,11 +1200,6 @@ static inline struct sock *mptcp_check_req_child(const struct sock *sk,
 }
 static inline void mptcp_select_window(const struct tcp_sock *tp, u32 new_win) {}
 static inline u32 __mptcp_select_window(const struct sock *sk)
-{
-	return 0;
-}
-static inline int mptcp_try_rmem_schedule(const struct sock *tp,
-					  unsigned int size)
 {
 	return 0;
 }
