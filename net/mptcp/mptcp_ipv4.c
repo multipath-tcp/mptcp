@@ -539,21 +539,11 @@ found:
 	if (event == NETDEV_DOWN) {
 		mpcb->loc4_bits &= ~(1 << i);
 
-		/* force sending an ACK on each subflow */
+		/* Force sending directly the REMOVE_ADDR option */
 		mpcb->remove_addrs |= (1 << mpcb->addr4[i].id);
-		mptcp_for_each_sk(mpcb, sk) {
-			tcp_sk(sk)->add_addr4 &= mpcb->loc4_bits;
-			if ((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_CLOSE |
-						   TCPF_TIME_WAIT))
-				continue;
-
-			if (tcp_sk(sk)->pf == 1)
-				continue;
-
-			if (inet_sk(sk)->loc_id != mpcb->addr4[i].id)
-				tcp_send_ack(sk);
-		}
-		mpcb->remove_addrs = 0;
+		sk = mptcp_select_ack_sock(mpcb, 0);
+		if (sk)
+			tcp_send_ack(sk);
 
 		mptcp_for_each_bit_set(mpcb->rx_opt.rem4_bits, i)
 			mpcb->rx_opt.addr4[i].bitfield &= mpcb->loc4_bits;

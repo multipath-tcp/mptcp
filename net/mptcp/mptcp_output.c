@@ -1067,6 +1067,9 @@ unsigned mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		opts->mptcp_options |= OPTION_REMOVE_ADDR;
 		opts->remove_addrs = mpcb->remove_addrs;
 		*size += mptcp_sub_len_remove_addr_align(opts->remove_addrs);
+
+		if (skb)
+			mpcb->remove_addrs = 0;
 	} else if (!(opts->mptcp_options & OPTION_MP_CAPABLE) &&
 		   !(opts->mptcp_options & OPTION_MP_JOIN) &&
 		   ((unlikely(tp->add_addr6) &&
