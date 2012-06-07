@@ -620,7 +620,7 @@ static inline u32 mptcp_skb_sub_end_seq(const struct sk_buff *skb)
 static inline __u32 *mptcp_skb_set_data_seq(const struct sk_buff *skb,
 					    u32 *data_seq)
 {
-	__u32 *ptr = (__u32 *)(skb_transport_header(skb) + (TCP_SKB_CB(skb)->dss_off << 2));
+	__u32 *ptr = (__u32 *)(skb_transport_header(skb) + TCP_SKB_CB(skb)->dss_off);
 
 	if (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ64_SET) {
 		*data_seq = (u32)get_unaligned_be64(ptr);

@@ -206,7 +206,7 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 		if (TCP_SKB_CB(tmp)->dss_off && !dss_csum_added) {
 			__be32 data_seq = htonl((u32)(tp->map_data_seq >> 32));
 			csum_tcp = skb_checksum(tmp, skb_transport_offset(tmp) +
-						(TCP_SKB_CB(tmp)->dss_off << 2),
+						TCP_SKB_CB(tmp)->dss_off,
 						MPTCP_SUB_LEN_SEQ_CSUM,
 						csum_tcp);
 			csum_tcp = csum_partial(&data_seq, sizeof(data_seq), csum_tcp);
@@ -940,7 +940,7 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	tp->pf = 0;
 
 	if (tcb->mptcp_flags & MPTCPHDR_ACK) {
-		__u32 *ptr = (__u32 *)(skb_transport_header(skb) + (tcb->dss_off << 2));
+		__u32 *ptr = (__u32 *)(skb_transport_header(skb) + tcb->dss_off);
 
 		ptr--;
 		if (tcb->mptcp_flags & MPTCPHDR_ACK64_SET) {
@@ -1217,7 +1217,7 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			}
 		}
 
-		tcb->dss_off = (ptr - skb_transport_header(skb)) >> 2;
+		tcb->dss_off = (ptr - skb_transport_header(skb));
 
 		if (mdss->M) {
 			if (mdss->m) {
