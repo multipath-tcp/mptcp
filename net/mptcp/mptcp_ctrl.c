@@ -804,8 +804,8 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
  */
 void mptcp_update_window_clamp(struct tcp_sock *tp)
 {
-	struct sock *meta_sk;
-	struct tcp_sock *meta_tp, *tmptp;
+	struct sock *meta_sk, *sk;
+	struct tcp_sock *meta_tp;
 	struct mptcp_cb *mpcb;
 	u32 new_clamp = 0, new_rcv_ssthresh = 0;
 	int new_rcvbuf = 0;
@@ -816,12 +816,17 @@ void mptcp_update_window_clamp(struct tcp_sock *tp)
 
 	mpcb = tp->mpcb;
 	meta_tp = mpcb_meta_tp(mpcb);
-	meta_sk = (struct sock *)mpcb;
+	meta_sk = mpcb_meta_sk(mpcb);
 
-	mptcp_for_each_tp(mpcb, tmptp) {
-		new_clamp += tmptp->window_clamp;
-		new_rcv_ssthresh += tmptp->rcv_ssthresh;
-		new_rcvbuf += ((struct sock*)tmptp)->sk_rcvbuf;
+	mptcp_for_each_sk(mpcb, sk) {
+		new_clamp += tcp_sk(sk)->window_clamp;
+		new_rcv_ssthresh += tcp_sk(sk)->rcv_ssthresh;
+		new_rcvbuf += sk->sk_rcvbuf;
+
+		if (new_rcvbuf > sysctl_tcp_rmem[2] || new_rcvbuf < 0) {
+			new_rcvbuf = sysctl_tcp_rmem[2];
+			break;
+		}
 	}
 	meta_tp->window_clamp = new_clamp;
 	meta_tp->rcv_ssthresh = new_rcv_ssthresh;
@@ -836,8 +841,14 @@ void mptcp_update_sndbuf(struct mptcp_cb *mpcb)
 {
 	struct sock *meta_sk = (struct sock *) mpcb, *sk;
 	int new_sndbuf = 0;
-	mptcp_for_each_sk(mpcb, sk)
+	mptcp_for_each_sk(mpcb, sk) {
 		new_sndbuf += sk->sk_sndbuf;
+
+		if (new_sndbuf > sysctl_tcp_wmem[2] || new_sndbuf < 0) {
+			new_sndbuf = sysctl_tcp_wmem[2];
+			break;
+		}
+	}
 	meta_sk->sk_sndbuf = min(new_sndbuf, sysctl_tcp_wmem[2]);
 }
 

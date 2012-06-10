@@ -847,7 +847,7 @@ static inline void mptcp_retransmit_queue(struct sock *sk)
 		mptcp_reinject_data(sk, 1);
 }
 
-static inline int mptcp_sk_can_send(struct sock *sk)
+static inline int mptcp_sk_can_send(const struct sock *sk)
 {
 	return (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCPF_CLOSE_WAIT);
 }
