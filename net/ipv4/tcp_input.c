@@ -4441,7 +4441,11 @@ static void tcp_ofo_queue(struct sock *sk)
 			tcp_dsack_extend(sk, TCP_SKB_CB(skb)->seq, dsack);
 		}
 
-		if (!after(TCP_SKB_CB(skb)->end_seq, tp->rcv_nxt)) {
+		/* In case of MPTCP, the segment may be empty if it's a
+		 * non-data DATA_FIN. (see beginning of tcp_data_queue)
+		 */
+		if (!after(TCP_SKB_CB(skb)->end_seq, tp->rcv_nxt) &&
+		    !(tp->mpc && TCP_SKB_CB(skb)->end_seq == TCP_SKB_CB(skb)->seq)) {
 			SOCK_DEBUG(sk, "ofo packet was already received\n");
 			__skb_unlink(skb, &tp->out_of_order_queue);
 			__kfree_skb(skb);
@@ -4507,23 +4511,9 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 		meta_tp = mpcb_meta_tp(mpcb);
 
 	/* If no data is present, but a data_fin is in the options, we still
-	 * have to call mptcp_queue_skb. */
-	if (tp->mpc && mptcp_is_data_fin(skb) &&
-	    TCP_SKB_CB(skb)->seq == TCP_SKB_CB(skb)->end_seq) {
-		__skb_pull(skb, th->doff * 4);
-
-		eaten = mptcp_queue_skb(sk, skb);
-		if (eaten < 0)
-			return;
-
-		if (eaten > 0)
-			__kfree_skb(skb);
-		else if (!sock_flag(sk, SOCK_DEAD) && !tp->mpc)
-			sk->sk_data_ready(sk, 0);
-		return;
-	}
-
-	if (TCP_SKB_CB(skb)->seq == TCP_SKB_CB(skb)->end_seq)
+	 * have to call mptcp_queue_skb later on. */
+	if (TCP_SKB_CB(skb)->seq == TCP_SKB_CB(skb)->end_seq &&
+	    !(tp->mpc && mptcp_is_data_fin(skb)))
 		goto drop;
 
 	/* If mptcp, we need dst for sending the reset in mptcp_queue_skb */
@@ -4698,7 +4688,9 @@ drop:
 
 		/* Do skb overlap to previous one? */
 		if (skb1 && before(seq, TCP_SKB_CB(skb1)->end_seq)) {
-			if (!after(end_seq, TCP_SKB_CB(skb1)->end_seq)) {
+			/* MPTCP allows non-data data-fin to be in the ofo-queue */
+			if (!after(end_seq, TCP_SKB_CB(skb1)->end_seq) &&
+			    !(tp->mpc && end_seq == seq)) {
 				/* All the bits are present. Drop. */
 				__kfree_skb(skb);
 				tcp_dsack_set(sk, seq, end_seq);
@@ -4734,6 +4726,9 @@ drop:
 						 end_seq);
 				break;
 			}
+			/* MPTCP allows non-data data-fin to be in the ofo-queue */
+			if (tp->mpc && TCP_SKB_CB(skb1)->seq == TCP_SKB_CB(skb1)->end_seq)
+				continue;
 			__skb_unlink(skb1, &tp->out_of_order_queue);
 			tcp_dsack_extend(sk, TCP_SKB_CB(skb1)->seq,
 					 TCP_SKB_CB(skb1)->end_seq);
