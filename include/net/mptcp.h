@@ -858,7 +858,7 @@ static inline void mptcp_set_rto(struct sock *sk)
 	struct sock *sk_it;
 	__u32 max_rto = 0;
 
-	if (!tp->mpc || !tp->mpcb)
+	if (!tp->mpc)
 		return;
 
 	mptcp_for_each_sk(tp->mpcb, sk_it) {

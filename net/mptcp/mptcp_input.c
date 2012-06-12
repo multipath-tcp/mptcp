@@ -70,7 +70,7 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk)
 				 * subflow-fin until the subflow has been finned
 				 * by the peer - thus we add a delay. */
 				if (mpcb->passive_close && sk_it->sk_state == TCP_ESTABLISHED)
-					delay = inet_csk(sk_it)->icsk_rto;
+					delay = inet_csk(sk_it)->icsk_rto << 3;
 
 				mptcp_sub_close(sk_it, delay);
 			}
