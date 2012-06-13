@@ -2063,9 +2063,6 @@ int tcp_close_state(struct sock *sk)
 
 void tcp_shutdown(struct sock *sk, int how)
 {
-	if (tcp_sk(sk)->mpc)
-		sk = mptcp_meta_sk(sk);
-
 	/*	We need to grab some memory, and put together a FIN,
 	 *	and then put it into the queue to be sent.
 	 *		Tim MacKenzie(tym@dibbler.cs.monash.edu.au) 4 Dec '92.
@@ -2079,7 +2076,7 @@ void tcp_shutdown(struct sock *sk, int how)
 	     TCPF_SYN_RECV | TCPF_CLOSE_WAIT)) {
 		/* Clear out any half completed packets.  FIN if needed. */
 		if (tcp_close_state(sk)) {
-			if (!tcp_sk(sk)->mpc)
+			if (!is_meta_sk(sk))
 				tcp_send_fin(sk);
 			else
 				mptcp_send_fin(sk);

@@ -794,6 +794,13 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 		sock_put(sk);
 	}
 
+	if (!delay) {
+		/* We directly send the FIN. Because it may take so a long time,
+		 * untile the work-queue will get scheduled...
+		 */
+		tcp_shutdown(sk, SEND_SHUTDOWN);
+	}
+
 	sock_hold(sk);
 	schedule_delayed_work(work, delay);
 }
