@@ -505,7 +505,7 @@ static void mptcp_combine_dfin(struct sk_buff *skb, struct mptcp_cb *mpcb,
 {
 	struct sock *sk_it, *meta_sk = mpcb_meta_sk(mpcb);
 	struct tcp_sock *meta_tp = mpcb_meta_tp(mpcb);
-	int all_empty = 1, all_acked = 1;
+	int all_empty = 1, all_acked;
 
 	/* Don't combine, if they didn't combine - otherwise we end up in
 	 * TIME_WAIT, even if our app is smart enough to avoid it */
@@ -514,17 +514,16 @@ static void mptcp_combine_dfin(struct sk_buff *skb, struct mptcp_cb *mpcb,
 			return;
 	}
 
-	/* If no other subflow still has data to send, we can combine */
+	/* If no other subflow has data to send, we can combine */
 	mptcp_for_each_sk(mpcb, sk_it) {
 		if (!tcp_write_queue_empty(sk_it))
 			all_empty = 0;
 	}
 
-	/* If all data has been DATA_ACKed, we can combine
+	/* If all data has been DATA_ACKed, we can combine.
 	 * -1, because the data_fin consumed one byte
 	 */
-	if (meta_tp->snd_una != meta_tp->write_seq - 1)
-		all_acked = 0;
+	all_acked = (meta_tp->snd_una == (meta_tp->write_seq - 1));
 
 	if ((all_empty || all_acked) && tcp_close_state(subsk))
 		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_FIN;
