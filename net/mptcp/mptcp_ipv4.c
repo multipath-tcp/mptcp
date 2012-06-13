@@ -489,15 +489,11 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 	if (event == NETDEV_UP && netif_running(ifa->ifa_dev->dev)) {
 		i = __mptcp_find_free_index(mpcb->loc4_bits, 0, mpcb->next_v4_index);
 		if (i < 0) {
-			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP Reached max "
-					"number of local IPv4 addresses: %d\n",
-					MPTCP_MAX_ADDR);
+			mptcp_debug("MPTCP_PM: NETDEV_UP Reached max "
+				    "number of local IPv4 addresses: %d\n",
+				    MPTCP_MAX_ADDR);
 			return;
 		}
-
-		printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP adding "
-			"address %pI4 to existing connection with mpcb: %#x\n",
-			&ifa->ifa_local, mpcb->mptcp_loc_token);
 
 		/* update this mpcb */
 		mpcb->addr4[i].addr.s_addr = ifa->ifa_local;
@@ -520,9 +516,6 @@ found:
 			continue;
 
 		if (event == NETDEV_DOWN) {
-			printk(KERN_DEBUG "MPTCP_PM: NETDEV_DOWN %pI4, "
-					"pi %d, loc_id %u\n", &ifa->ifa_local,
-					tp->mptcp->path_index, inet_sk(sk)->loc_id);
 			mptcp_retransmit_queue(sk);
 
 			mptcp_sub_force_close(sk);
