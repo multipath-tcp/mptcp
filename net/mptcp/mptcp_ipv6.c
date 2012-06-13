@@ -240,17 +240,23 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	struct request_sock **prev, *req;
 	struct sock *child;
 
+	/* Socket is in the process of destruction - we don't accept
+	 * new subflows */
+	if (sock_flag(meta_sk, SOCK_DEAD) || meta_sk->sk_state == TCP_CLOSE)
+		goto reset_and_discard;
+
 	req = inet6_csk_search_req(meta_sk, &prev, th->source,
 			&iph->saddr, &iph->daddr, inet6_iif(skb));
 
 	if (!req) {
 		if (th->syn) {
 			struct mp_join *join_opt = mptcp_find_join(skb);
-
+			/* Currently we make two calls to mptcp_find_join(). This
+			 * can probably be optimized. */
 			if (mptcp_v6_add_raddress(&mpcb->rx_opt,
 					(struct in6_addr *)&iph->saddr, 0,
 					join_opt->addr_id) < 0)
-				goto discard;
+				goto reset_and_discard;
 			if (mpcb->rx_opt.list_rcvd)
 				mpcb->rx_opt.list_rcvd = 0;
 
@@ -266,17 +272,19 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	if (child != meta_sk) {
 		tcp_child_process(meta_sk, child, skb);
 	} else {
-		req->rsk_ops->send_reset(NULL, skb);
-		goto discard;
+		goto reset_and_discard;
 	}
 	return 0;
 
+reset_and_discard:
+	tcp_v6_send_reset(NULL, skb);
 discard:
 	kfree_skb(skb);
 	return 0;
 }
 
-/*inspired from inet_csk_search_req
+/**
+ * Inspired from inet_csk_search_req
  * After this, the kref count of the mpcb associated with the request_sock
  * is incremented. Thus it is the responsibility of the caller
  * to call mpcb_put() when the reference is not needed anymore.

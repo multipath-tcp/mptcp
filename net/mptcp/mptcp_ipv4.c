@@ -242,7 +242,7 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	/* Socket is in the process of destruction - we don't accept
 	 * new subflows */
 	if (sock_flag(meta_sk, SOCK_DEAD) || meta_sk->sk_state == TCP_CLOSE)
-		goto discard;
+		goto reset_and_discard;
 
 	req = inet_csk_search_req(meta_sk, &prev, th->source,
 				  iph->saddr, iph->daddr);
@@ -255,7 +255,7 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 			if (mptcp_v4_add_raddress(&mpcb->rx_opt,
 					(struct in_addr *)&iph->saddr, 0,
 					join_opt->addr_id) < 0)
-				goto discard;
+				goto reset_and_discard;
 			if (mpcb->rx_opt.list_rcvd)
 				mpcb->rx_opt.list_rcvd = 0;
 
@@ -271,11 +271,12 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	if (child != meta_sk) {
 		tcp_child_process(meta_sk, child, skb);
 	} else {
-		req->rsk_ops->send_reset(NULL, skb);
-		goto discard;
+		goto reset_and_discard;
 	}
 	return 0;
 
+reset_and_discard:
+	tcp_v4_send_reset(NULL, skb);
 discard:
 	kfree_skb(skb);
 	return 0;
