@@ -4459,7 +4459,7 @@ static void tcp_ofo_queue(struct sock *sk)
 
 		if (tp->mpc) {
 			eaten = mptcp_queue_skb(sk, skb);
-			if (eaten < 0)
+			if (eaten == -1)
 				return;
 		} else {
 			__skb_queue_tail(&sk->sk_receive_queue, skb);
@@ -4562,7 +4562,7 @@ queue_and_out:
 			if (tp->mpc) {
 				eaten = mptcp_queue_skb(sk, skb);
 				/* Subflow is being destroyed */
-				if (eaten < 0)
+				if (eaten == -1)
 					return;
 			} else {
 				skb_set_owner_r(skb, sk);
@@ -4597,6 +4597,13 @@ queue_and_out:
 			__kfree_skb(skb);
 		else if (!sock_flag(sk, SOCK_DEAD) && !tp->mpc)
 			sk->sk_data_ready(sk, 0);
+
+		if (tp->mpc && eaten == -2) {
+			struct sock *meta_sk = mptcp_meta_sk(sk);
+			if (!sock_flag(meta_sk, SOCK_DEAD))
+				meta_sk->sk_data_ready(meta_sk, 0);
+		}
+
 		return;
 	}
 

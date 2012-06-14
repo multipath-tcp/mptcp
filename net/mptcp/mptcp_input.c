@@ -382,9 +382,10 @@ static int mptcp_skb_split_tail(struct sk_buff *skb, struct sock *sk, u32 seq)
 
 /**
  * @return:
- *  i) 1: the segment can be destroyed by the caller
- *  ii) -1: A reset has been sent on the subflow
- *  iii) 0: The segment has been enqueued.
+ *  i) -2: the caller should wakeup the application
+ *  ii) 1: the segment can be destroyed by the caller
+ *  iii) -1: A reset has been sent on the subflow
+ *  iiii) 0: The segment has been enqueued.
  */
 int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 {
@@ -814,10 +815,10 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 						__kfree_skb(tmp1);
 					else
 						ans = 1;
+				} else {
+					ans = -2;
 				}
 			}
-			if (!sock_flag(meta_sk, SOCK_DEAD))
-				sk->sk_data_ready(sk, 0);
 		}
 
 rcvd_fin:
