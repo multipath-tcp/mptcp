@@ -867,7 +867,7 @@ static inline void mptcp_set_rto(struct sock *sk)
 			max_rto = inet_csk(sk_it)->icsk_rto;
 	}
 	if (max_rto)
-		inet_csk(mpcb_meta_sk(tp->mpcb))->icsk_rto = max_rto * 2;
+		inet_csk(mpcb_meta_sk(tp->mpcb))->icsk_rto = max_rto << 1;
 }
 
 /* Maybe we could merge this with tcp_rearm_rto().
