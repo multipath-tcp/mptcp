@@ -400,7 +400,7 @@ int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
 
 void mptcp_ofo_queue(struct mptcp_cb *mpcb)
 {
-	struct sock *meta_sk = (struct sock *)mpcb;
+	struct sock *meta_sk = mpcb_meta_sk(mpcb);
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct sk_buff *skb;
 	struct mptcp_node *n;

@@ -52,8 +52,7 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk)
 
 	while ((skb = tcp_write_queue_head(meta_sk)) &&
 	       skb != tcp_send_head(meta_sk)) {
-		struct tcp_skb_cb *scb = TCP_SKB_CB(skb);
-		if (before(meta_tp->snd_una, scb->end_seq))
+		if (before(meta_tp->snd_una, TCP_SKB_CB(skb)->end_seq))
 			break;
 
 		tcp_unlink_write_queue(skb, meta_sk);
@@ -83,11 +82,8 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk)
 	}
 	/* Remove acknowledged data from the reinject queue */
 	skb_queue_walk_safe(&mpcb->reinject_queue, skb, tmp) {
-		struct tcp_skb_cb *scb = TCP_SKB_CB(skb);
-		if (before(meta_tp->snd_una, scb->end_seq))
-			/* continue, because the reinject-queue is not
-			 * necessarily ordered */
-			continue;
+		if (before(meta_tp->snd_una, TCP_SKB_CB(skb)->end_seq))
+			break;
 
 		skb_unlink(skb, &mpcb->reinject_queue);
 		kfree_skb(skb);
@@ -566,9 +562,10 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 					    __func__, tp->mptcp->path_index,
 					    mpcb->mptcp_loc_token);
 				mptcp_debug("%s seq %u end_seq %u, sub_seq %u "
-					    "data_len %u\n", __func__,
+					    "data_len %u dseq %u\n", __func__,
 					    sub_seq, sub_end_seq,
-					    tcb->sub_seq, tcb->mp_data_len);
+					    tcb->sub_seq, tcb->mp_data_len,
+					    tcb->seq);
 				mptcp_send_reset(sk, skb);
 				return 1;
 			}

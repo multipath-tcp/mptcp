@@ -629,16 +629,6 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		struct sk_buff *subskb = NULL;
 		int err;
 
-		if (reinject > 0 && !after(TCP_SKB_CB(skb)->end_seq,
-				       meta_tp->snd_una)) {
-			/* another copy of the segment already reached
-			 * the peer, just discard this one
-			 */
-			skb_unlink(skb, &mpcb->reinject_queue);
-			kfree_skb(skb);
-			continue;
-		}
-
 		/* This must be invoked even if we don't want
 		 * to support TSO at the moment
 		 */
