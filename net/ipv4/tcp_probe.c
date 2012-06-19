@@ -30,6 +30,7 @@
 #include <net/net_namespace.h>
 
 #include <net/tcp.h>
+#include <net/mptcp.h>
 
 MODULE_AUTHOR("Stephen Hemminger <shemminger@linux-foundation.org>");
 MODULE_DESCRIPTION("TCP cwnd snooper");
@@ -102,13 +103,13 @@ static int jtcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	const struct inet_sock *inet = inet_sk(sk);
 
 #ifdef CONFIG_MPTCP
-	if (log_interval) {
-		if (!tp->last_rcv_probe)
-			tp->last_rcv_probe = jiffies;
-		else if (jiffies - tp->last_rcv_probe <
+	if (log_interval && tp->mptcp) {
+		if (!tp->mptcp->last_rcv_probe)
+			tp->mptcp->last_rcv_probe = jiffies;
+		else if (jiffies - tp->mptcp->last_rcv_probe <
 			 log_interval * HZ / 1000)
 			goto out;
-		tp->last_rcv_probe = jiffies;
+		tp->mptcp->last_rcv_probe = jiffies;
 	}
 #endif
 
@@ -161,13 +162,13 @@ static int jtcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	const struct inet_sock *inet = inet_sk(sk);
 
 #ifdef CONFIG_MPTCP
-	if (log_interval) {
-		if (!tp->last_rcv_probe)
-			tp->last_rcv_probe = jiffies;
-		else if (jiffies - tp->last_rcv_probe <
+	if (log_interval && tp->mptcp) {
+		if (!tp->mptcp->last_rcv_probe)
+			tp->mptcp->last_rcv_probe = jiffies;
+		else if (jiffies - tp->mptcp->last_rcv_probe <
 			 log_interval * HZ / 1000)
 			goto out;
-		tp->last_rcv_probe = jiffies;
+		tp->mptcp->last_rcv_probe = jiffies;
 	}
 #endif
 
