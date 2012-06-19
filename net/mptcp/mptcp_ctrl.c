@@ -630,6 +630,12 @@ void mptcp_del_sock(struct sock *sk)
 		}
 	}
 
+	if (tp->mptcp->shortcut_ofoqueue) {
+		struct sk_buff *skb = tp->mptcp->shortcut_ofoqueue;
+		skb->shortcut_owner = NULL;
+		tp->mptcp->shortcut_ofoqueue = NULL;
+	}
+
 	tp->mptcp->next = NULL;
 	tp->mptcp->attached = 0;
 	mpcb->path_index_bits &= ~(1 << tp->mptcp->path_index);
