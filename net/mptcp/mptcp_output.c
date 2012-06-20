@@ -126,7 +126,7 @@ static struct sock *get_available_subflow(struct mptcp_cb *mpcb,
 			backupsk = sk;
 	}
 
-	if (mpcb->cnt_subflows == cnt_backups && lowpriosk)
+	if (mpcb->cnt_established == cnt_backups && lowpriosk)
 		return lowpriosk;
 	if (bestsk)
 		return bestsk;

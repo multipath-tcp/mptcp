@@ -5097,7 +5097,7 @@ static int tcp_should_expand_sndbuf(const struct sock *sk)
 		}
 
 		/* Backup-flow is available for sending - update send-buffer */
-		if (cnt_backups == tp->mpcb->cnt_subflows && backup_available)
+		if (cnt_backups == tp->mpcb->cnt_established && backup_available)
 			return 1;
 		return 0;
 	}
