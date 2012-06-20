@@ -2200,7 +2200,8 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 	    && TCP_SKB_CB(skb)->seq != tp->snd_una)
 		return -EAGAIN;
 
-	if (skb->len > cur_mss) {
+	/* We cannot use skb->len here, MPTCP modified it in mptcp_skb_entail. */
+	if (TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq - tcp_hdr(skb)->fin > cur_mss) {
 		if (tcp_fragment(sk, skb, cur_mss, cur_mss))
 			return -ENOMEM; /* We'll try again later. */
 	} else {
@@ -2956,9 +2957,12 @@ int tcp_write_wakeup(struct sock *sk)
 		/* We are probing the opening of a window
 		 * but the window size is != 0
 		 * must have been a result SWS avoidance ( sender )
+		 *
+		 * For the second condition, we cannot use skb-len, because
+		 * MPTCP modified it in mptcp_skb_entail.
 		 */
 		if (seg_size < TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq ||
-		    skb->len > mss) {
+		    TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq - tcp_hdr(skb)->fin > mss) {
 			seg_size = min(seg_size, mss);
 			TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_PSH;
 			if (tcp_fragment(sk, skb, seg_size, mss))

@@ -138,9 +138,7 @@ static struct mp_dss *mptcp_skb_find_dss(const struct sk_buff *skb)
 	if (!(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ))
 		return NULL;
 
-	return (struct mp_dss *)(skb->data - (MPTCP_SUB_LEN_DSS_ALIGN +
-			      	      	      MPTCP_SUB_LEN_ACK_ALIGN +
-			      	      	      MPTCP_SUB_LEN_SEQ_ALIGN));
+	return (struct mp_dss *)skb->data;
 }
 
 /* Reinject data from one TCP subflow to the meta_sk. If sk == NULL, we are
@@ -200,6 +198,10 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 		p32++;
 		p16 = (u16 *)p32;
 		TCP_SKB_CB(skb)->end_seq = ntohs(*p16) + TCP_SKB_CB(skb)->seq;
+
+		skb_pull(skb, MPTCP_SUB_LEN_DSS_ALIGN +
+			      MPTCP_SUB_LEN_ACK_ALIGN +
+			      MPTCP_SUB_LEN_SEQ_ALIGN);
 	}
 
 	skb->sk = meta_sk;
@@ -480,12 +482,12 @@ static void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 	int fin = (tcb->tcp_flags & TCPHDR_FIN) ? 1 : 0;
+	unsigned int old_len = skb->len;
 
 	/**** Write MPTCP DSS-option to the packet. ****/
-
-	ptr = (__be32 *)(skb->data - (MPTCP_SUB_LEN_DSS_ALIGN +
-				      MPTCP_SUB_LEN_ACK_ALIGN +
-				      MPTCP_SUB_LEN_SEQ_ALIGN));
+	ptr = (__be32 *) skb_push(skb, MPTCP_SUB_LEN_DSS_ALIGN +
+				       MPTCP_SUB_LEN_ACK_ALIGN +
+				       MPTCP_SUB_LEN_SEQ_ALIGN);
 
 	/* Then we start writing it from the start */
 	mdss = (struct mp_dss *) ptr;
@@ -544,7 +546,7 @@ static void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb)
 			  * of this subflow, we are sending a brand new
 			  * segment */
 	/* Take into account seg len */
-	tp->write_seq += skb->len + fin;
+	tp->write_seq += old_len + fin;
 	tcb->end_seq = tp->write_seq;
 
 	/* If it's a non-payload DATA_FIN (also no subflow-fin), the
@@ -1089,6 +1091,10 @@ unsigned mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 			*size += MPTCP_SUB_LEN_ACK_ALIGN;
 		} else {
 			opts->data_ack = mpcb_meta_tp(mpcb)->rcv_nxt;
+
+			skb_pull(skb, MPTCP_SUB_LEN_DSS_ALIGN +
+			      MPTCP_SUB_LEN_ACK_ALIGN +
+			      MPTCP_SUB_LEN_SEQ_ALIGN);
 
 			/* Doesn't matter, if csum included or not. It will be
 			 * either 10 or 12, and thus aligned = 12 */
