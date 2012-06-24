@@ -785,6 +785,33 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 	}
 }
 
+static int mptcp_sub_send_fin(struct sock *sk)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct sk_buff *skb = tcp_write_queue_tail(sk);
+	int mss_now = mptcp_sysctl_mss();
+
+	if (tcp_send_head(sk) != NULL) {
+		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_FIN;
+		TCP_SKB_CB(skb)->end_seq++;
+		tp->write_seq++;
+	} else {
+		skb = alloc_skb_fclone(MAX_TCP_HEADER, GFP_ATOMIC);
+		if (!skb)
+			return 1;
+
+		/* Reserve space for headers and prepare control bits. */
+		skb_reserve(skb, MAX_TCP_HEADER);
+		/* FIN eats a sequence byte, write_seq advanced by tcp_queue_skb(). */
+		tcp_init_nondata_skb(skb, tp->write_seq,
+				     TCPHDR_ACK | TCPHDR_FIN);
+		tcp_queue_skb(sk, skb);
+	}
+	__tcp_push_pending_frames(sk, mss_now, TCP_NAGLE_OFF);
+
+	return 0;
+}
+
 void mptcp_sub_close_wq(struct work_struct *work)
 {
 	struct mptcp_tcp_sock *mptcp = container_of(work, struct mptcp_tcp_sock, work.work);
@@ -826,10 +853,17 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 	}
 
 	if (!delay) {
+		unsigned char old_state = sk->sk_state;
+
 		/* We directly send the FIN. Because it may take so a long time,
 		 * untile the work-queue will get scheduled...
+		 *
+		 * If mptcp_sub_send_fin returns 1, it failed and thus we reset
+		 * the old state so that tcp_close will finally send the fin
+		 * in user-context.
 		 */
-		tcp_shutdown(sk, SEND_SHUTDOWN);
+		if (tcp_close_state(sk) && mptcp_sub_send_fin(sk))
+			sk->sk_state = old_state;
 	}
 
 	sock_hold(sk);

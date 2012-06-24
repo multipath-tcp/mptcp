@@ -2422,19 +2422,14 @@ void tcp_send_fin(struct sock *sk)
 		TCP_SKB_CB(skb)->end_seq++;
 		tp->write_seq++;
 	} else {
-		/* Socket is locked, keep trying until memory is available.
-		 * Due to the possible call from tcp_write_xmit, we might
-		 * be called from interrupt context, hence the following cond.
-		 */
-		if (!in_interrupt())
-			for (;;) {
-				skb = alloc_skb_fclone(MAX_TCP_HEADER,
-						       sk->sk_allocation);
-				if (skb)
-					break;
-				yield();
-		} else
-			skb = alloc_skb_fclone(MAX_TCP_HEADER, GFP_ATOMIC);
+		/* Socket is locked, keep trying until memory is available. */
+		for (;;) {
+			skb = alloc_skb_fclone(MAX_TCP_HEADER,
+					       sk->sk_allocation);
+			if (skb)
+				break;
+			yield();
+		}
 
 		/* Reserve space for headers and prepare control bits. */
 		skb_reserve(skb, MAX_TCP_HEADER);
