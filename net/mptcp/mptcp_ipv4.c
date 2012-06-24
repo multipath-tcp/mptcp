@@ -360,7 +360,6 @@ void mptcp_init4_subsockets(struct mptcp_cb *mpcb,
 
 	sk = sock.sk;
 
-	inet_sk(sk)->loc_id = loc->id;
 	inet_sk(sk)->rem_id = rem->id;
 
 	tp = tcp_sk(sk);

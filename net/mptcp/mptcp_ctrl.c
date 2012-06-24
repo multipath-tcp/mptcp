@@ -1425,7 +1425,6 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	child_tp->mpc = 1;
 	mpcb = child_tp->mpcb;
 
-	inet_sk(child)->loc_id = 0;
 	inet_sk(child)->rem_id = 0;
 
 	if (mptcp_add_sock(mpcb, child_tp, GFP_ATOMIC)) {
@@ -1498,7 +1497,6 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	child_tp->rx_opt.low_prio = req->low_prio;
 	child->sk_sndmsg_page = NULL;
 
-	inet_sk(child)->loc_id = mptcp_get_loc_addrid(mpcb, child);
 	inet_sk(child)->rem_id = req->rem_id;
 
 	/* Point it to the same struct socket and wq as the meta_sk */
