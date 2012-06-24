@@ -389,6 +389,177 @@ static int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	return 0;
 }
 
+/* Code inspired from sk_clone() */
+void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
+		      const gfp_t flags)
+{
+	struct sk_filter *filter;
+#ifdef CONFIG_SECURITY_NETWORK
+	void *sptr = newsk->sk_security;
+#endif
+
+	/* We cannot call sock_copy here, because obj_size may be the size
+	 * of tcp6_sock if the app is loading an ipv6 socket. */
+	if ((is_meta_sk(sk) && family == AF_INET6) ||
+	    (sk->sk_family == AF_INET6 && family == AF_INET6)) {
+		memcpy(newsk, sk, offsetof(struct sock, sk_dontcopy_begin));
+		memcpy(&newsk->sk_dontcopy_end, &sk->sk_dontcopy_end,
+			sizeof(struct tcp6_sock) - offsetof(struct sock, sk_dontcopy_end));
+	} else {
+		memcpy(newsk, sk, offsetof(struct sock, sk_dontcopy_begin));
+		memcpy(&newsk->sk_dontcopy_end, &sk->sk_dontcopy_end,
+			sizeof(struct tcp_sock) - offsetof(struct sock, sk_dontcopy_end));
+	}
+
+#ifdef CONFIG_SECURITY_NETWORK
+	if (!is_meta_sk(sk))
+		security_sk_alloc(newsk, family, flags);
+	else
+		newsk->sk_security = sptr;
+	security_sk_clone(sk, newsk);
+#endif
+
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+	if (is_meta_sk(sk) && sk->sk_family != family) {
+		newsk->sk_family = family;
+		newsk->sk_prot = newsk->sk_prot_creator =
+			tcp_sk(sk)->mpcb->sk_prot_alt;
+	}
+#endif
+
+	/* SANITY */
+	get_net(sock_net(newsk));
+	sk_node_init(&newsk->sk_node);
+	sock_lock_init(newsk);
+	/* either it's a creation of a new subflow,
+	 * or we are on the client-side (syn-sent state).
+	 *
+	 * If we are on the client-side we lock the meta-sk to prevent
+	 * simultaneous access to the meta-sk due to tcp_data_snd_check
+	 */
+	if (is_meta_sk(sk) || sk->sk_state == TCP_SYN_SENT)
+		bh_lock_sock(newsk);
+
+	newsk->sk_backlog.head	= newsk->sk_backlog.tail = NULL;
+	newsk->sk_backlog.len = 0;
+
+	atomic_set(&newsk->sk_rmem_alloc, 0);
+	/*
+	 * sk_wmem_alloc set to one (see sk_free() and sock_wfree())
+	 */
+	atomic_set(&newsk->sk_wmem_alloc, 1);
+	atomic_set(&newsk->sk_omem_alloc, 0);
+	skb_queue_head_init(&newsk->sk_receive_queue);
+	skb_queue_head_init(&newsk->sk_write_queue);
+#ifdef CONFIG_NET_DMA
+	skb_queue_head_init(&newsk->sk_async_wait_queue);
+#endif
+
+	spin_lock_init(&newsk->sk_dst_lock);
+	rwlock_init(&newsk->sk_callback_lock);
+	lockdep_set_class_and_name(&newsk->sk_callback_lock,
+				   af_callback_keys + newsk->sk_family,
+				   af_family_clock_key_strings[
+					   newsk->sk_family]);
+	newsk->sk_dst_cache	= NULL;
+	newsk->sk_wmem_queued	= 0;
+	newsk->sk_forward_alloc = 0;
+	newsk->sk_send_head	= NULL;
+	newsk->sk_userlocks	= sk->sk_userlocks & ~SOCK_BINDPORT_LOCK;
+
+	sock_reset_flag(newsk, SOCK_DONE);
+	skb_queue_head_init(&newsk->sk_error_queue);
+
+	filter = rcu_dereference_protected(newsk->sk_filter, 1);
+	if (filter != NULL)
+		sk_filter_charge(newsk, filter);
+
+	newsk->sk_err	   = 0;
+	newsk->sk_priority = 0;
+	/*
+	 * Before updating sk_refcnt, we must commit prior changes to memory
+	 * (Documentation/RCU/rculist_nulls.txt for details)
+	 */
+	smp_wmb();
+	atomic_set(&newsk->sk_refcnt, 2);
+
+	/*
+	 * Increment the counter in the same struct proto as the master
+	 * sock (sk_refcnt_debug_inc uses newsk->sk_prot->socks, that
+	 * is the same as sk->sk_prot->socks, as this field was copied
+	 * with memcpy).
+	 *
+	 * This _changes_ the previous behaviour, where
+	 * tcp_create_openreq_child always was incrementing the
+	 * equivalent to tcp_prot->socks (inet_sock_nr), so this have
+	 * to be taken into account in all callers. -acme
+	 */
+	sk_refcnt_debug_inc(newsk);
+
+	if (!is_meta_sk(sk)) {
+		/* MPTCP: make the meta sk point to the same struct socket
+		 * as the master subsocket. Same for sk_wq */
+		sk_set_socket(newsk, sk->sk_socket);
+		newsk->sk_wq = sk->sk_wq;
+
+		__inet_inherit_port(sk, newsk);
+
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+		if (sk->sk_family == AF_INET) {
+			struct ipv6_pinfo *newnp;
+
+			/* Master is IPv4. Initialize pinet6 for the meta sk. */
+			inet_sk(newsk)->pinet6 = newnp =
+					&((struct tcp6_sock *)newsk)->inet6;
+
+			newnp->hop_limit	= -1;
+			newnp->mcast_hops	= IPV6_DEFAULT_MCASTHOPS;
+			newnp->mc_loop	= 1;
+			newnp->pmtudisc	= IPV6_PMTUDISC_WANT;
+			newnp->ipv6only	= sock_net(newsk)->ipv6.sysctl.bindv6only;
+		} else if (inet_csk(sk)->icsk_af_ops == &ipv6_mapped) {
+			struct ipv6_pinfo *newnp, *np = inet6_sk(sk);
+			struct inet_connection_sock *icsk = inet_csk(newsk);
+
+			icsk->icsk_af_ops = &ipv6_specific;
+			newsk->sk_backlog_rcv = tcp_v6_do_rcv;
+
+			inet_sk(newsk)->pinet6 = &((struct tcp6_sock *)newsk)->inet6;
+
+			newnp = inet6_sk(newsk);
+			memcpy(newnp, np, sizeof(struct ipv6_pinfo));
+
+			newnp->ipv6_mc_list = NULL;
+			newnp->ipv6_ac_list = NULL;
+			newnp->ipv6_fl_list = NULL;
+			newnp->opt = NULL;
+			newnp->pktoptions = NULL;
+			newnp->rxpmtu = NULL;
+#ifdef CONFIG_TCP_MD5SIG
+			tcp_sk(newsk)->af_specific = &tcp_sock_ipv6_specific;
+#endif
+		}
+#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
+	} else {
+		/* Sub sk */
+		sk_set_socket(newsk, NULL);
+		newsk->sk_wq = NULL;
+
+		if (sock_flag(newsk, SOCK_TIMESTAMP) ||
+			sock_flag(newsk, SOCK_TIMESTAMPING_RX_SOFTWARE))
+			net_enable_timestamp();
+
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+		if (newsk->sk_family == AF_INET6)
+			inet_sk(newsk)->pinet6 =
+					&((struct tcp6_sock *)newsk)->inet6;
+#endif /* CONFIG_IPV6 || CONFIG_IPV6_MODULE */
+	}
+
+	if (newsk->sk_prot->sockets_allocated)
+		percpu_counter_inc(newsk->sk_prot->sockets_allocated);
+}
+
 int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key)
 {
 	struct mptcp_cb *mpcb;
@@ -500,6 +671,21 @@ int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key)
 		    __func__, mpcb->mptcp_loc_token);
 
 	return 0;
+}
+
+struct sock *mptcp_sk_clone(struct sock *sk, int family, const gfp_t priority)
+{
+	struct sock *newsk;
+	struct mptcp_cb *mpcb = (struct mptcp_cb *) sk;
+
+	newsk = sk_prot_alloc(mpcb->sk_prot_alt, priority, family);
+
+	if (newsk != NULL) {
+		mptcp_inherit_sk(sk, newsk, family, priority);
+		inet_csk(newsk)->icsk_af_ops = mpcb->icsk_af_ops_alt;
+	}
+
+	return newsk;
 }
 
 void mptcp_release_mpcb(struct mptcp_cb *mpcb)

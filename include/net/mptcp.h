@@ -1064,21 +1064,7 @@ static inline u8 mptcp_set_new_pathindex(struct mptcp_cb *mpcb)
 }
 
 #if (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))
-static inline struct sock *mptcp_sk_clone(struct sock *sk, int family,
-					  const gfp_t priority)
-{
-	struct sock *newsk;
-	struct mptcp_cb *mpcb = (struct mptcp_cb *) sk;
-
-	newsk = sk_prot_alloc(mpcb->sk_prot_alt, priority, family);
-
-	if (newsk != NULL) {
-		mptcp_inherit_sk(sk, newsk, family, priority);
-		inet_csk(newsk)->icsk_af_ops = mpcb->icsk_af_ops_alt;
-	}
-
-	return newsk;
-}
+struct sock *mptcp_sk_clone(struct sock *sk, int family, const gfp_t priority);
 
 static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
 {
