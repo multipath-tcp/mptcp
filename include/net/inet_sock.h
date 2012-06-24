@@ -154,10 +154,6 @@ struct inet_sock {
 	__be16			inet_sport;
 	__u16			inet_id;
 
-#ifdef CONFIG_MPTCP
-	__u8			rem_id;
-#endif /* CONFIG_MPTCP */
-
 	struct ip_options_rcu __rcu	*inet_opt;
 	__u8			tos;
 	__u8			min_ttl;

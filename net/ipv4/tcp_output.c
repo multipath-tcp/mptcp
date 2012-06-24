@@ -95,17 +95,6 @@ static inline __u32 tcp_acceptable_seq(const struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 
-	/* We do not call tcp_wnd_end(..,1) here,
-	 * because even when MPTCP is used,
-	 * we exceptionnaly want here to consider the send window as related to
-	 * the seqnums, not the dataseqs. The reason is that we have no dataseq
-	 * nums in non-data segments (this function is only called for the
-	 * construction of non-data segments, e.g. acks), and the dataseq is now
-	 * the only field that can be checked by the receiver. The seqnum we
-	 * choose here ensure that we are accepted as well by middleboxes
-	 * that are not aware of MPTCP stuff.
-	 */
-
 	if (!before(tcp_wnd_end(tp), tp->snd_nxt))
 		return tp->snd_nxt;
 	else

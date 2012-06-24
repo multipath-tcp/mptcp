@@ -364,16 +364,13 @@ void mptcp_init6_subsockets(struct mptcp_cb *mpcb,
 	}
 
 	sk = sock.sk;
-
-	inet_sk(sk)->rem_id = rem->id;
-
-	tp = tcp_sk(sk);
-
 	sk->sk_error_report = mptcp_sock_def_error_report;
 
+	tp = tcp_sk(sk);
 	if (mptcp_add_sock(mpcb, tp, GFP_KERNEL))
 		goto error;
 
+	tp->mptcp->rem_id = rem->id;
 	tp->mptcp->path_index = newpi;
 	tp->mpc = 1;
 	tp->mptcp->slave_sk = 1;

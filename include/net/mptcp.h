@@ -64,6 +64,7 @@ static inline int before64(const u64 seq1, const u64 seq2)
 
 struct mptcp_tcp_sock {
 	struct tcp_sock *tp; /* Where is my daddy? */
+	__u8	rem_id;
 
 	 /* Those three fields record the current mapping */
 	u64	map_data_seq;

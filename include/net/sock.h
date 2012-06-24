@@ -730,7 +730,6 @@ extern void sock_def_error_report(struct sock *sk);
 extern struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
 				  int family);
 
-
 struct request_sock_ops;
 struct timewait_sock_ops;
 struct inet_hashinfo;

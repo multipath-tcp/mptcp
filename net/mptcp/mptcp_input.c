@@ -1098,7 +1098,7 @@ static void mptcp_send_reset_rem_id(const struct mptcp_cb *mpcb, u8 rem_id)
 	struct sock *sk_it, *sk_tmp;
 
 	mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp) {
-		if (inet_sk(sk_it)->rem_id == rem_id) {
+		if (tcp_sk(sk_it)->mptcp->rem_id == rem_id) {
 			mptcp_reinject_data(sk_it, 0);
 			tcp_send_active_reset(sk_it, GFP_ATOMIC);
 			mptcp_sub_force_close(sk_it);
@@ -1303,7 +1303,7 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			struct sock *sk;
 			/* change priority of all subflow using this addr_id */
 			mptcp_for_each_sk(mopt->mpcb, sk) {
-				if (inet_sk(sk)->rem_id == mpprio->addr_id)
+				if (tcp_sk(sk)->mptcp->rem_id == mpprio->addr_id)
 					tcp_sk(sk)->rx_opt.low_prio = mpprio->b;
 			}
 		} else {

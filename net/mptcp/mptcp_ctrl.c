@@ -1425,8 +1425,6 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	child_tp->mpc = 1;
 	mpcb = child_tp->mpcb;
 
-	inet_sk(child)->rem_id = 0;
-
 	if (mptcp_add_sock(mpcb, child_tp, GFP_ATOMIC)) {
 		mptcp_destroy_mpcb(mpcb);
 		sock_orphan(child);
@@ -1434,6 +1432,7 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 		return -ENOBUFS;
 	}
 
+	child_tp->mptcp->rem_id = 0;
 	child_tp->mptcp->slave_sk = 0;
 	child_tp->mptcp->path_index = 1;
 	child_tp->mptcp->snt_isn = tcp_rsk(req)->snt_isn;
@@ -1497,8 +1496,6 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	child_tp->rx_opt.low_prio = req->low_prio;
 	child->sk_sndmsg_page = NULL;
 
-	inet_sk(child)->rem_id = req->rem_id;
-
 	/* Point it to the same struct socket and wq as the meta_sk */
 	sk_set_socket(child, mpcb_meta_sk(mpcb)->sk_socket);
 	child->sk_wq = mpcb_meta_sk(mpcb)->sk_wq;
@@ -1506,6 +1503,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	if (mptcp_add_sock(mpcb, child_tp, GFP_ATOMIC))
 		goto teardown;
 
+	child_tp->mptcp->rem_id = req->rem_id;
 	child_tp->mptcp->path_index = mptcp_set_new_pathindex(mpcb);
 	/* No more space for more subflows? */
 	if (!child_tp->mptcp->path_index) {
