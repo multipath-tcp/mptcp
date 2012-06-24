@@ -136,7 +136,7 @@ static void mptcp_recalc_alpha(struct sock *sk)
 		if (likely(sub_tp->srtt))
 			rtt = sub_tp->srtt;
 		else
-			mptcp_debug("%s: estimated rtt == 0, mpcb_token"
+			printk(KERN_ERR"%s: estimated rtt == 0, mpcb_token"
 				   ":%d, pi:%d, sub_sk->state:%d\n",
 				   __func__, mpcb->mptcp_loc_token,
 				   sub_tp->mptcp->path_index, sub_sk->sk_state);
@@ -171,7 +171,7 @@ static void mptcp_recalc_alpha(struct sock *sk)
 		if (likely(sub_tp->srtt))
 			rtt = sub_tp->srtt;
 		else
-			mptcp_debug("%s: estimated rtt == 0, mpcb_token"
+			printk(KERN_ERR"%s: estimated rtt == 0, mpcb_token"
 				   ":%d, pi:%d, sub_sk->state:%d\n",
 				   __func__, mpcb->mptcp_loc_token,
 				   sub_tp->mptcp->path_index, sub_sk->sk_state);
@@ -183,11 +183,11 @@ static void mptcp_recalc_alpha(struct sock *sk)
 	}
 	sum_denominator *= sum_denominator;
 	if (unlikely(!sum_denominator)) {
-		mptcp_debug("%s: sum_denominator == 0, cnt_established:%d\n",
+		printk(KERN_ERR"%s: sum_denominator == 0, cnt_established:%d\n",
 				__func__, mpcb->cnt_established);
 		mptcp_for_each_sk(mpcb, sub_sk) {
 			struct tcp_sock *sub_tp = tcp_sk(sub_sk);
-			mptcp_debug("%s: pi:%d, state:%d\n, rtt:%u, cwnd: %u",
+			printk(KERN_ERR"%s: pi:%d, state:%d\n, rtt:%u, cwnd: %u",
 					__func__, sub_tp->mptcp->path_index,
 					sub_sk->sk_state, sub_tp->srtt,
 					sub_tp->snd_cwnd);
