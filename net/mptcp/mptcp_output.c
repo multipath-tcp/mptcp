@@ -206,6 +206,13 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 
 	skb->sk = meta_sk;
 
+	/* If it reached already the destination, we don't have to reinject it */
+	if (!after(TCP_SKB_CB(skb)->end_seq, meta_tp->snd_una)) {
+		if (clone_it)
+			__kfree_skb(skb);
+		return -1;
+	}
+
 	/* If it's empty, just add */
 	if (skb_queue_empty(&mpcb->reinject_queue)) {
 		skb_queue_head(&mpcb->reinject_queue, skb);
@@ -630,6 +637,12 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		struct tcp_sock *subtp;
 		struct sk_buff *subskb = NULL;
 		int err;
+
+		if (reinject == 1 && !after(TCP_SKB_CB(skb)->end_seq, meta_tp->snd_una)) {
+			/* Segment already reached the peer, take the next one */
+			skb_unlink(skb, &mpcb->reinject_queue);
+			__kfree_skb(skb);
+		}
 
 		/* This must be invoked even if we don't want
 		 * to support TSO at the moment
