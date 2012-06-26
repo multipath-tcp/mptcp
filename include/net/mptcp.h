@@ -1064,7 +1064,7 @@ static inline u8 mptcp_set_new_pathindex(struct mptcp_cb *mpcb)
 	return 0;
 }
 
-#if (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE))
+#if IS_ENABLED(CONFIG_IPV6)
 struct sock *mptcp_sk_clone(struct sock *sk, int family, const gfp_t priority);
 
 static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
@@ -1073,7 +1073,7 @@ static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
 		ipv6_addr_type(&inet6_sk(sk)->saddr) == IPV6_ADDR_MAPPED;
 }
 
-#else /* (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)) */
+#else
 
 static inline struct sock *mptcp_sk_clone(const struct sock *sk, int family,
 					  const gfp_t priority)
@@ -1086,7 +1086,7 @@ static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
 	return 0;
 }
 
-#endif /* (defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)) */
+#endif
 
 #else /* CONFIG_MPTCP */
 
