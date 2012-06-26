@@ -395,18 +395,17 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	u32 sub_seq = tcb->seq;
 	int ans = 0;
 
-	if (meta_sk->sk_state == TCP_CLOSE) {
-		tp->rcv_nxt = sub_end_seq;
-		return 1;
-	}
-
-	if (!skb->len && tcp_hdr(skb)->fin && !mptcp_is_data_fin(skb)) {
-		/* Pure subflow FIN (without DFIN)
-		 * just update subflow and return
+	/* Already closed, or a pure subflow FIN ? */
+	if (meta_sk->sk_state == TCP_CLOSE ||
+	    (!skb->len && tcp_hdr(skb)->fin && !mptcp_is_data_fin(skb))) {
+		/* We have to queue it, so that later handling of the socket
+		 * is done correctly (e.g., inet_csk_destroy_sock from tcp_fin)
 		 */
+		__skb_queue_tail(&sk->sk_receive_queue, skb);
+		skb_set_owner_r(skb, sk);
 		tp->copied_seq++;
 		tp->rcv_nxt = sub_end_seq;
-		return 1;
+		return 0;
 	}
 
 	/* Record it, because we want to send our data_fin on the same path */
