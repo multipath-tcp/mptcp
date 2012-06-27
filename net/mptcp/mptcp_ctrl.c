@@ -753,8 +753,7 @@ int mptcp_add_sock(struct mptcp_cb *mpcb, struct tcp_sock *tp, gfp_t flags)
 	if (sk->sk_state == TCP_ESTABLISHED) {
 		mpcb->cnt_established++;
 		mptcp_update_sndbuf(mpcb);
-		if ((1 << meta_sk->sk_state) &
-		    (TCPF_SYN_SENT | TCPF_SYN_RECV))
+		if ((1 << meta_sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV))
 			meta_sk->sk_state = TCP_ESTABLISHED;
 	}
 
