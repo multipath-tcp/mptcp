@@ -2190,7 +2190,7 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 		return -EAGAIN;
 
 	/* We cannot use skb->len here, MPTCP modified it in mptcp_skb_entail. */
-	if (TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq - tcp_hdr(skb)->fin > cur_mss) {
+	if (TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq - (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN ? 1 : 0) > cur_mss) {
 		if (tcp_fragment(sk, skb, cur_mss, cur_mss))
 			return -ENOMEM; /* We'll try again later. */
 	} else {
@@ -2946,7 +2946,7 @@ int tcp_write_wakeup(struct sock *sk)
 		 * MPTCP modified it in mptcp_skb_entail.
 		 */
 		if (seg_size < TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq ||
-		    TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq - tcp_hdr(skb)->fin > mss) {
+		    TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq - (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN ? 1 : 0) > mss) {
 			seg_size = min(seg_size, mss);
 			TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_PSH;
 			if (tcp_fragment(sk, skb, seg_size, mss))
