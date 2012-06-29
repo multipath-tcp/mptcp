@@ -568,7 +568,7 @@ int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key)
 	struct inet_connection_sock *meta_icsk;
 	u64 idsn;
 
-	mpcb = kmem_cache_alloc(mpcb_cache, GFP_ATOMIC);
+	mpcb = kmem_cache_zalloc(mpcb_cache, GFP_ATOMIC);
 	/* Memory allocation failed. Stopping here. */
 	if (!mpcb)
 		return -ENOBUFS;
@@ -576,8 +576,6 @@ int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key)
 	meta_sk = mpcb_meta_sk(mpcb);
 	meta_tp = mpcb_meta_tp(mpcb);
 	meta_icsk = inet_csk(meta_sk);
-
-	memset(mpcb, 0, sizeof(struct mptcp_cb));
 
 	/* meta_sk inherits master sk */
 #if IS_ENABLED(CONFIG_IPV6)
