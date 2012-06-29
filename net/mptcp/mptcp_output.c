@@ -559,8 +559,7 @@ static void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb)
 	/* If it's a non-payload DATA_FIN (also no subflow-fin), the
 	 * segment is not part of the subflow but on a meta-only-level
 	 */
-	if (!mptcp_is_data_fin(skb) ||
-	    (TCP_SKB_CB(skb)->end_seq != TCP_SKB_CB(skb)->seq)) {
+	if (!mptcp_is_data_fin(skb) || tcb->end_seq != tcb->seq) {
 		tcp_add_write_queue_tail(sk, skb);
 		sk->sk_wmem_queued += skb->truesize;
 		sk_mem_charge(sk, skb->truesize);
