@@ -1121,14 +1121,14 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 	mptcp_debug("%s: Close of meta_sk with tok %#x\n", __func__,
 			mpcb->mptcp_loc_token);
 
+	mutex_lock(&mpcb->mutex);
+
+	lock_sock(meta_sk);
+
 	mptcp_for_each_sk(mpcb, sk_it) {
 		if (!is_master_tp(tcp_sk(sk_it)))
 			sock_rps_reset_flow(sk_it);
 	}
-
-	mutex_lock(&mpcb->mutex);
-
-	lock_sock(meta_sk);
 
 	/* Detach the mpcb from the token hashtable */
 	mptcp_hash_remove(mpcb);
