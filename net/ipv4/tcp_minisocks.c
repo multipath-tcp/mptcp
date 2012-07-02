@@ -868,7 +868,8 @@ int tcp_child_process(struct sock *parent, struct sock *child,
 		ret = tcp_rcv_state_process(child, skb, tcp_hdr(skb),
 					    skb->len);
 		/* Wakeup parent, send SIGIO */
-		if (state == TCP_SYN_RECV && child->sk_state != state)
+		if (state == TCP_SYN_RECV && child->sk_state != state &&
+		    !tcp_sk(parent)->mpc)
 			parent->sk_data_ready(parent, 0);
 	} else {
 		/* Alas, it is possible again, because we do lookup
