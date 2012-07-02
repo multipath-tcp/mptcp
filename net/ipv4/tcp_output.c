@@ -835,10 +835,27 @@ int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	tp = tcp_sk(sk);
 
 	if (likely(clone_it)) {
-		if (unlikely((!tp->mpc && skb_cloned(skb)) || mptcp_skb_cloned(skb, tp)))
-			skb = pskb_copy(skb, gfp_mask);
-		else
+		if (unlikely((!tp->mpc && skb_cloned(skb)) || mptcp_skb_cloned(skb, tp))) {
+			struct sk_buff *newskb;
+			if (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ)
+				skb_push(skb, MPTCP_SUB_LEN_DSS_ALIGN +
+					      MPTCP_SUB_LEN_ACK_ALIGN +
+					      MPTCP_SUB_LEN_SEQ_ALIGN);
+
+			newskb = pskb_copy(skb, gfp_mask);
+
+			if (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ) {
+				skb_pull(skb, MPTCP_SUB_LEN_DSS_ALIGN +
+					      MPTCP_SUB_LEN_ACK_ALIGN +
+					      MPTCP_SUB_LEN_SEQ_ALIGN);
+				skb_pull(newskb, MPTCP_SUB_LEN_DSS_ALIGN +
+					      MPTCP_SUB_LEN_ACK_ALIGN +
+					      MPTCP_SUB_LEN_SEQ_ALIGN);
+			}
+			skb = newskb;
+		} else {
 			skb = skb_clone(skb, gfp_mask);
+		}
 		if (unlikely(!skb))
 			return -ENOBUFS;
 	}
@@ -2189,8 +2206,7 @@ int tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 	    && TCP_SKB_CB(skb)->seq != tp->snd_una)
 		return -EAGAIN;
 
-	/* We cannot use skb->len here, MPTCP modified it in mptcp_skb_entail. */
-	if (TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq - (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN ? 1 : 0) > cur_mss) {
+	if (skb->len > cur_mss) {
 		if (tcp_fragment(sk, skb, cur_mss, cur_mss))
 			return -ENOMEM; /* We'll try again later. */
 	} else {
@@ -2941,12 +2957,9 @@ int tcp_write_wakeup(struct sock *sk)
 		/* We are probing the opening of a window
 		 * but the window size is != 0
 		 * must have been a result SWS avoidance ( sender )
-		 *
-		 * For the second condition, we cannot use skb-len, because
-		 * MPTCP modified it in mptcp_skb_entail.
 		 */
 		if (seg_size < TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq ||
-		    TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq - (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN ? 1 : 0) > mss) {
+		    skb->len > mss) {
 			seg_size = min(seg_size, mss);
 			TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_PSH;
 			if (tcp_fragment(sk, skb, seg_size, mss))
