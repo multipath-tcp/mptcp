@@ -402,7 +402,7 @@ int mptcp_lookup_join(struct sk_buff *skb)
 	/* OK, this is a new syn/join, let's create a new open request and
 	 * send syn+ack
 	 */
-	bh_lock_sock(meta_sk);
+	bh_lock_sock_nested(meta_sk);
 	if (sock_owned_by_user(meta_sk)) {
 		skb->sk = meta_sk;
 		if (unlikely(sk_add_backlog(meta_sk, skb))) {
