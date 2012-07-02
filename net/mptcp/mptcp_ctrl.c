@@ -1051,7 +1051,7 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 	}
 
 	sock_hold(sk);
-	schedule_delayed_work(work, delay);
+	queue_delayed_work(mptcp_wq, work, delay);
 }
 
 /**
@@ -1529,6 +1529,8 @@ teardown:
 	return meta_sk;
 }
 
+struct workqueue_struct *mptcp_wq;
+
 /* General initialization of mptcp */
 static int __init mptcp_init(void)
 {
@@ -1541,6 +1543,11 @@ static int __init mptcp_init(void)
 					     sizeof(struct mptcp_tcp_sock),
 					     0, SLAB_HWCACHE_ALIGN|SLAB_PANIC,
 					     NULL);
+
+	mptcp_wq = alloc_workqueue("mptcp_wq", WQ_UNBOUND | WQ_MEM_RECLAIM, 8);
+	if (!mptcp_wq)
+		return -ENOMEM;
+
 	mptcp_ofo_queue_init();
 	return 0;
 }

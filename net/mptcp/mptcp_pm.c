@@ -520,7 +520,7 @@ void mptcp_send_updatenotif(struct mptcp_cb *mpcb)
 
 	if (!work_pending(&mpcb->work)) {
 		sock_hold(mpcb_meta_sk(mpcb));
-		schedule_work(&mpcb->work);
+		queue_work(mptcp_wq, &mpcb->work);
 	}
 }
 
