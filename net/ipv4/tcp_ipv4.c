@@ -1821,6 +1821,7 @@ process:
 		bh_lock_sock_nested(meta_sk);
 		skb->sk = sk;
 	} else {
+		meta_sk = sk;
 		bh_lock_sock_nested(sk);
 
 		/* Socket became mp-capable while waiting for the lock */
@@ -1834,17 +1835,7 @@ process:
 	}
 
 	ret = 0;
-
-	if (meta_sk) {
-		if (!sock_owned_by_user(meta_sk)) {
-			if (!tcp_prequeue(sk, skb))
-				ret = tcp_v4_do_rcv(sk, skb);
-		} else if (unlikely(sk_add_backlog(meta_sk, skb))) {
-			bh_unlock_sock(meta_sk);
-			NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
-			goto discard_and_relse;
-		}
-	} else if (!sock_owned_by_user(sk)) {
+	if (!sock_owned_by_user(meta_sk)) {
 #ifdef CONFIG_NET_DMA
 		struct tcp_sock *tp = tcp_sk(sk);
 		if (!tp->ucopy.dma_chan && tp->ucopy.pinned_list)
@@ -1857,16 +1848,13 @@ process:
 			if (!tcp_prequeue(sk, skb))
 				ret = tcp_v4_do_rcv(sk, skb);
 		}
-	} else if (unlikely(sk_add_backlog(sk, skb))) {
-		bh_unlock_sock(sk);
+	} else if (unlikely(sk_add_backlog(meta_sk, skb))) {
+		bh_unlock_sock(meta_sk);
 		NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
 		goto discard_and_relse;
 	}
 
-	if (meta_sk)
-		bh_unlock_sock(meta_sk);
-	else
-		bh_unlock_sock(sk);
+	bh_unlock_sock(meta_sk);
 
 	sock_put(sk);
 

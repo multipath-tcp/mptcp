@@ -1004,7 +1004,7 @@ void mptcp_sub_close_wq(struct work_struct *work)
 	struct sock *meta_sk = mptcp_meta_sk(sk);
 
 	mutex_lock(&tp->mpcb->mutex);
-	lock_sock(meta_sk);
+	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
 
 	if (sock_flag(sk, SOCK_DEAD))
 		goto exit;
