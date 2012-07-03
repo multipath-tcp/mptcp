@@ -1943,14 +1943,16 @@ do_time_wait:
 
 			ret = mptcp_lookup_join(skb);
 			if (ret) {
+				/* As we come from do_time_wait, we are sure that
+				 * sk exists.
+				 */
+				inet_twsk_deschedule(inet_twsk(sk), &tcp_death_row);
+				inet_twsk_put(inet_twsk(sk));
+
 				if (ret < 0) {
 					tcp_v6_send_reset(NULL, skb);
-					if (sk)
-						sock_put(sk);
 					goto discard_it;
 				} else {
-					if (sk)
-						sock_put(sk);
 					return 0;
 				}
 			}
