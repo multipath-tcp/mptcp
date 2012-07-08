@@ -1195,7 +1195,15 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 		struct mp_dss *mdss = (struct mp_dss *) ptr;
 		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 
-		if (opsize != mptcp_sub_len_dss(mdss, mopt->dss_csum)) {
+		/* We check opsize for the csum and non-csum case. We do this,
+		 * because the draft says that the csum SHOULD be ignored if
+		 * it has not been negotiated in the MP_CAPABLE but still is
+		 * present in the data.
+		 *
+		 * It will get ignored later in mptcp_queue_skb.
+		 */
+		if (opsize != mptcp_sub_len_dss(mdss, 0) &&
+		    opsize != mptcp_sub_len_dss(mdss, 1)) {
 			mptcp_debug("%s: mp_dss: bad option size %d\n",
 					__func__, opsize);
 			break;
