@@ -642,13 +642,26 @@ ssize_t tcp_splice_read(struct socket *sock, loff_t *ppos,
 			release_sock(sk);
 			return err;
 		}
-
-		if (tcp_sk(sk)->mpc && !is_meta_sk(sk)) {
-			release_sock(sk);
-			mptcp_update_pointers(&sk, NULL, NULL);
-			lock_sock(sk);
-		}
 	}
+
+	/* This may happen, if the socket became MP_CAPABLE, while waiting for
+	 * the lock or while waiting in sk_stream_wait_connect.
+	 */
+	if (tcp_sk(sk)->mptcp && !is_meta_sk(sk)) {
+		struct sock *sk_it;
+
+		release_sock(sk);
+		mptcp_update_pointers(&sk, NULL, NULL);
+
+	        mptcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it) {
+			if (!is_master_tp(tcp_sk(sk_it)))
+	                        sock_rps_record_flow(sk_it);
+	        }
+
+		lock_sock(sk);
+	}
+
+
 #endif
 
 	timeo = sock_rcvtimeo(sk, sock->file->f_flags & O_NONBLOCK);
@@ -961,23 +974,25 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	timeo = sock_sndtimeo(sk, flags & MSG_DONTWAIT);
 
 	/* Wait for a connection to finish. */
-	if ((1 << sk->sk_state) & ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT)) {
+	if ((1 << sk->sk_state) & ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT))
 		if ((err = sk_stream_wait_connect(sk, &timeo)) != 0)
 			goto out_err;
 
-		if (tp->mptcp && !is_meta_sk(sk)) {
-			struct sock *sk_it;
+	/* This may happen, if the socket became MP_CAPABLE, while waiting for
+	 * the lock or while waiting in sk_stream_wait_connect.
+	 */
+	if (tp->mptcp && !is_meta_sk(sk)) {
+		struct sock *sk_it;
 
-			release_sock(sk);
-			mptcp_update_pointers(&sk, &tp, NULL);
+		release_sock(sk);
+		mptcp_update_pointers(&sk, &tp, NULL);
 
-		        mptcp_for_each_sk(tp->mpcb, sk_it) {
-				if (!is_master_tp(tcp_sk(sk_it)))
-		                        sock_rps_record_flow(sk_it);
-		        }
+	        mptcp_for_each_sk(tp->mpcb, sk_it) {
+			if (!is_master_tp(tcp_sk(sk_it)))
+	                        sock_rps_record_flow(sk_it);
+	        }
 
-			lock_sock(sk);
-		}
+		lock_sock(sk);
 	}
 
 	/* This should be in poll */
@@ -1583,17 +1598,28 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 #ifdef CONFIG_MPTCP
 	/* Wait for the mptcp connection to establish. */
 	if (tp->request_mptcp && !is_meta_sk(sk) &&
-	    ((1 << sk->sk_state) & ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT))) {
-		if ((err = sk_stream_wait_connect(sk, &timeo)) != 0) {
+	    ((1 << sk->sk_state) & ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT)))
+		if ((err = sk_stream_wait_connect(sk, &timeo)) != 0)
 			goto out;
-		}
 
-		if (tp->mptcp && !is_meta_sk(sk)) {
-			release_sock(sk);
-			mptcp_update_pointers(&sk, &tp, &mpcb);
-			lock_sock(sk);
-		}
+	/* This may happen, if the socket became MP_CAPABLE, while waiting for
+	 * the lock or while waiting in sk_stream_wait_connect.
+	 */
+	if (tp->mptcp && !is_meta_sk(sk)) {
+		struct sock *sk_it;
+
+		release_sock(sk);
+		mptcp_update_pointers(&sk, &tp, NULL);
+
+	        mptcp_for_each_sk(tp->mpcb, sk_it) {
+			if (!is_master_tp(tcp_sk(sk_it)))
+	                        sock_rps_record_flow(sk_it);
+	        }
+
+		lock_sock(sk);
 	}
+
+
 #endif
 
 	/* Urgent data needs to be handled specially. */
