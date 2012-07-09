@@ -739,19 +739,22 @@ extern u32 __tcp_select_window(struct sock *sk);
  */
 struct tcp_skb_cb {
 	union {
-		struct inet_skb_parm	h4;
+		union {
+			struct inet_skb_parm	h4;
 #if defined(CONFIG_IPV6) || defined (CONFIG_IPV6_MODULE)
-		struct inet6_skb_parm	h6;
+			struct inet6_skb_parm	h6;
 #endif
-	} header;	/* For incoming frames		*/
+		} header;	/* For incoming frames		*/
+#ifdef CONFIG_MPTCP
+		__u32 path_mask; /* path indices that tried to send this skb */
+#endif
+	};
 	__u32		seq;		/* Starting sequence number	*/
 	__u32		end_seq;	/* SEQ + FIN + SYN + datalen	*/
 	__u32		when;		/* used to compute rtt's	*/
 #ifdef CONFIG_MPTCP
 #define sub_seq		ack_seq
 #define	mp_data_len	when
-	__u32		path_mask; /* Mask of the path indices that have tried
-				    * to send this skb */
 	__u8		mptcp_flags;	/* flags for the MPTCP layer    */
 	__u8		dss_off;	/* Number of 4-byte words until
 					 * seq-number */
