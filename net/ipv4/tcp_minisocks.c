@@ -876,7 +876,9 @@ int tcp_child_process(struct sock *parent, struct sock *child,
 		 * in main socket hash table and lock on listening
 		 * socket does not protect us more.
 		 */
-		__sk_add_backlog(child, skb);
+		if (tcp_sk(child)->mpc)
+			skb->sk = child;
+		__sk_add_backlog(meta_sk, skb);
 	}
 
 	bh_unlock_sock(child);
