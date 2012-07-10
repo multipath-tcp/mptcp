@@ -2446,18 +2446,6 @@ void proto_unregister(struct proto *prot)
 }
 EXPORT_SYMBOL(proto_unregister);
 
-void sk_wake_async(struct sock *sk, int how, int band)
-{
-	if (sk->sk_type == SOCK_STREAM && sk->sk_protocol == IPPROTO_TCP &&
-	    tcp_sk(sk)->mpc) {
-		sk = mptcp_meta_sk(sk);
-	}
-
-	if (sock_flag(sk, SOCK_FASYNC))
-		sock_wake_async(sk->sk_socket, how, band);
-}
-EXPORT_SYMBOL(sk_wake_async);
-
 #ifdef CONFIG_PROC_FS
 static void *proto_seq_start(struct seq_file *seq, loff_t *pos)
 	__acquires(proto_list_lock)
