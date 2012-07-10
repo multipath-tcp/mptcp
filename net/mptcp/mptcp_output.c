@@ -1442,6 +1442,7 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 			continue;
 		}
 
+		sk_it->sk_err = ECONNRESET;
 		tcp_send_active_reset(sk_it, GFP_ATOMIC);
 		mptcp_sub_force_close(sk_it);
 	}
