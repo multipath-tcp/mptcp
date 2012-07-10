@@ -208,10 +208,10 @@ struct sock *mptcp_select_ack_sock(const struct mptcp_cb *mpcb, int copied)
 void mptcp_sock_def_error_report(struct sock *sk)
 {
 	if (!is_meta_sk(sk)) {
-		sk->sk_err = 0;
-
 		if (!sock_flag(sk, SOCK_DEAD))
 			mptcp_sub_close(sk, 0);
+
+		sk->sk_err = 0;
 		return;
 	}
 
@@ -1055,7 +1055,7 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 		 * the old state so that tcp_close will finally send the fin
 		 * in user-context.
 		 */
-		if (tcp_close_state(sk) && mptcp_sub_send_fin(sk))
+		if (!sk->sk_err && tcp_close_state(sk) && mptcp_sub_send_fin(sk))
 			sk->sk_state = old_state;
 	}
 
