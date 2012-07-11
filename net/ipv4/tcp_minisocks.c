@@ -788,7 +788,20 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 
 	/* While TCP_DEFER_ACCEPT is active, drop bare ACK. */
 	if (req->retrans < inet_csk(sk)->icsk_accept_queue.rskq_defer_accept &&
-	    TCP_SKB_CB(skb)->end_seq == tcp_rsk(req)->rcv_isn + 1) {
+	    TCP_SKB_CB(skb)->end_seq == tcp_rsk(req)->rcv_isn + 1 &&
+	    /* TODO MPTCP:
+	     * We do this here, because otherwise options sent in the third ack,
+	     * or duplicate fourth ack will get lost. Options like MP_PRIO, ADD_ADDR,...
+	     *
+	     * We could store them in request_sock, but this would mean that we
+	     * have to put tcp_options_received and multipath_options in there,
+	     * increasing considerably the size of the request-sock.
+	     *
+	     * As soon as we have reworked the request-sock MPTCP-fields and
+	     * created a mptcp_request_sock structure, we can handle options
+	     * correclty there without increasing request_sock.
+	     */
+	    !req->saw_mpc) {
 		inet_rsk(req)->acked = 1;
 		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPDEFERACCEPTDROP);
 		return NULL;
