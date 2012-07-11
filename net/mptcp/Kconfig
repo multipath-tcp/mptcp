@@ -3,7 +3,7 @@
 #
 config MPTCP
         bool "MPTCP protocol (EXPERIMENTAL)"
-        depends on EXPERIMENTAL && !SYN_COOKIES && !NET_DMA && !TCP_MD5SIG
+        depends on EXPERIMENTAL && !SYN_COOKIES && !NET_DMA && !TCP_MD5SIG && (IPV6=y || IPV6=n)
         ---help---
           This replaces the normal TCP stack with a Multipath TCP stack,
           able to use several paths at once.
