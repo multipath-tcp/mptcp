@@ -42,6 +42,23 @@
 
 #define AF_INET6_FAMILY(fam) ((fam) == AF_INET6)
 
+static void mptcp_v6_reqsk_destructor(struct request_sock *req)
+{
+	mptcp_reqsk_destructor(req);
+
+	kfree_skb(inet6_rsk(req)->pktopts);
+}
+
+struct request_sock_ops mptcp6_request_sock_ops __read_mostly = {
+	.family		=	AF_INET6,
+	.obj_size	=	sizeof(struct mptcp6_request_sock),
+	.rtx_syn_ack	=	tcp_v6_rtx_synack,
+	.send_ack	=	tcp_v6_reqsk_send_ack,
+	.destructor	=	mptcp_v6_reqsk_destructor,
+	.send_reset	=	tcp_v6_send_reset,
+	.syn_ack_timeout =	tcp_syn_ack_timeout,
+};
+
 static void mptcp_v6_reqsk_queue_hash_add(struct request_sock *req,
 				      unsigned long timeout)
 {

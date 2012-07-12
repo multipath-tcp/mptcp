@@ -48,6 +48,23 @@
 #define AF_INET_FAMILY(fam) 1
 #endif
 
+static void mptcp_v4_reqsk_destructor(struct request_sock *req)
+{
+	mptcp_reqsk_destructor(req);
+
+	kfree(inet_rsk(req)->opt);
+}
+
+struct request_sock_ops mptcp_request_sock_ops __read_mostly = {
+	.family		=	PF_INET,
+	.obj_size	=	sizeof(struct mptcp_request_sock),
+	.rtx_syn_ack	=	tcp_v4_rtx_synack,
+	.send_ack	=	tcp_v4_reqsk_send_ack,
+	.destructor	=	mptcp_v4_reqsk_destructor,
+	.send_reset	=	tcp_v4_send_reset,
+	.syn_ack_timeout =	tcp_syn_ack_timeout,
+};
+
 static void mptcp_v4_reqsk_queue_hash_add(struct request_sock *req,
 					  unsigned long timeout)
 {

@@ -342,6 +342,14 @@ struct multipath_options;
 
 extern void tcp_v4_err(struct sk_buff *skb, u32);
 
+extern int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req,
+			     struct request_values *rvp);
+extern int tcp_v6_rtx_synack(struct sock *sk, struct request_sock *req,
+			     struct request_values *rvp);
+extern void tcp_v4_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
+				  struct request_sock *req);
+extern void tcp_v6_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
+				  struct request_sock *req);
 extern __u32 tcp_v4_init_sequence(const struct sk_buff *skb);
 extern __u32 tcp_v6_init_sequence(const struct sk_buff *skb);
 

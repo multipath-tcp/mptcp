@@ -806,8 +806,8 @@ static void tcp_v4_timewait_ack(struct sock *sk, struct sk_buff *skb)
 	inet_twsk_put(tw);
 }
 
-static void tcp_v4_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
-				  struct request_sock *req)
+void tcp_v4_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
+			   struct request_sock *req)
 {
 	tcp_v4_send_ack(skb, tcp_rsk(req)->snt_isn + 1,
 			tcp_rsk(req)->rcv_isn + 1, 0, req->rcv_wnd,
@@ -850,8 +850,8 @@ int tcp_v4_send_synack(struct sock *sk, struct dst_entry *dst,
 	return err;
 }
 
-static int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req,
-			      struct request_values *rvp)
+int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req,
+		      struct request_values *rvp)
 {
 	TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_RETRANSSEGS);
 
@@ -863,9 +863,6 @@ static int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req,
  */
 static void tcp_v4_reqsk_destructor(struct request_sock *req)
 {
-	if (mptcp_req_sk_saw_mpc(req))
-		mptcp_reqsk_destructor(req);
-
 	kfree(inet_rsk(req)->opt);
 }
 
@@ -1296,16 +1293,6 @@ struct request_sock_ops tcp_request_sock_ops __read_mostly = {
 	.destructor	=	tcp_v4_reqsk_destructor,
 	.send_reset	=	tcp_v4_send_reset,
 	.syn_ack_timeout = 	tcp_syn_ack_timeout,
-};
-
-struct request_sock_ops mptcp_request_sock_ops __read_mostly = {
-	.family		=	PF_INET,
-	.obj_size	=	sizeof(struct mptcp_request_sock),
-	.rtx_syn_ack	=	tcp_v4_rtx_synack,
-	.send_ack	=	tcp_v4_reqsk_send_ack,
-	.destructor	=	tcp_v4_reqsk_destructor,
-	.send_reset	=	tcp_v4_send_reset,
-	.syn_ack_timeout =	tcp_syn_ack_timeout,
 };
 
 #ifdef CONFIG_TCP_MD5SIG
