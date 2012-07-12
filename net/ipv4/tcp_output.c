@@ -1929,6 +1929,21 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 	tcp_write_xmit(sk, mss_now, TCP_NAGLE_PUSH, 1, sk->sk_allocation);
 }
 
+void tcp_push_pending_frames(struct sock *sk)
+{
+	struct sk_buff *skb;
+
+	if (tcp_sk(sk)->mpc)
+		skb = mptcp_next_segment(mptcp_meta_sk(sk), NULL);
+	else
+		skb = tcp_send_head(sk);
+	if (skb) {
+		struct tcp_sock *tp = tcp_sk(sk);
+
+		__tcp_push_pending_frames(sk, tcp_current_mss(sk), tp->nonagle);
+	}
+}
+
 /* This function returns the amount that we can raise the
  * usable window based on the following constraints
  *

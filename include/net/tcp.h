@@ -476,6 +476,7 @@ extern int tcp_disconnect(struct sock *sk, int flags);
 
 extern void tcp_push(struct sock *sk, int flags, int mss_now,
 			    int nonagle);
+extern void tcp_push_pending_frames(struct sock *sk);
 
 /* From syncookies.c */
 extern __u32 syncookie_secret[2][16-4+SHA_DIGEST_WORDS];
@@ -1431,15 +1432,6 @@ static inline void tcp_unlink_write_queue(struct sk_buff *skb, struct sock *sk)
 static inline int tcp_write_queue_empty(struct sock *sk)
 {
 	return skb_queue_empty(&sk->sk_write_queue);
-}
-
-static inline void tcp_push_pending_frames(struct sock *sk)
-{
-	if (tcp_send_head(sk)) {
-		struct tcp_sock *tp = tcp_sk(sk);
-
-		__tcp_push_pending_frames(sk, tcp_current_mss(sk), tp->nonagle);
-	}
 }
 
 /* Start sequence of the highest skb with SACKed bit, valid only if
