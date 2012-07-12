@@ -307,6 +307,14 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 			tp->mptcp->reinjected_seq = tcb->end_seq;
 	}
 
+	skb_it = tcp_write_queue_tail(meta_sk);
+	/* If sk has sent the empty data-fin, we have to reinject it too. */
+	if (skb_it && TCP_SKB_CB(skb_it)->mptcp_flags & MPTCPHDR_FIN &&
+	    skb_it->len == 0 &&
+	    TCP_SKB_CB(skb_it)->path_mask & mptcp_pi_to_flag(tp->mptcp->path_index)) {
+		__mptcp_reinject_data(skb_it, meta_sk, NULL, 1);
+	}
+
 	tcp_push(meta_sk, 0, mptcp_sysctl_mss(), TCP_NAGLE_PUSH);
 
 	tp->pf = 1;

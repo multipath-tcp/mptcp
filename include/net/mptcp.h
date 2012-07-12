@@ -119,7 +119,6 @@ struct mptcp_tcp_sock {
 struct multipath_options {
 	struct mptcp_cb *mpcb;
 	u8	list_rcvd:1, /* 1 if IP list has been received */
-		dfin_rcvd:1,
 		mp_fail:1,
 		mp_fclose:1,
 		dss_csum:1;
@@ -180,8 +179,8 @@ struct mptcp_cb {
 
 	u16 remove_addrs;
 
-	/* Worker struct for update-notification */
 	u8 dfin_path_index;
+	/* Worker struct for update-notification */
 	struct work_struct work;
 	struct mutex mutex;
 
