@@ -537,9 +537,6 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 			newnp->opt = NULL;
 			newnp->pktoptions = NULL;
 			newnp->rxpmtu = NULL;
-#ifdef CONFIG_TCP_MD5SIG
-			tcp_sk(newsk)->af_specific = &tcp_sock_ipv6_specific;
-#endif
 		}
 #endif /* CONFIG_IPV6 */
 	} else {

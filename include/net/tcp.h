@@ -328,11 +328,6 @@ static inline int tcp_synq_no_recent_overflow(const struct sock *sk)
 }
 
 extern struct proto tcp_prot;
-extern const struct inet_connection_sock_af_ops ipv4_specific;
-extern const struct inet_connection_sock_af_ops ipv6_specific;
-extern const struct inet_connection_sock_af_ops ipv6_mapped;
-
-struct multipath_options;
 
 #define TCP_INC_STATS(net, field)	SNMP_INC_STATS((net)->mib.tcp_statistics, field)
 #define TCP_INC_STATS_BH(net, field)	SNMP_INC_STATS_BH((net)->mib.tcp_statistics, field)
@@ -340,41 +335,89 @@ struct multipath_options;
 #define TCP_ADD_STATS_USER(net, field, val) SNMP_ADD_STATS_USER((net)->mib.tcp_statistics, field, val)
 #define TCP_ADD_STATS(net, field, val)	SNMP_ADD_STATS((net)->mib.tcp_statistics, field, val)
 
-extern void tcp_v4_err(struct sk_buff *skb, u32);
+/**** START - Exports needed for MPTCP ****/
+extern const struct inet_connection_sock_af_ops ipv4_specific;
+extern const struct inet_connection_sock_af_ops ipv6_specific;
+extern const struct inet_connection_sock_af_ops ipv6_mapped;
+
+struct multipath_options;
+
+extern int tcp_close_state(struct sock *sk);
+extern void tcp_push(struct sock *sk, int flags, int mss_now,
+			    int nonagle);
+extern int tcp_xmit_probe_skb(struct sock *sk, int urgent);
+extern void tcp_cwnd_validate(struct sock *sk);
+extern void tcp_event_new_data_sent(struct sock *sk, const struct sk_buff *skb);
+extern int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
+			    gfp_t gfp_mask);
+extern int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
+			unsigned int mss_now, gfp_t gfp);
+extern unsigned int tcp_mss_split_point(const struct sock *sk, const struct sk_buff *skb,
+					unsigned int mss_now, unsigned int cwnd);
+extern int tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb);
+extern int tcp_nagle_test(const struct tcp_sock *tp, const struct sk_buff *skb,
+			  unsigned int cur_mss, int nonagle);
+extern int tcp_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
+			    unsigned int cur_mss);
+extern unsigned int tcp_cwnd_test(const struct tcp_sock *tp, const struct sk_buff *skb);
+extern int tcp_mtu_probe(struct sock *sk);
+extern int tcp_init_tso_segs(const struct sock *sk, struct sk_buff *skb,
+			     unsigned int mss_now);
+extern void __pskb_trim_head(struct sk_buff *skb, int len);
+extern void tcp_queue_skb(struct sock *sk, struct sk_buff *skb);
+extern void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags);
+extern void tcp_reset(struct sock *sk);
+
+/* Check that window update is acceptable.
+ * The function assumes that snd_una<=ack<=snd_next.
+ */
+static inline int tcp_may_update_window(const struct tcp_sock *tp,
+					const u32 ack, const u32 ack_seq,
+					const u32 nwin)
+{
+	return	after(ack, tp->snd_una) ||
+		after(ack_seq, tp->snd_wl1) ||
+		(ack_seq == tp->snd_wl1 && nwin > tp->snd_wnd);
+}
+
+static inline int tcp_urg_mode(const struct tcp_sock *tp)
+{
+	return tp->snd_una != tp->snd_up;
+}
 
 extern int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req,
 			     struct request_values *rvp);
-extern int tcp_v6_rtx_synack(struct sock *sk, struct request_sock *req,
-			     struct request_values *rvp);
 extern void tcp_v4_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 				  struct request_sock *req);
-extern void tcp_v6_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
-				  struct request_sock *req);
 extern __u32 tcp_v4_init_sequence(const struct sk_buff *skb);
-extern __u32 tcp_v6_init_sequence(const struct sk_buff *skb);
-
 extern int tcp_v4_send_synack(struct sock *sk, struct dst_entry *dst,
 			      struct request_sock *req,
 			      struct request_values *rvp);
+extern void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb);
+extern struct ip_options_rcu *tcp_v4_save_options(struct sock *sk,
+						  struct sk_buff *skb);
+
+extern int tcp_v6_rtx_synack(struct sock *sk, struct request_sock *req,
+			     struct request_values *rvp);
+extern void tcp_v6_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
+				  struct request_sock *req);
+extern __u32 tcp_v6_init_sequence(const struct sk_buff *skb);
 extern int tcp_v6_send_synack(struct sock *sk, struct request_sock *req,
 			      struct request_values *rvp);
+extern void tcp_v6_send_reset(struct sock *sk, struct sk_buff *skb);
+extern int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
+
+/**** END - Exports needed for MPTCP ****/
+
+extern void tcp_v4_err(struct sk_buff *skb, u32);
 
 extern void tcp_shutdown (struct sock *sk, int how);
-extern int tcp_close_state(struct sock *sk);
-
-extern void __tcp_v4_send_check(struct sk_buff *skb,
-				__be32 saddr, __be32 daddr);
-extern void __tcp_v6_send_check(struct sk_buff *skb,
-				const struct in6_addr *saddr,
-				const struct in6_addr *daddr);
 
 extern int tcp_v4_rcv(struct sk_buff *skb);
 
 extern struct inet_peer *tcp_v4_get_peer(struct sock *sk, bool *release_it);
 extern void *tcp_v4_tw_get_peer(struct sock *sk);
 extern int tcp_v4_tw_remember_stamp(struct inet_timewait_sock *tw);
-extern void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb);
-extern void tcp_v6_send_reset(struct sock *sk, struct sk_buff *skb);
 extern int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		       size_t size);
 extern int tcp_sendpage(struct sock *sk, struct page *page, int offset,
@@ -473,7 +516,6 @@ extern struct sock * tcp_v4_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 					  struct request_sock *req,
 					  struct dst_entry *dst);
 extern int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb);
-extern int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
 extern int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr,
 			  int addr_len);
 extern int tcp_connect(struct sock *sk);
@@ -481,10 +523,6 @@ extern struct sk_buff * tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 					struct request_sock *req,
 					struct request_values *rvp);
 extern int tcp_disconnect(struct sock *sk, int flags);
-
-extern void tcp_push(struct sock *sk, int flags, int mss_now,
-			    int nonagle);
-extern void tcp_push_pending_frames(struct sock *sk);
 
 /* From syncookies.c */
 extern __u32 syncookie_secret[2][16-4+SHA_DIGEST_WORDS];
@@ -520,24 +558,6 @@ static inline __u32 cookie_v6_init_sequence(struct sock *sk,
 #endif
 /* tcp_output.c */
 
-extern int tcp_xmit_probe_skb(struct sock *sk, int urgent);
-extern void tcp_cwnd_validate(struct sock *sk);
-extern void tcp_event_new_data_sent(struct sock *sk, const struct sk_buff *skb);
-extern int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
-			    gfp_t gfp_mask);
-extern int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
-			unsigned int mss_now, gfp_t gfp);
-extern unsigned int tcp_mss_split_point(const struct sock *sk, const struct sk_buff *skb,
-					unsigned int mss_now, unsigned int cwnd);
-extern int tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb);
-extern int tcp_nagle_test(const struct tcp_sock *tp, const struct sk_buff *skb,
-			  unsigned int cur_mss, int nonagle);
-extern int tcp_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
-			    unsigned int cur_mss);
-extern unsigned int tcp_cwnd_test(const struct tcp_sock *tp, const struct sk_buff *skb);
-extern int tcp_mtu_probe(struct sock *sk);
-extern int tcp_init_tso_segs(const struct sock *sk, struct sk_buff *skb,
-			     unsigned int mss_now);
 extern void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
 				      int nonagle);
 extern int tcp_may_send_now(struct sock *sk);
@@ -560,33 +580,9 @@ extern int tcp_syn_flood_action(struct sock *sk,
 extern void tcp_push_one(struct sock *, unsigned int mss_now);
 extern void tcp_send_ack(struct sock *sk);
 extern void tcp_send_delayed_ack(struct sock *sk);
-extern void __pskb_trim_head(struct sk_buff *skb, int len);
-extern void tcp_queue_skb(struct sock *sk, struct sk_buff *skb);
-extern void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags);
-
-static inline int tcp_urg_mode(const struct tcp_sock *tp)
-{
-	return tp->snd_una != tp->snd_up;
-}
 
 /* tcp_input.c */
-extern int tcp_prune_queue(struct sock *sk);
-extern int tcp_prune_ofo_queue(struct sock *sk);
 extern void tcp_cwnd_application_limited(struct sock *sk);
-extern void tcp_reset(struct sock *sk);
-
-
-/* Check that window update is acceptable.
- * The function assumes that snd_una<=ack<=snd_next.
- */
-static inline int tcp_may_update_window(const struct tcp_sock *tp,
-					const u32 ack, const u32 ack_seq,
-					const u32 nwin)
-{
-	return	after(ack, tp->snd_una) ||
-		after(ack_seq, tp->snd_wl1) ||
-		(ack_seq == tp->snd_wl1 && nwin > tp->snd_wnd);
-}
 
 /* tcp_timer.c */
 extern void tcp_init_xmit_timers(struct sock *);
@@ -594,7 +590,6 @@ static inline void tcp_clear_xmit_timers(struct sock *sk)
 {
 	inet_csk_clear_xmit_timers(sk);
 }
-extern void tcp_write_timer(unsigned long data);
 
 extern unsigned int tcp_sync_mss(struct sock *sk, u32 pmtu);
 extern unsigned int tcp_current_mss(struct sock *sk);
@@ -783,23 +778,6 @@ struct tcp_skb_cb {
 };
 
 #define TCP_SKB_CB(__skb)	((struct tcp_skb_cb *)&((__skb)->cb[0]))
-
-static inline void tcp_mark_push(struct tcp_sock *tp, struct sk_buff *skb)
-{
-	TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_PSH;
-	tp->pushed_seq = tp->write_seq;
-}
-
-static inline int forced_push(const struct tcp_sock *tp)
-{
-	return after(tp->write_seq, tp->pushed_seq + (tp->max_window >> 1));
-}
-
-static inline void tcp_mark_urg(struct tcp_sock *tp, int flags)
-{
-	if (flags & MSG_OOB)
-		tp->snd_up = tp->write_seq;
-}
 
 /* Due to TSO, an SKB can be composed of multiple actual
  * packets.  To keep these tracked properly, we use this.
@@ -1301,7 +1279,6 @@ extern int tcp_v4_md5_do_del(struct sock *sk, __be32 addr);
 					.keylen = (twsk)->tw_md5_keylen, \
 				} : NULL)
 
-extern const struct tcp_sock_af_ops tcp_sock_ipv6_specific;
 #else
 #define tcp_twsk_md5_key(twsk)	NULL
 #endif
@@ -1442,6 +1419,8 @@ static inline int tcp_write_queue_empty(struct sock *sk)
 	return skb_queue_empty(&sk->sk_write_queue);
 }
 
+extern void tcp_push_pending_frames(struct sock *sk);
+
 /* Start sequence of the highest skb with SACKed bit, valid only if
  * sacked > 0 or when the caller has ensured validity by itself.
  */
@@ -1522,8 +1501,6 @@ extern struct request_sock_ops tcp_request_sock_ops;
 extern struct request_sock_ops tcp6_request_sock_ops;
 
 extern void tcp_v4_destroy_sock(struct sock *sk);
-extern struct ip_options_rcu *tcp_v4_save_options(struct sock *sk,
-						  struct sk_buff *skb);
 extern int tcp_v4_gso_send_check(struct sk_buff *skb);
 extern struct sk_buff *tcp_tso_segment(struct sk_buff *skb, u32 features);
 extern struct sk_buff **tcp_gro_receive(struct sk_buff **head,

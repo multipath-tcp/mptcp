@@ -524,6 +524,17 @@ int tcp_ioctl(struct sock *sk, int cmd, unsigned long arg)
 }
 EXPORT_SYMBOL(tcp_ioctl);
 
+static inline void tcp_mark_push(struct tcp_sock *tp, struct sk_buff *skb)
+{
+	TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_PSH;
+	tp->pushed_seq = tp->write_seq;
+}
+
+static inline int forced_push(const struct tcp_sock *tp)
+{
+	return after(tp->write_seq, tp->pushed_seq + (tp->max_window >> 1));
+}
+
 static inline void skb_entail(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -542,18 +553,27 @@ static inline void skb_entail(struct sock *sk, struct sk_buff *skb)
 		tp->nonagle &= ~TCP_NAGLE_PUSH;
 }
 
+static inline void tcp_mark_urg(struct tcp_sock *tp, int flags)
+{
+	if (flags & MSG_OOB)
+		tp->snd_up = tp->write_seq;
+}
+
 void tcp_push(struct sock *sk, int flags, int mss_now,
 			    int nonagle)
 {
-	if (tcp_sk(sk)->mpc) {
-		mptcp_push(sk, flags, mss_now, nonagle);
-		return;
-	}
+	struct sk_buff *skb;
+	int reinject = 0;
 
-	if (tcp_send_head(sk)) {
+	if (tcp_sk(sk)->mpc)
+		skb = mptcp_next_segment(sk, &reinject);
+	else
+		skb = tcp_send_head(sk);
+
+	if (skb) {
 		struct tcp_sock *tp = tcp_sk(sk);
 
-		if (!(flags & MSG_MORE) || forced_push(tp))
+		if (!reinject && (!(flags & MSG_MORE) || forced_push(tp)))
 			tcp_mark_push(tp, tcp_write_queue_tail(sk));
 
 		tcp_mark_urg(tp, flags);

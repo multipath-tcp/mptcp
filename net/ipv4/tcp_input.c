@@ -4476,6 +4476,9 @@ static void tcp_ofo_queue(struct sock *sk)
 	}
 }
 
+static int tcp_prune_ofo_queue(struct sock *sk);
+static int tcp_prune_queue(struct sock *sk);
+
 static inline int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
 {
 	if (tcp_sk(sk)->mpc)

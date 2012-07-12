@@ -966,25 +966,6 @@ void mptcp_skb_entail_init(struct tcp_sock *tp, struct sk_buff *skb)
 	}
 }
 
-void mptcp_push(struct sock *sk, int flags, int mss_now, int nonagle)
-{
-	struct sock *meta_sk = tcp_sk(sk)->mpc ? mptcp_meta_sk(sk) : sk;
-
-	if (mptcp_next_segment(meta_sk, NULL)) {
-		struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-
-		if (!(flags & MSG_MORE) || forced_push(meta_tp))
-			if (tcp_write_queue_tail(meta_sk))
-				tcp_mark_push(meta_tp,
-					      tcp_write_queue_tail(meta_sk));
-
-		tcp_mark_urg(meta_tp, flags);
-		__tcp_push_pending_frames(meta_sk, mss_now,
-					  (flags & MSG_MORE) ?
-					  TCP_NAGLE_CORK : nonagle);
-	}
-}
-
 void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 		       unsigned *remaining)
 {
