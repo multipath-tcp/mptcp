@@ -628,7 +628,6 @@ int mptcp_get_dataseq_mapping(struct tcp_sock *tp, struct sk_buff *skb);
 void mptcp_update_window_clamp(struct tcp_sock *tp);
 void mptcp_update_sndbuf(struct mptcp_cb *mpcb);
 void mptcp_set_state(struct sock *sk, int state);
-void mptcp_push_frames(struct sock *sk);
 void mptcp_skb_entail_init(struct tcp_sock *tp, struct sk_buff *skb);
 struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject);
 void mptcp_release_mpcb(struct mptcp_cb *mpcb);
@@ -1227,7 +1226,6 @@ static inline int mptcp_get_dataseq_mapping(const struct tcp_sock *tp,
 static inline void mptcp_update_window_clamp(const struct tcp_sock *tp) {}
 static inline void mptcp_update_sndbuf(const struct mptcp_cb *mpcb) {}
 static inline void mptcp_set_state(const struct sock *sk, int state) {}
-static inline void mptcp_push_frames(const struct sock *sk) {}
 static inline void mptcp_skb_entail_init(const struct tcp_sock *tp,
 					 const struct sk_buff *skb) {}
 static inline struct sk_buff *mptcp_next_segment(const struct sock *sk,

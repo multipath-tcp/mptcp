@@ -1934,7 +1934,7 @@ void tcp_push_pending_frames(struct sock *sk)
 	struct sk_buff *skb;
 
 	if (tcp_sk(sk)->mpc)
-		skb = mptcp_next_segment(mptcp_meta_sk(sk), NULL);
+		skb = mptcp_next_segment(sk, NULL);
 	else
 		skb = tcp_send_head(sk);
 	if (skb) {
