@@ -1358,8 +1358,9 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 {
 	struct tcp_sock *child_tp = tcp_sk(child);
 	struct mptcp_cb *mpcb;
+	struct mptcp_request_sock *mtreq;
 
-	if (!req->saw_mpc) {
+	if (!tcp_rsk(req)->saw_mpc) {
 		child_tp->mpcb = NULL;
 		return 1;
 	}
@@ -1368,10 +1369,11 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	child_tp->rx_opt.saw_mpc = 0;
 
 	/* Just set this values to pass them to mptcp_alloc_mpcb */
-	child_tp->mptcp_loc_key = req->mptcp_loc_key;
-	child_tp->mptcp_loc_token = req->mptcp_loc_token;
+	mtreq = mptcp_rsk(req);
+	child_tp->mptcp_loc_key = mtreq->mptcp_loc_key;
+	child_tp->mptcp_loc_token = mtreq->mptcp_loc_token;
 
-	if (mptcp_alloc_mpcb(child, req->mptcp_rem_key)) {
+	if (mptcp_alloc_mpcb(child, mtreq->mptcp_rem_key)) {
 		/* The allocation of the mpcb failed!
 		 * Destroy the child and go to listen_overflow
 		 */
@@ -1399,10 +1401,10 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 
 	if (mopt->list_rcvd) {
 		memcpy(&mpcb->rx_opt, mopt, sizeof(*mopt));
-		mpcb->rx_opt.mptcp_rem_key = req->mptcp_rem_key;
+		mpcb->rx_opt.mptcp_rem_key = mtreq->mptcp_rem_key;
 	}
 
-	mpcb->rx_opt.dss_csum = sysctl_mptcp_checksum || req->dss_csum;
+	mpcb->rx_opt.dss_csum = sysctl_mptcp_checksum || mtreq->dss_csum;
 	mpcb->rx_opt.mpcb = mpcb;
 
 	mpcb->server_side = 1;
@@ -1431,7 +1433,8 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 				   struct request_sock **prev)
 {
 	struct tcp_sock *child_tp = tcp_sk(child);
-	struct mptcp_cb *mpcb = req->mpcb;
+	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
+	struct mptcp_cb *mpcb = mtreq->mpcb;
 	u8 hash_mac_check[20];
 
 	if (!mpcb->rx_opt.mptcp_opt_type == MPTCP_MP_JOIN_TYPE_ACK)
@@ -1439,8 +1442,8 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 
 	mptcp_hmac_sha1((u8 *)&mpcb->rx_opt.mptcp_rem_key,
 			(u8 *)&mpcb->mptcp_loc_key,
-			(u8 *)&req->mptcp_rem_nonce,
-			(u8 *)&req->mptcp_loc_nonce,
+			(u8 *)&mtreq->mptcp_rem_nonce,
+			(u8 *)&mtreq->mptcp_loc_nonce,
 			(u32 *)hash_mac_check);
 
 	if (memcmp(hash_mac_check, (char *)&mpcb->rx_opt.mptcp_recv_mac, 20))
@@ -1450,7 +1453,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	 * some of the fields
 	 */
 	child_tp->mpc = 1;
-	child_tp->rx_opt.low_prio = req->low_prio;
+	child_tp->rx_opt.low_prio = mtreq->low_prio;
 	child->sk_sndmsg_page = NULL;
 
 	/* Point it to the same struct socket and wq as the meta_sk */
@@ -1460,7 +1463,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	if (mptcp_add_sock(mpcb, child_tp, GFP_ATOMIC))
 		goto teardown;
 
-	child_tp->mptcp->rem_id = req->rem_id;
+	child_tp->mptcp->rem_id = mtreq->rem_id;
 	child_tp->mptcp->path_index = mptcp_set_new_pathindex(mpcb);
 	/* No more space for more subflows? */
 	if (!child_tp->mptcp->path_index) {

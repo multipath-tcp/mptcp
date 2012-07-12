@@ -104,6 +104,7 @@
 #include <net/inet_connection_sock.h>
 #include <net/tcp.h>
 #include <net/mptcp.h>
+#include <net/mptcp_v4.h>
 #include <net/udp.h>
 #include <net/udplite.h>
 #include <net/ping.h>
@@ -1658,6 +1659,43 @@ static struct packet_type ip_packet_type __read_mostly = {
 	.gro_complete = inet_gro_complete,
 };
 
+static int __init mptcp_inet_init(void)
+{
+#ifdef CONFIG_MPTCP
+	struct request_sock_ops *ops = &mptcp_request_sock_ops;
+
+	ops->slab_name = kasprintf(GFP_KERNEL, "request_sock_%s", "MPTCP");
+	if (ops->slab_name == NULL)
+		return -ENOMEM;
+
+	ops->slab = kmem_cache_create(ops->slab_name,
+				      ops->obj_size, 0,
+				      SLAB_HWCACHE_ALIGN, NULL);
+
+	if (ops->slab == NULL) {
+		printk(KERN_CRIT "%s: Can't create request sock SLAB cache!\n",
+		       "MPTCP");
+		kfree(ops->slab_name);
+		ops->slab_name = NULL;
+		return -ENOMEM;
+	}
+
+#endif
+	return 0;
+}
+
+static void __init mptcp_inet_cleanup(void)
+{
+#ifdef CONFIG_MPTCP
+	struct request_sock_ops *ops = &mptcp_request_sock_ops;
+
+	if (ops->slab_name != NULL)
+		kfree(ops->slab_name);
+	if (ops->slab != NULL)
+		kmem_cache_destroy(ops->slab);
+#endif
+}
+
 static int __init inet_init(void)
 {
 	struct sk_buff *dummy_skb;
@@ -1674,6 +1712,10 @@ static int __init inet_init(void)
 	rc = proto_register(&tcp_prot, 1);
 	if (rc)
 		goto out_free_reserved_ports;
+
+	rc = mptcp_inet_init();
+	if (rc)
+		goto out_unregister_tcp_proto;
 
 	rc = proto_register(&udp_prot, 1);
 	if (rc)
@@ -1779,6 +1821,7 @@ out_unregister_raw_proto:
 out_unregister_udp_proto:
 	proto_unregister(&udp_prot);
 out_unregister_tcp_proto:
+	mptcp_inet_cleanup();
 	proto_unregister(&tcp_prot);
 out_free_reserved_ports:
 	kfree(sysctl_local_reserved_ports);

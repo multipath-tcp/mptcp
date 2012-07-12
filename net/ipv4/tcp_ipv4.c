@@ -1298,6 +1298,16 @@ struct request_sock_ops tcp_request_sock_ops __read_mostly = {
 	.syn_ack_timeout = 	tcp_syn_ack_timeout,
 };
 
+struct request_sock_ops mptcp_request_sock_ops __read_mostly = {
+	.family		=	PF_INET,
+	.obj_size	=	sizeof(struct mptcp_request_sock),
+	.rtx_syn_ack	=	tcp_v4_rtx_synack,
+	.send_ack	=	tcp_v4_reqsk_send_ack,
+	.destructor	=	tcp_v4_reqsk_destructor,
+	.send_reset	=	tcp_v4_send_reset,
+	.syn_ack_timeout =	tcp_syn_ack_timeout,
+};
+
 #ifdef CONFIG_TCP_MD5SIG
 static const struct tcp_request_sock_ops tcp_request_sock_ipv4_ops = {
 	.md5_lookup	=	tcp_v4_reqsk_md5_lookup,
@@ -1342,20 +1352,36 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	if (sk_acceptq_is_full(sk) && inet_csk_reqsk_queue_young(sk) > 1)
 		goto drop;
 
-	req = inet_reqsk_alloc(&tcp_request_sock_ops);
-	if (!req)
-		goto drop;
-
-#ifdef CONFIG_TCP_MD5SIG
-	tcp_rsk(req)->af_specific = &tcp_request_sock_ipv4_ops;
-#endif
-
 	tcp_clear_options(&tmp_opt);
 	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
 	tmp_opt.user_mss  = tp->rx_opt.user_mss;
 	mopt.dss_csum = 0;
 	mptcp_init_mp_opt(&mopt);
 	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
+
+#ifdef CONFIG_MPTCP
+	if (tmp_opt.saw_mpc) {
+		req = inet_reqsk_alloc(&mptcp_request_sock_ops);
+
+		if (!req)
+			goto drop;
+
+		/* Must be set to NULL before calling openreq init.
+		 * tcp_openreq_init() uses this to know whether the request
+		 * is a join request or a conn request.
+		 */
+		mptcp_rsk(req)->mpcb = NULL;
+		mptcp_rsk(req)->dss_csum = mopt.dss_csum;
+	} else
+#endif
+		req = inet_reqsk_alloc(&tcp_request_sock_ops);
+
+	if (!req)
+		goto drop;
+
+#ifdef CONFIG_TCP_MD5SIG
+	tcp_rsk(req)->af_specific = &tcp_request_sock_ipv4_ops;
+#endif
 
 	if (tmp_opt.cookie_plus > 0 &&
 	    tmp_opt.saw_tstamp &&
@@ -1396,14 +1422,6 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 
-#ifdef CONFIG_MPTCP
-	/* Must be set to NULL before calling openreq init.
-	 * tcp_openreq_init() uses this to know whether the request
-	 * is a join request or a conn request.
-	 */
-	req->mpcb = NULL;
-	req->dss_csum = mopt.dss_csum;
-#endif
 	tcp_openreq_init(req, &tmp_opt, &mopt, skb);
 
 	ireq = inet_rsk(req);

@@ -1024,34 +1024,41 @@ void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 void mptcp_synack_options(struct request_sock *req,
 			  struct tcp_out_options *opts, unsigned *remaining)
 {
+	struct mptcp_request_sock *mtreq;
+	mtreq = mptcp_rsk(req);
+
 	opts->options |= OPTION_MPTCP;
 	/* MPCB not yet set - thus it's a new MPTCP-session */
-	if (!req->mpcb) {
+	if (!mtreq->mpcb) {
 		opts->mptcp_options |= OPTION_MP_CAPABLE | OPTION_TYPE_SYNACK;
 		*remaining -= MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN;
-		opts->sender_key = req->mptcp_loc_key;
-		opts->dss_csum = sysctl_mptcp_checksum || req->dss_csum;
+		opts->sender_key = mtreq->mptcp_loc_key;
+		opts->dss_csum = sysctl_mptcp_checksum || mtreq->dss_csum;
 	} else {
 		struct inet_request_sock *ireq = inet_rsk(req);
 		int i;
 
 		opts->mptcp_options |= OPTION_MP_JOIN | OPTION_TYPE_SYNACK;
-		opts->sender_truncated_mac = req->mptcp_hash_tmac;
-		opts->sender_nonce = req->mptcp_loc_nonce;
+		opts->sender_truncated_mac = mtreq->mptcp_hash_tmac;
+		opts->sender_nonce = mtreq->mptcp_loc_nonce;
 		opts->addr_id = 0;
 
 		/* Finding Address ID */
 		if (req->rsk_ops->family == AF_INET)
-			mptcp_for_each_bit_set(req->mpcb->loc4_bits, i) {
-				if (req->mpcb->addr4[i].addr.s_addr == ireq->loc_addr)
-					opts->addr_id = req->mpcb->addr4[i].id;
+			mptcp_for_each_bit_set(mtreq->mpcb->loc4_bits, i) {
+				struct mptcp_loc4 *addr =
+						&mtreq->mpcb->addr4[i];
+				if (addr->addr.s_addr == ireq->loc_addr)
+					opts->addr_id = addr->id;
 			}
 #if IS_ENABLED(CONFIG_IPV6)
 		else /* IPv6 */
-			mptcp_for_each_bit_set(req->mpcb->loc6_bits, i) {
-				if (ipv6_addr_equal(&req->mpcb->addr6[i].addr,
+			mptcp_for_each_bit_set(mtreq->mpcb->loc6_bits, i) {
+				struct mptcp_loc6 *addr =
+						&mtreq->mpcb->addr6[i];
+				if (ipv6_addr_equal(&addr->addr,
 						    &inet6_rsk(req)->loc_addr))
-					opts->addr_id = req->mpcb->addr6[i].id;
+					opts->addr_id = addr->id;
 			}
 #endif /* CONFIG_IPV6 */
 		*remaining -= MPTCP_SUB_LEN_JOIN_SYNACK_ALIGN;

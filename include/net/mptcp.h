@@ -64,6 +64,41 @@ static inline int before64(const u64 seq1, const u64 seq2)
 /* is seq1 > seq2 ? */
 #define after64(seq1, seq2)	before64(seq2, seq1)
 
+struct mptcp_request_sock {
+	struct tcp_request_sock		req;
+	struct mptcp_cb			*mpcb;
+	/* Collision list in the tuple hashtable. We need to find
+	 * the req sock when receiving the third msg of the 3-way handshake,
+	 * since that one does not contain the token. If this makes
+	 * the request sock too long, we can use kmalloc'ed specific entries for
+	 * that tuple hashtable. At the moment, though, I extend the
+	 * request_sock.
+	 */
+	struct list_head		collide_tuple;
+	struct list_head		collide_tk;
+	u32				mptcp_rem_nonce;
+	u32				mptcp_loc_token;
+	u64				mptcp_loc_key;
+	u64				mptcp_rem_key;
+	u64				mptcp_hash_tmac;
+	u32				mptcp_loc_nonce;
+	__u8				rem_id; /* Address-id in the MP_JOIN */
+	u8				dss_csum:1,
+					low_prio:1;
+};
+
+static inline
+struct mptcp_request_sock *mptcp_rsk(const struct request_sock *req)
+{
+	return (struct mptcp_request_sock *)req;
+}
+
+static inline
+struct request_sock *rev_mptcp_rsk(const struct mptcp_request_sock *req)
+{
+	return (struct request_sock *)req;
+}
+
 struct mptcp_tcp_sock {
 	struct tcp_sock	*next;		/* Next subflow socket */
 	 /* Those three fields record the current mapping */
@@ -707,7 +742,7 @@ static inline struct sock *mptcp_meta_sk(struct sock *sk)
 static inline
 struct mptcp_cb *mptcp_mpcb_from_req_sk(const struct request_sock *req)
 {
-	return req->mpcb;
+	return mptcp_rsk(req)->mpcb;
 }
 
 static inline int is_meta_tp(const struct tcp_sock *tp)
@@ -728,12 +763,12 @@ static inline int is_master_tp(const struct tcp_sock *tp)
 
 static inline int mptcp_req_sk_saw_mpc(const struct request_sock *req)
 {
-	return req->saw_mpc;
+	return tcp_rsk(req)->saw_mpc;
 }
 
 static inline void mptcp_reqsk_destructor(struct request_sock *req)
 {
-	if (!req->mpcb)
+	if (!mptcp_rsk(req)->mpcb)
 		mptcp_reqsk_remove_tk(req);
 	else
 		mptcp_hash_request_remove(req);

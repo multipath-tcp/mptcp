@@ -38,6 +38,8 @@
 #include <net/request_sock.h>
 #include <net/sock.h>
 
+extern struct request_sock_ops mptcp_request_sock_ops;
+
 #ifdef CONFIG_MPTCP
 
 int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb);

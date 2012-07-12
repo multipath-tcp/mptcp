@@ -52,7 +52,7 @@ static void mptcp_v4_reqsk_queue_hash_add(struct request_sock *req,
 					  unsigned long timeout)
 {
 	struct inet_connection_sock *meta_icsk =
-	    (struct inet_connection_sock *)(req->mpcb);
+	    (struct inet_connection_sock *)(mptcp_rsk(req)->mpcb);
 	struct listen_sock *lopt = meta_icsk->icsk_accept_queue.listen_opt;
 	const u32 h_local = inet_synq_hash(inet_rsk(req)->rmt_addr,
 					   inet_rsk(req)->rmt_port,
@@ -65,7 +65,7 @@ static void mptcp_v4_reqsk_queue_hash_add(struct request_sock *req,
 	spin_lock_bh(&mptcp_reqsk_hlock);
 	reqsk_queue_hash_req(&meta_icsk->icsk_accept_queue,
 			     h_local, req, timeout);
-	list_add(&req->collide_tuple, &mptcp_reqsk_htb[h_global]);
+	list_add(&mptcp_rsk(req)->collide_tuple, &mptcp_reqsk_htb[h_global]);
 	lopt->qlen++;
 	spin_unlock_bh(&mptcp_reqsk_hlock);
 }
@@ -75,6 +75,7 @@ static void mptcp_v4_join_request(struct mptcp_cb *mpcb, struct sk_buff *skb)
 {
 	struct inet_request_sock *ireq;
 	struct request_sock *req;
+	struct mptcp_request_sock *mtreq;
 	struct tcp_options_received tmp_opt;
 	u8 mptcp_hash_mac[20];
 	const u8 *hash_location;
@@ -82,7 +83,7 @@ static void mptcp_v4_join_request(struct mptcp_cb *mpcb, struct sk_buff *skb)
 	__be32 daddr = ip_hdr(skb)->daddr;
 	__u32 isn = TCP_SKB_CB(skb)->when;
 
-	req = inet_reqsk_alloc(&tcp_request_sock_ops);
+	req = inet_reqsk_alloc(&mptcp_request_sock_ops);
 	if (!req)
 		return;
 
@@ -93,20 +94,23 @@ static void mptcp_v4_join_request(struct mptcp_cb *mpcb, struct sk_buff *skb)
 
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 
-	req->mpcb = mpcb;
-	req->mptcp_rem_nonce = mpcb->rx_opt.mptcp_recv_nonce;
-	req->mptcp_rem_key = mpcb->rx_opt.mptcp_rem_key;
-	req->mptcp_loc_key = mpcb->mptcp_loc_key;
+	mtreq = mptcp_rsk(req);
+	mtreq->mpcb = mpcb;
+	mtreq->mptcp_rem_nonce = mpcb->rx_opt.mptcp_recv_nonce;
+	mtreq->mptcp_rem_key = mpcb->rx_opt.mptcp_rem_key;
+	mtreq->mptcp_loc_key = mpcb->mptcp_loc_key;
 
-	get_random_bytes(&req->mptcp_loc_nonce, sizeof(req->mptcp_loc_nonce));
+	get_random_bytes(&mtreq->mptcp_loc_nonce,
+			 sizeof(mtreq->mptcp_loc_nonce));
 
-	mptcp_hmac_sha1((u8 *)&req->mptcp_loc_key, (u8 *)&req->mptcp_rem_key,
-			(u8 *)&req->mptcp_loc_nonce,
-			(u8 *)&req->mptcp_rem_nonce, (u32 *)mptcp_hash_mac);
-	req->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
+	mptcp_hmac_sha1((u8 *)&mtreq->mptcp_loc_key,
+			(u8 *)&mtreq->mptcp_rem_key,
+			(u8 *)&mtreq->mptcp_loc_nonce,
+			(u8 *)&mtreq->mptcp_rem_nonce, (u32 *)mptcp_hash_mac);
+	mtreq->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
 
-	req->rem_id = tmp_opt.rem_id;
-	req->low_prio = tmp_opt.low_prio;
+	mtreq->rem_id = tmp_opt.rem_id;
+	mtreq->low_prio = tmp_opt.low_prio;
 	tcp_openreq_init(req, &tmp_opt, NULL, skb);
 
 	ireq = inet_rsk(req);
@@ -293,14 +297,15 @@ discard:
 struct request_sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
 					 const __be32 laddr)
 {
-	struct request_sock *req;
+	struct mptcp_request_sock *mtreq;
 	int found = 0;
 
 	spin_lock(&mptcp_reqsk_hlock);
-	list_for_each_entry(req,
+	list_for_each_entry(mtreq,
 			    &mptcp_reqsk_htb[inet_synq_hash
 					(raddr, rport, 0, MPTCP_HASH_SIZE)],
 			    collide_tuple) {
+		struct request_sock *req = rev_mptcp_rsk(mtreq);
 		const struct inet_request_sock *ireq = inet_rsk(req);
 
 		if (ireq->rmt_port == rport &&
@@ -314,13 +319,13 @@ struct request_sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
 	}
 
 	if (found)
-		sock_hold(mpcb_meta_sk(req->mpcb));
+		sock_hold(mpcb_meta_sk(mtreq->mpcb));
 	spin_unlock(&mptcp_reqsk_hlock);
 
 	if (!found)
 		return NULL;
 
-	return req;
+	return rev_mptcp_rsk(mtreq);
 }
 
 /**
