@@ -837,14 +837,14 @@ int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	if (likely(clone_it)) {
 		if (unlikely((!tp->mpc && skb_cloned(skb)) || mptcp_skb_cloned(skb, tp))) {
 			struct sk_buff *newskb;
-			if (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ)
+			if (mptcp_is_data_seq(skb))
 				skb_push(skb, MPTCP_SUB_LEN_DSS_ALIGN +
 					      MPTCP_SUB_LEN_ACK_ALIGN +
 					      MPTCP_SUB_LEN_SEQ_ALIGN);
 
 			newskb = pskb_copy(skb, gfp_mask);
 
-			if (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ) {
+			if (mptcp_is_data_seq(skb)) {
 				skb_pull(skb, MPTCP_SUB_LEN_DSS_ALIGN +
 					      MPTCP_SUB_LEN_ACK_ALIGN +
 					      MPTCP_SUB_LEN_SEQ_ALIGN);

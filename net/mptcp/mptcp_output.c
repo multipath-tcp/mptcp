@@ -137,7 +137,7 @@ static struct sock *get_available_subflow(struct mptcp_cb *mpcb,
 
 static struct mp_dss *mptcp_skb_find_dss(const struct sk_buff *skb)
 {
-	if (!(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ))
+	if (!mptcp_is_data_seq(skb))
 		return NULL;
 
 	return (struct mp_dss *)(skb->data - (MPTCP_SUB_LEN_DSS_ALIGN +
@@ -1142,7 +1142,7 @@ unsigned mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 	if (!tp->mptcp_add_addr_ack && !tp->mptcp->include_mpc) {
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_DATA_ACK;
-		if (!skb || (skb && !(tcb->mptcp_flags & MPTCPHDR_SEQ))) {
+		if (!skb || (skb && !mptcp_is_data_seq(skb))) {
 			opts->data_ack = mpcb_meta_tp(mpcb)->rcv_nxt;
 
 			*size += MPTCP_SUB_LEN_ACK_ALIGN;
@@ -1340,7 +1340,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	}
 
 	if (OPTION_DATA_ACK & opts->mptcp_options) {
-		if (!(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ)) {
+		if (!mptcp_is_data_seq(skb)) {
 			struct mp_dss *mdss = (struct mp_dss *) ptr;
 
 			mdss->kind = TCPOPT_MPTCP;

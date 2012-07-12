@@ -259,8 +259,6 @@ static inline int mptcp_pi_to_flag(int pi)
 	return 1 << (pi - 1);
 }
 
-#ifdef CONFIG_MPTCP
-
 #define MPTCP_SUB_CAPABLE			0
 #define MPTCP_SUB_LEN_CAPABLE_SYN		12
 #define MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN		12
@@ -324,7 +322,9 @@ static inline int mptcp_pi_to_flag(int pi)
 #define MPTCP_SUB_LEN_FCLOSE	12
 #define MPTCP_SUB_LEN_FCLOSE_ALIGN	12
 
-/* Only used for tcp_options_write */
+#ifdef CONFIG_MPTCP
+
+/* Only used for mptcp_options_write */
 #define OPTION_MPTCP	(1 << 5)
 
 /* MPTCP options */
@@ -688,6 +688,16 @@ static inline void mptcp_sub_force_close(struct sock *sk)
 	tcp_done(sk);
 }
 
+static inline int mptcp_is_data_fin(const struct sk_buff *skb)
+{
+	return TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN;
+}
+
+static inline int mptcp_is_data_seq(const struct sk_buff *skb)
+{
+	return TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ;
+}
+
 static inline int mptcp_skb_cloned(const struct sk_buff *skb,
 				   const struct tcp_sock *tp)
 {
@@ -696,8 +706,8 @@ static inline int mptcp_skb_cloned(const struct sk_buff *skb,
 	 * If it has a DSS-mapping dataref is at least 2
 	 */
 	return tp->mpc &&
-	       ((!(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ) && skb_cloned(skb)) ||
-		((TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ) && skb->cloned &&
+	       ((!mptcp_is_data_seq(skb) && skb_cloned(skb)) ||
+		(mptcp_is_data_seq(skb) && skb->cloned &&
 		 (atomic_read(&skb_shinfo(skb)->dataref) & SKB_DATAREF_MASK) > 2));
 }
 
@@ -722,11 +732,6 @@ static inline __u32 *mptcp_skb_set_data_seq(const struct sk_buff *skb,
 	}
 
 	return ptr;
-}
-
-static inline int mptcp_is_data_fin(const struct sk_buff *skb)
-{
-	return TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN;
 }
 
 static inline struct mptcp_cb *mpcb_from_tcpsock(const struct tcp_sock *tp)
@@ -1168,6 +1173,10 @@ static inline int mptcp_is_data_fin(const struct sk_buff *skb)
 {
 	return 0;
 }
+static inline int mptcp_is_data_seq(const struct sk_buff *skb)
+{
+	return 0;
+}
 static inline struct mptcp_cb *mpcb_from_tcpsock(const struct tcp_sock *tp)
 {
 	return NULL;
@@ -1242,8 +1251,8 @@ static inline void mptcp_close(const struct sock *meta_sk, long timeout) {}
 static inline void mptcp_set_bw_est(const struct tcp_sock *tp, u32 now) {}
 static inline int mptcp_check_req_master(const struct sock *sk,
 					 const struct sock *child,
-					 const struct request_sock *req,
-					 const struct request_sock **prev,
+					 struct request_sock *req,
+					 struct request_sock **prev,
 					 const struct multipath_options *mopt)
 {
 	return 0;

@@ -419,7 +419,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	/* If we are not yet fully established and do not know the mapping for
 	 * this segment, this path has to fallback to infinite or be torn down.
 	 */
-	if (!tp->mptcp->fully_established && !(tcb->mptcp_flags & MPTCPHDR_SEQ) &&
+	if (!tp->mptcp->fully_established && !mptcp_is_data_seq(skb) &&
 	    !tp->mptcp->mapping_present) {
 		int ret = mptcp_fallback_infinite(tp, skb);
 
@@ -455,7 +455,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 		tp->mptcp->map_data_len = tcb->mp_data_len = skb->len;
 		tp->mptcp->mapping_present = 1;
 		tcb->end_seq = tcb->seq + tcb->mp_data_len;
-	} else if (tcb->mptcp_flags & MPTCPHDR_SEQ) {
+	} else if (mptcp_is_data_seq(skb)) {
 		__u32 *ptr = mptcp_skb_set_data_seq(skb, &tcb->seq);
 		ptr++;
 		tcb->sub_seq = get_unaligned_be32(ptr) + tp->rx_opt.rcv_isn;
@@ -475,7 +475,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	/* If there is a DSS-mapping, check if it is ok with the current
 	 * expected mapping. If anything is wrong, reset the subflow
 	 */
-	if (tcb->mptcp_flags & MPTCPHDR_SEQ && !mpcb->infinite_mapping) {
+	if (mptcp_is_data_seq(skb) && !mpcb->infinite_mapping) {
 		if (!(tcb->mp_data_len)) {
 			mpcb->infinite_mapping = 1;
 			tp->mptcp->fully_established = 1;
@@ -961,7 +961,7 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 			mptcp_become_fully_estab(tp);
 
 		/* Get the data_seq */
-		if (tcb->mptcp_flags & MPTCPHDR_SEQ) {
+		if (mptcp_is_data_seq(skb)) {
 			mptcp_skb_set_data_seq(skb, &data_seq);
 		} else {
 			data_seq = meta_tp->snd_wl1;
@@ -971,7 +971,7 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 		data_ack = meta_tp->snd_una;
 
 		/* Get the data_seq */
-		if (tcb->mptcp_flags & MPTCPHDR_SEQ) {
+		if (mptcp_is_data_seq(skb)) {
 			mptcp_skb_set_data_seq(skb, &data_seq);
 		} else {
 			data_seq = meta_tp->snd_wl1;
