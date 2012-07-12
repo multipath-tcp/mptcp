@@ -290,8 +290,6 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 		    (tcb->tcp_flags & TCPHDR_FIN && !mptcp_is_data_fin(skb_it)))
 			continue;
 
-		tcb->path_mask |= mptcp_pi_to_flag(tp->mptcp->path_index);
-
 		/* Go to next segment, if it failed */
 		if (__mptcp_reinject_data(skb_it, meta_sk, sk, clone_it))
 			continue;
@@ -405,6 +403,23 @@ static void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb)
 
 		if (TCP_SKB_CB(skb_it)->seq == TCP_SKB_CB(skb)->seq) {
 			TCP_SKB_CB(skb_it)->path_mask |= mptcp_pi_to_flag(tp->mptcp->path_index);
+			break;
+		}
+	}
+}
+
+static void mptcp_find_and_set_pathmask(struct sock *meta_sk, struct sk_buff *skb)
+{
+	struct sk_buff *skb_it;
+
+	skb_it = tcp_write_queue_head(meta_sk);
+
+	tcp_for_write_queue_from(skb_it, meta_sk) {
+		if (skb_it == tcp_send_head(meta_sk))
+			break;
+
+		if (TCP_SKB_CB(skb_it)->seq == TCP_SKB_CB(skb)->seq) {
+			TCP_SKB_CB(skb)->path_mask = TCP_SKB_CB(skb_it)->path_mask;
 			break;
 		}
 	}
@@ -645,10 +660,20 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		struct sk_buff *subskb = NULL;
 		int err;
 
-		if (reinject == 1 && !after(TCP_SKB_CB(skb)->end_seq, meta_tp->snd_una)) {
-			/* Segment already reached the peer, take the next one */
-			skb_unlink(skb, &mpcb->reinject_queue);
-			__kfree_skb(skb);
+		if (reinject == 1) {
+			if (!after(TCP_SKB_CB(skb)->end_seq, meta_tp->snd_una)) {
+				/* Segment already reached the peer, take the next one */
+				skb_unlink(skb, &mpcb->reinject_queue);
+				__kfree_skb(skb);
+				continue;
+			}
+
+			/* Reinjection and it is coming from a subflow? We need
+			 * to find out the path-mask from the meta-write-queue
+			 * to properly select a subflow.
+			 */
+			if (!TCP_SKB_CB(skb)->path_mask)
+				mptcp_find_and_set_pathmask(meta_sk, skb);
 		}
 
 		/* This must be invoked even if we don't want
@@ -747,6 +772,12 @@ retry:
 			break;
 
 		TCP_SKB_CB(skb)->path_mask |= mptcp_pi_to_flag(subtp->mptcp->path_index);
+
+		/* The subskb is going in the subflow send-queue. It's path-mask
+		 * is not needed anymore and MUST be set to 0, as the path-mask
+		 * is a union with inet_skb_param.
+		 */
+		TCP_SKB_CB(subskb)->path_mask = 0;
 
 		if (!(subsk->sk_route_caps & NETIF_F_ALL_CSUM) &&
 		    skb->ip_summed == CHECKSUM_PARTIAL) {
@@ -1034,7 +1065,6 @@ unsigned mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 	struct mptcp_cb *mpcb = tp->mpcb;
 	struct tcp_skb_cb *tcb = skb ? TCP_SKB_CB(skb) : NULL;
 	unsigned ret = 0;
-
 
 	/* In fallback mp_fail-mode, we have to repeat it until the fallback
 	 * has been done by the sender
