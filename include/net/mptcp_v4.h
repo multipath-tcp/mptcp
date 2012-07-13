@@ -39,6 +39,7 @@
 #include <net/sock.h>
 
 extern struct request_sock_ops mptcp_request_sock_ops;
+extern struct proto mptcp_prot;
 
 #ifdef CONFIG_MPTCP
 

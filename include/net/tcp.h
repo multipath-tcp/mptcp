@@ -406,6 +406,9 @@ extern int tcp_v6_send_synack(struct sock *sk, struct request_sock *req,
 			      struct request_values *rvp);
 extern void tcp_v6_send_reset(struct sock *sk, struct sk_buff *skb);
 extern int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
+extern int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len);
+extern void tcp_v6_destroy_sock(struct sock *sk);
+extern void tcp_v6_hash(struct sock *sk);
 
 /**** END - Exports needed for MPTCP ****/
 

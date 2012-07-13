@@ -594,7 +594,7 @@ struct sock *inet_csk_clone(struct sock *sk, const struct request_sock *req,
 {
 	struct sock *newsk;
 
-	if (is_meta_sk(sk) && sk->sk_family != req->rsk_ops->family)
+	if (sk->sk_protocol == IPPROTO_TCP && tcp_sk(sk)->mpc)
 		newsk = mptcp_sk_clone(sk, req->rsk_ops->family, priority);
 	else
 		newsk = sk_clone(sk, priority);

@@ -1060,43 +1060,6 @@ static struct pernet_operations inet6_net_ops = {
 	.exit = inet6_net_exit,
 };
 
-static int __init mptcp6_inet_init(void)
-{
-#ifdef CONFIG_MPTCP
-	struct request_sock_ops *ops = &mptcp6_request_sock_ops;
-
-	ops->slab_name = kasprintf(GFP_KERNEL, "request_sock_%s", "MPTCP6");
-	if (ops->slab_name == NULL)
-		return -ENOMEM;
-
-	ops->slab = kmem_cache_create(ops->slab_name,
-				      ops->obj_size, 0,
-				      SLAB_HWCACHE_ALIGN, NULL);
-
-	if (ops->slab == NULL) {
-		printk(KERN_CRIT "%s: Can't create request sock SLAB cache!\n",
-		       "MPTCP6");
-		kfree(ops->slab_name);
-		ops->slab_name = NULL;
-		return -ENOMEM;
-	}
-
-#endif
-	return 0;
-}
-
-static void __init mptcp6_inet_cleanup(void)
-{
-#ifdef CONFIG_MPTCP
-	struct request_sock_ops *ops = &mptcp6_request_sock_ops;
-
-	if (ops->slab_name != NULL)
-		kfree(ops->slab_name);
-	if (ops->slab != NULL)
-		kmem_cache_destroy(ops->slab);
-#endif
-}
-
 static int __init inet6_init(void)
 {
 	struct sk_buff *dummy_skb;
@@ -1120,13 +1083,15 @@ static int __init inet6_init(void)
 	if (err)
 		goto out;
 
-	err = mptcp6_inet_init();
+#ifdef CONFIG_MPTCP
+	err = proto_register(&mptcpv6_prot, 1);
 	if (err)
 		goto out_unregister_tcp_proto;
+#endif
 
 	err = proto_register(&udpv6_prot, 1);
 	if (err)
-		goto out_unregister_tcp_proto;
+		goto out_unregister_mptcp_proto;
 
 	err = proto_register(&udplitev6_prot, 1);
 	if (err)
@@ -1294,8 +1259,11 @@ out_unregister_udplite_proto:
 	proto_unregister(&udplitev6_prot);
 out_unregister_udp_proto:
 	proto_unregister(&udpv6_prot);
+out_unregister_mptcp_proto:
+#ifdef CONFIG_MPTCP
+	proto_unregister(&mptcpv6_prot);
 out_unregister_tcp_proto:
-	mptcp6_inet_cleanup();
+#endif
 	proto_unregister(&tcpv6_prot);
 	goto out;
 }

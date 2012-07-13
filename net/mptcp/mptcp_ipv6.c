@@ -27,6 +27,7 @@
  *      2 of the License, or (at your option) any later version.
  */
 
+#include <linux/export.h>
 #include <linux/in6.h>
 #include <linux/kernel.h>
 
@@ -41,6 +42,46 @@
 #include <net/addrconf.h>
 
 #define AF_INET6_FAMILY(fam) ((fam) == AF_INET6)
+
+struct proto mptcpv6_prot = {
+	.name			= "MPTCPv6",
+	.owner			= THIS_MODULE,
+	.close			= mptcp_close,
+	.connect		= tcp_v6_connect,
+	.disconnect		= tcp_disconnect,
+	.accept			= inet_csk_accept,
+	.ioctl			= tcp_ioctl,
+	.destroy		= tcp_v6_destroy_sock,
+	.shutdown		= tcp_shutdown,
+	.setsockopt		= tcp_setsockopt,
+	.getsockopt		= tcp_getsockopt,
+	.recvmsg		= tcp_recvmsg,
+	.sendmsg		= tcp_sendmsg,
+	.sendpage		= tcp_sendpage,
+	.backlog_rcv		= mptcp_backlog_rcv,
+	.hash			= tcp_v6_hash,
+	.unhash			= inet_unhash,
+	.get_port		= inet_csk_get_port,
+	.enter_memory_pressure	= tcp_enter_memory_pressure,
+	.sockets_allocated	= &tcp_sockets_allocated,
+	.memory_allocated	= &tcp_memory_allocated,
+	.memory_pressure	= &tcp_memory_pressure,
+	.orphan_count		= &tcp_orphan_count,
+	.sysctl_mem		= sysctl_tcp_mem,
+	.sysctl_wmem		= sysctl_tcp_wmem,
+	.sysctl_rmem		= sysctl_tcp_rmem,
+	.max_header		= MAX_TCP_HEADER,
+	.obj_size		= sizeof(struct mptcp_cb),
+	.slab_flags		= SLAB_DESTROY_BY_RCU,
+	.twsk_prot		= NULL,
+	.rsk_prot		= &mptcp6_request_sock_ops,
+	.h.hashinfo		= &tcp_hashinfo,
+	.no_autobind		= true,
+#ifdef CONFIG_COMPAT
+	.compat_setsockopt	= compat_tcp_setsockopt,
+	.compat_getsockopt	= compat_tcp_getsockopt,
+#endif
+};
 
 static void mptcp_v6_reqsk_destructor(struct request_sock *req)
 {

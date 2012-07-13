@@ -87,7 +87,7 @@ static struct tcp_md5sig_key *tcp_v6_md5_do_lookup(struct sock *sk,
 }
 #endif
 
-static void tcp_v6_hash(struct sock *sk)
+void tcp_v6_hash(struct sock *sk)
 {
 	if (sk->sk_state != TCP_CLOSE) {
 		if (inet_csk(sk)->icsk_af_ops == &ipv6_mapped) {

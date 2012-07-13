@@ -148,10 +148,8 @@ void inet_sock_destruct(struct sock *sk)
 	}
 
 	if (sk->sk_type == SOCK_STREAM && sk->sk_protocol == IPPROTO_TCP &&
-	    tcp_sk(sk)->mpc) {
-		if (mptcp_sock_destruct(sk))
-			return;
-	}
+	    tcp_sk(sk)->mpc)
+		mptcp_sock_destruct(sk);
 
 	if (!sock_flag(sk, SOCK_DEAD)) {
 		pr_err("Attempt to release alive inet socket %p\n", sk);
@@ -1659,43 +1657,6 @@ static struct packet_type ip_packet_type __read_mostly = {
 	.gro_complete = inet_gro_complete,
 };
 
-static int __init mptcp_inet_init(void)
-{
-#ifdef CONFIG_MPTCP
-	struct request_sock_ops *ops = &mptcp_request_sock_ops;
-
-	ops->slab_name = kasprintf(GFP_KERNEL, "request_sock_%s", "MPTCP");
-	if (ops->slab_name == NULL)
-		return -ENOMEM;
-
-	ops->slab = kmem_cache_create(ops->slab_name,
-				      ops->obj_size, 0,
-				      SLAB_HWCACHE_ALIGN, NULL);
-
-	if (ops->slab == NULL) {
-		printk(KERN_CRIT "%s: Can't create request sock SLAB cache!\n",
-		       "MPTCP");
-		kfree(ops->slab_name);
-		ops->slab_name = NULL;
-		return -ENOMEM;
-	}
-
-#endif
-	return 0;
-}
-
-static void __init mptcp_inet_cleanup(void)
-{
-#ifdef CONFIG_MPTCP
-	struct request_sock_ops *ops = &mptcp_request_sock_ops;
-
-	if (ops->slab_name != NULL)
-		kfree(ops->slab_name);
-	if (ops->slab != NULL)
-		kmem_cache_destroy(ops->slab);
-#endif
-}
-
 static int __init inet_init(void)
 {
 	struct sk_buff *dummy_skb;
@@ -1713,13 +1674,15 @@ static int __init inet_init(void)
 	if (rc)
 		goto out_free_reserved_ports;
 
-	rc = mptcp_inet_init();
+#ifdef CONFIG_MPTCP
+	rc = proto_register(&mptcp_prot, 1);
 	if (rc)
 		goto out_unregister_tcp_proto;
+#endif
 
 	rc = proto_register(&udp_prot, 1);
 	if (rc)
-		goto out_unregister_tcp_proto;
+		goto out_unregister_mptcp_proto;
 
 	rc = proto_register(&raw_prot, 1);
 	if (rc)
@@ -1820,8 +1783,11 @@ out_unregister_raw_proto:
 	proto_unregister(&raw_prot);
 out_unregister_udp_proto:
 	proto_unregister(&udp_prot);
+out_unregister_mptcp_proto:
+#ifdef CONFIG_MPTCP
+	proto_unregister(&mptcp_prot);
 out_unregister_tcp_proto:
-	mptcp_inet_cleanup();
+#endif
 	proto_unregister(&tcp_prot);
 out_free_reserved_ports:
 	kfree(sysctl_local_reserved_ports);

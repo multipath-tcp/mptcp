@@ -37,6 +37,7 @@
 #include <net/mptcp_pm.h>
 
 extern struct request_sock_ops mptcp6_request_sock_ops;
+extern struct proto mptcpv6_prot;
 
 struct mptcp6_request_sock {
 	struct mptcp_request_sock	mptcp6rsk_tcp;

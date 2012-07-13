@@ -62,7 +62,6 @@
 #define AF_INET6_FAMILY(fam) 0
 #endif
 
-static struct kmem_cache *mpcb_cache __read_mostly;
 static struct kmem_cache *mptcp_sock_cache __read_mostly;
 
 /* Sysctl data */
@@ -377,7 +376,7 @@ static void mptcp_sub_inherit_sockopts(struct sock *meta_sk, struct sock *sub_sk
 		inet_csk_delete_keepalive_timer(sub_sk);
 }
 
-static int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb)
+int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {
 	struct sock *sk = skb->sk;
 
@@ -399,6 +398,8 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 		      const gfp_t flags)
 {
 	struct sk_filter *filter;
+	struct proto *prot = newsk->sk_prot;
+	const struct inet_connection_sock_af_ops *af_ops = inet_csk(newsk)->icsk_af_ops;
 #ifdef CONFIG_SECURITY_NETWORK
 	void *sptr = newsk->sk_security;
 #endif
@@ -417,20 +418,19 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 	}
 
 #ifdef CONFIG_SECURITY_NETWORK
-	if (!is_meta_sk(sk))
-		security_sk_alloc(newsk, family, flags);
-	else
+	if (is_meta_sk(sk))
 		newsk->sk_security = sptr;
 	security_sk_clone(sk, newsk);
 #endif
 
-#if IS_ENABLED(CONFIG_IPV6)
-	if (is_meta_sk(sk) && sk->sk_family != family) {
+	/* Has been changed by the memcpy above */
+	if (is_meta_sk(sk))
+		/* Only update for subsk's, because meta may be ipv4, but
+		 * subsk needs to be ipv6.
+		 */
 		newsk->sk_family = family;
-		newsk->sk_prot = newsk->sk_prot_creator =
-			tcp_sk(sk)->mpcb->sk_prot_alt;
-	}
-#endif
+	newsk->sk_prot = newsk->sk_prot_creator = prot;
+	inet_csk(newsk)->icsk_af_ops = af_ops;
 
 	/* SANITY */
 	get_net(sock_net(newsk));
@@ -553,7 +553,7 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 			newnp->pktoptions = NULL;
 			newnp->rxpmtu = NULL;
 		}
-#endif /* CONFIG_IPV6 */
+#endif
 	} else {
 		/* Sub sk */
 		sk_set_socket(newsk, NULL);
@@ -567,7 +567,7 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 		if (newsk->sk_family == AF_INET6)
 			inet_sk(newsk)->pinet6 =
 					&((struct tcp6_sock *)newsk)->inet6;
-#endif /* CONFIG_IPV6 */
+#endif
 	}
 
 	if (newsk->sk_prot->sockets_allocated)
@@ -578,16 +578,26 @@ int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key)
 {
 	struct mptcp_cb *mpcb;
 	struct tcp_sock *meta_tp, *master_tp = tcp_sk(master_sk);
-	struct sock *meta_sk;
+	struct sock *meta_sk = NULL;
 	struct inet_connection_sock *meta_icsk;
+	struct proto *prot = &mptcp_prot;
 	u64 idsn;
 
-	mpcb = kmem_cache_zalloc(mpcb_cache, GFP_ATOMIC);
+#if IS_ENABLED(CONFIG_IPV6)
+	if (master_sk->sk_family == AF_INET6)
+		prot = &mptcpv6_prot;
+#endif
+
+	meta_sk = sk_prot_alloc(prot, GFP_ATOMIC | __GFP_ZERO, master_sk->sk_family);
+	/* Need to set this here - it is needed by mptcp_inherit_sk */
+	meta_sk->sk_prot = meta_sk->sk_prot_creator = prot;
+	inet_csk(meta_sk)->icsk_af_ops = inet_csk(master_sk)->icsk_af_ops;
+
 	/* Memory allocation failed. Stopping here. */
-	if (!mpcb)
+	if (!meta_sk)
 		return -ENOBUFS;
 
-	meta_sk = mpcb_meta_sk(mpcb);
+	mpcb = (struct mptcp_cb *)meta_sk;
 	meta_tp = mpcb_meta_tp(mpcb);
 	meta_icsk = inet_csk(meta_sk);
 
@@ -597,10 +607,8 @@ int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key)
 
 	if (AF_INET_FAMILY(master_sk->sk_family)) {
 		mpcb->icsk_af_ops_alt = &ipv6_specific;
-		mpcb->sk_prot_alt = &tcpv6_prot;
 	} else {
 		mpcb->icsk_af_ops_alt = &ipv4_specific;
-		mpcb->sk_prot_alt = &tcp_prot;
 	}
 #else
 	mptcp_inherit_sk(master_sk, meta_sk, AF_INET, GFP_ATOMIC);
@@ -608,7 +616,7 @@ int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key)
 
 	meta_tp->mptcp = kmem_cache_zalloc(mptcp_sock_cache, GFP_ATOMIC);
 	if (!meta_tp->mptcp) {
-		kmem_cache_free(mpcb_cache, mpcb);
+		sk_free(meta_sk);
 		return -ENOBUFS;
 	}
 
@@ -664,7 +672,7 @@ int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key)
 	 */
 	if (reqsk_queue_alloc(&meta_icsk->icsk_accept_queue, 32, GFP_ATOMIC)) {
 		kmem_cache_free(mptcp_sock_cache, meta_tp->mptcp);
-		kmem_cache_free(mpcb_cache, mpcb);
+		sk_free(meta_sk);
 		return -ENOMEM;
 	}
 
@@ -686,31 +694,33 @@ int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key)
 	return 0;
 }
 
-#if IS_ENABLED(CONFIG_IPV6)
 struct sock *mptcp_sk_clone(struct sock *sk, int family, const gfp_t priority)
 {
-	struct sock *newsk;
-	struct mptcp_cb *mpcb = (struct mptcp_cb *) sk;
+	struct sock *newsk = NULL;
 
-	newsk = sk_prot_alloc(mpcb->sk_prot_alt, priority, family);
+	if (family == AF_INET) {
+		newsk = sk_prot_alloc(&tcp_prot, priority, family);
 
-	if (newsk != NULL) {
-		mptcp_inherit_sk(sk, newsk, family, priority);
-		inet_csk(newsk)->icsk_af_ops = mpcb->icsk_af_ops_alt;
+		if (!newsk)
+			return NULL;
+		/* Set these pointers - they are needed by mptcp_inherit_sk */
+		newsk->sk_prot = newsk->sk_prot_creator = &tcp_prot;
+		inet_csk(newsk)->icsk_af_ops = &ipv4_specific;
 	}
+#if IS_ENABLED(CONFIG_IPV6)
+	else {
+		newsk = sk_prot_alloc(&tcpv6_prot, priority, family);
 
-	return newsk;
-}
+		if (!newsk)
+			return NULL;
+		newsk->sk_prot = newsk->sk_prot_creator = &tcpv6_prot;
+		inet_csk(newsk)->icsk_af_ops = &ipv6_specific;
+	}
 #endif
 
-void mptcp_release_mpcb(struct mptcp_cb *mpcb)
-{
-	struct sock *meta_sk = mpcb_meta_sk(mpcb);
+	mptcp_inherit_sk(sk, newsk, family, priority);
 
-	security_sk_free(meta_sk);
-
-	mptcp_debug("%s: Will free mpcb %#x\n", __func__, mpcb->mptcp_loc_token);
-	kmem_cache_free(mpcb_cache, mpcb);
+	return newsk;
 }
 
 void mptcp_destroy_mpcb(struct mptcp_cb *mpcb)
@@ -718,22 +728,20 @@ void mptcp_destroy_mpcb(struct mptcp_cb *mpcb)
 	kfree((((struct inet_connection_sock *)mpcb)->icsk_accept_queue).listen_opt);
 	kmem_cache_free(mptcp_sock_cache, mpcb_meta_tp(mpcb)->mptcp);
 	bh_unlock_sock(mpcb_meta_sk(mpcb));
-	kmem_cache_free(mpcb_cache, mpcb);
+	sk_free((struct sock *)mpcb);
 }
 
-int mptcp_sock_destruct(struct sock *sk)
+void mptcp_sock_destruct(struct sock *sk)
 {
 	kmem_cache_free(mptcp_sock_cache, tcp_sk(sk)->mptcp);
 	tcp_sk(sk)->mptcp = NULL;
 
-	if (is_meta_sk(sk) || tcp_sk(sk)->was_meta_sk) {
-		mptcp_release_mpcb(tcp_sk(sk)->mpcb);
-		return 1;
-	} else {
+	if (!is_meta_sk(sk) && !tcp_sk(sk)->was_meta_sk) {
 		/* Taken when mpcb pointer was set */
 		sock_put(mptcp_meta_sk(sk));
+	} else {
+		mptcp_debug("%s destroying meta-sk\n", __func__);
 	}
-	return 0;
 }
 
 int mptcp_add_sock(struct mptcp_cb *mpcb, struct tcp_sock *tp, gfp_t flags)
@@ -1516,8 +1524,6 @@ static int __init mptcp_init(void)
 #ifdef CONFIG_SYSCTL
 	register_sysctl_table(mptcp_root_table);
 #endif
-	mpcb_cache = kmem_cache_create("mptcp_mpcb", sizeof(struct mptcp_cb),
-				       0, SLAB_HWCACHE_ALIGN|SLAB_PANIC, NULL);
 	mptcp_sock_cache = kmem_cache_create("mptcp_sock",
 					     sizeof(struct mptcp_tcp_sock),
 					     0, SLAB_HWCACHE_ALIGN|SLAB_PANIC,

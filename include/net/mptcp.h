@@ -229,14 +229,11 @@ struct mptcp_cb {
 	__u64	mptcp_loc_key;
 	__u32	mptcp_loc_token;
 
-#if IS_ENABLED(CONFIG_IPV6)
 	/* Alternative option pointers. If master sk is IPv4 these are IPv6 and
 	 * vice versa. Used to setup correct function pointers for sub sks of
 	 * different address family than the master socket.
 	 */
 	const struct inet_connection_sock_af_ops *icsk_af_ops_alt;
-	struct proto *sk_prot_alt;
-#endif
 
 	struct list_head collide_tk;
 
@@ -630,7 +627,6 @@ void mptcp_update_sndbuf(struct mptcp_cb *mpcb);
 void mptcp_set_state(struct sock *sk, int state);
 void mptcp_skb_entail_init(struct tcp_sock *tp, struct sk_buff *skb);
 struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject);
-void mptcp_release_mpcb(struct mptcp_cb *mpcb);
 void mptcp_send_fin(struct sock *meta_sk);
 void mptcp_send_reset(struct sock *sk, struct sk_buff *skb);
 void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority);
@@ -674,8 +670,10 @@ void mptcp_sock_def_error_report(struct sock *sk);
 void mptcp_sub_close_wq(struct work_struct *work);
 void mptcp_sub_close(struct sock *sk, unsigned long delay);
 struct sock *mptcp_select_ack_sock(const struct mptcp_cb *mpcb, int copied);
-int mptcp_sock_destruct(struct sock *sk);
+void mptcp_sock_destruct(struct sock *sk);
 void mptcp_destroy_mpcb(struct mptcp_cb *mpcb);
+int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb);
+struct sock *mptcp_sk_clone(struct sock *sk, int family, const gfp_t priority);
 
 static inline void mptcp_sub_force_close(struct sock *sk)
 {
@@ -1101,29 +1099,11 @@ static inline u8 mptcp_set_new_pathindex(struct mptcp_cb *mpcb)
 	return 0;
 }
 
-#if IS_ENABLED(CONFIG_IPV6)
-struct sock *mptcp_sk_clone(struct sock *sk, int family, const gfp_t priority);
-
 static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
 {
 	return sk->sk_family == AF_INET6 &&
 		ipv6_addr_type(&inet6_sk(sk)->saddr) == IPV6_ADDR_MAPPED;
 }
-
-#else
-
-static inline struct sock *mptcp_sk_clone(const struct sock *sk, int family,
-					  const gfp_t priority)
-{
-	return sk_clone(sk, priority);
-}
-
-static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
-{
-	return 0;
-}
-
-#endif
 
 #else /* CONFIG_MPTCP */
 
@@ -1282,10 +1262,7 @@ static inline void mptcp_mp_fail_rcvd(const struct mptcp_cb *mpcb,
 static inline void mptcp_init_mp_opt(const struct multipath_options *mopt) {}
 static inline void mptcp_wmem_free_skb(const struct sock *sk,
 				       const struct sk_buff *skb) {}
-static inline int mptcp_sock_destruct(const struct sock *sk)
-{
-	return 0;
-}
+static inline void mptcp_sock_destruct(const struct sock *sk) {}
 static inline void mptcp_update_pointers(struct sock **sk,
 					 struct tcp_sock **tp,
 					 struct mptcp_cb **mpcb) {}

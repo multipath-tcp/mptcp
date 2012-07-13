@@ -2133,11 +2133,6 @@ void tcp_close(struct sock *sk, long timeout)
 	int data_was_unread = 0;
 	int state;
 
-	if (is_meta_sk(sk)) {
-		mptcp_close(sk, timeout);
-		return;
-	}
-
 	lock_sock(sk);
 	sk->sk_shutdown = SHUTDOWN_MASK;
 
