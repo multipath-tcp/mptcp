@@ -23,7 +23,6 @@
 #include <net/route.h>
 #include <net/tcp_states.h>
 #include <net/xfrm.h>
-#include <net/tcp.h>
 #include <net/mptcp.h>
 
 #ifdef INET_CSK_DEBUG

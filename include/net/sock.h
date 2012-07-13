@@ -726,9 +726,19 @@ extern void sk_stream_kill_queues(struct sock *sk);
 
 extern int sk_wait_data(struct sock *sk, long *timeo);
 
+/* START - needed for MPTCP */
 extern void sock_def_error_report(struct sock *sk);
 extern struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
 				  int family);
+extern void sock_lock_init(struct sock *sk);
+
+extern struct lock_class_key af_callback_keys[AF_MAX];
+extern struct lock_class_key af_family_keys[AF_MAX];
+extern struct lock_class_key af_family_slock_keys[AF_MAX];
+extern char *const af_family_slock_key_strings[AF_MAX+1];
+extern char *const af_family_key_strings[AF_MAX+1];
+extern char *const af_family_clock_key_strings[AF_MAX+1];
+/* END - needed for MPTCP */
 
 struct request_sock_ops;
 struct timewait_sock_ops;
@@ -1055,27 +1065,6 @@ do {									\
 		       	(skey), (sname));				\
 	lockdep_init_map(&(sk)->sk_lock.dep_map, (name), (key), 0);	\
 } while (0)
-
-extern struct lock_class_key af_callback_keys[AF_MAX];
-extern struct lock_class_key af_family_keys[AF_MAX];
-extern struct lock_class_key af_family_slock_keys[AF_MAX];
-extern char *const af_family_slock_key_strings[AF_MAX+1];
-extern char *const af_family_key_strings[AF_MAX+1];
-extern char *const af_family_clock_key_strings[AF_MAX+1];
-
-/*
- * Initialize an sk_lock.
- *
- * (We also register the sk_lock with the lock validator.)
- */
-static inline void sock_lock_init(struct sock *sk)
-{
-	sock_lock_init_class_and_name(sk,
-			af_family_slock_key_strings[sk->sk_family],
-			af_family_slock_keys + sk->sk_family,
-			af_family_key_strings[sk->sk_family],
-			af_family_keys + sk->sk_family);
-}
 
 extern void lock_sock_nested(struct sock *sk, int subclass);
 
