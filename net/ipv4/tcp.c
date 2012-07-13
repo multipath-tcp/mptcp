@@ -458,7 +458,6 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	}
 	/* This barrier is coupled with smp_wmb() in tcp_reset() */
 	smp_rmb();
-
 	if (sk->sk_err)
 		mask |= POLLERR;
 
@@ -1467,9 +1466,7 @@ static inline struct sk_buff *tcp_recv_skb(struct sock *sk, u32 seq, u32 *off)
 	u32 offset;
 
 	skb_queue_walk(&sk->sk_receive_queue, skb) {
-
 		offset = seq - TCP_SKB_CB(skb)->seq;
-
 		if (tcp_hdr(skb)->syn)
 			offset--;
 		if (offset < skb->len || (!tcp_sk(sk)->mpc && tcp_hdr(skb)->fin) ||
@@ -1594,7 +1591,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	int copied_early = 0;
 	struct sk_buff *skb;
 	u32 urg_hole = 0;
-	/* MPTCP variables */
 	struct mptcp_cb *mpcb = tp->mptcp ? tp->mpcb : NULL;
 	struct sock *sk_it = tp->mptcp ? NULL : sk;
 
@@ -1702,7 +1698,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 				break;
 
 			offset = *seq - TCP_SKB_CB(skb)->seq;
-
 			if (tcp_hdr(skb)->syn)
 				offset--;
 			if (offset < skb->len)
@@ -2226,6 +2221,7 @@ adjudge_to_death:
 
 	/* It is the last release_sock in its life. It will remove backlog. */
 	release_sock(sk);
+
 
 	/* Now socket is owned by kernel and we acquire BH lock
 	   to finish close. No need to check for user refs.
