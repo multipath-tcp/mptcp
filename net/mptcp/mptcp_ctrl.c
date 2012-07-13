@@ -707,12 +707,13 @@ void mptcp_destroy_mpcb(struct mptcp_cb *mpcb)
 
 int mptcp_sock_destruct(struct sock *sk)
 {
+	kmem_cache_free(mptcp_sock_cache, tcp_sk(sk)->mptcp);
+	tcp_sk(sk)->mptcp = NULL;
+
 	if (is_meta_sk(sk) || tcp_sk(sk)->was_meta_sk) {
 		mptcp_release_mpcb(tcp_sk(sk)->mpcb);
 		return 1;
 	} else {
-		kmem_cache_free(mptcp_sock_cache, tcp_sk(sk)->mptcp);
-		tcp_sk(sk)->mptcp = NULL;
 		/* Taken when mpcb pointer was set */
 		sock_put(mptcp_meta_sk(sk));
 	}
