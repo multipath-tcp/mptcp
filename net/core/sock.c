@@ -1503,9 +1503,6 @@ struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 				     unsigned long data_len, int noblock,
 				     int *errcode)
 {
-	struct sock *meta_sk = (sk->sk_protocol == IPPROTO_TCP &&
-				tcp_sk(sk)->mpcb) ?
-				(struct sock *)tcp_sk(sk)->mpcb : sk;
 	struct sk_buff *skb;
 	gfp_t gfp_mask;
 	long timeo;
@@ -1563,8 +1560,8 @@ struct sk_buff *sock_alloc_send_pskb(struct sock *sk, unsigned long header_len,
 			err = -ENOBUFS;
 			goto failure;
 		}
-		set_bit(SOCK_ASYNC_NOSPACE, &meta_sk->sk_socket->flags);
-		set_bit(SOCK_NOSPACE, &meta_sk->sk_socket->flags);
+		set_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
+		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 		err = -EAGAIN;
 		if (!timeo)
 			goto failure;
