@@ -84,6 +84,8 @@ static void mptcp_v6_reqsk_queue_hash_add(struct request_sock *req,
 
 static void mptcp_v6_join_request(struct mptcp_cb *mpcb, struct sk_buff *skb)
 {
+	struct sock *meta_sk = mpcb_meta_sk(mpcb);
+	struct ipv6_pinfo *np = inet6_sk(meta_sk);
 	struct inet6_request_sock *treq;
 	struct request_sock *req;
 	struct mptcp_request_sock *mtreq;
@@ -131,8 +133,12 @@ static void mptcp_v6_join_request(struct mptcp_cb *mpcb, struct sk_buff *skb)
 	ipv6_addr_copy(&treq->loc_addr, &daddr);
 	ipv6_addr_copy(&treq->rmt_addr, &saddr);
 
-	atomic_inc(&skb->users);
-	treq->pktopts = skb;
+	if (ipv6_opt_accepted(meta_sk, skb) ||
+	    np->rxopt.bits.rxinfo || np->rxopt.bits.rxoinfo ||
+	    np->rxopt.bits.rxhlim || np->rxopt.bits.rxohlim) {
+		atomic_inc(&skb->users);
+		treq->pktopts = skb;
+	}
 
 	/*Todo: add the sanity checks here. See tcp_v6_conn_request*/
 
