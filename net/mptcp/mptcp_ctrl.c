@@ -481,6 +481,9 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 	newsk->sk_send_head	= NULL;
 	newsk->sk_userlocks	= sk->sk_userlocks & ~SOCK_BINDPORT_LOCK;
 
+	tcp_sk(newsk)->mpc = 0;
+	tcp_sk(newsk)->mptcp = NULL;
+
 	sock_reset_flag(newsk, SOCK_DONE);
 	skb_queue_head_init(&newsk->sk_error_queue);
 
@@ -714,6 +717,7 @@ void mptcp_destroy_mpcb(struct mptcp_cb *mpcb)
 {
 	kfree((((struct inet_connection_sock *)mpcb)->icsk_accept_queue).listen_opt);
 	kmem_cache_free(mptcp_sock_cache, mpcb_meta_tp(mpcb)->mptcp);
+	bh_unlock_sock(mpcb_meta_sk(mpcb));
 	kmem_cache_free(mpcb_cache, mpcb);
 }
 
@@ -1364,10 +1368,8 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	struct mptcp_cb *mpcb;
 	struct mptcp_request_sock *mtreq;
 
-	if (!tcp_rsk(req)->saw_mpc) {
-		child_tp->mpcb = NULL;
+	if (!tcp_rsk(req)->saw_mpc)
 		return 1;
-	}
 
 	/*** Copy mptcp related info from req to child ***/
 	child_tp->rx_opt.saw_mpc = 0;
@@ -1377,20 +1379,20 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	child_tp->mptcp_loc_key = mtreq->mptcp_loc_key;
 	child_tp->mptcp_loc_token = mtreq->mptcp_loc_token;
 
-	if (mptcp_alloc_mpcb(child, mtreq->mptcp_rem_key)) {
+	if (mptcp_alloc_mpcb(child, mtreq->mptcp_rem_key))
 		/* The allocation of the mpcb failed!
-		 * Destroy the child and go to listen_overflow
+		 * Fallback to regular TCP.
 		 */
-		sock_orphan(child);
-		tcp_done(child);
-		return -ENOBUFS;
-	}
+		return 1;
+
 	child_tp->mpc = 1;
 	mpcb = child_tp->mpcb;
 
 	if (mptcp_add_sock(mpcb, child_tp, GFP_ATOMIC)) {
 		mptcp_destroy_mpcb(mpcb);
 		sock_orphan(child);
+		bh_unlock_sock(child); /* Taken by sk_clone */
+		sock_put(child); /* refcnt is initialized to 2 */
 		tcp_done(child);
 		return -ENOBUFS;
 	}
@@ -1464,8 +1466,15 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	sk_set_socket(child, mpcb_meta_sk(mpcb)->sk_socket);
 	child->sk_wq = mpcb_meta_sk(mpcb)->sk_wq;
 
-	if (mptcp_add_sock(mpcb, child_tp, GFP_ATOMIC))
+	if (mptcp_add_sock(mpcb, child_tp, GFP_ATOMIC)) {
+		/* TODO when we support acking the third ack for new subflows,
+		 * we should silently discard this third ack, by returning NULL.
+		 *
+		 * Maybe, at the retransmission we will have enough memory to
+		 * fully add the socket to the meta-sk.
+		 */
 		goto teardown;
+	}
 
 	child_tp->mptcp->rem_id = mtreq->rem_id;
 	child_tp->mptcp->path_index = mptcp_set_new_pathindex(mpcb);
@@ -1490,7 +1499,11 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	return child;
 
 teardown:
+	/* Drop this request - sock creation failed. */
+	inet_csk_reqsk_queue_drop(meta_sk, req, prev);
 	sock_orphan(child);
+	bh_unlock_sock(child); /* Taken by sk_clone */
+	sock_put(child); /* refcnt is initialized to 2 */
 	tcp_done(child);
 	return meta_sk;
 }
