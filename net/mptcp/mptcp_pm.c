@@ -145,7 +145,8 @@ void mptcp_hash_remove(struct mptcp_cb *mpcb)
 {
 	/* remove from the token hashtable */
 	write_lock_bh(&tk_hash_lock);
-	list_del(&mpcb->collide_tk);
+	/* list_del_init, so that list_empty succeeds in mptcp_v4_do_rcv */
+	list_del_init(&mpcb->collide_tk);
 	write_unlock_bh(&tk_hash_lock);
 }
 

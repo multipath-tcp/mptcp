@@ -269,9 +269,11 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	struct request_sock **prev, *req;
 	struct sock *child;
 
-	/* Socket is in the process of destruction - we don't accept
-	 * new subflows */
-	if (sock_flag(meta_sk, SOCK_DEAD) || meta_sk->sk_state == TCP_CLOSE)
+	/* Has been removed from the tk-table. Thus, no new subflows.
+	 * Check for close-state is necessary, because we may have been closed
+	 * without passing by mptcp_close().
+	 */
+	if (meta_sk->sk_state == TCP_CLOSE || list_empty(&mpcb->collide_tk))
 		goto reset_and_discard;
 
 	req = inet6_csk_search_req(meta_sk, &prev, th->source,
