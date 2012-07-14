@@ -812,10 +812,7 @@ void mptcp_del_sock(struct sock *sk)
 	struct mptcp_cb *mpcb;
 	int done = 0;
 
-	/* Need to check for protocol here, because we may enter here for
-	 * non-tcp sockets. (coming from inet_csk_destroy_sock) */
-	if (sk->sk_type != SOCK_STREAM || sk->sk_protocol != IPPROTO_TCP ||
-	    !tp->mptcp || !tp->mptcp->attached)
+	if (!tp->mptcp || !tp->mptcp->attached)
 		return;
 
 	mpcb = tp->mpcb;

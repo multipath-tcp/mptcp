@@ -2093,6 +2093,7 @@ void tcp_v4_destroy_sock(struct sock *sk)
 		__skb_queue_purge(&tp->mpcb->reinject_queue);
 		mptcp_purge_ofo_queue(tp);
 	} else {
+		mptcp_del_sock(sk);
 		__skb_queue_purge(&tp->out_of_order_queue);
 	}
 
