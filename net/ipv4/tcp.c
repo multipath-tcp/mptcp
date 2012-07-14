@@ -2345,6 +2345,8 @@ int tcp_disconnect(struct sock *sk, int flags)
 		struct sock *current_sk;
 		struct tcp_sock *tp = tcp_sk(sk);
 
+		__skb_queue_purge(&tp->mpcb->reinject_queue);
+
 		mptcp_hash_remove(tp->mpcb);
 		reqsk_queue_destroy(&((struct inet_connection_sock *)tp->mpcb)->icsk_accept_queue);
 
