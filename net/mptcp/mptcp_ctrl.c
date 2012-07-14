@@ -391,6 +391,9 @@ static int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	return 0;
 }
 
+static struct lock_class_key meta_key;
+static struct lock_class_key meta_slock_key;
+
 /* Code inspired from sk_clone() */
 void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 		      const gfp_t flags)
@@ -432,15 +435,24 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 	/* SANITY */
 	get_net(sock_net(newsk));
 	sk_node_init(&newsk->sk_node);
-	sock_lock_init(newsk);
-	/* either it's a creation of a new subflow,
-	 * or we are on the client-side (syn-sent state).
+	if (!is_meta_sk(sk)) {
+		sock_lock_init_class_and_name(newsk, "slock-AF_INET-MPTCP",
+					      &meta_slock_key,
+					      "sk_lock-AF_INET-MPTCP",
+					      &meta_key);
+	} else {
+		sock_lock_init(newsk);
+	}
+
+	/* Unlocks are in:
 	 *
-	 * If we are on the client-side we lock the meta-sk to prevent
-	 * simultaneous access to the meta-sk due to tcp_data_snd_check
+	 * 1. If we are creating the mpcb
+	 * 	* on client-side in tcp_rcv_state_process, "case TCP_SYN_SENT"
+	 * 	* on server-side in tcp_child_process
+	 * 2. If we are creating a subsock
+	 * 	* Also in tcp_child_process
 	 */
-	if (is_meta_sk(sk) || sk->sk_state == TCP_SYN_SENT)
-		bh_lock_sock(newsk);
+	bh_lock_sock(newsk);
 
 	newsk->sk_backlog.head	= newsk->sk_backlog.tail = NULL;
 	newsk->sk_backlog.len = 0;

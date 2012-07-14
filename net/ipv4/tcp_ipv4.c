@@ -1609,6 +1609,11 @@ static struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb)
 	if (nsk) {
 		if (nsk->sk_state != TCP_TIME_WAIT) {
 			bh_lock_sock(nsk);
+			/* We will go into tcp_child_process, who will unlock
+			 * the meta-sk then.
+			 */
+			if (tcp_sk(nsk)->mpc && !is_meta_sk(nsk))
+				bh_lock_sock(mptcp_meta_sk(nsk));
 			return nsk;
 		}
 		inet_twsk_put(inet_twsk(nsk));
