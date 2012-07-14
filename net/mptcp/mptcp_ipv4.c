@@ -90,8 +90,8 @@ static void mptcp_v4_reqsk_queue_hash_add(struct request_sock *req,
 /* from tcp_v4_conn_request() */
 static void mptcp_v4_join_request(struct mptcp_cb *mpcb, struct sk_buff *skb)
 {
+	struct request_sock *req, **prev;
 	struct inet_request_sock *ireq;
-	struct request_sock *req;
 	struct mptcp_request_sock *mtreq;
 	struct tcp_options_received tmp_opt;
 	u8 mptcp_hash_mac[20];
@@ -150,8 +150,9 @@ static void mptcp_v4_join_request(struct mptcp_cb *mpcb, struct sk_buff *skb)
 	return;
 
 drop_and_free:
-	inet_csk_reqsk_queue_removed(mpcb_meta_sk(mpcb), req);
-	reqsk_free(req);
+	req = inet_csk_search_req(mpcb_meta_sk(mpcb), &prev,
+				  inet_rsk(req)->rmt_port, saddr, daddr);
+	inet_csk_reqsk_queue_drop(mpcb_meta_sk(mpcb), req, prev);
 	return;
 }
 

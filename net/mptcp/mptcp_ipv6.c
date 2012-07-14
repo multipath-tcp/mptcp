@@ -86,8 +86,8 @@ static void mptcp_v6_join_request(struct mptcp_cb *mpcb, struct sk_buff *skb)
 {
 	struct sock *meta_sk = mpcb_meta_sk(mpcb);
 	struct ipv6_pinfo *np = inet6_sk(meta_sk);
+	struct request_sock *req, **prev;
 	struct inet6_request_sock *treq;
-	struct request_sock *req;
 	struct mptcp_request_sock *mtreq;
 	struct tcp_options_received tmp_opt;
 	u8 mptcp_hash_mac[20];
@@ -157,8 +157,10 @@ static void mptcp_v6_join_request(struct mptcp_cb *mpcb, struct sk_buff *skb)
 	return;
 
 drop_and_free:
-	inet_csk_reqsk_queue_removed(mpcb_meta_sk(mpcb), req);
-	reqsk_free(req);
+	req = inet6_csk_search_req(mpcb_meta_sk(mpcb), &prev,
+				   inet_rsk(req)->rmt_port, &saddr, &daddr,
+				   inet6_iif(skb));
+	inet_csk_reqsk_queue_drop(mpcb_meta_sk(mpcb), req, prev);
 	return;
 }
 
