@@ -829,7 +829,15 @@ retry:
 				kfree_skb(subskb);
 			}
 
-			TCP_SKB_CB(skb)->path_mask &= ~mptcp_pi_to_flag(subtp->mptcp->path_index);
+			/* If it is a reinjection, we cannot modify the path-mask
+			 * of the skb, because subskb == skb. And subskb has been
+			 * freed above.
+			 *
+			 * TODO - we have to put back the skb in the
+			 * reinject-queue if tcp_transmit_skb fails.
+			 */
+			if (reinject <= 0)
+				TCP_SKB_CB(skb)->path_mask &= ~mptcp_pi_to_flag(subtp->mptcp->path_index);
 			mpcb->noneligible |= mptcp_pi_to_flag(subtp->mptcp->path_index);
 
 			continue;
