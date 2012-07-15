@@ -150,13 +150,6 @@ void mptcp_hash_remove(struct mptcp_cb *mpcb)
 	write_unlock_bh(&tk_hash_lock);
 }
 
-void mptcp_hash_request_remove(struct request_sock *req)
-{
-	spin_lock_bh(&mptcp_reqsk_hlock);
-	list_del(&mptcp_rsk(req)->collide_tuple);
-	spin_unlock_bh(&mptcp_reqsk_hlock);
-}
-
 u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock* sk)
 {
 	int i;

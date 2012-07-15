@@ -853,7 +853,6 @@ int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req,
 		      struct request_values *rvp)
 {
 	TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_RETRANSSEGS);
-
 	return tcp_v4_send_synack(sk, NULL, req, rvp);
 }
 
@@ -1407,7 +1406,6 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 		tcp_clear_options(&tmp_opt);
 
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
-
 	tcp_openreq_init(req, &tmp_opt, &mopt, skb);
 
 	ireq = inet_rsk(req);
@@ -1862,7 +1860,6 @@ process:
 		NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
 		goto discard_and_relse;
 	}
-
 	bh_unlock_sock(meta_sk);
 
 	sock_put(sk);

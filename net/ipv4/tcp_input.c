@@ -3539,10 +3539,8 @@ static int tcp_ack_update_window(struct sock *sk, const struct sk_buff *skb, u32
 
 no_window_update:
 	tp->snd_una = ack;
-#ifdef CONFIG_MPTCP
 	if (tp->mptcp && after(tp->snd_una, tp->mptcp->reinjected_seq))
 		tp->mptcp->reinjected_seq = tp->snd_una;
-#endif
 
 	return flag;
 }
@@ -3947,12 +3945,10 @@ void tcp_parse_options(const struct sk_buff *skb, struct tcp_options_received *o
 					break;
 				}
 				break;
-#ifdef CONFIG_MPTCP
 			case TCPOPT_MPTCP:
 				mptcp_parse_options(ptr - 2, opsize, opt_rx,
 						    mopt, skb);
 				break;
-#endif
 			}
 
 			ptr += opsize-2;
@@ -4771,13 +4767,6 @@ static struct sk_buff *tcp_collapse_one(struct sock *sk, struct sk_buff *skb,
  *
  * Segments with FIN/SYN are not collapsed (only because this
  * simplifies code)
- *
- * TODO: for MPTCP, we CANNOT collapse segments that have non contiguous
- * dataseq numbers. It is possible the seq numbers are contiguous but not
- * dataseq. In that case we must keep the segments separated. Until this
- * is supported, we disable the tcp_collapse function.
- * NOTE that when supporting this, we will need to ensure that the path_index
- * field is copied when creating the new skbuff.
  */
 static void
 tcp_collapse(struct sock *sk, struct sk_buff_head *list,
@@ -5148,11 +5137,6 @@ static void tcp_new_space(struct sock *sk)
 	meta_sk->sk_write_space(meta_sk);
 }
 
-
-/**
- * If the flow is MPTCP, sk is the subsock, and meta_sk is the mpcb.
- * Otherwise both are the regular TCP socket.
- */
 static void tcp_check_space(struct sock *sk)
 {
 	struct sock *meta_sk = tcp_sk(sk)->mpc ? mpcb_meta_sk(tcp_sk(sk)->mpcb) : sk;

@@ -527,6 +527,7 @@ extern struct sk_buff * tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 					struct request_values *rvp);
 extern int tcp_disconnect(struct sock *sk, int flags);
 
+
 /* From syncookies.c */
 extern __u32 syncookie_secret[2][16-4+SHA_DIGEST_WORDS];
 extern struct sock *cookie_v4_check(struct sock *sk, struct sk_buff *skb, 
@@ -724,11 +725,7 @@ extern u32 __tcp_select_window(struct sock *sk);
 #define TCPHDR_ECE 0x40
 #define TCPHDR_CWR 0x80
 
-/* MPTCP flags
- * Later, when the layer separation (subflow vs meta-flow) is clearer,
- * TCP flags will be rewritten with MPTCP flags when changing the layer.
- * This will allow using one flags field only, and spare 8 bits.
- */
+/* MPTCP flags */
 #define MPTCPHDR_ACK		0x01
 #define MPTCPHDR_SEQ		0x02
 #define MPTCPHDR_FIN		0x04
@@ -1281,7 +1278,6 @@ extern int tcp_v4_md5_do_del(struct sock *sk, __be32 addr);
 					.key = (twsk)->tw_md5_key,	 \
 					.keylen = (twsk)->tw_md5_keylen, \
 				} : NULL)
-
 #else
 #define tcp_twsk_md5_key(twsk)	NULL
 #endif
@@ -1504,6 +1500,7 @@ extern struct request_sock_ops tcp_request_sock_ops;
 extern struct request_sock_ops tcp6_request_sock_ops;
 
 extern void tcp_v4_destroy_sock(struct sock *sk);
+
 extern int tcp_v4_gso_send_check(struct sk_buff *skb);
 extern struct sk_buff *tcp_tso_segment(struct sk_buff *skb, u32 features);
 extern struct sk_buff **tcp_gro_receive(struct sk_buff **head,

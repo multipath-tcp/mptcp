@@ -1053,13 +1053,12 @@ void mptcp_synack_options(struct request_sock *req,
 	}
 }
 
-unsigned mptcp_established_options(struct sock *sk, struct sk_buff *skb,
-				   struct tcp_out_options *opts, unsigned *size)
+void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
+			       struct tcp_out_options *opts, unsigned *size)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_cb *mpcb = tp->mpcb;
 	struct tcp_skb_cb *tcb = skb ? TCP_SKB_CB(skb) : NULL;
-	unsigned ret = 0;
 
 	/* In fallback mp_fail-mode, we have to repeat it until the fallback
 	 * has been done by the sender
@@ -1070,7 +1069,7 @@ unsigned mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		opts->data_ack = (__u32)(mpcb->csum_cutoff_seq >> 32);
 		opts->data_seq = (__u32)mpcb->csum_cutoff_seq;
 		*size += MPTCP_SUB_LEN_FAIL;
-		return ret;
+		return;
 	}
 
 	if (unlikely(tp->send_mp_fclose)) {
@@ -1078,7 +1077,7 @@ unsigned mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		opts->mptcp_options |= OPTION_MP_FCLOSE;
 		opts->receiver_key = mpcb->rx_opt.mptcp_rem_key;
 		*size += MPTCP_SUB_LEN_FCLOSE_ALIGN;
-		return ret;
+		return;
 	}
 
 	/* 1. If we are the sender of the infinite-mapping, we need the
@@ -1103,7 +1102,7 @@ unsigned mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 	      !(tcb->mptcp_flags & MPTCPHDR_INF) &&
 	      !before(tcb->seq, tp->mptcp->infinite_cutoff_seq)) ||
 	     !mpcb->send_infinite_mapping)) {
-		return ret;
+		return;
 	}
 
 	if (unlikely(tp->mptcp->include_mpc)) {
@@ -1141,10 +1140,6 @@ unsigned mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 			 * either 10 or 12, and thus aligned = 12 */
 			*size += MPTCP_SUB_LEN_ACK_ALIGN +
 				 MPTCP_SUB_LEN_SEQ_ALIGN;
-
-			ret = MPTCP_SUB_LEN_DSS_ALIGN +
-			      MPTCP_SUB_LEN_ACK_ALIGN +
-			      MPTCP_SUB_LEN_SEQ_ALIGN;
 		}
 
 		*size += MPTCP_SUB_LEN_DSS_ALIGN;
@@ -1207,7 +1202,7 @@ unsigned mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 	}
 
 	tp->mptcp->include_mpc = 0;
-	return ret;
+	return;
 }
 
 void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
