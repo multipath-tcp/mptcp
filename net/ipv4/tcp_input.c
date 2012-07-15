@@ -4192,10 +4192,8 @@ static void tcp_fin(struct sock *sk)
 	case TCP_ESTABLISHED:
 		/* Move to CLOSE_WAIT */
 		tcp_set_state(sk, TCP_CLOSE_WAIT);
-#ifdef CONFIG_MPTCP
 		if (tp->mpc && tp->mpcb->passive_close)
 			mptcp_sub_close(sk, 0);
-#endif
 		inet_csk(sk)->icsk_ack.pingpong = 1;
 		break;
 
