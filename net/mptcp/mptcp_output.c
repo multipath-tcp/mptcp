@@ -1152,7 +1152,6 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_ADD_ADDR;
 		opts->addr4 = &mpcb->addr4[ind];
-		opts->addr6 = NULL;
 		if (skb)
 			tp->mptcp->add_addr4 &= ~(1 << ind);
 		*size += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN;
@@ -1163,7 +1162,6 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_ADD_ADDR;
 		opts->addr6 = &mpcb->addr6[ind];
-		opts->addr4 = NULL;
 		if (skb)
 			tp->mptcp->add_addr6 &= ~(1 << ind);
 		*size += MPTCP_SUB_LEN_ADD_ADDR6_ALIGN;

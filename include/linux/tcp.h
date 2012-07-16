@@ -258,11 +258,12 @@ struct tcp_out_options {
 	__u64	receiver_key;	/* receiver's key for mptcp */
 	__u64	sender_truncated_mac;
 	__u32	sender_nonce;	/* random number of the sender */
-	__u32	receiver_nonce;	/* random number of the receiver */
 	__u32	token;		/* token for mptcp */
 	char	sender_mac[20];
-	struct mptcp_loc4 *addr4;/* v4 addresses for MPTCP */
-	struct mptcp_loc6 *addr6;/* v6 addresses for MPTCP */
+	union {
+		struct mptcp_loc4 *addr4;/* v4 addresses for MPTCP */
+		struct mptcp_loc6 *addr6;/* v6 addresses for MPTCP */
+	};
 	u8	addr_id;	/* address id */
 	u16	remove_addrs;	/* list of address id */
 #endif /* CONFIG_MPTCP */
