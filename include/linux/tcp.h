@@ -248,24 +248,37 @@ struct tcp_out_options {
 	__u8	*hash_location;	/* temporary pointer, overloaded */
 #ifdef CONFIG_MPTCP
 	u16	mptcp_options;	/* bit field of MPTCP related OPTION_* */
-	__u32	data_seq;	/* data sequence number, for MPTCP */
-	__u32	data_ack;	/* data ack, for MPTCP */
-	__u32	sub_seq;	/* subflow seqnum, for MPTCP */
-	__u16	data_len;	/* data level length, for MPTCP */
 	__sum16	dss_csum;	/* Overloaded field: dss-checksum required
 				 * (for SYN-packets)? Or dss-csum itself */
-	__u64	sender_key;	/* sender's key for mptcp */
-	__u64	receiver_key;	/* receiver's key for mptcp */
-	__u64	sender_truncated_mac;
-	__u32	sender_nonce;	/* random number of the sender */
-	__u32	token;		/* token for mptcp */
-	char	sender_mac[20];
+
+	__u32	data_seq;	/* data sequence number, for MPTCP */
+	__u32	data_ack;	/* data ack, for MPTCP */
+
+	union {
+		struct {
+			__u64	sender_key;	/* sender's key for mptcp */
+			__u64	receiver_key;	/* receiver's key for mptcp */
+		} mp_capable;
+
+		struct {
+			__u64	sender_truncated_mac;
+			__u32	sender_nonce;
+					/* random number of the sender */
+			__u32	token;	/* token for mptcp */
+		} mp_join_syns;
+
+		struct {
+			char sender_mac[20];
+		} mp_join_ack;
+	};
+
 	union {
 		struct mptcp_loc4 *addr4;/* v4 addresses for MPTCP */
 		struct mptcp_loc6 *addr6;/* v6 addresses for MPTCP */
 	};
-	u8	addr_id;	/* address id */
+
 	u16	remove_addrs;	/* list of address id */
+	u8	addr_id;	/* address id */
 #endif /* CONFIG_MPTCP */
 };
 

@@ -982,7 +982,7 @@ void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 	if (is_master_tp(tp)) {
 		opts->mptcp_options |= OPTION_MP_CAPABLE | OPTION_TYPE_SYN;
 		*remaining -= MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN;
-		opts->sender_key = tp->mptcp_loc_key;
+		opts->mp_capable.sender_key = tp->mptcp_loc_key;
 		opts->dss_csum = sysctl_mptcp_checksum;
 
 		/* We arrive here either when sending a SYN or a
@@ -999,13 +999,13 @@ void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 
 		opts->mptcp_options |= OPTION_MP_JOIN | OPTION_TYPE_SYN;
 		*remaining -= MPTCP_SUB_LEN_JOIN_SYN_ALIGN;
-		opts->token = mpcb->rx_opt.mptcp_rem_token;
+		opts->mp_join_syns.token = mpcb->rx_opt.mptcp_rem_token;
 		opts->addr_id = mptcp_get_loc_addrid(mpcb, sk);
 
 		if (!tp->mptcp->mptcp_loc_nonce)
 			get_random_bytes(&tp->mptcp->mptcp_loc_nonce, 4);
 
-		opts->sender_nonce = tp->mptcp->mptcp_loc_nonce;
+		opts->mp_join_syns.sender_nonce = tp->mptcp->mptcp_loc_nonce;
 	}
 }
 
@@ -1020,15 +1020,16 @@ void mptcp_synack_options(struct request_sock *req,
 	if (!mtreq->mpcb) {
 		opts->mptcp_options |= OPTION_MP_CAPABLE | OPTION_TYPE_SYNACK;
 		*remaining -= MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN;
-		opts->sender_key = mtreq->mptcp_loc_key;
+		opts->mp_capable.sender_key = mtreq->mptcp_loc_key;
 		opts->dss_csum = sysctl_mptcp_checksum || mtreq->dss_csum;
 	} else {
 		struct inet_request_sock *ireq = inet_rsk(req);
 		int i;
 
 		opts->mptcp_options |= OPTION_MP_JOIN | OPTION_TYPE_SYNACK;
-		opts->sender_truncated_mac = mtreq->mptcp_hash_tmac;
-		opts->sender_nonce = mtreq->mptcp_loc_nonce;
+		opts->mp_join_syns.sender_truncated_mac =
+				mtreq->mptcp_hash_tmac;
+		opts->mp_join_syns.sender_nonce = mtreq->mptcp_loc_nonce;
 		opts->addr_id = 0;
 
 		/* Finding Address ID */
@@ -1075,7 +1076,7 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 	if (unlikely(tp->send_mp_fclose)) {
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_MP_FCLOSE;
-		opts->receiver_key = mpcb->rx_opt.mptcp_rem_key;
+		opts->mp_capable.receiver_key = mpcb->rx_opt.mptcp_rem_key;
 		*size += MPTCP_SUB_LEN_FCLOSE_ALIGN;
 		return;
 	}
@@ -1111,8 +1112,9 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 			opts->mptcp_options |= OPTION_MP_CAPABLE |
 					       OPTION_TYPE_ACK;
 			*size += MPTCP_SUB_LEN_CAPABLE_ACK_ALIGN;
-			opts->sender_key = mpcb->mptcp_loc_key;
-			opts->receiver_key = mpcb->rx_opt.mptcp_rem_key;
+			opts->mp_capable.sender_key = mpcb->mptcp_loc_key;
+			opts->mp_capable.receiver_key =
+					mpcb->rx_opt.mptcp_rem_key;
 			opts->dss_csum = mpcb->rx_opt.dss_csum;
 		} else {
 			opts->mptcp_options |= OPTION_MP_JOIN | OPTION_TYPE_ACK;
@@ -1122,7 +1124,7 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 					(u8 *)&mpcb->rx_opt.mptcp_rem_key,
 					(u8 *)&tp->mptcp->mptcp_loc_nonce,
 					(u8 *)&mpcb->rx_opt.mptcp_recv_nonce,
-					(u32 *)opts->sender_mac);
+					(u32 *)opts->mp_join_ack.sender_mac);
 		}
 	}
 
@@ -1214,12 +1216,12 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 
 		if ((OPTION_TYPE_SYN & opts->mptcp_options) ||
 		    (OPTION_TYPE_SYNACK & opts->mptcp_options)) {
-			mpc->sender_key = opts->sender_key;
+			mpc->sender_key = opts->mp_capable.sender_key;
 			mpc->len = MPTCP_SUB_LEN_CAPABLE_SYN;
 			ptr += MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN >> 2;
 		} else if (OPTION_TYPE_ACK & opts->mptcp_options) {
-			mpc->sender_key = opts->sender_key;
-			mpc->receiver_key = opts->receiver_key;
+			mpc->sender_key = opts->mp_capable.sender_key;
+			mpc->receiver_key = opts->mp_capable.receiver_key;
 			mpc->len = MPTCP_SUB_LEN_CAPABLE_ACK;
 			ptr += MPTCP_SUB_LEN_CAPABLE_ACK_ALIGN >> 2;
 		}
@@ -1241,19 +1243,21 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 
 		if (OPTION_TYPE_SYN & opts->mptcp_options) {
 			mpj->len = MPTCP_SUB_LEN_JOIN_SYN;
-			mpj->u.syn.token = opts->token;
-			mpj->u.syn.nonce = opts->sender_nonce;
+			mpj->u.syn.token = opts->mp_join_syns.token;
+			mpj->u.syn.nonce = opts->mp_join_syns.sender_nonce;
 			mpj->b = tp->mptcp->low_prio;
 			ptr += MPTCP_SUB_LEN_JOIN_SYN_ALIGN >> 2;
 		} else if (OPTION_TYPE_SYNACK & opts->mptcp_options) {
 			mpj->len = MPTCP_SUB_LEN_JOIN_SYNACK;
-			mpj->u.synack.mac = opts->sender_truncated_mac;
-			mpj->u.synack.nonce = opts->sender_nonce;
+			mpj->u.synack.mac =
+				opts->mp_join_syns.sender_truncated_mac;
+			mpj->u.synack.nonce = opts->mp_join_syns.sender_nonce;
 			mpj->b = tp->mptcp->low_prio;
 			ptr += MPTCP_SUB_LEN_JOIN_SYNACK_ALIGN >> 2;
 		} else if (OPTION_TYPE_ACK & opts->mptcp_options) {
 			mpj->len = MPTCP_SUB_LEN_JOIN_ACK;
-			memcpy(mpj->u.ack.mac, opts->sender_mac, 20);
+			memcpy(mpj->u.ack.mac,
+					opts->mp_join_ack.sender_mac, 20);
 			ptr += MPTCP_SUB_LEN_JOIN_ACK_ALIGN >> 2;
 		}
 	}
@@ -1315,7 +1319,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		mpfclose->sub = MPTCP_SUB_FCLOSE;
 		mpfclose->rsv1 = 0;
 		mpfclose->rsv2 = 0;
-		mpfclose->key = opts->receiver_key;
+		mpfclose->key = opts->mp_capable.receiver_key;
 
 		ptr += MPTCP_SUB_LEN_FCLOSE_ALIGN >> 2;
 	}
