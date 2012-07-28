@@ -1354,11 +1354,11 @@ void mptcp_set_state(struct sock *sk, int state)
 		 * has no support for MPTCP. This is the only option
 		 * as we don't know yet if he is MP_CAPABLE.
 		 */
-		if (tp->mpcb && is_master_tp(tp))
+		if (tp->mpc && is_master_tp(tp))
 			mptcp_meta_sk(sk)->sk_state = state;
 		break;
 	case TCP_CLOSE:
-		if (tcp_sk(sk)->mpcb && oldstate != TCP_SYN_SENT &&
+		if (tcp_sk(sk)->mpc && oldstate != TCP_SYN_SENT &&
 		    oldstate != TCP_SYN_RECV && oldstate != TCP_LISTEN)
 			tcp_sk(sk)->mpcb->cnt_established--;
 	}
