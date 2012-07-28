@@ -666,7 +666,7 @@ ssize_t tcp_splice_read(struct socket *sock, loff_t *ppos,
 	/* This may happen, if the socket became MP_CAPABLE, while waiting for
 	 * the lock or while waiting in sk_stream_wait_connect.
 	 */
-	if (tcp_sk(sk)->mptcp && !is_meta_sk(sk)) {
+	if (tcp_sk(sk)->mpc && !is_meta_sk(sk)) {
 		struct sock *sk_it;
 
 		release_sock(sk);
@@ -980,7 +980,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 	lock_sock(sk);
 
-	if (tp->mptcp) {
+	if (tp->mpc) {
 		struct sock *sk_it;
 
 		mptcp_for_each_sk(tp->mpcb, sk_it) {
@@ -1000,7 +1000,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	/* This may happen, if the socket became MP_CAPABLE, while waiting for
 	 * the lock or while waiting in sk_stream_wait_connect.
 	 */
-	if (tp->mptcp && !is_meta_sk(sk)) {
+	if (tp->mpc && !is_meta_sk(sk)) {
 		struct sock *sk_it;
 
 		release_sock(sk);
@@ -1591,8 +1591,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	int copied_early = 0;
 	struct sk_buff *skb;
 	u32 urg_hole = 0;
-	struct mptcp_cb *mpcb = tp->mptcp ? tp->mpcb : NULL;
-	struct sock *sk_it = tp->mptcp ? NULL : sk;
+	struct mptcp_cb *mpcb = tp->mpc ? tp->mpcb : NULL;
+	struct sock *sk_it = tp->mpc ? NULL : sk;
 
 	lock_sock(sk);
 
@@ -1621,7 +1621,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	/* This may happen, if the socket became MP_CAPABLE, while waiting for
 	 * the lock or while waiting in sk_stream_wait_connect.
 	 */
-	if (tp->mptcp && !is_meta_sk(sk)) {
+	if (tp->mpc && !is_meta_sk(sk)) {
 		struct sock *sk_it;
 
 		release_sock(sk);
@@ -1713,7 +1713,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		/* Well, if we have backlog, try to process it now yet. */
 
 		if (copied >= target && !sk->sk_backlog.tail &&
-			(!tp->mptcp || !mptcp_test_any_sk(mpcb, sk_it,
+			(!tp->mpc || !mptcp_test_any_sk(mpcb, sk_it,
 						sk_it->sk_backlog.tail)))
 			break;
 

@@ -1001,7 +1001,7 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack,
 		tot_len += TCPOLEN_MD5SIG_ALIGNED;
 #endif
 #ifdef CONFIG_MPTCP
-	if (rst && sk && tcp_sk(sk)->mptcp && tcp_sk(sk)->mptcp->csum_error)
+	if (rst && sk && tcp_sk(sk)->mpc && tcp_sk(sk)->mptcp->csum_error)
 		tot_len += MPTCP_SUB_LEN_FAIL_ALIGN;
 	if (mptcp)
 		tot_len += MPTCP_SUB_LEN_DSS + MPTCP_SUB_LEN_ACK;
@@ -1047,7 +1047,7 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack,
 	}
 #endif
 #ifdef CONFIG_MPTCP
-	if (rst && sk && tcp_sk(sk)->mptcp && tcp_sk(sk)->mptcp->csum_error) {
+	if (rst && sk && tcp_sk(sk)->mpc && tcp_sk(sk)->mptcp->csum_error) {
 		struct mp_fail *mpfail = (struct mp_fail *)topt;;
 
 		mpfail->kind = TCPOPT_MPTCP;
@@ -1100,7 +1100,7 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack,
 	kfree_skb(buff);
 
 #ifdef CONFIG_MPTCP
-	if (rst && sk && tcp_sk(sk)->mptcp && tcp_sk(sk)->mptcp->teardown)
+	if (rst && sk && tcp_sk(sk)->mpc && tcp_sk(sk)->mptcp->teardown)
 		tcp_done(sk);
 #endif
 }

@@ -756,7 +756,7 @@ static inline int is_meta_sk(const struct sock *sk)
 
 static inline int is_master_tp(const struct tcp_sock *tp)
 {
-	return !tp->mptcp || (!tp->mptcp->slave_sk && !is_meta_tp(tp));
+	return !tp->mpc || (!tp->mptcp->slave_sk && !is_meta_tp(tp));
 }
 
 static inline int mptcp_req_sk_saw_mpc(const struct request_sock *req)
@@ -938,7 +938,7 @@ static inline void mptcp_set_rto(struct sock *sk)
 	struct sock *sk_it;
 	__u32 max_rto = 0;
 
-	if (!tp->mptcp)
+	if (!tp->mpc)
 		return;
 
 	mptcp_for_each_sk(tp->mpcb, sk_it) {
@@ -967,7 +967,7 @@ static inline void mptcp_reset_xmit_timer(struct sock *meta_sk)
 
 static inline void mptcp_include_mpc(struct tcp_sock *tp)
 {
-	if (tp->mptcp) {
+	if (tp->mpc) {
 		tp->mptcp->include_mpc = 1;
 	}
 }

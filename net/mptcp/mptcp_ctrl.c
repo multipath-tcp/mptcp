@@ -812,7 +812,7 @@ void mptcp_del_sock(struct sock *sk)
 	struct mptcp_cb *mpcb;
 	int done = 0;
 
-	if (!tp->mptcp || !tp->mptcp->attached)
+	if (!tp->mpc || !tp->mptcp->attached)
 		return;
 
 	mpcb = tp->mpcb;
@@ -1089,7 +1089,7 @@ void mptcp_update_window_clamp(struct tcp_sock *tp)
 	int new_rcvbuf = 0;
 
 	/* Can happen if called from non mpcb sock. */
-	if (!tp->mptcp)
+	if (!tp->mpc)
 		return;
 
 	mpcb = tp->mpcb;
@@ -1280,7 +1280,7 @@ out:
 
 void mptcp_set_bw_est(struct tcp_sock *tp, u32 now)
 {
-	if (!tp->mptcp)
+	if (!tp->mpc)
 		return;
 
 	if (!tp->mptcp->bw_est.time)
