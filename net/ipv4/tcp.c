@@ -2337,20 +2337,33 @@ int tcp_disconnect(struct sock *sk, int flags)
 
 #ifdef CONFIG_MPTCP
 	if (is_meta_sk(sk)) {
-		struct sock *current_sk;
+		struct sock *subsk;
 		struct tcp_sock *tp = tcp_sk(sk);
 
 		__skb_queue_purge(&tp->mpcb->reinject_queue);
 
-		mptcp_hash_remove(tp->mpcb);
-		reqsk_queue_destroy(&((struct inet_connection_sock *)tp->mpcb)->icsk_accept_queue);
+		if (!list_empty(&tp->mpcb->collide_tk)) {
+			mptcp_hash_remove(tp->mpcb);
+			reqsk_queue_destroy(&((struct inet_connection_sock *)tp->mpcb)->icsk_accept_queue);
+		}
 
 		local_bh_disable();
-		mptcp_for_each_sk(tp->mpcb, current_sk) {
-			mptcp_del_sock(current_sk);
-			tcp_sk(current_sk)->mpc = 0;
-			tcp_sk(current_sk)->mpcb = NULL;
-			mptcp_sub_force_close(current_sk);
+		mptcp_for_each_sk(tp->mpcb, subsk) {
+			if (tcp_sk(subsk)->send_mp_fclose)
+				continue;
+
+			/* The socket will get removed from the subsocket-list
+			 * and made non-mptcp by setting mpc to 0.
+			 *
+			 * This is necessary, because tcp_disconnect assumes
+			 * that the connection is completly dead afterwards.
+			 * Thus we need to do a mptcp_del_sock. Due to this call
+			 * we have to make it non-mptcp.
+			 */
+
+			mptcp_del_sock(subsk);
+			tcp_sk(subsk)->mpc = 0;
+			mptcp_sub_force_close(subsk);
 		}
 		local_bh_enable();
 

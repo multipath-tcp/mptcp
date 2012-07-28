@@ -148,7 +148,11 @@ void inet_sock_destruct(struct sock *sk)
 	}
 
 	if (sk->sk_type == SOCK_STREAM && sk->sk_protocol == IPPROTO_TCP &&
-	    tcp_sk(sk)->mpc)
+	    tcp_sk(sk)->mptcp)
+		/* Important to check here for mptcp, because mpc may be 0 but
+		 * mptcp still set (it's the case when calling tcp_disconnect
+		 * with the meta-sk).
+		 */
 		mptcp_sock_destruct(sk);
 
 	if (!sock_flag(sk, SOCK_DEAD)) {

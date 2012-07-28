@@ -1022,6 +1022,7 @@ void mptcp_sub_close_wq(struct work_struct *work)
 
 	if (!tp->mpc) {
 		tcp_close(sk, 0);
+		sock_put(sk);
 		return;
 	}
 
@@ -1170,9 +1171,11 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 			sock_rps_reset_flow(sk_it);
 	}
 
-	/* Detach the mpcb from the token hashtable */
-	mptcp_hash_remove(mpcb);
-	reqsk_queue_destroy(&((struct inet_connection_sock *)mpcb)->icsk_accept_queue);
+	if (!list_empty(&mpcb->collide_tk)) {
+		/* Detach the mpcb from the token hashtable */
+		mptcp_hash_remove(mpcb);
+		reqsk_queue_destroy(&((struct inet_connection_sock *)mpcb)->icsk_accept_queue);
+	}
 
 	meta_sk->sk_shutdown = SHUTDOWN_MASK;
 	/* We need to flush the recv. buffs.  We do this only on the
@@ -1200,6 +1203,10 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 		NET_INC_STATS_USER(sock_net(meta_sk), LINUX_MIB_TCPABORTONCLOSE);
 		tcp_set_state(meta_sk, TCP_CLOSE);
 		tcp_send_active_reset(meta_sk, meta_sk->sk_allocation);
+	} else if (sock_flag(meta_sk, SOCK_LINGER) && !meta_sk->sk_lingertime) {
+		/* Check zero linger _after_ checking for unread data. */
+		meta_sk->sk_prot->disconnect(meta_sk, 0);
+		NET_INC_STATS_USER(sock_net(meta_sk), LINUX_MIB_TCPABORTONDATA);
 	} else if (tcp_close_state(meta_sk)) {
 		mptcp_send_fin(meta_sk);
 	} else if (meta_tp->snd_una == meta_tp->write_seq) {
