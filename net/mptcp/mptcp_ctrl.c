@@ -1061,6 +1061,25 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 	if (!delay) {
 		unsigned char old_state = sk->sk_state;
 
+		/* If we are in user-context we can directly do the closing
+		 * procedure. No need to schedule a work-queue. */
+		if (!in_interrupt()) {
+			struct sock *meta_sk = mptcp_meta_sk(sk);
+
+			if (!tcp_sk(sk)->mpc) {
+				tcp_close(sk, 0);
+				return;
+			}
+
+			if (meta_sk->sk_shutdown == SHUTDOWN_MASK ||
+			    sk->sk_state == TCP_CLOSE)
+				tcp_close(sk, 0);
+			else if (tcp_close_state(sk))
+				tcp_send_fin(sk);
+
+			return;
+		}
+
 		/* We directly send the FIN. Because it may take so a long time,
 		 * untile the work-queue will get scheduled...
 		 *

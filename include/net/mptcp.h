@@ -674,11 +674,12 @@ struct sock *mptcp_sk_clone(struct sock *sk, int family, const gfp_t priority);
 
 static inline void mptcp_sub_force_close(struct sock *sk)
 {
+	tcp_done(sk);
+
 	if (!sock_flag(sk, SOCK_DEAD))
 		mptcp_sub_close(sk, 0);
 	else
 		tcp_sk(sk)->mp_killed = 1;
-	tcp_done(sk);
 }
 
 static inline int mptcp_is_data_fin(const struct sk_buff *skb)
@@ -1039,10 +1040,7 @@ static inline void mptcp_mp_fail_rcvd(struct mptcp_cb *mpcb,
 			if (sk_it == sk)
 				continue;
 
-			if (!sock_flag(sk_it, SOCK_DEAD))
-				mptcp_sub_close(sk_it, 0);
-
-			tcp_done(sk_it);
+			mptcp_sub_force_close(sk_it);
 		}
 
 		tcp_reset(meta_sk);
