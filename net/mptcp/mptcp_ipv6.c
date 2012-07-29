@@ -358,44 +358,37 @@ discard:
 }
 
 /**
- * Inspired from inet_csk_search_req
- * After this, the kref count of the mpcb associated with the request_sock
+ * After this, the ref count of the meta_sk associated with the request_sock
  * is incremented. Thus it is the responsibility of the caller
- * to call mpcb_put() when the reference is not needed anymore.
+ * to call sock_put() when the reference is not needed anymore.
  */
-struct request_sock *mptcp_v6_search_req(const __be16 rport,
-					const struct in6_addr *raddr,
-					const struct in6_addr *laddr)
+struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *raddr,
+				 const struct in6_addr *laddr)
 {
 	struct mptcp_request_sock *mtreq;
-	int found = 0;
+	struct sock *meta_sk = NULL;
 
 	spin_lock(&mptcp_reqsk_hlock);
-	list_for_each_entry(mtreq, &mptcp_reqsk_htb[
-				inet6_synq_hash(raddr, rport, 0,
-				MPTCP_HASH_SIZE)],
-				collide_tuple) {
-		struct request_sock *req = rev_mptcp_rsk(mtreq);
-		const struct inet6_request_sock *treq = inet6_rsk(req);
+	list_for_each_entry(mtreq,
+			    &mptcp_reqsk_htb[inet6_synq_hash(raddr, rport, 0,
+					    	    	     MPTCP_HASH_SIZE)],
+			    collide_tuple) {
+		const struct inet6_request_sock *treq = inet6_rsk(rev_mptcp_rsk(mtreq));
 
-		if (inet_rsk(req)->rmt_port == rport &&
-		    AF_INET6_FAMILY(req->rsk_ops->family) &&
+		if (inet_rsk(rev_mptcp_rsk(mtreq))->rmt_port == rport &&
+		    AF_INET6_FAMILY(rev_mptcp_rsk(mtreq)->rsk_ops->family) &&
 		    ipv6_addr_equal(&treq->rmt_addr, raddr) &&
 		    ipv6_addr_equal(&treq->loc_addr, laddr)) {
-			WARN_ON(req->sk);
-			found = 1;
+			meta_sk = mpcb_meta_sk(mtreq->mpcb);
 			break;
 		}
 	}
 
-	if (found)
-		sock_hold(mpcb_meta_sk(mtreq->mpcb));
+	if (meta_sk)
+		sock_hold(meta_sk);
 	spin_unlock(&mptcp_reqsk_hlock);
 
-	if (!found)
-		return NULL;
-
-	return rev_mptcp_rsk(mtreq);
+	return meta_sk;
 }
 
 /**

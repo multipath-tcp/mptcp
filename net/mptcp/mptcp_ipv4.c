@@ -350,43 +350,37 @@ discard:
 }
 
 /**
- * Inspired from inet_csk_search_req
  * After this, the ref count of the meta_sk associated with the request_sock
  * is incremented. Thus it is the responsibility of the caller
  * to call sock_put() when the reference is not needed anymore.
  */
-struct request_sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
-					 const __be32 laddr)
+struct sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
+				 const __be32 laddr)
 {
 	struct mptcp_request_sock *mtreq;
-	int found = 0;
+	struct sock *meta_sk = NULL;
 
 	spin_lock(&mptcp_reqsk_hlock);
 	list_for_each_entry(mtreq,
-			    &mptcp_reqsk_htb[inet_synq_hash
-					(raddr, rport, 0, MPTCP_HASH_SIZE)],
+			    &mptcp_reqsk_htb[inet_synq_hash(raddr, rport, 0,
+					    	    	    MPTCP_HASH_SIZE)],
 			    collide_tuple) {
-		struct request_sock *req = rev_mptcp_rsk(mtreq);
-		const struct inet_request_sock *ireq = inet_rsk(req);
+		const struct inet_request_sock *ireq = inet_rsk(rev_mptcp_rsk(mtreq));
 
 		if (ireq->rmt_port == rport &&
 		    ireq->rmt_addr == raddr &&
 		    ireq->loc_addr == laddr &&
-		    AF_INET_FAMILY(req->rsk_ops->family)) {
-			WARN_ON(req->sk);
-			found = 1;
+		    AF_INET_FAMILY(rev_mptcp_rsk(mtreq)->rsk_ops->family)) {
+			meta_sk = mpcb_meta_sk(mtreq->mpcb);
 			break;
 		}
 	}
 
-	if (found)
-		sock_hold(mpcb_meta_sk(mtreq->mpcb));
+	if (meta_sk)
+		sock_hold(meta_sk);
 	spin_unlock(&mptcp_reqsk_hlock);
 
-	if (!found)
-		return NULL;
-
-	return rev_mptcp_rsk(mtreq);
+	return meta_sk;
 }
 
 /**

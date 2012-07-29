@@ -58,9 +58,8 @@ int mptcp_v6_add_raddress(struct multipath_options *mopt,
 			  const struct in6_addr *addr, __be16 port, u8 id);
 void mptcp_v6_set_init_addr_bit(struct mptcp_cb *mpcb,
 				const struct in6_addr *daddr);
-struct request_sock *mptcp_v6_search_req(const __be16 rport,
-					 const struct in6_addr *raddr,
-					 const struct in6_addr *laddr);
+struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *raddr,
+				 const struct in6_addr *laddr);
 void mptcp_init6_subsockets(struct mptcp_cb *mpcb,
 			    const struct mptcp_loc6 *loc,
 			    struct mptcp_rem6 *rem);

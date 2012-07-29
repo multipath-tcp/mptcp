@@ -302,21 +302,20 @@ out:
 int mptcp_syn_recv_sock(struct sk_buff *skb)
 {
 	struct tcphdr *th = tcp_hdr(skb);
-	struct request_sock *req = NULL;
-	struct sock *meta_sk;
+	struct sock *meta_sk = NULL;
 
 	if (skb->protocol == htons(ETH_P_IP))
-		req = mptcp_v4_search_req(th->source, ip_hdr(skb)->saddr,
-						ip_hdr(skb)->daddr);
+		meta_sk = mptcp_v4_search_req(th->source, ip_hdr(skb)->saddr,
+					      ip_hdr(skb)->daddr);
 #if IS_ENABLED(CONFIG_IPV6)
 	else /* IPv6 */
-		req = mptcp_v6_search_req(th->source, &ipv6_hdr(skb)->saddr,
-						&ipv6_hdr(skb)->daddr);
+		meta_sk = mptcp_v6_search_req(th->source, &ipv6_hdr(skb)->saddr,
+					      &ipv6_hdr(skb)->daddr);
 #endif /* CONFIG_IPV6 */
 
-	if (!req)
+	if (!meta_sk)
 		return 0;
-	meta_sk = mpcb_meta_sk(mptcp_rsk(req)->mpcb);
+
 	bh_lock_sock_nested(meta_sk);
 	if (sock_owned_by_user(meta_sk)) {
 		skb->sk = meta_sk;
@@ -335,7 +334,7 @@ int mptcp_syn_recv_sock(struct sk_buff *skb)
 		tcp_v6_do_rcv(meta_sk, skb);
 #endif /* CONFIG_IPV6 */
 	bh_unlock_sock(meta_sk);
-	sock_put(meta_sk); /* Taken by mptcp_search_req */
+	sock_put(meta_sk); /* Taken by mptcp_vX_search_req */
 	return 1;
 }
 
