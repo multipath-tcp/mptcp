@@ -928,7 +928,6 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 	int flag = 0;
 	u32 nwin;
-	u32 *snd_wnd = &meta_tp->snd_wnd;
 	u32 data_ack, data_seq;
 
 	if (!tp->mpc)
@@ -1000,19 +999,23 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 		tcp_update_wl(meta_tp, data_seq);
 		tcp_update_wl(tp, tcb->seq);
 
-		if (*snd_wnd != nwin) {
+		/* Draft v09, Section 3.3.5:
+		 * [...] It should only update its local receive window values
+		 * when the largest sequence number allowed (i.e.  DATA_ACK +
+		 * receive window) increases. [...]
+		 */
+		if (meta_tp->snd_wnd != nwin &&
+		    !before(data_ack + nwin, tcp_wnd_end(meta_tp))) {
 			struct sock *sk_it;
-			u32 *max_window = &meta_tp->max_window;
-			*snd_wnd = nwin;
 
+			meta_tp->snd_wnd = nwin;
 			mptcp_for_each_sk(tp->mpcb, sk_it)
 				tcp_sk(sk_it)->snd_wnd = nwin;
 
 			/* Diff to tcp_ack_update_window - fast_path */
 
-			if (nwin > *max_window) {
-				*max_window = nwin;
-
+			if (nwin > meta_tp->max_window) {
+				meta_tp->max_window = nwin;
 				mptcp_for_each_sk(tp->mpcb, sk_it)
 					tcp_sk(sk_it)->max_window = nwin;
 
