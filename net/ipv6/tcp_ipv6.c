@@ -1166,7 +1166,7 @@ void tcp_v6_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 }
 
 
-static struct sock *tcp_v6_hnd_req(struct sock *sk,struct sk_buff *skb)
+struct sock *tcp_v6_hnd_req(struct sock *sk,struct sk_buff *skb)
 {
 	struct request_sock *req, **prev;
 	const struct tcphdr *th = tcp_hdr(skb);
@@ -1189,7 +1189,7 @@ static struct sock *tcp_v6_hnd_req(struct sock *sk,struct sk_buff *skb)
 			/* We will go into tcp_child_process, who will unlock
 			 * the meta-sk then.
 			 */
-			if (tcp_sk(nsk)->mpc && !is_meta_sk(nsk))
+			if (tcp_sk(nsk)->mpc && is_master_tp(tcp_sk(nsk)))
 				bh_lock_sock(mptcp_meta_sk(nsk));
 			return nsk;
 		}

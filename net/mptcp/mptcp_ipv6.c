@@ -301,15 +301,11 @@ void mptcp_v6_set_init_addr_bit(struct mptcp_cb *mpcb,
 }
 
 /**
- * Currently we can only process join requests here.
- * (either the SYN or the final ACK)
+ * We only process join requests here. (either the SYN or the final ACK)
  */
 int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {
-	struct ipv6hdr *iph = ipv6_hdr(skb);
-	struct tcphdr *th = tcp_hdr(skb);
 	struct mptcp_cb *mpcb = (struct mptcp_cb *)meta_sk;
-	struct request_sock **prev, *req;
 	struct sock *child;
 
 	/* Has been removed from the tk-table. Thus, no new subflows.
@@ -319,33 +315,28 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	if (meta_sk->sk_state == TCP_CLOSE || list_empty(&mpcb->collide_tk))
 		goto reset_and_discard;
 
-	req = inet6_csk_search_req(meta_sk, &prev, th->source,
-			&iph->saddr, &iph->daddr, inet6_iif(skb));
+	child = tcp_v6_hnd_req(meta_sk, skb);
 
-	if (!req) {
-		if (th->syn) {
-			struct mp_join *join_opt = mptcp_find_join(skb);
-			/* Currently we make two calls to mptcp_find_join(). This
-			 * can probably be optimized. */
-			if (mptcp_v6_add_raddress(&mpcb->rx_opt,
-					(struct in6_addr *)&iph->saddr, 0,
-					join_opt->addr_id) < 0)
-				goto reset_and_discard;
-			if (mpcb->rx_opt.list_rcvd)
-				mpcb->rx_opt.list_rcvd = 0;
-
-			mptcp_v6_join_request(mpcb, skb);
-		}
-		goto discard;
-	}
-
-	child = tcp_check_req(meta_sk, skb, req, prev);
 	if (!child)
 		goto discard;
 
 	if (child != meta_sk) {
 		tcp_child_process(meta_sk, child, skb);
 	} else {
+		if (tcp_hdr(skb)->syn) {
+			struct mp_join *join_opt = mptcp_find_join(skb);
+			/* Currently we make two calls to mptcp_find_join(). This
+			 * can probably be optimized. */
+			if (mptcp_v6_add_raddress(&mpcb->rx_opt,
+					(struct in6_addr *)&ipv6_hdr(skb)->saddr, 0,
+					join_opt->addr_id) < 0)
+				goto reset_and_discard;
+			if (mpcb->rx_opt.list_rcvd)
+				mpcb->rx_opt.list_rcvd = 0;
+
+			mptcp_v6_join_request(mpcb, skb);
+			goto discard;
+		}
 		goto reset_and_discard;
 	}
 	return 0;

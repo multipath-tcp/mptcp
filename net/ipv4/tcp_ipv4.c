@@ -1589,7 +1589,7 @@ put_and_exit:
 }
 EXPORT_SYMBOL(tcp_v4_syn_recv_sock);
 
-static struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb)
+struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcphdr *th = tcp_hdr(skb);
 	const struct iphdr *iph = ip_hdr(skb);
@@ -1610,7 +1610,7 @@ static struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb)
 			/* We will go into tcp_child_process, who will unlock
 			 * the meta-sk then.
 			 */
-			if (tcp_sk(nsk)->mpc && !is_meta_sk(nsk))
+			if (tcp_sk(nsk)->mpc && is_master_tp(tcp_sk(nsk)))
 				bh_lock_sock(mptcp_meta_sk(nsk));
 			return nsk;
 		}

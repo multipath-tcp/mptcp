@@ -896,7 +896,9 @@ int tcp_child_process(struct sock *parent, struct sock *child,
 	}
 
 	if (tcp_sk(child)->mpc && is_master_tp(tcp_sk(child)))
-		bh_unlock_sock(meta_sk); /* Taken by mptcp_inherit_sk */
+		 /* Taken by mptcp_inherit_sk or tcp_vX_hnd_req */
+		bh_unlock_sock(meta_sk);
+
 	bh_unlock_sock(child);
 	sock_put(child);
 	return ret;
