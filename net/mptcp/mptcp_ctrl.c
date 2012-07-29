@@ -1034,7 +1034,7 @@ void mptcp_sub_close_wq(struct work_struct *work)
 
 	if (meta_sk->sk_shutdown == SHUTDOWN_MASK || sk->sk_state == TCP_CLOSE)
 		tcp_close(sk, 0);
-	else if (tcp_close_state(sk))
+	else if (sk->sk_state != TCP_CLOSE && tcp_close_state(sk))
 		tcp_send_fin(sk);
 
 exit:
@@ -1075,7 +1075,7 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 			if (meta_sk->sk_shutdown == SHUTDOWN_MASK ||
 			    sk->sk_state == TCP_CLOSE)
 				tcp_close(sk, 0);
-			else if (tcp_close_state(sk))
+			else if (sk->sk_state != TCP_CLOSE && tcp_close_state(sk))
 				tcp_send_fin(sk);
 
 			return;
@@ -1088,7 +1088,8 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 		 * the old state so that tcp_close will finally send the fin
 		 * in user-context.
 		 */
-		if (!sk->sk_err && tcp_close_state(sk) && mptcp_sub_send_fin(sk))
+		if (!sk->sk_err && sk->sk_state != TCP_CLOSE &&
+		    tcp_close_state(sk) && mptcp_sub_send_fin(sk))
 			sk->sk_state = old_state;
 	}
 
@@ -1338,12 +1339,11 @@ void mptcp_set_state(struct sock *sk, int state)
 
 	switch (state) {
 	case TCP_ESTABLISHED:
-		if (oldstate != TCP_ESTABLISHED && tp->mpc) {
+		if (oldstate != TCP_ESTABLISHED) {
 			struct sock *meta_sk = mptcp_meta_sk(sk);
-			tcp_sk(sk)->mpcb->cnt_established++;
+			tp->mpcb->cnt_established++;
 			mptcp_update_sndbuf(tp->mpcb);
-			if ((1 << meta_sk->sk_state) &
-				(TCPF_SYN_SENT | TCPF_SYN_RECV))
+			if ((1 << meta_sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV))
 				meta_sk->sk_state = TCP_ESTABLISHED;
 		}
 		break;
@@ -1353,13 +1353,13 @@ void mptcp_set_state(struct sock *sk, int state)
 		 * has no support for MPTCP. This is the only option
 		 * as we don't know yet if he is MP_CAPABLE.
 		 */
-		if (tp->mpc && is_master_tp(tp))
+		if (is_master_tp(tp))
 			mptcp_meta_sk(sk)->sk_state = state;
 		break;
 	case TCP_CLOSE:
-		if (tcp_sk(sk)->mpc && oldstate != TCP_SYN_SENT &&
-		    oldstate != TCP_SYN_RECV && oldstate != TCP_LISTEN)
-			tcp_sk(sk)->mpcb->cnt_established--;
+		if (!((1 << oldstate ) &
+		     (TCPF_SYN_SENT | TCPF_SYN_RECV | TCPF_LISTEN | TCPF_CLOSE)))
+			tp->mpcb->cnt_established--;
 	}
 }
 

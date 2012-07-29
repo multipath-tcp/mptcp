@@ -2051,7 +2051,7 @@ void tcp_set_state(struct sock *sk, int state)
 			TCP_DEC_STATS(sock_net(sk), TCP_MIB_CURRESTAB);
 	}
 
-	if (!is_meta_sk(sk))
+	if (!is_meta_sk(sk) && tcp_sk(sk)->mpc)
 		mptcp_set_state(sk, state);
 
 	/* Change state AFTER socket is unhashed to avoid closed
