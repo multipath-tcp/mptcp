@@ -4513,13 +4513,8 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 {
 	const struct tcphdr *th = tcp_hdr(skb);
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct tcp_sock *meta_tp = tp;
-	struct mptcp_cb *mpcb = mpcb_from_tcpsock(tp);
 
 	int eaten = -1;
-
-	if (tp->mpc)
-		meta_tp = mpcb_meta_tp(mpcb);
 
 	/* If no data is present, but a data_fin is in the options, we still
 	 * have to call mptcp_queue_skb later on. */

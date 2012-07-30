@@ -1283,7 +1283,7 @@ adjudge_to_death:
 		sk_mem_reclaim(meta_sk);
 		if (tcp_too_many_orphans(meta_sk, 0)) {
 			if (net_ratelimit())
-				printk(KERN_INFO "TCP: too many of orphaned "
+				printk(KERN_INFO "MPTCP: too many of orphaned "
 				       "sockets\n");
 			tcp_set_state(meta_sk, TCP_CLOSE);
 			tcp_send_active_reset(meta_sk, GFP_ATOMIC);
