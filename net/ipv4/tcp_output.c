@@ -121,7 +121,7 @@ static __u16 tcp_advertise_mss(struct sock *sk)
 	const struct dst_entry *dst = __sk_dst_get(sk);
 	int mss = tp->advmss;
 
-	if (dst) {
+	if (!tp->mpc && dst) {
 		unsigned int metric = dst_metric_advmss(dst);
 
 		if (metric < mss) {
@@ -2551,7 +2551,7 @@ struct sk_buff *tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 		 * available in the meta-socket.
 		 */
 		tcp_select_initial_window(tcp_space(sk),
-			mss - (ireq->tstamp_ok ? TCPOLEN_TSTAMP_ALIGNED : 0),
+			mss - (ireq->tstamp_ok && !mptcp_req_sk_saw_mpc(req) ? TCPOLEN_TSTAMP_ALIGNED : 0),
 			&req->rcv_wnd,
 			&req->window_clamp,
 			ireq->wscale_ok,

@@ -5881,7 +5881,8 @@ cont_mptcp:
 			tp->rx_opt.tstamp_ok	   = 1;
 			tp->tcp_header_len =
 				sizeof(struct tcphdr) + TCPOLEN_TSTAMP_ALIGNED;
-			tp->advmss	    -= TCPOLEN_TSTAMP_ALIGNED;
+			if (!tp->mpc)
+				tp->advmss -= TCPOLEN_TSTAMP_ALIGNED;
 			tcp_store_ts_recent(tp);
 		} else {
 			tp->tcp_header_len = sizeof(struct tcphdr);
@@ -6189,7 +6190,7 @@ out_syn_sent:
 					tcp_init_wl(tp, TCP_SKB_CB(skb)->seq);
 				}
 
-				if (tp->rx_opt.tstamp_ok)
+				if (!tp->mpc && tp->rx_opt.tstamp_ok)
 					tp->advmss -= TCPOLEN_TSTAMP_ALIGNED;
 
 				/* Make sure socket is routed, for

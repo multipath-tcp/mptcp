@@ -1409,6 +1409,8 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	child_tp->mptcp->init_rcv_wnd = req->rcv_wnd;
 	child_tp->mptcp->last_rbuf_opti = 0;
 
+	child_tp->advmss = mptcp_sysctl_mss();
+
 	if (mopt->list_rcvd) {
 		memcpy(&mpcb->rx_opt, mopt, sizeof(*mopt));
 		mpcb->rx_opt.mptcp_rem_key = mtreq->mptcp_rem_key;
@@ -1494,6 +1496,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	child_tp->mptcp->last_rbuf_opti = 0;
 
 	child->sk_error_report = mptcp_sock_def_error_report;
+	child_tp->advmss = mptcp_sysctl_mss();
 
 	/* Subflows do not use the accept queue, as they
 	 * are attached immediately to the mpcb.
