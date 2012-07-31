@@ -1129,7 +1129,7 @@ void mptcp_update_window_clamp(struct tcp_sock *tp)
 	}
 	meta_tp->window_clamp = new_clamp;
 	meta_tp->rcv_ssthresh = new_rcv_ssthresh;
-	meta_sk->sk_rcvbuf = min(new_rcvbuf, sysctl_tcp_rmem[2]);
+	meta_sk->sk_rcvbuf = max(min(new_rcvbuf, sysctl_tcp_rmem[2]), meta_sk->sk_rcvbuf);
 }
 
 /**
@@ -1148,7 +1148,7 @@ void mptcp_update_sndbuf(struct mptcp_cb *mpcb)
 			break;
 		}
 	}
-	meta_sk->sk_sndbuf = min(new_sndbuf, sysctl_tcp_wmem[2]);
+	meta_sk->sk_sndbuf = max(min(new_sndbuf, sysctl_tcp_wmem[2]), meta_sk->sk_sndbuf);
 }
 
 void mptcp_close(struct sock *meta_sk, long timeout)
