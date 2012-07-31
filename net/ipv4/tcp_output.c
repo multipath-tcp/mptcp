@@ -261,7 +261,7 @@ EXPORT_SYMBOL(tcp_select_initial_window);
 static u16 tcp_select_window(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	u32 cur_win = tcp_receive_window(tp);
+	u32 cur_win = tcp_receive_window(tp->mpc ? tcp_sk(mptcp_meta_sk(sk)) : tp);
 	u32 new_win = __tcp_select_window(sk);
 
 	/* Never shrink the offered window */
