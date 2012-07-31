@@ -660,7 +660,8 @@ int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key)
 	mutex_init(&mpcb->mutex);
 
 	/* Initialize workqueue-struct */
-	INIT_WORK(&mpcb->work, mptcp_send_updatenotif_wq);
+	INIT_WORK(&mpcb->create_work, mptcp_send_updatenotif_wq);
+	INIT_WORK(&mpcb->address_work, mptcp_address_worker);
 
 	/* Redefine function-pointers to wake up application */
 	master_sk->sk_error_report = mptcp_sock_def_error_report;

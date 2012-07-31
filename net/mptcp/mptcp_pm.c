@@ -428,7 +428,7 @@ int mptcp_lookup_join(struct sk_buff *skb)
  **/
 void mptcp_send_updatenotif_wq(struct work_struct *work)
 {
-	struct mptcp_cb *mpcb = container_of(work, struct mptcp_cb, work);
+	struct mptcp_cb *mpcb = container_of(work, struct mptcp_cb, create_work);
 	struct sock *meta_sk = mpcb_meta_sk(mpcb);
 	int iter = 0;
 	int i;
@@ -513,9 +513,208 @@ void mptcp_send_updatenotif(struct mptcp_cb *mpcb)
 	    sock_flag(mpcb_meta_sk(mpcb), SOCK_DEAD))
 		return;
 
-	if (!work_pending(&mpcb->work)) {
+	if (!work_pending(&mpcb->create_work)) {
 		sock_hold(mpcb_meta_sk(mpcb));
-		queue_work(mptcp_wq, &mpcb->work);
+		queue_work(mptcp_wq, &mpcb->create_work);
+	}
+}
+
+void mptcp_address_worker(struct work_struct *work)
+{
+	struct mptcp_cb *mpcb = container_of(work, struct mptcp_cb, address_work);
+	struct sock *meta_sk = mpcb_meta_sk(mpcb), *sk;
+	struct net *netns = sock_net(meta_sk);
+	struct net_device *dev;
+	int i;
+
+	lock_sock(meta_sk);
+
+	if (sock_flag(meta_sk, SOCK_DEAD))
+		goto exit;
+
+	/* The following is meant to run with bh disabled */
+	local_bh_disable();
+
+	/* First, we iterate over the interfaces to find addresses not yet
+	 * in our local list.
+	 */
+
+	rcu_read_lock();
+	read_lock_bh(&dev_base_lock);
+
+	for_each_netdev(netns, dev) {
+		struct in_device *in_dev = __in_dev_get_rcu(dev);
+		struct in_ifaddr *ifa;
+#if IS_ENABLED(CONFIG_IPV6)
+		struct inet6_dev *in6_dev = __in6_dev_get(dev);
+		struct inet6_ifaddr *ifa6;
+#endif
+
+		if (dev->flags & (IFF_LOOPBACK | IFF_NOMULTIPATH))
+			continue;
+
+		if (!in_dev)
+			goto cont_ipv6;
+
+		for (ifa = in_dev->ifa_list; ifa; ifa = ifa->ifa_next) {
+			unsigned long event;
+
+			if (!netif_running(in_dev->dev)) {
+				event = NETDEV_DOWN;
+			} else {
+				/* If it's up, it may have been changed or came up.
+				 * We set NETDEV_CHANGE, to take the good
+				 * code-path in mptcp_pm_addr4_event_handler
+				 */
+				event = NETDEV_CHANGE;
+			}
+
+			mptcp_pm_addr4_event_handler(ifa, event, mpcb);
+		}
+cont_ipv6:
+; /* This ; is necessary to fix build-errors when IPv6 is disabled */
+#if IS_ENABLED(CONFIG_IPV6)
+		if (!in6_dev)
+			continue;
+
+		list_for_each_entry(ifa6, &in6_dev->addr_list, if_list) {
+			unsigned long event;
+
+			if (!netif_running(in_dev->dev)) {
+				event = NETDEV_DOWN;
+			} else {
+				/* If it's up, it may have been changed or came up.
+				 * We set NETDEV_CHANGE, to take the good
+				 * code-path in mptcp_pm_addr4_event_handler
+				 */
+				event = NETDEV_CHANGE;
+			}
+
+			mptcp_pm_addr6_event_handler(ifa6, event, mpcb);
+		}
+#endif
+	}
+
+	/* Second, we iterate over our local addresses and check if they
+	 * still exist in the interface-list.
+	 */
+
+	/* MPCB-Local IPv4 Addresses */
+	mptcp_for_each_bit_set(mpcb->loc4_bits, i) {
+		int j;
+
+		for_each_netdev(netns, dev) {
+			struct in_device *in_dev = __in_dev_get_rcu(dev);
+			struct in_ifaddr *ifa;
+
+			if (dev->flags & (IFF_LOOPBACK | IFF_NOMULTIPATH) ||
+			    !in_dev)
+				continue;
+
+			for (ifa = in_dev->ifa_list; ifa; ifa = ifa->ifa_next) {
+				if (ifa->ifa_address == mpcb->addr4[i].addr.s_addr &&
+				    netif_running(dev))
+					goto next_loc_addr;
+			}
+		}
+
+		/* We did not find the address or the interface became NOMULTIPATH.
+		 * We thus have to remove it.
+		 */
+
+		/* Look for the socket and remove him */
+		mptcp_for_each_sk(mpcb, sk) {
+			if (sk->sk_family != AF_INET ||
+			    inet_sk(sk)->inet_saddr != mpcb->addr4[i].addr.s_addr)
+				continue;
+
+			mptcp_retransmit_queue(sk);
+
+			mptcp_sub_force_close(sk);
+		}
+
+		/* Now, remove the address from the local ones */
+		mpcb->loc4_bits &= ~(1 << i);
+
+		mpcb->remove_addrs |= (1 << mpcb->addr4[i].id);
+		sk = mptcp_select_ack_sock(mpcb, 0);
+		if (sk)
+			tcp_send_ack(sk);
+
+		mptcp_for_each_bit_set(mpcb->rx_opt.rem4_bits, j)
+			mpcb->rx_opt.addr4[j].bitfield &= mpcb->loc4_bits;
+
+next_loc_addr:
+		continue; /* necessary here due to the previous label */
+	}
+
+#if IS_ENABLED(CONFIG_IPV6)
+	/* MPCB-Local IPv6 Addresses */
+	mptcp_for_each_bit_set(mpcb->loc6_bits, i) {
+		int j;
+
+		for_each_netdev(netns, dev) {
+			struct inet6_dev *in6_dev = __in6_dev_get(dev);
+			struct inet6_ifaddr *ifa6;
+
+			if (dev->flags & (IFF_LOOPBACK | IFF_NOMULTIPATH) ||
+			    !in6_dev)
+				continue;
+
+
+			list_for_each_entry(ifa6, &in6_dev->addr_list, if_list) {
+				if (ipv6_addr_equal(&mpcb->addr6[i].addr, &ifa6->addr) &&
+				    netif_running(dev))
+					goto next_loc6_addr;
+			}
+		}
+
+		/* We did not find the address or the interface became NOMULTIPATH.
+		 * We thus have to remove it.
+		 */
+
+		/* Look for the socket and remove him */
+		mptcp_for_each_sk(mpcb, sk) {
+			if (sk->sk_family != AF_INET6 ||
+			    !ipv6_addr_equal(&inet6_sk(sk)->saddr, &mpcb->addr6[i].addr))
+				continue;
+
+			mptcp_retransmit_queue(sk);
+
+			mptcp_sub_force_close(sk);
+		}
+
+		/* Now, remove the address from the local ones */
+		mpcb->loc6_bits &= ~(1 << i);
+
+		/* Force sending directly the REMOVE_ADDR option */
+		mpcb->remove_addrs |= (1 << mpcb->addr6[i].id);
+		sk = mptcp_select_ack_sock(mpcb, 0);
+		if (sk)
+			tcp_send_ack(sk);
+
+		mptcp_for_each_bit_set(mpcb->rx_opt.rem6_bits, j)
+			mpcb->rx_opt.addr6[j].bitfield &= mpcb->loc6_bits;
+
+next_loc6_addr:
+		continue; /* necessary here due to the previous label */
+	}
+#endif
+
+	read_unlock_bh(&dev_base_lock);
+	rcu_read_unlock();
+
+	local_bh_enable();
+exit:
+	release_sock(meta_sk);
+	sock_put(meta_sk);
+}
+
+static void mptcp_address_create_worker(struct mptcp_cb *mpcb)
+{
+	if (!work_pending(&mpcb->address_work)) {
+		sock_hold(mpcb_meta_sk(mpcb));
+		queue_work(mptcp_wq, &mpcb->address_work);
 	}
 }
 
@@ -545,12 +744,18 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 
 			bh_lock_sock(mpcb_meta_sk(mpcb));
 
-			if (family == AF_INET)
-				mptcp_pm_addr4_event_handler((struct in_ifaddr *)ptr, event, mpcb);
+			if (sock_owned_by_user(mpcb_meta_sk(mpcb))) {
+				mptcp_address_create_worker(mpcb);
+			} else {
+				if (family == AF_INET)
+					mptcp_pm_addr4_event_handler(
+							(struct in_ifaddr *)ptr, event, mpcb);
 #if IS_ENABLED(CONFIG_IPV6)
-			else
-				mptcp_pm_addr6_event_handler((struct inet6_ifaddr *)ptr, event, mpcb);
+				else
+					mptcp_pm_addr6_event_handler(
+							(struct inet6_ifaddr *)ptr, event, mpcb);
 #endif
+			}
 
 			bh_unlock_sock(mpcb_meta_sk(mpcb));
 		}

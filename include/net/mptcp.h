@@ -203,7 +203,9 @@ struct mptcp_cb {
 
 	u8 dfin_path_index;
 	/* Worker struct for update-notification */
-	struct work_struct work;
+	struct work_struct create_work;
+	/* Worker to handle interface/address changes if socket is owned */
+	struct work_struct address_work;
 	struct mutex mutex;
 
 	/* Master socket, also part of the connection_list, this

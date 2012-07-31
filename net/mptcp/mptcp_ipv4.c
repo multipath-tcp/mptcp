@@ -535,7 +535,7 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 	}
 
 	/* Not yet in address-list */
-	if (event == NETDEV_UP && netif_running(ifa->ifa_dev->dev)) {
+	if ((event == NETDEV_UP || event == NETDEV_CHANGE) && netif_running(ifa->ifa_dev->dev)) {
 		i = __mptcp_find_free_index(mpcb->loc4_bits, 0, mpcb->next_v4_index);
 		if (i < 0) {
 			mptcp_debug("MPTCP_PM: NETDEV_UP Reached max "
