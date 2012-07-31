@@ -46,6 +46,14 @@ static int mptcp_is_available(struct sock *sk, struct sk_buff *skb)
 	    inet_csk(sk)->icsk_ca_state == TCP_CA_Loss)
 		return 0;
 
+	/* Don't send on this subflow if we bypass the allowed send-window at
+	 * the per-subflow level. Similar to tcp_snd_wnd_test, but manually
+	 * calculated end_seq (because here at this point end_seq is still at
+	 * the meta-level).
+	 */
+	if (skb && after(tp->write_seq + skb->len, tcp_wnd_end(tp)))
+		return 0;
+
 	return tcp_cwnd_test(tp, skb);
 }
 
