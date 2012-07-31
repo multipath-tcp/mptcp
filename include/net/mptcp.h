@@ -916,16 +916,16 @@ static inline int mptcp_check_snd_buf(struct tcp_sock *tp)
 			tp->reordering + 1);
 }
 
-static inline void mptcp_retransmit_queue(struct sock *sk)
-{
-	if (tcp_sk(sk)->mpc && sk->sk_state == TCP_ESTABLISHED &&
-	    tcp_sk(sk)->mpcb->cnt_established > 0)
-		mptcp_reinject_data(sk, 1);
-}
-
 static inline int mptcp_sk_can_send(const struct sock *sk)
 {
 	return (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCPF_CLOSE_WAIT);
+}
+
+static inline void mptcp_retransmit_queue(struct sock *sk)
+{
+	if (tcp_sk(sk)->mpc && mptcp_sk_can_send(sk) &&
+	    tcp_sk(sk)->mpcb->cnt_established > 0)
+		mptcp_reinject_data(sk, 1);
 }
 
 static inline void mptcp_set_rto(struct sock *sk)
