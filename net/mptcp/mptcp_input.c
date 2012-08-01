@@ -996,18 +996,14 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 		 */
 		if (meta_tp->snd_wnd != nwin &&
 		    !before(data_ack + nwin, tcp_wnd_end(meta_tp))) {
-			struct sock *sk_it;
-
 			meta_tp->snd_wnd = nwin;
-			mptcp_for_each_sk(tp->mpcb, sk_it)
-				tcp_sk(sk_it)->snd_wnd = nwin;
+			tp->snd_wnd = nwin;
 
 			/* Diff to tcp_ack_update_window - fast_path */
 
 			if (nwin > meta_tp->max_window) {
 				meta_tp->max_window = nwin;
-				mptcp_for_each_sk(tp->mpcb, sk_it)
-					tcp_sk(sk_it)->max_window = nwin;
+				tp->max_window = nwin;
 
 				/* Diff to tcp_ack_update_window - mss */
 			}

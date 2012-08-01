@@ -1513,20 +1513,3 @@ void mptcp_send_reset(struct sock *sk, struct sk_buff *skb)
 		tcp_v6_send_reset(sk, skb);
 #endif
 }
-
-void mptcp_select_window(struct tcp_sock *tp, u32 new_win)
-{
-	struct tcp_sock *meta_tp = mpcb_meta_tp(tp->mpcb), *tmp_tp;
-	meta_tp->rcv_wnd = new_win;
-	meta_tp->rcv_wup = meta_tp->rcv_nxt;
-
-	/* The receive-window is the same for all the subflows */
-	mptcp_for_each_tp(tp->mpcb, tmp_tp) {
-		tmp_tp->rcv_wnd = new_win;
-	}
-	/* the subsock rcv_wup must still be updated,
-	 * because it is used to decide when to echo the timestamp
-	 * and when to delay the acks */
-	tp->rcv_wup = tp->rcv_nxt;
-}
-
