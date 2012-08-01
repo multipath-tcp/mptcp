@@ -1119,6 +1119,9 @@ void mptcp_update_window_clamp(struct tcp_sock *tp)
 	meta_sk = mpcb_meta_sk(mpcb);
 
 	mptcp_for_each_sk(mpcb, sk) {
+		if (!mptcp_sk_can_recv(sk))
+			continue;
+
 		new_clamp += tcp_sk(sk)->window_clamp;
 		new_rcv_ssthresh += tcp_sk(sk)->rcv_ssthresh;
 		new_rcvbuf += sk->sk_rcvbuf;
@@ -1142,6 +1145,9 @@ void mptcp_update_sndbuf(struct mptcp_cb *mpcb)
 	struct sock *meta_sk = (struct sock *) mpcb, *sk;
 	int new_sndbuf = 0;
 	mptcp_for_each_sk(mpcb, sk) {
+		if (!mptcp_sk_can_send(sk))
+			continue;
+
 		new_sndbuf += sk->sk_sndbuf;
 
 		if (new_sndbuf > sysctl_tcp_wmem[2] || new_sndbuf < 0) {

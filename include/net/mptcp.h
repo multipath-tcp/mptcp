@@ -920,6 +920,11 @@ static inline int mptcp_sk_can_send(const struct sock *sk)
 	return (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCPF_CLOSE_WAIT);
 }
 
+static inline int mptcp_sk_can_recv(const struct sock *sk)
+{
+	return (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCP_FIN_WAIT1 | TCP_FIN_WAIT2);
+}
+
 static inline void mptcp_retransmit_queue(struct sock *sk)
 {
 	if (tcp_sk(sk)->mpc && mptcp_sk_can_send(sk) &&
