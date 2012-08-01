@@ -5840,10 +5840,12 @@ cont_mptcp:
 
 		TCP_ECN_rcv_synack(tp, th);
 
-		if (tp->mpc)
+		/* MPTCP: Don't update the window of new subflows. Only update
+		 * in presence of DATA_ACK's.
+		 */
+		if (tp->mpc && is_master_tp(tp))
 			/* -1 because rcv_nxt is not the data-seq number of the SYN/ACK */
 			mpcb_meta_tp(mpcb)->snd_wl1 = mpcb_meta_tp(mpcb)->rcv_nxt - 1;
-			/* For the subflow, snd_wl1 does not matter */
 		else
 			tp->snd_wl1 = TCP_SKB_CB(skb)->seq;
 		tcp_ack(sk, skb, FLAG_SLOWPATH);
@@ -5861,8 +5863,11 @@ cont_mptcp:
 
 		/* RFC1323: The window in SYN & SYN/ACK segments is
 		 * never scaled.
+		 *
+		 * MPTCP: Don't update the window of new subflows. Only update
+		 * in presence of DATA_ACK's.
 		 */
-		if (tp->mpc) {
+		if (tp->mpc && is_master_tp(tp)) {
 			mpcb_meta_tp(mpcb)->snd_wnd = tp->snd_wnd = ntohs(th->window);
 			tcp_init_wl(mpcb_meta_tp(mpcb),
 					mpcb_meta_tp(mpcb)->rcv_nxt);
@@ -5947,9 +5952,7 @@ cont_mptcp:
 			inet_csk_reset_keepalive_timer(sk, keepalive_time_when(tp));
 
 		if (!tp->rx_opt.snd_wscale)
-			__tcp_fast_path_on(tp, tp->mpc ?
-					mpcb_meta_tp(mpcb)->snd_wnd :
-					tp->snd_wnd);
+			__tcp_fast_path_on(tp, tp->snd_wnd);
 		else
 			tp->pred_flags = 0;
 

@@ -922,13 +922,12 @@ int mptcp_fin(struct mptcp_cb *mpcb)
 /* Handle the DATA_ACK */
 int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *meta_sk = mpcb_meta_sk(tp->mpcb);
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct sock *meta_sk = mptcp_meta_sk(sk);
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *tp = tcp_sk(sk);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 	int flag = 0;
-	u32 nwin;
-	u32 data_ack, data_seq;
+	u32 nwin, data_ack, data_seq;
+	__u32 *ptr;
 
 	if (!tp->mpc)
 		return 0;
@@ -936,44 +935,35 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	/* Something got acked - subflow is operational again */
 	tp->pf = 0;
 
-	if (tcb->mptcp_flags & MPTCPHDR_ACK) {
-		__u32 *ptr = (__u32 *)(skb_transport_header(skb) + tcb->dss_off);
+	if (!(tcb->mptcp_flags & MPTCPHDR_ACK))
+		return 0;
 
+	ptr = (__u32 *)(skb_transport_header(skb) + tcb->dss_off);
+	ptr--;
+
+	if (tcb->mptcp_flags & MPTCPHDR_ACK64_SET) {
+		/* 64-bit data_ack - thus we have to go one step higher */
 		ptr--;
-		if (tcb->mptcp_flags & MPTCPHDR_ACK64_SET) {
-			/* 64-bit data_ack - thus we have to go one step higher */
-			ptr--;
 
-			data_ack = (u32) get_unaligned_be64(ptr);
-		} else {
-			data_ack = get_unaligned_be32(ptr);
-		}
-
-		if (unlikely(!tp->mptcp->fully_established) &&
-		    (data_ack != meta_tp->mptcp->snt_isn ||
-		    tp->mptcp->snt_isn + 1 != tp->snd_una))
-			/* As soon as data has been data-acked,
-			 * or a subflow-data-ack (not acking syn - thus snt_isn + 1)
-			 * includes a data-ack, we are fully established
-			 */
-			mptcp_become_fully_estab(tp);
-
-		/* Get the data_seq */
-		if (mptcp_is_data_seq(skb)) {
-			mptcp_skb_set_data_seq(skb, &data_seq);
-		} else {
-			data_seq = meta_tp->snd_wl1;
-		}
+		data_ack = (u32) get_unaligned_be64(ptr);
 	} else {
-		/* This is needed to still correctly handle window-updates */
-		data_ack = meta_tp->snd_una;
+		data_ack = get_unaligned_be32(ptr);
+	}
 
-		/* Get the data_seq */
-		if (mptcp_is_data_seq(skb)) {
-			mptcp_skb_set_data_seq(skb, &data_seq);
-		} else {
-			data_seq = meta_tp->snd_wl1;
-		}
+	if (unlikely(!tp->mptcp->fully_established) &&
+	    (data_ack != meta_tp->mptcp->snt_isn ||
+	    tp->mptcp->snt_isn + 1 != tp->snd_una))
+		/* As soon as data has been data-acked,
+		 * or a subflow-data-ack (not acking syn - thus snt_isn + 1)
+		 * includes a data-ack, we are fully established
+		 */
+		mptcp_become_fully_estab(tp);
+
+	/* Get the data_seq */
+	if (mptcp_is_data_seq(skb)) {
+		mptcp_skb_set_data_seq(skb, &data_seq);
+	} else {
+		data_seq = meta_tp->snd_wl1;
 	}
 
 	/* If the ack is older than previous acks
