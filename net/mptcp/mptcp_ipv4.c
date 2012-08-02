@@ -200,15 +200,12 @@ drop_and_free:
 int mptcp_v4_rem_raddress(struct multipath_options *mopt, u8 id)
 {
 	int i;
-	struct mptcp_rem4 *rem4;
 
 	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
 		if (!((1 << i) & mopt->rem4_bits))
 			continue;
 
-		rem4 = &mopt->addr4[i];
-
-		if (rem4->id == id) {
+		if (mopt->addr4[i].id == id) {
 			/* remove address from bitfield */
 			mopt->rem4_bits &= ~(1 << i);
 

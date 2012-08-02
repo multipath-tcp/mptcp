@@ -1634,8 +1634,6 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 		lock_sock(sk);
 	}
-
-
 #endif
 
 	/* Urgent data needs to be handled specially. */

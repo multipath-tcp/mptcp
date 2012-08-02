@@ -276,7 +276,7 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 
 	skb_queue_walk_safe(&sk->sk_write_queue, skb_it, tmp) {
 		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb_it);
-		/* seq > reinjected_seq , to avoid reinjecting several times
+		/* seq >= reinjected_seq , to avoid reinjecting several times
 		 * the same segment. This does not duplicate functionality with
 		 * TCP_SKB_CB(skb)->path_mask, because the path_mask ensures the skb is not
 		 * scheduled twice to the same subflow. OTOH, the seq
