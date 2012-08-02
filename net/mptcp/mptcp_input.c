@@ -1107,6 +1107,40 @@ static void mptcp_send_reset_rem_id(const struct mptcp_cb *mpcb, u8 rem_id)
 	}
 }
 
+/* Same as tcp_parse_options but only parse MPTCP options. */
+void mptcp_post_parse_options(struct tcp_sock *tp,
+			      const struct sk_buff *skb)
+{
+	const struct tcphdr *th = tcp_hdr(skb);
+	int length = (th->doff * 4) - sizeof(struct tcphdr);
+	const unsigned char *ptr = (const unsigned char *)(th + 1);
+	struct mptcp_cb *mpcb = mpcb_from_tcpsock(tp);
+
+	while (length > 0) {
+		int opcode = *ptr++;
+		int opsize;
+
+		switch (opcode) {
+		case TCPOPT_EOL:
+			return;
+		case TCPOPT_NOP:	/* Ref: RFC 793 section 3.1 */
+			length--;
+			continue;
+		default:
+			opsize = *ptr++;
+			if (opsize < 2) /* "silly options" */
+				return;
+			if (opsize > length)
+				return;	/* don't parse partial options */
+			if (opcode == TCPOPT_MPTCP)
+				mptcp_parse_options(ptr - 2, opsize, &tp->rx_opt,
+						    &mpcb->rx_opt, skb);
+			ptr += opsize-2;
+			length -= opsize;
+		}
+	}
+}
+
 void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			 struct tcp_options_received *opt_rx,
 			 struct multipath_options *mopt,
@@ -1348,5 +1382,4 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 		break;
 	}
 }
-
 
