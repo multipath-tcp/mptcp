@@ -125,19 +125,6 @@ struct mptcp_tcp_sock {
 	u8	add_addr6;
 	u8	rem_id;
 
-	/* data for the scheduler */
-	struct {
-		u32	space;
-		u32	seq;
-		u32	time;
-		short   shift; /* Shift to apply to the space field.
-				* It is increased when space bytes are
-				* flushed in less than a jiffie (can happen
-				* with gigabit ethernet), so as to use a larger
-				* basis for bw computation.
-				*/
-	} bw_est;
-	u32	cur_bw_est;
 	u32	last_rbuf_opti;	/* Timestamp of last rbuf optimization */
 
 	struct sk_buff  *shortcut_ofoqueue; /* Shortcut to the current modified
@@ -914,12 +901,16 @@ static inline int mptcp_check_snd_buf(struct tcp_sock *tp)
 	struct mptcp_cb *mpcb = tp->mpcb;
 	struct tcp_sock *tp_it;
 	u32 rtt_max = tp->srtt;
+	u64 bw_est;
 
 	mptcp_for_each_tp(mpcb, tp_it)
 		if (rtt_max < tp_it->srtt)
 			rtt_max = tp_it->srtt;
 
-	return max_t(unsigned int, tp->mptcp->cur_bw_est * (rtt_max >> 3),
+	bw_est = div64_u64(((u64)tp->snd_cwnd * rtt_max) << 16,
+				(u64)tp->srtt);
+
+	return max_t(unsigned int, (u32)(bw_est >> 16),
 			tp->reordering + 1);
 }
 

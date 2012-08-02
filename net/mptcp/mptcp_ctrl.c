@@ -1304,33 +1304,6 @@ out:
 	sock_put(meta_sk); /* Taken by sock_hold */
 }
 
-void mptcp_set_bw_est(struct tcp_sock *tp, u32 now)
-{
-	if (!tp->mpc)
-		return;
-
-	if (!tp->mptcp->bw_est.time)
-		goto new_bw_est;
-
-	if (after(tp->snd_una, tp->mptcp->bw_est.seq)) {
-		if (now - tp->mptcp->bw_est.time == 0) {
-			/* The interval was to small - shift one more */
-			tp->mptcp->bw_est.shift++;
-		} else {
-			tp->mptcp->cur_bw_est = (tp->snd_una -
-				(tp->mptcp->bw_est.seq - tp->mptcp->bw_est.space)) /
-				(now - tp->mptcp->bw_est.time);
-		}
-		goto new_bw_est;
-	}
-	return;
-
-new_bw_est:
-	tp->mptcp->bw_est.space = (tp->snd_cwnd * tp->mss_cache) << tp->mptcp->bw_est.shift;
-	tp->mptcp->bw_est.seq = tp->snd_una + tp->mptcp->bw_est.space;
-	tp->mptcp->bw_est.time = now;
-}
-
 /**
  * Returns 1 if we should enable MPTCP for that socket.
  */
@@ -1515,7 +1488,6 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	}
 
 	child_tp->mptcp->slave_sk = 1;
-	child_tp->mptcp->bw_est.time = 0;
 	child_tp->mptcp->snt_isn = tcp_rsk(req)->snt_isn;
 	child_tp->mptcp->reinjected_seq = child_tp->snd_una;
 	child_tp->mptcp->init_rcv_wnd = req->rcv_wnd;
