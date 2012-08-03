@@ -59,13 +59,18 @@ u32 mptcp_get_crt_cwnd(struct tcp_sock *tp)
 		return min(tcp_packets_in_flight(tp), tp->snd_cwnd);
 }
 
+static inline int mptcp_ccc_sk_can_send(const struct sock *sk)
+{
+	return mptcp_sk_can_send(sk) && tcp_sk(sk)->srtt;
+}
+
 u32 mptcp_get_total_cwnd(struct mptcp_cb *mpcb)
 {
 	struct sock *sub_sk;
 	u32 cwnd = 0;
 
 	mptcp_for_each_sk(mpcb, sub_sk) {
-		if (!mptcp_sk_can_send(sub_sk))
+		if (!mptcp_ccc_sk_can_send(sub_sk))
 			continue;
 		cwnd += mptcp_get_crt_cwnd(tcp_sk(sub_sk));
 	}
@@ -126,29 +131,19 @@ static void mptcp_recalc_alpha(struct sock *sk)
 	/* Find the max numerator of the alpha-calculation */
 	mptcp_for_each_sk(mpcb, sub_sk) {
 		struct tcp_sock *sub_tp = tcp_sk(sub_sk);
-		u64 rtt = 1; /* Minimum value is 1, to avoid dividing by 0
-			      * u64 - because anyway we later need it */
 		u64 tmp;
 
-		if (!mptcp_sk_can_send(sub_sk))
+		if (!mptcp_ccc_sk_can_send(sub_sk))
 			continue;
 
 		can_send++;
-
-		if (likely(sub_tp->srtt))
-			rtt = sub_tp->srtt;
-		else
-			printk(KERN_ERR"%s: estimated rtt == 0, mpcb_token"
-				   ":%d, pi:%d, sub_sk->state:%d\n",
-				   __func__, mpcb->mptcp_loc_token,
-				   sub_tp->mptcp->path_index, sub_sk->sk_state);
 
 		/* We need to look for the path, that provides the max-value.
 		 * Integer-overflow is not possible here, because
 		 * tmp will be in u64.
 		 */
 		tmp = div64_u64(mptcp_ccc_scale(sub_tp->snd_cwnd,
-				alpha_scale_num), rtt * rtt);
+				alpha_scale_num), sub_tp->srtt * sub_tp->srtt);
 
 		if (tmp >= max_numerator) {
 			max_numerator = tmp;
@@ -164,24 +159,14 @@ static void mptcp_recalc_alpha(struct sock *sk)
 	/* Calculate the denominator */
 	mptcp_for_each_sk(mpcb, sub_sk) {
 		struct tcp_sock *sub_tp = tcp_sk(sub_sk);
-		u64 rtt = 1; /* Minimum value is 1, to avoid dividing by 0
-			      * u64 - because anyway we later need it */
 
-		if (!mptcp_sk_can_send(sub_sk))
+		if (!mptcp_ccc_sk_can_send(sub_sk))
 			continue;
-
-		if (likely(sub_tp->srtt))
-			rtt = sub_tp->srtt;
-		else
-			printk(KERN_ERR"%s: estimated rtt == 0, mpcb_token"
-				   ":%d, pi:%d, sub_sk->state:%d\n",
-				   __func__, mpcb->mptcp_loc_token,
-				   sub_tp->mptcp->path_index, sub_sk->sk_state);
 
 		sum_denominator += div_u64(
 				mptcp_ccc_scale(sub_tp->snd_cwnd,
 						alpha_scale_den) * best_rtt,
-						rtt);
+						sub_tp->srtt);
 	}
 	sum_denominator *= sum_denominator;
 	if (unlikely(!sum_denominator)) {
