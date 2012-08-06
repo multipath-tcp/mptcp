@@ -33,6 +33,8 @@
 #include <net/mptcp_v4.h>
 #include <net/mptcp_v6.h>
 
+#include <linux/kconfig.h>
+
 static inline void mptcp_become_fully_estab(struct tcp_sock *tp)
 {
 	tp->mptcp->fully_established = 1;

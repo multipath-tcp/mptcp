@@ -583,7 +583,7 @@ static int mptcp_pm_v6_netdev_event(struct notifier_block *this,
 }
 
 void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
-		struct mptcp_cb *mpcb)
+				  struct mptcp_cb *mpcb)
 {
 	int i;
 	struct sock *sk;
@@ -662,7 +662,6 @@ found:
 		mptcp_for_each_bit_set(mpcb->rx_opt.rem6_bits, i)
 			mpcb->rx_opt.addr6[i].bitfield &= mpcb->loc6_bits;
 	}
-
 }
 
 /*

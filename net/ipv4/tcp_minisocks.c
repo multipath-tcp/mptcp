@@ -18,6 +18,7 @@
  *		Jorge Cwik, <jorge@laser.satlink.net>
  */
 
+#include <linux/kconfig.h>
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/slab.h>

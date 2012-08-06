@@ -40,6 +40,7 @@
 #include <net/tcp_states.h>
 #include <net/transp_v6.h>
 
+#include <linux/kconfig.h>
 #include <linux/module.h>
 #include <linux/list.h>
 #include <linux/jhash.h>
@@ -52,14 +53,6 @@
 #include <linux/atomic.h>
 #ifdef CONFIG_SYSCTL
 #include <linux/sysctl.h>
-#endif
-
-#if IS_ENABLED(CONFIG_IPV6)
-#define AF_INET_FAMILY(fam) ((fam) == AF_INET)
-#define AF_INET6_FAMILY(fam) ((fam) == AF_INET6)
-#else
-#define AF_INET_FAMILY(fam) 1
-#define AF_INET6_FAMILY(fam) 0
 #endif
 
 static struct kmem_cache *mptcp_sock_cache __read_mostly;
@@ -605,7 +598,7 @@ int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key)
 #if IS_ENABLED(CONFIG_IPV6)
 	mptcp_inherit_sk(master_sk, meta_sk, AF_INET6, GFP_ATOMIC);
 
-	if (AF_INET_FAMILY(master_sk->sk_family)) {
+	if (master_sk->sk_family == AF_INET) {
 		mpcb->icsk_af_ops_alt = &ipv6_specific;
 	} else {
 		mpcb->icsk_af_ops_alt = &ipv4_specific;
