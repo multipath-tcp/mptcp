@@ -518,7 +518,7 @@ static void mptcp_dad_callback(unsigned long arg)
 	} else {
 		mptcp_pm_inet6_addr_event(NULL, NETDEV_UP, data->ifa);
 		kfree(data);
-		int6_ifa_put(data->ifa);
+		in6_ifa_put(data->ifa);
 	}
 }
 
