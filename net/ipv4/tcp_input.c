@@ -5787,7 +5787,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 				tp->mptcp->teardown = 1;
 				goto reset_and_undo;
 			}
-		} else if (tp->rx_opt.saw_mpc){
+		} else if (tp->rx_opt.saw_mpc && tp->request_mptcp) {
 			tp->rx_opt.saw_mpc = 0;
 
 			/* If alloc failed - fall back to regular TCP */

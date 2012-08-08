@@ -66,6 +66,7 @@ int sysctl_mptcp_ndiffports __read_mostly = 1;
 int sysctl_mptcp_enabled __read_mostly = 1;
 int sysctl_mptcp_checksum __read_mostly = 1;
 int sysctl_mptcp_debug __read_mostly = 0;
+int sysctl_mptcp_syn_retries __read_mostly = MPTCP_SYN_RETRIES;
 EXPORT_SYMBOL(sysctl_mptcp_debug);
 
 static ctl_table mptcp_table[] = {
@@ -100,6 +101,13 @@ static ctl_table mptcp_table[] = {
 	{
 		.procname = "mptcp_debug",
 		.data = &sysctl_mptcp_debug,
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.proc_handler = &proc_dointvec
+	},
+	{
+		.procname = "mptcp_syn_retries",
+		.data = &sysctl_mptcp_syn_retries,
 		.maxlen = sizeof(int),
 		.mode = 0644,
 		.proc_handler = &proc_dointvec

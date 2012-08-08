@@ -532,11 +532,13 @@ static inline int mptcp_sub_len_dss(struct mp_dss *m, int csum)
  * All subflows will be using that MSS. If any subflow has a lower MSS, it is
  * just not used. */
 #define MPTCP_MSS 1400
+#define MPTCP_SYN_RETRIES 3
 extern int sysctl_mptcp_mss;
 extern int sysctl_mptcp_ndiffports;
 extern int sysctl_mptcp_enabled;
 extern int sysctl_mptcp_checksum;
 extern int sysctl_mptcp_debug;
+extern int sysctl_mptcp_syn_retries;
 
 extern struct workqueue_struct *mptcp_wq;
 
@@ -965,6 +967,11 @@ static inline void mptcp_reset_xmit_timer(struct sock *meta_sk)
 				  inet_csk(meta_sk)->icsk_rto, TCP_RTO_MAX);
 }
 
+static inline int mptcp_sysctl_syn_retries(void)
+{
+	return sysctl_mptcp_syn_retries;
+}
+
 static inline void mptcp_include_mpc(struct tcp_sock *tp)
 {
 	if (tp->mpc) {
@@ -1287,6 +1294,10 @@ static inline int mptcp_check_snd_buf(const struct tcp_sock *tp)
 	return 0;
 }
 static inline void mptcp_retransmit_queue(const struct sock *sk) {}
+static inline int mptcp_sysctl_syn_retries(void)
+{
+	return 0;
+}
 static inline void mptcp_include_mpc(const struct tcp_sock *tp) {}
 static inline void mptcp_send_reset(const struct sock *sk,
 				    const struct sk_buff *skb) {}
