@@ -178,18 +178,12 @@ static int tcp_write_timeout(struct sock *sk)
 	if ((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV)) {
 		if (icsk->icsk_retransmits)
 			dst_negative_advice(sk);
-
-		if (tcp_sk(sk)->request_mptcp && is_master_tp(tcp_sk(sk))) {
-			int mpsr = mptcp_sysctl_syn_retries();
-			bool stopm = retransmits_timed_out(sk, mpsr, 0, 1);
-			/* Stop retransmitting MP_CAPABLE options
-			 *  in SYN if timed out. */
-			if (stopm)
-				tcp_sk(sk)->request_mptcp = 0;
-		}
-
 		retry_until = icsk->icsk_syn_retries ? : sysctl_tcp_syn_retries;
 		syn_set = 1;
+		/* Stop retransmitting MP_CAPABLE options in SYN if timed out. */
+		if (tcp_sk(sk)->request_mptcp && is_master_tp(tcp_sk(sk)) &&
+		    icsk->icsk_retransmits >= mptcp_sysctl_syn_retries())
+			tcp_sk(sk)->request_mptcp = 0;
 	} else {
 		if (retransmits_timed_out(sk, sysctl_tcp_retries1, 0, 0)) {
 			/* Black hole detection */
