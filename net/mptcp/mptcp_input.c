@@ -392,7 +392,7 @@ static int mptcp_skb_split_tail(struct sk_buff *skb, struct sock *sk, u32 seq)
  */
 int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 {
-	struct mptcp_cb *mpcb = mpcb_from_tcpsock(tcp_sk(sk));
+	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 	struct sock *meta_sk = (struct sock *) mpcb;
 	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = tcp_sk(meta_sk);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
@@ -1105,7 +1105,7 @@ void mptcp_post_parse_options(struct tcp_sock *tp,
 	const struct tcphdr *th = tcp_hdr(skb);
 	int length = (th->doff * 4) - sizeof(struct tcphdr);
 	const unsigned char *ptr = (const unsigned char *)(th + 1);
-	struct mptcp_cb *mpcb = mpcb_from_tcpsock(tp);
+	struct mptcp_cb *mpcb = tp->mpcb;
 
 	while (length > 0) {
 		int opcode = *ptr++;

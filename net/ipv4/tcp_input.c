@@ -4006,7 +4006,7 @@ static int tcp_fast_parse_options(const struct sk_buff *skb,
 		if (tcp_parse_aligned_timestamp(tp, th))
 			return 1;
 	}
-	mpcb = mpcb_from_tcpsock(tp);
+	mpcb = tp->mpcb;
 
 	__tcp_parse_options(skb, &tp->rx_opt, hvpp,
 			    mpcb ? &mpcb->rx_opt : NULL, 1, 1);

@@ -994,7 +994,7 @@ void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 		 * there is no data in the segment
 		 */
 	} else {
-		struct mptcp_cb *mpcb = mpcb_from_tcpsock(tp);
+		struct mptcp_cb *mpcb = tp->mpcb;
 
 		opts->mptcp_options |= OPTION_MP_JOIN | OPTION_TYPE_SYN;
 		*remaining -= MPTCP_SUB_LEN_JOIN_SYN_ALIGN;

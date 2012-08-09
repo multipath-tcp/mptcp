@@ -721,11 +721,6 @@ static inline __u32 *mptcp_skb_set_data_seq(const struct sk_buff *skb,
 	return ptr;
 }
 
-static inline struct mptcp_cb *mpcb_from_tcpsock(const struct tcp_sock *tp)
-{
-	return tp->mpcb;
-}
-
 static inline struct sock *mptcp_meta_sk(struct sock *sk)
 {
 	return mpcb_meta_sk(tcp_sk(sk)->mpcb);
@@ -739,7 +734,7 @@ struct mptcp_cb *mptcp_mpcb_from_req_sk(const struct request_sock *req)
 
 static inline int is_meta_tp(const struct tcp_sock *tp)
 {
-	return tp->mpcb && mpcb_meta_tp(mpcb_from_tcpsock(tp)) == tp;
+	return tp->mpcb && mpcb_meta_tp(tp->mpcb) == tp;
 }
 
 static inline int is_meta_sk(const struct sock *sk)
@@ -1190,10 +1185,6 @@ static inline int mptcp_is_data_fin(const struct sk_buff *skb)
 static inline int mptcp_is_data_seq(const struct sk_buff *skb)
 {
 	return 0;
-}
-static inline struct mptcp_cb *mpcb_from_tcpsock(const struct tcp_sock *tp)
-{
-	return NULL;
 }
 static inline struct sock *mptcp_meta_sk(const struct sock *sk)
 {

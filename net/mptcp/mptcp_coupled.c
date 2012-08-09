@@ -83,7 +83,7 @@ static inline void mptcp_set_forced(struct mptcp_cb *mpcb, bool force)
 
 static void mptcp_recalc_alpha(struct sock *sk)
 {
-	struct mptcp_cb *mpcb = mpcb_from_tcpsock(tcp_sk(sk));
+	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 	struct sock *sub_sk;
 	int best_cwnd = 0, best_rtt = 0, can_send = 0;
 	u64 max_numerator = 0, sum_denominator = 0, alpha = 1;
@@ -162,7 +162,7 @@ exit:
 
 static void mptcp_cc_init(struct sock *sk)
 {
-	struct mptcp_cb *mpcb = mpcb_from_tcpsock(tcp_sk(sk));
+	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 	if (tcp_sk(sk)->mpc) {
 		mptcp_set_forced(mpcb, 0);
 		mptcp_set_alpha(mpcb, 1);
@@ -182,13 +182,13 @@ static void mptcp_ccc_set_state(struct sock *sk, u8 ca_state)
 		return;
 
 	if (ca_state == TCP_CA_Recovery)
-		mptcp_set_forced(mpcb_from_tcpsock(tcp_sk(sk)), 1);
+		mptcp_set_forced(tcp_sk(sk)->mpcb, 1);
 }
 
 static void mptcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 {
 	struct tcp_sock *tp = tcp_sk(sk), *meta_tp;
-	struct mptcp_cb *mpcb = mpcb_from_tcpsock(tp);
+	struct mptcp_cb *mpcb = tp->mpcb;
 	int snd_cwnd;
 
 	if (!mpcb || !tp->mpc) {
