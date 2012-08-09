@@ -1117,7 +1117,7 @@ static inline int tcp_win_from_space(int space)
 static inline int tcp_space(const struct sock *sk)
 {
 	if (tcp_sk(sk)->mpc)
-		sk = (struct sock *) (tcp_sk(sk)->mpcb);
+		sk = (struct sock *)tcp_sk(sk)->mpcb;
 
 	return tcp_win_from_space(sk->sk_rcvbuf -
 				  atomic_read(&sk->sk_rmem_alloc));
@@ -1126,7 +1126,7 @@ static inline int tcp_space(const struct sock *sk)
 static inline int tcp_full_space(const struct sock *sk)
 {
 	if (tcp_sk(sk)->mpc)
-		sk = (struct sock *) (tcp_sk(sk)->mpcb);
+		sk = (struct sock *)tcp_sk(sk)->mpcb;
 
 	return tcp_win_from_space(sk->sk_rcvbuf); 
 }

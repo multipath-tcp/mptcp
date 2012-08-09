@@ -1456,7 +1456,7 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 
 	/* First - select a socket */
 	if (!mptcp_test_any_sk(mpcb, sk_it, tcp_sk(sk_it)->send_mp_fclose)) {
-		sk = mptcp_select_ack_sock(meta_tp, 0);
+		sk = mptcp_select_ack_sock(meta_sk, 0);
 
 		tcp_sk(sk)->send_mp_fclose = 1;
 	}

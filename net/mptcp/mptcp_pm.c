@@ -538,7 +538,7 @@ int mptcp_do_join_short(struct sk_buff *skb, struct multipath_options *mopt,
 void mptcp_send_updatenotif_wq(struct work_struct *work)
 {
 	struct mptcp_cb *mpcb = container_of(work, struct mptcp_cb, create_work);
-	struct sock *meta_sk = mpcb_meta_sk(mpcb);
+	struct sock *meta_sk = mpcb->meta_sk;
 	int iter = 0;
 	int i;
 
@@ -633,7 +633,7 @@ void mptcp_send_updatenotif(struct sock *meta_sk)
 void mptcp_address_worker(struct work_struct *work)
 {
 	struct mptcp_cb *mpcb = container_of(work, struct mptcp_cb, address_work);
-	struct sock *meta_sk = mpcb_meta_sk(mpcb), *sk;
+	struct sock *meta_sk = mpcb->meta_sk, *sk;
 	struct net *netns = sock_net(meta_sk);
 	struct net_device *dev;
 	int i;
@@ -748,7 +748,7 @@ cont_ipv6:
 		mpcb->loc4_bits &= ~(1 << i);
 
 		mpcb->remove_addrs |= (1 << mpcb->addr4[i].id);
-		sk = mptcp_select_ack_sock(tcp_sk(meta_sk), 0);
+		sk = mptcp_select_ack_sock(meta_sk, 0);
 		if (sk)
 			tcp_send_ack(sk);
 
@@ -800,7 +800,7 @@ next_loc_addr:
 
 		/* Force sending directly the REMOVE_ADDR option */
 		mpcb->remove_addrs |= (1 << mpcb->addr6[i].id);
-		sk = mptcp_select_ack_sock(tcp_sk(meta_sk), 0);
+		sk = mptcp_select_ack_sock(meta_sk, 0);
 		if (sk)
 			tcp_send_ack(sk);
 
@@ -824,7 +824,7 @@ exit:
 static void mptcp_address_create_worker(struct mptcp_cb *mpcb)
 {
 	if (!work_pending(&mpcb->address_work)) {
-		sock_hold(mpcb_meta_sk(mpcb));
+		sock_hold(mpcb->meta_sk);
 		queue_work(mptcp_wq, &mpcb->address_work);
 	}
 }

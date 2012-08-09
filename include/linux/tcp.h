@@ -549,26 +549,6 @@ struct tcp_sock {
 #endif /* CONFIG_MPTCP */
 };
 
-#ifdef CONFIG_MPTCP
-static inline struct tcp_sock *mpcb_meta_tp(const struct mptcp_cb *mpcb)
-{
-	return (struct tcp_sock *)mpcb;
-}
-static inline struct sock *mpcb_meta_sk(const struct mptcp_cb *mpcb)
-{
-	return (struct sock *)mpcb;
-}
-#else
-static inline struct tcp_sock *mpcb_meta_tp(const struct mptcp_cb *mpcb)
-{
-	return NULL;
-}
-static inline struct sock *mpcb_meta_sk(const struct mptcp_cb *mpcb)
-{
-	return NULL;
-}
-#endif
-
 static inline struct tcp_sock *tcp_sk(const struct sock *sk)
 {
 	return (struct tcp_sock *)sk;

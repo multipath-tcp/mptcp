@@ -135,8 +135,9 @@ static ctl_table mptcp_root_table[] = {
 };
 #endif
 
-struct sock *mptcp_select_ack_sock(const struct tcp_sock *meta_tp, int copied)
+struct sock *mptcp_select_ack_sock(const struct sock *meta_sk, int copied)
 {
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct sock *sk, *subsk = NULL;
 	u32 max_data_seq = 0;
 	/* max_data_seq initialized to correct compiler-warning.
@@ -656,6 +657,7 @@ int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key, u32 window)
 	meta_tp->advmss = mptcp_sysctl_mss();
 
 	meta_tp->mpcb = mpcb;
+	mpcb->meta_sk = meta_sk;
 	meta_tp->mpc = 1;
 	meta_tp->mptcp->attached = 0;
 	meta_tp->was_meta_sk = 0;
@@ -979,7 +981,7 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 		/* Optimize, __tcp_select_window() is not cheap. */
 		if (2 * rcv_window_now <= meta_tp->window_clamp) {
 			__u32 new_window;
-			subsk = mptcp_select_ack_sock(meta_tp, copied);
+			subsk = mptcp_select_ack_sock(meta_sk, copied);
 			if (!subsk)
 				return;
 			new_window = __tcp_select_window(subsk);

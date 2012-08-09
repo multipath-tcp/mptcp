@@ -171,6 +171,8 @@ struct mptcp_cb {
 	struct tcp_sock tp;
 #endif /* CONFIG_IPV6 */
 
+	struct sock *meta_sk;
+
 	/* list of sockets in this multipath connection */
 	struct tcp_sock *connection_list;
 	struct multipath_options rx_opt;
@@ -650,7 +652,7 @@ int mptcp_write_wakeup(struct sock *meta_sk);
 void mptcp_sock_def_error_report(struct sock *sk);
 void mptcp_sub_close_wq(struct work_struct *work);
 void mptcp_sub_close(struct sock *sk, unsigned long delay);
-struct sock *mptcp_select_ack_sock(const struct tcp_sock *meta_tp, int copied);
+struct sock *mptcp_select_ack_sock(const struct sock *meta_sk, int copied);
 void mptcp_destroy_meta_sk(struct sock *meta_sk);
 void mptcp_sock_destruct(struct sock *sk);
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb);
@@ -957,7 +959,7 @@ static inline int mptcp_sk_can_recv(const struct sock *sk)
  */
 static inline void mptcp_init_buffer_space(struct sock *sk)
 {
-	struct sock *meta_sk = mpcb_meta_sk(tcp_sk(sk)->mpcb);
+	struct sock *meta_sk = mptcp_meta_sk(sk);
 	int space = min(meta_sk->sk_rcvbuf + sk->sk_rcvbuf, sysctl_tcp_rmem[2]);
 
 	if (space > meta_sk->sk_rcvbuf) {

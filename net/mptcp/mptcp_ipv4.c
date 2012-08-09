@@ -407,7 +407,7 @@ struct sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
 		    ireq->rmt_addr == raddr &&
 		    ireq->loc_addr == laddr &&
 		    rev_mptcp_rsk(mtreq)->rsk_ops->family == AF_INET) {
-			meta_sk = mpcb_meta_sk(mtreq->mpcb);
+			meta_sk = mtreq->mpcb->meta_sk;
 			break;
 		}
 	}
@@ -595,7 +595,7 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 		/* re-send addresses */
 		mptcp_v4_send_add_addr(i, mpcb);
 		/* re-evaluate paths */
-		mptcp_send_updatenotif(mpcb_meta_sk(mpcb));
+		mptcp_send_updatenotif(mpcb->meta_sk);
 	}
 	return;
 found:
@@ -625,7 +625,7 @@ found:
 
 		/* Force sending directly the REMOVE_ADDR option */
 		mpcb->remove_addrs |= (1 << mpcb->addr4[i].id);
-		sk = mptcp_select_ack_sock(mpcb_meta_tp(mpcb), 0);
+		sk = mptcp_select_ack_sock(mpcb->meta_sk, 0);
 		if (sk)
 			tcp_send_ack(sk);
 

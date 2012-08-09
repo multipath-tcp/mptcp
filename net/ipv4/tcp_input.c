@@ -309,8 +309,8 @@ static int __tcp_grow_window(const struct sock *sk, const struct sk_buff *skb)
 static void tcp_grow_window(struct sock *sk, const struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct tcp_sock *meta_tp = tp->mpc ? mpcb_meta_tp(tp->mpcb) : tp;
-	struct sock *meta_sk = (struct sock *)meta_tp;
+	struct sock *meta_sk = tp->mpc ? mptcp_meta_sk(sk) : sk;
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
 	/* Check #1 */
 	if (meta_tp->rcv_ssthresh < meta_tp->window_clamp &&

@@ -854,7 +854,7 @@ int mptcp_fin(struct sock *meta_sk)
 	}
 
 	if (!sk)
-		sk = mptcp_select_ack_sock(meta_tp, 0);
+		sk = mptcp_select_ack_sock(meta_sk, 0);
 
 	inet_csk_schedule_ack(sk);
 

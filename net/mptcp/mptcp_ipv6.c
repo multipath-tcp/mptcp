@@ -412,7 +412,7 @@ struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *radd
 		    AF_INET6_FAMILY(rev_mptcp_rsk(mtreq)->rsk_ops->family) &&
 		    ipv6_addr_equal(&treq->rmt_addr, raddr) &&
 		    ipv6_addr_equal(&treq->loc_addr, laddr)) {
-			meta_sk = mpcb_meta_sk(mtreq->mpcb);
+			meta_sk = mtreq->mpcb->meta_sk;
 			break;
 		}
 	}
@@ -665,7 +665,7 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 		/* re-send addresses */
 		mptcp_v6_send_add_addr(i, mpcb);
 		/* re-evaluate paths */
-		mptcp_send_updatenotif(mpcb_meta_sk(mpcb));
+		mptcp_send_updatenotif(mpcb->meta_sk);
 	}
 	return;
 found:
@@ -695,7 +695,7 @@ found:
 
 		/* Force sending directly the REMOVE_ADDR option */
 		mpcb->remove_addrs |= (1 << mpcb->addr6[i].id);
-		sk = mptcp_select_ack_sock(mpcb_meta_tp(mpcb), 0);
+		sk = mptcp_select_ack_sock(mpcb->meta_sk, 0);
 		if (sk)
 			tcp_send_ack(sk);
 
