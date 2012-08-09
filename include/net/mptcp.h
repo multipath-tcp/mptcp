@@ -224,8 +224,6 @@ struct mptcp_cb {
 	 */
 	const struct inet_connection_sock_af_ops *icsk_af_ops_alt;
 
-	struct list_head collide_tk;
-
 	/* Local addresses */
 	struct mptcp_loc4 addr4[MPTCP_MAX_ADDR];
 	u8 loc4_bits; /* Bitfield, indicating which of the above indexes are set */

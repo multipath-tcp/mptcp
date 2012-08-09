@@ -542,6 +542,7 @@ struct tcp_sock {
 		was_meta_sk:1; /* This was a meta sk (in case of reuse) */
 	struct mptcp_tcp_sock *mptcp;
 #ifdef CONFIG_MPTCP
+	struct list_head tk_table;
 	u32		mptcp_loc_token;
 	u64		mptcp_loc_key;
 #endif /* CONFIG_MPTCP */

@@ -95,23 +95,23 @@ void mptcp_reqsk_remove_tk(struct request_sock *reqsk)
 	spin_unlock_bh(&mptcp_reqsk_tk_hlock);
 }
 
-void mptcp_hash_insert(struct mptcp_cb *mpcb, u32 token)
+void mptcp_hash_insert(struct tcp_sock *meta_tp, u32 token)
 {
 	u32 hash = mptcp_hash_tk(token);
 
 	write_lock_bh(&tk_hash_lock);
-	list_add(&mpcb->collide_tk, &tk_hashtable[hash]);
+	list_add(&meta_tp->tk_table, &tk_hashtable[hash]);
 	write_unlock_bh(&tk_hash_lock);
 }
 
 int mptcp_find_token(u32 token)
 {
 	u32 hash = mptcp_hash_tk(token);
-	struct mptcp_cb *mpcb;
+	struct tcp_sock *meta_tp;
 
 	read_lock_bh(&tk_hash_lock);
-	list_for_each_entry(mpcb, &tk_hashtable[hash], collide_tk) {
-		if (token == mpcb->mptcp_loc_token) {
+	list_for_each_entry(meta_tp, &tk_hashtable[hash], tk_table) {
+		if (token == meta_tp->mptcp_loc_token) {
 			read_unlock(&tk_hash_lock);
 			return 1;
 		}
@@ -149,29 +149,30 @@ void mptcp_reqsk_new_mptcp(struct request_sock *req,
  * It is the responsibility of the caller to decrement when releasing
  * the structure.
  */
-struct mptcp_cb *mptcp_hash_find(u32 token)
+struct sock *mptcp_hash_find(u32 token)
 {
 	u32 hash = mptcp_hash_tk(token);
-	struct mptcp_cb *mpcb;
+	struct tcp_sock *meta_tp;
 
 	read_lock(&tk_hash_lock);
-	list_for_each_entry(mpcb, &tk_hashtable[hash], collide_tk) {
-		if (token == mpcb->mptcp_loc_token) {
-			sock_hold(mpcb_meta_sk(mpcb));
+	list_for_each_entry(meta_tp, &tk_hashtable[hash], tk_table) {
+		if (token == meta_tp->mptcp_loc_token) {
+			struct sock *meta_sk = (struct sock *)meta_tp;
+			sock_hold(meta_sk);
 			read_unlock(&tk_hash_lock);
-			return mpcb;
+			return meta_sk;
 		}
 	}
 	read_unlock(&tk_hash_lock);
 	return NULL;
 }
 
-void mptcp_hash_remove(struct mptcp_cb *mpcb)
+void mptcp_hash_remove(struct tcp_sock *meta_tp)
 {
 	/* remove from the token hashtable */
 	write_lock_bh(&tk_hash_lock);
 	/* list_del_init, so that list_empty succeeds in mptcp_v4_do_rcv */
-	list_del_init(&mpcb->collide_tk);
+	list_del_init(&meta_tp->tk_table);
 	write_unlock_bh(&tk_hash_lock);
 }
 
@@ -408,13 +409,13 @@ int mptcp_lookup_join(struct sk_buff *skb)
 		return 0;
 
 	token = join_opt->u.syn.token;
-	mpcb = mptcp_hash_find(token);
-	meta_sk = mpcb_meta_sk(mpcb);
-	if (!mpcb) {
+	meta_sk = mptcp_hash_find(token);
+	if (!meta_sk) {
 		mptcp_debug("%s:mpcb not found:%x\n", __func__, token);
 		return -1;
 	}
 
+	mpcb = tcp_sk(meta_sk)->mpcb;
 	if (mpcb->infinite_mapping) {
 		/* We are in fallback-mode - thus no new subflows!!! */
 		sock_put(meta_sk); /* Taken by mptcp_hash_find */
@@ -454,13 +455,13 @@ int mptcp_do_join_short(struct sk_buff *skb, struct multipath_options *mopt,
 	u32 token;
 
 	token = mopt->mptcp_rem_token;
-	mpcb = mptcp_hash_find(token);
-	meta_sk = mpcb_meta_sk(mpcb);
-	if (!mpcb) {
+	meta_sk = mptcp_hash_find(token);
+	if (!meta_sk) {
 		mptcp_debug("%s:mpcb not found:%x\n", __func__, token);
 		return -1;
 	}
 
+	mpcb = tcp_sk(meta_sk)->mpcb;
 	if (mpcb->infinite_mapping) {
 		/* We are in fallback-mode - thus no new subflows!!! */
 		sock_put(meta_sk); /* Taken by mptcp_hash_find */
@@ -809,7 +810,7 @@ static void mptcp_address_create_worker(struct mptcp_cb *mpcb)
  */
 int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 {
-	struct mptcp_cb *mpcb;
+	struct tcp_sock *meta_tp;
 	int i;
 
 	if (!(event == NETDEV_UP || event == NETDEV_DOWN ||
@@ -823,14 +824,15 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 	read_lock_bh(&tk_hash_lock);
 
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
-		list_for_each_entry(mpcb, &tk_hashtable[i], collide_tk) {
-			if (!mpcb_meta_tp(mpcb)->mpc ||
-			    mpcb->infinite_mapping)
+		list_for_each_entry(meta_tp, &tk_hashtable[i], tk_table) {
+			struct mptcp_cb *mpcb = meta_tp->mpcb;
+			struct sock *meta_sk = (struct sock *)meta_tp;
+
+			if (!meta_tp->mpc || mpcb->infinite_mapping)
 				continue;
 
-			bh_lock_sock(mpcb_meta_sk(mpcb));
-
-			if (sock_owned_by_user(mpcb_meta_sk(mpcb))) {
+			bh_lock_sock(meta_sk);
+			if (sock_owned_by_user(meta_sk)) {
 				mptcp_address_create_worker(mpcb);
 			} else {
 				if (family == AF_INET)
@@ -843,7 +845,7 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 #endif
 			}
 
-			bh_unlock_sock(mpcb_meta_sk(mpcb));
+			bh_unlock_sock(meta_sk);
 		}
 	}
 	read_unlock_bh(&tk_hash_lock);
@@ -855,7 +857,7 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
  */
 static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 {
-	struct mptcp_cb *mpcb;
+	struct tcp_sock *meta_tp;
 	int i;
 
 	seq_puts(seq, "Multipath TCP (path manager):");
@@ -863,27 +865,30 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
 		read_lock_bh(&tk_hash_lock);
-		list_for_each_entry(mpcb, &tk_hashtable[i], collide_tk) {
-			struct inet_sock *isk = inet_sk(mpcb_meta_sk(mpcb));
+		list_for_each_entry(meta_tp, &tk_hashtable[i], tk_table) {
+			struct mptcp_cb *mpcb = meta_tp->mpcb;
+			struct sock *meta_sk = (struct sock *)meta_tp;
+			struct inet_sock *isk = inet_sk(meta_sk);
 
-			if (mpcb_meta_sk(mpcb)->sk_family == AF_INET ||
-			    mptcp_v6_is_v4_mapped(mpcb_meta_sk(mpcb))) {
+			if (!meta_tp->mpc)
+				continue;
+
+			if (meta_sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(meta_sk)) {
 				seq_printf(seq, "[%pI4:%hu - %pI4:%hu] ",
 						&isk->inet_saddr, ntohs(isk->inet_sport),
 						&isk->inet_daddr, ntohs(isk->inet_dport));
 #if IS_ENABLED(CONFIG_IPV6)
-			} else if (mpcb_meta_sk(mpcb)->sk_family == AF_INET6) {
+			} else if (meta_sk->sk_family == AF_INET6) {
 				seq_printf(seq, "[%pI6:%hu - %pI6:%hu] ",
 						&isk->pinet6->saddr, ntohs(isk->inet_sport),
 						&isk->pinet6->daddr, ntohs(isk->inet_dport));
 #endif
 			}
-
 			seq_printf(seq, "Loc_Tok %#x Rem_tok %#x cnt_est %d meta-state %d infinite? %d",
 					mpcb->mptcp_loc_token,
 					mpcb->rx_opt.mptcp_rem_token,
 					mpcb->cnt_established,
-					mpcb_meta_sk(mpcb)->sk_state,
+					meta_sk->sk_state,
 					mpcb->infinite_mapping);
 			seq_putc(seq, '\n');
 		}

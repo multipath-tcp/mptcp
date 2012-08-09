@@ -349,7 +349,7 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	 * Check for close-state is necessary, because we may have been closed
 	 * without passing by mptcp_close().
 	 */
-	if (meta_sk->sk_state == TCP_CLOSE || list_empty(&mpcb->collide_tk))
+	if (meta_sk->sk_state == TCP_CLOSE || list_empty(&tcp_sk(meta_sk)->tk_table))
 		goto reset_and_discard;
 
 	child = tcp_v4_hnd_req(meta_sk, skb);

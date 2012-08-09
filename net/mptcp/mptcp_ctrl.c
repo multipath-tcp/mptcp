@@ -692,7 +692,7 @@ int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key, u32 window)
 	tcp_init_xmit_timers(meta_sk);
 
 	/* Adding the mpcb in the token hashtable */
-	mptcp_hash_insert(mpcb, mpcb->mptcp_loc_token);
+	mptcp_hash_insert(meta_tp, mpcb->mptcp_loc_token);
 
 	mptcp_mpcb_inherit_sockopts(meta_sk, master_sk);
 
@@ -1150,9 +1150,9 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 			sock_rps_reset_flow(sk_it);
 	}
 
-	if (!list_empty(&mpcb->collide_tk)) {
+	if (!list_empty(&meta_tp->tk_table)) {
 		/* Detach the mpcb from the token hashtable */
-		mptcp_hash_remove(mpcb);
+		mptcp_hash_remove(meta_tp);
 		reqsk_queue_destroy(&((struct inet_connection_sock *)mpcb)->icsk_accept_queue);
 	}
 
