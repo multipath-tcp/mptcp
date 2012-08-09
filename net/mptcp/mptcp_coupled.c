@@ -52,15 +52,15 @@ static inline int mptcp_ccc_sk_can_send(const struct sock *sk)
 	return mptcp_sk_can_send(sk) && tcp_sk(sk)->srtt;
 }
 
-static inline u64 mptcp_get_alpha(struct mptcp_cb *mpcb)
+static inline u64 mptcp_get_alpha(struct sock *meta_sk)
 {
-	struct mptcp_ccc *mptcp_ccc = inet_csk_ca(mpcb_meta_sk(mpcb));
+	struct mptcp_ccc *mptcp_ccc = inet_csk_ca(meta_sk);
 	return mptcp_ccc->alpha;
 }
 
-static inline void mptcp_set_alpha(struct mptcp_cb *mpcb, u64 alpha)
+static inline void mptcp_set_alpha(struct sock *meta_sk, u64 alpha)
 {
-	struct mptcp_ccc *mptcp_ccc = inet_csk_ca(mpcb_meta_sk(mpcb));
+	struct mptcp_ccc *mptcp_ccc = inet_csk_ca(meta_sk);
 	mptcp_ccc->alpha = alpha;
 }
 
@@ -69,15 +69,15 @@ static inline u64 mptcp_ccc_scale(u32 val, int scale)
 	return (u64) val << scale;
 }
 
-static inline bool mptcp_get_forced(struct mptcp_cb *mpcb)
+static inline bool mptcp_get_forced(struct sock *meta_sk)
 {
-	struct mptcp_ccc *mptcp_ccc = inet_csk_ca(mpcb_meta_sk(mpcb));
+	struct mptcp_ccc *mptcp_ccc = inet_csk_ca(meta_sk);
 	return mptcp_ccc->forced_update;
 }
 
-static inline void mptcp_set_forced(struct mptcp_cb *mpcb, bool force)
+static inline void mptcp_set_forced(struct sock *meta_sk, bool force)
 {
-	struct mptcp_ccc *mptcp_ccc = inet_csk_ca(mpcb_meta_sk(mpcb));
+	struct mptcp_ccc *mptcp_ccc = inet_csk_ca(meta_sk);
 	mptcp_ccc->forced_update = force;
 }
 
@@ -157,15 +157,14 @@ static void mptcp_recalc_alpha(struct sock *sk)
 		alpha = 1;
 
 exit:
-	mptcp_set_alpha(mpcb, alpha);
+	mptcp_set_alpha(mptcp_meta_sk(sk), alpha);
 }
 
 static void mptcp_cc_init(struct sock *sk)
 {
-	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 	if (tcp_sk(sk)->mpc) {
-		mptcp_set_forced(mpcb, 0);
-		mptcp_set_alpha(mpcb, 1);
+		mptcp_set_forced(mptcp_meta_sk(sk), 0);
+		mptcp_set_alpha(mptcp_meta_sk(sk), 1);
 	}
 	/* If we do not mptcp, behave like reno: return */
 }
@@ -182,21 +181,19 @@ static void mptcp_ccc_set_state(struct sock *sk, u8 ca_state)
 		return;
 
 	if (ca_state == TCP_CA_Recovery)
-		mptcp_set_forced(tcp_sk(sk)->mpcb, 1);
+		mptcp_set_forced(mptcp_meta_sk(sk), 1);
 }
 
 static void mptcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 {
-	struct tcp_sock *tp = tcp_sk(sk), *meta_tp;
+	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = mptcp_meta_tp(tp);
 	struct mptcp_cb *mpcb = tp->mpcb;
 	int snd_cwnd;
 
-	if (!mpcb || !tp->mpc) {
+	if (!tp->mpc) {
 		tcp_reno_cong_avoid(sk, ack, in_flight);
 		return;
 	}
-
-	meta_tp = mpcb_meta_tp(mpcb);
 
 	if (!tcp_is_cwnd_limited(sk, in_flight))
 		return;
@@ -208,13 +205,13 @@ static void mptcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 		return;
 	}
 
-	if (mptcp_get_forced(mpcb)) {
+	if (mptcp_get_forced(mptcp_meta_sk(sk))) {
 		mptcp_recalc_alpha(sk);
-		mptcp_set_forced(mpcb, 0);
+		mptcp_set_forced(mptcp_meta_sk(sk), 0);
 	}
 
 	if (mpcb->cnt_established > 1) {
-		u64 alpha = mptcp_get_alpha(mpcb);
+		u64 alpha = mptcp_get_alpha(mptcp_meta_sk(sk));
 
 		/* This may happen, if at the initialization, the mpcb
 		 * was not yet attached to the sock, and thus

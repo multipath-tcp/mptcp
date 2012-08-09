@@ -207,9 +207,9 @@ u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock* sk)
 	BUG();
 }
 
-void mptcp_set_addresses(struct mptcp_cb *mpcb)
+void mptcp_set_addresses(struct sock *meta_sk)
 {
-	struct sock *meta_sk = mpcb_meta_sk(mpcb);
+	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct net *netns = sock_net(meta_sk);
 	struct net_device *dev;
 
@@ -536,11 +536,11 @@ next_subflow:
 	    sysctl_mptcp_ndiffports > mpcb->cnt_subflows) {
 		if (meta_sk->sk_family == AF_INET ||
 		    mptcp_v6_is_v4_mapped(meta_sk)) {
-			mptcp_init4_subsockets(mpcb, &mpcb->addr4[0],
+			mptcp_init4_subsockets(meta_sk, &mpcb->addr4[0],
 					       &mpcb->rx_opt.addr4[0]);
 		} else {
 #if IS_ENABLED(CONFIG_IPV6)
-			mptcp_init6_subsockets(mpcb, &mpcb->addr6[0],
+			mptcp_init6_subsockets(meta_sk, &mpcb->addr6[0],
 					       &mpcb->rx_opt.addr6[0]);
 #endif
 		}
@@ -561,7 +561,7 @@ next_subflow:
 		/* Are there still combinations to handle? */
 		if (remaining_bits) {
 			int i = mptcp_find_free_index(~remaining_bits);
-			mptcp_init4_subsockets(mpcb, &mpcb->addr4[i], rem);
+			mptcp_init4_subsockets(meta_sk, &mpcb->addr4[i], rem);
 			goto next_subflow;
 		}
 	}
@@ -577,7 +577,7 @@ next_subflow:
 		/* Are there still combinations to handle? */
 		if (remaining_bits) {
 			int i = mptcp_find_free_index(~remaining_bits);
-			mptcp_init6_subsockets(mpcb, &mpcb->addr6[i], rem);
+			mptcp_init6_subsockets(meta_sk, &mpcb->addr6[i], rem);
 			goto next_subflow;
 		}
 	}
@@ -589,16 +589,18 @@ exit:
 	sock_put(meta_sk);
 }
 
-void mptcp_send_updatenotif(struct mptcp_cb *mpcb)
+void mptcp_send_updatenotif(struct sock *meta_sk)
 {
+	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+
 	if ((mpcb->master_sk && !tcp_sk(mpcb->master_sk)->mptcp->fully_established) ||
 	    mpcb->infinite_mapping ||
 	    mpcb->server_side ||
-	    sock_flag(mpcb_meta_sk(mpcb), SOCK_DEAD))
+	    sock_flag(meta_sk, SOCK_DEAD))
 		return;
 
 	if (!work_pending(&mpcb->create_work)) {
-		sock_hold(mpcb_meta_sk(mpcb));
+		sock_hold(meta_sk);
 		queue_work(mptcp_wq, &mpcb->create_work);
 	}
 }
@@ -721,7 +723,7 @@ cont_ipv6:
 		mpcb->loc4_bits &= ~(1 << i);
 
 		mpcb->remove_addrs |= (1 << mpcb->addr4[i].id);
-		sk = mptcp_select_ack_sock(mpcb, 0);
+		sk = mptcp_select_ack_sock(tcp_sk(meta_sk), 0);
 		if (sk)
 			tcp_send_ack(sk);
 
@@ -773,7 +775,7 @@ next_loc_addr:
 
 		/* Force sending directly the REMOVE_ADDR option */
 		mpcb->remove_addrs |= (1 << mpcb->addr6[i].id);
-		sk = mptcp_select_ack_sock(mpcb, 0);
+		sk = mptcp_select_ack_sock(tcp_sk(meta_sk), 0);
 		if (sk)
 			tcp_send_ack(sk);
 

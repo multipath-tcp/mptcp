@@ -83,11 +83,11 @@ static int mptcp_dont_reinject_skb(struct tcp_sock *tp, struct sk_buff *skb)
  *
  * Additionally, this function is aware of the backup-subflows.
  */
-static struct sock *get_available_subflow(struct mptcp_cb *mpcb,
+static struct sock *get_available_subflow(struct sock *meta_sk,
 					  struct sk_buff *skb)
 {
-	struct sock *sk;
-	struct sock *bestsk = NULL, *lowpriosk = NULL, *backupsk = NULL;
+	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+	struct sock *sk, *bestsk = NULL, *lowpriosk = NULL, *backupsk = NULL;
 	u32 min_time_to_peer = 0xffffffff, lowprio_min_time_to_peer = 0xffffffff;
 	int cnt_backups = 0;
 
@@ -100,7 +100,7 @@ static struct sock *get_available_subflow(struct mptcp_cb *mpcb,
 	}
 
 	/* Answer data_fin on same subflow!!! */
-	if (mpcb_meta_sk(mpcb)->sk_shutdown & RCV_SHUTDOWN &&
+	if (meta_sk->sk_shutdown & RCV_SHUTDOWN &&
 	    skb && mptcp_is_data_fin(skb)) {
 		mptcp_for_each_sk(mpcb, sk) {
 			if (tcp_sk(sk)->mptcp->path_index == mpcb->dfin_path_index &&
@@ -542,7 +542,7 @@ static void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb)
 	mdss->len = mptcp_sub_len_dss(mdss, tp->mpcb->rx_opt.dss_csum);
 
 	if (tp->mpcb->send_infinite_mapping &&
-	    tcb->seq >= mpcb_meta_tp(tp->mpcb)->snd_nxt) {
+	    tcb->seq >= mptcp_meta_tp(tp)->snd_nxt) {
 		tp->mptcp->fully_established = 1;
 		tp->mpcb->infinite_mapping = 1;
 		tp->mptcp->infinite_cutoff_seq = tp->write_seq;
@@ -597,11 +597,12 @@ static void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb)
 	}
 }
 
-static void mptcp_combine_dfin(struct sk_buff *skb, struct mptcp_cb *mpcb,
+static void mptcp_combine_dfin(struct sk_buff *skb, struct sock *meta_sk,
 			       struct sock *subsk)
 {
-	struct sock *sk_it, *meta_sk = mpcb_meta_sk(mpcb);
-	struct tcp_sock *meta_tp = mpcb_meta_tp(mpcb);
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct mptcp_cb *mpcb = meta_tp->mpcb;
+	struct sock *sk_it;
 	int all_empty = 1, all_acked;
 
 	/* Don't combine, if they didn't combine - otherwise we end up in
@@ -694,7 +695,7 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		 */
 		BUG_ON(tso_segs != 1);
 
-		subsk = get_available_subflow(mpcb, skb);
+		subsk = get_available_subflow(meta_sk, skb);
 		if (!subsk)
 			break;
 		subtp = tcp_sk(subsk);
@@ -782,7 +783,7 @@ retry:
 		}
 
 		if (mptcp_is_data_fin(subskb))
-			mptcp_combine_dfin(subskb, mpcb, subsk);
+			mptcp_combine_dfin(subskb, meta_sk, subsk);
 		BUG_ON(tcp_send_head(subsk));
 
 		mptcp_skb_entail(subsk, subskb);
@@ -890,8 +891,7 @@ retry:
 u32 __mptcp_select_window(struct sock *sk)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
-	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = mpcb_meta_tp(tp->mpcb);
-	struct mptcp_cb *mpcb = tp->mpcb;
+	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = mptcp_meta_tp(tp);
 	int mss, free_space, full_space, window;
 
 	/* MSS for the peer's data.  Previous versions used mss_clamp
@@ -902,7 +902,7 @@ u32 __mptcp_select_window(struct sock *sk)
 	 */
 	mss = icsk->icsk_ack.rcv_mss;
 	free_space = tcp_space(sk);
-	full_space = min_t(int, mpcb_meta_tp(mpcb)->window_clamp,
+	full_space = min_t(int, meta_tp->window_clamp,
 			tcp_full_space(sk));
 
 	if (mss > full_space)
@@ -911,25 +911,24 @@ u32 __mptcp_select_window(struct sock *sk)
 	if (free_space < (full_space >> 1)) {
 		icsk->icsk_ack.quick = 0;
 
-		if (tcp_memory_pressure) {
+		if (tcp_memory_pressure)
 			/* TODO this has to be adapted when we support different
 			 * MSS's among the subflows.
 			 */
 			meta_tp->rcv_ssthresh = min(meta_tp->rcv_ssthresh,
 					        4U * meta_tp->advmss);
-		}
 
 		if (free_space < mss)
 			return 0;
 	}
 
-	if (free_space > mpcb_meta_tp(mpcb)->rcv_ssthresh)
-		free_space = mpcb_meta_tp(mpcb)->rcv_ssthresh;
+	if (free_space > meta_tp->rcv_ssthresh)
+		free_space = meta_tp->rcv_ssthresh;
 
 	/* Don't do rounding if we are using window scaling, since the
 	 * scaled window will not line up with the MSS boundary anyway.
 	 */
-	window = mpcb_meta_tp(mpcb)->rcv_wnd;
+	window = meta_tp->rcv_wnd;
 	if (tp->rx_opt.rcv_wscale) {
 		window = free_space;
 
@@ -1056,7 +1055,7 @@ void mptcp_synack_options(struct request_sock *req,
 void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 			       struct tcp_out_options *opts, unsigned *size)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = mptcp_meta_tp(tp);
 	struct mptcp_cb *mpcb = tp->mpcb;
 	struct tcp_skb_cb *tcb = skb ? TCP_SKB_CB(skb) : NULL;
 
@@ -1131,11 +1130,11 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_DATA_ACK;
 		if (!skb || (skb && !mptcp_is_data_seq(skb))) {
-			opts->data_ack = mpcb_meta_tp(mpcb)->rcv_nxt;
+			opts->data_ack = meta_tp->rcv_nxt;
 
 			*size += MPTCP_SUB_LEN_ACK_ALIGN;
 		} else {
-			opts->data_ack = mpcb_meta_tp(mpcb)->rcv_nxt;
+			opts->data_ack = meta_tp->rcv_nxt;
 
 			/* Doesn't matter, if csum included or not. It will be
 			 * either 10 or 12, and thus aligned = 12 */
@@ -1399,7 +1398,7 @@ struct sk_buff *mptcp_next_segment(struct sock *meta_sk, int *reinject)
 
 		if (!skb && meta_sk->sk_write_pending &&
 		    sk_stream_wspace(meta_sk) < sk_stream_min_wspace(meta_sk)) {
-			struct sock *subsk = get_available_subflow(mpcb, NULL);
+			struct sock *subsk = get_available_subflow(meta_sk, NULL);
 			if (!subsk)
 				return NULL;
 
@@ -1448,7 +1447,8 @@ void mptcp_send_fin(struct sock *meta_sk)
 
 void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 {
-	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	struct sock *sk = NULL, *sk_it = NULL, *sk_tmp;
 
 	if (!mpcb->cnt_subflows)
@@ -1456,7 +1456,7 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 
 	/* First - select a socket */
 	if (!mptcp_test_any_sk(mpcb, sk_it, tcp_sk(sk_it)->send_mp_fclose)) {
-		sk = mptcp_select_ack_sock(mpcb, 0);
+		sk = mptcp_select_ack_sock(meta_tp, 0);
 
 		tcp_sk(sk)->send_mp_fclose = 1;
 	}
@@ -1481,7 +1481,7 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 
 	tcp_send_ack(sk);
 
-	if (!mpcb_meta_tp(mpcb)->send_mp_fclose) {
+	if (!meta_tp->send_mp_fclose) {
 		struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
 
 		meta_icsk->icsk_rto = min(inet_csk(sk)->icsk_rto, TCP_RTO_MAX);
@@ -1489,7 +1489,7 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 					  meta_icsk->icsk_rto, TCP_RTO_MAX);
 	}
 
-	mpcb_meta_tp(mpcb)->send_mp_fclose = 1;
+	meta_tp->send_mp_fclose = 1;
 }
 
 void mptcp_send_reset(struct sock *sk, struct sk_buff *skb)

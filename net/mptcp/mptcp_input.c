@@ -35,12 +35,12 @@
 
 #include <linux/kconfig.h>
 
-static inline void mptcp_become_fully_estab(struct tcp_sock *tp)
+static inline void mptcp_become_fully_estab(struct sock *sk)
 {
-	tp->mptcp->fully_established = 1;
+	tcp_sk(sk)->mptcp->fully_established = 1;
 
-	if (is_master_tp(tp))
-		mptcp_send_updatenotif(tp->mpcb);
+	if (is_master_tp(tcp_sk(sk)))
+		mptcp_send_updatenotif(mptcp_meta_sk(sk));
 }
 
 /**
@@ -446,7 +446,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	if (!tp->mptcp->fully_established) {
 		tp->mptcp->init_rcv_wnd -= skb->len;
 		if (tp->mptcp->init_rcv_wnd < 0)
-			mptcp_become_fully_estab(tp);
+			mptcp_become_fully_estab(sk);
 	}
 
 	/* If we are in infinite-mapping-mode, the subflow is guaranteed to be
@@ -457,7 +457,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	 */
 	if (mpcb->infinite_mapping) {
 		tcb->seq = meta_tp->rcv_nxt;
-		tp->mptcp->map_data_seq = mptcp_get_rcv_nxt_64(mpcb);
+		tp->mptcp->map_data_seq = mptcp_get_rcv_nxt_64(meta_tp);
 		tp->mptcp->map_subseq = tcb->sub_seq = tcb->seq;
 		tp->mptcp->map_data_len = tcb->mp_data_len = skb->len;
 		tp->mptcp->mapping_present = 1;
@@ -683,7 +683,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	/* Have we received the full mapping ? Then push further */
 	if (tp->mptcp->mapping_present &&
 	    !before(tp->rcv_nxt, tp->mptcp->map_subseq + tp->mptcp->map_data_len)) {
-		u64 rcv_nxt64 = mptcp_get_rcv_nxt_64(mpcb);
+		u64 rcv_nxt64 = mptcp_get_rcv_nxt_64(meta_tp);
 
 		/* Is this an overlapping mapping? rcv_nxt >= end_data_seq
 		 * OR
@@ -707,7 +707,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 				tp->copied_seq = mptcp_skb_sub_end_seq(tmp1);
 
 				if (mptcp_is_data_fin(tmp1))
-					mptcp_fin(mpcb);
+					mptcp_fin(meta_sk);
 
 				/* the callers of mptcp_queue_skb still
 				 * need the skb
@@ -787,7 +787,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 					 * Thus, we skip the rest of
 					 * mptcp_queue_skb and exit.
 					 */
-					if (mptcp_fin(mpcb)) {
+					if (mptcp_fin(meta_sk)) {
 						ans = 0;
 						goto rcvd_fin;
 					}
@@ -808,7 +808,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 				/* Check if this fills a gap in the ofo queue */
 				if (!skb_queue_empty(
 					    &meta_tp->out_of_order_queue))
-					mptcp_ofo_queue(mpcb);
+					mptcp_ofo_queue(meta_sk);
 
 				if (!eaten)
 					skb_set_owner_r(tmp1, meta_sk);
@@ -839,10 +839,11 @@ rcvd_fin:
  * Can be called only when the FIN is validly part
  * of the data seqnum space. Not before when we get holes.
  */
-int mptcp_fin(struct mptcp_cb *mpcb)
+int mptcp_fin(struct sock *meta_sk)
 {
-	struct sock *meta_sk = mpcb_meta_sk(mpcb), *sk = NULL, *sk_it;
+	struct sock *sk = NULL, *sk_it;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	int ans = 0;
 
 	mptcp_for_each_sk(mpcb, sk_it) {
@@ -853,7 +854,7 @@ int mptcp_fin(struct mptcp_cb *mpcb)
 	}
 
 	if (!sk)
-		sk = mptcp_select_ack_sock(mpcb, 0);
+		sk = mptcp_select_ack_sock(meta_tp, 0);
 
 	inet_csk_schedule_ack(sk);
 
@@ -959,7 +960,7 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 		 * or a subflow-data-ack (not acking syn - thus snt_isn + 1)
 		 * includes a data-ack, we are fully established
 		 */
-		mptcp_become_fully_estab(tp);
+		mptcp_become_fully_estab(sk);
 
 	/* Get the data_seq */
 	if (mptcp_is_data_seq(skb)) {
@@ -1036,7 +1037,7 @@ void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk)
 		return;
 
 	mpcb = tcp_sk(sk)->mpcb;
-	meta_sk = mpcb_meta_sk(mpcb);
+	meta_sk = mptcp_meta_sk(sk);
 
 	if (!mpcb->infinite_mapping)
 		return;

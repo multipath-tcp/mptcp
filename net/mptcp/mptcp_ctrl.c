@@ -135,10 +135,9 @@ static ctl_table mptcp_root_table[] = {
 };
 #endif
 
-struct sock *mptcp_select_ack_sock(const struct mptcp_cb *mpcb, int copied)
+struct sock *mptcp_select_ack_sock(const struct tcp_sock *meta_tp, int copied)
 {
 	struct sock *sk, *subsk = NULL;
-	struct tcp_sock *meta_tp = mpcb_meta_tp(mpcb);
 	u32 max_data_seq = 0;
 	/* max_data_seq initialized to correct compiler-warning.
 	 * But the initialization is handled by max_data_seq_set */
@@ -159,7 +158,7 @@ struct sock *mptcp_select_ack_sock(const struct mptcp_cb *mpcb, int copied)
 	 *       strange meta-level retransmissions going on), we take
 	 *       the subflow who last sent the highest data_seq.
 	 */
-	mptcp_for_each_sk(mpcb, sk) {
+	mptcp_for_each_sk(meta_tp->mpcb, sk) {
 		struct tcp_sock *tp = tcp_sk(sk);
 
 		if ((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV |
@@ -194,7 +193,7 @@ struct sock *mptcp_select_ack_sock(const struct mptcp_cb *mpcb, int copied)
 	if (!subsk) {
 		mptcp_debug("%s subsk is null, copied %d, cseq %u\n", __func__,
 			    copied, meta_tp->copied_seq);
-		mptcp_for_each_sk(mpcb, sk) {
+		mptcp_for_each_sk(meta_tp->mpcb, sk) {
 			struct tcp_sock *tp = tcp_sk(sk);
 			mptcp_debug("%s pi %d state %u last_dseq %u\n",
 				    __func__, tp->mptcp->path_index, sk->sk_state,
@@ -598,7 +597,7 @@ int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key, u32 window)
 		return -ENOBUFS;
 
 	mpcb = (struct mptcp_cb *)meta_sk;
-	meta_tp = mpcb_meta_tp(mpcb);
+	meta_tp = tcp_sk(meta_sk);
 	meta_icsk = inet_csk(meta_sk);
 
 	/* meta_sk inherits master sk */
@@ -732,12 +731,12 @@ struct sock *mptcp_sk_clone(struct sock *sk, int family, const gfp_t priority)
 	return newsk;
 }
 
-void mptcp_destroy_mpcb(struct mptcp_cb *mpcb)
+void mptcp_destroy_meta_sk(struct sock *meta_sk)
 {
-	kfree((((struct inet_connection_sock *)mpcb)->icsk_accept_queue).listen_opt);
-	kmem_cache_free(mptcp_sock_cache, mpcb_meta_tp(mpcb)->mptcp);
-	bh_unlock_sock(mpcb_meta_sk(mpcb));
-	sk_free((struct sock *)mpcb);
+	kfree((inet_csk(meta_sk)->icsk_accept_queue).listen_opt);
+	kmem_cache_free(mptcp_sock_cache, tcp_sk(meta_sk)->mptcp);
+	bh_unlock_sock(meta_sk);
+	sk_free(meta_sk);
 }
 
 void mptcp_sock_destruct(struct sock *sk)
@@ -755,9 +754,9 @@ void mptcp_sock_destruct(struct sock *sk)
 	}
 }
 
-int mptcp_add_sock(struct mptcp_cb *mpcb, struct tcp_sock *tp, gfp_t flags)
+int mptcp_add_sock(struct sock *meta_sk, struct tcp_sock *tp, gfp_t flags)
 {
-	struct sock *meta_sk = mpcb_meta_sk(mpcb);
+	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct sock *sk = (struct sock *) tp;
 
 	tp->mptcp = kmem_cache_zalloc(mptcp_sock_cache, flags);
@@ -863,8 +862,9 @@ void mptcp_del_sock(struct sock *sk)
  * In this function, we update the meta socket info, based on the changes
  * in the application socket (bind, address allocation, ...)
  */
-void mptcp_update_metasocket(struct sock *sk, struct mptcp_cb *mpcb)
+void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
 {
+	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 
 	switch (sk->sk_family) {
 #if IS_ENABLED(CONFIG_IPV6)
@@ -900,7 +900,7 @@ void mptcp_update_metasocket(struct sock *sk, struct mptcp_cb *mpcb)
 		break;
 	}
 
-	mptcp_set_addresses(mpcb);
+	mptcp_set_addresses(meta_sk);
 
 	switch (sk->sk_family) {
 	case AF_INET:
@@ -970,7 +970,7 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 		/* Optimize, __tcp_select_window() is not cheap. */
 		if (2 * rcv_window_now <= meta_tp->window_clamp) {
 			__u32 new_window;
-			subsk = mptcp_select_ack_sock(mpcb, copied);
+			subsk = mptcp_select_ack_sock(meta_tp, copied);
 			if (!subsk)
 				return;
 			new_window = __tcp_select_window(subsk);
@@ -1346,6 +1346,7 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 			   struct multipath_options *mopt)
 {
 	struct tcp_sock *child_tp = tcp_sk(child);
+	struct sock *meta_sk;
 	struct mptcp_cb *mpcb;
 	struct mptcp_request_sock *mtreq;
 
@@ -1368,9 +1369,10 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 
 	child_tp->mpc = 1;
 	mpcb = child_tp->mpcb;
+	meta_sk = mptcp_meta_sk(child);
 
-	if (mptcp_add_sock(mpcb, child_tp, GFP_ATOMIC)) {
-		mptcp_destroy_mpcb(mpcb);
+	if (mptcp_add_sock(meta_sk, child_tp, GFP_ATOMIC)) {
+		mptcp_destroy_meta_sk(meta_sk);
 		sock_orphan(child);
 		bh_unlock_sock(child); /* Taken by sk_clone */
 		sock_put(child); /* refcnt is initialized to 2 */
@@ -1398,8 +1400,8 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 
 	mpcb->server_side = 1;
 	/* Will be moved to ESTABLISHED by  tcp_rcv_state_process() */
-	mpcb_meta_sk(mpcb)->sk_state = TCP_SYN_RECV;
-	mptcp_update_metasocket(child, mpcb);
+	meta_sk->sk_state = TCP_SYN_RECV;
+	mptcp_update_metasocket(child, meta_sk);
 
 	/* Needs to be done here additionally, because when accepting a
 	 * new connection we pass by __reqsk_free and not reqsk_free.
@@ -1407,12 +1409,12 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	mptcp_reqsk_remove_tk(req);
 
 	 /* hold in mptcp_inherit_sk due to initialization to 2 */
-	sock_put(mpcb_meta_sk(mpcb));
+	sock_put(meta_sk);
 
 	inet_csk_reqsk_queue_unlink(sk, req, prev);
 	inet_csk_reqsk_queue_removed(sk, req);
 
-	inet_csk_reqsk_queue_add(sk, req, mpcb_meta_sk(mpcb));
+	inet_csk_reqsk_queue_add(sk, req, meta_sk);
 
 	return 0;
 }
@@ -1446,10 +1448,10 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	child->sk_sndmsg_page = NULL;
 
 	/* Point it to the same struct socket and wq as the meta_sk */
-	sk_set_socket(child, mpcb_meta_sk(mpcb)->sk_socket);
-	child->sk_wq = mpcb_meta_sk(mpcb)->sk_wq;
+	sk_set_socket(child, meta_sk->sk_socket);
+	child->sk_wq = meta_sk->sk_wq;
 
-	if (mptcp_add_sock(mpcb, child_tp, GFP_ATOMIC)) {
+	if (mptcp_add_sock(meta_sk, child_tp, GFP_ATOMIC)) {
 		/* TODO when we support acking the third ack for new subflows,
 		 * we should silently discard this third ack, by returning NULL.
 		 *

@@ -68,7 +68,7 @@ static int tcp_out_of_resources(struct sock *sk, int do_reset)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	int shift = 0;
-	u32 snd_wnd = tp->mpc ? mpcb_meta_tp(tp->mpcb)->snd_wnd : tp->snd_wnd;
+	u32 snd_wnd = tp->mpc ? mptcp_meta_tp(tp)->snd_wnd : tp->snd_wnd;
 
 	/* If peer does not open window for long time, or did not transmit
 	 * anything for long time, penalize it. */
@@ -218,7 +218,7 @@ static void tcp_delack_timer(unsigned long data)
 {
 	struct sock *sk = (struct sock *)data;
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *meta_sk = tp->mpc ? mpcb_meta_sk(tp->mpcb) : sk;
+	struct sock *meta_sk = tp->mpc ? mptcp_meta_sk(sk) : sk;
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
 	bh_lock_sock(meta_sk);
@@ -330,7 +330,7 @@ void tcp_retransmit_timer(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
-	u32 snd_wnd = tp->mpc ? mpcb_meta_tp(tp->mpcb)->snd_wnd : tp->snd_wnd;
+	u32 snd_wnd = tp->mpc ? mptcp_meta_tp(tp)->snd_wnd : tp->snd_wnd;
 
 	if (!tp->packets_out)
 		goto out;
@@ -461,7 +461,7 @@ static void tcp_write_timer(unsigned long data)
 {
 	struct sock *sk = (struct sock *)data;
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *meta_sk = tp->mpc ? mpcb_meta_sk(tp->mpcb) : sk;
+	struct sock *meta_sk = tp->mpc ? mptcp_meta_sk(sk) : sk;
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	int event;
 

@@ -5020,7 +5020,7 @@ int tcp_prune_queue(struct sock *sk)
 void tcp_cwnd_application_limited(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *meta_sk = tp->mpc ? mpcb_meta_sk(tp->mpcb) : sk;
+	struct sock *meta_sk = tp->mpc ? mptcp_meta_sk(sk) : sk;
 
 	if (inet_csk(sk)->icsk_ca_state == TCP_CA_Open &&
 	    meta_sk->sk_socket && !test_bit(SOCK_NOSPACE,
@@ -5107,7 +5107,7 @@ static int tcp_should_expand_sndbuf(const struct sock *sk)
 static void tcp_new_space(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *meta_sk = tp->mpc ? mpcb_meta_sk(tp->mpcb) : sk;
+	struct sock *meta_sk = tp->mpc ? mptcp_meta_sk(sk) : sk;
 
 	if (tcp_should_expand_sndbuf(meta_sk)) {
 		int sndmem = SKB_TRUESIZE(max_t(u32,
@@ -5143,7 +5143,7 @@ static void tcp_new_space(struct sock *sk)
 
 static void tcp_check_space(struct sock *sk)
 {
-	struct sock *meta_sk = tcp_sk(sk)->mpc ? mpcb_meta_sk(tcp_sk(sk)->mpcb) : sk;
+	struct sock *meta_sk = tcp_sk(sk)->mpc ? mptcp_meta_sk(sk) : sk;
 
 	if (sock_flag(meta_sk, SOCK_QUEUE_SHRUNK)) {
 		sock_reset_flag(meta_sk, SOCK_QUEUE_SHRUNK);
@@ -5155,7 +5155,7 @@ static void tcp_check_space(struct sock *sk)
 
 static inline void tcp_data_snd_check(struct sock *sk)
 {
-	struct sock *meta_sk = tcp_sk(sk)->mpc ? mpcb_meta_sk(tcp_sk(sk)->mpcb) : sk;
+	struct sock *meta_sk = tcp_sk(sk)->mpc ? mptcp_meta_sk(sk) : sk;
 
 	tcp_push_pending_frames(meta_sk);
 	tcp_check_space(sk);
@@ -5452,8 +5452,8 @@ static int tcp_validate_incoming(struct sock *sk, struct sk_buff *skb,
 	if (tp->mpc) {
 		mptcp_post_parse_options(tp, skb);
 
-		mptcp_path_array_check(tp->mpcb);
-		if (mptcp_mp_fail_rcvd(tp->mpcb, sk, th))
+		mptcp_path_array_check(mptcp_meta_sk(sk));
+		if (mptcp_mp_fail_rcvd(sk, th))
 			goto discard;
 	}
 
@@ -5787,8 +5787,8 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 
 			tp->mpc = 1;
 
-			if (mptcp_add_sock(tp->mpcb, tp, GFP_ATOMIC)) {
-				mptcp_destroy_mpcb(tp->mpcb);
+			if (mptcp_add_sock(mptcp_meta_sk(sk), tp, GFP_ATOMIC)) {
+				mptcp_destroy_meta_sk(mptcp_meta_sk(sk));
 				tp->mpc = 0;
 				tp->mpcb = NULL;
 				goto cont_mptcp;
@@ -5810,11 +5810,11 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 
 			sk->sk_socket->sk = mptcp_meta_sk(sk);
 
-			mptcp_update_metasocket(sk, mpcb);
-			mptcp_path_array_check(mpcb);
+			mptcp_update_metasocket(sk, mptcp_meta_sk(sk));
+			mptcp_path_array_check(mptcp_meta_sk(sk));
 
 			 /* hold in mptcp_inherit_sk due to initialization to 2 */
-			sock_put(mpcb_meta_sk(mpcb));
+			sock_put(mptcp_meta_sk(sk));
 		} else {
 			tp->request_mptcp = 0;
 		}
@@ -6123,7 +6123,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 		tcp_data_snd_check(sk);
 out_syn_sent:
 		if (tp->mpc && is_master_tp(tp))
-			bh_unlock_sock(mpcb_meta_sk(tp->mpcb));
+			bh_unlock_sock(mptcp_meta_sk(sk));
 		return queued;
 	}
 

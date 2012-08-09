@@ -123,10 +123,11 @@ static void mptcp_v4_reqsk_queue_hash_add(struct request_sock *req,
 }
 
 /* from mptcp_v4_join_request() */
-static void mptcp_v4_join_request_short(struct mptcp_cb *mpcb,
+static void mptcp_v4_join_request_short(struct sock *meta_sk,
 					struct sk_buff *skb,
 					struct tcp_options_received *tmp_opt)
 {
+	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct request_sock *req, **prev;
 	struct inet_request_sock *ireq;
 	struct mptcp_request_sock *mtreq;
@@ -175,30 +176,31 @@ static void mptcp_v4_join_request_short(struct mptcp_cb *mpcb,
 	/* Adding to request queue in metasocket */
 	mptcp_v4_reqsk_queue_hash_add(req, TCP_TIMEOUT_INIT);
 
-	if (tcp_v4_send_synack(mpcb_meta_sk(mpcb), NULL, req, NULL))
+	if (tcp_v4_send_synack(meta_sk, NULL, req, NULL))
 		goto drop_and_free;
 
 	return;
 
 drop_and_free:
-	req = inet_csk_search_req(mpcb_meta_sk(mpcb), &prev,
-				  inet_rsk(req)->rmt_port, saddr, daddr);
-	inet_csk_reqsk_queue_drop(mpcb_meta_sk(mpcb), req, prev);
+	req = inet_csk_search_req(meta_sk, &prev, inet_rsk(req)->rmt_port,
+				  saddr, daddr);
+	inet_csk_reqsk_queue_drop(meta_sk, req, prev);
 	return;
 }
 
 /* from tcp_v4_conn_request() */
-static void mptcp_v4_join_request(struct mptcp_cb *mpcb, struct sk_buff *skb)
+static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 {
+	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct tcp_options_received tmp_opt;
 	const u8 *hash_location;
 
 	tcp_clear_options(&tmp_opt);
 	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
-	tmp_opt.user_mss = mpcb_meta_tp(mpcb)->rx_opt.user_mss;
+	tmp_opt.user_mss = tcp_sk(meta_sk)->rx_opt.user_mss;
 	tcp_parse_options(skb, &tmp_opt, &hash_location, &mpcb->rx_opt, 0);
 
-	mptcp_v4_join_request_short(mpcb, skb, &tmp_opt);
+	mptcp_v4_join_request_short(meta_sk, skb, &tmp_opt);
 }
 
 int mptcp_v4_rem_raddress(struct multipath_options *mopt, u8 id)
@@ -327,7 +329,7 @@ void mptcp_v4_do_rcv_join_syn(struct sock *meta_sk, struct sk_buff *skb,
 		return;
 	}
 	mpcb->rx_opt.list_rcvd = 0;
-	mptcp_v4_join_request_short(mpcb, skb, tmp_opt);
+	mptcp_v4_join_request_short(meta_sk, skb, tmp_opt);
 	return;
 
 reset:
@@ -369,7 +371,7 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 				goto reset_and_discard;
 			mpcb->rx_opt.list_rcvd = 0;
 
-			mptcp_v4_join_request(mpcb, skb);
+			mptcp_v4_join_request(meta_sk, skb);
 			goto discard;
 		}
 		goto reset_and_discard;
@@ -422,12 +424,11 @@ struct sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
  *
  * We are in user-context and meta-sock-lock is hold.
  */
-void mptcp_init4_subsockets(struct mptcp_cb *mpcb,
-			    const struct mptcp_loc4 *loc,
+void mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 			    struct mptcp_rem4 *rem)
 {
 	struct tcp_sock *tp;
-	struct sock *sk, *meta_sk = mpcb_meta_sk(mpcb);
+	struct sock *sk;
 	struct sockaddr_in loc_in, rem_in;
 	struct socket sock;
 	int ulid_size = 0, ret, newpi;
@@ -435,7 +436,7 @@ void mptcp_init4_subsockets(struct mptcp_cb *mpcb,
 	/* Don't try again - even if it fails */
 	rem->bitfield |= (1 << loc->id);
 
-	newpi = mptcp_set_new_pathindex(mpcb);
+	newpi = mptcp_set_new_pathindex(tcp_sk(meta_sk)->mpcb);
 	if (!newpi)
 		return;
 
@@ -457,7 +458,7 @@ void mptcp_init4_subsockets(struct mptcp_cb *mpcb,
 	sk->sk_error_report = mptcp_sock_def_error_report;
 
 	tp = tcp_sk(sk);
-	if (mptcp_add_sock(mpcb, tp, GFP_KERNEL))
+	if (mptcp_add_sock(meta_sk, tp, GFP_KERNEL))
 		goto error;
 
 	tp->mptcp->rem_id = rem->id;
@@ -480,7 +481,7 @@ void mptcp_init4_subsockets(struct mptcp_cb *mpcb,
 	rem_in.sin_addr = rem->addr;
 
 	mptcp_debug("%s: token %#x pi %d src_addr:%pI4:%d dst_addr:%pI4:%d\n",
-		    __func__, mpcb->mptcp_loc_token, newpi, &loc_in.sin_addr,
+		    __func__, tcp_sk(meta_sk)->mpcb->mptcp_loc_token, newpi, &loc_in.sin_addr,
 		    ntohs(loc_in.sin_port), &rem_in.sin_addr,
 		    ntohs(rem_in.sin_port));
 
@@ -594,7 +595,7 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 		/* re-send addresses */
 		mptcp_v4_send_add_addr(i, mpcb);
 		/* re-evaluate paths */
-		mptcp_send_updatenotif(mpcb);
+		mptcp_send_updatenotif(mpcb_meta_sk(mpcb));
 	}
 	return;
 found:
@@ -624,7 +625,7 @@ found:
 
 		/* Force sending directly the REMOVE_ADDR option */
 		mpcb->remove_addrs |= (1 << mpcb->addr4[i].id);
-		sk = mptcp_select_ack_sock(mpcb, 0);
+		sk = mptcp_select_ack_sock(mpcb_meta_tp(mpcb), 0);
 		if (sk)
 			tcp_send_ack(sk);
 

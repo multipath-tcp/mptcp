@@ -277,8 +277,8 @@ static u16 tcp_select_window(struct sock *sk)
 	}
 
 	if (tp->mpc) {
-		mpcb_meta_tp(tp->mpcb)->rcv_wnd = new_win;
-		mpcb_meta_tp(tp->mpcb)->rcv_wup = mpcb_meta_tp(tp->mpcb)->rcv_nxt;
+		mptcp_meta_tp(tp)->rcv_wnd = new_win;
+		mptcp_meta_tp(tp)->rcv_wup = mptcp_meta_tp(tp)->rcv_nxt;
 	}
 
 	tp->rcv_wnd = new_win;
@@ -1475,7 +1475,7 @@ static unsigned int tcp_snd_test(const struct sock *sk, struct sk_buff *skb,
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int cwnd_quota;
-	const struct tcp_sock *meta_tp = tp->mpc ? mpcb_meta_tp(tp->mpcb) : tp;
+	const struct tcp_sock *meta_tp = tp->mpc ? mptcp_meta_tp(tp) : tp;
 
 	tcp_init_tso_segs(sk, skb, cur_mss);
 
@@ -1649,7 +1649,7 @@ int tcp_mtu_probe(struct sock *sk)
 	int size_needed;
 	int copy;
 	int mss_now;
-	u32 snd_wnd = (tp->mpc) ? mpcb_meta_tp(tp->mpcb)->snd_wnd : tp->snd_wnd;
+	u32 snd_wnd = (tp->mpc) ? mptcp_meta_tp(tp)->snd_wnd : tp->snd_wnd;
 
 	/* Not currently probing/verifying,
 	 * not in recovery,

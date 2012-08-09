@@ -598,13 +598,13 @@ static inline int mptcp_sysctl_mss(void)
 int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb);
 int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
 			     struct sock *sk);
-void mptcp_ofo_queue(struct mptcp_cb *mpcb);
+void mptcp_ofo_queue(struct sock *meta_sk);
 void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp);
 void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied);
 int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key, u32 window);
-int mptcp_add_sock(struct mptcp_cb *mpcb, struct tcp_sock *tp, gfp_t flags);
+int mptcp_add_sock(struct sock *meta_sk, struct tcp_sock *tp, gfp_t flags);
 void mptcp_del_sock(struct sock *sk);
-void mptcp_update_metasocket(struct sock *sock, struct mptcp_cb *mpcb);
+void mptcp_update_metasocket(struct sock *sock, struct sock *meta_sk);
 void mptcp_reinject_data(struct sock *orig_sk, int clone_it);
 void mptcp_update_sndbuf(struct mptcp_cb *mpcb);
 void mptcp_set_state(struct sock *sk, int state);
@@ -646,15 +646,15 @@ void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn);
 void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 		     u32 *hash_out);
 void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk);
-int mptcp_fin(struct mptcp_cb *mpcb);
+int mptcp_fin(struct sock *meta_sk);
 void mptcp_retransmit_timer(struct sock *meta_sk);
 int mptcp_write_wakeup(struct sock *meta_sk);
 void mptcp_sock_def_error_report(struct sock *sk);
 void mptcp_sub_close_wq(struct work_struct *work);
 void mptcp_sub_close(struct sock *sk, unsigned long delay);
-struct sock *mptcp_select_ack_sock(const struct mptcp_cb *mpcb, int copied);
+struct sock *mptcp_select_ack_sock(const struct tcp_sock *meta_tp, int copied);
+void mptcp_destroy_meta_sk(struct sock *meta_sk);
 void mptcp_sock_destruct(struct sock *sk);
-void mptcp_destroy_mpcb(struct mptcp_cb *mpcb);
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb);
 struct sock *mptcp_sk_clone(struct sock *sk, int family, const gfp_t priority);
 
@@ -721,9 +721,14 @@ static inline __u32 *mptcp_skb_set_data_seq(const struct sk_buff *skb,
 	return ptr;
 }
 
-static inline struct sock *mptcp_meta_sk(struct sock *sk)
+static inline struct sock *mptcp_meta_sk(const struct sock *sk)
 {
-	return mpcb_meta_sk(tcp_sk(sk)->mpcb);
+	return (struct sock *)tcp_sk(sk)->mpcb;
+}
+
+static inline struct tcp_sock *mptcp_meta_tp(const struct tcp_sock *tp)
+{
+	return (struct tcp_sock *)tp->mpcb;
 }
 
 static inline
@@ -734,13 +739,13 @@ struct mptcp_cb *mptcp_mpcb_from_req_sk(const struct request_sock *req)
 
 static inline int is_meta_tp(const struct tcp_sock *tp)
 {
-	return tp->mpcb && mpcb_meta_tp(tp->mpcb) == tp;
+	return tp->mpcb && mptcp_meta_tp(tp) == tp;
 }
 
 static inline int is_meta_sk(const struct sock *sk)
 {
 	return sk->sk_type == SOCK_STREAM  && sk->sk_protocol == IPPROTO_TCP &&
-	       tcp_sk(sk)->mpc && mpcb_meta_sk(tcp_sk(sk)->mpcb) == sk;
+	       tcp_sk(sk)->mpc && mptcp_meta_sk(sk) == sk;
 }
 
 static inline int is_master_tp(const struct tcp_sock *tp)
@@ -843,10 +848,11 @@ static inline u64 mptcp_get_data_seq_64(struct mptcp_cb *mpcb, int index,
 	return ((u64)mpcb->rcv_high_order[index] << 32) | data_seq_32;
 }
 
-static inline u64 mptcp_get_rcv_nxt_64(struct mptcp_cb *mpcb)
+static inline u64 mptcp_get_rcv_nxt_64(struct tcp_sock *meta_tp)
 {
+	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	return mptcp_get_data_seq_64(mpcb, mpcb->rcv_hiseq_index,
-				     mpcb_meta_tp(mpcb)->rcv_nxt);
+				     meta_tp->rcv_nxt);
 }
 
 /* Similar to tcp_sequence(...) */
@@ -867,7 +873,7 @@ static inline int mptcp_sequence(struct tcp_sock *meta_tp,
 	}
 
 	return	!before64(end_data_seq, rcv_wup64) &&
-		!after64(data_seq, mptcp_get_rcv_nxt_64(mpcb) + tcp_receive_window(meta_tp));
+		!after64(data_seq, mptcp_get_rcv_nxt_64(meta_tp) + tcp_receive_window(meta_tp));
 }
 
 static inline void mptcp_check_sndseq_wrap(struct tcp_sock *meta_tp, int inc)
@@ -888,11 +894,13 @@ static inline void mptcp_check_rcvseq_wrap(struct tcp_sock *meta_tp, int inc)
 	}
 }
 
-static inline void mptcp_path_array_check(struct mptcp_cb *mpcb)
+static inline void mptcp_path_array_check(struct sock *meta_sk)
 {
+	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+
 	if (unlikely(mpcb->rx_opt.list_rcvd)) {
 		mpcb->rx_opt.list_rcvd = 0;
-		mptcp_send_updatenotif(mpcb);
+		mptcp_send_updatenotif(meta_sk);
 	}
 }
 
@@ -961,7 +969,7 @@ static inline void mptcp_set_rto(struct sock *sk)
 			max_rto = inet_csk(sk_it)->icsk_rto;
 	}
 	if (max_rto)
-		inet_csk(mpcb_meta_sk(tp->mpcb))->icsk_rto = max_rto << 1;
+		inet_csk(mptcp_meta_sk(sk))->icsk_rto = max_rto << 1;
 }
 
 /* Maybe we could merge this with tcp_rearm_rto().
@@ -1028,10 +1036,10 @@ static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
 	return 0;
 }
 
-static inline int mptcp_mp_fail_rcvd(struct mptcp_cb *mpcb, struct sock *sk,
-				     struct tcphdr *th)
+static inline int mptcp_mp_fail_rcvd(struct sock *sk, struct tcphdr *th)
 {
-	struct sock *meta_sk = mpcb_meta_sk(mpcb);
+	struct sock *meta_sk = mptcp_meta_sk(sk);
+	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 
 	if (unlikely(mpcb->rx_opt.mp_fail)) {
 		mpcb->rx_opt.mp_fail = 0;
@@ -1190,6 +1198,10 @@ static inline struct sock *mptcp_meta_sk(const struct sock *sk)
 {
 	return NULL;
 }
+static inline struct tcp_sock *mptcp_meta_tp(const struct tcp_sock *tp)
+{
+	return NULL;
+}
 static inline
 struct mptcp_cb *mptcp_mpcb_from_req_sk(const struct request_sock *req)
 {
@@ -1216,8 +1228,6 @@ static inline int mptcp_queue_skb(const struct sock *sk,
 static inline void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp) {}
 static inline void mptcp_cleanup_rbuf(const struct sock *meta_sk, int copied) {}
 static inline void mptcp_del_sock(const struct sock *sk) {}
-static inline void mptcp_update_metasocket(const struct sock *sock,
-					   const struct mptcp_cb *mpcb) {}
 static inline void mptcp_reinject_data(const struct sock *orig_sk,
 				       int clone_it) {}
 static inline void mptcp_init_buffer_space(const struct sock *sk) {}
@@ -1296,9 +1306,7 @@ static inline int mptcp_fallback_infinite(const struct tcp_sock *tp,
 {
 	return 0;
 }
-static inline int mptcp_mp_fail_rcvd(const struct mptcp_cb *mpcb,
-				     const struct sock *sk,
-				     const struct tcphdr *th)
+static inline int mptcp_mp_fail_rcvd(struct sock *sk, struct tcphdr *th)
 {
 	return 0;
 }
@@ -1313,7 +1321,7 @@ static inline int mptcp_check_rtt(const struct tcp_sock *tp, int time)
 {
 	return 0;
 }
-static inline void mptcp_path_array_check(const struct mptcp_cb *mpcb) {}
+static inline void mptcp_path_array_check(const struct sock *meta_sk) {}
 static inline int mptcp_check_snd_buf(const struct tcp_sock *tp)
 {
 	return 0;

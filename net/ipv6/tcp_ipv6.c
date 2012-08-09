@@ -351,7 +351,7 @@ static void tcp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 
 	tp = tcp_sk(sk);
 	if (tp->mpc)
-		meta_sk = mpcb_meta_sk(tp->mpcb);
+		meta_sk = mptcp_meta_sk(sk);
 	else
 		meta_sk = sk;
 

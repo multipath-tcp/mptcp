@@ -380,7 +380,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 
 	tp = tcp_sk(sk);
 	if (tp->mpc)
-		meta_sk = mpcb_meta_sk(tcp_sk(sk)->mpcb);
+		meta_sk = mptcp_meta_sk(sk);
 	else
 		meta_sk = sk;
 

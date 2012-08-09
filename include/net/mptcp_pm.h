@@ -87,8 +87,7 @@ struct mptcp_cb;
 extern struct list_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
 extern spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
 
-void mptcp_send_updatenotif(struct mptcp_cb *mpcb);
-
+void mptcp_send_updatenotif(struct sock *meta_sk);
 void mptcp_send_updatenotif_wq(struct work_struct *work);
 struct mp_join *mptcp_find_join(struct sk_buff *skb);
 u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock *sk);
@@ -103,7 +102,7 @@ void mptcp_reqsk_remove_tk(struct request_sock *reqsk);
 void mptcp_reqsk_new_mptcp(struct request_sock *req,
 			   const struct tcp_options_received *rx_opt,
 			   const struct multipath_options *mopt);
-void mptcp_set_addresses(struct mptcp_cb *mpcb);
+void mptcp_set_addresses(struct sock *meta_sk);
 int mptcp_syn_recv_sock(struct sk_buff *skb);
 void mptcp_address_worker(struct work_struct *work);
 int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family);
