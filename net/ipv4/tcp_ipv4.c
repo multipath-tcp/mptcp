@@ -2083,6 +2083,10 @@ static int tcp_v4_init_sock(struct sock *sk)
 	percpu_counter_inc(&tcp_sockets_allocated);
 	local_bh_enable();
 
+#ifdef CONFIG_MPTCP
+	INIT_LIST_HEAD(&tp->tk_table);
+#endif
+
 	return 0;
 }
 
@@ -2103,6 +2107,11 @@ void tcp_v4_destroy_sock(struct sock *sk)
 		mptcp_purge_ofo_queue(tp);
 	} else {
 		mptcp_del_sock(sk);
+		if (!list_empty(&tp->tk_table)) {
+			spin_lock(&mptcp_tk_hashlock);
+			list_del_init(&tp->tk_table);
+			spin_unlock(&mptcp_tk_hashlock);
+		}
 		__skb_queue_purge(&tp->out_of_order_queue);
 	}
 

@@ -5817,6 +5817,12 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			sock_put(mptcp_meta_sk(sk));
 		} else {
 			tp->request_mptcp = 0;
+
+			if (!list_empty(&tp->tk_table)) {
+				spin_lock(&mptcp_tk_hashlock);
+				list_del_init(&tp->tk_table);
+				spin_unlock(&mptcp_tk_hashlock);
+			}
 		}
 		mptcp_include_mpc(tp);
 cont_mptcp:

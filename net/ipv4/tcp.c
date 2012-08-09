@@ -2279,6 +2279,9 @@ int tcp_disconnect(struct sock *sk, int flags)
 		tp->was_meta_sk = 1;
 		tp->mpc = 0;
 		tp->mpcb = NULL;
+	} else {
+		if (!list_empty(&tp->tk_table))
+			mptcp_hash_remove(tp);
 	}
 #endif
 

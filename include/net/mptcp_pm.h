@@ -87,21 +87,26 @@ struct mptcp_cb;
 extern struct list_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
 extern spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
 
+/* Lock, protecting the two hash-tables that hold the token. Namely,
+ * mptcp_reqsk_tk_htb and tk_hashtable
+ */
+extern spinlock_t mptcp_tk_hashlock;	/* hashtable protection */
+
 void mptcp_send_updatenotif(struct sock *meta_sk);
 void mptcp_send_updatenotif_wq(struct work_struct *work);
 struct mp_join *mptcp_find_join(struct sk_buff *skb);
 u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock *sk);
-void mptcp_hash_insert(struct tcp_sock *meta_tp, u32 token);
+void __mptcp_hash_insert(struct tcp_sock *meta_tp, u32 token);
 void mptcp_hash_remove(struct tcp_sock *meta_tp);
 struct sock *mptcp_hash_find(u32 token);
 int mptcp_lookup_join(struct sk_buff *skb);
 int mptcp_do_join_short(struct sk_buff *skb, struct multipath_options *mopt,
 			struct tcp_options_received *tmp_opt);
-int mptcp_find_token(u32 token);
 void mptcp_reqsk_remove_tk(struct request_sock *reqsk);
 void mptcp_reqsk_new_mptcp(struct request_sock *req,
 			   const struct tcp_options_received *rx_opt,
 			   const struct multipath_options *mopt);
+void mptcp_connect_init(struct tcp_sock *tp);
 void mptcp_set_addresses(struct sock *meta_sk);
 int mptcp_syn_recv_sock(struct sk_buff *skb);
 void mptcp_address_worker(struct work_struct *work);
@@ -109,15 +114,11 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family);
 struct sock *mptcp_select_loc_sock(const struct mptcp_cb *mpcb, u16 ids);
 
 #else /* CONFIG_MPTCP */
-static inline int mptcp_find_token(u32 token)
-{
-	return 0;
-}
 static inline void mptcp_reqsk_new_mptcp(struct request_sock *req,
 					 const struct tcp_options_received *rx_opt,
 					 const struct multipath_options *mopt)
-{
-}
+{}
+static inline void mptcp_connect_init(struct tcp_sock *tp) {}
 
 #endif /* CONFIG_MPTCP */
 

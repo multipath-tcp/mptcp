@@ -342,7 +342,7 @@ reset:
  */
 int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {
-	struct mptcp_cb *mpcb = (struct mptcp_cb *)meta_sk;
+	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct sock *child;
 
 	/* Has been removed from the tk-table. Thus, no new subflows.

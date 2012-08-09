@@ -54,8 +54,7 @@ static inline u32 mptcp_hash_tk(u32 token)
 	return token % MPTCP_HASH_SIZE;
 }
 
-static struct list_head tk_hashtable[MPTCP_HASH_SIZE];
-static rwlock_t tk_hash_lock;	/* hashtable protection */
+struct list_head tk_hashtable[MPTCP_HASH_SIZE];
 
 /* This second hashtable is needed to retrieve request socks
  * created as a result of a join request. While the SYN contains
@@ -66,8 +65,8 @@ struct list_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
 spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
 
 /* The following hash table is used to avoid collision of token */
-struct list_head mptcp_reqsk_tk_htb[MPTCP_HASH_SIZE];
-static spinlock_t mptcp_reqsk_tk_hlock;	/* hashtable protection */
+static struct list_head mptcp_reqsk_tk_htb[MPTCP_HASH_SIZE];
+spinlock_t mptcp_tk_hashlock;	/* hashtable protection */
 
 static int mptcp_reqsk_find_tk(u32 token)
 {
@@ -90,33 +89,26 @@ static void mptcp_reqsk_insert_tk(struct request_sock *reqsk, u32 token)
 
 void mptcp_reqsk_remove_tk(struct request_sock *reqsk)
 {
-	spin_lock_bh(&mptcp_reqsk_tk_hlock);
+	spin_lock_bh(&mptcp_tk_hashlock);
 	list_del(&mptcp_rsk(reqsk)->collide_tk);
-	spin_unlock_bh(&mptcp_reqsk_tk_hlock);
+	spin_unlock_bh(&mptcp_tk_hashlock);
 }
 
-void mptcp_hash_insert(struct tcp_sock *meta_tp, u32 token)
+void __mptcp_hash_insert(struct tcp_sock *meta_tp, u32 token)
 {
 	u32 hash = mptcp_hash_tk(token);
-
-	write_lock_bh(&tk_hash_lock);
 	list_add(&meta_tp->tk_table, &tk_hashtable[hash]);
-	write_unlock_bh(&tk_hash_lock);
 }
 
-int mptcp_find_token(u32 token)
+static int mptcp_find_token(u32 token)
 {
 	u32 hash = mptcp_hash_tk(token);
 	struct tcp_sock *meta_tp;
 
-	read_lock_bh(&tk_hash_lock);
 	list_for_each_entry(meta_tp, &tk_hashtable[hash], tk_table) {
-		if (token == meta_tp->mptcp_loc_token) {
-			read_unlock(&tk_hash_lock);
+		if (token == meta_tp->mptcp_loc_token)
 			return 1;
-		}
 	}
-	read_unlock_bh(&tk_hash_lock);
 	return 0;
 }
 
@@ -129,7 +121,7 @@ void mptcp_reqsk_new_mptcp(struct request_sock *req,
 {
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
 
-	spin_lock(&mptcp_reqsk_tk_hlock);
+	spin_lock(&mptcp_tk_hashlock);
 	do {
 		get_random_bytes(&mtreq->mptcp_loc_key,
 				 sizeof(mtreq->mptcp_loc_key));
@@ -139,9 +131,26 @@ void mptcp_reqsk_new_mptcp(struct request_sock *req,
 		 mptcp_find_token(mtreq->mptcp_loc_token));
 
 	mptcp_reqsk_insert_tk(req, mtreq->mptcp_loc_token);
-	spin_unlock(&mptcp_reqsk_tk_hlock);
+	spin_unlock(&mptcp_tk_hashlock);
 
 	mtreq->mptcp_rem_key = mopt->mptcp_rem_key;
+}
+
+void mptcp_connect_init(struct tcp_sock *tp)
+{
+	u64 idsn;
+
+	spin_lock_bh(&mptcp_tk_hashlock);
+	do {
+		get_random_bytes(&tp->mptcp_loc_key,
+				 sizeof(tp->mptcp_loc_key));
+		mptcp_key_sha1(tp->mptcp_loc_key,
+			       &tp->mptcp_loc_token, &idsn);
+	} while (mptcp_reqsk_find_tk(tp->mptcp_loc_token) ||
+		 mptcp_find_token(tp->mptcp_loc_token));
+
+	__mptcp_hash_insert(tp, tp->mptcp_loc_token);
+	spin_unlock_bh(&mptcp_tk_hashlock);
 }
 
 /**
@@ -154,26 +163,26 @@ struct sock *mptcp_hash_find(u32 token)
 	u32 hash = mptcp_hash_tk(token);
 	struct tcp_sock *meta_tp;
 
-	read_lock(&tk_hash_lock);
+	spin_lock(&mptcp_tk_hashlock);
 	list_for_each_entry(meta_tp, &tk_hashtable[hash], tk_table) {
 		if (token == meta_tp->mptcp_loc_token) {
 			struct sock *meta_sk = (struct sock *)meta_tp;
 			sock_hold(meta_sk);
-			read_unlock(&tk_hash_lock);
+			spin_unlock(&mptcp_tk_hashlock);
 			return meta_sk;
 		}
 	}
-	read_unlock(&tk_hash_lock);
+	spin_unlock(&mptcp_tk_hashlock);
 	return NULL;
 }
 
 void mptcp_hash_remove(struct tcp_sock *meta_tp)
 {
 	/* remove from the token hashtable */
-	write_lock_bh(&tk_hash_lock);
+	spin_lock_bh(&mptcp_tk_hashlock);
 	/* list_del_init, so that list_empty succeeds in mptcp_v4_do_rcv */
 	list_del_init(&meta_tp->tk_table);
-	write_unlock_bh(&tk_hash_lock);
+	spin_unlock_bh(&mptcp_tk_hashlock);
 }
 
 u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock* sk)
@@ -460,6 +469,7 @@ int mptcp_do_join_short(struct sk_buff *skb, struct multipath_options *mopt,
 		mptcp_debug("%s:mpcb not found:%x\n", __func__, token);
 		return -1;
 	}
+	mpcb = tcp_sk(meta_sk)->mpcb;
 
 	mpcb = tcp_sk(meta_sk)->mpcb;
 	if (mpcb->infinite_mapping) {
@@ -821,14 +831,14 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 		return NOTIFY_DONE;
 
 	/* Now we iterate over the mpcb's */
-	read_lock_bh(&tk_hash_lock);
-
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
+		spin_lock_bh(&mptcp_tk_hashlock);
 		list_for_each_entry(meta_tp, &tk_hashtable[i], tk_table) {
 			struct mptcp_cb *mpcb = meta_tp->mpcb;
 			struct sock *meta_sk = (struct sock *)meta_tp;
 
-			if (!meta_tp->mpc || mpcb->infinite_mapping)
+			if (!meta_tp->mpc || !is_meta_sk(meta_sk) ||
+			     mpcb->infinite_mapping)
 				continue;
 
 			bh_lock_sock(meta_sk);
@@ -847,8 +857,8 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 
 			bh_unlock_sock(meta_sk);
 		}
+		spin_unlock_bh(&mptcp_tk_hashlock);
 	}
-	read_unlock_bh(&tk_hash_lock);
 	return NOTIFY_DONE;
 }
 
@@ -864,7 +874,7 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 	seq_putc(seq, '\n');
 
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
-		read_lock_bh(&tk_hash_lock);
+		spin_lock_bh(&mptcp_tk_hashlock);
 		list_for_each_entry(meta_tp, &tk_hashtable[i], tk_table) {
 			struct mptcp_cb *mpcb = meta_tp->mpcb;
 			struct sock *meta_sk = (struct sock *)meta_tp;
@@ -892,7 +902,7 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 					mpcb->infinite_mapping);
 			seq_putc(seq, '\n');
 		}
-		read_unlock_bh(&tk_hash_lock);
+		spin_unlock_bh(&mptcp_tk_hashlock);
 	}
 
 	return 0;
@@ -940,9 +950,8 @@ static int __init mptcp_pm_init(void)
 		INIT_LIST_HEAD(&mptcp_reqsk_tk_htb[i]);
 	}
 
-	rwlock_init(&tk_hash_lock);
 	spin_lock_init(&mptcp_reqsk_hlock);
-	spin_lock_init(&mptcp_reqsk_tk_hlock);
+	spin_lock_init(&mptcp_tk_hashlock);
 
 #if IS_ENABLED(CONFIG_IPV6)
 	mptcp_pm_v6_init();

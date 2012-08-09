@@ -692,7 +692,12 @@ int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key, u32 window)
 	tcp_init_xmit_timers(meta_sk);
 
 	/* Adding the mpcb in the token hashtable */
-	mptcp_hash_insert(meta_tp, mpcb->mptcp_loc_token);
+	spin_lock(&mptcp_tk_hashlock);
+	__mptcp_hash_insert(meta_tp, mpcb->mptcp_loc_token);
+	/* This is necessary, because the master has been added in tcp_connect_init */
+	if (!list_empty(&master_tp->tk_table))
+		list_del_init(&master_tp->tk_table);
+	spin_unlock(&mptcp_tk_hashlock);
 
 	mptcp_mpcb_inherit_sockopts(meta_sk, master_sk);
 
@@ -1350,6 +1355,8 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	struct mptcp_cb *mpcb;
 	struct mptcp_request_sock *mtreq;
 
+	INIT_LIST_HEAD(&child_tp->tk_table);
+
 	if (!tcp_rsk(req)->saw_mpc)
 		return 1;
 
@@ -1427,6 +1434,8 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
 	struct mptcp_cb *mpcb = mtreq->mpcb;
 	u8 hash_mac_check[20];
+
+	INIT_LIST_HEAD(&child_tp->tk_table);
 
 	if (!mpcb->rx_opt.join_ack)
 		goto teardown;
