@@ -66,6 +66,7 @@
 #include <net/icmp.h>
 #include <net/inet_hashtables.h>
 #include <net/tcp.h>
+#include <net/mptcp.h>
 #include <net/mptcp_v4.h>
 #include <net/transp_v6.h>
 #include <net/ipv6.h>

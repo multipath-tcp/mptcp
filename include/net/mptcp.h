@@ -1194,6 +1194,7 @@ static inline int mptcp_queue_skb(const struct sock *sk,
 {
 	return 0;
 }
+static inline void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp) {}
 static inline void mptcp_cleanup_rbuf(const struct sock *meta_sk, int copied) {}
 static inline void mptcp_del_sock(const struct sock *sk) {}
 static inline void mptcp_update_metasocket(const struct sock *sock,
