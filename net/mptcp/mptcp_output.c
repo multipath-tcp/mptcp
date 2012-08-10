@@ -1295,7 +1295,8 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	}
 	if (unlikely(OPTION_REMOVE_ADDR & opts->mptcp_options)) {
 		struct mp_remove_addr *mprem = (struct mp_remove_addr *) ptr;
-		u8 *addrs_id, id;
+		u8 *addrs_id;
+		int id;
 
 		mprem->kind = TCPOPT_MPTCP;
 		mprem->len = mptcp_sub_len_remove_addr(opts->remove_addrs);

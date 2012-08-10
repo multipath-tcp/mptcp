@@ -571,10 +571,10 @@ static inline int mptcp_sysctl_mss(void)
 
 /* Iterates over all bit set to 1 in a bitset */
 #define mptcp_for_each_bit_set(b, i)					\
-	for (i = __ffs(b); b >> i; i += __ffs(b >> (i + 1)) + 1)
+	for (i = ffs(b) - 1; i >= 0; i = ffs(b >> (i + 1) << (i + 1)) - 1)
 
 #define mptcp_for_each_bit_unset(b, i)					\
-	for (i = ffz(b); i < sizeof(b) * 8; i += ffz(b >> (i + 1)) + 1)
+	mptcp_for_each_bit_set(~b, i)
 
 /**
  * Returns 1 if any subflow meets the condition @cond,
@@ -1081,7 +1081,8 @@ static inline int mptcp_find_free_index(u8 bitfield)
 /* Find the first index whose bit in the bit-field == 0 */
 static inline u8 mptcp_set_new_pathindex(struct mptcp_cb *mpcb)
 {
-	u8 i, base = mpcb->next_path_index;
+	u8 base = mpcb->next_path_index;
+	int i;
 
 	/* Start at 2, because index 1 is for the initial subflow  plus the
 	 * bitshift, to make the path-index increasing
