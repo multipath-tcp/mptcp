@@ -51,8 +51,6 @@
 #elif defined(__BIG_ENDIAN_BITFIELD)
 	#define ntohll(x) (x)
 	#define htonll(x) (x)
-#else
-	#error "Could not determine byte order"
 #endif
 
 /* is seq1 < seq2 ? */
