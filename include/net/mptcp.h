@@ -723,12 +723,12 @@ static inline __u32 *mptcp_skb_set_data_seq(const struct sk_buff *skb,
 
 static inline struct sock *mptcp_meta_sk(const struct sock *sk)
 {
-	return (struct sock *)tcp_sk(sk)->mpcb;
+	return tcp_sk(sk)->meta_sk;
 }
 
 static inline struct tcp_sock *mptcp_meta_tp(const struct tcp_sock *tp)
 {
-	return (struct tcp_sock *)tp->mpcb;
+	return tcp_sk(tp->meta_sk);
 }
 
 static inline

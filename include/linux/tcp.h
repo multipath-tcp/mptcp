@@ -524,6 +524,7 @@ struct tcp_sock {
 	struct tcp_cookie_values  *cookie_values;
 
 	struct mptcp_cb		*mpcb;
+	struct sock		*meta_sk;
 	/* We keep these flags even if CONFIG_MPTCP is not checked, because
 	 * it allows checking MPTCP capability just by checking the mpc flag,
 	 * rather than adding ifdefs everywhere.

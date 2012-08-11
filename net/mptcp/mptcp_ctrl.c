@@ -657,6 +657,7 @@ int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key, u32 window)
 	meta_tp->advmss = mptcp_sysctl_mss();
 
 	meta_tp->mpcb = mpcb;
+	meta_tp->meta_sk = meta_sk;
 	mpcb->meta_sk = meta_sk;
 	meta_tp->mpc = 1;
 	meta_tp->mptcp->attached = 0;
@@ -687,6 +688,7 @@ int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key, u32 window)
 	}
 
 	master_tp->mpcb = mpcb;
+	master_tp->meta_sk = meta_sk;
 	mpcb->master_sk = master_sk;
 
 	/* Meta-level retransmit timer */
@@ -776,6 +778,7 @@ int mptcp_add_sock(struct sock *meta_sk, struct tcp_sock *tp, gfp_t flags)
 
 	tp->mptcp->tp = tp;
 	tp->mpcb = mpcb;
+	tp->meta_sk = meta_sk;
 
 	/* The corresponding sock_put is in mptcp_sock_destruct(). It cannot be
 	 * included in mptcp_del_sock(), because the mpcb must remain alive
