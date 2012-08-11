@@ -48,7 +48,6 @@
 #include <net/udp.h>
 #include <net/udplite.h>
 #include <net/tcp.h>
-#include <net/mptcp_v6.h>
 #include <net/ipip.h>
 #include <net/protocol.h>
 #include <net/inet_common.h>
@@ -1083,15 +1082,9 @@ static int __init inet6_init(void)
 	if (err)
 		goto out;
 
-#ifdef CONFIG_MPTCP
-	err = proto_register(&mptcpv6_prot, 1);
-	if (err)
-		goto out_unregister_tcp_proto;
-#endif
-
 	err = proto_register(&udpv6_prot, 1);
 	if (err)
-		goto out_unregister_mptcp_proto;
+		goto out_unregister_tcp_proto;
 
 	err = proto_register(&udplitev6_prot, 1);
 	if (err)
@@ -1259,11 +1252,7 @@ out_unregister_udplite_proto:
 	proto_unregister(&udplitev6_prot);
 out_unregister_udp_proto:
 	proto_unregister(&udpv6_prot);
-out_unregister_mptcp_proto:
-#ifdef CONFIG_MPTCP
-	proto_unregister(&mptcpv6_prot);
 out_unregister_tcp_proto:
-#endif
 	proto_unregister(&tcpv6_prot);
 	goto out;
 }

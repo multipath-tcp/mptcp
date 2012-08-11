@@ -2042,6 +2042,11 @@ void tcp_close(struct sock *sk, long timeout)
 	int data_was_unread = 0;
 	int state;
 
+	if (is_meta_sk(sk)) {
+		mptcp_close(sk, timeout);
+		return;
+	}
+
 	lock_sock(sk);
 	sk->sk_shutdown = SHUTDOWN_MASK;
 
@@ -2253,7 +2258,7 @@ int tcp_disconnect(struct sock *sk, int flags)
 
 		if (tp->inside_tk_table) {
 			mptcp_hash_remove(tp);
-			reqsk_queue_destroy(&((struct inet_connection_sock *)tp->mpcb)->icsk_accept_queue);
+			reqsk_queue_destroy(&inet_csk(tp->meta_sk)->icsk_accept_queue);
 		}
 
 		local_bh_disable();
@@ -2278,7 +2283,6 @@ int tcp_disconnect(struct sock *sk, int flags)
 
 		tp->was_meta_sk = 1;
 		tp->mpc = 0;
-		tp->mpcb = NULL;
 	} else {
 		if (tp->inside_tk_table)
 			mptcp_hash_remove(tp);

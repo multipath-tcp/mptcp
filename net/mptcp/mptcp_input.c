@@ -51,7 +51,7 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk)
 {
 	struct sk_buff *skb, *tmp;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct mptcp_cb *mpcb = (struct mptcp_cb *)meta_tp;
+	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	int acked = 0;
 
 	while ((skb = tcp_write_queue_head(meta_sk)) &&
@@ -66,7 +66,7 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk)
 
 			/* DATA_FIN has been acknowledged - now we can close
 			 * the subflows */
-			mptcp_for_each_sk(meta_tp->mpcb, sk_it) {
+			mptcp_for_each_sk(mpcb, sk_it) {
 				unsigned long delay = 0;
 
 				/* If we are the passive closer, don't trigger
@@ -393,7 +393,7 @@ static int mptcp_skb_split_tail(struct sk_buff *skb, struct sock *sk, u32 seq)
 int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 {
 	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
-	struct sock *meta_sk = (struct sock *) mpcb;
+	struct sock *meta_sk = tcp_sk(sk)->meta_sk;
 	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = tcp_sk(meta_sk);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 	struct sk_buff *tmp, *tmp1;

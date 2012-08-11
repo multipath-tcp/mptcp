@@ -1126,7 +1126,7 @@ static inline int tcp_space(const struct sock *sk)
 static inline int tcp_full_space(const struct sock *sk)
 {
 	if (tcp_sk(sk)->mpc)
-		sk = (struct sock *)tcp_sk(sk)->mpcb;
+		sk = tcp_sk(sk)->meta_sk;
 
 	return tcp_win_from_space(sk->sk_rcvbuf); 
 }

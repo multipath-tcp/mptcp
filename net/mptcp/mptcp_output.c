@@ -236,7 +236,6 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 
 	skb1 = skb_peek_tail(&mpcb->reinject_queue);
 	seq = TCP_SKB_CB(skb)->seq;
-	end_seq = TCP_SKB_CB(skb)->end_seq;
 	while (1) {
 		if (!after(TCP_SKB_CB(skb1)->seq, seq))
 			break;
@@ -248,6 +247,7 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 	}
 
 	/* Do skb overlap to previous one? */
+	end_seq = TCP_SKB_CB(skb)->end_seq;
 	if (skb1 && before(seq, TCP_SKB_CB(skb1)->end_seq)) {
 		if (!after(end_seq, TCP_SKB_CB(skb1)->end_seq)) {
 			/* All the bits are present. Don't reinject */
@@ -280,8 +280,7 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 {
 	struct sk_buff *skb_it, *tmp;
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct mptcp_cb *mpcb = tp->mpcb;
-	struct sock *meta_sk = (struct sock *) mpcb;
+	struct sock *meta_sk = tp->meta_sk;
 
 	skb_queue_walk_safe(&sk->sk_write_queue, skb_it, tmp) {
 		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb_it);
@@ -959,18 +958,6 @@ u32 __mptcp_select_window(struct sock *sk)
 	return window;
 }
 
-void mptcp_skb_entail_init(struct tcp_sock *tp, struct sk_buff *skb)
-{
-	/* in MPTCP mode, the subflow seqnum is given later */
-	if (tp->mpc) {
-		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
-		struct tcp_sock *meta_tp = (struct tcp_sock *)tp->mpcb;
-
-		tcb->seq = tcb->end_seq = meta_tp->write_seq;
-		tcb->mptcp_flags = MPTCPHDR_SEQ;
-	}
-}
-
 void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 		       unsigned *remaining)
 {
@@ -1382,10 +1369,8 @@ struct sk_buff *mptcp_next_segment(struct sock *meta_sk, int *reinject)
 	if (reinject)
 		*reinject = 0;
 
-	/* If it is the meta-sk and we are in fallback-mode, just take from
-	 * the meta-send-queue */
-	if (!is_meta_sk(meta_sk) ||
-	    mpcb->infinite_mapping || mpcb->send_infinite_mapping)
+	/* If we are in fallback-mode, just take from the meta-send-queue */
+	if (mpcb->infinite_mapping || mpcb->send_infinite_mapping)
 		return tcp_send_head(meta_sk);
 
 	skb = skb_peek(&mpcb->reinject_queue);

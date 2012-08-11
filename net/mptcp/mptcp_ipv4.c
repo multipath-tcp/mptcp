@@ -43,46 +43,6 @@
 #include <net/request_sock.h>
 #include <net/tcp.h>
 
-struct proto mptcp_prot = {
-	.name			= "MPTCP",
-	.owner			= THIS_MODULE,
-	.close			= mptcp_close,
-	.connect		= tcp_v4_connect,
-	.disconnect		= tcp_disconnect,
-	.accept			= inet_csk_accept,
-	.ioctl			= tcp_ioctl,
-	.destroy		= tcp_v4_destroy_sock,
-	.shutdown		= tcp_shutdown,
-	.setsockopt		= tcp_setsockopt,
-	.getsockopt		= tcp_getsockopt,
-	.recvmsg		= tcp_recvmsg,
-	.sendmsg		= tcp_sendmsg,
-	.sendpage		= tcp_sendpage,
-	.backlog_rcv		= mptcp_backlog_rcv,
-	.hash			= inet_hash,
-	.unhash			= inet_unhash,
-	.get_port		= inet_csk_get_port,
-	.enter_memory_pressure	= tcp_enter_memory_pressure,
-	.sockets_allocated	= &tcp_sockets_allocated,
-	.orphan_count		= &tcp_orphan_count,
-	.memory_allocated	= &tcp_memory_allocated,
-	.memory_pressure	= &tcp_memory_pressure,
-	.sysctl_mem		= sysctl_tcp_mem,
-	.sysctl_wmem		= sysctl_tcp_wmem,
-	.sysctl_rmem		= sysctl_tcp_rmem,
-	.max_header		= MAX_TCP_HEADER,
-	.obj_size		= sizeof(struct mptcp_cb),
-	.slab_flags		= SLAB_DESTROY_BY_RCU,
-	.twsk_prot		= NULL,
-	.rsk_prot		= &mptcp_request_sock_ops,
-	.h.hashinfo		= &tcp_hashinfo,
-	.no_autobind		= true,
-#ifdef CONFIG_COMPAT
-	.compat_setsockopt	= compat_tcp_setsockopt,
-	.compat_getsockopt	= compat_tcp_getsockopt,
-#endif
-};
-
 static void mptcp_v4_reqsk_destructor(struct request_sock *req)
 {
 	mptcp_reqsk_destructor(req);
@@ -103,8 +63,7 @@ struct request_sock_ops mptcp_request_sock_ops __read_mostly = {
 static void mptcp_v4_reqsk_queue_hash_add(struct request_sock *req,
 					  unsigned long timeout)
 {
-	struct inet_connection_sock *meta_icsk =
-	    (struct inet_connection_sock *)(mptcp_rsk(req)->mpcb);
+	struct inet_connection_sock *meta_icsk = inet_csk(mptcp_rsk(req)->mpcb->meta_sk);
 	struct listen_sock *lopt = meta_icsk->icsk_accept_queue.listen_opt;
 	const u32 h_local = inet_synq_hash(inet_rsk(req)->rmt_addr,
 					   inet_rsk(req)->rmt_port,
@@ -658,9 +617,43 @@ static struct notifier_block mptcp_pm_netdev_notifier = {
 /*
  * General initialization of IPv4 for MPTCP
  */
-void mptcp_pm_v4_init(void)
+int mptcp_pm_v4_init(void)
 {
-	register_inetaddr_notifier(&mptcp_pm_inetaddr_notifier);
-	register_netdevice_notifier(&mptcp_pm_netdev_notifier);
+	int ret;
+	struct request_sock_ops *ops = &mptcp_request_sock_ops;
+
+	ops->slab_name = kasprintf(GFP_KERNEL, "request_sock_%s", "MPTCP");
+	if (ops->slab_name == NULL) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	ops->slab = kmem_cache_create(ops->slab_name, ops->obj_size, 0,
+				      SLAB_HWCACHE_ALIGN, NULL);
+
+	if (ops->slab == NULL) {
+		printk(KERN_CRIT "%s: Can't create request sock SLAB cache!\n", "MPTCP");
+		ret =  -ENOMEM;
+		goto err_reqsk_create;
+	}
+
+	ret = register_inetaddr_notifier(&mptcp_pm_inetaddr_notifier);
+	if (ret)
+		goto err_reg_inetaddr;
+	ret = register_netdevice_notifier(&mptcp_pm_netdev_notifier);
+	if (ret)
+		goto err_reg_netdev;
+
+out:
+	return ret;
+
+err_reg_netdev:
+	unregister_inetaddr_notifier(&mptcp_pm_inetaddr_notifier);
+err_reg_inetaddr:
+	kmem_cache_destroy(ops->slab);
+err_reqsk_create:
+	kfree(ops->slab_name);
+	ops->slab_name = NULL;
+	goto out;
 }
 

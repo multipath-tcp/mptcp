@@ -161,16 +161,6 @@ struct multipath_options {
 };
 
 struct mptcp_cb {
-	/* The meta socket is used to create the subflow sockets. Thus, if we
-	 * need to support IPv6 socket creation, the meta socket should be a
-	 * tcp6_sock.
-	 * The function pointers are set specifically. */
-#if IS_ENABLED(CONFIG_IPV6)
-	struct tcp6_sock tp;
-#else
-	struct tcp_sock tp;
-#endif /* CONFIG_IPV6 */
-
 	struct sock *meta_sk;
 
 	/* list of sockets in this multipath connection */
@@ -608,7 +598,6 @@ void mptcp_update_metasocket(struct sock *sock, struct sock *meta_sk);
 void mptcp_reinject_data(struct sock *orig_sk, int clone_it);
 void mptcp_update_sndbuf(struct mptcp_cb *mpcb);
 void mptcp_set_state(struct sock *sk, int state);
-void mptcp_skb_entail_init(struct tcp_sock *tp, struct sk_buff *skb);
 struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject);
 void mptcp_send_fin(struct sock *meta_sk);
 void mptcp_send_reset(struct sock *sk, struct sk_buff *skb);
@@ -676,6 +665,12 @@ static inline int mptcp_is_data_fin(const struct sk_buff *skb)
 static inline int mptcp_is_data_seq(const struct sk_buff *skb)
 {
 	return TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ;
+}
+
+static inline void mptcp_skb_entail_init(struct tcp_sock *tp, struct sk_buff *skb)
+{
+	if (tp->mpc)
+		TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_SEQ;
 }
 
 static inline int mptcp_skb_cloned(const struct sk_buff *skb,
@@ -900,7 +895,7 @@ static inline int mptcp_sequence(struct tcp_sock *meta_tp,
 static inline void mptcp_check_sndseq_wrap(struct tcp_sock *meta_tp, int inc)
 {
 	if (unlikely(meta_tp->snd_nxt > meta_tp->snd_nxt + inc)) {
-		struct mptcp_cb *mpcb = (struct mptcp_cb *)meta_tp;
+		struct mptcp_cb *mpcb = meta_tp->mpcb;
 		mpcb->snd_hiseq_index = mpcb->snd_hiseq_index ? 0 : 1;
 		mpcb->snd_high_order[mpcb->snd_hiseq_index] += 2;
 	}
@@ -909,7 +904,7 @@ static inline void mptcp_check_sndseq_wrap(struct tcp_sock *meta_tp, int inc)
 static inline void mptcp_check_rcvseq_wrap(struct tcp_sock *meta_tp, int inc)
 {
 	if (unlikely(meta_tp->rcv_nxt > meta_tp->rcv_nxt + inc)) {
-		struct mptcp_cb *mpcb = (struct mptcp_cb *)meta_tp;
+		struct mptcp_cb *mpcb = meta_tp->mpcb;
 		mpcb->rcv_high_order[mpcb->rcv_hiseq_index] += 2;
 		mpcb->rcv_hiseq_index = mpcb->rcv_hiseq_index ? 0 : 1;
 	}
