@@ -1055,7 +1055,7 @@ static inline void mptcp_mp_fail_rcvd(struct mptcp_cb *mpcb,
 static inline int __mptcp_find_free_index(u8 bitfield, int j, u8 base)
 {
 	int i;
-	mptcp_for_each_bit_unset(bitfield << base, i) {
+	mptcp_for_each_bit_unset(bitfield >> base, i) {
 		/* We wrapped at the bitfield - try from 0 on */
 		if (i + base >= sizeof(bitfield) * 8) {
 			mptcp_for_each_bit_unset(bitfield, i) {
@@ -1085,7 +1085,7 @@ static inline u8 mptcp_set_new_pathindex(struct mptcp_cb *mpcb)
 	/* Start at 2, because index 1 is for the initial subflow  plus the
 	 * bitshift, to make the path-index increasing
 	 */
-	mptcp_for_each_bit_unset(mpcb->path_index_bits << base, i) {
+	mptcp_for_each_bit_unset(mpcb->path_index_bits >> base, i) {
 		if (i + base < 2)
 			continue;
 		if (i + base >= sizeof(mpcb->path_index_bits) * 8)
