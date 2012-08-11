@@ -687,7 +687,14 @@ static inline int mptcp_skb_cloned(const struct sk_buff *skb,
 {
 	/* If it does not has a DSS-mapping (MPTCPHDR_SEQ), it does not come
 	 * from the meta-level send-queue and thus dataref is as usual.
-	 * If it has a DSS-mapping dataref is at least 2
+	 * If it has a DSS-mapping dataref is 2, if we are coming straight from
+	 * the meta-send-queue.
+	 * It is 1, if we took the segment from a pskb_copy'd segment of the
+	 * reinject-queue.
+	 *
+	 * It will be > 2, if the segment is also referenced at another place.
+	 * E.g., an rbuf-opti reinjection is held in the meta-queue, subflow-queue
+	 * and in the queue of the new subflow.
 	 */
 	return tp->mpc &&
 	       ((!mptcp_is_data_seq(skb) && skb_cloned(skb)) ||
