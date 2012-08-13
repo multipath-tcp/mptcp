@@ -243,7 +243,7 @@ void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn)
 	if (token)
 		*token = mptcp_hashed_key[0];
 	if (idsn)
-		*idsn = ((u64)mptcp_hashed_key[3] << 32) | mptcp_hashed_key[4];
+		*idsn = *((u64 *)&mptcp_hashed_key[3]);
 }
 
 void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
