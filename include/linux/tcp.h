@@ -272,10 +272,8 @@ struct tcp_out_options {
 		} mp_join_ack;
 	};
 
-	union {
-		struct mptcp_loc4 *addr4;/* v4 addresses for MPTCP */
-		struct mptcp_loc6 *addr6;/* v6 addresses for MPTCP */
-	};
+	struct mptcp_loc4 *addr4;/* v4 addresses for MPTCP */
+	struct mptcp_loc6 *addr6;/* v6 addresses for MPTCP */
 
 	u16	remove_addrs;	/* list of address id */
 	u8	addr_id;	/* address id */
