@@ -891,7 +891,7 @@ static inline void mptcp_check_rcvseq_wrap(struct tcp_sock *meta_tp, int inc)
 
 static inline void mptcp_path_array_check(struct mptcp_cb *mpcb)
 {
-	if (unlikely(mpcb && mpcb->rx_opt.list_rcvd)) {
+	if (unlikely(mpcb->rx_opt.list_rcvd)) {
 		mpcb->rx_opt.list_rcvd = 0;
 		mptcp_send_updatenotif(mpcb);
 	}
@@ -1001,15 +1001,10 @@ static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
 	return 0;
 }
 
-static inline void mptcp_mp_fail_rcvd(struct mptcp_cb *mpcb,
-				      struct sock *sk, struct tcphdr *th)
+static inline int mptcp_mp_fail_rcvd(struct mptcp_cb *mpcb, struct sock *sk,
+				     struct tcphdr *th)
 {
-	struct sock *meta_sk;
-
-	if (!mpcb)
-		return;
-
-	meta_sk = mpcb_meta_sk(mpcb);
+	struct sock *meta_sk = mpcb_meta_sk(mpcb);
 
 	if (unlikely(mpcb->rx_opt.mp_fail)) {
 		mpcb->rx_opt.mp_fail = 0;
@@ -1023,6 +1018,8 @@ static inline void mptcp_mp_fail_rcvd(struct mptcp_cb *mpcb,
 			 * it is as if no packets are in flight */
 			tcp_sk(meta_sk)->packets_out = 0;
 		}
+
+		return 0;
 	}
 
 	if (unlikely(mpcb->rx_opt.mp_fclose)) {
@@ -1036,10 +1033,6 @@ static inline void mptcp_mp_fail_rcvd(struct mptcp_cb *mpcb,
 		else
 			tcp_sk(sk)->mp_killed = 1;
 
-		/* Set rst-bit and the socket will be tcp_done'd by
-		 * tcp_validate_incoming */
-		th->rst = 1;
-
 		mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp) {
 			if (sk_it == sk)
 				continue;
@@ -1048,7 +1041,11 @@ static inline void mptcp_mp_fail_rcvd(struct mptcp_cb *mpcb,
 		}
 
 		tcp_reset(meta_sk);
+
+		return 1;
 	}
+
+	return 0;
 }
 
 /* Find the first free index in the bitfield */
@@ -1276,9 +1273,12 @@ static inline int mptcp_fallback_infinite(const struct tcp_sock *tp,
 {
 	return 0;
 }
-static inline void mptcp_mp_fail_rcvd(const struct mptcp_cb *mpcb,
-				      const struct sock *sk,
-				      const struct tcphdr *th) {}
+static inline int mptcp_mp_fail_rcvd(const struct mptcp_cb *mpcb,
+				     const struct sock *sk,
+				     const struct tcphdr *th)
+{
+	return 0;
+}
 static inline void mptcp_init_mp_opt(const struct multipath_options *mopt) {}
 static inline void mptcp_wmem_free_skb(const struct sock *sk,
 				       const struct sk_buff *skb) {}
