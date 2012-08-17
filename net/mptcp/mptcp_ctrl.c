@@ -739,6 +739,8 @@ void mptcp_sock_destruct(struct sock *sk)
 	tcp_sk(sk)->mptcp = NULL;
 
 	if (!is_meta_sk(sk) && !tcp_sk(sk)->was_meta_sk) {
+		rcu_assign_pointer(inet_sk(sk)->inet_opt, NULL);
+
 		/* Taken when mpcb pointer was set */
 		sock_put(mptcp_meta_sk(sk));
 	} else {

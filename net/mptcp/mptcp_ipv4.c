@@ -396,7 +396,6 @@ void mptcp_init4_subsockets(struct mptcp_cb *mpcb,
 	sock.ops = NULL;
 
 	ret = inet_create(sock_net(meta_sk), &sock, IPPROTO_TCP, 1);
-
 	if (unlikely(ret < 0)) {
 		mptcp_debug("%s inet_create failed ret: %d\n", __func__, ret);
 		return;
