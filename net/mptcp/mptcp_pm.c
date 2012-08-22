@@ -779,6 +779,21 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
 		read_lock_bh(&tk_hash_lock);
 		list_for_each_entry(mpcb, &tk_hashtable[i], collide_tk) {
+			struct inet_sock *isk = inet_sk(mpcb_meta_sk(mpcb));
+
+			if (mpcb_meta_sk(mpcb)->sk_family == AF_INET ||
+			    mptcp_v6_is_v4_mapped(mpcb_meta_sk(mpcb))) {
+				seq_printf(seq, "[%pI4:%hu - %pI4:%hu] ",
+						&isk->inet_saddr, ntohs(isk->inet_sport),
+						&isk->inet_daddr, ntohs(isk->inet_dport));
+#if IS_ENABLED(CONFIG_IPV6)
+			} else if (mpcb_meta_sk(mpcb)->sk_family == AF_INET6) {
+				seq_printf(seq, "[%pI6:%hu - %pI6:%hu] ",
+						&isk->pinet6->saddr, ntohs(isk->inet_sport),
+						&isk->pinet6->daddr, ntohs(isk->inet_dport));
+#endif
+			}
+
 			seq_printf(seq, "Loc_Tok %#x Rem_tok %#x cnt_est %d meta-state %d infinite? %d",
 					mpcb->mptcp_loc_token,
 					mpcb->rx_opt.mptcp_rem_token,
