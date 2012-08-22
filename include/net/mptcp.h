@@ -73,7 +73,7 @@ struct mptcp_request_sock {
 	 * request_sock.
 	 */
 	struct list_head		collide_tuple;
-	struct list_head		collide_tk;
+	struct hlist_nulls_node		collide_tk;
 	u32				mptcp_rem_nonce;
 	u32				mptcp_loc_token;
 	u64				mptcp_loc_key;
@@ -758,17 +758,38 @@ static inline int mptcp_req_sk_saw_mpc(const struct request_sock *req)
 
 static inline void mptcp_hash_request_remove(struct request_sock *req)
 {
-	spin_lock_bh(&mptcp_reqsk_hlock);
+	int in_softirq = 0;
+
+	if (in_softirq()) {
+		spin_lock(&mptcp_reqsk_hlock);
+		in_softirq = 1;
+	} else {
+		spin_lock_bh(&mptcp_reqsk_hlock);
+	}
+
 	list_del(&mptcp_rsk(req)->collide_tuple);
-	spin_unlock_bh(&mptcp_reqsk_hlock);
+
+	if (in_softirq)
+		spin_unlock(&mptcp_reqsk_hlock);
+	else
+		spin_unlock_bh(&mptcp_reqsk_hlock);
 }
 
 static inline void mptcp_reqsk_destructor(struct request_sock *req)
 {
-	if (!mptcp_rsk(req)->mpcb)
-		mptcp_reqsk_remove_tk(req);
-	else
+	if (!mptcp_rsk(req)->mpcb) {
+		if (in_softirq()) {
+			mptcp_reqsk_remove_tk(req);
+		} else {
+			rcu_read_lock_bh();
+			spin_lock(&mptcp_tk_hashlock);
+			hlist_nulls_del_rcu(&mptcp_rsk(req)->collide_tk);
+			spin_unlock(&mptcp_tk_hashlock);
+			rcu_read_unlock_bh();
+		}
+	} else {
 		mptcp_hash_request_remove(req);
+	}
 }
 
 static inline void mptcp_init_mp_opt(struct multipath_options *mopt)

@@ -2157,10 +2157,6 @@ static int tcp_v6_init_sock(struct sock *sk)
 	percpu_counter_inc(&tcp_sockets_allocated);
 	local_bh_enable();
 
-#ifdef CONFIG_MPTCP
-	INIT_LIST_HEAD(&tp->tk_table);
-#endif
-
 	return 0;
 }
 

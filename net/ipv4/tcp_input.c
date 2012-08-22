@@ -5818,10 +5818,13 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		} else {
 			tp->request_mptcp = 0;
 
-			if (!list_empty(&tp->tk_table)) {
+			if (tp->inside_tk_table) {
+				rcu_read_lock();
 				spin_lock(&mptcp_tk_hashlock);
-				list_del_init(&tp->tk_table);
+				hlist_nulls_del_rcu(&tp->tk_table);
+				tp->inside_tk_table = 0;
 				spin_unlock(&mptcp_tk_hashlock);
+				rcu_read_unlock();
 			}
 		}
 		mptcp_include_mpc(tp);

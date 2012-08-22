@@ -324,7 +324,7 @@ void mptcp_v6_do_rcv_join_syn(struct sock *meta_sk, struct sk_buff *skb,
 	 * Check for close-state is necessary, because we may have been closed
 	 * without passing by mptcp_close().
 	 */
-	if (meta_sk->sk_state == TCP_CLOSE || list_empty(&mpcb->collide_tk))
+	if (meta_sk->sk_state == TCP_CLOSE || !tcp_sk(meta_sk)->inside_tk_table)
 		goto reset;
 
 	if (mptcp_v6_add_raddress(&mpcb->rx_opt,
@@ -354,7 +354,7 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	 * Check for close-state is necessary, because we may have been closed
 	 * without passing by mptcp_close().
 	 */
-	if (meta_sk->sk_state == TCP_CLOSE || list_empty(&tcp_sk(meta_sk)->tk_table))
+	if (meta_sk->sk_state == TCP_CLOSE || !tcp_sk(meta_sk)->inside_tk_table)
 		goto reset_and_discard;
 
 	child = tcp_v6_hnd_req(meta_sk, skb);

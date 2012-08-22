@@ -529,6 +529,7 @@ struct tcp_sock {
 	 * rather than adding ifdefs everywhere.
 	 */
 	u8      mpc:1,          /* Other end is multipath capable */
+		inside_tk_table:1, /* Is the tcp_sock inside the token-table? */
 		send_mp_fclose:1,
 		request_mptcp:1, /* Did we send out an MP_CAPABLE?
 				    * (this speeds up mptcp_doit() in tcp_recvmsg)
@@ -542,7 +543,7 @@ struct tcp_sock {
 		was_meta_sk:1; /* This was a meta sk (in case of reuse) */
 	struct mptcp_tcp_sock *mptcp;
 #ifdef CONFIG_MPTCP
-	struct list_head tk_table;
+	struct hlist_nulls_node tk_table;
 	u32		mptcp_loc_token;
 	u64		mptcp_loc_key;
 #endif /* CONFIG_MPTCP */
