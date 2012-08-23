@@ -1170,17 +1170,9 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 		opt_rx->saw_mpc = 1;
 		mopt->list_rcvd = 1;
 		mopt->dss_csum = sysctl_mptcp_checksum || mpcapable->c;
-		mopt->mptcp_opt_type = MPTCP_MP_CAPABLE_TYPE_SYN;
 
-		if (opsize >= MPTCP_SUB_LEN_CAPABLE_SYN) {
+		if (opsize >= MPTCP_SUB_LEN_CAPABLE_SYN)
 			mopt->mptcp_rem_key = mpcapable->sender_key;
-			mopt->mptcp_opt_type = MPTCP_MP_CAPABLE_TYPE_SYN;
-		}
-
-		if (opsize == MPTCP_SUB_LEN_CAPABLE_ACK) {
-			/* This only necessary for SYN-cookies */
-			mopt->mptcp_opt_type = MPTCP_MP_CAPABLE_TYPE_ACK;
-		}
 
 		break;
 	}
@@ -1200,19 +1192,17 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 		case MPTCP_SUB_LEN_JOIN_SYN:
 			mopt->mptcp_rem_token = mpjoin->u.syn.token;
 			mopt->mptcp_recv_nonce = mpjoin->u.syn.nonce;
-			mopt->mptcp_opt_type = MPTCP_MP_JOIN_TYPE_SYN;
 			opt_rx->saw_mpc = 1;
 			opt_rx->low_prio = mpjoin->b;
 			break;
 		case MPTCP_SUB_LEN_JOIN_SYNACK:
 			mopt->mptcp_recv_tmac = mpjoin->u.synack.mac;
 			mopt->mptcp_recv_nonce = mpjoin->u.synack.nonce;
-			mopt->mptcp_opt_type = MPTCP_MP_JOIN_TYPE_SYNACK;
 			opt_rx->low_prio = mpjoin->b;
 			break;
 		case MPTCP_SUB_LEN_JOIN_ACK:
 			memcpy(mopt->mptcp_recv_mac, mpjoin->u.ack.mac, 20);
-			mopt->mptcp_opt_type = MPTCP_MP_JOIN_TYPE_ACK;
+			mopt->join_ack = 1;
 			break;
 		}
 		opt_rx->rem_id = mpjoin->addr_id;

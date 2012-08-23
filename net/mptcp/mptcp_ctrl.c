@@ -1460,7 +1460,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	struct mptcp_cb *mpcb = mtreq->mpcb;
 	u8 hash_mac_check[20];
 
-	if (!mpcb->rx_opt.mptcp_opt_type == MPTCP_MP_JOIN_TYPE_ACK)
+	if (!mpcb->rx_opt.join_ack)
 		goto teardown;
 
 	mptcp_hmac_sha1((u8 *)&mpcb->rx_opt.mptcp_rem_key,

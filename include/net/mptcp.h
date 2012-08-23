@@ -141,11 +141,11 @@ struct multipath_options {
 	u8	list_rcvd:1, /* 1 if IP list has been received */
 		mp_fail:1,
 		mp_fclose:1,
-		dss_csum:1;
+		dss_csum:1,
+		join_ack:1;
 	u8	rem4_bits;
 	u8	rem6_bits;
 
-	u8	mptcp_opt_type;
 	u8	mptcp_recv_mac[20];
 	u32	mptcp_rem_token;	/* Received token */
 	u32	mptcp_recv_nonce;
@@ -248,8 +248,6 @@ static inline int mptcp_pi_to_flag(int pi)
 #define MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN		12
 #define MPTCP_SUB_LEN_CAPABLE_ACK		20
 #define MPTCP_SUB_LEN_CAPABLE_ACK_ALIGN		20
-#define MPTCP_MP_CAPABLE_TYPE_SYN		1
-#define MPTCP_MP_CAPABLE_TYPE_ACK		2
 
 #define MPTCP_SUB_JOIN			1
 #define MPTCP_SUB_LEN_JOIN_SYN		12
@@ -258,9 +256,6 @@ static inline int mptcp_pi_to_flag(int pi)
 #define MPTCP_SUB_LEN_JOIN_SYNACK_ALIGN	16
 #define MPTCP_SUB_LEN_JOIN_ACK		24
 #define MPTCP_SUB_LEN_JOIN_ACK_ALIGN	24
-#define MPTCP_MP_JOIN_TYPE_SYN		1
-#define MPTCP_MP_JOIN_TYPE_SYNACK	2
-#define MPTCP_MP_JOIN_TYPE_ACK		3
 
 #define MPTCP_SUB_DSS		2
 #define MPTCP_SUB_LEN_DSS	4
@@ -781,7 +776,7 @@ static inline void mptcp_init_mp_opt(struct multipath_options *mopt)
 {
 	mopt->list_rcvd = 0;
 	mopt->rem4_bits = mopt->rem6_bits = 0;
-	mopt->mptcp_opt_type = 0;
+	mopt->join_ack = 0;
 	mopt->mp_fail = 0;
 	mopt->mp_fclose = 0;
 	mopt->mptcp_rem_key = 0;
