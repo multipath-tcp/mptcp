@@ -890,7 +890,7 @@ retry:
 u32 __mptcp_select_window(struct sock *sk)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
-	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = mpcb_meta_tp(tp->mpcb);
 	struct mptcp_cb *mpcb = tp->mpcb;
 	int mss, free_space, full_space, window;
 
@@ -912,9 +912,11 @@ u32 __mptcp_select_window(struct sock *sk)
 		icsk->icsk_ack.quick = 0;
 
 		if (tcp_memory_pressure) {
-			tp->rcv_ssthresh = min(tp->rcv_ssthresh,
-					       4U * tp->advmss);
-			mptcp_update_window_clamp(tp);
+			/* TODO this has to be adapted when we support different
+			 * MSS's among the subflows.
+			 */
+			meta_tp->rcv_ssthresh = min(meta_tp->rcv_ssthresh,
+					        4U * meta_tp->advmss);
 		}
 
 		if (free_space < mss)

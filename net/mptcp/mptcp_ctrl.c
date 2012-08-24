@@ -769,7 +769,6 @@ int mptcp_add_sock(struct mptcp_cb *mpcb, struct tcp_sock *tp, gfp_t flags)
 	tp->mptcp->attached = 1;
 
 	mpcb->cnt_subflows++;
-	mptcp_update_window_clamp(tcp_sk(meta_sk));
 	atomic_add(atomic_read(&((struct sock *)tp)->sk_rmem_alloc),
 		   &meta_sk->sk_rmem_alloc);
 
@@ -1110,7 +1109,7 @@ void mptcp_update_window_clamp(struct tcp_sock *tp)
 	struct sock *meta_sk, *sk;
 	struct tcp_sock *meta_tp;
 	struct mptcp_cb *mpcb;
-	u32 new_clamp = 0, new_rcv_ssthresh = 0;
+	u32 new_clamp = 0;
 	int new_rcvbuf = 0;
 
 	/* Can happen if called from non mpcb sock. */
@@ -1126,7 +1125,6 @@ void mptcp_update_window_clamp(struct tcp_sock *tp)
 			continue;
 
 		new_clamp += tcp_sk(sk)->window_clamp;
-		new_rcv_ssthresh += tcp_sk(sk)->rcv_ssthresh;
 		new_rcvbuf += sk->sk_rcvbuf;
 
 		if (new_rcvbuf > sysctl_tcp_rmem[2] || new_rcvbuf < 0) {
@@ -1135,7 +1133,6 @@ void mptcp_update_window_clamp(struct tcp_sock *tp)
 		}
 	}
 	meta_tp->window_clamp = new_clamp;
-	meta_tp->rcv_ssthresh = new_rcv_ssthresh;
 	meta_sk->sk_rcvbuf = max(min(new_rcvbuf, sysctl_tcp_rmem[2]), meta_sk->sk_rcvbuf);
 }
 

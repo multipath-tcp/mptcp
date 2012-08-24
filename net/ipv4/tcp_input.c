@@ -309,10 +309,12 @@ static int __tcp_grow_window(const struct sock *sk, const struct sk_buff *skb)
 static void tcp_grow_window(struct sock *sk, const struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *meta_tp = tp->mpc ? mpcb_meta_tp(tp->mpcb) : tp;
+	struct sock *meta_sk = (struct sock *)meta_tp;
 
 	/* Check #1 */
-	if (tp->rcv_ssthresh < tp->window_clamp &&
-	    (int)tp->rcv_ssthresh < tcp_space(sk) &&
+	if (meta_tp->rcv_ssthresh < meta_tp->window_clamp &&
+	    (int)meta_tp->rcv_ssthresh < tcp_space(sk) &&
 	    !tcp_memory_pressure) {
 		int incr;
 
@@ -320,15 +322,14 @@ static void tcp_grow_window(struct sock *sk, const struct sk_buff *skb)
 		 * will fit to rcvbuf in future.
 		 */
 		if (tcp_win_from_space(skb->truesize) <= skb->len)
-			incr = 2 * tp->advmss;
+			incr = 2 * meta_tp->advmss;
 		else
-			incr = __tcp_grow_window(sk, skb);
+			incr = __tcp_grow_window(meta_sk, skb);
 
 		if (incr) {
-			tp->rcv_ssthresh = min(tp->rcv_ssthresh + incr,
-					       tp->window_clamp);
+			meta_tp->rcv_ssthresh = min(meta_tp->rcv_ssthresh + incr,
+					            meta_tp->window_clamp);
 			inet_csk(sk)->icsk_ack.quick |= 1;
-			mptcp_update_window_clamp(tp);
 		}
 	}
 }
@@ -5881,7 +5882,6 @@ cont_mptcp:
 		if (!tp->rx_opt.wscale_ok) {
 			tp->rx_opt.snd_wscale = tp->rx_opt.rcv_wscale = 0;
 			tp->window_clamp = min(tp->window_clamp, 65535U);
-			mptcp_update_window_clamp(tp);
 		}
 
 		if (tp->rx_opt.saw_tstamp) {
