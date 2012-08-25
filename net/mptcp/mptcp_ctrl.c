@@ -785,7 +785,6 @@ int mptcp_add_sock(struct mptcp_cb *mpcb, struct tcp_sock *tp, gfp_t flags)
 	 */
 	if (sk->sk_state == TCP_ESTABLISHED) {
 		mpcb->cnt_established++;
-		mptcp_update_sndbuf(mpcb);
 		if ((1 << meta_sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV))
 			meta_sk->sk_state = TCP_ESTABLISHED;
 	}
@@ -1114,19 +1113,11 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
  */
 void mptcp_update_window_clamp(struct tcp_sock *tp)
 {
-	struct sock *meta_sk, *sk;
-	struct tcp_sock *meta_tp;
-	struct mptcp_cb *mpcb;
+	struct mptcp_cb *mpcb = tp->mpcb;
+	struct sock *meta_sk = mpcb_meta_sk(mpcb), *sk;
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	u32 new_clamp = 0;
 	int new_rcvbuf = 0;
-
-	/* Can happen if called from non mpcb sock. */
-	if (!tp->mpc)
-		return;
-
-	mpcb = tp->mpcb;
-	meta_tp = mpcb_meta_tp(mpcb);
-	meta_sk = mpcb_meta_sk(mpcb);
 
 	mptcp_for_each_sk(mpcb, sk) {
 		if (!mptcp_sk_can_recv(sk))
@@ -1357,7 +1348,6 @@ void mptcp_set_state(struct sock *sk, int state)
 		if (oldstate != TCP_ESTABLISHED) {
 			struct sock *meta_sk = mptcp_meta_sk(sk);
 			tp->mpcb->cnt_established++;
-			mptcp_update_sndbuf(tp->mpcb);
 			if ((1 << meta_sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV))
 				meta_sk->sk_state = TCP_ESTABLISHED;
 		}

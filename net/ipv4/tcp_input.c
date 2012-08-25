@@ -393,7 +393,10 @@ static void tcp_init_buffer_space(struct sock *sk)
 	tp->rcv_ssthresh = min(tp->rcv_ssthresh, tp->window_clamp);
 	tp->snd_cwnd_stamp = tcp_time_stamp;
 
-	mptcp_update_window_clamp(tp);
+	if (tp->mpc) {
+		mptcp_update_window_clamp(tp);
+		mptcp_update_sndbuf(tp->mpcb);
+	}
 }
 
 /* 5. Recalculate window clamp after socket hit its memory bounds. */
@@ -413,8 +416,6 @@ static void tcp_clamp_window(struct sock *sk)
 	}
 	if (atomic_read(&sk->sk_rmem_alloc) > sk->sk_rcvbuf)
 		tp->rcv_ssthresh = min(tp->window_clamp, 2U * tp->advmss);
-
-	mptcp_update_window_clamp(tp);
 }
 
 /* Initialize RCV_MSS value.
@@ -557,7 +558,8 @@ void tcp_rcv_space_adjust(struct sock *sk)
 
 				/* Make the window clamp follow along.  */
 				tp->window_clamp = new_clamp;
-				mptcp_update_window_clamp(tp);
+				if (tp->mpc)
+					mptcp_update_window_clamp(tp);
 			}
 		}
 	}
@@ -2915,8 +2917,6 @@ static void tcp_mtup_probe_success(struct sock *sk)
 	tp->snd_cwnd_cnt = 0;
 	tp->snd_cwnd_stamp = tcp_time_stamp;
 	tp->snd_ssthresh = tcp_current_ssthresh(sk);
-
-	mptcp_update_window_clamp(tp);
 
 	icsk->icsk_mtup.search_low = icsk->icsk_mtup.probe_size;
 	icsk->icsk_mtup.probe_size = 0;
