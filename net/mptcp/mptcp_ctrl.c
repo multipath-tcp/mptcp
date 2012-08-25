@@ -654,6 +654,7 @@ int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key, u32 window)
 	meta_icsk->icsk_probes_out = 0;
 
 	meta_tp->mss_cache = mptcp_sysctl_mss();
+	meta_tp->advmss = mptcp_sysctl_mss();
 
 	meta_tp->mpcb = mpcb;
 	meta_tp->mpc = 1;
