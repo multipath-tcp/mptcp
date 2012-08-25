@@ -5794,7 +5794,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			tp->rx_opt.saw_mpc = 0;
 
 			/* If alloc failed - fall back to regular TCP */
-			if (unlikely(mptcp_alloc_mpcb(sk, mopt.mptcp_rem_key)))
+			if (unlikely(mptcp_alloc_mpcb(sk, mopt.mptcp_rem_key, ntohs(th->window))))
 				goto cont_mptcp;
 
 			tp->mpc = 1;
@@ -5843,14 +5843,7 @@ cont_mptcp:
 
 		TCP_ECN_rcv_synack(tp, th);
 
-		/* MPTCP: Don't update the window of new subflows. Only update
-		 * in presence of DATA_ACK's.
-		 */
-		if (tp->mpc && is_master_tp(tp))
-			/* -1 because rcv_nxt is not the data-seq number of the SYN/ACK */
-			mpcb_meta_tp(mpcb)->snd_wl1 = mpcb_meta_tp(mpcb)->rcv_nxt - 1;
-		else
-			tp->snd_wl1 = TCP_SKB_CB(skb)->seq;
+		tp->snd_wl1 = TCP_SKB_CB(skb)->seq;
 		tcp_ack(sk, skb, FLAG_SLOWPATH);
 		if (unlikely(tp->mp_killed))
 			goto discard;
@@ -5866,18 +5859,9 @@ cont_mptcp:
 
 		/* RFC1323: The window in SYN & SYN/ACK segments is
 		 * never scaled.
-		 *
-		 * MPTCP: Don't update the window of new subflows. Only update
-		 * in presence of DATA_ACK's.
 		 */
-		if (tp->mpc && is_master_tp(tp)) {
-			mpcb_meta_tp(mpcb)->snd_wnd = tp->snd_wnd = ntohs(th->window);
-			tcp_init_wl(mpcb_meta_tp(mpcb),
-					mpcb_meta_tp(mpcb)->rcv_nxt);
-		} else {
-			tp->snd_wnd = ntohs(th->window);
-			tcp_init_wl(tp, TCP_SKB_CB(skb)->seq);
-		}
+		tp->snd_wnd = ntohs(th->window);
+		tcp_init_wl(tp, TCP_SKB_CB(skb)->seq);
 
 		if (!tp->rx_opt.wscale_ok) {
 			tp->rx_opt.snd_wscale = tp->rx_opt.rcv_wscale = 0;
@@ -6034,15 +6018,9 @@ discard:
 		/* RFC1323: The window in SYN & SYN/ACK segments is
 		 * never scaled.
 		 */
-		if (tp->mpc) {
-			mpcb_meta_tp(mpcb)->snd_wl1    = mpcb_meta_tp(mpcb)->rcv_nxt - 1;
-			mpcb_meta_tp(mpcb)->snd_wnd    = ntohs(th->window);
-			mpcb_meta_tp(mpcb)->max_window = tp->snd_wnd;
-		} else {
-			tp->snd_wnd    = ntohs(th->window);
-			tp->snd_wl1    = TCP_SKB_CB(skb)->seq;
-			tp->max_window = tp->snd_wnd;
-		}
+		tp->snd_wnd    = ntohs(th->window);
+		tp->snd_wl1    = TCP_SKB_CB(skb)->seq;
+		tp->max_window = tp->snd_wnd;
 
 		TCP_ECN_rcv_syn(tp, th);
 
@@ -6191,18 +6169,9 @@ out_syn_sent:
 				if (tp->mpc && after(tp->snd_una, tp->mptcp->reinjected_seq))
 					tp->mptcp->reinjected_seq = tp->snd_una;
 #endif
-				if (tp->mpc) {
-					mpcb_meta_tp(tp->mpcb)->snd_wnd =
-						ntohs(th->window) <<
-						tp->rx_opt.snd_wscale;
-					tcp_init_wl(mpcb_meta_tp(tp->mpcb),
-						mpcb_meta_tp(
-							tp->mpcb)->rcv_nxt);
-				} else {
-					tp->snd_wnd = ntohs(th->window) <<
+				tp->snd_wnd = ntohs(th->window) <<
 					      tp->rx_opt.snd_wscale;
-					tcp_init_wl(tp, TCP_SKB_CB(skb)->seq);
-				}
+				tcp_init_wl(tp, TCP_SKB_CB(skb)->seq);
 
 				if (!tp->mpc && tp->rx_opt.tstamp_ok)
 					tp->advmss -= TCPOLEN_TSTAMP_ALIGNED;

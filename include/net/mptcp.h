@@ -601,7 +601,7 @@ int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
 void mptcp_ofo_queue(struct mptcp_cb *mpcb);
 void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp);
 void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied);
-int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key);
+int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key, u32 window);
 int mptcp_add_sock(struct mptcp_cb *mpcb, struct tcp_sock *tp, gfp_t flags);
 void mptcp_del_sock(struct sock *sk);
 void mptcp_update_metasocket(struct sock *sock, struct mptcp_cb *mpcb);

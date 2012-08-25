@@ -574,7 +574,7 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 		percpu_counter_inc(newsk->sk_prot->sockets_allocated);
 }
 
-int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key)
+int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key, u32 window)
 {
 	struct mptcp_cb *mpcb;
 	struct tcp_sock *meta_tp, *master_tp = tcp_sk(master_sk);
@@ -643,6 +643,9 @@ int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key)
 	mpcb->rcv_high_order[0] = idsn >> 32;
 	mpcb->rcv_high_order[1] = mpcb->rcv_high_order[0] + 1;
 	meta_tp->copied_seq = meta_tp->rcv_nxt = meta_tp->rcv_wup = (u32) idsn;
+
+	meta_tp->snd_wl1 = meta_tp->rcv_nxt - 1;
+	meta_tp->snd_wnd = window;
 
 	meta_tp->packets_out = 0;
 	meta_tp->mptcp->snt_isn = meta_tp->write_seq; /* Initial data-sequence-number */
@@ -1394,7 +1397,7 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	child_tp->mptcp_loc_key = mtreq->mptcp_loc_key;
 	child_tp->mptcp_loc_token = mtreq->mptcp_loc_token;
 
-	if (mptcp_alloc_mpcb(child, mtreq->mptcp_rem_key))
+	if (mptcp_alloc_mpcb(child, mtreq->mptcp_rem_key, child_tp->snd_wnd))
 		/* The allocation of the mpcb failed!
 		 * Fallback to regular TCP.
 		 */
