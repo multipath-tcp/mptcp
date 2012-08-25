@@ -630,7 +630,11 @@ int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key)
 	mpcb->snd_high_order[0] = idsn >> 32;
 	mpcb->snd_high_order[1] = mpcb->snd_high_order[0] - 1;
 	meta_tp->write_seq = (u32)idsn;
-	meta_tp->snd_sml = meta_tp->snd_una = meta_tp->snd_nxt = meta_tp->write_seq;
+	meta_tp->snd_sml = meta_tp->write_seq;
+	meta_tp->snd_una = meta_tp->write_seq;
+	meta_tp->snd_nxt = meta_tp->write_seq;
+	meta_tp->pushed_seq = meta_tp->write_seq;
+	meta_tp->snd_up = meta_tp->write_seq;
 
 	mpcb->rx_opt.mptcp_rem_key = remote_key;
 	mptcp_key_sha1(mpcb->rx_opt.mptcp_rem_key,
