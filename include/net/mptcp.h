@@ -142,12 +142,14 @@ struct multipath_options {
 		mp_fail:1,
 		mp_fclose:1,
 		dss_csum:1,
-		join_ack:1;
+		join_ack:1,
+		is_mp_join:1;
 	u8	rem4_bits;
 	u8	rem6_bits;
+	__u8	mpj_addr_id; /* MP_JOIN option addr_id */
 
 	u8	mptcp_recv_mac[20];
-	u32	mptcp_rem_token;	/* Received token */
+	u32	mptcp_rem_token;	/* Remote token */
 	u32	mptcp_recv_nonce;
 	u64	mptcp_rem_key;	/* Remote key */
 	u64	mptcp_recv_tmac;
@@ -779,6 +781,7 @@ static inline void mptcp_init_mp_opt(struct multipath_options *mopt)
 	mopt->join_ack = 0;
 	mopt->mp_fail = 0;
 	mopt->mp_fclose = 0;
+	mopt->is_mp_join = 0;
 	mopt->mptcp_rem_key = 0;
 	mopt->mpcb = NULL;
 }

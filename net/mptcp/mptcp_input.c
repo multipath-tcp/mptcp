@@ -1192,6 +1192,8 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 		case MPTCP_SUB_LEN_JOIN_SYN:
 			mopt->mptcp_rem_token = mpjoin->u.syn.token;
 			mopt->mptcp_recv_nonce = mpjoin->u.syn.nonce;
+			mopt->is_mp_join = 1;
+			mopt->mpj_addr_id = mpjoin->addr_id;
 			opt_rx->saw_mpc = 1;
 			opt_rx->low_prio = mpjoin->b;
 			break;

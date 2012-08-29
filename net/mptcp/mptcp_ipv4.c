@@ -122,15 +122,15 @@ static void mptcp_v4_reqsk_queue_hash_add(struct request_sock *req,
 	spin_unlock_bh(&mptcp_reqsk_hlock);
 }
 
-/* from tcp_v4_conn_request() */
-static void mptcp_v4_join_request(struct mptcp_cb *mpcb, struct sk_buff *skb)
+/* from mptcp_v4_join_request() */
+static void mptcp_v4_join_request_short(struct mptcp_cb *mpcb,
+					struct sk_buff *skb,
+					struct tcp_options_received *tmp_opt)
 {
 	struct request_sock *req, **prev;
 	struct inet_request_sock *ireq;
 	struct mptcp_request_sock *mtreq;
-	struct tcp_options_received tmp_opt;
 	u8 mptcp_hash_mac[20];
-	const u8 *hash_location;
 	__be32 saddr = ip_hdr(skb)->saddr;
 	__be32 daddr = ip_hdr(skb)->daddr;
 	__u32 isn = TCP_SKB_CB(skb)->when;
@@ -139,12 +139,7 @@ static void mptcp_v4_join_request(struct mptcp_cb *mpcb, struct sk_buff *skb)
 	if (!req)
 		return;
 
-	tcp_clear_options(&tmp_opt);
-	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
-	tmp_opt.user_mss = mpcb_meta_tp(mpcb)->rx_opt.user_mss;
-	tcp_parse_options(skb, &tmp_opt, &hash_location, &mpcb->rx_opt, 0);
-
-	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
+	tmp_opt->tstamp_ok = tmp_opt->saw_tstamp;
 
 	mtreq = mptcp_rsk(req);
 	mtreq->mpcb = mpcb;
@@ -161,9 +156,9 @@ static void mptcp_v4_join_request(struct mptcp_cb *mpcb, struct sk_buff *skb)
 			(u8 *)&mtreq->mptcp_rem_nonce, (u32 *)mptcp_hash_mac);
 	mtreq->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
 
-	mtreq->rem_id = tmp_opt.rem_id;
-	mtreq->low_prio = tmp_opt.low_prio;
-	tcp_openreq_init(req, &tmp_opt, NULL, skb);
+	mtreq->rem_id = tmp_opt->rem_id;
+	mtreq->low_prio = tmp_opt->low_prio;
+	tcp_openreq_init(req, tmp_opt, NULL, skb);
 
 	ireq = inet_rsk(req);
 	ireq->loc_addr = daddr;
@@ -188,6 +183,21 @@ drop_and_free:
 	req = inet_csk_search_req(mpcb_meta_sk(mpcb), &prev,
 				  inet_rsk(req)->rmt_port, saddr, daddr);
 	inet_csk_reqsk_queue_drop(mpcb_meta_sk(mpcb), req, prev);
+	return;
+}
+
+/* from tcp_v4_conn_request() */
+static void mptcp_v4_join_request(struct mptcp_cb *mpcb, struct sk_buff *skb)
+{
+	struct tcp_options_received tmp_opt;
+	const u8 *hash_location;
+
+	tcp_clear_options(&tmp_opt);
+	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
+	tmp_opt.user_mss = mpcb_meta_tp(mpcb)->rx_opt.user_mss;
+	tcp_parse_options(skb, &tmp_opt, &hash_location, &mpcb->rx_opt, 0);
+
+	mptcp_v4_join_request_short(mpcb, skb, &tmp_opt);
 	return;
 }
 
@@ -284,6 +294,37 @@ void mptcp_v4_set_init_addr_bit(struct mptcp_cb *mpcb, __be32 daddr)
 }
 
 /**
+ * Fast processing for SYN+MP_JOIN.
+ */
+int mptcp_v4_do_rcv_join_syn(struct sock *meta_sk, struct sk_buff *skb,
+			     struct tcp_options_received *tmp_opt)
+{
+	struct mptcp_cb *mpcb = (struct mptcp_cb *)meta_sk;
+#ifdef CONFIG_TCP_MD5SIG
+	/*
+	 * Hash check from tcp_v4_do_rcv.
+	 *
+	 * We really want to reject the packet as early as possible
+	 * if:
+	 *  o We're expecting an MD5'd packet and this is no MD5 tcp option
+	 *  o There is an MD5 option and we're not expecting one
+	 */
+	if (tcp_v4_inbound_md5_hash(meta_sk, skb))
+		return 0;
+#endif
+
+	if (mptcp_v4_add_raddress(&mpcb->rx_opt,
+			(struct in_addr *)&ip_hdr(skb)->saddr, 0,
+			mpcb->rx_opt.mpj_addr_id) < 0) {
+		tcp_v4_send_reset(NULL, skb);
+		return -1;
+	}
+	mpcb->rx_opt.list_rcvd = 0;
+	mptcp_v4_join_request_short(mpcb, skb, tmp_opt);
+	return 0;
+}
+
+/**
  * We only process join requests here. (either the SYN or the final ACK)
  */
 int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
@@ -314,8 +355,7 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 					(struct in_addr *)&ip_hdr(skb)->saddr, 0,
 					join_opt->addr_id) < 0)
 				goto reset_and_discard;
-			if (mpcb->rx_opt.list_rcvd)
-				mpcb->rx_opt.list_rcvd = 0;
+			mpcb->rx_opt.list_rcvd = 0;
 
 			mptcp_v4_join_request(mpcb, skb);
 			goto discard;

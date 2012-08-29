@@ -1316,6 +1316,24 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	__u32 isn = TCP_SKB_CB(skb)->when;
 	int want_cookie = 0;
 
+	tcp_clear_options(&tmp_opt);
+	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
+	tmp_opt.user_mss  = tp->rx_opt.user_mss;
+	mopt.dss_csum = 0;
+	mptcp_init_mp_opt(&mopt);
+	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
+
+#ifdef CONFIG_MPTCP
+	if (tmp_opt.saw_mpc && mopt.is_mp_join) {
+		int ret;
+		ret = mptcp_do_join_short(skb, &mopt, &tmp_opt);
+		if (ret < 0) {
+			tcp_v4_send_reset(NULL, skb);
+			goto drop;
+		}
+		return -ret;
+	}
+#endif
 	/* Never answer to SYNs send to broadcast or multicast */
 	if (skb_rtable(skb)->rt_flags & (RTCF_BROADCAST | RTCF_MULTICAST))
 		goto drop;
@@ -1337,13 +1355,6 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	 */
 	if (sk_acceptq_is_full(sk) && inet_csk_reqsk_queue_young(sk) > 1)
 		goto drop;
-
-	tcp_clear_options(&tmp_opt);
-	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
-	tmp_opt.user_mss  = tp->rx_opt.user_mss;
-	mopt.dss_csum = 0;
-	mptcp_init_mp_opt(&mopt);
-	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
 #ifdef CONFIG_MPTCP
 	if (tmp_opt.saw_mpc) {
@@ -1780,9 +1791,8 @@ process:
 		goto do_time_wait;
 
 #ifdef CONFIG_MPTCP
-	if (th->syn && !th->ack) {
+	if (!sk && th->syn && !th->ack) {
 		int ret;
-
 		ret = mptcp_lookup_join(skb);
 		if (ret) {
 			if (ret < 0) {
@@ -1913,7 +1923,6 @@ do_time_wait:
 #ifdef CONFIG_MPTCP
 		if (th->syn && !th->ack) {
 			int ret;
-
 			ret = mptcp_lookup_join(skb);
 			if (ret) {
 				/* As we come from do_time_wait, we are sure that

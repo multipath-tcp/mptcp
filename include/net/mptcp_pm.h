@@ -98,6 +98,8 @@ void mptcp_hash_insert(struct mptcp_cb *mpcb, u32 token);
 void mptcp_hash_remove(struct mptcp_cb *mpcb);
 struct mptcp_cb *mptcp_hash_find(u32 token);
 int mptcp_lookup_join(struct sk_buff *skb);
+int mptcp_do_join_short(struct sk_buff *skb, struct multipath_options *mopt,
+			struct tcp_options_received *tmp_opt);
 int mptcp_find_token(u32 token);
 int mptcp_reqsk_find_tk(u32 token);
 void mptcp_reqsk_insert_tk(struct request_sock *reqsk, u32 token);

@@ -6110,8 +6110,17 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 			goto discard;
 
 		if (th->syn) {
-			if (icsk->icsk_af_ops->conn_request(sk, skb) < 0)
+			res = icsk->icsk_af_ops->conn_request(sk, skb);
+			if (res < 0) {
+				/* MPTCP - if the skb has been put in the
+				 * backlog-queue, conn_request returns -2.
+				 * By returning 0, tcp_vX_do_rcv will not
+				 * free skb.
+				 */
+				if (res == -2)
+					return 0;
 				return 1;
+			}
 
 			/* Now we have several options: In theory there is
 			 * nothing else in the frame. KA9Q has an option to
