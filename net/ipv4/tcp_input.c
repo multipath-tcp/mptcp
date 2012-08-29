@@ -5302,29 +5302,20 @@ static void tcp_urg(struct sock *sk, struct sk_buff *skb, const struct tcphdr *t
 
 static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 {
-	struct tcp_sock *tp = tcp_sk(sk), *meta_tp;
-	struct mptcp_cb *mpcb = mpcb_from_tcpsock(tp);
+	struct tcp_sock *tp = tcp_sk(sk);
 	int chunk = skb->len - hlen;
 	int err;
 
-	if (tp->mpc)
-		meta_tp = mpcb_meta_tp(mpcb);
-	else
-		meta_tp = tp;
-
 	local_bh_enable();
 	if (skb_csum_unnecessary(skb))
-		err = skb_copy_datagram_iovec(skb, hlen, meta_tp->ucopy.iov,
-					      chunk);
+		err = skb_copy_datagram_iovec(skb, hlen, tp->ucopy.iov, chunk);
 	else
 		err = skb_copy_and_csum_datagram_iovec(skb, hlen,
-						       meta_tp->ucopy.iov);
+						       tp->ucopy.iov);
 
 	if (!err) {
-		meta_tp->ucopy.len -= chunk;
+		tp->ucopy.len -= chunk;
 		tp->copied_seq += chunk;
-		if (tp->mpc)
-			meta_tp->copied_seq += chunk;
 		tcp_rcv_space_adjust(sk);
 	}
 
