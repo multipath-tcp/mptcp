@@ -198,7 +198,6 @@ static void mptcp_v4_join_request(struct mptcp_cb *mpcb, struct sk_buff *skb)
 	tcp_parse_options(skb, &tmp_opt, &hash_location, &mpcb->rx_opt, 0);
 
 	mptcp_v4_join_request_short(mpcb, skb, &tmp_opt);
-	return;
 }
 
 int mptcp_v4_rem_raddress(struct multipath_options *mopt, u8 id)
