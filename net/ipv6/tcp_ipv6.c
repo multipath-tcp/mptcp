@@ -1224,6 +1224,27 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	if (skb->protocol == htons(ETH_P_IP))
 		return tcp_v4_conn_request(sk, skb);
 
+	tcp_clear_options(&tmp_opt);
+	tmp_opt.mss_clamp = IPV6_MIN_MTU - sizeof(struct tcphdr) -
+				sizeof(struct ipv6hdr);
+	tmp_opt.user_mss = tp->rx_opt.user_mss;
+	mopt.dss_csum = 0;
+	mptcp_init_mp_opt(&mopt);
+	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
+
+#ifdef CONFIG_MPTCP
+	if (tmp_opt.saw_mpc && mopt.is_mp_join) {
+		int ret;
+
+		ret = mptcp_do_join_short(skb, &mopt, &tmp_opt);
+		if (ret < 0) {
+			tcp_v6_send_reset(NULL, skb);
+			goto drop;
+		}
+		return -ret;
+	}
+#endif
+
 	if (!ipv6_unicast_destination(skb))
 		goto drop;
 
@@ -1235,13 +1256,6 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 
 	if (sk_acceptq_is_full(sk) && inet_csk_reqsk_queue_young(sk) > 1)
 		goto drop;
-
-	tcp_clear_options(&tmp_opt);
-	tmp_opt.mss_clamp = IPV6_MIN_MTU - sizeof(struct tcphdr) - sizeof(struct ipv6hdr);
-	tmp_opt.user_mss = tp->rx_opt.user_mss;
-	mopt.dss_csum = 0;
-	mptcp_init_mp_opt(&mopt);
-	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
 #ifdef CONFIG_MPTCP
 	if (tmp_opt.saw_mpc) {
@@ -1811,7 +1825,7 @@ process:
 		goto do_time_wait;
 
 #ifdef CONFIG_MPTCP
-	if (th->syn && !th->ack) {
+	if (!sk && th->syn && !th->ack) {
 		int ret;
 
 		ret = mptcp_lookup_join(skb);

@@ -469,7 +469,7 @@ int mptcp_do_join_short(struct sk_buff *skb, struct multipath_options *mopt,
 			mptcp_v4_do_rcv_join_syn(meta_sk, skb, tmp_opt);
 #if IS_ENABLED(CONFIG_IPV6)
 		} else { /* IPv6 */
-			tcp_v6_do_rcv(meta_sk, skb);
+			mptcp_v6_do_rcv_join_syn(meta_sk, skb, tmp_opt);
 #endif /* CONFIG_IPV6 */
 		}
 	}
