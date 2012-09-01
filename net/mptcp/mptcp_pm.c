@@ -67,9 +67,9 @@ spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
 
 /* The following hash table is used to avoid collision of token */
 struct list_head mptcp_reqsk_tk_htb[MPTCP_HASH_SIZE];
-spinlock_t mptcp_reqsk_tk_hlock;	/* hashtable protection */
+static spinlock_t mptcp_reqsk_tk_hlock;	/* hashtable protection */
 
-int mptcp_reqsk_find_tk(u32 token)
+static int mptcp_reqsk_find_tk(u32 token)
 {
 	u32 hash = mptcp_hash_tk(token);
 	struct mptcp_request_sock *mtreqsk;
@@ -81,7 +81,7 @@ int mptcp_reqsk_find_tk(u32 token)
 	return 0;
 }
 
-void mptcp_reqsk_insert_tk(struct request_sock *reqsk, u32 token)
+static void mptcp_reqsk_insert_tk(struct request_sock *reqsk, u32 token)
 {
 	u32 hash = mptcp_hash_tk(token);
 
@@ -118,6 +118,30 @@ int mptcp_find_token(u32 token)
 	}
 	read_unlock_bh(&tk_hash_lock);
 	return 0;
+}
+
+/* New MPTCP-connection request, prepare a new token for the meta-socket that
+ * will be created in mptcp_check_req_master(), and store the received token.
+ */
+void mptcp_reqsk_new_mptcp(struct request_sock *req,
+			   const struct tcp_options_received *rx_opt,
+			   const struct multipath_options *mopt)
+{
+	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
+
+	spin_lock(&mptcp_reqsk_tk_hlock);
+	do {
+		get_random_bytes(&mtreq->mptcp_loc_key,
+				 sizeof(mtreq->mptcp_loc_key));
+		mptcp_key_sha1(mtreq->mptcp_loc_key,
+			       &mtreq->mptcp_loc_token, NULL);
+	} while (mptcp_reqsk_find_tk(mtreq->mptcp_loc_token) ||
+		 mptcp_find_token(mtreq->mptcp_loc_token));
+
+	mptcp_reqsk_insert_tk(req, mtreq->mptcp_loc_token);
+	spin_unlock(&mptcp_reqsk_tk_hlock);
+
+	mtreq->mptcp_rem_key = mopt->mptcp_rem_key;
 }
 
 /**

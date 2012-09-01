@@ -1264,10 +1264,6 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 		if (req == NULL)
 			goto drop;
 
-		/* Must be set to NULL before calling openreq init.
-		 * tcp_openreq_init() uses this to know whether the request
-		 * is a join request or a conn request.
-		 */
 		mptcp_rsk(req)->mpcb = NULL;
 		mptcp_rsk(req)->dss_csum = mopt.dss_csum;
 	} else
@@ -1329,7 +1325,11 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 
-	tcp_openreq_init(req, &tmp_opt, &mopt, skb);
+	tcp_openreq_init(req, &tmp_opt, skb);
+
+	tcp_rsk(req)->saw_mpc = tmp_opt.saw_mpc;
+	if (tmp_opt.saw_mpc)
+		mptcp_reqsk_new_mptcp(req, &tmp_opt, &mopt);
 
 	treq = inet6_rsk(req);
 	ipv6_addr_copy(&treq->rmt_addr, &ipv6_hdr(skb)->saddr);

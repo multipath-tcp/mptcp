@@ -87,8 +87,6 @@ struct mptcp_cb;
 extern struct list_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
 extern spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
 
-extern spinlock_t mptcp_reqsk_tk_hlock;	/* hashtable protection */
-
 void mptcp_send_updatenotif(struct mptcp_cb *mpcb);
 
 void mptcp_send_updatenotif_wq(struct work_struct *work);
@@ -101,9 +99,10 @@ int mptcp_lookup_join(struct sk_buff *skb);
 int mptcp_do_join_short(struct sk_buff *skb, struct multipath_options *mopt,
 			struct tcp_options_received *tmp_opt);
 int mptcp_find_token(u32 token);
-int mptcp_reqsk_find_tk(u32 token);
-void mptcp_reqsk_insert_tk(struct request_sock *reqsk, u32 token);
 void mptcp_reqsk_remove_tk(struct request_sock *reqsk);
+void mptcp_reqsk_new_mptcp(struct request_sock *req,
+			   const struct tcp_options_received *rx_opt,
+			   const struct multipath_options *mopt);
 void mptcp_set_addresses(struct mptcp_cb *mpcb);
 int mptcp_syn_recv_sock(struct sk_buff *skb);
 void mptcp_address_worker(struct work_struct *work);
@@ -114,6 +113,11 @@ struct sock *mptcp_select_loc_sock(const struct mptcp_cb *mpcb, u16 ids);
 static inline int mptcp_find_token(u32 token)
 {
 	return 0;
+}
+static inline void mptcp_reqsk_new_mptcp(struct request_sock *req,
+					 const struct tcp_options_received *,
+					 const struct multipath_options *mopt)
+{
 }
 
 #endif /* CONFIG_MPTCP */

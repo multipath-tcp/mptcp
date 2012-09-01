@@ -1364,10 +1364,6 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 		if (!req)
 			goto drop;
 
-		/* Must be set to NULL before calling openreq init.
-		 * tcp_openreq_init() uses this to know whether the request
-		 * is a join request or a conn request.
-		 */
 		mptcp_rsk(req)->mpcb = NULL;
 		mptcp_rsk(req)->dss_csum = mopt.dss_csum;
 	} else
@@ -1419,7 +1415,10 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 		tcp_clear_options(&tmp_opt);
 
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
-	tcp_openreq_init(req, &tmp_opt, &mopt, skb);
+	tcp_openreq_init(req, &tmp_opt, skb);
+
+	if (tcp_rsk(req)->saw_mpc)
+		mptcp_reqsk_new_mptcp(req, &tmp_opt, &mopt);
 
 	ireq = inet_rsk(req);
 	ireq->loc_addr = daddr;

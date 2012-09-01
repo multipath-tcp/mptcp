@@ -158,7 +158,8 @@ static void mptcp_v4_join_request_short(struct mptcp_cb *mpcb,
 
 	mtreq->rem_id = tmp_opt->rem_id;
 	mtreq->low_prio = tmp_opt->low_prio;
-	tcp_openreq_init(req, tmp_opt, NULL, skb);
+
+	tcp_openreq_init(req, tmp_opt, skb);
 
 	ireq = inet_rsk(req);
 	ireq->loc_addr = daddr;

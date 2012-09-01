@@ -164,7 +164,8 @@ static void mptcp_v6_join_request_short(struct mptcp_cb *mpcb,
 
 	mtreq->rem_id = tmp_opt->rem_id;
 	mtreq->low_prio = tmp_opt->low_prio;
-	tcp_openreq_init(req, tmp_opt, NULL, skb);
+
+	tcp_openreq_init(req, tmp_opt, skb);
 
 	treq = inet6_rsk(req);
 	ipv6_addr_copy(&treq->loc_addr, &daddr);
