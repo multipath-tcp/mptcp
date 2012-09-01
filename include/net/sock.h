@@ -733,10 +733,6 @@ extern struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
 extern void sock_lock_init(struct sock *sk);
 
 extern struct lock_class_key af_callback_keys[AF_MAX];
-extern struct lock_class_key af_family_keys[AF_MAX];
-extern struct lock_class_key af_family_slock_keys[AF_MAX];
-extern char *const af_family_slock_key_strings[AF_MAX+1];
-extern char *const af_family_key_strings[AF_MAX+1];
 extern char *const af_family_clock_key_strings[AF_MAX+1];
 /* END - needed for MPTCP */
 

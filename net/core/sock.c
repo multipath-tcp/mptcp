@@ -138,15 +138,15 @@
  * Each address family might have different locking rules, so we have
  * one slock key per address family:
  */
-struct lock_class_key af_family_keys[AF_MAX];
-struct lock_class_key af_family_slock_keys[AF_MAX];
+static struct lock_class_key af_family_keys[AF_MAX];
+static struct lock_class_key af_family_slock_keys[AF_MAX];
 
 /*
  * Make lock validator output more readable. (we pre-construct these
  * strings build-time, so that runtime initialization of socket
  * locks is fast):
  */
-char *const af_family_key_strings[AF_MAX+1] = {
+static const char *const af_family_key_strings[AF_MAX+1] = {
   "sk_lock-AF_UNSPEC", "sk_lock-AF_UNIX"     , "sk_lock-AF_INET"     ,
   "sk_lock-AF_AX25"  , "sk_lock-AF_IPX"      , "sk_lock-AF_APPLETALK",
   "sk_lock-AF_NETROM", "sk_lock-AF_BRIDGE"   , "sk_lock-AF_ATMPVC"   ,
@@ -162,7 +162,7 @@ char *const af_family_key_strings[AF_MAX+1] = {
   "sk_lock-AF_IEEE802154", "sk_lock-AF_CAIF" , "sk_lock-AF_ALG"      ,
   "sk_lock-AF_NFC"   , "sk_lock-AF_MAX"
 };
-char *const af_family_slock_key_strings[AF_MAX+1] = {
+static const char *const af_family_slock_key_strings[AF_MAX+1] = {
   "slock-AF_UNSPEC", "slock-AF_UNIX"     , "slock-AF_INET"     ,
   "slock-AF_AX25"  , "slock-AF_IPX"      , "slock-AF_APPLETALK",
   "slock-AF_NETROM", "slock-AF_BRIDGE"   , "slock-AF_ATMPVC"   ,
