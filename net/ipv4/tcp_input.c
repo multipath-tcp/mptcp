@@ -394,7 +394,7 @@ static void tcp_init_buffer_space(struct sock *sk)
 	tp->snd_cwnd_stamp = tcp_time_stamp;
 
 	if (tp->mpc) {
-		mptcp_update_window_clamp(tp);
+		mptcp_init_buffer_space(sk);
 		mptcp_update_sndbuf(tp->mpcb);
 	}
 }

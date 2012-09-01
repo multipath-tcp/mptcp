@@ -606,7 +606,6 @@ int mptcp_add_sock(struct mptcp_cb *mpcb, struct tcp_sock *tp, gfp_t flags);
 void mptcp_del_sock(struct sock *sk);
 void mptcp_update_metasocket(struct sock *sock, struct mptcp_cb *mpcb);
 void mptcp_reinject_data(struct sock *orig_sk, int clone_it);
-void mptcp_update_window_clamp(struct tcp_sock *tp);
 void mptcp_update_sndbuf(struct mptcp_cb *mpcb);
 void mptcp_set_state(struct sock *sk, int state);
 void mptcp_skb_entail_init(struct tcp_sock *tp, struct sk_buff *skb);
@@ -930,6 +929,21 @@ static inline int mptcp_sk_can_recv(const struct sock *sk)
 	return (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCP_FIN_WAIT1 | TCP_FIN_WAIT2);
 }
 
+/* Adding a new subflow to the rcv-buffer space. We make a simple addition,
+ * to give some space to allow traffic on the new subflow. Autotuning will
+ * increase it further later on.
+ */
+static inline void mptcp_init_buffer_space(struct sock *sk)
+{
+	struct sock *meta_sk = mpcb_meta_sk(tcp_sk(sk)->mpcb);
+	int space = min(meta_sk->sk_rcvbuf + sk->sk_rcvbuf, sysctl_tcp_rmem[2]);
+
+	if (space > meta_sk->sk_rcvbuf) {
+		tcp_sk(meta_sk)->window_clamp += tcp_sk(sk)->window_clamp;
+		meta_sk->sk_rcvbuf = space;
+	}
+}
+
 static inline void mptcp_retransmit_queue(struct sock *sk)
 {
 	if (tcp_sk(sk)->mpc && mptcp_sk_can_send(sk) &&
@@ -1202,7 +1216,7 @@ static inline void mptcp_update_metasocket(const struct sock *sock,
 					   const struct mptcp_cb *mpcb) {}
 static inline void mptcp_reinject_data(const struct sock *orig_sk,
 				       int clone_it) {}
-static inline void mptcp_update_window_clamp(const struct tcp_sock *tp) {}
+static inline void mptcp_update_window_clamp(const struct sock *sk) {}
 static inline void mptcp_update_sndbuf(const struct mptcp_cb *mpcb) {}
 static inline void mptcp_set_state(const struct sock *sk, int state) {}
 static inline void mptcp_skb_entail_init(const struct tcp_sock *tp,

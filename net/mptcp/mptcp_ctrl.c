@@ -1108,34 +1108,6 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 }
 
 /**
- * At the moment we apply a simple addition algorithm.
- * We will complexify later
- */
-void mptcp_update_window_clamp(struct tcp_sock *tp)
-{
-	struct mptcp_cb *mpcb = tp->mpcb;
-	struct sock *meta_sk = mpcb_meta_sk(mpcb), *sk;
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	u32 new_clamp = 0;
-	int new_rcvbuf = 0;
-
-	mptcp_for_each_sk(mpcb, sk) {
-		if (!mptcp_sk_can_recv(sk))
-			continue;
-
-		new_clamp += tcp_sk(sk)->window_clamp;
-		new_rcvbuf += sk->sk_rcvbuf;
-
-		if (new_rcvbuf > sysctl_tcp_rmem[2] || new_rcvbuf < 0) {
-			new_rcvbuf = sysctl_tcp_rmem[2];
-			break;
-		}
-	}
-	meta_tp->window_clamp = new_clamp;
-	meta_sk->sk_rcvbuf = max(min(new_rcvbuf, sysctl_tcp_rmem[2]), meta_sk->sk_rcvbuf);
-}
-
-/**
  * Update the mpcb send window, based on the contributions
  * of each subflow
  */
