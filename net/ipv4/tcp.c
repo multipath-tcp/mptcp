@@ -1351,68 +1351,10 @@ void tcp_cleanup_rbuf(struct sock *sk, int copied)
 		tcp_send_ack(sk);
 }
 
-/* Packet is added to VJ-style prequeue for processing in process
- * context, if a reader task is waiting. Apparently, this exciting
- * idea (VJ's mail "Re: query about TCP header on tcp-ip" of 07 Sep 93)
- * failed somewhere. Latency? Burstiness? Well, at least now we will
- * see, why it failed. 8)8)				  --ANK
- */
-inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct tcp_sock *meta_tp = tp->mpc ? mpcb_meta_tp(tp->mpcb) : tp;
-	struct sock *meta_sk = tp->mpc ? mpcb_meta_sk(tp->mpcb) : sk;
-
-	if (sysctl_tcp_low_latency || !meta_tp->ucopy.task)
-		return 0;
-
-	__skb_queue_tail(&tp->ucopy.prequeue, skb);
-	tp->ucopy.memory += skb->truesize;
-	if (tp->ucopy.memory > sk->sk_rcvbuf) {
-		struct sk_buff *skb1;
-
-		BUG_ON(sock_owned_by_user(meta_sk));
-
-		while ((skb1 = __skb_dequeue(&tp->ucopy.prequeue)) != NULL) {
-			sk_backlog_rcv(sk, skb1);
-			NET_INC_STATS_BH(sock_net(sk),
-					 LINUX_MIB_TCPPREQUEUEDROPPED);
-		}
-
-		tp->ucopy.memory = 0;
-	} else if (skb_queue_len(&tp->ucopy.prequeue) == 1) {
-		struct sock *sk_it = tp->mpc ? NULL : sk;
-#ifdef CONFIG_MPTCP
-		struct mptcp_cb *mpcb = tp->mpc ? tp->mpcb : NULL;
-#endif
-
-		/* Here we test if in case of mptcp the sum of packets in the
-		 * prequeues in the subflows == 1.
-		 * Thus, the condition
-		 * "is there another subflow with queue-len > 0 ? "
-		 */
-		if (!mptcp_test_any_sk(mpcb, sk_it,
-				(sk_it != sk &&
-				skb_queue_len(&tcp_sk(sk_it)->ucopy.prequeue)))) {
-			wake_up_interruptible_sync_poll(sk_sleep(sk),
-					POLLIN | POLLRDNORM | POLLRDBAND);
-		}
-		if (!inet_csk_ack_scheduled(sk))
-			inet_csk_reset_xmit_timer(sk, ICSK_TIME_DACK,
-						  (3 * tcp_rto_min(sk)) / 4,
-						  TCP_RTO_MAX);
-	}
-	return 1;
-}
-EXPORT_SYMBOL(tcp_prequeue);
-
 static void tcp_prequeue_process(struct sock *sk)
 {
 	struct sk_buff *skb;
 	struct tcp_sock *tp = tcp_sk(sk);
-
-	if (tp->mpc && skb_queue_empty(&tp->ucopy.prequeue))
-		return;
 
 	NET_INC_STATS_USER(sock_net(sk), LINUX_MIB_TCPPREQUEUED);
 
@@ -1585,12 +1527,12 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	struct sk_buff *skb;
 	u32 urg_hole = 0;
 	struct mptcp_cb *mpcb = tp->mpc ? tp->mpcb : NULL;
-	struct sock *sk_it = tp->mpc ? NULL : sk;
 
 	lock_sock(sk);
 
 #ifdef CONFIG_MPTCP
 	if (tp->mpc) {
+		struct sock *sk_it;
 		mptcp_for_each_sk(mpcb, sk_it) {
 			if (!is_master_tp(tcp_sk(sk_it)))
 				sock_rps_record_flow(sk_it);
@@ -1703,9 +1645,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 		/* Well, if we have backlog, try to process it now yet. */
 
-		if (copied >= target && !sk->sk_backlog.tail &&
-			(!tp->mpc || !mptcp_test_any_sk(mpcb, sk_it,
-						sk_it->sk_backlog.tail)))
+		if (copied >= target && !sk->sk_backlog.tail)
 			break;
 
 		if (copied) {
@@ -1793,9 +1733,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			 * is not empty. It is more elegant, but eats cycles,
 			 * unfortunately.
 			 */
-			if (mptcp_test_any_sk(mpcb, sk_it,
-					     !skb_queue_empty(&tcp_sk(sk_it)->
-							      ucopy.prequeue)))
+			if (!skb_queue_empty(&tp->ucopy.prequeue))
 				goto do_prequeue;
 
 			/* __ Set realtime policy in scheduler __ */
@@ -1829,17 +1767,9 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			}
 
 			if (tp->rcv_nxt == tp->copied_seq &&
-			    mptcp_test_any_sk(
-				    mpcb, sk_it,
-				    !skb_queue_empty(&tcp_sk(sk_it)->
-						     ucopy.prequeue))) {
+			    !skb_queue_empty(&tp->ucopy.prequeue)) {
 do_prequeue:
-				if (tp->mpc) {
-					mptcp_for_each_sk(mpcb, sk_it)
-						tcp_prequeue_process(sk_it);
-				} else {
-					tcp_prequeue_process(sk);
-				}
+				tcp_prequeue_process(sk);
 
 				if ((chunk = len - tp->ucopy.len) != 0) {
 					NET_ADD_STATS_USER(sock_net(sk), LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
@@ -1955,18 +1885,11 @@ skip_copy:
 	} while (len > 0);
 
 	if (user_recv) {
-		if (mptcp_test_any_sk(mpcb, sk_it,
-				      !skb_queue_empty(&tcp_sk(sk_it)->
-						       ucopy.prequeue))) {
+		if (!skb_queue_empty(&tp->ucopy.prequeue)) {
 			int chunk;
 
 			tp->ucopy.len = copied > 0 ? len : 0;
-			if (tp->mpc) {
-				mptcp_for_each_sk(mpcb, sk_it)
-					tcp_prequeue_process(sk_it);
-			} else {
-				tcp_prequeue_process(sk);
-			}
+			tcp_prequeue_process(sk);
 
 			if (copied > 0 &&
 			    (chunk = len - tp->ucopy.len) != 0) {

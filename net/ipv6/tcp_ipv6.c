@@ -1897,7 +1897,7 @@ process:
 		else
 #endif
 		{
-			if (!tcp_prequeue(sk, skb))
+			if (!tcp_prequeue(meta_sk, skb))
 				ret = tcp_v6_do_rcv(sk, skb);
 		}
 	} else if (unlikely(sk_add_backlog(meta_sk, skb))) {

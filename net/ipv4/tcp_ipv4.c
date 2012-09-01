@@ -1865,7 +1865,7 @@ process:
 		else
 #endif
 		{
-			if (!tcp_prequeue(sk, skb))
+			if (!tcp_prequeue(meta_sk, skb))
 				ret = tcp_v4_do_rcv(sk, skb);
 		}
 	} else if (unlikely(sk_add_backlog(meta_sk, skb))) {
@@ -2122,8 +2122,7 @@ void tcp_v4_destroy_sock(struct sock *sk)
 #endif
 
 	/* Clean prequeue, it must be empty really */
-	if (!is_meta_sk(sk))
-		__skb_queue_purge(&tp->ucopy.prequeue);
+	__skb_queue_purge(&tp->ucopy.prequeue);
 
 	/* Clean up a referenced TCP bind bucket. */
 	if (inet_csk(sk)->icsk_bind_hash)
