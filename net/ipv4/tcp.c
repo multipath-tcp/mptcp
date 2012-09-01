@@ -1547,14 +1547,7 @@ int tcp_read_sock(struct sock *sk, read_descriptor_t *desc,
 	}
 	tp->copied_seq = seq;
 
-	if (tp->mpc) {
-		struct sock *sk_it;
-
-		mptcp_for_each_sk(tp->mpcb, sk_it)
-			tcp_rcv_space_adjust(sk_it);
-	} else {
-		tcp_rcv_space_adjust(sk);
-	}
+	tcp_rcv_space_adjust(sk);
 
 	/* Clean up data we have read: This will do ACK frames. */
 	if (copied > 0) {
@@ -1932,12 +1925,7 @@ do_prequeue:
 		copied += used;
 		len -= used;
 
-		if (tp->mpc) {
-			mptcp_for_each_sk(mpcb, sk_it)
-				tcp_rcv_space_adjust(sk_it);
-		} else {
-			tcp_rcv_space_adjust(sk);
-		}
+		tcp_rcv_space_adjust(sk);
 
 skip_copy:
 		if (tp->urg_data && after(tp->copied_seq, tp->urg_seq)) {

@@ -280,8 +280,9 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb, struct sk_buff *next,
  *          otherwise 0.
  */
 static inline int mptcp_direct_copy(struct sk_buff *skb, struct tcp_sock *tp,
-				    struct tcp_sock *meta_tp)
+				    struct sock *meta_sk)
 {
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	int chunk = min_t(unsigned int, skb->len, meta_tp->ucopy.len);
 	int eaten = 0;
 
@@ -292,6 +293,7 @@ static inline int mptcp_direct_copy(struct sk_buff *skb, struct tcp_sock *tp,
 		meta_tp->ucopy.len -= chunk;
 		meta_tp->copied_seq += chunk;
 		eaten = (chunk == skb->len && !mptcp_is_data_fin(skb));
+		tcp_rcv_space_adjust(meta_sk);
 	}
 	local_bh_disable();
 	return eaten;
@@ -395,7 +397,6 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = tcp_sk(meta_sk);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 	struct sk_buff *tmp, *tmp1;
-	u32 old_copied = tp->copied_seq;
 	u32 sub_end_seq = tcb->end_seq;
 	u32 sub_seq = tcb->seq;
 	int ans = 0;
@@ -724,8 +725,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 
 			if (ret <= 0) {
 				mptcp_reset_mapping(tp);
-				ans = ret;
-				goto exit;
+				return ret;
 			}
 		}
 
@@ -767,7 +767,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 				    meta_tp->copied_seq == meta_tp->rcv_nxt &&
 				    meta_tp->ucopy.len &&
 				    sock_owned_by_user(meta_sk)) {
-					eaten = mptcp_direct_copy(tmp1, tp, meta_tp);
+					eaten = mptcp_direct_copy(tmp1, tp, meta_sk);
 				}
 				mptcp_check_rcvseq_wrap(meta_tp,
 							TCP_SKB_CB(tmp1)->end_seq -
@@ -826,10 +826,6 @@ rcvd_fin:
 		tp->mptcp->last_data_seq = tp->mptcp->map_data_seq;
 		mptcp_reset_mapping(tp);
 	}
-
-exit:
-	if (old_copied != tp->copied_seq)
-		tcp_rcv_space_adjust(sk);
 
 	return ans;
 }
