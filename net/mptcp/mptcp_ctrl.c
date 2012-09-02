@@ -419,8 +419,7 @@ void mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 	}
 
 #ifdef CONFIG_SECURITY_NETWORK
-	if (is_meta_sk(sk))
-		newsk->sk_security = sptr;
+	newsk->sk_security = sptr;
 	security_sk_clone(sk, newsk);
 #endif
 
