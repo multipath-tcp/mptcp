@@ -604,10 +604,6 @@ found:
 			if (new_low_prio != tp->mptcp->low_prio)
 				tp->mptcp->send_mp_prio = 1;
 			tp->mptcp->low_prio = new_low_prio;
-		} else {
-			printk(KERN_DEBUG "MPTCP_PM: NETDEV_UP %pI4, pi %d\n",
-					&ifa->ifa_local, tp->mptcp->path_index);
-			BUG();
 		}
 	}
 
