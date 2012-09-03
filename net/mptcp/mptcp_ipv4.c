@@ -345,6 +345,7 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 		goto discard;
 
 	if (child != meta_sk) {
+		sock_rps_save_rxhash(child, skb);
 		tcp_child_process(meta_sk, child, skb);
 	} else {
 		if (tcp_hdr(skb)->syn) {
