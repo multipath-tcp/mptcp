@@ -365,6 +365,8 @@ int mptcp_syn_recv_sock(struct sk_buff *skb)
 	if (!meta_sk)
 		return 0;
 
+	TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_JOIN;
+
 	bh_lock_sock_nested(meta_sk);
 	if (sock_owned_by_user(meta_sk)) {
 		skb->sk = meta_sk;
@@ -445,6 +447,7 @@ int mptcp_lookup_join(struct sk_buff *skb)
 		return -1;
 	}
 
+	TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_JOIN;
 	/* OK, this is a new syn/join, let's create a new open request and
 	 * send syn+ack
 	 */
@@ -495,9 +498,11 @@ int mptcp_do_join_short(struct sk_buff *skb, struct multipath_options *mopt,
 	/* OK, this is a new syn/join, let's create a new open request and
 	 * send syn+ack
 	 */
-	bh_lock_sock_nested(meta_sk);
+	bh_lock_sock(meta_sk);
 	if (sock_owned_by_user(meta_sk)) {
 		skb->sk = meta_sk;
+		TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_JOIN;
+
 		if (unlikely(sk_add_backlog(meta_sk, skb))) {
 			NET_INC_STATS_BH(dev_net(skb->dev),
 					LINUX_MIB_TCPBACKLOGDROP);

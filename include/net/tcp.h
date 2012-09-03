@@ -733,6 +733,11 @@ extern u32 __tcp_select_window(struct sock *sk);
 #define MPTCPHDR_SEQ64_INDEX	0x40 /* Index of seq in mpcb->snd_high_order */
 #define MPTCPHDR_ACK64_SET	0x80
 
+/* It is impossible, that all 8 bits of mptcp_flags are set to 1 with the above
+ * Thus, defining MPTCPHDR_JOIN as 0xFF is safe.
+ */
+#define MPTCPHDR_JOIN		0xFF
+
 /* This is what the send packet queuing engine uses to pass
  * TCP per-packet control information to the transmission code.
  * We also store the host-order sequence numbers in here too.

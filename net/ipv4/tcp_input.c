@@ -3465,14 +3465,10 @@ static void tcp_ack_probe(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
-	int usable_wopen;
 
 	/* Was it a usable window open? */
-	usable_wopen=(!after(TCP_SKB_CB(
-				tcp_send_head(sk))->end_seq,
-				tcp_wnd_end(tp)));
 
-	if (usable_wopen) {
+	if (!after(TCP_SKB_CB(tcp_send_head(sk))->end_seq, tcp_wnd_end(tp))) {
 		icsk->icsk_backoff = 0;
 		inet_csk_clear_xmit_timer(sk, ICSK_TIME_PROBE0);
 		/* Socket must be waked up by subsequent tcp_data_snd_check().
@@ -5779,28 +5775,18 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 				goto reset_and_undo;
 			}
 		} else if (tp->rx_opt.saw_mpc && tp->request_mptcp) {
-			tp->rx_opt.saw_mpc = 0;
+			if (mptcp_create_master_sk(sk, mopt.mptcp_rem_key,
+						   ntohs(th->window)))
+				goto discard;
 
-			/* If alloc failed - fall back to regular TCP */
-			if (unlikely(mptcp_alloc_mpcb(sk, mopt.mptcp_rem_key, ntohs(th->window))))
-				goto cont_mptcp;
-
-			tp->mpc = 1;
-
-			if (mptcp_add_sock(mptcp_meta_sk(sk), tp, GFP_ATOMIC)) {
-				mptcp_destroy_meta_sk(mptcp_meta_sk(sk));
-				tp->mpc = 0;
-				tp->mpcb = NULL;
-				goto cont_mptcp;
-			}
+			sk = tcp_sk(sk)->mpcb->master_sk;
+			tp = tcp_sk(sk);
 
 			/* snd_nxt - 1, because it has been incremented
 			 * by tcp_connect for the SYN
 			 */
 			tp->mptcp->snt_isn = tp->snd_nxt - 1;
 			tp->mptcp->reinjected_seq = tp->snd_nxt - 1;
-			tp->mptcp->init_rcv_wnd = tp->rcv_wnd;
-			tp->mptcp->path_index = 1;
 
 			mpcb = tp->mpcb;
 
@@ -5808,13 +5794,14 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			mpcb->rx_opt.mpcb = mpcb;
 			mpcb->rx_opt.list_rcvd = 1;
 
-			sk->sk_socket->sk = mptcp_meta_sk(sk);
+			sk_set_socket(sk, mptcp_meta_sk(sk)->sk_socket);
+			sk->sk_wq = mptcp_meta_sk(sk)->sk_wq;
 
 			mptcp_update_metasocket(sk, mptcp_meta_sk(sk));
 			mptcp_path_array_check(mptcp_meta_sk(sk));
 
 			 /* hold in mptcp_inherit_sk due to initialization to 2 */
-			sock_put(mptcp_meta_sk(sk));
+			sock_put(sk);
 		} else {
 			tp->request_mptcp = 0;
 
@@ -5828,7 +5815,6 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			}
 		}
 		mptcp_include_mpc(tp);
-cont_mptcp:
 #endif
 
 		/* rfc793:
@@ -6121,6 +6107,10 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 
 	case TCP_SYN_SENT:
 		queued = tcp_rcv_synsent_state_process(sk, skb, th, len);
+		if (is_meta_sk(sk)) {
+			sk = tcp_sk(sk)->mpcb->master_sk;
+			tp = tcp_sk(sk);
+		}
 		if (queued >= 0)
 			goto out_syn_sent;
 		else
@@ -6131,8 +6121,6 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 		__kfree_skb(skb);
 		tcp_data_snd_check(sk);
 out_syn_sent:
-		if (tp->mpc && is_master_tp(tp))
-			bh_unlock_sock(mptcp_meta_sk(sk));
 		return queued;
 	}
 

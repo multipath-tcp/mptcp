@@ -118,8 +118,6 @@ static inline void mptcp_reqsk_new_mptcp(struct request_sock *req,
 					 const struct tcp_options_received *rx_opt,
 					 const struct multipath_options *mopt)
 {}
-static inline void mptcp_connect_init(struct tcp_sock *tp) {}
-
 #endif /* CONFIG_MPTCP */
 
 #endif /*_MPTCP_PM_H*/

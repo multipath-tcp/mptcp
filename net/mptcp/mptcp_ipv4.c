@@ -304,6 +304,28 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct sock *child;
 
+	if (!(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_JOIN)) {
+		struct tcphdr *th = tcp_hdr(skb);
+		const struct iphdr *iph = ip_hdr(skb);
+		struct sock *sk;
+
+		sk = inet_lookup_established(sock_net(meta_sk), &tcp_hashinfo,
+					     iph->saddr, th->source, iph->daddr,
+					     th->dest, inet_iif(skb));
+
+		if (is_meta_sk(sk)) {
+			WARN("%s Did not find a sub-sk - did found the meta!\n", __func__);
+			return 0;
+		}
+		if (!sk) {
+			WARN("%s Did not find a sub-sk at all!!!\n", __func__);
+			return 0;
+		}
+
+		return tcp_v4_do_rcv(sk, skb);
+	}
+	TCP_SKB_CB(skb)->mptcp_flags = 0;
+
 	/* Has been removed from the tk-table. Thus, no new subflows.
 	 * Check for close-state is necessary, because we may have been closed
 	 * without passing by mptcp_close().
@@ -318,7 +340,12 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 
 	if (child != meta_sk) {
 		sock_rps_save_rxhash(child, skb);
-		tcp_child_process(meta_sk, child, skb);
+		/* We don't call tcp_child_process here, because we hold
+		 * already the meta-sk-lock and are sure that it is not owned
+		 * by the user.
+		 */
+		tcp_rcv_state_process(child, skb, tcp_hdr(skb), skb->len);
+		sock_put(child);
 	} else {
 		if (tcp_hdr(skb)->syn) {
 			struct mp_join *join_opt = mptcp_find_join(skb);

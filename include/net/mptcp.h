@@ -623,6 +623,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 void mptcp_close(struct sock *meta_sk, long timeout);
 void mptcp_set_bw_est(struct tcp_sock *tp, u32 now);
 int mptcp_doit(struct sock *sk);
+int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key, u32 window);
 int mptcp_check_req_master(struct sock *sk, struct sock *child,
 			   struct request_sock *req,
 			   struct request_sock **prev,
@@ -813,23 +814,6 @@ static inline void mptcp_wmem_free_skb(struct sock *sk, struct sk_buff *skb)
 	sk->sk_wmem_queued -= skb->truesize;
 	sk_mem_uncharge(sk, skb->truesize);
 	kfree_skb(skb);
-}
-
-static inline void mptcp_update_pointers(struct sock **sk,
-		struct tcp_sock **tp, struct mptcp_cb **mpcb)
-{
-	/* The following happens if we entered the function without
-	 * being established, then received the mpc flag while
-	 * inside the function.
-	 */
-	if (((mpcb && !(*mpcb)) || !is_meta_sk(*sk)) && tcp_sk(*sk)->mpc) {
-		*sk = mptcp_meta_sk(*sk);
-		if (tp)
-			*tp = tcp_sk(*sk);
-
-		if (mpcb)
-			*mpcb = tcp_sk(*sk)->mpcb;
-	}
 }
 
 static inline int mptcp_check_rtt(struct tcp_sock *tp, int time)
@@ -1330,9 +1314,6 @@ static inline void mptcp_init_mp_opt(const struct multipath_options *mopt) {}
 static inline void mptcp_wmem_free_skb(const struct sock *sk,
 				       const struct sk_buff *skb) {}
 static inline void mptcp_sock_destruct(const struct sock *sk) {}
-static inline void mptcp_update_pointers(struct sock **sk,
-					 struct tcp_sock **tp,
-					 struct mptcp_cb **mpcb) {}
 static inline int mptcp_check_rtt(const struct tcp_sock *tp, int time)
 {
 	return 0;

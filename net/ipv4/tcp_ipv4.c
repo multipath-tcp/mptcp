@@ -1618,13 +1618,19 @@ struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb)
 
 	if (nsk) {
 		if (nsk->sk_state != TCP_TIME_WAIT) {
-			bh_lock_sock(nsk);
-			/* We will go into tcp_child_process, who will unlock
-			 * the meta-sk then.
+			/* Don't lock again the meta-sk. It has been locked
+			 * before mptcp_v6_do_rcv.
 			 */
-			if (tcp_sk(nsk)->mpc && is_master_tp(tcp_sk(nsk)))
+			if (is_meta_sk(sk))
+				return nsk;
+
+			if (tcp_sk(nsk)->mpc)
 				bh_lock_sock(mptcp_meta_sk(nsk));
+			else
+				bh_lock_sock(nsk);
+
 			return nsk;
+
 		}
 		inet_twsk_put(inet_twsk(nsk));
 		return NULL;
@@ -1842,15 +1848,6 @@ process:
 	} else {
 		meta_sk = sk;
 		bh_lock_sock_nested(sk);
-
-		/* Socket became mp-capable while waiting for the lock */
-		if (unlikely(tcp_sk(sk)->mpc)) {
-			meta_sk = mptcp_meta_sk(sk);
-
-			bh_unlock_sock(sk);
-			bh_lock_sock_nested(meta_sk);
-			skb->sk = sk;
-		}
 	}
 
 	ret = 0;

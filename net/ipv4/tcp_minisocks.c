@@ -794,7 +794,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 
 		/* MPTCP-supported */
 		if (!ret)
-			return child;
+			return tcp_sk(child)->mpcb->master_sk;
 	} else {
 		return mptcp_check_req_child(sk, child, req, prev);
 	}
@@ -837,8 +837,7 @@ int tcp_child_process(struct sock *parent, struct sock *child,
 		ret = tcp_rcv_state_process(child, skb, tcp_hdr(skb),
 					    skb->len);
 		/* Wakeup parent, send SIGIO */
-		if (state == TCP_SYN_RECV && child->sk_state != state &&
-		    !tcp_sk(parent)->mpc)
+		if (state == TCP_SYN_RECV && child->sk_state != state)
 			parent->sk_data_ready(parent, 0);
 	} else {
 		/* Alas, it is possible again, because we do lookup
@@ -850,11 +849,7 @@ int tcp_child_process(struct sock *parent, struct sock *child,
 		__sk_add_backlog(meta_sk, skb);
 	}
 
-	if (tcp_sk(child)->mpc && is_master_tp(tcp_sk(child)))
-		 /* Taken by mptcp_inherit_sk or tcp_vX_hnd_req */
-		bh_unlock_sock(meta_sk);
-
-	bh_unlock_sock(child);
+	bh_unlock_sock(meta_sk);
 	sock_put(child);
 	return ret;
 }
