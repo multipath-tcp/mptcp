@@ -727,7 +727,6 @@ extern void sk_stream_kill_queues(struct sock *sk);
 extern int sk_wait_data(struct sock *sk, long *timeo);
 
 /* START - needed for MPTCP */
-extern void sock_copy(struct sock *nsk, const struct sock *osk);
 extern void sock_def_error_report(struct sock *sk);
 extern struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
 				  int family);

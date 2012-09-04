@@ -3494,6 +3494,17 @@ static inline int tcp_may_raise_cwnd(const struct sock *sk, const int flag)
 		!((1 << inet_csk(sk)->icsk_ca_state) & (TCPF_CA_Recovery | TCPF_CA_CWR));
 }
 
+/* Check that window update is acceptable.
+ * The function assumes that snd_una<=ack<=snd_next.
+ */
+int tcp_may_update_window(const struct tcp_sock *tp, const u32 ack,
+			  const u32 ack_seq, const u32 nwin)
+{
+	return	after(ack, tp->snd_una) ||
+		after(ack_seq, tp->snd_wl1) ||
+		(ack_seq == tp->snd_wl1 && nwin > tp->snd_wnd);
+}
+
 /* Update our send window.
  *
  * Window update algorithm, described in RFC793/RFC1122 (used in linux-2.2
@@ -3724,10 +3735,6 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 	prior_in_flight = tcp_packets_in_flight(tp);
 
 	if (!(flag & FLAG_SLOWPATH) && after(ack, prior_snd_una)) {
-		if (tp->mpc) {
-			mptcp_debug("%s FAST_PATH is not enabled for MPTCP!!!\n", __func__);
-			BUG();
-		}
 		/* Window is constant, pure forward advance.
 		 * No more checks are required.
 		 * Note, we use the fact that SND.UNA>=SND.WL2.
@@ -3990,7 +3997,6 @@ static int tcp_fast_parse_options(const struct sk_buff *skb,
 				  struct tcphdr *th,
 				  struct tcp_sock *tp, const u8 **hvpp)
 {
-	struct mptcp_cb *mpcb;
 	/* In the spirit of fast parsing, compare doff directly to constant
 	 * values.  Because equality is used, short doff can be ignored here.
 	 */
@@ -4002,10 +4008,8 @@ static int tcp_fast_parse_options(const struct sk_buff *skb,
 		if (tcp_parse_aligned_timestamp(tp, th))
 			return 1;
 	}
-	mpcb = tp->mpcb;
-
 	__tcp_parse_options(skb, &tp->rx_opt, hvpp,
-			    mpcb ? &mpcb->rx_opt : NULL, 1, 1);
+			    tp->mpc ? &tp->mpcb->rx_opt : NULL, 1, 1);
 
 	return 1;
 }
@@ -4106,8 +4110,7 @@ static int tcp_disordered_ack(const struct sock *sk, const struct sk_buff *skb)
 		ack == tp->snd_una &&
 
 		/* 3. ... and does not update window. */
-		!tcp_may_update_window(tp, ack, seq,
-				ntohs(th->window) << tp->rx_opt.snd_wscale) &&
+		!tcp_may_update_window(tp, ack, seq, ntohs(th->window) << tp->rx_opt.snd_wscale) &&
 
 		/* 4. ... and sits in replay window. */
 		(s32)(tp->rx_opt.ts_recent - tp->rx_opt.rcv_tsval) <= (inet_csk(sk)->icsk_rto * 1024) / HZ);
@@ -4505,7 +4508,6 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 {
 	const struct tcphdr *th = tcp_hdr(skb);
 	struct tcp_sock *tp = tcp_sk(sk);
-
 	int eaten = -1;
 
 	/* If no data is present, but a data_fin is in the options, we still
@@ -4924,7 +4926,7 @@ static void tcp_collapse_ofo_queue(struct sock *sk)
  * Purge the out-of-order queue.
  * Return true if queue was pruned.
  */
-int tcp_prune_ofo_queue(struct sock *sk)
+static int tcp_prune_ofo_queue(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	int res = 0;
@@ -4960,7 +4962,7 @@ int tcp_prune_ofo_queue(struct sock *sk)
  * until the socket owning process reads some of the data
  * to stabilize the situation.
  */
-int tcp_prune_queue(struct sock *sk)
+static int tcp_prune_queue(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
@@ -5805,14 +5807,8 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		} else {
 			tp->request_mptcp = 0;
 
-			if (tp->inside_tk_table) {
-				rcu_read_lock();
-				spin_lock(&mptcp_tk_hashlock);
-				hlist_nulls_del_rcu(&tp->tk_table);
-				tp->inside_tk_table = 0;
-				spin_unlock(&mptcp_tk_hashlock);
-				rcu_read_unlock();
-			}
+			if (tp->inside_tk_table)
+				mptcp_hash_remove(tp);
 		}
 		mptcp_include_mpc(tp);
 #endif
@@ -6112,16 +6108,13 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 			tp = tcp_sk(sk);
 		}
 		if (queued >= 0)
-			goto out_syn_sent;
-		else
-			queued = 0;
+			return queued;
 
 		/* Do step6 onward by hand. */
 		tcp_urg(sk, skb, th);
 		__kfree_skb(skb);
 		tcp_data_snd_check(sk);
-out_syn_sent:
-		return queued;
+		return 0;
 	}
 
 	res = tcp_validate_incoming(sk, skb, th, 0);

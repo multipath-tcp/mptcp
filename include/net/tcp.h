@@ -367,23 +367,9 @@ extern void __pskb_trim_head(struct sk_buff *skb, int len);
 extern void tcp_queue_skb(struct sock *sk, struct sk_buff *skb);
 extern void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags);
 extern void tcp_reset(struct sock *sk);
-
-/* Check that window update is acceptable.
- * The function assumes that snd_una<=ack<=snd_next.
- */
-static inline int tcp_may_update_window(const struct tcp_sock *tp,
-					const u32 ack, const u32 ack_seq,
-					const u32 nwin)
-{
-	return	after(ack, tp->snd_una) ||
-		after(ack_seq, tp->snd_wl1) ||
-		(ack_seq == tp->snd_wl1 && nwin > tp->snd_wnd);
-}
-
-static inline int tcp_urg_mode(const struct tcp_sock *tp)
-{
-	return tp->snd_una != tp->snd_up;
-}
+extern int tcp_may_update_window(const struct tcp_sock *tp, const u32 ack,
+				 const u32 ack_seq, const u32 nwin);
+extern int tcp_urg_mode(const struct tcp_sock *tp);
 
 extern int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req,
 			     struct request_values *rvp);

@@ -97,6 +97,7 @@ void mptcp_send_updatenotif_wq(struct work_struct *work);
 struct mp_join *mptcp_find_join(struct sk_buff *skb);
 u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock *sk);
 void __mptcp_hash_insert(struct tcp_sock *meta_tp, u32 token);
+void mptcp_hash_remove_bh(struct tcp_sock *meta_tp);
 void mptcp_hash_remove(struct tcp_sock *meta_tp);
 struct sock *mptcp_hash_find(u32 token);
 int mptcp_lookup_join(struct sk_buff *skb);
@@ -118,6 +119,7 @@ static inline void mptcp_reqsk_new_mptcp(struct request_sock *req,
 					 const struct tcp_options_received *rx_opt,
 					 const struct multipath_options *mopt)
 {}
+static inline void mptcp_hash_remove(struct tcp_sock *meta_tp) {}
 #endif /* CONFIG_MPTCP */
 
 #endif /*_MPTCP_PM_H*/

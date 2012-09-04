@@ -126,7 +126,7 @@ struct mptcp_tcp_sock {
 	u32	last_rbuf_opti;	/* Timestamp of last rbuf optimization */
 
 	struct sk_buff  *shortcut_ofoqueue; /* Shortcut to the current modified
-					     * node in the ofo BST
+					     * skb in the ofo-queue.
 					     */
 
 	int	init_rcv_wnd;
@@ -293,10 +293,9 @@ static inline int mptcp_pi_to_flag(int pi)
 #define MPTCP_SUB_LEN_FCLOSE	12
 #define MPTCP_SUB_LEN_FCLOSE_ALIGN	12
 
-/* Only used for mptcp_options_write */
-#define OPTION_MPTCP	(1 << 5)
-
 #ifdef CONFIG_MPTCP
+
+#define OPTION_MPTCP		(1 << 5)
 
 /* MPTCP options */
 #define OPTION_TYPE_SYN		(1 << 0)
@@ -561,30 +560,6 @@ static inline int mptcp_sysctl_mss(void)
 #define mptcp_for_each_bit_unset(b, i)					\
 	mptcp_for_each_bit_set(~b, i)
 
-/**
- * Returns 1 if any subflow meets the condition @cond,
- * else return 0. Moreover, if 1 is returned, sk points to the
- * first subsocket that verified the condition.
- * - non MPTCP behaviour: If MPTCP is NOT supported for this connection,
- *   @mpcb must be set to NULL and sk to the struct sock. In that
- *   case the condition is tested against this unique socket.
- */
-#define mptcp_test_any_sk(mpcb, sk, cond)			\
-	({	int __ans = 0;					\
-		if (!mpcb) {					\
-			if (cond)				\
-				__ans = 1;			\
-		} else {					\
-			mptcp_for_each_sk(mpcb, sk) {	\
-				if (cond) {			\
-					__ans = 1;		\
-					break;			\
-				}				\
-			}					\
-		}						\
-		__ans;						\
-	})
-
 int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb);
 int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
 			     struct sock *sk);
@@ -621,7 +596,6 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			 struct tcp_out_options *opts,
 			 struct sk_buff *skb);
 void mptcp_close(struct sock *meta_sk, long timeout);
-void mptcp_set_bw_est(struct tcp_sock *tp, u32 now);
 int mptcp_doit(struct sock *sk);
 int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key, u32 window);
 int mptcp_check_req_master(struct sock *sk, struct sock *child,
@@ -1146,8 +1120,6 @@ static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
 
 #else /* CONFIG_MPTCP */
 
-#define is_mapping_applied(skb) (0))
-
 static inline int mptcp_sysctl_mss(void)
 {
 	return 0;
@@ -1164,17 +1136,6 @@ static inline int mptcp_sysctl_mss(void)
 #define mptcp_for_each_tp(mpcb, tp)
 #define mptcp_for_each_sk(mpcb, sk)
 #define mptcp_for_each_sk_safe(__mpcb, __sk, __temp)
-
-/* If MPTCP is not supported, we just need to evaluate the condition
- * against sk, which is the single socket in use.
- */
-#define mptcp_test_any_sk(mpcb, sk, cond)				\
-	({								\
-		int __ans = 0;						\
-		if (cond)						\
-			__ans = 1;					\
-		__ans;							\
-	})
 
 static inline int mptcp_skb_cloned(const struct sk_buff *skb,
 				   const struct tcp_sock *tp)
@@ -1219,7 +1180,6 @@ static inline int mptcp_req_sk_saw_mpc(const struct request_sock *req)
 {
 	return 0;
 }
-static inline void mptcp_reqsk_destructor(struct request_sock *req) {}
 static inline int mptcp_queue_skb(const struct sock *sk,
 				  const struct sk_buff *skb)
 {
@@ -1228,8 +1188,6 @@ static inline int mptcp_queue_skb(const struct sock *sk,
 static inline void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp) {}
 static inline void mptcp_cleanup_rbuf(const struct sock *meta_sk, int copied) {}
 static inline void mptcp_del_sock(const struct sock *sk) {}
-static inline void mptcp_reinject_data(const struct sock *orig_sk,
-				       int clone_it) {}
 static inline void mptcp_init_buffer_space(const struct sock *sk) {}
 static inline void mptcp_update_sndbuf(const struct mptcp_cb *mpcb) {}
 static inline void mptcp_set_state(const struct sock *sk, int state) {}
@@ -1249,7 +1207,6 @@ static inline int mptcp_write_wakeup(struct sock *meta_sk)
 }
 static inline void mptcp_sub_close(struct sock *sk, unsigned long delay) {}
 static inline void mptcp_set_rto(const struct sock *sk) {}
-static inline void mptcp_reset_xmit_timer(const struct sock *meta_sk) {}
 static inline void mptcp_send_fin(const struct sock *meta_sk) {}
 static inline void mptcp_parse_options(const uint8_t *ptr, const int opsize,
 				       const struct tcp_options_received *opt_rx,
@@ -1271,7 +1228,6 @@ static inline void mptcp_established_options(struct sock *sk,
 static inline void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 				       struct tcp_out_options *opts,
 				       struct sk_buff *skb) {}
-static inline void mptcp_set_bw_est(const struct tcp_sock *tp, u32 now) {}
 static inline int mptcp_doit(struct sock *sk)
 {
 	return 0;
@@ -1328,7 +1284,6 @@ static inline int mptcp_sysctl_syn_retries(void)
 {
 	return 0;
 }
-static inline void mptcp_include_mpc(const struct tcp_sock *tp) {}
 static inline void mptcp_send_reset(const struct sock *sk,
 				    const struct sk_buff *skb) {}
 static inline void mptcp_send_active_reset(struct sock *meta_sk,

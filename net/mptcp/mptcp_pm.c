@@ -188,7 +188,7 @@ struct sock *mptcp_hash_find(u32 token)
 	return NULL;
 }
 
-void mptcp_hash_remove(struct tcp_sock *meta_tp)
+void mptcp_hash_remove_bh(struct tcp_sock *meta_tp)
 {
 	/* remove from the token hashtable */
 	rcu_read_lock_bh();
@@ -197,6 +197,16 @@ void mptcp_hash_remove(struct tcp_sock *meta_tp)
 	meta_tp->inside_tk_table = 0;
 	spin_unlock(&mptcp_tk_hashlock);
 	rcu_read_unlock_bh();
+}
+
+void mptcp_hash_remove(struct tcp_sock *meta_tp)
+{
+	rcu_read_lock();
+	spin_lock(&mptcp_tk_hashlock);
+	hlist_nulls_del_rcu(&meta_tp->tk_table);
+	meta_tp->inside_tk_table = 0;
+	spin_unlock(&mptcp_tk_hashlock);
+	rcu_read_unlock();
 }
 
 u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock* sk)

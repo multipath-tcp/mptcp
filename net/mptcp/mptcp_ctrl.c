@@ -674,6 +674,7 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 		kmem_cache_free(mptcp_sock_cache, meta_tp->mptcp);
 		kmem_cache_free(mptcp_cb_cache, mpcb);
 		sk_free(master_sk);
+		meta_tp->mpc = 0;
 		return -ENOMEM;
 	}
 
@@ -1159,7 +1160,7 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 
 	if (meta_tp->inside_tk_table) {
 		/* Detach the mpcb from the token hashtable */
-		mptcp_hash_remove(meta_tp);
+		mptcp_hash_remove_bh(meta_tp);
 		reqsk_queue_destroy(&inet_csk(meta_sk)->icsk_accept_queue);
 	}
 

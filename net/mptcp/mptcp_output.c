@@ -651,7 +651,8 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 
 	sent_pkts = 0;
 
-	if (!push_one) {
+	/* Currently mtu-probing is not done in MPTCP */
+	if (!push_one && 0) {
 		/* Do MTU probing. */
 		result = tcp_mtu_probe(meta_sk);
 		if (!result) {
@@ -1440,22 +1441,27 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 		return;
 
 	/* First - select a socket */
-	if (!mptcp_test_any_sk(mpcb, sk_it, tcp_sk(sk_it)->send_mp_fclose)) {
-		sk = mptcp_select_ack_sock(meta_sk, 0);
 
-		tcp_sk(sk)->send_mp_fclose = 1;
+	/* Socket already selected? */
+	mptcp_for_each_sk(mpcb, sk_it) {
+		if (tcp_sk(sk_it)->send_mp_fclose) {
+			sk = sk_it;
+			goto found;
+		}
 	}
+
+	sk = mptcp_select_ack_sock(meta_sk, 0);
+	tcp_sk(sk)->send_mp_fclose = 1;
 
 	/** Reset all other subflows */
 
+found:
 	/* tcp_done must be handled with bh disabled */
 	if (!in_serving_softirq())
 		local_bh_disable();
 	mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp) {
-		if (tcp_sk(sk_it)->send_mp_fclose) {
-			sk = sk_it;
+		if (tcp_sk(sk_it)->send_mp_fclose)
 			continue;
-		}
 
 		sk_it->sk_err = ECONNRESET;
 		tcp_send_active_reset(sk_it, GFP_ATOMIC);

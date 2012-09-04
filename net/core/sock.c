@@ -990,7 +990,7 @@ void sock_lock_init(struct sock *sk)
  * even temporarly, because of RCU lookups. sk_node should also be left as is.
  * We must not copy fields between sk_dontcopy_begin and sk_dontcopy_end
  */
-void sock_copy(struct sock *nsk, const struct sock *osk)
+static void sock_copy(struct sock *nsk, const struct sock *osk)
 {
 #ifdef CONFIG_SECURITY_NETWORK
 	void *sptr = nsk->sk_security;

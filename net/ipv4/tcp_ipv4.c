@@ -2100,14 +2100,8 @@ void tcp_v4_destroy_sock(struct sock *sk)
 		mptcp_purge_ofo_queue(tp);
 	} else {
 		mptcp_del_sock(sk);
-		if (tp->inside_tk_table) {
-			rcu_read_lock();
-			spin_lock(&mptcp_tk_hashlock);
-			hlist_nulls_del_rcu(&tp->tk_table);
-			tp->inside_tk_table = 0;
-			spin_unlock(&mptcp_tk_hashlock);
-			rcu_read_unlock();
-		}
+		if (tp->inside_tk_table)
+			mptcp_hash_remove(tp);
 		__skb_queue_purge(&tp->out_of_order_queue);
 	}
 
