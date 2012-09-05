@@ -409,7 +409,7 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 		 */
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
 		skb_set_owner_r(skb, sk);
-		tp->copied_seq++;
+		tp->copied_seq = sub_end_seq;
 		tp->rcv_nxt = sub_end_seq;
 		return 0;
 	}
