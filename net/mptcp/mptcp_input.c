@@ -404,6 +404,9 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 	/* Already closed, or a pure subflow FIN ? */
 	if (meta_sk->sk_state == TCP_CLOSE ||
 	    (!skb->len && tcp_hdr(skb)->fin && !mptcp_is_data_fin(skb))) {
+		if (mptcp_is_data_fin(skb))
+			tcp_send_ack(sk);
+
 		/* We have to queue it, so that later handling of the socket
 		 * is done correctly (e.g., inet_csk_destroy_sock from tcp_fin)
 		 */
