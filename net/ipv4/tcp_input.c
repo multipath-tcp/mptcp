@@ -4198,8 +4198,8 @@ static void tcp_fin(struct sock *sk)
 	case TCP_ESTABLISHED:
 		/* Move to CLOSE_WAIT */
 		tcp_set_state(sk, TCP_CLOSE_WAIT);
-		if (tp->mpc && tp->mpcb->passive_close)
-			mptcp_sub_close(sk, 0);
+		if (tp->mpc)
+			mptcp_sub_close_passive(sk);
 		inet_csk(sk)->icsk_ack.pingpong = 1;
 		break;
 

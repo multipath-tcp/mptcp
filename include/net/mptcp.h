@@ -996,6 +996,19 @@ static inline void mptcp_include_mpc(struct tcp_sock *tp)
 	}
 }
 
+static inline void mptcp_sub_close_passive(struct sock *sk)
+{
+	struct sock *meta_sk = mptcp_meta_sk(sk);
+	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = tcp_sk(meta_sk);
+
+	/* Only close, if the app did a send-shutdown (passive close), and we
+	 * received the data-ack of the data-fin.
+	 */
+	if (tp->mpcb->passive_close &&
+	    meta_tp->snd_una == meta_tp->write_seq)
+		mptcp_sub_close(sk, 0);
+}
+
 static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
 					  struct sk_buff *skb)
 {
@@ -1286,7 +1299,7 @@ static inline int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	return 0;
 }
 static inline void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn) {}
-static inline void mptcp_fallback(const struct sock *master_sk) {}
+static inline void mptcp_sub_close_passive(struct sock *sk) {}
 static inline int mptcp_fallback_infinite(const struct tcp_sock *tp,
 					  const struct sk_buff *skb)
 {
