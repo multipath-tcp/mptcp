@@ -115,7 +115,7 @@ static inline int mptcp_find_token(u32 token)
 	return 0;
 }
 static inline void mptcp_reqsk_new_mptcp(struct request_sock *req,
-					 const struct tcp_options_received *,
+					 const struct tcp_options_received *rx_opt,
 					 const struct multipath_options *mopt)
 {
 }
