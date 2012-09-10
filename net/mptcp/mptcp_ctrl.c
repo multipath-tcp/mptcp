@@ -676,6 +676,7 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 
 	/* Redefine function-pointers to wake up application */
 	master_sk->sk_error_report = mptcp_sock_def_error_report;
+	master_sk->sk_data_ready = mptcp_data_ready;
 	meta_sk->sk_backlog_rcv = mptcp_backlog_rcv;
 	mpcb->syn_recv_sock = mptcp_syn_recv_sock;
 
@@ -1529,6 +1530,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	child_tp->mptcp->last_rbuf_opti = 0;
 
 	child->sk_error_report = mptcp_sock_def_error_report;
+	child->sk_data_ready = mptcp_data_ready;
 	child_tp->advmss = mptcp_sysctl_mss();
 
 	/* Subflows do not use the accept queue, as they

@@ -557,7 +557,7 @@ static inline int mptcp_sysctl_mss(void)
 #define mptcp_for_each_bit_unset(b, i)					\
 	mptcp_for_each_bit_set(~b, i)
 
-int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb);
+void mptcp_data_ready(struct sock *sk, int bytes);
 int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
 			     struct sock *sk);
 void mptcp_ofo_queue(struct sock *meta_sk);
@@ -607,7 +607,7 @@ void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn);
 void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 		     u32 *hash_out);
 void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk);
-int mptcp_fin(struct sock *meta_sk);
+void mptcp_fin(struct sock *meta_sk);
 void mptcp_retransmit_timer(struct sock *meta_sk);
 int mptcp_write_wakeup(struct sock *meta_sk);
 void mptcp_sock_def_error_report(struct sock *sk);
@@ -663,11 +663,6 @@ static inline int mptcp_skb_cloned(const struct sk_buff *skb,
 	       ((!mptcp_is_data_seq(skb) && skb_cloned(skb)) ||
 		(mptcp_is_data_seq(skb) && skb->cloned &&
 		 (atomic_read(&skb_shinfo(skb)->dataref) & SKB_DATAREF_MASK) > 2));
-}
-
-static inline u32 mptcp_skb_sub_end_seq(const struct sk_buff *skb)
-{
-	return ntohl(tcp_hdr(skb)->seq) + skb->len + tcp_hdr(skb)->fin;
 }
 
 /* Sets the data_seq and returns pointer to the in-skb field of the data_seq.
@@ -969,7 +964,7 @@ static inline void mptcp_sub_close_passive(struct sock *sk)
 }
 
 static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
-					  struct sk_buff *skb)
+					  const struct sk_buff *skb)
 {
 	/* If data has been acknowleged on the meta-level, fully_established
 	 * will have been set before and thus we will not fall back to infinite
@@ -1150,11 +1145,6 @@ static inline int is_master_tp(const struct tcp_sock *tp)
 	return 0;
 }
 static inline int mptcp_req_sk_saw_mpc(const struct request_sock *req)
-{
-	return 0;
-}
-static inline int mptcp_queue_skb(const struct sock *sk,
-				  const struct sk_buff *skb)
 {
 	return 0;
 }

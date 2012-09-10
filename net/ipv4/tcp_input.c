@@ -4183,7 +4183,7 @@ void tcp_reset(struct sock *sk)
  *
  *	If we are in FINWAIT-2, a received FIN moves us to TIME-WAIT.
  */
-static void tcp_fin(struct sock *sk)
+static void tcp_fin(struct sock *sk, const struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
@@ -4221,6 +4221,13 @@ static void tcp_fin(struct sock *sk)
 		tcp_set_state(sk, TCP_CLOSING);
 		break;
 	case TCP_FIN_WAIT2:
+		if (mptcp_is_data_seq(skb)) {
+			/* The socket will get closed by mptcp_data_ready.
+			 * We first have to process this data-seq.
+			 */
+			tp->close_it = 1;
+			break;
+		}
 		/* Received a FIN -- send ACK and enter TIME_WAIT. */
 		tcp_send_ack(sk);
 		tcp_time_wait(sk, TCP_TIME_WAIT, 0);
@@ -4431,7 +4438,6 @@ static void tcp_ofo_queue(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	__u32 dsack_high = tp->rcv_nxt;
 	struct sk_buff *skb;
-	int eaten = 0;
 
 	while ((skb = skb_peek(&tp->out_of_order_queue)) != NULL) {
 		if (after(TCP_SKB_CB(skb)->seq, tp->rcv_nxt))
@@ -4459,28 +4465,10 @@ static void tcp_ofo_queue(struct sock *sk)
 			   TCP_SKB_CB(skb)->end_seq);
 
 		__skb_unlink(skb, &tp->out_of_order_queue);
-
-		if (tp->mpc) {
-			eaten = mptcp_queue_skb(sk, skb);
-			if (eaten == -1)
-				return;
-			if (eaten == -2) {
-				struct sock *meta_sk = mptcp_meta_sk(sk);
-				if (!sock_flag(meta_sk, SOCK_DEAD))
-					meta_sk->sk_data_ready(meta_sk, 0);
-			}
-		} else {
-			__skb_queue_tail(&sk->sk_receive_queue, skb);
-		}
-
-		if (!tp->mpc)
-			tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
-
+		__skb_queue_tail(&sk->sk_receive_queue, skb);
+		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 		if (tcp_hdr(skb)->fin)
-			tcp_fin(sk);
-
-		if (eaten > 0)
-			__kfree_skb(skb);
+			tcp_fin(sk, skb);
 	}
 }
 
@@ -4564,23 +4552,14 @@ queue_and_out:
 			    tcp_try_rmem_schedule(sk, skb->truesize))
 				goto drop;
 
-			if (tp->mpc) {
-				eaten = mptcp_queue_skb(sk, skb);
-				/* Subflow is being destroyed */
-				if (eaten == -1)
-					return;
-			} else {
-				skb_set_owner_r(skb, sk);
-				__skb_queue_tail(&sk->sk_receive_queue, skb);
-			}
+			skb_set_owner_r(skb, sk);
+			__skb_queue_tail(&sk->sk_receive_queue, skb);
 		}
-		if (!tp->mpc)
-			tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
-
-		if (skb->len)
+		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
+		if (skb->len || mptcp_is_data_fin(skb))
 			tcp_event_data_recv(sk, skb);
 		if (th->fin)
-			tcp_fin(sk);
+			tcp_fin(sk, skb);
 
 		if (!skb_queue_empty(&tp->out_of_order_queue)) {
 			tcp_ofo_queue(sk);
@@ -4599,15 +4578,12 @@ queue_and_out:
 
 		if (eaten > 0)
 			__kfree_skb(skb);
-		else if (!sock_flag(sk, SOCK_DEAD) && !tp->mpc)
+		else if (!sock_flag(sk, SOCK_DEAD) || tp->mpc)
+			/* MPTCP: we always have to call data_ready, because
+			 * we may be about to receive a data-fin, which still
+			 * must get queued.
+			 */
 			sk->sk_data_ready(sk, 0);
-
-		if (tp->mpc && eaten == -2) {
-			struct sock *meta_sk = mptcp_meta_sk(sk);
-			if (!sock_flag(meta_sk, SOCK_DEAD))
-				meta_sk->sk_data_ready(meta_sk, 0);
-		}
-
 		return;
 	}
 

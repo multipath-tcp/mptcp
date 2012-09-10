@@ -171,15 +171,14 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 
 		/* tp->map_data_len may be 0 in case of a data-fin */
 		if ((tp->mptcp->map_data_len &&
-		     !after(tp->mptcp->map_subseq + tp->mptcp->map_data_len, ntohl(tcp_hdr(tmp)->seq))) ||
-		    (!tp->mptcp->map_data_len && before(tp->mptcp->map_subseq, ntohl(tcp_hdr(tmp)->seq))))
+		     !after(tp->mptcp->map_subseq + tp->mptcp->map_data_len, TCP_SKB_CB(tmp)->seq)) ||
+		    (!tp->mptcp->map_data_len && before(tp->mptcp->map_subseq, TCP_SKB_CB(tmp)->seq)))
 			break;
 
-		if (before(tp->mptcp->map_subseq + tp->mptcp->map_data_len, mptcp_skb_sub_end_seq(tmp)))
+		if (before(tp->mptcp->map_subseq + tp->mptcp->map_data_len, TCP_SKB_CB(tmp)->end_seq))
 			/* Mapping ends in the middle of the packet -
 			 * csum only these bytes */
-			csum_len = tp->mptcp->map_subseq + tp->mptcp->map_data_len -
-					ntohl(tcp_hdr(tmp)->seq);
+			csum_len = tp->mptcp->map_subseq + tp->mptcp->map_data_len - TCP_SKB_CB(tmp)->seq;
 		else
 			csum_len = tmp->len;
 
@@ -236,7 +235,7 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 			ans = -1;
 		} else {
 			tp->mpcb->send_mp_fail = 1;
-			tp->copied_seq = mptcp_skb_sub_end_seq(last);
+			tp->copied_seq = TCP_SKB_CB(last)->end_seq;
 			/* Need to purge the rcv-queue as it's no more valid */
 			__skb_queue_purge(&sk->sk_receive_queue);
 
@@ -262,7 +261,7 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb, struct sk_buff *next,
 	 * correctly handle overlapping mappings coming from different
 	 * subflows. Otherwise it would be a complete mess.
 	 */
-	tcb->seq = ((u32)tp->mptcp->map_data_seq) + ntohl(tcp_hdr(skb)->seq) - tp->mptcp->map_subseq;
+	tcb->seq = ((u32)tp->mptcp->map_data_seq) + tcb->seq - tp->mptcp->map_subseq;
 	tcb->mp_data_len = skb->len;
 	tcb->sub_seq = tcb->seq;
 	tcb->end_seq = tcb->seq + tcb->mp_data_len;
@@ -271,7 +270,7 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb, struct sk_buff *next,
 	 * mapping), and data_fin is enqueued, the end_data_seq is +1.
 	 */
 	if (skb_queue_is_last(&sk->sk_receive_queue, skb) ||
-	    after(mptcp_skb_sub_end_seq(next), tp->mptcp->map_subseq + tp->mptcp->map_data_len))
+	    after(TCP_SKB_CB(next)->end_seq, tp->mptcp->map_subseq + tp->mptcp->map_data_len))
 		tcb->end_seq += tp->mptcp->map_data_fin;
 }
 
@@ -316,15 +315,15 @@ static inline void mptcp_reset_mapping(struct tcp_sock *tp)
  */
 static void mptcp_skb_trim_head(struct sk_buff *skb, struct sock *sk, u32 seq)
 {
-	int len = seq - ntohl(tcp_hdr(skb)->seq);
-	u32 new_seq = ntohl(tcp_hdr(skb)->seq) + len;
+	int len = seq - TCP_SKB_CB(skb)->seq;
+	u32 new_seq = TCP_SKB_CB(skb)->seq + len;
 
 	if (len < skb_headlen(skb))
 		__skb_pull(skb, len);
 	else
 		__pskb_trim_head(skb, len - skb_headlen(skb));
 
-	tcp_hdr(skb)->seq = htonl(new_seq);
+	TCP_SKB_CB(skb)->seq = htonl(new_seq);
 
 	skb->truesize -= len;
 	atomic_sub(len, &sk->sk_rmem_alloc);
@@ -344,7 +343,7 @@ static int mptcp_skb_split_tail(struct sk_buff *skb, struct sock *sk, u32 seq)
 	int nlen, len;
 	u8 flags;
 
-	len = seq - ntohl(tcp_hdr(skb)->seq);
+	len = seq - TCP_SKB_CB(skb)->seq;
 	nsize = skb_headlen(skb) - len;
 	if (nsize < 0)
 		nsize = 0;
@@ -363,7 +362,7 @@ static int mptcp_skb_split_tail(struct sk_buff *skb, struct sock *sk, u32 seq)
 	skb->truesize -= nlen;
 
 	/* Correct the sequence numbers. */
-	tcp_hdr(buff)->seq = htonl(ntohl(tcp_hdr(skb)->seq) + len);
+	TCP_SKB_CB(buff)->seq = TCP_SKB_CB(skb)->seq + len;
 
 	/* PSH and FIN should only be set in the second packet. */
 	flags = TCP_SKB_CB(skb)->tcp_flags;
@@ -375,52 +374,27 @@ static int mptcp_skb_split_tail(struct sk_buff *skb, struct sock *sk, u32 seq)
 	/* buff has no TCP/IP-header - thus drop the reference */
 	skb_header_release(buff);
 
-	/* It is guaranteed that skb is the last packet in the rcv-queue.
-	 * Thus, it is safe to enqueue buff just at the end.
-	 */
-	__skb_queue_tail(&sk->sk_receive_queue, buff);
+	__skb_queue_after(&sk->sk_receive_queue, skb, buff);
 
 	return 0;
 }
 
-/**
- * @return:
- *  i) -2: the caller should wakeup the application
- *  ii) 1: the segment can be destroyed by the caller
- *  iii) -1: A reset has been sent on the subflow
- *  iiii) 0: The segment has been enqueued.
+/* @return: 0  everything is fine. Just continue processing
+ * 	    1  subflow is broken stop everything
  */
-int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
+static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 {
-	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
-	struct sock *meta_sk = tcp_sk(sk)->meta_sk;
-	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = tcp_sk(meta_sk);
-	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
-	struct sk_buff *tmp, *tmp1;
-	u32 sub_end_seq = tcb->end_seq;
-	u32 sub_seq = tcb->seq;
-	int ans = 0;
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct mptcp_cb *mpcb = tp->mpcb;
 
-	/* Already closed, or a pure subflow FIN ? */
-	if (meta_sk->sk_state == TCP_CLOSE ||
-	    (!skb->len && tcp_hdr(skb)->fin && !mptcp_is_data_fin(skb))) {
-		if (mptcp_is_data_fin(skb))
-			tcp_send_ack(sk);
-
-		/* We have to queue it, so that later handling of the socket
-		 * is done correctly (e.g., inet_csk_destroy_sock from tcp_fin)
+	if (!skb->len && tcp_hdr(skb)->fin && !mptcp_is_data_fin(skb)) {
+		/* Remove a pure subflow-fin from the queue and increase
+		 * copied_seq.
 		 */
-		__skb_queue_tail(&sk->sk_receive_queue, skb);
-		skb_set_owner_r(skb, sk);
-		tp->copied_seq = sub_end_seq;
-		tp->rcv_nxt = sub_end_seq;
-		return 0;
-	}
-
-	/* Record it, because we want to send our data_fin on the same path */
-	if (mptcp_is_data_fin(skb)) {
-		mpcb->dfin_path_index = tp->mptcp->path_index;
-		mpcb->dfin_combined = tcp_hdr(skb)->fin;
+		tp->copied_seq = TCP_SKB_CB(skb)->end_seq;
+		__skb_unlink(skb, &sk->sk_receive_queue);
+		__kfree_skb(skb);
+		return 1;
 	}
 
 	/* If we are not yet fully established and do not know the mapping for
@@ -432,8 +406,9 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 
 		if (ret & MPTCP_FLAG_SEND_RESET) {
 			mptcp_send_reset(sk, skb);
+			__skb_unlink(skb, &sk->sk_receive_queue);
 			__kfree_skb(skb);
-			return -1;
+			return 1;
 		} else {
 			mpcb->infinite_mapping = 1;
 			tp->mptcp->fully_established = 1;
@@ -449,229 +424,221 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 			mptcp_become_fully_estab(sk);
 	}
 
+	return 0;
+}
+
+/* @return: 0  everything is fine. Just continue processing
+ * 	    1  subflow is broken stop everything
+ * 	    -1 this packet was broken - continue with the next one.
+ */
+static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
+{
+	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = mptcp_meta_tp(tp);
+	struct mptcp_cb *mpcb = tp->mpcb;
+	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
+	u32 *ptr;
+	u32 data_seq, sub_seq, data_len;
+
 	/* If we are in infinite-mapping-mode, the subflow is guaranteed to be
 	 * in-order at the data-level. Thus data-seq-numbers can be inferred
 	 * from what is expected at the data-level.
-	 *
-	 * draft v04, Section 3.5
 	 */
 	if (mpcb->infinite_mapping) {
-		tcb->seq = meta_tp->rcv_nxt;
 		tp->mptcp->map_data_seq = mptcp_get_rcv_nxt_64(meta_tp);
-		tp->mptcp->map_subseq = tcb->sub_seq = tcb->seq;
-		tp->mptcp->map_data_len = tcb->mp_data_len = skb->len;
+		tp->mptcp->map_subseq = tcb->seq;
+		tp->mptcp->map_data_len = skb->len;
 		tp->mptcp->mapping_present = 1;
-		tcb->end_seq = tcb->seq + tcb->mp_data_len;
-	} else if (mptcp_is_data_seq(skb)) {
-		__u32 *ptr = mptcp_skb_set_data_seq(skb, &tcb->seq);
-		ptr++;
-		tcb->sub_seq = get_unaligned_be32(ptr) + tp->rx_opt.rcv_isn;
-		ptr++;
-		tcb->mp_data_len = get_unaligned_be16(ptr);
-		tcb->end_seq = tcb->seq + tcb->mp_data_len;
-
-		/* If it's an empty skb with DATA_FIN, sub_seq must get fixed.
-		 * The draft sets it to 0, but we really would like to have the
-		 * real value, to have an easy handling afterwards here in this
-		 * function.
-		 */
-		if (mptcp_is_data_fin(skb) && skb->len == 0)
-			tcb->sub_seq = sub_seq;
+		return 0;
 	}
 
-	/* If there is a DSS-mapping, check if it is ok with the current
-	 * expected mapping. If anything is wrong, reset the subflow
+	/* No mapping here? Exit - it is either already set or still on its way */
+	if (!mptcp_is_data_seq(skb))
+		return 0;
+
+	ptr = mptcp_skb_set_data_seq(skb, &data_seq);
+	ptr++;
+	sub_seq = get_unaligned_be32(ptr) + tp->rx_opt.rcv_isn;
+	ptr++;
+	data_len = get_unaligned_be16(ptr);
+
+	/* If it's an empty skb with DATA_FIN, sub_seq must get fixed.
+	 * The draft sets it to 0, but we really would like to have the
+	 * real value, to have an easy handling afterwards here in this
+	 * function.
 	 */
-	if (mptcp_is_data_seq(skb) && !mpcb->infinite_mapping) {
-		if (!(tcb->mp_data_len)) {
-			mpcb->infinite_mapping = 1;
-			tp->mptcp->fully_established = 1;
-			/* We need to repeat mp_fail's until the sender felt
-			 * back to infinite-mapping - here we stop repeating it.
-			 */
-			mpcb->send_mp_fail = 0;
+	if (mptcp_is_data_fin(skb) && skb->len == 0)
+		sub_seq = TCP_SKB_CB(skb)->seq;
 
-			/* TODO kill all other subflows than this one */
-			/* data_seq and so on are set correctly */
+	/* If there is already a mapping - we check if it maps with the current
+	 * one. If not - we reset.
+	 */
+	if (tp->mptcp->mapping_present &&
+	    (data_seq != (u32)tp->mptcp->map_data_seq ||
+	     sub_seq != tp->mptcp->map_subseq ||
+	     data_len != tp->mptcp->map_data_len)) {
+		/* Mapping in packet is different from what we want */
+		mptcp_debug("%s Mappings do not match!\n", __func__);
+		mptcp_send_reset(sk, skb);
+		__skb_unlink(skb, &sk->sk_receive_queue);
+		__kfree_skb(skb);
+		return 1;
+	}
 
-			/* At this point, the meta-ofo-queue has to be emptied,
-			 * as the following data is guaranteed to be in-order at
-			 * the data and subflow-level
-			 */
-			mptcp_purge_ofo_queue(meta_tp);
-		}
+	/* If the previous check was good, the current mapping is valid and we exit. */
+	if (tp->mptcp->mapping_present)
+		return 0;
 
-		/* We are sending mp-fail's and thus are in fallback mode.
-		 * Ignore packets which do not announce the fallback and still
-		 * want to provide a mapping.
+	/* Mapping not yet set on this subflow - we set it here! */
+
+	if (!data_len) {
+		mpcb->infinite_mapping = 1;
+		tp->mptcp->fully_established = 1;
+		/* We need to repeat mp_fail's until the sender felt
+		 * back to infinite-mapping - here we stop repeating it.
 		 */
-		if (mpcb->send_mp_fail) {
-			tp->rcv_nxt = sub_end_seq;
-			return 1;
+		mpcb->send_mp_fail = 0;
+
+		/* TODO kill all other subflows than this one */
+		/* data_seq and so on are set correctly */
+
+		/* At this point, the meta-ofo-queue has to be emptied,
+		 * as the following data is guaranteed to be in-order at
+		 * the data and subflow-level
+		 */
+		mptcp_purge_ofo_queue(meta_tp);
+	}
+
+	/* We are sending mp-fail's and thus are in fallback mode.
+	 * Ignore packets which do not announce the fallback and still
+	 * want to provide a mapping.
+	 */
+	if (mpcb->send_mp_fail) {
+		tp->copied_seq = TCP_SKB_CB(skb)->end_seq;
+		__skb_unlink(skb, &sk->sk_receive_queue);
+		__kfree_skb(skb);
+		return -1;
+	}
+
+	/* FIN increased the mapping-length by 1 */
+	if (mptcp_is_data_fin(skb))
+		data_len--;
+
+	/* Subflow-sequences of packet must be
+	 * (at least partially) be part of the DSS-mapping's
+	 * subflow-sequence-space.
+	 *
+	 * Basically the mapping is not valid, if either of the
+	 * following conditions is true:
+	 *
+	 * 1. It's not a data_fin and
+	 *    MPTCP-sub_seq >= TCP-end_seq
+	 *
+	 * 2. It's a data_fin and TCP-end_seq > TCP-seq and
+	 *    MPTCP-sub_seq >= TCP-end_seq
+	 *
+	 * The previous two can be merged into:
+	 *    TCP-end_seq > TCP-seq and MPTCP-sub_seq >= TCP-end_seq
+	 *    Because if it's not a data-fin, TCP-end_seq > TCP-seq
+	 *
+	 * 3. It's a data_fin and skb->len == 0 and
+	 *    MPTCP-sub_seq > TCP-end_seq
+	 *
+	 * 4. MPTCP-sub_seq + MPTCP-data_len < TCP-seq
+	 *
+	 * TODO - in case of data-fin, mptcp-data_len is + 1
+	 */
+	if ((!before(sub_seq, tcb->end_seq) && after(tcb->end_seq, sub_seq)) ||
+	    (mptcp_is_data_fin(skb) && skb->len == 0 && after(sub_seq, tcb->end_seq)) ||
+	    before(sub_seq + data_len, tcb->seq)) {
+		/* Subflow-sequences of packet is different from what is in the
+		 * packet's dss-mapping. The peer is misbehaving - reset
+		 */
+		mptcp_debug("%s Packet's mapping does not map to the DSS\n", __func__);
+		mptcp_send_reset(sk, skb);
+		return 1;
+	}
+
+	/* Does the DSS had 64-bit seqnum's ? */
+	if (!(tcb->mptcp_flags & MPTCPHDR_SEQ64_SET)) {
+		/* Wrapped around? */
+		if (unlikely(after(data_seq, meta_tp->rcv_nxt) && data_seq < meta_tp->rcv_nxt)) {
+			tp->mptcp->map_data_seq = mptcp_get_data_seq_64(mpcb, !mpcb->rcv_hiseq_index, data_seq);
+		} else {
+			/* Else, access the default high-order bits */
+			tp->mptcp->map_data_seq = mptcp_get_data_seq_64(mpcb, mpcb->rcv_hiseq_index, data_seq);
 		}
+	} else {
+		tp->mptcp->map_data_seq = mptcp_get_data_seq_64(mpcb, (tcb->mptcp_flags & MPTCPHDR_SEQ64_INDEX) ? 1 : 0, data_seq);
 
-		/* FIN increased the mapping-length by 1 */
-		if (mptcp_is_data_fin(skb))
-			tcb->mp_data_len--;
+		if (unlikely(tcb->mptcp_flags & MPTCPHDR_SEQ64_OFO)) {
+			/* We make sure that the data_seq is invalid.
+			 * It will be dropped later.
+			 */
+			tp->mptcp->map_data_seq += 0xFFFFFFFF;
+			tp->mptcp->map_data_seq += 0xFFFFFFFF;
+		}
+	}
 
-		if (tp->mptcp->mapping_present &&
-		    (tcb->seq != (u32)tp->mptcp->map_data_seq ||
-		     tcb->sub_seq != tp->mptcp->map_subseq ||
-		     tcb->mp_data_len != tp->mptcp->map_data_len)) {
-			/* Mapping in packet is different from what we want */
-			mptcp_debug("%s destroying subflow with pi %d from mpcb "
-				    "with token %#x\n", __func__,
-				    tp->mptcp->path_index, mpcb->mptcp_loc_token);
-			mptcp_debug("%s missing rest of the already present "
-				    "mapping: data_seq %llu, subseq %u, data_len "
-				    "%u - new mapping: data_seq %u, subseq %u, "
-				    "data_len %u\n", __func__, tp->mptcp->map_data_seq,
-				    tp->mptcp->map_subseq, tp->mptcp->map_data_len,
-				    tcb->seq, tcb->ack_seq, tcb->mp_data_len);
-			mptcp_send_reset(sk, skb);
+	tp->mptcp->map_data_len = data_len;
+	tp->mptcp->map_subseq = sub_seq;
+	tp->mptcp->map_data_fin = mptcp_is_data_fin(skb) ? 1 : 0;
+	tp->mptcp->mapping_present = 1;
+
+	return 0;
+}
+
+/* @return: 0  everything is fine. Just continue processing
+ * 	    1  subflow is broken stop everything
+ * 	    -1 this packet was broken - continue with the next one.
+ */
+static int mptcp_validate_mapping(struct sock *sk, struct sk_buff *skb)
+{
+	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = mptcp_meta_tp(tp);
+	struct sock *meta_sk = mptcp_meta_sk(sk);
+	struct mptcp_cb *mpcb = tp->mpcb;
+	struct sk_buff *tmp, *tmp1;
+	u64 rcv_nxt64;
+	u32 sub_end_seq1;
+
+	if (!tp->mptcp->mapping_present)
+		return 0;
+
+	/* either, the new skb gave us the mapping and the first segment
+	 * in the sub-rcv-queue has to be trimmed ...
+	 */
+	tmp = skb_peek(&sk->sk_receive_queue);
+	if (before(TCP_SKB_CB(tmp)->seq, tp->mptcp->map_subseq) &&
+	    after(TCP_SKB_CB(tmp)->end_seq, tp->mptcp->map_subseq))
+		mptcp_skb_trim_head(tmp, sk, tp->mptcp->map_subseq);
+
+	/* ... or the new skb (tail) has to be split at the end. */
+	sub_end_seq1 = TCP_SKB_CB(skb)->end_seq - tcp_hdr(skb)->fin;
+	if (after(sub_end_seq1, tp->mptcp->map_subseq + tp->mptcp->map_data_len)) {
+		u32 seq = tp->mptcp->map_subseq + tp->mptcp->map_data_len;
+		if (mptcp_skb_split_tail(skb, sk, seq)) { /* Allocation failed */
+			/* TODO : maybe handle this here better.
+			 * We now just force meta-retransmission.
+			 */
+			tp->copied_seq = TCP_SKB_CB(skb)->end_seq;
+			__skb_unlink(skb, &sk->sk_receive_queue);
 			__kfree_skb(skb);
 			return -1;
 		}
-
-		if (!tp->mptcp->mapping_present) {
-			/* Subflow-sequences of packet must be
-			 * (at least partially) be part of the DSS-mapping's
-			 * subflow-sequence-space.
-			 *
-			 * Basically the mapping is not valid, if either of the
-			 * following conditions is true:
-			 *
-			 * 1. It's not a data_fin and
-			 *    MPTCP-sub_seq >= TCP-end_seq
-			 *
-			 * 2. It's a data_fin and TCP-end_seq > TCP-seq and
-			 *    MPTCP-sub_seq >= TCP-end_seq
-			 *
-			 * The previous two can be merged into:
-			 *    TCP-end_seq > TCP-seq and MPTCP-sub_seq >= TCP-end_seq
-			 *    Because if it's not a data-fin, TCP-end_seq > TCP-seq
-			 *
-			 * 3. It's a data_fin and skb->len == 0 and
-			 *    MPTCP-sub_seq > TCP-end_seq
-			 *
-			 * 4. MPTCP-sub_seq + MPTCP-data_len < TCP-seq
-			 *
-			 * TODO - in case of data-fin, mptcp-data_len is + 1
-			 */
-			if ((!before(tcb->sub_seq, sub_end_seq) && after(sub_end_seq, sub_seq)) ||
-			    (mptcp_is_data_fin(skb) && skb->len == 0 && after(tcb->sub_seq, sub_end_seq)) ||
-			    before(tcb->sub_seq + tcb->mp_data_len, sub_seq)) {
-				/* Subflow-sequences of packet is different from
-				 * what is in the packet's dss-mapping.
-				 * The peer is misbehaving - reset
-				 */
-				mptcp_debug("%s destroying subflow with pi %d "
-					    "from mpcb with token %#x\n",
-					    __func__, tp->mptcp->path_index,
-					    mpcb->mptcp_loc_token);
-				mptcp_debug("%s seq %u end_seq %u, sub_seq %u "
-					    "data_len %u dseq %u\n", __func__,
-					    sub_seq, sub_end_seq,
-					    tcb->sub_seq, tcb->mp_data_len,
-					    tcb->seq);
-				mptcp_send_reset(sk, skb);
-				return 1;
-			}
-
-			/* Does the DSS had 64-bit seqnum's ? */
-			if (!(tcb->mptcp_flags & MPTCPHDR_SEQ64_SET)) {
-				/* Wrapped around? */
-				if (unlikely(after(tcb->seq, meta_tp->rcv_nxt) &&
-					     tcb->seq < meta_tp->rcv_nxt)) {
-					tp->mptcp->map_data_seq = mptcp_get_data_seq_64(mpcb, !mpcb->rcv_hiseq_index, tcb->seq);
-				} else {
-					/* Else, access the default high-order bits */
-					tp->mptcp->map_data_seq = mptcp_get_data_seq_64(mpcb, mpcb->rcv_hiseq_index, tcb->seq);
-				}
-			} else {
-				tp->mptcp->map_data_seq = mptcp_get_data_seq_64(mpcb, (tcb->mptcp_flags & MPTCPHDR_SEQ64_INDEX) ? 1 : 0, tcb->seq);
-
-				if (unlikely(tcb->mptcp_flags & MPTCPHDR_SEQ64_OFO)) {
-					/* We make sure that the data_seq is invalid.
-					 * It will be dropped later.
-					 */
-					tp->mptcp->map_data_seq += 0xFFFFFFFF;
-					tp->mptcp->map_data_seq += 0xFFFFFFFF;
-				}
-			}
-
-			tp->mptcp->map_data_len = tcb->mp_data_len;
-			tp->mptcp->map_subseq = tcb->sub_seq;
-			tp->mptcp->map_data_fin = mptcp_is_data_fin(skb) ? 1 : 0;
-			tp->mptcp->mapping_present = 1;
-		}
 	}
-
-	/* The skb goes into the sub-rcv queue in all cases.
-	 * This allows more generic skb management in the next lines although
-	 * it may be removed in few lines (direct copy to the app).
-	 */
-	__skb_queue_tail(&sk->sk_receive_queue, skb);
-	skb_set_owner_r(skb, sk);
-
-	/* If the mapping is known, we have to split coalesced segments */
-	if (tp->mptcp->mapping_present) {
-		int sub_end_seq1;
-		/* either, the new skb gave us the mapping and the first segment
-		 * in the sub-rcv-queue has to be split, or the new skb (tail)
-		 * has to be split at the end.
-		 */
-		tmp = skb_peek(&sk->sk_receive_queue);
-		if (before(ntohl(tcp_hdr(tmp)->seq), tp->mptcp->map_subseq) &&
-		    after(mptcp_skb_sub_end_seq(tmp), tp->mptcp->map_subseq)) {
-			mptcp_skb_trim_head(tmp, sk, tp->mptcp->map_subseq);
-		}
-
-		sub_end_seq1 = sub_end_seq - tcp_hdr(skb)->fin;
-
-		if (after(sub_end_seq1, tp->mptcp->map_subseq + tp->mptcp->map_data_len)) {
-			int ret;
-			ret = mptcp_skb_split_tail(skb, sk,
-					tp->mptcp->map_subseq + tp->mptcp->map_data_len);
-			if (ret) { /* Allocation failed */
-
-				/* TODO : maybe handle this here better.
-				 * We now just force retransmission, as rcv_nxt
-				 * is only advanced after this here.
-				 *
-				 * How could we do it more cleanly?
-				 */
-				__skb_unlink(skb, &sk->sk_receive_queue);
-				__kfree_skb(skb);
-				return -1;
-			}
-		}
-	}
-
-	tp->rcv_nxt = sub_end_seq;
 
 	/* Now, remove old sk_buff's from the receive-queue.
 	 * This may happen if the mapping has been lost for these segments and
 	 * the next mapping has already been received.
 	 */
 	if (tp->mptcp->mapping_present &&
-	    before(ntohl(tcp_hdr(skb_peek(&sk->sk_receive_queue))->seq), tp->mptcp->map_subseq)) {
-		mptcp_debug("%s remove packets not covered by mapping: "
-			    "data_len %u, tp->copied_seq %u, "
-			    "tp->map_subseq %u\n", __func__,
-			    tp->mptcp->map_data_len, tp->copied_seq,
-			    tp->mptcp->map_subseq);
+	    before(TCP_SKB_CB(skb_peek(&sk->sk_receive_queue))->seq, tp->mptcp->map_subseq)) {
+		mptcp_debug("%s remove packets not covered by mapping\n", __func__);
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
-			if (!before(ntohl(tcp_hdr(tmp1)->seq), tp->mptcp->map_subseq)) {
-				mptcp_debug("%s Not removing packet seq %u\n",
-					    __func__, ntohl(tcp_hdr(tmp1)->seq));
+			if (!before(TCP_SKB_CB(tmp1)->seq, tp->mptcp->map_subseq))
 				break;
-			}
-			mptcp_debug("%s remove packet seq %u\n",
-				    __func__, ntohl(tcp_hdr(tmp1)->seq));
-			__skb_unlink(tmp1, &sk->sk_receive_queue);
 
-			tp->copied_seq = mptcp_skb_sub_end_seq(tmp1);
+			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
+			__skb_unlink(tmp1, &sk->sk_receive_queue);
 
 			/* Impossible that we could free skb here, because his
 			 * mapping is known to be valid from previous checks
@@ -680,171 +647,200 @@ int mptcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 		}
 	}
 
-	/* Have we received the full mapping ? Then push further */
-	if (tp->mptcp->mapping_present &&
-	    !before(tp->rcv_nxt, tp->mptcp->map_subseq + tp->mptcp->map_data_len)) {
-		u64 rcv_nxt64 = mptcp_get_rcv_nxt_64(meta_tp);
+	rcv_nxt64 = mptcp_get_rcv_nxt_64(meta_tp);
 
-		/* Is this an overlapping mapping? rcv_nxt >= end_data_seq
-		 * OR
-		 * This mapping is out of window */
-		if (!before64(rcv_nxt64,
-			      tp->mptcp->map_data_seq + tp->mptcp->map_data_len + tp->mptcp->map_data_fin) ||
-		    !mptcp_sequence(meta_tp, tp->mptcp->map_data_seq,
-				    tp->mptcp->map_data_seq + tp->mptcp->map_data_len + tp->mptcp->map_data_fin)) {
-			skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
-				/* seq >= end_sub_mapping if data_len OR
-				 * seq > end_sub_mapping if not data_len
-				 * (data_fin without data)
-				 */
-				if ((tp->mptcp->map_data_len && !before(ntohl(tcp_hdr(tmp1)->seq),
-						tp->mptcp->map_subseq + tp->mptcp->map_data_len)) ||
-				    (!tp->mptcp->map_data_len && after(ntohl(tcp_hdr(tmp1)->seq),
-						tp->mptcp->map_subseq + tp->mptcp->map_data_len)))
-					break;
-				__skb_unlink(tmp1, &sk->sk_receive_queue);
+	/* Is this an overlapping mapping? rcv_nxt >= end_data_seq
+	 * OR
+	 * This mapping is out of window */
+	if (!before64(rcv_nxt64, tp->mptcp->map_data_seq + tp->mptcp->map_data_len + tp->mptcp->map_data_fin) ||
+	    !mptcp_sequence(meta_tp, tp->mptcp->map_data_seq,
+			    tp->mptcp->map_data_seq + tp->mptcp->map_data_len + tp->mptcp->map_data_fin)) {
+		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
+			/* seq >= end_sub_mapping if data_len OR
+			 * seq > end_sub_mapping if not data_len
+			 * (data_fin without data)
+			 */
+			if ((tp->mptcp->map_data_len && !before(TCP_SKB_CB(tmp1)->seq,
+					tp->mptcp->map_subseq + tp->mptcp->map_data_len)) ||
+			    (!tp->mptcp->map_data_len && after(TCP_SKB_CB(tmp1)->seq,
+					tp->mptcp->map_subseq + tp->mptcp->map_data_len)))
+				break;
+			__skb_unlink(tmp1, &sk->sk_receive_queue);
+			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 
-				tp->copied_seq = mptcp_skb_sub_end_seq(tmp1);
+			if (mptcp_is_data_fin(tmp1))
+				mptcp_fin(meta_sk);
 
-				if (mptcp_is_data_fin(tmp1))
-					mptcp_fin(meta_sk);
-
-				/* the callers of mptcp_queue_skb still
-				 * need the skb
-				 */
-				if (skb != tmp1)
-					__kfree_skb(tmp1);
-			}
-
-			mptcp_reset_mapping(tp);
-
-			/* We want tcp_data(/ofo)_queue to free skb. */
-			return 1;
+			__kfree_skb(tmp1);
 		}
 
-		/* Verify the checksum */
-		if (mpcb->rx_opt.dss_csum && !mpcb->infinite_mapping) {
-			int ret = mptcp_verif_dss_csum(sk);
-
-			if (ret <= 0) {
-				mptcp_reset_mapping(tp);
-				return ret;
-			}
-		}
-
-		if (before64(rcv_nxt64, tp->mptcp->map_data_seq)) {
-			/* Seg's have to go to the meta-ofo-queue */
-			skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
-				if (after(mptcp_skb_sub_end_seq(tmp1),
-					  tp->mptcp->map_subseq + tp->mptcp->map_data_len + tp->mptcp->map_data_fin))
-					break;
-
-				mptcp_prepare_skb(tmp1, tmp, sk);
-
-				__skb_unlink(tmp1, &sk->sk_receive_queue);
-				tp->copied_seq = mptcp_skb_sub_end_seq(tmp1);
-				skb_set_owner_r(tmp1, meta_sk);
-
-				if (mptcp_add_meta_ofo_queue(meta_sk, tmp1, sk)) {
-					if (tmp1 == skb)
-						ans = 1;
-					else
-						__kfree_skb(tmp1);
-				}
-			}
-		} else {
-			int eaten = 0;
-			/* Ready for the meta-rcv-queue */
-			skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
-				if (after(mptcp_skb_sub_end_seq(tmp1),
-					  tp->mptcp->map_subseq + tp->mptcp->map_data_len + tp->mptcp->map_data_fin)) {
-					break;
-				}
-
-				mptcp_prepare_skb(tmp1, tmp, sk);
-
-				/* Is direct copy possible ? */
-				if (TCP_SKB_CB(tmp1)->seq ==
-				    meta_tp->rcv_nxt &&
-				    meta_tp->ucopy.task == current &&
-				    meta_tp->copied_seq == meta_tp->rcv_nxt &&
-				    meta_tp->ucopy.len &&
-				    sock_owned_by_user(meta_sk)) {
-					eaten = mptcp_direct_copy(tmp1, tp, meta_sk);
-				}
-				mptcp_check_rcvseq_wrap(meta_tp,
-							TCP_SKB_CB(tmp1)->end_seq -
-							meta_tp->rcv_nxt);
-				meta_tp->rcv_nxt = TCP_SKB_CB(tmp1)->end_seq;
-
-				tp->copied_seq = mptcp_skb_sub_end_seq(tmp1);
-
-				if (mptcp_is_data_fin(tmp1)) {
-					/* If mptcp_fin tcp_done'd the meta_sk,
-					 * he flushed the rcv-queue. However,
-					 * tcp_data_queue() may still need the
-					 * skb.
-					 * Thus, we skip the rest of
-					 * mptcp_queue_skb and exit.
-					 */
-					if (mptcp_fin(meta_sk)) {
-						ans = 0;
-						goto rcvd_fin;
-					}
-				}
-
-				/* It is important that we unlink after mptcp_fin.
-				 * Otherwise, if mptcp_fin returns 1, and tcp_fin
-				 * will later also call tcp_done, we have a problem,
-				 * because sk_forward_alloc will be wrong.
-				 */
-				__skb_unlink(tmp1, &sk->sk_receive_queue);
-
-				if (!eaten)
-					__skb_queue_tail(
-						&meta_sk->sk_receive_queue,
-						tmp1);
-
-				/* Check if this fills a gap in the ofo queue */
-				if (!skb_queue_empty(
-					    &meta_tp->out_of_order_queue))
-					mptcp_ofo_queue(meta_sk);
-
-				if (!eaten)
-					skb_set_owner_r(tmp1, meta_sk);
-
-				if (eaten) {
-					if (tmp1 != skb)
-						__kfree_skb(tmp1);
-					else
-						ans = 1;
-				} else {
-					ans = -2;
-				}
-			}
-		}
-
-rcvd_fin:
-		inet_csk(meta_sk)->icsk_ack.lrcvtime = tcp_time_stamp;
-		tp->mptcp->last_data_seq = tp->mptcp->map_data_seq;
 		mptcp_reset_mapping(tp);
+
+		return -1;
 	}
 
-	return ans;
+	/* Record it, because we want to send our data_fin on the same path */
+	if (mptcp_is_data_fin(skb)) {
+		mpcb->dfin_path_index = tp->mptcp->path_index;
+		mpcb->dfin_combined = tcp_hdr(skb)->fin;
+	}
+
+	return 0;
 }
 
+/* @return: 0  everything is fine. Just continue processing
+ * 	    1  subflow is broken stop everything
+ * 	    -1 this mapping has been put in the meta-receive-queue
+ * 	    -2 this mapping has been eaten by the application
+ */
+static int mptcp_queue_skb(struct sock *sk)
+{
+	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = mptcp_meta_tp(tp);
+	struct sock *meta_sk = mptcp_meta_sk(sk);
+	struct mptcp_cb *mpcb = tp->mpcb;
+	struct sk_buff *tmp, *tmp1;
+	u64 rcv_nxt64 = mptcp_get_rcv_nxt_64(meta_tp);
+	int eaten = 0;
+
+	/* Have we not yet received the full mapping? */
+	if (!tp->mptcp->mapping_present ||
+	    before(tp->rcv_nxt, tp->mptcp->map_subseq + tp->mptcp->map_data_len))
+		return 1;
+
+	/* Verify the checksum */
+	if (mpcb->rx_opt.dss_csum && !mpcb->infinite_mapping) {
+		int ret = mptcp_verif_dss_csum(sk);
+
+		if (ret <= 0) {
+			mptcp_reset_mapping(tp);
+			return 1;
+		}
+	}
+
+	if (before64(rcv_nxt64, tp->mptcp->map_data_seq)) {
+		/* Seg's have to go to the meta-ofo-queue */
+		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
+			if (after(TCP_SKB_CB(tmp1)->end_seq,
+				  tp->mptcp->map_subseq + tp->mptcp->map_data_len + tp->mptcp->map_data_fin))
+				break;
+
+			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
+			mptcp_prepare_skb(tmp1, tmp, sk);
+			__skb_unlink(tmp1, &sk->sk_receive_queue);
+
+			skb_set_owner_r(tmp1, meta_sk);
+
+			if (mptcp_add_meta_ofo_queue(meta_sk, tmp1, sk))
+				__kfree_skb(tmp1);
+		}
+	} else {
+		/* Ready for the meta-rcv-queue */
+		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
+			if (after(TCP_SKB_CB(tmp1)->end_seq,
+				  tp->mptcp->map_subseq + tp->mptcp->map_data_len + tp->mptcp->map_data_fin))
+				break;
+
+			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
+			mptcp_prepare_skb(tmp1, tmp, sk);
+			__skb_unlink(tmp1, &sk->sk_receive_queue);
+
+			/* Is direct copy possible ? */
+			if (TCP_SKB_CB(tmp1)->seq == meta_tp->rcv_nxt &&
+			    meta_tp->ucopy.task == current &&
+			    meta_tp->copied_seq == meta_tp->rcv_nxt &&
+			    meta_tp->ucopy.len &&
+			    sock_owned_by_user(meta_sk))
+				eaten = mptcp_direct_copy(tmp1, tp, meta_sk);
+
+			mptcp_check_rcvseq_wrap(meta_tp,
+						TCP_SKB_CB(tmp1)->end_seq -
+						meta_tp->rcv_nxt);
+			meta_tp->rcv_nxt = TCP_SKB_CB(tmp1)->end_seq;
+
+
+			if (mptcp_is_data_fin(tmp1))
+				mptcp_fin(meta_sk);
+
+			if (!eaten) {
+				__skb_queue_tail(&meta_sk->sk_receive_queue, tmp1);
+				skb_set_owner_r(tmp1, meta_sk);
+			} else {
+				__kfree_skb(tmp1);
+			}
+
+			/* Check if this fills a gap in the ofo queue */
+			if (!skb_queue_empty(&meta_tp->out_of_order_queue))
+				mptcp_ofo_queue(meta_sk);
+		}
+	}
+
+	inet_csk(meta_sk)->icsk_ack.lrcvtime = tcp_time_stamp;
+	tp->mptcp->last_data_seq = tp->mptcp->map_data_seq;
+	mptcp_reset_mapping(tp);
+
+	return !eaten ? -1 : -2;
+}
+
+void mptcp_data_ready(struct sock *sk, int bytes)
+{
+	struct sock *meta_sk = mptcp_meta_sk(sk);
+	struct sk_buff *skb, *tmp;
+	int queued = 0;
+
+	/* If the meta is already closed, there is no point in pushing data */
+	if (meta_sk->sk_state == TCP_CLOSE)
+		goto exit;
+
+restart:
+	/* Iterate over all segments, detect their mapping (if we don't have
+	 * one yet), validate them and push everything one level higher.
+	 */
+	skb_queue_walk_safe(&sk->sk_receive_queue, skb, tmp) {
+		int ret;
+		/* Pre-validation - e.g., early fallback */
+		if (mptcp_prevalidate_skb(sk, skb))
+			break;
+
+		/* Set the current mapping */
+		ret = mptcp_detect_mapping(sk, skb);
+		if (ret < 0)
+			goto restart;
+		else if (ret > 0)
+			break;
+
+		/* Validation */
+		if (mptcp_validate_mapping(sk, skb) < 0)
+			goto restart;
+
+		/* Push a level higher */
+		ret = mptcp_queue_skb(sk);
+		if (ret < 0) {
+			if (ret == -1)
+				queued = ret;
+			goto restart;
+		}
+	}
+
+	if (queued == -1)
+		meta_sk->sk_data_ready(meta_sk, 0);
+
+exit:
+	if (tcp_sk(sk)->close_it) {
+		tcp_send_ack(sk);
+		tcp_time_wait(sk, TCP_TIME_WAIT, 0);
+	}
+}
 
 /**
  * Equivalent of tcp_fin() for MPTCP
  * Can be called only when the FIN is validly part
  * of the data seqnum space. Not before when we get holes.
  */
-int mptcp_fin(struct sock *meta_sk)
+void mptcp_fin(struct sock *meta_sk)
 {
 	struct sock *sk = NULL, *sk_it;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
-	int ans = 0;
 
 	mptcp_for_each_sk(mpcb, sk_it) {
 		if (tcp_sk(sk_it)->mptcp->path_index == mpcb->dfin_path_index) {
@@ -890,7 +886,6 @@ int mptcp_fin(struct sock *meta_sk)
 	case TCP_FIN_WAIT2:
 		/* Received a FIN -- send ACK and enter TIME_WAIT. */
 		tcp_send_ack(sk);
-		ans = sock_flag(sk, SOCK_DEAD);
 		tcp_time_wait(meta_sk, TCP_TIME_WAIT, 0);
 		break;
 	default:
@@ -919,7 +914,7 @@ int mptcp_fin(struct sock *meta_sk)
 			sk_wake_async(meta_sk, SOCK_WAKE_WAITD, POLL_IN);
 	}
 
-	return ans;
+	return;
 }
 
 /* Handle the DATA_ACK */

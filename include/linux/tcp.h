@@ -532,7 +532,7 @@ struct tcp_sock {
 	 * it allows checking MPTCP capability just by checking the mpc flag,
 	 * rather than adding ifdefs everywhere.
 	 */
-	u8      mpc:1,          /* Other end is multipath capable */
+	u16     mpc:1,          /* Other end is multipath capable */
 		inside_tk_table:1, /* Is the tcp_sock inside the token-table? */
 		send_mp_fclose:1,
 		request_mptcp:1, /* Did we send out an MP_CAPABLE?
@@ -544,7 +544,8 @@ struct tcp_sock {
 		mp_killed:1, /* Killed with a tcp_done in mptcp? */
 		mptcp_add_addr_ack:1,	/* Tell tcp_send_ack to return in case
 					 * alloc_skb fails. */
-		was_meta_sk:1; /* This was a meta sk (in case of reuse) */
+		was_meta_sk:1,	/* This was a meta sk (in case of reuse) */
+		close_it;	/* Should this socket get closed by mptcp_data_ready? */
 	struct mptcp_tcp_sock *mptcp;
 #ifdef CONFIG_MPTCP
 	struct hlist_nulls_node tk_table;
