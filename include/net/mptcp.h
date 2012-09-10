@@ -1229,7 +1229,7 @@ static inline void mptcp_update_metasocket(const struct sock *sock,
 					   const struct mptcp_cb *mpcb) {}
 static inline void mptcp_reinject_data(const struct sock *orig_sk,
 				       int clone_it) {}
-static inline void mptcp_update_window_clamp(const struct sock *sk) {}
+static inline void mptcp_init_buffer_space(const struct sock *sk) {}
 static inline void mptcp_update_sndbuf(const struct mptcp_cb *mpcb) {}
 static inline void mptcp_set_state(const struct sock *sk, int state) {}
 static inline void mptcp_skb_entail_init(const struct tcp_sock *tp,
