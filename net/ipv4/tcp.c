@@ -1877,9 +1877,6 @@ void tcp_set_state(struct sock *sk, int state)
 			TCP_DEC_STATS(sock_net(sk), TCP_MIB_CURRESTAB);
 	}
 
-	if (!is_meta_sk(sk) && tcp_sk(sk)->mpc)
-		mptcp_set_state(sk, state);
-
 	/* Change state AFTER socket is unhashed to avoid closed
 	 * socket sitting in hash tables.
 	 */
@@ -3324,13 +3321,10 @@ void tcp_done(struct sock *sk)
 
 	sk->sk_shutdown = SHUTDOWN_MASK;
 
-	if (!sock_flag(sk, SOCK_DEAD)) {
-		/* In case of mptcp, only wake up if it's the meta-sk */
-		if ((!tp->mpc && !tp->was_meta_sk) || is_meta_sk(sk))
-			sk->sk_state_change(sk);
-	} else {
+	if (!sock_flag(sk, SOCK_DEAD))
+		sk->sk_state_change(sk);
+	else
 		inet_csk_destroy_sock(sk);
-	}
 }
 EXPORT_SYMBOL_GPL(tcp_done);
 

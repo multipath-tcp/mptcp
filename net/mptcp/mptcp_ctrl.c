@@ -677,6 +677,7 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	/* Redefine function-pointers to wake up application */
 	master_sk->sk_error_report = mptcp_sock_def_error_report;
 	master_sk->sk_data_ready = mptcp_data_ready;
+	master_sk->sk_state_change = mptcp_set_state;
 	meta_sk->sk_backlog_rcv = mptcp_backlog_rcv;
 	mpcb->syn_recv_sock = mptcp_syn_recv_sock;
 
@@ -807,15 +808,6 @@ int mptcp_add_sock(struct sock *meta_sk, struct tcp_sock *tp, gfp_t flags)
 	atomic_add(atomic_read(&((struct sock *)tp)->sk_rmem_alloc),
 		   &meta_sk->sk_rmem_alloc);
 
-	/* The socket is already established if it was in the
-	 * accept queue of the mpcb
-	 */
-	if (sk->sk_state == TCP_ESTABLISHED) {
-		mpcb->cnt_established++;
-		if ((1 << meta_sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV))
-			meta_sk->sk_state = TCP_ESTABLISHED;
-	}
-
 	mptcp_sub_inherit_sockopts(meta_sk, sk);
 	INIT_DELAYED_WORK(&tp->mptcp->work, mptcp_sub_close_wq);
 
@@ -882,6 +874,8 @@ void mptcp_del_sock(struct sock *sk)
 
 	if (is_master_tp(tp))
 		mpcb->master_sk = NULL;
+
+	mpcb->cnt_established--;
 }
 
 /**
@@ -1338,34 +1332,19 @@ int mptcp_doit(struct sock *sk)
 	return 1;
 }
 
-void mptcp_set_state(struct sock *sk, int state)
+void mptcp_set_state(struct sock *sk)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
-	int oldstate = sk->sk_state;
+	struct sock *meta_sk = mptcp_meta_sk(sk);
 
-	switch (state) {
-	case TCP_ESTABLISHED:
-		if (oldstate != TCP_ESTABLISHED) {
-			struct sock *meta_sk = mptcp_meta_sk(sk);
-			tp->mpcb->cnt_established++;
-			if ((1 << meta_sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV))
-				meta_sk->sk_state = TCP_ESTABLISHED;
-		}
-		break;
-	case TCP_SYN_SENT:
-	case TCP_SYN_RECV:
-		/* We set the mpcb state to SYN_SENT even if the peer
-		 * has no support for MPTCP. This is the only option
-		 * as we don't know yet if he is MP_CAPABLE.
-		 */
-		if (is_master_tp(tp))
-			mptcp_meta_sk(sk)->sk_state = state;
-		break;
-	case TCP_CLOSE:
-		if (!((1 << oldstate ) &
-		     (TCPF_SYN_SENT | TCPF_SYN_RECV | TCPF_LISTEN | TCPF_CLOSE)))
-			tp->mpcb->cnt_established--;
+	/* Meta is not yet established - wake up the application */
+	if ((1 << meta_sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV) &&
+	    sk->sk_state == TCP_ESTABLISHED) {
+		tcp_set_state(meta_sk, TCP_ESTABLISHED);
+		meta_sk->sk_state_change(meta_sk);
 	}
+
+	if (sk->sk_state == TCP_ESTABLISHED)
+		tcp_sk(sk)->mpcb->cnt_established++;
 }
 
 int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key, u32 window)
@@ -1455,7 +1434,6 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 
 	mpcb->server_side = 1;
 	/* Will be moved to ESTABLISHED by  tcp_rcv_state_process() */
-	meta_sk->sk_state = TCP_SYN_RECV;
 	mptcp_update_metasocket(child, meta_sk);
 
 	/* Needs to be done here additionally, because when accepting a
@@ -1531,6 +1509,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 
 	child->sk_error_report = mptcp_sock_def_error_report;
 	child->sk_data_ready = mptcp_data_ready;
+	child->sk_state_change = mptcp_set_state;
 	child_tp->advmss = mptcp_sysctl_mss();
 
 	/* Subflows do not use the accept queue, as they

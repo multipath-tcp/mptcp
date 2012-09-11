@@ -4249,9 +4249,12 @@ static void tcp_fin(struct sock *sk, const struct sk_buff *skb)
 		tcp_sack_reset(&tp->rx_opt);
 	sk_mem_reclaim(sk);
 
-	/* MPTCP: subflow-fin has no effect to the application */
-	if (!tp->mpc && !sock_flag(sk, SOCK_DEAD)) {
+	if (!sock_flag(sk, SOCK_DEAD)) {
 		sk->sk_state_change(sk);
+
+		/* Don't wake up MPTCP-subflows */
+		if (tp->mpc)
+			return;
 
 		/* Do not send POLL_HUP for half duplex close. */
 		if (sk->sk_shutdown == SHUTDOWN_MASK ||
@@ -5902,9 +5905,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		else
 			tp->pred_flags = 0;
 
-		/* MPTCP: only wake-up if it's the initial subflow */
-		if ((!tp->mpc || is_master_tp(tp)) &&
-		    !sock_flag(sk, SOCK_DEAD)) {
+		if (!sock_flag(sk, SOCK_DEAD)) {
 			sk->sk_state_change(sk);
 			sk_wake_async(sk, SOCK_WAKE_IO, POLL_OUT);
 		}
@@ -6166,8 +6167,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 
 				if (!sock_flag(sk, SOCK_DEAD)) {
 					/* Wake up lingering close() */
-					if (!tp->mpc)
-						sk->sk_state_change(sk);
+					sk->sk_state_change(sk);
 				} else {
 					int tmo;
 
