@@ -1511,7 +1511,7 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	struct sock *sk = NULL, *sk_it = NULL, *sk_tmp;
 
-	if (!mpcb->cnt_subflows)
+	if (!mpcb->cnt_established)
 		return;
 
 	/* First - select a socket */
