@@ -853,7 +853,7 @@ int mptcp_fin(struct sock *meta_sk)
 		}
 	}
 
-	if (!sk)
+	if (!sk || sk->sk_state == TCP_CLOSE)
 		sk = mptcp_select_ack_sock(meta_sk, 0);
 
 	inet_csk_schedule_ack(sk);
