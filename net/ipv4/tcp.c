@@ -786,11 +786,6 @@ static ssize_t do_tcp_sendpages(struct sock *sk, struct page **pages, int poffse
 	ssize_t copied;
 	long timeo = sock_sndtimeo(sk, flags & MSG_DONTWAIT);
 
-	if (tp->mpc) {
-		printk(KERN_ERR "%s: function not yet supported\n", __func__);
-		BUG();
-	}
-
 	/* Wait for a connection to finish. */
 	if ((1 << sk->sk_state) & ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT))
 		if ((err = sk_stream_wait_connect(sk, &timeo)) != 0)
@@ -902,7 +897,7 @@ int tcp_sendpage(struct sock *sk, struct page *page, int offset,
 	ssize_t res;
 
 	if (!(sk->sk_route_caps & NETIF_F_SG) ||
-	    !(sk->sk_route_caps & NETIF_F_ALL_CSUM) || tcp_sk(sk)->mpcb)
+	    !(sk->sk_route_caps & NETIF_F_ALL_CSUM) || tcp_sk(sk)->mpc)
 		return sock_no_sendpage(sk->sk_socket, page, offset, size,
 					flags);
 
@@ -1363,8 +1358,7 @@ static inline struct sk_buff *tcp_recv_skb(struct sock *sk, u32 seq, u32 *off)
 		offset = seq - TCP_SKB_CB(skb)->seq;
 		if (tcp_hdr(skb)->syn)
 			offset--;
-		if (offset < skb->len || (!tcp_sk(sk)->mpc && tcp_hdr(skb)->fin) ||
-		    (tcp_sk(sk)->mpc && mptcp_is_data_fin(skb))) {
+		if (offset < skb->len || tcp_hdr(skb)->fin) {
 			*off = offset;
 			return skb;
 		}
@@ -1428,8 +1422,7 @@ int tcp_read_sock(struct sock *sk, read_descriptor_t *desc,
 			if (!skb || (offset+1 != skb->len))
 				break;
 		}
-		if ((!tp->mpc && tcp_hdr(skb)->fin) ||
-		    (tp->mpc && mptcp_is_data_fin(skb))) {
+		if (tcp_hdr(skb)->fin) {
 			sk_eat_skb(sk, skb, 0);
 			++seq;
 			break;
@@ -1478,14 +1471,13 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	int copied_early = 0;
 	struct sk_buff *skb;
 	u32 urg_hole = 0;
-	struct mptcp_cb *mpcb = tp->mpc ? tp->mpcb : NULL;
 
 	lock_sock(sk);
 
 #ifdef CONFIG_MPTCP
 	if (tp->mpc) {
 		struct sock *sk_it;
-		mptcp_for_each_sk(mpcb, sk_it) {
+		mptcp_for_each_sk(tp->mpcb, sk_it) {
 			if (!is_master_tp(tcp_sk(sk_it)))
 				sock_rps_record_flow(sk_it);
 		}
@@ -1562,8 +1554,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 				offset--;
 			if (offset < skb->len)
 				goto found_ok_skb;
-			if ((!mpcb && tcp_hdr(skb)->fin) ||
-			    (mpcb && mptcp_is_data_fin(skb)))
+			if (tcp_hdr(skb)->fin)
 				goto found_fin_ok;
 			WARN(!(flags & MSG_PEEK),
 			     "recvmsg bug 2: copied %X seq %X rcvnxt %X fl %X\n",
@@ -1792,8 +1783,7 @@ skip_copy:
 		if (used + offset < skb->len)
 			continue;
 
-		if ((!mpcb && tcp_hdr(skb)->fin) ||
-		    (mpcb && mptcp_is_data_fin(skb)))
+		if (tcp_hdr(skb)->fin)
 			goto found_fin_ok;
 		if (!(flags & MSG_PEEK)) {
 			sk_eat_skb(sk, skb, copied_early);
@@ -1816,6 +1806,7 @@ skip_copy:
 			int chunk;
 
 			tp->ucopy.len = copied > 0 ? len : 0;
+
 			tcp_prequeue_process(sk);
 
 			if (copied > 0 && (chunk = len - tp->ucopy.len) != 0) {

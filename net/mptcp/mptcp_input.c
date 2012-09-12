@@ -270,8 +270,13 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb, struct sk_buff *next,
 	 * mapping), and data_fin is enqueued, the end_data_seq is +1.
 	 */
 	if (skb_queue_is_last(&sk->sk_receive_queue, skb) ||
-	    after(TCP_SKB_CB(next)->end_seq, tp->mptcp->map_subseq + tp->mptcp->map_data_len))
+	    after(TCP_SKB_CB(next)->end_seq, tp->mptcp->map_subseq + tp->mptcp->map_data_len)) {
 		tcb->end_seq += tp->mptcp->map_data_fin;
+		if (mptcp_is_data_fin(skb))
+			tcp_hdr(skb)->fin = 1;
+		else
+			tcp_hdr(skb)->fin = 0;
+	}
 }
 
 /**
