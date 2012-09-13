@@ -449,6 +449,7 @@ void mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	sk->sk_data_ready = mptcp_data_ready;
 	sk->sk_write_space = mptcp_write_space;
 	sk->sk_state_change = mptcp_set_state;
+	sk->sk_destruct = mptcp_sock_destruct;
 
 	tp = tcp_sk(sk);
 	if (mptcp_add_sock(meta_sk, tp, GFP_KERNEL))

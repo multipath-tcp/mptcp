@@ -560,6 +560,9 @@ static inline int mptcp_sysctl_mss(void)
 void mptcp_data_ready(struct sock *sk, int bytes);
 void mptcp_write_space(struct sock *sk);
 void mptcp_set_state(struct sock *sk);
+void mptcp_sock_destruct(struct sock *sk);
+void mptcp_sock_def_error_report(struct sock *sk);
+
 int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
 			     struct sock *sk);
 void mptcp_ofo_queue(struct sock *meta_sk);
@@ -611,12 +614,10 @@ void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk);
 void mptcp_fin(struct sock *meta_sk);
 void mptcp_retransmit_timer(struct sock *meta_sk);
 int mptcp_write_wakeup(struct sock *meta_sk);
-void mptcp_sock_def_error_report(struct sock *sk);
 void mptcp_sub_close_wq(struct work_struct *work);
 void mptcp_sub_close(struct sock *sk, unsigned long delay);
 struct sock *mptcp_select_ack_sock(const struct sock *meta_sk, int copied);
 void mptcp_destroy_meta_sk(struct sock *meta_sk);
-void mptcp_sock_destruct(struct sock *sk);
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb);
 struct sock *mptcp_sk_clone(struct sock *sk, int family, const gfp_t priority);
 
@@ -1233,7 +1234,6 @@ static inline int mptcp_mp_fail_rcvd(struct sock *sk, struct tcphdr *th)
 static inline void mptcp_init_mp_opt(const struct multipath_options *mopt) {}
 static inline void mptcp_wmem_free_skb(const struct sock *sk,
 				       const struct sk_buff *skb) {}
-static inline void mptcp_sock_destruct(const struct sock *sk) {}
 static inline int mptcp_check_rtt(const struct tcp_sock *tp, int time)
 {
 	return 0;

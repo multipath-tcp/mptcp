@@ -145,15 +145,6 @@ void inet_sock_destruct(struct sock *sk)
 		       sk->sk_state, sk);
 		return;
 	}
-
-	if (sk->sk_type == SOCK_STREAM && sk->sk_protocol == IPPROTO_TCP &&
-	    tcp_sk(sk)->mptcp)
-		/* Important to check here for mptcp, because mpc may be 0 but
-		 * mptcp still set (it's the case when calling tcp_disconnect
-		 * with the meta-sk).
-		 */
-		mptcp_sock_destruct(sk);
-
 	if (!sock_flag(sk, SOCK_DEAD)) {
 		pr_err("Attempt to release alive inet socket %p\n", sk);
 		return;

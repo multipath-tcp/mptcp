@@ -692,7 +692,9 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	master_sk->sk_data_ready = mptcp_data_ready;
 	master_sk->sk_write_space = mptcp_write_space;
 	master_sk->sk_state_change = mptcp_set_state;
+	master_sk->sk_destruct = mptcp_sock_destruct;
 	meta_sk->sk_backlog_rcv = mptcp_backlog_rcv;
+	meta_sk->sk_destruct = mptcp_sock_destruct;
 	mpcb->syn_recv_sock = mptcp_syn_recv_sock;
 
 	/* Meta-level retransmit timer */
@@ -768,12 +770,12 @@ void mptcp_destroy_meta_sk(struct sock *meta_sk)
 
 void mptcp_sock_destruct(struct sock *sk)
 {
+	inet_sock_destruct(sk);
+
 	kmem_cache_free(mptcp_sock_cache, tcp_sk(sk)->mptcp);
 	tcp_sk(sk)->mptcp = NULL;
 
 	if (!is_meta_sk(sk) && !tcp_sk(sk)->was_meta_sk) {
-		rcu_assign_pointer(inet_sk(sk)->inet_opt, NULL);
-
 		/* Taken when mpcb pointer was set */
 		sock_put(mptcp_meta_sk(sk));
 	} else {
@@ -781,6 +783,7 @@ void mptcp_sock_destruct(struct sock *sk)
 
 		mptcp_debug("%s destroying meta-sk\n", __func__);
 	}
+
 }
 
 int mptcp_add_sock(struct sock *meta_sk, struct tcp_sock *tp, gfp_t flags)
@@ -877,6 +880,7 @@ void mptcp_del_sock(struct sock *sk)
 		mpcb->master_sk = NULL;
 
 	mpcb->cnt_established--;
+	rcu_assign_pointer(inet_sk(sk)->inet_opt, NULL);
 }
 
 /**
@@ -1512,6 +1516,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	child->sk_data_ready = mptcp_data_ready;
 	child->sk_write_space = mptcp_write_space;
 	child->sk_state_change = mptcp_set_state;
+	child->sk_destruct = mptcp_sock_destruct;
 	child_tp->advmss = mptcp_sysctl_mss();
 
 	/* Subflows do not use the accept queue, as they
