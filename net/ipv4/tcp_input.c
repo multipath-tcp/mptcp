@@ -4783,6 +4783,9 @@ tcp_collapse(struct sock *sk, struct sk_buff_head *list,
 	struct sk_buff *skb, *n;
 	bool end_of_skbs;
 
+	if (tcp_sk(sk)->mpc)
+		return;
+
 	/* First, check that queue is collapsible and find
 	 * the point where collapsing can be useful. */
 	skb = head;
@@ -4888,9 +4891,6 @@ static void tcp_collapse_ofo_queue(struct sock *sk)
 	struct sk_buff *head;
 	u32 start, end;
 
-	/* TODO - we can adapt this here for MPTCP at the subflow level but
-	 * also at the meta-level.
-	 */
 	if (skb == NULL || tp->mpc)
 		return;
 
@@ -4936,12 +4936,17 @@ static int tcp_prune_ofo_queue(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	int res = 0;
 
-	/* TODO - adapt for MPTCP - here we return 0, because there are other
-	 * places that should be first optimized. Then, we can start pruning
-	 * the ofo-queue.
-	 */
-	if (tp->mpc)
-		return 0;
+	if (is_meta_sk(sk)) {
+		if (!skb_queue_empty(&tp->out_of_order_queue)) {
+			NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_OFOPRUNED);
+			mptcp_purge_ofo_queue(tp);
+
+			/* No sack at the mptcp-level */
+			sk_mem_reclaim(sk);
+			res = 1;
+		}
+		return res;
+	}
 
 	if (!skb_queue_empty(&tp->out_of_order_queue)) {
 		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_OFOPRUNED);
@@ -4970,12 +4975,6 @@ static int tcp_prune_ofo_queue(struct sock *sk)
 static int tcp_prune_queue(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-
-	/* TODO - we can adapt this here for MPTCP on the subflow-level
-	 * but also at the meta-level.
-	 */
-	if (tp->mpc)
-		return -1;
 
 	SOCK_DEBUG(sk, "prune_queue: c=%x\n", tp->copied_seq);
 
