@@ -4464,6 +4464,11 @@ static void tcp_ofo_queue(struct sock *sk)
 			eaten = mptcp_queue_skb(sk, skb);
 			if (eaten == -1)
 				return;
+			if (eaten == -2) {
+				struct sock *meta_sk = mptcp_meta_sk(sk);
+				if (!sock_flag(meta_sk, SOCK_DEAD))
+					meta_sk->sk_data_ready(meta_sk, 0);
+			}
 		} else {
 			__skb_queue_tail(&sk->sk_receive_queue, skb);
 		}
