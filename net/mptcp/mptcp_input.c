@@ -1014,16 +1014,19 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	}
 	/*** Done, update the window ***/
 
-	if (after(data_ack, meta_tp->snd_una)) {
-		meta_tp->snd_una = data_ack;
+	/* We passed data and got it acked, remove any soft error
+	 * log. Something worked...
+	 */
+	sk->sk_err_soft = 0;
+	inet_csk(meta_sk)->icsk_probes_out = 0;
+	meta_tp->rcv_tstamp = tcp_time_stamp;
 
-		mptcp_clean_rtx_queue(meta_sk);
-	}
+	meta_tp->snd_una = data_ack;
+
+	mptcp_clean_rtx_queue(meta_sk);
+
 	if (meta_sk->sk_state != TCP_ESTABLISHED)
 		mptcp_rcv_state_process(meta_sk, sk, skb);
-
-	meta_tp->rcv_tstamp = tcp_time_stamp;
-	inet_csk(meta_sk)->icsk_probes_out = 0;
 
 	return flag;
 }
