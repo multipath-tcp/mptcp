@@ -306,6 +306,10 @@ struct tcp_options_received {
 	u32	rcv_isn; 	/* Needed to retrieve abs subflow seqnum
 				 * from the relative version.
 				 */
+	u32	mptcp_recv_nonce;
+	u64	mptcp_recv_tmac;
+	__u8	mpj_addr_id;	/* MP_JOIN option addr_id */
+	u8	mptcp_recv_mac[20];
 #endif /* CONFIG_MPTCP */
 };
 

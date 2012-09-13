@@ -525,10 +525,6 @@ int mptcp_do_join_short(struct sk_buff *skb, struct multipath_options *mopt,
 			return 2;
 		}
 	} else {
-		/* Copy the MP_JOIN info to mpcb's options. */
-		mpcb->rx_opt.mptcp_recv_nonce = mopt->mptcp_recv_nonce;
-		mpcb->rx_opt.mpj_addr_id = mopt->mpj_addr_id;
-
 		if (skb->protocol == htons(ETH_P_IP)) {
 			mptcp_v4_do_rcv_join_syn(meta_sk, skb, tmp_opt);
 #if IS_ENABLED(CONFIG_IPV6)

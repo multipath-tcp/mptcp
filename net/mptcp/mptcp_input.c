@@ -1191,19 +1191,19 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 		switch (opsize) {
 		case MPTCP_SUB_LEN_JOIN_SYN:
 			mopt->mptcp_rem_token = mpjoin->u.syn.token;
-			mopt->mptcp_recv_nonce = mpjoin->u.syn.nonce;
+			opt_rx->mptcp_recv_nonce = mpjoin->u.syn.nonce;
 			mopt->is_mp_join = 1;
-			mopt->mpj_addr_id = mpjoin->addr_id;
+			opt_rx->mpj_addr_id = mpjoin->addr_id;
 			opt_rx->saw_mpc = 1;
 			opt_rx->low_prio = mpjoin->b;
 			break;
 		case MPTCP_SUB_LEN_JOIN_SYNACK:
-			mopt->mptcp_recv_tmac = mpjoin->u.synack.mac;
-			mopt->mptcp_recv_nonce = mpjoin->u.synack.nonce;
+			opt_rx->mptcp_recv_tmac = mpjoin->u.synack.mac;
+			opt_rx->mptcp_recv_nonce = mpjoin->u.synack.nonce;
 			opt_rx->low_prio = mpjoin->b;
 			break;
 		case MPTCP_SUB_LEN_JOIN_ACK:
-			memcpy(mopt->mptcp_recv_mac, mpjoin->u.ack.mac, 20);
+			memcpy(opt_rx->mptcp_recv_mac, mpjoin->u.ack.mac, 20);
 			mopt->join_ack = 1;
 			break;
 		}

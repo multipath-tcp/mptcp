@@ -103,7 +103,7 @@ static void mptcp_v4_join_request_short(struct sock *meta_sk,
 
 	mtreq = mptcp_rsk(req);
 	mtreq->mpcb = mpcb;
-	mtreq->mptcp_rem_nonce = mpcb->rx_opt.mptcp_recv_nonce;
+	mtreq->mptcp_rem_nonce = tmp_opt->mptcp_recv_nonce;
 	mtreq->mptcp_rem_key = mpcb->rx_opt.mptcp_rem_key;
 	mtreq->mptcp_loc_key = mpcb->mptcp_loc_key;
 
@@ -283,7 +283,7 @@ void mptcp_v4_do_rcv_join_syn(struct sock *meta_sk, struct sk_buff *skb,
 
 	if (mptcp_v4_add_raddress(&mpcb->rx_opt,
 			(struct in_addr *)&ip_hdr(skb)->saddr, 0,
-			mpcb->rx_opt.mpj_addr_id) < 0) {
+			tmp_opt->mpj_addr_id) < 0) {
 		tcp_v4_send_reset(NULL, skb);
 		return;
 	}

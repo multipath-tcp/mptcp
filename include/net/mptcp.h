@@ -146,13 +146,9 @@ struct multipath_options {
 		is_mp_join:1;
 	u8	rem4_bits;
 	u8	rem6_bits;
-	__u8	mpj_addr_id; /* MP_JOIN option addr_id */
 
-	u8	mptcp_recv_mac[20];
 	u32	mptcp_rem_token;	/* Remote token */
-	u32	mptcp_recv_nonce;
 	u64	mptcp_rem_key;	/* Remote key */
-	u64	mptcp_recv_tmac;
 
 	struct	mptcp_rem4 addr4[MPTCP_MAX_ADDR];
 #if IS_ENABLED(CONFIG_IPV6)
@@ -603,7 +599,8 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 			   struct request_sock **prev,
 			   struct multipath_options *mopt);
 struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
-		struct request_sock *req, struct request_sock **prev);
+		struct request_sock *req, struct request_sock **prev,
+		const struct tcp_options_received *rx_opt);
 u32 __mptcp_select_window(struct sock *sk);
 int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb);
 void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn);
@@ -1243,7 +1240,8 @@ static inline int mptcp_check_req_master(const struct sock *sk,
 static inline struct sock *mptcp_check_req_child(const struct sock *sk,
 						 const struct sock *child,
 						 const struct request_sock *req,
-						 struct request_sock **prev)
+						 struct request_sock **prev,
+						 const struct tcp_options_received *rx_opt)
 {
 	return 0;
 }

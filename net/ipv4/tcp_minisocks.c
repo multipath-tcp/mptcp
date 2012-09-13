@@ -796,7 +796,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		if (!ret)
 			return tcp_sk(child)->mpcb->master_sk;
 	} else {
-		return mptcp_check_req_child(sk, child, req, prev);
+		return mptcp_check_req_child(sk, child, req, prev, &tmp_opt);
 	}
 	inet_csk_reqsk_queue_unlink(sk, req, prev);
 	inet_csk_reqsk_queue_removed(sk, req);

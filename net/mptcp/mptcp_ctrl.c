@@ -1450,7 +1450,8 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 
 struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 				   struct request_sock *req,
-				   struct request_sock **prev)
+				   struct request_sock **prev,
+				   const struct tcp_options_received *rx_opt)
 {
 	struct tcp_sock *child_tp = tcp_sk(child);
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
@@ -1468,7 +1469,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 			(u8 *)&mtreq->mptcp_loc_nonce,
 			(u32 *)hash_mac_check);
 
-	if (memcmp(hash_mac_check, (char *)&mpcb->rx_opt.mptcp_recv_mac, 20))
+	if (memcmp(hash_mac_check, (char *)&rx_opt->mptcp_recv_mac, 20))
 		goto teardown;
 
 	/* The child is a clone of the meta socket, we must now reset

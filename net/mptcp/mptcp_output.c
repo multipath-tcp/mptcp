@@ -1109,7 +1109,7 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 			mptcp_hmac_sha1((u8 *)&mpcb->mptcp_loc_key,
 					(u8 *)&mpcb->rx_opt.mptcp_rem_key,
 					(u8 *)&tp->mptcp->mptcp_loc_nonce,
-					(u8 *)&mpcb->rx_opt.mptcp_recv_nonce,
+					(u8 *)&tp->rx_opt.mptcp_recv_nonce,
 					(u32 *)opts->mp_join_ack.sender_mac);
 		}
 	}
