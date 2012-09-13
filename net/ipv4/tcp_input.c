@@ -3546,8 +3546,6 @@ static int tcp_ack_update_window(struct sock *sk, const struct sk_buff *skb, u32
 
 no_window_update:
 	tp->snd_una = ack;
-	if (tp->mpc && after(tp->snd_una, tp->mptcp->reinjected_seq))
-		tp->mptcp->reinjected_seq = tp->snd_una;
 
 	return flag;
 }
@@ -5769,7 +5767,6 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			 * by tcp_connect for the SYN
 			 */
 			tp->mptcp->snt_isn = tp->snd_nxt - 1;
-			tp->mptcp->reinjected_seq = tp->snd_nxt - 1;
 
 			mpcb = tp->mpcb;
 
@@ -6122,10 +6119,6 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 						      SOCK_WAKE_IO, POLL_OUT);
 
 				tp->snd_una = TCP_SKB_CB(skb)->ack_seq;
-#ifdef CONFIG_MPTCP
-				if (tp->mpc && after(tp->snd_una, tp->mptcp->reinjected_seq))
-					tp->mptcp->reinjected_seq = tp->snd_una;
-#endif
 				tp->snd_wnd = ntohs(th->window) <<
 					      tp->rx_opt.snd_wscale;
 				tcp_init_wl(tp, TCP_SKB_CB(skb)->seq);
@@ -6162,10 +6155,10 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 				sk->sk_shutdown |= SEND_SHUTDOWN;
 				dst_confirm(__sk_dst_get(sk));
 
-				if (!sock_flag(sk, SOCK_DEAD)) {
+				if (!sock_flag(sk, SOCK_DEAD))
 					/* Wake up lingering close() */
 					sk->sk_state_change(sk);
-				} else {
+				else {
 					int tmo;
 
 					if (tp->linger2 < 0 ||

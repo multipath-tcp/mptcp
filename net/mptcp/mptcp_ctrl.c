@@ -1426,7 +1426,6 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	child_tp = tcp_sk(child);
 
 	child_tp->mptcp->snt_isn = tcp_rsk(req)->snt_isn;
-	child_tp->mptcp->reinjected_seq = child_tp->snd_una;
 
 	mpcb = child_tp->mpcb;
 	if (mopt->list_rcvd) {
@@ -1508,7 +1507,6 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 
 	child_tp->mptcp->slave_sk = 1;
 	child_tp->mptcp->snt_isn = tcp_rsk(req)->snt_isn;
-	child_tp->mptcp->reinjected_seq = child_tp->snd_una;
 	child_tp->mptcp->init_rcv_wnd = req->rcv_wnd;
 	child_tp->mptcp->last_rbuf_opti = 0;
 

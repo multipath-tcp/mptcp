@@ -2689,7 +2689,6 @@ static void tcp_connect_init(struct sock *sk)
 	if (mptcp_doit(sk)) {
 		if (tp->mpc) {
 			tp->mptcp->snt_isn = tp->write_seq;
-			tp->mptcp->reinjected_seq = tp->write_seq;
 			tp->mptcp->init_rcv_wnd = tp->rcv_wnd;
 		}
 

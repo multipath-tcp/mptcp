@@ -117,7 +117,6 @@ struct mptcp_tcp_sock {
 	/* isn: needed to translate abs to relative subflow seqnums */
 	u32	snt_isn;
 	u32	last_data_seq;
-	u32	reinjected_seq;
 	u8	path_index;
 	u8	add_addr4; /* bit-field of addrs not yet sent to our peer */
 	u8	add_addr6;

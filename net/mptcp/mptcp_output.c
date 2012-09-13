@@ -284,33 +284,15 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 
 	skb_queue_walk_safe(&sk->sk_write_queue, skb_it, tmp) {
 		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb_it);
-		/* seq >= reinjected_seq , to avoid reinjecting several times
-		 * the same segment. This does not duplicate functionality with
-		 * TCP_SKB_CB(skb)->path_mask, because the path_mask ensures the skb is not
-		 * scheduled twice to the same subflow. OTOH, the seq
-		 * check ensures that at any time, _one_ subflow exactly
-		 * is allowed to reinject it, not all of them. That one
-		 * subflow is the one that received it last.
-		 * Also, subflow syn's and fin's are not reinjected
+		/* Subflow syn's and fin's are not reinjected
 		 */
-		if (before(tcb->seq, tp->mptcp->reinjected_seq) ||
-		    tcb->tcp_flags & TCPHDR_SYN ||
+		if (tcb->tcp_flags & TCPHDR_SYN ||
 		    (tcb->tcp_flags & TCPHDR_FIN && !mptcp_is_data_fin(skb_it)))
 			continue;
 
 		/* Go to next segment, if it failed */
 		if (__mptcp_reinject_data(skb_it, meta_sk, sk, clone_it))
 			continue;
-
-		/* If clone_it == 0, then the socket will get destroyed soon
-		 * and we don't care about reinjected_seq.
-		 *
-		 * It's very important to then not change reinjected_seq, because
-		 * tcb->end_seq got changed to end_data_seq and this may block
-		 * further reinjection.
-		 */
-		if (clone_it)
-			tp->mptcp->reinjected_seq = tcb->end_seq;
 	}
 
 	skb_it = tcp_write_queue_tail(meta_sk);
