@@ -558,6 +558,8 @@ static inline int mptcp_sysctl_mss(void)
 	mptcp_for_each_bit_set(~b, i)
 
 void mptcp_data_ready(struct sock *sk, int bytes);
+void mptcp_write_space(struct sock *sk);
+void mptcp_set_state(struct sock *sk);
 int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
 			     struct sock *sk);
 void mptcp_ofo_queue(struct sock *meta_sk);
@@ -569,7 +571,6 @@ void mptcp_del_sock(struct sock *sk);
 void mptcp_update_metasocket(struct sock *sock, struct sock *meta_sk);
 void mptcp_reinject_data(struct sock *orig_sk, int clone_it);
 void mptcp_update_sndbuf(struct mptcp_cb *mpcb);
-void mptcp_set_state(struct sock *sk);
 struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject);
 void mptcp_send_fin(struct sock *meta_sk);
 void mptcp_send_reset(struct sock *sk, struct sk_buff *skb);

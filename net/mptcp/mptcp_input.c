@@ -1029,6 +1029,16 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 
 	mptcp_clean_rtx_queue(meta_sk);
 
+	/* Simplified version of tcp_new_space, because the snd-buffer
+	 * is handled by all the subflows.
+	 */
+	if (sock_flag(meta_sk, SOCK_QUEUE_SHRUNK)) {
+		sock_reset_flag(meta_sk, SOCK_QUEUE_SHRUNK);
+		if (meta_sk->sk_socket &&
+			test_bit(SOCK_NOSPACE, &meta_sk->sk_socket->flags))
+			meta_sk->sk_write_space(meta_sk);
+	}
+
 	if (meta_sk->sk_state != TCP_ESTABLISHED)
 		mptcp_rcv_state_process(meta_sk, sk, skb);
 

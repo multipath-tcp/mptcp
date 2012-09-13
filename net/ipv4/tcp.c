@@ -561,18 +561,10 @@ static inline void tcp_mark_urg(struct tcp_sock *tp, int flags)
 void tcp_push(struct sock *sk, int flags, int mss_now,
 			    int nonagle)
 {
-	struct sk_buff *skb;
-	int reinject = 0;
-
-	if (tcp_sk(sk)->mpc)
-		skb = mptcp_next_segment(sk, &reinject);
-	else
-		skb = tcp_send_head(sk);
-
-	if (skb) {
+	if (tcp_send_head(sk)) {
 		struct tcp_sock *tp = tcp_sk(sk);
 
-		if (!reinject && (!(flags & MSG_MORE) || forced_push(tp)))
+		if (!(flags & MSG_MORE) || forced_push(tp))
 			tcp_mark_push(tp, tcp_write_queue_tail(sk));
 
 		tcp_mark_urg(tp, flags);

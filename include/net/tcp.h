@@ -1078,6 +1078,7 @@ static inline int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 	return 1;
 }
 
+
 #undef STATE_TRACE
 
 #ifdef STATE_TRACE
@@ -1468,7 +1469,14 @@ static inline int tcp_write_queue_empty(struct sock *sk)
 	return skb_queue_empty(&sk->sk_write_queue);
 }
 
-extern void tcp_push_pending_frames(struct sock *sk);
+static inline void tcp_push_pending_frames(struct sock *sk)
+{
+	if (tcp_send_head(sk)) {
+		struct tcp_sock *tp = tcp_sk(sk);
+
+		__tcp_push_pending_frames(sk, tcp_current_mss(sk), tp->nonagle);
+	}
+}
 
 /* Start sequence of the highest skb with SACKed bit, valid only if
  * sacked > 0 or when the caller has ensured validity by itself.

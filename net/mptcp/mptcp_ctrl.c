@@ -674,13 +674,6 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	INIT_WORK(&mpcb->create_work, mptcp_send_updatenotif_wq);
 	INIT_WORK(&mpcb->address_work, mptcp_address_worker);
 
-	/* Redefine function-pointers to wake up application */
-	master_sk->sk_error_report = mptcp_sock_def_error_report;
-	master_sk->sk_data_ready = mptcp_data_ready;
-	master_sk->sk_state_change = mptcp_set_state;
-	meta_sk->sk_backlog_rcv = mptcp_backlog_rcv;
-	mpcb->syn_recv_sock = mptcp_syn_recv_sock;
-
 	/* Init the accept_queue structure, we support a queue of 32 pending
 	 * connections, it does not need to be huge, since we only store  here
 	 * pending subflow creations.
@@ -693,6 +686,14 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 		meta_tp->mpc = 0;
 		return -ENOMEM;
 	}
+
+	/* Redefine function-pointers to wake up application */
+	master_sk->sk_error_report = mptcp_sock_def_error_report;
+	master_sk->sk_data_ready = mptcp_data_ready;
+	master_sk->sk_write_space = mptcp_write_space;
+	master_sk->sk_state_change = mptcp_set_state;
+	meta_sk->sk_backlog_rcv = mptcp_backlog_rcv;
+	mpcb->syn_recv_sock = mptcp_syn_recv_sock;
 
 	/* Meta-level retransmit timer */
 	meta_icsk->icsk_rto *= 2; /* Double of initial - rto */
@@ -1509,6 +1510,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 
 	child->sk_error_report = mptcp_sock_def_error_report;
 	child->sk_data_ready = mptcp_data_ready;
+	child->sk_write_space = mptcp_write_space;
 	child->sk_state_change = mptcp_set_state;
 	child_tp->advmss = mptcp_sysctl_mss();
 

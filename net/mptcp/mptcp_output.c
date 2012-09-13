@@ -320,7 +320,8 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 		__mptcp_reinject_data(skb_it, meta_sk, NULL, 1);
 	}
 
-	tcp_push_pending_frames(meta_sk);
+	__tcp_push_pending_frames(meta_sk, tcp_current_mss(meta_sk),
+				  tcp_sk(meta_sk)->nonagle);
 
 	tp->pf = 1;
 }
@@ -346,7 +347,7 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 	}
 
 	__mptcp_reinject_data(tcp_write_queue_head(meta_sk), meta_sk, NULL, 1);
-	tcp_push_pending_frames(meta_sk);
+	__tcp_push_pending_frames(meta_sk, tcp_current_mss(meta_sk), meta_tp->nonagle);
 
 out:
 	meta_icsk->icsk_rto = min(meta_icsk->icsk_rto << 1, TCP_RTO_MAX);
@@ -960,6 +961,16 @@ retry:
 		return 0;
 
 	return !meta_tp->packets_out && tcp_send_head(meta_sk);
+}
+
+void mptcp_write_space(struct sock *sk)
+{
+	struct sock *meta_sk = mptcp_meta_sk(sk);
+
+	if (mptcp_write_xmit(meta_sk, tcp_current_mss(sk), tcp_sk(sk)->nonagle,
+			     0, GFP_ATOMIC))
+		tcp_check_probe_timer(meta_sk);
+
 }
 
 u32 __mptcp_select_window(struct sock *sk)

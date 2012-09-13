@@ -1879,31 +1879,11 @@ void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
  */
 void tcp_push_one(struct sock *sk, unsigned int mss_now)
 {
-	struct sk_buff *skb;
+	struct sk_buff *skb = tcp_send_head(sk);
 
-	if (tcp_sk(sk)->mpc)
-		skb = mptcp_next_segment(sk, NULL);
-	else
-		skb = tcp_send_head(sk);
-
-	BUG_ON(!skb || (!tcp_sk(sk)->mpc && skb->len < mss_now));
+	BUG_ON(!skb || skb->len < mss_now);
 
 	tcp_write_xmit(sk, mss_now, TCP_NAGLE_PUSH, 1, sk->sk_allocation);
-}
-
-void tcp_push_pending_frames(struct sock *sk)
-{
-	struct sk_buff *skb;
-
-	if (tcp_sk(sk)->mpc)
-		skb = mptcp_next_segment(sk, NULL);
-	else
-		skb = tcp_send_head(sk);
-	if (skb) {
-		struct tcp_sock *tp = tcp_sk(sk);
-
-		__tcp_push_pending_frames(sk, tcp_current_mss(sk), tp->nonagle);
-	}
 }
 
 /* This function returns the amount that we can raise the

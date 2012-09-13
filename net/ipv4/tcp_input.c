@@ -5119,26 +5119,23 @@ static void tcp_new_space(struct sock *sk)
 		tp->snd_cwnd_stamp = tcp_time_stamp;
 	}
 
-	meta_sk->sk_write_space(meta_sk);
+	sk->sk_write_space(sk);
 }
 
 static void tcp_check_space(struct sock *sk)
 {
-	struct sock *meta_sk = tcp_sk(sk)->mpc ? mptcp_meta_sk(sk) : sk;
-
-	if (sock_flag(meta_sk, SOCK_QUEUE_SHRUNK)) {
-		sock_reset_flag(meta_sk, SOCK_QUEUE_SHRUNK);
-		if (meta_sk->sk_socket &&
-			test_bit(SOCK_NOSPACE, &meta_sk->sk_socket->flags))
+	if (sock_flag(sk, SOCK_QUEUE_SHRUNK)) {
+		sock_reset_flag(sk, SOCK_QUEUE_SHRUNK);
+		if (tcp_sk(sk)->mpc ||
+		    (sk->sk_socket &&
+			test_bit(SOCK_NOSPACE, &sk->sk_socket->flags)))
 			tcp_new_space(sk);
 	}
 }
 
 static inline void tcp_data_snd_check(struct sock *sk)
 {
-	struct sock *meta_sk = tcp_sk(sk)->mpc ? mptcp_meta_sk(sk) : sk;
-
-	tcp_push_pending_frames(meta_sk);
+	tcp_push_pending_frames(sk);
 	tcp_check_space(sk);
 }
 

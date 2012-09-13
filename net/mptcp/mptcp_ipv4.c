@@ -447,6 +447,7 @@ void mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	sk = sock.sk;
 	sk->sk_error_report = mptcp_sock_def_error_report;
 	sk->sk_data_ready = mptcp_data_ready;
+	sk->sk_write_space = mptcp_write_space;
 	sk->sk_state_change = mptcp_set_state;
 
 	tp = tcp_sk(sk);
