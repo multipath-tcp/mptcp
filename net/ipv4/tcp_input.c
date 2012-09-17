@@ -4879,7 +4879,7 @@ queue_and_out:
 
 		if (eaten > 0)
 			kfree_skb_partial(skb, fragstolen);
-		else if (!sock_flag(sk, SOCK_DEAD) || tp->mpc)
+		if (!sock_flag(sk, SOCK_DEAD) || tp->mpc)
 			/* MPTCP: we always have to call data_ready, because
 			 * we may be about to receive a data-fin, which still
 			 * must get queued.
@@ -5832,8 +5832,7 @@ no_ack:
 #endif
 			if (eaten)
 				kfree_skb_partial(skb, fragstolen);
-			else
-				sk->sk_data_ready(sk, 0);
+			sk->sk_data_ready(sk, 0);
 			return 0;
 		}
 	}
