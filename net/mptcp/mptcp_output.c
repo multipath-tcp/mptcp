@@ -361,19 +361,189 @@ send_mp_fclose:
 	goto out;
 }
 
+/**
+ * specific version of skb_entail (tcp.c),that allows appending to any
+ * subflow.
+ * Here, we do not set the data seq, since it remains the same. However,
+ * we do change the subflow seqnum.
+ *
+ * Note that we make the assumption that, within the local system, every
+ * segment has tcb->sub_seq == tcb->seq, that is, the dataseq is not shifted
+ * compared to the subflow seqnum. Put another way, the dataseq referenced
+ * is actually the number of the first data byte in the segment.
+ */
+static void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb)
+{
+	__be32 *ptr;
+	__u16 data_len;
+	struct mp_dss *mdss;
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
+	int fin = (tcb->tcp_flags & TCPHDR_FIN) ? 1 : 0;
+
+	/**** Write MPTCP DSS-option to the packet. ****/
+
+	ptr = (__be32 *)(skb->data - (MPTCP_SUB_LEN_DSS_ALIGN +
+				      MPTCP_SUB_LEN_ACK_ALIGN +
+				      MPTCP_SUB_LEN_SEQ_ALIGN));
+
+	/* Then we start writing it from the start */
+	mdss = (struct mp_dss *) ptr;
+
+	mdss->kind = TCPOPT_MPTCP;
+	mdss->sub = MPTCP_SUB_DSS;
+	mdss->rsv1 = 0;
+	mdss->rsv2 = 0;
+	mdss->F = (mptcp_is_data_fin(skb) ? 1 : 0);
+	mdss->m = 0;
+	mdss->M = 1;
+	mdss->a = 0;
+	mdss->A = 1;
+	mdss->len = mptcp_sub_len_dss(mdss, tp->mpcb->rx_opt.dss_csum);
+
+	if (tp->mpcb->send_infinite_mapping &&
+	    tcb->seq >= mptcp_meta_tp(tp)->snd_nxt) {
+		tp->mptcp->fully_established = 1;
+		tp->mpcb->infinite_mapping = 1;
+		tp->mptcp->infinite_cutoff_seq = tp->write_seq;
+		tcb->mptcp_flags |= MPTCPHDR_INF;
+		data_len = 0;
+	} else {
+		data_len = tcb->end_seq - tcb->seq;
+	}
+
+	ptr++;
+	ptr++; /* data_ack will be set in mptcp_options_write */
+	*ptr++ = htonl(tcb->seq); /* data_seq */
+
+	/* If it's a non-data DATA_FIN, we set subseq to 0 (draft v7) */
+	if (mptcp_is_data_fin(skb) && skb->len == 0)
+		*ptr++ = 0; /* subseq */
+	else
+		*ptr++ = htonl(tp->write_seq - tp->mptcp->snt_isn); /* subseq */
+
+	if (tp->mpcb->rx_opt.dss_csum && data_len) {
+		__be16 *p16 = (__be16 *)ptr;
+		__be32 hdseq = mptcp_get_highorder_sndbits(skb, tp->mpcb);
+		__wsum csum;
+		*ptr = htonl(((data_len) << 16) |
+				(TCPOPT_EOL << 8) |
+				(TCPOPT_EOL));
+
+		csum = csum_partial(ptr - 2, 12, skb->csum);
+		p16++;
+		*p16++ = csum_fold(csum_partial(&hdseq, sizeof(hdseq), csum));
+	} else {
+		*ptr++ = htonl(((data_len) << 16) |
+				(TCPOPT_NOP << 8) |
+				(TCPOPT_NOP));
+	}
+
+	tcb->seq = tp->write_seq;
+	tcb->sacked = 0; /* reset the sacked field: from the point of view
+			  * of this subflow, we are sending a brand new
+			  * segment */
+	/* Take into account seg len */
+	tp->write_seq += skb->len + fin;
+	tcb->end_seq = tp->write_seq;
+
+	/* If it's a non-payload DATA_FIN (also no subflow-fin), the
+	 * segment is not part of the subflow but on a meta-only-level
+	 */
+	if (!mptcp_is_data_fin(skb) || tcb->end_seq != tcb->seq) {
+		tcp_add_write_queue_tail(sk, skb);
+		sk->sk_wmem_queued += skb->truesize;
+		sk_mem_charge(sk, skb->truesize);
+	}
+}
+
 /* Inspired by tcp_write_wakeup */
 int mptcp_write_wakeup(struct sock *meta_sk)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct sk_buff *skb;
+	struct sk_buff *skb, *subskb;
 
-	skb = tcp_send_head(meta_sk);
-	if (skb && before(TCP_SKB_CB(skb)->seq, tcp_wnd_end(meta_tp))) {
-		/* Currently, zero-window-probes are still handled on a
-		 * subflow-level */
-		mptcp_debug("%s INSIDE - zero-window-probes on the meta-sk\n",
-				__func__);
-		BUG();
+	if ((skb = tcp_send_head(meta_sk)) != NULL &&
+	    before(TCP_SKB_CB(skb)->seq, tcp_wnd_end(meta_tp))) {
+		int err;
+		unsigned int mss = tcp_current_mss(meta_sk);
+		unsigned int seg_size = tcp_wnd_end(meta_tp) - TCP_SKB_CB(skb)->seq;
+		struct sock *subsk;
+
+		if (before(meta_tp->pushed_seq, TCP_SKB_CB(skb)->end_seq))
+			meta_tp->pushed_seq = TCP_SKB_CB(skb)->end_seq;
+
+		/* We are probing the opening of a window
+		 * but the window size is != 0
+		 * must have been a result SWS avoidance ( sender )
+		 */
+		if (seg_size < TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq ||
+		    skb->len > mss) {
+			seg_size = min(seg_size, mss);
+			TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_PSH;
+			if (tcp_fragment(meta_sk, skb, seg_size, mss))
+				return -1;
+		} else if (!tcp_skb_pcount(skb)) {
+			printk(KERN_ERR"%s should not happen with MPTCP!\n", __func__);
+			BUG();
+		}
+
+		subsk = get_available_subflow(meta_sk, skb);
+		if (!subsk)
+			return -1;
+
+		TCP_SKB_CB(skb)->mptcp_flags |= (meta_tp->mpcb->snd_hiseq_index ?
+						 MPTCPHDR_SEQ64_INDEX : 0);
+		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_PSH;
+
+		if ((subskb = skb_clone(skb, GFP_ATOMIC)) == NULL)
+			return -1;
+
+		TCP_SKB_CB(skb)->path_mask |= mptcp_pi_to_flag(tcp_sk(subsk)->mptcp->path_index);
+
+		/* The subskb is going in the subflow send-queue. Its path-mask
+		 * is not needed anymore and MUST be set to 0, as the path-mask
+		 * is a union with inet_skb_param.
+		 */
+		TCP_SKB_CB(subskb)->path_mask = 0;
+
+		mptcp_skb_entail(subsk, subskb);
+
+		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
+		err = tcp_transmit_skb(subsk, skb, 1, GFP_ATOMIC);
+		if (unlikely(err)) {
+			/* Remove the skb from the subsock */
+			if (!mptcp_is_data_fin(subskb) ||
+			    (TCP_SKB_CB(subskb)->end_seq != TCP_SKB_CB(subskb)->seq)) {
+				tcp_advance_send_head(subsk, subskb);
+				tcp_unlink_write_queue(subskb, subsk);
+				tcp_sk(subsk)->write_seq -= subskb->len;
+				mptcp_wmem_free_skb(subsk, subskb);
+			} else {
+				kfree_skb(subskb);
+			}
+
+			TCP_SKB_CB(skb)->path_mask &= ~mptcp_pi_to_flag(tcp_sk(subsk)->mptcp->path_index);
+
+			return err;
+		}
+
+		mptcp_check_sndseq_wrap(meta_tp, TCP_SKB_CB(skb)->end_seq -
+						 TCP_SKB_CB(skb)->seq);
+		tcp_event_new_data_sent(meta_sk, skb);
+
+		/* If it's a non-payload DATA_FIN (also no subflow-fin), the
+		 * segment is not part of the subflow but on a meta-only-level
+		 *
+		 * We free it, because it has been queued nowhere.
+		 */
+		if (!mptcp_is_data_fin(subskb) ||
+		    (TCP_SKB_CB(subskb)->end_seq != TCP_SKB_CB(subskb)->seq))
+			tcp_event_new_data_sent(subsk, subskb);
+		else
+			kfree_skb(subskb);
+
+		return 0;
 	} else {
 		struct sock *sk_it;
 		int ans = 0;
@@ -498,102 +668,6 @@ retrans:
 			return skb_it;
 	}
 	return NULL;
-}
-
-/**
- * specific version of skb_entail (tcp.c),that allows appending to any
- * subflow.
- * Here, we do not set the data seq, since it remains the same. However,
- * we do change the subflow seqnum.
- *
- * Note that we make the assumption that, within the local system, every
- * segment has tcb->sub_seq == tcb->seq, that is, the dataseq is not shifted
- * compared to the subflow seqnum. Put another way, the dataseq referenced
- * is actually the number of the first data byte in the segment.
- */
-static void mptcp_skb_entail(struct sock *sk, struct sk_buff *skb)
-{
-	__be32 *ptr;
-	__u16 data_len;
-	struct mp_dss *mdss;
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
-	int fin = (tcb->tcp_flags & TCPHDR_FIN) ? 1 : 0;
-
-	/**** Write MPTCP DSS-option to the packet. ****/
-
-	ptr = (__be32 *)(skb->data - (MPTCP_SUB_LEN_DSS_ALIGN +
-				      MPTCP_SUB_LEN_ACK_ALIGN +
-				      MPTCP_SUB_LEN_SEQ_ALIGN));
-
-	/* Then we start writing it from the start */
-	mdss = (struct mp_dss *) ptr;
-
-	mdss->kind = TCPOPT_MPTCP;
-	mdss->sub = MPTCP_SUB_DSS;
-	mdss->rsv1 = 0;
-	mdss->rsv2 = 0;
-	mdss->F = (mptcp_is_data_fin(skb) ? 1 : 0);
-	mdss->m = 0;
-	mdss->M = 1;
-	mdss->a = 0;
-	mdss->A = 1;
-	mdss->len = mptcp_sub_len_dss(mdss, tp->mpcb->rx_opt.dss_csum);
-
-	if (tp->mpcb->send_infinite_mapping &&
-	    tcb->seq >= mptcp_meta_tp(tp)->snd_nxt) {
-		tp->mptcp->fully_established = 1;
-		tp->mpcb->infinite_mapping = 1;
-		tp->mptcp->infinite_cutoff_seq = tp->write_seq;
-		tcb->mptcp_flags |= MPTCPHDR_INF;
-		data_len = 0;
-	} else {
-		data_len = tcb->end_seq - tcb->seq;
-	}
-
-	ptr++;
-	ptr++; /* data_ack will be set in mptcp_options_write */
-	*ptr++ = htonl(tcb->seq); /* data_seq */
-
-	/* If it's a non-data DATA_FIN, we set subseq to 0 (draft v7) */
-	if (mptcp_is_data_fin(skb) && skb->len == 0)
-		*ptr++ = 0; /* subseq */
-	else
-		*ptr++ = htonl(tp->write_seq - tp->mptcp->snt_isn); /* subseq */
-
-	if (tp->mpcb->rx_opt.dss_csum && data_len) {
-		__be16 *p16 = (__be16 *)ptr;
-		__be32 hdseq = mptcp_get_highorder_sndbits(skb, tp->mpcb);
-		__wsum csum;
-		*ptr = htonl(((data_len) << 16) |
-				(TCPOPT_EOL << 8) |
-				(TCPOPT_EOL));
-
-		csum = csum_partial(ptr - 2, 12, skb->csum);
-		p16++;
-		*p16++ = csum_fold(csum_partial(&hdseq, sizeof(hdseq), csum));
-	} else {
-		*ptr++ = htonl(((data_len) << 16) |
-				(TCPOPT_NOP << 8) |
-				(TCPOPT_NOP));
-	}
-
-	tcb->seq = tp->write_seq;
-	tcb->sacked = 0; /* reset the sacked field: from the point of view
-			  * of this subflow, we are sending a brand new
-			  * segment */
-	/* Take into account seg len */
-	tp->write_seq += skb->len + fin;
-	tcb->end_seq = tp->write_seq;
-
-	/* If it's a non-payload DATA_FIN (also no subflow-fin), the
-	 * segment is not part of the subflow but on a meta-only-level
-	 */
-	if (!mptcp_is_data_fin(skb) || tcb->end_seq != tcb->seq) {
-		tcp_add_write_queue_tail(sk, skb);
-		sk->sk_wmem_queued += skb->truesize;
-		sk_mem_charge(sk, skb->truesize);
-	}
 }
 
 static void mptcp_combine_dfin(struct sk_buff *skb, struct sock *meta_sk,

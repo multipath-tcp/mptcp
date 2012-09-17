@@ -281,9 +281,7 @@ static void tcp_probe_timer(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	int max_probes;
 
-	 if (tp->packets_out || (!tp->mpc && !tcp_send_head(sk)) ||
-			(tp->mpc && !tcp_send_head(sk) &&
-			!tcp_send_head(mptcp_meta_sk(sk)))) {
+	if (tp->packets_out || !tcp_send_head(sk)) {
 		icsk->icsk_probes_out = 0;
 		return;
 	}

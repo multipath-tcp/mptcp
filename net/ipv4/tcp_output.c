@@ -1869,17 +1869,9 @@ void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
 	 */
 	if (unlikely(sk->sk_state == TCP_CLOSE))
 		return;
-	if (tcp_write_xmit(sk, cur_mss, nonagle, 0, GFP_ATOMIC)) {
-		if (!is_meta_sk(sk)) {
-			tcp_check_probe_timer(sk);
-		} else {
-#ifdef CONFIG_MPTCP
-			struct sock *sk_it;
-			mptcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it)
-			    tcp_check_probe_timer(sk_it);
-#endif
-		}
-	}
+
+	if (tcp_write_xmit(sk, cur_mss, nonagle, 0, GFP_ATOMIC))
+		tcp_check_probe_timer(sk);
 }
 
 /* Send _single_ skb sitting at the send head. This function requires

@@ -370,6 +370,7 @@ extern void tcp_reset(struct sock *sk);
 extern int tcp_may_update_window(const struct tcp_sock *tp, const u32 ack,
 				 const u32 ack_seq, const u32 nwin);
 extern int tcp_urg_mode(const struct tcp_sock *tp);
+extern void tcp_ack_probe(struct sock *sk);
 
 extern int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req,
 			     struct request_values *rvp);

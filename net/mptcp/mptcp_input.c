@@ -929,6 +929,7 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *tp = tcp_sk(sk);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 	int flag = 0;
+	int prior_packets;
 	u32 nwin, data_ack, data_seq;
 	__u32 *ptr;
 
@@ -1020,6 +1021,9 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	sk->sk_err_soft = 0;
 	inet_csk(meta_sk)->icsk_probes_out = 0;
 	meta_tp->rcv_tstamp = tcp_time_stamp;
+	prior_packets = meta_tp->packets_out;
+	if (!prior_packets)
+		goto no_queue;
 
 	meta_tp->snd_una = data_ack;
 
@@ -1027,6 +1031,12 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 
 	if (meta_sk->sk_state != TCP_ESTABLISHED)
 		mptcp_rcv_state_process(meta_sk, sk, skb);
+
+	return flag;
+
+no_queue:
+	if (tcp_send_head(meta_sk))
+		tcp_ack_probe(meta_sk);
 
 	return flag;
 }
