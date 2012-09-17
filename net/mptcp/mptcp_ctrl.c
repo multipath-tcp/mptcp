@@ -696,6 +696,8 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	meta_icsk->icsk_rto *= 2; /* Double of initial - rto */
 
 	tcp_init_xmit_timers(master_sk);
+	/* Has been set for sending out the SYN */
+	inet_csk_clear_xmit_timer(meta_sk, ICSK_TIME_RETRANS);
 
 	if (!meta_tp->inside_tk_table) {
 		/* Adding the meta_tp in the token hashtable - coming from server-side */
