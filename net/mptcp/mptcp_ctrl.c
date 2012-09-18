@@ -1388,10 +1388,12 @@ int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key, u32 window)
 
 	meta_sk->sk_prot->unhash(meta_sk);
 
-	if (master_sk->sk_family == AF_INET6)
-		__inet6_hash(master_sk, NULL);
-	else
+	if (master_sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(master_sk))
 		__inet_hash_nolisten(master_sk, NULL);
+#if IS_ENABLED(CONFIG_IPV6)
+	else
+		__inet6_hash(master_sk, NULL);
+#endif
 
 	master_tp->mptcp->rem_id = 0;
 	master_tp->mptcp->slave_sk = 0;
