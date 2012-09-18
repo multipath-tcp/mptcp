@@ -68,6 +68,9 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 				  struct mptcp_cb *mpcb);
 int mptcp_pm_v6_init(void);
 void mptcp_v6_send_add_addr(int loc_id, struct mptcp_cb *mpcb);
+struct sock *mptcp_v6v4_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
+				      struct request_sock *req,
+				      struct dst_entry *dst);
 
 #else /* CONFIG_MPTCP */
 

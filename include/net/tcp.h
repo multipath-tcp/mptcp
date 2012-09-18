@@ -397,8 +397,12 @@ extern int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 extern void tcp_v6_destroy_sock(struct sock *sk);
 extern void tcp_v6_hash(struct sock *sk);
 extern struct sock *tcp_v6_hnd_req(struct sock *sk,struct sk_buff *skb);
-
-
+extern void __tcp_v6_send_check(struct sk_buff *skb,
+				const struct in6_addr *saddr,
+				const struct in6_addr *daddr);
+extern struct sock *tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
+					 struct request_sock *req,
+					 struct dst_entry *dst);
 /**** END - Exports needed for MPTCP ****/
 
 extern void tcp_v4_err(struct sk_buff *skb, u32);

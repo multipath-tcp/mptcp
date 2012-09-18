@@ -358,7 +358,7 @@ out:
 	rcu_read_unlock();
 }
 
-int mptcp_syn_recv_sock(struct sk_buff *skb)
+int mptcp_check_req(struct sk_buff *skb)
 {
 	struct tcphdr *th = tcp_hdr(skb);
 	struct sock *meta_sk = NULL;

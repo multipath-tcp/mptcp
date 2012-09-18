@@ -36,10 +36,12 @@
 #include <net/inet6_hashtables.h>
 #include <net/inet_common.h>
 #include <net/ipv6.h>
+#include <net/ip6_route.h>
 #include <net/mptcp.h>
 #include <net/mptcp_pm.h>
 #include <net/mptcp_v6.h>
 #include <net/tcp.h>
+#include <net/transp_v6.h>
 #include <net/addrconf.h>
 
 #define AF_INET6_FAMILY(fam) ((fam) == AF_INET6)
@@ -81,6 +83,167 @@ static void mptcp_v6_reqsk_queue_hash_add(struct request_sock *req,
 	list_add(&mptcp_rsk(req)->collide_tuple, &mptcp_reqsk_htb[h_global]);
 	lopt->qlen++;
 	spin_unlock_bh(&mptcp_reqsk_hlock);
+}
+
+/* The meta-socket is IPv4, but a new subsocket is IPv6 */
+static int mptcp_v6v4_send_synack(struct sock *sk, struct request_sock *req,
+				  struct request_values *rvp)
+{
+	struct inet6_request_sock *treq = inet6_rsk(req);
+	struct sk_buff * skb;
+	struct flowi6 fl6;
+	struct dst_entry *dst;
+	int err;
+
+	memset(&fl6, 0, sizeof(fl6));
+	fl6.flowi6_proto = IPPROTO_TCP;
+	ipv6_addr_copy(&fl6.daddr, &treq->rmt_addr);
+	ipv6_addr_copy(&fl6.saddr, &treq->loc_addr);
+	fl6.flowlabel = 0;
+	fl6.flowi6_oif = treq->iif;
+	fl6.flowi6_mark = sk->sk_mark;
+	fl6.fl6_dport = inet_rsk(req)->rmt_port;
+	fl6.fl6_sport = inet_rsk(req)->loc_port;
+	security_req_classify_flow(req, flowi6_to_flowi(&fl6));
+
+	dst = ip6_dst_lookup_flow(sk, &fl6, NULL, false);
+	if (IS_ERR(dst)) {
+		err = PTR_ERR(dst);
+		dst = NULL;
+		goto done;
+	}
+	skb = tcp_make_synack(sk, dst, req, rvp);
+	err = -ENOMEM;
+	if (skb) {
+		__tcp_v6_send_check(skb, &treq->loc_addr, &treq->rmt_addr);
+
+		ipv6_addr_copy(&fl6.daddr, &treq->rmt_addr);
+		err = ip6_xmit(sk, skb, &fl6, NULL, 0);
+		err = net_xmit_eval(err);
+	}
+
+done:
+	dst_release(dst);
+	return err;
+}
+
+/* The meta-socket is IPv4, but a new subsocket is IPv6 */
+struct sock *mptcp_v6v4_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
+				      struct request_sock *req,
+				      struct dst_entry *dst)
+{
+	struct inet6_request_sock *treq;
+	struct ipv6_pinfo *newnp;
+	struct tcp6_sock *newtcp6sk;
+	struct inet_sock *newinet;
+	struct tcp_sock *newtp;
+	struct sock *newsk;
+
+	treq = inet6_rsk(req);
+
+	if (sk_acceptq_is_full(sk))
+		goto out_overflow;
+
+	if (!dst) {
+		struct flowi6 fl6;
+
+		memset(&fl6, 0, sizeof(fl6));
+		fl6.flowi6_proto = IPPROTO_TCP;
+		ipv6_addr_copy(&fl6.daddr, &treq->rmt_addr);
+		ipv6_addr_copy(&fl6.saddr, &treq->loc_addr);
+		fl6.flowi6_oif = sk->sk_bound_dev_if;
+		fl6.flowi6_mark = sk->sk_mark;
+		fl6.fl6_dport = inet_rsk(req)->rmt_port;
+		fl6.fl6_sport = inet_rsk(req)->loc_port;
+		security_req_classify_flow(req, flowi6_to_flowi(&fl6));
+
+		dst = ip6_dst_lookup_flow(sk, &fl6, NULL, false);
+
+		if (IS_ERR(dst))
+			goto out;
+	}
+
+	newsk = tcp_create_openreq_child(sk, req, skb);
+	if (newsk == NULL)
+		goto out_nonewsk;
+
+	/*
+	 * No need to charge this sock to the relevant IPv6 refcnt debug socks
+	 * count here, tcp_create_openreq_child now does this for us, see the
+	 * comment in that function for the gory details. -acme
+	 */
+
+	newsk->sk_gso_type = SKB_GSO_TCPV6;
+	sk_setup_caps(newsk, dst);
+
+	newtcp6sk = (struct tcp6_sock *)newsk;
+	inet_sk(newsk)->pinet6 = &newtcp6sk->inet6;
+
+	newtp = tcp_sk(newsk);
+	newinet = inet_sk(newsk);
+	newnp = inet6_sk(newsk);
+
+	ipv6_addr_copy(&newnp->daddr, &treq->rmt_addr);
+	ipv6_addr_copy(&newnp->saddr, &treq->loc_addr);
+	ipv6_addr_copy(&newnp->rcv_saddr, &treq->loc_addr);
+	newsk->sk_bound_dev_if = treq->iif;
+
+	/* Now IPv6 options...
+
+	   First: no IPv4 options.
+	 */
+	newinet->inet_opt = NULL;
+	newnp->ipv6_ac_list = NULL;
+	newnp->ipv6_fl_list = NULL;
+	newnp->rxopt.all = 0;
+
+	/* Clone pktoptions received with SYN */
+	newnp->pktoptions = NULL;
+	if (treq->pktopts != NULL) {
+		newnp->pktoptions = skb_clone(treq->pktopts, GFP_ATOMIC);
+		kfree_skb(treq->pktopts);
+		treq->pktopts = NULL;
+		if (newnp->pktoptions)
+			skb_set_owner_r(newnp->pktoptions, newsk);
+	}
+	newnp->opt	  = NULL;
+	newnp->mcast_oif  = inet6_iif(skb);
+	newnp->mcast_hops = ipv6_hdr(skb)->hop_limit;
+
+	/* Initialization copied from inet6_create */
+	newnp->hop_limit  = -1;
+	newnp->mc_loop	  = 1;
+	newnp->pmtudisc	  = IPV6_PMTUDISC_WANT;
+
+	inet_csk(newsk)->icsk_ext_hdr_len = 0;
+
+	tcp_mtup_init(newsk);
+	tcp_sync_mss(newsk, dst_mtu(dst));
+	newtp->advmss = dst_metric_advmss(dst);
+	tcp_initialize_rcv_mss(newsk);
+	if (tcp_rsk(req)->snt_synack)
+		tcp_valid_rtt_meas(newsk,
+		    tcp_time_stamp - tcp_rsk(req)->snt_synack);
+	newtp->total_retrans = req->retrans;
+
+	newinet->inet_daddr = newinet->inet_saddr = LOOPBACK4_IPV6;
+	newinet->inet_rcv_saddr = LOOPBACK4_IPV6;
+
+	if (__inet_inherit_port(sk, newsk) < 0) {
+		sock_put(newsk);
+		goto out;
+	}
+	__inet6_hash(newsk, NULL);
+
+	return newsk;
+
+out_overflow:
+	NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_LISTENOVERFLOWS);
+out_nonewsk:
+	dst_release(dst);
+out:
+	NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_LISTENDROPS);
+	return NULL;
 }
 
 /* from mptcp_v6_join_request() */
@@ -131,9 +294,11 @@ static void mptcp_v6_join_request_short(struct sock *meta_sk,
 	ipv6_addr_copy(&treq->loc_addr, &daddr);
 	ipv6_addr_copy(&treq->rmt_addr, &saddr);
 
-	if (ipv6_opt_accepted(meta_sk, skb) ||
-	    np->rxopt.bits.rxinfo || np->rxopt.bits.rxoinfo ||
-	    np->rxopt.bits.rxhlim || np->rxopt.bits.rxohlim) {
+	/* Meta may be IPv4-only - then we should not do the below */
+	if (meta_sk->sk_family == AF_INET6 &&
+	    (ipv6_opt_accepted(meta_sk, skb) ||
+	     np->rxopt.bits.rxinfo || np->rxopt.bits.rxoinfo ||
+	     np->rxopt.bits.rxhlim || np->rxopt.bits.rxohlim)) {
 		atomic_inc(&skb->users);
 		treq->pktopts = skb;
 	}
@@ -149,8 +314,13 @@ static void mptcp_v6_join_request_short(struct sock *meta_sk,
 	/* Adding to request queue in metasocket */
 	mptcp_v6_reqsk_queue_hash_add(req, TCP_TIMEOUT_INIT);
 
-	if (tcp_v6_send_synack(meta_sk, req, NULL))
-		goto drop_and_free;
+	if (meta_sk->sk_family == AF_INET6) {
+		if (tcp_v6_send_synack(meta_sk, req, NULL))
+			goto drop_and_free;
+	} else {
+		if (mptcp_v6v4_send_synack(meta_sk, req, NULL))
+			goto drop_and_free;
+	}
 
 	return;
 

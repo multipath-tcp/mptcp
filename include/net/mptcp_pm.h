@@ -109,7 +109,7 @@ void mptcp_reqsk_new_mptcp(struct request_sock *req,
 			   const struct multipath_options *mopt);
 void mptcp_connect_init(struct tcp_sock *tp);
 void mptcp_set_addresses(struct sock *meta_sk);
-int mptcp_syn_recv_sock(struct sk_buff *skb);
+int mptcp_check_req(struct sk_buff *skb);
 void mptcp_address_worker(struct work_struct *work);
 int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family);
 struct sock *mptcp_select_loc_sock(const struct mptcp_cb *mpcb, u16 ids);

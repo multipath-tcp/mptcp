@@ -206,11 +206,12 @@ struct mptcp_cb {
 	__u64	mptcp_loc_key;
 	__u32	mptcp_loc_token;
 
-	/* Alternative option pointers. If master sk is IPv4 these are IPv6 and
-	 * vice versa. Used to setup correct function pointers for sub sks of
-	 * different address family than the master socket.
+	/* Create a new subflow - necessary because the meta-sk may be IPv4, but
+	 * the new subflow can be IPv6
 	 */
-	const struct inet_connection_sock_af_ops *icsk_af_ops_alt;
+	struct sock *(*syn_recv_sock)(struct sock *sk, struct sk_buff *skb,
+				      struct request_sock *req,
+				      struct dst_entry *dst);
 
 	/* Local addresses */
 	struct mptcp_loc4 addr4[MPTCP_MAX_ADDR];
