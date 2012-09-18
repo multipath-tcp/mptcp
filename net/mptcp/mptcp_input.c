@@ -94,7 +94,7 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk)
 	}
 
 	if (acked)
-		mptcp_reset_xmit_timer(meta_sk);
+		tcp_rearm_rto(meta_sk);
 }
 
 /* Inspired by tcp_rcv_state_process */

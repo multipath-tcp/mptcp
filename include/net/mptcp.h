@@ -944,21 +944,6 @@ static inline void mptcp_set_rto(struct sock *sk)
 		inet_csk(mptcp_meta_sk(sk))->icsk_rto = max_rto << 1;
 }
 
-/* Maybe we could merge this with tcp_rearm_rto().
- * But then we will have to add if's in the tcp-stack.
- */
-static inline void mptcp_reset_xmit_timer(struct sock *meta_sk)
-{
-	if (!is_meta_sk(meta_sk))
-		return;
-
-	if (!tcp_sk(meta_sk)->packets_out)
-		inet_csk_clear_xmit_timer(meta_sk, ICSK_TIME_RETRANS);
-	else
-		inet_csk_reset_xmit_timer(meta_sk, ICSK_TIME_RETRANS,
-				  inet_csk(meta_sk)->icsk_rto, TCP_RTO_MAX);
-}
-
 static inline int mptcp_sysctl_syn_retries(void)
 {
 	return sysctl_mptcp_syn_retries;

@@ -3252,7 +3252,7 @@ static void tcp_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 /* Restart timer after forward progress on connection.
  * RFC2988 recommends to restart timer to now+rto.
  */
-static void tcp_rearm_rto(struct sock *sk)
+void tcp_rearm_rto(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 
