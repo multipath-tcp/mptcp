@@ -510,7 +510,7 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 		mptcp_skb_entail(subsk, subskb);
 
 		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
-		err = tcp_transmit_skb(subsk, skb, 1, GFP_ATOMIC);
+		err = tcp_transmit_skb(subsk, subskb, 1, GFP_ATOMIC);
 		if (unlikely(err)) {
 			/* Remove the skb from the subsock */
 			if (!mptcp_is_data_fin(subskb) ||
