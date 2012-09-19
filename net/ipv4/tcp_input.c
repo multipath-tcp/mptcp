@@ -4999,11 +4999,9 @@ static int tcp_prune_queue(struct sock *sk)
 void tcp_cwnd_application_limited(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *meta_sk = tp->mpc ? mptcp_meta_sk(sk) : sk;
 
 	if (inet_csk(sk)->icsk_ca_state == TCP_CA_Open &&
-	    meta_sk->sk_socket && !test_bit(SOCK_NOSPACE,
-					    &meta_sk->sk_socket->flags)) {
+	    sk->sk_socket && !test_bit(SOCK_NOSPACE, &sk->sk_socket->flags)) {
 		/* Limited by application or receiver window. */
 		u32 init_win = tcp_init_cwnd(tp, __sk_dst_get(sk));
 		u32 win_used = max(tp->snd_cwnd_used, init_win);
