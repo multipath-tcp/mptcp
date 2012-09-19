@@ -308,6 +308,7 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 		struct tcphdr *th = tcp_hdr(skb);
 		const struct iphdr *iph = ip_hdr(skb);
 		struct sock *sk;
+		int ret;
 
 		sk = inet_lookup_established(sock_net(meta_sk), &tcp_hashinfo,
 					     iph->saddr, th->source, iph->daddr,
@@ -322,7 +323,10 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 			return 0;
 		}
 
-		return tcp_v4_do_rcv(sk, skb);
+		ret = tcp_v4_do_rcv(sk, skb);
+		sock_put(sk);
+
+		return ret;
 	}
 	TCP_SKB_CB(skb)->mptcp_flags = 0;
 

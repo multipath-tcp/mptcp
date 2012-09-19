@@ -483,6 +483,7 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	if (!(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_JOIN)) {
 		struct tcphdr *th = tcp_hdr(skb);
 		struct sock *sk;
+		int ret;
 
 		sk = __inet6_lookup_established(sock_net(meta_sk), &tcp_hashinfo,
 				&ipv6_hdr(skb)->saddr, th->source,
@@ -497,7 +498,10 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 			return 0;
 		}
 
-		return tcp_v6_do_rcv(sk, skb);
+		ret = tcp_v6_do_rcv(sk, skb);
+		sock_put(sk);
+
+		return ret;
 	}
 	TCP_SKB_CB(skb)->mptcp_flags = 0;
 
