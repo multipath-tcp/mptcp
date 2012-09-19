@@ -1151,7 +1151,7 @@ struct mptcp_cb *mptcp_mpcb_from_req_sk(const struct request_sock *req)
 {
 	return NULL;
 }
-static inline int is_meta_sk(const struct sock *tp)
+static inline int is_meta_sk(const struct sock *sk)
 {
 	return 0;
 }

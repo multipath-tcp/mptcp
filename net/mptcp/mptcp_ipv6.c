@@ -388,7 +388,7 @@ int mptcp_v6_add_raddress(struct multipath_options *mopt,
 		 * However the src_addr of the IP-packet has been changed. We
 		 * update the addr in the list, because this is the address as
 		 * OUR BOX sees it. */
-		if (rem6->id == id && !ipv6_addr_equal(&rem6->addr, addr)) {
+		if (rem6->id == id) {
 			/* update the address */
 			mptcp_debug("%s: updating old addr: %pI6 \
 					to addr %pI6 with id:%d\n",
