@@ -2505,11 +2505,7 @@ struct sk_buff *tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 	if (req->rcv_wnd == 0) { /* ignored for retransmitted syns */
 		__u8 rcv_wscale;
 		/* Set this up on the first call only */
-		if (tcp_rsk(req)->saw_mpc && mptcp_mpcb_from_req_sk(req))
-			req->window_clamp = dst_metric(dst, RTAX_WINDOW);
-		else
-			req->window_clamp = tp->window_clamp ? :
-						dst_metric(dst, RTAX_WINDOW);
+		req->window_clamp = tp->window_clamp ? : dst_metric(dst, RTAX_WINDOW);
 
 		/* limit the window selection if the user enforce a smaller rx buffer */
 		if (sk->sk_userlocks & SOCK_RCVBUF_LOCK &&
