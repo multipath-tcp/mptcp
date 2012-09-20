@@ -1020,17 +1020,8 @@ static inline int mptcp_mp_fail_rcvd(struct sock *sk, struct tcphdr *th)
 
 		tcp_send_active_reset(sk, GFP_ATOMIC);
 
-		if (!sock_flag(sk, SOCK_DEAD))
-			mptcp_sub_close(sk, 0);
-		else
-			tcp_sk(sk)->mp_killed = 1;
-
-		mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp) {
-			if (sk_it == sk)
-				continue;
-
+		mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp)
 			mptcp_sub_force_close(sk_it);
-		}
 
 		tcp_reset(meta_sk);
 
