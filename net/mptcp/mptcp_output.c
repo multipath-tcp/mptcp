@@ -302,8 +302,7 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 		__mptcp_reinject_data(skb_it, meta_sk, NULL, 1);
 	}
 
-	__tcp_push_pending_frames(meta_sk, tcp_current_mss(meta_sk),
-				  tcp_sk(meta_sk)->nonagle);
+	mptcp_push_pending_frames(meta_sk);
 
 	tp->pf = 1;
 }
@@ -329,7 +328,7 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 	}
 
 	__mptcp_reinject_data(tcp_write_queue_head(meta_sk), meta_sk, NULL, 1);
-	__tcp_push_pending_frames(meta_sk, tcp_current_mss(meta_sk), meta_tp->nonagle);
+	mptcp_push_pending_frames(meta_sk);
 
 out:
 	meta_icsk->icsk_rto = min(meta_icsk->icsk_rto << 1, TCP_RTO_MAX);
@@ -342,6 +341,36 @@ send_mp_fclose:
 	mptcp_send_active_reset(meta_sk, GFP_ATOMIC);
 
 	goto out;
+}
+
+static void mptcp_combine_dfin(struct sk_buff *skb, struct sock *meta_sk,
+			       struct sock *subsk)
+{
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct mptcp_cb *mpcb = meta_tp->mpcb;
+	struct sock *sk_it;
+	int all_empty = 1, all_acked;
+
+	/* Don't combine, if they didn't combine - otherwise we end up in
+	 * TIME_WAIT, even if our app is smart enough to avoid it */
+	if (meta_sk->sk_shutdown & RCV_SHUTDOWN) {
+		if (!mpcb->dfin_combined)
+			return;
+	}
+
+	/* If no other subflow has data to send, we can combine */
+	mptcp_for_each_sk(mpcb, sk_it) {
+		if (!tcp_write_queue_empty(sk_it))
+			all_empty = 0;
+	}
+
+	/* If all data has been DATA_ACKed, we can combine.
+	 * -1, because the data_fin consumed one byte
+	 */
+	all_acked = (meta_tp->snd_una == (meta_tp->write_seq - 1));
+
+	if ((all_empty || all_acked) && tcp_close_state(subsk))
+		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_FIN;
 }
 
 /**
@@ -489,6 +518,9 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 		 * is a union with inet_skb_param.
 		 */
 		TCP_SKB_CB(subskb)->path_mask = 0;
+
+		if (mptcp_is_data_fin(subskb))
+			mptcp_combine_dfin(subskb, meta_sk, subsk);
 
 		mptcp_skb_entail(subsk, subskb);
 
@@ -653,36 +685,6 @@ retrans:
 	return NULL;
 }
 
-static void mptcp_combine_dfin(struct sk_buff *skb, struct sock *meta_sk,
-			       struct sock *subsk)
-{
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct mptcp_cb *mpcb = meta_tp->mpcb;
-	struct sock *sk_it;
-	int all_empty = 1, all_acked;
-
-	/* Don't combine, if they didn't combine - otherwise we end up in
-	 * TIME_WAIT, even if our app is smart enough to avoid it */
-	if (meta_sk->sk_shutdown & RCV_SHUTDOWN) {
-		if (!mpcb->dfin_combined)
-			return;
-	}
-
-	/* If no other subflow has data to send, we can combine */
-	mptcp_for_each_sk(mpcb, sk_it) {
-		if (!tcp_write_queue_empty(sk_it))
-			all_empty = 0;
-	}
-
-	/* If all data has been DATA_ACKed, we can combine.
-	 * -1, because the data_fin consumed one byte
-	 */
-	all_acked = (meta_tp->snd_una == (meta_tp->write_seq - 1));
-
-	if ((all_empty || all_acked) && tcp_close_state(subsk))
-		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_FIN;
-}
-
 int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		     int push_one, gfp_t gfp)
 {
@@ -834,40 +836,30 @@ retry:
 		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
 
 		if (unlikely(tcp_transmit_skb(subsk, subskb, 1, gfp))) {
-			/* there are three cases of failure of
-			 * tcp_transmit_skb:
-			 * 1. err != -ENOBUFS && err < 0
-			 *    Thus, the failure is due to ip_write_xmit and may
-			 *    be a routing-issue. We should not immediatly
-			 *    schedule again this subflow and reinject the skb
-			 *    on another subflow.
-			 *
-			 * 2. err == -ENOBUFS && err < 0
-			 *    Thus, the failure is due to a failed skb_clone due
-			 *    to GFP_ATOMIC.
-			 *
-			 * 3. err > 0
-			 *    The device has not enough space in the queues.
-			 *    Select another subflow and mark
-			 *    the current subflow as non-eligible.
-			 *    When exiting tcp_write_xmit, he will become
-			 *    eligible again and we may try him again.
-			 *
-			 * All this can correctly be handled, by setting
-			 * mpcb->noneligible. If all the subflows have become
-			 * non-eligible, we just exit tcp_write_xmit in
-			 * get_available_subflow. Later, we will try again.
-			 */
+			if (TCP_SKB_CB(subskb)->tcp_flags & TCPHDR_FIN) {
+				/* If it is a subflow-fin we must leave it on the
+				 * subflow-send-queue, so that the probe-timer
+				 * can retransmit it.
+				 */
+				if (!subtp->packets_out && !inet_csk(subsk)->icsk_pending)
+					inet_csk_reset_xmit_timer(subsk, ICSK_TIME_PROBE0,
+								  inet_csk(subsk)->icsk_rto, TCP_RTO_MAX);
+			} else if (mptcp_is_data_fin(subskb) &&
+				   TCP_SKB_CB(subskb)->end_seq == TCP_SKB_CB(subskb)->seq) {
+				/* An empty data-fin has not been enqueued on the subflow
+				 * and thus we free it.
+				 */
 
-			/* Remove the skb from the subsock */
-			if (!mptcp_is_data_fin(subskb) ||
-			    (TCP_SKB_CB(subskb)->end_seq != TCP_SKB_CB(subskb)->seq)) {
+				kfree_skb(subskb);
+			} else {
+				/* In all other cases we remove it from the sub-queue.
+				 * Other subflows may send it, or the probe-timer will
+				 * handle it.
+				 */
 				tcp_advance_send_head(subsk, subskb);
 				tcp_unlink_write_queue(subskb, subsk);
 				subtp->write_seq -= subskb->len;
 				mptcp_wmem_free_skb(subsk, subskb);
-			} else {
-				kfree_skb(subskb);
 			}
 
 			/* If it is a reinjection, we cannot modify the path-mask
@@ -926,19 +918,7 @@ retry:
 
 void mptcp_write_space(struct sock *sk)
 {
-	struct sock *meta_sk = mptcp_meta_sk(sk);
-
-	/* If we are closed, the bytes will have to remain here.
-	 * In time closedown will finish, we empty the write queue and all
-	 * will be happy.
-	 */
-	if (unlikely(meta_sk->sk_state == TCP_CLOSE))
-		return;
-
-	if (mptcp_write_xmit(meta_sk, tcp_current_mss(sk), tcp_sk(sk)->nonagle,
-			     0, GFP_ATOMIC))
-		tcp_check_probe_timer(meta_sk);
-
+	mptcp_push_pending_frames(mptcp_meta_sk(sk));
 }
 
 u32 __mptcp_select_window(struct sock *sk)

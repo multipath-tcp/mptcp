@@ -620,6 +620,15 @@ void mptcp_destroy_meta_sk(struct sock *meta_sk);
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb);
 struct sock *mptcp_sk_clone(struct sock *sk, int family, const gfp_t priority);
 
+static inline void mptcp_push_pending_frames(struct sock *meta_sk)
+{
+	if (mptcp_next_segment(meta_sk, NULL)) {
+		struct tcp_sock *tp = tcp_sk(meta_sk);
+
+		__tcp_push_pending_frames(meta_sk, tcp_current_mss(meta_sk), tp->nonagle);
+	}
+}
+
 static inline void mptcp_sub_force_close(struct sock *sk)
 {
 	tcp_done(sk);

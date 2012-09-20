@@ -940,7 +940,7 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	tp->pf = 0;
 
 	if (!(tcb->mptcp_flags & MPTCPHDR_ACK))
-		return 0;
+		goto exit;
 
 	ptr = (__u32 *)(skb_transport_header(skb) + tcb->dss_off);
 	ptr--;
@@ -974,13 +974,13 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	 * then we can probably ignore it.
 	 */
 	if (before(data_ack, meta_tp->snd_una))
-		return 0;
+		goto exit;
 
 	/* If the ack includes data we haven't sent yet, discard
 	 * this segment (RFC793 Section 3.9).
 	 */
 	if (after(data_ack, meta_tp->snd_nxt))
-		return 0;
+		goto exit;
 
 	/*** Now, update the window  - inspired by tcp_ack_update_window ***/
 	nwin = ntohs(tcp_hdr(skb)->window);
@@ -1042,11 +1042,16 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	if (meta_sk->sk_state != TCP_ESTABLISHED)
 		mptcp_rcv_state_process(meta_sk, sk, skb);
 
+exit:
+	mptcp_push_pending_frames(meta_sk);
+
 	return flag;
 
 no_queue:
 	if (tcp_send_head(meta_sk))
 		tcp_ack_probe(meta_sk);
+
+	mptcp_push_pending_frames(meta_sk);
 
 	return flag;
 }
