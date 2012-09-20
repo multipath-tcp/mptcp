@@ -724,7 +724,6 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		struct sock *subsk;
 		struct tcp_sock *subtp;
 		struct sk_buff *subskb = NULL;
-		int err;
 
 		if (reinject == 1) {
 			if (!after(TCP_SKB_CB(skb)->end_seq, meta_tp->snd_una)) {
@@ -841,13 +840,12 @@ retry:
 
 		if (mptcp_is_data_fin(subskb))
 			mptcp_combine_dfin(subskb, meta_sk, subsk);
-		BUG_ON(tcp_send_head(subsk));
 
 		mptcp_skb_entail(subsk, subskb);
 
 		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
-		err = tcp_transmit_skb(subsk, subskb, 1, gfp);
-		if (unlikely(err)) {
+
+		if (unlikely(tcp_transmit_skb(subsk, subskb, 1, gfp))) {
 			/* there are three cases of failure of
 			 * tcp_transmit_skb:
 			 * 1. err != -ENOBUFS && err < 0
@@ -898,15 +896,6 @@ retry:
 			continue;
 		}
 
-		/* Advance the send_head.  This one is sent out.
-		 * This call will increment packets_out.
-		 */
-		if (!reinject && tcp_send_head(meta_sk) != skb) {
-			printk(KERN_ERR "sock_owned_by_user:%d\n",
-			       sock_owned_by_user(meta_sk));
-			BUG();
-		}
-
 		/* If it's a non-payload DATA_FIN (also no subflow-fin), the
 		 * segment is not part of the subflow but on a meta-only-level
 		 *
@@ -918,9 +907,7 @@ retry:
 		else
 			kfree_skb(subskb);
 
-		BUG_ON(tcp_send_head(subsk));
 		if (!reinject) {
-			BUG_ON(tcp_send_head(meta_sk) != skb);
 			mptcp_check_sndseq_wrap(meta_tp,
 					TCP_SKB_CB(skb)->end_seq -
 					TCP_SKB_CB(skb)->seq);
@@ -930,9 +917,13 @@ retry:
 			mptcp_mark_reinjected(subsk, skb);
 
 		tcp_minshall_update(meta_tp, mss_now, skb);
-		sent_pkts++;
+		sent_pkts += tcp_skb_pcount(skb);
+
+		if (inet_csk(subsk)->icsk_ca_state == TCP_CA_Recovery)
+			subtp->prr_out += tcp_skb_pcount(skb);
 
 		tcp_cwnd_validate(subsk);
+
 		if (push_one)
 			break;
 	}
