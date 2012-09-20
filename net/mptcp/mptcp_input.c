@@ -1113,8 +1113,7 @@ static void mptcp_send_reset_rem_id(const struct mptcp_cb *mpcb, u8 rem_id)
 }
 
 /* Same as tcp_parse_options but only parse MPTCP options. */
-void mptcp_post_parse_options(struct tcp_sock *tp,
-			      const struct sk_buff *skb)
+void mptcp_post_parse_options(struct tcp_sock *tp, const struct sk_buff *skb)
 {
 	const struct tcphdr *th = tcp_hdr(skb);
 	int length = (th->doff * 4) - sizeof(struct tcphdr);
