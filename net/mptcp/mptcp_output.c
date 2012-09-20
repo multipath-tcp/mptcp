@@ -694,18 +694,6 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 	int result;
 	int reinject = 0;
 
-	if (mss_now != mptcp_sysctl_mss()) {
-		printk(KERN_ERR "write xmit-mss_now %d, mptcp mss:%d\n",
-		       mss_now, mptcp_sysctl_mss());
-		BUG();
-	}
-	/* If we are closed, the bytes will have to remain here.
-	 * In time closedown will finish, we empty the write queue and all
-	 * will be happy.
-	 */
-	if (unlikely(meta_sk->sk_state == TCP_CLOSE))
-		return 0;
-
 	sent_pkts = 0;
 
 	/* Currently mtu-probing is not done in MPTCP */
@@ -939,6 +927,13 @@ retry:
 void mptcp_write_space(struct sock *sk)
 {
 	struct sock *meta_sk = mptcp_meta_sk(sk);
+
+	/* If we are closed, the bytes will have to remain here.
+	 * In time closedown will finish, we empty the write queue and all
+	 * will be happy.
+	 */
+	if (unlikely(meta_sk->sk_state == TCP_CLOSE))
+		return;
 
 	if (mptcp_write_xmit(meta_sk, tcp_current_mss(sk), tcp_sk(sk)->nonagle,
 			     0, GFP_ATOMIC))
