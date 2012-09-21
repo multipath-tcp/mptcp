@@ -876,16 +876,9 @@ retry:
 			continue;
 		}
 
-		/* If it's a non-payload DATA_FIN (also no subflow-fin), the
-		 * segment is not part of the subflow but on a meta-only-level
-		 *
-		 * We free it, because it has been queued nowhere.
-		 */
 		if (!mptcp_is_data_fin(subskb) ||
 		    (TCP_SKB_CB(subskb)->end_seq != TCP_SKB_CB(subskb)->seq))
 			tcp_event_new_data_sent(subsk, subskb);
-		else
-			kfree_skb(subskb);
 
 		if (!reinject) {
 			mptcp_check_sndseq_wrap(meta_tp,
@@ -903,6 +896,15 @@ retry:
 			subtp->prr_out += tcp_skb_pcount(skb);
 
 		tcp_cwnd_validate(subsk);
+
+		/* If it's a non-payload DATA_FIN (also no subflow-fin), the
+		 * segment is not part of the subflow but on a meta-only-level
+		 *
+		 * We free it, because it has been queued nowhere.
+		 */
+		if (mptcp_is_data_fin(subskb) &&
+		    TCP_SKB_CB(subskb)->end_seq == TCP_SKB_CB(subskb)->seq)
+			kfree_skb(subskb);
 
 		if (push_one)
 			break;
