@@ -244,10 +244,6 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 		}
 	}
 
-	/* We would have needed the rtable entry for sending the reset */
-	if (last)
-		skb_dst_drop(last);
-
 	return ans;
 }
 

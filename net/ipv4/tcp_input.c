@@ -4510,10 +4510,7 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 	    !(tp->mpc && mptcp_is_data_fin(skb)))
 		goto drop;
 
-	/* If mptcp, we need dst for sending the reset in mptcp_queue_skb */
-	if (!tp->mpc)
-		skb_dst_drop(skb);
-
+	skb_dst_drop(skb);
 	__skb_pull(skb, th->doff * 4);
 
 	TCP_ECN_accept_cwr(tp, skb);
