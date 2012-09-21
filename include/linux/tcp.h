@@ -545,7 +545,7 @@ struct tcp_sock {
 		mptcp_add_addr_ack:1,	/* Tell tcp_send_ack to return in case
 					 * alloc_skb fails. */
 		was_meta_sk:1,	/* This was a meta sk (in case of reuse) */
-		close_it;	/* Should this socket get closed by mptcp_data_ready? */
+		close_it:1;	/* Should this socket get closed by mptcp_data_ready? */
 	struct mptcp_tcp_sock *mptcp;
 #ifdef CONFIG_MPTCP
 	struct hlist_nulls_node tk_table;
