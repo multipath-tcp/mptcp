@@ -2091,15 +2091,22 @@ void tcp_v4_destroy_sock(struct sock *sk)
 
 	tcp_cleanup_congestion_control(sk);
 
-	/* Cleanup up the write buffer. */
-	tcp_write_queue_purge(sk);
-
 	/* Cleans up our, hopefully empty, out_of_order_queue. */
 	if (is_meta_sk(sk)) {
+		/* Cleanup up the write buffer. */
+		tcp_write_queue_purge(sk);
+
 		__skb_queue_purge(&tp->mpcb->reinject_queue);
 		mptcp_purge_ofo_queue(tp);
 	} else {
+		/* mptcp_del_sock MUST be before tcp_write_queue_purge because
+		 * we try to reinject
+		 */
 		mptcp_del_sock(sk);
+
+		/* Cleanup up the write buffer. */
+		tcp_write_queue_purge(sk);
+
 		if (tp->inside_tk_table)
 			mptcp_hash_remove(tp);
 		__skb_queue_purge(&tp->out_of_order_queue);
