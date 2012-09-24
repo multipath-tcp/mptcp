@@ -822,14 +822,14 @@ restart:
 		}
 	}
 
-	if (queued == -1)
-		meta_sk->sk_data_ready(meta_sk, 0);
-
 exit:
 	if (tcp_sk(sk)->close_it) {
 		tcp_send_ack(sk);
 		tcp_time_wait(sk, TCP_TIME_WAIT, 0);
 	}
+
+	if (queued == -1)
+		meta_sk->sk_data_ready(meta_sk, 0);
 }
 
 /**
