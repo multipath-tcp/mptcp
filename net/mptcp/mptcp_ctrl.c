@@ -442,7 +442,7 @@ int mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 	inet_csk(newsk)->icsk_af_ops = af_ops;
 
 	/* We don't yet have the mptcp-point. Thus we still need inet_sock_destruct */
-	sk->sk_destruct = inet_sock_destruct;
+	newsk->sk_destruct = inet_sock_destruct;
 
 	/* SANITY */
 	get_net(sock_net(newsk));
