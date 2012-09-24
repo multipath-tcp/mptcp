@@ -441,6 +441,9 @@ int mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 	newsk->sk_prot = newsk->sk_prot_creator = prot;
 	inet_csk(newsk)->icsk_af_ops = af_ops;
 
+	/* We don't yet have the mptcp-point. Thus we still need inet_sock_destruct */
+	sk->sk_destruct = inet_sock_destruct;
+
 	/* SANITY */
 	get_net(sock_net(newsk));
 	sk_node_init(&newsk->sk_node);
@@ -687,12 +690,7 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 		return -ENOMEM;
 	}
 
-	/* Redefine function-pointers to wake up application */
-	master_sk->sk_error_report = mptcp_sock_def_error_report;
-	master_sk->sk_data_ready = mptcp_data_ready;
-	master_sk->sk_write_space = mptcp_write_space;
-	master_sk->sk_state_change = mptcp_set_state;
-	master_sk->sk_destruct = mptcp_sock_destruct;
+	/* Redefine function-pointers as the meta-sk is now fully ready */
 	meta_sk->sk_backlog_rcv = mptcp_backlog_rcv;
 	meta_sk->sk_destruct = mptcp_sock_destruct;
 	mpcb->syn_recv_sock = mptcp_syn_recv_sock;
@@ -786,10 +784,10 @@ void mptcp_sock_destruct(struct sock *sk)
 
 }
 
-int mptcp_add_sock(struct sock *meta_sk, struct tcp_sock *tp, gfp_t flags)
+int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, gfp_t flags)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct sock *sk = (struct sock *) tp;
+	struct tcp_sock *tp = tcp_sk(sk);
 
 	tp->mptcp = kmem_cache_zalloc(mptcp_sock_cache, flags);
 	if (!tp->mptcp)
@@ -814,6 +812,15 @@ int mptcp_add_sock(struct sock *meta_sk, struct tcp_sock *tp, gfp_t flags)
 
 	mptcp_sub_inherit_sockopts(meta_sk, sk);
 	INIT_DELAYED_WORK(&tp->mptcp->work, mptcp_sub_close_wq);
+
+	/* As we successfully allocated the mptcp_tcp_sock, we have to
+	 * change the function-pointers here (for sk_destruct to work correctly)
+	 */
+	sk->sk_error_report = mptcp_sock_def_error_report;
+	sk->sk_data_ready = mptcp_data_ready;
+	sk->sk_write_space = mptcp_write_space;
+	sk->sk_state_change = mptcp_set_state;
+	sk->sk_destruct = mptcp_sock_destruct;
 
 	if (sk->sk_family == AF_INET)
 		mptcp_debug("%s: token %#x pi %d, src_addr:%pI4:%d dst_addr:"
@@ -1365,7 +1372,7 @@ int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key, u32 window)
 	master_sk = tcp_sk(meta_sk)->mpcb->master_sk;
 	master_tp = tcp_sk(master_sk);
 
-	if (mptcp_add_sock(meta_sk, master_tp, GFP_ATOMIC))
+	if (mptcp_add_sock(meta_sk, master_sk, GFP_ATOMIC))
 		goto err_add_sock;
 
 	master_tp->mpc = 1;
@@ -1490,7 +1497,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	sk_set_socket(child, meta_sk->sk_socket);
 	child->sk_wq = meta_sk->sk_wq;
 
-	if (mptcp_add_sock(meta_sk, child_tp, GFP_ATOMIC))
+	if (mptcp_add_sock(meta_sk, child, GFP_ATOMIC))
 		/* TODO when we support acking the third ack for new subflows,
 		 * we should silently discard this third ack, by returning NULL.
 		 *
@@ -1498,6 +1505,8 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 		 * fully add the socket to the meta-sk.
 		 */
 		goto teardown;
+
+	child_tp->advmss = mptcp_sysctl_mss();
 
 	child_tp->mptcp->rem_id = mtreq->rem_id;
 	child_tp->mptcp->path_index = mptcp_set_new_pathindex(mpcb);
@@ -1509,13 +1518,6 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	child_tp->mptcp->snt_isn = tcp_rsk(req)->snt_isn;
 	child_tp->mptcp->init_rcv_wnd = req->rcv_wnd;
 	child_tp->mptcp->last_rbuf_opti = 0;
-
-	child->sk_error_report = mptcp_sock_def_error_report;
-	child->sk_data_ready = mptcp_data_ready;
-	child->sk_write_space = mptcp_write_space;
-	child->sk_state_change = mptcp_set_state;
-	child->sk_destruct = mptcp_sock_destruct;
-	child_tp->advmss = mptcp_sysctl_mss();
 
 	/* Subflows do not use the accept queue, as they
 	 * are attached immediately to the mpcb.

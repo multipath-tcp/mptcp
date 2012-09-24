@@ -568,7 +568,7 @@ void mptcp_ofo_queue(struct sock *meta_sk);
 void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp);
 void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied);
 int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key, u32 window);
-int mptcp_add_sock(struct sock *meta_sk, struct tcp_sock *tp, gfp_t flags);
+int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, gfp_t flags);
 void mptcp_del_sock(struct sock *sk);
 void mptcp_update_metasocket(struct sock *sock, struct sock *meta_sk);
 void mptcp_reinject_data(struct sock *orig_sk, int clone_it);
