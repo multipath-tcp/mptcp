@@ -271,6 +271,9 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb, struct sk_buff *next,
 			tcp_hdr(skb)->fin = 1;
 		else
 			tcp_hdr(skb)->fin = 0;
+	} else {
+		/* We may have a subflow-fin with data but without data-fin */
+		tcp_hdr(skb)->fin = 0;
 	}
 }
 
