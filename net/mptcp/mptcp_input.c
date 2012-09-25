@@ -597,7 +597,6 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 static int mptcp_validate_mapping(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = mptcp_meta_tp(tp);
-	struct sock *meta_sk = mptcp_meta_sk(sk);
 	struct mptcp_cb *mpcb = tp->mpcb;
 	struct sk_buff *tmp, *tmp1;
 	u64 rcv_nxt64;
@@ -670,10 +669,6 @@ static int mptcp_validate_mapping(struct sock *sk, struct sk_buff *skb)
 				break;
 			__skb_unlink(tmp1, &sk->sk_receive_queue);
 			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
-
-			if (mptcp_is_data_fin(tmp1))
-				mptcp_fin(meta_sk);
-
 			__kfree_skb(tmp1);
 		}
 
