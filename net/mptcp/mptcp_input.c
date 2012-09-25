@@ -239,7 +239,6 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 			/* Need to purge the rcv-queue as it's no more valid */
 			__skb_queue_purge(&sk->sk_receive_queue);
 
-			last = NULL; /* prevent skb_dst_drop later in here */
 			ans = 0;
 		}
 	}
@@ -706,7 +705,7 @@ static int mptcp_queue_skb(struct sock *sk)
 	/* Have we not yet received the full mapping? */
 	if (!tp->mptcp->mapping_present ||
 	    before(tp->rcv_nxt, tp->mptcp->map_subseq + tp->mptcp->map_data_len))
-		return 1;
+		return 0;
 
 	/* Verify the checksum */
 	if (mpcb->rx_opt.dss_csum && !mpcb->infinite_mapping) {
@@ -819,6 +818,10 @@ restart:
 			if (ret == -1)
 				queued = ret;
 			goto restart;
+		} else if (ret == 0) {
+			continue;
+		} else { /* ret == 1 */
+			break;
 		}
 	}
 
