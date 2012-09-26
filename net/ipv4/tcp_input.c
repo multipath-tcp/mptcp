@@ -5754,6 +5754,11 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 				tp->mptcp->teardown = 1;
 				goto reset_and_undo;
 			}
+
+			/* Set this flag in order to postpone data sending
+			 * until the 4th ack arrives.
+			 */
+			tp->mptcp->pre_established = 1;
 		} else if (tp->rx_opt.saw_mpc && tp->request_mptcp) {
 			if (mptcp_create_master_sk(sk, mopt.mptcp_rem_key,
 						   ntohs(th->window)))
@@ -5808,7 +5813,17 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		 * move to established.
 		 */
 #ifdef CONFIG_MPTCP
-		tp->rx_opt.rcv_isn = TCP_SKB_CB(skb)->seq;
+		if (tp->mpc) {
+			tp->rx_opt.rcv_isn = TCP_SKB_CB(skb)->seq;
+
+			if (!is_master_tp(tp))
+				/* Timer for repeating the ACK until an answer
+				 * arrives. Used only when establishing an additional
+				 * subflow inside of an MPTCP connection.
+				 */
+				sk_reset_timer(sk, &tp->mptcp->mptcp_ack_timer,
+					       jiffies + icsk->icsk_rto);
+		}
 #endif
 		tp->rcv_nxt = TCP_SKB_CB(skb)->seq + 1;
 		tp->rcv_wup = TCP_SKB_CB(skb)->seq + 1;
@@ -6107,6 +6122,13 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 				smp_mb();
 				tcp_set_state(sk, TCP_ESTABLISHED);
 				sk->sk_state_change(sk);
+
+				/* Send an ACK when establishing a new
+				 * MPTCP subflow, i.e. using an MP_JOIN
+				 * subtype.
+				 */
+				if (tp->mpc && !is_master_tp(tp))
+					tcp_send_ack(sk);
 
 				/* Note, that this wakeup is only for marginal
 				 * crossed SYN case. Passively open sockets

@@ -970,6 +970,11 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 		 */
 		mptcp_become_fully_estab(sk);
 
+	if (tp->mptcp->pre_established) {
+		tp->mptcp->pre_established = 0;
+		sk_stop_timer(sk, &tp->mptcp->mptcp_ack_timer);
+	}
+
 	/* Get the data_seq */
 	if (mptcp_is_data_seq(skb)) {
 		mptcp_skb_set_data_seq(skb, &data_seq);

@@ -112,7 +112,10 @@ struct mptcp_tcp_sock {
 		mapping_present:1,
 		map_data_fin:1,
 		low_prio:1, /* use this socket as backup */
-		send_mp_prio:1; /* Trigger to send mp_prio on this socket */
+		send_mp_prio:1, /* Trigger to send mp_prio on this socket */
+		pre_established:1; /* State between sending 3rd ACK and receiving
+		 	 	    * the fourth ack of new subflows.
+		 	 	    */
 
 	/* isn: needed to translate abs to relative subflow seqnums */
 	u32	snt_isn;
@@ -133,6 +136,9 @@ struct mptcp_tcp_sock {
 	struct delayed_work work;
 	u32	mptcp_loc_nonce;
 	struct tcp_sock *tp; /* Where is my daddy? */
+
+	/* MP_JOIN subflow: timer for retransmitting the 3rd ack */
+	struct timer_list mptcp_ack_timer;
 };
 
 struct multipath_options {
@@ -622,6 +628,8 @@ struct sock *mptcp_select_ack_sock(const struct sock *meta_sk, int copied);
 void mptcp_destroy_meta_sk(struct sock *meta_sk);
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb);
 struct sock *mptcp_sk_clone(struct sock *sk, int family, const gfp_t priority);
+void mptcp_init_ack_timer(struct sock *sk);
+void mptcp_ack_handler(unsigned long);
 
 static inline void mptcp_push_pending_frames(struct sock *meta_sk)
 {

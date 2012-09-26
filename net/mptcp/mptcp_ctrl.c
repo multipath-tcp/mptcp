@@ -864,6 +864,11 @@ void mptcp_del_sock(struct sock *sk)
 	if (!tp->mpc || !tp->mptcp->attached)
 		return;
 
+	if (tp->mptcp->pre_established) {
+		tp->mptcp->pre_established = 0;
+		sk_stop_timer(sk, &tp->mptcp->mptcp_ack_timer);
+	}
+
 	mpcb = tp->mpcb;
 	tp_prev = mpcb->connection_list;
 

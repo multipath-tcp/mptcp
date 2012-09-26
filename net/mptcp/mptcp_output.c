@@ -43,6 +43,12 @@ static int mptcp_is_available(struct sock *sk, struct sk_buff *skb)
 	if (!mptcp_sk_can_send(sk))
 		return 0;
 
+	/* We do not send data on this subflow unless it is
+	 * fully established, i.e. the 4th ack has been received.
+	 */
+	if (tp->mptcp->pre_established)
+		return 0;
+
 	if (tp->pf || (tp->mpcb->noneligible & mptcp_pi_to_flag(tp->mptcp->path_index)) ||
 	    inet_csk(sk)->icsk_ca_state == TCP_CA_Loss)
 		return 0;
@@ -1568,4 +1574,92 @@ void mptcp_send_reset(struct sock *sk, struct sk_buff *skb)
 #endif
 
 	mptcp_sub_force_close(sk);
+}
+
+void mptcp_init_ack_timer(struct sock *sk)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	setup_timer(&tp->mptcp->mptcp_ack_timer, mptcp_ack_handler,
+			(unsigned long)sk);
+}
+
+static int mptcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	if (inet_csk(sk)->icsk_af_ops->rebuild_header(sk))
+		return -EHOSTUNREACH; /* Routing failure or similar */
+
+	TCP_SKB_CB(skb)->when = tcp_time_stamp;
+	mptcp_include_mpc(tp);
+
+	return tcp_transmit_skb(sk, skb, 1, GFP_ATOMIC);
+}
+
+void mptcp_ack_retransmit_timer(struct sock *sk)
+{
+	struct sk_buff *buff;
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct inet_connection_sock *icsk = inet_csk(sk);
+	int err;
+
+	buff = alloc_skb(MAX_TCP_HEADER, GFP_ATOMIC);
+	if (buff == NULL) {
+		sk_reset_timer(sk, &tp->mptcp->mptcp_ack_timer,
+			       jiffies + icsk->icsk_rto);
+		return;
+	}
+
+	/* Reserve space for headers and prepare control bits */
+	skb_reserve(buff, MAX_TCP_HEADER);
+	tcp_init_nondata_skb(buff, tp->snd_nxt, TCPHDR_ACK);
+	TCP_SKB_CB(buff)->when = tcp_time_stamp;
+
+	icsk->icsk_retransmits++;
+	err = mptcp_retransmit_skb(sk, buff);
+
+	if (err > 0) {
+		/* Retransmission failed because of local congestion,
+		 * do not backoff. */
+		if (!icsk->icsk_retransmits)
+			icsk->icsk_retransmits = 1;
+		sk_reset_timer(sk, &tp->mptcp->mptcp_ack_timer,
+			       jiffies + icsk->icsk_rto);
+		return;
+	}
+
+	if (icsk->icsk_retransmits == sysctl_tcp_retries1 + 1) {
+		sk_stop_timer(sk, &tp->mptcp->mptcp_ack_timer);
+		tcp_send_active_reset(sk, GFP_ATOMIC);
+		mptcp_sub_force_close(sk);
+		kfree_skb(buff);
+		return;
+	}
+
+	icsk->icsk_rto = min(icsk->icsk_rto << 1, TCP_RTO_MAX);
+	sk_reset_timer(sk, &tp->mptcp->mptcp_ack_timer,
+		       jiffies + icsk->icsk_rto);
+}
+
+void mptcp_ack_handler(unsigned long data)
+{
+	struct sock *sk = (struct sock *)data;
+	struct sock *meta_sk = mptcp_meta_sk(sk);
+
+	bh_lock_sock(meta_sk);
+	if (sock_owned_by_user(meta_sk)) {
+		/* Try again later */
+		sk_reset_timer(sk, &tcp_sk(sk)->mptcp->mptcp_ack_timer,
+			       jiffies + (HZ / 20));
+		goto out_unlock;
+	}
+
+	mptcp_ack_retransmit_timer(sk);
+
+	sk_mem_reclaim(sk);
+
+out_unlock:
+	bh_unlock_sock(meta_sk);
+	sock_put(sk);
 }

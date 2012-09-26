@@ -454,6 +454,9 @@ void mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	tp->mptcp->slave_sk = 1;
 	tp->mptcp->low_prio = loc->low_prio;
 
+	/* Initializing the timer for an MPTCP subflow */
+	mptcp_init_ack_timer(sk);
+
 	/** Then, connect the socket to the peer */
 
 	ulid_size = sizeof(struct sockaddr_in);
