@@ -254,8 +254,12 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 			__kfree_skb(skb);
 			return 0;
 		}
-		if (seq == TCP_SKB_CB(skb1)->seq)
-			skb1 = skb_queue_prev(&mpcb->reinject_queue, skb1);
+		if (seq == TCP_SKB_CB(skb1)->seq) {
+			if (skb_queue_is_first(&mpcb->reinject_queue, skb1))
+				skb1 = NULL;
+			else
+				skb1 = skb_queue_prev(&mpcb->reinject_queue, skb1);
+		}
 	}
 	if (!skb1)
 		__skb_queue_head(&mpcb->reinject_queue, skb);

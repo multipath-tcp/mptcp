@@ -150,8 +150,12 @@ static int try_shortcut(struct sk_buff *shortcut, struct sk_buff *skb,
 			 * Will get dropped by the caller's caller. */
 			return 1;
 		}
-		if (seq == TCP_SKB_CB(skb1)->seq)
-			skb1 = skb_queue_prev(head, skb1);
+		if (seq == TCP_SKB_CB(skb1)->seq) {
+			if (skb_queue_is_first(head, skb1))
+				skb1 = NULL;
+			else
+				skb1 = skb_queue_prev(head, skb1);
+		}
 	}
 	if (!skb1)
 		__skb_queue_head(head, skb);
