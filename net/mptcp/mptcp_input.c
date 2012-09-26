@@ -718,8 +718,13 @@ static int mptcp_queue_skb(struct sock *sk)
 	if (before64(rcv_nxt64, tp->mptcp->map_data_seq)) {
 		/* Seg's have to go to the meta-ofo-queue */
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
-			if (after(TCP_SKB_CB(tmp1)->end_seq,
-				  tp->mptcp->map_subseq + tp->mptcp->map_data_len + tp->mptcp->map_data_fin))
+			/* If we are currently processing the data-fin, increase
+			 * the mapping by one, because the data-fin consumes
+			 * one byte.
+			 */
+			if (!before(TCP_SKB_CB(tmp1)->seq,
+				    tp->mptcp->map_subseq + tp->mptcp->map_data_len +
+				    (tp->mptcp->map_data_fin && mptcp_is_data_fin(tmp1) ? 1 : 0)))
 				break;
 
 			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
@@ -734,8 +739,13 @@ static int mptcp_queue_skb(struct sock *sk)
 	} else {
 		/* Ready for the meta-rcv-queue */
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
-			if (after(TCP_SKB_CB(tmp1)->end_seq,
-				  tp->mptcp->map_subseq + tp->mptcp->map_data_len + tp->mptcp->map_data_fin))
+			/* If we are currently processing the data-fin, increase
+			 * the mapping by one, because the data-fin consumes
+			 * one byte.
+			 */
+			if (!before(TCP_SKB_CB(tmp1)->seq,
+				    tp->mptcp->map_subseq + tp->mptcp->map_data_len +
+				    (tp->mptcp->map_data_fin && mptcp_is_data_fin(tmp1) ? 1 : 0)))
 				break;
 
 			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
