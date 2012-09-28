@@ -750,8 +750,7 @@ cont_ipv6:
 			    inet_sk(sk)->inet_saddr != mpcb->addr4[i].addr.s_addr)
 				continue;
 
-			mptcp_retransmit_queue(sk);
-
+			mptcp_reinject_data(sk, 1);
 			mptcp_sub_force_close(sk);
 		}
 
@@ -801,8 +800,7 @@ next_loc_addr:
 			    !ipv6_addr_equal(&inet6_sk(sk)->saddr, &mpcb->addr6[i].addr))
 				continue;
 
-			mptcp_retransmit_queue(sk);
-
+			mptcp_reinject_data(sk, 1);
 			mptcp_sub_force_close(sk);
 		}
 

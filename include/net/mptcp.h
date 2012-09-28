@@ -926,13 +926,6 @@ static inline void mptcp_init_buffer_space(struct sock *sk)
 	}
 }
 
-static inline void mptcp_retransmit_queue(struct sock *sk)
-{
-	if (tcp_sk(sk)->mpc && mptcp_sk_can_send(sk) &&
-	    tcp_sk(sk)->mpcb->cnt_subflows)
-		mptcp_reinject_data(sk, 1);
-}
-
 static inline void mptcp_set_rto(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -1254,7 +1247,6 @@ static inline int mptcp_check_snd_buf(const struct tcp_sock *tp)
 {
 	return 0;
 }
-static inline void mptcp_retransmit_queue(const struct sock *sk) {}
 static inline int mptcp_sysctl_syn_retries(void)
 {
 	return 0;
