@@ -670,7 +670,6 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	meta_sk->sk_wmem_queued = 0;
 	meta_sk->sk_forward_alloc = 0;
 
-	/* Initialize the mutex */
 	mutex_init(&mpcb->mutex);
 
 	/* Initialize workqueue-struct */

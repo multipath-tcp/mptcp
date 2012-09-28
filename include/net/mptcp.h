@@ -192,6 +192,10 @@ struct mptcp_cb {
 	struct work_struct create_work;
 	/* Worker to handle interface/address changes if socket is owned */
 	struct work_struct address_work;
+	/* Mutex needed, because otherwise mptcp_close will complain that the
+	 * socket is owned by the user.
+	 * E.g., mptcp_sub_close_wq is taking the meta-lock.
+	 */
 	struct mutex mutex;
 
 	/* Master socket, also part of the connection_list, this
