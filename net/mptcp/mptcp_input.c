@@ -62,11 +62,11 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk)
 		tcp_unlink_write_queue(skb, meta_sk);
 
 		if (mptcp_is_data_fin(skb)) {
-			struct sock *sk_it;
+			struct sock *sk_it, *tmpsk;
 
 			/* DATA_FIN has been acknowledged - now we can close
 			 * the subflows */
-			mptcp_for_each_sk(mpcb, sk_it) {
+			mptcp_for_each_sk_safe(mpcb, sk_it, tmpsk) {
 				unsigned long delay = 0;
 
 				/* If we are the passive closer, don't trigger
@@ -1122,9 +1122,9 @@ static inline int mptcp_rem_raddress(struct multipath_options *mopt, u8 rem_id)
 
 static void mptcp_send_reset_rem_id(const struct mptcp_cb *mpcb, u8 rem_id)
 {
-	struct sock *sk_it, *sk_tmp;
+	struct sock *sk_it, *tmpsk;
 
-	mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp) {
+	mptcp_for_each_sk_safe(mpcb, sk_it, tmpsk) {
 		if (tcp_sk(sk_it)->mptcp->rem_id == rem_id) {
 			mptcp_reinject_data(sk_it, 0);
 			sk_it->sk_err = ECONNRESET;

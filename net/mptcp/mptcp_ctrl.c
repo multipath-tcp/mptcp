@@ -1173,7 +1173,7 @@ void mptcp_update_sndbuf(struct mptcp_cb *mpcb)
 void mptcp_close(struct sock *meta_sk, long timeout)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct sock *sk_it, *sk_tmp;
+	struct sock *sk_it, *tmpsk;
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	struct sk_buff *skb;
 	int data_was_unread = 0;
@@ -1213,7 +1213,7 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 
 	/* If socket has been already reset (e.g. in tcp_reset()) - kill it. */
 	if (meta_sk->sk_state == TCP_CLOSE) {
-		mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp)
+		mptcp_for_each_sk_safe(mpcb, sk_it, tmpsk)
 			mptcp_sub_close(sk_it, 0);
 		goto adjudge_to_death;
 	}
@@ -1232,7 +1232,7 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 	} else if (meta_tp->snd_una == meta_tp->write_seq) {
 		/* The DATA_FIN has been sent and acknowledged
 		 * (e.g., by sk_shutdown). Close all the other subflows */
-		mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp) {
+		mptcp_for_each_sk_safe(mpcb, sk_it, tmpsk) {
 			unsigned long delay = 0;
 			/* If we are the passive closer, don't trigger
 			 * subflow-fin until the subflow has been finned

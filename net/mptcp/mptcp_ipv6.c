@@ -781,7 +781,7 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 				  struct mptcp_cb *mpcb)
 {
 	int i;
-	struct sock *sk;
+	struct sock *sk, *tmpsk;
 	int addr_type = ipv6_addr_type(&ifa->addr);
 
 	/* Checks on interface and address-type */
@@ -822,7 +822,7 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 found:
 	/* Address already in list. Reactivate/Deactivate the
 	 * concerned paths. */
-	mptcp_for_each_sk(mpcb, sk) {
+	mptcp_for_each_sk_safe(mpcb, sk, tmpsk) {
 		struct tcp_sock *tp = tcp_sk(sk);
 		if (sk->sk_family != AF_INET6 ||
 		    !ipv6_addr_equal(&inet6_sk(sk)->saddr, &ifa->addr))

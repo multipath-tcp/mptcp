@@ -547,7 +547,7 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 				  struct mptcp_cb *mpcb)
 {
 	int i;
-	struct sock *sk;
+	struct sock *sk, *tmpsk;
 
 	if (ifa->ifa_scope > RT_SCOPE_LINK ||
 	    (ifa->ifa_dev->dev->flags & IFF_NOMULTIPATH))
@@ -583,7 +583,7 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 found:
 	/* Address already in list. Reactivate/Deactivate the
 	 * concerned paths. */
-	mptcp_for_each_sk(mpcb, sk) {
+	mptcp_for_each_sk_safe(mpcb, sk, tmpsk) {
 		struct tcp_sock *tp = tcp_sk(sk);
 		if (sk->sk_family != AF_INET ||
 		    inet_sk(sk)->inet_saddr != ifa->ifa_local)

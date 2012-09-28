@@ -1506,7 +1506,7 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
-	struct sock *sk = NULL, *sk_it = NULL, *sk_tmp;
+	struct sock *sk = NULL, *sk_it = NULL, *tmpsk;
 
 	if (!mpcb->cnt_subflows)
 		return;
@@ -1533,7 +1533,7 @@ found:
 	/* tcp_done must be handled with bh disabled */
 	if (!in_serving_softirq())
 		local_bh_disable();
-	mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp) {
+	mptcp_for_each_sk_safe(mpcb, sk_it, tmpsk) {
 		if (tcp_sk(sk_it)->send_mp_fclose)
 			continue;
 

@@ -1015,12 +1015,12 @@ static inline int mptcp_mp_fail_rcvd(struct sock *sk, struct tcphdr *th)
 	}
 
 	if (unlikely(mpcb->rx_opt.mp_fclose)) {
-		struct sock *sk_it, *sk_tmp;
+		struct sock *sk_it, *tmpsk;
 		mpcb->rx_opt.mp_fclose = 0;
 
 		tcp_send_active_reset(sk, GFP_ATOMIC);
 
-		mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp)
+		mptcp_for_each_sk_safe(mpcb, sk_it, tmpsk)
 			mptcp_sub_force_close(sk_it);
 
 		tcp_reset(meta_sk);

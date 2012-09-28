@@ -644,7 +644,7 @@ void mptcp_send_updatenotif(struct sock *meta_sk)
 void mptcp_address_worker(struct work_struct *work)
 {
 	struct mptcp_cb *mpcb = container_of(work, struct mptcp_cb, address_work);
-	struct sock *meta_sk = mpcb->meta_sk, *sk;
+	struct sock *meta_sk = mpcb->meta_sk, *sk, *tmpsk;
 	struct net *netns = sock_net(meta_sk);
 	struct net_device *dev;
 	int i;
@@ -745,7 +745,7 @@ cont_ipv6:
 		 */
 
 		/* Look for the socket and remove him */
-		mptcp_for_each_sk(mpcb, sk) {
+		mptcp_for_each_sk_safe(mpcb, sk, tmpsk) {
 			if (sk->sk_family != AF_INET ||
 			    inet_sk(sk)->inet_saddr != mpcb->addr4[i].addr.s_addr)
 				continue;
@@ -795,7 +795,7 @@ next_loc_addr:
 		 */
 
 		/* Look for the socket and remove him */
-		mptcp_for_each_sk(mpcb, sk) {
+		mptcp_for_each_sk_safe(mpcb, sk, tmpsk) {
 			if (sk->sk_family != AF_INET6 ||
 			    !ipv6_addr_equal(&inet6_sk(sk)->saddr, &mpcb->addr6[i].addr))
 				continue;
