@@ -485,6 +485,7 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 		unsigned int mss = tcp_current_mss(meta_sk);
 		unsigned int seg_size = tcp_wnd_end(meta_tp) - TCP_SKB_CB(skb)->seq;
 		struct sock *subsk;
+		struct tcp_sock *subtp;
 
 		if (before(meta_tp->pushed_seq, TCP_SKB_CB(skb)->end_seq))
 			meta_tp->pushed_seq = TCP_SKB_CB(skb)->end_seq;
@@ -507,6 +508,8 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 		subsk = get_available_subflow(meta_sk, skb);
 		if (!subsk)
 			return -1;
+
+		subtp = tcp_sk(subsk);
 
 		TCP_SKB_CB(skb)->mptcp_flags |= (meta_tp->mpcb->snd_hiseq_index ?
 						 MPTCPHDR_SEQ64_INDEX : 0);
@@ -531,15 +534,30 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
 		err = tcp_transmit_skb(subsk, subskb, 1, GFP_ATOMIC);
 		if (unlikely(err)) {
-			/* Remove the skb from the subsock */
-			if (!mptcp_is_data_fin(subskb) ||
-			    (TCP_SKB_CB(subskb)->end_seq != TCP_SKB_CB(subskb)->seq)) {
+			if (TCP_SKB_CB(subskb)->tcp_flags & TCPHDR_FIN) {
+				/* If it is a subflow-fin we must leave it on the
+				 * subflow-send-queue, so that the probe-timer
+				 * can retransmit it.
+				 */
+				if (!subtp->packets_out && !inet_csk(subsk)->icsk_pending)
+					inet_csk_reset_xmit_timer(subsk, ICSK_TIME_PROBE0,
+								  inet_csk(subsk)->icsk_rto, TCP_RTO_MAX);
+			} else if (mptcp_is_data_fin(subskb) &&
+				   TCP_SKB_CB(subskb)->end_seq == TCP_SKB_CB(subskb)->seq) {
+				/* An empty data-fin has not been enqueued on the subflow
+				 * and thus we free it.
+				 */
+
+				kfree_skb(subskb);
+			} else {
+				/* In all other cases we remove it from the sub-queue.
+				 * Other subflows may send it, or the probe-timer will
+				 * handle it.
+				 */
 				tcp_advance_send_head(subsk, subskb);
 				tcp_unlink_write_queue(subskb, subsk);
-				tcp_sk(subsk)->write_seq -= subskb->len;
+				subtp->write_seq -= subskb->len;
 				mptcp_wmem_free_skb(subsk, subskb);
-			} else {
-				kfree_skb(subskb);
 			}
 
 			TCP_SKB_CB(skb)->path_mask &= ~mptcp_pi_to_flag(tcp_sk(subsk)->mptcp->path_index);
