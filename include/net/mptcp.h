@@ -177,7 +177,6 @@ struct mptcp_cb {
 
 	/* socket count in this connection */
 	u8 cnt_subflows;
-	u8 cnt_established;
 	u8 last_pi_selected;
 
 	u32 noneligible;	/* Path mask of temporarily non
@@ -926,7 +925,7 @@ static inline void mptcp_init_buffer_space(struct sock *sk)
 static inline void mptcp_retransmit_queue(struct sock *sk)
 {
 	if (tcp_sk(sk)->mpc && mptcp_sk_can_send(sk) &&
-	    tcp_sk(sk)->mpcb->cnt_established > 0)
+	    tcp_sk(sk)->mpcb->cnt_subflows)
 		mptcp_reinject_data(sk, 1);
 }
 

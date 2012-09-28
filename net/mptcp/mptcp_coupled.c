@@ -93,7 +93,7 @@ static void mptcp_recalc_alpha(struct sock *sk)
 
 	/* Only one subflow left - fall back to normal reno-behavior
 	 * (set alpha to 1) */
-	if (mpcb->cnt_established <= 1)
+	if (mpcb->cnt_subflows <= 1)
 		goto exit;
 
 	/* Do regular alpha-calculation for multiple subflows */
@@ -141,7 +141,7 @@ static void mptcp_recalc_alpha(struct sock *sk)
 	sum_denominator *= sum_denominator;
 	if (unlikely(!sum_denominator)) {
 		printk(KERN_ERR"%s: sum_denominator == 0, cnt_established:%d\n",
-				__func__, mpcb->cnt_established);
+				__func__, mpcb->cnt_subflows);
 		mptcp_for_each_sk(mpcb, sub_sk) {
 			struct tcp_sock *sub_tp = tcp_sk(sub_sk);
 			printk(KERN_ERR"%s: pi:%d, state:%d\n, rtt:%u, cwnd: %u",
@@ -210,7 +210,7 @@ static void mptcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 		mptcp_set_forced(mptcp_meta_sk(sk), 0);
 	}
 
-	if (mpcb->cnt_established > 1) {
+	if (mpcb->cnt_subflows > 1) {
 		u64 alpha = mptcp_get_alpha(mptcp_meta_sk(sk));
 
 		/* This may happen, if at the initialization, the mpcb

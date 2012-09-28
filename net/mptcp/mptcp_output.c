@@ -137,7 +137,7 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 			backupsk = sk;
 	}
 
-	if (mpcb->cnt_established == cnt_backups && lowpriosk)
+	if (mpcb->cnt_subflows == cnt_backups && lowpriosk)
 		return lowpriosk;
 	if (bestsk)
 		return bestsk;
@@ -625,15 +625,15 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 {
 	struct sock *meta_sk;
 	struct tcp_sock *tp = tcp_sk(sk), *tp_it;
-	struct sk_buff *skb_it;
+	struct sk_buff *skb_head;
 
-	if (tp->mpcb->cnt_established == 1)
+	if (tp->mpcb->cnt_subflows == 1)
 		return NULL;
 
 	meta_sk = mptcp_meta_sk(sk);
-	skb_it = tcp_write_queue_head(meta_sk);
+	skb_head = tcp_write_queue_head(meta_sk);
 
-	if (!skb_it || skb_it == tcp_send_head(meta_sk))
+	if (!skb_head || skb_head == tcp_send_head(meta_sk))
 		return NULL;
 
 	/* If penalization is optional (coming from mptcp_next_segment() and
@@ -647,7 +647,7 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 	/* Half the cwnd of the slow flow */
 	mptcp_for_each_tp(tp->mpcb, tp_it) {
 		if (tp_it != tp &&
-		    TCP_SKB_CB(skb_it)->path_mask & mptcp_pi_to_flag(tp_it->mptcp->path_index)) {
+		    TCP_SKB_CB(skb_head)->path_mask & mptcp_pi_to_flag(tp_it->mptcp->path_index)) {
 			/* Only update every subflow rtt */
 			if (tcp_time_stamp - tp_it->mptcp->last_rbuf_opti < tp_it->srtt >> 3)
 				break;
@@ -665,10 +665,11 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 retrans:
 
 	/* Segment not yet injected into this path? Take it!!! */
-	if (!(TCP_SKB_CB(skb_it)->path_mask & mptcp_pi_to_flag(tp->mptcp->path_index))) {
+	if (!(TCP_SKB_CB(skb_head)->path_mask & mptcp_pi_to_flag(tp->mptcp->path_index))) {
 		int do_retrans = 0;
 		mptcp_for_each_tp(tp->mpcb, tp_it) {
-			if (tp_it != tp && TCP_SKB_CB(skb_it)->path_mask & mptcp_pi_to_flag(tp_it->mptcp->path_index)) {
+			if (tp_it != tp &&
+			    TCP_SKB_CB(skb_head)->path_mask & mptcp_pi_to_flag(tp_it->mptcp->path_index)) {
 				if (tp_it->snd_cwnd <= 4) {
 					do_retrans = 1;
 					break;
@@ -684,7 +685,7 @@ retrans:
 		}
 
 		if (do_retrans)
-			return skb_it;
+			return skb_head;
 	}
 	return NULL;
 }
@@ -1476,7 +1477,7 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	struct sock *sk = NULL, *sk_it = NULL, *sk_tmp;
 
-	if (!mpcb->cnt_established)
+	if (!mpcb->cnt_subflows)
 		return;
 
 	/* First - select a socket */
@@ -1490,6 +1491,9 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 	}
 
 	sk = mptcp_select_ack_sock(meta_sk, 0);
+	/* May happen if no subflow is in an appropriate state */
+	if (!sk)
+		return;
 	tcp_sk(sk)->send_mp_fclose = 1;
 
 	/** Reset all other subflows */

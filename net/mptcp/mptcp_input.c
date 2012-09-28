@@ -230,7 +230,7 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 		 */
 		tp->mpcb->csum_cutoff_seq = tp->mptcp->map_data_seq;
 
-		if (tp->mpcb->cnt_established > 1) {
+		if (tp->mpcb->cnt_subflows > 1) {
 			mptcp_send_reset(sk, last);
 			ans = -1;
 		} else {

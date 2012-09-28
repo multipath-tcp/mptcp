@@ -921,10 +921,10 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 						&isk->pinet6->daddr, ntohs(isk->inet_dport));
 #endif
 			}
-			seq_printf(seq, "Loc_Tok %#x Rem_tok %#x cnt_est %d meta-state %d infinite? %d",
+			seq_printf(seq, "Loc_Tok %#x Rem_tok %#x cnt_subs %d meta-state %d infinite? %d",
 					mpcb->mptcp_loc_token,
 					mpcb->rx_opt.mptcp_rem_token,
-					mpcb->cnt_established,
+					mpcb->cnt_subflows,
 					meta_sk->sk_state,
 					mpcb->infinite_mapping);
 			seq_putc(seq, '\n');
