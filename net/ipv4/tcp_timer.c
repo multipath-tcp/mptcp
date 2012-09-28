@@ -139,10 +139,8 @@ static void tcp_mtu_probing(struct inet_connection_sock *icsk, struct sock *sk)
  * retransmissions with an initial RTO of TCP_RTO_MIN or TCP_TIMEOUT_INIT if
  * syn_set flag is set.
  */
-static bool retransmits_timed_out(struct sock *sk,
-				  unsigned int boundary,
-				  unsigned int timeout,
-				  bool syn_set)
+bool retransmits_timed_out(struct sock *sk, unsigned int boundary,
+			   unsigned int timeout, bool syn_set)
 {
 	unsigned int linear_backoff_thresh, start_ts;
 	unsigned int rto_base = syn_set ? TCP_TIMEOUT_INIT : TCP_RTO_MIN;
@@ -168,7 +166,7 @@ static bool retransmits_timed_out(struct sock *sk,
 }
 
 /* A write timeout has occurred. Process the after effects. */
-static int tcp_write_timeout(struct sock *sk)
+int tcp_write_timeout(struct sock *sk)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	int retry_until;

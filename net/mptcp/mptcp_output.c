@@ -325,19 +325,32 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 	    mpcb->infinite_mapping || mpcb->send_infinite_mapping)
 		return;
 
-	if (!tcp_write_queue_head(meta_sk)) {
-		printk(KERN_ERR"%s no skb in meta write queue but packets_out: %u\n",
-				__func__, meta_tp->packets_out);
-		goto out;
-	}
-
 	__mptcp_reinject_data(tcp_write_queue_head(meta_sk), meta_sk, NULL, 1);
 	mptcp_push_pending_frames(meta_sk);
 
 out:
-	meta_icsk->icsk_rto = min(meta_icsk->icsk_rto << 1, TCP_RTO_MAX);
-	inet_csk_reset_xmit_timer(meta_sk, ICSK_TIME_RETRANS,
-			meta_icsk->icsk_rto, TCP_RTO_MAX);
+	if (tcp_write_timeout(meta_sk))
+		return;
+
+	meta_icsk->icsk_backoff++;
+	meta_icsk->icsk_retransmits++;
+
+	if (meta_sk->sk_state == TCP_ESTABLISHED &&
+	    (meta_tp->thin_lto || sysctl_tcp_thin_linear_timeouts) &&
+	    tcp_stream_is_thin(meta_tp) &&
+	    meta_icsk->icsk_retransmits <= TCP_THIN_LINEAR_RETRIES) {
+		meta_icsk->icsk_backoff = 0;
+		/* We cannot do the same as in tcp_write_timer because the
+		 * srtt is not set here.
+		 */
+		mptcp_set_rto(meta_sk);
+	} else {
+		/* Use normal (exponential) backoff */
+		meta_icsk->icsk_rto = min(meta_icsk->icsk_rto << 1, TCP_RTO_MAX);
+	}
+	inet_csk_reset_xmit_timer(meta_sk, ICSK_TIME_RETRANS, meta_icsk->icsk_rto, TCP_RTO_MAX);
+	if (retransmits_timed_out(meta_sk, sysctl_tcp_retries1 + 1, 0, 0))
+		__sk_dst_reset(meta_sk);
 
 	return;
 

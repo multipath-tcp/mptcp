@@ -372,6 +372,10 @@ extern int tcp_may_update_window(const struct tcp_sock *tp, const u32 ack,
 extern int tcp_urg_mode(const struct tcp_sock *tp);
 extern void tcp_ack_probe(struct sock *sk);
 extern void tcp_rearm_rto(struct sock *sk);
+extern int tcp_write_timeout(struct sock *sk);
+extern bool retransmits_timed_out(struct sock *sk, unsigned int boundary,
+				  unsigned int timeout, bool syn_set);
+
 
 extern int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req,
 			     struct request_values *rvp);
