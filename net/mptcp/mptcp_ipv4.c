@@ -421,14 +421,10 @@ void mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	struct sock *sk;
 	struct sockaddr_in loc_in, rem_in;
 	struct socket sock;
-	int ulid_size = 0, ret, newpi;
+	int ulid_size = 0, ret;
 
 	/* Don't try again - even if it fails */
 	rem->bitfield |= (1 << loc->id);
-
-	newpi = mptcp_set_new_pathindex(tcp_sk(meta_sk)->mpcb);
-	if (!newpi)
-		return;
 
 	/** First, create and prepare the new socket */
 
@@ -447,12 +443,9 @@ void mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	sk = sock.sk;
 	tp = tcp_sk(sk);
 
-	if (mptcp_add_sock(meta_sk, sk, GFP_KERNEL))
+	if (mptcp_add_sock(meta_sk, sk, rem->id, GFP_KERNEL))
 		goto error;
 
-	tp->mptcp->rem_id = rem->id;
-	tp->mptcp->path_index = newpi;
-	tp->mpc = 1;
 	tp->mptcp->slave_sk = 1;
 	tp->mptcp->low_prio = loc->low_prio;
 
@@ -470,8 +463,8 @@ void mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	rem_in.sin_addr = rem->addr;
 
 	mptcp_debug("%s: token %#x pi %d src_addr:%pI4:%d dst_addr:%pI4:%d\n",
-		    __func__, tcp_sk(meta_sk)->mpcb->mptcp_loc_token, newpi, &loc_in.sin_addr,
-		    ntohs(loc_in.sin_port), &rem_in.sin_addr,
+		    __func__, tcp_sk(meta_sk)->mpcb->mptcp_loc_token, tp->mptcp->path_index,
+		    &loc_in.sin_addr, ntohs(loc_in.sin_port), &rem_in.sin_addr,
 		    ntohs(rem_in.sin_port));
 
 	ret = sock.ops->bind(&sock, (struct sockaddr *)&loc_in, ulid_size);

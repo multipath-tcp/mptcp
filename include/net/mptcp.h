@@ -571,7 +571,7 @@ void mptcp_ofo_queue(struct sock *meta_sk);
 void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp);
 void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied);
 int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key, u32 window);
-int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, gfp_t flags);
+int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 rem_id, gfp_t flags);
 void mptcp_del_sock(struct sock *sk);
 void mptcp_update_metasocket(struct sock *sock, struct sock *meta_sk);
 void mptcp_reinject_data(struct sock *orig_sk, int clone_it);
@@ -1062,11 +1062,9 @@ static inline u8 mptcp_set_new_pathindex(struct mptcp_cb *mpcb)
 	u8 base = mpcb->next_path_index;
 	int i;
 
-	/* Start at 2, because index 1 is for the initial subflow  plus the
-	 * bitshift, to make the path-index increasing
-	 */
+	/* Start at 1, because 0 is reserved for the meta-sk */
 	mptcp_for_each_bit_unset(mpcb->path_index_bits >> base, i) {
-		if (i + base < 2)
+		if (i + base < 1)
 			continue;
 		if (i + base >= sizeof(mpcb->path_index_bits) * 8)
 			break;
@@ -1076,7 +1074,7 @@ static inline u8 mptcp_set_new_pathindex(struct mptcp_cb *mpcb)
 		return i;
 	}
 	mptcp_for_each_bit_unset(mpcb->path_index_bits, i) {
-		if (i < 2)
+		if (i < 1)
 			continue;
 		mpcb->path_index_bits |= (1 << i);
 		mpcb->next_path_index = i + 1;

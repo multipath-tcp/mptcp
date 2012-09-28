@@ -783,7 +783,7 @@ void mptcp_sock_destruct(struct sock *sk)
 
 }
 
-int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, gfp_t flags)
+int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 rem_id, gfp_t flags)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -792,9 +792,18 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, gfp_t flags)
 	if (!tp->mptcp)
 		return -ENOMEM;
 
+	tp->mptcp->path_index = mptcp_set_new_pathindex(mpcb);
+	/* No more space for more subflows? */
+	if (!tp->mptcp->path_index) {
+		kmem_cache_free(mptcp_sock_cache, tp->mptcp);
+		return -EPERM;
+	}
+
 	tp->mptcp->tp = tp;
 	tp->mpcb = mpcb;
 	tp->meta_sk = meta_sk;
+	tp->mpc = 1;
+	tp->mptcp->rem_id = rem_id;
 
 	/* The corresponding sock_put is in mptcp_sock_destruct(). It cannot be
 	 * included in mptcp_del_sock(), because the mpcb must remain alive
@@ -1364,10 +1373,8 @@ int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key, u32 window)
 	master_sk = tcp_sk(meta_sk)->mpcb->master_sk;
 	master_tp = tcp_sk(master_sk);
 
-	if (mptcp_add_sock(meta_sk, master_sk, GFP_ATOMIC))
+	if (mptcp_add_sock(meta_sk, master_sk, 0, GFP_ATOMIC))
 		goto err_add_sock;
-
-	master_tp->mpc = 1;
 
 	if (__inet_inherit_port(meta_sk, master_sk) < 0)
 		goto err_add_sock;
@@ -1381,10 +1388,6 @@ int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key, u32 window)
 		__inet6_hash(master_sk, NULL);
 #endif
 
-	master_tp->mptcp->rem_id = 0;
-	master_tp->mptcp->slave_sk = 0;
-	master_tp->mptcp->path_index = 1;
-	master_tp->mptcp->last_rbuf_opti = 0;
 	master_tp->mptcp->init_rcv_wnd = master_tp->rcv_wnd;
 	master_tp->advmss = mptcp_sysctl_mss();
 
@@ -1481,7 +1484,6 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	/* The child is a clone of the meta socket, we must now reset
 	 * some of the fields
 	 */
-	child_tp->mpc = 1;
 	child_tp->rx_opt.low_prio = mtreq->low_prio;
 	child->sk_sndmsg_page = NULL;
 
@@ -1489,7 +1491,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	sk_set_socket(child, meta_sk->sk_socket);
 	child->sk_wq = meta_sk->sk_wq;
 
-	if (mptcp_add_sock(meta_sk, child, GFP_ATOMIC))
+	if (mptcp_add_sock(meta_sk, child, mtreq->rem_id, GFP_ATOMIC))
 		/* TODO when we support acking the third ack for new subflows,
 		 * we should silently discard this third ack, by returning NULL.
 		 *
@@ -1500,16 +1502,9 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 
 	child_tp->advmss = mptcp_sysctl_mss();
 
-	child_tp->mptcp->rem_id = mtreq->rem_id;
-	child_tp->mptcp->path_index = mptcp_set_new_pathindex(mpcb);
-	/* No more space for more subflows? */
-	if (!child_tp->mptcp->path_index)
-		goto teardown;
-
 	child_tp->mptcp->slave_sk = 1;
 	child_tp->mptcp->snt_isn = tcp_rsk(req)->snt_isn;
 	child_tp->mptcp->init_rcv_wnd = req->rcv_wnd;
-	child_tp->mptcp->last_rbuf_opti = 0;
 
 	/* Subflows do not use the accept queue, as they
 	 * are attached immediately to the mpcb.

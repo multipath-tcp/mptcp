@@ -596,17 +596,13 @@ void mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	struct sock *sk;
 	struct sockaddr_in6 loc_in, rem_in;
 	struct socket sock;
-	int ulid_size = 0, ret, newpi;
+	int ulid_size = 0, ret;
 
 	/* Don't try again - even if it fails.
 	 * There is a special case as the IPv6 address of the initial subflow
 	 * has an id = 0. The other ones have id's in the range [8, 16[.
 	 */
 	rem->bitfield |= (1 << (loc->id - min(loc->id, (u8)MPTCP_MAX_ADDR)));
-
-	newpi = mptcp_set_new_pathindex(tcp_sk(meta_sk)->mpcb);
-	if (!newpi)
-		return;
 
 	/** First, create and prepare the new socket */
 
@@ -617,7 +613,6 @@ void mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	sock.ops = NULL;
 
 	ret = inet6_create(sock_net(meta_sk), &sock, IPPROTO_TCP, 1);
-
 	if (unlikely(ret < 0)) {
 		mptcp_debug("%s inet6_create failed ret: %d\n", __func__, ret);
 		return;
@@ -626,12 +621,9 @@ void mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	sk = sock.sk;
 	tp = tcp_sk(sk);
 
-	if (mptcp_add_sock(meta_sk, sk, GFP_KERNEL))
+	if (mptcp_add_sock(meta_sk, sk, rem->id, GFP_KERNEL))
 		goto error;
 
-	tp->mptcp->rem_id = rem->id;
-	tp->mptcp->path_index = newpi;
-	tp->mpc = 1;
 	tp->mptcp->slave_sk = 1;
 	tp->mptcp->low_prio = loc->low_prio;
 
@@ -649,8 +641,8 @@ void mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	rem_in.sin6_addr = rem->addr;
 
 	mptcp_debug("%s: token %#x pi %d src_addr:%pI6:%d dst_addr:%pI6:%d\n",
-		    __func__, tcp_sk(meta_sk)->mpcb->mptcp_loc_token, newpi, &loc_in.sin6_addr,
-		    ntohs(loc_in.sin6_port), &rem_in.sin6_addr,
+		    __func__, tcp_sk(meta_sk)->mpcb->mptcp_loc_token, tp->mptcp->path_index,
+		    &loc_in.sin6_addr, ntohs(loc_in.sin6_port), &rem_in.sin6_addr,
 		    ntohs(rem_in.sin6_port));
 
 	ret = sock.ops->bind(&sock, (struct sockaddr *)&loc_in, ulid_size);
