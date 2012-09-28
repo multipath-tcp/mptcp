@@ -395,7 +395,10 @@ static void mptcp_sub_inherit_sockopts(struct sock *meta_sk, struct sock *sub_sk
 
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {
-	struct sock *sk = skb->sk;
+	/* skb-sk may be NULL if we receive a packet immediatly after the
+	 * SYN/ACK + MP_CAPABLE.
+	 */
+	struct sock *sk = skb->sk ? skb->sk : meta_sk;
 
 	if (sk->sk_family == AF_INET)
 		return tcp_v4_do_rcv(sk, skb);
