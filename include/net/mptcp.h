@@ -638,8 +638,8 @@ static inline void mptcp_sub_force_close(struct sock *sk)
 
 	if (!sock_flag(sk, SOCK_DEAD))
 		mptcp_sub_close(sk, 0);
-	else
-		tcp_sk(sk)->mp_killed = 1;
+
+	tcp_sk(sk)->mp_killed = 1;
 }
 
 static inline int mptcp_is_data_fin(const struct sk_buff *skb)

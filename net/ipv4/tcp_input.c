@@ -5427,7 +5427,8 @@ static int tcp_validate_incoming(struct sock *sk, struct sk_buff *skb,
 		mptcp_post_parse_options(tp, skb);
 
 		mptcp_path_array_check(mptcp_meta_sk(sk));
-		if (mptcp_mp_fail_rcvd(sk, th))
+		/* Socket may have been mp_killed by a REMOVE_ADDR */
+		if (tp->mp_killed || mptcp_mp_fail_rcvd(sk, th))
 			goto discard;
 	}
 
