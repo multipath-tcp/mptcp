@@ -4222,9 +4222,9 @@ static void tcp_fin(struct sock *sk, const struct sk_buff *skb)
 		tcp_set_state(sk, TCP_CLOSING);
 		break;
 	case TCP_FIN_WAIT2:
-		if (mptcp_is_data_seq(skb)) {
+		if (tp->mpc) {
 			/* The socket will get closed by mptcp_data_ready.
-			 * We first have to process this data-seq.
+			 * We first have to process all data-sequences.
 			 */
 			tp->close_it = 1;
 			break;
