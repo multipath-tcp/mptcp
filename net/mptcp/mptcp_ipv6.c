@@ -498,6 +498,11 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 			return 0;
 		}
 
+		if (sk->sk_state == TCP_TIME_WAIT) {
+			inet_twsk_put(inet_twsk(sk));
+			return 0;
+		}
+
 		ret = tcp_v6_do_rcv(sk, skb);
 		sock_put(sk);
 
