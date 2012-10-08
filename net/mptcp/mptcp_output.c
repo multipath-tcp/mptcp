@@ -1062,7 +1062,7 @@ void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 
 		opts->mptcp_options |= OPTION_MP_JOIN | OPTION_TYPE_SYN;
 		*remaining -= MPTCP_SUB_LEN_JOIN_SYN_ALIGN;
-		opts->mp_join_syns.token = mpcb->rx_opt.mptcp_rem_token;
+		opts->mp_join_syns.token = mpcb->mptcp_rem_token;
 		opts->addr_id = mptcp_get_loc_addrid(mpcb, sk);
 
 		if (!tp->mptcp->mptcp_loc_nonce)
@@ -1139,7 +1139,7 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 	if (unlikely(tp->send_mp_fclose)) {
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_MP_FCLOSE;
-		opts->mp_capable.receiver_key = mpcb->rx_opt.mptcp_rem_key;
+		opts->mp_capable.receiver_key = mpcb->mptcp_rem_key;
 		*size += MPTCP_SUB_LEN_FCLOSE_ALIGN;
 		return;
 	}
@@ -1176,15 +1176,14 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 					       OPTION_TYPE_ACK;
 			*size += MPTCP_SUB_LEN_CAPABLE_ACK_ALIGN;
 			opts->mp_capable.sender_key = mpcb->mptcp_loc_key;
-			opts->mp_capable.receiver_key =
-					mpcb->rx_opt.mptcp_rem_key;
+			opts->mp_capable.receiver_key = mpcb->mptcp_rem_key;
 			opts->dss_csum = mpcb->rx_opt.dss_csum;
 		} else {
 			opts->mptcp_options |= OPTION_MP_JOIN | OPTION_TYPE_ACK;
 			*size += MPTCP_SUB_LEN_JOIN_ACK_ALIGN;
 
 			mptcp_hmac_sha1((u8 *)&mpcb->mptcp_loc_key,
-					(u8 *)&mpcb->rx_opt.mptcp_rem_key,
+					(u8 *)&mpcb->mptcp_rem_key,
 					(u8 *)&tp->mptcp->mptcp_loc_nonce,
 					(u8 *)&tp->rx_opt.mptcp_recv_nonce,
 					(u32 *)opts->mp_join_ack.sender_mac);

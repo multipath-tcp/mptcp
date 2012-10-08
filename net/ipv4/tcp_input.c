@@ -5743,7 +5743,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		if (!is_master_tp(tp)) {
 			u8 hash_mac_check[20];
 
-			mptcp_hmac_sha1((u8 *)&mpcb->rx_opt.mptcp_rem_key,
+			mptcp_hmac_sha1((u8 *)&mpcb->mptcp_rem_key,
 					(u8 *)&mpcb->mptcp_loc_key,
 					(u8 *)&tp->rx_opt.mptcp_recv_nonce,
 					(u8 *)&tp->mptcp->mptcp_loc_nonce,

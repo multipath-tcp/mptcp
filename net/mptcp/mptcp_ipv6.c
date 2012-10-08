@@ -273,7 +273,7 @@ static void mptcp_v6_join_request_short(struct sock *meta_sk,
 	mtreq = mptcp_rsk(req);
 	mtreq->mpcb = mpcb;
 	mtreq->mptcp_rem_nonce = tmp_opt->mptcp_recv_nonce;
-	mtreq->mptcp_rem_key = mpcb->rx_opt.mptcp_rem_key;
+	mtreq->mptcp_rem_key = mpcb->mptcp_rem_key;
 	mtreq->mptcp_loc_key = mpcb->mptcp_loc_key;
 
 	get_random_bytes(&mtreq->mptcp_loc_nonce,

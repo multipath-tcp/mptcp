@@ -921,7 +921,7 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 			}
 			seq_printf(seq, "Loc_Tok %#x Rem_tok %#x cnt_subs %d meta-state %d infinite? %d",
 					mpcb->mptcp_loc_token,
-					mpcb->rx_opt.mptcp_rem_token,
+					mpcb->mptcp_rem_token,
 					mpcb->cnt_subflows,
 					meta_sk->sk_state,
 					mpcb->infinite_mapping);

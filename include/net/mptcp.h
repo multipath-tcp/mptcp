@@ -152,7 +152,7 @@ struct multipath_options {
 	u8	rem4_bits;
 	u8	rem6_bits;
 
-	u32	mptcp_rem_token;	/* Remote token */
+	u32	mptcp_rem_token;/* Remote token */
 	u64	mptcp_rem_key;	/* Remote key */
 
 	struct	mptcp_rem4 addr4[MPTCP_MAX_ADDR];
@@ -213,6 +213,8 @@ struct mptcp_cb {
 
 	__u64	mptcp_loc_key;
 	__u32	mptcp_loc_token;
+	__u64	mptcp_rem_key;
+	__u32	mptcp_rem_token;
 
 	/* Create a new subflow - necessary because the meta-sk may be IPv4, but
 	 * the new subflow can be IPv6

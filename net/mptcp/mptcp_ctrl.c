@@ -626,9 +626,8 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	meta_tp->pushed_seq = meta_tp->write_seq;
 	meta_tp->snd_up = meta_tp->write_seq;
 
-	mpcb->rx_opt.mptcp_rem_key = remote_key;
-	mptcp_key_sha1(mpcb->rx_opt.mptcp_rem_key,
-		       &mpcb->rx_opt.mptcp_rem_token, &idsn);
+	mpcb->mptcp_rem_key = remote_key;
+	mptcp_key_sha1(mpcb->mptcp_rem_key, &mpcb->mptcp_rem_token, &idsn);
 	idsn = ntohll(idsn) + 1;
 	mpcb->rcv_high_order[0] = idsn >> 32;
 	mpcb->rcv_high_order[1] = mpcb->rcv_high_order[0] + 1;
@@ -1438,10 +1437,8 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	child_tp->mptcp->snt_isn = tcp_rsk(req)->snt_isn;
 
 	mpcb = child_tp->mpcb;
-	if (mopt->list_rcvd) {
+	if (mopt->list_rcvd)
 		memcpy(&mpcb->rx_opt, mopt, sizeof(*mopt));
-		mpcb->rx_opt.mptcp_rem_key = mtreq->mptcp_rem_key;
-	}
 
 	mpcb->rx_opt.dss_csum = sysctl_mptcp_checksum || mtreq->dss_csum;
 	mpcb->rx_opt.mpcb = mpcb;
@@ -1480,7 +1477,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	if (!mpcb->rx_opt.join_ack)
 		goto teardown;
 
-	mptcp_hmac_sha1((u8 *)&mpcb->rx_opt.mptcp_rem_key,
+	mptcp_hmac_sha1((u8 *)&mpcb->mptcp_rem_key,
 			(u8 *)&mpcb->mptcp_loc_key,
 			(u8 *)&mtreq->mptcp_rem_nonce,
 			(u8 *)&mtreq->mptcp_loc_nonce,
