@@ -1349,10 +1349,13 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	if (unlikely(OPTION_REMOVE_ADDR & opts->mptcp_options)) {
 		struct mp_remove_addr *mprem = (struct mp_remove_addr *) ptr;
 		u8 *addrs_id;
-		int id;
+		int id, len, len_align;
+
+		len = mptcp_sub_len_remove_addr(opts->remove_addrs);
+		len_align = mptcp_sub_len_remove_addr_align(opts->remove_addrs);
 
 		mprem->kind = TCPOPT_MPTCP;
-		mprem->len = mptcp_sub_len_remove_addr(opts->remove_addrs);
+		mprem->len = len;
 		mprem->sub = MPTCP_SUB_REMOVE_ADDR;
 		mprem->rsv = 0;
 		addrs_id = &mprem->addrs_id;
@@ -1360,7 +1363,14 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		mptcp_for_each_bit_set(opts->remove_addrs, id)
 			*(addrs_id++) = id;
 
-		ptr += mptcp_sub_len_remove_addr_align(opts->remove_addrs) >> 2;
+		/* Fill the rest with NOP's */
+		if (len_align > len) {
+			int i;
+			for (i = 0; i < len_align - len; i++)
+				*(addrs_id++) = TCPOPT_NOP;
+		}
+
+		ptr += len_align >> 2;
 	}
 	if (unlikely(OPTION_MP_FAIL & opts->mptcp_options)) {
 		struct mp_fail *mpfail = (struct mp_fail *) ptr;
