@@ -146,8 +146,8 @@ static int try_shortcut(struct sk_buff *shortcut, struct sk_buff *skb,
 	/* Do skb overlap to previous one? */
 	if (skb1 && before(seq, TCP_SKB_CB(skb1)->end_seq)) {
 		if (!after(end_seq, TCP_SKB_CB(skb1)->end_seq)) {
-			/* All the bits are present.
-			 * Will get dropped by the caller's caller. */
+			/* All the bits are present. */
+			__kfree_skb(skb);
 			return 1;
 		}
 		if (seq == TCP_SKB_CB(skb1)->seq) {
@@ -179,10 +179,9 @@ clean_covered:
 
 /**
  * @sk: the subflow that received this skb.
- * @return: 1 if the skb must be dropped by the caller, otherwise 0
  */
-int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
-			     struct sock *sk)
+void mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
+			      struct sock *sk)
 {
 	int ans;
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -193,8 +192,6 @@ int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
 	/* update the shortcut pointer in @sk */
 	if (!ans)
 		tp->mptcp->shortcut_ofoqueue = skb;
-
-	return ans;
 }
 
 void mptcp_ofo_queue(struct sock *meta_sk)

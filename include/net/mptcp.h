@@ -573,8 +573,8 @@ void mptcp_set_state(struct sock *sk);
 void mptcp_sock_destruct(struct sock *sk);
 void mptcp_sock_def_error_report(struct sock *sk);
 
-int mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
-			     struct sock *sk);
+void mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
+			      struct sock *sk);
 void mptcp_ofo_queue(struct sock *meta_sk);
 void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp);
 void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied);
@@ -662,7 +662,8 @@ static inline int mptcp_is_data_seq(const struct sk_buff *skb)
 	return TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ;
 }
 
-static inline void mptcp_skb_entail_init(struct tcp_sock *tp, struct sk_buff *skb)
+static inline void mptcp_skb_entail_init(const struct tcp_sock *tp,
+					 struct sk_buff *skb)
 {
 	if (tp->mpc)
 		TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_SEQ;
@@ -805,7 +806,7 @@ static inline void mptcp_wmem_free_skb(struct sock *sk, struct sk_buff *skb)
 	kfree_skb(skb);
 }
 
-static inline int mptcp_check_rtt(struct tcp_sock *tp, int time)
+static inline int mptcp_check_rtt(const struct tcp_sock *tp, int time)
 {
 	struct mptcp_cb *mpcb = tp->mpcb;
 	struct tcp_sock *tp_tmp;
@@ -824,45 +825,24 @@ static inline int mptcp_check_rtt(struct tcp_sock *tp, int time)
 	return 0;
 }
 
-static inline __be32 mptcp_get_highorder_sndbits(struct sk_buff *skb,
-						 struct mptcp_cb *mpcb)
+static inline __be32 mptcp_get_highorder_sndbits(const struct sk_buff *skb,
+						 const struct mptcp_cb *mpcb)
 {
 	return htonl(mpcb->snd_high_order[(TCP_SKB_CB(skb)->mptcp_flags &
 			MPTCPHDR_SEQ64_INDEX) ? 1 : 0]);
 }
 
-static inline u64 mptcp_get_data_seq_64(struct mptcp_cb *mpcb, int index,
+static inline u64 mptcp_get_data_seq_64(const struct mptcp_cb *mpcb, int index,
 					u32 data_seq_32)
 {
 	return ((u64)mpcb->rcv_high_order[index] << 32) | data_seq_32;
 }
 
-static inline u64 mptcp_get_rcv_nxt_64(struct tcp_sock *meta_tp)
+static inline u64 mptcp_get_rcv_nxt_64(const struct tcp_sock *meta_tp)
 {
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	return mptcp_get_data_seq_64(mpcb, mpcb->rcv_hiseq_index,
 				     meta_tp->rcv_nxt);
-}
-
-/* Similar to tcp_sequence(...) */
-static inline int mptcp_sequence(struct tcp_sock *meta_tp,
-				 u64 data_seq, u64 end_data_seq)
-{
-	struct mptcp_cb *mpcb = meta_tp->mpcb;
-	u64 rcv_wup64;
-
-	/* Wrap-around? */
-	if (meta_tp->rcv_wup > meta_tp->rcv_nxt) {
-		rcv_wup64 = ((u64)(mpcb->rcv_high_order[mpcb->rcv_hiseq_index] - 1) << 32) |
-				meta_tp->rcv_wup;
-	} else {
-		rcv_wup64 = mptcp_get_data_seq_64(meta_tp->mpcb,
-						  meta_tp->mpcb->rcv_hiseq_index,
-						  meta_tp->rcv_wup);
-	}
-
-	return	!before64(end_data_seq, rcv_wup64) &&
-		!after64(data_seq, mptcp_get_rcv_nxt_64(meta_tp) + tcp_receive_window(meta_tp));
 }
 
 static inline void mptcp_check_sndseq_wrap(struct tcp_sock *meta_tp, int inc)
@@ -893,14 +873,13 @@ static inline void mptcp_path_array_check(struct sock *meta_sk)
 	}
 }
 
-static inline int mptcp_check_snd_buf(struct tcp_sock *tp)
+static inline int mptcp_check_snd_buf(const struct tcp_sock *tp)
 {
-	struct mptcp_cb *mpcb = tp->mpcb;
 	struct tcp_sock *tp_it;
 	u32 rtt_max = tp->srtt;
 	u64 bw_est;
 
-	mptcp_for_each_tp(mpcb, tp_it)
+	mptcp_for_each_tp(tp->mpcb, tp_it)
 		if (rtt_max < tp_it->srtt)
 			rtt_max = tp_it->srtt;
 

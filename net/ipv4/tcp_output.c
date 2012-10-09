@@ -261,6 +261,10 @@ EXPORT_SYMBOL(tcp_select_initial_window);
 static u16 tcp_select_window(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	/* The window must never shrink at the meta-level. At the subflow we
+	 * have to allow this. Otherwise we may announce a window too large
+	 * for the current meta-level sk_rcvbuf.
+	 */
 	u32 cur_win = tcp_receive_window(tp->mpc ? tcp_sk(mptcp_meta_sk(sk)) : tp);
 	u32 new_win = __tcp_select_window(sk);
 

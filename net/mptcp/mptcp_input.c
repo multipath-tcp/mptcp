@@ -590,6 +590,26 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 	return 0;
 }
 
+/* Similar to tcp_sequence(...) */
+static inline int mptcp_sequence(const struct tcp_sock *meta_tp,
+				 u64 data_seq, u64 end_data_seq)
+{
+	struct mptcp_cb *mpcb = meta_tp->mpcb;
+	u64 rcv_wup64;
+
+	/* Wrap-around? */
+	if (meta_tp->rcv_wup > meta_tp->rcv_nxt) {
+		rcv_wup64 = ((u64)(mpcb->rcv_high_order[mpcb->rcv_hiseq_index] - 1) << 32) |
+				meta_tp->rcv_wup;
+	} else {
+		rcv_wup64 = mptcp_get_data_seq_64(mpcb, mpcb->rcv_hiseq_index,
+						  meta_tp->rcv_wup);
+	}
+
+	return	!before64(end_data_seq, rcv_wup64) &&
+		!after64(data_seq, mptcp_get_rcv_nxt_64(meta_tp) + tcp_receive_window(meta_tp));
+}
+
 /* @return: 0  everything is fine. Just continue processing
  * 	    1  subflow is broken stop everything
  * 	    -1 this packet was broken - continue with the next one.
@@ -733,8 +753,7 @@ static int mptcp_queue_skb(struct sock *sk)
 
 			skb_set_owner_r(tmp1, meta_sk);
 
-			if (mptcp_add_meta_ofo_queue(meta_sk, tmp1, sk))
-				__kfree_skb(tmp1);
+			mptcp_add_meta_ofo_queue(meta_sk, tmp1, sk);
 		}
 	} else {
 		/* Ready for the meta-rcv-queue */
