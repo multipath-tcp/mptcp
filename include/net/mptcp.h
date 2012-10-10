@@ -616,6 +616,8 @@ struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
 		struct request_sock *req, struct request_sock **prev,
 		const struct tcp_options_received *rx_opt);
 u32 __mptcp_select_window(struct sock *sk);
+void mptcp_select_initial_window(int *__space, __u32 *window_clamp,
+			         const struct sock *sk);
 int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb);
 void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn);
 void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
@@ -1207,6 +1209,9 @@ static inline u32 __mptcp_select_window(const struct sock *sk)
 {
 	return 0;
 }
+static inline void mptcp_select_initial_window(int *__space,
+					       __u32 *window_clamp,
+					       const struct sock *sk) {}
 static inline int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 {
 	return 0;

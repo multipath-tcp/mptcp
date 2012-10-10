@@ -1672,3 +1672,21 @@ out_unlock:
 	bh_unlock_sock(meta_sk);
 	sock_put(sk);
 }
+
+/* Modify values to an mptcp-level for the initial window of new subflows */
+void mptcp_select_initial_window(int *__space, __u32 *window_clamp,
+			         const struct sock *sk)
+{
+	struct sock *meta_sk = mptcp_meta_sk(sk);
+
+	/* If the user has set a limit - take this one. Else we take the
+	 * maximum. Per-destination metrics don't make sense as the window
+	 * is at the meta-level.
+	 */
+	if (meta_sk->sk_userlocks & SOCK_RCVBUF_LOCK)
+		*window_clamp = tcp_full_space(meta_sk);
+	else
+		*window_clamp = (65535 << 14);
+
+	*__space = tcp_space(meta_sk);
+}

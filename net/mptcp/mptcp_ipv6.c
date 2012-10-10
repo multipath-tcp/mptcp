@@ -86,7 +86,7 @@ static void mptcp_v6_reqsk_queue_hash_add(struct request_sock *req,
 }
 
 /* The meta-socket is IPv4, but a new subsocket is IPv6 */
-static int mptcp_v6v4_send_synack(struct sock *sk, struct request_sock *req,
+static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req,
 				  struct request_values *rvp)
 {
 	struct inet6_request_sock *treq = inet6_rsk(req);
@@ -101,24 +101,24 @@ static int mptcp_v6v4_send_synack(struct sock *sk, struct request_sock *req,
 	ipv6_addr_copy(&fl6.saddr, &treq->loc_addr);
 	fl6.flowlabel = 0;
 	fl6.flowi6_oif = treq->iif;
-	fl6.flowi6_mark = sk->sk_mark;
+	fl6.flowi6_mark = meta_sk->sk_mark;
 	fl6.fl6_dport = inet_rsk(req)->rmt_port;
 	fl6.fl6_sport = inet_rsk(req)->loc_port;
 	security_req_classify_flow(req, flowi6_to_flowi(&fl6));
 
-	dst = ip6_dst_lookup_flow(sk, &fl6, NULL, false);
+	dst = ip6_dst_lookup_flow(meta_sk, &fl6, NULL, false);
 	if (IS_ERR(dst)) {
 		err = PTR_ERR(dst);
 		dst = NULL;
 		goto done;
 	}
-	skb = tcp_make_synack(sk, dst, req, rvp);
+	skb = tcp_make_synack(meta_sk, dst, req, rvp);
 	err = -ENOMEM;
 	if (skb) {
 		__tcp_v6_send_check(skb, &treq->loc_addr, &treq->rmt_addr);
 
 		ipv6_addr_copy(&fl6.daddr, &treq->rmt_addr);
-		err = ip6_xmit(sk, skb, &fl6, NULL, 0);
+		err = ip6_xmit(meta_sk, skb, &fl6, NULL, 0);
 		err = net_xmit_eval(err);
 	}
 
