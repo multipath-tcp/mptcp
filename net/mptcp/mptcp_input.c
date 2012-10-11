@@ -98,8 +98,9 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk)
 }
 
 /* Inspired by tcp_rcv_state_process */
-static void mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
-				    const struct sk_buff *skb)
+static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
+				   const struct sk_buff *skb, u32 data_seq,
+				   u16 data_len)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct tcphdr *th = tcp_hdr(skb);
@@ -119,13 +120,49 @@ static void mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 			if (!sock_flag(meta_sk, SOCK_DEAD)) {
 				/* Wake up lingering close() */
 				meta_sk->sk_state_change(meta_sk);
+			} else {
+				int tmo;
+
+				if (meta_tp->linger2 < 0 ||
+				    (data_len &&
+				     after(data_seq + data_len - (mptcp_is_data_fin(skb) ? 1 : 0),
+					   meta_tp->rcv_nxt))) {
+					mptcp_send_active_reset(meta_sk, GFP_ATOMIC);
+					tcp_done(meta_sk);
+					NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_TCPABORTONDATA);
+					return 1;
+				}
+
+				tmo = tcp_fin_time(meta_sk);
+				if (tmo > TCP_TIMEWAIT_LEN) {
+					inet_csk_reset_keepalive_timer(meta_sk, tmo - TCP_TIMEWAIT_LEN);
+				} else if (mptcp_is_data_fin(skb) || sock_owned_by_user(meta_sk)) {
+					/* Bad case. We could lose such FIN otherwise.
+					 * It is not a big problem, but it looks confusing
+					 * and not so rare event. We still can lose it now,
+					 * if it spins in bh_lock_sock(), but it is really
+					 * marginal case.
+					 */
+					inet_csk_reset_keepalive_timer(meta_sk, tmo);
+				}
+
+				/* Diff to tcp_rcv_state_process:
+				 *
+				 * In case of MPTCP we cannot go into time-wait.
+				 * Because, we are still waiting for a data-fin.
+				 *
+				 * If we fully adapt time-wait-socks for MTPCP-awareness
+				 * we can change this here again.
+				 */
 			}
 		}
 		break;
 	case TCP_CLOSING:
 	case TCP_LAST_ACK:
-		if (meta_tp->snd_una == meta_tp->write_seq)
+		if (meta_tp->snd_una == meta_tp->write_seq) {
 			tcp_done(meta_sk);
+			return 1;
+		}
 		break;
 	}
 
@@ -148,6 +185,8 @@ static void mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 		}
 		break;
 	}
+
+	return 0;
 }
 
 /**
@@ -957,6 +996,7 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	int flag = 0;
 	int prior_packets;
 	u32 nwin, data_ack, data_seq;
+	u16 data_len = 0;
 	__u32 *ptr;
 
 	if (!tp->mpc)
@@ -996,7 +1036,10 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 
 	/* Get the data_seq */
 	if (mptcp_is_data_seq(skb)) {
-		mptcp_skb_set_data_seq(skb, &data_seq);
+		u32 *ptr = mptcp_skb_set_data_seq(skb, &data_seq);
+		ptr++;
+		ptr++;
+		data_len = get_unaligned_be16(ptr);
 	} else {
 		data_seq = meta_tp->snd_wl1;
 	}
@@ -1071,7 +1114,7 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	}
 
 	if (meta_sk->sk_state != TCP_ESTABLISHED)
-		mptcp_rcv_state_process(meta_sk, sk, skb);
+		mptcp_rcv_state_process(meta_sk, sk, skb, data_seq, data_len);
 
 exit:
 	mptcp_push_pending_frames(meta_sk);
