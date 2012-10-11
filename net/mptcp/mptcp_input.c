@@ -855,8 +855,11 @@ void mptcp_data_ready(struct sock *sk, int bytes)
 	int queued = 0;
 
 	/* If the meta is already closed, there is no point in pushing data */
-	if (meta_sk->sk_state == TCP_CLOSE)
+	if (meta_sk->sk_state == TCP_CLOSE) {
+		skb_queue_purge(&sk->sk_receive_queue);
+		tcp_sk(sk)->copied_seq = tcp_sk(sk)->rcv_nxt;
 		goto exit;
+	}
 
 restart:
 	/* Iterate over all segments, detect their mapping (if we don't have
