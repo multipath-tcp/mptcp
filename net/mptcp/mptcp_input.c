@@ -333,7 +333,7 @@ static inline int mptcp_direct_copy(struct sk_buff *skb, struct tcp_sock *tp,
 	if (!skb_copy_datagram_iovec(skb, 0, meta_tp->ucopy.iov, chunk)) {
 		meta_tp->ucopy.len -= chunk;
 		meta_tp->copied_seq += chunk;
-		eaten = (chunk == skb->len && !mptcp_is_data_fin(skb));
+		eaten = (chunk == skb->len);
 		tcp_rcv_space_adjust(meta_sk);
 	}
 	local_bh_disable();
