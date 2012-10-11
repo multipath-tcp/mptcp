@@ -897,7 +897,7 @@ exit:
 		tcp_time_wait(sk, TCP_TIME_WAIT, 0);
 	}
 
-	if (queued == -1)
+	if (queued == -1 && !sock_flag(meta_sk, SOCK_DEAD))
 		meta_sk->sk_data_ready(meta_sk, 0);
 }
 
