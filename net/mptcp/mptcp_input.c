@@ -651,7 +651,6 @@ static inline int mptcp_sequence(const struct tcp_sock *meta_tp,
 }
 
 /* @return: 0  everything is fine. Just continue processing
- * 	    1  subflow is broken stop everything
  * 	    -1 this packet was broken - continue with the next one.
  */
 static int mptcp_validate_mapping(struct sock *sk, struct sk_buff *skb)
