@@ -90,17 +90,7 @@ EXPORT_SYMBOL(sysctl_tcp_adv_win_scale);
 int sysctl_tcp_stdurg __read_mostly;
 int sysctl_tcp_rfc1337 __read_mostly;
 int sysctl_tcp_max_orphans __read_mostly = NR_FILE;
-#ifdef CONFIG_MPTCP
-/* At the moment we disable frto, because it creates problems
- * with failure recovery: It waits for the next ack before to decide
- * whether it enters the Loss state. But in case of failure,
- * the next ack never arrives of course. When we have several paths this is
- * a problem because we do want to retransmit on another working subflow
- * in that case. */
-int sysctl_tcp_frto __read_mostly = 0;
-#else
 int sysctl_tcp_frto __read_mostly = 2;
-#endif
 int sysctl_tcp_frto_response __read_mostly;
 int sysctl_tcp_nometrics_save __read_mostly;
 
@@ -2194,8 +2184,6 @@ static void tcp_enter_frto_loss(struct sock *sk, int allowed_segments, int flag)
 	tp->reordering = min_t(unsigned int, tp->reordering,
 			       sysctl_tcp_reordering);
 	tcp_set_ca_state(sk, TCP_CA_Loss);
-	if (tp->mpc)
-		mptcp_reinject_data(sk, 1);
 	tp->high_seq = tp->snd_nxt;
 	TCP_ECN_queue_cwr(tp);
 
@@ -2275,8 +2263,6 @@ void tcp_enter_loss(struct sock *sk, int how)
 	tp->reordering = min_t(unsigned int, tp->reordering,
 			       sysctl_tcp_reordering);
 	tcp_set_ca_state(sk, TCP_CA_Loss);
-	if (tp->mpc)
-		mptcp_reinject_data(sk, 1);
 	tp->high_seq = tp->snd_nxt;
 	TCP_ECN_queue_cwr(tp);
 	/* Abort F-RTO algorithm if one is in progress */
@@ -2969,8 +2955,6 @@ void tcp_simple_retransmit(struct sock *sk)
 		tp->prior_ssthresh = 0;
 		tp->undo_marker = 0;
 		tcp_set_ca_state(sk, TCP_CA_Loss);
-		if (tp->mpc)
-			mptcp_reinject_data(sk, 1);
 	}
 	tcp_xmit_retransmit_queue(sk);
 }
