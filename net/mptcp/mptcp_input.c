@@ -818,25 +818,24 @@ static int mptcp_queue_skb(struct sock *sk)
 			    sock_owned_by_user(meta_sk))
 				eaten = mptcp_direct_copy(tmp1, tp, meta_sk);
 
+			if (!eaten) {
+				__skb_queue_tail(&meta_sk->sk_receive_queue, tmp1);
+				skb_set_owner_r(tmp1, meta_sk);
+			}
 			mptcp_check_rcvseq_wrap(meta_tp,
 						TCP_SKB_CB(tmp1)->end_seq -
 						meta_tp->rcv_nxt);
 			meta_tp->rcv_nxt = TCP_SKB_CB(tmp1)->end_seq;
 
-
 			if (mptcp_is_data_fin(tmp1))
 				mptcp_fin(meta_sk);
-
-			if (!eaten) {
-				__skb_queue_tail(&meta_sk->sk_receive_queue, tmp1);
-				skb_set_owner_r(tmp1, meta_sk);
-			} else {
-				__kfree_skb(tmp1);
-			}
 
 			/* Check if this fills a gap in the ofo queue */
 			if (!skb_queue_empty(&meta_tp->out_of_order_queue))
 				mptcp_ofo_queue(meta_sk);
+
+			if (eaten)
+				__kfree_skb(tmp1);
 		}
 	}
 
