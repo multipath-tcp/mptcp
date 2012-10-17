@@ -1004,7 +1004,7 @@ static void tcp_adjust_fackets_out(struct sock *sk, const struct sk_buff *skb,
 /* Pcount in the middle of the write queue got changed, we need to do various
  * tweaks to fix counters
  */
-static void tcp_adjust_pcount(struct sock *sk, const struct sk_buff *skb, int decr)
+void tcp_adjust_pcount(struct sock *sk, const struct sk_buff *skb, int decr)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 

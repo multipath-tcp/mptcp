@@ -93,8 +93,13 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk)
 		kfree_skb(skb);
 	}
 
-	if (acked)
+	if (acked) {
 		tcp_rearm_rto(meta_sk);
+		/* Normally this is done in tcp_try_undo_loss - but MPTCP
+		 * does not call this function.
+		 */
+		inet_csk(meta_sk)->icsk_retransmits = 0;
+	}
 }
 
 /* Inspired by tcp_rcv_state_process */

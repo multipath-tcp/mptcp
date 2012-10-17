@@ -44,7 +44,7 @@ void tcp_init_xmit_timers(struct sock *sk)
 }
 EXPORT_SYMBOL(tcp_init_xmit_timers);
 
-static void tcp_write_err(struct sock *sk)
+void tcp_write_err(struct sock *sk)
 {
 	sk->sk_err = sk->sk_err_soft ? : ETIMEDOUT;
 	sk->sk_error_report(sk);
