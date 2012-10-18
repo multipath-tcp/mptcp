@@ -506,6 +506,52 @@ static void mptcp_sub_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 		kfree_skb(skb);
 }
 
+/* Handle the packets and sockets after a tcp_transmit_skb failed */
+static void mptcp_transmit_skb_failed(struct sock *sk, struct sk_buff *skb,
+				      struct sk_buff *subskb, int reinject)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct mptcp_cb *mpcb = tp->mpcb;
+
+	/* If it is a reinjection, we cannot modify the path-mask
+	 * of the skb, because subskb == skb. And subskb has been
+	 * freed above.
+	 */
+	if (reinject <= 0)
+		TCP_SKB_CB(skb)->path_mask &= ~mptcp_pi_to_flag(tp->mptcp->path_index);
+
+	if (TCP_SKB_CB(subskb)->tcp_flags & TCPHDR_FIN) {
+		/* If it is a subflow-fin we must leave it on the
+		 * subflow-send-queue, so that the probe-timer
+		 * can retransmit it.
+		 */
+		if (!tp->packets_out && !inet_csk(sk)->icsk_pending)
+			inet_csk_reset_xmit_timer(sk, ICSK_TIME_PROBE0,
+						  inet_csk(sk)->icsk_rto, TCP_RTO_MAX);
+	} else if (mptcp_is_data_fin(subskb) &&
+		   TCP_SKB_CB(subskb)->end_seq == TCP_SKB_CB(subskb)->seq) {
+		/* An empty data-fin has not been enqueued on the subflow
+		 * and thus we free it.
+		 */
+
+		kfree_skb(subskb);
+	} else {
+		/* In all other cases we remove it from the sub-queue.
+		 * Other subflows may send it, or the probe-timer will
+		 * handle it.
+		 */
+		tcp_advance_send_head(sk, subskb);
+		tcp_unlink_write_queue(subskb, sk);
+		tp->write_seq -= subskb->len;
+		if (reinject <= 0)
+			mptcp_wmem_free_skb(sk, subskb);
+		else
+			/* Reinjections have not been cloned,
+			 * we have to put them back on the queue.
+			 */
+			__skb_queue_head(&mpcb->reinject_queue, subskb);
+	}
+}
 
 /* Inspired by tcp_write_wakeup */
 int mptcp_write_wakeup(struct sock *meta_sk)
@@ -551,35 +597,7 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
 		err = tcp_transmit_skb(subsk, subskb, 1, GFP_ATOMIC);
 		if (unlikely(err)) {
-			struct tcp_sock *subtp = tcp_sk(subsk);
-			if (TCP_SKB_CB(subskb)->tcp_flags & TCPHDR_FIN) {
-				/* If it is a subflow-fin we must leave it on the
-				 * subflow-send-queue, so that the probe-timer
-				 * can retransmit it.
-				 */
-				if (!subtp->packets_out && !inet_csk(subsk)->icsk_pending)
-					inet_csk_reset_xmit_timer(subsk, ICSK_TIME_PROBE0,
-								  inet_csk(subsk)->icsk_rto, TCP_RTO_MAX);
-			} else if (mptcp_is_data_fin(subskb) &&
-				   TCP_SKB_CB(subskb)->end_seq == TCP_SKB_CB(subskb)->seq) {
-				/* An empty data-fin has not been enqueued on the subflow
-				 * and thus we free it.
-				 */
-
-				kfree_skb(subskb);
-			} else {
-				/* In all other cases we remove it from the sub-queue.
-				 * Other subflows may send it, or the probe-timer will
-				 * handle it.
-				 */
-				tcp_advance_send_head(subsk, subskb);
-				tcp_unlink_write_queue(subskb, subsk);
-				subtp->write_seq -= subskb->len;
-				mptcp_wmem_free_skb(subsk, subskb);
-			}
-
-			TCP_SKB_CB(skb)->path_mask &= ~mptcp_pi_to_flag(tcp_sk(subsk)->mptcp->path_index);
-
+			mptcp_transmit_skb_failed(subsk, skb, subskb, 0);
 			return err;
 		}
 
@@ -827,43 +845,8 @@ retry:
 		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
 
 		if (unlikely(tcp_transmit_skb(subsk, subskb, 1, gfp))) {
-			if (TCP_SKB_CB(subskb)->tcp_flags & TCPHDR_FIN) {
-				/* If it is a subflow-fin we must leave it on the
-				 * subflow-send-queue, so that the probe-timer
-				 * can retransmit it.
-				 */
-				if (!subtp->packets_out && !inet_csk(subsk)->icsk_pending)
-					inet_csk_reset_xmit_timer(subsk, ICSK_TIME_PROBE0,
-								  inet_csk(subsk)->icsk_rto, TCP_RTO_MAX);
-			} else if (mptcp_is_data_fin(subskb) &&
-				   TCP_SKB_CB(subskb)->end_seq == TCP_SKB_CB(subskb)->seq) {
-				/* An empty data-fin has not been enqueued on the subflow
-				 * and thus we free it.
-				 */
-
-				kfree_skb(subskb);
-			} else {
-				/* In all other cases we remove it from the sub-queue.
-				 * Other subflows may send it, or the probe-timer will
-				 * handle it.
-				 */
-				tcp_advance_send_head(subsk, subskb);
-				tcp_unlink_write_queue(subskb, subsk);
-				subtp->write_seq -= subskb->len;
-				mptcp_wmem_free_skb(subsk, subskb);
-			}
-
-			/* If it is a reinjection, we cannot modify the path-mask
-			 * of the skb, because subskb == skb. And subskb has been
-			 * freed above.
-			 *
-			 * TODO - we have to put back the skb in the
-			 * reinject-queue if tcp_transmit_skb fails.
-			 */
-			if (reinject <= 0)
-				TCP_SKB_CB(skb)->path_mask &= ~mptcp_pi_to_flag(subtp->mptcp->path_index);
+			mptcp_transmit_skb_failed(subsk, skb, subskb, reinject);
 			mpcb->noneligible |= mptcp_pi_to_flag(subtp->mptcp->path_index);
-
 			continue;
 		}
 
@@ -1766,6 +1749,8 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 		err = mptcp_retransmit_skb(sk, subskb);
 		if (!err)
 			mptcp_sub_event_new_data_sent(sk, subskb);
+		else
+			mptcp_transmit_skb_failed(sk, tcp_write_queue_head(meta_sk), subskb, 0);
 		__sk_dst_reset(meta_sk);
 		goto out_reset_timer;
 	}
@@ -1793,6 +1778,8 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 	}
 	if (!err)
 		mptcp_sub_event_new_data_sent(sk, subskb);
+	else
+		mptcp_transmit_skb_failed(sk, tcp_write_queue_head(meta_sk), subskb, 0);
 
 	/* Increase the timeout each time we retransmit.  Note that
 	 * we do not increase the rtt estimate.  rto is initialized
