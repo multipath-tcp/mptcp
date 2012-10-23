@@ -837,7 +837,7 @@ found:
 			continue;
 
 		if (event == NETDEV_DOWN) {
-			mptcp_reinject_data(sk, 1);
+			mptcp_reinject_data(sk, 0);
 			mptcp_sub_force_close(sk);
 		} else if (event == NETDEV_CHANGE) {
 			int new_low_prio = (ifa->idev->dev->flags & IFF_MPBACKUP) ?
