@@ -179,8 +179,9 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 		skb = pskb_copy(orig_skb, GFP_ATOMIC);
 	} else {
 		skb_unlink(orig_skb, &sk->sk_write_queue);
-		skb_get(orig_skb);
-		mptcp_wmem_free_skb(sk, orig_skb);
+		sock_set_flag(sk, SOCK_QUEUE_SHRUNK);
+		sk->sk_wmem_queued -= orig_skb->truesize;
+		sk_mem_uncharge(sk, orig_skb->truesize);
 		skb = orig_skb;
 	}
 	if (unlikely(!skb))
@@ -543,13 +544,17 @@ static void mptcp_transmit_skb_failed(struct sock *sk, struct sk_buff *skb,
 		tcp_advance_send_head(sk, subskb);
 		tcp_unlink_write_queue(subskb, sk);
 		tp->write_seq -= subskb->len;
-		if (reinject <= 0)
-			mptcp_wmem_free_skb(sk, subskb);
-		else
+		if (reinject <= 0) {
+			sk_wmem_free_skb(sk, subskb);
+		} else {
 			/* Reinjections have not been cloned,
 			 * we have to put them back on the queue.
 			 */
+			sock_set_flag(sk, SOCK_QUEUE_SHRUNK);
+			sk->sk_wmem_queued -= subskb->truesize;
+			sk_mem_uncharge(sk, subskb->truesize);
 			__skb_queue_head(&mpcb->reinject_queue, subskb);
+		}
 	}
 }
 

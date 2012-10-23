@@ -795,20 +795,6 @@ static inline void mptcp_init_mp_opt(struct multipath_options *mopt)
 	mopt->mpcb = NULL;
 }
 
-/**
- * This function is almost exactly the same as sk_wmem_free_skb.
- * The only difference is that we call kfree_skb instead of __kfree_skb.
- * This is important because a subsock may want to remove an skb,
- * while the meta-sock still has a reference to it.
- */
-static inline void mptcp_wmem_free_skb(struct sock *sk, struct sk_buff *skb)
-{
-	sock_set_flag(sk, SOCK_QUEUE_SHRUNK);
-	sk->sk_wmem_queued -= skb->truesize;
-	sk_mem_uncharge(sk, skb->truesize);
-	kfree_skb(skb);
-}
-
 static inline int mptcp_check_rtt(const struct tcp_sock *tp, int time)
 {
 	struct mptcp_cb *mpcb = tp->mpcb;
@@ -1229,8 +1215,6 @@ static inline int mptcp_mp_fail_rcvd(struct sock *sk, struct tcphdr *th)
 	return 0;
 }
 static inline void mptcp_init_mp_opt(const struct multipath_options *mopt) {}
-static inline void mptcp_wmem_free_skb(const struct sock *sk,
-				       const struct sk_buff *skb) {}
 static inline int mptcp_check_rtt(const struct tcp_sock *tp, int time)
 {
 	return 0;
