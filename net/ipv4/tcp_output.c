@@ -1553,6 +1553,8 @@ int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	flags = TCP_SKB_CB(skb)->tcp_flags;
 	TCP_SKB_CB(skb)->tcp_flags = flags & ~(TCPHDR_FIN | TCPHDR_PSH);
 	TCP_SKB_CB(buff)->tcp_flags = flags;
+	if (tp->mpc)
+		mptcp_fragment(skb, buff);
 
 	/* This packet was never sent out yet, so no SACK bits. */
 	TCP_SKB_CB(buff)->sacked = 0;
