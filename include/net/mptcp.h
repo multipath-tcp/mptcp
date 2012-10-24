@@ -636,6 +636,13 @@ struct sock *mptcp_sk_clone(struct sock *sk, int family, const gfp_t priority);
 void mptcp_init_ack_timer(struct sock *sk);
 void mptcp_ack_handler(unsigned long);
 
+static inline void mptcp_fragment(struct sk_buff *skb, struct sk_buff *buff)
+{
+	u8 flags = TCP_SKB_CB(skb)->mptcp_flags;
+	TCP_SKB_CB(skb)->mptcp_flags = flags & ~(MPTCPHDR_FIN);
+	TCP_SKB_CB(buff)->mptcp_flags = flags;
+}
+
 static inline void mptcp_push_pending_frames(struct sock *meta_sk)
 {
 	if (mptcp_next_segment(meta_sk, NULL)) {
@@ -1242,6 +1249,7 @@ static inline struct sock *mptcp_sk_clone(const struct sock *sk,
 {
 	return NULL;
 }
+static inline void mptcp_fragment(struct sk_buff *skb, struct sk_buff *buff) {}
 #endif /* CONFIG_MPTCP */
 
 #endif /* _MPTCP_H */
