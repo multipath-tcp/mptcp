@@ -47,6 +47,48 @@
 static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req,
 				  struct request_values *rvp, u16 queue_mapping);
 
+__u32 mptcp_v6_get_nonce(const __be32 *saddr, const __be32 *daddr,
+			 __be16 sport, __be16 dport, u32 seq)
+{
+	u32 secret[MD5_MESSAGE_BYTES / 4];
+	u32 hash[MD5_DIGEST_WORDS];
+	u32 i;
+
+	memcpy(hash, saddr, 16);
+	for (i = 0; i < 4; i++)
+		secret[i] = mptcp_secret[i] + (__force u32)daddr[i];
+	secret[4] = mptcp_secret[4] +
+		    (((__force u16)sport << 16) + (__force u16)dport);
+	secret[5] = seq;
+	for (i = 6; i < MD5_MESSAGE_BYTES / 4; i++)
+		secret[i] = mptcp_secret[i];
+
+	md5_transform(hash, secret);
+
+	return hash[0];
+}
+
+u64 mptcp_v6_get_key(const __be32 *saddr, const __be32 *daddr,
+		     __be16 sport, __be16 dport)
+{
+	u32 secret[MD5_MESSAGE_BYTES / 4];
+	u32 hash[MD5_DIGEST_WORDS];
+	u32 i;
+
+	memcpy(hash, saddr, 16);
+	for (i = 0; i < 4; i++)
+		secret[i] = mptcp_secret[i] + (__force u32)daddr[i];
+	secret[4] = mptcp_secret[4] +
+		    (((__force u16)sport << 16) + (__force u16)dport);
+	secret[5] = mptcp_key_seed++;
+	for (i = 5; i < MD5_MESSAGE_BYTES / 4; i++)
+		secret[i] = mptcp_secret[i];
+
+	md5_transform(hash, secret);
+
+	return *((u64 *)hash);
+}
+
 static void mptcp_v6_reqsk_destructor(struct request_sock *req)
 {
 	mptcp_reqsk_destructor(req);
@@ -297,23 +339,6 @@ static void mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 	tcp_openreq_init(req, &tmp_opt, skb);
 
-	mtreq = mptcp_rsk(req);
-	mtreq->mpcb = mpcb;
-	INIT_LIST_HEAD(&mtreq->collide_tuple);
-	mtreq->mptcp_rem_nonce = mopt.mptcp_recv_nonce;
-	mtreq->mptcp_rem_key = mpcb->mptcp_rem_key;
-	mtreq->mptcp_loc_key = mpcb->mptcp_loc_key;
-	get_random_bytes(&mtreq->mptcp_loc_nonce,
-			 sizeof(mtreq->mptcp_loc_nonce));
-	mptcp_hmac_sha1((u8 *)&mtreq->mptcp_loc_key,
-			(u8 *)&mtreq->mptcp_rem_key,
-			(u8 *)&mtreq->mptcp_loc_nonce,
-			(u8 *)&mtreq->mptcp_rem_nonce, (u32 *)mptcp_hash_mac);
-	mtreq->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
-	mtreq->rem_id = mopt.rem_id;
-	mtreq->low_prio = mopt.low_prio;
-	tcp_rsk(req)->saw_mpc = 1;
-
 	treq = inet6_rsk(req);
 	treq->rmt_addr = ipv6_hdr(skb)->saddr;
 	treq->loc_addr = ipv6_hdr(skb)->daddr;
@@ -385,6 +410,25 @@ static void mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 
 	tcp_rsk(req)->snt_isn = isn;
 	tcp_rsk(req)->snt_synack = tcp_time_stamp;
+
+	mtreq = mptcp_rsk(req);
+	mtreq->mpcb = mpcb;
+	INIT_LIST_HEAD(&mtreq->collide_tuple);
+	mtreq->mptcp_rem_nonce = mopt.mptcp_recv_nonce;
+	mtreq->mptcp_rem_key = mpcb->mptcp_rem_key;
+	mtreq->mptcp_loc_key = mpcb->mptcp_loc_key;
+	mtreq->mptcp_loc_nonce = mptcp_v6_get_nonce(ipv6_hdr(skb)->daddr.s6_addr32,
+						    ipv6_hdr(skb)->saddr.s6_addr32,
+						    tcp_hdr(skb)->dest,
+						    tcp_hdr(skb)->source, isn);
+	mptcp_hmac_sha1((u8 *)&mtreq->mptcp_loc_key,
+			(u8 *)&mtreq->mptcp_rem_key,
+			(u8 *)&mtreq->mptcp_loc_nonce,
+			(u8 *)&mtreq->mptcp_rem_nonce, (u32 *)mptcp_hash_mac);
+	mtreq->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
+	mtreq->rem_id = mopt.rem_id;
+	mtreq->low_prio = mopt.low_prio;
+	tcp_rsk(req)->saw_mpc = 1;
 
 	if (meta_sk->sk_family == AF_INET6) {
 		if (tcp_v6_send_synack(meta_sk, req, NULL, skb_get_queue_mapping(skb)))
@@ -684,18 +728,18 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	loc_in.sin6_addr = loc->addr;
 	rem_in.sin6_addr = rem->addr;
 
-	mptcp_debug("%s: token %#x pi %d src_addr:%pI6:%d dst_addr:%pI6:%d\n",
-		    __func__, tcp_sk(meta_sk)->mpcb->mptcp_loc_token,
-		    tp->mptcp->path_index, &loc_in.sin6_addr,
-		    ntohs(loc_in.sin6_port), &rem_in.sin6_addr,
-		    ntohs(rem_in.sin6_port));
-
 	ret = sock.ops->bind(&sock, (struct sockaddr *)&loc_in, ulid_size);
 	if (ret < 0) {
 		mptcp_debug("%s: MPTCP subsocket bind()failed, error %d\n",
 			    __func__, ret);
 		goto error;
 	}
+
+	mptcp_debug("%s: token %#x pi %d src_addr:%pI6:%d dst_addr:%pI6:%d\n",
+		    __func__, tcp_sk(meta_sk)->mpcb->mptcp_loc_token,
+		    tp->mptcp->path_index, &loc_in.sin6_addr,
+		    ntohs(loc_in.sin6_port), &rem_in.sin6_addr,
+		    ntohs(rem_in.sin6_port));
 
 	ret = sock.ops->connect(&sock, (struct sockaddr *)&rem_in,
 				ulid_size, O_NONBLOCK);

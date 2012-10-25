@@ -32,6 +32,8 @@
 #include <linux/tcp.h>
 
 #include <net/mptcp.h>
+#include <net/mptcp_v4.h>
+#include <net/mptcp_v6.h>
 #include <net/sock.h>
 
 /* If the sub-socket sk available to send the skb? */
@@ -1298,6 +1300,26 @@ u32 __mptcp_select_window(struct sock *sk)
 	return window;
 }
 
+static void mptcp_set_nonce(struct sock *sk)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct inet_sock *inet = inet_sk(sk);
+
+	if (sk->sk_family == AF_INET)
+		tp->mptcp->mptcp_loc_nonce = mptcp_v4_get_nonce(inet->inet_saddr,
+								inet->inet_daddr,
+								inet->inet_sport,
+								inet->inet_dport,
+								tp->write_seq);
+	else
+		tp->mptcp->mptcp_loc_nonce = mptcp_v6_get_nonce(inet6_sk(sk)->saddr.s6_addr32,
+				     	     	     	        inet6_sk(sk)->daddr.s6_addr32,
+				     	     	     	        inet->inet_sport,
+				     	     	     	        inet->inet_dport,
+				     	     	     	        tp->write_seq);
+	tp->mptcp->nonce_set = 1;
+}
+
 void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 		       unsigned *remaining)
 {
@@ -1327,8 +1349,8 @@ void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 		opts->mp_join_syns.token = mpcb->mptcp_rem_token;
 		opts->addr_id = mptcp_get_loc_addrid(mpcb, sk);
 
-		if (!tp->mptcp->mptcp_loc_nonce)
-			get_random_bytes(&tp->mptcp->mptcp_loc_nonce, 4);
+		if (!tp->mptcp->nonce_set)
+			mptcp_set_nonce(sk);
 
 		opts->mp_join_syns.sender_nonce = tp->mptcp->mptcp_loc_nonce;
 	}

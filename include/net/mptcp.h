@@ -147,6 +147,7 @@ struct mptcp_tcp_sock {
 	u32	map_subseq;
 	u16	map_data_len;
 	u16	slave_sk:1,
+		nonce_set:1, /* Is the nonce set? (in order to support 0-nonce) */
 		fully_established:1,
 		attached:1,
 		csum_error:1,
@@ -610,6 +611,12 @@ extern struct workqueue_struct *mptcp_wq;
 
 extern struct lock_class_key meta_key;
 extern struct lock_class_key meta_slock_key;
+extern u32 mptcp_secret[MD5_MESSAGE_BYTES / 4];
+
+/* This is needed to ensure that two subsequent key-generation result in
+ * different keys if the IPs and ports are the same.
+ */
+extern u32 mptcp_key_seed;
 
 void mptcp_data_ready(struct sock *sk, int bytes);
 void mptcp_write_space(struct sock *sk);

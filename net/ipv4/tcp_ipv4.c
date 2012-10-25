@@ -1428,7 +1428,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	tcp_openreq_init(req, &tmp_opt, skb);
 
 	if (mopt.saw_mpc)
-		mptcp_reqsk_new_mptcp(req, &tmp_opt, &mopt);
+		mptcp_reqsk_new_mptcp(req, &tmp_opt, &mopt, skb);
 
 	ireq = inet_rsk(req);
 	ireq->loc_addr = daddr;

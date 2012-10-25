@@ -27,8 +27,6 @@
  *      2 of the License, or (at your option) any later version.
  */
 
-#include <crypto/sha.h>
-
 #include <net/inet_common.h>
 #include <net/inet6_hashtables.h>
 #include <net/ipv6.h>
@@ -42,6 +40,7 @@
 #include <net/transp_v6.h>
 #include <net/xfrm.h>
 
+#include <linux/cryptohash.h>
 #include <linux/kconfig.h>
 #include <linux/module.h>
 #include <linux/list.h>
@@ -254,6 +253,9 @@ void mptcp_set_keepalive(struct sock *sk, int val)
 		sock_valbool_flag(sk, SOCK_KEEPOPEN, val);
 	}
 }
+
+u32 mptcp_secret[MD5_MESSAGE_BYTES / 4] ____cacheline_aligned;
+u32 mptcp_key_seed = 0;
 
 void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn)
 {
@@ -1597,6 +1599,8 @@ void __init mptcp_init(void)
 					   NULL);
 	if (!mptcp_cb_cache)
 		goto mptcp_cb_cache_failed;
+
+	get_random_bytes(mptcp_secret, sizeof(mptcp_secret));
 
 	mptcp_wq = alloc_workqueue("mptcp_wq", WQ_UNBOUND | WQ_MEM_RECLAIM, 8);
 	if (!mptcp_wq)

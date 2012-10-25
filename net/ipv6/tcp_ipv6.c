@@ -1197,7 +1197,7 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	tcp_openreq_init(req, &tmp_opt, skb);
 
 	if (mopt.saw_mpc)
-		mptcp_reqsk_new_mptcp(req, &tmp_opt, &mopt);
+		mptcp_reqsk_new_mptcp(req, &tmp_opt, &mopt, skb);
 
 	treq = inet6_rsk(req);
 	treq->rmt_addr = ipv6_hdr(skb)->saddr;
