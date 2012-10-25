@@ -301,9 +301,10 @@ static inline int mptcp_pi_to_flag(int pi)
 #define MPTCP_SUB_LEN_FCLOSE	12
 #define MPTCP_SUB_LEN_FCLOSE_ALIGN	12
 
-#ifdef CONFIG_MPTCP
 
 #define OPTION_MPTCP		(1 << 5)
+
+#ifdef CONFIG_MPTCP
 
 /* MPTCP options */
 #define OPTION_TYPE_SYN		(1 << 0)
@@ -1140,6 +1141,7 @@ static inline int mptcp_req_sk_saw_mpc(const struct request_sock *req)
 static inline void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp) {}
 static inline void mptcp_cleanup_rbuf(const struct sock *meta_sk, int copied) {}
 static inline void mptcp_del_sock(const struct sock *sk) {}
+static inline void mptcp_reinject_data(struct sock *orig_sk, int clone_it) {}
 static inline void mptcp_init_buffer_space(const struct sock *sk) {}
 static inline void mptcp_update_sndbuf(const struct mptcp_cb *mpcb) {}
 static inline void mptcp_skb_entail_init(const struct tcp_sock *tp,
@@ -1179,6 +1181,7 @@ static inline void mptcp_established_options(struct sock *sk,
 static inline void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 				       struct tcp_out_options *opts,
 				       struct sk_buff *skb) {}
+static inline void mptcp_close(struct sock *meta_sk, long timeout) {}
 static inline int mptcp_doit(struct sock *sk)
 {
 	return 0;
@@ -1189,7 +1192,7 @@ static inline int mptcp_check_req_master(const struct sock *sk,
 					 struct request_sock **prev,
 					 const struct multipath_options *mopt)
 {
-	return 0;
+	return 1;
 }
 static inline struct sock *mptcp_check_req_child(const struct sock *sk,
 						 const struct sock *child,
