@@ -72,7 +72,7 @@ int sysctl_mptcp_debug __read_mostly = 0;
 int sysctl_mptcp_syn_retries __read_mostly = MPTCP_SYN_RETRIES;
 EXPORT_SYMBOL(sysctl_mptcp_debug);
 
-static ctl_table mptcp_table[] = {
+static ctl_table mptcp_skeleton[] = {
 	{
 		.procname = "mptcp_mss",
 		.data = &sysctl_mptcp_mss,
@@ -118,23 +118,10 @@ static ctl_table mptcp_table[] = {
 	{ }
 };
 
-static ctl_table mptcp_net_table[] = {
-	{
-		.procname = "mptcp",
-		.maxlen = 0,
-		.mode = 0555,
-		.child = mptcp_table
-	},
-	{ }
-};
-
-static ctl_table mptcp_root_table[] = {
-	{
-		.procname = "net",
-		.mode = 0555,
-		.child = mptcp_net_table
-	},
-	{ }
+static struct ctl_path mptcp_path[] = {
+	{ .procname = "net", },
+	{ .procname = "mptcp", },
+	{ },
 };
 #endif
 
@@ -1532,7 +1519,7 @@ struct workqueue_struct *mptcp_wq;
 static int __init mptcp_init(void)
 {
 #ifdef CONFIG_SYSCTL
-	register_sysctl_table(mptcp_root_table);
+	register_sysctl_paths(mptcp_path, mptcp_skeleton);
 #endif
 	mptcp_sock_cache = kmem_cache_create("mptcp_sock",
 					     sizeof(struct mptcp_tcp_sock),
