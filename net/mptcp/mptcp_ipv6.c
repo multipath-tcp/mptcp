@@ -44,7 +44,8 @@
 #include <net/transp_v6.h>
 #include <net/addrconf.h>
 
-#define AF_INET6_FAMILY(fam) ((fam) == AF_INET6)
+static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req,
+				  struct request_values *rvp);
 
 static void mptcp_v6_reqsk_destructor(struct request_sock *req)
 {
@@ -53,10 +54,21 @@ static void mptcp_v6_reqsk_destructor(struct request_sock *req)
 	kfree_skb(inet6_rsk(req)->pktopts);
 }
 
+static int mptcp_v6_rtx_synack(struct sock *sk, struct request_sock *req,
+			     struct request_values *rvp)
+{
+	TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_RETRANSSEGS);
+
+	if (sk->sk_family == AF_INET6)
+		return tcp_v6_send_synack(sk, req, rvp);
+	else
+		return mptcp_v6v4_send_synack(sk, req, rvp);
+}
+
 struct request_sock_ops mptcp6_request_sock_ops __read_mostly = {
 	.family		=	AF_INET6,
 	.obj_size	=	sizeof(struct mptcp6_request_sock),
-	.rtx_syn_ack	=	tcp_v6_rtx_synack,
+	.rtx_syn_ack	=	mptcp_v6_rtx_synack,
 	.send_ack	=	tcp_v6_reqsk_send_ack,
 	.destructor	=	mptcp_v6_reqsk_destructor,
 	.send_reset	=	tcp_v6_send_reset,
@@ -575,7 +587,7 @@ struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *radd
 		const struct inet6_request_sock *treq = inet6_rsk(rev_mptcp_rsk(mtreq));
 
 		if (inet_rsk(rev_mptcp_rsk(mtreq))->rmt_port == rport &&
-		    AF_INET6_FAMILY(rev_mptcp_rsk(mtreq)->rsk_ops->family) &&
+		    rev_mptcp_rsk(mtreq)->rsk_ops->family == AF_INET6 &&
 		    ipv6_addr_equal(&treq->rmt_addr, raddr) &&
 		    ipv6_addr_equal(&treq->loc_addr, laddr)) {
 			meta_sk = mtreq->mpcb->meta_sk;
