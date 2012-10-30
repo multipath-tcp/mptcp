@@ -393,7 +393,8 @@ int mptcp_v6_add_raddress(struct multipath_options *mopt,
 		rem6 = &mopt->addr6[i];
 
 		/* Address is already in the list --- continue */
-		if (ipv6_addr_equal(&rem6->addr, addr))
+		if (rem6->id == id &&
+		    ipv6_addr_equal(&rem6->addr, addr) && rem6->port == port)
 			return 0;
 
 		/* This may be the case, when the peer is behind a NAT. He is

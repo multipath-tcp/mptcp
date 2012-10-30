@@ -196,7 +196,8 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 		rem4 = &mopt->addr4[i];
 
 		/* Address is already in the list --- continue */
-		if (rem4->addr.s_addr == addr->s_addr && rem4->port == port)
+		if (rem4->id == id &&
+		    rem4->addr.s_addr == addr->s_addr && rem4->port == port)
 			return 0;
 
 		/* This may be the case, when the peer is behind a NAT. He is
