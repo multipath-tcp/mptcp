@@ -539,6 +539,61 @@ int mptcp_do_join_short(struct sk_buff *skb, struct multipath_options *mopt,
 	return 0;
 }
 
+void mptcp_retry_subflow_worker(struct work_struct *work)
+{
+	struct delayed_work *delayed_work =
+		container_of(work, struct delayed_work, work);
+	struct mptcp_cb *mpcb =
+		container_of(delayed_work, struct mptcp_cb, subflow_retry_work);
+	struct sock *meta_sk = mpcb->meta_sk;
+	int iter = 0, i;
+
+next_subflow:
+	if (iter) {
+		release_sock(meta_sk);
+		mutex_unlock(&mpcb->mutex);
+
+		yield();
+	}
+	mutex_lock(&mpcb->mutex);
+	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
+
+	iter++;
+
+	if (sock_flag(meta_sk, SOCK_DEAD))
+		goto exit;
+
+	mptcp_for_each_bit_set(mpcb->rx_opt.rem4_bits, i) {
+		struct mptcp_rem4 *rem = &mpcb->rx_opt.addr4[i];
+		/* Do we need to retry establishing a subflow ? */
+		if (rem->retry_bitfield) {
+			int i = mptcp_find_free_index(~rem->retry_bitfield);
+			mptcp_init4_subsockets(meta_sk, &mpcb->addr4[i], rem);
+			rem->retry_bitfield &= ~(1 << mpcb->addr4[i].id);
+			goto next_subflow;
+		}
+	}
+
+#if IS_ENABLED(CONFIG_IPV6)
+	mptcp_for_each_bit_set(mpcb->rx_opt.rem6_bits, i) {
+		struct mptcp_rem6 *rem = &mpcb->rx_opt.addr6[i];
+
+		/* Do we need to retry establishing a subflow ? */
+		if (rem->retry_bitfield) {
+			int i = mptcp_find_free_index(~rem->retry_bitfield);
+			mptcp_init6_subsockets(meta_sk, &mpcb->addr6[i], rem);
+			rem->retry_bitfield &= ~(1 << mpcb->addr6[i].id);
+			goto next_subflow;
+		}
+	}
+#endif
+
+exit:
+	release_sock(meta_sk);
+	mutex_unlock(&mpcb->mutex);
+	sock_put(meta_sk);
+}
+
 /**
  * Create all new subflows, by doing calls to mptcp_initX_subsockets
  *
@@ -546,11 +601,11 @@ int mptcp_do_join_short(struct sk_buff *skb, struct multipath_options *mopt,
  * new subflows and giving other processes a chance to do some work on the
  * socket and potentially finishing the communication.
  **/
-void mptcp_send_updatenotif_wq(struct work_struct *work)
+void mptcp_create_subflow_worker(struct work_struct *work)
 {
-	struct mptcp_cb *mpcb = container_of(work, struct mptcp_cb, create_work);
+	struct mptcp_cb *mpcb = container_of(work, struct mptcp_cb, subflow_work);
 	struct sock *meta_sk = mpcb->meta_sk;
-	int iter = 0;
+	int iter = 0, retry = 0;
 	int i;
 
 next_subflow:
@@ -591,13 +646,16 @@ next_subflow:
 		u8 remaining_bits;
 
 		rem = &mpcb->rx_opt.addr4[i];
-
 		remaining_bits = ~(rem->bitfield) & mpcb->loc4_bits;
 
 		/* Are there still combinations to handle? */
 		if (remaining_bits) {
 			int i = mptcp_find_free_index(~remaining_bits);
-			mptcp_init4_subsockets(meta_sk, &mpcb->addr4[i], rem);
+			/* If a route is not yet available then retry once */
+			if (mptcp_init4_subsockets(meta_sk, &mpcb->addr4[i],
+						   rem) == -ENETUNREACH)
+				retry = rem->retry_bitfield |=
+					(1 << mpcb->addr4[i].id);
 			goto next_subflow;
 		}
 	}
@@ -613,11 +671,21 @@ next_subflow:
 		/* Are there still combinations to handle? */
 		if (remaining_bits) {
 			int i = mptcp_find_free_index(~remaining_bits);
-			mptcp_init6_subsockets(meta_sk, &mpcb->addr6[i], rem);
+			/* If a route is not yet available then retry once */
+			if (mptcp_init6_subsockets(meta_sk, &mpcb->addr6[i],
+						   rem) == -ENETUNREACH)
+				retry = rem->retry_bitfield |=
+					(1 << mpcb->addr6[i].id);
 			goto next_subflow;
 		}
 	}
 #endif
+
+	if (retry && !delayed_work_pending(&mpcb->subflow_retry_work)) {
+		sock_hold(meta_sk);
+		queue_delayed_work(mptcp_wq, &mpcb->subflow_retry_work,
+				   msecs_to_jiffies(MPTCP_SUBFLOW_RETRY_DELAY));
+	}
 
 exit:
 	release_sock(meta_sk);
@@ -625,7 +693,7 @@ exit:
 	sock_put(meta_sk);
 }
 
-void mptcp_send_updatenotif(struct sock *meta_sk)
+void mptcp_create_subflows(struct sock *meta_sk)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 
@@ -635,9 +703,9 @@ void mptcp_send_updatenotif(struct sock *meta_sk)
 	    sock_flag(meta_sk, SOCK_DEAD))
 		return;
 
-	if (!work_pending(&mpcb->create_work)) {
+	if (!work_pending(&mpcb->subflow_work)) {
 		sock_hold(meta_sk);
-		queue_work(mptcp_wq, &mpcb->create_work);
+		queue_work(mptcp_wq, &mpcb->subflow_work);
 	}
 }
 

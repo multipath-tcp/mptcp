@@ -233,6 +233,7 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 	rem4->addr.s_addr = addr->s_addr;
 	rem4->port = port;
 	rem4->bitfield = 0;
+	rem4->retry_bitfield = 0;
 	rem4->id = id;
 	mopt->list_rcvd = 1;
 	mopt->rem4_bits |= (1 << i);
@@ -420,8 +421,8 @@ struct sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
  *
  * We are in user-context and meta-sock-lock is hold.
  */
-void mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
-			    struct mptcp_rem4 *rem)
+int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
+			   struct mptcp_rem4 *rem)
 {
 	struct tcp_sock *tp;
 	struct sock *sk;
@@ -443,7 +444,7 @@ void mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	ret = inet_create(sock_net(meta_sk), &sock, IPPROTO_TCP, 1);
 	if (unlikely(ret < 0)) {
 		mptcp_debug("%s inet_create failed ret: %d\n", __func__, ret);
-		return;
+		return ret;
 	}
 
 	sk = sock.sk;
@@ -494,7 +495,7 @@ void mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	sk_set_socket(sk, meta_sk->sk_socket);
 	sk->sk_wq = meta_sk->sk_wq;
 
-	return;
+	return 0;
 
 error:
 	sock_orphan(sk);
@@ -504,7 +505,7 @@ error:
 	tcp_done(sk);
 	local_bh_enable();
 
-	return;
+	return ret;
 }
 
 /****** IPv4-Address event handler ******/
@@ -586,7 +587,7 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 		/* re-send addresses */
 		mptcp_v4_send_add_addr(i, mpcb);
 		/* re-evaluate paths */
-		mptcp_send_updatenotif(mpcb->meta_sk);
+		mptcp_create_subflows(mpcb->meta_sk);
 	}
 	return;
 found:

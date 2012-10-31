@@ -195,8 +195,9 @@ struct mptcp_cb {
 	u16 remove_addrs;
 
 	u8 dfin_path_index;
-	/* Worker struct for update-notification */
-	struct work_struct create_work;
+	/* Worker struct for subflow establishment */
+	struct work_struct subflow_work;
+	struct delayed_work subflow_retry_work;
 	/* Worker to handle interface/address changes if socket is owned */
 	struct work_struct address_work;
 	/* Mutex needed, because otherwise mptcp_close will complain that the
@@ -866,7 +867,7 @@ static inline void mptcp_path_array_check(struct sock *meta_sk)
 
 	if (unlikely(mpcb->rx_opt.list_rcvd)) {
 		mpcb->rx_opt.list_rcvd = 0;
-		mptcp_send_updatenotif(meta_sk);
+		mptcp_create_subflows(meta_sk);
 	}
 }
 

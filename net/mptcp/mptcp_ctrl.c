@@ -662,7 +662,8 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	mutex_init(&mpcb->mutex);
 
 	/* Initialize workqueue-struct */
-	INIT_WORK(&mpcb->create_work, mptcp_send_updatenotif_wq);
+	INIT_WORK(&mpcb->subflow_work, mptcp_create_subflow_worker);
+	INIT_DELAYED_WORK(&mpcb->subflow_retry_work, mptcp_retry_subflow_worker);
 	INIT_WORK(&mpcb->address_work, mptcp_address_worker);
 
 	/* Init the accept_queue structure, we support a queue of 32 pending

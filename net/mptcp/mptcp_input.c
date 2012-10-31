@@ -40,7 +40,7 @@ static inline void mptcp_become_fully_estab(struct sock *sk)
 	tcp_sk(sk)->mptcp->fully_established = 1;
 
 	if (is_master_tp(tcp_sk(sk)))
-		mptcp_send_updatenotif(mptcp_meta_sk(sk));
+		mptcp_create_subflows(mptcp_meta_sk(sk));
 }
 
 /**
