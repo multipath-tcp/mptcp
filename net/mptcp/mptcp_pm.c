@@ -486,7 +486,6 @@ int mptcp_lookup_join(struct sk_buff *skb)
 int mptcp_do_join_short(struct sk_buff *skb, struct multipath_options *mopt,
 			struct tcp_options_received *tmp_opt)
 {
-	struct mptcp_cb *mpcb;
 	struct sock *meta_sk;
 	u32 token;
 
@@ -496,10 +495,8 @@ int mptcp_do_join_short(struct sk_buff *skb, struct multipath_options *mopt,
 		mptcp_debug("%s:mpcb not found:%x\n", __func__, token);
 		return -1;
 	}
-	mpcb = tcp_sk(meta_sk)->mpcb;
 
-	mpcb = tcp_sk(meta_sk)->mpcb;
-	if (mpcb->infinite_mapping) {
+	if ( tcp_sk(meta_sk)->mpcb->infinite_mapping) {
 		/* We are in fallback-mode - thus no new subflows!!! */
 		sock_put(meta_sk); /* Taken by mptcp_hash_find */
 		return -1;
