@@ -89,12 +89,12 @@ static void mptcp_v6_reqsk_queue_hash_add(struct request_sock *req,
 					    inet_rsk(req)->rmt_port,
 					    0,
 					    MPTCP_HASH_SIZE);
-	spin_lock_bh(&mptcp_reqsk_hlock);
+	spin_lock(&mptcp_reqsk_hlock);
 	reqsk_queue_hash_req(&meta_icsk->icsk_accept_queue,
 			     h_local, req, timeout);
 	list_add(&mptcp_rsk(req)->collide_tuple, &mptcp_reqsk_htb[h_global]);
 	lopt->qlen++;
-	spin_unlock_bh(&mptcp_reqsk_hlock);
+	spin_unlock(&mptcp_reqsk_hlock);
 }
 
 /* The meta-socket is IPv4, but a new subsocket is IPv6 */
