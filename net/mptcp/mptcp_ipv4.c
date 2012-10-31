@@ -87,63 +87,114 @@ static void mptcp_v4_join_request_short(struct sock *meta_sk,
 					struct tcp_options_received *tmp_opt)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct request_sock *req, **prev;
+	struct request_sock *req;
 	struct inet_request_sock *ireq;
 	struct mptcp_request_sock *mtreq;
+	struct dst_entry *dst = NULL;
 	u8 mptcp_hash_mac[20];
 	__be32 saddr = ip_hdr(skb)->saddr;
 	__be32 daddr = ip_hdr(skb)->daddr;
 	__u32 isn = TCP_SKB_CB(skb)->when;
+	int want_cookie = 0;
 
 	req = inet_reqsk_alloc(&mptcp_request_sock_ops);
 	if (!req)
 		return;
 
-	tmp_opt->tstamp_ok = tmp_opt->saw_tstamp;
-
 	mtreq = mptcp_rsk(req);
 	mtreq->mpcb = mpcb;
+	INIT_LIST_HEAD(&mtreq->collide_tuple);
 	mtreq->mptcp_rem_nonce = tmp_opt->mptcp_recv_nonce;
 	mtreq->mptcp_rem_key = mpcb->mptcp_rem_key;
 	mtreq->mptcp_loc_key = mpcb->mptcp_loc_key;
-
 	get_random_bytes(&mtreq->mptcp_loc_nonce,
 			 sizeof(mtreq->mptcp_loc_nonce));
-
 	mptcp_hmac_sha1((u8 *)&mtreq->mptcp_loc_key,
 			(u8 *)&mtreq->mptcp_rem_key,
 			(u8 *)&mtreq->mptcp_loc_nonce,
 			(u8 *)&mtreq->mptcp_rem_nonce, (u32 *)mptcp_hash_mac);
 	mtreq->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
-
 	mtreq->rem_id = tmp_opt->rem_id;
 	mtreq->low_prio = tmp_opt->low_prio;
 
+	tmp_opt->tstamp_ok = tmp_opt->saw_tstamp;
 	tcp_openreq_init(req, tmp_opt, skb);
 
 	ireq = inet_rsk(req);
 	ireq->loc_addr = daddr;
 	ireq->rmt_addr = saddr;
-	ireq->opt = tcp_v4_save_options(NULL, skb);
+	ireq->no_srccheck = inet_sk(meta_sk)->transparent;
+	ireq->opt = tcp_v4_save_options(meta_sk, skb);
 
-	/* Todo: add the sanity checks here. See tcp_v4_conn_request */
+	if (security_inet_conn_request(meta_sk, skb, req))
+		goto drop_and_free;
 
+	if (!want_cookie || tmp_opt->tstamp_ok)
+		TCP_ECN_create_request(req, tcp_hdr(skb));
+
+	if (!isn) {
+		struct inet_peer *peer = NULL;
+		struct flowi4 fl4;
+
+		/* VJ's idea. We save last timestamp seen
+		 * from the destination in peer table, when entering
+		 * state TIME-WAIT, and check against it before
+		 * accepting new connection request.
+		 *
+		 * If "isn" is not zero, this request hit alive
+		 * timewait bucket, so that all the necessary checks
+		 * are made in the function processing timewait state.
+		 */
+		if (tmp_opt->saw_tstamp &&
+		    tcp_death_row.sysctl_tw_recycle &&
+		    (dst = inet_csk_route_req(meta_sk, &fl4, req)) != NULL &&
+		    fl4.daddr == saddr &&
+		    (peer = rt_get_peer((struct rtable *)dst, fl4.daddr)) != NULL) {
+			inet_peer_refcheck(peer);
+			if ((u32)get_seconds() - peer->tcp_ts_stamp < TCP_PAWS_MSL &&
+			    (s32)(peer->tcp_ts - req->ts_recent) >
+							TCP_PAWS_WINDOW) {
+				NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_PAWSPASSIVEREJECTED);
+				goto drop_and_release;
+			}
+		}
+		/* Kill the following clause, if you dislike this way. */
+		else if (!sysctl_tcp_syncookies &&
+			 (sysctl_max_syn_backlog - inet_csk_reqsk_queue_len(meta_sk) <
+			  (sysctl_max_syn_backlog >> 2)) &&
+			 (!peer || !peer->tcp_ts_stamp) &&
+			 (!dst || !dst_metric(dst, RTAX_RTT))) {
+			/* Without syncookies last quarter of
+			 * backlog is filled with destinations,
+			 * proven to be alive.
+			 * It means that we continue to communicate
+			 * to destinations, already remembered
+			 * to the moment of synflood.
+			 */
+			LIMIT_NETDEBUG(KERN_DEBUG "TCP: drop open request from %pI4/%u\n",
+				       &saddr, ntohs(tcp_hdr(skb)->source));
+			goto drop_and_release;
+		}
+
+		isn = tcp_v4_init_sequence(skb);
+	}
 	isn = tcp_v4_init_sequence(skb);
 
 	tcp_rsk(req)->snt_isn = isn;
+	tcp_rsk(req)->snt_synack = tcp_time_stamp;
+
+	if (tcp_v4_send_synack(meta_sk, dst, req, NULL))
+		goto drop_and_free;
 
 	/* Adding to request queue in metasocket */
 	mptcp_v4_reqsk_queue_hash_add(req, TCP_TIMEOUT_INIT);
 
-	if (tcp_v4_send_synack(meta_sk, NULL, req, NULL))
-		goto drop_and_free;
-
 	return;
 
+drop_and_release:
+	dst_release(dst);
 drop_and_free:
-	req = inet_csk_search_req(meta_sk, &prev, inet_rsk(req)->rmt_port,
-				  saddr, daddr);
-	inet_csk_reqsk_queue_drop(meta_sk, req, prev);
+	reqsk_free(req);
 	return;
 }
 

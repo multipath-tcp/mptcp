@@ -760,6 +760,9 @@ static inline void mptcp_hash_request_remove(struct request_sock *req)
 {
 	int in_softirq = 0;
 
+	if (list_empty(&mptcp_rsk(req)->collide_tuple))
+		return;
+
 	if (in_softirq()) {
 		spin_lock(&mptcp_reqsk_hlock);
 		in_softirq = 1;
