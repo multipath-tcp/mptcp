@@ -199,11 +199,11 @@ struct sock *mptcp_select_ack_sock(const struct sock *meta_sk, int copied)
 	}
 
 	if (!subsk) {
-		printk(KERN_ERR"%s subsk is null, copied %d, cseq %u\n", __func__,
+		mptcp_debug("%s subsk is null, copied %d, cseq %u\n", __func__,
 			    copied, meta_tp->copied_seq);
 		mptcp_for_each_sk(meta_tp->mpcb, sk) {
 			struct tcp_sock *tp = tcp_sk(sk);
-			printk(KERN_ERR"%s pi %d state %u last_dseq %u\n",
+			mptcp_debug("%s pi %d state %u last_dseq %u\n",
 				    __func__, tp->mptcp->path_index, sk->sk_state,
 				    tp->mptcp->last_data_seq);
 		}
