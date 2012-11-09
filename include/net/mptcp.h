@@ -880,6 +880,9 @@ static inline int mptcp_check_snd_buf(const struct tcp_sock *tp)
 	u32 rtt_max = tp->srtt;
 	u64 bw_est;
 
+	if (!tp->srtt)
+		return tp->reordering + 1;
+
 	mptcp_for_each_tp(tp->mpcb, tp_it)
 		if (rtt_max < tp_it->srtt)
 			rtt_max = tp_it->srtt;
