@@ -45,7 +45,7 @@
 #include <net/transp_v6.h>
 
 static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req,
-				  struct request_values *rvp);
+				  struct request_values *rvp, u16 queue_mapping);
 
 static void mptcp_v6_reqsk_destructor(struct request_sock *req)
 {
@@ -60,9 +60,9 @@ static int mptcp_v6_rtx_synack(struct sock *sk, struct request_sock *req,
 	TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_RETRANSSEGS);
 
 	if (sk->sk_family == AF_INET6)
-		return tcp_v6_send_synack(sk, req, rvp);
+		return tcp_v6_send_synack(sk, req, rvp, 0);
 	else
-		return mptcp_v6v4_send_synack(sk, req, rvp);
+		return mptcp_v6v4_send_synack(sk, req, rvp, 0);
 }
 
 struct request_sock_ops mptcp6_request_sock_ops __read_mostly = {
@@ -99,7 +99,7 @@ static void mptcp_v6_reqsk_queue_hash_add(struct request_sock *req,
 
 /* The meta-socket is IPv4, but a new subsocket is IPv6 */
 static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req,
-				  struct request_values *rvp)
+				  struct request_values *rvp, u16 queue_mapping)
 {
 	struct inet6_request_sock *treq = inet6_rsk(req);
 	struct sk_buff * skb;
@@ -130,6 +130,7 @@ static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req
 		__tcp_v6_send_check(skb, &treq->loc_addr, &treq->rmt_addr);
 
 		fl6.daddr = treq->rmt_addr;
+		skb_set_queue_mapping(skb, queue_mapping);
 		err = ip6_xmit(meta_sk, skb, &fl6, NULL, 0);
 		err = net_xmit_eval(err);
 	}
@@ -303,7 +304,7 @@ static void mptcp_v6_join_request_short(struct sock *meta_sk,
 	treq->loc_addr = ipv6_hdr(skb)->daddr;
 
 	if (!want_cookie || tmp_opt->tstamp_ok)
-		TCP_ECN_create_request(req, tcp_hdr(skb));
+		TCP_ECN_create_request(req, skb);
 
 	treq->iif = meta_sk->sk_bound_dev_if;
 
@@ -371,10 +372,10 @@ static void mptcp_v6_join_request_short(struct sock *meta_sk,
 	tcp_rsk(req)->snt_synack = tcp_time_stamp;
 
 	if (meta_sk->sk_family == AF_INET6) {
-		if (tcp_v6_send_synack(meta_sk, req, NULL))
+		if (tcp_v6_send_synack(meta_sk, req, NULL, skb_get_queue_mapping(skb)))
 			goto drop_and_free;
 	} else {
-		if (mptcp_v6v4_send_synack(meta_sk, req, NULL))
+		if (mptcp_v6v4_send_synack(meta_sk, req, NULL, skb_get_queue_mapping(skb)))
 			goto drop_and_free;
 	}
 

@@ -130,7 +130,7 @@ static void mptcp_v4_join_request_short(struct sock *meta_sk,
 		goto drop_and_free;
 
 	if (!want_cookie || tmp_opt->tstamp_ok)
-		TCP_ECN_create_request(req, tcp_hdr(skb));
+		TCP_ECN_create_request(req, skb);
 
 	if (!isn) {
 		struct inet_peer *peer = NULL;
@@ -181,7 +181,7 @@ static void mptcp_v4_join_request_short(struct sock *meta_sk,
 	tcp_rsk(req)->snt_isn = isn;
 	tcp_rsk(req)->snt_synack = tcp_time_stamp;
 
-	if (tcp_v4_send_synack(meta_sk, dst, req, NULL))
+	if (tcp_v4_send_synack(meta_sk, dst, req, NULL, skb_get_queue_mapping(skb)))
 		goto drop_and_free;
 
 	/* Adding to request queue in metasocket */
