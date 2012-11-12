@@ -391,6 +391,7 @@ extern void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb);
 extern struct ip_options_rcu *tcp_v4_save_options(struct sock *sk,
 						  struct sk_buff *skb);
 extern struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb);
+extern void tcp_v4_reqsk_destructor(struct request_sock *req);
 
 extern int tcp_v6_rtx_synack(struct sock *sk, struct request_sock *req,
 			     struct request_values *rvp);

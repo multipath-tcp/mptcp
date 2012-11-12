@@ -622,7 +622,7 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 					tcp_xmit_probe_skb(sk_it, 1);
 		}
 
-		/* At least on of the tcp_xmit_probe_skb's has to succeed */
+		/* At least one of the tcp_xmit_probe_skb's has to succeed */
 		mptcp_for_each_sk(meta_tp->mpcb, sk_it) {
 			int ret = tcp_xmit_probe_skb(sk_it, 0);
 			if (unlikely(ret > 0))
