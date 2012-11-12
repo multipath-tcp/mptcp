@@ -31,6 +31,7 @@
 #include <linux/in6.h>
 #include <linux/kernel.h>
 
+#include <net/addrconf.h>
 #include <net/flow.h>
 #include <net/inet6_connection_sock.h>
 #include <net/inet6_hashtables.h>
@@ -42,7 +43,6 @@
 #include <net/mptcp_v6.h>
 #include <net/tcp.h>
 #include <net/transp_v6.h>
-#include <net/addrconf.h>
 
 static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req,
 				  struct request_values *rvp);
