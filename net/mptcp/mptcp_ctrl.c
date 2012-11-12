@@ -221,6 +221,16 @@ void mptcp_sock_def_error_report(struct sock *sk)
 	return;
 }
 
+void mptcp_set_keepalive(struct sock *sk, int val)
+{
+	struct sock *sk_it;
+
+	mptcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it) {
+		tcp_set_keepalive(sk_it, val);
+		sock_valbool_flag(sk, SOCK_KEEPOPEN, val);
+	}
+}
+
 void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn)
 {
 	u32 workspace[SHA_WORKSPACE_WORDS];
@@ -357,27 +367,30 @@ static void mptcp_mpcb_inherit_sockopts(struct sock *meta_sk, struct sock *maste
 
 	/****** KEEPALIVE-handler ******/
 
-	/* Keepalive-timer has been started in tcp_rcv_synsent_state_process or
-	 * tcp_create_openreq_child */
+	/* Keepalive-timer has been started already, but it is handled at the
+	 * subflow level.
+	 */
 	if (sock_flag(meta_sk, SOCK_KEEPOPEN)) {
-		inet_csk_reset_keepalive_timer(meta_sk, keepalive_time_when(meta_tp));
-
-		/* Prevent keepalive-reset in tcp_rcv_synsent_state_process */
-		sock_reset_flag(master_sk, SOCK_KEEPOPEN);
+		inet_csk_delete_keepalive_timer(meta_sk);
+		inet_csk_reset_keepalive_timer(master_sk, keepalive_time_when(meta_tp));
 	}
 
 	/****** DEFER_ACCEPT-handler ******/
 
 	/* DEFER_ACCEPT is not of concern for new subflows - we always accept
-	 * them */
+	 * them
+	 */
 	inet_csk(meta_sk)->icsk_accept_queue.rskq_defer_accept = 0;
 }
 
 static void mptcp_sub_inherit_sockopts(struct sock *meta_sk, struct sock *sub_sk)
 {
-	/* Keepalive is handled at the meta-level */
-	if (sock_flag(meta_sk, SOCK_KEEPOPEN))
-		inet_csk_delete_keepalive_timer(sub_sk);
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	/* Keepalive is handled at the subflow-level */
+	if (sock_flag(meta_sk, SOCK_KEEPOPEN)) {
+		inet_csk_reset_keepalive_timer(sub_sk, keepalive_time_when(meta_tp));
+		sock_valbool_flag(sub_sk, SOCK_KEEPOPEN, keepalive_time_when(meta_tp));
+	}
 }
 
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb)

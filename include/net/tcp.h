@@ -413,6 +413,8 @@ extern struct sock *tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 					 struct request_sock *req,
 					 struct dst_entry *dst);
 extern void tcp_v6_reqsk_destructor(struct request_sock *req);
+
+extern void sock_valbool_flag(struct sock *sk, int bit, int valbool);
 /**** END - Exports needed for MPTCP ****/
 
 extern void tcp_v4_err(struct sk_buff *skb, u32);

@@ -61,24 +61,16 @@ struct request_sock_ops mptcp_request_sock_ops __read_mostly = {
 	.syn_ack_timeout =	tcp_syn_ack_timeout,
 };
 
-/* Similar to inet_csk_reqsk_queue_hash_add */
 static void mptcp_v4_reqsk_queue_hash_add(struct sock *meta_sk,
 					  struct request_sock *req,
 					  unsigned long timeout)
 {
-	struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
-	struct listen_sock *lopt = meta_icsk->icsk_accept_queue.listen_opt;
-	u32 h = inet_synq_hash(inet_rsk(req)->rmt_addr, inet_rsk(req)->rmt_port,
-			       lopt->hash_rnd, lopt->nr_table_entries);
+	const u32 h = inet_synq_hash(inet_rsk(req)->rmt_addr,
+				     inet_rsk(req)->rmt_port,
+				     0, MPTCP_HASH_SIZE);
 
-	reqsk_queue_hash_req(&meta_icsk->icsk_accept_queue, h, req, timeout);
-	/* We don't yet support retransmission of syn/ack's. Thus, we cannot
-	 * call inet_csk_reqsk_queue_added.
-	 */
-	reqsk_queue_added(&meta_icsk->icsk_accept_queue);
+	inet_csk_reqsk_queue_hash_add(meta_sk, req, timeout);
 
-	h = inet_synq_hash(inet_rsk(req)->rmt_addr, inet_rsk(req)->rmt_port,
-			   0, MPTCP_HASH_SIZE);
 	spin_lock(&mptcp_reqsk_hlock);
 	list_add(&mptcp_rsk(req)->collide_tuple, &mptcp_reqsk_htb[h]);
 	spin_unlock(&mptcp_reqsk_hlock);
