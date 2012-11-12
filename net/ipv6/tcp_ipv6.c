@@ -62,6 +62,7 @@
 #include <net/netdma.h>
 #include <net/inet_common.h>
 #include <net/secure_seq.h>
+#include <net/tcp_memcontrol.h>
 #include <net/mptcp.h>
 #include <net/mptcp_v6.h>
 
@@ -143,7 +144,7 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 			flowlabel = fl6_sock_lookup(sk, fl6.flowlabel);
 			if (flowlabel == NULL)
 				return -EINVAL;
-			ipv6_addr_copy(&usin->sin6_addr, &flowlabel->dst);
+			usin->sin6_addr = flowlabel->dst;
 			fl6_sock_release(flowlabel);
 		}
 	}
@@ -185,7 +186,7 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 		tp->write_seq = 0;
 	}
 
-	ipv6_addr_copy(&np->daddr, &usin->sin6_addr);
+	np->daddr = usin->sin6_addr;
 	np->flow_label = fl6.flowlabel;
 
 	/*
@@ -234,9 +235,8 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 		saddr = &np->rcv_saddr;
 
 	fl6.flowi6_proto = IPPROTO_TCP;
-	ipv6_addr_copy(&fl6.daddr, &np->daddr);
-	ipv6_addr_copy(&fl6.saddr,
-		       (saddr ? saddr : &np->saddr));
+	fl6.daddr = np->daddr;
+	fl6.saddr = saddr ? *saddr : np->saddr;
 	fl6.flowi6_oif = sk->sk_bound_dev_if;
 	fl6.flowi6_mark = sk->sk_mark;
 	fl6.fl6_dport = usin->sin6_port;
@@ -254,11 +254,11 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 
 	if (saddr == NULL) {
 		saddr = &fl6.saddr;
-		ipv6_addr_copy(&np->rcv_saddr, saddr);
+		np->rcv_saddr = *saddr;
 	}
 
 	/* set the source address */
-	ipv6_addr_copy(&np->saddr, saddr);
+	np->saddr = *saddr;
 	inet->inet_rcv_saddr = LOOPBACK4_IPV6;
 
 	sk->sk_gso_type = SKB_GSO_TCPV6;
@@ -393,8 +393,8 @@ static void tcp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 			 */
 			memset(&fl6, 0, sizeof(fl6));
 			fl6.flowi6_proto = IPPROTO_TCP;
-			ipv6_addr_copy(&fl6.daddr, &np->daddr);
-			ipv6_addr_copy(&fl6.saddr, &np->saddr);
+			fl6.daddr = np->daddr;
+			fl6.saddr = np->saddr;
 			fl6.flowi6_oif = sk->sk_bound_dev_if;
 			fl6.flowi6_mark = sk->sk_mark;
 			fl6.fl6_dport = inet->inet_dport;
@@ -483,8 +483,8 @@ int tcp_v6_send_synack(struct sock *sk, struct request_sock *req,
 
 	memset(&fl6, 0, sizeof(fl6));
 	fl6.flowi6_proto = IPPROTO_TCP;
-	ipv6_addr_copy(&fl6.daddr, &treq->rmt_addr);
-	ipv6_addr_copy(&fl6.saddr, &treq->loc_addr);
+	fl6.daddr = treq->rmt_addr;
+	fl6.saddr = treq->loc_addr;
 	fl6.flowlabel = 0;
 	fl6.flowi6_oif = treq->iif;
 	fl6.flowi6_mark = sk->sk_mark;
@@ -506,7 +506,7 @@ int tcp_v6_send_synack(struct sock *sk, struct request_sock *req,
 	if (skb) {
 		__tcp_v6_send_check(skb, &treq->loc_addr, &treq->rmt_addr);
 
-		ipv6_addr_copy(&fl6.daddr, &treq->rmt_addr);
+		fl6.daddr = treq->rmt_addr;
 		err = ip6_xmit(sk, skb, &fl6, opt, np->tclass);
 		err = net_xmit_eval(err);
 	}
@@ -612,8 +612,7 @@ static int tcp_v6_md5_do_add(struct sock *sk, const struct in6_addr *peer,
 			tp->md5sig_info->alloced6++;
 		}
 
-		ipv6_addr_copy(&tp->md5sig_info->keys6[tp->md5sig_info->entries6].addr,
-			       peer);
+		tp->md5sig_info->keys6[tp->md5sig_info->entries6].addr = *peer;
 		tp->md5sig_info->keys6[tp->md5sig_info->entries6].base.key = newkey;
 		tp->md5sig_info->keys6[tp->md5sig_info->entries6].base.keylen = newkeylen;
 
@@ -745,8 +744,8 @@ static int tcp_v6_md5_hash_pseudoheader(struct tcp_md5sig_pool *hp,
 
 	bp = &hp->md5_blk.ip6;
 	/* 1. TCP pseudo-header (RFC2460) */
-	ipv6_addr_copy(&bp->saddr, saddr);
-	ipv6_addr_copy(&bp->daddr, daddr);
+	bp->saddr = *saddr;
+	bp->daddr = *daddr;
 	bp->protocol = cpu_to_be32(IPPROTO_TCP);
 	bp->len = cpu_to_be32(nbytes);
 
@@ -1065,8 +1064,8 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack,
 #endif
 
 	memset(&fl6, 0, sizeof(fl6));
-	ipv6_addr_copy(&fl6.daddr, &ipv6_hdr(skb)->saddr);
-	ipv6_addr_copy(&fl6.saddr, &ipv6_hdr(skb)->daddr);
+	fl6.daddr = ipv6_hdr(skb)->saddr;
+	fl6.saddr = ipv6_hdr(skb)->daddr;
 
 	buff->ip_summed = CHECKSUM_PARTIAL;
 	buff->csum = 0;
@@ -1115,7 +1114,7 @@ void tcp_v6_send_reset(struct sock *sk, struct sk_buff *skb)
 
 #ifdef CONFIG_TCP_MD5SIG
 	if (sk)
-		key = tcp_v6_md5_do_lookup(sk, &ipv6_hdr(skb)->daddr);
+		key = tcp_v6_md5_do_lookup(sk, &ipv6_hdr(skb)->saddr);
 #endif
 
 	if (th->ack)
@@ -1333,8 +1332,8 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 		mptcp_reqsk_new_mptcp(req, &tmp_opt, &mopt);
 
 	treq = inet6_rsk(req);
-	ipv6_addr_copy(&treq->rmt_addr, &ipv6_hdr(skb)->saddr);
-	ipv6_addr_copy(&treq->loc_addr, &ipv6_hdr(skb)->daddr);
+	treq->rmt_addr = ipv6_hdr(skb)->saddr;
+	treq->loc_addr = ipv6_hdr(skb)->daddr;
 	if (!want_cookie || tmp_opt.tstamp_ok)
 		TCP_ECN_create_request(req, tcp_hdr(skb));
 
@@ -1464,7 +1463,7 @@ struct sock *tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 
 		ipv6_addr_set_v4mapped(newinet->inet_saddr, &newnp->saddr);
 
-		ipv6_addr_copy(&newnp->rcv_saddr, &newnp->saddr);
+		newnp->rcv_saddr = newnp->saddr;
 
 		inet_csk(newsk)->icsk_af_ops = &ipv6_mapped;
 		newsk->sk_backlog_rcv = tcp_v4_do_rcv;
@@ -1528,9 +1527,9 @@ struct sock *tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 
 	memcpy(newnp, np, sizeof(struct ipv6_pinfo));
 
-	ipv6_addr_copy(&newnp->daddr, &treq->rmt_addr);
-	ipv6_addr_copy(&newnp->saddr, &treq->loc_addr);
-	ipv6_addr_copy(&newnp->rcv_saddr, &treq->loc_addr);
+	newnp->daddr = treq->rmt_addr;
+	newnp->saddr = treq->loc_addr;
+	newnp->rcv_saddr = treq->loc_addr;
 	newsk->sk_bound_dev_if = treq->iif;
 
 	/* Now IPv6 options...
@@ -2145,7 +2144,8 @@ static int tcp_v6_init_sock(struct sock *sk)
 	sk->sk_rcvbuf = sysctl_tcp_rmem[1];
 
 	local_bh_disable();
-	percpu_counter_inc(&tcp_sockets_allocated);
+	sock_update_memcg(sk);
+	sk_sockets_allocated_inc(sk);
 	local_bh_enable();
 
 	return 0;
@@ -2364,7 +2364,6 @@ struct proto tcpv6_prot = {
 	.memory_allocated	= &tcp_memory_allocated,
 	.memory_pressure	= &tcp_memory_pressure,
 	.orphan_count		= &tcp_orphan_count,
-	.sysctl_mem		= sysctl_tcp_mem,
 	.sysctl_wmem		= sysctl_tcp_wmem,
 	.sysctl_rmem		= sysctl_tcp_rmem,
 	.max_header		= MAX_TCP_HEADER,
@@ -2377,6 +2376,9 @@ struct proto tcpv6_prot = {
 #ifdef CONFIG_COMPAT
 	.compat_setsockopt	= compat_tcp_setsockopt,
 	.compat_getsockopt	= compat_tcp_getsockopt,
+#endif
+#ifdef CONFIG_CGROUP_MEM_RES_CTLR_KMEM
+	.proto_cgroup		= tcp_proto_cgroup,
 #endif
 };
 
