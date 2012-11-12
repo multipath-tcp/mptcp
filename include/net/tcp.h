@@ -411,6 +411,7 @@ extern void __tcp_v6_send_check(struct sk_buff *skb,
 extern struct sock *tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 					 struct request_sock *req,
 					 struct dst_entry *dst);
+extern void tcp_v6_reqsk_destructor(struct request_sock *req);
 /**** END - Exports needed for MPTCP ****/
 
 extern void tcp_v4_err(struct sk_buff *skb, u32);
