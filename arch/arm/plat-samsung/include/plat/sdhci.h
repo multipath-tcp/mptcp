@@ -18,6 +18,8 @@
 #ifndef __PLAT_S3C_SDHCI_H
 #define __PLAT_S3C_SDHCI_H __FILE__
 
+#include <plat/devs.h>
+
 struct platform_device;
 struct mmc_host;
 struct mmc_card;
@@ -40,6 +42,7 @@ enum clk_types {
  * struct s3c_sdhci_platdata() - Platform device data for Samsung SDHCI
  * @max_width: The maximum number of data bits supported.
  * @host_caps: Standard MMC host capabilities bit field.
+ * @host_caps2: The second standard MMC host capabilities bit field.
  * @cd_type: Type of Card Detection method (see cd_types enum above)
  * @clk_type: Type of clock divider method (see clk_types enum above)
  * @ext_cd_init: Initialize external card detect subsystem. Called on
@@ -63,6 +66,7 @@ enum clk_types {
 struct s3c_sdhci_platdata {
 	unsigned int	max_width;
 	unsigned int	host_caps;
+	unsigned int	host_caps2;
 	unsigned int	pm_caps;
 	enum cd_types	cd_type;
 	enum clk_types	clk_type;
@@ -353,5 +357,31 @@ static inline void exynos4_default_sdhci2(void) { }
 static inline void exynos4_default_sdhci3(void) { }
 
 #endif /* CONFIG_EXYNOS4_SETUP_SDHCI */
+
+static inline void s3c_sdhci_setname(int id, char *name)
+{
+	switch (id) {
+#ifdef CONFIG_S3C_DEV_HSMMC
+	case 0:
+		s3c_device_hsmmc0.name = name;
+		break;
+#endif
+#ifdef CONFIG_S3C_DEV_HSMMC1
+	case 1:
+		s3c_device_hsmmc1.name = name;
+		break;
+#endif
+#ifdef CONFIG_S3C_DEV_HSMMC2
+	case 2:
+		s3c_device_hsmmc2.name = name;
+		break;
+#endif
+#ifdef CONFIG_S3C_DEV_HSMMC3
+	case 3:
+		s3c_device_hsmmc3.name = name;
+		break;
+#endif
+	}
+}
 
 #endif /* __PLAT_S3C_SDHCI_H */

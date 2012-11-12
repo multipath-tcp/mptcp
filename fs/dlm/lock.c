@@ -411,8 +411,8 @@ static int rsb_cmp(struct dlm_rsb *r, const char *name, int nlen)
 	return memcmp(r->res_name, maxname, DLM_RESNAME_MAXLEN);
 }
 
-static int search_rsb_tree(struct rb_root *tree, char *name, int len,
-			   unsigned int flags, struct dlm_rsb **r_ret)
+int dlm_search_rsb_tree(struct rb_root *tree, char *name, int len,
+			unsigned int flags, struct dlm_rsb **r_ret)
 {
 	struct rb_node *node = tree->rb_node;
 	struct dlm_rsb *r;
@@ -474,12 +474,12 @@ static int _search_rsb(struct dlm_ls *ls, char *name, int len, int b,
 	struct dlm_rsb *r;
 	int error;
 
-	error = search_rsb_tree(&ls->ls_rsbtbl[b].keep, name, len, flags, &r);
+	error = dlm_search_rsb_tree(&ls->ls_rsbtbl[b].keep, name, len, flags, &r);
 	if (!error) {
 		kref_get(&r->res_ref);
 		goto out;
 	}
-	error = search_rsb_tree(&ls->ls_rsbtbl[b].toss, name, len, flags, &r);
+	error = dlm_search_rsb_tree(&ls->ls_rsbtbl[b].toss, name, len, flags, &r);
 	if (error)
 		goto out;
 
@@ -1735,6 +1735,18 @@ static int _can_be_granted(struct dlm_rsb *r, struct dlm_lkb *lkb, int now)
 
 	if (now && conv && !(lkb->lkb_exflags & DLM_LKF_QUECVT))
 		return 1;
+
+	/*
+	 * Even if the convert is compat with all granted locks,
+	 * QUECVT forces it behind other locks on the convert queue.
+	 */
+
+	if (now && conv && (lkb->lkb_exflags & DLM_LKF_QUECVT)) {
+		if (list_empty(&r->res_convertqueue))
+			return 1;
+		else
+			goto out;
+	}
 
 	/*
 	 * The NOORDER flag is set to avoid the standard vms rules on grant

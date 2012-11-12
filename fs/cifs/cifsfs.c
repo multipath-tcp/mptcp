@@ -76,12 +76,7 @@ MODULE_PARM_DESC(cifs_min_small, "Small network buffers in pool. Default: 30 "
 unsigned int cifs_max_pending = CIFS_MAX_REQ;
 module_param(cifs_max_pending, int, 0444);
 MODULE_PARM_DESC(cifs_max_pending, "Simultaneous requests to server. "
-				   "Default: 50 Range: 2 to 256");
-unsigned short echo_retries = 5;
-module_param(echo_retries, ushort, 0644);
-MODULE_PARM_DESC(echo_retries, "Number of echo attempts before giving up and "
-			       "reconnecting server. Default: 5. 0 means "
-			       "never reconnect.");
+				   "Default: 32767 Range: 2 to 32767.");
 module_param(enable_oplocks, bool, 0644);
 MODULE_PARM_DESC(enable_oplocks, "Enable or disable oplocks (bool). Default:"
 				 "y/Y/1");
@@ -89,6 +84,8 @@ MODULE_PARM_DESC(enable_oplocks, "Enable or disable oplocks (bool). Default:"
 extern mempool_t *cifs_sm_req_poolp;
 extern mempool_t *cifs_req_poolp;
 extern mempool_t *cifs_mid_poolp;
+
+struct workqueue_struct	*cifsiod_wq;
 
 static int
 cifs_read_super(struct super_block *sb)
@@ -119,12 +116,10 @@ cifs_read_super(struct super_block *sb)
 
 	if (IS_ERR(inode)) {
 		rc = PTR_ERR(inode);
-		inode = NULL;
 		goto out_no_root;
 	}
 
-	sb->s_root = d_alloc_root(inode);
-
+	sb->s_root = d_make_root(inode);
 	if (!sb->s_root) {
 		rc = -ENOMEM;
 		goto out_no_root;
@@ -147,9 +142,6 @@ cifs_read_super(struct super_block *sb)
 
 out_no_root:
 	cERROR(1, "cifs_read_super: get root inode failed");
-	if (inode)
-		iput(inode);
-
 	return rc;
 }
 
@@ -378,13 +370,13 @@ cifs_show_options(struct seq_file *s, struct dentry *root)
 				   (int)(srcaddr->sa_family));
 	}
 
-	seq_printf(s, ",uid=%d", cifs_sb->mnt_uid);
+	seq_printf(s, ",uid=%u", cifs_sb->mnt_uid);
 	if (cifs_sb->mnt_cifs_flags & CIFS_MOUNT_OVERR_UID)
 		seq_printf(s, ",forceuid");
 	else
 		seq_printf(s, ",noforceuid");
 
-	seq_printf(s, ",gid=%d", cifs_sb->mnt_gid);
+	seq_printf(s, ",gid=%u", cifs_sb->mnt_gid);
 	if (cifs_sb->mnt_cifs_flags & CIFS_MOUNT_OVERR_GID)
 		seq_printf(s, ",forcegid");
 	else
@@ -442,11 +434,15 @@ cifs_show_options(struct seq_file *s, struct dentry *root)
 		seq_printf(s, ",noperm");
 	if (cifs_sb->mnt_cifs_flags & CIFS_MOUNT_STRICT_IO)
 		seq_printf(s, ",strictcache");
+	if (cifs_sb->mnt_cifs_flags & CIFS_MOUNT_CIFS_BACKUPUID)
+		seq_printf(s, ",backupuid=%u", cifs_sb->mnt_backupuid);
+	if (cifs_sb->mnt_cifs_flags & CIFS_MOUNT_CIFS_BACKUPGID)
+		seq_printf(s, ",backupgid=%u", cifs_sb->mnt_backupgid);
 
-	seq_printf(s, ",rsize=%d", cifs_sb->rsize);
-	seq_printf(s, ",wsize=%d", cifs_sb->wsize);
+	seq_printf(s, ",rsize=%u", cifs_sb->rsize);
+	seq_printf(s, ",wsize=%u", cifs_sb->wsize);
 	/* convert actimeo and display it in seconds */
-		seq_printf(s, ",actimeo=%lu", cifs_sb->actimeo / HZ);
+	seq_printf(s, ",actimeo=%lu", cifs_sb->actimeo / HZ);
 
 	return 0;
 }
@@ -703,7 +699,7 @@ static loff_t cifs_llseek(struct file *file, loff_t offset, int origin)
 	 * origin == SEEK_END || SEEK_DATA || SEEK_HOLE => we must revalidate
 	 * the cached file length
 	 */
-	if (origin != SEEK_SET || origin != SEEK_CUR) {
+	if (origin != SEEK_SET && origin != SEEK_CUR) {
 		int rc;
 		struct inode *inode = file->f_path.dentry->d_inode;
 
@@ -1116,14 +1112,20 @@ init_cifs(void)
 	if (cifs_max_pending < 2) {
 		cifs_max_pending = 2;
 		cFYI(1, "cifs_max_pending set to min of 2");
-	} else if (cifs_max_pending > 256) {
-		cifs_max_pending = 256;
-		cFYI(1, "cifs_max_pending set to max of 256");
+	} else if (cifs_max_pending > CIFS_MAX_REQ) {
+		cifs_max_pending = CIFS_MAX_REQ;
+		cFYI(1, "cifs_max_pending set to max of %u", CIFS_MAX_REQ);
+	}
+
+	cifsiod_wq = alloc_workqueue("cifsiod", WQ_FREEZABLE|WQ_MEM_RECLAIM, 0);
+	if (!cifsiod_wq) {
+		rc = -ENOMEM;
+		goto out_clean_proc;
 	}
 
 	rc = cifs_fscache_register();
 	if (rc)
-		goto out_clean_proc;
+		goto out_destroy_wq;
 
 	rc = cifs_init_inodecache();
 	if (rc)
@@ -1171,6 +1173,8 @@ out_destroy_inodecache:
 	cifs_destroy_inodecache();
 out_unreg_fscache:
 	cifs_fscache_unregister();
+out_destroy_wq:
+	destroy_workqueue(cifsiod_wq);
 out_clean_proc:
 	cifs_proc_clean();
 	return rc;
@@ -1180,11 +1184,8 @@ static void __exit
 exit_cifs(void)
 {
 	cFYI(DBG2, "exit_cifs");
-	cifs_proc_clean();
-	cifs_fscache_unregister();
-#ifdef CONFIG_CIFS_DFS_UPCALL
+	unregister_filesystem(&cifs_fs_type);
 	cifs_dfs_release_automount_timer();
-#endif
 #ifdef CONFIG_CIFS_ACL
 	cifs_destroy_idmaptrees();
 	exit_cifs_idmap();
@@ -1192,10 +1193,12 @@ exit_cifs(void)
 #ifdef CONFIG_CIFS_UPCALL
 	unregister_key_type(&cifs_spnego_key_type);
 #endif
-	unregister_filesystem(&cifs_fs_type);
-	cifs_destroy_inodecache();
-	cifs_destroy_mids();
 	cifs_destroy_request_bufs();
+	cifs_destroy_mids();
+	cifs_destroy_inodecache();
+	cifs_fscache_unregister();
+	destroy_workqueue(cifsiod_wq);
+	cifs_proc_clean();
 }
 
 MODULE_AUTHOR("Steve French <sfrench@us.ibm.com>");

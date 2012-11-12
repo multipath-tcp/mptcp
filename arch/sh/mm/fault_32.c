@@ -17,9 +17,9 @@
 #include <linux/kprobes.h>
 #include <linux/perf_event.h>
 #include <asm/io_trapped.h>
-#include <asm/system.h>
 #include <asm/mmu_context.h>
 #include <asm/tlbflush.h>
+#include <asm/traps.h>
 
 static inline int notify_page_fault(struct pt_regs *regs, int trap)
 {
@@ -86,7 +86,7 @@ static noinline int vmalloc_fault(unsigned long address)
 	pte_t *pte_k;
 
 	/* Make sure we are in vmalloc/module/P3 area: */
-	if (!(address >= VMALLOC_START && address < P3_ADDR_MAX))
+	if (!(address >= P3SEG && address < P3_ADDR_MAX))
 		return -1;
 
 	/*

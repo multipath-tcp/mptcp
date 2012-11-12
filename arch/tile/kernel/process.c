@@ -27,16 +27,18 @@
 #include <linux/kernel.h>
 #include <linux/tracehook.h>
 #include <linux/signal.h>
-#include <asm/system.h>
 #include <asm/stack.h>
+#include <asm/switch_to.h>
 #include <asm/homecache.h>
 #include <asm/syscalls.h>
 #include <asm/traps.h>
+#include <asm/setup.h>
 #ifdef CONFIG_HARDWALL
 #include <asm/hardwall.h>
 #endif
 #include <arch/chip.h>
 #include <arch/abi.h>
+#include <arch/sim_def.h>
 
 
 /*
@@ -108,9 +110,7 @@ void cpu_idle(void)
 		}
 		rcu_idle_exit();
 		tick_nohz_idle_exit();
-		preempt_enable_no_resched();
-		schedule();
-		preempt_disable();
+		schedule_preempt_disabled();
 	}
 }
 
@@ -286,7 +286,7 @@ struct task_struct *validate_current(void)
 	static struct task_struct corrupt = { .comm = "<corrupt>" };
 	struct task_struct *tsk = current;
 	if (unlikely((unsigned long)tsk < PAGE_OFFSET ||
-		     (void *)tsk > high_memory ||
+		     (high_memory && (void *)tsk > high_memory) ||
 		     ((unsigned long)tsk & (__alignof__(*tsk) - 1)) != 0)) {
 		pr_err("Corrupt 'current' %p (sp %#lx)\n", tsk, stack_pointer);
 		tsk = &corrupt;
@@ -567,6 +567,10 @@ struct task_struct *__sched _switch_to(struct task_struct *prev,
  */
 int do_work_pending(struct pt_regs *regs, u32 thread_info_flags)
 {
+	/* If we enter in kernel mode, do nothing and exit the caller loop. */
+	if (!user_mode(regs))
+		return 0;
+
 	if (thread_info_flags & _TIF_NEED_RESCHED) {
 		schedule();
 		return 1;
@@ -589,8 +593,7 @@ int do_work_pending(struct pt_regs *regs, u32 thread_info_flags)
 		return 1;
 	}
 	if (thread_info_flags & _TIF_SINGLESTEP) {
-		if ((regs->ex1 & SPR_EX_CONTEXT_1_1__PL_MASK) == 0)
-			single_step_once(regs);
+		single_step_once(regs);
 		return 0;
 	}
 	panic("work_pending: bad flags %#x\n", thread_info_flags);

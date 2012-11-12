@@ -17,6 +17,7 @@
 #include <linux/irqdomain.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
+#include <linux/of_irq.h>
 #include <linux/of_platform.h>
 #include <linux/memblock.h>
 
@@ -49,10 +50,22 @@ static void __init msm8x60_map_io(void)
 	msm_map_msm8x60_io();
 }
 
+#ifdef CONFIG_OF
+static struct of_device_id msm_dt_gic_match[] __initdata = {
+	{ .compatible = "qcom,msm-8660-qgic", .data = gic_of_init },
+	{}
+};
+#endif
+
 static void __init msm8x60_init_irq(void)
 {
-	gic_init(0, GIC_PPI_START, MSM_QGIC_DIST_BASE,
-		 (void *)MSM_QGIC_CPU_BASE);
+	if (!of_have_populated_dt())
+		gic_init(0, GIC_PPI_START, MSM_QGIC_DIST_BASE,
+			 (void *)MSM_QGIC_CPU_BASE);
+#ifdef CONFIG_OF
+	else
+		of_irq_init(msm_dt_gic_match);
+#endif
 
 	/* Edge trigger PPIs except AVS_SVICINT and AVS_SVICINTSWDONE */
 	writel(0xFFFFD7FF, MSM_QGIC_DIST_BASE + GIC_DIST_CONFIG + 4);
@@ -73,20 +86,8 @@ static struct of_dev_auxdata msm_auxdata_lookup[] __initdata = {
 	{}
 };
 
-static struct of_device_id msm_dt_gic_match[] __initdata = {
-	{ .compatible = "qcom,msm-8660-qgic", },
-	{}
-};
-
 static void __init msm8x60_dt_init(void)
 {
-	struct device_node *node;
-
-	node = of_find_matching_node_by_address(NULL, msm_dt_gic_match,
-			MSM8X60_QGIC_DIST_PHYS);
-	if (node)
-		irq_domain_add_simple(node, GIC_SPI_START);
-
 	if (of_machine_is_compatible("qcom,msm8660-surf")) {
 		printk(KERN_INFO "Init surf UART registers\n");
 		msm8x60_init_uart12dm();

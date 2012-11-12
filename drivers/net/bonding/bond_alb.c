@@ -180,11 +180,9 @@ static int tlb_initialize(struct bonding *bond)
 	int i;
 
 	new_hashtbl = kzalloc(size, GFP_KERNEL);
-	if (!new_hashtbl) {
-		pr_err("%s: Error: Failed to allocate TLB hash table\n",
-		       bond->dev->name);
+	if (!new_hashtbl)
 		return -1;
-	}
+
 	_lock_tx_hashtbl_bh(bond);
 
 	bond_info->tx_hashtbl = new_hashtbl;
@@ -344,26 +342,26 @@ static void rlb_update_entry_from_arp(struct bonding *bond, struct arp_pkt *arp)
 	_unlock_rx_hashtbl_bh(bond);
 }
 
-static void rlb_arp_recv(struct sk_buff *skb, struct bonding *bond,
+static int rlb_arp_recv(struct sk_buff *skb, struct bonding *bond,
 			 struct slave *slave)
 {
 	struct arp_pkt *arp;
 
 	if (skb->protocol != cpu_to_be16(ETH_P_ARP))
-		return;
+		goto out;
 
 	arp = (struct arp_pkt *) skb->data;
 	if (!arp) {
 		pr_debug("Packet has no ARP data\n");
-		return;
+		goto out;
 	}
 
 	if (!pskb_may_pull(skb, arp_hdr_len(bond->dev)))
-		return;
+		goto out;
 
 	if (skb->len < sizeof(struct arp_pkt)) {
 		pr_debug("Packet is too small to be an ARP\n");
-		return;
+		goto out;
 	}
 
 	if (arp->op_code == htons(ARPOP_REPLY)) {
@@ -371,6 +369,8 @@ static void rlb_arp_recv(struct sk_buff *skb, struct bonding *bond,
 		rlb_update_entry_from_arp(bond, arp);
 		pr_debug("Server received an ARP Reply from client\n");
 	}
+out:
+	return RX_HANDLER_ANOTHER;
 }
 
 /* Caller must hold bond lock for read */
@@ -784,11 +784,9 @@ static int rlb_initialize(struct bonding *bond)
 	int i;
 
 	new_hashtbl = kmalloc(size, GFP_KERNEL);
-	if (!new_hashtbl) {
-		pr_err("%s: Error: Failed to allocate RLB hash table\n",
-		       bond->dev->name);
+	if (!new_hashtbl)
 		return -1;
-	}
+
 	_lock_rx_hashtbl_bh(bond);
 
 	bond_info->rx_hashtbl = new_hashtbl;

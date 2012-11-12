@@ -1029,6 +1029,31 @@ static int do_amba_entry(const char *filename,
 }
 ADD_TO_DEVTABLE("amba", struct amba_id, do_amba_entry);
 
+/* LOOKS like x86cpu:vendor:VVVV:family:FFFF:model:MMMM:feature:*,FEAT,*
+ * All fields are numbers. It would be nicer to use strings for vendor
+ * and feature, but getting those out of the build system here is too
+ * complicated.
+ */
+
+static int do_x86cpu_entry(const char *filename, struct x86_cpu_id *id,
+			   char *alias)
+{
+	id->feature = TO_NATIVE(id->feature);
+	id->family = TO_NATIVE(id->family);
+	id->model = TO_NATIVE(id->model);
+	id->vendor = TO_NATIVE(id->vendor);
+
+	strcpy(alias, "x86cpu:");
+	ADD(alias, "vendor:",  id->vendor != X86_VENDOR_ANY, id->vendor);
+	ADD(alias, ":family:", id->family != X86_FAMILY_ANY, id->family);
+	ADD(alias, ":model:",  id->model  != X86_MODEL_ANY,  id->model);
+	strcat(alias, ":feature:*");
+	if (id->feature != X86_FEATURE_ANY)
+		sprintf(alias + strlen(alias), "%04X*", id->feature);
+	return 1;
+}
+ADD_TO_DEVTABLE("x86cpu", struct x86_cpu_id, do_x86cpu_entry);
+
 /* Does namelen bytes of name exactly match the symbol? */
 static bool sym_is(const char *name, unsigned namelen, const char *symbol)
 {
@@ -1073,6 +1098,10 @@ void handle_moddevtable(struct module *mod, struct elf_info *info,
 
 	/* We're looking for a section relative symbol */
 	if (!sym->st_shndx || get_secindex(info, sym) >= info->num_sections)
+		return;
+
+	/* We're looking for an object */
+	if (ELF_ST_TYPE(sym->st_info) != STT_OBJECT)
 		return;
 
 	/* All our symbols are of form <prefix>__mod_XXX_device_table. */

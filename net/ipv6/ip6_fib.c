@@ -673,11 +673,10 @@ static int fib6_add_rt2node(struct fib6_node *fn, struct rt6_info *rt,
 					    &rt->rt6i_gateway)) {
 				if (!(iter->rt6i_flags & RTF_EXPIRES))
 					return -EEXIST;
-				iter->dst.expires = rt->dst.expires;
-				if (!(rt->rt6i_flags & RTF_EXPIRES)) {
-					iter->rt6i_flags &= ~RTF_EXPIRES;
-					iter->dst.expires = 0;
-				}
+				if (!(rt->rt6i_flags & RTF_EXPIRES))
+					rt6_clean_expires(iter);
+				else
+					rt6_set_expires(iter, rt->dst.expires);
 				return -EEXIST;
 			}
 		}
@@ -1552,11 +1551,20 @@ static int fib6_age(struct rt6_info *rt, void *arg)
 		    time_after_eq(now, rt->dst.lastuse + gc_args.timeout)) {
 			RT6_TRACE("aging clone %p\n", rt);
 			return -1;
-		} else if ((rt->rt6i_flags & RTF_GATEWAY) &&
-			   (!(dst_get_neighbour_noref_raw(&rt->dst)->flags & NTF_ROUTER))) {
-			RT6_TRACE("purging route %p via non-router but gateway\n",
-				  rt);
-			return -1;
+		} else if (rt->rt6i_flags & RTF_GATEWAY) {
+			struct neighbour *neigh;
+			__u8 neigh_flags = 0;
+
+			neigh = dst_neigh_lookup(&rt->dst, &rt->rt6i_gateway);
+			if (neigh) {
+				neigh_flags = neigh->flags;
+				neigh_release(neigh);
+			}
+			if (neigh_flags & NTF_ROUTER) {
+				RT6_TRACE("purging route %p via non-router but gateway\n",
+					  rt);
+				return -1;
+			}
 		}
 		gc_args.more++;
 	}

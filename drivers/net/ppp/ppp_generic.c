@@ -32,7 +32,7 @@
 #include <linux/poll.h>
 #include <linux/ppp_defs.h>
 #include <linux/filter.h>
-#include <linux/if_ppp.h>
+#include <linux/ppp-ioctl.h>
 #include <linux/ppp_channel.h>
 #include <linux/ppp-comp.h>
 #include <linux/skbuff.h>
@@ -968,7 +968,6 @@ ppp_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	proto = npindex_to_proto[npi];
 	put_unaligned_be16(proto, pp);
 
-	netif_stop_queue(dev);
 	skb_queue_tail(&ppp->file.xq, skb);
 	ppp_xmit_process(ppp);
 	return NETDEV_TX_OK;
@@ -1031,7 +1030,7 @@ static void ppp_setup(struct net_device *dev)
 {
 	dev->netdev_ops = &ppp_netdev_ops;
 	dev->hard_header_len = PPP_HDRLEN;
-	dev->mtu = PPP_MTU;
+	dev->mtu = PPP_MRU;
 	dev->addr_len = 0;
 	dev->tx_queue_len = 3;
 	dev->type = ARPHRD_PPP;
@@ -1063,6 +1062,8 @@ ppp_xmit_process(struct ppp *ppp)
 		   code that we can accept some more. */
 		if (!ppp->xmit_pending && !skb_peek(&ppp->file.xq))
 			netif_wake_queue(ppp->dev);
+		else
+			netif_stop_queue(ppp->dev);
 	}
 	ppp_xmit_unlock(ppp);
 }
@@ -2136,7 +2137,7 @@ ppp_mp_reconstruct(struct ppp *ppp)
 
 				skb->len += p->len;
 				skb->data_len += p->len;
-				skb->truesize += p->len;
+				skb->truesize += p->truesize;
 
 				if (p == tail)
 					break;

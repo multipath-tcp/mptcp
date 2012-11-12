@@ -41,7 +41,6 @@
 #include <linux/mm.h>
 #include <linux/gfp.h>
 
-#include <asm/system.h>
 #include <asm/io.h>
 #include <asm/byteorder.h>
 #include <asm/uaccess.h>
@@ -2340,7 +2339,7 @@ static int gem_suspend(struct pci_dev *pdev, pm_message_t state)
 	netif_device_detach(dev);
 
 	/* Switch off chip, remember WOL setting */
-	gp->asleep_wol = gp->wake_on_lan;
+	gp->asleep_wol = !!gp->wake_on_lan;
 	gem_do_stop(dev, gp->asleep_wol);
 
 	/* Unlock the network stack */
@@ -2885,7 +2884,6 @@ static int __devinit gem_init_one(struct pci_dev *pdev,
 
 	dev = alloc_etherdev(sizeof(*gp));
 	if (!dev) {
-		pr_err("Etherdev alloc failed, aborting\n");
 		err = -ENOMEM;
 		goto err_disable_device;
 	}

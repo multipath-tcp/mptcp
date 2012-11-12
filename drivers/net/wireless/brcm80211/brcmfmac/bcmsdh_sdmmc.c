@@ -13,6 +13,9 @@
  * OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
+
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/types.h>
 #include <linux/netdevice.h>
 #include <linux/mmc/sdio.h>
@@ -105,9 +108,15 @@ static inline int brcmf_sdioh_f0_write_byte(struct brcmf_sdio_dev *sdiodev,
 			sdio_release_host(sdfunc);
 		}
 	} else if (regaddr == SDIO_CCCR_ABORT) {
+		sdfunc = kmemdup(sdiodev->func[0], sizeof(struct sdio_func),
+				 GFP_KERNEL);
+		if (!sdfunc)
+			return -ENOMEM;
+		sdfunc->num = 0;
 		sdio_claim_host(sdfunc);
 		sdio_writeb(sdfunc, *byte, regaddr, &err_ret);
 		sdio_release_host(sdfunc);
+		kfree(sdfunc);
 	} else if (regaddr < 0xF0) {
 		brcmf_dbg(ERROR, "F0 Wr:0x%02x: write disallowed\n", regaddr);
 		err_ret = -EPERM;
@@ -291,13 +300,14 @@ int brcmf_sdioh_request_buffer(struct brcmf_sdio_dev *sdiodev,
 			       struct sk_buff *pkt)
 {
 	int status;
-	uint pkt_len = pkt->len;
+	uint pkt_len;
 	bool fifo = (fix_inc == SDIOH_DATA_FIX);
 
 	brcmf_dbg(TRACE, "Enter\n");
 
 	if (pkt == NULL)
 		return -EINVAL;
+	pkt_len = pkt->len;
 
 	brcmf_pm_resume_wait(sdiodev, &sdiodev->request_buffer_wait);
 	if (brcmf_pm_resume_error(sdiodev))
@@ -482,10 +492,10 @@ static int brcmf_ops_sdio_probe(struct sdio_func *func,
 			kfree(bus_if);
 			return -ENOMEM;
 		}
-		sdiodev->func[0] = func->card->sdio_func[0];
+		sdiodev->func[0] = func;
 		sdiodev->func[1] = func;
 		sdiodev->bus_if = bus_if;
-		bus_if->bus_priv = sdiodev;
+		bus_if->bus_priv.sdio = sdiodev;
 		bus_if->type = SDIO_BUS;
 		bus_if->align = BRCMF_SDALIGN;
 		dev_set_drvdata(&func->card->dev, sdiodev);
@@ -526,7 +536,7 @@ static void brcmf_ops_sdio_remove(struct sdio_func *func)
 
 	if (func->num == 2) {
 		bus_if = dev_get_drvdata(&func->dev);
-		sdiodev = bus_if->bus_priv;
+		sdiodev = bus_if->bus_priv.sdio;
 		brcmf_dbg(TRACE, "F2 found, calling brcmf_sdio_remove...\n");
 		brcmf_sdio_remove(sdiodev);
 		dev_set_drvdata(&func->card->dev, NULL);
@@ -593,14 +603,14 @@ static struct sdio_driver brcmf_sdmmc_driver = {
 #endif	/* CONFIG_PM_SLEEP */
 };
 
-static void __exit brcmf_sdio_exit(void)
+void brcmf_sdio_exit(void)
 {
 	brcmf_dbg(TRACE, "Enter\n");
 
 	sdio_unregister_driver(&brcmf_sdmmc_driver);
 }
 
-static int __init brcmf_sdio_init(void)
+void brcmf_sdio_init(void)
 {
 	int ret;
 
@@ -610,9 +620,4 @@ static int __init brcmf_sdio_init(void)
 
 	if (ret)
 		brcmf_dbg(ERROR, "sdio_register_driver failed: %d\n", ret);
-
-	return ret;
 }
-
-module_init(brcmf_sdio_init);
-module_exit(brcmf_sdio_exit);

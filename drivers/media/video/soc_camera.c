@@ -526,19 +526,22 @@ static int soc_camera_open(struct file *file)
 			},
 		};
 
-		ret = soc_camera_power_on(icd, icl);
-		if (ret < 0)
-			goto epower;
-
 		/* The camera could have been already on, try to reset */
 		if (icl->reset)
 			icl->reset(icd->pdev);
 
+		/* Don't mess with the host during probe */
+		mutex_lock(&ici->host_lock);
 		ret = ici->ops->add(icd);
+		mutex_unlock(&ici->host_lock);
 		if (ret < 0) {
 			dev_err(icd->pdev, "Couldn't activate the camera: %d\n", ret);
 			goto eiciadd;
 		}
+
+		ret = soc_camera_power_on(icd, icl);
+		if (ret < 0)
+			goto epower;
 
 		pm_runtime_enable(&icd->vdev->dev);
 		ret = pm_runtime_resume(&icd->vdev->dev);
@@ -578,10 +581,10 @@ einitvb:
 esfmt:
 	pm_runtime_disable(&icd->vdev->dev);
 eresume:
-	ici->ops->remove(icd);
-eiciadd:
 	soc_camera_power_off(icd, icl);
 epower:
+	ici->ops->remove(icd);
+eiciadd:
 	icd->use_count--;
 	module_put(ici->ops->owner);
 
@@ -956,7 +959,7 @@ static void scan_add_host(struct soc_camera_host *ici)
 {
 	struct soc_camera_device *icd;
 
-	mutex_lock(&list_lock);
+	mutex_lock(&ici->host_lock);
 
 	list_for_each_entry(icd, &devices, list) {
 		if (icd->iface == ici->nr) {
@@ -967,7 +970,7 @@ static void scan_add_host(struct soc_camera_host *ici)
 		}
 	}
 
-	mutex_unlock(&list_lock);
+	mutex_unlock(&ici->host_lock);
 }
 
 #ifdef CONFIG_I2C_BOARDINFO
@@ -1050,6 +1053,14 @@ static int soc_camera_probe(struct soc_camera_device *icd)
 	if (ret < 0)
 		goto ereg;
 
+	/* The camera could have been already on, try to reset */
+	if (icl->reset)
+		icl->reset(icd->pdev);
+
+	ret = ici->ops->add(icd);
+	if (ret < 0)
+		goto eadd;
+
 	/*
 	 * This will not yet call v4l2_subdev_core_ops::s_power(1), because the
 	 * subdevice has not been initialised yet. We'll have to call it once
@@ -1059,14 +1070,6 @@ static int soc_camera_probe(struct soc_camera_device *icd)
 	ret = soc_camera_power_on(icd, icl);
 	if (ret < 0)
 		goto epower;
-
-	/* The camera could have been already on, try to reset */
-	if (icl->reset)
-		icl->reset(icd->pdev);
-
-	ret = ici->ops->add(icd);
-	if (ret < 0)
-		goto eadd;
 
 	/* Must have icd->vdev before registering the device */
 	ret = video_dev_create(icd);
@@ -1165,10 +1168,10 @@ eadddev:
 	video_device_release(icd->vdev);
 	icd->vdev = NULL;
 evdc:
-	ici->ops->remove(icd);
-eadd:
 	soc_camera_power_off(icd, icl);
 epower:
+	ici->ops->remove(icd);
+eadd:
 	regulator_bulk_free(icl->num_regulators, icl->regulators);
 ereg:
 	v4l2_ctrl_handler_free(&icd->ctrl_handler);
@@ -1313,6 +1316,7 @@ int soc_camera_host_register(struct soc_camera_host *ici)
 	list_add_tail(&ici->list, &hosts);
 	mutex_unlock(&list_lock);
 
+	mutex_init(&ici->host_lock);
 	scan_add_host(ici);
 
 	return 0;

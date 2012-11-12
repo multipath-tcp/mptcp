@@ -228,7 +228,7 @@ tlan_get_skb(const struct tlan_list *tag)
 	unsigned long addr;
 
 	addr = tag->buffer[9].address;
-	addr |= (tag->buffer[8].address << 16) << 16;
+	addr |= ((unsigned long) tag->buffer[8].address << 16) << 16;
 	return (struct sk_buff *) addr;
 }
 
@@ -486,7 +486,6 @@ static int __devinit tlan_probe1(struct pci_dev *pdev,
 
 	dev = alloc_etherdev(sizeof(struct tlan_priv));
 	if (dev == NULL) {
-		pr_err("Could not allocate memory for device\n");
 		rc = -ENOMEM;
 		goto err_out_regions;
 	}

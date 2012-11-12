@@ -17,6 +17,7 @@
 #include <linux/fs.h>
 #include <linux/vmalloc.h>
 
+#include <asm/cp15.h>
 #include <asm/cputype.h>
 #include <asm/sections.h>
 #include <asm/cachetype.h>
@@ -25,6 +26,7 @@
 #include <asm/smp_plat.h>
 #include <asm/tlb.h>
 #include <asm/highmem.h>
+#include <asm/system_info.h>
 #include <asm/traps.h>
 
 #include <asm/mach/arch.h>
@@ -487,7 +489,8 @@ static void __init build_mem_type_table(void)
 	 */
 	for (i = 0; i < ARRAY_SIZE(mem_types); i++) {
 		mem_types[i].prot_pte |= PTE_EXT_AF;
-		mem_types[i].prot_sect |= PMD_SECT_AF;
+		if (mem_types[i].prot_sect)
+			mem_types[i].prot_sect |= PMD_SECT_AF;
 	}
 	kern_pgprot |= PTE_EXT_AF;
 	vecs_pgprot |= PTE_EXT_AF;
@@ -616,8 +619,8 @@ static void __init alloc_init_section(pud_t *pud, unsigned long addr,
 	}
 }
 
-static void alloc_init_pud(pgd_t *pgd, unsigned long addr, unsigned long end,
-	unsigned long phys, const struct mem_type *type)
+static void __init alloc_init_pud(pgd_t *pgd, unsigned long addr,
+	unsigned long end, unsigned long phys, const struct mem_type *type)
 {
 	pud_t *pud = pud_offset(pgd, addr);
 	unsigned long next;
@@ -997,11 +1000,14 @@ static void __init devicemaps_init(struct machine_desc *mdesc)
 {
 	struct map_desc map;
 	unsigned long addr;
+	void *vectors;
 
 	/*
 	 * Allocate the vector page early.
 	 */
-	vectors_page = early_alloc(PAGE_SIZE);
+	vectors = early_alloc(PAGE_SIZE);
+
+	early_trap_init(vectors);
 
 	for (addr = VMALLOC_START; addr; addr += PMD_SIZE)
 		pmd_clear(pmd_off_k(addr));
@@ -1041,7 +1047,7 @@ static void __init devicemaps_init(struct machine_desc *mdesc)
 	 * location (0xffff0000).  If we aren't using high-vectors, also
 	 * create a mapping at the low-vectors virtual address.
 	 */
-	map.pfn = __phys_to_pfn(virt_to_phys(vectors_page));
+	map.pfn = __phys_to_pfn(virt_to_phys(vectors));
 	map.virtual = 0xffff0000;
 	map.length = PAGE_SIZE;
 	map.type = MT_HIGH_VECTORS;

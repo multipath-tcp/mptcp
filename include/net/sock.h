@@ -55,7 +55,9 @@
 #include <linux/uaccess.h>
 #include <linux/memcontrol.h>
 #include <linux/res_counter.h>
-#include <linux/jump_label.h>
+#include <linux/static_key.h>
+#include <linux/aio.h>
+#include <linux/sched.h>
 
 #include <linux/filter.h>
 #include <linux/rculist_nulls.h>
@@ -69,7 +71,7 @@ struct cgroup;
 struct cgroup_subsys;
 #ifdef CONFIG_NET
 int mem_cgroup_sockets_init(struct cgroup *cgrp, struct cgroup_subsys *ss);
-void mem_cgroup_sockets_destroy(struct cgroup *cgrp, struct cgroup_subsys *ss);
+void mem_cgroup_sockets_destroy(struct cgroup *cgrp);
 #else
 static inline
 int mem_cgroup_sockets_init(struct cgroup *cgrp, struct cgroup_subsys *ss)
@@ -77,7 +79,7 @@ int mem_cgroup_sockets_init(struct cgroup *cgrp, struct cgroup_subsys *ss)
 	return 0;
 }
 static inline
-void mem_cgroup_sockets_destroy(struct cgroup *cgrp, struct cgroup_subsys *ss)
+void mem_cgroup_sockets_destroy(struct cgroup *cgrp)
 {
 }
 #endif
@@ -244,6 +246,7 @@ struct cg_proto;
   *	@sk_user_data: RPC layer private data
   *	@sk_sndmsg_page: cached page for sendmsg
   *	@sk_sndmsg_off: cached offset for sendmsg
+  *	@sk_peek_off: current peek_offset value
   *	@sk_send_head: front of stuff to transmit
   *	@sk_security: used by security modules
   *	@sk_mark: generic packet mark
@@ -357,6 +360,7 @@ struct sock {
 	struct page		*sk_sndmsg_page;
 	struct sk_buff		*sk_send_head;
 	__u32			sk_sndmsg_off;
+	__s32			sk_peek_off;
 	int			sk_write_pending;
 #ifdef CONFIG_SECURITY
 	void			*sk_security;
@@ -372,6 +376,30 @@ struct sock {
 						  struct sk_buff *skb);  
 	void                    (*sk_destruct)(struct sock *sk);
 };
+
+static inline int sk_peek_offset(struct sock *sk, int flags)
+{
+	if ((flags & MSG_PEEK) && (sk->sk_peek_off >= 0))
+		return sk->sk_peek_off;
+	else
+		return 0;
+}
+
+static inline void sk_peek_offset_bwd(struct sock *sk, int val)
+{
+	if (sk->sk_peek_off >= 0) {
+		if (sk->sk_peek_off >= val)
+			sk->sk_peek_off -= val;
+		else
+			sk->sk_peek_off = 0;
+	}
+}
+
+static inline void sk_peek_offset_fwd(struct sock *sk, int val)
+{
+	if (sk->sk_peek_off >= 0)
+		sk->sk_peek_off += val;
+}
 
 /*
  * Hashed lists helper routines
@@ -590,6 +618,10 @@ enum sock_flags {
 	SOCK_RXQ_OVFL,
 	SOCK_ZEROCOPY, /* buffers from userspace */
 	SOCK_WIFI_STATUS, /* push wifi status to userspace */
+	SOCK_NOFCS, /* Tell NIC not to do the Ethernet FCS.
+		     * Will use last 4 bytes of packet sent from
+		     * user-space instead.
+		     */
 };
 
 static inline void sock_copy_flags(struct sock *nsk, struct sock *osk)
@@ -881,8 +913,7 @@ struct proto {
 	 */
 	int			(*init_cgroup)(struct cgroup *cgrp,
 					       struct cgroup_subsys *ss);
-	void			(*destroy_cgroup)(struct cgroup *cgrp,
-						  struct cgroup_subsys *ss);
+	void			(*destroy_cgroup)(struct cgroup *cgrp);
 	struct cg_proto		*(*proto_cgroup)(struct mem_cgroup *memcg);
 #endif
 };
@@ -934,13 +965,13 @@ inline void sk_refcnt_debug_release(const struct sock *sk)
 #endif /* SOCK_REFCNT_DEBUG */
 
 #if defined(CONFIG_CGROUP_MEM_RES_CTLR_KMEM) && defined(CONFIG_NET)
-extern struct jump_label_key memcg_socket_limit_enabled;
+extern struct static_key memcg_socket_limit_enabled;
 static inline struct cg_proto *parent_cg_proto(struct proto *proto,
 					       struct cg_proto *cg_proto)
 {
 	return proto->proto_cgroup(parent_mem_cgroup(cg_proto->memcg));
 }
-#define mem_cgroup_sockets_enabled static_branch(&memcg_socket_limit_enabled)
+#define mem_cgroup_sockets_enabled static_key_false(&memcg_socket_limit_enabled)
 #else
 #define mem_cgroup_sockets_enabled 0
 static inline struct cg_proto *parent_cg_proto(struct proto *proto,
@@ -1108,9 +1139,9 @@ sk_sockets_allocated_read_positive(struct sock *sk)
 	struct proto *prot = sk->sk_prot;
 
 	if (mem_cgroup_sockets_enabled && sk->sk_cgrp)
-		return percpu_counter_sum_positive(sk->sk_cgrp->sockets_allocated);
+		return percpu_counter_read_positive(sk->sk_cgrp->sockets_allocated);
 
-	return percpu_counter_sum_positive(prot->sockets_allocated);
+	return percpu_counter_read_positive(prot->sockets_allocated);
 }
 
 static inline int
@@ -1834,7 +1865,7 @@ static inline bool wq_has_sleeper(struct socket_wq *wq)
 static inline void sock_poll_wait(struct file *filp,
 		wait_queue_head_t *wait_address, poll_table *p)
 {
-	if (p && wait_address) {
+	if (!poll_does_not_wait(p) && wait_address) {
 		poll_wait(filp, wait_address, p);
 		/*
 		 * We need to be sure we are in sync with the

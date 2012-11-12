@@ -36,7 +36,6 @@
 #include <linux/slab.h>
 #include <linux/delay.h>
 
-#include <asm/system.h>
 #include <mach/hardware.h>
 #include <plat/dma.h>
 
@@ -164,6 +163,8 @@ static inline void set_gdma_dev(int req, int dev)
 }
 #else
 #define set_gdma_dev(req, dev)	do {} while (0)
+#define omap_readl(reg)		0
+#define omap_writel(val, reg)	do {} while (0)
 #endif
 
 void omap_set_dma_priority(int lch, int dst_port, int priority)
@@ -915,6 +916,13 @@ void omap_start_dma(int lch)
 			l |= OMAP_DMA_CCR_BUFFERING_DISABLE;
 	l |= OMAP_DMA_CCR_EN;
 
+	/*
+	 * As dma_write() uses IO accessors which are weakly ordered, there
+	 * is no guarantee that data in coherent DMA memory will be visible
+	 * to the DMA device.  Add a memory barrier here to ensure that any
+	 * such data is visible prior to enabling DMA.
+	 */
+	mb();
 	p->dma_write(l, CCR, lch);
 
 	dma_chan[lch].flags |= OMAP_DMA_ACTIVE;
@@ -963,6 +971,13 @@ void omap_stop_dma(int lch)
 		l &= ~OMAP_DMA_CCR_EN;
 		p->dma_write(l, CCR, lch);
 	}
+
+	/*
+	 * Ensure that data transferred by DMA is visible to any access
+	 * after DMA has been disabled.  This is important for coherent
+	 * DMA regions.
+	 */
+	mb();
 
 	if (!omap_dma_in_1510_mode() && dma_chan[lch].next_lch != -1) {
 		int next_lch, cur_lch = lch;
@@ -2125,7 +2140,7 @@ static int __devexit omap_system_dma_remove(struct platform_device *pdev)
 
 static struct platform_driver omap_system_dma_driver = {
 	.probe		= omap_system_dma_probe,
-	.remove		= omap_system_dma_remove,
+	.remove		= __devexit_p(omap_system_dma_remove),
 	.driver		= {
 		.name	= "omap_dma_system"
 	},
