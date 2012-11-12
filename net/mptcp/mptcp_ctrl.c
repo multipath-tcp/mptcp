@@ -401,8 +401,8 @@ static struct lock_class_key meta_key;
 static struct lock_class_key meta_slock_key;
 
 /* Code heavily inspired from sk_clone() */
-int mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
-		     const gfp_t flags)
+static int mptcp_inherit_sk(const struct sock *sk, struct sock *newsk,
+			    int family, const gfp_t flags)
 {
 	struct sk_filter *filter;
 	struct proto *prot = newsk->sk_prot;
@@ -711,7 +711,8 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	return 0;
 }
 
-struct sock *mptcp_sk_clone(struct sock *sk, int family, const gfp_t priority)
+struct sock *mptcp_sk_clone(const struct sock *sk, int family,
+			    const gfp_t priority)
 {
 	struct sock *newsk = NULL;
 
@@ -904,7 +905,7 @@ void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
 	case AF_INET6:
 		/* If the socket is v4 mapped, we continue with v4 operations */
 		if (!mptcp_v6_is_v4_mapped(sk)) {
-			ipv6_addr_copy(&mpcb->addr6[0].addr, &inet6_sk(sk)->saddr);
+			mpcb->addr6[0].addr = inet6_sk(sk)->saddr;
 			mpcb->addr6[0].id = 0;
 			mpcb->addr6[0].port = 0;
 			mpcb->addr6[0].low_prio = 0;
