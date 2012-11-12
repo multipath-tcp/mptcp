@@ -178,8 +178,6 @@ static void mptcp_v4_join_request_short(struct sock *meta_sk,
 
 		isn = tcp_v4_init_sequence(skb);
 	}
-	isn = tcp_v4_init_sequence(skb);
-
 	tcp_rsk(req)->snt_isn = isn;
 	tcp_rsk(req)->snt_synack = tcp_time_stamp;
 
