@@ -1536,23 +1536,51 @@ struct workqueue_struct *mptcp_wq;
 /* General initialization of mptcp */
 static int __init mptcp_init(void)
 {
-#ifdef CONFIG_SYSCTL
-	register_sysctl_paths(mptcp_path, mptcp_skeleton);
-#endif
+	int ret = -ENOMEM;
+	struct ctl_table_header *mptcp_sysclt;
+
 	mptcp_sock_cache = kmem_cache_create("mptcp_sock",
 					     sizeof(struct mptcp_tcp_sock),
 					     0, SLAB_HWCACHE_ALIGN|SLAB_PANIC,
 					     NULL);
+	if (!mptcp_sock_cache)
+		goto out;
+
 	mptcp_cb_cache = kmem_cache_create("mptcp_cb", sizeof(struct mptcp_cb),
 					   0, SLAB_HWCACHE_ALIGN|SLAB_PANIC,
 					   NULL);
+	if (!mptcp_cb_cache)
+		goto mptcp_cb_cache_failed;
 
 	mptcp_wq = alloc_workqueue("mptcp_wq", WQ_UNBOUND | WQ_MEM_RECLAIM, 8);
 	if (!mptcp_wq)
-		return -ENOMEM;
+		goto alloc_workqueue_failed;
 
-	return 0;
+	ret = mptcp_pm_init();
+	if (ret)
+		goto mptcp_pm_failed;
+
+#ifdef CONFIG_SYSCTL
+	mptcp_sysclt = register_sysctl_paths(mptcp_path, mptcp_skeleton);
+	if (!mptcp_sysclt) {
+		ret = -ENOMEM;
+		goto register_sysctl_failed;
+	}
+#endif
+
+out:
+	return ret;
+
+register_sysctl_failed:
+	mptcp_pm_undo();
+mptcp_pm_failed:
+	destroy_workqueue(mptcp_wq);
+alloc_workqueue_failed:
+	kmem_cache_destroy(mptcp_cb_cache);
+mptcp_cb_cache_failed:
+	kmem_cache_destroy(mptcp_sock_cache);
+
+	goto out;
 }
-module_init(mptcp_init);
 
-MODULE_LICENSE("GPL");
+late_initcall(mptcp_init);

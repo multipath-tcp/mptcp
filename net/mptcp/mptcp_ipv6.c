@@ -953,7 +953,6 @@ int mptcp_pm_v6_init(void)
 				      SLAB_HWCACHE_ALIGN, NULL);
 
 	if (ops->slab == NULL) {
-		printk(KERN_CRIT "%s: Can't create request sock SLAB cache!\n", "MPTCP6");
 		ret =  -ENOMEM;
 		goto err_reqsk_create;
 	}
@@ -976,4 +975,12 @@ err_reqsk_create:
 	kfree(ops->slab_name);
 	ops->slab_name = NULL;
 	goto out;
+}
+
+void mptcp_pm_v6_undo(void)
+{
+	kmem_cache_destroy(mptcp6_request_sock_ops.slab);
+	kfree(mptcp6_request_sock_ops.slab_name);
+	unregister_inet6addr_notifier(&mptcp_pm_inet6_addr_notifier);
+	unregister_netdevice_notifier(&mptcp_pm_v6_netdev_notifier);
 }
