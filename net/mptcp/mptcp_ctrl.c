@@ -660,7 +660,11 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	skb_queue_head_init(&master_tp->out_of_order_queue);
 	tcp_prequeue_init(master_tp);
 
-	/* Copye the write-queue from the meta down to the master */
+	/* Copye the write-queue from the meta down to the master.
+	 * This is necessary to get the SYN to the master-write-queue.
+	 * No other data can be queued, before tcp_sendmsg waits for the
+	 * connection to finish.
+	 */
 	skb_queue_walk_safe(&meta_sk->sk_write_queue, skb, tmp) {
 		skb_unlink(skb, &meta_sk->sk_write_queue);
 		skb_queue_tail(&master_sk->sk_write_queue, skb);

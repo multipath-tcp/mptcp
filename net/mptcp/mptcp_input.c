@@ -89,7 +89,7 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk)
 		if (before(meta_tp->snd_una, TCP_SKB_CB(skb)->end_seq))
 			break;
 
-		skb_unlink(skb, &mpcb->reinject_queue);
+		__skb_unlink(skb, &mpcb->reinject_queue);
 		kfree_skb(skb);
 	}
 
