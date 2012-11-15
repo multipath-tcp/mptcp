@@ -945,7 +945,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			goto out_err;
 
 	if (tp->mpc) {
-		struct sock *sk_it;
+		struct sock *sk_it = sk;
 
 		mptcp_for_each_sk(tp->mpcb, sk_it) {
 			if (!is_master_tp(tcp_sk(sk_it)))
@@ -2430,7 +2430,7 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 				else
 					elapsed = 0;
 				if (tp->mpc) {
-					struct sock *sk_it;
+					struct sock *sk_it = sk;
 					mptcp_for_each_sk(tp->mpcb, sk_it)
 						if (!(1 << sk->sk_state & (TCPF_CLOSE | TCPF_LISTEN)))
 							inet_csk_reset_keepalive_timer(sk_it, elapsed);

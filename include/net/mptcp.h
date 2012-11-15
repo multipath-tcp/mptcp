@@ -1260,7 +1260,7 @@ static inline struct sock *mptcp_sk_clone(const struct sock *sk,
 {
 	return NULL;
 }
-static void mptcp_set_keepalive(struct sock *sk, int val) {}
+static inline void mptcp_set_keepalive(struct sock *sk, int val) {}
 static inline void mptcp_fragment(struct sk_buff *skb, struct sk_buff *buff) {}
 #endif /* CONFIG_MPTCP */
 
