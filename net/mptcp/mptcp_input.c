@@ -90,7 +90,7 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk)
 			break;
 
 		__skb_unlink(skb, &mpcb->reinject_queue);
-		kfree_skb(skb);
+		__kfree_skb(skb);
 	}
 
 	if (acked) {
