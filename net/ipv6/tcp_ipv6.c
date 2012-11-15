@@ -526,7 +526,7 @@ int tcp_v6_rtx_synack(struct sock *sk, struct request_sock *req,
 	return tcp_v6_send_synack(sk, req, rvp, 0);
 }
 
-static void tcp_v6_reqsk_destructor(struct request_sock *req)
+void tcp_v6_reqsk_destructor(struct request_sock *req)
 {
 	kfree_skb(inet6_rsk(req)->pktopts);
 }

@@ -1031,11 +1031,10 @@ static __net_initdata struct pernet_operations mptcp_pm_proc_ops = {
 	.exit = mptcp_pm_proc_exit_net,
 };
 
-/* General initialization of MPTCP_PM
- */
-static int __init mptcp_pm_init(void)
+/* General initialization of MPTCP_PM */
+int mptcp_pm_init(void)
 {
-	int i;
+	int i, ret;
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
 		INIT_HLIST_NULLS_HEAD(&tk_hashtable[i], i);
 		INIT_LIST_HEAD(&mptcp_reqsk_htb[i]);
@@ -1045,14 +1044,36 @@ static int __init mptcp_pm_init(void)
 	spin_lock_init(&mptcp_reqsk_hlock);
 	spin_lock_init(&mptcp_tk_hashlock);
 
-#if IS_ENABLED(CONFIG_IPV6)
-	mptcp_pm_v6_init();
-#endif
-	mptcp_pm_v4_init();
+	ret = register_pernet_subsys(&mptcp_pm_proc_ops);
+	if (ret)
+		goto out;
 
-	return register_pernet_subsys(&mptcp_pm_proc_ops);
+#if IS_ENABLED(CONFIG_IPV6)
+	ret = mptcp_pm_v6_init();
+	if (ret)
+		goto mptcp_pm_v6_failed;
+#endif
+	ret = mptcp_pm_v4_init();
+	if (ret)
+		goto mptcp_pm_v4_failed;
+
+out:
+	return ret;
+
+mptcp_pm_v4_failed:
+#if IS_ENABLED(CONFIG_IPV6)
+	mptcp_pm_v6_undo();
+#endif
+mptcp_pm_v6_failed:
+	unregister_pernet_subsys(&mptcp_pm_proc_ops);
+	goto out;
 }
 
-module_init(mptcp_pm_init);
-
-MODULE_LICENSE("GPL");
+void mptcp_pm_undo(void)
+{
+#if IS_ENABLED(CONFIG_IPV6)
+	mptcp_pm_v6_undo();
+#endif
+	mptcp_pm_v4_undo();
+	unregister_pernet_subsys(&mptcp_pm_proc_ops);
+}

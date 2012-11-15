@@ -916,7 +916,7 @@ int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req,
 /*
  *	IPv4 request_sock destructor.
  */
-static void tcp_v4_reqsk_destructor(struct request_sock *req)
+void tcp_v4_reqsk_destructor(struct request_sock *req)
 {
 	kfree(inet_rsk(req)->opt);
 }
