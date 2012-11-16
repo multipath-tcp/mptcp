@@ -196,9 +196,7 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 		u16 *p16;
 
 		if (!mpdss || !mpdss->M) {
-			if (clone_it)
-				__kfree_skb(skb);
-
+			__kfree_skb(skb);
 			return -1;
 		}
 
@@ -224,8 +222,7 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 
 	/* If it reached already the destination, we don't have to reinject it */
 	if (!after(TCP_SKB_CB(skb)->end_seq, meta_tp->snd_una)) {
-		if (clone_it)
-			__kfree_skb(skb);
+		__kfree_skb(skb);
 		return -1;
 	}
 
