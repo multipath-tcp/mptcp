@@ -1077,5 +1077,7 @@ void mptcp_pm_undo(void)
 	mptcp_pm_v6_undo();
 #endif
 	mptcp_pm_v4_undo();
+#ifdef CONFIG_SYSCTL
 	unregister_pernet_subsys(&mptcp_pm_proc_ops);
+#endif
 }
