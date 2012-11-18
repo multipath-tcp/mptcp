@@ -60,10 +60,6 @@
 static struct kmem_cache *mptcp_sock_cache __read_mostly;
 static struct kmem_cache *mptcp_cb_cache __read_mostly;
 
-/* Sysctl data */
-
-#ifdef CONFIG_SYSCTL
-
 int sysctl_mptcp_mss __read_mostly = MPTCP_MSS;
 int sysctl_mptcp_ndiffports __read_mostly = 1;
 int sysctl_mptcp_enabled __read_mostly = 1;
@@ -72,6 +68,7 @@ int sysctl_mptcp_debug __read_mostly = 0;
 int sysctl_mptcp_syn_retries __read_mostly = MPTCP_SYN_RETRIES;
 EXPORT_SYMBOL(sysctl_mptcp_debug);
 
+#ifdef CONFIG_SYSCTL
 static ctl_table mptcp_skeleton[] = {
 	{
 		.procname = "mptcp_mss",

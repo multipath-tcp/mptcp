@@ -815,6 +815,7 @@ static int mptcp_queue_skb(struct sock *sk)
 			mptcp_prepare_skb(tmp1, tmp, sk);
 			__skb_unlink(tmp1, &sk->sk_receive_queue);
 
+			eaten = 0;
 			/* Is direct copy possible ? */
 			if (TCP_SKB_CB(tmp1)->seq == meta_tp->rcv_nxt &&
 			    meta_tp->ucopy.task == current &&
