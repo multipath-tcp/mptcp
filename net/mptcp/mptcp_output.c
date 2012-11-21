@@ -1519,43 +1519,32 @@ void mptcp_init_ack_timer(struct sock *sk)
 			(unsigned long)sk);
 }
 
-static int __mptcp_retransmit_skb(struct sock *sk, struct sk_buff *skb,
-				  int clone_it)
-{
-	if (inet_csk(sk)->icsk_af_ops->rebuild_header(sk))
-		return -EHOSTUNREACH; /* Routing failure or similar */
-
-	TCP_SKB_CB(skb)->when = tcp_time_stamp;
-
-	return tcp_transmit_skb(sk, skb, clone_it, GFP_ATOMIC);
-}
-
 void mptcp_ack_retransmit_timer(struct sock *sk)
 {
-	struct sk_buff *buff;
+	struct sk_buff *skb;
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
-	int err;
 
-	buff = alloc_skb(MAX_TCP_HEADER, GFP_ATOMIC);
-	if (buff == NULL) {
+	if (inet_csk(sk)->icsk_af_ops->rebuild_header(sk))
+		goto out; /* Routing failure or similar */
+
+	skb = alloc_skb(MAX_TCP_HEADER, GFP_ATOMIC);
+	if (skb == NULL) {
 		sk_reset_timer(sk, &tp->mptcp->mptcp_ack_timer,
 			       jiffies + icsk->icsk_rto);
 		return;
 	}
 
 	/* Reserve space for headers and prepare control bits */
-	skb_reserve(buff, MAX_TCP_HEADER);
+	skb_reserve(skb, MAX_TCP_HEADER);
 	/* snd_una - 1, because we want to trigger the peer to send
 	 * immediatly an ack back and acknowledge this.
 	 */
-	tcp_init_nondata_skb(buff, tp->snd_una - 1, TCPHDR_ACK);
+	tcp_init_nondata_skb(skb, tp->snd_una - 1, TCPHDR_ACK);
 
-	icsk->icsk_retransmits++;
 	mptcp_include_mpc(tp);
-	err = __mptcp_retransmit_skb(sk, buff, 0);
-
-	if (err > 0) {
+	TCP_SKB_CB(skb)->when = tcp_time_stamp;
+	if (tcp_transmit_skb(sk, skb, 0, GFP_ATOMIC) > 0) {
 		/* Retransmission failed because of local congestion,
 		 * do not backoff. */
 		if (!icsk->icsk_retransmits)
@@ -1565,6 +1554,8 @@ void mptcp_ack_retransmit_timer(struct sock *sk)
 		return;
 	}
 
+out:
+	icsk->icsk_retransmits++;
 	if (icsk->icsk_retransmits == sysctl_tcp_retries1 + 1) {
 		sk_stop_timer(sk, &tp->mptcp->mptcp_ack_timer);
 		tcp_send_active_reset(sk, GFP_ATOMIC);
@@ -1677,7 +1668,9 @@ static int mptcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 		}
 	}
 
-	err = __mptcp_retransmit_skb(sk, skb, 1);
+
+	TCP_SKB_CB(skb)->when = tcp_time_stamp;
+	err = tcp_transmit_skb(sk, skb, 1, GFP_ATOMIC);
 	if (err == 0) {
 		/* Update global TCP statistics. */
 		TCP_INC_STATS(sock_net(meta_sk), TCP_MIB_RETRANSSEGS);
