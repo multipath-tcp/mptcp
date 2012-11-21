@@ -1093,8 +1093,7 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 			if (nwin > meta_tp->max_window) {
 				meta_tp->max_window = nwin;
 				tp->max_window = nwin;
-
-				/* Diff to tcp_ack_update_window - mss */
+				tcp_sync_mss(sk, inet_csk(sk)->icsk_pmtu_cookie);
 			}
 		}
 	}
