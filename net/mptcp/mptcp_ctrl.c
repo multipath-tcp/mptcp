@@ -60,7 +60,6 @@
 static struct kmem_cache *mptcp_sock_cache __read_mostly;
 static struct kmem_cache *mptcp_cb_cache __read_mostly;
 
-int sysctl_mptcp_mss __read_mostly = MPTCP_MSS;
 int sysctl_mptcp_ndiffports __read_mostly = 1;
 int sysctl_mptcp_enabled __read_mostly = 1;
 int sysctl_mptcp_checksum __read_mostly = 1;
@@ -70,13 +69,6 @@ EXPORT_SYMBOL(sysctl_mptcp_debug);
 
 #ifdef CONFIG_SYSCTL
 static ctl_table mptcp_skeleton[] = {
-	{
-		.procname = "mptcp_mss",
-		.data = &sysctl_mptcp_mss,
-		.maxlen = sizeof(int),
-		.mode = 0644,
-		.proc_handler = &proc_dointvec
-	},
 	{
 		.procname = "mptcp_ndiffports",
 		.data = &sysctl_mptcp_ndiffports,
@@ -654,7 +646,7 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	skb_queue_head_init(&master_tp->out_of_order_queue);
 	tcp_prequeue_init(master_tp);
 
-	/* Copye the write-queue from the meta down to the master.
+	/* Copy the write-queue from the meta down to the master.
 	 * This is necessary to get the SYN to the master-write-queue.
 	 * No other data can be queued, before tcp_sendmsg waits for the
 	 * connection to finish.
@@ -1045,7 +1037,13 @@ static int mptcp_sub_send_fin(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *skb = tcp_write_queue_tail(sk);
-	int mss_now = mptcp_sysctl_mss();
+	int mss_now;
+
+	/* Optimization, tack on the FIN if we have a queue of
+	 * unsent frames.  But be careful about outgoing SACKS
+	 * and IP options.
+	 */
+	mss_now = tcp_current_mss(sk);
 
 	if (tcp_send_head(sk) != NULL) {
 		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_FIN;

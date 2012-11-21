@@ -968,8 +968,8 @@ void tcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 }
 
 /* Initialize TSO segments for a packet. */
-static void tcp_set_skb_tso_segs(const struct sock *sk, struct sk_buff *skb,
-				 unsigned int mss_now)
+void tcp_set_skb_tso_segs(const struct sock *sk, struct sk_buff *skb,
+			  unsigned int mss_now)
 {
 	if (skb->len <= mss_now || !sk_can_gso(sk) ||
 	    skb->ip_summed == CHECKSUM_NONE) {
@@ -1078,8 +1078,6 @@ int tcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	TCP_SKB_CB(skb)->tcp_flags = flags & ~(TCPHDR_FIN | TCPHDR_PSH);
 	TCP_SKB_CB(buff)->tcp_flags = flags;
 	TCP_SKB_CB(buff)->sacked = TCP_SKB_CB(skb)->sacked;
-	if (tp->mpc)
-		mptcp_fragment(skb, buff);
 
 	if (!skb_shinfo(skb)->nr_frags && skb->ip_summed != CHECKSUM_PARTIAL) {
 		/* Copy and checksum data tail into the new buffer. */
@@ -1302,10 +1300,6 @@ unsigned int tcp_current_mss(struct sock *sk)
 	unsigned header_len;
 	struct tcp_out_options opts;
 	struct tcp_md5sig_key *md5;
-
-	/* if sk is the meta-socket, return the common MSS */
-	if (tp->mpc)
-		return mptcp_sysctl_mss();
 
 	mss_now = tp->mss_cache;
 
@@ -1553,8 +1547,6 @@ int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	flags = TCP_SKB_CB(skb)->tcp_flags;
 	TCP_SKB_CB(skb)->tcp_flags = flags & ~(TCPHDR_FIN | TCPHDR_PSH);
 	TCP_SKB_CB(buff)->tcp_flags = flags;
-	if (tcp_sk(sk)->mpc)
-		mptcp_fragment(skb, buff);
 
 	/* This packet was never sent out yet, so no SACK bits. */
 	TCP_SKB_CB(buff)->sacked = 0;
