@@ -121,7 +121,7 @@ static __u16 tcp_advertise_mss(struct sock *sk)
 	const struct dst_entry *dst = __sk_dst_get(sk);
 	int mss = tp->advmss;
 
-	if (!tp->mpc && dst) {
+	if (dst) {
 		unsigned int metric = dst_metric_advmss(dst);
 
 		if (metric < mss) {
@@ -2507,10 +2507,7 @@ struct sk_buff *tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 
 	skb_dst_set(skb, dst_clone(dst));
 
-	if (mptcp_req_sk_saw_mpc(req))
-		mss = mptcp_sysctl_mss();
-	else
-		mss = dst_metric_advmss(dst);
+	mss = dst_metric_advmss(dst);
 
 	if (tp->rx_opt.user_mss && tp->rx_opt.user_mss < mss)
 		mss = tp->rx_opt.user_mss;
@@ -2645,10 +2642,7 @@ static void tcp_connect_init(struct sock *sk)
 	if (!tp->window_clamp)
 		tp->window_clamp = dst_metric(dst, RTAX_WINDOW);
 
-	if (mptcp_doit(sk))
-		tp->advmss = mptcp_sysctl_mss();
-	else
-		tp->advmss = dst_metric_advmss(dst);
+	tp->advmss = dst_metric_advmss(dst);
 
 	if (tp->rx_opt.user_mss && tp->rx_opt.user_mss < tp->advmss)
 		tp->advmss = tp->rx_opt.user_mss;

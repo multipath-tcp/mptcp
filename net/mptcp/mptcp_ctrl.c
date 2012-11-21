@@ -637,9 +637,6 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	meta_tp->mptcp->snt_isn = meta_tp->write_seq; /* Initial data-sequence-number */
 	meta_icsk->icsk_probes_out = 0;
 
-	meta_tp->mss_cache = mptcp_sysctl_mss();
-	meta_tp->advmss = mptcp_sysctl_mss();
-
 	/* Set mptcp-pointers */
 	master_tp->mpcb = mpcb;
 	master_tp->meta_sk = meta_sk;
@@ -1403,7 +1400,6 @@ int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key, u32 window)
 #endif
 
 	master_tp->mptcp->init_rcv_wnd = master_tp->rcv_wnd;
-	master_tp->advmss = mptcp_sysctl_mss();
 
 	return 0;
 
@@ -1511,8 +1507,6 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 		 * fully add the socket to the meta-sk.
 		 */
 		goto teardown;
-
-	child_tp->advmss = mptcp_sysctl_mss();
 
 	child_tp->mptcp->slave_sk = 1;
 	child_tp->mptcp->snt_isn = tcp_rsk(req)->snt_isn;
