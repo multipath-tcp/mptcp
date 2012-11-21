@@ -1511,14 +1511,6 @@ void mptcp_send_reset(struct sock *sk, struct sk_buff *skb)
 	mptcp_sub_force_close(sk);
 }
 
-void mptcp_init_ack_timer(struct sock *sk)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-
-	setup_timer(&tp->mptcp->mptcp_ack_timer, mptcp_ack_handler,
-			(unsigned long)sk);
-}
-
 void mptcp_ack_retransmit_timer(struct sock *sk)
 {
 	struct sk_buff *skb;
@@ -1580,6 +1572,9 @@ void mptcp_ack_handler(unsigned long data)
 			       jiffies + (HZ / 20));
 		goto out_unlock;
 	}
+
+	if (sk->sk_state == TCP_CLOSE)
+		goto out_unlock;
 
 	mptcp_ack_retransmit_timer(sk);
 

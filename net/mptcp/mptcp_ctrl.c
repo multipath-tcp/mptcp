@@ -899,6 +899,8 @@ void mptcp_del_sock(struct sock *sk)
 
 	if (is_master_tp(tp))
 		mpcb->master_sk = NULL;
+	else
+		sk_stop_timer(sk, &tp->mptcp->mptcp_ack_timer);
 
 	rcu_assign_pointer(inet_sk(sk)->inet_opt, NULL);
 }
