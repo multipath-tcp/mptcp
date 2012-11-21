@@ -117,7 +117,6 @@ void mptcp_set_addresses(struct sock *meta_sk);
 int mptcp_check_req(struct sk_buff *skb);
 void mptcp_address_worker(struct work_struct *work);
 int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family);
-struct sock *mptcp_select_loc_sock(const struct mptcp_cb *mpcb, u16 ids);
 int mptcp_pm_init(void);
 void mptcp_pm_undo(void);
 

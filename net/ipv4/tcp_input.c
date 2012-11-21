@@ -5470,9 +5470,7 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 
 	tp->rx_opt.saw_tstamp = 0;
 
-	/* MPTCP: force slowpath at the moment. Will carefully check
-	 * fast path for mptcp later.
-	 */
+	/* MPTCP: force slowpath. */
 	if (tp->mpc)
 		goto slow_path;
 
