@@ -281,6 +281,18 @@ static inline int mptcp_pi_to_flag(int pi)
 #define MPTCP_SUB_LEN_ACK_64		8
 #define MPTCP_SUB_LEN_ACK_64_ALIGN	8
 
+/* This is the "default" option-length we will send out most often.
+ * MPTCP DSS-header
+ * 32-bit data sequence number
+ * 32-bit data ack
+ *
+ * It is necessary to calculate the effective MSS we will be using when
+ * sending data.
+ */
+#define MPTCP_SUB_LEN_DSM_ALIGN  MPTCP_SUB_LEN_DSS_ALIGN + 		\
+				 MPTCP_SUB_LEN_SEQ_ALIGN + 		\
+				 MPTCP_SUB_LEN_ACK_ALIGN
+
 #define MPTCP_SUB_ADD_ADDR		3
 #define MPTCP_SUB_LEN_ADD_ADDR4		8
 #define MPTCP_SUB_LEN_ADD_ADDR6		20

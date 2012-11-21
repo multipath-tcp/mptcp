@@ -5826,11 +5826,15 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			tp->rx_opt.tstamp_ok	   = 1;
 			tp->tcp_header_len =
 				sizeof(struct tcphdr) + TCPOLEN_TSTAMP_ALIGNED;
-			if (!tp->mpc)
-				tp->advmss -= TCPOLEN_TSTAMP_ALIGNED;
+			tp->advmss -= TCPOLEN_TSTAMP_ALIGNED;
 			tcp_store_ts_recent(tp);
 		} else {
 			tp->tcp_header_len = sizeof(struct tcphdr);
+		}
+
+		if (tp->mpc) {
+			tp->tcp_header_len += MPTCP_SUB_LEN_DSM_ALIGN;
+			tp->advmss -= MPTCP_SUB_LEN_DSM_ALIGN;
 		}
 
 		if (tcp_is_sack(tp) && sysctl_tcp_fack)
@@ -5962,6 +5966,11 @@ discard:
 				sizeof(struct tcphdr) + TCPOLEN_TSTAMP_ALIGNED;
 		} else {
 			tp->tcp_header_len = sizeof(struct tcphdr);
+		}
+
+		if (tp->mpc) {
+			tp->tcp_header_len += MPTCP_SUB_LEN_DSM_ALIGN;
+			tp->advmss -= MPTCP_SUB_LEN_DSM_ALIGN;
 		}
 
 		tp->rcv_nxt = TCP_SKB_CB(skb)->seq + 1;
@@ -6127,8 +6136,10 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 					      tp->rx_opt.snd_wscale;
 				tcp_init_wl(tp, TCP_SKB_CB(skb)->seq);
 
-				if (!tp->mpc && tp->rx_opt.tstamp_ok)
+				if (tp->rx_opt.tstamp_ok)
 					tp->advmss -= TCPOLEN_TSTAMP_ALIGNED;
+				if (tp->mpc)
+					tp->advmss -= MPTCP_SUB_LEN_DSM_ALIGN;
 
 				/* Make sure socket is routed, for
 				 * correct metrics.

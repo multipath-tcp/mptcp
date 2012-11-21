@@ -2523,7 +2523,8 @@ struct sk_buff *tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 			req->window_clamp = tcp_full_space(sk);
 
 		tcp_select_initial_window(tcp_full_space(sk),
-			mss - (ireq->tstamp_ok && !mptcp_req_sk_saw_mpc(req) ? TCPOLEN_TSTAMP_ALIGNED : 0),
+			mss - (ireq->tstamp_ok ? TCPOLEN_TSTAMP_ALIGNED : 0) -
+			(tcp_rsk(req)->saw_mpc ? MPTCP_SUB_LEN_DSM_ALIGN : 0),
 			&req->rcv_wnd,
 			&req->window_clamp,
 			ireq->wscale_ok,
