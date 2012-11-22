@@ -345,29 +345,33 @@ reset:
 int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct sock *child;
+	struct sock *child, *rsk = NULL;
+	int ret;
 
 	if (!(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_JOIN)) {
 		struct tcphdr *th = tcp_hdr(skb);
 		const struct iphdr *iph = ip_hdr(skb);
 		struct sock *sk;
-		int ret;
 
 		sk = inet_lookup_established(sock_net(meta_sk), &tcp_hashinfo,
 					     iph->saddr, th->source, iph->daddr,
 					     th->dest, inet_iif(skb));
 
-		if (is_meta_sk(sk)) {
-			WARN("%s Did not find a sub-sk - did found the meta!\n", __func__);
-			return 0;
-		}
 		if (!sk) {
 			WARN("%s Did not find a sub-sk at all!!!\n", __func__);
+			kfree_skb(skb);
+			return 0;
+		}
+		if (is_meta_sk(sk)) {
+			WARN("%s Did not find a sub-sk - did found the meta!\n", __func__);
+			kfree_skb(skb);
+			sock_put(sk);
 			return 0;
 		}
 
 		if (sk->sk_state == TCP_TIME_WAIT) {
 			inet_twsk_put(inet_twsk(sk));
+			kfree_skb(skb);
 			return 0;
 		}
 
@@ -396,8 +400,12 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 		 * already the meta-sk-lock and are sure that it is not owned
 		 * by the user.
 		 */
-		tcp_rcv_state_process(child, skb, tcp_hdr(skb), skb->len);
+		ret = tcp_rcv_state_process(child, skb, tcp_hdr(skb), skb->len);
 		sock_put(child);
+		if (ret) {
+			rsk = child;
+			goto reset_and_discard;
+		}
 	} else {
 		if (tcp_hdr(skb)->syn) {
 			struct mp_join *join_opt = mptcp_find_join(skb);
@@ -417,7 +425,7 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	return 0;
 
 reset_and_discard:
-	tcp_v4_send_reset(NULL, skb);
+	tcp_v4_send_reset(rsk, skb);
 discard:
 	kfree_skb(skb);
 	return 0;
