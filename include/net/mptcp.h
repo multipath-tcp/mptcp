@@ -656,12 +656,17 @@ static inline void mptcp_push_pending_frames(struct sock *meta_sk)
 
 static inline void mptcp_sub_force_close(struct sock *sk)
 {
-	tcp_done(sk);
-
-	if (!sock_flag(sk, SOCK_DEAD))
-		mptcp_sub_close(sk, 0);
+	/* The below tcp_done may have freed the socket, if he is already dead.
+	 * Thus, we are not allowed to access it afterwards. That's why
+	 * we have to store the dead-state in this local variable.
+	 */
+	int sock_is_dead = sock_flag(sk, SOCK_DEAD);
 
 	tcp_sk(sk)->mp_killed = 1;
+	tcp_done(sk);
+
+	if (!sock_is_dead)
+		mptcp_sub_close(sk, 0);
 }
 
 static inline int mptcp_is_data_fin(const struct sk_buff *skb)
