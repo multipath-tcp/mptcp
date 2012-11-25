@@ -5032,13 +5032,14 @@ static int tcp_should_expand_sndbuf(const struct sock *sk)
 		mptcp_for_each_sk(tp->mpcb, sk_it) {
 			struct tcp_sock *tp_it = tcp_sk(sk_it);
 
+			if (!mptcp_sk_can_send(sk_it))
+				continue;
+
 			/* Backup-flows have to be counted - if there is no other
 			 * subflow we take the backup-flow into account. */
 			if (tp_it->rx_opt.low_prio || tp_it->mptcp->low_prio) {
 				cnt_backups++;
 			}
-			if (!mptcp_sk_can_send(sk_it))
-				continue;
 
 			if (tp_it->packets_out < tp_it->snd_cwnd) {
 				if (tp_it->rx_opt.low_prio || tp_it->mptcp->low_prio) {
