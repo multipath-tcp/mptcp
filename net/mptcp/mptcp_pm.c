@@ -951,14 +951,18 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 	return NOTIFY_DONE;
 }
 
-#ifdef CONFIG_SYSCTL
-/* Output /proc/net/mptcp_pm */
+#ifdef CONFIG_PROC_FS
+
+/* Output /proc/net/mptcp */
 static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 {
 	struct tcp_sock *meta_tp;
-	int i;
+	int i, n = 0;
 
-	seq_puts(seq, "Multipath TCP (path manager):");
+	seq_printf(seq, "  sl  loc_tok  rem_tok  v6 "
+		   "local_address                         "
+		   "remote_address                        "
+		   "st ns tx_queue rx_queue");
 	seq_putc(seq, '\n');
 
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
@@ -972,23 +976,38 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 			if (!meta_tp->mpc)
 				continue;
 
-			if (meta_sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(meta_sk)) {
-				seq_printf(seq, "[%pI4:%hu - %pI4:%hu] ",
-						&isk->inet_saddr, ntohs(isk->inet_sport),
-						&isk->inet_daddr, ntohs(isk->inet_dport));
+			seq_printf(seq, "%4d: %04X %04X ", n++,
+				   mpcb->mptcp_loc_token,
+				   mpcb->mptcp_rem_token);
+			if (meta_sk->sk_family == AF_INET ||
+			    mptcp_v6_is_v4_mapped(meta_sk)) {
+				seq_printf(seq, " 0 %08X:%04X "
+					   "                        "
+					   "%08X:%04X                        ",
+					   isk->inet_saddr,
+					   ntohs(isk->inet_sport),
+					   isk->inet_daddr,
+					   ntohs(isk->inet_dport));
 #if IS_ENABLED(CONFIG_IPV6)
 			} else if (meta_sk->sk_family == AF_INET6) {
-				seq_printf(seq, "[%pI6:%hu - %pI6:%hu] ",
-						&isk->pinet6->saddr, ntohs(isk->inet_sport),
-						&isk->pinet6->daddr, ntohs(isk->inet_dport));
+				struct in6_addr *src = &isk->pinet6->saddr;
+				struct in6_addr *dst = &isk->pinet6->daddr;
+				seq_printf(seq, " 1 %08X%08X%08X%08X:%04X "
+					   "%08X%08X%08X%08X:%04X",
+					   src->s6_addr32[0], src->s6_addr32[1],
+					   src->s6_addr32[2], src->s6_addr32[3],
+					   ntohs(isk->inet_sport),
+					   dst->s6_addr32[0], dst->s6_addr32[1],
+					   dst->s6_addr32[2], dst->s6_addr32[3],
+					   ntohs(isk->inet_dport));
 #endif
 			}
-			seq_printf(seq, "Loc_Tok %#x Rem_tok %#x cnt_subs %d meta-state %d infinite? %d",
-					mpcb->mptcp_loc_token,
-					mpcb->mptcp_rem_token,
-					mpcb->cnt_subflows,
+			seq_printf(seq, " %02X %02X %08X:%08X",
 					meta_sk->sk_state,
-					mpcb->infinite_mapping);
+					mpcb->cnt_subflows,
+					meta_tp->write_seq - meta_tp->snd_una,
+					max_t(int, meta_tp->rcv_nxt -
+						   meta_tp->copied_seq, 0));
 			seq_putc(seq, '\n');
 		}
 		rcu_read_unlock_bh();
@@ -1012,7 +1031,7 @@ static const struct file_operations mptcp_pm_seq_fops = {
 
 static __net_init int mptcp_pm_proc_init_net(struct net *net)
 {
-	if (!proc_net_fops_create(net, "mptcp_pm", S_IRUGO, &mptcp_pm_seq_fops))
+	if (!proc_net_fops_create(net, "mptcp", S_IRUGO, &mptcp_pm_seq_fops))
 		return -ENOMEM;
 
 	return 0;
@@ -1020,7 +1039,7 @@ static __net_init int mptcp_pm_proc_init_net(struct net *net)
 
 static __net_exit void mptcp_pm_proc_exit_net(struct net *net)
 {
-	proc_net_remove(net, "mptcp_pm");
+	proc_net_remove(net, "mptcp");
 }
 
 static __net_initdata struct pernet_operations mptcp_pm_proc_ops = {
