@@ -160,7 +160,7 @@ exit:
 	mptcp_set_alpha(mptcp_meta_sk(sk), alpha);
 }
 
-static void mptcp_cc_init(struct sock *sk)
+static void mptcp_ccc_init(struct sock *sk)
 {
 	if (tcp_sk(sk)->mpc) {
 		mptcp_set_forced(mptcp_meta_sk(sk), 0);
@@ -169,7 +169,7 @@ static void mptcp_cc_init(struct sock *sk)
 	/* If we do not mptcp, behave like reno: return */
 }
 
-static void mptcp_cwnd_event(struct sock *sk, enum tcp_ca_event event)
+static void mptcp_ccc_cwnd_event(struct sock *sk, enum tcp_ca_event event)
 {
 	if (event == CA_EVENT_LOSS)
 		mptcp_recalc_alpha(sk);
@@ -184,7 +184,7 @@ static void mptcp_ccc_set_state(struct sock *sk, u8 ca_state)
 		mptcp_set_forced(mptcp_meta_sk(sk), 1);
 }
 
-static void mptcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
+static void mptcp_ccc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 {
 	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = mptcp_meta_tp(tp);
 	struct mptcp_cb *mpcb = tp->mpcb;
@@ -232,10 +232,10 @@ static void mptcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 	}
 
 	if (sysctl_tcp_abc) {
-		if (tp->bytes_acked >= snd_cwnd * meta_tp->mss_cache) {
+		if (tp->bytes_acked >= snd_cwnd * tp->mss_cache) {
 			/* Only a single mss for all subflows - thus use the
 			 * one of the meta-tp */
-			tp->bytes_acked -= snd_cwnd * meta_tp->mss_cache;
+			tp->bytes_acked -= snd_cwnd * tp->mss_cache;
 			if (tp->snd_cwnd < tp->snd_cwnd_clamp)
 				tp->snd_cwnd++;
 		}
@@ -253,30 +253,30 @@ static void mptcp_fc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 	}
 }
 
-static struct tcp_congestion_ops mptcp_fc = {
-	.init		= mptcp_cc_init,
+static struct tcp_congestion_ops mptcp_ccc = {
+	.init		= mptcp_ccc_init,
 	.ssthresh	= tcp_reno_ssthresh,
-	.cong_avoid	= mptcp_fc_cong_avoid,
-	.cwnd_event	= mptcp_cwnd_event,
+	.cong_avoid	= mptcp_ccc_cong_avoid,
+	.cwnd_event	= mptcp_ccc_cwnd_event,
 	.set_state	= mptcp_ccc_set_state,
 	.min_cwnd	= tcp_reno_min_cwnd,
 	.owner		= THIS_MODULE,
 	.name		= "coupled",
 };
 
-static int __init mptcp_fc_register(void)
+static int __init mptcp_ccc_register(void)
 {
 	BUILD_BUG_ON(sizeof(struct mptcp_ccc) > ICSK_CA_PRIV_SIZE);
-	return tcp_register_congestion_control(&mptcp_fc);
+	return tcp_register_congestion_control(&mptcp_ccc);
 }
 
-static void __exit mptcp_fc_unregister(void)
+static void __exit mptcp_ccc_unregister(void)
 {
-	tcp_unregister_congestion_control(&mptcp_fc);
+	tcp_unregister_congestion_control(&mptcp_ccc);
 }
 
-module_init(mptcp_fc_register);
-module_exit(mptcp_fc_unregister);
+module_init(mptcp_ccc_register);
+module_exit(mptcp_ccc_unregister);
 
 MODULE_AUTHOR("Christoph Paasch, Sébastien Barré");
 MODULE_LICENSE("GPL");
