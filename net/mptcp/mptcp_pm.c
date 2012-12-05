@@ -1029,7 +1029,7 @@ static const struct file_operations mptcp_pm_seq_fops = {
 	.release = single_release_net,
 };
 
-static __net_init int mptcp_pm_proc_init_net(struct net *net)
+static int mptcp_pm_proc_init_net(struct net *net)
 {
 	if (!proc_net_fops_create(net, "mptcp", S_IRUGO, &mptcp_pm_seq_fops))
 		return -ENOMEM;
@@ -1037,12 +1037,12 @@ static __net_init int mptcp_pm_proc_init_net(struct net *net)
 	return 0;
 }
 
-static __net_exit void mptcp_pm_proc_exit_net(struct net *net)
+static void mptcp_pm_proc_exit_net(struct net *net)
 {
 	proc_net_remove(net, "mptcp");
 }
 
-static __net_initdata struct pernet_operations mptcp_pm_proc_ops = {
+static struct pernet_operations mptcp_pm_proc_ops = {
 	.init = mptcp_pm_proc_init_net,
 	.exit = mptcp_pm_proc_exit_net,
 };
@@ -1082,8 +1082,9 @@ out:
 mptcp_pm_v4_failed:
 #if IS_ENABLED(CONFIG_IPV6)
 	mptcp_pm_v6_undo();
-#endif
+
 mptcp_pm_v6_failed:
+#endif
 #ifdef CONFIG_SYSCTL
 	unregister_pernet_subsys(&mptcp_pm_proc_ops);
 #endif
