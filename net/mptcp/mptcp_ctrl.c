@@ -1327,9 +1327,7 @@ out:
 	sock_put(meta_sk); /* Taken by sock_hold */
 }
 
-/**
- * Returns 1 if we should enable MPTCP for that socket.
- */
+/* Returns 1 if we should enable MPTCP for that socket. */
 int mptcp_doit(struct sock *sk)
 {
 	/* Socket may already be established (e.g., called from tcp_recvmsg) */
@@ -1453,7 +1451,7 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	 */
 	mptcp_reqsk_remove_tk(req);
 
-	 /* Hole when creating the meta-sk in tcp_vX_syn_recv_sock. */
+	 /* Hold when creating the meta-sk in tcp_vX_syn_recv_sock. */
 	sock_put(meta_sk);
 
 	inet_csk_reqsk_queue_unlink(sk, req, prev);

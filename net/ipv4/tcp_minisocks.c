@@ -841,7 +841,6 @@ int tcp_child_process(struct sock *parent, struct sock *child,
 		if (state == TCP_SYN_RECV && child->sk_state != state)
 			parent->sk_data_ready(parent, 0);
 	} else {
-		printk(KERN_ERR"%s socket is owned dst %u\n", __func__, ntohs(inet_sk(child)->inet_dport));
 		/* Alas, it is possible again, because we do lookup
 		 * in main socket hash table and lock on listening
 		 * socket does not protect us more.

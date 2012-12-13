@@ -1829,20 +1829,13 @@ process:
 
 #ifdef CONFIG_MPTCP
 	if (!sk && th->syn && !th->ack) {
-		int ret;
+		int ret = mptcp_lookup_join(skb);
 
-		ret = mptcp_lookup_join(skb);
-		if (ret) {
-			if (ret < 0) {
-				tcp_v6_send_reset(NULL, skb);
-				if (sk)
-					sock_put(sk);
-				goto discard_it;
-			} else {
-				if (sk)
-					sock_put(sk);
-				return 0;
-			}
+		if (ret < 0) {
+			tcp_v6_send_reset(NULL, skb);
+			goto discard_it;
+		} else if (ret > 0) {
+			return 0;
 		}
 	}
 
@@ -1958,9 +1951,8 @@ do_time_wait:
 		}
 #ifdef CONFIG_MPTCP
 		if (th->syn && !th->ack) {
-			int ret;
+			int ret = mptcp_lookup_join(skb);
 
-			ret = mptcp_lookup_join(skb);
 			if (ret) {
 				/* As we come from do_time_wait, we are sure that
 				 * sk exists.

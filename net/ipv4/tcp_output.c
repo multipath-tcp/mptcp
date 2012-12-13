@@ -622,7 +622,7 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		if (unlikely(!(OPTION_TS & opts->options)))
 			remaining -= TCPOLEN_SACKPERM_ALIGNED;
 	}
-	if (tp->request_mptcp)
+	if (tp->request_mptcp || tp->mpc)
 		mptcp_syn_options(sk, opts, &remaining);
 
 	/* Note that timestamps are required by the specification.
@@ -2675,15 +2675,13 @@ static void tcp_connect_init(struct sock *sk)
 
 #ifdef CONFIG_MPTCP
 	if (mptcp_doit(sk)) {
-		if (tp->mpc) {
+		if (is_master_tp(tp)) {
+			tp->request_mptcp = 1;
+			mptcp_connect_init(tp);
+		} else {
 			tp->mptcp->snt_isn = tp->write_seq;
 			tp->mptcp->init_rcv_wnd = tp->rcv_wnd;
 		}
-
-		tp->request_mptcp = 1;
-
-		if (is_master_tp(tp))
-			mptcp_connect_init(tp);
 	}
 #endif
 }
