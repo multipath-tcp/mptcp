@@ -179,7 +179,8 @@ struct sock *mptcp_hash_find(u32 token)
 	hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[hash], tk_table) {
 		if (token == meta_tp->mptcp_loc_token) {
 			struct sock *meta_sk = (struct sock *)meta_tp;
-			sock_hold(meta_sk);
+			if (unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
+				meta_sk = NULL;
 			rcu_read_unlock();
 			return meta_sk;
 		}
@@ -926,6 +927,9 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 			struct mptcp_cb *mpcb = meta_tp->mpcb;
 			struct sock *meta_sk = (struct sock *)meta_tp;
 
+			if (unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
+				continue;
+
 			if (!meta_tp->mpc || !is_meta_sk(meta_sk) ||
 			     mpcb->infinite_mapping)
 				continue;
@@ -945,6 +949,7 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 			}
 
 			bh_unlock_sock(meta_sk);
+			sock_put(meta_sk);
 		}
 		rcu_read_unlock_bh();
 	}
