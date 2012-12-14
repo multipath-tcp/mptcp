@@ -1212,9 +1212,10 @@ static void mptcp_send_reset_rem_id(const struct mptcp_cb *mpcb, u8 rem_id)
 }
 
 /* Same as tcp_parse_options but only parse MPTCP options. */
-void mptcp_post_parse_options(struct tcp_sock *tp, const struct sk_buff *skb)
+void mptcp_post_parse_options(struct sock *sk, const struct sk_buff *skb)
 {
 	const struct tcphdr *th = tcp_hdr(skb);
+	struct tcp_sock *tp = tcp_sk(sk);
 	int length = (th->doff * 4) - sizeof(struct tcphdr);
 	const unsigned char *ptr = (const unsigned char *)(th + 1);
 	struct mptcp_cb *mpcb = tp->mpcb;
@@ -1237,7 +1238,7 @@ void mptcp_post_parse_options(struct tcp_sock *tp, const struct sk_buff *skb)
 				return;	/* don't parse partial options */
 			if (opcode == TCPOPT_MPTCP)
 				mptcp_parse_options(ptr - 2, opsize, &tp->rx_opt,
-						    &mpcb->rx_opt, skb);
+						    &mpcb->rx_opt, skb, sk);
 			ptr += opsize-2;
 			length -= opsize;
 		}
@@ -1247,7 +1248,7 @@ void mptcp_post_parse_options(struct tcp_sock *tp, const struct sk_buff *skb)
 void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			 struct tcp_options_received *opt_rx,
 			 struct multipath_options *mopt,
-			 const struct sk_buff *skb)
+			 const struct sk_buff *skb, struct sock *sk)
 {
 	struct mptcp_option *mp_opt = (struct mptcp_option *) ptr;
 
@@ -1303,7 +1304,7 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 		case MPTCP_SUB_LEN_JOIN_SYN:
 			mopt->mptcp_rem_token = mpjoin->u.syn.token;
 			opt_rx->mptcp_recv_nonce = mpjoin->u.syn.nonce;
-			mopt->is_mp_join = 1;
+			opt_rx->is_mp_join = 1;
 			opt_rx->mpj_addr_id = mpjoin->addr_id;
 			opt_rx->saw_mpc = 1;
 			opt_rx->low_prio = mpjoin->b;
@@ -1315,7 +1316,13 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			break;
 		case MPTCP_SUB_LEN_JOIN_ACK:
 			memcpy(opt_rx->mptcp_recv_mac, mpjoin->u.ack.mac, 20);
-			mopt->join_ack = 1;
+			opt_rx->join_ack = 1;
+
+			/* We have to acknowledge retransmissions of the third
+			 * ack.
+			 */
+			if (sk)
+				tcp_send_delayed_ack(sk);
 			break;
 		}
 		opt_rx->rem_id = mpjoin->addr_id;

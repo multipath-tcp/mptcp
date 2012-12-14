@@ -1692,10 +1692,7 @@ void mptcp_ack_retransmit_timer(struct sock *sk)
 
 	/* Reserve space for headers and prepare control bits */
 	skb_reserve(skb, MAX_TCP_HEADER);
-	/* snd_una - 1, because we want to trigger the peer to send
-	 * immediatly an ack back and acknowledge this.
-	 */
-	tcp_init_nondata_skb(skb, tp->snd_una - 1, TCPHDR_ACK);
+	tcp_init_nondata_skb(skb, tp->snd_una, TCPHDR_ACK);
 
 	mptcp_include_mpc(tp);
 	TCP_SKB_CB(skb)->when = tcp_time_stamp;

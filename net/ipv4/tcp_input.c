@@ -3942,7 +3942,7 @@ static void __tcp_parse_options(const struct sk_buff *skb,
 				 */
 				if (!fast)
 					mptcp_parse_options(ptr - 2, opsize,
-							    opt_rx, mopt, skb);
+							    opt_rx, mopt, skb, NULL);
 				break;
 			}
 
@@ -5409,7 +5409,7 @@ static int tcp_validate_incoming(struct sock *sk, struct sk_buff *skb,
 
 	/* If valid: post process the received MPTCP options. */
 	if (tp->mpc) {
-		mptcp_post_parse_options(tp, skb);
+		mptcp_post_parse_options(sk, skb);
 
 		mptcp_path_array_check(mptcp_meta_sk(sk));
 		/* Socket may have been mp_killed by a REMOVE_ADDR */

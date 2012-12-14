@@ -597,6 +597,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	int paws_reject = 0;
 
 	tmp_opt.saw_tstamp = 0;
+	tmp_opt.join_ack = 0;
 
 	if (!is_meta_sk(sk)) {
 		mopt = &stat_mopt;

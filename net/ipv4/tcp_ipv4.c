@@ -1324,7 +1324,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
 #ifdef CONFIG_MPTCP
-	if (tmp_opt.saw_mpc && mopt.is_mp_join) {
+	if (tmp_opt.saw_mpc && tmp_opt.is_mp_join) {
 		int ret;
 
 		ret = mptcp_do_join_short(skb, &mopt, &tmp_opt);

@@ -147,9 +147,7 @@ struct multipath_options {
 	u8	list_rcvd:1, /* 1 if IP list has been received */
 		mp_fail:1,
 		mp_fclose:1,
-		dss_csum:1,
-		join_ack:1,
-		is_mp_join:1;
+		dss_csum:1;
 	u8	rem4_bits;
 	u8	rem6_bits;
 
@@ -603,8 +601,8 @@ int mptcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			 struct tcp_options_received *opt_rx,
 			 struct multipath_options *mopt,
-			 const struct sk_buff *skb);
-void mptcp_post_parse_options(struct tcp_sock *tp, const struct sk_buff *skb);
+			 const struct sk_buff *skb, struct sock *sk);
+void mptcp_post_parse_options(struct sock *sk, const struct sk_buff *skb);
 void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 		       unsigned *remaining);
 void mptcp_synack_options(struct request_sock *req,
@@ -806,10 +804,8 @@ static inline void mptcp_init_mp_opt(struct multipath_options *mopt)
 {
 	mopt->list_rcvd = 0;
 	mopt->rem4_bits = mopt->rem6_bits = 0;
-	mopt->join_ack = 0;
 	mopt->mp_fail = 0;
 	mopt->mp_fclose = 0;
-	mopt->is_mp_join = 0;
 	mopt->mptcp_rem_key = 0;
 	mopt->mpcb = NULL;
 }
@@ -1173,7 +1169,7 @@ static inline void mptcp_parse_options(const uint8_t *ptr, const int opsize,
 				       const struct tcp_options_received *opt_rx,
 				       const struct multipath_options *mopt,
 				       const struct sk_buff *skb) {}
-static inline void mptcp_post_parse_options(struct tcp_sock *tp,
+static inline void mptcp_post_parse_options(struct sock *sk,
 					    const struct sk_buff *skb) {}
 static inline void mptcp_syn_options(struct sock *sk,
 				     struct tcp_out_options *opts,
