@@ -1185,13 +1185,9 @@ struct sock *tcp_v6_hnd_req(struct sock *sk,struct sk_buff *skb)
 			/* Don't lock again the meta-sk. It has been locked
 			 * before mptcp_v6_do_rcv.
 			 */
-			if (is_meta_sk(sk))
-				return nsk;
-
-			if (tcp_sk(nsk)->mpc)
+			if (tcp_sk(nsk)->mpc && !is_meta_sk(sk))
 				bh_lock_sock(mptcp_meta_sk(nsk));
-			else
-				bh_lock_sock(nsk);
+			bh_lock_sock(nsk);
 
 			return nsk;
 		}

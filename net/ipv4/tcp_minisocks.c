@@ -851,6 +851,8 @@ int tcp_child_process(struct sock *parent, struct sock *child,
 		__sk_add_backlog(meta_sk, skb);
 	}
 
+	if (tcp_sk(child)->mpc)
+		bh_unlock_sock(child);
 	bh_unlock_sock(meta_sk);
 	sock_put(child);
 	return ret;

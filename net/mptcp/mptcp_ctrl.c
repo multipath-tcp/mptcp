@@ -451,6 +451,7 @@ int mptcp_inherit_sk(struct sock *sk, struct sock *newsk, int family,
 	 * 2. If we are creating another subsock
 	 * 	* Also in tcp_child_process
 	 */
+	bh_lock_sock(newsk);
 	newsk->sk_backlog.head	= newsk->sk_backlog.tail = NULL;
 	newsk->sk_backlog.len = 0;
 
