@@ -185,9 +185,9 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 		if (!th->ack ||
 		    !after(TCP_SKB_CB(skb)->end_seq, tcptw->tw_rcv_nxt) ||
 		    TCP_SKB_CB(skb)->end_seq == TCP_SKB_CB(skb)->seq) {
-			inet_twsk_put(tw);
 			if (mptcp_is_data_fin(skb))
 				return TCP_TW_ACK;
+			inet_twsk_put(tw);
 			return TCP_TW_SUCCESS;
 		}
 
