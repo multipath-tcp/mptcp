@@ -1793,7 +1793,7 @@ process:
 
 #ifdef CONFIG_MPTCP
 	if (!sk && th->syn && !th->ack) {
-		int ret = mptcp_lookup_join(skb);
+		int ret = mptcp_lookup_join(skb, NULL);
 
 		if (ret < 0) {
 			tcp_v4_send_reset(NULL, skb);
@@ -1907,21 +1907,13 @@ do_time_wait:
 		}
 #ifdef CONFIG_MPTCP
 		if (th->syn && !th->ack) {
-			int ret = mptcp_lookup_join(skb);
+			int ret = mptcp_lookup_join(skb, inet_twsk(sk));
 
-			if (ret) {
-				/* As we come from do_time_wait, we are sure that
-				 * sk exists.
-				 */
-				inet_twsk_deschedule(inet_twsk(sk), &tcp_death_row);
-				inet_twsk_put(inet_twsk(sk));
-
-				if (ret < 0) {
-					tcp_v4_send_reset(NULL, skb);
-					goto discard_it;
-				} else {
-					return 0;
-				}
+			if (ret < 0) {
+				tcp_v4_send_reset(NULL, skb);
+				goto discard_it;
+			} else if (ret > 0) {
+				return 0;
 			}
 		}
 #endif
