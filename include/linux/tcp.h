@@ -346,6 +346,7 @@ static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
 	rx_opt->cookie_plus = 0;
 	rx_opt->saw_mpc = 0;
 	rx_opt->is_mp_join = 0;
+	rx_opt->join_ack = 0;
 }
 
 /* This is the max number of SACKS that we'll generate and process. It's safe
