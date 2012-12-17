@@ -250,7 +250,8 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 	newinet->inet_rcv_saddr = LOOPBACK4_IPV6;
 
 	if (__inet_inherit_port(meta_sk, newsk) < 0) {
-		sock_put(newsk);
+		inet_csk_prepare_forced_close(newsk);
+		tcp_done(newsk);
 		goto out;
 	}
 	__inet6_hash(newsk, NULL);
@@ -541,7 +542,8 @@ reset:
 int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct sock *child;
+	struct sock *child, *rsk = NULL;
+	int ret;
 
 	if (!(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_JOIN)) {
 		struct tcphdr *th = tcp_hdr(skb);
@@ -552,17 +554,21 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 				&ipv6_hdr(skb)->saddr, th->source,
 				&ipv6_hdr(skb)->daddr, ntohs(th->dest), inet6_iif(skb));
 
-		if (is_meta_sk(sk)) {
-			WARN("%s Did not find a sub-sk!\n", __func__);
-			return 0;
-		}
 		if (!sk) {
 			WARN("%s Did not find a sub-sk at all!!!\n", __func__);
+			kfree_skb(skb);
+			return 0;
+		}
+		if (is_meta_sk(sk)) {
+			WARN("%s Did not find a sub-sk!\n", __func__);
+			kfree_skb(skb);
+			sock_put(sk);
 			return 0;
 		}
 
 		if (sk->sk_state == TCP_TIME_WAIT) {
 			inet_twsk_put(inet_twsk(sk));
+			kfree_skb(skb);
 			return 0;
 		}
 
@@ -591,8 +597,13 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 		 * already the meta-sk-lock and are sure that it is not owned
 		 * by the user.
 		 */
-		tcp_rcv_state_process(child, skb, tcp_hdr(skb), skb->len);
+		ret = tcp_rcv_state_process(child, skb, tcp_hdr(skb), skb->len);
+		bh_unlock_sock(child);
 		sock_put(child);
+		if (ret) {
+			rsk = child;
+			goto reset_and_discard;
+		}
 	} else {
 		if (tcp_hdr(skb)->syn) {
 			struct mp_join *join_opt = mptcp_find_join(skb);
@@ -612,7 +623,7 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	return 0;
 
 reset_and_discard:
-	tcp_v6_send_reset(NULL, skb);
+	tcp_v6_send_reset(rsk, skb);
 discard:
 	kfree_skb(skb);
 	return 0;
@@ -644,8 +655,8 @@ struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *radd
 		}
 	}
 
-	if (meta_sk)
-		sock_hold(meta_sk);
+	if (meta_sk && unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
+		meta_sk = NULL;
 	spin_unlock(&mptcp_reqsk_hlock);
 
 	return meta_sk;
@@ -694,7 +705,7 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	tp->mptcp->low_prio = loc->low_prio;
 
 	/* Initializing the timer for an MPTCP subflow */
-	mptcp_init_ack_timer(sk);
+	setup_timer(&tp->mptcp->mptcp_ack_timer, mptcp_ack_handler, (unsigned long)sk);
 
 	/** Then, connect the socket to the peer */
 

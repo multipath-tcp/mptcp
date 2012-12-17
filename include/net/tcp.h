@@ -384,7 +384,8 @@ extern bool retransmits_timed_out(struct sock *sk, unsigned int boundary,
 				  unsigned int timeout, bool syn_set);
 extern void tcp_write_err(struct sock *sk);
 extern void tcp_adjust_pcount(struct sock *sk, const struct sk_buff *skb, int decr);
-
+extern void tcp_set_skb_tso_segs(const struct sock *sk, struct sk_buff *skb,
+				 unsigned int mss_now);
 
 extern int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req,
 			     struct request_values *rvp);

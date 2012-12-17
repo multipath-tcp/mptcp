@@ -1070,13 +1070,9 @@ struct sock *tcp_v6_hnd_req(struct sock *sk,struct sk_buff *skb)
 			/* Don't lock again the meta-sk. It has been locked
 			 * before mptcp_v6_do_rcv.
 			 */
-			if (is_meta_sk(sk))
-				return nsk;
-
-			if (tcp_sk(nsk)->mpc)
+			if (tcp_sk(nsk)->mpc && !is_meta_sk(sk))
 				bh_lock_sock(mptcp_meta_sk(nsk));
-			else
-				bh_lock_sock(nsk);
+			bh_lock_sock(nsk);
 
 			return nsk;
 		}
@@ -1120,7 +1116,7 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
 #ifdef CONFIG_MPTCP
-	if (tmp_opt.saw_mpc && mopt.is_mp_join) {
+	if (tmp_opt.saw_mpc && tmp_opt.is_mp_join) {
 		int ret;
 
 		ret = mptcp_do_join_short(skb, &mopt, &tmp_opt);
@@ -1494,7 +1490,8 @@ struct sock *tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 #endif
 
 	if (__inet_inherit_port(sk, newsk) < 0) {
-		sock_put(newsk);
+		inet_csk_prepare_forced_close(newsk);
+		tcp_done(newsk);
 		goto out;
 	}
 	__inet6_hash(newsk, NULL);
@@ -1721,20 +1718,13 @@ process:
 
 #ifdef CONFIG_MPTCP
 	if (!sk && th->syn && !th->ack) {
-		int ret;
+		int ret = mptcp_lookup_join(skb, NULL);
 
-		ret = mptcp_lookup_join(skb);
-		if (ret) {
-			if (ret < 0) {
-				tcp_v6_send_reset(NULL, skb);
-				if (sk)
-					sock_put(sk);
-				goto discard_it;
-			} else {
-				if (sk)
-					sock_put(sk);
-				return 0;
-			}
+		if (ret < 0) {
+			tcp_v6_send_reset(NULL, skb);
+			goto discard_it;
+		} else if (ret > 0) {
+			return 0;
 		}
 	}
 
@@ -1851,22 +1841,13 @@ do_time_wait:
 		}
 #ifdef CONFIG_MPTCP
 		if (th->syn && !th->ack) {
-			int ret;
+			int ret = mptcp_lookup_join(skb, inet_twsk(sk));
 
-			ret = mptcp_lookup_join(skb);
-			if (ret) {
-				/* As we come from do_time_wait, we are sure that
-				 * sk exists.
-				 */
-				inet_twsk_deschedule(inet_twsk(sk), &tcp_death_row);
-				inet_twsk_put(inet_twsk(sk));
-
-				if (ret < 0) {
-					tcp_v6_send_reset(NULL, skb);
-					goto discard_it;
-				} else {
-					return 0;
-				}
+			if (ret < 0) {
+				tcp_v6_send_reset(NULL, skb);
+				goto discard_it;
+			} else if (ret > 0) {
+				return 0;
 			}
 		}
 #endif

@@ -175,7 +175,7 @@ int tcp_write_timeout(struct sock *sk)
 		retry_until = icsk->icsk_syn_retries ? : sysctl_tcp_syn_retries;
 		syn_set = true;
 		/* Stop retransmitting MP_CAPABLE options in SYN if timed out. */
-		if (tcp_sk(sk)->request_mptcp && is_master_tp(tcp_sk(sk)) &&
+		if (tcp_sk(sk)->request_mptcp &&
 		    icsk->icsk_retransmits >= mptcp_sysctl_syn_retries())
 			tcp_sk(sk)->request_mptcp = 0;
 	} else {

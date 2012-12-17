@@ -185,9 +185,9 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 		if (!th->ack ||
 		    !after(TCP_SKB_CB(skb)->end_seq, tcptw->tw_rcv_nxt) ||
 		    TCP_SKB_CB(skb)->end_seq == TCP_SKB_CB(skb)->seq) {
-			inet_twsk_put(tw);
 			if (mptcp_is_data_fin(skb))
 				return TCP_TW_ACK;
+			inet_twsk_put(tw);
 			return TCP_TW_SUCCESS;
 		}
 
@@ -564,6 +564,8 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 			newtp->rx_opt.ts_recent_stamp = 0;
 			newtp->tcp_header_len = sizeof(struct tcphdr);
 		}
+		if (treq->saw_mpc)
+			newtp->tcp_header_len += MPTCP_SUB_LEN_DSM_ALIGN;
 #ifdef CONFIG_TCP_MD5SIG
 		newtp->md5sig_info = NULL;	/*XXX*/
 		if (newtp->af_specific->md5_lookup(sk, newsk))
@@ -598,6 +600,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	bool paws_reject = false;
 
 	tmp_opt.saw_tstamp = 0;
+	tmp_opt.join_ack = 0;
 
 	if (!is_meta_sk(sk)) {
 		mopt = &stat_mopt;
@@ -842,7 +845,6 @@ int tcp_child_process(struct sock *parent, struct sock *child,
 		if (state == TCP_SYN_RECV && child->sk_state != state)
 			parent->sk_data_ready(parent, 0);
 	} else {
-		printk(KERN_ERR"%s socket is owned dst %u\n", __func__, ntohs(inet_sk(child)->inet_dport));
 		/* Alas, it is possible again, because we do lookup
 		 * in main socket hash table and lock on listening
 		 * socket does not protect us more.
@@ -852,6 +854,8 @@ int tcp_child_process(struct sock *parent, struct sock *child,
 		__sk_add_backlog(meta_sk, skb);
 	}
 
+	if (tcp_sk(child)->mpc)
+		bh_unlock_sock(child);
 	bh_unlock_sock(meta_sk);
 	sock_put(child);
 	return ret;
