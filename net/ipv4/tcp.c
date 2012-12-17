@@ -734,7 +734,7 @@ static unsigned int tcp_xmit_size_goal(struct sock *sk, u32 mss_now,
 
 	xmit_size_goal = mss_now;
 
-	if (large_allowed && sk_can_gso(sk)) {
+	if (large_allowed && sk_can_gso(sk) && !tp->mpc) {
 		xmit_size_goal = ((sk->sk_gso_max_size - 1) -
 				  inet_csk(sk)->icsk_af_ops->net_header_len -
 				  inet_csk(sk)->icsk_ext_hdr_len -
@@ -761,7 +761,10 @@ static int tcp_send_mss(struct sock *sk, int *size_goal, int flags)
 {
 	int mss_now;
 
-	mss_now = tcp_current_mss(sk);
+	if (tcp_sk(sk)->mpc)
+		mss_now = mptcp_current_mss(sk);
+	else
+		mss_now = tcp_current_mss(sk);
 	*size_goal = tcp_xmit_size_goal(sk, mss_now, !(flags & MSG_OOB));
 
 	return mss_now;
@@ -903,6 +906,9 @@ static inline int select_size(const struct sock *sk, bool sg)
 	const struct tcp_sock *tp = tcp_sk(sk);
 	int tmp = tp->mss_cache;
 
+	if (tp->mpc)
+		tmp = mptcp_select_size(sk);
+
 	if (sg) {
 		if (sk_can_gso(sk)) {
 			/* Small frames wont use a full page:
@@ -943,7 +949,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			goto out_err;
 
 	if (tp->mpc) {
-		struct sock *sk_it;
+		struct sock *sk_it = sk;
 
 		mptcp_for_each_sk(tp->mpcb, sk_it) {
 			if (!is_master_tp(tcp_sk(sk_it)))
@@ -954,14 +960,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	/* This should be in poll */
 	clear_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
 
-
-	/* If we want to support TSO later, we'll need
-	 * to define xmit_size_goal to something much larger
-	 */
-	if (tp->mpc)
-		mss_now = size_goal = mptcp_sysctl_mss();
-	else
-		mss_now = tcp_send_mss(sk, &size_goal, flags);
+	mss_now = tcp_send_mss(sk, &size_goal, flags);
 
 	/* Ok commence sending. */
 	iovlen = msg->msg_iovlen;
@@ -1147,8 +1146,7 @@ wait_for_memory:
 			if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
 				goto do_error;
 
-			if (!tp->mpc)
-				mss_now = tcp_send_mss(sk, &size_goal, flags);
+			mss_now = tcp_send_mss(sk, &size_goal, flags);
 		}
 	}
 
@@ -1241,6 +1239,11 @@ void tcp_cleanup_rbuf(struct sock *sk, int copied)
 	int time_to_ack = 0;
 
 	struct sk_buff *skb = skb_peek(&sk->sk_receive_queue);
+
+	if (is_meta_sk(sk)) {
+		mptcp_cleanup_rbuf(sk, copied);
+		return;
+	}
 
 	WARN(skb && !before(tp->copied_seq, TCP_SKB_CB(skb)->end_seq),
 	     "cleanup rbuf bug: copied %X seq %X rcvnxt %X\n",
@@ -1432,13 +1435,8 @@ int tcp_read_sock(struct sock *sk, read_descriptor_t *desc,
 	tcp_rcv_space_adjust(sk);
 
 	/* Clean up data we have read: This will do ACK frames. */
-	if (copied > 0) {
-		if (tp->mpc)
-			mptcp_cleanup_rbuf(sk, copied);
-		else
-			tcp_cleanup_rbuf(sk, copied);
-	}
-
+	if (copied > 0)
+		tcp_cleanup_rbuf(sk, copied);
 	return copied;
 }
 EXPORT_SYMBOL(tcp_read_sock);
@@ -1602,10 +1600,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			}
 		}
 
-		if (tp->mpc)
-			mptcp_cleanup_rbuf(sk, copied);
-		else
-			tcp_cleanup_rbuf(sk, copied);
+		tcp_cleanup_rbuf(sk, copied);
 
 		if (!sysctl_tcp_low_latency && tp->ucopy.task == user_recv) {
 			/* Install new reader */
@@ -1830,10 +1825,7 @@ skip_copy:
 	 */
 
 	/* Clean up data we have read: This will do ACK frames. */
-	if (tp->mpc)
-		mptcp_cleanup_rbuf(sk, copied);
-	else
-		tcp_cleanup_rbuf(sk, copied);
+	tcp_cleanup_rbuf(sk, copied);
 
 	release_sock(sk);
 	return copied;
@@ -2443,6 +2435,13 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 					elapsed = tp->keepalive_time - elapsed;
 				else
 					elapsed = 0;
+				if (tp->mpc) {
+					struct sock *sk_it = sk;
+					mptcp_for_each_sk(tp->mpcb, sk_it)
+						if (!(1 << sk->sk_state & (TCPF_CLOSE | TCPF_LISTEN)))
+							inet_csk_reset_keepalive_timer(sk_it, elapsed);
+					break;
+				}
 				inet_csk_reset_keepalive_timer(sk, elapsed);
 			}
 		}

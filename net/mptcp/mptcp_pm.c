@@ -179,7 +179,8 @@ struct sock *mptcp_hash_find(u32 token)
 	hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[hash], tk_table) {
 		if (token == meta_tp->mptcp_loc_token) {
 			struct sock *meta_sk = (struct sock *)meta_tp;
-			sock_hold(meta_sk);
+			if (unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
+				meta_sk = NULL;
 			rcu_read_unlock();
 			return meta_sk;
 		}
@@ -433,7 +434,7 @@ struct mp_join *mptcp_find_join(struct sk_buff *skb)
 	return NULL;
 }
 
-int mptcp_lookup_join(struct sk_buff *skb)
+int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 {
 	struct mptcp_cb *mpcb;
 	struct sock *meta_sk;
@@ -456,6 +457,15 @@ int mptcp_lookup_join(struct sk_buff *skb)
 		return -1;
 	}
 
+	/* Coming from time-wait-sock processing in tcp_v4_rcv.
+	 * We have to deschedule it before continuing, because otherwise
+	 * mptcp_v4_do_rcv will hit again on it inside tcp_v4_hnd_req.
+	 */
+	if (tw) {
+		inet_twsk_deschedule(tw, &tcp_death_row);
+		inet_twsk_put(tw);
+	}
+
 	TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_JOIN;
 	/* OK, this is a new syn/join, let's create a new open request and
 	 * send syn+ack
@@ -474,7 +484,7 @@ int mptcp_lookup_join(struct sk_buff *skb)
 	} else if (skb->protocol == htons(ETH_P_IP))
 		tcp_v4_do_rcv(meta_sk, skb);
 #if IS_ENABLED(CONFIG_IPV6)
-	else /* IPv6 */
+	else
 		tcp_v6_do_rcv(meta_sk, skb);
 #endif /* CONFIG_IPV6 */
 	bh_unlock_sock(meta_sk);
@@ -925,6 +935,9 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 			struct mptcp_cb *mpcb = meta_tp->mpcb;
 			struct sock *meta_sk = (struct sock *)meta_tp;
 
+			if (unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
+				continue;
+
 			if (!meta_tp->mpc || !is_meta_sk(meta_sk) ||
 			     mpcb->infinite_mapping)
 				continue;
@@ -944,21 +957,25 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 			}
 
 			bh_unlock_sock(meta_sk);
+			sock_put(meta_sk);
 		}
 		rcu_read_unlock_bh();
 	}
 	return NOTIFY_DONE;
 }
 
-/*
- *	Output /proc/net/mptcp_pm
- */
+#ifdef CONFIG_PROC_FS
+
+/* Output /proc/net/mptcp */
 static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 {
 	struct tcp_sock *meta_tp;
-	int i;
+	int i, n = 0;
 
-	seq_puts(seq, "Multipath TCP (path manager):");
+	seq_printf(seq, "  sl  loc_tok  rem_tok  v6 "
+		   "local_address                         "
+		   "remote_address                        "
+		   "st ns tx_queue rx_queue");
 	seq_putc(seq, '\n');
 
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
@@ -972,23 +989,38 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 			if (!meta_tp->mpc)
 				continue;
 
-			if (meta_sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(meta_sk)) {
-				seq_printf(seq, "[%pI4:%hu - %pI4:%hu] ",
-						&isk->inet_saddr, ntohs(isk->inet_sport),
-						&isk->inet_daddr, ntohs(isk->inet_dport));
+			seq_printf(seq, "%4d: %04X %04X ", n++,
+				   mpcb->mptcp_loc_token,
+				   mpcb->mptcp_rem_token);
+			if (meta_sk->sk_family == AF_INET ||
+			    mptcp_v6_is_v4_mapped(meta_sk)) {
+				seq_printf(seq, " 0 %08X:%04X "
+					   "                        "
+					   "%08X:%04X                        ",
+					   isk->inet_saddr,
+					   ntohs(isk->inet_sport),
+					   isk->inet_daddr,
+					   ntohs(isk->inet_dport));
 #if IS_ENABLED(CONFIG_IPV6)
 			} else if (meta_sk->sk_family == AF_INET6) {
-				seq_printf(seq, "[%pI6:%hu - %pI6:%hu] ",
-						&isk->pinet6->saddr, ntohs(isk->inet_sport),
-						&isk->pinet6->daddr, ntohs(isk->inet_dport));
+				struct in6_addr *src = &isk->pinet6->saddr;
+				struct in6_addr *dst = &isk->pinet6->daddr;
+				seq_printf(seq, " 1 %08X%08X%08X%08X:%04X "
+					   "%08X%08X%08X%08X:%04X",
+					   src->s6_addr32[0], src->s6_addr32[1],
+					   src->s6_addr32[2], src->s6_addr32[3],
+					   ntohs(isk->inet_sport),
+					   dst->s6_addr32[0], dst->s6_addr32[1],
+					   dst->s6_addr32[2], dst->s6_addr32[3],
+					   ntohs(isk->inet_dport));
 #endif
 			}
-			seq_printf(seq, "Loc_Tok %#x Rem_tok %#x cnt_subs %d meta-state %d infinite? %d",
-					mpcb->mptcp_loc_token,
-					mpcb->mptcp_rem_token,
-					mpcb->cnt_subflows,
+			seq_printf(seq, " %02X %02X %08X:%08X",
 					meta_sk->sk_state,
-					mpcb->infinite_mapping);
+					mpcb->cnt_subflows,
+					meta_tp->write_seq - meta_tp->snd_una,
+					max_t(int, meta_tp->rcv_nxt -
+						   meta_tp->copied_seq, 0));
 			seq_putc(seq, '\n');
 		}
 		rcu_read_unlock_bh();
@@ -1010,29 +1042,29 @@ static const struct file_operations mptcp_pm_seq_fops = {
 	.release = single_release_net,
 };
 
-static __net_init int mptcp_pm_proc_init_net(struct net *net)
+static int mptcp_pm_proc_init_net(struct net *net)
 {
-	if (!proc_net_fops_create(net, "mptcp_pm", S_IRUGO, &mptcp_pm_seq_fops))
+	if (!proc_net_fops_create(net, "mptcp", S_IRUGO, &mptcp_pm_seq_fops))
 		return -ENOMEM;
 
 	return 0;
 }
 
-static __net_exit void mptcp_pm_proc_exit_net(struct net *net)
+static void mptcp_pm_proc_exit_net(struct net *net)
 {
-	proc_net_remove(net, "mptcp_pm");
+	proc_net_remove(net, "mptcp");
 }
 
-static __net_initdata struct pernet_operations mptcp_pm_proc_ops = {
+static struct pernet_operations mptcp_pm_proc_ops = {
 	.init = mptcp_pm_proc_init_net,
 	.exit = mptcp_pm_proc_exit_net,
 };
+#endif
 
-/* General initialization of MPTCP_PM
- */
-static int __init mptcp_pm_init(void)
+/* General initialization of MPTCP_PM */
+int mptcp_pm_init(void)
 {
-	int i;
+	int i, ret;
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
 		INIT_HLIST_NULLS_HEAD(&tk_hashtable[i], i);
 		INIT_LIST_HEAD(&mptcp_reqsk_htb[i]);
@@ -1042,14 +1074,43 @@ static int __init mptcp_pm_init(void)
 	spin_lock_init(&mptcp_reqsk_hlock);
 	spin_lock_init(&mptcp_tk_hashlock);
 
-#if IS_ENABLED(CONFIG_IPV6)
-	mptcp_pm_v6_init();
+#ifdef CONFIG_SYSCTL
+	ret = register_pernet_subsys(&mptcp_pm_proc_ops);
+	if (ret)
+		goto out;
 #endif
-	mptcp_pm_v4_init();
 
-	return register_pernet_subsys(&mptcp_pm_proc_ops);
+#if IS_ENABLED(CONFIG_IPV6)
+	ret = mptcp_pm_v6_init();
+	if (ret)
+		goto mptcp_pm_v6_failed;
+#endif
+	ret = mptcp_pm_v4_init();
+	if (ret)
+		goto mptcp_pm_v4_failed;
+
+out:
+	return ret;
+
+mptcp_pm_v4_failed:
+#if IS_ENABLED(CONFIG_IPV6)
+	mptcp_pm_v6_undo();
+
+mptcp_pm_v6_failed:
+#endif
+#ifdef CONFIG_SYSCTL
+	unregister_pernet_subsys(&mptcp_pm_proc_ops);
+#endif
+	goto out;
 }
 
-module_init(mptcp_pm_init);
-
-MODULE_LICENSE("GPL");
+void mptcp_pm_undo(void)
+{
+#if IS_ENABLED(CONFIG_IPV6)
+	mptcp_pm_v6_undo();
+#endif
+	mptcp_pm_v4_undo();
+#ifdef CONFIG_SYSCTL
+	unregister_pernet_subsys(&mptcp_pm_proc_ops);
+#endif
+}

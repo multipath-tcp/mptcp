@@ -51,20 +51,21 @@ static void mptcp_v6_reqsk_destructor(struct request_sock *req)
 {
 	mptcp_reqsk_destructor(req);
 
-	kfree_skb(inet6_rsk(req)->pktopts);
+	tcp_v6_reqsk_destructor(req);
 }
 
-static int mptcp_v6_rtx_synack(struct sock *sk, struct request_sock *req,
-			     struct request_values *rvp)
+/* Similar to tcp_v6_rtx_synack */
+static int mptcp_v6_rtx_synack(struct sock *meta_sk, struct request_sock *req,
+			       struct request_values *rvp)
 {
-	TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_RETRANSSEGS);
+	if (meta_sk->sk_family == AF_INET6)
+		return tcp_v6_rtx_synack(meta_sk, req, rvp);
 
-	if (sk->sk_family == AF_INET6)
-		return tcp_v6_send_synack(sk, req, rvp);
-	else
-		return mptcp_v6v4_send_synack(sk, req, rvp);
+	TCP_INC_STATS_BH(sock_net(meta_sk), TCP_MIB_RETRANSSEGS);
+	return mptcp_v6v4_send_synack(meta_sk, req, rvp);
 }
 
+/* Similar to tcp6_request_sock_ops */
 struct request_sock_ops mptcp6_request_sock_ops __read_mostly = {
 	.family		=	AF_INET6,
 	.obj_size	=	sizeof(struct mptcp6_request_sock),
@@ -75,29 +76,25 @@ struct request_sock_ops mptcp6_request_sock_ops __read_mostly = {
 	.syn_ack_timeout =	tcp_syn_ack_timeout,
 };
 
-static void mptcp_v6_reqsk_queue_hash_add(struct request_sock *req,
-				      unsigned long timeout)
+static void mptcp_v6_reqsk_queue_hash_add(struct sock *meta_sk,
+					  struct request_sock *req,
+					  unsigned long timeout)
 {
+	const u32 h = inet6_synq_hash(&inet6_rsk(req)->rmt_addr,
+				      inet_rsk(req)->rmt_port,
+				      0, MPTCP_HASH_SIZE);
 
-	struct inet_connection_sock *meta_icsk = inet_csk(mptcp_rsk(req)->mpcb->meta_sk);
-	struct listen_sock *lopt = meta_icsk->icsk_accept_queue.listen_opt;
-	const u32 h_local = inet6_synq_hash(&inet6_rsk(req)->rmt_addr,
-					   inet_rsk(req)->rmt_port,
-					   lopt->hash_rnd,
-					   lopt->nr_table_entries);
-	const u32 h_global = inet6_synq_hash(&inet6_rsk(req)->rmt_addr,
-					    inet_rsk(req)->rmt_port,
-					    0,
-					    MPTCP_HASH_SIZE);
+	inet6_csk_reqsk_queue_hash_add(meta_sk, req, timeout);
+
 	spin_lock(&mptcp_reqsk_hlock);
-	reqsk_queue_hash_req(&meta_icsk->icsk_accept_queue,
-			     h_local, req, timeout);
-	list_add(&mptcp_rsk(req)->collide_tuple, &mptcp_reqsk_htb[h_global]);
-	lopt->qlen++;
+	list_add(&mptcp_rsk(req)->collide_tuple, &mptcp_reqsk_htb[h]);
 	spin_unlock(&mptcp_reqsk_hlock);
 }
 
-/* The meta-socket is IPv4, but a new subsocket is IPv6 */
+/* Similar to tcp_v6_send_synack
+ *
+ * The meta-socket is IPv4, but a new subsocket is IPv6
+ */
 static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req,
 				  struct request_values *rvp)
 {
@@ -139,8 +136,11 @@ done:
 	return err;
 }
 
-/* The meta-socket is IPv4, but a new subsocket is IPv6 */
-struct sock *mptcp_v6v4_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
+/* Similar to tcp_v6_syn_recv_sock
+ *
+ * The meta-socket is IPv4, but a new subsocket is IPv6
+ */
+struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 				      struct request_sock *req,
 				      struct dst_entry *dst)
 {
@@ -153,29 +153,32 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 
 	treq = inet6_rsk(req);
 
-	if (sk_acceptq_is_full(sk))
+	if (sk_acceptq_is_full(meta_sk))
 		goto out_overflow;
 
 	if (!dst) {
+		/* This code is similar to inet6_csk_route_req, but as we
+		 * don't have a np-pointer in the meta, we have to do it
+		 * manually.
+		 */
 		struct flowi6 fl6;
 
 		memset(&fl6, 0, sizeof(fl6));
 		fl6.flowi6_proto = IPPROTO_TCP;
 		fl6.daddr = treq->rmt_addr;
 		fl6.saddr = treq->loc_addr;
-		fl6.flowi6_oif = sk->sk_bound_dev_if;
-		fl6.flowi6_mark = sk->sk_mark;
+		fl6.flowi6_oif = meta_sk->sk_bound_dev_if;
+		fl6.flowi6_mark = meta_sk->sk_mark;
 		fl6.fl6_dport = inet_rsk(req)->rmt_port;
 		fl6.fl6_sport = inet_rsk(req)->loc_port;
 		security_req_classify_flow(req, flowi6_to_flowi(&fl6));
 
-		dst = ip6_dst_lookup_flow(sk, &fl6, NULL, false);
-
+		dst = ip6_dst_lookup_flow(meta_sk, &fl6, NULL, false);
 		if (IS_ERR(dst))
 			goto out;
 	}
 
-	newsk = tcp_create_openreq_child(sk, req, skb);
+	newsk = tcp_create_openreq_child(meta_sk, req, skb);
 	if (newsk == NULL)
 		goto out_nonewsk;
 
@@ -186,6 +189,7 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 	 */
 
 	newsk->sk_gso_type = SKB_GSO_TCPV6;
+	/* We cannot call __ip6_dst_store, because we don't have the np-pointer */
 	sk_setup_caps(newsk, dst);
 
 	newtcp6sk = (struct tcp6_sock *)newsk;
@@ -222,7 +226,9 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 	newnp->mcast_oif  = inet6_iif(skb);
 	newnp->mcast_hops = ipv6_hdr(skb)->hop_limit;
 
-	/* Initialization copied from inet6_create */
+	/* Initialization copied from inet6_create - normally this should have
+	 * been handled by the memcpy as in tcp_v6_syn_recv_sock
+	 */
 	newnp->hop_limit  = -1;
 	newnp->mc_loop	  = 1;
 	newnp->pmtudisc	  = IPV6_PMTUDISC_WANT;
@@ -242,8 +248,9 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 	newinet->inet_daddr = newinet->inet_saddr = LOOPBACK4_IPV6;
 	newinet->inet_rcv_saddr = LOOPBACK4_IPV6;
 
-	if (__inet_inherit_port(sk, newsk) < 0) {
-		sock_put(newsk);
+	if (__inet_inherit_port(meta_sk, newsk) < 0) {
+		inet_csk_prepare_forced_close(newsk);
+		tcp_done(newsk);
 		goto out;
 	}
 	__inet6_hash(newsk, NULL);
@@ -251,15 +258,15 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 	return newsk;
 
 out_overflow:
-	NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_LISTENOVERFLOWS);
+	NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_LISTENOVERFLOWS);
 out_nonewsk:
 	dst_release(dst);
 out:
-	NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_LISTENDROPS);
+	NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_LISTENDROPS);
 	return NULL;
 }
 
-/* from mptcp_v6_join_request() */
+/* Similar to tcp_v6_conn_request */
 static void mptcp_v6_join_request_short(struct sock *meta_sk,
 					struct sk_buff *skb,
 					struct tcp_options_received *tmp_opt)
@@ -379,7 +386,7 @@ static void mptcp_v6_join_request_short(struct sock *meta_sk,
 	}
 
 	/* Adding to request queue in metasocket */
-	mptcp_v6_reqsk_queue_hash_add(req, TCP_TIMEOUT_INIT);
+	mptcp_v6_reqsk_queue_hash_add(meta_sk, req, TCP_TIMEOUT_INIT);
 
 	return;
 
@@ -390,6 +397,7 @@ drop_and_free:
 	return;
 }
 
+/* Similar to tcp_v6_conn_request, with subsequent call to mptcp_v6_join_request_short */
 static void mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
@@ -423,11 +431,8 @@ int mptcp_v6_rem_raddress(struct multipath_options *mopt, u8 id)
 	return -1;
 }
 
-/**
- * Based on function tcp_v4_conn_request (tcp_ipv4.c)
- * Returns -1 if there is no space anymore to store an additional
+/* Returns -1 if there is no space anymore to store an additional
  * address
- *
  */
 int mptcp_v6_add_raddress(struct multipath_options *mopt,
 			  const struct in6_addr *addr, __be16 port, u8 id)
@@ -447,7 +452,8 @@ int mptcp_v6_add_raddress(struct multipath_options *mopt,
 		 * trying to JOIN, thus sending the JOIN with a certain ID.
 		 * However the src_addr of the IP-packet has been changed. We
 		 * update the addr in the list, because this is the address as
-		 * OUR BOX sees it. */
+		 * OUR BOX sees it.
+		 */
 		if (rem6->id == id) {
 			/* update the address */
 			mptcp_debug("%s: updating old addr: %pI6 \
@@ -484,7 +490,8 @@ int mptcp_v6_add_raddress(struct multipath_options *mopt,
 }
 
 /* Sets the bitfield of the remote-address field
- * local address is not set as it will disappear with the global address-list */
+ * local address is not set as it will disappear with the global address-list
+ */
 void mptcp_v6_set_init_addr_bit(struct mptcp_cb *mpcb,
 				const struct in6_addr *daddr)
 {
@@ -498,9 +505,7 @@ void mptcp_v6_set_init_addr_bit(struct mptcp_cb *mpcb,
 	}
 }
 
-/**
- * Fast processing for SYN+MP_JOIN.
- */
+/* Fast processing for SYN+MP_JOIN. */
 void mptcp_v6_do_rcv_join_syn(struct sock *meta_sk, struct sk_buff *skb,
 			      struct tcp_options_received *tmp_opt)
 {
@@ -533,13 +538,11 @@ reset:
 	return;
 }
 
-/**
- * We only process join requests here. (either the SYN or the final ACK)
- */
 int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct sock *child;
+	struct sock *child, *rsk = NULL;
+	int ret;
 
 	if (!(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_JOIN)) {
 		struct tcphdr *th = tcp_hdr(skb);
@@ -550,17 +553,21 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 				&ipv6_hdr(skb)->saddr, th->source,
 				&ipv6_hdr(skb)->daddr, ntohs(th->dest), inet6_iif(skb));
 
-		if (is_meta_sk(sk)) {
-			WARN("%s Did not find a sub-sk!\n", __func__);
-			return 0;
-		}
 		if (!sk) {
 			WARN("%s Did not find a sub-sk at all!!!\n", __func__);
+			kfree_skb(skb);
+			return 0;
+		}
+		if (is_meta_sk(sk)) {
+			WARN("%s Did not find a sub-sk!\n", __func__);
+			kfree_skb(skb);
+			sock_put(sk);
 			return 0;
 		}
 
 		if (sk->sk_state == TCP_TIME_WAIT) {
 			inet_twsk_put(inet_twsk(sk));
+			kfree_skb(skb);
 			return 0;
 		}
 
@@ -589,8 +596,13 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 		 * already the meta-sk-lock and are sure that it is not owned
 		 * by the user.
 		 */
-		tcp_rcv_state_process(child, skb, tcp_hdr(skb), skb->len);
+		ret = tcp_rcv_state_process(child, skb, tcp_hdr(skb), skb->len);
+		bh_unlock_sock(child);
 		sock_put(child);
+		if (ret) {
+			rsk = child;
+			goto reset_and_discard;
+		}
 	} else {
 		if (tcp_hdr(skb)->syn) {
 			struct mp_join *join_opt = mptcp_find_join(skb);
@@ -610,14 +622,13 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	return 0;
 
 reset_and_discard:
-	tcp_v6_send_reset(NULL, skb);
+	tcp_v6_send_reset(rsk, skb);
 discard:
 	kfree_skb(skb);
 	return 0;
 }
 
-/**
- * After this, the ref count of the meta_sk associated with the request_sock
+/* After this, the ref count of the meta_sk associated with the request_sock
  * is incremented. Thus it is the responsibility of the caller
  * to call sock_put() when the reference is not needed anymore.
  */
@@ -643,15 +654,14 @@ struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *radd
 		}
 	}
 
-	if (meta_sk)
-		sock_hold(meta_sk);
+	if (meta_sk && unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
+		meta_sk = NULL;
 	spin_unlock(&mptcp_reqsk_hlock);
 
 	return meta_sk;
 }
 
-/**
- * Create a new IPv6 subflow.
+/* Create a new IPv6 subflow.
  *
  * We are in user-context and meta-sock-lock is hold.
  */
@@ -694,7 +704,7 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	tp->mptcp->low_prio = loc->low_prio;
 
 	/* Initializing the timer for an MPTCP subflow */
-	mptcp_init_ack_timer(sk);
+	setup_timer(&tp->mptcp->mptcp_ack_timer, mptcp_ack_handler, (unsigned long)sk);
 
 	/** Then, connect the socket to the peer */
 
@@ -801,9 +811,7 @@ static inline void mptcp_dad_setup_timer(struct inet6_ifaddr *ifa)
 	in6_ifa_hold(ifa);
 }
 
-/**
- * React on IPv6-addr add/rem-events
- */
+/* React on IPv6-addr add/rem-events */
 static int mptcp_pm_inet6_addr_event(struct notifier_block *this,
 				     unsigned long event, void *ptr)
 {
@@ -815,9 +823,7 @@ static int mptcp_pm_inet6_addr_event(struct notifier_block *this,
 	}
 }
 
-/**
- * React on ifup/down-events
- */
+/* React on ifup/down-events */
 static int mptcp_pm_v6_netdev_event(struct notifier_block *this,
 		unsigned long event, void *ptr)
 {
@@ -923,9 +929,7 @@ found:
 	}
 }
 
-/*
- * Send ADD_ADDR for loc_id on all available subflows
- */
+/* Send ADD_ADDR for loc_id on all available subflows */
 void mptcp_v6_send_add_addr(int loc_id, struct mptcp_cb *mpcb)
 {
 	struct tcp_sock *tp;
@@ -945,9 +949,6 @@ static struct notifier_block mptcp_pm_v6_netdev_notifier = {
 
 /****** End of IPv6-Address event handler ******/
 
-/*
- * General initialization of IPv6 for MPTCP
- */
 int mptcp_pm_v6_init(void)
 {
 	int ret;
@@ -963,7 +964,6 @@ int mptcp_pm_v6_init(void)
 				      SLAB_HWCACHE_ALIGN, NULL);
 
 	if (ops->slab == NULL) {
-		printk(KERN_CRIT "%s: Can't create request sock SLAB cache!\n", "MPTCP6");
 		ret =  -ENOMEM;
 		goto err_reqsk_create;
 	}
@@ -986,4 +986,12 @@ err_reqsk_create:
 	kfree(ops->slab_name);
 	ops->slab_name = NULL;
 	goto out;
+}
+
+void mptcp_pm_v6_undo(void)
+{
+	kmem_cache_destroy(mptcp6_request_sock_ops.slab);
+	kfree(mptcp6_request_sock_ops.slab_name);
+	unregister_inet6addr_notifier(&mptcp_pm_inet6_addr_notifier);
+	unregister_netdevice_notifier(&mptcp_pm_v6_netdev_notifier);
 }

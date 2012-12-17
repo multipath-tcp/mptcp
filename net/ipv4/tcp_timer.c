@@ -175,7 +175,7 @@ int tcp_write_timeout(struct sock *sk)
 		retry_until = icsk->icsk_syn_retries ? : sysctl_tcp_syn_retries;
 		syn_set = true;
 		/* Stop retransmitting MP_CAPABLE options in SYN if timed out. */
-		if (tcp_sk(sk)->request_mptcp && is_master_tp(tcp_sk(sk)) &&
+		if (tcp_sk(sk)->request_mptcp &&
 		    icsk->icsk_retransmits >= mptcp_sysctl_syn_retries())
 			tcp_sk(sk)->request_mptcp = 0;
 	} else {
@@ -516,6 +516,11 @@ void tcp_set_keepalive(struct sock *sk, int val)
 	if ((1 << sk->sk_state) & (TCPF_CLOSE | TCPF_LISTEN))
 		return;
 
+	if (is_meta_sk(sk)) {
+		mptcp_set_keepalive(sk, val);
+		return;
+	}
+
 	if (val && !sock_flag(sk, SOCK_KEEPOPEN))
 		inet_csk_reset_keepalive_timer(sk, keepalive_time_when(tcp_sk(sk)));
 	else if (!val)
@@ -539,13 +544,6 @@ static void tcp_keepalive_timer (unsigned long data)
 		goto out;
 	}
 
-	/* MPTCP-note: this will also be the case for meta-sk !!!! */
-	if (sk->sk_state == TCP_LISTEN || is_meta_sk(sk)) {
-		tcp_synack_timer(sk);
-		if (!is_meta_sk(sk))
-			goto out;
-	}
-
 	if (sk->sk_state == TCP_FIN_WAIT2 && sock_flag(sk, SOCK_DEAD)) {
 		if (tp->linger2 >= 0) {
 			const int tmo = tcp_fin_time(sk) - TCP_TIMEWAIT_LEN;
@@ -559,7 +557,13 @@ static void tcp_keepalive_timer (unsigned long data)
 		goto death;
 	}
 
-	if (!sock_flag(sk, SOCK_KEEPOPEN) || sk->sk_state == TCP_CLOSE)
+	if (sk->sk_state == TCP_LISTEN || is_meta_sk(sk)) {
+		tcp_synack_timer(sk);
+		goto out;
+	}
+
+	/* MPTCP: Keepalive timers are handled at the subflow level */
+	if (!sock_flag(sk, SOCK_KEEPOPEN) || sk->sk_state == TCP_CLOSE || is_meta_sk(sk))
 		goto out;
 
 	elapsed = keepalive_time_when(tp);
