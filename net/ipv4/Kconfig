@@ -570,12 +570,12 @@ config TCP_CONG_COUPLED
 	To enable it, just put 'coupled' in tcp_congestion_control
 
 config TCP_CONG_OLIA
-        tristate "MPTCP Opportunistic Linked Increase"
-        depends on EXPERIMENTAL && MPTCP
-        default n
-        ---help---
-        MultiPath TCP Opportunistic Linked Increase Congestion Control
-        To enable it, just put 'olia' in tcp_congestion_control
+	tristate "MPTCP Opportunistic Linked Increase"
+	depends on EXPERIMENTAL && MPTCP
+	default n
+	---help---
+	MultiPath TCP Opportunistic Linked Increase Congestion Control
+	To enable it, just put 'olia' in tcp_congestion_control
 
 choice
 	prompt "Default TCP congestion control"
@@ -609,7 +609,7 @@ choice
 		bool "Coupled" if TCP_CONG_COUPLED=y
 
 	config DEFAULT_OLIA
-		bool "Olia" if TCP_CONG_COUPLED=y
+		bool "Olia" if TCP_CONG_OLIA=y
 
 	config DEFAULT_RENO
 		bool "Reno"
