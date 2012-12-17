@@ -121,7 +121,7 @@ static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req
 		dst = NULL;
 		goto done;
 	}
-	skb = tcp_make_synack(meta_sk, dst, req, rvp);
+	skb = tcp_make_synack(meta_sk, dst, req, rvp, NULL);
 	err = -ENOMEM;
 	if (skb) {
 		__tcp_v6_send_check(skb, &treq->loc_addr, &treq->rmt_addr);

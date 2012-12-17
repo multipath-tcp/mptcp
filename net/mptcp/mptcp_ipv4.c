@@ -119,7 +119,7 @@ static void mptcp_v4_join_request_short(struct sock *meta_sk,
 	ireq->loc_addr = daddr;
 	ireq->rmt_addr = saddr;
 	ireq->no_srccheck = inet_sk(meta_sk)->transparent;
-	ireq->opt = tcp_v4_save_options(meta_sk, skb);
+	ireq->opt = tcp_v4_save_options(skb);
 
 	if (security_inet_conn_request(meta_sk, skb, req))
 		goto drop_and_free;

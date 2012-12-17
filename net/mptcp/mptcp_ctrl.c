@@ -1491,7 +1491,6 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	 * some of the fields
 	 */
 	child_tp->rx_opt.low_prio = mtreq->low_prio;
-	child->sk_sndmsg_page = NULL;
 
 	/* Point it to the same struct socket and wq as the meta_sk */
 	sk_set_socket(child, meta_sk->sk_socket);

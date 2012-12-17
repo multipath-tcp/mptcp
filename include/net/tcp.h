@@ -436,8 +436,7 @@ extern int tcp_v4_send_synack(struct sock *sk, struct dst_entry *dst,
 			      struct request_values *rvp, u16 queue_mapping,
 			      bool nocache);
 extern void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb);
-extern struct ip_options_rcu *tcp_v4_save_options(struct sock *sk,
-						  struct sk_buff *skb);
+extern struct ip_options_rcu *tcp_v4_save_options(struct sk_buff *skb);
 extern struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb);
 extern void tcp_v4_reqsk_destructor(struct request_sock *req);
 
