@@ -186,7 +186,7 @@ static void mptcp_ccc_set_state(struct sock *sk, u8 ca_state)
 
 static void mptcp_ccc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 {
-	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = mptcp_meta_tp(tp);
+	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_cb *mpcb = tp->mpcb;
 	int snd_cwnd;
 
