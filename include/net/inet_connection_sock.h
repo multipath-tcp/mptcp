@@ -240,6 +240,8 @@ static inline void inet_csk_reset_xmit_timer(struct sock *sk, const int what,
 
 extern struct sock *inet_csk_accept(struct sock *sk, int flags, int *err);
 
+extern u32 inet_synq_hash(const __be32 raddr, const __be16 rport, const u32 rnd,
+			  const u32 synq_hsize);
 extern struct request_sock *inet_csk_search_req(const struct sock *sk,
 						struct request_sock ***prevp,
 						const __be16 rport,
@@ -318,6 +320,7 @@ extern void inet_csk_reqsk_queue_prune(struct sock *parent,
 				       const unsigned long max_rto);
 
 extern void inet_csk_destroy_sock(struct sock *sk);
+extern void inet_csk_prepare_forced_close(struct sock *sk);
 
 /*
  * LISTEN is a special case for poll..
