@@ -971,11 +971,8 @@ void __scsi_remove_device(struct scsi_device *sdev)
 		sdev->host->hostt->slave_destroy(sdev);
 	transport_destroy_device(dev);
 
-	/* cause the request function to reject all I/O requests */
-	sdev->request_queue->queuedata = NULL;
-
 	/* Freeing the queue signals to block that we're done */
-	scsi_free_queue(sdev->request_queue);
+	blk_cleanup_queue(sdev->request_queue);
 	put_device(dev);
 }
 
@@ -1000,7 +997,6 @@ static void __scsi_remove_target(struct scsi_target *starget)
 	struct scsi_device *sdev;
 
 	spin_lock_irqsave(shost->host_lock, flags);
-	starget->reap_ref++;
  restart:
 	list_for_each_entry(sdev, &shost->__devices, siblings) {
 		if (sdev->channel != starget->channel ||
@@ -1014,14 +1010,6 @@ static void __scsi_remove_target(struct scsi_target *starget)
 		goto restart;
 	}
 	spin_unlock_irqrestore(shost->host_lock, flags);
-	scsi_target_reap(starget);
-}
-
-static int __remove_child (struct device * dev, void * data)
-{
-	if (scsi_is_target_device(dev))
-		__scsi_remove_target(to_scsi_target(dev));
-	return 0;
 }
 
 /**
@@ -1034,14 +1022,32 @@ static int __remove_child (struct device * dev, void * data)
  */
 void scsi_remove_target(struct device *dev)
 {
-	if (scsi_is_target_device(dev)) {
-		__scsi_remove_target(to_scsi_target(dev));
-		return;
-	}
+	struct Scsi_Host *shost = dev_to_shost(dev->parent);
+	struct scsi_target *starget, *last = NULL;
+	unsigned long flags;
 
-	get_device(dev);
-	device_for_each_child(dev, NULL, __remove_child);
-	put_device(dev);
+	/* remove targets being careful to lookup next entry before
+	 * deleting the last
+	 */
+	spin_lock_irqsave(shost->host_lock, flags);
+	list_for_each_entry(starget, &shost->__targets, siblings) {
+		if (starget->state == STARGET_DEL)
+			continue;
+		if (starget->dev.parent == dev || &starget->dev == dev) {
+			/* assuming new targets arrive at the end */
+			starget->reap_ref++;
+			spin_unlock_irqrestore(shost->host_lock, flags);
+			if (last)
+				scsi_target_reap(last);
+			last = starget;
+			__scsi_remove_target(starget);
+			spin_lock_irqsave(shost->host_lock, flags);
+		}
+	}
+	spin_unlock_irqrestore(shost->host_lock, flags);
+
+	if (last)
+		scsi_target_reap(last);
 }
 EXPORT_SYMBOL(scsi_remove_target);
 

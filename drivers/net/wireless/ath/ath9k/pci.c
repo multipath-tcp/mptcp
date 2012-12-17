@@ -37,6 +37,7 @@ static DEFINE_PCI_DEVICE_TABLE(ath_pci_id_table) = {
 	{ PCI_VDEVICE(ATHEROS, 0x0032) }, /* PCI-E  AR9485 */
 	{ PCI_VDEVICE(ATHEROS, 0x0033) }, /* PCI-E  AR9580 */
 	{ PCI_VDEVICE(ATHEROS, 0x0034) }, /* PCI-E  AR9462 */
+	{ PCI_VDEVICE(ATHEROS, 0x0037) }, /* PCI-E  AR1111/AR9485 */
 	{ 0 }
 };
 
@@ -123,8 +124,9 @@ static void ath_pci_aspm_init(struct ath_common *common)
 	if (!parent)
 		return;
 
-	if (ath9k_hw_get_btcoex_scheme(ah) != ATH_BTCOEX_CFG_NONE) {
-		/* Bluetooth coexistance requires disabling ASPM. */
+	if ((ath9k_hw_get_btcoex_scheme(ah) != ATH_BTCOEX_CFG_NONE) &&
+	    (AR_SREV_9285(ah))) {
+		/* Bluetooth coexistance requires disabling ASPM for AR9285. */
 		pci_read_config_byte(pdev, pos + PCI_EXP_LNKCTL, &aspm);
 		aspm &= ~(PCIE_LINK_STATE_L0S | PCIE_LINK_STATE_L1);
 		pci_write_config_byte(pdev, pos + PCI_EXP_LNKCTL, aspm);
@@ -312,6 +314,7 @@ static int ath_pci_suspend(struct device *device)
 	 * Otherwise the chip never moved to full sleep,
 	 * when no interface is up.
 	 */
+	ath9k_stop_btcoex(sc);
 	ath9k_hw_disable(sc->sc_ah);
 	ath9k_hw_setpower(sc->sc_ah, ATH9K_PM_FULL_SLEEP);
 

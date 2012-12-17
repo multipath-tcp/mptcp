@@ -605,12 +605,12 @@ static irqreturn_t ivybridge_irq_handler(DRM_IRQ_ARGS)
 			intel_opregion_gse_intr(dev);
 
 		for (i = 0; i < 3; i++) {
+			if (de_iir & (DE_PIPEA_VBLANK_IVB << (5 * i)))
+				drm_handle_vblank(dev, i);
 			if (de_iir & (DE_PLANEA_FLIP_DONE_IVB << (5 * i))) {
 				intel_prepare_page_flip(dev, i);
 				intel_finish_page_flip_plane(dev, i);
 			}
-			if (de_iir & (DE_PIPEA_VBLANK_IVB << (5 * i)))
-				drm_handle_vblank(dev, i);
 		}
 
 		/* check event from PCH */
@@ -692,6 +692,12 @@ static irqreturn_t ironlake_irq_handler(DRM_IRQ_ARGS)
 	if (de_iir & DE_GSE)
 		intel_opregion_gse_intr(dev);
 
+	if (de_iir & DE_PIPEA_VBLANK)
+		drm_handle_vblank(dev, 0);
+
+	if (de_iir & DE_PIPEB_VBLANK)
+		drm_handle_vblank(dev, 1);
+
 	if (de_iir & DE_PLANEA_FLIP_DONE) {
 		intel_prepare_page_flip(dev, 0);
 		intel_finish_page_flip_plane(dev, 0);
@@ -701,12 +707,6 @@ static irqreturn_t ironlake_irq_handler(DRM_IRQ_ARGS)
 		intel_prepare_page_flip(dev, 1);
 		intel_finish_page_flip_plane(dev, 1);
 	}
-
-	if (de_iir & DE_PIPEA_VBLANK)
-		drm_handle_vblank(dev, 0);
-
-	if (de_iir & DE_PIPEB_VBLANK)
-		drm_handle_vblank(dev, 1);
 
 	/* check event from PCH */
 	if (de_iir & DE_PCH_EVENT) {
@@ -2626,9 +2626,6 @@ void intel_irq_init(struct drm_device *dev)
 			dev->driver->irq_handler = i8xx_irq_handler;
 			dev->driver->irq_uninstall = i8xx_irq_uninstall;
 		} else if (INTEL_INFO(dev)->gen == 3) {
-			/* IIR "flip pending" means done if this bit is set */
-			I915_WRITE(ECOSKPD, _MASKED_BIT_DISABLE(ECO_FLIP_DONE));
-
 			dev->driver->irq_preinstall = i915_irq_preinstall;
 			dev->driver->irq_postinstall = i915_irq_postinstall;
 			dev->driver->irq_uninstall = i915_irq_uninstall;

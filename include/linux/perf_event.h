@@ -274,6 +274,8 @@ struct perf_event_attr {
 	__u64	branch_sample_type; /* enum branch_sample_type */
 };
 
+#define perf_flags(attr)	(*(&(attr)->read_format + 1))
+
 /*
  * Ioctls that can be done on a perf event fd:
  */
@@ -925,7 +927,7 @@ struct perf_event {
 	struct hw_perf_event		hw;
 
 	struct perf_event_context	*ctx;
-	struct file			*filp;
+	atomic_long_t			refcount;
 
 	/*
 	 * These accumulate total time (in nanoseconds) that children

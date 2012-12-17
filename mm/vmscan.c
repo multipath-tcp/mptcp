@@ -720,9 +720,41 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 			(PageSwapCache(page) && (sc->gfp_mask & __GFP_IO));
 
 		if (PageWriteback(page)) {
-			nr_writeback++;
-			unlock_page(page);
-			goto keep;
+			/*
+			 * memcg doesn't have any dirty pages throttling so we
+			 * could easily OOM just because too many pages are in
+			 * writeback and there is nothing else to reclaim.
+			 *
+			 * Check __GFP_IO, certainly because a loop driver
+			 * thread might enter reclaim, and deadlock if it waits
+			 * on a page for which it is needed to do the write
+			 * (loop masks off __GFP_IO|__GFP_FS for this reason);
+			 * but more thought would probably show more reasons.
+			 *
+			 * Don't require __GFP_FS, since we're not going into
+			 * the FS, just waiting on its writeback completion.
+			 * Worryingly, ext4 gfs2 and xfs allocate pages with
+			 * grab_cache_page_write_begin(,,AOP_FLAG_NOFS), so
+			 * testing may_enter_fs here is liable to OOM on them.
+			 */
+			if (global_reclaim(sc) ||
+			    !PageReclaim(page) || !(sc->gfp_mask & __GFP_IO)) {
+				/*
+				 * This is slightly racy - end_page_writeback()
+				 * might have just cleared PageReclaim, then
+				 * setting PageReclaim here end up interpreted
+				 * as PageReadahead - but that does not matter
+				 * enough to care.  What we do want is for this
+				 * page to have PageReclaim set next time memcg
+				 * reclaim reaches the tests above, so it will
+				 * then wait_on_page_writeback() to avoid OOM;
+				 * and it's also appropriate in global reclaim.
+				 */
+				SetPageReclaim(page);
+				nr_writeback++;
+				goto keep_locked;
+			}
+			wait_on_page_writeback(page);
 		}
 
 		references = page_check_references(page, sc);

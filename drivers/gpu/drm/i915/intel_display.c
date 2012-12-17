@@ -1238,7 +1238,7 @@ static void assert_pch_hdmi_disabled(struct drm_i915_private *dev_priv,
 				     enum pipe pipe, int reg)
 {
 	u32 val = I915_READ(reg);
-	WARN(hdmi_pipe_enabled(dev_priv, val, pipe),
+	WARN(hdmi_pipe_enabled(dev_priv, pipe, val),
 	     "PCH HDMI (0x%08x) enabled on transcoder %c, should be disabled\n",
 	     reg, pipe_name(pipe));
 }
@@ -1255,13 +1255,13 @@ static void assert_pch_ports_disabled(struct drm_i915_private *dev_priv,
 
 	reg = PCH_ADPA;
 	val = I915_READ(reg);
-	WARN(adpa_pipe_enabled(dev_priv, val, pipe),
+	WARN(adpa_pipe_enabled(dev_priv, pipe, val),
 	     "PCH VGA enabled on transcoder %c, should be disabled\n",
 	     pipe_name(pipe));
 
 	reg = PCH_LVDS;
 	val = I915_READ(reg);
-	WARN(lvds_pipe_enabled(dev_priv, val, pipe),
+	WARN(lvds_pipe_enabled(dev_priv, pipe, val),
 	     "PCH LVDS enabled on transcoder %c, should be disabled\n",
 	     pipe_name(pipe));
 
@@ -1723,7 +1723,7 @@ static void disable_pch_hdmi(struct drm_i915_private *dev_priv,
 			     enum pipe pipe, int reg)
 {
 	u32 val = I915_READ(reg);
-	if (hdmi_pipe_enabled(dev_priv, val, pipe)) {
+	if (hdmi_pipe_enabled(dev_priv, pipe, val)) {
 		DRM_DEBUG_KMS("Disabling pch HDMI %x on pipe %d\n",
 			      reg, pipe);
 		I915_WRITE(reg, val & ~PORT_ENABLE);
@@ -1745,12 +1745,12 @@ static void intel_disable_pch_ports(struct drm_i915_private *dev_priv,
 
 	reg = PCH_ADPA;
 	val = I915_READ(reg);
-	if (adpa_pipe_enabled(dev_priv, val, pipe))
+	if (adpa_pipe_enabled(dev_priv, pipe, val))
 		I915_WRITE(reg, val & ~ADPA_DAC_ENABLE);
 
 	reg = PCH_LVDS;
 	val = I915_READ(reg);
-	if (lvds_pipe_enabled(dev_priv, val, pipe)) {
+	if (lvds_pipe_enabled(dev_priv, pipe, val)) {
 		DRM_DEBUG_KMS("disable lvds on pipe %d val 0x%08x\n", pipe, val);
 		I915_WRITE(reg, val & ~LVDS_PORT_EN);
 		POSTING_READ(reg);
@@ -2641,12 +2641,33 @@ static void ironlake_fdi_disable(struct drm_crtc *crtc)
 	udelay(100);
 }
 
+static bool intel_crtc_has_pending_flip(struct drm_crtc *crtc)
+{
+	struct drm_device *dev = crtc->dev;
+	struct drm_i915_private *dev_priv = dev->dev_private;
+	unsigned long flags;
+	bool pending;
+
+	if (atomic_read(&dev_priv->mm.wedged))
+		return false;
+
+	spin_lock_irqsave(&dev->event_lock, flags);
+	pending = to_intel_crtc(crtc)->unpin_work != NULL;
+	spin_unlock_irqrestore(&dev->event_lock, flags);
+
+	return pending;
+}
+
 static void intel_crtc_wait_for_pending_flips(struct drm_crtc *crtc)
 {
 	struct drm_device *dev = crtc->dev;
+	struct drm_i915_private *dev_priv = dev->dev_private;
 
 	if (crtc->fb == NULL)
 		return;
+
+	wait_event(dev_priv->pending_flip_queue,
+		   !intel_crtc_has_pending_flip(crtc));
 
 	mutex_lock(&dev->struct_mutex);
 	intel_finish_fb(crtc->fb);
@@ -3581,17 +3602,6 @@ static bool intel_choose_pipe_bpp_dither(struct drm_crtc *crtc,
 			continue;
 		}
 
-		if (intel_encoder->type == INTEL_OUTPUT_EDP) {
-			/* Use VBT settings if we have an eDP panel */
-			unsigned int edp_bpc = dev_priv->edp.bpp / 3;
-
-			if (edp_bpc < display_bpc) {
-				DRM_DEBUG_KMS("clamping display bpc (was %d) to eDP (%d)\n", display_bpc, edp_bpc);
-				display_bpc = edp_bpc;
-			}
-			continue;
-		}
-
 		/* Not one of the known troublemakers, check the EDID */
 		list_for_each_entry(connector, &dev->mode_config.connector_list,
 				    head) {
@@ -3937,18 +3947,18 @@ static void i8xx_update_pll(struct drm_crtc *crtc,
 	POSTING_READ(DPLL(pipe));
 	udelay(150);
 
-	I915_WRITE(DPLL(pipe), dpll);
-
-	/* Wait for the clocks to stabilize. */
-	POSTING_READ(DPLL(pipe));
-	udelay(150);
-
 	/* The LVDS pin pair needs to be on before the DPLLs are enabled.
 	 * This is an exception to the general rule that mode_set doesn't turn
 	 * things on.
 	 */
 	if (intel_pipe_has_type(crtc, INTEL_OUTPUT_LVDS))
 		intel_update_lvds(crtc, clock, adjusted_mode);
+
+	I915_WRITE(DPLL(pipe), dpll);
+
+	/* Wait for the clocks to stabilize. */
+	POSTING_READ(DPLL(pipe));
+	udelay(150);
 
 	/* The pixel multiplier can only be updated once the
 	 * DPLL is enabled and the clocks are stable.
@@ -5927,9 +5937,8 @@ static void do_intel_finish_page_flip(struct drm_device *dev,
 
 	atomic_clear_mask(1 << intel_crtc->plane,
 			  &obj->pending_flip.counter);
-	if (atomic_read(&obj->pending_flip) == 0)
-		wake_up(&dev_priv->pending_flip_queue);
 
+	wake_up(&dev_priv->pending_flip_queue);
 	schedule_work(&work->work);
 
 	trace_i915_flip_complete(intel_crtc->plane, work->pending_flip_obj);
@@ -6178,7 +6187,7 @@ static int intel_gen7_queue_flip(struct drm_device *dev,
 	default:
 		WARN_ONCE(1, "unknown plane in flip command\n");
 		ret = -ENODEV;
-		goto err;
+		goto err_unpin;
 	}
 
 	ret = intel_ring_begin(ring, 4);

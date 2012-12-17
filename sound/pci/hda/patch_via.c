@@ -3226,7 +3226,7 @@ static void set_widgets_power_state_vt1718S(struct hda_codec *codec)
 {
 	struct via_spec *spec = codec->spec;
 	int imux_is_smixer;
-	unsigned int parm;
+	unsigned int parm, parm2;
 	/* MUX6 (1eh) = stereo mixer */
 	imux_is_smixer =
 	snd_hda_codec_read(codec, 0x1e, 0, AC_VERB_GET_CONNECT_SEL, 0x00) == 5;
@@ -3249,7 +3249,7 @@ static void set_widgets_power_state_vt1718S(struct hda_codec *codec)
 	parm = AC_PWRST_D3;
 	set_pin_power_state(codec, 0x27, &parm);
 	update_power_state(codec, 0x1a, parm);
-	update_power_state(codec, 0xb, parm);
+	parm2 = parm; /* for pin 0x0b */
 
 	/* PW2 (26h), AOW2 (ah) */
 	parm = AC_PWRST_D3;
@@ -3264,6 +3264,9 @@ static void set_widgets_power_state_vt1718S(struct hda_codec *codec)
 	if (!spec->hp_independent_mode) /* check for redirected HP */
 		set_pin_power_state(codec, 0x28, &parm);
 	update_power_state(codec, 0x8, parm);
+	if (!spec->hp_independent_mode && parm2 != AC_PWRST_D3)
+		parm = parm2;
+	update_power_state(codec, 0xb, parm);
 	/* MW9 (21h), Mw2 (1ah), AOW0 (8h) */
 	update_power_state(codec, 0x21, imux_is_smixer ? AC_PWRST_D0 : parm);
 
@@ -3658,6 +3661,32 @@ static void set_widgets_power_state_vt2002P(struct hda_codec *codec)
 		update_power_state(codec, 0x21, AC_PWRST_D3);
 }
 
+/*
+ * pin fix-up
+ */
+enum {
+	VIA_FIXUP_INTMIC_BOOST,
+};
+
+static void via_fixup_intmic_boost(struct hda_codec *codec,
+				  const struct hda_fixup *fix, int action)
+{
+	if (action == HDA_FIXUP_ACT_PRE_PROBE)
+		override_mic_boost(codec, 0x30, 0, 2, 40);
+}
+
+static const struct hda_fixup via_fixups[] = {
+	[VIA_FIXUP_INTMIC_BOOST] = {
+		.type = HDA_FIXUP_FUNC,
+		.v.func = via_fixup_intmic_boost,
+	},
+};
+
+static const struct snd_pci_quirk vt2002p_fixups[] = {
+	SND_PCI_QUIRK(0x1043, 0x8532, "Asus X202E", VIA_FIXUP_INTMIC_BOOST),
+	{}
+};
+
 /* patch for vt2002P */
 static int patch_vt2002P(struct hda_codec *codec)
 {
@@ -3673,6 +3702,9 @@ static int patch_vt2002P(struct hda_codec *codec)
 	override_mic_boost(codec, 0x2b, 0, 3, 40);
 	override_mic_boost(codec, 0x29, 0, 3, 40);
 	add_secret_dac_path(codec);
+
+	snd_hda_pick_fixup(codec, NULL, vt2002p_fixups, via_fixups);
+	snd_hda_apply_fixup(codec, HDA_FIXUP_ACT_PRE_PROBE);
 
 	/* automatic parse from the BIOS config */
 	err = via_parse_auto_config(codec);

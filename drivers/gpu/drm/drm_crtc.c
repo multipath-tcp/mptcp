@@ -1034,13 +1034,13 @@ void drm_mode_config_cleanup(struct drm_device *dev)
 		fb->funcs->destroy(fb);
 	}
 
-	list_for_each_entry_safe(crtc, ct, &dev->mode_config.crtc_list, head) {
-		crtc->funcs->destroy(crtc);
-	}
-
 	list_for_each_entry_safe(plane, plt, &dev->mode_config.plane_list,
 				 head) {
 		plane->funcs->destroy(plane);
+	}
+
+	list_for_each_entry_safe(crtc, ct, &dev->mode_config.crtc_list, head) {
+		crtc->funcs->destroy(crtc);
 	}
 
 	idr_remove_all(&dev->mode_config.crtc_idr);
@@ -1981,7 +1981,7 @@ int drm_mode_cursor_ioctl(struct drm_device *dev,
 	if (!drm_core_check_feature(dev, DRIVER_MODESET))
 		return -EINVAL;
 
-	if (!req->flags)
+	if (!req->flags || (~DRM_MODE_CURSOR_FLAGS & req->flags))
 		return -EINVAL;
 
 	mutex_lock(&dev->mode_config.mutex);

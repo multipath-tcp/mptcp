@@ -757,6 +757,7 @@ int hid_open_report(struct hid_device *device)
 	struct hid_item item;
 	unsigned int size;
 	__u8 *start;
+	__u8 *buf;
 	__u8 *end;
 	int ret;
 	static int (*dispatch_type[])(struct hid_parser *parser,
@@ -775,12 +776,21 @@ int hid_open_report(struct hid_device *device)
 		return -ENODEV;
 	size = device->dev_rsize;
 
-	if (device->driver->report_fixup)
-		start = device->driver->report_fixup(device, start, &size);
-
-	device->rdesc = kmemdup(start, size, GFP_KERNEL);
-	if (device->rdesc == NULL)
+	buf = kmemdup(start, size, GFP_KERNEL);
+	if (buf == NULL)
 		return -ENOMEM;
+
+	if (device->driver->report_fixup)
+		start = device->driver->report_fixup(device, buf, &size);
+	else
+		start = buf;
+
+	start = kmemdup(start, size, GFP_KERNEL);
+	kfree(buf);
+	if (start == NULL)
+		return -ENOMEM;
+
+	device->rdesc = start;
 	device->rsize = size;
 
 	parser = vzalloc(sizeof(struct hid_parser));
@@ -1521,10 +1531,12 @@ static const struct hid_device_id hid_have_special_driver[] = {
 	{ HID_USB_DEVICE(USB_VENDOR_ID_CHICONY, USB_DEVICE_ID_CHICONY_TACTICAL_PAD) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_CHICONY, USB_DEVICE_ID_CHICONY_WIRELESS) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_CHICONY, USB_DEVICE_ID_CHICONY_WIRELESS2) },
+	{ HID_USB_DEVICE(USB_VENDOR_ID_CHICONY, USB_DEVICE_ID_CHICONY_AK1D) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_CREATIVELABS, USB_DEVICE_ID_PRODIKEYS_PCMIDI) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_CYPRESS, USB_DEVICE_ID_CYPRESS_BARCODE_1) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_CYPRESS, USB_DEVICE_ID_CYPRESS_BARCODE_2) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_CYPRESS, USB_DEVICE_ID_CYPRESS_BARCODE_3) },
+	{ HID_USB_DEVICE(USB_VENDOR_ID_CYPRESS, USB_DEVICE_ID_CYPRESS_BARCODE_4) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_CYPRESS, USB_DEVICE_ID_CYPRESS_MOUSE) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_DRAGONRISE, 0x0006) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_DRAGONRISE, 0x0011) },

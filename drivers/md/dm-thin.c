@@ -19,7 +19,7 @@
 /*
  * Tunable constants
  */
-#define ENDIO_HOOK_POOL_SIZE 10240
+#define ENDIO_HOOK_POOL_SIZE 1024
 #define DEFERRED_SET_SIZE 64
 #define MAPPING_POOL_SIZE 1024
 #define PRISON_CELLS 1024
@@ -859,7 +859,7 @@ static void process_prepared_mapping(struct dm_thin_new_mapping *m)
 
 	if (m->err) {
 		cell_error(m->cell);
-		return;
+		goto out;
 	}
 
 	/*
@@ -871,7 +871,7 @@ static void process_prepared_mapping(struct dm_thin_new_mapping *m)
 	if (r) {
 		DMERR("dm_thin_insert_block() failed");
 		cell_error(m->cell);
-		return;
+		goto out;
 	}
 
 	/*
@@ -886,6 +886,7 @@ static void process_prepared_mapping(struct dm_thin_new_mapping *m)
 	} else
 		cell_defer(tc, m->cell, m->data_block);
 
+out:
 	list_del(&m->list);
 	mempool_free(m, tc->pool->mapping_pool);
 }

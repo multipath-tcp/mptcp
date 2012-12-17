@@ -556,7 +556,6 @@ struct usb_device {
 	struct usb3_lpm_parameters u1_params;
 	struct usb3_lpm_parameters u2_params;
 	unsigned lpm_disable_count;
-	unsigned hub_initiated_lpm_disable_count;
 };
 #define	to_usb_device(d) container_of(d, struct usb_device, dev)
 
@@ -825,6 +824,27 @@ static inline int usb_make_path(struct usb_device *dev, char *buf, size_t size)
 		| USB_DEVICE_ID_MATCH_DEVICE, \
 	.idVendor = (vend), \
 	.idProduct = (prod), \
+	.bInterfaceClass = (cl), \
+	.bInterfaceSubClass = (sc), \
+	.bInterfaceProtocol = (pr)
+
+/**
+ * USB_VENDOR_AND_INTERFACE_INFO - describe a specific usb vendor with a class of usb interfaces
+ * @vend: the 16 bit USB Vendor ID
+ * @cl: bInterfaceClass value
+ * @sc: bInterfaceSubClass value
+ * @pr: bInterfaceProtocol value
+ *
+ * This macro is used to create a struct usb_device_id that matches a
+ * specific vendor with a specific class of interfaces.
+ *
+ * This is especially useful when explicitly matching devices that have
+ * vendor specific bDeviceClass values, but standards-compliant interfaces.
+ */
+#define USB_VENDOR_AND_INTERFACE_INFO(vend, cl, sc, pr) \
+	.match_flags = USB_DEVICE_ID_MATCH_INT_INFO \
+		| USB_DEVICE_ID_MATCH_VENDOR, \
+	.idVendor = (vend), \
 	.bInterfaceClass = (cl), \
 	.bInterfaceSubClass = (sc), \
 	.bInterfaceProtocol = (pr)

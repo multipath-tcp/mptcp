@@ -1055,6 +1055,8 @@ rollback:
  */
 int dev_set_alias(struct net_device *dev, const char *alias, size_t len)
 {
+	char *new_ifalias;
+
 	ASSERT_RTNL();
 
 	if (len >= IFALIASZ)
@@ -1068,9 +1070,10 @@ int dev_set_alias(struct net_device *dev, const char *alias, size_t len)
 		return 0;
 	}
 
-	dev->ifalias = krealloc(dev->ifalias, len + 1, GFP_KERNEL);
-	if (!dev->ifalias)
+	new_ifalias = krealloc(dev->ifalias, len + 1, GFP_KERNEL);
+	if (!new_ifalias)
 		return -ENOMEM;
+	dev->ifalias = new_ifalias;
 
 	strlcpy(dev->ifalias, alias, len+1);
 	return len;
@@ -1172,6 +1175,7 @@ static int __dev_open(struct net_device *dev)
 		net_dmaengine_get();
 		dev_set_rx_mode(dev);
 		dev_activate(dev);
+		add_device_randomness(dev->dev_addr, dev->addr_len);
 	}
 
 	return ret;
@@ -1636,6 +1640,19 @@ static inline int deliver_skb(struct sk_buff *skb,
 	return pt_prev->func(skb, skb->dev, pt_prev, orig_dev);
 }
 
+static inline bool skb_loop_sk(struct packet_type *ptype, struct sk_buff *skb)
+{
+	if (ptype->af_packet_priv == NULL)
+		return false;
+
+	if (ptype->id_match)
+		return ptype->id_match(ptype, skb->sk);
+	else if ((struct sock *)ptype->af_packet_priv == skb->sk)
+		return true;
+
+	return false;
+}
+
 /*
  *	Support routine. Sends outgoing frames to any network
  *	taps currently in use.
@@ -1653,8 +1670,7 @@ static void dev_queue_xmit_nit(struct sk_buff *skb, struct net_device *dev)
 		 * they originated from - MvS (miquels@drinkel.ow.org)
 		 */
 		if ((ptype->dev == dev || !ptype->dev) &&
-		    (ptype->af_packet_priv == NULL ||
-		     (struct sock *)ptype->af_packet_priv != skb->sk)) {
+		    (!skb_loop_sk(ptype, skb))) {
 			if (pt_prev) {
 				deliver_skb(skb2, pt_prev, skb->dev);
 				pt_prev = ptype;
@@ -2103,7 +2119,8 @@ static bool can_checksum_protocol(netdev_features_t features, __be16 protocol)
 static netdev_features_t harmonize_features(struct sk_buff *skb,
 	__be16 protocol, netdev_features_t features)
 {
-	if (!can_checksum_protocol(features, protocol)) {
+	if (skb->ip_summed != CHECKSUM_NONE &&
+	    !can_checksum_protocol(features, protocol)) {
 		features &= ~NETIF_F_ALL_CSUM;
 		features &= ~NETIF_F_SG;
 	} else if (illegal_highdma(skb->dev, skb)) {
@@ -2599,15 +2616,16 @@ void __skb_get_rxhash(struct sk_buff *skb)
 	if (!skb_flow_dissect(skb, &keys))
 		return;
 
-	if (keys.ports) {
-		if ((__force u16)keys.port16[1] < (__force u16)keys.port16[0])
-			swap(keys.port16[0], keys.port16[1]);
+	if (keys.ports)
 		skb->l4_rxhash = 1;
-	}
 
 	/* get a consistent hash (same value on both flow directions) */
-	if ((__force u32)keys.dst < (__force u32)keys.src)
+	if (((__force u32)keys.dst < (__force u32)keys.src) ||
+	    (((__force u32)keys.dst == (__force u32)keys.src) &&
+	     ((__force u16)keys.port16[1] < (__force u16)keys.port16[0]))) {
 		swap(keys.dst, keys.src);
+		swap(keys.port16[0], keys.port16[1]);
+	}
 
 	hash = jhash_3words((__force u32)keys.dst,
 			    (__force u32)keys.src,
@@ -4770,6 +4788,7 @@ int dev_set_mac_address(struct net_device *dev, struct sockaddr *sa)
 	err = ops->ndo_set_mac_address(dev, sa);
 	if (!err)
 		call_netdevice_notifiers(NETDEV_CHANGEADDR, dev);
+	add_device_randomness(dev->dev_addr, dev->addr_len);
 	return err;
 }
 EXPORT_SYMBOL(dev_set_mac_address);
@@ -5548,6 +5567,7 @@ int register_netdevice(struct net_device *dev)
 	dev_init_scheduler(dev);
 	dev_hold(dev);
 	list_netdevice(dev);
+	add_device_randomness(dev->dev_addr, dev->addr_len);
 
 	/* Notify protocols, that a new device appeared. */
 	ret = call_netdevice_notifiers(NETDEV_REGISTER, dev);

@@ -2129,7 +2129,7 @@ static inline void flush_unauthorized_files(const struct cred *cred,
 		int fd;
 
 		j++;
-		i = j * __NFDBITS;
+		i = j * BITS_PER_LONG;
 		fdt = files_fdtable(files);
 		if (i >= fdt->max_fds)
 			break;
@@ -2792,11 +2792,16 @@ static int selinux_inode_setxattr(struct dentry *dentry, const char *name,
 
 			/* We strip a nul only if it is at the end, otherwise the
 			 * context contains a nul and we should audit that */
-			str = value;
-			if (str[size - 1] == '\0')
-				audit_size = size - 1;
-			else
-				audit_size = size;
+			if (value) {
+				str = value;
+				if (str[size - 1] == '\0')
+					audit_size = size - 1;
+				else
+					audit_size = size;
+			} else {
+				str = "";
+				audit_size = 0;
+			}
 			ab = audit_log_start(current->audit_context, GFP_ATOMIC, AUDIT_SELINUX_ERR);
 			audit_log_format(ab, "op=setxattr invalid_context=");
 			audit_log_n_untrustedstring(ab, value, audit_size);
