@@ -25,6 +25,8 @@ struct sockaddr;
 extern int inet6_csk_bind_conflict(const struct sock *sk,
 				   const struct inet_bind_bucket *tb, bool relax);
 
+extern u32 inet6_synq_hash(const struct in6_addr *raddr, const __be16 rport,
+			   const u32 rnd, const u32 synq_hsize);
 extern struct dst_entry* inet6_csk_route_req(struct sock *sk,
 					     struct flowi6 *fl6,
 					     const struct request_sock *req);
