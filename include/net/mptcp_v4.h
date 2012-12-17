@@ -57,6 +57,7 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 				  struct mptcp_cb *mpcb);
 int mptcp_pm_v4_init(void);
+void mptcp_pm_v4_undo(void);
 void mptcp_v4_send_add_addr(int loc_id, struct mptcp_cb *mpcb);
 
 #else

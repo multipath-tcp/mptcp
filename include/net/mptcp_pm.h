@@ -105,7 +105,7 @@ void __mptcp_hash_insert(struct tcp_sock *meta_tp, u32 token);
 void mptcp_hash_remove_bh(struct tcp_sock *meta_tp);
 void mptcp_hash_remove(struct tcp_sock *meta_tp);
 struct sock *mptcp_hash_find(u32 token);
-int mptcp_lookup_join(struct sk_buff *skb);
+int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw);
 int mptcp_do_join_short(struct sk_buff *skb, struct multipath_options *mopt,
 			struct tcp_options_received *tmp_opt);
 void mptcp_reqsk_remove_tk(struct request_sock *reqsk);
@@ -117,7 +117,8 @@ void mptcp_set_addresses(struct sock *meta_sk);
 int mptcp_check_req(struct sk_buff *skb);
 void mptcp_address_worker(struct work_struct *work);
 int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family);
-struct sock *mptcp_select_loc_sock(const struct mptcp_cb *mpcb, u16 ids);
+int mptcp_pm_init(void);
+void mptcp_pm_undo(void);
 
 #else /* CONFIG_MPTCP */
 static inline void mptcp_reqsk_new_mptcp(struct request_sock *req,
