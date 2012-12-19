@@ -437,7 +437,7 @@ discard:
  * to call sock_put() when the reference is not needed anymore.
  */
 struct sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
-				 const __be32 laddr, const struct net* net)
+				 const __be32 laddr, const struct net *net)
 {
 	struct mptcp_request_sock *mtreq;
 	struct sock *meta_sk = NULL;
