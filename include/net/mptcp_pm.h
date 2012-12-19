@@ -104,7 +104,7 @@ u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock *sk);
 void __mptcp_hash_insert(struct tcp_sock *meta_tp, u32 token);
 void mptcp_hash_remove_bh(struct tcp_sock *meta_tp);
 void mptcp_hash_remove(struct tcp_sock *meta_tp);
-struct sock *mptcp_hash_find(u32 token);
+struct sock *mptcp_hash_find(struct net *net, u32 token);
 int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw);
 int mptcp_do_join_short(struct sk_buff *skb, struct multipath_options *mopt,
 			struct tcp_options_received *tmp_opt);

@@ -437,7 +437,7 @@ discard:
  * to call sock_put() when the reference is not needed anymore.
  */
 struct sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
-				 const __be32 laddr)
+				 const __be32 laddr, const struct net* net)
 {
 	struct mptcp_request_sock *mtreq;
 	struct sock *meta_sk = NULL;
@@ -448,14 +448,15 @@ struct sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
 					    	    	    MPTCP_HASH_SIZE)],
 			    collide_tuple) {
 		const struct inet_request_sock *ireq = inet_rsk(rev_mptcp_rsk(mtreq));
+		meta_sk = mtreq->mpcb->meta_sk;
 
 		if (ireq->rmt_port == rport &&
 		    ireq->rmt_addr == raddr &&
 		    ireq->loc_addr == laddr &&
-		    rev_mptcp_rsk(mtreq)->rsk_ops->family == AF_INET) {
-			meta_sk = mtreq->mpcb->meta_sk;
+		    rev_mptcp_rsk(mtreq)->rsk_ops->family == AF_INET &&
+		    net_eq(net, sock_net(meta_sk)))
 			break;
-		}
+		meta_sk = NULL;
 	}
 
 	if (meta_sk && unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))

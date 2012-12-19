@@ -169,24 +169,24 @@ void mptcp_connect_init(struct tcp_sock *tp)
  * It is the responsibility of the caller to decrement when releasing
  * the structure.
  */
-struct sock *mptcp_hash_find(u32 token)
+struct sock *mptcp_hash_find(struct net *net, u32 token)
 {
 	u32 hash = mptcp_hash_tk(token);
 	struct tcp_sock *meta_tp;
+	struct sock *meta_sk = NULL;
 	struct hlist_nulls_node *node;
 
 	rcu_read_lock();
 	hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[hash], tk_table) {
-		if (token == meta_tp->mptcp_loc_token) {
-			struct sock *meta_sk = (struct sock *)meta_tp;
-			if (unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
-				meta_sk = NULL;
-			rcu_read_unlock();
-			return meta_sk;
-		}
+		meta_sk = (struct sock *)meta_tp;
+		if (token == meta_tp->mptcp_loc_token &&
+		    net_eq(net, sock_net(meta_sk)) &&
+		    atomic_inc_not_zero(&meta_sk->sk_refcnt))
+			break;
+		meta_sk = NULL;
 	}
 	rcu_read_unlock();
-	return NULL;
+	return meta_sk;
 }
 
 void mptcp_hash_remove_bh(struct tcp_sock *meta_tp)
@@ -365,11 +365,11 @@ int mptcp_check_req(struct sk_buff *skb)
 
 	if (skb->protocol == htons(ETH_P_IP))
 		meta_sk = mptcp_v4_search_req(th->source, ip_hdr(skb)->saddr,
-					      ip_hdr(skb)->daddr);
+					      ip_hdr(skb)->daddr, dev_net(skb_dst(skb)->dev));
 #if IS_ENABLED(CONFIG_IPV6)
 	else /* IPv6 */
 		meta_sk = mptcp_v6_search_req(th->source, &ipv6_hdr(skb)->saddr,
-					      &ipv6_hdr(skb)->daddr);
+					      &ipv6_hdr(skb)->daddr, dev_net(skb_dst(skb)->dev));
 #endif /* CONFIG_IPV6 */
 
 	if (!meta_sk)
@@ -445,7 +445,7 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 		return 0;
 
 	token = join_opt->u.syn.token;
-	meta_sk = mptcp_hash_find(token);
+	meta_sk = mptcp_hash_find(dev_net(skb_dst(skb)->dev), token);
 	if (!meta_sk) {
 		mptcp_debug("%s:mpcb not found:%x\n", __func__, token);
 		return -1;
@@ -501,7 +501,7 @@ int mptcp_do_join_short(struct sk_buff *skb, struct multipath_options *mopt,
 	u32 token;
 
 	token = mopt->mptcp_rem_token;
-	meta_sk = mptcp_hash_find(token);
+	meta_sk = mptcp_hash_find(dev_net(skb_dst(skb)->dev), token);
 	if (!meta_sk) {
 		mptcp_debug("%s:mpcb not found:%x\n", __func__, token);
 		return -1;
