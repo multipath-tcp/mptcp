@@ -1554,7 +1554,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	if (tmp_opt.saw_mpc && tmp_opt.is_mp_join) {
 		int ret;
 
-		ret = mptcp_do_join_short(skb, &mopt, &tmp_opt);
+		ret = mptcp_do_join_short(skb, &mopt, &tmp_opt, sock_net(sk));
 		if (ret < 0) {
 			tcp_v4_send_reset(NULL, skb);
 			goto drop;
@@ -2113,7 +2113,7 @@ process:
 	}
 
 	/* Is there a pending request sock for this segment ? */
-	if ((!sk || sk->sk_state == TCP_LISTEN) && mptcp_check_req(skb)) {
+	if ((!sk || sk->sk_state == TCP_LISTEN) && mptcp_check_req(skb, net)) {
 		if (sk)
 			sock_put(sk);
 		return 0;
