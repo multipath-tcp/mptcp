@@ -47,7 +47,7 @@ static inline void mptcp_become_fully_estab(struct sock *sk)
  * Cleans the meta-socket retransmission queue and the reinject-queue.
  * @sk must be the metasocket.
  */
-static void mptcp_clean_rtx_queue(struct sock *meta_sk)
+static void mptcp_clean_rtx_queue(struct sock *meta_sk, u32 prior_snd_una)
 {
 	struct sk_buff *skb, *tmp;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
@@ -92,6 +92,9 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk)
 		__skb_unlink(skb, &mpcb->reinject_queue);
 		__kfree_skb(skb);
 	}
+
+	if (likely(between(meta_tp->snd_up, prior_snd_una, meta_tp->snd_una)))
+		meta_tp->snd_up = meta_tp->snd_una;
 
 	if (acked) {
 		tcp_rearm_rto(meta_sk);
@@ -1004,6 +1007,7 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	struct sock *meta_sk = mptcp_meta_sk(sk);
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *tp = tcp_sk(sk);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
+	u32 prior_snd_una = meta_tp->snd_una;
 	int flag = 0;
 	int prior_packets;
 	u32 nwin, data_ack, data_seq;
@@ -1058,7 +1062,7 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	/* If the ack is older than previous acks
 	 * then we can probably ignore it.
 	 */
-	if (before(data_ack, meta_tp->snd_una))
+	if (before(data_ack, prior_snd_una))
 		goto exit;
 
 	/* If the ack includes data we haven't sent yet, discard
@@ -1111,7 +1115,7 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 
 	meta_tp->snd_una = data_ack;
 
-	mptcp_clean_rtx_queue(meta_sk);
+	mptcp_clean_rtx_queue(meta_sk, prior_snd_una);
 
 	/* Simplified version of tcp_new_space, because the snd-buffer
 	 * is handled by all the subflows.
@@ -1144,6 +1148,7 @@ void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk)
 {
 	struct mptcp_cb *mpcb;
 	struct sock *meta_sk;
+	u32 prior_snd_una;
 
 	if (!tcp_sk(sk)->mpc)
 		return;
@@ -1154,6 +1159,7 @@ void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk)
 	if (!mpcb->infinite_mapping)
 		return;
 
+	prior_snd_una = tcp_sk(meta_sk)->snd_una;
 	/* skb->data is pointing to the head of the MPTCP-option. We still assume
 	 * 32-bit data-acks.
 	 *
@@ -1161,7 +1167,7 @@ void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk)
 	 */
 	tcp_sk(meta_sk)->snd_una = ntohl(*(skb->data + 8)) + skb->len - 20 +
 				   mptcp_is_data_fin(skb) ? 1 : 0;
-	mptcp_clean_rtx_queue(meta_sk);
+	mptcp_clean_rtx_queue(meta_sk, prior_snd_una);
 }
 
 /**** static functions used by mptcp_parse_options */
