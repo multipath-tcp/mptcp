@@ -1169,7 +1169,8 @@ static inline void mptcp_send_fin(const struct sock *meta_sk) {}
 static inline void mptcp_parse_options(const uint8_t *ptr, const int opsize,
 				       const struct tcp_options_received *opt_rx,
 				       const struct multipath_options *mopt,
-				       const struct sk_buff *skb) {}
+				       const struct sk_buff *skb,
+				       const struct sock *sk) {}
 static inline void mptcp_post_parse_options(struct sock *sk,
 					    const struct sk_buff *skb) {}
 static inline void mptcp_syn_options(struct sock *sk,

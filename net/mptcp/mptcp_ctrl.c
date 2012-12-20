@@ -1530,7 +1530,9 @@ struct workqueue_struct *mptcp_wq;
 static int __init mptcp_init(void)
 {
 	int ret = -ENOMEM;
+#ifdef CONFIG_SYSCTL
 	struct ctl_table_header *mptcp_sysclt;
+#endif
 
 	mptcp_sock_cache = kmem_cache_create("mptcp_sock",
 					     sizeof(struct mptcp_tcp_sock),
@@ -1564,8 +1566,10 @@ static int __init mptcp_init(void)
 out:
 	return ret;
 
+#ifdef CONFIG_SYSCTL
 register_sysctl_failed:
 	mptcp_pm_undo();
+#endif
 mptcp_pm_failed:
 	destroy_workqueue(mptcp_wq);
 alloc_workqueue_failed:

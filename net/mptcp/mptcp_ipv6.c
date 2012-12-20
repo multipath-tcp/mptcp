@@ -627,7 +627,7 @@ discard:
  * to call sock_put() when the reference is not needed anymore.
  */
 struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *raddr,
-				 const struct in6_addr *laddr)
+				 const struct in6_addr *laddr, const struct net *net)
 {
 	struct mptcp_request_sock *mtreq;
 	struct sock *meta_sk = NULL;
@@ -638,14 +638,15 @@ struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *radd
 					    	    	     MPTCP_HASH_SIZE)],
 			    collide_tuple) {
 		const struct inet6_request_sock *treq = inet6_rsk(rev_mptcp_rsk(mtreq));
+		meta_sk = mtreq->mpcb->meta_sk;
 
 		if (inet_rsk(rev_mptcp_rsk(mtreq))->rmt_port == rport &&
 		    rev_mptcp_rsk(mtreq)->rsk_ops->family == AF_INET6 &&
 		    ipv6_addr_equal(&treq->rmt_addr, raddr) &&
-		    ipv6_addr_equal(&treq->loc_addr, laddr)) {
-			meta_sk = mtreq->mpcb->meta_sk;
+		    ipv6_addr_equal(&treq->loc_addr, laddr) &&
+		    net_eq(net, sock_net(meta_sk)))
 			break;
-		}
+		meta_sk = NULL;
 	}
 
 	if (meta_sk && unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
