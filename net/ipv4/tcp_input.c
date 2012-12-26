@@ -6025,7 +6025,8 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			if (tp->inside_tk_table)
 				mptcp_hash_remove(tp);
 		}
-		mptcp_include_mpc(tp);
+		if (tp->mpc)
+			tp->mptcp->include_mpc = 1;
 #endif
 
 		/* rfc793:

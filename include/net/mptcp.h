@@ -946,13 +946,6 @@ static inline int mptcp_sysctl_syn_retries(void)
 	return sysctl_mptcp_syn_retries;
 }
 
-static inline void mptcp_include_mpc(struct tcp_sock *tp)
-{
-	if (tp->mpc) {
-		tp->mptcp->include_mpc = 1;
-	}
-}
-
 static inline void mptcp_sub_close_passive(struct sock *sk)
 {
 	struct sock *meta_sk = mptcp_meta_sk(sk);
