@@ -1116,16 +1116,8 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
 #ifdef CONFIG_MPTCP
-	if (tmp_opt.saw_mpc && tmp_opt.is_mp_join) {
-		int ret;
-
-		ret = mptcp_do_join_short(skb, &mopt, &tmp_opt, sock_net(sk));
-		if (ret < 0) {
-			tcp_v6_send_reset(NULL, skb);
-			goto drop;
-		}
-		return -ret;
-	}
+	if (tmp_opt.saw_mpc && tmp_opt.is_mp_join)
+		return mptcp_do_join_short(skb, &mopt, &tmp_opt, sock_net(sk));
 #endif
 
 	if (!ipv6_unicast_destination(skb))

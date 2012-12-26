@@ -521,16 +521,13 @@ int mptcp_do_join_short(struct sk_buff *skb, struct multipath_options *mopt,
 		TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_JOIN;
 
 		if (unlikely(sk_add_backlog(meta_sk, skb,
-					    meta_sk->sk_rcvbuf + meta_sk->sk_sndbuf))) {
+					    meta_sk->sk_rcvbuf + meta_sk->sk_sndbuf)))
 			NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
-		} else {
+		else
 			/* Must make sure that upper layers won't free the
 			 * skb if it is added to the backlog-queue.
 			 */
-			bh_unlock_sock(meta_sk);
-			sock_put(meta_sk); /* Taken by mptcp_hash_find */
-			return 2;
-		}
+			skb_get(skb);
 	} else {
 		if (skb->protocol == htons(ETH_P_IP)) {
 			mptcp_v4_do_rcv_join_syn(meta_sk, skb, tmp_opt);
