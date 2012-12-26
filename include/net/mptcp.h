@@ -735,12 +735,6 @@ static inline struct tcp_sock *mptcp_meta_tp(const struct tcp_sock *tp)
 	return tcp_sk(tp->meta_sk);
 }
 
-static inline
-struct mptcp_cb *mptcp_mpcb_from_req_sk(const struct request_sock *req)
-{
-	return mptcp_rsk(req)->mpcb;
-}
-
 static inline int is_meta_tp(const struct tcp_sock *tp)
 {
 	return tp->mpcb && mptcp_meta_tp(tp) == tp;
@@ -755,11 +749,6 @@ static inline int is_meta_sk(const struct sock *sk)
 static inline int is_master_tp(const struct tcp_sock *tp)
 {
 	return !tp->mpc || (!tp->mptcp->slave_sk && !is_meta_tp(tp));
-}
-
-static inline int mptcp_req_sk_saw_mpc(const struct request_sock *req)
-{
-	return tcp_rsk(req)->saw_mpc;
 }
 
 static inline void mptcp_hash_request_remove(struct request_sock *req)
@@ -1119,20 +1108,11 @@ static inline struct tcp_sock *mptcp_meta_tp(const struct tcp_sock *tp)
 {
 	return NULL;
 }
-static inline
-struct mptcp_cb *mptcp_mpcb_from_req_sk(const struct request_sock *req)
-{
-	return NULL;
-}
 static inline int is_meta_sk(const struct sock *sk)
 {
 	return 0;
 }
 static inline int is_master_tp(const struct tcp_sock *tp)
-{
-	return 0;
-}
-static inline int mptcp_req_sk_saw_mpc(const struct request_sock *req)
 {
 	return 0;
 }
