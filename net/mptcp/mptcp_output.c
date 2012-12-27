@@ -1263,11 +1263,12 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 			opts->mptcp_options |= OPTION_MP_JOIN | OPTION_TYPE_ACK;
 			*size += MPTCP_SUB_LEN_JOIN_ACK_ALIGN;
 
-			mptcp_hmac_sha1((u8 *)&mpcb->mptcp_loc_key,
-					(u8 *)&mpcb->mptcp_rem_key,
-					(u8 *)&tp->mptcp->mptcp_loc_nonce,
-					(u8 *)&tp->rx_opt.mptcp_recv_nonce,
-					(u32 *)opts->mp_join_ack.sender_mac);
+			if (skb)
+				mptcp_hmac_sha1((u8 *)&mpcb->mptcp_loc_key,
+						(u8 *)&mpcb->mptcp_rem_key,
+						(u8 *)&tp->mptcp->mptcp_loc_nonce,
+						(u8 *)&tp->rx_opt.mptcp_recv_nonce,
+						(u32 *)opts->mp_join_ack.sender_mac);
 		}
 	}
 
@@ -1320,7 +1321,6 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		opts->mptcp_options |= OPTION_REMOVE_ADDR;
 		opts->remove_addrs = mpcb->remove_addrs;
 		*size += mptcp_sub_len_remove_addr_align(opts->remove_addrs);
-
 		if (skb)
 			mpcb->remove_addrs = 0;
 	} else if (!(opts->mptcp_options & OPTION_MP_CAPABLE) &&
@@ -1347,7 +1347,9 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		*size += MPTCP_SUB_LEN_PRIO_ALIGN;
 	}
 
-	tp->mptcp->include_mpc = 0;
+	if (skb)
+		tp->mptcp->include_mpc = 0;
+
 	return;
 }
 
@@ -1694,7 +1696,7 @@ void mptcp_ack_retransmit_timer(struct sock *sk)
 	skb_reserve(skb, MAX_TCP_HEADER);
 	tcp_init_nondata_skb(skb, tp->snd_una, TCPHDR_ACK);
 
-	mptcp_include_mpc(tp);
+	tp->mptcp->include_mpc = 1;
 	TCP_SKB_CB(skb)->when = tcp_time_stamp;
 	if (tcp_transmit_skb(sk, skb, 0, GFP_ATOMIC) > 0) {
 		/* Retransmission failed because of local congestion,

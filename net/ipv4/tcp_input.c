@@ -6025,7 +6025,8 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			if (tp->inside_tk_table)
 				mptcp_hash_remove(tp);
 		}
-		mptcp_include_mpc(tp);
+		if (tp->mpc)
+			tp->mptcp->include_mpc = 1;
 #endif
 
 		/* rfc793:
@@ -6076,7 +6077,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			tp->rx_opt.tstamp_ok	   = 1;
 			tp->tcp_header_len =
 				sizeof(struct tcphdr) + TCPOLEN_TSTAMP_ALIGNED;
-			tp->advmss -= TCPOLEN_TSTAMP_ALIGNED;
+			tp->advmss	    -= TCPOLEN_TSTAMP_ALIGNED;
 			tcp_store_ts_recent(tp);
 		} else {
 			tp->tcp_header_len = sizeof(struct tcphdr);
@@ -6271,17 +6272,8 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 		if (th->syn) {
 			if (th->fin)
 				goto discard;
-			res = icsk->icsk_af_ops->conn_request(sk, skb);
-			if (res < 0) {
-				/* MPTCP - if the skb has been put in the
-				 * backlog-queue, conn_request returns -2.
-				 * By returning 0, tcp_vX_do_rcv will not
-				 * free skb.
-				 */
-				if (res == -2)
-					return 0;
+			if (icsk->icsk_af_ops->conn_request(sk, skb) < 0)
 				return 1;
-			}
 
 			/* Now we have several options: In theory there is
 			 * nothing else in the frame. KA9Q has an option to

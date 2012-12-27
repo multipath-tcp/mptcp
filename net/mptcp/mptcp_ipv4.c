@@ -328,10 +328,9 @@ void mptcp_v4_do_rcv_join_syn(struct sock *meta_sk, struct sk_buff *skb,
 
 	if (mptcp_v4_add_raddress(&mpcb->rx_opt,
 			(struct in_addr *)&ip_hdr(skb)->saddr, 0,
-			tmp_opt->mpj_addr_id) < 0) {
-		tcp_v4_send_reset(NULL, skb);
-		return;
-	}
+			tmp_opt->mpj_addr_id) < 0)
+		goto reset;
+
 	mpcb->rx_opt.list_rcvd = 0;
 	mptcp_v4_join_request_short(meta_sk, skb, tmp_opt);
 	return;
