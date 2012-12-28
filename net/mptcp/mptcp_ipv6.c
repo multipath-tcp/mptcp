@@ -828,7 +828,7 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 
 	/* Look for the address among the local addresses */
 	mptcp_for_each_bit_set(mpcb->loc6_bits, i) {
-		if (ipv6_addr_equal(&mpcb->addr6[i].addr, &ifa->addr))
+		if (ipv6_addr_equal(&mpcb->locaddr6[i].addr, &ifa->addr))
 			goto found;
 	}
 
@@ -843,8 +843,8 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 		}
 
 		/* update this mpcb */
-		mpcb->addr6[i].addr = ifa->addr;
-		mpcb->addr6[i].id = i + MPTCP_MAX_ADDR;
+		mpcb->locaddr6[i].addr = ifa->addr;
+		mpcb->locaddr6[i].id = i + MPTCP_MAX_ADDR;
 		mpcb->loc6_bits |= (1 << i);
 		mpcb->next_v6_index = i + 1;
 		/* re-send addresses */
@@ -878,7 +878,7 @@ found:
 		mpcb->loc6_bits &= ~(1 << i);
 
 		/* Force sending directly the REMOVE_ADDR option */
-		mpcb->remove_addrs |= (1 << mpcb->addr6[i].id);
+		mpcb->remove_addrs |= (1 << mpcb->locaddr6[i].id);
 		sk = mptcp_select_ack_sock(mpcb->meta_sk, 0);
 		if (sk)
 			tcp_send_ack(sk);

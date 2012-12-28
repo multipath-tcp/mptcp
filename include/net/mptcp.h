@@ -225,11 +225,11 @@ struct mptcp_cb {
 				      struct dst_entry *dst);
 
 	/* Local addresses */
-	struct mptcp_loc4 addr4[MPTCP_MAX_ADDR];
+	struct mptcp_loc4 locaddr4[MPTCP_MAX_ADDR];
 	u8 loc4_bits; /* Bitfield, indicating which of the above indexes are set */
 	u8 next_v4_index;
 
-	struct mptcp_loc6 addr6[MPTCP_MAX_ADDR];
+	struct mptcp_loc6 locaddr6[MPTCP_MAX_ADDR];
 	u8 loc6_bits;
 	u8 next_v6_index;
 

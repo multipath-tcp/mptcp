@@ -936,10 +936,10 @@ void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
 	case AF_INET6:
 		/* If the socket is v4 mapped, we continue with v4 operations */
 		if (!mptcp_v6_is_v4_mapped(sk)) {
-			mpcb->addr6[0].addr = inet6_sk(sk)->saddr;
-			mpcb->addr6[0].id = 0;
-			mpcb->addr6[0].port = 0;
-			mpcb->addr6[0].low_prio = 0;
+			mpcb->locaddr6[0].addr = inet6_sk(sk)->saddr;
+			mpcb->locaddr6[0].id = 0;
+			mpcb->locaddr6[0].port = 0;
+			mpcb->locaddr6[0].low_prio = 0;
 			mpcb->loc6_bits |= 1;
 			mpcb->next_v6_index = 1;
 
@@ -950,10 +950,10 @@ void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
 		}
 #endif
 	case AF_INET:
-		mpcb->addr4[0].addr.s_addr = inet_sk(sk)->inet_saddr;
-		mpcb->addr4[0].id = 0;
-		mpcb->addr4[0].port = 0;
-		mpcb->addr4[0].low_prio = 0;
+		mpcb->locaddr4[0].addr.s_addr = inet_sk(sk)->inet_saddr;
+		mpcb->locaddr4[0].id = 0;
+		mpcb->locaddr4[0].port = 0;
+		mpcb->locaddr4[0].low_prio = 0;
 		mpcb->loc4_bits |= 1;
 		mpcb->next_v4_index = 1;
 
@@ -968,11 +968,11 @@ void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
 
 	switch (sk->sk_family) {
 	case AF_INET:
-		tcp_sk(sk)->mptcp->low_prio = mpcb->addr4[0].low_prio;
+		tcp_sk(sk)->mptcp->low_prio = mpcb->locaddr4[0].low_prio;
 		break;
 #if IS_ENABLED(CONFIG_IPV6)
 	case AF_INET6:
-		tcp_sk(sk)->mptcp->low_prio = mpcb->addr6[0].low_prio;
+		tcp_sk(sk)->mptcp->low_prio = mpcb->locaddr6[0].low_prio;
 		break;
 #endif
 	}

@@ -1198,7 +1198,7 @@ void mptcp_synack_options(struct request_sock *req,
 		if (req->rsk_ops->family == AF_INET)
 			mptcp_for_each_bit_set(mtreq->mpcb->loc4_bits, i) {
 				struct mptcp_loc4 *addr =
-						&mtreq->mpcb->addr4[i];
+						&mtreq->mpcb->locaddr4[i];
 				if (addr->addr.s_addr == ireq->loc_addr)
 					opts->addr_id = addr->id;
 			}
@@ -1206,7 +1206,7 @@ void mptcp_synack_options(struct request_sock *req,
 		else /* IPv6 */
 			mptcp_for_each_bit_set(mtreq->mpcb->loc6_bits, i) {
 				struct mptcp_loc6 *addr =
-						&mtreq->mpcb->addr6[i];
+						&mtreq->mpcb->locaddr6[i];
 				if (ipv6_addr_equal(&addr->addr,
 						    &inet6_rsk(req)->loc_addr))
 					opts->addr_id = addr->id;
@@ -1318,7 +1318,7 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		int ind = mptcp_find_free_index(~(tp->mptcp->add_addr4));
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_ADD_ADDR;
-		opts->addr4 = &mpcb->addr4[ind];
+		opts->addr4 = &mpcb->locaddr4[ind];
 		if (skb)
 			tp->mptcp->add_addr4 &= ~(1 << ind);
 		*size += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN;
@@ -1328,7 +1328,7 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		int ind = mptcp_find_free_index(~(tp->mptcp->add_addr6));
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_ADD_ADDR;
-		opts->addr6 = &mpcb->addr6[ind];
+		opts->addr6 = &mpcb->locaddr6[ind];
 		if (skb)
 			tp->mptcp->add_addr6 &= ~(1 << ind);
 		*size += MPTCP_SUB_LEN_ADD_ADDR6_ALIGN;
