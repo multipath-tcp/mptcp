@@ -314,26 +314,12 @@ struct tcp_options_received {
 		sack_ok : 4,	/* SACK seen on SYN packet		*/
 		snd_wscale : 4,	/* Window scaling received from sender	*/
 		rcv_wscale : 4;	/* Window scaling to send to receiver	*/
-	u8	saw_mpc:1,	/* MPC option seen, for MPTCP		*/
-		low_prio:1,	/* Backup flag, for MPTCP		*/
-		is_mp_join:1,	/* Does this SYN contains an MP-JOIN?	*/
-		join_ack:1;	/* Did we receive the third JOIN-ack?	*/
 	u8	cookie_plus:6,	/* bytes in authenticator/cookie option	*/
 		cookie_out_never:1,
 		cookie_in_always:1;
 	u8	num_sacks;	/* Number of SACK blocks		*/
 	u16	user_mss;	/* mss requested by user in ioctl	*/
 	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
-#ifdef CONFIG_MPTCP
-	__u8	rem_id;		/* Address-id in the MP_JOIN		*/
-	u32	rcv_isn; 	/* Needed to retrieve abs subflow seqnum
-				 * from the relative version.
-				 */
-	u32	mptcp_recv_nonce;
-	u64	mptcp_recv_tmac;
-	__u8	mpj_addr_id;	/* MP_JOIN option addr_id */
-	u8	mptcp_recv_mac[20];
-#endif /* CONFIG_MPTCP */
 };
 
 struct mptcp_cb;
@@ -344,9 +330,6 @@ static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
 	rx_opt->tstamp_ok = rx_opt->sack_ok = 0;
 	rx_opt->wscale_ok = rx_opt->snd_wscale = 0;
 	rx_opt->cookie_plus = 0;
-	rx_opt->saw_mpc = 0;
-	rx_opt->is_mp_join = 0;
-	rx_opt->join_ack = 0;
 }
 
 /* This is the max number of SACKS that we'll generate and process. It's safe

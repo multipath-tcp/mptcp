@@ -124,10 +124,12 @@ static int mptcp_find_token(u32 token)
  */
 void mptcp_reqsk_new_mptcp(struct request_sock *req,
 			   const struct tcp_options_received *rx_opt,
-			   const struct multipath_options *mopt)
+			   const struct mptcp_options_received *mopt)
 {
 	struct mptcp_request_sock *mtreq;
 	mtreq = mptcp_rsk(req);
+
+	tcp_rsk(req)->saw_mpc = 1;
 
 	rcu_read_lock();
 	spin_lock(&mptcp_tk_hashlock);
@@ -493,7 +495,7 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 	return 1;
 }
 
-int mptcp_do_join_short(struct sk_buff *skb, struct multipath_options *mopt,
+int mptcp_do_join_short(struct sk_buff *skb, struct mptcp_options_received *mopt,
 			struct tcp_options_received *tmp_opt, struct net *net)
 {
 	struct sock *meta_sk;
@@ -574,8 +576,8 @@ next_subflow:
 	if (sock_flag(meta_sk, SOCK_DEAD))
 		goto exit;
 
-	mptcp_for_each_bit_set(mpcb->rx_opt.rem4_bits, i) {
-		struct mptcp_rem4 *rem = &mpcb->rx_opt.addr4[i];
+	mptcp_for_each_bit_set(mpcb->rem4_bits, i) {
+		struct mptcp_rem4 *rem = &mpcb->remaddr4[i];
 		/* Do we need to retry establishing a subflow ? */
 		if (rem->retry_bitfield) {
 			int i = mptcp_find_free_index(~rem->retry_bitfield);
@@ -586,8 +588,8 @@ next_subflow:
 	}
 
 #if IS_ENABLED(CONFIG_IPV6)
-	mptcp_for_each_bit_set(mpcb->rx_opt.rem6_bits, i) {
-		struct mptcp_rem6 *rem = &mpcb->rx_opt.addr6[i];
+	mptcp_for_each_bit_set(mpcb->rem6_bits, i) {
+		struct mptcp_rem6 *rem = &mpcb->remaddr6[i];
 
 		/* Do we need to retry establishing a subflow ? */
 		if (rem->retry_bitfield) {
@@ -639,11 +641,11 @@ next_subflow:
 		if (meta_sk->sk_family == AF_INET ||
 		    mptcp_v6_is_v4_mapped(meta_sk)) {
 			mptcp_init4_subsockets(meta_sk, &mpcb->locaddr4[0],
-					       &mpcb->rx_opt.addr4[0]);
+					       &mpcb->remaddr4[0]);
 		} else {
 #if IS_ENABLED(CONFIG_IPV6)
 			mptcp_init6_subsockets(meta_sk, &mpcb->locaddr6[0],
-					       &mpcb->rx_opt.addr6[0]);
+					       &mpcb->remaddr6[0]);
 #endif
 		}
 		goto next_subflow;
@@ -652,11 +654,11 @@ next_subflow:
 	    sysctl_mptcp_ndiffports == mpcb->cnt_subflows)
 		goto exit;
 
-	mptcp_for_each_bit_set(mpcb->rx_opt.rem4_bits, i) {
+	mptcp_for_each_bit_set(mpcb->rem4_bits, i) {
 		struct mptcp_rem4 *rem;
 		u8 remaining_bits;
 
-		rem = &mpcb->rx_opt.addr4[i];
+		rem = &mpcb->remaddr4[i];
 		remaining_bits = ~(rem->bitfield) & mpcb->loc4_bits;
 
 		/* Are there still combinations to handle? */
@@ -672,11 +674,11 @@ next_subflow:
 	}
 
 #if IS_ENABLED(CONFIG_IPV6)
-	mptcp_for_each_bit_set(mpcb->rx_opt.rem6_bits, i) {
+	mptcp_for_each_bit_set(mpcb->rem6_bits, i) {
 		struct mptcp_rem6 *rem;
 		u8 remaining_bits;
 
-		rem = &mpcb->rx_opt.addr6[i];
+		rem = &mpcb->remaddr6[i];
 		remaining_bits = ~(rem->bitfield) & mpcb->loc6_bits;
 
 		/* Are there still combinations to handle? */
@@ -841,8 +843,8 @@ cont_ipv6:
 		if (sk)
 			tcp_send_ack(sk);
 
-		mptcp_for_each_bit_set(mpcb->rx_opt.rem4_bits, j)
-			mpcb->rx_opt.addr4[j].bitfield &= mpcb->loc4_bits;
+		mptcp_for_each_bit_set(mpcb->rem4_bits, j)
+			mpcb->remaddr4[j].bitfield &= mpcb->loc4_bits;
 
 next_loc_addr:
 		continue; /* necessary here due to the previous label */
@@ -892,8 +894,8 @@ next_loc_addr:
 		if (sk)
 			tcp_send_ack(sk);
 
-		mptcp_for_each_bit_set(mpcb->rx_opt.rem6_bits, j)
-			mpcb->rx_opt.addr6[j].bitfield &= mpcb->loc6_bits;
+		mptcp_for_each_bit_set(mpcb->rem6_bits, j)
+			mpcb->remaddr6[j].bitfield &= mpcb->loc6_bits;
 
 next_loc6_addr:
 		continue; /* necessary here due to the previous label */

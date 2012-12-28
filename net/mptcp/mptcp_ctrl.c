@@ -225,7 +225,6 @@ static void mptcp_sock_destruct(struct sock *sk)
 
 		mptcp_debug("%s destroying meta-sk\n", __func__);
 	}
-
 }
 
 static void mptcp_set_state(struct sock *sk)
@@ -824,6 +823,7 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 rem_id, gfp_t flags
 	tp->meta_sk = meta_sk;
 	tp->mpc = 1;
 	tp->mptcp->rem_id = rem_id;
+	tp->mptcp->rx_opt.mpcb = mpcb;
 
 	/* The corresponding sock_put is in mptcp_sock_destruct(). It cannot be
 	 * included in mptcp_del_sock(), because the mpcb must remain alive
@@ -943,7 +943,7 @@ void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
 			mpcb->loc6_bits |= 1;
 			mpcb->next_v6_index = 1;
 
-			mptcp_v6_add_raddress(&mpcb->rx_opt,
+			mptcp_v6_add_raddress(mpcb,
 					      &inet6_sk(sk)->daddr, 0, 0);
 			mptcp_v6_set_init_addr_bit(mpcb, &inet6_sk(sk)->daddr);
 			break;
@@ -957,7 +957,7 @@ void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
 		mpcb->loc4_bits |= 1;
 		mpcb->next_v4_index = 1;
 
-		mptcp_v4_add_raddress(&mpcb->rx_opt,
+		mptcp_v4_add_raddress(mpcb,
 				      (struct in_addr *)&inet_sk(sk)->inet_daddr,
 				      0, 0);
 		mptcp_v4_set_init_addr_bit(mpcb, inet_sk(sk)->inet_daddr);
@@ -1386,8 +1386,6 @@ int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key, u32 window)
 	struct tcp_sock *master_tp;
 	struct sock *master_sk;
 
-	tcp_sk(meta_sk)->rx_opt.saw_mpc = 0;
-
 	if (mptcp_alloc_mpcb(meta_sk, remote_key, window))
 		goto err_alloc_mpcb;
 
@@ -1426,7 +1424,7 @@ err_alloc_mpcb:
 int mptcp_check_req_master(struct sock *sk, struct sock *child,
 			   struct request_sock *req,
 			   struct request_sock **prev,
-			   struct multipath_options *mopt)
+			   struct mptcp_options_received *mopt)
 {
 	struct tcp_sock *child_tp = tcp_sk(child);
 	struct sock *meta_sk = child;
@@ -1446,17 +1444,14 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 
 	child = tcp_sk(child)->mpcb->master_sk;
 	child_tp = tcp_sk(child);
+	mpcb = child_tp->mpcb;
 
 	child_tp->mptcp->snt_isn = tcp_rsk(req)->snt_isn;
+	child_tp->mptcp->rcv_isn = tcp_rsk(req)->rcv_isn;
 
-	mpcb = child_tp->mpcb;
-	if (mopt->list_rcvd)
-		memcpy(&mpcb->rx_opt, mopt, sizeof(*mopt));
-
-	mpcb->rx_opt.dss_csum = sysctl_mptcp_checksum || mtreq->dss_csum;
-	mpcb->rx_opt.mpcb = mpcb;
-
+	mpcb->dss_csum = mtreq->dss_csum;
 	mpcb->server_side = 1;
+
 	/* Will be moved to ESTABLISHED by  tcp_rcv_state_process() */
 	mptcp_update_metasocket(child, meta_sk);
 
@@ -1478,7 +1473,7 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 				   struct request_sock *req,
 				   struct request_sock **prev,
-				   const struct tcp_options_received *rx_opt)
+				   struct mptcp_options_received *mopt)
 {
 	struct tcp_sock *child_tp = tcp_sk(child);
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
@@ -1487,7 +1482,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 
 	child_tp->inside_tk_table = 0;
 
-	if (!rx_opt->join_ack)
+	if (!mopt->join_ack)
 		goto teardown;
 
 	mptcp_hmac_sha1((u8 *)&mpcb->mptcp_rem_key,
@@ -1496,14 +1491,8 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 			(u8 *)&mtreq->mptcp_loc_nonce,
 			(u32 *)hash_mac_check);
 
-	if (memcmp(hash_mac_check, (char *)&rx_opt->mptcp_recv_mac, 20))
+	if (memcmp(hash_mac_check, (char *)&mopt->mptcp_recv_mac, 20))
 		goto teardown;
-
-	/* The child is a clone of the meta socket, we must now reset
-	 * some of the fields
-	 */
-	child_tp->rx_opt.low_prio = mtreq->low_prio;
-	child->sk_sndmsg_page = NULL;
 
 	/* Point it to the same struct socket and wq as the meta_sk */
 	sk_set_socket(child, meta_sk->sk_socket);
@@ -1518,8 +1507,15 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 		 */
 		goto teardown;
 
+	/* The child is a clone of the meta socket, we must now reset
+	 * some of the fields
+	 */
+	child_tp->mptcp->rx_opt.low_prio = mtreq->low_prio;
+	child->sk_sndmsg_page = NULL;
+
 	child_tp->mptcp->slave_sk = 1;
 	child_tp->mptcp->snt_isn = tcp_rsk(req)->snt_isn;
+	child_tp->mptcp->rcv_isn = tcp_rsk(req)->rcv_isn;
 	child_tp->mptcp->init_rcv_wnd = req->rcv_wnd;
 
 	/* Subflows do not use the accept queue, as they

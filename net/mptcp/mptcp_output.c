@@ -118,7 +118,7 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 	/* First, find the best subflow */
 	mptcp_for_each_sk(mpcb, sk) {
 		struct tcp_sock *tp = tcp_sk(sk);
-		if (tp->rx_opt.low_prio || tp->mptcp->low_prio)
+		if (tp->mptcp->rx_opt.low_prio || tp->mptcp->low_prio)
 			cnt_backups++;
 
 		if (mptcp_dont_reinject_skb(tp, skb))
@@ -127,12 +127,12 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 		if (!mptcp_is_available(sk, skb))
 			continue;
 
-		if ((tp->rx_opt.low_prio || tp->mptcp->low_prio) &&
+		if ((tp->mptcp->rx_opt.low_prio || tp->mptcp->low_prio) &&
 		    tp->srtt < lowprio_min_time_to_peer &&
 		    !(skb && mptcp_pi_to_flag(tp->mptcp->path_index) & TCP_SKB_CB(skb)->path_mask)) {
 			lowprio_min_time_to_peer = tp->srtt;
 			lowpriosk = sk;
-		} else if (!(tp->rx_opt.low_prio || tp->mptcp->low_prio) &&
+		} else if (!(tp->mptcp->rx_opt.low_prio || tp->mptcp->low_prio) &&
 		    tp->srtt < min_time_to_peer &&
 		    !(skb && mptcp_pi_to_flag(tp->mptcp->path_index) & TCP_SKB_CB(skb)->path_mask)) {
 			min_time_to_peer = tp->srtt;
@@ -435,7 +435,7 @@ static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff *skb,
 	mdss->M = 1;
 	mdss->a = 0;
 	mdss->A = 1;
-	mdss->len = mptcp_sub_len_dss(mdss, tp->mpcb->rx_opt.dss_csum);
+	mdss->len = mptcp_sub_len_dss(mdss, tp->mpcb->dss_csum);
 
 	if (tp->mpcb->send_infinite_mapping &&
 	    tcb->seq >= mptcp_meta_tp(tp)->snd_nxt) {
@@ -458,7 +458,7 @@ static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff *skb,
 	else
 		*ptr++ = htonl(tp->write_seq - tp->mptcp->snt_isn); /* subseq */
 
-	if (tp->mpcb->rx_opt.dss_csum && data_len) {
+	if (tp->mpcb->dss_csum && data_len) {
 		__be16 *p16 = (__be16 *)ptr;
 		__be32 hdseq = mptcp_get_highorder_sndbits(subskb, tp->mpcb);
 		__wsum csum;
@@ -1276,7 +1276,7 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 			*size += MPTCP_SUB_LEN_CAPABLE_ACK_ALIGN;
 			opts->mp_capable.sender_key = mpcb->mptcp_loc_key;
 			opts->mp_capable.receiver_key = mpcb->mptcp_rem_key;
-			opts->dss_csum = mpcb->rx_opt.dss_csum;
+			opts->dss_csum = mpcb->dss_csum;
 		} else {
 			opts->mptcp_options |= OPTION_MP_JOIN | OPTION_TYPE_ACK;
 			*size += MPTCP_SUB_LEN_JOIN_ACK_ALIGN;
@@ -1285,7 +1285,7 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 				mptcp_hmac_sha1((u8 *)&mpcb->mptcp_loc_key,
 						(u8 *)&mpcb->mptcp_rem_key,
 						(u8 *)&tp->mptcp->mptcp_loc_nonce,
-						(u8 *)&tp->rx_opt.mptcp_recv_nonce,
+						(u8 *)&tp->mptcp->rx_opt.mptcp_recv_nonce,
 						(u32 *)opts->mp_join_ack.sender_mac);
 		}
 	}
@@ -1514,7 +1514,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			mdss->M = 0;
 			mdss->a = 0;
 			mdss->A = 1;
-			mdss->len = mptcp_sub_len_dss(mdss, tp->mpcb->rx_opt.dss_csum);
+			mdss->len = mptcp_sub_len_dss(mdss, tp->mpcb->dss_csum);
 
 			ptr++;
 			*ptr++ = htonl(opts->data_ack);

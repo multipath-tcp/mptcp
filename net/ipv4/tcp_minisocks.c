@@ -149,7 +149,7 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 
 	tmp_opt.saw_tstamp = 0;
 	if (th->doff > (sizeof(*th) >> 2) && tcptw->tw_ts_recent_stamp) {
-		struct multipath_options mopt;
+		struct mptcp_options_received mopt;
 		mptcp_init_mp_opt(&mopt);
 
 		tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
@@ -484,7 +484,6 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 		newtp->snd_nxt = newtp->snd_up =
 			treq->snt_isn + 1 + tcp_s_data_size(oldtp);
 #ifdef CONFIG_MPTCP
-		newtp->rx_opt.rcv_isn = treq->rcv_isn;
 		memset(&newtp->rcvq_space, 0, sizeof(newtp->rcvq_space));
 #endif
 
@@ -593,24 +592,20 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 {
 	struct tcp_options_received tmp_opt;
 	const u8 *hash_location;
-	struct multipath_options stat_mopt, *mopt = NULL;
+	struct mptcp_options_received mopt;
 	struct sock *child;
 	const struct tcphdr *th = tcp_hdr(skb);
 	__be32 flg = tcp_flag_word(th) & (TCP_FLAG_RST|TCP_FLAG_SYN|TCP_FLAG_ACK);
 	bool paws_reject = false;
 
 	tmp_opt.saw_tstamp = 0;
-	tmp_opt.join_ack = 0;
 
-	if (!is_meta_sk(sk)) {
-		mopt = &stat_mopt;
-		mptcp_init_mp_opt(mopt);
-	} else {
-		mopt = &(tcp_sk(sk)->mpcb->rx_opt);
-	}
+	mptcp_init_mp_opt(&mopt);
+	if (is_meta_sk(sk))
+		mopt.mpcb = tcp_sk(sk)->mpcb;
 
 	if (th->doff > (sizeof(struct tcphdr)>>2)) {
-		tcp_parse_options(skb, &tmp_opt, &hash_location, mopt, 0);
+		tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
 		if (tmp_opt.saw_tstamp) {
 			tmp_opt.ts_recent = req->ts_recent;
@@ -757,7 +752,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	     * or duplicate fourth ack will get lost. Options like MP_PRIO, ADD_ADDR,...
 	     *
 	     * We could store them in request_sock, but this would mean that we
-	     * have to put tcp_options_received and multipath_options in there,
+	     * have to put tcp_options_received and mptcp_options_received in there,
 	     * increasing considerably the size of the request-sock.
 	     *
 	     * As soon as we have reworked the request-sock MPTCP-fields and
@@ -793,7 +788,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		goto listen_overflow;
 
 	if (!is_meta_sk(sk)) {
-		int ret = mptcp_check_req_master(sk, child, req, prev, mopt);
+		int ret = mptcp_check_req_master(sk, child, req, prev, &mopt);
 		if (ret < 0)
 			goto listen_overflow;
 
@@ -801,7 +796,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		if (!ret)
 			return tcp_sk(child)->mpcb->master_sk;
 	} else {
-		return mptcp_check_req_child(sk, child, req, prev, &tmp_opt);
+		return mptcp_check_req_child(sk, child, req, prev, &mopt);
 	}
 	inet_csk_reqsk_queue_unlink(sk, req, prev);
 	inet_csk_reqsk_queue_removed(sk, req);

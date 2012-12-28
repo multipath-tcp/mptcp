@@ -81,6 +81,7 @@ static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct tcp_options_received tmp_opt;
+	struct mptcp_options_received mopt;
 	const u8 *hash_location;
 	struct request_sock *req;
 	struct inet_request_sock *ireq;
@@ -93,18 +94,22 @@ static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	int want_cookie = 0;
 
 	tcp_clear_options(&tmp_opt);
+	mptcp_init_mp_opt(&mopt);
 	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
 	tmp_opt.user_mss = tcp_sk(meta_sk)->rx_opt.user_mss;
-	tcp_parse_options(skb, &tmp_opt, &hash_location, &mpcb->rx_opt, 0);
+	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
 	req = inet_reqsk_alloc(&mptcp_request_sock_ops);
 	if (!req)
 		return;
 
+	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
+	tcp_openreq_init(req, &tmp_opt, skb);
+
 	mtreq = mptcp_rsk(req);
 	mtreq->mpcb = mpcb;
 	INIT_LIST_HEAD(&mtreq->collide_tuple);
-	mtreq->mptcp_rem_nonce = tmp_opt.mptcp_recv_nonce;
+	mtreq->mptcp_rem_nonce = mopt.mptcp_recv_nonce;
 	mtreq->mptcp_rem_key = mpcb->mptcp_rem_key;
 	mtreq->mptcp_loc_key = mpcb->mptcp_loc_key;
 	get_random_bytes(&mtreq->mptcp_loc_nonce,
@@ -114,11 +119,9 @@ static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 			(u8 *)&mtreq->mptcp_loc_nonce,
 			(u8 *)&mtreq->mptcp_rem_nonce, (u32 *)mptcp_hash_mac);
 	mtreq->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
-	mtreq->rem_id = tmp_opt.rem_id;
-	mtreq->low_prio = tmp_opt.low_prio;
-
-	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
-	tcp_openreq_init(req, &tmp_opt, skb);
+	mtreq->rem_id = mopt.rem_id;
+	mtreq->low_prio = mopt.low_prio;
+	tcp_rsk(req)->saw_mpc = 1;
 
 	ireq = inet_rsk(req);
 	ireq->loc_addr = daddr;
@@ -196,17 +199,17 @@ drop_and_free:
 	return;
 }
 
-int mptcp_v4_rem_raddress(struct multipath_options *mopt, u8 id)
+int mptcp_v4_rem_raddress(struct mptcp_cb *mpcb, u8 id)
 {
 	int i;
 
 	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
-		if (!((1 << i) & mopt->rem4_bits))
+		if (!((1 << i) & mpcb->rem4_bits))
 			continue;
 
-		if (mopt->addr4[i].id == id) {
+		if (mpcb->remaddr4[i].id == id) {
 			/* remove address from bitfield */
-			mopt->rem4_bits &= ~(1 << i);
+			mpcb->rem4_bits &= ~(1 << i);
 
 			return 0;
 		}
@@ -220,14 +223,14 @@ int mptcp_v4_rem_raddress(struct multipath_options *mopt, u8 id)
  * Returns -1 if there is no space anymore to store an additional
  * address
  */
-int mptcp_v4_add_raddress(struct multipath_options *mopt,
-			  const struct in_addr *addr, __be16 port, u8 id)
+int mptcp_v4_add_raddress(struct mptcp_cb *mpcb, const struct in_addr *addr,
+			  __be16 port, u8 id)
 {
 	int i;
 	struct mptcp_rem4 *rem4;
 
-	mptcp_for_each_bit_set(mopt->rem4_bits, i) {
-		rem4 = &mopt->addr4[i];
+	mptcp_for_each_bit_set(mpcb->rem4_bits, i) {
+		rem4 = &mpcb->remaddr4[i];
 
 		/* Address is already in the list --- continue */
 		if (rem4->id == id &&
@@ -247,12 +250,12 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 				   &addr->s_addr, id);
 			rem4->addr.s_addr = addr->s_addr;
 			rem4->port = port;
-			mopt->list_rcvd = 1;
+			mpcb->list_rcvd = 1;
 			return 0;
 		}
 	}
 
-	i = mptcp_find_free_index(mopt->rem4_bits);
+	i = mptcp_find_free_index(mpcb->rem4_bits);
 	/* Do we have already the maximum number of local/remote addresses? */
 	if (i < 0) {
 		mptcp_debug("%s: At max num of remote addresses: %d --- not "
@@ -261,7 +264,7 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 		return -1;
 	}
 
-	rem4 = &mopt->addr4[i];
+	rem4 = &mpcb->remaddr4[i];
 
 	/* Address is not known yet, store it */
 	rem4->addr.s_addr = addr->s_addr;
@@ -269,8 +272,8 @@ int mptcp_v4_add_raddress(struct multipath_options *mopt,
 	rem4->bitfield = 0;
 	rem4->retry_bitfield = 0;
 	rem4->id = id;
-	mopt->list_rcvd = 1;
-	mopt->rem4_bits |= (1 << i);
+	mpcb->list_rcvd = 1;
+	mpcb->rem4_bits |= (1 << i);
 
 	return 0;
 }
@@ -282,10 +285,10 @@ void mptcp_v4_set_init_addr_bit(struct mptcp_cb *mpcb, __be32 daddr)
 {
 	int i;
 
-	mptcp_for_each_bit_set(mpcb->rx_opt.rem4_bits, i) {
-		if (mpcb->rx_opt.addr4[i].addr.s_addr == daddr) {
+	mptcp_for_each_bit_set(mpcb->rem4_bits, i) {
+		if (mpcb->remaddr4[i].addr.s_addr == daddr) {
 			/* It's the initial flow - thus local index == 0 */
-			mpcb->rx_opt.addr4[i].bitfield |= 1;
+			mpcb->remaddr4[i].bitfield |= 1;
 			return;
 		}
 	}
@@ -362,11 +365,11 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 			struct mp_join *join_opt = mptcp_find_join(skb);
 			/* Currently we make two calls to mptcp_find_join(). This
 			 * can probably be optimized. */
-			if (mptcp_v4_add_raddress(&mpcb->rx_opt,
+			if (mptcp_v4_add_raddress(mpcb,
 					(struct in_addr *)&ip_hdr(skb)->saddr, 0,
 					join_opt->addr_id) < 0)
 				goto reset_and_discard;
-			mpcb->rx_opt.list_rcvd = 0;
+			mpcb->list_rcvd = 0;
 
 			mptcp_v4_join_request(meta_sk, skb);
 			goto discard;
@@ -615,8 +618,8 @@ found:
 		if (sk)
 			tcp_send_ack(sk);
 
-		mptcp_for_each_bit_set(mpcb->rx_opt.rem4_bits, i)
-			mpcb->rx_opt.addr4[i].bitfield &= mpcb->loc4_bits;
+		mptcp_for_each_bit_set(mpcb->rem4_bits, i)
+			mpcb->remaddr4[i].bitfield &= mpcb->loc4_bits;
 	}
 }
 

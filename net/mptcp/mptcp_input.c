@@ -505,7 +505,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 
 	ptr = mptcp_skb_set_data_seq(skb, &data_seq);
 	ptr++;
-	sub_seq = get_unaligned_be32(ptr) + tp->rx_opt.rcv_isn;
+	sub_seq = get_unaligned_be32(ptr) + tp->mptcp->rcv_isn;
 	ptr++;
 	data_len = get_unaligned_be16(ptr);
 
@@ -770,7 +770,7 @@ static int mptcp_queue_skb(struct sock *sk)
 		return 0;
 
 	/* Verify the checksum */
-	if (mpcb->rx_opt.dss_csum && !mpcb->infinite_mapping) {
+	if (mpcb->dss_csum && !mpcb->infinite_mapping) {
 		int ret = mptcp_verif_dss_csum(sk);
 
 		if (ret <= 0) {
@@ -1166,7 +1166,7 @@ void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk)
 
 /**** static functions used by mptcp_parse_options */
 
-static inline u8 mptcp_get_64_bit(u64 data_seq, struct multipath_options *mopt)
+static inline u8 mptcp_get_64_bit(u64 data_seq, struct mptcp_options_received *mopt)
 {
 	u8 ret = 0;
 	u64 data_seq_high = (u32)(data_seq >> 32);
@@ -1184,11 +1184,11 @@ static inline u8 mptcp_get_64_bit(u64 data_seq, struct multipath_options *mopt)
 		return ret | MPTCPHDR_SEQ64_OFO;
 }
 
-static inline int mptcp_rem_raddress(struct multipath_options *mopt, u8 rem_id)
+static inline int mptcp_rem_raddress(struct mptcp_cb *mpcb, u8 rem_id)
 {
-	if (mptcp_v4_rem_raddress(mopt, rem_id) < 0) {
+	if (mptcp_v4_rem_raddress(mpcb, rem_id) < 0) {
 #if IS_ENABLED(CONFIG_IPV6)
-		if (mptcp_v6_rem_raddress(mopt, rem_id) < 0)
+		if (mptcp_v6_rem_raddress(mpcb, rem_id) < 0)
 			return -1;
 #else
 		return -1;
@@ -1218,7 +1218,6 @@ void mptcp_post_parse_options(struct sock *sk, const struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk);
 	int length = (th->doff * 4) - sizeof(struct tcphdr);
 	const unsigned char *ptr = (const unsigned char *)(th + 1);
-	struct mptcp_cb *mpcb = tp->mpcb;
 
 	while (length > 0) {
 		int opcode = *ptr++;
@@ -1238,7 +1237,7 @@ void mptcp_post_parse_options(struct sock *sk, const struct sk_buff *skb)
 				return;	/* don't parse partial options */
 			if (opcode == TCPOPT_MPTCP)
 				mptcp_parse_options(ptr - 2, opsize, &tp->rx_opt,
-						    &mpcb->rx_opt, skb, sk);
+						    &tp->mptcp->rx_opt, skb);
 			ptr += opsize-2;
 			length -= opsize;
 		}
@@ -1247,8 +1246,8 @@ void mptcp_post_parse_options(struct sock *sk, const struct sk_buff *skb)
 
 void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			 struct tcp_options_received *opt_rx,
-			 struct multipath_options *mopt,
-			 const struct sk_buff *skb, struct sock *sk)
+			 struct mptcp_options_received *mopt,
+			 const struct sk_buff *skb)
 {
 	struct mptcp_option *mp_opt = (struct mptcp_option *) ptr;
 
@@ -1279,8 +1278,11 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 		if (!mpcapable->s)
 			break;
 
-		opt_rx->saw_mpc = 1;
-		mopt->list_rcvd = 1;
+		/* We only support MPTCP version 0 */
+		if (mpcapable->ver != 0)
+			break;
+
+		mopt->saw_mpc = 1;
 		mopt->dss_csum = sysctl_mptcp_checksum || mpcapable->c;
 
 		if (opsize >= MPTCP_SUB_LEN_CAPABLE_SYN)
@@ -1302,30 +1304,23 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 
 		switch (opsize) {
 		case MPTCP_SUB_LEN_JOIN_SYN:
+			mopt->is_mp_join = 1;
+			mopt->low_prio = mpjoin->b;
+			mopt->rem_id = mpjoin->addr_id;
 			mopt->mptcp_rem_token = mpjoin->u.syn.token;
-			opt_rx->mptcp_recv_nonce = mpjoin->u.syn.nonce;
-			opt_rx->is_mp_join = 1;
-			opt_rx->mpj_addr_id = mpjoin->addr_id;
-			opt_rx->saw_mpc = 1;
-			opt_rx->low_prio = mpjoin->b;
+			mopt->mptcp_recv_nonce = mpjoin->u.syn.nonce;
 			break;
 		case MPTCP_SUB_LEN_JOIN_SYNACK:
-			opt_rx->mptcp_recv_tmac = mpjoin->u.synack.mac;
-			opt_rx->mptcp_recv_nonce = mpjoin->u.synack.nonce;
-			opt_rx->low_prio = mpjoin->b;
+			mopt->low_prio = mpjoin->b;
+			mopt->rem_id = mpjoin->addr_id;
+			mopt->mptcp_recv_tmac = mpjoin->u.synack.mac;
+			mopt->mptcp_recv_nonce = mpjoin->u.synack.nonce;
 			break;
 		case MPTCP_SUB_LEN_JOIN_ACK:
-			memcpy(opt_rx->mptcp_recv_mac, mpjoin->u.ack.mac, 20);
-			opt_rx->join_ack = 1;
-
-			/* We have to acknowledge retransmissions of the third
-			 * ack.
-			 */
-			if (sk)
-				tcp_send_delayed_ack(sk);
+			mopt->join_ack = 1;
+			memcpy(mopt->mptcp_recv_mac, mpjoin->u.ack.mac, 20);
 			break;
 		}
-		opt_rx->rem_id = mpjoin->addr_id;
 		break;
 	}
 	case MPTCP_SUB_DSS:
@@ -1385,6 +1380,9 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 	{
 		struct mp_add_addr *mpadd = (struct mp_add_addr *) ptr;
 
+		if (!mopt->mpcb)
+			break;
+
 #if IS_ENABLED(CONFIG_IPV6)
 		if ((mpadd->ipver == 4 && opsize != MPTCP_SUB_LEN_ADD_ADDR4 &&
 		     opsize != MPTCP_SUB_LEN_ADD_ADDR4 + 2) ||
@@ -1404,16 +1402,16 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			if (opsize == MPTCP_SUB_LEN_ADD_ADDR4 + 2)
 				port = mpadd->u.v4.port;
 
-			mptcp_v4_add_raddress(mopt, &mpadd->u.v4.addr, port,
-					      mpadd->addr_id);
+			mptcp_v4_add_raddress(mopt->mpcb, &mpadd->u.v4.addr,
+					      port, mpadd->addr_id);
 #if IS_ENABLED(CONFIG_IPV6)
 		} else if (mpadd->ipver == 6) {
 			__be16 port = 0;
 			if (opsize == MPTCP_SUB_LEN_ADD_ADDR6 + 2)
 				port = mpadd->u.v6.port;
 
-			mptcp_v6_add_raddress(mopt, &mpadd->u.v6.addr, port,
-					      mpadd->addr_id);
+			mptcp_v6_add_raddress(mopt->mpcb, &mpadd->u.v6.addr,
+					      port, mpadd->addr_id);
 #endif /* CONFIG_IPV6 */
 		}
 		break;
@@ -1429,10 +1427,12 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 					__func__, opsize);
 			break;
 		}
+		if (!mopt->mpcb)
+			break;
 
 		for (i = 0; i <= opsize - MPTCP_SUB_LEN_REMOVE_ADDR; i++) {
 			rem_id = (&mprem->addrs_id)[i];
-			if (!mptcp_rem_raddress(mopt, rem_id))
+			if (!mptcp_rem_raddress(mopt->mpcb, rem_id))
 				mptcp_send_reset_rem_id(mopt->mpcb, rem_id);
 		}
 		break;
@@ -1443,13 +1443,13 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 
 		if (opsize == MPTCP_SUB_LEN_PRIO) {
 			/* change priority of this subflow */
-			opt_rx->low_prio = mpprio->b;
+			mopt->low_prio = mpprio->b;
 		} else if (opsize == MPTCP_SUB_LEN_PRIO_ADDR) {
-			struct sock *sk;
+			struct sock *sk_it;
 			/* change priority of all subflow using this addr_id */
-			mptcp_for_each_sk(mopt->mpcb, sk) {
-				if (tcp_sk(sk)->mptcp->rem_id == mpprio->addr_id)
-					tcp_sk(sk)->rx_opt.low_prio = mpprio->b;
+			mptcp_for_each_sk(mopt->mpcb, sk_it) {
+				if (tcp_sk(sk_it)->mptcp->rem_id == mpprio->addr_id)
+					tcp_sk(sk_it)->mptcp->rx_opt.low_prio = mpprio->b;
 			}
 		} else {
 			mptcp_debug("%s: mp_prio: bad option size %d\n",
