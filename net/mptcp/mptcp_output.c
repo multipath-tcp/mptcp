@@ -118,7 +118,7 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 	/* First, find the best subflow */
 	mptcp_for_each_sk(mpcb, sk) {
 		struct tcp_sock *tp = tcp_sk(sk);
-		if (tp->mptcp->rx_opt.low_prio || tp->mptcp->low_prio)
+		if (tp->mptcp->rcv_low_prio || tp->mptcp->low_prio)
 			cnt_backups++;
 
 		if (mptcp_dont_reinject_skb(tp, skb))
@@ -127,12 +127,12 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 		if (!mptcp_is_available(sk, skb))
 			continue;
 
-		if ((tp->mptcp->rx_opt.low_prio || tp->mptcp->low_prio) &&
+		if ((tp->mptcp->rcv_low_prio || tp->mptcp->low_prio) &&
 		    tp->srtt < lowprio_min_time_to_peer &&
 		    !(skb && mptcp_pi_to_flag(tp->mptcp->path_index) & TCP_SKB_CB(skb)->path_mask)) {
 			lowprio_min_time_to_peer = tp->srtt;
 			lowpriosk = sk;
-		} else if (!(tp->mptcp->rx_opt.low_prio || tp->mptcp->low_prio) &&
+		} else if (!(tp->mptcp->rcv_low_prio || tp->mptcp->low_prio) &&
 		    tp->srtt < min_time_to_peer &&
 		    !(skb && mptcp_pi_to_flag(tp->mptcp->path_index) & TCP_SKB_CB(skb)->path_mask)) {
 			min_time_to_peer = tp->srtt;

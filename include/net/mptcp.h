@@ -99,14 +99,21 @@ struct request_sock *rev_mptcp_rsk(const struct mptcp_request_sock *req)
 
 struct mptcp_options_received {
 	struct mptcp_cb *mpcb;
-	u8	saw_mpc:1,
+	u16	saw_mpc:1,
+		dss_csum:1,
+
 		is_mp_join:1,
 		join_ack:1,
-		dss_csum:1,
+
+		saw_low_prio:2, /* 0x1 - low-prio set for this subflow
+				 * 0x2 - low-prio set for another subflow
+				 */
 		low_prio:1,
+
 		mp_fail:1,
 		mp_fclose:1;
 	u8	rem_id;		/* Address-id in the MP_JOIN */
+	u8	prio_addr_id;	/* Address-id in the MP_PRIO */
 
 	u32	mptcp_rem_token;/* Remote token */
 	u64	mptcp_rem_key;	/* Remote key */
@@ -133,6 +140,7 @@ struct mptcp_tcp_sock {
 		mapping_present:1,
 		map_data_fin:1,
 		low_prio:1, /* use this socket as backup */
+		rcv_low_prio:1, /* Peer sent low-prio option to us */
 		send_mp_prio:1, /* Trigger to send mp_prio on this socket */
 		pre_established:1; /* State between sending 3rd ACK and receiving
 		 	 	    * the fourth ack of new subflows.
@@ -788,10 +796,14 @@ static inline void mptcp_reqsk_destructor(struct request_sock *req)
 static inline void mptcp_init_mp_opt(struct mptcp_options_received *mopt)
 {
 	mopt->saw_mpc = 0;
+	mopt->dss_csum = 0;
+
 	mopt->is_mp_join = 0;
 	mopt->join_ack = 0;
-	mopt->dss_csum = 0;
+
+	mopt->saw_low_prio = 0;
 	mopt->low_prio = 0;
+
 	mopt->mp_fail = 0;
 	mopt->mp_fclose = 0;
 	mopt->mpcb = NULL;

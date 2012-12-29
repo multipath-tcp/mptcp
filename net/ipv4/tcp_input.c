@@ -5234,12 +5234,12 @@ static bool tcp_should_expand_sndbuf(const struct sock *sk)
 
 			/* Backup-flows have to be counted - if there is no other
 			 * subflow we take the backup-flow into account. */
-			if (tp_it->mptcp->rx_opt.low_prio || tp_it->mptcp->low_prio) {
+			if (tp_it->mptcp->rcv_low_prio || tp_it->mptcp->low_prio) {
 				cnt_backups++;
 			}
 
 			if (tp_it->packets_out < tp_it->snd_cwnd) {
-				if (tp_it->mptcp->rx_opt.low_prio || tp_it->mptcp->low_prio) {
+				if (tp_it->mptcp->rcv_low_prio || tp_it->mptcp->low_prio) {
 					backup_available = 1;
 					continue;
 				}
@@ -5606,15 +5606,31 @@ static int tcp_validate_incoming(struct sock *sk, struct sk_buff *skb,
 
 	/* If valid: post process the received MPTCP options. */
 	if (tp->mpc) {
+		struct mptcp_options_received *mopt = &tp->mptcp->rx_opt;
+
 		if (mptcp_mp_fail_rcvd(sk, th))
 			goto discard;
 
 		/* We have to acknowledge retransmissions of the third
 		 * ack.
 		 */
-		if (tp->mptcp->rx_opt.join_ack) {
+		if (mopt->join_ack) {
 			tcp_send_delayed_ack(sk);
-			tp->mptcp->rx_opt.join_ack = 0;
+			mopt->join_ack = 0;
+		}
+
+		if (mopt->saw_low_prio) {
+			if (mopt->saw_low_prio == 1) {
+				tp->mptcp->rcv_low_prio = mopt->low_prio;
+			} else {
+				struct sock *sk_it;
+				mptcp_for_each_sk(tp->mpcb, sk_it) {
+					struct mptcp_tcp_sock *mptcp = tcp_sk(sk_it)->mptcp;
+					if (mptcp->rem_id == mopt->prio_addr_id)
+						mptcp->rcv_low_prio = mopt->low_prio;
+				}
+			}
+			mopt->saw_low_prio = 0;
 		}
 
 		mptcp_path_array_check(mptcp_meta_sk(sk));
@@ -5986,6 +6002,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			 * until the 4th ack arrives.
 			 */
 			tp->mptcp->pre_established = 1;
+			tp->mptcp->rcv_low_prio = tp->mptcp->rx_opt.low_prio;
 		} else if (mopt.saw_mpc && tp->request_mptcp) {
 			if (mptcp_create_master_sk(sk, mopt.mptcp_rem_key,
 						   ntohs(th->window)))

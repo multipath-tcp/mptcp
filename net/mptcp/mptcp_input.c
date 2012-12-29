@@ -1402,19 +1402,19 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 	{
 		struct mp_prio *mpprio = (struct mp_prio *) ptr;
 
-		if (opsize == MPTCP_SUB_LEN_PRIO) {
-			/* change priority of this subflow */
-			mopt->low_prio = mpprio->b;
-		} else if (opsize == MPTCP_SUB_LEN_PRIO_ADDR) {
-			struct sock *sk_it;
-			/* change priority of all subflow using this addr_id */
-			mptcp_for_each_sk(mopt->mpcb, sk_it) {
-				if (tcp_sk(sk_it)->mptcp->rem_id == mpprio->addr_id)
-					tcp_sk(sk_it)->mptcp->rx_opt.low_prio = mpprio->b;
-			}
-		} else {
+		if (opsize != MPTCP_SUB_LEN_PRIO &&
+		    opsize != MPTCP_SUB_LEN_PRIO_ADDR) {
 			mptcp_debug("%s: mp_prio: bad option size %d\n",
 					__func__, opsize);
+			break;
+		}
+
+		mopt->saw_low_prio = 1;
+		mopt->low_prio = mpprio->b;
+
+		if (opsize == MPTCP_SUB_LEN_PRIO_ADDR) {
+			mopt->saw_low_prio = 2;
+			mopt->prio_addr_id = mpprio->addr_id;
 		}
 		break;
 	}

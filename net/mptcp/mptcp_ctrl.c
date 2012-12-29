@@ -1524,7 +1524,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	/* The child is a clone of the meta socket, we must now reset
 	 * some of the fields
 	 */
-	child_tp->mptcp->rx_opt.low_prio = mtreq->low_prio;
+	child_tp->mptcp->rcv_low_prio = mtreq->low_prio;
 	child->sk_sndmsg_page = NULL;
 
 	child_tp->mptcp->slave_sk = 1;
