@@ -5606,6 +5606,9 @@ static int tcp_validate_incoming(struct sock *sk, struct sk_buff *skb,
 
 	/* If valid: post process the received MPTCP options. */
 	if (tp->mpc) {
+		if (mptcp_mp_fail_rcvd(sk, th))
+			goto discard;
+
 		/* We have to acknowledge retransmissions of the third
 		 * ack.
 		 */
@@ -5616,7 +5619,7 @@ static int tcp_validate_incoming(struct sock *sk, struct sk_buff *skb,
 
 		mptcp_path_array_check(mptcp_meta_sk(sk));
 		/* Socket may have been mp_killed by a REMOVE_ADDR */
-		if (tp->mp_killed || mptcp_mp_fail_rcvd(sk, th))
+		if (tp->mp_killed)
 			goto discard;
 	}
 
