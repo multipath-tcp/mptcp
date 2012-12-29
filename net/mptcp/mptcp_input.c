@@ -1358,23 +1358,13 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			break;
 		}
 
-		if (mpadd->ipver == 4) {
-			__be16 port = 0;
-			if (opsize == MPTCP_SUB_LEN_ADD_ADDR4 + 2)
-				port = mpadd->u.v4.port;
-
-			mptcp_v4_add_raddress(mopt->mpcb, &mpadd->u.v4.addr,
-					      port, mpadd->addr_id);
-#if IS_ENABLED(CONFIG_IPV6)
-		} else if (mpadd->ipver == 6) {
-			__be16 port = 0;
-			if (opsize == MPTCP_SUB_LEN_ADD_ADDR6 + 2)
-				port = mpadd->u.v6.port;
-
-			mptcp_v6_add_raddress(mopt->mpcb, &mpadd->u.v6.addr,
-					      port, mpadd->addr_id);
-#endif /* CONFIG_IPV6 */
+		/* We have to manually parse the options if we got two of them. */
+		if (mopt->saw_add_addr) {
+			mopt->more_add_addr = 1;
+			break;
 		}
+		mopt->saw_add_addr = 1;
+		mopt->add_addr_ptr = ptr;
 		break;
 	}
 	case MPTCP_SUB_REMOVE_ADDR:
@@ -1466,4 +1456,77 @@ int mptcp_check_rtt(const struct tcp_sock *tp, int time)
 		return 1;
 
 	return 0;
+}
+
+void mptcp_handle_add_addr(const unsigned char *ptr, struct sock *sk)
+{
+	struct mp_add_addr *mpadd = (struct mp_add_addr *) ptr;
+
+	if (mpadd->ipver == 4) {
+		__be16 port = 0;
+		if (mpadd->len == MPTCP_SUB_LEN_ADD_ADDR4 + 2)
+			port  = mpadd->u.v4.port;
+
+		mptcp_v4_add_raddress(tcp_sk(sk)->mpcb, &mpadd->u.v4.addr, port,
+				      mpadd->addr_id);
+#if IS_ENABLED(CONFIG_IPV6)
+	} else if (mpadd->ipver == 6) {
+		__be16 port = 0;
+		if (mpadd->len == MPTCP_SUB_LEN_ADD_ADDR6 + 2)
+			port  = mpadd->u.v6.port;
+
+		mptcp_v6_add_raddress(tcp_sk(sk)->mpcb, &mpadd->u.v6.addr, port,
+				      mpadd->addr_id);
+#endif /* CONFIG_IPV6 */
+	}
+}
+
+void mptcp_parse_add_addr(const struct sk_buff *skb, struct sock *sk)
+{
+	struct tcphdr *th = tcp_hdr(skb);
+	unsigned char *ptr;
+	int length = (th->doff * 4) - sizeof(struct tcphdr);
+
+	/* Jump through the options to check whether ADD_ADDR is there */
+	ptr = (unsigned char *)(th + 1);
+	while (length > 0) {
+		int opcode = *ptr++;
+		int opsize;
+
+		switch (opcode) {
+		case TCPOPT_EOL:
+			return;
+		case TCPOPT_NOP:
+			length--;
+			continue;
+		default:
+			opsize = *ptr++;
+			if (opsize < 2)
+				return;
+			if (opsize > length)
+				return;  /* don't parse partial options */
+			if (opcode == TCPOPT_MPTCP &&
+			    ((struct mptcp_option *)ptr	)->sub == MPTCP_SUB_ADD_ADDR) {
+				struct mp_add_addr *mpadd = (struct mp_add_addr *) ptr;
+
+#if IS_ENABLED(CONFIG_IPV6)
+				if ((mpadd->ipver == 4 && opsize != MPTCP_SUB_LEN_ADD_ADDR4 &&
+				     opsize != MPTCP_SUB_LEN_ADD_ADDR4 + 2) ||
+				    (mpadd->ipver == 6 && opsize != MPTCP_SUB_LEN_ADD_ADDR6 &&
+				     opsize != MPTCP_SUB_LEN_ADD_ADDR6 + 2)) {
+#else
+				if (opsize != MPTCP_SUB_LEN_ADD_ADDR4 &&
+				    opsize != MPTCP_SUB_LEN_ADD_ADDR4 + 2) {
+#endif /* CONFIG_IPV6 */
+					goto cont;
+				}
+
+				mptcp_handle_add_addr(ptr, sk);
+			}
+cont:
+			ptr += opsize - 2;
+			length -= opsize;
+		}
+	}
+	return;
 }

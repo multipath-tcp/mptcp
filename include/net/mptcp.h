@@ -110,10 +110,17 @@ struct mptcp_options_received {
 				 */
 		low_prio:1,
 
+		saw_add_addr:2, /* Saw at least one add_addr option:
+				 * 0x1: IPv4 - 0x2: IPv6
+				 */
+		more_add_addr:1, /* Saw one more add-addr. */
+
 		mp_fail:1,
 		mp_fclose:1;
 	u8	rem_id;		/* Address-id in the MP_JOIN */
 	u8	prio_addr_id;	/* Address-id in the MP_PRIO */
+
+	const unsigned char *add_addr_ptr; /* Pointer to the add-address option */
 
 	u32	mptcp_rem_token;/* Remote token */
 	u64	mptcp_rem_key;	/* Remote key */
@@ -619,6 +626,8 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			 struct tcp_options_received *opt_rx,
 			 struct mptcp_options_received *mopt,
 			 const struct sk_buff *skb);
+void mptcp_handle_add_addr(const unsigned char *ptr, struct sock *sk);
+void mptcp_parse_add_addr(const struct sk_buff *skb, struct sock *sk);
 void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 		       unsigned *remaining);
 void mptcp_synack_options(struct request_sock *req,
@@ -804,9 +813,24 @@ static inline void mptcp_init_mp_opt(struct mptcp_options_received *mopt)
 	mopt->saw_low_prio = 0;
 	mopt->low_prio = 0;
 
+	mopt->saw_add_addr = 0;
+	mopt->more_add_addr = 0;
+
 	mopt->mp_fail = 0;
 	mopt->mp_fclose = 0;
 	mopt->mpcb = NULL;
+}
+
+static inline void mptcp_reset_mopt(struct tcp_sock *tp)
+{
+	struct mptcp_options_received *mopt = &tp->mptcp->rx_opt;
+
+	mopt->saw_low_prio = 0;
+	mopt->saw_add_addr = 0;
+	mopt->more_add_addr = 0;
+	mopt->join_ack = 0;
+	mopt->mp_fail = 0;
+	mopt->mp_fclose = 0;
 }
 
 static inline __be32 mptcp_get_highorder_sndbits(const struct sk_buff *skb,

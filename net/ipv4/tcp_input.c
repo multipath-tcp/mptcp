@@ -75,6 +75,8 @@
 #include <asm/unaligned.h>
 #include <net/netdma.h>
 #include <net/mptcp.h>
+#include <net/mptcp_v4.h>
+#include <net/mptcp_v6.h>
 
 int sysctl_tcp_timestamps __read_mostly = 1;
 int sysctl_tcp_window_scaling __read_mostly = 1;
@@ -5619,6 +5621,15 @@ static int tcp_validate_incoming(struct sock *sk, struct sk_buff *skb,
 			mopt->join_ack = 0;
 		}
 
+		if (mopt->saw_add_addr) {
+			if (mopt->more_add_addr)
+				mptcp_parse_add_addr(skb, sk);
+			else
+				mptcp_handle_add_addr(mopt->add_addr_ptr, sk);
+
+			mopt->more_add_addr = 0;
+			mopt->saw_add_addr = 0;
+		}
 		if (mopt->saw_low_prio) {
 			if (mopt->saw_low_prio == 1) {
 				tp->mptcp->rcv_low_prio = mopt->low_prio;
@@ -5642,6 +5653,8 @@ static int tcp_validate_incoming(struct sock *sk, struct sk_buff *skb,
 	return 1;
 
 discard:
+	if (tp->mpc)
+		mptcp_reset_mopt(tp);
 	__kfree_skb(skb);
 	return 0;
 }
