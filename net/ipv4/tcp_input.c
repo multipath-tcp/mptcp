@@ -5567,7 +5567,7 @@ out:
  * play significant role here.
  */
 static int tcp_validate_incoming(struct sock *sk, struct sk_buff *skb,
-				 struct tcphdr *th, int syn_inerr)
+			      const struct tcphdr *th, int syn_inerr)
 {
 	const u8 *hash_location;
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -5668,7 +5668,7 @@ discard:
  *	tcp_data_queue when everything is OK.
  */
 int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
-			struct tcphdr *th, unsigned int len)
+			const struct tcphdr *th, unsigned int len)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	int res;
@@ -5921,7 +5921,7 @@ void tcp_finish_connect(struct sock *sk, struct sk_buff *skb)
 }
 
 static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
-					 struct tcphdr *th, unsigned int len)
+					 const struct tcphdr *th, unsigned int len)
 {
 	const u8 *hash_location;
 	struct inet_connection_sock *icsk = inet_csk(sk);
@@ -6250,7 +6250,7 @@ reset_and_undo:
  */
 
 int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
-			  struct tcphdr *th, unsigned int len)
+			  const struct tcphdr *th, unsigned int len)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);

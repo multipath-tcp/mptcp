@@ -986,7 +986,7 @@ static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
 	return 0;
 }
 
-static inline int mptcp_mp_fail_rcvd(struct sock *sk, struct tcphdr *th)
+static inline int mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
 {
 	struct mptcp_tcp_sock *mptcp = tcp_sk(sk)->mptcp;
 	struct sock *meta_sk = mptcp_meta_sk(sk);
