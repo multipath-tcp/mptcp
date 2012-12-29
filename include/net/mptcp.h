@@ -611,7 +611,6 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			 struct tcp_options_received *opt_rx,
 			 struct mptcp_options_received *mopt,
 			 const struct sk_buff *skb);
-void mptcp_post_parse_options(struct sock *sk, const struct sk_buff *skb);
 void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 		       unsigned *remaining);
 void mptcp_synack_options(struct request_sock *req,
@@ -1104,8 +1103,6 @@ static inline void mptcp_parse_options(const uint8_t *ptr, const int opsize,
 				       const struct tcp_options_received *opt_rx,
 				       const struct mptcp_options_received *mopt,
 				       const struct sk_buff *skb) {}
-static inline void mptcp_post_parse_options(struct sock *sk,
-					    const struct sk_buff *skb) {}
 static inline void mptcp_syn_options(struct sock *sk,
 				     struct tcp_out_options *opts,
 				     unsigned *remaining) {}
