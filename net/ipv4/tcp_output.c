@@ -1379,11 +1379,13 @@ int tcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
 	if (tcp_skb_pcount(skb) > 1)
 		tcp_set_skb_tso_segs(sk, skb, tcp_skb_mss(skb));
 
+#ifdef CONFIG_MPTCP
 	/* Some data got acked - we assume that the seq-number reached the dest.
 	 * Anyway, our MPTCP-option has been trimmed above - we lost it here.
 	 */
 	if (tcp_sk(sk)->mpc)
 		TCP_SKB_CB(skb)->mptcp_flags &= ~MPTCPHDR_SEQ;
+#endif
 
 	return 0;
 }
