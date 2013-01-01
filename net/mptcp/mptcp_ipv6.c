@@ -506,38 +506,6 @@ void mptcp_v6_set_init_addr_bit(struct mptcp_cb *mpcb,
 	}
 }
 
-/* Fast processing for SYN+MP_JOIN. */
-void mptcp_v6_do_rcv_join_syn(struct sock *meta_sk, struct sk_buff *skb,
-			      struct tcp_options_received *tmp_opt)
-{
-	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-
-#ifdef CONFIG_TCP_MD5SIG
-	if (tcp_v6_inbound_md5_hash(meta_sk, skb))
-		return;
-#endif
-
-	/* Has been removed from the tk-table. Thus, no new subflows.
-	 * Check for close-state is necessary, because we may have been closed
-	 * without passing by mptcp_close().
-	 */
-	if (meta_sk->sk_state == TCP_CLOSE || !tcp_sk(meta_sk)->inside_tk_table)
-		goto reset;
-
-	if (mptcp_v6_add_raddress(&mpcb->rx_opt,
-			(struct in6_addr *)&ipv6_hdr(skb)->saddr, 0,
-			tmp_opt->mpj_addr_id) < 0)
-		goto reset;
-
-	mpcb->rx_opt.list_rcvd = 0;
-	mptcp_v6_join_request_short(meta_sk, skb, tmp_opt);
-	return;
-
-reset:
-	tcp_v6_send_reset(NULL, skb);
-	return;
-}
-
 int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;

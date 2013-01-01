@@ -301,45 +301,6 @@ void mptcp_v4_set_init_addr_bit(struct mptcp_cb *mpcb, __be32 daddr)
 	}
 }
 
-/* Fast processing for SYN+MP_JOIN. */
-void mptcp_v4_do_rcv_join_syn(struct sock *meta_sk, struct sk_buff *skb,
-			      struct tcp_options_received *tmp_opt)
-{
-	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-#ifdef CONFIG_TCP_MD5SIG
-	/*
-	 * Hash check from tcp_v4_do_rcv.
-	 *
-	 * We really want to reject the packet as early as possible
-	 * if:
-	 *  o We're expecting an MD5'd packet and this is no MD5 tcp option
-	 *  o There is an MD5 option and we're not expecting one
-	 */
-	if (tcp_v4_inbound_md5_hash(meta_sk, skb))
-		return;
-#endif
-
-	/* Has been removed from the tk-table. Thus, no new subflows.
-	 * Check for close-state is necessary, because we may have been closed
-	 * without passing by mptcp_close().
-	 */
-	if (meta_sk->sk_state == TCP_CLOSE || !tcp_sk(meta_sk)->inside_tk_table)
-		goto reset;
-
-	if (mptcp_v4_add_raddress(&mpcb->rx_opt,
-			(struct in_addr *)&ip_hdr(skb)->saddr, 0,
-			tmp_opt->mpj_addr_id) < 0)
-		goto reset;
-
-	mpcb->rx_opt.list_rcvd = 0;
-	mptcp_v4_join_request_short(meta_sk, skb, tmp_opt);
-	return;
-
-reset:
-	tcp_v4_send_reset(NULL, skb);
-	return;
-}
-
 /* We only process join requests here. (either the SYN or the final ACK) */
 int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {
