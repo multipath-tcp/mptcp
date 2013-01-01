@@ -937,8 +937,10 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 				continue;
 
 			if (!meta_tp->mpc || !is_meta_sk(meta_sk) ||
-			     mpcb->infinite_mapping)
+			     mpcb->infinite_mapping) {
+				sock_put(meta_sk);
 				continue;
+			}
 
 			bh_lock_sock(meta_sk);
 			if (sock_owned_by_user(meta_sk)) {
