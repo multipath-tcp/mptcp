@@ -583,8 +583,13 @@ static int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	if (buff == NULL)
 		return -ENOMEM; /* We'll just try again later. */
 
-	sk->sk_wmem_queued += buff->truesize;
-	sk_mem_charge(sk, buff->truesize);
+	/* See below - if reinject == 1, the buff will be added to the reinject-
+	 * queue, which is currently not part of the memory-accounting.
+	 */
+	if (reinject != 1) {
+		sk->sk_wmem_queued += buff->truesize;
+		sk_mem_charge(sk, buff->truesize);
+	}
 	nlen = skb->len - len - nsize;
 	buff->truesize += nlen;
 	skb->truesize -= nlen;
@@ -669,8 +674,13 @@ static int mptso_fragment(struct sock *sk, struct sk_buff *skb,
 	if (unlikely(buff == NULL))
 		return -ENOMEM;
 
-	sk->sk_wmem_queued += buff->truesize;
-	sk_mem_charge(sk, buff->truesize);
+	/* See below - if reinject == 1, the buff will be added to the reinject-
+	 * queue, which is currently not part of the memory-accounting.
+	 */
+	if (reinject != 1) {
+		sk->sk_wmem_queued += buff->truesize;
+		sk_mem_charge(sk, buff->truesize);
+	}
 	buff->truesize += nlen;
 	skb->truesize -= nlen;
 
