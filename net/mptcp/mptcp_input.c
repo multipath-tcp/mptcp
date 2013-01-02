@@ -1368,11 +1368,6 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 		break;
 	}
 	case MPTCP_SUB_REMOVE_ADDR:
-	{
-		struct mp_remove_addr *mprem = (struct mp_remove_addr *) ptr;
-		u8 rem_id;
-		int i;
-
 		if ((opsize - MPTCP_SUB_LEN_REMOVE_ADDR) < 0) {
 			mptcp_debug("%s: mp_remove_addr: bad option size %d\n",
 					__func__, opsize);
@@ -1381,13 +1376,13 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 		if (!mopt->mpcb)
 			break;
 
-		for (i = 0; i <= opsize - MPTCP_SUB_LEN_REMOVE_ADDR; i++) {
-			rem_id = (&mprem->addrs_id)[i];
-			if (!mptcp_rem_raddress(mopt->mpcb, rem_id))
-				mptcp_send_reset_rem_id(mopt->mpcb, rem_id);
+		if (mopt->saw_rem_addr) {
+			mopt->more_rem_addr = 1;
+			break;
 		}
+		mopt->saw_rem_addr = 1;
+		mopt->rem_addr_ptr = ptr;
 		break;
-	}
 	case MPTCP_SUB_PRIO:
 	{
 		struct mp_prio *mpprio = (struct mp_prio *) ptr;
@@ -1481,7 +1476,20 @@ void mptcp_handle_add_addr(const unsigned char *ptr, struct sock *sk)
 	}
 }
 
-void mptcp_parse_add_addr(const struct sk_buff *skb, struct sock *sk)
+void mptcp_handle_rem_addr(const unsigned char *ptr, struct sock *sk)
+{
+	struct mp_remove_addr *mprem = (struct mp_remove_addr *) ptr;
+	int i;
+	u8 rem_id;
+
+	for (i = 0; i <= mprem->len - MPTCP_SUB_LEN_REMOVE_ADDR; i++) {
+		rem_id = (&mprem->addrs_id)[i];
+		if (!mptcp_rem_raddress(tcp_sk(sk)->mpcb, rem_id))
+			mptcp_send_reset_rem_id(tcp_sk(sk)->mpcb, rem_id);
+	}
+}
+
+void mptcp_parse_addropt(const struct sk_buff *skb, struct sock *sk)
 {
 	struct tcphdr *th = tcp_hdr(skb);
 	unsigned char *ptr;
@@ -1513,15 +1521,21 @@ void mptcp_parse_add_addr(const struct sk_buff *skb, struct sock *sk)
 				if ((mpadd->ipver == 4 && opsize != MPTCP_SUB_LEN_ADD_ADDR4 &&
 				     opsize != MPTCP_SUB_LEN_ADD_ADDR4 + 2) ||
 				    (mpadd->ipver == 6 && opsize != MPTCP_SUB_LEN_ADD_ADDR6 &&
-				     opsize != MPTCP_SUB_LEN_ADD_ADDR6 + 2)) {
+				     opsize != MPTCP_SUB_LEN_ADD_ADDR6 + 2))
 #else
 				if (opsize != MPTCP_SUB_LEN_ADD_ADDR4 &&
-				    opsize != MPTCP_SUB_LEN_ADD_ADDR4 + 2) {
+				    opsize != MPTCP_SUB_LEN_ADD_ADDR4 + 2)
 #endif /* CONFIG_IPV6 */
 					goto cont;
-				}
 
 				mptcp_handle_add_addr(ptr, sk);
+			}
+			if (opcode == TCPOPT_MPTCP &&
+			    ((struct mptcp_option *)ptr)->sub == MPTCP_SUB_REMOVE_ADDR) {
+				if ((opsize - MPTCP_SUB_LEN_REMOVE_ADDR) < 0)
+					goto cont;
+
+				mptcp_handle_rem_addr(ptr, sk);
 			}
 cont:
 			ptr += opsize - 2;

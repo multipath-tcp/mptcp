@@ -115,12 +115,16 @@ struct mptcp_options_received {
 				 */
 		more_add_addr:1, /* Saw one more add-addr. */
 
+		saw_rem_addr:1, /* Saw at least one rem_addr option */
+		more_rem_addr:1, /* Saw one more rem-addr. */
+
 		mp_fail:1,
 		mp_fclose:1;
 	u8	rem_id;		/* Address-id in the MP_JOIN */
 	u8	prio_addr_id;	/* Address-id in the MP_PRIO */
 
 	const unsigned char *add_addr_ptr; /* Pointer to the add-address option */
+	const unsigned char *rem_addr_ptr; /* Pointer to the rem-address option */
 
 	u32	mptcp_rem_token;/* Remote token */
 	u64	mptcp_rem_key;	/* Remote key */
@@ -627,7 +631,8 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			 struct mptcp_options_received *mopt,
 			 const struct sk_buff *skb);
 void mptcp_handle_add_addr(const unsigned char *ptr, struct sock *sk);
-void mptcp_parse_add_addr(const struct sk_buff *skb, struct sock *sk);
+void mptcp_handle_rem_addr(const unsigned char *ptr, struct sock *sk);
+void mptcp_parse_addropt(const struct sk_buff *skb, struct sock *sk);
 void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 		       unsigned *remaining);
 void mptcp_synack_options(struct request_sock *req,
@@ -816,6 +821,9 @@ static inline void mptcp_init_mp_opt(struct mptcp_options_received *mopt)
 	mopt->saw_add_addr = 0;
 	mopt->more_add_addr = 0;
 
+	mopt->saw_rem_addr = 0;
+	mopt->more_rem_addr = 0;
+
 	mopt->mp_fail = 0;
 	mopt->mp_fclose = 0;
 	mopt->mpcb = NULL;
@@ -828,6 +836,8 @@ static inline void mptcp_reset_mopt(struct tcp_sock *tp)
 	mopt->saw_low_prio = 0;
 	mopt->saw_add_addr = 0;
 	mopt->more_add_addr = 0;
+	mopt->saw_rem_addr = 0;
+	mopt->more_rem_addr = 0;
 	mopt->join_ack = 0;
 	mopt->mp_fail = 0;
 	mopt->mp_fclose = 0;

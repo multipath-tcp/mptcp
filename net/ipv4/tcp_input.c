@@ -5621,14 +5621,20 @@ static int tcp_validate_incoming(struct sock *sk, struct sk_buff *skb,
 			mopt->join_ack = 0;
 		}
 
-		if (mopt->saw_add_addr) {
-			if (mopt->more_add_addr)
-				mptcp_parse_add_addr(skb, sk);
-			else
-				mptcp_handle_add_addr(mopt->add_addr_ptr, sk);
+		if (mopt->saw_add_addr || mopt->saw_rem_addr) {
+			if (mopt->more_add_addr || mopt->more_rem_addr) {
+				mptcp_parse_addropt(skb, sk);
+			} else {
+				if (mopt->saw_add_addr)
+					mptcp_handle_add_addr(mopt->add_addr_ptr, sk);
+				if (mopt->saw_rem_addr)
+					mptcp_handle_rem_addr(mopt->rem_addr_ptr, sk);
+			}
 
 			mopt->more_add_addr = 0;
 			mopt->saw_add_addr = 0;
+			mopt->more_rem_addr = 0;
+			mopt->saw_rem_addr = 0;
 		}
 		if (mopt->saw_low_prio) {
 			if (mopt->saw_low_prio == 1) {
