@@ -77,11 +77,11 @@ static void mptcp_v4_reqsk_queue_hash_add(struct sock *meta_sk,
 }
 
 /* Similar to tcp_v4_conn_request */
-static void mptcp_v4_join_request_short(struct sock *meta_sk,
-					struct sk_buff *skb,
-					struct tcp_options_received *tmp_opt)
+static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+	struct tcp_options_received tmp_opt;
+	const u8 *hash_location;
 	struct request_sock *req;
 	struct inet_request_sock *ireq;
 	struct mptcp_request_sock *mtreq;
@@ -92,6 +92,11 @@ static void mptcp_v4_join_request_short(struct sock *meta_sk,
 	__u32 isn = TCP_SKB_CB(skb)->when;
 	int want_cookie = 0;
 
+	tcp_clear_options(&tmp_opt);
+	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
+	tmp_opt.user_mss = tcp_sk(meta_sk)->rx_opt.user_mss;
+	tcp_parse_options(skb, &tmp_opt, &hash_location, &mpcb->rx_opt, 0);
+
 	req = inet_reqsk_alloc(&mptcp_request_sock_ops);
 	if (!req)
 		return;
@@ -99,7 +104,7 @@ static void mptcp_v4_join_request_short(struct sock *meta_sk,
 	mtreq = mptcp_rsk(req);
 	mtreq->mpcb = mpcb;
 	INIT_LIST_HEAD(&mtreq->collide_tuple);
-	mtreq->mptcp_rem_nonce = tmp_opt->mptcp_recv_nonce;
+	mtreq->mptcp_rem_nonce = tmp_opt.mptcp_recv_nonce;
 	mtreq->mptcp_rem_key = mpcb->mptcp_rem_key;
 	mtreq->mptcp_loc_key = mpcb->mptcp_loc_key;
 	get_random_bytes(&mtreq->mptcp_loc_nonce,
@@ -109,11 +114,11 @@ static void mptcp_v4_join_request_short(struct sock *meta_sk,
 			(u8 *)&mtreq->mptcp_loc_nonce,
 			(u8 *)&mtreq->mptcp_rem_nonce, (u32 *)mptcp_hash_mac);
 	mtreq->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
-	mtreq->rem_id = tmp_opt->rem_id;
-	mtreq->low_prio = tmp_opt->low_prio;
+	mtreq->rem_id = tmp_opt.rem_id;
+	mtreq->low_prio = tmp_opt.low_prio;
 
-	tmp_opt->tstamp_ok = tmp_opt->saw_tstamp;
-	tcp_openreq_init(req, tmp_opt, skb);
+	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
+	tcp_openreq_init(req, &tmp_opt, skb);
 
 	ireq = inet_rsk(req);
 	ireq->loc_addr = daddr;
@@ -124,7 +129,7 @@ static void mptcp_v4_join_request_short(struct sock *meta_sk,
 	if (security_inet_conn_request(meta_sk, skb, req))
 		goto drop_and_free;
 
-	if (!want_cookie || tmp_opt->tstamp_ok)
+	if (!want_cookie || tmp_opt.tstamp_ok)
 		TCP_ECN_create_request(req, skb);
 
 	if (!isn) {
@@ -139,7 +144,7 @@ static void mptcp_v4_join_request_short(struct sock *meta_sk,
 		 * timewait bucket, so that all the necessary checks
 		 * are made in the function processing timewait state.
 		 */
-		if (tmp_opt->saw_tstamp &&
+		if (tmp_opt.saw_tstamp &&
 		    tcp_death_row.sysctl_tw_recycle &&
 		    (dst = inet_csk_route_req(meta_sk, &fl4, req)) != NULL &&
 		    fl4.daddr == saddr) {
@@ -183,21 +188,6 @@ drop_and_release:
 drop_and_free:
 	reqsk_free(req);
 	return;
-}
-
-/* Similar to tcp_v6_conn_request, with subsequent call to mptcp_v4_join_request_short */
-static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
-{
-	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct tcp_options_received tmp_opt;
-	const u8 *hash_location;
-
-	tcp_clear_options(&tmp_opt);
-	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
-	tmp_opt.user_mss = tcp_sk(meta_sk)->rx_opt.user_mss;
-	tcp_parse_options(skb, &tmp_opt, &hash_location, &mpcb->rx_opt, 0, NULL);
-
-	mptcp_v4_join_request_short(meta_sk, skb, &tmp_opt);
 }
 
 int mptcp_v4_rem_raddress(struct multipath_options *mopt, u8 id)
@@ -293,45 +283,6 @@ void mptcp_v4_set_init_addr_bit(struct mptcp_cb *mpcb, __be32 daddr)
 			return;
 		}
 	}
-}
-
-/* Fast processing for SYN+MP_JOIN. */
-void mptcp_v4_do_rcv_join_syn(struct sock *meta_sk, struct sk_buff *skb,
-			      struct tcp_options_received *tmp_opt)
-{
-	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-#ifdef CONFIG_TCP_MD5SIG
-	/*
-	 * Hash check from tcp_v4_do_rcv.
-	 *
-	 * We really want to reject the packet as early as possible
-	 * if:
-	 *  o We're expecting an MD5'd packet and this is no MD5 tcp option
-	 *  o There is an MD5 option and we're not expecting one
-	 */
-	if (tcp_v4_inbound_md5_hash(meta_sk, skb))
-		return;
-#endif
-
-	/* Has been removed from the tk-table. Thus, no new subflows.
-	 * Check for close-state is necessary, because we may have been closed
-	 * without passing by mptcp_close().
-	 */
-	if (meta_sk->sk_state == TCP_CLOSE || !tcp_sk(meta_sk)->inside_tk_table)
-		goto reset;
-
-	if (mptcp_v4_add_raddress(&mpcb->rx_opt,
-			(struct in_addr *)&ip_hdr(skb)->saddr, 0,
-			tmp_opt->mpj_addr_id) < 0)
-		goto reset;
-
-	mpcb->rx_opt.list_rcvd = 0;
-	mptcp_v4_join_request_short(meta_sk, skb, tmp_opt);
-	return;
-
-reset:
-	tcp_v4_send_reset(NULL, skb);
-	return;
 }
 
 /* We only process join requests here. (either the SYN or the final ACK) */
