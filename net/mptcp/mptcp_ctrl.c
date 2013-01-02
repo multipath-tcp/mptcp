@@ -1143,9 +1143,12 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 		 * the old state so that tcp_close will finally send the fin
 		 * in user-context.
 		 */
-		if (!sk->sk_err && sk->sk_state != TCP_CLOSE &&
-		    tcp_close_state(sk) && mptcp_sub_send_fin(sk))
+		if (!sk->sk_err && old_state != TCP_CLOSE &&
+		    tcp_close_state(sk) && mptcp_sub_send_fin(sk)) {
+			if (old_state == TCP_ESTABLISHED)
+				TCP_INC_STATS(sock_net(sk), TCP_MIB_CURRESTAB);
 			sk->sk_state = old_state;
+		}
 	}
 
 	sock_hold(sk);

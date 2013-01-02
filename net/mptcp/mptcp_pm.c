@@ -512,6 +512,8 @@ int mptcp_do_join_short(struct sk_buff *skb, struct multipath_options *mopt,
 		return -1;
 	}
 
+	TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_JOIN;
+
 	/* OK, this is a new syn/join, let's create a new open request and
 	 * send syn+ack
 	 */
@@ -529,11 +531,16 @@ int mptcp_do_join_short(struct sk_buff *skb, struct multipath_options *mopt,
 			 */
 			skb_get(skb);
 	} else {
+		/* mptcp_v4_do_rcv tries to free the skb - we prevent this, as
+		 * the skb will finally be freed by tcp_v4_do_rcv (where we are
+		 * coming from)
+		 */
+		skb_get(skb);
 		if (skb->protocol == htons(ETH_P_IP)) {
-			mptcp_v4_do_rcv_join_syn(meta_sk, skb, tmp_opt);
+			tcp_v4_do_rcv(meta_sk, skb);
 #if IS_ENABLED(CONFIG_IPV6)
 		} else { /* IPv6 */
-			mptcp_v6_do_rcv_join_syn(meta_sk, skb, tmp_opt);
+			tcp_v6_do_rcv(meta_sk, skb);
 #endif /* CONFIG_IPV6 */
 		}
 	}
