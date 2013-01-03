@@ -1873,10 +1873,6 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 	    mpcb->infinite_mapping || mpcb->send_infinite_mapping)
 		return;
 
-	sk = get_available_subflow(meta_sk, tcp_write_queue_head(meta_sk));
-	if (!sk)
-		goto out_reset_timer;
-
 	WARN_ON(tcp_write_queue_empty(meta_sk));
 
 	if (!meta_tp->snd_wnd && !sock_flag(meta_sk, SOCK_DEAD) &&
@@ -1905,6 +1901,10 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 			return;
 		}
 
+		sk = get_available_subflow(meta_sk, tcp_write_queue_head(meta_sk));
+		if (!sk)
+			goto out_reset_timer;
+
 		subskb = mptcp_skb_entail(sk, tcp_write_queue_head(meta_sk), -1);
 		if (!subskb)
 			goto out_reset_timer;
@@ -1922,6 +1922,10 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 
 	if (meta_icsk->icsk_retransmits == 0)
 		NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_TCPTIMEOUTS);
+
+	sk = get_available_subflow(meta_sk, tcp_write_queue_head(meta_sk));
+	if (!sk)
+		goto out_reset_timer;
 
 	subskb = mptcp_skb_entail(sk, tcp_write_queue_head(meta_sk), -1);
 	if (!subskb)
