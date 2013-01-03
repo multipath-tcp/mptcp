@@ -208,19 +208,13 @@ static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 static int mptcp_verif_dss_csum(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sk_buff *tmp, *last = NULL;
+	struct sk_buff *tmp, *tmp1, *last = NULL;
 	__wsum csum_tcp = 0; /* cumulative checksum of pld + mptcp-header */
 	int ans = 1, overflowed = 0, offset = 0, dss_csum_added = 0;
 	int iter = 0;
 
-	skb_queue_walk(&sk->sk_receive_queue, tmp) {
+	skb_queue_walk_safe(&sk->sk_receive_queue, tmp, tmp1) {
 		unsigned int csum_len;
-
-		/* tp->map_data_len may be 0 in case of a data-fin */
-		if ((tp->mptcp->map_data_len &&
-		     !after(tp->mptcp->map_subseq + tp->mptcp->map_data_len, TCP_SKB_CB(tmp)->seq)) ||
-		    (!tp->mptcp->map_data_len && before(tp->mptcp->map_subseq, TCP_SKB_CB(tmp)->seq)))
-			break;
 
 		if (before(tp->mptcp->map_subseq + tp->mptcp->map_data_len, TCP_SKB_CB(tmp)->end_seq))
 			/* Mapping ends in the middle of the packet -
@@ -261,6 +255,11 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 		}
 		last = tmp;
 		iter++;
+
+		if (!skb_queue_is_last(&sk->sk_receive_queue, tmp) &&
+		    !before(TCP_SKB_CB(tmp1)->seq,
+			    tp->mptcp->map_subseq + tp->mptcp->map_data_len))
+			break;
 	}
 
 	/* Now, checksum must be 0 */
@@ -725,18 +724,14 @@ static int mptcp_validate_mapping(struct sock *sk, struct sk_buff *skb)
 	    !mptcp_sequence(meta_tp, tp->mptcp->map_data_seq,
 			    tp->mptcp->map_data_seq + tp->mptcp->map_data_len + tp->mptcp->map_data_fin)) {
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
-			/* seq >= end_sub_mapping if data_len OR
-			 * seq > end_sub_mapping if not data_len
-			 * (data_fin without data)
-			 */
-			if ((tp->mptcp->map_data_len && !before(TCP_SKB_CB(tmp1)->seq,
-					tp->mptcp->map_subseq + tp->mptcp->map_data_len)) ||
-			    (!tp->mptcp->map_data_len && after(TCP_SKB_CB(tmp1)->seq,
-					tp->mptcp->map_subseq + tp->mptcp->map_data_len)))
-				break;
 			__skb_unlink(tmp1, &sk->sk_receive_queue);
 			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 			__kfree_skb(tmp1);
+
+			if (!skb_queue_empty(&sk->sk_receive_queue) &&
+			    !before(TCP_SKB_CB(tmp)->seq,
+				    tp->mptcp->map_subseq + tp->mptcp->map_data_len))
+				break;
 		}
 
 		mptcp_reset_mapping(tp);
@@ -785,15 +780,6 @@ static int mptcp_queue_skb(struct sock *sk)
 	if (before64(rcv_nxt64, tp->mptcp->map_data_seq)) {
 		/* Seg's have to go to the meta-ofo-queue */
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
-			/* If we are currently processing the data-fin, increase
-			 * the mapping by one, because the data-fin consumes
-			 * one byte.
-			 */
-			if (!before(TCP_SKB_CB(tmp1)->seq,
-				    tp->mptcp->map_subseq + tp->mptcp->map_data_len +
-				    (tp->mptcp->map_data_fin && mptcp_is_data_fin(tmp1) ? 1 : 0)))
-				break;
-
 			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 			mptcp_prepare_skb(tmp1, tmp, sk);
 			__skb_unlink(tmp1, &sk->sk_receive_queue);
@@ -801,19 +787,16 @@ static int mptcp_queue_skb(struct sock *sk)
 			skb_set_owner_r(tmp1, meta_sk);
 
 			mptcp_add_meta_ofo_queue(meta_sk, tmp1, sk);
+
+			if (!skb_queue_empty(&sk->sk_receive_queue) &&
+			    !before(TCP_SKB_CB(tmp)->seq,
+				    tp->mptcp->map_subseq + tp->mptcp->map_data_len))
+				break;
+
 		}
 	} else {
 		/* Ready for the meta-rcv-queue */
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
-			/* If we are currently processing the data-fin, increase
-			 * the mapping by one, because the data-fin consumes
-			 * one byte.
-			 */
-			if (!before(TCP_SKB_CB(tmp1)->seq,
-				    tp->mptcp->map_subseq + tp->mptcp->map_data_len +
-				    (tp->mptcp->map_data_fin && mptcp_is_data_fin(tmp1) ? 1 : 0)))
-				break;
-
 			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 			mptcp_prepare_skb(tmp1, tmp, sk);
 			__skb_unlink(tmp1, &sk->sk_receive_queue);
@@ -845,6 +828,11 @@ static int mptcp_queue_skb(struct sock *sk)
 
 			if (eaten)
 				__kfree_skb(tmp1);
+
+			if (!skb_queue_empty(&sk->sk_receive_queue) &&
+			    !before(TCP_SKB_CB(tmp)->seq,
+				    tp->mptcp->map_subseq + tp->mptcp->map_data_len))
+				break;
 		}
 	}
 
