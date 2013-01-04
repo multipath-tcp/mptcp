@@ -380,6 +380,16 @@ static void mptcp_sub_inherit_sockopts(struct sock *meta_sk, struct sock *sub_sk
 		inet_csk_reset_keepalive_timer(sub_sk, keepalive_time_when(meta_tp));
 		sock_valbool_flag(sub_sk, SOCK_KEEPOPEN, keepalive_time_when(meta_tp));
 	}
+
+	/* IP_TOS also goes to the subflow. */
+	if (inet_sk(sub_sk)->tos != inet_sk(meta_sk)->tos) {
+		inet_sk(sub_sk)->tos = inet_sk(meta_sk)->tos;
+		sub_sk->sk_priority = meta_sk->sk_priority;
+		sk_dst_reset(sub_sk);
+	}
+
+	/* Inheris SO_REUSEADDR */
+	sub_sk->sk_reuse = meta_sk->sk_reuse;
 }
 
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb)
