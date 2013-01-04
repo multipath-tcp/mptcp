@@ -290,12 +290,20 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sock *meta_sk = tp->meta_sk;
 
+	/* It has already been closed - there is really no point in reinjecting */
+	if (meta_sk->sk_state == TCP_CLOSE)
+		return;
+
 	skb_queue_walk_safe(&sk->sk_write_queue, skb_it, tmp) {
 		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb_it);
-		/* Subflow syn's and fin's are not reinjected
+		/* Subflow syn's and fin's are not reinjected.
+		 *
+		 * As well as empty subflow-fins with a data-fin.
+		 * They are reinjected below (without the subflow-fin-flag)
 		 */
 		if (tcb->tcp_flags & TCPHDR_SYN ||
-		    (tcb->tcp_flags & TCPHDR_FIN && !mptcp_is_data_fin(skb_it)))
+		    (tcb->tcp_flags & TCPHDR_FIN && !mptcp_is_data_fin(skb_it)) ||
+		    (tcb->tcp_flags & TCPHDR_FIN && mptcp_is_data_fin(skb_it) && !skb_it->len))
 			continue;
 
 		/* Go to next segment, if it failed */
