@@ -801,6 +801,12 @@ static int mptcp_queue_skb(struct sock *sk)
 			mptcp_prepare_skb(tmp1, tmp, sk);
 			__skb_unlink(tmp1, &sk->sk_receive_queue);
 
+			/* This segment has already been received */
+			if (!after(TCP_SKB_CB(tmp1)->end_seq, meta_tp->rcv_nxt)) {
+				__kfree_skb(tmp1);
+				goto next;
+			}
+
 			eaten = 0;
 			/* Is direct copy possible ? */
 			if (TCP_SKB_CB(tmp1)->seq == meta_tp->rcv_nxt &&
@@ -829,6 +835,7 @@ static int mptcp_queue_skb(struct sock *sk)
 			if (eaten)
 				__kfree_skb(tmp1);
 
+next:
 			if (!skb_queue_empty(&sk->sk_receive_queue) &&
 			    !before(TCP_SKB_CB(tmp)->seq,
 				    tp->mptcp->map_subseq + tp->mptcp->map_data_len))
