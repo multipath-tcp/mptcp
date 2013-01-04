@@ -577,9 +577,6 @@ extern struct workqueue_struct *mptcp_wq;
 
 void mptcp_data_ready(struct sock *sk, int bytes);
 void mptcp_write_space(struct sock *sk);
-void mptcp_set_state(struct sock *sk);
-void mptcp_sock_destruct(struct sock *sk);
-void mptcp_sock_def_error_report(struct sock *sk);
 
 void mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
 			      struct sock *sk);

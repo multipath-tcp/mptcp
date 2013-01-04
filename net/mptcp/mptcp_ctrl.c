@@ -201,13 +201,46 @@ struct sock *mptcp_select_ack_sock(const struct sock *meta_sk, int copied)
 	return subsk;
 }
 
-void mptcp_sock_def_error_report(struct sock *sk)
+static void mptcp_sock_def_error_report(struct sock *sk)
 {
 	if (!sock_flag(sk, SOCK_DEAD))
 		mptcp_sub_close(sk, 0);
 
 	sk->sk_err = 0;
 	return;
+}
+
+static void mptcp_sock_destruct(struct sock *sk)
+{
+	inet_sock_destruct(sk);
+
+	kmem_cache_free(mptcp_sock_cache, tcp_sk(sk)->mptcp);
+	tcp_sk(sk)->mptcp = NULL;
+
+	if (!is_meta_sk(sk) && !tcp_sk(sk)->was_meta_sk) {
+		/* Taken when mpcb pointer was set */
+		sock_put(mptcp_meta_sk(sk));
+	} else {
+		kmem_cache_free(mptcp_cb_cache, tcp_sk(sk)->mpcb);
+
+		mptcp_debug("%s destroying meta-sk\n", __func__);
+	}
+
+}
+
+static void mptcp_set_state(struct sock *sk)
+{
+	struct sock *meta_sk = mptcp_meta_sk(sk);
+
+	/* Meta is not yet established - wake up the application */
+	if ((1 << meta_sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV) &&
+	    sk->sk_state == TCP_ESTABLISHED) {
+		tcp_set_state(meta_sk, TCP_ESTABLISHED);
+		meta_sk->sk_state_change(meta_sk);
+	}
+
+	if (sk->sk_state == TCP_ESTABLISHED)
+		tcp_sk(sk)->mpcb->cnt_established++;
 }
 
 void mptcp_set_keepalive(struct sock *sk, int val)
@@ -768,24 +801,6 @@ void mptcp_fallback_meta_sk(struct sock *meta_sk)
 	kfree(inet_csk(meta_sk)->icsk_accept_queue.listen_opt);
 	kmem_cache_free(mptcp_sock_cache, tcp_sk(meta_sk)->mptcp);
 	kmem_cache_free(mptcp_cb_cache, tcp_sk(meta_sk)->mpcb);
-}
-
-void mptcp_sock_destruct(struct sock *sk)
-{
-	inet_sock_destruct(sk);
-
-	kmem_cache_free(mptcp_sock_cache, tcp_sk(sk)->mptcp);
-	tcp_sk(sk)->mptcp = NULL;
-
-	if (!is_meta_sk(sk) && !tcp_sk(sk)->was_meta_sk) {
-		/* Taken when mpcb pointer was set */
-		sock_put(mptcp_meta_sk(sk));
-	} else {
-		kmem_cache_free(mptcp_cb_cache, tcp_sk(sk)->mpcb);
-
-		mptcp_debug("%s destroying meta-sk\n", __func__);
-	}
-
 }
 
 int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 rem_id, gfp_t flags)
@@ -1364,21 +1379,6 @@ int mptcp_doit(struct sock *sk)
 		return 0;
 
 	return 1;
-}
-
-void mptcp_set_state(struct sock *sk)
-{
-	struct sock *meta_sk = mptcp_meta_sk(sk);
-
-	/* Meta is not yet established - wake up the application */
-	if ((1 << meta_sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV) &&
-	    sk->sk_state == TCP_ESTABLISHED) {
-		tcp_set_state(meta_sk, TCP_ESTABLISHED);
-		meta_sk->sk_state_change(meta_sk);
-	}
-
-	if (sk->sk_state == TCP_ESTABLISHED)
-		tcp_sk(sk)->mpcb->cnt_established++;
 }
 
 int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key, u32 window)
