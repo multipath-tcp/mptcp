@@ -429,15 +429,20 @@ int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	 * SYN/ACK + MP_CAPABLE.
 	 */
 	struct sock *sk = skb->sk ? skb->sk : meta_sk;
+	int ret = 0;
+
+	if (unlikely(!atomic_inc_not_zero(&sk->sk_refcnt)))
+		return 0;
 
 	if (sk->sk_family == AF_INET)
-		return tcp_v4_do_rcv(sk, skb);
+		ret = tcp_v4_do_rcv(sk, skb);
 #if IS_ENABLED(CONFIG_IPV6)
 	else
-		return tcp_v6_do_rcv(sk, skb);
+		ret = tcp_v6_do_rcv(sk, skb);
 #endif
 
-	return 0;
+	sock_put(sk);
+	return ret;
 }
 
 static struct lock_class_key meta_key;
