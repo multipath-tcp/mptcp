@@ -1485,3 +1485,24 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 	}
 }
 
+int mptcp_check_rtt(const struct tcp_sock *tp, int time)
+{
+	struct mptcp_cb *mpcb = tp->mpcb;
+	struct sock *sk;
+	u32 rtt_max = 0;
+
+	/* In MPTCP, we take the max delay across all flows,
+	 * in order to take into account meta-reordering buffers.
+	 */
+	mptcp_for_each_sk(mpcb, sk) {
+		if (!mptcp_sk_can_recv(sk))
+			continue;
+
+		if (rtt_max < tcp_sk(sk)->rcv_rtt_est.rtt)
+			rtt_max = tcp_sk(sk)->rcv_rtt_est.rtt;
+	}
+	if (time < (rtt_max >> 3) || !rtt_max)
+		return 1;
+
+	return 0;
+}

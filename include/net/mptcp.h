@@ -654,6 +654,8 @@ struct sock *mptcp_sk_clone(const struct sock *sk, int family, const gfp_t prior
 struct sock *mptcp_sk_clone(const struct sock *sk, int family, const gfp_t priority);
 void mptcp_ack_handler(unsigned long);
 void mptcp_set_keepalive(struct sock *sk, int val);
+int mptcp_check_rtt(const struct tcp_sock *tp, int time);
+int mptcp_check_snd_buf(const struct tcp_sock *tp);
 
 static inline void mptcp_push_pending_frames(struct sock *meta_sk)
 {
@@ -673,7 +675,9 @@ static inline void mptcp_sub_force_close(struct sock *sk)
 	int sock_is_dead = sock_flag(sk, SOCK_DEAD);
 
 	tcp_sk(sk)->mp_killed = 1;
-	tcp_done(sk);
+
+	if (!sk->sk_state == TCP_CLOSE)
+		tcp_done(sk);
 
 	if (!sock_is_dead)
 		mptcp_sub_close(sk, 0);
@@ -814,25 +818,6 @@ static inline void mptcp_init_mp_opt(struct mptcp_options_received *mopt)
 	mopt->mpcb = NULL;
 }
 
-static inline int mptcp_check_rtt(const struct tcp_sock *tp, int time)
-{
-	struct mptcp_cb *mpcb = tp->mpcb;
-	struct tcp_sock *tp_tmp;
-	u32 rtt_max = 0;
-
-	/* In MPTCP, we take the max delay across all flows,
-	 * in order to take into account meta-reordering buffers.
-	 */
-	mptcp_for_each_tp(mpcb, tp_tmp) {
-		if (rtt_max < tp_tmp->rcv_rtt_est.rtt)
-			rtt_max = tp_tmp->rcv_rtt_est.rtt;
-	}
-	if (time < (rtt_max >> 3) || !rtt_max)
-		return 1;
-
-	return 0;
-}
-
 static inline __be32 mptcp_get_highorder_sndbits(const struct sk_buff *skb,
 						 const struct mptcp_cb *mpcb)
 {
@@ -881,26 +866,6 @@ static inline void mptcp_path_array_check(struct sock *meta_sk)
 	}
 }
 
-static inline int mptcp_check_snd_buf(const struct tcp_sock *tp)
-{
-	struct tcp_sock *tp_it;
-	u32 rtt_max = tp->srtt;
-	u64 bw_est;
-
-	if (!tp->srtt)
-		return tp->reordering + 1;
-
-	mptcp_for_each_tp(tp->mpcb, tp_it)
-		if (rtt_max < tp_it->srtt)
-			rtt_max = tp_it->srtt;
-
-	bw_est = div64_u64(((u64)tp->snd_cwnd * rtt_max) << 16,
-				(u64)tp->srtt);
-
-	return max_t(unsigned int, (u32)(bw_est >> 16),
-			tp->reordering + 1);
-}
-
 static inline int mptcp_sk_can_send(const struct sock *sk)
 {
 	return (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCPF_CLOSE_WAIT);
@@ -909,6 +874,12 @@ static inline int mptcp_sk_can_send(const struct sock *sk)
 static inline int mptcp_sk_can_recv(const struct sock *sk)
 {
 	return (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCP_FIN_WAIT1 | TCP_FIN_WAIT2);
+}
+
+static inline int mptcp_sk_can_send_ack(const struct sock *sk)
+{
+	return !((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV |
+					TCPF_CLOSE | TCPF_LISTEN));
 }
 
 /* Adding a new subflow to the rcv-buffer space. We make a simple addition,

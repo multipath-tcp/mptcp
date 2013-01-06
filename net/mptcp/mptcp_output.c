@@ -784,13 +784,20 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 
 		if (between(meta_tp->snd_up, meta_tp->snd_una + 1,
 			    meta_tp->snd_una + 0xFFFF)) {
-			mptcp_for_each_sk(meta_tp->mpcb, sk_it)
+			mptcp_for_each_sk(meta_tp->mpcb, sk_it) {
+				if (mptcp_sk_can_send_ack(sk_it))
 					tcp_xmit_probe_skb(sk_it, 1);
+			}
 		}
 
 		/* At least one of the tcp_xmit_probe_skb's has to succeed */
 		mptcp_for_each_sk(meta_tp->mpcb, sk_it) {
-			int ret = tcp_xmit_probe_skb(sk_it, 0);
+			int ret;
+
+			if (!mptcp_sk_can_send_ack(sk_it))
+				continue;
+
+			ret = tcp_xmit_probe_skb(sk_it, 0);
 			if (unlikely(ret > 0))
 				ans = ret;
 		}
@@ -2071,4 +2078,28 @@ int mptcp_select_size(const struct sock *meta_sk)
 		mss = tcp_sk(meta_sk)->mss_cache;
 
 	return mss;
+}
+
+int mptcp_check_snd_buf(const struct tcp_sock *tp)
+{
+	struct sock *sk;
+	u32 rtt_max = tp->srtt;
+	u64 bw_est;
+
+	if (!tp->srtt)
+		return tp->reordering + 1;
+
+	mptcp_for_each_sk(tp->mpcb, sk) {
+		if (!mptcp_sk_can_send(sk))
+			continue;
+
+		if (rtt_max < tcp_sk(sk)->srtt)
+			rtt_max = tcp_sk(sk)->srtt;
+	}
+
+	bw_est = div64_u64(((u64)tp->snd_cwnd * rtt_max) << 16,
+				(u64)tp->srtt);
+
+	return max_t(unsigned int, (u32)(bw_est >> 16),
+			tp->reordering + 1);
 }

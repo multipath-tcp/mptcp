@@ -158,8 +158,7 @@ struct sock *mptcp_select_ack_sock(const struct sock *meta_sk, int copied)
 	mptcp_for_each_sk(meta_tp->mpcb, sk) {
 		struct tcp_sock *tp = tcp_sk(sk);
 
-		if ((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV |
-					   TCPF_CLOSE | TCPF_LISTEN))
+		if (!mptcp_sk_can_send_ack(sk))
 			continue;
 
 		/* Select among those who contributed to the
@@ -996,6 +995,10 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 	mptcp_for_each_sk(mpcb, sk) {
 		struct tcp_sock *tp = tcp_sk(sk);
 		const struct inet_connection_sock *icsk = inet_csk(sk);
+
+		if (!mptcp_sk_can_send_ack(sk))
+			continue;
+
 		if (!inet_csk_ack_scheduled(sk))
 			continue;
 		/* Delayed ACKs frequently hit locked sockets during bulk
