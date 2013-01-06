@@ -500,13 +500,11 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	return 0;
 
 error:
-	sock_orphan(sk);
-
-	/* tcp_done must be handled with bh disabled */
-	local_bh_disable();
-	tcp_done(sk);
-	local_bh_enable();
-
+	/* May happen if mptcp_add_sock fails first */
+	if (!tp->mpc)
+		tcp_close(sk, 0);
+	else
+		mptcp_sub_force_close(sk);
 	return ret;
 }
 
