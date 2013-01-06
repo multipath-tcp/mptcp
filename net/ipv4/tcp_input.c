@@ -3442,7 +3442,8 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		if (!fully_acked)
 			break;
 
-		mptcp_clean_rtx_infinite(skb, sk);
+		if (tp->mpc)
+			mptcp_clean_rtx_infinite(skb, sk);
 		tcp_unlink_write_queue(skb, sk);
 
 		if (tp->mpc)
@@ -3832,12 +3833,6 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 			flag |= FLAG_ECE;
 
 		tcp_ca_event(sk, CA_EVENT_SLOW_ACK);
-	}
-
-	if (tp->mpc) {
-		flag |= mptcp_data_ack(sk, skb);
-		if (unlikely(tp->mp_killed))
-			return -1;
 	}
 
 	/* We passed data and got it acked, remove any soft error
@@ -4249,7 +4244,7 @@ void tcp_reset(struct sock *sk)
  *
  *	If we are in FINWAIT-2, a received FIN moves us to TIME-WAIT.
  */
-static void tcp_fin(struct sock *sk, const struct sk_buff *skb)
+static void tcp_fin(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
@@ -4537,7 +4532,7 @@ static void tcp_ofo_queue(struct sock *sk)
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
 		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 		if (tcp_hdr(skb)->fin)
-			tcp_fin(sk, skb);
+			tcp_fin(sk);
 	}
 }
 
@@ -4846,7 +4841,7 @@ queue_and_out:
 		if (skb->len || mptcp_is_data_fin(skb))
 			tcp_event_data_recv(sk, skb);
 		if (th->fin)
-			tcp_fin(sk, skb);
+			tcp_fin(sk);
 
 		if (!skb_queue_empty(&tp->out_of_order_queue)) {
 			tcp_ofo_queue(sk);
@@ -5650,6 +5645,8 @@ static int tcp_validate_incoming(struct sock *sk, struct sk_buff *skb,
 			mopt->saw_low_prio = 0;
 		}
 
+		mptcp_data_ack(sk, skb);
+
 		mptcp_path_array_check(mptcp_meta_sk(sk));
 		/* Socket may have been mp_killed by a REMOVE_ADDR */
 		if (tp->mp_killed)
@@ -6066,8 +6063,6 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 
 		tp->snd_wl1 = TCP_SKB_CB(skb)->seq;
 		tcp_ack(sk, skb, FLAG_SLOWPATH);
-		if (unlikely(tp->mp_killed))
-			goto discard;
 
 		/* Ok.. it's good. Set up sequence numbers and
 		 * move to established.

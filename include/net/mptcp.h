@@ -126,6 +126,10 @@ struct mptcp_options_received {
 	const unsigned char *add_addr_ptr; /* Pointer to the add-address option */
 	const unsigned char *rem_addr_ptr; /* Pointer to the rem-address option */
 
+	u32	data_ack;
+	u32	data_seq;
+	u16	data_len;
+
 	u32	mptcp_rem_token;/* Remote token */
 	u64	mptcp_rem_key;	/* Remote key */
 
@@ -658,7 +662,7 @@ void mptcp_select_initial_window(int *__space, __u32 *window_clamp,
 			         const struct sock *sk);
 unsigned int mptcp_current_mss(struct sock *meta_sk);
 int mptcp_select_size(const struct sock *meta_sk);
-int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb);
+void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb);
 void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn);
 void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 		     u32 *hash_out);
@@ -1199,10 +1203,7 @@ static inline int mptcp_select_size(const struct sock *meta_sk)
 {
 	return 0;
 }
-static inline int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
-{
-	return 0;
-}
+static inline void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb) {}
 static inline void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn) {}
 static inline void mptcp_sub_close_passive(struct sock *sk) {}
 static inline int mptcp_fallback_infinite(const struct tcp_sock *tp,
