@@ -1103,6 +1103,11 @@ void mptcp_sub_close_wq(struct work_struct *work)
 	struct sock *meta_sk = mptcp_meta_sk(sk);
 
 	if (!tp->mpc) {
+		if (sock_flag(sk, SOCK_DEAD)) {
+			sock_put(sk);
+			return;
+		}
+		tp->closing = 1;
 		tcp_close(sk, 0);
 		sock_put(sk);
 		return;
@@ -1114,10 +1119,12 @@ void mptcp_sub_close_wq(struct work_struct *work)
 	if (sock_flag(sk, SOCK_DEAD))
 		goto exit;
 
-	if (meta_sk->sk_shutdown == SHUTDOWN_MASK || sk->sk_state == TCP_CLOSE)
+	if (meta_sk->sk_shutdown == SHUTDOWN_MASK || sk->sk_state == TCP_CLOSE) {
+		tp->closing = 1;
 		tcp_close(sk, 0);
-	else if (tcp_close_state(sk))
+	} else if (tcp_close_state(sk)) {
 		tcp_send_fin(sk);
+	}
 
 exit:
 	release_sock(meta_sk);
@@ -1127,7 +1134,14 @@ exit:
 
 void mptcp_sub_close(struct sock *sk, unsigned long delay)
 {
+	struct tcp_sock *tp = tcp_sk(sk);
 	struct delayed_work *work = &tcp_sk(sk)->mptcp->work;
+
+	/* We are already closing - e.g., call from sock_def_error_report upon
+	 * tcp_disconnect in tcp_close.
+	 */
+	if (tp->closing)
+		return;
 
 	/* Work already scheduled ? */
 	if (work_pending(&work->work)) {
@@ -1150,15 +1164,17 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 			if (sock_flag(sk, SOCK_DEAD))
 				return;
 
-			if (!tcp_sk(sk)->mpc) {
+			if (!tp->mpc) {
+				tp->closing = 1;
 				tcp_close(sk, 0);
 				return;
 			}
 
 			if (mptcp_meta_sk(sk)->sk_shutdown == SHUTDOWN_MASK ||
-			    sk->sk_state == TCP_CLOSE)
+			    sk->sk_state == TCP_CLOSE) {
+				tp->closing = 1;
 				tcp_close(sk, 0);
-			else if (tcp_close_state(sk))
+			} else if (tcp_close_state(sk))
 				tcp_send_fin(sk);
 
 			return;
