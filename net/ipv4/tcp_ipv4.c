@@ -1329,7 +1329,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	struct tcp_extend_values tmp_ext;
 	struct tcp_options_received tmp_opt;
 	const u8 *hash_location;
-	struct multipath_options mopt;
+	struct mptcp_options_received mopt;
 	struct request_sock *req;
 	struct inet_request_sock *ireq;
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -1342,12 +1342,11 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	tcp_clear_options(&tmp_opt);
 	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
 	tmp_opt.user_mss  = tp->rx_opt.user_mss;
-	mopt.dss_csum = 0;
 	mptcp_init_mp_opt(&mopt);
 	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
 
 #ifdef CONFIG_MPTCP
-	if (tmp_opt.saw_mpc && tmp_opt.is_mp_join)
+	if (mopt.is_mp_join)
 		return mptcp_do_join_short(skb, &mopt, &tmp_opt, sock_net(sk));
 #endif
 	/* Never answer to SYNs send to broadcast or multicast */
@@ -1373,7 +1372,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 		goto drop;
 
 #ifdef CONFIG_MPTCP
-	if (tmp_opt.saw_mpc) {
+	if (mopt.saw_mpc) {
 		req = inet_reqsk_alloc(&mptcp_request_sock_ops);
 
 		if (!req)
@@ -1381,6 +1380,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 
 		mptcp_rsk(req)->mpcb = NULL;
 		mptcp_rsk(req)->dss_csum = mopt.dss_csum;
+		mptcp_rsk(req)->collide_tk.pprev = NULL;
 	} else
 #endif
 		req = inet_reqsk_alloc(&tcp_request_sock_ops);
@@ -1432,7 +1432,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 	tcp_openreq_init(req, &tmp_opt, skb);
 
-	if (tcp_rsk(req)->saw_mpc)
+	if (mopt.saw_mpc)
 		mptcp_reqsk_new_mptcp(req, &tmp_opt, &mopt);
 
 	ireq = inet_rsk(req);

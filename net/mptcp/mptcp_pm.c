@@ -124,10 +124,12 @@ static int mptcp_find_token(u32 token)
  */
 void mptcp_reqsk_new_mptcp(struct request_sock *req,
 			   const struct tcp_options_received *rx_opt,
-			   const struct multipath_options *mopt)
+			   const struct mptcp_options_received *mopt)
 {
 	struct mptcp_request_sock *mtreq;
 	mtreq = mptcp_rsk(req);
+
+	tcp_rsk(req)->saw_mpc = 1;
 
 	rcu_read_lock();
 	spin_lock(&mptcp_tk_hashlock);
@@ -216,9 +218,9 @@ u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock* sk)
 
 	if (sk->sk_family == AF_INET) {
 		mptcp_for_each_bit_set(mpcb->loc4_bits, i) {
-			if (mpcb->addr4[i].addr.s_addr ==
+			if (mpcb->locaddr4[i].addr.s_addr ==
 					inet_sk(sk)->inet_saddr)
-				return mpcb->addr4[i].id;
+				return mpcb->locaddr4[i].id;
 		}
 
 		mptcp_debug("%s %pI4 not locally found\n",
@@ -228,9 +230,9 @@ u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock* sk)
 #if IS_ENABLED(CONFIG_IPV6)
 	if (sk->sk_family == AF_INET6) {
 		mptcp_for_each_bit_set(mpcb->loc6_bits, i) {
-			if (ipv6_addr_equal(&mpcb->addr6[i].addr,
+			if (ipv6_addr_equal(&mpcb->locaddr6[i].addr,
 					    &inet6_sk(sk)->saddr))
-				return mpcb->addr6[i].id;
+				return mpcb->locaddr6[i].id;
 		}
 
 		mptcp_debug("%s %pI6 not locally found\n",
@@ -283,7 +285,7 @@ void mptcp_set_addresses(struct sock *meta_sk)
 				if ((meta_sk->sk_family == AF_INET ||
 				     mptcp_v6_is_v4_mapped(meta_sk)) &&
 				    inet_sk(meta_sk)->inet_saddr == ifa_address) {
-					mpcb->addr4[0].low_prio = dev->flags &
+					mpcb->locaddr4[0].low_prio = dev->flags &
 								IFF_MPBACKUP ? 1 : 0;
 					continue;
 				}
@@ -297,10 +299,10 @@ void mptcp_set_addresses(struct sock *meta_sk)
 						MPTCP_MAX_ADDR, &ifa_address);
 					goto out;
 				}
-				mpcb->addr4[i].addr.s_addr = ifa_address;
-				mpcb->addr4[i].port = 0;
-				mpcb->addr4[i].id = i;
-				mpcb->addr4[i].low_prio = (dev->flags & IFF_MPBACKUP) ?
+				mpcb->locaddr4[i].addr.s_addr = ifa_address;
+				mpcb->locaddr4[i].port = 0;
+				mpcb->locaddr4[i].id = i;
+				mpcb->locaddr4[i].low_prio = (dev->flags & IFF_MPBACKUP) ?
 								1 : 0;
 				mpcb->loc4_bits |= (1 << i);
 				mpcb->next_v4_index = i + 1;
@@ -325,7 +327,7 @@ cont_ipv6:
 				if (meta_sk->sk_family == AF_INET6 &&
 				    ipv6_addr_equal(&inet6_sk(meta_sk)->saddr,
 						    &(ifa6->addr))) {
-					mpcb->addr6[0].low_prio = dev->flags &
+					mpcb->locaddr6[0].low_prio = dev->flags &
 								IFF_MPBACKUP ? 1 : 0;
 					continue;
 				}
@@ -340,10 +342,10 @@ cont_ipv6:
 					goto out;
 				}
 
-				mpcb->addr6[i].addr = ifa6->addr;
-				mpcb->addr6[i].port = 0;
-				mpcb->addr6[i].id = i + MPTCP_MAX_ADDR;
-				mpcb->addr6[i].low_prio = (dev->flags & IFF_MPBACKUP) ?
+				mpcb->locaddr6[i].addr = ifa6->addr;
+				mpcb->locaddr6[i].port = 0;
+				mpcb->locaddr6[i].id = i + MPTCP_MAX_ADDR;
+				mpcb->locaddr6[i].low_prio = (dev->flags & IFF_MPBACKUP) ?
 								1 : 0;
 				mpcb->loc6_bits |= (1 << i);
 				mpcb->next_v6_index = i + 1;
@@ -493,7 +495,7 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 	return 1;
 }
 
-int mptcp_do_join_short(struct sk_buff *skb, struct multipath_options *mopt,
+int mptcp_do_join_short(struct sk_buff *skb, struct mptcp_options_received *mopt,
 			struct tcp_options_received *tmp_opt, struct net *net)
 {
 	struct sock *meta_sk;
@@ -574,26 +576,26 @@ next_subflow:
 	if (sock_flag(meta_sk, SOCK_DEAD))
 		goto exit;
 
-	mptcp_for_each_bit_set(mpcb->rx_opt.rem4_bits, i) {
-		struct mptcp_rem4 *rem = &mpcb->rx_opt.addr4[i];
+	mptcp_for_each_bit_set(mpcb->rem4_bits, i) {
+		struct mptcp_rem4 *rem = &mpcb->remaddr4[i];
 		/* Do we need to retry establishing a subflow ? */
 		if (rem->retry_bitfield) {
 			int i = mptcp_find_free_index(~rem->retry_bitfield);
-			mptcp_init4_subsockets(meta_sk, &mpcb->addr4[i], rem);
-			rem->retry_bitfield &= ~(1 << mpcb->addr4[i].id);
+			mptcp_init4_subsockets(meta_sk, &mpcb->locaddr4[i], rem);
+			rem->retry_bitfield &= ~(1 << mpcb->locaddr4[i].id);
 			goto next_subflow;
 		}
 	}
 
 #if IS_ENABLED(CONFIG_IPV6)
-	mptcp_for_each_bit_set(mpcb->rx_opt.rem6_bits, i) {
-		struct mptcp_rem6 *rem = &mpcb->rx_opt.addr6[i];
+	mptcp_for_each_bit_set(mpcb->rem6_bits, i) {
+		struct mptcp_rem6 *rem = &mpcb->remaddr6[i];
 
 		/* Do we need to retry establishing a subflow ? */
 		if (rem->retry_bitfield) {
 			int i = mptcp_find_free_index(~rem->retry_bitfield);
-			mptcp_init6_subsockets(meta_sk, &mpcb->addr6[i], rem);
-			rem->retry_bitfield &= ~(1 << mpcb->addr6[i].id);
+			mptcp_init6_subsockets(meta_sk, &mpcb->locaddr6[i], rem);
+			rem->retry_bitfield &= ~(1 << mpcb->locaddr6[i].id);
 			goto next_subflow;
 		}
 	}
@@ -638,12 +640,12 @@ next_subflow:
 	    sysctl_mptcp_ndiffports > mpcb->cnt_subflows) {
 		if (meta_sk->sk_family == AF_INET ||
 		    mptcp_v6_is_v4_mapped(meta_sk)) {
-			mptcp_init4_subsockets(meta_sk, &mpcb->addr4[0],
-					       &mpcb->rx_opt.addr4[0]);
+			mptcp_init4_subsockets(meta_sk, &mpcb->locaddr4[0],
+					       &mpcb->remaddr4[0]);
 		} else {
 #if IS_ENABLED(CONFIG_IPV6)
-			mptcp_init6_subsockets(meta_sk, &mpcb->addr6[0],
-					       &mpcb->rx_opt.addr6[0]);
+			mptcp_init6_subsockets(meta_sk, &mpcb->locaddr6[0],
+					       &mpcb->remaddr6[0]);
 #endif
 		}
 		goto next_subflow;
@@ -652,41 +654,41 @@ next_subflow:
 	    sysctl_mptcp_ndiffports == mpcb->cnt_subflows)
 		goto exit;
 
-	mptcp_for_each_bit_set(mpcb->rx_opt.rem4_bits, i) {
+	mptcp_for_each_bit_set(mpcb->rem4_bits, i) {
 		struct mptcp_rem4 *rem;
 		u8 remaining_bits;
 
-		rem = &mpcb->rx_opt.addr4[i];
+		rem = &mpcb->remaddr4[i];
 		remaining_bits = ~(rem->bitfield) & mpcb->loc4_bits;
 
 		/* Are there still combinations to handle? */
 		if (remaining_bits) {
 			int i = mptcp_find_free_index(~remaining_bits);
 			/* If a route is not yet available then retry once */
-			if (mptcp_init4_subsockets(meta_sk, &mpcb->addr4[i],
+			if (mptcp_init4_subsockets(meta_sk, &mpcb->locaddr4[i],
 						   rem) == -ENETUNREACH)
 				retry = rem->retry_bitfield |=
-					(1 << mpcb->addr4[i].id);
+					(1 << mpcb->locaddr4[i].id);
 			goto next_subflow;
 		}
 	}
 
 #if IS_ENABLED(CONFIG_IPV6)
-	mptcp_for_each_bit_set(mpcb->rx_opt.rem6_bits, i) {
+	mptcp_for_each_bit_set(mpcb->rem6_bits, i) {
 		struct mptcp_rem6 *rem;
 		u8 remaining_bits;
 
-		rem = &mpcb->rx_opt.addr6[i];
+		rem = &mpcb->remaddr6[i];
 		remaining_bits = ~(rem->bitfield) & mpcb->loc6_bits;
 
 		/* Are there still combinations to handle? */
 		if (remaining_bits) {
 			int i = mptcp_find_free_index(~remaining_bits);
 			/* If a route is not yet available then retry once */
-			if (mptcp_init6_subsockets(meta_sk, &mpcb->addr6[i],
+			if (mptcp_init6_subsockets(meta_sk, &mpcb->locaddr6[i],
 						   rem) == -ENETUNREACH)
 				retry = rem->retry_bitfield |=
-					(1 << mpcb->addr6[i].id);
+					(1 << mpcb->locaddr6[i].id);
 			goto next_subflow;
 		}
 	}
@@ -813,7 +815,7 @@ cont_ipv6:
 				continue;
 
 			for (ifa = in_dev->ifa_list; ifa; ifa = ifa->ifa_next) {
-				if (ifa->ifa_address == mpcb->addr4[i].addr.s_addr &&
+				if (ifa->ifa_address == mpcb->locaddr4[i].addr.s_addr &&
 				    netif_running(dev))
 					goto next_loc_addr;
 			}
@@ -826,7 +828,7 @@ cont_ipv6:
 		/* Look for the socket and remove him */
 		mptcp_for_each_sk_safe(mpcb, sk, tmpsk) {
 			if (sk->sk_family != AF_INET ||
-			    inet_sk(sk)->inet_saddr != mpcb->addr4[i].addr.s_addr)
+			    inet_sk(sk)->inet_saddr != mpcb->locaddr4[i].addr.s_addr)
 				continue;
 
 			mptcp_reinject_data(sk, 0);
@@ -836,13 +838,13 @@ cont_ipv6:
 		/* Now, remove the address from the local ones */
 		mpcb->loc4_bits &= ~(1 << i);
 
-		mpcb->remove_addrs |= (1 << mpcb->addr4[i].id);
+		mpcb->remove_addrs |= (1 << mpcb->locaddr4[i].id);
 		sk = mptcp_select_ack_sock(meta_sk, 0);
 		if (sk)
 			tcp_send_ack(sk);
 
-		mptcp_for_each_bit_set(mpcb->rx_opt.rem4_bits, j)
-			mpcb->rx_opt.addr4[j].bitfield &= mpcb->loc4_bits;
+		mptcp_for_each_bit_set(mpcb->rem4_bits, j)
+			mpcb->remaddr4[j].bitfield &= mpcb->loc4_bits;
 
 next_loc_addr:
 		continue; /* necessary here due to the previous label */
@@ -863,7 +865,7 @@ next_loc_addr:
 
 
 			list_for_each_entry(ifa6, &in6_dev->addr_list, if_list) {
-				if (ipv6_addr_equal(&mpcb->addr6[i].addr, &ifa6->addr) &&
+				if (ipv6_addr_equal(&mpcb->locaddr6[i].addr, &ifa6->addr) &&
 				    netif_running(dev))
 					goto next_loc6_addr;
 			}
@@ -876,7 +878,7 @@ next_loc_addr:
 		/* Look for the socket and remove him */
 		mptcp_for_each_sk_safe(mpcb, sk, tmpsk) {
 			if (sk->sk_family != AF_INET6 ||
-			    !ipv6_addr_equal(&inet6_sk(sk)->saddr, &mpcb->addr6[i].addr))
+			    !ipv6_addr_equal(&inet6_sk(sk)->saddr, &mpcb->locaddr6[i].addr))
 				continue;
 
 			mptcp_reinject_data(sk, 0);
@@ -887,13 +889,13 @@ next_loc_addr:
 		mpcb->loc6_bits &= ~(1 << i);
 
 		/* Force sending directly the REMOVE_ADDR option */
-		mpcb->remove_addrs |= (1 << mpcb->addr6[i].id);
+		mpcb->remove_addrs |= (1 << mpcb->locaddr6[i].id);
 		sk = mptcp_select_ack_sock(meta_sk, 0);
 		if (sk)
 			tcp_send_ack(sk);
 
-		mptcp_for_each_bit_set(mpcb->rx_opt.rem6_bits, j)
-			mpcb->rx_opt.addr6[j].bitfield &= mpcb->loc6_bits;
+		mptcp_for_each_bit_set(mpcb->rem6_bits, j)
+			mpcb->remaddr6[j].bitfield &= mpcb->loc6_bits;
 
 next_loc6_addr:
 		continue; /* necessary here due to the previous label */
