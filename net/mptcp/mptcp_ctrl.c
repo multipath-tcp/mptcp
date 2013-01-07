@@ -1107,22 +1107,18 @@ void mptcp_sub_close_wq(struct work_struct *work)
 	struct sock *sk = (struct sock *)tp;
 	struct sock *meta_sk = mptcp_meta_sk(sk);
 
-	if (!tp->mpc) {
-		if (sock_flag(sk, SOCK_DEAD)) {
-			sock_put(sk);
-			return;
-		}
-		tp->closing = 1;
-		tcp_close(sk, 0);
-		sock_put(sk);
-		return;
-	}
-
 	mutex_lock(&tp->mpcb->mutex);
 	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
 
 	if (sock_flag(sk, SOCK_DEAD))
 		goto exit;
+
+	/* We come from tcp_disconnect. We are sure that meta_sk is set */
+	if (!tp->mpc) {
+		tp->closing = 1;
+		tcp_close(sk, 0);
+		goto exit;
+	}
 
 	if (meta_sk->sk_shutdown == SHUTDOWN_MASK || sk->sk_state == TCP_CLOSE) {
 		tp->closing = 1;
