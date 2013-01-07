@@ -1064,7 +1064,7 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	struct tcp_extend_values tmp_ext;
 	struct tcp_options_received tmp_opt;
 	const u8 *hash_location;
-	struct multipath_options mopt;
+	struct mptcp_options_received mopt;
 	struct request_sock *req;
 	struct inet6_request_sock *treq;
 	struct ipv6_pinfo *np = inet6_sk(sk);
@@ -1080,12 +1080,11 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	tcp_clear_options(&tmp_opt);
 	tmp_opt.mss_clamp = IPV6_MIN_MTU - sizeof(struct tcphdr) - sizeof(struct ipv6hdr);
 	tmp_opt.user_mss = tp->rx_opt.user_mss;
-	mopt.dss_csum = 0;
 	mptcp_init_mp_opt(&mopt);
 	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0, NULL);
 
 #ifdef CONFIG_MPTCP
-	if (tmp_opt.saw_mpc && tmp_opt.is_mp_join)
+	if (mopt.is_mp_join)
 		return mptcp_do_join_short(skb, &mopt, &tmp_opt, sock_net(sk));
 #endif
 
@@ -1102,7 +1101,7 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 		goto drop;
 
 #ifdef CONFIG_MPTCP
-	if (tmp_opt.saw_mpc) {
+	if (mopt.saw_mpc) {
 		req = inet6_reqsk_alloc(&mptcp6_request_sock_ops);
 
 		if (req == NULL)
@@ -1110,6 +1109,7 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 
 		mptcp_rsk(req)->mpcb = NULL;
 		mptcp_rsk(req)->dss_csum = mopt.dss_csum;
+		mptcp_rsk(req)->collide_tk.pprev = NULL;
 	} else
 #endif
 		req = inet6_reqsk_alloc(&tcp6_request_sock_ops);
@@ -1168,11 +1168,9 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 		tcp_clear_options(&tmp_opt);
 
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
-
 	tcp_openreq_init(req, &tmp_opt, skb);
 
-	tcp_rsk(req)->saw_mpc = tmp_opt.saw_mpc;
-	if (tmp_opt.saw_mpc)
+	if (mopt.saw_mpc)
 		mptcp_reqsk_new_mptcp(req, &tmp_opt, &mopt);
 
 	treq = inet6_rsk(req);

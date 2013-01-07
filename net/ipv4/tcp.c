@@ -1158,7 +1158,7 @@ new_segment:
 				 * In case of mptcp, hw-csum's will be handled
 				 * later in mptcp_write_xmit.
 				 */
-				if (((tp->mpc && !tp->mpcb->rx_opt.dss_csum) || !tp->mpc) &&
+				if (((tp->mpc && !tp->mpcb->dss_csum) || !tp->mpc) &&
 				    (tp->mpc || sk->sk_route_caps & NETIF_F_ALL_CSUM))
 					skb->ip_summed = CHECKSUM_PARTIAL;
 
@@ -3632,6 +3632,7 @@ void tcp_done(struct sock *sk)
 	if (sk->sk_state == TCP_SYN_SENT || sk->sk_state == TCP_SYN_RECV)
 		TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_ATTEMPTFAILS);
 
+	WARN_ON(sk->sk_state == TCP_CLOSE);
 	tcp_set_state(sk, TCP_CLOSE);
 
 	/* If it is a meta-sk sending mp_fclose we have to maintain the

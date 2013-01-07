@@ -360,7 +360,7 @@ extern const struct inet_connection_sock_af_ops ipv4_specific;
 extern const struct inet_connection_sock_af_ops ipv6_specific;
 extern const struct inet_connection_sock_af_ops ipv6_mapped;
 
-struct multipath_options;
+struct mptcp_options_received;
 
 extern int tcp_close_state(struct sock *sk);
 extern void tcp_push(struct sock *sk, int flags, int mss_now,
@@ -464,9 +464,9 @@ extern void tcp_write_timer_handler(struct sock *sk);
 extern void tcp_delack_timer_handler(struct sock *sk);
 extern int tcp_ioctl(struct sock *sk, int cmd, unsigned long arg);
 extern int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
-				 struct tcphdr *th, unsigned int len);
+				 const struct tcphdr *th, unsigned int len);
 extern int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
-			       struct tcphdr *th, unsigned int len);
+			       const struct tcphdr *th, unsigned int len);
 extern void tcp_rcv_space_adjust(struct sock *sk);
 extern void tcp_cleanup_rbuf(struct sock *sk, int copied);
 extern int tcp_twsk_unique(struct sock *sk, struct sock *sktw, void *twp);
@@ -547,7 +547,7 @@ extern int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		       size_t len, int nonblock, int flags, int *addr_len);
 extern void tcp_parse_options(const struct sk_buff *skb,
 			      struct tcp_options_received *opt_rx, const u8 **hvpp,
-			      struct multipath_options *mopt, int estab,
+			      struct mptcp_options_received *mopt, int estab,
 			      struct tcp_fastopen_cookie *foc);
 extern const u8 *tcp_parse_md5sig_option(const struct tcphdr *th);
 
@@ -1238,7 +1238,7 @@ static inline void tcp_openreq_init(struct request_sock *req,
 	req->rcv_wnd = 0;		/* So that tcp_send_synack() knows! */
 	req->cookie_ts = 0;
 	tcp_rsk(req)->rcv_isn = TCP_SKB_CB(skb)->seq;
-	tcp_rsk(req)->saw_mpc = rx_opt->saw_mpc;
+	tcp_rsk(req)->saw_mpc = 0;
 	req->mss = rx_opt->mss_clamp;
 	req->ts_recent = rx_opt->saw_tstamp ? rx_opt->rcv_tsval : 0;
 	ireq->tstamp_ok = rx_opt->tstamp_ok;
