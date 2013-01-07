@@ -501,10 +501,13 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 
 error:
 	/* May happen if mptcp_add_sock fails first */
-	if (!tp->mpc)
+	if (!tp->mpc) {
 		tcp_close(sk, 0);
-	else
+	} else {
+		local_bh_disable();
 		mptcp_sub_force_close(sk);
+		local_bh_enable();
+	}
 	return ret;
 }
 
