@@ -3656,9 +3656,11 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 		tcp_ca_event(sk, CA_EVENT_SLOW_ACK);
 	}
 
-	flag |= mptcp_data_ack(sk, skb);
-	if (unlikely(tp->mp_killed))
-		return -1;
+	if (tp->mpc) {
+		flag |= mptcp_data_ack(sk, skb);
+		if (unlikely(tp->mp_killed))
+			return -1;
+	}
 
 	/* We passed data and got it acked, remove any soft error
 	 * log. Something worked...
