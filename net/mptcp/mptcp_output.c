@@ -226,6 +226,13 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 		return -1;
 	}
 
+	/* Only reinject segments that are fully covered by the mapping */
+	if (skb->len + (mptcp_is_data_fin(skb) ? 1 : 0) !=
+	    TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq) {
+		__kfree_skb(skb);
+		return 0;
+	}
+
 	/* If it's empty, just add */
 	if (skb_queue_empty(&mpcb->reinject_queue)) {
 		skb_queue_head(&mpcb->reinject_queue, skb);
@@ -1271,9 +1278,8 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 	    ((mpcb->send_infinite_mapping && tcb &&
 	      !(tcb->mptcp_flags & MPTCPHDR_INF) &&
 	      !before(tcb->seq, tp->mptcp->infinite_cutoff_seq)) ||
-	     !mpcb->send_infinite_mapping)) {
+	     !mpcb->send_infinite_mapping))
 		return;
-	}
 
 	if (unlikely(tp->mptcp->include_mpc)) {
 		opts->options |= OPTION_MPTCP;
@@ -1374,7 +1380,6 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 
 	if (skb)
 		tp->mptcp->include_mpc = 0;
-
 	return;
 }
 

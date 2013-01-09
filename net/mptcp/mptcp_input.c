@@ -47,7 +47,7 @@ static inline void mptcp_become_fully_estab(struct sock *sk)
  * Cleans the meta-socket retransmission queue and the reinject-queue.
  * @sk must be the metasocket.
  */
-static void mptcp_clean_rtx_queue(struct sock *meta_sk)
+static void mptcp_clean_rtx_queue(struct sock *meta_sk, u32 prior_snd_una)
 {
 	struct sk_buff *skb, *tmp;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
@@ -92,6 +92,9 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk)
 		__skb_unlink(skb, &mpcb->reinject_queue);
 		__kfree_skb(skb);
 	}
+
+	if (likely(between(meta_tp->snd_up, prior_snd_una, meta_tp->snd_una)))
+		meta_tp->snd_up = meta_tp->snd_una;
 
 	if (acked) {
 		tcp_rearm_rto(meta_sk);
@@ -205,19 +208,13 @@ static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 static int mptcp_verif_dss_csum(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sk_buff *tmp, *last = NULL;
+	struct sk_buff *tmp, *tmp1, *last = NULL;
 	__wsum csum_tcp = 0; /* cumulative checksum of pld + mptcp-header */
 	int ans = 1, overflowed = 0, offset = 0, dss_csum_added = 0;
 	int iter = 0;
 
-	skb_queue_walk(&sk->sk_receive_queue, tmp) {
+	skb_queue_walk_safe(&sk->sk_receive_queue, tmp, tmp1) {
 		unsigned int csum_len;
-
-		/* tp->map_data_len may be 0 in case of a data-fin */
-		if ((tp->mptcp->map_data_len &&
-		     !after(tp->mptcp->map_subseq + tp->mptcp->map_data_len, TCP_SKB_CB(tmp)->seq)) ||
-		    (!tp->mptcp->map_data_len && before(tp->mptcp->map_subseq, TCP_SKB_CB(tmp)->seq)))
-			break;
 
 		if (before(tp->mptcp->map_subseq + tp->mptcp->map_data_len, TCP_SKB_CB(tmp)->end_seq))
 			/* Mapping ends in the middle of the packet -
@@ -258,6 +255,11 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 		}
 		last = tmp;
 		iter++;
+
+		if (!skb_queue_is_last(&sk->sk_receive_queue, tmp) &&
+		    !before(TCP_SKB_CB(tmp1)->seq,
+			    tp->mptcp->map_subseq + tp->mptcp->map_data_len))
+			break;
 	}
 
 	/* Now, checksum must be 0 */
@@ -722,18 +724,14 @@ static int mptcp_validate_mapping(struct sock *sk, struct sk_buff *skb)
 	    !mptcp_sequence(meta_tp, tp->mptcp->map_data_seq,
 			    tp->mptcp->map_data_seq + tp->mptcp->map_data_len + tp->mptcp->map_data_fin)) {
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
-			/* seq >= end_sub_mapping if data_len OR
-			 * seq > end_sub_mapping if not data_len
-			 * (data_fin without data)
-			 */
-			if ((tp->mptcp->map_data_len && !before(TCP_SKB_CB(tmp1)->seq,
-					tp->mptcp->map_subseq + tp->mptcp->map_data_len)) ||
-			    (!tp->mptcp->map_data_len && after(TCP_SKB_CB(tmp1)->seq,
-					tp->mptcp->map_subseq + tp->mptcp->map_data_len)))
-				break;
 			__skb_unlink(tmp1, &sk->sk_receive_queue);
 			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 			__kfree_skb(tmp1);
+
+			if (!skb_queue_empty(&sk->sk_receive_queue) &&
+			    !before(TCP_SKB_CB(tmp)->seq,
+				    tp->mptcp->map_subseq + tp->mptcp->map_data_len))
+				break;
 		}
 
 		mptcp_reset_mapping(tp);
@@ -782,15 +780,6 @@ static int mptcp_queue_skb(struct sock *sk)
 	if (before64(rcv_nxt64, tp->mptcp->map_data_seq)) {
 		/* Seg's have to go to the meta-ofo-queue */
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
-			/* If we are currently processing the data-fin, increase
-			 * the mapping by one, because the data-fin consumes
-			 * one byte.
-			 */
-			if (!before(TCP_SKB_CB(tmp1)->seq,
-				    tp->mptcp->map_subseq + tp->mptcp->map_data_len +
-				    (tp->mptcp->map_data_fin && mptcp_is_data_fin(tmp1) ? 1 : 0)))
-				break;
-
 			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 			mptcp_prepare_skb(tmp1, tmp, sk);
 			__skb_unlink(tmp1, &sk->sk_receive_queue);
@@ -798,22 +787,25 @@ static int mptcp_queue_skb(struct sock *sk)
 			skb_set_owner_r(tmp1, meta_sk);
 
 			mptcp_add_meta_ofo_queue(meta_sk, tmp1, sk);
+
+			if (!skb_queue_empty(&sk->sk_receive_queue) &&
+			    !before(TCP_SKB_CB(tmp)->seq,
+				    tp->mptcp->map_subseq + tp->mptcp->map_data_len))
+				break;
+
 		}
 	} else {
 		/* Ready for the meta-rcv-queue */
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
-			/* If we are currently processing the data-fin, increase
-			 * the mapping by one, because the data-fin consumes
-			 * one byte.
-			 */
-			if (!before(TCP_SKB_CB(tmp1)->seq,
-				    tp->mptcp->map_subseq + tp->mptcp->map_data_len +
-				    (tp->mptcp->map_data_fin && mptcp_is_data_fin(tmp1) ? 1 : 0)))
-				break;
-
 			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 			mptcp_prepare_skb(tmp1, tmp, sk);
 			__skb_unlink(tmp1, &sk->sk_receive_queue);
+
+			/* This segment has already been received */
+			if (!after(TCP_SKB_CB(tmp1)->end_seq, meta_tp->rcv_nxt)) {
+				__kfree_skb(tmp1);
+				goto next;
+			}
 
 			eaten = 0;
 			/* Is direct copy possible ? */
@@ -842,6 +834,12 @@ static int mptcp_queue_skb(struct sock *sk)
 
 			if (eaten)
 				__kfree_skb(tmp1);
+
+next:
+			if (!skb_queue_empty(&sk->sk_receive_queue) &&
+			    !before(TCP_SKB_CB(tmp)->seq,
+				    tp->mptcp->map_subseq + tp->mptcp->map_data_len))
+				break;
 		}
 	}
 
@@ -1004,14 +1002,12 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	struct sock *meta_sk = mptcp_meta_sk(sk);
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *tp = tcp_sk(sk);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
+	u32 prior_snd_una = meta_tp->snd_una;
 	int flag = 0;
 	int prior_packets;
 	u32 nwin, data_ack, data_seq;
 	u16 data_len = 0;
 	__u32 *ptr;
-
-	if (!tp->mpc)
-		return 0;
 
 	/* Something got acked - subflow is operational again */
 	tp->pf = 0;
@@ -1058,7 +1054,7 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	/* If the ack is older than previous acks
 	 * then we can probably ignore it.
 	 */
-	if (before(data_ack, meta_tp->snd_una))
+	if (before(data_ack, prior_snd_una))
 		goto exit;
 
 	/* If the ack includes data we haven't sent yet, discard
@@ -1111,7 +1107,7 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 
 	meta_tp->snd_una = data_ack;
 
-	mptcp_clean_rtx_queue(meta_sk);
+	mptcp_clean_rtx_queue(meta_sk, prior_snd_una);
 
 	/* Simplified version of tcp_new_space, because the snd-buffer
 	 * is handled by all the subflows.
@@ -1144,6 +1140,7 @@ void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk)
 {
 	struct mptcp_cb *mpcb;
 	struct sock *meta_sk;
+	u32 prior_snd_una;
 
 	if (!tcp_sk(sk)->mpc)
 		return;
@@ -1154,6 +1151,7 @@ void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk)
 	if (!mpcb->infinite_mapping)
 		return;
 
+	prior_snd_una = tcp_sk(meta_sk)->snd_una;
 	/* skb->data is pointing to the head of the MPTCP-option. We still assume
 	 * 32-bit data-acks.
 	 *
@@ -1161,7 +1159,7 @@ void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk)
 	 */
 	tcp_sk(meta_sk)->snd_una = ntohl(*(skb->data + 8)) + skb->len - 20 +
 				   mptcp_is_data_fin(skb) ? 1 : 0;
-	mptcp_clean_rtx_queue(meta_sk);
+	mptcp_clean_rtx_queue(meta_sk, prior_snd_una);
 }
 
 /**** static functions used by mptcp_parse_options */
