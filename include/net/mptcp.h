@@ -676,7 +676,7 @@ static inline void mptcp_sub_force_close(struct sock *sk)
 
 	tcp_sk(sk)->mp_killed = 1;
 
-	if (!sk->sk_state == TCP_CLOSE)
+	if (sk->sk_state != TCP_CLOSE)
 		tcp_done(sk);
 
 	if (!sock_is_dead)
