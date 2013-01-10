@@ -548,6 +548,9 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 		 */
 		mpcb->send_mp_fail = 0;
 
+		/* We have to fixup data_len - it must be the same as skb->len */
+		data_len = skb->len;
+
 		/* TODO kill all other subflows than this one */
 		/* data_seq and so on are set correctly */
 
