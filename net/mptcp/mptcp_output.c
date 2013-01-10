@@ -2050,17 +2050,14 @@ unsigned int mptcp_current_mss(struct sock *meta_sk)
 			continue;
 
 		this_mss = tcp_current_mss(sk);
-		if (this_mss > mss)
+		if (!mss || this_mss < mss)
 			mss = this_mss;
 	}
 
 	/* If no subflow is available, we take a default-mss from the
 	 * meta-socket.
 	 */
-	if (!mss)
-		mss = tcp_current_mss(meta_sk);
-
-	return mss;
+	return !mss ? tcp_current_mss(meta_sk) : mss;
 }
 
 int mptcp_select_size(const struct sock *meta_sk)
