@@ -2062,7 +2062,7 @@ unsigned int mptcp_current_mss(struct sock *meta_sk)
 
 int mptcp_select_size(const struct sock *meta_sk)
 {
-	int mss = 65536; /* We look for the smalles MSS */
+	int mss = 0; /* We look for the smallest MSS */
 	struct sock *sk;
 
 	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk) {
@@ -2072,14 +2072,11 @@ int mptcp_select_size(const struct sock *meta_sk)
 			continue;
 
 		this_mss = tcp_sk(sk)->mss_cache;
-		if (this_mss < mss)
+		if (!mss || this_mss < mss)
 			mss = this_mss;
 	}
 
-	if (mss == 65536)
-		mss = tcp_sk(meta_sk)->mss_cache;
-
-	return mss;
+	return !mss ? tcp_sk(meta_sk)->mss_cache : mss;
 }
 
 int mptcp_check_snd_buf(const struct tcp_sock *tp)
