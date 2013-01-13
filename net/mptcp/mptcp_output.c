@@ -400,8 +400,20 @@ static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff *skb,
 		else
 			subskb = skb_clone(skb, GFP_ATOMIC);
 	} else {
-		__skb_unlink(skb, &mpcb->reinject_queue);
-		subskb = skb;
+		/* It may still be a clone from tcp_transmit_skb of the old
+		 * subflow during address-removal.
+		 */
+		if (skb_cloned(skb)) {
+			subskb = pskb_copy(skb, GFP_ATOMIC);
+			if (subskb) {
+				__skb_unlink(skb, &mpcb->reinject_queue);
+				kfree_skb(skb);
+				skb = subskb;
+			}
+		} else {
+			__skb_unlink(skb, &mpcb->reinject_queue);
+			subskb = skb;
+		}
 	}
 	if (!subskb)
 		return NULL;
