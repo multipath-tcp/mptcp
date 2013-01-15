@@ -421,6 +421,9 @@ extern struct sock *tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 extern void tcp_v6_reqsk_destructor(struct request_sock *req);
 
 extern void sock_valbool_flag(struct sock *sk, int bit, int valbool);
+extern unsigned int tcp_xmit_size_goal(struct sock *sk, u32 mss_now,
+				       int large_allowed);
+extern u32 tcp_tso_acked(struct sock *sk, struct sk_buff *skb);
 
 extern void skb_clone_fraglist(struct sk_buff *skb);
 extern void copy_skb_header(struct sk_buff *new, const struct sk_buff *old);

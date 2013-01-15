@@ -972,8 +972,8 @@ void tcp_queue_skb(struct sock *sk, struct sk_buff *skb)
 void tcp_set_skb_tso_segs(const struct sock *sk, struct sk_buff *skb,
 			  unsigned int mss_now)
 {
-	if (skb->len <= mss_now || !sk_can_gso(sk) ||
-	    skb->ip_summed == CHECKSUM_NONE || tcp_sk(sk)->mpc) {
+	if (skb->len <= mss_now || (is_meta_sk(sk) && !mptcp_sk_can_gso(sk)) ||
+	    (!is_meta_sk(sk) && !sk_can_gso(sk)) || skb->ip_summed == CHECKSUM_NONE) {
 		/* Avoid the costly divide in the normal
 		 * non-TSO case.
 		 */
@@ -1196,8 +1196,9 @@ int tcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
 #ifdef CONFIG_MPTCP
 	/* Some data got acked - we assume that the seq-number reached the dest.
 	 * Anyway, our MPTCP-option has been trimmed above - we lost it here.
+	 * Only remove the SEQ if the call does not come from a meta retransmit.
 	 */
-	if (tcp_sk(sk)->mpc)
+	if (tcp_sk(sk)->mpc && !is_meta_sk(sk))
 		TCP_SKB_CB(skb)->mptcp_flags &= ~MPTCPHDR_SEQ;
 #endif
 
@@ -1391,12 +1392,21 @@ unsigned int tcp_mss_split_point(const struct sock *sk, const struct sk_buff *sk
 				 unsigned int mss_now, unsigned int max_segs)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
+	const struct sock *meta_sk = tp->mpc ? mptcp_meta_sk(sk) : sk;
 	u32 needed, window, max_len;
 
-	window = tcp_wnd_end(tp) - TCP_SKB_CB(skb)->seq;
+	if (!tp->mpc)
+		window = tcp_wnd_end(tp) - TCP_SKB_CB(skb)->seq;
+	else
+		/* We need to evaluate the available space in the sending window
+		 * at the subflow level. However, the subflow seq has not yet
+		 * been set. Nevertheless we know that the caller will set it to
+		 * write_seq.
+		 */
+		window = tcp_wnd_end(tp) - tp->write_seq;
 	max_len = mss_now * max_segs;
 
-	if (likely(max_len <= window && skb != tcp_write_queue_tail(sk)))
+	if (likely(max_len <= window && skb != tcp_write_queue_tail(meta_sk)))
 		return max_len;
 
 	needed = min(skb->len, window);
@@ -1607,26 +1617,36 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 bool tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct sock *meta_sk = tp->mpc ? mptcp_meta_sk(sk) : sk;
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	const struct inet_connection_sock *icsk = inet_csk(sk);
 	u32 send_win, cong_win, limit, in_flight;
 	int win_divisor;
 
-	if (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN)
+	if (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN || mptcp_is_data_fin(skb))
 		goto send_now;
 
 	if (icsk->icsk_ca_state != TCP_CA_Open)
 		goto send_now;
 
 	/* Defer for less than two clock ticks. */
-	if (tp->tso_deferred &&
-	    (((u32)jiffies << 1) >> 1) - (tp->tso_deferred >> 1) > 1)
+	if (meta_tp->tso_deferred &&
+	    (((u32)jiffies << 1) >> 1) - (meta_tp->tso_deferred >> 1) > 1)
 		goto send_now;
 
 	in_flight = tcp_packets_in_flight(tp);
 
 	BUG_ON(tcp_skb_pcount(skb) <= 1 || (tp->snd_cwnd <= in_flight));
 
-	send_win = tcp_wnd_end(tp) - TCP_SKB_CB(skb)->seq;
+	if (!tp->mpc)
+		send_win = tcp_wnd_end(tp) - TCP_SKB_CB(skb)->seq;
+	else
+		/* We need to evaluate the available space in the sending window
+		 * at the subflow level. However, the subflow seq has not yet
+		 * been set. Nevertheless we know that the caller will set it to
+		 * write_seq.
+		 */
+		send_win = tcp_wnd_end(tp) - tp->write_seq;
 
 	/* From in_flight test above, we know that cwnd > in_flight.  */
 	cong_win = (tp->snd_cwnd - in_flight) * tp->mss_cache;
@@ -1639,7 +1659,7 @@ bool tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb)
 		goto send_now;
 
 	/* Middle in queue won't get any more data, full sendable already? */
-	if ((skb != tcp_write_queue_tail(sk)) && (limit >= skb->len))
+	if ((skb != tcp_write_queue_tail(meta_sk)) && (limit >= skb->len))
 		goto send_now;
 
 	win_divisor = ACCESS_ONCE(sysctl_tcp_tso_win_divisor);
@@ -1663,12 +1683,12 @@ bool tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb)
 	}
 
 	/* Ok, it looks like it is advisable to defer.  */
-	tp->tso_deferred = 1 | (jiffies << 1);
+	meta_tp->tso_deferred = 1 | (jiffies << 1);
 
 	return true;
 
 send_now:
-	tp->tso_deferred = 0;
+	meta_tp->tso_deferred = 0;
 	return false;
 }
 

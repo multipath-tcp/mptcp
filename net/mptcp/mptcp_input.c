@@ -43,6 +43,39 @@ static inline void mptcp_become_fully_estab(struct sock *sk)
 		mptcp_create_subflows(mptcp_meta_sk(sk));
 }
 
+/* Similar to tcp_tso_acked without any memory accounting */
+static inline int mptcp_tso_acked_reinject(struct sock *sk, struct sk_buff *skb)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	u32 packets_acked, len;
+
+	BUG_ON(!after(TCP_SKB_CB(skb)->end_seq, tp->snd_una));
+
+	packets_acked = tcp_skb_pcount(skb);
+
+	if (skb_cloned(skb) && pskb_expand_head(skb, 0, 0, GFP_ATOMIC))
+		return 0;
+
+	len = tp->snd_una - TCP_SKB_CB(skb)->seq;
+	__pskb_trim_head(skb, len);
+
+	TCP_SKB_CB(skb)->seq += len;
+	skb->ip_summed = CHECKSUM_PARTIAL;
+	skb->truesize	     -= len;
+
+	/* Any change of skb->len requires recalculation of tso factor. */
+	if (tcp_skb_pcount(skb) > 1)
+		tcp_set_skb_tso_segs(sk, skb, tcp_skb_mss(skb));
+	packets_acked -= tcp_skb_pcount(skb);
+
+	if (packets_acked) {
+		BUG_ON(tcp_skb_pcount(skb) == 0);
+		BUG_ON(!before(TCP_SKB_CB(skb)->seq, TCP_SKB_CB(skb)->end_seq));
+	}
+
+	return packets_acked;
+}
+
 /**
  * Cleans the meta-socket retransmission queue and the reinject-queue.
  * @sk must be the metasocket.
@@ -52,11 +85,31 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk, u32 prior_snd_una)
 	struct sk_buff *skb, *tmp;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
-	int acked = 0;
+	bool acked = false;
+	u32 acked_pcount;
 
 	while ((skb = tcp_write_queue_head(meta_sk)) &&
 	       skb != tcp_send_head(meta_sk)) {
-		if (before(meta_tp->snd_una, TCP_SKB_CB(skb)->end_seq))
+		bool fully_acked = true;
+
+		if (before(meta_tp->snd_una, TCP_SKB_CB(skb)->end_seq)) {
+			if (tcp_skb_pcount(skb) == 1 ||
+			    !after(meta_tp->snd_una, TCP_SKB_CB(skb)->seq))
+				break;
+
+			acked_pcount = tcp_tso_acked(meta_sk, skb);
+			if (!acked_pcount)
+				break;
+
+			fully_acked = false;
+		} else {
+			acked_pcount = tcp_skb_pcount(skb);
+		}
+
+		acked = true;
+		meta_tp->packets_out -= acked_pcount;
+
+		if (!fully_acked)
 			break;
 
 		tcp_unlink_write_queue(skb, meta_sk);
@@ -78,16 +131,18 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk, u32 prior_snd_una)
 				mptcp_sub_close(sk_it, delay);
 			}
 		}
-
-		meta_tp->packets_out -= tcp_skb_pcount(skb);
 		sk_wmem_free_skb(meta_sk, skb);
-
-		acked = 1;
 	}
 	/* Remove acknowledged data from the reinject queue */
 	skb_queue_walk_safe(&mpcb->reinject_queue, skb, tmp) {
-		if (before(meta_tp->snd_una, TCP_SKB_CB(skb)->end_seq))
+		if (before(meta_tp->snd_una, TCP_SKB_CB(skb)->end_seq)) {
+			if (tcp_skb_pcount(skb) == 1 ||
+			    !after(meta_tp->snd_una, TCP_SKB_CB(skb)->seq))
+				break;
+
+			mptcp_tso_acked_reinject(meta_sk, skb);
 			break;
+		}
 
 		__skb_unlink(skb, &mpcb->reinject_queue);
 		__kfree_skb(skb);

@@ -695,6 +695,8 @@ void mptcp_destroy_sock(struct sock *sk);
 int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 				    struct sk_buff *skb,
 				    struct mptcp_options_received *mopt);
+unsigned int mptcp_xmit_size_goal(struct sock *meta_sk, u32 mss_now,
+				  int large_allowed);
 
 static inline void mptcp_push_pending_frames(struct sock *meta_sk)
 {
@@ -930,6 +932,33 @@ static inline int mptcp_sk_can_send_ack(const struct sock *sk)
 {
 	return !((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV |
 					TCPF_CLOSE | TCPF_LISTEN));
+}
+
+/* Only support GSO if all subflows supports it */
+static inline bool mptcp_sk_can_gso(const struct sock *meta_sk)
+{
+	struct sock *sk;
+
+	if (tcp_sk(meta_sk)->mpcb->dss_csum)
+		return 0;
+
+	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk)
+		if (!sk_can_gso(sk))
+			return false;
+	return true;
+}
+
+static inline bool mptcp_can_sg(const struct sock *meta_sk)
+{
+	struct sock *sk;
+
+	if (tcp_sk(meta_sk)->mpcb->dss_csum)
+		return 0;
+
+	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk)
+		if (!(sk->sk_route_caps & NETIF_F_SG))
+			return false;
+	return true;
 }
 
 /* Adding a new subflow to the rcv-buffer space. We make a simple addition,
@@ -1241,6 +1270,18 @@ static inline int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 static inline int mptso_fragment(struct sock *sk, struct sk_buff *skb,
 				 unsigned int len, unsigned int mss_now,
 				 gfp_t gfp, int reinject)
+{
+	return 0;
+static inline bool mptcp_sk_can_gso(const struct sock *sk)
+{
+	return false;
+}
+static inline bool mptcp_can_sg(const struct sock *meta_sk)
+{
+	return false;
+}
+static inline unsigned int mptcp_xmit_size_goal(struct sock *meta_sk,
+						u32 mss_now, int large_allowed)
 {
 	return 0;
 }

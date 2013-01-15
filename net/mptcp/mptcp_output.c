@@ -1119,6 +1119,7 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 	while ((skb = mptcp_next_segment(meta_sk, &reinject))) {
 		unsigned int limit;
 		struct sk_buff *subskb = NULL;
+		u32 noneligible = mpcb->noneligible;
 
 		if (reinject == 1) {
 			if (!after(TCP_SKB_CB(skb)->end_seq, meta_tp->snd_una)) {
@@ -1136,27 +1137,28 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 				mptcp_find_and_set_pathmask(meta_sk, skb);
 		}
 
+subflow:
 		subsk = get_available_subflow(meta_sk, skb, &mss_now);
 		if (!subsk)
 			break;
 		subtp = tcp_sk(subsk);
-
-		/* This must be invoked even if we don't want
-		 * to support TSO at the moment
-		 */
-		tso_segs = tcp_init_tso_segs(meta_sk, skb, mss_now);
-		BUG_ON(!tso_segs);
-
-		/* At the moment we do not support tso, hence
-		 * tso_segs must be 1
-		 */
-		BUG_ON(tso_segs != 1);
 
 		/* Since all subsocks are locked before calling the scheduler,
 		 * the tcp_send_head should not change.
 		 */
 		BUG_ON(!reinject && tcp_send_head(meta_sk) != skb);
 retry:
+		/* If the segment was cloned (e.g. a meta retransmission),
+		 * the header must be expanded/copied so that there is no
+		 * corruption of TSO information.
+		 */
+		if (skb_cloned(skb) && skb_is_nonlinear(skb) &&
+		    unlikely(pskb_expand_head(skb, 0, 0, GFP_ATOMIC)))
+			break;
+
+		tso_segs = tcp_init_tso_segs(meta_sk, skb, mss_now);
+		BUG_ON(!tso_segs);
+
 		cwnd_quota = tcp_cwnd_test(subtp, skb);
 		if (!cwnd_quota) {
 			/* May happen, if at the first selection we circumvented
@@ -1183,14 +1185,25 @@ retry:
 						      nonagle : TCP_NAGLE_PUSH))))
 				break;
 		} else {
-			if (!push_one && tcp_tso_should_defer(meta_sk, skb))
-				break;
+			/* Do not try to defer the transmission of a reinjected
+			 * segment. Send it directly.
+			 * If it is not possible to send the TSO segment on the
+			 * best subflow right now try to look for another subflow.
+			 * If there is no subflow available defer the segment to avoid
+			 * the call to mptso_fragment.
+			 */
+			if (!push_one && !reinject && tcp_tso_should_defer(subsk, skb)) {
+				mpcb->noneligible |= mptcp_pi_to_flag(subtp->mptcp->path_index);
+				goto subflow;
+			}
 		}
 
 		limit = mss_now;
-		if (!meta_tp->mpc && tso_segs > 1 && !tcp_urg_mode(meta_tp))
-			limit = tcp_mss_split_point(meta_sk, skb, mss_now,
-						    cwnd_quota);
+		if (tso_segs > 1 && !tcp_urg_mode(meta_tp))
+			limit = tcp_mss_split_point(subsk, skb, mss_now,
+						    min_t(unsigned int,
+							  cwnd_quota,
+							  subsk->sk_gso_max_segs));
 
 		if (skb->len > limit &&
 		    unlikely(mptso_fragment(meta_sk, skb, limit, mss_now, gfp, reinject)))
@@ -1200,6 +1213,7 @@ retry:
 		if (!subskb)
 			break;
 
+		mpcb->noneligible = noneligible;
 		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
 		if (unlikely(tcp_transmit_skb(subsk, subskb, 1, gfp))) {
 			mptcp_transmit_skb_failed(subsk, skb, subskb, reinject);
@@ -1966,17 +1980,13 @@ out_unlock:
  * The diff is that we handle the retransmission-stats (retrans_stamp) at the
  * meta-level.
  */
-static int mptcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
+static int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 {
-	struct sock *meta_sk = mptcp_meta_sk(sk);
-	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = tcp_sk(meta_sk);
-	struct inet_connection_sock *icsk = inet_csk(sk);
-	unsigned int cur_mss;
-	int err;
-
-	/* Inconslusive MTU probe */
-	if (icsk->icsk_mtup.probe_size)
-		icsk->icsk_mtup.probe_size = 0;
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct sock *subsk;
+	struct sk_buff *subskb;
+	unsigned int limit, tso_segs, mss_now;
+	int err = -1, oldpcount;
 
 	/* Do not sent more than we queued. 1/4 is reserved for possible
 	 * copying overhead: fragmentation, tunneling, mangling etc.
@@ -1988,60 +1998,52 @@ static int mptcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 		return -EAGAIN;
 	}
 
-	if (before(TCP_SKB_CB(skb)->seq, tp->snd_una)) {
-		if (before(TCP_SKB_CB(skb)->end_seq, tp->snd_una))
-			BUG();
-		if (tcp_trim_head(sk, skb, tp->snd_una - TCP_SKB_CB(skb)->seq))
-			return -ENOMEM;
-	}
-
-	if (inet_csk(sk)->icsk_af_ops->rebuild_header(sk))
-		return -EHOSTUNREACH; /* Routing failure or similar. */
-
-	cur_mss = tcp_current_mss(sk);
-
-	/* If receiver has shrunk his window, and skb is out of
-	 * new window, do not retransmit it. The exception is the
-	 * case, when window is shrunk to zero. In this case
-	 * our retransmit serves as a zero window probe.
+	/* We need to make sure that the retransmitted segment can be sent on a
+	 * subflow right now. If it is too big, it needs to be fragmented.
 	 */
-	if (!before(TCP_SKB_CB(skb)->seq, tcp_wnd_end(tp)) &&
-	    TCP_SKB_CB(skb)->seq != tp->snd_una)
-		return -EAGAIN;
+	subsk = get_available_subflow(meta_sk, skb, &mss_now);
+	if (!subsk)
+		goto failed;
 
-	if (skb->len > cur_mss) {
-		if (mptcp_fragment(sk, skb, cur_mss, cur_mss, 0))
-			return -ENOMEM; /* We'll try again later. */
-	} else {
-		int oldpcount = tcp_skb_pcount(skb);
-
-		if (unlikely(oldpcount > 1)) {
-			tcp_init_tso_segs(sk, skb, cur_mss);
-			tcp_adjust_pcount(sk, skb, oldpcount - tcp_skb_pcount(skb));
-		}
-	}
-
-	/* Diff to tcp_retransmit_skb */
-
-	/* Some Solaris stacks overoptimize and ignore the FIN on a
-	 * retransmit when old data is attached.  So strip it off
-	 * since it is cheap to do so and saves bytes on the network.
+	/* If the segment was cloned (e.g. a meta retransmission), the header
+	 * must be expanded/copied so that there is no corruption of TSO
+	 * information.
 	 */
-	if (skb->len > 0 &&
-	    (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN) &&
-	    tp->snd_una == (TCP_SKB_CB(skb)->end_seq - 1)) {
-		if (!pskb_trim(skb, 0)) {
-			/* Reuse, even though it does some unnecessary work */
-			tcp_init_nondata_skb(skb, TCP_SKB_CB(skb)->end_seq - 1,
-					     TCP_SKB_CB(skb)->tcp_flags);
-			skb->ip_summed = CHECKSUM_NONE;
-		}
+	if (skb_cloned(skb) && skb_is_nonlinear(skb) &&
+	    unlikely(pskb_expand_head(skb, 0, 0, GFP_ATOMIC))) {
+		err = ENOMEM;
+		goto failed;
 	}
 
+	oldpcount = tcp_skb_pcount(skb);
+	tso_segs = tcp_init_tso_segs(meta_sk, skb, mss_now);
+	BUG_ON(!tso_segs);
 
-	TCP_SKB_CB(skb)->when = tcp_time_stamp;
-	err = tcp_transmit_skb(sk, skb, 1, GFP_ATOMIC);
-	if (err == 0) {
+	/* The MSS might have changed and so the number of segments. We
+	 * need to account for this change.
+	 */
+	if (unlikely(oldpcount != tso_segs))
+		tcp_adjust_pcount(meta_sk, skb, oldpcount - tso_segs);
+
+	limit = mss_now;
+	if (tso_segs > 1 && !tcp_urg_mode(meta_tp))
+		limit = tcp_mss_split_point(subsk, skb, mss_now,
+					    min_t(unsigned int,
+						  tcp_cwnd_test(tcp_sk(subsk), skb),
+						  subsk->sk_gso_max_segs));
+
+	if (skb->len > limit &&
+	    unlikely(mptso_fragment(meta_sk, skb, limit, mss_now,
+				    GFP_ATOMIC, 0)))
+		goto failed;
+
+	subskb = mptcp_skb_entail(subsk, &skb, -1);
+	if (!subskb)
+		goto failed;
+
+	TCP_SKB_CB(subskb)->when = tcp_time_stamp;
+	err = tcp_transmit_skb(subsk, subskb, 1, GFP_ATOMIC);
+	if (!err) {
 		/* Update global TCP statistics. */
 		TCP_INC_STATS(sock_net(meta_sk), TCP_MIB_RETRANSSEGS);
 
@@ -2049,8 +2051,13 @@ static int mptcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 
 		/* Save stamp of the first retransmit. */
 		if (!meta_tp->retrans_stamp)
-			meta_tp->retrans_stamp = TCP_SKB_CB(skb)->when;
+			meta_tp->retrans_stamp = TCP_SKB_CB(subskb)->when;
+		mptcp_sub_event_new_data_sent(subsk, subskb);
+	} else {
+		mptcp_transmit_skb_failed(subsk, skb, subskb, 0);
 	}
+
+failed:
 	return err;
 }
 
@@ -2061,11 +2068,9 @@ static int mptcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
  */
 void mptcp_retransmit_timer(struct sock *meta_sk)
 {
-	struct sock *sk;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
-	struct sk_buff *subskb, *skb;
 	int err;
 
 	if (unlikely(meta_tp->send_mp_fclose))
@@ -2107,19 +2112,7 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 			return;
 		}
 
-		sk = get_available_subflow(meta_sk, tcp_write_queue_head(meta_sk), NULL);
-		if (!sk)
-			goto out_reset_timer;
-
-		skb = tcp_write_queue_head(meta_sk);
-		subskb = mptcp_skb_entail(sk, &skb, -1);
-		if (!subskb)
-			goto out_reset_timer;
-		err = mptcp_retransmit_skb(sk, subskb);
-		if (!err)
-			mptcp_sub_event_new_data_sent(sk, subskb);
-		else
-			mptcp_transmit_skb_failed(sk, tcp_write_queue_head(meta_sk), subskb, 0);
+		mptcp_retransmit_skb(meta_sk, tcp_write_queue_head(meta_sk));
 		__sk_dst_reset(meta_sk);
 		goto out_reset_timer;
 	}
@@ -2130,19 +2123,7 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 	if (meta_icsk->icsk_retransmits == 0)
 		NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_TCPTIMEOUTS);
 
-	sk = get_available_subflow(meta_sk, tcp_write_queue_head(meta_sk), NULL);
-	if (!sk)
-		goto out_reset_timer;
-
-	skb = tcp_write_queue_head(meta_sk);
-	subskb = mptcp_skb_entail(sk, &skb, -1);
-	if (!subskb)
-		goto out_reset_timer;
-	err = mptcp_retransmit_skb(sk, subskb);
-	if (!err)
-		mptcp_sub_event_new_data_sent(sk, subskb);
-	else
-		mptcp_transmit_skb_failed(sk, tcp_write_queue_head(meta_sk), subskb, 0);
+	err = mptcp_retransmit_skb(meta_sk, tcp_write_queue_head(meta_sk));
 	if (err > 0) {
 		/* Retransmission failed because of local congestion,
 		 * do not backoff.
@@ -2301,6 +2282,29 @@ int mptcp_check_snd_buf(const struct tcp_sock *tp)
 
 	return max_t(unsigned int, (u32)(bw_est >> 16),
 			tp->reordering + 1);
+
+}
+
+unsigned int mptcp_xmit_size_goal(struct sock *meta_sk, u32 mss_now,
+				  int large_allowed)
+{
+	struct sock *sk;
+	u32 xmit_size_goal = 0;
+
+	if (large_allowed && mptcp_sk_can_gso(meta_sk)) {
+		mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk) {
+			int this_size_goal;
+
+			if (!mptcp_sk_can_send(sk))
+				continue;
+
+			this_size_goal = tcp_xmit_size_goal(sk, mss_now, 1);
+			if (!xmit_size_goal || this_size_goal < xmit_size_goal)
+				xmit_size_goal = this_size_goal;
+		}
+	}
+
+	return max(xmit_size_goal, mss_now);
 }
 
 /* Similar to tcp_trim_head - but we correctly copy the DSS-option */
