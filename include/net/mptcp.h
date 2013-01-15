@@ -666,7 +666,7 @@ u32 __mptcp_select_window(struct sock *sk);
 void mptcp_select_initial_window(int *__space, __u32 *window_clamp,
 			         const struct sock *sk);
 unsigned int mptcp_current_mss(struct sock *meta_sk);
-int mptcp_select_size(const struct sock *meta_sk);
+int mptcp_select_size(const struct sock *meta_sk, bool sg);
 void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn);
 void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 		     u32 *hash_out);
@@ -1184,7 +1184,7 @@ static inline unsigned int mptcp_current_mss(struct sock *meta_sk)
 {
 	return 0;
 }
-static inline int mptcp_select_size(const struct sock *meta_sk)
+static inline int mptcp_select_size(const struct sock *meta_sk, bool sg)
 {
 	return 0;
 }

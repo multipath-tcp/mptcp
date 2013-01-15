@@ -2248,7 +2248,7 @@ unsigned int mptcp_current_mss(struct sock *meta_sk)
 	return !mss ? tcp_current_mss(meta_sk) : mss;
 }
 
-int mptcp_select_size(const struct sock *meta_sk)
+int mptcp_select_size(const struct sock *meta_sk, bool sg)
 {
 	int mss = 0; /* We look for the smallest MSS */
 	struct sock *sk;
@@ -2262,6 +2262,18 @@ int mptcp_select_size(const struct sock *meta_sk)
 		this_mss = tcp_sk(sk)->mss_cache;
 		if (!mss || this_mss < mss)
 			mss = this_mss;
+	}
+
+	if (sg) {
+		if (mptcp_sk_can_gso(meta_sk)) {
+			mss = SKB_WITH_OVERHEAD(2048 - MAX_TCP_HEADER);
+		} else {
+			int pgbreak = SKB_MAX_HEAD(MAX_TCP_HEADER);
+
+			if (mss >= pgbreak &&
+			    mss <= pgbreak + (MAX_SKB_FRAGS - 1) * PAGE_SIZE)
+				mss = pgbreak;
+		}
 	}
 
 	return !mss ? tcp_sk(meta_sk)->mss_cache : mss;

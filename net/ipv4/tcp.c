@@ -977,7 +977,7 @@ static inline int select_size(const struct sock *sk, bool sg)
 	int tmp = tp->mss_cache;
 
 	if (tp->mpc)
-		tmp = mptcp_select_size(sk);
+		return mptcp_select_size(sk, sg);
 
 	if (sg) {
 		if (sk_can_gso(sk)) {
