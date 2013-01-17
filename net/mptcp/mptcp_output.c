@@ -678,7 +678,7 @@ static int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	/* Link BUFF into the send queue. */
 	skb_header_release(buff);
 	if (reinject == 1)
-		skb_queue_head(&tcp_sk(sk)->mpcb->reinject_queue, buff);
+		__skb_queue_after(&tcp_sk(sk)->mpcb->reinject_queue, skb, buff);
 	else
 		tcp_insert_write_queue_after(skb, buff, sk);
 
@@ -738,7 +738,7 @@ static int mptso_fragment(struct sock *sk, struct sk_buff *skb,
 	/* Link BUFF into the send queue. */
 	skb_header_release(buff);
 	if (reinject == 1)
-		skb_queue_head(&tcp_sk(sk)->mpcb->reinject_queue, buff);
+		__skb_queue_after(&tcp_sk(sk)->mpcb->reinject_queue, skb, buff);
 	else
 		tcp_insert_write_queue_after(skb, buff, sk);
 
