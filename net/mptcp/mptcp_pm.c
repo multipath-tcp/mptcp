@@ -989,7 +989,7 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 	seq_printf(seq, "  sl  loc_tok  rem_tok  v6 "
 		   "local_address                         "
 		   "remote_address                        "
-		   "st ns tx_queue rx_queue");
+		   "st ns tx_queue rx_queue inode");
 	seq_putc(seq, '\n');
 
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
@@ -1029,12 +1029,13 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 					   ntohs(isk->inet_dport));
 #endif
 			}
-			seq_printf(seq, " %02X %02X %08X:%08X",
+			seq_printf(seq, " %02X %02X %08X:%08X %lu",
 					meta_sk->sk_state,
 					mpcb->cnt_subflows,
 					meta_tp->write_seq - meta_tp->snd_una,
 					max_t(int, meta_tp->rcv_nxt -
-						   meta_tp->copied_seq, 0));
+						   meta_tp->copied_seq, 0),
+					sock_i_ino(meta_sk));
 			seq_putc(seq, '\n');
 		}
 		rcu_read_unlock_bh();
