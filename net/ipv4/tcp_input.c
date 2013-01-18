@@ -3589,10 +3589,6 @@ static int tcp_ack_update_window(struct sock *sk, const struct sk_buff *skb, u32
 	int flag = 0;
 	u32 nwin = ntohs(tcp_hdr(skb)->window);
 
-	/* Window-updates are handled in mptcp_data_ack */
-	if (tp->mpc)
-		goto no_window_update;
-
 	if (likely(!tcp_hdr(skb)->syn))
 		nwin <<= tp->rx_opt.snd_wscale;
 
@@ -3616,7 +3612,6 @@ static int tcp_ack_update_window(struct sock *sk, const struct sk_buff *skb, u32
 		}
 	}
 
-no_window_update:
 	tp->snd_una = ack;
 
 	return flag;

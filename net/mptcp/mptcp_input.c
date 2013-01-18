@@ -1075,7 +1075,6 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	if (tcp_may_update_window(meta_tp, data_ack, data_seq, nwin)) {
 		flag |= FLAG_WIN_UPDATE;
 		tcp_update_wl(meta_tp, data_seq);
-		tcp_update_wl(tp, tcb->seq);
 
 		/* Draft v09, Section 3.3.5:
 		 * [...] It should only update its local receive window values
@@ -1085,14 +1084,9 @@ int mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 		if (meta_tp->snd_wnd != nwin &&
 		    !before(data_ack + nwin, tcp_wnd_end(meta_tp))) {
 			meta_tp->snd_wnd = nwin;
-			tp->snd_wnd = nwin;
-
-			/* Diff to tcp_ack_update_window - fast_path */
 
 			if (nwin > meta_tp->max_window) {
 				meta_tp->max_window = nwin;
-				tp->max_window = nwin;
-				tcp_sync_mss(sk, inet_csk(sk)->icsk_pmtu_cookie);
 			}
 		}
 	}
