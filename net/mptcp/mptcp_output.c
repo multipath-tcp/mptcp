@@ -176,7 +176,7 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 		 * will be changed when it's going to be reinjected on another
 		 * subflow.
 		 */
-		skb = pskb_copy(orig_skb, GFP_ATOMIC);
+		skb = __pskb_copy(orig_skb, MAX_TCP_HEADER, GFP_ATOMIC);
 	} else {
 		__skb_unlink(orig_skb, &sk->sk_write_queue);
 		sock_set_flag(sk, SOCK_QUEUE_SHRUNK);
@@ -396,7 +396,7 @@ static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff *skb,
 		 * copy the TCP/IP-headers. (pskb_copy)
 		 */
 		if (reinject == -1)
-			subskb = pskb_copy(skb, GFP_ATOMIC);
+			subskb = __pskb_copy(skb, MAX_TCP_HEADER, GFP_ATOMIC);
 		else
 			subskb = skb_clone(skb, GFP_ATOMIC);
 	} else {
@@ -404,7 +404,7 @@ static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff *skb,
 		 * subflow during address-removal.
 		 */
 		if (skb_cloned(skb)) {
-			subskb = pskb_copy(skb, GFP_ATOMIC);
+			subskb = __pskb_copy(skb, MAX_TCP_HEADER, GFP_ATOMIC);
 			if (subskb) {
 				__skb_unlink(skb, &mpcb->reinject_queue);
 				kfree_skb(skb);
