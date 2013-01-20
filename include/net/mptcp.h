@@ -700,26 +700,6 @@ static inline void mptcp_skb_entail_init(const struct tcp_sock *tp,
 		TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_SEQ;
 }
 
-static inline int mptcp_skb_cloned(const struct sk_buff *skb,
-				   const struct tcp_sock *tp)
-{
-	/* If it does not has a DSS-mapping (MPTCPHDR_SEQ), it does not come
-	 * from the meta-level send-queue and thus dataref is as usual.
-	 * If it has a DSS-mapping dataref is 2, if we are coming straight from
-	 * the meta-send-queue.
-	 * It is 1, if we took the segment from a pskb_copy'd segment of the
-	 * reinject-queue.
-	 *
-	 * It will be > 2, if the segment is also referenced at another place.
-	 * E.g., an rbuf-opti reinjection is held in the meta-queue, subflow-queue
-	 * and in the queue of the new subflow.
-	 */
-	return tp->mpc &&
-	       ((!mptcp_is_data_seq(skb) && skb_cloned(skb)) ||
-		(mptcp_is_data_seq(skb) && skb->cloned &&
-		 (atomic_read(&skb_shinfo(skb)->dataref) & SKB_DATAREF_MASK) > 2));
-}
-
 /* Sets the data_seq and returns pointer to the in-skb field of the data_seq.
  * If the packet has a 64-bit dseq, the pointer points to the last 32 bits.
  */
@@ -1068,11 +1048,6 @@ static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
 #define mptcp_for_each_sk(mpcb, sk)
 #define mptcp_for_each_sk_safe(__mpcb, __sk, __temp)
 
-static inline int mptcp_skb_cloned(const struct sk_buff *skb,
-				   const struct tcp_sock *tp)
-{
-	return 0;
-}
 static inline __u32 *mptcp_skb_set_data_seq(const struct sk_buff *skb,
 					    u32 *data_seq)
 {

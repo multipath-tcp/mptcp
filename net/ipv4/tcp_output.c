@@ -840,7 +840,7 @@ int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	tp = tcp_sk(sk);
 
 	if (likely(clone_it)) {
-		if (unlikely((!tp->mpc && skb_cloned(skb)) || mptcp_skb_cloned(skb, tp))) {
+		if (unlikely(skb_cloned(skb))) {
 			struct sk_buff *newskb;
 			if (mptcp_is_data_seq(skb))
 				skb_push(skb, MPTCP_SUB_LEN_DSS_ALIGN +

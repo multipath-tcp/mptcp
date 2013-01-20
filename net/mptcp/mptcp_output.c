@@ -160,6 +160,56 @@ static struct mp_dss *mptcp_skb_find_dss(const struct sk_buff *skb)
 			      	      	      MPTCP_SUB_LEN_SEQ_ALIGN));
 }
 
+/* Similar to __pskb_copy and sk_stream_alloc_skb.
+ */
+static struct sk_buff *mptcp_pskb_copy(struct sk_buff *skb)
+{
+	struct sk_buff *n;
+	/* The TCP header must be at least 32-bit aligned.  */
+	int size = ALIGN(skb_headlen(skb), 4);
+
+	n = alloc_skb_fclone(size + MAX_TCP_HEADER, GFP_ATOMIC);
+	if (!n)
+		return NULL;
+
+	/* Set the data pointer */
+	skb_reserve(n, MAX_TCP_HEADER);
+	/* Set the tail pointer and length */
+	skb_put(n, skb_headlen(skb));
+	/* Copy the bytes */
+	skb_copy_from_linear_data(skb, n->data, n->len);
+
+	n->truesize += skb->data_len;
+	n->data_len  = skb->data_len;
+	n->len	     = skb->len;
+
+	if (skb_shinfo(skb)->nr_frags) {
+		int i;
+
+		if (skb_shinfo(skb)->tx_flags & SKBTX_DEV_ZEROCOPY) {
+			if (skb_copy_ubufs(skb, GFP_ATOMIC)) {
+				kfree_skb(n);
+				n = NULL;
+				goto out;
+			}
+		}
+		for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
+			skb_shinfo(n)->frags[i] = skb_shinfo(skb)->frags[i];
+			skb_frag_ref(skb, i);
+		}
+		skb_shinfo(n)->nr_frags = i;
+	}
+
+	if (skb_has_frag_list(skb)) {
+		skb_shinfo(n)->frag_list = skb_shinfo(skb)->frag_list;
+		skb_clone_fraglist(n);
+	}
+
+	copy_skb_header(n, skb);
+out:
+	return n;
+}
+
 /* Reinject data from one TCP subflow to the meta_sk. If sk == NULL, we are
  * coming from the meta-retransmit-timer
  */
@@ -176,7 +226,7 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 		 * will be changed when it's going to be reinjected on another
 		 * subflow.
 		 */
-		skb = __pskb_copy(orig_skb, MAX_TCP_HEADER, GFP_ATOMIC);
+		skb = mptcp_pskb_copy(orig_skb);
 	} else {
 		__skb_unlink(orig_skb, &sk->sk_write_queue);
 		sock_set_flag(sk, SOCK_QUEUE_SHRUNK);
@@ -382,29 +432,14 @@ static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff *skb,
 	struct sock *meta_sk = mptcp_meta_sk(sk);
 	struct mptcp_cb *mpcb = tp->mpcb;
 	struct tcp_skb_cb *tcb;
-	struct sk_buff *subskb;
+	struct sk_buff *subskb = NULL;
 
-	/* If the segment is reinjected, the clone is done already */
-	if (reinject <= 0) {
-		if (!reinject) {
-			TCP_SKB_CB(skb)->mptcp_flags |=
-					(mpcb->snd_hiseq_index ?
-					 MPTCPHDR_SEQ64_INDEX : 0);
-		}
-		/* The segment may be a meta-level
-		 * retransmission. In this case, we also have to
-		 * copy the TCP/IP-headers. (pskb_copy)
-		 */
-		if (reinject == -1)
-			subskb = __pskb_copy(skb, MAX_TCP_HEADER, GFP_ATOMIC);
-		else
-			subskb = skb_clone(skb, GFP_ATOMIC);
-	} else {
+	if (reinject == 1) {
 		/* It may still be a clone from tcp_transmit_skb of the old
 		 * subflow during address-removal.
 		 */
 		if (skb_cloned(skb)) {
-			subskb = __pskb_copy(skb, MAX_TCP_HEADER, GFP_ATOMIC);
+			subskb = mptcp_pskb_copy(skb);
 			if (subskb) {
 				__skb_unlink(skb, &mpcb->reinject_queue);
 				kfree_skb(skb);
@@ -414,6 +449,14 @@ static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff *skb,
 			__skb_unlink(skb, &mpcb->reinject_queue);
 			subskb = skb;
 		}
+	} else {
+		if (!reinject) {
+			TCP_SKB_CB(skb)->mptcp_flags |=
+					(mpcb->snd_hiseq_index ?
+					 MPTCPHDR_SEQ64_INDEX : 0);
+		}
+
+		subskb = mptcp_pskb_copy(skb);
 	}
 	if (!subskb)
 		return NULL;
