@@ -606,6 +606,13 @@ static void mptcp_transmit_skb_failed(struct sock *sk, struct sk_buff *skb,
 		 * handle it.
 		 */
 		tcp_advance_send_head(sk, subskb);
+
+		/* tcp_add_write_queue_tail initialized highest_sack. We have
+		 * to reset it, if necessary.
+		 */
+		if (tcp_sk(sk)->highest_sack == subskb)
+			tcp_sk(sk)->highest_sack = NULL;
+
 		tcp_unlink_write_queue(subskb, sk);
 		tp->write_seq -= subskb->len;
 		if (reinject <= 0) {
