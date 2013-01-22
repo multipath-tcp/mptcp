@@ -973,7 +973,7 @@ void tcp_set_skb_tso_segs(const struct sock *sk, struct sk_buff *skb,
 			  unsigned int mss_now)
 {
 	if (skb->len <= mss_now || !sk_can_gso(sk) ||
-	    skb->ip_summed == CHECKSUM_NONE) {
+	    skb->ip_summed == CHECKSUM_NONE || tcp_sk(sk)->mpc) {
 		/* Avoid the costly divide in the normal
 		 * non-TSO case.
 		 */
