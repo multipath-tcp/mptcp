@@ -68,7 +68,7 @@ int sysctl_mptcp_syn_retries __read_mostly = MPTCP_SYN_RETRIES;
 EXPORT_SYMBOL(sysctl_mptcp_debug);
 
 #ifdef CONFIG_SYSCTL
-static ctl_table mptcp_skeleton[] = {
+static struct ctl_table mptcp_table[] = {
 	{
 		.procname = "mptcp_ndiffports",
 		.data = &sysctl_mptcp_ndiffports,
@@ -105,12 +105,6 @@ static ctl_table mptcp_skeleton[] = {
 		.proc_handler = &proc_dointvec
 	},
 	{ }
-};
-
-static struct ctl_path mptcp_path[] = {
-	{ .procname = "net", },
-	{ .procname = "mptcp", },
-	{ },
 };
 #endif
 
@@ -1584,7 +1578,7 @@ static int __init mptcp_init(void)
 		goto mptcp_pm_failed;
 
 #ifdef CONFIG_SYSCTL
-	mptcp_sysclt = register_sysctl_paths(mptcp_path, mptcp_skeleton);
+	mptcp_sysclt = register_net_sysctl(&init_net, "net/mptcp", mptcp_table);
 	if (!mptcp_sysclt) {
 		ret = -ENOMEM;
 		goto register_sysctl_failed;
