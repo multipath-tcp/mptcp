@@ -984,6 +984,7 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 {
 	struct tcp_sock *meta_tp;
+	struct net *net = seq->private;
 	int i, n = 0;
 
 	seq_printf(seq, "  sl  loc_tok  rem_tok  v6 "
@@ -1000,7 +1001,7 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 			struct sock *meta_sk = (struct sock *)meta_tp;
 			struct inet_sock *isk = inet_sk(meta_sk);
 
-			if (!meta_tp->mpc)
+			if (!meta_tp->mpc || !net_eq(net, sock_net(meta_sk)))
 				continue;
 
 			seq_printf(seq, "%4d: %04X %04X ", n++,
