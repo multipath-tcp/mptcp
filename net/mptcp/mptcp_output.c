@@ -464,7 +464,7 @@ static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff **skb,
 	TCP_SKB_CB(*skb)->path_mask |= mptcp_pi_to_flag(tp->mptcp->path_index);
 
 	if (!(sk->sk_route_caps & NETIF_F_ALL_CSUM) &&
-	      (*skb)->ip_summed == CHECKSUM_PARTIAL) {
+	    (*skb)->ip_summed == CHECKSUM_PARTIAL) {
 		subskb->csum = (*skb)->csum = skb_checksum(*skb, 0, (*skb)->len, 0);
 		subskb->ip_summed = (*skb)->ip_summed = CHECKSUM_NONE;
 	}
@@ -825,8 +825,7 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 			if (mptcp_fragment(meta_sk, skb, seg_size, mss, 0))
 				return -1;
 		} else if (!tcp_skb_pcount(skb)) {
-			printk(KERN_ERR"%s should not happen with MPTCP!\n", __func__);
-			BUG();
+			tcp_set_skb_tso_segs(meta_sk, skb, mss);
 		}
 
 		subskb = mptcp_skb_entail(subsk, &skb, 0);
