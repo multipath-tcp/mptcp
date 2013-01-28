@@ -740,7 +740,7 @@ static int mptso_fragment(struct sock *sk, struct sk_buff *skb,
 			  int reinject)
 {
 	struct sk_buff *buff;
-	int nlen = skb->len - len;
+	int nlen = skb->len - len, old_factor;
 	u8 flags;
 
 	/* All of a TSO frame must be composed of paged data.  */
@@ -781,9 +781,22 @@ static int mptso_fragment(struct sock *sk, struct sk_buff *skb,
 	buff->ip_summed = skb->ip_summed = CHECKSUM_PARTIAL;
 	skb_split(skb, buff, len);
 
+	old_factor = tcp_skb_pcount(skb);
+
 	/* Fix up tso_factor for both original and new SKB.  */
 	tcp_set_skb_tso_segs(sk, skb, mss_now);
 	tcp_set_skb_tso_segs(sk, buff, mss_now);
+
+	/* If this packet has been sent out already, we must
+	 * adjust the various packet counters.
+	 */
+	if (!before(tcp_sk(sk)->snd_nxt, TCP_SKB_CB(buff)->end_seq) && reinject != 1) {
+		int diff = old_factor - tcp_skb_pcount(skb) -
+			tcp_skb_pcount(buff);
+
+		if (diff)
+			tcp_adjust_pcount(sk, skb, diff);
+	}
 
 	/* Link BUFF into the send queue. */
 	skb_header_release(buff);
