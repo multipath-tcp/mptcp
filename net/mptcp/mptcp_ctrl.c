@@ -1169,8 +1169,9 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 			    sk->sk_state == TCP_CLOSE) {
 				tp->closing = 1;
 				tcp_close(sk, 0);
-			} else if (tcp_close_state(sk))
+			} else if (tcp_close_state(sk)) {
 				tcp_send_fin(sk);
+			}
 
 			return;
 		}
