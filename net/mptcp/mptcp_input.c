@@ -665,10 +665,8 @@ static inline int mptcp_sequence(const struct tcp_sock *meta_tp,
  */
 static int mptcp_validate_mapping(struct sock *sk, struct sk_buff *skb)
 {
-	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = mptcp_meta_tp(tp);
-	struct mptcp_cb *mpcb = tp->mpcb;
+	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *tmp, *tmp1;
-	u64 rcv_nxt64;
 	u32 sub_end_seq1;
 
 	if (!tp->mptcp->mapping_present)
@@ -717,7 +715,27 @@ static int mptcp_validate_mapping(struct sock *sk, struct sk_buff *skb)
 		}
 	}
 
-	rcv_nxt64 = mptcp_get_rcv_nxt_64(meta_tp);
+	return 0;
+}
+
+/* @return: 0  everything is fine. Just continue processing
+ * 	    1  subflow is broken stop everything
+ * 	    -1 this mapping has been put in the meta-receive-queue
+ * 	    -2 this mapping has been eaten by the application
+ */
+static int mptcp_queue_skb(struct sock *sk)
+{
+	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = mptcp_meta_tp(tp);
+	struct sock *meta_sk = mptcp_meta_sk(sk);
+	struct mptcp_cb *mpcb = tp->mpcb;
+	struct sk_buff *tmp, *tmp1;
+	u64 rcv_nxt64 = mptcp_get_rcv_nxt_64(meta_tp);
+	int eaten = 0;
+
+	/* Have we not yet received the full mapping? */
+	if (!tp->mptcp->mapping_present ||
+	    before(tp->rcv_nxt, tp->mptcp->map_subseq + tp->mptcp->map_data_len))
+		return 0;
 
 	/* Is this an overlapping mapping? rcv_nxt >= end_data_seq
 	 * OR
@@ -742,32 +760,10 @@ static int mptcp_validate_mapping(struct sock *sk, struct sk_buff *skb)
 	}
 
 	/* Record it, because we want to send our data_fin on the same path */
-	if (mptcp_is_data_fin(skb)) {
+	if (tp->mptcp->map_data_fin) {
 		mpcb->dfin_path_index = tp->mptcp->path_index;
-		mpcb->dfin_combined = tcp_hdr(skb)->fin;
+		mpcb->dfin_combined = !!(sk->sk_shutdown & RCV_SHUTDOWN);
 	}
-
-	return 0;
-}
-
-/* @return: 0  everything is fine. Just continue processing
- * 	    1  subflow is broken stop everything
- * 	    -1 this mapping has been put in the meta-receive-queue
- * 	    -2 this mapping has been eaten by the application
- */
-static int mptcp_queue_skb(struct sock *sk)
-{
-	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = mptcp_meta_tp(tp);
-	struct sock *meta_sk = mptcp_meta_sk(sk);
-	struct mptcp_cb *mpcb = tp->mpcb;
-	struct sk_buff *tmp, *tmp1;
-	u64 rcv_nxt64 = mptcp_get_rcv_nxt_64(meta_tp);
-	int eaten = 0;
-
-	/* Have we not yet received the full mapping? */
-	if (!tp->mptcp->mapping_present ||
-	    before(tp->rcv_nxt, tp->mptcp->map_subseq + tp->mptcp->map_data_len))
-		return 0;
 
 	/* Verify the checksum */
 	if (mpcb->dss_csum && !mpcb->infinite_mapping) {
