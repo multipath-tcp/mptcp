@@ -75,6 +75,8 @@
 #include <asm/unaligned.h>
 #include <net/netdma.h>
 #include <net/mptcp.h>
+#include <net/mptcp_v4.h>
+#include <net/mptcp_v6.h>
 
 int sysctl_tcp_timestamps __read_mostly = 1;
 int sysctl_tcp_window_scaling __read_mostly = 1;
@@ -3232,7 +3234,8 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		if (!fully_acked)
 			break;
 
-		mptcp_clean_rtx_infinite(skb, sk);
+		if (tp->mpc)
+			mptcp_clean_rtx_infinite(skb, sk);
 		tcp_unlink_write_queue(skb, sk);
 
 		if (tp->mpc)
@@ -3381,10 +3384,6 @@ static int tcp_ack_update_window(struct sock *sk, const struct sk_buff *skb, u32
 	int flag = 0;
 	u32 nwin = ntohs(tcp_hdr(skb)->window);
 
-	/* Window-updates are handled in mptcp_data_ack */
-	if (tp->mpc)
-		goto no_window_update;
-
 	if (likely(!tcp_hdr(skb)->syn))
 		nwin <<= tp->rx_opt.snd_wscale;
 
@@ -3408,7 +3407,6 @@ static int tcp_ack_update_window(struct sock *sk, const struct sk_buff *skb, u32
 		}
 	}
 
-no_window_update:
 	tp->snd_una = ack;
 
 	return flag;
@@ -3629,12 +3627,6 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 		tcp_ca_event(sk, CA_EVENT_SLOW_ACK);
 	}
 
-	if (tp->mpc) {
-		flag |= mptcp_data_ack(sk, skb);
-		if (unlikely(tp->mp_killed))
-			return -1;
-	}
-
 	/* We passed data and got it acked, remove any soft error
 	 * log. Something worked...
 	 */
@@ -3716,10 +3708,9 @@ old_ack:
  * But, this can also be called on packets in the established flow when
  * the fast version below fails.
  */
-static void __tcp_parse_options(const struct sk_buff *skb,
-				struct tcp_options_received *opt_rx,
-				const u8 **hvpp, struct mptcp_options_received *mopt,
-				int estab, struct tcp_fastopen_cookie *foc, int fast)
+void tcp_parse_options(const struct sk_buff *skb, struct tcp_options_received *opt_rx,
+		       const u8 **hvpp, struct mptcp_options_received *mopt, int estab,
+		       struct tcp_fastopen_cookie *foc)
 {
 	const unsigned char *ptr;
 	const struct tcphdr *th = tcp_hdr(skb);
@@ -3827,13 +3818,8 @@ static void __tcp_parse_options(const struct sk_buff *skb,
 				}
 				break;
 			case TCPOPT_MPTCP:
-				/* Does not parse TCP options if coming from
-				 * tcp_fast_parse_options. They will be parsed
-				 * later.
-				 */
-				if (!fast)
-					mptcp_parse_options(ptr - 2, opsize,
-							    opt_rx, mopt, skb);
+				mptcp_parse_options(ptr - 2, opsize, opt_rx,
+						    mopt, skb);
 				break;
 			case TCPOPT_EXP:
 				/* Fast Open option shares code 254 using a
@@ -3858,13 +3844,6 @@ static void __tcp_parse_options(const struct sk_buff *skb,
 		}
 	}
 }
-
-void tcp_parse_options(const struct sk_buff *skb, struct tcp_options_received *opt_rx,
-		       const u8 **hvpp, struct mptcp_options_received *mopt, int estab,
-		       struct tcp_fastopen_cookie *foc)
-{
-	__tcp_parse_options(skb, opt_rx, hvpp, mopt, estab, foc, 0);
-}
 EXPORT_SYMBOL(tcp_parse_options);
 
 static bool tcp_parse_aligned_timestamp(struct tcp_sock *tp, const struct tcphdr *th)
@@ -3886,8 +3865,9 @@ static bool tcp_parse_aligned_timestamp(struct tcp_sock *tp, const struct tcphdr
 /* Fast parse options. This hopes to only see timestamps.
  * If it is wrong it falls back on tcp_parse_options().
  */
-bool tcp_fast_parse_options(const struct sk_buff *skb, const struct tcphdr *th,
-			    struct tcp_sock *tp, const u8 **hvpp)
+static bool tcp_fast_parse_options(const struct sk_buff *skb,
+				   const struct tcphdr *th,
+				   struct tcp_sock *tp, const u8 **hvpp)
 {
 	/* In the spirit of fast parsing, compare doff directly to constant
 	 * values.  Because equality is used, short doff can be ignored here.
@@ -3900,8 +3880,8 @@ bool tcp_fast_parse_options(const struct sk_buff *skb, const struct tcphdr *th,
 		if (tcp_parse_aligned_timestamp(tp, th))
 			return true;
 	}
-	__tcp_parse_options(skb, &tp->rx_opt, hvpp,
-			    tp->mpc ? &tp->mptcp->rx_opt : NULL, 1, NULL, 1);
+	tcp_parse_options(skb, &tp->rx_opt, hvpp,
+			    tp->mpc ? &tp->mptcp->rx_opt : NULL, 1, NULL);
 
 	return true;
 }
@@ -4075,7 +4055,7 @@ void tcp_reset(struct sock *sk)
  *
  *	If we are in FINWAIT-2, a received FIN moves us to TIME-WAIT.
  */
-static void tcp_fin(struct sock *sk, const struct sk_buff *skb)
+static void tcp_fin(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
@@ -4363,7 +4343,7 @@ static void tcp_ofo_queue(struct sock *sk)
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
 		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 		if (tcp_hdr(skb)->fin)
-			tcp_fin(sk, skb);
+			tcp_fin(sk);
 	}
 }
 
@@ -4679,7 +4659,7 @@ queue_and_out:
 		if (skb->len || mptcp_is_data_fin(skb))
 			tcp_event_data_recv(sk, skb);
 		if (th->fin)
-			tcp_fin(sk, skb);
+			tcp_fin(sk);
 
 		if (!skb_queue_empty(&tp->out_of_order_queue)) {
 			tcp_ofo_queue(sk);
@@ -5069,12 +5049,12 @@ static bool tcp_should_expand_sndbuf(const struct sock *sk)
 
 			/* Backup-flows have to be counted - if there is no other
 			 * subflow we take the backup-flow into account. */
-			if (tp_it->mptcp->rx_opt.low_prio || tp_it->mptcp->low_prio) {
+			if (tp_it->mptcp->rcv_low_prio || tp_it->mptcp->low_prio) {
 				cnt_backups++;
 			}
 
 			if (tp_it->packets_out < tp_it->snd_cwnd) {
-				if (tp_it->mptcp->rx_opt.low_prio || tp_it->mptcp->low_prio) {
+				if (tp_it->mptcp->rcv_low_prio || tp_it->mptcp->low_prio) {
 					backup_available = 1;
 					continue;
 				}
@@ -5467,26 +5447,14 @@ syn_challenge:
 	}
 
 	/* If valid: post process the received MPTCP options. */
-	if (tp->mpc) {
-		/* We have to acknowledge retransmissions of the third
-		 * ack.
-		 */
-		if (tp->mptcp->rx_opt.join_ack) {
-			tcp_send_delayed_ack(sk);
-			tp->mptcp->rx_opt.join_ack = 0;
-		}
-
-		mptcp_post_parse_options(sk, skb);
-
-		mptcp_path_array_check(mptcp_meta_sk(sk));
-		/* Socket may have been mp_killed by a REMOVE_ADDR */
-		if (tp->mp_killed || mptcp_mp_fail_rcvd(sk, th))
-			goto discard;
-	}
+	if (tp->mpc && mptcp_handle_options(sk, th, skb))
+		goto discard;
 
 	return true;
 
 discard:
+	if (tp->mpc)
+		mptcp_reset_mopt(tp);
 	__kfree_skb(skb);
 	return false;
 }
@@ -5897,6 +5865,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			 * until the 4th ack arrives.
 			 */
 			tp->mptcp->pre_established = 1;
+			tp->mptcp->rcv_low_prio = tp->mptcp->rx_opt.low_prio;
 		} else if (mopt.saw_mpc && tp->request_mptcp) {
 			if (mptcp_create_master_sk(sk, mopt.mptcp_rem_key,
 						   ntohs(th->window)))
@@ -5941,8 +5910,6 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 
 		tcp_init_wl(tp, TCP_SKB_CB(skb)->seq);
 		tcp_ack(sk, skb, FLAG_SLOWPATH);
-		if (unlikely(tp->mp_killed))
-			goto discard;
 
 		/* Ok.. it's good. Set up sequence numbers and
 		 * move to established.

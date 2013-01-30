@@ -1036,7 +1036,7 @@ int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	tp = tcp_sk(sk);
 
 	if (likely(clone_it)) {
-		if (unlikely((!tp->mpc && skb_cloned(skb)) || mptcp_skb_cloned(skb, tp))) {
+		if (unlikely(skb_cloned(skb))) {
 			struct sk_buff *newskb;
 			if (mptcp_is_data_seq(skb))
 				skb_push(skb, MPTCP_SUB_LEN_DSS_ALIGN +
@@ -1174,7 +1174,7 @@ void tcp_set_skb_tso_segs(const struct sock *sk, struct sk_buff *skb,
 			  unsigned int mss_now)
 {
 	if (skb->len <= mss_now || !sk_can_gso(sk) ||
-	    skb->ip_summed == CHECKSUM_NONE) {
+	    skb->ip_summed == CHECKSUM_NONE || tcp_sk(sk)->mpc) {
 		/* Avoid the costly divide in the normal
 		 * non-TSO case.
 		 */
@@ -1712,11 +1712,10 @@ static unsigned int tcp_snd_test(const struct sock *sk, struct sk_buff *skb,
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int cwnd_quota;
-	const struct tcp_sock *meta_tp = tp->mpc ? mptcp_meta_tp(tp) : tp;
 
 	tcp_init_tso_segs(sk, skb, cur_mss);
 
-	if (!tcp_nagle_test(meta_tp, skb, cur_mss, nonagle))
+	if (!tcp_nagle_test(tp, skb, cur_mss, nonagle))
 		return 0;
 
 	cwnd_quota = tcp_cwnd_test(tp, skb);
@@ -1745,8 +1744,8 @@ bool tcp_may_send_now(struct sock *sk)
  * know that all the data is in scatter-gather pages, and that the
  * packet has never been sent out before (and thus is not cloned).
  */
-int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
-		 unsigned int mss_now, gfp_t gfp)
+static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
+			unsigned int mss_now, gfp_t gfp)
 {
 	struct sk_buff *buff;
 	int nlen = skb->len - len;
@@ -2769,7 +2768,6 @@ struct sk_buff *tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 	skb_dst_set(skb, dst);
 
 	mss = dst_metric_advmss(dst);
-
 	if (tp->rx_opt.user_mss && tp->rx_opt.user_mss < mss)
 		mss = tp->rx_opt.user_mss;
 
@@ -2904,9 +2902,7 @@ void tcp_connect_init(struct sock *sk)
 
 	if (!tp->window_clamp)
 		tp->window_clamp = dst_metric(dst, RTAX_WINDOW);
-
 	tp->advmss = dst_metric_advmss(dst);
-
 	if (tp->rx_opt.user_mss && tp->rx_opt.user_mss < tp->advmss)
 		tp->advmss = tp->rx_opt.user_mss;
 
