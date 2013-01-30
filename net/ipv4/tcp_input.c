@@ -5602,56 +5602,8 @@ static int tcp_validate_incoming(struct sock *sk, struct sk_buff *skb,
 	}
 
 	/* If valid: post process the received MPTCP options. */
-	if (tp->mpc) {
-		struct mptcp_options_received *mopt = &tp->mptcp->rx_opt;
-
-		if (mptcp_mp_fail_rcvd(sk, th))
-			goto discard;
-
-		/* We have to acknowledge retransmissions of the third
-		 * ack.
-		 */
-		if (mopt->join_ack) {
-			tcp_send_delayed_ack(sk);
-			mopt->join_ack = 0;
-		}
-
-		if (mopt->saw_add_addr || mopt->saw_rem_addr) {
-			if (mopt->more_add_addr || mopt->more_rem_addr) {
-				mptcp_parse_addropt(skb, sk);
-			} else {
-				if (mopt->saw_add_addr)
-					mptcp_handle_add_addr(mopt->add_addr_ptr, sk);
-				if (mopt->saw_rem_addr)
-					mptcp_handle_rem_addr(mopt->rem_addr_ptr, sk);
-			}
-
-			mopt->more_add_addr = 0;
-			mopt->saw_add_addr = 0;
-			mopt->more_rem_addr = 0;
-			mopt->saw_rem_addr = 0;
-		}
-		if (mopt->saw_low_prio) {
-			if (mopt->saw_low_prio == 1) {
-				tp->mptcp->rcv_low_prio = mopt->low_prio;
-			} else {
-				struct sock *sk_it;
-				mptcp_for_each_sk(tp->mpcb, sk_it) {
-					struct mptcp_tcp_sock *mptcp = tcp_sk(sk_it)->mptcp;
-					if (mptcp->rem_id == mopt->prio_addr_id)
-						mptcp->rcv_low_prio = mopt->low_prio;
-				}
-			}
-			mopt->saw_low_prio = 0;
-		}
-
-		mptcp_data_ack(sk, skb);
-
-		mptcp_path_array_check(mptcp_meta_sk(sk));
-		/* Socket may have been mp_killed by a REMOVE_ADDR */
-		if (tp->mp_killed)
-			goto discard;
-	}
+	if (tp->mpc && mptcp_handle_options(sk, th, skb))
+		goto discard;
 
 	return 1;
 

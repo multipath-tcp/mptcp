@@ -634,9 +634,6 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			 struct tcp_options_received *opt_rx,
 			 struct mptcp_options_received *mopt,
 			 const struct sk_buff *skb);
-void mptcp_handle_add_addr(const unsigned char *ptr, struct sock *sk);
-void mptcp_handle_rem_addr(const unsigned char *ptr, struct sock *sk);
-void mptcp_parse_addropt(const struct sk_buff *skb, struct sock *sk);
 void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 		       unsigned *remaining);
 void mptcp_synack_options(struct request_sock *req,
@@ -655,14 +652,14 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 			   struct request_sock **prev,
 			   struct mptcp_options_received *mopt);
 struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
-		struct request_sock *req, struct request_sock **prev,
-		struct mptcp_options_received *mopt);
+				   struct request_sock *req,
+				   struct request_sock **prev,
+				   struct mptcp_options_received *mopt);
 u32 __mptcp_select_window(struct sock *sk);
 void mptcp_select_initial_window(int *__space, __u32 *window_clamp,
 			         const struct sock *sk);
 unsigned int mptcp_current_mss(struct sock *meta_sk);
 int mptcp_select_size(const struct sock *meta_sk);
-void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb);
 void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn);
 void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 		     u32 *hash_out);
@@ -676,11 +673,11 @@ struct sock *mptcp_select_ack_sock(const struct sock *meta_sk, int copied);
 void mptcp_fallback_meta_sk(struct sock *meta_sk);
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb);
 struct sock *mptcp_sk_clone(const struct sock *sk, int family, const gfp_t priority);
-struct sock *mptcp_sk_clone(const struct sock *sk, int family, const gfp_t priority);
 void mptcp_ack_handler(unsigned long);
 void mptcp_set_keepalive(struct sock *sk, int val);
 int mptcp_check_rtt(const struct tcp_sock *tp, int time);
 int mptcp_check_snd_buf(const struct tcp_sock *tp);
+int mptcp_handle_options(struct sock *sk, const struct tcphdr *th, struct sk_buff *skb);
 
 static inline void mptcp_push_pending_frames(struct sock *meta_sk)
 {
@@ -885,16 +882,6 @@ static inline void mptcp_check_rcvseq_wrap(struct tcp_sock *meta_tp, int inc)
 	}
 }
 
-static inline void mptcp_path_array_check(struct sock *meta_sk)
-{
-	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-
-	if (unlikely(mpcb->list_rcvd)) {
-		mpcb->list_rcvd = 0;
-		mptcp_create_subflows(meta_sk);
-	}
-}
-
 static inline int mptcp_sk_can_send(const struct sock *sk)
 {
 	return (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCPF_CLOSE_WAIT);
@@ -986,45 +973,6 @@ static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
 	return 0;
 }
 
-static inline int mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
-{
-	struct mptcp_tcp_sock *mptcp = tcp_sk(sk)->mptcp;
-	struct sock *meta_sk = mptcp_meta_sk(sk);
-	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
-
-	if (unlikely(mptcp->rx_opt.mp_fail)) {
-		mptcp->rx_opt.mp_fail = 0;
-
-		if (!th->rst && !mpcb->infinite_mapping) {
-			mpcb->send_infinite_mapping = 1;
-			/* We resend everything that has not been acknowledged */
-			meta_sk->sk_send_head = tcp_write_queue_head(meta_sk);
-
-			/* We artificially restart the whole send-queue. Thus,
-			 * it is as if no packets are in flight */
-			tcp_sk(meta_sk)->packets_out = 0;
-		}
-
-		return 0;
-	}
-
-	if (unlikely(mptcp->rx_opt.mp_fclose)) {
-		struct sock *sk_it, *tmpsk;
-		mptcp->rx_opt.mp_fclose = 0;
-
-		tcp_send_active_reset(sk, GFP_ATOMIC);
-
-		mptcp_for_each_sk_safe(mpcb, sk_it, tmpsk)
-			mptcp_sub_force_close(sk_it);
-
-		tcp_reset(meta_sk);
-
-		return 1;
-	}
-
-	return 0;
-}
-
 /* Find the first free index in the bitfield */
 static inline int __mptcp_find_free_index(u8 bitfield, int j, u8 base)
 {
@@ -1093,7 +1041,6 @@ static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
  * over the only socket available. This assumes that
  * the sk/tp arg is the socket in that case.
  */
-#define mptcp_for_each_tp(mpcb, tp)
 #define mptcp_for_each_sk(mpcb, sk)
 #define mptcp_for_each_sk_safe(__mpcb, __sk, __temp)
 
@@ -1180,13 +1127,13 @@ static inline int mptcp_check_req_master(const struct sock *sk,
 {
 	return 1;
 }
-static inline struct sock *mptcp_check_req_child(const struct sock *sk,
-						 const struct sock *child,
-						 const struct request_sock *req,
+static inline struct sock *mptcp_check_req_child(struct sock *sk,
+						 struct sock *child,
+						 struct request_sock *req,
 						 struct request_sock **prev,
-						 const struct tcp_options_received *rx_opt)
+						 struct mptcp_options_received *mopt)
 {
-	return 0;
+	return NULL;
 }
 static inline u32 __mptcp_select_window(const struct sock *sk)
 {
@@ -1203,15 +1150,10 @@ static inline int mptcp_select_size(const struct sock *meta_sk)
 {
 	return 0;
 }
-static inline void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb) {}
 static inline void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn) {}
 static inline void mptcp_sub_close_passive(struct sock *sk) {}
 static inline int mptcp_fallback_infinite(const struct tcp_sock *tp,
 					  const struct sk_buff *skb)
-{
-	return 0;
-}
-static inline int mptcp_mp_fail_rcvd(struct sock *sk, struct tcphdr *th)
 {
 	return 0;
 }
@@ -1220,7 +1162,6 @@ static inline int mptcp_check_rtt(const struct tcp_sock *tp, int time)
 {
 	return 0;
 }
-static inline void mptcp_path_array_check(const struct sock *meta_sk) {}
 static inline int mptcp_check_snd_buf(const struct tcp_sock *tp)
 {
 	return 0;
@@ -1244,6 +1185,13 @@ static inline struct sock *mptcp_sk_clone(const struct sock *sk,
 	return NULL;
 }
 static inline void mptcp_set_keepalive(struct sock *sk, int val) {}
+static inline int mptcp_handle_options(struct sock *sk,
+				       const struct tcphdr *th,
+				       struct sk_buff *skb)
+{
+	return 0;
+}
+static inline void mptcp_reset_mopt(struct tcp_sock *tp) {}
 #endif /* CONFIG_MPTCP */
 
 #endif /* _MPTCP_H */

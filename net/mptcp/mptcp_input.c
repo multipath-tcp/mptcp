@@ -995,7 +995,7 @@ void mptcp_fin(struct sock *meta_sk)
 }
 
 /* Handle the DATA_ACK */
-void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
+static void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 {
 	struct sock *meta_sk = mptcp_meta_sk(sk);
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *tp = tcp_sk(sk);
@@ -1430,7 +1430,7 @@ int mptcp_check_rtt(const struct tcp_sock *tp, int time)
 	return 0;
 }
 
-void mptcp_handle_add_addr(const unsigned char *ptr, struct sock *sk)
+static void mptcp_handle_add_addr(const unsigned char *ptr, struct sock *sk)
 {
 	struct mp_add_addr *mpadd = (struct mp_add_addr *) ptr;
 
@@ -1453,7 +1453,7 @@ void mptcp_handle_add_addr(const unsigned char *ptr, struct sock *sk)
 	}
 }
 
-void mptcp_handle_rem_addr(const unsigned char *ptr, struct sock *sk)
+static void mptcp_handle_rem_addr(const unsigned char *ptr, struct sock *sk)
 {
 	struct mp_remove_addr *mprem = (struct mp_remove_addr *) ptr;
 	int i;
@@ -1466,7 +1466,7 @@ void mptcp_handle_rem_addr(const unsigned char *ptr, struct sock *sk)
 	}
 }
 
-void mptcp_parse_addropt(const struct sk_buff *skb, struct sock *sk)
+static void mptcp_parse_addropt(const struct sk_buff *skb, struct sock *sk)
 {
 	struct tcphdr *th = tcp_hdr(skb);
 	unsigned char *ptr;
@@ -1520,4 +1520,111 @@ cont:
 		}
 	}
 	return;
+}
+
+static inline int mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
+{
+	struct mptcp_tcp_sock *mptcp = tcp_sk(sk)->mptcp;
+	struct sock *meta_sk = mptcp_meta_sk(sk);
+	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
+
+	if (unlikely(mptcp->rx_opt.mp_fail)) {
+		mptcp->rx_opt.mp_fail = 0;
+
+		if (!th->rst && !mpcb->infinite_mapping) {
+			mpcb->send_infinite_mapping = 1;
+			/* We resend everything that has not been acknowledged */
+			meta_sk->sk_send_head = tcp_write_queue_head(meta_sk);
+
+			/* We artificially restart the whole send-queue. Thus,
+			 * it is as if no packets are in flight */
+			tcp_sk(meta_sk)->packets_out = 0;
+		}
+
+		return 0;
+	}
+
+	if (unlikely(mptcp->rx_opt.mp_fclose)) {
+		struct sock *sk_it, *tmpsk;
+		mptcp->rx_opt.mp_fclose = 0;
+
+		tcp_send_active_reset(sk, GFP_ATOMIC);
+
+		mptcp_for_each_sk_safe(mpcb, sk_it, tmpsk) {
+			if (tmpsk && !tcp_sk(tmpsk)->mptcp)
+				printk(KERN_ERR"%s mptcp is NULL state %d\n", __func__, tmpsk->sk_state);
+			mptcp_sub_force_close(sk_it);
+		}
+
+		tcp_reset(meta_sk);
+
+		return 1;
+	}
+
+	return 0;
+}
+
+static inline void mptcp_path_array_check(struct sock *meta_sk)
+{
+	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+
+	if (unlikely(mpcb->list_rcvd)) {
+		mpcb->list_rcvd = 0;
+		mptcp_create_subflows(meta_sk);
+	}
+}
+
+int mptcp_handle_options(struct sock *sk, const struct tcphdr *th, struct sk_buff *skb)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct mptcp_options_received *mopt = &tp->mptcp->rx_opt;
+
+	if (mptcp_mp_fail_rcvd(sk, th))
+		return 1;
+
+	/* We have to acknowledge retransmissions of the third
+	 * ack.
+	 */
+	if (mopt->join_ack) {
+		tcp_send_delayed_ack(sk);
+		mopt->join_ack = 0;
+	}
+
+	if (mopt->saw_add_addr || mopt->saw_rem_addr) {
+		if (mopt->more_add_addr || mopt->more_rem_addr) {
+			mptcp_parse_addropt(skb, sk);
+		} else {
+			if (mopt->saw_add_addr)
+				mptcp_handle_add_addr(mopt->add_addr_ptr, sk);
+			if (mopt->saw_rem_addr)
+				mptcp_handle_rem_addr(mopt->rem_addr_ptr, sk);
+		}
+
+		mopt->more_add_addr = 0;
+		mopt->saw_add_addr = 0;
+		mopt->more_rem_addr = 0;
+		mopt->saw_rem_addr = 0;
+	}
+	if (mopt->saw_low_prio) {
+		if (mopt->saw_low_prio == 1) {
+			tp->mptcp->rcv_low_prio = mopt->low_prio;
+		} else {
+			struct sock *sk_it;
+			mptcp_for_each_sk(tp->mpcb, sk_it) {
+				struct mptcp_tcp_sock *mptcp = tcp_sk(sk_it)->mptcp;
+				if (mptcp->rem_id == mopt->prio_addr_id)
+					mptcp->rcv_low_prio = mopt->low_prio;
+			}
+		}
+		mopt->saw_low_prio = 0;
+	}
+
+	mptcp_data_ack(sk, skb);
+
+	mptcp_path_array_check(mptcp_meta_sk(sk));
+	/* Socket may have been mp_killed by a REMOVE_ADDR */
+	if (tp->mp_killed)
+		return 1;
+
+	return 0;
 }
