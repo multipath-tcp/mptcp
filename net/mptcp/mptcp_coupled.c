@@ -81,7 +81,7 @@ static inline void mptcp_set_forced(struct sock *meta_sk, bool force)
 	mptcp_ccc->forced_update = force;
 }
 
-static void mptcp_recalc_alpha(struct sock *sk)
+static void mptcp_ccc_recalc_alpha(struct sock *sk)
 {
 	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 	struct sock *sub_sk;
@@ -93,7 +93,7 @@ static void mptcp_recalc_alpha(struct sock *sk)
 
 	/* Only one subflow left - fall back to normal reno-behavior
 	 * (set alpha to 1) */
-	if (mpcb->cnt_subflows <= 1)
+	if (mpcb->cnt_established <= 1)
 		goto exit;
 
 	/* Do regular alpha-calculation for multiple subflows */
@@ -141,7 +141,7 @@ static void mptcp_recalc_alpha(struct sock *sk)
 	sum_denominator *= sum_denominator;
 	if (unlikely(!sum_denominator)) {
 		printk(KERN_ERR"%s: sum_denominator == 0, cnt_established:%d\n",
-				__func__, mpcb->cnt_subflows);
+				__func__, mpcb->cnt_established);
 		mptcp_for_each_sk(mpcb, sub_sk) {
 			struct tcp_sock *sub_tp = tcp_sk(sub_sk);
 			printk(KERN_ERR"%s: pi:%d, state:%d\n, rtt:%u, cwnd: %u",
@@ -172,7 +172,7 @@ static void mptcp_ccc_init(struct sock *sk)
 static void mptcp_ccc_cwnd_event(struct sock *sk, enum tcp_ca_event event)
 {
 	if (event == CA_EVENT_LOSS)
-		mptcp_recalc_alpha(sk);
+		mptcp_ccc_recalc_alpha(sk);
 }
 
 static void mptcp_ccc_set_state(struct sock *sk, u8 ca_state)
@@ -180,8 +180,7 @@ static void mptcp_ccc_set_state(struct sock *sk, u8 ca_state)
 	if (!tcp_sk(sk)->mpc)
 		return;
 
-	if (ca_state == TCP_CA_Recovery)
-		mptcp_set_forced(mptcp_meta_sk(sk), 1);
+	mptcp_set_forced(mptcp_meta_sk(sk), 1);
 }
 
 static void mptcp_ccc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
@@ -201,16 +200,16 @@ static void mptcp_ccc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 	if (tp->snd_cwnd <= tp->snd_ssthresh) {
 		/* In "safe" area, increase. */
 		tcp_slow_start(tp);
-		mptcp_recalc_alpha(sk);
+		mptcp_ccc_recalc_alpha(sk);
 		return;
 	}
 
 	if (mptcp_get_forced(mptcp_meta_sk(sk))) {
-		mptcp_recalc_alpha(sk);
+		mptcp_ccc_recalc_alpha(sk);
 		mptcp_set_forced(mptcp_meta_sk(sk), 0);
 	}
 
-	if (mpcb->cnt_subflows > 1) {
+	if (mpcb->cnt_established > 1) {
 		u64 alpha = mptcp_get_alpha(mptcp_meta_sk(sk));
 
 		/* This may happen, if at the initialization, the mpcb
@@ -243,7 +242,7 @@ static void mptcp_ccc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 		if (tp->snd_cwnd_cnt >= snd_cwnd) {
 			if (tp->snd_cwnd < tp->snd_cwnd_clamp) {
 				tp->snd_cwnd++;
-				mptcp_recalc_alpha(sk);
+				mptcp_ccc_recalc_alpha(sk);
 			}
 
 			tp->snd_cwnd_cnt = 0;

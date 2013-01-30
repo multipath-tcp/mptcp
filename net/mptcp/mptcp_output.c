@@ -118,7 +118,7 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 	/* First, find the best subflow */
 	mptcp_for_each_sk(mpcb, sk) {
 		struct tcp_sock *tp = tcp_sk(sk);
-		if (tp->mptcp->rx_opt.low_prio || tp->mptcp->low_prio)
+		if (tp->mptcp->rcv_low_prio || tp->mptcp->low_prio)
 			cnt_backups++;
 
 		if (mptcp_dont_reinject_skb(tp, skb))
@@ -127,12 +127,12 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 		if (!mptcp_is_available(sk, skb))
 			continue;
 
-		if ((tp->mptcp->rx_opt.low_prio || tp->mptcp->low_prio) &&
+		if ((tp->mptcp->rcv_low_prio || tp->mptcp->low_prio) &&
 		    tp->srtt < lowprio_min_time_to_peer &&
 		    !(skb && mptcp_pi_to_flag(tp->mptcp->path_index) & TCP_SKB_CB(skb)->path_mask)) {
 			lowprio_min_time_to_peer = tp->srtt;
 			lowpriosk = sk;
-		} else if (!(tp->mptcp->rx_opt.low_prio || tp->mptcp->low_prio) &&
+		} else if (!(tp->mptcp->rcv_low_prio || tp->mptcp->low_prio) &&
 		    tp->srtt < min_time_to_peer &&
 		    !(skb && mptcp_pi_to_flag(tp->mptcp->path_index) & TCP_SKB_CB(skb)->path_mask)) {
 			min_time_to_peer = tp->srtt;
@@ -160,6 +160,56 @@ static struct mp_dss *mptcp_skb_find_dss(const struct sk_buff *skb)
 			      	      	      MPTCP_SUB_LEN_SEQ_ALIGN));
 }
 
+/* Similar to __pskb_copy and sk_stream_alloc_skb.
+ */
+static struct sk_buff *mptcp_pskb_copy(struct sk_buff *skb)
+{
+	struct sk_buff *n;
+	/* The TCP header must be at least 32-bit aligned.  */
+	int size = ALIGN(skb_headlen(skb), 4);
+
+	n = alloc_skb_fclone(size + MAX_TCP_HEADER, GFP_ATOMIC);
+	if (!n)
+		return NULL;
+
+	/* Set the data pointer */
+	skb_reserve(n, MAX_TCP_HEADER);
+	/* Set the tail pointer and length */
+	skb_put(n, skb_headlen(skb));
+	/* Copy the bytes */
+	skb_copy_from_linear_data(skb, n->data, n->len);
+
+	n->truesize += skb->data_len;
+	n->data_len  = skb->data_len;
+	n->len	     = skb->len;
+
+	if (skb_shinfo(skb)->nr_frags) {
+		int i;
+
+		if (skb_shinfo(skb)->tx_flags & SKBTX_DEV_ZEROCOPY) {
+			if (skb_copy_ubufs(skb, GFP_ATOMIC)) {
+				kfree_skb(n);
+				n = NULL;
+				goto out;
+			}
+		}
+		for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
+			skb_shinfo(n)->frags[i] = skb_shinfo(skb)->frags[i];
+			skb_frag_ref(skb, i);
+		}
+		skb_shinfo(n)->nr_frags = i;
+	}
+
+	if (skb_has_frag_list(skb)) {
+		skb_shinfo(n)->frag_list = skb_shinfo(skb)->frag_list;
+		skb_clone_fraglist(n);
+	}
+
+	copy_skb_header(n, skb);
+out:
+	return n;
+}
+
 /* Reinject data from one TCP subflow to the meta_sk. If sk == NULL, we are
  * coming from the meta-retransmit-timer
  */
@@ -176,7 +226,7 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 		 * will be changed when it's going to be reinjected on another
 		 * subflow.
 		 */
-		skb = pskb_copy(orig_skb, GFP_ATOMIC);
+		skb = mptcp_pskb_copy(orig_skb);
 	} else {
 		__skb_unlink(orig_skb, &sk->sk_write_queue);
 		sock_set_flag(sk, SOCK_QUEUE_SHRUNK);
@@ -372,7 +422,7 @@ static void mptcp_combine_dfin(struct sk_buff *skb, struct sock *meta_sk,
  * compared to the subflow seqnum. Put another way, the dataseq referenced
  * is actually the number of the first data byte in the segment.
  */
-static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff *skb,
+static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff **skb,
 					int reinject)
 {
 	__be32 *ptr;
@@ -382,48 +432,41 @@ static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff *skb,
 	struct sock *meta_sk = mptcp_meta_sk(sk);
 	struct mptcp_cb *mpcb = tp->mpcb;
 	struct tcp_skb_cb *tcb;
-	struct sk_buff *subskb;
+	struct sk_buff *subskb = NULL;
 
-	/* If the segment is reinjected, the clone is done already */
-	if (reinject <= 0) {
-		if (!reinject) {
-			TCP_SKB_CB(skb)->mptcp_flags |=
-					(mpcb->snd_hiseq_index ?
-					 MPTCPHDR_SEQ64_INDEX : 0);
-		}
-		/* The segment may be a meta-level
-		 * retransmission. In this case, we also have to
-		 * copy the TCP/IP-headers. (pskb_copy)
-		 */
-		if (reinject == -1)
-			subskb = pskb_copy(skb, GFP_ATOMIC);
-		else
-			subskb = skb_clone(skb, GFP_ATOMIC);
-	} else {
+	if (reinject == 1) {
 		/* It may still be a clone from tcp_transmit_skb of the old
 		 * subflow during address-removal.
 		 */
-		if (skb_cloned(skb)) {
-			subskb = pskb_copy(skb, GFP_ATOMIC);
+		if (skb_cloned(*skb)) {
+			subskb = mptcp_pskb_copy(*skb);
 			if (subskb) {
-				__skb_unlink(skb, &mpcb->reinject_queue);
-				kfree_skb(skb);
-				skb = subskb;
+				__skb_unlink(*skb, &mpcb->reinject_queue);
+				kfree_skb(*skb);
+				*skb = subskb;
 			}
 		} else {
-			__skb_unlink(skb, &mpcb->reinject_queue);
-			subskb = skb;
+			__skb_unlink(*skb, &mpcb->reinject_queue);
+			subskb = *skb;
 		}
+	} else {
+		if (!reinject) {
+			TCP_SKB_CB(*skb)->mptcp_flags |=
+					(mpcb->snd_hiseq_index ?
+					 MPTCPHDR_SEQ64_INDEX : 0);
+		}
+
+		subskb = mptcp_pskb_copy(*skb);
 	}
 	if (!subskb)
 		return NULL;
 
-	TCP_SKB_CB(skb)->path_mask |= mptcp_pi_to_flag(tp->mptcp->path_index);
+	TCP_SKB_CB(*skb)->path_mask |= mptcp_pi_to_flag(tp->mptcp->path_index);
 
 	if (!(sk->sk_route_caps & NETIF_F_ALL_CSUM) &&
-	      skb->ip_summed == CHECKSUM_PARTIAL) {
-		subskb->csum = skb->csum = skb_checksum(skb, 0, skb->len, 0);
-		subskb->ip_summed = skb->ip_summed = CHECKSUM_NONE;
+	    (*skb)->ip_summed == CHECKSUM_PARTIAL) {
+		subskb->csum = (*skb)->csum = skb_checksum(*skb, 0, (*skb)->len, 0);
+		subskb->ip_summed = (*skb)->ip_summed = CHECKSUM_NONE;
 	}
 
 	/* The subskb is going in the subflow send-queue. Its path-mask
@@ -563,6 +606,13 @@ static void mptcp_transmit_skb_failed(struct sock *sk, struct sk_buff *skb,
 		 * handle it.
 		 */
 		tcp_advance_send_head(sk, subskb);
+
+		/* tcp_add_write_queue_tail initialized highest_sack. We have
+		 * to reset it, if necessary.
+		 */
+		if (tcp_sk(sk)->highest_sack == subskb)
+			tcp_sk(sk)->highest_sack = NULL;
+
 		tcp_unlink_write_queue(subskb, sk);
 		tp->write_seq -= subskb->len;
 		if (reinject <= 0) {
@@ -667,7 +717,7 @@ static int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	/* If this packet has been sent out already, we must
 	 * adjust the various packet counters.
 	 */
-	if (!before(tp->snd_nxt, TCP_SKB_CB(buff)->end_seq)) {
+	if (!before(tp->snd_nxt, TCP_SKB_CB(buff)->end_seq) && reinject != 1) {
 		int diff = old_factor - tcp_skb_pcount(skb) -
 			tcp_skb_pcount(buff);
 
@@ -678,7 +728,7 @@ static int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	/* Link BUFF into the send queue. */
 	skb_header_release(buff);
 	if (reinject == 1)
-		skb_queue_head(&tcp_sk(sk)->mpcb->reinject_queue, buff);
+		__skb_queue_after(&tcp_sk(sk)->mpcb->reinject_queue, skb, buff);
 	else
 		tcp_insert_write_queue_after(skb, buff, sk);
 
@@ -690,7 +740,7 @@ static int mptso_fragment(struct sock *sk, struct sk_buff *skb,
 			  int reinject)
 {
 	struct sk_buff *buff;
-	int nlen = skb->len - len;
+	int nlen = skb->len - len, old_factor;
 	u8 flags;
 
 	/* All of a TSO frame must be composed of paged data.  */
@@ -731,14 +781,27 @@ static int mptso_fragment(struct sock *sk, struct sk_buff *skb,
 	buff->ip_summed = skb->ip_summed = CHECKSUM_PARTIAL;
 	skb_split(skb, buff, len);
 
+	old_factor = tcp_skb_pcount(skb);
+
 	/* Fix up tso_factor for both original and new SKB.  */
 	tcp_set_skb_tso_segs(sk, skb, mss_now);
 	tcp_set_skb_tso_segs(sk, buff, mss_now);
 
+	/* If this packet has been sent out already, we must
+	 * adjust the various packet counters.
+	 */
+	if (!before(tcp_sk(sk)->snd_nxt, TCP_SKB_CB(buff)->end_seq) && reinject != 1) {
+		int diff = old_factor - tcp_skb_pcount(skb) -
+			tcp_skb_pcount(buff);
+
+		if (diff)
+			tcp_adjust_pcount(sk, skb, diff);
+	}
+
 	/* Link BUFF into the send queue. */
 	skb_header_release(buff);
 	if (reinject == 1)
-		skb_queue_head(&tcp_sk(sk)->mpcb->reinject_queue, buff);
+		__skb_queue_after(&tcp_sk(sk)->mpcb->reinject_queue, skb, buff);
 	else
 		tcp_insert_write_queue_after(skb, buff, sk);
 
@@ -775,11 +838,10 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 			if (mptcp_fragment(meta_sk, skb, seg_size, mss, 0))
 				return -1;
 		} else if (!tcp_skb_pcount(skb)) {
-			printk(KERN_ERR"%s should not happen with MPTCP!\n", __func__);
-			BUG();
+			tcp_set_skb_tso_segs(meta_sk, skb, mss);
 		}
 
-		subskb = mptcp_skb_entail(subsk, skb, 0);
+		subskb = mptcp_skb_entail(subsk, &skb, 0);
 		if (!subskb)
 			return -1;
 
@@ -1037,7 +1099,7 @@ retry:
 		    unlikely(mptso_fragment(meta_sk, skb, limit, mss_now, gfp, reinject)))
 			break;
 
-		subskb = mptcp_skb_entail(subsk, skb, reinject);
+		subskb = mptcp_skb_entail(subsk, &skb, reinject);
 		if (!subskb)
 			break;
 
@@ -1894,7 +1956,7 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
-	struct sk_buff *subskb;
+	struct sk_buff *subskb, *skb;
 	int err;
 
 	if (unlikely(meta_tp->send_mp_fclose))
@@ -1937,7 +1999,8 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 		if (!sk)
 			goto out_reset_timer;
 
-		subskb = mptcp_skb_entail(sk, tcp_write_queue_head(meta_sk), -1);
+		skb = tcp_write_queue_head(meta_sk);
+		subskb = mptcp_skb_entail(sk, &skb, -1);
 		if (!subskb)
 			goto out_reset_timer;
 		err = mptcp_retransmit_skb(sk, subskb);
@@ -1959,7 +2022,8 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 	if (!sk)
 		goto out_reset_timer;
 
-	subskb = mptcp_skb_entail(sk, tcp_write_queue_head(meta_sk), -1);
+	skb = tcp_write_queue_head(meta_sk);
+	subskb = mptcp_skb_entail(sk, &skb, -1);
 	if (!subskb)
 		goto out_reset_timer;
 	err = mptcp_retransmit_skb(sk, subskb);

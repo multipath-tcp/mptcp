@@ -357,8 +357,6 @@ extern void tcp_cwnd_validate(struct sock *sk);
 extern void tcp_event_new_data_sent(struct sock *sk, const struct sk_buff *skb);
 extern int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			    gfp_t gfp_mask);
-extern int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
-			unsigned int mss_now, gfp_t gfp);
 extern unsigned int tcp_mss_split_point(const struct sock *sk, const struct sk_buff *skb,
 					unsigned int mss_now, unsigned int cwnd);
 extern bool tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb);
@@ -423,6 +421,9 @@ extern struct sock *tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 extern void tcp_v6_reqsk_destructor(struct request_sock *req);
 
 extern void sock_valbool_flag(struct sock *sk, int bit, int valbool);
+
+extern void skb_clone_fraglist(struct sk_buff *skb);
+extern void copy_skb_header(struct sk_buff *new, const struct sk_buff *old);
 /**** END - Exports needed for MPTCP ****/
 
 extern void tcp_init_mem(struct net *net);
@@ -744,7 +745,6 @@ void tcp_send_window_probe(struct sock *sk);
 #define MPTCPHDR_SEQ64_SET	0x10 /* Did we received a 64-bit seq number */
 #define MPTCPHDR_SEQ64_OFO	0x20 /* Is it not in our circular array? */
 #define MPTCPHDR_SEQ64_INDEX	0x40 /* Index of seq in mpcb->snd_high_order */
-#define MPTCPHDR_ACK64_SET	0x80
 
 /* It is impossible, that all 8 bits of mptcp_flags are set to 1 with the above
  * Thus, defining MPTCPHDR_JOIN as 0xFF is safe.
