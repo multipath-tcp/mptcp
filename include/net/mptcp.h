@@ -598,10 +598,10 @@ extern struct workqueue_struct *mptcp_wq;
 
 #define mptcp_for_each_sk_safe(__mpcb, __sk, __temp)			\
 	for (__sk = (struct sock *)(__mpcb)->connection_list,		\
-		     __temp = __sk ? (struct sock *)tcp_sk(__sk)->mptcp->next : NULL; \
+	     __temp = __sk ? (struct sock *)tcp_sk(__sk)->mptcp->next : NULL; \
 	     __sk;							\
 	     __sk = __temp,						\
-		     __temp = __sk ? (struct sock *)tcp_sk(__sk)->mptcp->next : NULL)
+	     __temp = __sk ? (struct sock *)tcp_sk(__sk)->mptcp->next : NULL)
 
 /* Iterates over all bit set to 1 in a bitset */
 #define mptcp_for_each_bit_set(b, i)					\
