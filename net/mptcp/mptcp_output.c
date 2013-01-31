@@ -160,6 +160,40 @@ static struct mp_dss *mptcp_skb_find_dss(const struct sk_buff *skb)
 			      	      	      MPTCP_SUB_LEN_SEQ_ALIGN));
 }
 
+/* get the data-seq and end-data-seq and store them again in the
+ * tcp_skb_cb
+ */
+static int mptcp_reconstruct_mapping(struct sk_buff *skb, struct sk_buff *orig_skb)
+{
+	struct mp_dss *mpdss = mptcp_skb_find_dss(orig_skb);
+	u32 *p32;
+	u16 *p16;
+
+	if (!mpdss || !mpdss->M) {
+		__kfree_skb(skb);
+		return 1;
+	}
+
+	/* Move the pointer to the data-seq */
+	p32 = (u32 *)mpdss;
+	p32++;
+	if (mpdss->A) {
+		p32++;
+		if (mpdss->a)
+			p32++;
+	}
+
+	TCP_SKB_CB(skb)->seq = ntohl(*p32);
+
+	/* Get the data_len to calculate the end_data_seq */
+	p32++;
+	p32++;
+	p16 = (u16 *)p32;
+	TCP_SKB_CB(skb)->end_seq = ntohs(*p16) + TCP_SKB_CB(skb)->seq;
+
+	return 0;
+}
+
 /* Similar to __pskb_copy and sk_stream_alloc_skb.
  */
 static struct sk_buff *mptcp_pskb_copy(struct sk_buff *skb)
@@ -237,36 +271,8 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 	if (unlikely(!skb))
 		return -ENOBUFS;
 
-	/* get the data-seq and end-data-seq and store them again in the
-	 * tcp_skb_cb
-	 */
-	if (sk) {
-		struct mp_dss *mpdss = mptcp_skb_find_dss(orig_skb);
-		u32 *p32;
-		u16 *p16;
-
-		if (!mpdss || !mpdss->M) {
-			__kfree_skb(skb);
-			return -1;
-		}
-
-		/* Move the pointer to the data-seq */
-		p32 = (u32 *)mpdss;
-		p32++;
-		if (mpdss->A) {
-			p32++;
-			if (mpdss->a)
-				p32++;
-		}
-
-		TCP_SKB_CB(skb)->seq = ntohl(*p32);
-
-		/* Get the data_len to calculate the end_data_seq */
-		p32++;
-		p32++;
-		p16 = (u16 *)p32;
-		TCP_SKB_CB(skb)->end_seq = ntohs(*p16) + TCP_SKB_CB(skb)->seq;
-	}
+	if (sk && mptcp_reconstruct_mapping(skb, orig_skb))
+		return -1;
 
 	skb->sk = meta_sk;
 
@@ -625,6 +631,9 @@ static void mptcp_transmit_skb_failed(struct sock *sk, struct sk_buff *skb,
 			sk->sk_wmem_queued -= subskb->truesize;
 			sk_mem_uncharge(sk, subskb->truesize);
 			__skb_queue_head(&mpcb->reinject_queue, subskb);
+
+			/* subskb holds the mapping - thus we can use this one */
+			mptcp_reconstruct_mapping(subskb, subskb);
 		}
 	}
 }
