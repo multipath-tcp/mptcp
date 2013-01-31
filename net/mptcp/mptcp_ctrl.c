@@ -1550,11 +1550,10 @@ teardown:
 struct workqueue_struct *mptcp_wq;
 
 /* General initialization of mptcp */
-static int __init mptcp_init(void)
+void __init mptcp_init(void)
 {
-	int ret = -ENOMEM;
 #ifdef CONFIG_SYSCTL
-	struct ctl_table_header *mptcp_sysclt;
+	struct ctl_table_header *mptcp_sysctl;
 #endif
 
 	mptcp_sock_cache = kmem_cache_create("mptcp_sock",
@@ -1574,20 +1573,17 @@ static int __init mptcp_init(void)
 	if (!mptcp_wq)
 		goto alloc_workqueue_failed;
 
-	ret = mptcp_pm_init();
-	if (ret)
+	if (mptcp_pm_init())
 		goto mptcp_pm_failed;
 
 #ifdef CONFIG_SYSCTL
-	mptcp_sysclt = register_net_sysctl(&init_net, "net/mptcp", mptcp_table);
-	if (!mptcp_sysclt) {
-		ret = -ENOMEM;
+	mptcp_sysctl = register_net_sysctl(&init_net, "net/mptcp", mptcp_table);
+	if (!mptcp_sysctl)
 		goto register_sysctl_failed;
-	}
 #endif
 
 out:
-	return ret;
+	return;
 
 #ifdef CONFIG_SYSCTL
 register_sysctl_failed:
@@ -1599,8 +1595,4 @@ alloc_workqueue_failed:
 	kmem_cache_destroy(mptcp_cb_cache);
 mptcp_cb_cache_failed:
 	kmem_cache_destroy(mptcp_sock_cache);
-
-	goto out;
 }
-
-late_initcall(mptcp_init);
