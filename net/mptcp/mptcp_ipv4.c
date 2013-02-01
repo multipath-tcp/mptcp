@@ -452,6 +452,10 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	sk = sock.sk;
 	tp = tcp_sk(sk);
 
+	/* All subsockets need the MPTCP-lock-class */
+	lockdep_set_class_and_name(&(sk)->sk_lock.slock, &meta_slock_key, "slock-AF_INET-MPTCP");
+	lockdep_init_map(&(sk)->sk_lock.dep_map, "sk_lock-AF_INET-MPTCP", &meta_key, 0);
+
 	if (mptcp_add_sock(meta_sk, sk, rem->id, GFP_KERNEL))
 		goto error;
 

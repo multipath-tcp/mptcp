@@ -610,6 +610,9 @@ extern struct workqueue_struct *mptcp_wq;
 #define mptcp_for_each_bit_unset(b, i)					\
 	mptcp_for_each_bit_set(~b, i)
 
+extern struct lock_class_key meta_key;
+extern struct lock_class_key meta_slock_key;
+
 void mptcp_data_ready(struct sock *sk, int bytes);
 void mptcp_write_space(struct sock *sk);
 

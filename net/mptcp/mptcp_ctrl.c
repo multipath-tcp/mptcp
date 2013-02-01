@@ -439,8 +439,8 @@ int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	return ret;
 }
 
-static struct lock_class_key meta_key;
-static struct lock_class_key meta_slock_key;
+struct lock_class_key meta_key;
+struct lock_class_key meta_slock_key;
 
 /* Code heavily inspired from sk_clone() */
 static int mptcp_inherit_sk(const struct sock *sk, struct sock *newsk,
