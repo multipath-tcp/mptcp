@@ -1297,6 +1297,19 @@ adjudge_to_death:
 	sock_hold(meta_sk);
 	sock_orphan(meta_sk);
 
+	/* socket will be freed after mptcp_close - we have to prevent
+	 * access from the subflows.
+	 */
+	mptcp_for_each_sk(mpcb, sk_it) {
+		/* Similar to sock_orphan, but we don't set it DEAD, because
+		 * the callbacks are still set and must be called.
+		 */
+		write_lock_bh(&sk_it->sk_callback_lock);
+		sk_set_socket(sk_it, NULL);
+		sk_it->sk_wq  = NULL;
+		write_unlock_bh(&sk_it->sk_callback_lock);
+	}
+
 	/* It is the last release_sock in its life. It will remove backlog. */
 	release_sock(meta_sk);
 
