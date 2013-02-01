@@ -2296,9 +2296,6 @@ int tcp_disconnect(struct sock *sk, int flags)
 
 		local_bh_disable();
 		mptcp_for_each_sk_safe(tp->mpcb, subsk, tmpsk) {
-			if (tcp_sk(subsk)->send_mp_fclose)
-				continue;
-
 			/* The socket will get removed from the subsocket-list
 			 * and made non-mptcp by setting mpc to 0.
 			 *
