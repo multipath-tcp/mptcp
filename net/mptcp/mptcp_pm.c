@@ -508,18 +508,27 @@ int mptcp_do_join_short(struct sk_buff *skb, struct mptcp_options_received *mopt
 		return -1;
 	}
 
-	if ( tcp_sk(meta_sk)->mpcb->infinite_mapping) {
-		/* We are in fallback-mode - thus no new subflows!!! */
-		sock_put(meta_sk); /* Taken by mptcp_hash_find */
-		return -1;
-	}
-
 	TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_JOIN;
 
 	/* OK, this is a new syn/join, let's create a new open request and
 	 * send syn+ack
 	 */
 	bh_lock_sock(meta_sk);
+
+	/* This check is also done in mptcp_vX_do_rcv. But, there we cannot
+	 * call tcp_vX_send_reset, because we hold already two socket-locks.
+	 * (the listener and the meta from above)
+	 *
+	 * And the send-reset will try to take yet another one (ip_send_reply).
+	 * Thus, we propagate the reset up to tcp_rcv_state_process.
+	 */
+	if (tcp_sk(meta_sk)->mpcb->infinite_mapping ||
+	    meta_sk->sk_state == TCP_CLOSE || !tcp_sk(meta_sk)->inside_tk_table) {
+		bh_unlock_sock(meta_sk);
+		sock_put(meta_sk); /* Taken by mptcp_hash_find */
+		return -1;
+	}
+
 	if (sock_owned_by_user(meta_sk)) {
 		skb->sk = meta_sk;
 		TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_JOIN;
