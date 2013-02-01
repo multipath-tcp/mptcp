@@ -2303,11 +2303,18 @@ int tcp_disconnect(struct sock *sk, int flags)
 			 * that the connection is completly dead afterwards.
 			 * Thus we need to do a mptcp_del_sock. Due to this call
 			 * we have to make it non-mptcp.
+			 *
+			 * We have to lock the socket, because we set mpc to 0.
+			 * An incoming packet would take the subsocket's lock
+			 * and go on into the receive-path.
+			 * This would be a race.
 			 */
 
+			bh_lock_sock(subsk);
 			mptcp_del_sock(subsk);
 			tcp_sk(subsk)->mpc = 0;
 			mptcp_sub_force_close(subsk);
+			bh_unlock_sock(subsk);
 		}
 		local_bh_enable();
 
