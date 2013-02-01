@@ -2036,6 +2036,10 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 	if (!subskb)
 		goto out_reset_timer;
 	err = mptcp_retransmit_skb(sk, subskb);
+	if (!err)
+		mptcp_sub_event_new_data_sent(sk, subskb);
+	else
+		mptcp_transmit_skb_failed(sk, tcp_write_queue_head(meta_sk), subskb, 0);
 	if (err > 0) {
 		/* Retransmission failed because of local congestion,
 		 * do not backoff.
@@ -2047,10 +2051,6 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 					  TCP_RTO_MAX);
 		return;
 	}
-	if (!err)
-		mptcp_sub_event_new_data_sent(sk, subskb);
-	else
-		mptcp_transmit_skb_failed(sk, tcp_write_queue_head(meta_sk), subskb, 0);
 
 	/* Increase the timeout each time we retransmit.  Note that
 	 * we do not increase the rtt estimate.  rto is initialized
