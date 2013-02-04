@@ -6016,10 +6016,6 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		tp->snd_wl1 = TCP_SKB_CB(skb)->seq;
 		tcp_ack(sk, skb, FLAG_SLOWPATH);
 
-		/* Ok.. it's good. Set up sequence numbers and
-		 * move to established.
-		 */
-#ifdef CONFIG_MPTCP
 		if (tp->mpc && !is_master_tp(tp)) {
 			/* Timer for repeating the ACK until an answer
 			 * arrives. Used only when establishing an additional
@@ -6028,7 +6024,10 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			sk_reset_timer(sk, &tp->mptcp->mptcp_ack_timer,
 				       jiffies + icsk->icsk_rto);
 		}
-#endif
+
+		/* Ok.. it's good. Set up sequence numbers and
+		 * move to established.
+		 */
 		tp->rcv_nxt = TCP_SKB_CB(skb)->seq + 1;
 		tp->rcv_wup = TCP_SKB_CB(skb)->seq + 1;
 

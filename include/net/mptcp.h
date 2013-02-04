@@ -921,6 +921,7 @@ static inline void mptcp_set_rto(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sock *sk_it;
+	struct inet_connection_sock *micsk = inet_csk(mptcp_meta_sk(sk));
 	__u32 max_rto = 0;
 
 	if (!tp->mpc)
@@ -931,8 +932,12 @@ static inline void mptcp_set_rto(struct sock *sk)
 		    inet_csk(sk_it)->icsk_rto > max_rto)
 			max_rto = inet_csk(sk_it)->icsk_rto;
 	}
-	if (max_rto)
-		inet_csk(mptcp_meta_sk(sk))->icsk_rto = max_rto << 1;
+	if (max_rto) {
+		micsk->icsk_rto = max_rto << 1;
+
+		/* A successfull rto-measurement - reset backoff counter */
+		micsk->icsk_backoff = 0;
+	}
 }
 
 static inline int mptcp_sysctl_syn_retries(void)
