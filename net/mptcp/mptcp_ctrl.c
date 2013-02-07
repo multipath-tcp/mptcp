@@ -516,7 +516,6 @@ static int mptcp_inherit_sk(const struct sock *sk, struct sock *newsk,
 	newsk->sk_send_head	= NULL;
 	newsk->sk_userlocks	= sk->sk_userlocks & ~SOCK_BINDPORT_LOCK;
 
-	tcp_sk(newsk)->mpc = 0;
 	tcp_sk(newsk)->mptcp = NULL;
 
 	sock_reset_flag(newsk, SOCK_DONE);
@@ -1525,7 +1524,10 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	sk_set_socket(child, meta_sk->sk_socket);
 	child->sk_wq = meta_sk->sk_wq;
 
-	if (mptcp_add_sock(meta_sk, child, mtreq->rem_id, GFP_ATOMIC))
+	if (mptcp_add_sock(meta_sk, child, mtreq->rem_id, GFP_ATOMIC)) {
+		child_tp->mpc = 0; /* Has been inherited, but now
+				    * child_tp->mptcp is NULL
+				    */
 		/* TODO when we support acking the third ack for new subflows,
 		 * we should silently discard this third ack, by returning NULL.
 		 *
@@ -1533,6 +1535,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 		 * fully add the socket to the meta-sk.
 		 */
 		goto teardown;
+	}
 
 	/* The child is a clone of the meta socket, we must now reset
 	 * some of the fields
