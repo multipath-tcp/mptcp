@@ -682,6 +682,11 @@ int mptcp_check_rtt(const struct tcp_sock *tp, int time);
 int mptcp_check_snd_buf(const struct tcp_sock *tp);
 int mptcp_handle_options(struct sock *sk, const struct tcphdr *th, struct sk_buff *skb);
 void __init mptcp_init(void);
+int mptcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len);
+int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
+		   unsigned int mss_now, int reinject);
+int mptso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
+		   unsigned int mss_now, gfp_t gfp, int reinject);
 
 static inline void mptcp_push_pending_frames(struct sock *meta_sk)
 {
@@ -1201,6 +1206,20 @@ static inline int mptcp_handle_options(struct sock *sk,
 }
 static inline void mptcp_reset_mopt(struct tcp_sock *tp) {}
 static void  __init mptcp_init(void) {}
+static inline int mptcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
+{
+	return 0;
+}
+static int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
+			  unsigned int mss_now, int reinject)
+{
+	return 0;
+}
+static int mptso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
+			  unsigned int mss_now, gfp_t gfp, int reinject)
+{
+	return 0;
+}
 #endif /* CONFIG_MPTCP */
 
 #endif /* _MPTCP_H */
