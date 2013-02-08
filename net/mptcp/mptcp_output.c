@@ -247,8 +247,8 @@ out:
 /* Reinject data from one TCP subflow to the meta_sk. If sk == NULL, we are
  * coming from the meta-retransmit-timer
  */
-static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
-				 struct sock *sk, int clone_it)
+static void __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
+				  struct sock *sk, int clone_it)
 {
 	struct sk_buff *skb, *skb1;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
@@ -269,30 +269,30 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 		skb = orig_skb;
 	}
 	if (unlikely(!skb))
-		return -ENOBUFS;
+		return;
 
 	if (sk && mptcp_reconstruct_mapping(skb, orig_skb))
-		return -1;
+		return;
 
 	skb->sk = meta_sk;
 
 	/* If it reached already the destination, we don't have to reinject it */
 	if (!after(TCP_SKB_CB(skb)->end_seq, meta_tp->snd_una)) {
 		__kfree_skb(skb);
-		return -1;
+		return;
 	}
 
 	/* Only reinject segments that are fully covered by the mapping */
 	if (skb->len + (mptcp_is_data_fin(skb) ? 1 : 0) !=
 	    TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq) {
 		__kfree_skb(skb);
-		return 0;
+		return;
 	}
 
 	/* If it's empty, just add */
 	if (skb_queue_empty(&mpcb->reinject_queue)) {
 		skb_queue_head(&mpcb->reinject_queue, skb);
-		return 0;
+		return;
 	}
 
 	/* Find place to insert skb - or even we can 'drop' it, as the
@@ -319,7 +319,7 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 		if (!after(end_seq, TCP_SKB_CB(skb1)->end_seq)) {
 			/* All the bits are present. Don't reinject */
 			__kfree_skb(skb);
-			return 0;
+			return;
 		}
 		if (seq == TCP_SKB_CB(skb1)->seq) {
 			if (skb_queue_is_first(&mpcb->reinject_queue, skb1))
@@ -343,7 +343,7 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 		__skb_unlink(skb1, &mpcb->reinject_queue);
 		__kfree_skb(skb1);
 	}
-	return 0;
+	return;
 }
 
 /* Inserts data into the reinject queue */
@@ -369,9 +369,7 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 		    (tcb->tcp_flags & TCPHDR_FIN && mptcp_is_data_fin(skb_it) && !skb_it->len))
 			continue;
 
-		/* Go to next segment, if it failed */
-		if (__mptcp_reinject_data(skb_it, meta_sk, sk, clone_it))
-			continue;
+		__mptcp_reinject_data(skb_it, meta_sk, sk, clone_it);
 	}
 
 	skb_it = tcp_write_queue_tail(meta_sk);

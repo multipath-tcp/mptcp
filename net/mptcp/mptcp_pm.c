@@ -54,7 +54,7 @@ static inline u32 mptcp_hash_tk(u32 token)
 	return token % MPTCP_HASH_SIZE;
 }
 
-struct hlist_nulls_head tk_hashtable[MPTCP_HASH_SIZE];
+static struct hlist_nulls_head tk_hashtable[MPTCP_HASH_SIZE];
 
 /* This second hashtable is needed to retrieve request socks
  * created as a result of a join request. While the SYN contains
