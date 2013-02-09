@@ -875,7 +875,7 @@ void mptcp_del_sock(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk), *tp_prev;
 	struct mptcp_cb *mpcb;
 
-	if (!tp->mpc || !tp->mptcp->attached)
+	if (!tp->mptcp || !tp->mptcp->attached)
 		return;
 
 	if (tp->mptcp->pre_established) {
