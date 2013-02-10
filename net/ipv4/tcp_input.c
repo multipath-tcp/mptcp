@@ -4574,16 +4574,14 @@ static int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
  * Better try to coalesce them right now to avoid future collapses.
  * Returns true if caller should free @from instead of queueing it
  */
-static bool tcp_try_coalesce(struct sock *sk,
-			     struct sk_buff *to,
-			     struct sk_buff *from,
-			     bool *fragstolen)
+bool tcp_try_coalesce(struct sock *sk, struct sk_buff *to, struct sk_buff *from,
+		      bool *fragstolen)
 {
 	int delta;
 
 	*fragstolen = false;
 
-	if (tcp_sk(sk)->mpc)
+	if (tcp_sk(sk)->mpc && !is_meta_sk(sk))
 		return false;
 
 	if (tcp_hdr(from)->fin)
@@ -4729,8 +4727,8 @@ end:
 		skb_set_owner_r(skb, sk);
 }
 
-static int __must_check tcp_queue_rcv(struct sock *sk, struct sk_buff *skb, int hdrlen,
-		  bool *fragstolen)
+int __must_check tcp_queue_rcv(struct sock *sk, struct sk_buff *skb, int hdrlen,
+			       bool *fragstolen)
 {
 	int eaten;
 	struct sk_buff *tail = skb_peek_tail(&sk->sk_receive_queue);

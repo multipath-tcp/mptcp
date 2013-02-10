@@ -787,8 +787,10 @@ static int mptcp_queue_skb(struct sock *sk)
 			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 			mptcp_prepare_skb(tmp1, tmp, sk);
 			__skb_unlink(tmp1, &sk->sk_receive_queue);
-
-			skb_set_owner_r(tmp1, meta_sk);
+			/* MUST be done here, because fragstolen may be true later.
+			 * Then, kfree_skb_partial will not account the memory.
+			 */
+			skb_orphan(tmp1);
 
 			mptcp_add_meta_ofo_queue(meta_sk, tmp1, sk);
 
@@ -801,9 +803,16 @@ static int mptcp_queue_skb(struct sock *sk)
 	} else {
 		/* Ready for the meta-rcv-queue */
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
+			bool fragstolen = false;
+			u32 old_rcv_nxt = meta_tp->rcv_nxt;
+
 			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 			mptcp_prepare_skb(tmp1, tmp, sk);
 			__skb_unlink(tmp1, &sk->sk_receive_queue);
+			/* MUST be done here, because fragstolen may be true.
+			 * Then, kfree_skb_partial will not account the memory.
+			 */
+			skb_orphan(tmp1);
 
 			/* This segment has already been received */
 			if (!after(TCP_SKB_CB(tmp1)->end_seq, meta_tp->rcv_nxt)) {
@@ -820,14 +829,12 @@ static int mptcp_queue_skb(struct sock *sk)
 			    sock_owned_by_user(meta_sk))
 				eaten = mptcp_direct_copy(tmp1, tp, meta_sk);
 
-			if (!eaten) {
-				__skb_queue_tail(&meta_sk->sk_receive_queue, tmp1);
-				skb_set_owner_r(tmp1, meta_sk);
-			}
-			mptcp_check_rcvseq_wrap(meta_tp,
-						TCP_SKB_CB(tmp1)->end_seq -
-						meta_tp->rcv_nxt);
+			if (!eaten)
+				eaten = tcp_queue_rcv(meta_sk, tmp1, 0, &fragstolen);
+
 			meta_tp->rcv_nxt = TCP_SKB_CB(tmp1)->end_seq;
+
+			mptcp_check_rcvseq_wrap(meta_tp, old_rcv_nxt);
 
 			if (tcp_hdr(tmp1)->fin)
 				mptcp_fin(meta_sk);
@@ -837,7 +844,7 @@ static int mptcp_queue_skb(struct sock *sk)
 				mptcp_ofo_queue(meta_sk);
 
 			if (eaten)
-				__kfree_skb(tmp1);
+				kfree_skb_partial(tmp1, fragstolen);
 
 next:
 			if (!skb_queue_empty(&sk->sk_receive_queue) &&

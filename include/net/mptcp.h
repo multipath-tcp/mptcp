@@ -882,9 +882,10 @@ static inline void mptcp_check_sndseq_wrap(struct tcp_sock *meta_tp, int inc)
 	}
 }
 
-static inline void mptcp_check_rcvseq_wrap(struct tcp_sock *meta_tp, int inc)
+static inline void mptcp_check_rcvseq_wrap(struct tcp_sock *meta_tp,
+					   u32 old_rcv_nxt)
 {
-	if (unlikely(meta_tp->rcv_nxt > meta_tp->rcv_nxt + inc)) {
+	if (unlikely(old_rcv_nxt > meta_tp->rcv_nxt)) {
 		struct mptcp_cb *mpcb = meta_tp->mpcb;
 		mpcb->rcv_high_order[mpcb->rcv_hiseq_index] += 2;
 		mpcb->rcv_hiseq_index = mpcb->rcv_hiseq_index ? 0 : 1;
