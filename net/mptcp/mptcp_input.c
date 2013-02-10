@@ -829,7 +829,7 @@ static int mptcp_queue_skb(struct sock *sk)
 						meta_tp->rcv_nxt);
 			meta_tp->rcv_nxt = TCP_SKB_CB(tmp1)->end_seq;
 
-			if (mptcp_is_data_fin(tmp1))
+			if (tcp_hdr(tmp1)->fin)
 				mptcp_fin(meta_sk);
 
 			/* Check if this fills a gap in the ofo queue */
