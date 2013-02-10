@@ -525,9 +525,15 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 	if (tp->mptcp->mapping_present &&
 	    (data_seq != (u32)tp->mptcp->map_data_seq ||
 	     sub_seq != tp->mptcp->map_subseq ||
-	     data_len != tp->mptcp->map_data_len)) {
+	     data_len != tp->mptcp->map_data_len - (tp->mptcp->map_data_fin ? 1 : 0) ||
+	     mptcp_is_data_fin(skb) != tp->mptcp->map_data_fin)) {
 		/* Mapping in packet is different from what we want */
-		mptcp_debug("%s Mappings do not match!\n", __func__);
+		printk(KERN_ERR"%s Mappings do not match!\n", __func__);
+		printk(KERN_ERR"%s dseq %u mdseq %u, sseq %u msseq %u dlen %u mdlen %u dfin %d mdfin %d\n",
+				__func__, data_seq, (u32)tp->mptcp->map_data_seq,
+				sub_seq, tp->mptcp->map_subseq,
+				data_len, tp->mptcp->map_data_len,
+				mptcp_is_data_fin(skb), tp->mptcp->map_data_fin);
 		mptcp_send_reset(sk, skb);
 		__skb_unlink(skb, &sk->sk_receive_queue);
 		__kfree_skb(skb);
