@@ -525,9 +525,15 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 	if (tp->mptcp->mapping_present &&
 	    (data_seq != (u32)tp->mptcp->map_data_seq ||
 	     sub_seq != tp->mptcp->map_subseq ||
-	     data_len != tp->mptcp->map_data_len)) {
+	     data_len != tp->mptcp->map_data_len - (tp->mptcp->map_data_fin ? 1 : 0) ||
+	     mptcp_is_data_fin(skb) != tp->mptcp->map_data_fin)) {
 		/* Mapping in packet is different from what we want */
-		mptcp_debug("%s Mappings do not match!\n", __func__);
+		printk(KERN_ERR"%s Mappings do not match!\n", __func__);
+		printk(KERN_ERR"%s dseq %u mdseq %u, sseq %u msseq %u dlen %u mdlen %u dfin %d mdfin %d\n",
+				__func__, data_seq, (u32)tp->mptcp->map_data_seq,
+				sub_seq, tp->mptcp->map_subseq,
+				data_len, tp->mptcp->map_data_len,
+				mptcp_is_data_fin(skb), tp->mptcp->map_data_fin);
 		mptcp_send_reset(sk, skb);
 		__skb_unlink(skb, &sk->sk_receive_queue);
 		__kfree_skb(skb);
@@ -781,8 +787,10 @@ static int mptcp_queue_skb(struct sock *sk)
 			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 			mptcp_prepare_skb(tmp1, tmp, sk);
 			__skb_unlink(tmp1, &sk->sk_receive_queue);
-
-			skb_set_owner_r(tmp1, meta_sk);
+			/* MUST be done here, because fragstolen may be true later.
+			 * Then, kfree_skb_partial will not account the memory.
+			 */
+			skb_orphan(tmp1);
 
 			mptcp_add_meta_ofo_queue(meta_sk, tmp1, sk);
 
@@ -795,9 +803,16 @@ static int mptcp_queue_skb(struct sock *sk)
 	} else {
 		/* Ready for the meta-rcv-queue */
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
+			bool fragstolen = false;
+			u32 old_rcv_nxt = meta_tp->rcv_nxt;
+
 			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 			mptcp_prepare_skb(tmp1, tmp, sk);
 			__skb_unlink(tmp1, &sk->sk_receive_queue);
+			/* MUST be done here, because fragstolen may be true.
+			 * Then, kfree_skb_partial will not account the memory.
+			 */
+			skb_orphan(tmp1);
 
 			/* This segment has already been received */
 			if (!after(TCP_SKB_CB(tmp1)->end_seq, meta_tp->rcv_nxt)) {
@@ -814,16 +829,14 @@ static int mptcp_queue_skb(struct sock *sk)
 			    sock_owned_by_user(meta_sk))
 				eaten = mptcp_direct_copy(tmp1, tp, meta_sk);
 
-			if (!eaten) {
-				__skb_queue_tail(&meta_sk->sk_receive_queue, tmp1);
-				skb_set_owner_r(tmp1, meta_sk);
-			}
-			mptcp_check_rcvseq_wrap(meta_tp,
-						TCP_SKB_CB(tmp1)->end_seq -
-						meta_tp->rcv_nxt);
+			if (!eaten)
+				eaten = tcp_queue_rcv(meta_sk, tmp1, 0, &fragstolen);
+
 			meta_tp->rcv_nxt = TCP_SKB_CB(tmp1)->end_seq;
 
-			if (mptcp_is_data_fin(tmp1))
+			mptcp_check_rcvseq_wrap(meta_tp, old_rcv_nxt);
+
+			if (tcp_hdr(tmp1)->fin)
 				mptcp_fin(meta_sk);
 
 			/* Check if this fills a gap in the ofo queue */
@@ -831,7 +844,7 @@ static int mptcp_queue_skb(struct sock *sk)
 				mptcp_ofo_queue(meta_sk);
 
 			if (eaten)
-				__kfree_skb(tmp1);
+				kfree_skb_partial(tmp1, fragstolen);
 
 next:
 			if (!skb_queue_empty(&sk->sk_receive_queue) &&
@@ -1172,7 +1185,8 @@ static void mptcp_send_reset_rem_id(const struct mptcp_cb *mpcb, u8 rem_id)
 		if (tcp_sk(sk_it)->mptcp->rem_id == rem_id) {
 			mptcp_reinject_data(sk_it, 0);
 			sk_it->sk_err = ECONNRESET;
-			tcp_send_active_reset(sk_it, GFP_ATOMIC);
+			if (tcp_need_reset(sk_it->sk_state))
+				tcp_send_active_reset(sk_it, GFP_ATOMIC);
 			mptcp_sub_force_close(sk_it);
 		}
 	}
@@ -1548,13 +1562,11 @@ static inline int mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
 		struct sock *sk_it, *tmpsk;
 		mptcp->rx_opt.mp_fclose = 0;
 
-		tcp_send_active_reset(sk, GFP_ATOMIC);
+		if (tcp_need_reset(sk->sk_state))
+			tcp_send_active_reset(sk, GFP_ATOMIC);
 
-		mptcp_for_each_sk_safe(mpcb, sk_it, tmpsk) {
-			if (tmpsk && !tcp_sk(tmpsk)->mptcp)
-				printk(KERN_ERR"%s mptcp is NULL state %d\n", __func__, tmpsk->sk_state);
+		mptcp_for_each_sk_safe(mpcb, sk_it, tmpsk)
 			mptcp_sub_force_close(sk_it);
-		}
 
 		tcp_reset(meta_sk);
 

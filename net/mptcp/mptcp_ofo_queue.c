@@ -47,15 +47,30 @@ static void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
 /* Does 'skb' fits after 'here' in the queue 'head' ?
  * If yes, we queue it and return 1
  */
-static int mptcp_ofo_queue_after(struct sk_buff_head *head, struct sk_buff *skb,
-				struct sk_buff *here)
+static int mptcp_ofo_queue_after(struct sk_buff_head *head,
+				 struct sk_buff *skb, struct sk_buff *here,
+				 struct tcp_sock *tp)
 {
+	struct sock *meta_sk = tp->meta_sk;
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	u32 seq = TCP_SKB_CB(skb)->seq;
 	u32 end_seq = TCP_SKB_CB(skb)->end_seq;
 
 	/* We want to queue skb after here, thus seq >= end_seq */
 	if (before(seq, TCP_SKB_CB(here)->end_seq))
 		return 0;
+
+	if (seq == TCP_SKB_CB(here)->end_seq) {
+		bool fragstolen = false;
+
+		if (!tcp_try_coalesce(meta_sk, here, skb, &fragstolen)) {
+			__skb_queue_after(&meta_tp->out_of_order_queue, here, skb);
+			return 1;
+		} else {
+			kfree_skb_partial(skb, fragstolen);
+			return -1;
+		}
+	}
 
 	/* If here is the last one, we can always queue it */
 	if (skb_queue_is_last(head, here)) {
@@ -75,10 +90,12 @@ static int mptcp_ofo_queue_after(struct sk_buff_head *head, struct sk_buff *skb,
 	return 0;
 }
 
-static int try_shortcut(struct sk_buff *shortcut, struct sk_buff *skb,
-			struct sk_buff_head *head, struct mptcp_cb *mpcb)
+static void try_shortcut(struct sk_buff *shortcut, struct sk_buff *skb,
+			 struct sk_buff_head *head, struct tcp_sock *tp)
 {
-	struct tcp_sock *tp;
+	struct sock *meta_sk = tp->meta_sk;
+	struct tcp_sock *tp_it, *meta_tp = tcp_sk(meta_sk);
+	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	struct sk_buff *skb1, *best_shortcut = NULL;
 	u32 seq = TCP_SKB_CB(skb)->seq;
 	u32 end_seq = TCP_SKB_CB(skb)->end_seq;
@@ -88,20 +105,30 @@ static int try_shortcut(struct sk_buff *shortcut, struct sk_buff *skb,
 	if (!shortcut) {
 		if (skb_queue_empty(head)) {
 			__skb_queue_head(head, skb);
-			return 0;
+			goto end;
 		}
 	} else {
+		int ret = mptcp_ofo_queue_after(head, skb, shortcut, tp);
 		/* Does the tp's shortcut is a hit? If yes, we insert. */
-		if (mptcp_ofo_queue_after(head, skb, shortcut))
-			goto clean_covered;
+
+		if (ret) {
+			skb = (ret > 0) ? skb : NULL;
+			goto end;
+		}
 	}
 
 	/* Check the shortcuts of the other subsockets. */
-	mptcp_for_each_tp(mpcb, tp) {
-		shortcut = tp->mptcp->shortcut_ofoqueue;
+	mptcp_for_each_tp(mpcb, tp_it) {
+		shortcut = tp_it->mptcp->shortcut_ofoqueue;
 		/* Can we queue it here? If yes, do so! */
-		if (shortcut && mptcp_ofo_queue_after(head, skb, shortcut))
-			goto clean_covered;
+		if (shortcut) {
+			int ret = mptcp_ofo_queue_after(head, skb, shortcut, tp);
+
+			if (ret) {
+				skb = (ret > 0) ? skb : NULL;
+				goto end;
+			}
+		}
 
 		/* Could not queue it, check if we are close.
 		 * We are looking for a shortcut, close enough to seq to
@@ -128,9 +155,22 @@ static int try_shortcut(struct sk_buff *shortcut, struct sk_buff *skb,
 	else
 		skb1 = skb_peek_tail(head);
 
+	if (seq == TCP_SKB_CB(skb1)->end_seq) {
+		bool fragstolen = false;
+
+		if (!tcp_try_coalesce(meta_sk, skb1, skb, &fragstolen)) {
+			__skb_queue_after(&meta_tp->out_of_order_queue, skb1, skb);
+		} else {
+			kfree_skb_partial(skb, fragstolen);
+			skb = NULL;
+		}
+
+		goto end;
+	}
+
 	/* Find the insertion point, starting from best_shortcut if available.
 	 *
-	 * Inspired from tcp_data_queue.
+	 * Inspired from tcp_data_queue_ofo.
 	 */
 	while (1) {
 		/* skb1->seq <= seq */
@@ -148,7 +188,8 @@ static int try_shortcut(struct sk_buff *shortcut, struct sk_buff *skb,
 		if (!after(end_seq, TCP_SKB_CB(skb1)->end_seq)) {
 			/* All the bits are present. */
 			__kfree_skb(skb);
-			return 1;
+			skb = NULL;
+			goto end;
 		}
 		if (seq == TCP_SKB_CB(skb1)->seq) {
 			if (skb_queue_is_first(head, skb1))
@@ -162,7 +203,6 @@ static int try_shortcut(struct sk_buff *shortcut, struct sk_buff *skb,
 	else
 		__skb_queue_after(head, skb1, skb);
 
-clean_covered:
 	/* And clean segments covered by new one as whole. */
 	while (!skb_queue_is_last(head, skb)) {
 		skb1 = skb_queue_next(head, skb);
@@ -174,7 +214,14 @@ clean_covered:
 		mptcp_remove_shortcuts(mpcb, skb1);
 		__kfree_skb(skb1);
 	}
-	return 0;
+
+end:
+	if (skb) {
+		skb_set_owner_r(skb, meta_sk);
+		tp->mptcp->shortcut_ofoqueue = skb;
+	}
+
+	return;
 }
 
 /**
@@ -183,15 +230,10 @@ clean_covered:
 void mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
 			      struct sock *sk)
 {
-	int ans;
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	ans = try_shortcut(tp->mptcp->shortcut_ofoqueue, skb,
-			   &tcp_sk(meta_sk)->out_of_order_queue, tp->mpcb);
-
-	/* update the shortcut pointer in @sk */
-	if (!ans)
-		tp->mptcp->shortcut_ofoqueue = skb;
+	try_shortcut(tp->mptcp->shortcut_ofoqueue, skb,
+		     &tcp_sk(meta_sk)->out_of_order_queue, tp);
 }
 
 void mptcp_ofo_queue(struct sock *meta_sk)
@@ -200,6 +242,7 @@ void mptcp_ofo_queue(struct sock *meta_sk)
 	struct sk_buff *skb;
 
 	while ((skb = skb_peek(&meta_tp->out_of_order_queue)) != NULL) {
+		u32 old_rcv_nxt = meta_tp->rcv_nxt;
 		if (after(TCP_SKB_CB(skb)->seq, meta_tp->rcv_nxt))
 			break;
 
@@ -214,11 +257,10 @@ void mptcp_ofo_queue(struct sock *meta_sk)
 		mptcp_remove_shortcuts(meta_tp->mpcb, skb);
 
 		__skb_queue_tail(&meta_sk->sk_receive_queue, skb);
-		mptcp_check_rcvseq_wrap(meta_tp, TCP_SKB_CB(skb)->end_seq -
-						 meta_tp->rcv_nxt);
 		meta_tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
+		mptcp_check_rcvseq_wrap(meta_tp, old_rcv_nxt);
 
-		if (mptcp_is_data_fin(skb))
+		if (tcp_hdr(skb)->fin)
 			mptcp_fin(meta_sk);
 	}
 }

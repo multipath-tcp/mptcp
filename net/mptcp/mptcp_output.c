@@ -160,6 +160,38 @@ static struct mp_dss *mptcp_skb_find_dss(const struct sk_buff *skb)
 			      	      	      MPTCP_SUB_LEN_SEQ_ALIGN));
 }
 
+/* get the data-seq and end-data-seq and store them again in the
+ * tcp_skb_cb
+ */
+static int mptcp_reconstruct_mapping(struct sk_buff *skb, struct sk_buff *orig_skb)
+{
+	struct mp_dss *mpdss = mptcp_skb_find_dss(orig_skb);
+	u32 *p32;
+	u16 *p16;
+
+	if (!mpdss || !mpdss->M)
+		return 1;
+
+	/* Move the pointer to the data-seq */
+	p32 = (u32 *)mpdss;
+	p32++;
+	if (mpdss->A) {
+		p32++;
+		if (mpdss->a)
+			p32++;
+	}
+
+	TCP_SKB_CB(skb)->seq = ntohl(*p32);
+
+	/* Get the data_len to calculate the end_data_seq */
+	p32++;
+	p32++;
+	p16 = (u16 *)p32;
+	TCP_SKB_CB(skb)->end_seq = ntohs(*p16) + TCP_SKB_CB(skb)->seq;
+
+	return 0;
+}
+
 /* Similar to __pskb_copy and sk_stream_alloc_skb.
  */
 static struct sk_buff *mptcp_pskb_copy(struct sk_buff *skb)
@@ -213,8 +245,8 @@ out:
 /* Reinject data from one TCP subflow to the meta_sk. If sk == NULL, we are
  * coming from the meta-retransmit-timer
  */
-static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
-				 struct sock *sk, int clone_it)
+static void __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
+				  struct sock *sk, int clone_it)
 {
 	struct sk_buff *skb, *skb1;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
@@ -235,37 +267,11 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 		skb = orig_skb;
 	}
 	if (unlikely(!skb))
-		return -ENOBUFS;
+		return;
 
-	/* get the data-seq and end-data-seq and store them again in the
-	 * tcp_skb_cb
-	 */
-	if (sk) {
-		struct mp_dss *mpdss = mptcp_skb_find_dss(orig_skb);
-		u32 *p32;
-		u16 *p16;
-
-		if (!mpdss || !mpdss->M) {
-			__kfree_skb(skb);
-			return -1;
-		}
-
-		/* Move the pointer to the data-seq */
-		p32 = (u32 *)mpdss;
-		p32++;
-		if (mpdss->A) {
-			p32++;
-			if (mpdss->a)
-				p32++;
-		}
-
-		TCP_SKB_CB(skb)->seq = ntohl(*p32);
-
-		/* Get the data_len to calculate the end_data_seq */
-		p32++;
-		p32++;
-		p16 = (u16 *)p32;
-		TCP_SKB_CB(skb)->end_seq = ntohs(*p16) + TCP_SKB_CB(skb)->seq;
+	if (sk && mptcp_reconstruct_mapping(skb, orig_skb)) {
+		__kfree_skb(skb);
+		return;
 	}
 
 	skb->sk = meta_sk;
@@ -273,20 +279,37 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 	/* If it reached already the destination, we don't have to reinject it */
 	if (!after(TCP_SKB_CB(skb)->end_seq, meta_tp->snd_una)) {
 		__kfree_skb(skb);
-		return -1;
+		return;
 	}
 
 	/* Only reinject segments that are fully covered by the mapping */
 	if (skb->len + (mptcp_is_data_fin(skb) ? 1 : 0) !=
 	    TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq) {
+		u32 seq = TCP_SKB_CB(skb)->seq;
+		u32 end_seq = TCP_SKB_CB(skb)->end_seq;
+
 		__kfree_skb(skb);
-		return 0;
+
+		/* Ok, now we have to look for the full mapping in the meta
+		 * send-queue :S
+		 */
+		tcp_for_write_queue(skb, meta_sk) {
+			/* Not yet at the mapping? */
+			if (before(TCP_SKB_CB(skb)->seq, seq))
+				continue;
+			/* We have passed by the mapping */
+			if (after(TCP_SKB_CB(skb)->end_seq, end_seq))
+				return;
+
+			__mptcp_reinject_data(skb, meta_sk, NULL, 1);
+		}
+		return;
 	}
 
 	/* If it's empty, just add */
 	if (skb_queue_empty(&mpcb->reinject_queue)) {
 		skb_queue_head(&mpcb->reinject_queue, skb);
-		return 0;
+		return;
 	}
 
 	/* Find place to insert skb - or even we can 'drop' it, as the
@@ -313,7 +336,7 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 		if (!after(end_seq, TCP_SKB_CB(skb1)->end_seq)) {
 			/* All the bits are present. Don't reinject */
 			__kfree_skb(skb);
-			return 0;
+			return;
 		}
 		if (seq == TCP_SKB_CB(skb1)->seq) {
 			if (skb_queue_is_first(&mpcb->reinject_queue, skb1))
@@ -337,7 +360,7 @@ static int __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
 		__skb_unlink(skb1, &mpcb->reinject_queue);
 		__kfree_skb(skb1);
 	}
-	return 0;
+	return;
 }
 
 /* Inserts data into the reinject queue */
@@ -363,9 +386,7 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 		    (tcb->tcp_flags & TCPHDR_FIN && mptcp_is_data_fin(skb_it) && !skb_it->len))
 			continue;
 
-		/* Go to next segment, if it failed */
-		if (__mptcp_reinject_data(skb_it, meta_sk, sk, clone_it))
-			continue;
+		__mptcp_reinject_data(skb_it, meta_sk, sk, clone_it);
 	}
 
 	skb_it = tcp_write_queue_tail(meta_sk);
@@ -625,6 +646,9 @@ static void mptcp_transmit_skb_failed(struct sock *sk, struct sk_buff *skb,
 			sk->sk_wmem_queued -= subskb->truesize;
 			sk_mem_uncharge(sk, subskb->truesize);
 			__skb_queue_head(&mpcb->reinject_queue, subskb);
+
+			/* subskb holds the mapping - thus we can use this one */
+			mptcp_reconstruct_mapping(subskb, subskb);
 		}
 	}
 }
@@ -634,26 +658,37 @@ static void mptcp_transmit_skb_failed(struct sock *sk, struct sk_buff *skb,
  * packet to the list.  This won't be called frequently, I hope.
  * Remember, these are still headerless SKBs at this point.
  */
-static int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
-			  unsigned int mss_now, int reinject)
+int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
+		   unsigned int mss_now, int reinject)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *buff;
 	int nsize, old_factor;
 	int nlen;
 	u8 flags;
+	int dsslen = MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_ACK_ALIGN +
+		     MPTCP_SUB_LEN_SEQ_ALIGN;
+	char *dss[dsslen];
 
 	if (WARN_ON(len > skb->len))
 		return -EINVAL;
+
+	/* DSS-option must be recovered afterwards. */
+	if (!is_meta_sk(sk))
+		memcpy(dss, skb->data - dsslen, dsslen);
 
 	nsize = skb_headlen(skb) - len;
 	if (nsize < 0)
 		nsize = 0;
 
 	if (skb_cloned(skb) &&
-	    skb_is_nonlinear(skb) &&
-	    pskb_expand_head(skb, 0, 0, GFP_ATOMIC))
-		return -ENOMEM;
+	    skb_is_nonlinear(skb)) {
+		if (pskb_expand_head(skb, 0, 0, GFP_ATOMIC))
+			return -ENOMEM;
+		/* Recover dss-option */
+		if (!is_meta_sk(sk))
+			memcpy(skb->data - dsslen, dss, dsslen);
+	}
 
 	/* Get a new skb... force flag on. */
 	buff = sk_stream_alloc_skb(sk, nsize, GFP_ATOMIC);
@@ -700,6 +735,10 @@ static int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 		skb_split(skb, buff, len);
 	}
 
+	/* We lost the dss-option when creating buff - put it back! */
+	if (!is_meta_sk(sk))
+		memcpy(buff->data - dsslen, dss, dsslen);
+
 	buff->ip_summed = skb->ip_summed;
 
 	/* Looks stupid, but our code really uses when of
@@ -735,13 +774,14 @@ static int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	return 0;
 }
 
-static int mptso_fragment(struct sock *sk, struct sk_buff *skb,
-			  unsigned int len, unsigned int mss_now, gfp_t gfp,
-			  int reinject)
+int mptso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
+		   unsigned int mss_now, gfp_t gfp, int reinject)
 {
 	struct sk_buff *buff;
 	int nlen = skb->len - len, old_factor;
 	u8 flags;
+	int dsslen = MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_ACK_ALIGN +
+		     MPTCP_SUB_LEN_SEQ_ALIGN;
 
 	/* All of a TSO frame must be composed of paged data.  */
 	if (skb->len != skb->data_len)
@@ -780,6 +820,10 @@ static int mptso_fragment(struct sock *sk, struct sk_buff *skb,
 
 	buff->ip_summed = skb->ip_summed = CHECKSUM_PARTIAL;
 	skb_split(skb, buff, len);
+
+	/* We lost the dss-option when creating buff - put it back! */
+	if (!is_meta_sk(sk))
+		memcpy(buff->data - dsslen, skb->data - dsslen, dsslen);
 
 	old_factor = tcp_skb_pcount(skb);
 
@@ -1748,7 +1792,8 @@ found:
 			continue;
 
 		sk_it->sk_err = ECONNRESET;
-		tcp_send_active_reset(sk_it, GFP_ATOMIC);
+		if (tcp_need_reset(sk_it->sk_state))
+			tcp_send_active_reset(sk_it, GFP_ATOMIC);
 		mptcp_sub_force_close(sk_it);
 	}
 	if (!in_serving_softirq())
@@ -2027,6 +2072,10 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 	if (!subskb)
 		goto out_reset_timer;
 	err = mptcp_retransmit_skb(sk, subskb);
+	if (!err)
+		mptcp_sub_event_new_data_sent(sk, subskb);
+	else
+		mptcp_transmit_skb_failed(sk, tcp_write_queue_head(meta_sk), subskb, 0);
 	if (err > 0) {
 		/* Retransmission failed because of local congestion,
 		 * do not backoff.
@@ -2038,10 +2087,6 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 					  TCP_RTO_MAX);
 		return;
 	}
-	if (!err)
-		mptcp_sub_event_new_data_sent(sk, subskb);
-	else
-		mptcp_transmit_skb_failed(sk, tcp_write_queue_head(meta_sk), subskb, 0);
 
 	/* Increase the timeout each time we retransmit.  Note that
 	 * we do not increase the rtt estimate.  rto is initialized
@@ -2177,4 +2222,45 @@ int mptcp_check_snd_buf(const struct tcp_sock *tp)
 
 	return max_t(unsigned int, (u32)(bw_est >> 16),
 			tp->reordering + 1);
+}
+
+/* Similar to tcp_trim_head - but we correctly copy the DSS-option */
+int mptcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
+{
+	int dsslen = MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_ACK_ALIGN +
+		     MPTCP_SUB_LEN_SEQ_ALIGN;
+	char *dss[dsslen];
+
+	/* DSS-option must be recovered afterwards. */
+	memcpy(dss, skb->data - dsslen, dsslen);
+
+	if (skb_cloned(skb)) {
+		/* pskb_expand_head will delete our DSS-option. We have to copy
+		 * it back if pskb_expand_head succeeds.
+		 */
+
+		if (pskb_expand_head(skb, 0, 0, GFP_ATOMIC))
+			return -ENOMEM;
+
+		memcpy(skb->data - dsslen, dss, dsslen);
+	}
+
+	__pskb_trim_head(skb, len);
+
+	/* Put the DSS-option back in our header */
+	memcpy(skb->data - dsslen, dss, dsslen);
+
+	TCP_SKB_CB(skb)->seq += len;
+	skb->ip_summed = CHECKSUM_PARTIAL;
+
+	skb->truesize	     -= len;
+	sk->sk_wmem_queued   -= len;
+	sk_mem_uncharge(sk, len);
+	sock_set_flag(sk, SOCK_QUEUE_SHRUNK);
+
+	/* Any change of skb->len requires recalculation of tso factor. */
+	if (tcp_skb_pcount(skb) > 1)
+		tcp_set_skb_tso_segs(sk, skb, tcp_skb_mss(skb));
+
+	return 0;
 }

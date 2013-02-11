@@ -610,6 +610,9 @@ extern struct workqueue_struct *mptcp_wq;
 #define mptcp_for_each_bit_unset(b, i)					\
 	mptcp_for_each_bit_set(~b, i)
 
+extern struct lock_class_key meta_key;
+extern struct lock_class_key meta_slock_key;
+
 void mptcp_data_ready(struct sock *sk, int bytes);
 void mptcp_write_space(struct sock *sk);
 
@@ -678,6 +681,12 @@ void mptcp_set_keepalive(struct sock *sk, int val);
 int mptcp_check_rtt(const struct tcp_sock *tp, int time);
 int mptcp_check_snd_buf(const struct tcp_sock *tp);
 int mptcp_handle_options(struct sock *sk, const struct tcphdr *th, struct sk_buff *skb);
+void __init mptcp_init(void);
+int mptcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len);
+int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
+		   unsigned int mss_now, int reinject);
+int mptso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
+		   unsigned int mss_now, gfp_t gfp, int reinject);
 
 static inline void mptcp_push_pending_frames(struct sock *meta_sk)
 {
@@ -873,9 +882,10 @@ static inline void mptcp_check_sndseq_wrap(struct tcp_sock *meta_tp, int inc)
 	}
 }
 
-static inline void mptcp_check_rcvseq_wrap(struct tcp_sock *meta_tp, int inc)
+static inline void mptcp_check_rcvseq_wrap(struct tcp_sock *meta_tp,
+					   u32 old_rcv_nxt)
 {
-	if (unlikely(meta_tp->rcv_nxt > meta_tp->rcv_nxt + inc)) {
+	if (unlikely(old_rcv_nxt > meta_tp->rcv_nxt)) {
 		struct mptcp_cb *mpcb = meta_tp->mpcb;
 		mpcb->rcv_high_order[mpcb->rcv_hiseq_index] += 2;
 		mpcb->rcv_hiseq_index = mpcb->rcv_hiseq_index ? 0 : 1;
@@ -917,6 +927,7 @@ static inline void mptcp_set_rto(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sock *sk_it;
+	struct inet_connection_sock *micsk = inet_csk(mptcp_meta_sk(sk));
 	__u32 max_rto = 0;
 
 	if (!tp->mpc)
@@ -927,8 +938,12 @@ static inline void mptcp_set_rto(struct sock *sk)
 		    inet_csk(sk_it)->icsk_rto > max_rto)
 			max_rto = inet_csk(sk_it)->icsk_rto;
 	}
-	if (max_rto)
-		inet_csk(mptcp_meta_sk(sk))->icsk_rto = max_rto << 1;
+	if (max_rto) {
+		micsk->icsk_rto = max_rto << 1;
+
+		/* A successfull rto-measurement - reset backoff counter */
+		micsk->icsk_backoff = 0;
+	}
 }
 
 static inline int mptcp_sysctl_syn_retries(void)
@@ -1031,7 +1046,6 @@ static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
 	return sk->sk_family == AF_INET6 &&
 		ipv6_addr_type(&inet6_sk(sk)->saddr) == IPV6_ADDR_MAPPED;
 }
-
 #else /* CONFIG_MPTCP */
 #define mptcp_debug(fmt, args...)	\
 	do {				\
@@ -1192,6 +1206,21 @@ static inline int mptcp_handle_options(struct sock *sk,
 	return 0;
 }
 static inline void mptcp_reset_mopt(struct tcp_sock *tp) {}
+static void  __init mptcp_init(void) {}
+static inline int mptcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
+{
+	return 0;
+}
+static int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
+			  unsigned int mss_now, int reinject)
+{
+	return 0;
+}
+static int mptso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
+			  unsigned int mss_now, gfp_t gfp, int reinject)
+{
+	return 0;
+}
 #endif /* CONFIG_MPTCP */
 
 #endif /* _MPTCP_H */
