@@ -455,8 +455,8 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 		int ret = mptcp_fallback_infinite(tp, skb);
 
 		if (ret & MPTCP_FLAG_SEND_RESET) {
-			mptcp_send_reset(sk, skb);
 			__skb_unlink(skb, &sk->sk_receive_queue);
+			mptcp_send_reset(sk, skb);
 			__kfree_skb(skb);
 			return 1;
 		} else {
@@ -534,8 +534,8 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 				sub_seq, tp->mptcp->map_subseq,
 				data_len, tp->mptcp->map_data_len,
 				mptcp_is_data_fin(skb), tp->mptcp->map_data_fin);
-		mptcp_send_reset(sk, skb);
 		__skb_unlink(skb, &sk->sk_receive_queue);
+		mptcp_send_reset(sk, skb);
 		__kfree_skb(skb);
 		return 1;
 	}
