@@ -2051,7 +2051,8 @@ void tcp_v4_destroy_sock(struct sock *sk)
 		/* mptcp_del_sock MUST be before tcp_write_queue_purge because
 		 * we try to reinject
 		 */
-		mptcp_del_sock(sk);
+		if (tp->mpc)
+			mptcp_del_sock(sk);
 
 		/* Cleanup up the write buffer. */
 		tcp_write_queue_purge(sk);

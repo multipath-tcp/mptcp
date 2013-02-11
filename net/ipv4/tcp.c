@@ -2242,15 +2242,6 @@ out:
 }
 EXPORT_SYMBOL(tcp_close);
 
-/* These states need RST on ABORT according to RFC793 */
-
-static inline bool tcp_need_reset(int state)
-{
-	return (1 << state) &
-	       (TCPF_ESTABLISHED | TCPF_CLOSE_WAIT | TCPF_FIN_WAIT1 |
-		TCPF_FIN_WAIT2 | TCPF_SYN_RECV);
-}
-
 int tcp_disconnect(struct sock *sk, int flags)
 {
 	struct inet_sock *inet = inet_sk(sk);
@@ -2305,9 +2296,6 @@ int tcp_disconnect(struct sock *sk, int flags)
 
 		local_bh_disable();
 		mptcp_for_each_sk_safe(tp->mpcb, subsk, tmpsk) {
-			if (tcp_sk(subsk)->send_mp_fclose)
-				continue;
-
 			/* The socket will get removed from the subsocket-list
 			 * and made non-mptcp by setting mpc to 0.
 			 *
@@ -2315,11 +2303,18 @@ int tcp_disconnect(struct sock *sk, int flags)
 			 * that the connection is completly dead afterwards.
 			 * Thus we need to do a mptcp_del_sock. Due to this call
 			 * we have to make it non-mptcp.
+			 *
+			 * We have to lock the socket, because we set mpc to 0.
+			 * An incoming packet would take the subsocket's lock
+			 * and go on into the receive-path.
+			 * This would be a race.
 			 */
 
+			bh_lock_sock(subsk);
 			mptcp_del_sock(subsk);
 			tcp_sk(subsk)->mpc = 0;
 			mptcp_sub_force_close(subsk);
+			bh_unlock_sock(subsk);
 		}
 		local_bh_enable();
 

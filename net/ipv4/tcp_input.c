@@ -4574,16 +4574,14 @@ static int tcp_try_rmem_schedule(struct sock *sk, unsigned int size)
  * Better try to coalesce them right now to avoid future collapses.
  * Returns true if caller should free @from instead of queueing it
  */
-static bool tcp_try_coalesce(struct sock *sk,
-			     struct sk_buff *to,
-			     struct sk_buff *from,
-			     bool *fragstolen)
+bool tcp_try_coalesce(struct sock *sk, struct sk_buff *to, struct sk_buff *from,
+		      bool *fragstolen)
 {
 	int delta;
 
 	*fragstolen = false;
 
-	if (tcp_sk(sk)->mpc)
+	if (tcp_sk(sk)->mpc && !is_meta_sk(sk))
 		return false;
 
 	if (tcp_hdr(from)->fin)
@@ -4729,8 +4727,8 @@ end:
 		skb_set_owner_r(skb, sk);
 }
 
-static int __must_check tcp_queue_rcv(struct sock *sk, struct sk_buff *skb, int hdrlen,
-		  bool *fragstolen)
+int __must_check tcp_queue_rcv(struct sock *sk, struct sk_buff *skb, int hdrlen,
+			       bool *fragstolen)
 {
 	int eaten;
 	struct sk_buff *tail = skb_peek_tail(&sk->sk_receive_queue);
@@ -6016,10 +6014,6 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		tp->snd_wl1 = TCP_SKB_CB(skb)->seq;
 		tcp_ack(sk, skb, FLAG_SLOWPATH);
 
-		/* Ok.. it's good. Set up sequence numbers and
-		 * move to established.
-		 */
-#ifdef CONFIG_MPTCP
 		if (tp->mpc && !is_master_tp(tp)) {
 			/* Timer for repeating the ACK until an answer
 			 * arrives. Used only when establishing an additional
@@ -6028,7 +6022,10 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			sk_reset_timer(sk, &tp->mptcp->mptcp_ack_timer,
 				       jiffies + icsk->icsk_rto);
 		}
-#endif
+
+		/* Ok.. it's good. Set up sequence numbers and
+		 * move to established.
+		 */
 		tp->rcv_nxt = TCP_SKB_CB(skb)->seq + 1;
 		tp->rcv_wup = TCP_SKB_CB(skb)->seq + 1;
 
