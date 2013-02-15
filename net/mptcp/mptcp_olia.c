@@ -27,11 +27,11 @@
 static int scale = 10;
 
 struct mptcp_olia {
-	u32 	mptcp_loss1;
-	u32 	mptcp_loss2;
-	u32 	mptcp_loss3;
+	u32	mptcp_loss1;
+	u32	mptcp_loss2;
+	u32	mptcp_loss3;
 	int	epsilon_num;
-	u32     epsilon_den;
+	u32	epsilon_den;
 	int	mptcp_snd_cwnd_cnt;
 	u32	mptcp_previous_cwnd;
 	u32	mptcp_ssthresh;
@@ -61,7 +61,7 @@ static u32 mptcp_get_crt_cwnd(struct sock *sk)
 }
 
 /* return the dominator of the first term of  the increasing term */
-static u64 mptcp_get_rate(struct mptcp_cb* mpcb , u32 path_rtt)
+static u64 mptcp_get_rate(struct mptcp_cb *mpcb , u32 path_rtt)
 {
 	struct sock *sk;
 	u64 rate = 1; /* We have to avoid a zero-rate because it is used as a divisor */
@@ -83,7 +83,7 @@ static u64 mptcp_get_rate(struct mptcp_cb* mpcb , u32 path_rtt)
 }
 
 /* find the maximum cwnd, used to find set M */
-static u32 mptcp_get_max_cwnd(struct mptcp_cb* mpcb)
+static u32 mptcp_get_max_cwnd(struct mptcp_cb *mpcb)
 {
 	struct sock *sk;
 	u32 best_cwnd = 0;
@@ -101,7 +101,7 @@ static u32 mptcp_get_max_cwnd(struct mptcp_cb* mpcb)
 	return best_cwnd;
 }
 
-static void mptcp_get_epsilon(struct mptcp_cb* mpcb)
+static void mptcp_get_epsilon(struct mptcp_cb *mpcb)
 {
 	struct mptcp_olia *ca;
 	struct tcp_sock *tp;
@@ -128,7 +128,7 @@ static void mptcp_get_epsilon(struct mptcp_cb* mpcb)
 			      ca->mptcp_loss2 - ca->mptcp_loss1);
 
 		tmp_cwnd = mptcp_get_crt_cwnd(sk);
-		if (tmp_int * best_rtt >= best_int * tmp_rtt){
+		if (tmp_int * best_rtt >= best_int * tmp_rtt) {
 			best_rtt = tmp_rtt;
 			best_int = tmp_int;
 			best_cwnd = tmp_cwnd;
@@ -145,7 +145,7 @@ static void mptcp_get_epsilon(struct mptcp_cb* mpcb)
 			continue;
 
 		tmp_cwnd = mptcp_get_crt_cwnd(sk);
-		if (tmp_cwnd == max_cwnd){
+		if (tmp_cwnd == max_cwnd) {
 			M++;
 		} else {
 			tmp_rtt = tp->srtt * tp->srtt;
@@ -165,7 +165,7 @@ static void mptcp_get_epsilon(struct mptcp_cb* mpcb)
 		if (!mptcp_olia_sk_can_send(sk))
 			continue;
 
-		if (B_not_M == 0){
+		if (B_not_M == 0) {
 			ca->epsilon_num = 0;
 			ca->epsilon_den = 1;
 		} else {
@@ -178,7 +178,7 @@ static void mptcp_get_epsilon(struct mptcp_cb* mpcb)
 			    tmp_int * best_rtt == best_int * tmp_rtt){
 				ca->epsilon_num = 1;
 				ca->epsilon_den = mpcb->cnt_established * B_not_M;
-			} else if (tmp_cwnd == max_cwnd){
+			} else if (tmp_cwnd == max_cwnd) {
 				ca->epsilon_num = -1;
 				ca->epsilon_den = mpcb->cnt_established  * M;
 			} else {
@@ -220,8 +220,7 @@ static void mptcp_olia_set_state(struct sock *sk, u8 new_state)
 		struct mptcp_olia *ca = inet_csk_ca(sk);
 		struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 
-		if (ca->mptcp_loss3 != ca->mptcp_loss2 && !inet_csk(sk)->icsk_retransmits)
-		{
+		if (ca->mptcp_loss3 != ca->mptcp_loss2 && !inet_csk(sk)->icsk_retransmits) {
 			ca->mptcp_loss1 = ca->mptcp_loss2;
 			ca->mptcp_loss2 = ca->mptcp_loss3;
 
@@ -257,13 +256,13 @@ static void mptcp_olia_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 
 	ca->mptcp_loss3 = tp->snd_una;
 
-	if (!tcp_is_cwnd_limited(sk, in_flight)){
+	if (!tcp_is_cwnd_limited(sk, in_flight)) {
 		ca->mptcp_previous_cwnd = tp->snd_cwnd;
 		return;
 	}
 
 	/* slow start if it is in the safe area */
-	if (tp->snd_cwnd <= ssthresh){
+	if (tp->snd_cwnd <= ssthresh) {
 		tcp_slow_start(tp);
 		ca->mptcp_previous_cwnd = tp->snd_cwnd;
 		return;
@@ -275,7 +274,7 @@ static void mptcp_olia_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 	inc_den = ca->epsilon_den * tp->snd_cwnd * rate;
 
 	/* calculate the increasing term, scaling is used to reduce the rounding effect */
-	if (ca->epsilon_num == -1){
+	if (ca->epsilon_num == -1) {
 		if (ca->epsilon_den * cwnd_scaled * cwnd_scaled < rate) {
 			inc_num = rate - ca->epsilon_den *
 				cwnd_scaled * cwnd_scaled;
@@ -302,11 +301,11 @@ static void mptcp_olia_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 				tp->snd_cwnd++;
 		}
 	} else {
-		if (ca->mptcp_snd_cwnd_cnt >= (1 << scale) - 1){
+		if (ca->mptcp_snd_cwnd_cnt >= (1 << scale) - 1) {
 			if (tp->snd_cwnd < tp->snd_cwnd_clamp)
 				tp->snd_cwnd++;
 			ca->mptcp_snd_cwnd_cnt = 0;
-		} else if (ca->mptcp_snd_cwnd_cnt <= 0 - (1 << scale) + 1){
+		} else if (ca->mptcp_snd_cwnd_cnt <= 0 - (1 << scale) + 1) {
 			tp->snd_cwnd = max((int) 1 , (int) tp->snd_cwnd - 1);
 			ca->mptcp_snd_cwnd_cnt = 0;
 		}

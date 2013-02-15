@@ -5873,8 +5873,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 					(u32 *)hash_mac_check);
 			if (memcmp(hash_mac_check,
 				   (char *)&tp->mptcp->rx_opt.mptcp_recv_tmac, 8)) {
-				sock_orphan(sk);
-				tp->mptcp->teardown = 1;
+				mptcp_sub_force_close(sk);
 				goto reset_and_undo;
 			}
 

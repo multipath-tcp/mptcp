@@ -455,8 +455,8 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 		int ret = mptcp_fallback_infinite(tp, skb);
 
 		if (ret & MPTCP_FLAG_SEND_RESET) {
-			mptcp_send_reset(sk, skb);
 			__skb_unlink(skb, &sk->sk_receive_queue);
+			mptcp_send_reset(sk, skb);
 			__kfree_skb(skb);
 			return 1;
 		} else {
@@ -534,8 +534,8 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 				sub_seq, tp->mptcp->map_subseq,
 				data_len, tp->mptcp->map_data_len,
 				mptcp_is_data_fin(skb), tp->mptcp->map_data_fin);
-		mptcp_send_reset(sk, skb);
 		__skb_unlink(skb, &sk->sk_receive_queue);
+		mptcp_send_reset(sk, skb);
 		__kfree_skb(skb);
 		return 1;
 	}
@@ -736,7 +736,7 @@ static int mptcp_queue_skb(struct sock *sk)
 	struct mptcp_cb *mpcb = tp->mpcb;
 	struct sk_buff *tmp, *tmp1;
 	u64 rcv_nxt64 = mptcp_get_rcv_nxt_64(meta_tp);
-	int eaten = 0;
+	bool data_queued = false;
 
 	/* Have we not yet received the full mapping? */
 	if (!tp->mptcp->mapping_present ||
@@ -803,6 +803,7 @@ static int mptcp_queue_skb(struct sock *sk)
 	} else {
 		/* Ready for the meta-rcv-queue */
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
+			int eaten = 0;
 			bool fragstolen = false;
 			u32 old_rcv_nxt = meta_tp->rcv_nxt;
 
@@ -820,7 +821,6 @@ static int mptcp_queue_skb(struct sock *sk)
 				goto next;
 			}
 
-			eaten = 0;
 			/* Is direct copy possible ? */
 			if (TCP_SKB_CB(tmp1)->seq == meta_tp->rcv_nxt &&
 			    meta_tp->ucopy.task == current &&
@@ -846,6 +846,7 @@ static int mptcp_queue_skb(struct sock *sk)
 			if (eaten)
 				kfree_skb_partial(tmp1, fragstolen);
 
+			data_queued = true;
 next:
 			if (!skb_queue_empty(&sk->sk_receive_queue) &&
 			    !before(TCP_SKB_CB(tmp)->seq,
@@ -858,7 +859,7 @@ next:
 	tp->mptcp->last_data_seq = tp->mptcp->map_data_seq;
 	mptcp_reset_mapping(tp);
 
-	return !eaten ? -1 : -2;
+	return data_queued ? -1 : -2;
 }
 
 void mptcp_data_ready(struct sock *sk, int bytes)
@@ -1505,7 +1506,7 @@ static void mptcp_parse_addropt(const struct sk_buff *skb, struct sock *sk)
 			if (opsize > length)
 				return;  /* don't parse partial options */
 			if (opcode == TCPOPT_MPTCP &&
-			    ((struct mptcp_option *)ptr	)->sub == MPTCP_SUB_ADD_ADDR) {
+			    ((struct mptcp_option *)ptr)->sub == MPTCP_SUB_ADD_ADDR) {
 				struct mp_add_addr *mpadd = (struct mp_add_addr *) ptr;
 
 #if IS_ENABLED(CONFIG_IPV6)

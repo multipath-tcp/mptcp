@@ -571,8 +571,8 @@ struct tcp_sock {
 		inside_tk_table:1, /* Is the tcp_sock inside the token-table? */
 		send_mp_fclose:1,
 		request_mptcp:1, /* Did we send out an MP_CAPABLE?
-				    * (this speeds up mptcp_doit() in tcp_recvmsg)
-				    */
+				  * (this speeds up mptcp_doit() in tcp_recvmsg)
+				  */
 		pf:1, /* Potentially Failed state: when this flag is set, we
 		       * stop using the subflow
 		       */
@@ -580,7 +580,7 @@ struct tcp_sock {
 		mptcp_add_addr_ack:1,	/* Tell tcp_send_ack to return in case
 					 * alloc_skb fails. */
 		was_meta_sk:1,	/* This was a meta sk (in case of reuse) */
-		close_it:1,	/* Should this socket get closed by mptcp_data_ready? */
+		close_it:1,	/* Must close socket in mptcp_data_ready? */
 		closing:1;
 	struct mptcp_tcp_sock *mptcp;
 #ifdef CONFIG_MPTCP

@@ -99,7 +99,7 @@ static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req
 				  struct request_values *rvp, u16 queue_mapping)
 {
 	struct inet6_request_sock *treq = inet6_rsk(req);
-	struct sk_buff * skb;
+	struct sk_buff *skb;
 	struct flowi6 fl6;
 	struct dst_entry *dst;
 	int err;
@@ -594,7 +594,7 @@ struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *radd
 	spin_lock(&mptcp_reqsk_hlock);
 	list_for_each_entry(mtreq,
 			    &mptcp_reqsk_htb[inet6_synq_hash(raddr, rport, 0,
-					    	    	     MPTCP_HASH_SIZE)],
+							     MPTCP_HASH_SIZE)],
 			    collide_tuple) {
 		const struct inet6_request_sock *treq = inet6_rsk(rev_mptcp_rsk(mtreq));
 		meta_sk = mtreq->mpcb->meta_sk;
@@ -632,7 +632,7 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	 * There is a special case as the IPv6 address of the initial subflow
 	 * has an id = 0. The other ones have id's in the range [8, 16[.
 	 */
-	rem->bitfield |= (1 << (loc->id - min(loc->id, (u8)MPTCP_MAX_ADDR)));
+	rem->bitfield |= (1 << (loc->id - min_t(u8, loc->id, MPTCP_MAX_ADDR)));
 
 	/** First, create and prepare the new socket */
 
