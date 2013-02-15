@@ -63,9 +63,9 @@ static struct kmem_cache *mptcp_cb_cache __read_mostly;
 int sysctl_mptcp_ndiffports __read_mostly = 1;
 int sysctl_mptcp_enabled __read_mostly = 1;
 int sysctl_mptcp_checksum __read_mostly = 1;
-int sysctl_mptcp_debug __read_mostly = 0;
-int sysctl_mptcp_syn_retries __read_mostly = MPTCP_SYN_RETRIES;
+int sysctl_mptcp_debug __read_mostly;
 EXPORT_SYMBOL(sysctl_mptcp_debug);
+int sysctl_mptcp_syn_retries __read_mostly = MPTCP_SYN_RETRIES;
 
 #ifdef CONFIG_SYSCTL
 static struct ctl_table mptcp_table[] = {
@@ -617,7 +617,7 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 		newnp->opt = NULL;
 		newnp->pktoptions = NULL;
 		xchg(&newnp->rxpmtu, NULL);
-	} else if (meta_sk->sk_family == AF_INET6){
+	} else if (meta_sk->sk_family == AF_INET6) {
 		struct ipv6_pinfo *newnp;
 
 		/* Meta is IPv4. Initialize pinet6 for the master-sk. */
@@ -1109,12 +1109,14 @@ void mptcp_sub_close_wq(struct work_struct *work)
 	/* We come from tcp_disconnect. We are sure that meta_sk is set */
 	if (!tp->mpc) {
 		tp->closing = 1;
+		sock_rps_reset_flow(sk);
 		tcp_close(sk, 0);
 		goto exit;
 	}
 
 	if (meta_sk->sk_shutdown == SHUTDOWN_MASK || sk->sk_state == TCP_CLOSE) {
 		tp->closing = 1;
+		sock_rps_reset_flow(sk);
 		tcp_close(sk, 0);
 	} else if (tcp_close_state(sk)) {
 		tcp_send_fin(sk);
@@ -1160,6 +1162,7 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 
 			if (!tp->mpc) {
 				tp->closing = 1;
+				sock_rps_reset_flow(sk);
 				tcp_close(sk, 0);
 				return;
 			}
@@ -1167,6 +1170,7 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 			if (mptcp_meta_sk(sk)->sk_shutdown == SHUTDOWN_MASK ||
 			    sk->sk_state == TCP_CLOSE) {
 				tp->closing = 1;
+				sock_rps_reset_flow(sk);
 				tcp_close(sk, 0);
 			} else if (tcp_close_state(sk)) {
 				tcp_send_fin(sk);
@@ -1225,16 +1229,11 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 	int data_was_unread = 0;
 	int state;
 
-	mptcp_debug("%s: Close of meta_sk with tok %#x\n", __func__,
-			mpcb->mptcp_loc_token);
+	mptcp_debug("%s: Close of meta_sk with tok %#x\n",
+		    __func__, mpcb->mptcp_loc_token);
 
 	mutex_lock(&mpcb->mutex);
 	lock_sock(meta_sk);
-
-	mptcp_for_each_sk(mpcb, sk_it) {
-		if (!is_master_tp(tcp_sk(sk_it)))
-			sock_rps_reset_flow(sk_it);
-	}
 
 	if (meta_tp->inside_tk_table) {
 		/* Detach the mpcb from the token hashtable */
@@ -1344,7 +1343,7 @@ adjudge_to_death:
 			tcp_set_state(meta_sk, TCP_CLOSE);
 			tcp_send_active_reset(meta_sk, GFP_ATOMIC);
 			NET_INC_STATS_BH(sock_net(meta_sk),
-					LINUX_MIB_TCPABORTONLINGER);
+					 LINUX_MIB_TCPABORTONLINGER);
 		} else {
 			const int tmo = tcp_fin_time(meta_sk);
 
@@ -1366,7 +1365,7 @@ adjudge_to_death:
 			tcp_set_state(meta_sk, TCP_CLOSE);
 			tcp_send_active_reset(meta_sk, GFP_ATOMIC);
 			NET_INC_STATS_BH(sock_net(meta_sk),
-					LINUX_MIB_TCPABORTONMEMORY);
+					 LINUX_MIB_TCPABORTONMEMORY);
 		}
 	}
 

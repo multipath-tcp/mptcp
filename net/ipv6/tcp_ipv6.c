@@ -925,11 +925,6 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack,
 	}
 
 	kfree_skb(buff);
-
-#ifdef CONFIG_MPTCP
-	if (rst && sk && tcp_sk(sk)->mpc && tcp_sk(sk)->mptcp->teardown)
-		tcp_done(sk);
-#endif
 }
 
 void tcp_v6_send_reset(struct sock *sk, struct sk_buff *skb)
