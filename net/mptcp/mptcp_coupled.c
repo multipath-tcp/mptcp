@@ -140,14 +140,14 @@ static void mptcp_ccc_recalc_alpha(struct sock *sk)
 	}
 	sum_denominator *= sum_denominator;
 	if (unlikely(!sum_denominator)) {
-		printk(KERN_ERR"%s: sum_denominator == 0, cnt_established:%d\n",
-				__func__, mpcb->cnt_established);
+		pr_err("%s: sum_denominator == 0, cnt_established:%d\n",
+		       __func__, mpcb->cnt_established);
 		mptcp_for_each_sk(mpcb, sub_sk) {
 			struct tcp_sock *sub_tp = tcp_sk(sub_sk);
-			printk(KERN_ERR"%s: pi:%d, state:%d\n, rtt:%u, cwnd: %u",
-					__func__, sub_tp->mptcp->path_index,
-					sub_sk->sk_state, sub_tp->srtt,
-					sub_tp->snd_cwnd);
+			pr_err("%s: pi:%d, state:%d\n, rtt:%u, cwnd: %u",
+			       __func__, sub_tp->mptcp->path_index,
+			       sub_sk->sk_state, sub_tp->srtt,
+			       sub_tp->snd_cwnd);
 		}
 	}
 
