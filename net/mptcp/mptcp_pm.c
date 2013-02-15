@@ -212,7 +212,7 @@ void mptcp_hash_remove(struct tcp_sock *meta_tp)
 	rcu_read_unlock();
 }
 
-u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock* sk)
+u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock *sk)
 {
 	int i;
 
@@ -293,10 +293,9 @@ void mptcp_set_addresses(struct sock *meta_sk)
 				i = __mptcp_find_free_index(mpcb->loc4_bits, -1,
 							    mpcb->next_v4_index);
 				if (i < 0) {
-					mptcp_debug("%s: At max num of local "
-						"addresses: %d --- not adding "
-						"address: %pI4\n", __func__,
-						MPTCP_MAX_ADDR, &ifa_address);
+					mptcp_debug("%s: At max num of local addresses: %d --- not adding address: %pI4\n",
+						    __func__, MPTCP_MAX_ADDR, 
+						    &ifa_address);
 					goto out;
 				}
 				mpcb->locaddr4[i].addr.s_addr = ifa_address;
@@ -335,10 +334,9 @@ cont_ipv6:
 				i = __mptcp_find_free_index(mpcb->loc6_bits, -1,
 							    mpcb->next_v6_index);
 				if (i < 0) {
-					mptcp_debug("%s: At max num of local"
-						"addresses: %d --- not adding"
-						"address: %pI6\n", __func__,
-						MPTCP_MAX_ADDR, &ifa6->addr);
+					mptcp_debug("%s: At max num of local addresses: %d --- not adding address: %pI6\n",
+						    __func__, MPTCP_MAX_ADDR, 
+						    &ifa6->addr);
 					goto out;
 				}
 
@@ -390,12 +388,13 @@ int mptcp_check_req(struct sk_buff *skb, struct net *net)
 			kfree_skb(skb);
 			return 1;
 		}
-	} else if (skb->protocol == htons(ETH_P_IP))
+	} else if (skb->protocol == htons(ETH_P_IP)) {
 		tcp_v4_do_rcv(meta_sk, skb);
 #if IS_ENABLED(CONFIG_IPV6)
-	else /* IPv6 */
+	} else { /* IPv6 */
 		tcp_v6_do_rcv(meta_sk, skb);
 #endif /* CONFIG_IPV6 */
+	}
 	bh_unlock_sock(meta_sk);
 	sock_put(meta_sk); /* Taken by mptcp_vX_search_req */
 	return 1;
@@ -479,17 +478,18 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 					    meta_sk->sk_rcvbuf + meta_sk->sk_sndbuf))) {
 			bh_unlock_sock(meta_sk);
 			NET_INC_STATS_BH(sock_net(meta_sk),
-					LINUX_MIB_TCPBACKLOGDROP);
+					 LINUX_MIB_TCPBACKLOGDROP);
 			sock_put(meta_sk); /* Taken by mptcp_hash_find */
 			kfree_skb(skb);
 			return 1;
 		}
-	} else if (skb->protocol == htons(ETH_P_IP))
+	} else if (skb->protocol == htons(ETH_P_IP)) {
 		tcp_v4_do_rcv(meta_sk, skb);
 #if IS_ENABLED(CONFIG_IPV6)
-	else
+	} else {
 		tcp_v6_do_rcv(meta_sk, skb);
 #endif /* CONFIG_IPV6 */
+	}
 	bh_unlock_sock(meta_sk);
 	sock_put(meta_sk); /* Taken by mptcp_hash_find */
 	return 1;
@@ -962,7 +962,7 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 				continue;
 
 			if (!meta_tp->mpc || !is_meta_sk(meta_sk) ||
-			     mpcb->infinite_mapping) {
+			    mpcb->infinite_mapping) {
 				sock_put(meta_sk);
 				continue;
 			}
@@ -1007,7 +1007,8 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
 		struct hlist_nulls_node *node;
 		rcu_read_lock_bh();
-		hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[i], tk_table) {
+		hlist_nulls_for_each_entry_rcu(meta_tp, node,
+					       &tk_hashtable[i], tk_table) {
 			struct mptcp_cb *mpcb = meta_tp->mpcb;
 			struct sock *meta_sk = (struct sock *)meta_tp;
 			struct inet_sock *isk = inet_sk(meta_sk);
@@ -1020,9 +1021,7 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 				   mpcb->mptcp_rem_token);
 			if (meta_sk->sk_family == AF_INET ||
 			    mptcp_v6_is_v4_mapped(meta_sk)) {
-				seq_printf(seq, " 0 %08X:%04X "
-					   "                        "
-					   "%08X:%04X                        ",
+				seq_printf(seq, " 0 %08X:%04X                         %08X:%04X                        ",
 					   isk->inet_saddr,
 					   ntohs(isk->inet_sport),
 					   isk->inet_daddr,
@@ -1031,8 +1030,7 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 			} else if (meta_sk->sk_family == AF_INET6) {
 				struct in6_addr *src = &isk->pinet6->saddr;
 				struct in6_addr *dst = &isk->pinet6->daddr;
-				seq_printf(seq, " 1 %08X%08X%08X%08X:%04X "
-					   "%08X%08X%08X%08X:%04X",
+				seq_printf(seq, " 1 %08X%08X%08X%08X:%04X %08X%08X%08X%08X:%04X",
 					   src->s6_addr32[0], src->s6_addr32[1],
 					   src->s6_addr32[2], src->s6_addr32[3],
 					   ntohs(isk->inet_sport),
@@ -1042,12 +1040,11 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 #endif
 			}
 			seq_printf(seq, " %02X %02X %08X:%08X %lu",
-					meta_sk->sk_state,
-					mpcb->cnt_subflows,
-					meta_tp->write_seq - meta_tp->snd_una,
-					max_t(int, meta_tp->rcv_nxt -
-						   meta_tp->copied_seq, 0),
-					sock_i_ino(meta_sk));
+				   meta_sk->sk_state, mpcb->cnt_subflows,
+				   meta_tp->write_seq - meta_tp->snd_una,
+				   max_t(int, meta_tp->rcv_nxt -
+					 meta_tp->copied_seq, 0),
+				   sock_i_ino(meta_sk));
 			seq_putc(seq, '\n');
 		}
 		rcu_read_unlock_bh();

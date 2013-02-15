@@ -398,7 +398,7 @@ struct sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
 	spin_lock(&mptcp_reqsk_hlock);
 	list_for_each_entry(mtreq,
 			    &mptcp_reqsk_htb[inet_synq_hash(raddr, rport, 0,
-					    	    	    MPTCP_HASH_SIZE)],
+							    MPTCP_HASH_SIZE)],
 			    collide_tuple) {
 		const struct inet_request_sock *ireq = inet_rsk(rev_mptcp_rsk(mtreq));
 		meta_sk = mtreq->mpcb->meta_sk;

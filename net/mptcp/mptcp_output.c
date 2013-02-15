@@ -99,7 +99,7 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 
 	/* if there is only one subflow, bypass the scheduling function */
 	if (mpcb->cnt_subflows == 1) {
-		bestsk = (struct sock *) mpcb->connection_list;
+		bestsk = (struct sock *)mpcb->connection_list;
 		if (!mptcp_is_available(bestsk, skb))
 			bestsk = NULL;
 		return bestsk;
@@ -156,8 +156,8 @@ static struct mp_dss *mptcp_skb_find_dss(const struct sk_buff *skb)
 		return NULL;
 
 	return (struct mp_dss *)(skb->data - (MPTCP_SUB_LEN_DSS_ALIGN +
-			      	      	      MPTCP_SUB_LEN_ACK_ALIGN +
-			      	      	      MPTCP_SUB_LEN_SEQ_ALIGN));
+					      MPTCP_SUB_LEN_ACK_ALIGN +
+					      MPTCP_SUB_LEN_SEQ_ALIGN));
 }
 
 /* get the data-seq and end-data-seq and store them again in the
@@ -507,7 +507,7 @@ static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff **skb,
 				      MPTCP_SUB_LEN_SEQ_ALIGN));
 
 	/* Then we start writing it from the start */
-	mdss = (struct mp_dss *) ptr;
+	mdss = (struct mp_dss *)ptr;
 
 	mdss->kind = TCPOPT_MPTCP;
 	mdss->sub = MPTCP_SUB_DSS;
@@ -818,7 +818,8 @@ int mptso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	/* This packet was never sent out yet, so no SACK bits. */
 	TCP_SKB_CB(buff)->sacked = 0;
 
-	buff->ip_summed = skb->ip_summed = CHECKSUM_PARTIAL;
+	buff->ip_summed = CHECKSUM_PARTIAL;
+	skb->ip_summed = CHECKSUM_PARTIAL;
 	skb_split(skb, buff, len);
 
 	/* We lost the dss-option when creating buff - put it back! */
@@ -858,7 +859,8 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct sk_buff *skb, *subskb;
 
-	if ((skb = tcp_send_head(meta_sk)) != NULL &&
+	skb = tcp_send_head(meta_sk);
+	if (skb &&
 	    before(TCP_SKB_CB(skb)->seq, tcp_wnd_end(meta_tp))) {
 		int err;
 		unsigned int mss;
@@ -1055,11 +1057,10 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 	if (!push_one && 0) {
 		/* Do MTU probing. */
 		result = tcp_mtu_probe(meta_sk);
-		if (!result) {
+		if (!result)
 			return 0;
-		} else if (result > 0) {
+		else if (result > 0)
 			sent_pkts = 1;
-		}
 	}
 
 	while ((skb = mptcp_next_segment(meta_sk, &reinject))) {
@@ -1156,8 +1157,8 @@ retry:
 
 		if (!reinject) {
 			mptcp_check_sndseq_wrap(meta_tp,
-					TCP_SKB_CB(skb)->end_seq -
-					TCP_SKB_CB(skb)->seq);
+						TCP_SKB_CB(skb)->end_seq -
+						TCP_SKB_CB(skb)->seq);
 			tcp_event_new_data_sent(meta_sk, skb);
 		}
 		if (reinject > 0)
@@ -1224,7 +1225,7 @@ u32 __mptcp_select_window(struct sock *sk)
 			 * MSS's among the subflows.
 			 */
 			meta_tp->rcv_ssthresh = min(meta_tp->rcv_ssthresh,
-					        4U * meta_tp->advmss);
+						    4U * meta_tp->advmss);
 
 		if (free_space < mss)
 			return 0;
@@ -1444,8 +1445,7 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 	}
 
 	if (unlikely(tp->mptcp->add_addr4) &&
-			MAX_TCP_OPTION_SPACE - *size >=
-			MPTCP_SUB_LEN_ADD_ADDR4_ALIGN) {
+	    MAX_TCP_OPTION_SPACE - *size >= MPTCP_SUB_LEN_ADD_ADDR4_ALIGN) {
 		int ind = mptcp_find_free_index(~(tp->mptcp->add_addr4));
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_ADD_ADDR;
@@ -1454,8 +1454,7 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 			tp->mptcp->add_addr4 &= ~(1 << ind);
 		*size += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN;
 	} else if (unlikely(tp->mptcp->add_addr6) &&
-		 MAX_TCP_OPTION_SPACE - *size >=
-		 MPTCP_SUB_LEN_ADD_ADDR6_ALIGN) {
+		   MAX_TCP_OPTION_SPACE - *size >= MPTCP_SUB_LEN_ADD_ADDR6_ALIGN) {
 		int ind = mptcp_find_free_index(~(tp->mptcp->add_addr6));
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_ADD_ADDR;
@@ -1481,7 +1480,7 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		     MAX_TCP_OPTION_SPACE - *size >=
 		     MPTCP_SUB_LEN_ADD_ADDR4_ALIGN))) {
 		mptcp_debug("no space for add addr. unsent IPv4: %#x,IPv6: %#x\n",
-				tp->mptcp->add_addr4, tp->mptcp->add_addr6);
+			    tp->mptcp->add_addr4, tp->mptcp->add_addr6);
 		tp->mptcp_add_addr_ack = 1;
 		tcp_send_ack(sk);
 		tp->mptcp_add_addr_ack = 0;
@@ -1506,7 +1505,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			 struct sk_buff *skb)
 {
 	if (unlikely(OPTION_MP_CAPABLE & opts->mptcp_options)) {
-		struct mp_capable *mpc = (struct mp_capable *) ptr;
+		struct mp_capable *mpc = (struct mp_capable *)ptr;
 
 		mpc->kind = TCPOPT_MPTCP;
 
@@ -1530,7 +1529,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	}
 
 	if (unlikely(OPTION_MP_JOIN & opts->mptcp_options)) {
-		struct mp_join *mpj = (struct mp_join *) ptr;
+		struct mp_join *mpj = (struct mp_join *)ptr;
 
 		mpj->kind = TCPOPT_MPTCP;
 		mpj->sub = MPTCP_SUB_JOIN;
@@ -1553,12 +1552,12 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		} else if (OPTION_TYPE_ACK & opts->mptcp_options) {
 			mpj->len = MPTCP_SUB_LEN_JOIN_ACK;
 			memcpy(mpj->u.ack.mac,
-					opts->mp_join_ack.sender_mac, 20);
+			       opts->mp_join_ack.sender_mac, 20);
 			ptr += MPTCP_SUB_LEN_JOIN_ACK_ALIGN >> 2;
 		}
 	}
 	if (unlikely(OPTION_ADD_ADDR & opts->mptcp_options)) {
-		struct mp_add_addr *mpadd = (struct mp_add_addr *) ptr;
+		struct mp_add_addr *mpadd = (struct mp_add_addr *)ptr;
 
 		mpadd->kind = TCPOPT_MPTCP;
 		if (opts->addr4) {
@@ -1607,7 +1606,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		ptr += len_align >> 2;
 	}
 	if (unlikely(OPTION_MP_FAIL & opts->mptcp_options)) {
-		struct mp_fail *mpfail = (struct mp_fail *) ptr;
+		struct mp_fail *mpfail = (struct mp_fail *)ptr;
 
 		mpfail->kind = TCPOPT_MPTCP;
 		mpfail->len = MPTCP_SUB_LEN_FAIL;
@@ -1619,7 +1618,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		ptr += MPTCP_SUB_LEN_FAIL_ALIGN >> 2;
 	}
 	if (unlikely(OPTION_MP_FCLOSE & opts->mptcp_options)) {
-		struct mp_fclose *mpfclose = (struct mp_fclose *) ptr;
+		struct mp_fclose *mpfclose = (struct mp_fclose *)ptr;
 
 		mpfclose->kind = TCPOPT_MPTCP;
 		mpfclose->len = MPTCP_SUB_LEN_FCLOSE;
@@ -1633,7 +1632,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 
 	if (OPTION_DATA_ACK & opts->mptcp_options) {
 		if (!mptcp_is_data_seq(skb)) {
-			struct mp_dss *mdss = (struct mp_dss *) ptr;
+			struct mp_dss *mdss = (struct mp_dss *)ptr;
 
 			mdss->kind = TCPOPT_MPTCP;
 			mdss->sub = MPTCP_SUB_DSS;
@@ -1910,9 +1909,8 @@ static int mptcp_retransmit_skb(struct sock *sk, struct sk_buff *skb)
 	int err;
 
 	/* Inconslusive MTU probe */
-	if (icsk->icsk_mtup.probe_size) {
+	if (icsk->icsk_mtup.probe_size)
 		icsk->icsk_mtup.probe_size = 0;
-	}
 
 	/* Do not sent more than we queued. 1/4 is reserved for possible
 	 * copying overhead: fragmentation, tunneling, mangling etc.
@@ -2024,15 +2022,18 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 		struct inet_sock *meta_inet = inet_sk(meta_sk);
 		if (meta_sk->sk_family == AF_INET) {
 			LIMIT_NETDEBUG(KERN_DEBUG "TCP: Peer %pI4:%u/%u unexpectedly shrunk window %u:%u (repaired)\n",
-			       &meta_inet->inet_daddr, ntohs(meta_inet->inet_dport),
-			       meta_inet->inet_num, meta_tp->snd_una, meta_tp->snd_nxt);
+				       &meta_inet->inet_daddr, 
+				       ntohs(meta_inet->inet_dport),
+				       meta_inet->inet_num, meta_tp->snd_una, 
+				       meta_tp->snd_nxt);
 		}
 #if IS_ENABLED(CONFIG_IPV6)
 		else if (meta_sk->sk_family == AF_INET6) {
 			struct ipv6_pinfo *np = inet6_sk(meta_sk);
 			LIMIT_NETDEBUG(KERN_DEBUG "TCP: Peer %pI6:%u/%u unexpectedly shrunk window %u:%u (repaired)\n",
-			       &np->daddr, ntohs(meta_inet->inet_dport),
-			       meta_inet->inet_num, meta_tp->snd_una, meta_tp->snd_nxt);
+				       &np->daddr, ntohs(meta_inet->inet_dport),
+				       meta_inet->inet_num, meta_tp->snd_una, 
+				       meta_tp->snd_nxt);
 		}
 #endif
 		if (tcp_time_stamp - meta_tp->rcv_tstamp > TCP_RTO_MAX) {
@@ -2143,7 +2144,7 @@ send_mp_fclose:
 
 /* Modify values to an mptcp-level for the initial window of new subflows */
 void mptcp_select_initial_window(int *__space, __u32 *window_clamp,
-			         const struct sock *sk)
+				 const struct sock *sk)
 {
 	struct sock *meta_sk = mptcp_meta_sk(sk);
 

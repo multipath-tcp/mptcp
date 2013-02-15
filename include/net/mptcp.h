@@ -123,8 +123,8 @@ struct mptcp_options_received {
 	u8	rem_id;		/* Address-id in the MP_JOIN */
 	u8	prio_addr_id;	/* Address-id in the MP_PRIO */
 
-	const unsigned char *add_addr_ptr; /* Pointer to the add-address option */
-	const unsigned char *rem_addr_ptr; /* Pointer to the rem-address option */
+	const unsigned char *add_addr_ptr; /* Pointer to add-address option */
+	const unsigned char *rem_addr_ptr; /* Pointer to rem-address option */
 
 	u32	data_ack;
 	u32	data_seq;
@@ -150,16 +150,15 @@ struct mptcp_tcp_sock {
 		fully_established:1,
 		attached:1,
 		csum_error:1,
-		teardown:1,
 		include_mpc:1,
 		mapping_present:1,
 		map_data_fin:1,
 		low_prio:1, /* use this socket as backup */
 		rcv_low_prio:1, /* Peer sent low-prio option to us */
 		send_mp_prio:1, /* Trigger to send mp_prio on this socket */
-		pre_established:1; /* State between sending 3rd ACK and receiving
-		 	 	    * the fourth ack of new subflows.
-		 	 	    */
+		pre_established:1; /* State between sending 3rd ACK and 
+				    * receiving the fourth ack of new subflows.
+				    */
 
 	/* isn: needed to translate abs to relative subflow seqnums */
 	u32	snt_isn;
@@ -203,7 +202,7 @@ struct mptcp_cb {
 		server_side:1,
 		infinite_mapping:1,
 		send_mp_fail:1,
-		dfin_combined:1,   /* Does the DFIN received was combined with a subflow-fin? */
+		dfin_combined:1,   /* Was the DFIN combined with subflow-fin? */
 		passive_close:1,
 		snd_hiseq_index:1, /* Index in snd_high_order of snd_nxt */
 		rcv_hiseq_index:1; /* Index in rcv_high_order of rcv_nxt */
@@ -254,7 +253,7 @@ struct mptcp_cb {
 
 	/* Local addresses */
 	struct mptcp_loc4 locaddr4[MPTCP_MAX_ADDR];
-	u8 loc4_bits; /* Bitfield, indicating which of the above indexes are set */
+	u8 loc4_bits; /* Bitfield indicating which of the above addrs are set */
 	u8 next_v4_index;
 
 	struct mptcp_loc6 locaddr6[MPTCP_MAX_ADDR];
@@ -322,9 +321,9 @@ static inline int mptcp_pi_to_flag(int pi)
  * It is necessary to calculate the effective MSS we will be using when
  * sending data.
  */
-#define MPTCP_SUB_LEN_DSM_ALIGN  MPTCP_SUB_LEN_DSS_ALIGN + 		\
-				 MPTCP_SUB_LEN_SEQ_ALIGN + 		\
-				 MPTCP_SUB_LEN_ACK_ALIGN
+#define MPTCP_SUB_LEN_DSM_ALIGN  (MPTCP_SUB_LEN_DSS_ALIGN +		\
+				  MPTCP_SUB_LEN_SEQ_ALIGN +		\
+				  MPTCP_SUB_LEN_ACK_ALIGN)
 
 #define MPTCP_SUB_ADD_ADDR		3
 #define MPTCP_SUB_LEN_ADD_ADDR4		8
@@ -565,7 +564,7 @@ static inline int mptcp_sub_len_remove_addr_align(u16 bitfield)
 
 static inline int mptcp_sub_len_dss(struct mp_dss *m, int csum)
 {
-	return 4 + m->A * (4 + m->a * 4) + m->M * (10  +m->m * 4 + csum * 2);
+	return 4 + m->A * (4 + m->a * 4) + m->M * (10 + m->m * 4 + csum * 2);
 }
 
 /* Default MSS for MPTCP
@@ -594,7 +593,7 @@ extern struct workqueue_struct *mptcp_wq;
 #define mptcp_for_each_sk(mpcb, sk)					\
 	for ((sk) = (struct sock *)(mpcb)->connection_list;		\
 	     sk;							\
-	     sk = (struct sock *) tcp_sk(sk)->mptcp->next)
+	     sk = (struct sock *)tcp_sk(sk)->mptcp->next)
 
 #define mptcp_for_each_sk_safe(__mpcb, __sk, __temp)			\
 	for (__sk = (struct sock *)(__mpcb)->connection_list,		\
@@ -1049,7 +1048,7 @@ static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
 #else /* CONFIG_MPTCP */
 #define mptcp_debug(fmt, args...)	\
 	do {				\
-	} while(0)
+	} while (0)
 
 /* Without MPTCP, we just do one iteration
  * over the only socket available. This assumes that
