@@ -244,10 +244,9 @@ int mptcp_v4_add_raddress(struct mptcp_cb *mpcb, const struct in_addr *addr,
 		 * OUR BOX sees it. */
 		if (rem4->id == id && rem4->addr.s_addr != addr->s_addr) {
 			/* update the address */
-			mptcp_debug("%s: updating old addr:%pI4"
-				   " to addr %pI4 with id:%d\n",
-				   __func__, &rem4->addr.s_addr,
-				   &addr->s_addr, id);
+			mptcp_debug("%s: updating old addr:%pI4 to addr %pI4 with id:%d\n",
+				    __func__, &rem4->addr.s_addr,
+				    &addr->s_addr, id);
 			rem4->addr.s_addr = addr->s_addr;
 			rem4->port = port;
 			mpcb->list_rcvd = 1;
@@ -258,9 +257,8 @@ int mptcp_v4_add_raddress(struct mptcp_cb *mpcb, const struct in_addr *addr,
 	i = mptcp_find_free_index(mpcb->rem4_bits);
 	/* Do we have already the maximum number of local/remote addresses? */
 	if (i < 0) {
-		mptcp_debug("%s: At max num of remote addresses: %d --- not "
-			   "adding address: %pI4\n",
-			   __func__, MPTCP_MAX_ADDR, &addr->s_addr);
+		mptcp_debug("%s: At max num of remote addresses: %d --- not adding address: %pI4\n",
+			    __func__, MPTCP_MAX_ADDR, &addr->s_addr);
 		return -1;
 	}
 
@@ -366,8 +364,9 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 			/* Currently we make two calls to mptcp_find_join(). This
 			 * can probably be optimized. */
 			if (mptcp_v4_add_raddress(mpcb,
-					(struct in_addr *)&ip_hdr(skb)->saddr, 0,
-					join_opt->addr_id) < 0)
+						 (struct in_addr *)&ip_hdr(skb)->saddr,
+						 0,
+						 join_opt->addr_id) < 0)
 				goto reset_and_discard;
 			mpcb->list_rcvd = 0;
 
@@ -479,22 +478,23 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	rem_in.sin_addr = rem->addr;
 
 	mptcp_debug("%s: token %#x pi %d src_addr:%pI4:%d dst_addr:%pI4:%d\n",
-		    __func__, tcp_sk(meta_sk)->mpcb->mptcp_loc_token, tp->mptcp->path_index,
-		    &loc_in.sin_addr, ntohs(loc_in.sin_port), &rem_in.sin_addr,
+		    __func__, tcp_sk(meta_sk)->mpcb->mptcp_loc_token,
+		    tp->mptcp->path_index, &loc_in.sin_addr,
+		    ntohs(loc_in.sin_port), &rem_in.sin_addr,
 		    ntohs(rem_in.sin_port));
 
 	ret = sock.ops->bind(&sock, (struct sockaddr *)&loc_in, ulid_size);
 	if (ret < 0) {
-		mptcp_debug(KERN_ERR "%s: MPTCP subsocket bind() "
-				"failed, error %d\n", __func__, ret);
+		mptcp_debug("%s: MPTCP subsocket bind() failed, error %d\n",
+			    __func__, ret);
 		goto error;
 	}
 
 	ret = sock.ops->connect(&sock, (struct sockaddr *)&rem_in,
 				ulid_size, O_NONBLOCK);
 	if (ret < 0 && ret != -EINPROGRESS) {
-		mptcp_debug(KERN_ERR "%s: MPTCP subsocket connect() "
-				"failed, error %d\n", __func__, ret);
+		mptcp_debug("%s: MPTCP subsocket connect() failed, error %d\n",
+			    __func__, ret);
 		goto error;
 	}
 
@@ -576,8 +576,7 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 	if ((event == NETDEV_UP || event == NETDEV_CHANGE) && netif_running(ifa->ifa_dev->dev)) {
 		i = __mptcp_find_free_index(mpcb->loc4_bits, 0, mpcb->next_v4_index);
 		if (i < 0) {
-			mptcp_debug("MPTCP_PM: NETDEV_UP Reached max "
-				    "number of local IPv4 addresses: %d\n",
+			mptcp_debug("MPTCP_PM: NETDEV_UP Reached max number of local IPv4 addresses: %d\n",
 				    MPTCP_MAX_ADDR);
 			return;
 		}

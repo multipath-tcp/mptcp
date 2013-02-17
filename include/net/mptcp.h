@@ -156,7 +156,7 @@ struct mptcp_tcp_sock {
 		low_prio:1, /* use this socket as backup */
 		rcv_low_prio:1, /* Peer sent low-prio option to us */
 		send_mp_prio:1, /* Trigger to send mp_prio on this socket */
-		pre_established:1; /* State between sending 3rd ACK and 
+		pre_established:1; /* State between sending 3rd ACK and
 				    * receiving the fourth ack of new subflows.
 				    */
 
@@ -583,7 +583,7 @@ extern struct workqueue_struct *mptcp_wq;
 #define mptcp_debug(fmt, args...)					\
 	do {								\
 		if (unlikely(sysctl_mptcp_debug))			\
-			printk(KERN_DEBUG __FILE__ ": " fmt, ##args);	\
+			pr_debug(__FILE__ ": " fmt, ##args);	\
 	} while (0)
 
 /* Iterates over all subflows */
@@ -976,9 +976,9 @@ static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
 	if (TCP_SKB_CB(skb)->tcp_flags & (TCPHDR_SYN | TCPHDR_FIN))
 		return 0;
 
-	printk(KERN_ERR"%s %#x will fallback - pi %d from %pS, seq %u\n", __func__,
-		    tp->mpcb->mptcp_loc_token, tp->mptcp->path_index,
-		    __builtin_return_address(0), TCP_SKB_CB(skb)->seq);
+	pr_err("%s %#x will fallback - pi %d from %pS, seq %u\n", __func__,
+	       tp->mpcb->mptcp_loc_token, tp->mptcp->path_index,
+	       __builtin_return_address(0), TCP_SKB_CB(skb)->seq);
 	if (is_master_tp(tp))
 		tp->mpcb->send_infinite_mapping = 1;
 	else
@@ -1205,18 +1205,19 @@ static inline int mptcp_handle_options(struct sock *sk,
 	return 0;
 }
 static inline void mptcp_reset_mopt(struct tcp_sock *tp) {}
-static void  __init mptcp_init(void) {}
+static inline void  __init mptcp_init(void) {}
 static inline int mptcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
 {
 	return 0;
 }
-static int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
-			  unsigned int mss_now, int reinject)
+static inline int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
+				 unsigned int mss_now, int reinject)
 {
 	return 0;
 }
-static int mptso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
-			  unsigned int mss_now, gfp_t gfp, int reinject)
+static inline int mptso_fragment(struct sock *sk, struct sk_buff *skb,
+				 unsigned int len, unsigned int mss_now,
+				 gfp_t gfp, int reinject)
 {
 	return 0;
 }
