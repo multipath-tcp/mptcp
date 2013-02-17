@@ -223,8 +223,8 @@ u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock *sk)
 				return mpcb->locaddr4[i].id;
 		}
 
-		mptcp_debug("%s %pI4 not locally found\n",
-				__func__, &inet_sk(sk)->inet_saddr);
+		mptcp_debug("%s %pI4 not locally found\n", __func__,
+			    &inet_sk(sk)->inet_saddr);
 		BUG();
 	}
 #if IS_ENABLED(CONFIG_IPV6)
@@ -235,8 +235,8 @@ u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock *sk)
 				return mpcb->locaddr6[i].id;
 		}
 
-		mptcp_debug("%s %pI6 not locally found\n",
-				__func__, &inet6_sk(sk)->saddr);
+		mptcp_debug("%s %pI6 not locally found\n", __func__,
+			    &inet6_sk(sk)->saddr);
 		BUG();
 	}
 #endif /* CONFIG_IPV6 */
@@ -294,7 +294,7 @@ void mptcp_set_addresses(struct sock *meta_sk)
 							    mpcb->next_v4_index);
 				if (i < 0) {
 					mptcp_debug("%s: At max num of local addresses: %d --- not adding address: %pI4\n",
-						    __func__, MPTCP_MAX_ADDR, 
+						    __func__, MPTCP_MAX_ADDR,
 						    &ifa_address);
 					goto out;
 				}
@@ -335,7 +335,7 @@ cont_ipv6:
 							    mpcb->next_v6_index);
 				if (i < 0) {
 					mptcp_debug("%s: At max num of local addresses: %d --- not adding address: %pI6\n",
-						    __func__, MPTCP_MAX_ADDR, 
+						    __func__, MPTCP_MAX_ADDR,
 						    &ifa6->addr);
 					goto out;
 				}
