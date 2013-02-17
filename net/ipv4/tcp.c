@@ -855,6 +855,16 @@ static ssize_t do_tcp_sendpages(struct sock *sk, struct page **pages, int poffse
 
 	if (tp->mpc) {
 		struct sock *sk_it;
+
+		/* We must check this with socket-lock hold because we iterate
+		 * over the subflows.
+		 */
+		if (!mptcp_can_sendpage(sk)) {
+			release_sock(sk);
+			return sock_no_sendpage(sk->sk_socket, *pages, poffset,
+						psize, flags);
+		}
+
 		mptcp_for_each_sk(tp->mpcb, sk_it)
 			sock_rps_record_flow(sk_it);
 	}
@@ -964,8 +974,9 @@ int tcp_sendpage(struct sock *sk, struct page *page, int offset,
 {
 	ssize_t res;
 
-	if (!(sk->sk_route_caps & NETIF_F_SG) ||
-	    !(sk->sk_route_caps & NETIF_F_ALL_CSUM) || tcp_sk(sk)->mpc)
+	/* If MPTCP is enabled, we check it later after establishment */
+	if (!tcp_sk(sk)->mpc && (!(sk->sk_route_caps & NETIF_F_SG) ||
+	    !(sk->sk_route_caps & NETIF_F_ALL_CSUM)))
 		return sock_no_sendpage(sk->sk_socket, page, offset, size,
 					flags);
 

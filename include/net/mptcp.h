@@ -698,6 +698,22 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 unsigned int mptcp_xmit_size_goal(struct sock *meta_sk, u32 mss_now,
 				  int large_allowed);
 
+static inline bool mptcp_can_sendpage(struct sock *sk)
+{
+	struct sock *sk_it;
+
+	if (tcp_sk(sk)->mpcb->dss_csum)
+		return false;
+
+	mptcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it) {
+		if (!(sk_it->sk_route_caps & NETIF_F_SG) ||
+		    !(sk_it->sk_route_caps & NETIF_F_ALL_CSUM))
+			return false;
+	}
+
+	return true;
+}
+
 static inline void mptcp_push_pending_frames(struct sock *meta_sk)
 {
 	if (mptcp_next_segment(meta_sk, NULL)) {
@@ -1292,6 +1308,9 @@ static inline int mptcp_rcv_synsent_state_process(struct sock *sk,
 						  struct mptcp_options_received *mopt)
 {
 	return 0;
+static inline bool mptcp_can_sendpage(struct sock *sk)
+{
+	return false;
 }
 #endif /* CONFIG_MPTCP */
 
