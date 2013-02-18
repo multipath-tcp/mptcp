@@ -693,10 +693,8 @@ ssize_t tcp_splice_read(struct socket *sock, loff_t *ppos,
 #ifdef CONFIG_MPTCP
 	if (tcp_sk(sk)->mpc) {
 		struct sock *sk_it;
-		mptcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it) {
-			if (!is_master_tp(tcp_sk(sk_it)))
+		mptcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it)
 				sock_rps_record_flow(sk_it);
-		}
 	}
 #endif
 	/*
@@ -854,6 +852,12 @@ static ssize_t do_tcp_sendpages(struct sock *sk, struct page **pages, int poffse
 	if ((1 << sk->sk_state) & ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT))
 		if ((err = sk_stream_wait_connect(sk, &timeo)) != 0)
 			goto out_err;
+
+	if (tp->mpc) {
+		struct sock *sk_it;
+		mptcp_for_each_sk(tp->mpcb, sk_it)
+			sock_rps_record_flow(sk_it);
+	}
 
 	clear_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
 
@@ -1020,12 +1024,9 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			goto out_err;
 
 	if (tp->mpc) {
-		struct sock *sk_it = sk;
-
-		mptcp_for_each_sk(tp->mpcb, sk_it) {
-			if (!is_master_tp(tcp_sk(sk_it)))
-				sock_rps_record_flow(sk_it);
-		}
+		struct sock *sk_it;
+		mptcp_for_each_sk(tp->mpcb, sk_it)
+			sock_rps_record_flow(sk_it);
 	}
 
 	if (unlikely(tp->repair)) {
@@ -1568,10 +1569,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 #ifdef CONFIG_MPTCP
 	if (tp->mpc) {
 		struct sock *sk_it;
-		mptcp_for_each_sk(tp->mpcb, sk_it) {
-			if (!is_master_tp(tcp_sk(sk_it)))
-				sock_rps_record_flow(sk_it);
-		}
+		mptcp_for_each_sk(tp->mpcb, sk_it)
+			sock_rps_record_flow(sk_it);
 	}
 #endif
 
