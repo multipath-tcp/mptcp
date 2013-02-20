@@ -245,11 +245,22 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 
 		if (mptcp_is_data_seq(tmp) && !dss_csum_added) {
 			__be32 data_seq = htonl((u32)(tp->mptcp->map_data_seq >> 32));
-			csum_tcp = skb_checksum(tmp, skb_transport_offset(tmp) +
-						TCP_SKB_CB(tmp)->dss_off,
+
+			/* If a 64-bit dss is present, we increase the offset
+			 * by 4 bytes, as the high-order 64-bits will be added
+			 * in the infal csum_partial-call.
+			 */
+			u32 offset = skb_transport_offset(tmp) +
+				     TCP_SKB_CB(tmp)->dss_off;
+			if (TCP_SKB_CB(tmp)->mptcp_flags & MPTCPHDR_SEQ64_SET)
+				offset += 4;
+
+			csum_tcp = skb_checksum(tmp, offset,
 						MPTCP_SUB_LEN_SEQ_CSUM,
 						csum_tcp);
-			csum_tcp = csum_partial(&data_seq, sizeof(data_seq), csum_tcp);
+
+			csum_tcp = csum_partial(&data_seq,
+						sizeof(data_seq), csum_tcp);
 
 			dss_csum_added = 1; /* Just do it once */
 		}
