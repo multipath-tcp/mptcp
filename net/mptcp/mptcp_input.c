@@ -264,7 +264,7 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 
 	/* Now, checksum must be 0 */
 	if (unlikely(csum_fold(csum_tcp))) {
-		mptcp_debug("%s csum is wrong: %#x data_seq %u dss_csum_added %d overflowed %d iterations %d\n",
+		pr_err("%s csum is wrong: %#x data_seq %u dss_csum_added %d overflowed %d iterations %d\n",
 			    __func__, csum_fold(csum_tcp),
 			    TCP_SKB_CB(last)->seq, dss_csum_added, overflowed,
 			    iter);
@@ -611,7 +611,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 		/* Subflow-sequences of packet is different from what is in the
 		 * packet's dss-mapping. The peer is misbehaving - reset
 		 */
-		mptcp_debug("%s Packet's mapping does not map to the DSS\n", __func__);
+		pr_err("%s Packet's mapping does not map to the DSS\n", __func__);
 		mptcp_send_reset(sk, skb);
 		return 1;
 	}
