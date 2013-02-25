@@ -220,6 +220,16 @@ static void mptcp_sock_destruct(struct sock *sk)
 	}
 }
 
+void mptcp_destroy_sock(struct sock *sk)
+{
+	if (is_meta_sk(sk)) {
+		__skb_queue_purge(&tcp_sk(sk)->mpcb->reinject_queue);
+		mptcp_purge_ofo_queue(tcp_sk(sk));
+	} else {
+		mptcp_del_sock(sk);
+	}
+}
+
 static void mptcp_set_state(struct sock *sk)
 {
 	struct sock *meta_sk = mptcp_meta_sk(sk);
