@@ -49,9 +49,23 @@ static int mptcp_is_available(struct sock *sk, struct sk_buff *skb)
 	if (tp->mptcp->pre_established)
 		return 0;
 
-	if (tp->pf || (tp->mpcb->noneligible & mptcp_pi_to_flag(tp->mptcp->path_index)) ||
-	    inet_csk(sk)->icsk_ca_state == TCP_CA_Loss)
+	if (tp->pf || (tp->mpcb->noneligible & mptcp_pi_to_flag(tp->mptcp->path_index)))
 		return 0;
+
+	if (inet_csk(sk)->icsk_ca_state == TCP_CA_Loss) {
+		/* If SACK is disabled, and we got a loss, TCP does not exist
+		 * the loss-state until something above high_seq has been acked.
+		 * (see tcp_try_undo_recovery)
+		 *
+		 * high_seq is the snd_nxt at the moment of the RTO. As soon
+		 * as we have an RTO, we won't push data on the subflow.
+		 * Thus, snd_una can never go beyond high_seq.
+		 */
+		if (!tcp_is_reno(tp))
+			return 0;
+		else if (tp->snd_una != tp->high_seq)
+			return 0;
+	}
 
 	/* Don't send on this subflow if we bypass the allowed send-window at
 	 * the per-subflow level. Similar to tcp_snd_wnd_test, but manually
