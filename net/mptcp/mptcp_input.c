@@ -110,7 +110,7 @@ static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 				   const struct sk_buff *skb, u32 data_seq,
 				   u16 data_len)
 {
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *tp = tcp_sk(sk);
 	struct tcphdr *th = tcp_hdr(skb);
 
 	/* State-machine handling if FIN has been enqueued and he has
@@ -133,7 +133,7 @@ static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 
 				if (meta_tp->linger2 < 0 ||
 				    (data_len &&
-				     after(data_seq + data_len - (mptcp_is_data_fin(skb) ? 1 : 0),
+				     after(data_seq + data_len - (mptcp_is_data_fin2(skb, tp) ? 1 : 0),
 					   meta_tp->rcv_nxt))) {
 					mptcp_send_active_reset(meta_sk, GFP_ATOMIC);
 					tcp_done(meta_sk);
@@ -144,7 +144,8 @@ static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 				tmo = tcp_fin_time(meta_sk);
 				if (tmo > TCP_TIMEWAIT_LEN) {
 					inet_csk_reset_keepalive_timer(meta_sk, tmo - TCP_TIMEWAIT_LEN);
-				} else if (mptcp_is_data_fin(skb) || sock_owned_by_user(meta_sk)) {
+				} else if (mptcp_is_data_fin2(skb, tp) ||
+					   sock_owned_by_user(meta_sk)) {
 					/* Bad case. We could lose such FIN otherwise.
 					 * It is not a big problem, but it looks confusing
 					 * and not so rare event. We still can lose it now,
@@ -184,8 +185,8 @@ static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 		 */
 		if (meta_sk->sk_shutdown & RCV_SHUTDOWN) {
 			if (TCP_SKB_CB(skb)->end_seq != TCP_SKB_CB(skb)->seq &&
-			    after(TCP_SKB_CB(skb)->end_seq - th->fin, tcp_sk(sk)->rcv_nxt) &&
-			    !mptcp_is_data_fin(skb)) {
+			    after(TCP_SKB_CB(skb)->end_seq - th->fin, tp->rcv_nxt) &&
+			    !mptcp_is_data_fin2(skb, tp)) {
 				NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_TCPABORTONDATA);
 
 				mptcp_send_active_reset(meta_sk, GFP_ATOMIC);
@@ -323,7 +324,11 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb, struct sk_buff *next,
 	if (skb_queue_is_last(&sk->sk_receive_queue, skb) ||
 	    after(TCP_SKB_CB(next)->end_seq, tp->mptcp->map_subseq + tp->mptcp->map_data_len)) {
 		tcb->end_seq += tp->mptcp->map_data_fin;
-		if (mptcp_is_data_fin(skb))
+
+		/* We manually set the fin-flag if it is a data-fin. For easy
+		 * processing in tcp_recvmsg.
+		 */
+		if (mptcp_is_data_fin2(skb, tp))
 			tcp_hdr(skb)->fin = 1;
 		else
 			tcp_hdr(skb)->fin = 0;
@@ -445,9 +450,10 @@ static int mptcp_skb_split_tail(struct sk_buff *skb, struct sock *sk, u32 seq)
 static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct mptcp_cb *mpcb = tp->mpcb;
 
-	if (!skb->len && tcp_hdr(skb)->fin && !mptcp_is_data_fin(skb)) {
+	/* If we are in infinite mode, the subflow-fin is in fact a data-fin. */
+	if (!skb->len && tcp_hdr(skb)->fin && !mptcp_is_data_fin(skb) &&
+	    !tp->mpcb->infinite_mapping) {
 		/* Remove a pure subflow-fin from the queue and increase
 		 * copied_seq.
 		 */
@@ -462,16 +468,11 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 	 */
 	if (!tp->mptcp->fully_established && !mptcp_is_data_seq(skb) &&
 	    !tp->mptcp->mapping_present) {
-		int ret = mptcp_fallback_infinite(tp, skb);
-
-		if (ret & MPTCP_FLAG_SEND_RESET) {
+		if (mptcp_fallback_infinite(tp, skb) & MPTCP_FLAG_SEND_RESET) {
 			__skb_unlink(skb, &sk->sk_receive_queue);
 			mptcp_send_reset(sk, skb);
 			__kfree_skb(skb);
 			return 1;
-		} else {
-			mpcb->infinite_mapping = 1;
-			tp->mptcp->fully_established = 1;
 		}
 	}
 
@@ -507,6 +508,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 		tp->mptcp->map_data_seq = mptcp_get_rcv_nxt_64(meta_tp);
 		tp->mptcp->map_subseq = tcb->seq;
 		tp->mptcp->map_data_len = skb->len;
+		tp->mptcp->map_data_fin = tcp_hdr(skb)->fin ? 1 : 0;
 		tp->mptcp->mapping_present = 1;
 		return 0;
 	}
@@ -1032,7 +1034,10 @@ static void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	/* A valid packet came in - subflow is operational again */
 	tp->pf = 0;
 
-	if (!(tcb->mptcp_flags & MPTCPHDR_ACK))
+	/* If we are in infinite mapping mode, rx_opt.data_ack has been
+	 * set by mptcp_clean_rtx_infinite.
+	 */
+	if (!(tcb->mptcp_flags & MPTCPHDR_ACK) && !tp->mpcb->infinite_mapping)
 		goto exit;
 
 	data_ack = tp->mptcp->rx_opt.data_ack;
@@ -1139,20 +1144,23 @@ no_queue:
 void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk)
 {
 	struct sock *meta_sk = mptcp_meta_sk(sk);
+	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = tcp_sk(meta_sk);
 	u32 prior_snd_una;
 
-	if (!tcp_sk(sk)->mpcb->infinite_mapping)
+	if (!tp->mpcb->infinite_mapping)
 		return;
 
-	prior_snd_una = tcp_sk(meta_sk)->snd_una;
-	/* skb->data is pointing to the head of the MPTCP-option. We still assume
-	 * 32-bit data-acks.
+	prior_snd_una = meta_tp->snd_una;
+	/* The difference between both write_seq's represents the offset between
+	 * data-sequence and subflow-sequence. As we are infinite, this must
+	 * match.
 	 *
-	 * 20 is MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_ACK_ALIGN + MPTCP_SUB_LEN_SEQ_ALIGN
+	 * Thus, from this difference we can infer the meta snd_una.
 	 */
-	tcp_sk(meta_sk)->snd_una = ntohl(*(skb->data + 8)) + skb->len - 20 +
-				   mptcp_is_data_fin(skb) ? 1 : 0;
-	mptcp_clean_rtx_queue(meta_sk, prior_snd_una);
+	tp->mptcp->rx_opt.data_ack = meta_tp->write_seq - tp->write_seq +
+				     tp->snd_una;
+
+	mptcp_data_ack(sk, skb);
 }
 
 /**** static functions used by mptcp_parse_options */

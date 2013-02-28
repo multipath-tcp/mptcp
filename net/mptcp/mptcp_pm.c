@@ -719,7 +719,8 @@ void mptcp_create_subflows(struct sock *meta_sk)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 
-	if ((mpcb->master_sk && !tcp_sk(mpcb->master_sk)->mptcp->fully_established) ||
+	if ((mpcb->master_sk &&
+	     !tcp_sk(mpcb->master_sk)->mptcp->fully_established) ||
 	    mpcb->infinite_mapping ||
 	    mpcb->server_side ||
 	    sock_flag(meta_sk, SOCK_DEAD))

@@ -719,6 +719,16 @@ static inline int mptcp_is_data_fin(const struct sk_buff *skb)
 	return TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN;
 }
 
+/* Is it a data-fin while in infinite mapping mode?
+ * In infinite mode, a subflow-fin is in fact a data-fin.
+ */
+static inline int mptcp_is_data_fin2(const struct sk_buff *skb,
+				     const struct tcp_sock *tp)
+{
+	return (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN) ||
+	       (tp->mpcb->infinite_mapping && tcp_hdr(skb)->fin);
+}
+
 static inline int mptcp_is_data_seq(const struct sk_buff *skb)
 {
 	return TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ;
@@ -971,7 +981,7 @@ static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
 	 * will have been set before and thus we will not fall back to infinite
 	 * mapping.
 	 */
-	if (likely(tp->mptcp->fully_established))
+	if (likely(tp->mptcp->fully_established && !tp->mpcb->infinite_mapping))
 		return 0;
 
 	if (TCP_SKB_CB(skb)->tcp_flags & (TCPHDR_SYN | TCPHDR_FIN))
@@ -980,10 +990,11 @@ static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
 	pr_err("%s %#x will fallback - pi %d from %pS, seq %u\n", __func__,
 	       tp->mpcb->mptcp_loc_token, tp->mptcp->path_index,
 	       __builtin_return_address(0), TCP_SKB_CB(skb)->seq);
-	if (is_master_tp(tp))
-		tp->mpcb->send_infinite_mapping = 1;
-	else
+	if (!is_master_tp(tp))
 		return MPTCP_FLAG_SEND_RESET;
+
+	tp->mpcb->infinite_mapping = 1;
+	tp->mptcp->fully_established = 1;
 
 	return 0;
 }

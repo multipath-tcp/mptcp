@@ -3442,12 +3442,12 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		if (!fully_acked)
 			break;
 
-		if (tp->mpc)
-			mptcp_clean_rtx_infinite(skb, sk);
-		tcp_unlink_write_queue(skb, sk);
-
-		if (tp->mpc)
+		if (tp->mpc) {
 			flag |= mptcp_fallback_infinite(tp, skb);
+			mptcp_clean_rtx_infinite(skb, sk);
+		}
+
+		tcp_unlink_write_queue(skb, sk);
 
 		sk_wmem_free_skb(sk, skb);
 		tp->scoreboard_skb_hint = NULL;

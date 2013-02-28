@@ -1264,7 +1264,7 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 	 */
 	while ((skb = __skb_dequeue(&meta_sk->sk_receive_queue)) != NULL) {
 		u32 len = TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq -
-			  (mptcp_is_data_fin(skb) ? 1 : 0);
+			  tcp_hdr(skb)->fin;
 		data_was_unread += len;
 		__kfree_skb(skb);
 	}
