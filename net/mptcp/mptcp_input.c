@@ -467,13 +467,21 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 	 * this segment, this path has to fallback to infinite or be torn down.
 	 */
 	if (!tp->mptcp->fully_established && !mptcp_is_data_seq(skb) &&
-	    !tp->mptcp->mapping_present) {
-		if (mptcp_fallback_infinite(tp, skb) & MPTCP_FLAG_SEND_RESET) {
+	    !tp->mptcp->mapping_present && !tp->mpcb->infinite_mapping) {
+		pr_err("%s %#x will fallback - pi %d from %pS, seq %u\n",
+		       __func__, tp->mpcb->mptcp_loc_token,
+		       tp->mptcp->path_index, __builtin_return_address(0),
+		       TCP_SKB_CB(skb)->seq);
+
+		if (!is_master_tp(tp)) {
 			__skb_unlink(skb, &sk->sk_receive_queue);
 			mptcp_send_reset(sk, skb);
 			__kfree_skb(skb);
 			return 1;
 		}
+
+		tp->mpcb->infinite_mapping = 1;
+		tp->mptcp->fully_established = 1;
 	}
 
 	/* Receiver-side becomes fully established when a whole rcv-window has
@@ -1146,14 +1154,11 @@ no_queue:
 
 void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk)
 {
-	struct sock *meta_sk = mptcp_meta_sk(sk);
-	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = tcp_sk(meta_sk);
-	u32 prior_snd_una;
+	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = tcp_sk(mptcp_meta_sk(sk));
 
 	if (!tp->mpcb->infinite_mapping)
 		return;
 
-	prior_snd_una = meta_tp->snd_una;
 	/* The difference between both write_seq's represents the offset between
 	 * data-sequence and subflow-sequence. As we are infinite, this must
 	 * match.
@@ -1612,6 +1617,9 @@ int mptcp_handle_options(struct sock *sk, const struct tcphdr *th, struct sk_buf
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_options_received *mopt = &tp->mptcp->rx_opt;
+
+	if (tp->mpcb->infinite_mapping)
+		return 0;
 
 	if (mptcp_mp_fail_rcvd(sk, th))
 		return 1;

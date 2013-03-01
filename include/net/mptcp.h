@@ -974,8 +974,7 @@ static inline void mptcp_sub_close_passive(struct sock *sk)
 		mptcp_sub_close(sk, 0);
 }
 
-static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
-					  const struct sk_buff *skb)
+static inline int mptcp_fallback_infinite(struct tcp_sock *tp, int flag)
 {
 	/* If data has been acknowleged on the meta-level, fully_established
 	 * will have been set before and thus we will not fall back to infinite
@@ -984,12 +983,12 @@ static inline int mptcp_fallback_infinite(struct tcp_sock *tp,
 	if (likely(tp->mptcp->fully_established && !tp->mpcb->infinite_mapping))
 		return 0;
 
-	if (TCP_SKB_CB(skb)->tcp_flags & (TCPHDR_SYN | TCPHDR_FIN))
+	if (!(flag & FLAG_DATA_ACKED))
 		return 0;
 
-	pr_err("%s %#x will fallback - pi %d from %pS, seq %u\n", __func__,
+	pr_err("%s %#x will fallback - pi %d from %pS\n", __func__,
 	       tp->mpcb->mptcp_loc_token, tp->mptcp->path_index,
-	       __builtin_return_address(0), TCP_SKB_CB(skb)->seq);
+	       __builtin_return_address(0));
 	if (!is_master_tp(tp))
 		return MPTCP_FLAG_SEND_RESET;
 
@@ -1177,8 +1176,7 @@ static inline int mptcp_select_size(const struct sock *meta_sk)
 }
 static inline void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn) {}
 static inline void mptcp_sub_close_passive(struct sock *sk) {}
-static inline int mptcp_fallback_infinite(const struct tcp_sock *tp,
-					  const struct sk_buff *skb)
+static inline int mptcp_fallback_infinite(const struct tcp_sock *tp, int flag)
 {
 	return 0;
 }

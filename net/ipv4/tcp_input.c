@@ -3442,11 +3442,6 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		if (!fully_acked)
 			break;
 
-		if (tp->mpc) {
-			flag |= mptcp_fallback_infinite(tp, skb);
-			mptcp_clean_rtx_infinite(skb, sk);
-		}
-
 		tcp_unlink_write_queue(skb, sk);
 
 		sk_wmem_free_skb(sk, skb);
@@ -3848,10 +3843,16 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 	/* See if we can take anything off of the retransmit queue. */
 	flag |= tcp_clean_rtx_queue(sk, prior_fackets, prior_snd_una);
 
-	if (flag & MPTCP_FLAG_SEND_RESET) {
-		pr_err("%s resetting flow\n", __func__);
-		mptcp_send_reset(sk, skb);
-		goto invalid_ack;
+	if (tp->mpc) {
+		flag |= mptcp_fallback_infinite(tp, flag);
+
+		if (flag & MPTCP_FLAG_SEND_RESET) {
+			pr_err("%s resetting flow\n", __func__);
+			mptcp_send_reset(sk, skb);
+			goto invalid_ack;
+		}
+
+		mptcp_clean_rtx_infinite(skb, sk);
 	}
 
 	pkts_acked = prior_packets - tp->packets_out;
