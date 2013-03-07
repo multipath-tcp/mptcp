@@ -49,9 +49,23 @@ static int mptcp_is_available(struct sock *sk, struct sk_buff *skb)
 	if (tp->mptcp->pre_established)
 		return 0;
 
-	if (tp->pf || (tp->mpcb->noneligible & mptcp_pi_to_flag(tp->mptcp->path_index)) ||
-	    inet_csk(sk)->icsk_ca_state == TCP_CA_Loss)
+	if (tp->pf || (tp->mpcb->noneligible & mptcp_pi_to_flag(tp->mptcp->path_index)))
 		return 0;
+
+	if (inet_csk(sk)->icsk_ca_state == TCP_CA_Loss) {
+		/* If SACK is disabled, and we got a loss, TCP does not exist
+		 * the loss-state until something above high_seq has been acked.
+		 * (see tcp_try_undo_recovery)
+		 *
+		 * high_seq is the snd_nxt at the moment of the RTO. As soon
+		 * as we have an RTO, we won't push data on the subflow.
+		 * Thus, snd_una can never go beyond high_seq.
+		 */
+		if (!tcp_is_reno(tp))
+			return 0;
+		else if (tp->snd_una != tp->high_seq)
+			return 0;
+	}
 
 	/* Don't send on this subflow if we bypass the allowed send-window at
 	 * the per-subflow level. Similar to tcp_snd_wnd_test, but manually
@@ -410,6 +424,12 @@ static void mptcp_combine_dfin(struct sk_buff *skb, struct sock *meta_sk,
 	struct sock *sk_it;
 	int all_empty = 1, all_acked;
 
+	/* In infinite mapping we always try to combine */
+	if (mpcb->infinite_mapping && tcp_close_state(subsk)) {
+		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_FIN;
+		return;
+	}
+
 	/* Don't combine, if they didn't combine - otherwise we end up in
 	 * TIME_WAIT, even if our app is smart enough to avoid it */
 	if (meta_sk->sk_shutdown & RCV_SHUTDOWN) {
@@ -500,6 +520,19 @@ static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff **skb,
 	if (mptcp_is_data_fin(subskb))
 		mptcp_combine_dfin(subskb, meta_sk, sk);
 
+	if (tp->mpcb->infinite_mapping)
+		goto no_data_seq;
+
+	if (tp->mpcb->send_infinite_mapping &&
+	    tcb->seq >= mptcp_meta_tp(tp)->snd_nxt) {
+		tp->mptcp->fully_established = 1;
+		tp->mpcb->infinite_mapping = 1;
+		tp->mptcp->infinite_cutoff_seq = tp->write_seq;
+		tcb->mptcp_flags |= MPTCPHDR_INF;
+		data_len = 0;
+	} else {
+		data_len = tcb->end_seq - tcb->seq;
+	}
 
 	/**** Write MPTCP DSS-option to the packet. ****/
 	ptr = (__be32 *)(subskb->data - (MPTCP_SUB_LEN_DSS_ALIGN +
@@ -519,17 +552,6 @@ static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff **skb,
 	mdss->a = 0;
 	mdss->A = 1;
 	mdss->len = mptcp_sub_len_dss(mdss, tp->mpcb->dss_csum);
-
-	if (tp->mpcb->send_infinite_mapping &&
-	    tcb->seq >= mptcp_meta_tp(tp)->snd_nxt) {
-		tp->mptcp->fully_established = 1;
-		tp->mpcb->infinite_mapping = 1;
-		tp->mptcp->infinite_cutoff_seq = tp->write_seq;
-		tcb->mptcp_flags |= MPTCPHDR_INF;
-		data_len = 0;
-	} else {
-		data_len = tcb->end_seq - tcb->seq;
-	}
 
 	ptr++;
 	ptr++; /* data_ack will be set in mptcp_options_write */
@@ -558,6 +580,7 @@ static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff **skb,
 				(TCPOPT_NOP));
 	}
 
+no_data_seq:
 	tcb->seq = tp->write_seq;
 	tcb->sacked = 0; /* reset the sacked field: from the point of view
 			  * of this subflow, we are sending a brand new
@@ -598,6 +621,13 @@ static void mptcp_transmit_skb_failed(struct sock *sk, struct sk_buff *skb,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_cb *mpcb = tp->mpcb;
+
+	/* No work to do if we are in infinite mapping mode
+	 * There is only one subflow left and we cannot send this segment on
+	 * another subflow.
+	 */
+	if (mpcb->infinite_mapping)
+		return;
 
 	/* If it is a reinjection, we cannot modify the path-mask
 	 * of the skb, because subskb == skb. And subskb has been
@@ -1778,6 +1808,13 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 	/* May happen if no subflow is in an appropriate state */
 	if (!sk)
 		return;
+
+	/* We are in infinite mode - just send a reset */
+	if (mpcb->infinite_mapping) {
+		tcp_send_active_reset(sk, priority);
+		return;
+	}
+
 	tcp_sk(sk)->send_mp_fclose = 1;
 
 	/** Reset all other subflows */
