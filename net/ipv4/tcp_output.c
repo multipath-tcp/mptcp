@@ -1046,7 +1046,7 @@ int tcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	int nlen;
 	u8 flags;
 
-	if (tcp_sk(sk)->mpc)
+	if (tcp_sk(sk)->mpc && mptcp_is_data_seq(skb))
 		mptcp_fragment(sk, skb, len, mss_now, 0);
 
 	if (WARN_ON(len > skb->len))
@@ -1173,7 +1173,7 @@ void __pskb_trim_head(struct sk_buff *skb, int len)
 /* Remove acked data from a packet in the transmit queue. */
 int tcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
 {
-	if (tcp_sk(sk)->mpc && !is_meta_sk(sk))
+	if (tcp_sk(sk)->mpc && !is_meta_sk(sk) && mptcp_is_data_seq(skb))
 		return mptcp_trim_head(sk, skb, len);
 
 	if (skb_cloned(skb) && pskb_expand_head(skb, 0, 0, GFP_ATOMIC))
@@ -1556,7 +1556,7 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	int nlen = skb->len - len;
 	u8 flags;
 
-	if (tcp_sk(sk)->mpc)
+	if (tcp_sk(sk)->mpc && mptcp_is_data_seq(skb))
 		mptso_fragment(sk, skb, len, mss_now, gfp, 0);
 
 	/* All of a TSO frame must be composed of paged data.  */
