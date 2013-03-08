@@ -233,7 +233,7 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 	newnp->hop_limit  = -1;
 	newnp->mc_loop	  = 1;
 	newnp->pmtudisc	  = IPV6_PMTUDISC_WANT;
-	xchg(&newnp->rxpmtu, NULL);
+	(void)xchg(&newnp->rxpmtu, NULL);
 
 	inet_csk(newsk)->icsk_ext_hdr_len = 0;
 
