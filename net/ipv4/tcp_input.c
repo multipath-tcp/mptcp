@@ -5949,59 +5949,18 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		if (!th->syn)
 			goto discard_and_undo;
 
-#ifdef CONFIG_MPTCP
-		if (!is_master_tp(tp)) {
-			u8 hash_mac_check[20];
-			struct mptcp_cb *mpcb = tp->mpcb;
+		if (tp->request_mptcp || tp->mpc) {
+			int ret;
+			ret = mptcp_rcv_synsent_state_process(sk, &sk,
+							      skb, &mopt);
 
-			mptcp_hmac_sha1((u8 *)&mpcb->mptcp_rem_key,
-					(u8 *)&mpcb->mptcp_loc_key,
-					(u8 *)&tp->mptcp->rx_opt.mptcp_recv_nonce,
-					(u8 *)&tp->mptcp->mptcp_loc_nonce,
-					(u32 *)hash_mac_check);
-			if (memcmp(hash_mac_check,
-				   (char *)&tp->mptcp->rx_opt.mptcp_recv_tmac, 8)) {
-				mptcp_sub_force_close(sk);
+			tp = tcp_sk(sk); /* May have changed if we support MPTCP */
+
+			if (ret == 1)
 				goto reset_and_undo;
-			}
-
-			/* Set this flag in order to postpone data sending
-			 * until the 4th ack arrives.
-			 */
-			tp->mptcp->pre_established = 1;
-			tp->mptcp->rcv_low_prio = tp->mptcp->rx_opt.low_prio;
-		} else if (mopt.saw_mpc && tp->request_mptcp) {
-			if (mptcp_create_master_sk(sk, mopt.mptcp_rem_key,
-						   ntohs(th->window)))
+			if (ret == 2)
 				goto discard;
-
-			sk = tcp_sk(sk)->mpcb->master_sk;
-			tp = tcp_sk(sk);
-
-			/* snd_nxt - 1, because it has been incremented
-			 * by tcp_connect for the SYN
-			 */
-			tp->mptcp->snt_isn = tp->snd_nxt - 1;
-			tp->mpcb->dss_csum = mopt.dss_csum;
-
-			sk_set_socket(sk, mptcp_meta_sk(sk)->sk_socket);
-			sk->sk_wq = mptcp_meta_sk(sk)->sk_wq;
-
-			mptcp_update_metasocket(sk, mptcp_meta_sk(sk));
-
-			 /* hold in mptcp_inherit_sk due to initialization to 2 */
-			sock_put(sk);
-		} else {
-			tp->request_mptcp = 0;
-
-			if (tp->inside_tk_table)
-				mptcp_hash_remove(tp);
 		}
-		if (tp->mpc) {
-			tp->mptcp->rcv_isn = TCP_SKB_CB(skb)->seq;
-			tp->mptcp->include_mpc = 1;
-		}
-#endif
 
 		/* rfc793:
 		 *   "If the SYN bit is on ...

@@ -693,6 +693,9 @@ int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 int mptso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 		   unsigned int mss_now, gfp_t gfp, int reinject);
 void mptcp_destroy_sock(struct sock *sk);
+int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
+				    struct sk_buff *skb,
+				    struct mptcp_options_received *mopt);
 
 static inline void mptcp_push_pending_frames(struct sock *meta_sk)
 {
@@ -1238,6 +1241,13 @@ static inline int mptso_fragment(struct sock *sk, struct sk_buff *skb,
 	return 0;
 }
 static inline void mptcp_destroy_sock(struct sock *sk) {}
+static inline int mptcp_rcv_synsent_state_process(struct sock *sk,
+						  struct sock **skptr,
+						  struct sk_buff *skb,
+						  struct mptcp_options_received *mopt)
+{
+	return 0;
+}
 #endif /* CONFIG_MPTCP */
 
 #endif /* _MPTCP_H */

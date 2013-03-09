@@ -1670,3 +1670,73 @@ int mptcp_handle_options(struct sock *sk, const struct tcphdr *th, struct sk_buf
 
 	return 0;
 }
+
+/* The skptr is needed, because if we become MPTCP-capable, we have to switch
+ * from meta-socket to master-socket.
+ *
+ * @return: 1 - we want to reset this connection
+ * 	    2 - we want to discard the received syn/ack
+ * 	    0 - everything is fine - continue
+ */
+int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
+				    struct sk_buff *skb,
+				    struct mptcp_options_received *mopt)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	if (tp->mpc) {
+		u8 hash_mac_check[20];
+		struct mptcp_cb *mpcb = tp->mpcb;
+
+		mptcp_hmac_sha1((u8 *)&mpcb->mptcp_rem_key,
+				(u8 *)&mpcb->mptcp_loc_key,
+				(u8 *)&tp->mptcp->rx_opt.mptcp_recv_nonce,
+				(u8 *)&tp->mptcp->mptcp_loc_nonce,
+				(u32 *)hash_mac_check);
+		if (memcmp(hash_mac_check,
+			   (char *)&tp->mptcp->rx_opt.mptcp_recv_tmac, 8)) {
+			mptcp_sub_force_close(sk);
+			return 1;
+		}
+
+		/* Set this flag in order to postpone data sending
+		 * until the 4th ack arrives.
+		 */
+		tp->mptcp->pre_established = 1;
+		tp->mptcp->rcv_low_prio = tp->mptcp->rx_opt.low_prio;
+	} else if (mopt->saw_mpc) {
+		if (mptcp_create_master_sk(sk, mopt->mptcp_rem_key,
+					   ntohs(tcp_hdr(skb)->window)))
+			return 2;
+
+		sk = tcp_sk(sk)->mpcb->master_sk;
+		*skptr = sk;
+		tp = tcp_sk(sk);
+
+		/* snd_nxt - 1, because it has been incremented
+		 * by tcp_connect for the SYN
+		 */
+		tp->mptcp->snt_isn = tp->snd_nxt - 1;
+		tp->mpcb->dss_csum = mopt->dss_csum;
+
+		sk_set_socket(sk, mptcp_meta_sk(sk)->sk_socket);
+		sk->sk_wq = mptcp_meta_sk(sk)->sk_wq;
+
+		mptcp_update_metasocket(sk, mptcp_meta_sk(sk));
+
+		 /* hold in mptcp_inherit_sk due to initialization to 2 */
+		sock_put(sk);
+	} else {
+		tp->request_mptcp = 0;
+
+		if (tp->inside_tk_table)
+			mptcp_hash_remove(tp);
+	}
+
+	if (tp->mpc) {
+		tp->mptcp->rcv_isn = TCP_SKB_CB(skb)->seq;
+		tp->mptcp->include_mpc = 1;
+	}
+
+	return 0;
+}
