@@ -288,7 +288,7 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 		tp->mpcb->csum_cutoff_seq = tp->mptcp->map_data_seq;
 
 		if (tp->mpcb->cnt_subflows > 1) {
-			mptcp_send_reset(sk, last);
+			mptcp_send_reset(sk);
 			ans = -1;
 		} else {
 			tp->mpcb->send_mp_fail = 1;
@@ -475,7 +475,7 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 
 		if (!is_master_tp(tp)) {
 			__skb_unlink(skb, &sk->sk_receive_queue);
-			mptcp_send_reset(sk, skb);
+			mptcp_send_reset(sk);
 			__kfree_skb(skb);
 			return 1;
 		}
@@ -555,7 +555,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 		       tp->mptcp->map_data_len, mptcp_is_data_fin(skb),
 		       tp->mptcp->map_data_fin);
 		__skb_unlink(skb, &sk->sk_receive_queue);
-		mptcp_send_reset(sk, skb);
+		mptcp_send_reset(sk);
 		__kfree_skb(skb);
 		return 1;
 	}
@@ -633,7 +633,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 		 * packet's dss-mapping. The peer is misbehaving - reset
 		 */
 		pr_err("%s Packet's mapping does not map to the DSS\n", __func__);
-		mptcp_send_reset(sk, skb);
+		mptcp_send_reset(sk);
 		return 1;
 	}
 

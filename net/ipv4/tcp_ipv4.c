@@ -610,9 +610,6 @@ void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 #ifdef CONFIG_TCP_MD5SIG
 		__be32 opt[(TCPOLEN_MD5SIG_ALIGNED >> 2)];
 #endif
-#ifdef CONFIG_MPTCP
-		struct mp_fail mpfail;
-#endif
 	} rep;
 	struct ip_reply_arg arg;
 #ifdef CONFIG_TCP_MD5SIG
@@ -695,20 +692,6 @@ void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 				     ip_hdr(skb)->daddr, &rep.th);
 	}
 #endif
-#ifdef CONFIG_MPTCP
-	if (sk && tcp_sk(sk)->mpc && tcp_sk(sk)->mptcp->csum_error) {
-		/* We had a checksum-error? -> Include MP_FAIL */
-		rep.mpfail.kind = TCPOPT_MPTCP;
-		rep.mpfail.len = MPTCP_SUB_LEN_FAIL;
-		rep.mpfail.sub = MPTCP_SUB_FAIL;
-		rep.mpfail.rsv1 = 0;
-		rep.mpfail.rsv2 = 0;
-		rep.mpfail.data_seq = htonll(tcp_sk(sk)->mpcb->csum_cutoff_seq);
-
-		arg.iov[0].iov_len += MPTCP_SUB_LEN_FAIL_ALIGN;
-		rep.th.doff = arg.iov[0].iov_len / 4;
-	}
-#endif /* CONFIG_MPTCP */
 	arg.csum = csum_tcpudp_nofold(ip_hdr(skb)->daddr,
 				      ip_hdr(skb)->saddr, /* XXX */
 				      arg.iov[0].iov_len, IPPROTO_TCP, 0);

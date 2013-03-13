@@ -833,9 +833,6 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack,
 	unsigned int tot_len = sizeof(struct tcphdr);
 	struct dst_entry *dst;
 	__be32 *topt;
-#ifdef CONFIG_MPTCP
-	struct sock *sk = skb->sk;
-#endif
 
 	if (ts)
 		tot_len += TCPOLEN_TSTAMP_ALIGNED;
@@ -844,8 +841,6 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack,
 		tot_len += TCPOLEN_MD5SIG_ALIGNED;
 #endif
 #ifdef CONFIG_MPTCP
-	if (rst && sk && tcp_sk(sk)->mpc && tcp_sk(sk)->mptcp->csum_error)
-		tot_len += MPTCP_SUB_LEN_FAIL_ALIGN;
 	if (mptcp)
 		tot_len += MPTCP_SUB_LEN_DSS + MPTCP_SUB_LEN_ACK;
 #endif
@@ -890,17 +885,6 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack,
 	}
 #endif
 #ifdef CONFIG_MPTCP
-	if (rst && sk && tcp_sk(sk)->mpc && tcp_sk(sk)->mptcp->csum_error) {
-		struct mp_fail *mpfail = (struct mp_fail *)topt;;
-
-		mpfail->kind = TCPOPT_MPTCP;
-		mpfail->len = MPTCP_SUB_LEN_FAIL;
-		mpfail->sub = MPTCP_SUB_FAIL;
-		mpfail->rsv1 = 0;
-		mpfail->rsv2 = 0;
-		mpfail->data_seq = htonll(tcp_sk(sk)->mpcb->csum_cutoff_seq);
-		topt += 2;
-	}
 	if (mptcp) {
 		/* Construction of 32-bit data_ack */
 		*topt++ = htonl((TCPOPT_MPTCP << 24) |
