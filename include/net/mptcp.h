@@ -627,7 +627,6 @@ void mptcp_reinject_data(struct sock *orig_sk, int clone_it);
 void mptcp_update_sndbuf(struct mptcp_cb *mpcb);
 struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject);
 void mptcp_send_fin(struct sock *meta_sk);
-void mptcp_send_reset(struct sock *sk, struct sk_buff *skb);
 void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority);
 int mptcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		     int push_one, gfp_t gfp);
@@ -711,6 +710,12 @@ static inline void mptcp_sub_force_close(struct sock *sk)
 
 	if (!sock_is_dead)
 		mptcp_sub_close(sk, 0);
+}
+
+static inline void mptcp_send_reset(struct sock *sk)
+{
+	tcp_send_active_reset(sk, GFP_ATOMIC);
+	mptcp_sub_force_close(sk);
 }
 
 static inline int mptcp_is_data_fin(const struct sk_buff *skb)
@@ -1192,8 +1197,7 @@ static inline int mptcp_sysctl_syn_retries(void)
 {
 	return 0;
 }
-static inline void mptcp_send_reset(const struct sock *sk,
-				    const struct sk_buff *skb) {}
+static inline void mptcp_send_reset(const struct sock *sk) {}
 static inline void mptcp_send_active_reset(struct sock *meta_sk,
 					   gfp_t priority) {}
 static inline int mptcp_write_xmit(struct sock *sk, unsigned int mss_now,

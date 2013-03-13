@@ -1389,7 +1389,7 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 	/* In fallback mp_fail-mode, we have to repeat it until the fallback
 	 * has been done by the sender
 	 */
-	if (unlikely(mpcb->send_mp_fail)) {
+	if (unlikely(mpcb->send_mp_fail || tp->mptcp->csum_error)) {
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_MP_FAIL;
 		opts->data_ack = (__u32)(mpcb->csum_cutoff_seq >> 32);
@@ -1846,19 +1846,6 @@ found:
 	}
 
 	meta_tp->send_mp_fclose = 1;
-}
-
-void mptcp_send_reset(struct sock *sk, struct sk_buff *skb)
-{
-	skb_dst_set(skb, sk_dst_get(sk));
-	if (sk->sk_family == AF_INET)
-		tcp_v4_send_reset(sk, skb);
-#if IS_ENABLED(CONFIG_IPV6)
-	else if (sk->sk_family == AF_INET6)
-		tcp_v6_send_reset(sk, skb);
-#endif
-
-	mptcp_sub_force_close(sk);
 }
 
 void mptcp_ack_retransmit_timer(struct sock *sk)
