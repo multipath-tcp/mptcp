@@ -1482,7 +1482,8 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 	 * TODO: Handle wrapped data-sequence numbers
 	 *       (even if it's very unlikely)
 	 */
-	if (mpcb->infinite_mapping_snd && tp->mptcp->fully_established &&
+	if (unlikely(mpcb->infinite_mapping_snd) &&
+	    tp->mptcp->fully_established &&
 	    ((mpcb->send_infinite_mapping && tcb &&
 	      !(tcb->mptcp_flags & MPTCPHDR_INF) &&
 	      !before(tcb->seq, tp->mptcp->infinite_cutoff_seq)) ||
