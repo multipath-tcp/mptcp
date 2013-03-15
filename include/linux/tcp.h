@@ -282,10 +282,6 @@ struct tcp_out_options {
 					/* random number of the sender */
 			__u32	token;	/* token for mptcp */
 		} mp_join_syns;
-
-		struct {
-			char sender_mac[20];
-		} mp_join_ack;
 	};
 
 	struct mptcp_loc4 *addr4;/* v4 addresses for MPTCP */

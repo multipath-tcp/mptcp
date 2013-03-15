@@ -185,6 +185,9 @@ struct mptcp_tcp_sock {
 
 	/* MP_JOIN subflow: timer for retransmitting the 3rd ack */
 	struct timer_list mptcp_ack_timer;
+
+	/* HMAC of the third ack */
+	char sender_mac[20];
 };
 
 struct mptcp_cb {

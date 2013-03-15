@@ -1501,13 +1501,6 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		} else {
 			opts->mptcp_options |= OPTION_MP_JOIN | OPTION_TYPE_ACK;
 			*size += MPTCP_SUB_LEN_JOIN_ACK_ALIGN;
-
-			if (skb)
-				mptcp_hmac_sha1((u8 *)&mpcb->mptcp_loc_key,
-						(u8 *)&mpcb->mptcp_rem_key,
-						(u8 *)&tp->mptcp->mptcp_loc_nonce,
-						(u8 *)&tp->mptcp->rx_opt.mptcp_recv_nonce,
-						(u32 *)opts->mp_join_ack.sender_mac);
 		}
 	}
 
@@ -1640,8 +1633,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			ptr += MPTCP_SUB_LEN_JOIN_SYNACK_ALIGN >> 2;
 		} else if (OPTION_TYPE_ACK & opts->mptcp_options) {
 			mpj->len = MPTCP_SUB_LEN_JOIN_ACK;
-			memcpy(mpj->u.ack.mac,
-			       opts->mp_join_ack.sender_mac, 20);
+			memcpy(mpj->u.ack.mac, &tp->mptcp->sender_mac[0], 20);
 			ptr += MPTCP_SUB_LEN_JOIN_ACK_ALIGN >> 2;
 		}
 	}

@@ -1795,6 +1795,13 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 		 */
 		tp->mptcp->pre_established = 1;
 		tp->mptcp->rcv_low_prio = tp->mptcp->rx_opt.low_prio;
+
+		mptcp_hmac_sha1((u8 *)&mpcb->mptcp_loc_key,
+				(u8 *)&mpcb->mptcp_rem_key,
+				(u8 *)&tp->mptcp->mptcp_loc_nonce,
+				(u8 *)&tp->mptcp->rx_opt.mptcp_recv_nonce,
+				(u32 *)&tp->mptcp->sender_mac[0]);
+
 	} else if (mopt->saw_mpc) {
 		if (mptcp_create_master_sk(sk, mopt->mptcp_rem_key,
 					   ntohs(tcp_hdr(skb)->window)))
