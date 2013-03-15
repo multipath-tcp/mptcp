@@ -435,6 +435,9 @@ static inline bool tcp_need_reset(int state)
 	       (TCPF_ESTABLISHED | TCPF_CLOSE_WAIT | TCPF_FIN_WAIT1 |
 		TCPF_FIN_WAIT2 | TCPF_SYN_RECV);
 }
+
+extern bool tcp_dma_try_early_copy(struct sock *sk, struct sk_buff *skb,
+				   int hlen);
 extern int __must_check tcp_queue_rcv(struct sock *sk, struct sk_buff *skb, int hdrlen,
 				      bool *fragstolen);
 extern bool tcp_try_coalesce(struct sock *sk, struct sk_buff *to,

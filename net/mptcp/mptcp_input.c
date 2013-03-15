@@ -879,6 +879,7 @@ static int mptcp_queue_skb(struct sock *sk)
 		/* Ready for the meta-rcv-queue */
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
 			int eaten = 0;
+			int copied_early = 0;
 			bool fragstolen = false;
 			u32 old_rcv_nxt = meta_tp->rcv_nxt;
 
@@ -896,20 +897,34 @@ static int mptcp_queue_skb(struct sock *sk)
 				goto next;
 			}
 
+#ifdef CONFIG_NET_DMA
+			if (TCP_SKB_CB(tmp1)->seq == meta_tp->rcv_nxt  &&
+			    meta_tp->ucopy.task == current &&
+			    meta_tp->copied_seq == meta_tp->rcv_nxt &&
+			    tmp1->len <= meta_tp->ucopy.len &&
+			    sock_owned_by_user(meta_sk) &&
+			    tcp_dma_try_early_copy(meta_sk, tmp1, 0)) {
+				copied_early = 1;
+				eaten = 1;
+			}
+#endif
+
 			/* Is direct copy possible ? */
 			if (TCP_SKB_CB(tmp1)->seq == meta_tp->rcv_nxt &&
 			    meta_tp->ucopy.task == current &&
 			    meta_tp->copied_seq == meta_tp->rcv_nxt &&
-			    meta_tp->ucopy.len &&
-			    sock_owned_by_user(meta_sk))
-				eaten = mptcp_direct_copy(tmp1, tp, meta_sk);
+			    meta_tp->ucopy.len && sock_owned_by_user(meta_sk) &&
+			    !copied_early)
+				eaten = mptcp_direct_copy(tmp1, meta_sk);
 
 			if (!eaten)
 				eaten = tcp_queue_rcv(meta_sk, tmp1, 0, &fragstolen);
 
 			meta_tp->rcv_nxt = TCP_SKB_CB(tmp1)->end_seq;
-
 			mptcp_check_rcvseq_wrap(meta_tp, old_rcv_nxt);
+
+			if (copied_early)
+				tcp_cleanup_rbuf(meta_sk, tmp1->len);
 
 			if (tcp_hdr(tmp1)->fin)
 				mptcp_fin(meta_sk);
@@ -918,6 +933,12 @@ static int mptcp_queue_skb(struct sock *sk)
 			if (!skb_queue_empty(&meta_tp->out_of_order_queue))
 				mptcp_ofo_queue(meta_sk);
 
+#ifdef CONFIG_NET_DMA
+			if (copied_early)
+				__skb_queue_tail(&meta_sk->sk_async_wait_queue,
+						 tmp1);
+			else
+#endif
 			if (eaten)
 				kfree_skb_partial(tmp1, fragstolen);
 
