@@ -723,7 +723,10 @@ static inline void mptcp_push_pending_frames(struct sock *meta_sk)
 	if (mptcp_next_segment(meta_sk, NULL)) {
 		struct tcp_sock *tp = tcp_sk(meta_sk);
 
-		__tcp_push_pending_frames(meta_sk, mptcp_current_mss(meta_sk), tp->nonagle);
+		/* We don't care about the MSS, because it will be set in
+		 * mptcp_write_xmit.
+		 */
+		__tcp_push_pending_frames(meta_sk, 0, tp->nonagle);
 	}
 }
 

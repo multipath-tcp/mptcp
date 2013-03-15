@@ -41,7 +41,7 @@ static int mptcp_is_available(struct sock *sk, struct sk_buff *skb,
 			      unsigned int *mss)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	unsigned int mss_now = tcp_current_mss(sk);
+	unsigned int mss_now;
 
 	/* Set of states for which we are allowed to send data */
 	if (!mptcp_sk_can_send(sk))
@@ -71,6 +71,11 @@ static int mptcp_is_available(struct sock *sk, struct sk_buff *skb,
 			return 0;
 	}
 
+	if (!tcp_cwnd_test(tp, skb))
+		return 0;
+
+	mss_now = tcp_current_mss(sk);
+
 	/* Don't send on this subflow if we bypass the allowed send-window at
 	 * the per-subflow level. Similar to tcp_snd_wnd_test, but manually
 	 * calculated end_seq (because here at this point end_seq is still at
@@ -82,7 +87,7 @@ static int mptcp_is_available(struct sock *sk, struct sk_buff *skb,
 	if (mss)
 		*mss = mss_now;
 
-	return tcp_cwnd_test(tp, skb);
+	return 1;
 }
 
 /* Are we not allowed to reinject this skb on tp? */
