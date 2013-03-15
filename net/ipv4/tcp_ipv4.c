@@ -429,6 +429,8 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 			} else {
 				if (!test_and_set_bit(TCP_MTU_REDUCED_DEFERRED, &tp->tsq_flags))
 					sock_hold(sk);
+				if (tp->mpc)
+					set_bit(TCP_MTU_REDUCED_DEFERRED, &tcp_sk(meta_sk)->tsq_flags);
 			}
 			goto out;
 		}

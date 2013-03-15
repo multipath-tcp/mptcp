@@ -897,10 +897,14 @@ static void tcp_tasklet_func(unsigned long data)
 		} else {
 			/* defer the work to tcp_release_cb() */
 			set_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags);
+			if (tp->mpc)
+				set_bit(TCP_TSQ_DEFERRED, &mptcp_meta_tp(tp)->tsq_flags);
 		}
 		bh_unlock_sock(sk);
 
 		clear_bit(TSQ_QUEUED, &tp->tsq_flags);
+		if (tp->mpc)
+			clear_bit(TSQ_QUEUED, &mptcp_meta_tp(tp)->tsq_flags);
 		sk_free(sk);
 	}
 }
@@ -909,6 +913,25 @@ static void tcp_tasklet_func(unsigned long data)
 			  (1UL << TCP_WRITE_TIMER_DEFERRED) |	\
 			  (1UL << TCP_DELACK_TIMER_DEFERRED) |	\
 			  (1UL << TCP_MTU_REDUCED_DEFERRED))
+
+static void mptcp_release_cb(struct sock *meta_sk)
+{
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct sock *sk;
+	unsigned long flags, nflags;
+
+	/* perform an atomic operation only if at least one flag is set */
+	do {
+		flags = meta_tp->tsq_flags;
+		if (!(flags & TCP_DEFERRED_ALL))
+			return;
+		nflags = flags & ~TCP_DEFERRED_ALL;
+	} while (cmpxchg(&meta_tp->tsq_flags, flags, nflags) != flags);
+
+	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk)
+		tcp_release_cb(sk);
+}
+
 /**
  * tcp_release_cb - tcp release_sock() callback
  * @sk: socket
@@ -920,6 +943,11 @@ void tcp_release_cb(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned long flags, nflags;
+
+	if (is_meta_sk(sk)) {
+		mptcp_release_cb(sk);
+		return;
+	}
 
 	/* perform an atomic operation only if at least one flag is set */
 	do {
@@ -2079,6 +2107,8 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		 */
 		if (atomic_read(&sk->sk_wmem_alloc) >= sysctl_tcp_limit_output_bytes) {
 			set_bit(TSQ_THROTTLED, &tp->tsq_flags);
+			if (tp->mpc)
+				set_bit(TSQ_THROTTLED, &mptcp_meta_tp(tp)->tsq_flags);
 			break;
 		}
 		limit = mss_now;
