@@ -292,9 +292,12 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 			ans = -1;
 		} else {
 			tp->mpcb->send_mp_fail = 1;
-			tp->copied_seq = TCP_SKB_CB(last)->end_seq;
+
 			/* Need to purge the rcv-queue as it's no more valid */
-			__skb_queue_purge(&sk->sk_receive_queue);
+			while ((tmp = __skb_dequeue(&sk->sk_receive_queue)) != NULL) {
+				tp->copied_seq = TCP_SKB_CB(tmp)->end_seq;
+				kfree_skb(tmp);
+			}
 
 			ans = 0;
 		}
