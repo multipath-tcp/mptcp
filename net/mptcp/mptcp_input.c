@@ -411,7 +411,7 @@ static int mptcp_skb_split_tail(struct sk_buff *skb, struct sock *sk, u32 seq)
 	u8 flags;
 
 	len = seq - TCP_SKB_CB(skb)->seq;
-	nsize = skb_headlen(skb) - len;
+	nsize = skb_headlen(skb) - len + tcp_sk(sk)->tcp_header_len;
 	if (nsize < 0)
 		nsize = 0;
 
@@ -419,6 +419,12 @@ static int mptcp_skb_split_tail(struct sk_buff *skb, struct sock *sk, u32 seq)
 	buff = alloc_skb(nsize, GFP_ATOMIC);
 	if (buff == NULL)
 		return -ENOMEM;
+
+	skb_reserve(buff, tcp_sk(sk)->tcp_header_len);
+	skb_reset_transport_header(buff);
+
+	tcp_hdr(buff)->fin = tcp_hdr(skb)->fin;
+	tcp_hdr(skb)->fin = 0;
 
 	/* We absolutly need to call skb_set_owner_r before refreshing the
 	 * truesize of buff, otherwise the moved data will account twice.
@@ -437,9 +443,6 @@ static int mptcp_skb_split_tail(struct sk_buff *skb, struct sock *sk, u32 seq)
 	TCP_SKB_CB(buff)->tcp_flags = flags;
 
 	skb_split(skb, buff, len);
-
-	/* buff has no TCP/IP-header - thus drop the reference */
-	skb_header_release(buff);
 
 	__skb_queue_after(&sk->sk_receive_queue, skb, buff);
 
