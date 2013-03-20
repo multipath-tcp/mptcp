@@ -1578,8 +1578,19 @@ static inline int mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
 			meta_sk->sk_send_head = tcp_write_queue_head(meta_sk);
 
 			/* We artificially restart the whole send-queue. Thus,
-			 * it is as if no packets are in flight */
+			 * it is as if no packets are in flight
+			 */
 			tcp_sk(meta_sk)->packets_out = 0;
+
+			/* If the snd_nxt already wrapped around, we have to
+			 * undo the wrapping, as we are restarting from snd_una
+			 * on.
+			 */
+			if (tcp_sk(meta_sk)->snd_nxt < tcp_sk(meta_sk)->snd_una) {
+				mpcb->snd_high_order[mpcb->snd_hiseq_index] -= 2;
+				mpcb->snd_hiseq_index = mpcb->snd_hiseq_index ? 0 : 1;
+			}
+			tcp_sk(meta_sk)->snd_nxt = tcp_sk(meta_sk)->snd_una;
 		}
 
 		return 0;
