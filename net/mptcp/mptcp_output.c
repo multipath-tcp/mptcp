@@ -1345,12 +1345,15 @@ static void mptcp_set_nonce(struct sock *sk)
 								inet->inet_sport,
 								inet->inet_dport,
 								tp->write_seq);
+#if IS_ENABLED(CONFIG_IPV6)
 	else
 		tp->mptcp->mptcp_loc_nonce = mptcp_v6_get_nonce(inet6_sk(sk)->saddr.s6_addr32,
 				     	     	     	        inet6_sk(sk)->daddr.s6_addr32,
 				     	     	     	        inet->inet_sport,
 				     	     	     	        inet->inet_dport,
 				     	     	     	        tp->write_seq);
+#endif
+
 	tp->mptcp->nonce_set = 1;
 }
 

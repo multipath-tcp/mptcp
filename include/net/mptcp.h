@@ -1288,6 +1288,7 @@ static inline int mptso_fragment(struct sock *sk, struct sk_buff *skb,
 				 gfp_t gfp, int reinject)
 {
 	return 0;
+}
 static inline bool mptcp_sk_can_gso(const struct sock *sk)
 {
 	return false;

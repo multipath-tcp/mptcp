@@ -130,11 +130,13 @@ static void mptcp_set_key_reqsk(struct request_sock *req,
 						        ip_hdr(skb)->daddr,
 						        ireq->loc_port,
 						        ireq->rmt_port);
+#if IS_ENABLED(CONFIG_IPV6)
 	} else {
 		mtreq->mptcp_loc_key = mptcp_v6_get_key(ipv6_hdr(skb)->saddr.s6_addr32,
 							ipv6_hdr(skb)->daddr.s6_addr32,
 							ireq->loc_port,
 							ireq->rmt_port);
+#endif
 	}
 
 	mptcp_key_sha1(mtreq->mptcp_loc_key, &mtreq->mptcp_loc_token, NULL);
@@ -175,11 +177,13 @@ static void mptcp_set_key_sk(struct sock *sk)
 						     isk->inet_daddr,
 						     isk->inet_sport,
 						     isk->inet_dport);
+#if IS_ENABLED(CONFIG_IPV6)
 	else
 		tp->mptcp_loc_key = mptcp_v6_get_key(inet6_sk(sk)->saddr.s6_addr32,
 						     inet6_sk(sk)->daddr.s6_addr32,
 						     isk->inet_sport,
 						     isk->inet_dport);
+#endif
 
 	mptcp_key_sha1(tp->mptcp_loc_key,
 		       &tp->mptcp_loc_token, NULL);

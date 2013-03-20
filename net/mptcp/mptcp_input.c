@@ -915,7 +915,7 @@ static int mptcp_queue_skb(struct sock *sk)
 			    meta_tp->copied_seq == meta_tp->rcv_nxt &&
 			    meta_tp->ucopy.len && sock_owned_by_user(meta_sk) &&
 			    !copied_early)
-				eaten = mptcp_direct_copy(tmp1, meta_sk);
+				eaten = mptcp_direct_copy(tmp1, tp, meta_sk);
 
 			if (!eaten)
 				eaten = tcp_queue_rcv(meta_sk, tmp1, 0, &fragstolen);
@@ -1433,12 +1433,9 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 	}
 	case MPTCP_SUB_ADD_ADDR:
 	{
+#if IS_ENABLED(CONFIG_IPV6)
 		struct mp_add_addr *mpadd = (struct mp_add_addr *)ptr;
 
-		if (!mopt->mpcb)
-			break;
-
-#if IS_ENABLED(CONFIG_IPV6)
 		if ((mpadd->ipver == 4 && opsize != MPTCP_SUB_LEN_ADD_ADDR4 &&
 		     opsize != MPTCP_SUB_LEN_ADD_ADDR4 + 2) ||
 		    (mpadd->ipver == 6 && opsize != MPTCP_SUB_LEN_ADD_ADDR6 &&
@@ -1609,9 +1606,8 @@ static void mptcp_parse_addropt(const struct sk_buff *skb, struct sock *sk)
 				return;  /* don't parse partial options */
 			if (opcode == TCPOPT_MPTCP &&
 			    ((struct mptcp_option *)ptr)->sub == MPTCP_SUB_ADD_ADDR) {
-				struct mp_add_addr *mpadd = (struct mp_add_addr *)ptr;
-
 #if IS_ENABLED(CONFIG_IPV6)
+				struct mp_add_addr *mpadd = (struct mp_add_addr *)ptr;
 				if ((mpadd->ipver == 4 && opsize != MPTCP_SUB_LEN_ADD_ADDR4 &&
 				     opsize != MPTCP_SUB_LEN_ADD_ADDR4 + 2) ||
 				    (mpadd->ipver == 6 && opsize != MPTCP_SUB_LEN_ADD_ADDR6 &&
