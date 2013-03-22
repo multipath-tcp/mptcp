@@ -1487,7 +1487,7 @@ bool tcp_nagle_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 	 * Nagle can be ignored during F-RTO too (see RFC4138).
 	 */
 	if (tcp_urg_mode(tp) || (tp->frto_counter == 2) ||
-	    (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN))
+	    (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN) || mptcp_is_data_fin(skb))
 		return true;
 
 	if (!tcp_nagle_check(tp, skb, cur_mss, nonagle))
@@ -1611,7 +1611,7 @@ bool tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb)
 	u32 send_win, cong_win, limit, in_flight;
 	int win_divisor;
 
-	if (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN)
+	if ((TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN) || mptcp_is_data_fin(skb))
 		goto send_now;
 
 	if (icsk->icsk_ca_state != TCP_CA_Open)

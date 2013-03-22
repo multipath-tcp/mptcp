@@ -200,7 +200,8 @@ struct mptcp_cb {
 		list_rcvd:1, /* XXX TO REMOVE */
 		dss_csum:1,
 		server_side:1,
-		infinite_mapping:1,
+		infinite_mapping_rcv:1,
+		infinite_mapping_snd:1,
 		send_mp_fail:1,
 		dfin_combined:1,   /* Was the DFIN combined with subflow-fin? */
 		passive_close:1,
@@ -730,7 +731,7 @@ static inline int mptcp_is_data_fin2(const struct sk_buff *skb,
 				     const struct tcp_sock *tp)
 {
 	return (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN) ||
-	       (tp->mpcb->infinite_mapping && tcp_hdr(skb)->fin);
+	       (tp->mpcb->infinite_mapping_rcv && tcp_hdr(skb)->fin);
 }
 
 static inline int mptcp_is_data_seq(const struct sk_buff *skb)
@@ -984,10 +985,14 @@ static inline int mptcp_fallback_infinite(struct tcp_sock *tp, int flag)
 	 * will have been set before and thus we will not fall back to infinite
 	 * mapping.
 	 */
-	if (likely(tp->mptcp->fully_established && !tp->mpcb->infinite_mapping))
+	if (likely(tp->mptcp->fully_established))
 		return 0;
 
 	if (!(flag & FLAG_DATA_ACKED))
+		return 0;
+
+	/* Don't fallback twice ;) */
+	if (tp->mpcb->infinite_mapping_snd)
 		return 0;
 
 	pr_err("%s %#x will fallback - pi %d from %pS\n", __func__,
@@ -996,7 +1001,8 @@ static inline int mptcp_fallback_infinite(struct tcp_sock *tp, int flag)
 	if (!is_master_tp(tp))
 		return MPTCP_FLAG_SEND_RESET;
 
-	tp->mpcb->infinite_mapping = 1;
+	tp->mpcb->infinite_mapping_snd = 1;
+	tp->mpcb->infinite_mapping_rcv = 1;
 	tp->mptcp->fully_established = 1;
 
 	return 0;
