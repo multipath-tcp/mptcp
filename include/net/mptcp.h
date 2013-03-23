@@ -1321,6 +1321,7 @@ static inline int mptcp_rcv_synsent_state_process(struct sock *sk,
 						  struct mptcp_options_received *mopt)
 {
 	return 0;
+}
 static inline bool mptcp_can_sendpage(struct sock *sk)
 {
 	return false;
