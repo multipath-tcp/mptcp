@@ -151,15 +151,18 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 		if (tp->mptcp->rcv_low_prio || tp->mptcp->low_prio)
 			cnt_backups++;
 
-		if (mptcp_dont_reinject_skb(tp, skb))
-			continue;
-
 		if ((tp->mptcp->rcv_low_prio || tp->mptcp->low_prio) &&
 		    tp->srtt < lowprio_min_time_to_peer &&
 		    !(skb && mptcp_pi_to_flag(tp->mptcp->path_index) & TCP_SKB_CB(skb)->path_mask)) {
 
 			if (!mptcp_is_available(sk, skb, &this_mss))
 				continue;
+
+			if (mptcp_dont_reinject_skb(tp, skb)) {
+				mss_backup = this_mss;
+				backupsk = sk;
+				continue;
+			}
 
 			lowprio_min_time_to_peer = tp->srtt;
 			lowpriosk = sk;
@@ -170,17 +173,15 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 			if (!mptcp_is_available(sk, skb, &this_mss))
 				continue;
 
+			if (mptcp_dont_reinject_skb(tp, skb)) {
+				mss_backup = this_mss;
+				backupsk = sk;
+				continue;
+			}
+
 			min_time_to_peer = tp->srtt;
 			bestsk = sk;
 			mss = this_mss;
-		}
-
-		if (skb && mptcp_pi_to_flag(tp->mptcp->path_index) & TCP_SKB_CB(skb)->path_mask) {
-			if (!mptcp_is_available(sk, skb, &this_mss))
-				continue;
-
-			backupsk = sk;
-			mss_backup = this_mss;
 		}
 	}
 
@@ -189,7 +190,12 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 		sk = lowpriosk;
 	} else if (bestsk) {
 		sk = bestsk;
-	} else {
+	} else if (backupsk){
+		/* It has been sent on all subflows once - let's give it a
+		 * chance again by restarting its pathmask.
+		 */
+		if (skb)
+			TCP_SKB_CB(skb)->path_mask = 0;
 		mss = mss_backup;
 		sk = backupsk;
 	}
