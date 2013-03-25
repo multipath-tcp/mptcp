@@ -1389,7 +1389,7 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 	/* In fallback mp_fail-mode, we have to repeat it until the fallback
 	 * has been done by the sender
 	 */
-	if (unlikely(mpcb->send_mp_fail || tp->mptcp->csum_error)) {
+	if (unlikely(tp->mptcp->send_mp_fail)) {
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_MP_FAIL;
 		opts->data_ack = (__u32)(mpcb->csum_cutoff_seq >> 32);

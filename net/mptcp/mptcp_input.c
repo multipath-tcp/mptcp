@@ -281,7 +281,8 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 			    TCP_SKB_CB(last)->seq, dss_csum_added, overflowed,
 			    iter);
 
-		tp->mptcp->csum_error = 1;
+		tp->mptcp->send_mp_fail = 1;
+
 		/* map_data_seq is the data-seq number of the
 		 * mapping we are currently checking
 		 */
@@ -291,7 +292,6 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 			mptcp_send_reset(sk);
 			ans = -1;
 		} else {
-			tp->mpcb->send_mp_fail = 1;
 			tp->mpcb->send_infinite_mapping = 1;
 
 			/* Need to purge the rcv-queue as it's no more valid */
@@ -579,7 +579,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 		/* We need to repeat mp_fail's until the sender felt
 		 * back to infinite-mapping - here we stop repeating it.
 		 */
-		mpcb->send_mp_fail = 0;
+		tp->mptcp->send_mp_fail = 0;
 
 		/* We have to fixup data_len - it must be the same as skb->len */
 		data_len = skb->len + (mptcp_is_data_fin(skb) ? 1 : 0);
@@ -599,7 +599,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 	 * Ignore packets which do not announce the fallback and still
 	 * want to provide a mapping.
 	 */
-	if (mpcb->send_mp_fail) {
+	if (tp->mptcp->send_mp_fail) {
 		tp->copied_seq = TCP_SKB_CB(skb)->end_seq;
 		__skb_unlink(skb, &sk->sk_receive_queue);
 		__kfree_skb(skb);
