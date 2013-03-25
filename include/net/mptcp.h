@@ -150,7 +150,7 @@ struct mptcp_tcp_sock {
 		nonce_set:1, /* Is the nonce set? (in order to support 0-nonce) */
 		fully_established:1,
 		attached:1,
-		csum_error:1,
+		send_mp_fail:1,
 		include_mpc:1,
 		mapping_present:1,
 		map_data_fin:1,
@@ -206,7 +206,6 @@ struct mptcp_cb {
 		server_side:1,
 		infinite_mapping_rcv:1,
 		infinite_mapping_snd:1,
-		send_mp_fail:1,
 		dfin_combined:1,   /* Was the DFIN combined with subflow-fin? */
 		passive_close:1,
 		snd_hiseq_index:1, /* Index in snd_high_order of snd_nxt */
