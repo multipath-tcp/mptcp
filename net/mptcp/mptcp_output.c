@@ -135,11 +135,13 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 		if (tp->mptcp->rcv_low_prio || tp->mptcp->low_prio)
 			cnt_backups++;
 
-		if (mptcp_dont_reinject_skb(tp, skb))
-			continue;
-
 		if (!mptcp_is_available(sk, skb))
 			continue;
+
+		if (mptcp_dont_reinject_skb(tp, skb)) {
+			backupsk = sk;
+			continue;
+		}
 
 		if ((tp->mptcp->rcv_low_prio || tp->mptcp->low_prio) &&
 		    tp->srtt < lowprio_min_time_to_peer &&
@@ -152,16 +154,21 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 			min_time_to_peer = tp->srtt;
 			bestsk = sk;
 		}
-
-		if (skb && mptcp_pi_to_flag(tp->mptcp->path_index) & TCP_SKB_CB(skb)->path_mask)
-			backupsk = sk;
 	}
 
 	if (mpcb->cnt_established == cnt_backups && lowpriosk)
 		return lowpriosk;
 	if (bestsk)
 		return bestsk;
-	return backupsk;
+	if (backupsk) {
+		/* It has been sent on all subflows once - let's give it a
+		 * chance again by restarting its pathmask.
+		 */
+		if (skb)
+			TCP_SKB_CB(skb)->path_mask = 0;
+		return backupsk;
+	}
+	return NULL;
 }
 
 static struct mp_dss *mptcp_skb_find_dss(const struct sk_buff *skb)
