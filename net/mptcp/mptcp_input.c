@@ -485,6 +485,7 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 			return 1;
 		}
 
+		tp->mpcb->infinite_mapping_snd = 1;
 		tp->mpcb->infinite_mapping_rcv = 1;
 		tp->mptcp->fully_established = 1;
 	}
