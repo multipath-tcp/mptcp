@@ -318,9 +318,7 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb, struct sk_buff *next,
 	 * subflows. Otherwise it would be a complete mess.
 	 */
 	tcb->seq = ((u32)tp->mptcp->map_data_seq) + tcb->seq - tp->mptcp->map_subseq;
-	tcb->mp_data_len = skb->len;
-	tcb->sub_seq = tcb->seq;
-	tcb->end_seq = tcb->seq + tcb->mp_data_len;
+	tcb->end_seq = tcb->seq + skb->len;
 
 	/* If cur is the last one in the rcv-queue (or the last one for this
 	 * mapping), and data_fin is enqueued, the end_data_seq is +1.
