@@ -1002,11 +1002,17 @@ void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
 void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct mptcp_cb *mpcb = meta_tp->mpcb;
-	struct sock *sk, *subsk;
-	int time_to_ack = 0;
+	struct sock *sk;
+	__u32 rcv_window_now = 0;
 
-	mptcp_for_each_sk(mpcb, sk) {
+	if (copied > 0 && !(meta_sk->sk_shutdown & RCV_SHUTDOWN)) {
+		rcv_window_now = tcp_receive_window(meta_tp);
+
+		if (2 * rcv_window_now > meta_tp->window_clamp)
+			rcv_window_now = 0;
+	}
+
+	mptcp_for_each_sk(meta_tp->mpcb, sk) {
 		struct tcp_sock *tp = tcp_sk(sk);
 		const struct inet_connection_sock *icsk = inet_csk(sk);
 
@@ -1014,7 +1020,7 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 			continue;
 
 		if (!inet_csk_ack_scheduled(sk))
-			continue;
+			goto second_part;
 		/* Delayed ACKs frequently hit locked sockets during bulk
 		 * receive. */
 		if (icsk->icsk_ack.blocked ||
@@ -1031,31 +1037,14 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 		      ((icsk->icsk_ack.pending & ICSK_ACK_PUSHED) &&
 		       !icsk->icsk_ack.pingpong)) &&
 		     !atomic_read(&meta_sk->sk_rmem_alloc))) {
-			time_to_ack = 1;
 			tcp_send_ack(sk);
+			continue;
 		}
-	}
 
-	if (time_to_ack)
-		return;
-
-	/* We send an ACK if we can now advertise a non-zero window
-	 * which has been raised "significantly".
-	 *
-	 * Even if window raised up to infinity, do not send window open ACK
-	 * in states, where we will not receive more. It is useless.
-	 */
-	if (copied > 0 && !time_to_ack &&
-	    !(meta_sk->sk_shutdown & RCV_SHUTDOWN)) {
-		__u32 rcv_window_now = tcp_receive_window(meta_tp);
-
-		/* Optimize, __tcp_select_window() is not cheap. */
-		if (2 * rcv_window_now <= meta_tp->window_clamp) {
-			__u32 new_window;
-			subsk = mptcp_select_ack_sock(meta_sk, copied);
-			if (!subsk)
-				return;
-			new_window = __tcp_select_window(subsk);
+second_part:
+		/* This here is the second part of tcp_cleanup_rbuf */
+		if (rcv_window_now) {
+			__u32 new_window = __tcp_select_window(sk);
 
 			/* Send ACK now, if this read freed lots of space
 			 * in our buffer. Certainly, new_window is new window.
@@ -1064,16 +1053,8 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 			 * "Lots" means "at least twice" here.
 			 */
 			if (new_window && new_window >= 2 * rcv_window_now)
-				time_to_ack = 1;
+				tcp_send_ack(sk);
 		}
-	}
-
-	if (time_to_ack) {
-		if (subsk)
-			tcp_send_ack(subsk);
-		else
-			pr_err("%s did not find a subsk! Should not happen.\n",
-			       __func__);
 	}
 }
 
