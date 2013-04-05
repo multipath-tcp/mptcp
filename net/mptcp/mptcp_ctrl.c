@@ -838,6 +838,7 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 rem_id, gfp_t flags
 	tp->mpc = 1;
 	tp->mptcp->rem_id = rem_id;
 	tp->mptcp->rx_opt.mpcb = mpcb;
+	tp->mptcp->last_rbuf_opti = tcp_time_stamp;
 
 	/* The corresponding sock_put is in mptcp_sock_destruct(). It cannot be
 	 * included in mptcp_del_sock(), because the mpcb must remain alive
