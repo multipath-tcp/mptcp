@@ -160,9 +160,10 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 			paws_reject = tcp_paws_reject(&tmp_opt, th->rst);
 		}
 
-		/* TODO MPTCP: No key-verification here!!! */
-		if (unlikely(mopt.mp_fclose))
-			goto kill_with_rst;
+		if (unlikely(mopt.mp_fclose) && tcptw->mptcp_tw) {
+			if (mopt.mptcp_key == tcptw->mptcp_tw->loc_key)
+				goto kill_with_rst;
+		}
 	}
 
 	if (tw->tw_substate == TCP_FIN_WAIT2) {
