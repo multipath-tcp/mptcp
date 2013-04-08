@@ -310,7 +310,7 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 
 			/* If a 64-bit dss is present, we increase the offset
 			 * by 4 bytes, as the high-order 64-bits will be added
-			 * in the infal csum_partial-call.
+			 * in the final csum_partial-call.
 			 */
 			u32 offset = skb_transport_offset(tmp) +
 				     TCP_SKB_CB(tmp)->dss_off;
@@ -586,7 +586,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 	if (!mptcp_is_data_seq(skb))
 		return 0;
 
-	ptr = mptcp_skb_set_data_seq(skb, &data_seq);
+	ptr = mptcp_skb_set_data_seq(skb, &data_seq, mpcb);
 	ptr++;
 	sub_seq = get_unaligned_be32(ptr) + tp->mptcp->rcv_isn;
 	ptr++;
@@ -1261,24 +1261,6 @@ void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk)
 
 /**** static functions used by mptcp_parse_options */
 
-static inline u8 mptcp_get_64_bit(u64 data_seq, struct mptcp_options_received *mopt)
-{
-	u8 ret = 0;
-	u64 data_seq_high = (u32)(data_seq >> 32);
-
-	if (!mopt->mpcb)
-		return 0;
-
-	ret |= MPTCPHDR_SEQ64_SET;
-
-	if (mopt->mpcb->rcv_high_order[0] == data_seq_high)
-		return ret;
-	else if (mopt->mpcb->rcv_high_order[1] == data_seq_high)
-		return ret | MPTCPHDR_SEQ64_INDEX;
-	else
-		return ret | MPTCPHDR_SEQ64_OFO;
-}
-
 static inline int mptcp_rem_raddress(struct mptcp_cb *mpcb, u8 rem_id)
 {
 	if (mptcp_v4_rem_raddress(mpcb, rem_id) < 0) {
@@ -1357,7 +1339,7 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 		mopt->dss_csum = sysctl_mptcp_checksum || mpcapable->a;
 
 		if (opsize >= MPTCP_SUB_LEN_CAPABLE_SYN)
-			mopt->mptcp_rem_key = mpcapable->sender_key;
+			mopt->mptcp_key = mpcapable->sender_key;
 
 		break;
 	}
@@ -1433,7 +1415,7 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			if (mdss->m) {
 				u64 data_seq64 = get_unaligned_be64(ptr);
 
-				tcb->mptcp_flags |= mptcp_get_64_bit(data_seq64, mopt);
+				tcb->mptcp_flags |= MPTCPHDR_SEQ64_SET;
 				mopt->data_seq = (u32) data_seq64;
 
 				ptr += 12; /* 64-bit dseq + subseq */
@@ -1489,8 +1471,6 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 				    __func__, opsize);
 			break;
 		}
-		if (!mopt->mpcb)
-			break;
 
 		if (mopt->saw_rem_addr) {
 			mopt->more_rem_addr = 1;
@@ -1535,9 +1515,7 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 		}
 
 		mopt->mp_fclose = 1;
-		if (mopt->mpcb &&
-		    mopt->mpcb->mptcp_loc_key != ((struct mp_fclose *)ptr)->key)
-			mopt->mp_fclose = 0;
+		mopt->mptcp_key = ((struct mp_fclose *)ptr)->key;
 
 		break;
 	default:
@@ -1695,7 +1673,10 @@ static inline int mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
 
 	if (unlikely(mptcp->rx_opt.mp_fclose)) {
 		struct sock *sk_it, *tmpsk;
+
 		mptcp->rx_opt.mp_fclose = 0;
+		if (mptcp->rx_opt.mptcp_key != mpcb->mptcp_loc_key)
+			return 0;
 
 		if (tcp_need_reset(sk->sk_state))
 			tcp_send_active_reset(sk, GFP_ATOMIC);
@@ -1833,7 +1814,7 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 				(u32 *)&tp->mptcp->sender_mac[0]);
 
 	} else if (mopt->saw_mpc) {
-		if (mptcp_create_master_sk(sk, mopt->mptcp_rem_key,
+		if (mptcp_create_master_sk(sk, mopt->mptcp_key,
 					   ntohs(tcp_hdr(skb)->window)))
 			return 2;
 

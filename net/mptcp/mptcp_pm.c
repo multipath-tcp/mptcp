@@ -164,7 +164,7 @@ void mptcp_reqsk_new_mptcp(struct request_sock *req,
 	mptcp_reqsk_insert_tk(req, mtreq->mptcp_loc_token);
 	spin_unlock(&mptcp_tk_hashlock);
 	rcu_read_unlock();
-	mtreq->mptcp_rem_key = mopt->mptcp_rem_key;
+	mtreq->mptcp_rem_key = mopt->mptcp_key;
 }
 
 static void mptcp_set_key_sk(struct sock *sk)

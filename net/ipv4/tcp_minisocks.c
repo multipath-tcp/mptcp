@@ -601,8 +601,6 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	tmp_opt.saw_tstamp = 0;
 
 	mptcp_init_mp_opt(&mopt);
-	if (is_meta_sk(sk))
-		mopt.mpcb = tcp_sk(sk)->mpcb;
 
 	if (th->doff > (sizeof(struct tcphdr)>>2)) {
 		tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);

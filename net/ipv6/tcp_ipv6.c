@@ -1007,7 +1007,7 @@ static void tcp_v6_timewait_ack(struct sock *sk, struct sk_buff *skb)
 
 	if (mptcp_is_data_fin(skb)) {
 		/* As it's a data-fin we know that the data-seq is present */
-		mptcp_skb_set_data_seq(skb, &data_ack);
+		mptcp_skb_set_data_seq(skb, &data_ack, NULL);
 		data_ack++;
 	}
 	tcp_v6_send_ack(skb, tcptw->tw_snd_nxt, tcptw->tw_rcv_nxt,

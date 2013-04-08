@@ -98,7 +98,6 @@ struct request_sock *rev_mptcp_rsk(const struct mptcp_request_sock *req)
 }
 
 struct mptcp_options_received {
-	struct mptcp_cb *mpcb;
 	u16	saw_mpc:1,
 		dss_csum:1,
 		drop_me:1,
@@ -132,7 +131,9 @@ struct mptcp_options_received {
 	u16	data_len;
 
 	u32	mptcp_rem_token;/* Remote token */
-	u64	mptcp_rem_key;	/* Remote key */
+
+	/* Key inside the option (from mp_capable or fast_close) */
+	u64	mptcp_key;
 
 	u32	mptcp_recv_nonce;
 	u64	mptcp_recv_tmac;
@@ -793,16 +794,34 @@ static inline void mptcp_skb_entail_init(const struct tcp_sock *tp,
 		TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_SEQ;
 }
 
+static inline u8 mptcp_get_64_bit(u64 data_seq, struct mptcp_cb *mpcb)
+{
+	u64 data_seq_high = (u32)(data_seq >> 32);
+
+	if (mpcb->rcv_high_order[0] == data_seq_high)
+		return 0;
+	else if (mpcb->rcv_high_order[1] == data_seq_high)
+		return MPTCPHDR_SEQ64_INDEX;
+	else
+		return MPTCPHDR_SEQ64_OFO;
+}
+
 /* Sets the data_seq and returns pointer to the in-skb field of the data_seq.
  * If the packet has a 64-bit dseq, the pointer points to the last 32 bits.
  */
 static inline __u32 *mptcp_skb_set_data_seq(const struct sk_buff *skb,
-					    u32 *data_seq)
+					    u32 *data_seq,
+					    struct mptcp_cb *mpcb)
 {
 	__u32 *ptr = (__u32 *)(skb_transport_header(skb) + TCP_SKB_CB(skb)->dss_off);
 
 	if (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ64_SET) {
-		*data_seq = (u32)get_unaligned_be64(ptr);
+		u64 data_seq64 = get_unaligned_be64(ptr);
+
+		if (mpcb)
+			TCP_SKB_CB(skb)->mptcp_flags |= mptcp_get_64_bit(data_seq64, mpcb);
+
+		*data_seq = (u32)data_seq64 ;
 		ptr++;
 	} else {
 		*data_seq = get_unaligned_be32(ptr);
@@ -899,7 +918,6 @@ static inline void mptcp_init_mp_opt(struct mptcp_options_received *mopt)
 
 	mopt->mp_fail = 0;
 	mopt->mp_fclose = 0;
-	mopt->mpcb = NULL;
 }
 
 static inline void mptcp_reset_mopt(struct tcp_sock *tp)
@@ -1157,7 +1175,8 @@ static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
 #define mptcp_for_each_sk_safe(__mpcb, __sk, __temp)
 
 static inline __u32 *mptcp_skb_set_data_seq(const struct sk_buff *skb,
-					    u32 *data_seq)
+					    u32 *data_seq,
+					    struct mptcp_cb *mpcb)
 {
 	return 0;
 }
