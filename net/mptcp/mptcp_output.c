@@ -984,7 +984,7 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 			if (tcp_time_stamp - tp_it->mptcp->last_rbuf_opti < tp_it->srtt >> 3)
 				break;
 
-			if (tp->srtt < tp_it->srtt) {
+			if (tp->srtt < tp_it->srtt && inet_csk((struct sock *)tp_it)->icsk_ca_state == TCP_CA_Open) {
 				tp_it->snd_cwnd = max(tp_it->snd_cwnd >> 1U, 1U);
 				if (tp_it->snd_ssthresh != TCP_INFINITE_SSTHRESH)
 					tp_it->snd_ssthresh = max(tp_it->snd_ssthresh >> 1U, 2U);
