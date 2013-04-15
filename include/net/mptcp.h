@@ -200,6 +200,8 @@ struct mptcp_cb {
 	/* list of sockets in this multipath connection */
 	struct tcp_sock *connection_list;
 
+	atomic_t	refcnt;
+
 	/* High-order bits of 64-bit sequence numbers */
 	u32 snd_high_order[2];
 	u32 rcv_high_order[2];

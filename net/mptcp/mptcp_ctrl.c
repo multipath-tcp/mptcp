@@ -218,18 +218,27 @@ static void mptcp_sock_def_error_report(struct sock *sk)
 	return;
 }
 
+static void mptcp_mpcb_put(struct mptcp_cb *mpcb)
+{
+	if (atomic_dec_and_test(&mpcb->refcnt))
+		kmem_cache_free(mptcp_cb_cache, mpcb);
+}
+
 static void mptcp_sock_destruct(struct sock *sk)
 {
+	struct tcp_sock *tp = tcp_sk(sk);
+
 	inet_sock_destruct(sk);
 
-	kmem_cache_free(mptcp_sock_cache, tcp_sk(sk)->mptcp);
-	tcp_sk(sk)->mptcp = NULL;
+	kmem_cache_free(mptcp_sock_cache, tp->mptcp);
+	tp->mptcp = NULL;
 
-	if (!is_meta_sk(sk) && !tcp_sk(sk)->was_meta_sk) {
+	if (!is_meta_sk(sk) && !tp->was_meta_sk) {
 		/* Taken when mpcb pointer was set */
 		sock_put(mptcp_meta_sk(sk));
+		mptcp_mpcb_put(tp->mpcb);
 	} else {
-		kmem_cache_free(mptcp_cb_cache, tcp_sk(sk)->mpcb);
+		mptcp_mpcb_put(tp->mpcb);
 
 		mptcp_debug("%s destroying meta-sk\n", __func__);
 	}
@@ -810,6 +819,9 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	mpcb->orig_sk_sndbuf = meta_sk->sk_sndbuf;
 	mpcb->orig_window_clamp = meta_tp->window_clamp;
 
+	/* The meta is directly linked - set refcnt to 1 */
+	atomic_set(&mpcb->refcnt, 1);
+
 	mptcp_debug("%s: created mpcb with token %#x\n",
 		    __func__, mpcb->mptcp_loc_token);
 
@@ -890,6 +902,7 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 rem_id,
 	 * until the last subsocket is completely destroyed.
 	 */
 	sock_hold(meta_sk);
+	atomic_inc(&mpcb->refcnt);
 
 	tp->mptcp->next = mpcb->connection_list;
 	mpcb->connection_list = tp;
