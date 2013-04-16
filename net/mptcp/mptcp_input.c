@@ -1433,6 +1433,10 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			mopt->data_len = get_unaligned_be16(ptr);
 
 			tcb->mptcp_flags |= MPTCPHDR_SEQ;
+
+			/* Is a check-sum present? */
+			if (opsize == mptcp_sub_len_dss(mdss, 1))
+				tcb->mptcp_flags |= MPTCPHDR_DSS_CSUM;
 		}
 
 		if (mdss->F)
@@ -1715,6 +1719,19 @@ int mptcp_handle_options(struct sock *sk, const struct tcphdr *th, struct sk_buf
 
 	if (mptcp_mp_fail_rcvd(sk, th))
 		return 1;
+
+	/* RFC 6824, Section 3.3:
+	 * If a checksum is not present when its use has been negotiated, the
+	 * receiver MUST close the subflow with a RST as it is considered broken.
+	 */
+	if (mptcp_is_data_seq(skb) && tp->mpcb->dss_csum &&
+	    !(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_DSS_CSUM)) {
+		if (tcp_need_reset(sk->sk_state))
+			tcp_send_active_reset(sk, GFP_ATOMIC);
+
+		mptcp_sub_force_close(sk);
+		return 1;
+	}
 
 	/* We have to acknowledge retransmissions of the third
 	 * ack.
