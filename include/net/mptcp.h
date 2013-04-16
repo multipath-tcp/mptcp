@@ -989,7 +989,7 @@ static inline int mptcp_fallback_infinite(struct sock *sk, int flag)
 	if (likely(tp->mptcp->fully_established))
 		return 0;
 
-	if (!(flag & FLAG_DATA_ACKED))
+	if (!(flag & MPTCP_FLAG_DATA_ACKED))
 		return 0;
 
 	/* Don't fallback twice ;) */
