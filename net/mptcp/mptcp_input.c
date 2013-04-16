@@ -219,7 +219,8 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 
 		if (before(tp->mptcp->map_subseq + tp->mptcp->map_data_len, TCP_SKB_CB(tmp)->end_seq))
 			/* Mapping ends in the middle of the packet -
-			 * csum only these bytes */
+			 * csum only these bytes
+			 */
 			csum_len = tp->mptcp->map_subseq + tp->mptcp->map_data_len - TCP_SKB_CB(tmp)->seq;
 		else
 			csum_len = tmp->len;
@@ -239,8 +240,9 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 
 		csum_tcp = skb_checksum(tmp, offset, csum_len, csum_tcp);
 
-		/* Was it on an odd-length?  Then we have to merge the next byte
-		 * correctly (see above)*/
+		/* Was it on an odd-length? Then we have to merge the next byte
+		 * correctly (see above)
+		 */
 		if (csum_len != (csum_len & (~1)))
 			overflowed = 1;
 
@@ -249,7 +251,7 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 
 			/* If a 64-bit dss is present, we increase the offset
 			 * by 4 bytes, as the high-order 64-bits will be added
-			 * in the infal csum_partial-call.
+			 * in the final csum_partial-call.
 			 */
 			u32 offset = skb_transport_offset(tmp) +
 				     TCP_SKB_CB(tmp)->dss_off;
