@@ -271,7 +271,7 @@ static void mptcp_olia_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 	mptcp_get_epsilon(mpcb);
 	rate = mptcp_get_rate(mpcb, tp->srtt);
 	cwnd_scaled = mptcp_olia_scale(tp->snd_cwnd, scale);
-	inc_den = ca->epsilon_den * tp->snd_cwnd * rate;
+	inc_den = ca->epsilon_den * tp->snd_cwnd * rate ? : 1;
 
 	/* calculate the increasing term, scaling is used to reduce the rounding effect */
 	if (ca->epsilon_num == -1) {
