@@ -250,9 +250,7 @@ static void mptcp_olia_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 		return;
 	}
 
-	ssthresh = min(tp->snd_ssthresh , ca->mptcp_ssthresh);
-	if (mpcb->cnt_established > 1)
-		ssthresh--;
+	ssthresh = tp->snd_ssthresh;
 
 	ca->mptcp_loss3 = tp->snd_una;
 
