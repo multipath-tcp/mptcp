@@ -464,7 +464,6 @@ static int mptcp_skb_split_tail(struct sk_buff *skb, struct sock *sk, u32 seq)
 	struct sk_buff *buff;
 	int nsize;
 	int nlen, len;
-	u8 flags;
 
 	len = seq - TCP_SKB_CB(skb)->seq;
 	nsize = skb_headlen(skb) - len + tcp_sk(sk)->tcp_header_len;
@@ -492,11 +491,6 @@ static int mptcp_skb_split_tail(struct sk_buff *skb, struct sock *sk, u32 seq)
 
 	/* Correct the sequence numbers. */
 	TCP_SKB_CB(buff)->seq = TCP_SKB_CB(skb)->seq + len;
-
-	/* PSH and FIN should only be set in the second packet. */
-	flags = TCP_SKB_CB(skb)->tcp_flags;
-	TCP_SKB_CB(skb)->tcp_flags = flags & ~(TCPHDR_FIN | TCPHDR_PSH);
-	TCP_SKB_CB(buff)->tcp_flags = flags;
 
 	skb_split(skb, buff, len);
 
@@ -1130,7 +1124,7 @@ static void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	/* Even if there is no data-ack, we stop retransmitting.
 	 * Except if this is a SYN/ACK. Then it is just a retransmission
 	 */
-	if (tp->mptcp->pre_established && !(tcb->tcp_flags & TCPHDR_SYN)) {
+	if (tp->mptcp->pre_established && !tcp_hdr(skb)->syn) {
 		tp->mptcp->pre_established = 0;
 		sk_stop_timer(sk, &tp->mptcp->mptcp_ack_timer);
 	}
