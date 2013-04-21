@@ -194,11 +194,24 @@ struct mptcp_tcp_sock {
 	char sender_mac[20];
 };
 
+struct mptcp_tw {
+	struct list_head list;
+	u64 loc_key;
+	u64 rcv_nxt;
+	struct mptcp_cb __rcu *mpcb;
+	u8 meta_tw:1,
+	   in_list:1;
+};
+
 struct mptcp_cb {
 	struct sock *meta_sk;
 
 	/* list of sockets in this multipath connection */
 	struct tcp_sock *connection_list;
+
+	spinlock_t	 tw_lock;
+	struct list_head tw_list;
+	unsigned char	 mptw_state;
 
 	atomic_t	refcnt;
 
@@ -207,6 +220,7 @@ struct mptcp_cb {
 	u32 rcv_high_order[2];
 
 	u16	send_infinite_mapping:1,
+		in_time_wait:1,
 		list_rcvd:1, /* XXX TO REMOVE */
 		dss_csum:1,
 		server_side:1,
@@ -716,6 +730,9 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 				    struct mptcp_options_received *mopt);
 unsigned int mptcp_xmit_size_goal(struct sock *meta_sk, u32 mss_now,
 				  int large_allowed);
+int mptcp_time_wait(struct sock *sk, struct tcp_timewait_sock *tw);
+void mptcp_twsk_destructor(struct tcp_timewait_sock *tw);
+void mptcp_update_tw_socks(const struct tcp_sock *tp, int state);
 
 static inline bool mptcp_can_sendpage(struct sock *sk)
 {
@@ -1364,6 +1381,12 @@ static inline bool mptcp_can_sendpage(struct sock *sk)
 {
 	return false;
 }
+static inline int mptcp_time_wait(struct sock *sk, struct tcp_timewait_sock *tw)
+{
+	return 0;
+}
+static inline void mptcp_twsk_destructor(struct tcp_timewait_sock *tw) {}
+static inline void mptcp_update_tw_socks(const struct tcp_sock *tp, int state) {}
 #endif /* CONFIG_MPTCP */
 
 #endif /* _MPTCP_H */

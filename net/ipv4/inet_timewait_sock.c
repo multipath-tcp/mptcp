@@ -99,7 +99,7 @@ static void __inet_twsk_kill(struct inet_timewait_sock *tw,
 	}
 }
 
-static noinline void inet_twsk_free(struct inet_timewait_sock *tw)
+void inet_twsk_free(struct inet_timewait_sock *tw)
 {
 	struct module *owner = tw->tw_prot->owner;
 	twsk_destructor((struct sock *)tw);

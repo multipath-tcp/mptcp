@@ -429,6 +429,7 @@ extern u32 tcp_tso_acked(struct sock *sk, struct sk_buff *skb);
 extern void skb_clone_fraglist(struct sk_buff *skb);
 extern void copy_skb_header(struct sk_buff *new, const struct sk_buff *old);
 
+extern void inet_twsk_free(struct inet_timewait_sock *tw);
 /* These states need RST on ABORT according to RFC793 */
 static inline bool tcp_need_reset(int state)
 {

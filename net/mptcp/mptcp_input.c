@@ -212,15 +212,7 @@ static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 					 */
 					inet_csk_reset_keepalive_timer(meta_sk, tmo);
 				} else {
-					/* Diff to tcp_rcv_state_process:
-					 *
-					 * In case of MPTCP we cannot go into time-wait.
-					 * Because, we are still waiting for a data-fin.
-					 *
-					 * If we fully adapt time-wait-socks for MTPCP-awareness
-					 * we can change this here again.
-					 */
-					inet_csk_reset_keepalive_timer(meta_sk, tmo);
+					tcp_time_wait(meta_sk, TCP_FIN_WAIT2, tmo);
 				}
 			}
 		}
@@ -832,7 +824,8 @@ static int mptcp_queue_skb(struct sock *sk)
 
 	/* Is this an overlapping mapping? rcv_nxt >= end_data_seq
 	 * OR
-	 * This mapping is out of window */
+	 * This mapping is out of window
+	 */
 	if (!before64(rcv_nxt64, tp->mptcp->map_data_seq + tp->mptcp->map_data_len + tp->mptcp->map_data_fin) ||
 	    !mptcp_sequence(meta_tp, tp->mptcp->map_data_seq,
 			    tp->mptcp->map_data_seq + tp->mptcp->map_data_len + tp->mptcp->map_data_fin)) {
@@ -879,7 +872,10 @@ static int mptcp_queue_skb(struct sock *sk)
 			 */
 			skb_orphan(tmp1);
 
-			mptcp_add_meta_ofo_queue(meta_sk, tmp1, sk);
+			if (!mpcb->in_time_wait) /* In time-wait, do not receive data */
+				mptcp_add_meta_ofo_queue(meta_sk, tmp1, sk);
+			else
+				__kfree_skb(tmp1);
 
 			if (!skb_queue_empty(&sk->sk_receive_queue) &&
 			    !before(TCP_SKB_CB(tmp)->seq,
@@ -929,6 +925,9 @@ static int mptcp_queue_skb(struct sock *sk)
 			    !copied_early)
 				eaten = mptcp_direct_copy(tmp1, tp, meta_sk);
 
+			if (mpcb->in_time_wait) /* In time-wait, do not receive data */
+				eaten = 1;
+
 			if (!eaten)
 				eaten = tcp_queue_rcv(meta_sk, tmp1, 0, &fragstolen);
 
@@ -938,7 +937,7 @@ static int mptcp_queue_skb(struct sock *sk)
 			if (copied_early)
 				tcp_cleanup_rbuf(meta_sk, tmp1->len);
 
-			if (tcp_hdr(tmp1)->fin)
+			if (tcp_hdr(tmp1)->fin && !mpcb->in_time_wait)
 				mptcp_fin(meta_sk);
 
 			/* Check if this fills a gap in the ofo queue */
@@ -977,7 +976,7 @@ void mptcp_data_ready(struct sock *sk, int bytes)
 	int queued = 0;
 
 	/* If the meta is already closed, there is no point in pushing data */
-	if (meta_sk->sk_state == TCP_CLOSE) {
+	if (meta_sk->sk_state == TCP_CLOSE && !tcp_sk(sk)->mpcb->in_time_wait) {
 		skb_queue_purge(&sk->sk_receive_queue);
 		tcp_sk(sk)->copied_seq = tcp_sk(sk)->rcv_nxt;
 		goto exit;

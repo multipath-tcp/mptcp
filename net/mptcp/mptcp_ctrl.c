@@ -58,6 +58,7 @@
 
 static struct kmem_cache *mptcp_sock_cache __read_mostly;
 static struct kmem_cache *mptcp_cb_cache __read_mostly;
+static struct kmem_cache *mptcp_tw_cache __read_mostly;
 
 int sysctl_mptcp_ndiffports __read_mostly = 1;
 int sysctl_mptcp_enabled __read_mostly = 1;
@@ -238,7 +239,23 @@ static void mptcp_sock_destruct(struct sock *sk)
 		sock_put(mptcp_meta_sk(sk));
 		mptcp_mpcb_put(tp->mpcb);
 	} else {
-		mptcp_mpcb_put(tp->mpcb);
+		struct mptcp_cb *mpcb = tp->mpcb;
+		struct mptcp_tw *mptw;
+
+		/* The mpcb is disappearing - we can make the final
+		 * update to the rcv_nxt of the time-wait-sock and remove
+		 * its reference to the mpcb.
+		 */
+		spin_lock_bh(&mpcb->tw_lock);
+		list_for_each_entry_rcu(mptw, &mpcb->tw_list, list) {
+			list_del_rcu(&mptw->list);
+			mptw->in_list = 0;
+			mptcp_mpcb_put(mpcb);
+			rcu_assign_pointer(mptw->mpcb, NULL);
+		}
+		spin_unlock_bh(&mpcb->tw_lock);
+
+		mptcp_mpcb_put(mpcb);
 
 		mptcp_debug("%s destroying meta-sk\n", __func__);
 	}
@@ -813,6 +830,10 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	}
 	master_tp->inside_tk_table = 0;
 
+	/* Init time-wait stuff */
+	INIT_LIST_HEAD(&mpcb->tw_list);
+	spin_lock_init(&mpcb->tw_lock);
+
 	mptcp_mpcb_inherit_sockopts(meta_sk, master_sk);
 
 	mpcb->orig_sk_rcvbuf = meta_sk->sk_rcvbuf;
@@ -1299,6 +1320,9 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 		reqsk_queue_destroy(&inet_csk(meta_sk)->icsk_accept_queue);
 	}
 
+	/* We don't want to receive anything more - the rcv_nxt is accurate */
+	mptcp_update_tw_socks(meta_tp, meta_sk->sk_state);
+
 	meta_sk->sk_shutdown = SHUTDOWN_MASK;
 	/* We need to flush the recv. buffs.  We do this only on the
 	 * descriptor close, not protocol-sourced closes, because the
@@ -1632,6 +1656,95 @@ teardown:
 	return meta_sk;
 }
 
+int mptcp_time_wait(struct sock *sk, struct tcp_timewait_sock *tw)
+{
+	struct mptcp_tw *mptw;
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct mptcp_cb *mpcb = tp->mpcb;
+
+	/* Alloc MPTCP-tw-sock */
+	mptw = kmem_cache_alloc(mptcp_tw_cache, GFP_ATOMIC);
+	if (!mptw)
+		return -ENOBUFS;
+
+	atomic_inc(&mpcb->refcnt);
+
+	tw->mptcp_tw = mptw;
+	mptw->loc_key = mpcb->mptcp_loc_key;
+	mptw->meta_tw = mpcb->in_time_wait;
+	if (mptw->meta_tw) {
+		mptw->rcv_nxt = mptcp_get_rcv_nxt_64(mptcp_meta_tp(tp));
+		if (mpcb->mptw_state != TCP_TIME_WAIT)
+			mptw->rcv_nxt++;
+	}
+	rcu_assign_pointer(mptw->mpcb, mpcb);
+
+	spin_lock(&mpcb->tw_lock);
+	list_add_rcu(&mptw->list, &tp->mpcb->tw_list);
+	mptw->in_list = 1;
+	spin_unlock(&mpcb->tw_lock);
+
+	return 0;
+}
+
+void mptcp_twsk_destructor(struct tcp_timewait_sock *tw)
+{
+	struct mptcp_cb *mpcb;
+
+	rcu_read_lock();
+	mpcb = rcu_dereference(tw->mptcp_tw->mpcb);
+
+	/* If we are still holding a ref to the mpcb, we have to remove ourself
+	 * from the list and drop the ref properly.
+	 */
+	if (mpcb && atomic_inc_not_zero(&mpcb->refcnt)) {
+		spin_lock(&mpcb->tw_lock);
+		if (tw->mptcp_tw->in_list) {
+			list_del_rcu(&tw->mptcp_tw->list);
+			tw->mptcp_tw->in_list = 0;
+		}
+		spin_unlock(&mpcb->tw_lock);
+
+		/* Twice, because we increased it above */
+		mptcp_mpcb_put(mpcb);
+		mptcp_mpcb_put(mpcb);
+	}
+
+	rcu_read_unlock();
+
+	kmem_cache_free(mptcp_tw_cache, tw->mptcp_tw);
+}
+
+/* Updates the rcv_nxt of the time-wait-socks and allows them to ack a
+ * data-fin.
+ */
+void mptcp_update_tw_socks(const struct tcp_sock *tp, int state)
+{
+	struct mptcp_tw *mptw;
+
+	/* Used for sockets that go into tw after the meta
+	 * (see mptcp_time_wait())
+	 */
+	tp->mpcb->in_time_wait = 1;
+	tp->mpcb->mptw_state = state;
+
+	/* Update the time-wait-sock's information */
+	rcu_read_lock_bh();
+	list_for_each_entry_rcu(mptw, &tp->mpcb->tw_list, list) {
+		mptw->meta_tw = 1;
+		mptw->rcv_nxt = mptcp_get_rcv_nxt_64(tp);
+
+		/* We want to ack a DATA_FIN, but are yet in FIN_WAIT_2 -
+		 * pretend as if the DATA_FIN has already reached us, that way
+		 * the checks in tcp_timewait_state_process will be good as the
+		 * DATA_FIN comes in.
+		 */
+		if (state != TCP_TIME_WAIT)
+			mptw->rcv_nxt++;
+	}
+	rcu_read_unlock_bh();
+}
+
 struct workqueue_struct *mptcp_wq;
 
 /* General initialization of mptcp */
@@ -1643,16 +1756,22 @@ void __init mptcp_init(void)
 
 	mptcp_sock_cache = kmem_cache_create("mptcp_sock",
 					     sizeof(struct mptcp_tcp_sock),
-					     0, SLAB_HWCACHE_ALIGN|SLAB_PANIC,
+					     0, SLAB_HWCACHE_ALIGN,
 					     NULL);
 	if (!mptcp_sock_cache)
 		goto out;
 
 	mptcp_cb_cache = kmem_cache_create("mptcp_cb", sizeof(struct mptcp_cb),
-					   0, SLAB_HWCACHE_ALIGN|SLAB_PANIC,
+					   0, SLAB_DESTROY_BY_RCU|SLAB_HWCACHE_ALIGN,
 					   NULL);
 	if (!mptcp_cb_cache)
 		goto mptcp_cb_cache_failed;
+
+	mptcp_tw_cache = kmem_cache_create("mptcp_tw", sizeof(struct mptcp_tw),
+					   0, SLAB_DESTROY_BY_RCU|SLAB_HWCACHE_ALIGN,
+					   NULL);
+	if (!mptcp_tw_cache)
+		goto mptcp_tw_cache_failed;
 
 	get_random_bytes(mptcp_secret, sizeof(mptcp_secret));
 
@@ -1681,6 +1800,8 @@ register_sysctl_failed:
 mptcp_pm_failed:
 	destroy_workqueue(mptcp_wq);
 alloc_workqueue_failed:
+	kmem_cache_destroy(mptcp_tw_cache);
+mptcp_tw_cache_failed:
 	kmem_cache_destroy(mptcp_cb_cache);
 mptcp_cb_cache_failed:
 	kmem_cache_destroy(mptcp_sock_cache);

@@ -583,6 +583,7 @@ struct tcp_timewait_sock {
 	 * object holds a reference to them (tw_cookie_values->kref).
 	 */
 	struct tcp_cookie_values  *tw_cookie_values;
+	struct mptcp_tw		  *mptcp_tw;
 };
 
 static inline struct tcp_timewait_sock *tcp_twsk(const struct sock *sk)

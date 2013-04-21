@@ -329,8 +329,10 @@ void tcp_time_wait(struct sock *sk, int state, int timeo)
 	const struct tcp_sock *tp = tcp_sk(sk);
 	bool recycle_ok = false;
 
-	if (is_meta_sk(sk))
+	if (is_meta_sk(sk)) {
+		mptcp_update_tw_socks(tp, state);
 		goto tcp_done;
+	}
 
 	if (tcp_death_row.sysctl_tw_recycle && tp->rx_opt.ts_recent_stamp)
 		recycle_ok = tcp_remember_stamp(sk);
@@ -349,6 +351,15 @@ void tcp_time_wait(struct sock *sk, int state, int timeo)
 		tcptw->tw_rcv_wnd	= tcp_receive_window(tp);
 		tcptw->tw_ts_recent	= tp->rx_opt.ts_recent;
 		tcptw->tw_ts_recent_stamp = tp->rx_opt.ts_recent_stamp;
+
+		if (tp->mpc) {
+			if (mptcp_time_wait(sk, tcptw)) {
+				inet_twsk_free(tw);
+				goto exit;
+			}
+		} else {
+			tcptw->mptcp_tw = NULL;
+		}
 
 #if IS_ENABLED(CONFIG_IPV6)
 		if (tw->tw_family == PF_INET6) {
@@ -409,6 +420,7 @@ void tcp_time_wait(struct sock *sk, int state, int timeo)
 		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPTIMEWAITOVERFLOW);
 	}
 
+exit:
 	tcp_update_metrics(sk);
 tcp_done:
 	tcp_done(sk);
@@ -416,8 +428,11 @@ tcp_done:
 
 void tcp_twsk_destructor(struct sock *sk)
 {
-#ifdef CONFIG_TCP_MD5SIG
 	struct tcp_timewait_sock *twsk = tcp_twsk(sk);
+
+	if (twsk->mptcp_tw)
+		mptcp_twsk_destructor(twsk);
+#ifdef CONFIG_TCP_MD5SIG
 	if (twsk->tw_md5_key) {
 		tcp_free_md5sig_pool();
 		kfree_rcu(twsk->tw_md5_key, rcu);

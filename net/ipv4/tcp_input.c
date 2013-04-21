@@ -6341,20 +6341,8 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 						 */
 						inet_csk_reset_keepalive_timer(sk, tmo);
 					} else {
-						/* In case of MPTCP we cannot go into time-wait.
-						 * Because, we are still waiting for a subflow-fin.
-						 * This subflow-fin may carry the DATA_FIN who would
-						 * free the meta-sk.
-						 *
-						 * If we fully adapt time-wait-socks for MTPCP-awareness
-						 * we can change this here again.
-						 */
-						if (!tp->mpc) {
-							tcp_time_wait(sk, TCP_FIN_WAIT2, tmo);
-							goto discard;
-						} else {
-							inet_csk_reset_keepalive_timer(sk, tmo);
-						}
+						tcp_time_wait(sk, TCP_FIN_WAIT2, tmo);
+						goto discard;
 					}
 				}
 			}
