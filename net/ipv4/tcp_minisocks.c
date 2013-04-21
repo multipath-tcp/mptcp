@@ -146,10 +146,10 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 	const u8 *hash_location;
 	struct tcp_timewait_sock *tcptw = tcp_twsk((struct sock *)tw);
 	bool paws_reject = false;
+	struct mptcp_options_received mopt;
 
 	tmp_opt.saw_tstamp = 0;
 	if (th->doff > (sizeof(*th) >> 2) && tcptw->tw_ts_recent_stamp) {
-		struct mptcp_options_received mopt;
 		mptcp_init_mp_opt(&mopt);
 
 		tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
@@ -186,8 +186,16 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 		if (!th->ack ||
 		    !after(TCP_SKB_CB(skb)->end_seq, tcptw->tw_rcv_nxt) ||
 		    TCP_SKB_CB(skb)->end_seq == TCP_SKB_CB(skb)->seq) {
-			if (mptcp_is_data_fin(skb))
+			/* If mptcp_is_data_fin() returns true, we are sure that
+			 * mopt has been initialized - otherwise it would not
+			 * be a DATA_FIN.
+			 */
+			if (tcptw->mptcp_tw && tcptw->mptcp_tw->meta_tw &&
+			    mptcp_is_data_fin(skb) &&
+			    TCP_SKB_CB(skb)->seq == tcptw->tw_rcv_nxt &&
+			    mopt.data_seq + 1 == (u32)tcptw->mptcp_tw->rcv_nxt)
 				return TCP_TW_ACK;
+
 			inet_twsk_put(tw);
 			return TCP_TW_SUCCESS;
 		}
@@ -219,6 +227,7 @@ kill_with_rst:
 		else
 			inet_twsk_schedule(tw, &tcp_death_row, TCP_TIMEWAIT_LEN,
 					   TCP_TIMEWAIT_LEN);
+
 		return TCP_TW_ACK;
 	}
 

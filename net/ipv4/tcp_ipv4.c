@@ -817,13 +817,14 @@ static void tcp_v4_timewait_ack(struct sock *sk, struct sk_buff *skb)
 {
 	struct inet_timewait_sock *tw = inet_twsk(sk);
 	struct tcp_timewait_sock *tcptw = tcp_twsk(sk);
-	u32 data_ack = 0;
+	u32 data_ack;
+	int mptcp = 0;
 
-	if (mptcp_is_data_fin(skb)) {
-		/* As it's a data-fin we know that the data-seq is present */
-		mptcp_skb_set_data_seq(skb, &data_ack, NULL);
-		data_ack++;
+	if (tcptw->mptcp_tw && tcptw->mptcp_tw->meta_tw) {
+		data_ack = (u32)tcptw->mptcp_tw->rcv_nxt;
+		mptcp = 1;
 	}
+
 	tcp_v4_send_ack(skb, tcptw->tw_snd_nxt, tcptw->tw_rcv_nxt,
 			data_ack,
 			tcptw->tw_rcv_wnd >> tw->tw_rcv_wscale,
@@ -831,7 +832,7 @@ static void tcp_v4_timewait_ack(struct sock *sk, struct sk_buff *skb)
 			tw->tw_bound_dev_if,
 			tcp_twsk_md5_key(tcptw),
 			tw->tw_transparent ? IP_REPLY_ARG_NOSRCCHECK : 0,
-			tw->tw_tos, mptcp_is_data_fin(skb)
+			tw->tw_tos, mptcp
 			);
 
 	inet_twsk_put(tw);
