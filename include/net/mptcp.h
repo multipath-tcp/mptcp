@@ -973,8 +973,7 @@ static inline void mptcp_sub_close_passive(struct sock *sk)
 	/* Only close, if the app did a send-shutdown (passive close), and we
 	 * received the data-ack of the data-fin.
 	 */
-	if (tp->mpcb->passive_close &&
-	    meta_tp->snd_una == meta_tp->write_seq)
+	if (tp->mpcb->passive_close && meta_tp->snd_una == meta_tp->write_seq)
 		mptcp_sub_close(sk, 0);
 }
 

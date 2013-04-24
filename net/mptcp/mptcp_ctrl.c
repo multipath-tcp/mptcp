@@ -1273,13 +1273,16 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 		mptcp_send_fin(meta_sk);
 	} else if (meta_tp->snd_una == meta_tp->write_seq) {
 		/* The DATA_FIN has been sent and acknowledged
-		 * (e.g., by sk_shutdown). Close all the other subflows */
+		 * (e.g., by sk_shutdown). Close all the other subflows
+		 */
 		mptcp_for_each_sk_safe(mpcb, sk_it, tmpsk) {
 			unsigned long delay = 0;
 			/* If we are the passive closer, don't trigger
 			 * subflow-fin until the subflow has been finned
-			 * by the peer. - thus we add a delay */
-			if (mpcb->passive_close && sk_it->sk_state == TCP_ESTABLISHED)
+			 * by the peer. - thus we add a delay
+			 */
+			if (mpcb->passive_close &&
+			    sk_it->sk_state == TCP_ESTABLISHED)
 				delay = inet_csk(sk_it)->icsk_rto << 3;
 
 			mptcp_sub_close(sk_it, delay);
