@@ -1443,6 +1443,8 @@ err_add_sock:
 
 	inet_csk_prepare_forced_close(master_sk);
 	tcp_done(master_sk);
+	inet_csk_prepare_forced_close(meta_sk);
+	tcp_done(meta_sk);
 
 err_alloc_mpcb:
 	return -ENOBUFS;
@@ -1466,7 +1468,8 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	child_tp->mptcp_loc_key = mtreq->mptcp_loc_key;
 	child_tp->mptcp_loc_token = mtreq->mptcp_loc_token;
 
-	if (mptcp_create_master_sk(meta_sk, mtreq->mptcp_rem_key, child_tp->snd_wnd))
+	if (mptcp_create_master_sk(meta_sk, mtreq->mptcp_rem_key,
+				   child_tp->snd_wnd))
 		return -ENOBUFS;
 
 	child = tcp_sk(child)->mpcb->master_sk;
