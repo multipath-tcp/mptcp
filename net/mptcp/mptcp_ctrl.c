@@ -435,8 +435,10 @@ int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	struct sock *sk = skb->sk ? skb->sk : meta_sk;
 	int ret = 0;
 
-	if (unlikely(!atomic_inc_not_zero(&sk->sk_refcnt)))
+	if (unlikely(!atomic_inc_not_zero(&sk->sk_refcnt))) {
+		kfree_skb(skb);
 		return 0;
+	}
 
 	if (sk->sk_family == AF_INET)
 		ret = tcp_v4_do_rcv(sk, skb);
