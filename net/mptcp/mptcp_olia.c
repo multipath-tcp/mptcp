@@ -42,7 +42,7 @@ static inline int mptcp_olia_sk_can_send(const struct sock *sk)
 	return mptcp_sk_can_send(sk) && tcp_sk(sk)->srtt;
 }
 
-static inline u64 mptcp_olia_scale(u32 val, int scale)
+static inline u64 mptcp_olia_scale(u64 val, int scale)
 {
 	return (u64) val << scale;
 }
