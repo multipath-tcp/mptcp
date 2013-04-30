@@ -218,7 +218,8 @@ struct sock *mptcp_hash_find(struct net *net, u32 token)
 	struct hlist_nulls_node *node;
 
 	rcu_read_lock();
-	hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[hash], tk_table) {
+	hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[hash],
+				       tk_table) {
 		meta_sk = (struct sock *)meta_tp;
 		if (token == meta_tp->mptcp_loc_token &&
 		    net_eq(net, sock_net(meta_sk)) &&
@@ -995,7 +996,8 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
 		struct hlist_nulls_node *node;
 		rcu_read_lock_bh();
-		hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[i], tk_table) {
+		hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[i],
+					       tk_table) {
 			struct mptcp_cb *mpcb = meta_tp->mpcb;
 			struct sock *meta_sk = (struct sock *)meta_tp;
 
@@ -1003,7 +1005,8 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 				continue;
 
 			if (!meta_tp->mpc || !is_meta_sk(meta_sk) ||
-			    mpcb->infinite_mapping_snd || mpcb->infinite_mapping_rcv) {
+			    mpcb->infinite_mapping_snd ||
+			    mpcb->infinite_mapping_rcv) {
 				sock_put(meta_sk);
 				continue;
 			}
