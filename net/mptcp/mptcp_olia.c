@@ -33,8 +33,6 @@ struct mptcp_olia {
 	int	epsilon_num;
 	u32	epsilon_den;
 	int	mptcp_snd_cwnd_cnt;
-	u32	mptcp_previous_cwnd;
-	u32	mptcp_ssthresh;
 };
 
 static inline int mptcp_olia_sk_can_send(const struct sock *sk)
@@ -200,8 +198,6 @@ static void mptcp_olia_init(struct sock *sk)
 		ca->mptcp_loss1 = tp->snd_una;
 		ca->mptcp_loss2 = tp->snd_una;
 		ca->mptcp_loss3 = tp->snd_una;
-		ca->mptcp_ssthresh = tp->snd_ssthresh;
-		ca->mptcp_previous_cwnd = 1;
 		ca->mptcp_snd_cwnd_cnt = 0;
 		ca->epsilon_num = 0;
 		ca->epsilon_den = 1;
@@ -220,16 +216,10 @@ static void mptcp_olia_set_state(struct sock *sk, u8 new_state)
 		struct mptcp_olia *ca = inet_csk_ca(sk);
 		struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 
-		if (ca->mptcp_loss3 != ca->mptcp_loss2 && !inet_csk(sk)->icsk_retransmits) {
+		if (ca->mptcp_loss3 != ca->mptcp_loss2 &&
+		    !inet_csk(sk)->icsk_retransmits) {
 			ca->mptcp_loss1 = ca->mptcp_loss2;
 			ca->mptcp_loss2 = ca->mptcp_loss3;
-
-			if (mpcb->cnt_established == 1)
-				ca->mptcp_ssthresh =
-				    max(ca->mptcp_previous_cwnd >> 1U, 2U);
-			else
-				ca->mptcp_ssthresh =
-				    max(ca->mptcp_previous_cwnd >> 1U, 1U);
 		}
 	}
 
@@ -243,26 +233,20 @@ static void mptcp_olia_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 	struct mptcp_cb *mpcb = tp->mpcb;
 
 	u64 inc_num, inc_den, rate, cwnd_scaled;
-	u32 ssthresh;
 
 	if (!tp->mpc) {
 		tcp_reno_cong_avoid(sk, ack, in_flight);
 		return;
 	}
 
-	ssthresh = tp->snd_ssthresh;
-
 	ca->mptcp_loss3 = tp->snd_una;
 
-	if (!tcp_is_cwnd_limited(sk, in_flight)) {
-		ca->mptcp_previous_cwnd = tp->snd_cwnd;
+	if (!tcp_is_cwnd_limited(sk, in_flight))
 		return;
-	}
 
 	/* slow start if it is in the safe area */
-	if (tp->snd_cwnd <= ssthresh) {
+	if (tp->snd_cwnd <= tp->snd_ssthresh) {
 		tcp_slow_start(tp);
-		ca->mptcp_previous_cwnd = tp->snd_cwnd;
 		return;
 	}
 
@@ -308,8 +292,6 @@ static void mptcp_olia_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 			ca->mptcp_snd_cwnd_cnt = 0;
 		}
 	}
-	ca->mptcp_previous_cwnd = tp->snd_cwnd;
-
 }
 
 static struct tcp_congestion_ops mptcp_olia = {
