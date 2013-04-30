@@ -505,12 +505,14 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 
 	if (!(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_JOIN)) {
 		struct tcphdr *th = tcp_hdr(skb);
+		const struct ipv6hdr *ip6h = ipv6_hdr(skb);
 		struct sock *sk;
-		int ret;
 
-		sk = __inet6_lookup_established(sock_net(meta_sk), &tcp_hashinfo,
-				&ipv6_hdr(skb)->saddr, th->source,
-				&ipv6_hdr(skb)->daddr, ntohs(th->dest), inet6_iif(skb));
+		sk = __inet6_lookup_established(sock_net(meta_sk),
+						&tcp_hashinfo,
+						&ip6h->saddr, th->source,
+						&ip6h->daddr, ntohs(th->dest),
+						inet6_iif(skb));
 
 		if (!sk) {
 			WARN("%s Did not find a sub-sk at all!!!\n", __func__);
@@ -603,7 +605,7 @@ struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *radd
 			    &mptcp_reqsk_htb[inet6_synq_hash(raddr, rport, 0,
 							     MPTCP_HASH_SIZE)],
 			    collide_tuple) {
-		const struct inet6_request_sock *treq = inet6_rsk(rev_mptcp_rsk(mtreq));
+		struct inet6_request_sock *treq = inet6_rsk(rev_mptcp_rsk(mtreq));
 		meta_sk = mtreq->mpcb->meta_sk;
 
 		if (inet_rsk(rev_mptcp_rsk(mtreq))->rmt_port == rport &&

@@ -218,8 +218,7 @@ int mptcp_v4_rem_raddress(struct mptcp_cb *mpcb, u8 id)
 	return -1;
 }
 
-/**
- * Based on function tcp_v4_conn_request (tcp_ipv4.c)
+/* Based on function tcp_v4_conn_request (tcp_ipv4.c)
  * Returns -1 if there is no space anymore to store an additional
  * address
  */
@@ -241,7 +240,8 @@ int mptcp_v4_add_raddress(struct mptcp_cb *mpcb, const struct in_addr *addr,
 		 * trying to JOIN, thus sending the JOIN with a certain ID.
 		 * However the src_addr of the IP-packet has been changed. We
 		 * update the addr in the list, because this is the address as
-		 * OUR BOX sees it. */
+		 * OUR BOX sees it.
+		 */
 		if (rem4->id == id && rem4->addr.s_addr != addr->s_addr) {
 			/* update the address */
 			mptcp_debug("%s: updating old addr:%pI4 to addr %pI4 with id:%d\n",
@@ -362,11 +362,12 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 		if (tcp_hdr(skb)->syn) {
 			struct mp_join *join_opt = mptcp_find_join(skb);
 			/* Currently we make two calls to mptcp_find_join(). This
-			 * can probably be optimized. */
+			 * can probably be optimized.
+			 */
 			if (mptcp_v4_add_raddress(mpcb,
-						 (struct in_addr *)&ip_hdr(skb)->saddr,
-						 0,
-						 join_opt->addr_id) < 0)
+						  (struct in_addr *)&ip_hdr(skb)->saddr,
+						  0,
+						  join_opt->addr_id) < 0)
 				goto reset_and_discard;
 			mpcb->list_rcvd = 0;
 
@@ -399,7 +400,7 @@ struct sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
 			    &mptcp_reqsk_htb[inet_synq_hash(raddr, rport, 0,
 							    MPTCP_HASH_SIZE)],
 			    collide_tuple) {
-		const struct inet_request_sock *ireq = inet_rsk(rev_mptcp_rsk(mtreq));
+		struct inet_request_sock *ireq = inet_rsk(rev_mptcp_rsk(mtreq));
 		meta_sk = mtreq->mpcb->meta_sk;
 
 		if (ireq->rmt_port == rport &&

@@ -131,7 +131,8 @@ struct sock *mptcp_select_ack_sock(const struct sock *meta_sk, int copied)
 	struct sock *sk, *subsk = NULL;
 	u32 max_data_seq = 0;
 	/* max_data_seq initialized to correct compiler-warning.
-	 * But the initialization is handled by max_data_seq_set */
+	 * But the initialization is handled by max_data_seq_set
+	 */
 	short max_data_seq_set = 0;
 	u32 min_time = 0xffffffff;
 
@@ -156,7 +157,8 @@ struct sock *mptcp_select_ack_sock(const struct sock *meta_sk, int copied)
 			continue;
 
 		/* Select among those who contributed to the
-		 * current receive-queue. */
+		 * current receive-queue.
+		 */
 		if (copied && after(tp->mptcp->last_data_seq, meta_tp->copied_seq - copied)) {
 			if (tp->srtt < min_time) {
 				min_time = tp->srtt;
@@ -541,7 +543,8 @@ static int mptcp_inherit_sk(const struct sock *sk, struct sock *newsk,
 
 	if (unlikely(xfrm_sk_clone_policy(newsk))) {
 		/* It is still raw copy of parent, so invalidate
-		 * destructor and make plain sk_free() */
+		 * destructor and make plain sk_free()
+		 */
 		newsk->sk_destruct = NULL;
 		bh_unlock_sock(newsk);
 		sk_free(newsk);
@@ -551,15 +554,13 @@ static int mptcp_inherit_sk(const struct sock *sk, struct sock *newsk,
 
 	newsk->sk_err	   = 0;
 	newsk->sk_priority = 0;
-	/*
-	 * Before updating sk_refcnt, we must commit prior changes to memory
+	/* Before updating sk_refcnt, we must commit prior changes to memory
 	 * (Documentation/RCU/rculist_nulls.txt for details)
 	 */
 	smp_wmb();
 	atomic_set(&newsk->sk_refcnt, 2);
 
-	/*
-	 * Increment the counter in the same struct proto as the master
+	/* Increment the counter in the same struct proto as the master
 	 * sock (sk_refcnt_debug_inc uses newsk->sk_prot->socks, that
 	 * is the same as sk->sk_prot->socks, as this field was copied
 	 * with memcpy).
@@ -818,7 +819,8 @@ void mptcp_fallback_meta_sk(struct sock *meta_sk)
 	kmem_cache_free(mptcp_cb_cache, tcp_sk(meta_sk)->mpcb);
 }
 
-int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 rem_id, gfp_t flags)
+int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 rem_id,
+		   gfp_t flags)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -844,7 +846,8 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 rem_id, gfp_t flags
 
 	/* The corresponding sock_put is in mptcp_sock_destruct(). It cannot be
 	 * included in mptcp_del_sock(), because the mpcb must remain alive
-	 * until the last subsocket is completely destroyed. */
+	 * until the last subsocket is completely destroyed.
+	 */
 	sock_hold(meta_sk);
 
 	tp->mptcp->next = mpcb->connection_list;
@@ -936,8 +939,7 @@ void mptcp_del_sock(struct sock *sk)
 	rcu_assign_pointer(inet_sk(sk)->inet_opt, NULL);
 }
 
-/**
- * Updates the metasocket ULID/port data, based on the given sock.
+/* Updates the metasocket ULID/port data, based on the given sock.
  * The argument sock must be the sock accessible to the application.
  * In this function, we update the meta socket info, based on the changes
  * in the application socket (bind, address allocation, ...)
@@ -1024,12 +1026,12 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 		if (!inet_csk_ack_scheduled(sk))
 			goto second_part;
 		/* Delayed ACKs frequently hit locked sockets during bulk
-		 * receive. */
+		 * receive.
+		 */
 		if (icsk->icsk_ack.blocked ||
 		    /* Once-per-two-segments ACK was not sent by tcp_input.c */
 		    tp->rcv_nxt - tp->rcv_wup > icsk->icsk_ack.rcv_mss ||
-		    /*
-		     * If this read emptied read buffer, we send ACK, if
+		    /* If this read emptied read buffer, we send ACK, if
 		     * connection is not bidirectional, user drained
 		     * receive buffer and there was a small segment
 		     * in queue.
@@ -1155,7 +1157,8 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 		unsigned char old_state = sk->sk_state;
 
 		/* If we are in user-context we can directly do the closing
-		 * procedure. No need to schedule a work-queue. */
+		 * procedure. No need to schedule a work-queue.
+		 */
 		if (!in_softirq()) {
 			if (sock_flag(sk, SOCK_DEAD))
 				return;
@@ -1198,8 +1201,7 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 	queue_delayed_work(mptcp_wq, work, delay);
 }
 
-/**
- * Update the mpcb send window, based on the contributions
+/* Update the mpcb send window, based on the contributions
  * of each subflow
  */
 void mptcp_update_sndbuf(struct mptcp_cb *mpcb)
@@ -1315,7 +1317,7 @@ adjudge_to_death:
 	release_sock(meta_sk);
 
 	/* Now socket is owned by kernel and we acquire BH lock
-	   to finish close. No need to check for user refs.
+	 * to finish close. No need to check for user refs.
 	 */
 	local_bh_disable();
 	bh_lock_sock(meta_sk);
@@ -1402,7 +1404,8 @@ int mptcp_doit(struct sock *sk)
 	    (ipv6_addr_loopback(&inet6_sk(sk)->daddr) ||
 	     ipv6_addr_loopback(&inet6_sk(sk)->saddr)))
 		return 0;
-	if (mptcp_v6_is_v4_mapped(sk) && ipv4_is_loopback(inet_sk(sk)->inet_saddr))
+	if (mptcp_v6_is_v4_mapped(sk) &&
+	    ipv4_is_loopback(inet_sk(sk)->inet_saddr))
 		return 0;
 
 	return 1;

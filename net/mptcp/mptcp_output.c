@@ -95,8 +95,7 @@ static int mptcp_dont_reinject_skb(struct tcp_sock *tp, struct sk_buff *skb)
 		mptcp_pi_to_flag(tp->mptcp->path_index) & TCP_SKB_CB(skb)->path_mask;
 }
 
-/**
- * This is the scheduler. This function decides on which flow to send
+/* This is the scheduler. This function decides on which flow to send
  * a given MSS. If all subflows are found to be busy, NULL is returned
  * The flow is selected based on the shortest RTT.
  * If all paths have full cong windows, we simply return NULL.
@@ -213,8 +212,7 @@ static int mptcp_reconstruct_mapping(struct sk_buff *skb, struct sk_buff *orig_s
 	return 0;
 }
 
-/* Similar to __pskb_copy and sk_stream_alloc_skb.
- */
+/* Similar to __pskb_copy and sk_stream_alloc_skb. */
 static struct sk_buff *mptcp_pskb_copy(struct sk_buff *skb)
 {
 	struct sk_buff *n;
@@ -438,7 +436,8 @@ static void mptcp_combine_dfin(struct sk_buff *skb, struct sock *meta_sk,
 	}
 
 	/* Don't combine, if they didn't combine - otherwise we end up in
-	 * TIME_WAIT, even if our app is smart enough to avoid it */
+	 * TIME_WAIT, even if our app is smart enough to avoid it
+	 */
 	if (meta_sk->sk_shutdown & RCV_SHUTDOWN) {
 		if (!mpcb->dfin_combined)
 			return;
@@ -459,8 +458,7 @@ static void mptcp_combine_dfin(struct sk_buff *skb, struct sock *meta_sk,
 		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_FIN;
 }
 
-/**
- * specific version of skb_entail (tcp.c),that allows appending to any
+/* specific version of skb_entail (tcp.c),that allows appending to any
  * subflow.
  * Here, we do not set the data seq, since it remains the same. However,
  * we do change the subflow seqnum.
@@ -1473,7 +1471,8 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 			opts->data_ack = meta_tp->rcv_nxt;
 
 			/* Doesn't matter, if csum included or not. It will be
-			 * either 10 or 12, and thus aligned = 12 */
+			 * either 10 or 12, and thus aligned = 12
+			 */
 			*size += MPTCP_SUB_LEN_ACK_ALIGN +
 				 MPTCP_SUB_LEN_SEQ_ALIGN;
 		}
@@ -1710,8 +1709,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	}
 }
 
-/**
- * Returns the next segment to be sent from the mptcp meta-queue.
+/* Returns the next segment to be sent from the mptcp meta-queue.
  * (chooses the reinject queue if any segment is waiting in it, otherwise,
  * chooses the normal write queue).
  * Sets *@reinject to 1 if the returned segment comes from the
@@ -1879,7 +1877,8 @@ void mptcp_ack_retransmit_timer(struct sock *sk)
 	TCP_SKB_CB(skb)->when = tcp_time_stamp;
 	if (tcp_transmit_skb(sk, skb, 0, GFP_ATOMIC) > 0) {
 		/* Retransmission failed because of local congestion,
-		 * do not backoff. */
+		 * do not backoff.
+		 */
 		if (!icsk->icsk_retransmits)
 			icsk->icsk_retransmits = 1;
 		sk_reset_timer(sk, &tp->mptcp->mptcp_ack_timer,

@@ -214,7 +214,6 @@ static void mptcp_olia_set_state(struct sock *sk, u8 new_state)
 	if (new_state == TCP_CA_Loss ||
 	    new_state == TCP_CA_Recovery || new_state == TCP_CA_CWR) {
 		struct mptcp_olia *ca = inet_csk_ca(sk);
-		struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 
 		if (ca->mptcp_loss3 != ca->mptcp_loss2 &&
 		    !inet_csk(sk)->icsk_retransmits) {
