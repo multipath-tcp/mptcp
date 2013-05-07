@@ -197,8 +197,22 @@ struct sock *mptcp_select_ack_sock(const struct sock *meta_sk, int copied)
 
 static void mptcp_sock_def_error_report(struct sock *sk)
 {
+	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
+
 	if (!sock_flag(sk, SOCK_DEAD))
 		mptcp_sub_close(sk, 0);
+
+	if (mpcb->infinite_mapping_rcv || mpcb->infinite_mapping_snd) {
+		struct sock *meta_sk = mptcp_meta_sk(sk);
+
+		meta_sk->sk_err = sk->sk_err;
+		meta_sk->sk_err_soft = sk->sk_err_soft;
+
+		if (!sock_flag(meta_sk, SOCK_DEAD))
+			meta_sk->sk_error_report(meta_sk);
+
+		tcp_done(meta_sk);
+	}
 
 	sk->sk_err = 0;
 	return;
