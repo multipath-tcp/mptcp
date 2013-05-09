@@ -2015,8 +2015,13 @@ static int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 	 * subflow right now. If it is too big, it needs to be fragmented.
 	 */
 	subsk = get_available_subflow(meta_sk, skb, &mss_now);
-	if (!subsk)
+	if (!subsk) {
+		/* We want to increase icsk_retransmits, thus return 0, so that
+		 * mptcp_retransmit_timer enters the desired branch.
+		 */
+		err = 0;
 		goto failed;
+	}
 
 	/* If the segment was cloned (e.g. a meta retransmission), the header
 	 * must be expanded/copied so that there is no corruption of TSO
