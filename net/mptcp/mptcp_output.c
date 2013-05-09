@@ -2096,7 +2096,7 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 
 	sk = get_available_subflow(meta_sk, tcp_write_queue_head(meta_sk));
 	if (!sk)
-		goto out_reset_timer;
+		goto out_backoff;
 
 	skb = tcp_write_queue_head(meta_sk);
 	subskb = mptcp_skb_entail(sk, &skb, -1);
@@ -2119,6 +2119,7 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 		return;
 	}
 
+out_backoff:
 	/* Increase the timeout each time we retransmit.  Note that
 	 * we do not increase the rtt estimate.  rto is initialized
 	 * from rtt, but increases here.  Jacobson (SIGCOMM 88) suggests
