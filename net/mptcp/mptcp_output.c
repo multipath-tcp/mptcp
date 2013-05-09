@@ -480,6 +480,9 @@ static void mptcp_combine_dfin(struct sk_buff *skb, struct sock *meta_sk,
 
 	/* If no other subflow has data to send, we can combine */
 	mptcp_for_each_sk(mpcb, sk_it) {
+		if (!mptcp_sk_can_send(sk_it))
+			continue;
+
 		if (!tcp_write_queue_empty(sk_it))
 			all_empty = 0;
 	}
