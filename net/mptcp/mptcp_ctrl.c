@@ -239,8 +239,32 @@ static void mptcp_sock_destruct(struct sock *sk)
 void mptcp_destroy_sock(struct sock *sk)
 {
 	if (is_meta_sk(sk)) {
+		struct sock *sk_it, *tmpsk;
+
 		__skb_queue_purge(&tcp_sk(sk)->mpcb->reinject_queue);
 		mptcp_purge_ofo_queue(tcp_sk(sk));
+
+		/* We have to close all remaining subflows. Normally, they
+		 * should all be about to get closed. But, if the kernel is
+		 * forcing a closure (e.g., tcp_write_err), the subflows might
+		 * not have been closed properly (as we are waiting for the
+		 * DATA_ACK of the DATA_FIN).
+		 */
+		mptcp_for_each_sk_safe(tcp_sk(sk)->mpcb, sk_it, tmpsk) {
+			/* Already did call tcp_close - waiting for graceful
+			 * closure.
+			 */
+			if ((1 << sk_it->sk_state) &
+			    (TCPF_CLOSE | TCPF_CLOSING | TCPF_FIN_WAIT1 |
+			     TCPF_FIN_WAIT2 | TCPF_TIME_WAIT | TCPF_LAST_ACK))
+				continue;
+
+			/* Allow the delayed work first to prevent time-wait state */
+			if (delayed_work_pending(&tcp_sk(sk_it)->mptcp->work))
+				continue;
+
+			mptcp_sub_close(sk_it, 0);
+		}
 	} else {
 		mptcp_del_sock(sk);
 	}
