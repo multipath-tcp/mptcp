@@ -207,7 +207,6 @@ static void mptcp_olia_init(struct sock *sk)
 /* updating inter-loss distance and ssthresh */
 static void mptcp_olia_set_state(struct sock *sk, u8 new_state)
 {
-
 	if (!tcp_sk(sk)->mpc)
 		return;
 
