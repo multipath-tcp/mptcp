@@ -6352,6 +6352,8 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 						if (!tp->mpc) {
 							tcp_time_wait(sk, TCP_FIN_WAIT2, tmo);
 							goto discard;
+						} else {
+							inet_csk_reset_keepalive_timer(sk, tmo);
 						}
 					}
 				}

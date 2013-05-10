@@ -211,16 +211,17 @@ static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 					 * marginal case.
 					 */
 					inet_csk_reset_keepalive_timer(meta_sk, tmo);
+				} else {
+					/* Diff to tcp_rcv_state_process:
+					 *
+					 * In case of MPTCP we cannot go into time-wait.
+					 * Because, we are still waiting for a data-fin.
+					 *
+					 * If we fully adapt time-wait-socks for MTPCP-awareness
+					 * we can change this here again.
+					 */
+					inet_csk_reset_keepalive_timer(meta_sk, tmo);
 				}
-
-				/* Diff to tcp_rcv_state_process:
-				 *
-				 * In case of MPTCP we cannot go into time-wait.
-				 * Because, we are still waiting for a data-fin.
-				 *
-				 * If we fully adapt time-wait-socks for MTPCP-awareness
-				 * we can change this here again.
-				 */
 			}
 		}
 		break;
