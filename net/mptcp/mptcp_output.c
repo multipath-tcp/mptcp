@@ -71,11 +71,17 @@ static int mptcp_is_available(struct sock *sk, struct sk_buff *skb,
 			return 0;
 	}
 
+	if (!tp->mptcp->fully_established) {
+		/* Make sure that we send in-order data */
+		if (tp->mptcp->second_packet &&
+		    tp->mptcp->last_end_data_seq != TCP_SKB_CB(skb)->seq)
+			return 0;
+	}
+
 	if (!tcp_cwnd_test(tp, skb))
 		return 0;
 
 	mss_now = tcp_current_mss(sk);
-
 	/* Don't send on this subflow if we bypass the allowed send-window at
 	 * the per-subflow level. Similar to tcp_snd_wnd_test, but manually
 	 * calculated end_seq (because here at this point end_seq is still at
@@ -644,18 +650,23 @@ no_data_seq:
 	return subskb;
 }
 
-static void mptcp_sub_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
+static void mptcp_sub_event_new_data_sent(struct sock *sk,
+					  struct sk_buff *subskb,
+					  struct sk_buff *skb)
 {
 	/* If it's a non-payload DATA_FIN (also no subflow-fin), the
 	 * segment is not part of the subflow but on a meta-only-level
 	 *
 	 * We free it, because it has been queued nowhere.
 	 */
-	if (!mptcp_is_data_fin(skb) ||
-	    (TCP_SKB_CB(skb)->end_seq != TCP_SKB_CB(skb)->seq))
-		tcp_event_new_data_sent(sk, skb);
-	else
-		kfree_skb(skb);
+	if (!mptcp_is_data_fin(subskb) ||
+	    (TCP_SKB_CB(subskb)->end_seq != TCP_SKB_CB(subskb)->seq)) {
+		tcp_event_new_data_sent(sk, subskb);
+		tcp_sk(sk)->mptcp->second_packet = 1;
+		tcp_sk(sk)->mptcp->last_end_data_seq = TCP_SKB_CB(skb)->end_seq;
+	} else {
+		kfree_skb(subskb);
+	}
 }
 
 /* Handle the packets and sockets after a tcp_transmit_skb failed */
@@ -974,7 +985,7 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 		mptcp_check_sndseq_wrap(meta_tp, TCP_SKB_CB(skb)->end_seq -
 						 TCP_SKB_CB(skb)->seq);
 		tcp_event_new_data_sent(meta_sk, skb);
-		mptcp_sub_event_new_data_sent(subsk, subskb);
+		mptcp_sub_event_new_data_sent(subsk, subskb, skb);
 
 		return 0;
 	} else {
@@ -1253,7 +1264,7 @@ retry:
 		sent_pkts += tcp_skb_pcount(skb);
 		tcp_sk(subsk)->mptcp->sent_pkts += tcp_skb_pcount(skb);
 
-		mptcp_sub_event_new_data_sent(subsk, subskb);
+		mptcp_sub_event_new_data_sent(subsk, subskb, skb);
 
 		if (push_one)
 			break;
@@ -2073,7 +2084,7 @@ static int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 		/* Save stamp of the first retransmit. */
 		if (!meta_tp->retrans_stamp)
 			meta_tp->retrans_stamp = TCP_SKB_CB(subskb)->when;
-		mptcp_sub_event_new_data_sent(subsk, subskb);
+		mptcp_sub_event_new_data_sent(subsk, subskb, skb);
 	} else {
 		mptcp_transmit_skb_failed(subsk, skb, subskb, 0);
 	}
