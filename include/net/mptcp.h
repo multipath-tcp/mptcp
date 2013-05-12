@@ -148,6 +148,7 @@ struct mptcp_tcp_sock {
 	u16	map_data_len;
 	u16	slave_sk:1,
 		fully_established:1,
+		second_packet:1,
 		attached:1,
 		send_mp_fail:1,
 		include_mpc:1,
@@ -181,6 +182,7 @@ struct mptcp_tcp_sock {
 	struct delayed_work work;
 	u32	mptcp_loc_nonce;
 	struct tcp_sock *tp; /* Where is my daddy? */
+	u32	last_end_data_seq;
 
 	/* MP_JOIN subflow: timer for retransmitting the 3rd ack */
 	struct timer_list mptcp_ack_timer;
