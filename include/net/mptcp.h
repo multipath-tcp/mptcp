@@ -1004,6 +1004,7 @@ static inline void mptcp_init_buffer_space(struct sock *sk)
 
 	if (space > meta_sk->sk_rcvbuf) {
 		tcp_sk(meta_sk)->window_clamp += tcp_sk(sk)->window_clamp;
+		tcp_sk(meta_sk)->rcv_ssthresh += tcp_sk(sk)->rcv_ssthresh;
 		meta_sk->sk_rcvbuf = space;
 	}
 }
