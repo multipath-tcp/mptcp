@@ -271,6 +271,14 @@ struct mptcp_cb {
 	u32 path_index_bits;
 	/* Next pi to pick up in case a new path becomes available */
 	u8 next_path_index;
+
+	/* Original snd/rcvbuf of the initial subflow.
+	 * Used for the new subflows on the server-side to allow correct
+	 * autotuning
+	 */
+	int orig_sk_rcvbuf;
+	int orig_sk_sndbuf;
+	u32 orig_window_clamp;
 };
 
 static inline int mptcp_pi_to_flag(int pi)
