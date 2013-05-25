@@ -6301,13 +6301,6 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 				tcp_set_state(sk, TCP_ESTABLISHED);
 				sk->sk_state_change(sk);
 
-				/* Send an ACK when establishing a new
-				 * MPTCP subflow, i.e. using an MP_JOIN
-				 * subtype.
-				 */
-				if (tp->mpc && !is_master_tp(tp))
-					tcp_send_ack(sk);
-
 				/* Note, that this wakeup is only for marginal
 				 * crossed SYN case. Passively open sockets
 				 * are not waked up, because sk->sk_sleep ==
@@ -6345,6 +6338,13 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 				tcp_initialize_rcv_mss(sk);
 				tcp_init_buffer_space(sk);
 				tcp_fast_path_on(tp);
+
+				/* Send an ACK when establishing a new
+				 * MPTCP subflow, i.e. using an MP_JOIN
+				 * subtype.
+				 */
+				if (tp->mpc && !is_master_tp(tp))
+					tcp_send_ack(sk);
 			} else {
 				return 1;
 			}
