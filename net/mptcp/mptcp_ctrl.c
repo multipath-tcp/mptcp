@@ -254,9 +254,7 @@ void mptcp_destroy_sock(struct sock *sk)
 			/* Already did call tcp_close - waiting for graceful
 			 * closure.
 			 */
-			if ((1 << sk_it->sk_state) &
-			    (TCPF_CLOSE | TCPF_CLOSING | TCPF_FIN_WAIT1 |
-			     TCPF_FIN_WAIT2 | TCPF_TIME_WAIT | TCPF_LAST_ACK))
+			if (tcp_sk(sk_it)->closing)
 				continue;
 
 			/* Allow the delayed work first to prevent time-wait state */
@@ -1163,6 +1161,7 @@ void mptcp_sub_close_wq(struct work_struct *work)
 		sock_rps_reset_flow(sk);
 		tcp_close(sk, 0);
 	} else if (tcp_close_state(sk)) {
+		sk->sk_shutdown |= SEND_SHUTDOWN;
 		tcp_send_fin(sk);
 	}
 
@@ -1218,6 +1217,7 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 				sock_rps_reset_flow(sk);
 				tcp_close(sk, 0);
 			} else if (tcp_close_state(sk)) {
+				sk->sk_shutdown |= SEND_SHUTDOWN;
 				tcp_send_fin(sk);
 			}
 
