@@ -2216,9 +2216,12 @@ out_reset_timer:
 	return;
 
 send_mp_fclose:
+	if (tcp_write_timeout(meta_sk))
+		return;
+
 	mptcp_send_active_reset(meta_sk, GFP_ATOMIC);
 
-	goto out_reset_timer;
+	goto out_backoff;
 }
 
 /* Modify values to an mptcp-level for the initial window of new subflows */
