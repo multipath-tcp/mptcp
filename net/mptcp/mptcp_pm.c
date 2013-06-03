@@ -1103,7 +1103,7 @@ int mptcp_pm_init(void)
 	spin_lock_init(&mptcp_reqsk_hlock);
 	spin_lock_init(&mptcp_tk_hashlock);
 
-#ifdef CONFIG_SYSCTL
+#ifdef CONFIG_PROC_FS
 	ret = register_pernet_subsys(&mptcp_pm_proc_ops);
 	if (ret)
 		goto out;
@@ -1127,7 +1127,7 @@ mptcp_pm_v4_failed:
 
 mptcp_pm_v6_failed:
 #endif
-#ifdef CONFIG_SYSCTL
+#ifdef CONFIG_PROC_FS
 	unregister_pernet_subsys(&mptcp_pm_proc_ops);
 #endif
 	goto out;
@@ -1139,7 +1139,7 @@ void mptcp_pm_undo(void)
 	mptcp_pm_v6_undo();
 #endif
 	mptcp_pm_v4_undo();
-#ifdef CONFIG_SYSCTL
+#ifdef CONFIG_PROC_FS
 	unregister_pernet_subsys(&mptcp_pm_proc_ops);
 #endif
 }
