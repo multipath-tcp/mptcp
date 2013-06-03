@@ -1599,7 +1599,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	 * clone.
 	 */
 	child->sk_sndbuf = mpcb->orig_sk_sndbuf;
-	child->sk_rcvbuf = mpcb->orig_sk_sndbuf;
+	child->sk_rcvbuf = mpcb->orig_sk_rcvbuf;
 
 	child_tp->mptcp->slave_sk = 1;
 	child_tp->mptcp->snt_isn = tcp_rsk(req)->snt_isn;
