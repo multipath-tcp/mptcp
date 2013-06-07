@@ -1137,7 +1137,7 @@ static inline u8 mptcp_set_new_pathindex(struct mptcp_cb *mpcb)
 static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
 {
 	return sk->sk_family == AF_INET6 &&
-		ipv6_addr_type(&inet6_sk(sk)->saddr) == IPV6_ADDR_MAPPED;
+	       ipv6_addr_type(&inet6_sk(sk)->saddr) == IPV6_ADDR_MAPPED;
 }
 
 static inline void mptcp_lock_nested(struct sock *sk)
