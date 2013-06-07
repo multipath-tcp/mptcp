@@ -1139,15 +1139,6 @@ static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
 	return sk->sk_family == AF_INET6 &&
 	       ipv6_addr_type(&inet6_sk(sk)->saddr) == IPV6_ADDR_MAPPED;
 }
-
-static inline void mptcp_lock_nested(struct sock *sk)
-{
-#ifdef CONFIG_DEBUG_LOCK_ALLOC
-	mutex_lock_nest_lock(&tcp_sk(sk)->mpcb->mutex, &sk->sk_lock);
-#else
-	mutex_lock(&tcp_sk(sk)->mpcb->mutex);
-#endif
-}
 #else /* CONFIG_MPTCP */
 #define mptcp_debug(fmt, args...)	\
 	do {				\
@@ -1347,7 +1338,6 @@ static inline bool mptcp_can_sendpage(struct sock *sk)
 {
 	return false;
 }
-static inline void mptcp_lock_nested(struct sock *sk) {}
 #endif /* CONFIG_MPTCP */
 
 #endif /* _MPTCP_H */

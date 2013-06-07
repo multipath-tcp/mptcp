@@ -766,8 +766,7 @@ void inet_csk_listen_stop(struct sock *sk)
 		acc_req = req->dl_next;
 
 		if (is_meta_sk(child))
-			mptcp_lock_nested(child);
-
+			mutex_lock(&tcp_sk(child)->mpcb->mutex);
 		local_bh_disable();
 		bh_lock_sock(child);
 		WARN_ON(sock_owned_by_user(child));
