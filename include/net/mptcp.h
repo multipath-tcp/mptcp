@@ -1082,7 +1082,7 @@ static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
 static inline void mptcp_lock_nested(struct sock *sk)
 {
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
-	mutex_lock_nest_lock(&tcp_sk(sk)->mpcb->mutex, sk->sk_lock.dep_map);
+	mutex_lock_nest_lock(&tcp_sk(sk)->mpcb->mutex, &sk->sk_lock);
 #else
 	mutex_lock(&tcp_sk(sk)->mpcb->mutex);
 #endif
