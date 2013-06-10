@@ -2168,6 +2168,7 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 		return;
 	}
 
+out_backoff:
 	/* Increase the timeout each time we retransmit.  Note that
 	 * we do not increase the rtt estimate.  rto is initialized
 	 * from rtt, but increases here.  Jacobson (SIGCOMM 88) suggests

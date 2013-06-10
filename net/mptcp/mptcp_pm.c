@@ -282,6 +282,7 @@ u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock *sk)
 #endif /* CONFIG_IPV6 */
 
 	BUG();
+	return 0;
 }
 
 void mptcp_set_addresses(struct sock *meta_sk)
