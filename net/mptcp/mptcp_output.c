@@ -49,7 +49,8 @@ static int mptcp_is_available(struct sock *sk, struct sk_buff *skb)
 	if (tp->mptcp->pre_established)
 		return 0;
 
-	if (tp->pf || (tp->mpcb->noneligible & mptcp_pi_to_flag(tp->mptcp->path_index)))
+	if (tp->pf ||
+	    (tp->mpcb->noneligible & mptcp_pi_to_flag(tp->mptcp->path_index)))
 		return 0;
 
 	if (inet_csk(sk)->icsk_ca_state == TCP_CA_Loss) {
@@ -69,7 +70,7 @@ static int mptcp_is_available(struct sock *sk, struct sk_buff *skb)
 
 	if (!tp->mptcp->fully_established) {
 		/* Make sure that we send in-order data */
-		if (tp->mptcp->second_packet &&
+		if (skb && tp->mptcp->second_packet &&
 		    tp->mptcp->last_end_data_seq != TCP_SKB_CB(skb)->seq)
 			return 0;
 	}
