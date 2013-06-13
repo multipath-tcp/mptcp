@@ -1638,9 +1638,10 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 
 		mpc->sub = MPTCP_SUB_CAPABLE;
 		mpc->ver = 0;
-		mpc->c = opts->dss_csum ? 1 : 0;
+		mpc->a = opts->dss_csum ? 1 : 0;
+		mpc->b = 0;
 		mpc->rsv = 0;
-		mpc->s = 1;
+		mpc->h = 1;
 	}
 
 	if (unlikely(OPTION_MP_JOIN & opts->mptcp_options)) {

@@ -1328,20 +1328,28 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 		if (!sysctl_mptcp_enabled)
 			break;
 
-		/* MPTCP-Draft v06:
-		 * "If none of these flags are set, the MP_CAPABLE option MUST
-		 * be treated as invalid and ignored (i.e. it must be treated
-		 * as a regular TCP handshake)."
-		 */
-		if (!mpcapable->s)
-			break;
-
 		/* We only support MPTCP version 0 */
 		if (mpcapable->ver != 0)
 			break;
 
+		/* MPTCP-RFC 6824:
+		 * "If receiving a message with the 'B' flag set to 1, and this
+		 * is not understood, then this SYN MUST be silently ignored;
+		 */
+		if (mpcapable->b) {
+			mopt->drop_me = 1;
+			break;
+		}
+
+		/* MPTCP-RFC 6824:
+		 * "An implementation that only supports this method MUST set
+		 *  bit "H" to 1, and bits "C" through "G" to 0."
+		 */
+		if (!mpcapable->h)
+			break;
+
 		mopt->saw_mpc = 1;
-		mopt->dss_csum = sysctl_mptcp_checksum || mpcapable->c;
+		mopt->dss_csum = sysctl_mptcp_checksum || mpcapable->a;
 
 		if (opsize >= MPTCP_SUB_LEN_CAPABLE_SYN)
 			mopt->mptcp_rem_key = mpcapable->sender_key;

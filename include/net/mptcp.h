@@ -101,6 +101,7 @@ struct mptcp_options_received {
 	struct mptcp_cb *mpcb;
 	u16	saw_mpc:1,
 		dss_csum:1,
+		drop_me:1,
 
 		is_mp_join:1,
 		join_ack:1,
@@ -398,15 +399,17 @@ struct mp_capable {
 #if defined(__LITTLE_ENDIAN_BITFIELD)
 	__u8	ver:4,
 		sub:4;
-	__u8	s:1,
-		rsv:6,
-		c:1;
+	__u8	h:1,
+		rsv:5,
+		b:1,
+		a:1;
 #elif defined(__BIG_ENDIAN_BITFIELD)
 	__u8	sub:4,
 		ver:4;
-	__u8	c:1,
-		rsv:6,
-		s:1;
+	__u8	a:1,
+		b:1,
+		rsv:5,
+		h:1;
 #else
 #error	"Adjust your <asm/byteorder.h> defines"
 #endif
@@ -879,6 +882,7 @@ static inline void mptcp_init_mp_opt(struct mptcp_options_received *mopt)
 {
 	mopt->saw_mpc = 0;
 	mopt->dss_csum = 0;
+	mopt->drop_me = 0;
 
 	mopt->is_mp_join = 0;
 	mopt->join_ack = 0;

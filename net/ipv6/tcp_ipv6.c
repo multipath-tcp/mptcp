@@ -1096,6 +1096,8 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 #ifdef CONFIG_MPTCP
 	if (mopt.is_mp_join)
 		return mptcp_do_join_short(skb, &mopt, &tmp_opt, sock_net(sk));
+	if (mopt.drop_me)
+		goto drop;
 #endif
 
 	if (!ipv6_unicast_destination(skb))
