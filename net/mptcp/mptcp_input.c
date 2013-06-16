@@ -684,13 +684,15 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 	 * 3. It's a data_fin and skb->len == 0 and
 	 *    MPTCP-sub_seq > TCP-end_seq
 	 *
-	 * 4. MPTCP-sub_seq + MPTCP-data_len < TCP-seq
+	 * 4. It's not a data_fin and TCP-end_seq > TCP-seq and
+	 *    MPTCP-sub_seq + MPTCP-data_len <= TCP-seq
 	 *
-	 * TODO - in case of data-fin, mptcp-data_len is + 1
+	 * 5. MPTCP-sub_seq is prior to what we already copied (copied_seq)
 	 */
-	if ((!before(sub_seq, tcb->end_seq) && after(tcb->end_seq, sub_seq)) ||
+	if ((!before(sub_seq, tcb->end_seq) && after(tcb->end_seq, tcb->seq)) ||
 	    (mptcp_is_data_fin(skb) && skb->len == 0 && after(sub_seq, tcb->end_seq)) ||
-	    before(sub_seq + data_len, tcb->seq)) {
+	    (!after(sub_seq + data_len, tcb->seq) && after(tcb->end_seq, tcb->seq)) ||
+	    before(sub_seq, tp->copied_seq)) {
 		/* Subflow-sequences of packet is different from what is in the
 		 * packet's dss-mapping. The peer is misbehaving - reset
 		 */
