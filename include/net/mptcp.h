@@ -731,9 +731,15 @@ static inline void mptcp_send_reset(struct sock *sk)
 	mptcp_sub_force_close(sk);
 }
 
+static inline int mptcp_is_data_seq(const struct sk_buff *skb)
+{
+	return TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ;
+}
+
 static inline int mptcp_is_data_fin(const struct sk_buff *skb)
 {
-	return TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN;
+	return mptcp_is_data_seq(skb) &&
+	       (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN);
 }
 
 /* Is it a data-fin while in infinite mapping mode?
@@ -742,13 +748,8 @@ static inline int mptcp_is_data_fin(const struct sk_buff *skb)
 static inline int mptcp_is_data_fin2(const struct sk_buff *skb,
 				     const struct tcp_sock *tp)
 {
-	return (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN) ||
+	return mptcp_is_data_fin(skb) ||
 	       (tp->mpcb->infinite_mapping_rcv && tcp_hdr(skb)->fin);
-}
-
-static inline int mptcp_is_data_seq(const struct sk_buff *skb)
-{
-	return TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ;
 }
 
 static inline void mptcp_skb_entail_init(const struct tcp_sock *tp,
