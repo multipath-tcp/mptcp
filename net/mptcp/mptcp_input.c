@@ -1443,10 +1443,11 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			/* Is a check-sum present? */
 			if (opsize == mptcp_sub_len_dss(mdss, 1))
 				tcb->mptcp_flags |= MPTCPHDR_DSS_CSUM;
-		}
 
-		if (mdss->F)
-			tcb->mptcp_flags |= MPTCPHDR_FIN;
+			/* DATA_FIN only possible with DSS-mapping */
+			if (mdss->F)
+				tcb->mptcp_flags |= MPTCPHDR_FIN;
+		}
 
 		break;
 	}
