@@ -567,7 +567,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 	struct mptcp_cb *mpcb = tp->mpcb;
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 	u32 *ptr;
-	u32 data_seq, sub_seq, data_len;
+	u32 data_seq, sub_seq, data_len, tcp_end_seq;
 
 	/* If we are in infinite-mapping-mode, the subflow is guaranteed to be
 	 * in-order at the data-level. Thus data-seq-numbers can be inferred
@@ -689,9 +689,12 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 	 *
 	 * 5. MPTCP-sub_seq is prior to what we already copied (copied_seq)
 	 */
-	if ((!before(sub_seq, tcb->end_seq) && after(tcb->end_seq, tcb->seq)) ||
+
+	/* subflow-fin is not part of the mapping - ignore it here ! */
+	tcp_end_seq = TCP_SKB_CB(skb)->end_seq - (tcp_hdr(skb)->fin ? 1 : 0);
+	if ((!before(sub_seq, tcb->end_seq) && after(tcp_end_seq, tcb->seq)) ||
 	    (mptcp_is_data_fin(skb) && skb->len == 0 && after(sub_seq, tcb->end_seq)) ||
-	    (!after(sub_seq + data_len, tcb->seq) && after(tcb->end_seq, tcb->seq)) ||
+	    (!after(sub_seq + data_len, tcb->seq) && after(tcp_end_seq, tcb->seq)) ||
 	    before(sub_seq, tp->copied_seq)) {
 		/* Subflow-sequences of packet is different from what is in the
 		 * packet's dss-mapping. The peer is misbehaving - reset
@@ -757,7 +760,7 @@ static int mptcp_validate_mapping(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *tmp, *tmp1;
-	u32 sub_end_seq1;
+	u32 tcp_end_seq;
 
 	if (!tp->mptcp->mapping_present)
 		return 0;
@@ -771,8 +774,8 @@ static int mptcp_validate_mapping(struct sock *sk, struct sk_buff *skb)
 		mptcp_skb_trim_head(tmp, sk, tp->mptcp->map_subseq);
 
 	/* ... or the new skb (tail) has to be split at the end. */
-	sub_end_seq1 = TCP_SKB_CB(skb)->end_seq - tcp_hdr(skb)->fin;
-	if (after(sub_end_seq1, tp->mptcp->map_subseq + tp->mptcp->map_data_len)) {
+	tcp_end_seq = TCP_SKB_CB(skb)->end_seq - (tcp_hdr(skb)->fin ? 1 : 0);
+	if (after(tcp_end_seq, tp->mptcp->map_subseq + tp->mptcp->map_data_len)) {
 		u32 seq = tp->mptcp->map_subseq + tp->mptcp->map_data_len;
 		if (mptcp_skb_split_tail(skb, sk, seq)) { /* Allocation failed */
 			/* TODO : maybe handle this here better.
