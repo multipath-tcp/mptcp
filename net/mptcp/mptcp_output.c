@@ -469,16 +469,6 @@ static void mptcp_combine_dfin(struct sk_buff *skb, struct sock *meta_sk,
 		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_FIN;
 }
 
-/* specific version of skb_entail (tcp.c),that allows appending to any
- * subflow.
- * Here, we do not set the data seq, since it remains the same. However,
- * we do change the subflow seqnum.
- *
- * Note that we make the assumption that, within the local system, every
- * segment has tcb->sub_seq == tcb->seq, that is, the dataseq is not shifted
- * compared to the subflow seqnum. Put another way, the dataseq referenced
- * is actually the number of the first data byte in the segment.
- */
 static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff **skb,
 					int reinject)
 {
@@ -491,30 +481,11 @@ static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff **skb,
 	struct tcp_skb_cb *tcb;
 	struct sk_buff *subskb = NULL;
 
-	if (reinject == 1) {
-		/* It may still be a clone from tcp_transmit_skb of the old
-		 * subflow during address-removal.
-		 */
-		if (skb_cloned(*skb)) {
-			subskb = mptcp_pskb_copy(*skb);
-			if (subskb) {
-				__skb_unlink(*skb, &mpcb->reinject_queue);
-				kfree_skb(*skb);
-				*skb = subskb;
-			}
-		} else {
-			__skb_unlink(*skb, &mpcb->reinject_queue);
-			subskb = *skb;
-		}
-	} else {
-		if (!reinject) {
-			TCP_SKB_CB(*skb)->mptcp_flags |=
-					(mpcb->snd_hiseq_index ?
-					 MPTCPHDR_SEQ64_INDEX : 0);
-		}
+	if (!reinject)
+		TCP_SKB_CB(*skb)->mptcp_flags |= (mpcb->snd_hiseq_index ?
+						  MPTCPHDR_SEQ64_INDEX : 0);
 
-		subskb = mptcp_pskb_copy(*skb);
-	}
+	subskb = mptcp_pskb_copy(*skb);
 	if (!subskb)
 		return NULL;
 
@@ -650,12 +621,7 @@ static void mptcp_transmit_skb_failed(struct sock *sk, struct sk_buff *skb,
 	if (mpcb->infinite_mapping_snd)
 		return;
 
-	/* If it is a reinjection, we cannot modify the path-mask
-	 * of the skb, because subskb == skb. And subskb has been
-	 * freed above.
-	 */
-	if (reinject <= 0)
-		TCP_SKB_CB(skb)->path_mask &= ~mptcp_pi_to_flag(tp->mptcp->path_index);
+	TCP_SKB_CB(skb)->path_mask &= ~mptcp_pi_to_flag(tp->mptcp->path_index);
 
 	if (TCP_SKB_CB(subskb)->tcp_flags & TCPHDR_FIN) {
 		/* If it is a subflow-fin we must leave it on the
@@ -687,20 +653,7 @@ static void mptcp_transmit_skb_failed(struct sock *sk, struct sk_buff *skb,
 
 		tcp_unlink_write_queue(subskb, sk);
 		tp->write_seq -= subskb->len;
-		if (reinject <= 0) {
-			sk_wmem_free_skb(sk, subskb);
-		} else {
-			/* Reinjections have not been cloned,
-			 * we have to put them back on the queue.
-			 */
-			sock_set_flag(sk, SOCK_QUEUE_SHRUNK);
-			sk->sk_wmem_queued -= subskb->truesize;
-			sk_mem_uncharge(sk, subskb->truesize);
-			__skb_queue_head(&mpcb->reinject_queue, subskb);
-
-			/* subskb holds the mapping - thus we can use this one */
-			mptcp_reconstruct_mapping(subskb, subskb);
-		}
+		sk_wmem_free_skb(sk, subskb);
 	}
 }
 
@@ -1212,14 +1165,18 @@ retry:
 						TCP_SKB_CB(skb)->seq);
 			tcp_event_new_data_sent(meta_sk, skb);
 		}
-		if (reinject > 0)
-			mptcp_mark_reinjected(subsk, skb);
 
 		tcp_minshall_update(meta_tp, mss_now, skb);
 		sent_pkts += tcp_skb_pcount(skb);
 		tcp_sk(subsk)->mptcp->sent_pkts += tcp_skb_pcount(skb);
 
 		mptcp_sub_event_new_data_sent(subsk, subskb, skb);
+
+		if (reinject > 0) {
+			mptcp_mark_reinjected(subsk, skb);
+			__skb_unlink(skb, &mpcb->reinject_queue);
+			kfree_skb(skb);
+		}
 
 		if (push_one)
 			break;
