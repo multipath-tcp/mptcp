@@ -469,7 +469,7 @@ static void mptcp_combine_dfin(struct sk_buff *skb, struct sock *meta_sk,
 		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_FIN;
 }
 
-static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff **skb,
+static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff *skb,
 					int reinject)
 {
 	__be32 *ptr;
@@ -482,19 +482,19 @@ static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff **skb,
 	struct sk_buff *subskb = NULL;
 
 	if (!reinject)
-		TCP_SKB_CB(*skb)->mptcp_flags |= (mpcb->snd_hiseq_index ?
+		TCP_SKB_CB(skb)->mptcp_flags |= (mpcb->snd_hiseq_index ?
 						  MPTCPHDR_SEQ64_INDEX : 0);
 
-	subskb = mptcp_pskb_copy(*skb);
+	subskb = mptcp_pskb_copy(skb);
 	if (!subskb)
 		return NULL;
 
-	TCP_SKB_CB(*skb)->path_mask |= mptcp_pi_to_flag(tp->mptcp->path_index);
+	TCP_SKB_CB(skb)->path_mask |= mptcp_pi_to_flag(tp->mptcp->path_index);
 
 	if (!(sk->sk_route_caps & NETIF_F_ALL_CSUM) &&
-	    (*skb)->ip_summed == CHECKSUM_PARTIAL) {
-		subskb->csum = (*skb)->csum = skb_checksum(*skb, 0, (*skb)->len, 0);
-		subskb->ip_summed = (*skb)->ip_summed = CHECKSUM_NONE;
+	    skb->ip_summed == CHECKSUM_PARTIAL) {
+		subskb->csum = skb->csum = skb_checksum(skb, 0, skb->len, 0);
+		subskb->ip_summed = skb->ip_summed = CHECKSUM_NONE;
 	}
 
 	/* The subskb is going in the subflow send-queue. Its path-mask
@@ -648,8 +648,8 @@ static void mptcp_transmit_skb_failed(struct sock *sk, struct sk_buff *skb,
 		/* tcp_add_write_queue_tail initialized highest_sack. We have
 		 * to reset it, if necessary.
 		 */
-		if (tcp_sk(sk)->highest_sack == subskb)
-			tcp_sk(sk)->highest_sack = NULL;
+		if (tp->highest_sack == subskb)
+			tp->highest_sack = NULL;
 
 		tcp_unlink_write_queue(subskb, sk);
 		tp->write_seq -= subskb->len;
@@ -891,7 +891,7 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 			tcp_set_skb_tso_segs(meta_sk, skb, mss);
 		}
 
-		subskb = mptcp_skb_entail(subsk, &skb, 0);
+		subskb = mptcp_skb_entail(subsk, skb, 0);
 		if (!subskb)
 			return -1;
 
@@ -1148,7 +1148,7 @@ retry:
 		    unlikely(mptso_fragment(meta_sk, skb, limit, mss_now, gfp, reinject)))
 			break;
 
-		subskb = mptcp_skb_entail(subsk, &skb, reinject);
+		subskb = mptcp_skb_entail(subsk, skb, reinject);
 		if (!subskb)
 			break;
 
@@ -2050,7 +2050,7 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 			goto out_reset_timer;
 
 		skb = tcp_write_queue_head(meta_sk);
-		subskb = mptcp_skb_entail(sk, &skb, -1);
+		subskb = mptcp_skb_entail(sk, skb, -1);
 		if (!subskb)
 			goto out_reset_timer;
 		err = mptcp_retransmit_skb(sk, subskb);
@@ -2073,7 +2073,7 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 		goto out_backoff;
 
 	skb = tcp_write_queue_head(meta_sk);
-	subskb = mptcp_skb_entail(sk, &skb, -1);
+	subskb = mptcp_skb_entail(sk, skb, -1);
 	if (!subskb)
 		goto out_reset_timer;
 	err = mptcp_retransmit_skb(sk, subskb);
