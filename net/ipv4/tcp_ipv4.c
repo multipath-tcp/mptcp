@@ -612,9 +612,6 @@ void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 #ifdef CONFIG_TCP_MD5SIG
 		__be32 opt[(TCPOLEN_MD5SIG_ALIGNED >> 2)];
 #endif
-#ifdef CONFIG_MPTCP
-		struct mp_fail mpfail;
-#endif
 	} rep;
 	struct ip_reply_arg arg;
 #ifdef CONFIG_TCP_MD5SIG
@@ -697,20 +694,6 @@ void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 				     ip_hdr(skb)->daddr, &rep.th);
 	}
 #endif
-#ifdef CONFIG_MPTCP
-	if (sk && tcp_sk(sk)->mpc && tcp_sk(sk)->mptcp->csum_error) {
-		/* We had a checksum-error? -> Include MP_FAIL */
-		rep.mpfail.kind = TCPOPT_MPTCP;
-		rep.mpfail.len = MPTCP_SUB_LEN_FAIL;
-		rep.mpfail.sub = MPTCP_SUB_FAIL;
-		rep.mpfail.rsv1 = 0;
-		rep.mpfail.rsv2 = 0;
-		rep.mpfail.data_seq = htonll(tcp_sk(sk)->mpcb->csum_cutoff_seq);
-
-		arg.iov[0].iov_len += MPTCP_SUB_LEN_FAIL_ALIGN;
-		rep.th.doff = arg.iov[0].iov_len / 4;
-	}
-#endif /* CONFIG_MPTCP */
 	arg.csum = csum_tcpudp_nofold(ip_hdr(skb)->daddr,
 				      ip_hdr(skb)->saddr, /* XXX */
 				      arg.iov[0].iov_len, IPPROTO_TCP, 0);
@@ -836,13 +819,14 @@ static void tcp_v4_timewait_ack(struct sock *sk, struct sk_buff *skb)
 {
 	struct inet_timewait_sock *tw = inet_twsk(sk);
 	struct tcp_timewait_sock *tcptw = tcp_twsk(sk);
-	u32 data_ack = 0;
+	u32 data_ack;
+	int mptcp = 0;
 
-	if (mptcp_is_data_fin(skb)) {
-		/* As it's a data-fin we know that the data-seq is present */
-		mptcp_skb_set_data_seq(skb, &data_ack);
-		data_ack++;
+	if (tcptw->mptcp_tw && tcptw->mptcp_tw->meta_tw) {
+		data_ack = (u32)tcptw->mptcp_tw->rcv_nxt;
+		mptcp = 1;
 	}
+
 	tcp_v4_send_ack(skb, tcptw->tw_snd_nxt, tcptw->tw_rcv_nxt,
 			data_ack,
 			tcptw->tw_rcv_wnd >> tw->tw_rcv_wscale,
@@ -850,7 +834,7 @@ static void tcp_v4_timewait_ack(struct sock *sk, struct sk_buff *skb)
 			tw->tw_bound_dev_if,
 			tcp_twsk_md5_key(tcptw),
 			tw->tw_transparent ? IP_REPLY_ARG_NOSRCCHECK : 0,
-			tw->tw_tos, mptcp_is_data_fin(skb)
+			tw->tw_tos, mptcp
 			);
 
 	inet_twsk_put(tw);
@@ -1344,6 +1328,8 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 #ifdef CONFIG_MPTCP
 	if (mopt.is_mp_join)
 		return mptcp_do_join_short(skb, &mopt, &tmp_opt, sock_net(sk));
+	if (mopt.drop_me)
+		goto drop;
 #endif
 	/* Never answer to SYNs send to broadcast or multicast */
 	if (skb_rtable(skb)->rt_flags & (RTCF_BROADCAST | RTCF_MULTICAST))
@@ -1429,7 +1415,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	tcp_openreq_init(req, &tmp_opt, skb);
 
 	if (mopt.saw_mpc)
-		mptcp_reqsk_new_mptcp(req, &tmp_opt, &mopt);
+		mptcp_reqsk_new_mptcp(req, &tmp_opt, &mopt, skb);
 
 	ireq = inet_rsk(req);
 	ireq->loc_addr = daddr;
@@ -1899,7 +1885,7 @@ process:
 	ret = 0;
 	if (!sock_owned_by_user(meta_sk)) {
 #ifdef CONFIG_NET_DMA
-		struct tcp_sock *tp = tcp_sk(sk);
+		struct tcp_sock *tp = tcp_sk(meta_sk);
 		if (!tp->ucopy.dma_chan && tp->ucopy.pinned_list)
 			tp->ucopy.dma_chan = net_dma_find_channel();
 		if (tp->ucopy.dma_chan)

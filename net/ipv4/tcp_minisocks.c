@@ -96,10 +96,10 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 	const u8 *hash_location;
 	struct tcp_timewait_sock *tcptw = tcp_twsk((struct sock *)tw);
 	bool paws_reject = false;
+	struct mptcp_options_received mopt;
 
 	tmp_opt.saw_tstamp = 0;
 	if (th->doff > (sizeof(*th) >> 2) && tcptw->tw_ts_recent_stamp) {
-		struct mptcp_options_received mopt;
 		mptcp_init_mp_opt(&mopt);
 
 		tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0, NULL);
@@ -110,9 +110,10 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 			paws_reject = tcp_paws_reject(&tmp_opt, th->rst);
 		}
 
-		/* TODO MPTCP: No key-verification here!!! */
-		if (unlikely(mopt.mp_fclose))
-			goto kill_with_rst;
+		if (unlikely(mopt.mp_fclose) && tcptw->mptcp_tw) {
+			if (mopt.mptcp_key == tcptw->mptcp_tw->loc_key)
+				goto kill_with_rst;
+		}
 	}
 
 	if (tw->tw_substate == TCP_FIN_WAIT2) {
@@ -135,8 +136,16 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 		if (!th->ack ||
 		    !after(TCP_SKB_CB(skb)->end_seq, tcptw->tw_rcv_nxt) ||
 		    TCP_SKB_CB(skb)->end_seq == TCP_SKB_CB(skb)->seq) {
-			if (mptcp_is_data_fin(skb))
+			/* If mptcp_is_data_fin() returns true, we are sure that
+			 * mopt has been initialized - otherwise it would not
+			 * be a DATA_FIN.
+			 */
+			if (tcptw->mptcp_tw && tcptw->mptcp_tw->meta_tw &&
+			    mptcp_is_data_fin(skb) &&
+			    TCP_SKB_CB(skb)->seq == tcptw->tw_rcv_nxt &&
+			    mopt.data_seq + 1 == (u32)tcptw->mptcp_tw->rcv_nxt)
 				return TCP_TW_ACK;
+
 			inet_twsk_put(tw);
 			return TCP_TW_SUCCESS;
 		}
@@ -168,6 +177,7 @@ kill_with_rst:
 		else
 			inet_twsk_schedule(tw, &tcp_death_row, TCP_TIMEWAIT_LEN,
 					   TCP_TIMEWAIT_LEN);
+
 		return TCP_TW_ACK;
 	}
 
@@ -279,8 +289,10 @@ void tcp_time_wait(struct sock *sk, int state, int timeo)
 	const struct tcp_sock *tp = tcp_sk(sk);
 	bool recycle_ok = false;
 
-	if (is_meta_sk(sk))
+	if (is_meta_sk(sk)) {
+		mptcp_update_tw_socks(tp, state);
 		goto tcp_done;
+	}
 
 	if (tcp_death_row.sysctl_tw_recycle && tp->rx_opt.ts_recent_stamp)
 		recycle_ok = tcp_remember_stamp(sk);
@@ -300,6 +312,15 @@ void tcp_time_wait(struct sock *sk, int state, int timeo)
 		tcptw->tw_rcv_wnd	= tcp_receive_window(tp);
 		tcptw->tw_ts_recent	= tp->rx_opt.ts_recent;
 		tcptw->tw_ts_recent_stamp = tp->rx_opt.ts_recent_stamp;
+
+		if (tp->mpc) {
+			if (mptcp_time_wait(sk, tcptw)) {
+				inet_twsk_free(tw);
+				goto exit;
+			}
+		} else {
+			tcptw->mptcp_tw = NULL;
+		}
 
 #if IS_ENABLED(CONFIG_IPV6)
 		if (tw->tw_family == PF_INET6) {
@@ -360,6 +381,7 @@ void tcp_time_wait(struct sock *sk, int state, int timeo)
 		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPTIMEWAITOVERFLOW);
 	}
 
+exit:
 	tcp_update_metrics(sk);
 tcp_done:
 	tcp_done(sk);
@@ -367,9 +389,11 @@ tcp_done:
 
 void tcp_twsk_destructor(struct sock *sk)
 {
-#ifdef CONFIG_TCP_MD5SIG
 	struct tcp_timewait_sock *twsk = tcp_twsk(sk);
 
+	if (twsk->mptcp_tw)
+		mptcp_twsk_destructor(twsk);
+#ifdef CONFIG_TCP_MD5SIG
 	if (twsk->tw_md5_key) {
 		tcp_free_md5sig_pool();
 		kfree_rcu(twsk->tw_md5_key, rcu);
@@ -554,8 +578,6 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	tmp_opt.saw_tstamp = 0;
 
 	mptcp_init_mp_opt(&mopt);
-	if (is_meta_sk(sk))
-		mopt.mpcb = tcp_sk(sk)->mpcb;
 
 	if (th->doff > (sizeof(struct tcphdr)>>2)) {
 		tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0, NULL);
