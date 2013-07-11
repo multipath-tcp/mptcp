@@ -46,7 +46,7 @@
 #include <net/transp_v6.h>
 
 static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req,
-				  struct request_values *rvp, u16 queue_mapping);
+				  u16 queue_mapping);
 
 __u32 mptcp_v6_get_nonce(const __be32 *saddr, const __be32 *daddr,
 			 __be16 sport, __be16 dport, u32 seq)
@@ -98,14 +98,13 @@ static void mptcp_v6_reqsk_destructor(struct request_sock *req)
 }
 
 /* Similar to tcp_v6_rtx_synack */
-static int mptcp_v6_rtx_synack(struct sock *meta_sk, struct request_sock *req,
-			       struct request_values *rvp)
+static int mptcp_v6_rtx_synack(struct sock *meta_sk, struct request_sock *req)
 {
 	if (meta_sk->sk_family == AF_INET6)
-		return tcp_v6_rtx_synack(meta_sk, req, rvp);
+		return tcp_v6_rtx_synack(meta_sk, req);
 
 	TCP_INC_STATS_BH(sock_net(meta_sk), TCP_MIB_RETRANSSEGS);
-	return mptcp_v6v4_send_synack(meta_sk, req, rvp, 0);
+	return mptcp_v6v4_send_synack(meta_sk, req, 0);
 }
 
 /* Similar to tcp6_request_sock_ops */
@@ -139,7 +138,7 @@ static void mptcp_v6_reqsk_queue_hash_add(struct sock *meta_sk,
  * The meta-socket is IPv4, but a new subsocket is IPv6
  */
 static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req,
-				  struct request_values *rvp, u16 queue_mapping)
+				  u16 queue_mapping)
 {
 	struct inet6_request_sock *treq = inet6_rsk(req);
 	struct sk_buff *skb;
@@ -164,7 +163,7 @@ static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req
 		dst = NULL;
 		goto done;
 	}
-	skb = tcp_make_synack(meta_sk, dst, req, rvp, NULL);
+	skb = tcp_make_synack(meta_sk, dst, req, NULL);
 	err = -ENOMEM;
 	if (skb) {
 		__tcp_v6_send_check(skb, &treq->loc_addr, &treq->rmt_addr);
@@ -317,7 +316,6 @@ static void mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct tcp_options_received tmp_opt;
 	struct mptcp_options_received mopt;
-	const u8 *hash_location;
 	struct ipv6_pinfo *np = inet6_sk(meta_sk);
 	struct request_sock *req;
 	struct inet6_request_sock *treq;
@@ -332,7 +330,7 @@ static void mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	mptcp_init_mp_opt(&mopt);
 	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
 	tmp_opt.user_mss  = tcp_sk(meta_sk)->rx_opt.user_mss;
-	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0, NULL);
+	tcp_parse_options(skb, &tmp_opt, &mopt, 0, NULL);
 
 	req = inet6_reqsk_alloc(&mptcp6_request_sock_ops);
 	if (!req)
@@ -425,10 +423,10 @@ static void mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 
 	if (meta_sk->sk_family == AF_INET6) {
 		if (tcp_v6_send_synack(meta_sk, dst, &fl6, req,
-				       NULL, skb_get_queue_mapping(skb)))
+				       skb_get_queue_mapping(skb)))
 			goto drop_and_free;
 	} else {
-		if (mptcp_v6v4_send_synack(meta_sk, req, NULL, skb_get_queue_mapping(skb)))
+		if (mptcp_v6v4_send_synack(meta_sk, req, skb_get_queue_mapping(skb)))
 			goto drop_and_free;
 	}
 

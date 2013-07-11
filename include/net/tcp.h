@@ -419,29 +419,24 @@ extern void tcp_adjust_pcount(struct sock *sk, const struct sk_buff *skb, int de
 extern void tcp_set_skb_tso_segs(const struct sock *sk, struct sk_buff *skb,
 				 unsigned int mss_now);
 
-extern int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req,
-			     struct request_values *rvp);
+extern int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req);
 extern void tcp_v4_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 				  struct request_sock *req);
 extern __u32 tcp_v4_init_sequence(const struct sk_buff *skb);
 extern int tcp_v4_send_synack(struct sock *sk, struct dst_entry *dst,
-			      struct request_sock *req,
-			      struct request_values *rvp, u16 queue_mapping,
+			      struct request_sock *req, u16 queue_mapping,
 			      bool nocache);
 extern void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb);
 extern struct ip_options_rcu *tcp_v4_save_options(struct sk_buff *skb);
 extern struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb);
 extern void tcp_v4_reqsk_destructor(struct request_sock *req);
 
-extern int tcp_v6_rtx_synack(struct sock *sk, struct request_sock *req,
-			     struct request_values *rvp);
+extern int tcp_v6_rtx_synack(struct sock *sk, struct request_sock *req);
 extern void tcp_v6_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 				  struct request_sock *req);
 extern __u32 tcp_v6_init_sequence(const struct sk_buff *skb);
 extern int tcp_v6_send_synack(struct sock *sk, struct dst_entry *dst,
-			      struct flowi6 *fl6,
-			      struct request_sock *req,
-			      struct request_values *rvp,
+			      struct flowi6 *fl6, struct request_sock *req,
 			      u16 queue_mapping);
 extern void tcp_v6_send_reset(struct sock *sk, struct sk_buff *skb);
 extern int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);

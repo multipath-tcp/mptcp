@@ -112,7 +112,6 @@ static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct tcp_options_received tmp_opt;
 	struct mptcp_options_received mopt;
-	const u8 *hash_location;
 	struct request_sock *req;
 	struct inet_request_sock *ireq;
 	struct mptcp_request_sock *mtreq;
@@ -127,7 +126,7 @@ static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	mptcp_init_mp_opt(&mopt);
 	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
 	tmp_opt.user_mss = tcp_sk(meta_sk)->rx_opt.user_mss;
-	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0, NULL);
+	tcp_parse_options(skb, &tmp_opt, &mopt, 0, NULL);
 
 	req = inet_reqsk_alloc(&mptcp_request_sock_ops);
 	if (!req)
@@ -209,7 +208,7 @@ static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	mtreq->low_prio = mopt.low_prio;
 	tcp_rsk(req)->saw_mpc = 1;
 
-	if (tcp_v4_send_synack(meta_sk, dst, req, NULL, skb_get_queue_mapping(skb), want_cookie))
+	if (tcp_v4_send_synack(meta_sk, dst, req, skb_get_queue_mapping(skb), want_cookie))
 		goto drop_and_free;
 
 	/* Adding to request queue in metasocket */

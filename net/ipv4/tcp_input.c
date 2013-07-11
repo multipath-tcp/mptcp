@@ -3488,9 +3488,9 @@ old_ack:
  * the fast version below fails.
  */
 void tcp_parse_options(const struct sk_buff *skb,
-		       struct tcp_options_received *opt_rx, int estab,
+		       struct tcp_options_received *opt_rx,
 		       struct mptcp_options_received *mopt,
-		       struct tcp_fastopen_cookie *foc)
+		       int estab, struct tcp_fastopen_cookie *foc)
 {
 	const unsigned char *ptr;
 	const struct tcphdr *th = tcp_hdr(skb);
