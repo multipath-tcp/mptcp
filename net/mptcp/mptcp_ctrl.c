@@ -591,6 +591,7 @@ static int mptcp_inherit_sk(const struct sock *sk, struct sock *newsk,
 				   af_callback_keys + newsk->sk_family,
 				   af_family_clock_key_strings[newsk->sk_family]);
 	newsk->sk_dst_cache	= NULL;
+	newsk->sk_rx_dst	= NULL;
 	newsk->sk_wmem_queued	= 0;
 	newsk->sk_forward_alloc = 0;
 	newsk->sk_send_head	= NULL;

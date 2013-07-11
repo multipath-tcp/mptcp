@@ -331,7 +331,7 @@ static void mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	mptcp_init_mp_opt(&mopt);
 	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
 	tmp_opt.user_mss  = tcp_sk(meta_sk)->rx_opt.user_mss;
-	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0);
+	tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0, NULL);
 
 	req = inet6_reqsk_alloc(&mptcp6_request_sock_ops);
 	if (!req)

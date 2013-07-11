@@ -179,9 +179,14 @@ static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 	switch (meta_sk->sk_state) {
 	case TCP_FIN_WAIT1:
 		if (meta_tp->snd_una == meta_tp->write_seq) {
+			struct dst_entry *dst = __sk_dst_get(meta_sk);
+
 			tcp_set_state(meta_sk, TCP_FIN_WAIT2);
 			meta_sk->sk_shutdown |= SEND_SHUTDOWN;
-			dst_confirm(__sk_dst_get(meta_sk));
+
+			dst = __sk_dst_get(sk);
+			if (dst)
+				dst_confirm(dst);
 
 			if (!sock_flag(meta_sk, SOCK_DEAD)) {
 				/* Wake up lingering close() */
@@ -397,8 +402,7 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb, struct sk_buff *next,
  * @return: 1 if the segment has been eaten and can be suppressed,
  *          otherwise 0.
  */
-static inline int mptcp_direct_copy(struct sk_buff *skb, struct tcp_sock *tp,
-				    struct sock *meta_sk)
+static inline int mptcp_direct_copy(struct sk_buff *skb, struct sock *meta_sk)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	int chunk = min_t(unsigned int, skb->len, meta_tp->ucopy.len);
@@ -923,7 +927,7 @@ static int mptcp_queue_skb(struct sock *sk)
 			    meta_tp->copied_seq == meta_tp->rcv_nxt &&
 			    meta_tp->ucopy.len && sock_owned_by_user(meta_sk) &&
 			    !copied_early)
-				eaten = mptcp_direct_copy(tmp1, tp, meta_sk);
+				eaten = mptcp_direct_copy(tmp1, meta_sk);
 
 			if (mpcb->in_time_wait) /* In time-wait, do not receive data */
 				eaten = 1;
