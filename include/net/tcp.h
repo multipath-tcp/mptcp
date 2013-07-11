@@ -257,8 +257,9 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define FLAG_DSACKING_ACK       0x800 /* SACK blocks contained D-SACK info */
 #define FLAG_NONHEAD_RETRANS_ACKED      0x1000 /* Non-head rexmitted data was ACKed */
 #define FLAG_SACK_RENEGING      0x2000 /* snd_una advanced to a sacked seq */
-#define MPTCP_FLAG_SEND_RESET	0x4000
-#define MPTCP_FLAG_DATA_ACKED	0x8000
+#define FLAG_UPDATE_TS_RECENT   0x4000 /* tcp_replace_ts_recent() */
+#define MPTCP_FLAG_SEND_RESET	0x8000
+#define MPTCP_FLAG_DATA_ACKED	0x16000
 
 #define FLAG_ACKED              (FLAG_DATA_ACKED|FLAG_SYN_ACKED)
 #define FLAG_NOT_DUP            (FLAG_DATA|FLAG_WIN_UPDATE|FLAG_ACKED)
@@ -290,7 +291,6 @@ extern int sysctl_tcp_abort_on_overflow;
 extern int sysctl_tcp_max_orphans;
 extern int sysctl_tcp_fack;
 extern int sysctl_tcp_reordering;
-extern int sysctl_tcp_ecn;
 extern int sysctl_tcp_dsack;
 extern int sysctl_tcp_wmem[3];
 extern int sysctl_tcp_rmem[3];
@@ -304,7 +304,6 @@ extern int sysctl_tcp_dma_copybreak;
 extern int sysctl_tcp_nometrics_save;
 extern int sysctl_tcp_moderate_rcvbuf;
 extern int sysctl_tcp_tso_win_divisor;
-extern int sysctl_tcp_abc;
 extern int sysctl_tcp_mtu_probing;
 extern int sysctl_tcp_base_mss;
 extern int sysctl_tcp_workaround_signed_windows;
@@ -632,7 +631,8 @@ static inline __u32 cookie_v4_init_sequence(struct sock *sk,
 #endif
 
 extern __u32 cookie_init_timestamp(struct request_sock *req);
-extern bool cookie_check_timestamp(struct tcp_options_received *opt, bool *);
+extern bool cookie_check_timestamp(struct tcp_options_received *opt,
+				struct net *net, bool *ecn_ok);
 
 /* From net/ipv6/syncookies.c */
 extern struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb);
@@ -881,11 +881,12 @@ struct tcp_skb_cb {
  * notifications, we disable TCP ECN negociation.
  */
 static inline void
-TCP_ECN_create_request(struct request_sock *req, const struct sk_buff *skb)
+TCP_ECN_create_request(struct request_sock *req, const struct sk_buff *skb,
+		struct net *net)
 {
 	const struct tcphdr *th = tcp_hdr(skb);
 
-	if (sysctl_tcp_ecn && th->ece && th->cwr &&
+	if (net->ipv4.sysctl_tcp_ecn && th->ece && th->cwr &&
 	    INET_ECN_is_not_ect(TCP_SKB_CB(skb)->ip_dsfield))
 		inet_rsk(req)->ecn_ok = 1;
 }
@@ -1196,6 +1197,10 @@ static inline bool tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	if (sysctl_tcp_low_latency || !tp->ucopy.task)
+		return false;
+
+	if (skb->len <= tcp_hdrlen(skb) &&
+	    skb_queue_len(&tp->ucopy.prequeue) == 0)
 		return false;
 
 	__skb_queue_tail(&tp->ucopy.prequeue, skb);
