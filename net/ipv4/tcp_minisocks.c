@@ -95,7 +95,6 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 			   const struct tcphdr *th)
 {
 	struct tcp_options_received tmp_opt;
-	const u8 *hash_location;
 	struct tcp_timewait_sock *tcptw = tcp_twsk((struct sock *)tw);
 	bool paws_reject = false;
 	struct mptcp_options_received mopt;
@@ -104,7 +103,7 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 	if (th->doff > (sizeof(*th) >> 2) && tcptw->tw_ts_recent_stamp) {
 		mptcp_init_mp_opt(&mopt);
 
-		tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0, NULL);
+		tcp_parse_options(skb, &tmp_opt, &mopt, 0, NULL);
 
 		if (tmp_opt.saw_tstamp) {
 			tmp_opt.rcv_tsecr	-= tcptw->tw_ts_offset;
@@ -427,32 +426,6 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 		struct tcp_request_sock *treq = tcp_rsk(req);
 		struct inet_connection_sock *newicsk = inet_csk(newsk);
 		struct tcp_sock *newtp = tcp_sk(newsk);
-		struct tcp_sock *oldtp = tcp_sk(sk);
-		struct tcp_cookie_values *oldcvp = oldtp->cookie_values;
-
-		/* TCP Cookie Transactions require space for the cookie pair,
-		 * as it differs for each connection.  There is no need to
-		 * copy any s_data_payload stored at the original socket.
-		 * Failure will prevent resuming the connection.
-		 *
-		 * Presumed copied, in order of appearance:
-		 *	cookie_in_always, cookie_out_never
-		 */
-		if (oldcvp != NULL) {
-			struct tcp_cookie_values *newcvp =
-				kzalloc(sizeof(*newtp->cookie_values),
-					GFP_ATOMIC);
-
-			if (newcvp != NULL) {
-				kref_init(&newcvp->kref);
-				newcvp->cookie_desired =
-						oldcvp->cookie_desired;
-				newtp->cookie_values = newcvp;
-			} else {
-				/* Not Yet Implemented */
-				newtp->cookie_values = NULL;
-			}
-		}
 
 		/* Now setup tcp_sock */
 		newtp->pred_flags = 0;
@@ -461,8 +434,7 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 		newtp->rcv_nxt = treq->rcv_isn + 1;
 
 		newtp->snd_sml = newtp->snd_una =
-		newtp->snd_nxt = newtp->snd_up =
-			treq->snt_isn + 1 + tcp_s_data_size(oldtp);
+		newtp->snd_nxt = newtp->snd_up = treq->snt_isn + 1;
 #ifdef CONFIG_MPTCP
 		memset(&newtp->rcvq_space, 0, sizeof(newtp->rcvq_space));
 #endif
@@ -482,6 +454,7 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 		newtp->fackets_out = 0;
 		newtp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
 		tcp_enable_early_retrans(newtp);
+		newtp->tlp_high_seq = 0;
 
 		/* So many TCP implementations out there (incorrectly) count the
 		 * initial SYN frame in their delayed-ACK and congestion control
@@ -491,9 +464,6 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 		newtp->snd_cwnd = TCP_INIT_CWND;
 		newtp->snd_cwnd_cnt = 0;
 
-		newtp->frto_counter = 0;
-		newtp->frto_highmark = 0;
-
 		if (newicsk->icsk_ca_ops != &tcp_init_congestion_ops &&
 		    !try_module_get(newicsk->icsk_ca_ops->owner))
 			newicsk->icsk_ca_ops = &tcp_init_congestion_ops;
@@ -501,8 +471,7 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 		tcp_set_ca_state(newsk, TCP_CA_Open);
 		tcp_init_xmit_timers(newsk);
 		skb_queue_head_init(&newtp->out_of_order_queue);
-		newtp->write_seq = newtp->pushed_seq =
-			treq->snt_isn + 1 + tcp_s_data_size(oldtp);
+		newtp->write_seq = newtp->pushed_seq = treq->snt_isn + 1;
 
 		newtp->rx_opt.saw_tstamp = 0;
 
@@ -581,7 +550,6 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 			   bool fastopen)
 {
 	struct tcp_options_received tmp_opt;
-	const u8 *hash_location;
 	struct mptcp_options_received mopt;
 	struct sock *child;
 	const struct tcphdr *th = tcp_hdr(skb);
@@ -595,7 +563,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	mptcp_init_mp_opt(&mopt);
 
 	if (th->doff > (sizeof(struct tcphdr)>>2)) {
-		tcp_parse_options(skb, &tmp_opt, &hash_location, &mopt, 0, NULL);
+		tcp_parse_options(skb, &tmp_opt, &mopt, 0, NULL);
 
 		if (tmp_opt.saw_tstamp) {
 			tmp_opt.ts_recent = req->ts_recent;
@@ -631,8 +599,13 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		 *
 		 * Note that even if there is new data in the SYN packet
 		 * they will be thrown away too.
+		 *
+		 * Reset timer after retransmitting SYNACK, similar to
+		 * the idea of fast retransmit in recovery.
 		 */
-		inet_rtx_syn_ack(sk, req);
+		if (!inet_rtx_syn_ack(sk, req))
+			req->expires = min(TCP_TIMEOUT_INIT << req->num_timeout,
+					   TCP_RTO_MAX) + jiffies;
 		return NULL;
 	}
 
@@ -695,7 +668,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	 */
 	if ((flg & TCP_FLAG_ACK) && !fastopen &&
 	    (TCP_SKB_CB(skb)->ack_seq !=
-	     tcp_rsk(req)->snt_isn + 1 + tcp_s_data_size(tcp_sk(sk))))
+	     tcp_rsk(req)->snt_isn + 1))
 		return sk;
 
 	/* Also, it would be not so bad idea to check rcv_tsecr, which
