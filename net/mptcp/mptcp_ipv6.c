@@ -37,6 +37,7 @@
 #include <net/inet6_hashtables.h>
 #include <net/inet_common.h>
 #include <net/ipv6.h>
+#include <net/ip6_checksum.h>
 #include <net/ip6_route.h>
 #include <net/mptcp.h>
 #include <net/mptcp_pm.h>
@@ -286,7 +287,7 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 	if (tcp_rsk(req)->snt_synack)
 		tcp_valid_rtt_meas(newsk,
 				   tcp_time_stamp - tcp_rsk(req)->snt_synack);
-	newtp->total_retrans = req->retrans;
+	newtp->total_retrans = req->num_retrans;
 
 	newinet->inet_daddr = LOOPBACK4_IPV6;
 	newinet->inet_saddr = LOOPBACK4_IPV6;
