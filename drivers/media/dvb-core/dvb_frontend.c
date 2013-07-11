@@ -1029,12 +1029,6 @@ static struct dtv_cmds_h dtv_cmds[DTV_MAX_COMMAND + 1] = {
 	/* Get */
 	_DTV_CMD(DTV_DISEQC_SLAVE_REPLY, 0, 1),
 	_DTV_CMD(DTV_API_VERSION, 0, 0),
-	_DTV_CMD(DTV_CODE_RATE_HP, 0, 0),
-	_DTV_CMD(DTV_CODE_RATE_LP, 0, 0),
-	_DTV_CMD(DTV_GUARD_INTERVAL, 0, 0),
-	_DTV_CMD(DTV_TRANSMISSION_MODE, 0, 0),
-	_DTV_CMD(DTV_HIERARCHY, 0, 0),
-	_DTV_CMD(DTV_INTERLEAVING, 0, 0),
 
 	_DTV_CMD(DTV_ENUM_DELSYS, 0, 0),
 
@@ -1042,13 +1036,11 @@ static struct dtv_cmds_h dtv_cmds[DTV_MAX_COMMAND + 1] = {
 	_DTV_CMD(DTV_ATSCMH_RS_FRAME_ENSEMBLE, 1, 0),
 
 	_DTV_CMD(DTV_ATSCMH_FIC_VER, 0, 0),
-	_DTV_CMD(DTV_ATSCMH_PARADE_ID, 0, 0),
 	_DTV_CMD(DTV_ATSCMH_NOG, 0, 0),
 	_DTV_CMD(DTV_ATSCMH_TNOG, 0, 0),
 	_DTV_CMD(DTV_ATSCMH_SGN, 0, 0),
 	_DTV_CMD(DTV_ATSCMH_PRC, 0, 0),
 	_DTV_CMD(DTV_ATSCMH_RS_FRAME_MODE, 0, 0),
-	_DTV_CMD(DTV_ATSCMH_RS_FRAME_ENSEMBLE, 0, 0),
 	_DTV_CMD(DTV_ATSCMH_RS_CODE_MODE_PRI, 0, 0),
 	_DTV_CMD(DTV_ATSCMH_RS_CODE_MODE_SEC, 0, 0),
 	_DTV_CMD(DTV_ATSCMH_SCCC_BLOCK_MODE, 0, 0),
@@ -1056,8 +1048,6 @@ static struct dtv_cmds_h dtv_cmds[DTV_MAX_COMMAND + 1] = {
 	_DTV_CMD(DTV_ATSCMH_SCCC_CODE_MODE_B, 0, 0),
 	_DTV_CMD(DTV_ATSCMH_SCCC_CODE_MODE_C, 0, 0),
 	_DTV_CMD(DTV_ATSCMH_SCCC_CODE_MODE_D, 0, 0),
-
-	_DTV_CMD(DTV_LNA, 0, 0),
 };
 
 static void dtv_property_dump(struct dvb_frontend *fe, struct dtv_property *tvp)
@@ -1830,7 +1820,7 @@ static int dvb_frontend_ioctl(struct file *file,
 	struct dvb_frontend *fe = dvbdev->priv;
 	struct dtv_frontend_properties *c = &fe->dtv_property_cache;
 	struct dvb_frontend_private *fepriv = fe->frontend_priv;
-	int err = -ENOTTY;
+	int err = -EOPNOTSUPP;
 
 	dev_dbg(fe->dvb->device, "%s: (%d)\n", __func__, _IOC_NR(cmd));
 	if (fepriv->exit != DVB_FE_NO_EXIT)
@@ -1948,7 +1938,7 @@ static int dvb_frontend_ioctl_properties(struct file *file,
 		}
 
 	} else
-		err = -ENOTTY;
+		err = -EOPNOTSUPP;
 
 out:
 	kfree(tvp);
@@ -2081,7 +2071,7 @@ static int dvb_frontend_ioctl_legacy(struct file *file,
 	struct dvb_frontend *fe = dvbdev->priv;
 	struct dvb_frontend_private *fepriv = fe->frontend_priv;
 	struct dtv_frontend_properties *c = &fe->dtv_property_cache;
-	int err = -ENOTTY;
+	int err = -EOPNOTSUPP;
 
 	switch (cmd) {
 	case FE_GET_INFO: {

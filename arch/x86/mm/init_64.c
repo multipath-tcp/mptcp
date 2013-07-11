@@ -630,7 +630,9 @@ void __init paging_init(void)
 	 *	 numa support is not compiled in, and later node_set_state
 	 *	 will not set it back.
 	 */
-	node_clear_state(0, N_NORMAL_MEMORY);
+	node_clear_state(0, N_MEMORY);
+	if (N_MEMORY != N_NORMAL_MEMORY)
+		node_clear_state(0, N_NORMAL_MEMORY);
 
 	zone_sizes_init();
 }
@@ -828,6 +830,9 @@ int kern_addr_valid(unsigned long addr)
 	pud = pud_offset(pgd, addr);
 	if (pud_none(*pud))
 		return 0;
+
+	if (pud_large(*pud))
+		return pfn_valid(pud_pfn(*pud));
 
 	pmd = pmd_offset(pud, addr);
 	if (pmd_none(*pmd))
