@@ -936,27 +936,6 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 	}
 }
 
-/**** static functions, used by mptcp_write_xmit ****/
-static void mptcp_mark_reinjected(struct sock *sk, struct sk_buff *skb)
-{
-	struct sock *meta_sk;
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct sk_buff *skb_it;
-
-	meta_sk = mptcp_meta_sk(sk);
-	skb_it = tcp_write_queue_head(meta_sk);
-
-	tcp_for_write_queue_from(skb_it, meta_sk) {
-		if (skb_it == tcp_send_head(meta_sk))
-			break;
-
-		if (TCP_SKB_CB(skb_it)->seq == TCP_SKB_CB(skb)->seq) {
-			TCP_SKB_CB(skb_it)->path_mask |= mptcp_pi_to_flag(tp->mptcp->path_index);
-			break;
-		}
-	}
-}
-
 static void mptcp_find_and_set_pathmask(struct sock *meta_sk, struct sk_buff *skb)
 {
 	struct sk_buff *skb_it;
@@ -1173,7 +1152,6 @@ retry:
 		mptcp_sub_event_new_data_sent(subsk, subskb, skb);
 
 		if (reinject > 0) {
-			mptcp_mark_reinjected(subsk, skb);
 			__skb_unlink(skb, &mpcb->reinject_queue);
 			kfree_skb(skb);
 		}
