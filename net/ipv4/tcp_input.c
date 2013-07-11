@@ -5819,7 +5819,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 	mptcp_init_mp_opt(&mopt);
 
 	tcp_parse_options(skb, &tp->rx_opt, &hash_location,
-			  mpcb ? &tp->mptcp->rx_opt : &mopt, 0, &foc);
+			  tp->mpc ? &tp->mptcp->rx_opt : &mopt, 0, &foc);
 
 	if (th->ack) {
 		/* rfc793:
@@ -6099,7 +6099,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
-	int queued = 0, res;
+	int queued = 0;
 
 	tp->rx_opt.saw_tstamp = 0;
 
