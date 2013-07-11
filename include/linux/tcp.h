@@ -91,10 +91,6 @@ struct tcp_out_options {
 					/* random number of the sender */
 			__u32	token;	/* token for mptcp */
 		} mp_join_syns;
-
-		struct {
-			char sender_mac[20];
-		} mp_join_ack;
 	};
 
 	struct mptcp_loc4 *addr4;/* v4 addresses for MPTCP */
@@ -429,6 +425,7 @@ struct tcp_timewait_sock {
 	 * object holds a reference to them (tw_cookie_values->kref).
 	 */
 	struct tcp_cookie_values  *tw_cookie_values;
+	struct mptcp_tw		  *mptcp_tw;
 };
 
 static inline struct tcp_timewait_sock *tcp_twsk(const struct sock *sk)

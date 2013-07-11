@@ -694,10 +694,8 @@ ssize_t tcp_splice_read(struct socket *sock, loff_t *ppos,
 #ifdef CONFIG_MPTCP
 	if (tcp_sk(sk)->mpc) {
 		struct sock *sk_it;
-		mptcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it) {
-			if (!is_master_tp(tcp_sk(sk_it)))
+		mptcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it)
 				sock_rps_record_flow(sk_it);
-		}
 	}
 #endif
 	/*
@@ -795,15 +793,14 @@ struct sk_buff *sk_stream_alloc_skb(struct sock *sk, int size, gfp_t gfp)
 	return NULL;
 }
 
-static unsigned int tcp_xmit_size_goal(struct sock *sk, u32 mss_now,
-				       int large_allowed)
+unsigned int tcp_xmit_size_goal(struct sock *sk, u32 mss_now, int large_allowed)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	u32 xmit_size_goal, old_size_goal;
 
 	xmit_size_goal = mss_now;
 
-	if (large_allowed && sk_can_gso(sk) && !tp->mpc) {
+	if (large_allowed && sk_can_gso(sk)) {
 		xmit_size_goal = ((sk->sk_gso_max_size - 1) -
 				  inet_csk(sk)->icsk_af_ops->net_header_len -
 				  inet_csk(sk)->icsk_ext_hdr_len -
@@ -836,11 +833,13 @@ static int tcp_send_mss(struct sock *sk, int *size_goal, int flags)
 {
 	int mss_now;
 
-	if (tcp_sk(sk)->mpc)
+	if (tcp_sk(sk)->mpc) {
 		mss_now = mptcp_current_mss(sk);
-	else
+		*size_goal = mptcp_xmit_size_goal(sk, mss_now, !(flags & MSG_OOB));
+	} else {
 		mss_now = tcp_current_mss(sk);
-	*size_goal = tcp_xmit_size_goal(sk, mss_now, !(flags & MSG_OOB));
+		*size_goal = tcp_xmit_size_goal(sk, mss_now, !(flags & MSG_OOB));
+	}
 
 	return mss_now;
 }
@@ -862,6 +861,22 @@ static ssize_t do_tcp_sendpages(struct sock *sk, struct page *page, int offset,
 	    !tcp_passive_fastopen(sk)) {
 		if ((err = sk_stream_wait_connect(sk, &timeo)) != 0)
 			goto out_err;
+	}
+
+	if (tp->mpc) {
+		struct sock *sk_it;
+
+		/* We must check this with socket-lock hold because we iterate
+		 * over the subflows.
+		 */
+		if (!mptcp_can_sendpage(sk)) {
+			release_sock(sk);
+			return sock_no_sendpage(sk->sk_socket, *pages, poffset,
+						psize, flags);
+		}
+
+		mptcp_for_each_sk(tp->mpcb, sk_it)
+			sock_rps_record_flow(sk_it);
 	}
 
 	clear_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
@@ -966,8 +981,9 @@ int tcp_sendpage(struct sock *sk, struct page *page, int offset,
 {
 	ssize_t res;
 
-	if (!(sk->sk_route_caps & NETIF_F_SG) ||
-	    !(sk->sk_route_caps & NETIF_F_ALL_CSUM) || tcp_sk(sk)->mpc)
+	/* If MPTCP is enabled, we check it later after establishment */
+	if (!tcp_sk(sk)->mpc && (!(sk->sk_route_caps & NETIF_F_SG) ||
+	    !(sk->sk_route_caps & NETIF_F_ALL_CSUM)))
 		return sock_no_sendpage(sk->sk_socket, page, offset, size,
 					flags);
 
@@ -984,7 +1000,7 @@ static inline int select_size(const struct sock *sk, bool sg)
 	int tmp = tp->mss_cache;
 
 	if (tp->mpc)
-		tmp = mptcp_select_size(sk);
+		return mptcp_select_size(sk, sg);
 
 	if (sg) {
 		if (sk_can_gso(sk)) {
@@ -1072,12 +1088,9 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	}
 
 	if (tp->mpc) {
-		struct sock *sk_it = sk;
-
-		mptcp_for_each_sk(tp->mpcb, sk_it) {
-			if (!is_master_tp(tcp_sk(sk_it)))
-				sock_rps_record_flow(sk_it);
-		}
+		struct sock *sk_it;
+		mptcp_for_each_sk(tp->mpcb, sk_it)
+			sock_rps_record_flow(sk_it);
 	}
 
 	if (unlikely(tp->repair)) {
@@ -1108,10 +1121,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		goto out_err;
 
 	if (tp->mpc)
-		/* At the moment we assume sg is unavailable on any interface.
-		 * In the future we should set sg to 1 if *all* interfaces support sg
-		 */
-		sg = 0;
+		sg = mptcp_can_sg(sk);
 	else
 		sg = !!(sk->sk_route_caps & NETIF_F_SG);
 
@@ -1597,10 +1607,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 #ifdef CONFIG_MPTCP
 	if (tp->mpc) {
 		struct sock *sk_it;
-		mptcp_for_each_sk(tp->mpcb, sk_it) {
-			if (!is_master_tp(tcp_sk(sk_it)))
-				sock_rps_record_flow(sk_it);
-		}
+		mptcp_for_each_sk(tp->mpcb, sk_it)
+			sock_rps_record_flow(sk_it);
 	}
 #endif
 

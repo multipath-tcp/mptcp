@@ -119,45 +119,84 @@ static int mptcp_find_token(u32 token)
 	return 0;
 }
 
+static void mptcp_set_key_reqsk(struct request_sock *req,
+				const struct sk_buff *skb)
+{
+	struct inet_request_sock *ireq = inet_rsk(req);
+	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
+
+	if (skb->protocol == htons(ETH_P_IP)) {
+		mtreq->mptcp_loc_key = mptcp_v4_get_key(ip_hdr(skb)->saddr,
+						        ip_hdr(skb)->daddr,
+						        ireq->loc_port,
+						        ireq->rmt_port);
+#if IS_ENABLED(CONFIG_IPV6)
+	} else {
+		mtreq->mptcp_loc_key = mptcp_v6_get_key(ipv6_hdr(skb)->saddr.s6_addr32,
+							ipv6_hdr(skb)->daddr.s6_addr32,
+							ireq->loc_port,
+							ireq->rmt_port);
+#endif
+	}
+
+	mptcp_key_sha1(mtreq->mptcp_loc_key, &mtreq->mptcp_loc_token, NULL);
+}
+
 /* New MPTCP-connection request, prepare a new token for the meta-socket that
  * will be created in mptcp_check_req_master(), and store the received token.
  */
 void mptcp_reqsk_new_mptcp(struct request_sock *req,
 			   const struct tcp_options_received *rx_opt,
-			   const struct mptcp_options_received *mopt)
+			   const struct mptcp_options_received *mopt,
+			   const struct sk_buff *skb)
 {
-	struct mptcp_request_sock *mtreq;
-	mtreq = mptcp_rsk(req);
+	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
 
 	tcp_rsk(req)->saw_mpc = 1;
 
 	rcu_read_lock();
 	spin_lock(&mptcp_tk_hashlock);
 	do {
-		get_random_bytes(&mtreq->mptcp_loc_key,
-				 sizeof(mtreq->mptcp_loc_key));
-		mptcp_key_sha1(mtreq->mptcp_loc_key,
-			       &mtreq->mptcp_loc_token, NULL);
+		mptcp_set_key_reqsk(req, skb);
 	} while (mptcp_reqsk_find_tk(mtreq->mptcp_loc_token) ||
 		 mptcp_find_token(mtreq->mptcp_loc_token));
 
 	mptcp_reqsk_insert_tk(req, mtreq->mptcp_loc_token);
 	spin_unlock(&mptcp_tk_hashlock);
 	rcu_read_unlock();
-	mtreq->mptcp_rem_key = mopt->mptcp_rem_key;
+	mtreq->mptcp_rem_key = mopt->mptcp_key;
 }
 
-void mptcp_connect_init(struct tcp_sock *tp)
+static void mptcp_set_key_sk(struct sock *sk)
 {
-	u64 idsn;
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct inet_sock *isk = inet_sk(sk);
+
+	if (sk->sk_family == AF_INET)
+		tp->mptcp_loc_key = mptcp_v4_get_key(isk->inet_saddr,
+						     isk->inet_daddr,
+						     isk->inet_sport,
+						     isk->inet_dport);
+#if IS_ENABLED(CONFIG_IPV6)
+	else
+		tp->mptcp_loc_key = mptcp_v6_get_key(inet6_sk(sk)->saddr.s6_addr32,
+						     inet6_sk(sk)->daddr.s6_addr32,
+						     isk->inet_sport,
+						     isk->inet_dport);
+#endif
+
+	mptcp_key_sha1(tp->mptcp_loc_key,
+		       &tp->mptcp_loc_token, NULL);
+}
+
+void mptcp_connect_init(struct sock *sk)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
 
 	rcu_read_lock_bh();
 	spin_lock(&mptcp_tk_hashlock);
 	do {
-		get_random_bytes(&tp->mptcp_loc_key,
-				 sizeof(tp->mptcp_loc_key));
-		mptcp_key_sha1(tp->mptcp_loc_key,
-			       &tp->mptcp_loc_token, &idsn);
+		mptcp_set_key_sk(sk);
 	} while (mptcp_reqsk_find_tk(tp->mptcp_loc_token) ||
 		 mptcp_find_token(tp->mptcp_loc_token));
 
@@ -179,7 +218,8 @@ struct sock *mptcp_hash_find(struct net *net, u32 token)
 	struct hlist_nulls_node *node;
 
 	rcu_read_lock();
-	hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[hash], tk_table) {
+	hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[hash],
+				       tk_table) {
 		meta_sk = (struct sock *)meta_tp;
 		if (token == meta_tp->mptcp_loc_token &&
 		    net_eq(net, sock_net(meta_sk)) &&
@@ -242,6 +282,7 @@ u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock *sk)
 #endif /* CONFIG_IPV6 */
 
 	BUG();
+	return 0;
 }
 
 void mptcp_set_addresses(struct sock *meta_sk)
@@ -452,8 +493,10 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 	}
 
 	mpcb = tcp_sk(meta_sk)->mpcb;
-	if (mpcb->infinite_mapping) {
-		/* We are in fallback-mode - thus no new subflows!!! */
+	if (mpcb->infinite_mapping_rcv) {
+		/* We are in fallback-mode on the reception-side -
+		 * noe new subflows!
+		 */
 		sock_put(meta_sk); /* Taken by mptcp_hash_find */
 		return -1;
 	}
@@ -522,7 +565,7 @@ int mptcp_do_join_short(struct sk_buff *skb, struct mptcp_options_received *mopt
 	 * And the send-reset will try to take yet another one (ip_send_reply).
 	 * Thus, we propagate the reset up to tcp_rcv_state_process.
 	 */
-	if (tcp_sk(meta_sk)->mpcb->infinite_mapping ||
+	if (tcp_sk(meta_sk)->mpcb->infinite_mapping_rcv ||
 	    meta_sk->sk_state == TCP_CLOSE || !tcp_sk(meta_sk)->inside_tk_table) {
 		bh_unlock_sock(meta_sk);
 		sock_put(meta_sk); /* Taken by mptcp_hash_find */
@@ -721,9 +764,8 @@ void mptcp_create_subflows(struct sock *meta_sk)
 
 	if ((mpcb->master_sk &&
 	     !tcp_sk(mpcb->master_sk)->mptcp->fully_established) ||
-	    mpcb->infinite_mapping ||
-	    mpcb->server_side ||
-	    sock_flag(meta_sk, SOCK_DEAD))
+	    mpcb->infinite_mapping_snd || mpcb->infinite_mapping_rcv ||
+	    mpcb->server_side || sock_flag(meta_sk, SOCK_DEAD))
 		return;
 
 	if (!work_pending(&mpcb->subflow_work)) {
@@ -955,7 +997,8 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
 		struct hlist_nulls_node *node;
 		rcu_read_lock_bh();
-		hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[i], tk_table) {
+		hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[i],
+					       tk_table) {
 			struct mptcp_cb *mpcb = meta_tp->mpcb;
 			struct sock *meta_sk = (struct sock *)meta_tp;
 
@@ -963,7 +1006,8 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 				continue;
 
 			if (!meta_tp->mpc || !is_meta_sk(meta_sk) ||
-			    mpcb->infinite_mapping) {
+			    mpcb->infinite_mapping_snd ||
+			    mpcb->infinite_mapping_rcv) {
 				sock_put(meta_sk);
 				continue;
 			}
@@ -1099,7 +1143,7 @@ int mptcp_pm_init(void)
 	spin_lock_init(&mptcp_reqsk_hlock);
 	spin_lock_init(&mptcp_tk_hashlock);
 
-#ifdef CONFIG_SYSCTL
+#ifdef CONFIG_PROC_FS
 	ret = register_pernet_subsys(&mptcp_pm_proc_ops);
 	if (ret)
 		goto out;
@@ -1123,7 +1167,7 @@ mptcp_pm_v4_failed:
 
 mptcp_pm_v6_failed:
 #endif
-#ifdef CONFIG_SYSCTL
+#ifdef CONFIG_PROC_FS
 	unregister_pernet_subsys(&mptcp_pm_proc_ops);
 #endif
 	goto out;
@@ -1135,7 +1179,7 @@ void mptcp_pm_undo(void)
 	mptcp_pm_v6_undo();
 #endif
 	mptcp_pm_v4_undo();
-#ifdef CONFIG_SYSCTL
+#ifdef CONFIG_PROC_FS
 	unregister_pernet_subsys(&mptcp_pm_proc_ops);
 #endif
 }

@@ -258,6 +258,8 @@ static void tcp_delack_timer(unsigned long data)
 		/* deleguate our work to tcp_release_cb() */
 		if (!test_and_set_bit(TCP_DELACK_TIMER_DEFERRED, &tcp_sk(sk)->tsq_flags))
 			sock_hold(sk);
+		if (tcp_sk(sk)->mpc)
+			set_bit(TCP_DELACK_TIMER_DEFERRED, &mptcp_meta_tp(tcp_sk(sk))->tsq_flags);
 	}
 	bh_unlock_sock(meta_sk);
 	sock_put(sk);
@@ -533,6 +535,8 @@ static void tcp_write_timer(unsigned long data)
 		/* deleguate our work to tcp_release_cb() */
 		if (!test_and_set_bit(TCP_WRITE_TIMER_DEFERRED, &tcp_sk(sk)->tsq_flags))
 			sock_hold(sk);
+		if (tcp_sk(sk)->mpc)
+			set_bit(TCP_WRITE_TIMER_DEFERRED, &mptcp_meta_tp(tcp_sk(sk))->tsq_flags);
 	}
 	bh_unlock_sock(meta_sk);
 	sock_put(sk);

@@ -111,8 +111,9 @@ int mptcp_do_join_short(struct sk_buff *skb, struct mptcp_options_received *mopt
 void mptcp_reqsk_remove_tk(struct request_sock *reqsk);
 void mptcp_reqsk_new_mptcp(struct request_sock *req,
 			   const struct tcp_options_received *rx_opt,
-			   const struct mptcp_options_received *mopt);
-void mptcp_connect_init(struct tcp_sock *tp);
+			   const struct mptcp_options_received *mopt,
+			   const struct sk_buff *skb);
+void mptcp_connect_init(struct sock *sk);
 void mptcp_set_addresses(struct sock *meta_sk);
 int mptcp_check_req(struct sk_buff *skb, struct net *net);
 void mptcp_address_worker(struct work_struct *work);
@@ -123,7 +124,8 @@ void mptcp_pm_undo(void);
 #else /* CONFIG_MPTCP */
 static inline void mptcp_reqsk_new_mptcp(struct request_sock *req,
 					 const struct tcp_options_received *rx_opt,
-					 const struct mptcp_options_received *mopt)
+					 const struct mptcp_options_received *mopt,
+					 const struct sk_buff *skb)
 {}
 static inline void mptcp_hash_remove(struct tcp_sock *meta_tp) {}
 #endif /* CONFIG_MPTCP */

@@ -258,6 +258,7 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define FLAG_NONHEAD_RETRANS_ACKED      0x1000 /* Non-head rexmitted data was ACKed */
 #define FLAG_SACK_RENEGING      0x2000 /* snd_una advanced to a sacked seq */
 #define MPTCP_FLAG_SEND_RESET	0x4000
+#define MPTCP_FLAG_DATA_ACKED	0x8000
 
 #define FLAG_ACKED              (FLAG_DATA_ACKED|FLAG_SYN_ACKED)
 #define FLAG_NOT_DUP            (FLAG_DATA|FLAG_WIN_UPDATE|FLAG_ACKED)
@@ -463,10 +464,14 @@ extern struct sock *tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 extern void tcp_v6_reqsk_destructor(struct request_sock *req);
 
 extern void sock_valbool_flag(struct sock *sk, int bit, int valbool);
+extern unsigned int tcp_xmit_size_goal(struct sock *sk, u32 mss_now,
+				       int large_allowed);
+extern u32 tcp_tso_acked(struct sock *sk, struct sk_buff *skb);
 
 extern void skb_clone_fraglist(struct sk_buff *skb);
 extern void copy_skb_header(struct sk_buff *new, const struct sk_buff *old);
 
+extern void inet_twsk_free(struct inet_timewait_sock *tw);
 /* These states need RST on ABORT according to RFC793 */
 static inline bool tcp_need_reset(int state)
 {
@@ -474,6 +479,9 @@ static inline bool tcp_need_reset(int state)
 	       (TCPF_ESTABLISHED | TCPF_CLOSE_WAIT | TCPF_FIN_WAIT1 |
 		TCPF_FIN_WAIT2 | TCPF_SYN_RECV);
 }
+
+extern bool tcp_dma_try_early_copy(struct sock *sk, struct sk_buff *skb,
+				   int hlen);
 extern int __must_check tcp_queue_rcv(struct sock *sk, struct sk_buff *skb, int hdrlen,
 				      bool *fragstolen);
 extern bool tcp_try_coalesce(struct sock *sk, struct sk_buff *to,
@@ -820,6 +828,7 @@ void tcp_send_window_probe(struct sock *sk);
 #define MPTCPHDR_SEQ64_SET	0x10 /* Did we received a 64-bit seq number */
 #define MPTCPHDR_SEQ64_OFO	0x20 /* Is it not in our circular array? */
 #define MPTCPHDR_SEQ64_INDEX	0x40 /* Index of seq in mpcb->snd_high_order */
+#define MPTCPHDR_DSS_CSUM	0x80
 
 /* It is impossible, that all 8 bits of mptcp_flags are set to 1 with the above
  * Thus, defining MPTCPHDR_JOIN as 0xFF is safe.
@@ -848,8 +857,6 @@ struct tcp_skb_cb {
 	__u32		end_seq;	/* SEQ + FIN + SYN + datalen	*/
 	__u32		when;		/* used to compute rtt's	*/
 #ifdef CONFIG_MPTCP
-#define sub_seq		ack_seq
-#define	mp_data_len	when
 	__u8		mptcp_flags;	/* flags for the MPTCP layer    */
 	__u8		dss_off;	/* Number of 4-byte words until
 					 * seq-number */

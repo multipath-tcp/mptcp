@@ -3131,7 +3131,7 @@ void tcp_resume_early_retransmit(struct sock *sk)
 }
 
 /* If we get here, the whole TSO packet has not been acked. */
-static u32 tcp_tso_acked(struct sock *sk, struct sk_buff *skb)
+u32 tcp_tso_acked(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	u32 packets_acked;
@@ -3226,6 +3226,8 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		 */
 		if (!(scb->tcp_flags & TCPHDR_SYN)) {
 			flag |= FLAG_DATA_ACKED;
+			if (tp->mpc && mptcp_is_data_seq(skb))
+				flag |= MPTCP_FLAG_DATA_ACKED;
 		} else {
 			flag |= FLAG_SYN_ACKED;
 			tp->retrans_stamp = 0;
@@ -3636,11 +3638,11 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 	flag |= tcp_clean_rtx_queue(sk, prior_fackets, prior_snd_una);
 
 	if (tp->mpc) {
-		flag |= mptcp_fallback_infinite(tp, flag);
+		flag |= mptcp_fallback_infinite(sk, flag);
 
 		if (flag & MPTCP_FLAG_SEND_RESET) {
 			pr_err("%s resetting flow\n", __func__);
-			mptcp_send_reset(sk, skb);
+			mptcp_send_reset(sk);
 			goto invalid_ack;
 		}
 
@@ -5317,8 +5319,7 @@ static inline bool tcp_checksum_complete_user(struct sock *sk,
 }
 
 #ifdef CONFIG_NET_DMA
-static bool tcp_dma_try_early_copy(struct sock *sk, struct sk_buff *skb,
-				  int hlen)
+bool tcp_dma_try_early_copy(struct sock *sk, struct sk_buff *skb, int hlen)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	int chunk = skb->len - hlen;
@@ -5799,7 +5800,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 	mptcp_init_mp_opt(&mopt);
 
 	tcp_parse_options(skb, &tp->rx_opt, &hash_location,
-			  mpcb ? &tp->mptcp->rx_opt : &mopt, 0, &foc);
+			  tp->mpc ? &tp->mptcp->rx_opt : &mopt, 0, &foc);
 
 	if (th->ack) {
 		/* rfc793:
@@ -5844,59 +5845,18 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		if (!th->syn)
 			goto discard_and_undo;
 
-#ifdef CONFIG_MPTCP
-		if (!is_master_tp(tp)) {
-			u8 hash_mac_check[20];
-			struct mptcp_cb *mpcb = tp->mpcb;
+		if (tp->request_mptcp || tp->mpc) {
+			int ret;
+			ret = mptcp_rcv_synsent_state_process(sk, &sk,
+							      skb, &mopt);
 
-			mptcp_hmac_sha1((u8 *)&mpcb->mptcp_rem_key,
-					(u8 *)&mpcb->mptcp_loc_key,
-					(u8 *)&tp->mptcp->rx_opt.mptcp_recv_nonce,
-					(u8 *)&tp->mptcp->mptcp_loc_nonce,
-					(u32 *)hash_mac_check);
-			if (memcmp(hash_mac_check,
-				   (char *)&tp->mptcp->rx_opt.mptcp_recv_tmac, 8)) {
-				mptcp_sub_force_close(sk);
+			tp = tcp_sk(sk); /* May have changed if we support MPTCP */
+
+			if (ret == 1)
 				goto reset_and_undo;
-			}
-
-			/* Set this flag in order to postpone data sending
-			 * until the 4th ack arrives.
-			 */
-			tp->mptcp->pre_established = 1;
-			tp->mptcp->rcv_low_prio = tp->mptcp->rx_opt.low_prio;
-		} else if (mopt.saw_mpc && tp->request_mptcp) {
-			if (mptcp_create_master_sk(sk, mopt.mptcp_rem_key,
-						   ntohs(th->window)))
+			if (ret == 2)
 				goto discard;
-
-			sk = tcp_sk(sk)->mpcb->master_sk;
-			tp = tcp_sk(sk);
-
-			/* snd_nxt - 1, because it has been incremented
-			 * by tcp_connect for the SYN
-			 */
-			tp->mptcp->snt_isn = tp->snd_nxt - 1;
-			tp->mpcb->dss_csum = mopt.dss_csum;
-
-			sk_set_socket(sk, mptcp_meta_sk(sk)->sk_socket);
-			sk->sk_wq = mptcp_meta_sk(sk)->sk_wq;
-
-			mptcp_update_metasocket(sk, mptcp_meta_sk(sk));
-
-			 /* hold in mptcp_inherit_sk due to initialization to 2 */
-			sock_put(sk);
-		} else {
-			tp->request_mptcp = 0;
-
-			if (tp->inside_tk_table)
-				mptcp_hash_remove(tp);
 		}
-		if (tp->mpc) {
-			tp->mptcp->rcv_isn = TCP_SKB_CB(skb)->seq;
-			tp->mptcp->include_mpc = 1;
-		}
-#endif
 
 		/* rfc793:
 		 *   "If the SYN bit is on ...
@@ -6122,7 +6082,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct request_sock *req;
-	int queued = 0, res;
+	int queued = 0;
 
 	tp->rx_opt.saw_tstamp = 0;
 
@@ -6224,13 +6184,6 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 				tcp_set_state(sk, TCP_ESTABLISHED);
 				sk->sk_state_change(sk);
 
-				/* Send an ACK when establishing a new
-				 * MPTCP subflow, i.e. using an MP_JOIN
-				 * subtype.
-				 */
-				if (tp->mpc && !is_master_tp(tp))
-					tcp_send_ack(sk);
-
 				/* Note, that this wakeup is only for marginal
 				 * crossed SYN case. Passively open sockets
 				 * are not waked up, because sk->sk_sleep ==
@@ -6272,6 +6225,13 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 
 				tcp_initialize_rcv_mss(sk);
 				tcp_fast_path_on(tp);
+
+				/* Send an ACK when establishing a new
+				 * MPTCP subflow, i.e. using an MP_JOIN
+				 * subtype.
+				 */
+				if (tp->mpc && !is_master_tp(tp))
+					tcp_send_ack(sk);
 			} else {
 				return 1;
 			}
@@ -6333,18 +6293,8 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 						 */
 						inet_csk_reset_keepalive_timer(sk, tmo);
 					} else {
-						/* In case of MPTCP we cannot go into time-wait.
-						 * Because, we are still waiting for a subflow-fin.
-						 * This subflow-fin may carry the DATA_FIN who would
-						 * free the meta-sk.
-						 *
-						 * If we fully adapt time-wait-socks for MTPCP-awareness
-						 * we can change this here again.
-						 */
-						if (!tp->mpc) {
-							tcp_time_wait(sk, TCP_FIN_WAIT2, tmo);
-							goto discard;
-						}
+						tcp_time_wait(sk, TCP_FIN_WAIT2, tmo);
+						goto discard;
 					}
 				}
 			}

@@ -399,9 +399,14 @@ static void tcp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 		tp->mtu_info = ntohl(info);
 		if (!sock_owned_by_user(sk))
 			tcp_v6_mtu_reduced(sk);
-		else if (!test_and_set_bit(TCP_MTU_REDUCED_DEFERRED,
+		else {
+			if (!test_and_set_bit(TCP_MTU_REDUCED_DEFERRED,
 					   &tp->tsq_flags))
-			sock_hold(sk);
+				sock_hold(sk);
+			if (tp->mpc)
+				set_bit(TCP_MTU_REDUCED_DEFERRED,
+					&mptcp_meta_tp(tp)->tsq_flags);
+		}
 		goto out;
 	}
 
@@ -816,9 +821,6 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack,
 	unsigned int tot_len = sizeof(struct tcphdr);
 	struct dst_entry *dst;
 	__be32 *topt;
-#ifdef CONFIG_MPTCP
-	struct sock *sk = skb->sk;
-#endif
 
 	if (ts)
 		tot_len += TCPOLEN_TSTAMP_ALIGNED;
@@ -827,8 +829,6 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack,
 		tot_len += TCPOLEN_MD5SIG_ALIGNED;
 #endif
 #ifdef CONFIG_MPTCP
-	if (rst && sk && tcp_sk(sk)->mpc && tcp_sk(sk)->mptcp->csum_error)
-		tot_len += MPTCP_SUB_LEN_FAIL_ALIGN;
 	if (mptcp)
 		tot_len += MPTCP_SUB_LEN_DSS + MPTCP_SUB_LEN_ACK;
 #endif
@@ -873,17 +873,6 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack,
 	}
 #endif
 #ifdef CONFIG_MPTCP
-	if (rst && sk && tcp_sk(sk)->mpc && tcp_sk(sk)->mptcp->csum_error) {
-		struct mp_fail *mpfail = (struct mp_fail *)topt;;
-
-		mpfail->kind = TCPOPT_MPTCP;
-		mpfail->len = MPTCP_SUB_LEN_FAIL;
-		mpfail->sub = MPTCP_SUB_FAIL;
-		mpfail->rsv1 = 0;
-		mpfail->rsv2 = 0;
-		mpfail->data_seq = htonll(tcp_sk(sk)->mpcb->csum_cutoff_seq);
-		topt += 2;
-	}
 	if (mptcp) {
 		/* Construction of 32-bit data_ack */
 		*topt++ = htonl((TCPOPT_MPTCP << 24) |
@@ -1003,18 +992,18 @@ static void tcp_v6_timewait_ack(struct sock *sk, struct sk_buff *skb)
 {
 	struct inet_timewait_sock *tw = inet_twsk(sk);
 	struct tcp_timewait_sock *tcptw = tcp_twsk(sk);
-	u32 data_ack = 0;
+	u32 data_ack;
+	int mptcp = 0;
 
-	if (mptcp_is_data_fin(skb)) {
-		/* As it's a data-fin we know that the data-seq is present */
-		mptcp_skb_set_data_seq(skb, &data_ack);
-		data_ack++;
+	if (tcptw->mptcp_tw && tcptw->mptcp_tw->meta_tw) {
+		data_ack = (u32)tcptw->mptcp_tw->rcv_nxt;
+		mptcp = 1;
 	}
 	tcp_v6_send_ack(skb, tcptw->tw_snd_nxt, tcptw->tw_rcv_nxt,
 			data_ack,
 			tcptw->tw_rcv_wnd >> tw->tw_rcv_wscale,
 			tcptw->tw_ts_recent, tcp_twsk_md5_key(tcptw),
-			tw->tw_tclass, mptcp_is_data_fin(skb));
+			tw->tw_tclass, mptcp);
 
 	inet_twsk_put(tw);
 }
@@ -1096,6 +1085,8 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 #ifdef CONFIG_MPTCP
 	if (mopt.is_mp_join)
 		return mptcp_do_join_short(skb, &mopt, &tmp_opt, sock_net(sk));
+	if (mopt.drop_me)
+		goto drop;
 #endif
 
 	if (!ipv6_unicast_destination(skb))
@@ -1181,7 +1172,7 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	tcp_openreq_init(req, &tmp_opt, skb);
 
 	if (mopt.saw_mpc)
-		mptcp_reqsk_new_mptcp(req, &tmp_opt, &mopt);
+		mptcp_reqsk_new_mptcp(req, &tmp_opt, &mopt, skb);
 
 	treq = inet6_rsk(req);
 	treq->rmt_addr = ipv6_hdr(skb)->saddr;
@@ -1731,7 +1722,7 @@ process:
 	ret = 0;
 	if (!sock_owned_by_user(meta_sk)) {
 #ifdef CONFIG_NET_DMA
-		struct tcp_sock *tp = tcp_sk(sk);
+		struct tcp_sock *tp = tcp_sk(meta_sk);
 		if (!tp->ucopy.dma_chan && tp->ucopy.pinned_list)
 			tp->ucopy.dma_chan = net_dma_find_channel();
 		if (tp->ucopy.dma_chan)
