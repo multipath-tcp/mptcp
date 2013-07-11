@@ -230,25 +230,15 @@ static void mptcp_ccc_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 		snd_cwnd = tp->snd_cwnd;
 	}
 
-	if (sysctl_tcp_abc) {
-		if (tp->bytes_acked >= snd_cwnd * tp->mss_cache) {
-			/* Only a single mss for all subflows - thus use the
-			 * one of the meta-tp */
-			tp->bytes_acked -= snd_cwnd * tp->mss_cache;
-			if (tp->snd_cwnd < tp->snd_cwnd_clamp)
-				tp->snd_cwnd++;
+	if (tp->snd_cwnd_cnt >= snd_cwnd) {
+		if (tp->snd_cwnd < tp->snd_cwnd_clamp) {
+			tp->snd_cwnd++;
+			mptcp_ccc_recalc_alpha(sk);
 		}
-	} else {
-		if (tp->snd_cwnd_cnt >= snd_cwnd) {
-			if (tp->snd_cwnd < tp->snd_cwnd_clamp) {
-				tp->snd_cwnd++;
-				mptcp_ccc_recalc_alpha(sk);
-			}
 
-			tp->snd_cwnd_cnt = 0;
-		} else {
-			tp->snd_cwnd_cnt++;
-		}
+		tp->snd_cwnd_cnt = 0;
+	} else {
+		tp->snd_cwnd_cnt++;
 	}
 }
 

@@ -274,21 +274,13 @@ static void mptcp_olia_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
 	}
 
 
-	if (sysctl_tcp_abc) {
-		if (tp->bytes_acked >= tp->snd_cwnd * tp->mss_cache) {
-			tp->bytes_acked -= tp->snd_cwnd * tp->mss_cache;
-			if (tp->snd_cwnd < tp->snd_cwnd_clamp)
-				tp->snd_cwnd++;
-		}
-	} else {
-		if (ca->mptcp_snd_cwnd_cnt >= (1 << scale) - 1) {
-			if (tp->snd_cwnd < tp->snd_cwnd_clamp)
-				tp->snd_cwnd++;
-			ca->mptcp_snd_cwnd_cnt = 0;
-		} else if (ca->mptcp_snd_cwnd_cnt <= 0 - (1 << scale) + 1) {
-			tp->snd_cwnd = max((int) 1 , (int) tp->snd_cwnd - 1);
-			ca->mptcp_snd_cwnd_cnt = 0;
-		}
+	if (ca->mptcp_snd_cwnd_cnt >= (1 << scale) - 1) {
+		if (tp->snd_cwnd < tp->snd_cwnd_clamp)
+			tp->snd_cwnd++;
+		ca->mptcp_snd_cwnd_cnt = 0;
+	} else if (ca->mptcp_snd_cwnd_cnt <= 0 - (1 << scale) + 1) {
+		tp->snd_cwnd = max((int) 1 , (int) tp->snd_cwnd - 1);
+		ca->mptcp_snd_cwnd_cnt = 0;
 	}
 }
 

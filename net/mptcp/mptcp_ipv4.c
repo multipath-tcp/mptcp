@@ -146,7 +146,7 @@ static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 		goto drop_and_free;
 
 	if (!want_cookie || tmp_opt.tstamp_ok)
-		TCP_ECN_create_request(req, skb);
+		TCP_ECN_create_request(req, skb, sock_net(meta_sk));
 
 	if (!isn) {
 		struct flowi4 fl4;

@@ -346,7 +346,7 @@ static void mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	treq->loc_addr = ipv6_hdr(skb)->daddr;
 
 	if (!want_cookie || tmp_opt.tstamp_ok)
-		TCP_ECN_create_request(req, skb);
+		TCP_ECN_create_request(req, skb, sock_net(meta_sk));
 
 	treq->iif = meta_sk->sk_bound_dev_if;
 

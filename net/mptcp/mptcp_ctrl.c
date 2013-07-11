@@ -975,11 +975,6 @@ void mptcp_del_sock(struct sock *sk)
 	if (!tp->mptcp || !tp->mptcp->attached)
 		return;
 
-	if (tp->mptcp->pre_established) {
-		tp->mptcp->pre_established = 0;
-		sk_stop_timer(sk, &tp->mptcp->mptcp_ack_timer);
-	}
-
 	mpcb = tp->mpcb;
 	tp_prev = mpcb->connection_list;
 
@@ -1009,7 +1004,8 @@ void mptcp_del_sock(struct sock *sk)
 
 	if (is_master_tp(tp))
 		mpcb->master_sk = NULL;
-	else
+	else if (tp->mptcp->mptcp_ack_timer.data)
+		/* May not be initiated, if we are on the server-side */
 		sk_stop_timer(sk, &tp->mptcp->mptcp_ack_timer);
 
 	rcu_assign_pointer(inet_sk(sk)->inet_opt, NULL);

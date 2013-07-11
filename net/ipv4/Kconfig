@@ -572,7 +572,7 @@ config TCP_CONG_ILLINOIS
 
 config TCP_CONG_COUPLED
 	tristate "MPTCP COUPLED CONGESTION CONTROL"
-	depends on EXPERIMENTAL && MPTCP
+	depends on MPTCP
 	default n
 	---help---
 	MultiPath TCP Coupled Congestion Control
@@ -580,7 +580,7 @@ config TCP_CONG_COUPLED
 
 config TCP_CONG_OLIA
 	tristate "MPTCP Opportunistic Linked Increase"
-	depends on EXPERIMENTAL && MPTCP
+	depends on MPTCP
 	default n
 	---help---
 	MultiPath TCP Opportunistic Linked Increase Congestion Control
