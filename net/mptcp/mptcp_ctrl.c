@@ -1317,9 +1317,6 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 		reqsk_queue_destroy(&inet_csk(meta_sk)->icsk_accept_queue);
 	}
 
-	/* We don't want to receive anything more - the rcv_nxt is accurate */
-	mptcp_update_tw_socks(meta_tp, meta_sk->sk_state);
-
 	meta_sk->sk_shutdown = SHUTDOWN_MASK;
 	/* We need to flush the recv. buffs.  We do this only on the
 	 * descriptor close, not protocol-sourced closes, because the

@@ -560,9 +560,6 @@ static int mptcp_pm_netdev_event(struct notifier_block *this,
 	      event == NETDEV_CHANGE))
 		return NOTIFY_DONE;
 
-	if (dev->flags & IFF_NOMULTIPATH)
-		return NOTIFY_DONE;
-
 	/* Iterate over the addresses of the interface, then we go over the
 	 * mpcb's to modify them - that way we take tk_hash_lock for a shorter
 	 * time at each iteration. - otherwise we would need to take it from the
@@ -587,8 +584,7 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 	int i;
 	struct sock *sk, *tmpsk;
 
-	if (ifa->ifa_scope > RT_SCOPE_LINK ||
-	    (ifa->ifa_dev->dev->flags & IFF_NOMULTIPATH))
+	if (ifa->ifa_scope > RT_SCOPE_LINK)
 		return;
 
 	/* Look for the address among the local addresses */
@@ -598,7 +594,9 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 	}
 
 	/* Not yet in address-list */
-	if ((event == NETDEV_UP || event == NETDEV_CHANGE) && netif_running(ifa->ifa_dev->dev)) {
+	if ((event == NETDEV_UP || event == NETDEV_CHANGE) &&
+	    netif_running(ifa->ifa_dev->dev) &&
+	    !(ifa->ifa_dev->dev->flags & IFF_NOMULTIPATH)) {
 		i = __mptcp_find_free_index(mpcb->loc4_bits, 0, mpcb->next_v4_index);
 		if (i < 0) {
 			mptcp_debug("MPTCP_PM: NETDEV_UP Reached max number of local IPv4 addresses: %d\n",
@@ -619,14 +617,16 @@ void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 	return;
 found:
 	/* Address already in list. Reactivate/Deactivate the
-	 * concerned paths. */
+	 * concerned paths.
+	 */
 	mptcp_for_each_sk_safe(mpcb, sk, tmpsk) {
 		struct tcp_sock *tp = tcp_sk(sk);
 		if (sk->sk_family != AF_INET ||
 		    inet_sk(sk)->inet_saddr != ifa->ifa_local)
 			continue;
 
-		if (event == NETDEV_DOWN) {
+		if (event == NETDEV_DOWN ||
+		    (ifa->ifa_dev->dev->flags & IFF_NOMULTIPATH)) {
 			mptcp_reinject_data(sk, 0);
 			mptcp_sub_force_close(sk);
 		} else if (event == NETDEV_CHANGE) {
@@ -638,7 +638,8 @@ found:
 		}
 	}
 
-	if (event == NETDEV_DOWN) {
+	if (event == NETDEV_DOWN ||
+	    (ifa->ifa_dev->dev->flags & IFF_NOMULTIPATH)) {
 		mpcb->loc4_bits &= ~(1 << i);
 
 		/* Force sending directly the REMOVE_ADDR option */
