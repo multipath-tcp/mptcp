@@ -868,7 +868,6 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 
 	/* Checks on interface and address-type */
 	if (ifa->scope > RT_SCOPE_LINK ||
-	    (ifa->idev->dev->flags & IFF_NOMULTIPATH) ||
 	    addr_type == IPV6_ADDR_ANY ||
 	    (addr_type & IPV6_ADDR_LOOPBACK) ||
 	    (addr_type & IPV6_ADDR_LINKLOCAL))
@@ -881,7 +880,9 @@ void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 	}
 
 	/* Not yet in address-list */
-	if ((event == NETDEV_UP || event == NETDEV_CHANGE) && netif_running(ifa->idev->dev)) {
+	if ((event == NETDEV_UP || event == NETDEV_CHANGE) &&
+	    netif_running(ifa->idev->dev) &&
+	    !(ifa->idev->dev->flags & IFF_NOMULTIPATH)) {
 		i = __mptcp_find_free_index(mpcb->loc6_bits, 0, mpcb->next_v6_index);
 		if (i < 0) {
 			mptcp_debug("MPTCP_PM: NETDEV_UP Reached max number of local IPv6 addresses: %d\n",
@@ -909,7 +910,8 @@ found:
 		    !ipv6_addr_equal(&inet6_sk(sk)->saddr, &ifa->addr))
 			continue;
 
-		if (event == NETDEV_DOWN) {
+		if (event == NETDEV_DOWN ||
+		    (ifa->idev->dev->flags & IFF_NOMULTIPATH)) {
 			mptcp_reinject_data(sk, 0);
 			mptcp_sub_force_close(sk);
 		} else if (event == NETDEV_CHANGE) {
@@ -921,7 +923,8 @@ found:
 		}
 	}
 
-	if (event == NETDEV_DOWN) {
+	if (event == NETDEV_DOWN ||
+	    (ifa->idev->dev->flags & IFF_NOMULTIPATH)) {
 		mpcb->loc6_bits &= ~(1 << i);
 
 		/* Force sending directly the REMOVE_ADDR option */
