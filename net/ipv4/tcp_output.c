@@ -740,14 +740,10 @@ static void tcp_tasklet_func(unsigned long data)
 		} else {
 			/* defer the work to tcp_release_cb() */
 			set_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags);
-			if (tp->mpc)
-				set_bit(TCP_TSQ_DEFERRED, &mptcp_meta_tp(tp)->tsq_flags);
 		}
 		bh_unlock_sock(sk);
 
 		clear_bit(TSQ_QUEUED, &tp->tsq_flags);
-		if (tp->mpc)
-			clear_bit(TSQ_QUEUED, &mptcp_meta_tp(tp)->tsq_flags);
 		sk_free(sk);
 	}
 }
@@ -770,6 +766,13 @@ static void mptcp_release_cb(struct sock *meta_sk)
 			return;
 		nflags = flags & ~TCP_DEFERRED_ALL;
 	} while (cmpxchg(&meta_tp->tsq_flags, flags, nflags) != flags);
+
+	if (flags & (1UL << TCP_WRITE_TIMER_DEFERRED))
+		__sock_put(meta_sk);
+	if (flags & (1UL << TCP_DELACK_TIMER_DEFERRED))
+		__sock_put(meta_sk);
+	if (flags & (1UL << TCP_MTU_REDUCED_DEFERRED))
+		__sock_put(meta_sk);
 
 	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk)
 		tcp_release_cb(sk);
@@ -1974,8 +1977,6 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		 */
 		if (atomic_read(&sk->sk_wmem_alloc) >= sysctl_tcp_limit_output_bytes) {
 			set_bit(TSQ_THROTTLED, &tp->tsq_flags);
-			if (tp->mpc)
-				set_bit(TSQ_THROTTLED, &mptcp_meta_tp(tp)->tsq_flags);
 			break;
 		}
 		limit = mss_now;

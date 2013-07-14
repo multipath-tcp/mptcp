@@ -771,6 +771,8 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	skb_queue_head_init(&master_tp->out_of_order_queue);
 	tcp_prequeue_init(master_tp);
 
+	master_tp->tsq_flags = 0;
+
 	/* Copy the write-queue from the meta down to the master.
 	 * This is necessary to get the SYN to the master-write-queue.
 	 * No other data can be queued, before tcp_sendmsg waits for the
@@ -1634,6 +1636,8 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	child_tp->mptcp->snt_isn = tcp_rsk(req)->snt_isn;
 	child_tp->mptcp->rcv_isn = tcp_rsk(req)->rcv_isn;
 	child_tp->mptcp->init_rcv_wnd = req->rcv_wnd;
+
+	child_tp->tsq_flags = 0;
 
 	/* Subflows do not use the accept queue, as they
 	 * are attached immediately to the mpcb.
