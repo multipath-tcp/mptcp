@@ -775,7 +775,7 @@ static void mptcp_release_cb(struct sock *meta_sk)
 		__sock_put(meta_sk);
 
 	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk)
-		tcp_release_cb(sk);
+		sk->sk_prot->release_cb(sk);
 }
 
 /**
