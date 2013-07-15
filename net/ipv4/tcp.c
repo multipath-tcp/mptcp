@@ -864,9 +864,13 @@ static ssize_t do_tcp_sendpages(struct sock *sk, struct page *page, int offset,
 		 * over the subflows.
 		 */
 		if (!mptcp_can_sendpage(sk)) {
+			ssize_t ret;
+
 			release_sock(sk);
-			return sock_no_sendpage(sk->sk_socket, page, offset,
-						size, flags);
+			ret = sock_no_sendpage(sk->sk_socket, page, offset,
+					       size, flags);
+			lock_sock(sk);
+			return ret;
 		}
 
 		mptcp_for_each_sk(tp->mpcb, sk_it)
