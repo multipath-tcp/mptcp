@@ -333,7 +333,6 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 					     th->dest, inet_iif(skb));
 
 		if (!sk) {
-			WARN("%s Did not find a sub-sk at all!!!\n", __func__);
 			kfree_skb(skb);
 			return 0;
 		}

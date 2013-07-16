@@ -574,8 +574,6 @@ int mptcp_do_join_short(struct sk_buff *skb, struct mptcp_options_received *mopt
 
 	if (sock_owned_by_user(meta_sk)) {
 		skb->sk = meta_sk;
-		TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_JOIN;
-
 		if (unlikely(sk_add_backlog(meta_sk, skb,
 					    meta_sk->sk_rcvbuf + meta_sk->sk_sndbuf)))
 			NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
