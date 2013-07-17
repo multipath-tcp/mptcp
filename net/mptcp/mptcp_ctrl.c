@@ -301,7 +301,11 @@ static void mptcp_set_state(struct sock *sk)
 	if ((1 << meta_sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV) &&
 	    sk->sk_state == TCP_ESTABLISHED) {
 		tcp_set_state(meta_sk, TCP_ESTABLISHED);
-		meta_sk->sk_state_change(meta_sk);
+
+		if (!sock_flag(meta_sk, SOCK_DEAD)) {
+			meta_sk->sk_state_change(meta_sk);
+			sk_wake_async(meta_sk, SOCK_WAKE_IO, POLL_OUT);
+		}
 	}
 
 	if (sk->sk_state == TCP_ESTABLISHED)
