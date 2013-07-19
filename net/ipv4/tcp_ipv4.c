@@ -828,7 +828,7 @@ static void tcp_v4_timewait_ack(struct sock *sk, struct sk_buff *skb)
 {
 	struct inet_timewait_sock *tw = inet_twsk(sk);
 	struct tcp_timewait_sock *tcptw = tcp_twsk(sk);
-	u32 data_ack;
+	u32 data_ack = 0;
 	int mptcp = 0;
 
 	if (tcptw->mptcp_tw && tcptw->mptcp_tw->meta_tw) {
