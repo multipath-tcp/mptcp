@@ -151,6 +151,7 @@ struct mptcp_tcp_sock {
 	u16	slave_sk:1,
 		nonce_set:1, /* Is the nonce set? (in order to support 0-nonce) */
 		fully_established:1,
+		establish_increased:1,
 		second_packet:1,
 		attached:1,
 		send_mp_fail:1,
