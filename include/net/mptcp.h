@@ -1091,7 +1091,7 @@ static inline void mptcp_sub_close_passive(struct sock *sk)
 		mptcp_sub_close(sk, 0);
 }
 
-static inline int mptcp_fallback_infinite(struct sock *sk, int flag)
+static inline bool mptcp_fallback_infinite(struct sock *sk, int flag)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
@@ -1100,27 +1100,27 @@ static inline int mptcp_fallback_infinite(struct sock *sk, int flag)
 	 * mapping.
 	 */
 	if (likely(tp->mptcp->fully_established))
-		return 0;
+		return false;
 
 	if (!(flag & MPTCP_FLAG_DATA_ACKED))
-		return 0;
+		return false;
 
 	/* Don't fallback twice ;) */
 	if (tp->mpcb->infinite_mapping_snd)
-		return 0;
+		return false;
 
 	pr_err("%s %#x will fallback - pi %d, src %pI4 dst %pI4 from %pS\n",
 	       __func__, tp->mpcb->mptcp_loc_token, tp->mptcp->path_index,
 	       &inet_sk(sk)->inet_saddr, &inet_sk(sk)->inet_daddr,
 	       __builtin_return_address(0));
 	if (!is_master_tp(tp))
-		return MPTCP_FLAG_SEND_RESET;
+		return true;
 
 	tp->mpcb->infinite_mapping_snd = 1;
 	tp->mpcb->infinite_mapping_rcv = 1;
 	tp->mptcp->fully_established = 1;
 
-	return 0;
+	return false;
 }
 
 /* Find the first free index in the bitfield */
@@ -1302,9 +1302,9 @@ static inline int mptcp_select_size(const struct sock *meta_sk, bool sg)
 }
 static inline void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn) {}
 static inline void mptcp_sub_close_passive(struct sock *sk) {}
-static inline int mptcp_fallback_infinite(const struct sock *sk, int flag)
+static inline bool mptcp_fallback_infinite(const struct sock *sk, int flag)
 {
-	return 0;
+	return false;
 }
 static inline void mptcp_init_mp_opt(const struct mptcp_options_received *mopt) {}
 static inline int mptcp_check_rtt(const struct tcp_sock *tp, int time)

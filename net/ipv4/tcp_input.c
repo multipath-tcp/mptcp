@@ -3411,9 +3411,7 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 	flag |= tcp_clean_rtx_queue(sk, prior_fackets, prior_snd_una);
 
 	if (tp->mpc) {
-		flag |= mptcp_fallback_infinite(sk, flag);
-
-		if (flag & MPTCP_FLAG_SEND_RESET) {
+		if (mptcp_fallback_infinite(sk, flag)) {
 			pr_err("%s resetting flow\n", __func__);
 			mptcp_send_reset(sk);
 			goto invalid_ack;
