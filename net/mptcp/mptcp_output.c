@@ -58,7 +58,7 @@ static int mptcp_is_available(struct sock *sk, struct sk_buff *skb,
 		return 0;
 
 	if (inet_csk(sk)->icsk_ca_state == TCP_CA_Loss) {
-		/* If SACK is disabled, and we got a loss, TCP does not exist
+		/* If SACK is disabled, and we got a loss, TCP does not exit
 		 * the loss-state until something above high_seq has been acked.
 		 * (see tcp_try_undo_recovery)
 		 *
@@ -643,7 +643,7 @@ static void mptcp_sub_event_new_data_sent(struct sock *sk,
 
 /* Handle the packets and sockets after a tcp_transmit_skb failed */
 static void mptcp_transmit_skb_failed(struct sock *sk, struct sk_buff *skb,
-				      struct sk_buff *subskb, int reinject)
+				      struct sk_buff *subskb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_cb *mpcb = tp->mpcb;
@@ -932,7 +932,7 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
 		err = tcp_transmit_skb(subsk, subskb, 1, GFP_ATOMIC);
 		if (unlikely(err)) {
-			mptcp_transmit_skb_failed(subsk, skb, subskb, 0);
+			mptcp_transmit_skb_failed(subsk, skb, subskb);
 			return err;
 		}
 
@@ -1180,7 +1180,7 @@ retry:
 		mpcb->noneligible = noneligible;
 		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
 		if (unlikely(tcp_transmit_skb(subsk, subskb, 1, gfp))) {
-			mptcp_transmit_skb_failed(subsk, skb, subskb, reinject);
+			mptcp_transmit_skb_failed(subsk, skb, subskb);
 			mpcb->noneligible |= mptcp_pi_to_flag(subtp->mptcp->path_index);
 			continue;
 		}
@@ -2024,7 +2024,7 @@ static int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 			meta_tp->retrans_stamp = TCP_SKB_CB(subskb)->when;
 		mptcp_sub_event_new_data_sent(subsk, subskb, skb);
 	} else {
-		mptcp_transmit_skb_failed(subsk, skb, subskb, 0);
+		mptcp_transmit_skb_failed(subsk, skb, subskb);
 	}
 
 failed:

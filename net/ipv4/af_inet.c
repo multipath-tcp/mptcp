@@ -716,7 +716,7 @@ int inet_accept(struct socket *sock, struct socket *newsock, int flags)
 		struct sock *sk_it;
 
 		mptcp_for_each_sk(tcp_sk(sk2)->mpcb, sk_it)
-				sock_rps_record_flow(sk_it);
+			sock_rps_record_flow(sk_it);
 
 		if (tcp_sk(sk2)->mpcb->master_sk) {
 			sk_it = tcp_sk(sk2)->mpcb->master_sk;

@@ -689,7 +689,7 @@ ssize_t tcp_splice_read(struct socket *sock, loff_t *ppos,
 	if (tcp_sk(sk)->mpc) {
 		struct sock *sk_it;
 		mptcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it)
-				sock_rps_record_flow(sk_it);
+			sock_rps_record_flow(sk_it);
 	}
 #endif
 	/*

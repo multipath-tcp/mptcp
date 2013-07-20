@@ -6032,7 +6032,8 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 			    after(TCP_SKB_CB(skb)->end_seq - th->fin, tp->rcv_nxt) &&
 			    !tp->mpc) {
 				/* In case of mptcp, the reset is handled by
-				 * mptcp_rcv_state_process */
+				 * mptcp_rcv_state_process
+				 */
 				NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPABORTONDATA);
 				tcp_reset(sk);
 				return 1;

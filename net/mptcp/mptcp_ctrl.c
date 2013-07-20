@@ -1477,7 +1477,7 @@ int mptcp_doit(struct sock *sk)
 	if (!sysctl_mptcp_enabled)
 		return 0;
 
-	/* Don't do mptcp over loopback or local addresses */
+	/* Don't do mptcp over loopback */
 	if (sk->sk_family == AF_INET &&
 	    (ipv4_is_loopback(inet_sk(sk)->inet_daddr) ||
 	     ipv4_is_loopback(inet_sk(sk)->inet_saddr)))
