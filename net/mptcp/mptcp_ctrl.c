@@ -1013,8 +1013,7 @@ void mptcp_del_sock(struct sock *sk)
 
 	if (is_master_tp(tp))
 		mpcb->master_sk = NULL;
-	else if (tp->mptcp->mptcp_ack_timer.data)
-		/* May not be initiated, if we are on the server-side */
+	else if (tp->mptcp->pre_established)
 		sk_stop_timer(sk, &tp->mptcp->mptcp_ack_timer);
 
 	sk->sk_prot->release_cb(sk);

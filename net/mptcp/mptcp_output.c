@@ -1904,6 +1904,7 @@ void mptcp_ack_retransmit_timer(struct sock *sk)
 out:
 	icsk->icsk_retransmits++;
 	if (icsk->icsk_retransmits == sysctl_tcp_retries1 + 1) {
+		tp->mptcp->pre_established = 0;
 		sk_stop_timer(sk, &tp->mptcp->mptcp_ack_timer);
 		tcp_send_active_reset(sk, GFP_ATOMIC);
 		mptcp_sub_force_close(sk);
