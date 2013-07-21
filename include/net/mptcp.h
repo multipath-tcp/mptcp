@@ -53,15 +53,6 @@
 	#define htonll(x) (x)
 #endif
 
-/* is seq1 < seq2 ? */
-static inline int before64(const u64 seq1, const u64 seq2)
-{
-	return (s64)(seq1 - seq2) < 0;
-}
-
-/* is seq1 > seq2 ? */
-#define after64(seq1, seq2)	before64(seq2, seq1)
-
 struct mptcp_request_sock {
 	struct tcp_request_sock		req;
 	struct mptcp_cb			*mpcb;
@@ -84,18 +75,6 @@ struct mptcp_request_sock {
 	u8				dss_csum:1,
 					low_prio:1;
 };
-
-static inline
-struct mptcp_request_sock *mptcp_rsk(const struct request_sock *req)
-{
-	return (struct mptcp_request_sock *)req;
-}
-
-static inline
-struct request_sock *rev_mptcp_rsk(const struct mptcp_request_sock *req)
-{
-	return (struct request_sock *)req;
-}
 
 struct mptcp_options_received {
 	u16	saw_mpc:1,
@@ -303,11 +282,6 @@ struct mptcp_cb {
 	int orig_sk_sndbuf;
 	u32 orig_window_clamp;
 };
-
-static inline int mptcp_pi_to_flag(int pi)
-{
-	return 1 << (pi - 1);
-}
 
 #define MPTCP_SUB_CAPABLE			0
 #define MPTCP_SUB_LEN_CAPABLE_SYN		12
@@ -583,29 +557,11 @@ struct mp_prio {
 	__u8	addr_id;
 } __attribute__((__packed__));
 
-static inline int mptcp_sub_len_remove_addr(u16 bitfield)
-{
-	unsigned int c;
-	for (c = 0; bitfield; c++)
-		bitfield &= bitfield - 1;
-	return MPTCP_SUB_LEN_REMOVE_ADDR + c - 1;
-}
-
-static inline int mptcp_sub_len_remove_addr_align(u16 bitfield)
-{
-	return ALIGN(mptcp_sub_len_remove_addr(bitfield), 4);
-}
-
 static inline int mptcp_sub_len_dss(struct mp_dss *m, int csum)
 {
 	return 4 + m->A * (4 + m->a * 4) + m->M * (10 + m->m * 4 + csum * 2);
 }
 
-/* Default MSS for MPTCP
- * All subflows will be using that MSS. If any subflow has a lower MSS, it is
- * just not used. */
-#define MPTCP_MSS 1400
-#define MPTCP_SYN_RETRIES 3
 extern int sysctl_mptcp_ndiffports;
 extern int sysctl_mptcp_enabled;
 extern int sysctl_mptcp_checksum;
@@ -735,6 +691,18 @@ int mptcp_time_wait(struct sock *sk, struct tcp_timewait_sock *tw);
 void mptcp_twsk_destructor(struct tcp_timewait_sock *tw);
 void mptcp_update_tw_socks(const struct tcp_sock *tp, int state);
 
+static inline
+struct mptcp_request_sock *mptcp_rsk(const struct request_sock *req)
+{
+	return (struct mptcp_request_sock *)req;
+}
+
+static inline
+struct request_sock *rev_mptcp_rsk(const struct mptcp_request_sock *req)
+{
+	return (struct request_sock *)req;
+}
+
 static inline bool mptcp_can_sendpage(struct sock *sk)
 {
 	struct sock *sk_it;
@@ -810,7 +778,6 @@ static inline int mptcp_is_data_fin2(const struct sk_buff *skb,
 static inline void mptcp_skb_entail_init(const struct tcp_sock *tp,
 					 struct sk_buff *skb)
 {
-	if (tp->mpc)
 		TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_SEQ;
 }
 
@@ -1059,9 +1026,6 @@ static inline void mptcp_set_rto(struct sock *sk)
 	struct inet_connection_sock *micsk = inet_csk(mptcp_meta_sk(sk));
 	__u32 max_rto = 0;
 
-	if (!tp->mpc)
-		return;
-
 	mptcp_for_each_sk(tp->mpcb, sk_it) {
 		if (mptcp_sk_can_send(sk_it) &&
 		    inet_csk(sk_it)->icsk_rto > max_rto)
@@ -1194,12 +1158,6 @@ static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
 #define mptcp_for_each_sk(mpcb, sk)
 #define mptcp_for_each_sk_safe(__mpcb, __sk, __temp)
 
-static inline __u32 *mptcp_skb_set_data_seq(const struct sk_buff *skb,
-					    u32 *data_seq,
-					    struct mptcp_cb *mpcb)
-{
-	return 0;
-}
 static inline int mptcp_is_data_fin(const struct sk_buff *skb)
 {
 	return 0;
@@ -1232,11 +1190,6 @@ static inline void mptcp_init_buffer_space(const struct sock *sk) {}
 static inline void mptcp_update_sndbuf(const struct mptcp_cb *mpcb) {}
 static inline void mptcp_skb_entail_init(const struct tcp_sock *tp,
 					 const struct sk_buff *skb) {}
-static inline struct sk_buff *mptcp_next_segment(const struct sock *sk,
-						 const int *reinject)
-{
-	return NULL;
-}
 static inline void mptcp_clean_rtx_infinite(const struct sk_buff *skb,
 					    const struct sock *sk) {}
 static inline void mptcp_retransmit_timer(const struct sock *meta_sk) {}
@@ -1301,7 +1254,6 @@ static inline int mptcp_select_size(const struct sock *meta_sk, bool sg)
 {
 	return 0;
 }
-static inline void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn) {}
 static inline void mptcp_sub_close_passive(struct sock *sk) {}
 static inline bool mptcp_fallback_infinite(const struct sock *sk, int flag)
 {

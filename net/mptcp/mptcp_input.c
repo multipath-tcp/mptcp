@@ -35,6 +35,15 @@
 
 #include <linux/kconfig.h>
 
+/* is seq1 < seq2 ? */
+static inline int before64(const u64 seq1, const u64 seq2)
+{
+	return (s64)(seq1 - seq2) < 0;
+}
+
+/* is seq1 > seq2 ? */
+#define after64(seq1, seq2)	before64(seq2, seq1)
+
 static inline void mptcp_become_fully_estab(struct sock *sk)
 {
 	tcp_sk(sk)->mptcp->fully_established = 1;

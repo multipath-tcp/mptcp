@@ -2939,11 +2939,11 @@ void tcp_connect_init(struct sock *sk)
 	tcp_clear_retrans(tp);
 
 #ifdef CONFIG_MPTCP
-	if (mptcp_doit(sk)) {
+	if (sysctl_mptcp_enabled && mptcp_doit(sk)) {
 		if (is_master_tp(tp)) {
 			tp->request_mptcp = 1;
 			mptcp_connect_init(sk);
-		} else {
+		} else if (tp->mptcp) {
 			tp->mptcp->snt_isn = tp->write_seq;
 			tp->mptcp->init_rcv_wnd = tp->rcv_wnd;
 		}

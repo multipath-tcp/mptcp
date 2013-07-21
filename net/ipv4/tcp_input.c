@@ -721,7 +721,8 @@ void tcp_set_rto(struct sock *sk)
 	 * guarantees that rto is higher.
 	 */
 	tcp_bound_rto(sk);
-	mptcp_set_rto(sk);
+	if (tp->mpc)
+		mptcp_set_rto(sk);
 }
 
 __u32 tcp_init_cwnd(const struct tcp_sock *tp, const struct dst_entry *dst)
@@ -3075,7 +3076,6 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			break;
 
 		tcp_unlink_write_queue(skb, sk);
-
 		sk_wmem_free_skb(sk, skb);
 		tp->scoreboard_skb_hint = NULL;
 		if (skb == tp->retransmit_skb_hint)
@@ -5764,6 +5764,7 @@ reset_and_undo:
 
 int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 			  const struct tcphdr *th, unsigned int len)
+	__releases(&sk->sk_lock.slock)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);

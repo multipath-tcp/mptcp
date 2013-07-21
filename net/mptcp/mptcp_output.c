@@ -36,6 +36,24 @@
 #include <net/mptcp_v6.h>
 #include <net/sock.h>
 
+static inline int mptcp_pi_to_flag(int pi)
+{
+	return 1 << (pi - 1);
+}
+
+static inline int mptcp_sub_len_remove_addr(u16 bitfield)
+{
+	unsigned int c;
+	for (c = 0; bitfield; c++)
+		bitfield &= bitfield - 1;
+	return MPTCP_SUB_LEN_REMOVE_ADDR + c - 1;
+}
+
+static inline int mptcp_sub_len_remove_addr_align(u16 bitfield)
+{
+	return ALIGN(mptcp_sub_len_remove_addr(bitfield), 4);
+}
+
 /* If the sub-socket sk available to send the skb? */
 static int mptcp_is_available(struct sock *sk, struct sk_buff *skb,
 			      unsigned int *mss)
@@ -1868,7 +1886,7 @@ found:
 	meta_tp->send_mp_fclose = 1;
 }
 
-void mptcp_ack_retransmit_timer(struct sock *sk)
+static void mptcp_ack_retransmit_timer(struct sock *sk)
 {
 	struct sk_buff *skb;
 	struct tcp_sock *tp = tcp_sk(sk);

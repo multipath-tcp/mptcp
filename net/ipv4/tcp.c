@@ -603,7 +603,8 @@ static inline void skb_entail(struct sock *sk, struct sk_buff *skb)
 	tcb->seq     = tcb->end_seq = tp->write_seq;
 	tcb->tcp_flags = TCPHDR_ACK;
 	tcb->sacked  = 0;
-	mptcp_skb_entail_init(tp, skb);
+	if (tp->mpc)
+		mptcp_skb_entail_init(tp, skb);
 	skb_header_release(skb);
 	tcp_add_write_queue_tail(sk, skb);
 	sk->sk_wmem_queued += skb->truesize;
@@ -858,7 +859,7 @@ static ssize_t do_tcp_sendpages(struct sock *sk, struct page *page, int offset,
 	}
 
 	if (tp->mpc) {
-		struct sock *sk_it;
+		struct sock *sk_it = sk;
 
 		/* We must check this with socket-lock hold because we iterate
 		 * over the subflows.
@@ -1087,7 +1088,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	}
 
 	if (tp->mpc) {
-		struct sock *sk_it;
+		struct sock *sk_it = sk;
 		mptcp_for_each_sk(tp->mpcb, sk_it)
 			sock_rps_record_flow(sk_it);
 	}

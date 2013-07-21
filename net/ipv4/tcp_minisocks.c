@@ -179,7 +179,6 @@ kill_with_rst:
 		else
 			inet_twsk_schedule(tw, &tcp_death_row, TCP_TIMEWAIT_LEN,
 					   TCP_TIMEWAIT_LEN);
-
 		return TCP_TW_ACK;
 	}
 

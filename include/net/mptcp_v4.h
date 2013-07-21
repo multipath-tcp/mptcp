@@ -70,8 +70,7 @@ static inline int mptcp_v4_do_rcv(const struct sock *meta_sk,
 }
 
 static inline int mptcp_v4_send_synack(const struct sock *meta_sk,
-				       const struct request_sock *req,
-				       const struct request_values *rvp)
+				       const struct request_sock *req)
 {
 	return 0;
 }

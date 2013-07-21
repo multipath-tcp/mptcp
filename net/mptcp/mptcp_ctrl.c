@@ -65,7 +65,7 @@ int sysctl_mptcp_enabled __read_mostly = 1;
 int sysctl_mptcp_checksum __read_mostly = 1;
 int sysctl_mptcp_debug __read_mostly;
 EXPORT_SYMBOL(sysctl_mptcp_debug);
-int sysctl_mptcp_syn_retries __read_mostly = MPTCP_SYN_RETRIES;
+int sysctl_mptcp_syn_retries __read_mostly = 3;
 
 #ifdef CONFIG_SYSCTL
 static struct ctl_table mptcp_table[] = {
@@ -1475,9 +1475,6 @@ int mptcp_doit(struct sock *sk)
 	/* Socket may already be established (e.g., called from tcp_recvmsg) */
 	if (tcp_sk(sk)->mpc || tcp_sk(sk)->request_mptcp)
 		return 1;
-
-	if (!sysctl_mptcp_enabled)
-		return 0;
 
 	/* Don't do mptcp over loopback */
 	if (sk->sk_family == AF_INET &&
