@@ -3171,13 +3171,6 @@ void tcp_send_ack(struct sock *sk)
 	 */
 	buff = alloc_skb(MAX_TCP_HEADER, sk_gfp_atomic(sk, GFP_ATOMIC));
 	if (buff == NULL) {
-
-		/* MPTCP: We don't send a delayed ack if we are sending an mptcp
-		 * ADD_ADDR ack to avoid sending multiple ADD_ADDR acks for the
-		 * same address. */
-		if (tcp_sk(sk)->mptcp_add_addr_ack == 1)
-			return;
-
 		inet_csk_schedule_ack(sk);
 		inet_csk(sk)->icsk_ack.ato = TCP_ATO_MIN;
 		inet_csk_reset_xmit_timer(sk, ICSK_TIME_DACK,

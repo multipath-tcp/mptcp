@@ -754,7 +754,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	 * ESTABLISHED STATE. If it will be dropped after
 	 * socket is created, wait for troubles.
 	 */
-#if defined(CONFIG_MPTCP)
+#ifdef CONFIG_MPTCP
 	if (tcp_sk(sk)->mpc)
 		/* MPTCP: We call the mptcp-specific syn_recv_sock */
 		child = tcp_sk(sk)->mpcb->syn_recv_sock(sk, skb, req, NULL);

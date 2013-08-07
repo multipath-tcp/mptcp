@@ -724,7 +724,8 @@ int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	u8 flags;
 	int dsslen = MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_ACK_ALIGN +
 		     MPTCP_SUB_LEN_SEQ_ALIGN;
-	char *dss[dsslen];
+	char *dss[MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_ACK_ALIGN +
+		  MPTCP_SUB_LEN_SEQ_ALIGN];
 
 	if (WARN_ON(len > skb->len))
 		return -EINVAL;
@@ -1352,17 +1353,7 @@ void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 		opts->mptcp_options |= OPTION_MP_CAPABLE | OPTION_TYPE_SYN;
 		*remaining -= MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN;
 		opts->mp_capable.sender_key = tp->mptcp_loc_key;
-		opts->dss_csum = sysctl_mptcp_checksum;
-
-		/* We arrive here either when sending a SYN or a
-		 * SYN+ACK when in SYN_SENT state (that is, tcp_synack_options
-		 * is only called for syn+ack replied by a server, while this
-		 * function is called when SYNs are sent by both parties and
-		 * are crossed)
-		 * Due to this possibility, a slave subsocket may arrive here,
-		 * and does not need to set the dataseq options, since
-		 * there is no data in the segment
-		 */
+		opts->dss_csum = !!sysctl_mptcp_checksum;
 	} else {
 		struct mptcp_cb *mpcb = tp->mpcb;
 
@@ -1390,7 +1381,7 @@ void mptcp_synack_options(struct request_sock *req,
 		opts->mptcp_options |= OPTION_MP_CAPABLE | OPTION_TYPE_SYNACK;
 		*remaining -= MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN;
 		opts->mp_capable.sender_key = mtreq->mptcp_loc_key;
-		opts->dss_csum = sysctl_mptcp_checksum || mtreq->dss_csum;
+		opts->dss_csum = !!sysctl_mptcp_checksum || mtreq->dss_csum;
 	} else {
 		struct inet_request_sock *ireq = inet_rsk(req);
 		int i;
@@ -1592,7 +1583,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 
 		mpc->sub = MPTCP_SUB_CAPABLE;
 		mpc->ver = 0;
-		mpc->a = opts->dss_csum ? 1 : 0;
+		mpc->a = opts->dss_csum;
 		mpc->b = 0;
 		mpc->rsv = 0;
 		mpc->h = 1;

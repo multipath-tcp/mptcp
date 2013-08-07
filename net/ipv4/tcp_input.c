@@ -4746,6 +4746,9 @@ static bool tcp_should_expand_sndbuf(const struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 
+	if (tp->mpc)
+		return mptcp_should_expand_sndbuf(mptcp_meta_sk(sk));
+
 	/* If the user specified a specific send buffer setting, do
 	 * not modify it.
 	 */
@@ -4761,45 +4764,8 @@ static bool tcp_should_expand_sndbuf(const struct sock *sk)
 		return false;
 
 	/* If we filled the congestion window, do not expand.  */
-	if (!tp->mpc && tp->packets_out >= tp->snd_cwnd)
+	if (tp->packets_out >= tp->snd_cwnd)
 		return false;
-
-#ifdef CONFIG_MPTCP
-	if (tp->mpc) {
-		struct sock *sk_it;
-		int cnt_backups = 0;
-		int backup_available = 0;
-
-		/* For MPTCP we look for a subsocket that could send data.
-		 * If we found one, then we update the send-buffer.
-		 */
-		mptcp_for_each_sk(tp->mpcb, sk_it) {
-			struct tcp_sock *tp_it = tcp_sk(sk_it);
-
-			if (!mptcp_sk_can_send(sk_it))
-				continue;
-
-			/* Backup-flows have to be counted - if there is no other
-			 * subflow we take the backup-flow into account. */
-			if (tp_it->mptcp->rcv_low_prio || tp_it->mptcp->low_prio) {
-				cnt_backups++;
-			}
-
-			if (tp_it->packets_out < tp_it->snd_cwnd) {
-				if (tp_it->mptcp->rcv_low_prio || tp_it->mptcp->low_prio) {
-					backup_available = 1;
-					continue;
-				}
-				return 1;
-			}
-		}
-
-		/* Backup-flow is available for sending - update send-buffer */
-		if (tp->mpcb->cnt_established == cnt_backups && backup_available)
-			return 1;
-		return 0;
-	}
-#endif
 
 	return true;
 }
@@ -4813,9 +4779,8 @@ static bool tcp_should_expand_sndbuf(const struct sock *sk)
 static void tcp_new_space(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *meta_sk = tp->mpc ? mptcp_meta_sk(sk) : sk;
 
-	if (tcp_should_expand_sndbuf(meta_sk)) {
+	if (tcp_should_expand_sndbuf(sk)) {
 		int sndmem = SKB_TRUESIZE(max_t(u32,
 						tp->rx_opt.mss_clamp,
 						tp->mss_cache) +
@@ -4994,10 +4959,8 @@ static void tcp_urg(struct sock *sk, struct sk_buff *skb, const struct tcphdr *t
 		/* Is the urgent pointer pointing into this packet? */
 		if (ptr < skb->len) {
 			u8 tmp;
-
 			if (skb_copy_bits(skb, ptr, &tmp, 1))
 				BUG();
-
 			tp->urg_data = TCP_URG_VALID | tmp;
 			if (!sock_flag(sk, SOCK_DEAD))
 				sk->sk_data_ready(sk, 0);

@@ -263,7 +263,7 @@ struct mptcp_cb {
 	u8 loc6_bits;
 	u8 next_v6_index;
 
-	/* Remove addresses */
+	/* Remote addresses */
 	struct mptcp_rem4 remaddr4[MPTCP_MAX_ADDR];
 	u8 rem4_bits;
 
@@ -358,6 +358,9 @@ struct mptcp_cb {
 
 #ifdef CONFIG_MPTCP
 
+/* Used for checking if the mptcp initialization has been successful */
+extern bool mptcp_init_failed;
+
 /* MPTCP options */
 #define OPTION_TYPE_SYN		(1 << 0)
 #define OPTION_TYPE_SYNACK	(1 << 1)
@@ -371,8 +374,20 @@ struct mptcp_cb {
 #define OPTION_REMOVE_ADDR	(1 << 9)
 #define OPTION_MP_PRIO		(1 << 10)
 
-/* Used for checking if the mptcp initialization has been successful */
-extern bool mptcp_init_failed;
+/* MPTCP flags */
+#define MPTCPHDR_ACK		0x01
+#define MPTCPHDR_SEQ		0x02
+#define MPTCPHDR_FIN		0x04
+#define MPTCPHDR_INF		0x08
+#define MPTCPHDR_SEQ64_SET	0x10 /* Did we received a 64-bit seq number */
+#define MPTCPHDR_SEQ64_OFO	0x20 /* Is it not in our circular array? */
+#define MPTCPHDR_SEQ64_INDEX	0x40 /* Index of seq in mpcb->snd_high_order */
+#define MPTCPHDR_DSS_CSUM	0x80
+
+/* It is impossible, that all 8 bits of mptcp_flags are set to 1 with the above
+ * Thus, defining MPTCPHDR_JOIN as 0xFF is safe.
+ */
+#define MPTCPHDR_JOIN		0xFF
 
 struct mptcp_option {
 	__u8	kind;
@@ -693,6 +708,8 @@ unsigned int mptcp_xmit_size_goal(struct sock *meta_sk, u32 mss_now,
 int mptcp_time_wait(struct sock *sk, struct tcp_timewait_sock *tw);
 void mptcp_twsk_destructor(struct tcp_timewait_sock *tw);
 void mptcp_update_tw_socks(const struct tcp_sock *tp, int state);
+void mptcp_disconnect(struct sock *sk);
+bool mptcp_should_expand_sndbuf(struct sock *meta_sk);
 
 static inline
 struct mptcp_request_sock *mptcp_rsk(const struct request_sock *req)
@@ -1283,8 +1300,8 @@ static inline int mptcp_write_xmit(struct sock *sk, unsigned int mss_now,
 {
 	return 0;
 }
-static inline struct sock *mptcp_sk_clone(const struct sock *sk,
-					  int family, int priority)
+static inline struct sock *mptcp_sk_clone(const struct sock *sk, int family,
+					  const gfp_t priority)
 {
 	return NULL;
 }
@@ -1343,6 +1360,11 @@ static inline int mptcp_time_wait(struct sock *sk, struct tcp_timewait_sock *tw)
 }
 static inline void mptcp_twsk_destructor(struct tcp_timewait_sock *tw) {}
 static inline void mptcp_update_tw_socks(const struct tcp_sock *tp, int state) {}
+static inline void mptcp_disconnect(struct sock *sk) {}
+static inline bool mptcp_should_expand_sndbuf(struct sock *meta_sk)
+{
+	return false;
+}
 #endif /* CONFIG_MPTCP */
 
 #endif /* _MPTCP_H */

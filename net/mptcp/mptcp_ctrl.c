@@ -1471,6 +1471,47 @@ out:
 	sock_put(meta_sk); /* Taken by sock_hold */
 }
 
+void mptcp_disconnect(struct sock *sk)
+{
+	struct sock *subsk, *tmpsk;
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	__skb_queue_purge(&tp->mpcb->reinject_queue);
+
+	if (tp->inside_tk_table) {
+		mptcp_hash_remove_bh(tp);
+		reqsk_queue_destroy(&inet_csk(tp->meta_sk)->icsk_accept_queue);
+	}
+
+	local_bh_disable();
+	mptcp_for_each_sk_safe(tp->mpcb, subsk, tmpsk) {
+		/* The socket will get removed from the subsocket-list
+		 * and made non-mptcp by setting mpc to 0.
+		 *
+		 * This is necessary, because tcp_disconnect assumes
+		 * that the connection is completly dead afterwards.
+		 * Thus we need to do a mptcp_del_sock. Due to this call
+		 * we have to make it non-mptcp.
+		 *
+		 * We have to lock the socket, because we set mpc to 0.
+		 * An incoming packet would take the subsocket's lock
+		 * and go on into the receive-path.
+		 * This would be a race.
+		 */
+
+		bh_lock_sock(subsk);
+		mptcp_del_sock(subsk);
+		tcp_sk(subsk)->mpc = 0;
+		mptcp_sub_force_close(subsk);
+		bh_unlock_sock(subsk);
+	}
+	local_bh_enable();
+
+	tp->was_meta_sk = 1;
+	tp->mpc = 0;
+}
+
+
 /* Returns 1 if we should enable MPTCP for that socket. */
 int mptcp_doit(struct sock *sk)
 {

@@ -1861,3 +1861,55 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 
 	return 0;
 }
+
+bool mptcp_should_expand_sndbuf(struct sock *meta_sk)
+{
+	struct sock *sk_it;
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	int cnt_backups = 0;
+	int backup_available = 0;
+
+	/* If the user specified a specific send buffer setting, do
+	 * not modify it.
+	 */
+	if (meta_sk->sk_userlocks & SOCK_SNDBUF_LOCK)
+		return false;
+
+	/* If we are under global TCP memory pressure, do not expand.  */
+	if (sk_under_memory_pressure(meta_sk))
+		return false;
+
+	/* If we are under soft global TCP memory pressure, do not expand.  */
+	if (sk_memory_allocated(meta_sk) >= sk_prot_mem_limits(meta_sk, 0))
+		return false;
+
+
+	/* For MPTCP we look for a subsocket that could send data.
+	 * If we found one, then we update the send-buffer.
+	 */
+	mptcp_for_each_sk(meta_tp->mpcb, sk_it) {
+		struct tcp_sock *tp_it = tcp_sk(sk_it);
+
+		if (!mptcp_sk_can_send(sk_it))
+			continue;
+
+		/* Backup-flows have to be counted - if there is no other
+		 * subflow we take the backup-flow into account. */
+		if (tp_it->mptcp->rcv_low_prio || tp_it->mptcp->low_prio) {
+			cnt_backups++;
+		}
+
+		if (tp_it->packets_out < tp_it->snd_cwnd) {
+			if (tp_it->mptcp->rcv_low_prio || tp_it->mptcp->low_prio) {
+				backup_available = 1;
+				continue;
+			}
+			return 1;
+		}
+	}
+
+	/* Backup-flow is available for sending - update send-buffer */
+	if (meta_tp->mpcb->cnt_established == cnt_backups && backup_available)
+		return 1;
+	return 0;
+}

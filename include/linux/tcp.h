@@ -83,8 +83,7 @@ struct tcp_out_options {
 	struct tcp_fastopen_cookie *fastopen_cookie;	/* Fast open cookie */
 #ifdef CONFIG_MPTCP
 	u16	mptcp_options;	/* bit field of MPTCP related OPTION_* */
-	__sum16	dss_csum;	/* Overloaded field: dss-checksum required
-				 * (for SYN-packets)? Or dss-csum itself */
+	u8	dss_csum:1;	/* dss-checksum required? */
 
 	__u32	data_seq;	/* data sequence number, for MPTCP */
 	__u32	data_ack;	/* data ack, for MPTCP */
@@ -382,8 +381,7 @@ struct tcp_sock {
 		       * stop using the subflow
 		       */
 		mp_killed:1, /* Killed with a tcp_done in mptcp? */
-		mptcp_add_addr_ack:1,	/* Tell tcp_send_ack to return in case
-					 * alloc_skb fails. */
+		mptcp_add_addr_ack:1,
 		was_meta_sk:1,	/* This was a meta sk (in case of reuse) */
 		close_it:1,	/* Must close socket in mptcp_data_ready? */
 		closing:1;

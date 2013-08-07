@@ -39,7 +39,6 @@
 #include <net/sock.h>
 
 extern struct request_sock_ops mptcp_request_sock_ops;
-extern struct proto mptcp_prot;
 
 #ifdef CONFIG_MPTCP
 
@@ -65,12 +64,6 @@ u64 mptcp_v4_get_key(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport);
 
 static inline int mptcp_v4_do_rcv(const struct sock *meta_sk,
 				  const struct sk_buff *skb)
-{
-	return 0;
-}
-
-static inline int mptcp_v4_send_synack(const struct sock *meta_sk,
-				       const struct request_sock *req)
 {
 	return 0;
 }
