@@ -722,7 +722,7 @@ static void tcp_tasklet_func(unsigned long data)
 	unsigned long flags;
 	struct list_head *q, *n;
 	struct tcp_sock *tp;
-	struct sock *sk;
+	struct sock *sk, *meta_sk;
 
 	local_irq_save(flags);
 	list_splice_init(&tsq->head, &list);
@@ -733,15 +733,18 @@ static void tcp_tasklet_func(unsigned long data)
 		list_del(&tp->tsq_node);
 
 		sk = (struct sock *)tp;
-		bh_lock_sock(sk);
+		meta_sk = tp->mpc ? mptcp_meta_sk(sk) : sk;
+		bh_lock_sock(meta_sk);
 
-		if (!sock_owned_by_user(sk)) {
-			tcp_tsq_handler(sk);
+		if (!sock_owned_by_user(meta_sk)) {
+			tcp_tsq_handler(meta_sk);
 		} else {
 			/* defer the work to tcp_release_cb() */
 			set_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags);
+			if (tp->mpc)
+				set_bit(TCP_TSQ_DEFERRED, &tcp_sk(meta_sk)->tsq_flags);
 		}
-		bh_unlock_sock(sk);
+		bh_unlock_sock(meta_sk);
 
 		clear_bit(TSQ_QUEUED, &tp->tsq_flags);
 		sk_free(sk);
@@ -766,6 +769,9 @@ static void mptcp_release_cb(struct sock *meta_sk)
 			return;
 		nflags = flags & ~TCP_DEFERRED_ALL;
 	} while (cmpxchg(&meta_tp->tsq_flags, flags, nflags) != flags);
+
+	if (flags & (1UL << TCP_TSQ_DEFERRED))
+		tcp_tsq_handler(meta_sk);
 
 	if (flags & (1UL << TCP_WRITE_TIMER_DEFERRED))
 		__sock_put(meta_sk);
