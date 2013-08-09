@@ -1181,6 +1181,15 @@ retry:
 			}
 		}
 
+		/* TSQ : sk_wmem_alloc accounts skb truesize,
+		 * including skb overhead. But thats OK.
+		 */
+		if (atomic_read(&subsk->sk_wmem_alloc) >= sysctl_tcp_limit_output_bytes) {
+			set_bit(TSQ_THROTTLED, &subtp->tsq_flags);
+			mpcb->noneligible |= mptcp_pi_to_flag(subtp->mptcp->path_index);
+			continue;
+		}
+
 		limit = mss_now;
 		if (tso_segs > 1 && !tcp_urg_mode(meta_tp))
 			limit = tcp_mss_split_point(subsk, skb, mss_now,

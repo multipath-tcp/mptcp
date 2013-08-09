@@ -778,6 +778,7 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	skb_queue_head_init(&mpcb->reinject_queue);
 	skb_queue_head_init(&master_tp->out_of_order_queue);
 	tcp_prequeue_init(master_tp);
+	INIT_LIST_HEAD(&master_tp->tsq_node);
 
 	master_tp->tsq_flags = 0;
 
