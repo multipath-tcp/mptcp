@@ -497,8 +497,11 @@ static void mptcp_sub_inherit_sockopts(struct sock *meta_sk, struct sock *sub_sk
 		sk_dst_reset(sub_sk);
 	}
 
-	/* Inheris SO_REUSEADDR */
+	/* Inherit SO_REUSEADDR */
 	sub_sk->sk_reuse = meta_sk->sk_reuse;
+
+	/* Inherit snd/rcv-buffer locks */
+	sub_sk->sk_userlocks = meta_sk->sk_userlocks & ~SOCK_BINDPORT_LOCK;
 }
 
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb)
