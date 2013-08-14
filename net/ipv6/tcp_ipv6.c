@@ -999,12 +999,17 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	tcp_parse_options(skb, &tmp_opt, &mopt, 0, NULL);
 
 #ifdef CONFIG_MPTCP
+	/*MPTCP structures not initialized, so return error */
+	if (mptcp_init_failed)
+		mptcp_init_mp_opt(&mopt);
+
 	if (mopt.is_mp_join)
 		return mptcp_do_join_short(skb, &mopt, &tmp_opt, sock_net(sk));
 	if (mopt.drop_me)
 		goto drop;
 #endif
 
+tcp_flow:
 	if (!ipv6_unicast_destination(skb))
 		goto drop;
 
