@@ -1009,7 +1009,6 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 		goto drop;
 #endif
 
-tcp_flow:
 	if (!ipv6_unicast_destination(skb))
 		goto drop;
 
