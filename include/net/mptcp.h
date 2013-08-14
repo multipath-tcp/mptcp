@@ -371,6 +371,9 @@ struct mptcp_cb {
 #define OPTION_REMOVE_ADDR	(1 << 9)
 #define OPTION_MP_PRIO		(1 << 10)
 
+/* Used for checking if the mptcp initialization has been successful */
+extern bool mptcp_init_failed;
+
 struct mptcp_option {
 	__u8	kind;
 	__u8	len;

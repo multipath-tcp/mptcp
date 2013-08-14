@@ -404,6 +404,10 @@ int mptcp_check_req(struct sk_buff *skb, struct net *net)
 	struct tcphdr *th = tcp_hdr(skb);
 	struct sock *meta_sk = NULL;
 
+	/* MPTCP structures not initialized */
+	if (mptcp_init_failed)
+		return 0;
+
 	if (skb->protocol == htons(ETH_P_IP))
 		meta_sk = mptcp_v4_search_req(th->source, ip_hdr(skb)->saddr,
 					      ip_hdr(skb)->daddr, net);
@@ -484,6 +488,10 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 	struct mp_join *join_opt = mptcp_find_join(skb);
 	if (!join_opt)
 		return 0;
+
+	/* MPTCP structures were not initialized, so return error */
+	if (mptcp_init_failed)
+		return -1;
 
 	token = join_opt->u.syn.token;
 	meta_sk = mptcp_hash_find(dev_net(skb_dst(skb)->dev), token);
