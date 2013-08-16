@@ -569,7 +569,7 @@ static int mptcp_pm_netdev_event(struct notifier_block *this,
 	 * beginning till the end.
 	 */
 	rcu_read_lock();
-	in_dev = __in_dev_get_rcu(dev);
+	in_dev = __in_dev_get_rtnl(dev);
 
 	if (in_dev) {
 		for_primary_ifa(in_dev) {
