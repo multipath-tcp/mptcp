@@ -336,6 +336,10 @@ static void mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	if (!req)
 		return;
 
+#ifdef CONFIG_TCP_MD5SIG
+	tcp_rsk(req)->af_specific = &tcp_request_sock_ipv6_ops;
+#endif
+
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 	tcp_openreq_init(req, &tmp_opt, skb);
 

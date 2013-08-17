@@ -379,6 +379,8 @@ extern struct proto tcp_prot;
 extern const struct inet_connection_sock_af_ops ipv4_specific;
 extern const struct inet_connection_sock_af_ops ipv6_specific;
 extern const struct inet_connection_sock_af_ops ipv6_mapped;
+extern const struct tcp_request_sock_ops tcp_request_sock_ipv4_ops;
+extern const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops;
 
 struct mptcp_options_received;
 

@@ -1540,6 +1540,12 @@ int mptcp_doit(struct sock *sk)
 	    ipv4_is_loopback(inet_sk(sk)->inet_saddr))
 		return 0;
 
+#ifdef CONFIG_TCP_MD5SIG
+	/* If TCP_MD5SIG is enabled, do not do MPTCP - there is no Option-Space */
+	if (tcp_sk(sk)->af_specific->md5_lookup(sk, sk))
+		return 0;
+#endif
+
 	return 1;
 }
 
