@@ -1024,7 +1024,7 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	}
 
 #ifdef CONFIG_MPTCP
-	if (mopt.saw_mpc) {
+	if (mopt.saw_mpc && !want_cookie) {
 		req = inet6_reqsk_alloc(&mptcp6_request_sock_ops);
 
 		if (req == NULL)
@@ -1050,7 +1050,7 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 	tcp_openreq_init(req, &tmp_opt, skb);
 
-	if (mopt.saw_mpc)
+	if (mopt.saw_mpc && !want_cookie)
 		mptcp_reqsk_new_mptcp(req, &tmp_opt, &mopt, skb);
 
 	treq = inet6_rsk(req);
