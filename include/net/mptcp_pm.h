@@ -128,6 +128,7 @@ static inline void mptcp_reqsk_new_mptcp(struct request_sock *req,
 					 const struct sk_buff *skb)
 {}
 static inline void mptcp_hash_remove(struct tcp_sock *meta_tp) {}
+static inline void mptcp_hash_remove_bh(struct tcp_sock *meta_tp) {}
 #endif /* CONFIG_MPTCP */
 
 #endif /*_MPTCP_PM_H*/
