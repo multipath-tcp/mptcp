@@ -948,6 +948,7 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 			return -1;
 
 		TCP_SKB_CB(subskb)->tcp_flags |= TCPHDR_PSH;
+		TCP_SKB_CB(skb)->when = tcp_time_stamp;
 		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
 		err = tcp_transmit_skb(subsk, subskb, 1, GFP_ATOMIC);
 		if (unlikely(err)) {
@@ -1206,6 +1207,7 @@ retry:
 			break;
 
 		mpcb->noneligible = noneligible;
+		TCP_SKB_CB(skb)->when = tcp_time_stamp;
 		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
 		if (unlikely(tcp_transmit_skb(subsk, subskb, 1, gfp))) {
 			mptcp_transmit_skb_failed(subsk, skb, subskb);
@@ -2030,6 +2032,7 @@ static int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 	if (!subskb)
 		goto failed;
 
+	TCP_SKB_CB(skb)->when = tcp_time_stamp;
 	TCP_SKB_CB(subskb)->when = tcp_time_stamp;
 	err = tcp_transmit_skb(subsk, subskb, 1, GFP_ATOMIC);
 	if (!err) {
