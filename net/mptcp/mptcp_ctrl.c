@@ -757,6 +757,7 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 
 	meta_tp->snd_wl1 = meta_tp->rcv_nxt - 1;
 	meta_tp->snd_wnd = window;
+	meta_tp->retrans_stamp = 0; /* Set in tcp_connect() */
 
 	meta_tp->packets_out = 0;
 	meta_tp->mptcp->snt_isn = meta_tp->write_seq; /* Initial data-sequence-number */

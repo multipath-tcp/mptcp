@@ -108,6 +108,7 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk, u32 prior_snd_una)
 
 		acked = true;
 		meta_tp->packets_out -= acked_pcount;
+		meta_tp->retrans_stamp = 0;
 
 		if (!fully_acked)
 			break;
