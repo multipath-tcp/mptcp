@@ -158,8 +158,7 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 			cnt_backups++;
 
 		if ((tp->mptcp->rcv_low_prio || tp->mptcp->low_prio) &&
-		    tp->srtt < lowprio_min_time_to_peer &&
-		    !(skb && mptcp_pi_to_flag(tp->mptcp->path_index) & TCP_SKB_CB(skb)->path_mask)) {
+		    tp->srtt < lowprio_min_time_to_peer) {
 
 			if (!mptcp_is_available(sk, skb, &this_mss))
 				continue;
@@ -174,8 +173,7 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 			lowpriosk = sk;
 			mss_lowprio = this_mss;
 		} else if (!(tp->mptcp->rcv_low_prio || tp->mptcp->low_prio) &&
-		    tp->srtt < min_time_to_peer &&
-		    !(skb && mptcp_pi_to_flag(tp->mptcp->path_index) & TCP_SKB_CB(skb)->path_mask)) {
+			   tp->srtt < min_time_to_peer) {
 			if (!mptcp_is_available(sk, skb, &this_mss))
 				continue;
 
