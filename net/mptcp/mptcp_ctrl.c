@@ -205,7 +205,8 @@ static void mptcp_sock_def_error_report(struct sock *sk)
 	if (!sock_flag(sk, SOCK_DEAD))
 		mptcp_sub_close(sk, 0);
 
-	if (mpcb->infinite_mapping_rcv || mpcb->infinite_mapping_snd) {
+	if (mpcb->infinite_mapping_rcv || mpcb->infinite_mapping_snd ||
+	    mpcb->send_infinite_mapping) {
 		struct sock *meta_sk = mptcp_meta_sk(sk);
 
 		meta_sk->sk_err = sk->sk_err;

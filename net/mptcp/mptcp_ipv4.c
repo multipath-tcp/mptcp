@@ -361,10 +361,14 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	TCP_SKB_CB(skb)->mptcp_flags = 0;
 
 	/* Has been removed from the tk-table. Thus, no new subflows.
+	 *
 	 * Check for close-state is necessary, because we may have been closed
 	 * without passing by mptcp_close().
+	 *
+	 * When falling back, no new subflows are allowed either.
 	 */
-	if (meta_sk->sk_state == TCP_CLOSE || !tcp_sk(meta_sk)->inside_tk_table)
+	if (meta_sk->sk_state == TCP_CLOSE || !tcp_sk(meta_sk)->inside_tk_table ||
+	    mpcb->infinite_mapping_rcv || mpcb->send_infinite_mapping)
 		goto reset_and_discard;
 
 	child = tcp_v4_hnd_req(meta_sk, skb);
