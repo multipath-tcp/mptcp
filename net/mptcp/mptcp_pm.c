@@ -503,7 +503,7 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 	mpcb = tcp_sk(meta_sk)->mpcb;
 	if (mpcb->infinite_mapping_rcv) {
 		/* We are in fallback-mode on the reception-side -
-		 * noe new subflows!
+		 * no new subflows!
 		 */
 		sock_put(meta_sk); /* Taken by mptcp_hash_find */
 		return -1;
