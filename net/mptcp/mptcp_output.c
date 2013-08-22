@@ -724,8 +724,8 @@ int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	u8 flags;
 	int dsslen = MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_ACK_ALIGN +
 		     MPTCP_SUB_LEN_SEQ_ALIGN;
-	char *dss[MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_ACK_ALIGN +
-		  MPTCP_SUB_LEN_SEQ_ALIGN];
+	char dss[MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_ACK_ALIGN +
+		 MPTCP_SUB_LEN_SEQ_ALIGN];
 
 	if (WARN_ON(len > skb->len))
 		return -EINVAL;
@@ -2310,7 +2310,7 @@ int mptcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
 {
 	int dsslen = MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_ACK_ALIGN +
 		     MPTCP_SUB_LEN_SEQ_ALIGN;
-	char *dss[dsslen];
+	char dss[dsslen];
 
 	/* DSS-option must be recovered afterwards. */
 	memcpy(dss, skb->data - dsslen, dsslen);
