@@ -1666,6 +1666,8 @@ static inline int mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
 		mptcp->rx_opt.mp_fail = 0;
 
 		if (!th->rst && !mpcb->infinite_mapping_snd) {
+			struct sock *sk_it;
+
 			mpcb->send_infinite_mapping = 1;
 			/* We resend everything that has not been acknowledged */
 			meta_sk->sk_send_head = tcp_write_queue_head(meta_sk);
@@ -1684,6 +1686,14 @@ static inline int mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
 				mpcb->snd_hiseq_index = mpcb->snd_hiseq_index ? 0 : 1;
 			}
 			tcp_sk(meta_sk)->snd_nxt = tcp_sk(meta_sk)->snd_una;
+
+			/* Trigger a sending on the meta. */
+			mptcp_push_pending_frames(meta_sk);
+
+			mptcp_for_each_sk(mpcb, sk_it) {
+				if (sk != sk_it)
+					mptcp_sub_force_close(sk_it);
+			}
 		}
 
 		return 0;
