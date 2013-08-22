@@ -501,7 +501,7 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 	}
 
 	mpcb = tcp_sk(meta_sk)->mpcb;
-	if (mpcb->infinite_mapping_rcv) {
+	if (mpcb->infinite_mapping_rcv || mpcb->send_infinite_mapping) {
 		/* We are in fallback-mode on the reception-side -
 		 * no new subflows!
 		 */
@@ -574,6 +574,7 @@ int mptcp_do_join_short(struct sk_buff *skb, struct mptcp_options_received *mopt
 	 * Thus, we propagate the reset up to tcp_rcv_state_process.
 	 */
 	if (tcp_sk(meta_sk)->mpcb->infinite_mapping_rcv ||
+	    tcp_sk(meta_sk)->mpcb->send_infinite_mapping ||
 	    meta_sk->sk_state == TCP_CLOSE || !tcp_sk(meta_sk)->inside_tk_table) {
 		bh_unlock_sock(meta_sk);
 		sock_put(meta_sk); /* Taken by mptcp_hash_find */
@@ -771,6 +772,7 @@ void mptcp_create_subflows(struct sock *meta_sk)
 	if ((mpcb->master_sk &&
 	     !tcp_sk(mpcb->master_sk)->mptcp->fully_established) ||
 	    mpcb->infinite_mapping_snd || mpcb->infinite_mapping_rcv ||
+	    mpcb->send_infinite_mapping ||
 	    mpcb->server_side || sock_flag(meta_sk, SOCK_DEAD))
 		return;
 
@@ -1013,7 +1015,8 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 
 			if (!meta_tp->mpc || !is_meta_sk(meta_sk) ||
 			    mpcb->infinite_mapping_snd ||
-			    mpcb->infinite_mapping_rcv) {
+			    mpcb->infinite_mapping_rcv ||
+			    mpcb->send_infinite_mapping) {
 				sock_put(meta_sk);
 				continue;
 			}
