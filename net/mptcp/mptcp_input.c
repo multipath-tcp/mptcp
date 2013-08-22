@@ -574,7 +574,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 		tp->mptcp->map_data_seq = mptcp_get_rcv_nxt_64(meta_tp);
 		tp->mptcp->map_subseq = tcb->seq;
 		tp->mptcp->map_data_len = skb->len;
-		tp->mptcp->map_data_fin = tcp_hdr(skb)->fin ? 1 : 0;
+		tp->mptcp->map_data_fin = tcp_hdr(skb)->fin;
 		tp->mptcp->mapping_present = 1;
 		return 0;
 	}
@@ -603,7 +603,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 	if (tp->mptcp->mapping_present &&
 	    (data_seq != (u32)tp->mptcp->map_data_seq ||
 	     sub_seq != tp->mptcp->map_subseq ||
-	     data_len != tp->mptcp->map_data_len - (tp->mptcp->map_data_fin ? 1 : 0) ||
+	     data_len != tp->mptcp->map_data_len + tp->mptcp->map_data_fin ||
 	     mptcp_is_data_fin(skb) != tp->mptcp->map_data_fin)) {
 		/* Mapping in packet is different from what we want */
 		pr_err("%s Mappings do not match!\n", __func__);
@@ -688,7 +688,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 	 */
 
 	/* subflow-fin is not part of the mapping - ignore it here ! */
-	tcp_end_seq = TCP_SKB_CB(skb)->end_seq - (tcp_hdr(skb)->fin ? 1 : 0);
+	tcp_end_seq = TCP_SKB_CB(skb)->end_seq - tcp_hdr(skb)->fin;
 	if ((!before(sub_seq, tcb->end_seq) && after(tcp_end_seq, tcb->seq)) ||
 	    (mptcp_is_data_fin(skb) && skb->len == 0 && after(sub_seq, tcb->end_seq)) ||
 	    (!after(sub_seq + data_len, tcb->seq) && after(tcp_end_seq, tcb->seq)) ||
