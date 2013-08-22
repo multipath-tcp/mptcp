@@ -699,7 +699,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 	 */
 
 	/* subflow-fin is not part of the mapping - ignore it here ! */
-	tcp_end_seq = TCP_SKB_CB(skb)->end_seq - tcp_hdr(skb)->fin;
+	tcp_end_seq = tcb->end_seq - tcp_hdr(skb)->fin;
 	if ((!before(sub_seq, tcb->end_seq) && after(tcp_end_seq, tcb->seq)) ||
 	    (mptcp_is_data_fin(skb) && skb->len == 0 && after(sub_seq, tcb->end_seq)) ||
 	    (!after(sub_seq + data_len, tcb->seq) && after(tcp_end_seq, tcb->seq)) ||
@@ -707,7 +707,10 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 		/* Subflow-sequences of packet is different from what is in the
 		 * packet's dss-mapping. The peer is misbehaving - reset
 		 */
-		pr_err("%s Packet's mapping does not map to the DSS\n", __func__);
+		pr_err("%s Packet's mapping does not map to the DSS sub_seq %u "
+		       "end_seq %u, tcp_end_seq %u seq %u dfin %u len %u data_len %u"
+		       "copied_seq %u\n", __func__, sub_seq, tcb->end_seq, tcp_end_seq, tcb->seq, mptcp_is_data_fin(skb),
+		       skb->len, data_len, tp->copied_seq);
 		mptcp_send_reset(sk);
 		return 1;
 	}
