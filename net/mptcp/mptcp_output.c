@@ -543,7 +543,7 @@ static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff *skb,
 		goto no_data_seq;
 
 	if (tp->mpcb->send_infinite_mapping &&
-	    tcb->seq >= mptcp_meta_tp(tp)->snd_nxt) {
+	    !before(tcb->seq, mptcp_meta_tp(tp)->snd_nxt)) {
 		tp->mptcp->fully_established = 1;
 		tp->mpcb->infinite_mapping_snd = 1;
 		tp->mptcp->infinite_cutoff_seq = tp->write_seq;
