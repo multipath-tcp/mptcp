@@ -542,9 +542,7 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 		       TCP_SKB_CB(skb)->seq);
 
 		if (!is_master_tp(tp)) {
-			__skb_unlink(skb, &sk->sk_receive_queue);
 			mptcp_send_reset(sk);
-			__kfree_skb(skb);
 			return 1;
 		}
 
@@ -591,8 +589,16 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 	}
 
 	/* No mapping here? Exit - it is either already set or still on its way */
-	if (!mptcp_is_data_seq(skb))
+	if (!mptcp_is_data_seq(skb)) {
+		/* Too many packets without a mapping - this subflow is broken */
+		if (!tp->mptcp->mapping_present &&
+		    tp->rcv_nxt - tp->copied_seq > 65536) {
+			mptcp_send_reset(sk);
+			return 1;
+		}
+
 		return 0;
+	}
 
 	ptr = mptcp_skb_set_data_seq(skb, &data_seq, mpcb);
 	ptr++;
@@ -623,9 +629,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 		       sub_seq, tp->mptcp->map_subseq, data_len,
 		       tp->mptcp->map_data_len, mptcp_is_data_fin(skb),
 		       tp->mptcp->map_data_fin);
-		__skb_unlink(skb, &sk->sk_receive_queue);
 		mptcp_send_reset(sk);
-		__kfree_skb(skb);
 		return 1;
 	}
 
