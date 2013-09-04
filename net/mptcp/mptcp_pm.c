@@ -340,7 +340,6 @@ void mptcp_set_addresses(struct sock *meta_sk)
 					goto out;
 				}
 				mpcb->locaddr4[i].addr.s_addr = ifa_address;
-				mpcb->locaddr4[i].port = 0;
 				mpcb->locaddr4[i].id = i;
 				mpcb->locaddr4[i].low_prio = (dev->flags & IFF_MPBACKUP) ?
 								1 : 0;
@@ -382,7 +381,6 @@ cont_ipv6:
 				}
 
 				mpcb->locaddr6[i].addr = ifa6->addr;
-				mpcb->locaddr6[i].port = 0;
 				mpcb->locaddr6[i].id = i + MPTCP_MAX_ADDR;
 				mpcb->locaddr6[i].low_prio = (dev->flags & IFF_MPBACKUP) ?
 								1 : 0;

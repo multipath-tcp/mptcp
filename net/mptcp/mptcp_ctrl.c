@@ -1045,7 +1045,6 @@ void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
 		if (!mptcp_v6_is_v4_mapped(sk)) {
 			mpcb->locaddr6[0].addr = inet6_sk(sk)->saddr;
 			mpcb->locaddr6[0].id = 0;
-			mpcb->locaddr6[0].port = 0;
 			mpcb->locaddr6[0].low_prio = 0;
 			mpcb->loc6_bits |= 1;
 			mpcb->next_v6_index = 1;
@@ -1059,7 +1058,6 @@ void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
 	case AF_INET:
 		mpcb->locaddr4[0].addr.s_addr = inet_sk(sk)->inet_saddr;
 		mpcb->locaddr4[0].id = 0;
-		mpcb->locaddr4[0].port = 0;
 		mpcb->locaddr4[0].low_prio = 0;
 		mpcb->loc4_bits |= 1;
 		mpcb->next_v4_index = 1;
