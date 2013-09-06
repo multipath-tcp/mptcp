@@ -94,11 +94,38 @@ extern spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
  */
 extern spinlock_t mptcp_tk_hashlock;	/* hashtable protection */
 
+struct mptcp_local_addresses {
+	struct mptcp_loc4 locaddr4[MPTCP_MAX_ADDR];
+	u8 loc4_bits;
+	u8 next_v4_index;
+
+	struct mptcp_loc6 locaddr6[MPTCP_MAX_ADDR];
+	u8 loc6_bits;
+	u8 next_v6_index;
+};
+
+enum {
+	MPTCP_EVENT_ADD = 1,
+	MPTCP_EVENT_DEL,
+	MPTCP_EVENT_MOD,
+};
+
+struct mptcp_address_events {
+	struct list_head list;
+	unsigned short	family;
+	u8	code:7,
+		low_prio:1;
+	u8	id;
+	union {
+		struct in_addr addr4;
+		struct in6_addr addr6;
+	}u;
+};
+
 void mptcp_create_subflows(struct sock *meta_sk);
 void mptcp_create_subflow_worker(struct work_struct *work);
 void mptcp_retry_subflow_worker(struct work_struct *work);
 struct mp_join *mptcp_find_join(struct sk_buff *skb);
-u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock *sk);
 void __mptcp_hash_insert(struct tcp_sock *meta_tp, u32 token);
 void mptcp_hash_remove_bh(struct tcp_sock *meta_tp);
 void mptcp_hash_remove(struct tcp_sock *meta_tp);
@@ -112,10 +139,12 @@ void mptcp_reqsk_new_mptcp(struct request_sock *req,
 			   const struct mptcp_options_received *mopt,
 			   const struct sk_buff *skb);
 void mptcp_connect_init(struct sock *sk);
-void mptcp_set_addresses(struct sock *meta_sk);
+void mptcp_announce_addresses(struct sock *meta_sk);
 int mptcp_check_req(struct sk_buff *skb, struct net *net);
 void mptcp_address_worker(struct work_struct *work);
 int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family);
+void mptcp_path_manager(struct sock *meta_sk);
+void mptcp_add_pm_event(struct net *net, struct mptcp_address_events *event);
 int mptcp_pm_init(void);
 void mptcp_pm_undo(void);
 

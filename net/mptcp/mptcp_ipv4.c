@@ -110,6 +110,7 @@ static void mptcp_v4_reqsk_queue_hash_add(struct sock *meta_sk,
 static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+	struct mptcp_local_addresses *mptcp_local;
 	struct tcp_options_received tmp_opt;
 	struct mptcp_options_received mopt;
 	struct request_sock *req;
@@ -120,7 +121,7 @@ static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	__be32 saddr = ip_hdr(skb)->saddr;
 	__be32 daddr = ip_hdr(skb)->daddr;
 	__u32 isn = TCP_SKB_CB(skb)->when;
-	int want_cookie = 0;
+	int want_cookie = 0, i;
 
 	tcp_clear_options(&tmp_opt);
 	mptcp_init_mp_opt(&mopt);
@@ -208,6 +209,17 @@ static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 			(u8 *)&mtreq->mptcp_loc_nonce,
 			(u8 *)&mtreq->mptcp_rem_nonce, (u32 *)mptcp_hash_mac);
 	mtreq->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
+
+	rcu_read_lock();
+	mptcp_local = rcu_dereference(sock_net(meta_sk)->mptcp.local);
+
+	/* Finding Address ID */
+	mptcp_for_each_bit_set(mptcp_local->loc4_bits, i) {
+		if (mptcp_local->locaddr4[i].addr.s_addr == ireq->loc_addr)
+			mtreq->loc_id = mptcp_local->locaddr4[i].id;
+	}
+	rcu_read_unlock();
+
 	mtreq->rem_id = mopt.rem_id;
 	mtreq->low_prio = mopt.low_prio;
 	tcp_rsk(req)->saw_mpc = 1;
@@ -307,14 +319,14 @@ int mptcp_v4_add_raddress(struct mptcp_cb *mpcb, const struct in_addr *addr,
 /* Sets the bitfield of the remote-address field
  * local address is not set as it will disappear with the global address-list
  */
-void mptcp_v4_set_init_addr_bit(struct mptcp_cb *mpcb, __be32 daddr)
+void mptcp_v4_set_init_addr_bit(struct mptcp_cb *mpcb, __be32 daddr, u8 id)
 {
 	int i;
 
 	mptcp_for_each_bit_set(mpcb->rem4_bits, i) {
 		if (mpcb->remaddr4[i].addr.s_addr == daddr) {
 			/* It's the initial flow - thus local index == 0 */
-			mpcb->remaddr4[i].bitfield |= 1;
+			mpcb->remaddr4[i].bitfield |= (1 << id);
 			return;
 		}
 	}
@@ -487,7 +499,7 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	lockdep_set_class_and_name(&(sk)->sk_lock.slock, &meta_slock_key, "slock-AF_INET-MPTCP");
 	lockdep_init_map(&(sk)->sk_lock.dep_map, "sk_lock-AF_INET-MPTCP", &meta_key, 0);
 
-	if (mptcp_add_sock(meta_sk, sk, rem->id, GFP_KERNEL))
+	if (mptcp_add_sock(meta_sk, sk, loc->id, rem->id, GFP_KERNEL))
 		goto error;
 
 	tp->mptcp->slave_sk = 1;
@@ -567,11 +579,6 @@ static int mptcp_pm_netdev_event(struct notifier_block *this,
 	      event == NETDEV_CHANGE))
 		return NOTIFY_DONE;
 
-	/* Iterate over the addresses of the interface, then we go over the
-	 * mpcb's to modify them - that way we take tk_hash_lock for a shorter
-	 * time at each iteration. - otherwise we would need to take it from the
-	 * beginning till the end.
-	 */
 	rcu_read_lock();
 	in_dev = __in_dev_get_rtnl(dev);
 
@@ -586,89 +593,141 @@ static int mptcp_pm_netdev_event(struct notifier_block *this,
 }
 
 void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
-				  struct mptcp_cb *mpcb)
+				  struct net *net)
 {
+	struct mptcp_local_addresses *mptcp_local, *old;
+	struct net_device *netdev = ifa->ifa_dev->dev;
 	int i;
-	struct sock *sk, *tmpsk;
 
-	if (ifa->ifa_scope > RT_SCOPE_LINK)
+	if (ifa->ifa_scope > RT_SCOPE_LINK ||
+	    ipv4_is_loopback(ifa->ifa_local))
 		return;
 
-	/* Look for the address among the local addresses */
-	mptcp_for_each_bit_set(mpcb->loc4_bits, i) {
-		if (mpcb->locaddr4[i].addr.s_addr == ifa->ifa_local)
-			goto found;
-	}
+	rcu_read_lock_bh();
+	spin_lock(&net->mptcp.local_lock);
 
-	/* Not yet in address-list */
-	if ((event == NETDEV_UP || event == NETDEV_CHANGE) &&
-	    netif_running(ifa->ifa_dev->dev) &&
-	    !(ifa->ifa_dev->dev->flags & IFF_NOMULTIPATH)) {
-		i = __mptcp_find_free_index(mpcb->loc4_bits, 0, mpcb->next_v4_index);
-		if (i < 0) {
-			mptcp_debug("MPTCP_PM: NETDEV_UP Reached max number of local IPv4 addresses: %d\n",
-				    MPTCP_MAX_ADDR);
-			return;
+	mptcp_local = rcu_dereference(net->mptcp.local);
+
+	if (event == NETDEV_DOWN ||!netif_running(netdev) ||
+	    (netdev->flags & IFF_NOMULTIPATH)) {
+		/* It's an event that removes the address */
+		struct mptcp_address_events event;
+		bool found = false;
+
+		/* Look for the address among the local addresses */
+		mptcp_for_each_bit_set(mptcp_local->loc4_bits, i) {
+			if (mptcp_local->locaddr4[i].addr.s_addr == ifa->ifa_local) {
+				found = true;
+				break;
+			}
 		}
 
-		/* update this mpcb */
-		mpcb->locaddr4[i].addr.s_addr = ifa->ifa_local;
-		mpcb->locaddr4[i].id = i;
-		mpcb->loc4_bits |= (1 << i);
-		mpcb->next_v4_index = i + 1;
-		/* re-send addresses */
-		mptcp_v4_send_add_addr(i, mpcb);
-		/* re-evaluate paths */
-		mptcp_create_subflows(mpcb->meta_sk);
+		/* Not in the list - so we don't care */
+		if (!found)
+			goto exit;
+
+		old = mptcp_local;
+		mptcp_local = kmemdup(mptcp_local, sizeof(*mptcp_local),
+				      GFP_ATOMIC);
+		if (!mptcp_local)
+			goto exit;
+		kfree(old);
+
+		mptcp_local->loc4_bits &= ~(1 << i);
+
+		rcu_assign_pointer(net->mptcp.local, mptcp_local);
+
+		/* Now, we have to create an event for the MPTCP-sockets */
+		event.code = MPTCP_EVENT_DEL;
+		event.family = AF_INET;
+		event.id = i;
+		event.u.addr4.s_addr = ifa->ifa_local;
+		mptcp_add_pm_event(net, &event);
+
+	} else {
+		/* The event modifies / adds an address */
+		bool found = false;
+
+		/* Look for the address among the local addresses */
+		mptcp_for_each_bit_set(mptcp_local->loc4_bits, i) {
+			if (mptcp_local->locaddr4[i].addr.s_addr == ifa->ifa_local) {
+				found = true;
+				break;
+			}
+		}
+
+		if (!found) {
+			/* Not in the list, so we have to find an empty slot */
+			i = __mptcp_find_free_index(mptcp_local->loc4_bits, 0,
+						    mptcp_local->next_v4_index);
+			if (i < 0)
+				goto exit;
+		} else {
+			struct mptcp_address_events event;
+
+			/* Let's check if anything changes */
+			if ((netdev->flags & IFF_MPBACKUP) ? 1 : 0 == mptcp_local->locaddr4[i].low_prio)
+				goto exit;
+
+
+			/* Now, we have to create an event for the MPTCP-sockets */
+			event.code = MPTCP_EVENT_MOD;
+			event.family = AF_INET;
+			event.id = i;
+			event.low_prio = mptcp_local->locaddr4[i].low_prio;
+			event.u.addr4.s_addr = ifa->ifa_local;
+			mptcp_add_pm_event(net, &event);
+		}
+
+		old = mptcp_local;
+		mptcp_local = kmemdup(mptcp_local, sizeof(*mptcp_local),
+				      GFP_ATOMIC);
+		if (!mptcp_local)
+			goto exit;
+		kfree(old);
+
+		mptcp_local->locaddr4[i].addr.s_addr = ifa->ifa_local;
+		mptcp_local->locaddr4[i].id = i;
+		mptcp_local->locaddr4[i].low_prio = (netdev->flags & IFF_MPBACKUP) ? 1 : 0;
+
+		if (!found) {
+			mptcp_local->loc4_bits |= (1 << i);
+			mptcp_local->next_v4_index = i + 1;
+		}
+
+		rcu_assign_pointer(net->mptcp.local, mptcp_local);
+
+		if (!found) {
+			struct mptcp_address_events event;
+
+			/* Now, we have to create an event for the MPTCP-sockets */
+			event.code = MPTCP_EVENT_ADD;
+			event.family = AF_INET;
+			event.id = i;
+			event.low_prio = mptcp_local->locaddr4[i].low_prio;
+			event.u.addr4.s_addr = ifa->ifa_local;
+			mptcp_add_pm_event(net, &event);
+		}
 	}
+
+exit:
+	spin_unlock(&net->mptcp.local_lock);
+	rcu_read_unlock_bh();
 	return;
-found:
-	/* Address already in list. Reactivate/Deactivate the
-	 * concerned paths.
-	 */
-	mptcp_for_each_sk_safe(mpcb, sk, tmpsk) {
-		struct tcp_sock *tp = tcp_sk(sk);
-		if (sk->sk_family != AF_INET ||
-		    inet_sk(sk)->inet_saddr != ifa->ifa_local)
-			continue;
-
-		if (event == NETDEV_DOWN ||
-		    (ifa->ifa_dev->dev->flags & IFF_NOMULTIPATH)) {
-			mptcp_reinject_data(sk, 0);
-			mptcp_sub_force_close(sk);
-		} else if (event == NETDEV_CHANGE) {
-			int new_low_prio = (ifa->ifa_dev->dev->flags & IFF_MPBACKUP) ?
-						1 : 0;
-			if (new_low_prio != tp->mptcp->low_prio)
-				tp->mptcp->send_mp_prio = 1;
-			tp->mptcp->low_prio = new_low_prio;
-		}
-	}
-
-	if (event == NETDEV_DOWN ||
-	    (ifa->ifa_dev->dev->flags & IFF_NOMULTIPATH)) {
-		mpcb->loc4_bits &= ~(1 << i);
-
-		/* Force sending directly the REMOVE_ADDR option */
-		mpcb->remove_addrs |= (1 << mpcb->locaddr4[i].id);
-		sk = mptcp_select_ack_sock(mpcb->meta_sk, 0);
-		if (sk)
-			tcp_send_ack(sk);
-
-		mptcp_for_each_bit_set(mpcb->rem4_bits, i) {
-			mpcb->remaddr4[i].bitfield &= mpcb->loc4_bits;
-			mpcb->remaddr4[i].retry_bitfield &= mpcb->loc4_bits;
-		}
-	}
 }
 
-/* Send ADD_ADDR for loc_id on all available subflows */
+/* Send ADD_ADDR for loc_id on all available subflows.
+ * This function must remain callable from bh, while owned by user!
+ */
 void mptcp_v4_send_add_addr(int loc_id, struct mptcp_cb *mpcb)
 {
-	struct tcp_sock *tp;
+	struct sock *sk;
 
-	mptcp_for_each_tp(mpcb, tp)
-		tp->mptcp->add_addr4 |= (1 << loc_id);
+	mptcp_for_each_sk(mpcb, sk) {
+		tcp_sk(sk)->mptcp->add_addr4 |= (1 << loc_id);
+		if (mptcp_sk_can_send_ack(sk))
+			tcp_send_ack(sk);
+	}
 }
 
 static struct notifier_block mptcp_pm_inetaddr_notifier = {

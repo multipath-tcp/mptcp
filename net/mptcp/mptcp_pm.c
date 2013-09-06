@@ -252,44 +252,12 @@ void mptcp_hash_remove(struct tcp_sock *meta_tp)
 	rcu_read_unlock();
 }
 
-u8 mptcp_get_loc_addrid(struct mptcp_cb *mpcb, struct sock *sk)
+void mptcp_announce_addresses(struct sock *meta_sk)
 {
-	int i;
-
-	if (sk->sk_family == AF_INET) {
-		mptcp_for_each_bit_set(mpcb->loc4_bits, i) {
-			if (mpcb->locaddr4[i].addr.s_addr ==
-					inet_sk(sk)->inet_saddr)
-				return mpcb->locaddr4[i].id;
-		}
-
-		mptcp_debug("%s %pI4 not locally found\n", __func__,
-			    &inet_sk(sk)->inet_saddr);
-		BUG();
-	}
-#if IS_ENABLED(CONFIG_IPV6)
-	if (sk->sk_family == AF_INET6) {
-		mptcp_for_each_bit_set(mpcb->loc6_bits, i) {
-			if (ipv6_addr_equal(&mpcb->locaddr6[i].addr,
-					    &inet6_sk(sk)->saddr))
-				return mpcb->locaddr6[i].id;
-		}
-
-		mptcp_debug("%s %pI6 not locally found\n", __func__,
-			    &inet6_sk(sk)->saddr);
-		BUG();
-	}
-#endif /* CONFIG_IPV6 */
-
-	BUG();
-	return 0;
-}
-
-void mptcp_set_addresses(struct sock *meta_sk)
-{
+	struct mptcp_local_addresses *mptcp_local;
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct net *netns = sock_net(meta_sk);
-	struct net_device *dev;
+	struct net *net = sock_net(meta_sk);
+	int i;
 
 	/* if multiports is requested, we work with the main address
 	 * and play only with the ports
@@ -298,102 +266,32 @@ void mptcp_set_addresses(struct sock *meta_sk)
 		return;
 
 	rcu_read_lock();
-	read_lock_bh(&dev_base_lock);
+	mptcp_local = rcu_dereference(net->mptcp.local);
 
-	for_each_netdev(netns, dev) {
-		if (netif_running(dev)) {
-			struct in_device *in_dev = __in_dev_get_rcu(dev);
-			struct in_ifaddr *ifa;
-			__be32 ifa_address;
-#if IS_ENABLED(CONFIG_IPV6)
-			struct inet6_dev *in6_dev = __in6_dev_get(dev);
-			struct inet6_ifaddr *ifa6;
-#endif
+	/* Look for the address among the local addresses */
+	mptcp_for_each_bit_set(mptcp_local->loc4_bits, i) {
+		__be32 ifa_address = mptcp_local->locaddr4[i].addr.s_addr;
 
-			if (dev->flags & (IFF_LOOPBACK | IFF_NOMULTIPATH))
-				continue;
+		/* We do not need to announce the initial subflow's address again */
+		if ((meta_sk->sk_family == AF_INET ||
+		     mptcp_v6_is_v4_mapped(meta_sk)) &&
+		    inet_sk(meta_sk)->inet_saddr == ifa_address)
+			continue;
 
-			if (!in_dev)
-				goto cont_ipv6;
-
-			for (ifa = in_dev->ifa_list; ifa; ifa = ifa->ifa_next) {
-				int i;
-				ifa_address = ifa->ifa_local;
-
-				if (ifa->ifa_scope == RT_SCOPE_HOST)
-					continue;
-
-				if ((meta_sk->sk_family == AF_INET ||
-				     mptcp_v6_is_v4_mapped(meta_sk)) &&
-				    inet_sk(meta_sk)->inet_saddr == ifa_address) {
-					mpcb->locaddr4[0].low_prio = dev->flags &
-								IFF_MPBACKUP ? 1 : 0;
-					continue;
-				}
-
-				i = __mptcp_find_free_index(mpcb->loc4_bits, -1,
-							    mpcb->next_v4_index);
-				if (i < 0) {
-					mptcp_debug("%s: At max num of local addresses: %d --- not adding address: %pI4\n",
-						    __func__, MPTCP_MAX_ADDR,
-						    &ifa_address);
-					goto out;
-				}
-				mpcb->locaddr4[i].addr.s_addr = ifa_address;
-				mpcb->locaddr4[i].id = i;
-				mpcb->locaddr4[i].low_prio = (dev->flags & IFF_MPBACKUP) ?
-								1 : 0;
-				mpcb->loc4_bits |= (1 << i);
-				mpcb->next_v4_index = i + 1;
-				mptcp_v4_send_add_addr(i, mpcb);
-			}
-
-cont_ipv6:
-; /* This ; is necessary to fix build-errors when IPv6 is disabled */
-#if IS_ENABLED(CONFIG_IPV6)
-			if (!in6_dev)
-				continue;
-
-			list_for_each_entry(ifa6, &in6_dev->addr_list, if_list) {
-				int addr_type = ipv6_addr_type(&ifa6->addr);
-				int i;
-
-				if (addr_type == IPV6_ADDR_ANY ||
-				    addr_type & IPV6_ADDR_LOOPBACK ||
-				    addr_type & IPV6_ADDR_LINKLOCAL)
-					continue;
-
-				if (meta_sk->sk_family == AF_INET6 &&
-				    ipv6_addr_equal(&inet6_sk(meta_sk)->saddr,
-						    &(ifa6->addr))) {
-					mpcb->locaddr6[0].low_prio = dev->flags &
-								IFF_MPBACKUP ? 1 : 0;
-					continue;
-				}
-
-				i = __mptcp_find_free_index(mpcb->loc6_bits, -1,
-							    mpcb->next_v6_index);
-				if (i < 0) {
-					mptcp_debug("%s: At max num of local addresses: %d --- not adding address: %pI6\n",
-						    __func__, MPTCP_MAX_ADDR,
-						    &ifa6->addr);
-					goto out;
-				}
-
-				mpcb->locaddr6[i].addr = ifa6->addr;
-				mpcb->locaddr6[i].id = i + MPTCP_MAX_ADDR;
-				mpcb->locaddr6[i].low_prio = (dev->flags & IFF_MPBACKUP) ?
-								1 : 0;
-				mpcb->loc6_bits |= (1 << i);
-				mpcb->next_v6_index = i + 1;
-				mptcp_v6_send_add_addr(i, mpcb);
-			}
-#endif
-		}
+		mptcp_v4_send_add_addr(i, mpcb);
 	}
 
-out:
-	read_unlock_bh(&dev_base_lock);
+#if IS_ENABLED(CONFIG_IPV6)
+	mptcp_for_each_bit_set(mptcp_local->loc6_bits, i) {
+		struct in6_addr *ifa6 = &mptcp_local->locaddr6[i].addr;
+		if (meta_sk->sk_family == AF_INET6 &&
+		    ipv6_addr_equal(&inet6_sk(meta_sk)->saddr, ifa6))
+			continue;
+
+		mptcp_v6_send_add_addr(i, mpcb);
+	}
+#endif
+
 	rcu_read_unlock();
 }
 
@@ -616,7 +514,19 @@ void mptcp_retry_subflow_worker(struct work_struct *work)
 	struct mptcp_cb *mpcb =
 		container_of(delayed_work, struct mptcp_cb, subflow_retry_work);
 	struct sock *meta_sk = mpcb->meta_sk;
+	struct mptcp_local_addresses *mptcp_local;
 	int iter = 0, i;
+
+	/* We need a local (stable) copy of the address-list. Really, it is not
+	 * such a big deal, if the address-list is not 100% up-to-date.
+	 */
+	rcu_read_lock_bh();
+	mptcp_local = rcu_dereference(sock_net(meta_sk)->mptcp.local);
+	mptcp_local = kmemdup(mptcp_local, sizeof(*mptcp_local), GFP_ATOMIC);
+	rcu_read_unlock_bh();
+
+	if (!mptcp_local)
+		return;
 
 next_subflow:
 	if (iter) {
@@ -638,8 +548,8 @@ next_subflow:
 		/* Do we need to retry establishing a subflow ? */
 		if (rem->retry_bitfield) {
 			int i = mptcp_find_free_index(~rem->retry_bitfield);
-			mptcp_init4_subsockets(meta_sk, &mpcb->locaddr4[i], rem);
-			rem->retry_bitfield &= ~(1 << mpcb->locaddr4[i].id);
+			mptcp_init4_subsockets(meta_sk, &mptcp_local->locaddr4[i], rem);
+			rem->retry_bitfield &= ~(1 << mptcp_local->locaddr4[i].id);
 			goto next_subflow;
 		}
 	}
@@ -651,8 +561,8 @@ next_subflow:
 		/* Do we need to retry establishing a subflow ? */
 		if (rem->retry_bitfield) {
 			int i = mptcp_find_free_index(~rem->retry_bitfield);
-			mptcp_init6_subsockets(meta_sk, &mpcb->locaddr6[i], rem);
-			rem->retry_bitfield &= ~(1 << mpcb->locaddr6[i].id);
+			mptcp_init6_subsockets(meta_sk, &mptcp_local->locaddr6[i], rem);
+			rem->retry_bitfield &= ~(1 << mptcp_local->locaddr6[i].id);
 			goto next_subflow;
 		}
 	}
@@ -675,8 +585,17 @@ void mptcp_create_subflow_worker(struct work_struct *work)
 {
 	struct mptcp_cb *mpcb = container_of(work, struct mptcp_cb, subflow_work);
 	struct sock *meta_sk = mpcb->meta_sk;
+	struct mptcp_local_addresses *mptcp_local;
 	int iter = 0, retry = 0;
 	int i;
+
+	/* We need a local (stable) copy of the address-list. Really, it is not
+	 * such a big deal, if the address-list is not 100% up-to-date.
+	 */
+	rcu_read_lock_bh();
+	mptcp_local = rcu_dereference(sock_net(meta_sk)->mptcp.local);
+	mptcp_local = kmemdup(mptcp_local, sizeof(*mptcp_local), GFP_ATOMIC);
+	rcu_read_unlock_bh();
 
 next_subflow:
 	if (iter) {
@@ -693,15 +612,19 @@ next_subflow:
 	if (sock_flag(meta_sk, SOCK_DEAD))
 		goto exit;
 
+	if (mpcb->master_sk &&
+	    !tcp_sk(mpcb->master_sk)->mptcp->fully_established)
+		goto exit;
+
 	if (sysctl_mptcp_ndiffports > iter &&
 	    sysctl_mptcp_ndiffports > mpcb->cnt_subflows) {
 		if (meta_sk->sk_family == AF_INET ||
 		    mptcp_v6_is_v4_mapped(meta_sk)) {
-			mptcp_init4_subsockets(meta_sk, &mpcb->locaddr4[0],
+			mptcp_init4_subsockets(meta_sk, &mptcp_local->locaddr4[0],
 					       &mpcb->remaddr4[0]);
 		} else {
 #if IS_ENABLED(CONFIG_IPV6)
-			mptcp_init6_subsockets(meta_sk, &mpcb->locaddr6[0],
+			mptcp_init6_subsockets(meta_sk, &mptcp_local->locaddr6[0],
 					       &mpcb->remaddr6[0]);
 #endif
 		}
@@ -716,16 +639,16 @@ next_subflow:
 		u8 remaining_bits;
 
 		rem = &mpcb->remaddr4[i];
-		remaining_bits = ~(rem->bitfield) & mpcb->loc4_bits;
+		remaining_bits = ~(rem->bitfield) & mptcp_local->loc4_bits;
 
 		/* Are there still combinations to handle? */
 		if (remaining_bits) {
 			int i = mptcp_find_free_index(~remaining_bits);
 			/* If a route is not yet available then retry once */
-			if (mptcp_init4_subsockets(meta_sk, &mpcb->locaddr4[i],
+			if (mptcp_init4_subsockets(meta_sk, &mptcp_local->locaddr4[i],
 						   rem) == -ENETUNREACH)
 				retry = rem->retry_bitfield |=
-					(1 << mpcb->locaddr4[i].id);
+					(1 << mptcp_local->locaddr4[i].id);
 			goto next_subflow;
 		}
 	}
@@ -736,16 +659,16 @@ next_subflow:
 		u8 remaining_bits;
 
 		rem = &mpcb->remaddr6[i];
-		remaining_bits = ~(rem->bitfield) & mpcb->loc6_bits;
+		remaining_bits = ~(rem->bitfield) & mptcp_local->loc6_bits;
 
 		/* Are there still combinations to handle? */
 		if (remaining_bits) {
 			int i = mptcp_find_free_index(~remaining_bits);
 			/* If a route is not yet available then retry once */
-			if (mptcp_init6_subsockets(meta_sk, &mpcb->locaddr6[i],
+			if (mptcp_init6_subsockets(meta_sk, &mptcp_local->locaddr6[i],
 						   rem) == -ENETUNREACH)
 				retry = rem->retry_bitfield |=
-					(1 << mpcb->locaddr6[i].id);
+					(1 << mptcp_local->locaddr6[i].id);
 			goto next_subflow;
 		}
 	}
@@ -767,9 +690,7 @@ void mptcp_create_subflows(struct sock *meta_sk)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 
-	if ((mpcb->master_sk &&
-	     !tcp_sk(mpcb->master_sk)->mptcp->fully_established) ||
-	    mpcb->infinite_mapping_snd || mpcb->infinite_mapping_rcv ||
+	if (mpcb->infinite_mapping_snd || mpcb->infinite_mapping_rcv ||
 	    mpcb->send_infinite_mapping ||
 	    mpcb->server_side || sock_flag(meta_sk, SOCK_DEAD))
 		return;
@@ -782,206 +703,153 @@ void mptcp_create_subflows(struct sock *meta_sk)
 
 void mptcp_address_worker(struct work_struct *work)
 {
-	struct mptcp_cb *mpcb = container_of(work, struct mptcp_cb, address_work);
-	struct sock *meta_sk = mpcb->meta_sk, *sk, *tmpsk;
-	struct net *netns = sock_net(meta_sk);
-	struct net_device *dev;
+	struct delayed_work *delayed_work = container_of(work,
+							 struct delayed_work, work);
+	struct netns_mptcp *mptcpns = container_of(delayed_work, struct netns_mptcp,
+						   address_worker);
+	struct net *net = container_of(mptcpns, struct net, mptcp);
+	struct mptcp_address_events *event = NULL;
 	int i;
 
-	mutex_lock(&mpcb->mutex);
-	lock_sock(meta_sk);
+next_event:
+	kfree(event);
 
-	if (sock_flag(meta_sk, SOCK_DEAD))
-		goto exit;
+	/* First, let's dequeue an event from our event-list */
+	spin_lock_bh(&net->mptcp.local_lock);
 
-	/* The following is meant to run with bh disabled */
-	local_bh_disable();
-
-	/* First, we iterate over the interfaces to find addresses not yet
-	 * in our local list.
-	 */
-
-	rcu_read_lock();
-	read_lock_bh(&dev_base_lock);
-
-	for_each_netdev(netns, dev) {
-		struct in_device *in_dev = __in_dev_get_rcu(dev);
-		struct in_ifaddr *ifa;
-#if IS_ENABLED(CONFIG_IPV6)
-		struct inet6_dev *in6_dev = __in6_dev_get(dev);
-		struct inet6_ifaddr *ifa6;
-#endif
-
-		if (dev->flags & (IFF_LOOPBACK | IFF_NOMULTIPATH))
-			continue;
-
-		if (!in_dev)
-			goto cont_ipv6;
-
-		for (ifa = in_dev->ifa_list; ifa; ifa = ifa->ifa_next) {
-			unsigned long event;
-
-			if (!netif_running(in_dev->dev)) {
-				event = NETDEV_DOWN;
-			} else {
-				/* If it's up, it may have been changed or came up.
-				 * We set NETDEV_CHANGE, to take the good
-				 * code-path in mptcp_pm_addr4_event_handler
-				 */
-				event = NETDEV_CHANGE;
-			}
-
-			mptcp_pm_addr4_event_handler(ifa, event, mpcb);
-		}
-cont_ipv6:
-; /* This ; is necessary to fix build-errors when IPv6 is disabled */
-#if IS_ENABLED(CONFIG_IPV6)
-		if (!in6_dev)
-			continue;
-
-		read_lock(&in6_dev->lock);
-		list_for_each_entry(ifa6, &in6_dev->addr_list, if_list) {
-			unsigned long event;
-
-			if (!netif_running(in_dev->dev)) {
-				event = NETDEV_DOWN;
-			} else {
-				/* If it's up, it may have been changed or came up.
-				 * We set NETDEV_CHANGE, to take the good
-				 * code-path in mptcp_pm_addr4_event_handler
-				 */
-				event = NETDEV_CHANGE;
-			}
-
-			mptcp_pm_addr6_event_handler(ifa6, event, mpcb);
-		}
-		read_unlock(&in6_dev->lock);
-#endif
+	event = list_first_entry_or_null(&net->mptcp.events,
+					 struct mptcp_address_events, list);
+	if (!event) {
+		spin_unlock_bh(&net->mptcp.local_lock);
+		return;
 	}
 
-	/* Second, we iterate over our local addresses and check if they
-	 * still exist in the interface-list.
-	 */
+	list_del(&event->list);
 
-	/* MPCB-Local IPv4 Addresses */
-	mptcp_for_each_bit_set(mpcb->loc4_bits, i) {
-		int j;
+	spin_unlock_bh(&net->mptcp.local_lock);
 
-		for_each_netdev(netns, dev) {
-			struct in_device *in_dev = __in_dev_get_rcu(dev);
-			struct in_ifaddr *ifa;
+	/* Now we iterate over the MPTCP-sockets and apply the event. */
+	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
+		struct hlist_nulls_node *node;
+		struct tcp_sock *meta_tp;
 
-			if (dev->flags & (IFF_LOOPBACK | IFF_NOMULTIPATH) ||
-			    !in_dev)
+		rcu_read_lock_bh();
+		hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[i],
+					       tk_table) {
+			struct mptcp_cb *mpcb = meta_tp->mpcb;
+			struct sock *meta_sk = (struct sock *)meta_tp;
+
+			if (sock_net(meta_sk) != net)
 				continue;
 
-			for (ifa = in_dev->ifa_list; ifa; ifa = ifa->ifa_next) {
-				if (ifa->ifa_address == mpcb->locaddr4[i].addr.s_addr &&
-				    netif_running(dev))
-					goto next_loc_addr;
+			if (unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
+				continue;
+
+			bh_lock_sock(meta_sk);
+
+			if (!meta_tp->mpc || !is_meta_sk(meta_sk) ||
+			    mpcb->infinite_mapping_snd ||
+			    mpcb->infinite_mapping_rcv ||
+			    mpcb->send_infinite_mapping)
+				goto next;
+
+			if (sock_owned_by_user(meta_sk)) {
+				if (!test_and_set_bit(MPTCP_PATH_MANAGER,
+						      &meta_tp->tsq_flags))
+					sock_hold(meta_sk);
+
+				goto next;
 			}
-		}
 
-		/* We did not find the address or the interface became NOMULTIPATH.
-		 * We thus have to remove it.
-		 */
-
-		/* Look for the socket and remove him */
-		mptcp_for_each_sk_safe(mpcb, sk, tmpsk) {
-			if (sk->sk_family != AF_INET ||
-			    inet_sk(sk)->inet_saddr != mpcb->locaddr4[i].addr.s_addr)
-				continue;
-
-			mptcp_reinject_data(sk, 0);
-			mptcp_sub_force_close(sk);
-		}
-
-		/* Now, remove the address from the local ones */
-		mpcb->loc4_bits &= ~(1 << i);
-
-		mpcb->remove_addrs |= (1 << mpcb->locaddr4[i].id);
-		sk = mptcp_select_ack_sock(meta_sk, 0);
-		if (sk)
-			tcp_send_ack(sk);
-
-		mptcp_for_each_bit_set(mpcb->rem4_bits, j)
-			mpcb->remaddr4[j].bitfield &= mpcb->loc4_bits;
-
-next_loc_addr:
-		continue; /* necessary here due to the previous label */
-	}
-
+			if (event->code == MPTCP_EVENT_ADD) {
+				if (event->family == AF_INET)
+					mptcp_v4_send_add_addr(event->id, mpcb);
 #if IS_ENABLED(CONFIG_IPV6)
-	/* MPCB-Local IPv6 Addresses */
-	mptcp_for_each_bit_set(mpcb->loc6_bits, i) {
-		int j;
+				if (event->family == AF_INET6)
+					mptcp_v6_send_add_addr(event->id, mpcb);
+#endif
 
-		for_each_netdev(netns, dev) {
-			struct inet6_dev *in6_dev = __in6_dev_get(dev);
-			struct inet6_ifaddr *ifa6;
+				mptcp_create_subflows(mpcb->meta_sk);
+			}
 
-			if (dev->flags & (IFF_LOOPBACK | IFF_NOMULTIPATH) ||
-			    !in6_dev)
-				continue;
+			if (event->code == MPTCP_EVENT_DEL) {
+				struct sock *sk, *tmpsk;
+				int j, id = event->id;
+				struct mptcp_local_addresses *mptcp_local;
 
-			read_lock(&in6_dev->lock);
-			list_for_each_entry(ifa6, &in6_dev->addr_list, if_list) {
-				if (ipv6_addr_equal(&mpcb->locaddr6[i].addr, &ifa6->addr) &&
-				    netif_running(dev)) {
-					read_unlock(&in6_dev->lock);
-					goto next_loc6_addr;
+				/* Look for the socket and remove him */
+				mptcp_for_each_sk_safe(mpcb, sk, tmpsk) {
+					if (event->family == AF_INET &&
+					    (sk->sk_family == AF_INET ||
+					     mptcp_v6_is_v4_mapped(sk)) &&
+					     inet_sk(sk)->inet_saddr != event->u.addr4.s_addr)
+						continue;
+
+					if (event->family == AF_INET6 &&
+					    sk->sk_family == AF_INET6 &&
+					    !ipv6_addr_equal(&inet6_sk(sk)->saddr, &event->u.addr6))
+						continue;
+
+					id = tcp_sk(sk)->mptcp->loc_id;
+					mptcp_reinject_data(sk, 0);
+					mptcp_sub_force_close(sk);
+				}
+
+				mpcb->remove_addrs |= (1 << id);
+				sk = mptcp_select_ack_sock(meta_sk, 0);
+				if (sk)
+					tcp_send_ack(sk);
+
+				mptcp_local = rcu_dereference(net->mptcp.local);
+				if (event->family == AF_INET) {
+					mptcp_for_each_bit_set(mpcb->rem4_bits, j) {
+						mpcb->remaddr4[j].bitfield &= mptcp_local->loc4_bits;
+						mpcb->remaddr4[j].retry_bitfield &= mptcp_local->loc4_bits;
+					}
+				} else {
+					mptcp_for_each_bit_set(mpcb->rem6_bits, j) {
+						mpcb->remaddr6[j].bitfield &= mptcp_local->loc6_bits;
+						mpcb->remaddr6[j].retry_bitfield &= mptcp_local->loc6_bits;
+					}
 				}
 			}
-			read_unlock(&in6_dev->lock);
+
+			if (event->code == MPTCP_EVENT_MOD) {
+				struct sock *sk;
+
+				mptcp_for_each_sk(mpcb, sk) {
+					struct tcp_sock *tp = tcp_sk(sk);
+					if (event->family == AF_INET &&
+					    (sk->sk_family == AF_INET ||
+					     mptcp_v6_is_v4_mapped(sk)) &&
+					     inet_sk(sk)->inet_saddr == event->u.addr4.s_addr) {
+						if (event->low_prio != tp->mptcp->low_prio) {
+							tp->mptcp->send_mp_prio = 1;
+							tp->mptcp->low_prio = event->low_prio;
+
+							tcp_send_ack(sk);
+						}
+					}
+
+					if (event->family == AF_INET6 &&
+					    sk->sk_family == AF_INET6 &&
+					    !ipv6_addr_equal(&inet6_sk(sk)->saddr, &event->u.addr6)) {
+						if (event->low_prio != tp->mptcp->low_prio) {
+							tp->mptcp->send_mp_prio = 1;
+							tp->mptcp->low_prio = event->low_prio;
+
+							tcp_send_ack(sk);
+						}
+					}
+				}
+			}
+next:
+			bh_unlock_sock(meta_sk);
+			sock_put(meta_sk);
 		}
-
-		/* We did not find the address or the interface became NOMULTIPATH.
-		 * We thus have to remove it.
-		 */
-
-		/* Look for the socket and remove him */
-		mptcp_for_each_sk_safe(mpcb, sk, tmpsk) {
-			if (sk->sk_family != AF_INET6 ||
-			    !ipv6_addr_equal(&inet6_sk(sk)->saddr, &mpcb->locaddr6[i].addr))
-				continue;
-
-			mptcp_reinject_data(sk, 0);
-			mptcp_sub_force_close(sk);
-		}
-
-		/* Now, remove the address from the local ones */
-		mpcb->loc6_bits &= ~(1 << i);
-
-		/* Force sending directly the REMOVE_ADDR option */
-		mpcb->remove_addrs |= (1 << mpcb->locaddr6[i].id);
-		sk = mptcp_select_ack_sock(meta_sk, 0);
-		if (sk)
-			tcp_send_ack(sk);
-
-		mptcp_for_each_bit_set(mpcb->rem6_bits, j)
-			mpcb->remaddr6[j].bitfield &= mpcb->loc6_bits;
-
-next_loc6_addr:
-		continue; /* necessary here due to the previous label */
+		rcu_read_unlock_bh();
 	}
-#endif
-
-	read_unlock_bh(&dev_base_lock);
-	rcu_read_unlock();
-
-	local_bh_enable();
-exit:
-	release_sock(meta_sk);
-	mutex_unlock(&mpcb->mutex);
-	sock_put(meta_sk);
-}
-
-static void mptcp_address_create_worker(struct mptcp_cb *mpcb)
-{
-	if (!work_pending(&mpcb->address_work)) {
-		sock_hold(mpcb->meta_sk);
-		queue_work(mptcp_wq, &mpcb->address_work);
-	}
+	goto next_event;
 }
 
 /**
@@ -989,9 +857,6 @@ static void mptcp_address_create_worker(struct mptcp_cb *mpcb)
  */
 int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 {
-	struct tcp_sock *meta_tp;
-	int i;
-
 	if (!(event == NETDEV_UP || event == NETDEV_DOWN ||
 	      event == NETDEV_CHANGE))
 		return NOTIFY_DONE;
@@ -999,46 +864,204 @@ int mptcp_pm_addr_event_handler(unsigned long event, void *ptr, int family)
 	if (sysctl_mptcp_ndiffports > 1)
 		return NOTIFY_DONE;
 
-	/* Now we iterate over the mpcb's */
-	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
-		struct hlist_nulls_node *node;
-		rcu_read_lock_bh();
-		hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[i],
-					       tk_table) {
-			struct mptcp_cb *mpcb = meta_tp->mpcb;
-			struct sock *meta_sk = (struct sock *)meta_tp;
+	if (family == AF_INET) {
+		struct in_ifaddr *ifa = (struct in_ifaddr *)ptr;
+		struct net *net = dev_net(ifa->ifa_dev->dev);
 
-			if (unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
-				continue;
-
-			if (!meta_tp->mpc || !is_meta_sk(meta_sk) ||
-			    mpcb->infinite_mapping_snd ||
-			    mpcb->infinite_mapping_rcv ||
-			    mpcb->send_infinite_mapping) {
-				sock_put(meta_sk);
-				continue;
-			}
-
-			bh_lock_sock(meta_sk);
-			if (sock_owned_by_user(meta_sk)) {
-				mptcp_address_create_worker(mpcb);
-			} else {
-				if (family == AF_INET)
-					mptcp_pm_addr4_event_handler(
-							(struct in_ifaddr *)ptr, event, mpcb);
+		mptcp_pm_addr4_event_handler(ifa, event, net);
+	} else {
 #if IS_ENABLED(CONFIG_IPV6)
-				else
-					mptcp_pm_addr6_event_handler(
-							(struct inet6_ifaddr *)ptr, event, mpcb);
-#endif
-			}
+		struct inet6_ifaddr *ifa = (struct inet6_ifaddr *)ptr;
+		struct net *net = dev_net(ifa->idev->dev);
 
-			bh_unlock_sock(meta_sk);
-			sock_put(meta_sk);
-		}
-		rcu_read_unlock_bh();
+		mptcp_pm_addr6_event_handler(ifa, event, net);
+#endif
 	}
+
 	return NOTIFY_DONE;
+}
+
+/* Called upon release_sock, if the socket was owned by the user during
+ * a path-management event.
+ */
+void mptcp_path_manager(struct sock *meta_sk)
+{
+	struct mptcp_local_addresses *mptcp_local;
+	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+	struct sock *sk, *tmpsk;
+	int i;
+
+	rcu_read_lock();
+	mptcp_local = rcu_dereference(sock_net(meta_sk)->mptcp.local);
+
+	/* First, detect modifications or additions */
+	mptcp_for_each_bit_set(mptcp_local->loc4_bits, i) {
+		struct in_addr ifa = mptcp_local->locaddr4[i].addr;
+		bool found = false;
+
+		mptcp_for_each_sk(mpcb, sk) {
+			struct tcp_sock *tp = tcp_sk(sk);
+
+			if (sk->sk_family == AF_INET6 &&
+			    !mptcp_v6_is_v4_mapped(sk))
+				continue;
+
+			if (inet_sk(sk)->inet_saddr != ifa.s_addr)
+				continue;
+
+			found = true;
+
+			if (mptcp_local->locaddr4[i].low_prio != tp->mptcp->low_prio) {
+				tp->mptcp->send_mp_prio = 1;
+				tp->mptcp->low_prio = mptcp_local->locaddr4[i].low_prio;
+
+				tcp_send_ack(sk);
+			}
+		}
+
+		if (!found) {
+			mptcp_v4_send_add_addr(i, mpcb);
+			mptcp_create_subflows(meta_sk);
+		}
+	}
+
+#if IS_ENABLED(CONFIG_IPV6)
+	mptcp_for_each_bit_set(mptcp_local->loc6_bits, i) {
+		struct in6_addr ifa = mptcp_local->locaddr6[i].addr;
+		bool found = false;
+
+		mptcp_for_each_sk(mpcb, sk) {
+			struct tcp_sock *tp = tcp_sk(sk);
+
+			if (sk->sk_family == AF_INET ||
+			    mptcp_v6_is_v4_mapped(sk))
+				continue;
+
+			if (!ipv6_addr_equal(&inet6_sk(sk)->saddr, &ifa))
+				continue;
+
+			found = true;
+
+			if (mptcp_local->locaddr6[i].low_prio != tp->mptcp->low_prio) {
+				tp->mptcp->send_mp_prio = 1;
+				tp->mptcp->low_prio = mptcp_local->locaddr6[i].low_prio;
+
+				tcp_send_ack(sk);
+			}
+		}
+
+		if (!found) {
+			mptcp_v6_send_add_addr(i, mpcb);
+			mptcp_create_subflows(meta_sk);
+		}
+	}
+#endif
+
+	/* Now, detect address-removals */
+	mptcp_for_each_sk_safe(mpcb, sk, tmpsk) {
+		bool shall_remove = true;
+
+		if (sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(sk)) {
+			mptcp_for_each_bit_set(mptcp_local->loc4_bits, i) {
+				if (inet_sk(sk)->inet_saddr == mptcp_local->locaddr4[i].addr.s_addr) {
+					shall_remove = false;
+					break;
+				}
+			}
+		} else {
+			mptcp_for_each_bit_set(mptcp_local->loc6_bits, i) {
+				if (ipv6_addr_equal(&inet6_sk(sk)->saddr, &mptcp_local->locaddr6[i].addr)) {
+					shall_remove = false;
+					break;
+				}
+			}
+		}
+
+		if (shall_remove) {
+			int j;
+
+			mptcp_reinject_data(sk, 0);
+			mptcp_sub_force_close(sk);
+
+			mpcb->remove_addrs |= (1 << tcp_sk(sk)->mptcp->loc_id);
+			sk = mptcp_select_ack_sock(meta_sk, 0);
+			if (sk)
+				tcp_send_ack(sk);
+
+			if (sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(sk)) {
+				mptcp_for_each_bit_set(mpcb->rem4_bits, j) {
+					mpcb->remaddr4[j].bitfield &= mptcp_local->loc4_bits;
+					mpcb->remaddr4[j].retry_bitfield &= mptcp_local->loc4_bits;
+				}
+			} else {
+				mptcp_for_each_bit_set(mpcb->rem6_bits, j) {
+					mpcb->remaddr6[j].bitfield &= mptcp_local->loc6_bits;
+					mpcb->remaddr6[j].retry_bitfield &= mptcp_local->loc6_bits;
+				}
+			}
+		}
+	}
+	rcu_read_unlock();
+}
+
+static struct mptcp_address_events *mptcp_lookup_similar_event(struct net *net,
+							       struct mptcp_address_events *event)
+{
+	struct mptcp_address_events *eventq;
+
+	list_for_each_entry(eventq, &net->mptcp.events, list) {
+		if (eventq->family != event->family)
+			continue;
+		if (eventq->id != event->id)
+			continue;
+		if (event->family == AF_INET) {
+			if (eventq->u.addr4.s_addr == event->u.addr4.s_addr)
+				return eventq;
+		} else {
+			if (ipv6_addr_equal(&eventq->u.addr6, &event->u.addr6))
+				return eventq;
+		}
+	}
+	return NULL;
+}
+
+/* We already hold the net-namespace MPTCP-lock */
+void mptcp_add_pm_event(struct net *net, struct mptcp_address_events *event)
+{
+	struct mptcp_address_events *eventq = mptcp_lookup_similar_event(net, event);
+
+	if (eventq) {
+		/* Add -> Remove. So, no event at all */
+		switch (event->code) {
+		case MPTCP_EVENT_DEL:
+			if (eventq->code == MPTCP_EVENT_ADD) {
+				list_del(&eventq->list);
+				kfree(eventq);
+			}
+			break;
+		case MPTCP_EVENT_ADD:
+			eventq->low_prio = event->low_prio;
+			eventq->code = MPTCP_EVENT_ADD;
+			break;
+		case MPTCP_EVENT_MOD:
+			eventq->low_prio = event->low_prio;
+			break;
+		}
+
+		return;
+	}
+
+	/* OK, we have to add the new address to the wait queue */
+	eventq = kmemdup(event, sizeof(struct mptcp_address_events), GFP_ATOMIC);
+	if (!eventq)
+		return;
+
+	list_add_tail(&eventq->list, &net->mptcp.events);
+
+	/* Create work-queue */
+	if (!delayed_work_pending(&net->mptcp.address_worker))
+		queue_delayed_work(mptcp_wq, &net->mptcp.address_worker,
+				   msecs_to_jiffies(500));
 }
 
 #ifdef CONFIG_PROC_FS
@@ -1118,22 +1141,40 @@ static const struct file_operations mptcp_pm_seq_fops = {
 	.release = single_release_net,
 };
 
-static int mptcp_pm_proc_init_net(struct net *net)
+static int mptcp_pm_init_net(struct net *net)
 {
+	struct mptcp_local_addresses *mptcp_local;
+
 	if (!proc_create("mptcp", S_IRUGO, net->proc_net, &mptcp_pm_seq_fops))
 		return -ENOMEM;
 
+	mptcp_local = kzalloc(sizeof(*mptcp_local), GFP_KERNEL);
+	if (!mptcp_local)
+		goto kzalloc_err;
+
+	mptcp_local->next_v4_index = 1;
+
+	rcu_assign_pointer(net->mptcp.local, mptcp_local);
+	INIT_DELAYED_WORK(&net->mptcp.address_worker, mptcp_address_worker);
+	INIT_LIST_HEAD(&net->mptcp.events);
+	spin_lock_init(&net->mptcp.local_lock);
+
 	return 0;
+
+kzalloc_err:
+	remove_proc_entry("mptcp", net->proc_net);
+
+	return 1;
 }
 
-static void mptcp_pm_proc_exit_net(struct net *net)
+static void mptcp_pm_exit_net(struct net *net)
 {
 	remove_proc_entry("mptcp", net->proc_net);
 }
 
 static struct pernet_operations mptcp_pm_proc_ops = {
-	.init = mptcp_pm_proc_init_net,
-	.exit = mptcp_pm_proc_exit_net,
+	.init = mptcp_pm_init_net,
+	.exit = mptcp_pm_exit_net,
 };
 #endif
 

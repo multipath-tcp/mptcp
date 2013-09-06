@@ -83,7 +83,9 @@ struct tcp_out_options {
 	struct tcp_fastopen_cookie *fastopen_cookie;	/* Fast open cookie */
 #ifdef CONFIG_MPTCP
 	u16	mptcp_options;	/* bit field of MPTCP related OPTION_* */
-	u8	dss_csum:1;	/* dss-checksum required? */
+	u8	dss_csum:1,
+		add_addr_v4:1,
+		add_addr_v6:1;	/* dss-checksum required? */
 
 	__u32	data_seq;	/* data sequence number, for MPTCP */
 	__u32	data_ack;	/* data ack, for MPTCP */
@@ -100,13 +102,20 @@ struct tcp_out_options {
 					/* random number of the sender */
 			__u32	token;	/* token for mptcp */
 		} mp_join_syns;
+
+		struct {
+			struct in_addr addr;
+			u8 addr_id;
+		} add_addr4;
+
+		struct {
+			struct in6_addr addr;
+			u8 addr_id;
+		} add_addr6;
 	};
 
-	struct mptcp_loc4 *addr4;/* v4 addresses for MPTCP */
-	struct mptcp_loc6 *addr6;/* v6 addresses for MPTCP */
-
 	u16	remove_addrs;	/* list of address id */
-	u8	addr_id;	/* address id */
+	u8	addr_id;	/* address id (mp_join or add_address) */
 #endif /* CONFIG_MPTCP */
 };
 
@@ -402,6 +411,7 @@ enum tsq_flags {
 	TCP_MTU_REDUCED_DEFERRED,  /* tcp_v{4|6}_err() could not call
 				    * tcp_v{4|6}_mtu_reduced()
 				    */
+	MPTCP_PATH_MANAGER, /* MPTCP deferred creation of new subflows */
 	MPTCP_SUB_DEFERRED, /* A subflow got deferred - process them */
 };
 

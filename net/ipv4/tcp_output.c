@@ -763,7 +763,8 @@ static void tcp_tasklet_func(unsigned long data)
 #define TCP_DEFERRED_ALL ((1UL << TCP_TSQ_DEFERRED) |		\
 			  (1UL << TCP_WRITE_TIMER_DEFERRED) |	\
 			  (1UL << TCP_DELACK_TIMER_DEFERRED) |	\
-			  (1UL << TCP_MTU_REDUCED_DEFERRED) |	\
+			  (1UL << TCP_MTU_REDUCED_DEFERRED) |   \
+			  (1UL << MPTCP_PATH_MANAGER) |		\
 			  (1UL << MPTCP_SUB_DEFERRED))
 
 /**
@@ -799,6 +800,10 @@ void tcp_release_cb(struct sock *sk)
 	}
 	if (flags & (1UL << TCP_MTU_REDUCED_DEFERRED)) {
 		sk->sk_prot->mtu_reduced(sk);
+		__sock_put(sk);
+	}
+	if (flags & (1UL << MPTCP_PATH_MANAGER)) {
+		mptcp_path_manager(sk);
 		__sock_put(sk);
 	}
 	if (flags & (1UL << MPTCP_SUB_DEFERRED))
