@@ -33,7 +33,9 @@
 #include <net/ip6_checksum.h>
 #include <net/mptcp.h>
 #include <net/mptcp_v4.h>
+#if IS_ENABLED(CONFIG_IPV6)
 #include <net/mptcp_v6.h>
+#endif
 #include <net/sock.h>
 #include <net/tcp.h>
 #include <net/tcp_states.h>
@@ -826,7 +828,6 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	/* Initialize workqueue-struct */
 	INIT_WORK(&mpcb->subflow_work, mptcp_create_subflow_worker);
 	INIT_DELAYED_WORK(&mpcb->subflow_retry_work, mptcp_retry_subflow_worker);
-	INIT_WORK(&mpcb->address_work, mptcp_address_worker);
 
 	/* Init the accept_queue structure, we support a queue of 32 pending
 	 * connections, it does not need to be huge, since we only store  here
@@ -929,7 +930,7 @@ void mptcp_fallback_meta_sk(struct sock *meta_sk)
 	kmem_cache_free(mptcp_cb_cache, tcp_sk(meta_sk)->mpcb);
 }
 
-int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 rem_id,
+int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 		   gfp_t flags)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
@@ -950,6 +951,7 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 rem_id,
 	tp->mpcb = mpcb;
 	tp->meta_sk = meta_sk;
 	tp->mpc = 1;
+	tp->mptcp->loc_id = loc_id;
 	tp->mptcp->rem_id = rem_id;
 	tp->mptcp->last_rbuf_opti = tcp_time_stamp;
 
@@ -1053,50 +1055,47 @@ void mptcp_del_sock(struct sock *sk)
 void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+	struct mptcp_local_addresses *mptcp_local;
+	int i;
+	u8 id;
 
-	switch (sk->sk_family) {
-#if IS_ENABLED(CONFIG_IPV6)
-	case AF_INET6:
-		/* If the socket is v4 mapped, we continue with v4 operations */
-		if (!mptcp_v6_is_v4_mapped(sk)) {
-			mpcb->locaddr6[0].addr = inet6_sk(sk)->saddr;
-			mpcb->locaddr6[0].id = 0;
-			mpcb->locaddr6[0].low_prio = 0;
-			mpcb->loc6_bits |= 1;
-			mpcb->next_v6_index = 1;
+	/* Handle the backup-flows */
+	rcu_read_lock();
+	mptcp_local = rcu_dereference(sock_net(meta_sk)->mptcp.local);
 
-			mptcp_v6_add_raddress(mpcb,
-					      &inet6_sk(sk)->daddr, 0, 0);
-			mptcp_v6_set_init_addr_bit(mpcb, &inet6_sk(sk)->daddr);
-			break;
+	if (sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(sk)) {
+		mptcp_for_each_bit_set(mptcp_local->loc4_bits, i) {
+			if (inet_sk(sk)->inet_saddr == mptcp_local->locaddr4[i].addr.s_addr) {
+				tcp_sk(sk)->mptcp->low_prio = mptcp_local->locaddr4[i].low_prio;
+				break;
+			}
 		}
-#endif
-	case AF_INET:
-		mpcb->locaddr4[0].addr.s_addr = inet_sk(sk)->inet_saddr;
-		mpcb->locaddr4[0].id = 0;
-		mpcb->locaddr4[0].low_prio = 0;
-		mpcb->loc4_bits |= 1;
-		mpcb->next_v4_index = 1;
+		id = mptcp_local->locaddr4[i].id;
+	} else {
+		mptcp_for_each_bit_set(mptcp_local->loc6_bits, i) {
+			if (ipv6_addr_equal(&inet6_sk(sk)->saddr, &mptcp_local->locaddr6[i].addr)) {
+				tcp_sk(sk)->mptcp->low_prio = mptcp_local->locaddr6[i].low_prio;
+				break;
+			}
+		}
+		id = mptcp_local->locaddr6[i].id;
+	}
+	rcu_read_unlock();
 
+	if (sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(sk)) {
 		mptcp_v4_add_raddress(mpcb,
 				      (struct in_addr *)&inet_sk(sk)->inet_daddr,
 				      0, 0);
-		mptcp_v4_set_init_addr_bit(mpcb, inet_sk(sk)->inet_daddr);
-		break;
-	}
-
-	mptcp_set_addresses(meta_sk);
-
-	switch (sk->sk_family) {
-	case AF_INET:
-		tcp_sk(sk)->mptcp->low_prio = mpcb->locaddr4[0].low_prio;
-		break;
+		mptcp_v4_set_init_addr_bit(mpcb, inet_sk(sk)->inet_daddr, id);
+	} else {
 #if IS_ENABLED(CONFIG_IPV6)
-	case AF_INET6:
-		tcp_sk(sk)->mptcp->low_prio = mpcb->locaddr6[0].low_prio;
-		break;
+		mptcp_v6_add_raddress(mpcb, &inet6_sk(sk)->daddr, 0, 0);
+		mptcp_v6_set_init_addr_bit(mpcb, &inet6_sk(sk)->daddr, id);
 #endif
 	}
+
+	mptcp_announce_addresses(meta_sk);
+
 
 	tcp_sk(sk)->mptcp->send_mp_prio = tcp_sk(sk)->mptcp->low_prio;
 }
@@ -1584,7 +1583,7 @@ int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key, u32 window)
 	master_sk = tcp_sk(meta_sk)->mpcb->master_sk;
 	master_tp = tcp_sk(master_sk);
 
-	if (mptcp_add_sock(meta_sk, master_sk, 0, GFP_ATOMIC))
+	if (mptcp_add_sock(meta_sk, master_sk, 0, 0, GFP_ATOMIC))
 		goto err_add_sock;
 
 	if (__inet_inherit_port(meta_sk, master_sk) < 0)
@@ -1693,7 +1692,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	sk_set_socket(child, meta_sk->sk_socket);
 	child->sk_wq = meta_sk->sk_wq;
 
-	if (mptcp_add_sock(meta_sk, child, mtreq->rem_id, GFP_ATOMIC)) {
+	if (mptcp_add_sock(meta_sk, child, mtreq->loc_id, mtreq->rem_id, GFP_ATOMIC)) {
 		child_tp->mpc = 0; /* Has been inherited, but now
 				    * child_tp->mptcp is NULL
 				    */

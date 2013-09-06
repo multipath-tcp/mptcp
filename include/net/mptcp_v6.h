@@ -57,13 +57,13 @@ int mptcp_v6_rem_raddress(struct mptcp_cb *mpcb, u8 id);
 int mptcp_v6_add_raddress(struct mptcp_cb *mpcb, const struct in6_addr *addr,
 			  __be16 port, u8 id);
 void mptcp_v6_set_init_addr_bit(struct mptcp_cb *mpcb,
-				const struct in6_addr *daddr);
+				const struct in6_addr *daddr, u8 id);
 struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *raddr,
 				 const struct in6_addr *laddr, const struct net *net);
 int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 			   struct mptcp_rem6 *rem);
 void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
-				  struct mptcp_cb *mpcb);
+				  struct net *net);
 int mptcp_pm_v6_init(void);
 void mptcp_pm_v6_undo(void);
 void mptcp_v6_send_add_addr(int loc_id, struct mptcp_cb *mpcb);

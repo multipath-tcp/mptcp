@@ -1370,7 +1370,7 @@ void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 		opts->mptcp_options |= OPTION_MP_JOIN | OPTION_TYPE_SYN;
 		*remaining -= MPTCP_SUB_LEN_JOIN_SYN_ALIGN;
 		opts->mp_join_syns.token = mpcb->mptcp_rem_token;
-		opts->addr_id = mptcp_get_loc_addrid(mpcb, sk);
+		opts->addr_id = tp->mptcp->loc_id;
 
 		if (!tp->mptcp->nonce_set)
 			mptcp_set_nonce(sk);
@@ -1389,37 +1389,15 @@ void mptcp_synack_options(struct request_sock *req,
 	/* MPCB not yet set - thus it's a new MPTCP-session */
 	if (!mtreq->mpcb) {
 		opts->mptcp_options |= OPTION_MP_CAPABLE | OPTION_TYPE_SYNACK;
-		*remaining -= MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN;
 		opts->mp_capable.sender_key = mtreq->mptcp_loc_key;
 		opts->dss_csum = !!sysctl_mptcp_checksum || mtreq->dss_csum;
+		*remaining -= MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN;
 	} else {
-		struct inet_request_sock *ireq = inet_rsk(req);
-		int i;
-
 		opts->mptcp_options |= OPTION_MP_JOIN | OPTION_TYPE_SYNACK;
 		opts->mp_join_syns.sender_truncated_mac =
 				mtreq->mptcp_hash_tmac;
 		opts->mp_join_syns.sender_nonce = mtreq->mptcp_loc_nonce;
-		opts->addr_id = 0;
-
-		/* Finding Address ID */
-		if (req->rsk_ops->family == AF_INET)
-			mptcp_for_each_bit_set(mtreq->mpcb->loc4_bits, i) {
-				struct mptcp_loc4 *addr =
-						&mtreq->mpcb->locaddr4[i];
-				if (addr->addr.s_addr == ireq->loc_addr)
-					opts->addr_id = addr->id;
-			}
-#if IS_ENABLED(CONFIG_IPV6)
-		else /* IPv6 */
-			mptcp_for_each_bit_set(mtreq->mpcb->loc6_bits, i) {
-				struct mptcp_loc6 *addr =
-						&mtreq->mpcb->locaddr6[i];
-				if (ipv6_addr_equal(&addr->addr,
-						    &inet6_rsk(req)->loc_addr))
-					opts->addr_id = addr->id;
-			}
-#endif /* CONFIG_IPV6 */
+		opts->addr_id = mtreq->loc_id;
 		*remaining -= MPTCP_SUB_LEN_JOIN_SYNACK_ALIGN;
 	}
 }
@@ -1520,19 +1498,51 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 
 	if (unlikely(tp->mptcp->add_addr4) &&
 	    MAX_TCP_OPTION_SPACE - *size >= MPTCP_SUB_LEN_ADD_ADDR4_ALIGN) {
-		int ind = mptcp_find_free_index(~(tp->mptcp->add_addr4));
+		struct mptcp_local_addresses *mptcp_local;
+		int ind;
+
+		rcu_read_lock_bh();
+		mptcp_local = rcu_dereference(sock_net(sk)->mptcp.local);
+		/* The list of local addresses may have changed */
+		tp->mptcp->add_addr4 &= mptcp_local->loc4_bits;
+		ind = mptcp_find_free_index(~(tp->mptcp->add_addr4));
+
+		if (ind == -1)
+			goto end_addr;
+
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_ADD_ADDR;
-		opts->addr4 = &mpcb->locaddr4[ind];
+		opts->add_addr4.addr_id = mptcp_local->locaddr4[ind].id;
+		opts->add_addr4.addr = mptcp_local->locaddr4[ind].addr;
+		opts->add_addr_v4 = 1;
+
+		rcu_read_unlock_bh();
+
 		if (skb)
 			tp->mptcp->add_addr4 &= ~(1 << ind);
 		*size += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN;
 	} else if (unlikely(tp->mptcp->add_addr6) &&
 		   MAX_TCP_OPTION_SPACE - *size >= MPTCP_SUB_LEN_ADD_ADDR6_ALIGN) {
-		int ind = mptcp_find_free_index(~(tp->mptcp->add_addr6));
+		struct mptcp_local_addresses *mptcp_local;
+		int ind;
+
+		rcu_read_lock_bh();
+		mptcp_local = rcu_dereference(sock_net(sk)->mptcp.local);
+		/* The list of local addresses may have changed */
+		tp->mptcp->add_addr6 &= mptcp_local->loc6_bits;
+		ind = mptcp_find_free_index(~(tp->mptcp->add_addr6));
+
+		if (ind == -1)
+			goto end_addr;
+
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_ADD_ADDR;
-		opts->addr6 = &mpcb->locaddr6[ind];
+		opts->add_addr6.addr_id = mptcp_local->locaddr6[ind].id;
+		opts->add_addr6.addr = mptcp_local->locaddr6[ind].addr;
+		opts->add_addr_v6 = 1;
+
+		rcu_read_unlock_bh();
+
 		if (skb)
 			tp->mptcp->add_addr6 &= ~(1 << ind);
 		*size += MPTCP_SUB_LEN_ADD_ADDR6_ALIGN;
@@ -1553,12 +1563,11 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		    (unlikely(tp->mptcp->add_addr4) &&
 		     MAX_TCP_OPTION_SPACE - *size >=
 		     MPTCP_SUB_LEN_ADD_ADDR4_ALIGN))) {
-		mptcp_debug("no space for add addr. unsent IPv4: %#x,IPv6: %#x\n",
-			    tp->mptcp->add_addr4, tp->mptcp->add_addr6);
 		tp->mptcp_add_addr_ack = 1;
 		tcp_send_ack(sk);
 		tp->mptcp_add_addr_ack = 0;
 	}
+end_addr:
 
 	if (unlikely(tp->mptcp->send_mp_prio) &&
 	    MAX_TCP_OPTION_SPACE - *size >= MPTCP_SUB_LEN_PRIO_ALIGN) {
@@ -1632,23 +1641,21 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		struct mp_add_addr *mpadd = (struct mp_add_addr *)ptr;
 
 		mpadd->kind = TCPOPT_MPTCP;
-		if (opts->addr4) {
+		if (opts->add_addr_v4) {
 			mpadd->len = MPTCP_SUB_LEN_ADD_ADDR4;
 			mpadd->sub = MPTCP_SUB_ADD_ADDR;
 			mpadd->ipver = 4;
-			mpadd->addr_id = opts->addr4->id;
-			mpadd->u.v4.addr = opts->addr4->addr;
+			mpadd->addr_id = opts->add_addr4.addr_id;
+			mpadd->u.v4.addr = opts->add_addr4.addr;
 			ptr += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN >> 2;
-		} else if (opts->addr6) {
+		} else if (opts->add_addr_v6) {
 			mpadd->len = MPTCP_SUB_LEN_ADD_ADDR6;
 			mpadd->sub = MPTCP_SUB_ADD_ADDR;
 			mpadd->ipver = 6;
-			mpadd->addr_id = opts->addr6->id;
-			memcpy(&mpadd->u.v6.addr, &opts->addr6->addr,
+			mpadd->addr_id = opts->add_addr6.addr_id;
+			memcpy(&mpadd->u.v6.addr, &opts->add_addr6.addr,
 			       sizeof(mpadd->u.v6.addr));
 			ptr += MPTCP_SUB_LEN_ADD_ADDR6_ALIGN >> 2;
-		} else {
-			BUG();
 		}
 	}
 	if (unlikely(OPTION_REMOVE_ADDR & opts->mptcp_options)) {

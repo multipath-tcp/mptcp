@@ -71,7 +71,8 @@ struct mptcp_request_sock {
 	u64				mptcp_rem_key;
 	u64				mptcp_hash_tmac;
 	u32				mptcp_loc_nonce;
-	__u8				rem_id; /* Address-id in the MP_JOIN */
+	u8				loc_id;
+	u8				rem_id; /* Address-id in the MP_JOIN */
 	u8				dss_csum:1,
 					low_prio:1;
 };
@@ -150,8 +151,9 @@ struct mptcp_tcp_sock {
 	u32	rcv_isn;
 	u32	last_data_seq;
 	u8	path_index;
-	u8	add_addr4; /* bit-field of addrs not yet sent to our peer */
-	u8	add_addr6;
+	unsigned long add_addr4; /* bit-field of addrs not yet sent to our peer */
+	unsigned long add_addr6;
+	u8	loc_id;
 	u8	rem_id;
 
 	u32	last_rbuf_opti;	/* Timestamp of last rbuf optimization */
@@ -230,8 +232,6 @@ struct mptcp_cb {
 	/* Worker struct for subflow establishment */
 	struct work_struct subflow_work;
 	struct delayed_work subflow_retry_work;
-	/* Worker to handle interface/address changes if socket is owned */
-	struct work_struct address_work;
 	/* Mutex needed, because otherwise mptcp_close will complain that the
 	 * socket is owned by the user.
 	 * E.g., mptcp_sub_close_wq is taking the meta-lock.
@@ -256,11 +256,6 @@ struct mptcp_cb {
 	struct sock *(*syn_recv_sock)(struct sock *sk, struct sk_buff *skb,
 				      struct request_sock *req,
 				      struct dst_entry *dst);
-
-	/* Local addresses */
-	struct mptcp_loc4 locaddr4[MPTCP_MAX_ADDR];
-	u8 loc4_bits; /* Bitfield indicating which of the above addrs are set */
-	u8 next_v4_index;
 
 	struct mptcp_loc6 locaddr6[MPTCP_MAX_ADDR];
 	u8 loc6_bits;
@@ -638,7 +633,8 @@ void mptcp_ofo_queue(struct sock *meta_sk);
 void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp);
 void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied);
 int mptcp_alloc_mpcb(struct sock *master_sk, __u64 remote_key, u32 window);
-int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 rem_id, gfp_t flags);
+int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
+		   gfp_t flags);
 void mptcp_del_sock(struct sock *sk);
 void mptcp_update_metasocket(struct sock *sock, struct sock *meta_sk);
 void mptcp_reinject_data(struct sock *orig_sk, int clone_it);
