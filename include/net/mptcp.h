@@ -1046,6 +1046,12 @@ static inline void mptcp_set_rto(struct sock *sk)
 	struct inet_connection_sock *micsk = inet_csk(mptcp_meta_sk(sk));
 	__u32 max_rto = 0;
 
+	/* We are in recovery-phase on the MPTCP-level. Do not update the
+	 * RTO, because this would kill exponential backoff.
+	 */
+	if (micsk->icsk_retransmits)
+		return;
+
 	mptcp_for_each_sk(tp->mpcb, sk_it) {
 		if (mptcp_sk_can_send(sk_it) &&
 		    inet_csk(sk_it)->icsk_rto > max_rto)
