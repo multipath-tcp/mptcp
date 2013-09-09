@@ -601,7 +601,14 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		 *
 		 * Reset timer after retransmitting SYNACK, similar to
 		 * the idea of fast retransmit in recovery.
+		 *
+		 * Fall back to TCP if MP_CAPABLE is not set.
 		 */
+
+		if (tcp_rsk(req)->saw_mpc && !mopt.saw_mpc)
+			tcp_rsk(req)->saw_mpc = false;
+
+
 		if (!inet_rtx_syn_ack(sk, req))
 			req->expires = min(TCP_TIMEOUT_INIT << req->num_timeout,
 					   TCP_RTO_MAX) + jiffies;
