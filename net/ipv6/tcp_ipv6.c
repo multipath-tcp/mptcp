@@ -85,7 +85,7 @@ static struct tcp_md5sig_key *tcp_v6_md5_do_lookup(struct sock *sk,
 }
 #endif
 
-static void inet6_sk_rx_dst_set(struct sock *sk, const struct sk_buff *skb)
+void inet6_sk_rx_dst_set(struct sock *sk, const struct sk_buff *skb)
 {
 	struct dst_entry *dst = skb_dst(skb);
 	const struct rt6_info *rt = (const struct rt6_info *)dst;

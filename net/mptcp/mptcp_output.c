@@ -2111,7 +2111,6 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 		}
 
 		mptcp_retransmit_skb(meta_sk, tcp_write_queue_head(meta_sk));
-		__sk_dst_reset(meta_sk);
 		goto out_reset_timer;
 	}
 

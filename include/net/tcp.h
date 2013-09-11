@@ -443,6 +443,7 @@ extern void tcp_v6_send_reset(struct sock *sk, struct sk_buff *skb);
 extern int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
 extern int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len);
 extern void tcp_v6_destroy_sock(struct sock *sk);
+void inet6_sk_rx_dst_set(struct sock *sk, const struct sk_buff *skb);
 extern void tcp_v6_hash(struct sock *sk);
 extern struct sock *tcp_v6_hnd_req(struct sock *sk,struct sk_buff *skb);
 extern struct sock *tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,

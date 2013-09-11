@@ -160,8 +160,7 @@ static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req
 	dst = ip6_dst_lookup_flow(meta_sk, &fl6, NULL, false);
 	if (IS_ERR(dst)) {
 		err = PTR_ERR(dst);
-		dst = NULL;
-		goto done;
+		return err;
 	}
 	skb = tcp_make_synack(meta_sk, dst, req, NULL);
 	err = -ENOMEM;
@@ -174,8 +173,6 @@ static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req
 		err = net_xmit_eval(err);
 	}
 
-done:
-	dst_release(dst);
 	return err;
 }
 
@@ -234,6 +231,7 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 	newsk->sk_gso_type = SKB_GSO_TCPV6;
 	/* We cannot call __ip6_dst_store, because we don't have the np-pointer */
 	sk_setup_caps(newsk, dst);
+	inet6_sk_rx_dst_set(newsk, skb);
 
 	newtcp6sk = (struct tcp6_sock *)newsk;
 	inet_sk(newsk)->pinet6 = &newtcp6sk->inet6;
@@ -259,8 +257,9 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 	/* Clone pktoptions received with SYN */
 	newnp->pktoptions = NULL;
 	if (treq->pktopts != NULL) {
-		newnp->pktoptions = skb_clone(treq->pktopts, GFP_ATOMIC);
-		kfree_skb(treq->pktopts);
+		newnp->pktoptions = skb_clone(treq->pktopts,
+					      sk_gfp_atomic(meta_sk, GFP_ATOMIC));
+		consume_skb(treq->pktopts);
 		treq->pktopts = NULL;
 		if (newnp->pktoptions)
 			skb_set_owner_r(newnp->pktoptions, newsk);
@@ -268,6 +267,7 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 	newnp->opt	  = NULL;
 	newnp->mcast_oif  = inet6_iif(skb);
 	newnp->mcast_hops = ipv6_hdr(skb)->hop_limit;
+	newnp->rcv_tclass = ipv6_get_dsfield(ipv6_hdr(skb));
 
 	/* Initialization copied from inet6_create - normally this should have
 	 * been handled by the memcpy as in tcp_v6_syn_recv_sock
@@ -282,10 +282,12 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 	tcp_mtup_init(newsk);
 	tcp_sync_mss(newsk, dst_mtu(dst));
 	newtp->advmss = dst_metric_advmss(dst);
+	if (tcp_sk(meta_sk)->rx_opt.user_mss &&
+	    tcp_sk(meta_sk)->rx_opt.user_mss < newtp->advmss)
+		newtp->advmss = tcp_sk(meta_sk)->rx_opt.user_mss;
+
 	tcp_initialize_rcv_mss(newsk);
-	if (tcp_rsk(req)->snt_synack)
-		tcp_valid_rtt_meas(newsk,
-				   tcp_time_stamp - tcp_rsk(req)->snt_synack);
+	tcp_synack_rtt_meas(newsk, req);
 	newtp->total_retrans = req->num_retrans;
 
 	newinet->inet_daddr = LOOPBACK4_IPV6;
