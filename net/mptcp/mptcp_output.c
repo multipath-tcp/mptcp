@@ -1477,20 +1477,24 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 
 	if (unlikely(tp->mptcp->include_mpc)) {
 		opts->options |= OPTION_MPTCP;
-		if (is_master_tp(tp)) {
-			opts->mptcp_options |= OPTION_MP_CAPABLE |
-					       OPTION_TYPE_ACK;
-			*size += MPTCP_SUB_LEN_CAPABLE_ACK_ALIGN;
-			opts->mp_capable.sender_key = mpcb->mptcp_loc_key;
-			opts->mp_capable.receiver_key = mpcb->mptcp_rem_key;
-			opts->dss_csum = mpcb->dss_csum;
-		} else {
-			opts->mptcp_options |= OPTION_MP_JOIN | OPTION_TYPE_ACK;
-			*size += MPTCP_SUB_LEN_JOIN_ACK_ALIGN;
-		}
+		opts->mptcp_options |= OPTION_MP_CAPABLE |
+				       OPTION_TYPE_ACK;
+		*size += MPTCP_SUB_LEN_CAPABLE_ACK_ALIGN;
+		opts->mp_capable.sender_key = mpcb->mptcp_loc_key;
+		opts->mp_capable.receiver_key = mpcb->mptcp_rem_key;
+		opts->dss_csum = mpcb->dss_csum;
+
+		if (skb)
+			tp->mptcp->include_mpc = 0;
+	}
+	if (unlikely(tp->mptcp->pre_established)) {
+		opts->options |= OPTION_MPTCP;
+		opts->mptcp_options |= OPTION_MP_JOIN | OPTION_TYPE_ACK;
+		*size += MPTCP_SUB_LEN_JOIN_ACK_ALIGN;
 	}
 
-	if (!tp->mptcp_add_addr_ack && !tp->mptcp->include_mpc) {
+	if (!tp->mptcp_add_addr_ack && !tp->mptcp->include_mpc &&
+	    !tp->mptcp->pre_established) {
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_DATA_ACK;
 		/* If !skb, we come from tcp_current_mss and thus we always
@@ -1564,8 +1568,6 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		*size += MPTCP_SUB_LEN_PRIO_ALIGN;
 	}
 
-	if (skb)
-		tp->mptcp->include_mpc = 0;
 	return;
 }
 
@@ -1895,6 +1897,16 @@ static void mptcp_ack_retransmit_timer(struct sock *sk)
 	if (inet_csk(sk)->icsk_af_ops->rebuild_header(sk))
 		goto out; /* Routing failure or similar */
 
+	if (!tp->retrans_stamp)
+		tp->retrans_stamp = tcp_time_stamp ? : 1;
+
+	if (tcp_write_timeout(sk)) {
+		tp->mptcp->pre_established = 0;
+		sk_stop_timer(sk, &tp->mptcp->mptcp_ack_timer);
+		tcp_send_active_reset(sk, GFP_ATOMIC);
+		goto out;
+	}
+
 	skb = alloc_skb(MAX_TCP_HEADER, GFP_ATOMIC);
 	if (skb == NULL) {
 		sk_reset_timer(sk, &tp->mptcp->mptcp_ack_timer,
@@ -1906,7 +1918,6 @@ static void mptcp_ack_retransmit_timer(struct sock *sk)
 	skb_reserve(skb, MAX_TCP_HEADER);
 	tcp_init_nondata_skb(skb, tp->snd_una, TCPHDR_ACK);
 
-	tp->mptcp->include_mpc = 1;
 	TCP_SKB_CB(skb)->when = tcp_time_stamp;
 	if (tcp_transmit_skb(sk, skb, 0, GFP_ATOMIC) > 0) {
 		/* Retransmission failed because of local congestion,
@@ -1919,19 +1930,16 @@ static void mptcp_ack_retransmit_timer(struct sock *sk)
 		return;
 	}
 
-out:
-	icsk->icsk_retransmits++;
-	if (icsk->icsk_retransmits == sysctl_tcp_retries1 + 1) {
-		tp->mptcp->pre_established = 0;
-		sk_stop_timer(sk, &tp->mptcp->mptcp_ack_timer);
-		tcp_send_active_reset(sk, GFP_ATOMIC);
-		mptcp_sub_force_close(sk);
-		return;
-	}
 
+	icsk->icsk_retransmits++;
 	icsk->icsk_rto = min(icsk->icsk_rto << 1, TCP_RTO_MAX);
 	sk_reset_timer(sk, &tp->mptcp->mptcp_ack_timer,
 		       jiffies + icsk->icsk_rto);
+	if (retransmits_timed_out(sk, sysctl_tcp_retries1 + 1, 0, 0)) {
+		__sk_dst_reset(sk);
+	}
+
+out:;
 }
 
 void mptcp_ack_handler(unsigned long data)
@@ -2169,8 +2177,6 @@ out_reset_timer:
 		meta_icsk->icsk_rto = min(meta_icsk->icsk_rto << 1, TCP_RTO_MAX);
 	}
 	inet_csk_reset_xmit_timer(meta_sk, ICSK_TIME_RETRANS, meta_icsk->icsk_rto, TCP_RTO_MAX);
-	if (retransmits_timed_out(meta_sk, sysctl_tcp_retries1 + 1, 0, 0))
-		__sk_dst_reset(meta_sk);
 
 	return;
 

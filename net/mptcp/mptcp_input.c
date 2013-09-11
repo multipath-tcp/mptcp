@@ -1859,6 +1859,7 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 		 */
 		tp->mptcp->snt_isn = tp->snd_nxt - 1;
 		tp->mpcb->dss_csum = mopt->dss_csum;
+		tp->mptcp->include_mpc = 1;
 
 		sk_set_socket(sk, mptcp_meta_sk(sk)->sk_socket);
 		sk->sk_wq = mptcp_meta_sk(sk)->sk_wq;
@@ -1874,10 +1875,8 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 			mptcp_hash_remove(tp);
 	}
 
-	if (tp->mpc) {
+	if (tp->mpc)
 		tp->mptcp->rcv_isn = TCP_SKB_CB(skb)->seq;
-		tp->mptcp->include_mpc = 1;
-	}
 
 	return 0;
 }
