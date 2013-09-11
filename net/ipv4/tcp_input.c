@@ -5523,7 +5523,9 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			ret = mptcp_rcv_synsent_state_process(sk, &sk,
 							      skb, &mopt);
 
-			tp = tcp_sk(sk); /* May have changed if we support MPTCP */
+			/* May have changed if we support MPTCP */
+			tp = tcp_sk(sk);
+			icsk = inet_csk(sk);
 
 			if (ret == 1)
 				goto reset_and_undo;
