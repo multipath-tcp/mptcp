@@ -803,7 +803,8 @@ void tcp_release_cb(struct sock *sk)
 		__sock_put(sk);
 	}
 	if (flags & (1UL << MPTCP_PATH_MANAGER)) {
-		mptcp_path_manager(sk);
+		if (tcp_sk(sk)->mpcb->pm_ops->release_sock)
+			tcp_sk(sk)->mpcb->pm_ops->release_sock(sk);
 		__sock_put(sk);
 	}
 	if (flags & (1UL << MPTCP_SUB_DEFERRED))
@@ -3192,6 +3193,7 @@ void tcp_send_ack(struct sock *sk)
 	TCP_SKB_CB(buff)->when = tcp_time_stamp;
 	tcp_transmit_skb(sk, buff, 0, sk_gfp_atomic(sk, GFP_ATOMIC));
 }
+EXPORT_SYMBOL(tcp_send_ack);
 
 /* This routine sends a packet with an out of date sequence
  * number. It assumes the other end will try to ack it.

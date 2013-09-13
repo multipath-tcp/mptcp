@@ -49,10 +49,11 @@ static inline int mptcp_sub_len_remove_addr(u16 bitfield)
 	return MPTCP_SUB_LEN_REMOVE_ADDR + c - 1;
 }
 
-static inline int mptcp_sub_len_remove_addr_align(u16 bitfield)
+int mptcp_sub_len_remove_addr_align(u16 bitfield)
 {
 	return ALIGN(mptcp_sub_len_remove_addr(bitfield), 4);
 }
+EXPORT_SYMBOL(mptcp_sub_len_remove_addr_align);
 
 /* If the sub-socket sk available to send the skb? */
 static int mptcp_is_available(struct sock *sk, struct sk_buff *skb,
@@ -477,7 +478,7 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 
 	tp->pf = 1;
 }
-
+EXPORT_SYMBOL(mptcp_reinject_data);
 
 static void mptcp_combine_dfin(struct sk_buff *skb, struct sock *meta_sk,
 			       struct sock *subsk)
@@ -1496,78 +1497,8 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		*size += MPTCP_SUB_LEN_DSS_ALIGN;
 	}
 
-	if (unlikely(tp->mptcp->add_addr4) &&
-	    MAX_TCP_OPTION_SPACE - *size >= MPTCP_SUB_LEN_ADD_ADDR4_ALIGN) {
-		struct mptcp_local_addresses *mptcp_local;
-		int ind;
-
-		rcu_read_lock_bh();
-		mptcp_local = rcu_dereference(sock_net(sk)->mptcp.local);
-		/* The list of local addresses may have changed */
-		tp->mptcp->add_addr4 &= mptcp_local->loc4_bits;
-		ind = mptcp_find_free_index(~(tp->mptcp->add_addr4));
-
-		if (ind == -1)
-			goto end_addr;
-
-		opts->options |= OPTION_MPTCP;
-		opts->mptcp_options |= OPTION_ADD_ADDR;
-		opts->add_addr4.addr_id = mptcp_local->locaddr4[ind].id;
-		opts->add_addr4.addr = mptcp_local->locaddr4[ind].addr;
-		opts->add_addr_v4 = 1;
-
-		rcu_read_unlock_bh();
-
-		if (skb)
-			tp->mptcp->add_addr4 &= ~(1 << ind);
-		*size += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN;
-	} else if (unlikely(tp->mptcp->add_addr6) &&
-		   MAX_TCP_OPTION_SPACE - *size >= MPTCP_SUB_LEN_ADD_ADDR6_ALIGN) {
-		struct mptcp_local_addresses *mptcp_local;
-		int ind;
-
-		rcu_read_lock_bh();
-		mptcp_local = rcu_dereference(sock_net(sk)->mptcp.local);
-		/* The list of local addresses may have changed */
-		tp->mptcp->add_addr6 &= mptcp_local->loc6_bits;
-		ind = mptcp_find_free_index(~(tp->mptcp->add_addr6));
-
-		if (ind == -1)
-			goto end_addr;
-
-		opts->options |= OPTION_MPTCP;
-		opts->mptcp_options |= OPTION_ADD_ADDR;
-		opts->add_addr6.addr_id = mptcp_local->locaddr6[ind].id;
-		opts->add_addr6.addr = mptcp_local->locaddr6[ind].addr;
-		opts->add_addr_v6 = 1;
-
-		rcu_read_unlock_bh();
-
-		if (skb)
-			tp->mptcp->add_addr6 &= ~(1 << ind);
-		*size += MPTCP_SUB_LEN_ADD_ADDR6_ALIGN;
-	} else if (unlikely(mpcb->remove_addrs) &&
-		   MAX_TCP_OPTION_SPACE - *size >=
-		   mptcp_sub_len_remove_addr_align(mpcb->remove_addrs)) {
-		opts->options |= OPTION_MPTCP;
-		opts->mptcp_options |= OPTION_REMOVE_ADDR;
-		opts->remove_addrs = mpcb->remove_addrs;
-		*size += mptcp_sub_len_remove_addr_align(opts->remove_addrs);
-		if (skb)
-			mpcb->remove_addrs = 0;
-	} else if (!(opts->mptcp_options & OPTION_MP_CAPABLE) &&
-		   !(opts->mptcp_options & OPTION_MP_JOIN) &&
-		   ((unlikely(tp->mptcp->add_addr6) &&
-		     MAX_TCP_OPTION_SPACE - *size <=
-		     MPTCP_SUB_LEN_ADD_ADDR6_ALIGN) ||
-		    (unlikely(tp->mptcp->add_addr4) &&
-		     MAX_TCP_OPTION_SPACE - *size >=
-		     MPTCP_SUB_LEN_ADD_ADDR4_ALIGN))) {
-		tp->mptcp_add_addr_ack = 1;
-		tcp_send_ack(sk);
-		tp->mptcp_add_addr_ack = 0;
-	}
-end_addr:
+	if (mpcb->pm_ops->addr_signal)
+		mpcb->pm_ops->addr_signal(sk, size, opts, skb);
 
 	if (unlikely(tp->mptcp->send_mp_prio) &&
 	    MAX_TCP_OPTION_SPACE - *size >= MPTCP_SUB_LEN_PRIO_ALIGN) {

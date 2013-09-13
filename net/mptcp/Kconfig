@@ -7,3 +7,39 @@ config MPTCP
         ---help---
           This replaces the normal TCP stack with a Multipath TCP stack,
           able to use several paths at once.
+
+menuconfig MPTCP_PM_ADVANCED
+	bool "MPTCP: advanced path-manager control"
+	---help---
+	  Support for selection of different path-managers. You should choose 'Y' here,
+	  because otherwise you will not actively create new MPTCP-subflows.
+
+if MPTCP_PM_ADVANCED
+
+config MPTCP_FULLMESH
+	tristate "MPTCP Full-Mesh Path-Manager"
+	depends on MPTCP=y
+	---help---
+	  This path-management module will create a full-mesh among all IP-addresses.
+
+choice
+	prompt "Default MPTCP Path-Manager"
+	default DEFAULT
+	help
+	  Select the Path-Manager of your choice
+
+	config DEFAULT_FULLMESH
+		bool "Full mesh" if MPTCP_FULLMESH=y
+
+	config DEFAULT_DUMMY
+		bool "Default"
+
+endchoice
+
+endif
+
+config DEFAULT_MPTCP_PM
+	string
+	default "default" if DEFAULT_DUMMY
+	default "fullmesh" if DEFAULT_FULLMESH 
+	default "default"

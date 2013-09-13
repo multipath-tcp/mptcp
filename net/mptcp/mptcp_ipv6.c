@@ -40,7 +40,6 @@
 #include <net/ip6_checksum.h>
 #include <net/ip6_route.h>
 #include <net/mptcp.h>
-#include <net/mptcp_pm.h>
 #include <net/mptcp_v6.h>
 #include <net/tcp.h>
 #include <net/transp_v6.h>
@@ -315,7 +314,6 @@ out:
 static void mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct mptcp_local_addresses *mptcp_local;
 	struct tcp_options_received tmp_opt;
 	struct mptcp_options_received mopt;
 	struct ipv6_pinfo *np = inet6_sk(meta_sk);
@@ -326,7 +324,8 @@ static void mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	__u32 isn = TCP_SKB_CB(skb)->when;
 	struct dst_entry *dst = NULL;
 	struct flowi6 fl6;
-	int want_cookie = 0, i;
+	int want_cookie = 0;
+	union inet_addr addr;
 
 	tcp_clear_options(&tmp_opt);
 	mptcp_init_mp_opt(&mopt);
@@ -424,16 +423,8 @@ static void mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 			(u8 *)&mtreq->mptcp_rem_nonce, (u32 *)mptcp_hash_mac);
 	mtreq->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
 
-	rcu_read_lock();
-	mptcp_local = rcu_dereference(sock_net(meta_sk)->mptcp.local);
-
-	/* Finding Address ID */
-	mptcp_for_each_bit_set(mptcp_local->loc6_bits, i) {
-		if (ipv6_addr_equal(&mptcp_local->locaddr6[i].addr, &treq->loc_addr))
-			mtreq->loc_id = mptcp_local->locaddr6[i].id;
-	}
-	rcu_read_unlock();
-
+	addr.in6 = treq->loc_addr;
+	mtreq->loc_id = mpcb->pm_ops->get_local_id(AF_INET6, &addr, sock_net(meta_sk));
 	mtreq->rem_id = mopt.rem_id;
 	mtreq->low_prio = mopt.low_prio;
 	tcp_rsk(req)->saw_mpc = 1;
@@ -697,7 +688,7 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	 * There is a special case as the IPv6 address of the initial subflow
 	 * has an id = 0. The other ones have id's in the range [8, 16[.
 	 */
-	rem->bitfield |= (1 << loc->id);
+	rem->bitfield |= (1 << (loc->id - MPTCP_MAX_ADDR));
 
 	/** First, create and prepare the new socket */
 
@@ -779,252 +770,11 @@ error:
 	}
 	return ret;
 }
-
-struct mptcp_dad_data {
-	struct timer_list timer;
-	struct inet6_ifaddr *ifa;
-};
-
-static int mptcp_ipv6_is_in_dad_state(struct inet6_ifaddr *ifa)
-{
-	return ((ifa->flags & IFA_F_TENTATIVE) &&
-		ifa->state == INET6_IFADDR_STATE_DAD);
-}
-
-static void mptcp_dad_callback(unsigned long arg);
-static int mptcp_pm_inet6_addr_event(struct notifier_block *this,
-				     unsigned long event, void *ptr);
-
-static inline void mptcp_dad_init_timer(struct mptcp_dad_data *data,
-					struct inet6_ifaddr *ifa)
-{
-	data->ifa = ifa;
-	data->timer.data = (unsigned long)data;
-	data->timer.function = mptcp_dad_callback;
-	if (ifa->idev->cnf.rtr_solicit_delay)
-		data->timer.expires = jiffies + ifa->idev->cnf.rtr_solicit_delay;
-	else
-		data->timer.expires = jiffies + MPTCP_IPV6_DEFAULT_DAD_WAIT;
-}
-
-static void mptcp_dad_callback(unsigned long arg)
-{
-	struct mptcp_dad_data *data = (struct mptcp_dad_data *)arg;
-
-	if (mptcp_ipv6_is_in_dad_state(data->ifa)) {
-		mptcp_dad_init_timer(data, data->ifa);
-		add_timer(&data->timer);
-	} else {
-		mptcp_pm_inet6_addr_event(NULL, NETDEV_UP, data->ifa);
-		in6_ifa_put(data->ifa);
-		kfree(data);
-	}
-}
-
-static inline void mptcp_dad_setup_timer(struct inet6_ifaddr *ifa)
-{
-	struct mptcp_dad_data *data;
-
-	data = kmalloc(sizeof(*data), GFP_ATOMIC);
-
-	if (!data)
-		return;
-
-	init_timer(&data->timer);
-	mptcp_dad_init_timer(data, ifa);
-	add_timer(&data->timer);
-	in6_ifa_hold(ifa);
-}
-
-/* React on IPv6-addr add/rem-events */
-static int mptcp_pm_inet6_addr_event(struct notifier_block *this,
-				     unsigned long event, void *ptr)
-{
-	if (mptcp_ipv6_is_in_dad_state((struct inet6_ifaddr *)ptr)) {
-		mptcp_dad_setup_timer((struct inet6_ifaddr *)ptr);
-		return NOTIFY_DONE;
-	} else {
-		return mptcp_pm_addr_event_handler(event, ptr, AF_INET6);
-	}
-}
-
-/* React on ifup/down-events */
-static int mptcp_pm_v6_netdev_event(struct notifier_block *this,
-		unsigned long event, void *ptr)
-{
-	struct net_device *dev = ptr;
-	struct inet6_dev *in6_dev = NULL;
-
-	if (!(event == NETDEV_UP || event == NETDEV_DOWN ||
-	      event == NETDEV_CHANGE))
-		return NOTIFY_DONE;
-
-	rcu_read_lock();
-	in6_dev = __in6_dev_get(dev);
-
-	if (in6_dev) {
-		struct inet6_ifaddr *ifa6;
-		list_for_each_entry(ifa6, &in6_dev->addr_list, if_list)
-				mptcp_pm_inet6_addr_event(NULL, event, ifa6);
-	}
-
-	rcu_read_unlock();
-	return NOTIFY_DONE;
-}
-
-
-void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
-				  struct net *net)
-{
-	struct mptcp_local_addresses *mptcp_local;
-	struct net_device *netdev = ifa->idev->dev;
-	int addr_type = ipv6_addr_type(&ifa->addr);
-	int i;
-
-	if (ifa->scope > RT_SCOPE_LINK ||
-	    addr_type == IPV6_ADDR_ANY ||
-	    (addr_type & IPV6_ADDR_LOOPBACK) ||
-	    (addr_type & IPV6_ADDR_LINKLOCAL))
-		return;
-
-	rcu_read_lock_bh();
-	spin_lock(&net->mptcp.local_lock);
-
-	mptcp_local = rcu_dereference(net->mptcp.local);
-
-	if (event == NETDEV_DOWN ||!netif_running(netdev) ||
-	    (netdev->flags & IFF_NOMULTIPATH)) {
-		struct mptcp_address_events event;
-
-		/* It's an event that removes the address */
-		bool found = false;
-
-		/* Look for the address among the local addresses */
-		mptcp_for_each_bit_set(mptcp_local->loc6_bits, i) {
-			if (ipv6_addr_equal(&mptcp_local->locaddr6[i].addr, &ifa->addr)) {
-				found = true;
-				break;
-			}
-		}
-
-		/* Not in the list - so we don't care */
-		if (!found)
-			goto exit;
-
-		mptcp_local = kmemdup(mptcp_local, sizeof(*mptcp_local),
-				      GFP_ATOMIC);
-		if (!mptcp_local)
-			goto exit;
-
-		mptcp_local->loc6_bits &= ~(1 << i);
-
-		rcu_assign_pointer(net->mptcp.local, mptcp_local);
-
-		/* Now, we have to create an event for the MPTCP-sockets */
-		event.code = MPTCP_EVENT_DEL;
-		event.family = AF_INET6;
-		event.id = i + MPTCP_MAX_ADDR;
-		event.u.addr6 = ifa->addr;
-		mptcp_add_pm_event(net, &event);
-
-	} else {
-		/* The event modifies / adds an address */
-		bool found = false;
-
-		/* Look for the address among the local addresses */
-		mptcp_for_each_bit_set(mptcp_local->loc6_bits, i) {
-			if (ipv6_addr_equal(&mptcp_local->locaddr6[i].addr, &ifa->addr)) {
-				found = true;
-				break;
-			}
-		}
-
-		if (!found) {
-			/* Not in the list, so we have to find an empty slot */
-			i = __mptcp_find_free_index(mptcp_local->loc6_bits, 0,
-						    mptcp_local->next_v6_index);
-			if (i < 0)
-				goto exit;
-		} else {
-			struct mptcp_address_events event;
-
-			/* Let's check if anything changes */
-			if ((netdev->flags & IFF_MPBACKUP) ? 1 : 0 == mptcp_local->locaddr6[i].low_prio)
-				goto exit;
-
-
-			/* Now, we have to create an event for the MPTCP-sockets */
-			event.code = MPTCP_EVENT_MOD;
-			event.family = AF_INET6;
-			event.id = i + MPTCP_MAX_ADDR;
-			event.low_prio = mptcp_local->locaddr6[i].low_prio;
-			event.u.addr6 = ifa->addr;
-			mptcp_add_pm_event(net, &event);
-		}
-
-		mptcp_local = kmemdup(mptcp_local, sizeof(*mptcp_local),
-				      GFP_ATOMIC);
-		if (!mptcp_local)
-			goto exit;
-
-		mptcp_local->locaddr6[i].addr = ifa->addr;
-		mptcp_local->locaddr6[i].id = i + MPTCP_MAX_ADDR;
-		mptcp_local->locaddr6[i].low_prio = (netdev->flags & IFF_MPBACKUP) ? 1 : 0;
-
-		if (!found) {
-			mptcp_local->loc6_bits |= (1 << i);
-			mptcp_local->next_v6_index = i + 1;
-		}
-
-		rcu_assign_pointer(net->mptcp.local, mptcp_local);
-
-		if (!found) {
-			struct mptcp_address_events event;
-
-			/* Now, we have to create an event for the MPTCP-sockets */
-			event.code = MPTCP_EVENT_ADD;
-			event.family = AF_INET6;
-			event.id = i + MPTCP_MAX_ADDR;
-			event.low_prio = mptcp_local->locaddr6[i].low_prio;
-			event.u.addr6 = ifa->addr;
-			mptcp_add_pm_event(net, &event);
-		}
-	}
-
-exit:
-	spin_unlock(&net->mptcp.local_lock);
-	rcu_read_unlock_bh();
-	return;
-}
-
-/* Send ADD_ADDR for loc_id on all available subflows.
- * This function must remain callable from bh, while owned by user!
- */
-void mptcp_v6_send_add_addr(int loc_id, struct mptcp_cb *mpcb)
-{
-	struct sock *sk;
-
-	mptcp_for_each_sk(mpcb, sk) {
-		tcp_sk(sk)->mptcp->add_addr6 |= (1 << loc_id);
-		if (mptcp_sk_can_send_ack(sk))
-			tcp_send_ack(sk);
-	}
-}
-
-
-static struct notifier_block mptcp_pm_inet6_addr_notifier = {
-		.notifier_call = mptcp_pm_inet6_addr_event,
-};
-
-static struct notifier_block mptcp_pm_v6_netdev_notifier = {
-		.notifier_call = mptcp_pm_v6_netdev_event,
-};
-
-/****** End of IPv6-Address event handler ******/
+EXPORT_SYMBOL(mptcp_init6_subsockets);
 
 int mptcp_pm_v6_init(void)
 {
-	int ret;
+	int ret = 0;
 	struct request_sock_ops *ops = &mptcp6_request_sock_ops;
 
 	ops->slab_name = kasprintf(GFP_KERNEL, "request_sock_%s", "MPTCP6");
@@ -1035,26 +785,14 @@ int mptcp_pm_v6_init(void)
 
 	ops->slab = kmem_cache_create(ops->slab_name, ops->obj_size, 0,
 				      SLAB_HWCACHE_ALIGN, NULL);
-
 	if (ops->slab == NULL) {
 		ret =  -ENOMEM;
 		goto err_reqsk_create;
 	}
 
-	ret = register_inet6addr_notifier(&mptcp_pm_inet6_addr_notifier);
-	if (ret)
-		goto err_reg_inet6addr;
-	ret = register_netdevice_notifier(&mptcp_pm_v6_netdev_notifier);
-	if (ret)
-		goto err_reg_netdev6;
-
 out:
 	return ret;
 
-err_reg_netdev6:
-	unregister_inet6addr_notifier(&mptcp_pm_inet6_addr_notifier);
-err_reg_inet6addr:
-	kmem_cache_destroy(ops->slab);
 err_reqsk_create:
 	kfree(ops->slab_name);
 	ops->slab_name = NULL;
@@ -1065,6 +803,4 @@ void mptcp_pm_v6_undo(void)
 {
 	kmem_cache_destroy(mptcp6_request_sock_ops.slab);
 	kfree(mptcp6_request_sock_ops.slab_name);
-	unregister_inet6addr_notifier(&mptcp_pm_inet6_addr_notifier);
-	unregister_netdevice_notifier(&mptcp_pm_v6_netdev_notifier);
 }

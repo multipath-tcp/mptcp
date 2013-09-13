@@ -32,11 +32,13 @@
 
 #include <linux/compiler.h>
 
+enum {
+	MPTCP_PM_FULLMESH = 0,
+	MPTCP_PM_MAX
+};
+
 struct netns_mptcp {
-	struct mptcp_local_addresses __rcu *local;
-	spinlock_t local_lock; /* Protecting the above pointer */
-	struct list_head events;
-	struct delayed_work address_worker;
+	void *path_managers[MPTCP_PM_MAX];
 };
 
 #endif /* __NETNS_MPTCP_H__ */

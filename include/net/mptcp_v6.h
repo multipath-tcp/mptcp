@@ -34,7 +34,6 @@
 #include <net/if_inet6.h>
 
 #include <net/mptcp.h>
-#include <net/mptcp_pm.h>
 
 extern struct request_sock_ops mptcp6_request_sock_ops;
 extern struct proto mptcpv6_prot;
@@ -46,12 +45,6 @@ struct mptcp6_request_sock {
 
 #ifdef CONFIG_MPTCP
 
-/*
- * Used to wait for DAD to finish. If rtr_solicit_delay is set, we use it
- * instead
- */
-#define MPTCP_IPV6_DEFAULT_DAD_WAIT (HZ/10)
-
 int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb);
 int mptcp_v6_rem_raddress(struct mptcp_cb *mpcb, u8 id);
 int mptcp_v6_add_raddress(struct mptcp_cb *mpcb, const struct in6_addr *addr,
@@ -62,11 +55,8 @@ struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *radd
 				 const struct in6_addr *laddr, const struct net *net);
 int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 			   struct mptcp_rem6 *rem);
-void mptcp_pm_addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
-				  struct net *net);
 int mptcp_pm_v6_init(void);
 void mptcp_pm_v6_undo(void);
-void mptcp_v6_send_add_addr(int loc_id, struct mptcp_cb *mpcb);
 struct sock *mptcp_v6v4_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 				      struct request_sock *req,
 				      struct dst_entry *dst);

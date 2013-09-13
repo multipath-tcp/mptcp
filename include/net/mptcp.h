@@ -34,6 +34,7 @@
 #include <linux/ipv6.h>
 #include <linux/list.h>
 #include <linux/net.h>
+#include <linux/netpoll.h>
 #include <linux/skbuff.h>
 #include <linux/socket.h>
 #include <linux/tcp.h>
@@ -42,7 +43,6 @@
 #include <asm/byteorder.h>
 #include <asm/unaligned.h>
 #include <crypto/hash.h>
-#include <net/mptcp_pm.h>
 #include <net/tcp.h>
 
 #if defined(__LITTLE_ENDIAN_BITFIELD)
@@ -52,6 +52,40 @@
 	#define ntohll(x) (x)
 	#define htonll(x) (x)
 #endif
+
+/* Max number of local or remote addresses we can store.
+ * When changing, see the bitfield below in mptcp_loc4/6. */
+#define MPTCP_MAX_ADDR	8
+
+#define MPTCP_SUBFLOW_RETRY_DELAY	1000
+
+struct mptcp_loc4 {
+	u8		id;
+	u8		low_prio:1;
+	struct in_addr	addr;
+};
+
+struct mptcp_rem4 {
+	u8		id;
+	u8		bitfield;
+	u8		retry_bitfield;
+	__be16		port;
+	struct in_addr	addr;
+};
+
+struct mptcp_loc6 {
+	u8		id;
+	u8		low_prio:1;
+	struct in6_addr	addr;
+};
+
+struct mptcp_rem6 {
+	u8		id;
+	u8		bitfield;
+	u8		retry_bitfield;
+	__be16		port;
+	struct in6_addr	addr;
+};
 
 struct mptcp_request_sock {
 	struct tcp_request_sock		req;
@@ -151,8 +185,6 @@ struct mptcp_tcp_sock {
 	u32	rcv_isn;
 	u32	last_data_seq;
 	u8	path_index;
-	unsigned long add_addr4; /* bit-field of addrs not yet sent to our peer */
-	unsigned long add_addr6;
 	u8	loc_id;
 	u8	rem_id;
 
@@ -184,6 +216,24 @@ struct mptcp_tw {
 	struct mptcp_cb __rcu *mpcb;
 	u8 meta_tw:1,
 	   in_list:1;
+};
+
+#define MPTCP_PM_NAME_MAX 16
+struct mptcp_pm_ops {
+	struct list_head list;
+
+	/* Signal the creation of a new MPTCP-session. */
+	void (*new_session)(struct sock *meta_sk, u8 id);
+	void (*release_sock)(struct sock *meta_sk);
+	void (*fully_established)(struct sock *meta_sk);
+	void (*new_remote_address)(struct sock *meta_sk);
+	int  (*get_local_id)(sa_family_t family, union inet_addr *addr,
+			     struct net *net);
+	void (*addr_signal)(struct sock *sk, unsigned *size,
+			    struct tcp_out_options *opts, struct sk_buff *skb);
+
+	char 		name[MPTCP_PM_NAME_MAX];
+	struct module 	*owner;
 };
 
 struct mptcp_cb {
@@ -226,12 +276,12 @@ struct mptcp_cb {
 
 	struct sk_buff_head reinject_queue;
 
-	u16 remove_addrs;
-
 	u8 dfin_path_index;
-	/* Worker struct for subflow establishment */
-	struct work_struct subflow_work;
-	struct delayed_work subflow_retry_work;
+
+#define MPTCP_PM_SIZE 152
+	u8 mptcp_pm[MPTCP_PM_SIZE];
+	struct mptcp_pm_ops *pm_ops;
+
 	/* Mutex needed, because otherwise mptcp_close will complain that the
 	 * socket is owned by the user.
 	 * E.g., mptcp_sub_close_wq is taking the meta-lock.
@@ -256,10 +306,6 @@ struct mptcp_cb {
 	struct sock *(*syn_recv_sock)(struct sock *sk, struct sk_buff *skb,
 				      struct request_sock *req,
 				      struct dst_entry *dst);
-
-	struct mptcp_loc6 locaddr6[MPTCP_MAX_ADDR];
-	u8 loc6_bits;
-	u8 next_v6_index;
 
 	/* Remote addresses */
 	struct mptcp_rem4 remaddr4[MPTCP_MAX_ADDR];
@@ -624,6 +670,23 @@ extern u32 mptcp_secret[MD5_MESSAGE_BYTES / 4];
  */
 extern u32 mptcp_key_seed;
 
+#define MPTCP_HASH_SIZE                1024
+
+extern struct hlist_nulls_head tk_hashtable[MPTCP_HASH_SIZE];
+
+/* This second hashtable is needed to retrieve request socks
+ * created as a result of a join request. While the SYN contains
+ * the token, the final ack does not, so we need a separate hashtable
+ * to retrieve the mpcb.
+ */
+extern struct list_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
+extern spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
+
+/* Lock, protecting the two hash-tables that hold the token. Namely,
+ * mptcp_reqsk_tk_htb and tk_hashtable
+ */
+extern spinlock_t mptcp_tk_hashlock;	/* hashtable protection */
+
 void mptcp_data_ready(struct sock *sk, int bytes);
 void mptcp_write_space(struct sock *sk);
 
@@ -712,6 +775,31 @@ bool mptcp_should_expand_sndbuf(struct sock *meta_sk);
 int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb);
 void mptcp_tsq_flags(struct sock *sk);
 void mptcp_tsq_sub_deferred(struct sock *meta_sk);
+struct mp_join *mptcp_find_join(struct sk_buff *skb);
+void mptcp_hash_remove_bh(struct tcp_sock *meta_tp);
+void mptcp_hash_remove(struct tcp_sock *meta_tp);
+struct sock *mptcp_hash_find(struct net *net, u32 token);
+int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw);
+int mptcp_do_join_short(struct sk_buff *skb, struct mptcp_options_received *mopt,
+			struct tcp_options_received *tmp_opt, struct net *net);
+void mptcp_reqsk_destructor(struct request_sock *req);
+void mptcp_reqsk_new_mptcp(struct request_sock *req,
+			   const struct tcp_options_received *rx_opt,
+			   const struct mptcp_options_received *mopt,
+			   const struct sk_buff *skb);
+int mptcp_check_req(struct sk_buff *skb, struct net *net);
+void mptcp_connect_init(struct sock *sk);
+void mptcp_sub_force_close(struct sock *sk);
+int mptcp_sub_len_remove_addr_align(u16 bitfield);
+
+/* MPTCP-path-manager registration/initialization functions */
+int mptcp_register_path_manager(struct mptcp_pm_ops *pm);
+void mptcp_unregister_path_manager(struct mptcp_pm_ops *pm);
+void mptcp_init_path_manager(struct mptcp_cb *mpcb);
+void mptcp_cleanup_path_manager(struct mptcp_cb *mpcb);
+void mptcp_get_default_path_manager(char *name);
+int mptcp_set_default_path_manager(const char *name);
+extern struct mptcp_pm_ops mptcp_pm_default;
 
 static inline
 struct mptcp_request_sock *mptcp_rsk(const struct request_sock *req)
@@ -751,23 +839,6 @@ static inline void mptcp_push_pending_frames(struct sock *meta_sk)
 		 */
 		__tcp_push_pending_frames(meta_sk, 0, tp->nonagle);
 	}
-}
-
-static inline void mptcp_sub_force_close(struct sock *sk)
-{
-	/* The below tcp_done may have freed the socket, if he is already dead.
-	 * Thus, we are not allowed to access it afterwards. That's why
-	 * we have to store the dead-state in this local variable.
-	 */
-	int sock_is_dead = sock_flag(sk, SOCK_DEAD);
-
-	tcp_sk(sk)->mp_killed = 1;
-
-	if (sk->sk_state != TCP_CLOSE)
-		tcp_done(sk);
-
-	if (!sock_is_dead)
-		mptcp_sub_close(sk, 0);
 }
 
 static inline void mptcp_send_reset(struct sock *sk)
@@ -885,26 +956,6 @@ static inline void mptcp_hash_request_remove(struct request_sock *req)
 		spin_unlock(&mptcp_reqsk_hlock);
 	else
 		spin_unlock_bh(&mptcp_reqsk_hlock);
-}
-
-static inline void mptcp_reqsk_destructor(struct request_sock *req)
-{
-	if (!mptcp_rsk(req)->mpcb) {
-		if (hlist_nulls_unhashed(&mptcp_rsk(req)->collide_tk))
-			return;
-
-		if (in_softirq()) {
-			mptcp_reqsk_remove_tk(req);
-		} else {
-			rcu_read_lock_bh();
-			spin_lock(&mptcp_tk_hashlock);
-			hlist_nulls_del_rcu(&mptcp_rsk(req)->collide_tk);
-			spin_unlock(&mptcp_tk_hashlock);
-			rcu_read_unlock_bh();
-		}
-	} else {
-		mptcp_hash_request_remove(req);
-	}
 }
 
 static inline void mptcp_init_mp_opt(struct mptcp_options_received *mopt)
@@ -1381,6 +1432,13 @@ static inline bool mptcp_should_expand_sndbuf(struct sock *meta_sk)
 }
 static inline void mptcp_tsq_flags(struct sock *sk) {}
 static inline void mptcp_tsq_sub_deferred(struct sock *meta_sk) {}
+static inline void mptcp_hash_remove_bh(struct tcp_sock *meta_tp) {}
+static inline void mptcp_hash_remove(struct tcp_sock *meta_tp) {}
+static inline void mptcp_reqsk_new_mptcp(struct request_sock *req,
+					 const struct tcp_options_received *rx_opt,
+					 const struct mptcp_options_received *mopt,
+					 const struct sk_buff *skb)
+{}
 #endif /* CONFIG_MPTCP */
 
 #endif /* _MPTCP_H */
