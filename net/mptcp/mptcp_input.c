@@ -48,8 +48,9 @@ static inline void mptcp_become_fully_estab(struct sock *sk)
 {
 	tcp_sk(sk)->mptcp->fully_established = 1;
 
-	if (is_master_tp(tcp_sk(sk)))
-		mptcp_create_subflows(mptcp_meta_sk(sk));
+	if (is_master_tp(tcp_sk(sk)) &&
+	    tcp_sk(sk)->mpcb->pm_ops->fully_established)
+		tcp_sk(sk)->mpcb->pm_ops->fully_established(mptcp_meta_sk(sk));
 }
 
 /* Similar to tcp_tso_acked without any memory accounting */
@@ -1052,6 +1053,219 @@ exit:
 		meta_sk->sk_data_ready(meta_sk, 0);
 }
 
+
+int mptcp_check_req(struct sk_buff *skb, struct net *net)
+{
+	struct tcphdr *th = tcp_hdr(skb);
+	struct sock *meta_sk = NULL;
+
+	/* MPTCP structures not initialized */
+	if (mptcp_init_failed)
+		return 0;
+
+	if (skb->protocol == htons(ETH_P_IP))
+		meta_sk = mptcp_v4_search_req(th->source, ip_hdr(skb)->saddr,
+					      ip_hdr(skb)->daddr, net);
+#if IS_ENABLED(CONFIG_IPV6)
+	else /* IPv6 */
+		meta_sk = mptcp_v6_search_req(th->source, &ipv6_hdr(skb)->saddr,
+					      &ipv6_hdr(skb)->daddr, net);
+#endif /* CONFIG_IPV6 */
+
+	if (!meta_sk)
+		return 0;
+
+	TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_JOIN;
+
+	bh_lock_sock_nested(meta_sk);
+	if (sock_owned_by_user(meta_sk)) {
+		skb->sk = meta_sk;
+		if (unlikely(sk_add_backlog(meta_sk, skb,
+					    meta_sk->sk_rcvbuf + meta_sk->sk_sndbuf))) {
+			bh_unlock_sock(meta_sk);
+			NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
+			sock_put(meta_sk); /* Taken by mptcp_search_req */
+			kfree_skb(skb);
+			return 1;
+		}
+	} else if (skb->protocol == htons(ETH_P_IP)) {
+		tcp_v4_do_rcv(meta_sk, skb);
+#if IS_ENABLED(CONFIG_IPV6)
+	} else { /* IPv6 */
+		tcp_v6_do_rcv(meta_sk, skb);
+#endif /* CONFIG_IPV6 */
+	}
+	bh_unlock_sock(meta_sk);
+	sock_put(meta_sk); /* Taken by mptcp_vX_search_req */
+	return 1;
+}
+
+struct mp_join *mptcp_find_join(struct sk_buff *skb)
+{
+	struct tcphdr *th = tcp_hdr(skb);
+	unsigned char *ptr;
+	int length = (th->doff * 4) - sizeof(struct tcphdr);
+
+	/* Jump through the options to check whether JOIN is there */
+	ptr = (unsigned char *)(th + 1);
+	while (length > 0) {
+		int opcode = *ptr++;
+		int opsize;
+
+		switch (opcode) {
+		case TCPOPT_EOL:
+			return NULL;
+		case TCPOPT_NOP:	/* Ref: RFC 793 section 3.1 */
+			length--;
+			continue;
+		default:
+			opsize = *ptr++;
+			if (opsize < 2)	/* "silly options" */
+				return NULL;
+			if (opsize > length)
+				return NULL;  /* don't parse partial options */
+			if (opcode == TCPOPT_MPTCP &&
+			    ((struct mptcp_option *)(ptr - 2))->sub == MPTCP_SUB_JOIN) {
+				return (struct mp_join *)(ptr - 2);
+			}
+			ptr += opsize - 2;
+			length -= opsize;
+		}
+	}
+	return NULL;
+}
+
+int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
+{
+	struct mptcp_cb *mpcb;
+	struct sock *meta_sk;
+	u32 token;
+	struct mp_join *join_opt = mptcp_find_join(skb);
+	if (!join_opt)
+		return 0;
+
+	/* MPTCP structures were not initialized, so return error */
+	if (mptcp_init_failed)
+		return -1;
+
+	token = join_opt->u.syn.token;
+	meta_sk = mptcp_hash_find(dev_net(skb_dst(skb)->dev), token);
+	if (!meta_sk) {
+		mptcp_debug("%s:mpcb not found:%x\n", __func__, token);
+		return -1;
+	}
+
+	mpcb = tcp_sk(meta_sk)->mpcb;
+	if (mpcb->infinite_mapping_rcv || mpcb->send_infinite_mapping) {
+		/* We are in fallback-mode on the reception-side -
+		 * no new subflows!
+		 */
+		sock_put(meta_sk); /* Taken by mptcp_hash_find */
+		return -1;
+	}
+
+	/* Coming from time-wait-sock processing in tcp_v4_rcv.
+	 * We have to deschedule it before continuing, because otherwise
+	 * mptcp_v4_do_rcv will hit again on it inside tcp_v4_hnd_req.
+	 */
+	if (tw) {
+		inet_twsk_deschedule(tw, &tcp_death_row);
+		inet_twsk_put(tw);
+	}
+
+	TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_JOIN;
+	/* OK, this is a new syn/join, let's create a new open request and
+	 * send syn+ack
+	 */
+	bh_lock_sock_nested(meta_sk);
+	if (sock_owned_by_user(meta_sk)) {
+		skb->sk = meta_sk;
+		if (unlikely(sk_add_backlog(meta_sk, skb,
+					    meta_sk->sk_rcvbuf + meta_sk->sk_sndbuf))) {
+			bh_unlock_sock(meta_sk);
+			NET_INC_STATS_BH(sock_net(meta_sk),
+					 LINUX_MIB_TCPBACKLOGDROP);
+			sock_put(meta_sk); /* Taken by mptcp_hash_find */
+			kfree_skb(skb);
+			return 1;
+		}
+	} else if (skb->protocol == htons(ETH_P_IP)) {
+		tcp_v4_do_rcv(meta_sk, skb);
+#if IS_ENABLED(CONFIG_IPV6)
+	} else {
+		tcp_v6_do_rcv(meta_sk, skb);
+#endif /* CONFIG_IPV6 */
+	}
+	bh_unlock_sock(meta_sk);
+	sock_put(meta_sk); /* Taken by mptcp_hash_find */
+	return 1;
+}
+
+int mptcp_do_join_short(struct sk_buff *skb, struct mptcp_options_received *mopt,
+			struct tcp_options_received *tmp_opt, struct net *net)
+{
+	struct sock *meta_sk;
+	u32 token;
+
+	token = mopt->mptcp_rem_token;
+	meta_sk = mptcp_hash_find(net, token);
+	if (!meta_sk) {
+		mptcp_debug("%s:mpcb not found:%x\n", __func__, token);
+		return -1;
+	}
+
+	TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_JOIN;
+
+	/* OK, this is a new syn/join, let's create a new open request and
+	 * send syn+ack
+	 */
+	bh_lock_sock(meta_sk);
+
+	/* This check is also done in mptcp_vX_do_rcv. But, there we cannot
+	 * call tcp_vX_send_reset, because we hold already two socket-locks.
+	 * (the listener and the meta from above)
+	 *
+	 * And the send-reset will try to take yet another one (ip_send_reply).
+	 * Thus, we propagate the reset up to tcp_rcv_state_process.
+	 */
+	if (tcp_sk(meta_sk)->mpcb->infinite_mapping_rcv ||
+	    tcp_sk(meta_sk)->mpcb->send_infinite_mapping ||
+	    meta_sk->sk_state == TCP_CLOSE || !tcp_sk(meta_sk)->inside_tk_table) {
+		bh_unlock_sock(meta_sk);
+		sock_put(meta_sk); /* Taken by mptcp_hash_find */
+		return -1;
+	}
+
+	if (sock_owned_by_user(meta_sk)) {
+		skb->sk = meta_sk;
+		if (unlikely(sk_add_backlog(meta_sk, skb,
+					    meta_sk->sk_rcvbuf + meta_sk->sk_sndbuf)))
+			NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
+		else
+			/* Must make sure that upper layers won't free the
+			 * skb if it is added to the backlog-queue.
+			 */
+			skb_get(skb);
+	} else {
+		/* mptcp_v4_do_rcv tries to free the skb - we prevent this, as
+		 * the skb will finally be freed by tcp_v4_do_rcv (where we are
+		 * coming from)
+		 */
+		skb_get(skb);
+		if (skb->protocol == htons(ETH_P_IP)) {
+			tcp_v4_do_rcv(meta_sk, skb);
+#if IS_ENABLED(CONFIG_IPV6)
+		} else { /* IPv6 */
+			tcp_v6_do_rcv(meta_sk, skb);
+#endif /* CONFIG_IPV6 */
+		}
+	}
+
+	bh_unlock_sock(meta_sk);
+	sock_put(meta_sk); /* Taken by mptcp_hash_find */
+	return 0;
+}
+
 /**
  * Equivalent of tcp_fin() for MPTCP
  * Can be called only when the FIN is validly part
@@ -1761,7 +1975,8 @@ static inline void mptcp_path_array_check(struct sock *meta_sk)
 
 	if (unlikely(mpcb->list_rcvd)) {
 		mpcb->list_rcvd = 0;
-		mptcp_create_subflows(meta_sk);
+		if (mpcb->pm_ops->new_remote_address)
+			mpcb->pm_ops->new_remote_address(meta_sk);
 	}
 }
 

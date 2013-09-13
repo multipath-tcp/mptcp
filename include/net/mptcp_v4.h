@@ -34,7 +34,6 @@
 #include <linux/in.h>
 #include <linux/skbuff.h>
 #include <net/mptcp.h>
-#include <net/mptcp_pm.h>
 #include <net/request_sock.h>
 #include <net/sock.h>
 
@@ -51,11 +50,8 @@ struct sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
 				 const __be32 laddr, const struct net *net);
 int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 			   struct mptcp_rem4 *rem);
-void mptcp_pm_addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
-				  struct net *net);
 int mptcp_pm_v4_init(void);
 void mptcp_pm_v4_undo(void);
-void mptcp_v4_send_add_addr(int loc_id, struct mptcp_cb *mpcb);
 u32 mptcp_v4_get_nonce(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport,
 		       u32 seq);
 u64 mptcp_v4_get_key(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport);
