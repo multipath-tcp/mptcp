@@ -222,6 +222,9 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 	if (newsk == NULL)
 		goto out_nonewsk;
 
+	newtcp6sk = (struct tcp6_sock *)newsk;
+	inet_sk(newsk)->pinet6 = &newtcp6sk->inet6;
+
 	/*
 	 * No need to charge this sock to the relevant IPv6 refcnt debug socks
 	 * count here, tcp_create_openreq_child now does this for us, see the
@@ -229,12 +232,8 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 	 */
 
 	newsk->sk_gso_type = SKB_GSO_TCPV6;
-	/* We cannot call __ip6_dst_store, because we don't have the np-pointer */
-	sk_setup_caps(newsk, dst);
+	__ip6_dst_store(newsk, dst, NULL, NULL);
 	inet6_sk_rx_dst_set(newsk, skb);
-
-	newtcp6sk = (struct tcp6_sock *)newsk;
-	inet_sk(newsk)->pinet6 = &newtcp6sk->inet6;
 
 	newtp = tcp_sk(newsk);
 	newinet = inet_sk(newsk);
