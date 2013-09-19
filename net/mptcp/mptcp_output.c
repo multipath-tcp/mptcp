@@ -1241,7 +1241,7 @@ retry:
 		mptcp_for_each_sk(mpcb, subsk) {
 			subtp = tcp_sk(subsk);
 			if (subtp->mptcp->sent_pkts) {
-				if (inet_csk(subsk)->icsk_ca_state == TCP_CA_Recovery)
+				if (tcp_in_cwnd_reduction(subsk))
 					subtp->prr_out += subtp->mptcp->sent_pkts;
 				tcp_cwnd_validate(subsk);
 				subtp->mptcp->sent_pkts = 0;
