@@ -1954,7 +1954,7 @@ out_unlock:
  * The diff is that we handle the retransmission-stats (retrans_stamp) at the
  * meta-level.
  */
-static int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
+int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct sock *subsk;
@@ -2101,6 +2101,8 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 
 	if (meta_icsk->icsk_retransmits == 0)
 		NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_TCPTIMEOUTS);
+
+	meta_icsk->icsk_ca_state = TCP_CA_Loss;
 
 	err = mptcp_retransmit_skb(meta_sk, tcp_write_queue_head(meta_sk));
 	if (err > 0) {

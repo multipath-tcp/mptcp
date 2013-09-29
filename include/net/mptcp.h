@@ -737,6 +737,7 @@ unsigned int mptcp_xmit_size_goal(struct sock *meta_sk, u32 mss_now,
 int mptcp_time_wait(struct sock *sk, struct tcp_timewait_sock *tw);
 void mptcp_twsk_destructor(struct tcp_timewait_sock *tw);
 void mptcp_update_tw_socks(const struct tcp_sock *tp, int state);
+int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb);
 
 static inline bool mptcp_can_sendpage(struct sock *sk)
 {

@@ -1129,6 +1129,28 @@ void mptcp_fin(struct sock *meta_sk)
 	return;
 }
 
+static void mptcp_xmit_retransmit_queue(struct sock *meta_sk)
+{
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct sk_buff *skb;
+
+	if (!meta_tp->packets_out)
+		return;
+
+	tcp_for_write_queue(skb, meta_sk) {
+		if (skb == tcp_send_head(meta_sk))
+			break;
+
+		if (mptcp_retransmit_skb(meta_sk, skb))
+			return;
+
+		if (skb == tcp_write_queue_head(meta_sk))
+			inet_csk_reset_xmit_timer(meta_sk, ICSK_TIME_RETRANS,
+						  inet_csk(meta_sk)->icsk_rto,
+						  TCP_RTO_MAX);
+	}
+}
+
 /* Handle the DATA_ACK */
 static void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 {
@@ -1225,6 +1247,15 @@ static void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	meta_tp->snd_una = data_ack;
 
 	mptcp_clean_rtx_queue(meta_sk, prior_snd_una);
+
+	/* We are in loss-state, and something got acked, retransmit the whole
+	 * queue now!
+	 */
+	if (inet_csk(meta_sk)->icsk_ca_state == TCP_CA_Loss &&
+	    after(data_ack, prior_snd_una)) {
+		mptcp_xmit_retransmit_queue(meta_sk);
+		inet_csk(meta_sk)->icsk_ca_state = TCP_CA_Open;
+	}
 
 	/* Simplified version of tcp_new_space, because the snd-buffer
 	 * is handled by all the subflows.
