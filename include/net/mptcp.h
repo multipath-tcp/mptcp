@@ -710,6 +710,7 @@ void mptcp_twsk_destructor(struct tcp_timewait_sock *tw);
 void mptcp_update_tw_socks(const struct tcp_sock *tp, int state);
 void mptcp_disconnect(struct sock *sk);
 bool mptcp_should_expand_sndbuf(struct sock *meta_sk);
+int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb);
 
 static inline
 struct mptcp_request_sock *mptcp_rsk(const struct request_sock *req)
