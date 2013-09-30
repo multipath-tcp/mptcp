@@ -1119,7 +1119,8 @@ retry:
 		    unlikely(pskb_expand_head(skb, 0, 0, GFP_ATOMIC)))
 			break;
 
-		tso_segs = tcp_init_tso_segs(meta_sk, skb, mss_now);
+		tcp_set_skb_tso_segs(meta_sk, skb, mss_now);
+		tso_segs = tcp_skb_pcount(skb);
 		BUG_ON(!tso_segs);
 
 		cwnd_quota = tcp_cwnd_test(subtp, skb);
@@ -1995,7 +1996,8 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 	}
 
 	oldpcount = tcp_skb_pcount(skb);
-	tso_segs = tcp_init_tso_segs(meta_sk, skb, mss_now);
+	tcp_set_skb_tso_segs(meta_sk, skb, mss_now);
+	tso_segs = tcp_skb_pcount(skb);
 	BUG_ON(!tso_segs);
 
 	/* The MSS might have changed and so the number of segments. We
