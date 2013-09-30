@@ -189,24 +189,6 @@ next_subflow:
 	    !tcp_sk(mpcb->master_sk)->mptcp->fully_established)
 		goto exit;
 
-	if (sysctl_mptcp_ndiffports > iter &&
-	    sysctl_mptcp_ndiffports > mpcb->cnt_subflows) {
-		if (meta_sk->sk_family == AF_INET ||
-		    mptcp_v6_is_v4_mapped(meta_sk)) {
-			mptcp_init4_subsockets(meta_sk, &mptcp_local->locaddr4[0],
-					       &mpcb->remaddr4[0]);
-		} else {
-#if IS_ENABLED(CONFIG_IPV6)
-			mptcp_init6_subsockets(meta_sk, &mptcp_local->locaddr6[0],
-					       &mpcb->remaddr6[0]);
-#endif
-		}
-		goto next_subflow;
-	}
-	if (sysctl_mptcp_ndiffports > 1 &&
-	    sysctl_mptcp_ndiffports == mpcb->cnt_subflows)
-		goto exit;
-
 	mptcp_for_each_bit_set(mpcb->rem4_bits, i) {
 		struct mptcp_rem4 *rem;
 		u8 remaining_bits;
@@ -866,9 +848,6 @@ static int netdev_event(struct notifier_block *this, unsigned long event,
 	struct inet6_dev *in6_dev;
 #endif
 
-	if (sysctl_mptcp_ndiffports > 1)
-		return NOTIFY_DONE;
-
 	if (!(event == NETDEV_UP || event == NETDEV_DOWN ||
 	      event == NETDEV_CHANGE))
 		return NOTIFY_DONE;
@@ -914,12 +893,6 @@ static void full_mesh_new_session(struct sock *meta_sk, u8 id)
 	INIT_WORK(&fmp->subflow_work, create_subflow_worker);
 	INIT_DELAYED_WORK(&fmp->subflow_retry_work, retry_subflow_worker);
 	fmp->mpcb = mpcb;
-
-	/* if multiports is requested, we work with the main address
-	 * and play only with the ports
-	 */
-	if (sysctl_mptcp_ndiffports > 1)
-		return;
 
 	sk = mptcp_select_ack_sock(meta_sk, 0);
 
