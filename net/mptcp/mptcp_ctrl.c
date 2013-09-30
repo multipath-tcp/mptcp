@@ -63,8 +63,6 @@ static struct kmem_cache *mptcp_sock_cache __read_mostly;
 static struct kmem_cache *mptcp_cb_cache __read_mostly;
 static struct kmem_cache *mptcp_tw_cache __read_mostly;
 
-int sysctl_mptcp_ndiffports __read_mostly = 1;
-EXPORT_SYMBOL(sysctl_mptcp_ndiffports);
 int sysctl_mptcp_enabled __read_mostly = 1;
 int sysctl_mptcp_checksum __read_mostly = 1;
 int sysctl_mptcp_debug __read_mostly;
@@ -94,13 +92,6 @@ static int proc_mptcp_path_manager(ctl_table *ctl, int write,
 }
 
 static struct ctl_table mptcp_table[] = {
-	{
-		.procname = "mptcp_ndiffports",
-		.data = &sysctl_mptcp_ndiffports,
-		.maxlen = sizeof(int),
-		.mode = 0644,
-		.proc_handler = &proc_dointvec
-	},
 	{
 		.procname = "mptcp_enabled",
 		.data = &sysctl_mptcp_enabled,

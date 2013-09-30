@@ -624,7 +624,6 @@ static inline int mptcp_sub_len_dss(struct mp_dss *m, int csum)
 	return 4 + m->A * (4 + m->a * 4) + m->M * (10 + m->m * 4 + csum * 2);
 }
 
-extern int sysctl_mptcp_ndiffports;
 extern int sysctl_mptcp_enabled;
 extern int sysctl_mptcp_checksum;
 extern int sysctl_mptcp_debug;

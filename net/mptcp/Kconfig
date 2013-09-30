@@ -22,6 +22,14 @@ config MPTCP_FULLMESH
 	---help---
 	  This path-management module will create a full-mesh among all IP-addresses.
 
+config MPTCP_NDIFFPORTS
+	tristate "MPTCP ndiff-ports"
+	depends on MPTCP=y
+	---help---
+	  This path-management module will create multiple subflows between the same
+	  pair of IP-addresses, modifying the source-port. You can set the number
+	  of subflows via the mptcp_ndiffports-sysctl.
+
 choice
 	prompt "Default MPTCP Path-Manager"
 	default DEFAULT
@@ -30,6 +38,9 @@ choice
 
 	config DEFAULT_FULLMESH
 		bool "Full mesh" if MPTCP_FULLMESH=y
+
+	config DEFAULT_NDIFFPORTS
+		bool "ndiff-ports" if MPTCP_NDIFFPORTS=y
 
 	config DEFAULT_DUMMY
 		bool "Default"
@@ -42,4 +53,5 @@ config DEFAULT_MPTCP_PM
 	string
 	default "default" if DEFAULT_DUMMY
 	default "fullmesh" if DEFAULT_FULLMESH 
+	default "ndiffports" if DEFAULT_NDIFFPORTS
 	default "default"
