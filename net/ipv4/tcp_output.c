@@ -780,8 +780,11 @@ static void mptcp_release_cb(struct sock *meta_sk)
 	if (flags & (1UL << TCP_MTU_REDUCED_DEFERRED))
 		__sock_put(meta_sk);
 
-	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk)
+	while ((sk = meta_tp->mpcb->callback_list) != NULL) {
+		meta_tp->mpcb->callback_list = tcp_sk(sk)->mptcp->next_cb;
+		tcp_sk(sk)->mptcp->next_cb = NULL;
 		sk->sk_prot->release_cb(sk);
+	}
 }
 
 /**
