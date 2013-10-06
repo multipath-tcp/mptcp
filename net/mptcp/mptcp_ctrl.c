@@ -230,9 +230,27 @@ static void mptcp_mpcb_put(struct mptcp_cb *mpcb)
 
 static void mptcp_sock_destruct(struct sock *sk)
 {
+	struct sock *cb_sk, *prev = NULL;
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	inet_sock_destruct(sk);
+
+	cb_sk = tp->mpcb->callback_list;
+	while (cb_sk) {
+		if (cb_sk == sk) {
+			if (prev)
+				tcp_sk(prev)->mptcp->next_cb = tcp_sk(cb_sk)->mptcp->next_cb;
+			else
+				tp->mpcb->callback_list = tcp_sk(cb_sk)->mptcp->next_cb;
+
+			tcp_sk(cb_sk)->mptcp->next_cb = NULL;
+			cb_sk->sk_prot->release_cb(cb_sk);
+			break;
+		}
+
+		prev = cb_sk;
+		cb_sk = tcp_sk(cb_sk)->mptcp->next_cb;
+	}
 
 	kmem_cache_free(mptcp_sock_cache, tp->mptcp);
 	tp->mptcp = NULL;
@@ -1024,8 +1042,6 @@ void mptcp_del_sock(struct sock *sk)
 	else if (tp->mptcp->pre_established)
 		sk_stop_timer(sk, &tp->mptcp->mptcp_ack_timer);
 
-	sk->sk_prot->release_cb(sk);
-
 	rcu_assign_pointer(inet_sk(sk)->inet_opt, NULL);
 }
 
@@ -1802,6 +1818,20 @@ void mptcp_update_tw_socks(const struct tcp_sock *tp, int state)
 			mptw->rcv_nxt++;
 	}
 	rcu_read_unlock_bh();
+}
+
+void mptcp_tsq_flags(struct sock *sk, int bit)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct sock *meta_sk = mptcp_meta_sk(sk);
+
+	if (!tp->mptcp->next_cb) {
+		tp->mptcp->next_cb = tp->mpcb->callback_list;
+		tp->mpcb->callback_list = sk;
+	}
+
+	if (!test_and_set_bit(bit, &tcp_sk(meta_sk)->tsq_flags))
+		sock_hold(meta_sk);
 }
 
 struct workqueue_struct *mptcp_wq;

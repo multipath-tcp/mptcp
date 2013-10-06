@@ -403,10 +403,8 @@ static void tcp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 			if (!test_and_set_bit(TCP_MTU_REDUCED_DEFERRED,
 					   &tp->tsq_flags))
 				sock_hold(sk);
-			if (tp->mpc &&
-			    !test_and_set_bit(TCP_MTU_REDUCED_DEFERRED,
-					      &tcp_sk(meta_sk)->tsq_flags))
-				sock_hold(meta_sk);
+			if (tp->mpc)
+				mptcp_tsq_flags(sk, TCP_MTU_REDUCED_DEFERRED);
 		}
 		goto out;
 	}

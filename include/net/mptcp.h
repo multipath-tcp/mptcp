@@ -121,6 +121,7 @@ struct mptcp_options_received {
 
 struct mptcp_tcp_sock {
 	struct tcp_sock	*next;		/* Next subflow socket */
+	struct sock	*next_cb;
 	struct mptcp_options_received rx_opt;
 
 	 /* Those three fields record the current mapping */
@@ -188,6 +189,8 @@ struct mptcp_cb {
 
 	/* list of sockets in this multipath connection */
 	struct tcp_sock *connection_list;
+	/* list of sockets that need a call to release_cb */
+	struct sock *callback_list;
 
 	spinlock_t	 tw_lock;
 	struct list_head tw_list;
@@ -711,6 +714,7 @@ void mptcp_update_tw_socks(const struct tcp_sock *tp, int state);
 void mptcp_disconnect(struct sock *sk);
 bool mptcp_should_expand_sndbuf(struct sock *meta_sk);
 int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb);
+void mptcp_tsq_flags(struct sock *sk, int bit);
 
 static inline
 struct mptcp_request_sock *mptcp_rsk(const struct request_sock *req)
@@ -1372,6 +1376,7 @@ static inline bool mptcp_should_expand_sndbuf(struct sock *meta_sk)
 {
 	return false;
 }
+static inline void mptcp_tsq_flags(struct sock *sk, int bit) {}
 #endif /* CONFIG_MPTCP */
 
 #endif /* _MPTCP_H */

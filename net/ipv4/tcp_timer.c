@@ -247,7 +247,8 @@ out:
 static void tcp_delack_timer(unsigned long data)
 {
 	struct sock *sk = (struct sock *)data;
-	struct sock *meta_sk = tcp_sk(sk)->mpc ? mptcp_meta_sk(sk) : sk;
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct sock *meta_sk = tp->mpc ? mptcp_meta_sk(sk) : sk;
 
 	bh_lock_sock(meta_sk);
 	if (!sock_owned_by_user(meta_sk)) {
@@ -258,9 +259,8 @@ static void tcp_delack_timer(unsigned long data)
 		/* deleguate our work to tcp_release_cb() */
 		if (!test_and_set_bit(TCP_DELACK_TIMER_DEFERRED, &tcp_sk(sk)->tsq_flags))
 			sock_hold(sk);
-		if (tcp_sk(sk)->mpc &&
-		    !test_and_set_bit(TCP_DELACK_TIMER_DEFERRED, &tcp_sk(meta_sk)->tsq_flags))
-			sock_hold(meta_sk);
+		if (tp->mpc)
+			mptcp_tsq_flags(sk, TCP_DELACK_TIMER_DEFERRED);
 	}
 	bh_unlock_sock(meta_sk);
 	sock_put(sk);
@@ -538,9 +538,8 @@ static void tcp_write_timer(unsigned long data)
 		/* deleguate our work to tcp_release_cb() */
 		if (!test_and_set_bit(TCP_WRITE_TIMER_DEFERRED, &tcp_sk(sk)->tsq_flags))
 			sock_hold(sk);
-		if (tcp_sk(sk)->mpc &&
-		    !test_and_set_bit(TCP_WRITE_TIMER_DEFERRED, &tcp_sk(meta_sk)->tsq_flags))
-			sock_hold(meta_sk);
+		if (tcp_sk(sk)->mpc)
+			mptcp_tsq_flags(sk, TCP_WRITE_TIMER_DEFERRED);
 	}
 	bh_unlock_sock(meta_sk);
 	sock_put(sk);
