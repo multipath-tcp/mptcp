@@ -404,7 +404,7 @@ static void tcp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 					   &tp->tsq_flags))
 				sock_hold(sk);
 			if (tp->mpc)
-				mptcp_tsq_flags(sk, TCP_MTU_REDUCED_DEFERRED);
+				mptcp_tsq_flags(sk);
 		}
 		goto out;
 	}

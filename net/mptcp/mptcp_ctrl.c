@@ -1820,18 +1820,46 @@ void mptcp_update_tw_socks(const struct tcp_sock *tp, int state)
 	rcu_read_unlock_bh();
 }
 
-void mptcp_tsq_flags(struct sock *sk, int bit)
+void mptcp_tsq_flags(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sock *meta_sk = mptcp_meta_sk(sk);
 
+	/* It will be handled as a regular deferred-call */
+	if (is_meta_sk(sk))
+		return;
+
 	if (!tp->mptcp->next_cb) {
 		tp->mptcp->next_cb = tp->mpcb->callback_list;
 		tp->mpcb->callback_list = sk;
+		/* We need to hold it here, as the sock_hold is not assured
+		 * by the release_sock as it is done in regular TCP.
+		 *
+		 * The subsocket may get inet_csk_destroy'd while it is inside
+		 * the callback_list.
+		 */
+		sock_hold(sk);
 	}
 
-	if (!test_and_set_bit(bit, &tcp_sk(meta_sk)->tsq_flags))
+	if (!test_and_set_bit(MPTCP_SUB_DEFERRED, &tcp_sk(meta_sk)->tsq_flags))
 		sock_hold(meta_sk);
+}
+
+void mptcp_tsq_sub_deferred(struct sock *meta_sk)
+{
+	struct sock *sk;
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+
+	BUG_ON(!is_meta_sk(meta_sk) && !meta_tp->was_meta_sk);
+
+	__sock_put(meta_sk);
+	while ((sk = meta_tp->mpcb->callback_list) != NULL) {
+		meta_tp->mpcb->callback_list = tcp_sk(sk)->mptcp->next_cb;
+		tcp_sk(sk)->mptcp->next_cb = NULL;
+		sk->sk_prot->release_cb(sk);
+		/* Final sock_put (cfr. mptcp_tsq_flags */
+		sock_put(sk);
+	}
 }
 
 struct workqueue_struct *mptcp_wq;

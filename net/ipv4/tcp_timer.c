@@ -260,7 +260,7 @@ static void tcp_delack_timer(unsigned long data)
 		if (!test_and_set_bit(TCP_DELACK_TIMER_DEFERRED, &tcp_sk(sk)->tsq_flags))
 			sock_hold(sk);
 		if (tp->mpc)
-			mptcp_tsq_flags(sk, TCP_DELACK_TIMER_DEFERRED);
+			mptcp_tsq_flags(sk);
 	}
 	bh_unlock_sock(meta_sk);
 	sock_put(sk);
@@ -539,7 +539,7 @@ static void tcp_write_timer(unsigned long data)
 		if (!test_and_set_bit(TCP_WRITE_TIMER_DEFERRED, &tcp_sk(sk)->tsq_flags))
 			sock_hold(sk);
 		if (tcp_sk(sk)->mpc)
-			mptcp_tsq_flags(sk, TCP_WRITE_TIMER_DEFERRED);
+			mptcp_tsq_flags(sk);
 	}
 	bh_unlock_sock(meta_sk);
 	sock_put(sk);

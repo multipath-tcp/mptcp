@@ -714,7 +714,8 @@ void mptcp_update_tw_socks(const struct tcp_sock *tp, int state);
 void mptcp_disconnect(struct sock *sk);
 bool mptcp_should_expand_sndbuf(struct sock *meta_sk);
 int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb);
-void mptcp_tsq_flags(struct sock *sk, int bit);
+void mptcp_tsq_flags(struct sock *sk);
+void mptcp_tsq_sub_deferred(struct sock *meta_sk);
 
 static inline
 struct mptcp_request_sock *mptcp_rsk(const struct request_sock *req)
@@ -1376,7 +1377,8 @@ static inline bool mptcp_should_expand_sndbuf(struct sock *meta_sk)
 {
 	return false;
 }
-static inline void mptcp_tsq_flags(struct sock *sk, int bit) {}
+static inline void mptcp_tsq_flags(struct sock *sk) {}
+static inline void mptcp_tsq_sub_deferred(struct sock *meta_sk) {}
 #endif /* CONFIG_MPTCP */
 
 #endif /* _MPTCP_H */
