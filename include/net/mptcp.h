@@ -741,7 +741,8 @@ int mptcp_time_wait(struct sock *sk, struct tcp_timewait_sock *tw);
 void mptcp_twsk_destructor(struct tcp_timewait_sock *tw);
 void mptcp_update_tw_socks(const struct tcp_sock *tp, int state);
 int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb);
-void mptcp_tsq_flags(struct sock *sk, int bit);
+void mptcp_tsq_flags(struct sock *sk);
+void mptcp_tsq_sub_deferred(struct sock *meta_sk);
 
 static inline bool mptcp_can_sendpage(struct sock *sk)
 {
@@ -1403,6 +1404,8 @@ static inline int mptcp_time_wait(struct sock *sk, struct tcp_timewait_sock *tw)
 static inline void mptcp_twsk_destructor(struct tcp_timewait_sock *tw) {}
 static inline void mptcp_update_tw_socks(const struct tcp_sock *tp, int state) {}
 static inline void mptcp_tsq_flags(struct sock *sk, int bit) {}
+static inline void mptcp_tsq_flags(struct sock *sk) {}
+static inline void mptcp_tsq_sub_deferred(struct sock *meta_sk) {}
 #endif /* CONFIG_MPTCP */
 
 #endif /* _MPTCP_H */

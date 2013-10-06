@@ -737,12 +737,21 @@ static void tcp_tasklet_func(unsigned long data)
 		bh_lock_sock(meta_sk);
 
 		if (!sock_owned_by_user(meta_sk)) {
-			tcp_tsq_handler(meta_sk);
+			tcp_tsq_handler(sk);
+			if (tp->mpc)
+				tcp_tsq_handler(meta_sk);
 		} else {
 			/* defer the work to tcp_release_cb() */
 			set_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags);
-			if (tp->mpc)
+
+			/* For MPTCP, we set the tsq-bit on the meta, and the
+			 * subflow as we don't know if the limitation happened
+			 * while inside mptcp_write_xmit or during tcp_write_xmit.
+			 */
+			if (tp->mpc) {
 				set_bit(TCP_TSQ_DEFERRED, &tcp_sk(meta_sk)->tsq_flags);
+				mptcp_tsq_flags(sk);
+			}
 		}
 		bh_unlock_sock(meta_sk);
 
@@ -754,38 +763,8 @@ static void tcp_tasklet_func(unsigned long data)
 #define TCP_DEFERRED_ALL ((1UL << TCP_TSQ_DEFERRED) |		\
 			  (1UL << TCP_WRITE_TIMER_DEFERRED) |	\
 			  (1UL << TCP_DELACK_TIMER_DEFERRED) |	\
-			  (1UL << TCP_MTU_REDUCED_DEFERRED))
-
-static void mptcp_release_cb(struct sock *meta_sk)
-{
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct sock *sk;
-	unsigned long flags, nflags;
-
-	/* perform an atomic operation only if at least one flag is set */
-	do {
-		flags = meta_tp->tsq_flags;
-		if (!(flags & TCP_DEFERRED_ALL))
-			return;
-		nflags = flags & ~TCP_DEFERRED_ALL;
-	} while (cmpxchg(&meta_tp->tsq_flags, flags, nflags) != flags);
-
-	if (flags & (1UL << TCP_TSQ_DEFERRED))
-		tcp_tsq_handler(meta_sk);
-
-	if (flags & (1UL << TCP_WRITE_TIMER_DEFERRED))
-		__sock_put(meta_sk);
-	if (flags & (1UL << TCP_DELACK_TIMER_DEFERRED))
-		__sock_put(meta_sk);
-	if (flags & (1UL << TCP_MTU_REDUCED_DEFERRED))
-		__sock_put(meta_sk);
-
-	while ((sk = meta_tp->mpcb->callback_list) != NULL) {
-		meta_tp->mpcb->callback_list = tcp_sk(sk)->mptcp->next_cb;
-		tcp_sk(sk)->mptcp->next_cb = NULL;
-		sk->sk_prot->release_cb(sk);
-	}
-}
+			  (1UL << TCP_MTU_REDUCED_DEFERRED) |	\
+			  (1UL << MPTCP_SUB_DEFERRED))
 
 /**
  * tcp_release_cb - tcp release_sock() callback
@@ -798,11 +777,6 @@ void tcp_release_cb(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned long flags, nflags;
-
-	if (is_meta_sk(sk)) {
-		mptcp_release_cb(sk);
-		return;
-	}
 
 	/* perform an atomic operation only if at least one flag is set */
 	do {
@@ -827,6 +801,8 @@ void tcp_release_cb(struct sock *sk)
 		sk->sk_prot->mtu_reduced(sk);
 		__sock_put(sk);
 	}
+	if (flags & (1UL << MPTCP_SUB_DEFERRED))
+		mptcp_tsq_sub_deferred(sk);
 }
 EXPORT_SYMBOL(tcp_release_cb);
 
