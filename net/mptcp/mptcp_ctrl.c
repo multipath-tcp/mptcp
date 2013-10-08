@@ -1313,7 +1313,7 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 void mptcp_update_sndbuf(struct mptcp_cb *mpcb)
 {
 	struct sock *meta_sk = mpcb->meta_sk, *sk;
-	int new_sndbuf = 0;
+	int new_sndbuf = 0, old_sndbuf = meta_sk->sk_sndbuf;
 	mptcp_for_each_sk(mpcb, sk) {
 		if (!mptcp_sk_can_send(sk))
 			continue;
@@ -1326,6 +1326,14 @@ void mptcp_update_sndbuf(struct mptcp_cb *mpcb)
 		}
 	}
 	meta_sk->sk_sndbuf = max(min(new_sndbuf, sysctl_tcp_wmem[2]), meta_sk->sk_sndbuf);
+
+	/* The subflow's call to sk_write_space in tcp_new_space ends up in
+	 * mptcp_write_space.
+	 * It has nothing to do with waking up the application.
+	 * So, we do it here.
+	 */
+	if (old_sndbuf != meta_sk->sk_sndbuf)
+		meta_sk->sk_write_space(meta_sk);
 }
 
 void mptcp_close(struct sock *meta_sk, long timeout)
