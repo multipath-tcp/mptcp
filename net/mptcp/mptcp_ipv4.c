@@ -655,8 +655,10 @@ found:
 		if (sk)
 			tcp_send_ack(sk);
 
-		mptcp_for_each_bit_set(mpcb->rem4_bits, i)
+		mptcp_for_each_bit_set(mpcb->rem4_bits, i) {
 			mpcb->remaddr4[i].bitfield &= mpcb->loc4_bits;
+			mpcb->remaddr4[i].retry_bitfield &= mpcb->loc4_bits;
+		}
 	}
 }
 
