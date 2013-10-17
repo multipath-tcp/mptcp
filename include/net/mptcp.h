@@ -1026,9 +1026,12 @@ static inline bool mptcp_sk_can_gso(const struct sock *meta_sk)
 	if (tcp_sk(meta_sk)->mpcb->dss_csum)
 		return 0;
 
-	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk)
+	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk) {
+		if (!mptcp_sk_can_send(sk))
+			continue;
 		if (!sk_can_gso(sk))
 			return false;
+	}
 	return true;
 }
 
@@ -1039,9 +1042,12 @@ static inline bool mptcp_can_sg(const struct sock *meta_sk)
 	if (tcp_sk(meta_sk)->mpcb->dss_csum)
 		return 0;
 
-	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk)
+	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk) {
+		if (!mptcp_sk_can_send(sk))
+			continue;
 		if (!(sk->sk_route_caps & NETIF_F_SG))
 			return false;
+	}
 	return true;
 }
 
