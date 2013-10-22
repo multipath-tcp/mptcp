@@ -65,6 +65,7 @@
 #include <net/tcp_memcontrol.h>
 #include <net/mptcp.h>
 #include <net/mptcp_v6.h>
+#include <net/busy_poll.h>
 
 #include <asm/uaccess.h>
 
@@ -1585,6 +1586,7 @@ process:
 	if (sk_filter(sk, skb))
 		goto discard_and_relse;
 
+	sk_mark_napi_id(sk, skb);
 	skb->dev = NULL;
 
 	if (tcp_sk(sk)->mpc) {
