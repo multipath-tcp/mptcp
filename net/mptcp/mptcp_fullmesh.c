@@ -842,7 +842,7 @@ static struct notifier_block inet6_addr_notifier = {
 static int netdev_event(struct notifier_block *this, unsigned long event,
 			void *ptr)
 {
-	struct net_device *dev = ptr;
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct in_device *in_dev;
 #if IS_ENABLED(CONFIG_IPV6)
 	struct inet6_dev *in6_dev;
