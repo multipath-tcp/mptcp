@@ -1004,7 +1004,8 @@ static inline void mptcp_check_rcvseq_wrap(struct tcp_sock *meta_tp,
 
 static inline int mptcp_sk_can_send(const struct sock *sk)
 {
-	return (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCPF_CLOSE_WAIT);
+	return (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCPF_CLOSE_WAIT) &&
+	       !tcp_sk(sk)->mptcp->pre_established;
 }
 
 static inline int mptcp_sk_can_recv(const struct sock *sk)
@@ -1015,7 +1016,8 @@ static inline int mptcp_sk_can_recv(const struct sock *sk)
 static inline int mptcp_sk_can_send_ack(const struct sock *sk)
 {
 	return !((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV |
-					TCPF_CLOSE | TCPF_LISTEN));
+					TCPF_CLOSE | TCPF_LISTEN)) &&
+	       !tcp_sk(sk)->mptcp->pre_established;
 }
 
 /* Only support GSO if all subflows supports it */
