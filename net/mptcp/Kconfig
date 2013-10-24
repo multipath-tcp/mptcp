@@ -10,6 +10,7 @@ config MPTCP
 
 menuconfig MPTCP_PM_ADVANCED
 	bool "MPTCP: advanced path-manager control"
+	depends on MPTCP=y
 	---help---
 	  Support for selection of different path-managers. You should choose 'Y' here,
 	  because otherwise you will not actively create new MPTCP-subflows.
