@@ -4837,9 +4837,6 @@ static int i9xx_crtc_mode_set(struct drm_crtc *crtc,
 		return -EINVAL;
 	}
 
-	/* Ensure that the cursor is valid for the new mode before changing... */
-	intel_crtc_update_cursor(crtc, true);
-
 	if (is_lvds && dev_priv->lvds_downclock_avail) {
 		/*
 		 * Ensure we match the reduced clock's P to the target clock.
@@ -5688,9 +5685,6 @@ static int ironlake_crtc_mode_set(struct drm_crtc *crtc,
 		intel_crtc->config.dpll.p2 = clock.p2;
 	}
 
-	/* Ensure that the cursor is valid for the new mode before changing... */
-	intel_crtc_update_cursor(crtc, true);
-
 	/* CPU eDP is the only output that doesn't need a PCH PLL of its own. */
 	if (intel_crtc->config.has_pch_encoder) {
 		fp = i9xx_dpll_compute_fp(&intel_crtc->config.dpll);
@@ -5896,9 +5890,6 @@ static int haswell_crtc_mode_set(struct drm_crtc *crtc,
 
 	if (!intel_ddi_pll_mode_set(crtc))
 		return -EINVAL;
-
-	/* Ensure that the cursor is valid for the new mode before changing... */
-	intel_crtc_update_cursor(crtc, true);
 
 	if (intel_crtc->config.has_dp_encoder)
 		intel_dp_set_m_n(intel_crtc);
@@ -6581,7 +6572,8 @@ static int intel_crtc_cursor_set(struct drm_crtc *crtc,
 	intel_crtc->cursor_width = width;
 	intel_crtc->cursor_height = height;
 
-	intel_crtc_update_cursor(crtc, intel_crtc->cursor_bo != NULL);
+	if (intel_crtc->active)
+		intel_crtc_update_cursor(crtc, intel_crtc->cursor_bo != NULL);
 
 	return 0;
 fail_unpin:
@@ -6600,7 +6592,8 @@ static int intel_crtc_cursor_move(struct drm_crtc *crtc, int x, int y)
 	intel_crtc->cursor_x = x;
 	intel_crtc->cursor_y = y;
 
-	intel_crtc_update_cursor(crtc, intel_crtc->cursor_bo != NULL);
+	if (intel_crtc->active)
+		intel_crtc_update_cursor(crtc, intel_crtc->cursor_bo != NULL);
 
 	return 0;
 }
@@ -7808,6 +7801,19 @@ intel_modeset_pipe_config(struct drm_crtc *crtc,
 	drm_mode_copy(&pipe_config->requested_mode, mode);
 	pipe_config->cpu_transcoder = to_intel_crtc(crtc)->pipe;
 	pipe_config->shared_dpll = DPLL_ID_PRIVATE;
+
+	/*
+	 * Sanitize sync polarity flags based on requested ones. If neither
+	 * positive or negative polarity is requested, treat this as meaning
+	 * negative polarity.
+	 */
+	if (!(pipe_config->adjusted_mode.flags &
+	      (DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_NHSYNC)))
+		pipe_config->adjusted_mode.flags |= DRM_MODE_FLAG_NHSYNC;
+
+	if (!(pipe_config->adjusted_mode.flags &
+	      (DRM_MODE_FLAG_PVSYNC | DRM_MODE_FLAG_NVSYNC)))
+		pipe_config->adjusted_mode.flags |= DRM_MODE_FLAG_NVSYNC;
 
 	/* Compute a starting value for pipe_config->pipe_bpp taking the source
 	 * plane pixel format and any sink constraints into account. Returns the
