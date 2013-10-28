@@ -55,9 +55,7 @@
 #include <linux/inetdevice.h>
 #include <linux/workqueue.h>
 #include <linux/atomic.h>
-#ifdef CONFIG_SYSCTL
 #include <linux/sysctl.h>
-#endif
 
 static struct kmem_cache *mptcp_sock_cache __read_mostly;
 static struct kmem_cache *mptcp_cb_cache __read_mostly;
@@ -71,7 +69,6 @@ int sysctl_mptcp_syn_retries __read_mostly = 3;
 
 bool mptcp_init_failed __read_mostly;
 
-#ifdef CONFIG_SYSCTL
 static int proc_mptcp_path_manager(ctl_table *ctl, int write,
 				   void __user *buffer, size_t *lenp,
 				   loff_t *ppos)
@@ -128,7 +125,6 @@ static struct ctl_table mptcp_table[] = {
 	},
 	{ }
 };
-#endif
 
 static inline u32 mptcp_hash_tk(u32 token)
 {
@@ -2118,7 +2114,6 @@ void mptcp_tsq_sub_deferred(struct sock *meta_sk)
 struct workqueue_struct *mptcp_wq;
 EXPORT_SYMBOL(mptcp_wq);
 
-#ifdef CONFIG_PROC_FS
 /* Output /proc/net/mptcp */
 static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 {
@@ -2211,15 +2206,12 @@ static struct pernet_operations mptcp_pm_proc_ops = {
 	.init = mptcp_pm_init_net,
 	.exit = mptcp_pm_exit_net,
 };
-#endif
 
 /* General initialization of mptcp */
 void __init mptcp_init(void)
 {
 	int i;
-#ifdef CONFIG_SYSCTL
 	struct ctl_table_header *mptcp_sysctl;
-#endif
 
 	mptcp_sock_cache = kmem_cache_create("mptcp_sock",
 					     sizeof(struct mptcp_tcp_sock),
@@ -2265,11 +2257,9 @@ void __init mptcp_init(void)
 	if (mptcp_pm_v4_init())
 		goto mptcp_pm_v4_failed;
 
-#ifdef CONFIG_SYSCTL
 	mptcp_sysctl = register_net_sysctl(&init_net, "net/mptcp", mptcp_table);
 	if (!mptcp_sysctl)
 		goto register_sysctl_failed;
-#endif
 
 	if (mptcp_register_path_manager(&mptcp_pm_default))
 		goto register_pm_failed;
@@ -2289,9 +2279,7 @@ mptcp_pm_v4_failed:
 	mptcp_pm_v6_undo();
 mptcp_pm_v6_failed:
 #endif
-#ifdef CONFIG_PROC_FS
 	unregister_pernet_subsys(&mptcp_pm_proc_ops);
-#endif
 pernet_failed:
 	destroy_workqueue(mptcp_wq);
 alloc_workqueue_failed:
