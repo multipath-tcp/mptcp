@@ -1868,7 +1868,7 @@ void __init mptcp_init(void)
 		goto register_sysctl_failed;
 #endif
 
-	pr_info("MPTCP: Stable release v0.87.3");
+	pr_info("MPTCP: Stable release v0.87.4");
 
 	mptcp_init_failed = false;
 
