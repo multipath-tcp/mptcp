@@ -122,7 +122,6 @@ static struct mptcp_pm_ops ndiffports __read_mostly = {
 	.owner = THIS_MODULE,
 };
 
-#if CONFIG_SYSCTL
 static struct ctl_table ndiff_table[] = {
 	{
 		.procname = "mptcp_ndiffports",
@@ -135,18 +134,15 @@ static struct ctl_table ndiff_table[] = {
 };
 
 struct ctl_table_header *mptcp_sysctl;
-#endif
 
 /* General initialization of MPTCP_PM */
 static int __init ndiffports_register(void)
 {
 	BUILD_BUG_ON(sizeof(struct ndiffports_priv) > MPTCP_PM_SIZE);
 
-#ifdef CONFIG_SYSCTL
 	mptcp_sysctl = register_net_sysctl(&init_net, "net/mptcp", ndiff_table);
 	if (!mptcp_sysctl)
 		goto exit;
-#endif
 
 	if (mptcp_register_path_manager(&ndiffports))
 		goto pm_failed;
