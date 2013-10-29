@@ -143,7 +143,7 @@ static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req
 	struct sk_buff *skb;
 	struct flowi6 fl6;
 	struct dst_entry *dst;
-	int err;
+	int err = -ENOMEM;
 
 	memset(&fl6, 0, sizeof(fl6));
 	fl6.flowi6_proto = IPPROTO_TCP;
@@ -162,7 +162,7 @@ static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req
 		return err;
 	}
 	skb = tcp_make_synack(meta_sk, dst, req, NULL);
-	err = -ENOMEM;
+
 	if (skb) {
 		__tcp_v6_send_check(skb, &treq->loc_addr, &treq->rmt_addr);
 
@@ -206,7 +206,7 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 		fl6.flowi6_proto = IPPROTO_TCP;
 		fl6.daddr = treq->rmt_addr;
 		fl6.saddr = treq->loc_addr;
-		fl6.flowi6_oif = meta_sk->sk_bound_dev_if;
+		fl6.flowi6_oif = treq->iif;
 		fl6.flowi6_mark = meta_sk->sk_mark;
 		fl6.fl6_dport = inet_rsk(req)->rmt_port;
 		fl6.fl6_sport = inet_rsk(req)->loc_port;
@@ -221,6 +221,9 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 	if (newsk == NULL)
 		goto out_nonewsk;
 
+	/* Diff to tcp_v6_syn_recv_sock: Must do this prior to __ip6_dst_store,
+	 * as it tries to access the pinet6-pointer.
+	 */
 	newtcp6sk = (struct tcp6_sock *)newsk;
 	inet_sk(newsk)->pinet6 = &newtcp6sk->inet6;
 
