@@ -15,10 +15,8 @@ struct sock;
 struct sockaddr;
 struct socket;
 
-extern int inet_create(struct net *net, struct socket *sock, int protocol,
-		       int kern);
-extern int inet6_create(struct net *net, struct socket *sock, int protocol,
-			int kern);
+int inet_create(struct net *net, struct socket *sock, int protocol, int kern);
+int inet6_create(struct net *net, struct socket *sock, int protocol, int kern);
 extern int inet_release(struct socket *sock);
 extern int inet_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 			       int addr_len, int flags);

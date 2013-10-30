@@ -3744,11 +3744,11 @@ static void tcp_fin(struct sock *sk)
 	case TCP_ESTABLISHED:
 		/* Move to CLOSE_WAIT */
 		tcp_set_state(sk, TCP_CLOSE_WAIT);
-		if (tp->mpc)
-			mptcp_sub_close_passive(sk);
 		dst = __sk_dst_get(sk);
 		if (!dst || !dst_metric(dst, RTAX_QUICKACK))
 			inet_csk(sk)->icsk_ack.pingpong = 1;
+		if (tp->mpc)
+			mptcp_sub_close_passive(sk);
 		break;
 
 	case TCP_CLOSE_WAIT:

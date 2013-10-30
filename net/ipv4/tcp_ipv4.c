@@ -856,8 +856,8 @@ void tcp_v4_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
  *	socket.
  */
 int tcp_v4_send_synack(struct sock *sk, struct dst_entry *dst,
-		       struct request_sock *req, u16 queue_mapping,
-		       bool nocache)
+		       struct request_sock *req,
+		       u16 queue_mapping, bool nocache)
 {
 	const struct inet_request_sock *ireq = inet_rsk(req);
 	struct flowi4 fl4;
