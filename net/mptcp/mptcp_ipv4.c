@@ -563,7 +563,9 @@ int mptcp_pm_v4_init(void)
 	}
 
 	ops->slab = kmem_cache_create(ops->slab_name, ops->obj_size, 0,
-				      SLAB_HWCACHE_ALIGN, NULL);
+				      SLAB_DESTROY_BY_RCU|SLAB_HWCACHE_ALIGN,
+				      NULL);
+
 	if (ops->slab == NULL) {
 		ret =  -ENOMEM;
 		goto err_reqsk_create;
