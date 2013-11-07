@@ -2132,6 +2132,7 @@ static noinline int record_one_backref(u64 inum, u64 offset, u64 root_id,
 		WARN_ON(1);
 		return ret;
 	}
+	ret = 0;
 
 	while (1) {
 		cond_resched();
@@ -2181,8 +2182,6 @@ static noinline int record_one_backref(u64 inum, u64 offset, u64 root_id,
 		    old->len || extent_offset + num_bytes <=
 		    old->extent_offset + old->offset)
 			continue;
-
-		ret = 0;
 		break;
 	}
 
@@ -8037,7 +8036,7 @@ static int btrfs_rename(struct inode *old_dir, struct dentry *old_dentry,
 
 
 	/* check for collisions, even if the  name isn't there */
-	ret = btrfs_check_dir_item_collision(root, new_dir->i_ino,
+	ret = btrfs_check_dir_item_collision(dest, new_dir->i_ino,
 			     new_dentry->d_name.name,
 			     new_dentry->d_name.len);
 
