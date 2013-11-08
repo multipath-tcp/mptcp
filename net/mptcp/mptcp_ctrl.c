@@ -473,27 +473,11 @@ static void mptcp_mpcb_put(struct mptcp_cb *mpcb)
 
 static void mptcp_sock_destruct(struct sock *sk)
 {
-	struct sock *cb_sk, *prev = NULL;
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	inet_sock_destruct(sk);
 
-	cb_sk = tp->mpcb->callback_list;
-	while (cb_sk) {
-		if (cb_sk == sk) {
-			if (prev)
-				tcp_sk(prev)->mptcp->next_cb = tcp_sk(cb_sk)->mptcp->next_cb;
-			else
-				tp->mpcb->callback_list = tcp_sk(cb_sk)->mptcp->next_cb;
-
-			tcp_sk(cb_sk)->mptcp->next_cb = NULL;
-			cb_sk->sk_prot->release_cb(cb_sk);
-			break;
-		}
-
-		prev = cb_sk;
-		cb_sk = tcp_sk(cb_sk)->mptcp->next_cb;
-	}
+	BUG_ON(!list_empty(&tp->mptcp->cb_list));
 
 	kmem_cache_free(mptcp_sock_cache, tp->mptcp);
 	tp->mptcp = NULL;
@@ -994,6 +978,8 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 		return -ENOBUFS;
 	}
 
+	INIT_LIST_HEAD(&meta_tp->mptcp->cb_list);
+
 	/* Store the keys and generate the peer's token */
 	mpcb->mptcp_loc_key = meta_tp->mptcp_loc_key;
 	mpcb->mptcp_loc_token = meta_tp->mptcp_loc_token;
@@ -1107,6 +1093,8 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	INIT_LIST_HEAD(&mpcb->tw_list);
 	spin_lock_init(&mpcb->tw_lock);
 
+	INIT_LIST_HEAD(&mpcb->callback_list);
+
 	mptcp_mpcb_inherit_sockopts(meta_sk, master_sk);
 
 	mpcb->orig_sk_rcvbuf = meta_sk->sk_rcvbuf;
@@ -1185,6 +1173,8 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 		kmem_cache_free(mptcp_sock_cache, tp->mptcp);
 		return -EPERM;
 	}
+
+	INIT_LIST_HEAD(&tp->mptcp->cb_list);
 
 	tp->mptcp->tp = tp;
 	tp->mpcb = mpcb;
@@ -2078,9 +2068,8 @@ void mptcp_tsq_flags(struct sock *sk)
 	if (is_meta_sk(sk))
 		return;
 
-	if (!tp->mptcp->next_cb) {
-		tp->mptcp->next_cb = tp->mpcb->callback_list;
-		tp->mpcb->callback_list = sk;
+	if (list_empty(&tp->mptcp->cb_list)) {
+		list_add(&tp->mptcp->cb_list, &tp->mpcb->callback_list);
 		/* We need to hold it here, as the sock_hold is not assured
 		 * by the release_sock as it is done in regular TCP.
 		 *
@@ -2096,15 +2085,17 @@ void mptcp_tsq_flags(struct sock *sk)
 
 void mptcp_tsq_sub_deferred(struct sock *meta_sk)
 {
-	struct sock *sk;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct mptcp_tcp_sock *mptcp, *tmp;
 
 	BUG_ON(!is_meta_sk(meta_sk) && !meta_tp->was_meta_sk);
 
 	__sock_put(meta_sk);
-	while ((sk = meta_tp->mpcb->callback_list) != NULL) {
-		meta_tp->mpcb->callback_list = tcp_sk(sk)->mptcp->next_cb;
-		tcp_sk(sk)->mptcp->next_cb = NULL;
+	list_for_each_entry_safe(mptcp, tmp, &meta_tp->mpcb->callback_list, cb_list) {
+		struct tcp_sock *tp = mptcp->tp;
+		struct sock *sk = (struct sock *)tp;
+
+		list_del_init(&mptcp->cb_list);
 		sk->sk_prot->release_cb(sk);
 		/* Final sock_put (cfr. mptcp_tsq_flags */
 		sock_put(sk);
