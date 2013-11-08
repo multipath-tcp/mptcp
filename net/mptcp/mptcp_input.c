@@ -63,7 +63,7 @@ static inline int mptcp_tso_acked_reinject(struct sock *sk, struct sk_buff *skb)
 
 	packets_acked = tcp_skb_pcount(skb);
 
-	if (skb_cloned(skb) && pskb_expand_head(skb, 0, 0, GFP_ATOMIC))
+	if (skb_unclone(skb, GFP_ATOMIC))
 		return 0;
 
 	len = tp->snd_una - TCP_SKB_CB(skb)->seq;
