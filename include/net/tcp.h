@@ -421,8 +421,8 @@ void tcp_v4_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 			   struct request_sock *req);
 __u32 tcp_v4_init_sequence(const struct sk_buff *skb);
 int tcp_v4_send_synack(struct sock *sk, struct dst_entry *dst,
-		       struct request_sock *req, u16 queue_mapping,
-		       bool nocache);
+		       struct request_sock *req,
+		       u16 queue_mapping);
 void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb);
 struct ip_options_rcu *tcp_v4_save_options(struct sk_buff *skb);
 struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb);

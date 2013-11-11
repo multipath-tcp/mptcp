@@ -288,8 +288,6 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 		newtp->advmss = tcp_sk(meta_sk)->rx_opt.user_mss;
 
 	tcp_initialize_rcv_mss(newsk);
-	tcp_synack_rtt_meas(newsk, req);
-	newtp->total_retrans = req->num_retrans;
 
 	newinet->inet_daddr = LOOPBACK4_IPV6;
 	newinet->inet_saddr = LOOPBACK4_IPV6;
