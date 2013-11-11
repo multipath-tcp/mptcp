@@ -143,8 +143,8 @@ static void try_shortcut(struct sk_buff *shortcut, struct sk_buff *skb,
 		 */
 		if (shortcut && after(TCP_SKB_CB(shortcut)->seq, seq)) {
 			/* Are we closer than the current best shortcut? */
-			if ((u32)(seq - TCP_SKB_CB(shortcut)->seq) < distance) {
-				distance = (u32)(seq - TCP_SKB_CB(shortcut)->seq);
+			if ((u32)(TCP_SKB_CB(shortcut)->seq - seq) < distance) {
+				distance = (u32)(TCP_SKB_CB(shortcut)->seq - seq);
 				best_shortcut = shortcut;
 			}
 		}
