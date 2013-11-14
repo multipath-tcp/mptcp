@@ -385,6 +385,7 @@ struct tcp_sock {
 		request_mptcp:1, /* Did we send out an MP_CAPABLE?
 				  * (this speeds up mptcp_doit() in tcp_recvmsg)
 				  */
+		mptcp_enabled:1, /* Is MPTCP enabled from the application ? */
 		pf:1, /* Potentially Failed state: when this flag is set, we
 		       * stop using the subflow
 		       */

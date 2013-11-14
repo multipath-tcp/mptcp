@@ -1024,6 +1024,8 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	}
 
 #ifdef CONFIG_MPTCP
+	if (sysctl_mptcp_enabled == MPTCP_APP && !tp->mptcp_enabled)
+		mopt.saw_mpc = 0;
 	if (mopt.saw_mpc && !want_cookie) {
 		req = inet6_reqsk_alloc(&mptcp6_request_sock_ops);
 

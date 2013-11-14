@@ -2739,6 +2739,18 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 		tp->notsent_lowat = val;
 		sk->sk_write_space(sk);
 		break;
+#ifdef CONFIG_MPTCP
+	case MPTCP_ENABLED:
+		if (sk->sk_state == TCP_CLOSE || sk->sk_state == TCP_LISTEN) {
+			if (val)
+				tp->mptcp_enabled = 1;
+			else
+				tp->mptcp_enabled = 0;
+		} else {
+			err = -EPERM;
+		}
+		break;
+#endif
 	default:
 		err = -ENOPROTOOPT;
 		break;
@@ -2958,6 +2970,11 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 	case TCP_NOTSENT_LOWAT:
 		val = tp->notsent_lowat;
 		break;
+#ifdef CONFIG_MPTCP
+	case MPTCP_ENABLED:
+		val = tp->mptcp_enabled;
+		break;
+#endif
 	default:
 		return -ENOPROTOOPT;
 	}
