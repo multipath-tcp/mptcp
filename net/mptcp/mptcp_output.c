@@ -1028,21 +1028,19 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 		goto retrans;
 
 	/* Half the cwnd of the slow flow */
-	mptcp_for_each_tp(tp->mpcb, tp_it) {
-		if (tp_it != tp &&
-		    TCP_SKB_CB(skb_head)->path_mask & mptcp_pi_to_flag(tp_it->mptcp->path_index)) {
-			/* Only update every subflow rtt */
-			if (tcp_time_stamp - tp_it->mptcp->last_rbuf_opti < tp_it->srtt >> 3)
+	if (tcp_time_stamp - tp->mptcp->last_rbuf_opti >= tp->srtt >> 3) {
+		mptcp_for_each_tp(tp->mpcb, tp_it) {
+			if (tp_it != tp &&
+			    TCP_SKB_CB(skb_head)->path_mask & mptcp_pi_to_flag(tp_it->mptcp->path_index)) {
+				if (tp->srtt < tp_it->srtt && inet_csk((struct sock *)tp_it)->icsk_ca_state == TCP_CA_Open) {
+					tp_it->snd_cwnd = max(tp_it->snd_cwnd >> 1U, 1U);
+					if (tp_it->snd_ssthresh != TCP_INFINITE_SSTHRESH)
+						tp_it->snd_ssthresh = max(tp_it->snd_ssthresh >> 1U, 2U);
+
+					tp->mptcp->last_rbuf_opti = tcp_time_stamp;
+				}
 				break;
-
-			if (tp->srtt < tp_it->srtt && inet_csk((struct sock *)tp_it)->icsk_ca_state == TCP_CA_Open) {
-				tp_it->snd_cwnd = max(tp_it->snd_cwnd >> 1U, 1U);
-				if (tp_it->snd_ssthresh != TCP_INFINITE_SSTHRESH)
-					tp_it->snd_ssthresh = max(tp_it->snd_ssthresh >> 1U, 2U);
-
-				tp_it->mptcp->last_rbuf_opti = tcp_time_stamp;
 			}
-			break;
 		}
 	}
 
