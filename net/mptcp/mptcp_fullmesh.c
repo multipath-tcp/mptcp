@@ -244,7 +244,7 @@ static void update_remove_addrs(u8 addr_id, struct sock *meta_sk,
 				struct mptcp_loc_addr *mptcp_local)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct fullmesh_priv *fmp = (struct fullmesh_priv *)mpcb->mptcp_pm;
+	struct fullmesh_priv *fmp = (struct fullmesh_priv *)&mpcb->mptcp_pm[0];
 	struct sock *sk;
 	int i;
 
@@ -310,7 +310,7 @@ next_event:
 					       tk_table) {
 			struct mptcp_cb *mpcb = meta_tp->mpcb;
 			struct sock *meta_sk = (struct sock *)meta_tp, *sk;
-			struct fullmesh_priv *fmp = (struct fullmesh_priv *)mpcb->mptcp_pm;
+			struct fullmesh_priv *fmp = (struct fullmesh_priv *)&mpcb->mptcp_pm[0];
 
 			if (sock_net(meta_sk) != net)
 				continue;
@@ -883,7 +883,7 @@ static void full_mesh_new_session(struct sock *meta_sk, u8 id)
 {
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct fullmesh_priv *fmp = (struct fullmesh_priv *)mpcb->mptcp_pm;
+	struct fullmesh_priv *fmp = (struct fullmesh_priv *)&mpcb->mptcp_pm[0];
 	struct net *net = sock_net(meta_sk);
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(net);
 	struct sock *sk;
@@ -942,7 +942,7 @@ static void full_mesh_new_session(struct sock *meta_sk, u8 id)
 static void full_mesh_create_subflows(struct sock *meta_sk)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct fullmesh_priv *pm_priv = (struct fullmesh_priv *)mpcb->mptcp_pm;
+	struct fullmesh_priv *pm_priv = (struct fullmesh_priv *)&mpcb->mptcp_pm[0];
 
 	if (mpcb->infinite_mapping_snd || mpcb->infinite_mapping_rcv ||
 	    mpcb->send_infinite_mapping ||
@@ -962,7 +962,7 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 {
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct fullmesh_priv *fmp = (struct fullmesh_priv *)mpcb->mptcp_pm;
+	struct fullmesh_priv *fmp = (struct fullmesh_priv *)&mpcb->mptcp_pm[0];
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(meta_sk));
 	struct sock *sk, *tmpsk;
 	int i;
@@ -1112,7 +1112,7 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_cb *mpcb = tp->mpcb;
-	struct fullmesh_priv *fmp = (struct fullmesh_priv *)mpcb->mptcp_pm;
+	struct fullmesh_priv *fmp = (struct fullmesh_priv *)&mpcb->mptcp_pm[0];
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(sk));
 	int remove_addr_len;

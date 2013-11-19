@@ -85,7 +85,7 @@ exit:
 static void ndiffports_new_session(struct sock *meta_sk, u8 id)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct ndiffports_priv *fmp = (struct ndiffports_priv *)mpcb->mptcp_pm;
+	struct ndiffports_priv *fmp = (struct ndiffports_priv *)&mpcb->mptcp_pm[0];
 
 	/* Initialize workqueue-struct */
 	INIT_WORK(&fmp->subflow_work, create_subflow_worker);
@@ -95,7 +95,7 @@ static void ndiffports_new_session(struct sock *meta_sk, u8 id)
 static void ndiffports_create_subflows(struct sock *meta_sk)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct ndiffports_priv *pm_priv = (struct ndiffports_priv *)mpcb->mptcp_pm;
+	struct ndiffports_priv *pm_priv = (struct ndiffports_priv *)&mpcb->mptcp_pm[0];
 
 	if (mpcb->infinite_mapping_snd || mpcb->infinite_mapping_rcv ||
 	    mpcb->send_infinite_mapping ||
