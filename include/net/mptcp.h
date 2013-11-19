@@ -279,7 +279,7 @@ struct mptcp_cb {
 	u8 dfin_path_index;
 
 #define MPTCP_PM_SIZE 320
-	u8 mptcp_pm[MPTCP_PM_SIZE];
+	u8 mptcp_pm[MPTCP_PM_SIZE] __aligned(8);
 	struct mptcp_pm_ops *pm_ops;
 
 	/* Mutex needed, because otherwise mptcp_close will complain that the
