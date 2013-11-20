@@ -1213,14 +1213,25 @@ static int mptcp_fm_init_net(struct net *net)
 
 static void mptcp_fm_exit_net(struct net *net)
 {
+	struct mptcp_addr_event *eventq, *tmp;
 	struct mptcp_fm_ns *fm_ns;
 	struct mptcp_loc_addr *mptcp_local;
 
 	fm_ns = fm_get_ns(net);
+	cancel_delayed_work_sync(&fm_ns->address_worker);
 
 	rcu_read_lock_bh();
+
 	mptcp_local = rcu_dereference(fm_ns->local);
 	kfree(mptcp_local);
+
+	spin_lock(&fm_ns->local_lock);
+	list_for_each_entry_safe(eventq, tmp, &fm_ns->events, list) {
+		list_del(&eventq->list);
+		kfree(eventq);
+	}
+	spin_unlock(&fm_ns->local_lock);
+
 	rcu_read_unlock_bh();
 
 	kfree(fm_ns);
