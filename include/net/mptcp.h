@@ -743,6 +743,8 @@ void mptcp_update_tw_socks(const struct tcp_sock *tp, int state);
 int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb);
 void mptcp_tsq_flags(struct sock *sk);
 void mptcp_tsq_sub_deferred(struct sock *meta_sk);
+void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
+			    const struct sk_buff *skb);
 
 static inline bool mptcp_can_sendpage(struct sock *sk)
 {
@@ -1414,6 +1416,8 @@ static inline void mptcp_update_tw_socks(const struct tcp_sock *tp, int state) {
 static inline void mptcp_tsq_flags(struct sock *sk, int bit) {}
 static inline void mptcp_tsq_flags(struct sock *sk) {}
 static inline void mptcp_tsq_sub_deferred(struct sock *meta_sk) {}
+static inline void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
+					  const struct sk_buff *skb) {}
 #endif /* CONFIG_MPTCP */
 
 #endif /* _MPTCP_H */

@@ -31,8 +31,8 @@
 #include <net/tcp.h>
 #include <net/mptcp.h>
 
-static void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
-				   const struct sk_buff *skb)
+void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
+			    const struct sk_buff *skb)
 {
 	struct tcp_sock *tp;
 
