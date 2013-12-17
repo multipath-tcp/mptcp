@@ -790,6 +790,8 @@ int mptcp_check_req(struct sk_buff *skb, struct net *net);
 void mptcp_connect_init(struct sock *sk);
 void mptcp_sub_force_close(struct sock *sk);
 int mptcp_sub_len_remove_addr_align(u16 bitfield);
+void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
+			    const struct sk_buff *skb);
 
 /* MPTCP-path-manager registration/initialization functions */
 int mptcp_register_path_manager(struct mptcp_pm_ops *pm);
@@ -1438,8 +1440,9 @@ static inline void mptcp_hash_remove(struct tcp_sock *meta_tp) {}
 static inline void mptcp_reqsk_new_mptcp(struct request_sock *req,
 					 const struct tcp_options_received *rx_opt,
 					 const struct mptcp_options_received *mopt,
-					 const struct sk_buff *skb)
-{}
+					 const struct sk_buff *skb) {}
+static inline void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
+					  const struct sk_buff *skb) {}
 #endif /* CONFIG_MPTCP */
 
 #endif /* _MPTCP_H */
