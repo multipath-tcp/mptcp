@@ -1048,20 +1048,20 @@ retrans:
 
 	/* Segment not yet injected into this path? Take it!!! */
 	if (!(TCP_SKB_CB(skb_head)->path_mask & mptcp_pi_to_flag(tp->mptcp->path_index))) {
-		int do_retrans = 0;
+		bool do_retrans = false;
 		mptcp_for_each_tp(tp->mpcb, tp_it) {
 			if (tp_it != tp &&
 			    TCP_SKB_CB(skb_head)->path_mask & mptcp_pi_to_flag(tp_it->mptcp->path_index)) {
 				if (tp_it->snd_cwnd <= 4) {
-					do_retrans = 1;
+					do_retrans = true;
 					break;
 				}
 
 				if (4 * tp->srtt >= tp_it->srtt) {
-					do_retrans = 0;
+					do_retrans = false;
 					break;
 				} else {
-					do_retrans = 1;
+					do_retrans = true;
 				}
 			}
 		}

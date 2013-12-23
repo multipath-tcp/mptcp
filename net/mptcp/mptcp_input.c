@@ -2169,12 +2169,12 @@ bool mptcp_should_expand_sndbuf(struct sock *meta_sk)
 				backup_available = 1;
 				continue;
 			}
-			return 1;
+			return true;
 		}
 	}
 
 	/* Backup-flow is available for sending - update send-buffer */
 	if (meta_tp->mpcb->cnt_established == cnt_backups && backup_available)
-		return 1;
-	return 0;
+		return true;
+	return false;
 }
