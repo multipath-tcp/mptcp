@@ -1141,13 +1141,19 @@ retry:
 
 		cwnd_quota = tcp_cwnd_test(subtp, skb);
 		if (!cwnd_quota) {
-			/* May happen, if at the first selection we circumvented
-			 * the test due to a DATA_FIN (and got rejected at
-			 * tcp_snd_wnd_test), but the reinjected segment is not
-			 * a DATA_FIN.
+			/* May happen due to two cases:
+			 *
+			 * - if at the first selection we circumvented
+			 *   the test due to a DATA_FIN (and got rejected at
+			 *   tcp_snd_wnd_test), but the reinjected segment is not
+			 *   a DATA_FIN.
+			 * - if we take a DATA_FIN with data, but
+			 *   tcp_set_skb_tso_segs() increases the number of
+			 *   tso_segs to something > 1. Then, cwnd_test might
+			 *   reject it.
 			 */
-			BUG_ON(reinject != -1);
-			break;
+			mpcb->noneligible |= mptcp_pi_to_flag(subtp->mptcp->path_index);
+			continue;
 		}
 
 		if (!reinject && unlikely(!tcp_snd_wnd_test(meta_tp, skb, mss_now))) {
