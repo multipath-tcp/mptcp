@@ -2154,7 +2154,7 @@ unsigned int mptcp_current_mss(struct sock *meta_sk)
 			continue;
 
 		this_mss = tcp_current_mss(sk);
-		if (!mss || this_mss < mss)
+		if (this_mss > mss)
 			mss = this_mss;
 	}
 
@@ -2176,7 +2176,7 @@ int mptcp_select_size(const struct sock *meta_sk, bool sg)
 			continue;
 
 		this_mss = tcp_sk(sk)->mss_cache;
-		if (!mss || this_mss < mss)
+		if (this_mss > mss)
 			mss = this_mss;
 	}
 
@@ -2234,7 +2234,7 @@ unsigned int mptcp_xmit_size_goal(struct sock *meta_sk, u32 mss_now,
 				continue;
 
 			this_size_goal = tcp_xmit_size_goal(sk, mss_now, 1);
-			if (!xmit_size_goal || this_size_goal < xmit_size_goal)
+			if (this_size_goal > xmit_size_goal)
 				xmit_size_goal = this_size_goal;
 		}
 	}
