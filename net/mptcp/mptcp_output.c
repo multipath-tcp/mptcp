@@ -1079,7 +1079,7 @@ int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 	struct sock *subsk;
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	struct sk_buff *skb;
-	unsigned int tso_segs, sent_pkts;
+	unsigned int tso_segs, old_factor, sent_pkts;
 	int cwnd_quota;
 	int result;
 	int reinject = 0;
@@ -1135,9 +1135,20 @@ retry:
 		if (skb_unclone(skb, GFP_ATOMIC))
 			break;
 
+		old_factor = tcp_skb_pcount(skb);
 		tcp_set_skb_tso_segs(meta_sk, skb, mss_now);
 		tso_segs = tcp_skb_pcount(skb);
-		BUG_ON(!tso_segs);
+
+		if (reinject == -1) {
+			/* The packet has already once been sent, so if we
+			 * change the pcount here we have to adjust packets_out
+			 * in the meta-sk
+			 */
+			int diff = old_factor - tso_segs;
+
+			if (diff)
+				tcp_adjust_pcount(meta_sk, skb, diff);
+		}
 
 		cwnd_quota = tcp_cwnd_test(subtp, skb);
 		if (!cwnd_quota) {
