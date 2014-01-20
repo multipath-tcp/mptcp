@@ -958,12 +958,12 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 		newnp->pktoptions = NULL;
 		(void)xchg(&newnp->rxpmtu, NULL);
 	} else if (meta_sk->sk_family == AF_INET6) {
-		struct ipv6_pinfo *newnp;
+		struct ipv6_pinfo *newnp, *np = inet6_sk(meta_sk);
 
-		/* Meta is IPv4. Initialize pinet6 for the master-sk. */
 		inet_sk(master_sk)->pinet6 = &((struct tcp6_sock *)master_sk)->inet6;
 
 		newnp = inet6_sk(master_sk);
+		memcpy(newnp, np, sizeof(struct ipv6_pinfo));
 
 		newnp->hop_limit	= -1;
 		newnp->mcast_hops	= IPV6_DEFAULT_MCASTHOPS;
