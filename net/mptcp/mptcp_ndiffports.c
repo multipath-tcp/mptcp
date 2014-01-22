@@ -35,11 +35,11 @@ static void create_subflow_worker(struct work_struct *work)
 next_subflow:
 	if (iter) {
 		release_sock(meta_sk);
-		mutex_unlock(&mpcb->mutex);
+		mutex_unlock(&mpcb->mpcb_mutex);
 
 		yield();
 	}
-	mutex_lock(&mpcb->mutex);
+	mutex_lock(&mpcb->mpcb_mutex);
 	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
 
 	iter++;
@@ -78,7 +78,7 @@ next_subflow:
 
 exit:
 	release_sock(meta_sk);
-	mutex_unlock(&mpcb->mutex);
+	mutex_unlock(&mpcb->mpcb_mutex);
 	sock_put(meta_sk);
 }
 
