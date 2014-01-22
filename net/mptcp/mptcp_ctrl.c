@@ -465,7 +465,7 @@ static void mptcp_sock_def_error_report(struct sock *sk)
 
 static void mptcp_mpcb_put(struct mptcp_cb *mpcb)
 {
-	if (atomic_dec_and_test(&mpcb->refcnt)) {
+	if (atomic_dec_and_test(&mpcb->mpcb_refcnt)) {
 		mptcp_cleanup_path_manager(mpcb);
 		kmem_cache_free(mptcp_cb_cache, mpcb);
 	}
@@ -1052,7 +1052,7 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	meta_sk->sk_wmem_queued = 0;
 	meta_sk->sk_forward_alloc = 0;
 
-	mutex_init(&mpcb->mutex);
+	mutex_init(&mpcb->mpcb_mutex);
 
 	/* Init the accept_queue structure, we support a queue of 32 pending
 	 * connections, it does not need to be huge, since we only store  here
@@ -1104,7 +1104,7 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	mpcb->orig_window_clamp = meta_tp->window_clamp;
 
 	/* The meta is directly linked - set refcnt to 1 */
-	atomic_set(&mpcb->refcnt, 1);
+	atomic_set(&mpcb->mpcb_refcnt, 1);
 
 	mptcp_init_path_manager(mpcb);
 
@@ -1191,7 +1191,7 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 	 * until the last subsocket is completely destroyed.
 	 */
 	sock_hold(meta_sk);
-	atomic_inc(&mpcb->refcnt);
+	atomic_inc(&mpcb->mpcb_refcnt);
 
 	tp->mptcp->next = mpcb->connection_list;
 	mpcb->connection_list = tp;
@@ -1421,7 +1421,7 @@ void mptcp_sub_close_wq(struct work_struct *work)
 	struct sock *sk = (struct sock *)tp;
 	struct sock *meta_sk = mptcp_meta_sk(sk);
 
-	mutex_lock(&tp->mpcb->mutex);
+	mutex_lock(&tp->mpcb->mpcb_mutex);
 	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
 
 	if (sock_flag(sk, SOCK_DEAD))
@@ -1446,7 +1446,7 @@ void mptcp_sub_close_wq(struct work_struct *work)
 
 exit:
 	release_sock(meta_sk);
-	mutex_unlock(&tp->mpcb->mutex);
+	mutex_unlock(&tp->mpcb->mpcb_mutex);
 	sock_put(sk);
 }
 
@@ -1581,7 +1581,7 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 	mptcp_debug("%s: Close of meta_sk with tok %#x\n",
 		    __func__, mpcb->mptcp_loc_token);
 
-	mutex_lock(&mpcb->mutex);
+	mutex_lock(&mpcb->mpcb_mutex);
 	lock_sock(meta_sk);
 
 	if (meta_tp->inside_tk_table) {
@@ -1728,7 +1728,7 @@ adjudge_to_death:
 out:
 	bh_unlock_sock(meta_sk);
 	local_bh_enable();
-	mutex_unlock(&mpcb->mutex);
+	mutex_unlock(&mpcb->mpcb_mutex);
 	sock_put(meta_sk); /* Taken by sock_hold */
 }
 
@@ -1986,7 +1986,7 @@ int mptcp_time_wait(struct sock *sk, struct tcp_timewait_sock *tw)
 	if (!mptw)
 		return -ENOBUFS;
 
-	atomic_inc(&mpcb->refcnt);
+	atomic_inc(&mpcb->mpcb_refcnt);
 
 	tw->mptcp_tw = mptw;
 	mptw->loc_key = mpcb->mptcp_loc_key;
@@ -2016,7 +2016,7 @@ void mptcp_twsk_destructor(struct tcp_timewait_sock *tw)
 	/* If we are still holding a ref to the mpcb, we have to remove ourself
 	 * from the list and drop the ref properly.
 	 */
-	if (mpcb && atomic_inc_not_zero(&mpcb->refcnt)) {
+	if (mpcb && atomic_inc_not_zero(&mpcb->mpcb_refcnt)) {
 		spin_lock(&mpcb->tw_lock);
 		if (tw->mptcp_tw->in_list) {
 			list_del_rcu(&tw->mptcp_tw->list);

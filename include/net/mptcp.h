@@ -248,7 +248,7 @@ struct mptcp_cb {
 	struct list_head tw_list;
 	unsigned char	 mptw_state;
 
-	atomic_t	refcnt;
+	atomic_t	mpcb_refcnt;
 
 	/* High-order bits of 64-bit sequence numbers */
 	u32 snd_high_order[2];
@@ -286,7 +286,7 @@ struct mptcp_cb {
 	 * socket is owned by the user.
 	 * E.g., mptcp_sub_close_wq is taking the meta-lock.
 	 */
-	struct mutex mutex;
+	struct mutex mpcb_mutex;
 
 	/* Master socket, also part of the connection_list, this
 	 * socket is the one that the application sees.
