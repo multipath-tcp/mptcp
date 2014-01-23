@@ -226,14 +226,14 @@ static void mptcp_set_key_reqsk(struct request_sock *req,
 	if (skb->protocol == htons(ETH_P_IP)) {
 		mtreq->mptcp_loc_key = mptcp_v4_get_key(ip_hdr(skb)->saddr,
 						        ip_hdr(skb)->daddr,
-						        ireq->loc_port,
-						        ireq->rmt_port);
+						        htons(ireq->ir_num),
+						        ireq->ir_rmt_port);
 #if IS_ENABLED(CONFIG_IPV6)
 	} else {
 		mtreq->mptcp_loc_key = mptcp_v6_get_key(ipv6_hdr(skb)->saddr.s6_addr32,
 							ipv6_hdr(skb)->daddr.s6_addr32,
-							ireq->loc_port,
-							ireq->rmt_port);
+							htons(ireq->ir_num),
+							ireq->ir_rmt_port);
 #endif
 	}
 
@@ -278,7 +278,7 @@ static void mptcp_set_key_sk(struct sock *sk)
 #if IS_ENABLED(CONFIG_IPV6)
 	else
 		tp->mptcp_loc_key = mptcp_v6_get_key(inet6_sk(sk)->saddr.s6_addr32,
-						     inet6_sk(sk)->daddr.s6_addr32,
+						     sk->sk_v6_daddr.s6_addr32,
 						     isk->inet_sport,
 						     isk->inet_dport);
 #endif
@@ -1227,7 +1227,7 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 			    __func__ , mpcb->mptcp_loc_token,
 			    tp->mptcp->path_index, &inet6_sk(sk)->saddr,
 			    ntohs(((struct inet_sock *)tp)->inet_sport),
-			    &inet6_sk(sk)->daddr,
+			    &sk->sk_v6_daddr,
 			    ntohs(((struct inet_sock *)tp)->inet_dport),
 			    mpcb->cnt_subflows);
 
@@ -1305,8 +1305,8 @@ void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
 		mptcp_v4_set_init_addr_bit(mpcb, inet_sk(sk)->inet_daddr, id);
 	} else {
 #if IS_ENABLED(CONFIG_IPV6)
-		mptcp_v6_add_raddress(mpcb, &inet6_sk(sk)->daddr, 0, 0);
-		mptcp_v6_set_init_addr_bit(mpcb, &inet6_sk(sk)->daddr, id);
+		mptcp_v6_add_raddress(mpcb, &sk->sk_v6_daddr, 0, 0);
+		mptcp_v6_set_init_addr_bit(mpcb, &sk->sk_v6_daddr, id);
 #endif
 	}
 
@@ -1793,7 +1793,7 @@ int mptcp_doit(struct sock *sk)
 	     ipv4_is_loopback(inet_sk(sk)->inet_saddr)))
 		return 0;
 	if (sk->sk_family == AF_INET6 &&
-	    (ipv6_addr_loopback(&inet6_sk(sk)->daddr) ||
+	    (ipv6_addr_loopback(&sk->sk_v6_daddr) ||
 	     ipv6_addr_loopback(&inet6_sk(sk)->saddr)))
 		return 0;
 	if (mptcp_v6_is_v4_mapped(sk) &&
@@ -2148,7 +2148,7 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 #if IS_ENABLED(CONFIG_IPV6)
 			} else if (meta_sk->sk_family == AF_INET6) {
 				struct in6_addr *src = &isk->pinet6->saddr;
-				struct in6_addr *dst = &isk->pinet6->daddr;
+				struct in6_addr *dst = &meta_sk->sk_v6_daddr;
 				seq_printf(seq, " 1 %08X%08X%08X%08X:%04X %08X%08X%08X%08X:%04X",
 					   src->s6_addr32[0], src->s6_addr32[1],
 					   src->s6_addr32[2], src->s6_addr32[3],

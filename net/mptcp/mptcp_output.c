@@ -1349,7 +1349,7 @@ static void mptcp_set_nonce(struct sock *sk)
 #if IS_ENABLED(CONFIG_IPV6)
 	else
 		tp->mptcp->mptcp_loc_nonce = mptcp_v6_get_nonce(inet6_sk(sk)->saddr.s6_addr32,
-				     	     	     	        inet6_sk(sk)->daddr.s6_addr32,
+				     	     	     	        sk->sk_v6_daddr.s6_addr32,
 				     	     	     	        inet->inet_sport,
 				     	     	     	        inet->inet_dport,
 				     	     	     	        tp->write_seq);
@@ -2041,9 +2041,9 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 		}
 #if IS_ENABLED(CONFIG_IPV6)
 		else if (meta_sk->sk_family == AF_INET6) {
-			struct ipv6_pinfo *np = inet6_sk(meta_sk);
 			LIMIT_NETDEBUG(KERN_DEBUG "MPTCP: Peer %pI6:%u/%u unexpectedly shrunk window %u:%u (repaired)\n",
-				       &np->daddr, ntohs(meta_inet->inet_dport),
+				       &meta_sk->sk_v6_daddr,
+				       ntohs(meta_inet->inet_dport),
 				       meta_inet->inet_num, meta_tp->snd_una,
 				       meta_tp->snd_nxt);
 		}

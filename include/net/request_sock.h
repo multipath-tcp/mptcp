@@ -43,11 +43,12 @@ struct request_sock_ops {
 					   struct request_sock *req);
 };
 
-extern int inet_rtx_syn_ack(struct sock *parent, struct request_sock *req);
+int inet_rtx_syn_ack(struct sock *parent, struct request_sock *req);
 
 /* struct request_sock - mini sock to represent a connection request
  */
 struct request_sock {
+	struct sock_common		__req_common;
 	struct request_sock		*dl_next;
 	u16				mss;
 	u8				num_retrans; /* number of retransmits */
@@ -165,10 +166,10 @@ struct request_sock_queue {
 int reqsk_queue_alloc(struct request_sock_queue *queue,
 		      unsigned int nr_table_entries, gfp_t flags);
 
-extern void __reqsk_queue_destroy(struct request_sock_queue *queue);
-extern void reqsk_queue_destroy(struct request_sock_queue *queue);
-extern void reqsk_fastopen_remove(struct sock *sk,
-				  struct request_sock *req, bool reset);
+void __reqsk_queue_destroy(struct request_sock_queue *queue);
+void reqsk_queue_destroy(struct request_sock_queue *queue);
+void reqsk_fastopen_remove(struct sock *sk, struct request_sock *req,
+			   bool reset);
 
 static inline struct request_sock *
 	reqsk_queue_yank_acceptq(struct request_sock_queue *queue)

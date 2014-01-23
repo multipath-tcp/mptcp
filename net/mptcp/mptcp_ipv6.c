@@ -109,7 +109,7 @@ static int mptcp_v6_rtx_synack(struct sock *meta_sk, struct request_sock *req)
 /* Similar to tcp6_request_sock_ops */
 struct request_sock_ops mptcp6_request_sock_ops __read_mostly = {
 	.family		=	AF_INET6,
-	.obj_size	=	sizeof(struct mptcp6_request_sock),
+	.obj_size	=	sizeof(struct mptcp_request_sock),
 	.rtx_syn_ack	=	mptcp_v6_rtx_synack,
 	.send_ack	=	tcp_v6_reqsk_send_ack,
 	.destructor	=	mptcp_v6_reqsk_destructor,
@@ -121,8 +121,8 @@ static void mptcp_v6_reqsk_queue_hash_add(struct sock *meta_sk,
 					  struct request_sock *req,
 					  unsigned long timeout)
 {
-	const u32 h = inet6_synq_hash(&inet6_rsk(req)->rmt_addr,
-				      inet_rsk(req)->rmt_port,
+	const u32 h = inet6_synq_hash(&inet_rsk(req)->ir_v6_rmt_addr,
+				      inet_rsk(req)->ir_rmt_port,
 				      0, MPTCP_HASH_SIZE);
 
 	inet6_csk_reqsk_queue_hash_add(meta_sk, req, timeout);
@@ -139,7 +139,7 @@ static void mptcp_v6_reqsk_queue_hash_add(struct sock *meta_sk,
 static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req,
 				  u16 queue_mapping)
 {
-	struct inet6_request_sock *treq = inet6_rsk(req);
+	struct inet_request_sock *treq = inet_rsk(req);
 	struct sk_buff *skb;
 	struct flowi6 fl6;
 	struct dst_entry *dst;
@@ -147,13 +147,13 @@ static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req
 
 	memset(&fl6, 0, sizeof(fl6));
 	fl6.flowi6_proto = IPPROTO_TCP;
-	fl6.daddr = treq->rmt_addr;
-	fl6.saddr = treq->loc_addr;
+	fl6.daddr = treq->ir_v6_rmt_addr;
+	fl6.saddr = treq->ir_v6_loc_addr;
 	fl6.flowlabel = 0;
-	fl6.flowi6_oif = treq->iif;
+	fl6.flowi6_oif = treq->ir_iif;
 	fl6.flowi6_mark = meta_sk->sk_mark;
-	fl6.fl6_dport = inet_rsk(req)->rmt_port;
-	fl6.fl6_sport = inet_rsk(req)->loc_port;
+	fl6.fl6_dport = inet_rsk(req)->ir_rmt_port;
+	fl6.fl6_sport = htons(inet_rsk(req)->ir_num);
 	security_req_classify_flow(req, flowi6_to_flowi(&fl6));
 
 	dst = ip6_dst_lookup_flow(meta_sk, &fl6, NULL, false);
@@ -164,9 +164,10 @@ static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req
 	skb = tcp_make_synack(meta_sk, dst, req, NULL);
 
 	if (skb) {
-		__tcp_v6_send_check(skb, &treq->loc_addr, &treq->rmt_addr);
+		__tcp_v6_send_check(skb, &treq->ir_v6_loc_addr,
+				    &treq->ir_v6_rmt_addr);
 
-		fl6.daddr = treq->rmt_addr;
+		fl6.daddr = treq->ir_v6_rmt_addr;
 		skb_set_queue_mapping(skb, queue_mapping);
 		err = ip6_xmit(meta_sk, skb, &fl6, NULL, 0);
 		err = net_xmit_eval(err);
@@ -183,14 +184,14 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 				      struct request_sock *req,
 				      struct dst_entry *dst)
 {
-	struct inet6_request_sock *treq;
+	struct inet_request_sock *treq;
 	struct ipv6_pinfo *newnp;
 	struct tcp6_sock *newtcp6sk;
 	struct inet_sock *newinet;
 	struct tcp_sock *newtp;
 	struct sock *newsk;
 
-	treq = inet6_rsk(req);
+	treq = inet_rsk(req);
 
 	if (sk_acceptq_is_full(meta_sk))
 		goto out_overflow;
@@ -204,12 +205,12 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 
 		memset(&fl6, 0, sizeof(fl6));
 		fl6.flowi6_proto = IPPROTO_TCP;
-		fl6.daddr = treq->rmt_addr;
-		fl6.saddr = treq->loc_addr;
-		fl6.flowi6_oif = treq->iif;
+		fl6.daddr = treq->ir_v6_rmt_addr;
+		fl6.saddr = treq->ir_v6_loc_addr;
+		fl6.flowi6_oif = treq->ir_iif;
 		fl6.flowi6_mark = meta_sk->sk_mark;
-		fl6.fl6_dport = inet_rsk(req)->rmt_port;
-		fl6.fl6_sport = inet_rsk(req)->loc_port;
+		fl6.fl6_dport = inet_rsk(req)->ir_rmt_port;
+		fl6.fl6_sport = htons(inet_rsk(req)->ir_num);
 		security_req_classify_flow(req, flowi6_to_flowi(&fl6));
 
 		dst = ip6_dst_lookup_flow(meta_sk, &fl6, NULL, false);
@@ -241,10 +242,10 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 	newinet = inet_sk(newsk);
 	newnp = inet6_sk(newsk);
 
-	newnp->daddr = treq->rmt_addr;
-	newnp->saddr = treq->loc_addr;
-	newnp->rcv_saddr = treq->loc_addr;
-	newsk->sk_bound_dev_if = treq->iif;
+	newsk->sk_v6_daddr = treq->ir_v6_rmt_addr;
+	newnp->saddr = treq->ir_v6_loc_addr;
+	newsk->sk_v6_rcv_saddr = treq->ir_v6_loc_addr;
+	newsk->sk_bound_dev_if = treq->ir_iif;
 
 	/* Now IPv6 options...
 
@@ -319,7 +320,7 @@ static void mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	struct mptcp_options_received mopt;
 	struct ipv6_pinfo *np = inet6_sk(meta_sk);
 	struct request_sock *req;
-	struct inet6_request_sock *treq;
+	struct inet_request_sock *treq;
 	struct mptcp_request_sock *mtreq;
 	u8 mptcp_hash_mac[20];
 	__u32 isn = TCP_SKB_CB(skb)->when;
@@ -345,19 +346,19 @@ static void mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 	tcp_openreq_init(req, &tmp_opt, skb);
 
-	treq = inet6_rsk(req);
-	treq->rmt_addr = ipv6_hdr(skb)->saddr;
-	treq->loc_addr = ipv6_hdr(skb)->daddr;
+	treq = inet_rsk(req);
+	treq->ir_v6_rmt_addr = ipv6_hdr(skb)->saddr;
+	treq->ir_v6_loc_addr = ipv6_hdr(skb)->daddr;
 
 	if (!want_cookie || tmp_opt.tstamp_ok)
 		TCP_ECN_create_request(req, skb, sock_net(meta_sk));
 
-	treq->iif = meta_sk->sk_bound_dev_if;
+	treq->ir_iif = meta_sk->sk_bound_dev_if;
 
 	/* So that link locals have meaning */
 	if (!meta_sk->sk_bound_dev_if &&
-	    ipv6_addr_type(&treq->rmt_addr) & IPV6_ADDR_LINKLOCAL)
-		treq->iif = inet6_iif(skb);
+	    ipv6_addr_type(&treq->ir_v6_rmt_addr) & IPV6_ADDR_LINKLOCAL)
+		treq->ir_iif = inet6_iif(skb);
 
 	if (!isn) {
 		if (meta_sk->sk_family == AF_INET6 &&
@@ -398,7 +399,8 @@ static void mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 			 * to the moment of synflood.
 			 */
 			LIMIT_NETDEBUG(KERN_DEBUG "TCP: drop open request from %pI6/%u\n",
-				       &treq->rmt_addr, ntohs(tcp_hdr(skb)->source));
+				       &treq->ir_v6_rmt_addr,
+				       ntohs(tcp_hdr(skb)->source));
 			goto drop_and_release;
 		}
 
@@ -425,7 +427,7 @@ static void mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 			(u8 *)&mtreq->mptcp_rem_nonce, (u32 *)mptcp_hash_mac);
 	mtreq->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
 
-	addr.in6 = treq->loc_addr;
+	addr.in6 = treq->ir_v6_loc_addr;
 	mtreq->loc_id = mpcb->pm_ops->get_local_id(AF_INET6, &addr, sock_net(meta_sk));
 	mtreq->rem_id = mopt.rem_id;
 	mtreq->low_prio = mopt.low_prio;
@@ -654,13 +656,13 @@ struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *radd
 			    &mptcp_reqsk_htb[inet6_synq_hash(raddr, rport, 0,
 							     MPTCP_HASH_SIZE)],
 			    collide_tuple) {
-		struct inet6_request_sock *treq = inet6_rsk(rev_mptcp_rsk(mtreq));
+		struct inet_request_sock *treq = inet_rsk(rev_mptcp_rsk(mtreq));
 		meta_sk = mtreq->mpcb->meta_sk;
 
-		if (inet_rsk(rev_mptcp_rsk(mtreq))->rmt_port == rport &&
+		if (inet_rsk(rev_mptcp_rsk(mtreq))->ir_rmt_port == rport &&
 		    rev_mptcp_rsk(mtreq)->rsk_ops->family == AF_INET6 &&
-		    ipv6_addr_equal(&treq->rmt_addr, raddr) &&
-		    ipv6_addr_equal(&treq->loc_addr, laddr) &&
+		    ipv6_addr_equal(&treq->ir_v6_rmt_addr, raddr) &&
+		    ipv6_addr_equal(&treq->ir_v6_loc_addr, laddr) &&
 		    net_eq(net, sock_net(meta_sk)))
 			break;
 		meta_sk = NULL;
