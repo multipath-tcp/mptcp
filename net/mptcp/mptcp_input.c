@@ -2134,6 +2134,13 @@ bool mptcp_should_expand_sndbuf(struct sock *meta_sk)
 	int cnt_backups = 0;
 	int backup_available = 0;
 
+	/* We circumvent this check in tcp_check_space, because we want to
+	 * always call sk_write_space. So, we reproduce the check here.
+	 */
+	if (!meta_sk->sk_socket ||
+	    !test_bit(SOCK_NOSPACE, &meta_sk->sk_socket->flags))
+		return false;
+
 	/* If the user specified a specific send buffer setting, do
 	 * not modify it.
 	 */
