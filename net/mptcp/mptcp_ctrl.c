@@ -1222,6 +1222,7 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 			    &((struct inet_sock *)tp)->inet_daddr,
 			    ntohs(((struct inet_sock *)tp)->inet_dport),
 			    mpcb->cnt_subflows);
+#if IS_ENABLED(CONFIG_IPV6)
 	else
 		mptcp_debug("%s: token %#x pi %d, src_addr:%pI6:%d dst_addr:%pI6:%d, cnt_subflows now %d\n",
 			    __func__ , mpcb->mptcp_loc_token,
@@ -1230,6 +1231,7 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 			    &sk->sk_v6_daddr,
 			    ntohs(((struct inet_sock *)tp)->inet_dport),
 			    mpcb->cnt_subflows);
+#endif
 
 	return 0;
 }
@@ -1792,10 +1794,12 @@ int mptcp_doit(struct sock *sk)
 	    (ipv4_is_loopback(inet_sk(sk)->inet_daddr) ||
 	     ipv4_is_loopback(inet_sk(sk)->inet_saddr)))
 		return 0;
+#if IS_ENABLED(CONFIG_IPV6)
 	if (sk->sk_family == AF_INET6 &&
 	    (ipv6_addr_loopback(&sk->sk_v6_daddr) ||
 	     ipv6_addr_loopback(&inet6_sk(sk)->saddr)))
 		return 0;
+#endif
 	if (mptcp_v6_is_v4_mapped(sk) &&
 	    ipv4_is_loopback(inet_sk(sk)->inet_saddr))
 		return 0;
