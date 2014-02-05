@@ -892,6 +892,14 @@ static void full_mesh_create_subflows(struct sock *meta_sk)
 	    mpcb->server_side || sock_flag(meta_sk, SOCK_DEAD))
 		return;
 
+	/* The master may not yet be fully established (address added through
+	 * mptcp_update_metasocket). Then, we should not attempt to create new
+	 * subflows.
+	 */
+	if (mpcb->master_sk &&
+	    !tcp_sk(mpcb->master_sk)->mptcp->fully_established)
+		return;
+
 	if (!work_pending(&pm_priv->subflow_work)) {
 		sock_hold(meta_sk);
 		queue_work(mptcp_wq, &pm_priv->subflow_work);
