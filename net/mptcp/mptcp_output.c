@@ -1798,6 +1798,7 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 	/* We are in infinite mode - just send a reset */
 	if (mpcb->infinite_mapping_snd || mpcb->infinite_mapping_rcv) {
 		tcp_send_active_reset(sk, priority);
+		mptcp_sub_force_close(sk);
 		return;
 	}
 
