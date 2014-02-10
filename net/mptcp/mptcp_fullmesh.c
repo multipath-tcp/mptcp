@@ -371,6 +371,9 @@ next_event:
 
 			if (i < 0)
 				goto duno;
+
+			/* It might have been a MOD-event. */
+			event->code = MPTCP_EVENT_ADD;
 		} else {
 			/* Let's check if anything changes */
 			if (event->family == AF_INET && 
