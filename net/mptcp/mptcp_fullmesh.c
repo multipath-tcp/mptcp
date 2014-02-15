@@ -500,6 +500,12 @@ duno:
 					    !ipv6_addr_equal(&inet6_sk(sk)->saddr, &event->u.addr6))
 						continue;
 
+					/* Reinject, so that pf = 1 and so we
+					 * won't select this one as the
+					 * ack-sock.
+					 */
+					mptcp_reinject_data(sk, 0);
+
 					/* A master is special, it has
 					 * address-id 0
 					 */
@@ -508,7 +514,6 @@ duno:
 					else if (tcp_sk(sk)->mptcp->loc_id != id)
 						update_remove_addrs(tcp_sk(sk)->mptcp->loc_id, meta_sk, mptcp_local);
 
-					mptcp_reinject_data(sk, 0);
 					mptcp_sub_force_close(sk);
 					found = true;
 				}
@@ -1016,14 +1021,19 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 		}
 
 		if (shall_remove) {
+			/* Reinject, so that pf = 1 and so we
+			 * won't select this one as the
+			 * ack-sock.
+			 */
 			mptcp_reinject_data(sk, 0);
-			mptcp_sub_force_close(sk);
 
 			update_remove_addrs(tcp_sk(sk)->mptcp->loc_id, meta_sk,
 					    mptcp_local);
 
 			if (mpcb->master_sk == sk)
 				update_remove_addrs(0, meta_sk, mptcp_local);
+
+			mptcp_sub_force_close(sk);
 		}
 	}
 	rcu_read_unlock();
