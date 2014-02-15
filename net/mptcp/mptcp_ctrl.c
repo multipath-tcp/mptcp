@@ -380,7 +380,8 @@ struct sock *mptcp_select_ack_sock(const struct sock *meta_sk, int copied)
 
 	/* How do we select the subflow to send the window-update on?
 	 *
-	 * 1. He has to be in a state where he can send an ack.
+	 * 1. He has to be in a state where he can send an ack and is
+	 *           operational (pf = 0).
 	 * 2. He has to be one of those subflow who recently
 	 *    contributed to the received stream
 	 *    (this guarantees a working subflow)
@@ -395,7 +396,7 @@ struct sock *mptcp_select_ack_sock(const struct sock *meta_sk, int copied)
 	mptcp_for_each_sk(meta_tp->mpcb, sk) {
 		struct tcp_sock *tp = tcp_sk(sk);
 
-		if (!mptcp_sk_can_send_ack(sk))
+		if (!mptcp_sk_can_send_ack(sk) || tp->pf)
 			continue;
 
 		/* Select among those who contributed to the
