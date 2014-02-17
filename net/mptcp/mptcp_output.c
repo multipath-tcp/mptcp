@@ -1197,7 +1197,8 @@ retry:
 			limit = tcp_mss_split_point(subsk, skb, mss_now,
 						    min_t(unsigned int,
 							  cwnd_quota,
-							  subsk->sk_gso_max_segs));
+							  subsk->sk_gso_max_segs),
+						    nonagle);
 
 		if (skb->len > limit &&
 		    unlikely(mptso_fragment(meta_sk, skb, limit, mss_now, gfp, reinject)))
@@ -1968,7 +1969,8 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 		limit = tcp_mss_split_point(subsk, skb, mss_now,
 					    min_t(unsigned int,
 						  tcp_cwnd_test(tcp_sk(subsk), skb),
-						  subsk->sk_gso_max_segs));
+						  subsk->sk_gso_max_segs),
+					          TCP_NAGLE_OFF);
 
 	if (skb->len > limit &&
 	    unlikely(mptso_fragment(meta_sk, skb, limit, mss_now,

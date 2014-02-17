@@ -156,7 +156,7 @@ static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req
 	fl6.fl6_sport = htons(inet_rsk(req)->ir_num);
 	security_req_classify_flow(req, flowi6_to_flowi(&fl6));
 
-	dst = ip6_dst_lookup_flow(meta_sk, &fl6, NULL, false);
+	dst = ip6_dst_lookup_flow(meta_sk, &fl6, NULL);
 	if (IS_ERR(dst)) {
 		err = PTR_ERR(dst);
 		return err;
@@ -213,7 +213,7 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 		fl6.fl6_sport = htons(inet_rsk(req)->ir_num);
 		security_req_classify_flow(req, flowi6_to_flowi(&fl6));
 
-		dst = ip6_dst_lookup_flow(meta_sk, &fl6, NULL, false);
+		dst = ip6_dst_lookup_flow(meta_sk, &fl6, NULL);
 		if (IS_ERR(dst))
 			goto out;
 	}
@@ -269,7 +269,7 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 	newnp->opt	  = NULL;
 	newnp->mcast_oif  = inet6_iif(skb);
 	newnp->mcast_hops = ipv6_hdr(skb)->hop_limit;
-	newnp->rcv_tclass = ipv6_get_dsfield(ipv6_hdr(skb));
+	newnp->rcv_flowinfo = ip6_flowinfo(ipv6_hdr(skb));
 
 	/* Initialization copied from inet6_create - normally this should have
 	 * been handled by the memcpy as in tcp_v6_syn_recv_sock

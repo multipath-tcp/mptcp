@@ -304,6 +304,7 @@ extern int sysctl_tcp_limit_output_bytes;
 extern int sysctl_tcp_challenge_ack_limit;
 extern unsigned int sysctl_tcp_notsent_lowat;
 extern int sysctl_tcp_min_tso_segs;
+extern int sysctl_tcp_autocorking;
 
 extern atomic_long_t tcp_memory_allocated;
 extern struct percpu_counter tcp_sockets_allocated;
@@ -380,7 +381,10 @@ extern const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops;
 struct mptcp_options_received;
 
 int tcp_close_state(struct sock *sk);
-void tcp_push(struct sock *sk, int flags, int mss_now, int nonagle);
+void tcp_push(struct sock *sk, int flags, int mss_now, int nonagle, int
+	      size_goal);
+void tcp_minshall_update(struct tcp_sock *tp, unsigned int mss_now,
+			 const struct sk_buff *skb);
 int tcp_xmit_probe_skb(struct sock *sk, int urgent);
 void tcp_cwnd_validate(struct sock *sk);
 void tcp_event_new_data_sent(struct sock *sk, const struct sk_buff *skb);
@@ -389,7 +393,8 @@ int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 unsigned int tcp_mss_split_point(const struct sock *sk,
 				 const struct sk_buff *skb,
 				 unsigned int mss_now,
-				 unsigned int cwnd);
+				 unsigned int max_segs,
+				 int nonagle);
 bool tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb);
 bool tcp_nagle_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 		    unsigned int cur_mss, int nonagle);
@@ -592,7 +597,6 @@ struct sk_buff *tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 				struct tcp_fastopen_cookie *foc);
 int tcp_disconnect(struct sock *sk, int flags);
 
-void tcp_connect_init(struct sock *sk);
 void tcp_finish_connect(struct sock *sk, struct sk_buff *skb);
 int tcp_send_rcvq(struct sock *sk, struct msghdr *msg, size_t size);
 void inet_sk_rx_dst_set(struct sock *sk, const struct sk_buff *skb);
@@ -746,8 +750,6 @@ static inline u32 __tcp_set_rto(const struct tcp_sock *tp)
 {
 	return (tp->srtt >> 3) + tp->rttvar;
 }
-
-void tcp_set_rto(struct sock *sk);
 
 static inline void __tcp_fast_path_on(struct tcp_sock *tp, u32 snd_wnd)
 {
@@ -1111,13 +1113,6 @@ static inline u32 tcp_wnd_end(const struct tcp_sock *tp)
 	return tp->snd_una + tp->snd_wnd;
 }
 bool tcp_is_cwnd_limited(const struct sock *sk, u32 in_flight);
-
-static inline void tcp_minshall_update(struct tcp_sock *tp, unsigned int mss,
-				       const struct sk_buff *skb)
-{
-	if (skb->len < mss)
-		tp->snd_sml = TCP_SKB_CB(skb)->end_seq;
-}
 
 static inline void tcp_check_probe_timer(struct sock *sk)
 {
