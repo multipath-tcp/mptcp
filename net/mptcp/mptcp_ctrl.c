@@ -172,7 +172,7 @@ static void mptcp_reqsk_remove_tk(struct request_sock *reqsk)
 {
 	rcu_read_lock();
 	spin_lock(&mptcp_tk_hashlock);
-	hlist_nulls_del_rcu(&mptcp_rsk(reqsk)->collide_tk);
+	hlist_nulls_del_init_rcu(&mptcp_rsk(reqsk)->collide_tk);
 	spin_unlock(&mptcp_tk_hashlock);
 	rcu_read_unlock();
 }
@@ -180,15 +180,12 @@ static void mptcp_reqsk_remove_tk(struct request_sock *reqsk)
 void mptcp_reqsk_destructor(struct request_sock *req)
 {
 	if (!mptcp_rsk(req)->mpcb) {
-		if (hlist_nulls_unhashed(&mptcp_rsk(req)->collide_tk))
-			return;
-
 		if (in_softirq()) {
 			mptcp_reqsk_remove_tk(req);
 		} else {
 			rcu_read_lock_bh();
 			spin_lock(&mptcp_tk_hashlock);
-			hlist_nulls_del_rcu(&mptcp_rsk(req)->collide_tk);
+			hlist_nulls_del_init_rcu(&mptcp_rsk(req)->collide_tk);
 			spin_unlock(&mptcp_tk_hashlock);
 			rcu_read_unlock_bh();
 		}
@@ -334,7 +331,7 @@ void mptcp_hash_remove_bh(struct tcp_sock *meta_tp)
 	/* remove from the token hashtable */
 	rcu_read_lock_bh();
 	spin_lock(&mptcp_tk_hashlock);
-	hlist_nulls_del_rcu(&meta_tp->tk_table);
+	hlist_nulls_del_init_rcu(&meta_tp->tk_table);
 	meta_tp->inside_tk_table = 0;
 	spin_unlock(&mptcp_tk_hashlock);
 	rcu_read_unlock_bh();
@@ -344,7 +341,7 @@ void mptcp_hash_remove(struct tcp_sock *meta_tp)
 {
 	rcu_read_lock();
 	spin_lock(&mptcp_tk_hashlock);
-	hlist_nulls_del_rcu(&meta_tp->tk_table);
+	hlist_nulls_del_init_rcu(&meta_tp->tk_table);
 	meta_tp->inside_tk_table = 0;
 	spin_unlock(&mptcp_tk_hashlock);
 	rcu_read_unlock();
