@@ -1712,7 +1712,8 @@ struct sk_buff *mptcp_next_segment(struct sock *meta_sk, int *reinject)
 	} else {
 		skb = tcp_send_head(meta_sk);
 
-		if (!skb && meta_sk->sk_write_pending &&
+		if (!skb && meta_sk->sk_socket &&
+		    test_bit(SOCK_NOSPACE, &meta_sk->sk_socket->flags) &&
 		    sk_stream_wspace(meta_sk) < sk_stream_min_wspace(meta_sk)) {
 			struct sock *subsk = get_available_subflow(meta_sk, NULL, NULL);
 			if (!subsk)
