@@ -1408,6 +1408,9 @@ unsigned int tcp_current_mss(struct sock *sk)
 	struct tcp_out_options opts;
 	struct tcp_md5sig_key *md5;
 
+	if (is_meta_sk(sk))
+		return mptcp_current_mss(sk);
+
 	mss_now = tp->mss_cache;
 
 	if (dst) {
@@ -1599,14 +1602,16 @@ static unsigned int tcp_snd_test(const struct sock *sk, struct sk_buff *skb,
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int cwnd_quota;
+	const struct sock *meta_sk = tp->mpc ? mptcp_meta_sk(sk) : sk;
+	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
-	tcp_init_tso_segs(sk, skb, cur_mss);
+	tcp_init_tso_segs(meta_sk, skb, cur_mss);
 
-	if (!tcp_nagle_test(tp, skb, cur_mss, nonagle))
+	if (!tcp_nagle_test(meta_tp, skb, cur_mss, nonagle))
 		return 0;
 
 	cwnd_quota = tcp_cwnd_test(tp, skb);
-	if (cwnd_quota && !tcp_snd_wnd_test(tp, skb, cur_mss))
+	if (cwnd_quota && !tcp_snd_wnd_test(meta_tp, skb, cur_mss))
 		cwnd_quota = 0;
 
 	return cwnd_quota;
@@ -1616,12 +1621,16 @@ static unsigned int tcp_snd_test(const struct sock *sk, struct sk_buff *skb,
 bool tcp_may_send_now(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
-	struct sk_buff *skb = tcp_send_head(sk);
+	struct sk_buff *skb;
+	const struct sock *meta_sk = tp->mpc ? mptcp_meta_sk(sk) : sk;
+	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+
+	skb = tcp_send_head(meta_sk);
 
 	return skb &&
 		tcp_snd_test(sk, skb, tcp_current_mss(sk),
-			     (tcp_skb_is_last(sk, skb) ?
-			      tp->nonagle : TCP_NAGLE_PUSH));
+			     (tcp_skb_is_last(meta_sk, skb) ?
+			      meta_tp->nonagle : TCP_NAGLE_PUSH));
 }
 
 /* Trim TSO SKB to LEN bytes, put the remaining data into a new packet
