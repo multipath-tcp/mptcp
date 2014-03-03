@@ -102,17 +102,17 @@ struct tcp_out_options {
 					/* random number of the sender */
 			__u32	token;	/* token for mptcp */
 		} mp_join_syns;
-
-		struct {
-			struct in_addr addr;
-			u8 addr_id;
-		} add_addr4;
-
-		struct {
-			struct in6_addr addr;
-			u8 addr_id;
-		} add_addr6;
 	};
+
+	struct {
+		struct in_addr addr;
+		u8 addr_id;
+	} add_addr4;
+
+	struct {
+		struct in6_addr addr;
+		u8 addr_id;
+	} add_addr6;
 
 	u16	remove_addrs;	/* list of address id */
 	u8	addr_id;	/* address id (mp_join or add_address) */
