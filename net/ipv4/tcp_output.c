@@ -90,8 +90,8 @@ void tcp_event_new_data_sent(struct sock *sk, const struct sk_buff *skb)
 		tcp_rearm_rto(sk);
 	}
 
-	NET_ADD_STATS_BH(sock_net(sk), LINUX_MIB_TCPORIGDATASENT,
-			 tcp_skb_pcount(skb));
+	NET_ADD_STATS(sock_net(sk), LINUX_MIB_TCPORIGDATASENT,
+		      tcp_skb_pcount(skb));
 }
 
 /* SND.NXT, if window was not shrunk.
