@@ -84,7 +84,7 @@ static void retry_subflow_worker(struct work_struct *work)
 	 * such a big deal, if the address-list is not 100% up-to-date.
 	 */
 	rcu_read_lock_bh();
-	mptcp_local = rcu_dereference(fm_ns->local);
+	mptcp_local = rcu_dereference_bh(fm_ns->local);
 	mptcp_local = kmemdup(mptcp_local, sizeof(*mptcp_local), GFP_ATOMIC);
 	rcu_read_unlock_bh();
 
@@ -162,7 +162,7 @@ static void create_subflow_worker(struct work_struct *work)
 	 * such a big deal, if the address-list is not 100% up-to-date.
 	 */
 	rcu_read_lock_bh();
-	mptcp_local = rcu_dereference(fm_ns->local);
+	mptcp_local = rcu_dereference_bh(fm_ns->local);
 	mptcp_local = kmemdup(mptcp_local, sizeof(*mptcp_local), GFP_ATOMIC);
 	rcu_read_unlock_bh();
 
@@ -334,7 +334,7 @@ next_event:
 
 	list_del(&event->list);
 
-	mptcp_local = rcu_dereference(fm_ns->local);
+	mptcp_local = rcu_dereference_bh(fm_ns->local);
 
 	if (event->code == MPTCP_EVENT_DEL) {
 		id = mptcp_find_address(mptcp_local, event);
@@ -477,7 +477,7 @@ duno:
 				struct mptcp_loc_addr *mptcp_local;
 				bool found = false;
 
-				mptcp_local = rcu_dereference(fm_ns->local);
+				mptcp_local = rcu_dereference_bh(fm_ns->local);
 
 				/* Look for the socket and remove him */
 				mptcp_for_each_sk_safe(mpcb, sk, tmpsk) {
@@ -635,8 +635,7 @@ static void addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 	    ipv4_is_loopback(ifa->ifa_local))
 		return;
 
-	rcu_read_lock_bh();
-	spin_lock(&fm_ns->local_lock);
+	spin_lock_bh(&fm_ns->local_lock);
 
 	mpevent.family = AF_INET;
 	mpevent.u.addr4.s_addr = ifa->ifa_local;
@@ -652,8 +651,7 @@ static void addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 
 	add_pm_event(net, &mpevent);
 
-	spin_unlock(&fm_ns->local_lock);
-	rcu_read_unlock_bh();
+	spin_unlock_bh(&fm_ns->local_lock);
 	return;
 }
 
@@ -746,8 +744,7 @@ static void addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 	    (addr_type & IPV6_ADDR_LINKLOCAL))
 		return;
 
-	rcu_read_lock_bh();
-	spin_lock(&fm_ns->local_lock);
+	spin_lock_bh(&fm_ns->local_lock);
 
 	mpevent.family = AF_INET6;
 	mpevent.u.addr6 = ifa->addr;
@@ -763,8 +760,7 @@ static void addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 
 	add_pm_event(net, &mpevent);
 
-	spin_unlock(&fm_ns->local_lock);
-	rcu_read_unlock_bh();
+	spin_unlock_bh(&fm_ns->local_lock);
 	return;
 }
 
@@ -1085,7 +1081,7 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 	if (likely(!fmp->add_addr))
 		goto remove_addr;
 
-	rcu_read_lock_bh();
+	rcu_read_lock();
 	mptcp_local = rcu_dereference(fm_ns->local);
 
 	/* IPv4 */
@@ -1126,7 +1122,7 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 		*size += MPTCP_SUB_LEN_ADD_ADDR6_ALIGN;
 	}
 
-	rcu_read_unlock_bh();
+	rcu_read_unlock();
 
 	if (!unannouncedv4 && !unannouncedv6 && skb) {
 		fmp->add_addr--;
@@ -1186,7 +1182,7 @@ static void mptcp_fm_exit_net(struct net *net)
 
 	rcu_read_lock_bh();
 
-	mptcp_local = rcu_dereference(fm_ns->local);
+	mptcp_local = rcu_dereference_bh(fm_ns->local);
 	kfree(mptcp_local);
 
 	spin_lock(&fm_ns->local_lock);
