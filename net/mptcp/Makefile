@@ -10,6 +10,7 @@ mptcp-y := mptcp_ctrl.o mptcp_ipv4.o mptcp_ofo_queue.o mptcp_pm.o \
 
 obj-$(CONFIG_TCP_CONG_COUPLED) += mptcp_coupled.o
 obj-$(CONFIG_TCP_CONG_OLIA) += mptcp_olia.o
+obj-$(CONFIG_TCP_CONG_WVEGAS) += mptcp_wvegas.o
 obj-$(CONFIG_MPTCP_FULLMESH) += mptcp_fullmesh.o
 obj-$(CONFIG_MPTCP_NDIFFPORTS) += mptcp_ndiffports.o
 
