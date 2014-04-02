@@ -560,16 +560,6 @@ static void mptcp_set_state(struct sock *sk)
 	}
 }
 
-void mptcp_set_keepalive(struct sock *sk, int val)
-{
-	struct sock *sk_it;
-
-	mptcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it) {
-		tcp_set_keepalive(sk_it, val);
-		sock_valbool_flag(sk, SOCK_KEEPOPEN, val);
-	}
-}
-
 u32 mptcp_secret[MD5_MESSAGE_BYTES / 4] ____cacheline_aligned;
 u32 mptcp_key_seed = 0;
 
@@ -671,8 +661,6 @@ static void mptcp_mpcb_inherit_sockopts(struct sock *meta_sk, struct sock *maste
 	 *
 	 * Socket-options handled in this function here
 	 * ======
-	 * SO_KEEPALIVE
-	 * TCP_KEEP*
 	 * TCP_DEFER_ACCEPT
 	 *
 	 * Socket-options on the todo-list
@@ -704,18 +692,8 @@ static void mptcp_mpcb_inherit_sockopts(struct sock *meta_sk, struct sock *maste
 	 * TCP_CONGESTION
 	 * TCP_SYNCNT
 	 * TCP_QUICKACK
+	 * SO_KEEPALIVE
 	 */
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-
-	/****** KEEPALIVE-handler ******/
-
-	/* Keepalive-timer has been started already, but it is handled at the
-	 * subflow level.
-	 */
-	if (sock_flag(meta_sk, SOCK_KEEPOPEN)) {
-		inet_csk_delete_keepalive_timer(meta_sk);
-		inet_csk_reset_keepalive_timer(master_sk, keepalive_time_when(meta_tp));
-	}
 
 	/****** DEFER_ACCEPT-handler ******/
 
@@ -727,13 +705,6 @@ static void mptcp_mpcb_inherit_sockopts(struct sock *meta_sk, struct sock *maste
 
 static void mptcp_sub_inherit_sockopts(struct sock *meta_sk, struct sock *sub_sk)
 {
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	/* Keepalive is handled at the subflow-level */
-	if (sock_flag(meta_sk, SOCK_KEEPOPEN)) {
-		inet_csk_reset_keepalive_timer(sub_sk, keepalive_time_when(meta_tp));
-		sock_valbool_flag(sub_sk, SOCK_KEEPOPEN, keepalive_time_when(meta_tp));
-	}
-
 	/* IP_TOS also goes to the subflow. */
 	if (inet_sk(sub_sk)->tos != inet_sk(meta_sk)->tos) {
 		inet_sk(sub_sk)->tos = inet_sk(meta_sk)->tos;

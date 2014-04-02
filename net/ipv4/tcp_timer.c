@@ -569,11 +569,6 @@ void tcp_set_keepalive(struct sock *sk, int val)
 	if ((1 << sk->sk_state) & (TCPF_CLOSE | TCPF_LISTEN))
 		return;
 
-	if (is_meta_sk(sk)) {
-		mptcp_set_keepalive(sk, val);
-		return;
-	}
-
 	if (val && !sock_flag(sk, SOCK_KEEPOPEN))
 		inet_csk_reset_keepalive_timer(sk, keepalive_time_when(tcp_sk(sk)));
 	else if (!val)
@@ -597,6 +592,11 @@ static void tcp_keepalive_timer (unsigned long data)
 		goto out;
 	}
 
+	if (sk->sk_state == TCP_LISTEN) {
+		tcp_synack_timer(sk);
+		goto out;
+	}
+
 	if (sk->sk_state == TCP_FIN_WAIT2 && sock_flag(sk, SOCK_DEAD)) {
 		if (tp->linger2 >= 0) {
 			const int tmo = tcp_fin_time(sk) - TCP_TIMEWAIT_LEN;
@@ -610,13 +610,7 @@ static void tcp_keepalive_timer (unsigned long data)
 		goto death;
 	}
 
-	if (sk->sk_state == TCP_LISTEN || is_meta_sk(sk)) {
-		tcp_synack_timer(sk);
-		goto out;
-	}
-
-	/* MPTCP: Keepalive timers are handled at the subflow level */
-	if (!sock_flag(sk, SOCK_KEEPOPEN) || sk->sk_state == TCP_CLOSE || is_meta_sk(sk))
+	if (!sock_flag(sk, SOCK_KEEPOPEN) || sk->sk_state == TCP_CLOSE)
 		goto out;
 
 	elapsed = keepalive_time_when(tp);

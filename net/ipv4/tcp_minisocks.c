@@ -477,7 +477,11 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 
 		newtp->urg_data = 0;
 
-		if (sock_flag(newsk, SOCK_KEEPOPEN))
+		/* MPTCP: If we are creating a subflow, KEEPOPEN might have been
+		 * set on the meta. But, keepalive is entirely handled at the
+		 * meta-socket, so let's keep it there.
+		 */
+		if (sock_flag(newsk, SOCK_KEEPOPEN) && is_meta_sk(sk))
 			inet_csk_reset_keepalive_timer(newsk,
 						       keepalive_time_when(newtp));
 

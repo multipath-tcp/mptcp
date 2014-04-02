@@ -752,7 +752,6 @@ void mptcp_fallback_meta_sk(struct sock *meta_sk);
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb);
 struct sock *mptcp_sk_clone(const struct sock *sk, int family, const gfp_t priority);
 void mptcp_ack_handler(unsigned long);
-void mptcp_set_keepalive(struct sock *sk, int val);
 int mptcp_check_rtt(const struct tcp_sock *tp, int time);
 int mptcp_check_snd_buf(const struct tcp_sock *tp);
 int mptcp_handle_options(struct sock *sk, const struct tcphdr *th, struct sk_buff *skb);
@@ -1375,7 +1374,6 @@ static inline struct sock *mptcp_sk_clone(const struct sock *sk, int family,
 {
 	return NULL;
 }
-static inline void mptcp_set_keepalive(struct sock *sk, int val) {}
 static inline int mptcp_handle_options(struct sock *sk,
 				       const struct tcphdr *th,
 				       struct sk_buff *skb)

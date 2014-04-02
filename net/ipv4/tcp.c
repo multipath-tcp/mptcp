@@ -2673,13 +2673,6 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 					elapsed = tp->keepalive_time - elapsed;
 				else
 					elapsed = 0;
-				if (tp->mpc) {
-					struct sock *sk_it = sk;
-					mptcp_for_each_sk(tp->mpcb, sk_it)
-						if (!(1 << sk->sk_state & (TCPF_CLOSE | TCPF_LISTEN)))
-							inet_csk_reset_keepalive_timer(sk_it, elapsed);
-					break;
-				}
 				inet_csk_reset_keepalive_timer(sk, elapsed);
 			}
 		}
