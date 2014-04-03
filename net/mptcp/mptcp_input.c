@@ -255,8 +255,9 @@ static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 			    after(TCP_SKB_CB(skb)->end_seq - th->fin, tp->rcv_nxt) &&
 			    !mptcp_is_data_fin2(skb, tp)) {
 				NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_TCPABORTONDATA);
-
 				mptcp_send_active_reset(meta_sk, GFP_ATOMIC);
+				tcp_reset(meta_sk);
+				return 1;
 			}
 		}
 		break;
@@ -1490,8 +1491,9 @@ static void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 			meta_sk->sk_write_space(meta_sk);
 	}
 
-	if (meta_sk->sk_state != TCP_ESTABLISHED)
-		mptcp_rcv_state_process(meta_sk, sk, skb, data_seq, data_len);
+	if (meta_sk->sk_state != TCP_ESTABLISHED &&
+	    mptcp_rcv_state_process(meta_sk, sk, skb, data_seq, data_len))
+		return;
 
 exit:
 	mptcp_push_pending_frames(meta_sk);

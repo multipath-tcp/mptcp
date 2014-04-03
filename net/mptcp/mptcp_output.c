@@ -1776,36 +1776,32 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 	if (!mpcb->cnt_subflows)
 		return;
 
+	WARN_ON(meta_tp->send_mp_fclose);
+
 	/* First - select a socket */
-
-	/* Socket already selected? */
-	mptcp_for_each_sk(mpcb, sk_it) {
-		if (tcp_sk(sk_it)->send_mp_fclose) {
-			sk = sk_it;
-			goto found;
-		}
-	}
-
 	sk = mptcp_select_ack_sock(meta_sk, 0);
+
 	/* May happen if no subflow is in an appropriate state */
 	if (!sk)
 		return;
 
 	/* We are in infinite mode - just send a reset */
 	if (mpcb->infinite_mapping_snd || mpcb->infinite_mapping_rcv) {
-		tcp_send_active_reset(sk, priority);
+		sk_it->sk_err = ECONNRESET;
+		if (tcp_need_reset(sk->sk_state))
+			tcp_send_active_reset(sk, priority);
 		mptcp_sub_force_close(sk);
 		return;
 	}
 
-	tcp_sk(sk)->send_mp_fclose = 1;
 
+	tcp_sk(sk)->send_mp_fclose = 1;
 	/** Reset all other subflows */
 
-found:
 	/* tcp_done must be handled with bh disabled */
 	if (!in_serving_softirq())
 		local_bh_disable();
+
 	mptcp_for_each_sk_safe(mpcb, sk_it, tmpsk) {
 		if (tcp_sk(sk_it)->send_mp_fclose)
 			continue;
@@ -1815,18 +1811,12 @@ found:
 			tcp_send_active_reset(sk_it, GFP_ATOMIC);
 		mptcp_sub_force_close(sk_it);
 	}
+
 	if (!in_serving_softirq())
 		local_bh_enable();
 
 	tcp_send_ack(sk);
-
-	if (!meta_tp->send_mp_fclose) {
-		struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
-
-		meta_icsk->icsk_rto = min(inet_csk(sk)->icsk_rto, TCP_RTO_MAX);
-		inet_csk_reset_xmit_timer(meta_sk, ICSK_TIME_RETRANS,
-					  meta_icsk->icsk_rto, TCP_RTO_MAX);
-	}
+	inet_csk_reset_keepalive_timer(sk, inet_csk(sk)->icsk_rto);
 
 	meta_tp->send_mp_fclose = 1;
 }
@@ -2015,9 +2005,6 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 	struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
 	int err;
 
-	if (unlikely(meta_tp->send_mp_fclose))
-		goto send_mp_fclose;
-
 	/* In fallback, retransmission is handled at the subflow-level */
 	if (!meta_tp->packets_out || mpcb->infinite_mapping_snd ||
 	    mpcb->send_infinite_mapping)
@@ -2079,7 +2066,6 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 		return;
 	}
 
-out_backoff:
 	/* Increase the timeout each time we retransmit.  Note that
 	 * we do not increase the rtt estimate.  rto is initialized
 	 * from rtt, but increases here.  Jacobson (SIGCOMM 88) suggests
@@ -2124,24 +2110,6 @@ out_reset_timer:
 	inet_csk_reset_xmit_timer(meta_sk, ICSK_TIME_RETRANS, meta_icsk->icsk_rto, TCP_RTO_MAX);
 
 	return;
-
-send_mp_fclose:
-	/* MUST do this before tcp_write_timeout, because retrans_stamp may have
-	 * been set to 0 in another part while we are retransmitting
-	 * MP_FASTCLOSE. Then, we would crash, because retransmits_timed_out
-	 * accesses the meta-write-queue.
-	 *
-	 * We make sure that the timestamp is != 0.
-	 */
-	if (!meta_tp->retrans_stamp)
-		meta_tp->retrans_stamp = tcp_time_stamp ? : 1;
-
-	if (tcp_write_timeout(meta_sk))
-		return;
-
-	mptcp_send_active_reset(meta_sk, GFP_ATOMIC);
-
-	goto out_backoff;
 }
 
 /* Modify values to an mptcp-level for the initial window of new subflows */
