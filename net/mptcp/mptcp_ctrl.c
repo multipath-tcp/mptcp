@@ -523,9 +523,12 @@ void mptcp_destroy_sock(struct sock *sk)
 		 */
 		mptcp_for_each_sk_safe(tcp_sk(sk)->mpcb, sk_it, tmpsk) {
 			/* Already did call tcp_close - waiting for graceful
-			 * closure.
+			 * closure, or if we are retransmitting fast-close on
+			 * the subflow. The reset (or timeout) will kill the
+			 * subflow..
 			 */
-			if (tcp_sk(sk_it)->closing)
+			if (tcp_sk(sk_it)->closing ||
+			    tcp_sk(sk_it)->send_mp_fclose)
 				continue;
 
 			/* Allow the delayed work first to prevent time-wait state */
@@ -1602,8 +1605,11 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 
 	/* If socket has been already reset (e.g. in tcp_reset()) - kill it. */
 	if (meta_sk->sk_state == TCP_CLOSE) {
-		mptcp_for_each_sk_safe(mpcb, sk_it, tmpsk)
+		mptcp_for_each_sk_safe(mpcb, sk_it, tmpsk) {
+			if (tcp_sk(sk_it)->send_mp_fclose)
+				continue;
 			mptcp_sub_close(sk_it, 0);
+		}
 		goto adjudge_to_death;
 	}
 

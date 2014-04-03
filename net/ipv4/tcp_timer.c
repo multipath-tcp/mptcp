@@ -594,6 +594,29 @@ static void tcp_keepalive_timer (unsigned long data)
 		goto out;
 	}
 
+	if (tp->send_mp_fclose) {
+		/* MUST do this before tcp_write_timeout, because retrans_stamp
+		 * may have been set to 0 in another part while we are
+		 * retransmitting MP_FASTCLOSE. Then, we would crash, because
+		 * retransmits_timed_out accesses the meta-write-queue.
+		 *
+		 * We make sure that the timestamp is != 0.
+		 */
+		if (!tp->retrans_stamp)
+			tp->retrans_stamp = tcp_time_stamp ? : 1;
+
+		if (tcp_write_timeout(sk))
+			goto out;
+
+		tcp_send_ack(sk);
+		icsk->icsk_backoff++;
+		icsk->icsk_retransmits++;
+
+		icsk->icsk_rto = min(icsk->icsk_rto << 1, TCP_RTO_MAX);
+		elapsed = icsk->icsk_rto;
+		goto resched;
+	}
+
 	if (sk->sk_state == TCP_FIN_WAIT2 && sock_flag(sk, SOCK_DEAD)) {
 		if (tp->linger2 >= 0) {
 			const int tmo = tcp_fin_time(sk) - TCP_TIMEWAIT_LEN;

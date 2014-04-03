@@ -3140,7 +3140,6 @@ EXPORT_SYMBOL(tcp_md5_hash_key);
 void tcp_done(struct sock *sk)
 {
 	struct request_sock *req = tcp_sk(sk)->fastopen_rsk;
-	struct tcp_sock *tp = tcp_sk(sk);
 
 	if (sk->sk_state == TCP_SYN_SENT || sk->sk_state == TCP_SYN_RECV)
 		TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_ATTEMPTFAILS);
@@ -3148,10 +3147,7 @@ void tcp_done(struct sock *sk)
 	WARN_ON(sk->sk_state == TCP_CLOSE);
 	tcp_set_state(sk, TCP_CLOSE);
 
-	/* If it is a meta-sk sending mp_fclose we have to maintain the
-	 * rexmit-timer for retransmitting the MP_FCLOSE */
-	if (!tp->mpc || !is_meta_sk(sk) || !tp->send_mp_fclose)
-		tcp_clear_xmit_timers(sk);
+	tcp_clear_xmit_timers(sk);
 
 	if (req != NULL)
 		reqsk_fastopen_remove(sk, req, false);
