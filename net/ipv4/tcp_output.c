@@ -1408,9 +1408,6 @@ unsigned int tcp_current_mss(struct sock *sk)
 	struct tcp_out_options opts;
 	struct tcp_md5sig_key *md5;
 
-	if (is_meta_sk(sk))
-		return mptcp_current_mss(sk);
-
 	mss_now = tp->mss_cache;
 
 	if (dst) {
