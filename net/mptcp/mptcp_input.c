@@ -1624,21 +1624,28 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			break;
 		}
 
+		/* saw_mpc must be set, because in tcp_check_req we assume that
+		 * it is set to support falling back to reg. TCP if a rexmitted
+		 * SYN has no MP_CAPABLE or MP_JOIN
+		 */
 		switch (opsize) {
 		case MPTCP_SUB_LEN_JOIN_SYN:
 			mopt->is_mp_join = 1;
+			mopt->saw_mpc = 1;
 			mopt->low_prio = mpjoin->b;
 			mopt->rem_id = mpjoin->addr_id;
 			mopt->mptcp_rem_token = mpjoin->u.syn.token;
 			mopt->mptcp_recv_nonce = mpjoin->u.syn.nonce;
 			break;
 		case MPTCP_SUB_LEN_JOIN_SYNACK:
+			mopt->saw_mpc = 1;
 			mopt->low_prio = mpjoin->b;
 			mopt->rem_id = mpjoin->addr_id;
 			mopt->mptcp_recv_tmac = mpjoin->u.synack.mac;
 			mopt->mptcp_recv_nonce = mpjoin->u.synack.nonce;
 			break;
 		case MPTCP_SUB_LEN_JOIN_ACK:
+			mopt->saw_mpc = 1;
 			mopt->join_ack = 1;
 			memcpy(mopt->mptcp_recv_mac, mpjoin->u.ack.mac, 20);
 			break;
