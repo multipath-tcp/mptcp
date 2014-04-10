@@ -131,9 +131,8 @@ next_subflow:
 	}
 #endif
 
-	kfree(mptcp_local);
-
 exit:
+	kfree(mptcp_local);
 	release_sock(meta_sk);
 	mutex_unlock(&mpcb->mpcb_mutex);
 	sock_put(meta_sk);
