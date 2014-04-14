@@ -164,7 +164,6 @@ struct mptcp_tcp_sock {
 	u32	map_subseq;
 	u16	map_data_len;
 	u16	slave_sk:1,
-		nonce_set:1, /* Is the nonce set? (in order to support 0-nonce) */
 		fully_established:1,
 		establish_increased:1,
 		second_packet:1,

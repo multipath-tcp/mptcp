@@ -1134,8 +1134,8 @@ void mptcp_fallback_meta_sk(struct sock *meta_sk)
 int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 		   gfp_t flags)
 {
-	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct tcp_sock *tp = tcp_sk(sk);
+	struct mptcp_cb *mpcb	= tcp_sk(meta_sk)->mpcb;
+	struct tcp_sock *tp	= tcp_sk(sk);
 
 	tp->mptcp = kmem_cache_zalloc(mptcp_sock_cache, flags);
 	if (!tp->mptcp)

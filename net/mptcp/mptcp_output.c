@@ -1333,29 +1333,6 @@ u32 __mptcp_select_window(struct sock *sk)
 	return window;
 }
 
-static void mptcp_set_nonce(struct sock *sk)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct inet_sock *inet = inet_sk(sk);
-
-	if (sk->sk_family == AF_INET)
-		tp->mptcp->mptcp_loc_nonce = mptcp_v4_get_nonce(inet->inet_saddr,
-								inet->inet_daddr,
-								inet->inet_sport,
-								inet->inet_dport,
-								tp->write_seq);
-#if IS_ENABLED(CONFIG_IPV6)
-	else
-		tp->mptcp->mptcp_loc_nonce = mptcp_v6_get_nonce(inet6_sk(sk)->saddr.s6_addr32,
-				     	     	     	        sk->sk_v6_daddr.s6_addr32,
-				     	     	     	        inet->inet_sport,
-				     	     	     	        inet->inet_dport,
-				     	     	     	        tp->write_seq);
-#endif
-
-	tp->mptcp->nonce_set = 1;
-}
-
 void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 		       unsigned *remaining)
 {
@@ -1374,10 +1351,6 @@ void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 		*remaining -= MPTCP_SUB_LEN_JOIN_SYN_ALIGN;
 		opts->mp_join_syns.token = mpcb->mptcp_rem_token;
 		opts->addr_id = tp->mptcp->loc_id;
-
-		if (!tp->mptcp->nonce_set)
-			mptcp_set_nonce(sk);
-
 		opts->mp_join_syns.sender_nonce = tp->mptcp->mptcp_loc_nonce;
 	}
 }

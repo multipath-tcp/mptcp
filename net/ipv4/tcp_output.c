@@ -37,6 +37,10 @@
 #define pr_fmt(fmt) "TCP: " fmt
 
 #include <net/mptcp.h>
+#include <net/mptcp_v4.h>
+#if IS_ENABLED(CONFIG_IPV6)
+#include <net/mptcp_v6.h>
+#endif
 #include <net/ipv6.h>
 #include <net/tcp.h>
 
@@ -3013,8 +3017,28 @@ static void tcp_connect_init(struct sock *sk)
 			tp->request_mptcp = 1;
 			mptcp_connect_init(sk);
 		} else if (tp->mptcp) {
-			tp->mptcp->snt_isn = tp->write_seq;
-			tp->mptcp->init_rcv_wnd = tp->rcv_wnd;
+			struct inet_sock *inet	= inet_sk(sk);
+
+			tp->mptcp->snt_isn	= tp->write_seq;
+			tp->mptcp->init_rcv_wnd	= tp->rcv_wnd;
+
+			/* Set nonce for new subflows */
+			if (sk->sk_family == AF_INET)
+				tp->mptcp->mptcp_loc_nonce = mptcp_v4_get_nonce(
+							inet->inet_saddr,
+							inet->inet_daddr,
+							inet->inet_sport,
+							inet->inet_dport,
+							tp->write_seq);
+#if IS_ENABLED(CONFIG_IPV6)
+			else
+				tp->mptcp->mptcp_loc_nonce = mptcp_v6_get_nonce(
+						inet6_sk(sk)->saddr.s6_addr32,
+						sk->sk_v6_daddr.s6_addr32,
+						inet->inet_sport,
+						inet->inet_dport,
+						tp->write_seq);
+#endif
 		}
 	}
 #endif
