@@ -792,6 +792,7 @@ void mptcp_sub_force_close(struct sock *sk);
 int mptcp_sub_len_remove_addr_align(u16 bitfield);
 void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
 			    const struct sk_buff *skb);
+void mptcp_init_buffer_space(struct sock *sk);
 
 /* MPTCP-path-manager registration/initialization functions */
 int mptcp_register_path_manager(struct mptcp_pm_ops *pm);
@@ -1083,22 +1084,6 @@ static inline bool mptcp_can_sg(const struct sock *meta_sk)
 			return false;
 	}
 	return true;
-}
-
-/* Adding a new subflow to the rcv-buffer space. We make a simple addition,
- * to give some space to allow traffic on the new subflow. Autotuning will
- * increase it further later on.
- */
-static inline void mptcp_init_buffer_space(struct sock *sk)
-{
-	struct sock *meta_sk = mptcp_meta_sk(sk);
-	int space = min(meta_sk->sk_rcvbuf + sk->sk_rcvbuf, sysctl_tcp_rmem[2]);
-
-	if (space > meta_sk->sk_rcvbuf) {
-		tcp_sk(meta_sk)->window_clamp += tcp_sk(sk)->window_clamp;
-		tcp_sk(meta_sk)->rcv_ssthresh += tcp_sk(sk)->rcv_ssthresh;
-		meta_sk->sk_rcvbuf = space;
-	}
 }
 
 static inline void mptcp_set_rto(struct sock *sk)

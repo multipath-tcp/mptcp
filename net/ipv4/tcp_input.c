@@ -420,10 +420,8 @@ void tcp_init_buffer_space(struct sock *sk)
 	tp->rcv_ssthresh = min(tp->rcv_ssthresh, tp->window_clamp);
 	tp->snd_cwnd_stamp = tcp_time_stamp;
 
-	if (tp->mpc) {
+	if (tp->mpc)
 		mptcp_init_buffer_space(sk);
-		mptcp_update_sndbuf(tp->mpcb);
-	}
 }
 
 /* 5. Recalculate window clamp after socket hit its memory bounds. */
