@@ -113,7 +113,7 @@ static void mptcp_ccc_recalc_alpha(struct sock *sk)
 		 * tmp will be in u64.
 		 */
 		tmp = div64_u64(mptcp_ccc_scale(sub_tp->snd_cwnd,
-				alpha_scale_num), sub_tp->srtt * sub_tp->srtt);
+				alpha_scale_num), (u64)sub_tp->srtt * sub_tp->srtt);
 
 		if (tmp >= max_numerator) {
 			max_numerator = tmp;
