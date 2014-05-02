@@ -368,8 +368,10 @@ next_event:
 				i = __mptcp_find_free_index(mptcp_local->loc6_bits, 0,
 							    mptcp_local->next_v6_index);
 
-			if (i < 0)
+			if (i < 0) {
+				mptcp_debug("%s no more space\n", __func__);
 				goto duno;
+			}
 
 			/* It might have been a MOD-event. */
 			event->code = MPTCP_EVENT_ADD;
