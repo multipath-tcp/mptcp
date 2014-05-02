@@ -1184,11 +1184,17 @@ static inline int __mptcp_find_free_index(u8 bitfield, int j, u8 base)
 		/* We wrapped at the bitfield - try from 0 on */
 		if (i + base >= sizeof(bitfield) * 8) {
 			mptcp_for_each_bit_unset(bitfield, i) {
+				if (i >= sizeof(bitfield) * 8)
+					goto exit;
+
 				if (i != j)
 					return i;
 			}
 			goto exit;
 		}
+		if (i + base >= sizeof(bitfield) * 8)
+			break;
+
 		if (i + base != j)
 			return i + base;
 	}
@@ -1219,6 +1225,8 @@ static inline u8 mptcp_set_new_pathindex(struct mptcp_cb *mpcb)
 		return i;
 	}
 	mptcp_for_each_bit_unset(mpcb->path_index_bits, i) {
+		if (i >= sizeof(mpcb->path_index_bits) * 8)
+			break;
 		if (i < 1)
 			continue;
 		mpcb->path_index_bits |= (1 << i);
