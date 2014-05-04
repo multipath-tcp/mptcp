@@ -458,7 +458,7 @@ static void mptcp_skb_trim_head(struct sk_buff *skb, struct sock *sk, u32 seq)
 	else
 		__pskb_trim_head(skb, len - skb_headlen(skb));
 
-	TCP_SKB_CB(skb)->seq = htonl(new_seq);
+	TCP_SKB_CB(skb)->seq = new_seq;
 
 	skb->truesize -= len;
 	atomic_sub(len, &sk->sk_rmem_alloc);
