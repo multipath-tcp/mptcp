@@ -59,6 +59,8 @@ struct mptcp_fm_ns {
 	struct net *net;
 };
 
+static struct mptcp_pm_ops full_mesh __read_mostly;
+
 static struct mptcp_fm_ns *fm_get_ns(struct net *net)
 {
 	return (struct mptcp_fm_ns *)net->mptcp.path_managers[MPTCP_PM_FULLMESH];
@@ -450,6 +452,10 @@ duno:
 			    mpcb->send_infinite_mapping)
 				goto next;
 
+			/* May be that the pm has changed in-between */
+			if (mpcb->pm_ops != &full_mesh)
+				goto next;
+
 			if (sock_owned_by_user(meta_sk)) {
 				if (!test_and_set_bit(MPTCP_PATH_MANAGER,
 						      &meta_tp->tsq_flags))
@@ -827,7 +833,7 @@ static struct notifier_block mptcp_pm_netdev_notifier = {
 		.notifier_call = netdev_event,
 };
 
-static void full_mesh_new_session(struct sock *meta_sk, u8 id)
+static void full_mesh_new_session(struct sock *meta_sk, int id)
 {
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
@@ -836,6 +842,11 @@ static void full_mesh_new_session(struct sock *meta_sk, u8 id)
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(net);
 	struct sock *sk;
 	int i;
+
+	if (id == -1) {
+		mptcp_fallback_default(mpcb);
+		return;
+	}
 
 	/* Initialize workqueue-struct */
 	INIT_WORK(&fmp->subflow_work, create_subflow_worker);
@@ -1041,7 +1052,7 @@ static int full_mesh_get_local_id(sa_family_t family, union inet_addr *addr,
 {
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(net);
-	int id = 0, i;
+	int id = -1, i;
 
 	/* Handle the backup-flows */
 	rcu_read_lock();
