@@ -223,7 +223,7 @@ struct mptcp_pm_ops {
 	struct list_head list;
 
 	/* Signal the creation of a new MPTCP-session. */
-	void (*new_session)(struct sock *meta_sk, u8 id);
+	void (*new_session)(struct sock *meta_sk, int id);
 	void (*release_sock)(struct sock *meta_sk);
 	void (*fully_established)(struct sock *meta_sk);
 	void (*new_remote_address)(struct sock *meta_sk);
@@ -798,6 +798,7 @@ int mptcp_register_path_manager(struct mptcp_pm_ops *pm);
 void mptcp_unregister_path_manager(struct mptcp_pm_ops *pm);
 void mptcp_init_path_manager(struct mptcp_cb *mpcb);
 void mptcp_cleanup_path_manager(struct mptcp_cb *mpcb);
+void mptcp_fallback_default(struct mptcp_cb *mpcb);
 void mptcp_get_default_path_manager(char *name);
 int mptcp_set_default_path_manager(const char *name);
 extern struct mptcp_pm_ops mptcp_pm_default;

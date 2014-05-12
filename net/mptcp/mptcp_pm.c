@@ -119,6 +119,19 @@ void mptcp_cleanup_path_manager(struct mptcp_cb *mpcb)
 	module_put(mpcb->pm_ops->owner);
 }
 
+/* Fallback to the default path-manager. */
+void mptcp_fallback_default(struct mptcp_cb *mpcb)
+{
+	struct mptcp_pm_ops *pm;
+
+	mptcp_cleanup_path_manager(mpcb);
+	pm = mptcp_pm_find("default");
+
+	/* Cannot fail - it's the default module */
+	try_module_get(pm->owner);
+	mpcb->pm_ops = pm;
+}
+
 /* Set default value from kernel configuration at bootup */
 static int __init mptcp_path_manager_default(void)
 {

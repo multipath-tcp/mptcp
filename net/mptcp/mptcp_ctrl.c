@@ -1286,7 +1286,7 @@ void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	union inet_addr addr;
-	u8 id;
+	int id;
 
 	/* Get the local address-id */
 	if (sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(sk)) {
@@ -1301,11 +1301,13 @@ void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
 		mptcp_v4_add_raddress(mpcb,
 				      (struct in_addr *)&inet_sk(sk)->inet_daddr,
 				      0, 0);
-		mptcp_v4_set_init_addr_bit(mpcb, inet_sk(sk)->inet_daddr, id);
+		if (id >= 0)
+			mptcp_v4_set_init_addr_bit(mpcb, inet_sk(sk)->inet_daddr, id);
 	} else {
 #if IS_ENABLED(CONFIG_IPV6)
 		mptcp_v6_add_raddress(mpcb, &inet6_sk(sk)->daddr, 0, 0);
-		mptcp_v6_set_init_addr_bit(mpcb, &inet6_sk(sk)->daddr, id);
+		if (id >= 0)
+			mptcp_v6_set_init_addr_bit(mpcb, &inet6_sk(sk)->daddr, id);
 #endif
 	}
 

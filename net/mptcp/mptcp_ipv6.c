@@ -429,6 +429,8 @@ static void mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 
 	addr.in6 = treq->loc_addr;
 	mtreq->loc_id = mpcb->pm_ops->get_local_id(AF_INET6, &addr, sock_net(meta_sk));
+	if (mtreq->loc_id == -1) /* Address not part of the allowed ones */
+		goto drop_and_release;
 	mtreq->rem_id = mopt.rem_id;
 	mtreq->low_prio = mopt.low_prio;
 	tcp_rsk(req)->saw_mpc = 1;
