@@ -181,6 +181,8 @@ static inline struct tcp_request_sock *tcp_rsk(const struct request_sock *req)
 	return (struct tcp_request_sock *)req;
 }
 
+struct tcp_md5sig_key;
+
 struct tcp_sock {
 	/* inet_connection_sock has to be the first member of tcp_sock */
 	struct inet_connection_sock	inet_conn;
@@ -403,6 +405,17 @@ struct tcp_sock {
 	u32		mptcp_loc_token;
 	u64		mptcp_loc_key;
 #endif /* CONFIG_MPTCP */
+
+	/* Functions that depend on the value of the mpc flag */
+	u32 (*__select_window)(struct sock *sk);
+	u16 (*select_window)(struct sock *sk);
+	void (*select_initial_window)(int __space, __u32 mss, __u32 *rcv_wnd,
+					__u32 *window_clamp, int wscale_ok,
+					__u8 *rcv_wscale, __u32 init_rcv_wnd,
+					const struct sock *sk);
+	void (*init_buffer_space)(struct sock *sk);
+	void (*set_rto)(struct sock *sk);
+	bool (*should_expand_sndbuf)(const struct sock *sk);
 };
 
 enum tsq_flags {

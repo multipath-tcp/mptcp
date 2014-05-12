@@ -1489,6 +1489,18 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 	return;
 }
 
+u16 mptcp_select_window(struct sock *sk)
+{
+	u16 new_win		= tcp_select_window(sk);
+	struct tcp_sock *tp	= tcp_sk(sk);
+	struct tcp_sock *meta_tp = mptcp_meta_tp(tp);
+
+	meta_tp->rcv_wnd	= tp->rcv_wnd;
+	meta_tp->rcv_wup	= meta_tp->rcv_nxt;
+
+	return new_win;
+}
+
 void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			 struct tcp_out_options *opts,
 			 struct sk_buff *skb)
@@ -2088,13 +2100,18 @@ out_reset_timer:
 }
 
 /* Modify values to an mptcp-level for the initial window of new subflows */
-void mptcp_select_initial_window(int *__space, __u32 *window_clamp,
+void mptcp_select_initial_window(int __space, __u32 mss, __u32 *rcv_wnd,
+				__u32 *window_clamp, int wscale_ok,
+				__u8 *rcv_wscale, __u32 init_rcv_wnd,
 				 const struct sock *sk)
 {
 	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 
 	*window_clamp = mpcb->orig_window_clamp;
-	*__space = tcp_win_from_space(mpcb->orig_sk_rcvbuf);
+	__space = tcp_win_from_space(mpcb->orig_sk_rcvbuf);
+
+	tcp_select_initial_window(__space, mss, rcv_wnd, window_clamp,
+				  wscale_ok, rcv_wscale, init_rcv_wnd, sk);
 }
 
 unsigned int mptcp_current_mss(struct sock *meta_sk)

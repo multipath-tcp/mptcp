@@ -399,6 +399,26 @@ struct mptcp_cb {
 
 #define OPTION_MPTCP		(1 << 5)
 
+static inline void reset_mpc(struct tcp_sock *tp)
+{
+	tp->mpc	= 0;
+
+	tp->__select_window		= __tcp_select_window;
+	tp->select_window		= tcp_select_window;
+	tp->select_initial_window	= tcp_select_initial_window;
+	tp->init_buffer_space		= tcp_init_buffer_space;
+	tp->set_rto			= tcp_set_rto;
+	tp->should_expand_sndbuf	= tcp_should_expand_sndbuf;
+}
+
+/* Initializes MPTCP flags in tcp_sock (and other tcp_sock members that depend
+ * on those flags).
+ */
+static inline void mptcp_init_tcp_sock(struct tcp_sock *tp)
+{
+	reset_mpc(tp);
+}
+
 #ifdef CONFIG_MPTCP
 
 /* Used for checking if the mptcp initialization has been successful */
@@ -733,8 +753,10 @@ struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
 				   struct request_sock **prev,
 				   struct mptcp_options_received *mopt);
 u32 __mptcp_select_window(struct sock *sk);
-void mptcp_select_initial_window(int *__space, __u32 *window_clamp,
-			         const struct sock *sk);
+void mptcp_select_initial_window(int __space, __u32 mss, __u32 *rcv_wnd,
+					__u32 *window_clamp, int wscale_ok,
+					__u8 *rcv_wscale, __u32 init_rcv_wnd,
+					const struct sock *sk);
 unsigned int mptcp_current_mss(struct sock *meta_sk);
 int mptcp_select_size(const struct sock *meta_sk, bool sg);
 void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn);
@@ -770,7 +792,7 @@ int mptcp_time_wait(struct sock *sk, struct tcp_timewait_sock *tw);
 void mptcp_twsk_destructor(struct tcp_timewait_sock *tw);
 void mptcp_update_tw_socks(const struct tcp_sock *tp, int state);
 void mptcp_disconnect(struct sock *sk);
-bool mptcp_should_expand_sndbuf(struct sock *meta_sk);
+bool mptcp_should_expand_sndbuf(const struct sock *sk);
 int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb);
 void mptcp_tsq_flags(struct sock *sk);
 void mptcp_tsq_sub_deferred(struct sock *meta_sk);
@@ -1227,6 +1249,24 @@ static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
 	return sk->sk_family == AF_INET6 &&
 	       ipv6_addr_type(&inet6_sk(sk)->saddr) == IPV6_ADDR_MAPPED;
 }
+
+/* TCP and MPTCP mpc flag-depending functions */
+u16 mptcp_select_window(struct sock *sk);
+void mptcp_init_buffer_space(struct sock *sk);
+void mptcp_tcp_set_rto(struct sock *sk);
+
+static inline void set_mpc(struct tcp_sock *tp)
+{
+	tp->mpc	= 1;
+
+	tp->__select_window		= __mptcp_select_window;
+	tp->select_window		= mptcp_select_window;
+	tp->select_initial_window	= mptcp_select_initial_window;
+	tp->init_buffer_space		= mptcp_init_buffer_space;
+	tp->set_rto			= mptcp_tcp_set_rto;
+	tp->should_expand_sndbuf	= mptcp_should_expand_sndbuf;
+}
+
 #else /* CONFIG_MPTCP */
 #define mptcp_debug(fmt, args...)	\
 	do {				\
@@ -1267,7 +1307,6 @@ static inline void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp) {}
 static inline void mptcp_cleanup_rbuf(const struct sock *meta_sk, int copied) {}
 static inline void mptcp_del_sock(const struct sock *sk) {}
 static inline void mptcp_reinject_data(struct sock *orig_sk, int clone_it) {}
-static inline void mptcp_init_buffer_space(const struct sock *sk) {}
 static inline void mptcp_update_sndbuf(const struct mptcp_cb *mpcb) {}
 static inline void mptcp_skb_entail_init(const struct tcp_sock *tp,
 					 const struct sk_buff *skb) {}
@@ -1320,13 +1359,6 @@ static inline struct sock *mptcp_check_req_child(struct sock *sk,
 {
 	return NULL;
 }
-static inline u32 __mptcp_select_window(const struct sock *sk)
-{
-	return 0;
-}
-static inline void mptcp_select_initial_window(int *__space,
-					       __u32 *window_clamp,
-					       const struct sock *sk) {}
 static inline unsigned int mptcp_current_mss(struct sock *meta_sk)
 {
 	return 0;
@@ -1421,10 +1453,6 @@ static inline int mptcp_time_wait(struct sock *sk, struct tcp_timewait_sock *tw)
 static inline void mptcp_twsk_destructor(struct tcp_timewait_sock *tw) {}
 static inline void mptcp_update_tw_socks(const struct tcp_sock *tp, int state) {}
 static inline void mptcp_disconnect(struct sock *sk) {}
-static inline bool mptcp_should_expand_sndbuf(struct sock *meta_sk)
-{
-	return false;
-}
 static inline void mptcp_tsq_flags(struct sock *sk) {}
 static inline void mptcp_tsq_sub_deferred(struct sock *meta_sk) {}
 static inline void mptcp_hash_remove_bh(struct tcp_sock *meta_tp) {}
