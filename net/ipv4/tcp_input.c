@@ -419,9 +419,6 @@ void tcp_init_buffer_space(struct sock *sk)
 
 	tp->rcv_ssthresh = min(tp->rcv_ssthresh, tp->window_clamp);
 	tp->snd_cwnd_stamp = tcp_time_stamp;
-
-	if (tp->mpc)
-		mptcp_init_buffer_space(sk);
 }
 
 /* 5. Recalculate window clamp after socket hit its memory bounds. */
@@ -772,7 +769,7 @@ static void tcp_update_pacing_rate(struct sock *sk)
 /* Calculate rto without backoff.  This is the second half of Van Jacobson's
  * routine referred to above.
  */
-static void tcp_set_rto(struct sock *sk)
+void tcp_set_rto(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	/* Old crap is replaced with new one. 8)
@@ -797,8 +794,6 @@ static void tcp_set_rto(struct sock *sk)
 	 * guarantees that rto is higher.
 	 */
 	tcp_bound_rto(sk);
-	if (tp->mpc)
-		mptcp_set_rto(sk);
 }
 
 __u32 tcp_init_cwnd(const struct tcp_sock *tp, const struct dst_entry *dst)
@@ -2920,7 +2915,7 @@ static inline bool tcp_ack_update_rtt(struct sock *sk, const int flag,
 		return false;
 
 	tcp_rtt_estimator(sk, seq_rtt);
-	tcp_set_rto(sk);
+	tp->set_rto(sk);
 
 	/* RFC6298: only reset backoff on valid RTT measurement. */
 	inet_csk(sk)->icsk_backoff = 0;
@@ -4800,12 +4795,9 @@ void tcp_cwnd_application_limited(struct sock *sk)
 	tp->snd_cwnd_stamp = tcp_time_stamp;
 }
 
-static bool tcp_should_expand_sndbuf(const struct sock *sk)
+bool tcp_should_expand_sndbuf(const struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
-
-	if (tp->mpc)
-		return mptcp_should_expand_sndbuf(mptcp_meta_sk(sk));
 
 	/* If the user specified a specific send buffer setting, do
 	 * not modify it.
@@ -4838,7 +4830,7 @@ static void tcp_new_space(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	if (tcp_should_expand_sndbuf(sk)) {
+	if (tp->should_expand_sndbuf(sk)) {
 		tcp_sndbuf_expand(sk);
 		tp->snd_cwnd_stamp = tcp_time_stamp;
 	}
@@ -4875,7 +4867,7 @@ static void __tcp_ack_snd_check(struct sock *sk, int ofo_possible)
 	     /* ... and right edge of window advances far enough.
 	      * (tcp_recvmsg() will send ACK otherwise). Or...
 	      */
-	     __tcp_select_window(sk) >= tp->rcv_wnd) ||
+	     tp->__select_window(sk) >= tp->rcv_wnd) ||
 	    /* We ACK each frame or... */
 	    tcp_in_quickack_mode(sk) ||
 	    /* We have out of order data. */
@@ -5435,7 +5427,7 @@ void tcp_finish_connect(struct sock *sk, struct sk_buff *skb)
 	 */
 	tp->lsndtime = tcp_time_stamp;
 
-	tcp_init_buffer_space(sk);
+	tp->init_buffer_space(sk);
 
 	if (sock_flag(sk, SOCK_KEEPOPEN))
 		inet_csk_reset_keepalive_timer(sk, keepalive_time_when(tp));
@@ -5869,7 +5861,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 
 			tcp_mtup_init(sk);
 			tp->copied_seq = tp->rcv_nxt;
-			tcp_init_buffer_space(sk);
+			tp->init_buffer_space(sk);
 		}
 		smp_mb();
 		tcp_set_state(sk, TCP_ESTABLISHED);

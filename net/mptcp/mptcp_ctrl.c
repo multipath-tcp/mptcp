@@ -996,7 +996,7 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	mpcb->meta_sk = meta_sk;
 	mpcb->master_sk = master_sk;
 
-	meta_tp->mpc = 1;
+	set_mpc(meta_tp);
 	meta_tp->mptcp->attached = 0;
 	meta_tp->was_meta_sk = 0;
 
@@ -1035,7 +1035,7 @@ int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 		kmem_cache_free(mptcp_sock_cache, meta_tp->mptcp);
 		kmem_cache_free(mptcp_cb_cache, mpcb);
 		sk_free(master_sk);
-		meta_tp->mpc = 0;
+		reset_mpc(meta_tp);
 		return -ENOMEM;
 	}
 
@@ -1153,7 +1153,7 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 	tp->mptcp->tp = tp;
 	tp->mpcb = mpcb;
 	tp->meta_sk = meta_sk;
-	tp->mpc = 1;
+	set_mpc(tp);
 	tp->mptcp->loc_id = loc_id;
 	tp->mptcp->rem_id = rem_id;
 	tp->mptcp->last_rbuf_opti = tcp_time_stamp;
@@ -1261,7 +1261,7 @@ void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	union inet_addr addr;
-	u8 id;
+	int id;
 
 	/* Get the local address-id */
 	if (sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(sk)) {
@@ -1276,11 +1276,13 @@ void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
 		mptcp_v4_add_raddress(mpcb,
 				      (struct in_addr *)&inet_sk(sk)->inet_daddr,
 				      0, 0);
-		mptcp_v4_set_init_addr_bit(mpcb, inet_sk(sk)->inet_daddr, id);
+		if (id >= 0)
+			mptcp_v4_set_init_addr_bit(mpcb, inet_sk(sk)->inet_daddr, id);
 	} else {
 #if IS_ENABLED(CONFIG_IPV6)
 		mptcp_v6_add_raddress(mpcb, &sk->sk_v6_daddr, 0, 0);
-		mptcp_v6_set_init_addr_bit(mpcb, &sk->sk_v6_daddr, id);
+		if (id >= 0)
+			mptcp_v6_set_init_addr_bit(mpcb, &sk->sk_v6_daddr, id);
 #endif
 	}
 
@@ -1341,7 +1343,7 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 second_part:
 		/* This here is the second part of tcp_cleanup_rbuf */
 		if (rcv_window_now) {
-			__u32 new_window = __tcp_select_window(sk);
+			__u32 new_window = tp->__select_window(sk);
 
 			/* Send ACK now, if this read freed lots of space
 			 * in our buffer. Certainly, new_window is new window.
@@ -1739,14 +1741,14 @@ void mptcp_disconnect(struct sock *sk)
 
 		bh_lock_sock(subsk);
 		mptcp_del_sock(subsk);
-		tcp_sk(subsk)->mpc = 0;
+		reset_mpc(tcp_sk(subsk));
 		mptcp_sub_force_close(subsk);
 		bh_unlock_sock(subsk);
 	}
 	local_bh_enable();
 
 	tp->was_meta_sk = 1;
-	tp->mpc = 0;
+	reset_mpc(tp);
 }
 
 
@@ -1909,9 +1911,9 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	child->sk_wq = meta_sk->sk_wq;
 
 	if (mptcp_add_sock(meta_sk, child, mtreq->loc_id, mtreq->rem_id, GFP_ATOMIC)) {
-		child_tp->mpc = 0; /* Has been inherited, but now
-				    * child_tp->mptcp is NULL
-				    */
+		reset_mpc(child_tp); /* Has been inherited, but now
+				      * child_tp->mptcp is NULL
+				      */
 		/* TODO when we support acking the third ack for new subflows,
 		 * we should silently discard this third ack, by returning NULL.
 		 *

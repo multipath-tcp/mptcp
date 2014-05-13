@@ -1024,20 +1024,22 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 	if (!penal && sk_stream_memory_free(meta_sk))
 		goto retrans;
 
-	/* Half the cwnd of the slow flow */
-	if (tcp_time_stamp - tp->mptcp->last_rbuf_opti >= tp->srtt >> 3) {
-		mptcp_for_each_tp(tp->mpcb, tp_it) {
-			if (tp_it != tp &&
-			    TCP_SKB_CB(skb_head)->path_mask & mptcp_pi_to_flag(tp_it->mptcp->path_index)) {
-				if (tp->srtt < tp_it->srtt && inet_csk((struct sock *)tp_it)->icsk_ca_state == TCP_CA_Open) {
-					tp_it->snd_cwnd = max(tp_it->snd_cwnd >> 1U, 1U);
-					if (tp_it->snd_ssthresh != TCP_INFINITE_SSTHRESH)
-						tp_it->snd_ssthresh = max(tp_it->snd_ssthresh >> 1U, 2U);
+	/* Only penalize again after an RTT has elapsed */
+	if (tcp_time_stamp - tp->mptcp->last_rbuf_opti < tp->srtt >> 3)
+		goto retrans;
 
-					tp->mptcp->last_rbuf_opti = tcp_time_stamp;
-				}
-				break;
+	/* Half the cwnd of the slow flow */
+	mptcp_for_each_tp(tp->mpcb, tp_it) {
+		if (tp_it != tp &&
+		    TCP_SKB_CB(skb_head)->path_mask & mptcp_pi_to_flag(tp_it->mptcp->path_index)) {
+			if (tp->srtt < tp_it->srtt && inet_csk((struct sock *)tp_it)->icsk_ca_state == TCP_CA_Open) {
+				tp_it->snd_cwnd = max(tp_it->snd_cwnd >> 1U, 1U);
+				if (tp_it->snd_ssthresh != TCP_INFINITE_SSTHRESH)
+					tp_it->snd_ssthresh = max(tp_it->snd_ssthresh >> 1U, 2U);
+
+				tp->mptcp->last_rbuf_opti = tcp_time_stamp;
 			}
+			break;
 		}
 	}
 
@@ -1448,8 +1450,7 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		*size += MPTCP_SUB_LEN_JOIN_ACK_ALIGN;
 	}
 
-	if (!tp->mptcp_add_addr_ack && !tp->mptcp->include_mpc &&
-	    !tp->mptcp->pre_established) {
+	if (!tp->mptcp->include_mpc && !tp->mptcp->pre_established) {
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_DATA_ACK;
 		/* If !skb, we come from tcp_current_mss and thus we always
@@ -1485,6 +1486,18 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 	}
 
 	return;
+}
+
+u16 mptcp_select_window(struct sock *sk)
+{
+	u16 new_win		= tcp_select_window(sk);
+	struct tcp_sock *tp	= tcp_sk(sk);
+	struct tcp_sock *meta_tp = mptcp_meta_tp(tp);
+
+	meta_tp->rcv_wnd	= tp->rcv_wnd;
+	meta_tp->rcv_wup	= meta_tp->rcv_nxt;
+
+	return new_win;
 }
 
 void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
@@ -2086,13 +2099,18 @@ out_reset_timer:
 }
 
 /* Modify values to an mptcp-level for the initial window of new subflows */
-void mptcp_select_initial_window(int *__space, __u32 *window_clamp,
+void mptcp_select_initial_window(int __space, __u32 mss, __u32 *rcv_wnd,
+				__u32 *window_clamp, int wscale_ok,
+				__u8 *rcv_wscale, __u32 init_rcv_wnd,
 				 const struct sock *sk)
 {
 	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 
 	*window_clamp = mpcb->orig_window_clamp;
-	*__space = tcp_win_from_space(mpcb->orig_sk_rcvbuf);
+	__space = tcp_win_from_space(mpcb->orig_sk_rcvbuf);
+
+	tcp_select_initial_window(__space, mss, rcv_wnd, window_clamp,
+				  wscale_ok, rcv_wscale, init_rcv_wnd, sk);
 }
 
 unsigned int mptcp_current_mss(struct sock *meta_sk)

@@ -219,12 +219,7 @@ void tcp_select_initial_window(int __space, __u32 mss,
 			       int wscale_ok, __u8 *rcv_wscale,
 			       __u32 init_rcv_wnd, const struct sock *sk)
 {
-	unsigned int space;
-
-	if (tcp_sk(sk)->mpc)
-		mptcp_select_initial_window(&__space, window_clamp, sk);
-
-	space = (__space < 0 ? 0 : __space);
+	unsigned int space = (__space < 0 ? 0 : __space);
 
 	/* If no clamp set the clamp to the max possible scaled window */
 	if (*window_clamp == 0)
@@ -277,7 +272,7 @@ EXPORT_SYMBOL(tcp_select_initial_window);
  * value can be stuffed directly into th->window for an outgoing
  * frame.
  */
-static u16 tcp_select_window(struct sock *sk)
+u16 tcp_select_window(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	/* The window must never shrink at the meta-level. At the subflow we
@@ -285,7 +280,7 @@ static u16 tcp_select_window(struct sock *sk)
 	 * for the current meta-level sk_rcvbuf.
 	 */
 	u32 cur_win = tcp_receive_window(tp->mpc ? tcp_sk(mptcp_meta_sk(sk)) : tp);
-	u32 new_win = __tcp_select_window(sk);
+	u32 new_win = tp->__select_window(sk);
 
 	/* Never shrink the offered window */
 	if (new_win < cur_win) {
@@ -297,11 +292,6 @@ static u16 tcp_select_window(struct sock *sk)
 		 * Relax Will Robinson.
 		 */
 		new_win = ALIGN(cur_win, 1 << tp->rx_opt.rcv_wscale);
-	}
-
-	if (tp->mpc) {
-		mptcp_meta_tp(tp)->rcv_wnd = new_win;
-		mptcp_meta_tp(tp)->rcv_wup = mptcp_meta_tp(tp)->rcv_nxt;
 	}
 
 	tp->rcv_wnd = new_win;
@@ -994,7 +984,7 @@ int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		 */
 		th->window	= htons(min(tp->rcv_wnd, 65535U));
 	} else {
-		th->window	= htons(tcp_select_window(sk));
+		th->window	= htons(tp->select_window(sk));
 	}
 	th->check		= 0;
 	th->urg_ptr		= 0;
@@ -2296,9 +2286,6 @@ u32 __tcp_select_window(struct sock *sk)
 	int full_space = min_t(int, tp->window_clamp, tcp_full_space(sk));
 	int window;
 
-	if (tp->mpc)
-		return __mptcp_select_window(sk);
-
 	if (mss > full_space)
 		mss = full_space;
 
@@ -2883,7 +2870,7 @@ struct sk_buff *tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 		    (req->window_clamp > tcp_full_space(sk) || req->window_clamp == 0))
 			req->window_clamp = tcp_full_space(sk);
 
-		tcp_select_initial_window(tcp_full_space(sk),
+		tp->select_initial_window(tcp_full_space(sk),
 			mss - (ireq->tstamp_ok ? TCPOLEN_TSTAMP_ALIGNED : 0) -
 			(tcp_rsk(req)->saw_mpc ? MPTCP_SUB_LEN_DSM_ALIGN : 0),
 			&req->rcv_wnd,
@@ -2980,7 +2967,7 @@ static void tcp_connect_init(struct sock *sk)
 	    (tp->window_clamp > tcp_full_space(sk) || tp->window_clamp == 0))
 		tp->window_clamp = tcp_full_space(sk);
 
-	tcp_select_initial_window(tcp_full_space(sk),
+	tp->select_initial_window(tcp_full_space(sk),
 				  tp->advmss - (tp->rx_opt.ts_recent_stamp ? tp->tcp_header_len - sizeof(struct tcphdr) : 0),
 				  &tp->rcv_wnd,
 				  &tp->window_clamp,

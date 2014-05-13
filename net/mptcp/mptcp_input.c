@@ -458,7 +458,7 @@ static void mptcp_skb_trim_head(struct sk_buff *skb, struct sock *sk, u32 seq)
 	else
 		__pskb_trim_head(skb, len - skb_headlen(skb));
 
-	TCP_SKB_CB(skb)->seq = htonl(new_seq);
+	TCP_SKB_CB(skb)->seq = new_seq;
 
 	skb->truesize -= len;
 	atomic_sub(len, &sk->sk_rmem_alloc);
@@ -2136,9 +2136,10 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 	return 0;
 }
 
-bool mptcp_should_expand_sndbuf(struct sock *meta_sk)
+bool mptcp_should_expand_sndbuf(const struct sock *sk)
 {
 	struct sock *sk_it;
+	struct sock *meta_sk = mptcp_meta_sk(sk);
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	int cnt_backups = 0;
 	int backup_available = 0;
@@ -2202,6 +2203,8 @@ void mptcp_init_buffer_space(struct sock *sk)
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	int space;
 
+	tcp_init_buffer_space(sk);
+
 	if (is_master_tp(tp)) {
 		/* If there is only one subflow, we just use regular TCP
 		 * autotuning. User-locks are handled already by
@@ -2244,3 +2247,8 @@ snd_buf:
 	}
 }
 
+void mptcp_tcp_set_rto(struct sock *sk)
+{
+	tcp_set_rto(sk);
+	mptcp_set_rto(sk);
+}
