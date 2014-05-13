@@ -1450,8 +1450,7 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		*size += MPTCP_SUB_LEN_JOIN_ACK_ALIGN;
 	}
 
-	if (!tp->mptcp_add_addr_ack && !tp->mptcp->include_mpc &&
-	    !tp->mptcp->pre_established) {
+	if (!tp->mptcp->include_mpc && !tp->mptcp->pre_established) {
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_DATA_ACK;
 		/* If !skb, we come from tcp_current_mss and thus we always
