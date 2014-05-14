@@ -1530,19 +1530,6 @@ void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk)
 
 /**** static functions used by mptcp_parse_options */
 
-static inline int mptcp_rem_raddress(struct mptcp_cb *mpcb, u8 rem_id)
-{
-	if (mptcp_v4_rem_raddress(mpcb, rem_id) < 0) {
-#if IS_ENABLED(CONFIG_IPV6)
-		if (mptcp_v6_rem_raddress(mpcb, rem_id) < 0)
-			return -1;
-#else
-		return -1;
-#endif /* CONFIG_IPV6 */
-	}
-	return 0;
-}
-
 static void mptcp_send_reset_rem_id(const struct mptcp_cb *mpcb, u8 rem_id)
 {
 	struct sock *sk_it, *tmpsk;
@@ -1852,11 +1839,14 @@ static void mptcp_handle_rem_addr(const unsigned char *ptr, struct sock *sk)
 	struct mp_remove_addr *mprem = (struct mp_remove_addr *)ptr;
 	int i;
 	u8 rem_id;
+	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 
 	for (i = 0; i <= mprem->len - MPTCP_SUB_LEN_REMOVE_ADDR; i++) {
 		rem_id = (&mprem->addrs_id)[i];
-		if (!mptcp_rem_raddress(tcp_sk(sk)->mpcb, rem_id))
-			mptcp_send_reset_rem_id(tcp_sk(sk)->mpcb, rem_id);
+
+		if (mpcb->pm_ops->rem_raddr)
+			mpcb->pm_ops->rem_raddr(mpcb, rem_id);
+		mptcp_send_reset_rem_id(mpcb, rem_id);
 	}
 }
 

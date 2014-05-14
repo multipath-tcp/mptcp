@@ -58,8 +58,6 @@
  */
 #define MPTCP_MAX_ADDR	8
 
-#define MPTCP_SUBFLOW_RETRY_DELAY	1000
-
 struct mptcp_loc4 {
 	u8		loc4_id;
 	u8		low_prio:1;
@@ -232,6 +230,7 @@ struct mptcp_pm_ops {
 			     struct net *net);
 	void (*addr_signal)(struct sock *sk, unsigned *size,
 			    struct tcp_out_options *opts, struct sk_buff *skb);
+	void (*rem_raddr)(struct mptcp_cb *mpcb, u8 rem_id);
 
 	char 		name[MPTCP_PM_NAME_MAX];
 	struct module 	*owner;

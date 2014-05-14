@@ -14,6 +14,8 @@ enum {
 	MPTCP_EVENT_MOD,
 };
 
+#define MPTCP_SUBFLOW_RETRY_DELAY	1000
+
 struct mptcp_loc_addr {
 	struct mptcp_loc4 locaddr4[MPTCP_MAX_ADDR];
 	u8 loc4_bits;
@@ -69,6 +71,34 @@ static struct fullmesh_priv *fullmesh_get_priv(const struct mptcp_cb *mpcb)
 }
 
 static void full_mesh_create_subflows(struct sock *meta_sk);
+
+static void mptcp_v4_rem_raddress(struct mptcp_cb *mpcb, u8 id)
+{
+	int i;
+
+	mptcp_for_each_bit_set(mpcb->rem4_bits, i) {
+		if (mpcb->remaddr4[i].rem4_id == id) {
+			/* remove address from bitfield */
+			mpcb->rem4_bits &= ~(1 << i);
+
+			break;
+		}
+	}
+}
+
+static void mptcp_v6_rem_raddress(struct mptcp_cb *mpcb, u8 id)
+{
+	int i;
+
+	mptcp_for_each_bit_set(mpcb->rem6_bits, i) {
+		if (mpcb->remaddr6[i].rem6_id == id) {
+			/* remove address from bitfield */
+			mpcb->rem6_bits &= ~(1 << i);
+
+			break;
+		}
+	}
+}
 
 static void retry_subflow_worker(struct work_struct *work)
 {
@@ -1189,6 +1219,12 @@ remove_addr:
 		fmp->remove_addrs = 0;
 }
 
+static void full_mesh_rem_raddr(struct mptcp_cb *mpcb, u8 rem_id)
+{
+	mptcp_v4_rem_raddress(mpcb, rem_id);
+	mptcp_v6_rem_raddress(mpcb, rem_id);
+}
+
 static int mptcp_fm_init_net(struct net *net)
 {
 	struct mptcp_loc_addr *mptcp_local;
@@ -1255,6 +1291,7 @@ static struct mptcp_pm_ops full_mesh __read_mostly = {
 	.get_local_index = full_mesh_get_local_index,
 	.get_local_id = full_mesh_get_local_id,
 	.addr_signal = full_mesh_addr_signal,
+	.rem_raddr = full_mesh_rem_raddr,
 	.name = "fullmesh",
 	.owner = THIS_MODULE,
 };

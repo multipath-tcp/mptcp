@@ -472,25 +472,6 @@ drop_and_free:
 	return;
 }
 
-int mptcp_v6_rem_raddress(struct mptcp_cb *mpcb, u8 id)
-{
-	int i;
-
-	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
-		if (!((1 << i) & mpcb->rem6_bits))
-			continue;
-
-		if (mpcb->remaddr6[i].rem6_id == id) {
-			/* remove address from bitfield */
-			mpcb->rem6_bits &= ~(1 << i);
-
-			return 0;
-		}
-	}
-
-	return -1;
-}
-
 /* Returns -1 if there is no space anymore to store an additional
  * address
  */

@@ -248,25 +248,6 @@ drop_and_free:
 	return;
 }
 
-int mptcp_v4_rem_raddress(struct mptcp_cb *mpcb, u8 id)
-{
-	int i;
-
-	for (i = 0; i < MPTCP_MAX_ADDR; i++) {
-		if (!((1 << i) & mpcb->rem4_bits))
-			continue;
-
-		if (mpcb->remaddr4[i].rem4_id == id) {
-			/* remove address from bitfield */
-			mpcb->rem4_bits &= ~(1 << i);
-
-			return 0;
-		}
-	}
-
-	return -1;
-}
-
 /* Based on function tcp_v4_conn_request (tcp_ipv4.c)
  * Returns -1 if there is no space anymore to store an additional
  * address
