@@ -483,9 +483,6 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	struct socket sock;
 	int ulid_size = 0, ret;
 
-	/* Don't try again - even if it fails */
-	rem->bitfield |= (1 << loc->loc4_id);
-
 	/** First, create and prepare the new socket */
 
 	sock.type = meta_sk->sk_socket->type;

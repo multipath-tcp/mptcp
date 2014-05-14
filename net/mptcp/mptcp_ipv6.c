@@ -705,12 +705,6 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	struct socket sock;
 	int ulid_size = 0, ret;
 
-	/* Don't try again - even if it fails.
-	 * There is a special case as the IPv6 address of the initial subflow
-	 * has an id = 0. The other ones have id's in the range [8, 16[.
-	 */
-	rem->bitfield |= (1 << (loc->loc6_id - MPTCP_MAX_ADDR));
-
 	/** First, create and prepare the new socket */
 
 	sock.type = meta_sk->sk_socket->type;

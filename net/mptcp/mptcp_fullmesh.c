@@ -113,8 +113,11 @@ next_subflow:
 		/* Do we need to retry establishing a subflow ? */
 		if (rem->retry_bitfield) {
 			int i = mptcp_find_free_index(~rem->retry_bitfield);
-			mptcp_init4_subsockets(meta_sk, &mptcp_local->locaddr4[i], rem);
+
+			rem->bitfield |= (1 << mptcp_local->locaddr4[i].loc4_id);
 			rem->retry_bitfield &= ~(1 << i);
+
+			mptcp_init4_subsockets(meta_sk, &mptcp_local->locaddr4[i], rem);
 			goto next_subflow;
 		}
 	}
@@ -126,8 +129,11 @@ next_subflow:
 		/* Do we need to retry establishing a subflow ? */
 		if (rem->retry_bitfield) {
 			int i = mptcp_find_free_index(~rem->retry_bitfield);
-			mptcp_init6_subsockets(meta_sk, &mptcp_local->locaddr6[i], rem);
+
+			rem->bitfield |= (1 << (mptcp_local->locaddr6[i].loc6_id - MPTCP_MAX_ADDR));
 			rem->retry_bitfield &= ~(1 << i);
+
+			mptcp_init6_subsockets(meta_sk, &mptcp_local->locaddr6[i], rem);
 			goto next_subflow;
 		}
 	}
@@ -199,6 +205,9 @@ next_subflow:
 		/* Are there still combinations to handle? */
 		if (remaining_bits) {
 			int i = mptcp_find_free_index(~remaining_bits);
+
+			rem->bitfield |= (1 << mptcp_local->locaddr4[i].loc4_id);
+
 			/* If a route is not yet available then retry once */
 			if (mptcp_init4_subsockets(meta_sk, &mptcp_local->locaddr4[i],
 						   rem) == -ENETUNREACH)
@@ -218,6 +227,9 @@ next_subflow:
 		/* Are there still combinations to handle? */
 		if (remaining_bits) {
 			int i = mptcp_find_free_index(~remaining_bits);
+
+			rem->bitfield |= (1 << (mptcp_local->locaddr6[i].loc6_id - MPTCP_MAX_ADDR));
+
 			/* If a route is not yet available then retry once */
 			if (mptcp_init6_subsockets(meta_sk, &mptcp_local->locaddr6[i],
 						   rem) == -ENETUNREACH)
