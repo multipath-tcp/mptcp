@@ -131,6 +131,7 @@ void mptcp_fallback_default(struct mptcp_cb *mpcb)
 	try_module_get(pm->owner);
 	mpcb->pm_ops = pm;
 }
+EXPORT_SYMBOL_GPL(mptcp_fallback_default);
 
 /* Set default value from kernel configuration at bootup */
 static int __init mptcp_path_manager_default(void)
