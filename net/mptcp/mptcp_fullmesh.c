@@ -396,11 +396,11 @@ next_event:
 
 		if (event->family == AF_INET) {
 			mptcp_local->locaddr4[i].addr.s_addr = event->u.addr4.s_addr;
-			mptcp_local->locaddr4[i].id = i;
+			mptcp_local->locaddr4[i].loc4_id = i;
 			mptcp_local->locaddr4[i].low_prio = event->low_prio;
 		} else {
 			mptcp_local->locaddr6[i].addr = event->u.addr6;
-			mptcp_local->locaddr6[i].id = i + MPTCP_MAX_ADDR;
+			mptcp_local->locaddr6[i].loc6_id = i + MPTCP_MAX_ADDR;
 			mptcp_local->locaddr6[i].low_prio = event->low_prio;
 		}
 
@@ -1061,14 +1061,14 @@ static int full_mesh_get_local_id(sa_family_t family, union inet_addr *addr,
 	if (family == AF_INET) {
 		mptcp_for_each_bit_set(mptcp_local->loc4_bits, i) {
 			if (addr->in.s_addr == mptcp_local->locaddr4[i].addr.s_addr) {
-				id = mptcp_local->locaddr4[i].id;
+				id = mptcp_local->locaddr4[i].loc4_id;
 				break;
 			}
 		}
 	} else {
 		mptcp_for_each_bit_set(mptcp_local->loc6_bits, i) {
 			if (ipv6_addr_equal(&addr->in6, &mptcp_local->locaddr6[i].addr)) {
-				id = mptcp_local->locaddr6[i].id;
+				id = mptcp_local->locaddr6[i].loc6_id;
 				break;
 			}
 		}
@@ -1104,7 +1104,7 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_ADD_ADDR;
-		opts->add_addr4.addr_id = mptcp_local->locaddr4[ind].id;
+		opts->add_addr4.addr_id = mptcp_local->locaddr4[ind].loc4_id;
 		opts->add_addr4.addr = mptcp_local->locaddr4[ind].addr;
 		opts->add_addr_v4 = 1;
 
@@ -1123,7 +1123,7 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_ADD_ADDR;
-		opts->add_addr6.addr_id = mptcp_local->locaddr6[ind].id;
+		opts->add_addr6.addr_id = mptcp_local->locaddr6[ind].loc6_id;
 		opts->add_addr6.addr = mptcp_local->locaddr6[ind].addr;
 		opts->add_addr_v6 = 1;
 

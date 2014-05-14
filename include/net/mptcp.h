@@ -60,13 +60,13 @@
 #define MPTCP_SUBFLOW_RETRY_DELAY	1000
 
 struct mptcp_loc4 {
-	u8		id;
+	u8		loc4_id;
 	u8		low_prio:1;
 	struct in_addr	addr;
 };
 
 struct mptcp_rem4 {
-	u8		id;
+	u8		rem4_id;
 	u8		bitfield;
 	u8		retry_bitfield;
 	__be16		port;
@@ -74,13 +74,13 @@ struct mptcp_rem4 {
 };
 
 struct mptcp_loc6 {
-	u8		id;
+	u8		loc6_id;
 	u8		low_prio:1;
 	struct in6_addr	addr;
 };
 
 struct mptcp_rem6 {
-	u8		id;
+	u8		rem6_id;
 	u8		bitfield;
 	u8		retry_bitfield;
 	__be16		port;

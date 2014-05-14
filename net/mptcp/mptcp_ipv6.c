@@ -479,7 +479,7 @@ int mptcp_v6_rem_raddress(struct mptcp_cb *mpcb, u8 id)
 		if (!((1 << i) & mpcb->rem6_bits))
 			continue;
 
-		if (mpcb->remaddr6[i].id == id) {
+		if (mpcb->remaddr6[i].rem6_id == id) {
 			/* remove address from bitfield */
 			mpcb->rem6_bits &= ~(1 << i);
 
@@ -503,7 +503,7 @@ int mptcp_v6_add_raddress(struct mptcp_cb *mpcb, const struct in6_addr *addr,
 		rem6 = &mpcb->remaddr6[i];
 
 		/* Address is already in the list --- continue */
-		if (rem6->id == id &&
+		if (rem6->rem6_id == id &&
 		    ipv6_addr_equal(&rem6->addr, addr) && rem6->port == port)
 			return 0;
 
@@ -513,7 +513,7 @@ int mptcp_v6_add_raddress(struct mptcp_cb *mpcb, const struct in6_addr *addr,
 		 * update the addr in the list, because this is the address as
 		 * OUR BOX sees it.
 		 */
-		if (rem6->id == id) {
+		if (rem6->rem6_id == id) {
 			/* update the address */
 			mptcp_debug("%s: updating old addr: %pI6 to addr %pI6 with id:%d\n",
 				    __func__, &rem6->addr, addr, id);
@@ -539,7 +539,7 @@ int mptcp_v6_add_raddress(struct mptcp_cb *mpcb, const struct in6_addr *addr,
 	rem6->port = port;
 	rem6->bitfield = 0;
 	rem6->retry_bitfield = 0;
-	rem6->id = id;
+	rem6->rem6_id = id;
 	mpcb->list_rcvd = 1;
 	mpcb->rem6_bits |= (1 << i);
 
@@ -709,7 +709,7 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	 * There is a special case as the IPv6 address of the initial subflow
 	 * has an id = 0. The other ones have id's in the range [8, 16[.
 	 */
-	rem->bitfield |= (1 << (loc->id - MPTCP_MAX_ADDR));
+	rem->bitfield |= (1 << (loc->loc6_id - MPTCP_MAX_ADDR));
 
 	/** First, create and prepare the new socket */
 
@@ -732,7 +732,7 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	lockdep_set_class_and_name(&(sk)->sk_lock.slock, &meta_slock_key, "slock-AF_INET-MPTCP");
 	lockdep_init_map(&(sk)->sk_lock.dep_map, "sk_lock-AF_INET-MPTCP", &meta_key, 0);
 
-	if (mptcp_add_sock(meta_sk, sk, loc->id, rem->id, GFP_KERNEL))
+	if (mptcp_add_sock(meta_sk, sk, loc->loc6_id, rem->rem6_id, GFP_KERNEL))
 		goto error;
 
 	tp->mptcp->slave_sk = 1;

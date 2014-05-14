@@ -58,7 +58,7 @@ next_subflow:
 			struct mptcp_loc4 loc;
 
 			loc.addr.s_addr = inet_sk(meta_sk)->inet_saddr;
-			loc.id = 0;
+			loc.loc4_id = 0;
 			loc.low_prio = 0;
 
 			mptcp_init4_subsockets(meta_sk, &loc, &mpcb->remaddr4[0]);
@@ -67,7 +67,7 @@ next_subflow:
 			struct mptcp_loc6 loc;
 
 			loc.addr = inet6_sk(meta_sk)->saddr;
-			loc.id = 0;
+			loc.loc6_id = 0;
 			loc.low_prio = 0;
 
 			mptcp_init6_subsockets(meta_sk, &loc, &mpcb->remaddr6[0]);
