@@ -29,10 +29,7 @@ struct mptcp_addr_event {
 	unsigned short	family;
 	u8	code:7,
 		low_prio:1;
-	union {
-		struct in_addr addr4;
-		struct in6_addr addr6;
-	}u;
+	union inet_addr addr;
 };
 
 struct fullmesh_priv {
@@ -284,26 +281,26 @@ static void update_remove_addrs(u8 addr_id, struct sock *meta_sk,
 }
 
 static int mptcp_find_address(struct mptcp_loc_addr *mptcp_local,
-			      struct mptcp_addr_event *event)
+			      sa_family_t family, union inet_addr *addr)
 {
 	int i;
 	u8 loc_bits;
 	bool found = false;
 
-	if (event->family == AF_INET)
+	if (family == AF_INET)
 		loc_bits = mptcp_local->loc4_bits;
 	else
 		loc_bits = mptcp_local->loc6_bits;
 
 	mptcp_for_each_bit_set(loc_bits, i) {
-		if (event->family == AF_INET &&
-		    mptcp_local->locaddr4[i].addr.s_addr == event->u.addr4.s_addr) {
+		if (family == AF_INET &&
+		    mptcp_local->locaddr4[i].addr.s_addr == addr->in.s_addr) {
 			found = true;
 			break;
 		}
-		if (event->family == AF_INET6 &&
+		if (family == AF_INET6 &&
 		    ipv6_addr_equal(&mptcp_local->locaddr6[i].addr,
-				    &event->u.addr6)) {
+				    &addr->in6)) {
 			found = true;
 			break;
 		}
@@ -350,7 +347,7 @@ next_event:
 	mptcp_local = rcu_dereference_bh(fm_ns->local);
 
 	if (event->code == MPTCP_EVENT_DEL) {
-		id = mptcp_find_address(mptcp_local, event);
+		id = mptcp_find_address(mptcp_local, event->family, &event->addr);
 
 		/* Not in the list - so we don't care */
 		if (id < 0)
@@ -370,7 +367,7 @@ next_event:
 		rcu_assign_pointer(fm_ns->local, mptcp_local);
 		kfree(old);
 	} else {
-		int i = mptcp_find_address(mptcp_local, event);
+		int i = mptcp_find_address(mptcp_local, event->family, &event->addr);
 		int j = i;
 
 		if (j < 0) {
@@ -407,11 +404,11 @@ next_event:
 			goto duno;
 
 		if (event->family == AF_INET) {
-			mptcp_local->locaddr4[i].addr.s_addr = event->u.addr4.s_addr;
+			mptcp_local->locaddr4[i].addr.s_addr = event->addr.in.s_addr;
 			mptcp_local->locaddr4[i].loc4_id = i;
 			mptcp_local->locaddr4[i].low_prio = event->low_prio;
 		} else {
-			mptcp_local->locaddr6[i].addr = event->u.addr6;
+			mptcp_local->locaddr6[i].addr = event->addr.in6;
 			mptcp_local->locaddr6[i].loc6_id = i + MPTCP_MAX_ADDR;
 			mptcp_local->locaddr6[i].low_prio = event->low_prio;
 		}
@@ -511,12 +508,12 @@ duno:
 					if (event->family == AF_INET &&
 					    (sk->sk_family == AF_INET ||
 					     mptcp_v6_is_v4_mapped(sk)) &&
-					     inet_sk(sk)->inet_saddr != event->u.addr4.s_addr)
+					     inet_sk(sk)->inet_saddr != event->addr.in.s_addr)
 						continue;
 
 					if (event->family == AF_INET6 &&
 					    sk->sk_family == AF_INET6 &&
-					    !ipv6_addr_equal(&inet6_sk(sk)->saddr, &event->u.addr6))
+					    !ipv6_addr_equal(&inet6_sk(sk)->saddr, &event->addr.in6))
 						continue;
 
 					/* Reinject, so that pf = 1 and so we
@@ -558,7 +555,7 @@ duno:
 					if (event->family == AF_INET &&
 					    (sk->sk_family == AF_INET ||
 					     mptcp_v6_is_v4_mapped(sk)) &&
-					     inet_sk(sk)->inet_saddr == event->u.addr4.s_addr) {
+					     inet_sk(sk)->inet_saddr == event->addr.in.s_addr) {
 						if (event->low_prio != tp->mptcp->low_prio) {
 							tp->mptcp->send_mp_prio = 1;
 							tp->mptcp->low_prio = event->low_prio;
@@ -569,7 +566,7 @@ duno:
 
 					if (event->family == AF_INET6 &&
 					    sk->sk_family == AF_INET6 &&
-					    !ipv6_addr_equal(&inet6_sk(sk)->saddr, &event->u.addr6)) {
+					    !ipv6_addr_equal(&inet6_sk(sk)->saddr, &event->addr.in6)) {
 						if (event->low_prio != tp->mptcp->low_prio) {
 							tp->mptcp->send_mp_prio = 1;
 							tp->mptcp->low_prio = event->low_prio;
@@ -598,10 +595,10 @@ static struct mptcp_addr_event *lookup_similar_event(struct net *net,
 		if (eventq->family != event->family)
 			continue;
 		if (event->family == AF_INET) {
-			if (eventq->u.addr4.s_addr == event->u.addr4.s_addr)
+			if (eventq->addr.in.s_addr == event->addr.in.s_addr)
 				return eventq;
 		} else {
-			if (ipv6_addr_equal(&eventq->u.addr6, &event->u.addr6))
+			if (ipv6_addr_equal(&eventq->addr.in6, &event->addr.in6))
 				return eventq;
 		}
 	}
@@ -657,7 +654,7 @@ static void addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 	spin_lock_bh(&fm_ns->local_lock);
 
 	mpevent.family = AF_INET;
-	mpevent.u.addr4.s_addr = ifa->ifa_local;
+	mpevent.addr.in.s_addr = ifa->ifa_local;
 	mpevent.low_prio = (netdev->flags & IFF_MPBACKUP) ? 1 : 0;
 
 	if (event == NETDEV_DOWN || !netif_running(netdev) ||
@@ -766,7 +763,7 @@ static void addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 	spin_lock_bh(&fm_ns->local_lock);
 
 	mpevent.family = AF_INET6;
-	mpevent.u.addr6 = ifa->addr;
+	mpevent.addr.in6 = ifa->addr;
 	mpevent.low_prio = (netdev->flags & IFF_MPBACKUP) ? 1 : 0;
 
 	if (event == NETDEV_DOWN ||!netif_running(netdev) ||
