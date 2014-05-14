@@ -63,6 +63,11 @@ static struct mptcp_fm_ns *fm_get_ns(struct net *net)
 	return (struct mptcp_fm_ns *)net->mptcp.path_managers[MPTCP_PM_FULLMESH];
 }
 
+static struct fullmesh_priv *fullmesh_get_priv(const struct mptcp_cb *mpcb)
+{
+	return (struct fullmesh_priv *)&mpcb->mptcp_pm[0];
+}
+
 static void full_mesh_create_subflows(struct sock *meta_sk);
 
 static void retry_subflow_worker(struct work_struct *work)
@@ -70,10 +75,10 @@ static void retry_subflow_worker(struct work_struct *work)
 	struct delayed_work *delayed_work = container_of(work,
 							 struct delayed_work,
 							 work);
-	struct fullmesh_priv *pm_priv = container_of(delayed_work,
-						     struct fullmesh_priv,
-						     subflow_retry_work);
-	struct mptcp_cb *mpcb = pm_priv->mpcb;
+	struct fullmesh_priv *fmp = container_of(delayed_work,
+						 struct fullmesh_priv,
+						 subflow_retry_work);
+	struct mptcp_cb *mpcb = fmp->mpcb;
 	struct sock *meta_sk = mpcb->meta_sk;
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(meta_sk));
@@ -152,10 +157,9 @@ exit:
  **/
 static void create_subflow_worker(struct work_struct *work)
 {
-	struct fullmesh_priv *pm_priv = container_of(work,
-						     struct fullmesh_priv,
-						     subflow_work);
-	struct mptcp_cb *mpcb = pm_priv->mpcb;
+	struct fullmesh_priv *fmp = container_of(work, struct fullmesh_priv,
+						 subflow_work);
+	struct mptcp_cb *mpcb = fmp->mpcb;
 	struct sock *meta_sk = mpcb->meta_sk;
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(meta_sk));
@@ -236,9 +240,9 @@ next_subflow:
 	}
 #endif
 
-	if (retry && !delayed_work_pending(&pm_priv->subflow_retry_work)) {
+	if (retry && !delayed_work_pending(&fmp->subflow_retry_work)) {
 		sock_hold(meta_sk);
-		queue_delayed_work(mptcp_wq, &pm_priv->subflow_retry_work,
+		queue_delayed_work(mptcp_wq, &fmp->subflow_retry_work,
 				   msecs_to_jiffies(MPTCP_SUBFLOW_RETRY_DELAY));
 	}
 
@@ -252,7 +256,7 @@ exit:
 static void announce_remove_addr(u8 addr_id, struct sock *meta_sk)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct fullmesh_priv *fmp = (struct fullmesh_priv *)&mpcb->mptcp_pm[0];
+	struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
 	struct sock *sk = mptcp_select_ack_sock(meta_sk);
 
 	fmp->remove_addrs |= (1 << addr_id);
@@ -265,7 +269,7 @@ static void update_addr_bitfields(struct sock *meta_sk,
 				  const struct mptcp_loc_addr *mptcp_local)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct fullmesh_priv *fmp = (struct fullmesh_priv *)&mpcb->mptcp_pm[0];
+	struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
 	int i;
 
 	/* The bits in announced_addrs_* always match with loc*_bits. So, a
@@ -380,10 +384,10 @@ next_event:
 		if (j < 0) {
 			/* Not in the list, so we have to find an empty slot */
 			if (event->family == AF_INET)
-				i = __mptcp_find_free_index(mptcp_local->loc4_bits, -1,
+				i = __mptcp_find_free_index(mptcp_local->loc4_bits,
 							    mptcp_local->next_v4_index);
 			if (event->family == AF_INET6)
-				i = __mptcp_find_free_index(mptcp_local->loc6_bits, -1,
+				i = __mptcp_find_free_index(mptcp_local->loc6_bits,
 							    mptcp_local->next_v6_index);
 
 			if (i < 0) {
@@ -452,7 +456,7 @@ duno:
 					       tk_table) {
 			struct mptcp_cb *mpcb = meta_tp->mpcb;
 			struct sock *meta_sk = (struct sock *)meta_tp, *sk;
-			struct fullmesh_priv *fmp = (struct fullmesh_priv *)&mpcb->mptcp_pm[0];
+			struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
 
 			if (sock_net(meta_sk) != net)
 				continue;
@@ -852,7 +856,7 @@ static void full_mesh_new_session(struct sock *meta_sk, int index)
 {
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct fullmesh_priv *fmp = (struct fullmesh_priv *)&mpcb->mptcp_pm[0];
+	struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
 	struct net *net = sock_net(meta_sk);
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(net);
 	struct sock *sk;
@@ -916,7 +920,7 @@ static void full_mesh_new_session(struct sock *meta_sk, int index)
 static void full_mesh_create_subflows(struct sock *meta_sk)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct fullmesh_priv *pm_priv = (struct fullmesh_priv *)&mpcb->mptcp_pm[0];
+	struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
 
 	if (mpcb->infinite_mapping_snd || mpcb->infinite_mapping_rcv ||
 	    mpcb->send_infinite_mapping ||
@@ -931,9 +935,9 @@ static void full_mesh_create_subflows(struct sock *meta_sk)
 	    !tcp_sk(mpcb->master_sk)->mptcp->fully_established)
 		return;
 
-	if (!work_pending(&pm_priv->subflow_work)) {
+	if (!work_pending(&fmp->subflow_work)) {
 		sock_hold(meta_sk);
-		queue_work(mptcp_wq, &pm_priv->subflow_work);
+		queue_work(mptcp_wq, &fmp->subflow_work);
 	}
 }
 
@@ -944,7 +948,7 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 {
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct fullmesh_priv *fmp = (struct fullmesh_priv *)&mpcb->mptcp_pm[0];
+	struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(meta_sk));
 	struct sock *sk, *tmpsk;
 	int i;
@@ -1113,7 +1117,7 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_cb *mpcb = tp->mpcb;
-	struct fullmesh_priv *fmp = (struct fullmesh_priv *)&mpcb->mptcp_pm[0];
+	struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(sk));
 	int remove_addr_len;
