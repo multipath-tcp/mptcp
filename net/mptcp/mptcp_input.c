@@ -1814,24 +1814,29 @@ int mptcp_check_rtt(const struct tcp_sock *tp, int time)
 static void mptcp_handle_add_addr(const unsigned char *ptr, struct sock *sk)
 {
 	struct mp_add_addr *mpadd = (struct mp_add_addr *)ptr;
+	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
+	__be16 port = 0;
+	union inet_addr addr;
+	sa_family_t family;
 
 	if (mpadd->ipver == 4) {
-		__be16 port = 0;
 		if (mpadd->len == MPTCP_SUB_LEN_ADD_ADDR4 + 2)
 			port  = mpadd->u.v4.port;
-
-		mptcp_v4_add_raddress(tcp_sk(sk)->mpcb, &mpadd->u.v4.addr, port,
-				      mpadd->addr_id);
+		family = AF_INET;
+		addr.in = mpadd->u.v4.addr;
 #if IS_ENABLED(CONFIG_IPV6)
 	} else if (mpadd->ipver == 6) {
-		__be16 port = 0;
 		if (mpadd->len == MPTCP_SUB_LEN_ADD_ADDR6 + 2)
 			port  = mpadd->u.v6.port;
-
-		mptcp_v6_add_raddress(tcp_sk(sk)->mpcb, &mpadd->u.v6.addr, port,
-				      mpadd->addr_id);
+		family = AF_INET6;
+		addr.in6 = mpadd->u.v6.addr;
 #endif /* CONFIG_IPV6 */
+	} else {
+		return;
 	}
+
+	if (mpcb->pm_ops->add_raddr)
+		mpcb->pm_ops->add_raddr(mpcb, &addr, family, port, mpadd->addr_id);
 }
 
 static void mptcp_handle_rem_addr(const unsigned char *ptr, struct sock *sk)

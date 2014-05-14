@@ -230,6 +230,8 @@ struct mptcp_pm_ops {
 			     struct net *net);
 	void (*addr_signal)(struct sock *sk, unsigned *size,
 			    struct tcp_out_options *opts, struct sk_buff *skb);
+	void (*add_raddr)(struct mptcp_cb *mpcb, const union inet_addr *addr, 
+			  sa_family_t family, __be16 port, u8 id);
 	void (*rem_raddr)(struct mptcp_cb *mpcb, u8 rem_id);
 
 	char 		name[MPTCP_PM_NAME_MAX];

@@ -60,6 +60,8 @@ struct mptcp_fm_ns {
 
 static struct mptcp_pm_ops full_mesh __read_mostly;
 
+static void full_mesh_create_subflows(struct sock *meta_sk);
+
 static struct mptcp_fm_ns *fm_get_ns(struct net *net)
 {
 	return (struct mptcp_fm_ns *)net->mptcp.path_managers[MPTCP_PM_FULLMESH];
@@ -70,7 +72,114 @@ static struct fullmesh_priv *fullmesh_get_priv(const struct mptcp_cb *mpcb)
 	return (struct fullmesh_priv *)&mpcb->mptcp_pm[0];
 }
 
-static void full_mesh_create_subflows(struct sock *meta_sk);
+static void mptcp_addv4_raddr(struct mptcp_cb *mpcb,
+			      const struct in_addr *addr, 
+			      __be16 port, u8 id)
+{
+	int i;
+	struct mptcp_rem4 *rem4;
+
+	mptcp_for_each_bit_set(mpcb->rem4_bits, i) {
+		rem4 = &mpcb->remaddr4[i];
+
+		/* Address is already in the list --- continue */
+		if (rem4->rem4_id == id &&
+		    rem4->addr.s_addr == addr->s_addr && rem4->port == port)
+			return;
+
+		/* This may be the case, when the peer is behind a NAT. He is
+		 * trying to JOIN, thus sending the JOIN with a certain ID.
+		 * However the src_addr of the IP-packet has been changed. We
+		 * update the addr in the list, because this is the address as
+		 * OUR BOX sees it.
+		 */
+		if (rem4->rem4_id == id && rem4->addr.s_addr != addr->s_addr) {
+			/* update the address */
+			mptcp_debug("%s: updating old addr:%pI4 to addr %pI4 with id:%d\n",
+				    __func__, &rem4->addr.s_addr,
+				    &addr->s_addr, id);
+			rem4->addr.s_addr = addr->s_addr;
+			rem4->port = port;
+			mpcb->list_rcvd = 1;
+			return;
+		}
+	}
+
+	i = mptcp_find_free_index(mpcb->rem4_bits);
+	/* Do we have already the maximum number of local/remote addresses? */
+	if (i < 0) {
+		mptcp_debug("%s: At max num of remote addresses: %d --- not adding address: %pI4\n",
+			    __func__, MPTCP_MAX_ADDR, &addr->s_addr);
+		return;
+	}
+
+	rem4 = &mpcb->remaddr4[i];
+
+	/* Address is not known yet, store it */
+	rem4->addr.s_addr = addr->s_addr;
+	rem4->port = port;
+	rem4->bitfield = 0;
+	rem4->retry_bitfield = 0;
+	rem4->rem4_id = id;
+	mpcb->list_rcvd = 1;
+	mpcb->rem4_bits |= (1 << i);
+
+	return;
+}
+
+static void mptcp_addv6_raddr(struct mptcp_cb *mpcb,
+			      const struct in6_addr *addr,
+			      __be16 port, u8 id)
+{
+	int i;
+	struct mptcp_rem6 *rem6;
+
+	mptcp_for_each_bit_set(mpcb->rem6_bits, i) {
+		rem6 = &mpcb->remaddr6[i];
+
+		/* Address is already in the list --- continue */
+		if (rem6->rem6_id == id &&
+		    ipv6_addr_equal(&rem6->addr, addr) && rem6->port == port)
+			return;
+
+		/* This may be the case, when the peer is behind a NAT. He is
+		 * trying to JOIN, thus sending the JOIN with a certain ID.
+		 * However the src_addr of the IP-packet has been changed. We
+		 * update the addr in the list, because this is the address as
+		 * OUR BOX sees it.
+		 */
+		if (rem6->rem6_id == id) {
+			/* update the address */
+			mptcp_debug("%s: updating old addr: %pI6 to addr %pI6 with id:%d\n",
+				    __func__, &rem6->addr, addr, id);
+			rem6->addr = *addr;
+			rem6->port = port;
+			mpcb->list_rcvd = 1;
+			return;
+		}
+	}
+
+	i = mptcp_find_free_index(mpcb->rem6_bits);
+	/* Do we have already the maximum number of local/remote addresses? */
+	if (i < 0) {
+		mptcp_debug("%s: At max num of remote addresses: %d --- not adding address: %pI6\n",
+			    __func__, MPTCP_MAX_ADDR, addr);
+		return;
+	}
+
+	rem6 = &mpcb->remaddr6[i];
+
+	/* Address is not known yet, store it */
+	rem6->addr = *addr;
+	rem6->port = port;
+	rem6->bitfield = 0;
+	rem6->retry_bitfield = 0;
+	rem6->rem6_id = id;
+	mpcb->list_rcvd = 1;
+	mpcb->rem6_bits |= (1 << i);
+
+	return;
+}
 
 static void mptcp_v4_rem_raddress(struct mptcp_cb *mpcb, u8 id)
 {
@@ -1219,6 +1328,16 @@ remove_addr:
 		fmp->remove_addrs = 0;
 }
 
+static void full_mesh_add_raddr(struct mptcp_cb *mpcb,
+				const union inet_addr *addr, 
+				sa_family_t family, __be16 port, u8 id)
+{
+	if (family == AF_INET)
+		mptcp_addv4_raddr(mpcb, &addr->in, port, id);
+	else
+		mptcp_addv6_raddr(mpcb, &addr->in6, port, id);
+}
+
 static void full_mesh_rem_raddr(struct mptcp_cb *mpcb, u8 rem_id)
 {
 	mptcp_v4_rem_raddress(mpcb, rem_id);
@@ -1291,6 +1410,7 @@ static struct mptcp_pm_ops full_mesh __read_mostly = {
 	.get_local_index = full_mesh_get_local_index,
 	.get_local_id = full_mesh_get_local_id,
 	.addr_signal = full_mesh_addr_signal,
+	.add_raddr = full_mesh_add_raddr,
 	.rem_raddr = full_mesh_rem_raddr,
 	.name = "fullmesh",
 	.owner = THIS_MODULE,

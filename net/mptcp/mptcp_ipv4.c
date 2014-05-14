@@ -248,64 +248,6 @@ drop_and_free:
 	return;
 }
 
-/* Based on function tcp_v4_conn_request (tcp_ipv4.c)
- * Returns -1 if there is no space anymore to store an additional
- * address
- */
-int mptcp_v4_add_raddress(struct mptcp_cb *mpcb, const struct in_addr *addr,
-			  __be16 port, u8 id)
-{
-	int i;
-	struct mptcp_rem4 *rem4;
-
-	mptcp_for_each_bit_set(mpcb->rem4_bits, i) {
-		rem4 = &mpcb->remaddr4[i];
-
-		/* Address is already in the list --- continue */
-		if (rem4->rem4_id == id &&
-		    rem4->addr.s_addr == addr->s_addr && rem4->port == port)
-			return 0;
-
-		/* This may be the case, when the peer is behind a NAT. He is
-		 * trying to JOIN, thus sending the JOIN with a certain ID.
-		 * However the src_addr of the IP-packet has been changed. We
-		 * update the addr in the list, because this is the address as
-		 * OUR BOX sees it.
-		 */
-		if (rem4->rem4_id == id && rem4->addr.s_addr != addr->s_addr) {
-			/* update the address */
-			mptcp_debug("%s: updating old addr:%pI4 to addr %pI4 with id:%d\n",
-				    __func__, &rem4->addr.s_addr,
-				    &addr->s_addr, id);
-			rem4->addr.s_addr = addr->s_addr;
-			rem4->port = port;
-			mpcb->list_rcvd = 1;
-			return 0;
-		}
-	}
-
-	i = mptcp_find_free_index(mpcb->rem4_bits);
-	/* Do we have already the maximum number of local/remote addresses? */
-	if (i < 0) {
-		mptcp_debug("%s: At max num of remote addresses: %d --- not adding address: %pI4\n",
-			    __func__, MPTCP_MAX_ADDR, &addr->s_addr);
-		return -1;
-	}
-
-	rem4 = &mpcb->remaddr4[i];
-
-	/* Address is not known yet, store it */
-	rem4->addr.s_addr = addr->s_addr;
-	rem4->port = port;
-	rem4->bitfield = 0;
-	rem4->retry_bitfield = 0;
-	rem4->rem4_id = id;
-	mpcb->list_rcvd = 1;
-	mpcb->rem4_bits |= (1 << i);
-
-	return 0;
-}
-
 /* Sets the bitfield of the remote-address field
  * local address is not set as it will disappear with the global address-list
  */
@@ -392,17 +334,6 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 		}
 	} else {
 		if (tcp_hdr(skb)->syn) {
-			struct mp_join *join_opt = mptcp_find_join(skb);
-			/* Currently we make two calls to mptcp_find_join(). This
-			 * can probably be optimized.
-			 */
-			if (mptcp_v4_add_raddress(mpcb,
-						  (struct in_addr *)&ip_hdr(skb)->saddr,
-						  0,
-						  join_opt->addr_id) < 0)
-				goto reset_and_discard;
-			mpcb->list_rcvd = 0;
-
 			mptcp_v4_join_request(meta_sk, skb);
 			goto discard;
 		}

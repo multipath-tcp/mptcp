@@ -472,62 +472,6 @@ drop_and_free:
 	return;
 }
 
-/* Returns -1 if there is no space anymore to store an additional
- * address
- */
-int mptcp_v6_add_raddress(struct mptcp_cb *mpcb, const struct in6_addr *addr,
-			  __be16 port, u8 id)
-{
-	int i;
-	struct mptcp_rem6 *rem6;
-
-	mptcp_for_each_bit_set(mpcb->rem6_bits, i) {
-		rem6 = &mpcb->remaddr6[i];
-
-		/* Address is already in the list --- continue */
-		if (rem6->rem6_id == id &&
-		    ipv6_addr_equal(&rem6->addr, addr) && rem6->port == port)
-			return 0;
-
-		/* This may be the case, when the peer is behind a NAT. He is
-		 * trying to JOIN, thus sending the JOIN with a certain ID.
-		 * However the src_addr of the IP-packet has been changed. We
-		 * update the addr in the list, because this is the address as
-		 * OUR BOX sees it.
-		 */
-		if (rem6->rem6_id == id) {
-			/* update the address */
-			mptcp_debug("%s: updating old addr: %pI6 to addr %pI6 with id:%d\n",
-				    __func__, &rem6->addr, addr, id);
-			rem6->addr = *addr;
-			rem6->port = port;
-			mpcb->list_rcvd = 1;
-			return 0;
-		}
-	}
-
-	i = mptcp_find_free_index(mpcb->rem6_bits);
-	/* Do we have already the maximum number of local/remote addresses? */
-	if (i < 0) {
-		mptcp_debug("%s: At max num of remote addresses: %d --- not adding address: %pI6\n",
-			    __func__, MPTCP_MAX_ADDR, addr);
-		return -1;
-	}
-
-	rem6 = &mpcb->remaddr6[i];
-
-	/* Address is not known yet, store it */
-	rem6->addr = *addr;
-	rem6->port = port;
-	rem6->bitfield = 0;
-	rem6->retry_bitfield = 0;
-	rem6->rem6_id = id;
-	mpcb->list_rcvd = 1;
-	mpcb->rem6_bits |= (1 << i);
-
-	return 0;
-}
-
 /* Sets the bitfield of the remote-address field
  * local address is not set as it will disappear with the global address-list
  */
@@ -615,16 +559,6 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 		}
 	} else {
 		if (tcp_hdr(skb)->syn) {
-			struct mp_join *join_opt = mptcp_find_join(skb);
-			/* Currently we make two calls to mptcp_find_join(). This
-			 * can probably be optimized. */
-			if (mptcp_v6_add_raddress(mpcb,
-						  (struct in6_addr *)&ipv6_hdr(skb)->saddr,
-						  0,
-						  join_opt->addr_id) < 0)
-				goto reset_and_discard;
-			mpcb->list_rcvd = 0;
-
 			mptcp_v6_join_request(meta_sk, skb);
 			goto discard;
 		}
