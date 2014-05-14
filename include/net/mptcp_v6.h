@@ -45,7 +45,7 @@ int mptcp_v6_rem_raddress(struct mptcp_cb *mpcb, u8 id);
 int mptcp_v6_add_raddress(struct mptcp_cb *mpcb, const struct in6_addr *addr,
 			  __be16 port, u8 id);
 void mptcp_v6_set_init_addr_bit(struct mptcp_cb *mpcb,
-				const struct in6_addr *daddr, u8 id);
+				const struct in6_addr *daddr, int index);
 struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *raddr,
 				 const struct in6_addr *laddr, const struct net *net);
 int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,

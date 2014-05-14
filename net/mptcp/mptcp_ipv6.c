@@ -550,13 +550,12 @@ int mptcp_v6_add_raddress(struct mptcp_cb *mpcb, const struct in6_addr *addr,
  * local address is not set as it will disappear with the global address-list
  */
 void mptcp_v6_set_init_addr_bit(struct mptcp_cb *mpcb,
-				const struct in6_addr *daddr, u8 id)
+				const struct in6_addr *daddr, int index)
 {
 	int i;
 	mptcp_for_each_bit_set(mpcb->rem6_bits, i) {
 		if (ipv6_addr_equal(&mpcb->remaddr6[i].addr, daddr)) {
-			/* It's the initial flow - thus local index == 0 */
-			mpcb->remaddr6[i].bitfield |= (1 << (id - MPTCP_MAX_ADDR));
+			mpcb->remaddr6[i].bitfield |= (1 << index);
 			return;
 		}
 	}

@@ -111,7 +111,7 @@ next_subflow:
 		if (rem->retry_bitfield) {
 			int i = mptcp_find_free_index(~rem->retry_bitfield);
 
-			rem->bitfield |= (1 << mptcp_local->locaddr4[i].loc4_id);
+			rem->bitfield |= (1 << i);
 			rem->retry_bitfield &= ~(1 << i);
 
 			mptcp_init4_subsockets(meta_sk, &mptcp_local->locaddr4[i], rem);
@@ -127,7 +127,7 @@ next_subflow:
 		if (rem->retry_bitfield) {
 			int i = mptcp_find_free_index(~rem->retry_bitfield);
 
-			rem->bitfield |= (1 << (mptcp_local->locaddr6[i].loc6_id - MPTCP_MAX_ADDR));
+			rem->bitfield |= (1 << i);
 			rem->retry_bitfield &= ~(1 << i);
 
 			mptcp_init6_subsockets(meta_sk, &mptcp_local->locaddr6[i], rem);
@@ -203,7 +203,7 @@ next_subflow:
 		if (remaining_bits) {
 			int i = mptcp_find_free_index(~remaining_bits);
 
-			rem->bitfield |= (1 << mptcp_local->locaddr4[i].loc4_id);
+			rem->bitfield |= (1 << i);
 
 			/* If a route is not yet available then retry once */
 			if (mptcp_init4_subsockets(meta_sk, &mptcp_local->locaddr4[i],
@@ -225,7 +225,7 @@ next_subflow:
 		if (remaining_bits) {
 			int i = mptcp_find_free_index(~remaining_bits);
 
-			rem->bitfield |= (1 << (mptcp_local->locaddr6[i].loc6_id - MPTCP_MAX_ADDR));
+			rem->bitfield |= (1 << i);
 
 			/* If a route is not yet available then retry once */
 			if (mptcp_init6_subsockets(meta_sk, &mptcp_local->locaddr6[i],
@@ -842,7 +842,7 @@ static struct notifier_block mptcp_pm_netdev_notifier = {
 		.notifier_call = netdev_event,
 };
 
-static void full_mesh_new_session(struct sock *meta_sk, int id)
+static void full_mesh_new_session(struct sock *meta_sk, int index)
 {
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
@@ -852,7 +852,7 @@ static void full_mesh_new_session(struct sock *meta_sk, int id)
 	struct sock *sk;
 	int i;
 
-	if (id == -1) {
+	if (index == -1) {
 		mptcp_fallback_default(mpcb);
 		return;
 	}
@@ -902,9 +902,9 @@ static void full_mesh_new_session(struct sock *meta_sk, int id)
 	rcu_read_unlock();
 
 	if (meta_sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(meta_sk))
-		fmp->announced_addrs_v4 |= (1 << id);
+		fmp->announced_addrs_v4 |= (1 << index);
 	else
-		fmp->announced_addrs_v6 |= (1 << (id - MPTCP_MAX_ADDR));
+		fmp->announced_addrs_v6 |= (1 << index);
 }
 
 static void full_mesh_create_subflows(struct sock *meta_sk)
@@ -1056,32 +1056,45 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 	rcu_read_unlock();
 }
 
-static int full_mesh_get_local_id(sa_family_t family, union inet_addr *addr,
-				  struct net *net)
+static int full_mesh_get_local_index(sa_family_t family, union inet_addr *addr,
+				     struct net *net)
 {
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(net);
-	int id = -1, i;
+	int index;
 
 	/* Handle the backup-flows */
 	rcu_read_lock();
 	mptcp_local = rcu_dereference(fm_ns->local);
 
-	if (family == AF_INET) {
-		mptcp_for_each_bit_set(mptcp_local->loc4_bits, i) {
-			if (addr->in.s_addr == mptcp_local->locaddr4[i].addr.s_addr) {
-				id = mptcp_local->locaddr4[i].loc4_id;
-				break;
-			}
-		}
-	} else {
-		mptcp_for_each_bit_set(mptcp_local->loc6_bits, i) {
-			if (ipv6_addr_equal(&addr->in6, &mptcp_local->locaddr6[i].addr)) {
-				id = mptcp_local->locaddr6[i].loc6_id;
-				break;
-			}
-		}
+	index = mptcp_find_address(mptcp_local, family, addr);
+
+	rcu_read_unlock();
+
+	return index;
+}
+
+static int full_mesh_get_local_id(sa_family_t family, union inet_addr *addr,
+				  struct net *net)
+{
+	struct mptcp_loc_addr *mptcp_local;
+	struct mptcp_fm_ns *fm_ns = fm_get_ns(net);
+	int index, id = -1;
+
+	/* Handle the backup-flows */
+	rcu_read_lock();
+	mptcp_local = rcu_dereference(fm_ns->local);
+
+	index = mptcp_find_address(mptcp_local, family, addr);
+
+	if (index != -1) {
+		if (family == AF_INET)
+			id = mptcp_local->locaddr4[index].loc4_id;
+		else
+			id = mptcp_local->locaddr6[index].loc6_id;
 	}
+
+
 	rcu_read_unlock();
 
 	return id;
@@ -1228,6 +1241,7 @@ static struct mptcp_pm_ops full_mesh __read_mostly = {
 	.release_sock = full_mesh_release_sock,
 	.fully_established = full_mesh_create_subflows,
 	.new_remote_address = full_mesh_create_subflows,
+	.get_local_index = full_mesh_get_local_index,
 	.get_local_id = full_mesh_get_local_id,
 	.addr_signal = full_mesh_addr_signal,
 	.name = "fullmesh",

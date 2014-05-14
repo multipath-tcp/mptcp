@@ -327,14 +327,13 @@ int mptcp_v4_add_raddress(struct mptcp_cb *mpcb, const struct in_addr *addr,
 /* Sets the bitfield of the remote-address field
  * local address is not set as it will disappear with the global address-list
  */
-void mptcp_v4_set_init_addr_bit(struct mptcp_cb *mpcb, __be32 daddr, u8 id)
+void mptcp_v4_set_init_addr_bit(struct mptcp_cb *mpcb, __be32 daddr, int index)
 {
 	int i;
 
 	mptcp_for_each_bit_set(mpcb->rem4_bits, i) {
 		if (mpcb->remaddr4[i].addr.s_addr == daddr) {
-			/* It's the initial flow - thus local index == 0 */
-			mpcb->remaddr4[i].bitfield |= (1 << id);
+			mpcb->remaddr4[i].bitfield |= (1 << index);
 			return;
 		}
 	}

@@ -1261,33 +1261,33 @@ void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	union inet_addr addr;
-	int id;
+	int index;
 
-	/* Get the local address-id */
+	/* Get the index of the local address */
 	if (sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(sk)) {
 		addr.ip = inet_sk(sk)->inet_saddr;
-		id = mpcb->pm_ops->get_local_id(AF_INET, &addr, sock_net(meta_sk));
+		index = mpcb->pm_ops->get_local_index(AF_INET, &addr, sock_net(meta_sk));
 	} else {
 		addr.in6 = inet6_sk(sk)->saddr;
-		id = mpcb->pm_ops->get_local_id(AF_INET6, &addr, sock_net(meta_sk));
+		index = mpcb->pm_ops->get_local_index(AF_INET6, &addr, sock_net(meta_sk));
 	}
 
 	if (sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(sk)) {
 		mptcp_v4_add_raddress(mpcb,
 				      (struct in_addr *)&inet_sk(sk)->inet_daddr,
 				      0, 0);
-		if (id >= 0)
-			mptcp_v4_set_init_addr_bit(mpcb, inet_sk(sk)->inet_daddr, id);
+		if (index >= 0)
+			mptcp_v4_set_init_addr_bit(mpcb, inet_sk(sk)->inet_daddr, index);
 	} else {
 #if IS_ENABLED(CONFIG_IPV6)
 		mptcp_v6_add_raddress(mpcb, &sk->sk_v6_daddr, 0, 0);
-		if (id >= 0)
-			mptcp_v6_set_init_addr_bit(mpcb, &sk->sk_v6_daddr, id);
+		if (index >= 0)
+			mptcp_v6_set_init_addr_bit(mpcb, &sk->sk_v6_daddr, index);
 #endif
 	}
 
 	if (mpcb->pm_ops->new_session)
-		mpcb->pm_ops->new_session(meta_sk, id);
+		mpcb->pm_ops->new_session(meta_sk, index);
 
 	tcp_sk(sk)->mptcp->send_mp_prio = tcp_sk(sk)->mptcp->low_prio;
 }
