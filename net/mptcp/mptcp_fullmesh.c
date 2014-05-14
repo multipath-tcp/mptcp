@@ -373,10 +373,10 @@ next_event:
 		if (j < 0) {
 			/* Not in the list, so we have to find an empty slot */
 			if (event->family == AF_INET)
-				i = __mptcp_find_free_index(mptcp_local->loc4_bits, 0,
+				i = __mptcp_find_free_index(mptcp_local->loc4_bits, -1,
 							    mptcp_local->next_v4_index);
 			if (event->family == AF_INET6)
-				i = __mptcp_find_free_index(mptcp_local->loc6_bits, 0,
+				i = __mptcp_find_free_index(mptcp_local->loc6_bits, -1,
 							    mptcp_local->next_v6_index);
 
 			if (i < 0) {
@@ -405,7 +405,7 @@ next_event:
 
 		if (event->family == AF_INET) {
 			mptcp_local->locaddr4[i].addr.s_addr = event->addr.in.s_addr;
-			mptcp_local->locaddr4[i].loc4_id = i;
+			mptcp_local->locaddr4[i].loc4_id = i + 1;
 			mptcp_local->locaddr4[i].low_prio = event->low_prio;
 		} else {
 			mptcp_local->locaddr6[i].addr = event->addr.in6;
