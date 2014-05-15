@@ -255,7 +255,7 @@ int mptcp_v4_rem_raddress(struct mptcp_cb *mpcb, u8 id)
 		if (!((1 << i) & mpcb->rem4_bits))
 			continue;
 
-		if (mpcb->remaddr4[i].id == id) {
+		if (mpcb->remaddr4[i].rem4_id == id) {
 			/* remove address from bitfield */
 			mpcb->rem4_bits &= ~(1 << i);
 
@@ -280,7 +280,7 @@ int mptcp_v4_add_raddress(struct mptcp_cb *mpcb, const struct in_addr *addr,
 		rem4 = &mpcb->remaddr4[i];
 
 		/* Address is already in the list --- continue */
-		if (rem4->id == id &&
+		if (rem4->rem4_id == id &&
 		    rem4->addr.s_addr == addr->s_addr && rem4->port == port)
 			return 0;
 
@@ -290,7 +290,7 @@ int mptcp_v4_add_raddress(struct mptcp_cb *mpcb, const struct in_addr *addr,
 		 * update the addr in the list, because this is the address as
 		 * OUR BOX sees it.
 		 */
-		if (rem4->id == id && rem4->addr.s_addr != addr->s_addr) {
+		if (rem4->rem4_id == id && rem4->addr.s_addr != addr->s_addr) {
 			/* update the address */
 			mptcp_debug("%s: updating old addr:%pI4 to addr %pI4 with id:%d\n",
 				    __func__, &rem4->addr.s_addr,
@@ -317,7 +317,7 @@ int mptcp_v4_add_raddress(struct mptcp_cb *mpcb, const struct in_addr *addr,
 	rem4->port = port;
 	rem4->bitfield = 0;
 	rem4->retry_bitfield = 0;
-	rem4->id = id;
+	rem4->rem4_id = id;
 	mpcb->list_rcvd = 1;
 	mpcb->rem4_bits |= (1 << i);
 
@@ -327,14 +327,13 @@ int mptcp_v4_add_raddress(struct mptcp_cb *mpcb, const struct in_addr *addr,
 /* Sets the bitfield of the remote-address field
  * local address is not set as it will disappear with the global address-list
  */
-void mptcp_v4_set_init_addr_bit(struct mptcp_cb *mpcb, __be32 daddr, u8 id)
+void mptcp_v4_set_init_addr_bit(struct mptcp_cb *mpcb, __be32 daddr, int index)
 {
 	int i;
 
 	mptcp_for_each_bit_set(mpcb->rem4_bits, i) {
 		if (mpcb->remaddr4[i].addr.s_addr == daddr) {
-			/* It's the initial flow - thus local index == 0 */
-			mpcb->remaddr4[i].bitfield |= (1 << id);
+			mpcb->remaddr4[i].bitfield |= (1 << index);
 			return;
 		}
 	}
@@ -483,9 +482,6 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	struct socket sock;
 	int ulid_size = 0, ret;
 
-	/* Don't try again - even if it fails */
-	rem->bitfield |= (1 << loc->id);
-
 	/** First, create and prepare the new socket */
 
 	sock.type = meta_sk->sk_socket->type;
@@ -507,7 +503,7 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	lockdep_set_class_and_name(&(sk)->sk_lock.slock, &meta_slock_key, "slock-AF_INET-MPTCP");
 	lockdep_init_map(&(sk)->sk_lock.dep_map, "sk_lock-AF_INET-MPTCP", &meta_key, 0);
 
-	if (mptcp_add_sock(meta_sk, sk, loc->id, rem->id, GFP_KERNEL))
+	if (mptcp_add_sock(meta_sk, sk, loc->loc4_id, rem->rem4_id, GFP_KERNEL))
 		goto error;
 
 	tp->mptcp->slave_sk = 1;

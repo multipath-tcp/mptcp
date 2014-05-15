@@ -58,7 +58,7 @@ next_subflow:
 			struct mptcp_loc4 loc;
 
 			loc.addr.s_addr = inet_sk(meta_sk)->inet_saddr;
-			loc.id = 0;
+			loc.loc4_id = 0;
 			loc.low_prio = 0;
 
 			mptcp_init4_subsockets(meta_sk, &loc, &mpcb->remaddr4[0]);
@@ -67,7 +67,7 @@ next_subflow:
 			struct mptcp_loc6 loc;
 
 			loc.addr = inet6_sk(meta_sk)->saddr;
-			loc.id = 0;
+			loc.loc6_id = 0;
 			loc.low_prio = 0;
 
 			mptcp_init6_subsockets(meta_sk, &loc, &mpcb->remaddr6[0]);
@@ -82,7 +82,7 @@ exit:
 	sock_put(meta_sk);
 }
 
-static void ndiffports_new_session(struct sock *meta_sk, int id)
+static void ndiffports_new_session(struct sock *meta_sk, int index)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct ndiffports_priv *fmp = (struct ndiffports_priv *)&mpcb->mptcp_pm[0];
@@ -108,8 +108,8 @@ static void ndiffports_create_subflows(struct sock *meta_sk)
 	}
 }
 
-static int ndiffports_get_local_id(sa_family_t family, union inet_addr *addr,
-				  struct net *net)
+static int ndiffports_get_local_index(sa_family_t family, union inet_addr *addr,
+				      struct net *net)
 {
 	return 0;
 }
@@ -117,7 +117,8 @@ static int ndiffports_get_local_id(sa_family_t family, union inet_addr *addr,
 static struct mptcp_pm_ops ndiffports __read_mostly = {
 	.new_session = ndiffports_new_session,
 	.fully_established = ndiffports_create_subflows,
-	.get_local_id = ndiffports_get_local_id,
+	.get_local_index = ndiffports_get_local_index,
+	.get_local_id = ndiffports_get_local_index,
 	.name = "ndiffports",
 	.owner = THIS_MODULE,
 };
