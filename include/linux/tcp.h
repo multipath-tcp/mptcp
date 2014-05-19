@@ -415,6 +415,17 @@ struct tcp_sock {
 	void (*init_buffer_space)(struct sock *sk);
 	void (*set_rto)(struct sock *sk);
 	bool (*should_expand_sndbuf)(const struct sock *sk);
+
+	/* Functions that depend on is_meta_sk() */
+	void (*send_fin)(struct sock *sk);
+	bool (*write_xmit)(struct sock *sk, unsigned int mss_now, int nonagle,
+			int push_one, gfp_t gfp);
+	void (*send_active_reset)(struct sock *sk, gfp_t priority);
+	int (*write_wakeup)(struct sock *sk);
+	bool (*prune_ofo_queue)(struct sock *sk);
+	void (*retransmit_timer)(struct sock *sk);
+	void (*time_wait)(struct sock *sk, int state, int timeo);
+	void (*cleanup_rbuf)(struct sock *sk, int copied);
 };
 
 enum tsq_flags {

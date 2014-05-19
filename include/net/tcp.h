@@ -687,6 +687,8 @@ void tcp_send_loss_probe(struct sock *sk);
 bool tcp_schedule_loss_probe(struct sock *sk);
 
 u16 tcp_select_window(struct sock *sk);
+bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
+		int push_one, gfp_t gfp);
 
 /* tcp_input.c */
 void tcp_cwnd_application_limited(struct sock *sk);
@@ -695,6 +697,7 @@ void tcp_rearm_rto(struct sock *sk);
 void tcp_reset(struct sock *sk);
 void tcp_set_rto(struct sock *sk);
 bool tcp_should_expand_sndbuf(const struct sock *sk);
+bool tcp_prune_ofo_queue(struct sock *sk);
 
 /* tcp_timer.c */
 void tcp_init_xmit_timers(struct sock *);

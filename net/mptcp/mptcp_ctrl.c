@@ -1040,6 +1040,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	}
 
 	/* Redefine function-pointers as the meta-sk is now fully ready */
+	set_meta_funcs(meta_tp);
 	meta_sk->sk_backlog_rcv = mptcp_backlog_rcv;
 	meta_sk->sk_destruct = mptcp_sock_destruct;
 	mpcb->syn_recv_sock = mptcp_syn_recv_sock;
@@ -1594,7 +1595,8 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 		/* Unread data was tossed, zap the connection. */
 		NET_INC_STATS_USER(sock_net(meta_sk), LINUX_MIB_TCPABORTONCLOSE);
 		tcp_set_state(meta_sk, TCP_CLOSE);
-		tcp_send_active_reset(meta_sk, meta_sk->sk_allocation);
+		tcp_sk(meta_sk)->send_active_reset(meta_sk,
+						   meta_sk->sk_allocation);
 	} else if (sock_flag(meta_sk, SOCK_LINGER) && !meta_sk->sk_lingertime) {
 		/* Check zero linger _after_ checking for unread data. */
 		meta_sk->sk_prot->disconnect(meta_sk, 0);
@@ -1672,7 +1674,7 @@ adjudge_to_death:
 	if (meta_sk->sk_state == TCP_FIN_WAIT2) {
 		if (meta_tp->linger2 < 0) {
 			tcp_set_state(meta_sk, TCP_CLOSE);
-			tcp_send_active_reset(meta_sk, GFP_ATOMIC);
+			meta_tp->send_active_reset(meta_sk, GFP_ATOMIC);
 			NET_INC_STATS_BH(sock_net(meta_sk),
 					 LINUX_MIB_TCPABORTONLINGER);
 		} else {
@@ -1682,7 +1684,7 @@ adjudge_to_death:
 				inet_csk_reset_keepalive_timer(meta_sk,
 							       tmo - TCP_TIMEWAIT_LEN);
 			} else {
-				tcp_time_wait(meta_sk, TCP_FIN_WAIT2, tmo);
+				meta_tp->time_wait(meta_sk, TCP_FIN_WAIT2, tmo);
 				goto out;
 			}
 		}
@@ -1693,7 +1695,7 @@ adjudge_to_death:
 			if (net_ratelimit())
 				pr_info("MPTCP: too many of orphaned sockets\n");
 			tcp_set_state(meta_sk, TCP_CLOSE);
-			tcp_send_active_reset(meta_sk, GFP_ATOMIC);
+			meta_tp->send_active_reset(meta_sk, GFP_ATOMIC);
 			NET_INC_STATS_BH(sock_net(meta_sk),
 					 LINUX_MIB_TCPABORTONMEMORY);
 		}
@@ -1749,6 +1751,7 @@ void mptcp_disconnect(struct sock *sk)
 
 	tp->was_meta_sk = 1;
 	reset_mpc(tp);
+	reset_meta_funcs(tp);
 }
 
 
@@ -1927,6 +1930,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	 * some of the fields
 	 */
 	child_tp->mptcp->rcv_low_prio = mtreq->low_prio;
+	reset_meta_funcs(child_tp);
 
 	/* We should allow proper increase of the snd/rcv-buffers. Thus, we
 	 * use the original values instead of the bloated up ones from the
@@ -2018,8 +2022,9 @@ void mptcp_twsk_destructor(struct tcp_timewait_sock *tw)
 /* Updates the rcv_nxt of the time-wait-socks and allows them to ack a
  * data-fin.
  */
-void mptcp_update_tw_socks(const struct tcp_sock *tp, int state)
+void mptcp_update_tw_socks(struct sock *sk, int state, int timeo)
 {
+	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_tw *mptw;
 
 	/* Used for sockets that go into tw after the meta
@@ -2043,6 +2048,8 @@ void mptcp_update_tw_socks(const struct tcp_sock *tp, int state)
 			mptw->rcv_nxt++;
 	}
 	rcu_read_unlock_bh();
+
+	tcp_done(sk);
 }
 
 void mptcp_tsq_flags(struct sock *sk)

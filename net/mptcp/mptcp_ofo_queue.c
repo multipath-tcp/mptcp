@@ -236,6 +236,23 @@ void mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
 		     &tcp_sk(meta_sk)->out_of_order_queue, tp);
 }
 
+bool mptcp_prune_ofo_queue(struct sock *sk)
+{
+	struct tcp_sock *tp	= tcp_sk(sk);
+	bool res		= false;
+
+	if (!skb_queue_empty(&tp->out_of_order_queue)) {
+		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_OFOPRUNED);
+		mptcp_purge_ofo_queue(tp);
+
+		/* No sack at the mptcp-level */
+		sk_mem_reclaim(sk);
+		res = true;
+	}
+
+	return res;
+}
+
 void mptcp_ofo_queue(struct sock *meta_sk)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
