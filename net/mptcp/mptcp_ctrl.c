@@ -880,7 +880,7 @@ static int mptcp_inherit_sk(const struct sock *sk, struct sock *newsk,
 	return 0;
 }
 
-int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
+static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 {
 	struct mptcp_cb *mpcb;
 	struct sock *master_sk;
