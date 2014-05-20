@@ -745,6 +745,9 @@ static void tcp_tasklet_func(unsigned long data)
 			if (tp->mpc)
 				tcp_tsq_handler(meta_sk);
 		} else {
+			if (tp->mpc && sk->sk_state == TCP_CLOSE)
+				goto exit;
+
 			/* defer the work to tcp_release_cb() */
 			set_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags);
 
@@ -757,6 +760,7 @@ static void tcp_tasklet_func(unsigned long data)
 				mptcp_tsq_flags(sk);
 			}
 		}
+exit:
 		bh_unlock_sock(meta_sk);
 
 		clear_bit(TSQ_QUEUED, &tp->tsq_flags);
