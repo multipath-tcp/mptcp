@@ -131,6 +131,10 @@ static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	if (!req)
 		return;
 
+	mtreq = mptcp_rsk(req);
+	mtreq->mpcb = mpcb;
+	INIT_LIST_HEAD(&mtreq->collide_tuple);
+
 #ifdef CONFIG_TCP_MD5SIG
 	tcp_rsk(req)->af_specific = &tcp_request_sock_ipv4_ops;
 #endif
@@ -194,9 +198,6 @@ static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	tcp_rsk(req)->snt_synack = tcp_time_stamp;
 	tcp_rsk(req)->listener = NULL;
 
-	mtreq = mptcp_rsk(req);
-	mtreq->mpcb = mpcb;
-	INIT_LIST_HEAD(&mtreq->collide_tuple);
 	mtreq->mptcp_rem_nonce = mopt.mptcp_recv_nonce;
 	mtreq->mptcp_rem_key = mpcb->mptcp_rem_key;
 	mtreq->mptcp_loc_key = mpcb->mptcp_loc_key;
