@@ -802,9 +802,9 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 				    struct mptcp_options_received *mopt);
 unsigned int mptcp_xmit_size_goal(struct sock *meta_sk, u32 mss_now,
 				  int large_allowed);
-int mptcp_time_wait(struct sock *sk, struct tcp_timewait_sock *tw);
+int mptcp_init_tw_sock(struct sock *sk, struct tcp_timewait_sock *tw);
 void mptcp_twsk_destructor(struct tcp_timewait_sock *tw);
-void mptcp_update_tw_socks(struct sock *sk, int state, int timeo);
+void mptcp_time_wait(struct sock *sk, int state, int timeo);
 void mptcp_disconnect(struct sock *sk);
 bool mptcp_should_expand_sndbuf(const struct sock *sk);
 int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb);
@@ -1293,7 +1293,7 @@ static inline void set_meta_funcs(struct tcp_sock *tp)
 	tp->write_wakeup	= mptcp_write_wakeup;
 	tp->prune_ofo_queue	= mptcp_prune_ofo_queue;
 	tp->retransmit_timer	= mptcp_retransmit_timer;
-	tp->time_wait		= mptcp_update_tw_socks;
+	tp->time_wait		= mptcp_time_wait;
 	tp->cleanup_rbuf	= mptcp_cleanup_rbuf;
 }
 
@@ -1463,7 +1463,8 @@ static inline bool mptcp_can_sendpage(struct sock *sk)
 {
 	return false;
 }
-static inline int mptcp_time_wait(struct sock *sk, struct tcp_timewait_sock *tw)
+static inline int mptcp_init_tw_sock(struct sock *sk,
+				     struct tcp_timewait_sock *tw)
 {
 	return 0;
 }

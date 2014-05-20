@@ -1960,7 +1960,7 @@ teardown:
 	return meta_sk;
 }
 
-int mptcp_time_wait(struct sock *sk, struct tcp_timewait_sock *tw)
+int mptcp_init_tw_sock(struct sock *sk, struct tcp_timewait_sock *tw)
 {
 	struct mptcp_tw *mptw;
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -2022,13 +2022,13 @@ void mptcp_twsk_destructor(struct tcp_timewait_sock *tw)
 /* Updates the rcv_nxt of the time-wait-socks and allows them to ack a
  * data-fin.
  */
-void mptcp_update_tw_socks(struct sock *sk, int state, int timeo)
+void mptcp_time_wait(struct sock *sk, int state, int timeo)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_tw *mptw;
 
 	/* Used for sockets that go into tw after the meta
-	 * (see mptcp_time_wait())
+	 * (see mptcp_init_tw_sock())
 	 */
 	tp->mpcb->in_time_wait = 1;
 	tp->mpcb->mptw_state = state;

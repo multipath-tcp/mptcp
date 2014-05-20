@@ -311,7 +311,7 @@ void tcp_time_wait(struct sock *sk, int state, int timeo)
 		tcptw->tw_ts_offset	= tp->tsoffset;
 
 		if (tp->mpc) {
-			if (mptcp_time_wait(sk, tcptw)) {
+			if (mptcp_init_tw_sock(sk, tcptw)) {
 				inet_twsk_free(tw);
 				goto exit;
 			}
