@@ -290,11 +290,6 @@ void tcp_time_wait(struct sock *sk, int state, int timeo)
 	const struct tcp_sock *tp = tcp_sk(sk);
 	bool recycle_ok = false;
 
-	if (is_meta_sk(sk)) {
-		mptcp_update_tw_socks(tp, state);
-		goto tcp_done;
-	}
-
 	if (tcp_death_row.sysctl_tw_recycle && tp->rx_opt.ts_recent_stamp)
 		recycle_ok = tcp_remember_stamp(sk);
 
@@ -383,7 +378,6 @@ void tcp_time_wait(struct sock *sk, int state, int timeo)
 
 exit:
 	tcp_update_metrics(sk);
-tcp_done:
 	tcp_done(sk);
 }
 

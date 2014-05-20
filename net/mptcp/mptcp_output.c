@@ -911,6 +911,9 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct sk_buff *skb, *subskb;
 
+	if (meta_sk->sk_state == TCP_CLOSE)
+		return -1;
+
 	skb = tcp_send_head(meta_sk);
 	if (skb &&
 	    before(TCP_SKB_CB(skb)->seq, tcp_wnd_end(meta_tp))) {
@@ -1071,7 +1074,7 @@ retrans:
 	return NULL;
 }
 
-int mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
+bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		     int push_one, gfp_t gfp)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *subtp;
@@ -1822,7 +1825,7 @@ static void mptcp_ack_retransmit_timer(struct sock *sk)
 	if (tcp_write_timeout(sk)) {
 		tp->mptcp->pre_established = 0;
 		sk_stop_timer(sk, &tp->mptcp->mptcp_ack_timer);
-		tcp_send_active_reset(sk, GFP_ATOMIC);
+		tp->send_active_reset(sk, GFP_ATOMIC);
 		goto out;
 	}
 

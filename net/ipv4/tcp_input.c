@@ -3887,7 +3887,7 @@ static void tcp_fin(struct sock *sk)
 		}
 		/* Received a FIN -- send ACK and enter TIME_WAIT. */
 		tcp_send_ack(sk);
-		tcp_time_wait(sk, TCP_TIME_WAIT, 0);
+		tp->time_wait(sk, TCP_TIME_WAIT, 0);
 		break;
 	default:
 		/* Only TCP_LISTEN and TCP_CLOSE are left, in these
@@ -4132,7 +4132,6 @@ static void tcp_ofo_queue(struct sock *sk)
 	}
 }
 
-static bool tcp_prune_ofo_queue(struct sock *sk);
 static int tcp_prune_queue(struct sock *sk);
 
 static int tcp_try_rmem_schedule(struct sock *sk, struct sk_buff *skb,
@@ -4148,7 +4147,7 @@ static int tcp_try_rmem_schedule(struct sock *sk, struct sk_buff *skb,
 			return -1;
 
 		if (!sk_rmem_schedule(sk, skb, size)) {
-			if (!tcp_prune_ofo_queue(sk))
+			if (!tcp_sk(sk)->prune_ofo_queue(sk))
 				return -1;
 
 			if (!sk_rmem_schedule(sk, skb, size))
@@ -4689,22 +4688,10 @@ static void tcp_collapse_ofo_queue(struct sock *sk)
  * Purge the out-of-order queue.
  * Return true if queue was pruned.
  */
-static bool tcp_prune_ofo_queue(struct sock *sk)
+bool tcp_prune_ofo_queue(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	bool res = false;
-
-	if (is_meta_sk(sk)) {
-		if (!skb_queue_empty(&tp->out_of_order_queue)) {
-			NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_OFOPRUNED);
-			mptcp_purge_ofo_queue(tp);
-
-			/* No sack at the mptcp-level */
-			sk_mem_reclaim(sk);
-			res = true;
-		}
-		return res;
-	}
 
 	if (!skb_queue_empty(&tp->out_of_order_queue)) {
 		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_OFOPRUNED);
@@ -4757,7 +4744,7 @@ static int tcp_prune_queue(struct sock *sk)
 	/* Collapsing did not help, destructive actions follow.
 	 * This must not ever occur. */
 
-	tcp_prune_ofo_queue(sk);
+	tp->prune_ofo_queue(sk);
 
 	if (atomic_read(&sk->sk_rmem_alloc) <= sk->sk_rcvbuf)
 		return 0;
@@ -5312,7 +5299,7 @@ void tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 					NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPHPHITSTOUSER);
 				}
 				if (copied_early)
-					tcp_cleanup_rbuf(sk, skb->len);
+					tp->cleanup_rbuf(sk, skb->len);
 			}
 			if (!eaten) {
 				if (tcp_checksum_complete_user(sk, skb))
@@ -5971,7 +5958,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 			 */
 			inet_csk_reset_keepalive_timer(sk, tmo);
 		} else {
-			tcp_time_wait(sk, TCP_FIN_WAIT2, tmo);
+			tp->time_wait(sk, TCP_FIN_WAIT2, tmo);
 			goto discard;
 		}
 		break;
@@ -5979,7 +5966,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 
 	case TCP_CLOSING:
 		if (tp->snd_una == tp->write_seq) {
-			tcp_time_wait(sk, TCP_TIME_WAIT, 0);
+			tp->time_wait(sk, TCP_TIME_WAIT, 0);
 			goto discard;
 		}
 		break;

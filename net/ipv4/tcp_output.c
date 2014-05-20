@@ -74,9 +74,6 @@ int sysctl_tcp_slow_start_after_idle __read_mostly = 1;
 unsigned int sysctl_tcp_notsent_lowat __read_mostly = UINT_MAX;
 EXPORT_SYMBOL(sysctl_tcp_notsent_lowat);
 
-static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
-			   int push_one, gfp_t gfp);
-
 /* Account for new data that has been sent to the network. */
 void tcp_event_new_data_sent(struct sock *sk, const struct sk_buff *skb)
 {
@@ -713,8 +710,8 @@ static void tcp_tsq_handler(struct sock *sk)
 	if ((1 << sk->sk_state) &
 	    (TCPF_ESTABLISHED | TCPF_FIN_WAIT1 | TCPF_CLOSING |
 	     TCPF_CLOSE_WAIT  | TCPF_LAST_ACK))
-		tcp_write_xmit(sk, tcp_current_mss(sk), tcp_sk(sk)->nonagle,
-			       0, GFP_ATOMIC);
+		tcp_sk(sk)->write_xmit(sk, tcp_current_mss(sk),
+				       tcp_sk(sk)->nonagle, 0, GFP_ATOMIC);
 }
 /*
  * One tasklet per cpu tries to send more skbs.
@@ -1949,7 +1946,7 @@ int tcp_mtu_probe(struct sock *sk)
  * Returns true, if no segments are in flight and we have queued segments,
  * but cannot send anything now because of SWS or another problem.
  */
-static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
+bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			   int push_one, gfp_t gfp)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -1957,9 +1954,6 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 	unsigned int tso_segs, sent_pkts;
 	int cwnd_quota;
 	int result;
-
-	if (is_meta_sk(sk))
-		return mptcp_write_xmit(sk, mss_now, nonagle, push_one, gfp);
 
 	sent_pkts = 0;
 
@@ -2143,7 +2137,7 @@ void tcp_send_loss_probe(struct sock *sk)
 	int err = -1;
 
 	if (tcp_send_head(sk) != NULL) {
-		err = tcp_write_xmit(sk, mss, TCP_NAGLE_OFF, 2, GFP_ATOMIC);
+		err = tp->write_xmit(sk, mss, TCP_NAGLE_OFF, 2, GFP_ATOMIC);
 		goto rearm_timer;
 	}
 
@@ -2202,8 +2196,8 @@ void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
 	if (unlikely(sk->sk_state == TCP_CLOSE))
 		return;
 
-	if (tcp_write_xmit(sk, cur_mss, nonagle, 0,
-			   sk_gfp_atomic(sk, GFP_ATOMIC)))
+	if (tcp_sk(sk)->write_xmit(sk, cur_mss, nonagle, 0,
+				   sk_gfp_atomic(sk, GFP_ATOMIC)))
 		tcp_check_probe_timer(sk);
 }
 
@@ -2216,7 +2210,8 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 
 	BUG_ON(!skb || skb->len < mss_now);
 
-	tcp_write_xmit(sk, mss_now, TCP_NAGLE_PUSH, 1, sk->sk_allocation);
+	tcp_sk(sk)->write_xmit(sk, mss_now, TCP_NAGLE_PUSH, 1,
+			       sk->sk_allocation);
 }
 
 /* This function returns the amount that we can raise the
@@ -2762,11 +2757,6 @@ void tcp_send_fin(struct sock *sk)
 void tcp_send_active_reset(struct sock *sk, gfp_t priority)
 {
 	struct sk_buff *skb;
-
-	if (is_meta_sk(sk)) {
-		mptcp_send_active_reset(sk, priority);
-		return;
-	}
 
 	/* NOTE: No TCP options attached and we never retransmit this. */
 	skb = alloc_skb(MAX_TCP_HEADER, priority);
@@ -3322,9 +3312,6 @@ int tcp_write_wakeup(struct sock *sk)
 	if (sk->sk_state == TCP_CLOSE)
 		return -1;
 
-	if (is_meta_sk(sk))
-		return mptcp_write_wakeup(sk);
-
 	if ((skb = tcp_send_head(sk)) != NULL &&
 	    before(TCP_SKB_CB(skb)->seq, tcp_wnd_end(tp))) {
 		int err;
@@ -3369,7 +3356,7 @@ void tcp_send_probe0(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	int err;
 
-	err = tcp_write_wakeup(sk);
+	err = tp->write_wakeup(sk);
 
 	if (tp->packets_out || !tcp_send_head(sk)) {
 		/* Cancel probe timer, if it is not required. */

@@ -228,7 +228,8 @@ static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 					 */
 					inet_csk_reset_keepalive_timer(meta_sk, tmo);
 				} else {
-					tcp_time_wait(meta_sk, TCP_FIN_WAIT2, tmo);
+					meta_tp->time_wait(meta_sk,
+							TCP_FIN_WAIT2, tmo);
 				}
 			}
 		}
@@ -960,7 +961,7 @@ static int mptcp_queue_skb(struct sock *sk)
 			mptcp_check_rcvseq_wrap(meta_tp, old_rcv_nxt);
 
 			if (copied_early)
-				tcp_cleanup_rbuf(meta_sk, tmp1->len);
+				meta_tp->cleanup_rbuf(meta_sk, tmp1->len);
 
 			if (tcp_hdr(tmp1)->fin && !mpcb->in_time_wait)
 				mptcp_fin(meta_sk);
@@ -1047,7 +1048,7 @@ restart:
 exit:
 	if (tcp_sk(sk)->close_it) {
 		tcp_send_ack(sk);
-		tcp_time_wait(sk, TCP_TIME_WAIT, 0);
+		tcp_sk(sk)->time_wait(sk, TCP_TIME_WAIT, 0);
 	}
 
 	if (queued == -1 && !sock_flag(meta_sk, SOCK_DEAD))
@@ -1322,7 +1323,7 @@ void mptcp_fin(struct sock *meta_sk)
 	case TCP_FIN_WAIT2:
 		/* Received a FIN -- send ACK and enter TIME_WAIT. */
 		tcp_send_ack(sk);
-		tcp_time_wait(meta_sk, TCP_TIME_WAIT, 0);
+		meta_tp->time_wait(meta_sk, TCP_TIME_WAIT, 0);
 		break;
 	default:
 		/* Only TCP_LISTEN and TCP_CLOSE are left, in these
@@ -1552,7 +1553,8 @@ static void mptcp_send_reset_rem_id(const struct mptcp_cb *mpcb, u8 rem_id)
 			mptcp_reinject_data(sk_it, 0);
 			sk_it->sk_err = ECONNRESET;
 			if (tcp_need_reset(sk_it->sk_state))
-				tcp_send_active_reset(sk_it, GFP_ATOMIC);
+				tcp_sk(sk_it)->send_active_reset(sk_it,
+								 GFP_ATOMIC);
 			mptcp_sub_force_close(sk_it);
 		}
 	}
@@ -1965,7 +1967,7 @@ static inline int mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
 			return 0;
 
 		if (tcp_need_reset(sk->sk_state))
-			tcp_send_active_reset(sk, GFP_ATOMIC);
+			tcp_sk(sk)->send_active_reset(sk, GFP_ATOMIC);
 
 		mptcp_for_each_sk_safe(mpcb, sk_it, tmpsk)
 			mptcp_sub_force_close(sk_it);
@@ -2007,7 +2009,7 @@ int mptcp_handle_options(struct sock *sk, const struct tcphdr *th, struct sk_buf
 	if (mptcp_is_data_seq(skb) && tp->mpcb->dss_csum &&
 	    !(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_DSS_CSUM)) {
 		if (tcp_need_reset(sk->sk_state))
-			tcp_send_active_reset(sk, GFP_ATOMIC);
+			tp->send_active_reset(sk, GFP_ATOMIC);
 
 		mptcp_sub_force_close(sk);
 		return 1;
@@ -2222,7 +2224,7 @@ void mptcp_init_buffer_space(struct sock *sk)
 		goto snd_buf;
 
 	/* Adding a new subflow to the rcv-buffer space. We make a simple
-	 * addition, to give some space to allow traffic on the new subflow. 
+	 * addition, to give some space to allow traffic on the new subflow.
 	 * Autotuning will increase it further later on.
 	 */
 	space = min(meta_sk->sk_rcvbuf + sk->sk_rcvbuf, sysctl_tcp_rmem[2]);
@@ -2237,7 +2239,7 @@ snd_buf:
 		return;
 
 	/* Adding a new subflow to the send-buffer space. We make a simple
-	 * addition, to give some space to allow traffic on the new subflow. 
+	 * addition, to give some space to allow traffic on the new subflow.
 	 * Autotuning will increase it further later on.
 	 */
 	space = min(meta_sk->sk_sndbuf + sk->sk_sndbuf, sysctl_tcp_wmem[2]);
