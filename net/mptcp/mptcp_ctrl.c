@@ -1949,12 +1949,16 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	/* Subflows do not use the accept queue, as they
 	 * are attached immediately to the mpcb.
 	 */
-	inet_csk_reqsk_queue_drop(meta_sk, req, prev);
+	inet_csk_reqsk_queue_unlink(meta_sk, req, prev);
+	reqsk_queue_removed(&inet_csk(meta_sk)->icsk_accept_queue, req);
+	reqsk_free(req);
 	return child;
 
 teardown:
 	/* Drop this request - sock creation failed. */
-	inet_csk_reqsk_queue_drop(meta_sk, req, prev);
+	inet_csk_reqsk_queue_unlink(meta_sk, req, prev);
+	reqsk_queue_removed(&inet_csk(meta_sk)->icsk_accept_queue, req);
+	reqsk_free(req);
 	inet_csk_prepare_forced_close(child);
 	tcp_done(child);
 	return meta_sk;
