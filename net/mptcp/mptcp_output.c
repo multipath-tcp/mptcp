@@ -1777,7 +1777,7 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 	WARN_ON(meta_tp->send_mp_fclose);
 
 	/* First - select a socket */
-	sk = mptcp_select_ack_sock(meta_sk, 0);
+	sk = mptcp_select_ack_sock(meta_sk);
 
 	/* May happen if no subflow is in an appropriate state */
 	if (!sk)

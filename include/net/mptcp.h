@@ -182,7 +182,6 @@ struct mptcp_tcp_sock {
 	/* isn: needed to translate abs to relative subflow seqnums */
 	u32	snt_isn;
 	u32	rcv_isn;
-	u32	last_data_seq;
 	u8	path_index;
 	u8	loc_id;
 	u8	rem_id;
@@ -782,7 +781,7 @@ void mptcp_retransmit_timer(struct sock *meta_sk);
 int mptcp_write_wakeup(struct sock *meta_sk);
 void mptcp_sub_close_wq(struct work_struct *work);
 void mptcp_sub_close(struct sock *sk, unsigned long delay);
-struct sock *mptcp_select_ack_sock(const struct sock *meta_sk, int copied);
+struct sock *mptcp_select_ack_sock(const struct sock *meta_sk);
 void mptcp_fallback_meta_sk(struct sock *meta_sk);
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb);
 struct sock *mptcp_sk_clone(const struct sock *sk, int family, const gfp_t priority);

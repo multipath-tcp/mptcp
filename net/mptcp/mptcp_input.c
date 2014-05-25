@@ -989,7 +989,6 @@ next:
 	}
 
 	inet_csk(meta_sk)->icsk_ack.lrcvtime = tcp_time_stamp;
-	tp->mptcp->last_data_seq = tp->mptcp->map_data_seq;
 	mptcp_reset_mapping(tp);
 
 	return data_queued ? -1 : -2;
@@ -1287,7 +1286,7 @@ void mptcp_fin(struct sock *meta_sk)
 	}
 
 	if (!sk || sk->sk_state == TCP_CLOSE)
-		sk = mptcp_select_ack_sock(meta_sk, 0);
+		sk = mptcp_select_ack_sock(meta_sk);
 
 	inet_csk_schedule_ack(sk);
 

@@ -364,76 +364,43 @@ static struct sock *mptcp_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 	return tcp_v4_syn_recv_sock(sk, skb, req, dst);
 }
 
-struct sock *mptcp_select_ack_sock(const struct sock *meta_sk, int copied)
+struct sock *mptcp_select_ack_sock(const struct sock *meta_sk)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct sock *sk, *subsk = NULL;
-	u32 max_data_seq = 0;
-	/* max_data_seq initialized to correct compiler-warning.
-	 * But the initialization is handled by max_data_seq_set
-	 */
-	short max_data_seq_set = 0;
-	u32 min_time = 0xffffffff;
+	struct sock *sk, *rttsk = NULL, *lastsk = NULL;
+	u32 min_time = 0, last_active = 0;
 
-	/* How do we select the subflow to send the window-update on?
-	 *
-	 * 1. He has to be in a state where he can send an ack and is
-	 *           operational (pf = 0).
-	 * 2. He has to be one of those subflow who recently
-	 *    contributed to the received stream
-	 *    (this guarantees a working subflow)
-	 *    a) its latest data_seq received is after the original
-	 *       copied_seq.
-	 *       We select the one with the lowest rtt, so that the
-	 *       window-update reaches our peer the fastest.
-	 *    b) if no subflow has this kind of data_seq (e.g., very
-	 *       strange meta-level retransmissions going on), we take
-	 *       the subflow who last sent the highest data_seq.
-	 */
 	mptcp_for_each_sk(meta_tp->mpcb, sk) {
 		struct tcp_sock *tp = tcp_sk(sk);
+		u32 elapsed;
 
 		if (!mptcp_sk_can_send_ack(sk) || tp->pf)
 			continue;
 
-		/* Select among those who contributed to the
-		 * current receive-queue.
+		elapsed = keepalive_time_elapsed(tp);
+
+		/* We take the one with the lowest RTT within a reasonable
+		 * (meta-RTO)-timeframe
 		 */
-		if (copied && after(tp->mptcp->last_data_seq, meta_tp->copied_seq - copied)) {
-			if (tp->srtt < min_time) {
+		if (elapsed < inet_csk(meta_sk)->icsk_rto) {
+			if (!min_time || tp->srtt < min_time) {
 				min_time = tp->srtt;
-				subsk = sk;
-				max_data_seq_set = 0;
+				rttsk = sk;
 			}
 			continue;
 		}
 
-		if (!subsk && !max_data_seq_set) {
-			max_data_seq = tp->mptcp->last_data_seq;
-			max_data_seq_set = 1;
-			subsk = sk;
-		}
-
-		/* Otherwise, take the one with the highest data_seq */
-		if ((!subsk || max_data_seq_set) &&
-		    after(tp->mptcp->last_data_seq, max_data_seq)) {
-			max_data_seq = tp->mptcp->last_data_seq;
-			subsk = sk;
+		/* Otherwise, we just take the most recent active */
+		if (!rttsk && (!last_active || elapsed < last_active)) {
+			last_active = elapsed;
+			lastsk = sk;
 		}
 	}
 
-	if (!subsk) {
-		mptcp_debug("%s subsk is null, copied %d, cseq %u\n", __func__,
-			    copied, meta_tp->copied_seq);
-		mptcp_for_each_sk(meta_tp->mpcb, sk) {
-			struct tcp_sock *tp = tcp_sk(sk);
-			mptcp_debug("%s pi %d state %u last_dseq %u\n",
-				    __func__, tp->mptcp->path_index, sk->sk_state,
-				    tp->mptcp->last_data_seq);
-		}
-	}
+	if (rttsk)
+		return rttsk;
 
-	return subsk;
+	return lastsk;
 }
 EXPORT_SYMBOL(mptcp_select_ack_sock);
 
