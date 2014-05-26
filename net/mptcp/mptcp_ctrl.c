@@ -898,7 +898,7 @@ static int mptcp_inherit_sk(const struct sock *sk, struct sock *newsk,
 	newsk->sk_wq = NULL;
 
 	if (newsk->sk_prot->sockets_allocated)
-		percpu_counter_inc(newsk->sk_prot->sockets_allocated);
+		sk_sockets_allocated_inc(newsk);
 
 	if (sock_flag(newsk, SOCK_TIMESTAMP) ||
 	    sock_flag(newsk, SOCK_TIMESTAMPING_RX_SOFTWARE))
