@@ -840,8 +840,7 @@ static int mptcp_inherit_sk(const struct sock *sk, struct sock *newsk,
 	if (newsk->sk_prot->sockets_allocated)
 		sk_sockets_allocated_inc(newsk);
 
-	if (sock_flag(newsk, SOCK_TIMESTAMP) ||
-	    sock_flag(newsk, SOCK_TIMESTAMPING_RX_SOFTWARE))
+	if (newsk->sk_flags & SK_FLAGS_TIMESTAMP)
 		net_enable_timestamp();
 
 	return 0;
