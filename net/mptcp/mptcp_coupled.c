@@ -1,5 +1,5 @@
 /*
- *	MPTCP implementation - Coupled Congestion Control
+ *	MPTCP implementation - Linked Increase congestion control Algorithm (LIA)
  *
  *	Initial Design & Implementation:
  *	Sébastien Barré <sebastien.barre@uclouvain.be>
@@ -252,7 +252,7 @@ static struct tcp_congestion_ops mptcp_ccc = {
 	.set_state	= mptcp_ccc_set_state,
 	.min_cwnd	= tcp_reno_min_cwnd,
 	.owner		= THIS_MODULE,
-	.name		= "coupled",
+	.name		= "lia",
 };
 
 static int __init mptcp_ccc_register(void)
@@ -271,5 +271,5 @@ module_exit(mptcp_ccc_unregister);
 
 MODULE_AUTHOR("Christoph Paasch, Sébastien Barré");
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("MPTCP COUPLED CONGESTION CONTROL");
+MODULE_DESCRIPTION("MPTCP LINKED INCREASE CONGESTION CONTROL ALGORITHM");
 MODULE_VERSION("0.1");
