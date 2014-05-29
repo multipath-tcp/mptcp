@@ -1394,7 +1394,7 @@ void mptcp_synack_options(struct request_sock *req,
 void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 			       struct tcp_out_options *opts, unsigned *size)
 {
-	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = mptcp_meta_tp(tp);
+	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_cb *mpcb = tp->mpcb;
 	struct tcp_skb_cb *tcb = skb ? TCP_SKB_CB(skb) : NULL;
 
@@ -1404,8 +1404,6 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 	if (unlikely(tp->mptcp->send_mp_fail)) {
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_MP_FAIL;
-		opts->data_ack = (__u32)(mpcb->csum_cutoff_seq >> 32);
-		opts->data_seq = (__u32)mpcb->csum_cutoff_seq;
 		*size += MPTCP_SUB_LEN_FAIL;
 		return;
 	}
@@ -1468,12 +1466,8 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		 * assume that the DSS-option will be set for the data-packet.
 		 */
 		if (skb && !mptcp_is_data_seq(skb)) {
-			opts->data_ack = meta_tp->rcv_nxt;
-
 			*size += MPTCP_SUB_LEN_ACK_ALIGN;
 		} else {
-			opts->data_ack = meta_tp->rcv_nxt;
-
 			/* Doesn't matter, if csum included or not. It will be
 			 * either 10 or 12, and thus aligned = 12
 			 */
@@ -1622,7 +1616,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		mpfail->sub = MPTCP_SUB_FAIL;
 		mpfail->rsv1 = 0;
 		mpfail->rsv2 = 0;
-		mpfail->data_seq = htonll(((u64)opts->data_ack << 32) | opts->data_seq);
+		mpfail->data_seq = htonll(tp->mpcb->csum_cutoff_seq);
 
 		ptr += MPTCP_SUB_LEN_FAIL_ALIGN >> 2;
 	}
@@ -1655,7 +1649,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			mdss->len = mptcp_sub_len_dss(mdss, tp->mpcb->dss_csum);
 
 			ptr++;
-			*ptr++ = htonl(opts->data_ack);
+			*ptr++ = htonl(mptcp_meta_tp(tp)->rcv_nxt);
 		} else {
 			/**** Just update the data_ack ****/
 
@@ -1665,7 +1659,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			/* TODO if we allow sending 64-bit dseq's we have to change "16" */
 			__be32 *dack = (__be32 *)(skb->data + (tcp_hdr(skb)->doff << 2) - 16);
 
-			*dack = htonl(opts->data_ack);
+			*dack = htonl(mptcp_meta_tp(tp)->rcv_nxt);
 		}
 	}
 	if (unlikely(OPTION_MP_PRIO & opts->mptcp_options)) {
