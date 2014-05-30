@@ -1226,32 +1226,8 @@ void mptcp_del_sock(struct sock *sk)
  */
 void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
 {
-	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	union inet_addr saddr, daddr;
-	sa_family_t family;
-	int index;
-
-	/* Get the index of the local address */
-	if (sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(sk)) {
-		saddr.ip = inet_sk(sk)->inet_saddr;
-		daddr.ip = inet_sk(sk)->inet_daddr;
-		family = AF_INET;
-		index = mpcb->pm_ops->get_local_index(AF_INET, &saddr, sock_net(meta_sk));
-	} else {
-		saddr.in6 = inet6_sk(sk)->saddr;
-		daddr.in6 = sk->sk_v6_daddr;
-		family = AF_INET6;
-		index = mpcb->pm_ops->get_local_index(AF_INET6, &saddr, sock_net(meta_sk));
-	}
-
-	if (mpcb->pm_ops->add_raddr)
-		mpcb->pm_ops->add_raddr(mpcb, &daddr, family, 0, 0);
-
-	if (index >= 0 && mpcb->pm_ops->set_init_addrbit)
-		mpcb->pm_ops->set_init_addrbit(mpcb, &daddr, family, index);
-
-	if (mpcb->pm_ops->new_session)
-		mpcb->pm_ops->new_session(meta_sk, index);
+	if (tcp_sk(sk)->mpcb->pm_ops->new_session)
+		tcp_sk(sk)->mpcb->pm_ops->new_session(meta_sk);
 
 	tcp_sk(sk)->mptcp->send_mp_prio = tcp_sk(sk)->mptcp->low_prio;
 }

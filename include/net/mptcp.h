@@ -220,12 +220,10 @@ struct mptcp_pm_ops {
 	struct list_head list;
 
 	/* Signal the creation of a new MPTCP-session. */
-	void (*new_session)(struct sock *meta_sk, int index);
+	void (*new_session)(struct sock *meta_sk);
 	void (*release_sock)(struct sock *meta_sk);
 	void (*fully_established)(struct sock *meta_sk);
 	void (*new_remote_address)(struct sock *meta_sk);
-	int  (*get_local_index)(sa_family_t family, union inet_addr *addr,
-				struct net *net);
 	int  (*get_local_id)(sa_family_t family, union inet_addr *addr,
 			     struct net *net);
 	void (*addr_signal)(struct sock *sk, unsigned *size,
@@ -233,8 +231,6 @@ struct mptcp_pm_ops {
 	void (*add_raddr)(struct mptcp_cb *mpcb, const union inet_addr *addr, 
 			  sa_family_t family, __be16 port, u8 id);
 	void (*rem_raddr)(struct mptcp_cb *mpcb, u8 rem_id);
-	void (*set_init_addrbit)(struct mptcp_cb *mpcb, const union inet_addr *addr,
-				 sa_family_t family, u8 id);
 
 	char 		name[MPTCP_PM_NAME_MAX];
 	struct module 	*owner;

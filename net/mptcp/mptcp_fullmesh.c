@@ -236,6 +236,16 @@ static void mptcp_v6_set_init_addr_bit(struct mptcp_cb *mpcb,
 	}
 }
 
+static void mptcp_set_init_addr_bit(struct mptcp_cb *mpcb,
+			            const union inet_addr *addr, 
+				    sa_family_t family, u8 id)
+{
+	if (family == AF_INET)
+		mptcp_v4_set_init_addr_bit(mpcb, &addr->in, id);
+	else
+		mptcp_v6_set_init_addr_bit(mpcb, &addr->in6, id);
+}
+
 static void retry_subflow_worker(struct work_struct *work)
 {
 	struct delayed_work *delayed_work = container_of(work,
@@ -1018,20 +1028,47 @@ static struct notifier_block mptcp_pm_netdev_notifier = {
 		.notifier_call = netdev_event,
 };
 
-static void full_mesh_new_session(struct sock *meta_sk, int index)
+static void full_mesh_add_raddr(struct mptcp_cb *mpcb,
+				const union inet_addr *addr,
+				sa_family_t family, __be16 port, u8 id)
+{
+	if (family == AF_INET)
+		mptcp_addv4_raddr(mpcb, &addr->in, port, id);
+	else
+		mptcp_addv6_raddr(mpcb, &addr->in6, port, id);
+}
+
+static void full_mesh_new_session(struct sock *meta_sk)
 {
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
-	struct net *net = sock_net(meta_sk);
-	struct mptcp_fm_ns *fm_ns = fm_get_ns(net);
+	struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(meta_sk));
 	struct sock *sk;
-	int i;
+	int i, index;
+	union inet_addr saddr, daddr;
+	sa_family_t family;
 
-	if (index == -1) {
-		mptcp_fallback_default(mpcb);
-		return;
+	/* Init local variables necessary for the rest */
+	if (meta_sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(meta_sk)) {
+		saddr.ip = inet_sk(meta_sk)->inet_saddr;
+		daddr.ip = inet_sk(meta_sk)->inet_daddr;
+		family = AF_INET;
+	} else {
+		saddr.in6 = inet6_sk(meta_sk)->saddr;
+		daddr.in6 = meta_sk->sk_v6_daddr;
+		family = AF_INET6;
 	}
+
+	rcu_read_lock();
+	mptcp_local = rcu_dereference(fm_ns->local);
+
+	index = mptcp_find_address(mptcp_local, family, &saddr);
+	if (index < 0)
+		goto fallback;
+
+	full_mesh_add_raddr(mpcb, &daddr, family, 0, 0);
+	mptcp_set_init_addr_bit(mpcb, &daddr, family, index);
 
 	/* Initialize workqueue-struct */
 	INIT_WORK(&fmp->subflow_work, create_subflow_worker);
@@ -1040,23 +1077,15 @@ static void full_mesh_new_session(struct sock *meta_sk, int index)
 
 	sk = mptcp_select_ack_sock(meta_sk);
 
-	rcu_read_lock();
-	mptcp_local = rcu_dereference(fm_ns->local);
-
 	/* Look for the address among the local addresses */
 	mptcp_for_each_bit_set(mptcp_local->loc4_bits, i) {
 		__be32 ifa_address = mptcp_local->locaddr4[i].addr.s_addr;
 
 		/* We do not need to announce the initial subflow's address again */
-		if ((meta_sk->sk_family == AF_INET ||
-		     mptcp_v6_is_v4_mapped(meta_sk)) &&
-		    inet_sk(meta_sk)->inet_saddr == ifa_address)
+		if (family == AF_INET && saddr.ip == ifa_address)
 			continue;
 
 		fmp->add_addr++;
-
-		if (sk)
-			tcp_send_ack(sk);
 	}
 
 #if IS_ENABLED(CONFIG_IPV6)
@@ -1064,23 +1093,27 @@ static void full_mesh_new_session(struct sock *meta_sk, int index)
 		struct in6_addr *ifa6 = &mptcp_local->locaddr6[i].addr;
 
 		/* We do not need to announce the initial subflow's address again */
-		if (meta_sk->sk_family == AF_INET6 &&
-		    ipv6_addr_equal(&inet6_sk(meta_sk)->saddr, ifa6))
+		if (family == AF_INET6 && ipv6_addr_equal(&saddr.in6, ifa6))
 			continue;
 
 		fmp->add_addr++;
-
-		if (sk)
-			tcp_send_ack(sk);
 	}
 #endif
 
 	rcu_read_unlock();
 
-	if (meta_sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(meta_sk))
+	if (family == AF_INET)
 		fmp->announced_addrs_v4 |= (1 << index);
 	else
 		fmp->announced_addrs_v6 |= (1 << index);
+
+
+	return;
+
+fallback:
+	rcu_read_unlock();
+	mptcp_fallback_default(mpcb);
+	return;
 }
 
 static void full_mesh_create_subflows(struct sock *meta_sk)
@@ -1093,10 +1126,6 @@ static void full_mesh_create_subflows(struct sock *meta_sk)
 	    mpcb->server_side || sock_flag(meta_sk, SOCK_DEAD))
 		return;
 
-	/* The master may not yet be fully established (address added through
-	 * mptcp_update_metasocket). Then, we should not attempt to create new
-	 * subflows.
-	 */
 	if (mpcb->master_sk &&
 	    !tcp_sk(mpcb->master_sk)->mptcp->fully_established)
 		return;
@@ -1233,24 +1262,6 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 	rcu_read_unlock();
 }
 
-static int full_mesh_get_local_index(sa_family_t family, union inet_addr *addr,
-				     struct net *net)
-{
-	struct mptcp_loc_addr *mptcp_local;
-	struct mptcp_fm_ns *fm_ns = fm_get_ns(net);
-	int index;
-
-	/* Handle the backup-flows */
-	rcu_read_lock();
-	mptcp_local = rcu_dereference(fm_ns->local);
-
-	index = mptcp_find_address(mptcp_local, family, addr);
-
-	rcu_read_unlock();
-
-	return index;
-}
-
 static int full_mesh_get_local_id(sa_family_t family, union inet_addr *addr,
 				  struct net *net)
 {
@@ -1355,26 +1366,6 @@ remove_addr:
 		fmp->remove_addrs = 0;
 }
 
-static void full_mesh_add_raddr(struct mptcp_cb *mpcb,
-				const union inet_addr *addr, 
-				sa_family_t family, __be16 port, u8 id)
-{
-	if (family == AF_INET)
-		mptcp_addv4_raddr(mpcb, &addr->in, port, id);
-	else
-		mptcp_addv6_raddr(mpcb, &addr->in6, port, id);
-}
-
-static void full_mesh_set_init_addrbit(struct mptcp_cb *mpcb,
-			               const union inet_addr *addr, 
-				       sa_family_t family, u8 id)
-{
-	if (family == AF_INET)
-		mptcp_v4_set_init_addr_bit(mpcb, &addr->in, id);
-	else
-		mptcp_v6_set_init_addr_bit(mpcb, &addr->in6, id);
-}
-
 static void full_mesh_rem_raddr(struct mptcp_cb *mpcb, u8 rem_id)
 {
 	mptcp_v4_rem_raddress(mpcb, rem_id);
@@ -1444,12 +1435,10 @@ static struct mptcp_pm_ops full_mesh __read_mostly = {
 	.release_sock = full_mesh_release_sock,
 	.fully_established = full_mesh_create_subflows,
 	.new_remote_address = full_mesh_create_subflows,
-	.get_local_index = full_mesh_get_local_index,
 	.get_local_id = full_mesh_get_local_id,
 	.addr_signal = full_mesh_addr_signal,
 	.add_raddr = full_mesh_add_raddr,
 	.rem_raddr = full_mesh_rem_raddr,
-	.set_init_addrbit = full_mesh_set_init_addrbit,
 	.name = "fullmesh",
 	.owner = THIS_MODULE,
 };
