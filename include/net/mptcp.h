@@ -233,6 +233,8 @@ struct mptcp_pm_ops {
 	void (*add_raddr)(struct mptcp_cb *mpcb, const union inet_addr *addr, 
 			  sa_family_t family, __be16 port, u8 id);
 	void (*rem_raddr)(struct mptcp_cb *mpcb, u8 rem_id);
+	void (*set_init_addrbit)(struct mptcp_cb *mpcb, const union inet_addr *addr,
+				 sa_family_t family, u8 id);
 
 	char 		name[MPTCP_PM_NAME_MAX];
 	struct module 	*owner;

@@ -472,21 +472,6 @@ drop_and_free:
 	return;
 }
 
-/* Sets the bitfield of the remote-address field
- * local address is not set as it will disappear with the global address-list
- */
-void mptcp_v6_set_init_addr_bit(struct mptcp_cb *mpcb,
-				const struct in6_addr *daddr, int index)
-{
-	int i;
-	mptcp_for_each_bit_set(mpcb->rem6_bits, i) {
-		if (ipv6_addr_equal(&mpcb->remaddr6[i].addr, daddr)) {
-			mpcb->remaddr6[i].bitfield |= (1 << index);
-			return;
-		}
-	}
-}
-
 int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;

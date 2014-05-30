@@ -209,6 +209,33 @@ static void mptcp_v6_rem_raddress(struct mptcp_cb *mpcb, u8 id)
 	}
 }
 
+/* Sets the bitfield of the remote-address field */
+static void mptcp_v4_set_init_addr_bit(struct mptcp_cb *mpcb,
+				       const struct in_addr *addr, u8 index)
+{
+	int i;
+
+	mptcp_for_each_bit_set(mpcb->rem4_bits, i) {
+		if (mpcb->remaddr4[i].addr.s_addr == addr->s_addr) {
+			mpcb->remaddr4[i].bitfield |= (1 << index);
+			return;
+		}
+	}
+}
+
+/* Sets the bitfield of the remote-address field */
+static void mptcp_v6_set_init_addr_bit(struct mptcp_cb *mpcb,
+				       const struct in6_addr *addr, u8 index)
+{
+	int i;
+	mptcp_for_each_bit_set(mpcb->rem6_bits, i) {
+		if (ipv6_addr_equal(&mpcb->remaddr6[i].addr, addr)) {
+			mpcb->remaddr6[i].bitfield |= (1 << index);
+			return;
+		}
+	}
+}
+
 static void retry_subflow_worker(struct work_struct *work)
 {
 	struct delayed_work *delayed_work = container_of(work,
@@ -1338,6 +1365,16 @@ static void full_mesh_add_raddr(struct mptcp_cb *mpcb,
 		mptcp_addv6_raddr(mpcb, &addr->in6, port, id);
 }
 
+static void full_mesh_set_init_addrbit(struct mptcp_cb *mpcb,
+			               const union inet_addr *addr, 
+				       sa_family_t family, u8 id)
+{
+	if (family == AF_INET)
+		mptcp_v4_set_init_addr_bit(mpcb, &addr->in, id);
+	else
+		mptcp_v6_set_init_addr_bit(mpcb, &addr->in6, id);
+}
+
 static void full_mesh_rem_raddr(struct mptcp_cb *mpcb, u8 rem_id)
 {
 	mptcp_v4_rem_raddress(mpcb, rem_id);
@@ -1412,6 +1449,7 @@ static struct mptcp_pm_ops full_mesh __read_mostly = {
 	.addr_signal = full_mesh_addr_signal,
 	.add_raddr = full_mesh_add_raddr,
 	.rem_raddr = full_mesh_rem_raddr,
+	.set_init_addrbit = full_mesh_set_init_addrbit,
 	.name = "fullmesh",
 	.owner = THIS_MODULE,
 };

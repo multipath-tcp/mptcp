@@ -1237,24 +1237,18 @@ void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
 		daddr.ip = inet_sk(sk)->inet_daddr;
 		family = AF_INET;
 		index = mpcb->pm_ops->get_local_index(AF_INET, &saddr, sock_net(meta_sk));
-
-		if (mpcb->pm_ops->add_raddr)
-			mpcb->pm_ops->add_raddr(mpcb, &daddr, family, 0, 0);
-
-		if (index >= 0)
-			mptcp_v4_set_init_addr_bit(mpcb, inet_sk(sk)->inet_daddr, index);
 	} else {
 		saddr.in6 = inet6_sk(sk)->saddr;
 		daddr.in6 = sk->sk_v6_daddr;
 		family = AF_INET6;
 		index = mpcb->pm_ops->get_local_index(AF_INET6, &saddr, sock_net(meta_sk));
-
-		if (mpcb->pm_ops->add_raddr)
-			mpcb->pm_ops->add_raddr(mpcb, &daddr, family, 0, 0);
-
-		if (index >= 0)
-			mptcp_v6_set_init_addr_bit(mpcb, &sk->sk_v6_daddr, index);
 	}
+
+	if (mpcb->pm_ops->add_raddr)
+		mpcb->pm_ops->add_raddr(mpcb, &daddr, family, 0, 0);
+
+	if (index >= 0 && mpcb->pm_ops->set_init_addrbit)
+		mpcb->pm_ops->set_init_addrbit(mpcb, &daddr, family, index);
 
 	if (mpcb->pm_ops->new_session)
 		mpcb->pm_ops->new_session(meta_sk, index);

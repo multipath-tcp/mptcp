@@ -248,21 +248,6 @@ drop_and_free:
 	return;
 }
 
-/* Sets the bitfield of the remote-address field
- * local address is not set as it will disappear with the global address-list
- */
-void mptcp_v4_set_init_addr_bit(struct mptcp_cb *mpcb, __be32 daddr, int index)
-{
-	int i;
-
-	mptcp_for_each_bit_set(mpcb->rem4_bits, i) {
-		if (mpcb->remaddr4[i].addr.s_addr == daddr) {
-			mpcb->remaddr4[i].bitfield |= (1 << index);
-			return;
-		}
-	}
-}
-
 /* We only process join requests here. (either the SYN or the final ACK) */
 int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {
