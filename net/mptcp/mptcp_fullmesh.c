@@ -240,35 +240,42 @@ exit:
 	sock_put(meta_sk);
 }
 
-static void update_remove_addrs(u8 addr_id, struct sock *meta_sk,
-				struct mptcp_loc_addr *mptcp_local)
+static void announce_remove_addr(u8 addr_id, struct sock *meta_sk)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct fullmesh_priv *fmp = (struct fullmesh_priv *)&mpcb->mptcp_pm[0];
-	struct sock *sk;
-	int i;
+	struct sock *sk = mptcp_select_ack_sock(meta_sk, 0);
 
 	fmp->remove_addrs |= (1 << addr_id);
-	/* v4 goes from 0 to MPTCP_MAX_ADDR, v6 beyond */
-	if (addr_id < MPTCP_MAX_ADDR) {
-		fmp->announced_addrs_v4 &= ~(1 << addr_id);
 
-		mptcp_for_each_bit_set(mpcb->rem4_bits, i) {
-			mpcb->remaddr4[i].bitfield &= mptcp_local->loc4_bits;
-			mpcb->remaddr4[i].retry_bitfield &= mptcp_local->loc4_bits;
-		}
-	} else {
-		fmp->announced_addrs_v6 &= ~(1 << (addr_id - MPTCP_MAX_ADDR));
-
-		mptcp_for_each_bit_set(mpcb->rem6_bits, i) {
-			mpcb->remaddr6[i].bitfield &= mptcp_local->loc6_bits;
-			mpcb->remaddr6[i].retry_bitfield &= mptcp_local->loc6_bits;
-		}
-	}
-
-	sk = mptcp_select_ack_sock(meta_sk, 0);
 	if (sk)
 		tcp_send_ack(sk);
+}
+
+static void update_addr_bitfields(struct sock *meta_sk,
+				  const struct mptcp_loc_addr *mptcp_local)
+{
+	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+	struct fullmesh_priv *fmp = (struct fullmesh_priv *)&mpcb->mptcp_pm[0];
+	int i;
+
+	/* The bits in announced_addrs_* always match with loc*_bits. So, a
+	 * simply & operation unsets the correct bits, because these go from
+	 * announced to non-announced
+	 */
+	fmp->announced_addrs_v4 &= mptcp_local->loc4_bits;
+
+	mptcp_for_each_bit_set(mpcb->rem4_bits, i) {
+		mpcb->remaddr4[i].bitfield &= mptcp_local->loc4_bits;
+		mpcb->remaddr4[i].retry_bitfield &= mptcp_local->loc4_bits;
+	}
+
+	fmp->announced_addrs_v6 &= mptcp_local->loc6_bits;
+
+	mptcp_for_each_bit_set(mpcb->rem6_bits, i) {
+		mpcb->remaddr6[i].bitfield &= mptcp_local->loc6_bits;
+		mpcb->remaddr6[i].retry_bitfield &= mptcp_local->loc6_bits;
+	}
 }
 
 static int mptcp_find_address(struct mptcp_loc_addr *mptcp_local,
@@ -486,6 +493,10 @@ duno:
 
 				mptcp_local = rcu_dereference_bh(fm_ns->local);
 
+				/* In any case, we need to update our bitfields */
+				if (id >= 0)
+					update_addr_bitfields(meta_sk, mptcp_local);
+
 				/* Look for the socket and remove him */
 				mptcp_for_each_sk_safe(mpcb, sk, tmpsk) {
 					if ((event->family == AF_INET6 &&
@@ -513,19 +524,14 @@ duno:
 					 */
 					mptcp_reinject_data(sk, 0);
 
-					/* A master is special, it has
-					 * address-id 0
-					 */
-					if (!tcp_sk(sk)->mptcp->loc_id)
-						update_remove_addrs(0, meta_sk, mptcp_local);
-					else if (tcp_sk(sk)->mptcp->loc_id != id)
-						update_remove_addrs(tcp_sk(sk)->mptcp->loc_id, meta_sk, mptcp_local);
+					/* We announce the removal of this id */
+					announce_remove_addr(tcp_sk(sk)->mptcp->loc_id, meta_sk);
 
 					mptcp_sub_force_close(sk);
 					found = true;
 				}
 
-				if (!found)
+				if (found)
 					goto next;
 
 				/* The id may have been given by the event,
@@ -535,7 +541,7 @@ duno:
 				 * So, we have to finally remove it here.
 				 */
 				if (id > 0)
-					update_remove_addrs(id, meta_sk, mptcp_local);
+					announce_remove_addr(id, meta_sk);
 			}
 
 			if (event->code == MPTCP_EVENT_MOD) {
@@ -1035,12 +1041,16 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 			 */
 			mptcp_reinject_data(sk, 0);
 
-			update_remove_addrs(tcp_sk(sk)->mptcp->loc_id, meta_sk,
-					    mptcp_local);
+			announce_remove_addr(tcp_sk(sk)->mptcp->loc_id,
+					     meta_sk);
 
 			mptcp_sub_force_close(sk);
 		}
 	}
+
+	/* Just call it optimistically. It actually cannot do any harm */
+	update_addr_bitfields(meta_sk, mptcp_local);
+
 	rcu_read_unlock();
 }
 
