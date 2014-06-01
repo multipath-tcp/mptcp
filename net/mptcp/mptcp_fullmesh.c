@@ -291,11 +291,16 @@ next_subflow:
 		/* Do we need to retry establishing a subflow ? */
 		if (rem->retry_bitfield) {
 			int i = mptcp_find_free_index(~rem->retry_bitfield);
+			struct mptcp_rem4 rem4;
 
 			rem->bitfield |= (1 << i);
 			rem->retry_bitfield &= ~(1 << i);
 
-			mptcp_init4_subsockets(meta_sk, &mptcp_local->locaddr4[i], rem);
+			rem4.addr = rem->addr;
+			rem4.port = rem->port;
+			rem4.rem4_id = rem->rem4_id;
+
+			mptcp_init4_subsockets(meta_sk, &mptcp_local->locaddr4[i], &rem4);
 			goto next_subflow;
 		}
 	}
@@ -307,11 +312,16 @@ next_subflow:
 		/* Do we need to retry establishing a subflow ? */
 		if (rem->retry_bitfield) {
 			int i = mptcp_find_free_index(~rem->retry_bitfield);
+			struct mptcp_rem6 rem6;
 
 			rem->bitfield |= (1 << i);
 			rem->retry_bitfield &= ~(1 << i);
 
-			mptcp_init6_subsockets(meta_sk, &mptcp_local->locaddr6[i], rem);
+			rem6.addr = rem->addr;
+			rem6.port = rem->port;
+			rem6.rem6_id = rem->rem6_id;
+
+			mptcp_init6_subsockets(meta_sk, &mptcp_local->locaddr6[i], &rem6);
 			goto next_subflow;
 		}
 	}
@@ -382,12 +392,17 @@ next_subflow:
 		/* Are there still combinations to handle? */
 		if (remaining_bits) {
 			int i = mptcp_find_free_index(~remaining_bits);
+			struct mptcp_rem4 rem4;
 
 			rem->bitfield |= (1 << i);
 
+			rem4.addr = rem->addr;
+			rem4.port = rem->port;
+			rem4.rem4_id = rem->rem4_id;
+
 			/* If a route is not yet available then retry once */
 			if (mptcp_init4_subsockets(meta_sk, &mptcp_local->locaddr4[i],
-						   rem) == -ENETUNREACH)
+						   &rem4) == -ENETUNREACH)
 				retry = rem->retry_bitfield |= (1 << i);
 			goto next_subflow;
 		}
@@ -404,12 +419,17 @@ next_subflow:
 		/* Are there still combinations to handle? */
 		if (remaining_bits) {
 			int i = mptcp_find_free_index(~remaining_bits);
+			struct mptcp_rem6 rem6;
 
 			rem->bitfield |= (1 << i);
 
+			rem6.addr = rem->addr;
+			rem6.port = rem->port;
+			rem6.rem6_id = rem->rem6_id;
+
 			/* If a route is not yet available then retry once */
 			if (mptcp_init6_subsockets(meta_sk, &mptcp_local->locaddr6[i],
-						   rem) == -ENETUNREACH)
+						   &rem6) == -ENETUNREACH)
 				retry = rem->retry_bitfield |= (1 << i);
 			goto next_subflow;
 		}
