@@ -53,11 +53,6 @@
 	#define htonll(x) (x)
 #endif
 
-/* Max number of local or remote addresses we can store.
- * When changing, see the bitfield below in mptcp_rem4/6.
- */
-#define MPTCP_MAX_ADDR	8
-
 struct mptcp_loc4 {
 	u8		loc4_id;
 	u8		low_prio:1;
@@ -66,8 +61,6 @@ struct mptcp_loc4 {
 
 struct mptcp_rem4 {
 	u8		rem4_id;
-	u8		bitfield;
-	u8		retry_bitfield;
 	__be16		port;
 	struct in_addr	addr;
 };
@@ -80,8 +73,6 @@ struct mptcp_loc6 {
 
 struct mptcp_rem6 {
 	u8		rem6_id;
-	u8		bitfield;
-	u8		retry_bitfield;
 	__be16		port;
 	struct in6_addr	addr;
 };
@@ -278,7 +269,7 @@ struct mptcp_cb {
 
 	u8 dfin_path_index;
 
-#define MPTCP_PM_SIZE 320
+#define MPTCP_PM_SIZE 608
 	u8 mptcp_pm[MPTCP_PM_SIZE] __aligned(8);
 	struct mptcp_pm_ops *pm_ops;
 
@@ -306,13 +297,6 @@ struct mptcp_cb {
 	struct sock *(*syn_recv_sock)(struct sock *sk, struct sk_buff *skb,
 				      struct request_sock *req,
 				      struct dst_entry *dst);
-
-	/* Remote addresses */
-	struct mptcp_rem4 remaddr4[MPTCP_MAX_ADDR];
-	u8 rem4_bits;
-
-	struct mptcp_rem6 remaddr6[MPTCP_MAX_ADDR];
-	u8 rem6_bits;
 
 	u32 path_index_bits;
 	/* Next pi to pick up in case a new path becomes available */
