@@ -1038,9 +1038,6 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 			update_remove_addrs(tcp_sk(sk)->mptcp->loc_id, meta_sk,
 					    mptcp_local);
 
-			if (mpcb->master_sk == sk)
-				update_remove_addrs(0, meta_sk, mptcp_local);
-
 			mptcp_sub_force_close(sk);
 		}
 	}
