@@ -54,7 +54,8 @@
 #endif
 
 /* Max number of local or remote addresses we can store.
- * When changing, see the bitfield below in mptcp_loc4/6. */
+ * When changing, see the bitfield below in mptcp_rem4/6.
+ */
 #define MPTCP_MAX_ADDR	8
 
 #define MPTCP_SUBFLOW_RETRY_DELAY	1000
