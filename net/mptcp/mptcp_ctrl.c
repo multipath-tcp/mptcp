@@ -2099,13 +2099,13 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 			if (meta_sk->sk_family == AF_INET ||
 			    mptcp_v6_is_v4_mapped(meta_sk)) {
 				seq_printf(seq, " 0 %08X:%04X                         %08X:%04X                        ",
-					   isk->inet_saddr,
+					   isk->inet_rcv_saddr,
 					   ntohs(isk->inet_sport),
 					   isk->inet_daddr,
 					   ntohs(isk->inet_dport));
 #if IS_ENABLED(CONFIG_IPV6)
 			} else if (meta_sk->sk_family == AF_INET6) {
-				struct in6_addr *src = &isk->pinet6->saddr;
+				struct in6_addr *src = &meta_sk->sk_v6_rcv_saddr;
 				struct in6_addr *dst = &meta_sk->sk_v6_daddr;
 				seq_printf(seq, " 1 %08X%08X%08X%08X:%04X %08X%08X%08X%08X:%04X",
 					   src->s6_addr32[0], src->s6_addr32[1],
