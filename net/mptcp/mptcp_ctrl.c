@@ -364,76 +364,43 @@ static struct sock *mptcp_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 	return tcp_v4_syn_recv_sock(sk, skb, req, dst);
 }
 
-struct sock *mptcp_select_ack_sock(const struct sock *meta_sk, int copied)
+struct sock *mptcp_select_ack_sock(const struct sock *meta_sk)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct sock *sk, *subsk = NULL;
-	u32 max_data_seq = 0;
-	/* max_data_seq initialized to correct compiler-warning.
-	 * But the initialization is handled by max_data_seq_set
-	 */
-	short max_data_seq_set = 0;
-	u32 min_time = 0xffffffff;
+	struct sock *sk, *rttsk = NULL, *lastsk = NULL;
+	u32 min_time = 0, last_active = 0;
 
-	/* How do we select the subflow to send the window-update on?
-	 *
-	 * 1. He has to be in a state where he can send an ack and is
-	 *           operational (pf = 0).
-	 * 2. He has to be one of those subflow who recently
-	 *    contributed to the received stream
-	 *    (this guarantees a working subflow)
-	 *    a) its latest data_seq received is after the original
-	 *       copied_seq.
-	 *       We select the one with the lowest rtt, so that the
-	 *       window-update reaches our peer the fastest.
-	 *    b) if no subflow has this kind of data_seq (e.g., very
-	 *       strange meta-level retransmissions going on), we take
-	 *       the subflow who last sent the highest data_seq.
-	 */
 	mptcp_for_each_sk(meta_tp->mpcb, sk) {
 		struct tcp_sock *tp = tcp_sk(sk);
+		u32 elapsed;
 
 		if (!mptcp_sk_can_send_ack(sk) || tp->pf)
 			continue;
 
-		/* Select among those who contributed to the
-		 * current receive-queue.
+		elapsed = keepalive_time_elapsed(tp);
+
+		/* We take the one with the lowest RTT within a reasonable
+		 * (meta-RTO)-timeframe
 		 */
-		if (copied && after(tp->mptcp->last_data_seq, meta_tp->copied_seq - copied)) {
-			if (tp->srtt < min_time) {
+		if (elapsed < inet_csk(meta_sk)->icsk_rto) {
+			if (!min_time || tp->srtt < min_time) {
 				min_time = tp->srtt;
-				subsk = sk;
-				max_data_seq_set = 0;
+				rttsk = sk;
 			}
 			continue;
 		}
 
-		if (!subsk && !max_data_seq_set) {
-			max_data_seq = tp->mptcp->last_data_seq;
-			max_data_seq_set = 1;
-			subsk = sk;
-		}
-
-		/* Otherwise, take the one with the highest data_seq */
-		if ((!subsk || max_data_seq_set) &&
-		    after(tp->mptcp->last_data_seq, max_data_seq)) {
-			max_data_seq = tp->mptcp->last_data_seq;
-			subsk = sk;
+		/* Otherwise, we just take the most recent active */
+		if (!rttsk && (!last_active || elapsed < last_active)) {
+			last_active = elapsed;
+			lastsk = sk;
 		}
 	}
 
-	if (!subsk) {
-		mptcp_debug("%s subsk is null, copied %d, cseq %u\n", __func__,
-			    copied, meta_tp->copied_seq);
-		mptcp_for_each_sk(meta_tp->mpcb, sk) {
-			struct tcp_sock *tp = tcp_sk(sk);
-			mptcp_debug("%s pi %d state %u last_dseq %u\n",
-				    __func__, tp->mptcp->path_index, sk->sk_state,
-				    tp->mptcp->last_data_seq);
-		}
-	}
+	if (rttsk)
+		return rttsk;
 
-	return subsk;
+	return lastsk;
 }
 EXPORT_SYMBOL(mptcp_select_ack_sock);
 
@@ -871,10 +838,9 @@ static int mptcp_inherit_sk(const struct sock *sk, struct sock *newsk,
 	newsk->sk_wq = NULL;
 
 	if (newsk->sk_prot->sockets_allocated)
-		percpu_counter_inc(newsk->sk_prot->sockets_allocated);
+		sk_sockets_allocated_inc(newsk);
 
-	if (sock_flag(newsk, SOCK_TIMESTAMP) ||
-	    sock_flag(newsk, SOCK_TIMESTAMPING_RX_SOFTWARE))
+	if (newsk->sk_flags & SK_FLAGS_TIMESTAMP)
 		net_enable_timestamp();
 
 	return 0;
@@ -1260,35 +1226,8 @@ void mptcp_del_sock(struct sock *sk)
  */
 void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
 {
-	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	union inet_addr addr;
-	int index;
-
-	/* Get the index of the local address */
-	if (sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(sk)) {
-		addr.ip = inet_sk(sk)->inet_saddr;
-		index = mpcb->pm_ops->get_local_index(AF_INET, &addr, sock_net(meta_sk));
-	} else {
-		addr.in6 = inet6_sk(sk)->saddr;
-		index = mpcb->pm_ops->get_local_index(AF_INET6, &addr, sock_net(meta_sk));
-	}
-
-	if (sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(sk)) {
-		mptcp_v4_add_raddress(mpcb,
-				      (struct in_addr *)&inet_sk(sk)->inet_daddr,
-				      0, 0);
-		if (index >= 0)
-			mptcp_v4_set_init_addr_bit(mpcb, inet_sk(sk)->inet_daddr, index);
-	} else {
-#if IS_ENABLED(CONFIG_IPV6)
-		mptcp_v6_add_raddress(mpcb, &sk->sk_v6_daddr, 0, 0);
-		if (index >= 0)
-			mptcp_v6_set_init_addr_bit(mpcb, &sk->sk_v6_daddr, index);
-#endif
-	}
-
-	if (mpcb->pm_ops->new_session)
-		mpcb->pm_ops->new_session(meta_sk, index);
+	if (tcp_sk(sk)->mpcb->pm_ops->new_session)
+		tcp_sk(sk)->mpcb->pm_ops->new_session(meta_sk);
 
 	tcp_sk(sk)->mptcp->send_mp_prio = tcp_sk(sk)->mptcp->low_prio;
 }
@@ -1949,18 +1888,22 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	/* Subflows do not use the accept queue, as they
 	 * are attached immediately to the mpcb.
 	 */
-	inet_csk_reqsk_queue_drop(meta_sk, req, prev);
+	inet_csk_reqsk_queue_unlink(meta_sk, req, prev);
+	reqsk_queue_removed(&inet_csk(meta_sk)->icsk_accept_queue, req);
+	reqsk_free(req);
 	return child;
 
 teardown:
 	/* Drop this request - sock creation failed. */
-	inet_csk_reqsk_queue_drop(meta_sk, req, prev);
+	inet_csk_reqsk_queue_unlink(meta_sk, req, prev);
+	reqsk_queue_removed(&inet_csk(meta_sk)->icsk_accept_queue, req);
+	reqsk_free(req);
 	inet_csk_prepare_forced_close(child);
 	tcp_done(child);
 	return meta_sk;
 }
 
-int mptcp_time_wait(struct sock *sk, struct tcp_timewait_sock *tw)
+int mptcp_init_tw_sock(struct sock *sk, struct tcp_timewait_sock *tw)
 {
 	struct mptcp_tw *mptw;
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -2022,13 +1965,13 @@ void mptcp_twsk_destructor(struct tcp_timewait_sock *tw)
 /* Updates the rcv_nxt of the time-wait-socks and allows them to ack a
  * data-fin.
  */
-void mptcp_update_tw_socks(struct sock *sk, int state, int timeo)
+void mptcp_time_wait(struct sock *sk, int state, int timeo)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_tw *mptw;
 
 	/* Used for sockets that go into tw after the meta
-	 * (see mptcp_time_wait())
+	 * (see mptcp_init_tw_sock())
 	 */
 	tp->mpcb->in_time_wait = 1;
 	tp->mpcb->mptw_state = state;
@@ -2129,13 +2072,13 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 			if (meta_sk->sk_family == AF_INET ||
 			    mptcp_v6_is_v4_mapped(meta_sk)) {
 				seq_printf(seq, " 0 %08X:%04X                         %08X:%04X                        ",
-					   isk->inet_saddr,
+					   isk->inet_rcv_saddr,
 					   ntohs(isk->inet_sport),
 					   isk->inet_daddr,
 					   ntohs(isk->inet_dport));
 #if IS_ENABLED(CONFIG_IPV6)
 			} else if (meta_sk->sk_family == AF_INET6) {
-				struct in6_addr *src = &isk->pinet6->saddr;
+				struct in6_addr *src = &meta_sk->sk_v6_rcv_saddr;
 				struct in6_addr *dst = &meta_sk->sk_v6_daddr;
 				seq_printf(seq, " 1 %08X%08X%08X%08X:%04X %08X%08X%08X%08X:%04X",
 					   src->s6_addr32[0], src->s6_addr32[1],

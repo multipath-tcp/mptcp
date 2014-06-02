@@ -56,21 +56,31 @@ next_subflow:
 		if (meta_sk->sk_family == AF_INET ||
 		    mptcp_v6_is_v4_mapped(meta_sk)) {
 			struct mptcp_loc4 loc;
+			struct mptcp_rem4 rem;
 
 			loc.addr.s_addr = inet_sk(meta_sk)->inet_saddr;
 			loc.loc4_id = 0;
 			loc.low_prio = 0;
 
-			mptcp_init4_subsockets(meta_sk, &loc, &mpcb->remaddr4[0]);
+			rem.addr.s_addr = inet_sk(meta_sk)->inet_daddr;
+			rem.port = inet_sk(meta_sk)->inet_dport;
+			rem.rem4_id = 0; /* Default 0 */
+
+			mptcp_init4_subsockets(meta_sk, &loc, &rem);
 		} else {
 #if IS_ENABLED(CONFIG_IPV6)
 			struct mptcp_loc6 loc;
+			struct mptcp_rem6 rem;
 
 			loc.addr = inet6_sk(meta_sk)->saddr;
 			loc.loc6_id = 0;
 			loc.low_prio = 0;
 
-			mptcp_init6_subsockets(meta_sk, &loc, &mpcb->remaddr6[0]);
+			rem.addr = meta_sk->sk_v6_daddr;
+			rem.port = inet_sk(meta_sk)->inet_dport;
+			rem.rem6_id = 0; /* Default 0 */
+
+			mptcp_init6_subsockets(meta_sk, &loc, &rem);
 #endif
 		}
 		goto next_subflow;
@@ -82,7 +92,7 @@ exit:
 	sock_put(meta_sk);
 }
 
-static void ndiffports_new_session(struct sock *meta_sk, int index)
+static void ndiffports_new_session(struct sock *meta_sk)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct ndiffports_priv *fmp = (struct ndiffports_priv *)&mpcb->mptcp_pm[0];
@@ -108,8 +118,8 @@ static void ndiffports_create_subflows(struct sock *meta_sk)
 	}
 }
 
-static int ndiffports_get_local_index(sa_family_t family, union inet_addr *addr,
-				      struct net *net)
+static int ndiffports_get_local_id(sa_family_t family, union inet_addr *addr,
+				   struct net *net)
 {
 	return 0;
 }
@@ -117,8 +127,7 @@ static int ndiffports_get_local_index(sa_family_t family, union inet_addr *addr,
 static struct mptcp_pm_ops ndiffports __read_mostly = {
 	.new_session = ndiffports_new_session,
 	.fully_established = ndiffports_create_subflows,
-	.get_local_index = ndiffports_get_local_index,
-	.get_local_id = ndiffports_get_local_index,
+	.get_local_id = ndiffports_get_local_id,
 	.name = "ndiffports",
 	.owner = THIS_MODULE,
 };

@@ -989,7 +989,6 @@ next:
 	}
 
 	inet_csk(meta_sk)->icsk_ack.lrcvtime = tcp_time_stamp;
-	tp->mptcp->last_data_seq = tp->mptcp->map_data_seq;
 	mptcp_reset_mapping(tp);
 
 	return data_queued ? -1 : -2;
@@ -1287,7 +1286,7 @@ void mptcp_fin(struct sock *meta_sk)
 	}
 
 	if (!sk || sk->sk_state == TCP_CLOSE)
-		sk = mptcp_select_ack_sock(meta_sk, 0);
+		sk = mptcp_select_ack_sock(meta_sk);
 
 	inet_csk_schedule_ack(sk);
 
@@ -1530,19 +1529,6 @@ void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk)
 }
 
 /**** static functions used by mptcp_parse_options */
-
-static inline int mptcp_rem_raddress(struct mptcp_cb *mpcb, u8 rem_id)
-{
-	if (mptcp_v4_rem_raddress(mpcb, rem_id) < 0) {
-#if IS_ENABLED(CONFIG_IPV6)
-		if (mptcp_v6_rem_raddress(mpcb, rem_id) < 0)
-			return -1;
-#else
-		return -1;
-#endif /* CONFIG_IPV6 */
-	}
-	return 0;
-}
 
 static void mptcp_send_reset_rem_id(const struct mptcp_cb *mpcb, u8 rem_id)
 {
@@ -1828,24 +1814,29 @@ int mptcp_check_rtt(const struct tcp_sock *tp, int time)
 static void mptcp_handle_add_addr(const unsigned char *ptr, struct sock *sk)
 {
 	struct mp_add_addr *mpadd = (struct mp_add_addr *)ptr;
+	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
+	__be16 port = 0;
+	union inet_addr addr;
+	sa_family_t family;
 
 	if (mpadd->ipver == 4) {
-		__be16 port = 0;
 		if (mpadd->len == MPTCP_SUB_LEN_ADD_ADDR4 + 2)
 			port  = mpadd->u.v4.port;
-
-		mptcp_v4_add_raddress(tcp_sk(sk)->mpcb, &mpadd->u.v4.addr, port,
-				      mpadd->addr_id);
+		family = AF_INET;
+		addr.in = mpadd->u.v4.addr;
 #if IS_ENABLED(CONFIG_IPV6)
 	} else if (mpadd->ipver == 6) {
-		__be16 port = 0;
 		if (mpadd->len == MPTCP_SUB_LEN_ADD_ADDR6 + 2)
 			port  = mpadd->u.v6.port;
-
-		mptcp_v6_add_raddress(tcp_sk(sk)->mpcb, &mpadd->u.v6.addr, port,
-				      mpadd->addr_id);
+		family = AF_INET6;
+		addr.in6 = mpadd->u.v6.addr;
 #endif /* CONFIG_IPV6 */
+	} else {
+		return;
 	}
+
+	if (mpcb->pm_ops->add_raddr)
+		mpcb->pm_ops->add_raddr(mpcb, &addr, family, port, mpadd->addr_id);
 }
 
 static void mptcp_handle_rem_addr(const unsigned char *ptr, struct sock *sk)
@@ -1853,11 +1844,14 @@ static void mptcp_handle_rem_addr(const unsigned char *ptr, struct sock *sk)
 	struct mp_remove_addr *mprem = (struct mp_remove_addr *)ptr;
 	int i;
 	u8 rem_id;
+	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 
 	for (i = 0; i <= mprem->len - MPTCP_SUB_LEN_REMOVE_ADDR; i++) {
 		rem_id = (&mprem->addrs_id)[i];
-		if (!mptcp_rem_raddress(tcp_sk(sk)->mpcb, rem_id))
-			mptcp_send_reset_rem_id(tcp_sk(sk)->mpcb, rem_id);
+
+		if (mpcb->pm_ops->rem_raddr)
+			mpcb->pm_ops->rem_raddr(mpcb, rem_id);
+		mptcp_send_reset_rem_id(mpcb, rem_id);
 	}
 }
 

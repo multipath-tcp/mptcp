@@ -907,6 +907,8 @@ extern void sock_lock_init(struct sock *sk);
 
 extern struct lock_class_key af_callback_keys[AF_MAX];
 extern char *const af_family_clock_key_strings[AF_MAX+1];
+
+#define SK_FLAGS_TIMESTAMP ((1UL << SOCK_TIMESTAMP) | (1UL << SOCK_TIMESTAMPING_RX_SOFTWARE))
 /* END - needed for MPTCP */
 
 struct request_sock_ops;

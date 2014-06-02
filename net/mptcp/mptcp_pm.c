@@ -34,15 +34,14 @@
 static DEFINE_SPINLOCK(mptcp_pm_list_lock);
 static LIST_HEAD(mptcp_pm_list);
 
-static int mptcp_default_index(sa_family_t family, union inet_addr *addr,
-			       struct net *net)
+static int mptcp_default_id(sa_family_t family, union inet_addr *addr,
+			    struct net *net)
 {
 	return 0;
 }
 
 struct mptcp_pm_ops mptcp_pm_default = {
-	.get_local_index = mptcp_default_index,
-	.get_local_id = mptcp_default_index, /* We do not care */
+	.get_local_id = mptcp_default_id, /* We do not care */
 	.name = "default",
 	.owner = THIS_MODULE,
 };
@@ -63,7 +62,7 @@ int mptcp_register_path_manager(struct mptcp_pm_ops *pm)
 {
 	int ret = 0;
 
-	if (!pm->get_local_index || !pm->get_local_id)
+	if (!pm->get_local_id)
 		return -EINVAL;
 
 	spin_lock(&mptcp_pm_list_lock);

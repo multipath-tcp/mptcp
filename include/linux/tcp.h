@@ -87,9 +87,6 @@ struct tcp_out_options {
 		add_addr_v4:1,
 		add_addr_v6:1;	/* dss-checksum required? */
 
-	__u32	data_seq;	/* data sequence number, for MPTCP */
-	__u32	data_ack;	/* data ack, for MPTCP */
-
 	union {
 		struct {
 			__u64	sender_key;	/* sender's key for mptcp */
