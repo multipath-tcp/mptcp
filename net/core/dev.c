@@ -2289,7 +2289,7 @@ EXPORT_SYMBOL(skb_checksum_help);
 __be16 skb_network_protocol(struct sk_buff *skb, int *depth)
 {
 	__be16 type = skb->protocol;
-	int vlan_depth = ETH_HLEN;
+	int vlan_depth = skb->mac_len;
 
 	/* Tunnel gso handlers can set protocol to ethernet. */
 	if (type == htons(ETH_P_TEB)) {
@@ -3944,6 +3944,7 @@ static enum gro_result dev_gro_receive(struct napi_struct *napi, struct sk_buff 
 	}
 	NAPI_GRO_CB(skb)->count = 1;
 	NAPI_GRO_CB(skb)->age = jiffies;
+	NAPI_GRO_CB(skb)->last = skb;
 	skb_shinfo(skb)->gso_size = skb_gro_len(skb);
 	skb->next = napi->gro_list;
 	napi->gro_list = skb;
@@ -4050,6 +4051,7 @@ static void napi_reuse_skb(struct napi_struct *napi, struct sk_buff *skb)
 	skb->vlan_tci = 0;
 	skb->dev = napi->dev;
 	skb->skb_iif = 0;
+	skb->truesize = SKB_TRUESIZE(skb_end_offset(skb));
 
 	napi->skb = skb;
 }
@@ -4605,6 +4607,32 @@ void *netdev_lower_get_next_private_rcu(struct net_device *dev,
 EXPORT_SYMBOL(netdev_lower_get_next_private_rcu);
 
 /**
+ * netdev_lower_get_next - Get the next device from the lower neighbour
+ *                         list
+ * @dev: device
+ * @iter: list_head ** of the current position
+ *
+ * Gets the next netdev_adjacent from the dev's lower neighbour
+ * list, starting from iter position. The caller must hold RTNL lock or
+ * its own locking that guarantees that the neighbour lower
+ * list will remain unchainged.
+ */
+void *netdev_lower_get_next(struct net_device *dev, struct list_head **iter)
+{
+	struct netdev_adjacent *lower;
+
+	lower = list_entry((*iter)->next, struct netdev_adjacent, list);
+
+	if (&lower->list == &dev->adj_list.lower)
+		return NULL;
+
+	*iter = &lower->list;
+
+	return lower->dev;
+}
+EXPORT_SYMBOL(netdev_lower_get_next);
+
+/**
  * netdev_lower_get_first_private_rcu - Get the first ->private from the
  *				       lower neighbour list, RCU
  *				       variant
@@ -5053,6 +5081,30 @@ void *netdev_lower_dev_get_private(struct net_device *dev,
 	return lower->private;
 }
 EXPORT_SYMBOL(netdev_lower_dev_get_private);
+
+
+int dev_get_nest_level(struct net_device *dev,
+		       bool (*type_check)(struct net_device *dev))
+{
+	struct net_device *lower = NULL;
+	struct list_head *iter;
+	int max_nest = -1;
+	int nest;
+
+	ASSERT_RTNL();
+
+	netdev_for_each_lower_dev(dev, lower, iter) {
+		nest = dev_get_nest_level(lower, type_check);
+		if (max_nest < nest)
+			max_nest = nest;
+	}
+
+	if (type_check(dev))
+		max_nest++;
+
+	return max_nest;
+}
+EXPORT_SYMBOL(dev_get_nest_level);
 
 static void dev_change_rx_flags(struct net_device *dev, int flags)
 {
@@ -5523,7 +5575,7 @@ static int dev_new_index(struct net *net)
 
 /* Delayed registration/unregisteration */
 static LIST_HEAD(net_todo_list);
-static DECLARE_WAIT_QUEUE_HEAD(netdev_unregistering_wq);
+DECLARE_WAIT_QUEUE_HEAD(netdev_unregistering_wq);
 
 static void net_set_todo(struct net_device *dev)
 {
