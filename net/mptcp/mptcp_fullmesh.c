@@ -1109,10 +1109,12 @@ static void full_mesh_new_session(struct sock *meta_sk)
 		saddr.ip = inet_sk(meta_sk)->inet_saddr;
 		daddr.ip = inet_sk(meta_sk)->inet_daddr;
 		family = AF_INET;
+#if IS_ENABLED(CONFIG_IPV6)
 	} else {
 		saddr.in6 = inet6_sk(meta_sk)->saddr;
 		daddr.in6 = meta_sk->sk_v6_daddr;
 		family = AF_INET6;
+#endif
 	}
 
 	rcu_read_lock();
