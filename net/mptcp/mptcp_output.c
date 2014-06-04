@@ -519,12 +519,116 @@ static void mptcp_combine_dfin(struct sk_buff *skb, struct sock *meta_sk,
 	}
 }
 
+static int mptcp_write_dss_mapping(struct tcp_sock *tp, struct sk_buff *skb,
+				   __be32 *ptr)
+{
+	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
+	__be32 *start = ptr;
+	__u16 data_len;
+
+	*ptr++ = htonl(tcb->seq); /* data_seq */
+
+	/* If it's a non-data DATA_FIN, we set subseq to 0 (draft v7) */
+	if (mptcp_is_data_fin(skb) && skb->len == 0)
+		*ptr++ = 0; /* subseq */
+	else
+		*ptr++ = htonl(tp->write_seq - tp->mptcp->snt_isn); /* subseq */
+
+	if (tcb->mptcp_flags & MPTCPHDR_INF)
+		data_len = 0;
+	else
+		data_len = tcb->end_seq - tcb->seq;
+
+	if (tp->mpcb->dss_csum && data_len) {
+		__be16 *p16 = (__be16 *)ptr;
+		__be32 hdseq = mptcp_get_highorder_sndbits(skb, tp->mpcb);
+		__wsum csum;
+
+		*ptr = htonl(((data_len) << 16) |
+			     (TCPOPT_EOL << 8) |
+			     (TCPOPT_EOL));
+		csum = csum_partial(ptr - 2, 12, skb->csum);
+		p16++;
+		*p16++ = csum_fold(csum_partial(&hdseq, sizeof(hdseq), csum));
+	} else {
+		*ptr++ = htonl(((data_len) << 16) |
+			       (TCPOPT_NOP << 8) |
+			       (TCPOPT_NOP));
+	}
+
+	return ptr - start;
+}
+
+static int mptcp_write_dss_data_ack(struct tcp_sock *tp, struct sk_buff *skb,
+				    __be32 *ptr)
+{
+	struct mp_dss *mdss = (struct mp_dss *)ptr;
+	__be32 *start = ptr;
+
+	mdss->kind = TCPOPT_MPTCP;
+	mdss->sub = MPTCP_SUB_DSS;
+	mdss->rsv1 = 0;
+	mdss->rsv2 = 0;
+	mdss->F = mptcp_is_data_fin(skb) ? 1 : 0;
+	mdss->m = 0;
+	mdss->M = mptcp_is_data_seq(skb) ? 1 : 0;
+	mdss->a = 0;
+	mdss->A = 1;
+	mdss->len = mptcp_sub_len_dss(mdss, tp->mpcb->dss_csum);
+	ptr++;
+
+	*ptr++ = htonl(mptcp_meta_tp(tp)->rcv_nxt);
+
+	return ptr - start;
+}
+
+const int mptcp_dss_len = MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_ACK_ALIGN +
+	MPTCP_SUB_LEN_SEQ_ALIGN;
+
+/* RFC6824 states that once a particular subflow mapping has been sent
+ * out it must never be changed. However, packets may be split while
+ * they are in the retransmission queue (due to SACK or ACKs) and that
+ * arguably means that we would change the mapping (e.g. it splits it,
+ * our sends out a subset of the initial mapping).
+ *
+ * Furthermore, the skb checksum is not always preserved across splits
+ * (e.g. mptso_fragment) which would mean that we need to recompute
+ * the DSS checksum in this case.
+ *
+ * To avoid this we save the initial DSS mapping which allows us to
+ * send the same DSS mapping even for fragmented retransmits.
+ */
+static void mptcp_save_dss_data_seq(struct tcp_sock *tp, struct sk_buff *skb)
+{
+	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
+	__be32 *ptr = (__be32 *)(skb->data - mptcp_dss_len);
+
+	tcb->mptcp_flags |= MPTCPHDR_SEQ;
+
+	ptr += mptcp_write_dss_data_ack(tp, skb, ptr);
+	ptr += mptcp_write_dss_mapping(tp, skb, ptr);
+}
+
+/* Write the saved DSS mapping to the header */
+static int mptcp_write_dss_data_seq(struct tcp_sock *tp, struct sk_buff *skb,
+				     __be32 *ptr)
+{
+	/**** Just update the data_ack ****/
+
+	/* Get pointer to data_ack-field. MPTCP is always at
+	 * the end of the TCP-options.
+	 */
+	/* TODO if we allow sending 64-bit dseq's we have to change "16" */
+	__be32 *dack = (__be32 *)(skb->data + (tcp_hdr(skb)->doff << 2) - 16);
+
+	*dack = htonl(mptcp_meta_tp(tp)->rcv_nxt);
+
+	return mptcp_dss_len/sizeof(*ptr);
+}
+
 static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff *skb,
 					int reinject)
 {
-	__be32 *ptr;
-	__u16 data_len;
-	struct mp_dss *mdss;
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sock *meta_sk = mptcp_meta_sk(sk);
 	struct mptcp_cb *mpcb = tp->mpcb;
@@ -566,58 +670,9 @@ static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff *skb,
 		tp->mpcb->infinite_mapping_snd = 1;
 		tp->mptcp->infinite_cutoff_seq = tp->write_seq;
 		tcb->mptcp_flags |= MPTCPHDR_INF;
-		data_len = 0;
-	} else {
-		data_len = tcb->end_seq - tcb->seq;
 	}
 
-	/**** Write MPTCP DSS-option to the packet. ****/
-	ptr = (__be32 *)(subskb->data - (MPTCP_SUB_LEN_DSS_ALIGN +
-				      MPTCP_SUB_LEN_ACK_ALIGN +
-				      MPTCP_SUB_LEN_SEQ_ALIGN));
-
-	/* Then we start writing it from the start */
-	mdss = (struct mp_dss *)ptr;
-
-	mdss->kind = TCPOPT_MPTCP;
-	mdss->sub = MPTCP_SUB_DSS;
-	mdss->rsv1 = 0;
-	mdss->rsv2 = 0;
-	mdss->F = (mptcp_is_data_fin(subskb) ? 1 : 0);
-	mdss->m = 0;
-	mdss->M = 1;
-	mdss->a = 0;
-	mdss->A = 1;
-	mdss->len = mptcp_sub_len_dss(mdss, tp->mpcb->dss_csum);
-
-	ptr++;
-	ptr++; /* data_ack will be set in mptcp_options_write */
-	*ptr++ = htonl(tcb->seq); /* data_seq */
-
-	/* If it's a non-data DATA_FIN, we set subseq to 0 (draft v7) */
-	if (mptcp_is_data_fin(subskb) && subskb->len == 0)
-		*ptr++ = 0; /* subseq */
-	else
-		*ptr++ = htonl(tp->write_seq - tp->mptcp->snt_isn); /* subseq */
-
-	if (tp->mpcb->dss_csum && data_len) {
-		__be16 *p16 = (__be16 *)ptr;
-		__be32 hdseq = mptcp_get_highorder_sndbits(subskb, tp->mpcb);
-		__wsum csum;
-		*ptr = htonl(((data_len) << 16) |
-				(TCPOPT_EOL << 8) |
-				(TCPOPT_EOL));
-
-		csum = csum_partial(ptr - 2, 12, subskb->csum);
-		p16++;
-		*p16++ = csum_fold(csum_partial(&hdseq, sizeof(hdseq), csum));
-	} else {
-		*ptr++ = htonl(((data_len) << 16) |
-				(TCPOPT_NOP << 8) |
-				(TCPOPT_NOP));
-	}
-
-	tcb->mptcp_flags |= MPTCPHDR_SEQ;
+	mptcp_save_dss_data_seq(tp, subskb);
 
 no_data_seq:
 	tcb->seq = tp->write_seq;
@@ -1636,33 +1691,10 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	}
 
 	if (OPTION_DATA_ACK & opts->mptcp_options) {
-		if (!mptcp_is_data_seq(skb)) {
-			struct mp_dss *mdss = (struct mp_dss *)ptr;
-
-			mdss->kind = TCPOPT_MPTCP;
-			mdss->sub = MPTCP_SUB_DSS;
-			mdss->rsv1 = 0;
-			mdss->rsv2 = 0;
-			mdss->F = 0;
-			mdss->m = 0;
-			mdss->M = 0;
-			mdss->a = 0;
-			mdss->A = 1;
-			mdss->len = mptcp_sub_len_dss(mdss, tp->mpcb->dss_csum);
-
-			ptr++;
-			*ptr++ = htonl(mptcp_meta_tp(tp)->rcv_nxt);
-		} else {
-			/**** Just update the data_ack ****/
-
-			/* Get pointer to data_ack-field. MPTCP is always at
-			 * the end of the TCP-options.
-			 */
-			/* TODO if we allow sending 64-bit dseq's we have to change "16" */
-			__be32 *dack = (__be32 *)(skb->data + (tcp_hdr(skb)->doff << 2) - 16);
-
-			*dack = htonl(mptcp_meta_tp(tp)->rcv_nxt);
-		}
+		if (!mptcp_is_data_seq(skb))
+			ptr += mptcp_write_dss_data_ack(tp, skb, ptr);
+		else
+			ptr += mptcp_write_dss_data_seq(tp, skb, ptr);
 	}
 	if (unlikely(OPTION_MP_PRIO & opts->mptcp_options)) {
 		struct mp_prio *mpprio = (struct mp_prio *)ptr;
