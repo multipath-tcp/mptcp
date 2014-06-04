@@ -869,31 +869,24 @@ static inline void mptcp_send_reset(struct sock *sk)
 	mptcp_sub_force_close(sk);
 }
 
-static inline int mptcp_is_data_seq(const struct sk_buff *skb)
+static inline bool mptcp_is_data_seq(const struct sk_buff *skb)
 {
 	return TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ;
 }
 
-static inline int mptcp_is_data_fin(const struct sk_buff *skb)
+static inline bool mptcp_is_data_fin(const struct sk_buff *skb)
 {
-	return mptcp_is_data_seq(skb) &&
-	       (TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN);
+	return TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_FIN;
 }
 
 /* Is it a data-fin while in infinite mapping mode?
  * In infinite mode, a subflow-fin is in fact a data-fin.
  */
-static inline int mptcp_is_data_fin2(const struct sk_buff *skb,
+static inline bool mptcp_is_data_fin2(const struct sk_buff *skb,
 				     const struct tcp_sock *tp)
 {
 	return mptcp_is_data_fin(skb) ||
 	       (tp->mpcb->infinite_mapping_rcv && tcp_hdr(skb)->fin);
-}
-
-static inline void mptcp_skb_entail_init(const struct tcp_sock *tp,
-					 struct sk_buff *skb)
-{
-		TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_SEQ;
 }
 
 static inline u8 mptcp_get_64_bit(u64 data_seq, struct mptcp_cb *mpcb)
@@ -1239,7 +1232,7 @@ static inline u8 mptcp_set_new_pathindex(struct mptcp_cb *mpcb)
 	return 0;
 }
 
-static inline int mptcp_v6_is_v4_mapped(struct sock *sk)
+static inline bool mptcp_v6_is_v4_mapped(struct sock *sk)
 {
 	return sk->sk_family == AF_INET6 &&
 	       ipv6_addr_type(&inet6_sk(sk)->saddr) == IPV6_ADDR_MAPPED;
@@ -1289,11 +1282,11 @@ static inline void set_meta_funcs(struct tcp_sock *tp)
 #define mptcp_for_each_sk(mpcb, sk)
 #define mptcp_for_each_sk_safe(__mpcb, __sk, __temp)
 
-static inline int mptcp_is_data_fin(const struct sk_buff *skb)
+static inline bool mptcp_is_data_fin(const struct sk_buff *skb)
 {
 	return 0;
 }
-static inline int mptcp_is_data_seq(const struct sk_buff *skb)
+static inline bool mptcp_is_data_seq(const struct sk_buff *skb)
 {
 	return 0;
 }
@@ -1317,8 +1310,6 @@ static inline void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp) {}
 static inline void mptcp_del_sock(const struct sock *sk) {}
 static inline void mptcp_reinject_data(struct sock *orig_sk, int clone_it) {}
 static inline void mptcp_update_sndbuf(const struct mptcp_cb *mpcb) {}
-static inline void mptcp_skb_entail_init(const struct tcp_sock *tp,
-					 const struct sk_buff *skb) {}
 static inline void mptcp_clean_rtx_infinite(const struct sk_buff *skb,
 					    const struct sock *sk) {}
 static inline void mptcp_sub_close(struct sock *sk, unsigned long delay) {}

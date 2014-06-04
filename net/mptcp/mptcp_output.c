@@ -617,6 +617,8 @@ static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff *skb,
 				(TCPOPT_NOP));
 	}
 
+	tcb->mptcp_flags |= MPTCPHDR_SEQ;
+
 no_data_seq:
 	tcb->seq = tp->write_seq;
 	tcb->sacked = 0; /* reset the sacked field: from the point of view
@@ -1753,7 +1755,7 @@ void mptcp_send_fin(struct sock *meta_sk)
 
 		tcp_init_nondata_skb(skb, meta_tp->write_seq, TCPHDR_ACK);
 		TCP_SKB_CB(skb)->end_seq++;
-		TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_FIN | MPTCPHDR_SEQ;
+		TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_FIN;
 		tcp_queue_skb(meta_sk, skb);
 	}
 	__tcp_push_pending_frames(meta_sk, mss_now, TCP_NAGLE_OFF);
