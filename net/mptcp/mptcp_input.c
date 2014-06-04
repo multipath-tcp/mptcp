@@ -1076,7 +1076,7 @@ int mptcp_check_req(struct sk_buff *skb, struct net *net)
 	if (!meta_sk)
 		return 0;
 
-	TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_JOIN;
+	TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_JOIN;
 
 	bh_lock_sock_nested(meta_sk);
 	if (sock_owned_by_user(meta_sk)) {
@@ -1174,7 +1174,7 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 		inet_twsk_put(tw);
 	}
 
-	TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_JOIN;
+	TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_JOIN;
 	/* OK, this is a new syn/join, let's create a new open request and
 	 * send syn+ack
 	 */
@@ -1215,7 +1215,7 @@ int mptcp_do_join_short(struct sk_buff *skb, struct mptcp_options_received *mopt
 		return -1;
 	}
 
-	TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_JOIN;
+	TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_JOIN;
 
 	/* OK, this is a new syn/join, let's create a new open request and
 	 * send syn+ack
