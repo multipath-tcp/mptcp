@@ -225,22 +225,12 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 	return sk;
 }
 
-static struct mp_dss *mptcp_skb_find_dss(const struct sk_buff *skb)
-{
-	if (!mptcp_is_data_seq(skb))
-		return NULL;
-
-	return (struct mp_dss *)(skb->data - (MPTCP_SUB_LEN_DSS_ALIGN +
-					      MPTCP_SUB_LEN_ACK_ALIGN +
-					      MPTCP_SUB_LEN_SEQ_ALIGN));
-}
-
 /* get the data-seq and end-data-seq and store them again in the
  * tcp_skb_cb
  */
 static int mptcp_reconstruct_mapping(struct sk_buff *skb, struct sk_buff *orig_skb)
 {
-	struct mp_dss *mpdss = mptcp_skb_find_dss(orig_skb);
+	struct mp_dss *mpdss = (struct mp_dss *)TCP_SKB_CB(skb)->dss;
 	u32 *p32;
 	u16 *p16;
 
@@ -601,7 +591,7 @@ const int mptcp_dss_len = MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_ACK_ALIGN +
 static void mptcp_save_dss_data_seq(struct tcp_sock *tp, struct sk_buff *skb)
 {
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
-	__be32 *ptr = (__be32 *)(skb->data - mptcp_dss_len);
+	__be32 *ptr = (__be32 *)tcb->dss;
 
 	tcb->mptcp_flags |= MPTCPHDR_SEQ;
 
@@ -613,15 +603,17 @@ static void mptcp_save_dss_data_seq(struct tcp_sock *tp, struct sk_buff *skb)
 static int mptcp_write_dss_data_seq(struct tcp_sock *tp, struct sk_buff *skb,
 				     __be32 *ptr)
 {
-	/**** Just update the data_ack ****/
+	__be32 *start = ptr;
 
-	/* Get pointer to data_ack-field. MPTCP is always at
-	 * the end of the TCP-options.
+	memcpy(ptr, TCP_SKB_CB(skb)->dss, mptcp_dss_len);
+
+	/* update the data_ack */
+	start[1] = htonl(mptcp_meta_tp(tp)->rcv_nxt);
+
+	/* dss is in a union with inet_skb_parm and
+	 * the IP layer expects zeroed IPCB fields.
 	 */
-	/* TODO if we allow sending 64-bit dseq's we have to change "16" */
-	__be32 *dack = (__be32 *)(skb->data + (tcp_hdr(skb)->doff << 2) - 16);
-
-	*dack = htonl(mptcp_meta_tp(tp)->rcv_nxt);
+	memset(TCP_SKB_CB(skb)->dss, 0 , mptcp_dss_len);
 
 	return mptcp_dss_len/sizeof(*ptr);
 }
@@ -651,12 +643,7 @@ static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff *skb,
 		subskb->ip_summed = skb->ip_summed = CHECKSUM_NONE;
 	}
 
-	/* The subskb is going in the subflow send-queue. Its path-mask
-	 * is not needed anymore and MUST be set to 0, as the path-mask
-	 * is a union with inet_skb_param.
-	 */
 	tcb = TCP_SKB_CB(subskb);
-	tcb->path_mask = 0;
 
 	if (mptcp_is_data_fin(subskb))
 		mptcp_combine_dfin(subskb, meta_sk, sk);
@@ -777,17 +764,9 @@ int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	int nsize, old_factor;
 	int nlen;
 	u8 flags;
-	int dsslen = MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_ACK_ALIGN +
-		     MPTCP_SUB_LEN_SEQ_ALIGN;
-	char dss[MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_ACK_ALIGN +
-		 MPTCP_SUB_LEN_SEQ_ALIGN];
 
 	if (WARN_ON(len > skb->len))
 		return -EINVAL;
-
-	/* DSS-option must be recovered afterwards. */
-	if (!is_meta_sk(sk))
-		memcpy(dss, skb->data - dsslen, dsslen);
 
 	nsize = skb_headlen(skb) - len;
 	if (nsize < 0)
@@ -796,9 +775,6 @@ int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	if (skb_cloned(skb)) {
 		if (pskb_expand_head(skb, 0, 0, GFP_ATOMIC))
 			return -ENOMEM;
-		/* Recover dss-option */
-		if (!is_meta_sk(sk))
-			memcpy(skb->data - dsslen, dss, dsslen);
 	}
 
 	/* Get a new skb... force flag on. */
@@ -848,7 +824,7 @@ int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 
 	/* We lost the dss-option when creating buff - put it back! */
 	if (!is_meta_sk(sk))
-		memcpy(buff->data - dsslen, dss, dsslen);
+		memcpy(TCP_SKB_CB(buff)->dss, TCP_SKB_CB(skb)->dss, mptcp_dss_len);
 
 	buff->ip_summed = skb->ip_summed;
 
@@ -891,8 +867,6 @@ int mptso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	struct sk_buff *buff;
 	int nlen = skb->len - len, old_factor;
 	u8 flags;
-	int dsslen = MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_ACK_ALIGN +
-		     MPTCP_SUB_LEN_SEQ_ALIGN;
 
 	/* All of a TSO frame must be composed of paged data.  */
 	if (skb->len != skb->data_len)
@@ -935,7 +909,7 @@ int mptso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 
 	/* We lost the dss-option when creating buff - put it back! */
 	if (!is_meta_sk(sk))
-		memcpy(buff->data - dsslen, skb->data - dsslen, dsslen);
+		memcpy(TCP_SKB_CB(buff)->dss, TCP_SKB_CB(skb)->dss, mptcp_dss_len);
 
 	old_factor = tcp_skb_pcount(skb);
 
@@ -2256,28 +2230,13 @@ unsigned int mptcp_xmit_size_goal(struct sock *meta_sk, u32 mss_now,
 /* Similar to tcp_trim_head - but we correctly copy the DSS-option */
 int mptcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
 {
-	int dsslen = MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_ACK_ALIGN +
-		     MPTCP_SUB_LEN_SEQ_ALIGN;
-	char dss[dsslen];
-
-	/* DSS-option must be recovered afterwards. */
-	memcpy(dss, skb->data - dsslen, dsslen);
 
 	if (skb_cloned(skb)) {
-		/* pskb_expand_head will delete our DSS-option. We have to copy
-		 * it back if pskb_expand_head succeeds.
-		 */
-
 		if (pskb_expand_head(skb, 0, 0, GFP_ATOMIC))
 			return -ENOMEM;
-
-		memcpy(skb->data - dsslen, dss, dsslen);
 	}
 
 	__pskb_trim_head(skb, len);
-
-	/* Put the DSS-option back in our header */
-	memcpy(skb->data - dsslen, dss, dsslen);
 
 	TCP_SKB_CB(skb)->seq += len;
 	skb->ip_summed = CHECKSUM_PARTIAL;

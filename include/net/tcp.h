@@ -848,7 +848,10 @@ struct tcp_skb_cb {
 #endif
 		} header;	/* For incoming frames		*/
 #ifdef CONFIG_MPTCP
-		__u32 path_mask; /* path indices that tried to send this skb */
+		union {			/* For MPTCP outgoing frames */
+			__u32 path_mask; /* paths that tried to send this skb */
+			__u32 dss[6];	/* DSS options */
+		};
 #endif
 	};
 	__u32		seq;		/* Starting sequence number	*/
