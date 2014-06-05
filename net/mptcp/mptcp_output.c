@@ -582,7 +582,7 @@ const int mptcp_dss_len = MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_ACK_ALIGN +
  * our sends out a subset of the initial mapping).
  *
  * Furthermore, the skb checksum is not always preserved across splits
- * (e.g. mptso_fragment) which would mean that we need to recompute
+ * (e.g. mptcp_fragment) which would mean that we need to recompute
  * the DSS checksum in this case.
  *
  * To avoid this we save the initial DSS mapping which allows us to
@@ -844,83 +844,6 @@ int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	 * adjust the various packet counters.
 	 */
 	if (!before(tp->snd_nxt, TCP_SKB_CB(buff)->end_seq) && reinject != 1) {
-		int diff = old_factor - tcp_skb_pcount(skb) -
-			tcp_skb_pcount(buff);
-
-		if (diff)
-			tcp_adjust_pcount(sk, skb, diff);
-	}
-
-	/* Link BUFF into the send queue. */
-	skb_header_release(buff);
-	if (reinject == 1)
-		__skb_queue_after(&tcp_sk(sk)->mpcb->reinject_queue, skb, buff);
-	else
-		tcp_insert_write_queue_after(skb, buff, sk);
-
-	return 0;
-}
-
-int mptso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
-		   unsigned int mss_now, gfp_t gfp, int reinject)
-{
-	struct sk_buff *buff;
-	int nlen = skb->len - len, old_factor;
-	u8 flags;
-
-	/* All of a TSO frame must be composed of paged data.  */
-	if (skb->len != skb->data_len)
-		return mptcp_fragment(sk, skb, len, mss_now, reinject);
-
-	buff = sk_stream_alloc_skb(sk, 0, gfp);
-	if (unlikely(buff == NULL))
-		return -ENOMEM;
-
-	/* See below - if reinject == 1, the buff will be added to the reinject-
-	 * queue, which is currently not part of the memory-accounting.
-	 */
-	if (reinject != 1) {
-		sk->sk_wmem_queued += buff->truesize;
-		sk_mem_charge(sk, buff->truesize);
-	}
-	buff->truesize += nlen;
-	skb->truesize -= nlen;
-
-	/* Correct the sequence numbers. */
-	TCP_SKB_CB(buff)->seq = TCP_SKB_CB(skb)->seq + len;
-	TCP_SKB_CB(buff)->end_seq = TCP_SKB_CB(skb)->end_seq;
-	TCP_SKB_CB(skb)->end_seq = TCP_SKB_CB(buff)->seq;
-
-	/* PSH and FIN should only be set in the second packet. */
-	flags = TCP_SKB_CB(skb)->tcp_flags;
-	TCP_SKB_CB(skb)->tcp_flags = flags & ~(TCPHDR_FIN | TCPHDR_PSH);
-	TCP_SKB_CB(buff)->tcp_flags = flags;
-
-	flags = TCP_SKB_CB(skb)->mptcp_flags;
-	TCP_SKB_CB(skb)->mptcp_flags = flags & ~(MPTCPHDR_FIN);
-	TCP_SKB_CB(buff)->mptcp_flags = flags;
-
-	/* This packet was never sent out yet, so no SACK bits. */
-	TCP_SKB_CB(buff)->sacked = 0;
-
-	buff->ip_summed = CHECKSUM_PARTIAL;
-	skb->ip_summed = CHECKSUM_PARTIAL;
-	skb_split(skb, buff, len);
-
-	/* We lost the dss-option when creating buff - put it back! */
-	if (!is_meta_sk(sk))
-		memcpy(TCP_SKB_CB(buff)->dss, TCP_SKB_CB(skb)->dss, mptcp_dss_len);
-
-	old_factor = tcp_skb_pcount(skb);
-
-	/* Fix up tso_factor for both original and new SKB.  */
-	tcp_set_skb_tso_segs(sk, skb, mss_now);
-	tcp_set_skb_tso_segs(sk, buff, mss_now);
-
-	/* If this packet has been sent out already, we must
-	 * adjust the various packet counters.
-	 */
-	if (!before(tcp_sk(sk)->snd_nxt, TCP_SKB_CB(buff)->end_seq) && reinject != 1) {
 		int diff = old_factor - tcp_skb_pcount(skb) -
 			tcp_skb_pcount(buff);
 
@@ -1229,7 +1152,7 @@ retry:
 			 * If it is not possible to send the TSO segment on the
 			 * best subflow right now try to look for another subflow.
 			 * If there is no subflow available defer the segment to avoid
-			 * the call to mptso_fragment.
+			 * the call to mptcp_fragment.
 			 */
 			if (!push_one && !reinject && tcp_tso_should_defer(subsk, skb)) {
 				mpcb->noneligible |= mptcp_pi_to_flag(subtp->mptcp->path_index);
@@ -1246,7 +1169,7 @@ retry:
 						    nonagle);
 
 		if (skb->len > limit &&
-		    unlikely(mptso_fragment(meta_sk, skb, limit, mss_now, gfp, reinject)))
+		    unlikely(mptcp_fragment(meta_sk, skb, limit, mss_now, gfp, reinject)))
 			break;
 
 		subskb = mptcp_skb_entail(subsk, skb, reinject);
@@ -1965,7 +1888,7 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 					          TCP_NAGLE_OFF);
 
 	if (skb->len > limit &&
-	    unlikely(mptso_fragment(meta_sk, skb, limit, mss_now,
+	    unlikely(mptcp_fragment(meta_sk, skb, limit, mss_now,
 				    GFP_ATOMIC, 0)))
 		goto failed;
 
