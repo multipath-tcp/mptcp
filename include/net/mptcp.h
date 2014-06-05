@@ -774,7 +774,7 @@ int mptcp_handle_options(struct sock *sk, const struct tcphdr *th, struct sk_buf
 void __init mptcp_init(void);
 int mptcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len);
 int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
-		   unsigned int mss_now, int reinject);
+		   unsigned int mss_now, gfp_t gfp, int reinject);
 int mptso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 		   unsigned int mss_now, gfp_t gfp, int reinject);
 void mptcp_destroy_sock(struct sock *sk);
@@ -1397,7 +1397,7 @@ static inline int mptcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
 	return 0;
 }
 static inline int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
-				 unsigned int mss_now, int reinject)
+				 unsigned int mss_now, gfp_t gfp, int reinject)
 {
 	return 0;
 }

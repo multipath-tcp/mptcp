@@ -1118,7 +1118,7 @@ int tcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	u8 flags;
 
 	if (tcp_sk(sk)->mpc && mptcp_is_data_seq(skb))
-		mptcp_fragment(sk, skb, len, mss_now, 0);
+		mptcp_fragment(sk, skb, len, mss_now, gfp, 0);
 
 	if (WARN_ON(len > skb->len))
 		return -EINVAL;

@@ -757,7 +757,7 @@ static void mptcp_transmit_skb_failed(struct sock *sk, struct sk_buff *skb,
  * Remember, these are still headerless SKBs at this point.
  */
 int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
-		   unsigned int mss_now, int reinject)
+		   unsigned int mss_now, gfp_t gfp, int reinject)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *buff;
@@ -773,12 +773,12 @@ int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 		nsize = 0;
 
 	if (skb_cloned(skb)) {
-		if (pskb_expand_head(skb, 0, 0, GFP_ATOMIC))
+		if (pskb_expand_head(skb, 0, 0, gfp))
 			return -ENOMEM;
 	}
 
 	/* Get a new skb... force flag on. */
-	buff = sk_stream_alloc_skb(sk, nsize, GFP_ATOMIC);
+	buff = sk_stream_alloc_skb(sk, nsize, gfp);
 	if (buff == NULL)
 		return -ENOMEM; /* We'll just try again later. */
 
@@ -974,7 +974,8 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 		    skb->len > mss) {
 			seg_size = min(seg_size, mss);
 			TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_PSH;
-			if (mptcp_fragment(meta_sk, skb, seg_size, mss, 0))
+			if (mptcp_fragment(meta_sk, skb, seg_size, mss,
+					   GFP_ATOMIC, 0))
 				return -1;
 		} else if (!tcp_skb_pcount(skb)) {
 			tcp_set_skb_tso_segs(meta_sk, skb, mss);
