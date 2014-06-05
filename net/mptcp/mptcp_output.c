@@ -751,112 +751,52 @@ static void mptcp_transmit_skb_failed(struct sock *sk, struct sk_buff *skb,
 	}
 }
 
-/* Function to create two new TCP segments.  Shrinks the given segment
- * to the specified size and appends a new segment with the rest of the
- * packet to the list.  This won't be called frequently, I hope.
- * Remember, these are still headerless SKBs at this point.
+/* Fragment an skb and update the mptcp meta-data. Due to reinject, we
+ * might need to undo some operations done by tcp_fragment.
  */
-int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
-		   unsigned int mss_now, gfp_t gfp, int reinject)
+static int mptcp_fragment(struct sock *meta_sk, struct sk_buff *skb, u32 len,
+			  unsigned int mss_now, gfp_t gfp, int reinject)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
+	int ret, diff, old_factor;
 	struct sk_buff *buff;
-	int nsize, old_factor;
-	int nlen;
 	u8 flags;
 
-	if (WARN_ON(len > skb->len))
-		return -EINVAL;
+	if (skb_headlen(skb) < len)
+		diff = skb->len - len;
+	else
+		diff = skb->data_len;
+	old_factor = tcp_skb_pcount(skb);
 
-	nsize = skb_headlen(skb) - len;
-	if (nsize < 0)
-		nsize = 0;
+	ret = tcp_fragment(meta_sk, skb, len, mss_now, gfp);
+	if (ret)
+		return ret;
 
-	if (skb_cloned(skb)) {
-		if (pskb_expand_head(skb, 0, 0, gfp))
-			return -ENOMEM;
-	}
-
-	/* Get a new skb... force flag on. */
-	buff = sk_stream_alloc_skb(sk, nsize, gfp);
-	if (buff == NULL)
-		return -ENOMEM; /* We'll just try again later. */
-
-	/* See below - if reinject == 1, the buff will be added to the reinject-
-	 * queue, which is currently not part of the memory-accounting.
-	 */
-	if (reinject != 1) {
-		sk->sk_wmem_queued += buff->truesize;
-		sk_mem_charge(sk, buff->truesize);
-	}
-	nlen = skb->len - len - nsize;
-	buff->truesize += nlen;
-	skb->truesize -= nlen;
-
-	/* Correct the sequence numbers. */
-	TCP_SKB_CB(buff)->seq = TCP_SKB_CB(skb)->seq + len;
-	TCP_SKB_CB(buff)->end_seq = TCP_SKB_CB(skb)->end_seq;
-	TCP_SKB_CB(skb)->end_seq = TCP_SKB_CB(buff)->seq;
-
-	/* PSH and FIN should only be set in the second packet. */
-	flags = TCP_SKB_CB(skb)->tcp_flags;
-	TCP_SKB_CB(skb)->tcp_flags = flags & ~(TCPHDR_FIN | TCPHDR_PSH);
-	TCP_SKB_CB(buff)->tcp_flags = flags;
-	TCP_SKB_CB(buff)->sacked = TCP_SKB_CB(skb)->sacked;
+	buff = skb->next;
 
 	flags = TCP_SKB_CB(skb)->mptcp_flags;
 	TCP_SKB_CB(skb)->mptcp_flags = flags & ~(MPTCPHDR_FIN);
 	TCP_SKB_CB(buff)->mptcp_flags = flags;
 
-	if (!skb_shinfo(skb)->nr_frags && skb->ip_summed != CHECKSUM_PARTIAL) {
-		/* Copy and checksum data tail into the new buffer. */
-		buff->csum = csum_partial_copy_nocheck(skb->data + len,
-						       skb_put(buff, nsize),
-						       nsize, 0);
-
-		skb_trim(skb, len);
-
-		skb->csum = csum_block_sub(skb->csum, buff->csum, len);
-	} else {
-		skb->ip_summed = CHECKSUM_PARTIAL;
-		skb_split(skb, buff, len);
-	}
-
-	/* We lost the dss-option when creating buff - put it back! */
-	if (!is_meta_sk(sk))
-		memcpy(TCP_SKB_CB(buff)->dss, TCP_SKB_CB(skb)->dss, mptcp_dss_len);
-
-	buff->ip_summed = skb->ip_summed;
-
-	/* Looks stupid, but our code really uses when of
-	 * skbs, which it never sent before. --ANK
+	/* If reinject == 1, the buff will be added to the reinject
+	 * queue, which is currently not part of memory accounting. So
+	 * undo the changes done by tcp_fragment and update the
+	 * reinject queue. Also, undo changes to the packet counters.
 	 */
-	TCP_SKB_CB(buff)->when = TCP_SKB_CB(skb)->when;
-	buff->tstamp = skb->tstamp;
+	if (reinject == 1) {
+		int undo = buff->truesize - diff;
+		meta_sk->sk_wmem_queued -= undo;
+		sk_mem_uncharge(meta_sk, undo);
 
-	old_factor = tcp_skb_pcount(skb);
+		tcp_sk(meta_sk)->mpcb->reinject_queue.qlen++;
+		meta_sk->sk_write_queue.qlen--;
 
-	/* Fix up tso_factor for both original and new SKB.  */
-	tcp_set_skb_tso_segs(sk, skb, mss_now);
-	tcp_set_skb_tso_segs(sk, buff, mss_now);
-
-	/* If this packet has been sent out already, we must
-	 * adjust the various packet counters.
-	 */
-	if (!before(tp->snd_nxt, TCP_SKB_CB(buff)->end_seq) && reinject != 1) {
-		int diff = old_factor - tcp_skb_pcount(skb) -
-			tcp_skb_pcount(buff);
-
-		if (diff)
-			tcp_adjust_pcount(sk, skb, diff);
+		if (!before(tcp_sk(meta_sk)->snd_nxt, TCP_SKB_CB(buff)->end_seq)) {
+			undo = old_factor - tcp_skb_pcount(skb) -
+				tcp_skb_pcount(buff);
+			if (undo)
+				tcp_adjust_pcount(meta_sk, skb, -undo);
+		}
 	}
-
-	/* Link BUFF into the send queue. */
-	skb_header_release(buff);
-	if (reinject == 1)
-		__skb_queue_after(&tcp_sk(sk)->mpcb->reinject_queue, skb, buff);
-	else
-		tcp_insert_write_queue_after(skb, buff, sk);
 
 	return 0;
 }

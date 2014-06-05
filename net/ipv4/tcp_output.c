@@ -1117,9 +1117,6 @@ int tcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	int nlen;
 	u8 flags;
 
-	if (tcp_sk(sk)->mpc && mptcp_is_data_seq(skb))
-		mptcp_fragment(sk, skb, len, mss_now, gfp, 0);
-
 	if (WARN_ON(len > skb->len))
 		return -EINVAL;
 
@@ -1657,9 +1654,6 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	struct sk_buff *buff;
 	int nlen = skb->len - len;
 	u8 flags;
-
-	if (tcp_sk(sk)->mpc && mptcp_is_data_seq(skb))
-		mptcp_fragment(sk, skb, len, mss_now, gfp, 0);
 
 	/* All of a TSO frame must be composed of paged data.  */
 	if (skb->len != skb->data_len)
