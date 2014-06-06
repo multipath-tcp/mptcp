@@ -222,6 +222,8 @@ struct mptcp_pm_ops {
 	void (*add_raddr)(struct mptcp_cb *mpcb, const union inet_addr *addr, 
 			  sa_family_t family, __be16 port, u8 id);
 	void (*rem_raddr)(struct mptcp_cb *mpcb, u8 rem_id);
+	void (*init_subsocket_v4)(struct sock *sk, struct in_addr addr);
+	void (*init_subsocket_v6)(struct sock *sk, struct in6_addr addr);
 
 	char 		name[MPTCP_PM_NAME_MAX];
 	struct module 	*owner;

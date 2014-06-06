@@ -13,6 +13,7 @@ obj-$(CONFIG_TCP_CONG_OLIA) += mptcp_olia.o
 obj-$(CONFIG_TCP_CONG_WVEGAS) += mptcp_wvegas.o
 obj-$(CONFIG_MPTCP_FULLMESH) += mptcp_fullmesh.o
 obj-$(CONFIG_MPTCP_NDIFFPORTS) += mptcp_ndiffports.o
+obj-$(CONFIG_MPTCP_BINDER) += mptcp_binder.o
 
 mptcp-$(subst m,y,$(CONFIG_IPV6)) += mptcp_ipv6.o
 
