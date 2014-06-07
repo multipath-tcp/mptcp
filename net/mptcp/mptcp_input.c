@@ -383,32 +383,36 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb, struct sk_buff *next,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
+	u32 inc = 0;
+
+	/* If skb is the end of this mapping (end is always at mapping-boundary
+	 * thanks to the splitting/trimming), then we need to increase
+	 * data-end-seq by 1 if this here is a data-fin.
+	 *
+	 * We need to do -1 because end_seq includes the subflow-FIN.
+	 */
+	if (tp->mptcp->map_data_fin &&
+	    (tcb->end_seq - (tcp_hdr(skb)->fin ? 1 : 0)) ==
+	    (tp->mptcp->map_subseq + tp->mptcp->map_data_len)) {
+		inc = 1;
+
+		/* We manually set the fin-flag if it is a data-fin. For easy
+		 * processing in tcp_recvmsg.
+		 */
+		tcp_hdr(skb)->fin = 1;
+	} else {
+		/* We may have a subflow-fin with data but without data-fin */
+		tcp_hdr(skb)->fin = 0;
+	}
+
 	/* Adapt data-seq's to the packet itself. We kinda transform the
 	 * dss-mapping to a per-packet granularity. This is necessary to
 	 * correctly handle overlapping mappings coming from different
 	 * subflows. Otherwise it would be a complete mess.
 	 */
 	tcb->seq = ((u32)tp->mptcp->map_data_seq) + tcb->seq - tp->mptcp->map_subseq;
-	tcb->end_seq = tcb->seq + skb->len;
+	tcb->end_seq = tcb->seq + skb->len + inc;
 
-	/* If cur is the last one in the rcv-queue (or the last one for this
-	 * mapping), and data_fin is enqueued, the end_data_seq is +1.
-	 */
-	if (skb_queue_is_last(&sk->sk_receive_queue, skb) ||
-	    after(TCP_SKB_CB(next)->end_seq, tp->mptcp->map_subseq + tp->mptcp->map_data_len)) {
-		tcb->end_seq += tp->mptcp->map_data_fin;
-
-		/* We manually set the fin-flag if it is a data-fin. For easy
-		 * processing in tcp_recvmsg.
-		 */
-		if (mptcp_is_data_fin2(skb, tp))
-			tcp_hdr(skb)->fin = 1;
-		else
-			tcp_hdr(skb)->fin = 0;
-	} else {
-		/* We may have a subflow-fin with data but without data-fin */
-		tcp_hdr(skb)->fin = 0;
-	}
 }
 
 /**
