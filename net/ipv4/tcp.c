@@ -644,8 +644,8 @@ static bool tcp_should_autocork(struct sock *sk, struct sk_buff *skb,
 	       atomic_read(&sk->sk_wmem_alloc) > skb->truesize;
 }
 
-void tcp_push(struct sock *sk, int flags, int mss_now, int nonagle,
-	      int size_goal)
+static void tcp_push(struct sock *sk, int flags, int mss_now,
+		     int nonagle, int size_goal)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *skb;

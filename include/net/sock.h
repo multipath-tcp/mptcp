@@ -900,10 +900,8 @@ void sk_clear_memalloc(struct sock *sk);
 int sk_wait_data(struct sock *sk, long *timeo);
 
 /* START - needed for MPTCP */
-extern void sock_def_error_report(struct sock *sk);
-extern struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
-				  int family);
-extern void sock_lock_init(struct sock *sk);
+struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority, int family);
+void sock_lock_init(struct sock *sk);
 
 extern struct lock_class_key af_callback_keys[AF_MAX];
 extern char *const af_family_clock_key_strings[AF_MAX+1];

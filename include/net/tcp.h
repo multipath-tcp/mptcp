@@ -381,8 +381,6 @@ extern const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops;
 struct mptcp_options_received;
 
 int tcp_close_state(struct sock *sk);
-void tcp_push(struct sock *sk, int flags, int mss_now, int nonagle, int
-	      size_goal);
 void tcp_minshall_update(struct tcp_sock *tp, unsigned int mss_now,
 			 const struct sk_buff *skb);
 int tcp_xmit_probe_skb(struct sock *sk, int urgent);
@@ -452,7 +450,6 @@ struct sock *tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 				  struct dst_entry *dst);
 void tcp_v6_reqsk_destructor(struct request_sock *req);
 
-void sock_valbool_flag(struct sock *sk, int bit, int valbool);
 unsigned int tcp_xmit_size_goal(struct sock *sk, u32 mss_now,
 				       int large_allowed);
 u32 tcp_tso_acked(struct sock *sk, struct sk_buff *skb);

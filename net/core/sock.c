@@ -600,7 +600,7 @@ out:
 	return ret;
 }
 
-void sock_valbool_flag(struct sock *sk, int bit, int valbool)
+static inline void sock_valbool_flag(struct sock *sk, int bit, int valbool)
 {
 	if (valbool)
 		sock_set_flag(sk, bit);
@@ -2182,7 +2182,7 @@ static void sock_def_wakeup(struct sock *sk)
 	rcu_read_unlock();
 }
 
-void sock_def_error_report(struct sock *sk)
+static void sock_def_error_report(struct sock *sk)
 {
 	struct socket_wq *wq;
 
