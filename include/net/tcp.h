@@ -1214,10 +1214,15 @@ static inline int tcp_win_from_space(int space)
 		space - (space>>sysctl_tcp_adv_win_scale);
 }
 
+static inline bool mptcp(const struct tcp_sock *tp)
+{
+	return tp->mpc;
+}
+
 /* Note: caller must be prepared to deal with negative returns */ 
 static inline int tcp_space(const struct sock *sk)
 {
-	if (tcp_sk(sk)->mpc)
+	if (mptcp(tcp_sk(sk)))
 		sk = tcp_sk(sk)->meta_sk;
 
 	return tcp_win_from_space(sk->sk_rcvbuf -
@@ -1226,7 +1231,7 @@ static inline int tcp_space(const struct sock *sk)
 
 static inline int tcp_full_space(const struct sock *sk)
 {
-	if (tcp_sk(sk)->mpc)
+	if (mptcp(tcp_sk(sk)))
 		sk = tcp_sk(sk)->meta_sk;
 
 	return tcp_win_from_space(sk->sk_rcvbuf); 

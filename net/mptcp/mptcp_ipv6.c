@@ -679,7 +679,7 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 
 error:
 	/* May happen if mptcp_add_sock fails first */
-	if (!tp->mpc) {
+	if (!mptcp(tp)) {
 		tcp_close(sk, 0);
 	} else {
 		local_bh_disable();

@@ -1332,8 +1332,7 @@ static int mptcp_sub_send_fin(struct sock *sk)
 
 void mptcp_sub_close_wq(struct work_struct *work)
 {
-	struct mptcp_tcp_sock *mptcp = container_of(work, struct mptcp_tcp_sock, work.work);
-	struct tcp_sock *tp = mptcp->tp;
+	struct tcp_sock *tp = container_of(work, struct mptcp_tcp_sock, work.work)->tp;
 	struct sock *sk = (struct sock *)tp;
 	struct sock *meta_sk = mptcp_meta_sk(sk);
 
@@ -1344,7 +1343,7 @@ void mptcp_sub_close_wq(struct work_struct *work)
 		goto exit;
 
 	/* We come from tcp_disconnect. We are sure that meta_sk is set */
-	if (!tp->mpc) {
+	if (!mptcp(tp)) {
 		tp->closing = 1;
 		sock_rps_reset_flow(sk);
 		tcp_close(sk, 0);
@@ -1399,7 +1398,7 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 			if (sock_flag(sk, SOCK_DEAD))
 				return;
 
-			if (!tp->mpc) {
+			if (!mptcp(tp)) {
 				tp->closing = 1;
 				sock_rps_reset_flow(sk);
 				tcp_close(sk, 0);
@@ -1705,7 +1704,7 @@ int mptcp_doit(struct sock *sk)
 		return 0;
 
 	/* Socket may already be established (e.g., called from tcp_recvmsg) */
-	if (tcp_sk(sk)->mpc || tcp_sk(sk)->request_mptcp)
+	if (mptcp(tcp_sk(sk)) || tcp_sk(sk)->request_mptcp)
 		return 1;
 
 	/* Don't do mptcp over loopback */
@@ -2063,7 +2062,7 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 			struct sock *meta_sk = (struct sock *)meta_tp;
 			struct inet_sock *isk = inet_sk(meta_sk);
 
-			if (!meta_tp->mpc || !net_eq(net, sock_net(meta_sk)))
+			if (!mptcp(meta_tp) || !net_eq(net, sock_net(meta_sk)))
 				continue;
 
 			seq_printf(seq, "%4d: %04X %04X ", n++,

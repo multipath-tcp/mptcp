@@ -697,7 +697,7 @@ duno:
 
 			bh_lock_sock(meta_sk);
 
-			if (!meta_tp->mpc || !is_meta_sk(meta_sk) ||
+			if (!mptcp(meta_tp) || !is_meta_sk(meta_sk) ||
 			    mpcb->infinite_mapping_snd ||
 			    mpcb->infinite_mapping_rcv ||
 			    mpcb->send_infinite_mapping)

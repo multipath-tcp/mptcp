@@ -732,7 +732,7 @@ ssize_t tcp_splice_read(struct socket *sock, loff_t *ppos,
 	sock_rps_record_flow(sk);
 
 #ifdef CONFIG_MPTCP
-	if (tcp_sk(sk)->mpc) {
+	if (mptcp(tcp_sk(sk))) {
 		struct sock *sk_it;
 		mptcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it)
 			sock_rps_record_flow(sk_it);
@@ -883,7 +883,7 @@ static int tcp_send_mss(struct sock *sk, int *size_goal, int flags)
 {
 	int mss_now;
 
-	if (tcp_sk(sk)->mpc) {
+	if (mptcp(tcp_sk(sk))) {
 		mss_now = mptcp_current_mss(sk);
 		*size_goal = mptcp_xmit_size_goal(sk, mss_now, !(flags & MSG_OOB));
 	} else {
@@ -913,7 +913,7 @@ static ssize_t do_tcp_sendpages(struct sock *sk, struct page *page, int offset,
 			goto out_err;
 	}
 
-	if (tp->mpc) {
+	if (mptcp(tp)) {
 		struct sock *sk_it = sk;
 
 		/* We must check this with socket-lock hold because we iterate
@@ -1038,7 +1038,7 @@ int tcp_sendpage(struct sock *sk, struct page *page, int offset,
 	ssize_t res;
 
 	/* If MPTCP is enabled, we check it later after establishment */
-	if (!tcp_sk(sk)->mpc && (!(sk->sk_route_caps & NETIF_F_SG) ||
+	if (!mptcp(tcp_sk(sk)) && (!(sk->sk_route_caps & NETIF_F_SG) ||
 	    !(sk->sk_route_caps & NETIF_F_ALL_CSUM)))
 		return sock_no_sendpage(sk->sk_socket, page, offset, size,
 					flags);
@@ -1055,7 +1055,7 @@ static inline int select_size(const struct sock *sk, bool sg)
 	const struct tcp_sock *tp = tcp_sk(sk);
 	int tmp = tp->mss_cache;
 
-	if (tp->mpc)
+	if (mptcp(tp))
 		return mptcp_select_size(sk, sg);
 
 	if (sg) {
@@ -1145,7 +1145,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			goto do_error;
 	}
 
-	if (tp->mpc) {
+	if (mptcp(tp)) {
 		struct sock *sk_it = sk;
 		mptcp_for_each_sk(tp->mpcb, sk_it)
 			sock_rps_record_flow(sk_it);
@@ -1178,7 +1178,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	if (sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN))
 		goto out_err;
 
-	if (tp->mpc)
+	if (mptcp(tp))
 		sg = mptcp_can_sg(sk);
 	else
 		sg = !!(sk->sk_route_caps & NETIF_F_SG);
@@ -1239,8 +1239,8 @@ new_segment:
 				 * In case of mptcp, hw-csum's will be handled
 				 * later in mptcp_write_xmit.
 				 */
-				if (((tp->mpc && !tp->mpcb->dss_csum) || !tp->mpc) &&
-				    (tp->mpc || sk->sk_route_caps & NETIF_F_ALL_CSUM))
+				if (((mptcp(tp) && !tp->mpcb->dss_csum) || !mptcp(tp)) &&
+				    (mptcp(tp) || sk->sk_route_caps & NETIF_F_ALL_CSUM))
 					skb->ip_summed = CHECKSUM_PARTIAL;
 
 				skb_entail(sk, skb);
@@ -1679,7 +1679,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	lock_sock(sk);
 
 #ifdef CONFIG_MPTCP
-	if (tp->mpc) {
+	if (mptcp(tp)) {
 		struct sock *sk_it;
 		mptcp_for_each_sk(tp->mpcb, sk_it)
 			sock_rps_record_flow(sk_it);

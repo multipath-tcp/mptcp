@@ -2073,7 +2073,7 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	if (tp->mpc) {
+	if (mptcp(tp)) {
 		u8 hash_mac_check[20];
 		struct mptcp_cb *mpcb = tp->mpcb;
 
@@ -2130,7 +2130,7 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 			mptcp_hash_remove(tp);
 	}
 
-	if (tp->mpc)
+	if (mptcp(tp))
 		tp->mptcp->rcv_isn = TCP_SKB_CB(skb)->seq;
 
 	return 0;

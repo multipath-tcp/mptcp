@@ -354,7 +354,7 @@ static void tcp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 	}
 
 	tp = tcp_sk(sk);
-	if (tp->mpc)
+	if (mptcp(tp))
 		meta_sk = mptcp_meta_sk(sk);
 	else
 		meta_sk = sk;
@@ -406,7 +406,7 @@ static void tcp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 			if (!test_and_set_bit(TCP_MTU_REDUCED_DEFERRED,
 					   &tp->tsq_flags))
 				sock_hold(sk);
-			if (tp->mpc)
+			if (mptcp(tp))
 				mptcp_tsq_flags(sk);
 		}
 		goto out;
@@ -966,7 +966,7 @@ struct sock *tcp_v6_hnd_req(struct sock *sk, struct sk_buff *skb)
 			/* Don't lock again the meta-sk. It has been locked
 			 * before mptcp_v6_do_rcv.
 			 */
-			if (tcp_sk(nsk)->mpc && !is_meta_sk(sk))
+			if (mptcp(tcp_sk(nsk)) && !is_meta_sk(sk))
 				bh_lock_sock(mptcp_meta_sk(nsk));
 			bh_lock_sock(nsk);
 
@@ -1606,7 +1606,7 @@ process:
 	sk_mark_napi_id(sk, skb);
 	skb->dev = NULL;
 
-	if (tcp_sk(sk)->mpc) {
+	if (mptcp(tcp_sk(sk))) {
 		meta_sk = mptcp_meta_sk(sk);
 
 		bh_lock_sock_nested(meta_sk);

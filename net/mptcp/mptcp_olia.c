@@ -194,7 +194,7 @@ static void mptcp_olia_init(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_olia *ca = inet_csk_ca(sk);
 
-	if (tp->mpc) {
+	if (mptcp(tp)) {
 		ca->mptcp_loss1 = tp->snd_una;
 		ca->mptcp_loss2 = tp->snd_una;
 		ca->mptcp_loss3 = tp->snd_una;
@@ -207,7 +207,7 @@ static void mptcp_olia_init(struct sock *sk)
 /* updating inter-loss distance and ssthresh */
 static void mptcp_olia_set_state(struct sock *sk, u8 new_state)
 {
-	if (!tcp_sk(sk)->mpc)
+	if (!mptcp(tcp_sk(sk)))
 		return;
 
 	if (new_state == TCP_CA_Loss ||
@@ -232,7 +232,7 @@ static void mptcp_olia_cong_avoid(struct sock *sk, u32 ack, u32 acked, u32 in_fl
 
 	u64 inc_num, inc_den, rate, cwnd_scaled;
 
-	if (!tp->mpc) {
+	if (!mptcp(tp)) {
 		tcp_reno_cong_avoid(sk, ack, acked, in_flight);
 		return;
 	}

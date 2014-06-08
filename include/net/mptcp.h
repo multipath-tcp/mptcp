@@ -939,12 +939,12 @@ static inline int is_meta_tp(const struct tcp_sock *tp)
 static inline int is_meta_sk(const struct sock *sk)
 {
 	return sk->sk_type == SOCK_STREAM  && sk->sk_protocol == IPPROTO_TCP &&
-	       tcp_sk(sk)->mpc && mptcp_meta_sk(sk) == sk;
+	       mptcp(tcp_sk(sk)) && mptcp_meta_sk(sk) == sk;
 }
 
 static inline int is_master_tp(const struct tcp_sock *tp)
 {
-	return !tp->mpc || (!tp->mptcp->slave_sk && !is_meta_tp(tp));
+	return !mptcp(tp) || (!tp->mptcp->slave_sk && !is_meta_tp(tp));
 }
 
 static inline void mptcp_hash_request_remove(struct request_sock *req)

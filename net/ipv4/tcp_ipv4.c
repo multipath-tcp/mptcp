@@ -361,7 +361,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 	}
 
 	tp = tcp_sk(sk);
-	if (tp->mpc)
+	if (mptcp(tp))
 		meta_sk = mptcp_meta_sk(sk);
 	else
 		meta_sk = sk;
@@ -423,7 +423,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 			} else {
 				if (!test_and_set_bit(TCP_MTU_REDUCED_DEFERRED, &tp->tsq_flags))
 					sock_hold(sk);
-				if (tp->mpc)
+				if (mptcp(tp))
 					mptcp_tsq_flags(sk);
 			}
 			goto out;
@@ -1799,7 +1799,7 @@ struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb)
 			/* Don't lock again the meta-sk. It has been locked
 			 * before mptcp_v4_do_rcv.
 			 */
-			if (tcp_sk(nsk)->mpc && !is_meta_sk(sk))
+			if (mptcp(tcp_sk(nsk)) && !is_meta_sk(sk))
 				bh_lock_sock(mptcp_meta_sk(nsk));
 			bh_lock_sock(nsk);
 
@@ -1995,7 +1995,7 @@ bool tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 	} else if (skb_queue_len(&tp->ucopy.prequeue) == 1) {
 		wake_up_interruptible_sync_poll(sk_sleep(sk),
 					   POLLIN | POLLRDNORM | POLLRDBAND);
-		if (!inet_csk_ack_scheduled(sk) && !tp->mpc)
+		if (!inet_csk_ack_scheduled(sk) && !mptcp(tp))
 			inet_csk_reset_xmit_timer(sk, ICSK_TIME_DACK,
 						  (3 * tcp_rto_min(sk)) / 4,
 						  TCP_RTO_MAX);
@@ -2096,7 +2096,7 @@ process:
 	sk_mark_napi_id(sk, skb);
 	skb->dev = NULL;
 
-	if (tcp_sk(sk)->mpc) {
+	if (mptcp(tcp_sk(sk))) {
 		meta_sk = mptcp_meta_sk(sk);
 
 		bh_lock_sock_nested(meta_sk);
@@ -2276,7 +2276,7 @@ void tcp_v4_destroy_sock(struct sock *sk)
 
 	tcp_cleanup_congestion_control(sk);
 
-	if (tp->mpc)
+	if (mptcp(tp))
 		mptcp_destroy_sock(sk);
 	if (tp->inside_tk_table)
 		mptcp_hash_remove(tp);

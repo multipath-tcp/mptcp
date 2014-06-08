@@ -276,7 +276,7 @@ u16 tcp_select_window(struct sock *sk)
 	 * have to allow this. Otherwise we may announce a window too large
 	 * for the current meta-level sk_rcvbuf.
 	 */
-	u32 cur_win = tcp_receive_window(tp->mpc ? tcp_sk(mptcp_meta_sk(sk)) : tp);
+	u32 cur_win = tcp_receive_window(mptcp(tp) ? tcp_sk(mptcp_meta_sk(sk)) : tp);
 	u32 new_win = tp->__select_window(sk);
 
 	/* Never shrink the offered window */
@@ -552,7 +552,7 @@ static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		if (unlikely(!(OPTION_TS & opts->options)))
 			remaining -= TCPOLEN_SACKPERM_ALIGNED;
 	}
-	if (tp->request_mptcp || tp->mpc)
+	if (tp->request_mptcp || mptcp(tp))
 		mptcp_syn_options(sk, opts, &remaining);
 
 	if (fastopen && fastopen->cookie.len >= 0) {
@@ -663,7 +663,7 @@ static unsigned int tcp_established_options(struct sock *sk, struct sk_buff *skb
 		opts->tsecr = tp->rx_opt.ts_recent;
 		size += TCPOLEN_TSTAMP_ALIGNED;
 	}
-	if (tp->mpc)
+	if (mptcp(tp))
 		mptcp_established_options(sk, skb, opts, &size);
 
 	eff_sacks = tp->rx_opt.num_sacks + tp->rx_opt.dsack;
@@ -737,15 +737,15 @@ static void tcp_tasklet_func(unsigned long data)
 		list_del(&tp->tsq_node);
 
 		sk = (struct sock *)tp;
-		meta_sk = tp->mpc ? mptcp_meta_sk(sk) : sk;
+		meta_sk = mptcp(tp) ? mptcp_meta_sk(sk) : sk;
 		bh_lock_sock(meta_sk);
 
 		if (!sock_owned_by_user(meta_sk)) {
 			tcp_tsq_handler(sk);
-			if (tp->mpc)
+			if (mptcp(tp))
 				tcp_tsq_handler(meta_sk);
 		} else {
-			if (tp->mpc && sk->sk_state == TCP_CLOSE)
+			if (mptcp(tp) && sk->sk_state == TCP_CLOSE)
 				goto exit;
 
 			/* defer the work to tcp_release_cb() */
@@ -755,7 +755,7 @@ static void tcp_tasklet_func(unsigned long data)
 			 * subflow as we don't know if the limitation happened
 			 * while inside mptcp_write_xmit or during tcp_write_xmit.
 			 */
-			if (tp->mpc) {
+			if (mptcp(tp)) {
 				set_bit(TCP_TSQ_DEFERRED, &tcp_sk(meta_sk)->tsq_flags);
 				mptcp_tsq_flags(sk);
 			}
@@ -1240,7 +1240,7 @@ void __pskb_trim_head(struct sk_buff *skb, int len)
 /* Remove acked data from a packet in the transmit queue. */
 int tcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
 {
-	if (tcp_sk(sk)->mpc && !is_meta_sk(sk) && mptcp_is_data_seq(skb))
+	if (mptcp(tcp_sk(sk)) && !is_meta_sk(sk) && mptcp_is_data_seq(skb))
 		return mptcp_trim_head(sk, skb, len);
 
 	if (skb_unclone(skb, GFP_ATOMIC))
@@ -1265,7 +1265,7 @@ int tcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
 	 * Anyway, our MPTCP-option has been trimmed above - we lost it here.
 	 * Only remove the SEQ if the call does not come from a meta retransmit.
 	 */
-	if (tcp_sk(sk)->mpc && !is_meta_sk(sk))
+	if (mptcp(tcp_sk(sk)) && !is_meta_sk(sk))
 		TCP_SKB_CB(skb)->mptcp_flags &= ~MPTCPHDR_SEQ;
 #endif
 
@@ -1491,10 +1491,10 @@ unsigned int tcp_mss_split_point(const struct sock *sk,
 				 int nonagle)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
-	const struct sock *meta_sk = tp->mpc ? mptcp_meta_sk(sk) : sk;
+	const struct sock *meta_sk = mptcp(tp) ? mptcp_meta_sk(sk) : sk;
 	u32 partial, needed, window, max_len;
 
-	if (!tp->mpc)
+	if (!mptcp(tp))
 		window = tcp_wnd_end(tp) - TCP_SKB_CB(skb)->seq;
 	else
 		/* We need to evaluate the available space in the sending window
@@ -1610,7 +1610,7 @@ static unsigned int tcp_snd_test(const struct sock *sk, struct sk_buff *skb,
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int cwnd_quota;
-	const struct sock *meta_sk = tp->mpc ? mptcp_meta_sk(sk) : sk;
+	const struct sock *meta_sk = mptcp(tp) ? mptcp_meta_sk(sk) : sk;
 	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
 	tcp_init_tso_segs(meta_sk, skb, cur_mss);
@@ -1630,7 +1630,7 @@ bool tcp_may_send_now(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *skb;
-	const struct sock *meta_sk = tp->mpc ? mptcp_meta_sk(sk) : sk;
+	const struct sock *meta_sk = mptcp(tp) ? mptcp_meta_sk(sk) : sk;
 	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
 	skb = tcp_send_head(meta_sk);
@@ -1703,7 +1703,7 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 bool tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *meta_sk = tp->mpc ? mptcp_meta_sk(sk) : sk;
+	struct sock *meta_sk = mptcp(tp) ? mptcp_meta_sk(sk) : sk;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	const struct inet_connection_sock *icsk = inet_csk(sk);
 	u32 send_win, cong_win, limit, in_flight;
@@ -1724,7 +1724,7 @@ bool tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb)
 
 	BUG_ON(tcp_skb_pcount(skb) <= 1 || (tp->snd_cwnd <= in_flight));
 
-	if (!tp->mpc)
+	if (!mptcp(tp))
 		send_win = tcp_wnd_end(tp) - TCP_SKB_CB(skb)->seq;
 	else
 		/* We need to evaluate the available space in the sending window
@@ -2393,7 +2393,7 @@ static void tcp_retrans_try_collapse(struct sock *sk, struct sk_buff *to,
 		return;
 
 	/* Currently not supported for MPTCP - but it should be possible */
-	if (tp->mpc)
+	if (mptcp(tp))
 		return;
 
 	tcp_for_write_queue_from_safe(skb, tmp, sk) {
