@@ -1244,6 +1244,7 @@ bool mptcp_prune_ofo_queue(struct sock *sk);
 
 static inline void set_mpc(struct tcp_sock *tp)
 {
+	static_key_slow_inc(&mptcp_static_key);
 	tp->mpc	= 1;
 
 	tp->__select_window		= __mptcp_select_window;

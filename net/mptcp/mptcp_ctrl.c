@@ -69,6 +69,9 @@ int sysctl_mptcp_syn_retries __read_mostly = 3;
 
 bool mptcp_init_failed __read_mostly;
 
+struct static_key mptcp_static_key = STATIC_KEY_INIT_FALSE;
+EXPORT_SYMBOL(mptcp_static_key);
+
 static int proc_mptcp_path_manager(ctl_table *ctl, int write,
 				   void __user *buffer, size_t *lenp,
 				   loff_t *ppos)
@@ -472,6 +475,13 @@ static void mptcp_sock_destruct(struct sock *sk)
 
 		mptcp_debug("%s destroying meta-sk\n", __func__);
 	}
+
+	WARN_ON(!static_key_false(&mptcp_static_key));
+	/* Must be the last call, because is_meta_sk() above still needs the
+	 * static key
+	 */
+	static_key_slow_dec(&mptcp_static_key);
+
 }
 
 void mptcp_destroy_sock(struct sock *sk)
@@ -962,7 +972,6 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	mpcb->meta_sk = meta_sk;
 	mpcb->master_sk = master_sk;
 
-	set_mpc(meta_tp);
 	meta_tp->mptcp->attached = 0;
 	meta_tp->was_meta_sk = 0;
 
@@ -1001,11 +1010,11 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 		kmem_cache_free(mptcp_sock_cache, meta_tp->mptcp);
 		kmem_cache_free(mptcp_cb_cache, mpcb);
 		sk_free(master_sk);
-		reset_mpc(meta_tp);
 		return -ENOMEM;
 	}
 
 	/* Redefine function-pointers as the meta-sk is now fully ready */
+	set_mpc(meta_tp);
 	set_meta_funcs(meta_tp);
 	meta_sk->sk_backlog_rcv = mptcp_backlog_rcv;
 	meta_sk->sk_destruct = mptcp_sock_destruct;
