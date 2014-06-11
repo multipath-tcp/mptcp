@@ -1214,11 +1214,18 @@ static inline int tcp_win_from_space(int space)
 		space - (space>>sysctl_tcp_adv_win_scale);
 }
 
+#ifdef CONFIG_MPTCP
 extern struct static_key mptcp_static_key;
 static inline bool mptcp(const struct tcp_sock *tp)
 {
 	return static_key_false(&mptcp_static_key) && tp->mpc;
 }
+#else
+static inline bool mptcp(const struct tcp_sock *tp)
+{
+	return 0;
+}
+#endif
 
 /* Note: caller must be prepared to deal with negative returns */ 
 static inline int tcp_space(const struct sock *sk)
