@@ -372,9 +372,6 @@ extern struct proto tcp_prot;
 #define TCP_ADD_STATS(net, field, val)	SNMP_ADD_STATS((net)->mib.tcp_statistics, field, val)
 
 /**** START - Exports needed for MPTCP ****/
-extern const struct inet_connection_sock_af_ops ipv4_specific;
-extern const struct inet_connection_sock_af_ops ipv6_specific;
-extern const struct inet_connection_sock_af_ops ipv6_mapped;
 extern const struct tcp_request_sock_ops tcp_request_sock_ipv4_ops;
 extern const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops;
 
@@ -458,6 +455,7 @@ void skb_clone_fraglist(struct sk_buff *skb);
 void copy_skb_header(struct sk_buff *new, const struct sk_buff *old);
 
 void inet_twsk_free(struct inet_timewait_sock *tw);
+int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb);
 /* These states need RST on ABORT according to RFC793 */
 static inline bool tcp_need_reset(int state)
 {

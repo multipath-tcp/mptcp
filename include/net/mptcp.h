@@ -819,6 +819,11 @@ void mptcp_get_default_path_manager(char *name);
 int mptcp_set_default_path_manager(const char *name);
 extern struct mptcp_pm_ops mptcp_pm_default;
 
+static inline int is_mptcp_enabled(void)
+{
+	return sysctl_mptcp_enabled && !mptcp_init_failed;
+}
+
 static inline
 struct mptcp_request_sock *mptcp_rsk(const struct request_sock *req)
 {

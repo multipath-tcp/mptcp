@@ -690,6 +690,45 @@ error:
 }
 EXPORT_SYMBOL(mptcp_init6_subsockets);
 
+const struct inet_connection_sock_af_ops mptcp_v6_specific = {
+	.queue_xmit	   = inet6_csk_xmit,
+	.send_check	   = tcp_v6_send_check,
+	.rebuild_header	   = inet6_sk_rebuild_header,
+	.sk_rx_dst_set	   = inet6_sk_rx_dst_set,
+	.conn_request	   = tcp_v6_conn_request,
+	.syn_recv_sock	   = tcp_v6_syn_recv_sock,
+	.net_header_len	   = sizeof(struct ipv6hdr),
+	.net_frag_header_len = sizeof(struct frag_hdr),
+	.setsockopt	   = ipv6_setsockopt,
+	.getsockopt	   = ipv6_getsockopt,
+	.addr2sockaddr	   = inet6_csk_addr2sockaddr,
+	.sockaddr_len	   = sizeof(struct sockaddr_in6),
+	.bind_conflict	   = inet6_csk_bind_conflict,
+#ifdef CONFIG_COMPAT
+	.compat_setsockopt = compat_ipv6_setsockopt,
+	.compat_getsockopt = compat_ipv6_getsockopt,
+#endif
+};
+
+const struct inet_connection_sock_af_ops mptcp_v6_mapped = {
+	.queue_xmit	   = ip_queue_xmit,
+	.send_check	   = tcp_v4_send_check,
+	.rebuild_header	   = inet_sk_rebuild_header,
+	.sk_rx_dst_set	   = inet_sk_rx_dst_set,
+	.conn_request	   = tcp_v6_conn_request,
+	.syn_recv_sock	   = tcp_v6_syn_recv_sock,
+	.net_header_len	   = sizeof(struct iphdr),
+	.setsockopt	   = ipv6_setsockopt,
+	.getsockopt	   = ipv6_getsockopt,
+	.addr2sockaddr	   = inet6_csk_addr2sockaddr,
+	.sockaddr_len	   = sizeof(struct sockaddr_in6),
+	.bind_conflict	   = inet6_csk_bind_conflict,
+#ifdef CONFIG_COMPAT
+	.compat_setsockopt = compat_ipv6_setsockopt,
+	.compat_getsockopt = compat_ipv6_getsockopt,
+#endif
+};
+
 int mptcp_pm_v6_init(void)
 {
 	int ret = 0;

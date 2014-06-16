@@ -891,7 +891,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	}
 
 #if IS_ENABLED(CONFIG_IPV6)
-	if (meta_icsk->icsk_af_ops == &ipv6_mapped) {
+	if (meta_icsk->icsk_af_ops == &mptcp_v6_mapped) {
 		struct ipv6_pinfo *newnp, *np = inet6_sk(meta_sk);
 
 		inet_sk(master_sk)->pinet6 = &((struct tcp6_sock *)master_sk)->inet6;
@@ -1087,9 +1087,9 @@ struct sock *mptcp_sk_clone(const struct sock *sk, int family,
 		newsk->sk_prot = &tcpv6_prot;
 		newsk->sk_prot_creator = &tcpv6_prot;
 		if (family == AF_INET)
-			inet_csk(newsk)->icsk_af_ops = &ipv6_mapped;
+			inet_csk(newsk)->icsk_af_ops = &mptcp_v6_mapped;
 		else
-			inet_csk(newsk)->icsk_af_ops = &ipv6_specific;
+			inet_csk(newsk)->icsk_af_ops = &mptcp_v6_specific;
 		newsk->sk_family = AF_INET6;
 	}
 #endif
