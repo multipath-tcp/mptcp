@@ -38,9 +38,10 @@
 extern struct request_sock_ops mptcp6_request_sock_ops;
 extern struct proto mptcpv6_prot;
 extern const struct inet_connection_sock_af_ops mptcp_v6_specific;
-extern const struct inet_connection_sock_af_ops mptcp_v6_mapped;
 
 #ifdef CONFIG_MPTCP
+
+extern const struct inet_connection_sock_af_ops mptcp_v6_mapped;
 
 int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb);
 struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *raddr,
@@ -58,6 +59,8 @@ u64 mptcp_v6_get_key(const __be32 *saddr, const __be32 *daddr,
 		     __be16 sport, __be16 dport);
 
 #else /* CONFIG_MPTCP */
+
+#define mptcp_v6_mapped ipv6_mapped
 
 static inline int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {

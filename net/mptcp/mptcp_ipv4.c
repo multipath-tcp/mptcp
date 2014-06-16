@@ -87,6 +87,7 @@ struct request_sock_ops mptcp_request_sock_ops __read_mostly = {
 	.destructor	=	mptcp_v4_reqsk_destructor,
 	.send_reset	=	tcp_v4_send_reset,
 	.syn_ack_timeout =	tcp_syn_ack_timeout,
+	.init	        =	mptcp_reqsk_init,
 };
 
 static void mptcp_v4_reqsk_queue_hash_add(struct sock *meta_sk,
@@ -470,7 +471,7 @@ const struct inet_connection_sock_af_ops mptcp_v4_specific = {
 	.send_check	   = tcp_v4_send_check,
 	.rebuild_header	   = inet_sk_rebuild_header,
 	.sk_rx_dst_set	   = inet_sk_rx_dst_set,
-	.conn_request	   = tcp_v4_conn_request,
+	.conn_request	   = mptcp_conn_request,
 	.syn_recv_sock	   = tcp_v4_syn_recv_sock,
 	.net_header_len	   = sizeof(struct iphdr),
 	.setsockopt	   = ip_setsockopt,

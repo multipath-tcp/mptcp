@@ -244,7 +244,6 @@ static void mptcp_set_key_reqsk(struct request_sock *req,
  * will be created in mptcp_check_req_master(), and store the received token.
  */
 void mptcp_reqsk_new_mptcp(struct request_sock *req,
-			   const struct tcp_options_received *rx_opt,
 			   const struct mptcp_options_received *mopt,
 			   const struct sk_buff *skb)
 {
@@ -1075,7 +1074,7 @@ struct sock *mptcp_sk_clone(const struct sock *sk, int family,
 		/* Set these pointers - they are needed by mptcp_inherit_sk */
 		newsk->sk_prot = &tcp_prot;
 		newsk->sk_prot_creator = &tcp_prot;
-		inet_csk(newsk)->icsk_af_ops = &ipv4_specific;
+		inet_csk(newsk)->icsk_af_ops = &mptcp_v4_specific;
 		newsk->sk_family = AF_INET;
 	}
 #if IS_ENABLED(CONFIG_IPV6)
@@ -2044,6 +2043,69 @@ void mptcp_tsq_sub_deferred(struct sock *meta_sk)
 		/* Final sock_put (cfr. mptcp_tsq_flags */
 		sock_put(sk);
 	}
+}
+
+void mptcp_reqsk_init(struct request_sock *req,
+		      struct sk_buff *skb, void *init_data)
+{
+	struct mptcp_options_received *mopt =
+	    (struct mptcp_options_received *)init_data;
+	struct mptcp_request_sock *mreq = mptcp_rsk(req);
+
+	mreq->mpcb = NULL;
+	mreq->dss_csum = mopt->dss_csum;
+	mreq->collide_tk.pprev = NULL;
+
+	mptcp_reqsk_new_mptcp(req, mopt, skb);
+}
+
+int mptcp_conn_request(struct sock *sk, struct sk_buff *skb,
+		       struct request_sock_ops *ops, void *init_data)
+{
+	struct mptcp_options_received mopt;
+	struct tcp_sock *tp = tcp_sk(sk);
+#ifdef CONFIG_SYN_COOKIES
+	__u32 isn = TCP_SKB_CB(skb)->when;
+#endif
+	bool want_cookie = false;
+
+#ifdef CONFIG_SYN_COOKIES
+	if ((sysctl_tcp_syncookies == 2 ||
+	     inet_csk_reqsk_queue_is_full(sk)) && !isn)
+		want_cookie = sysctl_tcp_syncookies;
+#endif
+
+	mptcp_init_mp_opt(&mopt);
+	tcp_parse_mptcp_options(skb, &mopt);
+
+	if (mopt.is_mp_join)
+		return mptcp_do_join_short(skb, &mopt, sock_net(sk));
+	if (mopt.drop_me)
+		goto drop;
+
+	if (sysctl_mptcp_enabled == MPTCP_APP && !tp->mptcp_enabled)
+		mopt.saw_mpc = 0;
+
+	if (skb->protocol == htons(ETH_P_IP)) {
+		if (mopt.saw_mpc && !want_cookie)
+			return tcp_v4_conn_request(sk, skb,
+						   &mptcp_request_sock_ops,
+						   &mopt);
+		return tcp_v4_conn_request(sk, skb, &tcp_request_sock_ops,
+					   NULL);
+#if IS_ENABLED(CONFIG_IPV6)
+	} else {
+		if (mopt.saw_mpc && !want_cookie)
+			return tcp_v6_conn_request(sk, skb,
+						   &mptcp6_request_sock_ops,
+						   &mopt);
+		return tcp_v6_conn_request(sk, skb, &tcp6_request_sock_ops,
+					   NULL);
+#endif
+	}
+drop:
+	NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_LISTENDROPS);
+	return 0;
 }
 
 struct workqueue_struct *mptcp_wq;

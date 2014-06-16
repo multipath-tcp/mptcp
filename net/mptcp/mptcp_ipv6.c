@@ -115,6 +115,7 @@ struct request_sock_ops mptcp6_request_sock_ops __read_mostly = {
 	.destructor	=	mptcp_v6_reqsk_destructor,
 	.send_reset	=	tcp_v6_send_reset,
 	.syn_ack_timeout =	tcp_syn_ack_timeout,
+	.init	        =	mptcp_reqsk_init,
 };
 
 static void mptcp_v6_reqsk_queue_hash_add(struct sock *meta_sk,
@@ -695,7 +696,7 @@ const struct inet_connection_sock_af_ops mptcp_v6_specific = {
 	.send_check	   = tcp_v6_send_check,
 	.rebuild_header	   = inet6_sk_rebuild_header,
 	.sk_rx_dst_set	   = inet6_sk_rx_dst_set,
-	.conn_request	   = tcp_v6_conn_request,
+	.conn_request	   = mptcp_conn_request,
 	.syn_recv_sock	   = tcp_v6_syn_recv_sock,
 	.net_header_len	   = sizeof(struct ipv6hdr),
 	.net_frag_header_len = sizeof(struct frag_hdr),
@@ -715,7 +716,7 @@ const struct inet_connection_sock_af_ops mptcp_v6_mapped = {
 	.send_check	   = tcp_v4_send_check,
 	.rebuild_header	   = inet_sk_rebuild_header,
 	.sk_rx_dst_set	   = inet_sk_rx_dst_set,
-	.conn_request	   = tcp_v6_conn_request,
+	.conn_request	   = mptcp_conn_request,
 	.syn_recv_sock	   = tcp_v6_syn_recv_sock,
 	.net_header_len	   = sizeof(struct iphdr),
 	.setsockopt	   = ipv6_setsockopt,

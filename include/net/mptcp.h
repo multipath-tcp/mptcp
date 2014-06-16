@@ -724,8 +724,9 @@ void mptcp_send_fin(struct sock *meta_sk);
 void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority);
 bool mptcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		     int push_one, gfp_t gfp);
+void tcp_parse_mptcp_options(const struct sk_buff *skb,
+			     struct mptcp_options_received *mopt);
 void mptcp_parse_options(const uint8_t *ptr, int opsize,
-			 struct tcp_options_received *opt_rx,
 			 struct mptcp_options_received *mopt,
 			 const struct sk_buff *skb);
 void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
@@ -795,10 +796,9 @@ void mptcp_hash_remove(struct tcp_sock *meta_tp);
 struct sock *mptcp_hash_find(struct net *net, u32 token);
 int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw);
 int mptcp_do_join_short(struct sk_buff *skb, struct mptcp_options_received *mopt,
-			struct tcp_options_received *tmp_opt, struct net *net);
+			struct net *net);
 void mptcp_reqsk_destructor(struct request_sock *req);
 void mptcp_reqsk_new_mptcp(struct request_sock *req,
-			   const struct tcp_options_received *rx_opt,
 			   const struct mptcp_options_received *mopt,
 			   const struct sk_buff *skb);
 int mptcp_check_req(struct sk_buff *skb, struct net *net);
@@ -808,6 +808,10 @@ int mptcp_sub_len_remove_addr_align(u16 bitfield);
 void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
 			    const struct sk_buff *skb);
 void mptcp_init_buffer_space(struct sock *sk);
+void mptcp_reqsk_init(struct request_sock *req,
+		      struct sk_buff *skb, void *init_data);
+int mptcp_conn_request(struct sock *sk, struct sk_buff *skb,
+		       struct request_sock_ops *ops, void *init_data);
 
 /* MPTCP-path-manager registration/initialization functions */
 int mptcp_register_path_manager(struct mptcp_pm_ops *pm);
@@ -1318,7 +1322,6 @@ static inline void mptcp_sub_close(struct sock *sk, unsigned long delay) {}
 static inline void mptcp_set_rto(const struct sock *sk) {}
 static inline void mptcp_send_fin(const struct sock *meta_sk) {}
 static inline void mptcp_parse_options(const uint8_t *ptr, const int opsize,
-				       const struct tcp_options_received *opt_rx,
 				       const struct mptcp_options_received *mopt,
 				       const struct sk_buff *skb) {}
 static inline void mptcp_syn_options(struct sock *sk,

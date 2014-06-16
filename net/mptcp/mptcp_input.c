@@ -1207,7 +1207,7 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 }
 
 int mptcp_do_join_short(struct sk_buff *skb, struct mptcp_options_received *mopt,
-			struct tcp_options_received *tmp_opt, struct net *net)
+			struct net *net)
 {
 	struct sock *meta_sk;
 	u32 token;
@@ -1551,7 +1551,6 @@ static void mptcp_send_reset_rem_id(const struct mptcp_cb *mpcb, u8 rem_id)
 }
 
 void mptcp_parse_options(const uint8_t *ptr, int opsize,
-			 struct tcp_options_received *opt_rx,
 			 struct mptcp_options_received *mopt,
 			 const struct sk_buff *skb)
 {
@@ -1790,6 +1789,38 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 		mptcp_debug("%s: Received unkown subtype: %d\n",
 			    __func__, mp_opt->sub);
 		break;
+	}
+}
+
+/** Parse only MPTCP options */
+void tcp_parse_mptcp_options(const struct sk_buff *skb,
+			     struct mptcp_options_received *mopt)
+{
+	const struct tcphdr *th = tcp_hdr(skb);
+	int length = (th->doff * 4) - sizeof(struct tcphdr);
+	const unsigned char *ptr = (const unsigned char *)(th + 1);
+
+	while (length > 0) {
+		int opcode = *ptr++;
+		int opsize;
+
+		switch (opcode) {
+		case TCPOPT_EOL:
+			return;
+		case TCPOPT_NOP:	/* Ref: RFC 793 section 3.1 */
+			length--;
+			continue;
+		default:
+			opsize = *ptr++;
+			if (opsize < 2)	/* "silly options" */
+				return;
+			if (opsize > length)
+				return;	/* don't parse partial options */
+			if (opcode == TCPOPT_MPTCP)
+				mptcp_parse_options(ptr - 2, opsize, mopt, skb);
+		}
+		ptr += opsize - 2;
+		length -= opsize;
 	}
 }
 

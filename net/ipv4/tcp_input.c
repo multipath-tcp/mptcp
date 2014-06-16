@@ -3622,8 +3622,7 @@ void tcp_parse_options(const struct sk_buff *skb,
 				break;
 #endif
 			case TCPOPT_MPTCP:
-				mptcp_parse_options(ptr - 2, opsize, opt_rx,
-						    mopt, skb);
+				mptcp_parse_options(ptr - 2, opsize, mopt, skb);
 				break;
 			case TCPOPT_EXP:
 				/* Fast Open option shares code 254 using a
@@ -5771,7 +5770,9 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 		if (th->syn) {
 			if (th->fin)
 				goto discard;
-			if (icsk->icsk_af_ops->conn_request(sk, skb) < 0)
+			if (icsk->icsk_af_ops->conn_request(sk, skb,
+							    &tcp_request_sock_ops,
+							    NULL) < 0)
 				return 1;
 
 			/* Now we have several options: In theory there is
