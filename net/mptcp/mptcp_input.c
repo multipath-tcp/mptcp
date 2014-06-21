@@ -36,7 +36,7 @@
 #include <linux/kconfig.h>
 
 /* is seq1 < seq2 ? */
-static inline int before64(const u64 seq1, const u64 seq2)
+static inline bool before64(const u64 seq1, const u64 seq2)
 {
 	return (s64)(seq1 - seq2) < 0;
 }
@@ -756,7 +756,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 }
 
 /* Similar to tcp_sequence(...) */
-static inline int mptcp_sequence(const struct tcp_sock *meta_tp,
+static inline bool mptcp_sequence(const struct tcp_sock *meta_tp,
 				 u64 data_seq, u64 end_data_seq)
 {
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
