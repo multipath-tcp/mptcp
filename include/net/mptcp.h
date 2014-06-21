@@ -1077,7 +1077,7 @@ static inline bool mptcp_sk_can_gso(const struct sock *meta_sk)
 	struct sock *sk;
 
 	if (tcp_sk(meta_sk)->mpcb->dss_csum)
-		return 0;
+		return false;
 
 	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk) {
 		if (!mptcp_sk_can_send(sk))
@@ -1093,7 +1093,7 @@ static inline bool mptcp_can_sg(const struct sock *meta_sk)
 	struct sock *sk;
 
 	if (tcp_sk(meta_sk)->mpcb->dss_csum)
-		return 0;
+		return false;
 
 	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk) {
 		if (!mptcp_sk_can_send(sk))
