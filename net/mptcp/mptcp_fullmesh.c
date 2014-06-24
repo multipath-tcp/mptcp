@@ -697,7 +697,7 @@ duno:
 
 			bh_lock_sock(meta_sk);
 
-			if (!meta_tp->mpc || !is_meta_sk(meta_sk) ||
+			if (!mptcp(meta_tp) || !is_meta_sk(meta_sk) ||
 			    mpcb->infinite_mapping_snd ||
 			    mpcb->infinite_mapping_rcv ||
 			    mpcb->send_infinite_mapping)
@@ -1109,10 +1109,12 @@ static void full_mesh_new_session(struct sock *meta_sk)
 		saddr.ip = inet_sk(meta_sk)->inet_saddr;
 		daddr.ip = inet_sk(meta_sk)->inet_daddr;
 		family = AF_INET;
+#if IS_ENABLED(CONFIG_IPV6)
 	} else {
 		saddr.in6 = inet6_sk(meta_sk)->saddr;
 		daddr.in6 = meta_sk->sk_v6_daddr;
 		family = AF_INET6;
+#endif
 	}
 
 	rcu_read_lock();

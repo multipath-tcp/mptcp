@@ -115,6 +115,7 @@ struct request_sock_ops mptcp6_request_sock_ops __read_mostly = {
 	.destructor	=	mptcp_v6_reqsk_destructor,
 	.send_reset	=	tcp_v6_send_reset,
 	.syn_ack_timeout =	tcp_syn_ack_timeout,
+	.init	        =	mptcp_reqsk_init,
 };
 
 static void mptcp_v6_reqsk_queue_hash_add(struct sock *meta_sk,
@@ -661,6 +662,9 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 		    ntohs(loc_in.sin6_port), &rem_in.sin6_addr,
 		    ntohs(rem_in.sin6_port));
 
+	if (tcp_sk(meta_sk)->mpcb->pm_ops->init_subsocket_v6)
+		tcp_sk(meta_sk)->mpcb->pm_ops->init_subsocket_v6(sk, rem->addr);
+
 	ret = sock.ops->connect(&sock, (struct sockaddr *)&rem_in,
 				ulid_size, O_NONBLOCK);
 	if (ret < 0 && ret != -EINPROGRESS) {
@@ -676,7 +680,7 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 
 error:
 	/* May happen if mptcp_add_sock fails first */
-	if (!tp->mpc) {
+	if (!mptcp(tp)) {
 		tcp_close(sk, 0);
 	} else {
 		local_bh_disable();
@@ -686,6 +690,45 @@ error:
 	return ret;
 }
 EXPORT_SYMBOL(mptcp_init6_subsockets);
+
+const struct inet_connection_sock_af_ops mptcp_v6_specific = {
+	.queue_xmit	   = inet6_csk_xmit,
+	.send_check	   = tcp_v6_send_check,
+	.rebuild_header	   = inet6_sk_rebuild_header,
+	.sk_rx_dst_set	   = inet6_sk_rx_dst_set,
+	.conn_request	   = mptcp_conn_request,
+	.syn_recv_sock	   = tcp_v6_syn_recv_sock,
+	.net_header_len	   = sizeof(struct ipv6hdr),
+	.net_frag_header_len = sizeof(struct frag_hdr),
+	.setsockopt	   = ipv6_setsockopt,
+	.getsockopt	   = ipv6_getsockopt,
+	.addr2sockaddr	   = inet6_csk_addr2sockaddr,
+	.sockaddr_len	   = sizeof(struct sockaddr_in6),
+	.bind_conflict	   = inet6_csk_bind_conflict,
+#ifdef CONFIG_COMPAT
+	.compat_setsockopt = compat_ipv6_setsockopt,
+	.compat_getsockopt = compat_ipv6_getsockopt,
+#endif
+};
+
+const struct inet_connection_sock_af_ops mptcp_v6_mapped = {
+	.queue_xmit	   = ip_queue_xmit,
+	.send_check	   = tcp_v4_send_check,
+	.rebuild_header	   = inet_sk_rebuild_header,
+	.sk_rx_dst_set	   = inet_sk_rx_dst_set,
+	.conn_request	   = mptcp_conn_request,
+	.syn_recv_sock	   = tcp_v6_syn_recv_sock,
+	.net_header_len	   = sizeof(struct iphdr),
+	.setsockopt	   = ipv6_setsockopt,
+	.getsockopt	   = ipv6_getsockopt,
+	.addr2sockaddr	   = inet6_csk_addr2sockaddr,
+	.sockaddr_len	   = sizeof(struct sockaddr_in6),
+	.bind_conflict	   = inet6_csk_bind_conflict,
+#ifdef CONFIG_COMPAT
+	.compat_setsockopt = compat_ipv6_setsockopt,
+	.compat_getsockopt = compat_ipv6_getsockopt,
+#endif
+};
 
 int mptcp_pm_v6_init(void)
 {

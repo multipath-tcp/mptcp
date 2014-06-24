@@ -36,7 +36,7 @@
 #include <linux/kconfig.h>
 
 /* is seq1 < seq2 ? */
-static inline int before64(const u64 seq1, const u64 seq2)
+static inline bool before64(const u64 seq1, const u64 seq2)
 {
 	return (s64)(seq1 - seq2) < 0;
 }
@@ -383,32 +383,36 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb, struct sk_buff *next,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
+	u32 inc = 0;
+
+	/* If skb is the end of this mapping (end is always at mapping-boundary
+	 * thanks to the splitting/trimming), then we need to increase
+	 * data-end-seq by 1 if this here is a data-fin.
+	 *
+	 * We need to do -1 because end_seq includes the subflow-FIN.
+	 */
+	if (tp->mptcp->map_data_fin &&
+	    (tcb->end_seq - (tcp_hdr(skb)->fin ? 1 : 0)) ==
+	    (tp->mptcp->map_subseq + tp->mptcp->map_data_len)) {
+		inc = 1;
+
+		/* We manually set the fin-flag if it is a data-fin. For easy
+		 * processing in tcp_recvmsg.
+		 */
+		tcp_hdr(skb)->fin = 1;
+	} else {
+		/* We may have a subflow-fin with data but without data-fin */
+		tcp_hdr(skb)->fin = 0;
+	}
+
 	/* Adapt data-seq's to the packet itself. We kinda transform the
 	 * dss-mapping to a per-packet granularity. This is necessary to
 	 * correctly handle overlapping mappings coming from different
 	 * subflows. Otherwise it would be a complete mess.
 	 */
 	tcb->seq = ((u32)tp->mptcp->map_data_seq) + tcb->seq - tp->mptcp->map_subseq;
-	tcb->end_seq = tcb->seq + skb->len;
+	tcb->end_seq = tcb->seq + skb->len + inc;
 
-	/* If cur is the last one in the rcv-queue (or the last one for this
-	 * mapping), and data_fin is enqueued, the end_data_seq is +1.
-	 */
-	if (skb_queue_is_last(&sk->sk_receive_queue, skb) ||
-	    after(TCP_SKB_CB(next)->end_seq, tp->mptcp->map_subseq + tp->mptcp->map_data_len)) {
-		tcb->end_seq += tp->mptcp->map_data_fin;
-
-		/* We manually set the fin-flag if it is a data-fin. For easy
-		 * processing in tcp_recvmsg.
-		 */
-		if (mptcp_is_data_fin2(skb, tp))
-			tcp_hdr(skb)->fin = 1;
-		else
-			tcp_hdr(skb)->fin = 0;
-	} else {
-		/* We may have a subflow-fin with data but without data-fin */
-		tcp_hdr(skb)->fin = 0;
-	}
 }
 
 /**
@@ -752,7 +756,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 }
 
 /* Similar to tcp_sequence(...) */
-static inline int mptcp_sequence(const struct tcp_sock *meta_tp,
+static inline bool mptcp_sequence(const struct tcp_sock *meta_tp,
 				 u64 data_seq, u64 end_data_seq)
 {
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
@@ -1076,7 +1080,7 @@ int mptcp_check_req(struct sk_buff *skb, struct net *net)
 	if (!meta_sk)
 		return 0;
 
-	TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_JOIN;
+	TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_JOIN;
 
 	bh_lock_sock_nested(meta_sk);
 	if (sock_owned_by_user(meta_sk)) {
@@ -1174,7 +1178,7 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 		inet_twsk_put(tw);
 	}
 
-	TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_JOIN;
+	TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_JOIN;
 	/* OK, this is a new syn/join, let's create a new open request and
 	 * send syn+ack
 	 */
@@ -1203,7 +1207,7 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 }
 
 int mptcp_do_join_short(struct sk_buff *skb, struct mptcp_options_received *mopt,
-			struct tcp_options_received *tmp_opt, struct net *net)
+			struct net *net)
 {
 	struct sock *meta_sk;
 	u32 token;
@@ -1215,7 +1219,7 @@ int mptcp_do_join_short(struct sk_buff *skb, struct mptcp_options_received *mopt
 		return -1;
 	}
 
-	TCP_SKB_CB(skb)->mptcp_flags = MPTCPHDR_JOIN;
+	TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_JOIN;
 
 	/* OK, this is a new syn/join, let's create a new open request and
 	 * send syn+ack
@@ -1547,7 +1551,6 @@ static void mptcp_send_reset_rem_id(const struct mptcp_cb *mpcb, u8 rem_id)
 }
 
 void mptcp_parse_options(const uint8_t *ptr, int opsize,
-			 struct tcp_options_received *opt_rx,
 			 struct mptcp_options_received *mopt,
 			 const struct sk_buff *skb)
 {
@@ -1786,6 +1789,38 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 		mptcp_debug("%s: Received unkown subtype: %d\n",
 			    __func__, mp_opt->sub);
 		break;
+	}
+}
+
+/** Parse only MPTCP options */
+void tcp_parse_mptcp_options(const struct sk_buff *skb,
+			     struct mptcp_options_received *mopt)
+{
+	const struct tcphdr *th = tcp_hdr(skb);
+	int length = (th->doff * 4) - sizeof(struct tcphdr);
+	const unsigned char *ptr = (const unsigned char *)(th + 1);
+
+	while (length > 0) {
+		int opcode = *ptr++;
+		int opsize;
+
+		switch (opcode) {
+		case TCPOPT_EOL:
+			return;
+		case TCPOPT_NOP:	/* Ref: RFC 793 section 3.1 */
+			length--;
+			continue;
+		default:
+			opsize = *ptr++;
+			if (opsize < 2)	/* "silly options" */
+				return;
+			if (opsize > length)
+				return;	/* don't parse partial options */
+			if (opcode == TCPOPT_MPTCP)
+				mptcp_parse_options(ptr - 2, opsize, mopt, skb);
+		}
+		ptr += opsize - 2;
+		length -= opsize;
 	}
 }
 
@@ -2069,7 +2104,7 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	if (tp->mpc) {
+	if (mptcp(tp)) {
 		u8 hash_mac_check[20];
 		struct mptcp_cb *mpcb = tp->mpcb;
 
@@ -2126,7 +2161,7 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 			mptcp_hash_remove(tp);
 	}
 
-	if (tp->mpc)
+	if (mptcp(tp))
 		tp->mptcp->rcv_isn = TCP_SKB_CB(skb)->seq;
 
 	return 0;

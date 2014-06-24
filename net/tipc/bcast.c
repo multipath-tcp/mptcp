@@ -631,7 +631,7 @@ static int tipc_bcbearer_send(struct sk_buff *buf, struct tipc_bearer *unused1,
 			tipc_bearer_send(b, buf, &b->bcast_addr);
 		} else {
 			/* Avoid concurrent buffer access */
-			tbuf = pskb_copy(buf, GFP_ATOMIC);
+			tbuf = pskb_copy_for_clone(buf, GFP_ATOMIC);
 			if (!tbuf)
 				break;
 			tipc_bearer_send(b, tbuf, &b->bcast_addr);

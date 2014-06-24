@@ -38,6 +38,7 @@
 #include <net/sock.h>
 
 extern struct request_sock_ops mptcp_request_sock_ops;
+extern const struct inet_connection_sock_af_ops mptcp_v4_specific;
 
 #ifdef CONFIG_MPTCP
 

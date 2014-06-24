@@ -31,6 +31,14 @@ config MPTCP_NDIFFPORTS
 	  pair of IP-addresses, modifying the source-port. You can set the number
 	  of subflows via the mptcp_ndiffports-sysctl.
 
+config MPTCP_BINDER
+	tristate "MPTCP Binder"
+	depends on (MPTCP=y)
+	---help---
+	  This path-management module works like ndiffports, and adds the sysctl
+	  option to set the gateway (and/or path to) per each additional subflow
+	  via Loose Source Routing (IPv4 only).
+
 choice
 	prompt "Default MPTCP Path-Manager"
 	default DEFAULT
@@ -42,6 +50,9 @@ choice
 
 	config DEFAULT_NDIFFPORTS
 		bool "ndiff-ports" if MPTCP_NDIFFPORTS=y
+
+	config DEFAULT_BINDER
+		bool "binder" if MPTCP_BINDER=y
 
 	config DEFAULT_DUMMY
 		bool "Default"
@@ -55,4 +66,5 @@ config DEFAULT_MPTCP_PM
 	default "default" if DEFAULT_DUMMY
 	default "fullmesh" if DEFAULT_FULLMESH 
 	default "ndiffports" if DEFAULT_NDIFFPORTS
+	default "binder" if DEFAULT_BINDER
 	default "default"

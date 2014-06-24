@@ -162,7 +162,7 @@ exit:
 
 static void mptcp_ccc_init(struct sock *sk)
 {
-	if (tcp_sk(sk)->mpc) {
+	if (mptcp(tcp_sk(sk))) {
 		mptcp_set_forced(mptcp_meta_sk(sk), 0);
 		mptcp_set_alpha(mptcp_meta_sk(sk), 1);
 	}
@@ -177,7 +177,7 @@ static void mptcp_ccc_cwnd_event(struct sock *sk, enum tcp_ca_event event)
 
 static void mptcp_ccc_set_state(struct sock *sk, u8 ca_state)
 {
-	if (!tcp_sk(sk)->mpc)
+	if (!mptcp(tcp_sk(sk)))
 		return;
 
 	mptcp_set_forced(mptcp_meta_sk(sk), 1);
@@ -189,7 +189,7 @@ static void mptcp_ccc_cong_avoid(struct sock *sk, u32 ack, u32 acked, u32 in_fli
 	struct mptcp_cb *mpcb = tp->mpcb;
 	int snd_cwnd;
 
-	if (!tp->mpc) {
+	if (!mptcp(tp)) {
 		tcp_reno_cong_avoid(sk, ack, acked, in_flight);
 		return;
 	}

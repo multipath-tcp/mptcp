@@ -310,7 +310,7 @@ void tcp_time_wait(struct sock *sk, int state, int timeo)
 		tcptw->tw_ts_recent_stamp = tp->rx_opt.ts_recent_stamp;
 		tcptw->tw_ts_offset	= tp->tsoffset;
 
-		if (tp->mpc) {
+		if (mptcp(tp)) {
 			if (mptcp_init_tw_sock(sk, tcptw)) {
 				inet_twsk_free(tw);
 				goto exit;
@@ -475,7 +475,7 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 		 * set on the meta. But, keepalive is entirely handled at the
 		 * meta-socket, so let's keep it there.
 		 */
-		if (sock_flag(newsk, SOCK_KEEPOPEN) && !tcp_sk(sk)->mpc)
+		if (sock_flag(newsk, SOCK_KEEPOPEN) && !mptcp(tcp_sk(sk)))
 			inet_csk_reset_keepalive_timer(newsk,
 						       keepalive_time_when(newtp));
 
@@ -551,7 +551,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	__be32 flg = tcp_flag_word(th) & (TCP_FLAG_RST|TCP_FLAG_SYN|TCP_FLAG_ACK);
 	bool paws_reject = false;
 
-	BUG_ON(!tcp_sk(sk)->mpc && fastopen == (sk->sk_state == TCP_LISTEN));
+	BUG_ON(!mptcp(tcp_sk(sk)) && fastopen == (sk->sk_state == TCP_LISTEN));
 
 	tmp_opt.saw_tstamp = 0;
 
@@ -752,7 +752,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	 * socket is created, wait for troubles.
 	 */
 #ifdef CONFIG_MPTCP
-	if (tcp_sk(sk)->mpc)
+	if (mptcp(tcp_sk(sk)))
 		/* MPTCP: We call the mptcp-specific syn_recv_sock */
 		child = tcp_sk(sk)->mpcb->syn_recv_sock(sk, skb, req, NULL);
 	else
@@ -832,7 +832,7 @@ int tcp_child_process(struct sock *parent, struct sock *child,
 {
 	int ret = 0;
 	int state = child->sk_state;
-	struct sock *meta_sk = tcp_sk(child)->mpc ? mptcp_meta_sk(child) : child;
+	struct sock *meta_sk = mptcp(tcp_sk(child)) ? mptcp_meta_sk(child) : child;
 
 	if (!sock_owned_by_user(meta_sk)) {
 		ret = tcp_rcv_state_process(child, skb, tcp_hdr(skb),
@@ -845,12 +845,12 @@ int tcp_child_process(struct sock *parent, struct sock *child,
 		 * in main socket hash table and lock on listening
 		 * socket does not protect us more.
 		 */
-		if (tcp_sk(child)->mpc)
+		if (mptcp(tcp_sk(child)))
 			skb->sk = child;
 		__sk_add_backlog(meta_sk, skb);
 	}
 
-	if (tcp_sk(child)->mpc)
+	if (mptcp(tcp_sk(child)))
 		bh_unlock_sock(child);
 	bh_unlock_sock(meta_sk);
 	sock_put(child);

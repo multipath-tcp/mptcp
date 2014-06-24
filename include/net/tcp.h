@@ -372,17 +372,12 @@ extern struct proto tcp_prot;
 #define TCP_ADD_STATS(net, field, val)	SNMP_ADD_STATS((net)->mib.tcp_statistics, field, val)
 
 /**** START - Exports needed for MPTCP ****/
-extern const struct inet_connection_sock_af_ops ipv4_specific;
-extern const struct inet_connection_sock_af_ops ipv6_specific;
-extern const struct inet_connection_sock_af_ops ipv6_mapped;
 extern const struct tcp_request_sock_ops tcp_request_sock_ipv4_ops;
 extern const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops;
 
 struct mptcp_options_received;
 
 int tcp_close_state(struct sock *sk);
-void tcp_push(struct sock *sk, int flags, int mss_now, int nonagle, int
-	      size_goal);
 void tcp_minshall_update(struct tcp_sock *tp, unsigned int mss_now,
 			 const struct sk_buff *skb);
 int tcp_xmit_probe_skb(struct sock *sk, int urgent);
@@ -452,7 +447,6 @@ struct sock *tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 				  struct dst_entry *dst);
 void tcp_v6_reqsk_destructor(struct request_sock *req);
 
-void sock_valbool_flag(struct sock *sk, int bit, int valbool);
 unsigned int tcp_xmit_size_goal(struct sock *sk, u32 mss_now,
 				       int large_allowed);
 u32 tcp_tso_acked(struct sock *sk, struct sk_buff *skb);
@@ -461,6 +455,8 @@ void skb_clone_fraglist(struct sk_buff *skb);
 void copy_skb_header(struct sk_buff *new, const struct sk_buff *old);
 
 void inet_twsk_free(struct inet_timewait_sock *tw);
+int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb,
+			struct request_sock_ops *ops, void *init_data);
 /* These states need RST on ABORT according to RFC793 */
 static inline bool tcp_need_reset(int state)
 {
@@ -582,7 +578,8 @@ const u8 *tcp_parse_md5sig_option(const struct tcphdr *th);
  */
 
 void tcp_v4_send_check(struct sock *sk, struct sk_buff *skb);
-int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb);
+int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb,
+			struct request_sock_ops *ops, void *init_data);
 struct sock *tcp_create_openreq_child(struct sock *sk,
 				      struct request_sock *req,
 				      struct sk_buff *skb);
@@ -670,7 +667,7 @@ void tcp_retransmit_timer(struct sock *sk);
 void tcp_xmit_retransmit_queue(struct sock *);
 void tcp_simple_retransmit(struct sock *);
 int tcp_trim_head(struct sock *, struct sk_buff *, u32);
-int tcp_fragment(struct sock *, struct sk_buff *, u32, unsigned int);
+int tcp_fragment(struct sock *, struct sk_buff *, u32, unsigned int, gfp_t);
 
 void tcp_send_probe0(struct sock *);
 void tcp_send_partial(struct sock *);
@@ -848,7 +845,10 @@ struct tcp_skb_cb {
 #endif
 		} header;	/* For incoming frames		*/
 #ifdef CONFIG_MPTCP
-		__u32 path_mask; /* path indices that tried to send this skb */
+		union {			/* For MPTCP outgoing frames */
+			__u32 path_mask; /* paths that tried to send this skb */
+			__u32 dss[6];	/* DSS options */
+		};
 #endif
 	};
 	__u32		seq;		/* Starting sequence number	*/
@@ -1214,10 +1214,23 @@ static inline int tcp_win_from_space(int space)
 		space - (space>>sysctl_tcp_adv_win_scale);
 }
 
+#ifdef CONFIG_MPTCP
+extern struct static_key mptcp_static_key;
+static inline bool mptcp(const struct tcp_sock *tp)
+{
+	return static_key_false(&mptcp_static_key) && tp->mpc;
+}
+#else
+static inline bool mptcp(const struct tcp_sock *tp)
+{
+	return 0;
+}
+#endif
+
 /* Note: caller must be prepared to deal with negative returns */ 
 static inline int tcp_space(const struct sock *sk)
 {
-	if (tcp_sk(sk)->mpc)
+	if (mptcp(tcp_sk(sk)))
 		sk = tcp_sk(sk)->meta_sk;
 
 	return tcp_win_from_space(sk->sk_rcvbuf -
@@ -1226,7 +1239,7 @@ static inline int tcp_space(const struct sock *sk)
 
 static inline int tcp_full_space(const struct sock *sk)
 {
-	if (tcp_sk(sk)->mpc)
+	if (mptcp(tcp_sk(sk)))
 		sk = tcp_sk(sk)->meta_sk;
 
 	return tcp_win_from_space(sk->sk_rcvbuf); 

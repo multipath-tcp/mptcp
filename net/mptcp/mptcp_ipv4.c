@@ -87,6 +87,7 @@ struct request_sock_ops mptcp_request_sock_ops __read_mostly = {
 	.destructor	=	mptcp_v4_reqsk_destructor,
 	.send_reset	=	tcp_v4_send_reset,
 	.syn_ack_timeout =	tcp_syn_ack_timeout,
+	.init	        =	mptcp_reqsk_init,
 };
 
 static void mptcp_v4_reqsk_queue_hash_add(struct sock *meta_sk,
@@ -436,6 +437,9 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 		    ntohs(loc_in.sin_port), &rem_in.sin_addr,
 		    ntohs(rem_in.sin_port));
 
+	if (tcp_sk(meta_sk)->mpcb->pm_ops->init_subsocket_v4)
+		tcp_sk(meta_sk)->mpcb->pm_ops->init_subsocket_v4(sk, rem->addr);
+
 	ret = sock.ops->connect(&sock, (struct sockaddr *)&rem_in,
 				ulid_size, O_NONBLOCK);
 	if (ret < 0 && ret != -EINPROGRESS) {
@@ -451,7 +455,7 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 
 error:
 	/* May happen if mptcp_add_sock fails first */
-	if (!tp->mpc) {
+	if (!mptcp(tp)) {
 		tcp_close(sk, 0);
 	} else {
 		local_bh_disable();
@@ -461,6 +465,25 @@ error:
 	return ret;
 }
 EXPORT_SYMBOL(mptcp_init4_subsockets);
+
+const struct inet_connection_sock_af_ops mptcp_v4_specific = {
+	.queue_xmit	   = ip_queue_xmit,
+	.send_check	   = tcp_v4_send_check,
+	.rebuild_header	   = inet_sk_rebuild_header,
+	.sk_rx_dst_set	   = inet_sk_rx_dst_set,
+	.conn_request	   = mptcp_conn_request,
+	.syn_recv_sock	   = tcp_v4_syn_recv_sock,
+	.net_header_len	   = sizeof(struct iphdr),
+	.setsockopt	   = ip_setsockopt,
+	.getsockopt	   = ip_getsockopt,
+	.addr2sockaddr	   = inet_csk_addr2sockaddr,
+	.sockaddr_len	   = sizeof(struct sockaddr_in),
+	.bind_conflict	   = inet_csk_bind_conflict,
+#ifdef CONFIG_COMPAT
+	.compat_setsockopt = compat_ip_setsockopt,
+	.compat_getsockopt = compat_ip_getsockopt,
+#endif
+};
 
 /* General initialization of IPv4 for MPTCP */
 int mptcp_pm_v4_init(void)

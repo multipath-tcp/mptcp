@@ -361,7 +361,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 	}
 
 	tp = tcp_sk(sk);
-	if (tp->mpc)
+	if (mptcp(tp))
 		meta_sk = mptcp_meta_sk(sk);
 	else
 		meta_sk = sk;
@@ -423,7 +423,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 			} else {
 				if (!test_and_set_bit(TCP_MTU_REDUCED_DEFERRED, &tp->tsq_flags))
 					sock_hold(sk);
-				if (tp->mpc)
+				if (mptcp(tp))
 					mptcp_tsq_flags(sk);
 			}
 			goto out;
@@ -1477,10 +1477,10 @@ static int tcp_v4_conn_req_fastopen(struct sock *sk,
 	return 0;
 }
 
-int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
+int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb,
+			struct request_sock_ops *ops, void *init_data)
 {
 	struct tcp_options_received tmp_opt;
-	struct mptcp_options_received mopt;
 	struct request_sock *req;
 	struct inet_request_sock *ireq;
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -1495,22 +1495,6 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	struct sk_buff *skb_synack;
 	int do_fastopen;
 
-	tcp_clear_options(&tmp_opt);
-	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
-	tmp_opt.user_mss  = tp->rx_opt.user_mss;
-	mptcp_init_mp_opt(&mopt);
-	tcp_parse_options(skb, &tmp_opt, &mopt, 0, want_cookie ? NULL : &foc);
-
-#ifdef CONFIG_MPTCP
-	/* MPTCP structures not initialized, so clear MPTCP fields */
-	if  (mptcp_init_failed)
-		mptcp_init_mp_opt(&mopt);
-
-	if (mopt.is_mp_join)
-		return mptcp_do_join_short(skb, &mopt, &tmp_opt, sock_net(sk));
-	if (mopt.drop_me)
-		goto drop;
-#endif
 	/* Never answer to SYNs send to broadcast or multicast */
 	if (skb_rtable(skb)->rt_flags & (RTCF_BROADCAST | RTCF_MULTICAST))
 		goto drop;
@@ -1536,22 +1520,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 		goto drop;
 	}
 
-#ifdef CONFIG_MPTCP
-	if (sysctl_mptcp_enabled == MPTCP_APP && !tp->mptcp_enabled)
-		mopt.saw_mpc = 0;
-	if (mopt.saw_mpc && !want_cookie) {
-		req = inet_reqsk_alloc(&mptcp_request_sock_ops);
-
-		if (!req)
-			goto drop;
-
-		mptcp_rsk(req)->mpcb = NULL;
-		mptcp_rsk(req)->dss_csum = mopt.dss_csum;
-		mptcp_rsk(req)->collide_tk.pprev = NULL;
-	} else
-#endif
-		req = inet_reqsk_alloc(&tcp_request_sock_ops);
-
+	req = inet_reqsk_alloc(ops);
 	if (!req)
 		goto drop;
 
@@ -1559,14 +1528,19 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	tcp_rsk(req)->af_specific = &tcp_request_sock_ipv4_ops;
 #endif
 
+	tcp_clear_options(&tmp_opt);
+	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
+	tmp_opt.user_mss  = tp->rx_opt.user_mss;
+	tcp_parse_options(skb, &tmp_opt, NULL, 0, want_cookie ? NULL : &foc);
+
 	if (want_cookie && !tmp_opt.saw_tstamp)
 		tcp_clear_options(&tmp_opt);
 
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 	tcp_openreq_init(req, &tmp_opt, skb);
 
-	if (mopt.saw_mpc && !want_cookie)
-		mptcp_reqsk_new_mptcp(req, &tmp_opt, &mopt, skb);
+	if (ops->init)
+		ops->init(req, skb, init_data);
 
 	ireq = inet_rsk(req);
 	ireq->ir_loc_addr = daddr;
@@ -1799,7 +1773,7 @@ struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb)
 			/* Don't lock again the meta-sk. It has been locked
 			 * before mptcp_v4_do_rcv.
 			 */
-			if (tcp_sk(nsk)->mpc && !is_meta_sk(sk))
+			if (mptcp(tcp_sk(nsk)) && !is_meta_sk(sk))
 				bh_lock_sock(mptcp_meta_sk(nsk));
 			bh_lock_sock(nsk);
 
@@ -1995,7 +1969,7 @@ bool tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 	} else if (skb_queue_len(&tp->ucopy.prequeue) == 1) {
 		wake_up_interruptible_sync_poll(sk_sleep(sk),
 					   POLLIN | POLLRDNORM | POLLRDBAND);
-		if (!inet_csk_ack_scheduled(sk) && !tp->mpc)
+		if (!inet_csk_ack_scheduled(sk) && !mptcp(tp))
 			inet_csk_reset_xmit_timer(sk, ICSK_TIME_DACK,
 						  (3 * tcp_rto_min(sk)) / 4,
 						  TCP_RTO_MAX);
@@ -2096,7 +2070,7 @@ process:
 	sk_mark_napi_id(sk, skb);
 	skb->dev = NULL;
 
-	if (tcp_sk(sk)->mpc) {
+	if (mptcp(tcp_sk(sk))) {
 		meta_sk = mptcp_meta_sk(sk);
 
 		bh_lock_sock_nested(meta_sk);
@@ -2259,7 +2233,12 @@ static int tcp_v4_init_sock(struct sock *sk)
 
 	tcp_init_sock(sk);
 
-	icsk->icsk_af_ops = &ipv4_specific;
+#ifdef CONFIG_MPTCP
+	if (is_mptcp_enabled())
+		icsk->icsk_af_ops = &mptcp_v4_specific;
+	else
+#endif
+		icsk->icsk_af_ops = &ipv4_specific;
 
 #ifdef CONFIG_TCP_MD5SIG
 	tcp_sk(sk)->af_specific = &tcp_sock_ipv4_specific;
@@ -2276,7 +2255,7 @@ void tcp_v4_destroy_sock(struct sock *sk)
 
 	tcp_cleanup_congestion_control(sk);
 
-	if (tp->mpc)
+	if (mptcp(tp))
 		mptcp_destroy_sock(sk);
 	if (tp->inside_tk_table)
 		mptcp_hash_remove(tp);
