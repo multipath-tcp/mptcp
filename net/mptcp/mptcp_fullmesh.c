@@ -716,12 +716,7 @@ duno:
 			}
 
 			if (event->code == MPTCP_EVENT_ADD) {
-				if (event->family == AF_INET)
-					fmp->add_addr++;
-#if IS_ENABLED(CONFIG_IPV6)
-				if (event->family == AF_INET6)
-					fmp->add_addr++;
-#endif
+				fmp->add_addr++;
 
 				sk = mptcp_select_ack_sock(meta_sk);
 				if (sk)
