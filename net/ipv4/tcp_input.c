@@ -5804,6 +5804,12 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 		if (is_meta_sk(sk)) {
 			sk = tcp_sk(sk)->mpcb->master_sk;
 			tp = tcp_sk(sk);
+
+			/* Need to call it here, because it will announce new
+			 * addresses, which can only be done after the third ack
+			 * of the 3-way handshake.
+			 */
+			mptcp_update_metasocket(sk, tp->meta_sk);
 		}
 		if (queued >= 0)
 			return queued;

@@ -1093,13 +1093,12 @@ static void full_mesh_add_raddr(struct mptcp_cb *mpcb,
 		mptcp_addv6_raddr(mpcb, &addr->in6, port, id);
 }
 
-static void full_mesh_new_session(struct sock *meta_sk)
+static void full_mesh_new_session(struct sock *meta_sk, struct sock *sk)
 {
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(meta_sk));
-	struct sock *sk;
 	int i, index;
 	union inet_addr saddr, daddr;
 	sa_family_t family;
@@ -1132,8 +1131,6 @@ static void full_mesh_new_session(struct sock *meta_sk)
 	INIT_DELAYED_WORK(&fmp->subflow_retry_work, retry_subflow_worker);
 	fmp->mpcb = mpcb;
 
-	sk = mptcp_select_ack_sock(meta_sk);
-
 	/* Look for the address among the local addresses */
 	mptcp_for_each_bit_set(mptcp_local->loc4_bits, i) {
 		__be32 ifa_address = mptcp_local->locaddr4[i].addr.s_addr;
@@ -1164,6 +1161,8 @@ static void full_mesh_new_session(struct sock *meta_sk)
 	else
 		fmp->announced_addrs_v6 |= (1 << index);
 
+	for (i = fmp->add_addr; i && fmp->add_addr; i--)
+		tcp_send_ack(sk);
 
 	return;
 
