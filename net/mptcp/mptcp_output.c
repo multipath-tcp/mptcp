@@ -1755,7 +1755,7 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 	 * information.
 	 */
 	if (skb_unclone(skb, GFP_ATOMIC)) {
-		err = ENOMEM;
+		err = -ENOMEM;
 		goto failed;
 	}
 
