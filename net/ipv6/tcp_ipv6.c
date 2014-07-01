@@ -777,7 +777,7 @@ static struct dst_entry *tcp_v6_route_req(struct sock *sk, struct flowi *fl,
 struct request_sock_ops tcp6_request_sock_ops __read_mostly = {
 	.family		=	AF_INET6,
 	.obj_size	=	sizeof(struct tcp6_request_sock),
-	.rtx_syn_ack	=	tcp_v6_rtx_synack,
+	.rtx_syn_ack	=	tcp_rtx_synack,
 	.send_ack	=	tcp_v6_reqsk_send_ack,
 	.destructor	=	tcp_v6_reqsk_destructor,
 	.send_reset	=	tcp_v6_send_reset,

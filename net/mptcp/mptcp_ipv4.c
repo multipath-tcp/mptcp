@@ -82,7 +82,7 @@ static void mptcp_v4_reqsk_destructor(struct request_sock *req)
 struct request_sock_ops mptcp_request_sock_ops __read_mostly = {
 	.family		=	PF_INET,
 	.obj_size	=	sizeof(struct mptcp_request_sock),
-	.rtx_syn_ack	=	tcp_v4_rtx_synack,
+	.rtx_syn_ack	=	tcp_rtx_synack,
 	.send_ack	=	tcp_v4_reqsk_send_ack,
 	.destructor	=	mptcp_v4_reqsk_destructor,
 	.send_reset	=	tcp_v4_send_reset,
