@@ -103,6 +103,7 @@ static int mptcp_v6_rtx_synack(struct sock *meta_sk, struct request_sock *req)
 		return tcp_v6_rtx_synack(meta_sk, req);
 
 	TCP_INC_STATS_BH(sock_net(meta_sk), TCP_MIB_RETRANSSEGS);
+	NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_TCPSYNRETRANS);
 	return mptcp_v6v4_send_synack(meta_sk, req, 0);
 }
 
