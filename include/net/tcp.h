@@ -429,7 +429,7 @@ void tcp_v6_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 __u32 tcp_v6_init_sequence(const struct sk_buff *skb);
 int tcp_v6_send_synack(struct sock *sk, struct dst_entry *dst,
 		       struct flowi6 *fl6, struct request_sock *req,
-		       u16 queue_mapping);
+		       u16 queue_mapping, struct tcp_fastopen_cookie *foc);
 void tcp_v6_send_reset(struct sock *sk, struct sk_buff *skb);
 int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
 int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len);
