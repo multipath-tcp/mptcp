@@ -793,6 +793,7 @@ const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops = {
 	.cookie_init_seq =	cookie_v6_init_sequence,
 #endif
 	.route_req	=	tcp_v6_route_req,
+	.init_seq	=	tcp_v6_init_sequence,
 };
 
 static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack,
@@ -1163,7 +1164,7 @@ int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb,
 			goto drop_and_release;
 		}
 
-		isn = tcp_v6_init_sequence(skb);
+		isn = af_ops->init_seq(skb);
 	}
 
 	if (!dst) {

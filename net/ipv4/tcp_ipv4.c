@@ -1322,6 +1322,7 @@ const struct tcp_request_sock_ops tcp_request_sock_ipv4_ops = {
 	.cookie_init_seq =	cookie_v4_init_sequence,
 #endif
 	.route_req	=	tcp_v4_route_req,
+	.init_seq	=	tcp_v4_init_sequence,
 };
 
 int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb,
@@ -1433,7 +1434,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb,
 			goto drop_and_release;
 		}
 
-		isn = tcp_v4_init_sequence(skb);
+		isn = af_ops->init_seq(skb);
 	}
 	if (!dst) {
 		dst = af_ops->route_req(sk, (struct flowi *)&fl4, req, NULL);
