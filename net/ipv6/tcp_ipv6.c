@@ -779,6 +779,9 @@ const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops = {
 	.calc_md5_hash	=	tcp_v6_md5_hash_skb,
 #endif
 	.init_req	=	tcp_v6_init_req,
+#ifdef CONFIG_SYN_COOKIES
+	.cookie_init_seq =	cookie_v6_init_sequence,
+#endif
 };
 
 static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack,
@@ -1110,7 +1113,7 @@ int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb,
 
 	if (!isn) {
 		if (want_cookie) {
-			isn = cookie_v6_init_sequence(sk, skb, &req->mss);
+			isn = cookie_init_sequence(af_ops, sk, skb, &req->mss);
 			req->cookie_ts = tmp_opt.tstamp_ok;
 			goto have_isn;
 		}
