@@ -234,7 +234,8 @@ static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	mtreq->low_prio = mopt.low_prio;
 	tcp_rsk(req)->saw_mpc = 1;
 
-	if (tcp_v4_send_synack(meta_sk, dst, req, skb_get_queue_mapping(skb)))
+	if (tcp_v4_send_synack(meta_sk, dst, req, skb_get_queue_mapping(skb),
+			       NULL))
 		goto drop_and_free;
 
 	/* Adding to request queue in metasocket */

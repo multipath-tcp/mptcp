@@ -416,7 +416,8 @@ void tcp_v4_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 __u32 tcp_v4_init_sequence(const struct sk_buff *skb);
 int tcp_v4_send_synack(struct sock *sk, struct dst_entry *dst,
 		       struct request_sock *req,
-		       u16 queue_mapping);
+		       u16 queue_mapping,
+		       struct tcp_fastopen_cookie *foc);
 void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb);
 struct ip_options_rcu *tcp_v4_save_options(struct sk_buff *skb);
 struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb);
@@ -1263,6 +1264,9 @@ static inline void tcp_openreq_init(struct request_sock *req,
 	ireq->ir_num = ntohs(tcp_hdr(skb)->dest);
 }
 
+extern void tcp_openreq_init_rwin(struct request_sock *req,
+				  struct sock *sk, struct dst_entry *dst);
+
 void tcp_enter_memory_pressure(struct sock *sk);
 
 static inline int keepalive_intvl_when(const struct tcp_sock *tp)
@@ -1472,13 +1476,10 @@ void tcp_free_fastopen_req(struct tcp_sock *tp);
 
 extern struct tcp_fastopen_context __rcu *tcp_fastopen_ctx;
 int tcp_fastopen_reset_cipher(void *key, unsigned int len);
-int tcp_fastopen_create_child(struct sock *sk,
-			      struct sk_buff *skb,
-			      struct sk_buff *skb_synack,
-			      struct request_sock *req);
-bool tcp_fastopen_check(struct sock *sk, struct sk_buff *skb,
-			struct request_sock *req,
-			struct tcp_fastopen_cookie *foc);
+bool tcp_try_fastopen(struct sock *sk, struct sk_buff *skb,
+		      struct request_sock *req,
+		      struct tcp_fastopen_cookie *foc,
+		      struct dst_entry *dst);
 void tcp_fastopen_init_key_once(bool publish);
 #define TCP_FASTOPEN_KEY_LENGTH 16
 
