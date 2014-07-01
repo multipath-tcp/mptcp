@@ -461,7 +461,7 @@ static void mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	tcp_rsk(req)->saw_mpc = 1;
 
 	if (meta_sk->sk_family == AF_INET6) {
-		if (tcp_v6_send_synack(meta_sk, dst, &fl6, req,
+		if (tcp_v6_send_synack(meta_sk, dst, (struct flowi *)&fl6, req,
 				       skb_get_queue_mapping(skb), NULL))
 			goto drop_and_free;
 	} else {

@@ -850,6 +850,7 @@ void tcp_v4_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
  *	socket.
  */
 int tcp_v4_send_synack(struct sock *sk, struct dst_entry *dst,
+		       struct flowi *fl,
 		       struct request_sock *req,
 		       u16 queue_mapping,
 		       struct tcp_fastopen_cookie *foc)
@@ -882,7 +883,8 @@ int tcp_v4_send_synack(struct sock *sk, struct dst_entry *dst,
 
 int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req)
 {
-	int res = tcp_v4_send_synack(sk, NULL, req, 0, NULL);
+	const struct  tcp_request_sock_ops *af_ops = tcp_rsk(req)->af_specific;
+	int res = af_ops->send_synack(sk, NULL, NULL, req, 0, NULL);
 
 	if (!res) {
 		TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_RETRANSSEGS);
@@ -1323,6 +1325,7 @@ const struct tcp_request_sock_ops tcp_request_sock_ipv4_ops = {
 #endif
 	.route_req	=	tcp_v4_route_req,
 	.init_seq	=	tcp_v4_init_sequence,
+	.send_synack	=	tcp_v4_send_synack,
 };
 
 int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb,
@@ -1446,8 +1449,8 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb,
 	tcp_openreq_init_rwin(req, sk, dst);
 	fastopen = !want_cookie &&
 		   tcp_try_fastopen(sk, skb, req, &foc, dst);
-	err = tcp_v4_send_synack(sk, dst, req,
-				 skb_get_queue_mapping(skb), &foc);
+	err = af_ops->send_synack(sk, dst, NULL, req,
+				  skb_get_queue_mapping(skb), &foc);
 	if (!fastopen) {
 		if (err || want_cookie)
 			goto drop_and_free;
