@@ -1056,7 +1056,7 @@ int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb,
 		goto drop;
 	}
 
-	req = inet6_reqsk_alloc(ops);
+	req = inet_reqsk_alloc(ops);
 	if (req == NULL)
 		goto drop;
 
