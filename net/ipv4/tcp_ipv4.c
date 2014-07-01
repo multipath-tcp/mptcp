@@ -1286,6 +1286,22 @@ static void tcp_v4_init_req(struct request_sock *req, struct sock *sk,
 	ireq->opt = tcp_v4_save_options(skb);
 }
 
+static struct dst_entry *tcp_v4_route_req(struct sock *sk, struct flowi *fl,
+					  const struct request_sock *req,
+					  bool *strict)
+{
+	struct dst_entry *dst = inet_csk_route_req(sk, &fl->u.ip4, req);
+
+	if (strict) {
+		if (fl->u.ip4.daddr == inet_rsk(req)->ir_rmt_addr)
+			*strict = true;
+		else
+			*strict = false;
+	}
+
+	return dst;
+}
+
 struct request_sock_ops tcp_request_sock_ops __read_mostly = {
 	.family		=	PF_INET,
 	.obj_size	=	sizeof(struct tcp_request_sock),
@@ -1305,6 +1321,7 @@ const struct tcp_request_sock_ops tcp_request_sock_ipv4_ops = {
 #ifdef CONFIG_SYN_COOKIES
 	.cookie_init_seq =	cookie_v4_init_sequence,
 #endif
+	.route_req	=	tcp_v4_route_req,
 };
 
 int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb,
@@ -1388,11 +1405,13 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb,
 		 * timewait bucket, so that all the necessary checks
 		 * are made in the function processing timewait state.
 		 */
-		if (tmp_opt.saw_tstamp &&
-		    tcp_death_row.sysctl_tw_recycle &&
-		    (dst = inet_csk_route_req(sk, &fl4, req)) != NULL &&
-		    fl4.daddr == saddr) {
-			if (!tcp_peer_is_proven(req, dst, true)) {
+		if (tmp_opt.saw_tstamp && tcp_death_row.sysctl_tw_recycle) {
+			bool strict;
+
+			dst = af_ops->route_req(sk, (struct flowi *)&fl4, req,
+						&strict);
+			if (dst && strict &&
+			    !tcp_peer_is_proven(req, dst, true)) {
 				NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_PAWSPASSIVEREJECTED);
 				goto drop_and_release;
 			}
@@ -1416,8 +1435,11 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb,
 
 		isn = tcp_v4_init_sequence(skb);
 	}
-	if (!dst && (dst = inet_csk_route_req(sk, &fl4, req)) == NULL)
-		goto drop_and_free;
+	if (!dst) {
+		dst = af_ops->route_req(sk, (struct flowi *)&fl4, req, NULL);
+		if (!dst)
+			goto drop_and_free;
+	}
 
 	tcp_rsk(req)->snt_isn = isn;
 	tcp_openreq_init_rwin(req, sk, dst);
