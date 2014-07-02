@@ -428,8 +428,15 @@ static void mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 		isn = tcp_v6_init_sequence(skb);
 	}
 
+	if (!dst) {
+		dst = inet6_csk_route_req(meta_sk, &fl6, req);
+		if (!dst)
+			goto drop_and_free;
+	}
+
 	tcp_rsk(req)->snt_isn = isn;
 	tcp_rsk(req)->snt_synack = tcp_time_stamp;
+	tcp_openreq_init_rwin(req, meta_sk, dst);
 	tcp_rsk(req)->listener = NULL;
 
 	mtreq->mptcp_rem_nonce = mopt.mptcp_recv_nonce;

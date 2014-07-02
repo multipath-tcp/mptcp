@@ -136,6 +136,7 @@ static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	__u32 isn = TCP_SKB_CB(skb)->when;
 	int want_cookie = 0;
 	union inet_addr addr;
+	struct flowi4 fl4;
 
 	tcp_clear_options(&tmp_opt);
 	mptcp_init_mp_opt(&mopt);
@@ -171,8 +172,6 @@ static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 		TCP_ECN_create_request(req, skb, sock_net(meta_sk));
 
 	if (!isn) {
-		struct flowi4 fl4;
-
 		/* VJ's idea. We save last timestamp seen
 		 * from the destination in peer table, when entering
 		 * state TIME-WAIT, and check against it before
@@ -210,8 +209,16 @@ static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 
 		isn = tcp_v4_init_sequence(skb);
 	}
+
+	if (!dst) {
+		dst = inet_csk_route_req(meta_sk, &fl4, req);
+		if (!dst)
+			goto drop_and_free;
+	}
+
 	tcp_rsk(req)->snt_isn = isn;
 	tcp_rsk(req)->snt_synack = tcp_time_stamp;
+	tcp_openreq_init_rwin(req, meta_sk, dst);
 	tcp_rsk(req)->listener = NULL;
 
 	mtreq->mptcp_rem_nonce = mopt.mptcp_recv_nonce;
