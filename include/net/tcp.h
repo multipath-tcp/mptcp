@@ -451,8 +451,7 @@ void skb_clone_fraglist(struct sk_buff *skb);
 void copy_skb_header(struct sk_buff *new, const struct sk_buff *old);
 
 void inet_twsk_free(struct inet_timewait_sock *tw);
-int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb,
-			struct request_sock_ops *ops, void *init_data);
+int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb);
 /* These states need RST on ABORT according to RFC793 */
 static inline bool tcp_need_reset(int state)
 {
@@ -574,8 +573,7 @@ const u8 *tcp_parse_md5sig_option(const struct tcphdr *th);
  */
 
 void tcp_v4_send_check(struct sock *sk, struct sk_buff *skb);
-int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb,
-			struct request_sock_ops *ops, void *init_data);
+int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb);
 struct sock *tcp_create_openreq_child(struct sock *sk,
 				      struct request_sock *req,
 				      struct sk_buff *skb);
@@ -1721,7 +1719,7 @@ void tcp4_proc_exit(void);
 int tcp_rtx_synack(struct sock *sk, struct request_sock *req);
 int tcp_conn_request(struct request_sock_ops *rsk_ops,
 		     const struct tcp_request_sock_ops *af_ops,
-		     struct sock *sk, struct sk_buff *skb, void *init_data);
+		     struct sock *sk, struct sk_buff *skb);
 
 /* TCP af-specific functions */
 struct tcp_sock_af_ops {

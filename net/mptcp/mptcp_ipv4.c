@@ -78,6 +78,14 @@ static void mptcp_v4_reqsk_destructor(struct request_sock *req)
 	tcp_v4_reqsk_destructor(req);
 }
 
+static void mptcp_v4_init_req(struct request_sock *req, struct sock *sk,
+			      struct sk_buff *skb)
+{
+	tcp_request_sock_ipv4_ops.init_req(req, sk, skb);
+	mptcp_reqsk_init(req, skb);
+}
+
+
 /* Similar to tcp_request_sock_ops */
 struct request_sock_ops mptcp_request_sock_ops __read_mostly = {
 	.family		=	PF_INET,
@@ -87,7 +95,6 @@ struct request_sock_ops mptcp_request_sock_ops __read_mostly = {
 	.destructor	=	mptcp_v4_reqsk_destructor,
 	.send_reset	=	tcp_v4_send_reset,
 	.syn_ack_timeout =	tcp_syn_ack_timeout,
-	.init	        =	mptcp_reqsk_init,
 };
 
 static void mptcp_v4_reqsk_queue_hash_add(struct sock *meta_sk,
@@ -493,11 +500,16 @@ const struct inet_connection_sock_af_ops mptcp_v4_specific = {
 #endif
 };
 
+struct tcp_request_sock_ops mptcp_request_sock_ipv4_ops;
+
 /* General initialization of IPv4 for MPTCP */
 int mptcp_pm_v4_init(void)
 {
 	int ret = 0;
 	struct request_sock_ops *ops = &mptcp_request_sock_ops;
+
+	mptcp_request_sock_ipv4_ops = tcp_request_sock_ipv4_ops;
+	mptcp_request_sock_ipv4_ops.init_req = mptcp_v4_init_req;
 
 	ops->slab_name = kasprintf(GFP_KERNEL, "request_sock_%s", "MPTCP");
 	if (ops->slab_name == NULL) {

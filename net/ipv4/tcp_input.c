@@ -5773,9 +5773,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 		if (th->syn) {
 			if (th->fin)
 				goto discard;
-			if (icsk->icsk_af_ops->conn_request(sk, skb,
-							    &tcp_request_sock_ops,
-							    NULL) < 0)
+			if (icsk->icsk_af_ops->conn_request(sk, skb) < 0)
 				return 1;
 
 			/* Now we have several options: In theory there is
@@ -6057,7 +6055,7 @@ static inline void pr_drop_req(struct request_sock *req, __u16 port, int family)
 
 int tcp_conn_request(struct request_sock_ops *rsk_ops,
 		     const struct tcp_request_sock_ops *af_ops,
-		     struct sock *sk, struct sk_buff *skb, void *init_data)
+		     struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_options_received tmp_opt;
 	struct request_sock *req;
@@ -6108,9 +6106,6 @@ int tcp_conn_request(struct request_sock_ops *rsk_ops,
 
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 	tcp_openreq_init(req, &tmp_opt, skb);
-
-	if (rsk_ops->init)
-		rsk_ops->init(req, skb, init_data);
 
 	af_ops->init_req(req, sk, skb);
 

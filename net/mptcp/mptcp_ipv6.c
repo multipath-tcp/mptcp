@@ -107,6 +107,13 @@ static int mptcp_v6_rtx_synack(struct sock *meta_sk, struct request_sock *req)
 	return mptcp_v6v4_send_synack(meta_sk, req, 0);
 }
 
+static void mptcp_v6_init_req(struct request_sock *req, struct sock *sk,
+			      struct sk_buff *skb)
+{
+	tcp_request_sock_ipv6_ops.init_req(req, sk, skb);
+	mptcp_reqsk_init(req, skb);
+}
+
 /* Similar to tcp6_request_sock_ops */
 struct request_sock_ops mptcp6_request_sock_ops __read_mostly = {
 	.family		=	AF_INET6,
@@ -116,7 +123,6 @@ struct request_sock_ops mptcp6_request_sock_ops __read_mostly = {
 	.destructor	=	mptcp_v6_reqsk_destructor,
 	.send_reset	=	tcp_v6_send_reset,
 	.syn_ack_timeout =	tcp_syn_ack_timeout,
-	.init	        =	mptcp_reqsk_init,
 };
 
 static void mptcp_v6_reqsk_queue_hash_add(struct sock *meta_sk,
@@ -738,10 +744,15 @@ const struct inet_connection_sock_af_ops mptcp_v6_mapped = {
 #endif
 };
 
+struct tcp_request_sock_ops mptcp_request_sock_ipv6_ops;
+
 int mptcp_pm_v6_init(void)
 {
 	int ret = 0;
 	struct request_sock_ops *ops = &mptcp6_request_sock_ops;
+
+	mptcp_request_sock_ipv6_ops = tcp_request_sock_ipv6_ops;
+	mptcp_request_sock_ipv6_ops.init_req = mptcp_v6_init_req;
 
 	ops->slab_name = kasprintf(GFP_KERNEL, "request_sock_%s", "MPTCP6");
 	if (ops->slab_name == NULL) {

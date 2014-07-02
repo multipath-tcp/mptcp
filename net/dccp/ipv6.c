@@ -357,8 +357,7 @@ static struct sock *dccp_v6_hnd_req(struct sock *sk,struct sk_buff *skb)
 	return sk;
 }
 
-static int dccp_v6_conn_request(struct sock *sk, struct sk_buff *skb,
-				struct request_sock_ops *ops, void *init_data)
+static int dccp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 {
 	struct request_sock *req;
 	struct dccp_request_sock *dreq;
