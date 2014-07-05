@@ -268,8 +268,7 @@ void dccp_done(struct sock *sk);
 int dccp_reqsk_init(struct request_sock *rq, struct dccp_sock const *dp,
 		    struct sk_buff const *skb);
 
-int dccp_v4_conn_request(struct sock *sk, struct sk_buff *skb,
-			 struct request_sock_ops *ops, void *init_data);
+int dccp_v4_conn_request(struct sock *sk, struct sk_buff *skb);
 
 struct sock *dccp_create_openreq_child(struct sock *sk,
 				       const struct request_sock *req,

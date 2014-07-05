@@ -604,9 +604,7 @@ int dccp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 	if (sk->sk_state == DCCP_LISTEN) {
 		if (dh->dccph_type == DCCP_PKT_REQUEST) {
 			if (inet_csk(sk)->icsk_af_ops->conn_request(sk,
-								    skb,
-								    NULL,
-								    NULL) < 0)
+								    skb) < 0)
 				return 1;
 			goto discard;
 		}

@@ -367,7 +367,7 @@ static int dccp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	struct dccp_skb_cb *dcb = DCCP_SKB_CB(skb);
 
 	if (skb->protocol == htons(ETH_P_IP))
-		return dccp_v4_conn_request(sk, skb, NULL, NULL);
+		return dccp_v4_conn_request(sk, skb);
 
 	if (!ipv6_unicast_destination(skb))
 		return 0;	/* discard, don't send a reset here */
