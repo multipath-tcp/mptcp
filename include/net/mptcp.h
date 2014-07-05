@@ -719,7 +719,6 @@ void mptcp_del_sock(struct sock *sk);
 void mptcp_update_metasocket(struct sock *sock, struct sock *meta_sk);
 void mptcp_reinject_data(struct sock *orig_sk, int clone_it);
 void mptcp_update_sndbuf(struct mptcp_cb *mpcb);
-struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject);
 void mptcp_send_fin(struct sock *meta_sk);
 void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority);
 bool mptcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
@@ -858,7 +857,11 @@ static inline bool mptcp_can_sendpage(struct sock *sk)
 
 static inline void mptcp_push_pending_frames(struct sock *meta_sk)
 {
-	if (mptcp_next_segment(meta_sk, NULL)) {
+	/* We check packets out and send-head here. TCP only checks the
+	 * send-head. But, MPTCP also checks packets_out, as this is an
+	 * indication that we might want to do opportunistic reinjection.
+	 */
+	if (tcp_sk(meta_sk)->packets_out || tcp_send_head(meta_sk)) {
 		struct tcp_sock *tp = tcp_sk(meta_sk);
 
 		/* We don't care about the MSS, because it will be set in

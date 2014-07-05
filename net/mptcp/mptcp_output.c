@@ -936,6 +936,48 @@ retrans:
 	return NULL;
 }
 
+/* Returns the next segment to be sent from the mptcp meta-queue.
+ * (chooses the reinject queue if any segment is waiting in it, otherwise,
+ * chooses the normal write queue).
+ * Sets *@reinject to 1 if the returned segment comes from the
+ * reinject queue. Sets it to 0 if it is the regular send-head of the meta-sk,
+ * and sets it to -1 if it is a meta-level retransmission to optimize the
+ * receive-buffer.
+ */
+static struct sk_buff *mptcp_next_segment(struct sock *meta_sk, int *reinject)
+{
+	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+	struct sk_buff *skb = NULL;
+
+	*reinject = 0;
+
+	/* If we are in fallback-mode, just take from the meta-send-queue */
+	if (mpcb->infinite_mapping_snd || mpcb->send_infinite_mapping)
+		return tcp_send_head(meta_sk);
+
+	skb = skb_peek(&mpcb->reinject_queue);
+
+	if (skb) {
+		*reinject = 1;
+	} else {
+		skb = tcp_send_head(meta_sk);
+
+		if (!skb && meta_sk->sk_socket &&
+		    test_bit(SOCK_NOSPACE, &meta_sk->sk_socket->flags) &&
+		    sk_stream_wspace(meta_sk) < sk_stream_min_wspace(meta_sk)) {
+			struct sock *subsk = get_available_subflow(meta_sk, NULL,
+								   NULL, false);
+			if (!subsk)
+				return NULL;
+
+			skb = mptcp_rcv_buf_optimization(subsk, 0);
+			if (skb)
+				*reinject = -1;
+		}
+	}
+	return skb;
+}
+
 bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		     int push_one, gfp_t gfp)
 {
@@ -1505,49 +1547,6 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 
 		ptr += MPTCP_SUB_LEN_PRIO_ALIGN >> 2;
 	}
-}
-
-/* Returns the next segment to be sent from the mptcp meta-queue.
- * (chooses the reinject queue if any segment is waiting in it, otherwise,
- * chooses the normal write queue).
- * Sets *@reinject to 1 if the returned segment comes from the
- * reinject queue. Sets it to 0 if it is the regular send-head of the meta-sk,
- * and sets it to -1 if it is a meta-level retransmission to optimize the
- * receive-buffer.
- */
-struct sk_buff *mptcp_next_segment(struct sock *meta_sk, int *reinject)
-{
-	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct sk_buff *skb = NULL;
-	if (reinject)
-		*reinject = 0;
-
-	/* If we are in fallback-mode, just take from the meta-send-queue */
-	if (mpcb->infinite_mapping_snd || mpcb->send_infinite_mapping)
-		return tcp_send_head(meta_sk);
-
-	skb = skb_peek(&mpcb->reinject_queue);
-
-	if (skb) {
-		if (reinject)
-			*reinject = 1;
-	} else {
-		skb = tcp_send_head(meta_sk);
-
-		if (!skb && meta_sk->sk_socket &&
-		    test_bit(SOCK_NOSPACE, &meta_sk->sk_socket->flags) &&
-		    sk_stream_wspace(meta_sk) < sk_stream_min_wspace(meta_sk)) {
-			struct sock *subsk = get_available_subflow(meta_sk, NULL,
-								   NULL, false);
-			if (!subsk)
-				return NULL;
-
-			skb = mptcp_rcv_buf_optimization(subsk, 0);
-			if (skb && reinject)
-				*reinject = -1;
-		}
-	}
-	return skb;
 }
 
 /* Sends the datafin */
