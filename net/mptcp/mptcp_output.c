@@ -60,7 +60,7 @@ EXPORT_SYMBOL(mptcp_sub_len_remove_addr_align);
 
 /* If the sub-socket sk available to send the skb? */
 static int mptcp_is_available(struct sock *sk, struct sk_buff *skb,
-			      unsigned int *mss, bool zero_wnd_test)
+			      bool zero_wnd_test)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int mss_now;
@@ -117,9 +117,6 @@ static int mptcp_is_available(struct sock *sk, struct sk_buff *skb,
 	    after(tp->write_seq + min(skb->len, mss_now), tcp_wnd_end(tp)))
 		return 0;
 
-	if (mss)
-		*mss = mss_now;
-
 	return 1;
 }
 
@@ -143,19 +140,17 @@ static int mptcp_dont_reinject_skb(struct tcp_sock *tp, struct sk_buff *skb)
  */
 static struct sock *get_available_subflow(struct sock *meta_sk,
 					  struct sk_buff *skb,
-					  unsigned int *mss_now,
 					  bool zero_wnd_test)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct sock *sk, *bestsk = NULL, *lowpriosk = NULL, *backupsk = NULL;
-	unsigned int mss = 0, mss_lowprio = 0, mss_backup = 0;
 	u32 min_time_to_peer = 0xffffffff, lowprio_min_time_to_peer = 0xffffffff;
 	int cnt_backups = 0;
 
 	/* if there is only one subflow, bypass the scheduling function */
 	if (mpcb->cnt_subflows == 1) {
 		bestsk = (struct sock *)mpcb->connection_list;
-		if (!mptcp_is_available(bestsk, skb, mss_now, zero_wnd_test))
+		if (!mptcp_is_available(bestsk, skb, zero_wnd_test))
 			bestsk = NULL;
 		return bestsk;
 	}
@@ -165,7 +160,7 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 	    skb && mptcp_is_data_fin(skb)) {
 		mptcp_for_each_sk(mpcb, sk) {
 			if (tcp_sk(sk)->mptcp->path_index == mpcb->dfin_path_index &&
-			    mptcp_is_available(sk, skb, mss_now, zero_wnd_test))
+			    mptcp_is_available(sk, skb, zero_wnd_test))
 				return sk;
 		}
 	}
@@ -173,7 +168,6 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 	/* First, find the best subflow */
 	mptcp_for_each_sk(mpcb, sk) {
 		struct tcp_sock *tp = tcp_sk(sk);
-		int this_mss;
 
 		if (tp->mptcp->rcv_low_prio || tp->mptcp->low_prio)
 			cnt_backups++;
@@ -181,37 +175,32 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 		if ((tp->mptcp->rcv_low_prio || tp->mptcp->low_prio) &&
 		    tp->srtt < lowprio_min_time_to_peer) {
 
-			if (!mptcp_is_available(sk, skb, &this_mss, zero_wnd_test))
+			if (!mptcp_is_available(sk, skb, zero_wnd_test))
 				continue;
 
 			if (mptcp_dont_reinject_skb(tp, skb)) {
-				mss_backup = this_mss;
 				backupsk = sk;
 				continue;
 			}
 
 			lowprio_min_time_to_peer = tp->srtt;
 			lowpriosk = sk;
-			mss_lowprio = this_mss;
 		} else if (!(tp->mptcp->rcv_low_prio || tp->mptcp->low_prio) &&
 			   tp->srtt < min_time_to_peer) {
-			if (!mptcp_is_available(sk, skb, &this_mss, zero_wnd_test))
+			if (!mptcp_is_available(sk, skb, zero_wnd_test))
 				continue;
 
 			if (mptcp_dont_reinject_skb(tp, skb)) {
-				mss_backup = this_mss;
 				backupsk = sk;
 				continue;
 			}
 
 			min_time_to_peer = tp->srtt;
 			bestsk = sk;
-			mss = this_mss;
 		}
 	}
 
 	if (mpcb->cnt_established == cnt_backups && lowpriosk) {
-		mss = mss_lowprio;
 		sk = lowpriosk;
 	} else if (bestsk) {
 		sk = bestsk;
@@ -221,12 +210,8 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 		 */
 		if (skb)
 			TCP_SKB_CB(skb)->path_mask = 0;
-		mss = mss_backup;
 		sk = backupsk;
 	}
-
-	if (mss_now)
-		*mss_now = mss;
 
 	return sk;
 }
@@ -799,12 +784,12 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 		int err;
 		unsigned int mss;
 		unsigned int seg_size = tcp_wnd_end(meta_tp) - TCP_SKB_CB(skb)->seq;
-		struct sock *subsk = get_available_subflow(meta_sk, skb, &mss,
-							   true);
+		struct sock *subsk = get_available_subflow(meta_sk, skb, true);
 		struct tcp_sock *subtp;
 		if (!subsk)
 			goto window_probe;
 		subtp = tcp_sk(subsk);
+		mss = tcp_current_mss(subsk);
 
 		seg_size = min(tcp_wnd_end(meta_tp) - TCP_SKB_CB(skb)->seq,
 			       tcp_wnd_end(subtp) - subtp->write_seq);
@@ -935,7 +920,7 @@ retrans:
 			}
 		}
 
-		if (do_retrans && mptcp_is_available(sk, skb_head, NULL, false))
+		if (do_retrans && mptcp_is_available(sk, skb_head, false))
 			return skb_head;
 	}
 	return NULL;
@@ -971,7 +956,7 @@ static struct sk_buff *mptcp_next_segment(struct sock *meta_sk, int *reinject)
 		    test_bit(SOCK_NOSPACE, &meta_sk->sk_socket->flags) &&
 		    sk_stream_wspace(meta_sk) < sk_stream_min_wspace(meta_sk)) {
 			struct sock *subsk = get_available_subflow(meta_sk, NULL,
-								   NULL, false);
+								   false);
 			if (!subsk)
 				return NULL;
 
@@ -1012,9 +997,11 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		struct sk_buff *subskb = NULL;
 		u32 noneligible = mpcb->noneligible;
 
-		subsk = get_available_subflow(meta_sk, skb, &mss_now, false);
+		subsk = get_available_subflow(meta_sk, skb, false);
 		if (!subsk)
 			break;
+
+		mss_now = tcp_current_mss(subsk);
 
 		if (!reinject && unlikely(!tcp_snd_wnd_test(meta_tp, skb, mss_now))) {
 			skb = mptcp_rcv_buf_optimization(subsk, 1);
@@ -1750,7 +1737,7 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 	/* We need to make sure that the retransmitted segment can be sent on a
 	 * subflow right now. If it is too big, it needs to be fragmented.
 	 */
-	subsk = get_available_subflow(meta_sk, skb, &mss_now, false);
+	subsk = get_available_subflow(meta_sk, skb, false);
 	if (!subsk) {
 		/* We want to increase icsk_retransmits, thus return 0, so that
 		 * mptcp_retransmit_timer enters the desired branch.
@@ -1758,6 +1745,7 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 		err = 0;
 		goto failed;
 	}
+	mss_now = tcp_current_mss(subsk);
 
 	/* If the segment was cloned (e.g. a meta retransmission), the header
 	 * must be expanded/copied so that there is no corruption of TSO
