@@ -263,6 +263,23 @@ static int mptcp_reconstruct_mapping(struct sk_buff *skb, struct sk_buff *orig_s
 	return 0;
 }
 
+static void mptcp_find_and_set_pathmask(struct sock *meta_sk, struct sk_buff *skb)
+{
+	struct sk_buff *skb_it;
+
+	skb_it = tcp_write_queue_head(meta_sk);
+
+	tcp_for_write_queue_from(skb_it, meta_sk) {
+		if (skb_it == tcp_send_head(meta_sk))
+			break;
+
+		if (TCP_SKB_CB(skb_it)->seq == TCP_SKB_CB(skb)->seq) {
+			TCP_SKB_CB(skb)->path_mask = TCP_SKB_CB(skb_it)->path_mask;
+			break;
+		}
+	}
+}
+
 /* Reinject data from one TCP subflow to the meta_sk. If sk == NULL, we are
  * coming from the meta-retransmit-timer
  */
@@ -331,6 +348,11 @@ static void __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk
 	 * path_mask/dss.
 	 */
 	memset(TCP_SKB_CB(skb)->dss, 0 , mptcp_dss_len);
+
+	/* We need to find out the path-mask from the meta-write-queue
+	 * to properly select a subflow.
+	 */
+	mptcp_find_and_set_pathmask(meta_sk, skb);
 
 	/* If it's empty, just add */
 	if (skb_queue_empty(&mpcb->reinject_queue)) {
@@ -849,23 +871,6 @@ window_probe:
 	}
 }
 
-static void mptcp_find_and_set_pathmask(struct sock *meta_sk, struct sk_buff *skb)
-{
-	struct sk_buff *skb_it;
-
-	skb_it = tcp_write_queue_head(meta_sk);
-
-	tcp_for_write_queue_from(skb_it, meta_sk) {
-		if (skb_it == tcp_send_head(meta_sk))
-			break;
-
-		if (TCP_SKB_CB(skb_it)->seq == TCP_SKB_CB(skb)->seq) {
-			TCP_SKB_CB(skb)->path_mask = TCP_SKB_CB(skb_it)->path_mask;
-			break;
-		}
-	}
-}
-
 static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 {
 	struct sock *meta_sk;
@@ -930,7 +935,7 @@ retrans:
 			}
 		}
 
-		if (do_retrans)
+		if (do_retrans && mptcp_is_available(sk, skb_head, NULL, false))
 			return skb_head;
 	}
 	return NULL;
@@ -1007,6 +1012,19 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		struct sk_buff *subskb = NULL;
 		u32 noneligible = mpcb->noneligible;
 
+		subsk = get_available_subflow(meta_sk, skb, &mss_now, false);
+		if (!subsk)
+			break;
+
+		if (!reinject && unlikely(!tcp_snd_wnd_test(meta_tp, skb, mss_now))) {
+			skb = mptcp_rcv_buf_optimization(subsk, 1);
+			if (skb) {
+				reinject = -1;
+			} else {
+				break;
+			}
+		}
+
 		if (reinject == 1) {
 			if (!after(TCP_SKB_CB(skb)->end_seq, meta_tp->snd_una)) {
 				/* Segment already reached the peer, take the next one */
@@ -1014,26 +1032,15 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 				__kfree_skb(skb);
 				continue;
 			}
-
-			/* Reinjection and it is coming from a subflow? We need
-			 * to find out the path-mask from the meta-write-queue
-			 * to properly select a subflow.
-			 */
-			if (!TCP_SKB_CB(skb)->path_mask)
-				mptcp_find_and_set_pathmask(meta_sk, skb);
 		}
 
-subflow:
-		subsk = get_available_subflow(meta_sk, skb, &mss_now, false);
-		if (!subsk)
-			break;
 		subtp = tcp_sk(subsk);
 
 		/* Since all subsocks are locked before calling the scheduler,
 		 * the tcp_send_head should not change.
 		 */
 		BUG_ON(!reinject && tcp_send_head(meta_sk) != skb);
-retry:
+
 		/* If the segment was cloned (e.g. a meta retransmission),
 		 * the header must be expanded/copied so that there is no
 		 * corruption of TSO information.
@@ -1074,11 +1081,6 @@ retry:
 		}
 
 		if (!reinject && unlikely(!tcp_snd_wnd_test(meta_tp, skb, mss_now))) {
-			skb = mptcp_rcv_buf_optimization(subsk, 1);
-			if (skb) {
-				reinject = -1;
-				goto retry;
-			}
 			break;
 		}
 
@@ -1097,7 +1099,7 @@ retry:
 			 */
 			if (!push_one && !reinject && tcp_tso_should_defer(subsk, skb)) {
 				mpcb->noneligible |= mptcp_pi_to_flag(subtp->mptcp->path_index);
-				goto subflow;
+				continue;
 			}
 		}
 
