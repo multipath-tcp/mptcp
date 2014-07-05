@@ -92,6 +92,25 @@ static int proc_mptcp_path_manager(ctl_table *ctl, int write,
 	return ret;
 }
 
+static int proc_mptcp_scheduler(ctl_table *ctl, int write,
+				void __user *buffer, size_t *lenp,
+				loff_t *ppos)
+{
+	char val[MPTCP_SCHED_NAME_MAX];
+	ctl_table tbl = {
+		.data = val,
+		.maxlen = MPTCP_SCHED_NAME_MAX,
+	};
+	int ret;
+
+	mptcp_get_default_scheduler(val);
+
+	ret = proc_dostring(&tbl, write, buffer, lenp, ppos);
+	if (write && ret == 0)
+		ret = mptcp_set_default_scheduler(val);
+	return ret;
+}
+
 static struct ctl_table mptcp_table[] = {
 	{
 		.procname = "mptcp_enabled",
@@ -126,6 +145,12 @@ static struct ctl_table mptcp_table[] = {
 		.mode		= 0644,
 		.maxlen		= MPTCP_PM_NAME_MAX,
 		.proc_handler	= proc_mptcp_path_manager,
+	},
+	{
+		.procname	= "mptcp_scheduler",
+		.mode		= 0644,
+		.maxlen		= MPTCP_SCHED_NAME_MAX,
+		.proc_handler	= proc_mptcp_scheduler,
 	},
 	{ }
 };
@@ -2300,12 +2325,17 @@ void __init mptcp_init(void)
 	if (mptcp_register_path_manager(&mptcp_pm_default))
 		goto register_pm_failed;
 
+	if (mptcp_register_scheduler(&mptcp_sched_default))
+		goto register_sched_failed;
+
 	pr_info("MPTCP: Stable release v0.89.0-rc");
 
 	mptcp_init_failed = false;
 
 	return;
 
+register_sched_failed:
+	mptcp_unregister_path_manager(&mptcp_pm_default);
 register_pm_failed:
 	unregister_net_sysctl_table(mptcp_sysctl);
 register_sysctl_failed:

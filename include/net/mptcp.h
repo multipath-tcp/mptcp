@@ -229,6 +229,21 @@ struct mptcp_pm_ops {
 	struct module 	*owner;
 };
 
+#define MPTCP_SCHED_NAME_MAX 16
+struct mptcp_sched_ops {
+	struct list_head list;
+
+	struct sock *		(*get_subflow)(struct sock *meta_sk,
+					       struct sk_buff *skb,
+					       bool zero_wnd_test);
+	struct sk_buff *	(*next_segment)(struct sock *meta_sk,
+						int *reinject,
+						struct sock **subsk);
+
+	char			name[MPTCP_SCHED_NAME_MAX];
+	struct module		*owner;
+};
+
 struct mptcp_cb {
 	struct sock *meta_sk;
 
@@ -274,6 +289,8 @@ struct mptcp_cb {
 #define MPTCP_PM_SIZE 608
 	u8 mptcp_pm[MPTCP_PM_SIZE] __aligned(8);
 	struct mptcp_pm_ops *pm_ops;
+
+	struct mptcp_sched_ops *sched_ops;
 
 	/* Mutex needed, because otherwise mptcp_close will complain that the
 	 * socket is owned by the user.
@@ -821,6 +838,15 @@ void mptcp_fallback_default(struct mptcp_cb *mpcb);
 void mptcp_get_default_path_manager(char *name);
 int mptcp_set_default_path_manager(const char *name);
 extern struct mptcp_pm_ops mptcp_pm_default;
+
+/* MPTCP-scheduler registration/initialization functions */
+int mptcp_register_scheduler(struct mptcp_sched_ops *sched);
+void mptcp_unregister_scheduler(struct mptcp_sched_ops *sched);
+void mptcp_init_scheduler(struct mptcp_cb *mpcb);
+void mptcp_cleanup_scheduler(struct mptcp_cb *mpcb);
+void mptcp_get_default_scheduler(char *name);
+int mptcp_set_default_scheduler(const char *name);
+extern struct mptcp_sched_ops mptcp_sched_default;
 
 static inline int is_mptcp_enabled(void)
 {
