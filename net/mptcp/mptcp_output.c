@@ -703,20 +703,9 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 	struct sk_buff *skb;
 	unsigned int tso_segs, old_factor, sent_pkts;
 	int cwnd_quota;
-	int result;
 	int reinject = 0;
 
 	sent_pkts = 0;
-
-	/* Currently mtu-probing is not done in MPTCP */
-	if (!push_one && 0) {
-		/* Do MTU probing. */
-		result = tcp_mtu_probe(meta_sk);
-		if (!result)
-			return 0;
-		else if (result > 0)
-			sent_pkts = 1;
-	}
 
 	while ((skb = mpcb->sched_ops->next_segment(meta_sk, &reinject, &subsk))) {
 		unsigned int limit;

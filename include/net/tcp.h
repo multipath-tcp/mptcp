@@ -391,7 +391,6 @@ bool tcp_nagle_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 bool tcp_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 		      unsigned int cur_mss);
 unsigned int tcp_cwnd_test(const struct tcp_sock *tp, const struct sk_buff *skb);
-int tcp_mtu_probe(struct sock *sk);
 int tcp_init_tso_segs(const struct sock *sk, struct sk_buff *skb,
 		      unsigned int mss_now);
 void __pskb_trim_head(struct sk_buff *skb, int len);
