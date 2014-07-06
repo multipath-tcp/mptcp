@@ -460,6 +460,7 @@ static void mptcp_mpcb_put(struct mptcp_cb *mpcb)
 {
 	if (atomic_dec_and_test(&mpcb->mpcb_refcnt)) {
 		mptcp_cleanup_path_manager(mpcb);
+		mptcp_cleanup_scheduler(mpcb);
 		kmem_cache_free(mptcp_cb_cache, mpcb);
 	}
 }
@@ -1080,6 +1081,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	atomic_set(&mpcb->mpcb_refcnt, 1);
 
 	mptcp_init_path_manager(mpcb);
+	mptcp_init_scheduler(mpcb);
 
 	mptcp_debug("%s: created mpcb with token %#x\n",
 		    __func__, mpcb->mptcp_loc_token);

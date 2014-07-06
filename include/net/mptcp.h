@@ -853,6 +853,11 @@ static inline int is_mptcp_enabled(void)
 	return sysctl_mptcp_enabled && !mptcp_init_failed;
 }
 
+static inline int mptcp_pi_to_flag(int pi)
+{
+	return 1 << (pi - 1);
+}
+
 static inline
 struct mptcp_request_sock *mptcp_rsk(const struct request_sock *req)
 {
