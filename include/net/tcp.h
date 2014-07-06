@@ -385,7 +385,6 @@ unsigned int tcp_mss_split_point(const struct sock *sk,
 				 unsigned int mss_now,
 				 unsigned int max_segs,
 				 int nonagle);
-bool tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb);
 bool tcp_nagle_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 		    unsigned int cur_mss, int nonagle);
 bool tcp_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,

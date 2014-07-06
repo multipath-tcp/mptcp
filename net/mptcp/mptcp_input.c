@@ -54,19 +54,19 @@ static inline void mptcp_become_fully_estab(struct sock *sk)
 }
 
 /* Similar to tcp_tso_acked without any memory accounting */
-static inline int mptcp_tso_acked_reinject(struct sock *sk, struct sk_buff *skb)
+static inline int mptcp_tso_acked_reinject(struct sock *meta_sk, struct sk_buff *skb)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	u32 packets_acked, len;
 
-	BUG_ON(!after(TCP_SKB_CB(skb)->end_seq, tp->snd_una));
+	BUG_ON(!after(TCP_SKB_CB(skb)->end_seq, meta_tp->snd_una));
 
 	packets_acked = tcp_skb_pcount(skb);
 
 	if (skb_unclone(skb, GFP_ATOMIC))
 		return 0;
 
-	len = tp->snd_una - TCP_SKB_CB(skb)->seq;
+	len = meta_tp->snd_una - TCP_SKB_CB(skb)->seq;
 	__pskb_trim_head(skb, len);
 
 	TCP_SKB_CB(skb)->seq += len;
@@ -75,7 +75,7 @@ static inline int mptcp_tso_acked_reinject(struct sock *sk, struct sk_buff *skb)
 
 	/* Any change of skb->len requires recalculation of tso factor. */
 	if (tcp_skb_pcount(skb) > 1)
-		tcp_set_skb_tso_segs(sk, skb, tcp_skb_mss(skb));
+		tcp_set_skb_tso_segs(meta_sk, skb, tcp_skb_mss(skb));
 	packets_acked -= tcp_skb_pcount(skb);
 
 	if (packets_acked) {

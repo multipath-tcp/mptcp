@@ -278,10 +278,6 @@ struct mptcp_cb {
 	u8 cnt_subflows;
 	u8 cnt_established;
 
-	u32 noneligible;	/* Path mask of temporarily non
-				 * eligible subflows by the scheduler
-				 */
-
 	struct sk_buff_head reinject_queue;
 
 	u8 dfin_path_index;
