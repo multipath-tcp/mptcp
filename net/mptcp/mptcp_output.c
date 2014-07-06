@@ -934,7 +934,7 @@ retrans:
  * and sets it to -1 if it is a meta-level retransmission to optimize the
  * receive-buffer.
  */
-static struct sk_buff *mptcp_next_segment(struct sock *meta_sk, int *reinject)
+static struct sk_buff *__mptcp_next_segment(struct sock *meta_sk, int *reinject)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct sk_buff *skb = NULL;
@@ -968,11 +968,38 @@ static struct sk_buff *mptcp_next_segment(struct sock *meta_sk, int *reinject)
 	return skb;
 }
 
+static struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
+					  int *reinject,
+					  struct sock **subsk)
+{
+	struct sk_buff *skb = __mptcp_next_segment(meta_sk, reinject);
+	unsigned int mss_now;
+
+	if (!skb)
+		return NULL;
+
+	*subsk = get_available_subflow(meta_sk, skb, false);
+	if (!*subsk)
+		return NULL;
+
+	mss_now = tcp_current_mss(*subsk);
+
+	if (!*reinject && unlikely(!tcp_snd_wnd_test(tcp_sk(meta_sk), skb, mss_now))) {
+		skb = mptcp_rcv_buf_optimization(*subsk, 1);
+		if (skb)
+			*reinject = -1;
+		else
+			return NULL;
+	}
+
+	return skb;
+}
+
 bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		     int push_one, gfp_t gfp)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *subtp;
-	struct sock *subsk;
+	struct sock *subsk = NULL;
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	struct sk_buff *skb;
 	unsigned int tso_segs, old_factor, sent_pkts;
@@ -992,25 +1019,12 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 			sent_pkts = 1;
 	}
 
-	while ((skb = mptcp_next_segment(meta_sk, &reinject))) {
+	while ((skb = mptcp_next_segment(meta_sk, &reinject, &subsk))) {
 		unsigned int limit;
 		struct sk_buff *subskb = NULL;
 		u32 noneligible = mpcb->noneligible;
 
-		subsk = get_available_subflow(meta_sk, skb, false);
-		if (!subsk)
-			break;
-
 		mss_now = tcp_current_mss(subsk);
-
-		if (!reinject && unlikely(!tcp_snd_wnd_test(meta_tp, skb, mss_now))) {
-			skb = mptcp_rcv_buf_optimization(subsk, 1);
-			if (skb) {
-				reinject = -1;
-			} else {
-				break;
-			}
-		}
 
 		if (reinject == 1) {
 			if (!after(TCP_SKB_CB(skb)->end_seq, meta_tp->snd_una)) {
