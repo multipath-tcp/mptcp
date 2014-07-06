@@ -36,6 +36,9 @@
 #include <net/mptcp_v6.h>
 #include <net/sock.h>
 
+const int mptcp_dss_len = MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_ACK_ALIGN +
+	MPTCP_SUB_LEN_SEQ_ALIGN;
+
 static inline int mptcp_pi_to_flag(int pi)
 {
 	return 1 << (pi - 1);
@@ -324,6 +327,11 @@ static void __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk
 		return;
 	}
 
+	/* Segment goes back to the MPTCP-layer. So, we need to zero the
+	 * path_mask/dss.
+	 */
+	memset(TCP_SKB_CB(skb)->dss, 0 , mptcp_dss_len);
+
 	/* If it's empty, just add */
 	if (skb_queue_empty(&mpcb->reinject_queue)) {
 		skb_queue_head(&mpcb->reinject_queue, skb);
@@ -525,9 +533,6 @@ static int mptcp_write_dss_data_ack(struct tcp_sock *tp, struct sk_buff *skb,
 
 	return ptr - start;
 }
-
-const int mptcp_dss_len = MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_ACK_ALIGN +
-	MPTCP_SUB_LEN_SEQ_ALIGN;
 
 /* RFC6824 states that once a particular subflow mapping has been sent
  * out it must never be changed. However, packets may be split while
