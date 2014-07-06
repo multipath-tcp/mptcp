@@ -294,10 +294,16 @@ static struct sk_buff *__mptcp_next_segment(struct sock *meta_sk, int *reinject)
 
 static struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
 					  int *reinject,
-					  struct sock **subsk)
+					  struct sock **subsk,
+					  unsigned int *limit)
 {
 	struct sk_buff *skb = __mptcp_next_segment(meta_sk, reinject);
 	unsigned int mss_now;
+	struct tcp_sock *subtp;
+	u32 max_len, max_segs, window, needed;
+
+	/* As we set it, we have to reset it as well. */
+	*limit = 0;
 
 	if (!skb)
 		return NULL;
@@ -306,6 +312,7 @@ static struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
 	if (!*subsk)
 		return NULL;
 
+	subtp = tcp_sk(*subsk);
 	mss_now = tcp_current_mss(*subsk);
 
 	if (!*reinject && unlikely(!tcp_snd_wnd_test(tcp_sk(meta_sk), skb, mss_now))) {
@@ -315,6 +322,30 @@ static struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
 		else
 			return NULL;
 	}
+
+
+	/* The following is similar to tcp_mss_split_point, but
+	 * we do not care about nagle, because we will anyways
+	 * use TCP_NAGLE_PUSH, which overrides this.
+	 *
+	 * So, we first limit according to the cwnd/gso-size and then according
+	 * to the subflow's window.
+	 */
+	max_segs = min_t(unsigned int, tcp_cwnd_test(subtp, skb),
+			 (*subsk)->sk_gso_max_segs);
+	if (!max_segs)
+		return NULL;
+
+	max_len = mss_now * max_segs;
+	window = tcp_wnd_end(subtp) - subtp->write_seq;
+
+	needed = min(skb->len, window);
+	if (max_len <= skb->len)
+		/* Take max_win, which is actually the cwnd/gso-size */
+		*limit = max_len;
+	else
+		/* Or, take the window */
+		*limit = needed;
 
 	return skb;
 }

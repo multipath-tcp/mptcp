@@ -177,7 +177,6 @@ struct mptcp_tcp_sock {
 	u8	rem_id;
 
 	u32	last_rbuf_opti;	/* Timestamp of last rbuf optimization */
-	unsigned int sent_pkts;
 
 	struct sk_buff  *shortcut_ofoqueue; /* Shortcut to the current modified
 					     * skb in the ofo-queue.
@@ -238,7 +237,8 @@ struct mptcp_sched_ops {
 					       bool zero_wnd_test);
 	struct sk_buff *	(*next_segment)(struct sock *meta_sk,
 						int *reinject,
-						struct sock **subsk);
+						struct sock **subsk,
+						unsigned int *limit);
 
 	char			name[MPTCP_SCHED_NAME_MAX];
 	struct module		*owner;

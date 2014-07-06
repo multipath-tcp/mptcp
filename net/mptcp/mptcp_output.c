@@ -421,8 +421,7 @@ static int mptcp_write_dss_data_seq(struct tcp_sock *tp, struct sk_buff *skb,
 	return mptcp_dss_len/sizeof(*ptr);
 }
 
-static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff *skb,
-					int reinject)
+static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sock *meta_sk = mptcp_meta_sk(sk);
@@ -436,7 +435,13 @@ static struct sk_buff *mptcp_skb_entail(struct sock *sk, struct sk_buff *skb,
 
 	subskb = pskb_copy_for_clone(skb, GFP_ATOMIC);
 	if (!subskb)
-		return NULL;
+		return false;
+
+	/* At the subflow-level we need to call again tcp_init_tso_segs. We
+	 * force this, by setting gso_segs to 0. It has been set to 1 prior to
+	 * the call to mptcp_skb_entail.
+	 */
+	skb_shinfo(subskb)->gso_segs = 0;
 
 	TCP_SKB_CB(skb)->path_mask |= mptcp_pi_to_flag(tp->mptcp->path_index);
 
@@ -474,91 +479,43 @@ no_data_seq:
 	tcb->end_seq = tp->write_seq;
 
 	/* If it's a non-payload DATA_FIN (also no subflow-fin), the
-	 * segment is not part of the subflow but on a meta-only-level
+	 * segment is not part of the subflow but on a meta-only-level.
 	 */
 	if (!mptcp_is_data_fin(subskb) || tcb->end_seq != tcb->seq) {
 		tcp_add_write_queue_tail(sk, subskb);
 		sk->sk_wmem_queued += subskb->truesize;
 		sk_mem_charge(sk, subskb->truesize);
-	}
-
-	return subskb;
-}
-
-static void mptcp_sub_event_new_data_sent(struct sock *sk,
-					  struct sk_buff *subskb,
-					  struct sk_buff *skb)
-{
-	/* If it's a non-payload DATA_FIN (also no subflow-fin), the
-	 * segment is not part of the subflow but on a meta-only-level
-	 *
-	 * We free it, because it has been queued nowhere.
-	 */
-	if (!mptcp_is_data_fin(subskb) ||
-	    (TCP_SKB_CB(subskb)->end_seq != TCP_SKB_CB(subskb)->seq)) {
-		tcp_event_new_data_sent(sk, subskb);
-		tcp_sk(sk)->mptcp->second_packet = 1;
-		tcp_sk(sk)->mptcp->last_end_data_seq = TCP_SKB_CB(skb)->end_seq;
 	} else {
+		int err;
+
+		/* Necessary to initialize for tcp_transmit_skb. mss of 1, as
+		 * skb->len = 0 will force tso_segs to 1.
+		 */
+		tcp_init_tso_segs(sk, subskb, 1);
+		/* Empty data-fins are sent immediatly on the subflow */
+		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
+		err = tcp_transmit_skb(sk, subskb, 1, GFP_ATOMIC);
+
+		/* It has not been queued, we can free it now. */
 		kfree_skb(subskb);
+
+		if (err)
+			return false;
 	}
-}
 
-/* Handle the packets and sockets after a tcp_transmit_skb failed */
-static void mptcp_transmit_skb_failed(struct sock *sk, struct sk_buff *skb,
-				      struct sk_buff *subskb)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct mptcp_cb *mpcb = tp->mpcb;
-
-	/* No work to do if we are in infinite mapping mode
-	 * There is only one subflow left and we cannot send this segment on
-	 * another subflow.
-	 */
-	if (mpcb->infinite_mapping_snd)
-		return;
-
-	TCP_SKB_CB(skb)->path_mask &= ~mptcp_pi_to_flag(tp->mptcp->path_index);
-
-	if (TCP_SKB_CB(subskb)->tcp_flags & TCPHDR_FIN) {
-		/* If it is a subflow-fin we must leave it on the
-		 * subflow-send-queue, so that the probe-timer
-		 * can retransmit it.
-		 */
-		if (!tp->packets_out && !inet_csk(sk)->icsk_pending)
-			inet_csk_reset_xmit_timer(sk, ICSK_TIME_PROBE0,
-						  inet_csk(sk)->icsk_rto, TCP_RTO_MAX);
-	} else if (mptcp_is_data_fin(subskb) &&
-		   TCP_SKB_CB(subskb)->end_seq == TCP_SKB_CB(subskb)->seq) {
-		/* An empty data-fin has not been enqueued on the subflow
-		 * and thus we free it.
-		 */
-
-		kfree_skb(subskb);
-	} else {
-		/* In all other cases we remove it from the sub-queue.
-		 * Other subflows may send it, or the probe-timer will
-		 * handle it.
-		 */
-		tcp_advance_send_head(sk, subskb);
-
-		/* tcp_add_write_queue_tail initialized highest_sack. We have
-		 * to reset it, if necessary.
-		 */
-		if (tp->highest_sack == subskb)
-			tp->highest_sack = NULL;
-
-		tcp_unlink_write_queue(subskb, sk);
-		tp->write_seq -= subskb->len;
-		sk_wmem_free_skb(sk, subskb);
+	if (!tp->mptcp->fully_established) {
+		tp->mptcp->second_packet = 1;
+		tp->mptcp->last_end_data_seq = TCP_SKB_CB(skb)->end_seq;
 	}
+
+	return true;
 }
 
 /* Fragment an skb and update the mptcp meta-data. Due to reinject, we
  * might need to undo some operations done by tcp_fragment.
  */
 static int mptcp_fragment(struct sock *meta_sk, struct sk_buff *skb, u32 len,
-			  unsigned int mss_now, gfp_t gfp, int reinject)
+			  gfp_t gfp, int reinject)
 {
 	int ret, diff, old_factor;
 	struct sk_buff *buff;
@@ -570,7 +527,12 @@ static int mptcp_fragment(struct sock *meta_sk, struct sk_buff *skb, u32 len,
 		diff = skb->data_len;
 	old_factor = tcp_skb_pcount(skb);
 
-	ret = tcp_fragment(meta_sk, skb, len, mss_now, gfp);
+	/* The mss_now in tcp_fragment is used to set the tso_segs of the skb.
+	 * At the MPTCP-level we do not care about the absolute value. All we
+	 * care about is that it is set to 1 for accurate packets_out
+	 * accounting.
+	 */
+	ret = tcp_fragment(meta_sk, skb, len, UINT_MAX, gfp);
 	if (ret)
 		return ret;
 
@@ -609,7 +571,7 @@ static int mptcp_fragment(struct sock *meta_sk, struct sk_buff *skb, u32 len,
 int mptcp_write_wakeup(struct sock *meta_sk)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct sk_buff *skb, *subskb;
+	struct sk_buff *skb;
 	struct sock *sk_it;
 	int ans = 0;
 
@@ -619,7 +581,6 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 	skb = tcp_send_head(meta_sk);
 	if (skb &&
 	    before(TCP_SKB_CB(skb)->seq, tcp_wnd_end(meta_tp))) {
-		int err;
 		unsigned int mss;
 		unsigned int seg_size = tcp_wnd_end(meta_tp) - TCP_SKB_CB(skb)->seq;
 		struct sock *subsk = meta_tp->mpcb->sched_ops->get_subflow(meta_sk, skb, true);
@@ -643,30 +604,23 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 		    skb->len > mss) {
 			seg_size = min(seg_size, mss);
 			TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_PSH;
-			if (mptcp_fragment(meta_sk, skb, seg_size, mss,
+			if (mptcp_fragment(meta_sk, skb, seg_size,
 					   GFP_ATOMIC, 0))
 				return -1;
 		} else if (!tcp_skb_pcount(skb)) {
-			tcp_set_skb_tso_segs(meta_sk, skb, mss);
+			/* see mptcp_write_xmit on why we use UINT_MAX */
+			tcp_set_skb_tso_segs(meta_sk, skb, UINT_MAX);
 		}
 
-		subskb = mptcp_skb_entail(subsk, skb, 0);
-		if (!subskb)
+		if (!mptcp_skb_entail(subsk, skb, 0))
 			return -1;
-
-		TCP_SKB_CB(subskb)->tcp_flags |= TCPHDR_PSH;
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
-		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
-		err = tcp_transmit_skb(subsk, subskb, 1, GFP_ATOMIC);
-		if (unlikely(err)) {
-			mptcp_transmit_skb_failed(subsk, skb, subskb);
-			return err;
-		}
 
 		mptcp_check_sndseq_wrap(meta_tp, TCP_SKB_CB(skb)->end_seq -
 						 TCP_SKB_CB(skb)->seq);
 		tcp_event_new_data_sent(meta_sk, skb);
-		mptcp_sub_event_new_data_sent(subsk, subskb, skb);
+
+		__tcp_push_pending_frames(subsk, mss, TCP_NAGLE_PUSH);
 
 		return 0;
 	} else {
@@ -701,17 +655,17 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 	struct sock *subsk = NULL;
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	struct sk_buff *skb;
-	unsigned int tso_segs, old_factor, sent_pkts;
-	int cwnd_quota;
+	unsigned int sent_pkts;
 	int reinject = 0;
+	unsigned int sublimit;
 
 	sent_pkts = 0;
 
-	while ((skb = mpcb->sched_ops->next_segment(meta_sk, &reinject, &subsk))) {
+	while ((skb = mpcb->sched_ops->next_segment(meta_sk, &reinject, &subsk,
+						    &sublimit))) {
 		unsigned int limit;
-		struct sk_buff *subskb = NULL;
-		u32 noneligible = mpcb->noneligible;
 
+		subtp = tcp_sk(subsk);
 		mss_now = tcp_current_mss(subsk);
 
 		if (reinject == 1) {
@@ -723,13 +677,6 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 			}
 		}
 
-		subtp = tcp_sk(subsk);
-
-		/* Since all subsocks are locked before calling the scheduler,
-		 * the tcp_send_head should not change.
-		 */
-		BUG_ON(!reinject && tcp_send_head(meta_sk) != skb);
-
 		/* If the segment was cloned (e.g. a meta retransmission),
 		 * the header must be expanded/copied so that there is no
 		 * corruption of TSO information.
@@ -737,85 +684,63 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		if (skb_unclone(skb, GFP_ATOMIC))
 			break;
 
-		old_factor = tcp_skb_pcount(skb);
-		tcp_set_skb_tso_segs(meta_sk, skb, mss_now);
-		tso_segs = tcp_skb_pcount(skb);
-
-		if (reinject == -1) {
-			/* The packet has already once been sent, so if we
-			 * change the pcount here we have to adjust packets_out
-			 * in the meta-sk
-			 */
-			int diff = old_factor - tso_segs;
-
-			if (diff)
-				tcp_adjust_pcount(meta_sk, skb, diff);
-		}
-
-		cwnd_quota = tcp_cwnd_test(subtp, skb);
-		if (!cwnd_quota) {
-			/* May happen due to two cases:
-			 *
-			 * - if at the first selection we circumvented
-			 *   the test due to a DATA_FIN (and got rejected at
-			 *   tcp_snd_wnd_test), but the reinjected segment is not
-			 *   a DATA_FIN.
-			 * - if we take a DATA_FIN with data, but
-			 *   tcp_set_skb_tso_segs() increases the number of
-			 *   tso_segs to something > 1. Then, cwnd_test might
-			 *   reject it.
-			 */
-			mpcb->noneligible |= mptcp_pi_to_flag(subtp->mptcp->path_index);
-			continue;
-		}
-
-		if (!reinject && unlikely(!tcp_snd_wnd_test(meta_tp, skb, mss_now))) {
+		if (unlikely(!tcp_snd_wnd_test(meta_tp, skb, mss_now)))
 			break;
-		}
 
-		if (tso_segs == 1) {
-			if (unlikely(!tcp_nagle_test(meta_tp, skb, mss_now,
-						     (tcp_skb_is_last(meta_sk, skb) ?
-						      nonagle : TCP_NAGLE_PUSH))))
-				break;
-		} else {
-			/* Do not try to defer the transmission of a reinjected
-			 * segment. Send it directly.
-			 * If it is not possible to send the TSO segment on the
-			 * best subflow right now try to look for another subflow.
-			 * If there is no subflow available defer the segment to avoid
-			 * the call to mptcp_fragment.
-			 */
-			if (!push_one && !reinject && tcp_tso_should_defer(subsk, skb)) {
-				mpcb->noneligible |= mptcp_pi_to_flag(subtp->mptcp->path_index);
-				continue;
-			}
-		}
+		/* Force tso_segs to 1 by using UINT_MAX.
+		 * We actually don't care about the exact number of segments
+		 * emitted on the subflow. We need just to set tso_segs, because
+		 * we still need an accurate packets_out count in
+		 * tcp_event_new_data_sent.
+		 */
+		tcp_set_skb_tso_segs(meta_sk, skb, UINT_MAX);
+
+		/* Check for nagle, irregardless of tso_segs. If the segment is
+		 * actually larger than mss_now (TSO segment), then
+		 * tcp_nagle_check will have partial == false and always trigger
+		 * the transmission.
+		 * tcp_write_xmit has a TSO-level nagle check which is not
+		 * subject to the MPTCP-level. It is based on the properties of
+		 * the subflow, not the MPTCP-level.
+		 */
+		if (unlikely(!tcp_nagle_test(meta_tp, skb, mss_now,
+					     (tcp_skb_is_last(meta_sk, skb) ?
+					      nonagle : TCP_NAGLE_PUSH))))
+			break;
 
 		limit = mss_now;
-		if (tso_segs > 1 && !tcp_urg_mode(meta_tp))
-			limit = tcp_mss_split_point(subsk, skb, mss_now,
-						    min_t(unsigned int,
-							  cwnd_quota,
-							  subsk->sk_gso_max_segs),
+		/* skb->len > mss_now is the equivalent of tso_segs > 1 in
+		 * tcp_write_xmit. Otherwise split-point would return 0.
+		 */
+		if (skb->len > mss_now && !tcp_urg_mode(meta_tp))
+			/* We limit the size of the skb so that it fits into the
+			 * window. Call tcp_mss_split_point to avoid duplicating
+			 * code.
+			 * We really only care about fitting the skb into the
+			 * window. That's why we use UINT_MAX. If the skb does
+			 * not fit into the cwnd_quota or the NIC's max-segs
+			 * limitation, it will be split by the subflow's
+			 * tcp_write_xmit which does the appropriate call to
+			 * tcp_mss_split_point.
+			 */
+			limit = tcp_mss_split_point(meta_sk, skb, mss_now,
+						    UINT_MAX / mss_now,
 						    nonagle);
 
+		if (sublimit)
+			limit = min(limit, sublimit);
+
 		if (skb->len > limit &&
-		    unlikely(mptcp_fragment(meta_sk, skb, limit, mss_now, gfp, reinject)))
+		    unlikely(mptcp_fragment(meta_sk, skb, limit, gfp, reinject)))
 			break;
 
-		subskb = mptcp_skb_entail(subsk, skb, reinject);
-		if (!subskb)
+		if (!mptcp_skb_entail(subsk, skb, reinject))
 			break;
-
-		mpcb->noneligible = noneligible;
+		/* Nagle is handled at the MPTCP-layer, so
+		 * always push on the subflow
+		 */
+		__tcp_push_pending_frames(subsk, mss_now, TCP_NAGLE_PUSH);
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
-		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
-		if (unlikely(tcp_transmit_skb(subsk, subskb, 1, gfp))) {
-			mptcp_transmit_skb_failed(subsk, skb, subskb);
-			mpcb->noneligible |= mptcp_pi_to_flag(subtp->mptcp->path_index);
-			continue;
-		}
 
 		if (!reinject) {
 			mptcp_check_sndseq_wrap(meta_tp,
@@ -826,9 +751,6 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 
 		tcp_minshall_update(meta_tp, mss_now, skb);
 		sent_pkts += tcp_skb_pcount(skb);
-		tcp_sk(subsk)->mptcp->sent_pkts += tcp_skb_pcount(skb);
-
-		mptcp_sub_event_new_data_sent(subsk, subskb, skb);
 
 		if (reinject > 0) {
 			__skb_unlink(skb, &mpcb->reinject_queue);
@@ -837,21 +759,6 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 
 		if (push_one)
 			break;
-	}
-
-	mpcb->noneligible = 0;
-
-	if (likely(sent_pkts)) {
-		mptcp_for_each_sk(mpcb, subsk) {
-			subtp = tcp_sk(subsk);
-			if (subtp->mptcp->sent_pkts) {
-				if (tcp_in_cwnd_reduction(subsk))
-					subtp->prr_out += subtp->mptcp->sent_pkts;
-				tcp_cwnd_validate(subsk);
-				subtp->mptcp->sent_pkts = 0;
-			}
-		}
-		return 0;
 	}
 
 	return !meta_tp->packets_out && tcp_send_head(meta_sk);
@@ -1422,9 +1329,8 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct sock *subsk;
-	struct sk_buff *subskb;
-	unsigned int limit, tso_segs, mss_now;
-	int err = -1, oldpcount;
+	unsigned int limit, mss_now;
+	int err = -1;
 
 	/* Do not sent more than we queued. 1/4 is reserved for possible
 	 * copying overhead: fragmentation, tunneling, mangling etc.
@@ -1458,52 +1364,42 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 		goto failed;
 	}
 
-	oldpcount = tcp_skb_pcount(skb);
-	tcp_set_skb_tso_segs(meta_sk, skb, mss_now);
-	tso_segs = tcp_skb_pcount(skb);
-	BUG_ON(!tso_segs);
-
-	/* The MSS might have changed and so the number of segments. We
-	 * need to account for this change.
-	 */
-	if (unlikely(oldpcount != tso_segs))
-		tcp_adjust_pcount(meta_sk, skb, oldpcount - tso_segs);
+	/* Must have been set by mptcp_write_xmit before */
+	BUG_ON(!tcp_skb_pcount(skb));
 
 	limit = mss_now;
-	if (tso_segs > 1 && !tcp_urg_mode(meta_tp))
-		limit = tcp_mss_split_point(subsk, skb, mss_now,
-					    min_t(unsigned int,
-						  tcp_cwnd_test(tcp_sk(subsk), skb),
-						  subsk->sk_gso_max_segs),
-					          TCP_NAGLE_OFF);
+	/* skb->len > mss_now is the equivalent of tso_segs > 1 in
+	 * tcp_write_xmit. Otherwise split-point would return 0.
+	 */
+	if (skb->len > mss_now && !tcp_urg_mode(meta_tp))
+		limit = tcp_mss_split_point(meta_sk, skb, mss_now,
+					    UINT_MAX / mss_now,
+					    TCP_NAGLE_OFF);
 
 	if (skb->len > limit &&
-	    unlikely(mptcp_fragment(meta_sk, skb, limit, mss_now,
+	    unlikely(mptcp_fragment(meta_sk, skb, limit,
 				    GFP_ATOMIC, 0)))
 		goto failed;
 
-	subskb = mptcp_skb_entail(subsk, skb, -1);
-	if (!subskb)
+	if (!mptcp_skb_entail(subsk, skb, -1))
 		goto failed;
-
 	TCP_SKB_CB(skb)->when = tcp_time_stamp;
-	TCP_SKB_CB(subskb)->when = tcp_time_stamp;
-	err = tcp_transmit_skb(subsk, subskb, 1, GFP_ATOMIC);
-	if (!err) {
-		/* Update global TCP statistics. */
-		TCP_INC_STATS(sock_net(meta_sk), TCP_MIB_RETRANSSEGS);
 
-		/* Diff to tcp_retransmit_skb */
+	/* Update global TCP statistics. */
+	TCP_INC_STATS(sock_net(meta_sk), TCP_MIB_RETRANSSEGS);
 
-		/* Save stamp of the first retransmit. */
-		if (!meta_tp->retrans_stamp)
-			meta_tp->retrans_stamp = TCP_SKB_CB(subskb)->when;
-		mptcp_sub_event_new_data_sent(subsk, subskb, skb);
-	} else {
-		mptcp_transmit_skb_failed(subsk, skb, subskb);
-	}
+	/* Diff to tcp_retransmit_skb */
+
+	/* Save stamp of the first retransmit. */
+	if (!meta_tp->retrans_stamp)
+		meta_tp->retrans_stamp = TCP_SKB_CB(skb)->when;
+
+	__tcp_push_pending_frames(subsk, mss_now, TCP_NAGLE_PUSH);
+
+	return 0;
 
 failed:
+	NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_TCPRETRANSFAIL);
 	return err;
 }
 
