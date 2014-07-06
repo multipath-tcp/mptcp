@@ -11,7 +11,7 @@ static int mptcp_is_available(struct sock *sk, struct sk_buff *skb,
 			      bool zero_wnd_test)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	unsigned int mss_now;
+	unsigned int mss_now, space, in_flight;
 
 	/* Set of states for which we are allowed to send data */
 	if (!mptcp_sk_can_send(sk))
@@ -55,13 +55,24 @@ static int mptcp_is_available(struct sock *sk, struct sk_buff *skb,
 	if (test_bit(TSQ_THROTTLED, &tp->tsq_flags))
 		return 0;
 
-	if (!tcp_cwnd_test(tp, skb))
+	in_flight = tcp_packets_in_flight(tp);
+	/* Not even a single spot in the cwnd */
+	if (in_flight >= tp->snd_cwnd)
+		return 0;
+
+	/* Now, check if what is queued in the subflow's send-queue
+	 * already fills the cwnd.
+	 */
+	space = (tp->snd_cwnd - in_flight) * tp->mss_cache;
+
+	if (tp->write_seq - tp->snd_nxt > space)
 		return 0;
 
 	if (zero_wnd_test && !before(tp->write_seq, tcp_wnd_end(tp)))
 		return 0;
 
 	mss_now = tcp_current_mss(sk);
+
 	/* Don't send on this subflow if we bypass the allowed send-window at
 	 * the per-subflow level. Similar to tcp_snd_wnd_test, but manually
 	 * calculated end_seq (because here at this point end_seq is still at

@@ -1531,7 +1531,7 @@ unsigned int tcp_cwnd_test(const struct tcp_sock *tp,
 
 	/* Don't be strict about the congestion window for the final FIN.  */
 	if (skb &&
-	    ((TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN) || mptcp_is_data_fin(skb)) &&
+	    (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN) &&
 	    tcp_skb_pcount(skb) == 1)
 		return 1;
 
