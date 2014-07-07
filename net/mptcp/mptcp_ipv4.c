@@ -41,15 +41,14 @@
 #include <net/request_sock.h>
 #include <net/tcp.h>
 
-u32 mptcp_v4_get_nonce(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport,
-		       u32 seq)
+u32 mptcp_v4_get_nonce(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport)
 {
 	u32 hash[MD5_DIGEST_WORDS];
 
 	hash[0] = (__force u32)saddr;
 	hash[1] = (__force u32)daddr;
 	hash[2] = ((__force u16)sport << 16) + (__force u16)dport;
-	hash[3] = seq;
+	hash[3] = mptcp_seed++;
 
 	md5_transform(hash, mptcp_secret);
 
@@ -63,7 +62,7 @@ u64 mptcp_v4_get_key(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport)
 	hash[0] = (__force u32)saddr;
 	hash[1] = (__force u32)daddr;
 	hash[2] = ((__force u16)sport << 16) + (__force u16)dport;
-	hash[3] = mptcp_key_seed++;
+	hash[3] = mptcp_seed++;
 
 	md5_transform(hash, mptcp_secret);
 
@@ -233,7 +232,7 @@ static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	mtreq->mptcp_loc_key = mpcb->mptcp_loc_key;
 	mtreq->mptcp_loc_nonce = mptcp_v4_get_nonce(saddr, daddr,
 						    tcp_hdr(skb)->source,
-						    tcp_hdr(skb)->dest, isn);
+						    tcp_hdr(skb)->dest);
 	mptcp_hmac_sha1((u8 *)&mtreq->mptcp_loc_key,
 			(u8 *)&mtreq->mptcp_rem_key,
 			(u8 *)&mtreq->mptcp_loc_nonce,

@@ -50,8 +50,7 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 			   struct mptcp_rem4 *rem);
 int mptcp_pm_v4_init(void);
 void mptcp_pm_v4_undo(void);
-u32 mptcp_v4_get_nonce(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport,
-		       u32 seq);
+u32 mptcp_v4_get_nonce(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport);
 u64 mptcp_v4_get_key(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport);
 
 #else

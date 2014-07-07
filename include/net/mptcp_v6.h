@@ -55,7 +55,7 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 				      struct request_sock *req,
 				      struct dst_entry *dst);
 __u32 mptcp_v6_get_nonce(const __be32 *saddr, const __be32 *daddr,
-			 __be16 sport, __be16 dport, u32 seq);
+			 __be16 sport, __be16 dport);
 u64 mptcp_v6_get_key(const __be32 *saddr, const __be32 *daddr,
 		     __be16 sport, __be16 dport);
 

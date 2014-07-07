@@ -683,10 +683,10 @@ extern struct lock_class_key meta_key;
 extern struct lock_class_key meta_slock_key;
 extern u32 mptcp_secret[MD5_MESSAGE_BYTES / 4];
 
-/* This is needed to ensure that two subsequent key-generation result in
- * different keys if the IPs and ports are the same.
+/* This is needed to ensure that two subsequent key/nonce-generation result in
+ * different keys/nonces if the IPs and ports are the same.
  */
-extern u32 mptcp_key_seed;
+extern u32 mptcp_seed;
 
 #define MPTCP_HASH_SIZE                1024
 

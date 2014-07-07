@@ -541,7 +541,7 @@ static void mptcp_set_state(struct sock *sk)
 }
 
 u32 mptcp_secret[MD5_MESSAGE_BYTES / 4] ____cacheline_aligned;
-u32 mptcp_key_seed = 0;
+u32 mptcp_seed = 0;
 
 void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn)
 {

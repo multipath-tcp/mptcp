@@ -48,7 +48,7 @@ static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req
 				  u16 queue_mapping);
 
 __u32 mptcp_v6_get_nonce(const __be32 *saddr, const __be32 *daddr,
-			 __be16 sport, __be16 dport, u32 seq)
+			 __be16 sport, __be16 dport)
 {
 	u32 secret[MD5_MESSAGE_BYTES / 4];
 	u32 hash[MD5_DIGEST_WORDS];
@@ -59,7 +59,7 @@ __u32 mptcp_v6_get_nonce(const __be32 *saddr, const __be32 *daddr,
 		secret[i] = mptcp_secret[i] + (__force u32)daddr[i];
 	secret[4] = mptcp_secret[4] +
 		    (((__force u16)sport << 16) + (__force u16)dport);
-	secret[5] = seq;
+	secret[5] = mptcp_seed++;
 	for (i = 6; i < MD5_MESSAGE_BYTES / 4; i++)
 		secret[i] = mptcp_secret[i];
 
@@ -80,7 +80,7 @@ u64 mptcp_v6_get_key(const __be32 *saddr, const __be32 *daddr,
 		secret[i] = mptcp_secret[i] + (__force u32)daddr[i];
 	secret[4] = mptcp_secret[4] +
 		    (((__force u16)sport << 16) + (__force u16)dport);
-	secret[5] = mptcp_key_seed++;
+	secret[5] = mptcp_seed++;
 	for (i = 5; i < MD5_MESSAGE_BYTES / 4; i++)
 		secret[i] = mptcp_secret[i];
 
@@ -451,7 +451,7 @@ static void mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	mtreq->mptcp_loc_nonce = mptcp_v6_get_nonce(ipv6_hdr(skb)->daddr.s6_addr32,
 						    ipv6_hdr(skb)->saddr.s6_addr32,
 						    tcp_hdr(skb)->dest,
-						    tcp_hdr(skb)->source, isn);
+						    tcp_hdr(skb)->source);
 	mptcp_hmac_sha1((u8 *)&mtreq->mptcp_loc_key,
 			(u8 *)&mtreq->mptcp_rem_key,
 			(u8 *)&mtreq->mptcp_loc_nonce,

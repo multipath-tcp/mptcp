@@ -2953,16 +2953,14 @@ static void tcp_connect_init(struct sock *sk)
 							inet->inet_saddr,
 							inet->inet_daddr,
 							inet->inet_sport,
-							inet->inet_dport,
-							tp->write_seq);
+							inet->inet_dport);
 #if IS_ENABLED(CONFIG_IPV6)
 			else
 				tp->mptcp->mptcp_loc_nonce = mptcp_v6_get_nonce(
 						inet6_sk(sk)->saddr.s6_addr32,
 						sk->sk_v6_daddr.s6_addr32,
 						inet->inet_sport,
-						inet->inet_dport,
-						tp->write_seq);
+						inet->inet_dport);
 #endif
 		}
 	}
