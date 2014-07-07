@@ -740,8 +740,8 @@ static int tcp_v6_inbound_md5_hash(struct sock *sk, const struct sk_buff *skb)
 }
 #endif
 
-static void tcp_v6_init_req(struct request_sock *req, struct sock *sk,
-			    struct sk_buff *skb)
+static int tcp_v6_init_req(struct request_sock *req, struct sock *sk,
+			   struct sk_buff *skb)
 {
 	struct inet_request_sock *ireq = inet_rsk(req);
 	struct ipv6_pinfo *np = inet6_sk(sk);
@@ -763,6 +763,8 @@ static void tcp_v6_init_req(struct request_sock *req, struct sock *sk,
 		atomic_inc(&skb->users);
 		ireq->pktopts = skb;
 	}
+
+	return 0;
 }
 
 static struct dst_entry *tcp_v6_route_req(struct sock *sk, struct flowi *fl,

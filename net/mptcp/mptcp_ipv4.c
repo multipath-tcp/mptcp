@@ -78,11 +78,13 @@ static void mptcp_v4_reqsk_destructor(struct request_sock *req)
 	tcp_v4_reqsk_destructor(req);
 }
 
-static void mptcp_v4_init_req(struct request_sock *req, struct sock *sk,
-			      struct sk_buff *skb)
+static int mptcp_v4_init_req(struct request_sock *req, struct sock *sk,
+			     struct sk_buff *skb)
 {
 	tcp_request_sock_ipv4_ops.init_req(req, sk, skb);
 	mptcp_reqsk_init(req, skb);
+
+	return 0;
 }
 
 

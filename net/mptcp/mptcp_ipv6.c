@@ -107,11 +107,13 @@ static int mptcp_v6_rtx_synack(struct sock *meta_sk, struct request_sock *req)
 	return mptcp_v6v4_send_synack(meta_sk, req, 0);
 }
 
-static void mptcp_v6_init_req(struct request_sock *req, struct sock *sk,
-			      struct sk_buff *skb)
+static int mptcp_v6_init_req(struct request_sock *req, struct sock *sk,
+			     struct sk_buff *skb)
 {
 	tcp_request_sock_ipv6_ops.init_req(req, sk, skb);
 	mptcp_reqsk_init(req, skb);
+
+	return 0;
 }
 
 /* Similar to tcp6_request_sock_ops */

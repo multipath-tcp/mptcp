@@ -1748,7 +1748,7 @@ struct tcp_request_sock_ops {
 						  const struct request_sock *req,
 						  const struct sk_buff *skb);
 #endif
-	void (*init_req)(struct request_sock *req, struct sock *sk,
+	int (*init_req)(struct request_sock *req, struct sock *sk,
 			 struct sk_buff *skb);
 #ifdef CONFIG_SYN_COOKIES
 	__u32 (*cookie_init_seq)(struct sock *sk, const struct sk_buff *skb,
