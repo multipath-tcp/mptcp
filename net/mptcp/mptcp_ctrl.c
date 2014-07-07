@@ -2046,6 +2046,35 @@ void mptcp_tsq_sub_deferred(struct sock *meta_sk)
 	}
 }
 
+void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, struct request_sock *req,
+			   struct sk_buff *skb)
+{
+	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
+	struct mptcp_options_received mopt;
+	u8 mptcp_hash_mac[20];
+
+	mptcp_init_mp_opt(&mopt);
+	tcp_parse_mptcp_options(skb, &mopt);
+
+	mtreq = mptcp_rsk(req);
+	mtreq->mpcb = mpcb;
+	INIT_LIST_HEAD(&mtreq->collide_tuple);
+
+	mtreq->mptcp_rem_nonce = mopt.mptcp_recv_nonce;
+	mtreq->mptcp_rem_key = mpcb->mptcp_rem_key;
+	mtreq->mptcp_loc_key = mpcb->mptcp_loc_key;
+
+	mptcp_hmac_sha1((u8 *)&mtreq->mptcp_loc_key,
+			(u8 *)&mtreq->mptcp_rem_key,
+			(u8 *)&mtreq->mptcp_loc_nonce,
+			(u8 *)&mtreq->mptcp_rem_nonce, (u32 *)mptcp_hash_mac);
+	mtreq->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
+
+	mtreq->rem_id = mopt.rem_id;
+	mtreq->low_prio = mopt.low_prio;
+	tcp_rsk(req)->saw_mpc = 1;
+}
+
 void mptcp_reqsk_init(struct request_sock *req, struct sk_buff *skb)
 {
 	struct mptcp_options_received mopt;

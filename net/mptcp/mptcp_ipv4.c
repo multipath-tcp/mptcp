@@ -86,6 +86,28 @@ static int mptcp_v4_init_req(struct request_sock *req, struct sock *sk,
 	return 0;
 }
 
+static int mptcp_v4_join_init_req(struct request_sock *req, struct sock *sk,
+				  struct sk_buff *skb)
+{
+	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
+	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
+	union inet_addr addr;
+
+	tcp_request_sock_ipv4_ops.init_req(req, sk, skb);
+
+	mtreq->mptcp_loc_nonce = mptcp_v4_get_nonce(ip_hdr(skb)->saddr,
+						    ip_hdr(skb)->daddr,
+						    tcp_hdr(skb)->source,
+						    tcp_hdr(skb)->dest);
+	addr.ip = inet_rsk(req)->ir_loc_addr;
+	mtreq->loc_id = mpcb->pm_ops->get_local_id(AF_INET, &addr, sock_net(sk));
+	if (mtreq->loc_id == -1)
+		return -1;
+
+	mptcp_join_reqsk_init(mpcb, req, skb);
+
+	return 0;
+}
 
 /* Similar to tcp_request_sock_ops */
 struct request_sock_ops mptcp_request_sock_ops __read_mostly = {
@@ -129,138 +151,11 @@ static void mptcp_v4_reqsk_queue_hash_add(struct sock *meta_sk,
 }
 
 /* Similar to tcp_v4_conn_request */
-static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
+static int mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 {
-	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct tcp_options_received tmp_opt;
-	struct mptcp_options_received mopt;
-	struct request_sock *req;
-	struct inet_request_sock *ireq;
-	struct mptcp_request_sock *mtreq;
-	struct dst_entry *dst = NULL;
-	u8 mptcp_hash_mac[20];
-	__be32 saddr = ip_hdr(skb)->saddr;
-	__be32 daddr = ip_hdr(skb)->daddr;
-	__u32 isn = TCP_SKB_CB(skb)->when;
-	int want_cookie = 0;
-	union inet_addr addr;
-	struct flowi4 fl4;
-
-	tcp_clear_options(&tmp_opt);
-	mptcp_init_mp_opt(&mopt);
-	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
-	tmp_opt.user_mss = tcp_sk(meta_sk)->rx_opt.user_mss;
-	tcp_parse_options(skb, &tmp_opt, &mopt, 0, NULL);
-
-	req = inet_reqsk_alloc(&mptcp_request_sock_ops);
-	if (!req)
-		return;
-
-	mtreq = mptcp_rsk(req);
-	mtreq->mpcb = mpcb;
-	INIT_LIST_HEAD(&mtreq->collide_tuple);
-
-	tcp_rsk(req)->af_specific = &tcp_request_sock_ipv4_ops;
-
-	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
-	tcp_openreq_init(req, &tmp_opt, skb);
-
-	ireq = inet_rsk(req);
-	ireq->ir_loc_addr = daddr;
-	ireq->ir_rmt_addr = saddr;
-	ireq->no_srccheck = inet_sk(meta_sk)->transparent;
-	ireq->opt = tcp_v4_save_options(skb);
-
-	if (security_inet_conn_request(meta_sk, skb, req))
-		goto drop_and_free;
-
-	if (!want_cookie || tmp_opt.tstamp_ok)
-		TCP_ECN_create_request(req, skb, sock_net(meta_sk));
-
-	if (!isn) {
-		/* VJ's idea. We save last timestamp seen
-		 * from the destination in peer table, when entering
-		 * state TIME-WAIT, and check against it before
-		 * accepting new connection request.
-		 *
-		 * If "isn" is not zero, this request hit alive
-		 * timewait bucket, so that all the necessary checks
-		 * are made in the function processing timewait state.
-		 */
-		if (tmp_opt.saw_tstamp &&
-		    tcp_death_row.sysctl_tw_recycle &&
-		    (dst = inet_csk_route_req(meta_sk, &fl4, req)) != NULL &&
-		    fl4.daddr == saddr) {
-			if (!tcp_peer_is_proven(req, dst, true)) {
-				NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_PAWSPASSIVEREJECTED);
-				goto drop_and_release;
-			}
-		}
-		/* Kill the following clause, if you dislike this way. */
-		else if (!sysctl_tcp_syncookies &&
-			 (sysctl_max_syn_backlog - inet_csk_reqsk_queue_len(meta_sk) <
-			  (sysctl_max_syn_backlog >> 2)) &&
-			 !tcp_peer_is_proven(req, dst, false)) {
-			/* Without syncookies last quarter of
-			 * backlog is filled with destinations,
-			 * proven to be alive.
-			 * It means that we continue to communicate
-			 * to destinations, already remembered
-			 * to the moment of synflood.
-			 */
-			LIMIT_NETDEBUG(KERN_DEBUG pr_fmt("drop open request from %pI4/%u\n"),
-				       &saddr, ntohs(tcp_hdr(skb)->source));
-			goto drop_and_release;
-		}
-
-		isn = tcp_v4_init_sequence(skb);
-	}
-
-	if (!dst) {
-		dst = inet_csk_route_req(meta_sk, &fl4, req);
-		if (!dst)
-			goto drop_and_free;
-	}
-
-	tcp_rsk(req)->snt_isn = isn;
-	tcp_rsk(req)->snt_synack = tcp_time_stamp;
-	tcp_openreq_init_rwin(req, meta_sk, dst);
-	tcp_rsk(req)->listener = NULL;
-
-	mtreq->mptcp_rem_nonce = mopt.mptcp_recv_nonce;
-	mtreq->mptcp_rem_key = mpcb->mptcp_rem_key;
-	mtreq->mptcp_loc_key = mpcb->mptcp_loc_key;
-	mtreq->mptcp_loc_nonce = mptcp_v4_get_nonce(saddr, daddr,
-						    tcp_hdr(skb)->source,
-						    tcp_hdr(skb)->dest);
-	mptcp_hmac_sha1((u8 *)&mtreq->mptcp_loc_key,
-			(u8 *)&mtreq->mptcp_rem_key,
-			(u8 *)&mtreq->mptcp_loc_nonce,
-			(u8 *)&mtreq->mptcp_rem_nonce, (u32 *)mptcp_hash_mac);
-	mtreq->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
-
-	addr.ip = ireq->ir_loc_addr;
-	mtreq->loc_id = mpcb->pm_ops->get_local_id(AF_INET, &addr, sock_net(meta_sk));
-	if (mtreq->loc_id == -1) /* Address not part of the allowed ones */
-		goto drop_and_release;
-	mtreq->rem_id = mopt.rem_id;
-	mtreq->low_prio = mopt.low_prio;
-	tcp_rsk(req)->saw_mpc = 1;
-
-	if (tcp_v4_send_synack(meta_sk, dst, NULL, req,
-			       skb_get_queue_mapping(skb), NULL))
-		goto drop_and_free;
-
-	/* Adding to request queue in metasocket */
-	mptcp_v4_reqsk_queue_hash_add(meta_sk, req, TCP_TIMEOUT_INIT);
-
-	return;
-
-drop_and_release:
-	dst_release(dst);
-drop_and_free:
-	reqsk_free(req);
-	return;
+	return tcp_conn_request(&mptcp_request_sock_ops,
+				&mptcp_join_request_sock_ipv4_ops,
+				meta_sk, skb);
 }
 
 /* We only process join requests here. (either the SYN or the final ACK) */
@@ -500,6 +395,7 @@ const struct inet_connection_sock_af_ops mptcp_v4_specific = {
 };
 
 struct tcp_request_sock_ops mptcp_request_sock_ipv4_ops;
+struct tcp_request_sock_ops mptcp_join_request_sock_ipv4_ops;
 
 /* General initialization of IPv4 for MPTCP */
 int mptcp_pm_v4_init(void)
@@ -509,6 +405,10 @@ int mptcp_pm_v4_init(void)
 
 	mptcp_request_sock_ipv4_ops = tcp_request_sock_ipv4_ops;
 	mptcp_request_sock_ipv4_ops.init_req = mptcp_v4_init_req;
+
+	mptcp_join_request_sock_ipv4_ops = tcp_request_sock_ipv4_ops;
+	mptcp_join_request_sock_ipv4_ops.init_req = mptcp_v4_join_init_req;
+	mptcp_join_request_sock_ipv4_ops.queue_hash_add = mptcp_v4_reqsk_queue_hash_add;
 
 	ops->slab_name = kasprintf(GFP_KERNEL, "request_sock_%s", "MPTCP");
 	if (ops->slab_name == NULL) {

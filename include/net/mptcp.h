@@ -808,6 +808,8 @@ int mptcp_sub_len_remove_addr_align(u16 bitfield);
 void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
 			    const struct sk_buff *skb);
 void mptcp_init_buffer_space(struct sock *sk);
+void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, struct request_sock *req,
+			   struct sk_buff *skb);
 void mptcp_reqsk_init(struct request_sock *req, struct sk_buff *skb);
 int mptcp_conn_request(struct sock *sk, struct sk_buff *skb);
 

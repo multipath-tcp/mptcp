@@ -40,6 +40,7 @@
 extern struct request_sock_ops mptcp_request_sock_ops;
 extern const struct inet_connection_sock_af_ops mptcp_v4_specific;
 extern struct tcp_request_sock_ops mptcp_request_sock_ipv4_ops;
+extern struct tcp_request_sock_ops mptcp_join_request_sock_ipv4_ops;
 
 #ifdef CONFIG_MPTCP
 

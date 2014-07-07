@@ -39,6 +39,7 @@ extern struct request_sock_ops mptcp6_request_sock_ops;
 extern struct proto mptcpv6_prot;
 extern const struct inet_connection_sock_af_ops mptcp_v6_specific;
 extern struct tcp_request_sock_ops mptcp_request_sock_ipv6_ops;
+extern struct tcp_request_sock_ops mptcp_join_request_sock_ipv6_ops;
 
 #ifdef CONFIG_MPTCP
 

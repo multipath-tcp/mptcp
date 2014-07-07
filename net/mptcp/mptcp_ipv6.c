@@ -116,6 +116,30 @@ static int mptcp_v6_init_req(struct request_sock *req, struct sock *sk,
 	return 0;
 }
 
+static int mptcp_v6_join_init_req(struct request_sock *req, struct sock *sk,
+				  struct sk_buff *skb)
+{
+	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
+	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
+	union inet_addr addr;
+
+	tcp_request_sock_ipv6_ops.init_req(req, sk, skb);
+
+	mtreq->mptcp_loc_nonce = mptcp_v6_get_nonce(ipv6_hdr(skb)->saddr.s6_addr32,
+						    ipv6_hdr(skb)->daddr.s6_addr32,
+						    tcp_hdr(skb)->source,
+						    tcp_hdr(skb)->dest);
+	addr.in6 = inet_rsk(req)->ir_v6_loc_addr;
+	mtreq->loc_id = mpcb->pm_ops->get_local_id(AF_INET6, &addr, sock_net(sk));
+	if (mtreq->loc_id == -1)
+		return -1;
+
+	mptcp_join_reqsk_init(mpcb, req, skb);
+
+	return 0;
+}
+
+
 /* Similar to tcp6_request_sock_ops */
 struct request_sock_ops mptcp6_request_sock_ops __read_mostly = {
 	.family		=	AF_INET6,
@@ -199,6 +223,18 @@ static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req
 	}
 
 	return err;
+}
+
+
+static int mptcp_v6_send_synack(struct sock *meta_sk, struct dst_entry *dst,
+				struct flowi *fl, struct request_sock *req,
+				u16 queue_mapping,
+				struct tcp_fastopen_cookie *foc)
+{
+	if (meta_sk->sk_family == AF_INET6)
+		return tcp_v6_send_synack(meta_sk, dst, fl, req, queue_mapping,
+					  NULL);
+	return mptcp_v6v4_send_synack(meta_sk, req, queue_mapping);
 }
 
 /* Similar to tcp_v6_syn_recv_sock
@@ -337,154 +373,11 @@ out:
 	return NULL;
 }
 
-/* Similar to tcp_v6_conn_request */
-static void mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
+static int mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 {
-	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct tcp_options_received tmp_opt;
-	struct mptcp_options_received mopt;
-	struct ipv6_pinfo *np = inet6_sk(meta_sk);
-	struct request_sock *req;
-	struct inet_request_sock *treq;
-	struct mptcp_request_sock *mtreq;
-	u8 mptcp_hash_mac[20];
-	__u32 isn = TCP_SKB_CB(skb)->when;
-	struct dst_entry *dst = NULL;
-	struct flowi6 fl6;
-	int want_cookie = 0;
-	union inet_addr addr;
-
-	tcp_clear_options(&tmp_opt);
-	mptcp_init_mp_opt(&mopt);
-	tmp_opt.mss_clamp = TCP_MSS_DEFAULT;
-	tmp_opt.user_mss  = tcp_sk(meta_sk)->rx_opt.user_mss;
-	tcp_parse_options(skb, &tmp_opt, &mopt, 0, NULL);
-
-	req = inet_reqsk_alloc(&mptcp6_request_sock_ops);
-	if (!req)
-		return;
-
-	mtreq = mptcp_rsk(req);
-	mtreq->mpcb = mpcb;
-	INIT_LIST_HEAD(&mtreq->collide_tuple);
-
-	tcp_rsk(req)->af_specific = &tcp_request_sock_ipv6_ops;
-
-	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
-	tcp_openreq_init(req, &tmp_opt, skb);
-
-	treq = inet_rsk(req);
-	treq->ir_v6_rmt_addr = ipv6_hdr(skb)->saddr;
-	treq->ir_v6_loc_addr = ipv6_hdr(skb)->daddr;
-
-	if (!want_cookie || tmp_opt.tstamp_ok)
-		TCP_ECN_create_request(req, skb, sock_net(meta_sk));
-
-	treq->ir_iif = meta_sk->sk_bound_dev_if;
-
-	/* So that link locals have meaning */
-	if (!meta_sk->sk_bound_dev_if &&
-	    ipv6_addr_type(&treq->ir_v6_rmt_addr) & IPV6_ADDR_LINKLOCAL)
-		treq->ir_iif = inet6_iif(skb);
-
-	if (!isn) {
-		if (meta_sk->sk_family == AF_INET6 &&
-		    (ipv6_opt_accepted(meta_sk, skb) ||
-		    np->rxopt.bits.rxinfo || np->rxopt.bits.rxoinfo ||
-		    np->rxopt.bits.rxhlim || np->rxopt.bits.rxohlim)) {
-			atomic_inc(&skb->users);
-			treq->pktopts = skb;
-		}
-
-		/* VJ's idea. We save last timestamp seen
-		 * from the destination in peer table, when entering
-		 * state TIME-WAIT, and check against it before
-		 * accepting new connection request.
-		 *
-		 * If "isn" is not zero, this request hit alive
-		 * timewait bucket, so that all the necessary checks
-		 * are made in the function processing timewait state.
-		 */
-		if (tmp_opt.saw_tstamp &&
-		    tcp_death_row.sysctl_tw_recycle &&
-		    (dst = inet6_csk_route_req(meta_sk, &fl6, req)) != NULL) {
-			if (!tcp_peer_is_proven(req, dst, true)) {
-				NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_PAWSPASSIVEREJECTED);
-				goto drop_and_release;
-			}
-		}
-		/* Kill the following clause, if you dislike this way. */
-		else if (!sysctl_tcp_syncookies &&
-			 (sysctl_max_syn_backlog - inet_csk_reqsk_queue_len(meta_sk) <
-			  (sysctl_max_syn_backlog >> 2)) &&
-			 !tcp_peer_is_proven(req, dst, false)) {
-			/* Without syncookies last quarter of
-			 * backlog is filled with destinations,
-			 * proven to be alive.
-			 * It means that we continue to communicate
-			 * to destinations, already remembered
-			 * to the moment of synflood.
-			 */
-			LIMIT_NETDEBUG(KERN_DEBUG "TCP: drop open request from %pI6/%u\n",
-				       &treq->ir_v6_rmt_addr,
-				       ntohs(tcp_hdr(skb)->source));
-			goto drop_and_release;
-		}
-
-		isn = tcp_v6_init_sequence(skb);
-	}
-
-	if (!dst) {
-		dst = inet6_csk_route_req(meta_sk, &fl6, req);
-		if (!dst)
-			goto drop_and_free;
-	}
-
-	tcp_rsk(req)->snt_isn = isn;
-	tcp_rsk(req)->snt_synack = tcp_time_stamp;
-	tcp_openreq_init_rwin(req, meta_sk, dst);
-	tcp_rsk(req)->listener = NULL;
-
-	mtreq->mptcp_rem_nonce = mopt.mptcp_recv_nonce;
-	mtreq->mptcp_rem_key = mpcb->mptcp_rem_key;
-	mtreq->mptcp_loc_key = mpcb->mptcp_loc_key;
-	mtreq->mptcp_loc_nonce = mptcp_v6_get_nonce(ipv6_hdr(skb)->daddr.s6_addr32,
-						    ipv6_hdr(skb)->saddr.s6_addr32,
-						    tcp_hdr(skb)->dest,
-						    tcp_hdr(skb)->source);
-	mptcp_hmac_sha1((u8 *)&mtreq->mptcp_loc_key,
-			(u8 *)&mtreq->mptcp_rem_key,
-			(u8 *)&mtreq->mptcp_loc_nonce,
-			(u8 *)&mtreq->mptcp_rem_nonce, (u32 *)mptcp_hash_mac);
-	mtreq->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
-
-	addr.in6 = treq->ir_v6_loc_addr;
-	mtreq->loc_id = mpcb->pm_ops->get_local_id(AF_INET6, &addr, sock_net(meta_sk));
-	if (mtreq->loc_id == -1) /* Address not part of the allowed ones */
-		goto drop_and_release;
-	mtreq->rem_id = mopt.rem_id;
-	mtreq->low_prio = mopt.low_prio;
-	tcp_rsk(req)->saw_mpc = 1;
-
-	if (meta_sk->sk_family == AF_INET6) {
-		if (tcp_v6_send_synack(meta_sk, dst, (struct flowi *)&fl6, req,
-				       skb_get_queue_mapping(skb), NULL))
-			goto drop_and_free;
-	} else {
-		if (mptcp_v6v4_send_synack(meta_sk, req, skb_get_queue_mapping(skb)))
-			goto drop_and_free;
-	}
-
-	/* Adding to request queue in metasocket */
-	mptcp_v6_reqsk_queue_hash_add(meta_sk, req, TCP_TIMEOUT_INIT);
-
-	return;
-
-drop_and_release:
-	dst_release(dst);
-drop_and_free:
-	reqsk_free(req);
-	return;
+	return tcp_conn_request(&mptcp6_request_sock_ops,
+				&mptcp_join_request_sock_ipv6_ops,
+				meta_sk, skb);
 }
 
 int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
@@ -745,6 +638,7 @@ const struct inet_connection_sock_af_ops mptcp_v6_mapped = {
 };
 
 struct tcp_request_sock_ops mptcp_request_sock_ipv6_ops;
+struct tcp_request_sock_ops mptcp_join_request_sock_ipv6_ops;
 
 int mptcp_pm_v6_init(void)
 {
@@ -753,6 +647,11 @@ int mptcp_pm_v6_init(void)
 
 	mptcp_request_sock_ipv6_ops = tcp_request_sock_ipv6_ops;
 	mptcp_request_sock_ipv6_ops.init_req = mptcp_v6_init_req;
+
+	mptcp_join_request_sock_ipv6_ops = tcp_request_sock_ipv6_ops;
+	mptcp_join_request_sock_ipv6_ops.init_req = mptcp_v6_join_init_req;
+	mptcp_join_request_sock_ipv6_ops.queue_hash_add = mptcp_v6_reqsk_queue_hash_add;
+	mptcp_join_request_sock_ipv6_ops.send_synack = mptcp_v6_send_synack;
 
 	ops->slab_name = kasprintf(GFP_KERNEL, "request_sock_%s", "MPTCP6");
 	if (ops->slab_name == NULL) {
