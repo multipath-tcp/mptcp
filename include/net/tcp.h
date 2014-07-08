@@ -220,8 +220,6 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define	TFO_SERVER_ENABLE	2
 #define	TFO_CLIENT_NO_COOKIE	4	/* Data in SYN w/o cookie option */
 
-/* Process SYN data but skip cookie validation */
-#define	TFO_SERVER_COOKIE_NOT_CHKED	0x100
 /* Accept SYN data w/o any cookie option */
 #define	TFO_SERVER_COOKIE_NOT_REQD	0x200
 
@@ -230,10 +228,6 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
  */
 #define	TFO_SERVER_WO_SOCKOPT1	0x400
 #define	TFO_SERVER_WO_SOCKOPT2	0x800
-/* Always create TFO child sockets on a TFO listener even when
- * cookie/data not present. (For testing purpose!)
- */
-#define	TFO_SERVER_ALWAYS	0x1000
 
 /* Flags from tcp_input.c for tcp_ack */
 #define FLAG_DATA               0x01 /* Incoming frame contained data.          */
@@ -421,8 +415,10 @@ void tcp_v4_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 			   struct request_sock *req);
 __u32 tcp_v4_init_sequence(const struct sk_buff *skb);
 int tcp_v4_send_synack(struct sock *sk, struct dst_entry *dst,
+		       struct flowi *fl,
 		       struct request_sock *req,
-		       u16 queue_mapping);
+		       u16 queue_mapping,
+		       struct tcp_fastopen_cookie *foc);
 void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb);
 struct ip_options_rcu *tcp_v4_save_options(struct sk_buff *skb);
 struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb);
@@ -433,8 +429,8 @@ void tcp_v6_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 			   struct request_sock *req);
 __u32 tcp_v6_init_sequence(const struct sk_buff *skb);
 int tcp_v6_send_synack(struct sock *sk, struct dst_entry *dst,
-		       struct flowi6 *fl6, struct request_sock *req,
-		       u16 queue_mapping);
+		       struct flowi *fl, struct request_sock *req,
+		       u16 queue_mapping, struct tcp_fastopen_cookie *foc);
 void tcp_v6_send_reset(struct sock *sk, struct sk_buff *skb);
 int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
 int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len);
@@ -455,8 +451,7 @@ void skb_clone_fraglist(struct sk_buff *skb);
 void copy_skb_header(struct sk_buff *new, const struct sk_buff *old);
 
 void inet_twsk_free(struct inet_timewait_sock *tw);
-int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb,
-			struct request_sock_ops *ops, void *init_data);
+int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb);
 /* These states need RST on ABORT according to RFC793 */
 static inline bool tcp_need_reset(int state)
 {
@@ -578,8 +573,7 @@ const u8 *tcp_parse_md5sig_option(const struct tcphdr *th);
  */
 
 void tcp_v4_send_check(struct sock *sk, struct sk_buff *skb);
-int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb,
-			struct request_sock_ops *ops, void *init_data);
+int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb);
 struct sock *tcp_create_openreq_child(struct sock *sk,
 				      struct request_sock *req,
 				      struct sk_buff *skb);
@@ -625,14 +619,8 @@ static inline u32 tcp_cookie_time(void)
 
 u32 __cookie_v4_init_sequence(const struct iphdr *iph, const struct tcphdr *th,
 			      u16 *mssp);
-__u32 cookie_v4_init_sequence(struct sock *sk, struct sk_buff *skb, __u16 *mss);
-#else
-static inline __u32 cookie_v4_init_sequence(struct sock *sk,
-					    struct sk_buff *skb,
-					    __u16 *mss)
-{
-	return 0;
-}
+__u32 cookie_v4_init_sequence(struct sock *sk, const struct sk_buff *skb,
+			      __u16 *mss);
 #endif
 
 __u32 cookie_init_timestamp(struct request_sock *req);
@@ -648,13 +636,6 @@ u32 __cookie_v6_init_sequence(const struct ipv6hdr *iph,
 			      const struct tcphdr *th, u16 *mssp);
 __u32 cookie_v6_init_sequence(struct sock *sk, const struct sk_buff *skb,
 			      __u16 *mss);
-#else
-static inline __u32 cookie_v6_init_sequence(struct sock *sk,
-					    struct sk_buff *skb,
-					    __u16 *mss)
-{
-	return 0;
-}
 #endif
 /* tcp_output.c */
 
@@ -1269,6 +1250,9 @@ static inline void tcp_openreq_init(struct request_sock *req,
 	ireq->ir_num = ntohs(tcp_hdr(skb)->dest);
 }
 
+extern void tcp_openreq_init_rwin(struct request_sock *req,
+				  struct sock *sk, struct dst_entry *dst);
+
 void tcp_enter_memory_pressure(struct sock *sk);
 
 static inline int keepalive_intvl_when(const struct tcp_sock *tp)
@@ -1478,8 +1462,10 @@ void tcp_free_fastopen_req(struct tcp_sock *tp);
 
 extern struct tcp_fastopen_context __rcu *tcp_fastopen_ctx;
 int tcp_fastopen_reset_cipher(void *key, unsigned int len);
-void tcp_fastopen_cookie_gen(__be32 src, __be32 dst,
-			     struct tcp_fastopen_cookie *foc);
+bool tcp_try_fastopen(struct sock *sk, struct sk_buff *skb,
+		      struct request_sock *req,
+		      struct tcp_fastopen_cookie *foc,
+		      struct dst_entry *dst);
 void tcp_fastopen_init_key_once(bool publish);
 #define TCP_FASTOPEN_KEY_LENGTH 16
 
@@ -1730,6 +1716,11 @@ int tcp4_proc_init(void);
 void tcp4_proc_exit(void);
 #endif
 
+int tcp_rtx_synack(struct sock *sk, struct request_sock *req);
+int tcp_conn_request(struct request_sock_ops *rsk_ops,
+		     const struct tcp_request_sock_ops *af_ops,
+		     struct sock *sk, struct sk_buff *skb);
+
 /* TCP af-specific functions */
 struct tcp_sock_af_ops {
 #ifdef CONFIG_TCP_MD5SIG
@@ -1747,6 +1738,7 @@ struct tcp_sock_af_ops {
 };
 
 struct tcp_request_sock_ops {
+	u16 mss_clamp;
 #ifdef CONFIG_TCP_MD5SIG
 	struct tcp_md5sig_key	*(*md5_lookup) (struct sock *sk,
 						struct request_sock *req);
@@ -1756,7 +1748,38 @@ struct tcp_request_sock_ops {
 						  const struct request_sock *req,
 						  const struct sk_buff *skb);
 #endif
+	int (*init_req)(struct request_sock *req, struct sock *sk,
+			 struct sk_buff *skb);
+#ifdef CONFIG_SYN_COOKIES
+	__u32 (*cookie_init_seq)(struct sock *sk, const struct sk_buff *skb,
+				 __u16 *mss);
+#endif
+	struct dst_entry *(*route_req)(struct sock *sk, struct flowi *fl,
+				       const struct request_sock *req,
+				       bool *strict);
+	__u32 (*init_seq)(const struct sk_buff *skb);
+	int (*send_synack)(struct sock *sk, struct dst_entry *dst,
+			   struct flowi *fl, struct request_sock *req,
+			   u16 queue_mapping, struct tcp_fastopen_cookie *foc);
+	void (*queue_hash_add)(struct sock *sk, struct request_sock *req,
+			       const unsigned long timeout);
 };
+
+#ifdef CONFIG_SYN_COOKIES
+static inline __u32 cookie_init_sequence(const struct tcp_request_sock_ops *ops,
+					 struct sock *sk, struct sk_buff *skb,
+					 __u16 *mss)
+{
+	return ops->cookie_init_seq(sk, skb, mss);
+}
+#else
+static inline __u32 cookie_init_sequence(const struct tcp_request_sock_ops *ops,
+					 struct sock *sk, struct sk_buff *skb,
+					 __u16 *mss)
+{
+	return 0;
+}
+#endif
 
 int tcpv4_offload_init(void);
 

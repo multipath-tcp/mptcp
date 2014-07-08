@@ -34,6 +34,7 @@
 #include <net/mptcp.h>
 #include <net/mptcp_v4.h>
 #if IS_ENABLED(CONFIG_IPV6)
+#include <net/ip6_route.h>
 #include <net/mptcp_v6.h>
 #endif
 #include <net/sock.h>
@@ -540,7 +541,7 @@ static void mptcp_set_state(struct sock *sk)
 }
 
 u32 mptcp_secret[MD5_MESSAGE_BYTES / 4] ____cacheline_aligned;
-u32 mptcp_key_seed = 0;
+u32 mptcp_seed = 0;
 
 void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn)
 {
@@ -2045,22 +2046,51 @@ void mptcp_tsq_sub_deferred(struct sock *meta_sk)
 	}
 }
 
-void mptcp_reqsk_init(struct request_sock *req,
-		      struct sk_buff *skb, void *init_data)
+void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, struct request_sock *req,
+			   struct sk_buff *skb)
 {
-	struct mptcp_options_received *mopt =
-	    (struct mptcp_options_received *)init_data;
-	struct mptcp_request_sock *mreq = mptcp_rsk(req);
+	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
+	struct mptcp_options_received mopt;
+	u8 mptcp_hash_mac[20];
 
-	mreq->mpcb = NULL;
-	mreq->dss_csum = mopt->dss_csum;
-	mreq->collide_tk.pprev = NULL;
+	mptcp_init_mp_opt(&mopt);
+	tcp_parse_mptcp_options(skb, &mopt);
 
-	mptcp_reqsk_new_mptcp(req, mopt, skb);
+	mtreq = mptcp_rsk(req);
+	mtreq->mpcb = mpcb;
+	INIT_LIST_HEAD(&mtreq->collide_tuple);
+
+	mtreq->mptcp_rem_nonce = mopt.mptcp_recv_nonce;
+	mtreq->mptcp_rem_key = mpcb->mptcp_rem_key;
+	mtreq->mptcp_loc_key = mpcb->mptcp_loc_key;
+
+	mptcp_hmac_sha1((u8 *)&mtreq->mptcp_loc_key,
+			(u8 *)&mtreq->mptcp_rem_key,
+			(u8 *)&mtreq->mptcp_loc_nonce,
+			(u8 *)&mtreq->mptcp_rem_nonce, (u32 *)mptcp_hash_mac);
+	mtreq->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
+
+	mtreq->rem_id = mopt.rem_id;
+	mtreq->low_prio = mopt.low_prio;
+	tcp_rsk(req)->saw_mpc = 1;
 }
 
-int mptcp_conn_request(struct sock *sk, struct sk_buff *skb,
-		       struct request_sock_ops *ops, void *init_data)
+void mptcp_reqsk_init(struct request_sock *req, struct sk_buff *skb)
+{
+	struct mptcp_options_received mopt;
+	struct mptcp_request_sock *mreq = mptcp_rsk(req);
+
+	mptcp_init_mp_opt(&mopt);
+	tcp_parse_mptcp_options(skb, &mopt);
+
+	mreq->mpcb = NULL;
+	mreq->dss_csum = mopt.dss_csum;
+	mreq->collide_tk.pprev = NULL;
+
+	mptcp_reqsk_new_mptcp(req, &mopt, skb);
+}
+
+int mptcp_conn_request(struct sock *sk, struct sk_buff *skb)
 {
 	struct mptcp_options_received mopt;
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -2087,20 +2117,29 @@ int mptcp_conn_request(struct sock *sk, struct sk_buff *skb,
 		mopt.saw_mpc = 0;
 
 	if (skb->protocol == htons(ETH_P_IP)) {
-		if (mopt.saw_mpc && !want_cookie)
-			return tcp_v4_conn_request(sk, skb,
-						   &mptcp_request_sock_ops,
-						   &mopt);
-		return tcp_v4_conn_request(sk, skb, &tcp_request_sock_ops,
-					   NULL);
+		if (mopt.saw_mpc && !want_cookie) {
+			if (skb_rtable(skb)->rt_flags &
+			    (RTCF_BROADCAST | RTCF_MULTICAST))
+				goto drop;
+
+			return tcp_conn_request(&mptcp_request_sock_ops,
+						&mptcp_request_sock_ipv4_ops,
+						sk, skb);
+		}
+
+		return tcp_v4_conn_request(sk, skb);
 #if IS_ENABLED(CONFIG_IPV6)
 	} else {
-		if (mopt.saw_mpc && !want_cookie)
-			return tcp_v6_conn_request(sk, skb,
-						   &mptcp6_request_sock_ops,
-						   &mopt);
-		return tcp_v6_conn_request(sk, skb, &tcp6_request_sock_ops,
-					   NULL);
+		if (mopt.saw_mpc && !want_cookie) {
+			if (!ipv6_unicast_destination(skb))
+				goto drop;
+
+			return tcp_conn_request(&mptcp6_request_sock_ops,
+						&mptcp_request_sock_ipv6_ops,
+						sk, skb);
+		}
+
+		return tcp_v6_conn_request(sk, skb);
 #endif
 	}
 drop:

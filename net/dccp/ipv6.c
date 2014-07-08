@@ -357,8 +357,7 @@ static struct sock *dccp_v6_hnd_req(struct sock *sk,struct sk_buff *skb)
 	return sk;
 }
 
-static int dccp_v6_conn_request(struct sock *sk, struct sk_buff *skb,
-				struct request_sock_ops *ops, void *init_data)
+static int dccp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 {
 	struct request_sock *req;
 	struct dccp_request_sock *dreq;
@@ -368,7 +367,7 @@ static int dccp_v6_conn_request(struct sock *sk, struct sk_buff *skb,
 	struct dccp_skb_cb *dcb = DCCP_SKB_CB(skb);
 
 	if (skb->protocol == htons(ETH_P_IP))
-		return dccp_v4_conn_request(sk, skb, NULL, NULL);
+		return dccp_v4_conn_request(sk, skb);
 
 	if (!ipv6_unicast_destination(skb))
 		return 0;	/* discard, don't send a reset here */
@@ -387,7 +386,7 @@ static int dccp_v6_conn_request(struct sock *sk, struct sk_buff *skb,
 	if (sk_acceptq_is_full(sk) && inet_csk_reqsk_queue_young(sk) > 1)
 		goto drop;
 
-	req = inet6_reqsk_alloc(&dccp6_request_sock_ops);
+	req = inet_reqsk_alloc(&dccp6_request_sock_ops);
 	if (req == NULL)
 		goto drop;
 

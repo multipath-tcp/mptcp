@@ -39,6 +39,8 @@
 
 extern struct request_sock_ops mptcp_request_sock_ops;
 extern const struct inet_connection_sock_af_ops mptcp_v4_specific;
+extern struct tcp_request_sock_ops mptcp_request_sock_ipv4_ops;
+extern struct tcp_request_sock_ops mptcp_join_request_sock_ipv4_ops;
 
 #ifdef CONFIG_MPTCP
 
@@ -49,8 +51,7 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 			   struct mptcp_rem4 *rem);
 int mptcp_pm_v4_init(void);
 void mptcp_pm_v4_undo(void);
-u32 mptcp_v4_get_nonce(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport,
-		       u32 seq);
+u32 mptcp_v4_get_nonce(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport);
 u64 mptcp_v4_get_key(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport);
 
 #else

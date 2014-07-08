@@ -41,8 +41,6 @@ struct request_sock_ops {
 	void		(*destructor)(struct request_sock *req);
 	void		(*syn_ack_timeout)(struct sock *sk,
 					   struct request_sock *req);
-	void		(*init)(struct request_sock *req, struct sk_buff *skb,
-				void *init_data);
 };
 
 int inet_rtx_syn_ack(struct sock *parent, struct request_sock *req);

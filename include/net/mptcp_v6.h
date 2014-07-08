@@ -38,6 +38,8 @@
 extern struct request_sock_ops mptcp6_request_sock_ops;
 extern struct proto mptcpv6_prot;
 extern const struct inet_connection_sock_af_ops mptcp_v6_specific;
+extern struct tcp_request_sock_ops mptcp_request_sock_ipv6_ops;
+extern struct tcp_request_sock_ops mptcp_join_request_sock_ipv6_ops;
 
 #ifdef CONFIG_MPTCP
 
@@ -54,7 +56,7 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 				      struct request_sock *req,
 				      struct dst_entry *dst);
 __u32 mptcp_v6_get_nonce(const __be32 *saddr, const __be32 *daddr,
-			 __be16 sport, __be16 dport, u32 seq);
+			 __be16 sport, __be16 dport);
 u64 mptcp_v6_get_key(const __be32 *saddr, const __be32 *daddr,
 		     __be16 sport, __be16 dport);
 
