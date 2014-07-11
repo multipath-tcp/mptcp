@@ -311,7 +311,7 @@ next_subflow:
 		release_sock(meta_sk);
 		mutex_unlock(&mpcb->mpcb_mutex);
 
-		yield();
+		cond_resched();
 	}
 	mutex_lock(&mpcb->mpcb_mutex);
 	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
@@ -403,7 +403,7 @@ next_subflow:
 		release_sock(meta_sk);
 		mutex_unlock(&mpcb->mpcb_mutex);
 
-		yield();
+		cond_resched();
 	}
 	mutex_lock(&mpcb->mpcb_mutex);
 	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
