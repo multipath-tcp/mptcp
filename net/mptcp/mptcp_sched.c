@@ -7,24 +7,24 @@ static DEFINE_SPINLOCK(mptcp_sched_list_lock);
 static LIST_HEAD(mptcp_sched_list);
 
 /* If the sub-socket sk available to send the skb? */
-static int mptcp_is_available(struct sock *sk, struct sk_buff *skb,
-			      bool zero_wnd_test)
+static bool mptcp_is_available(struct sock *sk, struct sk_buff *skb,
+			       bool zero_wnd_test)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int mss_now, space, in_flight;
 
 	/* Set of states for which we are allowed to send data */
 	if (!mptcp_sk_can_send(sk))
-		return 0;
+		return false;
 
 	/* We do not send data on this subflow unless it is
 	 * fully established, i.e. the 4th ack has been received.
 	 */
 	if (tp->mptcp->pre_established)
-		return 0;
+		return false;
 
 	if (tp->pf)
-		return 0;
+		return false;
 
 	if (inet_csk(sk)->icsk_ca_state == TCP_CA_Loss) {
 		/* If SACK is disabled, and we got a loss, TCP does not exit
@@ -36,28 +36,28 @@ static int mptcp_is_available(struct sock *sk, struct sk_buff *skb,
 		 * Thus, snd_una can never go beyond high_seq.
 		 */
 		if (!tcp_is_reno(tp))
-			return 0;
+			return false;
 		else if (tp->snd_una != tp->high_seq)
-			return 0;
+			return false;
 	}
 
 	if (!tp->mptcp->fully_established) {
 		/* Make sure that we send in-order data */
 		if (skb && tp->mptcp->second_packet &&
 		    tp->mptcp->last_end_data_seq != TCP_SKB_CB(skb)->seq)
-			return 0;
+			return false;
 	}
 
 	/* If TSQ is already throttling us, do not send on this subflow. When
 	 * TSQ gets cleared the subflow becomes eligible again.
 	 */
 	if (test_bit(TSQ_THROTTLED, &tp->tsq_flags))
-		return 0;
+		return false;
 
 	in_flight = tcp_packets_in_flight(tp);
 	/* Not even a single spot in the cwnd */
 	if (in_flight >= tp->snd_cwnd)
-		return 0;
+		return false;
 
 	/* Now, check if what is queued in the subflow's send-queue
 	 * already fills the cwnd.
@@ -65,10 +65,10 @@ static int mptcp_is_available(struct sock *sk, struct sk_buff *skb,
 	space = (tp->snd_cwnd - in_flight) * tp->mss_cache;
 
 	if (tp->write_seq - tp->snd_nxt > space)
-		return 0;
+		return false;
 
 	if (zero_wnd_test && !before(tp->write_seq, tcp_wnd_end(tp)))
-		return 0;
+		return false;
 
 	mss_now = tcp_current_mss(sk);
 
@@ -79,9 +79,9 @@ static int mptcp_is_available(struct sock *sk, struct sk_buff *skb,
 	 */
 	if (skb && !zero_wnd_test &&
 	    after(tp->write_seq + min(skb->len, mss_now), tcp_wnd_end(tp)))
-		return 0;
+		return false;
 
-	return 1;
+	return true;
 }
 
 /* Are we not allowed to reinject this skb on tp? */
