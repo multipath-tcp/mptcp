@@ -62,7 +62,7 @@ static int mptcp_reconstruct_mapping(struct sk_buff *skb, struct sk_buff *orig_s
 	u32 *p32;
 	u16 *p16;
 
-	if (!mpdss || !mpdss->M)
+	if (!mpdss->M)
 		return 1;
 
 	/* Move the pointer to the data-seq */
