@@ -814,8 +814,7 @@ static int mptcp_validate_mapping(struct sock *sk, struct sk_buff *skb)
 	 * This may happen if the mapping has been lost for these segments and
 	 * the next mapping has already been received.
 	 */
-	if (tp->mptcp->mapping_present &&
-	    before(TCP_SKB_CB(skb_peek(&sk->sk_receive_queue))->seq, tp->mptcp->map_subseq)) {
+	if (before(TCP_SKB_CB(skb_peek(&sk->sk_receive_queue))->seq, tp->mptcp->map_subseq)) {
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
 			if (!before(TCP_SKB_CB(tmp1)->seq, tp->mptcp->map_subseq))
 				break;
