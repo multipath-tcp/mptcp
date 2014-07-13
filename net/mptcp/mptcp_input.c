@@ -1004,14 +1004,20 @@ void mptcp_data_ready(struct sock *sk, int bytes)
 	struct sk_buff *skb, *tmp;
 	int queued = 0;
 
-	/* If the meta is already closed, there is no point in pushing data */
-	if (meta_sk->sk_state == TCP_CLOSE && !tcp_sk(sk)->mpcb->in_time_wait) {
+	/* restart before the check, because mptcp_fin might have changed the
+	 * state.
+	 */
+restart:
+	/* If the meta cannot receive data, there is no point in pushing data.
+	 * If we are in time-wait, we may still be waiting for the final FIN.
+	 * So, we should proceed with the processing.
+	 */
+	if (!mptcp_sk_can_recv(meta_sk) && !tcp_sk(sk)->mpcb->in_time_wait) {
 		skb_queue_purge(&sk->sk_receive_queue);
 		tcp_sk(sk)->copied_seq = tcp_sk(sk)->rcv_nxt;
 		goto exit;
 	}
 
-restart:
 	/* Iterate over all segments, detect their mapping (if we don't have
 	 * one yet), validate them and push everything one level higher.
 	 */
