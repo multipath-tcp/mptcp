@@ -953,6 +953,7 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 			tcp_set_skb_tso_segs(meta_sk, skb, mss);
 		}
 
+		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_PSH;
 		subskb = mptcp_skb_entail(subsk, skb, 0);
 		if (!subskb)
 			return -1;
