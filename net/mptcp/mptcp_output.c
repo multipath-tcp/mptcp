@@ -612,6 +612,7 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 			tcp_set_skb_tso_segs(meta_sk, skb, UINT_MAX);
 		}
 
+		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_PSH;
 		if (!mptcp_skb_entail(subsk, skb, 0))
 			return -1;
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
