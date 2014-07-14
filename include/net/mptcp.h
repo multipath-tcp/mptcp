@@ -1091,7 +1091,7 @@ static inline int mptcp_sk_can_send(const struct sock *sk)
 
 static inline int mptcp_sk_can_recv(const struct sock *sk)
 {
-	return (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCP_FIN_WAIT1 | TCP_FIN_WAIT2);
+	return (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCPF_FIN_WAIT1 | TCPF_FIN_WAIT2);
 }
 
 static inline int mptcp_sk_can_send_ack(const struct sock *sk)
