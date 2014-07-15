@@ -555,6 +555,8 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 
 		tp->mpcb->infinite_mapping_snd = 1;
 		tp->mpcb->infinite_mapping_rcv = 1;
+		/* We do a seamless fallback and should not send a inf.mapping. */
+		tp->mpcb->send_infinite_mapping = 0;
 		tp->mptcp->fully_established = 1;
 	}
 

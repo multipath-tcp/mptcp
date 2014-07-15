@@ -453,13 +453,8 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 
 	tcb = TCP_SKB_CB(subskb);
 
-	if (mptcp_is_data_fin(subskb))
-		mptcp_combine_dfin(subskb, meta_sk, sk);
-
-	if (tp->mpcb->infinite_mapping_snd)
-		goto no_data_seq;
-
 	if (tp->mpcb->send_infinite_mapping &&
+	    !tp->mpcb->infinite_mapping_snd &&
 	    !before(tcb->seq, mptcp_meta_tp(tp)->snd_nxt)) {
 		tp->mptcp->fully_established = 1;
 		tp->mpcb->infinite_mapping_snd = 1;
@@ -467,9 +462,11 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 		tcb->mptcp_flags |= MPTCPHDR_INF;
 	}
 
+	if (mptcp_is_data_fin(subskb))
+		mptcp_combine_dfin(subskb, meta_sk, sk);
+
 	mptcp_save_dss_data_seq(tp, subskb);
 
-no_data_seq:
 	tcb->seq = tp->write_seq;
 	tcb->sacked = 0; /* reset the sacked field: from the point of view
 			  * of this subflow, we are sending a brand new
@@ -929,8 +926,8 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 	 *       (even if it's very unlikely)
 	 */
 	if (unlikely(mpcb->infinite_mapping_snd) &&
-	    tp->mptcp->fully_established &&
 	    ((mpcb->send_infinite_mapping && tcb &&
+	      mptcp_is_data_seq(skb) &&
 	      !(tcb->mptcp_flags & MPTCPHDR_INF) &&
 	      !before(tcb->seq, tp->mptcp->infinite_cutoff_seq)) ||
 	     !mpcb->send_infinite_mapping))

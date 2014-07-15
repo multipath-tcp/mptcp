@@ -1962,6 +1962,16 @@ int mptcp_init_tw_sock(struct sock *sk, struct tcp_timewait_sock *tw)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_cb *mpcb = tp->mpcb;
 
+	/* A subsocket in tw can only receive data. So, if we are in
+	 * infinite-receive, then we should not reply with a data-ack or act
+	 * upon general MPTCP-signaling. We prevent this by simply not creating
+	 * the mptcp_tw_sock.
+	 */
+	if (mpcb->infinite_mapping_rcv) {
+		tw->mptcp_tw = NULL;
+		return 0;
+	}
+
 	/* Alloc MPTCP-tw-sock */
 	mptw = kmem_cache_alloc(mptcp_tw_cache, GFP_ATOMIC);
 	if (!mptw)
