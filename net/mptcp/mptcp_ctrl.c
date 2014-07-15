@@ -720,11 +720,7 @@ static void mptcp_mpcb_inherit_sockopts(struct sock *meta_sk, struct sock *maste
 		inet_csk_reset_keepalive_timer(master_sk, keepalive_time_when(meta_tp));
 	}
 
-	/****** DEFER_ACCEPT-handler ******/
-
-	/* DEFER_ACCEPT is not of concern for new subflows - we always accept
-	 * them
-	 */
+	/* DEFER_ACCEPT should not be set on the meta, as we want to accept new subflows directly */
 	inet_csk(meta_sk)->icsk_accept_queue.rskq_defer_accept = 0;
 }
 
@@ -1857,8 +1853,7 @@ err_alloc_mpcb:
 
 int mptcp_check_req_master(struct sock *sk, struct sock *child,
 			   struct request_sock *req,
-			   struct request_sock **prev,
-			   struct mptcp_options_received *mopt)
+			   struct request_sock **prev)
 {
 	struct tcp_sock *child_tp = tcp_sk(child);
 	struct sock *meta_sk = child;

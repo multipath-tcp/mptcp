@@ -725,8 +725,7 @@ int mptcp_doit(struct sock *sk);
 int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key, u32 window);
 int mptcp_check_req_master(struct sock *sk, struct sock *child,
 			   struct request_sock *req,
-			   struct request_sock **prev,
-			   struct mptcp_options_received *mopt);
+			   struct request_sock **prev);
 struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
 				   struct request_sock *req,
 				   struct request_sock **prev,
@@ -1323,8 +1322,7 @@ static inline int mptcp_doit(struct sock *sk)
 static inline int mptcp_check_req_master(const struct sock *sk,
 					 const struct sock *child,
 					 struct request_sock *req,
-					 struct request_sock **prev,
-					 const struct mptcp_options_received *mopt)
+					 struct request_sock **prev)
 {
 	return 1;
 }
