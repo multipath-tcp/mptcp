@@ -722,6 +722,9 @@ static void mptcp_mpcb_inherit_sockopts(struct sock *meta_sk, struct sock *maste
 
 	/* DEFER_ACCEPT should not be set on the meta, as we want to accept new subflows directly */
 	inet_csk(meta_sk)->icsk_accept_queue.rskq_defer_accept = 0;
+
+	/* Do not propagate subflow-errors up to the MPTCP-layer */
+	inet_sk(master_sk)->recverr = 0;
 }
 
 static void mptcp_sub_inherit_sockopts(struct sock *meta_sk, struct sock *sub_sk)
@@ -748,6 +751,9 @@ static void mptcp_sub_inherit_sockopts(struct sock *meta_sk, struct sock *sub_sk
 
 	/* Nagle/Cork is forced off on the subflows. It is handled at the meta-layer */
 	tcp_sk(sub_sk)->nonagle = TCP_NAGLE_OFF|TCP_NAGLE_PUSH;
+
+	/* Do not propagate subflow-errors up to the MPTCP-layer */
+	inet_sk(sub_sk)->recverr = 0;
 }
 
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb)
