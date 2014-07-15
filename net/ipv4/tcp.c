@@ -2698,6 +2698,12 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 		break;
 
 	case TCP_DEFER_ACCEPT:
+		/* An established MPTCP-connection (mptcp(tp) only returns true
+		 * if the socket is established) should not use DEFER on new
+		 * subflows.
+		 */
+		if (mptcp(tp))
+			break;
 		/* Translate value in seconds to number of retransmits */
 		icsk->icsk_accept_queue.rskq_defer_accept =
 			secs_to_retrans(val, TCP_TIMEOUT_INIT / HZ,
