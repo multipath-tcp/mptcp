@@ -168,7 +168,7 @@ EXPORT_SYMBOL(tk_hashtable);
  * the token, the final ack does not, so we need a separate hashtable
  * to retrieve the mpcb.
  */
-struct list_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
+struct hlist_nulls_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
 spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
 
 /* The following hash table is used to avoid collision of token */
@@ -2113,7 +2113,7 @@ void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, struct request_sock *req,
 
 	mtreq = mptcp_rsk(req);
 	mtreq->mpcb = mpcb;
-	INIT_LIST_HEAD(&mtreq->collide_tuple);
+	mtreq->collide_tuple.pprev = NULL;
 
 	mtreq->mptcp_rem_nonce = mopt.mptcp_recv_nonce;
 	mtreq->mptcp_rem_key = mpcb->mptcp_rem_key;
@@ -2331,7 +2331,7 @@ void __init mptcp_init(void)
 
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
 		INIT_HLIST_NULLS_HEAD(&tk_hashtable[i], i);
-		INIT_LIST_HEAD(&mptcp_reqsk_htb[i]);
+		INIT_HLIST_NULLS_HEAD(&mptcp_reqsk_htb[i], i);
 		INIT_HLIST_NULLS_HEAD(&mptcp_reqsk_tk_htb[i], i);
 	}
 

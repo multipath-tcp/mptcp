@@ -87,7 +87,7 @@ struct mptcp_request_sock {
 	 * that tuple hashtable. At the moment, though, I extend the
 	 * request_sock.
 	 */
-	struct list_head		collide_tuple;
+	struct hlist_nulls_node		collide_tuple;
 	struct hlist_nulls_node		collide_tk;
 	u32				mptcp_rem_nonce;
 	u32				mptcp_loc_token;
@@ -710,7 +710,7 @@ extern struct hlist_nulls_head tk_hashtable[MPTCP_HASH_SIZE];
  * the token, the final ack does not, so we need a separate hashtable
  * to retrieve the mpcb.
  */
-extern struct list_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
+extern struct hlist_nulls_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
 extern spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
 
 /* Lock, protecting the two hash-tables that hold the token. Namely,
@@ -989,7 +989,7 @@ static inline void mptcp_hash_request_remove(struct request_sock *req)
 {
 	int in_softirq = 0;
 
-	if (list_empty(&mptcp_rsk(req)->collide_tuple))
+	if (hlist_nulls_unhashed(&mptcp_rsk(req)->collide_tuple))
 		return;
 
 	if (in_softirq()) {
@@ -999,7 +999,7 @@ static inline void mptcp_hash_request_remove(struct request_sock *req)
 		spin_lock_bh(&mptcp_reqsk_hlock);
 	}
 
-	list_del(&mptcp_rsk(req)->collide_tuple);
+	hlist_nulls_del_init_rcu(&mptcp_rsk(req)->collide_tuple);
 
 	if (in_softirq)
 		spin_unlock(&mptcp_reqsk_hlock);

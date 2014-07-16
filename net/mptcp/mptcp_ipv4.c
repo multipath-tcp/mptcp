@@ -145,9 +145,11 @@ static void mptcp_v4_reqsk_queue_hash_add(struct sock *meta_sk,
 	reqsk_queue_hash_req(&meta_icsk->icsk_accept_queue, h2, req, timeout);
 	reqsk_queue_added(&meta_icsk->icsk_accept_queue);
 
+	rcu_read_lock();
 	spin_lock(&mptcp_reqsk_hlock);
-	list_add(&mptcp_rsk(req)->collide_tuple, &mptcp_reqsk_htb[h1]);
+	hlist_nulls_add_head_rcu(&mptcp_rsk(req)->collide_tuple, &mptcp_reqsk_htb[h1]);
 	spin_unlock(&mptcp_reqsk_hlock);
+	rcu_read_unlock();
 }
 
 /* Similar to tcp_v4_conn_request */
@@ -252,12 +254,12 @@ struct sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
 {
 	struct mptcp_request_sock *mtreq;
 	struct sock *meta_sk = NULL;
+	const struct hlist_nulls_node *node;
+	const u32 hash = inet_synq_hash(raddr, rport, 0, MPTCP_HASH_SIZE);
 
-	spin_lock(&mptcp_reqsk_hlock);
-	list_for_each_entry(mtreq,
-			    &mptcp_reqsk_htb[inet_synq_hash(raddr, rport, 0,
-							    MPTCP_HASH_SIZE)],
-			    collide_tuple) {
+	rcu_read_lock();
+	hlist_nulls_for_each_entry_rcu(mtreq, node, &mptcp_reqsk_htb[hash],
+				       collide_tuple) {
 		struct inet_request_sock *ireq = inet_rsk(rev_mptcp_rsk(mtreq));
 		meta_sk = mtreq->mpcb->meta_sk;
 
@@ -272,7 +274,7 @@ struct sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
 
 	if (meta_sk && unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
 		meta_sk = NULL;
-	spin_unlock(&mptcp_reqsk_hlock);
+	rcu_read_unlock();
 
 	return meta_sk;
 }
