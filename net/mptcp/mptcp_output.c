@@ -1032,13 +1032,13 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		mpj->kind = TCPOPT_MPTCP;
 		mpj->sub = MPTCP_SUB_JOIN;
 		mpj->rsv = 0;
-		mpj->addr_id = opts->addr_id;
 
 		if (OPTION_TYPE_SYN & opts->mptcp_options) {
 			mpj->len = MPTCP_SUB_LEN_JOIN_SYN;
 			mpj->u.syn.token = opts->mp_join_syns.token;
 			mpj->u.syn.nonce = opts->mp_join_syns.sender_nonce;
 			mpj->b = tp->mptcp->low_prio;
+			mpj->addr_id = opts->addr_id;
 			ptr += MPTCP_SUB_LEN_JOIN_SYN_ALIGN >> 2;
 		} else if (OPTION_TYPE_SYNACK & opts->mptcp_options) {
 			mpj->len = MPTCP_SUB_LEN_JOIN_SYNACK;
@@ -1046,9 +1046,11 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 				opts->mp_join_syns.sender_truncated_mac;
 			mpj->u.synack.nonce = opts->mp_join_syns.sender_nonce;
 			mpj->b = tp->mptcp->low_prio;
+			mpj->addr_id = opts->addr_id;
 			ptr += MPTCP_SUB_LEN_JOIN_SYNACK_ALIGN >> 2;
 		} else if (OPTION_TYPE_ACK & opts->mptcp_options) {
 			mpj->len = MPTCP_SUB_LEN_JOIN_ACK;
+			mpj->addr_id = 0; /* addr_id is rsv (RFC 6824, p. 21) */
 			memcpy(mpj->u.ack.mac, &tp->mptcp->sender_mac[0], 20);
 			ptr += MPTCP_SUB_LEN_JOIN_ACK_ALIGN >> 2;
 		}
