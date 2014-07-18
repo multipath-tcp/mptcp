@@ -229,6 +229,21 @@ struct mptcp_pm_ops {
 	struct module 	*owner;
 };
 
+#define MPTCP_SCHED_NAME_MAX 16
+struct mptcp_sched_ops {
+	struct list_head list;
+
+	struct sock *		(*get_subflow)(struct sock *meta_sk,
+					       struct sk_buff *skb,
+					       bool zero_wnd_test);
+	struct sk_buff *	(*next_segment)(struct sock *meta_sk,
+						int *reinject,
+						struct sock **subsk);
+
+	char			name[MPTCP_SCHED_NAME_MAX];
+	struct module		*owner;
+};
+
 struct mptcp_cb {
 	struct sock *meta_sk;
 
@@ -274,6 +289,8 @@ struct mptcp_cb {
 #define MPTCP_PM_SIZE 608
 	u8 mptcp_pm[MPTCP_PM_SIZE] __aligned(8);
 	struct mptcp_pm_ops *pm_ops;
+
+	struct mptcp_sched_ops *sched_ops;
 
 	/* Mutex needed, because otherwise mptcp_close will complain that the
 	 * socket is owned by the user.
@@ -719,7 +736,6 @@ void mptcp_del_sock(struct sock *sk);
 void mptcp_update_metasocket(struct sock *sock, struct sock *meta_sk);
 void mptcp_reinject_data(struct sock *orig_sk, int clone_it);
 void mptcp_update_sndbuf(struct mptcp_cb *mpcb);
-struct sk_buff *mptcp_next_segment(struct sock *sk, int *reinject);
 void mptcp_send_fin(struct sock *meta_sk);
 void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority);
 bool mptcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
@@ -823,9 +839,23 @@ void mptcp_get_default_path_manager(char *name);
 int mptcp_set_default_path_manager(const char *name);
 extern struct mptcp_pm_ops mptcp_pm_default;
 
+/* MPTCP-scheduler registration/initialization functions */
+int mptcp_register_scheduler(struct mptcp_sched_ops *sched);
+void mptcp_unregister_scheduler(struct mptcp_sched_ops *sched);
+void mptcp_init_scheduler(struct mptcp_cb *mpcb);
+void mptcp_cleanup_scheduler(struct mptcp_cb *mpcb);
+void mptcp_get_default_scheduler(char *name);
+int mptcp_set_default_scheduler(const char *name);
+extern struct mptcp_sched_ops mptcp_sched_default;
+
 static inline int is_mptcp_enabled(void)
 {
 	return sysctl_mptcp_enabled && !mptcp_init_failed;
+}
+
+static inline int mptcp_pi_to_flag(int pi)
+{
+	return 1 << (pi - 1);
 }
 
 static inline
@@ -858,7 +888,11 @@ static inline bool mptcp_can_sendpage(struct sock *sk)
 
 static inline void mptcp_push_pending_frames(struct sock *meta_sk)
 {
-	if (mptcp_next_segment(meta_sk, NULL)) {
+	/* We check packets out and send-head here. TCP only checks the
+	 * send-head. But, MPTCP also checks packets_out, as this is an
+	 * indication that we might want to do opportunistic reinjection.
+	 */
+	if (tcp_sk(meta_sk)->packets_out || tcp_send_head(meta_sk)) {
 		struct tcp_sock *tp = tcp_sk(meta_sk);
 
 		/* We don't care about the MSS, because it will be set in

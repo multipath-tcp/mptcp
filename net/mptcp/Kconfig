@@ -68,3 +68,26 @@ config DEFAULT_MPTCP_PM
 	default "ndiffports" if DEFAULT_NDIFFPORTS
 	default "binder" if DEFAULT_BINDER
 	default "default"
+
+if MPTCP
+choice
+	prompt "Default MPTCP Scheduler"
+	default DEFAULT
+	help
+	  Select the Scheduler of your choice
+
+	config DEFAULT_SCHEDULER
+		bool "Default"
+		---help---
+		  This is the default scheduler, sending first on the subflow
+		  with the lowest RTT.
+
+endchoice
+endif
+
+config DEFAULT_MPTCP_SCHED
+	string
+	depends on (MPTCP=y)
+	default "default" if DEFAULT_SCHEDULER
+	default "default"
+
