@@ -777,6 +777,7 @@ int mptcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	flags = TCP_SKB_CB(skb)->mptcp_flags;
 	TCP_SKB_CB(skb)->mptcp_flags = flags & ~(MPTCPHDR_FIN);
 	TCP_SKB_CB(buff)->mptcp_flags = flags;
+	TCP_SKB_CB(buff)->path_mask = TCP_SKB_CB(skb)->path_mask;
 
 	if (!skb_shinfo(skb)->nr_frags && skb->ip_summed != CHECKSUM_PARTIAL) {
 		/* Copy and checksum data tail into the new buffer. */
@@ -871,6 +872,7 @@ int mptso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	flags = TCP_SKB_CB(skb)->mptcp_flags;
 	TCP_SKB_CB(skb)->mptcp_flags = flags & ~(MPTCPHDR_FIN);
 	TCP_SKB_CB(buff)->mptcp_flags = flags;
+	TCP_SKB_CB(buff)->path_mask = TCP_SKB_CB(skb)->path_mask;
 
 	/* This packet was never sent out yet, so no SACK bits. */
 	TCP_SKB_CB(buff)->sacked = 0;
