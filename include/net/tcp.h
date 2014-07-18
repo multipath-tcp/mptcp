@@ -382,6 +382,7 @@ extern const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops;
 
 struct mptcp_options_received;
 
+extern void tcp_enter_quickack_mode(struct sock *sk);
 extern int tcp_close_state(struct sock *sk);
 extern void tcp_push(struct sock *sk, int flags, int mss_now,
 			    int nonagle);
