@@ -754,14 +754,8 @@ static void tcp_tasklet_func(unsigned long data)
 			/* defer the work to tcp_release_cb() */
 			set_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags);
 
-			/* For MPTCP, we set the tsq-bit on the meta, and the
-			 * subflow as we don't know if the limitation happened
-			 * while inside mptcp_write_xmit or during tcp_write_xmit.
-			 */
-			if (mptcp(tp)) {
-				set_bit(TCP_TSQ_DEFERRED, &tcp_sk(meta_sk)->tsq_flags);
+			if (mptcp(tp))
 				mptcp_tsq_flags(sk);
-			}
 		}
 exit:
 		bh_unlock_sock(meta_sk);
