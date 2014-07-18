@@ -49,6 +49,12 @@ static int mptcp_is_available(struct sock *sk, struct sk_buff *skb,
 			return 0;
 	}
 
+	/* If TSQ is already throttling us, do not send on this subflow. When
+	 * TSQ gets cleared the subflow becomes eligible again.
+	 */
+	if (test_bit(TSQ_THROTTLED, &tp->tsq_flags))
+		return 0;
+
 	if (!tcp_cwnd_test(tp, skb))
 		return 0;
 
