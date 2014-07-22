@@ -188,52 +188,52 @@ static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 	 * sk_forward_alloc is wrong upon inet_csk_destroy_sock()
 	 */
 	switch (meta_sk->sk_state) {
-	case TCP_FIN_WAIT1:
-		if (meta_tp->snd_una == meta_tp->write_seq) {
-			struct dst_entry *dst = __sk_dst_get(meta_sk);
+	case TCP_FIN_WAIT1: {
+		struct dst_entry *dst;
+		int tmo;
 
-			tcp_set_state(meta_sk, TCP_FIN_WAIT2);
-			meta_sk->sk_shutdown |= SEND_SHUTDOWN;
+		if (meta_tp->snd_una != meta_tp->write_seq)
+			break;
 
-			dst = __sk_dst_get(sk);
-			if (dst)
-				dst_confirm(dst);
+		tcp_set_state(meta_sk, TCP_FIN_WAIT2);
+		meta_sk->sk_shutdown |= SEND_SHUTDOWN;
 
-			if (!sock_flag(meta_sk, SOCK_DEAD)) {
-				/* Wake up lingering close() */
-				meta_sk->sk_state_change(meta_sk);
-			} else {
-				int tmo;
+		dst = __sk_dst_get(sk);
+		if (dst)
+			dst_confirm(dst);
 
-				if (meta_tp->linger2 < 0 ||
-				    (data_len &&
-				     after(data_seq + data_len - (mptcp_is_data_fin2(skb, tp) ? 1 : 0),
-					   meta_tp->rcv_nxt))) {
-					mptcp_send_active_reset(meta_sk, GFP_ATOMIC);
-					tcp_done(meta_sk);
-					NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_TCPABORTONDATA);
-					return 1;
-				}
+		if (!sock_flag(meta_sk, SOCK_DEAD)) {
+			/* Wake up lingering close() */
+			meta_sk->sk_state_change(meta_sk);
+			break;
+		}
 
-				tmo = tcp_fin_time(meta_sk);
-				if (tmo > TCP_TIMEWAIT_LEN) {
-					inet_csk_reset_keepalive_timer(meta_sk, tmo - TCP_TIMEWAIT_LEN);
-				} else if (mptcp_is_data_fin2(skb, tp) ||
-					   sock_owned_by_user(meta_sk)) {
-					/* Bad case. We could lose such FIN otherwise.
-					 * It is not a big problem, but it looks confusing
-					 * and not so rare event. We still can lose it now,
-					 * if it spins in bh_lock_sock(), but it is really
-					 * marginal case.
-					 */
-					inet_csk_reset_keepalive_timer(meta_sk, tmo);
-				} else {
-					meta_tp->time_wait(meta_sk,
-							TCP_FIN_WAIT2, tmo);
-				}
-			}
+		if (meta_tp->linger2 < 0 ||
+		    (data_len &&
+		     after(data_seq + data_len - (mptcp_is_data_fin2(skb, tp) ? 1 : 0),
+			   meta_tp->rcv_nxt))) {
+			mptcp_send_active_reset(meta_sk, GFP_ATOMIC);
+			tcp_done(meta_sk);
+			NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_TCPABORTONDATA);
+			return 1;
+		}
+
+		tmo = tcp_fin_time(meta_sk);
+		if (tmo > TCP_TIMEWAIT_LEN) {
+			inet_csk_reset_keepalive_timer(meta_sk, tmo - TCP_TIMEWAIT_LEN);
+		} else if (mptcp_is_data_fin2(skb, tp) || sock_owned_by_user(meta_sk)) {
+			/* Bad case. We could lose such FIN otherwise.
+			 * It is not a big problem, but it looks confusing
+			 * and not so rare event. We still can lose it now,
+			 * if it spins in bh_lock_sock(), but it is really
+			 * marginal case.
+			 */
+			inet_csk_reset_keepalive_timer(meta_sk, tmo);
+		} else {
+			meta_tp->time_wait(meta_sk, TCP_FIN_WAIT2, tmo);
 		}
 		break;
+	}
 	case TCP_CLOSING:
 	case TCP_LAST_ACK:
 		if (meta_tp->snd_una == meta_tp->write_seq) {
