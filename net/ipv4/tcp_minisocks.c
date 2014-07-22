@@ -456,9 +456,6 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 
 		newtp->snd_sml = newtp->snd_una =
 		newtp->snd_nxt = newtp->snd_up = treq->snt_isn + 1;
-#ifdef CONFIG_MPTCP
-		memset(&newtp->rcvq_space, 0, sizeof(newtp->rcvq_space));
-#endif
 
 		tcp_prequeue_init(newtp);
 		INIT_LIST_HEAD(&newtp->tsq_node);
