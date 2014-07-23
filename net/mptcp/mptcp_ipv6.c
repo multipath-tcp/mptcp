@@ -178,7 +178,7 @@ static void mptcp_v6_reqsk_queue_hash_add(struct sock *meta_sk,
 
 	rcu_read_lock();
 	spin_lock(&mptcp_reqsk_hlock);
-	hlist_nulls_add_head_rcu(&mptcp_rsk(req)->collide_tuple, &mptcp_reqsk_htb[h1]);
+	hlist_nulls_add_head_rcu(&mptcp_rsk(req)->hash_entry, &mptcp_reqsk_htb[h1]);
 	spin_unlock(&mptcp_reqsk_hlock);
 	rcu_read_unlock();
 }
@@ -482,7 +482,7 @@ struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *radd
 
 	rcu_read_lock();
 	hlist_nulls_for_each_entry_rcu(mtreq, node, &mptcp_reqsk_htb[hash],
-				       collide_tuple) {
+				       hash_entry) {
 		struct inet_request_sock *treq = inet_rsk(rev_mptcp_rsk(mtreq));
 		meta_sk = mtreq->mpcb->meta_sk;
 

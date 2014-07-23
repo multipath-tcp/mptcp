@@ -80,15 +80,11 @@ struct mptcp_rem6 {
 struct mptcp_request_sock {
 	struct tcp_request_sock		req;
 	struct mptcp_cb			*mpcb;
-	/* Collision list in the tuple hashtable. We need to find
-	 * the req sock when receiving the third msg of the 3-way handshake,
-	 * since that one does not contain the token. If this makes
-	 * the request sock too long, we can use kmalloc'ed specific entries for
-	 * that tuple hashtable. At the moment, though, I extend the
-	 * request_sock.
+	/* hlist-nulls entry to the hash-table. Depending on whether this is a
+	 * a new MPTCP connection or an additional subflow, the request-socket
+	 * is either in the mptcp_reqsk_tk_htb or mptcp_reqsk_htb.
 	 */
-	struct hlist_nulls_node		collide_tuple;
-	struct hlist_nulls_node		collide_tk;
+	struct hlist_nulls_node		hash_entry;
 	u32				mptcp_rem_nonce;
 	u32				mptcp_loc_token;
 	u64				mptcp_loc_key;
@@ -989,7 +985,7 @@ static inline void mptcp_hash_request_remove(struct request_sock *req)
 {
 	int in_softirq = 0;
 
-	if (hlist_nulls_unhashed(&mptcp_rsk(req)->collide_tuple))
+	if (hlist_nulls_unhashed(&mptcp_rsk(req)->hash_entry))
 		return;
 
 	if (in_softirq()) {
@@ -999,7 +995,7 @@ static inline void mptcp_hash_request_remove(struct request_sock *req)
 		spin_lock_bh(&mptcp_reqsk_hlock);
 	}
 
-	hlist_nulls_del_init_rcu(&mptcp_rsk(req)->collide_tuple);
+	hlist_nulls_del_init_rcu(&mptcp_rsk(req)->hash_entry);
 
 	if (in_softirq)
 		spin_unlock(&mptcp_reqsk_hlock);

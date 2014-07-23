@@ -182,7 +182,7 @@ static int mptcp_reqsk_find_tk(u32 token)
 	const struct hlist_nulls_node *node;
 
 	hlist_nulls_for_each_entry_rcu(mtreqsk, node,
-				       &mptcp_reqsk_tk_htb[hash], collide_tk) {
+				       &mptcp_reqsk_tk_htb[hash], hash_entry) {
 		if (token == mtreqsk->mptcp_loc_token)
 			return 1;
 	}
@@ -193,7 +193,7 @@ static void mptcp_reqsk_insert_tk(struct request_sock *reqsk, u32 token)
 {
 	u32 hash = mptcp_hash_tk(token);
 
-	hlist_nulls_add_head_rcu(&mptcp_rsk(reqsk)->collide_tk,
+	hlist_nulls_add_head_rcu(&mptcp_rsk(reqsk)->hash_entry,
 				 &mptcp_reqsk_tk_htb[hash]);
 }
 
@@ -201,7 +201,7 @@ static void mptcp_reqsk_remove_tk(struct request_sock *reqsk)
 {
 	rcu_read_lock();
 	spin_lock(&mptcp_tk_hashlock);
-	hlist_nulls_del_init_rcu(&mptcp_rsk(reqsk)->collide_tk);
+	hlist_nulls_del_init_rcu(&mptcp_rsk(reqsk)->hash_entry);
 	spin_unlock(&mptcp_tk_hashlock);
 	rcu_read_unlock();
 }
@@ -214,7 +214,7 @@ void mptcp_reqsk_destructor(struct request_sock *req)
 		} else {
 			rcu_read_lock_bh();
 			spin_lock(&mptcp_tk_hashlock);
-			hlist_nulls_del_init_rcu(&mptcp_rsk(req)->collide_tk);
+			hlist_nulls_del_init_rcu(&mptcp_rsk(req)->hash_entry);
 			spin_unlock(&mptcp_tk_hashlock);
 			rcu_read_unlock_bh();
 		}
@@ -2113,7 +2113,7 @@ void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, struct request_sock *req,
 
 	mtreq = mptcp_rsk(req);
 	mtreq->mpcb = mpcb;
-	mtreq->collide_tuple.pprev = NULL;
+	mtreq->hash_entry.pprev = NULL;
 
 	mtreq->mptcp_rem_nonce = mopt.mptcp_recv_nonce;
 	mtreq->mptcp_rem_key = mpcb->mptcp_rem_key;
@@ -2140,7 +2140,7 @@ void mptcp_reqsk_init(struct request_sock *req, struct sk_buff *skb)
 
 	mreq->mpcb = NULL;
 	mreq->dss_csum = mopt.dss_csum;
-	mreq->collide_tk.pprev = NULL;
+	mreq->hash_entry.pprev = NULL;
 
 	mptcp_reqsk_new_mptcp(req, &mopt, skb);
 }
