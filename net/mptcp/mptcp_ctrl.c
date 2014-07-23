@@ -275,7 +275,7 @@ void mptcp_reqsk_new_mptcp(struct request_sock *req,
 {
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
 
-	tcp_rsk(req)->saw_mpc = 1;
+	inet_rsk(req)->saw_mpc = 1;
 
 	rcu_read_lock();
 	spin_lock(&mptcp_tk_hashlock);
@@ -1837,7 +1837,7 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	struct mptcp_cb *mpcb;
 	struct mptcp_request_sock *mtreq;
 
-	if (!tcp_rsk(req)->saw_mpc)
+	if (!inet_rsk(req)->saw_mpc)
 		return 1;
 
 	/* Just set this values to pass them to mptcp_alloc_mpcb */
@@ -2127,7 +2127,7 @@ void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, struct request_sock *req,
 
 	mtreq->rem_id = mopt.rem_id;
 	mtreq->low_prio = mopt.low_prio;
-	tcp_rsk(req)->saw_mpc = 1;
+	inet_rsk(req)->saw_mpc = 1;
 }
 
 void mptcp_reqsk_init(struct request_sock *req, struct sk_buff *skb)
