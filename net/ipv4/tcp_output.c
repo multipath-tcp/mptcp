@@ -754,14 +754,8 @@ static void tcp_tasklet_func(unsigned long data)
 			/* defer the work to tcp_release_cb() */
 			set_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags);
 
-			/* For MPTCP, we set the tsq-bit on the meta, and the
-			 * subflow as we don't know if the limitation happened
-			 * while inside mptcp_write_xmit or during tcp_write_xmit.
-			 */
-			if (mptcp(tp)) {
-				set_bit(TCP_TSQ_DEFERRED, &tcp_sk(meta_sk)->tsq_flags);
+			if (mptcp(tp))
 				mptcp_tsq_flags(sk);
-			}
 		}
 exit:
 		bh_unlock_sock(meta_sk);
@@ -1494,21 +1488,12 @@ unsigned int tcp_mss_split_point(const struct sock *sk,
 				 int nonagle)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
-	const struct sock *meta_sk = mptcp(tp) ? mptcp_meta_sk(sk) : sk;
 	u32 partial, needed, window, max_len;
 
-	if (!mptcp(tp))
-		window = tcp_wnd_end(tp) - TCP_SKB_CB(skb)->seq;
-	else
-		/* We need to evaluate the available space in the sending window
-		 * at the subflow level. However, the subflow seq has not yet
-		 * been set. Nevertheless we know that the caller will set it to
-		 * write_seq.
-		 */
-		window = tcp_wnd_end(tp) - tp->write_seq;
+	window = tcp_wnd_end(tp) - TCP_SKB_CB(skb)->seq;
 	max_len = mss_now * max_segs;
 
-	if (likely(max_len <= window && skb != tcp_write_queue_tail(meta_sk)))
+	if (likely(max_len <= window && skb != tcp_write_queue_tail(sk)))
 		return max_len;
 
 	needed = min(skb->len, window);
@@ -1537,7 +1522,7 @@ unsigned int tcp_cwnd_test(const struct tcp_sock *tp,
 
 	/* Don't be strict about the congestion window for the final FIN.  */
 	if (skb &&
-	    ((TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN) || mptcp_is_data_fin(skb)) &&
+	    (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN) &&
 	    tcp_skb_pcount(skb) == 1)
 		return 1;
 
@@ -1703,11 +1688,9 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
  *
  * This algorithm is from John Heffner.
  */
-bool tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb)
+static bool tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *meta_sk = mptcp(tp) ? mptcp_meta_sk(sk) : sk;
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	const struct inet_connection_sock *icsk = inet_csk(sk);
 	u32 send_win, cong_win, limit, in_flight;
 	int win_divisor;
@@ -1719,23 +1702,15 @@ bool tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb)
 		goto send_now;
 
 	/* Defer for less than two clock ticks. */
-	if (meta_tp->tso_deferred &&
-	    (((u32)jiffies << 1) >> 1) - (meta_tp->tso_deferred >> 1) > 1)
+	if (tp->tso_deferred &&
+	    (((u32)jiffies << 1) >> 1) - (tp->tso_deferred >> 1) > 1)
 		goto send_now;
 
 	in_flight = tcp_packets_in_flight(tp);
 
 	BUG_ON(tcp_skb_pcount(skb) <= 1 || (tp->snd_cwnd <= in_flight));
 
-	if (!mptcp(tp))
-		send_win = tcp_wnd_end(tp) - TCP_SKB_CB(skb)->seq;
-	else
-		/* We need to evaluate the available space in the sending window
-		 * at the subflow level. However, the subflow seq has not yet
-		 * been set. Nevertheless we know that the caller will set it to
-		 * write_seq.
-		 */
-		send_win = tcp_wnd_end(tp) - tp->write_seq;
+	send_win = tcp_wnd_end(tp) - TCP_SKB_CB(skb)->seq;
 
 	/* From in_flight test above, we know that cwnd > in_flight.  */
 	cong_win = (tp->snd_cwnd - in_flight) * tp->mss_cache;
@@ -1748,7 +1723,7 @@ bool tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb)
 		goto send_now;
 
 	/* Middle in queue won't get any more data, full sendable already? */
-	if ((skb != tcp_write_queue_tail(meta_sk)) && (limit >= skb->len))
+	if ((skb != tcp_write_queue_tail(sk)) && (limit >= skb->len))
 		goto send_now;
 
 	win_divisor = ACCESS_ONCE(sysctl_tcp_tso_win_divisor);
@@ -1774,13 +1749,13 @@ bool tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb)
 	/* Ok, it looks like it is advisable to defer.
 	 * Do not rearm the timer if already set to not break TCP ACK clocking.
 	 */
-	if (!meta_tp->tso_deferred)
-		meta_tp->tso_deferred = 1 | (jiffies << 1);
+	if (!tp->tso_deferred)
+		tp->tso_deferred = 1 | (jiffies << 1);
 
 	return true;
 
 send_now:
-	meta_tp->tso_deferred = 0;
+	tp->tso_deferred = 0;
 	return false;
 }
 
@@ -1793,7 +1768,7 @@ send_now:
  *         1 if a probe was sent,
  *         -1 otherwise
  */
-int tcp_mtu_probe(struct sock *sk)
+static int tcp_mtu_probe(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
@@ -1940,7 +1915,11 @@ bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 
 	sent_pkts = 0;
 
-	if (!push_one) {
+	/* pmtu not yet supported with MPTCP. Should be possible, by early
+	 * exiting the loop inside tcp_mtu_probe, making sure that only one
+	 * single DSS-mapping gets probed.
+	 */
+	if (!push_one && !mptcp(tp)) {
 		/* Do MTU probing. */
 		result = tcp_mtu_probe(sk);
 		if (!result) {

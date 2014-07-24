@@ -668,6 +668,7 @@ static void mptcp_mpcb_inherit_sockopts(struct sock *meta_sk, struct sock *maste
 	 * Socket-options handled in this function here
 	 * ======
 	 * TCP_DEFER_ACCEPT
+	 * SO_KEEPALIVE
 	 *
 	 * Socket-options on the todo-list
 	 * ======
@@ -698,15 +699,21 @@ static void mptcp_mpcb_inherit_sockopts(struct sock *meta_sk, struct sock *maste
 	 * TCP_CONGESTION
 	 * TCP_SYNCNT
 	 * TCP_QUICKACK
-	 * SO_KEEPALIVE
 	 */
 
-	/****** DEFER_ACCEPT-handler ******/
-
-	/* DEFER_ACCEPT is not of concern for new subflows - we always accept
-	 * them
-	 */
+	/* DEFER_ACCEPT should not be set on the meta, as we want to accept new subflows directly */
 	inet_csk(meta_sk)->icsk_accept_queue.rskq_defer_accept = 0;
+
+	/* Keepalives are handled entirely at the MPTCP-layer */
+	if (sock_flag(meta_sk, SOCK_KEEPOPEN)) {
+		inet_csk_reset_keepalive_timer(meta_sk,
+				keepalive_time_when(tcp_sk(meta_sk)));
+		sock_reset_flag(master_sk, SOCK_KEEPOPEN);
+		inet_csk_delete_keepalive_timer(master_sk);
+	}
+
+	/* Do not propagate subflow-errors up to the MPTCP-layer */
+	inet_sk(master_sk)->recverr = 0;
 }
 
 static void mptcp_sub_inherit_sockopts(struct sock *meta_sk, struct sock *sub_sk)
@@ -723,6 +730,18 @@ static void mptcp_sub_inherit_sockopts(struct sock *meta_sk, struct sock *sub_sk
 
 	/* Inherit snd/rcv-buffer locks */
 	sub_sk->sk_userlocks = meta_sk->sk_userlocks & ~SOCK_BINDPORT_LOCK;
+
+	/* Nagle/Cork is forced off on the subflows. It is handled at the meta-layer */
+	tcp_sk(sub_sk)->nonagle = TCP_NAGLE_OFF|TCP_NAGLE_PUSH;
+
+	/* Keepalives are handled entirely at the MPTCP-layer */
+	if (sock_flag(sub_sk, SOCK_KEEPOPEN)) {
+		sock_reset_flag(sub_sk, SOCK_KEEPOPEN);
+		inet_csk_delete_keepalive_timer(sub_sk);
+	}
+
+	/* Do not propagate subflow-errors up to the MPTCP-layer */
+	inet_sk(sub_sk)->recverr = 0;
 }
 
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb)
@@ -1263,7 +1282,7 @@ void mptcp_del_sock(struct sock *sk)
 void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
 {
 	if (tcp_sk(sk)->mpcb->pm_ops->new_session)
-		tcp_sk(sk)->mpcb->pm_ops->new_session(meta_sk);
+		tcp_sk(sk)->mpcb->pm_ops->new_session(meta_sk, sk);
 
 	tcp_sk(sk)->mptcp->send_mp_prio = tcp_sk(sk)->mptcp->low_prio;
 }
@@ -1811,8 +1830,7 @@ err_alloc_mpcb:
 
 int mptcp_check_req_master(struct sock *sk, struct sock *child,
 			   struct request_sock *req,
-			   struct request_sock **prev,
-			   struct mptcp_options_received *mopt)
+			   struct request_sock **prev)
 {
 	struct tcp_sock *child_tp = tcp_sk(child);
 	struct sock *meta_sk = child;
@@ -1943,6 +1961,16 @@ int mptcp_init_tw_sock(struct sock *sk, struct tcp_timewait_sock *tw)
 	struct mptcp_tw *mptw;
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_cb *mpcb = tp->mpcb;
+
+	/* A subsocket in tw can only receive data. So, if we are in
+	 * infinite-receive, then we should not reply with a data-ack or act
+	 * upon general MPTCP-signaling. We prevent this by simply not creating
+	 * the mptcp_tw_sock.
+	 */
+	if (mpcb->infinite_mapping_rcv) {
+		tw->mptcp_tw = NULL;
+		return 0;
+	}
 
 	/* Alloc MPTCP-tw-sock */
 	mptw = kmem_cache_alloc(mptcp_tw_cache, GFP_ATOMIC);

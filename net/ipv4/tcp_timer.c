@@ -431,9 +431,6 @@ void tcp_retransmit_timer(struct sock *sk)
 
 	tcp_enter_loss(sk, 0);
 
-	if (mptcp(tp))
-		mptcp_reinject_data(sk, 1);
-
 	if (tcp_retransmit_skb(sk, tcp_write_queue_head(sk)) > 0) {
 		/* Retransmission failed because of local congestion,
 		 * do not backoff.
@@ -484,13 +481,15 @@ out_reset_timer:
 		/* Use normal (exponential) backoff */
 		icsk->icsk_rto = min(icsk->icsk_rto << 1, TCP_RTO_MAX);
 	}
-	if (mptcp(tp))
-		mptcp_set_rto(sk);
 	inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS, icsk->icsk_rto, TCP_RTO_MAX);
 	if (retransmits_timed_out(sk, sysctl_tcp_retries1 + 1, 0, 0))
 		__sk_dst_reset(sk);
 
 out:;
+	if (mptcp(tp)) {
+		mptcp_reinject_data(sk, 1);
+		mptcp_set_rto(sk);
+	}
 }
 
 void tcp_write_timer_handler(struct sock *sk)

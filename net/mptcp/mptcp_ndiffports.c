@@ -37,7 +37,7 @@ next_subflow:
 		release_sock(meta_sk);
 		mutex_unlock(&mpcb->mpcb_mutex);
 
-		yield();
+		cond_resched();
 	}
 	mutex_lock(&mpcb->mpcb_mutex);
 	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
@@ -92,7 +92,7 @@ exit:
 	sock_put(meta_sk);
 }
 
-static void ndiffports_new_session(struct sock *meta_sk)
+static void ndiffports_new_session(struct sock *meta_sk, struct sock *sk)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct ndiffports_priv *fmp = (struct ndiffports_priv *)&mpcb->mptcp_pm[0];

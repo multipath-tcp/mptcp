@@ -165,7 +165,7 @@ static void tcp_incr_quickack(struct sock *sk)
 		icsk->icsk_ack.quick = min(quickacks, TCP_MAX_QUICKACKS);
 }
 
-static void tcp_enter_quickack_mode(struct sock *sk)
+void tcp_enter_quickack_mode(struct sock *sk)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	tcp_incr_quickack(sk);
@@ -5624,10 +5624,11 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			return -1;
 
 		/* With MPTCP we cannot send data on the third ack due to the
-		 * lack of option-space */
-		if ((sk->sk_write_pending && !mptcp(tp)) ||
+		 * lack of option-space to combine with an MP_CAPABLE.
+		 */
+		if (!mptcp(tp) && (sk->sk_write_pending ||
 		    icsk->icsk_accept_queue.rskq_defer_accept ||
-		    icsk->icsk_ack.pingpong) {
+		    icsk->icsk_ack.pingpong)) {
 			/* Save one ACK. Data will be ready after
 			 * several ticks, if write_pending is set.
 			 *
@@ -5802,6 +5803,12 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 		if (is_meta_sk(sk)) {
 			sk = tcp_sk(sk)->mpcb->master_sk;
 			tp = tcp_sk(sk);
+
+			/* Need to call it here, because it will announce new
+			 * addresses, which can only be done after the third ack
+			 * of the 3-way handshake.
+			 */
+			mptcp_update_metasocket(sk, tp->meta_sk);
 		}
 		if (queued >= 0)
 			return queued;

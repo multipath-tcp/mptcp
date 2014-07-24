@@ -54,19 +54,19 @@ static inline void mptcp_become_fully_estab(struct sock *sk)
 }
 
 /* Similar to tcp_tso_acked without any memory accounting */
-static inline int mptcp_tso_acked_reinject(struct sock *sk, struct sk_buff *skb)
+static inline int mptcp_tso_acked_reinject(struct sock *meta_sk, struct sk_buff *skb)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	u32 packets_acked, len;
 
-	BUG_ON(!after(TCP_SKB_CB(skb)->end_seq, tp->snd_una));
+	BUG_ON(!after(TCP_SKB_CB(skb)->end_seq, meta_tp->snd_una));
 
 	packets_acked = tcp_skb_pcount(skb);
 
 	if (skb_unclone(skb, GFP_ATOMIC))
 		return 0;
 
-	len = tp->snd_una - TCP_SKB_CB(skb)->seq;
+	len = meta_tp->snd_una - TCP_SKB_CB(skb)->seq;
 	__pskb_trim_head(skb, len);
 
 	TCP_SKB_CB(skb)->seq += len;
@@ -75,7 +75,7 @@ static inline int mptcp_tso_acked_reinject(struct sock *sk, struct sk_buff *skb)
 
 	/* Any change of skb->len requires recalculation of tso factor. */
 	if (tcp_skb_pcount(skb) > 1)
-		tcp_set_skb_tso_segs(sk, skb, tcp_skb_mss(skb));
+		tcp_set_skb_tso_segs(meta_sk, skb, tcp_skb_mss(skb));
 	packets_acked -= tcp_skb_pcount(skb);
 
 	if (packets_acked) {
@@ -555,6 +555,8 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 
 		tp->mpcb->infinite_mapping_snd = 1;
 		tp->mpcb->infinite_mapping_rcv = 1;
+		/* We do a seamless fallback and should not send a inf.mapping. */
+		tp->mpcb->send_infinite_mapping = 0;
 		tp->mptcp->fully_established = 1;
 	}
 
@@ -814,8 +816,7 @@ static int mptcp_validate_mapping(struct sock *sk, struct sk_buff *skb)
 	 * This may happen if the mapping has been lost for these segments and
 	 * the next mapping has already been received.
 	 */
-	if (tp->mptcp->mapping_present &&
-	    before(TCP_SKB_CB(skb_peek(&sk->sk_receive_queue))->seq, tp->mptcp->map_subseq)) {
+	if (before(TCP_SKB_CB(skb_peek(&sk->sk_receive_queue))->seq, tp->mptcp->map_subseq)) {
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
 			if (!before(TCP_SKB_CB(tmp1)->seq, tp->mptcp->map_subseq))
 				break;
@@ -913,6 +914,7 @@ static int mptcp_queue_skb(struct sock *sk)
 				break;
 
 		}
+		tcp_enter_quickack_mode(sk);
 	} else {
 		/* Ready for the meta-rcv-queue */
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
@@ -1004,14 +1006,20 @@ void mptcp_data_ready(struct sock *sk, int bytes)
 	struct sk_buff *skb, *tmp;
 	int queued = 0;
 
-	/* If the meta is already closed, there is no point in pushing data */
-	if (meta_sk->sk_state == TCP_CLOSE && !tcp_sk(sk)->mpcb->in_time_wait) {
+	/* restart before the check, because mptcp_fin might have changed the
+	 * state.
+	 */
+restart:
+	/* If the meta cannot receive data, there is no point in pushing data.
+	 * If we are in time-wait, we may still be waiting for the final FIN.
+	 * So, we should proceed with the processing.
+	 */
+	if (!mptcp_sk_can_recv(meta_sk) && !tcp_sk(sk)->mpcb->in_time_wait) {
 		skb_queue_purge(&sk->sk_receive_queue);
 		tcp_sk(sk)->copied_seq = tcp_sk(sk)->rcv_nxt;
 		goto exit;
 	}
 
-restart:
 	/* Iterate over all segments, detect their mapping (if we don't have
 	 * one yet), validate them and push everything one level higher.
 	 */
@@ -2152,8 +2160,6 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 
 		sk_set_socket(sk, mptcp_meta_sk(sk)->sk_socket);
 		sk->sk_wq = mptcp_meta_sk(sk)->sk_wq;
-
-		mptcp_update_metasocket(sk, mptcp_meta_sk(sk));
 
 		 /* hold in mptcp_inherit_sk due to initialization to 2 */
 		sock_put(sk);

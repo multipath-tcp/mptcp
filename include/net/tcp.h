@@ -371,6 +371,7 @@ extern const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops;
 
 struct mptcp_options_received;
 
+void tcp_enter_quickack_mode(struct sock *sk);
 int tcp_close_state(struct sock *sk);
 void tcp_minshall_update(struct tcp_sock *tp, unsigned int mss_now,
 			 const struct sk_buff *skb);
@@ -384,13 +385,11 @@ unsigned int tcp_mss_split_point(const struct sock *sk,
 				 unsigned int mss_now,
 				 unsigned int max_segs,
 				 int nonagle);
-bool tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb);
 bool tcp_nagle_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 		    unsigned int cur_mss, int nonagle);
 bool tcp_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 		      unsigned int cur_mss);
 unsigned int tcp_cwnd_test(const struct tcp_sock *tp, const struct sk_buff *skb);
-int tcp_mtu_probe(struct sock *sk);
 int tcp_init_tso_segs(const struct sock *sk, struct sk_buff *skb,
 		      unsigned int mss_now);
 void __pskb_trim_head(struct sk_buff *skb, int len);

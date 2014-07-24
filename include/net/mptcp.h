@@ -177,7 +177,6 @@ struct mptcp_tcp_sock {
 	u8	rem_id;
 
 	u32	last_rbuf_opti;	/* Timestamp of last rbuf optimization */
-	unsigned int sent_pkts;
 
 	struct sk_buff  *shortcut_ofoqueue; /* Shortcut to the current modified
 					     * skb in the ofo-queue.
@@ -211,7 +210,7 @@ struct mptcp_pm_ops {
 	struct list_head list;
 
 	/* Signal the creation of a new MPTCP-session. */
-	void (*new_session)(struct sock *meta_sk);
+	void (*new_session)(struct sock *meta_sk, struct sock *sk);
 	void (*release_sock)(struct sock *meta_sk);
 	void (*fully_established)(struct sock *meta_sk);
 	void (*new_remote_address)(struct sock *meta_sk);
@@ -238,7 +237,8 @@ struct mptcp_sched_ops {
 					       bool zero_wnd_test);
 	struct sk_buff *	(*next_segment)(struct sock *meta_sk,
 						int *reinject,
-						struct sock **subsk);
+						struct sock **subsk,
+						unsigned int *limit);
 
 	char			name[MPTCP_SCHED_NAME_MAX];
 	struct module		*owner;
@@ -277,10 +277,6 @@ struct mptcp_cb {
 	/* socket count in this connection */
 	u8 cnt_subflows;
 	u8 cnt_established;
-
-	u32 noneligible;	/* Path mask of temporarily non
-				 * eligible subflows by the scheduler
-				 */
 
 	struct sk_buff_head reinject_queue;
 
@@ -760,8 +756,7 @@ int mptcp_doit(struct sock *sk);
 int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key, u32 window);
 int mptcp_check_req_master(struct sock *sk, struct sock *child,
 			   struct request_sock *req,
-			   struct request_sock **prev,
-			   struct mptcp_options_received *mopt);
+			   struct request_sock **prev);
 struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
 				   struct request_sock *req,
 				   struct request_sock **prev,
@@ -1095,7 +1090,7 @@ static inline int mptcp_sk_can_send(const struct sock *sk)
 
 static inline int mptcp_sk_can_recv(const struct sock *sk)
 {
-	return (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCP_FIN_WAIT1 | TCP_FIN_WAIT2);
+	return (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCPF_FIN_WAIT1 | TCPF_FIN_WAIT2);
 }
 
 static inline int mptcp_sk_can_send_ack(const struct sock *sk)
@@ -1380,8 +1375,7 @@ static inline int mptcp_doit(struct sock *sk)
 static inline int mptcp_check_req_master(const struct sock *sk,
 					 const struct sock *child,
 					 struct request_sock *req,
-					 struct request_sock **prev,
-					 const struct mptcp_options_received *mopt)
+					 struct request_sock **prev)
 {
 	return 1;
 }
