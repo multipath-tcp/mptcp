@@ -1343,6 +1343,7 @@ static inline int is_master_tp(const struct tcp_sock *tp)
 }
 static inline void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp) {}
 static inline void mptcp_del_sock(const struct sock *sk) {}
+static inline void mptcp_update_metasocket(struct sock *sock, struct sock *meta_sk) {}
 static inline void mptcp_reinject_data(struct sock *orig_sk, int clone_it) {}
 static inline void mptcp_update_sndbuf(const struct mptcp_cb *mpcb) {}
 static inline void mptcp_clean_rtx_infinite(const struct sk_buff *skb,
