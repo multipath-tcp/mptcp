@@ -2117,11 +2117,9 @@ void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, struct request_sock *req,
 	mtreq->hash_entry.pprev = NULL;
 
 	mtreq->mptcp_rem_nonce = mopt.mptcp_recv_nonce;
-	mtreq->mptcp_rem_key = mpcb->mptcp_rem_key;
-	mtreq->mptcp_loc_key = mpcb->mptcp_loc_key;
 
-	mptcp_hmac_sha1((u8 *)&mtreq->mptcp_loc_key,
-			(u8 *)&mtreq->mptcp_rem_key,
+	mptcp_hmac_sha1((u8 *)&mpcb->mptcp_loc_key,
+			(u8 *)&mpcb->mptcp_rem_key,
 			(u8 *)&mtreq->mptcp_loc_nonce,
 			(u8 *)&mtreq->mptcp_rem_nonce, (u32 *)mptcp_hash_mac);
 	mtreq->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;

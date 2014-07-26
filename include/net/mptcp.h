@@ -84,17 +84,26 @@ struct mptcp_request_sock {
 	 * is either in the mptcp_reqsk_tk_htb or mptcp_reqsk_htb.
 	 */
 	struct hlist_nulls_node		hash_entry;
-	u32				mptcp_rem_nonce;
-	u32				mptcp_loc_token;
-	u64				mptcp_loc_key;
-	u64				mptcp_rem_key;
-	u64				mptcp_hash_tmac;
-	u32				mptcp_loc_nonce;
+
+	union {
+		struct {
+			/* Only on initial subflows */
+			u64		mptcp_loc_key;
+			u64		mptcp_rem_key;
+			u32		mptcp_loc_token;
+		};
+
+		struct {
+			/* Only on additional subflows */
+			struct mptcp_cb	*mptcp_mpcb;
+			u32		mptcp_rem_nonce;
+			u32		mptcp_loc_nonce;
+			u64		mptcp_hash_tmac;
+		};
+	};
+
 	u8				loc_id;
 	u8				rem_id; /* Address-id in the MP_JOIN */
-
-	/* Only on additional subflows */
-	struct mptcp_cb			*mptcp_mpcb;
 	u8				dss_csum:1,
 					is_sub:1, /* Is this a new subflow? */
 					low_prio:1;
