@@ -484,7 +484,7 @@ struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *radd
 	hlist_nulls_for_each_entry_rcu(mtreq, node, &mptcp_reqsk_htb[hash],
 				       hash_entry) {
 		struct inet_request_sock *treq = inet_rsk(rev_mptcp_rsk(mtreq));
-		meta_sk = mtreq->mpcb->meta_sk;
+		meta_sk = mtreq->mptcp_mpcb->meta_sk;
 
 		if (inet_rsk(rev_mptcp_rsk(mtreq))->ir_rmt_port == rport &&
 		    rev_mptcp_rsk(mtreq)->rsk_ops->family == AF_INET6 &&

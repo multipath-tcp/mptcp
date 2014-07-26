@@ -868,7 +868,7 @@ void mptcp_synack_options(struct request_sock *req,
 
 	opts->options |= OPTION_MPTCP;
 	/* MPCB not yet set - thus it's a new MPTCP-session */
-	if (!mtreq->mpcb) {
+	if (!mtreq->is_sub) {
 		opts->mptcp_options |= OPTION_MP_CAPABLE | OPTION_TYPE_SYNACK;
 		opts->mp_capable.sender_key = mtreq->mptcp_loc_key;
 		opts->dss_csum = !!sysctl_mptcp_checksum || mtreq->dss_csum;

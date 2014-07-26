@@ -208,7 +208,7 @@ static void mptcp_reqsk_remove_tk(struct request_sock *reqsk)
 
 void mptcp_reqsk_destructor(struct request_sock *req)
 {
-	if (!mptcp_rsk(req)->mpcb) {
+	if (!mptcp_rsk(req)->is_sub) {
 		if (in_softirq()) {
 			mptcp_reqsk_remove_tk(req);
 		} else {
@@ -1884,7 +1884,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 {
 	struct tcp_sock *child_tp = tcp_sk(child);
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
-	struct mptcp_cb *mpcb = mtreq->mpcb;
+	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	u8 hash_mac_check[20];
 
 	child_tp->inside_tk_table = 0;
@@ -2112,7 +2112,8 @@ void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, struct request_sock *req,
 	tcp_parse_mptcp_options(skb, &mopt);
 
 	mtreq = mptcp_rsk(req);
-	mtreq->mpcb = mpcb;
+	mtreq->mptcp_mpcb = mpcb;
+	mtreq->is_sub = 1;
 	mtreq->hash_entry.pprev = NULL;
 
 	mtreq->mptcp_rem_nonce = mopt.mptcp_recv_nonce;
@@ -2138,7 +2139,7 @@ void mptcp_reqsk_init(struct request_sock *req, struct sk_buff *skb)
 	mptcp_init_mp_opt(&mopt);
 	tcp_parse_mptcp_options(skb, &mopt);
 
-	mreq->mpcb = NULL;
+	mreq->is_sub = 0;
 	mreq->dss_csum = mopt.dss_csum;
 	mreq->hash_entry.pprev = NULL;
 

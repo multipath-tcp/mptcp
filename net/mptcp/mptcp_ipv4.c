@@ -261,7 +261,7 @@ struct sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
 	hlist_nulls_for_each_entry_rcu(mtreq, node, &mptcp_reqsk_htb[hash],
 				       hash_entry) {
 		struct inet_request_sock *ireq = inet_rsk(rev_mptcp_rsk(mtreq));
-		meta_sk = mtreq->mpcb->meta_sk;
+		meta_sk = mtreq->mptcp_mpcb->meta_sk;
 
 		if (ireq->ir_rmt_port == rport &&
 		    ireq->ir_rmt_addr == raddr &&

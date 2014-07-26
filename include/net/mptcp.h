@@ -79,7 +79,6 @@ struct mptcp_rem6 {
 
 struct mptcp_request_sock {
 	struct tcp_request_sock		req;
-	struct mptcp_cb			*mpcb;
 	/* hlist-nulls entry to the hash-table. Depending on whether this is a
 	 * a new MPTCP connection or an additional subflow, the request-socket
 	 * is either in the mptcp_reqsk_tk_htb or mptcp_reqsk_htb.
@@ -93,7 +92,11 @@ struct mptcp_request_sock {
 	u32				mptcp_loc_nonce;
 	u8				loc_id;
 	u8				rem_id; /* Address-id in the MP_JOIN */
+
+	/* Only on additional subflows */
+	struct mptcp_cb			*mptcp_mpcb;
 	u8				dss_csum:1,
+					is_sub:1, /* Is this a new subflow? */
 					low_prio:1;
 };
 
