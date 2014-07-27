@@ -2148,16 +2148,16 @@ int mptcp_conn_request(struct sock *sk, struct sk_buff *skb)
 {
 	struct mptcp_options_received mopt;
 	struct tcp_sock *tp = tcp_sk(sk);
-#ifdef CONFIG_SYN_COOKIES
 	__u32 isn = TCP_SKB_CB(skb)->when;
-#endif
 	bool want_cookie = false;
 
-#ifdef CONFIG_SYN_COOKIES
 	if ((sysctl_tcp_syncookies == 2 ||
-	     inet_csk_reqsk_queue_is_full(sk)) && !isn)
-		want_cookie = sysctl_tcp_syncookies;
-#endif
+	     inet_csk_reqsk_queue_is_full(sk)) && !isn) {
+		want_cookie = tcp_syn_flood_action(sk, skb,
+						   mptcp_request_sock_ops.slab_name);
+		if (!want_cookie)
+			goto drop;
+	}
 
 	mptcp_init_mp_opt(&mopt);
 	tcp_parse_mptcp_options(skb, &mopt);
