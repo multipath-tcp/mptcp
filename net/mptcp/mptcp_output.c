@@ -1310,6 +1310,8 @@ void mptcp_ack_handler(unsigned long data)
 
 	if (sk->sk_state == TCP_CLOSE)
 		goto out_unlock;
+	if (!tcp_sk(sk)->mptcp->pre_established)
+		goto out_unlock;
 
 	mptcp_ack_retransmit_timer(sk);
 
