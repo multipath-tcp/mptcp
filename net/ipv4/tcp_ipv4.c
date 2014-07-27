@@ -1894,7 +1894,7 @@ static int tcp_v4_init_sock(struct sock *sk)
 	tcp_init_sock(sk);
 
 #ifdef CONFIG_MPTCP
-	if (is_mptcp_enabled())
+	if (is_mptcp_enabled(sk))
 		icsk->icsk_af_ops = &mptcp_v4_specific;
 	else
 #endif

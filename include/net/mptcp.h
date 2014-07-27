@@ -851,9 +851,15 @@ void mptcp_get_default_scheduler(char *name);
 int mptcp_set_default_scheduler(const char *name);
 extern struct mptcp_sched_ops mptcp_sched_default;
 
-static inline int is_mptcp_enabled(void)
+static inline bool is_mptcp_enabled(const struct sock *sk)
 {
-	return sysctl_mptcp_enabled && !mptcp_init_failed;
+	if (!sysctl_mptcp_enabled || mptcp_init_failed)
+		return false;
+
+	if (sysctl_mptcp_enabled == MPTCP_APP && !tcp_sk(sk)->mptcp_enabled)
+		return false;
+
+	return true;
 }
 
 static inline int mptcp_pi_to_flag(int pi)
