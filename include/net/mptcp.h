@@ -232,8 +232,8 @@ struct mptcp_pm_ops {
 	void (*init_subsocket_v4)(struct sock *sk, struct in_addr addr);
 	void (*init_subsocket_v6)(struct sock *sk, struct in6_addr addr);
 
-	char 		name[MPTCP_PM_NAME_MAX];
-	struct module 	*owner;
+	char		name[MPTCP_PM_NAME_MAX];
+	struct module	*owner;
 };
 
 #define MPTCP_SCHED_NAME_MAX 16
@@ -743,7 +743,7 @@ void mptcp_update_sndbuf(struct mptcp_cb *mpcb);
 void mptcp_send_fin(struct sock *meta_sk);
 void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority);
 bool mptcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
-		     int push_one, gfp_t gfp);
+		      int push_one, gfp_t gfp);
 void tcp_parse_mptcp_options(const struct sk_buff *skb,
 			     struct mptcp_options_received *mopt);
 void mptcp_parse_options(const uint8_t *ptr, int opsize,
@@ -964,7 +964,7 @@ static inline __u32 *mptcp_skb_set_data_seq(const struct sk_buff *skb,
 		if (mpcb)
 			TCP_SKB_CB(skb)->mptcp_flags |= mptcp_get_64_bit(data_seq64, mpcb);
 
-		*data_seq = (u32)data_seq64 ;
+		*data_seq = (u32)data_seq64;
 		ptr++;
 	} else {
 		*data_seq = get_unaligned_be32(ptr);

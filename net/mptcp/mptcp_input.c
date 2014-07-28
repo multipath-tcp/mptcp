@@ -348,9 +348,8 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 	/* Now, checksum must be 0 */
 	if (unlikely(csum_fold(csum_tcp))) {
 		pr_err("%s csum is wrong: %#x data_seq %u dss_csum_added %d overflowed %d iterations %d\n",
-			    __func__, csum_fold(csum_tcp),
-			    TCP_SKB_CB(last)->seq, dss_csum_added, overflowed,
-			    iter);
+		       __func__, csum_fold(csum_tcp), TCP_SKB_CB(last)->seq,
+		       dss_csum_added, overflowed, iter);
 
 		tp->mptcp->send_mp_fail = 1;
 
@@ -412,7 +411,6 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb, struct sk_buff *next,
 	 */
 	tcb->seq = ((u32)tp->mptcp->map_data_seq) + tcb->seq - tp->mptcp->map_subseq;
 	tcb->end_seq = tcb->seq + skb->len + inc;
-
 }
 
 /**
@@ -562,7 +560,8 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 
 	/* Receiver-side becomes fully established when a whole rcv-window has
 	 * been received without the need to fallback due to the previous
-	 * condition. */
+	 * condition.
+	 */
 	if (!tp->mptcp->fully_established) {
 		tp->mptcp->init_rcv_wnd -= skb->len;
 		if (tp->mptcp->init_rcv_wnd < 0)
@@ -912,7 +911,6 @@ static int mptcp_queue_skb(struct sock *sk)
 			    !before(TCP_SKB_CB(tmp)->seq,
 				    tp->mptcp->map_subseq + tp->mptcp->map_data_len))
 				break;
-
 		}
 		tcp_enter_quickack_mode(sk);
 	} else {
@@ -2103,8 +2101,8 @@ int mptcp_handle_options(struct sock *sk, const struct tcphdr *th, struct sk_buf
  * from meta-socket to master-socket.
  *
  * @return: 1 - we want to reset this connection
- * 	    2 - we want to discard the received syn/ack
- * 	    0 - everything is fine - continue
+ *	    2 - we want to discard the received syn/ack
+ *	    0 - everything is fine - continue
  */
 int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 				    struct sk_buff *skb,
@@ -2216,10 +2214,10 @@ bool mptcp_should_expand_sndbuf(const struct sock *sk)
 			continue;
 
 		/* Backup-flows have to be counted - if there is no other
-		 * subflow we take the backup-flow into account. */
-		if (tp_it->mptcp->rcv_low_prio || tp_it->mptcp->low_prio) {
+		 * subflow we take the backup-flow into account.
+		 */
+		if (tp_it->mptcp->rcv_low_prio || tp_it->mptcp->low_prio)
 			cnt_backups++;
-		}
 
 		if (tp_it->packets_out < tp_it->snd_cwnd) {
 			if (tp_it->mptcp->rcv_low_prio || tp_it->mptcp->low_prio) {

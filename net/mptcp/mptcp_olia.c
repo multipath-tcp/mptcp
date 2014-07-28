@@ -185,7 +185,6 @@ static void mptcp_get_epsilon(struct mptcp_cb *mpcb)
 			}
 		}
 	}
-
 }
 
 /* setting the initial values */
@@ -220,7 +219,6 @@ static void mptcp_olia_set_state(struct sock *sk, u8 new_state)
 			ca->mptcp_loss2 = ca->mptcp_loss3;
 		}
 	}
-
 }
 
 /* main algorithm */

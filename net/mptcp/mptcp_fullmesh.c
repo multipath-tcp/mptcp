@@ -101,7 +101,7 @@ static struct fullmesh_priv *fullmesh_get_priv(const struct mptcp_cb *mpcb)
 }
 
 static void mptcp_addv4_raddr(struct mptcp_cb *mpcb,
-			      const struct in_addr *addr, 
+			      const struct in_addr *addr,
 			      __be16 port, u8 id)
 {
 	int i;
@@ -272,7 +272,7 @@ static void mptcp_v6_set_init_addr_bit(struct mptcp_cb *mpcb,
 }
 
 static void mptcp_set_init_addr_bit(struct mptcp_cb *mpcb,
-			            const union inet_addr *addr, 
+				    const union inet_addr *addr,
 				    sa_family_t family, u8 id)
 {
 	if (family == AF_INET)
@@ -630,11 +630,11 @@ next_event:
 			event->code = MPTCP_EVENT_ADD;
 		} else {
 			/* Let's check if anything changes */
-			if (event->family == AF_INET && 
+			if (event->family == AF_INET &&
 			    event->low_prio == mptcp_local->locaddr4[i].low_prio)
 				goto duno;
 
-			if (event->family == AF_INET6 && 
+			if (event->family == AF_INET6 &&
 			    event->low_prio == mptcp_local->locaddr6[i].low_prio)
 				goto duno;
 		}
@@ -937,8 +937,8 @@ static int inet6_addr_event(struct notifier_block *this,
 
 static int ipv6_is_in_dad_state(struct inet6_ifaddr *ifa)
 {
-	return ((ifa->flags & IFA_F_TENTATIVE) &&
-		ifa->state == INET6_IFADDR_STATE_DAD);
+	return (ifa->flags & IFA_F_TENTATIVE) &&
+	       ifa->state == INET6_IFADDR_STATE_DAD;
 }
 
 static void dad_init_timer(struct mptcp_dad_data *data,
@@ -1002,7 +1002,7 @@ static void addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 	mpevent.addr.in6 = ifa->addr;
 	mpevent.low_prio = (netdev->flags & IFF_MPBACKUP) ? 1 : 0;
 
-	if (event == NETDEV_DOWN ||!netif_running(netdev) ||
+	if (event == NETDEV_DOWN || !netif_running(netdev) ||
 	    (netdev->flags & IFF_NOMULTIPATH))
 		mpevent.code = MPTCP_EVENT_DEL;
 	else if (event == NETDEV_UP)
@@ -1397,9 +1397,8 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 
 	rcu_read_unlock();
 
-	if (!unannouncedv4 && !unannouncedv6 && skb) {
+	if (!unannouncedv4 && !unannouncedv6 && skb)
 		fmp->add_addr--;
-	}
 
 remove_addr:
 	if (likely(!fmp->remove_addrs))

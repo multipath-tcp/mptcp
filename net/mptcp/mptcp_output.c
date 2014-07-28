@@ -470,7 +470,8 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 	tcb->seq = tp->write_seq;
 	tcb->sacked = 0; /* reset the sacked field: from the point of view
 			  * of this subflow, we are sending a brand new
-			  * segment */
+			  * segment
+			  */
 	/* Take into account seg len */
 	tp->write_seq += subskb->len + ((tcb->tcp_flags & TCPHDR_FIN) ? 1 : 0);
 	tcb->end_seq = tp->write_seq;
@@ -1288,9 +1289,8 @@ static void mptcp_ack_retransmit_timer(struct sock *sk)
 	icsk->icsk_rto = min(icsk->icsk_rto << 1, TCP_RTO_MAX);
 	sk_reset_timer(sk, &tp->mptcp->mptcp_ack_timer,
 		       jiffies + icsk->icsk_rto);
-	if (retransmits_timed_out(sk, sysctl_tcp_retries1 + 1, 0, 0)) {
+	if (retransmits_timed_out(sk, sysctl_tcp_retries1 + 1, 0, 0))
 		__sk_dst_reset(sk);
-	}
 
 out:;
 }
@@ -1614,7 +1614,6 @@ int mptcp_check_snd_buf(const struct tcp_sock *tp)
 
 	return max_t(unsigned int, (u32)(bw_est >> 16),
 			tp->reordering + 1);
-
 }
 
 unsigned int mptcp_xmit_size_goal(struct sock *meta_sk, u32 mss_now,
@@ -1642,7 +1641,6 @@ unsigned int mptcp_xmit_size_goal(struct sock *meta_sk, u32 mss_now,
 /* Similar to tcp_trim_head - but we correctly copy the DSS-option */
 int mptcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
 {
-
 	if (skb_cloned(skb)) {
 		if (pskb_expand_head(skb, 0, 0, GFP_ATOMIC))
 			return -ENOMEM;

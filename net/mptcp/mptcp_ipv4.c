@@ -135,7 +135,7 @@ static void mptcp_v4_reqsk_queue_hash_add(struct sock *meta_sk,
 	 * if the third ACK gets lost, the client will handle the retransmission
 	 * anyways. If our SYN/ACK gets lost, the client will retransmit the
 	 * SYN.
-	 */ 
+	 */
 	struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
 	struct listen_sock *lopt = meta_icsk->icsk_accept_queue.listen_opt;
 	const u32 h2 = inet_synq_hash(inet_rsk(req)->ir_rmt_addr,

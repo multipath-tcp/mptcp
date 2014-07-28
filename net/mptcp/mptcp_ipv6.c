@@ -166,7 +166,7 @@ static void mptcp_v6_reqsk_queue_hash_add(struct sock *meta_sk,
 	 * if the third ACK gets lost, the client will handle the retransmission
 	 * anyways. If our SYN/ACK gets lost, the client will retransmit the
 	 * SYN.
-	 */ 
+	 */
 	struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
 	struct listen_sock *lopt = meta_icsk->icsk_accept_queue.listen_opt;
 	const u32 h2 = inet6_synq_hash(&inet_rsk(req)->ir_v6_rmt_addr,
@@ -291,8 +291,7 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 	newtcp6sk = (struct tcp6_sock *)newsk;
 	inet_sk(newsk)->pinet6 = &newtcp6sk->inet6;
 
-	/*
-	 * No need to charge this sock to the relevant IPv6 refcnt debug socks
+	/* No need to charge this sock to the relevant IPv6 refcnt debug socks
 	 * count here, tcp_create_openreq_child now does this for us, see the
 	 * comment in that function for the gory details. -acme
 	 */
@@ -311,8 +310,7 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 	newsk->sk_bound_dev_if = treq->ir_iif;
 
 	/* Now IPv6 options...
-
-	   First: no IPv4 options.
+	 * First: no IPv4 options.
 	 */
 	newinet->inet_opt = NULL;
 	newnp->ipv6_ac_list = NULL;

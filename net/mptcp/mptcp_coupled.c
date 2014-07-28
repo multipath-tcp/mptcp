@@ -92,7 +92,8 @@ static void mptcp_ccc_recalc_alpha(struct sock *sk)
 		return;
 
 	/* Only one subflow left - fall back to normal reno-behavior
-	 * (set alpha to 1) */
+	 * (set alpha to 1)
+	 */
 	if (mpcb->cnt_established <= 1)
 		goto exit;
 
@@ -223,7 +224,8 @@ static void mptcp_ccc_cong_avoid(struct sock *sk, u32 ack, u32 acked, u32 in_fli
 						alpha);
 
 		/* snd_cwnd_cnt >= max (scale * tot_cwnd / alpha, cwnd)
-		 * Thus, we select here the max value. */
+		 * Thus, we select here the max value.
+		 */
 		if (snd_cwnd < tp->snd_cwnd)
 			snd_cwnd = tp->snd_cwnd;
 	} else {
