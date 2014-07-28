@@ -462,6 +462,26 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	return 0;
 
 reset_and_discard:
+	if (reqsk_queue_len(&inet_csk(meta_sk)->icsk_accept_queue)) {
+		const struct tcphdr *th = tcp_hdr(skb);
+		struct request_sock **prev, *req;
+		/* If we end up here, it means we should not have matched on the
+		 * request-socket. But, because the request-sock queue is only
+		 * destroyed in mptcp_close, the socket may actually already be
+		 * in close-state (e.g., through shutdown()) while still having
+		 * pending request sockets.
+		 */
+		req = inet6_csk_search_req(meta_sk, &prev, th->source,
+					   &ipv6_hdr(skb)->saddr,
+					   &ipv6_hdr(skb)->daddr, inet6_iif(skb));
+		if (req) {
+			inet_csk_reqsk_queue_unlink(meta_sk, req, prev);
+			reqsk_queue_removed(&inet_csk(meta_sk)->icsk_accept_queue,
+					    req);
+			reqsk_free(req);
+		}
+	}
+
 	tcp_v6_send_reset(rsk, skb);
 discard:
 	kfree_skb(skb);
