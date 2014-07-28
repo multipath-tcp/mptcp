@@ -816,7 +816,8 @@ embryonic_reset:
 			 * avoid ending up in inet_csk_reqsk_queue_removed ...
 			 */
 			inet_csk_reqsk_queue_unlink(sk, req, prev);
-			reqsk_queue_removed(&inet_csk(sk)->icsk_accept_queue, req);
+			if (reqsk_queue_removed(&inet_csk(sk)->icsk_accept_queue, req) == 0)
+				mptcp_delete_synack_timer(sk);
 			reqsk_free(req);
 		} else {
 			inet_csk_reqsk_queue_drop(sk, req, prev);

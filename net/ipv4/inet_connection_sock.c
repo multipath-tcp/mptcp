@@ -651,7 +651,7 @@ void inet_csk_reqsk_queue_prune(struct sock *parent,
 
 	lopt->clock_hand = i;
 
-	if (lopt->qlen)
+	if (lopt->qlen && !is_meta_sk(parent))
 		inet_csk_reset_keepalive_timer(parent, interval);
 }
 EXPORT_SYMBOL_GPL(inet_csk_reqsk_queue_prune);

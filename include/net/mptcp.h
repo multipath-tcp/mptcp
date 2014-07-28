@@ -332,6 +332,9 @@ struct mptcp_cb {
 	int orig_sk_rcvbuf;
 	int orig_sk_sndbuf;
 	u32 orig_window_clamp;
+
+	/* Timer for retransmitting SYN/ACK+MP_JOIN */
+	struct timer_list synack_timer;
 };
 
 #define MPTCP_SUB_CAPABLE			0
@@ -850,6 +853,18 @@ void mptcp_cleanup_scheduler(struct mptcp_cb *mpcb);
 void mptcp_get_default_scheduler(char *name);
 int mptcp_set_default_scheduler(const char *name);
 extern struct mptcp_sched_ops mptcp_sched_default;
+
+static inline void mptcp_reset_synack_timer(struct sock *meta_sk,
+					    unsigned long len)
+{
+	sk_reset_timer(meta_sk, &tcp_sk(meta_sk)->mpcb->synack_timer,
+		       jiffies + len);
+}
+
+static inline void mptcp_delete_synack_timer(struct sock *meta_sk)
+{
+	sk_stop_timer(meta_sk, &tcp_sk(meta_sk)->mpcb->synack_timer);
+}
 
 static inline bool is_mptcp_enabled(const struct sock *sk)
 {

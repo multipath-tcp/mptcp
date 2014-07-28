@@ -174,7 +174,8 @@ static void mptcp_v6_reqsk_queue_hash_add(struct sock *meta_sk,
 				      lopt->hash_rnd, lopt->nr_table_entries);
 
 	reqsk_queue_hash_req(&meta_icsk->icsk_accept_queue, h2, req, timeout);
-	reqsk_queue_added(&meta_icsk->icsk_accept_queue);
+	if (reqsk_queue_added(&meta_icsk->icsk_accept_queue) == 0)
+		mptcp_reset_synack_timer(meta_sk, timeout);
 
 	rcu_read_lock();
 	spin_lock(&mptcp_reqsk_hlock);

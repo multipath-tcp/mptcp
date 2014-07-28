@@ -539,6 +539,8 @@ void mptcp_destroy_sock(struct sock *sk)
 
 			mptcp_sub_close(sk_it, 0);
 		}
+
+		mptcp_delete_synack_timer(sk);
 	} else {
 		mptcp_del_sock(sk);
 	}
@@ -901,6 +903,36 @@ static int mptcp_inherit_sk(const struct sock *sk, struct sock *newsk,
 	return 0;
 }
 
+static void mptcp_synack_timer_handler(unsigned long data)
+{
+	struct sock *meta_sk = (struct sock *) data;
+	struct listen_sock *lopt = inet_csk(meta_sk)->icsk_accept_queue.listen_opt;
+
+	/* Only process if socket is not in use. */
+	bh_lock_sock(meta_sk);
+
+	if (sock_owned_by_user(meta_sk)) {
+		/* Try again later. */
+		mptcp_reset_synack_timer(meta_sk, HZ/20);
+		goto out;
+	}
+
+	/* May happen if the queue got destructed in mptcp_close */
+	if (!lopt)
+		goto out;
+
+	inet_csk_reqsk_queue_prune(meta_sk, TCP_SYNQ_INTERVAL,
+				   TCP_TIMEOUT_INIT, TCP_RTO_MAX);
+
+	if (lopt->qlen)
+		mptcp_reset_synack_timer(meta_sk, TCP_SYNQ_INTERVAL);
+
+out:
+	bh_unlock_sock(meta_sk);
+	sock_put(meta_sk);
+}
+
+
 static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 {
 	struct mptcp_cb *mpcb;
@@ -1101,6 +1133,9 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 
 	mptcp_init_path_manager(mpcb);
 	mptcp_init_scheduler(mpcb);
+
+	setup_timer(&mpcb->synack_timer, mptcp_synack_timer_handler,
+		    (unsigned long)meta_sk);
 
 	mptcp_debug("%s: created mpcb with token %#x\n",
 		    __func__, mpcb->mptcp_loc_token);
@@ -1710,6 +1745,8 @@ void mptcp_disconnect(struct sock *sk)
 {
 	struct sock *subsk, *tmpsk;
 	struct tcp_sock *tp = tcp_sk(sk);
+
+	mptcp_delete_synack_timer(sk);
 
 	__skb_queue_purge(&tp->mpcb->reinject_queue);
 
