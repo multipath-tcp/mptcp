@@ -917,7 +917,7 @@ static int mptcp_queue_skb(struct sock *sk)
 		/* Ready for the meta-rcv-queue */
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
 			int eaten = 0;
-			int copied_early = 0;
+			const bool copied_early = false;
 			bool fragstolen = false;
 			u32 old_rcv_nxt = meta_tp->rcv_nxt;
 
@@ -942,7 +942,7 @@ static int mptcp_queue_skb(struct sock *sk)
 			    tmp1->len <= meta_tp->ucopy.len &&
 			    sock_owned_by_user(meta_sk) &&
 			    tcp_dma_try_early_copy(meta_sk, tmp1, 0)) {
-				copied_early = 1;
+				copied_early = true;
 				eaten = 1;
 			}
 #endif
@@ -964,8 +964,10 @@ static int mptcp_queue_skb(struct sock *sk)
 			meta_tp->rcv_nxt = TCP_SKB_CB(tmp1)->end_seq;
 			mptcp_check_rcvseq_wrap(meta_tp, old_rcv_nxt);
 
+#ifdef CONFIG_NET_DMA
 			if (copied_early)
 				meta_tp->cleanup_rbuf(meta_sk, tmp1->len);
+#endif
 
 			if (tcp_hdr(tmp1)->fin && !mpcb->in_time_wait)
 				mptcp_fin(meta_sk);
