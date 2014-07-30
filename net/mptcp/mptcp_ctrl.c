@@ -957,6 +957,10 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 
 	mpcb = kmem_cache_zalloc(mptcp_cb_cache, GFP_ATOMIC);
 	if (!mpcb) {
+		/* sk_free (and __sk_free) requirese wmem_alloc to be 1.
+		 * All the rest is set to 0 thanks to __GFP_ZERO above.
+		 */
+		atomic_set(&master_sk->sk_wmem_alloc, 1);
 		sk_free(master_sk);
 		return -ENOBUFS;
 	}
