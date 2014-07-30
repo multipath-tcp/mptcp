@@ -921,6 +921,10 @@ static int mptcp_pm_inetaddr_event(struct notifier_block *this,
 	struct in_ifaddr *ifa = (struct in_ifaddr *)ptr;
 	struct net *net = dev_net(ifa->ifa_dev->dev);
 
+	if (!(event == NETDEV_UP || event == NETDEV_DOWN ||
+	      event == NETDEV_CHANGE))
+		return NOTIFY_DONE;
+
 	addr4_event_handler(ifa, event, net);
 
 	return NOTIFY_DONE;
@@ -1031,6 +1035,10 @@ static int inet6_addr_event(struct notifier_block *this, unsigned long event,
 {
 	struct inet6_ifaddr *ifa6 = (struct inet6_ifaddr *)ptr;
 	struct net *net = dev_net(ifa6->idev->dev);
+
+	if (!(event == NETDEV_UP || event == NETDEV_DOWN ||
+	      event == NETDEV_CHANGE))
+		return NOTIFY_DONE;
 
 	if (ipv6_is_in_dad_state(ifa6))
 		dad_setup_timer(ifa6);
