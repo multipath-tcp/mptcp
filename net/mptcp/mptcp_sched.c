@@ -6,6 +6,15 @@
 static DEFINE_SPINLOCK(mptcp_sched_list_lock);
 static LIST_HEAD(mptcp_sched_list);
 
+struct defsched_priv {
+	u32	last_rbuf_opti;
+};
+
+static struct defsched_priv *defsched_get_priv(const struct tcp_sock *tp)
+{
+	return (struct defsched_priv *)&tp->mptcp->mptcp_sched[0];
+}
+
 /* If the sub-socket sk available to send the skb? */
 static bool mptcp_is_available(struct sock *sk, struct sk_buff *skb,
 			       bool zero_wnd_test)
@@ -184,6 +193,7 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 	struct sock *meta_sk;
 	struct tcp_sock *tp = tcp_sk(sk), *tp_it;
 	struct sk_buff *skb_head;
+	struct defsched_priv *dsp = defsched_get_priv(tp);
 
 	if (tp->mpcb->cnt_subflows == 1)
 		return NULL;
@@ -203,7 +213,7 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 		goto retrans;
 
 	/* Only penalize again after an RTT has elapsed */
-	if (tcp_time_stamp - tp->mptcp->last_rbuf_opti < tp->srtt >> 3)
+	if (tcp_time_stamp - dsp->last_rbuf_opti < tp->srtt >> 3)
 		goto retrans;
 
 	/* Half the cwnd of the slow flow */
@@ -215,7 +225,7 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 				if (tp_it->snd_ssthresh != TCP_INFINITE_SSTHRESH)
 					tp_it->snd_ssthresh = max(tp_it->snd_ssthresh >> 1U, 2U);
 
-				tp->mptcp->last_rbuf_opti = tcp_time_stamp;
+				dsp->last_rbuf_opti = tcp_time_stamp;
 			}
 			break;
 		}
@@ -349,9 +359,17 @@ static struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
 	return skb;
 }
 
+static void defsched_init(struct sock *sk)
+{
+	struct defsched_priv *dsp = defsched_get_priv(tcp_sk(sk));
+
+	dsp->last_rbuf_opti = tcp_time_stamp;
+}
+
 struct mptcp_sched_ops mptcp_sched_default = {
 	.get_subflow = get_available_subflow,
 	.next_segment = mptcp_next_segment,
+	.init = defsched_init,
 	.name = "default",
 	.owner = THIS_MODULE,
 };
@@ -460,6 +478,8 @@ void mptcp_cleanup_scheduler(struct mptcp_cb *mpcb)
 /* Set default value from kernel configuration at bootup */
 static int __init mptcp_scheduler_default(void)
 {
+	BUILD_BUG_ON(sizeof(struct defsched_priv) > MPTCP_SCHED_SIZE);
+
 	return mptcp_set_default_scheduler(CONFIG_DEFAULT_MPTCP_SCHED);
 }
 late_initcall(mptcp_scheduler_default);
