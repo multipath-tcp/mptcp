@@ -1422,10 +1422,59 @@ static void full_mesh_rem_raddr(struct mptcp_cb *mpcb, u8 rem_id)
 	mptcp_v6_rem_raddress(mpcb, rem_id);
 }
 
+/* Output /proc/net/mptcp_fullmesh */
+static int mptcp_fm_seq_show(struct seq_file *seq, void *v)
+{
+	struct net *net = seq->private;
+	struct mptcp_loc_addr *mptcp_local;
+	struct mptcp_fm_ns *fm_ns = fm_get_ns(net);
+	int i;
+
+	seq_printf(seq, "Index, Address-ID, Backup, IP-address\n");
+
+	rcu_read_lock_bh();
+	mptcp_local = rcu_dereference(fm_ns->local);
+
+	seq_printf(seq, "IPv4, next v4-index: %u\n", mptcp_local->next_v4_index);
+
+	mptcp_for_each_bit_set(mptcp_local->loc4_bits, i) {
+		struct mptcp_loc4 *loc4 = &mptcp_local->locaddr4[i];
+
+		seq_printf(seq, "%u, %u, %u, %pI4\n", i, loc4->loc4_id,
+			   loc4->low_prio, &loc4->addr);
+	}
+
+	seq_printf(seq, "IPv6, next v6-index: %u\n", mptcp_local->next_v6_index);
+
+	mptcp_for_each_bit_set(mptcp_local->loc6_bits, i) {
+		struct mptcp_loc6 *loc6 = &mptcp_local->locaddr6[i];
+
+		seq_printf(seq, "%u, %u, %u, %pI6\n", i, loc6->loc6_id,
+			   loc6->low_prio, &loc6->addr);
+	}
+	rcu_read_unlock_bh();
+
+	return 0;
+}
+
+static int mptcp_fm_seq_open(struct inode *inode, struct file *file)
+{
+	return single_open_net(inode, file, mptcp_fm_seq_show);
+}
+
+static const struct file_operations mptcp_fm_seq_fops = {
+	.owner = THIS_MODULE,
+	.open = mptcp_fm_seq_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release_net,
+};
+
 static int mptcp_fm_init_net(struct net *net)
 {
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_fm_ns *fm_ns;
+	int err = 0;
 
 	fm_ns = kzalloc(sizeof(*fm_ns), GFP_KERNEL);
 	if (!fm_ns)
@@ -1433,8 +1482,14 @@ static int mptcp_fm_init_net(struct net *net)
 
 	mptcp_local = kzalloc(sizeof(*mptcp_local), GFP_KERNEL);
 	if (!mptcp_local) {
-		kfree(fm_ns);
-		return -ENOBUFS;
+		err = -ENOBUFS;
+		goto err_mptcp_local;
+	}
+
+	if (!proc_create("mptcp_fullmesh", S_IRUGO, net->proc_net, 
+			 &mptcp_fm_seq_fops)) {
+		err = -ENOMEM;
+		goto err_seq_fops;
 	}
 
 	mptcp_local->next_v4_index = 1;
@@ -1447,6 +1502,11 @@ static int mptcp_fm_init_net(struct net *net)
 	net->mptcp.path_managers[MPTCP_PM_FULLMESH] = fm_ns;
 
 	return 0;
+err_seq_fops:
+	kfree(mptcp_local);
+err_mptcp_local:
+	kfree(fm_ns);
+	return err;
 }
 
 static void mptcp_fm_exit_net(struct net *net)
@@ -1471,6 +1531,8 @@ static void mptcp_fm_exit_net(struct net *net)
 	spin_unlock(&fm_ns->local_lock);
 
 	rcu_read_unlock_bh();
+
+	remove_proc_entry("mptcp_fullmesh", net->proc_net);
 
 	kfree(fm_ns);
 }
