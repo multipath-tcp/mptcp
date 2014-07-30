@@ -92,6 +92,7 @@ static int mptcp_v4_join_init_req(struct request_sock *req, struct sock *sk,
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
 	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 	union inet_addr addr;
+	int loc_id;
 
 	tcp_request_sock_ipv4_ops.init_req(req, sk, skb);
 
@@ -100,9 +101,10 @@ static int mptcp_v4_join_init_req(struct request_sock *req, struct sock *sk,
 						    tcp_hdr(skb)->source,
 						    tcp_hdr(skb)->dest);
 	addr.ip = inet_rsk(req)->ir_loc_addr;
-	mtreq->loc_id = mpcb->pm_ops->get_local_id(AF_INET, &addr, sock_net(sk));
-	if (mtreq->loc_id == -1)
+	loc_id = mpcb->pm_ops->get_local_id(AF_INET, &addr, sock_net(sk));
+	if (loc_id == -1)
 		return -1;
+	mtreq->loc_id = loc_id;
 
 	mptcp_join_reqsk_init(mpcb, req, skb);
 
