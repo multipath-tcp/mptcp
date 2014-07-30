@@ -167,7 +167,6 @@ struct tcp_request_sock {
 						  * FastOpen it's the seq#
 						  * after data-in-SYN.
 						  */
-	u8				saw_mpc:1;
 };
 
 static inline struct tcp_request_sock *tcp_rsk(const struct request_sock *req)

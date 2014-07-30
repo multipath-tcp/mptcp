@@ -79,25 +79,33 @@ struct mptcp_rem6 {
 
 struct mptcp_request_sock {
 	struct tcp_request_sock		req;
-	struct mptcp_cb			*mpcb;
-	/* Collision list in the tuple hashtable. We need to find
-	 * the req sock when receiving the third msg of the 3-way handshake,
-	 * since that one does not contain the token. If this makes
-	 * the request sock too long, we can use kmalloc'ed specific entries for
-	 * that tuple hashtable. At the moment, though, I extend the
-	 * request_sock.
+	/* hlist-nulls entry to the hash-table. Depending on whether this is a
+	 * a new MPTCP connection or an additional subflow, the request-socket
+	 * is either in the mptcp_reqsk_tk_htb or mptcp_reqsk_htb.
 	 */
-	struct list_head		collide_tuple;
-	struct hlist_nulls_node		collide_tk;
-	u32				mptcp_rem_nonce;
-	u32				mptcp_loc_token;
-	u64				mptcp_loc_key;
-	u64				mptcp_rem_key;
-	u64				mptcp_hash_tmac;
-	u32				mptcp_loc_nonce;
+	struct hlist_nulls_node		hash_entry;
+
+	union {
+		struct {
+			/* Only on initial subflows */
+			u64		mptcp_loc_key;
+			u64		mptcp_rem_key;
+			u32		mptcp_loc_token;
+		};
+
+		struct {
+			/* Only on additional subflows */
+			struct mptcp_cb	*mptcp_mpcb;
+			u32		mptcp_rem_nonce;
+			u32		mptcp_loc_nonce;
+			u64		mptcp_hash_tmac;
+		};
+	};
+
 	u8				loc_id;
 	u8				rem_id; /* Address-id in the MP_JOIN */
 	u8				dss_csum:1,
+					is_sub:1, /* Is this a new subflow? */
 					low_prio:1;
 };
 
@@ -710,7 +718,7 @@ extern struct hlist_nulls_head tk_hashtable[MPTCP_HASH_SIZE];
  * the token, the final ack does not, so we need a separate hashtable
  * to retrieve the mpcb.
  */
-extern struct list_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
+extern struct hlist_nulls_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
 extern spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
 
 /* Lock, protecting the two hash-tables that hold the token. Namely,
@@ -843,9 +851,15 @@ void mptcp_get_default_scheduler(char *name);
 int mptcp_set_default_scheduler(const char *name);
 extern struct mptcp_sched_ops mptcp_sched_default;
 
-static inline int is_mptcp_enabled(void)
+static inline bool is_mptcp_enabled(const struct sock *sk)
 {
-	return sysctl_mptcp_enabled && !mptcp_init_failed;
+	if (!sysctl_mptcp_enabled || mptcp_init_failed)
+		return false;
+
+	if (sysctl_mptcp_enabled == MPTCP_APP && !tcp_sk(sk)->mptcp_enabled)
+		return false;
+
+	return true;
 }
 
 static inline int mptcp_pi_to_flag(int pi)
@@ -989,7 +1003,7 @@ static inline void mptcp_hash_request_remove(struct request_sock *req)
 {
 	int in_softirq = 0;
 
-	if (list_empty(&mptcp_rsk(req)->collide_tuple))
+	if (hlist_nulls_unhashed(&mptcp_rsk(req)->hash_entry))
 		return;
 
 	if (in_softirq()) {
@@ -999,7 +1013,7 @@ static inline void mptcp_hash_request_remove(struct request_sock *req)
 		spin_lock_bh(&mptcp_reqsk_hlock);
 	}
 
-	list_del(&mptcp_rsk(req)->collide_tuple);
+	hlist_nulls_del_init_rcu(&mptcp_rsk(req)->hash_entry);
 
 	if (in_softirq)
 		spin_unlock(&mptcp_reqsk_hlock);
@@ -1343,6 +1357,7 @@ static inline int is_master_tp(const struct tcp_sock *tp)
 }
 static inline void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp) {}
 static inline void mptcp_del_sock(const struct sock *sk) {}
+static inline void mptcp_update_metasocket(struct sock *sock, struct sock *meta_sk) {}
 static inline void mptcp_reinject_data(struct sock *orig_sk, int clone_it) {}
 static inline void mptcp_update_sndbuf(const struct mptcp_cb *mpcb) {}
 static inline void mptcp_clean_rtx_infinite(const struct sk_buff *skb,

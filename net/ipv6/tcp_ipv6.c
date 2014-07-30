@@ -215,7 +215,7 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 		sin.sin_addr.s_addr = usin->sin6_addr.s6_addr32[3];
 
 #ifdef CONFIG_MPTCP
-		if (is_mptcp_enabled())
+		if (is_mptcp_enabled(sk))
 			icsk->icsk_af_ops = &mptcp_v6_mapped;
 		else
 #endif
@@ -230,7 +230,7 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 		if (err) {
 			icsk->icsk_ext_hdr_len = exthdrlen;
 #ifdef CONFIG_MPTCP
-			if (is_mptcp_enabled())
+			if (is_mptcp_enabled(sk))
 				icsk->icsk_af_ops = &mptcp_v6_specific;
 			else
 #endif
@@ -1125,7 +1125,7 @@ struct sock *tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 		newsk->sk_v6_rcv_saddr = newnp->saddr;
 
 #ifdef CONFIG_MPTCP
-		if (is_mptcp_enabled())
+		if (is_mptcp_enabled(newsk))
 			inet_csk(newsk)->icsk_af_ops = &mptcp_v6_mapped;
 		else
 #endif
@@ -1745,7 +1745,7 @@ static int tcp_v6_init_sock(struct sock *sk)
 	tcp_init_sock(sk);
 
 #ifdef CONFIG_MPTCP
-	if (is_mptcp_enabled())
+	if (is_mptcp_enabled(sk))
 		icsk->icsk_af_ops = &mptcp_v6_specific;
 	else
 #endif

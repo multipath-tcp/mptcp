@@ -630,7 +630,7 @@ static unsigned int tcp_synack_options(struct sock *sk,
 		}
 	}
 
-	if (tcp_rsk(req)->saw_mpc)
+	if (ireq->saw_mpc)
 		mptcp_synack_options(req, opts, &remaining);
 
 	return MAX_TCP_OPTION_SPACE - remaining;

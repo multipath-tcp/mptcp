@@ -69,7 +69,7 @@ struct fullmesh_priv {
 
 	u16 remove_addrs; /* Addresses to remove */
 	u8 announced_addrs_v4; /* IPv4 Addresses we did announce */
-	u8 announced_addrs_v6; /* IPv4 Addresses we did announce */
+	u8 announced_addrs_v6; /* IPv6 Addresses we did announce */
 
 	u8	add_addr; /* Are we sending an add_addr? */
 

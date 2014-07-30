@@ -416,7 +416,7 @@ void tcp_openreq_init_rwin(struct request_sock *req,
 	/* tcp_full_space because it is guaranteed to be the first packet */
 	tp->select_initial_window(tcp_full_space(sk),
 		mss - (ireq->tstamp_ok ? TCPOLEN_TSTAMP_ALIGNED : 0) -
-		(tcp_rsk(req)->saw_mpc ? MPTCP_SUB_LEN_DSM_ALIGN : 0),
+		(ireq->saw_mpc ? MPTCP_SUB_LEN_DSM_ALIGN : 0),
 		&req->rcv_wnd,
 		&req->window_clamp,
 		ireq->wscale_ok,
@@ -535,7 +535,7 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 			newtp->rx_opt.ts_recent_stamp = 0;
 			newtp->tcp_header_len = sizeof(struct tcphdr);
 		}
-		if (treq->saw_mpc)
+		if (ireq->saw_mpc)
 			newtp->tcp_header_len += MPTCP_SUB_LEN_DSM_ALIGN;
 		newtp->tsoffset = 0;
 #ifdef CONFIG_TCP_MD5SIG
@@ -629,8 +629,8 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		 * Fall back to TCP if MP_CAPABLE is not set.
 		 */
 
-		if (tcp_rsk(req)->saw_mpc && !mopt.saw_mpc)
-			tcp_rsk(req)->saw_mpc = false;
+		if (inet_rsk(req)->saw_mpc && !mopt.saw_mpc)
+			inet_rsk(req)->saw_mpc = false;
 
 
 		if (!inet_rtx_syn_ack(sk, req))

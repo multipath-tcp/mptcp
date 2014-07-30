@@ -168,7 +168,7 @@ EXPORT_SYMBOL(tk_hashtable);
  * the token, the final ack does not, so we need a separate hashtable
  * to retrieve the mpcb.
  */
-struct list_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
+struct hlist_nulls_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
 spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
 
 /* The following hash table is used to avoid collision of token */
@@ -182,7 +182,7 @@ static int mptcp_reqsk_find_tk(u32 token)
 	const struct hlist_nulls_node *node;
 
 	hlist_nulls_for_each_entry_rcu(mtreqsk, node,
-				       &mptcp_reqsk_tk_htb[hash], collide_tk) {
+				       &mptcp_reqsk_tk_htb[hash], hash_entry) {
 		if (token == mtreqsk->mptcp_loc_token)
 			return 1;
 	}
@@ -193,7 +193,7 @@ static void mptcp_reqsk_insert_tk(struct request_sock *reqsk, u32 token)
 {
 	u32 hash = mptcp_hash_tk(token);
 
-	hlist_nulls_add_head_rcu(&mptcp_rsk(reqsk)->collide_tk,
+	hlist_nulls_add_head_rcu(&mptcp_rsk(reqsk)->hash_entry,
 				 &mptcp_reqsk_tk_htb[hash]);
 }
 
@@ -201,20 +201,20 @@ static void mptcp_reqsk_remove_tk(struct request_sock *reqsk)
 {
 	rcu_read_lock();
 	spin_lock(&mptcp_tk_hashlock);
-	hlist_nulls_del_init_rcu(&mptcp_rsk(reqsk)->collide_tk);
+	hlist_nulls_del_init_rcu(&mptcp_rsk(reqsk)->hash_entry);
 	spin_unlock(&mptcp_tk_hashlock);
 	rcu_read_unlock();
 }
 
 void mptcp_reqsk_destructor(struct request_sock *req)
 {
-	if (!mptcp_rsk(req)->mpcb) {
+	if (!mptcp_rsk(req)->is_sub) {
 		if (in_softirq()) {
 			mptcp_reqsk_remove_tk(req);
 		} else {
 			rcu_read_lock_bh();
 			spin_lock(&mptcp_tk_hashlock);
-			hlist_nulls_del_init_rcu(&mptcp_rsk(req)->collide_tk);
+			hlist_nulls_del_init_rcu(&mptcp_rsk(req)->hash_entry);
 			spin_unlock(&mptcp_tk_hashlock);
 			rcu_read_unlock_bh();
 		}
@@ -275,7 +275,7 @@ void mptcp_reqsk_new_mptcp(struct request_sock *req,
 {
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
 
-	tcp_rsk(req)->saw_mpc = 1;
+	inet_rsk(req)->saw_mpc = 1;
 
 	rcu_read_lock();
 	spin_lock(&mptcp_tk_hashlock);
@@ -1837,7 +1837,7 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	struct mptcp_cb *mpcb;
 	struct mptcp_request_sock *mtreq;
 
-	if (!tcp_rsk(req)->saw_mpc)
+	if (!inet_rsk(req)->saw_mpc)
 		return 1;
 
 	/* Just set this values to pass them to mptcp_alloc_mpcb */
@@ -1884,7 +1884,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 {
 	struct tcp_sock *child_tp = tcp_sk(child);
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
-	struct mptcp_cb *mpcb = mtreq->mpcb;
+	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	u8 hash_mac_check[20];
 
 	child_tp->inside_tk_table = 0;
@@ -2112,22 +2112,21 @@ void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, struct request_sock *req,
 	tcp_parse_mptcp_options(skb, &mopt);
 
 	mtreq = mptcp_rsk(req);
-	mtreq->mpcb = mpcb;
-	INIT_LIST_HEAD(&mtreq->collide_tuple);
+	mtreq->mptcp_mpcb = mpcb;
+	mtreq->is_sub = 1;
+	mtreq->hash_entry.pprev = NULL;
 
 	mtreq->mptcp_rem_nonce = mopt.mptcp_recv_nonce;
-	mtreq->mptcp_rem_key = mpcb->mptcp_rem_key;
-	mtreq->mptcp_loc_key = mpcb->mptcp_loc_key;
 
-	mptcp_hmac_sha1((u8 *)&mtreq->mptcp_loc_key,
-			(u8 *)&mtreq->mptcp_rem_key,
+	mptcp_hmac_sha1((u8 *)&mpcb->mptcp_loc_key,
+			(u8 *)&mpcb->mptcp_rem_key,
 			(u8 *)&mtreq->mptcp_loc_nonce,
 			(u8 *)&mtreq->mptcp_rem_nonce, (u32 *)mptcp_hash_mac);
 	mtreq->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
 
 	mtreq->rem_id = mopt.rem_id;
 	mtreq->low_prio = mopt.low_prio;
-	tcp_rsk(req)->saw_mpc = 1;
+	inet_rsk(req)->saw_mpc = 1;
 }
 
 void mptcp_reqsk_init(struct request_sock *req, struct sk_buff *skb)
@@ -2138,9 +2137,9 @@ void mptcp_reqsk_init(struct request_sock *req, struct sk_buff *skb)
 	mptcp_init_mp_opt(&mopt);
 	tcp_parse_mptcp_options(skb, &mopt);
 
-	mreq->mpcb = NULL;
+	mreq->is_sub = 0;
 	mreq->dss_csum = mopt.dss_csum;
-	mreq->collide_tk.pprev = NULL;
+	mreq->hash_entry.pprev = NULL;
 
 	mptcp_reqsk_new_mptcp(req, &mopt, skb);
 }
@@ -2149,16 +2148,16 @@ int mptcp_conn_request(struct sock *sk, struct sk_buff *skb)
 {
 	struct mptcp_options_received mopt;
 	struct tcp_sock *tp = tcp_sk(sk);
-#ifdef CONFIG_SYN_COOKIES
 	__u32 isn = TCP_SKB_CB(skb)->when;
-#endif
 	bool want_cookie = false;
 
-#ifdef CONFIG_SYN_COOKIES
 	if ((sysctl_tcp_syncookies == 2 ||
-	     inet_csk_reqsk_queue_is_full(sk)) && !isn)
-		want_cookie = sysctl_tcp_syncookies;
-#endif
+	     inet_csk_reqsk_queue_is_full(sk)) && !isn) {
+		want_cookie = tcp_syn_flood_action(sk, skb,
+						   mptcp_request_sock_ops.slab_name);
+		if (!want_cookie)
+			goto drop;
+	}
 
 	mptcp_init_mp_opt(&mopt);
 	tcp_parse_mptcp_options(skb, &mopt);
@@ -2331,7 +2330,7 @@ void __init mptcp_init(void)
 
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
 		INIT_HLIST_NULLS_HEAD(&tk_hashtable[i], i);
-		INIT_LIST_HEAD(&mptcp_reqsk_htb[i]);
+		INIT_HLIST_NULLS_HEAD(&mptcp_reqsk_htb[i], i);
 		INIT_HLIST_NULLS_HEAD(&mptcp_reqsk_tk_htb[i], i);
 	}
 

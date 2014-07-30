@@ -176,9 +176,11 @@ static void mptcp_v6_reqsk_queue_hash_add(struct sock *meta_sk,
 	reqsk_queue_hash_req(&meta_icsk->icsk_accept_queue, h2, req, timeout);
 	reqsk_queue_added(&meta_icsk->icsk_accept_queue);
 
+	rcu_read_lock();
 	spin_lock(&mptcp_reqsk_hlock);
-	list_add(&mptcp_rsk(req)->collide_tuple, &mptcp_reqsk_htb[h1]);
+	hlist_nulls_add_head_rcu(&mptcp_rsk(req)->hash_entry, &mptcp_reqsk_htb[h1]);
 	spin_unlock(&mptcp_reqsk_hlock);
+	rcu_read_unlock();
 }
 
 /* Similar to tcp_v6_send_synack
@@ -460,6 +462,26 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	return 0;
 
 reset_and_discard:
+	if (reqsk_queue_len(&inet_csk(meta_sk)->icsk_accept_queue)) {
+		const struct tcphdr *th = tcp_hdr(skb);
+		struct request_sock **prev, *req;
+		/* If we end up here, it means we should not have matched on the
+		 * request-socket. But, because the request-sock queue is only
+		 * destroyed in mptcp_close, the socket may actually already be
+		 * in close-state (e.g., through shutdown()) while still having
+		 * pending request sockets.
+		 */
+		req = inet6_csk_search_req(meta_sk, &prev, th->source,
+					   &ipv6_hdr(skb)->saddr,
+					   &ipv6_hdr(skb)->daddr, inet6_iif(skb));
+		if (req) {
+			inet_csk_reqsk_queue_unlink(meta_sk, req, prev);
+			reqsk_queue_removed(&inet_csk(meta_sk)->icsk_accept_queue,
+					    req);
+			reqsk_free(req);
+		}
+	}
+
 	tcp_v6_send_reset(rsk, skb);
 discard:
 	kfree_skb(skb);
@@ -475,14 +497,14 @@ struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *radd
 {
 	struct mptcp_request_sock *mtreq;
 	struct sock *meta_sk = NULL;
+	const struct hlist_nulls_node *node;
+	const u32 hash = inet6_synq_hash(raddr, rport, 0, MPTCP_HASH_SIZE);
 
-	spin_lock(&mptcp_reqsk_hlock);
-	list_for_each_entry(mtreq,
-			    &mptcp_reqsk_htb[inet6_synq_hash(raddr, rport, 0,
-							     MPTCP_HASH_SIZE)],
-			    collide_tuple) {
+	rcu_read_lock();
+	hlist_nulls_for_each_entry_rcu(mtreq, node, &mptcp_reqsk_htb[hash],
+				       hash_entry) {
 		struct inet_request_sock *treq = inet_rsk(rev_mptcp_rsk(mtreq));
-		meta_sk = mtreq->mpcb->meta_sk;
+		meta_sk = mtreq->mptcp_mpcb->meta_sk;
 
 		if (inet_rsk(rev_mptcp_rsk(mtreq))->ir_rmt_port == rport &&
 		    rev_mptcp_rsk(mtreq)->rsk_ops->family == AF_INET6 &&
@@ -495,7 +517,7 @@ struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *radd
 
 	if (meta_sk && unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
 		meta_sk = NULL;
-	spin_unlock(&mptcp_reqsk_hlock);
+	rcu_read_unlock();
 
 	return meta_sk;
 }
