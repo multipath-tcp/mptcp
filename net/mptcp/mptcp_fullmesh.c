@@ -592,8 +592,10 @@ next_event:
 		id = mptcp_find_address(mptcp_local, event->family, &event->addr);
 
 		/* Not in the list - so we don't care */
-		if (id < 0)
+		if (id < 0) {
+			mptcp_debug("%s could not find id\n", __func__);
 			goto duno;
+		}
 
 		old = mptcp_local;
 		mptcp_local = kmemdup(mptcp_local, sizeof(*mptcp_local),
@@ -850,14 +852,17 @@ static void add_pm_event(struct net *net, struct mptcp_addr_event *event)
 	if (eventq) {
 		switch (event->code) {
 		case MPTCP_EVENT_DEL:
+			mptcp_debug("%s del old_code %u\n", __func__, eventq->code);
 			list_del(&eventq->list);
 			kfree(eventq);
 			break;
 		case MPTCP_EVENT_ADD:
+			mptcp_debug("%s add old_code %u\n", __func__, eventq->code);
 			eventq->low_prio = event->low_prio;
 			eventq->code = MPTCP_EVENT_ADD;
 			return;
 		case MPTCP_EVENT_MOD:
+			mptcp_debug("%s mod old_code %u\n", __func__, eventq->code);
 			eventq->low_prio = event->low_prio;
 			return;
 		}
@@ -901,6 +906,8 @@ static void addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 	else if (event == NETDEV_CHANGE)
 		mpevent.code = MPTCP_EVENT_MOD;
 
+	mptcp_debug("%s created event for %pI4, code %u prio %u\n", __func__,
+		    &ifa->ifa_local, mpevent.code, mpevent.low_prio);
 	add_pm_event(net, &mpevent);
 
 	spin_unlock_bh(&fm_ns->local_lock);
@@ -1010,6 +1017,8 @@ static void addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 	else if (event == NETDEV_CHANGE)
 		mpevent.code = MPTCP_EVENT_MOD;
 
+	mptcp_debug("%s created event for %pI6, code %u prio %u\n", __func__,
+		    &ifa->addr, mpevent.code, mpevent.low_prio);
 	add_pm_event(net, &mpevent);
 
 	spin_unlock_bh(&fm_ns->local_lock);
