@@ -864,6 +864,7 @@ static void add_pm_event(struct net *net, struct mptcp_addr_event *event)
 		case MPTCP_EVENT_MOD:
 			mptcp_debug("%s mod old_code %u\n", __func__, eventq->code);
 			eventq->low_prio = event->low_prio;
+			eventq->code = MPTCP_EVENT_MOD;
 			return;
 		}
 	}
@@ -899,7 +900,7 @@ static void addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 	mpevent.low_prio = (netdev->flags & IFF_MPBACKUP) ? 1 : 0;
 
 	if (event == NETDEV_DOWN || !netif_running(netdev) ||
-	    (netdev->flags & IFF_NOMULTIPATH))
+	    (netdev->flags & IFF_NOMULTIPATH) || !(netdev->flags & IFF_UP))
 		mpevent.code = MPTCP_EVENT_DEL;
 	else if (event == NETDEV_UP)
 		mpevent.code = MPTCP_EVENT_ADD;
@@ -1014,7 +1015,7 @@ static void addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 	mpevent.low_prio = (netdev->flags & IFF_MPBACKUP) ? 1 : 0;
 
 	if (event == NETDEV_DOWN || !netif_running(netdev) ||
-	    (netdev->flags & IFF_NOMULTIPATH))
+	    (netdev->flags & IFF_NOMULTIPATH) || !(netdev->flags & IFF_UP))
 		mpevent.code = MPTCP_EVENT_DEL;
 	else if (event == NETDEV_UP)
 		mpevent.code = MPTCP_EVENT_ADD;
