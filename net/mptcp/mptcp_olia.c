@@ -167,7 +167,7 @@ static void mptcp_get_epsilon(struct mptcp_cb *mpcb)
 			ca->epsilon_num = 0;
 			ca->epsilon_den = 1;
 		} else {
-			tmp_rtt = tp->srtt * tp->srtt;
+			tmp_rtt = (u64)tp->srtt * tp->srtt;
 			tmp_int = max(ca->mptcp_loss3 - ca->mptcp_loss2,
 				      ca->mptcp_loss2 - ca->mptcp_loss1);
 			tmp_cwnd = mptcp_get_crt_cwnd(sk);
@@ -185,7 +185,6 @@ static void mptcp_get_epsilon(struct mptcp_cb *mpcb)
 			}
 		}
 	}
-
 }
 
 /* setting the initial values */
@@ -220,7 +219,6 @@ static void mptcp_olia_set_state(struct sock *sk, u8 new_state)
 			ca->mptcp_loss2 = ca->mptcp_loss3;
 		}
 	}
-
 }
 
 /* main algorithm */

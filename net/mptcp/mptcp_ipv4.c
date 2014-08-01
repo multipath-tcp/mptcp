@@ -92,6 +92,7 @@ static int mptcp_v4_join_init_req(struct request_sock *req, struct sock *sk,
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
 	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 	union inet_addr addr;
+	int loc_id;
 
 	tcp_request_sock_ipv4_ops.init_req(req, sk, skb);
 
@@ -100,9 +101,10 @@ static int mptcp_v4_join_init_req(struct request_sock *req, struct sock *sk,
 						    tcp_hdr(skb)->source,
 						    tcp_hdr(skb)->dest);
 	addr.ip = inet_rsk(req)->ir_loc_addr;
-	mtreq->loc_id = mpcb->pm_ops->get_local_id(AF_INET, &addr, sock_net(sk));
-	if (mtreq->loc_id == -1)
+	loc_id = mpcb->pm_ops->get_local_id(AF_INET, &addr, sock_net(sk));
+	if (loc_id == -1)
 		return -1;
+	mtreq->loc_id = loc_id;
 
 	mptcp_join_reqsk_init(mpcb, req, skb);
 
@@ -135,7 +137,7 @@ static void mptcp_v4_reqsk_queue_hash_add(struct sock *meta_sk,
 	 * if the third ACK gets lost, the client will handle the retransmission
 	 * anyways. If our SYN/ACK gets lost, the client will retransmit the
 	 * SYN.
-	 */ 
+	 */
 	struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
 	struct listen_sock *lopt = meta_icsk->icsk_accept_queue.listen_opt;
 	const u32 h2 = inet_synq_hash(inet_rsk(req)->ir_rmt_addr,
@@ -143,7 +145,8 @@ static void mptcp_v4_reqsk_queue_hash_add(struct sock *meta_sk,
 				     lopt->hash_rnd, lopt->nr_table_entries);
 
 	reqsk_queue_hash_req(&meta_icsk->icsk_accept_queue, h2, req, timeout);
-	reqsk_queue_added(&meta_icsk->icsk_accept_queue);
+	if (reqsk_queue_added(&meta_icsk->icsk_accept_queue) == 0)
+		mptcp_reset_synack_timer(meta_sk, timeout);
 
 	rcu_read_lock();
 	spin_lock(&mptcp_reqsk_hlock);

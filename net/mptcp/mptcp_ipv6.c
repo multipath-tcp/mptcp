@@ -122,6 +122,7 @@ static int mptcp_v6_join_init_req(struct request_sock *req, struct sock *sk,
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
 	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 	union inet_addr addr;
+	int loc_id;
 
 	tcp_request_sock_ipv6_ops.init_req(req, sk, skb);
 
@@ -130,9 +131,10 @@ static int mptcp_v6_join_init_req(struct request_sock *req, struct sock *sk,
 						    tcp_hdr(skb)->source,
 						    tcp_hdr(skb)->dest);
 	addr.in6 = inet_rsk(req)->ir_v6_loc_addr;
-	mtreq->loc_id = mpcb->pm_ops->get_local_id(AF_INET6, &addr, sock_net(sk));
-	if (mtreq->loc_id == -1)
+	loc_id = mpcb->pm_ops->get_local_id(AF_INET6, &addr, sock_net(sk));
+	if (loc_id == -1)
 		return -1;
+	mtreq->loc_id = loc_id;
 
 	mptcp_join_reqsk_init(mpcb, req, skb);
 
@@ -166,7 +168,7 @@ static void mptcp_v6_reqsk_queue_hash_add(struct sock *meta_sk,
 	 * if the third ACK gets lost, the client will handle the retransmission
 	 * anyways. If our SYN/ACK gets lost, the client will retransmit the
 	 * SYN.
-	 */ 
+	 */
 	struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
 	struct listen_sock *lopt = meta_icsk->icsk_accept_queue.listen_opt;
 	const u32 h2 = inet6_synq_hash(&inet_rsk(req)->ir_v6_rmt_addr,
@@ -174,7 +176,8 @@ static void mptcp_v6_reqsk_queue_hash_add(struct sock *meta_sk,
 				      lopt->hash_rnd, lopt->nr_table_entries);
 
 	reqsk_queue_hash_req(&meta_icsk->icsk_accept_queue, h2, req, timeout);
-	reqsk_queue_added(&meta_icsk->icsk_accept_queue);
+	if (reqsk_queue_added(&meta_icsk->icsk_accept_queue) == 0)
+		mptcp_reset_synack_timer(meta_sk, timeout);
 
 	rcu_read_lock();
 	spin_lock(&mptcp_reqsk_hlock);
@@ -291,8 +294,7 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 	newtcp6sk = (struct tcp6_sock *)newsk;
 	inet_sk(newsk)->pinet6 = &newtcp6sk->inet6;
 
-	/*
-	 * No need to charge this sock to the relevant IPv6 refcnt debug socks
+	/* No need to charge this sock to the relevant IPv6 refcnt debug socks
 	 * count here, tcp_create_openreq_child now does this for us, see the
 	 * comment in that function for the gory details. -acme
 	 */
@@ -311,8 +313,7 @@ struct sock *mptcp_v6v4_syn_recv_sock(struct sock *meta_sk, struct sk_buff *skb,
 	newsk->sk_bound_dev_if = treq->ir_iif;
 
 	/* Now IPv6 options...
-
-	   First: no IPv4 options.
+	 * First: no IPv4 options.
 	 */
 	newinet->inet_opt = NULL;
 	newnp->ipv6_ac_list = NULL;

@@ -251,9 +251,9 @@ static void mptcp_set_key_reqsk(struct request_sock *req,
 
 	if (skb->protocol == htons(ETH_P_IP)) {
 		mtreq->mptcp_loc_key = mptcp_v4_get_key(ip_hdr(skb)->saddr,
-						        ip_hdr(skb)->daddr,
-						        htons(ireq->ir_num),
-						        ireq->ir_rmt_port);
+							ip_hdr(skb)->daddr,
+							htons(ireq->ir_num),
+							ireq->ir_rmt_port);
 #if IS_ENABLED(CONFIG_IPV6)
 	} else {
 		mtreq->mptcp_loc_key = mptcp_v6_get_key(ipv6_hdr(skb)->saddr.s6_addr32,
@@ -507,7 +507,6 @@ static void mptcp_sock_destruct(struct sock *sk)
 	 * static key
 	 */
 	static_key_slow_dec(&mptcp_static_key);
-
 }
 
 void mptcp_destroy_sock(struct sock *sk)
@@ -540,6 +539,8 @@ void mptcp_destroy_sock(struct sock *sk)
 
 			mptcp_sub_close(sk_it, 0);
 		}
+
+		mptcp_delete_synack_timer(sk);
 	} else {
 		mptcp_del_sock(sk);
 	}
@@ -580,7 +581,8 @@ void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn)
 
 	/* Initialize input with appropriate padding */
 	memset(&input[9], 0, sizeof(input) - 10); /* -10, because the last byte
-						   * is explicitly set too */
+						   * is explicitly set too
+						   */
 	memcpy(input, &key, sizeof(key)); /* Copy key to the msg beginning */
 	input[8] = 0x80; /* Padding: First bit after message = 1 */
 	input[63] = 0x40; /* Padding: Length of the message = 64 bits */
@@ -707,7 +709,7 @@ static void mptcp_mpcb_inherit_sockopts(struct sock *meta_sk, struct sock *maste
 	/* Keepalives are handled entirely at the MPTCP-layer */
 	if (sock_flag(meta_sk, SOCK_KEEPOPEN)) {
 		inet_csk_reset_keepalive_timer(meta_sk,
-				keepalive_time_when(tcp_sk(meta_sk)));
+					       keepalive_time_when(tcp_sk(meta_sk)));
 		sock_reset_flag(master_sk, SOCK_KEEPOPEN);
 		inet_csk_delete_keepalive_timer(master_sk);
 	}
@@ -901,6 +903,36 @@ static int mptcp_inherit_sk(const struct sock *sk, struct sock *newsk,
 	return 0;
 }
 
+static void mptcp_synack_timer_handler(unsigned long data)
+{
+	struct sock *meta_sk = (struct sock *) data;
+	struct listen_sock *lopt = inet_csk(meta_sk)->icsk_accept_queue.listen_opt;
+
+	/* Only process if socket is not in use. */
+	bh_lock_sock(meta_sk);
+
+	if (sock_owned_by_user(meta_sk)) {
+		/* Try again later. */
+		mptcp_reset_synack_timer(meta_sk, HZ/20);
+		goto out;
+	}
+
+	/* May happen if the queue got destructed in mptcp_close */
+	if (!lopt)
+		goto out;
+
+	inet_csk_reqsk_queue_prune(meta_sk, TCP_SYNQ_INTERVAL,
+				   TCP_TIMEOUT_INIT, TCP_RTO_MAX);
+
+	if (lopt->qlen)
+		mptcp_reset_synack_timer(meta_sk, TCP_SYNQ_INTERVAL);
+
+out:
+	bh_unlock_sock(meta_sk);
+	sock_put(meta_sk);
+}
+
+
 static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 {
 	struct mptcp_cb *mpcb;
@@ -925,6 +957,10 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 
 	mpcb = kmem_cache_zalloc(mptcp_cb_cache, GFP_ATOMIC);
 	if (!mpcb) {
+		/* sk_free (and __sk_free) requirese wmem_alloc to be 1.
+		 * All the rest is set to 0 thanks to __GFP_ZERO above.
+		 */
+		atomic_set(&master_sk->sk_wmem_alloc, 1);
 		sk_free(master_sk);
 		return -ENOBUFS;
 	}
@@ -1101,6 +1137,9 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 
 	mptcp_init_path_manager(mpcb);
 	mptcp_init_scheduler(mpcb);
+
+	setup_timer(&mpcb->synack_timer, mptcp_synack_timer_handler,
+		    (unsigned long)meta_sk);
 
 	mptcp_debug("%s: created mpcb with token %#x\n",
 		    __func__, mpcb->mptcp_loc_token);
@@ -1711,6 +1750,8 @@ void mptcp_disconnect(struct sock *sk)
 	struct sock *subsk, *tmpsk;
 	struct tcp_sock *tp = tcp_sk(sk);
 
+	mptcp_delete_synack_timer(sk);
+
 	__skb_queue_purge(&tp->mpcb->reinject_queue);
 
 	if (tp->inside_tk_table) {
@@ -2211,10 +2252,7 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 	struct net *net = seq->private;
 	int i, n = 0;
 
-	seq_printf(seq, "  sl  loc_tok  rem_tok  v6 "
-		   "local_address                         "
-		   "remote_address                        "
-		   "st ns tx_queue rx_queue inode");
+	seq_printf(seq, "  sl  loc_tok  rem_tok  v6 local_address                         remote_address                        st ns tx_queue rx_queue inode");
 	seq_putc(seq, '\n');
 
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {

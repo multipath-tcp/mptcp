@@ -101,7 +101,7 @@ static struct fullmesh_priv *fullmesh_get_priv(const struct mptcp_cb *mpcb)
 }
 
 static void mptcp_addv4_raddr(struct mptcp_cb *mpcb,
-			      const struct in_addr *addr, 
+			      const struct in_addr *addr,
 			      __be16 port, u8 id)
 {
 	int i;
@@ -272,7 +272,7 @@ static void mptcp_v6_set_init_addr_bit(struct mptcp_cb *mpcb,
 }
 
 static void mptcp_set_init_addr_bit(struct mptcp_cb *mpcb,
-			            const union inet_addr *addr, 
+				    const union inet_addr *addr,
 				    sa_family_t family, u8 id)
 {
 	if (family == AF_INET)
@@ -592,8 +592,10 @@ next_event:
 		id = mptcp_find_address(mptcp_local, event->family, &event->addr);
 
 		/* Not in the list - so we don't care */
-		if (id < 0)
+		if (id < 0) {
+			mptcp_debug("%s could not find id\n", __func__);
 			goto duno;
+		}
 
 		old = mptcp_local;
 		mptcp_local = kmemdup(mptcp_local, sizeof(*mptcp_local),
@@ -630,11 +632,11 @@ next_event:
 			event->code = MPTCP_EVENT_ADD;
 		} else {
 			/* Let's check if anything changes */
-			if (event->family == AF_INET && 
+			if (event->family == AF_INET &&
 			    event->low_prio == mptcp_local->locaddr4[i].low_prio)
 				goto duno;
 
-			if (event->family == AF_INET6 && 
+			if (event->family == AF_INET6 &&
 			    event->low_prio == mptcp_local->locaddr6[i].low_prio)
 				goto duno;
 		}
@@ -716,12 +718,7 @@ duno:
 			}
 
 			if (event->code == MPTCP_EVENT_ADD) {
-				if (event->family == AF_INET)
-					fmp->add_addr++;
-#if IS_ENABLED(CONFIG_IPV6)
-				if (event->family == AF_INET6)
-					fmp->add_addr++;
-#endif
+				fmp->add_addr++;
 
 				sk = mptcp_select_ack_sock(meta_sk);
 				if (sk)
@@ -855,15 +852,19 @@ static void add_pm_event(struct net *net, struct mptcp_addr_event *event)
 	if (eventq) {
 		switch (event->code) {
 		case MPTCP_EVENT_DEL:
+			mptcp_debug("%s del old_code %u\n", __func__, eventq->code);
 			list_del(&eventq->list);
 			kfree(eventq);
 			break;
 		case MPTCP_EVENT_ADD:
+			mptcp_debug("%s add old_code %u\n", __func__, eventq->code);
 			eventq->low_prio = event->low_prio;
 			eventq->code = MPTCP_EVENT_ADD;
 			return;
 		case MPTCP_EVENT_MOD:
+			mptcp_debug("%s mod old_code %u\n", __func__, eventq->code);
 			eventq->low_prio = event->low_prio;
+			eventq->code = MPTCP_EVENT_MOD;
 			return;
 		}
 	}
@@ -899,13 +900,15 @@ static void addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 	mpevent.low_prio = (netdev->flags & IFF_MPBACKUP) ? 1 : 0;
 
 	if (event == NETDEV_DOWN || !netif_running(netdev) ||
-	    (netdev->flags & IFF_NOMULTIPATH))
+	    (netdev->flags & IFF_NOMULTIPATH) || !(netdev->flags & IFF_UP))
 		mpevent.code = MPTCP_EVENT_DEL;
 	else if (event == NETDEV_UP)
 		mpevent.code = MPTCP_EVENT_ADD;
 	else if (event == NETDEV_CHANGE)
 		mpevent.code = MPTCP_EVENT_MOD;
 
+	mptcp_debug("%s created event for %pI4, code %u prio %u\n", __func__,
+		    &ifa->ifa_local, mpevent.code, mpevent.low_prio);
 	add_pm_event(net, &mpevent);
 
 	spin_unlock_bh(&fm_ns->local_lock);
@@ -918,6 +921,10 @@ static int mptcp_pm_inetaddr_event(struct notifier_block *this,
 {
 	struct in_ifaddr *ifa = (struct in_ifaddr *)ptr;
 	struct net *net = dev_net(ifa->ifa_dev->dev);
+
+	if (!(event == NETDEV_UP || event == NETDEV_DOWN ||
+	      event == NETDEV_CHANGE))
+		return NOTIFY_DONE;
 
 	addr4_event_handler(ifa, event, net);
 
@@ -942,8 +949,8 @@ static int inet6_addr_event(struct notifier_block *this,
 
 static int ipv6_is_in_dad_state(struct inet6_ifaddr *ifa)
 {
-	return ((ifa->flags & IFA_F_TENTATIVE) &&
-		ifa->state == INET6_IFADDR_STATE_DAD);
+	return (ifa->flags & IFA_F_TENTATIVE) &&
+	       ifa->state == INET6_IFADDR_STATE_DAD;
 }
 
 static void dad_init_timer(struct mptcp_dad_data *data,
@@ -1007,14 +1014,16 @@ static void addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
 	mpevent.addr.in6 = ifa->addr;
 	mpevent.low_prio = (netdev->flags & IFF_MPBACKUP) ? 1 : 0;
 
-	if (event == NETDEV_DOWN ||!netif_running(netdev) ||
-	    (netdev->flags & IFF_NOMULTIPATH))
+	if (event == NETDEV_DOWN || !netif_running(netdev) ||
+	    (netdev->flags & IFF_NOMULTIPATH) || !(netdev->flags & IFF_UP))
 		mpevent.code = MPTCP_EVENT_DEL;
 	else if (event == NETDEV_UP)
 		mpevent.code = MPTCP_EVENT_ADD;
 	else if (event == NETDEV_CHANGE)
 		mpevent.code = MPTCP_EVENT_MOD;
 
+	mptcp_debug("%s created event for %pI6, code %u prio %u\n", __func__,
+		    &ifa->addr, mpevent.code, mpevent.low_prio);
 	add_pm_event(net, &mpevent);
 
 	spin_unlock_bh(&fm_ns->local_lock);
@@ -1027,6 +1036,10 @@ static int inet6_addr_event(struct notifier_block *this, unsigned long event,
 {
 	struct inet6_ifaddr *ifa6 = (struct inet6_ifaddr *)ptr;
 	struct net *net = dev_net(ifa6->idev->dev);
+
+	if (!(event == NETDEV_UP || event == NETDEV_DOWN ||
+	      event == NETDEV_CHANGE))
+		return NOTIFY_DONE;
 
 	if (ipv6_is_in_dad_state(ifa6))
 		dad_setup_timer(ifa6);
@@ -1402,9 +1415,8 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 
 	rcu_read_unlock();
 
-	if (!unannouncedv4 && !unannouncedv6 && skb) {
+	if (!unannouncedv4 && !unannouncedv6 && skb)
 		fmp->add_addr--;
-	}
 
 remove_addr:
 	if (likely(!fmp->remove_addrs))
@@ -1428,10 +1440,59 @@ static void full_mesh_rem_raddr(struct mptcp_cb *mpcb, u8 rem_id)
 	mptcp_v6_rem_raddress(mpcb, rem_id);
 }
 
+/* Output /proc/net/mptcp_fullmesh */
+static int mptcp_fm_seq_show(struct seq_file *seq, void *v)
+{
+	struct net *net = seq->private;
+	struct mptcp_loc_addr *mptcp_local;
+	struct mptcp_fm_ns *fm_ns = fm_get_ns(net);
+	int i;
+
+	seq_printf(seq, "Index, Address-ID, Backup, IP-address\n");
+
+	rcu_read_lock_bh();
+	mptcp_local = rcu_dereference(fm_ns->local);
+
+	seq_printf(seq, "IPv4, next v4-index: %u\n", mptcp_local->next_v4_index);
+
+	mptcp_for_each_bit_set(mptcp_local->loc4_bits, i) {
+		struct mptcp_loc4 *loc4 = &mptcp_local->locaddr4[i];
+
+		seq_printf(seq, "%u, %u, %u, %pI4\n", i, loc4->loc4_id,
+			   loc4->low_prio, &loc4->addr);
+	}
+
+	seq_printf(seq, "IPv6, next v6-index: %u\n", mptcp_local->next_v6_index);
+
+	mptcp_for_each_bit_set(mptcp_local->loc6_bits, i) {
+		struct mptcp_loc6 *loc6 = &mptcp_local->locaddr6[i];
+
+		seq_printf(seq, "%u, %u, %u, %pI6\n", i, loc6->loc6_id,
+			   loc6->low_prio, &loc6->addr);
+	}
+	rcu_read_unlock_bh();
+
+	return 0;
+}
+
+static int mptcp_fm_seq_open(struct inode *inode, struct file *file)
+{
+	return single_open_net(inode, file, mptcp_fm_seq_show);
+}
+
+static const struct file_operations mptcp_fm_seq_fops = {
+	.owner = THIS_MODULE,
+	.open = mptcp_fm_seq_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release_net,
+};
+
 static int mptcp_fm_init_net(struct net *net)
 {
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_fm_ns *fm_ns;
+	int err = 0;
 
 	fm_ns = kzalloc(sizeof(*fm_ns), GFP_KERNEL);
 	if (!fm_ns)
@@ -1439,8 +1500,14 @@ static int mptcp_fm_init_net(struct net *net)
 
 	mptcp_local = kzalloc(sizeof(*mptcp_local), GFP_KERNEL);
 	if (!mptcp_local) {
-		kfree(fm_ns);
-		return -ENOBUFS;
+		err = -ENOBUFS;
+		goto err_mptcp_local;
+	}
+
+	if (!proc_create("mptcp_fullmesh", S_IRUGO, net->proc_net, 
+			 &mptcp_fm_seq_fops)) {
+		err = -ENOMEM;
+		goto err_seq_fops;
 	}
 
 	mptcp_local->next_v4_index = 1;
@@ -1453,6 +1520,11 @@ static int mptcp_fm_init_net(struct net *net)
 	net->mptcp.path_managers[MPTCP_PM_FULLMESH] = fm_ns;
 
 	return 0;
+err_seq_fops:
+	kfree(mptcp_local);
+err_mptcp_local:
+	kfree(fm_ns);
+	return err;
 }
 
 static void mptcp_fm_exit_net(struct net *net)
@@ -1477,6 +1549,8 @@ static void mptcp_fm_exit_net(struct net *net)
 	spin_unlock(&fm_ns->local_lock);
 
 	rcu_read_unlock_bh();
+
+	remove_proc_entry("mptcp_fullmesh", net->proc_net);
 
 	kfree(fm_ns);
 }

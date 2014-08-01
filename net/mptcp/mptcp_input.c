@@ -188,52 +188,52 @@ static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 	 * sk_forward_alloc is wrong upon inet_csk_destroy_sock()
 	 */
 	switch (meta_sk->sk_state) {
-	case TCP_FIN_WAIT1:
-		if (meta_tp->snd_una == meta_tp->write_seq) {
-			struct dst_entry *dst = __sk_dst_get(meta_sk);
+	case TCP_FIN_WAIT1: {
+		struct dst_entry *dst;
+		int tmo;
 
-			tcp_set_state(meta_sk, TCP_FIN_WAIT2);
-			meta_sk->sk_shutdown |= SEND_SHUTDOWN;
+		if (meta_tp->snd_una != meta_tp->write_seq)
+			break;
 
-			dst = __sk_dst_get(sk);
-			if (dst)
-				dst_confirm(dst);
+		tcp_set_state(meta_sk, TCP_FIN_WAIT2);
+		meta_sk->sk_shutdown |= SEND_SHUTDOWN;
 
-			if (!sock_flag(meta_sk, SOCK_DEAD)) {
-				/* Wake up lingering close() */
-				meta_sk->sk_state_change(meta_sk);
-			} else {
-				int tmo;
+		dst = __sk_dst_get(sk);
+		if (dst)
+			dst_confirm(dst);
 
-				if (meta_tp->linger2 < 0 ||
-				    (data_len &&
-				     after(data_seq + data_len - (mptcp_is_data_fin2(skb, tp) ? 1 : 0),
-					   meta_tp->rcv_nxt))) {
-					mptcp_send_active_reset(meta_sk, GFP_ATOMIC);
-					tcp_done(meta_sk);
-					NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_TCPABORTONDATA);
-					return 1;
-				}
+		if (!sock_flag(meta_sk, SOCK_DEAD)) {
+			/* Wake up lingering close() */
+			meta_sk->sk_state_change(meta_sk);
+			break;
+		}
 
-				tmo = tcp_fin_time(meta_sk);
-				if (tmo > TCP_TIMEWAIT_LEN) {
-					inet_csk_reset_keepalive_timer(meta_sk, tmo - TCP_TIMEWAIT_LEN);
-				} else if (mptcp_is_data_fin2(skb, tp) ||
-					   sock_owned_by_user(meta_sk)) {
-					/* Bad case. We could lose such FIN otherwise.
-					 * It is not a big problem, but it looks confusing
-					 * and not so rare event. We still can lose it now,
-					 * if it spins in bh_lock_sock(), but it is really
-					 * marginal case.
-					 */
-					inet_csk_reset_keepalive_timer(meta_sk, tmo);
-				} else {
-					meta_tp->time_wait(meta_sk,
-							TCP_FIN_WAIT2, tmo);
-				}
-			}
+		if (meta_tp->linger2 < 0 ||
+		    (data_len &&
+		     after(data_seq + data_len - (mptcp_is_data_fin2(skb, tp) ? 1 : 0),
+			   meta_tp->rcv_nxt))) {
+			mptcp_send_active_reset(meta_sk, GFP_ATOMIC);
+			tcp_done(meta_sk);
+			NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_TCPABORTONDATA);
+			return 1;
+		}
+
+		tmo = tcp_fin_time(meta_sk);
+		if (tmo > TCP_TIMEWAIT_LEN) {
+			inet_csk_reset_keepalive_timer(meta_sk, tmo - TCP_TIMEWAIT_LEN);
+		} else if (mptcp_is_data_fin2(skb, tp) || sock_owned_by_user(meta_sk)) {
+			/* Bad case. We could lose such FIN otherwise.
+			 * It is not a big problem, but it looks confusing
+			 * and not so rare event. We still can lose it now,
+			 * if it spins in bh_lock_sock(), but it is really
+			 * marginal case.
+			 */
+			inet_csk_reset_keepalive_timer(meta_sk, tmo);
+		} else {
+			meta_tp->time_wait(meta_sk, TCP_FIN_WAIT2, tmo);
 		}
 		break;
+	}
 	case TCP_CLOSING:
 	case TCP_LAST_ACK:
 		if (meta_tp->snd_una == meta_tp->write_seq) {
@@ -348,9 +348,8 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 	/* Now, checksum must be 0 */
 	if (unlikely(csum_fold(csum_tcp))) {
 		pr_err("%s csum is wrong: %#x data_seq %u dss_csum_added %d overflowed %d iterations %d\n",
-			    __func__, csum_fold(csum_tcp),
-			    TCP_SKB_CB(last)->seq, dss_csum_added, overflowed,
-			    iter);
+		       __func__, csum_fold(csum_tcp), TCP_SKB_CB(last)->seq,
+		       dss_csum_added, overflowed, iter);
 
 		tp->mptcp->send_mp_fail = 1;
 
@@ -412,7 +411,6 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb, struct sk_buff *next,
 	 */
 	tcb->seq = ((u32)tp->mptcp->map_data_seq) + tcb->seq - tp->mptcp->map_subseq;
 	tcb->end_seq = tcb->seq + skb->len + inc;
-
 }
 
 /**
@@ -562,7 +560,8 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 
 	/* Receiver-side becomes fully established when a whole rcv-window has
 	 * been received without the need to fallback due to the previous
-	 * condition. */
+	 * condition.
+	 */
 	if (!tp->mptcp->fully_established) {
 		tp->mptcp->init_rcv_wnd -= skb->len;
 		if (tp->mptcp->init_rcv_wnd < 0)
@@ -912,14 +911,13 @@ static int mptcp_queue_skb(struct sock *sk)
 			    !before(TCP_SKB_CB(tmp)->seq,
 				    tp->mptcp->map_subseq + tp->mptcp->map_data_len))
 				break;
-
 		}
 		tcp_enter_quickack_mode(sk);
 	} else {
 		/* Ready for the meta-rcv-queue */
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
 			int eaten = 0;
-			int copied_early = 0;
+			const bool copied_early = false;
 			bool fragstolen = false;
 			u32 old_rcv_nxt = meta_tp->rcv_nxt;
 
@@ -944,7 +942,7 @@ static int mptcp_queue_skb(struct sock *sk)
 			    tmp1->len <= meta_tp->ucopy.len &&
 			    sock_owned_by_user(meta_sk) &&
 			    tcp_dma_try_early_copy(meta_sk, tmp1, 0)) {
-				copied_early = 1;
+				copied_early = true;
 				eaten = 1;
 			}
 #endif
@@ -966,8 +964,10 @@ static int mptcp_queue_skb(struct sock *sk)
 			meta_tp->rcv_nxt = TCP_SKB_CB(tmp1)->end_seq;
 			mptcp_check_rcvseq_wrap(meta_tp, old_rcv_nxt);
 
+#ifdef CONFIG_NET_DMA
 			if (copied_early)
 				meta_tp->cleanup_rbuf(meta_sk, tmp1->len);
+#endif
 
 			if (tcp_hdr(tmp1)->fin && !mpcb->in_time_wait)
 				mptcp_fin(meta_sk);
@@ -2103,8 +2103,8 @@ int mptcp_handle_options(struct sock *sk, const struct tcphdr *th, struct sk_buf
  * from meta-socket to master-socket.
  *
  * @return: 1 - we want to reset this connection
- * 	    2 - we want to discard the received syn/ack
- * 	    0 - everything is fine - continue
+ *	    2 - we want to discard the received syn/ack
+ *	    0 - everything is fine - continue
  */
 int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 				    struct sk_buff *skb,
@@ -2216,10 +2216,10 @@ bool mptcp_should_expand_sndbuf(const struct sock *sk)
 			continue;
 
 		/* Backup-flows have to be counted - if there is no other
-		 * subflow we take the backup-flow into account. */
-		if (tp_it->mptcp->rcv_low_prio || tp_it->mptcp->low_prio) {
+		 * subflow we take the backup-flow into account.
+		 */
+		if (tp_it->mptcp->rcv_low_prio || tp_it->mptcp->low_prio)
 			cnt_backups++;
-		}
 
 		if (tp_it->packets_out < tp_it->snd_cwnd) {
 			if (tp_it->mptcp->rcv_low_prio || tp_it->mptcp->low_prio) {
