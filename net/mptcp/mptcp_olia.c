@@ -120,13 +120,13 @@ static void mptcp_get_epsilon(struct mptcp_cb *mpcb)
 		if (!mptcp_olia_sk_can_send(sk))
 			continue;
 
-		tmp_rtt = tp->srtt * tp->srtt;
+		tmp_rtt = (u64)tp->srtt * tp->srtt;
 		/* TODO - check here and rename variables */
 		tmp_int = max(ca->mptcp_loss3 - ca->mptcp_loss2,
 			      ca->mptcp_loss2 - ca->mptcp_loss1);
 
 		tmp_cwnd = mptcp_get_crt_cwnd(sk);
-		if (tmp_int * best_rtt >= best_int * tmp_rtt) {
+		if ((u64)tmp_int * best_rtt >= (u64)best_int * tmp_rtt) {
 			best_rtt = tmp_rtt;
 			best_int = tmp_int;
 			best_cwnd = tmp_cwnd;
@@ -146,11 +146,11 @@ static void mptcp_get_epsilon(struct mptcp_cb *mpcb)
 		if (tmp_cwnd == max_cwnd) {
 			M++;
 		} else {
-			tmp_rtt = tp->srtt * tp->srtt;
+			tmp_rtt = (u64)tp->srtt * tp->srtt;
 			tmp_int = max(ca->mptcp_loss3 - ca->mptcp_loss2,
 				      ca->mptcp_loss2 - ca->mptcp_loss1);
 
-			if (tmp_int * best_rtt == best_int * tmp_rtt)
+			if ((u64)tmp_int * best_rtt == (u64)best_int * tmp_rtt)
 				B_not_M++;
 		}
 	}
@@ -173,7 +173,7 @@ static void mptcp_get_epsilon(struct mptcp_cb *mpcb)
 			tmp_cwnd = mptcp_get_crt_cwnd(sk);
 
 			if (tmp_cwnd < max_cwnd &&
-			    tmp_int * best_rtt == best_int * tmp_rtt){
+			    (u64)tmp_int * best_rtt == (u64)best_int * tmp_rtt) {
 				ca->epsilon_num = 1;
 				ca->epsilon_den = mpcb->cnt_established * B_not_M;
 			} else if (tmp_cwnd == max_cwnd) {
