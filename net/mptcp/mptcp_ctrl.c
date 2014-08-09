@@ -364,10 +364,16 @@ begin:
 				       tk_table) {
 		meta_sk = (struct sock *)meta_tp;
 		if (token == meta_tp->mptcp_loc_token &&
-		    net_eq(net, sock_net(meta_sk)) &&
-		    atomic_inc_not_zero(&meta_sk->sk_refcnt))
-			goto out;
-		meta_sk = NULL;
+		    net_eq(net, sock_net(meta_sk))) {
+			if (unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
+				goto out;
+			if (unlikely(token != meta_tp->mptcp_loc_token ||
+				     !net_eq(net, sock_net(meta_sk)))) {
+				sock_gen_put(meta_sk);
+				goto begin;
+			}
+			goto found;
+		}
 	}
 	/* A TCP-socket is destroyed by RCU. So, it might have been recycled
 	 * and put into another hash-table list. So, after the lookup we may
@@ -378,6 +384,8 @@ begin:
 	if (get_nulls_value(node) != hash)
 		goto begin;
 out:
+	meta_sk = NULL;
+found:
 	rcu_read_unlock();
 	return meta_sk;
 }
