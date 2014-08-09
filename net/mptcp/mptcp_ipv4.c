@@ -124,7 +124,7 @@ struct request_sock_ops mptcp_request_sock_ops __read_mostly = {
 
 static void mptcp_v4_reqsk_queue_hash_add(struct sock *meta_sk,
 					  struct request_sock *req,
-					  unsigned long timeout)
+					  const unsigned long timeout)
 {
 	const u32 h1 = inet_synq_hash(inet_rsk(req)->ir_rmt_addr,
 				     inet_rsk(req)->ir_rmt_port,
