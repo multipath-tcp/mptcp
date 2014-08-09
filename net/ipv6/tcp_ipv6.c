@@ -1943,12 +1943,28 @@ void tcp6_proc_exit(struct net *net)
 static void tcp_v6_clear_sk(struct sock *sk, int size)
 {
 	struct inet_sock *inet = inet_sk(sk);
+#ifdef CONFIG_MPTCP
+	struct tcp_sock *tp = tcp_sk(sk);
+	/* size_tk_table goes from the end of tk_table to the end of sk */
+	int size_tk_table = size - offsetof(struct tcp_sock, tk_table) -
+			    sizeof(tp->tk_table);
+#endif
 
 	/* we do not want to clear pinet6 field, because of RCU lookups */
 	sk_prot_clear_nulls(sk, offsetof(struct inet_sock, pinet6));
 
 	size -= offsetof(struct inet_sock, pinet6) + sizeof(inet->pinet6);
+
+#ifdef CONFIG_MPTCP
+	/* We zero out only from pinet6 to tk_table */
+	size -= size_tk_table + sizeof(tp->tk_table);
+#endif
 	memset(&inet->pinet6 + 1, 0, size);
+
+#ifdef CONFIG_MPTCP
+	memset((char *)&tp->tk_table + sizeof(tp->tk_table), 0, size_tk_table);
+#endif
+
 }
 
 struct proto tcpv6_prot = {
