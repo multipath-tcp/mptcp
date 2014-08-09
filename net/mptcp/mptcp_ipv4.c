@@ -281,6 +281,7 @@ struct sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
 	const u32 hash = inet_synq_hash(raddr, rport, 0, MPTCP_HASH_SIZE);
 
 	rcu_read_lock();
+begin:
 	hlist_nulls_for_each_entry_rcu(mtreq, node, &mptcp_reqsk_htb[hash],
 				       hash_entry) {
 		struct inet_request_sock *ireq = inet_rsk(rev_mptcp_rsk(mtreq));
@@ -291,10 +292,19 @@ struct sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
 		    ireq->ir_loc_addr == laddr &&
 		    rev_mptcp_rsk(mtreq)->rsk_ops->family == AF_INET &&
 		    net_eq(net, sock_net(meta_sk)))
-			break;
+			goto found;
 		meta_sk = NULL;
 	}
+	/* A request-socket is destroyed by RCU. So, it might have been recycled
+	 * and put into another hash-table list. So, after the lookup we may
+	 * end up in a different list. So, we may need to restart.
+	 *
+	 * See also the comment in __inet_lookup_established.
+	 */
+	if (get_nulls_value(node) != hash)
+		goto begin;
 
+found:
 	if (meta_sk && unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
 		meta_sk = NULL;
 	rcu_read_unlock();

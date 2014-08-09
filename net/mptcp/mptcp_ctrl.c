@@ -181,11 +181,20 @@ static int mptcp_reqsk_find_tk(u32 token)
 	struct mptcp_request_sock *mtreqsk;
 	const struct hlist_nulls_node *node;
 
+begin:
 	hlist_nulls_for_each_entry_rcu(mtreqsk, node,
 				       &mptcp_reqsk_tk_htb[hash], hash_entry) {
 		if (token == mtreqsk->mptcp_loc_token)
 			return 1;
 	}
+	/* A request-socket is destroyed by RCU. So, it might have been recycled
+	 * and put into another hash-table list. So, after the lookup we may
+	 * end up in a different list. So, we may need to restart.
+	 *
+	 * See also the comment in __inet_lookup_established.
+	 */
+	if (get_nulls_value(node) != hash)
+		goto begin;
 	return 0;
 }
 
@@ -236,10 +245,19 @@ static int mptcp_find_token(u32 token)
 	struct tcp_sock *meta_tp;
 	const struct hlist_nulls_node *node;
 
+begin:
 	hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[hash], tk_table) {
 		if (token == meta_tp->mptcp_loc_token)
 			return 1;
 	}
+	/* A TCP-socket is destroyed by RCU. So, it might have been recycled
+	 * and put into another hash-table list. So, after the lookup we may
+	 * end up in a different list. So, we may need to restart.
+	 *
+	 * See also the comment in __inet_lookup_established.
+	 */
+	if (get_nulls_value(node) != hash)
+		goto begin;
 	return 0;
 }
 
@@ -341,15 +359,25 @@ struct sock *mptcp_hash_find(struct net *net, u32 token)
 	struct hlist_nulls_node *node;
 
 	rcu_read_lock();
+begin:
 	hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[hash],
 				       tk_table) {
 		meta_sk = (struct sock *)meta_tp;
 		if (token == meta_tp->mptcp_loc_token &&
 		    net_eq(net, sock_net(meta_sk)) &&
 		    atomic_inc_not_zero(&meta_sk->sk_refcnt))
-			break;
+			goto out;
 		meta_sk = NULL;
 	}
+	/* A TCP-socket is destroyed by RCU. So, it might have been recycled
+	 * and put into another hash-table list. So, after the lookup we may
+	 * end up in a different list. So, we may need to restart.
+	 *
+	 * See also the comment in __inet_lookup_established.
+	 */
+	if (get_nulls_value(node) != hash)
+		goto begin;
+out:
 	rcu_read_unlock();
 	return meta_sk;
 }
