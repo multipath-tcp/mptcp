@@ -141,6 +141,36 @@ static int mptcp_v6_join_init_req(struct request_sock *req, struct sock *sk,
 	return 0;
 }
 
+static struct dst_entry *mptcp_v6_route_req(struct sock *sk, struct flowi *fl,
+					    const struct request_sock *req,
+					    bool *strict)
+{
+	struct inet_request_sock *treq = inet_rsk(req);
+	struct flowi6 fl6;
+	struct dst_entry *dst;
+
+	if (sk->sk_family == AF_INET6)
+		return tcp_request_sock_ipv6_ops.route_req(sk, fl, req, strict);
+
+	if (strict)
+		*strict = true;
+
+	memset(&fl6, 0, sizeof(fl6));
+	fl6.flowi6_proto = IPPROTO_TCP;
+	fl6.daddr = treq->ir_v6_rmt_addr;
+	fl6.saddr = treq->ir_v6_loc_addr;
+	fl6.flowlabel = 0;
+	fl6.flowi6_oif = treq->ir_iif;
+	fl6.flowi6_mark = sk->sk_mark;
+	fl6.fl6_dport = inet_rsk(req)->ir_rmt_port;
+	fl6.fl6_sport = htons(inet_rsk(req)->ir_num);
+	security_req_classify_flow(req, flowi6_to_flowi(&fl6));
+
+	dst = ip6_dst_lookup_flow(sk, &fl6, NULL);
+	if (IS_ERR(dst))
+		return NULL;
+	return dst;
+}
 
 /* Similar to tcp6_request_sock_ops */
 struct request_sock_ops mptcp6_request_sock_ops __read_mostly = {
@@ -683,6 +713,7 @@ int mptcp_pm_v6_init(void)
 
 	mptcp_join_request_sock_ipv6_ops = tcp_request_sock_ipv6_ops;
 	mptcp_join_request_sock_ipv6_ops.init_req = mptcp_v6_join_init_req;
+	mptcp_join_request_sock_ipv6_ops.route_req = mptcp_v6_route_req;
 	mptcp_join_request_sock_ipv6_ops.queue_hash_add = mptcp_v6_reqsk_queue_hash_add;
 	mptcp_join_request_sock_ipv6_ops.send_synack = mptcp_v6_send_synack;
 
