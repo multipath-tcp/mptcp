@@ -69,7 +69,22 @@ config DEFAULT_MPTCP_PM
 	default "binder" if DEFAULT_BINDER
 	default "default"
 
-if MPTCP
+menuconfig MPTCP_SCHED_ADVANCED
+	bool "MPTCP: advanced scheduler control"
+	depends on MPTCP=y
+	---help---
+	  Support for selection of different schedulers. You should choose 'Y' here,
+	  if you want to choose a different scheduler than the default one.
+
+if MPTCP_SCHED_ADVANCED
+
+config MPTCP_ROUNDROBIN
+	tristate "MPTCP Round-Robin"
+	depends on (MPTCP=y)
+	---help---
+	  This is a very simple round-robin scheduler. Probably has bad performance
+	  but might be interesting for researchers.
+
 choice
 	prompt "Default MPTCP Scheduler"
 	default DEFAULT
@@ -82,6 +97,12 @@ choice
 		  This is the default scheduler, sending first on the subflow
 		  with the lowest RTT.
 
+	config DEFAULT_ROUNDROBIN
+		bool "Round-Robin" if MPTCP_ROUNDROBIN=y
+		---help---
+		  This is the round-rob scheduler, sending in a round-robin
+		  fashion..
+
 endchoice
 endif
 
@@ -89,5 +110,6 @@ config DEFAULT_MPTCP_SCHED
 	string
 	depends on (MPTCP=y)
 	default "default" if DEFAULT_SCHEDULER
+	default "roundrobin" if DEFAULT_ROUNDROBIN
 	default "default"
 

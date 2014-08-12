@@ -175,21 +175,30 @@ spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
 static struct hlist_nulls_head mptcp_reqsk_tk_htb[MPTCP_HASH_SIZE];
 spinlock_t mptcp_tk_hashlock;	/* hashtable protection */
 
-static int mptcp_reqsk_find_tk(u32 token)
+static bool mptcp_reqsk_find_tk(const u32 token)
 {
-	u32 hash = mptcp_hash_tk(token);
-	struct mptcp_request_sock *mtreqsk;
+	const u32 hash = mptcp_hash_tk(token);
+	const struct mptcp_request_sock *mtreqsk;
 	const struct hlist_nulls_node *node;
 
+begin:
 	hlist_nulls_for_each_entry_rcu(mtreqsk, node,
 				       &mptcp_reqsk_tk_htb[hash], hash_entry) {
 		if (token == mtreqsk->mptcp_loc_token)
-			return 1;
+			return true;
 	}
-	return 0;
+	/* A request-socket is destroyed by RCU. So, it might have been recycled
+	 * and put into another hash-table list. So, after the lookup we may
+	 * end up in a different list. So, we may need to restart.
+	 *
+	 * See also the comment in __inet_lookup_established.
+	 */
+	if (get_nulls_value(node) != hash)
+		goto begin;
+	return false;
 }
 
-static void mptcp_reqsk_insert_tk(struct request_sock *reqsk, u32 token)
+static void mptcp_reqsk_insert_tk(struct request_sock *reqsk, const u32 token)
 {
 	u32 hash = mptcp_hash_tk(token);
 
@@ -223,24 +232,33 @@ void mptcp_reqsk_destructor(struct request_sock *req)
 	}
 }
 
-static void __mptcp_hash_insert(struct tcp_sock *meta_tp, u32 token)
+static void __mptcp_hash_insert(struct tcp_sock *meta_tp, const u32 token)
 {
 	u32 hash = mptcp_hash_tk(token);
 	hlist_nulls_add_head_rcu(&meta_tp->tk_table, &tk_hashtable[hash]);
 	meta_tp->inside_tk_table = 1;
 }
 
-static int mptcp_find_token(u32 token)
+static bool mptcp_find_token(u32 token)
 {
-	u32 hash = mptcp_hash_tk(token);
-	struct tcp_sock *meta_tp;
+	const u32 hash = mptcp_hash_tk(token);
+	const struct tcp_sock *meta_tp;
 	const struct hlist_nulls_node *node;
 
+begin:
 	hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[hash], tk_table) {
 		if (token == meta_tp->mptcp_loc_token)
-			return 1;
+			return true;
 	}
-	return 0;
+	/* A TCP-socket is destroyed by RCU. So, it might have been recycled
+	 * and put into another hash-table list. So, after the lookup we may
+	 * end up in a different list. So, we may need to restart.
+	 *
+	 * See also the comment in __inet_lookup_established.
+	 */
+	if (get_nulls_value(node) != hash)
+		goto begin;
+	return false;
 }
 
 static void mptcp_set_key_reqsk(struct request_sock *req,
@@ -333,23 +351,41 @@ void mptcp_connect_init(struct sock *sk)
  * It is the responsibility of the caller to decrement when releasing
  * the structure.
  */
-struct sock *mptcp_hash_find(struct net *net, u32 token)
+struct sock *mptcp_hash_find(struct net *net, const u32 token)
 {
-	u32 hash = mptcp_hash_tk(token);
-	struct tcp_sock *meta_tp;
+	const u32 hash = mptcp_hash_tk(token);
+	const struct tcp_sock *meta_tp;
 	struct sock *meta_sk = NULL;
-	struct hlist_nulls_node *node;
+	const struct hlist_nulls_node *node;
 
 	rcu_read_lock();
+begin:
 	hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[hash],
 				       tk_table) {
 		meta_sk = (struct sock *)meta_tp;
 		if (token == meta_tp->mptcp_loc_token &&
-		    net_eq(net, sock_net(meta_sk)) &&
-		    atomic_inc_not_zero(&meta_sk->sk_refcnt))
-			break;
-		meta_sk = NULL;
+		    net_eq(net, sock_net(meta_sk))) {
+			if (unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
+				goto out;
+			if (unlikely(token != meta_tp->mptcp_loc_token ||
+				     !net_eq(net, sock_net(meta_sk)))) {
+				sock_gen_put(meta_sk);
+				goto begin;
+			}
+			goto found;
+		}
 	}
+	/* A TCP-socket is destroyed by RCU. So, it might have been recycled
+	 * and put into another hash-table list. So, after the lookup we may
+	 * end up in a different list. So, we may need to restart.
+	 *
+	 * See also the comment in __inet_lookup_established.
+	 */
+	if (get_nulls_value(node) != hash)
+		goto begin;
+out:
+	meta_sk = NULL;
+found:
 	rcu_read_unlock();
 	return meta_sk;
 }
@@ -1217,7 +1253,8 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 	set_mpc(tp);
 	tp->mptcp->loc_id = loc_id;
 	tp->mptcp->rem_id = rem_id;
-	tp->mptcp->last_rbuf_opti = tcp_time_stamp;
+	if (mpcb->sched_ops->init)
+		mpcb->sched_ops->init(sk);
 
 	/* The corresponding sock_put is in mptcp_sock_destruct(). It cannot be
 	 * included in mptcp_del_sock(), because the mpcb must remain alive

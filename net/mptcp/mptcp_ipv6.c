@@ -141,6 +141,36 @@ static int mptcp_v6_join_init_req(struct request_sock *req, struct sock *sk,
 	return 0;
 }
 
+static struct dst_entry *mptcp_v6_route_req(struct sock *sk, struct flowi *fl,
+					    const struct request_sock *req,
+					    bool *strict)
+{
+	struct inet_request_sock *treq = inet_rsk(req);
+	struct flowi6 fl6;
+	struct dst_entry *dst;
+
+	if (sk->sk_family == AF_INET6)
+		return tcp_request_sock_ipv6_ops.route_req(sk, fl, req, strict);
+
+	if (strict)
+		*strict = true;
+
+	memset(&fl6, 0, sizeof(fl6));
+	fl6.flowi6_proto = IPPROTO_TCP;
+	fl6.daddr = treq->ir_v6_rmt_addr;
+	fl6.saddr = treq->ir_v6_loc_addr;
+	fl6.flowlabel = 0;
+	fl6.flowi6_oif = treq->ir_iif;
+	fl6.flowi6_mark = sk->sk_mark;
+	fl6.fl6_dport = inet_rsk(req)->ir_rmt_port;
+	fl6.fl6_sport = htons(inet_rsk(req)->ir_num);
+	security_req_classify_flow(req, flowi6_to_flowi(&fl6));
+
+	dst = ip6_dst_lookup_flow(sk, &fl6, NULL);
+	if (IS_ERR(dst))
+		return NULL;
+	return dst;
+}
 
 /* Similar to tcp6_request_sock_ops */
 struct request_sock_ops mptcp6_request_sock_ops __read_mostly = {
@@ -155,7 +185,7 @@ struct request_sock_ops mptcp6_request_sock_ops __read_mostly = {
 
 static void mptcp_v6_reqsk_queue_hash_add(struct sock *meta_sk,
 					  struct request_sock *req,
-					  unsigned long timeout)
+					  const unsigned long timeout)
 {
 	const u32 h1 = inet6_synq_hash(&inet_rsk(req)->ir_v6_rmt_addr,
 				      inet_rsk(req)->ir_rmt_port,
@@ -502,6 +532,7 @@ struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *radd
 	const u32 hash = inet6_synq_hash(raddr, rport, 0, MPTCP_HASH_SIZE);
 
 	rcu_read_lock();
+begin:
 	hlist_nulls_for_each_entry_rcu(mtreq, node, &mptcp_reqsk_htb[hash],
 				       hash_entry) {
 		struct inet_request_sock *treq = inet_rsk(rev_mptcp_rsk(mtreq));
@@ -512,10 +543,19 @@ struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *radd
 		    ipv6_addr_equal(&treq->ir_v6_rmt_addr, raddr) &&
 		    ipv6_addr_equal(&treq->ir_v6_loc_addr, laddr) &&
 		    net_eq(net, sock_net(meta_sk)))
-			break;
+			goto found;
 		meta_sk = NULL;
 	}
+	/* A request-socket is destroyed by RCU. So, it might have been recycled
+	 * and put into another hash-table list. So, after the lookup we may
+	 * end up in a different list. So, we may need to restart.
+	 *
+	 * See also the comment in __inet_lookup_established.
+	 */
+	if (get_nulls_value(node) != hash)
+		goto begin;
 
+found:
 	if (meta_sk && unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
 		meta_sk = NULL;
 	rcu_read_unlock();
@@ -673,6 +713,7 @@ int mptcp_pm_v6_init(void)
 
 	mptcp_join_request_sock_ipv6_ops = tcp_request_sock_ipv6_ops;
 	mptcp_join_request_sock_ipv6_ops.init_req = mptcp_v6_join_init_req;
+	mptcp_join_request_sock_ipv6_ops.route_req = mptcp_v6_route_req;
 	mptcp_join_request_sock_ipv6_ops.queue_hash_add = mptcp_v6_reqsk_queue_hash_add;
 	mptcp_join_request_sock_ipv6_ops.send_synack = mptcp_v6_send_synack;
 

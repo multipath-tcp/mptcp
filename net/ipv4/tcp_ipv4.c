@@ -2484,6 +2484,19 @@ void tcp4_proc_exit(void)
 }
 #endif /* CONFIG_PROC_FS */
 
+#ifdef CONFIG_MPTCP
+static void tcp_v4_clear_sk(struct sock *sk, int size)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	/* we do not want to clear tk_table field, because of RCU lookups */
+	sk_prot_clear_nulls(sk, offsetof(struct tcp_sock, tk_table));
+
+	size -= offsetof(struct tcp_sock, tk_table) + sizeof(tp->tk_table);
+	memset((char *)&tp->tk_table + sizeof(tp->tk_table), 0, size);
+}
+#endif
+
 struct proto tcp_prot = {
 	.name			= "TCP",
 	.owner			= THIS_MODULE,
@@ -2530,6 +2543,9 @@ struct proto tcp_prot = {
 	.init_cgroup		= tcp_init_cgroup,
 	.destroy_cgroup		= tcp_destroy_cgroup,
 	.proto_cgroup		= tcp_proto_cgroup,
+#endif
+#ifdef CONFIG_MPTCP
+	.clear_sk		= tcp_v4_clear_sk,
 #endif
 };
 EXPORT_SYMBOL(tcp_prot);
