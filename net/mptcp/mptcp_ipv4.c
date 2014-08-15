@@ -323,7 +323,7 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	struct sock *sk;
 	struct sockaddr_in loc_in, rem_in;
 	struct socket sock;
-	int ulid_size = 0, ret;
+	int ret;
 
 	/** First, create and prepare the new socket */
 
@@ -356,8 +356,6 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	setup_timer(&tp->mptcp->mptcp_ack_timer, mptcp_ack_handler, (unsigned long)sk);
 
 	/** Then, connect the socket to the peer */
-
-	ulid_size = sizeof(struct sockaddr_in);
 	loc_in.sin_family = AF_INET;
 	rem_in.sin_family = AF_INET;
 	loc_in.sin_port = 0;
@@ -368,7 +366,7 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	loc_in.sin_addr = loc->addr;
 	rem_in.sin_addr = rem->addr;
 
-	ret = sock.ops->bind(&sock, (struct sockaddr *)&loc_in, ulid_size);
+	ret = sock.ops->bind(&sock, (struct sockaddr *)&loc_in, sizeof(struct sockaddr_in));
 	if (ret < 0) {
 		mptcp_debug("%s: MPTCP subsocket bind() failed, error %d\n",
 			    __func__, ret);
@@ -385,7 +383,7 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 		tcp_sk(meta_sk)->mpcb->pm_ops->init_subsocket_v4(sk, rem->addr);
 
 	ret = sock.ops->connect(&sock, (struct sockaddr *)&rem_in,
-				ulid_size, O_NONBLOCK);
+				sizeof(struct sockaddr_in), O_NONBLOCK);
 	if (ret < 0 && ret != -EINPROGRESS) {
 		mptcp_debug("%s: MPTCP subsocket connect() failed, error %d\n",
 			    __func__, ret);
@@ -474,5 +472,3 @@ void mptcp_pm_v4_undo(void)
 	kmem_cache_destroy(mptcp_request_sock_ops.slab);
 	kfree(mptcp_request_sock_ops.slab_name);
 }
-
-
