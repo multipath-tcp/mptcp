@@ -1915,8 +1915,19 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	struct mptcp_cb *mpcb;
 	struct mptcp_request_sock *mtreq;
 
-	if (!inet_rsk(req)->saw_mpc)
+	/* Never contained an MP_CAPABLE */
+	if (!inet_rsk(req)->mptcp_rqsk)
 		return 1;
+
+	if (!inet_rsk(req)->saw_mpc) {
+		/* Fallback to regular TCP, because we saw one SYN without
+		 * MP_CAPABLE. In tcp_check_req we continue the regular path.
+		 * But, the socket has been added to the reqsk_tk_htb, so we
+		 * must still remove it.
+		 */
+		mptcp_reqsk_remove_tk(req);
+		return 1;
+	}
 
 	/* Just set this values to pass them to mptcp_alloc_mpcb */
 	mtreq = mptcp_rsk(req);
@@ -2192,6 +2203,7 @@ void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, struct request_sock *req,
 	mtreq = mptcp_rsk(req);
 	mtreq->mptcp_mpcb = mpcb;
 	mtreq->is_sub = 1;
+	inet_rsk(req)->mptcp_rqsk = 1;
 
 	mtreq->mptcp_rem_nonce = mopt.mptcp_recv_nonce;
 
@@ -2215,6 +2227,7 @@ void mptcp_reqsk_init(struct request_sock *req, struct sk_buff *skb)
 	tcp_parse_mptcp_options(skb, &mopt);
 
 	mreq->is_sub = 0;
+	inet_rsk(req)->mptcp_rqsk = 1;
 	mreq->dss_csum = mopt.dss_csum;
 	mreq->hash_entry.pprev = NULL;
 
