@@ -2192,7 +2192,6 @@ void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, struct request_sock *req,
 	mtreq = mptcp_rsk(req);
 	mtreq->mptcp_mpcb = mpcb;
 	mtreq->is_sub = 1;
-	mtreq->hash_entry.pprev = NULL;
 
 	mtreq->mptcp_rem_nonce = mopt.mptcp_recv_nonce;
 
