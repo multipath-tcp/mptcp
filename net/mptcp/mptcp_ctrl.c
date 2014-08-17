@@ -2405,7 +2405,8 @@ void __init mptcp_init(void)
 
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
 		INIT_HLIST_NULLS_HEAD(&tk_hashtable[i], i);
-		INIT_HLIST_NULLS_HEAD(&mptcp_reqsk_htb[i], i);
+		INIT_HLIST_NULLS_HEAD(&mptcp_reqsk_htb[i],
+				      i + MPTCP_REQSK_NULLS_BASE);
 		INIT_HLIST_NULLS_HEAD(&mptcp_reqsk_tk_htb[i], i);
 	}
 
