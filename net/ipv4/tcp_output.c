@@ -1423,6 +1423,7 @@ unsigned int tcp_current_mss(struct sock *sk)
 
 	return mss_now;
 }
+EXPORT_SYMBOL(tcp_current_mss);
 
 /* Congestion window validation. (RFC2861) */
 void tcp_cwnd_validate(struct sock *sk)
