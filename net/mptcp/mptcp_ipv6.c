@@ -123,6 +123,7 @@ static int mptcp_v6_join_init_req(struct request_sock *req, struct sock *sk,
 	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 	union inet_addr addr;
 	int loc_id;
+	bool low_prio = false;
 
 	tcp_request_sock_ipv6_ops.init_req(req, sk, skb);
 
@@ -131,10 +132,11 @@ static int mptcp_v6_join_init_req(struct request_sock *req, struct sock *sk,
 						    tcp_hdr(skb)->source,
 						    tcp_hdr(skb)->dest);
 	addr.in6 = inet_rsk(req)->ir_v6_loc_addr;
-	loc_id = mpcb->pm_ops->get_local_id(AF_INET6, &addr, sock_net(sk));
+	loc_id = mpcb->pm_ops->get_local_id(AF_INET6, &addr, sock_net(sk), &low_prio);
 	if (loc_id == -1)
 		return -1;
 	mtreq->loc_id = loc_id;
+	mtreq->low_prio = low_prio;
 
 	mptcp_join_reqsk_init(mpcb, req, skb);
 

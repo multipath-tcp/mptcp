@@ -106,7 +106,8 @@ struct mptcp_request_sock {
 	u8				rem_id; /* Address-id in the MP_JOIN */
 	u8				dss_csum:1,
 					is_sub:1, /* Is this a new subflow? */
-					low_prio:1;
+					low_prio:1, /* Interface set to low-prio? */
+					rcv_low_prio:1;
 };
 
 struct mptcp_options_received {
@@ -224,7 +225,7 @@ struct mptcp_pm_ops {
 	void (*fully_established)(struct sock *meta_sk);
 	void (*new_remote_address)(struct sock *meta_sk);
 	int  (*get_local_id)(sa_family_t family, union inet_addr *addr,
-			     struct net *net);
+			     struct net *net, bool *low_prio);
 	void (*addr_signal)(struct sock *sk, unsigned *size,
 			    struct tcp_out_options *opts, struct sk_buff *skb);
 	void (*add_raddr)(struct mptcp_cb *mpcb, const union inet_addr *addr, 

@@ -1332,7 +1332,7 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 }
 
 static int full_mesh_get_local_id(sa_family_t family, union inet_addr *addr,
-				  struct net *net)
+				  struct net *net, bool *low_prio)
 {
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(net);
@@ -1345,10 +1345,13 @@ static int full_mesh_get_local_id(sa_family_t family, union inet_addr *addr,
 	index = mptcp_find_address(mptcp_local, family, addr);
 
 	if (index != -1) {
-		if (family == AF_INET)
+		if (family == AF_INET) {
 			id = mptcp_local->locaddr4[index].loc4_id;
-		else
+			*low_prio = mptcp_local->locaddr4[index].low_prio;
+		} else {
 			id = mptcp_local->locaddr6[index].loc6_id;
+			*low_prio = mptcp_local->locaddr6[index].low_prio;
+		}
 	}
 
 
