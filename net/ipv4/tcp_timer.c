@@ -611,7 +611,6 @@ static void tcp_keepalive_timer (unsigned long data)
 			goto out;
 
 		tcp_send_ack(sk);
-		icsk->icsk_backoff++;
 		icsk->icsk_retransmits++;
 
 		icsk->icsk_rto = min(icsk->icsk_rto << 1, TCP_RTO_MAX);
