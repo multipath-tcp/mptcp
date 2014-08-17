@@ -893,6 +893,13 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 	struct mptcp_cb *mpcb = tp->mpcb;
 	struct tcp_skb_cb *tcb = skb ? TCP_SKB_CB(skb) : NULL;
 
+	/* We are coming from tcp_current_mss with the meta_sk as an argument.
+	 * It does not make sense to check for the options, because when the
+	 * segment gets sent, another subflow will be chosen.
+	 */
+	if (!skb && is_meta_sk(sk))
+		return;
+
 	/* In fallback mp_fail-mode, we have to repeat it until the fallback
 	 * has been done by the sender
 	 */

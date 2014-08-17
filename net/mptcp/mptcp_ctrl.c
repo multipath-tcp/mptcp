@@ -507,12 +507,12 @@ static void mptcp_sock_destruct(struct sock *sk)
 
 	inet_sock_destruct(sk);
 
-	BUG_ON(!list_empty(&tp->mptcp->cb_list));
-
-	kmem_cache_free(mptcp_sock_cache, tp->mptcp);
-	tp->mptcp = NULL;
-
 	if (!is_meta_sk(sk) && !tp->was_meta_sk) {
+		BUG_ON(!list_empty(&tp->mptcp->cb_list));
+
+		kmem_cache_free(mptcp_sock_cache, tp->mptcp);
+		tp->mptcp = NULL;
+
 		/* Taken when mpcb pointer was set */
 		sock_put(mptcp_meta_sk(sk));
 		mptcp_mpcb_put(tp->mpcb);
@@ -1038,14 +1038,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	}
 #endif
 
-	meta_tp->mptcp = kmem_cache_zalloc(mptcp_sock_cache, GFP_ATOMIC);
-	if (!meta_tp->mptcp) {
-		kmem_cache_free(mptcp_cb_cache, mpcb);
-		sk_free(master_sk);
-		return -ENOBUFS;
-	}
-
-	INIT_LIST_HEAD(&meta_tp->mptcp->cb_list);
+	meta_tp->mptcp = NULL;
 
 	/* Store the keys and generate the peer's token */
 	mpcb->mptcp_loc_key = meta_tp->mptcp_loc_key;
@@ -1078,7 +1071,6 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	meta_tp->retrans_stamp = 0; /* Set in tcp_connect() */
 
 	meta_tp->packets_out = 0;
-	meta_tp->mptcp->snt_isn = meta_tp->write_seq; /* Initial data-sequence-number */
 	meta_icsk->icsk_probes_out = 0;
 
 	/* Set mptcp-pointers */
@@ -1089,7 +1081,6 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	mpcb->meta_sk = meta_sk;
 	mpcb->master_sk = master_sk;
 
-	meta_tp->mptcp->attached = 0;
 	meta_tp->was_meta_sk = 0;
 
 	/* Initialize the queues */
@@ -1124,7 +1115,6 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	 */
 	if (reqsk_queue_alloc(&meta_icsk->icsk_accept_queue, 32, GFP_ATOMIC)) {
 		inet_put_port(master_sk);
-		kmem_cache_free(mptcp_sock_cache, meta_tp->mptcp);
 		kmem_cache_free(mptcp_cb_cache, mpcb);
 		sk_free(master_sk);
 		return -ENOMEM;
@@ -1224,7 +1214,6 @@ struct sock *mptcp_sk_clone(const struct sock *sk, int family,
 void mptcp_fallback_meta_sk(struct sock *meta_sk)
 {
 	kfree(inet_csk(meta_sk)->icsk_accept_queue.listen_opt);
-	kmem_cache_free(mptcp_sock_cache, tcp_sk(meta_sk)->mptcp);
 	kmem_cache_free(mptcp_cb_cache, tcp_sk(meta_sk)->mpcb);
 }
 
