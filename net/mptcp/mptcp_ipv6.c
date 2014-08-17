@@ -554,7 +554,7 @@ begin:
 	 *
 	 * See also the comment in __inet_lookup_established.
 	 */
-	if (get_nulls_value(node) != hash)
+	if (get_nulls_value(node) != hash + MPTCP_REQSK_NULLS_BASE)
 		goto begin;
 
 found:

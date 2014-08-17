@@ -732,6 +732,14 @@ extern spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
  */
 extern spinlock_t mptcp_tk_hashlock;	/* hashtable protection */
 
+/* Request-sockets can be hashed in the tk_htb for collision-detection or in
+ * the regular htb for join-connections. We need to define different NULLS
+ * values so that we can correctly detect a request-socket that has been
+ * recycled. See also c25eb3bfb9729.
+ */
+#define MPTCP_REQSK_NULLS_BASE (1U << 29)
+
+
 void mptcp_data_ready(struct sock *sk, int bytes);
 void mptcp_write_space(struct sock *sk);
 
