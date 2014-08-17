@@ -125,6 +125,13 @@ static int mptcp_v6_join_init_req(struct request_sock *req, struct sock *sk,
 	int loc_id;
 	bool low_prio = false;
 
+	/* We need to do this as early as possible. Because, if we fail later
+	 * (e.g., get_local_id), then reqsk_free tries to remove the
+	 * request-socket from the htb in mptcp_hash_request_remove as pprev
+	 * may be different from NULL.
+	 */
+	mtreq->hash_entry.pprev = NULL;
+
 	tcp_request_sock_ipv6_ops.init_req(req, sk, skb);
 
 	mtreq->mptcp_loc_nonce = mptcp_v6_get_nonce(ipv6_hdr(skb)->saddr.s6_addr32,
