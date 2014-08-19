@@ -309,6 +309,7 @@ static struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
 	struct sk_buff *skb = __mptcp_next_segment(meta_sk, reinject);
 	unsigned int mss_now;
 	struct tcp_sock *subtp;
+	u16 gso_max_segs;
 	u32 max_len, max_segs, window, needed;
 
 	/* As we set it, we have to reset it as well. */
@@ -332,6 +333,9 @@ static struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
 			return NULL;
 	}
 
+	/* No splitting required, as we will only send one single segment */
+	if (skb->len <= mss_now)
+		return skb;
 
 	/* The following is similar to tcp_mss_split_point, but
 	 * we do not care about nagle, because we will anyways
@@ -340,8 +344,11 @@ static struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
 	 * So, we first limit according to the cwnd/gso-size and then according
 	 * to the subflow's window.
 	 */
-	max_segs = min_t(unsigned int, tcp_cwnd_test(subtp, skb),
-			 (*subsk)->sk_gso_max_segs);
+
+	gso_max_segs = (*subsk)->sk_gso_max_segs;
+	if (!gso_max_segs) /* No gso supported on the subflow's NIC */
+		gso_max_segs = 1;
+	max_segs = min_t(unsigned int, tcp_cwnd_test(subtp, skb), gso_max_segs);
 	if (!max_segs)
 		return NULL;
 
