@@ -1350,11 +1350,11 @@ static inline void set_meta_funcs(struct tcp_sock *tp)
 
 static inline bool mptcp_is_data_fin(const struct sk_buff *skb)
 {
-	return 0;
+	return false;
 }
 static inline bool mptcp_is_data_seq(const struct sk_buff *skb)
 {
-	return 0;
+	return false;
 }
 static inline struct sock *mptcp_meta_sk(const struct sock *sk)
 {
