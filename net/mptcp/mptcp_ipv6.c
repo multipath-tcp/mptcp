@@ -81,7 +81,7 @@ u64 mptcp_v6_get_key(const __be32 *saddr, const __be32 *daddr,
 	secret[4] = mptcp_secret[4] +
 		    (((__force u16)sport << 16) + (__force u16)dport);
 	secret[5] = mptcp_seed++;
-	for (i = 5; i < MD5_MESSAGE_BYTES / 4; i++)
+	for (i = 6; i < MD5_MESSAGE_BYTES / 4; i++)
 		secret[i] = mptcp_secret[i];
 
 	md5_transform(hash, secret);
