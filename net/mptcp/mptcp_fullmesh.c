@@ -1106,7 +1106,7 @@ static void full_mesh_add_raddr(struct mptcp_cb *mpcb,
 		mptcp_addv6_raddr(mpcb, &addr->in6, port, id);
 }
 
-static void full_mesh_new_session(struct sock *meta_sk, struct sock *sk)
+static void full_mesh_new_session(struct sock *meta_sk)
 {
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
@@ -1175,7 +1175,7 @@ static void full_mesh_new_session(struct sock *meta_sk, struct sock *sk)
 		fmp->announced_addrs_v6 |= (1 << index);
 
 	for (i = fmp->add_addr; i && fmp->add_addr; i--)
-		tcp_send_ack(sk);
+		tcp_send_ack(mpcb->master_sk);
 
 	return;
 
