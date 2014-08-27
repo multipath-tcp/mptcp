@@ -261,8 +261,6 @@ struct mptcp_cb {
 	/* list of sockets that need a call to release_cb */
 	struct hlist_head callback_list;
 
-	atomic_t	mpcb_refcnt;
-
 	/* High-order bits of 64-bit sequence numbers */
 	u32 snd_high_order[2];
 	u32 rcv_high_order[2];
@@ -292,12 +290,6 @@ struct mptcp_cb {
 
 	struct mptcp_sched_ops *sched_ops;
 
-	/* Mutex needed, because otherwise mptcp_close will complain that the
-	 * socket is owned by the user.
-	 * E.g., mptcp_sub_close_wq is taking the meta-lock.
-	 */
-	struct mutex mpcb_mutex;
-
 	/* Master socket, also part of the connection_list, this
 	 * socket is the one that the application sees.
 	 */
@@ -316,6 +308,15 @@ struct mptcp_cb {
 	u8		 dfin_path_index;
 
 	struct list_head tw_list;
+
+	/***** Start of fields, used for subflow establishment and closure */
+	atomic_t	mpcb_refcnt;
+
+	/* Mutex needed, because otherwise mptcp_close will complain that the
+	 * socket is owned by the user.
+	 * E.g., mptcp_sub_close_wq is taking the meta-lock.
+	 */
+	struct mutex	mpcb_mutex;
 
 	/***** Start of fields, used for subflow establishment */
 	struct sock *meta_sk;
