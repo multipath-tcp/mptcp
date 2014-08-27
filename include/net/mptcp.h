@@ -276,6 +276,7 @@ struct mptcp_cb {
 	u16	send_infinite_mapping:1,
 		in_time_wait:1,
 		list_rcvd:1, /* XXX TO REMOVE */
+		addr_signal:1, /* Path-manager wants us to call addr_signal */
 		dss_csum:1,
 		server_side:1,
 		infinite_mapping_rcv:1,

@@ -518,6 +518,7 @@ static void announce_remove_addr(u8 addr_id, struct sock *meta_sk)
 	struct sock *sk = mptcp_select_ack_sock(meta_sk);
 
 	fmp->remove_addrs |= (1 << addr_id);
+	mpcb->addr_signal = 1;
 
 	if (sk)
 		tcp_send_ack(sk);
@@ -746,6 +747,7 @@ duno:
 
 			if (event->code == MPTCP_EVENT_ADD) {
 				fmp->add_addr++;
+				mpcb->addr_signal = 1;
 
 				sk = mptcp_select_ack_sock(meta_sk);
 				if (sk)
@@ -1180,6 +1182,7 @@ static void full_mesh_new_session(struct sock *meta_sk)
 			continue;
 
 		fmp->add_addr++;
+		mpcb->addr_signal = 1;
 	}
 
 #if IS_ENABLED(CONFIG_IPV6)
@@ -1191,6 +1194,7 @@ static void full_mesh_new_session(struct sock *meta_sk)
 			continue;
 
 		fmp->add_addr++;
+		mpcb->addr_signal = 1;
 	}
 #endif
 
@@ -1274,6 +1278,7 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 
 		if (!found) {
 			fmp->add_addr++;
+			mpcb->addr_signal = 1;
 
 			sk = mptcp_select_ack_sock(meta_sk);
 			if (sk)
@@ -1309,6 +1314,7 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 
 		if (!found) {
 			fmp->add_addr++;
+			mpcb->addr_signal = 1;
 
 			sk = mptcp_select_ack_sock(meta_sk);
 			if (sk)
@@ -1399,6 +1405,8 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 	int remove_addr_len;
 	u8 unannouncedv4, unannouncedv6;
 
+	mpcb->addr_signal = 0;
+
 	if (likely(!fmp->add_addr))
 		goto remove_addr;
 
@@ -1450,11 +1458,11 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 
 remove_addr:
 	if (likely(!fmp->remove_addrs))
-		return;
+		goto exit;
 
 	remove_addr_len = mptcp_sub_len_remove_addr_align(fmp->remove_addrs);
 	if (MAX_TCP_OPTION_SPACE - *size < remove_addr_len)
-		return;
+		goto exit;
 
 	opts->options |= OPTION_MPTCP;
 	opts->mptcp_options |= OPTION_REMOVE_ADDR;
@@ -1462,6 +1470,9 @@ remove_addr:
 	*size += remove_addr_len;
 	if (skb)
 		fmp->remove_addrs = 0;
+
+exit:
+	mpcb->addr_signal = !!(fmp->add_addr || fmp->remove_addrs);
 }
 
 static void full_mesh_rem_raddr(struct mptcp_cb *mpcb, u8 rem_id)

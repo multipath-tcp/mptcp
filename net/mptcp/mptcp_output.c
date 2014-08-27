@@ -981,7 +981,7 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		*size += MPTCP_SUB_LEN_DSS_ALIGN;
 	}
 
-	if (mpcb->pm_ops->addr_signal)
+	if (unlikely(mpcb->addr_signal) && mpcb->pm_ops->addr_signal)
 		mpcb->pm_ops->addr_signal(sk, size, opts, skb);
 
 	if (unlikely(tp->mptcp->send_mp_prio) &&
