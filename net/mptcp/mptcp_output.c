@@ -36,8 +36,9 @@
 #include <net/mptcp_v6.h>
 #include <net/sock.h>
 
-const int mptcp_dss_len = MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_ACK_ALIGN +
-	MPTCP_SUB_LEN_SEQ_ALIGN;
+static const int mptcp_dss_len = MPTCP_SUB_LEN_DSS_ALIGN +
+				 MPTCP_SUB_LEN_ACK_ALIGN +
+				 MPTCP_SUB_LEN_SEQ_ALIGN;
 
 static inline int mptcp_sub_len_remove_addr(u16 bitfield)
 {

@@ -270,7 +270,7 @@ found:
 	return NULL;
 }
 
-struct mptcp_sched_ops mptcp_sched_rr = {
+static struct mptcp_sched_ops mptcp_sched_rr = {
 	.get_subflow = rr_get_available_subflow,
 	.next_segment = mptcp_rr_next_segment,
 	.name = "roundrobin",
