@@ -793,7 +793,7 @@ int mptcp_select_size(const struct sock *meta_sk, bool sg);
 void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn);
 void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 		     u32 *hash_out);
-void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk);
+void mptcp_clean_rtx_infinite(const struct sk_buff *skb, struct sock *sk);
 void mptcp_fin(struct sock *meta_sk);
 void mptcp_retransmit_timer(struct sock *meta_sk);
 int mptcp_write_wakeup(struct sock *meta_sk);
@@ -806,13 +806,14 @@ struct sock *mptcp_sk_clone(const struct sock *sk, int family, const gfp_t prior
 void mptcp_ack_handler(unsigned long);
 int mptcp_check_rtt(const struct tcp_sock *tp, int time);
 int mptcp_check_snd_buf(const struct tcp_sock *tp);
-int mptcp_handle_options(struct sock *sk, const struct tcphdr *th, struct sk_buff *skb);
+int mptcp_handle_options(struct sock *sk, const struct tcphdr *th,
+			 const struct sk_buff *skb);
 void __init mptcp_init(void);
 int mptcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len);
 void mptcp_destroy_sock(struct sock *sk);
 int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
-				    struct sk_buff *skb,
-				    struct mptcp_options_received *mopt);
+				    const struct sk_buff *skb,
+				    const struct mptcp_options_received *mopt);
 unsigned int mptcp_xmit_size_goal(struct sock *meta_sk, u32 mss_now,
 				  int large_allowed);
 int mptcp_init_tw_sock(struct sock *sk, struct tcp_timewait_sock *tw);
@@ -823,12 +824,13 @@ bool mptcp_should_expand_sndbuf(const struct sock *sk);
 int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb);
 void mptcp_tsq_flags(struct sock *sk);
 void mptcp_tsq_sub_deferred(struct sock *meta_sk);
-struct mp_join *mptcp_find_join(struct sk_buff *skb);
+struct mp_join *mptcp_find_join(const struct sk_buff *skb);
 void mptcp_hash_remove_bh(struct tcp_sock *meta_tp);
 void mptcp_hash_remove(struct tcp_sock *meta_tp);
 struct sock *mptcp_hash_find(struct net *net, u32 token);
 int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw);
-int mptcp_do_join_short(struct sk_buff *skb, struct mptcp_options_received *mopt,
+int mptcp_do_join_short(struct sk_buff *skb,
+			const struct mptcp_options_received *mopt,
 			struct net *net);
 void mptcp_reqsk_destructor(struct request_sock *req);
 void mptcp_reqsk_new_mptcp(struct request_sock *req,

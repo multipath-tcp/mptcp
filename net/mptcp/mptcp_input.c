@@ -54,9 +54,10 @@ static inline void mptcp_become_fully_estab(struct sock *sk)
 }
 
 /* Similar to tcp_tso_acked without any memory accounting */
-static inline int mptcp_tso_acked_reinject(struct sock *meta_sk, struct sk_buff *skb)
+static inline int mptcp_tso_acked_reinject(const struct sock *meta_sk,
+					   struct sk_buff *skb)
 {
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	u32 packets_acked, len;
 
 	BUG_ON(!after(TCP_SKB_CB(skb)->end_seq, meta_tp->snd_una));
@@ -180,7 +181,7 @@ static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 				   u16 data_len)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *tp = tcp_sk(sk);
-	struct tcphdr *th = tcp_hdr(skb);
+	const struct tcphdr *th = tcp_hdr(skb);
 
 	/* State-machine handling if FIN has been enqueued and he has
 	 * been acked (snd_una == write_seq) - it's important that this
@@ -377,10 +378,10 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 	return ans;
 }
 
-static inline void mptcp_prepare_skb(struct sk_buff *skb, struct sk_buff *next,
-				     struct sock *sk)
+static inline void mptcp_prepare_skb(struct sk_buff *skb,
+				     const struct sock *sk)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
+	const struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 	u32 inc = 0;
 
@@ -417,7 +418,8 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb, struct sk_buff *next,
  * @return: 1 if the segment has been eaten and can be suppressed,
  *          otherwise 0.
  */
-static inline int mptcp_direct_copy(struct sk_buff *skb, struct sock *meta_sk)
+static inline int mptcp_direct_copy(const struct sk_buff *skb,
+				    struct sock *meta_sk)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	int chunk = min_t(unsigned int, skb->len, meta_tp->ucopy.len);
@@ -760,7 +762,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 static inline bool mptcp_sequence(const struct tcp_sock *meta_tp,
 				 u64 data_seq, u64 end_data_seq)
 {
-	struct mptcp_cb *mpcb = meta_tp->mpcb;
+	const struct mptcp_cb *mpcb = meta_tp->mpcb;
 	u64 rcv_wup64;
 
 	/* Wrap-around? */
@@ -895,7 +897,7 @@ static int mptcp_queue_skb(struct sock *sk)
 		/* Seg's have to go to the meta-ofo-queue */
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
 			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
-			mptcp_prepare_skb(tmp1, tmp, sk);
+			mptcp_prepare_skb(tmp1, sk);
 			__skb_unlink(tmp1, &sk->sk_receive_queue);
 			/* MUST be done here, because fragstolen may be true later.
 			 * Then, kfree_skb_partial will not account the memory.
@@ -922,7 +924,7 @@ static int mptcp_queue_skb(struct sock *sk)
 			u32 old_rcv_nxt = meta_tp->rcv_nxt;
 
 			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
-			mptcp_prepare_skb(tmp1, tmp, sk);
+			mptcp_prepare_skb(tmp1, sk);
 			__skb_unlink(tmp1, &sk->sk_receive_queue);
 			/* MUST be done here, because fragstolen may be true.
 			 * Then, kfree_skb_partial will not account the memory.
@@ -1069,7 +1071,7 @@ exit:
 
 int mptcp_check_req(struct sk_buff *skb, struct net *net)
 {
-	struct tcphdr *th = tcp_hdr(skb);
+	const struct tcphdr *th = tcp_hdr(skb);
 	struct sock *meta_sk = NULL;
 
 	/* MPTCP structures not initialized */
@@ -1113,9 +1115,9 @@ int mptcp_check_req(struct sk_buff *skb, struct net *net)
 	return 1;
 }
 
-struct mp_join *mptcp_find_join(struct sk_buff *skb)
+struct mp_join *mptcp_find_join(const struct sk_buff *skb)
 {
-	struct tcphdr *th = tcp_hdr(skb);
+	const struct tcphdr *th = tcp_hdr(skb);
 	unsigned char *ptr;
 	int length = (th->doff * 4) - sizeof(struct tcphdr);
 
@@ -1150,7 +1152,7 @@ struct mp_join *mptcp_find_join(struct sk_buff *skb)
 
 int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 {
-	struct mptcp_cb *mpcb;
+	const struct mptcp_cb *mpcb;
 	struct sock *meta_sk;
 	u32 token;
 	struct mp_join *join_opt = mptcp_find_join(skb);
@@ -1214,7 +1216,8 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 	return 1;
 }
 
-int mptcp_do_join_short(struct sk_buff *skb, struct mptcp_options_received *mopt,
+int mptcp_do_join_short(struct sk_buff *skb,
+			const struct mptcp_options_received *mopt,
 			struct net *net)
 {
 	struct sock *meta_sk;
@@ -1519,7 +1522,7 @@ no_queue:
 	return;
 }
 
-void mptcp_clean_rtx_infinite(struct sk_buff *skb, struct sock *sk)
+void mptcp_clean_rtx_infinite(const struct sk_buff *skb, struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = tcp_sk(mptcp_meta_sk(sk));
 
@@ -2026,7 +2029,8 @@ static inline void mptcp_path_array_check(struct sock *meta_sk)
 	}
 }
 
-int mptcp_handle_options(struct sock *sk, const struct tcphdr *th, struct sk_buff *skb)
+int mptcp_handle_options(struct sock *sk, const struct tcphdr *th,
+			 const struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_options_received *mopt = &tp->mptcp->rx_opt;
@@ -2105,8 +2109,8 @@ int mptcp_handle_options(struct sock *sk, const struct tcphdr *th, struct sk_buf
  *	    0 - everything is fine - continue
  */
 int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
-				    struct sk_buff *skb,
-				    struct mptcp_options_received *mopt)
+				    const struct sk_buff *skb,
+				    const struct mptcp_options_received *mopt)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
@@ -2176,9 +2180,9 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 
 bool mptcp_should_expand_sndbuf(const struct sock *sk)
 {
-	struct sock *sk_it;
-	struct sock *meta_sk = mptcp_meta_sk(sk);
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	const struct sock *sk_it;
+	const struct sock *meta_sk = mptcp_meta_sk(sk);
+	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	int cnt_backups = 0;
 	int backup_available = 0;
 
