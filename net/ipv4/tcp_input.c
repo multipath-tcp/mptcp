@@ -288,7 +288,7 @@ static void tcp_sndbuf_expand(struct sock *sk)
 		/* MPTCP: ok, the subflow sndbuf has grown, reflect
 		 * this in the aggregate buffer.*/
 		if (mptcp(tp) && old_sndbuf != sk->sk_sndbuf)
-			mptcp_update_sndbuf(tp->mpcb);
+			mptcp_update_sndbuf(tp);
 	}
 }
 

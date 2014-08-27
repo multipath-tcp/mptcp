@@ -1578,11 +1578,12 @@ EXPORT_SYMBOL(mptcp_sub_force_close);
 /* Update the mpcb send window, based on the contributions
  * of each subflow
  */
-void mptcp_update_sndbuf(struct mptcp_cb *mpcb)
+void mptcp_update_sndbuf(const struct tcp_sock *tp)
 {
-	struct sock *meta_sk = mpcb->meta_sk, *sk;
+	struct sock *meta_sk = tp->meta_sk, *sk;
 	int new_sndbuf = 0, old_sndbuf = meta_sk->sk_sndbuf;
-	mptcp_for_each_sk(mpcb, sk) {
+
+	mptcp_for_each_sk(tp->mpcb, sk) {
 		if (!mptcp_sk_can_send(sk))
 			continue;
 
