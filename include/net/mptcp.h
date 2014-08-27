@@ -284,23 +284,9 @@ struct mptcp_cb {
 
 	struct sk_buff_head reinject_queue;
 
-#define MPTCP_PM_SIZE 608
-	u8 mptcp_pm[MPTCP_PM_SIZE] __aligned(8);
-	struct mptcp_pm_ops *pm_ops;
-
 	struct mptcp_sched_ops *sched_ops;
 
-	/* Master socket, also part of the connection_list, this
-	 * socket is the one that the application sees.
-	 */
-	struct sock *master_sk;
-
 	u64	csum_cutoff_seq;
-
-	__u64	mptcp_loc_key;
-	__u32	mptcp_loc_token;
-	__u64	mptcp_rem_key;
-	__u32	mptcp_rem_token;
 
 	/***** Start of fields, used for connection closure */
 	spinlock_t	 tw_lock;
@@ -320,6 +306,20 @@ struct mptcp_cb {
 
 	/***** Start of fields, used for subflow establishment */
 	struct sock *meta_sk;
+
+	/* Master socket, also part of the connection_list, this
+	 * socket is the one that the application sees.
+	 */
+	struct sock *master_sk;
+
+	__u64	mptcp_loc_key;
+	__u64	mptcp_rem_key;
+	__u32	mptcp_loc_token;
+	__u32	mptcp_rem_token;
+
+#define MPTCP_PM_SIZE 608
+	u8 mptcp_pm[MPTCP_PM_SIZE] __aligned(8);
+	struct mptcp_pm_ops *pm_ops;
 
 	/* Create a new subflow - necessary because the meta-sk may be IPv4, but
 	 * the new subflow can be IPv6
