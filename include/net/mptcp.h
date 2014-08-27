@@ -155,7 +155,7 @@ struct mptcp_options_received {
 
 struct mptcp_tcp_sock {
 	struct tcp_sock	*next;		/* Next subflow socket */
-	struct list_head cb_list;
+	struct hlist_node cb_list;
 	struct mptcp_options_received rx_opt;
 
 	 /* Those three fields record the current mapping */
@@ -261,7 +261,7 @@ struct mptcp_cb {
 	/* list of sockets in this multipath connection */
 	struct tcp_sock *connection_list;
 	/* list of sockets that need a call to release_cb */
-	struct list_head callback_list;
+	struct hlist_head callback_list;
 
 	spinlock_t	 tw_lock;
 	struct list_head tw_list;

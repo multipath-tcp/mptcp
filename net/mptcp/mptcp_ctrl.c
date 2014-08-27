@@ -508,7 +508,7 @@ static void mptcp_sock_destruct(struct sock *sk)
 	inet_sock_destruct(sk);
 
 	if (!is_meta_sk(sk) && !tp->was_meta_sk) {
-		BUG_ON(!list_empty(&tp->mptcp->cb_list));
+		BUG_ON(!hlist_unhashed(&tp->mptcp->cb_list));
 
 		kmem_cache_free(mptcp_sock_cache, tp->mptcp);
 		tp->mptcp = NULL;
@@ -1150,7 +1150,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	INIT_LIST_HEAD(&mpcb->tw_list);
 	spin_lock_init(&mpcb->tw_lock);
 
-	INIT_LIST_HEAD(&mpcb->callback_list);
+	INIT_HLIST_HEAD(&mpcb->callback_list);
 
 	mptcp_mpcb_inherit_sockopts(meta_sk, master_sk);
 
@@ -1234,7 +1234,7 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 		return -EPERM;
 	}
 
-	INIT_LIST_HEAD(&tp->mptcp->cb_list);
+	INIT_HLIST_NODE(&tp->mptcp->cb_list);
 
 	tp->mptcp->tp = tp;
 	tp->mpcb = mpcb;
@@ -2145,8 +2145,8 @@ void mptcp_tsq_flags(struct sock *sk)
 	if (is_meta_sk(sk))
 		return;
 
-	if (list_empty(&tp->mptcp->cb_list)) {
-		list_add(&tp->mptcp->cb_list, &tp->mpcb->callback_list);
+	if (hlist_unhashed(&tp->mptcp->cb_list)) {
+		hlist_add_head(&tp->mptcp->cb_list, &tp->mpcb->callback_list);
 		/* We need to hold it here, as the sock_hold is not assured
 		 * by the release_sock as it is done in regular TCP.
 		 *
@@ -2163,16 +2163,17 @@ void mptcp_tsq_flags(struct sock *sk)
 void mptcp_tsq_sub_deferred(struct sock *meta_sk)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct mptcp_tcp_sock *mptcp, *tmp;
+	struct mptcp_tcp_sock *mptcp;
+	struct hlist_node *tmp;
 
 	BUG_ON(!is_meta_sk(meta_sk) && !meta_tp->was_meta_sk);
 
 	__sock_put(meta_sk);
-	list_for_each_entry_safe(mptcp, tmp, &meta_tp->mpcb->callback_list, cb_list) {
+	hlist_for_each_entry_safe(mptcp, tmp, &meta_tp->mpcb->callback_list, cb_list) {
 		struct tcp_sock *tp = mptcp->tp;
 		struct sock *sk = (struct sock *)tp;
 
-		list_del_init(&mptcp->cb_list);
+		hlist_del_init(&mptcp->cb_list);
 		sk->sk_prot->release_cb(sk);
 		/* Final sock_put (cfr. mptcp_tsq_flags */
 		sock_put(sk);
