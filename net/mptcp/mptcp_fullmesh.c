@@ -100,6 +100,33 @@ static struct fullmesh_priv *fullmesh_get_priv(const struct mptcp_cb *mpcb)
 	return (struct fullmesh_priv *)&mpcb->mptcp_pm[0];
 }
 
+/* Find the first free index in the bitfield */
+static int __mptcp_find_free_index(u8 bitfield, u8 base)
+{
+	int i;
+
+	/* There are anyways no free bits... */
+	if (bitfield == 0xff)
+		goto exit;
+
+	i = ffs(~(bitfield >> base)) - 1;
+	if (i < 0)
+		goto exit;
+
+	/* No free bits when starting at base, try from 0 on */
+	if (i + base >= sizeof(bitfield) * 8)
+		return __mptcp_find_free_index(bitfield, 0);
+
+	return i + base;
+exit:
+	return -1;
+}
+
+static int mptcp_find_free_index(u8 bitfield)
+{
+	return __mptcp_find_free_index(bitfield, 0);
+}
+
 static void mptcp_addv4_raddr(struct mptcp_cb *mpcb,
 			      const struct in_addr *addr,
 			      __be16 port, u8 id)

@@ -1250,34 +1250,6 @@ static inline bool mptcp_fallback_infinite(struct sock *sk, int flag)
 	return false;
 }
 
-/* Find the first free index in the bitfield */
-static inline int __mptcp_find_free_index(u8 bitfield, u8 base)
-{
-	int i;
-	mptcp_for_each_bit_unset(bitfield >> base, i) {
-		/* We wrapped at the bitfield - try from 0 on */
-		if (i + base >= sizeof(bitfield) * 8) {
-			mptcp_for_each_bit_unset(bitfield, i) {
-				if (i >= sizeof(bitfield) * 8)
-					goto exit;
-				return i;
-			}
-			goto exit;
-		}
-		if (i + base >= sizeof(bitfield) * 8)
-			break;
-
-		return i + base;
-	}
-exit:
-	return -1;
-}
-
-static inline int mptcp_find_free_index(u8 bitfield)
-{
-	return __mptcp_find_free_index(bitfield, 0);
-}
-
 /* Find the first index whose bit in the bit-field == 0 */
 static inline u8 mptcp_set_new_pathindex(struct mptcp_cb *mpcb)
 {
