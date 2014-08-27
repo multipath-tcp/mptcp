@@ -261,10 +261,6 @@ struct mptcp_cb {
 	/* list of sockets that need a call to release_cb */
 	struct hlist_head callback_list;
 
-	spinlock_t	 tw_lock;
-	struct list_head tw_list;
-	unsigned char	 mptw_state;
-
 	atomic_t	mpcb_refcnt;
 
 	/* High-order bits of 64-bit sequence numbers */
@@ -290,8 +286,6 @@ struct mptcp_cb {
 
 	struct sk_buff_head reinject_queue;
 
-	u8 dfin_path_index;
-
 #define MPTCP_PM_SIZE 608
 	u8 mptcp_pm[MPTCP_PM_SIZE] __aligned(8);
 	struct mptcp_pm_ops *pm_ops;
@@ -315,6 +309,13 @@ struct mptcp_cb {
 	__u32	mptcp_loc_token;
 	__u64	mptcp_rem_key;
 	__u32	mptcp_rem_token;
+
+	/***** Start of fields, used for connection closure */
+	spinlock_t	 tw_lock;
+	unsigned char	 mptw_state;
+	u8		 dfin_path_index;
+
+	struct list_head tw_list;
 
 	/***** Start of fields, used for subflow establishment */
 	struct sock *meta_sk;
