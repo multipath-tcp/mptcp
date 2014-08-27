@@ -282,9 +282,13 @@ struct mptcp_cb {
 	u8 cnt_subflows;
 	u8 cnt_established;
 
-	struct sk_buff_head reinject_queue;
-
 	struct mptcp_sched_ops *sched_ops;
+
+	struct sk_buff_head reinject_queue;
+	/* First cache-line boundary is here minus 8 bytes. But from the
+	 * reinject-queue only the next and prev pointers are regularly
+	 * accessed. Thus, the whole data-path is on a single cache-line.
+	 */
 
 	u64	csum_cutoff_seq;
 
