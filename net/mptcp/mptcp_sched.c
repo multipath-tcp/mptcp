@@ -213,7 +213,7 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 		goto retrans;
 
 	/* Only penalize again after an RTT has elapsed */
-	if (tcp_time_stamp - dsp->last_rbuf_opti < tp->srtt >> 3)
+	if (tcp_time_stamp - dsp->last_rbuf_opti < usecs_to_jiffies(tp->srtt_us >> 3))
 		goto retrans;
 
 	/* Half the cwnd of the slow flow */
