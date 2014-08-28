@@ -9,6 +9,7 @@
 #include <linux/list.h>
 #include <linux/sysctl.h>
 
+#include <net/flow.h>
 #include <net/netns/core.h>
 #include <net/netns/mib.h>
 #include <net/netns/unix.h>
@@ -16,6 +17,7 @@
 #include <net/netns/ipv4.h>
 #include <net/netns/ipv6.h>
 #include <net/netns/mptcp.h>
+#include <net/netns/ieee802154_6lowpan.h>
 #include <net/netns/sctp.h>
 #include <net/netns/dccp.h>
 #include <net/netns/netfilter.h>
@@ -94,6 +96,9 @@ struct net {
 #if IS_ENABLED(CONFIG_MPTCP)
 	struct netns_mptcp	mptcp;
 #endif
+#if IS_ENABLED(CONFIG_IEEE802154_6LOWPAN)
+	struct netns_ieee802154_lowpan	ieee802154_lowpan;
+#endif
 #if defined(CONFIG_IP_SCTP) || defined(CONFIG_IP_SCTP_MODULE)
 	struct netns_sctp	sctp;
 #endif
@@ -130,14 +135,6 @@ struct net {
 	struct sock		*diag_nlsk;
 	atomic_t		fnhe_genid;
 };
-
-/*
- * ifindex generation is per-net namespace, and loopback is
- * always the 1st device in ns (see net_dev_init), thus any
- * loopback device should get ifindex 1
- */
-
-#define LOOPBACK_IFINDEX	1
 
 #include <linux/seq_file_net.h>
 

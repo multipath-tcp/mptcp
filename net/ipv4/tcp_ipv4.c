@@ -442,7 +442,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 			break;
 
 		icsk->icsk_backoff--;
-		inet_csk(sk)->icsk_rto = (tp->srtt ? __tcp_set_rto(tp) :
+		inet_csk(sk)->icsk_rto = (tp->srtt_us ? __tcp_set_rto(tp) :
 			TCP_TIMEOUT_INIT) << icsk->icsk_backoff;
 		tcp_bound_rto(sk);
 
@@ -899,8 +899,6 @@ bool tcp_syn_flood_action(struct sock *sk,
 	const char *msg = "Dropping request";
 	bool want_cookie = false;
 	struct listen_sock *lopt;
-
-
 
 #ifdef CONFIG_SYN_COOKIES
 	if (sysctl_tcp_syncookies) {
