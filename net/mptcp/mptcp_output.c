@@ -1605,22 +1605,22 @@ int mptcp_select_size(const struct sock *meta_sk, bool sg)
 int mptcp_check_snd_buf(const struct tcp_sock *tp)
 {
 	struct sock *sk;
-	u32 rtt_max = tp->srtt;
+	u32 rtt_max = tp->srtt_us;
 	u64 bw_est;
 
-	if (!tp->srtt)
+	if (!tp->srtt_us)
 		return tp->reordering + 1;
 
 	mptcp_for_each_sk(tp->mpcb, sk) {
 		if (!mptcp_sk_can_send(sk))
 			continue;
 
-		if (rtt_max < tcp_sk(sk)->srtt)
-			rtt_max = tcp_sk(sk)->srtt;
+		if (rtt_max < tcp_sk(sk)->srtt_us)
+			rtt_max = tcp_sk(sk)->srtt_us;
 	}
 
 	bw_est = div64_u64(((u64)tp->snd_cwnd * rtt_max) << 16,
-				(u64)tp->srtt);
+				(u64)tp->srtt_us);
 
 	return max_t(unsigned int, (u32)(bw_est >> 16),
 			tp->reordering + 1);

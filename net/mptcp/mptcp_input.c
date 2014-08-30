@@ -1002,7 +1002,7 @@ next:
 	return data_queued ? -1 : -2;
 }
 
-void mptcp_data_ready(struct sock *sk, int bytes)
+void mptcp_data_ready(struct sock *sk)
 {
 	struct sock *meta_sk = mptcp_meta_sk(sk);
 	struct sk_buff *skb, *tmp;
@@ -1065,7 +1065,7 @@ exit:
 	}
 
 	if (queued == -1 && !sock_flag(meta_sk, SOCK_DEAD))
-		meta_sk->sk_data_ready(meta_sk, 0);
+		meta_sk->sk_data_ready(meta_sk);
 }
 
 

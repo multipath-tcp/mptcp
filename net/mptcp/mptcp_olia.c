@@ -37,7 +37,7 @@ struct mptcp_olia {
 
 static inline int mptcp_olia_sk_can_send(const struct sock *sk)
 {
-	return mptcp_sk_can_send(sk) && tcp_sk(sk)->srtt;
+	return mptcp_sk_can_send(sk) && tcp_sk(sk)->srtt_us;
 }
 
 static inline u64 mptcp_olia_scale(u64 val, int scale)
@@ -74,7 +74,7 @@ static u64 mptcp_get_rate(struct mptcp_cb *mpcb , u32 path_rtt)
 
 		tmp_cwnd = mptcp_get_crt_cwnd(sk);
 		scaled_num = mptcp_olia_scale(tmp_cwnd, scale) * path_rtt;
-		rate += div_u64(scaled_num , tp->srtt);
+		rate += div_u64(scaled_num , tp->srtt_us);
 	}
 	rate *= rate;
 	return rate;
@@ -120,7 +120,7 @@ static void mptcp_get_epsilon(struct mptcp_cb *mpcb)
 		if (!mptcp_olia_sk_can_send(sk))
 			continue;
 
-		tmp_rtt = (u64)tp->srtt * tp->srtt;
+		tmp_rtt = (u64)tp->srtt_us * tp->srtt_us;
 		/* TODO - check here and rename variables */
 		tmp_int = max(ca->mptcp_loss3 - ca->mptcp_loss2,
 			      ca->mptcp_loss2 - ca->mptcp_loss1);
@@ -146,7 +146,7 @@ static void mptcp_get_epsilon(struct mptcp_cb *mpcb)
 		if (tmp_cwnd == max_cwnd) {
 			M++;
 		} else {
-			tmp_rtt = (u64)tp->srtt * tp->srtt;
+			tmp_rtt = (u64)tp->srtt_us * tp->srtt_us;
 			tmp_int = max(ca->mptcp_loss3 - ca->mptcp_loss2,
 				      ca->mptcp_loss2 - ca->mptcp_loss1);
 
@@ -167,7 +167,7 @@ static void mptcp_get_epsilon(struct mptcp_cb *mpcb)
 			ca->epsilon_num = 0;
 			ca->epsilon_den = 1;
 		} else {
-			tmp_rtt = (u64)tp->srtt * tp->srtt;
+			tmp_rtt = (u64)tp->srtt_us * tp->srtt_us;
 			tmp_int = max(ca->mptcp_loss3 - ca->mptcp_loss2,
 				      ca->mptcp_loss2 - ca->mptcp_loss1);
 			tmp_cwnd = mptcp_get_crt_cwnd(sk);
@@ -247,7 +247,7 @@ static void mptcp_olia_cong_avoid(struct sock *sk, u32 ack, u32 acked, u32 in_fl
 	}
 
 	mptcp_get_epsilon(mpcb);
-	rate = mptcp_get_rate(mpcb, tp->srtt);
+	rate = mptcp_get_rate(mpcb, tp->srtt_us);
 	cwnd_scaled = mptcp_olia_scale(tp->snd_cwnd, scale);
 	inc_den = ca->epsilon_den * tp->snd_cwnd * rate ? : 1;
 
@@ -287,7 +287,6 @@ static struct tcp_congestion_ops mptcp_olia = {
 	.ssthresh	= tcp_reno_ssthresh,
 	.cong_avoid	= mptcp_olia_cong_avoid,
 	.set_state	= mptcp_olia_set_state,
-	.min_cwnd	= tcp_reno_min_cwnd,
 	.owner		= THIS_MODULE,
 	.name		= "olia",
 };

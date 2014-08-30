@@ -146,7 +146,7 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 			cnt_backups++;
 
 		if ((tp->mptcp->rcv_low_prio || tp->mptcp->low_prio) &&
-		    tp->srtt < lowprio_min_time_to_peer) {
+		    tp->srtt_us < lowprio_min_time_to_peer) {
 			if (!mptcp_is_available(sk, skb, zero_wnd_test))
 				continue;
 
@@ -155,10 +155,10 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 				continue;
 			}
 
-			lowprio_min_time_to_peer = tp->srtt;
+			lowprio_min_time_to_peer = tp->srtt_us;
 			lowpriosk = sk;
 		} else if (!(tp->mptcp->rcv_low_prio || tp->mptcp->low_prio) &&
-			   tp->srtt < min_time_to_peer) {
+			   tp->srtt_us < min_time_to_peer) {
 			if (!mptcp_is_available(sk, skb, zero_wnd_test))
 				continue;
 
@@ -167,7 +167,7 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 				continue;
 			}
 
-			min_time_to_peer = tp->srtt;
+			min_time_to_peer = tp->srtt_us;
 			bestsk = sk;
 		}
 	}
@@ -220,7 +220,7 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 	mptcp_for_each_tp(tp->mpcb, tp_it) {
 		if (tp_it != tp &&
 		    TCP_SKB_CB(skb_head)->path_mask & mptcp_pi_to_flag(tp_it->mptcp->path_index)) {
-			if (tp->srtt < tp_it->srtt && inet_csk((struct sock *)tp_it)->icsk_ca_state == TCP_CA_Open) {
+			if (tp->srtt_us < tp_it->srtt_us && inet_csk((struct sock *)tp_it)->icsk_ca_state == TCP_CA_Open) {
 				tp_it->snd_cwnd = max(tp_it->snd_cwnd >> 1U, 1U);
 				if (tp_it->snd_ssthresh != TCP_INFINITE_SSTHRESH)
 					tp_it->snd_ssthresh = max(tp_it->snd_ssthresh >> 1U, 2U);
@@ -244,7 +244,7 @@ retrans:
 					break;
 				}
 
-				if (4 * tp->srtt >= tp_it->srtt) {
+				if (4 * tp->srtt_us >= tp_it->srtt_us) {
 					do_retrans = false;
 					break;
 				} else {

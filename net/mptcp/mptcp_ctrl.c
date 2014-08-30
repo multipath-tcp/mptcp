@@ -447,8 +447,8 @@ struct sock *mptcp_select_ack_sock(const struct sock *meta_sk)
 		 * (meta-RTO)-timeframe
 		 */
 		if (elapsed < inet_csk(meta_sk)->icsk_rto) {
-			if (!min_time || tp->srtt < min_time) {
-				min_time = tp->srtt;
+			if (!min_time || tp->srtt_us < min_time) {
+				min_time = tp->srtt_us;
 				rttsk = sk;
 			}
 			continue;
