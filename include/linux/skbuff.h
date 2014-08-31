@@ -338,13 +338,18 @@ enum {
 
 	SKB_GSO_GRE = 1 << 6,
 
-	SKB_GSO_IPIP = 1 << 7,
+	SKB_GSO_GRE_CSUM = 1 << 7,
 
-	SKB_GSO_SIT = 1 << 8,
+	SKB_GSO_IPIP = 1 << 8,
 
-	SKB_GSO_UDP_TUNNEL = 1 << 9,
+	SKB_GSO_SIT = 1 << 9,
 
-	SKB_GSO_MPLS = 1 << 10,
+	SKB_GSO_UDP_TUNNEL = 1 << 10,
+
+	SKB_GSO_UDP_TUNNEL_CSUM = 1 << 11,
+
+	SKB_GSO_MPLS = 1 << 12,
+
 };
 
 #if BITS_PER_LONG > 32
@@ -426,7 +431,7 @@ static inline u32 skb_mstamp_us_delta(const struct skb_mstamp *t1,
  *	@csum_start: Offset from skb->head where checksumming should start
  *	@csum_offset: Offset from csum_start where checksum should be stored
  *	@priority: Packet queueing priority
- *	@local_df: allow local fragmentation
+ *	@ignore_df: allow local fragmentation
  *	@cloned: Head may be cloned (check refcnt to be sure)
  *	@ip_summed: Driver fed us an IP checksum
  *	@nohdr: Payload reference only, must not modify header
@@ -514,7 +519,7 @@ struct sk_buff {
 	};
 	__u32			priority;
 	kmemcheck_bitfield_begin(flags1);
-	__u8			local_df:1,
+	__u8			ignore_df:1,
 				cloned:1,
 				ip_summed:2,
 				nohdr:1,
@@ -567,7 +572,10 @@ struct sk_buff {
 	 * headers if needed
 	 */
 	__u8			encapsulation:1;
-	/* 6/8 bit hole (depending on ndisc_nodetype presence) */
+	__u8			encap_hdr_csum:1;
+	__u8			csum_valid:1;
+	__u8			csum_complete_sw:1;
+	/* 3/5 bit hole (depending on ndisc_nodetype presence) */
 	kmemcheck_bitfield_end(flags2);
 
 #if defined CONFIG_NET_DMA || defined CONFIG_NET_RX_BUSY_POLL
@@ -1846,6 +1854,18 @@ static inline int pskb_network_may_pull(struct sk_buff *skb, unsigned int len)
 	return pskb_may_pull(skb, skb_network_offset(skb) + len);
 }
 
+static inline void skb_pop_rcv_encapsulation(struct sk_buff *skb)
+{
+	/* Only continue with checksum unnecessary if device indicated
+	 * it is valid across encapsulation (skb->encapsulation was set).
+	 */
+	if (skb->ip_summed == CHECKSUM_UNNECESSARY && !skb->encapsulation)
+		skb->ip_summed = CHECKSUM_NONE;
+
+	skb->encapsulation = 0;
+	skb->csum_valid = 0;
+}
+
 /*
  * CPUs often take a performance hit when accessing unaligned memory
  * locations. The actual performance hit varies, it can be small if the
@@ -2730,7 +2750,7 @@ __sum16 __skb_checksum_complete(struct sk_buff *skb);
 
 static inline int skb_csum_unnecessary(const struct sk_buff *skb)
 {
-	return skb->ip_summed & CHECKSUM_UNNECESSARY;
+	return ((skb->ip_summed & CHECKSUM_UNNECESSARY) || skb->csum_valid);
 }
 
 /**
@@ -2794,15 +2814,20 @@ static inline __sum16 __skb_checksum_validate_complete(struct sk_buff *skb,
 {
 	if (skb->ip_summed == CHECKSUM_COMPLETE) {
 		if (!csum_fold(csum_add(psum, skb->csum))) {
-			skb->ip_summed = CHECKSUM_UNNECESSARY;
+			skb->csum_valid = 1;
 			return 0;
 		}
 	}
 
 	skb->csum = psum;
 
-	if (complete || skb->len <= CHECKSUM_BREAK)
-		return __skb_checksum_complete(skb);
+	if (complete || skb->len <= CHECKSUM_BREAK) {
+		__sum16 csum;
+
+		csum = __skb_checksum_complete(skb);
+		skb->csum_valid = !csum;
+		return csum;
+	}
 
 	return 0;
 }
@@ -2826,6 +2851,7 @@ static inline __wsum null_compute_pseudo(struct sk_buff *skb, int proto)
 				zero_okay, check, compute_pseudo)	\
 ({									\
 	__sum16 __ret = 0;						\
+	skb->csum_valid = 0;						\
 	if (__skb_checksum_validate_needed(skb, zero_okay, check))	\
 		__ret = __skb_checksum_validate_complete(skb,		\
 				complete, compute_pseudo(skb, proto));	\
@@ -3002,6 +3028,7 @@ static inline struct sec_path *skb_sec_path(struct sk_buff *skb)
 struct skb_gso_cb {
 	int	mac_offset;
 	int	encap_level;
+	__u16	csum_start;
 };
 #define SKB_GSO_CB(skb) ((struct skb_gso_cb *)(skb)->cb)
 
@@ -3024,6 +3051,28 @@ static inline int gso_pskb_expand_head(struct sk_buff *skb, int extra)
 	new_headroom = skb_headroom(skb);
 	SKB_GSO_CB(skb)->mac_offset += (new_headroom - headroom);
 	return 0;
+}
+
+/* Compute the checksum for a gso segment. First compute the checksum value
+ * from the start of transport header to SKB_GSO_CB(skb)->csum_start, and
+ * then add in skb->csum (checksum from csum_start to end of packet).
+ * skb->csum and csum_start are then updated to reflect the checksum of the
+ * resultant packet starting from the transport header-- the resultant checksum
+ * is in the res argument (i.e. normally zero or ~ of checksum of a pseudo
+ * header.
+ */
+static inline __sum16 gso_make_checksum(struct sk_buff *skb, __wsum res)
+{
+	int plen = SKB_GSO_CB(skb)->csum_start - skb_headroom(skb) -
+	    skb_transport_offset(skb);
+	__u16 csum;
+
+	csum = csum_fold(csum_partial(skb_transport_header(skb),
+				      plen, skb->csum));
+	skb->csum = res;
+	SKB_GSO_CB(skb)->csum_start -= plen;
+
+	return csum;
 }
 
 static inline bool skb_is_gso(const struct sk_buff *skb)

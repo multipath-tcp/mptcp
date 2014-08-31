@@ -748,6 +748,7 @@ static int tcp_v6_init_req(struct request_sock *req, struct sock *sk,
 	ireq->ir_v6_loc_addr = ipv6_hdr(skb)->daddr;
 
 	ireq->ir_iif = sk->sk_bound_dev_if;
+	ireq->ir_mark = inet_request_mark(sk, skb);
 
 	/* So that link locals have meaning */
 	if (!sk->sk_bound_dev_if &&
@@ -892,6 +893,7 @@ static void tcp_v6_send_response(struct sk_buff *skb, u32 seq, u32 ack,
 		fl6.flowi6_oif = inet6_iif(skb);
 	else
 		fl6.flowi6_oif = oif;
+	fl6.flowi6_mark = IP6_REPLY_MARK(net, skb->mark);
 	fl6.fl6_dport = t1->dest;
 	fl6.fl6_sport = t1->source;
 	security_skb_classify_flow(skb, flowi6_to_flowi(&fl6));
@@ -2025,7 +2027,6 @@ static struct inet_protosw tcpv6_protosw = {
 	.protocol	=	IPPROTO_TCP,
 	.prot		=	&tcpv6_prot,
 	.ops		=	&inet6_stream_ops,
-	.no_check	=	0,
 	.flags		=	INET_PROTOSW_PERMANENT |
 				INET_PROTOSW_ICSK,
 };

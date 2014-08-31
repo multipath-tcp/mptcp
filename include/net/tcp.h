@@ -377,7 +377,6 @@ int tcp_close_state(struct sock *sk);
 void tcp_minshall_update(struct tcp_sock *tp, unsigned int mss_now,
 			 const struct sk_buff *skb);
 int tcp_xmit_probe_skb(struct sock *sk, int urgent);
-void tcp_cwnd_validate(struct sock *sk);
 void tcp_event_new_data_sent(struct sock *sk, const struct sk_buff *skb);
 int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		     gfp_t gfp_mask);
@@ -668,7 +667,6 @@ bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		int push_one, gfp_t gfp);
 
 /* tcp_input.c */
-void tcp_cwnd_application_limited(struct sock *sk);
 void tcp_resume_early_retransmit(struct sock *sk);
 void tcp_rearm_rto(struct sock *sk);
 void tcp_reset(struct sock *sk);
@@ -923,7 +921,7 @@ struct tcp_congestion_ops {
 	/* return slow start threshold (required) */
 	u32 (*ssthresh)(struct sock *sk);
 	/* do new cwnd calculation (required) */
-	void (*cong_avoid)(struct sock *sk, u32 ack, u32 acked, u32 in_flight);
+	void (*cong_avoid)(struct sock *sk, u32 ack, u32 acked);
 	/* call before changing ca_state (optional) */
 	void (*set_state)(struct sock *sk, u8 new_state);
 	/* call when cwnd event occurs (optional) */
@@ -955,7 +953,7 @@ void tcp_cong_avoid_ai(struct tcp_sock *tp, u32 w);
 
 extern struct tcp_congestion_ops tcp_init_congestion_ops;
 u32 tcp_reno_ssthresh(struct sock *sk);
-void tcp_reno_cong_avoid(struct sock *sk, u32 ack, u32 acked, u32 in_flight);
+void tcp_reno_cong_avoid(struct sock *sk, u32 ack, u32 acked);
 extern struct tcp_congestion_ops tcp_reno;
 
 static inline void tcp_set_ca_state(struct sock *sk, const u8 ca_state)
@@ -1101,7 +1099,30 @@ static inline u32 tcp_wnd_end(const struct tcp_sock *tp)
 {
 	return tp->snd_una + tp->snd_wnd;
 }
-bool tcp_is_cwnd_limited(const struct sock *sk, u32 in_flight);
+
+/* We follow the spirit of RFC2861 to validate cwnd but implement a more
+ * flexible approach. The RFC suggests cwnd should not be raised unless
+ * it was fully used previously. And that's exactly what we do in
+ * congestion avoidance mode. But in slow start we allow cwnd to grow
+ * as long as the application has used half the cwnd.
+ * Example :
+ *    cwnd is 10 (IW10), but application sends 9 frames.
+ *    We allow cwnd to reach 18 when all frames are ACKed.
+ * This check is safe because it's as aggressive as slow start which already
+ * risks 100% overshoot. The advantage is that we discourage application to
+ * either send more filler packets or data to artificially blow up the cwnd
+ * usage, and allow application-limited process to probe bw more aggressively.
+ */
+static inline bool tcp_is_cwnd_limited(const struct sock *sk)
+{
+	const struct tcp_sock *tp = tcp_sk(sk);
+
+	/* If in slow start, ensure cwnd grows to twice what was ACKed. */
+	if (tp->snd_cwnd <= tp->snd_ssthresh)
+		return tp->snd_cwnd < 2 * tp->max_packets_out;
+
+	return tp->is_cwnd_limited;
+}
 
 static inline void tcp_check_probe_timer(struct sock *sk)
 {
