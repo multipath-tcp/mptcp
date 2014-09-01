@@ -603,6 +603,37 @@ static void mptcp_set_state(struct sock *sk)
 	}
 }
 
+void mptcp_init_congestion_control(struct sock *sk)
+{
+	struct inet_connection_sock *icsk = inet_csk(sk);
+	struct inet_connection_sock *meta_icsk = inet_csk(mptcp_meta_sk(sk));
+	const struct tcp_congestion_ops *ca = meta_icsk->icsk_ca_ops;
+
+	/* The application didn't set the congestion control to use
+	 * fallback to the default one.
+	 */
+	if (ca == &tcp_init_congestion_ops)
+		goto use_default;
+
+	/* Use the same congestion control as set by the user. If the
+	 * module is not available fallback to the default one.
+	 */
+	if (!try_module_get(ca->owner)) {
+		pr_warn("%s: fallback to the system default CC\n", __func__);
+		goto use_default;
+	}
+
+	icsk->icsk_ca_ops = ca;
+	if (icsk->icsk_ca_ops->init)
+		icsk->icsk_ca_ops->init(sk);
+
+	return;
+
+use_default:
+	icsk->icsk_ca_ops = &tcp_init_congestion_ops;
+	tcp_init_congestion_control(sk);
+}
+
 u32 mptcp_secret[MD5_MESSAGE_BYTES / 4] ____cacheline_aligned;
 u32 mptcp_seed = 0;
 

@@ -5404,7 +5404,7 @@ void tcp_finish_connect(struct sock *sk, struct sk_buff *skb)
 
 	tcp_init_metrics(sk);
 
-	tcp_init_congestion_control(sk);
+	tp->init_congestion_control(sk);
 
 	/* Prevent spurious tcp_cwnd_restart() on first data
 	 * packet.
@@ -5851,7 +5851,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 			synack_stamp = tp->lsndtime;
 			/* Make sure socket is routed, for correct metrics. */
 			icsk->icsk_af_ops->rebuild_header(sk);
-			tcp_init_congestion_control(sk);
+			tp->init_congestion_control(sk);
 
 			tcp_mtup_init(sk);
 			tp->copied_seq = tp->rcv_nxt;
