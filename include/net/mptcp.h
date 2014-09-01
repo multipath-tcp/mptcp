@@ -423,6 +423,7 @@ static inline void reset_mpc(struct tcp_sock *tp)
 	tp->init_buffer_space		= tcp_init_buffer_space;
 	tp->set_rto			= tcp_set_rto;
 	tp->should_expand_sndbuf	= tcp_should_expand_sndbuf;
+	tp->init_congestion_control	= tcp_init_congestion_control;
 }
 
 static void reset_meta_funcs(struct tcp_sock *tp)
@@ -845,6 +846,7 @@ void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, struct request_sock *req,
 			   struct sk_buff *skb);
 void mptcp_reqsk_init(struct request_sock *req, struct sk_buff *skb);
 int mptcp_conn_request(struct sock *sk, struct sk_buff *skb);
+void mptcp_init_congestion_control(struct sock *sk);
 
 /* MPTCP-path-manager registration/initialization functions */
 int mptcp_register_path_manager(struct mptcp_pm_ops *pm);
@@ -1331,6 +1333,7 @@ static inline void set_mpc(struct tcp_sock *tp)
 	tp->init_buffer_space		= mptcp_init_buffer_space;
 	tp->set_rto			= mptcp_tcp_set_rto;
 	tp->should_expand_sndbuf	= mptcp_should_expand_sndbuf;
+	tp->init_congestion_control	= mptcp_init_congestion_control;
 }
 
 static inline void set_meta_funcs(struct tcp_sock *tp)
