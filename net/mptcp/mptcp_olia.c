@@ -222,7 +222,7 @@ static void mptcp_olia_set_state(struct sock *sk, u8 new_state)
 }
 
 /* main algorithm */
-static void mptcp_olia_cong_avoid(struct sock *sk, u32 ack, u32 acked, u32 in_flight)
+static void mptcp_olia_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_olia *ca = inet_csk_ca(sk);
@@ -231,13 +231,13 @@ static void mptcp_olia_cong_avoid(struct sock *sk, u32 ack, u32 acked, u32 in_fl
 	u64 inc_num, inc_den, rate, cwnd_scaled;
 
 	if (!mptcp(tp)) {
-		tcp_reno_cong_avoid(sk, ack, acked, in_flight);
+		tcp_reno_cong_avoid(sk, ack, acked);
 		return;
 	}
 
 	ca->mptcp_loss3 = tp->snd_una;
 
-	if (!tcp_is_cwnd_limited(sk, in_flight))
+	if (!tcp_is_cwnd_limited(sk))
 		return;
 
 	/* slow start if it is in the safe area */

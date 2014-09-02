@@ -184,18 +184,18 @@ static void mptcp_ccc_set_state(struct sock *sk, u8 ca_state)
 	mptcp_set_forced(mptcp_meta_sk(sk), 1);
 }
 
-static void mptcp_ccc_cong_avoid(struct sock *sk, u32 ack, u32 acked, u32 in_flight)
+static void mptcp_ccc_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_cb *mpcb = tp->mpcb;
 	int snd_cwnd;
 
 	if (!mptcp(tp)) {
-		tcp_reno_cong_avoid(sk, ack, acked, in_flight);
+		tcp_reno_cong_avoid(sk, ack, acked);
 		return;
 	}
 
-	if (!tcp_is_cwnd_limited(sk, in_flight))
+	if (!tcp_is_cwnd_limited(sk))
 		return;
 
 	if (tp->snd_cwnd <= tp->snd_ssthresh) {

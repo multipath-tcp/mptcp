@@ -163,13 +163,13 @@ static u64 mptcp_wvegas_weight(struct mptcp_cb *mpcb, struct sock *sk)
 		return wvegas->weight;
 }
 
-static void mptcp_wvegas_cong_avoid(struct sock *sk, u32 ack, u32 acked, u32 in_flight)
+static void mptcp_wvegas_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct wvegas *wvegas = inet_csk_ca(sk);
 
 	if (!wvegas->doing_wvegas_now) {
-		tcp_reno_cong_avoid(sk, ack, acked, in_flight);
+		tcp_reno_cong_avoid(sk, ack, acked);
 		return;
 	}
 
@@ -177,7 +177,7 @@ static void mptcp_wvegas_cong_avoid(struct sock *sk, u32 ack, u32 acked, u32 in_
 		wvegas->beg_snd_nxt  = tp->snd_nxt;
 
 		if (wvegas->cnt_rtt <= 2) {
-			tcp_reno_cong_avoid(sk, ack, acked, in_flight);
+			tcp_reno_cong_avoid(sk, ack, acked);
 		} else {
 			u32 rtt, diff, q_delay;
 			u64 target_cwnd;
