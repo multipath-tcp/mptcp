@@ -2244,6 +2244,10 @@ void mptcp_init_buffer_space(struct sock *sk)
 	tcp_init_buffer_space(sk);
 
 	if (is_master_tp(tp)) {
+		meta_tp->rcvq_space.space = meta_tp->rcv_wnd;
+		meta_tp->rcvq_space.time = tcp_time_stamp;
+		meta_tp->rcvq_space.seq = meta_tp->copied_seq;
+
 		/* If there is only one subflow, we just use regular TCP
 		 * autotuning. User-locks are handled already by
 		 * tcp_init_buffer_space
