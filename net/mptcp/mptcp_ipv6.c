@@ -44,9 +44,6 @@
 #include <net/tcp.h>
 #include <net/transp_v6.h>
 
-static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req,
-				  u16 queue_mapping);
-
 __u32 mptcp_v6_get_nonce(const __be32 *saddr, const __be32 *daddr,
 			 __be16 sport, __be16 dport)
 {
@@ -96,17 +93,6 @@ static void mptcp_v6_reqsk_destructor(struct request_sock *req)
 	tcp_v6_reqsk_destructor(req);
 }
 
-/* Similar to tcp_v6_rtx_synack */
-static int mptcp_v6_rtx_synack(struct sock *meta_sk, struct request_sock *req)
-{
-	if (meta_sk->sk_family == AF_INET6)
-		return tcp_v6_rtx_synack(meta_sk, req);
-
-	TCP_INC_STATS_BH(sock_net(meta_sk), TCP_MIB_RETRANSSEGS);
-	NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_TCPSYNRETRANS);
-	return mptcp_v6v4_send_synack(meta_sk, req, 0);
-}
-
 static int mptcp_v6_init_req(struct request_sock *req, struct sock *sk,
 			     struct sk_buff *skb)
 {
@@ -150,42 +136,11 @@ static int mptcp_v6_join_init_req(struct request_sock *req, struct sock *sk,
 	return 0;
 }
 
-static struct dst_entry *mptcp_v6_route_req(struct sock *sk, struct flowi *fl,
-					    const struct request_sock *req,
-					    bool *strict)
-{
-	struct inet_request_sock *treq = inet_rsk(req);
-	struct flowi6 fl6;
-	struct dst_entry *dst;
-
-	if (sk->sk_family == AF_INET6)
-		return tcp_request_sock_ipv6_ops.route_req(sk, fl, req, strict);
-
-	if (strict)
-		*strict = true;
-
-	memset(&fl6, 0, sizeof(fl6));
-	fl6.flowi6_proto = IPPROTO_TCP;
-	fl6.daddr = treq->ir_v6_rmt_addr;
-	fl6.saddr = treq->ir_v6_loc_addr;
-	fl6.flowlabel = 0;
-	fl6.flowi6_oif = treq->ir_iif;
-	fl6.flowi6_mark = sk->sk_mark;
-	fl6.fl6_dport = inet_rsk(req)->ir_rmt_port;
-	fl6.fl6_sport = htons(inet_rsk(req)->ir_num);
-	security_req_classify_flow(req, flowi6_to_flowi(&fl6));
-
-	dst = ip6_dst_lookup_flow(sk, &fl6, NULL);
-	if (IS_ERR(dst))
-		return NULL;
-	return dst;
-}
-
 /* Similar to tcp6_request_sock_ops */
 struct request_sock_ops mptcp6_request_sock_ops __read_mostly = {
 	.family		=	AF_INET6,
 	.obj_size	=	sizeof(struct mptcp_request_sock),
-	.rtx_syn_ack	=	mptcp_v6_rtx_synack,
+	.rtx_syn_ack	=	tcp_v6_rtx_synack,
 	.send_ack	=	tcp_v6_reqsk_send_ack,
 	.destructor	=	mptcp_v6_reqsk_destructor,
 	.send_reset	=	tcp_v6_send_reset,
@@ -223,62 +178,6 @@ static void mptcp_v6_reqsk_queue_hash_add(struct sock *meta_sk,
 	hlist_nulls_add_head_rcu(&mptcp_rsk(req)->hash_entry, &mptcp_reqsk_htb[h1]);
 	spin_unlock(&mptcp_reqsk_hlock);
 	rcu_read_unlock();
-}
-
-/* Similar to tcp_v6_send_synack
- *
- * The meta-socket is IPv4, but a new subsocket is IPv6
- */
-static int mptcp_v6v4_send_synack(struct sock *meta_sk, struct request_sock *req,
-				  u16 queue_mapping)
-{
-	struct inet_request_sock *treq = inet_rsk(req);
-	struct sk_buff *skb;
-	struct flowi6 fl6;
-	struct dst_entry *dst;
-	int err = -ENOMEM;
-
-	memset(&fl6, 0, sizeof(fl6));
-	fl6.flowi6_proto = IPPROTO_TCP;
-	fl6.daddr = treq->ir_v6_rmt_addr;
-	fl6.saddr = treq->ir_v6_loc_addr;
-	fl6.flowlabel = 0;
-	fl6.flowi6_oif = treq->ir_iif;
-	fl6.flowi6_mark = meta_sk->sk_mark;
-	fl6.fl6_dport = inet_rsk(req)->ir_rmt_port;
-	fl6.fl6_sport = htons(inet_rsk(req)->ir_num);
-	security_req_classify_flow(req, flowi6_to_flowi(&fl6));
-
-	dst = ip6_dst_lookup_flow(meta_sk, &fl6, NULL);
-	if (IS_ERR(dst)) {
-		err = PTR_ERR(dst);
-		return err;
-	}
-	skb = tcp_make_synack(meta_sk, dst, req, NULL);
-
-	if (skb) {
-		__tcp_v6_send_check(skb, &treq->ir_v6_loc_addr,
-				    &treq->ir_v6_rmt_addr);
-
-		fl6.daddr = treq->ir_v6_rmt_addr;
-		skb_set_queue_mapping(skb, queue_mapping);
-		err = ip6_xmit(meta_sk, skb, &fl6, NULL, 0);
-		err = net_xmit_eval(err);
-	}
-
-	return err;
-}
-
-
-static int mptcp_v6_send_synack(struct sock *meta_sk, struct dst_entry *dst,
-				struct flowi *fl, struct request_sock *req,
-				u16 queue_mapping,
-				struct tcp_fastopen_cookie *foc)
-{
-	if (meta_sk->sk_family == AF_INET6)
-		return tcp_v6_send_synack(meta_sk, dst, fl, req, queue_mapping,
-					  NULL);
-	return mptcp_v6v4_send_synack(meta_sk, req, queue_mapping);
 }
 
 static int mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
@@ -586,9 +485,7 @@ int mptcp_pm_v6_init(void)
 
 	mptcp_join_request_sock_ipv6_ops = tcp_request_sock_ipv6_ops;
 	mptcp_join_request_sock_ipv6_ops.init_req = mptcp_v6_join_init_req;
-	mptcp_join_request_sock_ipv6_ops.route_req = mptcp_v6_route_req;
 	mptcp_join_request_sock_ipv6_ops.queue_hash_add = mptcp_v6_reqsk_queue_hash_add;
-	mptcp_join_request_sock_ipv6_ops.send_synack = mptcp_v6_send_synack;
 
 	ops->slab_name = kasprintf(GFP_KERNEL, "request_sock_%s", "MPTCP6");
 	if (ops->slab_name == NULL) {

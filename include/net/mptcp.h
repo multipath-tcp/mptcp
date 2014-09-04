@@ -325,13 +325,6 @@ struct mptcp_cb {
 	u8 mptcp_pm[MPTCP_PM_SIZE] __aligned(8);
 	struct mptcp_pm_ops *pm_ops;
 
-	/* Create a new subflow - necessary because the meta-sk may be IPv4, but
-	 * the new subflow can be IPv6
-	 */
-	struct sock *(*syn_recv_sock)(struct sock *sk, struct sk_buff *skb,
-				      struct request_sock *req,
-				      struct dst_entry *dst);
-
 	u32 path_index_bits;
 	/* Next pi to pick up in case a new path becomes available */
 	u8 next_path_index;

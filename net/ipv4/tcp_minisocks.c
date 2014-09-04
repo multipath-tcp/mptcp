@@ -763,14 +763,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	 * ESTABLISHED STATE. If it will be dropped after
 	 * socket is created, wait for troubles.
 	 */
-#ifdef CONFIG_MPTCP
-	if (mptcp(tcp_sk(sk)))
-		/* MPTCP: We call the mptcp-specific syn_recv_sock */
-		child = tcp_sk(sk)->mpcb->syn_recv_sock(sk, skb, req, NULL);
-	else
-#endif
-		child = inet_csk(sk)->icsk_af_ops->syn_recv_sock(sk, skb,
-				req, NULL);
+	child = inet_csk(sk)->icsk_af_ops->syn_recv_sock(sk, skb, req, NULL);
 
 	if (child == NULL)
 		goto listen_overflow;

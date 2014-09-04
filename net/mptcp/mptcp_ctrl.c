@@ -411,20 +411,6 @@ void mptcp_hash_remove(struct tcp_sock *meta_tp)
 	rcu_read_unlock();
 }
 
-static struct sock *mptcp_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
-					struct request_sock *req,
-					struct dst_entry *dst)
-{
-#if IS_ENABLED(CONFIG_IPV6)
-	if (sk->sk_family == AF_INET6)
-		return tcp_v6_syn_recv_sock(sk, skb, req, dst);
-
-#endif
-
-	/* sk->sk_family == AF_INET && req->rsk_ops->family == AF_INET */
-	return tcp_v4_syn_recv_sock(sk, skb, req, dst);
-}
-
 struct sock *mptcp_select_ack_sock(const struct sock *meta_sk)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
@@ -1019,7 +1005,6 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	set_meta_funcs(meta_tp);
 	meta_sk->sk_backlog_rcv = mptcp_backlog_rcv;
 	meta_sk->sk_destruct = mptcp_sock_destruct;
-	mpcb->syn_recv_sock = mptcp_syn_recv_sock;
 
 	/* Meta-level retransmit timer */
 	meta_icsk->icsk_rto *= 2; /* Double of initial - rto */

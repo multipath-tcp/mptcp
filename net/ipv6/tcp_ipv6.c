@@ -754,8 +754,7 @@ static int tcp_v6_init_req(struct request_sock *req, struct sock *sk,
 	    ipv6_addr_type(&ireq->ir_v6_rmt_addr) & IPV6_ADDR_LINKLOCAL)
 		ireq->ir_iif = inet6_iif(skb);
 
-	/* MPTCP: We need to check for np, because sk may be IPv4 only */
-	if (!TCP_SKB_CB(skb)->when && np &&
+	if (!TCP_SKB_CB(skb)->when &&
 	    (ipv6_opt_accepted(sk, skb) || np->rxopt.bits.rxinfo ||
 	     np->rxopt.bits.rxoinfo || np->rxopt.bits.rxhlim ||
 	     np->rxopt.bits.rxohlim || np->repflow)) {
