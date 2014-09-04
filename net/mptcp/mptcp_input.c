@@ -1155,6 +1155,7 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 	const struct mptcp_cb *mpcb;
 	struct sock *meta_sk;
 	u32 token;
+	bool meta_v4;
 	struct mp_join *join_opt = mptcp_find_join(skb);
 	if (!join_opt)
 		return 0;
@@ -1170,9 +1171,16 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 		return -1;
 	}
 
-	if (meta_sk->sk_family == AF_INET &&
-	    skb->protocol == htons(ETH_P_IPV6)) {
-		mptcp_debug("SYN+MP_JOIN with IPV6 address on pure IPV4 meta\n");
+	meta_v4 = meta_sk->sk_family == AF_INET;
+	if (meta_v4) {
+		if (skb->protocol == htons(ETH_P_IPV6)) {
+			mptcp_debug("SYN+MP_JOIN with IPV6 address on pure IPV4 meta\n");
+			sock_put(meta_sk); /* Taken by mptcp_hash_find */
+			return -1;
+		}
+	} else if (skb->protocol == htons(ETH_P_IP) &&
+		   inet6_sk(meta_sk)->ipv6only) {
+		mptcp_debug("SYN+MP_JOIN with IPV4 address on IPV6_V6ONLY meta\n");
 		sock_put(meta_sk); /* Taken by mptcp_hash_find */
 		return -1;
 	}
@@ -1229,6 +1237,7 @@ int mptcp_do_join_short(struct sk_buff *skb,
 {
 	struct sock *meta_sk;
 	u32 token;
+	bool meta_v4;
 
 	token = mopt->mptcp_rem_token;
 	meta_sk = mptcp_hash_find(net, token);
@@ -1237,9 +1246,16 @@ int mptcp_do_join_short(struct sk_buff *skb,
 		return -1;
 	}
 
-	if (meta_sk->sk_family == AF_INET &&
-	    skb->protocol == htons(ETH_P_IPV6)) {
-		mptcp_debug("SYN+MP_JOIN with IPV6 address on pure IPV4 meta\n");
+	meta_v4 = meta_sk->sk_family == AF_INET;
+	if (meta_v4) {
+		if (skb->protocol == htons(ETH_P_IPV6)) {
+			mptcp_debug("SYN+MP_JOIN with IPV6 address on pure IPV4 meta\n");
+			sock_put(meta_sk); /* Taken by mptcp_hash_find */
+			return -1;
+		}
+	} else if (skb->protocol == htons(ETH_P_IP) &&
+		   inet6_sk(meta_sk)->ipv6only) {
+		mptcp_debug("SYN+MP_JOIN with IPV4 address on IPV6_V6ONLY meta\n");
 		sock_put(meta_sk); /* Taken by mptcp_hash_find */
 		return -1;
 	}

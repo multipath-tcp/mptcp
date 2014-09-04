@@ -718,13 +718,19 @@ duno:
 			struct mptcp_cb *mpcb = meta_tp->mpcb;
 			struct sock *meta_sk = (struct sock *)meta_tp, *sk;
 			struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
+			bool meta_v4 = meta_sk->sk_family == AF_INET;
 
 			if (sock_net(meta_sk) != net)
 				continue;
 
-			/* skip IPv6 events if meta is IPv4 */
-			if (meta_sk->sk_family == AF_INET &&
-			    event->family == AF_INET6)
+			if (meta_v4) {
+				/* skip IPv6 events if meta is IPv4 */
+				if (event->family == AF_INET6)
+					continue;
+			}
+			/* skip IPv4 events if IPV6_V6ONLY is set */
+			else if (event->family == AF_INET &&
+				 inet6_sk(meta_sk)->ipv6only)
 				continue;
 
 			if (unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
@@ -1149,6 +1155,7 @@ static void full_mesh_new_session(struct sock *meta_sk)
 	int i, index;
 	union inet_addr saddr, daddr;
 	sa_family_t family;
+	bool meta_v4 = meta_sk->sk_family == AF_INET;
 
 	/* Init local variables necessary for the rest */
 	if (meta_sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(meta_sk)) {
@@ -1178,6 +1185,9 @@ static void full_mesh_new_session(struct sock *meta_sk)
 	INIT_DELAYED_WORK(&fmp->subflow_retry_work, retry_subflow_worker);
 	fmp->mpcb = mpcb;
 
+	if (!meta_v4 && inet6_sk(meta_sk)->ipv6only)
+		goto skip_ipv4;
+
 	/* Look for the address among the local addresses */
 	mptcp_for_each_bit_set(mptcp_local->loc4_bits, i) {
 		__be32 ifa_address = mptcp_local->locaddr4[i].addr.s_addr;
@@ -1190,9 +1200,10 @@ static void full_mesh_new_session(struct sock *meta_sk)
 		mpcb->addr_signal = 1;
 	}
 
+skip_ipv4:
 #if IS_ENABLED(CONFIG_IPV6)
 	/* skip IPv6 addresses if meta-socket is IPv4 */
-	if (meta_sk->sk_family == AF_INET)
+	if (meta_v4)
 		goto skip_ipv6;
 
 	mptcp_for_each_bit_set(mptcp_local->loc6_bits, i) {
@@ -1257,10 +1268,14 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 	struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(meta_sk));
 	struct sock *sk, *tmpsk;
+	bool meta_v4 = meta_sk->sk_family == AF_INET;
 	int i;
 
 	rcu_read_lock();
 	mptcp_local = rcu_dereference(fm_ns->local);
+
+	if (!meta_v4 && inet6_sk(meta_sk)->ipv6only)
+		goto skip_ipv4;
 
 	/* First, detect modifications or additions */
 	mptcp_for_each_bit_set(mptcp_local->loc4_bits, i) {
@@ -1298,9 +1313,10 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 		}
 	}
 
+skip_ipv4:
 #if IS_ENABLED(CONFIG_IPV6)
 	/* skip IPv6 addresses if meta-socket is IPv4 */
-	if (meta_sk->sk_family == AF_INET)
+	if (meta_v4)
 		goto removal;
 
 	mptcp_for_each_bit_set(mptcp_local->loc6_bits, i) {
@@ -1421,7 +1437,8 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(sk));
 	int remove_addr_len;
-	u8 unannouncedv4, unannouncedv6 = 0;
+	u8 unannouncedv4 = 0, unannouncedv6 = 0;
+	bool meta_v4 = meta_sk->sk_family == AF_INET;
 
 	mpcb->addr_signal = 0;
 
@@ -1430,6 +1447,9 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 
 	rcu_read_lock();
 	mptcp_local = rcu_dereference(fm_ns->local);
+
+	if (!meta_v4 && inet6_sk(meta_sk)->ipv6only)
+		goto skip_ipv4;
 
 	/* IPv4 */
 	unannouncedv4 = (~fmp->announced_addrs_v4) & mptcp_local->loc4_bits;
@@ -1450,9 +1470,10 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 		*size += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN;
 	}
 
-	if (meta_sk->sk_family == AF_INET)
+	if (meta_v4)
 		goto skip_ipv6;
 
+skip_ipv4:
 	/* IPv6 */
 	unannouncedv6 = (~fmp->announced_addrs_v6) & mptcp_local->loc6_bits;
 	if (unannouncedv6 &&
