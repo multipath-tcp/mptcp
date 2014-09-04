@@ -390,6 +390,7 @@ struct tcp_sock {
 		       */
 		mp_killed:1, /* Killed with a tcp_done in mptcp? */
 		was_meta_sk:1,	/* This was a meta sk (in case of reuse) */
+		is_master_sk,
 		close_it:1,	/* Must close socket in mptcp_data_ready? */
 		closing:1;
 	struct mptcp_tcp_sock *mptcp;

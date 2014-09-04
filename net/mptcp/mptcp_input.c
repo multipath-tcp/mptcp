@@ -1170,6 +1170,13 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 		return -1;
 	}
 
+	if (meta_sk->sk_family == AF_INET &&
+	    skb->protocol == htons(ETH_P_IPV6)) {
+		mptcp_debug("SYN+MP_JOIN with IPV6 address on pure IPV4 meta\n");
+		sock_put(meta_sk); /* Taken by mptcp_hash_find */
+		return -1;
+	}
+
 	mpcb = tcp_sk(meta_sk)->mpcb;
 	if (mpcb->infinite_mapping_rcv || mpcb->send_infinite_mapping) {
 		/* We are in fallback-mode on the reception-side -
@@ -1227,6 +1234,13 @@ int mptcp_do_join_short(struct sk_buff *skb,
 	meta_sk = mptcp_hash_find(net, token);
 	if (!meta_sk) {
 		mptcp_debug("%s:mpcb not found:%x\n", __func__, token);
+		return -1;
+	}
+
+	if (meta_sk->sk_family == AF_INET &&
+	    skb->protocol == htons(ETH_P_IPV6)) {
+		mptcp_debug("SYN+MP_JOIN with IPV6 address on pure IPV4 meta\n");
+		sock_put(meta_sk); /* Taken by mptcp_hash_find */
 		return -1;
 	}
 
@@ -2163,7 +2177,7 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 		sk_set_socket(sk, mptcp_meta_sk(sk)->sk_socket);
 		sk->sk_wq = mptcp_meta_sk(sk)->sk_wq;
 
-		 /* hold in mptcp_inherit_sk due to initialization to 2 */
+		 /* hold in sk_clone_lock due to initialization to 2 */
 		sock_put(sk);
 	} else {
 		tp->request_mptcp = 0;

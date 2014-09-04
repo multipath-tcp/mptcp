@@ -670,10 +670,7 @@ struct sock *inet_csk_clone_lock(const struct sock *sk,
 {
 	struct sock *newsk;
 
-	if (sk->sk_protocol == IPPROTO_TCP && mptcp(tcp_sk(sk)))
-		newsk = mptcp_sk_clone(sk, req->rsk_ops->family, priority);
-	else
-		newsk = sk_clone_lock(sk, priority);
+	newsk = sk_clone_lock(sk, priority);
 
 	if (newsk != NULL) {
 		struct inet_connection_sock *newicsk = inet_csk(newsk);

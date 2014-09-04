@@ -419,9 +419,6 @@ static struct sock *mptcp_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 	if (sk->sk_family == AF_INET6)
 		return tcp_v6_syn_recv_sock(sk, skb, req, dst);
 
-	/* sk->sk_family == AF_INET */
-	if (req->rsk_ops->family == AF_INET6)
-		return mptcp_v6v4_syn_recv_sock(sk, skb, req, dst);
 #endif
 
 	/* sk->sk_family == AF_INET && req->rsk_ops->family == AF_INET */
@@ -728,7 +725,7 @@ void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 
 static void mptcp_mpcb_inherit_sockopts(struct sock *meta_sk, struct sock *master_sk)
 {
-	/* Socket-options handled by mptcp_inherit_sk while creating the meta-sk.
+	/* Socket-options handled by sk_clone_lock while creating the meta-sk.
 	 * ======
 	 * SO_SNDBUF, SO_SNDBUFFORCE, SO_RCVBUF, SO_RCVBUFFORCE, SO_RCVLOWAT,
 	 * SO_RCVTIMEO, SO_SNDTIMEO, SO_ATTACH_FILTER, SO_DETACH_FILTER,
@@ -753,7 +750,7 @@ static void mptcp_mpcb_inherit_sockopts(struct sock *meta_sk, struct sock *maste
 	 * SO_RXQ_OVFL
 	 * TCP_COOKIE_TRANSACTIONS
 	 * TCP_MAXSEG
-	 * TCP_THIN_* - Handled by mptcp_inherit_sk, but we need to support this
+	 * TCP_THIN_* - Handled by sk_clone_lock, but we need to support this
 	 *		in mptcp_retransmit_timer. AND we need to check what is
 	 *		about the subsockets.
 	 * TCP_LINGER2
@@ -842,134 +839,6 @@ int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb)
 struct lock_class_key meta_key;
 struct lock_class_key meta_slock_key;
 
-/* Code heavily inspired from sk_clone() */
-static int mptcp_inherit_sk(const struct sock *sk, struct sock *newsk,
-			    int family, const gfp_t flags)
-{
-	struct sk_filter *filter;
-	struct proto *prot = newsk->sk_prot;
-	const struct inet_connection_sock_af_ops *af_ops = inet_csk(newsk)->icsk_af_ops;
-#ifdef CONFIG_SECURITY_NETWORK
-	void *sptr = newsk->sk_security;
-#endif
-
-	if (sk->sk_family == AF_INET) {
-		memcpy(newsk, sk, offsetof(struct sock, sk_dontcopy_begin));
-		memcpy(&newsk->sk_dontcopy_end, &sk->sk_dontcopy_end,
-		       sizeof(struct tcp_sock) - offsetof(struct sock, sk_dontcopy_end));
-	} else {
-		memcpy(newsk, sk, offsetof(struct sock, sk_dontcopy_begin));
-		memcpy(&newsk->sk_dontcopy_end, &sk->sk_dontcopy_end,
-		       sizeof(struct tcp6_sock) - offsetof(struct sock, sk_dontcopy_end));
-	}
-
-#ifdef CONFIG_SECURITY_NETWORK
-	newsk->sk_security = sptr;
-	security_sk_clone(sk, newsk);
-#endif
-
-	/* Has been changed by sock_copy above - we may need an IPv6-socket */
-	newsk->sk_family = family;
-	newsk->sk_prot = prot;
-	newsk->sk_prot_creator = prot;
-	inet_csk(newsk)->icsk_af_ops = af_ops;
-
-	/* We don't yet have the mptcp-point. Thus we still need inet_sock_destruct */
-	newsk->sk_destruct = inet_sock_destruct;
-
-	/* SANITY */
-	get_net(sock_net(newsk));
-	sk_node_init(&newsk->sk_node);
-	sock_lock_init_class_and_name(newsk, "slock-AF_INET-MPTCP",
-				      &meta_slock_key, "sk_lock-AF_INET-MPTCP",
-				      &meta_key);
-
-	/* Unlocks are in:
-	 *
-	 * 1. If we are creating the master-sk
-	 *	* on client-side in tcp_rcv_state_process, "case TCP_SYN_SENT"
-	 *	* on server-side in tcp_child_process
-	 * 2. If we are creating another subsock
-	 *	* Also in tcp_child_process
-	 */
-	bh_lock_sock(newsk);
-	newsk->sk_backlog.head = NULL;
-	newsk->sk_backlog.tail = NULL;
-	newsk->sk_backlog.len = 0;
-
-	atomic_set(&newsk->sk_rmem_alloc, 0);
-	atomic_set(&newsk->sk_wmem_alloc, 1);
-	atomic_set(&newsk->sk_omem_alloc, 0);
-
-	skb_queue_head_init(&newsk->sk_receive_queue);
-	skb_queue_head_init(&newsk->sk_write_queue);
-#ifdef CONFIG_NET_DMA
-	skb_queue_head_init(&newsk->sk_async_wait_queue);
-#endif
-
-	spin_lock_init(&newsk->sk_dst_lock);
-	rwlock_init(&newsk->sk_callback_lock);
-	lockdep_set_class_and_name(&newsk->sk_callback_lock,
-				   af_callback_keys + newsk->sk_family,
-				   af_family_clock_key_strings[newsk->sk_family]);
-	newsk->sk_dst_cache	= NULL;
-	newsk->sk_rx_dst	= NULL;
-	newsk->sk_wmem_queued	= 0;
-	newsk->sk_forward_alloc = 0;
-	newsk->sk_send_head	= NULL;
-	newsk->sk_userlocks	= sk->sk_userlocks & ~SOCK_BINDPORT_LOCK;
-
-	tcp_sk(newsk)->mptcp = NULL;
-
-	sock_reset_flag(newsk, SOCK_DONE);
-	skb_queue_head_init(&newsk->sk_error_queue);
-
-	filter = rcu_dereference_protected(newsk->sk_filter, 1);
-	if (filter != NULL)
-		sk_filter_charge(newsk, filter);
-
-	if (unlikely(xfrm_sk_clone_policy(newsk))) {
-		/* It is still raw copy of parent, so invalidate
-		 * destructor and make plain sk_free()
-		 */
-		newsk->sk_destruct = NULL;
-		bh_unlock_sock(newsk);
-		sk_free(newsk);
-		newsk = NULL;
-		return -ENOMEM;
-	}
-
-	newsk->sk_err	   = 0;
-	newsk->sk_priority = 0;
-	/* Before updating sk_refcnt, we must commit prior changes to memory
-	 * (Documentation/RCU/rculist_nulls.txt for details)
-	 */
-	smp_wmb();
-	atomic_set(&newsk->sk_refcnt, 2);
-
-	/* Increment the counter in the same struct proto as the master
-	 * sock (sk_refcnt_debug_inc uses newsk->sk_prot->socks, that
-	 * is the same as sk->sk_prot->socks, as this field was copied
-	 * with memcpy).
-	 *
-	 * This _changes_ the previous behaviour, where
-	 * tcp_create_openreq_child always was incrementing the
-	 * equivalent to tcp_prot->socks (inet_sock_nr), so this have
-	 * to be taken into account in all callers. -acme
-	 */
-	sk_refcnt_debug_inc(newsk);
-	sk_set_socket(newsk, NULL);
-	newsk->sk_wq = NULL;
-
-	if (newsk->sk_prot->sockets_allocated)
-		sk_sockets_allocated_inc(newsk);
-
-	if (newsk->sk_flags & SK_FLAGS_TIMESTAMP)
-		net_enable_timestamp();
-
-	return 0;
-}
-
 static void mptcp_synack_timer_handler(unsigned long data)
 {
 	struct sock *meta_sk = (struct sock *) data;
@@ -999,7 +868,6 @@ out:
 	sock_put(meta_sk);
 }
 
-
 static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 {
 	struct mptcp_cb *mpcb;
@@ -1009,18 +877,19 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	struct sk_buff *skb, *tmp;
 	u64 idsn;
 
-	master_sk = sk_prot_alloc(meta_sk->sk_prot, GFP_ATOMIC | __GFP_ZERO,
-				  meta_sk->sk_family);
+	dst_release(meta_sk->sk_rx_dst);
+	meta_sk->sk_rx_dst = NULL;
+	/* This flag is set to announce sock_lock_init to
+	 * reclassify the lock-class of the master socket.
+	 */
+	meta_tp->is_master_sk = 1;
+	master_sk = sk_clone_lock(meta_sk, GFP_ATOMIC | __GFP_ZERO);
+	meta_tp->is_master_sk = 0;
 	if (!master_sk)
 		return -ENOBUFS;
 
 	master_tp = tcp_sk(master_sk);
 	master_icsk = inet_csk(master_sk);
-
-	/* Need to set this here - it is needed by mptcp_inherit_sk */
-	master_sk->sk_prot = meta_sk->sk_prot;
-	master_sk->sk_prot_creator = meta_sk->sk_prot;
-	master_icsk->icsk_af_ops = meta_icsk->icsk_af_ops;
 
 	mpcb = kmem_cache_zalloc(mptcp_cb_cache, GFP_ATOMIC);
 	if (!mpcb) {
@@ -1029,12 +898,6 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 		 */
 		atomic_set(&master_sk->sk_wmem_alloc, 1);
 		sk_free(master_sk);
-		return -ENOBUFS;
-	}
-
-	/* master_sk inherits from meta_sk */
-	if (mptcp_inherit_sk(meta_sk, master_sk, meta_sk->sk_family, GFP_ATOMIC)) {
-		kmem_cache_free(mptcp_cb_cache, mpcb);
 		return -ENOBUFS;
 	}
 
@@ -1202,44 +1065,6 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 		    __func__, mpcb->mptcp_loc_token);
 
 	return 0;
-}
-
-struct sock *mptcp_sk_clone(const struct sock *sk, int family,
-			    const gfp_t priority)
-{
-	struct sock *newsk = NULL;
-
-	if (family == AF_INET && sk->sk_family == AF_INET) {
-		newsk = sk_prot_alloc(&tcp_prot, priority, family);
-		if (!newsk)
-			return NULL;
-
-		/* Set these pointers - they are needed by mptcp_inherit_sk */
-		newsk->sk_prot = &tcp_prot;
-		newsk->sk_prot_creator = &tcp_prot;
-		inet_csk(newsk)->icsk_af_ops = &mptcp_v4_specific;
-		newsk->sk_family = AF_INET;
-	}
-#if IS_ENABLED(CONFIG_IPV6)
-	else {
-		newsk = sk_prot_alloc(&tcpv6_prot, priority, family);
-		if (!newsk)
-			return NULL;
-
-		newsk->sk_prot = &tcpv6_prot;
-		newsk->sk_prot_creator = &tcpv6_prot;
-		if (family == AF_INET)
-			inet_csk(newsk)->icsk_af_ops = &mptcp_v6_mapped;
-		else
-			inet_csk(newsk)->icsk_af_ops = &mptcp_v6_specific;
-		newsk->sk_family = AF_INET6;
-	}
-#endif
-
-	if (mptcp_inherit_sk(sk, newsk, family, priority))
-		return NULL;
-
-	return newsk;
 }
 
 void mptcp_fallback_meta_sk(struct sock *meta_sk)

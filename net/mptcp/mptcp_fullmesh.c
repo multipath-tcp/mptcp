@@ -722,6 +722,11 @@ duno:
 			if (sock_net(meta_sk) != net)
 				continue;
 
+			/* skip IPv6 events if meta is IPv4 */
+			if (meta_sk->sk_family == AF_INET &&
+			    event->family == AF_INET6)
+				continue;
+
 			if (unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
 				continue;
 
@@ -1186,6 +1191,10 @@ static void full_mesh_new_session(struct sock *meta_sk)
 	}
 
 #if IS_ENABLED(CONFIG_IPV6)
+	/* skip IPv6 addresses if meta-socket is IPv4 */
+	if (meta_sk->sk_family == AF_INET)
+		goto skip_ipv6;
+
 	mptcp_for_each_bit_set(mptcp_local->loc6_bits, i) {
 		struct in6_addr *ifa6 = &mptcp_local->locaddr6[i].addr;
 
@@ -1196,6 +1205,8 @@ static void full_mesh_new_session(struct sock *meta_sk)
 		fmp->add_addr++;
 		mpcb->addr_signal = 1;
 	}
+
+skip_ipv6:
 #endif
 
 	rcu_read_unlock();
@@ -1288,6 +1299,10 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 	}
 
 #if IS_ENABLED(CONFIG_IPV6)
+	/* skip IPv6 addresses if meta-socket is IPv4 */
+	if (meta_sk->sk_family == AF_INET)
+		goto removal;
+
 	mptcp_for_each_bit_set(mptcp_local->loc6_bits, i) {
 		struct in6_addr ifa = mptcp_local->locaddr6[i].addr;
 		bool found = false;
@@ -1322,6 +1337,8 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 			full_mesh_create_subflows(meta_sk);
 		}
 	}
+
+removal:
 #endif
 
 	/* Now, detect address-removals */
@@ -1399,11 +1416,12 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_cb *mpcb = tp->mpcb;
+	struct sock *meta_sk = mpcb->meta_sk;
 	struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(sk));
 	int remove_addr_len;
-	u8 unannouncedv4, unannouncedv6;
+	u8 unannouncedv4, unannouncedv6 = 0;
 
 	mpcb->addr_signal = 0;
 
@@ -1432,6 +1450,9 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 		*size += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN;
 	}
 
+	if (meta_sk->sk_family == AF_INET)
+		goto skip_ipv6;
+
 	/* IPv6 */
 	unannouncedv6 = (~fmp->announced_addrs_v6) & mptcp_local->loc6_bits;
 	if (unannouncedv6 &&
@@ -1451,6 +1472,7 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 		*size += MPTCP_SUB_LEN_ADD_ADDR6_ALIGN;
 	}
 
+skip_ipv6:
 	rcu_read_unlock();
 
 	if (!unannouncedv4 && !unannouncedv6 && skb)
