@@ -2338,9 +2338,13 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 			if (!mptcp(meta_tp) || !net_eq(net, sock_net(meta_sk)))
 				continue;
 
-			seq_printf(seq, "%4d: %04X %04X ", n++,
-				   mpcb->mptcp_loc_token,
-				   mpcb->mptcp_rem_token);
+			if (capable(CAP_NET_ADMIN)) {
+				seq_printf(seq, "%4d: %04X %04X ", n++,
+						mpcb->mptcp_loc_token,
+						mpcb->mptcp_rem_token);
+			} else {
+				seq_printf(seq, "%4d: %04X %04X ", n++, -1, -1);
+			}
 			if (meta_sk->sk_family == AF_INET ||
 			    mptcp_v6_is_v4_mapped(meta_sk)) {
 				seq_printf(seq, " 0 %08X:%04X                         %08X:%04X                        ",
@@ -2369,6 +2373,7 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 				   sock_i_ino(meta_sk));
 			seq_putc(seq, '\n');
 		}
+
 		rcu_read_unlock_bh();
 	}
 
