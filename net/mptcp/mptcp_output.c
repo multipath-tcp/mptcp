@@ -1267,7 +1267,7 @@ static void mptcp_ack_retransmit_timer(struct sock *sk)
 	if (tcp_write_timeout(sk)) {
 		tp->mptcp->pre_established = 0;
 		sk_stop_timer(sk, &tp->mptcp->mptcp_ack_timer);
-		tp->send_active_reset(sk, GFP_ATOMIC);
+		tp->ops->send_active_reset(sk, GFP_ATOMIC);
 		goto out;
 	}
 

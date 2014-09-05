@@ -854,6 +854,42 @@ out:
 	sock_put(meta_sk);
 }
 
+static const struct tcp_sock_ops mptcp_meta_specific = {
+	.__select_window		= __mptcp_select_window,
+	.select_window			= mptcp_select_window,
+	.select_initial_window		= mptcp_select_initial_window,
+	.init_buffer_space		= mptcp_init_buffer_space,
+	.set_rto			= mptcp_tcp_set_rto,
+	.should_expand_sndbuf		= mptcp_should_expand_sndbuf,
+	.init_congestion_control	= mptcp_init_congestion_control,
+	.send_fin			= mptcp_send_fin,
+	.write_xmit			= mptcp_write_xmit,
+	.send_active_reset		= mptcp_send_active_reset,
+	.write_wakeup			= mptcp_write_wakeup,
+	.prune_ofo_queue		= mptcp_prune_ofo_queue,
+	.retransmit_timer		= mptcp_retransmit_timer,
+	.time_wait			= mptcp_time_wait,
+	.cleanup_rbuf			= mptcp_cleanup_rbuf,
+};
+
+static const struct tcp_sock_ops mptcp_sub_specific = {
+	.__select_window		= __mptcp_select_window,
+	.select_window			= mptcp_select_window,
+	.select_initial_window		= mptcp_select_initial_window,
+	.init_buffer_space		= mptcp_init_buffer_space,
+	.set_rto			= mptcp_tcp_set_rto,
+	.should_expand_sndbuf		= mptcp_should_expand_sndbuf,
+	.init_congestion_control	= mptcp_init_congestion_control,
+	.send_fin			= tcp_send_fin,
+	.write_xmit			= tcp_write_xmit,
+	.send_active_reset		= tcp_send_active_reset,
+	.write_wakeup			= tcp_write_wakeup,
+	.prune_ofo_queue		= tcp_prune_ofo_queue,
+	.retransmit_timer		= tcp_retransmit_timer,
+	.time_wait			= tcp_time_wait,
+	.cleanup_rbuf			= tcp_cleanup_rbuf,
+};
+
 static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 {
 	struct mptcp_cb *mpcb;
@@ -1001,8 +1037,10 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	}
 
 	/* Redefine function-pointers as the meta-sk is now fully ready */
-	set_mpc(meta_tp);
-	set_meta_funcs(meta_tp);
+	static_key_slow_inc(&mptcp_static_key);
+	meta_tp->mpc = 1;
+	meta_tp->ops = &mptcp_meta_specific;
+
 	meta_sk->sk_backlog_rcv = mptcp_backlog_rcv;
 	meta_sk->sk_destruct = mptcp_sock_destruct;
 
@@ -1080,7 +1118,11 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 	tp->mptcp->tp = tp;
 	tp->mpcb = mpcb;
 	tp->meta_sk = meta_sk;
-	set_mpc(tp);
+
+	static_key_slow_inc(&mptcp_static_key);
+	tp->mpc = 1;
+	tp->ops = &mptcp_sub_specific;
+
 	tp->mptcp->loc_id = loc_id;
 	tp->mptcp->rem_id = rem_id;
 	if (mpcb->sched_ops->init)
@@ -1244,7 +1286,7 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 second_part:
 		/* This here is the second part of tcp_cleanup_rbuf */
 		if (rcv_window_now) {
-			__u32 new_window = tp->__select_window(sk);
+			__u32 new_window = tp->ops->__select_window(sk);
 
 			/* Send ACK now, if this read freed lots of space
 			 * in our buffer. Certainly, new_window is new window.
@@ -1495,8 +1537,8 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 		/* Unread data was tossed, zap the connection. */
 		NET_INC_STATS_USER(sock_net(meta_sk), LINUX_MIB_TCPABORTONCLOSE);
 		tcp_set_state(meta_sk, TCP_CLOSE);
-		tcp_sk(meta_sk)->send_active_reset(meta_sk,
-						   meta_sk->sk_allocation);
+		tcp_sk(meta_sk)->ops->send_active_reset(meta_sk,
+							meta_sk->sk_allocation);
 	} else if (sock_flag(meta_sk, SOCK_LINGER) && !meta_sk->sk_lingertime) {
 		/* Check zero linger _after_ checking for unread data. */
 		meta_sk->sk_prot->disconnect(meta_sk, 0);
@@ -1574,7 +1616,7 @@ adjudge_to_death:
 	if (meta_sk->sk_state == TCP_FIN_WAIT2) {
 		if (meta_tp->linger2 < 0) {
 			tcp_set_state(meta_sk, TCP_CLOSE);
-			meta_tp->send_active_reset(meta_sk, GFP_ATOMIC);
+			meta_tp->ops->send_active_reset(meta_sk, GFP_ATOMIC);
 			NET_INC_STATS_BH(sock_net(meta_sk),
 					 LINUX_MIB_TCPABORTONLINGER);
 		} else {
@@ -1584,7 +1626,8 @@ adjudge_to_death:
 				inet_csk_reset_keepalive_timer(meta_sk,
 							       tmo - TCP_TIMEWAIT_LEN);
 			} else {
-				meta_tp->time_wait(meta_sk, TCP_FIN_WAIT2, tmo);
+				meta_tp->ops->time_wait(meta_sk, TCP_FIN_WAIT2,
+							tmo);
 				goto out;
 			}
 		}
@@ -1595,7 +1638,7 @@ adjudge_to_death:
 			if (net_ratelimit())
 				pr_info("MPTCP: too many of orphaned sockets\n");
 			tcp_set_state(meta_sk, TCP_CLOSE);
-			meta_tp->send_active_reset(meta_sk, GFP_ATOMIC);
+			meta_tp->ops->send_active_reset(meta_sk, GFP_ATOMIC);
 			NET_INC_STATS_BH(sock_net(meta_sk),
 					 LINUX_MIB_TCPABORTONMEMORY);
 		}
@@ -1645,15 +1688,16 @@ void mptcp_disconnect(struct sock *sk)
 
 		bh_lock_sock(subsk);
 		mptcp_del_sock(subsk);
-		reset_mpc(tcp_sk(subsk));
+		tcp_sk(subsk)->mpc = 0;
+		tcp_sk(subsk)->ops = &tcp_specific;
 		mptcp_sub_force_close(subsk);
 		bh_unlock_sock(subsk);
 	}
 	local_bh_enable();
 
 	tp->was_meta_sk = 1;
-	reset_mpc(tp);
-	reset_meta_funcs(tp);
+	tp->mpc = 0;
+	tp->ops = &tcp_specific;
 }
 
 
@@ -1826,9 +1870,10 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	child->sk_wq = meta_sk->sk_wq;
 
 	if (mptcp_add_sock(meta_sk, child, mtreq->loc_id, mtreq->rem_id, GFP_ATOMIC)) {
-		reset_mpc(child_tp); /* Has been inherited, but now
-				      * child_tp->mptcp is NULL
-				      */
+		/* Has been inherited, but now child_tp->mptcp is NULL */
+		child_tp->mpc = 0;
+		child_tp->ops = &tcp_specific;
+
 		/* TODO when we support acking the third ack for new subflows,
 		 * we should silently discard this third ack, by returning NULL.
 		 *
@@ -1842,7 +1887,6 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	 * some of the fields
 	 */
 	child_tp->mptcp->rcv_low_prio = mtreq->rcv_low_prio;
-	reset_meta_funcs(child_tp);
 
 	/* We should allow proper increase of the snd/rcv-buffers. Thus, we
 	 * use the original values instead of the bloated up ones from the

@@ -281,7 +281,7 @@ u16 tcp_select_window(struct sock *sk)
 	 * for the current meta-level sk_rcvbuf.
 	 */
 	u32 cur_win = tcp_receive_window(mptcp(tp) ? tcp_sk(mptcp_meta_sk(sk)) : tp);
-	u32 new_win = tp->__select_window(sk);
+	u32 new_win = tp->ops->__select_window(sk);
 
 	/* Never shrink the offered window */
 	if (new_win < cur_win) {
@@ -723,8 +723,8 @@ static void tcp_tsq_handler(struct sock *sk)
 	if ((1 << sk->sk_state) &
 	    (TCPF_ESTABLISHED | TCPF_FIN_WAIT1 | TCPF_CLOSING |
 	     TCPF_CLOSE_WAIT  | TCPF_LAST_ACK))
-		tcp_sk(sk)->write_xmit(sk, tcp_current_mss(sk),
-				       tcp_sk(sk)->nonagle, 0, GFP_ATOMIC);
+		tcp_sk(sk)->ops->write_xmit(sk, tcp_current_mss(sk),
+					    tcp_sk(sk)->nonagle, 0, GFP_ATOMIC);
 }
 /*
  * One tasklet per cpu tries to send more skbs.
@@ -972,7 +972,7 @@ int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		 */
 		th->window	= htons(min(tp->rcv_wnd, 65535U));
 	} else {
-		th->window	= htons(tp->select_window(sk));
+		th->window	= htons(tp->ops->select_window(sk));
 	}
 	th->check		= 0;
 	th->urg_ptr		= 0;
@@ -2102,7 +2102,8 @@ void tcp_send_loss_probe(struct sock *sk)
 	int err = -1;
 
 	if (tcp_send_head(sk) != NULL) {
-		err = tp->write_xmit(sk, mss, TCP_NAGLE_OFF, 2, GFP_ATOMIC);
+		err = tp->ops->write_xmit(sk, mss, TCP_NAGLE_OFF, 2,
+					  GFP_ATOMIC);
 		goto rearm_timer;
 	}
 
@@ -2161,8 +2162,8 @@ void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
 	if (unlikely(sk->sk_state == TCP_CLOSE))
 		return;
 
-	if (tcp_sk(sk)->write_xmit(sk, cur_mss, nonagle, 0,
-				   sk_gfp_atomic(sk, GFP_ATOMIC)))
+	if (tcp_sk(sk)->ops->write_xmit(sk, cur_mss, nonagle, 0,
+					sk_gfp_atomic(sk, GFP_ATOMIC)))
 		tcp_check_probe_timer(sk);
 }
 
@@ -2175,8 +2176,8 @@ void tcp_push_one(struct sock *sk, unsigned int mss_now)
 
 	BUG_ON(!skb || skb->len < mss_now);
 
-	tcp_sk(sk)->write_xmit(sk, mss_now, TCP_NAGLE_PUSH, 1,
-			       sk->sk_allocation);
+	tcp_sk(sk)->ops->write_xmit(sk, mss_now, TCP_NAGLE_PUSH, 1,
+				    sk->sk_allocation);
 }
 
 /* This function returns the amount that we can raise the
@@ -2899,13 +2900,13 @@ static void tcp_connect_init(struct sock *sk)
 	    (tp->window_clamp > tcp_full_space(sk) || tp->window_clamp == 0))
 		tp->window_clamp = tcp_full_space(sk);
 
-	tp->select_initial_window(tcp_full_space(sk),
-				  tp->advmss - (tp->rx_opt.ts_recent_stamp ? tp->tcp_header_len - sizeof(struct tcphdr) : 0),
-				  &tp->rcv_wnd,
-				  &tp->window_clamp,
-				  sysctl_tcp_window_scaling,
-				  &rcv_wscale,
-				  dst_metric(dst, RTAX_INITRWND), sk);
+	tp->ops->select_initial_window(tcp_full_space(sk),
+				       tp->advmss - (tp->rx_opt.ts_recent_stamp ? tp->tcp_header_len - sizeof(struct tcphdr) : 0),
+				       &tp->rcv_wnd,
+				       &tp->window_clamp,
+				       sysctl_tcp_window_scaling,
+				       &rcv_wscale,
+				       dst_metric(dst, RTAX_INITRWND), sk);
 
 	tp->rx_opt.rcv_wscale = rcv_wscale;
 	tp->rcv_ssthresh = tp->rcv_wnd;
@@ -3303,7 +3304,7 @@ void tcp_send_probe0(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	int err;
 
-	err = tp->write_wakeup(sk);
+	err = tp->ops->write_wakeup(sk);
 
 	if (tp->packets_out || !tcp_send_head(sk)) {
 		/* Cancel probe timer, if it is not required. */

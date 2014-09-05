@@ -2920,7 +2920,7 @@ static inline bool tcp_ack_update_rtt(struct sock *sk, const int flag,
 		return false;
 
 	tcp_rtt_estimator(sk, seq_rtt_us);
-	tp->set_rto(sk);
+	tp->ops->set_rto(sk);
 
 	/* RFC6298: only reset backoff on valid RTT measurement. */
 	inet_csk(sk)->icsk_backoff = 0;
@@ -3884,7 +3884,7 @@ static void tcp_fin(struct sock *sk)
 		}
 		/* Received a FIN -- send ACK and enter TIME_WAIT. */
 		tcp_send_ack(sk);
-		tp->time_wait(sk, TCP_TIME_WAIT, 0);
+		tp->ops->time_wait(sk, TCP_TIME_WAIT, 0);
 		break;
 	default:
 		/* Only TCP_LISTEN and TCP_CLOSE are left, in these
@@ -4144,7 +4144,7 @@ static int tcp_try_rmem_schedule(struct sock *sk, struct sk_buff *skb,
 			return -1;
 
 		if (!sk_rmem_schedule(sk, skb, size)) {
-			if (!tcp_sk(sk)->prune_ofo_queue(sk))
+			if (!tcp_sk(sk)->ops->prune_ofo_queue(sk))
 				return -1;
 
 			if (!sk_rmem_schedule(sk, skb, size))
@@ -4741,7 +4741,7 @@ static int tcp_prune_queue(struct sock *sk)
 	/* Collapsing did not help, destructive actions follow.
 	 * This must not ever occur. */
 
-	tp->prune_ofo_queue(sk);
+	tp->ops->prune_ofo_queue(sk);
 
 	if (atomic_read(&sk->sk_rmem_alloc) <= sk->sk_rcvbuf)
 		return 0;
@@ -4814,7 +4814,7 @@ static void tcp_new_space(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	if (tp->should_expand_sndbuf(sk)) {
+	if (tp->ops->should_expand_sndbuf(sk)) {
 		tcp_sndbuf_expand(sk);
 		tp->snd_cwnd_stamp = tcp_time_stamp;
 	}
@@ -4851,7 +4851,7 @@ static void __tcp_ack_snd_check(struct sock *sk, int ofo_possible)
 	     /* ... and right edge of window advances far enough.
 	      * (tcp_recvmsg() will send ACK otherwise). Or...
 	      */
-	     tp->__select_window(sk) >= tp->rcv_wnd) ||
+	     tp->ops->__select_window(sk) >= tp->rcv_wnd) ||
 	    /* We ACK each frame or... */
 	    tcp_in_quickack_mode(sk) ||
 	    /* We have out of order data. */
@@ -5296,7 +5296,7 @@ void tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 					NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPHPHITSTOUSER);
 				}
 				if (copied_early)
-					tp->cleanup_rbuf(sk, skb->len);
+					tp->ops->cleanup_rbuf(sk, skb->len);
 			}
 			if (!eaten) {
 				if (tcp_checksum_complete_user(sk, skb))
@@ -5404,14 +5404,14 @@ void tcp_finish_connect(struct sock *sk, struct sk_buff *skb)
 
 	tcp_init_metrics(sk);
 
-	tp->init_congestion_control(sk);
+	tp->ops->init_congestion_control(sk);
 
 	/* Prevent spurious tcp_cwnd_restart() on first data
 	 * packet.
 	 */
 	tp->lsndtime = tcp_time_stamp;
 
-	tp->init_buffer_space(sk);
+	tp->ops->init_buffer_space(sk);
 
 	if (sock_flag(sk, SOCK_KEEPOPEN))
 		inet_csk_reset_keepalive_timer(sk, keepalive_time_when(tp));
@@ -5851,11 +5851,11 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 			synack_stamp = tp->lsndtime;
 			/* Make sure socket is routed, for correct metrics. */
 			icsk->icsk_af_ops->rebuild_header(sk);
-			tp->init_congestion_control(sk);
+			tp->ops->init_congestion_control(sk);
 
 			tcp_mtup_init(sk);
 			tp->copied_seq = tp->rcv_nxt;
-			tp->init_buffer_space(sk);
+			tp->ops->init_buffer_space(sk);
 		}
 		smp_mb();
 		tcp_set_state(sk, TCP_ESTABLISHED);
@@ -5965,7 +5965,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 			 */
 			inet_csk_reset_keepalive_timer(sk, tmo);
 		} else {
-			tp->time_wait(sk, TCP_FIN_WAIT2, tmo);
+			tp->ops->time_wait(sk, TCP_FIN_WAIT2, tmo);
 			goto discard;
 		}
 		break;
@@ -5973,7 +5973,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 
 	case TCP_CLOSING:
 		if (tp->snd_una == tp->write_seq) {
-			tp->time_wait(sk, TCP_TIME_WAIT, 0);
+			tp->ops->time_wait(sk, TCP_TIME_WAIT, 0);
 			goto discard;
 		}
 		break;

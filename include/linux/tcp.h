@@ -371,6 +371,8 @@ struct tcp_sock {
 	 */
 	struct request_sock *fastopen_rsk;
 
+	/* MPTCP/TCP-specific callbacks */
+	const struct tcp_sock_ops	*ops;
 
 	struct mptcp_cb		*mpcb;
 	struct sock		*meta_sk;
@@ -399,29 +401,6 @@ struct tcp_sock {
 	u32		mptcp_loc_token;
 	u64		mptcp_loc_key;
 #endif /* CONFIG_MPTCP */
-
-	/* Functions that depend on the value of the mpc flag */
-	u32 (*__select_window)(struct sock *sk);
-	u16 (*select_window)(struct sock *sk);
-	void (*select_initial_window)(int __space, __u32 mss, __u32 *rcv_wnd,
-					__u32 *window_clamp, int wscale_ok,
-					__u8 *rcv_wscale, __u32 init_rcv_wnd,
-					const struct sock *sk);
-	void (*init_buffer_space)(struct sock *sk);
-	void (*set_rto)(struct sock *sk);
-	bool (*should_expand_sndbuf)(const struct sock *sk);
-
-	/* Functions that depend on is_meta_sk() */
-	void (*send_fin)(struct sock *sk);
-	bool (*write_xmit)(struct sock *sk, unsigned int mss_now, int nonagle,
-			int push_one, gfp_t gfp);
-	void (*send_active_reset)(struct sock *sk, gfp_t priority);
-	int (*write_wakeup)(struct sock *sk);
-	bool (*prune_ofo_queue)(struct sock *sk);
-	void (*retransmit_timer)(struct sock *sk);
-	void (*time_wait)(struct sock *sk, int state, int timeo);
-	void (*cleanup_rbuf)(struct sock *sk, int copied);
-	void (*init_congestion_control)(struct sock *sk);
 };
 
 enum tsq_flags {

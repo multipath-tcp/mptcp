@@ -414,40 +414,6 @@ struct mptcp_cb {
 
 #define OPTION_MPTCP		(1 << 5)
 
-static inline void reset_mpc(struct tcp_sock *tp)
-{
-	tp->mpc	= 0;
-
-	tp->__select_window		= __tcp_select_window;
-	tp->select_window		= tcp_select_window;
-	tp->select_initial_window	= tcp_select_initial_window;
-	tp->init_buffer_space		= tcp_init_buffer_space;
-	tp->set_rto			= tcp_set_rto;
-	tp->should_expand_sndbuf	= tcp_should_expand_sndbuf;
-	tp->init_congestion_control	= tcp_init_congestion_control;
-}
-
-static void reset_meta_funcs(struct tcp_sock *tp)
-{
-	tp->send_fin		= tcp_send_fin;
-	tp->write_xmit		= tcp_write_xmit;
-	tp->send_active_reset	= tcp_send_active_reset;
-	tp->write_wakeup	= tcp_write_wakeup;
-	tp->prune_ofo_queue	= tcp_prune_ofo_queue;
-	tp->retransmit_timer	= tcp_retransmit_timer;
-	tp->time_wait		= tcp_time_wait;
-	tp->cleanup_rbuf	= tcp_cleanup_rbuf;
-}
-
-/* Initializes MPTCP flags in tcp_sock (and other tcp_sock members that depend
- * on those flags).
- */
-static inline void mptcp_init_tcp_sock(struct tcp_sock *tp)
-{
-	reset_mpc(tp);
-	reset_meta_funcs(tp);
-}
-
 #ifdef CONFIG_MPTCP
 
 /* Used for checking if the mptcp initialization has been successful */
@@ -943,7 +909,7 @@ static inline void mptcp_push_pending_frames(struct sock *meta_sk)
 
 static inline void mptcp_send_reset(struct sock *sk)
 {
-	tcp_sk(sk)->send_active_reset(sk, GFP_ATOMIC);
+	tcp_sk(sk)->ops->send_active_reset(sk, GFP_ATOMIC);
 	mptcp_sub_force_close(sk);
 }
 
@@ -1295,32 +1261,6 @@ void mptcp_tcp_set_rto(struct sock *sk);
 
 /* TCP and MPTCP flag-depending functions */
 bool mptcp_prune_ofo_queue(struct sock *sk);
-
-static inline void set_mpc(struct tcp_sock *tp)
-{
-	static_key_slow_inc(&mptcp_static_key);
-	tp->mpc	= 1;
-
-	tp->__select_window		= __mptcp_select_window;
-	tp->select_window		= mptcp_select_window;
-	tp->select_initial_window	= mptcp_select_initial_window;
-	tp->init_buffer_space		= mptcp_init_buffer_space;
-	tp->set_rto			= mptcp_tcp_set_rto;
-	tp->should_expand_sndbuf	= mptcp_should_expand_sndbuf;
-	tp->init_congestion_control	= mptcp_init_congestion_control;
-}
-
-static inline void set_meta_funcs(struct tcp_sock *tp)
-{
-	tp->send_fin		= mptcp_send_fin;
-	tp->write_xmit		= mptcp_write_xmit;
-	tp->send_active_reset	= mptcp_send_active_reset;
-	tp->write_wakeup	= mptcp_write_wakeup;
-	tp->prune_ofo_queue	= mptcp_prune_ofo_queue;
-	tp->retransmit_timer	= mptcp_retransmit_timer;
-	tp->time_wait		= mptcp_time_wait;
-	tp->cleanup_rbuf	= mptcp_cleanup_rbuf;
-}
 
 #else /* CONFIG_MPTCP */
 #define mptcp_debug(fmt, args...)	\

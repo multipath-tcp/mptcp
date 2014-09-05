@@ -414,7 +414,7 @@ void tcp_openreq_init_rwin(struct request_sock *req,
 		req->window_clamp = tcp_full_space(sk);
 
 	/* tcp_full_space because it is guaranteed to be the first packet */
-	tp->select_initial_window(tcp_full_space(sk),
+	tp->ops->select_initial_window(tcp_full_space(sk),
 		mss - (ireq->tstamp_ok ? TCPOLEN_TSTAMP_ALIGNED : 0) -
 		(ireq->saw_mpc ? MPTCP_SUB_LEN_DSM_ALIGN : 0),
 		&req->rcv_wnd,

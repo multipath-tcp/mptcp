@@ -1738,6 +1738,30 @@ struct tcp_sock_af_ops {
 #endif
 };
 
+/* TCP/MPTCP-specific functions */
+struct tcp_sock_ops {
+	u32 (*__select_window)(struct sock *sk);
+	u16 (*select_window)(struct sock *sk);
+	void (*select_initial_window)(int __space, __u32 mss, __u32 *rcv_wnd,
+				      __u32 *window_clamp, int wscale_ok,
+				      __u8 *rcv_wscale, __u32 init_rcv_wnd,
+				      const struct sock *sk);
+	void (*init_buffer_space)(struct sock *sk);
+	void (*set_rto)(struct sock *sk);
+	bool (*should_expand_sndbuf)(const struct sock *sk);
+	void (*send_fin)(struct sock *sk);
+	bool (*write_xmit)(struct sock *sk, unsigned int mss_now, int nonagle,
+			   int push_one, gfp_t gfp);
+	void (*send_active_reset)(struct sock *sk, gfp_t priority);
+	int (*write_wakeup)(struct sock *sk);
+	bool (*prune_ofo_queue)(struct sock *sk);
+	void (*retransmit_timer)(struct sock *sk);
+	void (*time_wait)(struct sock *sk, int state, int timeo);
+	void (*cleanup_rbuf)(struct sock *sk, int copied);
+	void (*init_congestion_control)(struct sock *sk);
+};
+extern const struct tcp_sock_ops tcp_specific;
+
 struct tcp_request_sock_ops {
 	u16 mss_clamp;
 #ifdef CONFIG_TCP_MD5SIG

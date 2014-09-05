@@ -372,6 +372,24 @@ static int retrans_to_secs(u8 retrans, int timeout, int rto_max)
 	return period;
 }
 
+const struct tcp_sock_ops tcp_specific = {
+	.__select_window		= __tcp_select_window,
+	.select_window			= tcp_select_window,
+	.select_initial_window		= tcp_select_initial_window,
+	.init_buffer_space		= tcp_init_buffer_space,
+	.set_rto			= tcp_set_rto,
+	.should_expand_sndbuf		= tcp_should_expand_sndbuf,
+	.init_congestion_control	= tcp_init_congestion_control,
+	.send_fin			= tcp_send_fin,
+	.write_xmit			= tcp_write_xmit,
+	.send_active_reset		= tcp_send_active_reset,
+	.write_wakeup			= tcp_write_wakeup,
+	.prune_ofo_queue		= tcp_prune_ofo_queue,
+	.retransmit_timer		= tcp_retransmit_timer,
+	.time_wait			= tcp_time_wait,
+	.cleanup_rbuf			= tcp_cleanup_rbuf,
+};
+
 /* Address-family independent initialization for a tcp_sock.
  *
  * NOTE: A lot of things set to zero explicitly by call to
@@ -420,8 +438,7 @@ void tcp_init_sock(struct sock *sk)
 	sk->sk_sndbuf = sysctl_tcp_wmem[1];
 	sk->sk_rcvbuf = sysctl_tcp_rmem[1];
 
-	/* Set function pointers in tcp_sock to tcp functions. */
-	mptcp_init_tcp_sock(tp);
+	tp->ops = &tcp_specific;
 
 	local_bh_disable();
 	sock_update_memcg(sk);
@@ -1477,7 +1494,7 @@ void tcp_cleanup_rbuf(struct sock *sk, int copied)
 
 		/* Optimize, __tcp_select_window() is not cheap. */
 		if (2*rcv_window_now <= tp->window_clamp) {
-			__u32 new_window = tp->__select_window(sk);
+			__u32 new_window = tp->ops->__select_window(sk);
 
 			/* Send ACK now, if this read freed lots of space
 			 * in our buffer. Certainly, new_window is new window.
@@ -1642,7 +1659,7 @@ int tcp_read_sock(struct sock *sk, read_descriptor_t *desc,
 	/* Clean up data we have read: This will do ACK frames. */
 	if (copied > 0) {
 		tcp_recv_skb(sk, seq, &offset);
-		tp->cleanup_rbuf(sk, copied);
+		tp->ops->cleanup_rbuf(sk, copied);
 	}
 	return copied;
 }
@@ -1824,7 +1841,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			}
 		}
 
-		tp->cleanup_rbuf(sk, copied);
+		tp->ops->cleanup_rbuf(sk, copied);
 
 		if (!sysctl_tcp_low_latency && tp->ucopy.task == user_recv) {
 			/* Install new reader */
@@ -1876,7 +1893,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			if (tp->rcv_wnd == 0 &&
 			    !skb_queue_empty(&sk->sk_async_wait_queue)) {
 				tcp_service_net_dma(sk, true);
-				tp->cleanup_rbuf(sk, copied);
+				tp->ops->cleanup_rbuf(sk, copied);
 			} else
 				dma_async_issue_pending(tp->ucopy.dma_chan);
 		}
@@ -2056,7 +2073,7 @@ skip_copy:
 	 */
 
 	/* Clean up data we have read: This will do ACK frames. */
-	tp->cleanup_rbuf(sk, copied);
+	tp->ops->cleanup_rbuf(sk, copied);
 
 	release_sock(sk);
 	return copied;
@@ -2163,7 +2180,7 @@ void tcp_shutdown(struct sock *sk, int how)
 	     TCPF_SYN_RECV | TCPF_CLOSE_WAIT)) {
 		/* Clear out any half completed packets.  FIN if needed. */
 		if (tcp_close_state(sk))
-			tcp_sk(sk)->send_fin(sk);
+			tcp_sk(sk)->ops->send_fin(sk);
 	}
 }
 EXPORT_SYMBOL(tcp_shutdown);
@@ -2235,7 +2252,7 @@ void tcp_close(struct sock *sk, long timeout)
 		/* Unread data was tossed, zap the connection. */
 		NET_INC_STATS_USER(sock_net(sk), LINUX_MIB_TCPABORTONCLOSE);
 		tcp_set_state(sk, TCP_CLOSE);
-		tcp_sk(sk)->send_active_reset(sk, sk->sk_allocation);
+		tcp_sk(sk)->ops->send_active_reset(sk, sk->sk_allocation);
 	} else if (sock_flag(sk, SOCK_LINGER) && !sk->sk_lingertime) {
 		/* Check zero linger _after_ checking for unread data. */
 		sk->sk_prot->disconnect(sk, 0);
@@ -2315,7 +2332,7 @@ adjudge_to_death:
 		struct tcp_sock *tp = tcp_sk(sk);
 		if (tp->linger2 < 0) {
 			tcp_set_state(sk, TCP_CLOSE);
-			tp->send_active_reset(sk, GFP_ATOMIC);
+			tp->ops->send_active_reset(sk, GFP_ATOMIC);
 			NET_INC_STATS_BH(sock_net(sk),
 					LINUX_MIB_TCPABORTONLINGER);
 		} else {
@@ -2325,7 +2342,8 @@ adjudge_to_death:
 				inet_csk_reset_keepalive_timer(sk,
 						tmo - TCP_TIMEWAIT_LEN);
 			} else {
-				tcp_sk(sk)->time_wait(sk, TCP_FIN_WAIT2, tmo);
+				tcp_sk(sk)->ops->time_wait(sk, TCP_FIN_WAIT2,
+							   tmo);
 				goto out;
 			}
 		}
@@ -2334,7 +2352,7 @@ adjudge_to_death:
 		sk_mem_reclaim(sk);
 		if (tcp_check_oom(sk, 0)) {
 			tcp_set_state(sk, TCP_CLOSE);
-			tcp_sk(sk)->send_active_reset(sk, GFP_ATOMIC);
+			tcp_sk(sk)->ops->send_active_reset(sk, GFP_ATOMIC);
 			NET_INC_STATS_BH(sock_net(sk),
 					LINUX_MIB_TCPABORTONMEMORY);
 		}
@@ -2381,7 +2399,7 @@ int tcp_disconnect(struct sock *sk, int flags)
 		/* The last check adjusts for discrepancy of Linux wrt. RFC
 		 * states
 		 */
-		tp->send_active_reset(sk, gfp_any());
+		tp->ops->send_active_reset(sk, gfp_any());
 		sk->sk_err = ECONNRESET;
 	} else if (old_state == TCP_SYN_SENT)
 		sk->sk_err = ECONNRESET;
@@ -2731,7 +2749,7 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 			    (TCPF_ESTABLISHED | TCPF_CLOSE_WAIT) &&
 			    inet_csk_ack_scheduled(sk)) {
 				icsk->icsk_ack.pending |= ICSK_ACK_PUSHED;
-				tp->cleanup_rbuf(sk, 1);
+				tp->ops->cleanup_rbuf(sk, 1);
 				if (!(val & 1))
 					icsk->icsk_ack.pingpong = 1;
 			}
