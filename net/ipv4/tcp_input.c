@@ -5530,6 +5530,18 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		if (!th->syn)
 			goto discard_and_undo;
 
+		/* rfc793:
+		 *   "If the SYN bit is on ...
+		 *    are acceptable then ...
+		 *    (our SYN has been ACKed), change the connection
+		 *    state to ESTABLISHED..."
+		 */
+
+		TCP_ECN_rcv_synack(tp, th);
+
+		tcp_init_wl(tp, TCP_SKB_CB(skb)->seq);
+		tcp_ack(sk, skb, FLAG_SLOWPATH);
+
 		if (tp->request_mptcp || mptcp(tp)) {
 			int ret;
 			ret = mptcp_rcv_synsent_state_process(sk, &sk,
@@ -5544,18 +5556,6 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			if (ret == 2)
 				goto discard;
 		}
-
-		/* rfc793:
-		 *   "If the SYN bit is on ...
-		 *    are acceptable then ...
-		 *    (our SYN has been ACKed), change the connection
-		 *    state to ESTABLISHED..."
-		 */
-
-		TCP_ECN_rcv_synack(tp, th);
-
-		tcp_init_wl(tp, TCP_SKB_CB(skb)->seq);
-		tcp_ack(sk, skb, FLAG_SLOWPATH);
 
 		if (mptcp(tp) && !is_master_tp(tp)) {
 			/* Timer for repeating the ACK until an answer

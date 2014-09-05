@@ -896,7 +896,6 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	struct sock *master_sk;
 	struct inet_connection_sock *master_icsk, *meta_icsk = inet_csk(meta_sk);
 	struct tcp_sock *master_tp, *meta_tp = tcp_sk(meta_sk);
-	struct sk_buff *skb, *tmp;
 	u64 idsn;
 
 	dst_release(meta_sk->sk_rx_dst);
@@ -1006,22 +1005,6 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	INIT_LIST_HEAD(&master_tp->tsq_node);
 
 	master_tp->tsq_flags = 0;
-
-	/* Copy the write-queue from the meta down to the master.
-	 * This is necessary to get the SYN to the master-write-queue.
-	 * No other data can be queued, before tcp_sendmsg waits for the
-	 * connection to finish.
-	 */
-	skb_queue_walk_safe(&meta_sk->sk_write_queue, skb, tmp) {
-		skb_unlink(skb, &meta_sk->sk_write_queue);
-		skb_queue_tail(&master_sk->sk_write_queue, skb);
-
-		master_sk->sk_wmem_queued += skb->truesize;
-		sk_mem_charge(master_sk, skb->truesize);
-	}
-
-	meta_sk->sk_wmem_queued = 0;
-	meta_sk->sk_forward_alloc = 0;
 
 	mutex_init(&mpcb->mpcb_mutex);
 
