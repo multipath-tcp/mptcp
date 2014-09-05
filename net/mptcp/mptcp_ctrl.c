@@ -1764,9 +1764,8 @@ err_alloc_mpcb:
 	return -ENOBUFS;
 }
 
-int mptcp_check_req_master(struct sock *sk, struct sock *child,
-			   struct request_sock *req,
-			   struct request_sock **prev)
+static int __mptcp_check_req_master(struct sock *child,
+				    struct request_sock *req)
 {
 	struct tcp_sock *child_tp = tcp_sk(child);
 	struct sock *meta_sk = child;
@@ -1814,8 +1813,70 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	 */
 	mptcp_reqsk_remove_tk(req);
 
-	 /* Hold when creating the meta-sk in tcp_vX_syn_recv_sock. */
+	/* Hold when creating the meta-sk in tcp_vX_syn_recv_sock. */
 	sock_put(meta_sk);
+
+	return 0;
+}
+
+int mptcp_check_req_fastopen(struct sock *child, struct request_sock *req)
+{
+	struct sock *meta_sk = child, *master_sk;
+	struct sk_buff *skb;
+	u32 new_mapping;
+	int ret;
+
+	ret = __mptcp_check_req_master(child, req);
+	if (ret)
+		return ret;
+
+	master_sk = tcp_sk(meta_sk)->mpcb->master_sk;
+
+	/* We need to rewind copied_seq as it is set to IDSN + 1 and as we have
+	 * pre-MPTCP data in the receive queue.
+	 */
+	tcp_sk(meta_sk)->copied_seq -= tcp_sk(master_sk)->rcv_nxt -
+				       tcp_rsk(req)->rcv_isn - 1;
+
+	/* Map subflow sequence number to data sequence numbers. We need to map
+	 * these data to [IDSN - len - 1, IDSN[.
+	 */
+	new_mapping = tcp_sk(meta_sk)->copied_seq - tcp_rsk(req)->rcv_isn - 1;
+
+	/* There should be only one skb: the SYN + data. */
+	skb_queue_walk(&meta_sk->sk_receive_queue, skb) {
+		TCP_SKB_CB(skb)->seq += new_mapping;
+		TCP_SKB_CB(skb)->end_seq += new_mapping;
+	}
+
+	/* With fastopen we change the semantics of the relative subflow
+	 * sequence numbers to deal with middleboxes that could add/remove
+	 * multiple bytes in the SYN. We chose to start counting at rcv_nxt - 1
+	 * instead of the regular TCP ISN.
+	 */
+	tcp_sk(master_sk)->mptcp->rcv_isn = tcp_sk(master_sk)->rcv_nxt - 1;
+
+	/* We need to update copied_seq of the master_sk to account for the
+	 * already moved data to the meta receive queue.
+	 */
+	tcp_sk(master_sk)->copied_seq = tcp_sk(master_sk)->rcv_nxt;
+
+	/* Handled by the master_sk */
+	tcp_sk(meta_sk)->fastopen_rsk = NULL;
+
+	return 0;
+}
+
+int mptcp_check_req_master(struct sock *sk, struct sock *child,
+			   struct request_sock *req,
+			   struct request_sock **prev)
+{
+	struct sock *meta_sk = child;
+	int ret;
+
+	ret = __mptcp_check_req_master(child, req);
+	if (ret)
+		return ret;
 
 	inet_csk_reqsk_queue_unlink(sk, req, prev);
 	inet_csk_reqsk_queue_removed(sk, req);

@@ -744,6 +744,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 void mptcp_close(struct sock *meta_sk, long timeout);
 int mptcp_doit(struct sock *sk);
 int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key, u32 window);
+int mptcp_check_req_fastopen(struct sock *child, struct request_sock *req);
 int mptcp_check_req_master(struct sock *sk, struct sock *child,
 			   struct request_sock *req,
 			   struct request_sock **prev);
@@ -1094,8 +1095,9 @@ static inline void mptcp_check_rcvseq_wrap(struct tcp_sock *meta_tp,
 
 static inline int mptcp_sk_can_send(const struct sock *sk)
 {
-	return (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCPF_CLOSE_WAIT) &&
-	       !tcp_sk(sk)->mptcp->pre_established;
+	return tcp_passive_fastopen(sk) ||
+	       ((1 << sk->sk_state) & (TCPF_ESTABLISHED | TCPF_CLOSE_WAIT) &&
+		!tcp_sk(sk)->mptcp->pre_established);
 }
 
 static inline int mptcp_sk_can_recv(const struct sock *sk)
@@ -1329,6 +1331,11 @@ static inline void mptcp_close(struct sock *meta_sk, long timeout) {}
 static inline int mptcp_doit(struct sock *sk)
 {
 	return 0;
+}
+static inline int mptcp_check_req_fastopen(struct sock *child,
+					   struct request_sock *req)
+{
+	return 1;
 }
 static inline int mptcp_check_req_master(const struct sock *sk,
 					 const struct sock *child,
