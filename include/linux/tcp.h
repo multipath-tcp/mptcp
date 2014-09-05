@@ -53,7 +53,7 @@ static inline unsigned int tcp_optlen(const struct sk_buff *skb)
 /* TCP Fast Open */
 #define TCP_FASTOPEN_COOKIE_MIN	4	/* Min Fast Open Cookie size in bytes */
 #define TCP_FASTOPEN_COOKIE_MAX	16	/* Max Fast Open Cookie size in bytes */
-#define TCP_FASTOPEN_COOKIE_SIZE 8	/* the size employed by this impl. */
+#define TCP_FASTOPEN_COOKIE_SIZE 4	/* the size employed by this impl. */
 
 /* TCP Fast Open Cookie as stored in memory */
 struct tcp_fastopen_cookie {
