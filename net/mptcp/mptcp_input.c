@@ -2131,6 +2131,67 @@ int mptcp_handle_options(struct sock *sk, const struct tcphdr *th,
 	return 0;
 }
 
+/* In case of fastopen, some data can already be in the write queue.
+ * We need to update the sequence number of the segments as they
+ * were initially TCP sequence numbers.
+ */
+static void mptcp_rcv_synsent_fastopen(struct sock *meta_sk)
+{
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct tcp_sock *master_tp = tcp_sk(meta_tp->mpcb->master_sk);
+	struct sk_buff *skb;
+	u32 new_mapping = meta_tp->write_seq - master_tp->snd_una;
+
+	/* There should only be one skb in write queue: the data not
+	 * acknowledged in the SYN+ACK. In this case, we need to map
+	 * this data to data sequence numbers.
+	 */
+	skb_queue_walk(&meta_sk->sk_write_queue, skb) {
+		/* If the server only acknowledges partially the data sent in
+		 * the SYN, we need to trim the acknowledged part because
+		 * we don't want to retransmit this already received data.
+		 * When we reach this point, tcp_ack() has already cleaned up
+		 * fully acked segments. However, tcp trims partially acked
+		 * segments only when retransmitting. Since MPTCP comes into
+		 * play only now, we will fake an initial transmit, and
+		 * retransmit_skb() will not be called. The following fragment
+		 * comes from __tcp_retransmit_skb().
+		 */
+		if (before(TCP_SKB_CB(skb)->seq, master_tp->snd_una)) {
+			BUG_ON(before(TCP_SKB_CB(skb)->end_seq,
+				      master_tp->snd_una));
+			/* tcp_trim_head can only returns ENOMEM if skb is
+			 * cloned. It is not the case here (see
+			 * tcp_send_syn_data).
+			 */
+			BUG_ON(tcp_trim_head(meta_sk, skb, master_tp->snd_una -
+					     TCP_SKB_CB(skb)->seq));
+		}
+
+		TCP_SKB_CB(skb)->seq += new_mapping;
+		TCP_SKB_CB(skb)->end_seq += new_mapping;
+	}
+
+	/* We can advance write_seq by the number of bytes unacknowledged
+	 * and that were mapped in the previous loop.
+	 */
+	meta_tp->write_seq += master_tp->write_seq - master_tp->snd_una;
+
+	/* The packets from the master_sk will be entailed to it later
+	 * Until that time, its write queue is empty, and
+	 * write_seq must align with snd_una
+	 */
+	master_tp->snd_nxt = master_tp->write_seq = master_tp->snd_una;
+	master_tp->packets_out = 0;
+
+	/* Although these data have been sent already over the subsk,
+	 * They have never been sent over the meta_sk, so we rewind
+	 * the send_head so that tcp considers it as an initial send
+	 * (instead of retransmit).
+	 */
+	meta_sk->sk_send_head = tcp_write_queue_head(meta_sk);
+}
+
 /* The skptr is needed, because if we become MPTCP-capable, we have to switch
  * from meta-socket to master-socket.
  *
@@ -2172,6 +2233,8 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 				(u32 *)&tp->mptcp->sender_mac[0]);
 
 	} else if (mopt->saw_mpc) {
+		struct sock *meta_sk = sk;
+
 		if (mptcp_create_master_sk(sk, mopt->mptcp_key,
 					   ntohs(tcp_hdr(skb)->window)))
 			return 2;
@@ -2180,10 +2243,22 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 		*skptr = sk;
 		tp = tcp_sk(sk);
 
-		/* snd_nxt - 1, because it has been incremented
-		 * by tcp_connect for the SYN
+		/* If fastopen was used data might be in the send queue. We
+		 * need to update their sequence number to MPTCP-level seqno.
+		 * Note that it can happen in rare cases that fastopen_req is
+		 * NULL and syn_data is 0 but fastopen indeed occurred and
+		 * data has been queued in the write queue (but not sent).
+		 * Example of such rare cases: connect is non-blocking and
+		 * TFO is configured to work without cookies.
 		 */
-		tp->mptcp->snt_isn = tp->snd_nxt - 1;
+		if (!skb_queue_empty(&meta_sk->sk_write_queue))
+			mptcp_rcv_synsent_fastopen(meta_sk);
+
+		/* -1, because the SYN consumed 1 byte. In case of TFO, we
+		 * start the subflow-sequence number as if the data of the SYN
+		 * is not part of any mapping.
+		 */
+		tp->mptcp->snt_isn = tp->snd_una - 1;
 		tp->mpcb->dss_csum = mopt->dss_csum;
 		tp->mptcp->include_mpc = 1;
 
