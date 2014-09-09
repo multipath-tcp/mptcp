@@ -1549,7 +1549,8 @@ void mptcp_select_initial_window(int __space, __u32 mss, __u32 *rcv_wnd,
 				  wscale_ok, rcv_wscale, init_rcv_wnd, sk);
 }
 
-unsigned int mptcp_current_mss(struct sock *meta_sk)
+static unsigned int __mptcp_current_mss(const struct sock *meta_sk,
+					unsigned int (*mss_cb)(struct sock *sk))
 {
 	unsigned int mss = 0;
 	struct sock *sk;
@@ -1560,10 +1561,17 @@ unsigned int mptcp_current_mss(struct sock *meta_sk)
 		if (!mptcp_sk_can_send(sk))
 			continue;
 
-		this_mss = tcp_current_mss(sk);
+		this_mss = mss_cb(sk);
 		if (this_mss > mss)
 			mss = this_mss;
 	}
+
+	return mss;
+}
+
+unsigned int mptcp_current_mss(struct sock *meta_sk)
+{
+	unsigned int mss = __mptcp_current_mss(meta_sk, tcp_current_mss);
 
 	/* If no subflow is available, we take a default-mss from the
 	 * meta-socket.
@@ -1571,21 +1579,14 @@ unsigned int mptcp_current_mss(struct sock *meta_sk)
 	return !mss ? tcp_current_mss(meta_sk) : mss;
 }
 
+static unsigned int mptcp_select_size_mss(struct sock *sk)
+{
+	return tcp_sk(sk)->mss_cache;
+}
+
 int mptcp_select_size(const struct sock *meta_sk, bool sg)
 {
-	int mss = 0; /* We look for the smallest MSS */
-	struct sock *sk;
-
-	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk) {
-		int this_mss;
-
-		if (!mptcp_sk_can_send(sk))
-			continue;
-
-		this_mss = tcp_sk(sk)->mss_cache;
-		if (this_mss > mss)
-			mss = this_mss;
-	}
+	unsigned int mss = __mptcp_current_mss(meta_sk, mptcp_select_size_mss);
 
 	if (sg) {
 		if (mptcp_sk_can_gso(meta_sk)) {
