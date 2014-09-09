@@ -1549,21 +1549,89 @@ void mptcp_select_initial_window(int __space, __u32 mss, __u32 *rcv_wnd,
 				  wscale_ok, rcv_wscale, init_rcv_wnd, sk);
 }
 
+static inline u64 mptcp_calc_rate(const struct sock *meta_sk, unsigned int mss,
+				  unsigned int (*mss_cb)(struct sock *sk))
+{
+	struct sock *sk;
+	u64 rate = 0;
+
+	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk) {
+		struct tcp_sock *tp = tcp_sk(sk);
+		int this_mss;
+		u64 this_rate;
+
+		if (!mptcp_sk_can_send(sk))
+			continue;
+
+		/* Do not consider subflows without a RTT estimation yet
+		 * otherwise this_rate >>> rate.
+		 */
+		if (unlikely(!tp->srtt_us))
+			continue;
+
+		this_mss = mss_cb(sk);
+
+		/* If this_mss is smaller than mss, it means that a segment will
+		 * be splitted in two (or more) when pushed on this subflow. If
+		 * you consider that mss = 1428 and this_mss = 1420 then two
+		 * segments will be generated: a 1420-byte and 8-byte segment.
+		 * The latter will introduce a large overhead as for a single
+		 * data segment 2 slots will be used in the congestion window.
+		 * Therefore reducing by ~2 the potential throughput of this
+		 * subflow. Indeed, 1428 will be send while 2840 could have been
+		 * sent if mss == 1420 reducing the throughput by 2840 / 1428.
+		 *
+		 * The following algorithm take into account this overhead
+		 * when computing the potential throughput that MPTCP can
+		 * achieve when generating mss-byte segments.
+		 *
+		 * The formulae is the following:
+		 *  \sum_{\forall sub} ratio * \frac{mss * cwnd_sub}{rtt_sub}
+		 * Where ratio is computed as follows:
+		 *  \frac{mss}{\ceil{mss / mss_sub} * mss_sub}
+		 *
+		 * ratio gives the reduction factor of the theoretical
+		 * throughput a subflow can achieve if MPTCP uses a specific
+		 * MSS value.
+		 */
+		this_rate = div64_u64((u64)mss * mss * (USEC_PER_SEC << 3) *
+				      max(tp->snd_cwnd, tp->packets_out),
+				      (u64)tp->srtt_us *
+				      DIV_ROUND_UP(mss, this_mss) * this_mss);
+		rate += this_rate;
+	}
+
+	return rate;
+}
+
 static unsigned int __mptcp_current_mss(const struct sock *meta_sk,
 					unsigned int (*mss_cb)(struct sock *sk))
 {
 	unsigned int mss = 0;
+	u64 rate = 0;
 	struct sock *sk;
 
 	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk) {
 		int this_mss;
+		u64 this_rate;
 
 		if (!mptcp_sk_can_send(sk))
 			continue;
 
 		this_mss = mss_cb(sk);
-		if (this_mss > mss)
+
+		/* Same mss values will produce the same throughput. */
+		if (this_mss == mss)
+			continue;
+
+		/* See whether using this mss value can theoretically improve
+		 * the performances.
+		 */
+		this_rate = mptcp_calc_rate(meta_sk, this_mss, mss_cb);
+		if (this_rate >= rate) {
 			mss = this_mss;
+			rate = this_rate;
+		}
 	}
 
 	return mss;
