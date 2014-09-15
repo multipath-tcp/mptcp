@@ -1146,7 +1146,7 @@ static void full_mesh_add_raddr(struct mptcp_cb *mpcb,
 		mptcp_addv6_raddr(mpcb, &addr->in6, port, id);
 }
 
-static void full_mesh_new_session(struct sock *meta_sk)
+static void full_mesh_new_session(const struct sock *meta_sk)
 {
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
@@ -1588,7 +1588,7 @@ static int mptcp_fm_init_net(struct net *net)
 		goto err_mptcp_local;
 	}
 
-	if (!proc_create("mptcp_fullmesh", S_IRUGO, net->proc_net, 
+	if (!proc_create("mptcp_fullmesh", S_IRUGO, net->proc_net,
 			 &mptcp_fm_seq_fops)) {
 		err = -ENOMEM;
 		goto err_seq_fops;

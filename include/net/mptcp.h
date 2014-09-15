@@ -220,7 +220,7 @@ struct mptcp_pm_ops {
 	struct list_head list;
 
 	/* Signal the creation of a new MPTCP-session. */
-	void (*new_session)(struct sock *meta_sk);
+	void (*new_session)(const struct sock *meta_sk);
 	void (*release_sock)(struct sock *meta_sk);
 	void (*fully_established)(struct sock *meta_sk);
 	void (*new_remote_address)(struct sock *meta_sk);
@@ -719,7 +719,7 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied);
 int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 		   gfp_t flags);
 void mptcp_del_sock(struct sock *sk);
-void mptcp_update_metasocket(struct sock *sock, struct sock *meta_sk);
+void mptcp_update_metasocket(struct sock *sock, const struct sock *meta_sk);
 void mptcp_reinject_data(struct sock *orig_sk, int clone_it);
 void mptcp_update_sndbuf(const struct tcp_sock *tp);
 void mptcp_send_fin(struct sock *meta_sk);
@@ -751,7 +751,7 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
 				   struct request_sock *req,
 				   struct request_sock **prev,
-				   struct mptcp_options_received *mopt);
+				   const struct mptcp_options_received *mopt);
 u32 __mptcp_select_window(struct sock *sk);
 void mptcp_select_initial_window(int __space, __u32 mss, __u32 *rcv_wnd,
 					__u32 *window_clamp, int wscale_ok,
@@ -795,7 +795,7 @@ void mptcp_tsq_sub_deferred(struct sock *meta_sk);
 struct mp_join *mptcp_find_join(const struct sk_buff *skb);
 void mptcp_hash_remove_bh(struct tcp_sock *meta_tp);
 void mptcp_hash_remove(struct tcp_sock *meta_tp);
-struct sock *mptcp_hash_find(struct net *net, u32 token);
+struct sock *mptcp_hash_find(const struct net *net, const u32 token);
 int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw);
 int mptcp_do_join_short(struct sk_buff *skb,
 			const struct mptcp_options_received *mopt,
@@ -811,9 +811,9 @@ int mptcp_sub_len_remove_addr_align(u16 bitfield);
 void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
 			    const struct sk_buff *skb);
 void mptcp_init_buffer_space(struct sock *sk);
-void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, struct request_sock *req,
+void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, const struct request_sock *req,
 			   struct sk_buff *skb);
-void mptcp_reqsk_init(struct request_sock *req, struct sk_buff *skb);
+void mptcp_reqsk_init(struct request_sock *req, const struct sk_buff *skb);
 int mptcp_conn_request(struct sock *sk, struct sk_buff *skb);
 void mptcp_init_congestion_control(struct sock *sk);
 
@@ -1302,7 +1302,7 @@ static inline int is_master_tp(const struct tcp_sock *tp)
 }
 static inline void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp) {}
 static inline void mptcp_del_sock(const struct sock *sk) {}
-static inline void mptcp_update_metasocket(struct sock *sock, struct sock *meta_sk) {}
+static inline void mptcp_update_metasocket(struct sock *sock, const struct sock *meta_sk) {}
 static inline void mptcp_reinject_data(struct sock *orig_sk, int clone_it) {}
 static inline void mptcp_update_sndbuf(const struct tcp_sock *tp) {}
 static inline void mptcp_clean_rtx_infinite(const struct sk_buff *skb,
@@ -1348,7 +1348,7 @@ static inline struct sock *mptcp_check_req_child(struct sock *sk,
 						 struct sock *child,
 						 struct request_sock *req,
 						 struct request_sock **prev,
-						 struct mptcp_options_received *mopt)
+						 const struct mptcp_options_received *mopt)
 {
 	return NULL;
 }

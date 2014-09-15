@@ -189,7 +189,7 @@ static int mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 
 int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {
-	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct sock *child, *rsk = NULL;
 	int ret;
 
@@ -300,7 +300,7 @@ discard:
 struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *raddr,
 				 const struct in6_addr *laddr, const struct net *net)
 {
-	struct mptcp_request_sock *mtreq;
+	const struct mptcp_request_sock *mtreq;
 	struct sock *meta_sk = NULL;
 	const struct hlist_nulls_node *node;
 	const u32 hash = inet6_synq_hash(raddr, rport, 0, MPTCP_HASH_SIZE);

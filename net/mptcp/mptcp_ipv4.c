@@ -175,7 +175,7 @@ static int mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 /* We only process join requests here. (either the SYN or the final ACK) */
 int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {
-	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct sock *child, *rsk = NULL;
 	int ret;
 
@@ -284,7 +284,7 @@ discard:
 struct sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
 				 const __be32 laddr, const struct net *net)
 {
-	struct mptcp_request_sock *mtreq;
+	const struct mptcp_request_sock *mtreq;
 	struct sock *meta_sk = NULL;
 	const struct hlist_nulls_node *node;
 	const u32 hash = inet_synq_hash(raddr, rport, 0, MPTCP_HASH_SIZE);

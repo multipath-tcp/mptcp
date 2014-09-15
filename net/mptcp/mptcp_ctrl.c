@@ -206,7 +206,7 @@ static void mptcp_reqsk_insert_tk(struct request_sock *reqsk, const u32 token)
 				 &mptcp_reqsk_tk_htb[hash]);
 }
 
-static void mptcp_reqsk_remove_tk(struct request_sock *reqsk)
+static void mptcp_reqsk_remove_tk(const struct request_sock *reqsk)
 {
 	rcu_read_lock();
 	spin_lock(&mptcp_tk_hashlock);
@@ -264,7 +264,7 @@ begin:
 static void mptcp_set_key_reqsk(struct request_sock *req,
 				const struct sk_buff *skb)
 {
-	struct inet_request_sock *ireq = inet_rsk(req);
+	const struct inet_request_sock *ireq = inet_rsk(req);
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
 
 	if (skb->protocol == htons(ETH_P_IP)) {
@@ -308,10 +308,10 @@ void mptcp_reqsk_new_mptcp(struct request_sock *req,
 	mtreq->mptcp_rem_key = mopt->mptcp_key;
 }
 
-static void mptcp_set_key_sk(struct sock *sk)
+static void mptcp_set_key_sk(const struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct inet_sock *isk = inet_sk(sk);
+	const struct inet_sock *isk = inet_sk(sk);
 
 	if (sk->sk_family == AF_INET)
 		tp->mptcp_loc_key = mptcp_v4_get_key(isk->inet_saddr,
@@ -351,7 +351,7 @@ void mptcp_connect_init(struct sock *sk)
  * It is the responsibility of the caller to decrement when releasing
  * the structure.
  */
-struct sock *mptcp_hash_find(struct net *net, const u32 token)
+struct sock *mptcp_hash_find(const struct net *net, const u32 token)
 {
 	const u32 hash = mptcp_hash_tk(token);
 	const struct tcp_sock *meta_tp;
@@ -413,7 +413,7 @@ void mptcp_hash_remove(struct tcp_sock *meta_tp)
 
 struct sock *mptcp_select_ack_sock(const struct sock *meta_sk)
 {
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct sock *sk, *rttsk = NULL, *lastsk = NULL;
 	u32 min_time = 0, last_active = 0;
 
@@ -453,7 +453,7 @@ EXPORT_SYMBOL(mptcp_select_ack_sock);
 
 static void mptcp_sock_def_error_report(struct sock *sk)
 {
-	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
+	const struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 
 	if (!sock_flag(sk, SOCK_DEAD))
 		mptcp_sub_close(sk, 0);
@@ -768,7 +768,7 @@ static void mptcp_mpcb_inherit_sockopts(struct sock *meta_sk, struct sock *maste
 	inet_sk(master_sk)->recverr = 0;
 }
 
-static void mptcp_sub_inherit_sockopts(struct sock *meta_sk, struct sock *sub_sk)
+static void mptcp_sub_inherit_sockopts(const struct sock *meta_sk, struct sock *sub_sk)
 {
 	/* IP_TOS also goes to the subflow. */
 	if (inet_sk(sub_sk)->tos != inet_sk(meta_sk)->tos) {
@@ -1210,7 +1210,7 @@ void mptcp_del_sock(struct sock *sk)
  * In this function, we update the meta socket info, based on the changes
  * in the application socket (bind, address allocation, ...)
  */
-void mptcp_update_metasocket(struct sock *sk, struct sock *meta_sk)
+void mptcp_update_metasocket(struct sock *sk, const struct sock *meta_sk)
 {
 	if (tcp_sk(sk)->mpcb->pm_ops->new_session)
 		tcp_sk(sk)->mpcb->pm_ops->new_session(meta_sk);
@@ -1888,7 +1888,7 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 				   struct request_sock *req,
 				   struct request_sock **prev,
-				   struct mptcp_options_received *mopt)
+				   const struct mptcp_options_received *mopt)
 {
 	struct tcp_sock *child_tp = tcp_sk(child);
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
@@ -2110,7 +2110,7 @@ void mptcp_tsq_sub_deferred(struct sock *meta_sk)
 	}
 }
 
-void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, struct request_sock *req,
+void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, const struct request_sock *req,
 			   struct sk_buff *skb)
 {
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
@@ -2138,7 +2138,7 @@ void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, struct request_sock *req,
 	inet_rsk(req)->saw_mpc = 1;
 }
 
-void mptcp_reqsk_init(struct request_sock *req, struct sk_buff *skb)
+void mptcp_reqsk_init(struct request_sock *req, const struct sk_buff *skb)
 {
 	struct mptcp_options_received mopt;
 	struct mptcp_request_sock *mreq = mptcp_rsk(req);
@@ -2157,7 +2157,7 @@ void mptcp_reqsk_init(struct request_sock *req, struct sk_buff *skb)
 int mptcp_conn_request(struct sock *sk, struct sk_buff *skb)
 {
 	struct mptcp_options_received mopt;
-	struct tcp_sock *tp = tcp_sk(sk);
+	const struct tcp_sock *tp = tcp_sk(sk);
 	__u32 isn = TCP_SKB_CB(skb)->when;
 	bool want_cookie = false;
 
@@ -2218,7 +2218,7 @@ EXPORT_SYMBOL(mptcp_wq);
 static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 {
 	struct tcp_sock *meta_tp;
-	struct net *net = seq->private;
+	const struct net *net = seq->private;
 	int i, n = 0;
 
 	seq_printf(seq, "  sl  loc_tok  rem_tok  v6 local_address                         remote_address                        st ns tx_queue rx_queue inode");
