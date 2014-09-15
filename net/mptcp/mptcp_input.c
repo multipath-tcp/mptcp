@@ -1593,7 +1593,7 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			 struct mptcp_options_received *mopt,
 			 const struct sk_buff *skb)
 {
-	struct mptcp_option *mp_opt = (struct mptcp_option *)ptr;
+	const struct mptcp_option *mp_opt = (struct mptcp_option *)ptr;
 
 	/* If the socket is mp-capable we would have a mopt. */
 	if (!mopt)
@@ -1602,7 +1602,7 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 	switch (mp_opt->sub) {
 	case MPTCP_SUB_CAPABLE:
 	{
-		struct mp_capable *mpcapable = (struct mp_capable *)ptr;
+		const struct mp_capable *mpcapable = (struct mp_capable *)ptr;
 
 		if (opsize != MPTCP_SUB_LEN_CAPABLE_SYN &&
 		    opsize != MPTCP_SUB_LEN_CAPABLE_ACK) {
@@ -1644,7 +1644,7 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 	}
 	case MPTCP_SUB_JOIN:
 	{
-		struct mp_join *mpjoin = (struct mp_join *)ptr;
+		const struct mp_join *mpjoin = (struct mp_join *)ptr;
 
 		if (opsize != MPTCP_SUB_LEN_JOIN_SYN &&
 		    opsize != MPTCP_SUB_LEN_JOIN_SYNACK &&
@@ -1684,7 +1684,7 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 	}
 	case MPTCP_SUB_DSS:
 	{
-		struct mp_dss *mdss = (struct mp_dss *)ptr;
+		const struct mp_dss *mdss = (struct mp_dss *)ptr;
 		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 
 		/* We check opsize for the csum and non-csum case. We do this,
@@ -1747,7 +1747,7 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 	case MPTCP_SUB_ADD_ADDR:
 	{
 #if IS_ENABLED(CONFIG_IPV6)
-		struct mp_add_addr *mpadd = (struct mp_add_addr *)ptr;
+		const struct mp_add_addr *mpadd = (struct mp_add_addr *)ptr;
 
 		if ((mpadd->ipver == 4 && opsize != MPTCP_SUB_LEN_ADD_ADDR4 &&
 		     opsize != MPTCP_SUB_LEN_ADD_ADDR4 + 2) ||
@@ -1787,7 +1787,7 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 		break;
 	case MPTCP_SUB_PRIO:
 	{
-		struct mp_prio *mpprio = (struct mp_prio *)ptr;
+		const struct mp_prio *mpprio = (struct mp_prio *)ptr;
 
 		if (opsize != MPTCP_SUB_LEN_PRIO &&
 		    opsize != MPTCP_SUB_LEN_PRIO_ADDR) {

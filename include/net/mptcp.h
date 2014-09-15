@@ -228,7 +228,7 @@ struct mptcp_pm_ops {
 			     struct net *net, bool *low_prio);
 	void (*addr_signal)(struct sock *sk, unsigned *size,
 			    struct tcp_out_options *opts, struct sk_buff *skb);
-	void (*add_raddr)(struct mptcp_cb *mpcb, const union inet_addr *addr, 
+	void (*add_raddr)(struct mptcp_cb *mpcb, const union inet_addr *addr,
 			  sa_family_t family, __be16 port, u8 id);
 	void (*rem_raddr)(struct mptcp_cb *mpcb, u8 rem_id);
 	void (*init_subsocket_v4)(struct sock *sk, struct in_addr addr);
@@ -631,7 +631,7 @@ struct mp_prio {
 	__u8	addr_id;
 } __attribute__((__packed__));
 
-static inline int mptcp_sub_len_dss(struct mp_dss *m, int csum)
+static inline int mptcp_sub_len_dss(const struct mp_dss *m, const int csum)
 {
 	return 4 + m->A * (4 + m->a * 4) + m->M * (10 + m->m * 4 + csum * 2);
 }
@@ -731,7 +731,7 @@ void tcp_parse_mptcp_options(const struct sk_buff *skb,
 void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			 struct mptcp_options_received *mopt,
 			 const struct sk_buff *skb);
-void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
+void mptcp_syn_options(const struct sock *sk, struct tcp_out_options *opts,
 		       unsigned *remaining);
 void mptcp_synack_options(struct request_sock *req,
 			  struct tcp_out_options *opts,
@@ -739,7 +739,7 @@ void mptcp_synack_options(struct request_sock *req,
 void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 			       struct tcp_out_options *opts, unsigned *size);
 void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
-			 struct tcp_out_options *opts,
+			 const struct tcp_out_options *opts,
 			 struct sk_buff *skb);
 void mptcp_close(struct sock *meta_sk, long timeout);
 int mptcp_doit(struct sock *sk);
@@ -782,7 +782,7 @@ void mptcp_destroy_sock(struct sock *sk);
 int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 				    const struct sk_buff *skb,
 				    const struct mptcp_options_received *mopt);
-unsigned int mptcp_xmit_size_goal(struct sock *meta_sk, u32 mss_now,
+unsigned int mptcp_xmit_size_goal(const struct sock *meta_sk, u32 mss_now,
 				  int large_allowed);
 int mptcp_init_tw_sock(struct sock *sk, struct tcp_timewait_sock *tw);
 void mptcp_twsk_destructor(struct tcp_timewait_sock *tw);
@@ -1250,7 +1250,7 @@ static inline u8 mptcp_set_new_pathindex(struct mptcp_cb *mpcb)
 	return 0;
 }
 
-static inline bool mptcp_v6_is_v4_mapped(struct sock *sk)
+static inline bool mptcp_v6_is_v4_mapped(const struct sock *sk)
 {
 	return sk->sk_family == AF_INET6 &&
 	       ipv6_addr_type(&inet6_sk(sk)->saddr) == IPV6_ADDR_MAPPED;
@@ -1313,7 +1313,7 @@ static inline void mptcp_send_fin(const struct sock *meta_sk) {}
 static inline void mptcp_parse_options(const uint8_t *ptr, const int opsize,
 				       const struct mptcp_options_received *mopt,
 				       const struct sk_buff *skb) {}
-static inline void mptcp_syn_options(struct sock *sk,
+static inline void mptcp_syn_options(const struct sock *sk,
 				     struct tcp_out_options *opts,
 				     unsigned *remaining) {}
 static inline void mptcp_synack_options(struct request_sock *req,
@@ -1325,7 +1325,7 @@ static inline void mptcp_established_options(struct sock *sk,
 					     struct tcp_out_options *opts,
 					     unsigned *size) {}
 static inline void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
-				       struct tcp_out_options *opts,
+				       const struct tcp_out_options *opts,
 				       struct sk_buff *skb) {}
 static inline void mptcp_close(struct sock *meta_sk, long timeout) {}
 static inline int mptcp_doit(struct sock *sk)
@@ -1399,7 +1399,7 @@ static inline bool mptcp_can_sg(const struct sock *meta_sk)
 {
 	return false;
 }
-static inline unsigned int mptcp_xmit_size_goal(struct sock *meta_sk,
+static inline unsigned int mptcp_xmit_size_goal(const struct sock *meta_sk,
 						u32 mss_now, int large_allowed)
 {
 	return 0;
@@ -1408,7 +1408,7 @@ static inline void mptcp_destroy_sock(struct sock *sk) {}
 static inline int mptcp_rcv_synsent_state_process(struct sock *sk,
 						  struct sock **skptr,
 						  struct sk_buff *skb,
-						  struct mptcp_options_received *mopt)
+						  const struct mptcp_options_received *mopt)
 {
 	return 0;
 }

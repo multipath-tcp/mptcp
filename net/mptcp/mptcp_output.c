@@ -59,7 +59,7 @@ EXPORT_SYMBOL(mptcp_sub_len_remove_addr_align);
  */
 static int mptcp_reconstruct_mapping(struct sk_buff *skb)
 {
-	struct mp_dss *mpdss = (struct mp_dss *)TCP_SKB_CB(skb)->dss;
+	const struct mp_dss *mpdss = (struct mp_dss *)TCP_SKB_CB(skb)->dss;
 	u32 *p32;
 	u16 *p16;
 
@@ -86,7 +86,7 @@ static int mptcp_reconstruct_mapping(struct sk_buff *skb)
 	return 0;
 }
 
-static void mptcp_find_and_set_pathmask(struct sock *meta_sk, struct sk_buff *skb)
+static void mptcp_find_and_set_pathmask(const struct sock *meta_sk, struct sk_buff *skb)
 {
 	struct sk_buff *skb_it;
 
@@ -110,7 +110,7 @@ static void __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk
 				  struct sock *sk, int clone_it)
 {
 	struct sk_buff *skb, *skb1;
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	u32 seq, end_seq;
 
@@ -273,10 +273,10 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 }
 EXPORT_SYMBOL(mptcp_reinject_data);
 
-static void mptcp_combine_dfin(struct sk_buff *skb, struct sock *meta_sk,
+static void mptcp_combine_dfin(const struct sk_buff *skb, const struct sock *meta_sk,
 			       struct sock *subsk)
 {
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	struct sock *sk_it;
 	int all_empty = 1, all_acked;
@@ -316,10 +316,10 @@ static void mptcp_combine_dfin(struct sk_buff *skb, struct sock *meta_sk,
 	}
 }
 
-static int mptcp_write_dss_mapping(struct tcp_sock *tp, struct sk_buff *skb,
+static int mptcp_write_dss_mapping(const struct tcp_sock *tp, const struct sk_buff *skb,
 				   __be32 *ptr)
 {
-	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
+	const struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 	__be32 *start = ptr;
 	__u16 data_len;
 
@@ -356,7 +356,7 @@ static int mptcp_write_dss_mapping(struct tcp_sock *tp, struct sk_buff *skb,
 	return ptr - start;
 }
 
-static int mptcp_write_dss_data_ack(struct tcp_sock *tp, struct sk_buff *skb,
+static int mptcp_write_dss_data_ack(const struct tcp_sock *tp, const struct sk_buff *skb,
 				    __be32 *ptr)
 {
 	struct mp_dss *mdss = (struct mp_dss *)ptr;
@@ -392,7 +392,7 @@ static int mptcp_write_dss_data_ack(struct tcp_sock *tp, struct sk_buff *skb,
  * To avoid this we save the initial DSS mapping which allows us to
  * send the same DSS mapping even for fragmented retransmits.
  */
-static void mptcp_save_dss_data_seq(struct tcp_sock *tp, struct sk_buff *skb)
+static void mptcp_save_dss_data_seq(const struct tcp_sock *tp, struct sk_buff *skb)
 {
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 	__be32 *ptr = (__be32 *)tcb->dss;
@@ -404,8 +404,8 @@ static void mptcp_save_dss_data_seq(struct tcp_sock *tp, struct sk_buff *skb)
 }
 
 /* Write the saved DSS mapping to the header */
-static int mptcp_write_dss_data_seq(struct tcp_sock *tp, struct sk_buff *skb,
-				     __be32 *ptr)
+static int mptcp_write_dss_data_seq(const struct tcp_sock *tp, struct sk_buff *skb,
+				    __be32 *ptr)
 {
 	__be32 *start = ptr;
 
@@ -425,8 +425,8 @@ static int mptcp_write_dss_data_seq(struct tcp_sock *tp, struct sk_buff *skb,
 static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *meta_sk = mptcp_meta_sk(sk);
-	struct mptcp_cb *mpcb = tp->mpcb;
+	const struct sock *meta_sk = mptcp_meta_sk(sk);
+	const struct mptcp_cb *mpcb = tp->mpcb;
 	struct tcp_skb_cb *tcb;
 	struct sk_buff *subskb = NULL;
 
@@ -840,10 +840,10 @@ u32 __mptcp_select_window(struct sock *sk)
 	return window;
 }
 
-void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
+void mptcp_syn_options(const struct sock *sk, struct tcp_out_options *opts,
 		       unsigned *remaining)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
+	const struct tcp_sock *tp = tcp_sk(sk);
 
 	opts->options |= OPTION_MPTCP;
 	if (is_master_tp(tp)) {
@@ -852,7 +852,7 @@ void mptcp_syn_options(struct sock *sk, struct tcp_out_options *opts,
 		opts->mp_capable.sender_key = tp->mptcp_loc_key;
 		opts->dss_csum = !!sysctl_mptcp_checksum;
 	} else {
-		struct mptcp_cb *mpcb = tp->mpcb;
+		const struct mptcp_cb *mpcb = tp->mpcb;
 
 		opts->mptcp_options |= OPTION_MP_JOIN | OPTION_TYPE_SYN;
 		*remaining -= MPTCP_SUB_LEN_JOIN_SYN_ALIGN;
@@ -892,7 +892,7 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_cb *mpcb = tp->mpcb;
-	struct tcp_skb_cb *tcb = skb ? TCP_SKB_CB(skb) : NULL;
+	const struct tcp_skb_cb *tcb = skb ? TCP_SKB_CB(skb) : NULL;
 
 	/* We are coming from tcp_current_mss with the meta_sk as an argument.
 	 * It does not make sense to check for the options, because when the
@@ -1009,7 +1009,7 @@ u16 mptcp_select_window(struct sock *sk)
 }
 
 void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
-			 struct tcp_out_options *opts,
+			 const struct tcp_out_options *opts,
 			 struct sk_buff *skb)
 {
 	if (unlikely(OPTION_MP_CAPABLE & opts->mptcp_options)) {
@@ -1673,7 +1673,7 @@ int mptcp_select_size(const struct sock *meta_sk, bool sg)
 
 int mptcp_check_snd_buf(const struct tcp_sock *tp)
 {
-	struct sock *sk;
+	const struct sock *sk;
 	u32 rtt_max = tp->srtt_us;
 	u64 bw_est;
 
@@ -1695,7 +1695,7 @@ int mptcp_check_snd_buf(const struct tcp_sock *tp)
 			tp->reordering + 1);
 }
 
-unsigned int mptcp_xmit_size_goal(struct sock *meta_sk, u32 mss_now,
+unsigned int mptcp_xmit_size_goal(const struct sock *meta_sk, u32 mss_now,
 				  int large_allowed)
 {
 	struct sock *sk;
