@@ -21,10 +21,10 @@ static struct rrsched_priv *rrsched_get_priv(const struct tcp_sock *tp)
 }
 
 /* If the sub-socket sk available to send the skb? */
-static bool mptcp_rr_is_available(struct sock *sk, struct sk_buff *skb,
+static bool mptcp_rr_is_available(const struct sock *sk, const struct sk_buff *skb,
 				  bool zero_wnd_test, bool cwnd_test)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
+	const struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int space, in_flight;
 
 	/* Set of states for which we are allowed to send data */
@@ -86,7 +86,7 @@ zero_wnd_test:
 }
 
 /* Are we not allowed to reinject this skb on tp? */
-static int mptcp_rr_dont_reinject_skb(struct tcp_sock *tp, struct sk_buff *skb)
+static int mptcp_rr_dont_reinject_skb(const struct tcp_sock *tp, const struct sk_buff *skb)
 {
 	/* If the skb has already been enqueued in this sk, try to find
 	 * another one.
@@ -101,7 +101,7 @@ static struct sock *rr_get_available_subflow(struct sock *meta_sk,
 					     struct sk_buff *skb,
 					     bool zero_wnd_test)
 {
-	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct sock *sk, *bestsk = NULL, *backupsk = NULL;
 
 	/* Answer data_fin on same subflow!!! */
@@ -151,9 +151,9 @@ static struct sock *rr_get_available_subflow(struct sock *meta_sk,
  * and sets it to -1 if it is a meta-level retransmission to optimize the
  * receive-buffer.
  */
-static struct sk_buff *__mptcp_rr_next_segment(struct sock *meta_sk, int *reinject)
+static struct sk_buff *__mptcp_rr_next_segment(const struct sock *meta_sk, int *reinject)
 {
-	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct sk_buff *skb = NULL;
 
 	*reinject = 0;
@@ -176,7 +176,7 @@ static struct sk_buff *mptcp_rr_next_segment(struct sock *meta_sk,
 					     struct sock **subsk,
 					     unsigned int *limit)
 {
-	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct sock *sk_it, *choose_sk = NULL;
 	struct sk_buff *skb = __mptcp_rr_next_segment(meta_sk, reinject);
 	unsigned char split = num_segments;
@@ -299,4 +299,3 @@ MODULE_AUTHOR("Christoph Paasch");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("ROUNDROBIN MPTCP");
 MODULE_VERSION("0.89");
-

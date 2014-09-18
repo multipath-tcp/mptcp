@@ -49,7 +49,7 @@ void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
  */
 static int mptcp_ofo_queue_after(struct sk_buff_head *head,
 				 struct sk_buff *skb, struct sk_buff *here,
-				 struct tcp_sock *tp)
+				 const struct tcp_sock *tp)
 {
 	struct sock *meta_sk = tp->meta_sk;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
@@ -227,7 +227,7 @@ end:
 /**
  * @sk: the subflow that received this skb.
  */
-void mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
+void mptcp_add_meta_ofo_queue(const struct sock *meta_sk, struct sk_buff *skb,
 			      struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);

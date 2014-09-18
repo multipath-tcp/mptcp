@@ -297,7 +297,7 @@ error:
  **/
 static void create_subflow_worker(struct work_struct *work)
 {
-	struct binder_priv *pm_priv = container_of(work,
+	const struct binder_priv *pm_priv = container_of(work,
 						     struct binder_priv,
 						     subflow_work);
 	struct mptcp_cb *mpcb = pm_priv->mpcb;

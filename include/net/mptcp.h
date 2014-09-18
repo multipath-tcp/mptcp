@@ -711,7 +711,7 @@ extern spinlock_t mptcp_tk_hashlock;	/* hashtable protection */
 void mptcp_data_ready(struct sock *sk);
 void mptcp_write_space(struct sock *sk);
 
-void mptcp_add_meta_ofo_queue(struct sock *meta_sk, struct sk_buff *skb,
+void mptcp_add_meta_ofo_queue(const struct sock *meta_sk, struct sk_buff *skb,
 			      struct sock *sk);
 void mptcp_ofo_queue(struct sock *meta_sk);
 void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp);

@@ -90,7 +90,7 @@ static struct mptcp_pm_ops full_mesh __read_mostly;
 
 static void full_mesh_create_subflows(struct sock *meta_sk);
 
-static struct mptcp_fm_ns *fm_get_ns(struct net *net)
+static struct mptcp_fm_ns *fm_get_ns(const struct net *net)
 {
 	return (struct mptcp_fm_ns *)net->mptcp.path_managers[MPTCP_PM_FULLMESH];
 }
@@ -253,7 +253,7 @@ static void mptcp_v4_rem_raddress(struct mptcp_cb *mpcb, u8 id)
 	}
 }
 
-static void mptcp_v6_rem_raddress(struct mptcp_cb *mpcb, u8 id)
+static void mptcp_v6_rem_raddress(const struct mptcp_cb *mpcb, u8 id)
 {
 	int i;
 	struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
@@ -269,7 +269,7 @@ static void mptcp_v6_rem_raddress(struct mptcp_cb *mpcb, u8 id)
 }
 
 /* Sets the bitfield of the remote-address field */
-static void mptcp_v4_set_init_addr_bit(struct mptcp_cb *mpcb,
+static void mptcp_v4_set_init_addr_bit(const struct mptcp_cb *mpcb,
 				       const struct in_addr *addr, u8 index)
 {
 	int i;
@@ -410,7 +410,7 @@ static void create_subflow_worker(struct work_struct *work)
 	struct mptcp_cb *mpcb = fmp->mpcb;
 	struct sock *meta_sk = mpcb->meta_sk;
 	struct mptcp_loc_addr *mptcp_local;
-	struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(meta_sk));
+	const struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(meta_sk));
 	int iter = 0, retry = 0;
 	int i;
 
@@ -550,8 +550,8 @@ static void update_addr_bitfields(struct sock *meta_sk,
 	}
 }
 
-static int mptcp_find_address(struct mptcp_loc_addr *mptcp_local,
-			      sa_family_t family, union inet_addr *addr)
+static int mptcp_find_address(const struct mptcp_loc_addr *mptcp_local,
+			      sa_family_t family, const union inet_addr *addr)
 {
 	int i;
 	u8 loc_bits;
@@ -584,7 +584,7 @@ static int mptcp_find_address(struct mptcp_loc_addr *mptcp_local,
 
 static void mptcp_address_worker(struct work_struct *work)
 {
-	struct delayed_work *delayed_work = container_of(work,
+	const struct delayed_work *delayed_work = container_of(work,
 							 struct delayed_work,
 							 work);
 	struct mptcp_fm_ns *fm_ns = container_of(delayed_work,
@@ -709,7 +709,7 @@ duno:
 
 	/* Now we iterate over the MPTCP-sockets and apply the event. */
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
-		struct hlist_nulls_node *node;
+		const struct hlist_nulls_node *node;
 		struct tcp_sock *meta_tp;
 
 		rcu_read_lock_bh();
@@ -863,8 +863,8 @@ next:
 	goto next_event;
 }
 
-static struct mptcp_addr_event *lookup_similar_event(struct net *net,
-						     struct mptcp_addr_event *event)
+static struct mptcp_addr_event *lookup_similar_event(const struct net *net,
+						     const struct mptcp_addr_event *event)
 {
 	struct mptcp_addr_event *eventq;
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(net);
@@ -884,7 +884,7 @@ static struct mptcp_addr_event *lookup_similar_event(struct net *net,
 }
 
 /* We already hold the net-namespace MPTCP-lock */
-static void add_pm_event(struct net *net, struct mptcp_addr_event *event)
+static void add_pm_event(struct net *net, const struct mptcp_addr_event *event)
 {
 	struct mptcp_addr_event *eventq = lookup_similar_event(net, event);
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(net);
@@ -922,10 +922,10 @@ static void add_pm_event(struct net *net, struct mptcp_addr_event *event)
 				   msecs_to_jiffies(500));
 }
 
-static void addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
+static void addr4_event_handler(const struct in_ifaddr *ifa, unsigned long event,
 				struct net *net)
 {
-	struct net_device *netdev = ifa->ifa_dev->dev;
+	const struct net_device *netdev = ifa->ifa_dev->dev;
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(net);
 	struct mptcp_addr_event mpevent;
 
@@ -959,7 +959,7 @@ static void addr4_event_handler(struct in_ifaddr *ifa, unsigned long event,
 static int mptcp_pm_inetaddr_event(struct notifier_block *this,
 				   unsigned long event, void *ptr)
 {
-	struct in_ifaddr *ifa = (struct in_ifaddr *)ptr;
+	const struct in_ifaddr *ifa = (struct in_ifaddr *)ptr;
 	struct net *net = dev_net(ifa->ifa_dev->dev);
 
 	if (!(event == NETDEV_UP || event == NETDEV_DOWN ||
@@ -987,7 +987,7 @@ static void dad_callback(unsigned long arg);
 static int inet6_addr_event(struct notifier_block *this,
 				     unsigned long event, void *ptr);
 
-static int ipv6_is_in_dad_state(struct inet6_ifaddr *ifa)
+static int ipv6_is_in_dad_state(const struct inet6_ifaddr *ifa)
 {
 	return (ifa->flags & IFA_F_TENTATIVE) &&
 	       ifa->state == INET6_IFADDR_STATE_DAD;
@@ -1034,10 +1034,10 @@ static inline void dad_setup_timer(struct inet6_ifaddr *ifa)
 	in6_ifa_hold(ifa);
 }
 
-static void addr6_event_handler(struct inet6_ifaddr *ifa, unsigned long event,
+static void addr6_event_handler(const struct inet6_ifaddr *ifa, unsigned long event,
 				struct net *net)
 {
-	struct net_device *netdev = ifa->idev->dev;
+	const struct net_device *netdev = ifa->idev->dev;
 	int addr_type = ipv6_addr_type(&ifa->addr);
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(net);
 	struct mptcp_addr_event mpevent;
@@ -1099,7 +1099,7 @@ static struct notifier_block inet6_addr_notifier = {
 static int netdev_event(struct notifier_block *this, unsigned long event,
 			void *ptr)
 {
-	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
+	const struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct in_device *in_dev;
 #if IS_ENABLED(CONFIG_IPV6)
 	struct inet6_dev *in6_dev;
@@ -1151,7 +1151,7 @@ static void full_mesh_new_session(const struct sock *meta_sk)
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
-	struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(meta_sk));
+	const struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(meta_sk));
 	int i, index;
 	union inet_addr saddr, daddr;
 	sa_family_t family;
@@ -1207,7 +1207,7 @@ skip_ipv4:
 		goto skip_ipv6;
 
 	mptcp_for_each_bit_set(mptcp_local->loc6_bits, i) {
-		struct in6_addr *ifa6 = &mptcp_local->locaddr6[i].addr;
+		const struct in6_addr *ifa6 = &mptcp_local->locaddr6[i].addr;
 
 		/* We do not need to announce the initial subflow's address again */
 		if (family == AF_INET6 && ipv6_addr_equal(&saddr.in6, ifa6))
@@ -1240,7 +1240,7 @@ fallback:
 
 static void full_mesh_create_subflows(struct sock *meta_sk)
 {
-	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
 
 	if (mpcb->infinite_mapping_snd || mpcb->infinite_mapping_rcv ||
@@ -1266,7 +1266,7 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 	struct mptcp_loc_addr *mptcp_local;
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
-	struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(meta_sk));
+	const struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(meta_sk));
 	struct sock *sk, *tmpsk;
 	bool meta_v4 = meta_sk->sk_family == AF_INET;
 	int i;
@@ -1401,7 +1401,7 @@ static int full_mesh_get_local_id(sa_family_t family, union inet_addr *addr,
 				  struct net *net, bool *low_prio)
 {
 	struct mptcp_loc_addr *mptcp_local;
-	struct mptcp_fm_ns *fm_ns = fm_get_ns(net);
+	const struct mptcp_fm_ns *fm_ns = fm_get_ns(net);
 	int index, id = -1;
 
 	/* Handle the backup-flows */
@@ -1430,7 +1430,7 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 				  struct tcp_out_options *opts,
 				  struct sk_buff *skb)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
+	const struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_cb *mpcb = tp->mpcb;
 	struct sock *meta_sk = mpcb->meta_sk;
 	struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
@@ -1527,9 +1527,9 @@ static void full_mesh_rem_raddr(struct mptcp_cb *mpcb, u8 rem_id)
 /* Output /proc/net/mptcp_fullmesh */
 static int mptcp_fm_seq_show(struct seq_file *seq, void *v)
 {
-	struct net *net = seq->private;
+	const struct net *net = seq->private;
 	struct mptcp_loc_addr *mptcp_local;
-	struct mptcp_fm_ns *fm_ns = fm_get_ns(net);
+	const struct mptcp_fm_ns *fm_ns = fm_get_ns(net);
 	int i;
 
 	seq_printf(seq, "Index, Address-ID, Backup, IP-address\n");

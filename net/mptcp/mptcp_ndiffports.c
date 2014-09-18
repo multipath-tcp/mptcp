@@ -27,7 +27,7 @@ MODULE_PARM_DESC(num_subflows, "choose the number of subflows per MPTCP connecti
  **/
 static void create_subflow_worker(struct work_struct *work)
 {
-	struct ndiffports_priv *pm_priv = container_of(work,
+	const struct ndiffports_priv *pm_priv = container_of(work,
 						     struct ndiffports_priv,
 						     subflow_work);
 	struct mptcp_cb *mpcb = pm_priv->mpcb;
@@ -105,7 +105,7 @@ static void ndiffports_new_session(const struct sock *meta_sk)
 
 static void ndiffports_create_subflows(struct sock *meta_sk)
 {
-	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct ndiffports_priv *pm_priv = (struct ndiffports_priv *)&mpcb->mptcp_pm[0];
 
 	if (mpcb->infinite_mapping_snd || mpcb->infinite_mapping_rcv ||
