@@ -50,7 +50,7 @@ static inline u64 mptcp_olia_scale(u64 val, int scale)
  */
 static u32 mptcp_get_crt_cwnd(struct sock *sk)
 {
-	struct inet_connection_sock *icsk = inet_csk(sk);
+	const struct inet_connection_sock *icsk = inet_csk(sk);
 
 	if (icsk->icsk_ca_state == TCP_CA_Recovery)
 		return tcp_sk(sk)->snd_ssthresh;
@@ -59,7 +59,7 @@ static u32 mptcp_get_crt_cwnd(struct sock *sk)
 }
 
 /* return the dominator of the first term of  the increasing term */
-static u64 mptcp_get_rate(struct mptcp_cb *mpcb , u32 path_rtt)
+static u64 mptcp_get_rate(const struct mptcp_cb *mpcb , u32 path_rtt)
 {
 	struct sock *sk;
 	u64 rate = 1; /* We have to avoid a zero-rate because it is used as a divisor */
@@ -81,7 +81,7 @@ static u64 mptcp_get_rate(struct mptcp_cb *mpcb , u32 path_rtt)
 }
 
 /* find the maximum cwnd, used to find set M */
-static u32 mptcp_get_max_cwnd(struct mptcp_cb *mpcb)
+static u32 mptcp_get_max_cwnd(const struct mptcp_cb *mpcb)
 {
 	struct sock *sk;
 	u32 best_cwnd = 0;
@@ -99,7 +99,7 @@ static u32 mptcp_get_max_cwnd(struct mptcp_cb *mpcb)
 	return best_cwnd;
 }
 
-static void mptcp_get_epsilon(struct mptcp_cb *mpcb)
+static void mptcp_get_epsilon(const struct mptcp_cb *mpcb)
 {
 	struct mptcp_olia *ca;
 	struct tcp_sock *tp;
@@ -190,7 +190,7 @@ static void mptcp_get_epsilon(struct mptcp_cb *mpcb)
 /* setting the initial values */
 static void mptcp_olia_init(struct sock *sk)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
+	const struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_olia *ca = inet_csk_ca(sk);
 
 	if (mptcp(tp)) {
@@ -226,7 +226,7 @@ static void mptcp_olia_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_olia *ca = inet_csk_ca(sk);
-	struct mptcp_cb *mpcb = tp->mpcb;
+	const struct mptcp_cb *mpcb = tp->mpcb;
 
 	u64 inc_num, inc_den, rate, cwnd_scaled;
 

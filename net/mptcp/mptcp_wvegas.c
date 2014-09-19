@@ -60,7 +60,7 @@ static inline u64 mptcp_wvegas_scale(u32 val, int scale)
 	return (u64) val << scale;
 }
 
-static void wvegas_enable(struct sock *sk)
+static void wvegas_enable(const struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	struct wvegas *wvegas = inet_csk_ca(sk);
@@ -79,7 +79,7 @@ static void wvegas_enable(struct sock *sk)
 	wvegas->queue_delay = 0;
 }
 
-static inline void wvegas_disable(struct sock *sk)
+static inline void wvegas_disable(const struct sock *sk)
 {
 	struct wvegas *wvegas = inet_csk_ca(sk);
 
@@ -134,16 +134,16 @@ static void mptcp_wvegas_cwnd_event(struct sock *sk, enum tcp_ca_event event)
 	}
 }
 
-static inline u32 mptcp_wvegas_ssthresh(struct tcp_sock *tp)
+static inline u32 mptcp_wvegas_ssthresh(const struct tcp_sock *tp)
 {
 	return  min(tp->snd_ssthresh, tp->snd_cwnd - 1);
 }
 
-static u64 mptcp_wvegas_weight(struct mptcp_cb *mpcb, struct sock *sk)
+static u64 mptcp_wvegas_weight(const struct mptcp_cb *mpcb, const struct sock *sk)
 {
 	u64 total_rate = 0;
 	struct sock *sub_sk;
-	struct wvegas *wvegas = inet_csk_ca(sk);
+	const struct wvegas *wvegas = inet_csk_ca(sk);
 
 	if (!mpcb)
 		return wvegas->weight;

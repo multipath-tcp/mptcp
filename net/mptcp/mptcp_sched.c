@@ -16,10 +16,10 @@ static struct defsched_priv *defsched_get_priv(const struct tcp_sock *tp)
 }
 
 /* If the sub-socket sk available to send the skb? */
-static bool mptcp_is_available(struct sock *sk, struct sk_buff *skb,
+static bool mptcp_is_available(struct sock *sk, const struct sk_buff *skb,
 			       bool zero_wnd_test)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
+	const struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int mss_now, space, in_flight;
 
 	/* Set of states for which we are allowed to send data */
@@ -94,7 +94,7 @@ static bool mptcp_is_available(struct sock *sk, struct sk_buff *skb,
 }
 
 /* Are we not allowed to reinject this skb on tp? */
-static int mptcp_dont_reinject_skb(struct tcp_sock *tp, struct sk_buff *skb)
+static int mptcp_dont_reinject_skb(const struct tcp_sock *tp, const struct sk_buff *skb)
 {
 	/* If the skb has already been enqueued in this sk, try to find
 	 * another one.
@@ -191,7 +191,8 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 {
 	struct sock *meta_sk;
-	struct tcp_sock *tp = tcp_sk(sk), *tp_it;
+	const struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *tp_it;
 	struct sk_buff *skb_head;
 	struct defsched_priv *dsp = defsched_get_priv(tp);
 
@@ -269,7 +270,7 @@ retrans:
  */
 static struct sk_buff *__mptcp_next_segment(struct sock *meta_sk, int *reinject)
 {
-	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct sk_buff *skb = NULL;
 
 	*reinject = 0;

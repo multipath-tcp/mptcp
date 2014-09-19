@@ -52,16 +52,14 @@ static inline int mptcp_ccc_sk_can_send(const struct sock *sk)
 	return mptcp_sk_can_send(sk) && tcp_sk(sk)->srtt_us;
 }
 
-static inline u64 mptcp_get_alpha(struct sock *meta_sk)
+static inline u64 mptcp_get_alpha(const struct sock *meta_sk)
 {
-	struct mptcp_ccc *mptcp_ccc = inet_csk_ca(meta_sk);
-	return mptcp_ccc->alpha;
+	return ((struct mptcp_ccc *)inet_csk_ca(meta_sk))->alpha;
 }
 
-static inline void mptcp_set_alpha(struct sock *meta_sk, u64 alpha)
+static inline void mptcp_set_alpha(const struct sock *meta_sk, u64 alpha)
 {
-	struct mptcp_ccc *mptcp_ccc = inet_csk_ca(meta_sk);
-	mptcp_ccc->alpha = alpha;
+	((struct mptcp_ccc *)inet_csk_ca(meta_sk))->alpha = alpha;
 }
 
 static inline u64 mptcp_ccc_scale(u32 val, int scale)
@@ -69,22 +67,20 @@ static inline u64 mptcp_ccc_scale(u32 val, int scale)
 	return (u64) val << scale;
 }
 
-static inline bool mptcp_get_forced(struct sock *meta_sk)
+static inline bool mptcp_get_forced(const struct sock *meta_sk)
 {
-	struct mptcp_ccc *mptcp_ccc = inet_csk_ca(meta_sk);
-	return mptcp_ccc->forced_update;
+	return ((struct mptcp_ccc *)inet_csk_ca(meta_sk))->forced_update;
 }
 
-static inline void mptcp_set_forced(struct sock *meta_sk, bool force)
+static inline void mptcp_set_forced(const struct sock *meta_sk, bool force)
 {
-	struct mptcp_ccc *mptcp_ccc = inet_csk_ca(meta_sk);
-	mptcp_ccc->forced_update = force;
+	((struct mptcp_ccc *)inet_csk_ca(meta_sk))->forced_update = force;
 }
 
-static void mptcp_ccc_recalc_alpha(struct sock *sk)
+static void mptcp_ccc_recalc_alpha(const struct sock *sk)
 {
-	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
-	struct sock *sub_sk;
+	const struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
+	const struct sock *sub_sk;
 	int best_cwnd = 0, best_rtt = 0, can_send = 0;
 	u64 max_numerator = 0, sum_denominator = 0, alpha = 1;
 
@@ -187,7 +183,7 @@ static void mptcp_ccc_set_state(struct sock *sk, u8 ca_state)
 static void mptcp_ccc_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct mptcp_cb *mpcb = tp->mpcb;
+	const struct mptcp_cb *mpcb = tp->mpcb;
 	int snd_cwnd;
 
 	if (!mptcp(tp)) {
