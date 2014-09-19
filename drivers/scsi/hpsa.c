@@ -3131,7 +3131,7 @@ static int hpsa_big_passthru_ioctl(struct ctlr_info *h, void __user *argp)
 		}
 		if (ioc->Request.Type.Direction == XFER_WRITE) {
 			if (copy_from_user(buff[sg_used], data_ptr, sz)) {
-				status = -ENOMEM;
+				status = -EFAULT;
 				goto cleanup1;
 			}
 		} else
@@ -4367,9 +4367,9 @@ static inline void hpsa_set_driver_support_bits(struct ctlr_info *h)
 {
 	u32 driver_support;
 
-#ifdef CONFIG_X86
-	/* Need to enable prefetch in the SCSI core for 6400 in x86 */
 	driver_support = readl(&(h->cfgtable->driver_support));
+	/* Need to enable prefetch in the SCSI core for 6400 in x86 */
+#ifdef CONFIG_X86
 	driver_support |= ENABLE_SCSI_PREFETCH;
 #endif
 	driver_support |= ENABLE_UNIT_ATTN;
