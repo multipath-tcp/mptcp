@@ -1009,14 +1009,22 @@ static void dad_callback(unsigned long arg)
 {
 	struct mptcp_dad_data *data = (struct mptcp_dad_data *)arg;
 
+	/* DAD failed or IP brought down? */
+	if (data->ifa->state == INET6_IFADDR_STATE_ERRDAD ||
+	    data->ifa->state == INET6_IFADDR_STATE_DEAD)
+		goto exit;
+
 	if (!ipv6_dad_finished(data->ifa)) {
 		dad_init_timer(data, data->ifa);
 		add_timer(&data->timer);
-	} else {
-		inet6_addr_event(NULL, NETDEV_UP, data->ifa);
-		in6_ifa_put(data->ifa);
-		kfree(data);
+		return;
 	}
+
+	inet6_addr_event(NULL, NETDEV_UP, data->ifa);
+
+exit:
+	in6_ifa_put(data->ifa);
+	kfree(data);
 }
 
 static inline void dad_setup_timer(struct inet6_ifaddr *ifa)
