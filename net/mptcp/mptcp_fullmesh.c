@@ -987,10 +987,10 @@ static void dad_callback(unsigned long arg);
 static int inet6_addr_event(struct notifier_block *this,
 				     unsigned long event, void *ptr);
 
-static int ipv6_is_in_dad_state(const struct inet6_ifaddr *ifa)
+static bool ipv6_dad_finished(const struct inet6_ifaddr *ifa)
 {
-	return (ifa->flags & IFA_F_TENTATIVE) &&
-	       ifa->state == INET6_IFADDR_STATE_DAD;
+	return !(ifa->flags & IFA_F_TENTATIVE) ||
+	       ifa->state > INET6_IFADDR_STATE_DAD;
 }
 
 static void dad_init_timer(struct mptcp_dad_data *data,
@@ -1009,7 +1009,7 @@ static void dad_callback(unsigned long arg)
 {
 	struct mptcp_dad_data *data = (struct mptcp_dad_data *)arg;
 
-	if (ipv6_is_in_dad_state(data->ifa)) {
+	if (!ipv6_dad_finished(data->ifa)) {
 		dad_init_timer(data, data->ifa);
 		add_timer(&data->timer);
 	} else {
@@ -1081,7 +1081,7 @@ static int inet6_addr_event(struct notifier_block *this, unsigned long event,
 	      event == NETDEV_CHANGE))
 		return NOTIFY_DONE;
 
-	if (ipv6_is_in_dad_state(ifa6))
+	if (!ipv6_dad_finished(ifa6))
 		dad_setup_timer(ifa6);
 	else
 		addr6_event_handler(ifa6, event, net);
