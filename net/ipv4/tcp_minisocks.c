@@ -421,7 +421,7 @@ void tcp_openreq_init_rwin(struct request_sock *req,
 		&req->window_clamp,
 		ireq->wscale_ok,
 		&rcv_wscale,
-		dst_metric(dst, RTAX_INITRWND), sk);
+		dst_metric(dst, RTAX_INITRWND));
 	ireq->rcv_wscale = rcv_wscale;
 }
 EXPORT_SYMBOL(tcp_openreq_init_rwin);
