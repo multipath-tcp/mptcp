@@ -1622,6 +1622,7 @@ static void mlx4_ib_get_dev_addr(struct net_device *dev,
 	struct inet6_dev *in6_dev;
 	union ib_gid  *pgid;
 	struct inet6_ifaddr *ifp;
+	union ib_gid default_gid;
 #endif
 	union ib_gid gid;
 
@@ -1642,12 +1643,15 @@ static void mlx4_ib_get_dev_addr(struct net_device *dev,
 		in_dev_put(in_dev);
 	}
 #if IS_ENABLED(CONFIG_IPV6)
+	mlx4_make_default_gid(dev, &default_gid);
 	/* IPv6 gids */
 	in6_dev = in6_dev_get(dev);
 	if (in6_dev) {
 		read_lock_bh(&in6_dev->lock);
 		list_for_each_entry(ifp, &in6_dev->addr_list, if_list) {
 			pgid = (union ib_gid *)&ifp->addr;
+			if (!memcmp(pgid, &default_gid, sizeof(*pgid)))
+				continue;
 			update_gid_table(ibdev, port, pgid, 0, 0);
 		}
 		read_unlock_bh(&in6_dev->lock);
@@ -1723,31 +1727,34 @@ static void mlx4_ib_scan_netdevs(struct mlx4_ib_dev *ibdev)
 			port_state = (netif_running(curr_netdev) && netif_carrier_ok(curr_netdev)) ?
 						IB_PORT_ACTIVE : IB_PORT_DOWN;
 			mlx4_ib_set_default_gid(ibdev, curr_netdev, port);
+			/* if using bonding/team and a slave port is down, we
+			 * don't the bond IP based gids in the table since
+			 * flows that select port by gid may get the down port.
+			 */
+			if (curr_master && (port_state == IB_PORT_DOWN)) {
+				reset_gid_table(ibdev, port);
+				mlx4_ib_set_default_gid(ibdev,
+							curr_netdev, port);
+			}
+			/* if bonding is used it is possible that we add it to
+			 * masters only after IP address is assigned to the
+			 * net bonding interface.
+			*/
+			if (curr_master && (old_master != curr_master)) {
+				reset_gid_table(ibdev, port);
+				mlx4_ib_set_default_gid(ibdev,
+							curr_netdev, port);
+				mlx4_ib_get_dev_addr(curr_master, ibdev, port);
+			}
+
+			if (!curr_master && (old_master != curr_master)) {
+				reset_gid_table(ibdev, port);
+				mlx4_ib_set_default_gid(ibdev,
+							curr_netdev, port);
+				mlx4_ib_get_dev_addr(curr_netdev, ibdev, port);
+			}
 		} else {
 			reset_gid_table(ibdev, port);
-		}
-		/* if using bonding/team and a slave port is down, we don't the bond IP
-		 * based gids in the table since flows that select port by gid may get
-		 * the down port.
-		 */
-		if (curr_master && (port_state == IB_PORT_DOWN)) {
-			reset_gid_table(ibdev, port);
-			mlx4_ib_set_default_gid(ibdev, curr_netdev, port);
-		}
-		/* if bonding is used it is possible that we add it to masters
-		 * only after IP address is assigned to the net bonding
-		 * interface.
-		*/
-		if (curr_master && (old_master != curr_master)) {
-			reset_gid_table(ibdev, port);
-			mlx4_ib_set_default_gid(ibdev, curr_netdev, port);
-			mlx4_ib_get_dev_addr(curr_master, ibdev, port);
-		}
-
-		if (!curr_master && (old_master != curr_master)) {
-			reset_gid_table(ibdev, port);
-			mlx4_ib_set_default_gid(ibdev, curr_netdev, port);
-			mlx4_ib_get_dev_addr(curr_netdev, ibdev, port);
 		}
 	}
 
