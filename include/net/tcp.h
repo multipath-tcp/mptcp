@@ -1206,7 +1206,8 @@ u32 tcp_default_init_rwnd(u32 mss);
 /* Determine a window scaling and initial window to offer. */
 void tcp_select_initial_window(int __space, __u32 mss, __u32 *rcv_wnd,
 			       __u32 *window_clamp, int wscale_ok,
-			       __u8 *rcv_wscale, __u32 init_rcv_wnd);
+			       __u8 *rcv_wscale, __u32 init_rcv_wnd,
+			       const struct sock *sk);
 
 static inline int tcp_win_from_space(int space)
 {
@@ -1764,7 +1765,8 @@ struct tcp_sock_ops {
 	u16 (*select_window)(struct sock *sk);
 	void (*select_initial_window)(int __space, __u32 mss, __u32 *rcv_wnd,
 				      __u32 *window_clamp, int wscale_ok,
-				      __u8 *rcv_wscale, __u32 init_rcv_wnd);
+				      __u8 *rcv_wscale, __u32 init_rcv_wnd,
+				      const struct sock *sk);
 	void (*init_buffer_space)(struct sock *sk);
 	void (*set_rto)(struct sock *sk);
 	bool (*should_expand_sndbuf)(const struct sock *sk);

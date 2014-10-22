@@ -217,7 +217,7 @@ u32 tcp_default_init_rwnd(u32 mss)
 void tcp_select_initial_window(int __space, __u32 mss,
 			       __u32 *rcv_wnd, __u32 *window_clamp,
 			       int wscale_ok, __u8 *rcv_wscale,
-			       __u32 init_rcv_wnd)
+			       __u32 init_rcv_wnd, const struct sock *sk)
 {
 	unsigned int space = (__space < 0 ? 0 : __space);
 
@@ -2960,7 +2960,7 @@ static void tcp_connect_init(struct sock *sk)
 				       &tp->window_clamp,
 				       sysctl_tcp_window_scaling,
 				       &rcv_wscale,
-				       dst_metric(dst, RTAX_INITRWND));
+				       dst_metric(dst, RTAX_INITRWND), sk);
 
 	tp->rx_opt.rcv_wscale = rcv_wscale;
 	tp->rcv_ssthresh = tp->rcv_wnd;
