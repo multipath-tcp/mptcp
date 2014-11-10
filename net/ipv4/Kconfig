@@ -580,6 +580,14 @@ config TCP_CONG_WVEGAS
 	wVegas congestion control for MPTCP
 	To enable it, just put 'wvegas' in tcp_congestion_control
 
+config TCP_CONG_BALIA
+	tristate "MPTCP BALIA CONGESTION CONTROL"
+	depends on MPTCP
+	default n
+	---help---
+	Multipath TCP Balanced Linked Adaptation Congestion Control
+	To enable it, just put 'balia' in tcp_congestion_control
+
 choice
 	prompt "Default TCP congestion control"
 	default DEFAULT_CUBIC
@@ -617,6 +625,9 @@ choice
 	config DEFAULT_WVEGAS
 		bool "Wvegas" if TCP_CONG_WVEGAS=y
 
+	config DEFAULT_BALIA
+		bool "Balia" if TCP_CONG_BALIA=y
+
 	config DEFAULT_RENO
 		bool "Reno"
 
@@ -640,6 +651,7 @@ config DEFAULT_TCP_CONG
 	default "veno" if DEFAULT_VENO
 	default "coupled" if DEFAULT_COUPLED
 	default "wvegas" if DEFAULT_WVEGAS
+	default "balia" if DEFAULT_BALIA
 	default "reno" if DEFAULT_RENO
 	default "cubic"
 
