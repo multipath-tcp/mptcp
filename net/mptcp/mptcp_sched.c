@@ -172,10 +172,10 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 		}
 	}
 
-	if (mpcb->cnt_established == cnt_backups && lowpriosk) {
-		sk = lowpriosk;
-	} else if (bestsk) {
+	if (bestsk) {
 		sk = bestsk;
+	} else if (lowpriosk) {
+		sk = lowpriosk;
 	} else if (backupsk) {
 		/* It has been sent on all subflows once - let's give it a
 		 * chance again by restarting its pathmask.
@@ -183,6 +183,8 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 		if (skb)
 			TCP_SKB_CB(skb)->path_mask = 0;
 		sk = backupsk;
+	} else {
+		sk = NULL;
 	}
 
 	return sk;
