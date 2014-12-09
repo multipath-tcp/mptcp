@@ -222,8 +222,12 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 		if (tp_it != tp &&
 		    TCP_SKB_CB(skb_head)->path_mask & mptcp_pi_to_flag(tp_it->mptcp->path_index)) {
 			if (tp->srtt_us < tp_it->srtt_us && inet_csk((struct sock *)tp_it)->icsk_ca_state == TCP_CA_Open) {
+				u32 prior_cwnd = tp_it->snd_cwnd;
+
 				tp_it->snd_cwnd = max(tp_it->snd_cwnd >> 1U, 1U);
-				if (tp_it->snd_ssthresh != TCP_INFINITE_SSTHRESH)
+
+				/* If in slow start, do not reduce the ssthresh */
+				if (prior_cwnd >= tp_it->snd_ssthresh)
 					tp_it->snd_ssthresh = max(tp_it->snd_ssthresh >> 1U, 2U);
 
 				dsp->last_rbuf_opti = tcp_time_stamp;
