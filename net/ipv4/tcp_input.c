@@ -343,7 +343,7 @@ static void tcp_grow_window(struct sock *sk, const struct sk_buff *skb)
 
 	/* Check #1 */
 	if (meta_tp->rcv_ssthresh < meta_tp->window_clamp &&
-	    (int)meta_tp->rcv_ssthresh < tcp_space(sk) &&
+	    (int)meta_tp->rcv_ssthresh < tcp_space(meta_sk) &&
 	    !sk_under_memory_pressure(sk)) {
 		int incr;
 
