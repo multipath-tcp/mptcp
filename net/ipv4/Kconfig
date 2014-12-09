@@ -556,13 +556,13 @@ config TCP_CONG_ILLINOIS
 	For further details see:
 	  http://www.ews.uiuc.edu/~shaoliu/tcpillinois/index.html
 
-config TCP_CONG_COUPLED
-	tristate "MPTCP COUPLED CONGESTION CONTROL"
+config TCP_CONG_LIA
+	tristate "MPTCP Linked Increase"
 	depends on MPTCP
 	default n
 	---help---
-	MultiPath TCP Coupled Congestion Control
-	To enable it, just put 'coupled' in tcp_congestion_control
+	MultiPath TCP Linked Increase Congestion Control
+	To enable it, just put 'lia' in tcp_congestion_control
 
 config TCP_CONG_OLIA
 	tristate "MPTCP Opportunistic Linked Increase"
@@ -616,8 +616,8 @@ choice
 	config DEFAULT_WESTWOOD
 		bool "Westwood" if TCP_CONG_WESTWOOD=y
 
-	config DEFAULT_COUPLED
-		bool "Coupled" if TCP_CONG_COUPLED=y
+	config DEFAULT_LIA
+		bool "Lia" if TCP_CONG_LIA=y
 
 	config DEFAULT_OLIA
 		bool "Olia" if TCP_CONG_OLIA=y
@@ -649,7 +649,7 @@ config DEFAULT_TCP_CONG
 	default "vegas" if DEFAULT_VEGAS
 	default "westwood" if DEFAULT_WESTWOOD
 	default "veno" if DEFAULT_VENO
-	default "coupled" if DEFAULT_COUPLED
+	default "lia" if DEFAULT_LIA
 	default "wvegas" if DEFAULT_WVEGAS
 	default "balia" if DEFAULT_BALIA
 	default "reno" if DEFAULT_RENO
