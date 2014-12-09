@@ -1232,18 +1232,12 @@ static inline bool mptcp(const struct tcp_sock *tp)
 /* Note: caller must be prepared to deal with negative returns */ 
 static inline int tcp_space(const struct sock *sk)
 {
-	if (mptcp(tcp_sk(sk)))
-		sk = tcp_sk(sk)->meta_sk;
-
 	return tcp_win_from_space(sk->sk_rcvbuf -
 				  atomic_read(&sk->sk_rmem_alloc));
 } 
 
 static inline int tcp_full_space(const struct sock *sk)
 {
-	if (mptcp(tcp_sk(sk)))
-		sk = tcp_sk(sk)->meta_sk;
-
 	return tcp_win_from_space(sk->sk_rcvbuf); 
 }
 

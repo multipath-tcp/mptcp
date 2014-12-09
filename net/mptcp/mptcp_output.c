@@ -773,6 +773,7 @@ u32 __mptcp_select_window(struct sock *sk)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk), *meta_tp = mptcp_meta_tp(tp);
+	struct sock *meta_sk = mptcp_meta_sk(sk);
 	int mss, free_space, full_space, window;
 
 	/* MSS for the peer's data.  Previous versions used mss_clamp
@@ -782,9 +783,9 @@ u32 __mptcp_select_window(struct sock *sk)
 	 * fluctuations.  --SAW  1998/11/1
 	 */
 	mss = icsk->icsk_ack.rcv_mss;
-	free_space = tcp_space(sk);
+	free_space = tcp_space(meta_sk);
 	full_space = min_t(int, meta_tp->window_clamp,
-			tcp_full_space(sk));
+			tcp_full_space(meta_sk));
 
 	if (mss > full_space)
 		mss = full_space;
