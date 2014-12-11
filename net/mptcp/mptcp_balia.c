@@ -24,8 +24,9 @@
  * if max_rate > 2^rate_scale_limit
  */
 
-static int rate_scale_limit = 30;
-static int scale_num = 10;
+static int rate_scale_limit = 25;
+static int alpha_scale = 10;
+static int scale_num = 5;
 
 struct mptcp_balia {
 	u64	ai;
@@ -78,7 +79,6 @@ static void mptcp_balia_recalc_ai(const struct sock *sk)
 	const struct tcp_sock *tp = tcp_sk(sk);
 	const struct mptcp_cb *mpcb = tp->mpcb;
 	const struct sock *sub_sk;
-	int can_send = 0;
 	u64 max_rate = 0, rate = 0, sum_rate = 0;
 	u64 alpha = 0, ai = 0, md = 0;
 	int num_scale_down = 0;
@@ -98,27 +98,24 @@ static void mptcp_balia_recalc_ai(const struct sock *sk)
 		if (!mptcp_balia_sk_can_send(sub_sk))
 			continue;
 
-		can_send++;
-
 		tmp = div_u64((u64)tp->mss_cache * sub_tp->snd_cwnd
 				* (USEC_PER_SEC << 3), sub_tp->srtt_us);
 		sum_rate += tmp;
+
+		if (tp == sub_tp)
+			rate = tmp;
 
 		if (tmp >= max_rate)
 			max_rate = tmp;
 	}
 
-	/* No subflow is able to send - we don't care anymore */
-	if (unlikely(!can_send))
+	/* At least, the current subflow should be able to send */
+	if (unlikely(!rate))
 		goto exit;
 
-	rate = div_u64((u64)tp->mss_cache * tp->snd_cwnd *
-			(USEC_PER_SEC << 3), tp->srtt_us);
 	alpha = div64_u64(max_rate, rate);
 
-	/* Scale down max_rate from B/s to KB/s, MB/s, or GB/s
-	 * if max_rate is too high (i.e., >2^30)
-	 */
+	/* Scale down max_rate if it is too high (e.g., >2^25) */
 	while (max_rate > mptcp_balia_scale(1, rate_scale_limit)) {
 		max_rate >>= scale_num;
 		num_scale_down++;
@@ -129,6 +126,9 @@ static void mptcp_balia_recalc_ai(const struct sock *sk)
 		mptcp_for_each_sk(mpcb, sub_sk) {
 			struct tcp_sock *sub_tp = tcp_sk(sub_sk);
 			u64 tmp;
+
+			if (!mptcp_balia_sk_can_send(sub_sk))
+				continue;
 
 			tmp = div_u64((u64)tp->mss_cache * sub_tp->snd_cwnd
 				* (USEC_PER_SEC << 3), sub_tp->srtt_us);
@@ -151,9 +151,9 @@ static void mptcp_balia_recalc_ai(const struct sock *sk)
 	if (unlikely(!ai))
 		ai = tp->snd_cwnd;
 
-	md = ((tp->snd_cwnd >> 1) * min(mptcp_balia_scale(alpha, scale_num),
-					mptcp_balia_scale(3, scale_num) >> 1))
-					>> scale_num;
+	md = ((tp->snd_cwnd >> 1) * min(mptcp_balia_scale(alpha, alpha_scale),
+					mptcp_balia_scale(3, alpha_scale) >> 1))
+					>> alpha_scale;
 
 exit:
 	mptcp_set_ai(sk, ai);
