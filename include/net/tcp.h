@@ -372,6 +372,7 @@ extern const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops;
 
 struct mptcp_options_received;
 
+void tcp_cwnd_validate(struct sock *sk, bool is_cwnd_limited);
 void tcp_enter_quickack_mode(struct sock *sk);
 int tcp_close_state(struct sock *sk);
 void tcp_minshall_update(struct tcp_sock *tp, unsigned int mss_now,
@@ -1774,6 +1775,7 @@ struct tcp_sock_ops {
 	void (*time_wait)(struct sock *sk, int state, int timeo);
 	void (*cleanup_rbuf)(struct sock *sk, int copied);
 	void (*init_congestion_control)(struct sock *sk);
+	void (*cwnd_validate)(struct sock *sk, bool is_cwnd_limited);
 };
 extern const struct tcp_sock_ops tcp_specific;
 

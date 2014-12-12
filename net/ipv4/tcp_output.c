@@ -1448,7 +1448,7 @@ static void tcp_cwnd_application_limited(struct sock *sk)
 	tp->snd_cwnd_stamp = tcp_time_stamp;
 }
 
-static void tcp_cwnd_validate(struct sock *sk, bool is_cwnd_limited)
+void tcp_cwnd_validate(struct sock *sk, bool is_cwnd_limited)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
@@ -2055,7 +2055,8 @@ repair:
 		/* Send one loss probe per tail loss episode. */
 		if (push_one != 2)
 			tcp_schedule_loss_probe(sk);
-		tcp_cwnd_validate(sk, is_cwnd_limited);
+		if (tp->ops->cwnd_validate)
+			tp->ops->cwnd_validate(sk, is_cwnd_limited);
 		return false;
 	}
 	return (push_one == 2) || (!tp->packets_out && tcp_send_head(sk));

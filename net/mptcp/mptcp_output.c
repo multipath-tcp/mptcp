@@ -655,11 +655,9 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 	struct sock *subsk = NULL;
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	struct sk_buff *skb;
-	unsigned int sent_pkts;
 	int reinject = 0;
 	unsigned int sublimit;
-
-	sent_pkts = 0;
+	__u32 path_mask = 0;
 
 	while ((skb = mpcb->sched_ops->next_segment(meta_sk, &reinject, &subsk,
 						    &sublimit))) {
@@ -740,6 +738,7 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		 * always push on the subflow
 		 */
 		__tcp_push_pending_frames(subsk, mss_now, TCP_NAGLE_PUSH);
+		path_mask |= mptcp_pi_to_flag(subtp->mptcp->path_index);
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
 
 		if (!reinject) {
@@ -750,7 +749,6 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		}
 
 		tcp_minshall_update(meta_tp, mss_now, skb);
-		sent_pkts += tcp_skb_pcount(skb);
 
 		if (reinject > 0) {
 			__skb_unlink(skb, &mpcb->reinject_queue);
@@ -759,6 +757,22 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 
 		if (push_one)
 			break;
+	}
+
+	mptcp_for_each_sk(mpcb, subsk) {
+		subtp = tcp_sk(subsk);
+
+		if (!(path_mask & mptcp_pi_to_flag(subtp->mptcp->path_index)))
+			continue;
+
+		/* We have pushed data on this subflow. We ignore the call to
+		 * cwnd_validate in tcp_write_xmit as is_cwnd_limited will never
+		 * be true (we never push more than what the cwnd can accept).
+		 * We need to ensure that we call tcp_cwnd_validate with
+		 * is_cwnd_limited set to true if we have filled the cwnd.
+		 */
+		tcp_cwnd_validate(subsk, tcp_packets_in_flight(subtp) >=
+				  subtp->snd_cwnd);
 	}
 
 	return !meta_tp->packets_out && tcp_send_head(meta_sk);
