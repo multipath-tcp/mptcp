@@ -195,6 +195,8 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 	sk->sk_v6_daddr = usin->sin6_addr;
 	np->flow_label = fl6.flowlabel;
 
+	ip6_set_txhash(sk);
+
 	/*
 	 *	TCP over IPv4
 	 */
@@ -522,20 +524,6 @@ done:
 	return err;
 }
 
-int tcp_v6_rtx_synack(struct sock *sk, struct request_sock *req)
-{
-	const struct tcp_request_sock_ops *af_ops = tcp_rsk(req)->af_specific;
-	struct flowi fl;
-	int res;
-
-	res = af_ops->send_synack(sk, NULL, &fl, req, 0, NULL);
-	if (!res) {
-		TCP_INC_STATS_BH(sock_net(sk), TCP_MIB_RETRANSSEGS);
-		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPSYNRETRANS);
-	}
-	return res;
-}
-
 void tcp_v6_reqsk_destructor(struct request_sock *req)
 {
 	kfree_skb(inet_rsk(req)->pktopts);
@@ -696,7 +684,8 @@ clear_hash_noput:
 	return 1;
 }
 
-static int tcp_v6_inbound_md5_hash(struct sock *sk, const struct sk_buff *skb)
+static int __tcp_v6_inbound_md5_hash(struct sock *sk,
+				     const struct sk_buff *skb)
 {
 	const __u8 *hash_location = NULL;
 	struct tcp_md5sig_key *hash_expected;
@@ -736,6 +725,18 @@ static int tcp_v6_inbound_md5_hash(struct sock *sk, const struct sk_buff *skb)
 	}
 	return 0;
 }
+
+static int tcp_v6_inbound_md5_hash(struct sock *sk, const struct sk_buff *skb)
+{
+	int ret;
+
+	rcu_read_lock();
+	ret = __tcp_v6_inbound_md5_hash(sk, skb);
+	rcu_read_unlock();
+
+	return ret;
+}
+
 #endif
 
 static int tcp_v6_init_req(struct request_sock *req, struct sock *sk,
@@ -748,7 +749,6 @@ static int tcp_v6_init_req(struct request_sock *req, struct sock *sk,
 	ireq->ir_v6_loc_addr = ipv6_hdr(skb)->daddr;
 
 	ireq->ir_iif = sk->sk_bound_dev_if;
-	ireq->ir_mark = inet_request_mark(sk, skb);
 
 	/* So that link locals have meaning */
 	if (!sk->sk_bound_dev_if &&
@@ -1198,6 +1198,8 @@ struct sock *tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 	newsk->sk_v6_rcv_saddr = ireq->ir_v6_loc_addr;
 	newsk->sk_bound_dev_if = ireq->ir_iif;
 
+	ip6_set_txhash(newsk);
+
 	/* Now IPv6 options...
 
 	   First: no IPv4 options.
@@ -1308,11 +1310,6 @@ int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 
 	if (skb->protocol == htons(ETH_P_IP))
 		return tcp_v4_do_rcv(sk, skb);
-
-#ifdef CONFIG_TCP_MD5SIG
-	if (tcp_v6_inbound_md5_hash(sk, skb))
-		goto discard;
-#endif
 
 	if (is_meta_sk(sk))
 		return mptcp_v6_do_rcv(sk, skb);
@@ -1514,6 +1511,11 @@ process:
 	if (!xfrm6_policy_check(sk, XFRM_POLICY_IN, skb))
 		goto discard_and_relse;
 
+#ifdef CONFIG_TCP_MD5SIG
+	if (tcp_v6_inbound_md5_hash(sk, skb))
+		goto discard_and_relse;
+#endif
+
 	if (sk_filter(sk, skb))
 		goto discard_and_relse;
 
@@ -1695,6 +1697,7 @@ static const struct inet_connection_sock_af_ops ipv6_specific = {
 	.compat_setsockopt = compat_ipv6_setsockopt,
 	.compat_getsockopt = compat_ipv6_getsockopt,
 #endif
+	.mtu_reduced	   = tcp_v6_mtu_reduced,
 };
 
 #ifdef CONFIG_TCP_MD5SIG
@@ -1725,6 +1728,7 @@ static const struct inet_connection_sock_af_ops ipv6_mapped = {
 	.compat_setsockopt = compat_ipv6_setsockopt,
 	.compat_getsockopt = compat_ipv6_getsockopt,
 #endif
+	.mtu_reduced	   = tcp_v4_mtu_reduced,
 };
 
 #ifdef CONFIG_TCP_MD5SIG
@@ -1985,7 +1989,6 @@ struct proto tcpv6_prot = {
 	.sendpage		= tcp_sendpage,
 	.backlog_rcv		= tcp_v6_do_rcv,
 	.release_cb		= tcp_release_cb,
-	.mtu_reduced		= tcp_v6_mtu_reduced,
 	.hash			= tcp_v6_hash,
 	.unhash			= inet_unhash,
 	.get_port		= inet_csk_get_port,

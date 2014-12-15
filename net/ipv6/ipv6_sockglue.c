@@ -242,7 +242,7 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
 		if (optlen < sizeof(int) ||
 		    inet_sk(sk)->inet_num)
 			goto e_inval;
-		np->ipv6only = valbool;
+		sk->sk_ipv6only = valbool;
 		retv = 0;
 		break;
 
@@ -841,6 +841,10 @@ pref_skip_coa:
 		np->dontfrag = valbool;
 		retv = 0;
 		break;
+	case IPV6_AUTOFLOWLABEL:
+		np->autoflowlabel = valbool;
+		retv = 0;
+		break;
 	}
 
 	release_sock(sk);
@@ -1065,7 +1069,7 @@ static int do_ipv6_getsockopt(struct sock *sk, int level, int optname,
 	}
 
 	case IPV6_V6ONLY:
-		val = np->ipv6only;
+		val = sk->sk_ipv6only;
 		break;
 
 	case IPV6_RECVPKTINFO:
@@ -1165,7 +1169,6 @@ static int do_ipv6_getsockopt(struct sock *sk, int level, int optname,
 			return -EFAULT;
 
 		return 0;
-		break;
 	}
 
 	case IPV6_TRANSPARENT:
@@ -1278,6 +1281,10 @@ static int do_ipv6_getsockopt(struct sock *sk, int level, int optname,
 
 	case IPV6_DONTFRAG:
 		val = np->dontfrag;
+		break;
+
+	case IPV6_AUTOFLOWLABEL:
+		val = np->autoflowlabel;
 		break;
 
 	default:
