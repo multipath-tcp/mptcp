@@ -393,12 +393,12 @@ static int binder_get_local_id(sa_family_t family, union inet_addr *addr,
 /* Callback functions, executed when syctl mptcp.mptcp_gateways is updated.
  * Inspired from proc_tcp_congestion_control().
  */
-static int proc_mptcp_gateways(ctl_table *ctl, int write,
-				       void __user *buffer, size_t *lenp,
-				       loff_t *ppos)
+static int proc_mptcp_gateways(struct ctl_table *ctl, int write,
+			       void __user *buffer, size_t *lenp,
+			       loff_t *ppos)
 {
 	int ret;
-	ctl_table tbl = {
+	struct ctl_table tbl = {
 		.maxlen = MPTCP_GW_SYSCTL_MAX_LEN,
 	};
 

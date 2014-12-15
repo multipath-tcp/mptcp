@@ -73,12 +73,12 @@ bool mptcp_init_failed __read_mostly;
 struct static_key mptcp_static_key = STATIC_KEY_INIT_FALSE;
 EXPORT_SYMBOL(mptcp_static_key);
 
-static int proc_mptcp_path_manager(ctl_table *ctl, int write,
+static int proc_mptcp_path_manager(struct ctl_table *ctl, int write,
 				   void __user *buffer, size_t *lenp,
 				   loff_t *ppos)
 {
 	char val[MPTCP_PM_NAME_MAX];
-	ctl_table tbl = {
+	struct ctl_table tbl = {
 		.data = val,
 		.maxlen = MPTCP_PM_NAME_MAX,
 	};
@@ -92,12 +92,12 @@ static int proc_mptcp_path_manager(ctl_table *ctl, int write,
 	return ret;
 }
 
-static int proc_mptcp_scheduler(ctl_table *ctl, int write,
+static int proc_mptcp_scheduler(struct ctl_table *ctl, int write,
 				void __user *buffer, size_t *lenp,
 				loff_t *ppos)
 {
 	char val[MPTCP_SCHED_NAME_MAX];
-	ctl_table tbl = {
+	struct ctl_table tbl = {
 		.data = val,
 		.maxlen = MPTCP_SCHED_NAME_MAX,
 	};
@@ -949,7 +949,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 		newnp->mcast_hops	= IPV6_DEFAULT_MCASTHOPS;
 		newnp->mc_loop	= 1;
 		newnp->pmtudisc	= IPV6_PMTUDISC_WANT;
-		newnp->ipv6only	= sock_net(master_sk)->ipv6.sysctl.bindv6only;
+		master_sk->sk_ipv6only = sock_net(master_sk)->ipv6.sysctl.bindv6only;
 	}
 #endif
 

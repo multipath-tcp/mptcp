@@ -729,8 +729,7 @@ duno:
 					continue;
 			}
 			/* skip IPv4 events if IPV6_V6ONLY is set */
-			else if (event->family == AF_INET &&
-				 inet6_sk(meta_sk)->ipv6only)
+			else if (event->family == AF_INET && meta_sk->sk_ipv6only)
 				continue;
 
 			if (unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
@@ -1193,7 +1192,7 @@ static void full_mesh_new_session(const struct sock *meta_sk)
 	INIT_DELAYED_WORK(&fmp->subflow_retry_work, retry_subflow_worker);
 	fmp->mpcb = mpcb;
 
-	if (!meta_v4 && inet6_sk(meta_sk)->ipv6only)
+	if (!meta_v4 && meta_sk->sk_ipv6only)
 		goto skip_ipv4;
 
 	/* Look for the address among the local addresses */
@@ -1282,7 +1281,7 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 	rcu_read_lock();
 	mptcp_local = rcu_dereference(fm_ns->local);
 
-	if (!meta_v4 && inet6_sk(meta_sk)->ipv6only)
+	if (!meta_v4 && meta_sk->sk_ipv6only)
 		goto skip_ipv4;
 
 	/* First, detect modifications or additions */
@@ -1456,7 +1455,7 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 	rcu_read_lock();
 	mptcp_local = rcu_dereference(fm_ns->local);
 
-	if (!meta_v4 && inet6_sk(meta_sk)->ipv6only)
+	if (!meta_v4 && meta_sk->sk_ipv6only)
 		goto skip_ipv4;
 
 	/* IPv4 */

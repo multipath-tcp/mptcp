@@ -410,7 +410,6 @@ void tcp_adjust_pcount(struct sock *sk, const struct sk_buff *skb, int decr);
 void tcp_set_skb_tso_segs(const struct sock *sk, struct sk_buff *skb,
 			  unsigned int mss_now);
 
-int tcp_v4_rtx_synack(struct sock *sk, struct request_sock *req);
 void tcp_v4_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 			   struct request_sock *req);
 int tcp_v4_send_synack(struct sock *sk, struct dst_entry *dst,
@@ -423,7 +422,6 @@ struct ip_options_rcu *tcp_v4_save_options(struct sk_buff *skb);
 struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb);
 void tcp_v4_reqsk_destructor(struct request_sock *req);
 
-int tcp_v6_rtx_synack(struct sock *sk, struct request_sock *req);
 void tcp_v6_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 			   struct request_sock *req);
 __u32 tcp_v6_init_sequence(const struct sk_buff *skb);

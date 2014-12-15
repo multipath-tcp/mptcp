@@ -140,7 +140,7 @@ static int mptcp_v6_join_init_req(struct request_sock *req, struct sock *sk,
 struct request_sock_ops mptcp6_request_sock_ops __read_mostly = {
 	.family		=	AF_INET6,
 	.obj_size	=	sizeof(struct mptcp_request_sock),
-	.rtx_syn_ack	=	tcp_v6_rtx_synack,
+	.rtx_syn_ack	=	tcp_rtx_synack,
 	.send_ack	=	tcp_v6_reqsk_send_ack,
 	.destructor	=	mptcp_v6_reqsk_destructor,
 	.send_reset	=	tcp_v6_send_reset,

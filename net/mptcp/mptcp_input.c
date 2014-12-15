@@ -1178,8 +1178,7 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 			sock_put(meta_sk); /* Taken by mptcp_hash_find */
 			return -1;
 		}
-	} else if (skb->protocol == htons(ETH_P_IP) &&
-		   inet6_sk(meta_sk)->ipv6only) {
+	} else if (skb->protocol == htons(ETH_P_IP) && meta_sk->sk_ipv6only) {
 		mptcp_debug("SYN+MP_JOIN with IPV4 address on IPV6_V6ONLY meta\n");
 		sock_put(meta_sk); /* Taken by mptcp_hash_find */
 		return -1;
@@ -1253,8 +1252,7 @@ int mptcp_do_join_short(struct sk_buff *skb,
 			sock_put(meta_sk); /* Taken by mptcp_hash_find */
 			return -1;
 		}
-	} else if (skb->protocol == htons(ETH_P_IP) &&
-		   inet6_sk(meta_sk)->ipv6only) {
+	} else if (skb->protocol == htons(ETH_P_IP) && meta_sk->sk_ipv6only) {
 		mptcp_debug("SYN+MP_JOIN with IPV4 address on IPV6_V6ONLY meta\n");
 		sock_put(meta_sk); /* Taken by mptcp_hash_find */
 		return -1;
