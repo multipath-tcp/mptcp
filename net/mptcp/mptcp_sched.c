@@ -15,25 +15,39 @@ static struct defsched_priv *defsched_get_priv(const struct tcp_sock *tp)
 	return (struct defsched_priv *)&tp->mptcp->mptcp_sched[0];
 }
 
-/* If the sub-socket sk available to send the skb? */
-static bool mptcp_is_available(struct sock *sk, const struct sk_buff *skb,
+static bool mptcp_is_def_unavailable(struct sock *sk)
+{
+	const struct tcp_sock *tp = tcp_sk(sk);
+
+	/* Set of TCP states for which we are not allowed to send data "definetively" */
+	if ((1 << sk->sk_state) & (TCPF_FIN_WAIT1 | TCPF_FIN_WAIT2 | TCPF_CLOSE | TCPF_CLOSING | TCPF_LISTEN))
+		return true;
+
+	/* The socket failed */
+	if (tp->pf)
+		return true;
+
+	return false;
+}
+
+static bool mptcp_is_temp_unavailable(struct sock *sk, const struct sk_buff *skb,
 			       bool zero_wnd_test)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int mss_now, space, in_flight;
 
-	/* Set of states for which we are allowed to send data */
-	if (!mptcp_sk_can_send(sk))
-		return false;
+	/* Set of TCP states for which we are not allowed to send data "temporally" */
+	if (sk->sk_state == TCPF_SYN_SENT && !tcp_passive_fastopen(sk))
+		return true;
+
+	if ((1 << sk->sk_state) & (TCPF_SYN_RECV | TCPF_TIME_WAIT | TCPF_LAST_ACK))
+		return true;
 
 	/* We do not send data on this subflow unless it is
 	 * fully established, i.e. the 4th ack has been received.
 	 */
 	if (tp->mptcp->pre_established)
-		return false;
-
-	if (tp->pf)
-		return false;
+		return true;
 
 	if (inet_csk(sk)->icsk_ca_state == TCP_CA_Loss) {
 		/* If SACK is disabled, and we got a loss, TCP does not exit
@@ -45,28 +59,28 @@ static bool mptcp_is_available(struct sock *sk, const struct sk_buff *skb,
 		 * Thus, snd_una can never go beyond high_seq.
 		 */
 		if (!tcp_is_reno(tp))
-			return false;
+			return true;
 		else if (tp->snd_una != tp->high_seq)
-			return false;
+			return true;
 	}
 
 	if (!tp->mptcp->fully_established) {
 		/* Make sure that we send in-order data */
 		if (skb && tp->mptcp->second_packet &&
 		    tp->mptcp->last_end_data_seq != TCP_SKB_CB(skb)->seq)
-			return false;
+			return true;
 	}
 
 	/* If TSQ is already throttling us, do not send on this subflow. When
 	 * TSQ gets cleared the subflow becomes eligible again.
 	 */
 	if (test_bit(TSQ_THROTTLED, &tp->tsq_flags))
-		return false;
+		return true;
 
 	in_flight = tcp_packets_in_flight(tp);
 	/* Not even a single spot in the cwnd */
 	if (in_flight >= tp->snd_cwnd)
-		return false;
+		return true;
 
 	/* Now, check if what is queued in the subflow's send-queue
 	 * already fills the cwnd.
@@ -74,10 +88,10 @@ static bool mptcp_is_available(struct sock *sk, const struct sk_buff *skb,
 	space = (tp->snd_cwnd - in_flight) * tp->mss_cache;
 
 	if (tp->write_seq - tp->snd_nxt > space)
-		return false;
+		return true;
 
 	if (zero_wnd_test && !before(tp->write_seq, tcp_wnd_end(tp)))
-		return false;
+		return true;
 
 	mss_now = tcp_current_mss(sk);
 
@@ -88,7 +102,19 @@ static bool mptcp_is_available(struct sock *sk, const struct sk_buff *skb,
 	 */
 	if (skb && !zero_wnd_test &&
 	    after(tp->write_seq + min(skb->len, mss_now), tcp_wnd_end(tp)))
+		return true;
+
+	return false;
+}
+
+/* If the sub-socket sk available to send the skb? */
+static bool mptcp_is_available(struct sock *sk, const struct sk_buff *skb,
+			       bool zero_wnd_test)
+{
+	if (mptcp_is_def_unavailable(sk) ||
+		mptcp_is_temp_unavailable(sk, skb, zero_wnd_test)) {
 		return false;
+	}
 
 	return true;
 }
@@ -116,9 +142,11 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 					  bool zero_wnd_test)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct sock *sk, *bestsk = NULL, *lowpriosk = NULL, *backupsk = NULL;
-	u32 min_time_to_peer = 0xffffffff, lowprio_min_time_to_peer = 0xffffffff;
-	int cnt_backups = 0;
+	struct sock *sk, *bestsk = NULL, *usedbestsk = NULL;
+	struct sock *lowpriosk = NULL, *usedlowpriosk = NULL;
+	u32 best_min_srtt = 0xffffffff, usedbest_min_srtt = 0xffffffff;
+	u32 lowprio_min_srtt = 0xffffffff, usedlowprio_min_srtt = 0xffffffff;
+	int cnt_bests = 0, cnt_bests_error = 0;
 
 	/* if there is only one subflow, bypass the scheduling function */
 	if (mpcb->cnt_subflows == 1) {
@@ -142,47 +170,68 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 	mptcp_for_each_sk(mpcb, sk) {
 		struct tcp_sock *tp = tcp_sk(sk);
 
-		if (tp->mptcp->rcv_low_prio || tp->mptcp->low_prio)
-			cnt_backups++;
+		if (tp->mptcp->rcv_low_prio || tp->mptcp->low_prio) {
+			if (mptcp_is_def_unavailable(sk))
+				continue;
 
-		if ((tp->mptcp->rcv_low_prio || tp->mptcp->low_prio) &&
-		    tp->srtt_us < lowprio_min_time_to_peer) {
-			if (!mptcp_is_available(sk, skb, zero_wnd_test))
+			if (mptcp_is_temp_unavailable(sk, skb, zero_wnd_test))
 				continue;
 
 			if (mptcp_dont_reinject_skb(tp, skb)) {
-				backupsk = sk;
+				if (tp->srtt_us < usedlowprio_min_srtt) {
+					usedlowprio_min_srtt = tp->srtt_us;
+					usedlowpriosk = sk;
+					continue;
+				}
+			}
+
+			if (tp->srtt_us < lowprio_min_srtt) {
+				lowprio_min_srtt = tp->srtt_us;
+				lowpriosk = sk;
+			}
+		} else if (!(tp->mptcp->rcv_low_prio || tp->mptcp->low_prio)) {
+			cnt_bests++;
+
+			if (mptcp_is_def_unavailable(sk)) {
+				cnt_bests_error++;
 				continue;
 			}
 
-			lowprio_min_time_to_peer = tp->srtt_us;
-			lowpriosk = sk;
-		} else if (!(tp->mptcp->rcv_low_prio || tp->mptcp->low_prio) &&
-			   tp->srtt_us < min_time_to_peer) {
-			if (!mptcp_is_available(sk, skb, zero_wnd_test))
+			if (mptcp_is_temp_unavailable(sk, skb, zero_wnd_test))
 				continue;
 
 			if (mptcp_dont_reinject_skb(tp, skb)) {
-				backupsk = sk;
-				continue;
+				if (tp->srtt_us < usedbest_min_srtt) {
+					usedbest_min_srtt = tp->srtt_us;
+					usedbestsk = sk;
+					continue;
+				}
 			}
 
-			min_time_to_peer = tp->srtt_us;
-			bestsk = sk;
+			if (tp->srtt_us < best_min_srtt) {
+				best_min_srtt = tp->srtt_us;
+				bestsk = sk;
+			}
 		}
 	}
 
-	if (mpcb->cnt_established == cnt_backups && lowpriosk) {
-		sk = lowpriosk;
-	} else if (bestsk) {
+	if (bestsk) {
 		sk = bestsk;
-	} else if (backupsk) {
-		/* It has been sent on all subflows once - let's give it a
-		 * chance again by restarting its pathmask.
-		 */
+	} else if (usedbestsk) {
+		sk = usedbestsk;
 		if (skb)
 			TCP_SKB_CB(skb)->path_mask = 0;
-		sk = backupsk;
+	} else if (cnt_bests == cnt_bests_error) {
+		/* Lowprio sks are only used if all the active sks are 0 or
+		 * have permanent errors
+		 */
+		if (lowpriosk) {
+			sk = lowpriosk;
+		} else if (usedlowpriosk) {
+			sk = usedlowpriosk;
+			if (skb)
+				TCP_SKB_CB(skb)->path_mask = 0;
+		}
 	}
 
 	return sk;
