@@ -434,6 +434,7 @@ const struct inet_connection_sock_af_ops mptcp_v4_specific = {
 	.compat_setsockopt = compat_ip_setsockopt,
 	.compat_getsockopt = compat_ip_getsockopt,
 #endif
+	.mtu_reduced	   = tcp_v4_mtu_reduced,
 };
 
 struct tcp_request_sock_ops mptcp_request_sock_ipv4_ops;

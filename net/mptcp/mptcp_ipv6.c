@@ -451,6 +451,7 @@ const struct inet_connection_sock_af_ops mptcp_v6_specific = {
 	.compat_setsockopt = compat_ipv6_setsockopt,
 	.compat_getsockopt = compat_ipv6_getsockopt,
 #endif
+	.mtu_reduced	   = tcp_v6_mtu_reduced,
 };
 
 const struct inet_connection_sock_af_ops mptcp_v6_mapped = {
@@ -470,6 +471,7 @@ const struct inet_connection_sock_af_ops mptcp_v6_mapped = {
 	.compat_setsockopt = compat_ipv6_setsockopt,
 	.compat_getsockopt = compat_ipv6_getsockopt,
 #endif
+	.mtu_reduced	   = tcp_v4_mtu_reduced,
 };
 
 struct tcp_request_sock_ops mptcp_request_sock_ipv6_ops;

@@ -323,7 +323,7 @@ failure:
 	return err;
 }
 
-static void tcp_v6_mtu_reduced(struct sock *sk)
+void tcp_v6_mtu_reduced(struct sock *sk)
 {
 	struct dst_entry *dst;
 
