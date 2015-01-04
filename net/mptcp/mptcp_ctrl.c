@@ -330,6 +330,44 @@ static void mptcp_set_key_sk(const struct sock *sk)
 		       &tp->mptcp_loc_token, NULL);
 }
 
+void mptcp_enable_sock(struct sock *sk)
+{
+	if (!sock_flag(sk, SOCK_MPTCP)) {
+		sock_set_flag(sk, SOCK_MPTCP);
+
+		/* Necessary here, because MPTCP can be enabled/disabled through
+		 * a setsockopt.
+		 */
+		if (sk->sk_family == AF_INET)
+			inet_csk(sk)->icsk_af_ops = &mptcp_v4_specific;
+#if IS_ENABLED(CONFIG_IPV6)
+		else if (mptcp_v6_is_v4_mapped(sk))
+			inet_csk(sk)->icsk_af_ops = &mptcp_v6_mapped;
+		else
+			inet_csk(sk)->icsk_af_ops = &mptcp_v6_specific;
+#endif
+	}
+}
+
+void mptcp_disable_sock(struct sock *sk)
+{
+	if (sock_flag(sk, SOCK_MPTCP)) {
+		sock_reset_flag(sk, SOCK_MPTCP);
+
+		/* Necessary here, because MPTCP can be enabled/disabled through
+		 * a setsockopt.
+		 */
+		if (sk->sk_family == AF_INET)
+			inet_csk(sk)->icsk_af_ops = &ipv4_specific;
+#if IS_ENABLED(CONFIG_IPV6)
+		else if (mptcp_v6_is_v4_mapped(sk))
+			inet_csk(sk)->icsk_af_ops = &ipv6_mapped;
+		else
+			inet_csk(sk)->icsk_af_ops = &ipv6_specific;
+#endif
+	}
+}
+
 void mptcp_connect_init(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -1687,17 +1725,6 @@ void mptcp_disconnect(struct sock *sk)
 /* Returns 1 if we should enable MPTCP for that socket. */
 int mptcp_doit(struct sock *sk)
 {
-	/* Do not allow MPTCP enabling if the MPTCP initialization failed */
-	if (mptcp_init_failed)
-		return 0;
-
-	if (sysctl_mptcp_enabled == MPTCP_APP && !tcp_sk(sk)->mptcp_enabled)
-		return 0;
-
-	/* Socket may already be established (e.g., called from tcp_recvmsg) */
-	if (mptcp(tcp_sk(sk)) || tcp_sk(sk)->request_mptcp)
-		return 1;
-
 	/* Don't do mptcp over loopback */
 	if (sk->sk_family == AF_INET &&
 	    (ipv4_is_loopback(inet_sk(sk)->inet_daddr) ||
@@ -2157,7 +2184,6 @@ void mptcp_reqsk_init(struct request_sock *req, const struct sk_buff *skb)
 int mptcp_conn_request(struct sock *sk, struct sk_buff *skb)
 {
 	struct mptcp_options_received mopt;
-	const struct tcp_sock *tp = tcp_sk(sk);
 	__u32 isn = TCP_SKB_CB(skb)->when;
 	bool want_cookie = false;
 
@@ -2177,7 +2203,7 @@ int mptcp_conn_request(struct sock *sk, struct sk_buff *skb)
 	if (mopt.drop_me)
 		goto drop;
 
-	if (sysctl_mptcp_enabled == MPTCP_APP && !tp->mptcp_enabled)
+	if (!sock_flag(sk, SOCK_MPTCP))
 		mopt.saw_mpc = 0;
 
 	if (skb->protocol == htons(ETH_P_IP)) {

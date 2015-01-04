@@ -1609,9 +1609,6 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			break;
 		}
 
-		if (!sysctl_mptcp_enabled)
-			break;
-
 		/* We only support MPTCP version 0 */
 		if (mpcapable->ver != 0)
 			break;

@@ -3008,7 +3008,7 @@ static void tcp_connect_init(struct sock *sk)
 	tcp_clear_retrans(tp);
 
 #ifdef CONFIG_MPTCP
-	if (sysctl_mptcp_enabled && mptcp_doit(sk)) {
+	if (sock_flag(sk, SOCK_MPTCP) && mptcp_doit(sk)) {
 		if (is_master_tp(tp)) {
 			tp->request_mptcp = 1;
 			mptcp_connect_init(sk);

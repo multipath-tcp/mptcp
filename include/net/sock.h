@@ -717,6 +717,7 @@ enum sock_flags {
 		     */
 	SOCK_FILTER_LOCKED, /* Filter cannot be changed anymore */
 	SOCK_SELECT_ERR_QUEUE, /* Wake select on error queue */
+	SOCK_MPTCP, /* MPTCP set on this socket */
 };
 
 static inline void sock_copy_flags(struct sock *nsk, struct sock *osk)
