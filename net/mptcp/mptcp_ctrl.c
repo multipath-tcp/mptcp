@@ -330,6 +330,65 @@ static void mptcp_set_key_sk(const struct sock *sk)
 		       &tp->mptcp_loc_token, NULL);
 }
 
+#ifdef HAVE_JUMP_LABEL
+/* We are not allowed to call static_key_slow_dec() from irq context
+ * If mptcp_enable/disable_static_key() is called from irq context,
+ * defer the static_key_slow_dec() calls.
+ */
+static atomic_t mptcp_enable_deferred;
+#endif
+
+void mptcp_enable_static_key(void)
+{
+#ifdef HAVE_JUMP_LABEL
+	int deferred;
+
+	if (in_interrupt()) {
+		atomic_inc(&mptcp_enable_deferred);
+		return;
+	}
+
+	deferred = atomic_xchg(&mptcp_enable_deferred, 0);
+
+	if (deferred > 0) {
+		while (deferred--)
+			static_key_slow_inc(&mptcp_static_key);
+	} else if (deferred < 0) {
+		/* Do exactly one dec less than necessary */
+		while (++deferred)
+			static_key_slow_dec(&mptcp_static_key);
+		return;
+	}
+#endif
+	static_key_slow_inc(&mptcp_static_key);
+	WARN_ON(atomic_read(&mptcp_static_key.enabled) == 0);
+}
+
+void mptcp_disable_static_key(void)
+{
+#ifdef HAVE_JUMP_LABEL
+	int deferred;
+
+	if (in_interrupt()) {
+		atomic_dec(&mptcp_enable_deferred);
+		return;
+	}
+
+	deferred = atomic_xchg(&mptcp_enable_deferred, 0);
+
+	if (deferred > 0) {
+		/* Do exactly one inc less than necessary */
+		while (--deferred)
+			static_key_slow_inc(&mptcp_static_key);
+		return;
+	} else if (deferred < 0) {
+		while (deferred++)
+			static_key_slow_dec(&mptcp_static_key);
+	}
+#endif
+	static_key_slow_dec(&mptcp_static_key);
+}
+
 void mptcp_enable_sock(struct sock *sk)
 {
 	if (!sock_flag(sk, SOCK_MPTCP)) {
@@ -346,6 +405,8 @@ void mptcp_enable_sock(struct sock *sk)
 		else
 			inet_csk(sk)->icsk_af_ops = &mptcp_v6_specific;
 #endif
+
+		mptcp_enable_static_key();
 	}
 }
 
@@ -365,6 +426,8 @@ void mptcp_disable_sock(struct sock *sk)
 		else
 			inet_csk(sk)->icsk_af_ops = &ipv6_specific;
 #endif
+
+		mptcp_disable_static_key();
 	}
 }
 
@@ -526,8 +589,6 @@ static void mptcp_sock_destruct(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	inet_sock_destruct(sk);
-
 	if (!is_meta_sk(sk) && !tp->was_meta_sk) {
 		BUG_ON(!hlist_unhashed(&tp->mptcp->cb_list));
 
@@ -560,10 +621,9 @@ static void mptcp_sock_destruct(struct sock *sk)
 	}
 
 	WARN_ON(!static_key_false(&mptcp_static_key));
-	/* Must be the last call, because is_meta_sk() above still needs the
-	 * static key
-	 */
-	static_key_slow_dec(&mptcp_static_key);
+
+	/* Must be called here, because this will decrement the jump-label. */
+	inet_sock_destruct(sk);
 }
 
 void mptcp_destroy_sock(struct sock *sk)
@@ -1057,8 +1117,12 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 		return -ENOMEM;
 	}
 
+	if (!sock_flag(meta_sk, SOCK_MPTCP)) {
+		mptcp_enable_static_key();
+		sock_set_flag(meta_sk, SOCK_MPTCP);
+	}
+
 	/* Redefine function-pointers as the meta-sk is now fully ready */
-	static_key_slow_inc(&mptcp_static_key);
 	meta_tp->mpc = 1;
 	meta_tp->ops = &mptcp_meta_specific;
 
@@ -1140,7 +1204,11 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 	tp->mpcb = mpcb;
 	tp->meta_sk = meta_sk;
 
-	static_key_slow_inc(&mptcp_static_key);
+	if (!sock_flag(sk, SOCK_MPTCP)) {
+		mptcp_enable_static_key();
+		sock_set_flag(sk, SOCK_MPTCP);
+	}
+
 	tp->mpc = 1;
 	tp->ops = &mptcp_sub_specific;
 
