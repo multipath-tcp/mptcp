@@ -840,6 +840,8 @@ int mptcp_conn_request(struct sock *sk, struct sk_buff *skb);
 void mptcp_init_congestion_control(struct sock *sk);
 void mptcp_enable_sock(struct sock *sk);
 void mptcp_disable_sock(struct sock *sk);
+void mptcp_enable_static_key(void);
+void mptcp_disable_static_key(void);
 
 /* MPTCP-path-manager registration/initialization functions */
 int mptcp_register_path_manager(struct mptcp_pm_ops *pm);
@@ -1318,7 +1320,6 @@ bool mptcp_prune_ofo_queue(struct sock *sk);
 
 static inline void set_mpc(struct tcp_sock *tp)
 {
-	static_key_slow_inc(&mptcp_static_key);
 	tp->mpc	= 1;
 
 	tp->__select_window		= __mptcp_select_window;

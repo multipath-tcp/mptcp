@@ -148,6 +148,9 @@ void inet_sock_destruct(struct sock *sk)
 		return;
 	}
 
+	if (sock_flag(sk, SOCK_MPTCP))
+		mptcp_disable_static_key();
+
 	WARN_ON(atomic_read(&sk->sk_rmem_alloc));
 	WARN_ON(atomic_read(&sk->sk_wmem_alloc));
 	WARN_ON(sk->sk_wmem_queued);
