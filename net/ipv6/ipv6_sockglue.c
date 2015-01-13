@@ -199,7 +199,7 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
 				local_bh_enable();
 				sk->sk_prot = &tcp_prot;
 #ifdef CONFIG_MPTCP
-				if (is_mptcp_enabled(sk))
+				if (sock_flag(sk, SOCK_MPTCP))
 					icsk->icsk_af_ops = &mptcp_v4_specific;
 				else
 #endif
