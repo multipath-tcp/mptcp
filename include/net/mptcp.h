@@ -815,7 +815,6 @@ void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, const struct request_sock *req
 			   struct sk_buff *skb);
 void mptcp_reqsk_init(struct request_sock *req, const struct sk_buff *skb);
 int mptcp_conn_request(struct sock *sk, struct sk_buff *skb);
-void mptcp_init_congestion_control(struct sock *sk);
 void mptcp_enable_sock(struct sock *sk);
 void mptcp_disable_sock(struct sock *sk);
 void mptcp_enable_static_key(void);
@@ -942,7 +941,8 @@ static inline bool mptcp_is_data_fin2(const struct sk_buff *skb,
 				     const struct tcp_sock *tp)
 {
 	return mptcp_is_data_fin(skb) ||
-	       (tp->mpcb->infinite_mapping_rcv && tcp_hdr(skb)->fin);
+	       (tp->mpcb->infinite_mapping_rcv &&
+	        (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN));
 }
 
 static inline u8 mptcp_get_64_bit(u64 data_seq, struct mptcp_cb *mpcb)

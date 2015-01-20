@@ -277,7 +277,7 @@ void mptcp_ofo_queue(struct sock *meta_sk)
 		meta_tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 		mptcp_check_rcvseq_wrap(meta_tp, old_rcv_nxt);
 
-		if (tcp_hdr(skb)->fin)
+		if (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN)
 			mptcp_fin(meta_sk);
 	}
 }

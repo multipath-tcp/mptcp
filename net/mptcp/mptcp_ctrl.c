@@ -684,35 +684,36 @@ static void mptcp_set_state(struct sock *sk)
 	}
 }
 
-void mptcp_init_congestion_control(struct sock *sk)
+static void mptcp_assign_congestion_control(struct sock *sk)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct inet_connection_sock *meta_icsk = inet_csk(mptcp_meta_sk(sk));
 	const struct tcp_congestion_ops *ca = meta_icsk->icsk_ca_ops;
 
-	/* The application didn't set the congestion control to use
-	 * fallback to the default one.
+	/* Congestion control is the same as meta. Thus, it has been
+	 * try_module_get'd by tcp_assign_congestion_control.
 	 */
-	if (ca == &tcp_init_congestion_ops)
-		goto use_default;
+	if (icsk->icsk_ca_ops == ca)
+		return;
 
-	/* Use the same congestion control as set by the user. If the
-	 * module is not available fallback to the default one.
-	 */
+	/* Use the same congestion control as set on the meta-sk */
 	if (!try_module_get(ca->owner)) {
-		pr_warn("%s: fallback to the system default CC\n", __func__);
-		goto use_default;
+		/* This should never happen. The congestion control is linked
+		 * to the meta-socket (through tcp_assign_congestion_control)
+		 * who "holds" the refcnt on the module.
+		 */
+		WARN(1, "Could not get the congestion control!");
+		return;
 	}
-
 	icsk->icsk_ca_ops = ca;
-	if (icsk->icsk_ca_ops->init)
-		icsk->icsk_ca_ops->init(sk);
+
+	/* Clear out private data before diag gets it and
+	 * the ca has not been initialized.
+	 */
+	if (ca->get_info)
+		memset(icsk->icsk_ca_priv, 0, sizeof(icsk->icsk_ca_priv));
 
 	return;
-
-use_default:
-	icsk->icsk_ca_ops = &tcp_init_congestion_ops;
-	tcp_init_congestion_control(sk);
 }
 
 u32 mptcp_secret[MD5_MESSAGE_BYTES / 4] ____cacheline_aligned;
@@ -959,7 +960,6 @@ static const struct tcp_sock_ops mptcp_meta_specific = {
 	.init_buffer_space		= mptcp_init_buffer_space,
 	.set_rto			= mptcp_tcp_set_rto,
 	.should_expand_sndbuf		= mptcp_should_expand_sndbuf,
-	.init_congestion_control	= mptcp_init_congestion_control,
 	.send_fin			= mptcp_send_fin,
 	.write_xmit			= mptcp_write_xmit,
 	.send_active_reset		= mptcp_send_active_reset,
@@ -977,7 +977,6 @@ static const struct tcp_sock_ops mptcp_sub_specific = {
 	.init_buffer_space		= mptcp_init_buffer_space,
 	.set_rto			= mptcp_tcp_set_rto,
 	.should_expand_sndbuf		= mptcp_should_expand_sndbuf,
-	.init_congestion_control	= mptcp_init_congestion_control,
 	.send_fin			= tcp_send_fin,
 	.write_xmit			= tcp_write_xmit,
 	.send_active_reset		= tcp_send_active_reset,
@@ -1168,6 +1167,10 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 	setup_timer(&mpcb->synack_timer, mptcp_synack_timer_handler,
 		    (unsigned long)meta_sk);
 
+	if (!try_module_get(inet_csk(master_sk)->icsk_ca_ops->owner))
+		tcp_assign_congestion_control(master_sk);
+
+
 	mptcp_debug("%s: created mpcb with token %#x\n",
 		    __func__, mpcb->mptcp_loc_token);
 
@@ -1233,6 +1236,9 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 
 	mptcp_sub_inherit_sockopts(meta_sk, sk);
 	INIT_DELAYED_WORK(&tp->mptcp->work, mptcp_sub_close_wq);
+
+	/* Properly inherit CC from the meta-socket */
+	mptcp_assign_congestion_control(sk);
 
 	/* As we successfully allocated the mptcp_tcp_sock, we have to
 	 * change the function-pointers here (for sk_destruct to work correctly)
@@ -1599,8 +1605,10 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 	 * reader process may not have drained the data yet!
 	 */
 	while ((skb = __skb_dequeue(&meta_sk->sk_receive_queue)) != NULL) {
-		u32 len = TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq -
-			  tcp_hdr(skb)->fin;
+		u32 len = TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq;
+
+		if (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN)
+			len--;
 		data_was_unread += len;
 		__kfree_skb(skb);
 	}
@@ -2246,7 +2254,7 @@ void mptcp_reqsk_init(struct request_sock *req, const struct sk_buff *skb)
 int mptcp_conn_request(struct sock *sk, struct sk_buff *skb)
 {
 	struct mptcp_options_received mopt;
-	__u32 isn = TCP_SKB_CB(skb)->when;
+	__u32 isn = TCP_SKB_CB(skb)->tcp_tw_isn;
 	bool want_cookie = false;
 
 	if ((sysctl_tcp_syncookies == 2 ||

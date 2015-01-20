@@ -492,7 +492,6 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 		 */
 		tcp_init_tso_segs(sk, subskb, 1);
 		/* Empty data-fins are sent immediatly on the subflow */
-		TCP_SKB_CB(subskb)->when = tcp_time_stamp;
 		err = tcp_transmit_skb(sk, subskb, 1, GFP_ATOMIC);
 
 		/* It has not been queued, we can free it now. */
@@ -614,7 +613,7 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_PSH;
 		if (!mptcp_skb_entail(subsk, skb, 0))
 			return -1;
-		TCP_SKB_CB(skb)->when = tcp_time_stamp;
+		skb_mstamp_get(&skb->skb_mstamp);
 
 		mptcp_check_sndseq_wrap(meta_tp, TCP_SKB_CB(skb)->end_seq -
 						 TCP_SKB_CB(skb)->seq);
@@ -739,7 +738,7 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		 */
 		__tcp_push_pending_frames(subsk, mss_now, TCP_NAGLE_PUSH);
 		path_mask |= mptcp_pi_to_flag(subtp->mptcp->path_index);
-		TCP_SKB_CB(skb)->when = tcp_time_stamp;
+		skb_mstamp_get(&skb->skb_mstamp);
 
 		if (!reinject) {
 			mptcp_check_sndseq_wrap(meta_tp,
@@ -1297,7 +1296,6 @@ static void mptcp_ack_retransmit_timer(struct sock *sk)
 	skb_reserve(skb, MAX_TCP_HEADER);
 	tcp_init_nondata_skb(skb, tp->snd_una, TCPHDR_ACK);
 
-	TCP_SKB_CB(skb)->when = tcp_time_stamp;
 	if (tcp_transmit_skb(sk, skb, 0, GFP_ATOMIC) > 0) {
 		/* Retransmission failed because of local congestion,
 		 * do not backoff.
@@ -1410,7 +1408,7 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 
 	if (!mptcp_skb_entail(subsk, skb, -1))
 		goto failed;
-	TCP_SKB_CB(skb)->when = tcp_time_stamp;
+	skb_mstamp_get(&skb->skb_mstamp);
 
 	/* Update global TCP statistics. */
 	TCP_INC_STATS(sock_net(meta_sk), TCP_MIB_RETRANSSEGS);
@@ -1419,7 +1417,7 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 
 	/* Save stamp of the first retransmit. */
 	if (!meta_tp->retrans_stamp)
-		meta_tp->retrans_stamp = TCP_SKB_CB(skb)->when;
+		meta_tp->retrans_stamp = tcp_skb_timestamp(skb);
 
 	__tcp_push_pending_frames(subsk, mss_now, TCP_NAGLE_PUSH);
 

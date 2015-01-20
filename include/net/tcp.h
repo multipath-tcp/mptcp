@@ -370,6 +370,7 @@ extern const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops;
 
 struct mptcp_options_received;
 
+void tcp_cleanup_rbuf(struct sock *sk, int copied);
 void tcp_cwnd_validate(struct sock *sk, bool is_cwnd_limited);
 void tcp_enter_quickack_mode(struct sock *sk);
 int tcp_close_state(struct sock *sk);
@@ -416,7 +417,6 @@ int tcp_v4_send_synack(struct sock *sk, struct dst_entry *dst,
 		       u16 queue_mapping,
 		       struct tcp_fastopen_cookie *foc);
 void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb);
-struct ip_options_rcu *tcp_v4_save_options(struct sk_buff *skb);
 struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb);
 void tcp_v4_reqsk_destructor(struct request_sock *req);
 
@@ -1807,7 +1807,6 @@ struct tcp_sock_ops {
 	void (*retransmit_timer)(struct sock *sk);
 	void (*time_wait)(struct sock *sk, int state, int timeo);
 	void (*cleanup_rbuf)(struct sock *sk, int copied);
-	void (*init_congestion_control)(struct sock *sk);
 	void (*cwnd_validate)(struct sock *sk, bool is_cwnd_limited);
 };
 extern const struct tcp_sock_ops tcp_specific;

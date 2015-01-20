@@ -378,7 +378,6 @@ const struct tcp_sock_ops tcp_specific = {
 	.init_buffer_space		= tcp_init_buffer_space,
 	.set_rto			= tcp_set_rto,
 	.should_expand_sndbuf		= tcp_should_expand_sndbuf,
-	.init_congestion_control	= tcp_init_congestion_control,
 	.send_fin			= tcp_send_fin,
 	.write_xmit			= tcp_write_xmit,
 	.send_active_reset		= tcp_send_active_reset,
@@ -1472,7 +1471,7 @@ static int tcp_peek_sndq(struct sock *sk, struct msghdr *msg, int len)
  * calculation of whether or not we must ACK for the sake of
  * a window update.
  */
-static void tcp_cleanup_rbuf(struct sock *sk, int copied)
+void tcp_cleanup_rbuf(struct sock *sk, int copied)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	bool time_to_ack = false;

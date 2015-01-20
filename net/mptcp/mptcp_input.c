@@ -383,8 +383,10 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb,
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
-	u32 inc = 0;
+	u32 inc = 0, end_seq = tcb->end_seq;
 
+	if (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN)
+		end_seq--;
 	/* If skb is the end of this mapping (end is always at mapping-boundary
 	 * thanks to the splitting/trimming), then we need to increase
 	 * data-end-seq by 1 if this here is a data-fin.
@@ -392,17 +394,16 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb,
 	 * We need to do -1 because end_seq includes the subflow-FIN.
 	 */
 	if (tp->mptcp->map_data_fin &&
-	    (tcb->end_seq - (tcp_hdr(skb)->fin ? 1 : 0)) ==
-	    (tp->mptcp->map_subseq + tp->mptcp->map_data_len)) {
+	    end_seq == tp->mptcp->map_subseq + tp->mptcp->map_data_len) {
 		inc = 1;
 
 		/* We manually set the fin-flag if it is a data-fin. For easy
 		 * processing in tcp_recvmsg.
 		 */
-		tcp_hdr(skb)->fin = 1;
+		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_FIN;
 	} else {
 		/* We may have a subflow-fin with data but without data-fin */
-		tcp_hdr(skb)->fin = 0;
+		TCP_SKB_CB(skb)->tcp_flags &= ~TCPHDR_FIN;
 	}
 
 	/* Adapt data-seq's to the packet itself. We kinda transform the
@@ -478,6 +479,7 @@ static int mptcp_skb_split_tail(struct sk_buff *skb, struct sock *sk, u32 seq)
 	struct sk_buff *buff;
 	int nsize;
 	int nlen, len;
+	u8 flags;
 
 	len = seq - TCP_SKB_CB(skb)->seq;
 	nsize = skb_headlen(skb) - len + tcp_sk(sk)->tcp_header_len;
@@ -492,8 +494,9 @@ static int mptcp_skb_split_tail(struct sk_buff *skb, struct sock *sk, u32 seq)
 	skb_reserve(buff, tcp_sk(sk)->tcp_header_len);
 	skb_reset_transport_header(buff);
 
-	tcp_hdr(buff)->fin = tcp_hdr(skb)->fin;
-	tcp_hdr(skb)->fin = 0;
+	flags = TCP_SKB_CB(skb)->tcp_flags;
+	TCP_SKB_CB(skb)->tcp_flags = flags & ~(TCPHDR_FIN);
+	TCP_SKB_CB(buff)->tcp_flags = flags;
 
 	/* We absolutly need to call skb_set_owner_r before refreshing the
 	 * truesize of buff, otherwise the moved data will account twice.
@@ -715,7 +718,9 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 	 */
 
 	/* subflow-fin is not part of the mapping - ignore it here ! */
-	tcp_end_seq = tcb->end_seq - tcp_hdr(skb)->fin;
+	tcp_end_seq = tcb->end_seq;
+	if (tcb->tcp_flags & TCPHDR_FIN)
+		tcp_end_seq--;
 	if ((!before(sub_seq, tcb->end_seq) && after(tcp_end_seq, tcb->seq)) ||
 	    (mptcp_is_data_fin(skb) && skb->len == 0 && after(sub_seq, tcb->end_seq)) ||
 	    (!after(sub_seq + data_len, tcb->seq) && after(tcp_end_seq, tcb->seq)) ||
@@ -801,7 +806,9 @@ static int mptcp_validate_mapping(struct sock *sk, struct sk_buff *skb)
 		mptcp_skb_trim_head(tmp, sk, tp->mptcp->map_subseq);
 
 	/* ... or the new skb (tail) has to be split at the end. */
-	tcp_end_seq = TCP_SKB_CB(skb)->end_seq - (tcp_hdr(skb)->fin ? 1 : 0);
+	tcp_end_seq = TCP_SKB_CB(skb)->end_seq;
+	if (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN)
+		tcp_end_seq--;
 	if (after(tcp_end_seq, tp->mptcp->map_subseq + tp->mptcp->map_data_len)) {
 		u32 seq = tp->mptcp->map_subseq + tp->mptcp->map_data_len;
 		if (mptcp_skb_split_tail(skb, sk, seq)) { /* Allocation failed */
@@ -973,7 +980,8 @@ static int mptcp_queue_skb(struct sock *sk)
 				meta_tp->cleanup_rbuf(meta_sk, tmp1->len);
 #endif
 
-			if (tcp_hdr(tmp1)->fin && !mpcb->in_time_wait)
+			if ((TCP_SKB_CB(tmp1)->tcp_flags & TCPHDR_FIN) &&
+			    !mpcb->in_time_wait)
 				mptcp_fin(meta_sk);
 
 			/* Check if this fills a gap in the ofo queue */
