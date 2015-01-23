@@ -651,6 +651,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 
 	if (!data_len) {
 		mpcb->infinite_mapping_rcv = 1;
+		mpcb->send_infinite_mapping = 1;
 		tp->mptcp->fully_established = 1;
 		/* We need to repeat mp_fail's until the sender felt
 		 * back to infinite-mapping - here we stop repeating it.
