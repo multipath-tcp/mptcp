@@ -1448,6 +1448,7 @@ static inline void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
 					  const struct sk_buff *skb) {}
 static inline void mptcp_delete_synack_timer(struct sock *meta_sk) {}
 static inline void mptcp_init_tcp_sock(struct sock *sk) {}
+static inline void mptcp_disable_static_key(void) {}
 #endif /* CONFIG_MPTCP */
 
 #endif /* _MPTCP_H */
