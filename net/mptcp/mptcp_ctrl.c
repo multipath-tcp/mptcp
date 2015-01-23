@@ -1311,17 +1311,13 @@ void mptcp_del_sock(struct sock *sk)
 	rcu_assign_pointer(inet_sk(sk)->inet_opt, NULL);
 }
 
-/* Updates the metasocket ULID/port data, based on the given sock.
- * The argument sock must be the sock accessible to the application.
- * In this function, we update the meta socket info, based on the changes
- * in the application socket (bind, address allocation, ...)
+/* Updates the MPTCP-session based on path-manager information (e.g., addresses,
+ * low-prio flows,...).
  */
 void mptcp_update_metasocket(struct sock *sk, const struct sock *meta_sk)
 {
 	if (tcp_sk(sk)->mpcb->pm_ops->new_session)
 		tcp_sk(sk)->mpcb->pm_ops->new_session(meta_sk);
-
-	tcp_sk(sk)->mptcp->send_mp_prio = tcp_sk(sk)->mptcp->low_prio;
 }
 
 /* Clean up the receive buffer for full frames taken by the user,

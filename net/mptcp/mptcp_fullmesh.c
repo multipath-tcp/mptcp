@@ -1159,6 +1159,7 @@ static void full_mesh_new_session(const struct sock *meta_sk)
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
 	const struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(meta_sk));
+	struct tcp_sock *master_tp = tcp_sk(mpcb->master_sk);
 	int i, index;
 	union inet_addr saddr, daddr;
 	sa_family_t family;
@@ -1183,6 +1184,12 @@ static void full_mesh_new_session(const struct sock *meta_sk)
 	index = mptcp_find_address(mptcp_local, family, &saddr);
 	if (index < 0)
 		goto fallback;
+
+	if (family == AF_INET)
+		master_tp->mptcp->low_prio = mptcp_local->locaddr4[index].low_prio;
+	else
+		master_tp->mptcp->low_prio = mptcp_local->locaddr6[index].low_prio;
+	master_tp->mptcp->send_mp_prio = master_tp->mptcp->low_prio;
 
 	full_mesh_add_raddr(mpcb, &daddr, family, 0, 0);
 	mptcp_set_init_addr_bit(mpcb, &daddr, family, index);
@@ -1235,6 +1242,9 @@ skip_ipv6:
 		fmp->announced_addrs_v6 |= (1 << index);
 
 	for (i = fmp->add_addr; i && fmp->add_addr; i--)
+		tcp_send_ack(mpcb->master_sk);
+
+	if (master_tp->mptcp->send_mp_prio)
 		tcp_send_ack(mpcb->master_sk);
 
 	return;
