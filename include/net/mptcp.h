@@ -941,6 +941,17 @@ static inline void mptcp_send_reset(struct sock *sk)
 	mptcp_sub_force_close(sk);
 }
 
+static inline void mptcp_sub_force_close_all(struct mptcp_cb *mpcb,
+					     struct sock *except)
+{
+	struct sock *sk_it, *tmp;
+
+	mptcp_for_each_sk_safe(mpcb, sk_it, tmp) {
+		if (sk_it != except)
+			mptcp_sub_force_close(sk_it);
+	}
+}
+
 static inline bool mptcp_is_data_seq(const struct sk_buff *skb)
 {
 	return TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_SEQ;
@@ -1242,6 +1253,8 @@ static inline bool mptcp_fallback_infinite(struct sock *sk, int flag)
 	tp->mpcb->infinite_mapping_snd = 1;
 	tp->mpcb->infinite_mapping_rcv = 1;
 	tp->mptcp->fully_established = 1;
+
+	mptcp_sub_force_close_all(tp->mpcb, sk);
 
 	return false;
 }
