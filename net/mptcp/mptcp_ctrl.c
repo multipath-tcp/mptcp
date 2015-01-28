@@ -992,7 +992,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 {
 	struct mptcp_cb *mpcb;
 	struct sock *master_sk;
-	struct inet_connection_sock *master_icsk, *meta_icsk = inet_csk(meta_sk);
+	struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
 	struct tcp_sock *master_tp, *meta_tp = tcp_sk(meta_sk);
 	u64 idsn;
 
@@ -1008,7 +1008,6 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 		return -ENOBUFS;
 
 	master_tp = tcp_sk(master_sk);
-	master_icsk = inet_csk(master_sk);
 
 	mpcb = kmem_cache_zalloc(mptcp_cb_cache, GFP_ATOMIC);
 	if (!mpcb) {
@@ -2211,7 +2210,6 @@ void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, const struct request_sock *req
 	mptcp_init_mp_opt(&mopt);
 	tcp_parse_mptcp_options(skb, &mopt);
 
-	mtreq = mptcp_rsk(req);
 	mtreq->mptcp_mpcb = mpcb;
 	mtreq->is_sub = 1;
 	inet_rsk(req)->mptcp_rqsk = 1;
