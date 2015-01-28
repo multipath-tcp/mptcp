@@ -105,7 +105,7 @@ static void mptcp_get_epsilon(const struct mptcp_cb *mpcb)
 	struct tcp_sock *tp;
 	struct sock *sk;
 	u64 tmp_int, tmp_rtt, best_int = 0, best_rtt = 1;
-	u32 max_cwnd = 1, best_cwnd = 1, tmp_cwnd;
+	u32 max_cwnd, tmp_cwnd;
 	u8 M = 0, B_not_M = 0;
 
 	/* TODO - integrate this in the following loop - we just want to iterate once */
@@ -125,11 +125,9 @@ static void mptcp_get_epsilon(const struct mptcp_cb *mpcb)
 		tmp_int = max(ca->mptcp_loss3 - ca->mptcp_loss2,
 			      ca->mptcp_loss2 - ca->mptcp_loss1);
 
-		tmp_cwnd = mptcp_get_crt_cwnd(sk);
 		if ((u64)tmp_int * best_rtt >= (u64)best_int * tmp_rtt) {
 			best_rtt = tmp_rtt;
 			best_int = tmp_int;
-			best_cwnd = tmp_cwnd;
 		}
 	}
 
