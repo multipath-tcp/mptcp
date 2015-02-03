@@ -50,7 +50,7 @@ int reqsk_queue_alloc(struct request_sock_queue *queue,
 	lopt_size += nr_table_entries * sizeof(struct request_sock *);
 
 	if (lopt_size <= (PAGE_SIZE << PAGE_ALLOC_COSTLY_ORDER))
-		lopt = kzalloc(lopt_size, GFP_KERNEL |
+		lopt = kzalloc(lopt_size, flags |
 					  __GFP_NOWARN |
 					  __GFP_NORETRY);
 	if (!lopt)
