@@ -1493,8 +1493,6 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 
 	sk = __inet6_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest,
 				tcp_v6_iif(skb));
-	if (!sk)
-		goto no_tcp_socket;
 
 process:
 	if (sk && sk->sk_state == TCP_TIME_WAIT)
