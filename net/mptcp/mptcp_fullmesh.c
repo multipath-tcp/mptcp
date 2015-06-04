@@ -75,6 +75,9 @@ struct fullmesh_priv {
 
 	u8 rem4_bits;
 	u8 rem6_bits;
+
+	/* Are we established the additional subflows for primary pair? */
+	u8 first_pair:1;
 };
 
 struct mptcp_fm_ns {
@@ -85,6 +88,10 @@ struct mptcp_fm_ns {
 
 	struct net *net;
 };
+
+static int num_subflows __read_mostly = 1;
+module_param(num_subflows, int, 0644);
+MODULE_PARM_DESC(num_subflows, "choose the number of subflows per pair of IP addresses of MPTCP connection");
 
 static struct mptcp_pm_ops full_mesh __read_mostly;
 
@@ -308,6 +315,26 @@ static void mptcp_set_init_addr_bit(struct mptcp_cb *mpcb,
 		mptcp_v6_set_init_addr_bit(mpcb, &addr->in6, id);
 }
 
+static void mptcp_v4_subflows(struct sock *meta_sk,
+			      const struct mptcp_loc4 *loc,
+			      struct mptcp_rem4 *rem)
+{
+	int i;
+
+	for (i = 1; i < num_subflows; i++)
+		mptcp_init4_subsockets(meta_sk, loc, rem);
+}
+
+static void mptcp_v6_subflows(struct sock *meta_sk,
+			      const struct mptcp_loc6 *loc,
+			      struct mptcp_rem6 *rem)
+{
+	int i;
+
+	for (i = 1; i < num_subflows; i++)
+		mptcp_init6_subsockets(meta_sk, loc, rem);
+}
+
 static void retry_subflow_worker(struct work_struct *work)
 {
 	struct delayed_work *delayed_work = container_of(work,
@@ -363,6 +390,9 @@ next_subflow:
 			rem4.rem4_id = rem->rem4_id;
 
 			mptcp_init4_subsockets(meta_sk, &mptcp_local->locaddr4[i], &rem4);
+			mptcp_v4_subflows(meta_sk,
+					  &mptcp_local->locaddr4[i],
+					  &rem4);
 			goto next_subflow;
 		}
 	}
@@ -384,6 +414,9 @@ next_subflow:
 			rem6.rem6_id = rem->rem6_id;
 
 			mptcp_init6_subsockets(meta_sk, &mptcp_local->locaddr6[i], &rem6);
+			mptcp_v6_subflows(meta_sk,
+					  &mptcp_local->locaddr6[i],
+					  &rem6);
 			goto next_subflow;
 		}
 	}
@@ -435,6 +468,23 @@ next_subflow:
 	mutex_lock(&mpcb->mpcb_mutex);
 	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
 
+	/* Create the additional subflows for the first pair */
+	if (fmp->first_pair == 0) {
+		struct mptcp_loc4 loc;
+		struct mptcp_rem4 rem;
+
+		loc.addr.s_addr = inet_sk(meta_sk)->inet_saddr;
+		loc.loc4_id = 0;
+		loc.low_prio = 0;
+
+		rem.addr.s_addr = inet_sk(meta_sk)->inet_daddr;
+		rem.port = inet_sk(meta_sk)->inet_dport;
+		rem.rem4_id = 0; /* Default 0 */
+
+		mptcp_v4_subflows(meta_sk, &loc, &rem);
+
+		fmp->first_pair = 1;
+	}
 	iter++;
 
 	if (sock_flag(meta_sk, SOCK_DEAD))
@@ -466,11 +516,31 @@ next_subflow:
 			if (mptcp_init4_subsockets(meta_sk, &mptcp_local->locaddr4[i],
 						   &rem4) == -ENETUNREACH)
 				retry = rem->retry_bitfield |= (1 << i);
+			else
+				mptcp_v4_subflows(meta_sk,
+						  &mptcp_local->locaddr4[i],
+						  &rem4);
 			goto next_subflow;
 		}
 	}
 
 #if IS_ENABLED(CONFIG_IPV6)
+	if (fmp->first_pair == 0) {
+			struct mptcp_loc6 loc;
+			struct mptcp_rem6 rem;
+
+			loc.addr = inet6_sk(meta_sk)->saddr;
+			loc.loc6_id = 0;
+			loc.low_prio = 0;
+
+			rem.addr = meta_sk->sk_v6_daddr;
+			rem.port = inet_sk(meta_sk)->inet_dport;
+			rem.rem6_id = 0; /* Default 0 */
+
+			mptcp_v6_subflows(meta_sk, &loc, &rem);
+
+			fmp->first_pair = 1;
+	}
 	mptcp_for_each_bit_set(fmp->rem6_bits, i) {
 		struct fullmesh_rem6 *rem;
 		u8 remaining_bits;
@@ -493,6 +563,10 @@ next_subflow:
 			if (mptcp_init6_subsockets(meta_sk, &mptcp_local->locaddr6[i],
 						   &rem6) == -ENETUNREACH)
 				retry = rem->retry_bitfield |= (1 << i);
+			else
+				mptcp_v6_subflows(meta_sk,
+						  &mptcp_local->locaddr6[i],
+						  &rem6);
 			goto next_subflow;
 		}
 	}
