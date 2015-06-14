@@ -2254,16 +2254,6 @@ void mptcp_reqsk_init(struct request_sock *req, const struct sk_buff *skb)
 int mptcp_conn_request(struct sock *sk, struct sk_buff *skb)
 {
 	struct mptcp_options_received mopt;
-	__u32 isn = TCP_SKB_CB(skb)->tcp_tw_isn;
-	bool want_cookie = false;
-
-	if ((sysctl_tcp_syncookies == 2 ||
-	     inet_csk_reqsk_queue_is_full(sk)) && !isn) {
-		want_cookie = tcp_syn_flood_action(sk, skb,
-						   mptcp_request_sock_ops.slab_name);
-		if (!want_cookie)
-			goto drop;
-	}
 
 	mptcp_init_mp_opt(&mopt);
 	tcp_parse_mptcp_options(skb, &mopt);
@@ -2277,7 +2267,7 @@ int mptcp_conn_request(struct sock *sk, struct sk_buff *skb)
 		mopt.saw_mpc = 0;
 
 	if (skb->protocol == htons(ETH_P_IP)) {
-		if (mopt.saw_mpc && !want_cookie) {
+		if (mopt.saw_mpc) {
 			if (skb_rtable(skb)->rt_flags &
 			    (RTCF_BROADCAST | RTCF_MULTICAST))
 				goto drop;
@@ -2290,7 +2280,7 @@ int mptcp_conn_request(struct sock *sk, struct sk_buff *skb)
 		return tcp_v4_conn_request(sk, skb);
 #if IS_ENABLED(CONFIG_IPV6)
 	} else {
-		if (mopt.saw_mpc && !want_cookie) {
+		if (mopt.saw_mpc) {
 			if (!ipv6_unicast_destination(skb))
 				goto drop;
 
