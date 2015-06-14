@@ -2008,8 +2008,13 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	if (ret)
 		return ret;
 
-	inet_csk_reqsk_queue_unlink(sk, req, prev);
-	inet_csk_reqsk_queue_removed(sk, req);
+	/* prev indicates that we come from tcp_check_req and thus need to
+	 * handle the request-socket fully.
+	 */
+	if (prev) {
+		inet_csk_reqsk_queue_unlink(sk, req, prev);
+		inet_csk_reqsk_queue_removed(sk, req);
+	}
 	inet_csk_reqsk_queue_add(sk, req, meta_sk);
 
 	return 0;
@@ -2286,6 +2291,39 @@ void mptcp_reqsk_init(struct request_sock *req, const struct sk_buff *skb,
 	}
 
 	mptcp_reqsk_new_mptcp(req, &mopt, skb);
+}
+
+void mptcp_cookies_reqsk_init(struct request_sock *req,
+			      struct mptcp_options_received *mopt,
+			      struct sk_buff *skb)
+{
+	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
+
+	/* Absolutely need to always initialize this. */
+	mtreq->hash_entry.pprev = NULL;
+
+	mtreq->mptcp_rem_key = mopt->mptcp_sender_key;
+	mtreq->mptcp_loc_key = mopt->mptcp_receiver_key;
+
+	/* Generate the token */
+	mptcp_key_sha1(mtreq->mptcp_loc_key, &mtreq->mptcp_loc_token, NULL);
+
+	rcu_read_lock();
+	spin_lock(&mptcp_tk_hashlock);
+
+	/* Check, if the key is still free */
+	if (mptcp_reqsk_find_tk(mtreq->mptcp_loc_token) ||
+	    mptcp_find_token(mtreq->mptcp_loc_token))
+		goto out;
+
+	inet_rsk(req)->saw_mpc = 1;
+	mtreq->is_sub = 0;
+	inet_rsk(req)->mptcp_rqsk = 1;
+	mtreq->dss_csum = mopt->dss_csum;
+
+out:
+	spin_unlock(&mptcp_tk_hashlock);
+	rcu_read_unlock();
 }
 
 int mptcp_conn_request(struct sock *sk, struct sk_buff *skb)

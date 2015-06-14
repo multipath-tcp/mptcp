@@ -821,6 +821,9 @@ void mptcp_enable_sock(struct sock *sk);
 void mptcp_disable_sock(struct sock *sk);
 void mptcp_enable_static_key(void);
 void mptcp_disable_static_key(void);
+void mptcp_cookies_reqsk_init(struct request_sock *req,
+			      struct mptcp_options_received *mopt,
+			      struct sk_buff *skb);
 
 /* MPTCP-path-manager registration/initialization functions */
 int mptcp_register_path_manager(struct mptcp_pm_ops *pm);
@@ -1451,6 +1454,9 @@ static inline void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
 static inline void mptcp_delete_synack_timer(struct sock *meta_sk) {}
 static inline void mptcp_init_tcp_sock(struct sock *sk) {}
 static inline void mptcp_disable_static_key(void) {}
+static inline void mptcp_cookies_reqsk_init(struct request_sock *req,
+					    struct mptcp_options_received *mopt,
+					    struct sk_buff *skb) {}
 #endif /* CONFIG_MPTCP */
 
 #endif /* _MPTCP_H */
