@@ -325,6 +325,7 @@ static void mptcp_v4_subflows(struct sock *meta_sk,
 		mptcp_init4_subsockets(meta_sk, loc, rem);
 }
 
+#if IS_ENABLED(CONFIG_IPV6)
 static void mptcp_v6_subflows(struct sock *meta_sk,
 			      const struct mptcp_loc6 *loc,
 			      struct mptcp_rem6 *rem)
@@ -334,6 +335,7 @@ static void mptcp_v6_subflows(struct sock *meta_sk,
 	for (i = 1; i < num_subflows; i++)
 		mptcp_init6_subsockets(meta_sk, loc, rem);
 }
+#endif
 
 static void retry_subflow_worker(struct work_struct *work)
 {
