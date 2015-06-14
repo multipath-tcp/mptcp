@@ -262,7 +262,8 @@ begin:
 }
 
 static void mptcp_set_key_reqsk(struct request_sock *req,
-				const struct sk_buff *skb)
+				const struct sk_buff *skb,
+				u32 seed)
 {
 	const struct inet_request_sock *ireq = inet_rsk(req);
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
@@ -271,13 +272,15 @@ static void mptcp_set_key_reqsk(struct request_sock *req,
 		mtreq->mptcp_loc_key = mptcp_v4_get_key(ip_hdr(skb)->saddr,
 							ip_hdr(skb)->daddr,
 							htons(ireq->ir_num),
-							ireq->ir_rmt_port);
+							ireq->ir_rmt_port,
+							seed);
 #if IS_ENABLED(CONFIG_IPV6)
 	} else {
 		mtreq->mptcp_loc_key = mptcp_v6_get_key(ipv6_hdr(skb)->saddr.s6_addr32,
 							ipv6_hdr(skb)->daddr.s6_addr32,
 							htons(ireq->ir_num),
-							ireq->ir_rmt_port);
+							ireq->ir_rmt_port,
+							seed);
 #endif
 	}
 
@@ -298,7 +301,7 @@ void mptcp_reqsk_new_mptcp(struct request_sock *req,
 	rcu_read_lock();
 	spin_lock(&mptcp_tk_hashlock);
 	do {
-		mptcp_set_key_reqsk(req, skb);
+		mptcp_set_key_reqsk(req, skb, mptcp_seed++);
 	} while (mptcp_reqsk_find_tk(mtreq->mptcp_loc_token) ||
 		 mptcp_find_token(mtreq->mptcp_loc_token));
 
@@ -317,13 +320,15 @@ static void mptcp_set_key_sk(const struct sock *sk)
 		tp->mptcp_loc_key = mptcp_v4_get_key(isk->inet_saddr,
 						     isk->inet_daddr,
 						     isk->inet_sport,
-						     isk->inet_dport);
+						     isk->inet_dport,
+						     mptcp_seed++);
 #if IS_ENABLED(CONFIG_IPV6)
 	else
 		tp->mptcp_loc_key = mptcp_v6_get_key(inet6_sk(sk)->saddr.s6_addr32,
 						     sk->sk_v6_daddr.s6_addr32,
 						     isk->inet_sport,
-						     isk->inet_dport);
+						     isk->inet_dport,
+						     mptcp_seed++);
 #endif
 
 	mptcp_key_sha1(tp->mptcp_loc_key,

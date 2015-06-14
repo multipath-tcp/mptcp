@@ -66,7 +66,7 @@ __u32 mptcp_v6_get_nonce(const __be32 *saddr, const __be32 *daddr,
 }
 
 u64 mptcp_v6_get_key(const __be32 *saddr, const __be32 *daddr,
-		     __be16 sport, __be16 dport)
+		     __be16 sport, __be16 dport, u32 seed)
 {
 	u32 secret[MD5_MESSAGE_BYTES / 4];
 	u32 hash[MD5_DIGEST_WORDS];
@@ -77,7 +77,7 @@ u64 mptcp_v6_get_key(const __be32 *saddr, const __be32 *daddr,
 		secret[i] = mptcp_secret[i] + (__force u32)daddr[i];
 	secret[4] = mptcp_secret[4] +
 		    (((__force u16)sport << 16) + (__force u16)dport);
-	secret[5] = mptcp_seed++;
+	secret[5] = seed;
 	for (i = 6; i < MD5_MESSAGE_BYTES / 4; i++)
 		secret[i] = mptcp_secret[i];
 
