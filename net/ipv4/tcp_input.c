@@ -6079,11 +6079,16 @@ int tcp_conn_request(struct request_sock_ops *rsk_ops,
 	/* TW buckets are converted to open requests without
 	 * limitations, they conserve resources and peer is
 	 * evidently real one.
+	 *
+	 * MPTCP: new subflows cannot be established in a stateless manner.
 	 */
-	if ((sysctl_tcp_syncookies == 2 ||
+	if (((!is_meta_sk(sk) && sysctl_tcp_syncookies == 2) ||
 	     inet_csk_reqsk_queue_is_full(sk)) && !isn) {
 		want_cookie = tcp_syn_flood_action(sk, skb, rsk_ops->slab_name);
 		if (!want_cookie)
+			goto drop;
+
+		if (is_meta_sk(sk))
 			goto drop;
 	}
 

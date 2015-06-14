@@ -304,11 +304,38 @@ void mptcp_reqsk_new_mptcp(struct request_sock *req,
 		mptcp_set_key_reqsk(req, skb, mptcp_seed++);
 	} while (mptcp_reqsk_find_tk(mtreq->mptcp_loc_token) ||
 		 mptcp_find_token(mtreq->mptcp_loc_token));
-
 	mptcp_reqsk_insert_tk(req, mtreq->mptcp_loc_token);
 	spin_unlock(&mptcp_tk_hashlock);
 	rcu_read_unlock();
 	mtreq->mptcp_rem_key = mopt->mptcp_key;
+}
+
+static int mptcp_reqsk_new_cookie(struct request_sock *req,
+				  const struct mptcp_options_received *mopt,
+				  const struct sk_buff *skb)
+{
+	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
+
+	rcu_read_lock();
+	spin_lock(&mptcp_tk_hashlock);
+
+	mptcp_set_key_reqsk(req, skb, tcp_rsk(req)->snt_isn);
+
+	if (mptcp_reqsk_find_tk(mtreq->mptcp_loc_token) ||
+	    mptcp_find_token(mtreq->mptcp_loc_token)) {
+		spin_unlock(&mptcp_tk_hashlock);
+		rcu_read_unlock();
+		return false;
+	}
+
+	inet_rsk(req)->saw_mpc = 1;
+
+	spin_unlock(&mptcp_tk_hashlock);
+	rcu_read_unlock();
+
+	mtreq->mptcp_rem_key = mopt->mptcp_key;
+
+	return true;
 }
 
 static void mptcp_set_key_sk(const struct sock *sk)
@@ -2249,10 +2276,14 @@ void mptcp_reqsk_init(struct request_sock *req, const struct sk_buff *skb,
 	mptcp_init_mp_opt(&mopt);
 	tcp_parse_mptcp_options(skb, &mopt);
 
-	mreq->is_sub = 0;
-	inet_rsk(req)->mptcp_rqsk = 1;
 	mreq->dss_csum = mopt.dss_csum;
-	mreq->hash_entry.pprev = NULL;
+
+	if (want_cookie) {
+		if (!mptcp_reqsk_new_cookie(req, &mopt, skb))
+			/* No key available - back to regular TCP */
+			inet_rsk(req)->mptcp_rqsk = 0;
+		return;
+	}
 
 	mptcp_reqsk_new_mptcp(req, &mopt, skb);
 }
