@@ -2240,7 +2240,8 @@ void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, const struct request_sock *req
 	inet_rsk(req)->saw_mpc = 1;
 }
 
-void mptcp_reqsk_init(struct request_sock *req, const struct sk_buff *skb)
+void mptcp_reqsk_init(struct request_sock *req, const struct sk_buff *skb,
+		      bool want_cookie)
 {
 	struct mptcp_options_received mopt;
 	struct mptcp_request_sock *mreq = mptcp_rsk(req);

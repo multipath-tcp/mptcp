@@ -79,7 +79,7 @@ static void mptcp_v4_reqsk_destructor(struct request_sock *req)
 }
 
 static int mptcp_v4_init_req(struct request_sock *req, struct sock *sk,
-			     struct sk_buff *skb)
+			     struct sk_buff *skb, bool want_cookie)
 {
 	tcp_request_sock_ipv4_ops.init_req(req, sk, skb);
 	mptcp_reqsk_init(req, skb);
@@ -88,7 +88,7 @@ static int mptcp_v4_init_req(struct request_sock *req, struct sock *sk,
 }
 
 static int mptcp_v4_join_init_req(struct request_sock *req, struct sock *sk,
-				  struct sk_buff *skb)
+				  struct sk_buff *skb, bool want_cookie)
 {
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
 	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
@@ -103,7 +103,7 @@ static int mptcp_v4_join_init_req(struct request_sock *req, struct sock *sk,
 	 */
 	mtreq->hash_entry.pprev = NULL;
 
-	tcp_request_sock_ipv4_ops.init_req(req, sk, skb);
+	tcp_request_sock_ipv4_ops.init_req(req, sk, skb, want_cookie);
 
 	mtreq->mptcp_loc_nonce = mptcp_v4_get_nonce(ip_hdr(skb)->saddr,
 						    ip_hdr(skb)->daddr,

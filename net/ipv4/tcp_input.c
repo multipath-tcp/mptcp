@@ -6115,7 +6115,7 @@ int tcp_conn_request(struct request_sock_ops *rsk_ops,
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 	tcp_openreq_init(req, &tmp_opt, skb, sk);
 
-	if (af_ops->init_req(req, sk, skb))
+	if (af_ops->init_req(req, sk, skb, want_cookie))
 		goto drop_and_free;
 
 	if (security_inet_conn_request(sk, skb, req))
@@ -6125,7 +6125,7 @@ int tcp_conn_request(struct request_sock_ops *rsk_ops,
 		tcp_ecn_create_request(req, skb, sk);
 
 	if (want_cookie) {
-		isn = cookie_init_sequence(af_ops, sk, skb, &req->mss);
+		isn = cookie_init_sequence(req, af_ops, sk, skb, &req->mss);
 		req->cookie_ts = tmp_opt.tstamp_ok;
 	} else if (!isn) {
 		/* VJ's idea. We save last timestamp seen
