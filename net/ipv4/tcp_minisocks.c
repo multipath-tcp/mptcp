@@ -113,7 +113,7 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 		}
 
 		if (unlikely(mopt.mp_fclose) && tcptw->mptcp_tw) {
-			if (mopt.mptcp_key == tcptw->mptcp_tw->loc_key)
+			if (mopt.mptcp_sender_key == tcptw->mptcp_tw->loc_key)
 				goto kill_with_rst;
 		}
 	}

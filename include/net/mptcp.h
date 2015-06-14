@@ -146,7 +146,8 @@ struct mptcp_options_received {
 	u32	mptcp_rem_token;/* Remote token */
 
 	/* Key inside the option (from mp_capable or fast_close) */
-	u64	mptcp_key;
+	u64	mptcp_sender_key;
+	u64	mptcp_receiver_key;
 
 	u32	mptcp_recv_nonce;
 	u64	mptcp_recv_tmac;

@@ -1643,7 +1643,9 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 		mopt->dss_csum = sysctl_mptcp_checksum || mpcapable->a;
 
 		if (opsize >= MPTCP_SUB_LEN_CAPABLE_SYN)
-			mopt->mptcp_key = mpcapable->sender_key;
+			mopt->mptcp_sender_key = mpcapable->sender_key;
+		if (opsize == MPTCP_SUB_LEN_CAPABLE_ACK)
+			mopt->mptcp_receiver_key = mpcapable->receiver_key;
 
 		break;
 	}
@@ -1826,7 +1828,7 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 		}
 
 		mopt->mp_fclose = 1;
-		mopt->mptcp_key = ((struct mp_fclose *)ptr)->key;
+		mopt->mptcp_sender_key = ((struct mp_fclose *)ptr)->key;
 
 		break;
 	default:
@@ -2029,7 +2031,7 @@ static inline int mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
 
 	if (unlikely(mptcp->rx_opt.mp_fclose)) {
 		mptcp->rx_opt.mp_fclose = 0;
-		if (mptcp->rx_opt.mptcp_key != mpcb->mptcp_loc_key)
+		if (mptcp->rx_opt.mptcp_sender_key != mpcb->mptcp_loc_key)
 			return 0;
 
 		if (tcp_need_reset(sk->sk_state))
@@ -2232,7 +2234,7 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 	} else if (mopt->saw_mpc) {
 		struct sock *meta_sk = sk;
 
-		if (mptcp_create_master_sk(sk, mopt->mptcp_key,
+		if (mptcp_create_master_sk(sk, mopt->mptcp_sender_key,
 					   ntohs(tcp_hdr(skb)->window)))
 			return 2;
 
