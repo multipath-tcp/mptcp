@@ -1619,10 +1619,6 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			break;
 		}
 
-		/* We only support MPTCP version 0 */
-		if (mpcapable->ver != 0)
-			break;
-
 		/* MPTCP-RFC 6824:
 		 * "If receiving a message with the 'B' flag set to 1, and this
 		 * is not understood, then this SYN MUST be silently ignored;
