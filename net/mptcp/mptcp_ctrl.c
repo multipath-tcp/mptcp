@@ -262,7 +262,8 @@ begin:
 }
 
 static void mptcp_set_key_reqsk(struct request_sock *req,
-				const struct sk_buff *skb)
+				const struct sk_buff *skb,
+				u32 seed)
 {
 	const struct inet_request_sock *ireq = inet_rsk(req);
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
@@ -271,13 +272,15 @@ static void mptcp_set_key_reqsk(struct request_sock *req,
 		mtreq->mptcp_loc_key = mptcp_v4_get_key(ip_hdr(skb)->saddr,
 							ip_hdr(skb)->daddr,
 							htons(ireq->ir_num),
-							ireq->ir_rmt_port);
+							ireq->ir_rmt_port,
+							seed);
 #if IS_ENABLED(CONFIG_IPV6)
 	} else {
 		mtreq->mptcp_loc_key = mptcp_v6_get_key(ipv6_hdr(skb)->saddr.s6_addr32,
 							ipv6_hdr(skb)->daddr.s6_addr32,
 							htons(ireq->ir_num),
-							ireq->ir_rmt_port);
+							ireq->ir_rmt_port,
+							seed);
 #endif
 	}
 
@@ -298,14 +301,41 @@ void mptcp_reqsk_new_mptcp(struct request_sock *req,
 	rcu_read_lock();
 	spin_lock(&mptcp_tk_hashlock);
 	do {
-		mptcp_set_key_reqsk(req, skb);
+		mptcp_set_key_reqsk(req, skb, mptcp_seed++);
 	} while (mptcp_reqsk_find_tk(mtreq->mptcp_loc_token) ||
 		 mptcp_find_token(mtreq->mptcp_loc_token));
-
 	mptcp_reqsk_insert_tk(req, mtreq->mptcp_loc_token);
 	spin_unlock(&mptcp_tk_hashlock);
 	rcu_read_unlock();
-	mtreq->mptcp_rem_key = mopt->mptcp_key;
+	mtreq->mptcp_rem_key = mopt->mptcp_sender_key;
+}
+
+static int mptcp_reqsk_new_cookie(struct request_sock *req,
+				  const struct mptcp_options_received *mopt,
+				  const struct sk_buff *skb)
+{
+	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
+
+	rcu_read_lock();
+	spin_lock(&mptcp_tk_hashlock);
+
+	mptcp_set_key_reqsk(req, skb, tcp_rsk(req)->snt_isn);
+
+	if (mptcp_reqsk_find_tk(mtreq->mptcp_loc_token) ||
+	    mptcp_find_token(mtreq->mptcp_loc_token)) {
+		spin_unlock(&mptcp_tk_hashlock);
+		rcu_read_unlock();
+		return false;
+	}
+
+	inet_rsk(req)->saw_mpc = 1;
+
+	spin_unlock(&mptcp_tk_hashlock);
+	rcu_read_unlock();
+
+	mtreq->mptcp_rem_key = mopt->mptcp_sender_key;
+
+	return true;
 }
 
 static void mptcp_set_key_sk(const struct sock *sk)
@@ -317,13 +347,15 @@ static void mptcp_set_key_sk(const struct sock *sk)
 		tp->mptcp_loc_key = mptcp_v4_get_key(isk->inet_saddr,
 						     isk->inet_daddr,
 						     isk->inet_sport,
-						     isk->inet_dport);
+						     isk->inet_dport,
+						     mptcp_seed++);
 #if IS_ENABLED(CONFIG_IPV6)
 	else
 		tp->mptcp_loc_key = mptcp_v6_get_key(inet6_sk(sk)->saddr.s6_addr32,
 						     sk->sk_v6_daddr.s6_addr32,
 						     isk->inet_sport,
-						     isk->inet_dport);
+						     isk->inet_dport,
+						     mptcp_seed++);
 #endif
 
 	mptcp_key_sha1(tp->mptcp_loc_key,
@@ -1976,8 +2008,13 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	if (ret)
 		return ret;
 
-	inet_csk_reqsk_queue_unlink(sk, req, prev);
-	inet_csk_reqsk_queue_removed(sk, req);
+	/* prev indicates that we come from tcp_check_req and thus need to
+	 * handle the request-socket fully.
+	 */
+	if (prev) {
+		inet_csk_reqsk_queue_unlink(sk, req, prev);
+		inet_csk_reqsk_queue_removed(sk, req);
+	}
 	inet_csk_reqsk_queue_add(sk, req, meta_sk);
 
 	return 0;
@@ -2235,7 +2272,8 @@ void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, const struct request_sock *req
 	inet_rsk(req)->saw_mpc = 1;
 }
 
-void mptcp_reqsk_init(struct request_sock *req, const struct sk_buff *skb)
+void mptcp_reqsk_init(struct request_sock *req, const struct sk_buff *skb,
+		      bool want_cookie)
 {
 	struct mptcp_options_received mopt;
 	struct mptcp_request_sock *mreq = mptcp_rsk(req);
@@ -2243,27 +2281,54 @@ void mptcp_reqsk_init(struct request_sock *req, const struct sk_buff *skb)
 	mptcp_init_mp_opt(&mopt);
 	tcp_parse_mptcp_options(skb, &mopt);
 
-	mreq->is_sub = 0;
-	inet_rsk(req)->mptcp_rqsk = 1;
 	mreq->dss_csum = mopt.dss_csum;
-	mreq->hash_entry.pprev = NULL;
+
+	if (want_cookie) {
+		if (!mptcp_reqsk_new_cookie(req, &mopt, skb))
+			/* No key available - back to regular TCP */
+			inet_rsk(req)->mptcp_rqsk = 0;
+		return;
+	}
 
 	mptcp_reqsk_new_mptcp(req, &mopt, skb);
+}
+
+void mptcp_cookies_reqsk_init(struct request_sock *req,
+			      struct mptcp_options_received *mopt,
+			      struct sk_buff *skb)
+{
+	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
+
+	/* Absolutely need to always initialize this. */
+	mtreq->hash_entry.pprev = NULL;
+
+	mtreq->mptcp_rem_key = mopt->mptcp_sender_key;
+	mtreq->mptcp_loc_key = mopt->mptcp_receiver_key;
+
+	/* Generate the token */
+	mptcp_key_sha1(mtreq->mptcp_loc_key, &mtreq->mptcp_loc_token, NULL);
+
+	rcu_read_lock();
+	spin_lock(&mptcp_tk_hashlock);
+
+	/* Check, if the key is still free */
+	if (mptcp_reqsk_find_tk(mtreq->mptcp_loc_token) ||
+	    mptcp_find_token(mtreq->mptcp_loc_token))
+		goto out;
+
+	inet_rsk(req)->saw_mpc = 1;
+	mtreq->is_sub = 0;
+	inet_rsk(req)->mptcp_rqsk = 1;
+	mtreq->dss_csum = mopt->dss_csum;
+
+out:
+	spin_unlock(&mptcp_tk_hashlock);
+	rcu_read_unlock();
 }
 
 int mptcp_conn_request(struct sock *sk, struct sk_buff *skb)
 {
 	struct mptcp_options_received mopt;
-	__u32 isn = TCP_SKB_CB(skb)->tcp_tw_isn;
-	bool want_cookie = false;
-
-	if ((sysctl_tcp_syncookies == 2 ||
-	     inet_csk_reqsk_queue_is_full(sk)) && !isn) {
-		want_cookie = tcp_syn_flood_action(sk, skb,
-						   mptcp_request_sock_ops.slab_name);
-		if (!want_cookie)
-			goto drop;
-	}
 
 	mptcp_init_mp_opt(&mopt);
 	tcp_parse_mptcp_options(skb, &mopt);
@@ -2277,7 +2342,7 @@ int mptcp_conn_request(struct sock *sk, struct sk_buff *skb)
 		mopt.saw_mpc = 0;
 
 	if (skb->protocol == htons(ETH_P_IP)) {
-		if (mopt.saw_mpc && !want_cookie) {
+		if (mopt.saw_mpc) {
 			if (skb_rtable(skb)->rt_flags &
 			    (RTCF_BROADCAST | RTCF_MULTICAST))
 				goto drop;
@@ -2290,7 +2355,7 @@ int mptcp_conn_request(struct sock *sk, struct sk_buff *skb)
 		return tcp_v4_conn_request(sk, skb);
 #if IS_ENABLED(CONFIG_IPV6)
 	} else {
-		if (mopt.saw_mpc && !want_cookie) {
+		if (mopt.saw_mpc) {
 			if (!ipv6_unicast_destination(skb))
 				goto drop;
 

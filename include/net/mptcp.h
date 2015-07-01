@@ -146,7 +146,8 @@ struct mptcp_options_received {
 	u32	mptcp_rem_token;/* Remote token */
 
 	/* Key inside the option (from mp_capable or fast_close) */
-	u64	mptcp_key;
+	u64	mptcp_sender_key;
+	u64	mptcp_receiver_key;
 
 	u32	mptcp_recv_nonce;
 	u64	mptcp_recv_tmac;
@@ -813,12 +814,16 @@ void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
 void mptcp_init_buffer_space(struct sock *sk);
 void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, const struct request_sock *req,
 			   struct sk_buff *skb);
-void mptcp_reqsk_init(struct request_sock *req, const struct sk_buff *skb);
+void mptcp_reqsk_init(struct request_sock *req, const struct sk_buff *skb,
+		      bool want_cookie);
 int mptcp_conn_request(struct sock *sk, struct sk_buff *skb);
 void mptcp_enable_sock(struct sock *sk);
 void mptcp_disable_sock(struct sock *sk);
 void mptcp_enable_static_key(void);
 void mptcp_disable_static_key(void);
+void mptcp_cookies_reqsk_init(struct request_sock *req,
+			      struct mptcp_options_received *mopt,
+			      struct sk_buff *skb);
 
 /* MPTCP-path-manager registration/initialization functions */
 int mptcp_register_path_manager(struct mptcp_pm_ops *pm);
@@ -1449,6 +1454,9 @@ static inline void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
 static inline void mptcp_delete_synack_timer(struct sock *meta_sk) {}
 static inline void mptcp_init_tcp_sock(struct sock *sk) {}
 static inline void mptcp_disable_static_key(void) {}
+static inline void mptcp_cookies_reqsk_init(struct request_sock *req,
+					    struct mptcp_options_received *mopt,
+					    struct sk_buff *skb) {}
 #endif /* CONFIG_MPTCP */
 
 #endif /* _MPTCP_H */

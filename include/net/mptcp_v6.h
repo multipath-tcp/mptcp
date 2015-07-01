@@ -53,7 +53,7 @@ void mptcp_pm_v6_undo(void);
 __u32 mptcp_v6_get_nonce(const __be32 *saddr, const __be32 *daddr,
 			 __be16 sport, __be16 dport);
 u64 mptcp_v6_get_key(const __be32 *saddr, const __be32 *daddr,
-		     __be16 sport, __be16 dport);
+		     __be16 sport, __be16 dport, u32 seed);
 
 #else /* CONFIG_MPTCP */
 

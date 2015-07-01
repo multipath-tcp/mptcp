@@ -55,14 +55,15 @@ u32 mptcp_v4_get_nonce(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport)
 	return hash[0];
 }
 
-u64 mptcp_v4_get_key(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport)
+u64 mptcp_v4_get_key(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport,
+		     u32 seed)
 {
 	u32 hash[MD5_DIGEST_WORDS];
 
 	hash[0] = (__force u32)saddr;
 	hash[1] = (__force u32)daddr;
 	hash[2] = ((__force u16)sport << 16) + (__force u16)dport;
-	hash[3] = mptcp_seed++;
+	hash[3] = seed;
 
 	md5_transform(hash, mptcp_secret);
 
@@ -78,16 +79,39 @@ static void mptcp_v4_reqsk_destructor(struct request_sock *req)
 }
 
 static int mptcp_v4_init_req(struct request_sock *req, struct sock *sk,
-			     struct sk_buff *skb)
+			     struct sk_buff *skb, bool want_cookie)
 {
-	tcp_request_sock_ipv4_ops.init_req(req, sk, skb);
-	mptcp_reqsk_init(req, skb);
+	tcp_request_sock_ipv4_ops.init_req(req, sk, skb, want_cookie);
+
+	mptcp_rsk(req)->hash_entry.pprev = NULL;
+	mptcp_rsk(req)->is_sub = 0;
+	inet_rsk(req)->mptcp_rqsk = 1;
+
+	/* In case of SYN-cookies, we wait for the isn to be generated - it is
+	 * input to the key-generation.
+	 */
+	if (!want_cookie)
+		mptcp_reqsk_init(req, skb, false);
 
 	return 0;
 }
 
+#ifdef CONFIG_SYN_COOKIES
+static u32 mptcp_v4_cookie_init_seq(struct request_sock *req, struct sock *sk,
+				    const struct sk_buff *skb, __u16 *mssp)
+{
+	__u32 isn = cookie_v4_init_sequence(req, sk, skb, mssp);
+
+	tcp_rsk(req)->snt_isn = isn;
+
+	mptcp_reqsk_init(req, skb, true);
+
+	return isn;
+}
+#endif
+
 static int mptcp_v4_join_init_req(struct request_sock *req, struct sock *sk,
-				  struct sk_buff *skb)
+				  struct sk_buff *skb, bool want_cookie)
 {
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
 	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
@@ -102,7 +126,7 @@ static int mptcp_v4_join_init_req(struct request_sock *req, struct sock *sk,
 	 */
 	mtreq->hash_entry.pprev = NULL;
 
-	tcp_request_sock_ipv4_ops.init_req(req, sk, skb);
+	tcp_request_sock_ipv4_ops.init_req(req, sk, skb, want_cookie);
 
 	mtreq->mptcp_loc_nonce = mptcp_v4_get_nonce(ip_hdr(skb)->saddr,
 						    ip_hdr(skb)->daddr,
@@ -448,7 +472,9 @@ int mptcp_pm_v4_init(void)
 
 	mptcp_request_sock_ipv4_ops = tcp_request_sock_ipv4_ops;
 	mptcp_request_sock_ipv4_ops.init_req = mptcp_v4_init_req;
-
+#ifdef CONFIG_SYN_COOKIES
+	mptcp_request_sock_ipv4_ops.cookie_init_seq = mptcp_v4_cookie_init_seq;
+#endif
 	mptcp_join_request_sock_ipv4_ops = tcp_request_sock_ipv4_ops;
 	mptcp_join_request_sock_ipv4_ops.init_req = mptcp_v4_join_init_req;
 	mptcp_join_request_sock_ipv4_ops.queue_hash_add = mptcp_v4_reqsk_queue_hash_add;

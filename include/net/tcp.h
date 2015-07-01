@@ -613,8 +613,8 @@ static inline u32 tcp_cookie_time(void)
 
 u32 __cookie_v4_init_sequence(const struct iphdr *iph, const struct tcphdr *th,
 			      u16 *mssp);
-__u32 cookie_v4_init_sequence(struct sock *sk, const struct sk_buff *skb,
-			      __u16 *mss);
+__u32 cookie_v4_init_sequence(struct request_sock *req, struct sock *sk,
+			      const struct sk_buff *skb, __u16 *mss);
 #endif
 
 __u32 cookie_init_timestamp(struct request_sock *req);
@@ -628,8 +628,8 @@ struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb);
 #ifdef CONFIG_SYN_COOKIES
 u32 __cookie_v6_init_sequence(const struct ipv6hdr *iph,
 			      const struct tcphdr *th, u16 *mssp);
-__u32 cookie_v6_init_sequence(struct sock *sk, const struct sk_buff *skb,
-			      __u16 *mss);
+__u32 cookie_v6_init_sequence(struct request_sock *req, struct sock *sk,
+			      const struct sk_buff *skb, __u16 *mss);
 #endif
 /* tcp_output.c */
 
@@ -1823,10 +1823,10 @@ struct tcp_request_sock_ops {
 						  const struct sk_buff *skb);
 #endif
 	int (*init_req)(struct request_sock *req, struct sock *sk,
-			 struct sk_buff *skb);
+			 struct sk_buff *skb, bool want_cookie);
 #ifdef CONFIG_SYN_COOKIES
-	__u32 (*cookie_init_seq)(struct sock *sk, const struct sk_buff *skb,
-				 __u16 *mss);
+	__u32 (*cookie_init_seq)(struct request_sock *req, struct sock *sk,
+				 const struct sk_buff *skb, __u16 *mss);
 #endif
 	struct dst_entry *(*route_req)(struct sock *sk, struct flowi *fl,
 				       const struct request_sock *req,
@@ -1840,14 +1840,16 @@ struct tcp_request_sock_ops {
 };
 
 #ifdef CONFIG_SYN_COOKIES
-static inline __u32 cookie_init_sequence(const struct tcp_request_sock_ops *ops,
+static inline __u32 cookie_init_sequence(struct request_sock *req,
+					 const struct tcp_request_sock_ops *ops,
 					 struct sock *sk, struct sk_buff *skb,
 					 __u16 *mss)
 {
-	return ops->cookie_init_seq(sk, skb, mss);
+	return ops->cookie_init_seq(req, sk, skb, mss);
 }
 #else
-static inline __u32 cookie_init_sequence(const struct tcp_request_sock_ops *ops,
+static inline __u32 cookie_init_sequence(struct request_sock *req,
+					 const struct tcp_request_sock_ops *ops,
 					 struct sock *sk, struct sk_buff *skb,
 					 __u16 *mss)
 {

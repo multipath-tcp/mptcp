@@ -66,7 +66,7 @@ __u32 mptcp_v6_get_nonce(const __be32 *saddr, const __be32 *daddr,
 }
 
 u64 mptcp_v6_get_key(const __be32 *saddr, const __be32 *daddr,
-		     __be16 sport, __be16 dport)
+		     __be16 sport, __be16 dport, u32 seed)
 {
 	u32 secret[MD5_MESSAGE_BYTES / 4];
 	u32 hash[MD5_DIGEST_WORDS];
@@ -77,7 +77,7 @@ u64 mptcp_v6_get_key(const __be32 *saddr, const __be32 *daddr,
 		secret[i] = mptcp_secret[i] + (__force u32)daddr[i];
 	secret[4] = mptcp_secret[4] +
 		    (((__force u16)sport << 16) + (__force u16)dport);
-	secret[5] = mptcp_seed++;
+	secret[5] = seed;
 	for (i = 6; i < MD5_MESSAGE_BYTES / 4; i++)
 		secret[i] = mptcp_secret[i];
 
@@ -94,16 +94,39 @@ static void mptcp_v6_reqsk_destructor(struct request_sock *req)
 }
 
 static int mptcp_v6_init_req(struct request_sock *req, struct sock *sk,
-			     struct sk_buff *skb)
+			     struct sk_buff *skb, bool want_cookie)
 {
-	tcp_request_sock_ipv6_ops.init_req(req, sk, skb);
-	mptcp_reqsk_init(req, skb);
+	tcp_request_sock_ipv6_ops.init_req(req, sk, skb, want_cookie);
+
+	mptcp_rsk(req)->hash_entry.pprev = NULL;
+	mptcp_rsk(req)->is_sub = 0;
+	inet_rsk(req)->mptcp_rqsk = 1;
+
+	/* In case of SYN-cookies, we wait for the isn to be generated - it is
+	 * input to the key-generation.
+	 */
+	if (!want_cookie)
+		mptcp_reqsk_init(req, skb, false);
 
 	return 0;
 }
 
+#ifdef CONFIG_SYN_COOKIES
+static u32 mptcp_v6_cookie_init_seq(struct request_sock *req, struct sock *sk,
+				    const struct sk_buff *skb, __u16 *mssp)
+{
+	__u32 isn = cookie_v6_init_sequence(req, sk, skb, mssp);
+
+	tcp_rsk(req)->snt_isn = isn;
+
+	mptcp_reqsk_init(req, skb, true);
+
+	return isn;
+}
+#endif
+
 static int mptcp_v6_join_init_req(struct request_sock *req, struct sock *sk,
-				  struct sk_buff *skb)
+				  struct sk_buff *skb, bool want_cookie)
 {
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
 	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
@@ -118,7 +141,7 @@ static int mptcp_v6_join_init_req(struct request_sock *req, struct sock *sk,
 	 */
 	mtreq->hash_entry.pprev = NULL;
 
-	tcp_request_sock_ipv6_ops.init_req(req, sk, skb);
+	tcp_request_sock_ipv6_ops.init_req(req, sk, skb, want_cookie);
 
 	mtreq->mptcp_loc_nonce = mptcp_v6_get_nonce(ipv6_hdr(skb)->saddr.s6_addr32,
 						    ipv6_hdr(skb)->daddr.s6_addr32,
@@ -484,6 +507,9 @@ int mptcp_pm_v6_init(void)
 
 	mptcp_request_sock_ipv6_ops = tcp_request_sock_ipv6_ops;
 	mptcp_request_sock_ipv6_ops.init_req = mptcp_v6_init_req;
+#ifdef CONFIG_SYN_COOKIES
+	mptcp_request_sock_ipv6_ops.cookie_init_seq = mptcp_v6_cookie_init_seq;
+#endif
 
 	mptcp_join_request_sock_ipv6_ops = tcp_request_sock_ipv6_ops;
 	mptcp_join_request_sock_ipv6_ops.init_req = mptcp_v6_join_init_req;

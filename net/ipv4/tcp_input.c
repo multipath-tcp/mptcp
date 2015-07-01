@@ -6080,11 +6080,16 @@ int tcp_conn_request(struct request_sock_ops *rsk_ops,
 	/* TW buckets are converted to open requests without
 	 * limitations, they conserve resources and peer is
 	 * evidently real one.
+	 *
+	 * MPTCP: new subflows cannot be established in a stateless manner.
 	 */
-	if ((sysctl_tcp_syncookies == 2 ||
+	if (((!is_meta_sk(sk) && sysctl_tcp_syncookies == 2) ||
 	     inet_csk_reqsk_queue_is_full(sk)) && !isn) {
 		want_cookie = tcp_syn_flood_action(sk, skb, rsk_ops->slab_name);
 		if (!want_cookie)
+			goto drop;
+
+		if (is_meta_sk(sk))
 			goto drop;
 	}
 
@@ -6116,7 +6121,7 @@ int tcp_conn_request(struct request_sock_ops *rsk_ops,
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
 	tcp_openreq_init(req, &tmp_opt, skb, sk);
 
-	if (af_ops->init_req(req, sk, skb))
+	if (af_ops->init_req(req, sk, skb, want_cookie))
 		goto drop_and_free;
 
 	if (security_inet_conn_request(sk, skb, req))
@@ -6126,7 +6131,7 @@ int tcp_conn_request(struct request_sock_ops *rsk_ops,
 		tcp_ecn_create_request(req, skb, sk);
 
 	if (want_cookie) {
-		isn = cookie_init_sequence(af_ops, sk, skb, &req->mss);
+		isn = cookie_init_sequence(req, af_ops, sk, skb, &req->mss);
 		req->cookie_ts = tmp_opt.tstamp_ok;
 	} else if (!isn) {
 		/* VJ's idea. We save last timestamp seen

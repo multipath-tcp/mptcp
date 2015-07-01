@@ -19,6 +19,8 @@
 #include <linux/cryptohash.h>
 #include <linux/kernel.h>
 #include <net/ipv6.h>
+#include <net/mptcp.h>
+#include <net/mptcp_v6.h>
 #include <net/tcp.h>
 
 #define COOKIEBITS 24	/* Upper bits store count */
@@ -47,8 +49,19 @@ static inline struct sock *get_cookie_sock(struct sock *sk, struct sk_buff *skb,
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct sock *child;
+	int ret;
 
 	child = icsk->icsk_af_ops->syn_recv_sock(sk, skb, req, dst);
+
+#ifdef CONFIG_MPTCP
+	ret = mptcp_check_req_master(sk, child, req, NULL);
+	if (ret < 0)
+		return NULL;
+
+	if (!ret)
+		return tcp_sk(child)->mpcb->master_sk;
+#endif
+
 	if (child)
 		inet_csk_reqsk_queue_add(sk, req, child);
 	else
@@ -130,7 +143,8 @@ u32 __cookie_v6_init_sequence(const struct ipv6hdr *iph,
 }
 EXPORT_SYMBOL_GPL(__cookie_v6_init_sequence);
 
-__u32 cookie_v6_init_sequence(struct sock *sk, const struct sk_buff *skb, __u16 *mssp)
+__u32 cookie_v6_init_sequence(struct request_sock *req, struct sock *sk,
+			      const struct sk_buff *skb, __u16 *mssp)
 {
 	const struct ipv6hdr *iph = ipv6_hdr(skb);
 	const struct tcphdr *th = tcp_hdr(skb);
@@ -155,6 +169,7 @@ EXPORT_SYMBOL_GPL(__cookie_v6_check);
 struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_options_received tcp_opt;
+	struct mptcp_options_received mopt;
 	struct inet_request_sock *ireq;
 	struct tcp_request_sock *treq;
 	struct ipv6_pinfo *np = inet6_sk(sk);
@@ -181,19 +196,33 @@ struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 
 	/* check for timestamp cookie support */
 	memset(&tcp_opt, 0, sizeof(tcp_opt));
-	tcp_parse_options(skb, &tcp_opt, NULL, 0, NULL);
+	mptcp_init_mp_opt(&mopt);
+	tcp_parse_options(skb, &tcp_opt, &mopt, 0, NULL);
 
 	if (!cookie_check_timestamp(&tcp_opt, sock_net(sk), &ecn_ok))
 		goto out;
 
 	ret = NULL;
-	req = inet_reqsk_alloc(&tcp6_request_sock_ops);
+#ifdef CONFIG_MPTCP
+	if (mopt.saw_mpc)
+		req = inet_reqsk_alloc(&mptcp6_request_sock_ops);
+	else
+#endif
+		req = inet_reqsk_alloc(&tcp6_request_sock_ops);
 	if (!req)
 		goto out;
 
 	ireq = inet_rsk(req);
+	ireq->mptcp_rqsk = 0;
+	ireq->saw_mpc = 0;
 	treq = tcp_rsk(req);
 	treq->listener = NULL;
+
+	/* Must be done before anything else, as it initializes
+	 * hash_entry of the MPTCP request-sock.
+	 */
+	if (mopt.saw_mpc)
+		mptcp_cookies_reqsk_init(req, &mopt, skb);
 
 	if (security_inet_conn_request(sk, skb, req))
 		goto out_free;
