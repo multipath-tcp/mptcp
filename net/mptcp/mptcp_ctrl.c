@@ -92,6 +92,22 @@ static int proc_mptcp_path_manager(struct ctl_table *ctl, int write,
 	return ret;
 }
 
+static int proc_mptcp_available_path_manager(ctl_table *ctl, int write,
+				   void __user *buffer, size_t *lenp,
+				   loff_t *ppos)
+{
+	char val[MPTCP_PM_NAME_MAX];
+	ctl_table tbl = {
+		.data = val,
+		.maxlen = MPTCP_PM_NAME_MAX,
+	};
+	int ret;
+
+	mptcp_get_available_path_manager(val, MPTCP_PM_NAME_MAX);
+	ret = proc_dostring(&tbl, write, buffer, lenp, ppos);
+	return ret;
+}
+
 static int proc_mptcp_scheduler(struct ctl_table *ctl, int write,
 				void __user *buffer, size_t *lenp,
 				loff_t *ppos)
@@ -151,6 +167,12 @@ static struct ctl_table mptcp_table[] = {
 		.mode		= 0644,
 		.maxlen		= MPTCP_SCHED_NAME_MAX,
 		.proc_handler	= proc_mptcp_scheduler,
+	},
+		{
+		.procname	= "mptcp_available_pm",
+		.mode		= 0644,
+		.maxlen		= MPTCP_SCHED_NAME_MAX,
+		.proc_handler	= proc_mptcp_available_path_manager,
 	},
 	{ }
 };
