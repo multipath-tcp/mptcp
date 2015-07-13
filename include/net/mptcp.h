@@ -217,6 +217,8 @@ struct mptcp_tw {
 };
 
 #define MPTCP_PM_NAME_MAX 16
+#define MPTCP_PM_MAX 10
+#define MPTCP_PM_BUF_MAX (MPTCP_PM_NAME_MAX*MPTCP_PM_MAX)
 struct mptcp_pm_ops {
 	struct list_head list;
 
