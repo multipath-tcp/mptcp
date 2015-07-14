@@ -96,7 +96,7 @@ static int proc_mptcp_available_path_manager(ctl_table *ctl, int write,
 				   void __user *buffer, size_t *lenp,
 				   loff_t *ppos)
 {
-	char val[MPTCP_PM_NAME_MAX];
+	char val[MPTCP_PM_BUF_MAX];
 	ctl_table tbl = {
 		.data = val,
 		.maxlen = MPTCP_PM_BUF_MAX,
