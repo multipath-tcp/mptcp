@@ -527,8 +527,8 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	/* If we are in infinite mode, the subflow-fin is in fact a data-fin. */
-	if (!skb->len && tcp_hdr(skb)->fin && !mptcp_is_data_fin(skb) &&
-	    !tp->mpcb->infinite_mapping_rcv) {
+	if (!skb->len && (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN) &&
+	    !mptcp_is_data_fin(skb) && !tp->mpcb->infinite_mapping_rcv) {
 		/* Remove a pure subflow-fin from the queue and increase
 		 * copied_seq.
 		 */
@@ -596,7 +596,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 		tp->mptcp->map_data_seq = mptcp_get_rcv_nxt_64(meta_tp);
 		tp->mptcp->map_subseq = tcb->seq;
 		tp->mptcp->map_data_len = skb->len;
-		tp->mptcp->map_data_fin = tcp_hdr(skb)->fin;
+		tp->mptcp->map_data_fin = !!(TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN);
 		tp->mptcp->mapping_present = 1;
 		return 0;
 	}
