@@ -477,6 +477,8 @@ void mptcp_connect_init(struct sock *sk)
 	__mptcp_hash_insert(tp, tp->mptcp_loc_token);
 	spin_unlock(&mptcp_tk_hashlock);
 	rcu_read_unlock_bh();
+
+	MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_MPCAPABLEACTIVE);
 }
 
 /**
@@ -1912,9 +1914,12 @@ static int __mptcp_check_req_master(struct sock *child,
 		 * But, the socket has been added to the reqsk_tk_htb, so we
 		 * must still remove it.
 		 */
+		MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_MPCAPABLEPASSIVEFALLBACK);
 		mptcp_reqsk_remove_tk(req);
 		return 1;
 	}
+
+	MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_MPCAPABLEPASSIVEACK);
 
 	/* Just set this values to pass them to mptcp_alloc_mpcb */
 	mtreq = mptcp_rsk(req);
@@ -2032,8 +2037,10 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 
 	child_tp->inside_tk_table = 0;
 
-	if (!mopt->join_ack)
+	if (!mopt->join_ack) {
+		MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_JOINACKFAIL);
 		goto teardown;
+	}
 
 	mptcp_hmac_sha1((u8 *)&mpcb->mptcp_rem_key,
 			(u8 *)&mpcb->mptcp_loc_key,
@@ -2041,8 +2048,10 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 			(u8 *)&mtreq->mptcp_loc_nonce,
 			(u32 *)hash_mac_check);
 
-	if (memcmp(hash_mac_check, (char *)&mopt->mptcp_recv_mac, 20))
+	if (memcmp(hash_mac_check, (char *)&mopt->mptcp_recv_mac, 20)) {
+		MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_JOINACKMAC);
 		goto teardown;
+	}
 
 	/* Point it to the same struct socket and wq as the meta_sk */
 	sk_set_socket(child, meta_sk->sk_socket);
@@ -2087,6 +2096,8 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	inet_csk_reqsk_queue_unlink(meta_sk, req, prev);
 	reqsk_queue_removed(&inet_csk(meta_sk)->icsk_accept_queue, req);
 	reqsk_free(req);
+
+	MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_JOINACKRX);
 	return child;
 
 teardown:
@@ -2270,6 +2281,8 @@ void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, const struct request_sock *req
 	mtreq->rem_id = mopt.rem_id;
 	mtreq->rcv_low_prio = mopt.low_prio;
 	inet_rsk(req)->saw_mpc = 1;
+
+	MPTCP_INC_STATS(sock_net(mpcb->meta_sk), MPTCP_MIB_JOINSYNRX);
 }
 
 void mptcp_reqsk_init(struct request_sock *req, const struct sk_buff *skb,
@@ -2347,6 +2360,7 @@ int mptcp_conn_request(struct sock *sk, struct sk_buff *skb)
 			    (RTCF_BROADCAST | RTCF_MULTICAST))
 				goto drop;
 
+			MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_MPCAPABLEPASSIVE);
 			return tcp_conn_request(&mptcp_request_sock_ops,
 						&mptcp_request_sock_ipv4_ops,
 						sk, skb);
@@ -2359,6 +2373,7 @@ int mptcp_conn_request(struct sock *sk, struct sk_buff *skb)
 			if (!ipv6_unicast_destination(skb))
 				goto drop;
 
+			MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_MPCAPABLEPASSIVE);
 			return tcp_conn_request(&mptcp6_request_sock_ops,
 						&mptcp_request_sock_ipv6_ops,
 						sk, skb);
@@ -2371,6 +2386,50 @@ drop:
 	NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_LISTENDROPS);
 	return 0;
 }
+
+static const struct snmp_mib mptcp_snmp_list[] = {
+	SNMP_MIB_ITEM("MPCapableSYNRX", MPTCP_MIB_MPCAPABLEPASSIVE),
+	SNMP_MIB_ITEM("MPCapableSYNTX", MPTCP_MIB_MPCAPABLEACTIVE),
+	SNMP_MIB_ITEM("MPCapableSYNACKRX", MPTCP_MIB_MPCAPABLEACTIVEACK),
+	SNMP_MIB_ITEM("MPCapableACKRX", MPTCP_MIB_MPCAPABLEPASSIVEACK),
+	SNMP_MIB_ITEM("MPCapableFallbackACK", MPTCP_MIB_MPCAPABLEPASSIVEFALLBACK),
+	SNMP_MIB_ITEM("MPCapableFallbackSYNACK", MPTCP_MIB_MPCAPABLEACTIVEFALLBACK),
+	SNMP_MIB_ITEM("MPCapableRetransFallback", MPTCP_MIB_MPCAPABLERETRANSFALLBACK),
+	SNMP_MIB_ITEM("MPTCPCsumEnabled", MPTCP_MIB_CSUMENABLED),
+	SNMP_MIB_ITEM("MPTCPRetrans", MPTCP_MIB_RETRANSSEGS),
+	SNMP_MIB_ITEM("MPFailRX", MPTCP_MIB_MPFAILRX),
+	SNMP_MIB_ITEM("MPCsumFail", MPTCP_MIB_CSUMFAIL),
+	SNMP_MIB_ITEM("MPFastcloseRX", MPTCP_MIB_FASTCLOSERX),
+	SNMP_MIB_ITEM("MPFastcloseTX", MPTCP_MIB_FASTCLOSETX),
+	SNMP_MIB_ITEM("MPFallbackAckSub", MPTCP_MIB_FBACKSUB),
+	SNMP_MIB_ITEM("MPFallbackAckInit", MPTCP_MIB_FBACKINIT),
+	SNMP_MIB_ITEM("MPFallbackDataSub", MPTCP_MIB_FBDATASUB),
+	SNMP_MIB_ITEM("MPFallbackDataInit", MPTCP_MIB_FBDATAINIT),
+	SNMP_MIB_ITEM("MPRemoveAddrSubDelete", MPTCP_MIB_REMADDRSUB),
+	SNMP_MIB_ITEM("MPJoinNoTokenFound", MPTCP_MIB_JOINNOTOKEN),
+	SNMP_MIB_ITEM("MPJoinAlreadyFallenback", MPTCP_MIB_JOINFALLBACK),
+	SNMP_MIB_ITEM("MPJoinSynTx", MPTCP_MIB_JOINSYNTX),
+	SNMP_MIB_ITEM("MPJoinSynRx", MPTCP_MIB_JOINSYNRX),
+	SNMP_MIB_ITEM("MPJoinSynAckRx", MPTCP_MIB_JOINSYNACKRX),
+	SNMP_MIB_ITEM("MPJoinSynAckHMacFailure", MPTCP_MIB_JOINSYNACKMAC),
+	SNMP_MIB_ITEM("MPJoinAckRx", MPTCP_MIB_JOINACKRX),
+	SNMP_MIB_ITEM("MPJoinAckHMacFailure", MPTCP_MIB_JOINACKMAC),
+	SNMP_MIB_ITEM("MPJoinAckMissing", MPTCP_MIB_JOINACKFAIL),
+	SNMP_MIB_ITEM("MPJoinAckRTO", MPTCP_MIB_JOINACKRTO),
+	SNMP_MIB_ITEM("MPJoinAckRexmit", MPTCP_MIB_JOINACKRXMIT),
+	SNMP_MIB_ITEM("NoDSSInWindow", MPTCP_MIB_NODSSWINDOW),
+	SNMP_MIB_ITEM("DSSNotMatching", MPTCP_MIB_DSSNOMATCH),
+	SNMP_MIB_ITEM("InfiniteMapRx", MPTCP_MIB_INFINITEMAPRX),
+	SNMP_MIB_ITEM("DSSNoMatchTCP", MPTCP_MIB_DSSTCPMISMATCH),
+	SNMP_MIB_ITEM("DSSTrimHead", MPTCP_MIB_DSSTRIMHEAD),
+	SNMP_MIB_ITEM("DSSSplitTail", MPTCP_MIB_DSSSPLITTAIL),
+	SNMP_MIB_ITEM("DSSPurgeOldSubSegs", MPTCP_MIB_PURGEOLD),
+	SNMP_MIB_ITEM("AddAddrRx", MPTCP_MIB_ADDADDRRX),
+	SNMP_MIB_ITEM("AddAddrTx", MPTCP_MIB_ADDADDRTX),
+	SNMP_MIB_ITEM("RemAddrRx", MPTCP_MIB_REMADDRRX),
+	SNMP_MIB_ITEM("RemAddrTx", MPTCP_MIB_REMADDRTX),
+	SNMP_MIB_SENTINEL
+};
 
 struct workqueue_struct *mptcp_wq;
 EXPORT_SYMBOL(mptcp_wq);
@@ -2452,17 +2511,62 @@ static const struct file_operations mptcp_pm_seq_fops = {
 	.release = single_release_net,
 };
 
-static int mptcp_pm_init_net(struct net *net)
+static int mptcp_snmp_seq_show(struct seq_file *seq, void *v)
 {
-	if (!proc_create("mptcp", S_IRUGO, net->proc_net, &mptcp_pm_seq_fops))
-		return -ENOMEM;
+	struct net *net = seq->private;
+	int i;
+
+	for (i = 0; mptcp_snmp_list[i].name != NULL; i++)
+		seq_printf(seq, "%-32s\t%ld\n", mptcp_snmp_list[i].name,
+			   snmp_fold_field(net->mptcp.mptcp_statistics,
+				      mptcp_snmp_list[i].entry));
 
 	return 0;
 }
 
+static int mptcp_snmp_seq_open(struct inode *inode, struct file *file)
+{
+	return single_open_net(inode, file, mptcp_snmp_seq_show);
+}
+
+static const struct file_operations mptcp_snmp_seq_fops = {
+	.owner = THIS_MODULE,
+	.open = mptcp_snmp_seq_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release_net,
+};
+
+static int mptcp_pm_init_net(struct net *net)
+{
+#ifdef CONFIG_PROC_FS
+	net->mptcp.proc_net_mptcp = proc_net_mkdir(net, "mptcp_net", net->proc_net);
+	if (!net->mptcp.proc_net_mptcp)
+		goto out_proc_net_mptcp;
+	if (!proc_create("mptcp", S_IRUGO, net->mptcp.proc_net_mptcp,
+			 &mptcp_pm_seq_fops))
+		goto out_mptcp_net_mptcp;
+	if (!proc_create("snmp", S_IRUGO, net->mptcp.proc_net_mptcp,
+			 &mptcp_snmp_seq_fops))
+		goto out_mptcp_net_snmp;
+
+	return 0;
+
+out_mptcp_net_snmp:
+	remove_proc_entry("mptcp", net->mptcp.proc_net_mptcp);
+out_mptcp_net_mptcp:
+	remove_proc_subtree("mptcp_net", net->proc_net);
+	net->mptcp.proc_net_mptcp = NULL;
+out_proc_net_mptcp:
+	return -ENOMEM;
+#endif
+}
+
 static void mptcp_pm_exit_net(struct net *net)
 {
-	remove_proc_entry("mptcp", net->proc_net);
+	remove_proc_entry("snmp", net->mptcp.proc_net_mptcp);
+	remove_proc_entry("mptcp", net->mptcp.proc_net_mptcp);
+	remove_proc_subtree("mptcp_net", net->proc_net);
 }
 
 static struct pernet_operations mptcp_pm_proc_ops = {

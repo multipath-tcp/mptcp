@@ -438,6 +438,8 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 		goto error;
 	}
 
+	MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_JOINSYNTX);
+
 	sk_set_socket(sk, meta_sk->sk_socket);
 	sk->sk_wq = meta_sk->sk_wq;
 
