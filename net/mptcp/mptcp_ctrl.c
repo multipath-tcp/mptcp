@@ -2454,15 +2454,28 @@ static const struct file_operations mptcp_pm_seq_fops = {
 
 static int mptcp_pm_init_net(struct net *net)
 {
-	if (!proc_create("mptcp", S_IRUGO, net->proc_net, &mptcp_pm_seq_fops))
-		return -ENOMEM;
+#ifdef CONFIG_PROC_FS
+	net->mptcp.proc_net_mptcp = proc_net_mkdir(net, "mptcp_net", net->proc_net);
+	if (!net->mptcp.proc_net_mptcp)
+		goto out_proc_net_mptcp;
+	if (!proc_create("mptcp", S_IRUGO, net->mptcp.proc_net_mptcp,
+			 &mptcp_pm_seq_fops))
+		goto out_mptcp_net_mptcp;
 
 	return 0;
+
+out_mptcp_net_mptcp:
+	remove_proc_subtree("mptcp_net", net->proc_net);
+	net->mptcp.proc_net_mptcp = NULL;
+out_proc_net_mptcp:
+	return -ENOMEM;
+#endif
 }
 
 static void mptcp_pm_exit_net(struct net *net)
 {
-	remove_proc_entry("mptcp", net->proc_net);
+	remove_proc_entry("mptcp", net->mptcp.proc_net_mptcp);
+	remove_proc_subtree("mptcp_net", net->proc_net);
 }
 
 static struct pernet_operations mptcp_pm_proc_ops = {
