@@ -675,6 +675,63 @@ extern struct workqueue_struct *mptcp_wq;
 #define mptcp_for_each_bit_unset(b, i)					\
 	mptcp_for_each_bit_set(~b, i)
 
+#define MPTCP_INC_STATS(net, field)	SNMP_INC_STATS((net)->mptcp.mptcp_statistics, field)
+#define MPTCP_INC_STATS_BH(net, field)	SNMP_INC_STATS_BH((net)->mptcp.mptcp_statistics, field)
+#define MPTCP_DEC_STATS(net, field)	SNMP_DEC_STATS((net)->mptcp.mptcp_statistics, field)
+#define MPTCP_ADD_STATS_USER(net, field, val) SNMP_ADD_STATS_USER((net)->mptcp.mptcp_statistics, field, val)
+#define MPTCP_ADD_STATS(net, field, val)	SNMP_ADD_STATS((net)->mptcp.mptcp_statistics, field, val)
+
+enum
+{
+	MPTCP_MIB_NUM = 0,
+	MPTCP_MIB_MPCAPABLEPASSIVE,	/* Received SYN with MP_CAPABLE */
+	MPTCP_MIB_MPCAPABLEACTIVE,	/* Sent SYN with MP_CAPABLE */
+	MPTCP_MIB_MPCAPABLEACTIVEACK,	/* Received SYN/ACK with MP_CAPABLE */
+	MPTCP_MIB_MPCAPABLEPASSIVEACK,	/* Received third ACK with MP_CAPABLE */
+	MPTCP_MIB_MPCAPABLEPASSIVEFALLBACK,/* Server-side fallback during 3-way handshake */
+	MPTCP_MIB_MPCAPABLEACTIVEFALLBACK, /* Client-side fallback during 3-way handshake */
+	MPTCP_MIB_MPCAPABLERETRANSFALLBACK,/* Client-side stopped sending MP_CAPABLE after too many SYN-retransmissions */
+	MPTCP_MIB_CSUMENABLED,		/* Created MPTCP-connection with DSS-checksum enabled */
+	MPTCP_MIB_RETRANSSEGS,		/* Segments retransmitted at the MPTCP-level */
+	MPTCP_MIB_MPFAILRX,		/* Received an MP_FAIL */
+	MPTCP_MIB_CSUMFAIL,		/* Received segment with invalid checksum */
+	MPTCP_MIB_FASTCLOSERX,		/* Recevied a FAST_CLOSE */
+	MPTCP_MIB_FASTCLOSETX,		/* Sent a FAST_CLOSE */
+	MPTCP_MIB_FBACKSUB,		/* Fallback upon ack without data-ack on new subflow */
+	MPTCP_MIB_FBACKINIT,		/* Fallback upon ack without data-ack on initial subflow */
+	MPTCP_MIB_FBDATASUB,		/* Fallback upon data without DSS at the beginning on new subflow */
+	MPTCP_MIB_FBDATAINIT,		/* Fallback upon data without DSS at the beginning on initial subflow */
+	MPTCP_MIB_REMADDRSUB,		/* Remove subflow due to REMOVE_ADDR */
+	MPTCP_MIB_JOINNOTOKEN,		/* Received MP_JOIN but the token was not found */
+	MPTCP_MIB_JOINFALLBACK,		/* Received MP_JOIN on session that has fallen back to reg. TCP */
+	MPTCP_MIB_JOINSYNTX,		/* Sent a SYN + MP_JOIN */
+	MPTCP_MIB_JOINSYNRX,		/* Received a SYN + MP_JOIN */
+	MPTCP_MIB_JOINSYNACKRX,		/* Received a SYN/ACK + MP_JOIN */
+	MPTCP_MIB_JOINSYNACKMAC,	/* HMAC was wrong on SYN/ACK + MP_JOIN */
+	MPTCP_MIB_JOINACKRX,		/* Received an ACK + MP_JOIN */
+	MPTCP_MIB_JOINACKMAC,		/* HMAC was wrong on ACK + MP_JOIN */
+	MPTCP_MIB_JOINACKFAIL,		/* Third ACK on new subflow did not contain an MP_JOIN */
+	MPTCP_MIB_JOINACKRTO,		/* Retransmission timer for third ACK + MP_JOIN timed out */
+	MPTCP_MIB_JOINACKRXMIT,		/* Retransmitted an ACK + MP_JOIN */
+	MPTCP_MIB_NODSSWINDOW,		/* Received too many packets without a DSS-option */
+	MPTCP_MIB_DSSNOMATCH,		/* Received a new mapping that did not match the previous one */
+	MPTCP_MIB_INFINITEMAPRX,	/* Received an infinite mapping */
+	MPTCP_MIB_DSSTCPMISMATCH,	/* DSS-mapping did not map with TCP's sequence numbers */
+	MPTCP_MIB_DSSTRIMHEAD,		/* Trimmed segment at the head (coalescing middlebox) */
+	MPTCP_MIB_DSSSPLITTAIL,		/* Trimmed segment at the tail (coalescing middlebox) */
+	MPTCP_MIB_PURGEOLD,		/* Removed old skb from the rcv-queue due to missing DSS-mapping */
+	MPTCP_MIB_ADDADDRRX,		/* Received an ADD_ADDR */
+	MPTCP_MIB_ADDADDRTX,		/* Sent an ADD_ADDR */
+	MPTCP_MIB_REMADDRRX,		/* Received a REMOVE_ADDR */
+	MPTCP_MIB_REMADDRTX,		/* Sent a REMOVE_ADDR */
+	__MPTCP_MIB_MAX
+};
+
+#define MPTCP_MIB_MAX __MPTCP_MIB_MAX
+struct mptcp_mib {
+	unsigned long	mibs[MPTCP_MIB_MAX];
+};
+
 extern struct lock_class_key meta_key;
 extern struct lock_class_key meta_slock_key;
 extern u32 mptcp_secret[MD5_MESSAGE_BYTES / 4];
@@ -1226,14 +1283,18 @@ static inline bool mptcp_fallback_infinite(struct sock *sk, int flag)
 	       __func__, tp->mpcb->mptcp_loc_token, tp->mptcp->path_index,
 	       &inet_sk(sk)->inet_saddr, &inet_sk(sk)->inet_daddr,
 	       __builtin_return_address(0));
-	if (!is_master_tp(tp))
+	if (!is_master_tp(tp)) {
+		MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_FBACKSUB);
 		return true;
+	}
 
 	tp->mpcb->infinite_mapping_snd = 1;
 	tp->mpcb->infinite_mapping_rcv = 1;
 	tp->mptcp->fully_established = 1;
 
 	mptcp_sub_force_close_all(tp->mpcb, sk);
+
+	MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_FBACKINIT);
 
 	return false;
 }

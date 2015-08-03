@@ -171,8 +171,11 @@ int tcp_write_timeout(struct sock *sk)
 		syn_set = true;
 		/* Stop retransmitting MP_CAPABLE options in SYN if timed out. */
 		if (tcp_sk(sk)->request_mptcp &&
-		    icsk->icsk_retransmits >= mptcp_sysctl_syn_retries())
+		    icsk->icsk_retransmits >= mptcp_sysctl_syn_retries()) {
 			tcp_sk(sk)->request_mptcp = 0;
+
+			MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_MPCAPABLERETRANSFALLBACK);
+		}
 	} else {
 		if (retransmits_timed_out(sk, sysctl_tcp_retries1, 0, 0)) {
 			/* Black hole detection */
