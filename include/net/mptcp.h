@@ -292,6 +292,7 @@ struct mptcp_cb {
 	 */
 
 	u64	csum_cutoff_seq;
+	u64	infinite_rcv_seq;
 
 	/***** Start of fields, used for connection closure */
 	spinlock_t	 tw_lock;
@@ -1288,6 +1289,7 @@ static inline bool mptcp_fallback_infinite(struct sock *sk, int flag)
 
 	mpcb->infinite_mapping_snd = 1;
 	mpcb->infinite_mapping_rcv = 1;
+	mpcb->infinite_rcv_seq = mptcp_get_rcv_nxt_64(mptcp_meta_tp(tp));
 	tp->mptcp->fully_established = 1;
 
 	mptcp_sub_force_close_all(mpcb, sk);
