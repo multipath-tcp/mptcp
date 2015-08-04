@@ -526,10 +526,11 @@ static int mptcp_skb_split_tail(struct sk_buff *skb, struct sock *sk, u32 seq)
 static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct mptcp_cb *mpcb = tp->mpcb;
 
 	/* If we are in infinite mode, the subflow-fin is in fact a data-fin. */
 	if (!skb->len && (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN) &&
-	    !mptcp_is_data_fin(skb) && !tp->mpcb->infinite_mapping_rcv) {
+	    !mptcp_is_data_fin(skb) && !mpcb->infinite_mapping_rcv) {
 		/* Remove a pure subflow-fin from the queue and increase
 		 * copied_seq.
 		 */
@@ -543,9 +544,9 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 	 * this segment, this path has to fallback to infinite or be torn down.
 	 */
 	if (!tp->mptcp->fully_established && !mptcp_is_data_seq(skb) &&
-	    !tp->mptcp->mapping_present && !tp->mpcb->infinite_mapping_rcv) {
+	    !tp->mptcp->mapping_present && !mpcb->infinite_mapping_rcv) {
 		pr_err("%s %#x will fallback - pi %d from %pS, seq %u\n",
-		       __func__, tp->mpcb->mptcp_loc_token,
+		       __func__, mpcb->mptcp_loc_token,
 		       tp->mptcp->path_index, __builtin_return_address(0),
 		       TCP_SKB_CB(skb)->seq);
 
@@ -557,13 +558,13 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 
 		MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_FBDATAINIT);
 
-		tp->mpcb->infinite_mapping_snd = 1;
-		tp->mpcb->infinite_mapping_rcv = 1;
+		mpcb->infinite_mapping_snd = 1;
+		mpcb->infinite_mapping_rcv = 1;
 
-		mptcp_sub_force_close_all(tp->mpcb, sk);
+		mptcp_sub_force_close_all(mpcb, sk);
 
 		/* We do a seamless fallback and should not send a inf.mapping. */
-		tp->mpcb->send_infinite_mapping = 0;
+		mpcb->send_infinite_mapping = 0;
 		tp->mptcp->fully_established = 1;
 	}
 

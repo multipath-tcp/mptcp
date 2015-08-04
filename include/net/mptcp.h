@@ -859,9 +859,6 @@ int mptcp_do_join_short(struct sk_buff *skb,
 			const struct mptcp_options_received *mopt,
 			struct net *net);
 void mptcp_reqsk_destructor(struct request_sock *req);
-void mptcp_reqsk_new_mptcp(struct request_sock *req,
-			   const struct mptcp_options_received *mopt,
-			   const struct sk_buff *skb);
 int mptcp_check_req(struct sk_buff *skb, struct net *net);
 void mptcp_connect_init(struct sock *sk);
 void mptcp_sub_force_close(struct sock *sk);
@@ -1264,6 +1261,7 @@ static inline void mptcp_sub_close_passive(struct sock *sk)
 static inline bool mptcp_fallback_infinite(struct sock *sk, int flag)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct mptcp_cb *mpcb = tp->mpcb;
 
 	/* If data has been acknowleged on the meta-level, fully_established
 	 * will have been set before and thus we will not fall back to infinite
@@ -1276,11 +1274,11 @@ static inline bool mptcp_fallback_infinite(struct sock *sk, int flag)
 		return false;
 
 	/* Don't fallback twice ;) */
-	if (tp->mpcb->infinite_mapping_snd)
+	if (mpcb->infinite_mapping_snd)
 		return false;
 
 	pr_err("%s %#x will fallback - pi %d, src %pI4 dst %pI4 from %pS\n",
-	       __func__, tp->mpcb->mptcp_loc_token, tp->mptcp->path_index,
+	       __func__, mpcb->mptcp_loc_token, tp->mptcp->path_index,
 	       &inet_sk(sk)->inet_saddr, &inet_sk(sk)->inet_daddr,
 	       __builtin_return_address(0));
 	if (!is_master_tp(tp)) {
@@ -1288,11 +1286,11 @@ static inline bool mptcp_fallback_infinite(struct sock *sk, int flag)
 		return true;
 	}
 
-	tp->mpcb->infinite_mapping_snd = 1;
-	tp->mpcb->infinite_mapping_rcv = 1;
+	mpcb->infinite_mapping_snd = 1;
+	mpcb->infinite_mapping_rcv = 1;
 	tp->mptcp->fully_established = 1;
 
-	mptcp_sub_force_close_all(tp->mpcb, sk);
+	mptcp_sub_force_close_all(mpcb, sk);
 
 	MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_FBACKINIT);
 
@@ -1510,10 +1508,6 @@ static inline void mptcp_tsq_flags(struct sock *sk) {}
 static inline void mptcp_tsq_sub_deferred(struct sock *meta_sk) {}
 static inline void mptcp_hash_remove_bh(struct tcp_sock *meta_tp) {}
 static inline void mptcp_hash_remove(struct tcp_sock *meta_tp) {}
-static inline void mptcp_reqsk_new_mptcp(struct request_sock *req,
-					 const struct tcp_options_received *rx_opt,
-					 const struct mptcp_options_received *mopt,
-					 const struct sk_buff *skb) {}
 static inline void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
 					  const struct sk_buff *skb) {}
 static inline void mptcp_delete_synack_timer(struct sock *meta_sk) {}

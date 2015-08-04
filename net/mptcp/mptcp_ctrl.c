@@ -290,9 +290,9 @@ static void mptcp_set_key_reqsk(struct request_sock *req,
 /* New MPTCP-connection request, prepare a new token for the meta-socket that
  * will be created in mptcp_check_req_master(), and store the received token.
  */
-void mptcp_reqsk_new_mptcp(struct request_sock *req,
-			   const struct mptcp_options_received *mopt,
-			   const struct sk_buff *skb)
+static void mptcp_reqsk_new_mptcp(struct request_sock *req,
+				  const struct mptcp_options_received *mopt,
+				  const struct sk_buff *skb)
 {
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
 
