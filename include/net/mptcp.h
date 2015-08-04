@@ -1355,6 +1355,10 @@ bool mptcp_prune_ofo_queue(struct sock *sk);
 #define mptcp_for_each_sk(mpcb, sk)
 #define mptcp_for_each_sk_safe(__mpcb, __sk, __temp)
 
+#define MPTCP_INC_STATS(net, field)	\
+	do {				\
+	} while(0)
+
 static inline bool mptcp_is_data_fin(const struct sk_buff *skb)
 {
 	return false;
