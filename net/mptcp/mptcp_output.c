@@ -273,44 +273,31 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 }
 EXPORT_SYMBOL(mptcp_reinject_data);
 
-static void mptcp_combine_dfin(const struct sk_buff *skb, const struct sock *meta_sk,
+static void mptcp_combine_dfin(const struct sk_buff *skb,
+			       const struct sock *meta_sk,
 			       struct sock *subsk)
 {
 	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct mptcp_cb *mpcb = meta_tp->mpcb;
-	struct sock *sk_it;
-	int all_empty = 1, all_acked;
+	const struct mptcp_cb *mpcb = meta_tp->mpcb;
 
 	/* In infinite mapping we always try to combine */
-	if (mpcb->infinite_mapping_snd && tcp_close_state(subsk)) {
-		subsk->sk_shutdown |= SEND_SHUTDOWN;
-		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_FIN;
+	if (mpcb->infinite_mapping_snd)
+		goto combine;
+
+	/* Don't combine, if they didn't combine when closing - otherwise we end
+	 * up in TIME_WAIT, even if our app is smart enough to avoid it.
+	 */
+	if (!mptcp_sk_can_recv(meta_sk) && !mpcb->dfin_combined)
 		return;
-	}
 
-	/* Don't combine, if they didn't combine - otherwise we end up in
-	 * TIME_WAIT, even if our app is smart enough to avoid it
+	/* Don't combine if there is still outstanding data that remains to be
+	 * DATA_ACKed, because otherwise we may never be able to deliver this.
 	 */
-	if (meta_sk->sk_shutdown & RCV_SHUTDOWN) {
-		if (!mpcb->dfin_combined)
-			return;
-	}
+	if (meta_tp->snd_una != TCP_SKB_CB(skb)->seq)
+		return;
 
-	/* If no other subflow has data to send, we can combine */
-	mptcp_for_each_sk(mpcb, sk_it) {
-		if (!mptcp_sk_can_send(sk_it))
-			continue;
-
-		if (!tcp_write_queue_empty(sk_it))
-			all_empty = 0;
-	}
-
-	/* If all data has been DATA_ACKed, we can combine.
-	 * -1, because the data_fin consumed one byte
-	 */
-	all_acked = (meta_tp->snd_una == (meta_tp->write_seq - 1));
-
-	if ((all_empty || all_acked) && tcp_close_state(subsk)) {
+combine:
+	if (tcp_close_state(subsk)) {
 		subsk->sk_shutdown |= SEND_SHUTDOWN;
 		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_FIN;
 	}
