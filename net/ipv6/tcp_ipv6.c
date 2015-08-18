@@ -1183,6 +1183,14 @@ struct sock *tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 	if (newsk == NULL)
 		goto out_nonewsk;
 
+#ifdef CONFIG_MPTCP
+	/* If the meta_sk is v6-mapped we can end up here with the wrong af_ops.
+	 * Just make sure that this subflow is v6.
+	 */
+	if (is_meta_sk(sk))
+		inet_csk(newsk)->icsk_af_ops = &mptcp_v6_specific;
+#endif
+
 	/*
 	 * No need to charge this sock to the relevant IPv6 refcnt debug socks
 	 * count here, tcp_create_openreq_child now does this for us, see the
