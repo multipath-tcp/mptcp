@@ -1692,25 +1692,6 @@ process:
 	if (sk && sk->sk_state == TCP_TIME_WAIT)
 		goto do_time_wait;
 
-#ifdef CONFIG_MPTCP
-	if (!sk && th->syn && !th->ack) {
-		int ret = mptcp_lookup_join(skb, NULL);
-
-		if (ret < 0) {
-			tcp_v4_send_reset(NULL, skb);
-			goto discard_it;
-		} else if (ret > 0) {
-			return 0;
-		}
-	}
-
-	/* Is there a pending request sock for this segment ? */
-	if ((!sk || sk->sk_state == TCP_LISTEN) && mptcp_check_req(skb, net)) {
-		if (sk)
-			sock_put(sk);
-		return 0;
-	}
-#endif
 	if (!sk)
 		goto no_tcp_socket;
 
@@ -1721,6 +1702,15 @@ process:
 
 	if (!xfrm4_policy_check(sk, XFRM_POLICY_IN, skb))
 		goto discard_and_relse;
+
+#ifdef CONFIG_MPTCP
+	/* Is there a pending request sock for this segment ? */
+	if (sk->sk_state == TCP_LISTEN && mptcp_check_req(skb, net)) {
+		if (sk)
+			sock_put(sk);
+		return 0;
+	}
+#endif
 
 #ifdef CONFIG_TCP_MD5SIG
 	/*
@@ -1771,6 +1761,26 @@ process:
 no_tcp_socket:
 	if (!xfrm4_policy_check(NULL, XFRM_POLICY_IN, skb))
 		goto discard_it;
+
+#ifdef CONFIG_MPTCP
+	if (!sk && th->syn && !th->ack) {
+		int ret = mptcp_lookup_join(skb, NULL);
+
+		if (ret < 0) {
+			tcp_v4_send_reset(NULL, skb);
+			goto discard_it;
+		} else if (ret > 0) {
+			return 0;
+		}
+	}
+
+	/* Is there a pending request sock for this segment ? */
+	if (!sk && mptcp_check_req(skb, net)) {
+		if (sk)
+			sock_put(sk);
+		return 0;
+	}
+#endif
 
 	if (skb->len < (th->doff << 2) || tcp_checksum_complete(skb)) {
 csum_error:

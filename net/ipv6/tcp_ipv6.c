@@ -1183,6 +1183,14 @@ struct sock *tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 	if (newsk == NULL)
 		goto out_nonewsk;
 
+#ifdef CONFIG_MPTCP
+	/* If the meta_sk is v6-mapped we can end up here with the wrong af_ops.
+	 * Just make sure that this subflow is v6.
+	 */
+	if (is_meta_sk(sk))
+		inet_csk(newsk)->icsk_af_ops = &mptcp_v6_specific;
+#endif
+
 	/*
 	 * No need to charge this sock to the relevant IPv6 refcnt debug socks
 	 * count here, tcp_create_openreq_child now does this for us, see the
@@ -1514,26 +1522,6 @@ process:
 	if (sk && sk->sk_state == TCP_TIME_WAIT)
 		goto do_time_wait;
 
-#ifdef CONFIG_MPTCP
-	if (!sk && th->syn && !th->ack) {
-		int ret = mptcp_lookup_join(skb, NULL);
-
-		if (ret < 0) {
-			tcp_v6_send_reset(NULL, skb);
-			goto discard_it;
-		} else if (ret > 0) {
-			return 0;
-		}
-	}
-
-	/* Is there a pending request sock for this segment ? */
-	if ((!sk || sk->sk_state == TCP_LISTEN) && mptcp_check_req(skb, net)) {
-		if (sk)
-			sock_put(sk);
-		return 0;
-	}
-#endif
-
 	if (!sk)
 		goto no_tcp_socket;
 
@@ -1546,6 +1534,15 @@ process:
 		goto discard_and_relse;
 
 	tcp_v6_fill_cb(skb, hdr, th);
+
+#ifdef CONFIG_MPTCP
+	/* Is there a pending request sock for this segment ? */
+	if (sk->sk_state == TCP_LISTEN && mptcp_check_req(skb, net)) {
+		if (sk)
+			sock_put(sk);
+		return 0;
+	}
+#endif
 
 #ifdef CONFIG_TCP_MD5SIG
 	if (tcp_v6_inbound_md5_hash(sk, skb))
@@ -1590,6 +1587,26 @@ no_tcp_socket:
 		goto discard_it;
 
 	tcp_v6_fill_cb(skb, hdr, th);
+
+#ifdef CONFIG_MPTCP
+	if (!sk && th->syn && !th->ack) {
+		int ret = mptcp_lookup_join(skb, NULL);
+
+		if (ret < 0) {
+			tcp_v6_send_reset(NULL, skb);
+			goto discard_it;
+		} else if (ret > 0) {
+			return 0;
+		}
+	}
+
+	/* Is there a pending request sock for this segment ? */
+	if (!sk && mptcp_check_req(skb, net)) {
+		if (sk)
+			sock_put(sk);
+		return 0;
+	}
+#endif
 
 	if (skb->len < (th->doff<<2) || tcp_checksum_complete(skb)) {
 csum_error:
