@@ -210,12 +210,17 @@ static inline struct sock *get_cookie_sock(struct sock *sk, struct sk_buff *skb,
 	child = icsk->icsk_af_ops->syn_recv_sock(sk, skb, req, dst);
 
 #ifdef CONFIG_MPTCP
+	if (!child)
+		goto listen_overflow;
+
 	ret = mptcp_check_req_master(sk, child, req, NULL);
 	if (ret < 0)
 		return NULL;
 
 	if (!ret)
 		return tcp_sk(child)->mpcb->master_sk;
+
+listen_overflow:
 #endif
 
 	if (child)
