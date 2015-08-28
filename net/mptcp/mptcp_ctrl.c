@@ -2539,6 +2539,10 @@ static const struct file_operations mptcp_snmp_seq_fops = {
 
 static int mptcp_pm_init_net(struct net *net)
 {
+	net->mptcp.mptcp_statistics = alloc_percpu(struct mptcp_mib);
+	if (!net->mptcp.mptcp_statistics)
+		goto out_mptcp_mibs;
+
 #ifdef CONFIG_PROC_FS
 	net->mptcp.proc_net_mptcp = proc_net_mkdir(net, "mptcp_net", net->proc_net);
 	if (!net->mptcp.proc_net_mptcp)
@@ -2549,17 +2553,21 @@ static int mptcp_pm_init_net(struct net *net)
 	if (!proc_create("snmp", S_IRUGO, net->mptcp.proc_net_mptcp,
 			 &mptcp_snmp_seq_fops))
 		goto out_mptcp_net_snmp;
+#endif
 
 	return 0;
 
+#ifdef CONFIG_PROC_FS
 out_mptcp_net_snmp:
 	remove_proc_entry("mptcp", net->mptcp.proc_net_mptcp);
 out_mptcp_net_mptcp:
 	remove_proc_subtree("mptcp_net", net->proc_net);
 	net->mptcp.proc_net_mptcp = NULL;
 out_proc_net_mptcp:
-	return -ENOMEM;
+	free_percpu(net->mptcp.mptcp_statistics);
 #endif
+out_mptcp_mibs:
+	return -ENOMEM;
 }
 
 static void mptcp_pm_exit_net(struct net *net)
@@ -2567,6 +2575,7 @@ static void mptcp_pm_exit_net(struct net *net)
 	remove_proc_entry("snmp", net->mptcp.proc_net_mptcp);
 	remove_proc_entry("mptcp", net->mptcp.proc_net_mptcp);
 	remove_proc_subtree("mptcp_net", net->proc_net);
+	free_percpu(net->mptcp.mptcp_statistics);
 }
 
 static struct pernet_operations mptcp_pm_proc_ops = {
