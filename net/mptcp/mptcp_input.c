@@ -1212,7 +1212,7 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 	 * mptcp_v4_do_rcv will hit again on it inside tcp_v4_hnd_req.
 	 */
 	if (tw) {
-		inet_twsk_deschedule(tw, &tcp_death_row);
+		inet_twsk_deschedule(tw);
 		inet_twsk_put(tw);
 	}
 

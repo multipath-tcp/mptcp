@@ -1837,7 +1837,7 @@ int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key, u32 window)
 		__inet_hash_nolisten(master_sk, NULL);
 #if IS_ENABLED(CONFIG_IPV6)
 	else
-		__inet6_hash(master_sk, NULL);
+		__inet_hash(master_sk, NULL);
 #endif
 
 	master_tp->mptcp->init_rcv_wnd = master_tp->rcv_wnd;

@@ -427,7 +427,6 @@ void tcp_v4_reqsk_destructor(struct request_sock *req);
 
 void tcp_v6_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 			   struct request_sock *req);
-__u32 tcp_v6_init_sequence(const struct sk_buff *skb);
 int tcp_v6_send_synack(struct sock *sk, struct dst_entry *dst,
 		       struct flowi *fl, struct request_sock *req,
 		       u16 queue_mapping, struct tcp_fastopen_cookie *foc);
@@ -1819,7 +1818,7 @@ struct tcp_request_sock_ops {
 					  const struct sock *sk,
 					  const struct sk_buff *skb);
 #endif
-	int (*init_req)(struct request_sock *req, struct sock *sk,
+	int (*init_req)(struct request_sock *req, struct sock *sk_listener,
 			 struct sk_buff *skb, bool want_cookie);
 #ifdef CONFIG_SYN_COOKIES
 	__u32 (*cookie_init_seq)(struct request_sock *req, struct sock *sk,
