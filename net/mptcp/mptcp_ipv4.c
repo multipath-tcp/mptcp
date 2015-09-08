@@ -178,8 +178,7 @@ static void mptcp_v4_reqsk_queue_hash_add(struct sock *meta_sk,
 				     lopt->hash_rnd, lopt->nr_table_entries);
 
 	reqsk_queue_hash_req(&meta_icsk->icsk_accept_queue, h2, req, timeout);
-	if (reqsk_queue_added(&meta_icsk->icsk_accept_queue) == 0)
-		mptcp_reset_synack_timer(meta_sk, timeout);
+	reqsk_queue_added(&meta_icsk->icsk_accept_queue);
 
 	rcu_read_lock();
 	spin_lock(&mptcp_reqsk_hlock);
@@ -278,21 +277,17 @@ reset_and_discard:
 	if (reqsk_queue_len(&inet_csk(meta_sk)->icsk_accept_queue)) {
 		const struct tcphdr *th = tcp_hdr(skb);
 		const struct iphdr *iph = ip_hdr(skb);
-		struct request_sock **prev, *req;
+		struct request_sock *req;
 		/* If we end up here, it means we should not have matched on the
 		 * request-socket. But, because the request-sock queue is only
 		 * destroyed in mptcp_close, the socket may actually already be
 		 * in close-state (e.g., through shutdown()) while still having
 		 * pending request sockets.
 		 */
-		req = inet_csk_search_req(meta_sk, &prev, th->source,
-					  iph->saddr, iph->daddr);
-		if (req) {
-			inet_csk_reqsk_queue_unlink(meta_sk, req, prev);
-			reqsk_queue_removed(&inet_csk(meta_sk)->icsk_accept_queue,
-					    req);
-			reqsk_free(req);
-		}
+		req = inet_csk_search_req(meta_sk, th->source, iph->saddr, iph->daddr);
+
+		if (req)
+			inet_csk_reqsk_queue_drop(meta_sk, req);
 	}
 
 	tcp_v4_send_reset(rsk, skb);

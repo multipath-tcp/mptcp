@@ -805,7 +805,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		goto listen_overflow;
 
 	if (!is_meta_sk(sk)) {
-		int ret = mptcp_check_req_master(sk, child, req, prev);
+		int ret = mptcp_check_req_master(sk, child, req, 1);
 		if (ret < 0)
 			goto listen_overflow;
 
@@ -813,7 +813,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		if (!ret)
 			return tcp_sk(child)->mpcb->master_sk;
 	} else {
-		return mptcp_check_req_child(sk, child, req, prev, &mopt);
+		return mptcp_check_req_child(sk, child, req, &mopt);
 	}
 
 	inet_csk_reqsk_queue_drop(sk, req);

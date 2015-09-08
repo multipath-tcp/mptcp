@@ -338,9 +338,6 @@ struct mptcp_cb {
 	int orig_sk_rcvbuf;
 	int orig_sk_sndbuf;
 	u32 orig_window_clamp;
-
-	/* Timer for retransmitting SYN/ACK+MP_JOIN */
-	struct timer_list synack_timer;
 };
 
 #define MPTCP_SUB_CAPABLE			0
@@ -805,11 +802,9 @@ int mptcp_doit(struct sock *sk);
 int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key, u32 window);
 int mptcp_check_req_fastopen(struct sock *child, struct request_sock *req);
 int mptcp_check_req_master(struct sock *sk, struct sock *child,
-			   struct request_sock *req,
-			   struct request_sock **prev);
+			   struct request_sock *req, int drop);
 struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
 				   struct request_sock *req,
-				   struct request_sock **prev,
 				   const struct mptcp_options_received *mopt);
 u32 __mptcp_select_window(struct sock *sk);
 void mptcp_select_initial_window(int __space, __u32 mss, __u32 *rcv_wnd,
@@ -904,18 +899,6 @@ static inline void mptcp_init_tcp_sock(struct sock *sk)
 {
 	if (!mptcp_init_failed && sysctl_mptcp_enabled == MPTCP_SYSCTL)
 		mptcp_enable_sock(sk);
-}
-
-static inline void mptcp_reset_synack_timer(struct sock *meta_sk,
-					    unsigned long len)
-{
-	sk_reset_timer(meta_sk, &tcp_sk(meta_sk)->mpcb->synack_timer,
-		       jiffies + len);
-}
-
-static inline void mptcp_delete_synack_timer(struct sock *meta_sk)
-{
-	sk_stop_timer(meta_sk, &tcp_sk(meta_sk)->mpcb->synack_timer);
 }
 
 static inline int mptcp_pi_to_flag(int pi)
@@ -1423,14 +1406,13 @@ static inline int mptcp_check_req_fastopen(struct sock *child,
 static inline int mptcp_check_req_master(const struct sock *sk,
 					 const struct sock *child,
 					 struct request_sock *req,
-					 struct request_sock **prev)
+					 int drop)
 {
 	return 1;
 }
 static inline struct sock *mptcp_check_req_child(struct sock *sk,
 						 struct sock *child,
 						 struct request_sock *req,
-						 struct request_sock **prev,
 						 const struct mptcp_options_received *mopt)
 {
 	return NULL;
@@ -1512,7 +1494,6 @@ static inline void mptcp_hash_remove_bh(struct tcp_sock *meta_tp) {}
 static inline void mptcp_hash_remove(struct tcp_sock *meta_tp) {}
 static inline void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
 					  const struct sk_buff *skb) {}
-static inline void mptcp_delete_synack_timer(struct sock *meta_sk) {}
 static inline void mptcp_init_tcp_sock(struct sock *sk) {}
 static inline void mptcp_disable_static_key(void) {}
 static inline void mptcp_cookies_reqsk_init(struct request_sock *req,

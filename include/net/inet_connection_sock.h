@@ -263,7 +263,6 @@ u32 inet_synq_hash(const __be32 raddr, const __be16 rport, const u32 rnd,
 		   const u32 synq_hsize);
 
 struct request_sock *inet_csk_search_req(struct sock *sk,
-					 struct request_sock ***prevp,
 					 const __be16 rport,
 					 const __be32 raddr,
 					 const __be32 laddr);

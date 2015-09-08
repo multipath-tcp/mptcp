@@ -690,8 +690,6 @@ void mptcp_destroy_sock(struct sock *sk)
 
 			mptcp_sub_close(sk_it, 0);
 		}
-
-		mptcp_delete_synack_timer(sk);
 	} else {
 		mptcp_del_sock(sk);
 	}
@@ -958,35 +956,6 @@ int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb)
 struct lock_class_key meta_key;
 struct lock_class_key meta_slock_key;
 
-static void mptcp_synack_timer_handler(unsigned long data)
-{
-	struct sock *meta_sk = (struct sock *) data;
-	struct listen_sock *lopt = inet_csk(meta_sk)->icsk_accept_queue.listen_opt;
-
-	/* Only process if socket is not in use. */
-	bh_lock_sock(meta_sk);
-
-	if (sock_owned_by_user(meta_sk)) {
-		/* Try again later. */
-		mptcp_reset_synack_timer(meta_sk, HZ/20);
-		goto out;
-	}
-
-	/* May happen if the queue got destructed in mptcp_close */
-	if (!lopt)
-		goto out;
-
-	inet_csk_reqsk_queue_prune(meta_sk, TCP_SYNQ_INTERVAL,
-				   TCP_TIMEOUT_INIT, TCP_RTO_MAX);
-
-	if (lopt->qlen)
-		mptcp_reset_synack_timer(meta_sk, TCP_SYNQ_INTERVAL);
-
-out:
-	bh_unlock_sock(meta_sk);
-	sock_put(meta_sk);
-}
-
 static const struct tcp_sock_ops mptcp_meta_specific = {
 	.__select_window		= __mptcp_select_window,
 	.select_window			= mptcp_select_window,
@@ -1197,9 +1166,6 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key, u32 window)
 
 	mptcp_init_path_manager(mpcb);
 	mptcp_init_scheduler(mpcb);
-
-	setup_timer(&mpcb->synack_timer, mptcp_synack_timer_handler,
-		    (unsigned long)meta_sk);
 
 	if (!try_module_get(inet_csk(master_sk)->icsk_ca_ops->owner))
 		tcp_assign_congestion_control(master_sk);
@@ -1783,8 +1749,6 @@ void mptcp_disconnect(struct sock *sk)
 	struct sock *subsk, *tmpsk;
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	mptcp_delete_synack_timer(sk);
-
 	__skb_queue_purge(&tp->mpcb->reinject_queue);
 
 	if (tp->inside_tk_table) {
@@ -2000,7 +1964,7 @@ int mptcp_check_req_fastopen(struct sock *child, struct request_sock *req)
 
 int mptcp_check_req_master(struct sock *sk, struct sock *child,
 			   struct request_sock *req,
-			   struct request_sock **prev)
+			   int drop)
 {
 	struct sock *meta_sk = child;
 	int ret;
@@ -2009,10 +1973,10 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	if (ret)
 		return ret;
 
-	/* prev indicates that we come from tcp_check_req and thus need to
+	/* drop indicates that we come from tcp_check_req and thus need to
 	 * handle the request-socket fully.
 	 */
-	if (prev) {
+	if (drop) {
 		inet_csk_reqsk_queue_drop(sk, req);
 	} else {
 		/* Thus, we come from syn-cookies */
@@ -2025,7 +1989,6 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 
 struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 				   struct request_sock *req,
-				   struct request_sock **prev,
 				   const struct mptcp_options_received *mopt)
 {
 	struct tcp_sock *child_tp = tcp_sk(child);
@@ -2091,18 +2054,14 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	/* Subflows do not use the accept queue, as they
 	 * are attached immediately to the mpcb.
 	 */
-	inet_csk_reqsk_queue_unlink(meta_sk, req, prev);
-	reqsk_queue_removed(&inet_csk(meta_sk)->icsk_accept_queue, req);
-	reqsk_free(req);
+	inet_csk_reqsk_queue_drop(meta_sk, req);
 
 	MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_JOINACKRX);
 	return child;
 
 teardown:
 	/* Drop this request - sock creation failed. */
-	inet_csk_reqsk_queue_unlink(meta_sk, req, prev);
-	reqsk_queue_removed(&inet_csk(meta_sk)->icsk_accept_queue, req);
-	reqsk_free(req);
+	inet_csk_reqsk_queue_drop(meta_sk, req);
 	inet_csk_prepare_forced_close(child);
 	tcp_done(child);
 	return meta_sk;
