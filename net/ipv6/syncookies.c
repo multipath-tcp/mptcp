@@ -67,11 +67,12 @@ static inline struct sock *get_cookie_sock(struct sock *sk, struct sk_buff *skb,
 listen_overflow:
 #endif
 
-	if (child)
+	if (child) {
+		atomic_set(&req->rsk_refcnt, 1);
 		inet_csk_reqsk_queue_add(sk, req, child);
-	else
+	} else {
 		reqsk_free(req);
-
+	}
 	return child;
 }
 
@@ -212,10 +213,10 @@ struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 	ret = NULL;
 #ifdef CONFIG_MPTCP
 	if (mopt.saw_mpc)
-		req = inet_reqsk_alloc(&mptcp6_request_sock_ops);
+		req = inet_reqsk_alloc(&mptcp6_request_sock_ops, sk);
 	else
 #endif
-		req = inet_reqsk_alloc(&tcp6_request_sock_ops);
+		req = inet_reqsk_alloc(&tcp6_request_sock_ops, sk);
 	if (!req)
 		goto out;
 
@@ -223,7 +224,7 @@ struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 	ireq->mptcp_rqsk = 0;
 	ireq->saw_mpc = 0;
 	treq = tcp_rsk(req);
-	treq->listener = NULL;
+	treq->tfo_listener = false;
 
 	/* Must be done before anything else, as it initializes
 	 * hash_entry of the MPTCP request-sock.
@@ -254,7 +255,6 @@ struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 
 	ireq->ir_mark = inet_request_mark(sk, skb);
 
-	req->expires = 0UL;
 	req->num_retrans = 0;
 	ireq->snd_wscale	= tcp_opt.snd_wscale;
 	ireq->sack_ok		= tcp_opt.sack_ok;

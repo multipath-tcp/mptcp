@@ -2013,8 +2013,10 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	 * handle the request-socket fully.
 	 */
 	if (prev) {
-		inet_csk_reqsk_queue_unlink(sk, req, prev);
-		inet_csk_reqsk_queue_removed(sk, req);
+		inet_csk_reqsk_queue_drop(sk, req);
+	} else {
+		/* Thus, we come from syn-cookies */
+		atomic_set(&req->rsk_refcnt, 1);
 	}
 	inet_csk_reqsk_queue_add(sk, req, meta_sk);
 
