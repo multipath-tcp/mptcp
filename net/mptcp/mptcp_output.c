@@ -1452,19 +1452,19 @@ void mptcp_retransmit_timer(struct sock *meta_sk)
 		 */
 		struct inet_sock *meta_inet = inet_sk(meta_sk);
 		if (meta_sk->sk_family == AF_INET) {
-			LIMIT_NETDEBUG(KERN_DEBUG "MPTCP: Peer %pI4:%u/%u unexpectedly shrunk window %u:%u (repaired)\n",
-				       &meta_inet->inet_daddr,
-				       ntohs(meta_inet->inet_dport),
-				       meta_inet->inet_num, meta_tp->snd_una,
-				       meta_tp->snd_nxt);
+			net_dbg_ratelimited("MPTCP: Peer %pI4:%u/%u unexpectedly shrunk window %u:%u (repaired)\n",
+					    &meta_inet->inet_daddr,
+					    ntohs(meta_inet->inet_dport),
+					    meta_inet->inet_num, meta_tp->snd_una,
+					    meta_tp->snd_nxt);
 		}
 #if IS_ENABLED(CONFIG_IPV6)
 		else if (meta_sk->sk_family == AF_INET6) {
-			LIMIT_NETDEBUG(KERN_DEBUG "MPTCP: Peer %pI6:%u/%u unexpectedly shrunk window %u:%u (repaired)\n",
-				       &meta_sk->sk_v6_daddr,
-				       ntohs(meta_inet->inet_dport),
-				       meta_inet->inet_num, meta_tp->snd_una,
-				       meta_tp->snd_nxt);
+			net_dbg_ratelimited("MPTCP: Peer %pI6:%u/%u unexpectedly shrunk window %u:%u (repaired)\n",
+					    &meta_sk->sk_v6_daddr,
+					    ntohs(meta_inet->inet_dport),
+					    meta_inet->inet_num, meta_tp->snd_una,
+					    meta_tp->snd_nxt);
 		}
 #endif
 		if (tcp_time_stamp - meta_tp->rcv_tstamp > TCP_RTO_MAX) {

@@ -430,7 +430,7 @@ static inline int mptcp_direct_copy(const struct sk_buff *skb,
 	__set_current_state(TASK_RUNNING);
 
 	local_bh_enable();
-	if (!skb_copy_datagram_iovec(skb, 0, meta_tp->ucopy.iov, chunk)) {
+	if (!skb_copy_datagram_msg(skb, 0, meta_tp->ucopy.msg, chunk)) {
 		meta_tp->ucopy.len -= chunk;
 		meta_tp->copied_seq += chunk;
 		eaten = (chunk == skb->len);
