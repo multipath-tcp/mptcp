@@ -1472,14 +1472,12 @@ void mptcp_sub_close_wq(struct work_struct *work)
 	/* We come from tcp_disconnect. We are sure that meta_sk is set */
 	if (!mptcp(tp)) {
 		tp->closing = 1;
-		sock_rps_reset_flow(sk);
 		tcp_close(sk, 0);
 		goto exit;
 	}
 
 	if (meta_sk->sk_shutdown == SHUTDOWN_MASK || sk->sk_state == TCP_CLOSE) {
 		tp->closing = 1;
-		sock_rps_reset_flow(sk);
 		tcp_close(sk, 0);
 	} else if (tcp_close_state(sk)) {
 		sk->sk_shutdown |= SEND_SHUTDOWN;
@@ -1527,7 +1525,6 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 
 			if (!mptcp(tp)) {
 				tp->closing = 1;
-				sock_rps_reset_flow(sk);
 				tcp_close(sk, 0);
 				return;
 			}
@@ -1535,7 +1532,6 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 			if (mptcp_meta_sk(sk)->sk_shutdown == SHUTDOWN_MASK ||
 			    sk->sk_state == TCP_CLOSE) {
 				tp->closing = 1;
-				sock_rps_reset_flow(sk);
 				tcp_close(sk, 0);
 			} else if (tcp_close_state(sk)) {
 				sk->sk_shutdown |= SEND_SHUTDOWN;
