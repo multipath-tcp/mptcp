@@ -186,13 +186,15 @@ struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 	int mss;
 	struct dst_entry *dst;
 	__u8 rcv_wscale;
-	bool ecn_ok = false;
 
 	if (!sysctl_tcp_syncookies || !th->ack || th->rst)
 		goto out;
 
-	if (tcp_synq_no_recent_overflow(sk) ||
-		(mss = __cookie_v6_check(ipv6_hdr(skb), th, cookie)) == 0) {
+	if (tcp_synq_no_recent_overflow(sk))
+		goto out;
+
+	mss = __cookie_v6_check(ipv6_hdr(skb), th, cookie);
+	if (mss == 0) {
 		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_SYNCOOKIESFAILED);
 		goto out;
 	}
@@ -204,7 +206,7 @@ struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 	mptcp_init_mp_opt(&mopt);
 	tcp_parse_options(skb, &tcp_opt, &mopt, 0, NULL);
 
-	if (!cookie_check_timestamp(&tcp_opt, sock_net(sk), &ecn_ok))
+	if (!cookie_timestamp_decode(&tcp_opt))
 		goto out;
 
 	ret = NULL;
@@ -254,7 +256,6 @@ struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 
 	req->expires = 0UL;
 	req->num_retrans = 0;
-	ireq->ecn_ok		= ecn_ok;
 	ireq->snd_wscale	= tcp_opt.snd_wscale;
 	ireq->sack_ok		= tcp_opt.sack_ok;
 	ireq->wscale_ok		= tcp_opt.wscale_ok;
@@ -295,6 +296,7 @@ struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 				       dst_metric(dst, RTAX_INITRWND), sk);
 
 	ireq->rcv_wscale = rcv_wscale;
+	ireq->ecn_ok = cookie_ecn_ok(&tcp_opt, sock_net(sk), dst);
 
 	ret = get_cookie_sock(sk, skb, req, dst);
 out:
@@ -303,4 +305,3 @@ out_free:
 	reqsk_free(req);
 	return NULL;
 }
-
