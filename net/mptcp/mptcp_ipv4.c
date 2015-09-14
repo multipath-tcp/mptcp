@@ -162,23 +162,7 @@ static void mptcp_v4_reqsk_queue_hash_add(struct sock *meta_sk,
 	const u32 h1 = inet_synq_hash(inet_rsk(req)->ir_rmt_addr,
 				     inet_rsk(req)->ir_rmt_port,
 				     0, MPTCP_HASH_SIZE);
-	/* We cannot call inet_csk_reqsk_queue_hash_add(), because we do not
-	 * want to reset the keepalive-timer (responsible for retransmitting
-	 * SYN/ACKs). We do not retransmit SYN/ACKs+MP_JOINs, because we cannot
-	 * overload the keepalive timer. Also, it's not a big deal, because the
-	 * third ACK of the MP_JOIN-handshake is sent in a reliable manner. So,
-	 * if the third ACK gets lost, the client will handle the retransmission
-	 * anyways. If our SYN/ACK gets lost, the client will retransmit the
-	 * SYN.
-	 */
-	struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
-	struct listen_sock *lopt = meta_icsk->icsk_accept_queue.listen_opt;
-	const u32 h2 = inet_synq_hash(inet_rsk(req)->ir_rmt_addr,
-				     inet_rsk(req)->ir_rmt_port,
-				     lopt->hash_rnd, lopt->nr_table_entries);
-
-	reqsk_queue_hash_req(&meta_icsk->icsk_accept_queue, h2, req, timeout);
-	reqsk_queue_added(&meta_icsk->icsk_accept_queue);
+	inet_csk_reqsk_queue_hash_add(meta_sk, req, timeout);
 
 	rcu_read_lock();
 	spin_lock(&mptcp_reqsk_hlock);
