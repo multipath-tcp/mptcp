@@ -610,7 +610,8 @@ static void reqsk_timer_handler(unsigned long data)
 	int max_retries, thresh;
 	u8 defer_accept;
 
-	if (sk_listener->sk_state != TCP_LISTEN || !lopt) {
+	if ((sk_listener->sk_state != TCP_LISTEN && !is_meta_sk(sk_listener)) ||
+	    !lopt) {
 		reqsk_put(req);
 		return;
 	}
