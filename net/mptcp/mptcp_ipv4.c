@@ -270,8 +270,10 @@ reset_and_discard:
 		 */
 		req = inet_csk_search_req(meta_sk, th->source, iph->saddr, iph->daddr);
 
-		if (req)
+		if (req) {
 			inet_csk_reqsk_queue_drop(meta_sk, req);
+			reqsk_put(req);
+		}
 	}
 
 	tcp_v4_send_reset(rsk, skb);

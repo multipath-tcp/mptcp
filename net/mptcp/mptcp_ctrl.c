@@ -2056,12 +2056,19 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	 */
 	inet_csk_reqsk_queue_drop(meta_sk, req);
 
+	/* The refcnt is initialized to 2, because regular TCP will put him
+	 * in the socket's listener queue. However, we do not have a listener-queue.
+	 * So, we need to make sure that this request-sock indeed gets destroyed.
+	 */
+	reqsk_put(req);
+
 	MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_JOINACKRX);
 	return child;
 
 teardown:
 	/* Drop this request - sock creation failed. */
 	inet_csk_reqsk_queue_drop(meta_sk, req);
+	reqsk_put(req);
 	inet_csk_prepare_forced_close(child);
 	tcp_done(child);
 	return meta_sk;

@@ -286,8 +286,10 @@ reset_and_discard:
 					   &ipv6_hdr(skb)->saddr,
 					   &ipv6_hdr(skb)->daddr, inet6_iif(skb));
 
-		if (req)
+		if (req) {
 			inet_csk_reqsk_queue_drop(meta_sk, req);
+			reqsk_put(req);
+		}
 	}
 
 	tcp_v6_send_reset(rsk, skb);
