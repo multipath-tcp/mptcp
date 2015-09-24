@@ -85,6 +85,15 @@ config MPTCP_ROUNDROBIN
 	  This is a very simple round-robin scheduler. Probably has bad performance
 	  but might be interesting for researchers.
 
+config MPTCP_REDUNDANT
+	tristate "MPTCP Redundant"
+	depends on (MPTCP=y)
+	---help---
+	  This is a very simple redundant scheduler, which floods each MPTCP segment
+	  through all the available TCP subflows. It has a bad throughput but it might
+	  be interesting for researchers focused on applications with low throughput but
+	  high latency and jitter demands.
+
 choice
 	prompt "Default MPTCP Scheduler"
 	default DEFAULT
@@ -103,6 +112,11 @@ choice
 		  This is the round-rob scheduler, sending in a round-robin
 		  fashion..
 
+	config DEFAULT_REDUNDANT
+		bool "Redundant" if MPTCP_REDUNDANT=y
+		---help---
+		  This is the redundant scheduler, sending each MPTCP segment
+		  through all the available TCP subflows...
 endchoice
 endif
 
@@ -111,5 +125,6 @@ config DEFAULT_MPTCP_SCHED
 	depends on (MPTCP=y)
 	default "default" if DEFAULT_SCHEDULER
 	default "roundrobin" if DEFAULT_ROUNDROBIN
+	default "redundant" if DEFAULT_REDUNDANT
 	default "default"
 
