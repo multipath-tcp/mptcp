@@ -5,7 +5,7 @@
  *	Analysis, Design and Implementation:
  *	Qiuyu Peng <qpeng@caltech.edu>
  *	Anwar Walid <anwar@research.bell-labs.com>
- *	Jaehyun Hwang <jh.hwang@alcatel-lucent.com>
+ *	Jaehyun Hwang <jhyun.hwang@samsung.com>
  *	Steven H. Low <slow@caltech.edu>
  *
  *	This program is free software; you can redistribute it and/or
@@ -19,7 +19,7 @@
 
 #include <linux/module.h>
 
-/* The variable 'rate' (i.e., x_r) will be scaled down
+/* The variable 'rate' (i.e., x_r) will be scaled
  * e.g., from B/s to KB/s, MB/s, or GB/s
  * if max_rate > 2^rate_scale_limit
  */
@@ -80,7 +80,7 @@ static void mptcp_balia_recalc_ai(const struct sock *sk)
 	const struct mptcp_cb *mpcb = tp->mpcb;
 	const struct sock *sub_sk;
 	u64 max_rate = 0, rate = 0, sum_rate = 0;
-	u64 alpha = 0, ai = 0, md = 0;
+	u64 alpha, ai = tp->snd_cwnd, md = (tp->snd_cwnd >> 1);
 	int num_scale_down = 0;
 
 	if (!mpcb)
