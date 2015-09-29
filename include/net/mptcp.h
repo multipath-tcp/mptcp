@@ -756,6 +756,8 @@ extern spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
  */
 extern spinlock_t mptcp_tk_hashlock;	/* hashtable protection */
 
+extern const int mptcp_dss_len;
+
 /* Request-sockets can be hashed in the tk_htb for collision-detection or in
  * the regular htb for join-connections. We need to define different NULLS
  * values so that we can correctly detect a request-socket that has been
@@ -893,6 +895,26 @@ void mptcp_cleanup_scheduler(struct mptcp_cb *mpcb);
 void mptcp_get_default_scheduler(char *name);
 int mptcp_set_default_scheduler(const char *name);
 extern struct mptcp_sched_ops mptcp_sched_default;
+struct defsched_priv *defsched_get_priv(const struct tcp_sock *tp);
+void defsched_init(struct sock *sk);
+bool mptcp_is_def_unavailable(struct sock *sk);
+bool mptcp_is_temp_unavailable(struct sock *sk, const struct sk_buff *skb,
+				bool zero_wnd_test);
+bool mptcp_is_available(struct sock *sk, const struct sk_buff *skb,
+			bool zero_wnd_test);
+int mptcp_dont_reinject_skb(const struct tcp_sock *tp, const struct sk_buff *skb);
+bool subflow_is_backup(const struct tcp_sock *tp);
+bool subflow_is_active(const struct tcp_sock *tp);
+struct sock *get_subflow_from_selectors(struct mptcp_cb *mpcb,
+				struct sk_buff *skb,
+				bool (*selector)(const struct tcp_sock *),
+				bool zero_wnd_test, bool *force);
+struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal);
+struct sock *get_available_subflow(struct sock *meta_sk, struct sk_buff *skb,
+					bool zero_wnd_test);
+struct defsched_priv {
+       u32     last_rbuf_opti;
+};
 
 /* Initializes function-pointers and MPTCP-flags */
 static inline void mptcp_init_tcp_sock(struct sock *sk)

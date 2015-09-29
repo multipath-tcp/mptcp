@@ -6,16 +6,12 @@
 static DEFINE_SPINLOCK(mptcp_sched_list_lock);
 static LIST_HEAD(mptcp_sched_list);
 
-struct defsched_priv {
-	u32	last_rbuf_opti;
-};
-
-static struct defsched_priv *defsched_get_priv(const struct tcp_sock *tp)
+struct defsched_priv *defsched_get_priv(const struct tcp_sock *tp)
 {
 	return (struct defsched_priv *)&tp->mptcp->mptcp_sched[0];
 }
 
-static bool mptcp_is_def_unavailable(struct sock *sk)
+bool mptcp_is_def_unavailable(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 
@@ -35,7 +31,7 @@ static bool mptcp_is_def_unavailable(struct sock *sk)
 	return false;
 }
 
-static bool mptcp_is_temp_unavailable(struct sock *sk,
+bool mptcp_is_temp_unavailable(struct sock *sk,
 				      const struct sk_buff *skb,
 				      bool zero_wnd_test)
 {
@@ -101,7 +97,7 @@ static bool mptcp_is_temp_unavailable(struct sock *sk,
 }
 
 /* Is the sub-socket sk available to send the skb? */
-static bool mptcp_is_available(struct sock *sk, const struct sk_buff *skb,
+bool mptcp_is_available(struct sock *sk, const struct sk_buff *skb,
 			       bool zero_wnd_test)
 {
 	return !mptcp_is_def_unavailable(sk) &&
@@ -109,7 +105,7 @@ static bool mptcp_is_available(struct sock *sk, const struct sk_buff *skb,
 }
 
 /* Are we not allowed to reinject this skb on tp? */
-static int mptcp_dont_reinject_skb(const struct tcp_sock *tp, const struct sk_buff *skb)
+int mptcp_dont_reinject_skb(const struct tcp_sock *tp, const struct sk_buff *skb)
 {
 	/* If the skb has already been enqueued in this sk, try to find
 	 * another one.
@@ -119,12 +115,12 @@ static int mptcp_dont_reinject_skb(const struct tcp_sock *tp, const struct sk_bu
 		mptcp_pi_to_flag(tp->mptcp->path_index) & TCP_SKB_CB(skb)->path_mask;
 }
 
-static bool subflow_is_backup(const struct tcp_sock *tp)
+bool subflow_is_backup(const struct tcp_sock *tp)
 {
 	return tp->mptcp->rcv_low_prio || tp->mptcp->low_prio;
 }
 
-static bool subflow_is_active(const struct tcp_sock *tp)
+bool subflow_is_active(const struct tcp_sock *tp)
 {
 	return !tp->mptcp->rcv_low_prio && !tp->mptcp->low_prio;
 }
@@ -132,7 +128,7 @@ static bool subflow_is_active(const struct tcp_sock *tp)
 /* Generic function to iterate over used and unused subflows and to select the
  * best one
  */
-static struct sock
+struct sock
 *get_subflow_from_selectors(struct mptcp_cb *mpcb, struct sk_buff *skb,
 			    bool (*selector)(const struct tcp_sock *),
 			    bool zero_wnd_test, bool *force)
@@ -214,7 +210,7 @@ static struct sock
  *
  * Additionally, this function is aware of the backup-subflows.
  */
-static struct sock *get_available_subflow(struct sock *meta_sk,
+struct sock *get_available_subflow(struct sock *meta_sk,
 					  struct sk_buff *skb,
 					  bool zero_wnd_test)
 {
@@ -262,7 +258,7 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 	return sk;
 }
 
-static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
+struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 {
 	struct sock *meta_sk;
 	const struct tcp_sock *tp = tcp_sk(sk);
@@ -445,7 +441,7 @@ static struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
 	return skb;
 }
 
-static void defsched_init(struct sock *sk)
+void defsched_init(struct sock *sk)
 {
 	struct defsched_priv *dsp = defsched_get_priv(tcp_sk(sk));
 
