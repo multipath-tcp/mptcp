@@ -1,22 +1,22 @@
 /* MPTCP Scheduler for redundant transmission.
  *
  * The scheduler will transmit information replicated through all the available
- * active (non-backup) subflows. When backup subflows are used no replication
- * is performed
+ * active (non-backup) subflows. When backup subflows are used no replication is
+ * performed
  *
  * The code is highly inspired in mptcp_sched.c
  *
  * Design:
- * Christian Pinedo <christian.pinedo@ehu.eus> <chr.pinedo@gmail.com>
- * Igor Lopez <igor.lopez@ehu.eus>
+ * - Christian Pinedo <christian.pinedo@ehu.eus> <chr.pinedo@gmail.com>
+ * - Igor Lopez <igor.lopez@ehu.eus>
  *
  * Implementation:
- * Christian Pinedo <christian.pinedo@ehu.eus> <chr.pinedo@gmail.com>
+ * - Christian Pinedo <christian.pinedo@ehu.eus> <chr.pinedo@gmail.com>
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version
- * 2 of the License, or (at your option) any later version.
+ * This program is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License as published by the Free Software
+ * Foundation; either version 2 of the License, or (at your option) any later
+ * version.
  */
 
 #include <linux/module.h>	/* Needed by all modules */
@@ -25,7 +25,8 @@
 /* Modified __mptcp_next_segment from mptcp_sched.c to re-send skbs through
  * other paths
  */
-static struct sk_buff *__redundant_next_segment(struct sock *meta_sk, int *reinject)
+static struct sk_buff *__redundant_next_segment(struct sock *meta_sk,
+						int *reinject)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct sk_buff *skb = NULL;
@@ -40,11 +41,11 @@ begin:
 	skb = skb_peek(&mpcb->reinject_queue);
 
 	if (skb) {
-		// Reinjected or Redundant skb
+		/* Reinjected or Redundant skb */
 		*reinject = 1;
 
 		if (TCP_SKB_CB(skb)->dss[1] == 1) {
-			// Additional checks for a redundant skb
+			/* Additional checks for a redundant skb */
 			struct sock *subsk = get_available_subflow(meta_sk,
 								   skb,
 								   false);
@@ -58,8 +59,8 @@ begin:
 
 			tp = tcp_sk(subsk);
 			if (TCP_SKB_CB(skb)->path_mask == 0 ||
-			    TCP_SKB_CB(skb)->path_mask &
-			    mptcp_pi_to_flag(tp->mptcp->path_index)) {
+				TCP_SKB_CB(skb)->path_mask &
+				mptcp_pi_to_flag(tp->mptcp->path_index)) {
 				skb_unlink(skb, &mpcb->reinject_queue);
 				__kfree_skb(skb);
 				goto begin;
@@ -67,14 +68,16 @@ begin:
 
 		}
 	} else {
-		// Normal skb
+		/* Normal skb */
 		skb = tcp_send_head(meta_sk);
 
 		if (!skb && meta_sk->sk_socket &&
-		    test_bit(SOCK_NOSPACE, &meta_sk->sk_socket->flags) &&
-		    sk_stream_wspace(meta_sk) < sk_stream_min_wspace(meta_sk)) {
-			struct sock *subsk = get_available_subflow(meta_sk, NULL,
-								   false);
+			test_bit(SOCK_NOSPACE, &meta_sk->sk_socket->flags) &&
+			sk_stream_wspace(meta_sk) <
+				sk_stream_min_wspace(meta_sk)) {
+			struct sock *subsk = get_available_subflow(meta_sk,
+									NULL,
+									false);
 			if (!subsk)
 				return NULL;
 
@@ -86,11 +89,13 @@ begin:
 	return skb;
 }
 
-/* Modified mptcp_next_segment from mptcp_sched.c to re-send skbs through other paths */
+/* Modified mptcp_next_segment from mptcp_sched.c to re-send skbs through other
+ * paths
+ */
 static struct sk_buff *redundant_next_segment(struct sock *meta_sk,
-					     int *reinject,
-					     struct sock **subsk,
-					     unsigned int *limit)
+						int *reinject,
+						struct sock **subsk,
+						unsigned int *limit)
 {
 	struct sk_buff *skb = __redundant_next_segment(meta_sk, reinject);
 	unsigned int mss_now;
@@ -111,7 +116,8 @@ static struct sk_buff *redundant_next_segment(struct sock *meta_sk,
 	subtp = tcp_sk(*subsk);
 	mss_now = tcp_current_mss(*subsk);
 
-	if (!*reinject && unlikely(!tcp_snd_wnd_test(tcp_sk(meta_sk), skb, mss_now))) {
+	if (!*reinject && unlikely(!tcp_snd_wnd_test(tcp_sk(meta_sk),
+							skb, mss_now))) {
 		skb = mptcp_rcv_buf_optimization(*subsk, 1);
 		if (skb)
 			*reinject = -1;
@@ -125,28 +131,33 @@ static struct sk_buff *redundant_next_segment(struct sock *meta_sk,
 	 * Inspired in __mptcp_reinject_data() of mptcp_output.c file
 	 */
 	if (subflow_is_active(subtp) &&
-	    (!*reinject || (*reinject && TCP_SKB_CB(skb)->dss[1] != 1 ))) {
+		(!*reinject || (*reinject && TCP_SKB_CB(skb)->dss[1] != 1))) {
 		const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 		struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 		struct sock *sk;
+
 		mptcp_for_each_sk(mpcb, sk) {
 			struct tcp_sock *tp = tcp_sk(sk);
 			struct sk_buff *copy_skb;
+
 			if ((sk != *subsk) && subflow_is_active(tp)) {
 				/* This is an additional active sk!! */
 				copy_skb = pskb_copy_for_clone(skb, GFP_ATOMIC);
 				if (unlikely(!copy_skb))
 					continue;
 				copy_skb->sk = meta_sk;
-				if (!after(TCP_SKB_CB(copy_skb)->end_seq, meta_tp->snd_una)) {
+				if (!after(TCP_SKB_CB(copy_skb)->end_seq,
+						meta_tp->snd_una)) {
 					__kfree_skb(copy_skb);
 					break;
 				}
-				memset(TCP_SKB_CB(copy_skb)->dss, 0 , mptcp_dss_len);
+				memset(TCP_SKB_CB(copy_skb)->dss, 0,
+					mptcp_dss_len);
 				/* Set the path_mask for this copy_skb blocking
 				 * all the other active paths...
 				 */
-				TCP_SKB_CB(copy_skb)->path_mask |= ~(mptcp_pi_to_flag(tp->mptcp->path_index));
+				TCP_SKB_CB(copy_skb)->path_mask |=
+					~(mptcp_pi_to_flag(tp->mptcp->path_index));
 				/* Set one to mark this packet as a redundant
 				 * one and not a normal reinjection
 				 */
