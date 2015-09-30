@@ -51,8 +51,6 @@ begin:
 			struct tcp_sock *tp;
 
 			if (!subsk) {
-				pr_debug("redundant skb: deleted because of "
-					 "no-path\n");
 				skb_unlink(skb, &mpcb->reinject_queue);
 				__kfree_skb(skb);
 				goto begin;
@@ -62,20 +60,10 @@ begin:
 			if (TCP_SKB_CB(skb)->path_mask == 0 ||
 			    TCP_SKB_CB(skb)->path_mask &
 			    mptcp_pi_to_flag(tp->mptcp->path_index)) {
-				pr_debug("redundant skb: deleted because of "
-					 "no-desired-path (provided path %u, "
-					 "wanted by path_mask %u)\n",
-					 tp->mptcp->path_index,
-					 (-1u ^ TCP_SKB_CB(skb)->path_mask));
 				skb_unlink(skb, &mpcb->reinject_queue);
 				__kfree_skb(skb);
 				goto begin;
 			}
-
-			pr_debug("redundant skb: passed (provided path %u, "
-				 "wanted by path-mask %u)\n",
-				 tp->mptcp->path_index,
-				 (-1u ^ TCP_SKB_CB(skb)->path_mask));
 
 		}
 	} else {
@@ -136,14 +124,11 @@ static struct sk_buff *redundant_next_segment(struct sock *meta_sk,
 	 * going through active sk.
 	 * Inspired in __mptcp_reinject_data() of mptcp_output.c file
 	 */
-	pr_debug("skb: skb on path %u\n", subtp->mptcp->path_index);
 	if (subflow_is_active(subtp) &&
 	    (!*reinject || (*reinject && TCP_SKB_CB(skb)->dss[1] != 1 ))) {
 		const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 		struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 		struct sock *sk;
-		pr_debug("redundantable skb: %s skb on active path\n",
-			 (*reinject) ? "reinjected" : "new");
 		mptcp_for_each_sk(mpcb, sk) {
 			struct tcp_sock *tp = tcp_sk(sk);
 			struct sk_buff *copy_skb;
@@ -169,8 +154,6 @@ static struct sk_buff *redundant_next_segment(struct sock *meta_sk,
 				TCP_SKB_CB(copy_skb)->dss[1] = 1;
 				/* Enqueue */
 				skb_queue_tail(&mpcb->reinject_queue, copy_skb);
-				pr_debug("redundant skb: redundant skb scheduled for the path %u with path_mask %u\n",
-					 tp->mptcp->path_index, TCP_SKB_CB(copy_skb)->path_mask);
 			}
 		}
 	}
