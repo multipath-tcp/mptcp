@@ -146,8 +146,7 @@ static struct sk_buff *redundant_next_segment(struct sock *meta_sk,
 				/* Set the path_mask for this copy_skb blocking
 				 * all the other active paths...
 				 */
-				TCP_SKB_CB(copy_skb)->path_mask = mptcp_pi_to_flag(tp->mptcp->path_index);
-				TCP_SKB_CB(copy_skb)->path_mask ^= -1u;
+				TCP_SKB_CB(copy_skb)->path_mask |= ~(mptcp_pi_to_flag(tp->mptcp->path_index));
 				/* Set one to mark this packet as a redundant
 				 * one and not a normal reinjection
 				 */
