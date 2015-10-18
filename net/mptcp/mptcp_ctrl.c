@@ -2092,8 +2092,10 @@ int mptcp_init_tw_sock(struct sock *sk, struct tcp_timewait_sock *tw)
 
 	/* Alloc MPTCP-tw-sock */
 	mptw = kmem_cache_alloc(mptcp_tw_cache, GFP_ATOMIC);
-	if (!mptw)
+	if (!mptw) {
+		tw->mptcp_tw = NULL;
 		return -ENOBUFS;
+	}
 
 	atomic_inc(&mpcb->mpcb_refcnt);
 
