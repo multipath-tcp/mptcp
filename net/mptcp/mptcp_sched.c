@@ -251,7 +251,7 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 
 	sk = get_subflow_from_selectors(mpcb, skb, &subflow_is_backup,
 					zero_wnd_test, &force);
-	if (!force)
+	if (!force && skb)
 		/* one used backup sk or one NULL sk where there is no one
 		 * temporally unavailable unused backup sk
 		 *
