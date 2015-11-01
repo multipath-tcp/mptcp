@@ -57,14 +57,17 @@ EXPORT_SYMBOL(mptcp_sub_len_remove_addr_align);
 /* get the data-seq and end-data-seq and store them again in the
  * tcp_skb_cb
  */
-static int mptcp_reconstruct_mapping(struct sk_buff *skb)
+static bool mptcp_reconstruct_mapping(struct sk_buff *skb)
 {
 	const struct mp_dss *mpdss = (struct mp_dss *)TCP_SKB_CB(skb)->dss;
 	u32 *p32;
 	u16 *p16;
 
+	if (!mptcp_is_data_seq(skb))
+		return false;
+
 	if (!mpdss->M)
-		return 1;
+		return false;
 
 	/* Move the pointer to the data-seq */
 	p32 = (u32 *)mpdss;
@@ -83,7 +86,7 @@ static int mptcp_reconstruct_mapping(struct sk_buff *skb)
 	p16 = (u16 *)p32;
 	TCP_SKB_CB(skb)->end_seq = ntohs(*p16) + TCP_SKB_CB(skb)->seq;
 
-	return 0;
+	return true;
 }
 
 static bool mptcp_is_reinjected(const struct sk_buff *skb)
@@ -135,7 +138,7 @@ static void __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk
 	if (unlikely(!skb))
 		return;
 
-	if (sk && mptcp_reconstruct_mapping(skb)) {
+	if (sk && !mptcp_reconstruct_mapping(skb)) {
 		__kfree_skb(skb);
 		return;
 	}
