@@ -426,10 +426,10 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 		return false;
 
 	/* At the subflow-level we need to call again tcp_init_tso_segs. We
-	 * force this, by setting gso_segs to 0. It has been set to 1 prior to
+	 * force this, by setting pcount to 0. It has been set to 1 prior to
 	 * the call to mptcp_skb_entail.
 	 */
-	skb_shinfo(subskb)->gso_segs = 0;
+	tcp_skb_pcount_set(subskb, 0);
 
 	TCP_SKB_CB(skb)->path_mask |= mptcp_pi_to_flag(tp->mptcp->path_index);
 
