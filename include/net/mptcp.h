@@ -186,7 +186,7 @@ struct mptcp_tcp_sock {
 	u8	loc_id;
 	u8	rem_id;
 
-#define MPTCP_SCHED_SIZE 4
+#define MPTCP_SCHED_SIZE 32
 	u8	mptcp_sched[MPTCP_SCHED_SIZE] __aligned(8);
 
 	struct sk_buff  *shortcut_ofoqueue; /* Shortcut to the current modified
@@ -251,6 +251,7 @@ struct mptcp_sched_ops {
 						struct sock **subsk,
 						unsigned int *limit);
 	void			(*init)(struct sock *sk);
+	void			(*release)(struct sock *sk);
 
 	char			name[MPTCP_SCHED_NAME_MAX];
 	struct module		*owner;
@@ -283,6 +284,8 @@ struct mptcp_cb {
 	u8 cnt_subflows;
 	u8 cnt_established;
 
+#define MPTCP_SCHED_DATA_SIZE 8
+	u8 mptcp_sched[MPTCP_SCHED_DATA_SIZE] __aligned(8);
 	struct mptcp_sched_ops *sched_ops;
 
 	struct sk_buff_head reinject_queue;
@@ -897,6 +900,8 @@ void mptcp_init_scheduler(struct mptcp_cb *mpcb);
 void mptcp_cleanup_scheduler(struct mptcp_cb *mpcb);
 void mptcp_get_default_scheduler(char *name);
 int mptcp_set_default_scheduler(const char *name);
+bool mptcp_is_available(struct sock *sk, const struct sk_buff *skb,
+			       bool zero_wnd_test);
 extern struct mptcp_sched_ops mptcp_sched_default;
 
 /* Initializes function-pointers and MPTCP-flags */
