@@ -486,7 +486,7 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 		} else {
 			/* RTO revert clocked out retransmission.
 			 * Will retransmit now */
-			tcp_retransmit_timer(sk);
+			tcp_sk(sk)->ops->retransmit_timer(sk);
 		}
 
 		break;

@@ -1369,7 +1369,7 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 	subsk = meta_tp->mpcb->sched_ops->get_subflow(meta_sk, skb, false);
 	if (!subsk) {
 		/* We want to increase icsk_retransmits, thus return 0, so that
-		 * mptcp_retransmit_timer enters the desired branch.
+		 * mptcp_meta_retransmit_timer enters the desired branch.
 		 */
 		err = 0;
 		goto failed;
@@ -1429,7 +1429,7 @@ failed:
  * The diff is that we have to handle retransmissions of the FAST_CLOSE-message
  * and that we don't have an srtt estimation at the meta-level.
  */
-void mptcp_retransmit_timer(struct sock *meta_sk)
+void mptcp_meta_retransmit_timer(struct sock *meta_sk)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
@@ -1541,6 +1541,18 @@ out_reset_timer:
 	inet_csk_reset_xmit_timer(meta_sk, ICSK_TIME_RETRANS, meta_icsk->icsk_rto, TCP_RTO_MAX);
 
 	return;
+}
+
+void mptcp_sub_retransmit_timer(struct sock *sk)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	tcp_retransmit_timer(sk);
+
+	if (!tp->fastopen_rsk) {
+		mptcp_reinject_data(sk, 1);
+		mptcp_set_rto(sk);
+	}
 }
 
 /* Modify values to an mptcp-level for the initial window of new subflows */

@@ -495,10 +495,6 @@ out_reset_timer:
 		__sk_dst_reset(sk);
 
 out:;
-	if (mptcp(tp)) {
-		mptcp_reinject_data(sk, 1);
-		mptcp_set_rto(sk);
-	}
 }
 
 void tcp_write_timer_handler(struct sock *sk)
