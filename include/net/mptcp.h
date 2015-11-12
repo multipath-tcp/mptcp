@@ -443,6 +443,7 @@ extern bool mptcp_init_failed;
 #define MPTCPHDR_JOIN		0x80
 /* MPTCP flags: TX only */
 #define MPTCPHDR_INF		0x08
+#define MPTCP_REINJECT		0x10 /* Did we reinject this segment? */
 
 struct mptcp_option {
 	__u8	kind;

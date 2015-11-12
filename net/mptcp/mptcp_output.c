@@ -86,6 +86,11 @@ static int mptcp_reconstruct_mapping(struct sk_buff *skb)
 	return 0;
 }
 
+static bool mptcp_is_reinjected(const struct sk_buff *skb)
+{
+	return TCP_SKB_CB(skb)->mptcp_flags & MPTCP_REINJECT;
+}
+
 static void mptcp_find_and_set_pathmask(const struct sock *meta_sk, struct sk_buff *skb)
 {
 	struct sk_buff *skb_it;
@@ -257,6 +262,10 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 		    (tcb->tcp_flags & TCPHDR_FIN && mptcp_is_data_fin(skb_it) && !skb_it->len))
 			continue;
 
+		if (mptcp_is_reinjected(skb_it))
+			continue;
+
+		tcb->mptcp_flags |= MPTCP_REINJECT;
 		__mptcp_reinject_data(skb_it, meta_sk, sk, clone_it);
 	}
 
