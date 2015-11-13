@@ -36,7 +36,7 @@
 #include <net/mptcp_v6.h>
 #include <net/sock.h>
 
-static const int mptcp_dss_len = MPTCP_SUB_LEN_DSS_ALIGN +
+const int mptcp_dss_len = MPTCP_SUB_LEN_DSS_ALIGN +
 				 MPTCP_SUB_LEN_ACK_ALIGN +
 				 MPTCP_SUB_LEN_SEQ_ALIGN;
 
