@@ -205,7 +205,9 @@ static inline struct sock *get_cookie_sock(struct sock *sk, struct sk_buff *skb,
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct sock *child;
+#ifdef CONFIG_MPTCP
 	int ret;
+#endif
 
 	child = icsk->icsk_af_ops->syn_recv_sock(sk, skb, req, dst);
 
