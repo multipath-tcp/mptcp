@@ -222,7 +222,7 @@ retry:
 		}
 
 		/* Or, it must then be fully used  */
-		if (rsp->quota == num_segments)
+		if (rsp->quota >= num_segments)
 			full_subs++;
 	}
 
