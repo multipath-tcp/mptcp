@@ -1750,27 +1750,3 @@ unsigned int mptcp_xmit_size_goal(const struct sock *meta_sk, u32 mss_now,
 	return max(xmit_size_goal, mss_now);
 }
 
-/* Similar to tcp_trim_head - but we correctly copy the DSS-option */
-int mptcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
-{
-	if (skb_cloned(skb)) {
-		if (pskb_expand_head(skb, 0, 0, GFP_ATOMIC))
-			return -ENOMEM;
-	}
-
-	__pskb_trim_head(skb, len);
-
-	TCP_SKB_CB(skb)->seq += len;
-	skb->ip_summed = CHECKSUM_PARTIAL;
-
-	skb->truesize	     -= len;
-	sk->sk_wmem_queued   -= len;
-	sk_mem_uncharge(sk, len);
-	sock_set_flag(sk, SOCK_QUEUE_SHRUNK);
-
-	/* Any change of skb->len requires recalculation of tso factor. */
-	if (tcp_skb_pcount(skb) > 1)
-		tcp_set_skb_tso_segs(sk, skb, tcp_skb_mss(skb));
-
-	return 0;
-}
