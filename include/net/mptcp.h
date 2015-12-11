@@ -875,6 +875,7 @@ void mptcp_disable_static_key(void);
 void mptcp_cookies_reqsk_init(struct request_sock *req,
 			      struct mptcp_options_received *mopt,
 			      struct sk_buff *skb);
+void mptcp_sock_destruct(struct sock *sk);
 
 /* MPTCP-path-manager registration/initialization functions */
 int mptcp_register_path_manager(struct mptcp_pm_ops *pm);
