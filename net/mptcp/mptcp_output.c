@@ -921,7 +921,6 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_MP_FAIL;
 		*size += MPTCP_SUB_LEN_FAIL;
-		return;
 	}
 
 	if (unlikely(tp->send_mp_fclose)) {
