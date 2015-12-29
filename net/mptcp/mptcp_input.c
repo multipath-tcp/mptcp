@@ -1146,6 +1146,8 @@ struct mp_join *mptcp_find_join(const struct sk_buff *skb)
 			length--;
 			continue;
 		default:
+			if (length == 1)	/* not enough room for opsize */
+				return NULL;
 			opsize = *ptr++;
 			if (opsize < 2)	/* "silly options" */
 				return NULL;
@@ -1859,6 +1861,8 @@ void tcp_parse_mptcp_options(const struct sk_buff *skb,
 			length--;
 			continue;
 		default:
+			if (length == 1)	/* not enough room for opsize */
+				return;
 			opsize = *ptr++;
 			if (opsize < 2)	/* "silly options" */
 				return;
