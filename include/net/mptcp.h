@@ -951,7 +951,8 @@ static inline void mptcp_push_pending_frames(struct sock *meta_sk)
 
 static inline void mptcp_send_reset(struct sock *sk)
 {
-	tcp_sk(sk)->ops->send_active_reset(sk, GFP_ATOMIC);
+	if (tcp_need_reset(sk->sk_state))
+		tcp_sk(sk)->ops->send_active_reset(sk, GFP_ATOMIC);
 	mptcp_sub_force_close(sk);
 }
 
@@ -962,7 +963,7 @@ static inline void mptcp_sub_force_close_all(struct mptcp_cb *mpcb,
 
 	mptcp_for_each_sk_safe(mpcb, sk_it, tmp) {
 		if (sk_it != except)
-			mptcp_sub_force_close(sk_it);
+			mptcp_send_reset(sk_it);
 	}
 }
 

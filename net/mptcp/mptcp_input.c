@@ -1596,11 +1596,7 @@ static void mptcp_send_reset_rem_id(const struct mptcp_cb *mpcb, u8 rem_id)
 	mptcp_for_each_sk_safe(mpcb, sk_it, tmpsk) {
 		if (tcp_sk(sk_it)->mptcp->rem_id == rem_id) {
 			mptcp_reinject_data(sk_it, 0);
-			sk_it->sk_err = ECONNRESET;
-			if (tcp_need_reset(sk_it->sk_state))
-				tcp_sk(sk_it)->ops->send_active_reset(sk_it,
-								      GFP_ATOMIC);
-			mptcp_sub_force_close(sk_it);
+			mptcp_send_reset(sk_it);
 		}
 	}
 }
@@ -2046,9 +2042,6 @@ static inline int mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
 		if (mptcp->rx_opt.mptcp_sender_key != mpcb->mptcp_loc_key)
 			return 0;
 
-		if (tcp_need_reset(sk->sk_state))
-			tcp_sk(sk)->ops->send_active_reset(sk, GFP_ATOMIC);
-
 		mptcp_sub_force_close_all(mpcb, NULL);
 
 		tcp_reset(meta_sk);
@@ -2088,10 +2081,7 @@ int mptcp_handle_options(struct sock *sk, const struct tcphdr *th,
 	 */
 	if (mptcp_is_data_seq(skb) && tp->mpcb->dss_csum &&
 	    !(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_DSS_CSUM)) {
-		if (tcp_need_reset(sk->sk_state))
-			tp->ops->send_active_reset(sk, GFP_ATOMIC);
-
-		mptcp_sub_force_close(sk);
+		mptcp_send_reset(sk);
 		return 1;
 	}
 
