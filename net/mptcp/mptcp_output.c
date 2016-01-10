@@ -1235,10 +1235,18 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 	/* We are in infinite mode or about to go there - just send a reset */
 	if (mpcb->infinite_mapping_snd || mpcb->send_infinite_mapping ||
 	    mpcb->infinite_mapping_rcv) {
+
+		/* tcp_done must be handled with bh disabled */
+		if (!in_serving_softirq())
+			local_bh_disable();
+
 		sk->sk_err = ECONNRESET;
 		if (tcp_need_reset(sk->sk_state))
 			tcp_send_active_reset(sk, priority);
 		mptcp_sub_force_close(sk);
+
+		if (!in_serving_softirq())
+			local_bh_enable();
 		return;
 	}
 
