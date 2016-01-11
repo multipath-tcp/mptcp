@@ -658,6 +658,7 @@ void tcp_send_loss_probe(struct sock *sk);
 bool tcp_schedule_loss_probe(struct sock *sk);
 
 u16 tcp_select_window(struct sock *sk);
+int select_size(const struct sock *sk, bool sg);
 bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		int push_one, gfp_t gfp);
 
@@ -1792,6 +1793,7 @@ struct tcp_sock_ops {
 				      __u32 *window_clamp, int wscale_ok,
 				      __u8 *rcv_wscale, __u32 init_rcv_wnd,
 				      const struct sock *sk);
+	int (*select_size)(const struct sock *sk, bool sg);
 	void (*init_buffer_space)(struct sock *sk);
 	void (*set_rto)(struct sock *sk);
 	bool (*should_expand_sndbuf)(const struct sock *sk);

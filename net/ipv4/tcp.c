@@ -376,6 +376,7 @@ const struct tcp_sock_ops tcp_specific = {
 	.__select_window		= __tcp_select_window,
 	.select_window			= tcp_select_window,
 	.select_initial_window		= tcp_select_initial_window,
+	.select_size			= select_size,
 	.init_buffer_space		= tcp_init_buffer_space,
 	.set_rto			= tcp_set_rto,
 	.should_expand_sndbuf		= tcp_should_expand_sndbuf,
@@ -1065,13 +1066,10 @@ int tcp_sendpage(struct sock *sk, struct page *page, int offset,
 }
 EXPORT_SYMBOL(tcp_sendpage);
 
-static inline int select_size(const struct sock *sk, bool sg)
+int select_size(const struct sock *sk, bool sg)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	int tmp = tp->mss_cache;
-
-	if (mptcp(tp))
-		return mptcp_select_size(sk, sg);
 
 	if (sg) {
 		if (sk_can_gso(sk)) {
@@ -1214,7 +1212,7 @@ new_segment:
 				goto wait_for_sndbuf;
 
 			skb = sk_stream_alloc_skb(sk,
-						  select_size(sk, sg),
+						  tp->ops->select_size(sk, sg),
 						  sk->sk_allocation);
 			if (!skb)
 				goto wait_for_memory;

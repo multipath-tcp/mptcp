@@ -1423,10 +1423,6 @@ static inline unsigned int mptcp_current_mss(struct sock *meta_sk)
 {
 	return 0;
 }
-static inline int mptcp_select_size(const struct sock *meta_sk, bool sg)
-{
-	return 0;
-}
 static inline void mptcp_sub_close_passive(struct sock *sk) {}
 static inline bool mptcp_fallback_infinite(const struct sock *sk, int flag)
 {
