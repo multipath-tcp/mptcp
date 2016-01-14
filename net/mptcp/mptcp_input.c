@@ -1611,7 +1611,8 @@ static inline bool is_valid_addropt_opsize(u8 mptcp_ver,
 		       opsize == MPTCP_SUB_LEN_ADD_ADDR6 + 2;
 	}
 	if (mptcp_ver >= MPTCP_VERSION_1 && mpadd->ipver == 6)
-		return false; /* IPv6 with ADD_ADDR2 not supported yet */
+		return opsize == MPTCP_SUB_LEN_ADD_ADDR6_VER1 ||
+		       opsize == MPTCP_SUB_LEN_ADD_ADDR6_VER1 + 2;
 #endif
 	if (mptcp_ver < MPTCP_VERSION_1 && mpadd->ipver == 4) {
 		return opsize == MPTCP_SUB_LEN_ADD_ADDR4 ||
@@ -1954,7 +1955,36 @@ skip_hmac_v4:
 		addr.in = mpadd->u.v4.addr;
 #if IS_ENABLED(CONFIG_IPV6)
 	} else if (mpadd->ipver == 6) {
-		if (mpadd->len == MPTCP_SUB_LEN_ADD_ADDR6 + 2)
+		char *recv_hmac;
+		u8 hash_mac_check[20];
+		u8 no_key[8];
+		int msg_parts;
+
+		if (mpcb->mptcp_ver < MPTCP_VERSION_1)
+			goto skip_hmac_v6;
+
+		*(u64 *)no_key = 0;
+		recv_hmac = (char *)mpadd->u.v6.mac;
+		if (mpadd->len == MPTCP_SUB_LEN_ADD_ADDR6_VER1) {
+			recv_hmac -= sizeof(mpadd->u.v6.port);
+			msg_parts = 2;
+		} else if (mpadd->len == MPTCP_SUB_LEN_ADD_ADDR6_VER1 + 2) {
+			msg_parts = 3;
+		}
+		mptcp_hmac_sha1((u8 *)&mpcb->mptcp_rem_key,
+				(u8 *)no_key,
+				(u32 *)hash_mac_check, msg_parts,
+				1, (u8 *)&mpadd->addr_id,
+				16, (u8 *)&mpadd->u.v6.addr.s6_addr,
+				2, (u8 *)&mpadd->u.v6.port);
+		if (memcmp(hash_mac_check, recv_hmac, 8) != 0)
+			/* ADD_ADDR2 discarded */
+			return;
+skip_hmac_v6:
+		if ((mpcb->mptcp_ver == MPTCP_VERSION_0 &&
+		     mpadd->len == MPTCP_SUB_LEN_ADD_ADDR6 + 2) ||
+		     (mpcb->mptcp_ver == MPTCP_VERSION_1 &&
+		     mpadd->len == MPTCP_SUB_LEN_ADD_ADDR6_VER1 + 2))
 			port  = mpadd->u.v6.port;
 		family = AF_INET6;
 		addr.in6 = mpadd->u.v6.addr;
