@@ -800,12 +800,15 @@ void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn)
 		*idsn = *((u64 *)&mptcp_hashed_key[3]);
 }
 
-void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
-		       u32 *hash_out)
+void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u32 *hash_out, int arg_num, ...)
 {
 	u32 workspace[SHA_WORKSPACE_WORDS];
 	u8 input[128]; /* 2 512-bit blocks */
 	int i;
+	int index;
+	int length;
+	u8 *msg;
+	va_list list;
 
 	memset(workspace, 0, sizeof(workspace));
 
@@ -816,14 +819,23 @@ void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u8 *rand_1, u8 *rand_2,
 	for (i = 0; i < 8; i++)
 		input[i + 8] ^= key_2[i];
 
-	memcpy(&input[64], rand_1, 4);
-	memcpy(&input[68], rand_2, 4);
-	input[72] = 0x80; /* Padding: First bit after message = 1 */
-	memset(&input[73], 0, 53);
+	va_start(list, arg_num);
+	index = 64;
+	for (i = 0; i < arg_num; i++) {
+		length = va_arg(list, int);
+		msg = va_arg(list, u8 *);
+		BUG_ON(index + length > 125); /* Message is too long */
+		memcpy(&input[index], msg, length);
+		index += length;
+	}
+	va_end(list);
 
-	/* Padding: Length of the message = 512 + 64 bits */
+	input[index] = 0x80; /* Padding: First bit after message = 1 */
+	memset(&input[index + 1], 0, (126 - index));
+
+	/* Padding: Length of the message = 512 + message length (bits) */
 	input[126] = 0x02;
-	input[127] = 0x40;
+	input[127] = ((index - 64) * 8); /* Message length (bits) */
 
 	sha_init(hash_out);
 	sha_transform(hash_out, input, workspace);
@@ -2032,9 +2044,9 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 
 	mptcp_hmac_sha1((u8 *)&mpcb->mptcp_rem_key,
 			(u8 *)&mpcb->mptcp_loc_key,
-			(u8 *)&mtreq->mptcp_rem_nonce,
-			(u8 *)&mtreq->mptcp_loc_nonce,
-			(u32 *)hash_mac_check);
+			(u32 *)hash_mac_check, 2,
+			4, (u8 *)&mtreq->mptcp_rem_nonce,
+			4, (u8 *)&mtreq->mptcp_loc_nonce);
 
 	if (memcmp(hash_mac_check, (char *)&mopt->mptcp_recv_mac, 20)) {
 		MPTCP_INC_STATS_BH(sock_net(meta_sk), MPTCP_MIB_JOINACKMAC);
@@ -2267,8 +2279,9 @@ void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, const struct request_sock *req
 
 	mptcp_hmac_sha1((u8 *)&mpcb->mptcp_loc_key,
 			(u8 *)&mpcb->mptcp_rem_key,
-			(u8 *)&mtreq->mptcp_loc_nonce,
-			(u8 *)&mtreq->mptcp_rem_nonce, (u32 *)mptcp_hash_mac);
+			(u32 *)mptcp_hash_mac, 2,
+			4, (u8 *)&mtreq->mptcp_loc_nonce,
+			4, (u8 *)&mtreq->mptcp_rem_nonce);
 	mtreq->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
 
 	mtreq->rem_id = mopt.rem_id;

@@ -2213,9 +2213,9 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 
 		mptcp_hmac_sha1((u8 *)&mpcb->mptcp_rem_key,
 				(u8 *)&mpcb->mptcp_loc_key,
-				(u8 *)&tp->mptcp->rx_opt.mptcp_recv_nonce,
-				(u8 *)&tp->mptcp->mptcp_loc_nonce,
-				(u32 *)hash_mac_check);
+				(u32 *)hash_mac_check, 2,
+				4, (u8 *)&tp->mptcp->rx_opt.mptcp_recv_nonce,
+				4, (u8 *)&tp->mptcp->mptcp_loc_nonce);
 		if (memcmp(hash_mac_check,
 			   (char *)&tp->mptcp->rx_opt.mptcp_recv_tmac, 8)) {
 			MPTCP_INC_STATS_BH(sock_net(sk), MPTCP_MIB_JOINSYNACKMAC);
@@ -2231,9 +2231,9 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 
 		mptcp_hmac_sha1((u8 *)&mpcb->mptcp_loc_key,
 				(u8 *)&mpcb->mptcp_rem_key,
-				(u8 *)&tp->mptcp->mptcp_loc_nonce,
-				(u8 *)&tp->mptcp->rx_opt.mptcp_recv_nonce,
-				(u32 *)&tp->mptcp->sender_mac[0]);
+				(u32 *)&tp->mptcp->sender_mac[0], 2,
+				4, (u8 *)&tp->mptcp->mptcp_loc_nonce,
+				4, (u8 *)&tp->mptcp->rx_opt.mptcp_recv_nonce);
 
 		MPTCP_INC_STATS_BH(sock_net(sk), MPTCP_MIB_JOINSYNACKRX);
 	} else if (mopt->saw_mpc) {
