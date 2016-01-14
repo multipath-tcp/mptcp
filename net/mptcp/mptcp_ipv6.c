@@ -106,7 +106,7 @@ static int mptcp_v6_init_req(struct request_sock *req, struct sock *sk,
 	 * input to the key-generation.
 	 */
 	if (!want_cookie)
-		mptcp_reqsk_init(req, skb, false);
+		mptcp_reqsk_init(req, sk, skb, false);
 
 	return 0;
 }
@@ -119,7 +119,7 @@ static u32 mptcp_v6_cookie_init_seq(struct request_sock *req, struct sock *sk,
 
 	tcp_rsk(req)->snt_isn = isn;
 
-	mptcp_reqsk_init(req, skb, true);
+	mptcp_reqsk_init(req, sk, skb, true);
 
 	return isn;
 }

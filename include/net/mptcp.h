@@ -107,7 +107,8 @@ struct mptcp_request_sock {
 	u8				dss_csum:1,
 					is_sub:1, /* Is this a new subflow? */
 					low_prio:1, /* Interface set to low-prio? */
-					rcv_low_prio:1;
+					rcv_low_prio:1,
+					mptcp_ver:4;
 };
 
 struct mptcp_options_received {
@@ -143,11 +144,13 @@ struct mptcp_options_received {
 	u32	data_seq;
 	u16	data_len;
 
-	u32	mptcp_rem_token;/* Remote token */
+	u8	mptcp_ver; /* MPTCP version */
 
 	/* Key inside the option (from mp_capable or fast_close) */
 	u64	mptcp_sender_key;
 	u64	mptcp_receiver_key;
+
+	u32	mptcp_rem_token; /* Remote token */
 
 	u32	mptcp_recv_nonce;
 	u64	mptcp_recv_tmac;
@@ -330,6 +333,8 @@ struct mptcp_cb {
 	u32 path_index_bits;
 	/* Next pi to pick up in case a new path becomes available */
 	u8 next_path_index;
+
+	__u8	mptcp_ver;
 
 	/* Original snd/rcvbuf of the initial subflow.
 	 * Used for the new subflows on the server-side to allow correct
@@ -639,6 +644,7 @@ static inline int mptcp_sub_len_dss(const struct mp_dss *m, const int csum)
 #define MPTCP_SYSCTL	1
 
 extern int sysctl_mptcp_enabled;
+extern int sysctl_mptcp_version;
 extern int sysctl_mptcp_checksum;
 extern int sysctl_mptcp_debug;
 extern int sysctl_mptcp_syn_retries;
@@ -797,7 +803,8 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			 struct sk_buff *skb);
 void mptcp_close(struct sock *meta_sk, long timeout);
 int mptcp_doit(struct sock *sk);
-int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key, u32 window);
+int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key,
+			   __u8 mptcp_ver, u32 window);
 int mptcp_check_req_fastopen(struct sock *child, struct request_sock *req);
 int mptcp_check_req_master(struct sock *sk, struct sock *child,
 			   struct request_sock *req, int drop);
@@ -862,8 +869,8 @@ void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
 void mptcp_init_buffer_space(struct sock *sk);
 void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, const struct request_sock *req,
 			   struct sk_buff *skb);
-void mptcp_reqsk_init(struct request_sock *req, const struct sk_buff *skb,
-		      bool want_cookie);
+void mptcp_reqsk_init(struct request_sock *req, struct sock *sk,
+		      const struct sk_buff *skb, bool want_cookie);
 int mptcp_conn_request(struct sock *sk, struct sk_buff *skb);
 void mptcp_enable_sock(struct sock *sk);
 void mptcp_disable_sock(struct sock *sk);
