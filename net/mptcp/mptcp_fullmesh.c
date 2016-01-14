@@ -1547,7 +1547,10 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 	/* IPv4 */
 	unannouncedv4 = (~fmp->announced_addrs_v4) & mptcp_local->loc4_bits;
 	if (unannouncedv4 &&
-	    MAX_TCP_OPTION_SPACE - *size >= MPTCP_SUB_LEN_ADD_ADDR4_ALIGN) {
+	    ((mpcb->mptcp_ver == MPTCP_VERSION_0 &&
+	    MAX_TCP_OPTION_SPACE - *size >= MPTCP_SUB_LEN_ADD_ADDR4_ALIGN) ||
+	    (mpcb->mptcp_ver >= MPTCP_VERSION_1 &&
+	    MAX_TCP_OPTION_SPACE - *size >= MPTCP_SUB_LEN_ADD_ADDR4_ALIGN_VER1))) {
 		int ind = mptcp_find_free_index(~unannouncedv4);
 
 		opts->options |= OPTION_MPTCP;
@@ -1555,12 +1558,28 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 		opts->add_addr4.addr_id = mptcp_local->locaddr4[ind].loc4_id;
 		opts->add_addr4.addr = mptcp_local->locaddr4[ind].addr;
 		opts->add_addr_v4 = 1;
+		if (mpcb->mptcp_ver >= MPTCP_VERSION_1) {
+			u8 mptcp_hash_mac[20];
+			u8 no_key[8];
+
+			*(u64 *)no_key = 0;
+			mptcp_hmac_sha1((u8 *)&mpcb->mptcp_loc_key,
+					(u8 *)no_key,
+					(u32 *)mptcp_hash_mac, 2,
+					1, (u8 *)&mptcp_local->locaddr4[ind].loc4_id,
+					4, (u8 *)&opts->add_addr4.addr.s_addr);
+			opts->add_addr4.trunc_mac = *(u64 *)mptcp_hash_mac;
+		}
 
 		if (skb) {
 			fmp->announced_addrs_v4 |= (1 << ind);
 			fmp->add_addr--;
 		}
-		*size += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN;
+
+		if (mpcb->mptcp_ver < MPTCP_VERSION_1)
+			*size += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN;
+		if (mpcb->mptcp_ver >= MPTCP_VERSION_1)
+			*size += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN_VER1;
 	}
 
 	if (meta_v4)

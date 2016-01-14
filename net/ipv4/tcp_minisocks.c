@@ -111,7 +111,7 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 	if (th->doff > (sizeof(*th) >> 2) && tcptw->tw_ts_recent_stamp) {
 		mptcp_init_mp_opt(&mopt);
 
-		tcp_parse_options(skb, &tmp_opt, &mopt, 0, NULL);
+		tcp_parse_options(skb, &tmp_opt, &mopt, 0, NULL, NULL);
 
 		if (tmp_opt.saw_tstamp) {
 			tmp_opt.rcv_tsecr	-= tcptw->tw_ts_offset;
@@ -609,7 +609,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	mptcp_init_mp_opt(&mopt);
 
 	if (th->doff > (sizeof(struct tcphdr)>>2)) {
-		tcp_parse_options(skb, &tmp_opt, &mopt, 0, NULL);
+		tcp_parse_options(skb, &tmp_opt, &mopt, 0, NULL, NULL);
 
 		if (tmp_opt.saw_tstamp) {
 			tmp_opt.ts_recent = req->ts_recent;

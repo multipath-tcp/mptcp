@@ -3664,7 +3664,8 @@ static void tcp_parse_fastopen_option(int len, const unsigned char *cookie,
 void tcp_parse_options(const struct sk_buff *skb,
 		       struct tcp_options_received *opt_rx,
 		       struct mptcp_options_received *mopt,
-		       int estab, struct tcp_fastopen_cookie *foc)
+		       int estab, struct tcp_fastopen_cookie *foc,
+		       struct tcp_sock *tp)
 {
 	const unsigned char *ptr;
 	const struct tcphdr *th = tcp_hdr(skb);
@@ -3748,7 +3749,7 @@ void tcp_parse_options(const struct sk_buff *skb,
 				break;
 #endif
 			case TCPOPT_MPTCP:
-				mptcp_parse_options(ptr - 2, opsize, mopt, skb);
+				mptcp_parse_options(ptr - 2, opsize, mopt, skb, tp);
 				break;
 
 			case TCPOPT_FASTOPEN:
@@ -3813,8 +3814,8 @@ static bool tcp_fast_parse_options(const struct sk_buff *skb,
 		if (tcp_parse_aligned_timestamp(tp, th))
 			return true;
 	}
-	tcp_parse_options(skb, &tp->rx_opt, mptcp(tp) ? &tp->mptcp->rx_opt : NULL,
-			  1, NULL);
+	tcp_parse_options(skb, &tp->rx_opt,
+			  mptcp(tp) ? &tp->mptcp->rx_opt : NULL, 1, NULL, tp);
 	if (tp->rx_opt.saw_tstamp && tp->rx_opt.rcv_tsecr)
 		tp->rx_opt.rcv_tsecr -= tp->tsoffset;
 
@@ -5502,7 +5503,7 @@ static bool tcp_rcv_fastopen_synack(struct sock *sk, struct sk_buff *synack,
 		/* Get original SYNACK MSS value if user MSS sets mss_clamp */
 		tcp_clear_options(&opt);
 		opt.user_mss = opt.mss_clamp = 0;
-		tcp_parse_options(synack, &opt, NULL, 0, NULL);
+		tcp_parse_options(synack, &opt, NULL, 0, NULL, NULL);
 		mss = opt.mss_clamp;
 	}
 
@@ -5557,7 +5558,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 	mptcp_init_mp_opt(&mopt);
 
 	tcp_parse_options(skb, &tp->rx_opt,
-			  mptcp(tp) ? &tp->mptcp->rx_opt : &mopt, 0, &foc);
+			  mptcp(tp) ? &tp->mptcp->rx_opt : &mopt, 0, &foc, tp);
 	if (tp->rx_opt.saw_tstamp && tp->rx_opt.rcv_tsecr)
 		tp->rx_opt.rcv_tsecr -= tp->tsoffset;
 
@@ -6286,7 +6287,7 @@ int tcp_conn_request(struct request_sock_ops *rsk_ops,
 	tcp_clear_options(&tmp_opt);
 	tmp_opt.mss_clamp = af_ops->mss_clamp;
 	tmp_opt.user_mss  = tp->rx_opt.user_mss;
-	tcp_parse_options(skb, &tmp_opt, NULL, 0, want_cookie ? NULL : &foc);
+	tcp_parse_options(skb, &tmp_opt, NULL, 0, want_cookie ? NULL : &foc, NULL);
 
 	if (want_cookie && !tmp_opt.saw_tstamp)
 		tcp_clear_options(&tmp_opt);

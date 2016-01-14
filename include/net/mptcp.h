@@ -345,6 +345,9 @@ struct mptcp_cb {
 	u32 orig_window_clamp;
 };
 
+#define MPTCP_VERSION_0 0
+#define MPTCP_VERSION_1 1
+
 #define MPTCP_SUB_CAPABLE			0
 #define MPTCP_SUB_LEN_CAPABLE_SYN		12
 #define MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN		12
@@ -395,8 +398,10 @@ struct mptcp_cb {
 
 #define MPTCP_SUB_ADD_ADDR		3
 #define MPTCP_SUB_LEN_ADD_ADDR4		8
+#define MPTCP_SUB_LEN_ADD_ADDR4_VER1	16
 #define MPTCP_SUB_LEN_ADD_ADDR6		20
 #define MPTCP_SUB_LEN_ADD_ADDR4_ALIGN	8
+#define MPTCP_SUB_LEN_ADD_ADDR4_ALIGN_VER1	16
 #define MPTCP_SUB_LEN_ADD_ADDR6_ALIGN	20
 
 #define MPTCP_SUB_REMOVE_ADDR	4
@@ -561,6 +566,7 @@ struct mp_add_addr {
 		struct {
 			struct in_addr	addr;
 			__be16		port;
+			__u8		mac[8];
 		} v4;
 		struct {
 			struct in6_addr	addr;
@@ -790,7 +796,8 @@ void tcp_parse_mptcp_options(const struct sk_buff *skb,
 			     struct mptcp_options_received *mopt);
 void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			 struct mptcp_options_received *mopt,
-			 const struct sk_buff *skb);
+			 const struct sk_buff *skb,
+			 struct tcp_sock *tp);
 void mptcp_syn_options(const struct sock *sk, struct tcp_out_options *opts,
 		       unsigned *remaining);
 void mptcp_synack_options(struct request_sock *req,
@@ -1383,8 +1390,9 @@ static inline void mptcp_sub_close(struct sock *sk, unsigned long delay) {}
 static inline void mptcp_set_rto(const struct sock *sk) {}
 static inline void mptcp_send_fin(const struct sock *meta_sk) {}
 static inline void mptcp_parse_options(const uint8_t *ptr, const int opsize,
-				       const struct mptcp_options_received *mopt,
-				       const struct sk_buff *skb) {}
+				       struct mptcp_options_received *mopt,
+				       const struct sk_buff *skb
+				       const struct tcp_sock *tp) {}
 static inline void mptcp_syn_options(const struct sock *sk,
 				     struct tcp_out_options *opts,
 				     unsigned *remaining) {}

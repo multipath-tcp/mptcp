@@ -104,7 +104,9 @@ struct tcp_out_options {
 	};
 
 	struct {
+		__u64 trunc_mac;
 		struct in_addr addr;
+		u16 port;
 		u8 addr_id;
 	} add_addr4;
 

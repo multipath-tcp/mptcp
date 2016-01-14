@@ -559,7 +559,8 @@ int tcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int nonblock,
 void tcp_parse_options(const struct sk_buff *skb,
 		       struct tcp_options_received *opt_rx,
 		       struct mptcp_options_received *mopt_rx,
-		       int estab, struct tcp_fastopen_cookie *foc);
+		       int estab, struct tcp_fastopen_cookie *foc,
+		       struct tcp_sock *tp);
 const u8 *tcp_parse_md5sig_option(const struct tcphdr *th);
 
 /*
