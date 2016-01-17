@@ -1241,11 +1241,6 @@ static inline void mptcp_set_rto(struct sock *sk)
 	}
 }
 
-static inline int mptcp_sysctl_syn_retries(void)
-{
-	return sysctl_mptcp_syn_retries;
-}
-
 static inline void mptcp_sub_close_passive(struct sock *sk)
 {
 	struct sock *meta_sk = mptcp_meta_sk(sk);
@@ -1449,10 +1444,6 @@ static inline int mptcp_check_rtt(const struct tcp_sock *tp, int time)
 	return 0;
 }
 static inline int mptcp_check_snd_buf(const struct tcp_sock *tp)
-{
-	return 0;
-}
-static inline int mptcp_sysctl_syn_retries(void)
 {
 	return 0;
 }
