@@ -1394,7 +1394,7 @@ static inline void mptcp_set_rto(const struct sock *sk) {}
 static inline void mptcp_send_fin(const struct sock *meta_sk) {}
 static inline void mptcp_parse_options(const uint8_t *ptr, const int opsize,
 				       struct mptcp_options_received *mopt,
-				       const struct sk_buff *skb
+				       const struct sk_buff *skb,
 				       const struct tcp_sock *tp) {}
 static inline void mptcp_syn_options(const struct sock *sk,
 				     struct tcp_out_options *opts,

@@ -1923,7 +1923,7 @@ static void mptcp_handle_add_addr(const unsigned char *ptr, struct sock *sk)
 		char *recv_hmac;
 		u8 hash_mac_check[20];
 		u8 no_key[8];
-		int msg_parts;
+		int msg_parts = 0;
 
 		if (mpcb->mptcp_ver < MPTCP_VERSION_1)
 			goto skip_hmac_v4;
@@ -1958,7 +1958,7 @@ skip_hmac_v4:
 		char *recv_hmac;
 		u8 hash_mac_check[20];
 		u8 no_key[8];
-		int msg_parts;
+		int msg_parts = 0;
 
 		if (mpcb->mptcp_ver < MPTCP_VERSION_1)
 			goto skip_hmac_v6;

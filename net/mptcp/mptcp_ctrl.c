@@ -871,6 +871,7 @@ void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u32 *hash_out, int arg_num, ...)
 	for (i = 0; i < 5; i++)
 		hash_out[i] = cpu_to_be32(hash_out[i]);
 }
+EXPORT_SYMBOL(mptcp_hmac_sha1);
 
 static void mptcp_mpcb_inherit_sockopts(struct sock *meta_sk, struct sock *master_sk)
 {
