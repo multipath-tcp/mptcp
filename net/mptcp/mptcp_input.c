@@ -1781,6 +1781,12 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 	{
 		struct mp_add_addr *mpadd = (struct mp_add_addr *)ptr;
 
+		/* If tcp_sock is not available, MPTCP version can't be
+		 * retrieved and ADD_ADDR opsize validation is not possible.
+		 */
+		if (!tp)
+			break;
+
 		if (!is_valid_addropt_opsize(tp->mpcb->mptcp_ver,
 					     mpadd, opsize)) {
 			mptcp_debug("%s: mp_add_addr: bad option size %d\n",
