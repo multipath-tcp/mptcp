@@ -803,7 +803,11 @@ u32 __mptcp_select_window(struct sock *sk)
 		mss = full_space;
 
 	if (free_space < (full_space >> 1)) {
-		icsk->icsk_ack.quick = 0;
+		/* If free_space is decreasing due to mostly meta-level
+		 * out-of-order packets, don't turn off the quick-ack mode.
+		 */
+		if (meta_tp->rcv_nxt - meta_tp->copied_seq > ((full_space - free_space) >> 1))
+			icsk->icsk_ack.quick = 0;
 
 		if (tcp_memory_pressure)
 			/* TODO this has to be adapted when we support different
