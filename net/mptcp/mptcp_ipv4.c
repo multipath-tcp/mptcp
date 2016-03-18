@@ -380,6 +380,9 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	loc_in.sin_addr = loc->addr;
 	rem_in.sin_addr = rem->addr;
 
+	if (loc->if_idx)
+		sk->sk_bound_dev_if = loc->if_idx;
+
 	ret = sock.ops->bind(&sock, (struct sockaddr *)&loc_in, sizeof(struct sockaddr_in));
 	if (ret < 0) {
 		mptcp_debug("%s: MPTCP subsocket bind() failed, error %d\n",
@@ -387,11 +390,11 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 		goto error;
 	}
 
-	mptcp_debug("%s: token %#x pi %d src_addr:%pI4:%d dst_addr:%pI4:%d\n",
+	mptcp_debug("%s: token %#x pi %d src_addr:%pI4:%d dst_addr:%pI4:%d ifidx: %d\n",
 		    __func__, tcp_sk(meta_sk)->mpcb->mptcp_loc_token,
 		    tp->mptcp->path_index, &loc_in.sin_addr,
 		    ntohs(loc_in.sin_port), &rem_in.sin_addr,
-		    ntohs(rem_in.sin_port));
+		    ntohs(rem_in.sin_port), loc->if_idx);
 
 	if (tcp_sk(meta_sk)->mpcb->pm_ops->init_subsocket_v4)
 		tcp_sk(meta_sk)->mpcb->pm_ops->init_subsocket_v4(sk, rem->addr);

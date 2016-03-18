@@ -396,6 +396,9 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	loc_in.sin6_addr = loc->addr;
 	rem_in.sin6_addr = rem->addr;
 
+	if (loc->if_idx)
+		sk->sk_bound_dev_if = loc->if_idx;
+
 	ret = sock.ops->bind(&sock, (struct sockaddr *)&loc_in, sizeof(struct sockaddr_in6));
 	if (ret < 0) {
 		mptcp_debug("%s: MPTCP subsocket bind()failed, error %d\n",
@@ -403,11 +406,11 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 		goto error;
 	}
 
-	mptcp_debug("%s: token %#x pi %d src_addr:%pI6:%d dst_addr:%pI6:%d\n",
+	mptcp_debug("%s: token %#x pi %d src_addr:%pI6:%d dst_addr:%pI6:%d ifidx: %u\n",
 		    __func__, tcp_sk(meta_sk)->mpcb->mptcp_loc_token,
 		    tp->mptcp->path_index, &loc_in.sin6_addr,
 		    ntohs(loc_in.sin6_port), &rem_in.sin6_addr,
-		    ntohs(rem_in.sin6_port));
+		    ntohs(rem_in.sin6_port), loc->if_idx);
 
 	if (tcp_sk(meta_sk)->mpcb->pm_ops->init_subsocket_v6)
 		tcp_sk(meta_sk)->mpcb->pm_ops->init_subsocket_v6(sk, rem->addr);
