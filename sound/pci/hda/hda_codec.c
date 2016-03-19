@@ -3259,7 +3259,7 @@ static int add_std_chmaps(struct hda_codec *codec)
 			struct snd_pcm_chmap *chmap;
 			const struct snd_pcm_chmap_elem *elem;
 
-			if (!pcm || pcm->own_chmap ||
+			if (!pcm || !pcm->pcm || pcm->own_chmap ||
 			    !hinfo->substreams)
 				continue;
 			elem = hinfo->chmap ? hinfo->chmap : snd_pcm_std_chmaps;
@@ -3833,10 +3833,8 @@ int snd_hda_codec_build_pcms(struct hda_codec *codec)
 		return -EINVAL;
 
 	err = snd_hda_codec_parse_pcms(codec);
-	if (err < 0) {
-		snd_hda_codec_reset(codec);
+	if (err < 0)
 		return err;
-	}
 
 	/* attach a new PCM streams */
 	list_for_each_entry(cpcm, &codec->pcm_list_head, list) {

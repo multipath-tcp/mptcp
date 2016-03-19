@@ -988,9 +988,6 @@ void spi_finalize_current_message(struct spi_master *master)
 
 	spin_lock_irqsave(&master->queue_lock, flags);
 	mesg = master->cur_msg;
-	master->cur_msg = NULL;
-
-	queue_kthread_work(&master->kworker, &master->pump_messages);
 	spin_unlock_irqrestore(&master->queue_lock, flags);
 
 	spi_unmap_msg(master, mesg);
@@ -1003,9 +1000,13 @@ void spi_finalize_current_message(struct spi_master *master)
 		}
 	}
 
-	trace_spi_message_done(mesg);
-
+	spin_lock_irqsave(&master->queue_lock, flags);
+	master->cur_msg = NULL;
 	master->cur_msg_prepared = false;
+	queue_kthread_work(&master->kworker, &master->pump_messages);
+	spin_unlock_irqrestore(&master->queue_lock, flags);
+
+	trace_spi_message_done(mesg);
 
 	mesg->state = NULL;
 	if (mesg->complete)
@@ -1426,8 +1427,7 @@ static struct class spi_master_class = {
  *
  * The caller is responsible for assigning the bus number and initializing
  * the master's methods before calling spi_register_master(); and (after errors
- * adding the device) calling spi_master_put() and kfree() to prevent a memory
- * leak.
+ * adding the device) calling spi_master_put() to prevent a memory leak.
  */
 struct spi_master *spi_alloc_master(struct device *dev, unsigned size)
 {

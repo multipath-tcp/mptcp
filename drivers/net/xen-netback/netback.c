@@ -1571,13 +1571,13 @@ static inline void xenvif_tx_dealloc_action(struct xenvif_queue *queue)
 		smp_rmb();
 
 		while (dc != dp) {
-			BUG_ON(gop - queue->tx_unmap_ops > MAX_PENDING_REQS);
+			BUG_ON(gop - queue->tx_unmap_ops >= MAX_PENDING_REQS);
 			pending_idx =
 				queue->dealloc_ring[pending_index(dc++)];
 
-			pending_idx_release[gop-queue->tx_unmap_ops] =
+			pending_idx_release[gop - queue->tx_unmap_ops] =
 				pending_idx;
-			queue->pages_to_unmap[gop-queue->tx_unmap_ops] =
+			queue->pages_to_unmap[gop - queue->tx_unmap_ops] =
 				queue->mmap_pages[pending_idx];
 			gnttab_set_unmap_op(gop,
 					    idx_to_kaddr(queue, pending_idx),
@@ -2007,8 +2007,11 @@ static int __init netback_init(void)
 	if (!xen_domain())
 		return -ENODEV;
 
-	/* Allow as many queues as there are CPUs, by default */
-	xenvif_max_queues = num_online_cpus();
+	/* Allow as many queues as there are CPUs if user has not
+	 * specified a value.
+	 */
+	if (xenvif_max_queues == 0)
+		xenvif_max_queues = num_online_cpus();
 
 	if (fatal_skb_slots < XEN_NETBK_LEGACY_SLOTS_MAX) {
 		pr_info("fatal_skb_slots too small (%d), bump it to XEN_NETBK_LEGACY_SLOTS_MAX (%d)\n",

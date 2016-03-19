@@ -775,6 +775,11 @@ int bpf_check_classic(const struct sock_filter *filter, unsigned int flen)
 			if (ftest->k == 0)
 				return -EINVAL;
 			break;
+		case BPF_ALU | BPF_LSH | BPF_K:
+		case BPF_ALU | BPF_RSH | BPF_K:
+			if (ftest->k >= 32)
+				return -EINVAL;
+			break;
 		case BPF_LD | BPF_MEM:
 		case BPF_LDX | BPF_MEM:
 		case BPF_ST:
@@ -1526,9 +1531,13 @@ int sk_get_filter(struct sock *sk, struct sock_filter __user *ubuf,
 		goto out;
 
 	/* We're copying the filter that has been originally attached,
-	 * so no conversion/decode needed anymore.
+	 * so no conversion/decode needed anymore. eBPF programs that
+	 * have no original program cannot be dumped through this.
 	 */
+	ret = -EACCES;
 	fprog = filter->prog->orig_prog;
+	if (!fprog)
+		goto out;
 
 	ret = fprog->len;
 	if (!len)

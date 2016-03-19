@@ -324,7 +324,8 @@ static int ff_layout_update_mirror_cred(struct nfs4_ff_layout_mirror *mirror,
 				__func__, PTR_ERR(cred));
 			return PTR_ERR(cred);
 		} else {
-			mirror->cred = cred;
+			if (cmpxchg(&mirror->cred, NULL, cred))
+				put_rpccred(cred);
 		}
 	}
 	return 0;
@@ -386,7 +387,7 @@ nfs4_ff_layout_prepare_ds(struct pnfs_layout_segment *lseg, u32 ds_idx,
 	/* matching smp_wmb() in _nfs4_pnfs_v3/4_ds_connect */
 	smp_rmb();
 	if (ds->ds_clp)
-		goto out;
+		goto out_update_creds;
 
 	flavor = nfs4_ff_layout_choose_authflavor(mirror);
 
@@ -430,7 +431,7 @@ nfs4_ff_layout_prepare_ds(struct pnfs_layout_segment *lseg, u32 ds_idx,
 			}
 		}
 	}
-
+out_update_creds:
 	if (ff_layout_update_mirror_cred(mirror, ds))
 		ds = NULL;
 out:
@@ -499,16 +500,19 @@ int ff_layout_encode_ds_ioerr(struct nfs4_flexfile_layout *flo,
 					   range->offset, range->length))
 			continue;
 		/* offset(8) + length(8) + stateid(NFS4_STATEID_SIZE)
-		 * + deviceid(NFS4_DEVICEID4_SIZE) + status(4) + opnum(4)
+		 * + array length + deviceid(NFS4_DEVICEID4_SIZE)
+		 * + status(4) + opnum(4)
 		 */
 		p = xdr_reserve_space(xdr,
-				24 + NFS4_STATEID_SIZE + NFS4_DEVICEID4_SIZE);
+				28 + NFS4_STATEID_SIZE + NFS4_DEVICEID4_SIZE);
 		if (unlikely(!p))
 			return -ENOBUFS;
 		p = xdr_encode_hyper(p, err->offset);
 		p = xdr_encode_hyper(p, err->length);
 		p = xdr_encode_opaque_fixed(p, &err->stateid,
 					    NFS4_STATEID_SIZE);
+		/* Encode 1 error */
+		*p++ = cpu_to_be32(1);
 		p = xdr_encode_opaque_fixed(p, &err->deviceid,
 					    NFS4_DEVICEID4_SIZE);
 		*p++ = cpu_to_be32(err->status);

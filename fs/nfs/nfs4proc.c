@@ -1152,6 +1152,8 @@ static int can_open_delegated(struct nfs_delegation *delegation, fmode_t fmode)
 		return 0;
 	if ((delegation->type & fmode) != fmode)
 		return 0;
+	if (test_bit(NFS_DELEGATION_NEED_RECLAIM, &delegation->flags))
+		return 0;
 	if (test_bit(NFS_DELEGATION_RETURNING, &delegation->flags))
 		return 0;
 	nfs_mark_delegation_referenced(delegation);
@@ -1204,15 +1206,19 @@ static bool nfs_need_update_open_stateid(struct nfs4_state *state,
 
 static void nfs_resync_open_stateid_locked(struct nfs4_state *state)
 {
+	if (!(state->n_wronly || state->n_rdonly || state->n_rdwr))
+		return;
 	if (state->n_wronly)
 		set_bit(NFS_O_WRONLY_STATE, &state->flags);
 	if (state->n_rdonly)
 		set_bit(NFS_O_RDONLY_STATE, &state->flags);
 	if (state->n_rdwr)
 		set_bit(NFS_O_RDWR_STATE, &state->flags);
+	set_bit(NFS_OPEN_STATE, &state->flags);
 }
 
 static void nfs_clear_open_stateid_locked(struct nfs4_state *state,
+		nfs4_stateid *arg_stateid,
 		nfs4_stateid *stateid, fmode_t fmode)
 {
 	clear_bit(NFS_O_RDWR_STATE, &state->flags);
@@ -1231,8 +1237,9 @@ static void nfs_clear_open_stateid_locked(struct nfs4_state *state,
 	if (stateid == NULL)
 		return;
 	/* Handle races with OPEN */
-	if (!nfs4_stateid_match_other(stateid, &state->open_stateid) ||
-	    !nfs4_stateid_is_newer(stateid, &state->open_stateid)) {
+	if (!nfs4_stateid_match_other(arg_stateid, &state->open_stateid) ||
+	    (nfs4_stateid_match_other(stateid, &state->open_stateid) &&
+	    !nfs4_stateid_is_newer(stateid, &state->open_stateid))) {
 		nfs_resync_open_stateid_locked(state);
 		return;
 	}
@@ -1241,10 +1248,12 @@ static void nfs_clear_open_stateid_locked(struct nfs4_state *state,
 	nfs4_stateid_copy(&state->open_stateid, stateid);
 }
 
-static void nfs_clear_open_stateid(struct nfs4_state *state, nfs4_stateid *stateid, fmode_t fmode)
+static void nfs_clear_open_stateid(struct nfs4_state *state,
+	nfs4_stateid *arg_stateid,
+	nfs4_stateid *stateid, fmode_t fmode)
 {
 	write_seqlock(&state->seqlock);
-	nfs_clear_open_stateid_locked(state, stateid, fmode);
+	nfs_clear_open_stateid_locked(state, arg_stateid, stateid, fmode);
 	write_sequnlock(&state->seqlock);
 	if (test_bit(NFS_STATE_RECLAIM_NOGRACE, &state->flags))
 		nfs4_schedule_state_manager(state->owner->so_server->nfs_client);
@@ -2410,7 +2419,7 @@ static int _nfs4_do_open(struct inode *dir,
 		goto err_free_label;
 	state = ctx->state;
 
-	if ((opendata->o_arg.open_flags & O_EXCL) &&
+	if ((opendata->o_arg.open_flags & (O_CREAT|O_EXCL)) == (O_CREAT|O_EXCL) &&
 	    (opendata->o_arg.createmode != NFS4_CREATE_GUARDED)) {
 		nfs4_exclusive_attrset(opendata, sattr);
 
@@ -2669,7 +2678,8 @@ static void nfs4_close_done(struct rpc_task *task, void *data)
 				goto out_release;
 			}
 	}
-	nfs_clear_open_stateid(state, res_stateid, calldata->arg.fmode);
+	nfs_clear_open_stateid(state, &calldata->arg.stateid,
+			res_stateid, calldata->arg.fmode);
 out_release:
 	nfs_release_seqid(calldata->arg.seqid);
 	nfs_refresh_inode(calldata->inode, calldata->res.fattr);
@@ -5357,15 +5367,15 @@ static int nfs4_proc_getlk(struct nfs4_state *state, int cmd, struct file_lock *
 	return err;
 }
 
-static int do_vfs_lock(struct file *file, struct file_lock *fl)
+static int do_vfs_lock(struct inode *inode, struct file_lock *fl)
 {
 	int res = 0;
 	switch (fl->fl_flags & (FL_POSIX|FL_FLOCK)) {
 		case FL_POSIX:
-			res = posix_lock_file_wait(file, fl);
+			res = posix_lock_inode_wait(inode, fl);
 			break;
 		case FL_FLOCK:
-			res = flock_lock_file_wait(file, fl);
+			res = flock_lock_inode_wait(inode, fl);
 			break;
 		default:
 			BUG();
@@ -5425,7 +5435,7 @@ static void nfs4_locku_done(struct rpc_task *task, void *data)
 	switch (task->tk_status) {
 		case 0:
 			renew_lease(calldata->server, calldata->timestamp);
-			do_vfs_lock(calldata->fl.fl_file, &calldata->fl);
+			do_vfs_lock(calldata->lsp->ls_state->inode, &calldata->fl);
 			if (nfs4_update_lock_stateid(calldata->lsp,
 					&calldata->res.stateid))
 				break;
@@ -5533,7 +5543,7 @@ static int nfs4_proc_unlck(struct nfs4_state *state, int cmd, struct file_lock *
 	mutex_lock(&sp->so_delegreturn_mutex);
 	/* Exclude nfs4_reclaim_open_stateid() - note nesting! */
 	down_read(&nfsi->rwsem);
-	if (do_vfs_lock(request->fl_file, request) == -ENOENT) {
+	if (do_vfs_lock(inode, request) == -ENOENT) {
 		up_read(&nfsi->rwsem);
 		mutex_unlock(&sp->so_delegreturn_mutex);
 		goto out;
@@ -5674,7 +5684,7 @@ static void nfs4_lock_done(struct rpc_task *task, void *calldata)
 				data->timestamp);
 		if (data->arg.new_lock) {
 			data->fl.fl_flags &= ~(FL_SLEEP | FL_ACCESS);
-			if (do_vfs_lock(data->fl.fl_file, &data->fl) < 0) {
+			if (do_vfs_lock(lsp->ls_state->inode, &data->fl) < 0) {
 				rpc_restart_call_prepare(task);
 				break;
 			}
@@ -5916,7 +5926,7 @@ static int _nfs4_proc_setlk(struct nfs4_state *state, int cmd, struct file_lock 
 	if (status != 0)
 		goto out;
 	request->fl_flags |= FL_ACCESS;
-	status = do_vfs_lock(request->fl_file, request);
+	status = do_vfs_lock(state->inode, request);
 	if (status < 0)
 		goto out;
 	down_read(&nfsi->rwsem);
@@ -5924,7 +5934,7 @@ static int _nfs4_proc_setlk(struct nfs4_state *state, int cmd, struct file_lock 
 		/* Yes: cache locks! */
 		/* ...but avoid races with delegation recall... */
 		request->fl_flags = fl_flags & ~FL_SLEEP;
-		status = do_vfs_lock(request->fl_file, request);
+		status = do_vfs_lock(state->inode, request);
 		up_read(&nfsi->rwsem);
 		goto out;
 	}
@@ -8568,6 +8578,7 @@ static const struct nfs4_minor_version_ops nfs_v4_2_minor_ops = {
 	.reboot_recovery_ops = &nfs41_reboot_recovery_ops,
 	.nograce_recovery_ops = &nfs41_nograce_recovery_ops,
 	.state_renewal_ops = &nfs41_state_renewal_ops,
+	.mig_recovery_ops = &nfs41_mig_recovery_ops,
 };
 #endif
 

@@ -275,6 +275,7 @@ enum iwl_mvm_ref_type {
 	IWL_MVM_REF_UCODE_DOWN,
 	IWL_MVM_REF_SCAN,
 	IWL_MVM_REF_ROC,
+	IWL_MVM_REF_ROC_AUX,
 	IWL_MVM_REF_P2P_CLIENT,
 	IWL_MVM_REF_AP_IBSS,
 	IWL_MVM_REF_USER,
@@ -867,6 +868,11 @@ static inline bool iwl_mvm_is_radio_killed(struct iwl_mvm *mvm)
 {
 	return test_bit(IWL_MVM_STATUS_HW_RFKILL, &mvm->status) ||
 	       test_bit(IWL_MVM_STATUS_HW_CTKILL, &mvm->status);
+}
+
+static inline bool iwl_mvm_is_radio_hw_killed(struct iwl_mvm *mvm)
+{
+	return test_bit(IWL_MVM_STATUS_HW_RFKILL, &mvm->status);
 }
 
 /* Must be called with rcu_read_lock() held and it can only be

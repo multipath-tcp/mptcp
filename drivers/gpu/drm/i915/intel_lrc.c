@@ -848,6 +848,8 @@ static int intel_lr_context_pin(struct intel_engine_cs *ring,
 		ret = intel_pin_and_map_ringbuffer_obj(ring->dev, ringbuf);
 		if (ret)
 			goto unpin_ctx_obj;
+
+		ctx_obj->dirty = true;
 	}
 
 	return ret;
@@ -1296,6 +1298,7 @@ static int gen8_emit_flush_render(struct intel_ringbuffer *ringbuf,
 	if (flush_domains) {
 		flags |= PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH;
 		flags |= PIPE_CONTROL_DEPTH_CACHE_FLUSH;
+		flags |= PIPE_CONTROL_FLUSH_ENABLE;
 	}
 
 	if (invalidate_domains) {

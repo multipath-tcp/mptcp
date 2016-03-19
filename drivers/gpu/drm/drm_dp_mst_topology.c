@@ -804,8 +804,6 @@ static void drm_dp_destroy_mst_branch_device(struct kref *kref)
 	struct drm_dp_mst_port *port, *tmp;
 	bool wake_tx = false;
 
-	cancel_work_sync(&mstb->mgr->work);
-
 	/*
 	 * destroy all ports - don't need lock
 	 * as there are no more references to the mst branch
@@ -867,8 +865,16 @@ static void drm_dp_destroy_port(struct kref *kref)
 		port->vcpi.num_slots = 0;
 
 		kfree(port->cached_edid);
-		if (port->connector)
-			(*port->mgr->cbs->destroy_connector)(mgr, port->connector);
+
+		/* we can't destroy the connector here, as
+		   we might be holding the mode_config.mutex
+		   from an EDID retrieval */
+		if (port->connector) {
+			mutex_lock(&mgr->destroy_connector_lock);
+			list_add(&port->connector->destroy_list, &mgr->destroy_connector_list);
+			mutex_unlock(&mgr->destroy_connector_lock);
+			schedule_work(&mgr->destroy_connector_work);
+		}
 		drm_dp_port_teardown_pdt(port, port->pdt);
 
 		if (!port->input && port->vcpi.vcpi > 0)
@@ -1163,6 +1169,8 @@ static struct drm_dp_mst_branch *drm_dp_get_mst_branch_device(struct drm_dp_mst_
 	struct drm_dp_mst_port *port;
 	int i;
 	/* find the port by iterating down */
+
+	mutex_lock(&mgr->lock);
 	mstb = mgr->mst_primary;
 
 	for (i = 0; i < lct - 1; i++) {
@@ -1171,17 +1179,19 @@ static struct drm_dp_mst_branch *drm_dp_get_mst_branch_device(struct drm_dp_mst_
 
 		list_for_each_entry(port, &mstb->ports, next) {
 			if (port->port_num == port_num) {
-				if (!port->mstb) {
+				mstb = port->mstb;
+				if (!mstb) {
 					DRM_ERROR("failed to lookup MSTB with lct %d, rad %02x\n", lct, rad[0]);
-					return NULL;
+					goto out;
 				}
 
-				mstb = port->mstb;
 				break;
 			}
 		}
 	}
 	kref_get(&mstb->kref);
+out:
+	mutex_unlock(&mgr->lock);
 	return mstb;
 }
 
@@ -1189,7 +1199,7 @@ static void drm_dp_check_and_send_link_address(struct drm_dp_mst_topology_mgr *m
 					       struct drm_dp_mst_branch *mstb)
 {
 	struct drm_dp_mst_port *port;
-
+	struct drm_dp_mst_branch *mstb_child;
 	if (!mstb->link_address_sent) {
 		drm_dp_send_link_address(mgr, mstb);
 		mstb->link_address_sent = true;
@@ -1204,17 +1214,31 @@ static void drm_dp_check_and_send_link_address(struct drm_dp_mst_topology_mgr *m
 		if (!port->available_pbn)
 			drm_dp_send_enum_path_resources(mgr, mstb, port);
 
-		if (port->mstb)
-			drm_dp_check_and_send_link_address(mgr, port->mstb);
+		if (port->mstb) {
+			mstb_child = drm_dp_get_validated_mstb_ref(mgr, port->mstb);
+			if (mstb_child) {
+				drm_dp_check_and_send_link_address(mgr, mstb_child);
+				drm_dp_put_mst_branch_device(mstb_child);
+			}
+		}
 	}
 }
 
 static void drm_dp_mst_link_probe_work(struct work_struct *work)
 {
 	struct drm_dp_mst_topology_mgr *mgr = container_of(work, struct drm_dp_mst_topology_mgr, work);
+	struct drm_dp_mst_branch *mstb;
 
-	drm_dp_check_and_send_link_address(mgr, mgr->mst_primary);
-
+	mutex_lock(&mgr->lock);
+	mstb = mgr->mst_primary;
+	if (mstb) {
+		kref_get(&mstb->kref);
+	}
+	mutex_unlock(&mgr->lock);
+	if (mstb) {
+		drm_dp_check_and_send_link_address(mgr, mstb);
+		drm_dp_put_mst_branch_device(mstb);
+	}
 }
 
 static bool drm_dp_validate_guid(struct drm_dp_mst_topology_mgr *mgr,
@@ -1269,7 +1293,6 @@ retry:
 				goto retry;
 			}
 			DRM_DEBUG_KMS("failed to dpcd write %d %d\n", tosend, ret);
-			WARN(1, "fail\n");
 
 			return -EIO;
 		}
@@ -1953,6 +1976,8 @@ void drm_dp_mst_topology_mgr_suspend(struct drm_dp_mst_topology_mgr *mgr)
 	drm_dp_dpcd_writeb(mgr->aux, DP_MSTM_CTRL,
 			   DP_MST_EN | DP_UPSTREAM_IS_SRC);
 	mutex_unlock(&mgr->lock);
+	flush_work(&mgr->work);
+	flush_work(&mgr->destroy_connector_work);
 }
 EXPORT_SYMBOL(drm_dp_mst_topology_mgr_suspend);
 
@@ -2632,6 +2657,30 @@ static void drm_dp_tx_work(struct work_struct *work)
 	mutex_unlock(&mgr->qlock);
 }
 
+static void drm_dp_destroy_connector_work(struct work_struct *work)
+{
+	struct drm_dp_mst_topology_mgr *mgr = container_of(work, struct drm_dp_mst_topology_mgr, destroy_connector_work);
+	struct drm_connector *connector;
+
+	/*
+	 * Not a regular list traverse as we have to drop the destroy
+	 * connector lock before destroying the connector, to avoid AB->BA
+	 * ordering between this lock and the config mutex.
+	 */
+	for (;;) {
+		mutex_lock(&mgr->destroy_connector_lock);
+		connector = list_first_entry_or_null(&mgr->destroy_connector_list, struct drm_connector, destroy_list);
+		if (!connector) {
+			mutex_unlock(&mgr->destroy_connector_lock);
+			break;
+		}
+		list_del(&connector->destroy_list);
+		mutex_unlock(&mgr->destroy_connector_lock);
+
+		mgr->cbs->destroy_connector(mgr, connector);
+	}
+}
+
 /**
  * drm_dp_mst_topology_mgr_init - initialise a topology manager
  * @mgr: manager struct to initialise
@@ -2651,10 +2700,13 @@ int drm_dp_mst_topology_mgr_init(struct drm_dp_mst_topology_mgr *mgr,
 	mutex_init(&mgr->lock);
 	mutex_init(&mgr->qlock);
 	mutex_init(&mgr->payload_lock);
+	mutex_init(&mgr->destroy_connector_lock);
 	INIT_LIST_HEAD(&mgr->tx_msg_upq);
 	INIT_LIST_HEAD(&mgr->tx_msg_downq);
+	INIT_LIST_HEAD(&mgr->destroy_connector_list);
 	INIT_WORK(&mgr->work, drm_dp_mst_link_probe_work);
 	INIT_WORK(&mgr->tx_work, drm_dp_tx_work);
+	INIT_WORK(&mgr->destroy_connector_work, drm_dp_destroy_connector_work);
 	init_waitqueue_head(&mgr->tx_waitq);
 	mgr->dev = dev;
 	mgr->aux = aux;
@@ -2679,6 +2731,8 @@ EXPORT_SYMBOL(drm_dp_mst_topology_mgr_init);
  */
 void drm_dp_mst_topology_mgr_destroy(struct drm_dp_mst_topology_mgr *mgr)
 {
+	flush_work(&mgr->work);
+	flush_work(&mgr->destroy_connector_work);
 	mutex_lock(&mgr->payload_lock);
 	kfree(mgr->payloads);
 	mgr->payloads = NULL;
@@ -2713,12 +2767,13 @@ static int drm_dp_mst_i2c_xfer(struct i2c_adapter *adapter, struct i2c_msg *msgs
 	if (msgs[num - 1].flags & I2C_M_RD)
 		reading = true;
 
-	if (!reading) {
+	if (!reading || (num - 1 > DP_REMOTE_I2C_READ_MAX_TRANSACTIONS)) {
 		DRM_DEBUG_KMS("Unsupported I2C transaction for MST device\n");
 		ret = -EIO;
 		goto out;
 	}
 
+	memset(&msg, 0, sizeof(msg));
 	msg.req_type = DP_REMOTE_I2C_READ;
 	msg.u.i2c_read.num_transactions = num - 1;
 	msg.u.i2c_read.port_number = port->port_num;

@@ -171,7 +171,8 @@ static void remove_cache_hash_entry(struct wb_cache_entry *e)
 /* Public interface (see dm-cache-policy.h */
 static int wb_map(struct dm_cache_policy *pe, dm_oblock_t oblock,
 		  bool can_block, bool can_migrate, bool discarded_oblock,
-		  struct bio *bio, struct policy_result *result)
+		  struct bio *bio, struct policy_locker *locker,
+		  struct policy_result *result)
 {
 	struct policy *p = to_policy(pe);
 	struct wb_cache_entry *e;
@@ -434,7 +435,7 @@ static struct dm_cache_policy *wb_create(dm_cblock_t cache_size,
 static struct dm_cache_policy_type wb_policy_type = {
 	.name = "cleaner",
 	.version = {1, 0, 0},
-	.hint_size = 0,
+	.hint_size = 4,
 	.owner = THIS_MODULE,
 	.create = wb_create
 };

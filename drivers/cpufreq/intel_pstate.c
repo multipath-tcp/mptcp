@@ -48,9 +48,9 @@ static inline int32_t mul_fp(int32_t x, int32_t y)
 	return ((int64_t)x * (int64_t)y) >> FRAC_BITS;
 }
 
-static inline int32_t div_fp(int32_t x, int32_t y)
+static inline int32_t div_fp(s64 x, s64 y)
 {
-	return div_s64((int64_t)x << FRAC_BITS, y);
+	return div64_s64((int64_t)x << FRAC_BITS, y);
 }
 
 static inline int ceiling_fp(int32_t x)
@@ -535,7 +535,7 @@ static void byt_set_pstate(struct cpudata *cpudata, int pstate)
 
 	val |= vid;
 
-	wrmsrl(MSR_IA32_PERF_CTL, val);
+	wrmsrl_on_cpu(cpudata->cpu, MSR_IA32_PERF_CTL, val);
 }
 
 #define BYT_BCLK_FREQS 5
@@ -678,6 +678,7 @@ static struct cpu_defaults knl_params = {
 		.get_max = core_get_max_pstate,
 		.get_min = core_get_min_pstate,
 		.get_turbo = knl_get_turbo_pstate,
+		.get_scaling = core_get_scaling,
 		.set = core_set_pstate,
 	},
 };
@@ -760,6 +761,11 @@ static inline void intel_pstate_sample(struct cpudata *cpu)
 	local_irq_save(flags);
 	rdmsrl(MSR_IA32_APERF, aperf);
 	rdmsrl(MSR_IA32_MPERF, mperf);
+	if (cpu->prev_mperf == mperf) {
+		local_irq_restore(flags);
+		return;
+	}
+
 	local_irq_restore(flags);
 
 	cpu->last_sample_time = cpu->sample.time;
@@ -794,7 +800,7 @@ static inline void intel_pstate_set_sample_time(struct cpudata *cpu)
 static inline int32_t intel_pstate_get_scaled_busy(struct cpudata *cpu)
 {
 	int32_t core_busy, max_pstate, current_pstate, sample_ratio;
-	u32 duration_us;
+	s64 duration_us;
 	u32 sample_time;
 
 	/*
@@ -821,8 +827,8 @@ static inline int32_t intel_pstate_get_scaled_busy(struct cpudata *cpu)
 	 * to adjust our busyness.
 	 */
 	sample_time = pid_params.sample_rate_ms  * USEC_PER_MSEC;
-	duration_us = (u32) ktime_us_delta(cpu->sample.time,
-					   cpu->last_sample_time);
+	duration_us = ktime_us_delta(cpu->sample.time,
+				     cpu->last_sample_time);
 	if (duration_us > sample_time * 3) {
 		sample_ratio = div_fp(int_tofp(sample_time),
 				      int_tofp(duration_us));

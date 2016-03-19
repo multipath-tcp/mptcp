@@ -1127,6 +1127,7 @@ END_FTR_SECTION_IFSET(CPU_FTR_HAS_PPR)
 	cmpwi	r12, BOOK3S_INTERRUPT_H_DOORBELL
 	bne	3f
 	lbz	r0, HSTATE_HOST_IPI(r13)
+	cmpwi	r0, 0
 	beq	4f
 	b	guest_exit_cont
 3:
@@ -1170,6 +1171,7 @@ mc_cont:
 	bl	kvmhv_accumulate_time
 #endif
 
+	mr 	r3, r12
 	/* Increment exit count, poke other threads to exit */
 	bl	kvmhv_commence_exit
 	nop

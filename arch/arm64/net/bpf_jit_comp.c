@@ -1,7 +1,7 @@
 /*
  * BPF JIT compiler for ARM64
  *
- * Copyright (C) 2014 Zi Shen Lim <zlim.lnx@gmail.com>
+ * Copyright (C) 2014-2015 Zi Shen Lim <zlim.lnx@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -113,9 +113,9 @@ static inline void emit_a64_mov_i(const int is64, const int reg,
 static inline int bpf2a64_offset(int bpf_to, int bpf_from,
 				 const struct jit_ctx *ctx)
 {
-	int to = ctx->offset[bpf_to + 1];
+	int to = ctx->offset[bpf_to];
 	/* -1 to account for the Branch instruction */
-	int from = ctx->offset[bpf_from + 1] - 1;
+	int from = ctx->offset[bpf_from] - 1;
 
 	return to - from;
 }
@@ -225,6 +225,17 @@ static int build_insn(const struct bpf_insn *insn, struct jit_ctx *ctx)
 	u8 jmp_cond;
 	s32 jmp_offset;
 
+#define check_imm(bits, imm) do {				\
+	if ((((imm) > 0) && ((imm) >> (bits))) ||		\
+	    (((imm) < 0) && (~(imm) >> (bits)))) {		\
+		pr_info("[%2d] imm=%d(0x%x) out of range\n",	\
+			i, imm, imm);				\
+		return -EINVAL;					\
+	}							\
+} while (0)
+#define check_imm19(imm) check_imm(19, imm)
+#define check_imm26(imm) check_imm(26, imm)
+
 	switch (code) {
 	/* dst = src */
 	case BPF_ALU | BPF_MOV | BPF_X:
@@ -258,15 +269,33 @@ static int build_insn(const struct bpf_insn *insn, struct jit_ctx *ctx)
 		break;
 	case BPF_ALU | BPF_DIV | BPF_X:
 	case BPF_ALU64 | BPF_DIV | BPF_X:
-		emit(A64_UDIV(is64, dst, dst, src), ctx);
-		break;
 	case BPF_ALU | BPF_MOD | BPF_X:
 	case BPF_ALU64 | BPF_MOD | BPF_X:
-		ctx->tmp_used = 1;
-		emit(A64_UDIV(is64, tmp, dst, src), ctx);
-		emit(A64_MUL(is64, tmp, tmp, src), ctx);
-		emit(A64_SUB(is64, dst, dst, tmp), ctx);
+	{
+		const u8 r0 = bpf2a64[BPF_REG_0];
+
+		/* if (src == 0) return 0 */
+		jmp_offset = 3; /* skip ahead to else path */
+		check_imm19(jmp_offset);
+		emit(A64_CBNZ(is64, src, jmp_offset), ctx);
+		emit(A64_MOVZ(1, r0, 0, 0), ctx);
+		jmp_offset = epilogue_offset(ctx);
+		check_imm26(jmp_offset);
+		emit(A64_B(jmp_offset), ctx);
+		/* else */
+		switch (BPF_OP(code)) {
+		case BPF_DIV:
+			emit(A64_UDIV(is64, dst, dst, src), ctx);
+			break;
+		case BPF_MOD:
+			ctx->tmp_used = 1;
+			emit(A64_UDIV(is64, tmp, dst, src), ctx);
+			emit(A64_MUL(is64, tmp, tmp, src), ctx);
+			emit(A64_SUB(is64, dst, dst, tmp), ctx);
+			break;
+		}
 		break;
+	}
 	case BPF_ALU | BPF_LSH | BPF_X:
 	case BPF_ALU64 | BPF_LSH | BPF_X:
 		emit(A64_LSLV(is64, dst, dst, src), ctx);
@@ -289,20 +318,38 @@ static int build_insn(const struct bpf_insn *insn, struct jit_ctx *ctx)
 	case BPF_ALU | BPF_END | BPF_FROM_BE:
 #ifdef CONFIG_CPU_BIG_ENDIAN
 		if (BPF_SRC(code) == BPF_FROM_BE)
-			break;
+			goto emit_bswap_uxt;
 #else /* !CONFIG_CPU_BIG_ENDIAN */
 		if (BPF_SRC(code) == BPF_FROM_LE)
-			break;
+			goto emit_bswap_uxt;
 #endif
 		switch (imm) {
 		case 16:
 			emit(A64_REV16(is64, dst, dst), ctx);
+			/* zero-extend 16 bits into 64 bits */
+			emit(A64_UXTH(is64, dst, dst), ctx);
 			break;
 		case 32:
 			emit(A64_REV32(is64, dst, dst), ctx);
+			/* upper 32 bits already cleared */
 			break;
 		case 64:
 			emit(A64_REV64(dst, dst), ctx);
+			break;
+		}
+		break;
+emit_bswap_uxt:
+		switch (imm) {
+		case 16:
+			/* zero-extend 16 bits into 64 bits */
+			emit(A64_UXTH(is64, dst, dst), ctx);
+			break;
+		case 32:
+			/* zero-extend 32 bits into 64 bits */
+			emit(A64_UXTW(is64, dst, dst), ctx);
+			break;
+		case 64:
+			/* nop */
 			break;
 		}
 		break;
@@ -374,17 +421,6 @@ static int build_insn(const struct bpf_insn *insn, struct jit_ctx *ctx)
 	case BPF_ALU64 | BPF_ARSH | BPF_K:
 		emit(A64_ASR(is64, dst, dst, imm), ctx);
 		break;
-
-#define check_imm(bits, imm) do {				\
-	if ((((imm) > 0) && ((imm) >> (bits))) ||		\
-	    (((imm) < 0) && (~(imm) >> (bits)))) {		\
-		pr_info("[%2d] imm=%d(0x%x) out of range\n",	\
-			i, imm, imm);				\
-		return -EINVAL;					\
-	}							\
-} while (0)
-#define check_imm19(imm) check_imm(19, imm)
-#define check_imm26(imm) check_imm(26, imm)
 
 	/* JUMP off */
 	case BPF_JMP | BPF_JA:
@@ -640,10 +676,11 @@ static int build_body(struct jit_ctx *ctx)
 		const struct bpf_insn *insn = &prog->insnsi[i];
 		int ret;
 
+		ret = build_insn(insn, ctx);
+
 		if (ctx->image == NULL)
 			ctx->offset[i] = ctx->idx;
 
-		ret = build_insn(insn, ctx);
 		if (ret > 0) {
 			i++;
 			continue;

@@ -681,6 +681,7 @@ static inline struct context_entry *iommu_context_addr(struct intel_iommu *iommu
 	struct context_entry *context;
 	u64 *entry;
 
+	entry = &root->lo;
 	if (ecs_enabled(iommu)) {
 		if (devfn >= 0x80) {
 			devfn -= 0x80;
@@ -688,7 +689,6 @@ static inline struct context_entry *iommu_context_addr(struct intel_iommu *iommu
 		}
 		devfn *= 2;
 	}
-	entry = &root->lo;
 	if (*entry & 1)
 		context = phys_to_virt(*entry & VTD_PAGE_MASK);
 	else {
@@ -1756,8 +1756,9 @@ static int domain_init(struct dmar_domain *domain, int guest_width)
 
 static void domain_exit(struct dmar_domain *domain)
 {
+	struct dmar_drhd_unit *drhd;
+	struct intel_iommu *iommu;
 	struct page *freelist = NULL;
-	int i;
 
 	/* Domain 0 is reserved, so dont process it */
 	if (!domain)
@@ -1777,8 +1778,10 @@ static void domain_exit(struct dmar_domain *domain)
 
 	/* clear attached or cached domains */
 	rcu_read_lock();
-	for_each_set_bit(i, domain->iommu_bmp, g_num_of_iommus)
-		iommu_detach_domain(domain, g_iommus[i]);
+	for_each_active_iommu(iommu, drhd)
+		if (domain_type_is_vm(domain) ||
+		    test_bit(iommu->seq_id, domain->iommu_bmp))
+			iommu_detach_domain(domain, iommu);
 	rcu_read_unlock();
 
 	dma_free_pagelist(freelist);
@@ -2030,15 +2033,19 @@ static int __domain_mapping(struct dmar_domain *domain, unsigned long iov_pfn,
 				return -ENOMEM;
 			/* It is large page*/
 			if (largepage_lvl > 1) {
+				unsigned long nr_superpages, end_pfn;
+
 				pteval |= DMA_PTE_LARGE_PAGE;
 				lvl_pages = lvl_to_nr_pages(largepage_lvl);
+
+				nr_superpages = sg_res / lvl_pages;
+				end_pfn = iov_pfn + nr_superpages * lvl_pages - 1;
+
 				/*
 				 * Ensure that old small page tables are
-				 * removed to make room for superpage,
-				 * if they exist.
+				 * removed to make room for superpage(s).
 				 */
-				dma_pte_free_pagetable(domain, iov_pfn,
-						       iov_pfn + lvl_pages - 1);
+				dma_pte_free_pagetable(domain, iov_pfn, end_pfn);
 			} else {
 				pteval &= ~(uint64_t)DMA_PTE_LARGE_PAGE;
 			}
@@ -3921,14 +3928,17 @@ int dmar_find_matched_atsr_unit(struct pci_dev *dev)
 	dev = pci_physfn(dev);
 	for (bus = dev->bus; bus; bus = bus->parent) {
 		bridge = bus->self;
-		if (!bridge || !pci_is_pcie(bridge) ||
+		/* If it's an integrated device, allow ATS */
+		if (!bridge)
+			return 1;
+		/* Connected via non-PCIe: no ATS */
+		if (!pci_is_pcie(bridge) ||
 		    pci_pcie_type(bridge) == PCI_EXP_TYPE_PCI_BRIDGE)
 			return 0;
+		/* If we found the root port, look it up in the ATSR */
 		if (pci_pcie_type(bridge) == PCI_EXP_TYPE_ROOT_PORT)
 			break;
 	}
-	if (!bridge)
-		return 0;
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(atsru, &dmar_atsr_units, list) {

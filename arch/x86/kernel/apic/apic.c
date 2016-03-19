@@ -336,6 +336,13 @@ static void __setup_APIC_LVTT(unsigned int clocks, int oneshot, int irqen)
 	apic_write(APIC_LVTT, lvtt_value);
 
 	if (lvtt_value & APIC_LVT_TIMER_TSCDEADLINE) {
+		/*
+		 * See Intel SDM: TSC-Deadline Mode chapter. In xAPIC mode,
+		 * writing to the APIC LVTT and TSC_DEADLINE MSR isn't serialized.
+		 * According to Intel, MFENCE can do the serialization here.
+		 */
+		asm volatile("mfence" : : : "memory");
+
 		printk_once(KERN_DEBUG "TSC deadline timer enabled\n");
 		return;
 	}
@@ -1424,7 +1431,7 @@ static inline void __x2apic_disable(void)
 {
 	u64 msr;
 
-	if (cpu_has_apic)
+	if (!cpu_has_apic)
 		return;
 
 	rdmsrl(MSR_IA32_APICBASE, msr);
@@ -1483,10 +1490,13 @@ void x2apic_setup(void)
 
 static __init void x2apic_disable(void)
 {
-	u32 x2apic_id;
+	u32 x2apic_id, state = x2apic_state;
 
-	if (x2apic_state != X2APIC_ON)
-		goto out;
+	x2apic_mode = 0;
+	x2apic_state = X2APIC_DISABLED;
+
+	if (state != X2APIC_ON)
+		return;
 
 	x2apic_id = read_apic_id();
 	if (x2apic_id >= 255)
@@ -1494,9 +1504,6 @@ static __init void x2apic_disable(void)
 
 	__x2apic_disable();
 	register_lapic_address(mp_lapic_addr);
-out:
-	x2apic_state = X2APIC_DISABLED;
-	x2apic_mode = 0;
 }
 
 static __init void x2apic_enable(void)

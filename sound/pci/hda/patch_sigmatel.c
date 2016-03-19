@@ -702,6 +702,7 @@ static bool hp_bnb2011_with_dock(struct hda_codec *codec)
 static bool hp_blike_system(u32 subsystem_id)
 {
 	switch (subsystem_id) {
+	case 0x103c1473: /* HP ProBook 6550b */
 	case 0x103c1520:
 	case 0x103c1521:
 	case 0x103c1523:
@@ -2920,7 +2921,8 @@ static const struct snd_pci_quirk stac92hd83xxx_fixup_tbl[] = {
 	SND_PCI_QUIRK(PCI_VENDOR_ID_HP, 0x148a,
 		      "HP Mini", STAC_92HD83XXX_HP_LED),
 	SND_PCI_QUIRK_VENDOR(PCI_VENDOR_ID_HP, "HP", STAC_92HD83XXX_HP),
-	SND_PCI_QUIRK(PCI_VENDOR_ID_TOSHIBA, 0xfa91,
+	/* match both for 0xfa91 and 0xfa93 */
+	SND_PCI_QUIRK_MASK(PCI_VENDOR_ID_TOSHIBA, 0xfffd, 0xfa91,
 		      "Toshiba Satellite S50D", STAC_92HD83XXX_GPIO10_EAPD),
 	{} /* terminator */
 };
@@ -3108,6 +3110,29 @@ static void stac92hd71bxx_fixup_hp_hdx(struct hda_codec *codec,
 	spec->gpio_led = 0x08;
 }
 
+static bool is_hp_output(struct hda_codec *codec, hda_nid_t pin)
+{
+	unsigned int pin_cfg = snd_hda_codec_get_pincfg(codec, pin);
+
+	/* count line-out, too, as BIOS sets often so */
+	return get_defcfg_connect(pin_cfg) != AC_JACK_PORT_NONE &&
+		(get_defcfg_device(pin_cfg) == AC_JACK_LINE_OUT ||
+		 get_defcfg_device(pin_cfg) == AC_JACK_HP_OUT);
+}
+
+static void fixup_hp_headphone(struct hda_codec *codec, hda_nid_t pin)
+{
+	unsigned int pin_cfg = snd_hda_codec_get_pincfg(codec, pin);
+
+	/* It was changed in the BIOS to just satisfy MS DTM.
+	 * Lets turn it back into slaved HP
+	 */
+	pin_cfg = (pin_cfg & (~AC_DEFCFG_DEVICE)) |
+		(AC_JACK_HP_OUT << AC_DEFCFG_DEVICE_SHIFT);
+	pin_cfg = (pin_cfg & (~(AC_DEFCFG_DEF_ASSOC | AC_DEFCFG_SEQUENCE))) |
+		0x1f;
+	snd_hda_codec_set_pincfg(codec, pin, pin_cfg);
+}
 
 static void stac92hd71bxx_fixup_hp(struct hda_codec *codec,
 				   const struct hda_fixup *fix, int action)
@@ -3117,22 +3142,12 @@ static void stac92hd71bxx_fixup_hp(struct hda_codec *codec,
 	if (action != HDA_FIXUP_ACT_PRE_PROBE)
 		return;
 
-	if (hp_blike_system(codec->core.subsystem_id)) {
-		unsigned int pin_cfg = snd_hda_codec_get_pincfg(codec, 0x0f);
-		if (get_defcfg_device(pin_cfg) == AC_JACK_LINE_OUT ||
-			get_defcfg_device(pin_cfg) == AC_JACK_SPEAKER  ||
-			get_defcfg_device(pin_cfg) == AC_JACK_HP_OUT) {
-			/* It was changed in the BIOS to just satisfy MS DTM.
-			 * Lets turn it back into slaved HP
-			 */
-			pin_cfg = (pin_cfg & (~AC_DEFCFG_DEVICE))
-					| (AC_JACK_HP_OUT <<
-						AC_DEFCFG_DEVICE_SHIFT);
-			pin_cfg = (pin_cfg & (~(AC_DEFCFG_DEF_ASSOC
-							| AC_DEFCFG_SEQUENCE)))
-								| 0x1f;
-			snd_hda_codec_set_pincfg(codec, 0x0f, pin_cfg);
-		}
+	/* when both output A and F are assigned, these are supposedly
+	 * dock and built-in headphones; fix both pin configs
+	 */
+	if (is_hp_output(codec, 0x0a) && is_hp_output(codec, 0x0f)) {
+		fixup_hp_headphone(codec, 0x0a);
+		fixup_hp_headphone(codec, 0x0f);
 	}
 
 	if (find_mute_led_cfg(codec, 1))
@@ -4521,7 +4536,11 @@ static int patch_stac92hd73xx(struct hda_codec *codec)
 		return err;
 
 	spec = codec->spec;
-	codec->power_save_node = 1;
+	/* enable power_save_node only for new 92HD89xx chips, as it causes
+	 * click noises on old 92HD73xx chips.
+	 */
+	if ((codec->core.vendor_id & 0xfffffff0) != 0x111d7670)
+		codec->power_save_node = 1;
 	spec->linear_tone_beep = 0;
 	spec->gen.mixer_nid = 0x1d;
 	spec->have_spdif_mux = 1;
