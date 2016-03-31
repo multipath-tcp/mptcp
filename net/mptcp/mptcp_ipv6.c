@@ -208,7 +208,7 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 						&tcp_hashinfo,
 						&ip6h->saddr, th->source,
 						&ip6h->daddr, ntohs(th->dest),
-						inet6_iif(skb));
+						tcp_v6_iif(skb));
 
 		if (!sk) {
 			kfree_skb(skb);
@@ -284,7 +284,7 @@ reset_and_discard:
 		 */
 		req = inet6_csk_search_req(meta_sk, th->source,
 					   &ipv6_hdr(skb)->saddr,
-					   &ipv6_hdr(skb)->daddr, inet6_iif(skb));
+					   &ipv6_hdr(skb)->daddr, tcp_v6_iif(skb));
 
 		if (req) {
 			inet_csk_reqsk_queue_drop(meta_sk, req);
