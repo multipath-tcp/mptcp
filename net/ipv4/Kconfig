@@ -702,6 +702,7 @@ config DEFAULT_TCP_CONG
 	default "westwood" if DEFAULT_WESTWOOD
 	default "veno" if DEFAULT_VENO
 	default "lia" if DEFAULT_LIA
+	default "olia" if DEFAULT_OLIA
 	default "wvegas" if DEFAULT_WVEGAS
 	default "balia" if DEFAULT_BALIA
 	default "reno" if DEFAULT_RENO
