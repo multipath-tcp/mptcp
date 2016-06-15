@@ -1600,6 +1600,13 @@ static void add_atomic_switch_msr(struct vcpu_vmx *vmx, unsigned msr,
 			return;
 		}
 		break;
+	case MSR_IA32_PEBS_ENABLE:
+		/* PEBS needs a quiescent period after being disabled (to write
+		 * a record).  Disabling PEBS through VMX MSR swapping doesn't
+		 * provide that period, so a CPU could write host's record into
+		 * guest's memory.
+		 */
+		wrmsrl(MSR_IA32_PEBS_ENABLE, 0);
 	}
 
 	for (i = 0; i < m->nr; ++i)
@@ -6733,6 +6740,7 @@ static int handle_invept(struct kvm_vcpu *vcpu)
 	if (!(types & (1UL << type))) {
 		nested_vmx_failValid(vcpu,
 				VMXERR_INVALID_OPERAND_TO_INVEPT_INVVPID);
+		skip_emulated_instruction(vcpu);
 		return 1;
 	}
 
