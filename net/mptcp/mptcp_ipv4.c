@@ -383,7 +383,8 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	if (loc->if_idx)
 		sk->sk_bound_dev_if = loc->if_idx;
 
-	ret = sock.ops->bind(&sock, (struct sockaddr *)&loc_in, sizeof(struct sockaddr_in));
+	ret = kernel_bind(&sock, (struct sockaddr *)&loc_in,
+			  sizeof(struct sockaddr_in));
 	if (ret < 0) {
 		mptcp_debug("%s: MPTCP subsocket bind() failed, error %d\n",
 			    __func__, ret);
@@ -399,8 +400,8 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	if (tcp_sk(meta_sk)->mpcb->pm_ops->init_subsocket_v4)
 		tcp_sk(meta_sk)->mpcb->pm_ops->init_subsocket_v4(sk, rem->addr);
 
-	ret = sock.ops->connect(&sock, (struct sockaddr *)&rem_in,
-				sizeof(struct sockaddr_in), O_NONBLOCK);
+	ret = kernel_connect(&sock, (struct sockaddr *)&rem_in,
+			     sizeof(struct sockaddr_in), O_NONBLOCK);
 	if (ret < 0 && ret != -EINPROGRESS) {
 		mptcp_debug("%s: MPTCP subsocket connect() failed, error %d\n",
 			    __func__, ret);
