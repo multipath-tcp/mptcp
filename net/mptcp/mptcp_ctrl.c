@@ -2218,7 +2218,8 @@ void mptcp_time_wait(struct sock *meta_sk, int state, int timeo)
 	}
 	rcu_read_unlock_bh();
 
-	tcp_done(meta_sk);
+	if (meta_sk->sk_state != TCP_CLOSE)
+		tcp_done(meta_sk);
 }
 
 void mptcp_tsq_flags(struct sock *sk)
