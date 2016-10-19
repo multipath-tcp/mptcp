@@ -2191,22 +2191,22 @@ void mptcp_twsk_destructor(struct tcp_timewait_sock *tw)
 /* Updates the rcv_nxt of the time-wait-socks and allows them to ack a
  * data-fin.
  */
-void mptcp_time_wait(struct sock *sk, int state, int timeo)
+void mptcp_time_wait(struct sock *meta_sk, int state, int timeo)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_tw *mptw;
 
 	/* Used for sockets that go into tw after the meta
 	 * (see mptcp_init_tw_sock())
 	 */
-	tp->mpcb->in_time_wait = 1;
-	tp->mpcb->mptw_state = state;
+	meta_tp->mpcb->in_time_wait = 1;
+	meta_tp->mpcb->mptw_state = state;
 
 	/* Update the time-wait-sock's information */
 	rcu_read_lock_bh();
-	list_for_each_entry_rcu(mptw, &tp->mpcb->tw_list, list) {
+	list_for_each_entry_rcu(mptw, &meta_tp->mpcb->tw_list, list) {
 		mptw->meta_tw = 1;
-		mptw->rcv_nxt = mptcp_get_rcv_nxt_64(tp);
+		mptw->rcv_nxt = mptcp_get_rcv_nxt_64(meta_tp);
 
 		/* We want to ack a DATA_FIN, but are yet in FIN_WAIT_2 -
 		 * pretend as if the DATA_FIN has already reached us, that way
@@ -2218,7 +2218,7 @@ void mptcp_time_wait(struct sock *sk, int state, int timeo)
 	}
 	rcu_read_unlock_bh();
 
-	tcp_done(sk);
+	tcp_done(meta_sk);
 }
 
 void mptcp_tsq_flags(struct sock *sk)
