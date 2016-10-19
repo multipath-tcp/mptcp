@@ -990,8 +990,7 @@ static int mptcp_queue_skb(struct sock *sk)
 			meta_tp->rcv_nxt = TCP_SKB_CB(tmp1)->end_seq;
 			mptcp_check_rcvseq_wrap(meta_tp, old_rcv_nxt);
 
-			if ((TCP_SKB_CB(tmp1)->tcp_flags & TCPHDR_FIN) &&
-			    !mpcb->in_time_wait)
+			if (TCP_SKB_CB(tmp1)->tcp_flags & TCPHDR_FIN)
 				mptcp_fin(meta_sk);
 
 			/* Check if this fills a gap in the ofo queue */
@@ -1338,6 +1337,7 @@ void mptcp_fin(struct sock *meta_sk)
 	struct sock *sk = NULL, *sk_it;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
+	unsigned char state;
 
 	mptcp_for_each_sk(mpcb, sk_it) {
 		if (tcp_sk(sk_it)->mptcp->path_index == mpcb->dfin_path_index) {
@@ -1351,10 +1351,15 @@ void mptcp_fin(struct sock *meta_sk)
 
 	inet_csk_schedule_ack(sk);
 
-	meta_sk->sk_shutdown |= RCV_SHUTDOWN;
-	sock_set_flag(meta_sk, SOCK_DONE);
+	if (!mpcb->in_time_wait) {
+		meta_sk->sk_shutdown |= RCV_SHUTDOWN;
+		sock_set_flag(meta_sk, SOCK_DONE);
+		state = meta_sk->sk_state;
+	} else {
+		state = mpcb->mptw_state;
+	}
 
-	switch (meta_sk->sk_state) {
+	switch (state) {
 	case TCP_SYN_RECV:
 	case TCP_ESTABLISHED:
 		/* Move to CLOSE_WAIT */
