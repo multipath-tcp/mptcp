@@ -108,7 +108,8 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 	struct mptcp_options_received mopt;
 
 	tmp_opt.saw_tstamp = 0;
-	if (th->doff > (sizeof(*th) >> 2) && tcptw->tw_ts_recent_stamp) {
+	if (th->doff > (sizeof(*th) >> 2) &&
+	    (tcptw->tw_ts_recent_stamp || tcptw->mptcp_tw)) {
 		mptcp_init_mp_opt(&mopt);
 
 		tcp_parse_options(skb, &tmp_opt, &mopt, 0, NULL, NULL);
