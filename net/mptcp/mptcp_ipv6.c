@@ -352,24 +352,22 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	struct tcp_sock *tp;
 	struct sock *sk;
 	struct sockaddr_in6 loc_in, rem_in;
-	struct socket sock;
+	struct socket_alloc sock_full;
+	struct socket *sock = (struct socket *)&sock_full;
 	int ret;
 
 	/** First, create and prepare the new socket */
+	memcpy(&sock_full, meta_sk->sk_socket, sizeof(sock_full));
+	sock->state = SS_UNCONNECTED;
+	sock->ops = NULL;
 
-	sock.type = meta_sk->sk_socket->type;
-	sock.state = SS_UNCONNECTED;
-	sock.wq = meta_sk->sk_socket->wq;
-	sock.file = meta_sk->sk_socket->file;
-	sock.ops = NULL;
-
-	ret = inet6_create(sock_net(meta_sk), &sock, IPPROTO_TCP, 1);
+	ret = inet6_create(sock_net(meta_sk), sock, IPPROTO_TCP, 1);
 	if (unlikely(ret < 0)) {
 		mptcp_debug("%s inet6_create failed ret: %d\n", __func__, ret);
 		return ret;
 	}
 
-	sk = sock.sk;
+	sk = sock->sk;
 	tp = tcp_sk(sk);
 
 	/* All subsockets need the MPTCP-lock-class */
@@ -399,7 +397,8 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	if (loc->if_idx)
 		sk->sk_bound_dev_if = loc->if_idx;
 
-	ret = sock.ops->bind(&sock, (struct sockaddr *)&loc_in, sizeof(struct sockaddr_in6));
+	ret = sock->ops->bind(sock, (struct sockaddr *)&loc_in,
+			      sizeof(struct sockaddr_in6));
 	if (ret < 0) {
 		mptcp_debug("%s: MPTCP subsocket bind()failed, error %d\n",
 			    __func__, ret);
@@ -415,8 +414,8 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	if (tcp_sk(meta_sk)->mpcb->pm_ops->init_subsocket_v6)
 		tcp_sk(meta_sk)->mpcb->pm_ops->init_subsocket_v6(sk, rem->addr);
 
-	ret = sock.ops->connect(&sock, (struct sockaddr *)&rem_in,
-				sizeof(struct sockaddr_in6), O_NONBLOCK);
+	ret = sock->ops->connect(sock, (struct sockaddr *)&rem_in,
+				 sizeof(struct sockaddr_in6), O_NONBLOCK);
 	if (ret < 0 && ret != -EINPROGRESS) {
 		mptcp_debug("%s: MPTCP subsocket connect() failed, error %d\n",
 			    __func__, ret);
