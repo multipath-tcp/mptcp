@@ -623,7 +623,13 @@ static void mptcp_sock_def_error_report(struct sock *sk)
 		if (!sock_flag(meta_sk, SOCK_DEAD))
 			meta_sk->sk_error_report(meta_sk);
 
-		tcp_done(meta_sk);
+		WARN(meta_sk->sk_state == TCP_CLOSE,
+		     "Meta already closed i_rcv %u i_snd %u send_i %u flags %#lx\n",
+		     mpcb->infinite_mapping_rcv, mpcb->infinite_mapping_snd,
+		     mpcb->send_infinite_mapping, meta_sk->sk_flags);
+
+		if (meta_sk->sk_state != TCP_CLOSE)
+			tcp_done(meta_sk);
 	}
 
 	sk->sk_err = 0;

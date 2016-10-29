@@ -1261,7 +1261,8 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 	sk = mptcp_select_ack_sock(meta_sk);
 
 	/* May happen if no subflow is in an appropriate state, OR
-	 * we are in infinite mode or about to go there - just send a reset */
+	 * we are in infinite mode or about to go there - just send a reset
+	 */
 	if (!sk || mpcb->infinite_mapping_snd || mpcb->send_infinite_mapping ||
 	    mpcb->infinite_mapping_rcv) {
 
