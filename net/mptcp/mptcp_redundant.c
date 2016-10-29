@@ -208,6 +208,9 @@ static struct sk_buff *redundant_next_segment(struct sock *meta_sk,
 			sk_data->skb_end_seq = TCP_SKB_CB(skb)->end_seq;
 			cb_data->next_subflow = tp->mptcp->next;
 			*subsk = (struct sock *)tp;
+
+			if (TCP_SKB_CB(skb)->path_mask)
+				*reinject = -1;
 			return skb;
 		}
 
