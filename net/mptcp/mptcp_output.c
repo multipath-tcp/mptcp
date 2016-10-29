@@ -145,6 +145,10 @@ static void __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk
 
 	skb->sk = meta_sk;
 
+	/* Reset subflow-specific TCP control-data */
+	TCP_SKB_CB(skb)->sacked = 0;
+	TCP_SKB_CB(skb)->tcp_flags &= (TCPHDR_ACK | TCPHDR_PSH);
+
 	/* If it reached already the destination, we don't have to reinject it */
 	if (!after(TCP_SKB_CB(skb)->end_seq, meta_tp->snd_una)) {
 		__kfree_skb(skb);
@@ -468,10 +472,7 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 	mptcp_save_dss_data_seq(tp, subskb);
 
 	tcb->seq = tp->write_seq;
-	tcb->sacked = 0; /* reset the sacked field: from the point of view
-			  * of this subflow, we are sending a brand new
-			  * segment
-			  */
+
 	/* Take into account seg len */
 	tp->write_seq += subskb->len + ((tcb->tcp_flags & TCPHDR_FIN) ? 1 : 0);
 	tcb->end_seq = tp->write_seq;
@@ -582,6 +583,9 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 		unsigned int seg_size = tcp_wnd_end(meta_tp) - TCP_SKB_CB(skb)->seq;
 		struct sock *subsk = meta_tp->mpcb->sched_ops->get_subflow(meta_sk, skb, true);
 		struct tcp_sock *subtp;
+
+		WARN_ON(TCP_SKB_CB(skb)->sacked);
+
 		if (!subsk)
 			goto window_probe;
 		subtp = tcp_sk(subsk);
@@ -660,6 +664,9 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 	while ((skb = mpcb->sched_ops->next_segment(meta_sk, &reinject, &subsk,
 						    &sublimit))) {
 		unsigned int limit;
+
+		WARN(TCP_SKB_CB(skb)->sacked, "sacked: %u reinject: %u",
+		     TCP_SKB_CB(skb)->sacked, reinject);
 
 		subtp = tcp_sk(subsk);
 		mss_now = tcp_current_mss(subsk);
@@ -1391,6 +1398,8 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 	struct sock *subsk;
 	unsigned int limit, mss_now;
 	int err = -1;
+
+	WARN_ON(TCP_SKB_CB(skb)->sacked);
 
 	/* Do not sent more than we queued. 1/4 is reserved for possible
 	 * copying overhead: fragmentation, tunneling, mangling etc.
