@@ -950,6 +950,9 @@ static void mptcp_sub_inherit_sockopts(const struct sock *meta_sk, struct sock *
 	/* Inherit SO_REUSEADDR */
 	sub_sk->sk_reuse = meta_sk->sk_reuse;
 
+	/* Inherit SO_MARK: can be used for routing or filtering */
+	sub_sk->sk_mark = meta_sk->sk_mark;
+
 	/* Inherit snd/rcv-buffer locks */
 	sub_sk->sk_userlocks = meta_sk->sk_userlocks & ~SOCK_BINDPORT_LOCK;
 
