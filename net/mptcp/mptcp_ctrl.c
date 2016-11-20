@@ -734,6 +734,8 @@ static void mptcp_set_state(struct sock *sk)
 			meta_sk->sk_state_change(meta_sk);
 			sk_wake_async(meta_sk, SOCK_WAKE_IO, POLL_OUT);
 		}
+
+		tcp_sk(meta_sk)->lsndtime = tcp_time_stamp;
 	}
 
 	if (sk->sk_state == TCP_ESTABLISHED) {
