@@ -1772,9 +1772,9 @@ adjudge_to_death:
 	}
 	if (meta_sk->sk_state != TCP_CLOSE) {
 		sk_mem_reclaim(meta_sk);
-		if (tcp_too_many_orphans(meta_sk, 0)) {
+		if (tcp_check_oom(meta_sk, 0)) {
 			if (net_ratelimit())
-				pr_info("MPTCP: too many of orphaned sockets\n");
+				pr_info("MPTCP: out of memory: force closing socket\n");
 			tcp_set_state(meta_sk, TCP_CLOSE);
 			meta_tp->ops->send_active_reset(meta_sk, GFP_ATOMIC);
 			NET_INC_STATS_BH(sock_net(meta_sk),
