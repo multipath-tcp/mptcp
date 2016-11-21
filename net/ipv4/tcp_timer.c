@@ -256,7 +256,7 @@ void tcp_delack_timer_handler(struct sock *sk)
 	}
 
 out:
-	if (sk_under_memory_pressure(sk))
+	if (tcp_under_memory_pressure(sk))
 		sk_mem_reclaim(sk);
 }
 
@@ -655,7 +655,7 @@ static void tcp_keepalive_timer (unsigned long data)
 			tcp_write_err(sk);
 			goto out;
 		}
-		if (tp->ops->write_wakeup(sk) <= 0) {
+		if (tp->ops->write_wakeup(sk, LINUX_MIB_TCPKEEPALIVE) <= 0) {
 			icsk->icsk_probes_out++;
 			elapsed = keepalive_intvl_when(tp);
 		} else {
