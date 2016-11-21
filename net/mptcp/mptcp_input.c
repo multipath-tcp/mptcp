@@ -2405,7 +2405,7 @@ bool mptcp_should_expand_sndbuf(const struct sock *sk)
 		return false;
 
 	/* If we are under global TCP memory pressure, do not expand.  */
-	if (sk_under_memory_pressure(meta_sk))
+	if (tcp_under_memory_pressure(meta_sk))
 		return false;
 
 	/* If we are under soft global TCP memory pressure, do not expand.  */
