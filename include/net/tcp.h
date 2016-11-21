@@ -379,7 +379,7 @@ void tcp_enter_quickack_mode(struct sock *sk);
 int tcp_close_state(struct sock *sk);
 void tcp_minshall_update(struct tcp_sock *tp, unsigned int mss_now,
 			 const struct sk_buff *skb);
-int tcp_xmit_probe_skb(struct sock *sk, int urgent);
+int tcp_xmit_probe_skb(struct sock *sk, int urgent, int mib);
 void tcp_event_new_data_sent(struct sock *sk, const struct sk_buff *skb);
 int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		     gfp_t gfp_mask);
@@ -393,8 +393,7 @@ bool tcp_nagle_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 bool tcp_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 		      unsigned int cur_mss);
 unsigned int tcp_cwnd_test(const struct tcp_sock *tp, const struct sk_buff *skb);
-int tcp_init_tso_segs(const struct sock *sk, struct sk_buff *skb,
-		      unsigned int mss_now);
+int tcp_init_tso_segs(struct sk_buff *skb, unsigned int mss_now);
 void __pskb_trim_head(struct sk_buff *skb, int len);
 void tcp_queue_skb(struct sock *sk, struct sk_buff *skb);
 void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags);
@@ -409,8 +408,7 @@ bool retransmits_timed_out(struct sock *sk, unsigned int boundary,
 			   unsigned int timeout, bool syn_set);
 void tcp_write_err(struct sock *sk);
 void tcp_adjust_pcount(struct sock *sk, const struct sk_buff *skb, int decr);
-void tcp_set_skb_tso_segs(const struct sock *sk, struct sk_buff *skb,
-			  unsigned int mss_now);
+void tcp_set_skb_tso_segs(struct sk_buff *skb, unsigned int mss_now);
 
 void tcp_v4_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
 			   struct request_sock *req);
@@ -1847,7 +1845,7 @@ struct tcp_sock_ops {
 	bool (*write_xmit)(struct sock *sk, unsigned int mss_now, int nonagle,
 			   int push_one, gfp_t gfp);
 	void (*send_active_reset)(struct sock *sk, gfp_t priority);
-	int (*write_wakeup)(struct sock *sk);
+	int (*write_wakeup)(struct sock *sk, int mib);
 	bool (*prune_ofo_queue)(struct sock *sk);
 	void (*retransmit_timer)(struct sock *sk);
 	void (*time_wait)(struct sock *sk, int state, int timeo);

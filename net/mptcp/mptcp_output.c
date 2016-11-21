@@ -490,7 +490,7 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 		/* Necessary to initialize for tcp_transmit_skb. mss of 1, as
 		 * skb->len = 0 will force tso_segs to 1.
 		 */
-		tcp_init_tso_segs(sk, subskb, 1);
+		tcp_init_tso_segs(subskb, 1);
 		/* Empty data-fins are sent immediatly on the subflow */
 		err = tcp_transmit_skb(sk, subskb, 1, GFP_ATOMIC);
 
@@ -566,7 +566,7 @@ static int mptcp_fragment(struct sock *meta_sk, struct sk_buff *skb, u32 len,
 }
 
 /* Inspired by tcp_write_wakeup */
-int mptcp_write_wakeup(struct sock *meta_sk)
+int mptcp_write_wakeup(struct sock *meta_sk, int mib)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct sk_buff *skb;
@@ -610,7 +610,7 @@ int mptcp_write_wakeup(struct sock *meta_sk)
 				return -1;
 		} else if (!tcp_skb_pcount(skb)) {
 			/* see mptcp_write_xmit on why we use UINT_MAX */
-			tcp_set_skb_tso_segs(meta_sk, skb, UINT_MAX);
+			tcp_set_skb_tso_segs(skb, UINT_MAX);
 		}
 
 		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_PSH;
@@ -631,7 +631,7 @@ window_probe:
 			    meta_tp->snd_una + 0xFFFF)) {
 			mptcp_for_each_sk(meta_tp->mpcb, sk_it) {
 				if (mptcp_sk_can_send_ack(sk_it))
-					tcp_xmit_probe_skb(sk_it, 1);
+					tcp_xmit_probe_skb(sk_it, 1, mib);
 			}
 		}
 
@@ -642,7 +642,7 @@ window_probe:
 			if (!mptcp_sk_can_send_ack(sk_it))
 				continue;
 
-			ret = tcp_xmit_probe_skb(sk_it, 0);
+			ret = tcp_xmit_probe_skb(sk_it, 0, mib);
 			if (unlikely(ret > 0))
 				ans = ret;
 		}
@@ -696,7 +696,7 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		 * we still need an accurate packets_out count in
 		 * tcp_event_new_data_sent.
 		 */
-		tcp_set_skb_tso_segs(meta_sk, skb, UINT_MAX);
+		tcp_set_skb_tso_segs(skb, UINT_MAX);
 
 		/* Check for nagle, irregardless of tso_segs. If the segment is
 		 * actually larger than mss_now (TSO segment), then

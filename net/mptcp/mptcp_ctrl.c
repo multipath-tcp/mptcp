@@ -47,6 +47,7 @@
 #include <linux/kconfig.h>
 #include <linux/module.h>
 #include <linux/netpoll.h>
+#include <linux/proc_fs.h>
 #include <linux/list.h>
 #include <linux/jhash.h>
 #include <linux/tcp.h>

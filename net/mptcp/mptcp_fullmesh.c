@@ -1,4 +1,5 @@
 #include <linux/module.h>
+#include <linux/proc_fs.h>
 
 #include <net/mptcp.h>
 #include <net/mptcp_v4.h>

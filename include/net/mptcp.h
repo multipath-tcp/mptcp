@@ -839,7 +839,7 @@ void mptcp_clean_rtx_infinite(const struct sk_buff *skb, struct sock *sk);
 void mptcp_fin(struct sock *meta_sk);
 void mptcp_meta_retransmit_timer(struct sock *meta_sk);
 void mptcp_sub_retransmit_timer(struct sock *sk);
-int mptcp_write_wakeup(struct sock *meta_sk);
+int mptcp_write_wakeup(struct sock *meta_sk, int mib);
 void mptcp_sub_close_wq(struct work_struct *work);
 void mptcp_sub_close(struct sock *sk, unsigned long delay);
 struct sock *mptcp_select_ack_sock(const struct sock *meta_sk);

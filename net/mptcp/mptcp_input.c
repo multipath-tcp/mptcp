@@ -76,7 +76,7 @@ static inline int mptcp_tso_acked_reinject(const struct sock *meta_sk,
 
 	/* Any change of skb->len requires recalculation of tso factor. */
 	if (tcp_skb_pcount(skb) > 1)
-		tcp_set_skb_tso_segs(meta_sk, skb, tcp_skb_mss(skb));
+		tcp_set_skb_tso_segs(skb, tcp_skb_mss(skb));
 	packets_acked -= tcp_skb_pcount(skb);
 
 	if (packets_acked) {
