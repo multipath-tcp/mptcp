@@ -1212,10 +1212,8 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 	 * We have to deschedule it before continuing, because otherwise
 	 * mptcp_v4_do_rcv will hit again on it inside tcp_v4_hnd_req.
 	 */
-	if (tw) {
-		inet_twsk_deschedule(tw);
-		inet_twsk_put(tw);
-	}
+	if (tw)
+		inet_twsk_deschedule_put(tw);
 
 	TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_JOIN;
 	/* OK, this is a new syn/join, let's create a new open request and
