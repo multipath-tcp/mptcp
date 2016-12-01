@@ -502,6 +502,15 @@ void mptcp_unregister_scheduler(struct mptcp_sched_ops *sched)
 	spin_lock(&mptcp_sched_list_lock);
 	list_del_rcu(&sched->list);
 	spin_unlock(&mptcp_sched_list_lock);
+
+	/* Wait for outstanding readers to complete before the
+	 * module gets removed entirely.
+	 *
+	 * A try_module_get() should fail by now as our module is
+	 * in "going" state since no refs are held anymore and
+	 * module_exit() handler being called.
+	 */
+	synchronize_rcu();
 }
 EXPORT_SYMBOL_GPL(mptcp_unregister_scheduler);
 
