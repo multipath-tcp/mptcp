@@ -85,6 +85,13 @@ config MPTCP_ROUNDROBIN
 	  This is a very simple round-robin scheduler. Probably has bad performance
 	  but might be interesting for researchers.
 
+config MPTCP_REMP 
+	tristate "MPTCP ReMP" 
+ 	depends on (MPTCP=y) 
+  	---help--- 
+ 	  This scheduler sends all packets redundantly over all subflows to decreases 
+ 	  latency and jitter on the cost of lower throughput. 
+
 choice
 	prompt "Default MPTCP Scheduler"
 	default DEFAULT

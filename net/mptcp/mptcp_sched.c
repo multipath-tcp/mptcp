@@ -101,7 +101,7 @@ static bool mptcp_is_temp_unavailable(struct sock *sk,
 }
 
 /* Is the sub-socket sk available to send the skb? */
-static bool mptcp_is_available(struct sock *sk, const struct sk_buff *skb,
+bool mptcp_is_available(struct sock *sk, const struct sk_buff *skb,
 			       bool zero_wnd_test)
 {
 	return !mptcp_is_def_unavailable(sk) &&
