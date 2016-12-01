@@ -422,12 +422,15 @@ struct tcp_sock {
 		is_master_sk:1,
 		close_it:1,	/* Must close socket in mptcp_data_ready? */
 		closing:1,
-		mptcp_ver:4;
+		mptcp_ver:4,
+		mptcp_sched_setsockopt:1;
 	struct mptcp_tcp_sock *mptcp;
 #ifdef CONFIG_MPTCP
+#define MPTCP_SCHED_NAME_MAX 16
 	struct hlist_nulls_node tk_table;
 	u32		mptcp_loc_token;
 	u64		mptcp_loc_key;
+	char		mptcp_sched_name[MPTCP_SCHED_NAME_MAX];
 #endif /* CONFIG_MPTCP */
 };
 

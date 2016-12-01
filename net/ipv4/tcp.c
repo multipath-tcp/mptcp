@@ -2434,6 +2434,34 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 		release_sock(sk);
 		return err;
 	}
+#ifdef CONFIG_MPTCP
+	case MPTCP_SCHEDULER: {
+		char name[MPTCP_SCHED_NAME_MAX];
+
+		if (optlen < 1)
+			return -EINVAL;
+
+		/* Cannot be used if MPTCP is not used or we already have
+		 * established an MPTCP-connection.
+		 */
+		if (mptcp_init_failed || !sysctl_mptcp_enabled ||
+		    sk->sk_state != TCP_CLOSE)
+			return -EPERM;
+
+		val = strncpy_from_user(name, optval,
+					min_t(long, MPTCP_SCHED_NAME_MAX - 1,
+					      optlen));
+
+		if (val < 0)
+			return -EFAULT;
+		name[val] = 0;
+
+		lock_sock(sk);
+		err = mptcp_set_scheduler(sk, name);
+		release_sock(sk);
+		return err;
+	}
+#endif
 	default:
 		/* fallthru */
 		break;
@@ -3005,6 +3033,25 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 		return 0;
 	}
 #ifdef CONFIG_MPTCP
+	case MPTCP_SCHEDULER:
+		if (get_user(len, optlen))
+			return -EFAULT;
+		len = min_t(unsigned int, len, MPTCP_SCHED_NAME_MAX);
+		if (put_user(len, optlen))
+			return -EFAULT;
+
+		if (mptcp(tcp_sk(sk))) {
+			struct mptcp_cb *mpcb = tcp_sk(mptcp_meta_sk(sk))->mpcb;
+
+			if (copy_to_user(optval, mpcb->sched_ops->name, len))
+				return -EFAULT;
+		} else {
+			if (copy_to_user(optval, tcp_sk(sk)->mptcp_sched_name,
+					 len))
+				return -EFAULT;
+		}
+		return 0;
+
 	case MPTCP_ENABLED:
 		val = sock_flag(sk, SOCK_MPTCP) ? 1 : 0;
 		break;

@@ -554,18 +554,67 @@ int mptcp_set_default_scheduler(const char *name)
 	return ret;
 }
 
+/* Must be called with rcu lock held */
+static struct mptcp_sched_ops *__mptcp_sched_find_autoload(const char *name)
+{
+	struct mptcp_sched_ops *sched = mptcp_sched_find(name);
+#ifdef CONFIG_MODULES
+	if (!sched && capable(CAP_NET_ADMIN)) {
+		rcu_read_unlock();
+		request_module("mptcp_%s", name);
+		rcu_read_lock();
+		sched = mptcp_sched_find(name);
+	}
+#endif
+	return sched;
+}
+
 void mptcp_init_scheduler(struct mptcp_cb *mpcb)
 {
 	struct mptcp_sched_ops *sched;
+	struct sock *meta_sk = mpcb->meta_sk;
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
 	rcu_read_lock();
+	/* if scheduler was set using socket option */
+	if (meta_tp->mptcp_sched_setsockopt) {
+		sched = __mptcp_sched_find_autoload(meta_tp->mptcp_sched_name);
+		if (sched && try_module_get(sched->owner)) {
+			mpcb->sched_ops = sched;
+			goto out;
+		}
+	}
+
 	list_for_each_entry_rcu(sched, &mptcp_sched_list, list) {
 		if (try_module_get(sched->owner)) {
 			mpcb->sched_ops = sched;
 			break;
 		}
 	}
+out:
 	rcu_read_unlock();
+}
+
+/* Change scheduler for socket */
+int mptcp_set_scheduler(struct sock *sk, const char *name)
+{
+	struct mptcp_sched_ops *sched;
+	int err = 0;
+
+	rcu_read_lock();
+	sched = __mptcp_sched_find_autoload(name);
+
+	if (!sched) {
+		err = -ENOENT;
+	} else if (!ns_capable(sock_net(sk)->user_ns, CAP_NET_ADMIN)) {
+		err = -EPERM;
+	} else {
+		strcpy(tcp_sk(sk)->mptcp_sched_name, name);
+		tcp_sk(sk)->mptcp_sched_setsockopt = 1;
+	}
+	rcu_read_unlock();
+
+	return err;
 }
 
 /* Manage refcounts on socket close. */
