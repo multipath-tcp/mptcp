@@ -97,7 +97,6 @@ struct mptcp_request_sock {
 
 		struct {
 			/* Only on additional subflows */
-			struct mptcp_cb	*mptcp_mpcb;
 			u32		mptcp_rem_nonce;
 			u32		mptcp_loc_nonce;
 			u64		mptcp_hash_tmac;
@@ -834,7 +833,8 @@ void mptcp_select_initial_window(int __space, __u32 mss, __u32 *rcv_wnd,
 unsigned int mptcp_current_mss(struct sock *meta_sk);
 int mptcp_select_size(const struct sock *meta_sk, bool sg);
 void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn);
-void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u32 *hash_out, int arg_num, ...);
+void mptcp_hmac_sha1(const u8 *key_1, const u8 *key_2, u32 *hash_out,
+		     int arg_num, ...);
 void mptcp_clean_rtx_infinite(const struct sk_buff *skb, struct sock *sk);
 void mptcp_fin(struct sock *meta_sk);
 void mptcp_meta_retransmit_timer(struct sock *meta_sk);
@@ -881,7 +881,8 @@ int mptcp_sub_len_remove_addr_align(u16 bitfield);
 void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
 			    const struct sk_buff *skb);
 void mptcp_init_buffer_space(struct sock *sk);
-void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, const struct request_sock *req,
+void mptcp_join_reqsk_init(const struct mptcp_cb *mpcb,
+			   const struct request_sock *req,
 			   struct sk_buff *skb);
 void mptcp_reqsk_init(struct request_sock *req, const struct sock *sk,
 		      const struct sk_buff *skb, bool want_cookie);

@@ -414,32 +414,34 @@ void tcp_write_err(struct sock *sk);
 void tcp_adjust_pcount(struct sock *sk, const struct sk_buff *skb, int decr);
 void tcp_set_skb_tso_segs(struct sk_buff *skb, unsigned int mss_now);
 
-void tcp_v4_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
+void tcp_v4_reqsk_send_ack(const struct sock *sk, struct sk_buff *skb,
 			   struct request_sock *req);
 int tcp_v4_send_synack(struct sock *sk, struct dst_entry *dst,
 		       struct flowi *fl,
 		       struct request_sock *req,
 		       u16 queue_mapping,
 		       struct tcp_fastopen_cookie *foc);
-void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb);
+void tcp_v4_send_reset(const struct sock *sk, struct sk_buff *skb);
 struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb);
 void tcp_v4_reqsk_destructor(struct request_sock *req);
 
-void tcp_v6_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
+void tcp_v6_reqsk_send_ack(const struct sock *sk, struct sk_buff *skb,
 			   struct request_sock *req);
 int tcp_v6_send_synack(struct sock *sk, struct dst_entry *dst,
 		       struct flowi *fl, struct request_sock *req,
 		       u16 queue_mapping, struct tcp_fastopen_cookie *foc);
-void tcp_v6_send_reset(struct sock *sk, struct sk_buff *skb);
+void tcp_v6_send_reset(const struct sock *sk, struct sk_buff *skb);
 int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
 int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len);
 void tcp_v6_destroy_sock(struct sock *sk);
 void inet6_sk_rx_dst_set(struct sock *sk, const struct sk_buff *skb);
 void tcp_v6_hash(struct sock *sk);
 struct sock *tcp_v6_hnd_req(struct sock *sk,struct sk_buff *skb);
-struct sock *tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
-			          struct request_sock *req,
-				  struct dst_entry *dst);
+struct sock *tcp_v6_syn_recv_sock(const struct sock *sk, struct sk_buff *skb,
+				  struct request_sock *req,
+				  struct dst_entry *dst,
+				  struct request_sock *req_unhash,
+				  bool *own_req);
 void tcp_v6_reqsk_destructor(struct request_sock *req);
 
 unsigned int tcp_xmit_size_goal(struct sock *sk, u32 mss_now,
@@ -1896,10 +1898,10 @@ struct tcp_request_sock_ops {
 					  const struct sock *sk,
 					  const struct sk_buff *skb);
 #endif
-	void (*init_req)(struct request_sock *req,
-			 const struct sock *sk_listener,
-			 struct sk_buff *skb,
-			 bool want_cookie);
+	int (*init_req)(struct request_sock *req,
+			const struct sock *sk_listener,
+			struct sk_buff *skb,
+			bool want_cookie);
 #ifdef CONFIG_SYN_COOKIES
 	__u32 (*cookie_init_seq)(struct request_sock *req, const struct sock *sk,
 				 const struct sk_buff *skb, __u16 *mss);

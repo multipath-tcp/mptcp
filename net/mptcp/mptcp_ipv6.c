@@ -93,7 +93,7 @@ static void mptcp_v6_reqsk_destructor(struct request_sock *req)
 	tcp_v6_reqsk_destructor(req);
 }
 
-static int mptcp_v6_init_req(struct request_sock *req, struct sock *sk,
+static int mptcp_v6_init_req(struct request_sock *req, const struct sock *sk,
 			     struct sk_buff *skb, bool want_cookie)
 {
 	tcp_request_sock_ipv6_ops.init_req(req, sk, skb, want_cookie);
@@ -125,11 +125,11 @@ static u32 mptcp_v6_cookie_init_seq(struct request_sock *req, const struct sock 
 }
 #endif
 
-static int mptcp_v6_join_init_req(struct request_sock *req, struct sock *sk,
+static int mptcp_v6_join_init_req(struct request_sock *req, const struct sock *sk,
 				  struct sk_buff *skb, bool want_cookie)
 {
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
-	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
+	const struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 	union inet_addr addr;
 	int loc_id;
 	bool low_prio = false;

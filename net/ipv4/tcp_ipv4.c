@@ -1210,7 +1210,8 @@ static bool tcp_v4_inbound_md5_hash(const struct sock *sk,
 
 static int tcp_v4_init_req(struct request_sock *req,
 			   const struct sock *sk_listener,
-			   struct sk_buff *skb)
+			   struct sk_buff *skb,
+			   bool want_cookie)
 {
 	struct inet_request_sock *ireq = inet_rsk(req);
 

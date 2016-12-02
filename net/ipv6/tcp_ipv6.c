@@ -693,7 +693,8 @@ static bool tcp_v6_inbound_md5_hash(const struct sock *sk,
 
 static int tcp_v6_init_req(struct request_sock *req,
 			   const struct sock *sk_listener,
-			   struct sk_buff *skb)
+			   struct sk_buff *skb,
+			   bool want_cookie)
 {
 	struct inet_request_sock *ireq = inet_rsk(req);
 	const struct ipv6_pinfo *np = inet6_sk(sk_listener);

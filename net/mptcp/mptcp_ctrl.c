@@ -809,7 +809,8 @@ void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn)
 		*idsn = *((u64 *)&mptcp_hashed_key[3]);
 }
 
-void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u32 *hash_out, int arg_num, ...)
+void mptcp_hmac_sha1(const u8 *key_1, const u8 *key_2, u32 *hash_out,
+		     int arg_num, ...)
 {
 	u32 workspace[SHA_WORKSPACE_WORDS];
 	u8 input[128]; /* 2 512-bit blocks */
@@ -2271,7 +2272,8 @@ void mptcp_tsq_sub_deferred(struct sock *meta_sk)
 	}
 }
 
-void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, const struct request_sock *req,
+void mptcp_join_reqsk_init(const struct mptcp_cb *mpcb,
+			   const struct request_sock *req,
 			   struct sk_buff *skb)
 {
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
@@ -2281,7 +2283,6 @@ void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, const struct request_sock *req
 	mptcp_init_mp_opt(&mopt);
 	tcp_parse_mptcp_options(skb, &mopt);
 
-	mtreq->mptcp_mpcb = mpcb;
 	mtreq->is_sub = 1;
 	inet_rsk(req)->mptcp_rqsk = 1;
 
