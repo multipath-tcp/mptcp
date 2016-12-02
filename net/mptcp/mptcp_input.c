@@ -1081,53 +1081,6 @@ exit:
 		meta_sk->sk_data_ready(meta_sk);
 }
 
-
-int mptcp_check_req(struct sk_buff *skb, struct net *net)
-{
-	const struct tcphdr *th = tcp_hdr(skb);
-	struct sock *meta_sk = NULL;
-
-	/* MPTCP structures not initialized */
-	if (mptcp_init_failed)
-		return 0;
-
-	if (skb->protocol == htons(ETH_P_IP))
-		meta_sk = mptcp_v4_search_req(th->source, ip_hdr(skb)->saddr,
-					      ip_hdr(skb)->daddr, net);
-#if IS_ENABLED(CONFIG_IPV6)
-	else /* IPv6 */
-		meta_sk = mptcp_v6_search_req(th->source, &ipv6_hdr(skb)->saddr,
-					      &ipv6_hdr(skb)->daddr, net);
-#endif /* CONFIG_IPV6 */
-
-	if (!meta_sk)
-		return 0;
-
-	TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_JOIN;
-
-	bh_lock_sock_nested(meta_sk);
-	if (sock_owned_by_user(meta_sk)) {
-		skb->sk = meta_sk;
-		if (unlikely(sk_add_backlog(meta_sk, skb,
-					    meta_sk->sk_rcvbuf + meta_sk->sk_sndbuf))) {
-			bh_unlock_sock(meta_sk);
-			NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
-			sock_put(meta_sk); /* Taken by mptcp_search_req */
-			kfree_skb(skb);
-			return 1;
-		}
-	} else if (skb->protocol == htons(ETH_P_IP)) {
-		tcp_v4_do_rcv(meta_sk, skb);
-#if IS_ENABLED(CONFIG_IPV6)
-	} else { /* IPv6 */
-		tcp_v6_do_rcv(meta_sk, skb);
-#endif /* CONFIG_IPV6 */
-	}
-	bh_unlock_sock(meta_sk);
-	sock_put(meta_sk); /* Taken by mptcp_vX_search_req */
-	return 1;
-}
-
 struct mp_join *mptcp_find_join(const struct sk_buff *skb)
 {
 	const struct tcphdr *th = tcp_hdr(skb);
