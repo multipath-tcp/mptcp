@@ -1215,7 +1215,6 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 	if (tw)
 		inet_twsk_deschedule_put(tw);
 
-	TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_JOIN;
 	/* OK, this is a new syn/join, let's create a new open request and
 	 * send syn+ack
 	 */
@@ -1271,8 +1270,6 @@ int mptcp_do_join_short(struct sk_buff *skb,
 		sock_put(meta_sk); /* Taken by mptcp_hash_find */
 		return -1;
 	}
-
-	TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_JOIN;
 
 	/* OK, this is a new syn/join, let's create a new open request and
 	 * send syn+ack

@@ -180,44 +180,62 @@ static int mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {
 	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct sock *child, *rsk = NULL;
+	const struct tcphdr *th = tcp_hdr(skb);
+	const struct ipv6hdr *ip6h = ipv6_hdr(skb);
+	struct sock *child, *rsk = NULL, *sk;
 	int ret;
 
-	if (!(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_JOIN)) {
-		struct tcphdr *th = tcp_hdr(skb);
-		const struct ipv6hdr *ip6h = ipv6_hdr(skb);
-		struct sock *sk;
+	sk = __inet6_lookup_established(sock_net(meta_sk),
+					&tcp_hashinfo,
+					&ip6h->saddr, th->source,
+					&ip6h->daddr, ntohs(th->dest),
+					tcp_v6_iif(skb));
 
-		sk = __inet6_lookup_established(sock_net(meta_sk),
-						&tcp_hashinfo,
-						&ip6h->saddr, th->source,
-						&ip6h->daddr, ntohs(th->dest),
-						tcp_v6_iif(skb));
+	if (!sk)
+		goto new_subflow;
 
-		if (!sk) {
-			kfree_skb(skb);
-			return 0;
-		}
-		if (is_meta_sk(sk)) {
-			WARN("%s Did not find a sub-sk!\n", __func__);
-			kfree_skb(skb);
-			sock_put(sk);
-			return 0;
-		}
-
-		if (sk->sk_state == TCP_TIME_WAIT) {
-			inet_twsk_put(inet_twsk(sk));
-			kfree_skb(skb);
-			return 0;
-		}
-
-		ret = tcp_v6_do_rcv(sk, skb);
+	if (is_meta_sk(sk)) {
+		WARN("%s Did not find a sub-sk - did found the meta!\n", __func__);
 		sock_put(sk);
-
-		return ret;
+		goto discard;
 	}
-	TCP_SKB_CB(skb)->mptcp_flags = 0;
 
+	if (sk->sk_state == TCP_TIME_WAIT) {
+		inet_twsk_put(inet_twsk(sk));
+		goto discard;
+	}
+
+	if (sk->sk_state == TCP_NEW_SYN_RECV) {
+		struct request_sock *req = inet_reqsk(sk);
+
+		child = tcp_check_req(meta_sk, skb, req, false);
+		if (!child) {
+			reqsk_put(req);
+			goto discard;
+		}
+
+		if (child != meta_sk) {
+			ret = mptcp_finish_handshake(child, skb);
+			if (ret) {
+				rsk = child;
+				goto reset_and_discard;
+			}
+
+			return 0;
+		}
+
+		/* tcp_check_req failed */
+		reqsk_put(req);
+
+		goto discard;
+	}
+
+	ret = tcp_v6_do_rcv(sk, skb);
+	sock_put(sk);
+
+	return ret;
+
+new_subflow:
 	/* Has been removed from the tk-table. Thus, no new subflows.
 	 *
 	 * Check for close-state is necessary, because we may have been closed
@@ -229,38 +247,28 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	    mpcb->infinite_mapping_rcv || mpcb->send_infinite_mapping)
 		goto reset_and_discard;
 
-	child = tcp_v6_hnd_req(meta_sk, skb);
-
+	child = tcp_v6_cookie_check(meta_sk, skb);
 	if (!child)
 		goto discard;
 
 	if (child != meta_sk) {
-		sock_rps_save_rxhash(child, skb);
-		/* We don't call tcp_child_process here, because we hold
-		 * already the meta-sk-lock and are sure that it is not owned
-		 * by the user.
-		 */
-		ret = tcp_rcv_state_process(child, skb, tcp_hdr(skb), skb->len);
-		bh_unlock_sock(child);
-		sock_put(child);
+		ret = mptcp_finish_handshake(child, skb);
 		if (ret) {
 			rsk = child;
 			goto reset_and_discard;
 		}
-	} else {
-		if (tcp_hdr(skb)->syn) {
-			mptcp_v6_join_request(meta_sk, skb);
-			goto discard;
-		}
-		goto reset_and_discard;
 	}
+
+	if (tcp_hdr(skb)->syn)
+		mptcp_v6_join_request(meta_sk, skb);
+
+discard:
+	kfree_skb(skb);
 	return 0;
 
 reset_and_discard:
 	tcp_v6_send_reset(rsk, skb);
-discard:
-	kfree_skb(skb);
-	return 0;
+	goto discard;
 }
 
 /* Create a new IPv6 subflow.
