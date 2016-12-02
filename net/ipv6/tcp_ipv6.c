@@ -974,7 +974,7 @@ void tcp_v6_reqsk_send_ack(const struct sock *sk, struct sk_buff *skb,
 }
 
 
-static struct sock *tcp_v6_cookie_check(struct sock *sk, struct sk_buff *skb)
+struct sock *tcp_v6_cookie_check(struct sock *sk, struct sk_buff *skb)
 {
 #ifdef CONFIG_SYN_COOKIES
 	const struct tcphdr *th = tcp_hdr(skb);
@@ -1460,8 +1460,6 @@ process:
 				bh_lock_sock(sk);
 
 				if (sock_owned_by_user(sk)) {
-					TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_JOIN;
-
 					skb->sk = sk;
 					if (unlikely(sk_add_backlog(sk, skb,
 								    sk->sk_rcvbuf + sk->sk_sndbuf))) {
