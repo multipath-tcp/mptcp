@@ -1455,7 +1455,30 @@ process:
 			reqsk_put(req);
 			goto discard_it;
 		}
-		if (likely(sk->sk_state == TCP_LISTEN)) {
+		if (likely(sk->sk_state == TCP_LISTEN || is_meta_sk(sk))) {
+			if (is_meta_sk(sk)) {
+				bh_lock_sock(sk);
+
+				if (sock_owned_by_user(sk)) {
+					TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_JOIN;
+
+					skb->sk = sk;
+					if (unlikely(sk_add_backlog(sk, skb,
+								    sk->sk_rcvbuf + sk->sk_sndbuf))) {
+						reqsk_put(req);
+
+						bh_unlock_sock(sk);
+						NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
+						goto discard_and_relse;
+					}
+
+					reqsk_put(req);
+					bh_unlock_sock(sk);
+
+					return 0;
+				}
+			}
+
 			nsk = tcp_check_req(sk, skb, req, false);
 		} else {
 			inet_csk_reqsk_queue_drop_and_put(sk, req);
@@ -1463,11 +1486,15 @@ process:
 		}
 		if (!nsk) {
 			reqsk_put(req);
+			if (is_meta_sk(sk))
+				bh_unlock_sock(sk);
 			goto discard_it;
 		}
 		if (nsk == sk) {
 			sock_hold(sk);
 			reqsk_put(req);
+			if (is_meta_sk(sk))
+				bh_unlock_sock(sk);
 			tcp_v6_restore_cb(skb);
 		} else if (tcp_child_process(sk, nsk, skb)) {
 			tcp_v6_send_reset(nsk, skb);
@@ -1546,13 +1573,6 @@ no_tcp_socket:
 		} else if (ret > 0) {
 			return 0;
 		}
-	}
-
-	/* Is there a pending request sock for this segment ? */
-	if (!sk && mptcp_check_req(skb, net)) {
-		if (sk)
-			sock_put(sk);
-		return 0;
 	}
 #endif
 
