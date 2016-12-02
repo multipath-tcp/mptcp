@@ -155,22 +155,6 @@ struct request_sock_ops mptcp_request_sock_ops __read_mostly = {
 	.syn_ack_timeout =	tcp_syn_ack_timeout,
 };
 
-static void mptcp_v4_reqsk_queue_hash_add(struct sock *meta_sk,
-					  struct request_sock *req,
-					  const unsigned long timeout)
-{
-	const u32 h1 = inet_synq_hash(inet_rsk(req)->ir_rmt_addr,
-				     inet_rsk(req)->ir_rmt_port,
-				     0, MPTCP_HASH_SIZE);
-	inet_csk_reqsk_queue_hash_add(meta_sk, req, timeout);
-
-	rcu_read_lock();
-	spin_lock(&mptcp_reqsk_hlock);
-	hlist_nulls_add_head_rcu(&mptcp_rsk(req)->hash_entry, &mptcp_reqsk_htb[h1]);
-	spin_unlock(&mptcp_reqsk_hlock);
-	rcu_read_unlock();
-}
-
 /* Similar to tcp_v4_conn_request */
 static int mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 {
@@ -258,72 +242,10 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	return 0;
 
 reset_and_discard:
-	if (reqsk_queue_len(&inet_csk(meta_sk)->icsk_accept_queue)) {
-		const struct tcphdr *th = tcp_hdr(skb);
-		const struct iphdr *iph = ip_hdr(skb);
-		struct request_sock *req;
-		/* If we end up here, it means we should not have matched on the
-		 * request-socket. But, because the request-sock queue is only
-		 * destroyed in mptcp_close, the socket may actually already be
-		 * in close-state (e.g., through shutdown()) while still having
-		 * pending request sockets.
-		 */
-		req = inet_csk_search_req(meta_sk, th->source, iph->saddr, iph->daddr);
-
-		if (req) {
-			inet_csk_reqsk_queue_drop(meta_sk, req);
-			reqsk_put(req);
-		}
-	}
-
 	tcp_v4_send_reset(rsk, skb);
 discard:
 	kfree_skb(skb);
 	return 0;
-}
-
-/* After this, the ref count of the meta_sk associated with the request_sock
- * is incremented. Thus it is the responsibility of the caller
- * to call sock_put() when the reference is not needed anymore.
- */
-struct sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
-				 const __be32 laddr, const struct net *net)
-{
-	const struct mptcp_request_sock *mtreq;
-	struct sock *meta_sk = NULL;
-	const struct hlist_nulls_node *node;
-	const u32 hash = inet_synq_hash(raddr, rport, 0, MPTCP_HASH_SIZE);
-
-	rcu_read_lock();
-begin:
-	hlist_nulls_for_each_entry_rcu(mtreq, node, &mptcp_reqsk_htb[hash],
-				       hash_entry) {
-		struct inet_request_sock *ireq = inet_rsk(rev_mptcp_rsk(mtreq));
-		meta_sk = mtreq->mptcp_mpcb->meta_sk;
-
-		if (ireq->ir_rmt_port == rport &&
-		    ireq->ir_rmt_addr == raddr &&
-		    ireq->ir_loc_addr == laddr &&
-		    rev_mptcp_rsk(mtreq)->rsk_ops->family == AF_INET &&
-		    net_eq(net, sock_net(meta_sk)))
-			goto found;
-		meta_sk = NULL;
-	}
-	/* A request-socket is destroyed by RCU. So, it might have been recycled
-	 * and put into another hash-table list. So, after the lookup we may
-	 * end up in a different list. So, we may need to restart.
-	 *
-	 * See also the comment in __inet_lookup_established.
-	 */
-	if (get_nulls_value(node) != hash + MPTCP_REQSK_NULLS_BASE)
-		goto begin;
-
-found:
-	if (meta_sk && unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
-		meta_sk = NULL;
-	rcu_read_unlock();
-
-	return meta_sk;
 }
 
 /* Create a new IPv4 subflow.
