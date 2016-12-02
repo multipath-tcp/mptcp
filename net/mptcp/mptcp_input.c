@@ -1441,6 +1441,16 @@ static void mptcp_xmit_retransmit_queue(struct sock *meta_sk)
 	}
 }
 
+static void mptcp_snd_una_update(struct tcp_sock *meta_tp, u32 data_ack)
+{
+	u32 delta = data_ack - meta_tp->snd_una;
+
+	u64_stats_update_begin(&meta_tp->syncp);
+	meta_tp->bytes_acked += delta;
+	u64_stats_update_end(&meta_tp->syncp);
+	meta_tp->snd_una = data_ack;
+}
+
 /* Handle the DATA_ACK */
 static void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 {
@@ -1532,7 +1542,7 @@ static void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	if (!prior_packets)
 		goto no_queue;
 
-	meta_tp->snd_una = data_ack;
+	mptcp_snd_una_update(meta_tp, data_ack);
 
 	mptcp_clean_rtx_queue(meta_sk, prior_snd_una);
 
