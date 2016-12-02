@@ -416,20 +416,12 @@ void tcp_set_skb_tso_segs(struct sk_buff *skb, unsigned int mss_now);
 
 void tcp_v4_reqsk_send_ack(const struct sock *sk, struct sk_buff *skb,
 			   struct request_sock *req);
-int tcp_v4_send_synack(struct sock *sk, struct dst_entry *dst,
-		       struct flowi *fl,
-		       struct request_sock *req,
-		       u16 queue_mapping,
-		       struct tcp_fastopen_cookie *foc);
 void tcp_v4_send_reset(const struct sock *sk, struct sk_buff *skb);
 struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb);
 void tcp_v4_reqsk_destructor(struct request_sock *req);
 
 void tcp_v6_reqsk_send_ack(const struct sock *sk, struct sk_buff *skb,
 			   struct request_sock *req);
-int tcp_v6_send_synack(struct sock *sk, struct dst_entry *dst,
-		       struct flowi *fl, struct request_sock *req,
-		       u16 queue_mapping, struct tcp_fastopen_cookie *foc);
 void tcp_v6_send_reset(const struct sock *sk, struct sk_buff *skb);
 int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
 int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len);

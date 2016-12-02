@@ -1612,7 +1612,7 @@ void mptcp_select_initial_window(int __space, __u32 mss, __u32 *rcv_wnd,
 				__u8 *rcv_wscale, __u32 init_rcv_wnd,
 				 const struct sock *sk)
 {
-	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
+	const struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 
 	*window_clamp = mpcb->orig_window_clamp;
 	__space = tcp_win_from_space(mpcb->orig_sk_rcvbuf);

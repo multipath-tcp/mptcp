@@ -257,7 +257,7 @@ struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 	tp->ops->select_initial_window(tcp_full_space(sk), req->mss,
 				       &req->rsk_rcv_wnd, &req->rsk_window_clamp,
 				       ireq->wscale_ok, &rcv_wscale,
-				       dst_metric(dst, RTAX_INITRWND));
+				       dst_metric(dst, RTAX_INITRWND), sk);
 
 	ireq->rcv_wscale = rcv_wscale;
 	ireq->ecn_ok = cookie_ecn_ok(&tcp_opt, sock_net(sk), dst);
