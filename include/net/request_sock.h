@@ -176,7 +176,7 @@ struct request_sock_queue {
 					     */
 };
 
-void reqsk_queue_alloc(struct request_sock_queue *queue, gfp_t flags);
+void reqsk_queue_alloc(struct request_sock_queue *queue);
 
 void reqsk_fastopen_remove(struct sock *sk, struct request_sock *req,
 			   bool reset);

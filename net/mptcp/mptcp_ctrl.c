@@ -1162,12 +1162,9 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	 * connections, it does not need to be huge, since we only store  here
 	 * pending subflow creations.
 	 */
-	if (reqsk_queue_alloc(&meta_icsk->icsk_accept_queue, 32, GFP_ATOMIC)) {
-		inet_put_port(master_sk);
-		kmem_cache_free(mptcp_cb_cache, mpcb);
-		sk_free(master_sk);
-		return -ENOMEM;
-	}
+	reqsk_queue_alloc(&meta_icsk->icsk_accept_queue);
+	meta_sk->sk_max_ack_backlog = 32;
+	meta_sk->sk_ack_backlog = 0;
 
 	if (!sock_flag(meta_sk, SOCK_MPTCP)) {
 		mptcp_enable_static_key();
@@ -1230,7 +1227,6 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 
 void mptcp_fallback_meta_sk(struct sock *meta_sk)
 {
-	kfree(inet_csk(meta_sk)->icsk_accept_queue.listen_opt);
 	kmem_cache_free(mptcp_cb_cache, tcp_sk(meta_sk)->mpcb);
 }
 
@@ -1628,6 +1624,7 @@ void mptcp_update_sndbuf(const struct tcp_sock *tp)
 		meta_sk->sk_write_space(meta_sk);
 }
 
+/* Similar to: tcp_close */
 void mptcp_close(struct sock *meta_sk, long timeout)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
@@ -1643,11 +1640,9 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 	mutex_lock(&mpcb->mpcb_mutex);
 	lock_sock(meta_sk);
 
-	if (meta_tp->inside_tk_table) {
+	if (meta_tp->inside_tk_table)
 		/* Detach the mpcb from the token hashtable */
 		mptcp_hash_remove_bh(meta_tp);
-		reqsk_queue_destroy(&inet_csk(meta_sk)->icsk_accept_queue);
-	}
 
 	meta_sk->sk_shutdown = SHUTDOWN_MASK;
 	/* We need to flush the recv. buffs.  We do this only on the
@@ -1805,10 +1800,8 @@ void mptcp_disconnect(struct sock *sk)
 
 	__skb_queue_purge(&tp->mpcb->reinject_queue);
 
-	if (tp->inside_tk_table) {
+	if (tp->inside_tk_table)
 		mptcp_hash_remove_bh(tp);
-		reqsk_queue_destroy(&inet_csk(tp->meta_sk)->icsk_accept_queue);
-	}
 
 	local_bh_disable();
 	mptcp_for_each_sk_safe(tp->mpcb, subsk, tmpsk) {
