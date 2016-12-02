@@ -81,10 +81,6 @@ struct mptcp_rem6 {
 
 struct mptcp_request_sock {
 	struct tcp_request_sock		req;
-	/* hlist-nulls entry to the hash-table. Depending on whether this is a
-	 * a new MPTCP connection or an additional subflow, the request-socket
-	 * is either in the mptcp_reqsk_tk_htb or mptcp_reqsk_htb.
-	 */
 	struct hlist_nulls_node		hash_entry;
 
 	union {
@@ -759,19 +755,6 @@ extern u32 mptcp_seed;
 
 extern struct hlist_nulls_head tk_hashtable[MPTCP_HASH_SIZE];
 
-/* This second hashtable is needed to retrieve request socks
- * created as a result of a join request. While the SYN contains
- * the token, the final ack does not, so we need a separate hashtable
- * to retrieve the mpcb.
- */
-extern struct hlist_nulls_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
-extern spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
-
-/* Lock, protecting the two hash-tables that hold the token. Namely,
- * mptcp_reqsk_tk_htb and tk_hashtable
- */
-extern spinlock_t mptcp_tk_hashlock;	/* hashtable protection */
-
 /* Request-sockets can be hashed in the tk_htb for collision-detection or in
  * the regular htb for join-connections. We need to define different NULLS
  * values so that we can correctly detect a request-socket that has been
@@ -876,7 +859,6 @@ int mptcp_do_join_short(struct sk_buff *skb,
 			const struct mptcp_options_received *mopt,
 			struct net *net);
 void mptcp_reqsk_destructor(struct request_sock *req);
-int mptcp_check_req(struct sk_buff *skb, struct net *net);
 void mptcp_connect_init(struct sock *sk);
 void mptcp_sub_force_close(struct sock *sk);
 int mptcp_sub_len_remove_addr_align(u16 bitfield);
@@ -1081,28 +1063,6 @@ static inline int is_meta_sk(const struct sock *sk)
 static inline int is_master_tp(const struct tcp_sock *tp)
 {
 	return !mptcp(tp) || (!tp->mptcp->slave_sk && !is_meta_tp(tp));
-}
-
-static inline void mptcp_hash_request_remove(struct request_sock *req)
-{
-	int in_softirq = 0;
-
-	if (hlist_nulls_unhashed(&mptcp_rsk(req)->hash_entry))
-		return;
-
-	if (in_softirq()) {
-		spin_lock(&mptcp_reqsk_hlock);
-		in_softirq = 1;
-	} else {
-		spin_lock_bh(&mptcp_reqsk_hlock);
-	}
-
-	hlist_nulls_del_init_rcu(&mptcp_rsk(req)->hash_entry);
-
-	if (in_softirq)
-		spin_unlock(&mptcp_reqsk_hlock);
-	else
-		spin_unlock_bh(&mptcp_reqsk_hlock);
 }
 
 static inline void mptcp_init_mp_opt(struct mptcp_options_received *mopt)

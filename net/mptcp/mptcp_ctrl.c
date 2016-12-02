@@ -176,17 +176,13 @@ static inline u32 mptcp_hash_tk(u32 token)
 struct hlist_nulls_head tk_hashtable[MPTCP_HASH_SIZE];
 EXPORT_SYMBOL(tk_hashtable);
 
-/* This second hashtable is needed to retrieve request socks
- * created as a result of a join request. While the SYN contains
- * the token, the final ack does not, so we need a separate hashtable
- * to retrieve the mpcb.
- */
-struct hlist_nulls_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
-spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
-
 /* The following hash table is used to avoid collision of token */
 static struct hlist_nulls_head mptcp_reqsk_tk_htb[MPTCP_HASH_SIZE];
-spinlock_t mptcp_tk_hashlock;	/* hashtable protection */
+
+/* Lock, protecting the two hash-tables that hold the token. Namely,
+ * mptcp_reqsk_tk_htb and tk_hashtable
+ */
+static spinlock_t mptcp_tk_hashlock;
 
 static bool mptcp_reqsk_find_tk(const u32 token)
 {
@@ -240,8 +236,6 @@ void mptcp_reqsk_destructor(struct request_sock *req)
 			spin_unlock(&mptcp_tk_hashlock);
 			rcu_read_unlock_bh();
 		}
-	} else {
-		mptcp_hash_request_remove(req);
 	}
 }
 
@@ -2656,12 +2650,9 @@ void __init mptcp_init(void)
 
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
 		INIT_HLIST_NULLS_HEAD(&tk_hashtable[i], i);
-		INIT_HLIST_NULLS_HEAD(&mptcp_reqsk_htb[i],
-				      i + MPTCP_REQSK_NULLS_BASE);
 		INIT_HLIST_NULLS_HEAD(&mptcp_reqsk_tk_htb[i], i);
 	}
 
-	spin_lock_init(&mptcp_reqsk_hlock);
 	spin_lock_init(&mptcp_tk_hashlock);
 
 	if (register_pernet_subsys(&mptcp_pm_proc_ops))
