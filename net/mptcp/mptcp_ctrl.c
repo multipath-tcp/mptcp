@@ -304,12 +304,12 @@ static void mptcp_set_key_reqsk(struct request_sock *req,
  * will be created in mptcp_check_req_master(), and store the received token.
  */
 static void mptcp_reqsk_new_mptcp(struct request_sock *req,
-				  struct sock *sk,
+				  const struct sock *sk,
 				  const struct mptcp_options_received *mopt,
 				  const struct sk_buff *skb)
 {
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
-	struct tcp_sock *tp = tcp_sk(sk);
+	const struct tcp_sock *tp = tcp_sk(sk);
 
 	inet_rsk(req)->saw_mpc = 1;
 	/* MPTCP version agreement */
@@ -2301,7 +2301,7 @@ void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, const struct request_sock *req
 	MPTCP_INC_STATS_BH(sock_net(mpcb->meta_sk), MPTCP_MIB_JOINSYNRX);
 }
 
-void mptcp_reqsk_init(struct request_sock *req, struct sock *sk,
+void mptcp_reqsk_init(struct request_sock *req, const struct sock *sk,
 		      const struct sk_buff *skb, bool want_cookie)
 {
 	struct mptcp_options_received mopt;

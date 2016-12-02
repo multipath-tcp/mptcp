@@ -883,7 +883,7 @@ void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
 void mptcp_init_buffer_space(struct sock *sk);
 void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, const struct request_sock *req,
 			   struct sk_buff *skb);
-void mptcp_reqsk_init(struct request_sock *req, struct sock *sk,
+void mptcp_reqsk_init(struct request_sock *req, const struct sock *sk,
 		      const struct sk_buff *skb, bool want_cookie);
 int mptcp_conn_request(struct sock *sk, struct sk_buff *skb);
 void mptcp_enable_sock(struct sock *sk);

@@ -112,7 +112,7 @@ static int mptcp_v6_init_req(struct request_sock *req, struct sock *sk,
 }
 
 #ifdef CONFIG_SYN_COOKIES
-static u32 mptcp_v6_cookie_init_seq(struct request_sock *req, struct sock *sk,
+static u32 mptcp_v6_cookie_init_seq(struct request_sock *req, const struct sock *sk,
 				    const struct sk_buff *skb, __u16 *mssp)
 {
 	__u32 isn = cookie_v6_init_sequence(req, sk, skb, mssp);
