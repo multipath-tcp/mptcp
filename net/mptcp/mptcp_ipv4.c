@@ -384,7 +384,6 @@ int mptcp_pm_v4_init(void)
 #endif
 	mptcp_join_request_sock_ipv4_ops = tcp_request_sock_ipv4_ops;
 	mptcp_join_request_sock_ipv4_ops.init_req = mptcp_v4_join_init_req;
-	mptcp_join_request_sock_ipv4_ops.queue_hash_add = mptcp_v4_reqsk_queue_hash_add;
 
 	ops->slab_name = kasprintf(GFP_KERNEL, "request_sock_%s", "MPTCP");
 	if (ops->slab_name == NULL) {
