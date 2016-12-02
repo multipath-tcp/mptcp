@@ -2036,7 +2036,8 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	return 0;
 }
 
-struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
+struct sock *mptcp_check_req_child(struct sock *meta_sk,
+				   struct sock *child,
 				   struct request_sock *req,
 				   const struct mptcp_options_received *mopt)
 {
@@ -2096,7 +2097,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	child_tp->mptcp->slave_sk = 1;
 	child_tp->mptcp->snt_isn = tcp_rsk(req)->snt_isn;
 	child_tp->mptcp->rcv_isn = tcp_rsk(req)->rcv_isn;
-	child_tp->mptcp->init_rcv_wnd = req->rcv_wnd;
+	child_tp->mptcp->init_rcv_wnd = req->rsk_rcv_wnd;
 
 	child_tp->tsq_flags = 0;
 

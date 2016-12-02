@@ -822,7 +822,8 @@ int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key,
 int mptcp_check_req_fastopen(struct sock *child, struct request_sock *req);
 int mptcp_check_req_master(struct sock *sk, struct sock *child,
 			   struct request_sock *req, int drop);
-struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
+struct sock *mptcp_check_req_child(struct sock *meta_sk,
+				   struct sock *child,
 				   struct request_sock *req,
 				   const struct mptcp_options_received *mopt);
 u32 __mptcp_select_window(struct sock *sk);
@@ -1435,7 +1436,7 @@ static inline int mptcp_check_req_master(const struct sock *sk,
 {
 	return 1;
 }
-static inline struct sock *mptcp_check_req_child(struct sock *sk,
+static inline struct sock *mptcp_check_req_child(struct sock *meta_sk,
 						 struct sock *child,
 						 struct request_sock *req,
 						 const struct mptcp_options_received *mopt)
