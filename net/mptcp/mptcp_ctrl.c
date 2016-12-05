@@ -1191,6 +1191,24 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 		rcu_read_lock();
 		spin_lock(&mptcp_tk_hashlock);
 
+		/* With lockless listeners, we might process two ACKs at the
+		 * same time. With TCP, inet_csk_complete_hashdance takes care
+		 * of this. But, for MPTCP this would be too late if we add
+		 * this MPTCP-socket in the token table (new subflows might
+		 * come in and match on this socket here.
+		 * So, we need to check if someone else already added the token
+		 * and revert in that case. The other guy won the race...
+		 */
+		if (mptcp_find_token(mpcb->mptcp_loc_token)) {
+			spin_unlock(&mptcp_tk_hashlock);
+			rcu_read_unlock();
+
+			inet_put_port(master_sk);
+			kmem_cache_free(mptcp_cb_cache, mpcb);
+			sk_free(master_sk);
+
+			return -ENOBUFS;
+		}
 		__mptcp_hash_insert(meta_tp, mpcb->mptcp_loc_token);
 
 		spin_unlock(&mptcp_tk_hashlock);
