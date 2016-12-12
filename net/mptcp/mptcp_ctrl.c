@@ -2134,7 +2134,6 @@ teardown:
 
 	/* Drop this request - sock creation failed. */
 	inet_csk_reqsk_queue_drop(meta_sk, req);
-	reqsk_put(req);
 	inet_csk_prepare_forced_close(child);
 	tcp_done(child);
 	return meta_sk;
