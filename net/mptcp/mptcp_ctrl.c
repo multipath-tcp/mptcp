@@ -1899,13 +1899,7 @@ int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key,
 		goto err_add_sock;
 
 	meta_sk->sk_prot->unhash(meta_sk);
-
-	if (master_sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(master_sk))
-		__inet_hash_nolisten(master_sk, NULL);
-#if IS_ENABLED(CONFIG_IPV6)
-	else
-		__inet_hash(master_sk, NULL);
-#endif
+	inet_ehash_nolisten(master_sk, NULL);
 
 	master_tp->mptcp->init_rcv_wnd = master_tp->rcv_wnd;
 
@@ -2030,7 +2024,7 @@ int mptcp_check_req_fastopen(struct sock *child, struct request_sock *req)
 }
 
 int mptcp_check_req_master(struct sock *sk, struct sock *child,
-			   struct request_sock *req,
+			   struct request_sock *req, const struct sk_buff *skb,
 			   int drop)
 {
 	struct sock *meta_sk = child;
@@ -2039,19 +2033,21 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	ret = __mptcp_check_req_master(child, req);
 	if (ret)
 		return ret;
+	child = tcp_sk(child)->mpcb->master_sk;
 
-	tcp_synack_rtt_meas(tcp_sk(child)->mpcb->master_sk, req);
+	sock_rps_save_rxhash(child, skb);
 
 	/* drop indicates that we come from tcp_check_req and thus need to
 	 * handle the request-socket fully.
 	 */
 	if (drop) {
-		inet_csk_reqsk_queue_drop(sk, req);
+		tcp_synack_rtt_meas(child, req);
+		inet_csk_complete_hashdance(sk, meta_sk, req, true);
 	} else {
 		/* Thus, we come from syn-cookies */
 		atomic_set(&req->rsk_refcnt, 1);
+		inet_csk_reqsk_queue_add(sk, req, meta_sk);
 	}
-	inet_csk_reqsk_queue_add(sk, req, meta_sk);
 
 	return 0;
 }
@@ -2059,6 +2055,7 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 struct sock *mptcp_check_req_child(struct sock *meta_sk,
 				   struct sock *child,
 				   struct request_sock *req,
+				   const struct sk_buff *skb,
 				   const struct mptcp_options_received *mopt)
 {
 	struct tcp_sock *child_tp = tcp_sk(child);
@@ -2121,6 +2118,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk,
 
 	child_tp->tsq_flags = 0;
 
+	sock_rps_save_rxhash(child, skb);
 	tcp_synack_rtt_meas(child, req);
 
 	/* Subflows do not use the accept queue, as they

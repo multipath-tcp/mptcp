@@ -819,16 +819,16 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	if (!child)
 		goto listen_overflow;
 
-	if (!is_meta_sk(sk)) {
-		int ret = mptcp_check_req_master(sk, child, req, 1);
+	if (own_req && !is_meta_sk(sk)) {
+		int ret = mptcp_check_req_master(sk, child, req, skb, 1);
 		if (ret < 0)
 			goto listen_overflow;
 
 		/* MPTCP-supported */
 		if (!ret)
 			return tcp_sk(child)->mpcb->master_sk;
-	} else {
-		return mptcp_check_req_child(sk, child, req, &mopt);
+	} else if (own_req) {
+		return mptcp_check_req_child(sk, child, req, skb, &mopt);
 	}
 
 	sock_rps_save_rxhash(child, skb);
