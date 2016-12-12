@@ -2055,7 +2055,7 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 struct sock *mptcp_check_req_child(struct sock *meta_sk,
 				   struct sock *child,
 				   struct request_sock *req,
-				   const struct sk_buff *skb,
+				   struct sk_buff *skb,
 				   const struct mptcp_options_received *mopt)
 {
 	struct tcp_sock *child_tp = tcp_sk(child);
@@ -2136,6 +2136,8 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk,
 	return child;
 
 teardown:
+	req->rsk_ops->send_reset(meta_sk, skb);
+
 	/* Drop this request - sock creation failed. */
 	inet_csk_reqsk_queue_drop(meta_sk, req);
 	reqsk_put(req);

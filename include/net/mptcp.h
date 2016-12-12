@@ -826,7 +826,7 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 struct sock *mptcp_check_req_child(struct sock *meta_sk,
 				   struct sock *child,
 				   struct request_sock *req,
-				   const struct sk_buff *skb,
+				   struct sk_buff *skb,
 				   const struct mptcp_options_received *mopt);
 u32 __mptcp_select_window(struct sock *sk);
 void mptcp_select_initial_window(int __space, __u32 mss, __u32 *rcv_wnd,
@@ -1442,7 +1442,7 @@ static inline int mptcp_check_req_master(const struct sock *sk,
 static inline struct sock *mptcp_check_req_child(const struct sock *meta_sk,
 						 const struct sock *child,
 						 const struct request_sock *req,
-						 const struct sk_buff *skb,
+						 struct sk_buff *skb,
 						 const struct mptcp_options_received *mopt)
 {
 	return NULL;
