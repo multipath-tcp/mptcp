@@ -2032,6 +2032,9 @@ struct proto tcpv6_prot = {
 	.proto_cgroup		= tcp_proto_cgroup,
 #endif
 	.clear_sk		= tcp_v6_clear_sk,
+#ifdef CONFIG_MPTCP
+	.copy_sk		= tcp_copy_sk,
+#endif
 };
 
 static const struct inet6_protocol tcpv6_protocol = {
