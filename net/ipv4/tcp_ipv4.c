@@ -2421,6 +2421,22 @@ static void tcp_v4_clear_sk(struct sock *sk, int size)
 
 	memset(&tp->tk_table.pprev, 0, size - offsetof(struct tcp_sock, tk_table.pprev));
 }
+
+void tcp_copy_sk(struct sock *nsk, const struct sock *osk)
+{
+	struct tcp_sock *ntp = tcp_sk(nsk);
+	struct tcp_sock *otp = tcp_sk(osk);
+
+	memcpy(nsk, osk, offsetof(struct sock, sk_dontcopy_begin));
+
+	memcpy(&nsk->sk_dontcopy_end, &osk->sk_dontcopy_end,
+	       offsetof(struct tcp_sock, tk_table.next) - offsetof(struct sock, sk_dontcopy_end));
+
+	memcpy(&ntp->tk_table.pprev, &otp->tk_table.pprev,
+	       osk->sk_prot->obj_size - offsetof(struct tcp_sock, tk_table.pprev));
+
+	ntp->tk_table.pprev = NULL;
+}
 #endif
 
 struct proto tcp_prot = {
@@ -2471,6 +2487,7 @@ struct proto tcp_prot = {
 #endif
 #ifdef CONFIG_MPTCP
 	.clear_sk		= tcp_v4_clear_sk,
+	.copy_sk		= tcp_copy_sk,
 #endif
 };
 EXPORT_SYMBOL(tcp_prot);
