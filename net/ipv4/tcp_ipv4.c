@@ -2457,10 +2457,9 @@ static void tcp_v4_clear_sk(struct sock *sk, int size)
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	/* we do not want to clear tk_table field, because of RCU lookups */
-	sk_prot_clear_nulls(sk, offsetof(struct tcp_sock, tk_table));
+	sk_prot_clear_nulls(sk, offsetof(struct tcp_sock, tk_table.next));
 
-	size -= offsetof(struct tcp_sock, tk_table) + sizeof(tp->tk_table);
-	memset((char *)&tp->tk_table + sizeof(tp->tk_table), 0, size);
+	memset(&tp->tk_table.pprev, 0, size - offsetof(struct tcp_sock, tk_table.pprev));
 }
 #endif
 
