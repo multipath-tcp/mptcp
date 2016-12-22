@@ -995,7 +995,9 @@ int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb)
 }
 
 struct lock_class_key meta_key;
+char *meta_key_name = "sk_lock-AF_INET-MPTCP";
 struct lock_class_key meta_slock_key;
+char *meta_slock_key_name = "slock-AF_INET-MPTCP";
 
 static const struct tcp_sock_ops mptcp_meta_specific = {
 	.__select_window		= __mptcp_select_window,

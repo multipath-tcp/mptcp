@@ -749,7 +749,10 @@ struct mptcp_mib {
 };
 
 extern struct lock_class_key meta_key;
+extern char *meta_key_name;
 extern struct lock_class_key meta_slock_key;
+extern char *meta_slock_key_name;
+
 extern u32 mptcp_secret[MD5_MESSAGE_BYTES / 4];
 
 /* This is needed to ensure that two subsequent key/nonce-generation result in
