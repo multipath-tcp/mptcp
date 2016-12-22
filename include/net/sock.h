@@ -1002,6 +1002,7 @@ struct proto {
 	void			(*rehash)(struct sock *sk);
 	int			(*get_port)(struct sock *sk, unsigned short snum);
 	void			(*clear_sk)(struct sock *sk, int size);
+	void			(*copy_sk)(struct sock *nsk, const struct sock *osk);
 
 	/* Keeping track of sockets in use */
 #ifdef CONFIG_PROC_FS

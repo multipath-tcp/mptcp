@@ -463,6 +463,7 @@ int __must_check tcp_queue_rcv(struct sock *sk, struct sk_buff *skb, int hdrlen,
 			       bool *fragstolen);
 bool tcp_try_coalesce(struct sock *sk, struct sk_buff *to,
 		      struct sk_buff *from, bool *fragstolen);
+void tcp_copy_sk(struct sock *nsk, const struct sock *osk);
 /**** END - Exports needed for MPTCP ****/
 
 void tcp_tasklet_init(void);
