@@ -70,6 +70,7 @@ int sysctl_mptcp_checksum __read_mostly = 1;
 int sysctl_mptcp_debug __read_mostly;
 EXPORT_SYMBOL(sysctl_mptcp_debug);
 int sysctl_mptcp_syn_retries __read_mostly = 3;
+static const int sysctl_sockopt_mptcp_enabled = MPTCP_ENABLED;
 
 bool mptcp_init_failed __read_mostly;
 
@@ -130,6 +131,13 @@ static struct ctl_table mptcp_table[] = {
 		.proc_handler = &proc_dointvec_minmax,
 		.extra1 = &min_mptcp_version,
 		.extra2 = &max_mptcp_version,
+	},
+	{
+		.procname = "sockopt_mptcp_enabled",
+		.data = (void *)&sysctl_sockopt_mptcp_enabled,
+		.mode = 0444,
+		.maxlen = sizeof(int),
+		.proc_handler = &proc_dointvec
 	},
 	{
 		.procname = "mptcp_checksum",
