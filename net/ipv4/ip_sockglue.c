@@ -1264,11 +1264,22 @@ EXPORT_SYMBOL(compat_ip_setsockopt);
  *	the _received_ ones. The set sets the _sent_ ones.
  */
 
+static bool getsockopt_needs_rtnl(int optname)
+{
+	switch (optname) {
+	case IP_MSFILTER:
+	case MCAST_MSFILTER:
+		return true;
+	}
+	return false;
+}
+
 static int do_ip_getsockopt(struct sock *sk, int level, int optname,
 			    char __user *optval, int __user *optlen, unsigned int flags)
 {
 	struct inet_sock *inet = inet_sk(sk);
-	int val;
+	bool needs_rtnl = getsockopt_needs_rtnl(optname);
+	int val, err = 0;
 	int len;
 
 	if (level != SOL_IP)
@@ -1282,6 +1293,8 @@ static int do_ip_getsockopt(struct sock *sk, int level, int optname,
 	if (len < 0)
 		return -EINVAL;
 
+	if (needs_rtnl)
+		rtnl_lock();
 	lock_sock(sk);
 
 	switch (optname) {
@@ -1399,39 +1412,35 @@ static int do_ip_getsockopt(struct sock *sk, int level, int optname,
 	case IP_MSFILTER:
 	{
 		struct ip_msfilter msf;
-		int err;
 
 		if (len < IP_MSFILTER_SIZE(0)) {
-			release_sock(sk);
-			return -EINVAL;
+			err = -EINVAL;
+			goto out;
 		}
 		if (copy_from_user(&msf, optval, IP_MSFILTER_SIZE(0))) {
-			release_sock(sk);
-			return -EFAULT;
+			err = -EFAULT;
+			goto out;
 		}
 		err = ip_mc_msfget(sk, &msf,
 				   (struct ip_msfilter __user *)optval, optlen);
-		release_sock(sk);
-		return err;
+		goto out;
 	}
 	case MCAST_MSFILTER:
 	{
 		struct group_filter gsf;
-		int err;
 
 		if (len < GROUP_FILTER_SIZE(0)) {
-			release_sock(sk);
-			return -EINVAL;
+			err = -EINVAL;
+			goto out;
 		}
 		if (copy_from_user(&gsf, optval, GROUP_FILTER_SIZE(0))) {
-			release_sock(sk);
-			return -EFAULT;
+			err = -EFAULT;
+			goto out;
 		}
 		err = ip_mc_gsfget(sk, &gsf,
 				   (struct group_filter __user *)optval,
 				   optlen);
-		release_sock(sk);
-		return err;
+		goto out;
 	}
 	case IP_MULTICAST_ALL:
 		val = inet->mc_all;
@@ -1498,6 +1507,12 @@ static int do_ip_getsockopt(struct sock *sk, int level, int optname,
 			return -EFAULT;
 	}
 	return 0;
+
+out:
+	release_sock(sk);
+	if (needs_rtnl)
+		rtnl_unlock();
+	return err;
 }
 
 int ip_getsockopt(struct sock *sk, int level,

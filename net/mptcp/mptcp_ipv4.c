@@ -78,7 +78,7 @@ static void mptcp_v4_reqsk_destructor(struct request_sock *req)
 	tcp_v4_reqsk_destructor(req);
 }
 
-static int mptcp_v4_init_req(struct request_sock *req, struct sock *sk,
+static int mptcp_v4_init_req(struct request_sock *req, const struct sock *sk,
 			     struct sk_buff *skb, bool want_cookie)
 {
 	tcp_request_sock_ipv4_ops.init_req(req, sk, skb, want_cookie);
@@ -97,7 +97,7 @@ static int mptcp_v4_init_req(struct request_sock *req, struct sock *sk,
 }
 
 #ifdef CONFIG_SYN_COOKIES
-static u32 mptcp_v4_cookie_init_seq(struct request_sock *req, struct sock *sk,
+static u32 mptcp_v4_cookie_init_seq(struct request_sock *req, const struct sock *sk,
 				    const struct sk_buff *skb, __u16 *mssp)
 {
 	__u32 isn = cookie_v4_init_sequence(req, sk, skb, mssp);
@@ -110,11 +110,11 @@ static u32 mptcp_v4_cookie_init_seq(struct request_sock *req, struct sock *sk,
 }
 #endif
 
-static int mptcp_v4_join_init_req(struct request_sock *req, struct sock *sk,
+static int mptcp_v4_join_init_req(struct request_sock *req, const struct sock *sk,
 				  struct sk_buff *skb, bool want_cookie)
 {
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
-	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
+	const struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 	union inet_addr addr;
 	int loc_id;
 	bool low_prio = false;
@@ -155,23 +155,7 @@ struct request_sock_ops mptcp_request_sock_ops __read_mostly = {
 	.syn_ack_timeout =	tcp_syn_ack_timeout,
 };
 
-static void mptcp_v4_reqsk_queue_hash_add(struct sock *meta_sk,
-					  struct request_sock *req,
-					  const unsigned long timeout)
-{
-	const u32 h1 = inet_synq_hash(inet_rsk(req)->ir_rmt_addr,
-				     inet_rsk(req)->ir_rmt_port,
-				     0, MPTCP_HASH_SIZE);
-	inet_csk_reqsk_queue_hash_add(meta_sk, req, timeout);
-
-	rcu_read_lock();
-	spin_lock(&mptcp_reqsk_hlock);
-	hlist_nulls_add_head_rcu(&mptcp_rsk(req)->hash_entry, &mptcp_reqsk_htb[h1]);
-	spin_unlock(&mptcp_reqsk_hlock);
-	rcu_read_unlock();
-}
-
-/* Similar to tcp_v4_conn_request */
+/* Similar to: tcp_v4_conn_request */
 static int mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 {
 	return tcp_conn_request(&mptcp_request_sock_ops,
@@ -179,46 +163,83 @@ static int mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 				meta_sk, skb);
 }
 
-/* We only process join requests here. (either the SYN or the final ACK) */
+int mptcp_finish_handshake(struct sock *child, struct sk_buff *skb)
+{
+	int ret;
+
+	/* We don't call tcp_child_process here, because we hold
+	 * already the meta-sk-lock and are sure that it is not owned
+	 * by the user.
+	 */
+	tcp_sk(child)->segs_in += max_t(u16, 1, skb_shinfo(skb)->gso_segs);
+	ret = tcp_rcv_state_process(child, skb);
+	bh_unlock_sock(child);
+	sock_put(child);
+
+	return ret;
+}
+
+
+/* Similar to: tcp_v4_do_rcv
+ * We only process join requests here. (either the SYN or the final ACK)
+ */
 int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {
 	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct sock *child, *rsk = NULL;
+	const struct tcphdr *th = tcp_hdr(skb);
+	const struct iphdr *iph = ip_hdr(skb);
+	struct sock *child, *rsk = NULL, *sk;
 	int ret;
 
-	if (!(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_JOIN)) {
-		struct tcphdr *th = tcp_hdr(skb);
-		const struct iphdr *iph = ip_hdr(skb);
-		struct sock *sk;
+	sk = inet_lookup_established(sock_net(meta_sk), &tcp_hashinfo,
+				     iph->saddr, th->source, iph->daddr,
+				     th->dest, inet_iif(skb));
 
-		sk = inet_lookup_established(sock_net(meta_sk), &tcp_hashinfo,
-					     iph->saddr, th->source, iph->daddr,
-					     th->dest, inet_iif(skb));
+	if (!sk)
+		goto new_subflow;
 
-		if (!sk) {
-			kfree_skb(skb);
-			return 0;
-		}
-		if (is_meta_sk(sk)) {
-			WARN("%s Did not find a sub-sk - did found the meta!\n", __func__);
-			kfree_skb(skb);
-			sock_put(sk);
-			return 0;
-		}
-
-		if (sk->sk_state == TCP_TIME_WAIT) {
-			inet_twsk_put(inet_twsk(sk));
-			kfree_skb(skb);
-			return 0;
-		}
-
-		ret = tcp_v4_do_rcv(sk, skb);
+	if (is_meta_sk(sk)) {
+		WARN("%s Did not find a sub-sk - did found the meta!\n", __func__);
 		sock_put(sk);
-
-		return ret;
+		goto discard;
 	}
-	TCP_SKB_CB(skb)->mptcp_flags = 0;
 
+	if (sk->sk_state == TCP_TIME_WAIT) {
+		inet_twsk_put(inet_twsk(sk));
+		goto discard;
+	}
+
+	if (sk->sk_state == TCP_NEW_SYN_RECV) {
+		struct request_sock *req = inet_reqsk(sk);
+
+		child = tcp_check_req(meta_sk, skb, req, false);
+		if (!child) {
+			reqsk_put(req);
+			goto discard;
+		}
+
+		if (child != meta_sk) {
+			ret = mptcp_finish_handshake(child, skb);
+			if (ret) {
+				rsk = child;
+				goto reset_and_discard;
+			}
+
+			return 0;
+		} else {
+			/* tcp_check_req failed */
+			reqsk_put(req);
+		}
+
+		goto discard;
+	}
+
+	ret = tcp_v4_do_rcv(sk, skb);
+	sock_put(sk);
+
+	return ret;
+
+new_subflow:
 	/* Has been removed from the tk-table. Thus, no new subflows.
 	 *
 	 * Check for close-state is necessary, because we may have been closed
@@ -230,100 +251,28 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	    mpcb->infinite_mapping_rcv || mpcb->send_infinite_mapping)
 		goto reset_and_discard;
 
-	child = tcp_v4_hnd_req(meta_sk, skb);
-
+	child = tcp_v4_cookie_check(meta_sk, skb);
 	if (!child)
 		goto discard;
 
 	if (child != meta_sk) {
-		sock_rps_save_rxhash(child, skb);
-		/* We don't call tcp_child_process here, because we hold
-		 * already the meta-sk-lock and are sure that it is not owned
-		 * by the user.
-		 */
-		ret = tcp_rcv_state_process(child, skb, tcp_hdr(skb), skb->len);
-		bh_unlock_sock(child);
-		sock_put(child);
+		ret = mptcp_finish_handshake(child, skb);
 		if (ret) {
 			rsk = child;
 			goto reset_and_discard;
 		}
-	} else {
-		if (tcp_hdr(skb)->syn) {
-			mptcp_v4_join_request(meta_sk, skb);
-			goto discard;
-		}
-		goto reset_and_discard;
-	}
-	return 0;
-
-reset_and_discard:
-	if (reqsk_queue_len(&inet_csk(meta_sk)->icsk_accept_queue)) {
-		const struct tcphdr *th = tcp_hdr(skb);
-		const struct iphdr *iph = ip_hdr(skb);
-		struct request_sock *req;
-		/* If we end up here, it means we should not have matched on the
-		 * request-socket. But, because the request-sock queue is only
-		 * destroyed in mptcp_close, the socket may actually already be
-		 * in close-state (e.g., through shutdown()) while still having
-		 * pending request sockets.
-		 */
-		req = inet_csk_search_req(meta_sk, th->source, iph->saddr, iph->daddr);
-
-		if (req) {
-			inet_csk_reqsk_queue_drop(meta_sk, req);
-			reqsk_put(req);
-		}
 	}
 
-	tcp_v4_send_reset(rsk, skb);
+	if (tcp_hdr(skb)->syn)
+		mptcp_v4_join_request(meta_sk, skb);
+
 discard:
 	kfree_skb(skb);
 	return 0;
-}
 
-/* After this, the ref count of the meta_sk associated with the request_sock
- * is incremented. Thus it is the responsibility of the caller
- * to call sock_put() when the reference is not needed anymore.
- */
-struct sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
-				 const __be32 laddr, const struct net *net)
-{
-	const struct mptcp_request_sock *mtreq;
-	struct sock *meta_sk = NULL;
-	const struct hlist_nulls_node *node;
-	const u32 hash = inet_synq_hash(raddr, rport, 0, MPTCP_HASH_SIZE);
-
-	rcu_read_lock();
-begin:
-	hlist_nulls_for_each_entry_rcu(mtreq, node, &mptcp_reqsk_htb[hash],
-				       hash_entry) {
-		struct inet_request_sock *ireq = inet_rsk(rev_mptcp_rsk(mtreq));
-		meta_sk = mtreq->mptcp_mpcb->meta_sk;
-
-		if (ireq->ir_rmt_port == rport &&
-		    ireq->ir_rmt_addr == raddr &&
-		    ireq->ir_loc_addr == laddr &&
-		    rev_mptcp_rsk(mtreq)->rsk_ops->family == AF_INET &&
-		    net_eq(net, sock_net(meta_sk)))
-			goto found;
-		meta_sk = NULL;
-	}
-	/* A request-socket is destroyed by RCU. So, it might have been recycled
-	 * and put into another hash-table list. So, after the lookup we may
-	 * end up in a different list. So, we may need to restart.
-	 *
-	 * See also the comment in __inet_lookup_established.
-	 */
-	if (get_nulls_value(node) != hash + MPTCP_REQSK_NULLS_BASE)
-		goto begin;
-
-found:
-	if (meta_sk && unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
-		meta_sk = NULL;
-	rcu_read_unlock();
-
-	return meta_sk;
+reset_and_discard:
+	tcp_v4_send_reset(rsk, skb);
+	goto discard;
 }
 
 /* Create a new IPv4 subflow.
@@ -355,8 +304,8 @@ int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
 	tp = tcp_sk(sk);
 
 	/* All subsockets need the MPTCP-lock-class */
-	lockdep_set_class_and_name(&(sk)->sk_lock.slock, &meta_slock_key, "slock-AF_INET-MPTCP");
-	lockdep_init_map(&(sk)->sk_lock.dep_map, "sk_lock-AF_INET-MPTCP", &meta_key, 0);
+	lockdep_set_class_and_name(&(sk)->sk_lock.slock, &meta_slock_key, meta_slock_key_name);
+	lockdep_init_map(&(sk)->sk_lock.dep_map, meta_key_name, &meta_key, 0);
 
 	if (mptcp_add_sock(meta_sk, sk, loc->loc4_id, rem->rem4_id, GFP_KERNEL))
 		goto error;
@@ -462,7 +411,6 @@ int mptcp_pm_v4_init(void)
 #endif
 	mptcp_join_request_sock_ipv4_ops = tcp_request_sock_ipv4_ops;
 	mptcp_join_request_sock_ipv4_ops.init_req = mptcp_v4_join_init_req;
-	mptcp_join_request_sock_ipv4_ops.queue_hash_add = mptcp_v4_reqsk_queue_hash_add;
 
 	ops->slab_name = kasprintf(GFP_KERNEL, "request_sock_%s", "MPTCP");
 	if (ops->slab_name == NULL) {

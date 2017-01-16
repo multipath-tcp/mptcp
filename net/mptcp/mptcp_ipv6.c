@@ -93,7 +93,7 @@ static void mptcp_v6_reqsk_destructor(struct request_sock *req)
 	tcp_v6_reqsk_destructor(req);
 }
 
-static int mptcp_v6_init_req(struct request_sock *req, struct sock *sk,
+static int mptcp_v6_init_req(struct request_sock *req, const struct sock *sk,
 			     struct sk_buff *skb, bool want_cookie)
 {
 	tcp_request_sock_ipv6_ops.init_req(req, sk, skb, want_cookie);
@@ -112,7 +112,7 @@ static int mptcp_v6_init_req(struct request_sock *req, struct sock *sk,
 }
 
 #ifdef CONFIG_SYN_COOKIES
-static u32 mptcp_v6_cookie_init_seq(struct request_sock *req, struct sock *sk,
+static u32 mptcp_v6_cookie_init_seq(struct request_sock *req, const struct sock *sk,
 				    const struct sk_buff *skb, __u16 *mssp)
 {
 	__u32 isn = cookie_v6_init_sequence(req, sk, skb, mssp);
@@ -125,11 +125,11 @@ static u32 mptcp_v6_cookie_init_seq(struct request_sock *req, struct sock *sk,
 }
 #endif
 
-static int mptcp_v6_join_init_req(struct request_sock *req, struct sock *sk,
+static int mptcp_v6_join_init_req(struct request_sock *req, const struct sock *sk,
 				  struct sk_buff *skb, bool want_cookie)
 {
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
-	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
+	const struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 	union inet_addr addr;
 	int loc_id;
 	bool low_prio = false;
@@ -170,22 +170,6 @@ struct request_sock_ops mptcp6_request_sock_ops __read_mostly = {
 	.syn_ack_timeout =	tcp_syn_ack_timeout,
 };
 
-static void mptcp_v6_reqsk_queue_hash_add(struct sock *meta_sk,
-					  struct request_sock *req,
-					  const unsigned long timeout)
-{
-	const u32 h1 = inet6_synq_hash(&inet_rsk(req)->ir_v6_rmt_addr,
-				      inet_rsk(req)->ir_rmt_port,
-				      0, MPTCP_HASH_SIZE);
-	inet6_csk_reqsk_queue_hash_add(meta_sk, req, timeout);
-
-	rcu_read_lock();
-	spin_lock(&mptcp_reqsk_hlock);
-	hlist_nulls_add_head_rcu(&mptcp_rsk(req)->hash_entry, &mptcp_reqsk_htb[h1]);
-	spin_unlock(&mptcp_reqsk_hlock);
-	rcu_read_unlock();
-}
-
 static int mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 {
 	return tcp_conn_request(&mptcp6_request_sock_ops,
@@ -196,44 +180,62 @@ static int mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {
 	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct sock *child, *rsk = NULL;
+	const struct tcphdr *th = tcp_hdr(skb);
+	const struct ipv6hdr *ip6h = ipv6_hdr(skb);
+	struct sock *child, *rsk = NULL, *sk;
 	int ret;
 
-	if (!(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_JOIN)) {
-		struct tcphdr *th = tcp_hdr(skb);
-		const struct ipv6hdr *ip6h = ipv6_hdr(skb);
-		struct sock *sk;
+	sk = __inet6_lookup_established(sock_net(meta_sk),
+					&tcp_hashinfo,
+					&ip6h->saddr, th->source,
+					&ip6h->daddr, ntohs(th->dest),
+					tcp_v6_iif(skb));
 
-		sk = __inet6_lookup_established(sock_net(meta_sk),
-						&tcp_hashinfo,
-						&ip6h->saddr, th->source,
-						&ip6h->daddr, ntohs(th->dest),
-						tcp_v6_iif(skb));
+	if (!sk)
+		goto new_subflow;
 
-		if (!sk) {
-			kfree_skb(skb);
-			return 0;
-		}
-		if (is_meta_sk(sk)) {
-			WARN("%s Did not find a sub-sk!\n", __func__);
-			kfree_skb(skb);
-			sock_put(sk);
-			return 0;
-		}
-
-		if (sk->sk_state == TCP_TIME_WAIT) {
-			inet_twsk_put(inet_twsk(sk));
-			kfree_skb(skb);
-			return 0;
-		}
-
-		ret = tcp_v6_do_rcv(sk, skb);
+	if (is_meta_sk(sk)) {
+		WARN("%s Did not find a sub-sk - did found the meta!\n", __func__);
 		sock_put(sk);
-
-		return ret;
+		goto discard;
 	}
-	TCP_SKB_CB(skb)->mptcp_flags = 0;
 
+	if (sk->sk_state == TCP_TIME_WAIT) {
+		inet_twsk_put(inet_twsk(sk));
+		goto discard;
+	}
+
+	if (sk->sk_state == TCP_NEW_SYN_RECV) {
+		struct request_sock *req = inet_reqsk(sk);
+
+		child = tcp_check_req(meta_sk, skb, req, false);
+		if (!child) {
+			reqsk_put(req);
+			goto discard;
+		}
+
+		if (child != meta_sk) {
+			ret = mptcp_finish_handshake(child, skb);
+			if (ret) {
+				rsk = child;
+				goto reset_and_discard;
+			}
+
+			return 0;
+		} else {
+			/* tcp_check_req failed */
+			reqsk_put(req);
+		}
+
+		goto discard;
+	}
+
+	ret = tcp_v6_do_rcv(sk, skb);
+	sock_put(sk);
+
+	return ret;
+
+new_subflow:
 	/* Has been removed from the tk-table. Thus, no new subflows.
 	 *
 	 * Check for close-state is necessary, because we may have been closed
@@ -245,101 +247,28 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	    mpcb->infinite_mapping_rcv || mpcb->send_infinite_mapping)
 		goto reset_and_discard;
 
-	child = tcp_v6_hnd_req(meta_sk, skb);
-
+	child = tcp_v6_cookie_check(meta_sk, skb);
 	if (!child)
 		goto discard;
 
 	if (child != meta_sk) {
-		sock_rps_save_rxhash(child, skb);
-		/* We don't call tcp_child_process here, because we hold
-		 * already the meta-sk-lock and are sure that it is not owned
-		 * by the user.
-		 */
-		ret = tcp_rcv_state_process(child, skb, tcp_hdr(skb), skb->len);
-		bh_unlock_sock(child);
-		sock_put(child);
+		ret = mptcp_finish_handshake(child, skb);
 		if (ret) {
 			rsk = child;
 			goto reset_and_discard;
 		}
-	} else {
-		if (tcp_hdr(skb)->syn) {
-			mptcp_v6_join_request(meta_sk, skb);
-			goto discard;
-		}
-		goto reset_and_discard;
-	}
-	return 0;
-
-reset_and_discard:
-	if (reqsk_queue_len(&inet_csk(meta_sk)->icsk_accept_queue)) {
-		const struct tcphdr *th = tcp_hdr(skb);
-		struct request_sock *req;
-		/* If we end up here, it means we should not have matched on the
-		 * request-socket. But, because the request-sock queue is only
-		 * destroyed in mptcp_close, the socket may actually already be
-		 * in close-state (e.g., through shutdown()) while still having
-		 * pending request sockets.
-		 */
-		req = inet6_csk_search_req(meta_sk, th->source,
-					   &ipv6_hdr(skb)->saddr,
-					   &ipv6_hdr(skb)->daddr, tcp_v6_iif(skb));
-
-		if (req) {
-			inet_csk_reqsk_queue_drop(meta_sk, req);
-			reqsk_put(req);
-		}
 	}
 
-	tcp_v6_send_reset(rsk, skb);
+	if (tcp_hdr(skb)->syn)
+		mptcp_v6_join_request(meta_sk, skb);
+
 discard:
 	kfree_skb(skb);
 	return 0;
-}
 
-/* After this, the ref count of the meta_sk associated with the request_sock
- * is incremented. Thus it is the responsibility of the caller
- * to call sock_put() when the reference is not needed anymore.
- */
-struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *raddr,
-				 const struct in6_addr *laddr, const struct net *net)
-{
-	const struct mptcp_request_sock *mtreq;
-	struct sock *meta_sk = NULL;
-	const struct hlist_nulls_node *node;
-	const u32 hash = inet6_synq_hash(raddr, rport, 0, MPTCP_HASH_SIZE);
-
-	rcu_read_lock();
-begin:
-	hlist_nulls_for_each_entry_rcu(mtreq, node, &mptcp_reqsk_htb[hash],
-				       hash_entry) {
-		struct inet_request_sock *treq = inet_rsk(rev_mptcp_rsk(mtreq));
-		meta_sk = mtreq->mptcp_mpcb->meta_sk;
-
-		if (inet_rsk(rev_mptcp_rsk(mtreq))->ir_rmt_port == rport &&
-		    rev_mptcp_rsk(mtreq)->rsk_ops->family == AF_INET6 &&
-		    ipv6_addr_equal(&treq->ir_v6_rmt_addr, raddr) &&
-		    ipv6_addr_equal(&treq->ir_v6_loc_addr, laddr) &&
-		    net_eq(net, sock_net(meta_sk)))
-			goto found;
-		meta_sk = NULL;
-	}
-	/* A request-socket is destroyed by RCU. So, it might have been recycled
-	 * and put into another hash-table list. So, after the lookup we may
-	 * end up in a different list. So, we may need to restart.
-	 *
-	 * See also the comment in __inet_lookup_established.
-	 */
-	if (get_nulls_value(node) != hash + MPTCP_REQSK_NULLS_BASE)
-		goto begin;
-
-found:
-	if (meta_sk && unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
-		meta_sk = NULL;
-	rcu_read_unlock();
-
-	return meta_sk;
+reset_and_discard:
+	tcp_v6_send_reset(rsk, skb);
+	goto discard;
 }
 
 /* Create a new IPv6 subflow.
@@ -371,8 +300,8 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	tp = tcp_sk(sk);
 
 	/* All subsockets need the MPTCP-lock-class */
-	lockdep_set_class_and_name(&(sk)->sk_lock.slock, &meta_slock_key, "slock-AF_INET-MPTCP");
-	lockdep_init_map(&(sk)->sk_lock.dep_map, "sk_lock-AF_INET-MPTCP", &meta_key, 0);
+	lockdep_set_class_and_name(&(sk)->sk_lock.slock, &meta_slock_key, meta_slock_key_name);
+	lockdep_init_map(&(sk)->sk_lock.dep_map, meta_key_name, &meta_key, 0);
 
 	if (mptcp_add_sock(meta_sk, sk, loc->loc6_id, rem->rem6_id, GFP_KERNEL))
 		goto error;
@@ -499,7 +428,6 @@ int mptcp_pm_v6_init(void)
 
 	mptcp_join_request_sock_ipv6_ops = tcp_request_sock_ipv6_ops;
 	mptcp_join_request_sock_ipv6_ops.init_req = mptcp_v6_join_init_req;
-	mptcp_join_request_sock_ipv6_ops.queue_hash_add = mptcp_v6_reqsk_queue_hash_add;
 
 	ops->slab_name = kasprintf(GFP_KERNEL, "request_sock_%s", "MPTCP6");
 	if (ops->slab_name == NULL) {

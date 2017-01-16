@@ -233,6 +233,7 @@ source "net/netlink/Kconfig"
 source "net/mpls/Kconfig"
 source "net/hsr/Kconfig"
 source "net/switchdev/Kconfig"
+source "net/l3mdev/Kconfig"
 
 config RPS
 	bool

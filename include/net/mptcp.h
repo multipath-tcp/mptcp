@@ -81,10 +81,6 @@ struct mptcp_rem6 {
 
 struct mptcp_request_sock {
 	struct tcp_request_sock		req;
-	/* hlist-nulls entry to the hash-table. Depending on whether this is a
-	 * a new MPTCP connection or an additional subflow, the request-socket
-	 * is either in the mptcp_reqsk_tk_htb or mptcp_reqsk_htb.
-	 */
 	struct hlist_nulls_node		hash_entry;
 
 	union {
@@ -97,7 +93,6 @@ struct mptcp_request_sock {
 
 		struct {
 			/* Only on additional subflows */
-			struct mptcp_cb	*mptcp_mpcb;
 			u32		mptcp_rem_nonce;
 			u32		mptcp_loc_nonce;
 			u64		mptcp_hash_tmac;
@@ -457,7 +452,6 @@ extern bool mptcp_init_failed;
 #define MPTCPHDR_SEQ64_SET	0x10 /* Did we received a 64-bit seq number?  */
 #define MPTCPHDR_SEQ64_OFO	0x20 /* Is it not in our circular array? */
 #define MPTCPHDR_DSS_CSUM	0x40
-#define MPTCPHDR_JOIN		0x80
 /* MPTCP flags: TX only */
 #define MPTCPHDR_INF		0x08
 #define MPTCP_REINJECT		0x10 /* Did we reinject this segment? */
@@ -749,7 +743,10 @@ struct mptcp_mib {
 };
 
 extern struct lock_class_key meta_key;
+extern char *meta_key_name;
 extern struct lock_class_key meta_slock_key;
+extern char *meta_slock_key_name;
+
 extern u32 mptcp_secret[MD5_MESSAGE_BYTES / 4];
 
 /* This is needed to ensure that two subsequent key/nonce-generation result in
@@ -760,19 +757,6 @@ extern u32 mptcp_seed;
 #define MPTCP_HASH_SIZE                1024
 
 extern struct hlist_nulls_head tk_hashtable[MPTCP_HASH_SIZE];
-
-/* This second hashtable is needed to retrieve request socks
- * created as a result of a join request. While the SYN contains
- * the token, the final ack does not, so we need a separate hashtable
- * to retrieve the mpcb.
- */
-extern struct hlist_nulls_head mptcp_reqsk_htb[MPTCP_HASH_SIZE];
-extern spinlock_t mptcp_reqsk_hlock;	/* hashtable protection */
-
-/* Lock, protecting the two hash-tables that hold the token. Namely,
- * mptcp_reqsk_tk_htb and tk_hashtable
- */
-extern spinlock_t mptcp_tk_hashlock;	/* hashtable protection */
 
 /* Request-sockets can be hashed in the tk_htb for collision-detection or in
  * the regular htb for join-connections. We need to define different NULLS
@@ -822,9 +806,12 @@ int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key,
 			   __u8 mptcp_ver, u32 window);
 int mptcp_check_req_fastopen(struct sock *child, struct request_sock *req);
 int mptcp_check_req_master(struct sock *sk, struct sock *child,
-			   struct request_sock *req, int drop);
-struct sock *mptcp_check_req_child(struct sock *sk, struct sock *child,
+			   struct request_sock *req, const struct sk_buff *skb,
+			   int drop);
+struct sock *mptcp_check_req_child(struct sock *meta_sk,
+				   struct sock *child,
 				   struct request_sock *req,
+				   struct sk_buff *skb,
 				   const struct mptcp_options_received *mopt);
 u32 __mptcp_select_window(struct sock *sk);
 void mptcp_select_initial_window(int __space, __u32 mss, __u32 *rcv_wnd,
@@ -834,7 +821,8 @@ void mptcp_select_initial_window(int __space, __u32 mss, __u32 *rcv_wnd,
 unsigned int mptcp_current_mss(struct sock *meta_sk);
 int mptcp_select_size(const struct sock *meta_sk, bool sg);
 void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn);
-void mptcp_hmac_sha1(u8 *key_1, u8 *key_2, u32 *hash_out, int arg_num, ...);
+void mptcp_hmac_sha1(const u8 *key_1, const u8 *key_2, u32 *hash_out,
+		     int arg_num, ...);
 void mptcp_clean_rtx_infinite(const struct sk_buff *skb, struct sock *sk);
 void mptcp_fin(struct sock *meta_sk);
 void mptcp_meta_retransmit_timer(struct sock *meta_sk);
@@ -874,16 +862,16 @@ int mptcp_do_join_short(struct sk_buff *skb,
 			const struct mptcp_options_received *mopt,
 			struct net *net);
 void mptcp_reqsk_destructor(struct request_sock *req);
-int mptcp_check_req(struct sk_buff *skb, struct net *net);
 void mptcp_connect_init(struct sock *sk);
 void mptcp_sub_force_close(struct sock *sk);
 int mptcp_sub_len_remove_addr_align(u16 bitfield);
 void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
 			    const struct sk_buff *skb);
 void mptcp_init_buffer_space(struct sock *sk);
-void mptcp_join_reqsk_init(struct mptcp_cb *mpcb, const struct request_sock *req,
+void mptcp_join_reqsk_init(const struct mptcp_cb *mpcb,
+			   const struct request_sock *req,
 			   struct sk_buff *skb);
-void mptcp_reqsk_init(struct request_sock *req, struct sock *sk,
+void mptcp_reqsk_init(struct request_sock *req, const struct sock *sk,
 		      const struct sk_buff *skb, bool want_cookie);
 int mptcp_conn_request(struct sock *sk, struct sk_buff *skb);
 void mptcp_enable_sock(struct sock *sk);
@@ -894,6 +882,7 @@ void mptcp_cookies_reqsk_init(struct request_sock *req,
 			      struct mptcp_options_received *mopt,
 			      struct sk_buff *skb);
 void mptcp_sock_destruct(struct sock *sk);
+int mptcp_finish_handshake(struct sock *child, struct sk_buff *skb);
 
 /* MPTCP-path-manager registration/initialization functions */
 int mptcp_register_path_manager(struct mptcp_pm_ops *pm);
@@ -1069,35 +1058,14 @@ static inline int is_meta_tp(const struct tcp_sock *tp)
 
 static inline int is_meta_sk(const struct sock *sk)
 {
-	return sk->sk_type == SOCK_STREAM  && sk->sk_protocol == IPPROTO_TCP &&
+	return sk->sk_state != TCP_NEW_SYN_RECV &&
+	       sk->sk_type == SOCK_STREAM && sk->sk_protocol == IPPROTO_TCP &&
 	       mptcp(tcp_sk(sk)) && mptcp_meta_sk(sk) == sk;
 }
 
 static inline int is_master_tp(const struct tcp_sock *tp)
 {
 	return !mptcp(tp) || (!tp->mptcp->slave_sk && !is_meta_tp(tp));
-}
-
-static inline void mptcp_hash_request_remove(struct request_sock *req)
-{
-	int in_softirq = 0;
-
-	if (hlist_nulls_unhashed(&mptcp_rsk(req)->hash_entry))
-		return;
-
-	if (in_softirq()) {
-		spin_lock(&mptcp_reqsk_hlock);
-		in_softirq = 1;
-	} else {
-		spin_lock_bh(&mptcp_reqsk_hlock);
-	}
-
-	hlist_nulls_del_init_rcu(&mptcp_rsk(req)->hash_entry);
-
-	if (in_softirq)
-		spin_unlock(&mptcp_reqsk_hlock);
-	else
-		spin_unlock_bh(&mptcp_reqsk_hlock);
 }
 
 static inline void mptcp_init_mp_opt(struct mptcp_options_received *mopt)
@@ -1429,14 +1397,16 @@ static inline int mptcp_check_req_fastopen(struct sock *child,
 }
 static inline int mptcp_check_req_master(const struct sock *sk,
 					 const struct sock *child,
-					 struct request_sock *req,
+					 const struct request_sock *req,
+					 const struct sk_buff *skb,
 					 int drop)
 {
 	return 1;
 }
-static inline struct sock *mptcp_check_req_child(struct sock *sk,
-						 struct sock *child,
-						 struct request_sock *req,
+static inline struct sock *mptcp_check_req_child(const struct sock *meta_sk,
+						 const struct sock *child,
+						 const struct request_sock *req,
+						 struct sk_buff *skb,
 						 const struct mptcp_options_received *mopt)
 {
 	return NULL;

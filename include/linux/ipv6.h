@@ -227,7 +227,7 @@ struct ipv6_pinfo {
 	struct ipv6_ac_socklist	*ipv6_ac_list;
 	struct ipv6_fl_socklist __rcu *ipv6_fl_list;
 
-	struct ipv6_txoptions	*opt;
+	struct ipv6_txoptions __rcu	*opt;
 	struct sk_buff		*pktoptions;
 	struct sk_buff		*rxpmtu;
 	struct inet6_cork	cork;
@@ -264,9 +264,9 @@ struct tcp6_timewait_sock {
 };
 
 #if IS_ENABLED(CONFIG_IPV6)
-static inline struct ipv6_pinfo * inet6_sk(const struct sock *__sk)
+static inline struct ipv6_pinfo *inet6_sk(const struct sock *__sk)
 {
-	return inet_sk(__sk)->pinet6;
+	return sk_fullsock(__sk) ? inet_sk(__sk)->pinet6 : NULL;
 }
 
 static inline struct raw6_sock *raw6_sk(const struct sock *sk)
@@ -308,6 +308,12 @@ static inline int inet_v6_ipv6only(const struct sock *sk)
 #define ipv6_sk_rxinfo(sk)	0
 
 static inline struct ipv6_pinfo * inet6_sk(const struct sock *__sk)
+{
+	return NULL;
+}
+
+static inline struct inet6_request_sock *
+			inet6_rsk(const struct request_sock *rsk)
 {
 	return NULL;
 }
