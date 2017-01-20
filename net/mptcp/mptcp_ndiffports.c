@@ -62,7 +62,10 @@ next_subflow:
 			loc.addr.s_addr = inet_sk(meta_sk)->inet_saddr;
 			loc.loc4_id = 0;
 			loc.low_prio = 0;
-			loc.if_idx = mpcb->master_sk->sk_bound_dev_if;
+			if (mpcb->master_sk)
+				loc.if_idx = mpcb->master_sk->sk_bound_dev_if;
+			else
+				loc.if_idx = 0;
 
 			rem.addr.s_addr = inet_sk(meta_sk)->inet_daddr;
 			rem.port = inet_sk(meta_sk)->inet_dport;
@@ -77,7 +80,10 @@ next_subflow:
 			loc.addr = inet6_sk(meta_sk)->saddr;
 			loc.loc6_id = 0;
 			loc.low_prio = 0;
-			loc.if_idx = mpcb->master_sk->sk_bound_dev_if;
+			if (mpcb->master_sk)
+				loc.if_idx = mpcb->master_sk->sk_bound_dev_if;
+			else
+				loc.if_idx = 0;
 
 			rem.addr = meta_sk->sk_v6_daddr;
 			rem.port = inet_sk(meta_sk)->inet_dport;
