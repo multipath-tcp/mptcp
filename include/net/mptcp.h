@@ -217,6 +217,8 @@ struct mptcp_tw {
 };
 
 #define MPTCP_PM_NAME_MAX 16
+#define MPTCP_PM_MAX 10
+#define MPTCP_PM_BUF_MAX (MPTCP_PM_NAME_MAX*MPTCP_PM_MAX)
 struct mptcp_pm_ops {
 	struct list_head list;
 
@@ -893,6 +895,7 @@ void mptcp_fallback_default(struct mptcp_cb *mpcb);
 void mptcp_get_default_path_manager(char *name);
 int mptcp_set_scheduler(struct sock *sk, const char *name);
 int mptcp_set_default_path_manager(const char *name);
+void mptcp_get_available_path_manager(char *name, size_t maxlen);
 extern struct mptcp_pm_ops mptcp_pm_default;
 
 /* MPTCP-scheduler registration/initialization functions */
