@@ -1910,7 +1910,7 @@ void tcp_parse_mptcp_options(const struct sk_buff *skb,
 	}
 }
 
-int mptcp_check_rtt(const struct tcp_sock *tp, int time)
+bool mptcp_check_rtt(const struct tcp_sock *tp, int time)
 {
 	struct mptcp_cb *mpcb = tp->mpcb;
 	struct sock *sk;
@@ -1927,9 +1927,9 @@ int mptcp_check_rtt(const struct tcp_sock *tp, int time)
 			rtt_max = tcp_sk(sk)->rcv_rtt_est.rtt;
 	}
 	if (time < (rtt_max >> 3) || !rtt_max)
-		return 1;
+		return true;
 
-	return 0;
+	return false;
 }
 
 static void mptcp_handle_add_addr(const unsigned char *ptr, struct sock *sk)
@@ -2090,7 +2090,7 @@ cont:
 	return;
 }
 
-static inline int mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
+static inline bool mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
 {
 	struct mptcp_tcp_sock *mptcp = tcp_sk(sk)->mptcp;
 	struct sock *meta_sk = mptcp_meta_sk(sk);
@@ -2126,23 +2126,23 @@ static inline int mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
 			mptcp_sub_force_close_all(mpcb, sk);
 		}
 
-		return 0;
+		return false;
 	}
 
 	if (unlikely(mptcp->rx_opt.mp_fclose)) {
 		MPTCP_INC_STATS_BH(sock_net(sk), MPTCP_MIB_FASTCLOSERX);
 		mptcp->rx_opt.mp_fclose = 0;
 		if (mptcp->rx_opt.mptcp_sender_key != mpcb->mptcp_loc_key)
-			return 0;
+			return false;
 
 		mptcp_sub_force_close_all(mpcb, NULL);
 
 		tcp_reset(meta_sk);
 
-		return 1;
+		return true;
 	}
 
-	return 0;
+	return false;
 }
 
 static inline void mptcp_path_array_check(struct sock *meta_sk)
@@ -2156,17 +2156,17 @@ static inline void mptcp_path_array_check(struct sock *meta_sk)
 	}
 }
 
-int mptcp_handle_options(struct sock *sk, const struct tcphdr *th,
-			 const struct sk_buff *skb)
+bool mptcp_handle_options(struct sock *sk, const struct tcphdr *th,
+			  const struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_options_received *mopt = &tp->mptcp->rx_opt;
 
 	if (tp->mpcb->infinite_mapping_rcv || tp->mpcb->infinite_mapping_snd)
-		return 0;
+		return false;
 
 	if (mptcp_mp_fail_rcvd(sk, th))
-		return 1;
+		return true;
 
 	/* RFC 6824, Section 3.3:
 	 * If a checksum is not present when its use has been negotiated, the
@@ -2175,7 +2175,7 @@ int mptcp_handle_options(struct sock *sk, const struct tcphdr *th,
 	if (mptcp_is_data_seq(skb) && tp->mpcb->dss_csum &&
 	    !(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_DSS_CSUM)) {
 		mptcp_send_reset(sk);
-		return 1;
+		return true;
 	}
 
 	/* We have to acknowledge retransmissions of the third
@@ -2220,9 +2220,9 @@ int mptcp_handle_options(struct sock *sk, const struct tcphdr *th,
 	mptcp_path_array_check(mptcp_meta_sk(sk));
 	/* Socket may have been mp_killed by a REMOVE_ADDR */
 	if (tp->mp_killed)
-		return 1;
+		return true;
 
-	return 0;
+	return false;
 }
 
 /* In case of fastopen, some data can already be in the write queue.

@@ -849,10 +849,10 @@ struct sock *mptcp_select_ack_sock(const struct sock *meta_sk);
 void mptcp_fallback_meta_sk(struct sock *meta_sk);
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb);
 void mptcp_ack_handler(unsigned long);
-int mptcp_check_rtt(const struct tcp_sock *tp, int time);
+bool mptcp_check_rtt(const struct tcp_sock *tp, int time);
 int mptcp_check_snd_buf(const struct tcp_sock *tp);
-int mptcp_handle_options(struct sock *sk, const struct tcphdr *th,
-			 const struct sk_buff *skb);
+bool mptcp_handle_options(struct sock *sk, const struct tcphdr *th,
+			  const struct sk_buff *skb);
 void __init mptcp_init(void);
 void mptcp_destroy_sock(struct sock *sk);
 int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
@@ -1454,20 +1454,20 @@ static inline bool mptcp_fallback_infinite(const struct sock *sk, int flag)
 	return false;
 }
 static inline void mptcp_init_mp_opt(const struct mptcp_options_received *mopt) {}
-static inline int mptcp_check_rtt(const struct tcp_sock *tp, int time)
+static inline bool mptcp_check_rtt(const struct tcp_sock *tp, int time)
 {
-	return 0;
+	return false;
 }
 static inline int mptcp_check_snd_buf(const struct tcp_sock *tp)
 {
 	return 0;
 }
 static inline void mptcp_send_reset(const struct sock *sk) {}
-static inline int mptcp_handle_options(struct sock *sk,
-				       const struct tcphdr *th,
-				       struct sk_buff *skb)
+static inline bool mptcp_handle_options(struct sock *sk,
+					const struct tcphdr *th,
+					struct sk_buff *skb)
 {
-	return 0;
+	return false;
 }
 static inline void mptcp_reset_mopt(struct tcp_sock *tp) {}
 static inline void  __init mptcp_init(void) {}
