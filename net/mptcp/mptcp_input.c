@@ -1072,7 +1072,7 @@ restart:
 	}
 
 exit:
-	if (tcp_sk(sk)->close_it) {
+	if (tcp_sk(sk)->close_it && sk->sk_state == TCP_FIN_WAIT2) {
 		tcp_send_ack(sk);
 		tcp_sk(sk)->ops->time_wait(sk, TCP_TIME_WAIT, 0);
 	}
