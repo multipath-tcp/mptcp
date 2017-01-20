@@ -1397,7 +1397,7 @@ static struct sk_buff **inet_gro_receive(struct sk_buff **head,
 	skb_gro_pull(skb, sizeof(*iph));
 	skb_set_transport_header(skb, skb_gro_offset(skb));
 
-	pp = ops->callbacks.gro_receive(head, skb);
+	pp = call_gro_receive(ops->callbacks.gro_receive, head, skb);
 
 out_unlock:
 	rcu_read_unlock();
@@ -1407,6 +1407,45 @@ out:
 
 	return pp;
 }
+
+static struct sk_buff **ipip_gro_receive(struct sk_buff **head,
+					 struct sk_buff *skb)
+{
+	if (NAPI_GRO_CB(skb)->encap_mark) {
+		NAPI_GRO_CB(skb)->flush = 1;
+		return NULL;
+	}
+
+	NAPI_GRO_CB(skb)->encap_mark = 1;
+
+	return inet_gro_receive(head, skb);
+}
+
+#define SECONDS_PER_DAY	86400
+
+/* inet_current_timestamp - Return IP network timestamp
+ *
+ * Return milliseconds since midnight in network byte order.
+ */
+__be32 inet_current_timestamp(void)
+{
+	u32 secs;
+	u32 msecs;
+	struct timespec64 ts;
+
+	ktime_get_real_ts64(&ts);
+
+	/* Get secs since midnight. */
+	(void)div_u64_rem(ts.tv_sec, SECONDS_PER_DAY, &secs);
+	/* Convert to msecs. */
+	msecs = secs * MSEC_PER_SEC;
+	/* Convert nsec to msec. */
+	msecs += (u32)ts.tv_nsec / NSEC_PER_MSEC;
+
+	/* Convert to network byte order. */
+	return htons(msecs);
+}
+EXPORT_SYMBOL(inet_current_timestamp);
 
 int inet_recv_error(struct sock *sk, struct msghdr *msg, int len, int *addr_len)
 {
@@ -1448,6 +1487,13 @@ out_unlock:
 	rcu_read_unlock();
 
 	return err;
+}
+
+static int ipip_gro_complete(struct sk_buff *skb, int nhoff)
+{
+	skb->encapsulation = 1;
+	skb_shinfo(skb)->gso_type |= SKB_GSO_IPIP;
+	return inet_gro_complete(skb, nhoff);
 }
 
 int inet_ctl_sock_create(struct sock **sk, unsigned short family,
@@ -1666,8 +1712,8 @@ static struct packet_offload ip_packet_offload __read_mostly = {
 static const struct net_offload ipip_offload = {
 	.callbacks = {
 		.gso_segment	= inet_gso_segment,
-		.gro_receive	= inet_gro_receive,
-		.gro_complete	= inet_gro_complete,
+		.gro_receive	= ipip_gro_receive,
+		.gro_complete	= ipip_gro_complete,
 	},
 };
 

@@ -1821,12 +1821,11 @@ static noinline int find_dir_range(struct btrfs_root *root,
 next:
 	/* check the next slot in the tree to see if it is a valid item */
 	nritems = btrfs_header_nritems(path->nodes[0]);
+	path->slots[0]++;
 	if (path->slots[0] >= nritems) {
 		ret = btrfs_next_leaf(root, path);
 		if (ret)
 			goto out;
-	} else {
-		path->slots[0]++;
 	}
 
 	btrfs_item_key_to_cpu(path->nodes[0], &key, path->slots[0]);
@@ -2596,14 +2595,12 @@ static inline void btrfs_remove_all_log_ctxs(struct btrfs_root *root,
 					     int index, int error)
 {
 	struct btrfs_log_ctx *ctx;
+	struct btrfs_log_ctx *safe;
 
-	if (!error) {
-		INIT_LIST_HEAD(&root->log_ctxs[index]);
-		return;
-	}
-
-	list_for_each_entry(ctx, &root->log_ctxs[index], list)
+	list_for_each_entry_safe(ctx, safe, &root->log_ctxs[index], list) {
+		list_del_init(&ctx->list);
 		ctx->log_ret = error;
+	}
 
 	INIT_LIST_HEAD(&root->log_ctxs[index]);
 }
@@ -2842,13 +2839,9 @@ int btrfs_sync_log(struct btrfs_trans_handle *trans,
 	mutex_unlock(&root->log_mutex);
 
 out_wake_log_root:
-	/*
-	 * We needn't get log_mutex here because we are sure all
-	 * the other tasks are blocked.
-	 */
+	mutex_lock(&log_root_tree->log_mutex);
 	btrfs_remove_all_log_ctxs(log_root_tree, index2, ret);
 
-	mutex_lock(&log_root_tree->log_mutex);
 	log_root_tree->log_transid_committed++;
 	atomic_set(&log_root_tree->log_commit[index2], 0);
 	mutex_unlock(&log_root_tree->log_mutex);
@@ -2856,10 +2849,8 @@ out_wake_log_root:
 	if (waitqueue_active(&log_root_tree->log_commit_wait[index2]))
 		wake_up(&log_root_tree->log_commit_wait[index2]);
 out:
-	/* See above. */
-	btrfs_remove_all_log_ctxs(root, index1, ret);
-
 	mutex_lock(&root->log_mutex);
+	btrfs_remove_all_log_ctxs(root, index1, ret);
 	root->log_transid_committed++;
 	atomic_set(&root->log_commit[index1], 0);
 	mutex_unlock(&root->log_mutex);
@@ -4992,6 +4983,7 @@ process_leaf:
 			if (di_key.type == BTRFS_ROOT_ITEM_KEY)
 				continue;
 
+			btrfs_release_path(path);
 			di_inode = btrfs_iget(root->fs_info->sb, &di_key,
 					      root, NULL);
 			if (IS_ERR(di_inode)) {
@@ -5001,13 +4993,12 @@ process_leaf:
 
 			if (btrfs_inode_in_log(di_inode, trans->transid)) {
 				iput(di_inode);
-				continue;
+				break;
 			}
 
 			ctx->log_new_dentries = false;
 			if (type == BTRFS_FT_DIR)
 				log_mode = LOG_INODE_ALL;
-			btrfs_release_path(path);
 			ret = btrfs_log_inode(trans, root, di_inode,
 					      log_mode, 0, LLONG_MAX, ctx);
 			iput(di_inode);

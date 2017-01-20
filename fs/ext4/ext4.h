@@ -224,6 +224,7 @@ struct ext4_io_submit {
 #define	EXT4_MAX_BLOCK_SIZE		65536
 #define EXT4_MIN_BLOCK_LOG_SIZE		10
 #define EXT4_MAX_BLOCK_LOG_SIZE		16
+#define EXT4_MAX_CLUSTER_LOG_SIZE	30
 #ifdef __KERNEL__
 # define EXT4_BLOCK_SIZE(s)		((s)->s_blocksize)
 #else
@@ -1008,6 +1009,7 @@ struct ext4_inode_info {
 /*
  * Mount flags set via mount options or defaults
  */
+#define EXT4_MOUNT_NO_MBCACHE		0x00001 /* Disable mbcache */
 #define EXT4_MOUNT_GRPID		0x00004	/* Create files with directory's group */
 #define EXT4_MOUNT_DEBUG		0x00008	/* Some debugging messages */
 #define EXT4_MOUNT_ERRORS_CONT		0x00010	/* Continue on errors */
