@@ -2090,59 +2090,60 @@ cont:
 	return;
 }
 
-static inline bool mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
+static bool mptcp_mp_fastclose_rcvd(struct sock *sk)
+{
+	struct mptcp_tcp_sock *mptcp = tcp_sk(sk)->mptcp;
+	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
+
+	if (likely(!mptcp->rx_opt.mp_fclose))
+		return false;
+
+	MPTCP_INC_STATS_BH(sock_net(sk), MPTCP_MIB_FASTCLOSERX);
+	mptcp->rx_opt.mp_fclose = 0;
+	if (mptcp->rx_opt.mptcp_sender_key != mpcb->mptcp_loc_key)
+		return false;
+
+	mptcp_sub_force_close_all(mpcb, NULL);
+
+	tcp_reset(mptcp_meta_sk(sk));
+
+	return true;
+}
+
+static void mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
 {
 	struct mptcp_tcp_sock *mptcp = tcp_sk(sk)->mptcp;
 	struct sock *meta_sk = mptcp_meta_sk(sk);
 	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 
-	if (unlikely(mptcp->rx_opt.mp_fail)) {
-		MPTCP_INC_STATS_BH(sock_net(sk), MPTCP_MIB_MPFAILRX);
-		mptcp->rx_opt.mp_fail = 0;
+	MPTCP_INC_STATS_BH(sock_net(sk), MPTCP_MIB_MPFAILRX);
+	mptcp->rx_opt.mp_fail = 0;
 
-		if (!th->rst && !mpcb->infinite_mapping_snd) {
-			mpcb->send_infinite_mapping = 1;
-			/* We resend everything that has not been acknowledged */
-			meta_sk->sk_send_head = tcp_write_queue_head(meta_sk);
+	if (!th->rst && !mpcb->infinite_mapping_snd) {
+		mpcb->send_infinite_mapping = 1;
+		/* We resend everything that has not been acknowledged */
+		meta_sk->sk_send_head = tcp_write_queue_head(meta_sk);
 
-			/* We artificially restart the whole send-queue. Thus,
-			 * it is as if no packets are in flight
-			 */
-			tcp_sk(meta_sk)->packets_out = 0;
+		/* We artificially restart the whole send-queue. Thus,
+		 * it is as if no packets are in flight
+		 */
+		tcp_sk(meta_sk)->packets_out = 0;
 
-			/* If the snd_nxt already wrapped around, we have to
-			 * undo the wrapping, as we are restarting from snd_una
-			 * on.
-			 */
-			if (tcp_sk(meta_sk)->snd_nxt < tcp_sk(meta_sk)->snd_una) {
-				mpcb->snd_high_order[mpcb->snd_hiseq_index] -= 2;
-				mpcb->snd_hiseq_index = mpcb->snd_hiseq_index ? 0 : 1;
-			}
-			tcp_sk(meta_sk)->snd_nxt = tcp_sk(meta_sk)->snd_una;
-
-			/* Trigger a sending on the meta. */
-			mptcp_push_pending_frames(meta_sk);
-
-			mptcp_sub_force_close_all(mpcb, sk);
+		/* If the snd_nxt already wrapped around, we have to
+		 * undo the wrapping, as we are restarting from snd_una
+		 * on.
+		 */
+		if (tcp_sk(meta_sk)->snd_nxt < tcp_sk(meta_sk)->snd_una) {
+			mpcb->snd_high_order[mpcb->snd_hiseq_index] -= 2;
+			mpcb->snd_hiseq_index = mpcb->snd_hiseq_index ? 0 : 1;
 		}
+		tcp_sk(meta_sk)->snd_nxt = tcp_sk(meta_sk)->snd_una;
 
-		return false;
+		/* Trigger a sending on the meta. */
+		mptcp_push_pending_frames(meta_sk);
+
+		mptcp_sub_force_close_all(mpcb, sk);
 	}
-
-	if (unlikely(mptcp->rx_opt.mp_fclose)) {
-		MPTCP_INC_STATS_BH(sock_net(sk), MPTCP_MIB_FASTCLOSERX);
-		mptcp->rx_opt.mp_fclose = 0;
-		if (mptcp->rx_opt.mptcp_sender_key != mpcb->mptcp_loc_key)
-			return false;
-
-		mptcp_sub_force_close_all(mpcb, NULL);
-
-		tcp_reset(meta_sk);
-
-		return true;
-	}
-
-	return false;
 }
 
 static inline void mptcp_path_array_check(struct sock *meta_sk)
@@ -2165,8 +2166,11 @@ bool mptcp_handle_options(struct sock *sk, const struct tcphdr *th,
 	if (tp->mpcb->infinite_mapping_rcv || tp->mpcb->infinite_mapping_snd)
 		return false;
 
-	if (mptcp_mp_fail_rcvd(sk, th))
+	if (mptcp_mp_fastclose_rcvd(sk))
 		return true;
+
+	if (unlikely(mopt->mp_fail))
+		mptcp_mp_fail_rcvd(sk, th);
 
 	/* RFC 6824, Section 3.3:
 	 * If a checksum is not present when its use has been negotiated, the
