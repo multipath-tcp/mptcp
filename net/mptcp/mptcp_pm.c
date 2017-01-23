@@ -84,6 +84,15 @@ void mptcp_unregister_path_manager(struct mptcp_pm_ops *pm)
 	spin_lock(&mptcp_pm_list_lock);
 	list_del_rcu(&pm->list);
 	spin_unlock(&mptcp_pm_list_lock);
+
+	/* Wait for outstanding readers to complete before the
+	 * module gets removed entirely.
+	 *
+	 * A try_module_get() should fail by now as our module is
+	 * in "going" state since no refs are held anymore and
+	 * module_exit() handler being called.
+	 */
+	synchronize_rcu();
 }
 EXPORT_SYMBOL_GPL(mptcp_unregister_path_manager);
 
