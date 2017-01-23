@@ -805,7 +805,7 @@ exit:
 			  (1UL << TCP_WRITE_TIMER_DEFERRED) |	\
 			  (1UL << TCP_DELACK_TIMER_DEFERRED) |	\
 			  (1UL << TCP_MTU_REDUCED_DEFERRED) |   \
-			  (1UL << MPTCP_PATH_MANAGER) |		\
+			  (1UL << MPTCP_PATH_MANAGER_DEFERRED) |\
 			  (1UL << MPTCP_SUB_DEFERRED))
 
 /**
@@ -854,7 +854,7 @@ void tcp_release_cb(struct sock *sk)
 		inet_csk(sk)->icsk_af_ops->mtu_reduced(sk);
 		__sock_put(sk);
 	}
-	if (flags & (1UL << MPTCP_PATH_MANAGER)) {
+	if (flags & (1UL << MPTCP_PATH_MANAGER_DEFERRED)) {
 		if (tcp_sk(sk)->mpcb->pm_ops->release_sock)
 			tcp_sk(sk)->mpcb->pm_ops->release_sock(sk);
 		__sock_put(sk);

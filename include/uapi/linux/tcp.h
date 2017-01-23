@@ -117,6 +117,7 @@ enum {
 #define TCP_SAVED_SYN		28	/* Get SYN headers recorded for connection */
 #define MPTCP_ENABLED		42
 #define MPTCP_SCHEDULER		43
+#define MPTCP_PATH_MANAGER	44
 
 struct tcp_repair_opt {
 	__u32	opt_code;

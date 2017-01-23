@@ -423,14 +423,17 @@ struct tcp_sock {
 		close_it:1,	/* Must close socket in mptcp_data_ready? */
 		closing:1,
 		mptcp_ver:4,
-		mptcp_sched_setsockopt:1;
+		mptcp_sched_setsockopt:1,
+		mptcp_pm_setsockopt:1;
 	struct mptcp_tcp_sock *mptcp;
 #ifdef CONFIG_MPTCP
 #define MPTCP_SCHED_NAME_MAX 16
+#define MPTCP_PM_NAME_MAX 16
 	struct hlist_nulls_node tk_table;
 	u32		mptcp_loc_token;
 	u64		mptcp_loc_key;
 	char		mptcp_sched_name[MPTCP_SCHED_NAME_MAX];
+	char		mptcp_pm_name[MPTCP_PM_NAME_MAX];
 #endif /* CONFIG_MPTCP */
 };
 
@@ -443,7 +446,7 @@ enum tsq_flags {
 	TCP_MTU_REDUCED_DEFERRED,  /* tcp_v{4|6}_err() could not call
 				    * tcp_v{4|6}_mtu_reduced()
 				    */
-	MPTCP_PATH_MANAGER, /* MPTCP deferred creation of new subflows */
+	MPTCP_PATH_MANAGER_DEFERRED, /* MPTCP deferred creation of new subflows */
 	MPTCP_SUB_DEFERRED, /* A subflow got deferred - process them */
 };
 

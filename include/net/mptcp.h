@@ -892,6 +892,7 @@ void mptcp_cleanup_path_manager(struct mptcp_cb *mpcb);
 void mptcp_fallback_default(struct mptcp_cb *mpcb);
 void mptcp_get_default_path_manager(char *name);
 int mptcp_set_scheduler(struct sock *sk, const char *name);
+int mptcp_set_path_manager(struct sock *sk, const char *name);
 int mptcp_set_default_path_manager(const char *name);
 extern struct mptcp_pm_ops mptcp_pm_default;
 

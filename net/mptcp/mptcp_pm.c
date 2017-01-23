@@ -136,18 +136,66 @@ int mptcp_set_default_path_manager(const char *name)
 	return ret;
 }
 
+static struct mptcp_pm_ops *__mptcp_pm_find_autoload(const char *name)
+{
+	struct mptcp_pm_ops *pm = mptcp_pm_find(name);
+#ifdef CONFIG_MODULES
+	if (!pm && capable(CAP_NET_ADMIN)) {
+		rcu_read_unlock();
+		request_module("mptcp_%s", name);
+		rcu_read_lock();
+		pm = mptcp_pm_find(name);
+	}
+#endif
+	return pm;
+}
+
 void mptcp_init_path_manager(struct mptcp_cb *mpcb)
 {
 	struct mptcp_pm_ops *pm;
+	struct sock *meta_sk = mpcb->meta_sk;
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
 	rcu_read_lock();
+	/* if path manager was set using socket option */
+	if (meta_tp->mptcp_pm_setsockopt) {
+		pm = __mptcp_pm_find_autoload(meta_tp->mptcp_pm_name);
+		if (pm && try_module_get(pm->owner)) {
+			mpcb->pm_ops = pm;
+			goto out;
+		}
+	}
+
 	list_for_each_entry_rcu(pm, &mptcp_pm_list, list) {
 		if (try_module_get(pm->owner)) {
 			mpcb->pm_ops = pm;
 			break;
 		}
 	}
+out:
 	rcu_read_unlock();
+}
+
+/* Change path manager for socket */
+int mptcp_set_path_manager(struct sock *sk, const char *name)
+{
+	struct mptcp_pm_ops *pm;
+	int err = 0;
+
+	rcu_read_lock();
+	pm = __mptcp_pm_find_autoload(name);
+
+	if (!pm) {
+		err = -ENOENT;
+	} else if (!ns_capable(sock_net(sk)->user_ns, CAP_NET_ADMIN)) {
+		err = -EPERM;
+	} else {
+		strcpy(tcp_sk(sk)->mptcp_pm_name, name);
+		tcp_sk(sk)->mptcp_pm_setsockopt = 1;
+	}
+	rcu_read_unlock();
+
+	return err;
 }
 
 /* Manage refcounts on socket close. */
