@@ -127,6 +127,22 @@ int mptcp_set_default_path_manager(const char *name)
 	return ret;
 }
 
+void mptcp_get_available_path_manager(char *buf, size_t maxlen)
+{
+	struct mptcp_pm_ops *pm;
+	size_t offs = 0;
+
+	BUG_ON(list_empty(&mptcp_pm_list));
+	rcu_read_lock();
+	list_for_each_entry_rcu(pm, &mptcp_pm_list, list) {
+		offs += snprintf(buf + offs, maxlen - offs,
+				 "%s%s",
+				 offs == 0 ? "" : " ", pm->name);
+
+	}
+	rcu_read_unlock();
+}
+
 void mptcp_init_path_manager(struct mptcp_cb *mpcb)
 {
 	struct mptcp_pm_ops *pm;
