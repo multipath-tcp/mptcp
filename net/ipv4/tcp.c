@@ -3099,7 +3099,10 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 		return 0;
 
 	case MPTCP_ENABLED:
-		val = sock_flag(sk, SOCK_MPTCP) ? 1 : 0;
+		if (sk->sk_state != TCP_SYN_SENT)
+			val = mptcp(tp) ? 1 : 0;
+		else
+			val = sock_flag(sk, SOCK_MPTCP) ? 1 : 0;
 		break;
 #endif
 	default:
