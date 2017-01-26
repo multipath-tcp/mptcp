@@ -612,7 +612,7 @@ static void update_addr_bitfields(struct sock *meta_sk,
 	int i;
 
 	/* The bits in announced_addrs_* always match with loc*_bits. So, a
-	 * simply & operation unsets the correct bits, because these go from
+	 * simple & operation unsets the correct bits, because these go from
 	 * announced to non-announced
 	 */
 	fmp->announced_addrs_v4 &= mptcp_local->loc4_bits;
