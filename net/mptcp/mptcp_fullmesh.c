@@ -1696,6 +1696,65 @@ static void full_mesh_rem_raddr(struct mptcp_cb *mpcb, u8 rem_id)
 	mptcp_v6_rem_raddress(mpcb, rem_id);
 }
 
+static void full_mesh_delete_subflow(struct sock *sk)
+{
+	struct fullmesh_priv *fmp = fullmesh_get_priv(tcp_sk(sk)->mpcb);
+	struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(sk));
+	struct mptcp_loc_addr *mptcp_local;
+	int index, i;
+
+	if (!create_on_err)
+		return;
+
+	rcu_read_lock_bh();
+	mptcp_local = rcu_dereference_bh(fm_ns->local);
+
+	if (sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(sk)) {
+		union inet_addr saddr;
+
+		saddr.ip = inet_sk(sk)->inet_saddr;
+		index = mptcp_find_address(mptcp_local, AF_INET, &saddr,
+					   sk->sk_bound_dev_if);
+		if (index < 0)
+			goto out;
+
+		mptcp_for_each_bit_set(fmp->rem4_bits, i) {
+			struct fullmesh_rem4 *rem4 = &fmp->remaddr4[i];
+
+			if (rem4->addr.s_addr != sk->sk_daddr)
+				continue;
+
+			if (rem4->port && rem4->port != inet_sk(sk)->inet_dport)
+				continue;
+
+			rem4->bitfield &= ~(1 << index);
+		}
+	} else {
+		union inet_addr saddr;
+
+		saddr.in6 = inet6_sk(sk)->saddr;
+		index = mptcp_find_address(mptcp_local, AF_INET6, &saddr,
+					   sk->sk_bound_dev_if);
+		if (index < 0)
+			goto out;
+
+		mptcp_for_each_bit_set(fmp->rem6_bits, i) {
+			struct fullmesh_rem6 *rem6 = &fmp->remaddr6[i];
+
+			if (!ipv6_addr_equal(&rem6->addr, &sk->sk_v6_daddr))
+				continue;
+
+			if (rem6->port && rem6->port != inet_sk(sk)->inet_dport)
+				continue;
+
+			rem6->bitfield &= ~(1 << index);
+		}
+	}
+
+out:
+	rcu_read_unlock_bh();
+}
+
 /* Output /proc/net/mptcp_fullmesh */
 static int mptcp_fm_seq_show(struct seq_file *seq, void *v)
 {
@@ -1826,6 +1885,7 @@ static struct mptcp_pm_ops full_mesh __read_mostly = {
 	.addr_signal = full_mesh_addr_signal,
 	.add_raddr = full_mesh_add_raddr,
 	.rem_raddr = full_mesh_rem_raddr,
+	.delete_subflow = full_mesh_delete_subflow,
 	.name = "fullmesh",
 	.owner = THIS_MODULE,
 };

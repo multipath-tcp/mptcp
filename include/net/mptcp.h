@@ -235,6 +235,7 @@ struct mptcp_pm_ops {
 	void (*rem_raddr)(struct mptcp_cb *mpcb, u8 rem_id);
 	void (*init_subsocket_v4)(struct sock *sk, struct in_addr addr);
 	void (*init_subsocket_v6)(struct sock *sk, struct in6_addr addr);
+	void (*delete_subflow)(struct sock *sk);
 
 	char		name[MPTCP_PM_NAME_MAX];
 	struct module	*owner;

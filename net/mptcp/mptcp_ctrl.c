@@ -1351,6 +1351,9 @@ void mptcp_del_sock(struct sock *sk)
 	if (mpcb->sched_ops->release)
 		mpcb->sched_ops->release(sk);
 
+	if (mpcb->pm_ops->delete_subflow)
+		mpcb->pm_ops->delete_subflow(sk);
+
 	mptcp_debug("%s: Removing subsock tok %#x pi:%d state %d is_meta? %d\n",
 		    __func__, mpcb->mptcp_loc_token, tp->mptcp->path_index,
 		    sk->sk_state, is_meta_sk(sk));
