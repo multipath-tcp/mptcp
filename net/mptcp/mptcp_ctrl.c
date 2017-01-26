@@ -604,13 +604,13 @@ EXPORT_SYMBOL(mptcp_select_ack_sock);
 static void mptcp_sock_def_error_report(struct sock *sk)
 {
 	const struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
+	struct sock *meta_sk = mptcp_meta_sk(sk);
 
 	if (!sock_flag(sk, SOCK_DEAD))
 		mptcp_sub_close(sk, 0);
 
 	if (mpcb->infinite_mapping_rcv || mpcb->infinite_mapping_snd ||
 	    mpcb->send_infinite_mapping) {
-		struct sock *meta_sk = mptcp_meta_sk(sk);
 
 		meta_sk->sk_err = sk->sk_err;
 		meta_sk->sk_err_soft = sk->sk_err_soft;
@@ -626,6 +626,9 @@ static void mptcp_sock_def_error_report(struct sock *sk)
 		if (meta_sk->sk_state != TCP_CLOSE)
 			tcp_done(meta_sk);
 	}
+
+	if (mpcb->pm_ops->subflow_error)
+		mpcb->pm_ops->subflow_error(meta_sk, sk);
 
 	sk->sk_err = 0;
 	return;
