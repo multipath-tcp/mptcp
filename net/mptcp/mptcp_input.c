@@ -2169,6 +2169,9 @@ bool mptcp_handle_options(struct sock *sk, const struct tcphdr *th,
 	if (mptcp_mp_fastclose_rcvd(sk))
 		return true;
 
+	if (sk->sk_state == TCP_RST_WAIT && !th->rst)
+		return true;
+
 	if (unlikely(mopt->mp_fail))
 		mptcp_mp_fail_rcvd(sk, th);
 
