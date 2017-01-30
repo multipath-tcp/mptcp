@@ -1297,10 +1297,13 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 
 	mptcp_sub_force_close_all(mpcb, sk);
 
+	tcp_set_state(sk, TCP_RST_WAIT);
+
 	if (!in_serving_softirq())
 		local_bh_enable();
 
 	tcp_send_ack(sk);
+	tcp_clear_xmit_timers(sk);
 	inet_csk_reset_keepalive_timer(sk, inet_csk(sk)->icsk_rto);
 
 	meta_tp->send_mp_fclose = 1;

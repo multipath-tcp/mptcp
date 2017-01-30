@@ -26,6 +26,7 @@ enum {
 	TCP_LISTEN,
 	TCP_CLOSING,	/* Now a valid state */
 	TCP_NEW_SYN_RECV,
+	TCP_RST_WAIT,
 
 	TCP_MAX_STATES	/* Leave at the end! */
 };
@@ -47,6 +48,7 @@ enum {
 	TCPF_LISTEN	 = (1 << 10),
 	TCPF_CLOSING	 = (1 << 11),
 	TCPF_NEW_SYN_RECV = (1 << 12),
+	TCPF_RST_WAIT	 = (1 << 13),
 };
 
 #endif	/* _LINUX_TCP_STATES_H */
