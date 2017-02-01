@@ -1729,6 +1729,7 @@ static void full_mesh_delete_subflow(struct sock *sk)
 
 			rem4->bitfield &= ~(1 << index);
 		}
+#if IS_ENABLED(CONFIG_IPV6)
 	} else {
 		union inet_addr saddr;
 
@@ -1749,6 +1750,7 @@ static void full_mesh_delete_subflow(struct sock *sk)
 
 			rem6->bitfield &= ~(1 << index);
 		}
+#endif
 	}
 
 out:
