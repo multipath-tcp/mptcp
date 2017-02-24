@@ -2442,6 +2442,189 @@ drop:
 	return 0;
 }
 
+static void __mptcp_get_info(const struct sock *meta_sk,
+			     struct mptcp_meta_info *info)
+{
+	const struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
+	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	u32 now = tcp_time_stamp;
+	unsigned int start;
+
+	memset(info, 0, sizeof(*info));
+
+	info->mptcpi_state = meta_sk->sk_state;
+	info->mptcpi_retransmits = meta_icsk->icsk_retransmits;
+	info->mptcpi_probes = meta_icsk->icsk_probes_out;
+	info->mptcpi_backoff = meta_icsk->icsk_backoff;
+
+	info->mptcpi_rto = jiffies_to_usecs(meta_icsk->icsk_rto);
+
+	info->mptcpi_unacked = meta_tp->packets_out;
+
+	info->mptcpi_last_data_sent = jiffies_to_msecs(now - meta_tp->lsndtime);
+	info->mptcpi_last_data_recv = jiffies_to_msecs(now - meta_icsk->icsk_ack.lrcvtime);
+	info->mptcpi_last_ack_recv = jiffies_to_msecs(now - meta_tp->rcv_tstamp);
+
+	info->mptcpi_total_retrans = meta_tp->total_retrans;
+
+	do {
+		start = u64_stats_fetch_begin_irq(&meta_tp->syncp);
+		info->mptcpi_bytes_acked = meta_tp->bytes_acked;
+		info->mptcpi_bytes_received = meta_tp->bytes_received;
+	} while (u64_stats_fetch_retry_irq(&meta_tp->syncp, start));
+}
+
+static void mptcp_get_sub_info(struct sock *sk, struct mptcp_sub_info *info)
+{
+	struct inet_sock *inet = inet_sk(sk);
+
+	memset(info, 0, sizeof(*info));
+
+	if (sk->sk_family == AF_INET) {
+		info->src_v4.sin_family = AF_INET;
+		info->src_v4.sin_port = inet->inet_sport;
+
+		info->src_v4.sin_addr.s_addr = inet->inet_rcv_saddr;
+		if (!info->src_v4.sin_addr.s_addr)
+			info->src_v4.sin_addr.s_addr = inet->inet_saddr;
+
+		info->dst_v4.sin_family = AF_INET;
+		info->dst_v4.sin_port = inet->inet_dport;
+		info->dst_v4.sin_addr.s_addr = inet->inet_daddr;
+#if IS_ENABLED(CONFIG_IPV6)
+	} else {
+		struct ipv6_pinfo *np = inet6_sk(sk);
+
+		info->src_v6.sin6_family = AF_INET6;
+		info->src_v6.sin6_port = inet->inet_sport;
+
+		if (ipv6_addr_any(&sk->sk_v6_rcv_saddr))
+			info->src_v6.sin6_addr = np->saddr;
+		else
+			info->src_v6.sin6_addr = sk->sk_v6_rcv_saddr;
+
+		info->dst_v6.sin6_family = AF_INET6;
+		info->dst_v6.sin6_port = inet->inet_dport;
+		info->dst_v6.sin6_addr = sk->sk_v6_daddr;
+#endif
+	}
+}
+
+int mptcp_get_info(const struct sock *meta_sk, char __user *optval, int optlen)
+{
+	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct sock *sk;
+
+	struct mptcp_meta_info meta_info;
+	struct mptcp_info m_info;
+
+	unsigned int info_len;
+
+	if (copy_from_user(&m_info, optval, optlen))
+		return -EFAULT;
+
+	if (m_info.meta_info) {
+		unsigned int len;
+
+		__mptcp_get_info(meta_sk, &meta_info);
+
+		/* Need to set this, if user thinks that tcp_info is bigger than ours */
+		len = min_t(unsigned int, m_info.meta_len, sizeof(meta_info));
+		m_info.meta_len = len;
+
+		if (copy_to_user(m_info.meta_info, &meta_info, len))
+			return -EFAULT;
+	}
+
+	/* Need to set this, if user thinks that tcp_info is bigger than ours */
+	info_len = min_t(unsigned int, m_info.tcp_info_len, sizeof(struct tcp_info));
+	m_info.tcp_info_len = info_len;
+
+	if (m_info.initial) {
+		struct mptcp_cb *mpcb = meta_tp->mpcb;
+
+		if (mpcb->master_sk) {
+			struct tcp_info info;
+
+			tcp_get_info(mpcb->master_sk, &info);
+			if (copy_to_user(m_info.initial, &info, info_len))
+				return -EFAULT;
+		} else if (meta_tp->record_master_info && mpcb->master_info) {
+			if (copy_to_user(m_info.initial, mpcb->master_info, info_len))
+				return -EFAULT;
+		} else {
+			return meta_tp->record_master_info ? -ENOMEM : -EINVAL;
+		}
+	}
+
+	if (m_info.subflows) {
+		unsigned int len, sub_len = 0;
+		char __user *ptr;
+
+		ptr = (char __user *)m_info.subflows;
+		len = m_info.sub_len;
+
+		mptcp_for_each_sk(meta_tp->mpcb, sk) {
+			struct tcp_info t_info;
+			unsigned int tmp_len;
+
+			tcp_get_info(sk, &t_info);
+
+			tmp_len = min_t(unsigned int, len, info_len);
+			len -= tmp_len;
+
+			if (copy_to_user(ptr, &t_info, tmp_len))
+				return -EFAULT;
+
+			ptr += tmp_len;
+			sub_len += tmp_len;
+
+			if (len == 0)
+				break;
+		}
+
+		m_info.sub_len = sub_len;
+	}
+
+	if (m_info.subflow_info) {
+		unsigned int len, sub_info_len, total_sub_info_len = 0;
+		char __user *ptr;
+
+		ptr = (char __user *)m_info.subflow_info;
+		len = m_info.total_sub_info_len;
+
+		sub_info_len = min_t(unsigned int, m_info.sub_info_len,
+				     sizeof(struct mptcp_sub_info));
+		m_info.sub_info_len = sub_info_len;
+
+		mptcp_for_each_sk(meta_tp->mpcb, sk) {
+			struct mptcp_sub_info m_sub_info;
+			unsigned int tmp_len;
+
+			mptcp_get_sub_info(sk, &m_sub_info);
+
+			tmp_len = min_t(unsigned int, len, sub_info_len);
+			len -= tmp_len;
+
+			if (copy_to_user(ptr, &m_sub_info, tmp_len))
+				return -EFAULT;
+
+			ptr += tmp_len;
+			total_sub_info_len += tmp_len;
+
+			if (len == 0)
+				break;
+		}
+
+		m_info.total_sub_info_len = total_sub_info_len;
+	}
+
+	if (copy_to_user(optval, &m_info, optlen))
+		return -EFAULT;
+
+	return 0;
+}
+
 static const struct snmp_mib mptcp_snmp_list[] = {
 	SNMP_MIB_ITEM("MPCapableSYNRX", MPTCP_MIB_MPCAPABLEPASSIVE),
 	SNMP_MIB_ITEM("MPCapableSYNTX", MPTCP_MIB_MPCAPABLEACTIVE),

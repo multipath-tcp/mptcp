@@ -3112,6 +3112,29 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 		else
 			val = sock_flag(sk, SOCK_MPTCP) ? 1 : 0;
 		break;
+	case MPTCP_INFO:
+	{
+		int ret;
+
+		if (!mptcp(tp))
+			return -EINVAL;
+
+		if (get_user(len, optlen))
+			return -EFAULT;
+
+		len = min_t(unsigned int, len, sizeof(struct mptcp_info));
+
+		lock_sock(sk);
+		ret = mptcp_get_info(sk, optval, len);
+		release_sock(sk);
+
+		if (ret)
+			return ret;
+
+		if (put_user(len, optlen))
+			return -EFAULT;
+		return 0;
+	}
 #endif
 	default:
 		return -ENOPROTOOPT;
