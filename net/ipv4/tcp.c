@@ -2759,6 +2759,14 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 		else
 			mptcp_disable_sock(sk);
 		break;
+	case MPTCP_INFO:
+		if (mptcp_init_failed || !sysctl_mptcp_enabled) {
+			err = -EPERM;
+			break;
+		}
+
+		tp->record_master_info = !!(val & MPTCP_INFO_FLAG_SAVE_MASTER);
+		break;
 #endif
 	default:
 		err = -ENOPROTOOPT;

@@ -408,7 +408,7 @@ struct tcp_sock {
 	 * it allows checking MPTCP capability just by checking the mpc flag,
 	 * rather than adding ifdefs everywhere.
 	 */
-	u16     mpc:1,          /* Other end is multipath capable */
+	u32     mpc:1,          /* Other end is multipath capable */
 		inside_tk_table:1, /* Is the tcp_sock inside the token-table? */
 		send_mp_fclose:1,
 		request_mptcp:1, /* Did we send out an MP_CAPABLE?
@@ -424,7 +424,8 @@ struct tcp_sock {
 		closing:1,
 		mptcp_ver:4,
 		mptcp_sched_setsockopt:1,
-		mptcp_pm_setsockopt:1;
+		mptcp_pm_setsockopt:1,
+		record_master_info:1;
 	struct mptcp_tcp_sock *mptcp;
 #ifdef CONFIG_MPTCP
 #define MPTCP_SCHED_NAME_MAX 16

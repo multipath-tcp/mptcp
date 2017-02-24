@@ -639,6 +639,7 @@ static void mptcp_mpcb_put(struct mptcp_cb *mpcb)
 	if (atomic_dec_and_test(&mpcb->mpcb_refcnt)) {
 		mptcp_cleanup_path_manager(mpcb);
 		mptcp_cleanup_scheduler(mpcb);
+		kfree(mpcb->master_info);
 		kmem_cache_free(mptcp_cb_cache, mpcb);
 	}
 }
@@ -1379,10 +1380,23 @@ void mptcp_del_sock(struct sock *sk)
 	if (!skb_queue_empty(&sk->sk_write_queue))
 		mptcp_reinject_data(sk, 0);
 
-	if (is_master_tp(tp))
+	if (is_master_tp(tp)) {
+		struct sock *meta_sk = mptcp_meta_sk(sk);
+		struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+
+		if (meta_tp->record_master_info &&
+		    !sock_flag(meta_sk, SOCK_DEAD)) {
+			mpcb->master_info = kmalloc(sizeof(*mpcb->master_info),
+						    GFP_ATOMIC);
+
+			if (mpcb->master_info)
+				tcp_get_info(sk, mpcb->master_info);
+		}
+
 		mpcb->master_sk = NULL;
-	else if (tp->mptcp->pre_established)
+	} else if (tp->mptcp->pre_established) {
 		sk_stop_timer(sk, &tp->mptcp->mptcp_ack_timer);
+	}
 
 	rcu_assign_pointer(inet_sk(sk)->inet_opt, NULL);
 }

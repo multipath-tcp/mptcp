@@ -118,6 +118,9 @@ enum {
 #define MPTCP_ENABLED		42
 #define MPTCP_SCHEDULER		43
 #define MPTCP_PATH_MANAGER	44
+#define MPTCP_INFO		45
+
+#define MPTCP_INFO_FLAG_SAVE_MASTER	0x01
 
 struct tcp_repair_opt {
 	__u32	opt_code;
