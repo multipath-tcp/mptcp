@@ -952,7 +952,12 @@ static int mptcp_queue_skb(struct sock *sk)
 				    tp->mptcp->map_subseq + tp->mptcp->map_data_len))
 				break;
 		}
-		tcp_enter_quickack_mode(sk);
+
+		/* Quick ACK if more 3/4 of the receive window is filled */
+		if (after64(tp->mptcp->map_data_seq,
+			    rcv_nxt64 + 3 * (tcp_receive_window(meta_tp) >> 2)))
+			tcp_enter_quickack_mode(sk);
+
 	} else {
 		/* Ready for the meta-rcv-queue */
 		skb_queue_walk_safe(&sk->sk_receive_queue, tmp1, tmp) {
