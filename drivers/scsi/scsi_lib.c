@@ -910,9 +910,12 @@ void scsi_io_completion(struct scsi_cmnd *cmd, unsigned int good_bytes)
 	}
 
 	/*
-	 * If we finished all bytes in the request we are done now.
+	 * special case: failed zero length commands always need to
+	 * drop down into the retry code. Otherwise, if we finished
+	 * all bytes in the request we are done now.
 	 */
-	if (!scsi_end_request(req, error, good_bytes, 0))
+	if (!(blk_rq_bytes(req) == 0 && error) &&
+	    !scsi_end_request(req, error, good_bytes, 0))
 		return;
 
 	/*
@@ -1117,7 +1120,8 @@ int scsi_init_io(struct scsi_cmnd *cmd)
 	bool is_mq = (rq->mq_ctx != NULL);
 	int error;
 
-	BUG_ON(!rq->nr_phys_segments);
+	if (WARN_ON_ONCE(!rq->nr_phys_segments))
+		return -EINVAL;
 
 	error = scsi_init_sgtable(rq, &cmd->sdb);
 	if (error)

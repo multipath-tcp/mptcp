@@ -1255,6 +1255,10 @@ bytes respectively. Such letter suffixes can also be entirely omitted.
 			When zero, profiling data is discarded and associated
 			debugfs files are removed at module unload time.
 
+	goldfish	[X86] Enable the goldfish android emulator platform.
+			Don't use this when you are not running on the
+			android emulator
+
 	gpt		[EFI] Forces disk with valid GPT signature but
 			invalid Protective MBR to be treated as GPT. If the
 			primary GPT is corrupted, it enables the backup/alternate
@@ -1371,7 +1375,14 @@ bytes respectively. Such letter suffixes can also be entirely omitted.
 	i8042.nopnp	[HW] Don't use ACPIPnP / PnPBIOS to discover KBD/AUX
 			     controllers
 	i8042.notimeout	[HW] Ignore timeout condition signalled by controller
-	i8042.reset	[HW] Reset the controller during init and cleanup
+	i8042.reset	[HW] Reset the controller during init, cleanup and
+			     suspend-to-ram transitions, only during s2r
+			     transitions, or never reset
+			Format: { 1 | Y | y | 0 | N | n }
+			1, Y, y: always reset controller
+			0, N, n: don't ever reset controller
+			Default: only on s2r transitions on x86; most other
+			architectures force reset to be always executed
 	i8042.unlock	[HW] Unlock (ignore) the keylock
 	i8042.kbdreset  [HW] Reset device connected to KBD port
 
@@ -3928,6 +3939,8 @@ bytes respectively. Such letter suffixes can also be entirely omitted.
 					sector if the number is odd);
 				i = IGNORE_DEVICE (don't bind to this
 					device);
+				j = NO_REPORT_LUNS (don't use report luns
+					command, uas only);
 				l = NOT_LOCKABLE (don't try to lock and
 					unlock ejectable media);
 				m = MAX_SECTORS_64 (don't transfer more

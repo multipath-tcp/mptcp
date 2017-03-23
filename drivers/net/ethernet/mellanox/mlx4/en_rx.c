@@ -502,8 +502,11 @@ void mlx4_en_recover_from_oom(struct mlx4_en_priv *priv)
 		return;
 
 	for (ring = 0; ring < priv->rx_ring_num; ring++) {
-		if (mlx4_en_is_ring_empty(priv->rx_ring[ring]))
+		if (mlx4_en_is_ring_empty(priv->rx_ring[ring])) {
+			local_bh_disable();
 			napi_reschedule(&priv->rx_cq[ring]->napi);
+			local_bh_enable();
+		}
 	}
 }
 
@@ -704,7 +707,7 @@ static int get_fixed_ipv6_csum(__wsum hw_checksum, struct sk_buff *skb,
 
 	if (ipv6h->nexthdr == IPPROTO_FRAGMENT || ipv6h->nexthdr == IPPROTO_HOPOPTS)
 		return -1;
-	hw_checksum = csum_add(hw_checksum, (__force __wsum)(ipv6h->nexthdr << 8));
+	hw_checksum = csum_add(hw_checksum, (__force __wsum)htons(ipv6h->nexthdr));
 
 	csum_pseudo_hdr = csum_partial(&ipv6h->saddr,
 				       sizeof(ipv6h->saddr) + sizeof(ipv6h->daddr), 0);

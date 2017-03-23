@@ -757,15 +757,20 @@ static int cgwb_bdi_init(struct backing_dev_info *bdi)
 	if (!bdi->wb_congested)
 		return -ENOMEM;
 
+	atomic_set(&bdi->wb_congested->refcnt, 1);
+
 	err = wb_init(&bdi->wb, bdi, 1, GFP_KERNEL);
 	if (err) {
-		kfree(bdi->wb_congested);
+		wb_congested_put(bdi->wb_congested);
 		return err;
 	}
 	return 0;
 }
 
-static void cgwb_bdi_destroy(struct backing_dev_info *bdi) { }
+static void cgwb_bdi_destroy(struct backing_dev_info *bdi)
+{
+	wb_congested_put(bdi->wb_congested);
+}
 
 #endif	/* CONFIG_CGROUP_WRITEBACK */
 
@@ -825,6 +830,20 @@ int bdi_register_dev(struct backing_dev_info *bdi, dev_t dev)
 }
 EXPORT_SYMBOL(bdi_register_dev);
 
+int bdi_register_owner(struct backing_dev_info *bdi, struct device *owner)
+{
+	int rc;
+
+	rc = bdi_register(bdi, NULL, "%u:%u", MAJOR(owner->devt),
+			MINOR(owner->devt));
+	if (rc)
+		return rc;
+	bdi->owner = owner;
+	get_device(owner);
+	return 0;
+}
+EXPORT_SYMBOL(bdi_register_owner);
+
 /*
  * Remove bdi from bdi_list, and ensure that it is no longer visible
  */
@@ -848,6 +867,11 @@ void bdi_unregister(struct backing_dev_info *bdi)
 		bdi_debug_unregister(bdi);
 		device_unregister(bdi->dev);
 		bdi->dev = NULL;
+	}
+
+	if (bdi->owner) {
+		put_device(bdi->owner);
+		bdi->owner = NULL;
 	}
 }
 
@@ -989,7 +1013,7 @@ long wait_iff_congested(struct zone *zone, int sync, long timeout)
 		 * here rather than calling cond_resched().
 		 */
 		if (current->flags & PF_WQ_WORKER)
-			schedule_timeout(1);
+			schedule_timeout_uninterruptible(1);
 		else
 			cond_resched();
 

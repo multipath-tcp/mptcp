@@ -646,24 +646,23 @@ static void ffs_user_copy_worker(struct work_struct *work)
 						   work);
 	int ret = io_data->req->status ? io_data->req->status :
 					 io_data->req->actual;
+	bool kiocb_has_eventfd = io_data->kiocb->ki_flags & IOCB_EVENTFD;
 
 	if (io_data->read && ret > 0) {
 		use_mm(io_data->mm);
 		ret = copy_to_iter(io_data->buf, ret, &io_data->data);
-		if (iov_iter_count(&io_data->data))
+		if (ret != io_data->req->actual && iov_iter_count(&io_data->data))
 			ret = -EFAULT;
 		unuse_mm(io_data->mm);
 	}
 
 	io_data->kiocb->ki_complete(io_data->kiocb, ret, ret);
 
-	if (io_data->ffs->ffs_eventfd &&
-	    !(io_data->kiocb->ki_flags & IOCB_EVENTFD))
+	if (io_data->ffs->ffs_eventfd && !kiocb_has_eventfd)
 		eventfd_signal(io_data->ffs->ffs_eventfd, 1);
 
 	usb_ep_free_request(io_data->ep, io_data->req);
 
-	io_data->kiocb->private = NULL;
 	if (io_data->read)
 		kfree(io_data->to_free);
 	kfree(io_data->buf);
@@ -2080,6 +2079,8 @@ static int __ffs_data_do_os_desc(enum ffs_os_desc_type type,
 		if (len < sizeof(*d) || h->interface >= ffs->interfaces_count)
 			return -EINVAL;
 		length = le32_to_cpu(d->dwSize);
+		if (len < length)
+			return -EINVAL;
 		type = le32_to_cpu(d->dwPropertyDataType);
 		if (type < USB_EXT_PROP_UNICODE ||
 		    type > USB_EXT_PROP_UNICODE_MULTI) {
@@ -2088,6 +2089,11 @@ static int __ffs_data_do_os_desc(enum ffs_os_desc_type type,
 			return -EINVAL;
 		}
 		pnl = le16_to_cpu(d->wPropertyNameLength);
+		if (length < 14 + pnl) {
+			pr_vdebug("invalid os descriptor length: %d pnl:%d (descriptor %d)\n",
+				  length, pnl, type);
+			return -EINVAL;
+		}
 		pdl = le32_to_cpu(*(u32 *)((u8 *)data + 10 + pnl));
 		if (length != 14 + pnl + pdl) {
 			pr_vdebug("invalid os descriptor length: %d pnl:%d pdl:%d (descriptor %d)\n",
@@ -2172,6 +2178,9 @@ static int __ffs_data_got_descs(struct ffs_data *ffs,
 		}
 	}
 	if (flags & (1 << i)) {
+		if (len < 4) {
+			goto error;
+		}
 		os_descs_count = get_unaligned_le32(data);
 		data += 4;
 		len -= 4;
@@ -2244,7 +2253,8 @@ static int __ffs_data_got_strings(struct ffs_data *ffs,
 
 	ENTER();
 
-	if (unlikely(get_unaligned_le32(data) != FUNCTIONFS_STRINGS_MAGIC ||
+	if (unlikely(len < 16 ||
+		     get_unaligned_le32(data) != FUNCTIONFS_STRINGS_MAGIC ||
 		     get_unaligned_le32(data + 4) != len))
 		goto error;
 	str_count  = get_unaligned_le32(data + 8);
@@ -2741,6 +2751,7 @@ static int _ffs_func_bind(struct usb_configuration *c,
 		func->ffs->ss_descs_count;
 
 	int fs_len, hs_len, ss_len, ret, i;
+	struct ffs_ep *eps_ptr;
 
 	/* Make it a single chunk, less management later on */
 	vla_group(d);
@@ -2789,12 +2800,9 @@ static int _ffs_func_bind(struct usb_configuration *c,
 	       ffs->raw_descs_length);
 
 	memset(vla_ptr(vlabuf, d, inums), 0xff, d_inums__sz);
-	for (ret = ffs->eps_count; ret; --ret) {
-		struct ffs_ep *ptr;
-
-		ptr = vla_ptr(vlabuf, d, eps);
-		ptr[ret].num = -1;
-	}
+	eps_ptr = vla_ptr(vlabuf, d, eps);
+	for (i = 0; i < ffs->eps_count; i++)
+		eps_ptr[i].num = -1;
 
 	/* Save pointers
 	 * d_eps == vlabuf, func->eps used to kfree vlabuf later
