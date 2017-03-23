@@ -203,8 +203,9 @@ static void try_shortcut(struct sk_buff *shortcut, struct sk_buff *skb,
 	else
 		__skb_queue_after(head, skb1, skb);
 
+end:
 	/* And clean segments covered by new one as whole. */
-	while (!skb_queue_is_last(head, skb)) {
+	while (skb && !skb_queue_is_last(head, skb)) {
 		skb1 = skb_queue_next(head, skb);
 
 		if (!after(end_seq, TCP_SKB_CB(skb1)->seq))
@@ -215,7 +216,6 @@ static void try_shortcut(struct sk_buff *shortcut, struct sk_buff *skb,
 		__kfree_skb(skb1);
 	}
 
-end:
 	if (skb) {
 		skb_set_owner_r(skb, meta_sk);
 		tp->mptcp->shortcut_ofoqueue = skb;
