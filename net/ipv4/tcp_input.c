@@ -6466,12 +6466,18 @@ int tcp_conn_request(struct request_sock_ops *rsk_ops,
 		fastopen_sk = tcp_try_fastopen(sk, skb, req, &foc, dst);
 	}
 	if (fastopen_sk) {
+		struct sock *meta_sk = fastopen_sk;
+
+		if (mptcp(tcp_sk(fastopen_sk)))
+			meta_sk = mptcp_meta_sk(fastopen_sk);
 		af_ops->send_synack(fastopen_sk, dst, &fl, req,
 				    &foc, false);
 		/* Add the child socket directly into the accept queue */
-		inet_csk_reqsk_queue_add(sk, req, fastopen_sk);
+		inet_csk_reqsk_queue_add(sk, req, meta_sk);
 		sk->sk_data_ready(sk);
 		bh_unlock_sock(fastopen_sk);
+		if (meta_sk != fastopen_sk)
+			bh_unlock_sock(meta_sk);
 		sock_put(fastopen_sk);
 	} else {
 		tcp_rsk(req)->tfo_listener = false;

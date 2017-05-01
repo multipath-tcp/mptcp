@@ -216,13 +216,6 @@ static struct sock *tcp_fastopen_create_child(struct sock *sk,
 	tcp_init_metrics(child);
 	tp->ops->init_buffer_space(child);
 
-	sk->sk_data_ready(sk);
-	if (mptcp(tcp_sk(child)))
-		bh_unlock_sock(child);
-	bh_unlock_sock(meta_sk);
-	sock_put(child);
-	WARN_ON(!req->sk);
-
 	/* tcp_conn_request() is sending the SYNACK,
 	 * and queues the child into listener accept queue.
 	 */
