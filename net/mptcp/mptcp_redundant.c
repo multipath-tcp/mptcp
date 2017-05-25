@@ -170,6 +170,9 @@ static struct sk_buff *redundant_next_segment(struct sock *meta_sk,
 	struct sk_buff *skb;
 	int active_valid_sks = -1;
 
+	/* As we set it, we have to reset it as well. */
+	*limit = 0;
+
 	if (skb_queue_empty(&mpcb->reinject_queue) &&
 	    skb_queue_empty(&meta_sk->sk_write_queue))
 		/* Nothing to send */
