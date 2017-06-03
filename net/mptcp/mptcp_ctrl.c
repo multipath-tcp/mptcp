@@ -1415,18 +1415,21 @@ void mptcp_update_metasocket(struct sock *sk, const struct sock *meta_sk)
  * tcp_recvmsg has given to the user so far, it speeds up the
  * calculation of whether or not we must ACK for the sake of
  * a window update.
+ * (inspired from tcp_cleanup_rbuf())
  */
 void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct sock *sk;
+	bool recheck_rcv_window = false;
 	__u32 rcv_window_now = 0;
 
 	if (copied > 0 && !(meta_sk->sk_shutdown & RCV_SHUTDOWN)) {
 		rcv_window_now = tcp_receive_window(meta_tp);
 
-		if (2 * rcv_window_now > meta_tp->window_clamp)
-			rcv_window_now = 0;
+		/* Optimize, __mptcp_select_window() is not cheap. */
+		if (2 * rcv_window_now <= meta_tp->window_clamp)
+			recheck_rcv_window = true;
 	}
 
 	mptcp_for_each_sk(meta_tp->mpcb, sk) {
@@ -1460,7 +1463,7 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 
 second_part:
 		/* This here is the second part of tcp_cleanup_rbuf */
-		if (rcv_window_now) {
+		if (recheck_rcv_window) {
 			__u32 new_window = tp->ops->__select_window(sk);
 
 			/* Send ACK now, if this read freed lots of space
