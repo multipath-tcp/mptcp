@@ -58,7 +58,7 @@ static inline int mptcp_tso_acked_reinject(const struct sock *meta_sk,
 					   struct sk_buff *skb)
 {
 	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	u32 packets_acked, len;
+	u32 packets_acked, len, delta_truesize;
 
 	BUG_ON(!after(TCP_SKB_CB(skb)->end_seq, meta_tp->snd_una));
 
@@ -68,11 +68,13 @@ static inline int mptcp_tso_acked_reinject(const struct sock *meta_sk,
 		return 0;
 
 	len = meta_tp->snd_una - TCP_SKB_CB(skb)->seq;
-	__pskb_trim_head(skb, len);
+	delta_truesize = __pskb_trim_head(skb, len);
 
 	TCP_SKB_CB(skb)->seq += len;
 	skb->ip_summed = CHECKSUM_PARTIAL;
-	skb->truesize	     -= len;
+
+	if (delta_truesize)
+		skb->truesize -= delta_truesize;
 
 	/* Any change of skb->len requires recalculation of tso factor. */
 	if (tcp_skb_pcount(skb) > 1)
@@ -465,14 +467,17 @@ static void mptcp_skb_trim_head(struct sk_buff *skb, struct sock *sk, u32 seq)
 {
 	int len = seq - TCP_SKB_CB(skb)->seq;
 	u32 new_seq = TCP_SKB_CB(skb)->seq + len;
+	u32 delta_truesize;
 
-	__pskb_trim_head(skb, len);
+	delta_truesize = __pskb_trim_head(skb, len);
 
 	TCP_SKB_CB(skb)->seq = new_seq;
 
-	skb->truesize -= len;
-	atomic_sub(len, &sk->sk_rmem_alloc);
-	sk_mem_uncharge(sk, len);
+	if (delta_truesize) {
+		skb->truesize -= delta_truesize;
+		atomic_sub(delta_truesize, &sk->sk_rmem_alloc);
+		sk_mem_uncharge(sk, delta_truesize);
+	}
 }
 
 /* The DSS-mapping received on the sk only covers the first half of the skb

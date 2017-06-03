@@ -873,6 +873,7 @@ static const struct usb_device_id id_table_combined[] = {
 	{ USB_DEVICE_AND_INTERFACE_INFO(MICROCHIP_VID, MICROCHIP_USB_BOARD_PID,
 					USB_CLASS_VENDOR_SPEC,
 					USB_SUBCLASS_VENDOR_SPEC, 0x00) },
+	{ USB_DEVICE_INTERFACE_NUMBER(ACTEL_VID, MICROSEMI_ARROW_SF2PLUS_BOARD_PID, 2) },
 	{ USB_DEVICE(JETI_VID, JETI_SPC1201_PID) },
 	{ USB_DEVICE(MARVELL_VID, MARVELL_SHEEVAPLUG_PID),
 		.driver_info = (kernel_ulong_t)&ftdi_jtag_quirk },
@@ -1439,10 +1440,13 @@ static int read_latency_timer(struct usb_serial_port *port)
 			     FTDI_SIO_GET_LATENCY_TIMER_REQUEST_TYPE,
 			     0, priv->interface,
 			     buf, 1, WDR_TIMEOUT);
-	if (rv < 0)
+	if (rv < 1) {
 		dev_err(&port->dev, "Unable to read latency timer: %i\n", rv);
-	else
+		if (rv >= 0)
+			rv = -EIO;
+	} else {
 		priv->latency = buf[0];
+	}
 
 	kfree(buf);
 

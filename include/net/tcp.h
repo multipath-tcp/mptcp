@@ -398,7 +398,7 @@ bool tcp_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 		      unsigned int cur_mss);
 unsigned int tcp_cwnd_test(const struct tcp_sock *tp, const struct sk_buff *skb);
 int tcp_init_tso_segs(struct sk_buff *skb, unsigned int mss_now);
-void __pskb_trim_head(struct sk_buff *skb, int len);
+int __pskb_trim_head(struct sk_buff *skb, int len);
 void tcp_queue_skb(struct sock *sk, struct sk_buff *skb);
 void tcp_init_nondata_skb(struct sk_buff *skb, u32 seq, u8 flags);
 void tcp_reset(struct sock *sk);
