@@ -1804,7 +1804,7 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 		/* If tcp_sock is not available, MPTCP version can't be
 		 * retrieved and ADD_ADDR opsize validation is not possible.
 		 */
-		if (!tp)
+		if (!tp || !tp->mpcb)
 			break;
 
 		if (!is_valid_addropt_opsize(tp->mpcb->mptcp_ver,
