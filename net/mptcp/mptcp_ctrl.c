@@ -1404,10 +1404,10 @@ void mptcp_del_sock(struct sock *sk)
 /* Updates the MPTCP-session based on path-manager information (e.g., addresses,
  * low-prio flows,...).
  */
-void mptcp_update_metasocket(struct sock *sk, const struct sock *meta_sk)
+void mptcp_update_metasocket(const struct sock *meta_sk)
 {
-	if (tcp_sk(sk)->mpcb->pm_ops->new_session)
-		tcp_sk(sk)->mpcb->pm_ops->new_session(meta_sk);
+	if (tcp_sk(meta_sk)->mpcb->pm_ops->new_session)
+		tcp_sk(meta_sk)->mpcb->pm_ops->new_session(meta_sk);
 }
 
 /* Clean up the receive buffer for full frames taken by the user,
@@ -1983,9 +1983,6 @@ static int __mptcp_check_req_master(struct sock *child,
 
 	mpcb->dss_csum = mtreq->dss_csum;
 	mpcb->server_side = 1;
-
-	/* Will be moved to ESTABLISHED by  tcp_rcv_state_process() */
-	mptcp_update_metasocket(child, meta_sk);
 
 	/* Needs to be done here additionally, because when accepting a
 	 * new connection we pass by __reqsk_free and not reqsk_free.
