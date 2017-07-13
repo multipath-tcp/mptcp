@@ -796,7 +796,7 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied);
 int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 		   gfp_t flags);
 void mptcp_del_sock(struct sock *sk);
-void mptcp_update_metasocket(struct sock *sock, const struct sock *meta_sk);
+void mptcp_update_metasocket(const struct sock *meta_sk);
 void mptcp_reinject_data(struct sock *orig_sk, int clone_it);
 void mptcp_update_sndbuf(const struct tcp_sock *tp);
 void mptcp_send_fin(struct sock *meta_sk);
@@ -1394,7 +1394,7 @@ static inline int is_master_tp(const struct tcp_sock *tp)
 }
 static inline void mptcp_purge_ofo_queue(struct tcp_sock *meta_tp) {}
 static inline void mptcp_del_sock(const struct sock *sk) {}
-static inline void mptcp_update_metasocket(struct sock *sock, const struct sock *meta_sk) {}
+static inline void mptcp_update_metasocket(const struct sock *meta_sk) {}
 static inline void mptcp_reinject_data(struct sock *orig_sk, int clone_it) {}
 static inline void mptcp_update_sndbuf(const struct tcp_sock *tp) {}
 static inline void mptcp_clean_rtx_infinite(const struct sk_buff *skb,
