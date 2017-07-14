@@ -449,8 +449,14 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 
 	TCP_SKB_CB(skb)->path_mask |= mptcp_pi_to_flag(tp->mptcp->path_index);
 
-	if (!(sk->sk_route_caps & NETIF_F_ALL_CSUM) &&
-	    skb->ip_summed == CHECKSUM_PARTIAL) {
+	/* Compute checksum, if:
+	 * 1. The current route does not support csum offloading but it was
+	 *    assumed that it does (ip_summed is CHECKSUM_PARTIAL)
+	 * 2. We need the DSS-checksum but ended up not pre-computing it
+	 *    (e.g., in the case of TFO retransmissions).
+	 */
+	if (skb->ip_summed == CHECKSUM_PARTIAL &&
+	    (!(sk->sk_route_caps & NETIF_F_ALL_CSUM) || tp->mpcb->dss_csum)) {
 		subskb->csum = skb->csum = skb_checksum(skb, 0, skb->len, 0);
 		subskb->ip_summed = skb->ip_summed = CHECKSUM_NONE;
 	}
