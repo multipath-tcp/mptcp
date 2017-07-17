@@ -430,6 +430,9 @@ struct mptcp_cb {
 
 #define OPTION_MPTCP		(1 << 5)
 
+/* Max number of fastclose retransmissions */
+#define MPTCP_FASTCLOSE_RETRIES 3
+
 #ifdef CONFIG_MPTCP
 
 /* Used for checking if the mptcp initialization has been successful */

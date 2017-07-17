@@ -1314,6 +1314,10 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 	inet_csk_reset_keepalive_timer(sk, inet_csk(sk)->icsk_rto);
 
 	meta_tp->send_mp_fclose = 1;
+	inet_csk(sk)->icsk_retransmits = 0;
+
+	/* Prevent exp backoff reverting on ICMP dest unreachable */
+	inet_csk(sk)->icsk_backoff = 0;
 
 	MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_FASTCLOSETX);
 }
