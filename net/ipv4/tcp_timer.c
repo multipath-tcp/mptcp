@@ -621,8 +621,10 @@ static void tcp_keepalive_timer (unsigned long data)
 		if (!tp->retrans_stamp)
 			tp->retrans_stamp = tcp_time_stamp ? : 1;
 
-		if (tcp_write_timeout(sk))
+		if (icsk->icsk_retransmits >= MPTCP_FASTCLOSE_RETRIES) {
+			tcp_write_err(sk);
 			goto out;
+		}
 
 		tcp_send_ack(sk);
 		icsk->icsk_retransmits++;
