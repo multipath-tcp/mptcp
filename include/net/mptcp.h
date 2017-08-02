@@ -953,7 +953,7 @@ static inline bool mptcp_can_sendpage(struct sock *sk)
 
 	mptcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it) {
 		if (!(sk_it->sk_route_caps & NETIF_F_SG) ||
-		    !(sk_it->sk_route_caps & NETIF_F_ALL_CSUM))
+		    !sk_check_csum_caps(sk_it))
 			return false;
 	}
 

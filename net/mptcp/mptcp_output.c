@@ -456,7 +456,7 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 	 *    (e.g., in the case of TFO retransmissions).
 	 */
 	if (skb->ip_summed == CHECKSUM_PARTIAL &&
-	    (!(sk->sk_route_caps & NETIF_F_ALL_CSUM) || tp->mpcb->dss_csum)) {
+	    (!sk_check_csum_caps(sk) || tp->mpcb->dss_csum)) {
 		subskb->csum = skb->csum = skb_checksum(skb, 0, skb->len, 0);
 		subskb->ip_summed = skb->ip_summed = CHECKSUM_NONE;
 	}
