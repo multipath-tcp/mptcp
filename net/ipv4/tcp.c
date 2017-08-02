@@ -3329,6 +3329,8 @@ EXPORT_SYMBOL_GPL(tcp_done);
 
 int tcp_abort(struct sock *sk, int err)
 {
+	struct sock *meta_sk = mptcp(tcp_sk(sk)) ? mptcp_meta_sk(sk) : sk;
+
 	if (!sk_fullsock(sk)) {
 		if (sk->sk_state == TCP_NEW_SYN_RECV) {
 			struct request_sock *req = inet_reqsk(sk);
@@ -3344,7 +3346,7 @@ int tcp_abort(struct sock *sk, int err)
 	}
 
 	/* Don't race with userspace socket closes such as tcp_close. */
-	lock_sock(sk);
+	lock_sock(meta_sk);
 
 	if (sk->sk_state == TCP_LISTEN) {
 		tcp_set_state(sk, TCP_CLOSE);
@@ -3353,7 +3355,7 @@ int tcp_abort(struct sock *sk, int err)
 
 	/* Don't race with BH socket closes such as inet_csk_listen_stop. */
 	local_bh_disable();
-	bh_lock_sock(sk);
+	bh_lock_sock(meta_sk);
 
 	if (!sock_flag(sk, SOCK_DEAD)) {
 		sk->sk_err = err;
@@ -3365,9 +3367,9 @@ int tcp_abort(struct sock *sk, int err)
 		tcp_done(sk);
 	}
 
-	bh_unlock_sock(sk);
+	bh_unlock_sock(meta_sk);
 	local_bh_enable();
-	release_sock(sk);
+	release_sock(meta_sk);
 	sock_put(sk);
 	return 0;
 }
