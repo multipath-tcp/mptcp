@@ -471,6 +471,13 @@ next_subflow:
 	mutex_lock(&mpcb->mpcb_mutex);
 	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
 
+	if (sock_flag(meta_sk, SOCK_DEAD))
+		goto exit;
+
+	if (mpcb->master_sk &&
+	    !tcp_sk(mpcb->master_sk)->mptcp->fully_established)
+		goto exit;
+
 	/* Create the additional subflows for the first pair */
 	if (fmp->first_pair == 0 && mpcb->master_sk) {
 		struct mptcp_loc4 loc;
@@ -490,13 +497,6 @@ next_subflow:
 		fmp->first_pair = 1;
 	}
 	iter++;
-
-	if (sock_flag(meta_sk, SOCK_DEAD))
-		goto exit;
-
-	if (mpcb->master_sk &&
-	    !tcp_sk(mpcb->master_sk)->mptcp->fully_established)
-		goto exit;
 
 	mptcp_for_each_bit_set(fmp->rem4_bits, i) {
 		struct fullmesh_rem4 *rem;
