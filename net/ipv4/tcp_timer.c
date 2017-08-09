@@ -23,11 +23,6 @@
 #include <net/mptcp.h>
 #include <net/tcp.h>
 
-int sysctl_tcp_syn_retries __read_mostly = TCP_SYN_RETRIES;
-int sysctl_tcp_synack_retries __read_mostly = TCP_SYNACK_RETRIES;
-int sysctl_tcp_retries1 __read_mostly = TCP_RETR1;
-int sysctl_tcp_retries2 __read_mostly = TCP_RETR2;
-int sysctl_tcp_orphan_retries __read_mostly;
 int sysctl_tcp_thin_linear_timeouts __read_mostly;
 
 void tcp_write_err(struct sock *sk)
@@ -83,7 +78,7 @@ static int tcp_out_of_resources(struct sock *sk, bool do_reset)
 /* Calculate maximal number or retries on an orphaned socket. */
 static int tcp_orphan_retries(struct sock *sk, bool alive)
 {
-	int retries = sysctl_tcp_orphan_retries; /* May be zero. */
+	int retries = sock_net(sk)->ipv4.sysctl_tcp_orphan_retries; /* May be zero. */
 
 	/* We know from an ICMP that something is wrong. */
 	if (sk->sk_err_soft && !alive)
@@ -156,6 +151,7 @@ int tcp_write_timeout(struct sock *sk)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct net *net = sock_net(sk);
 	int retry_until;
 	bool do_reset, syn_set = false;
 
@@ -168,7 +164,7 @@ int tcp_write_timeout(struct sock *sk)
 				NET_INC_STATS_BH(sock_net(sk),
 						 LINUX_MIB_TCPFASTOPENACTIVEFAIL);
 		}
-		retry_until = icsk->icsk_syn_retries ? : sysctl_tcp_syn_retries;
+		retry_until = icsk->icsk_syn_retries ? : net->ipv4.sysctl_tcp_syn_retries;
 		syn_set = true;
 
 #ifdef CONFIG_MPTCP
@@ -181,7 +177,7 @@ int tcp_write_timeout(struct sock *sk)
 		}
 #endif /* CONFIG_MPTCP */
 	} else {
-		if (retransmits_timed_out(sk, sysctl_tcp_retries1, 0, 0)) {
+		if (retransmits_timed_out(sk, net->ipv4.sysctl_tcp_retries1, 0, 0)) {
 			/* Some middle-boxes may black-hole Fast Open _after_
 			 * the handshake. Therefore we conservatively disable
 			 * Fast Open on this path on recurring timeouts with
@@ -190,7 +186,7 @@ int tcp_write_timeout(struct sock *sk)
 			if (tp->syn_data_acked &&
 			    tp->bytes_acked <= tp->rx_opt.mss_clamp) {
 				tcp_fastopen_cache_set(sk, 0, NULL, true, 0);
-				if (icsk->icsk_retransmits == sysctl_tcp_retries1)
+				if (icsk->icsk_retransmits == net->ipv4.sysctl_tcp_retries1)
 					NET_INC_STATS_BH(sock_net(sk),
 							 LINUX_MIB_TCPFASTOPENACTIVEFAIL);
 			}
@@ -200,7 +196,7 @@ int tcp_write_timeout(struct sock *sk)
 			dst_negative_advice(sk);
 		}
 
-		retry_until = sysctl_tcp_retries2;
+		retry_until = net->ipv4.sysctl_tcp_retries2;
 		if (sock_flag(sk, SOCK_DEAD)) {
 			const bool alive = icsk->icsk_rto < TCP_RTO_MAX;
 
@@ -318,7 +314,7 @@ static void tcp_probe_timer(struct sock *sk)
 		 (s32)(tcp_time_stamp - start_ts) > icsk->icsk_user_timeout)
 		goto abort;
 
-	max_probes = sysctl_tcp_retries2;
+	max_probes = sock_net(sk)->ipv4.sysctl_tcp_retries2;
 	if (sock_flag(sk, SOCK_DEAD)) {
 		const bool alive = inet_csk_rto_backoff(icsk, TCP_RTO_MAX) < TCP_RTO_MAX;
 
@@ -345,7 +341,7 @@ static void tcp_fastopen_synack_timer(struct sock *sk)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	int max_retries = icsk->icsk_syn_retries ? :
-	    sysctl_tcp_synack_retries + 1; /* add one more retry for fastopen */
+	    sock_net(sk)->ipv4.sysctl_tcp_synack_retries + 1; /* add one more retry for fastopen */
 	struct request_sock *req;
 
 	req = tcp_sk(sk)->fastopen_rsk;
@@ -373,6 +369,7 @@ static void tcp_fastopen_synack_timer(struct sock *sk)
 void tcp_retransmit_timer(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct net *net = sock_net(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
 	if (tp->fastopen_rsk) {
@@ -503,7 +500,7 @@ out_reset_timer:
 		icsk->icsk_rto = min(icsk->icsk_rto << 1, TCP_RTO_MAX);
 	}
 	inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS, icsk->icsk_rto, TCP_RTO_MAX);
-	if (retransmits_timed_out(sk, sysctl_tcp_retries1 + 1, 0, 0))
+	if (retransmits_timed_out(sk, net->ipv4.sysctl_tcp_retries1 + 1, 0, 0))
 		__sk_dst_reset(sk);
 
 out:;
