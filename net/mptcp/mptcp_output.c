@@ -1324,9 +1324,10 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 
 static void mptcp_ack_retransmit_timer(struct sock *sk)
 {
-	struct sk_buff *skb;
-	struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct net *net = sock_net(sk);
+	struct sk_buff *skb;
 
 	if (inet_csk(sk)->icsk_af_ops->rebuild_header(sk))
 		goto out; /* Routing failure or similar */
@@ -1371,7 +1372,7 @@ static void mptcp_ack_retransmit_timer(struct sock *sk)
 	icsk->icsk_rto = min(icsk->icsk_rto << 1, TCP_RTO_MAX);
 	sk_reset_timer(sk, &tp->mptcp->mptcp_ack_timer,
 		       jiffies + icsk->icsk_rto);
-	if (retransmits_timed_out(sk, sysctl_tcp_retries1 + 1, 0, 0))
+	if (retransmits_timed_out(sk, net->ipv4.sysctl_tcp_retries1 + 1, 0, 0))
 		__sk_dst_reset(sk);
 
 out:;
