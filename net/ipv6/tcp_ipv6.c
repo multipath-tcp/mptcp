@@ -1479,7 +1479,7 @@ process:
 					reqsk_put(req);
 
 					bh_unlock_sock(sk);
-					NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
+					__NET_INC_STATS(net, LINUX_MIB_TCPBACKLOGDROP);
 					goto discard_and_relse;
 				}
 
@@ -1555,7 +1555,6 @@ process:
 	} else if (unlikely(sk_add_backlog(meta_sk, skb,
 					   meta_sk->sk_rcvbuf + meta_sk->sk_sndbuf))) {
 		bh_unlock_sock(meta_sk);
-		NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
 		__NET_INC_STATS(net, LINUX_MIB_TCPBACKLOGDROP);
 		goto discard_and_relse;
 	}

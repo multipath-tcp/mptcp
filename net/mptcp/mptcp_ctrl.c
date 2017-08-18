@@ -1710,14 +1710,14 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 
 	if (data_was_unread) {
 		/* Unread data was tossed, zap the connection. */
-		NET_INC_STATS_USER(sock_net(meta_sk), LINUX_MIB_TCPABORTONCLOSE);
+		NET_INC_STATS(sock_net(meta_sk), LINUX_MIB_TCPABORTONCLOSE);
 		tcp_set_state(meta_sk, TCP_CLOSE);
 		tcp_sk(meta_sk)->ops->send_active_reset(meta_sk,
 							meta_sk->sk_allocation);
 	} else if (sock_flag(meta_sk, SOCK_LINGER) && !meta_sk->sk_lingertime) {
 		/* Check zero linger _after_ checking for unread data. */
 		meta_sk->sk_prot->disconnect(meta_sk, 0);
-		NET_INC_STATS_USER(sock_net(meta_sk), LINUX_MIB_TCPABORTONDATA);
+		NET_INC_STATS(sock_net(meta_sk), LINUX_MIB_TCPABORTONDATA);
 	} else if (tcp_close_state(meta_sk)) {
 		mptcp_send_fin(meta_sk);
 	} else if (meta_tp->snd_una == meta_tp->write_seq) {
@@ -1792,8 +1792,8 @@ adjudge_to_death:
 		if (meta_tp->linger2 < 0) {
 			tcp_set_state(meta_sk, TCP_CLOSE);
 			meta_tp->ops->send_active_reset(meta_sk, GFP_ATOMIC);
-			NET_INC_STATS_BH(sock_net(meta_sk),
-					 LINUX_MIB_TCPABORTONLINGER);
+			__NET_INC_STATS(sock_net(meta_sk),
+					LINUX_MIB_TCPABORTONLINGER);
 		} else {
 			const int tmo = tcp_fin_time(meta_sk);
 
@@ -1814,8 +1814,8 @@ adjudge_to_death:
 				pr_info("MPTCP: out of memory: force closing socket\n");
 			tcp_set_state(meta_sk, TCP_CLOSE);
 			meta_tp->ops->send_active_reset(meta_sk, GFP_ATOMIC);
-			NET_INC_STATS_BH(sock_net(meta_sk),
-					 LINUX_MIB_TCPABORTONMEMORY);
+			__NET_INC_STATS(sock_net(meta_sk),
+					LINUX_MIB_TCPABORTONMEMORY);
 		}
 	}
 
@@ -2442,7 +2442,7 @@ int mptcp_conn_request(struct sock *sk, struct sk_buff *skb)
 #endif
 	}
 drop:
-	NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_LISTENDROPS);
+	__NET_INC_STATS(sock_net(sk), LINUX_MIB_LISTENDROPS);
 	return 0;
 }
 

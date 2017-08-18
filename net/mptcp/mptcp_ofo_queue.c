@@ -242,7 +242,7 @@ bool mptcp_prune_ofo_queue(struct sock *sk)
 	bool res		= false;
 
 	if (!skb_queue_empty(&tp->out_of_order_queue)) {
-		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_OFOPRUNED);
+		__NET_INC_STATS(sock_net(sk), LINUX_MIB_OFOPRUNED);
 		mptcp_purge_ofo_queue(tp);
 
 		/* No sack at the mptcp-level */

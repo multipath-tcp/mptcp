@@ -215,7 +215,7 @@ static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 			   meta_tp->rcv_nxt))) {
 			mptcp_send_active_reset(meta_sk, GFP_ATOMIC);
 			tcp_done(meta_sk);
-			NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_TCPABORTONDATA);
+			__NET_INC_STATS(sock_net(meta_sk), LINUX_MIB_TCPABORTONDATA);
 			return 1;
 		}
 
@@ -256,7 +256,7 @@ static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 			if (TCP_SKB_CB(skb)->end_seq != TCP_SKB_CB(skb)->seq &&
 			    after(TCP_SKB_CB(skb)->end_seq - th->fin, tp->rcv_nxt) &&
 			    !mptcp_is_data_fin2(skb, tp)) {
-				NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_TCPABORTONDATA);
+				__NET_INC_STATS(sock_net(meta_sk), LINUX_MIB_TCPABORTONDATA);
 				mptcp_send_active_reset(meta_sk, GFP_ATOMIC);
 				tcp_reset(meta_sk);
 				return 1;
@@ -1182,7 +1182,7 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 		if (unlikely(sk_add_backlog(meta_sk, skb,
 					    meta_sk->sk_rcvbuf + meta_sk->sk_sndbuf))) {
 			bh_unlock_sock(meta_sk);
-			NET_INC_STATS_BH(sock_net(meta_sk),
+			__NET_INC_STATS(sock_net(meta_sk),
 					 LINUX_MIB_TCPBACKLOGDROP);
 			sock_put(meta_sk); /* Taken by mptcp_hash_find */
 			kfree_skb(skb);
@@ -1254,7 +1254,7 @@ int mptcp_do_join_short(struct sk_buff *skb,
 		skb->sk = meta_sk;
 		if (unlikely(sk_add_backlog(meta_sk, skb,
 					    meta_sk->sk_rcvbuf + meta_sk->sk_sndbuf)))
-			NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
+			__NET_INC_STATS(net, LINUX_MIB_TCPBACKLOGDROP);
 		else
 			/* Must make sure that upper layers won't free the
 			 * skb if it is added to the backlog-queue.

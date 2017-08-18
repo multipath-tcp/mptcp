@@ -1487,7 +1487,7 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 	return 0;
 
 failed:
-	NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_TCPRETRANSFAIL);
+	__NET_INC_STATS(sock_net(meta_sk), LINUX_MIB_TCPRETRANSFAIL);
 	return err;
 }
 
@@ -1546,7 +1546,7 @@ void mptcp_meta_retransmit_timer(struct sock *meta_sk)
 		return;
 
 	if (meta_icsk->icsk_retransmits == 0)
-		NET_INC_STATS_BH(sock_net(meta_sk), LINUX_MIB_TCPTIMEOUTS);
+		__NET_INC_STATS(sock_net(meta_sk), LINUX_MIB_TCPTIMEOUTS);
 
 	meta_icsk->icsk_ca_state = TCP_CA_Loss;
 

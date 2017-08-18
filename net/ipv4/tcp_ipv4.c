@@ -1674,7 +1674,7 @@ process:
 					reqsk_put(req);
 
 					bh_unlock_sock(sk);
-					NET_INC_STATS_BH(net, LINUX_MIB_TCPBACKLOGDROP);
+					__NET_INC_STATS(net, LINUX_MIB_TCPBACKLOGDROP);
 					goto discard_and_relse;
 				}
 

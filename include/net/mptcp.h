@@ -696,7 +696,7 @@ extern struct workqueue_struct *mptcp_wq;
 	mptcp_for_each_bit_set(~b, i)
 
 #define MPTCP_INC_STATS(net, field)	SNMP_INC_STATS((net)->mptcp.mptcp_statistics, field)
-#define MPTCP_INC_STATS_BH(net, field)	SNMP_INC_STATS_BH((net)->mptcp.mptcp_statistics, field)
+#define MPTCP_INC_STATS_BH(net, field)	__SNMP_INC_STATS((net)->mptcp.mptcp_statistics, field)
 
 enum
 {
