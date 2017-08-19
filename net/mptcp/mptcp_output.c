@@ -982,7 +982,8 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		if (skb)
 			tp->mptcp->include_mpc = 0;
 	}
-	if (unlikely(tp->mptcp->pre_established)) {
+	if (unlikely(tp->mptcp->pre_established) &&
+	    (!skb || !(tcb->tcp_flags & (TCPHDR_FIN | TCPHDR_RST)))) {
 		opts->options |= OPTION_MPTCP;
 		opts->mptcp_options |= OPTION_MP_JOIN | OPTION_TYPE_ACK;
 		*size += MPTCP_SUB_LEN_JOIN_ACK_ALIGN;
