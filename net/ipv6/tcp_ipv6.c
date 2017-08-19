@@ -961,7 +961,7 @@ static void tcp_v6_timewait_ack(struct sock *sk, struct sk_buff *skb)
 	u32 data_ack = 0;
 	int mptcp = 0;
 
-	if (tcptw->mptcp_tw && tcptw->mptcp_tw->meta_tw) {
+	if (tcptw->mptcp_tw) {
 		data_ack = (u32)tcptw->mptcp_tw->rcv_nxt;
 		mptcp = 1;
 	}

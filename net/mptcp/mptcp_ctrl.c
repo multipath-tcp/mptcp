@@ -2180,11 +2180,9 @@ int mptcp_init_tw_sock(struct sock *sk, struct tcp_timewait_sock *tw)
 	tw->mptcp_tw = mptw;
 	mptw->loc_key = mpcb->mptcp_loc_key;
 	mptw->meta_tw = mpcb->in_time_wait;
-	if (mptw->meta_tw) {
-		mptw->rcv_nxt = mptcp_get_rcv_nxt_64(mptcp_meta_tp(tp));
-		if (mpcb->mptw_state != TCP_TIME_WAIT)
-			mptw->rcv_nxt++;
-	}
+	mptw->rcv_nxt = mptcp_get_rcv_nxt_64(mptcp_meta_tp(tp));
+	if (mptw->meta_tw && mpcb->mptw_state != TCP_TIME_WAIT)
+		mptw->rcv_nxt++;
 	rcu_assign_pointer(mptw->mpcb, mpcb);
 
 	spin_lock(&mpcb->tw_lock);
