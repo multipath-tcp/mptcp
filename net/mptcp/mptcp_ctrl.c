@@ -1508,23 +1508,19 @@ static int mptcp_sub_send_fin(struct sock *sk)
 	return 0;
 }
 
-void mptcp_sub_close_wq(struct work_struct *work)
+static void mptcp_sub_close_doit(struct sock *sk)
 {
-	struct tcp_sock *tp = container_of(work, struct mptcp_tcp_sock, work.work)->tp;
-	struct sock *sk = (struct sock *)tp;
 	struct sock *meta_sk = mptcp_meta_sk(sk);
-
-	mutex_lock(&tp->mpcb->mpcb_mutex);
-	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
+	struct tcp_sock *tp = tcp_sk(sk);
 
 	if (sock_flag(sk, SOCK_DEAD))
-		goto exit;
+		return;
 
 	/* We come from tcp_disconnect. We are sure that meta_sk is set */
 	if (!mptcp(tp)) {
 		tp->closing = 1;
 		tcp_close(sk, 0);
-		goto exit;
+		return;
 	}
 
 	if (meta_sk->sk_shutdown == SHUTDOWN_MASK || sk->sk_state == TCP_CLOSE) {
@@ -1534,8 +1530,19 @@ void mptcp_sub_close_wq(struct work_struct *work)
 		sk->sk_shutdown |= SEND_SHUTDOWN;
 		tcp_send_fin(sk);
 	}
+}
 
-exit:
+void mptcp_sub_close_wq(struct work_struct *work)
+{
+	struct tcp_sock *tp = container_of(work, struct mptcp_tcp_sock, work.work)->tp;
+	struct sock *sk = (struct sock *)tp;
+	struct sock *meta_sk = mptcp_meta_sk(sk);
+
+	mutex_lock(&tp->mpcb->mpcb_mutex);
+	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
+
+	mptcp_sub_close_doit(sk);
+
 	release_sock(meta_sk);
 	mutex_unlock(&tp->mpcb->mpcb_mutex);
 	sock_put(sk);
@@ -1571,24 +1578,7 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 		 * procedure. No need to schedule a work-queue.
 		 */
 		if (!in_softirq()) {
-			if (sock_flag(sk, SOCK_DEAD))
-				return;
-
-			if (!mptcp(tp)) {
-				tp->closing = 1;
-				tcp_close(sk, 0);
-				return;
-			}
-
-			if (mptcp_meta_sk(sk)->sk_shutdown == SHUTDOWN_MASK ||
-			    sk->sk_state == TCP_CLOSE) {
-				tp->closing = 1;
-				tcp_close(sk, 0);
-			} else if (tcp_close_state(sk)) {
-				sk->sk_shutdown |= SEND_SHUTDOWN;
-				tcp_send_fin(sk);
-			}
-
+			mptcp_sub_close_doit(sk);
 			return;
 		}
 
