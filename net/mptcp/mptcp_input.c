@@ -693,7 +693,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 		 * as the following data is guaranteed to be in-order at
 		 * the data and subflow-level
 		 */
-		mptcp_purge_ofo_queue(meta_tp);
+		skb_rbtree_purge(&meta_tp->out_of_order_queue);
 
 		set_infinite_rcv = true;
 		MPTCP_INC_STATS_BH(sock_net(sk), MPTCP_MIB_INFINITEMAPRX);
@@ -943,7 +943,7 @@ static int mptcp_queue_skb(struct sock *sk)
 			skb_orphan(tmp1);
 
 			if (!mpcb->in_time_wait) /* In time-wait, do not receive data */
-				mptcp_add_meta_ofo_queue(meta_sk, tmp1, sk);
+				tcp_data_queue_ofo(meta_sk, tmp1);
 			else
 				__kfree_skb(tmp1);
 
@@ -999,8 +999,8 @@ static int mptcp_queue_skb(struct sock *sk)
 				mptcp_fin(meta_sk);
 
 			/* Check if this fills a gap in the ofo queue */
-			if (!skb_queue_empty(&meta_tp->out_of_order_queue))
-				mptcp_ofo_queue(meta_sk);
+			if (!RB_EMPTY_ROOT(&meta_tp->out_of_order_queue))
+				tcp_ofo_queue(meta_sk);
 
 			if (eaten)
 				kfree_skb_partial(tmp1, fragstolen);
@@ -1355,7 +1355,7 @@ void mptcp_fin(struct sock *meta_sk)
 	/* It _is_ possible, that we have something out-of-order _after_ FIN.
 	 * Probably, we should reset in this case. For now drop them.
 	 */
-	mptcp_purge_ofo_queue(meta_tp);
+	skb_rbtree_purge(&meta_tp->out_of_order_queue);
 	sk_mem_reclaim(meta_sk);
 
 	if (!sock_flag(meta_sk, SOCK_DEAD)) {

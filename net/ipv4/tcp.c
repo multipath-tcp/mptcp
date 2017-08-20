@@ -383,7 +383,6 @@ const struct tcp_sock_ops tcp_specific = {
 	.write_xmit			= tcp_write_xmit,
 	.send_active_reset		= tcp_send_active_reset,
 	.write_wakeup			= tcp_write_wakeup,
-	.prune_ofo_queue		= tcp_prune_ofo_queue,
 	.retransmit_timer		= tcp_retransmit_timer,
 	.time_wait			= tcp_time_wait,
 	.cleanup_rbuf			= tcp_cleanup_rbuf,
@@ -1092,7 +1091,7 @@ EXPORT_SYMBOL(tcp_sendpage);
  * This also speeds up tso_fragment(), since it wont fallback
  * to tcp_fragment().
  */
-static int linear_payload_sz(bool first_skb)
+int linear_payload_sz(bool first_skb)
 {
 	if (first_skb)
 		return SKB_WITH_OVERHEAD(2048 - MAX_TCP_HEADER);

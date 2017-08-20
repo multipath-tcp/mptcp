@@ -5,7 +5,7 @@
 
 obj-$(CONFIG_MPTCP) += mptcp.o
 
-mptcp-y := mptcp_ctrl.o mptcp_ipv4.o mptcp_ofo_queue.o mptcp_pm.o \
+mptcp-y := mptcp_ctrl.o mptcp_ipv4.o mptcp_pm.o \
 	   mptcp_output.o mptcp_input.o mptcp_sched.o
 
 obj-$(CONFIG_TCP_CONG_LIA) += mptcp_coupled.o

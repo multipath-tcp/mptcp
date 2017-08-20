@@ -1739,13 +1739,13 @@ static unsigned int mptcp_select_size_mss(struct sock *sk)
 	return tcp_sk(sk)->mss_cache;
 }
 
-int mptcp_select_size(const struct sock *meta_sk, bool sg)
+int mptcp_select_size(const struct sock *meta_sk, bool sg, bool first_skb)
 {
 	unsigned int mss = __mptcp_current_mss(meta_sk, mptcp_select_size_mss);
 
 	if (sg) {
 		if (mptcp_sk_can_gso(meta_sk)) {
-			mss = SKB_WITH_OVERHEAD(2048 - MAX_TCP_HEADER);
+			mss = linear_payload_sz(first_skb);
 		} else {
 			int pgbreak = SKB_MAX_HEAD(MAX_TCP_HEADER);
 

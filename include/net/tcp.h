@@ -445,7 +445,9 @@ int __must_check tcp_queue_rcv(struct sock *sk, struct sk_buff *skb, int hdrlen,
 			       bool *fragstolen);
 bool tcp_try_coalesce(struct sock *sk, struct sk_buff *to,
 		      struct sk_buff *from, bool *fragstolen);
-void tcp_copy_sk(struct sock *nsk, const struct sock *osk);
+void tcp_ofo_queue(struct sock *sk);
+void tcp_data_queue_ofo(struct sock *sk, struct sk_buff *skb);
+int linear_payload_sz(bool first_skb);
 /**** END - Exports needed for MPTCP ****/
 
 void tcp_tasklet_init(void);
@@ -679,7 +681,7 @@ void tcp_skb_collapse_tstamp(struct sk_buff *skb,
 			     const struct sk_buff *next_skb);
 
 u16 tcp_select_window(struct sock *sk);
-int select_size(const struct sock *sk, bool sg,, bool first_skb);
+int select_size(const struct sock *sk, bool sg, bool first_skb);
 bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		int push_one, gfp_t gfp);
 
@@ -690,7 +692,6 @@ void tcp_synack_rtt_meas(struct sock *sk, struct request_sock *req);
 void tcp_reset(struct sock *sk);
 void tcp_set_rto(struct sock *sk);
 bool tcp_should_expand_sndbuf(const struct sock *sk);
-bool tcp_prune_ofo_queue(struct sock *sk);
 void tcp_skb_mark_lost_uncond_verify(struct tcp_sock *tp, struct sk_buff *skb);
 void tcp_fin(struct sock *sk);
 
@@ -1950,7 +1951,7 @@ struct tcp_sock_ops {
 				      __u32 *window_clamp, int wscale_ok,
 				      __u8 *rcv_wscale, __u32 init_rcv_wnd,
 				      const struct sock *sk);
-	int (*select_size)(const struct sock *sk, bool sg,, bool first_skb);
+	int (*select_size)(const struct sock *sk, bool sg, bool first_skb);
 	void (*init_buffer_space)(struct sock *sk);
 	void (*set_rto)(struct sock *sk);
 	bool (*should_expand_sndbuf)(const struct sock *sk);
@@ -1959,7 +1960,6 @@ struct tcp_sock_ops {
 			   int push_one, gfp_t gfp);
 	void (*send_active_reset)(struct sock *sk, gfp_t priority);
 	int (*write_wakeup)(struct sock *sk, int mib);
-	bool (*prune_ofo_queue)(struct sock *sk);
 	void (*retransmit_timer)(struct sock *sk);
 	void (*time_wait)(struct sock *sk, int state, int timeo);
 	void (*cleanup_rbuf)(struct sock *sk, int copied);

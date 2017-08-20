@@ -691,7 +691,6 @@ void mptcp_destroy_sock(struct sock *sk)
 		struct sock *sk_it, *tmpsk;
 
 		__skb_queue_purge(&tcp_sk(sk)->mpcb->reinject_queue);
-		mptcp_purge_ofo_queue(tcp_sk(sk));
 
 		/* We have to close all remaining subflows. Normally, they
 		 * should all be about to get closed. But, if the kernel is
@@ -1014,7 +1013,6 @@ static const struct tcp_sock_ops mptcp_meta_specific = {
 	.write_xmit			= mptcp_write_xmit,
 	.send_active_reset		= mptcp_send_active_reset,
 	.write_wakeup			= mptcp_write_wakeup,
-	.prune_ofo_queue		= mptcp_prune_ofo_queue,
 	.retransmit_timer		= mptcp_meta_retransmit_timer,
 	.time_wait			= mptcp_time_wait,
 	.cleanup_rbuf			= mptcp_cleanup_rbuf,
@@ -1032,7 +1030,6 @@ static const struct tcp_sock_ops mptcp_sub_specific = {
 	.write_xmit			= tcp_write_xmit,
 	.send_active_reset		= tcp_send_active_reset,
 	.write_wakeup			= tcp_write_wakeup,
-	.prune_ofo_queue		= tcp_prune_ofo_queue,
 	.retransmit_timer		= mptcp_sub_retransmit_timer,
 	.time_wait			= tcp_time_wait,
 	.cleanup_rbuf			= tcp_cleanup_rbuf,
@@ -1151,7 +1148,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 
 	/* Initialize the queues */
 	skb_queue_head_init(&mpcb->reinject_queue);
-	skb_queue_head_init(&master_tp->out_of_order_queue);
+	master_tp->out_of_order_queue = RB_ROOT;
 	tcp_prequeue_init(master_tp);
 	INIT_LIST_HEAD(&master_tp->tsq_node);
 
