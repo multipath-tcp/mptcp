@@ -2253,6 +2253,9 @@ void intel_unpin_fb_obj(struct drm_framebuffer *fb, unsigned int rotation)
 	intel_fill_fb_ggtt_view(&view, fb, rotation);
 	vma = i915_gem_object_to_ggtt(obj, &view);
 
+	if (WARN_ON_ONCE(!vma))
+		return;
+
 	i915_vma_unpin_fence(vma);
 	i915_gem_object_unpin_from_display_plane(vma);
 }
@@ -2587,8 +2590,9 @@ intel_fill_fb_info(struct drm_i915_private *dev_priv,
 			 * We only keep the x/y offsets, so push all of the
 			 * gtt offset into the x/y offsets.
 			 */
-			_intel_adjust_tile_offset(&x, &y, tile_size,
-						  tile_width, tile_height, pitch_tiles,
+			_intel_adjust_tile_offset(&x, &y,
+						  tile_width, tile_height,
+						  tile_size, pitch_tiles,
 						  gtt_offset_rotated * tile_size, 0);
 
 			gtt_offset_rotated += rot_info->plane[i].width * rot_info->plane[i].height;
@@ -2974,6 +2978,9 @@ int skl_check_plane_surface(struct intel_plane_state *plane_state)
 	const struct drm_framebuffer *fb = plane_state->base.fb;
 	unsigned int rotation = plane_state->base.rotation;
 	int ret;
+
+	if (!plane_state->base.visible)
+		return 0;
 
 	/* Rotate src coordinates to match rotated GTT view */
 	if (intel_rotation_90_or_270(rotation))
@@ -3692,10 +3699,6 @@ static void intel_update_pipe_config(struct intel_crtc *crtc,
 	/* drm_atomic_helper_update_legacy_modeset_state might not be called. */
 	crtc->base.mode = crtc->base.state->mode;
 
-	DRM_DEBUG_KMS("Updating pipe size %ix%i -> %ix%i\n",
-		      old_crtc_state->pipe_src_w, old_crtc_state->pipe_src_h,
-		      pipe_config->pipe_src_w, pipe_config->pipe_src_h);
-
 	/*
 	 * Update pipe size and adjust fitter if needed: the reason for this is
 	 * that in compute_mode_changes we check the native mode (not the pfit
@@ -4276,10 +4279,10 @@ static void page_flip_completed(struct intel_crtc *intel_crtc)
 	drm_crtc_vblank_put(&intel_crtc->base);
 
 	wake_up_all(&dev_priv->pending_flip_queue);
-	queue_work(dev_priv->wq, &work->unpin_work);
-
 	trace_i915_flip_complete(intel_crtc->plane,
 				 work->pending_flip_obj);
+
+	queue_work(dev_priv->wq, &work->unpin_work);
 }
 
 static int intel_crtc_wait_for_pending_flips(struct drm_crtc *crtc)
@@ -4828,23 +4831,17 @@ static void skylake_pfit_enable(struct intel_crtc *crtc)
 	struct intel_crtc_scaler_state *scaler_state =
 		&crtc->config->scaler_state;
 
-	DRM_DEBUG_KMS("for crtc_state = %p\n", crtc->config);
-
 	if (crtc->config->pch_pfit.enabled) {
 		int id;
 
-		if (WARN_ON(crtc->config->scaler_state.scaler_id < 0)) {
-			DRM_ERROR("Requesting pfit without getting a scaler first\n");
+		if (WARN_ON(crtc->config->scaler_state.scaler_id < 0))
 			return;
-		}
 
 		id = scaler_state->scaler_id;
 		I915_WRITE(SKL_PS_CTRL(pipe, id), PS_SCALER_EN |
 			PS_FILTER_MEDIUM | scaler_state->scalers[id].mode);
 		I915_WRITE(SKL_PS_WIN_POS(pipe, id), crtc->config->pch_pfit.pos);
 		I915_WRITE(SKL_PS_WIN_SZ(pipe, id), crtc->config->pch_pfit.size);
-
-		DRM_DEBUG_KMS("for crtc_state = %p scaler_id = %d\n", crtc->config, id);
 	}
 }
 
@@ -6262,36 +6259,25 @@ skl_dpll0_disable(struct drm_i915_private *dev_priv)
 	dev_priv->cdclk_pll.vco = 0;
 }
 
-static bool skl_cdclk_pcu_ready(struct drm_i915_private *dev_priv)
-{
-	int ret;
-	u32 val;
-
-	/* inform PCU we want to change CDCLK */
-	val = SKL_CDCLK_PREPARE_FOR_CHANGE;
-	mutex_lock(&dev_priv->rps.hw_lock);
-	ret = sandybridge_pcode_read(dev_priv, SKL_PCODE_CDCLK_CONTROL, &val);
-	mutex_unlock(&dev_priv->rps.hw_lock);
-
-	return ret == 0 && (val & SKL_CDCLK_READY_FOR_CHANGE);
-}
-
-static bool skl_cdclk_wait_for_pcu_ready(struct drm_i915_private *dev_priv)
-{
-	return _wait_for(skl_cdclk_pcu_ready(dev_priv), 3000, 10) == 0;
-}
-
 static void skl_set_cdclk(struct drm_i915_private *dev_priv, int cdclk, int vco)
 {
 	struct drm_device *dev = &dev_priv->drm;
 	u32 freq_select, pcu_ack;
+	int ret;
 
 	WARN_ON((cdclk == 24000) != (vco == 0));
 
 	DRM_DEBUG_DRIVER("Changing CDCLK to %d kHz (VCO %d kHz)\n", cdclk, vco);
 
-	if (!skl_cdclk_wait_for_pcu_ready(dev_priv)) {
-		DRM_ERROR("failed to inform PCU about cdclk change\n");
+	mutex_lock(&dev_priv->rps.hw_lock);
+	ret = skl_pcode_request(dev_priv, SKL_PCODE_CDCLK_CONTROL,
+				SKL_CDCLK_PREPARE_FOR_CHANGE,
+				SKL_CDCLK_READY_FOR_CHANGE,
+				SKL_CDCLK_READY_FOR_CHANGE, 3);
+	mutex_unlock(&dev_priv->rps.hw_lock);
+	if (ret) {
+		DRM_ERROR("Failed to inform PCU about cdclk change (%d)\n",
+			  ret);
 		return;
 	}
 
@@ -6876,6 +6862,12 @@ static void intel_crtc_disable_noatomic(struct drm_crtc *crtc)
 	}
 
 	state = drm_atomic_state_alloc(crtc->dev);
+	if (!state) {
+		DRM_DEBUG_KMS("failed to disable [CRTC:%d:%s], out of memory",
+			      crtc->base.id, crtc->name);
+		return;
+	}
+
 	state->acquire_ctx = crtc->dev->mode_config.acquire_ctx;
 
 	/* Everything's already locked, -EDEADLK can't happen. */
@@ -13775,6 +13767,15 @@ static void update_scanline_offset(struct intel_crtc *crtc)
 	 * type. For DP ports it behaves like most other platforms, but on HDMI
 	 * there's an extra 1 line difference. So we need to add two instead of
 	 * one to the value.
+	 *
+	 * On VLV/CHV DSI the scanline counter would appear to increment
+	 * approx. 1/3 of a scanline before start of vblank. Unfortunately
+	 * that means we can't tell whether we're in vblank or not while
+	 * we're on that particular line. We must still set scanline_offset
+	 * to 1 so that the vblank timestamps come out correct when we query
+	 * the scanline counter from within the vblank interrupt handler.
+	 * However if queried just before the start of vblank we'll get an
+	 * answer that's slightly in the future.
 	 */
 	if (IS_GEN2(dev)) {
 		const struct drm_display_mode *adjusted_mode = &crtc->config->base.adjusted_mode;
@@ -13970,8 +13971,9 @@ static int intel_modeset_checks(struct drm_atomic_state *state)
 
 		DRM_DEBUG_KMS("New cdclk calculated to be atomic %u, actual %u\n",
 			      intel_state->cdclk, intel_state->dev_cdclk);
-	} else
+	} else {
 		to_intel_atomic_state(state)->cdclk = dev_priv->atomic_cdclk_freq;
+	}
 
 	intel_modeset_clear_plls(state);
 
@@ -14072,8 +14074,9 @@ static int intel_atomic_check(struct drm_device *dev,
 
 		if (ret)
 			return ret;
-	} else
-		intel_state->cdclk = dev_priv->cdclk_freq;
+	} else {
+		intel_state->cdclk = dev_priv->atomic_cdclk_freq;
+	}
 
 	ret = drm_atomic_helper_check_planes(dev, state);
 	if (ret)
@@ -16441,6 +16444,7 @@ void intel_modeset_init(struct drm_device *dev)
 
 	intel_update_czclk(dev_priv);
 	intel_update_cdclk(dev);
+	dev_priv->atomic_cdclk_freq = dev_priv->cdclk_freq;
 
 	intel_shared_dpll_init(dev);
 
@@ -16757,7 +16761,6 @@ static void intel_modeset_readout_hw_state(struct drm_device *dev)
 
 	for_each_intel_crtc(dev, crtc) {
 		struct intel_crtc_state *crtc_state = crtc->config;
-		int pixclk = 0;
 
 		__drm_atomic_helper_crtc_destroy_state(&crtc_state->base);
 		memset(crtc_state, 0, sizeof(*crtc_state));
@@ -16769,22 +16772,8 @@ static void intel_modeset_readout_hw_state(struct drm_device *dev)
 		crtc->base.enabled = crtc_state->base.enable;
 		crtc->active = crtc_state->base.active;
 
-		if (crtc_state->base.active) {
+		if (crtc_state->base.active)
 			dev_priv->active_crtcs |= 1 << crtc->pipe;
-
-			if (INTEL_GEN(dev_priv) >= 9 || IS_BROADWELL(dev_priv))
-				pixclk = ilk_pipe_pixel_rate(crtc_state);
-			else if (IS_VALLEYVIEW(dev_priv) || IS_CHERRYVIEW(dev_priv))
-				pixclk = crtc_state->base.adjusted_mode.crtc_clock;
-			else
-				WARN_ON(dev_priv->display.modeset_calc_cdclk);
-
-			/* pixel rate mustn't exceed 95% of cdclk with IPS on BDW */
-			if (IS_BROADWELL(dev_priv) && crtc_state->ips_enabled)
-				pixclk = DIV_ROUND_UP(pixclk * 100, 95);
-		}
-
-		dev_priv->min_pixclk[crtc->pipe] = pixclk;
 
 		readout_plane_state(crtc);
 
@@ -16859,6 +16848,8 @@ static void intel_modeset_readout_hw_state(struct drm_device *dev)
 	}
 
 	for_each_intel_crtc(dev, crtc) {
+		int pixclk = 0;
+
 		crtc->base.hwmode = crtc->config->base.adjusted_mode;
 
 		memset(&crtc->base.mode, 0, sizeof(crtc->base.mode));
@@ -16886,9 +16877,22 @@ static void intel_modeset_readout_hw_state(struct drm_device *dev)
 			 */
 			crtc->base.state->mode.private_flags = I915_MODE_FLAG_INHERITED;
 
+			if (INTEL_GEN(dev_priv) >= 9 || IS_BROADWELL(dev_priv))
+				pixclk = ilk_pipe_pixel_rate(crtc->config);
+			else if (IS_VALLEYVIEW(dev_priv) || IS_CHERRYVIEW(dev_priv))
+				pixclk = crtc->config->base.adjusted_mode.crtc_clock;
+			else
+				WARN_ON(dev_priv->display.modeset_calc_cdclk);
+
+			/* pixel rate mustn't exceed 95% of cdclk with IPS on BDW */
+			if (IS_BROADWELL(dev_priv) && crtc->config->ips_enabled)
+				pixclk = DIV_ROUND_UP(pixclk * 100, 95);
+
 			drm_calc_timestamping_constants(&crtc->base, &crtc->base.hwmode);
 			update_scanline_offset(crtc);
 		}
+
+		dev_priv->min_pixclk[crtc->pipe] = pixclk;
 
 		intel_pipe_config_sanity_check(dev_priv, crtc->config);
 	}

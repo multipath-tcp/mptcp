@@ -772,6 +772,12 @@ struct page *follow_devmap_pmd(struct vm_area_struct *vma, unsigned long addr,
 
 	assert_spin_locked(pmd_lockptr(mm, pmd));
 
+	/*
+	 * When we COW a devmap PMD entry, we split it into PTEs, so we should
+	 * not be in this function with `flags & FOLL_COW` set.
+	 */
+	WARN_ONCE(flags & FOLL_COW, "mm: In follow_devmap_pmd with FOLL_COW set");
+
 	if (flags & FOLL_WRITE && !pmd_write(*pmd))
 		return NULL;
 
@@ -872,15 +878,17 @@ void huge_pmd_set_accessed(struct fault_env *fe, pmd_t orig_pmd)
 {
 	pmd_t entry;
 	unsigned long haddr;
+	bool write = fe->flags & FAULT_FLAG_WRITE;
 
 	fe->ptl = pmd_lock(fe->vma->vm_mm, fe->pmd);
 	if (unlikely(!pmd_same(*fe->pmd, orig_pmd)))
 		goto unlock;
 
 	entry = pmd_mkyoung(orig_pmd);
+	if (write)
+		entry = pmd_mkdirty(entry);
 	haddr = fe->address & HPAGE_PMD_MASK;
-	if (pmdp_set_access_flags(fe->vma, haddr, fe->pmd, entry,
-				fe->flags & FAULT_FLAG_WRITE))
+	if (pmdp_set_access_flags(fe->vma, haddr, fe->pmd, entry, write))
 		update_mmu_cache_pmd(fe->vma, fe->address, fe->pmd);
 
 unlock:
@@ -1116,6 +1124,16 @@ out_unlock:
 	return ret;
 }
 
+/*
+ * FOLL_FORCE can write to even unwritable pmd's, but only
+ * after we've gone through a COW cycle and they are dirty.
+ */
+static inline bool can_follow_write_pmd(pmd_t pmd, unsigned int flags)
+{
+	return pmd_write(pmd) ||
+	       ((flags & FOLL_FORCE) && (flags & FOLL_COW) && pmd_dirty(pmd));
+}
+
 struct page *follow_trans_huge_pmd(struct vm_area_struct *vma,
 				   unsigned long addr,
 				   pmd_t *pmd,
@@ -1126,7 +1144,7 @@ struct page *follow_trans_huge_pmd(struct vm_area_struct *vma,
 
 	assert_spin_locked(pmd_lockptr(mm, pmd));
 
-	if (flags & FOLL_WRITE && !pmd_write(*pmd))
+	if (flags & FOLL_WRITE && !can_follow_write_pmd(*pmd, flags))
 		goto out;
 
 	/* Avoid dumping huge zero page */
@@ -1209,8 +1227,11 @@ int do_huge_pmd_numa_page(struct fault_env *fe, pmd_t pmd)
 	 */
 	if (unlikely(pmd_trans_migrating(*fe->pmd))) {
 		page = pmd_page(*fe->pmd);
+		if (!get_page_unless_zero(page))
+			goto out_unlock;
 		spin_unlock(fe->ptl);
 		wait_on_page_locked(page);
+		put_page(page);
 		goto out;
 	}
 
@@ -1242,8 +1263,11 @@ int do_huge_pmd_numa_page(struct fault_env *fe, pmd_t pmd)
 
 	/* Migration could have started since the pmd_trans_migrating check */
 	if (!page_locked) {
+		if (!get_page_unless_zero(page))
+			goto out_unlock;
 		spin_unlock(fe->ptl);
 		wait_on_page_locked(page);
+		put_page(page);
 		page_nid = -1;
 		goto out;
 	}
@@ -1349,8 +1373,8 @@ bool madvise_free_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 		get_page(page);
 		spin_unlock(ptl);
 		split_huge_page(page);
-		put_page(page);
 		unlock_page(page);
+		put_page(page);
 		goto out_unlocked;
 	}
 
@@ -1362,8 +1386,7 @@ bool madvise_free_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 		deactivate_page(page);
 
 	if (pmd_young(orig_pmd) || pmd_dirty(orig_pmd)) {
-		orig_pmd = pmdp_huge_get_and_clear_full(tlb->mm, addr, pmd,
-			tlb->fullmm);
+		pmdp_invalidate(vma, addr, pmd);
 		orig_pmd = pmd_mkold(orig_pmd);
 		orig_pmd = pmd_mkclean(orig_pmd);
 

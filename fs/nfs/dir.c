@@ -477,7 +477,7 @@ void nfs_force_use_readdirplus(struct inode *dir)
 {
 	if (!list_empty(&NFS_I(dir)->open_files)) {
 		nfs_advise_use_readdirplus(dir);
-		nfs_zap_mapping(dir, dir->i_mapping);
+		invalidate_mapping_pages(dir->i_mapping, 0, -1);
 	}
 }
 
@@ -886,17 +886,6 @@ int uncached_readdir(nfs_readdir_descriptor_t *desc)
 	goto out;
 }
 
-static bool nfs_dir_mapping_need_revalidate(struct inode *dir)
-{
-	struct nfs_inode *nfsi = NFS_I(dir);
-
-	if (nfs_attribute_cache_expired(dir))
-		return true;
-	if (nfsi->cache_validity & NFS_INO_INVALID_DATA)
-		return true;
-	return false;
-}
-
 /* The file offset position represents the dirent entry number.  A
    last cookie cache takes care of the common case of reading the
    whole directory.
@@ -928,7 +917,7 @@ static int nfs_readdir(struct file *file, struct dir_context *ctx)
 	desc->decode = NFS_PROTO(inode)->decode_dirent;
 	desc->plus = nfs_use_readdirplus(inode, ctx) ? 1 : 0;
 
-	if (ctx->pos == 0 || nfs_dir_mapping_need_revalidate(inode))
+	if (ctx->pos == 0 || nfs_attribute_cache_expired(inode))
 		res = nfs_revalidate_mapping(inode, file->f_mapping);
 	if (res < 0)
 		goto out;
@@ -1178,11 +1167,13 @@ static int nfs_lookup_revalidate(struct dentry *dentry, unsigned int flags)
 	/* Force a full look up iff the parent directory has changed */
 	if (!nfs_is_exclusive_create(dir, flags) &&
 	    nfs_check_verifier(dir, dentry, flags & LOOKUP_RCU)) {
-
-		if (nfs_lookup_verify_inode(inode, flags)) {
+		error = nfs_lookup_verify_inode(inode, flags);
+		if (error) {
 			if (flags & LOOKUP_RCU)
 				return -ECHILD;
-			goto out_zap_parent;
+			if (error == -ESTALE)
+				goto out_zap_parent;
+			goto out_error;
 		}
 		goto out_valid;
 	}
@@ -1206,8 +1197,10 @@ static int nfs_lookup_revalidate(struct dentry *dentry, unsigned int flags)
 	trace_nfs_lookup_revalidate_enter(dir, dentry, flags);
 	error = NFS_PROTO(dir)->lookup(dir, &dentry->d_name, fhandle, fattr, label);
 	trace_nfs_lookup_revalidate_exit(dir, dentry, flags, error);
-	if (error)
+	if (error == -ESTALE || error == -ENOENT)
 		goto out_bad;
+	if (error)
+		goto out_error;
 	if (nfs_compare_fh(NFS_FH(inode), fhandle))
 		goto out_bad;
 	if ((error = nfs_refresh_inode(inode, fattr)) != 0)

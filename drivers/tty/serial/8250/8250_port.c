@@ -1320,7 +1320,7 @@ out_lock:
 	/*
 	 * Check if the device is a Fintek F81216A
 	 */
-	if (port->type == PORT_16550A)
+	if (port->type == PORT_16550A && port->iotype == UPIO_PORT)
 		fintek_8250_probe(up);
 
 	if (up->capabilities != old_capabilities) {
@@ -1411,7 +1411,7 @@ static void __do_stop_tx_rs485(struct uart_8250_port *p)
 	 * Enable previously disabled RX interrupts.
 	 */
 	if (!(p->port.rs485.flags & SER_RS485_RX_DURING_TX)) {
-		serial8250_clear_fifos(p);
+		serial8250_clear_and_reinit_fifos(p);
 
 		p->ier |= UART_IER_RLSI | UART_IER_RDI;
 		serial_port_out(&p->port, UART_IER, p->ier);

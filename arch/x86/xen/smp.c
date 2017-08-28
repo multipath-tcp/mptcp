@@ -87,12 +87,6 @@ static void cpu_bringup(void)
 	cpu_data(cpu).x86_max_cores = 1;
 	set_cpu_sibling_map(cpu);
 
-	/*
-	 * identify_cpu() may have set logical_pkg_id to -1 due
-	 * to incorrect phys_proc_id. Let's re-comupte it.
-	 */
-	topology_update_package_map(apic->cpu_present_to_apicid(cpu), cpu);
-
 	xen_setup_cpu_clockevents();
 
 	notify_cpu_starting(cpu);
@@ -771,6 +765,8 @@ static void __init xen_hvm_smp_prepare_cpus(unsigned int max_cpus)
 
 void __init xen_hvm_smp_init(void)
 {
+	if (!xen_have_vector_callback)
+		return;
 	smp_ops.smp_prepare_cpus = xen_hvm_smp_prepare_cpus;
 	smp_ops.smp_send_reschedule = xen_smp_send_reschedule;
 	smp_ops.cpu_die = xen_cpu_die;

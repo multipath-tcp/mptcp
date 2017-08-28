@@ -74,7 +74,9 @@ struct rpcrdma_ia {
 	unsigned int		ri_max_frmr_depth;
 	unsigned int		ri_max_inline_write;
 	unsigned int		ri_max_inline_read;
+	unsigned int		ri_max_send_sges;
 	bool			ri_reminv_expected;
+	bool			ri_implicit_roundup;
 	struct ib_qp_attr	ri_qp_attr;
 	struct ib_qp_init_attr	ri_qp_init_attr;
 };
@@ -95,8 +97,24 @@ struct rpcrdma_ep {
 	struct delayed_work	rep_connect_worker;
 };
 
-#define INIT_CQCOUNT(ep) atomic_set(&(ep)->rep_cqcount, (ep)->rep_cqinit)
-#define DECR_CQCOUNT(ep) atomic_sub_return(1, &(ep)->rep_cqcount)
+static inline void
+rpcrdma_init_cqcount(struct rpcrdma_ep *ep, int count)
+{
+	atomic_set(&ep->rep_cqcount, ep->rep_cqinit - count);
+}
+
+/* To update send queue accounting, provider must take a
+ * send completion every now and then.
+ */
+static inline void
+rpcrdma_set_signaled(struct rpcrdma_ep *ep, struct ib_send_wr *send_wr)
+{
+	send_wr->send_flags = 0;
+	if (unlikely(atomic_sub_return(1, &ep->rep_cqcount) <= 0)) {
+		rpcrdma_init_cqcount(ep, 0);
+		send_wr->send_flags = IB_SEND_SIGNALED;
+	}
+}
 
 /* Pre-allocate extra Work Requests for handling backward receives
  * and sends. This is a fixed value because the Work Queues are
@@ -293,6 +311,7 @@ struct rpcrdma_mr_seg {		/* chunk descriptors */
  * - xdr_buf tail iovec
  */
 enum {
+	RPCRDMA_MIN_SEND_SGES = 3,
 	RPCRDMA_MAX_SEND_PAGES = PAGE_SIZE + RPCRDMA_MAX_INLINE - 1,
 	RPCRDMA_MAX_PAGE_SGES = (RPCRDMA_MAX_SEND_PAGES >> PAGE_SHIFT) + 1,
 	RPCRDMA_MAX_SEND_SGES = 1 + 1 + RPCRDMA_MAX_PAGE_SGES + 1,

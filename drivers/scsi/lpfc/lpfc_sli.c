@@ -5951,18 +5951,25 @@ lpfc_sli4_alloc_resource_identifiers(struct lpfc_hba *phba)
 
  free_vfi_bmask:
 	kfree(phba->sli4_hba.vfi_bmask);
+	phba->sli4_hba.vfi_bmask = NULL;
  free_xri_ids:
 	kfree(phba->sli4_hba.xri_ids);
+	phba->sli4_hba.xri_ids = NULL;
  free_xri_bmask:
 	kfree(phba->sli4_hba.xri_bmask);
+	phba->sli4_hba.xri_bmask = NULL;
  free_vpi_ids:
 	kfree(phba->vpi_ids);
+	phba->vpi_ids = NULL;
  free_vpi_bmask:
 	kfree(phba->vpi_bmask);
+	phba->vpi_bmask = NULL;
  free_rpi_ids:
 	kfree(phba->sli4_hba.rpi_ids);
+	phba->sli4_hba.rpi_ids = NULL;
  free_rpi_bmask:
 	kfree(phba->sli4_hba.rpi_bmask);
+	phba->sli4_hba.rpi_bmask = NULL;
  err_exit:
 	return rc;
 }
@@ -13678,7 +13685,7 @@ lpfc_wq_create(struct lpfc_hba *phba, struct lpfc_queue *wq,
 			       LPFC_WQ_WQE_SIZE_128);
 			bf_set(lpfc_mbx_wq_create_page_size,
 			       &wq_create->u.request_1,
-			       (PAGE_SIZE/SLI4_PAGE_SIZE));
+			       LPFC_WQ_PAGE_SIZE_4096);
 			page = wq_create->u.request_1.page;
 			break;
 		}
@@ -13704,8 +13711,9 @@ lpfc_wq_create(struct lpfc_hba *phba, struct lpfc_queue *wq,
 			       LPFC_WQ_WQE_SIZE_128);
 			break;
 		}
-		bf_set(lpfc_mbx_wq_create_page_size, &wq_create->u.request_1,
-		       (PAGE_SIZE/SLI4_PAGE_SIZE));
+		bf_set(lpfc_mbx_wq_create_page_size,
+		       &wq_create->u.request_1,
+		       LPFC_WQ_PAGE_SIZE_4096);
 		page = wq_create->u.request_1.page;
 		break;
 	default:
@@ -13891,7 +13899,7 @@ lpfc_rq_create(struct lpfc_hba *phba, struct lpfc_queue *hrq,
 		       LPFC_RQE_SIZE_8);
 		bf_set(lpfc_rq_context_page_size,
 		       &rq_create->u.request.context,
-		       (PAGE_SIZE/SLI4_PAGE_SIZE));
+		       LPFC_RQ_PAGE_SIZE_4096);
 	} else {
 		switch (hrq->entry_count) {
 		default:

@@ -694,6 +694,7 @@ unsigned long native_calibrate_tsc(void)
 			crystal_khz = 24000;	/* 24.0 MHz */
 			break;
 		case INTEL_FAM6_SKYLAKE_X:
+		case INTEL_FAM6_ATOM_DENVERTON:
 			crystal_khz = 25000;	/* 25.0 MHz */
 			break;
 		case INTEL_FAM6_ATOM_GOLDMONT:
@@ -1287,6 +1288,8 @@ static int __init init_tsc_clocksource(void)
 	 * exporting a reliable TSC.
 	 */
 	if (boot_cpu_has(X86_FEATURE_TSC_RELIABLE)) {
+		if (boot_cpu_has(X86_FEATURE_ART))
+			art_related_clocksource = &clocksource_tsc;
 		clocksource_register_khz(&clocksource_tsc, tsc_khz);
 		return 0;
 	}

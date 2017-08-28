@@ -122,10 +122,12 @@ static void dccp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 	np = inet6_sk(sk);
 
 	if (type == NDISC_REDIRECT) {
-		struct dst_entry *dst = __sk_dst_check(sk, np->dst_cookie);
+		if (!sock_owned_by_user(sk)) {
+			struct dst_entry *dst = __sk_dst_check(sk, np->dst_cookie);
 
-		if (dst)
-			dst->ops->redirect(dst, sk, skb);
+			if (dst)
+				dst->ops->redirect(dst, sk, skb);
+		}
 		goto out;
 	}
 
@@ -227,7 +229,7 @@ static int dccp_v6_send_response(const struct sock *sk, struct request_sock *req
 		opt = ireq->ipv6_opt;
 		if (!opt)
 			opt = rcu_dereference(np->opt);
-		err = ip6_xmit(sk, skb, &fl6, opt, np->tclass);
+		err = ip6_xmit(sk, skb, &fl6, sk->sk_mark, opt, np->tclass);
 		rcu_read_unlock();
 		err = net_xmit_eval(err);
 	}
@@ -281,7 +283,7 @@ static void dccp_v6_ctl_send_reset(const struct sock *sk, struct sk_buff *rxskb)
 	dst = ip6_dst_lookup_flow(ctl_sk, &fl6, NULL);
 	if (!IS_ERR(dst)) {
 		skb_dst_set(skb, dst);
-		ip6_xmit(ctl_sk, skb, &fl6, NULL, 0);
+		ip6_xmit(ctl_sk, skb, &fl6, 0, NULL, 0);
 		DCCP_INC_STATS(DCCP_MIB_OUTSEGS);
 		DCCP_INC_STATS(DCCP_MIB_OUTRSTS);
 		return;
@@ -378,6 +380,7 @@ static int dccp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 		goto drop_and_free;
 
 	inet_csk_reqsk_queue_hash_add(sk, req, DCCP_TIMEOUT_INIT);
+	reqsk_put(req);
 	return 0;
 
 drop_and_free:
@@ -424,6 +427,9 @@ static struct sock *dccp_v6_request_recv_sock(const struct sock *sk,
 		newsk->sk_backlog_rcv = dccp_v4_do_rcv;
 		newnp->pktoptions  = NULL;
 		newnp->opt	   = NULL;
+		newnp->ipv6_mc_list = NULL;
+		newnp->ipv6_ac_list = NULL;
+		newnp->ipv6_fl_list = NULL;
 		newnp->mcast_oif   = inet6_iif(skb);
 		newnp->mcast_hops  = ipv6_hdr(skb)->hop_limit;
 
@@ -488,6 +494,9 @@ static struct sock *dccp_v6_request_recv_sock(const struct sock *sk,
 	/* Clone RX bits */
 	newnp->rxopt.all = np->rxopt.all;
 
+	newnp->ipv6_mc_list = NULL;
+	newnp->ipv6_ac_list = NULL;
+	newnp->ipv6_fl_list = NULL;
 	newnp->pktoptions = NULL;
 	newnp->opt	  = NULL;
 	newnp->mcast_oif  = inet6_iif(skb);

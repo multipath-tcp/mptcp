@@ -410,11 +410,26 @@ static int notify_online(unsigned int cpu)
 	return 0;
 }
 
+static void __cpuhp_kick_ap_work(struct cpuhp_cpu_state *st);
+
 static int bringup_wait_for_ap(unsigned int cpu)
 {
 	struct cpuhp_cpu_state *st = per_cpu_ptr(&cpuhp_state, cpu);
 
+	/* Wait for the CPU to reach CPUHP_AP_ONLINE_IDLE */
 	wait_for_completion(&st->done);
+	if (WARN_ON_ONCE((!cpu_online(cpu))))
+		return -ECANCELED;
+
+	/* Unpark the stopper thread and the hotplug thread of the target cpu */
+	stop_machine_unpark(cpu);
+	kthread_unpark(st->thread);
+
+	/* Should we go further up ? */
+	if (st->target > CPUHP_AP_ONLINE_IDLE) {
+		__cpuhp_kick_ap_work(st);
+		wait_for_completion(&st->done);
+	}
 	return st->result;
 }
 
@@ -437,9 +452,7 @@ static int bringup_cpu(unsigned int cpu)
 		cpu_notify(CPU_UP_CANCELED, cpu);
 		return ret;
 	}
-	ret = bringup_wait_for_ap(cpu);
-	BUG_ON(!cpu_online(cpu));
-	return ret;
+	return bringup_wait_for_ap(cpu);
 }
 
 /*
@@ -659,7 +672,6 @@ void __init cpuhp_threads_init(void)
 	kthread_unpark(this_cpu_read(cpuhp_state.thread));
 }
 
-#ifdef CONFIG_HOTPLUG_CPU
 EXPORT_SYMBOL(register_cpu_notifier);
 EXPORT_SYMBOL(__register_cpu_notifier);
 void unregister_cpu_notifier(struct notifier_block *nb)
@@ -676,6 +688,7 @@ void __unregister_cpu_notifier(struct notifier_block *nb)
 }
 EXPORT_SYMBOL(__unregister_cpu_notifier);
 
+#ifdef CONFIG_HOTPLUG_CPU
 /**
  * clear_tasks_mm_cpumask - Safely clear tasks' mm_cpumask for a CPU
  * @cpu: a CPU id
@@ -974,31 +987,20 @@ void notify_cpu_starting(unsigned int cpu)
 }
 
 /*
- * Called from the idle task. We need to set active here, so we can kick off
- * the stopper thread and unpark the smpboot threads. If the target state is
- * beyond CPUHP_AP_ONLINE_IDLE we kick cpuhp thread and let it bring up the
- * cpu further.
+ * Called from the idle task. Wake up the controlling task which brings the
+ * stopper and the hotplug thread of the upcoming CPU up and then delegates
+ * the rest of the online bringup to the hotplug thread.
  */
 void cpuhp_online_idle(enum cpuhp_state state)
 {
 	struct cpuhp_cpu_state *st = this_cpu_ptr(&cpuhp_state);
-	unsigned int cpu = smp_processor_id();
 
 	/* Happens for the boot cpu */
 	if (state != CPUHP_AP_ONLINE_IDLE)
 		return;
 
 	st->state = CPUHP_AP_ONLINE_IDLE;
-
-	/* Unpark the stopper thread and the hotplug thread of this cpu */
-	stop_machine_unpark(cpu);
-	kthread_unpark(st->thread);
-
-	/* Should we go further up ? */
-	if (st->target > CPUHP_AP_ONLINE_IDLE)
-		__cpuhp_kick_ap_work(st);
-	else
-		complete(&st->done);
+	complete(&st->done);
 }
 
 /* Requires cpu_add_remove_lock to be held */
@@ -1441,14 +1443,12 @@ static void cpuhp_store_callbacks(enum cpuhp_state state,
 	/* (Un)Install the callbacks for further cpu hotplug operations */
 	struct cpuhp_step *sp;
 
-	mutex_lock(&cpuhp_state_mutex);
 	sp = cpuhp_get_step(state);
 	sp->startup.single = startup;
 	sp->teardown.single = teardown;
 	sp->name = name;
 	sp->multi_instance = multi_instance;
 	INIT_HLIST_HEAD(&sp->list);
-	mutex_unlock(&cpuhp_state_mutex);
 }
 
 static void *cpuhp_get_teardown_cb(enum cpuhp_state state)
@@ -1518,16 +1518,13 @@ static int cpuhp_reserve_state(enum cpuhp_state state)
 {
 	enum cpuhp_state i;
 
-	mutex_lock(&cpuhp_state_mutex);
 	for (i = CPUHP_AP_ONLINE_DYN; i <= CPUHP_AP_ONLINE_DYN_END; i++) {
 		if (cpuhp_ap_states[i].name)
 			continue;
 
 		cpuhp_ap_states[i].name = "Reserved";
-		mutex_unlock(&cpuhp_state_mutex);
 		return i;
 	}
-	mutex_unlock(&cpuhp_state_mutex);
 	WARN(1, "No more dynamic states available for CPU hotplug\n");
 	return -ENOSPC;
 }
@@ -1544,6 +1541,7 @@ int __cpuhp_state_add_instance(enum cpuhp_state state, struct hlist_node *node,
 		return -EINVAL;
 
 	get_online_cpus();
+	mutex_lock(&cpuhp_state_mutex);
 
 	if (!invoke || !sp->startup.multi)
 		goto add_node;
@@ -1568,11 +1566,10 @@ int __cpuhp_state_add_instance(enum cpuhp_state state, struct hlist_node *node,
 	}
 add_node:
 	ret = 0;
-	mutex_lock(&cpuhp_state_mutex);
 	hlist_add_head(node, &sp->list);
-	mutex_unlock(&cpuhp_state_mutex);
 
 err:
+	mutex_unlock(&cpuhp_state_mutex);
 	put_online_cpus();
 	return ret;
 }
@@ -1601,6 +1598,7 @@ int __cpuhp_setup_state(enum cpuhp_state state,
 		return -EINVAL;
 
 	get_online_cpus();
+	mutex_lock(&cpuhp_state_mutex);
 
 	/* currently assignments for the ONLINE state are possible */
 	if (state == CPUHP_AP_ONLINE_DYN) {
@@ -1636,6 +1634,8 @@ int __cpuhp_setup_state(enum cpuhp_state state,
 		}
 	}
 out:
+	mutex_unlock(&cpuhp_state_mutex);
+
 	put_online_cpus();
 	if (!ret && dyn_state)
 		return state;
@@ -1655,6 +1655,8 @@ int __cpuhp_state_remove_instance(enum cpuhp_state state,
 		return -EINVAL;
 
 	get_online_cpus();
+	mutex_lock(&cpuhp_state_mutex);
+
 	if (!invoke || !cpuhp_get_teardown_cb(state))
 		goto remove;
 	/*
@@ -1671,7 +1673,6 @@ int __cpuhp_state_remove_instance(enum cpuhp_state state,
 	}
 
 remove:
-	mutex_lock(&cpuhp_state_mutex);
 	hlist_del(node);
 	mutex_unlock(&cpuhp_state_mutex);
 	put_online_cpus();
@@ -1696,6 +1697,7 @@ void __cpuhp_remove_state(enum cpuhp_state state, bool invoke)
 	BUG_ON(cpuhp_cb_check(state));
 
 	get_online_cpus();
+	mutex_lock(&cpuhp_state_mutex);
 
 	if (sp->multi_instance) {
 		WARN(!hlist_empty(&sp->list),
@@ -1721,6 +1723,7 @@ void __cpuhp_remove_state(enum cpuhp_state state, bool invoke)
 	}
 remove:
 	cpuhp_store_callbacks(state, NULL, NULL, NULL, false);
+	mutex_unlock(&cpuhp_state_mutex);
 	put_online_cpus();
 }
 EXPORT_SYMBOL(__cpuhp_remove_state);
@@ -1764,13 +1767,13 @@ static ssize_t write_cpuhp_target(struct device *dev,
 	ret = !sp->name || sp->cant_stop ? -EINVAL : 0;
 	mutex_unlock(&cpuhp_state_mutex);
 	if (ret)
-		return ret;
+		goto out;
 
 	if (st->state < target)
 		ret = do_cpu_up(dev->id, target);
 	else
 		ret = do_cpu_down(dev->id, target);
-
+out:
 	unlock_device_hotplug();
 	return ret ? ret : count;
 }

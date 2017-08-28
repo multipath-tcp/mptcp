@@ -192,6 +192,9 @@ int xhci_reset(struct xhci_hcd *xhci)
 	if (ret)
 		return ret;
 
+	if (xhci->quirks & XHCI_ASMEDIA_MODIFY_FLOWCONTROL)
+		usb_asmedia_modifyflowcontrol(to_pci_dev(xhci_to_hcd(xhci)->self.controller));
+
 	xhci_dbg_trace(xhci, trace_xhci_dbg_init,
 			 "Wait for controller to be ready for doorbell rings");
 	/*
@@ -1122,6 +1125,9 @@ int xhci_resume(struct xhci_hcd *xhci, bool hibernated)
 	if ((xhci->quirks & XHCI_COMP_MODE_QUIRK) && !comp_timer_running)
 		compliance_mode_recovery_timer_init(xhci);
 
+	if (xhci->quirks & XHCI_ASMEDIA_MODIFY_FLOWCONTROL)
+		usb_asmedia_modifyflowcontrol(to_pci_dev(hcd->self.controller));
+
 	/* Re-enable port polling. */
 	xhci_dbg(xhci, "%s: starting port polling.\n", __func__);
 	set_bit(HCD_FLAG_POLL_RH, &xhci->shared_hcd->flags);
@@ -1528,19 +1534,6 @@ int xhci_urb_dequeue(struct usb_hcd *hcd, struct urb *urb, int status)
 		usb_hcd_giveback_urb(hcd, urb, -ESHUTDOWN);
 		xhci_urb_free_priv(urb_priv);
 		return ret;
-	}
-	if ((xhci->xhc_state & XHCI_STATE_DYING) ||
-			(xhci->xhc_state & XHCI_STATE_HALTED)) {
-		xhci_dbg_trace(xhci, trace_xhci_dbg_cancel_urb,
-				"Ep 0x%x: URB %p to be canceled on "
-				"non-responsive xHCI host.",
-				urb->ep->desc.bEndpointAddress, urb);
-		/* Let the stop endpoint command watchdog timer (which set this
-		 * state) finish cleaning up the endpoint TD lists.  We must
-		 * have caught it in the middle of dropping a lock and giving
-		 * back an URB.
-		 */
-		goto done;
 	}
 
 	ep_index = xhci_get_endpoint_index(&urb->ep->desc);
@@ -3783,8 +3776,10 @@ static int xhci_setup_device(struct usb_hcd *hcd, struct usb_device *udev,
 
 	mutex_lock(&xhci->mutex);
 
-	if (xhci->xhc_state)	/* dying, removing or halted */
+	if (xhci->xhc_state) {	/* dying, removing or halted */
+		ret = -ESHUTDOWN;
 		goto out;
+	}
 
 	if (!udev->slot_id) {
 		xhci_dbg_trace(xhci, trace_xhci_dbg_address,

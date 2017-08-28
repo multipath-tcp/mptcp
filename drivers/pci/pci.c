@@ -564,10 +564,6 @@ static void pci_restore_bars(struct pci_dev *dev)
 {
 	int i;
 
-	/* Per SR-IOV spec 3.4.1.11, VF BARs are RO zero */
-	if (dev->is_virtfn)
-		return;
-
 	for (i = 0; i < PCI_BRIDGE_RESOURCES; i++)
 		pci_update_resource(dev, i);
 }
@@ -1786,8 +1782,8 @@ static void pci_pme_list_scan(struct work_struct *work)
 		}
 	}
 	if (!list_empty(&pci_pme_list))
-		schedule_delayed_work(&pci_pme_work,
-				      msecs_to_jiffies(PME_TIMEOUT));
+		queue_delayed_work(system_freezable_wq, &pci_pme_work,
+				   msecs_to_jiffies(PME_TIMEOUT));
 	mutex_unlock(&pci_pme_list_mutex);
 }
 
@@ -1852,8 +1848,9 @@ void pci_pme_active(struct pci_dev *dev, bool enable)
 			mutex_lock(&pci_pme_list_mutex);
 			list_add(&pme_dev->list, &pci_pme_list);
 			if (list_is_singular(&pci_pme_list))
-				schedule_delayed_work(&pci_pme_work,
-						      msecs_to_jiffies(PME_TIMEOUT));
+				queue_delayed_work(system_freezable_wq,
+						   &pci_pme_work,
+						   msecs_to_jiffies(PME_TIMEOUT));
 			mutex_unlock(&pci_pme_list_mutex);
 		} else {
 			mutex_lock(&pci_pme_list_mutex);
@@ -2106,6 +2103,10 @@ bool pci_dev_run_wake(struct pci_dev *dev)
 	if (!dev->pme_support)
 		return false;
 
+	/* PME-capable in principle, but not from the intended sleep state */
+	if (!pci_pme_capable(dev, pci_target_state(dev)))
+		return false;
+
 	while (bus->parent) {
 		struct pci_dev *bridge = bus->self;
 
@@ -2141,7 +2142,8 @@ bool pci_dev_keep_suspended(struct pci_dev *pci_dev)
 
 	if (!pm_runtime_suspended(dev)
 	    || pci_target_state(pci_dev) != pci_dev->current_state
-	    || platform_pci_need_resume(pci_dev))
+	    || platform_pci_need_resume(pci_dev)
+	    || (pci_dev->dev_flags & PCI_DEV_FLAGS_NEEDS_RESUME))
 		return false;
 
 	/*
@@ -4830,36 +4832,6 @@ int pci_select_bars(struct pci_dev *dev, unsigned long flags)
 	return bars;
 }
 EXPORT_SYMBOL(pci_select_bars);
-
-/**
- * pci_resource_bar - get position of the BAR associated with a resource
- * @dev: the PCI device
- * @resno: the resource number
- * @type: the BAR type to be filled in
- *
- * Returns BAR position in config space, or 0 if the BAR is invalid.
- */
-int pci_resource_bar(struct pci_dev *dev, int resno, enum pci_bar_type *type)
-{
-	int reg;
-
-	if (resno < PCI_ROM_RESOURCE) {
-		*type = pci_bar_unknown;
-		return PCI_BASE_ADDRESS_0 + 4 * resno;
-	} else if (resno == PCI_ROM_RESOURCE) {
-		*type = pci_bar_mem32;
-		return dev->rom_base_reg;
-	} else if (resno < PCI_BRIDGE_RESOURCES) {
-		/* device specific resource */
-		*type = pci_bar_unknown;
-		reg = pci_iov_resource_bar(dev, resno);
-		if (reg)
-			return reg;
-	}
-
-	dev_err(&dev->dev, "BAR %d: invalid resource\n", resno);
-	return 0;
-}
 
 /* Some architectures require additional programming to enable VGA */
 static arch_set_vga_state_t arch_set_vga_state;

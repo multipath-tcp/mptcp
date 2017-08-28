@@ -352,6 +352,13 @@ static int __swiotlb_dma_supported(struct device *hwdev, u64 mask)
 	return 1;
 }
 
+static int __swiotlb_dma_mapping_error(struct device *hwdev, dma_addr_t addr)
+{
+	if (swiotlb)
+		return swiotlb_dma_mapping_error(hwdev, addr);
+	return 0;
+}
+
 static struct dma_map_ops swiotlb_dma_ops = {
 	.alloc = __dma_alloc,
 	.free = __dma_free,
@@ -366,7 +373,7 @@ static struct dma_map_ops swiotlb_dma_ops = {
 	.sync_sg_for_cpu = __swiotlb_sync_sg_for_cpu,
 	.sync_sg_for_device = __swiotlb_sync_sg_for_device,
 	.dma_supported = __swiotlb_dma_supported,
-	.mapping_error = swiotlb_dma_mapping_error,
+	.mapping_error = __swiotlb_dma_mapping_error,
 };
 
 static int __init atomic_pool_init(void)
@@ -524,7 +531,8 @@ EXPORT_SYMBOL(dummy_dma_ops);
 
 static int __init arm64_dma_init(void)
 {
-	if (swiotlb_force || max_pfn > (arm64_dma_phys_limit >> PAGE_SHIFT))
+	if (swiotlb_force == SWIOTLB_FORCE ||
+	    max_pfn > (arm64_dma_phys_limit >> PAGE_SHIFT))
 		swiotlb = 1;
 
 	return atomic_pool_init();

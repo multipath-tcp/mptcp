@@ -2994,6 +2994,9 @@ static int raid_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		}
 	}
 
+	/* Disable/enable discard support on raid set. */
+	configure_discard_support(rs);
+
 	mddev_unlock(&rs->md);
 	return 0;
 
@@ -3580,19 +3583,13 @@ static int raid_preresume(struct dm_target *ti)
 	if (test_bit(RT_FLAG_UPDATE_SBS, &rs->runtime_flags))
 		rs_update_sbs(rs);
 
-	/*
-	 * Disable/enable discard support on raid set after any
-	 * conversion, because devices can have been added
-	 */
-	configure_discard_support(rs);
-
 	/* Load the bitmap from disk unless raid0 */
 	r = __load_dirty_region_bitmap(rs);
 	if (r)
 		return r;
 
 	/* Resize bitmap to adjust to changed region size (aka MD bitmap chunksize) */
-	if (test_bit(RT_FLAG_RS_BITMAP_LOADED, &rs->runtime_flags) &&
+	if (test_bit(RT_FLAG_RS_BITMAP_LOADED, &rs->runtime_flags) && mddev->bitmap &&
 	    mddev->bitmap_info.chunksize != to_bytes(rs->requested_bitmap_chunk_sectors)) {
 		r = bitmap_resize(mddev->bitmap, mddev->dev_sectors,
 				  to_bytes(rs->requested_bitmap_chunk_sectors), 0);
@@ -3624,6 +3621,8 @@ static int raid_preresume(struct dm_target *ti)
 	return r;
 }
 
+#define RESUME_STAY_FROZEN_FLAGS (CTR_FLAG_DELTA_DISKS | CTR_FLAG_DATA_OFFSET)
+
 static void raid_resume(struct dm_target *ti)
 {
 	struct raid_set *rs = ti->private;
@@ -3641,7 +3640,15 @@ static void raid_resume(struct dm_target *ti)
 	mddev->ro = 0;
 	mddev->in_sync = 0;
 
-	clear_bit(MD_RECOVERY_FROZEN, &mddev->recovery);
+	/*
+	 * Keep the RAID set frozen if reshape/rebuild flags are set.
+	 * The RAID set is unfrozen once the next table load/resume,
+	 * which clears the reshape/rebuild flags, occurs.
+	 * This ensures that the constructor for the inactive table
+	 * retrieves an up-to-date reshape_position.
+	 */
+	if (!(rs->ctr_flags & RESUME_STAY_FROZEN_FLAGS))
+		clear_bit(MD_RECOVERY_FROZEN, &mddev->recovery);
 
 	if (mddev->suspended)
 		mddev_resume(mddev);

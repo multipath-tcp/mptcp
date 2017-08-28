@@ -777,6 +777,11 @@ cifs_reopen_persistent_handles(struct cifs_tcon *tcon)
 	struct list_head *tmp1;
 	struct list_head tmp_list;
 
+	if (!tcon->use_persistent || !tcon->need_reopen_files)
+		return;
+
+	tcon->need_reopen_files = false;
+
 	cifs_dbg(FYI, "Reopen persistent handles");
 	INIT_LIST_HEAD(&tmp_list);
 
@@ -793,7 +798,8 @@ cifs_reopen_persistent_handles(struct cifs_tcon *tcon)
 
 	list_for_each_safe(tmp, tmp1, &tmp_list) {
 		open_file = list_entry(tmp, struct cifsFileInfo, rlist);
-		cifs_reopen_file(open_file, false /* do not flush */);
+		if (cifs_reopen_file(open_file, false /* do not flush */))
+			tcon->need_reopen_files = true;
 		list_del_init(&open_file->rlist);
 		cifsFileInfo_put(open_file);
 	}
@@ -2591,7 +2597,7 @@ cifs_write_from_iter(loff_t offset, size_t len, struct iov_iter *from,
 		wdata->credits = credits;
 
 		if (!wdata->cfile->invalidHandle ||
-		    !cifs_reopen_file(wdata->cfile, false))
+		    !(rc = cifs_reopen_file(wdata->cfile, false)))
 			rc = server->ops->async_writev(wdata,
 					cifs_uncached_writedata_release);
 		if (rc) {
@@ -2878,7 +2884,15 @@ cifs_readdata_to_iov(struct cifs_readdata *rdata, struct iov_iter *iter)
 	for (i = 0; i < rdata->nr_pages; i++) {
 		struct page *page = rdata->pages[i];
 		size_t copy = min_t(size_t, remaining, PAGE_SIZE);
-		size_t written = copy_page_to_iter(page, 0, copy, iter);
+		size_t written;
+
+		if (unlikely(iter->type & ITER_PIPE)) {
+			void *addr = kmap_atomic(page);
+
+			written = copy_to_iter(addr, copy, iter);
+			kunmap_atomic(addr);
+		} else
+			written = copy_page_to_iter(page, 0, copy, iter);
 		remaining -= written;
 		if (written < copy && iov_iter_count(iter) > 0)
 			break;
@@ -2988,7 +3002,7 @@ cifs_send_async_read(loff_t offset, size_t len, struct cifsFileInfo *open_file,
 		rdata->credits = credits;
 
 		if (!rdata->cfile->invalidHandle ||
-		    !cifs_reopen_file(rdata->cfile, true))
+		    !(rc = cifs_reopen_file(rdata->cfile, true)))
 			rc = server->ops->async_readv(rdata);
 error:
 		if (rc) {
@@ -3563,7 +3577,7 @@ static int cifs_readpages(struct file *file, struct address_space *mapping,
 		}
 
 		if (!rdata->cfile->invalidHandle ||
-		    !cifs_reopen_file(rdata->cfile, true))
+		    !(rc = cifs_reopen_file(rdata->cfile, true)))
 			rc = server->ops->async_readv(rdata);
 		if (rc) {
 			add_credits_and_wake_if(server, rdata->credits, 0);

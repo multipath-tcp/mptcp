@@ -1343,7 +1343,6 @@ int ttm_bo_clean_mm(struct ttm_bo_device *bdev, unsigned mem_type)
 		       mem_type);
 		return ret;
 	}
-	fence_put(man->move);
 
 	man->use_type = false;
 	man->has_type = false;
@@ -1354,6 +1353,9 @@ int ttm_bo_clean_mm(struct ttm_bo_device *bdev, unsigned mem_type)
 
 		ret = (*man->func->takedown)(man);
 	}
+
+	fence_put(man->move);
+	man->move = NULL;
 
 	return ret;
 }
@@ -1654,7 +1656,6 @@ static int ttm_bo_swapout(struct ttm_mem_shrink *shrink)
 	struct ttm_buffer_object *bo;
 	int ret = -EBUSY;
 	int put_count;
-	uint32_t swap_placement = (TTM_PL_FLAG_CACHED | TTM_PL_FLAG_SYSTEM);
 
 	spin_lock(&glob->lru_lock);
 	list_for_each_entry(bo, &glob->swap_lru, swap) {
@@ -1685,7 +1686,8 @@ static int ttm_bo_swapout(struct ttm_mem_shrink *shrink)
 	 * Move to system cached
 	 */
 
-	if ((bo->mem.placement & swap_placement) != swap_placement) {
+	if (bo->mem.mem_type != TTM_PL_SYSTEM ||
+	    bo->ttm->caching_state != tt_cached) {
 		struct ttm_mem_reg evict_mem;
 
 		evict_mem = bo->mem;

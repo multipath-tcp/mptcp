@@ -108,19 +108,19 @@ xfs_finish_page_writeback(
 	unsigned int		bsize;
 
 	ASSERT(bvec->bv_offset < PAGE_SIZE);
-	ASSERT((bvec->bv_offset & ((1 << inode->i_blkbits) - 1)) == 0);
+	ASSERT((bvec->bv_offset & (i_blocksize(inode) - 1)) == 0);
 	ASSERT(end < PAGE_SIZE);
-	ASSERT((bvec->bv_len & ((1 << inode->i_blkbits) - 1)) == 0);
+	ASSERT((bvec->bv_len & (i_blocksize(inode) - 1)) == 0);
 
 	bh = head = page_buffers(bvec->bv_page);
 
 	bsize = bh->b_size;
 	do {
+		if (off > end)
+			break;
 		next = bh->b_this_page;
 		if (off < bvec->bv_offset)
 			goto next_bh;
-		if (off > end)
-			break;
 		bh->b_end_io(bh, !error);
 next_bh:
 		off += bsize;
@@ -279,54 +279,49 @@ xfs_end_io(
 	struct xfs_ioend	*ioend =
 		container_of(work, struct xfs_ioend, io_work);
 	struct xfs_inode	*ip = XFS_I(ioend->io_inode);
+	xfs_off_t		offset = ioend->io_offset;
+	size_t			size = ioend->io_size;
 	int			error = ioend->io_bio->bi_error;
 
 	/*
-	 * Set an error if the mount has shut down and proceed with end I/O
-	 * processing so it can perform whatever cleanups are necessary.
+	 * Just clean up the in-memory strutures if the fs has been shut down.
 	 */
-	if (XFS_FORCED_SHUTDOWN(ip->i_mount))
+	if (XFS_FORCED_SHUTDOWN(ip->i_mount)) {
 		error = -EIO;
-
-	/*
-	 * For a CoW extent, we need to move the mapping from the CoW fork
-	 * to the data fork.  If instead an error happened, just dump the
-	 * new blocks.
-	 */
-	if (ioend->io_type == XFS_IO_COW) {
-		if (error)
-			goto done;
-		if (ioend->io_bio->bi_error) {
-			error = xfs_reflink_cancel_cow_range(ip,
-					ioend->io_offset, ioend->io_size);
-			goto done;
-		}
-		error = xfs_reflink_end_cow(ip, ioend->io_offset,
-				ioend->io_size);
-		if (error)
-			goto done;
+		goto done;
 	}
 
 	/*
-	 * For unwritten extents we need to issue transactions to convert a
-	 * range to normal written extens after the data I/O has finished.
-	 * Detecting and handling completion IO errors is done individually
-	 * for each case as different cleanup operations need to be performed
-	 * on error.
+	 * Clean up any COW blocks on an I/O error.
 	 */
-	if (ioend->io_type == XFS_IO_UNWRITTEN) {
-		if (error)
-			goto done;
-		error = xfs_iomap_write_unwritten(ip, ioend->io_offset,
-						  ioend->io_size);
-	} else if (ioend->io_append_trans) {
-		error = xfs_setfilesize_ioend(ioend, error);
-	} else {
-		ASSERT(!xfs_ioend_is_append(ioend) ||
-		       ioend->io_type == XFS_IO_COW);
+	if (unlikely(error)) {
+		switch (ioend->io_type) {
+		case XFS_IO_COW:
+			xfs_reflink_cancel_cow_range(ip, offset, size, true);
+			break;
+		}
+
+		goto done;
+	}
+
+	/*
+	 * Success:  commit the COW or unwritten blocks if needed.
+	 */
+	switch (ioend->io_type) {
+	case XFS_IO_COW:
+		error = xfs_reflink_end_cow(ip, offset, size);
+		break;
+	case XFS_IO_UNWRITTEN:
+		error = xfs_iomap_write_unwritten(ip, offset, size);
+		break;
+	default:
+		ASSERT(!xfs_ioend_is_append(ioend) || ioend->io_append_trans);
+		break;
 	}
 
 done:
+	if (ioend->io_append_trans)
+		error = xfs_setfilesize_ioend(ioend, error);
 	xfs_destroy_ioend(ioend, error);
 }
 
@@ -354,7 +349,7 @@ xfs_map_blocks(
 {
 	struct xfs_inode	*ip = XFS_I(inode);
 	struct xfs_mount	*mp = ip->i_mount;
-	ssize_t			count = 1 << inode->i_blkbits;
+	ssize_t			count = i_blocksize(inode);
 	xfs_fileoff_t		offset_fsb, end_fsb;
 	int			error = 0;
 	int			bmapi_flags = XFS_BMAPI_ENTIRE;
@@ -486,6 +481,12 @@ xfs_submit_ioend(
 	struct xfs_ioend	*ioend,
 	int			status)
 {
+	/* Convert CoW extents to regular */
+	if (!status && ioend->io_type == XFS_IO_COW) {
+		status = xfs_reflink_convert_cow(XFS_I(ioend->io_inode),
+				ioend->io_offset, ioend->io_size);
+	}
+
 	/* Reserve log space if we might write beyond the on-disk inode size. */
 	if (!status &&
 	    ioend->io_type != XFS_IO_UNWRITTEN &&
@@ -758,7 +759,7 @@ xfs_aops_discard_page(
 			break;
 		}
 next_buffer:
-		offset += 1 << inode->i_blkbits;
+		offset += i_blocksize(inode);
 
 	} while ((bh = bh->b_this_page) != head);
 
@@ -846,7 +847,7 @@ xfs_writepage_map(
 	LIST_HEAD(submit_list);
 	struct xfs_ioend	*ioend, *next;
 	struct buffer_head	*bh, *head;
-	ssize_t			len = 1 << inode->i_blkbits;
+	ssize_t			len = i_blocksize(inode);
 	int			error = 0;
 	int			count = 0;
 	int			uptodate = 1;
@@ -1158,19 +1159,22 @@ xfs_vm_releasepage(
 	 * block_invalidatepage() can send pages that are still marked dirty
 	 * but otherwise have invalidated buffers.
 	 *
-	 * We've historically freed buffers on the latter. Instead, quietly
-	 * filter out all dirty pages to avoid spurious buffer state warnings.
-	 * This can likely be removed once shrink_active_list() is fixed.
+	 * We want to release the latter to avoid unnecessary buildup of the
+	 * LRU, skip the former and warn if we've left any lingering
+	 * delalloc/unwritten buffers on clean pages. Skip pages with delalloc
+	 * or unwritten buffers and warn if the page is not dirty. Otherwise
+	 * try to release the buffers.
 	 */
-	if (PageDirty(page))
-		return 0;
-
 	xfs_count_page_state(page, &delalloc, &unwritten);
 
-	if (WARN_ON_ONCE(delalloc))
+	if (delalloc) {
+		WARN_ON_ONCE(!PageDirty(page));
 		return 0;
-	if (WARN_ON_ONCE(unwritten))
+	}
+	if (unwritten) {
+		WARN_ON_ONCE(!PageDirty(page));
 		return 0;
+	}
 
 	return try_to_free_buffers(page);
 }
@@ -1246,50 +1250,12 @@ xfs_map_trim_size(
 	    offset + mapping_size >= i_size_read(inode)) {
 		/* limit mapping to block that spans EOF */
 		mapping_size = roundup_64(i_size_read(inode) - offset,
-					  1 << inode->i_blkbits);
+					  i_blocksize(inode));
 	}
 	if (mapping_size > LONG_MAX)
 		mapping_size = LONG_MAX;
 
 	bh_result->b_size = mapping_size;
-}
-
-/* Bounce unaligned directio writes to the page cache. */
-static int
-xfs_bounce_unaligned_dio_write(
-	struct xfs_inode	*ip,
-	xfs_fileoff_t		offset_fsb,
-	struct xfs_bmbt_irec	*imap)
-{
-	struct xfs_bmbt_irec	irec;
-	xfs_fileoff_t		delta;
-	bool			shared;
-	bool			x;
-	int			error;
-
-	irec = *imap;
-	if (offset_fsb > irec.br_startoff) {
-		delta = offset_fsb - irec.br_startoff;
-		irec.br_blockcount -= delta;
-		irec.br_startblock += delta;
-		irec.br_startoff = offset_fsb;
-	}
-	error = xfs_reflink_trim_around_shared(ip, &irec, &shared, &x);
-	if (error)
-		return error;
-
-	/*
-	 * We're here because we're trying to do a directio write to a
-	 * region that isn't aligned to a filesystem block.  If any part
-	 * of the extent is shared, fall back to buffered mode to handle
-	 * the RMW.  This is done by returning -EREMCHG ("remote addr
-	 * changed"), which is caught further up the call stack.
-	 */
-	if (shared) {
-		trace_xfs_reflink_bounce_dio_write(ip, imap);
-		return -EREMCHG;
-	}
-	return 0;
 }
 
 STATIC int
@@ -1320,7 +1286,7 @@ __xfs_get_blocks(
 		return -EIO;
 
 	offset = (xfs_off_t)iblock << inode->i_blkbits;
-	ASSERT(bh_result->b_size >= (1 << inode->i_blkbits));
+	ASSERT(bh_result->b_size >= i_blocksize(inode));
 	size = bh_result->b_size;
 
 	if (!create && offset >= i_size_read(inode))
@@ -1360,6 +1326,26 @@ __xfs_get_blocks(
 	ASSERT(!need_alloc);
 	if (error)
 		goto out_unlock;
+
+	/*
+	 * The only time we can ever safely find delalloc blocks on direct I/O
+	 * is a dio write to post-eof speculative preallocation. All other
+	 * scenarios are indicative of a problem or misuse (such as mixing
+	 * direct and mapped I/O).
+	 *
+	 * The file may be unmapped by the time we get here so we cannot
+	 * reliably fail the I/O based on mapping. Instead, fail the I/O if this
+	 * is a read or a write within eof. Otherwise, carry on but warn as a
+	 * precuation if the file happens to be mapped.
+	 */
+	if (direct && imap.br_startblock == DELAYSTARTBLOCK) {
+		if (!create || offset < i_size_read(VFS_I(ip))) {
+			WARN_ON_ONCE(1);
+			error = -EIO;
+			goto out_unlock;
+		}
+		WARN_ON_ONCE(mapping_mapped(VFS_I(ip)->i_mapping));
+	}
 
 	/* for DAX, we convert unwritten extents directly */
 	if (create &&
@@ -1409,13 +1395,6 @@ __xfs_get_blocks(
 	if (imap.br_startblock != HOLESTARTBLOCK &&
 	    imap.br_startblock != DELAYSTARTBLOCK &&
 	    (create || !ISUNWRITTEN(&imap))) {
-		if (create && direct && !is_cow) {
-			error = xfs_bounce_unaligned_dio_write(ip, offset_fsb,
-					&imap);
-			if (error)
-				return error;
-		}
-
 		xfs_map_buffer(inode, bh_result, &imap, offset);
 		if (ISUNWRITTEN(&imap))
 			set_buffer_unwritten(bh_result);
@@ -1449,8 +1428,6 @@ __xfs_get_blocks(
 	     (offset >= i_size_read(inode)) ||
 	     (new || ISUNWRITTEN(&imap))))
 		set_buffer_new(bh_result);
-
-	BUG_ON(direct && imap.br_startblock == DELAYSTARTBLOCK);
 
 	return 0;
 
@@ -1657,7 +1634,7 @@ xfs_vm_set_page_dirty(
 			if (offset < end_offset)
 				set_buffer_dirty(bh);
 			bh = bh->b_this_page;
-			offset += 1 << inode->i_blkbits;
+			offset += i_blocksize(inode);
 		} while (bh != head);
 	}
 	/*

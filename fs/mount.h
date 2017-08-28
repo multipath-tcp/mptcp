@@ -58,6 +58,7 @@ struct mount {
 	struct mnt_namespace *mnt_ns;	/* containing namespace */
 	struct mountpoint *mnt_mp;	/* where is it mounted */
 	struct hlist_node mnt_mp_list;	/* list mounts with the same mountpoint */
+	struct list_head mnt_umounting; /* list entry for umount propagation */
 #ifdef CONFIG_FSNOTIFY
 	struct hlist_head mnt_fsnotify_marks;
 	__u32 mnt_fsnotify_mask;
@@ -89,7 +90,6 @@ static inline int is_mounted(struct vfsmount *mnt)
 }
 
 extern struct mount *__lookup_mnt(struct vfsmount *, struct dentry *);
-extern struct mount *__lookup_mnt_last(struct vfsmount *, struct dentry *);
 
 extern int __legitimize_mnt(struct vfsmount *, unsigned);
 extern bool legitimize_mnt(struct vfsmount *, unsigned);

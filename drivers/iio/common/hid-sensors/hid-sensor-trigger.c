@@ -127,6 +127,20 @@ static void hid_sensor_set_power_work(struct work_struct *work)
 	struct hid_sensor_common *attrb = container_of(work,
 						       struct hid_sensor_common,
 						       work);
+
+	if (attrb->poll_interval >= 0)
+		sensor_hub_set_feature(attrb->hsdev, attrb->poll.report_id,
+				       attrb->poll.index,
+				       sizeof(attrb->poll_interval),
+				       &attrb->poll_interval);
+
+	if (attrb->raw_hystersis >= 0)
+		sensor_hub_set_feature(attrb->hsdev,
+				       attrb->sensitivity.report_id,
+				       attrb->sensitivity.index,
+				       sizeof(attrb->raw_hystersis),
+				       &attrb->raw_hystersis);
+
 	_hid_sensor_power_state(attrb, true);
 }
 

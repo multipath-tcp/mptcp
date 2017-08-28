@@ -427,14 +427,16 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
 		}
 
 		if (is_tcf_vlan(a)) {
-			if (tcf_vlan_action(a) == VLAN_F_POP) {
+			if (tcf_vlan_action(a) == TCA_VLAN_ACT_POP) {
 				attr->action |= MLX5_FLOW_CONTEXT_ACTION_VLAN_POP;
-			} else if (tcf_vlan_action(a) == VLAN_F_PUSH) {
+			} else if (tcf_vlan_action(a) == TCA_VLAN_ACT_PUSH) {
 				if (tcf_vlan_push_proto(a) != htons(ETH_P_8021Q))
 					return -EOPNOTSUPP;
 
 				attr->action |= MLX5_FLOW_CONTEXT_ACTION_VLAN_PUSH;
 				attr->vlan = tcf_vlan_push_vid(a);
+			} else { /* action is TCA_VLAN_ACT_MODIFY */
+				return -EOPNOTSUPP;
 			}
 			continue;
 		}
@@ -567,9 +569,13 @@ int mlx5e_stats_flower(struct mlx5e_priv *priv,
 
 	mlx5_fc_query_cached(counter, &bytes, &packets, &lastuse);
 
+	preempt_disable();
+
 	tcf_exts_to_list(f->exts, &actions);
 	list_for_each_entry(a, &actions, list)
 		tcf_action_stats_update(a, bytes, packets, lastuse);
+
+	preempt_enable();
 
 	return 0;
 }

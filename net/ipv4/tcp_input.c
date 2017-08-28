@@ -1177,13 +1177,14 @@ static int tcp_match_skb_to_sack(struct sock *sk, struct sk_buff *skb,
 		 */
 		if (pkt_len > mss) {
 			unsigned int new_len = (pkt_len / mss) * mss;
-			if (!in_sack && new_len < pkt_len) {
+			if (!in_sack && new_len < pkt_len)
 				new_len += mss;
-				if (new_len >= skb->len)
-					return 0;
-			}
 			pkt_len = new_len;
 		}
+
+		if (pkt_len >= skb->len && !in_sack)
+			return 0;
+
 		err = tcp_fragment(sk, skb, pkt_len, mss, GFP_ATOMIC);
 		if (err < 0)
 			return err;
@@ -2563,8 +2564,8 @@ static inline void tcp_end_cwnd_reduction(struct sock *sk)
 		return;
 
 	/* Reset cwnd to ssthresh in CWR or Recovery (unless it's undone) */
-	if (inet_csk(sk)->icsk_ca_state == TCP_CA_CWR ||
-	    (tp->undo_marker && tp->snd_ssthresh < TCP_INFINITE_SSTHRESH)) {
+	if (tp->snd_ssthresh < TCP_INFINITE_SSTHRESH &&
+	    (inet_csk(sk)->icsk_ca_state == TCP_CA_CWR || tp->undo_marker)) {
 		tp->snd_cwnd = tp->snd_ssthresh;
 		tp->snd_cwnd_stamp = tcp_time_stamp;
 	}
@@ -3238,7 +3239,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			int delta;
 
 			/* Non-retransmitted hole got filled? That's reordering */
-			if (reord < prior_fackets)
+			if (reord < prior_fackets && reord <= tp->fackets_out)
 				tcp_update_reordering(sk, tp->fackets_out - reord, 0);
 
 			delta = tcp_is_fack(tp) ? pkts_acked :
@@ -5666,6 +5667,7 @@ void tcp_finish_connect(struct sock *sk, struct sk_buff *skb)
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
 	tcp_set_state(sk, TCP_ESTABLISHED);
+	icsk->icsk_ack.lrcvtime = tcp_time_stamp;
 
 	if (skb) {
 		icsk->icsk_af_ops->sk_rx_dst_set(sk, skb);
@@ -5924,7 +5926,6 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 			 * to stand against the temptation 8)     --ANK
 			 */
 			inet_csk_schedule_ack(sk);
-			icsk->icsk_ack.lrcvtime = tcp_time_stamp;
 			tcp_enter_quickack_mode(sk);
 			inet_csk_reset_xmit_timer(sk, ICSK_TIME_DACK,
 						  TCP_DELACK_MAX, TCP_RTO_MAX);
@@ -6058,9 +6059,15 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
 		if (th->syn) {
 			if (th->fin)
 				goto discard;
-			if (icsk->icsk_af_ops->conn_request(sk, skb) < 0)
-				return 1;
+			/* It is possible that we process SYN packets from backlog,
+			 * so we need to make sure to disable BH right there.
+			 */
+			local_bh_disable();
+			acceptable = icsk->icsk_af_ops->conn_request(sk, skb) >= 0;
+			local_bh_enable();
 
+			if (!acceptable)
+				return 1;
 			consume_skb(skb);
 			return 0;
 		}

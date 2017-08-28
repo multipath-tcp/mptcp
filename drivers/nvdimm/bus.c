@@ -218,7 +218,10 @@ long nvdimm_clear_poison(struct device *dev, phys_addr_t phys,
 	if (cmd_rc < 0)
 		return cmd_rc;
 
-	nvdimm_clear_from_poison_list(nvdimm_bus, phys, len);
+	if (clear_err.cleared > 0)
+		nvdimm_clear_from_poison_list(nvdimm_bus, phys,
+					      clear_err.cleared);
+
 	return clear_err.cleared;
 }
 EXPORT_SYMBOL_GPL(nvdimm_clear_poison);
@@ -934,8 +937,14 @@ static int __nd_ioctl(struct nvdimm_bus *nvdimm_bus, struct nvdimm *nvdimm,
 	rc = nd_desc->ndctl(nd_desc, nvdimm, cmd, buf, buf_len, NULL);
 	if (rc < 0)
 		goto out_unlock;
+	nvdimm_bus_unlock(&nvdimm_bus->dev);
+
 	if (copy_to_user(p, buf, buf_len))
 		rc = -EFAULT;
+
+	vfree(buf);
+	return rc;
+
  out_unlock:
 	nvdimm_bus_unlock(&nvdimm_bus->dev);
  out:

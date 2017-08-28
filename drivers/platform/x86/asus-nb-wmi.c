@@ -116,6 +116,10 @@ static struct quirk_entry quirk_asus_ux303ub = {
 	.wmi_backlight_native = true,
 };
 
+static struct quirk_entry quirk_asus_x550lb = {
+	.xusb2pr = 0x01D9,
+};
+
 static int dmi_matched(const struct dmi_system_id *dmi)
 {
 	quirks = dmi->driver_data;
@@ -170,6 +174,15 @@ static const struct dmi_system_id asus_quirks[] = {
 		.matches = {
 			DMI_MATCH(DMI_SYS_VENDOR, "ASUSTeK COMPUTER INC."),
 			DMI_MATCH(DMI_PRODUCT_NAME, "X401A1"),
+		},
+		.driver_data = &quirk_asus_wapf4,
+	},
+	{
+		.callback = dmi_matched,
+		.ident = "ASUSTeK COMPUTER INC. X45U",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "ASUSTeK COMPUTER INC."),
+			DMI_MATCH(DMI_PRODUCT_NAME, "X45U"),
 		},
 		.driver_data = &quirk_asus_wapf4,
 	},
@@ -397,6 +410,15 @@ static const struct dmi_system_id asus_quirks[] = {
 			DMI_MATCH(DMI_PRODUCT_NAME, "UX303UB"),
 		},
 		.driver_data = &quirk_asus_ux303ub,
+	},
+	{
+		.callback = dmi_matched,
+		.ident = "ASUSTeK COMPUTER INC. X550LB",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "ASUSTeK COMPUTER INC."),
+			DMI_MATCH(DMI_PRODUCT_NAME, "X550LB"),
+		},
+		.driver_data = &quirk_asus_x550lb,
 	},
 	{},
 };

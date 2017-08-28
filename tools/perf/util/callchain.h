@@ -5,17 +5,14 @@
 #include <linux/list.h>
 #include <linux/rbtree.h>
 #include "event.h"
+#include "map.h"
 #include "symbol.h"
 
 #define HELP_PAD "\t\t\t\t"
 
 #define CALLCHAIN_HELP "setup and enables call-graph (stack chain/backtrace):\n\n"
 
-#ifdef HAVE_DWARF_UNWIND_SUPPORT
 # define RECORD_MODE_HELP  HELP_PAD "record_mode:\tcall graph recording mode (fp|dwarf|lbr)\n"
-#else
-# define RECORD_MODE_HELP  HELP_PAD "record_mode:\tcall graph recording mode (fp|lbr)\n"
-#endif
 
 #define RECORD_SIZE_HELP						\
 	HELP_PAD "record_size:\tif record_mode is 'dwarf', max size of stack recording (<bytes>)\n" \
@@ -178,8 +175,13 @@ int callchain_merge(struct callchain_cursor *cursor,
  */
 static inline void callchain_cursor_reset(struct callchain_cursor *cursor)
 {
+	struct callchain_cursor_node *node;
+
 	cursor->nr = 0;
 	cursor->last = &cursor->first;
+
+	for (node = cursor->first; node != NULL; node = node->next)
+		map__zput(node->map);
 }
 
 int callchain_cursor_append(struct callchain_cursor *cursor, u64 ip,

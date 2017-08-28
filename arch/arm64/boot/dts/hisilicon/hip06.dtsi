@@ -322,7 +322,7 @@
 			compatible = "generic-ohci";
 			reg = <0x0 0xa7030000 0x0 0x10000>;
 			interrupt-parent = <&mbigen_usb>;
-			interrupts = <64 4>;
+			interrupts = <640 4>;
 			dma-coherent;
 			status = "disabled";
 		};
@@ -331,7 +331,7 @@
 			compatible = "generic-ehci";
 			reg = <0x0 0xa7020000 0x0 0x10000>;
 			interrupt-parent = <&mbigen_usb>;
-			interrupts = <65 4>;
+			interrupts = <641 4>;
 			dma-coherent;
 			status = "disabled";
 		};
@@ -590,7 +590,7 @@
 			reg = <0 0xa2000000 0 0x10000>;
 			sas-addr = [50 01 88 20 16 00 00 00];
 			hisilicon,sas-syscon = <&pcie_subctl>;
-			am-max-trans;
+			hip06-sas-v2-quirk-amt;
 			ctrl-reset-reg = <0xa18>;
 			ctrl-reset-sts-reg = <0x5a0c>;
 			ctrl-clock-ena-reg = <0x318>;

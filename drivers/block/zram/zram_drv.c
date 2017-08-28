@@ -25,6 +25,7 @@
 #include <linux/genhd.h>
 #include <linux/highmem.h>
 #include <linux/slab.h>
+#include <linux/backing-dev.h>
 #include <linux/string.h>
 #include <linux/vmalloc.h>
 #include <linux/err.h>
@@ -109,6 +110,14 @@ static void zram_set_obj_size(struct zram_meta *meta,
 static inline bool is_partial_io(struct bio_vec *bvec)
 {
 	return bvec->bv_len != PAGE_SIZE;
+}
+
+static void zram_revalidate_disk(struct zram *zram)
+{
+	revalidate_disk(zram->disk);
+	/* revalidate_disk reset the BDI_CAP_STABLE_WRITES so set again */
+	zram->disk->queue->backing_dev_info.capabilities |=
+		BDI_CAP_STABLE_WRITES;
 }
 
 /*
@@ -573,13 +582,13 @@ static int zram_decompress_page(struct zram *zram, char *mem, u32 index)
 
 	if (!handle || zram_test_flag(meta, index, ZRAM_ZERO)) {
 		bit_spin_unlock(ZRAM_ACCESS, &meta->table[index].value);
-		clear_page(mem);
+		memset(mem, 0, PAGE_SIZE);
 		return 0;
 	}
 
 	cmem = zs_map_object(meta->mem_pool, handle, ZS_MM_RO);
 	if (size == PAGE_SIZE) {
-		copy_page(mem, cmem);
+		memcpy(mem, cmem, PAGE_SIZE);
 	} else {
 		struct zcomp_strm *zstrm = zcomp_stream_get(zram->comp);
 
@@ -771,7 +780,7 @@ compress_again:
 
 	if ((clen == PAGE_SIZE) && !is_partial_io(bvec)) {
 		src = kmap_atomic(page);
-		copy_page(cmem, src);
+		memcpy(cmem, src, PAGE_SIZE);
 		kunmap_atomic(src);
 	} else {
 		memcpy(cmem, src, clen);
@@ -1094,14 +1103,8 @@ static ssize_t disksize_store(struct device *dev,
 	zram->comp = comp;
 	zram->disksize = disksize;
 	set_capacity(zram->disk, zram->disksize >> SECTOR_SHIFT);
+	zram_revalidate_disk(zram);
 	up_write(&zram->init_lock);
-
-	/*
-	 * Revalidate disk out of the init_lock to avoid lockdep splat.
-	 * It's okay because disk's capacity is protected by init_lock
-	 * so that revalidate_disk always sees up-to-date capacity.
-	 */
-	revalidate_disk(zram->disk);
 
 	return len;
 
@@ -1148,7 +1151,7 @@ static ssize_t reset_store(struct device *dev,
 	/* Make sure all the pending I/O are finished */
 	fsync_bdev(bdev);
 	zram_reset_device(zram);
-	revalidate_disk(zram->disk);
+	zram_revalidate_disk(zram);
 	bdput(bdev);
 
 	mutex_lock(&bdev->bd_mutex);

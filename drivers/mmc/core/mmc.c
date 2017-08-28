@@ -1258,7 +1258,7 @@ out_err:
 static int mmc_select_hs400es(struct mmc_card *card)
 {
 	struct mmc_host *host = card->host;
-	int err = 0;
+	int err = -EINVAL;
 	u8 val;
 
 	if (!(host->caps & MMC_CAP_8_BIT_DATA)) {
@@ -1690,10 +1690,10 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 		err = mmc_select_hs400(card);
 		if (err)
 			goto free_card;
-	} else if (mmc_card_hs(card)) {
+	} else if (!mmc_card_hs400es(card)) {
 		/* Select the desired bus width optionally */
 		err = mmc_select_bus_width(card);
-		if (err > 0) {
+		if (err > 0 && mmc_card_hs(card)) {
 			err = mmc_select_hs_ddr(card);
 			if (err)
 				goto free_card;

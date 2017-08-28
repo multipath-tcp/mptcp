@@ -408,7 +408,7 @@ bool mei_cldev_enabled(struct mei_cl_device *cldev)
 EXPORT_SYMBOL_GPL(mei_cldev_enabled);
 
 /**
- * mei_cldev_enable_device - enable me client device
+ * mei_cldev_enable - enable me client device
  *     create connection with me client
  *
  * @cldev: me client device
@@ -678,8 +678,10 @@ static ssize_t modalias_show(struct device *dev, struct device_attribute *a,
 {
 	struct mei_cl_device *cldev = to_mei_cl_device(dev);
 	const uuid_le *uuid = mei_me_cl_uuid(cldev->me_cl);
+	u8 version = mei_me_cl_ver(cldev->me_cl);
 
-	return scnprintf(buf, PAGE_SIZE, "mei:%s:%pUl:", cldev->name, uuid);
+	return scnprintf(buf, PAGE_SIZE, "mei:%s:%pUl:%02X:",
+			 cldev->name, uuid, version);
 }
 static DEVICE_ATTR_RO(modalias);
 

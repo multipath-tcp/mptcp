@@ -217,7 +217,8 @@ static inline bool xfs_is_reflink_inode(struct xfs_inode *ip)
 #define XFS_IRECLAIM		(1 << 0) /* started reclaiming this inode */
 #define XFS_ISTALE		(1 << 1) /* inode has been staled */
 #define XFS_IRECLAIMABLE	(1 << 2) /* inode can be reclaimed */
-#define XFS_INEW		(1 << 3) /* inode has just been allocated */
+#define __XFS_INEW_BIT		3	 /* inode has just been allocated */
+#define XFS_INEW		(1 << __XFS_INEW_BIT)
 #define XFS_ITRUNCATED		(1 << 5) /* truncated down so flush-on-close */
 #define XFS_IDIRTY_RELEASE	(1 << 6) /* dirty release already seen */
 #define __XFS_IFLOCK_BIT	7	 /* inode is being flushed right now */
@@ -246,6 +247,11 @@ static inline bool xfs_is_reflink_inode(struct xfs_inode *ip)
  * Synchronize processes attempting to flush the in-core inode back to disk.
  */
 
+static inline int xfs_isiflocked(struct xfs_inode *ip)
+{
+	return xfs_iflags_test(ip, XFS_IFLOCK);
+}
+
 extern void __xfs_iflock(struct xfs_inode *ip);
 
 static inline int xfs_iflock_nowait(struct xfs_inode *ip)
@@ -261,14 +267,10 @@ static inline void xfs_iflock(struct xfs_inode *ip)
 
 static inline void xfs_ifunlock(struct xfs_inode *ip)
 {
+	ASSERT(xfs_isiflocked(ip));
 	xfs_iflags_clear(ip, XFS_IFLOCK);
 	smp_mb();
 	wake_up_bit(&ip->i_flags, __XFS_IFLOCK_BIT);
-}
-
-static inline int xfs_isiflocked(struct xfs_inode *ip)
-{
-	return xfs_iflags_test(ip, XFS_IFLOCK);
 }
 
 /*
@@ -466,6 +468,7 @@ static inline void xfs_finish_inode_setup(struct xfs_inode *ip)
 	xfs_iflags_clear(ip, XFS_INEW);
 	barrier();
 	unlock_new_inode(VFS_I(ip));
+	wake_up_bit(&ip->i_flags, __XFS_INEW_BIT);
 }
 
 static inline void xfs_setup_existing_inode(struct xfs_inode *ip)

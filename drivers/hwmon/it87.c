@@ -1300,25 +1300,35 @@ static ssize_t set_pwm_enable(struct device *dev, struct device_attribute *attr,
 			it87_write_value(data, IT87_REG_FAN_MAIN_CTRL,
 					 data->fan_main_ctrl);
 		} else {
+			u8 ctrl;
+
 			/* No on/off mode, set maximum pwm value */
 			data->pwm_duty[nr] = pwm_to_reg(data, 0xff);
 			it87_write_value(data, IT87_REG_PWM_DUTY[nr],
 					 data->pwm_duty[nr]);
 			/* and set manual mode */
-			data->pwm_ctrl[nr] = has_newer_autopwm(data) ?
-					     data->pwm_temp_map[nr] :
-					     data->pwm_duty[nr];
-			it87_write_value(data, IT87_REG_PWM[nr],
-					 data->pwm_ctrl[nr]);
+			if (has_newer_autopwm(data)) {
+				ctrl = (data->pwm_ctrl[nr] & 0x7c) |
+					data->pwm_temp_map[nr];
+			} else {
+				ctrl = data->pwm_duty[nr];
+			}
+			data->pwm_ctrl[nr] = ctrl;
+			it87_write_value(data, IT87_REG_PWM[nr], ctrl);
 		}
 	} else {
-		if (val == 1)				/* Manual mode */
-			data->pwm_ctrl[nr] = has_newer_autopwm(data) ?
-					     data->pwm_temp_map[nr] :
-					     data->pwm_duty[nr];
-		else					/* Automatic mode */
-			data->pwm_ctrl[nr] = 0x80 | data->pwm_temp_map[nr];
-		it87_write_value(data, IT87_REG_PWM[nr], data->pwm_ctrl[nr]);
+		u8 ctrl;
+
+		if (has_newer_autopwm(data)) {
+			ctrl = (data->pwm_ctrl[nr] & 0x7c) |
+				data->pwm_temp_map[nr];
+			if (val != 1)
+				ctrl |= 0x80;
+		} else {
+			ctrl = (val == 1 ? data->pwm_duty[nr] : 0x80);
+		}
+		data->pwm_ctrl[nr] = ctrl;
+		it87_write_value(data, IT87_REG_PWM[nr], ctrl);
 
 		if (data->type != it8603 && nr < 3) {
 			/* set SmartGuardian mode */
@@ -1344,6 +1354,7 @@ static ssize_t set_pwm(struct device *dev, struct device_attribute *attr,
 		return -EINVAL;
 
 	mutex_lock(&data->update_lock);
+	it87_update_pwm_ctrl(data, nr);
 	if (has_newer_autopwm(data)) {
 		/*
 		 * If we are in automatic mode, the PWM duty cycle register
@@ -1456,13 +1467,15 @@ static ssize_t set_pwm_temp_map(struct device *dev,
 	}
 
 	mutex_lock(&data->update_lock);
+	it87_update_pwm_ctrl(data, nr);
 	data->pwm_temp_map[nr] = reg;
 	/*
 	 * If we are in automatic mode, write the temp mapping immediately;
 	 * otherwise, just store it for later use.
 	 */
 	if (data->pwm_ctrl[nr] & 0x80) {
-		data->pwm_ctrl[nr] = 0x80 | data->pwm_temp_map[nr];
+		data->pwm_ctrl[nr] = (data->pwm_ctrl[nr] & 0xfc) |
+						data->pwm_temp_map[nr];
 		it87_write_value(data, IT87_REG_PWM[nr], data->pwm_ctrl[nr]);
 	}
 	mutex_unlock(&data->update_lock);
@@ -2587,7 +2600,7 @@ static int __init it87_find(int sioaddr, unsigned short *address,
 
 		/* Check for pwm4 */
 		reg = superio_inb(sioaddr, IT87_SIO_GPIO4_REG);
-		if (!(reg & BIT(2)))
+		if (reg & BIT(2))
 			sio_data->skip_pwm |= BIT(3);
 
 		/* Check for pwm2, fan2 */
@@ -3102,7 +3115,7 @@ static int __init sm_it87_init(void)
 {
 	int sioaddr[2] = { REG_2E, REG_4E };
 	struct it87_sio_data sio_data;
-	unsigned short isa_address;
+	unsigned short isa_address[2];
 	bool found = false;
 	int i, err;
 
@@ -3112,15 +3125,29 @@ static int __init sm_it87_init(void)
 
 	for (i = 0; i < ARRAY_SIZE(sioaddr); i++) {
 		memset(&sio_data, 0, sizeof(struct it87_sio_data));
-		isa_address = 0;
-		err = it87_find(sioaddr[i], &isa_address, &sio_data);
-		if (err || isa_address == 0)
+		isa_address[i] = 0;
+		err = it87_find(sioaddr[i], &isa_address[i], &sio_data);
+		if (err || isa_address[i] == 0)
 			continue;
+		/*
+		 * Don't register second chip if its ISA address matches
+		 * the first chip's ISA address.
+		 */
+		if (i && isa_address[i] == isa_address[0])
+			break;
 
-		err = it87_device_add(i, isa_address, &sio_data);
+		err = it87_device_add(i, isa_address[i], &sio_data);
 		if (err)
 			goto exit_dev_unregister;
+
 		found = true;
+
+		/*
+		 * IT8705F may respond on both SIO addresses.
+		 * Stop probing after finding one.
+		 */
+		if (sio_data.type == it87)
+			break;
 	}
 
 	if (!found) {

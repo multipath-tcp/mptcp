@@ -751,7 +751,9 @@ static void bcm2835_pll_divider_off(struct clk_hw *hw)
 	cprman_write(cprman, data->cm_reg,
 		     (cprman_read(cprman, data->cm_reg) &
 		      ~data->load_mask) | data->hold_mask);
-	cprman_write(cprman, data->a2w_reg, A2W_PLL_CHANNEL_DISABLE);
+	cprman_write(cprman, data->a2w_reg,
+		     cprman_read(cprman, data->a2w_reg) |
+		     A2W_PLL_CHANNEL_DISABLE);
 	spin_unlock(&cprman->regs_lock);
 }
 
@@ -1596,7 +1598,7 @@ static const struct bcm2835_clk_desc clk_desc_array[] = {
 		.a2w_reg = A2W_PLLH_AUX,
 		.load_mask = CM_PLLH_LOADAUX,
 		.hold_mask = 0,
-		.fixed_divider = 10),
+		.fixed_divider = 1),
 	[BCM2835_PLLH_PIX]	= REGISTER_PLL_DIV(
 		.name = "pllh_pix",
 		.source_pll = "pllh",

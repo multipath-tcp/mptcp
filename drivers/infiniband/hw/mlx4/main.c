@@ -697,9 +697,11 @@ static int eth_link_query_port(struct ib_device *ibdev, u8 port,
 	if (err)
 		goto out;
 
-	props->active_width	=  (((u8 *)mailbox->buf)[5] == 0x40) ?
-						IB_WIDTH_4X : IB_WIDTH_1X;
-	props->active_speed	= IB_SPEED_QDR;
+	props->active_width	=  (((u8 *)mailbox->buf)[5] == 0x40) ||
+				   (((u8 *)mailbox->buf)[5] == 0x20 /*56Gb*/) ?
+					   IB_WIDTH_4X : IB_WIDTH_1X;
+	props->active_speed	=  (((u8 *)mailbox->buf)[5] == 0x20 /*56Gb*/) ?
+					   IB_SPEED_FDR : IB_SPEED_QDR;
 	props->port_cap_flags	= IB_PORT_CM_SUP | IB_PORT_IP_BASED_GIDS;
 	props->gid_tbl_len	= mdev->dev->caps.gid_table_len[port];
 	props->max_msg_sz	= mdev->dev->caps.max_msg_sz;
@@ -1678,9 +1680,19 @@ static int __mlx4_ib_create_flow(struct ib_qp *qp, struct ib_flow_attr *flow_att
 		size += ret;
 	}
 
+	if (mlx4_is_master(mdev->dev) && flow_type == MLX4_FS_REGULAR &&
+	    flow_attr->num_of_specs == 1) {
+		struct _rule_hw *rule_header = (struct _rule_hw *)(ctrl + 1);
+		enum ib_flow_spec_type header_spec =
+			((union ib_flow_spec *)(flow_attr + 1))->type;
+
+		if (header_spec == IB_FLOW_SPEC_ETH)
+			mlx4_handle_eth_header_mcast_prio(ctrl, rule_header);
+	}
+
 	ret = mlx4_cmd_imm(mdev->dev, mailbox->dma, reg_id, size >> 2, 0,
 			   MLX4_QP_FLOW_STEERING_ATTACH, MLX4_CMD_TIME_CLASS_A,
-			   MLX4_CMD_WRAPPED);
+			   MLX4_CMD_NATIVE);
 	if (ret == -ENOMEM)
 		pr_err("mcg table is full. Fail to register network rule.\n");
 	else if (ret == -ENXIO)
@@ -1697,7 +1709,7 @@ static int __mlx4_ib_destroy_flow(struct mlx4_dev *dev, u64 reg_id)
 	int err;
 	err = mlx4_cmd(dev, reg_id, 0, 0,
 		       MLX4_QP_FLOW_STEERING_DETACH, MLX4_CMD_TIME_CLASS_A,
-		       MLX4_CMD_WRAPPED);
+		       MLX4_CMD_NATIVE);
 	if (err)
 		pr_err("Fail to detach network rule. registration id = 0x%llx\n",
 		       reg_id);
@@ -2820,14 +2832,19 @@ static void *mlx4_ib_add(struct mlx4_dev *dev)
 			goto err_steer_qp_release;
 		}
 
-		bitmap_zero(ibdev->ib_uc_qpns_bitmap, ibdev->steer_qpn_count);
-
-		err = mlx4_FLOW_STEERING_IB_UC_QP_RANGE(
-				dev, ibdev->steer_qpn_base,
-				ibdev->steer_qpn_base +
-				ibdev->steer_qpn_count - 1);
-		if (err)
-			goto err_steer_free_bitmap;
+		if (dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_DMFS_IPOIB) {
+			bitmap_zero(ibdev->ib_uc_qpns_bitmap,
+				    ibdev->steer_qpn_count);
+			err = mlx4_FLOW_STEERING_IB_UC_QP_RANGE(
+					dev, ibdev->steer_qpn_base,
+					ibdev->steer_qpn_base +
+					ibdev->steer_qpn_count - 1);
+			if (err)
+				goto err_steer_free_bitmap;
+		} else {
+			bitmap_fill(ibdev->ib_uc_qpns_bitmap,
+				    ibdev->steer_qpn_count);
+		}
 	}
 
 	for (j = 1; j <= ibdev->dev->caps.num_ports; j++)
@@ -2919,6 +2936,7 @@ err_counter:
 		mlx4_ib_delete_counters_table(ibdev, &ibdev->counters_table[i]);
 
 err_map:
+	mlx4_ib_free_eqs(dev, ibdev);
 	iounmap(ibdev->uar_map);
 
 err_uar:

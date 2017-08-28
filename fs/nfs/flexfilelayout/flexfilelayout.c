@@ -28,6 +28,9 @@
 
 static struct group_info	*ff_zero_group;
 
+static void ff_layout_read_record_layoutstats_done(struct rpc_task *task,
+		struct nfs_pgio_header *hdr);
+
 static struct pnfs_layout_hdr *
 ff_layout_alloc_layout_hdr(struct inode *inode, gfp_t gfp_flags)
 {
@@ -1070,9 +1073,6 @@ static int ff_layout_async_handle_error_v4(struct rpc_task *task,
 	struct nfs_client *mds_client = mds_server->nfs_client;
 	struct nfs4_slot_table *tbl = &clp->cl_session->fc_slot_table;
 
-	if (task->tk_status >= 0)
-		return 0;
-
 	switch (task->tk_status) {
 	/* MDS state errors */
 	case -NFS4ERR_DELEG_REVOKED:
@@ -1173,9 +1173,6 @@ static int ff_layout_async_handle_error_v3(struct rpc_task *task,
 {
 	struct nfs4_deviceid_node *devid = FF_LAYOUT_DEVID_NODE(lseg, idx);
 
-	if (task->tk_status >= 0)
-		return 0;
-
 	switch (task->tk_status) {
 	/* File access problems. Don't mark the device as unavailable */
 	case -EACCES:
@@ -1209,6 +1206,13 @@ static int ff_layout_async_handle_error(struct rpc_task *task,
 					int idx)
 {
 	int vers = clp->cl_nfs_mod->rpc_vers->number;
+
+	if (task->tk_status >= 0)
+		return 0;
+
+	/* Handle the case of an invalid layout segment */
+	if (!pnfs_is_valid_lseg(lseg))
+		return -NFS4ERR_RESET_TO_PNFS;
 
 	switch (vers) {
 	case 3:
@@ -1293,6 +1297,7 @@ static int ff_layout_read_done_cb(struct rpc_task *task,
 					hdr->pgio_mirror_idx + 1,
 					&hdr->pgio_mirror_idx))
 			goto out_eagain;
+		ff_layout_read_record_layoutstats_done(task, hdr);
 		pnfs_read_resend_pnfs(hdr);
 		return task->tk_status;
 	case -NFS4ERR_RESET_TO_MDS:

@@ -473,6 +473,7 @@ struct mm_struct {
 	 */
 	struct task_struct __rcu *owner;
 #endif
+	struct user_namespace *user_ns;
 
 	/* store ref to file /proc/<pid>/exe symlink points to */
 	struct file __rcu *exe_file;
@@ -506,6 +507,10 @@ struct mm_struct {
 	 * PROT_NONE or PROT_NUMA mapped page.
 	 */
 	bool tlb_flush_pending;
+#endif
+#ifdef CONFIG_ARCH_WANT_BATCHED_UNMAP_TLB_FLUSH
+	/* See flush_tlb_batched_pending() */
+	bool tlb_flush_batched;
 #endif
 	struct uprobes_state uprobes_state;
 #ifdef CONFIG_X86_INTEL_MPX

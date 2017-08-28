@@ -133,6 +133,8 @@ static int __init parse_tag_initrd(const bp_tag_t* tag)
 
 __tagtable(BP_TAG_INITRD, parse_tag_initrd);
 
+#endif /* CONFIG_BLK_DEV_INITRD */
+
 #ifdef CONFIG_OF
 
 static int __init parse_tag_fdt(const bp_tag_t *tag)
@@ -144,8 +146,6 @@ static int __init parse_tag_fdt(const bp_tag_t *tag)
 __tagtable(BP_TAG_FDT, parse_tag_fdt);
 
 #endif /* CONFIG_OF */
-
-#endif /* CONFIG_BLK_DEV_INITRD */
 
 static int __init parse_tag_cmdline(const bp_tag_t* tag)
 {
@@ -540,7 +540,7 @@ subsys_initcall(topology_init);
 
 void cpu_reset(void)
 {
-#if XCHAL_HAVE_PTP_MMU
+#if XCHAL_HAVE_PTP_MMU && IS_ENABLED(CONFIG_MMU)
 	local_irq_disable();
 	/*
 	 * We have full MMU: all autoload ways, ways 7, 8 and 9 of DTLB must

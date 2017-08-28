@@ -330,7 +330,7 @@ static void nuke(struct dummy *dum, struct dummy_ep *ep)
 /* caller must hold lock */
 static void stop_activity(struct dummy *dum)
 {
-	struct dummy_ep	*ep;
+	int i;
 
 	/* prevent any more requests */
 	dum->address = 0;
@@ -338,8 +338,8 @@ static void stop_activity(struct dummy *dum)
 	/* The timer is left running so that outstanding URBs can fail */
 
 	/* nuke any pending requests first, so driver i/o is quiesced */
-	list_for_each_entry(ep, &dum->gadget.ep_list, ep.ep_list)
-		nuke(dum, ep);
+	for (i = 0; i < DUMMY_ENDPOINTS; ++i)
+		nuke(dum, &dum->ep[i]);
 
 	/* driver now does any non-usb quiescing necessary */
 }
@@ -442,23 +442,16 @@ static void set_link_state(struct dummy_hcd *dum_hcd)
 		/* Report reset and disconnect events to the driver */
 		if (dum->driver && (disconnect || reset)) {
 			stop_activity(dum);
-			spin_unlock(&dum->lock);
 			if (reset)
 				usb_gadget_udc_reset(&dum->gadget, dum->driver);
 			else
 				dum->driver->disconnect(&dum->gadget);
-			spin_lock(&dum->lock);
 		}
 	} else if (dum_hcd->active != dum_hcd->old_active) {
-		if (dum_hcd->old_active && dum->driver->suspend) {
-			spin_unlock(&dum->lock);
+		if (dum_hcd->old_active && dum->driver->suspend)
 			dum->driver->suspend(&dum->gadget);
-			spin_lock(&dum->lock);
-		} else if (!dum_hcd->old_active &&  dum->driver->resume) {
-			spin_unlock(&dum->lock);
+		else if (!dum_hcd->old_active &&  dum->driver->resume)
 			dum->driver->resume(&dum->gadget);
-			spin_lock(&dum->lock);
-		}
 	}
 
 	dum_hcd->old_status = dum_hcd->port_status;
@@ -983,7 +976,9 @@ static int dummy_udc_stop(struct usb_gadget *g)
 	struct dummy_hcd	*dum_hcd = gadget_to_dummy_hcd(g);
 	struct dummy		*dum = dum_hcd->dum;
 
+	spin_lock_irq(&dum->lock);
 	dum->driver = NULL;
+	spin_unlock_irq(&dum->lock);
 
 	return 0;
 }
@@ -1031,6 +1026,8 @@ static int dummy_udc_probe(struct platform_device *pdev)
 	int		rc;
 
 	dum = *((void **)dev_get_platdata(&pdev->dev));
+	/* Clear usb_gadget region for new registration to udc-core */
+	memzero_explicit(&dum->gadget, sizeof(struct usb_gadget));
 	dum->gadget.name = gadget_name;
 	dum->gadget.ops = &dummy_ops;
 	dum->gadget.max_speed = USB_SPEED_SUPER;
@@ -2007,7 +2004,7 @@ ss_hub_descriptor(struct usb_hub_descriptor *desc)
 			HUB_CHAR_COMMON_OCPM);
 	desc->bNbrPorts = 1;
 	desc->u.ss.bHubHdrDecLat = 0x04; /* Worst case: 0.4 micro sec*/
-	desc->u.ss.DeviceRemovable = 0xffff;
+	desc->u.ss.DeviceRemovable = 0;
 }
 
 static inline void hub_descriptor(struct usb_hub_descriptor *desc)
@@ -2019,8 +2016,8 @@ static inline void hub_descriptor(struct usb_hub_descriptor *desc)
 			HUB_CHAR_INDV_PORT_LPSM |
 			HUB_CHAR_COMMON_OCPM);
 	desc->bNbrPorts = 1;
-	desc->u.hs.DeviceRemovable[0] = 0xff;
-	desc->u.hs.DeviceRemovable[1] = 0xff;
+	desc->u.hs.DeviceRemovable[0] = 0;
+	desc->u.hs.DeviceRemovable[1] = 0xff;	/* PortPwrCtrlMask */
 }
 
 static int dummy_hub_control(

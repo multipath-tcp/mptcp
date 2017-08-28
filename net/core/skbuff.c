@@ -3076,22 +3076,32 @@ struct sk_buff *skb_segment(struct sk_buff *head_skb,
 	if (sg && csum && (mss != GSO_BY_FRAGS))  {
 		if (!(features & NETIF_F_GSO_PARTIAL)) {
 			struct sk_buff *iter;
+			unsigned int frag_len;
 
 			if (!list_skb ||
 			    !net_gso_ok(features, skb_shinfo(head_skb)->gso_type))
 				goto normal;
 
-			/* Split the buffer at the frag_list pointer.
-			 * This is based on the assumption that all
-			 * buffers in the chain excluding the last
-			 * containing the same amount of data.
+			/* If we get here then all the required
+			 * GSO features except frag_list are supported.
+			 * Try to split the SKB to multiple GSO SKBs
+			 * with no frag_list.
+			 * Currently we can do that only when the buffers don't
+			 * have a linear part and all the buffers except
+			 * the last are of the same length.
 			 */
+			frag_len = list_skb->len;
 			skb_walk_frags(head_skb, iter) {
+				if (frag_len != iter->len && iter->next)
+					goto normal;
 				if (skb_headlen(iter))
 					goto normal;
 
 				len -= iter->len;
 			}
+
+			if (len != frag_len)
+				goto normal;
 		}
 
 		/* GSO partial only requires that we trim off any excess that
@@ -3779,6 +3789,7 @@ static void __skb_complete_tx_timestamp(struct sk_buff *skb,
 	serr->ee.ee_errno = ENOMSG;
 	serr->ee.ee_origin = SO_EE_ORIGIN_TIMESTAMPING;
 	serr->ee.ee_info = tstype;
+	serr->header.h4.iif = skb->dev ? skb->dev->ifindex : 0;
 	if (sk->sk_tsflags & SOF_TIMESTAMPING_OPT_ID) {
 		serr->ee.ee_data = skb_shinfo(skb)->tskey;
 		if (sk->sk_protocol == IPPROTO_TCP &&
@@ -3814,13 +3825,14 @@ void skb_complete_tx_timestamp(struct sk_buff *skb,
 	if (!skb_may_tx_timestamp(sk, false))
 		return;
 
-	/* take a reference to prevent skb_orphan() from freeing the socket */
-	sock_hold(sk);
-
-	*skb_hwtstamps(skb) = *hwtstamps;
-	__skb_complete_tx_timestamp(skb, sk, SCM_TSTAMP_SND);
-
-	sock_put(sk);
+	/* Take a reference to prevent skb_orphan() from freeing the socket,
+	 * but only if the socket refcount is not zero.
+	 */
+	if (likely(atomic_inc_not_zero(&sk->sk_refcnt))) {
+		*skb_hwtstamps(skb) = *hwtstamps;
+		__skb_complete_tx_timestamp(skb, sk, SCM_TSTAMP_SND);
+		sock_put(sk);
+	}
 }
 EXPORT_SYMBOL_GPL(skb_complete_tx_timestamp);
 
@@ -3871,7 +3883,7 @@ void skb_complete_wifi_ack(struct sk_buff *skb, bool acked)
 {
 	struct sock *sk = skb->sk;
 	struct sock_exterr_skb *serr;
-	int err;
+	int err = 1;
 
 	skb->wifi_acked_valid = 1;
 	skb->wifi_acked = acked;
@@ -3881,14 +3893,15 @@ void skb_complete_wifi_ack(struct sk_buff *skb, bool acked)
 	serr->ee.ee_errno = ENOMSG;
 	serr->ee.ee_origin = SO_EE_ORIGIN_TXSTATUS;
 
-	/* take a reference to prevent skb_orphan() from freeing the socket */
-	sock_hold(sk);
-
-	err = sock_queue_err_skb(sk, skb);
+	/* Take a reference to prevent skb_orphan() from freeing the socket,
+	 * but only if the socket refcount is not zero.
+	 */
+	if (likely(atomic_inc_not_zero(&sk->sk_refcnt))) {
+		err = sock_queue_err_skb(sk, skb);
+		sock_put(sk);
+	}
 	if (err)
 		kfree_skb(skb);
-
-	sock_put(sk);
 }
 EXPORT_SYMBOL_GPL(skb_complete_wifi_ack);
 

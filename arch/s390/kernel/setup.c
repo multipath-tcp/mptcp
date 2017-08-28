@@ -445,7 +445,7 @@ static void __init setup_resources(void)
 	 * part of the System RAM resource.
 	 */
 	if (crashk_res.end) {
-		memblock_add(crashk_res.start, resource_size(&crashk_res));
+		memblock_add_node(crashk_res.start, resource_size(&crashk_res), 0);
 		memblock_reserve(crashk_res.start, resource_size(&crashk_res));
 		insert_resource(&iomem_resource, &crashk_res);
 	}
@@ -819,10 +819,10 @@ static void __init setup_randomness(void)
 {
 	struct sysinfo_3_2_2 *vmms;
 
-	vmms = (struct sysinfo_3_2_2 *) alloc_page(GFP_KERNEL);
-	if (vmms && stsi(vmms, 3, 2, 2) == 0 && vmms->count)
-		add_device_randomness(&vmms, vmms->count);
-	free_page((unsigned long) vmms);
+	vmms = (struct sysinfo_3_2_2 *) memblock_alloc(PAGE_SIZE, PAGE_SIZE);
+	if (stsi(vmms, 3, 2, 2) == 0 && vmms->count)
+		add_device_randomness(&vmms->vm, sizeof(vmms->vm[0]) * vmms->count);
+	memblock_free((unsigned long) vmms, PAGE_SIZE);
 }
 
 /*

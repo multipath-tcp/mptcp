@@ -80,9 +80,9 @@ static struct rhashtable_params ht_parms = {
 
 static struct rhashtable gl_hash_table;
 
-void gfs2_glock_free(struct gfs2_glock *gl)
+static void gfs2_glock_dealloc(struct rcu_head *rcu)
 {
-	struct gfs2_sbd *sdp = gl->gl_name.ln_sbd;
+	struct gfs2_glock *gl = container_of(rcu, struct gfs2_glock, gl_rcu);
 
 	if (gl->gl_ops->go_flags & GLOF_ASPACE) {
 		kmem_cache_free(gfs2_glock_aspace_cachep, gl);
@@ -90,6 +90,13 @@ void gfs2_glock_free(struct gfs2_glock *gl)
 		kfree(gl->gl_lksb.sb_lvbptr);
 		kmem_cache_free(gfs2_glock_cachep, gl);
 	}
+}
+
+void gfs2_glock_free(struct gfs2_glock *gl)
+{
+	struct gfs2_sbd *sdp = gl->gl_name.ln_sbd;
+
+	call_rcu(&gl->gl_rcu, gfs2_glock_dealloc);
 	if (atomic_dec_and_test(&sdp->sd_glock_disposal))
 		wake_up(&sdp->sd_glock_wait);
 }
@@ -658,9 +665,11 @@ int gfs2_glock_get(struct gfs2_sbd *sdp, u64 number,
 	struct kmem_cache *cachep;
 	int ret, tries = 0;
 
+	rcu_read_lock();
 	gl = rhashtable_lookup_fast(&gl_hash_table, &name, ht_parms);
 	if (gl && !lockref_get_not_dead(&gl->gl_lockref))
 		gl = NULL;
+	rcu_read_unlock();
 
 	*glp = gl;
 	if (gl)
@@ -728,15 +737,18 @@ again:
 
 	if (ret == -EEXIST) {
 		ret = 0;
+		rcu_read_lock();
 		tmp = rhashtable_lookup_fast(&gl_hash_table, &name, ht_parms);
 		if (tmp == NULL || !lockref_get_not_dead(&tmp->gl_lockref)) {
 			if (++tries < 100) {
+				rcu_read_unlock();
 				cond_resched();
 				goto again;
 			}
 			tmp = NULL;
 			ret = -ENOMEM;
 		}
+		rcu_read_unlock();
 	} else {
 		WARN_ON_ONCE(ret);
 	}
@@ -1420,26 +1432,32 @@ static struct shrinker glock_shrinker = {
  * @sdp: the filesystem
  * @bucket: the bucket
  *
+ * Note that the function can be called multiple times on the same
+ * object.  So the user must ensure that the function can cope with
+ * that.
  */
 
 static void glock_hash_walk(glock_examiner examiner, const struct gfs2_sbd *sdp)
 {
 	struct gfs2_glock *gl;
-	struct rhash_head *pos;
-	const struct bucket_table *tbl;
-	int i;
+	struct rhashtable_iter iter;
 
-	rcu_read_lock();
-	tbl = rht_dereference_rcu(gl_hash_table.tbl, &gl_hash_table);
-	for (i = 0; i < tbl->size; i++) {
-		rht_for_each_entry_rcu(gl, pos, tbl, i, gl_node) {
+	rhashtable_walk_enter(&gl_hash_table, &iter);
+
+	do {
+		gl = ERR_PTR(rhashtable_walk_start(&iter));
+		if (gl)
+			continue;
+
+		while ((gl = rhashtable_walk_next(&iter)) && !IS_ERR(gl))
 			if ((gl->gl_name.ln_sbd == sdp) &&
 			    lockref_get_not_dead(&gl->gl_lockref))
 				examiner(gl);
-		}
-	}
-	rcu_read_unlock();
-	cond_resched();
+
+		rhashtable_walk_stop(&iter);
+	} while (cond_resched(), gl == ERR_PTR(-EAGAIN));
+
+	rhashtable_walk_exit(&iter);
 }
 
 /**

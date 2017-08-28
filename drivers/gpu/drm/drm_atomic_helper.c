@@ -362,7 +362,7 @@ mode_fixup(struct drm_atomic_state *state)
 	struct drm_connector *connector;
 	struct drm_connector_state *conn_state;
 	int i;
-	bool ret;
+	int ret;
 
 	for_each_crtc_in_state(state, crtc, crtc_state, i) {
 		if (!crtc_state->mode_changed &&
@@ -1253,8 +1253,10 @@ int drm_atomic_helper_commit(struct drm_device *dev,
 
 	if (!nonblock) {
 		ret = drm_atomic_helper_wait_for_fences(dev, state, true);
-		if (ret)
+		if (ret) {
+			drm_atomic_helper_cleanup_planes(dev, state);
 			return ret;
+		}
 	}
 
 	/*
@@ -1380,6 +1382,15 @@ static int stall_checks(struct drm_crtc *crtc, bool nonblock)
 	return ret < 0 ? ret : 0;
 }
 
+void release_crtc_commit(struct completion *completion)
+{
+	struct drm_crtc_commit *commit = container_of(completion,
+						      typeof(*commit),
+						      flip_done);
+
+	drm_crtc_commit_put(commit);
+}
+
 /**
  * drm_atomic_helper_setup_commit - setup possibly nonblocking commit
  * @state: new modeset state to be committed
@@ -1472,6 +1483,8 @@ int drm_atomic_helper_setup_commit(struct drm_atomic_state *state,
 		}
 
 		crtc_state->event->base.completion = &commit->flip_done;
+		crtc_state->event->base.completion_release = release_crtc_commit;
+		drm_crtc_commit_get(commit);
 	}
 
 	return 0;
@@ -3113,6 +3126,8 @@ void __drm_atomic_helper_plane_duplicate_state(struct drm_plane *plane,
 
 	if (state->fb)
 		drm_framebuffer_reference(state->fb);
+
+	state->fence = NULL;
 }
 EXPORT_SYMBOL(__drm_atomic_helper_plane_duplicate_state);
 

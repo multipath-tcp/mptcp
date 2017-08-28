@@ -1021,7 +1021,7 @@ again:
 	next_tail = (tail + sizeof(*cmd)) % CMD_BUFFER_SIZE;
 	left      = (head - next_tail) % CMD_BUFFER_SIZE;
 
-	if (left <= 2) {
+	if (left <= 0x20) {
 		struct iommu_cmd sync_cmd;
 		int ret;
 
@@ -3857,11 +3857,9 @@ static void irte_ga_prepare(void *entry,
 			    u8 vector, u32 dest_apicid, int devid)
 {
 	struct irte_ga *irte = (struct irte_ga *) entry;
-	struct iommu_dev_data *dev_data = search_dev_data(devid);
 
 	irte->lo.val                      = 0;
 	irte->hi.val                      = 0;
-	irte->lo.fields_remap.guest_mode  = dev_data ? dev_data->use_vapic : 0;
 	irte->lo.fields_remap.int_type    = delivery_mode;
 	irte->lo.fields_remap.dm          = dest_mode;
 	irte->hi.fields.vector            = vector;
@@ -3917,10 +3915,10 @@ static void irte_ga_set_affinity(void *entry, u16 devid, u16 index,
 	struct irte_ga *irte = (struct irte_ga *) entry;
 	struct iommu_dev_data *dev_data = search_dev_data(devid);
 
-	if (!dev_data || !dev_data->use_vapic) {
+	if (!dev_data || !dev_data->use_vapic ||
+	    !irte->lo.fields_remap.guest_mode) {
 		irte->hi.fields.vector = vector;
 		irte->lo.fields_remap.destination = dest_apicid;
-		irte->lo.fields_remap.guest_mode = 0;
 		modify_irte_ga(devid, index, irte, NULL);
 	}
 }
@@ -4296,6 +4294,7 @@ static int amd_ir_set_vcpu_affinity(struct irq_data *data, void *vcpu_info)
 		/* Setting */
 		irte->hi.fields.ga_root_ptr = (pi_data->base >> 12);
 		irte->hi.fields.vector = vcpu_pi_info->vector;
+		irte->lo.fields_vapic.ga_log_intr = 1;
 		irte->lo.fields_vapic.guest_mode = 1;
 		irte->lo.fields_vapic.ga_tag = pi_data->ga_tag;
 

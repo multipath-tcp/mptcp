@@ -751,7 +751,6 @@ static void get_supported(u32 eth_proto_cap,
 	ptys2ethtool_supported_port(link_ksettings, eth_proto_cap);
 	ptys2ethtool_supported_link(supported, eth_proto_cap);
 	ethtool_link_ksettings_add_link_mode(link_ksettings, supported, Pause);
-	ethtool_link_ksettings_add_link_mode(link_ksettings, supported, Asym_Pause);
 }
 
 static void get_advertising(u32 eth_proto_cap, u8 tx_pause,
@@ -761,7 +760,7 @@ static void get_advertising(u32 eth_proto_cap, u8 tx_pause,
 	unsigned long *advertising = link_ksettings->link_modes.advertising;
 
 	ptys2ethtool_adver_link(advertising, eth_proto_cap);
-	if (tx_pause)
+	if (rx_pause)
 		ethtool_link_ksettings_add_link_mode(link_ksettings, advertising, Pause);
 	if (tx_pause ^ rx_pause)
 		ethtool_link_ksettings_add_link_mode(link_ksettings, advertising, Asym_Pause);
@@ -806,6 +805,8 @@ static int mlx5e_get_link_ksettings(struct net_device *netdev,
 	struct mlx5e_priv *priv    = netdev_priv(netdev);
 	struct mlx5_core_dev *mdev = priv->mdev;
 	u32 out[MLX5_ST_SZ_DW(ptys_reg)] = {0};
+	u32 rx_pause = 0;
+	u32 tx_pause = 0;
 	u32 eth_proto_cap;
 	u32 eth_proto_admin;
 	u32 eth_proto_lp;
@@ -828,11 +829,13 @@ static int mlx5e_get_link_ksettings(struct net_device *netdev,
 	an_disable_admin = MLX5_GET(ptys_reg, out, an_disable_admin);
 	an_status        = MLX5_GET(ptys_reg, out, an_status);
 
+	mlx5_query_port_pause(mdev, &rx_pause, &tx_pause);
+
 	ethtool_link_ksettings_zero_link_mode(link_ksettings, supported);
 	ethtool_link_ksettings_zero_link_mode(link_ksettings, advertising);
 
 	get_supported(eth_proto_cap, link_ksettings);
-	get_advertising(eth_proto_admin, 0, 0, link_ksettings);
+	get_advertising(eth_proto_admin, tx_pause, rx_pause, link_ksettings);
 	get_speed_duplex(netdev, eth_proto_oper, link_ksettings);
 
 	eth_proto_oper = eth_proto_oper ? eth_proto_oper : eth_proto_cap;
@@ -975,15 +978,18 @@ static int mlx5e_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key,
 
 static void mlx5e_modify_tirs_hash(struct mlx5e_priv *priv, void *in, int inlen)
 {
-	struct mlx5_core_dev *mdev = priv->mdev;
 	void *tirc = MLX5_ADDR_OF(modify_tir_in, in, ctx);
-	int i;
+	struct mlx5_core_dev *mdev = priv->mdev;
+	int ctxlen = MLX5_ST_SZ_BYTES(tirc);
+	int tt;
 
 	MLX5_SET(modify_tir_in, in, bitmask.hash, 1);
-	mlx5e_build_tir_ctx_hash(tirc, priv);
 
-	for (i = 0; i < MLX5E_NUM_INDIR_TIRS; i++)
-		mlx5_core_modify_tir(mdev, priv->indir_tir[i].tirn, in, inlen);
+	for (tt = 0; tt < MLX5E_NUM_INDIR_TIRS; tt++) {
+		memset(tirc, 0, ctxlen);
+		mlx5e_build_indir_tir_ctx_hash(priv, tirc, tt);
+		mlx5_core_modify_tir(mdev, priv->indir_tir[tt].tirn, in, inlen);
+	}
 }
 
 static int mlx5e_set_rxfh(struct net_device *dev, const u32 *indir,
@@ -991,6 +997,7 @@ static int mlx5e_set_rxfh(struct net_device *dev, const u32 *indir,
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
 	int inlen = MLX5_ST_SZ_BYTES(modify_tir_in);
+	bool hash_changed = false;
 	void *in;
 
 	if ((hfunc != ETH_RSS_HASH_NO_CHANGE) &&
@@ -1012,14 +1019,21 @@ static int mlx5e_set_rxfh(struct net_device *dev, const u32 *indir,
 		mlx5e_redirect_rqt(priv, rqtn, MLX5E_INDIR_RQT_SIZE, 0);
 	}
 
-	if (key)
+	if (hfunc != ETH_RSS_HASH_NO_CHANGE &&
+	    hfunc != priv->params.rss_hfunc) {
+		priv->params.rss_hfunc = hfunc;
+		hash_changed = true;
+	}
+
+	if (key) {
 		memcpy(priv->params.toeplitz_hash_key, key,
 		       sizeof(priv->params.toeplitz_hash_key));
+		hash_changed = hash_changed ||
+			       priv->params.rss_hfunc == ETH_RSS_HASH_TOP;
+	}
 
-	if (hfunc != ETH_RSS_HASH_NO_CHANGE)
-		priv->params.rss_hfunc = hfunc;
-
-	mlx5e_modify_tirs_hash(priv, in, inlen);
+	if (hash_changed)
+		mlx5e_modify_tirs_hash(priv, in, inlen);
 
 	mutex_unlock(&priv->state_lock);
 
@@ -1169,11 +1183,11 @@ static int mlx5e_get_ts_info(struct net_device *dev,
 				 SOF_TIMESTAMPING_RX_HARDWARE |
 				 SOF_TIMESTAMPING_RAW_HARDWARE;
 
-	info->tx_types = (BIT(1) << HWTSTAMP_TX_OFF) |
-			 (BIT(1) << HWTSTAMP_TX_ON);
+	info->tx_types = BIT(HWTSTAMP_TX_OFF) |
+			 BIT(HWTSTAMP_TX_ON);
 
-	info->rx_filters = (BIT(1) << HWTSTAMP_FILTER_NONE) |
-			   (BIT(1) << HWTSTAMP_FILTER_ALL);
+	info->rx_filters = BIT(HWTSTAMP_FILTER_NONE) |
+			   BIT(HWTSTAMP_FILTER_ALL);
 
 	return 0;
 }

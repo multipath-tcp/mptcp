@@ -241,6 +241,7 @@ struct smb_version_operations {
 	/* verify the message */
 	int (*check_message)(char *, unsigned int, struct TCP_Server_Info *);
 	bool (*is_oplock_break)(char *, struct TCP_Server_Info *);
+	int (*handle_cancelled_mid)(char *, struct TCP_Server_Info *);
 	void (*downgrade_oplock)(struct TCP_Server_Info *,
 					struct cifsInodeInfo *, bool);
 	/* process transaction2 response */
@@ -646,6 +647,8 @@ struct TCP_Server_Info {
 	unsigned int	max_read;
 	unsigned int	max_write;
 	__u8		preauth_hash[512];
+	struct delayed_work reconnect; /* reconnect workqueue job */
+	struct mutex reconnect_mutex; /* prevent simultaneous reconnects */
 #endif /* CONFIG_CIFS_SMB2 */
 	unsigned long echo_interval;
 };
@@ -849,6 +852,7 @@ cap_unix(struct cifs_ses *ses)
 struct cifs_tcon {
 	struct list_head tcon_list;
 	int tc_count;
+	struct list_head rlist; /* reconnect list */
 	struct list_head openFileList;
 	spinlock_t open_file_lock; /* protects list above */
 	struct cifs_ses *ses;	/* pointer to session associated with */
@@ -922,11 +926,11 @@ struct cifs_tcon {
 	bool broken_posix_open; /* e.g. Samba server versions < 3.3.2, 3.2.9 */
 	bool broken_sparse_sup; /* if server or share does not support sparse */
 	bool need_reconnect:1; /* connection reset, tid now invalid */
+	bool need_reopen_files:1; /* need to reopen tcon file handles */
 	bool use_resilient:1; /* use resilient instead of durable handles */
 	bool use_persistent:1; /* use persistent instead of durable handles */
 #ifdef CONFIG_CIFS_SMB2
 	bool print:1;		/* set if connection to printer share */
-	bool bad_network_name:1; /* set if ret status STATUS_BAD_NETWORK_NAME */
 	__le32 capabilities;
 	__u32 share_flags;
 	__u32 maximal_access;
@@ -1311,10 +1315,17 @@ struct mid_q_entry {
 	void *callback_data;	  /* general purpose pointer for callback */
 	void *resp_buf;		/* pointer to received SMB header */
 	int mid_state;	/* wish this were enum but can not pass to wait_event */
+	unsigned int mid_flags;
 	__le16 command;		/* smb command code */
 	bool large_buf:1;	/* if valid response, is pointer to large buf */
 	bool multiRsp:1;	/* multiple trans2 responses for one request  */
 	bool multiEnd:1;	/* both received */
+};
+
+struct close_cancelled_open {
+	struct cifs_fid         fid;
+	struct cifs_tcon        *tcon;
+	struct work_struct      work;
 };
 
 /*	Make code in transport.c a little cleaner by moving
@@ -1447,6 +1458,9 @@ static inline void free_dfs_info_array(struct dfs_info3_param *param,
 #define   MID_RETRY_NEEDED      8 /* session closed while this request out */
 #define   MID_RESPONSE_MALFORMED 0x10
 #define   MID_SHUTDOWN		 0x20
+
+/* Flags */
+#define   MID_WAIT_CANCELLED	 1 /* Cancelled while waiting for response */
 
 /* Types of response buffer returned from SendReceive2 */
 #define   CIFS_NO_BUFFER        0    /* Response buffer not returned */
@@ -1637,6 +1651,7 @@ void cifs_oplock_break(struct work_struct *work);
 
 extern const struct slow_work_ops cifs_oplock_break_ops;
 extern struct workqueue_struct *cifsiod_wq;
+extern struct workqueue_struct *cifsoplockd_wq;
 extern __u32 cifs_lock_secret;
 
 extern mempool_t *cifs_mid_poolp;

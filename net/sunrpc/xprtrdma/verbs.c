@@ -208,6 +208,7 @@ rpcrdma_update_connect_private(struct rpcrdma_xprt *r_xprt,
 
 	/* Default settings for RPC-over-RDMA Version One */
 	r_xprt->rx_ia.ri_reminv_expected = false;
+	r_xprt->rx_ia.ri_implicit_roundup = xprt_rdma_pad_optimize;
 	rsize = RPCRDMA_V1_DEF_INLINE_SIZE;
 	wsize = RPCRDMA_V1_DEF_INLINE_SIZE;
 
@@ -215,6 +216,7 @@ rpcrdma_update_connect_private(struct rpcrdma_xprt *r_xprt,
 	    pmsg->cp_magic == rpcrdma_cmp_magic &&
 	    pmsg->cp_version == RPCRDMA_CMP_VERSION) {
 		r_xprt->rx_ia.ri_reminv_expected = true;
+		r_xprt->rx_ia.ri_implicit_roundup = true;
 		rsize = rpcrdma_decode_buffer_size(pmsg->cp_send_size);
 		wsize = rpcrdma_decode_buffer_size(pmsg->cp_recv_size);
 	}
@@ -223,8 +225,8 @@ rpcrdma_update_connect_private(struct rpcrdma_xprt *r_xprt,
 		cdata->inline_rsize = rsize;
 	if (wsize < cdata->inline_wsize)
 		cdata->inline_wsize = wsize;
-	pr_info("rpcrdma: max send %u, max recv %u\n",
-		cdata->inline_wsize, cdata->inline_rsize);
+	dprintk("RPC:       %s: max send %u, max recv %u\n",
+		__func__, cdata->inline_wsize, cdata->inline_rsize);
 	rpcrdma_set_max_header_sizes(r_xprt);
 }
 
@@ -477,18 +479,20 @@ rpcrdma_ia_close(struct rpcrdma_ia *ia)
  */
 int
 rpcrdma_ep_create(struct rpcrdma_ep *ep, struct rpcrdma_ia *ia,
-				struct rpcrdma_create_data_internal *cdata)
+		  struct rpcrdma_create_data_internal *cdata)
 {
 	struct rpcrdma_connect_private *pmsg = &ep->rep_cm_private;
+	unsigned int max_qp_wr, max_sge;
 	struct ib_cq *sendcq, *recvcq;
-	unsigned int max_qp_wr;
 	int rc;
 
-	if (ia->ri_device->attrs.max_sge < RPCRDMA_MAX_SEND_SGES) {
-		dprintk("RPC:       %s: insufficient sge's available\n",
-			__func__);
+	max_sge = min_t(unsigned int, ia->ri_device->attrs.max_sge,
+			RPCRDMA_MAX_SEND_SGES);
+	if (max_sge < RPCRDMA_MIN_SEND_SGES) {
+		pr_warn("rpcrdma: HCA provides only %d send SGEs\n", max_sge);
 		return -ENOMEM;
 	}
+	ia->ri_max_send_sges = max_sge - RPCRDMA_MIN_SEND_SGES;
 
 	if (ia->ri_device->attrs.max_qp_wr <= RPCRDMA_BACKWARD_WRS) {
 		dprintk("RPC:       %s: insufficient wqe's available\n",
@@ -513,7 +517,7 @@ rpcrdma_ep_create(struct rpcrdma_ep *ep, struct rpcrdma_ia *ia,
 	ep->rep_attr.cap.max_recv_wr = cdata->max_requests;
 	ep->rep_attr.cap.max_recv_wr += RPCRDMA_BACKWARD_WRS;
 	ep->rep_attr.cap.max_recv_wr += 1;	/* drain cqe */
-	ep->rep_attr.cap.max_send_sge = RPCRDMA_MAX_SEND_SGES;
+	ep->rep_attr.cap.max_send_sge = max_sge;
 	ep->rep_attr.cap.max_recv_sge = 1;
 	ep->rep_attr.cap.max_inline_data = 0;
 	ep->rep_attr.sq_sig_type = IB_SIGNAL_REQ_WR;
@@ -532,7 +536,7 @@ rpcrdma_ep_create(struct rpcrdma_ep *ep, struct rpcrdma_ia *ia,
 	ep->rep_cqinit = ep->rep_attr.cap.max_send_wr/2 - 1;
 	if (ep->rep_cqinit <= 2)
 		ep->rep_cqinit = 0;	/* always signal? */
-	INIT_CQCOUNT(ep);
+	rpcrdma_init_cqcount(ep, 0);
 	init_waitqueue_head(&ep->rep_connect_wait);
 	INIT_DELAYED_WORK(&ep->rep_connect_worker, rpcrdma_connect_worker);
 
@@ -1311,13 +1315,7 @@ rpcrdma_ep_post(struct rpcrdma_ia *ia,
 	dprintk("RPC:       %s: posting %d s/g entries\n",
 		__func__, send_wr->num_sge);
 
-	if (DECR_CQCOUNT(ep) > 0)
-		send_wr->send_flags = 0;
-	else { /* Provider must take a send completion every now and then */
-		INIT_CQCOUNT(ep);
-		send_wr->send_flags = IB_SEND_SIGNALED;
-	}
-
+	rpcrdma_set_signaled(ep, send_wr);
 	rc = ib_post_send(ia->ri_id->qp, send_wr, &send_wr_fail);
 	if (rc)
 		goto out_postsend_err;

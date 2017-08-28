@@ -1976,11 +1976,13 @@ static int sci_startup(struct uart_port *port)
 
 	dev_dbg(port->dev, "%s(%d)\n", __func__, port->line);
 
-	ret = sci_request_irq(s);
-	if (unlikely(ret < 0))
-		return ret;
-
 	sci_request_dma(port);
+
+	ret = sci_request_irq(s);
+	if (unlikely(ret < 0)) {
+		sci_free_dma(port);
+		return ret;
+	}
 
 	return 0;
 }
@@ -2012,8 +2014,8 @@ static void sci_shutdown(struct uart_port *port)
 	}
 #endif
 
-	sci_free_dma(port);
 	sci_free_irq(s);
+	sci_free_dma(port);
 }
 
 static int sci_sck_calc(struct sci_port *s, unsigned int bps,
@@ -2363,6 +2365,10 @@ done:
 		 * bit time x serial data number) after setting SCSCR.RE = 1.
 		 */
 		udelay(DIV_ROUND_UP(10 * 1000000, baud));
+	}
+	if (port->flags & UPF_HARD_FLOW) {
+		/* Refresh (Auto) RTS */
+		sci_set_mctrl(port, port->mctrl);
 	}
 
 #ifdef CONFIG_SERIAL_SH_SCI_DMA

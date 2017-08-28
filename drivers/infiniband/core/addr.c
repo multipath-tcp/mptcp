@@ -444,8 +444,8 @@ static int addr6_resolve(struct sockaddr_in6 *src_in,
 	fl6.saddr = src_in->sin6_addr;
 	fl6.flowi6_oif = addr->bound_dev_if;
 
-	dst = ip6_route_output(addr->net, NULL, &fl6);
-	if ((ret = dst->error))
+	ret = ipv6_stub->ipv6_dst_lookup(addr->net, NULL, &dst, &fl6);
+	if (ret < 0)
 		goto put;
 
 	rt = (struct rt6_info *)dst;
@@ -518,6 +518,11 @@ static int addr_resolve(struct sockaddr *src_in,
 	struct dst_entry *dst;
 	int ret;
 
+	if (!addr->net) {
+		pr_warn_ratelimited("%s: missing namespace\n", __func__);
+		return -EINVAL;
+	}
+
 	if (src_in->sa_family == AF_INET) {
 		struct rtable *rt = NULL;
 		const struct sockaddr_in *dst_in4 =
@@ -555,7 +560,6 @@ static int addr_resolve(struct sockaddr *src_in,
 	}
 
 	addr->bound_dev_if = ndev->ifindex;
-	addr->net = dev_net(ndev);
 	dev_put(ndev);
 
 	return ret;

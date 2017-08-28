@@ -458,6 +458,12 @@ static void xhci_disable_port(struct usb_hcd *hcd, struct xhci_hcd *xhci,
 		return;
 	}
 
+	if (xhci->quirks & XHCI_BROKEN_PORT_PED) {
+		xhci_dbg(xhci,
+			 "Broken Port Enabled/Disabled, ignoring port disable request.\n");
+		return;
+	}
+
 	/* Write 1 to disable the port */
 	writel(port_status | PORT_PE, addr);
 	port_status = readl(addr);
@@ -777,6 +783,9 @@ static u32 xhci_get_port_status(struct usb_hcd *hcd,
 			clear_bit(wIndex, &bus_state->resuming_ports);
 
 			set_bit(wIndex, &bus_state->rexit_ports);
+
+			xhci_test_and_clear_bit(xhci, port_array, wIndex,
+						PORT_PLC);
 			xhci_set_link_state(xhci, port_array, wIndex,
 					XDEV_U0);
 
@@ -1342,6 +1351,9 @@ int xhci_bus_suspend(struct usb_hcd *hcd)
 				t2 |= PORT_WKOC_E | PORT_WKCONN_E;
 				t2 &= ~PORT_WKDISC_E;
 			}
+			if ((xhci->quirks & XHCI_U2_DISABLE_WAKE) &&
+			    (hcd->speed < HCD_USB3))
+				t2 &= ~PORT_WAKE_BITS;
 		} else
 			t2 &= ~PORT_WAKE_BITS;
 

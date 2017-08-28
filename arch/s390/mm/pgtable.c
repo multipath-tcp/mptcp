@@ -202,7 +202,7 @@ static inline pgste_t ptep_xchg_start(struct mm_struct *mm,
 	return pgste;
 }
 
-static inline void ptep_xchg_commit(struct mm_struct *mm,
+static inline pte_t ptep_xchg_commit(struct mm_struct *mm,
 				    unsigned long addr, pte_t *ptep,
 				    pgste_t pgste, pte_t old, pte_t new)
 {
@@ -220,6 +220,7 @@ static inline void ptep_xchg_commit(struct mm_struct *mm,
 	} else {
 		*ptep = new;
 	}
+	return old;
 }
 
 pte_t ptep_xchg_direct(struct mm_struct *mm, unsigned long addr,
@@ -231,7 +232,7 @@ pte_t ptep_xchg_direct(struct mm_struct *mm, unsigned long addr,
 	preempt_disable();
 	pgste = ptep_xchg_start(mm, addr, ptep);
 	old = ptep_flush_direct(mm, addr, ptep);
-	ptep_xchg_commit(mm, addr, ptep, pgste, old, new);
+	old = ptep_xchg_commit(mm, addr, ptep, pgste, old, new);
 	preempt_enable();
 	return old;
 }
@@ -246,7 +247,7 @@ pte_t ptep_xchg_lazy(struct mm_struct *mm, unsigned long addr,
 	preempt_disable();
 	pgste = ptep_xchg_start(mm, addr, ptep);
 	old = ptep_flush_lazy(mm, addr, ptep);
-	ptep_xchg_commit(mm, addr, ptep, pgste, old, new);
+	old = ptep_xchg_commit(mm, addr, ptep, pgste, old, new);
 	preempt_enable();
 	return old;
 }
@@ -605,12 +606,29 @@ void ptep_zap_key(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 bool test_and_clear_guest_dirty(struct mm_struct *mm, unsigned long addr)
 {
 	spinlock_t *ptl;
+	pgd_t *pgd;
+	pud_t *pud;
+	pmd_t *pmd;
 	pgste_t pgste;
 	pte_t *ptep;
 	pte_t pte;
 	bool dirty;
 
-	ptep = get_locked_pte(mm, addr, &ptl);
+	pgd = pgd_offset(mm, addr);
+	pud = pud_alloc(mm, pgd, addr);
+	if (!pud)
+		return false;
+	pmd = pmd_alloc(mm, pud, addr);
+	if (!pmd)
+		return false;
+	/* We can't run guests backed by huge pages, but userspace can
+	 * still set them up and then try to migrate them without any
+	 * migration support.
+	 */
+	if (pmd_large(*pmd))
+		return true;
+
+	ptep = pte_alloc_map_lock(mm, pmd, addr, &ptl);
 	if (unlikely(!ptep))
 		return false;
 

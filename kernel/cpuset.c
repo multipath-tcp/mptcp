@@ -61,6 +61,7 @@
 #include <linux/cgroup.h>
 #include <linux/wait.h>
 
+DEFINE_STATIC_KEY_FALSE(cpusets_pre_enable_key);
 DEFINE_STATIC_KEY_FALSE(cpusets_enabled_key);
 
 /* See "Frequency meter" comments, below. */
@@ -174,9 +175,9 @@ typedef enum {
 } cpuset_flagbits_t;
 
 /* convenient tests for these bits */
-static inline bool is_cpuset_online(const struct cpuset *cs)
+static inline bool is_cpuset_online(struct cpuset *cs)
 {
-	return test_bit(CS_ONLINE, &cs->flags);
+	return test_bit(CS_ONLINE, &cs->flags) && !css_is_dying(&cs->css);
 }
 
 static inline int is_cpu_exclusive(const struct cpuset *cs)

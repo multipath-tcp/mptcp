@@ -258,13 +258,6 @@ uvc_function_setup(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
 	memcpy(&uvc_event->req, ctrl, sizeof(uvc_event->req));
 	v4l2_event_queue(&uvc->vdev, &v4l2_event);
 
-	/* Pass additional setup data to userspace */
-	if (uvc->event_setup_out && uvc->event_length) {
-		uvc->control_req->length = uvc->event_length;
-		return usb_ep_queue(uvc->func.config->cdev->gadget->ep0,
-			uvc->control_req, GFP_ATOMIC);
-	}
-
 	return 0;
 }
 
@@ -632,7 +625,7 @@ uvc_function_bind(struct usb_configuration *c, struct usb_function *f)
 	uvc_ss_streaming_comp.bMaxBurst = opts->streaming_maxburst;
 	uvc_ss_streaming_comp.wBytesPerInterval =
 		cpu_to_le16(max_packet_size * max_packet_mult *
-			    opts->streaming_maxburst);
+			    (opts->streaming_maxburst + 1));
 
 	/* Allocate endpoints. */
 	ep = usb_ep_autoconfig(cdev->gadget, &uvc_control_ep);

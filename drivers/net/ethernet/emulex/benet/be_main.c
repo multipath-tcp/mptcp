@@ -319,6 +319,13 @@ static int be_mac_addr_set(struct net_device *netdev, void *p)
 	if (ether_addr_equal(addr->sa_data, adapter->dev_mac))
 		return 0;
 
+	/* BE3 VFs without FILTMGMT privilege are not allowed to set its MAC
+	 * address
+	 */
+	if (BEx_chip(adapter) && be_virtfn(adapter) &&
+	    !check_privilege(adapter, BE_PRIV_FILTMGMT))
+		return -EPERM;
+
 	/* if device is not running, copy MAC to netdev->dev_addr */
 	if (!netif_running(netdev))
 		goto done;
@@ -3630,7 +3637,11 @@ static void be_rx_qs_destroy(struct be_adapter *adapter)
 
 static void be_disable_if_filters(struct be_adapter *adapter)
 {
-	be_dev_mac_del(adapter, adapter->pmac_id[0]);
+	/* Don't delete MAC on BE3 VFs without FILTMGMT privilege  */
+	if (!BEx_chip(adapter) || !be_virtfn(adapter) ||
+	    check_privilege(adapter, BE_PRIV_FILTMGMT))
+		be_dev_mac_del(adapter, adapter->pmac_id[0]);
+
 	be_clear_uc_list(adapter);
 	be_clear_mc_list(adapter);
 
@@ -3783,8 +3794,9 @@ static int be_enable_if_filters(struct be_adapter *adapter)
 	if (status)
 		return status;
 
-	/* For BE3 VFs, the PF programs the initial MAC address */
-	if (!(BEx_chip(adapter) && be_virtfn(adapter))) {
+	/* Don't add MAC on BE3 VFs without FILTMGMT privilege */
+	if (!BEx_chip(adapter) || !be_virtfn(adapter) ||
+	    check_privilege(adapter, BE_PRIV_FILTMGMT)) {
 		status = be_dev_mac_add(adapter, adapter->netdev->dev_addr);
 		if (status)
 			return status;
@@ -5144,9 +5156,11 @@ static netdev_features_t be_features_check(struct sk_buff *skb,
 	struct be_adapter *adapter = netdev_priv(dev);
 	u8 l4_hdr = 0;
 
-	/* The code below restricts offload features for some tunneled packets.
+	/* The code below restricts offload features for some tunneled and
+	 * Q-in-Q packets.
 	 * Offload features for normal (non tunnel) packets are unchanged.
 	 */
+	features = vlan_features_check(skb, features);
 	if (!skb->encapsulation ||
 	    !(adapter->flags & BE_FLAGS_VXLAN_OFFLOADS))
 		return features;
@@ -5172,7 +5186,9 @@ static netdev_features_t be_features_check(struct sk_buff *skb,
 	    skb->inner_protocol_type != ENCAP_TYPE_ETHER ||
 	    skb->inner_protocol != htons(ETH_P_TEB) ||
 	    skb_inner_mac_header(skb) - skb_transport_header(skb) !=
-	    sizeof(struct udphdr) + sizeof(struct vxlanhdr))
+		sizeof(struct udphdr) + sizeof(struct vxlanhdr) ||
+	    !adapter->vxlan_port ||
+	    udp_hdr(skb)->dest != adapter->vxlan_port)
 		return features & ~(NETIF_F_CSUM_MASK | NETIF_F_GSO_MASK);
 
 	return features;

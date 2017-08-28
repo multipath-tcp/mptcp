@@ -1054,8 +1054,6 @@ static struct ib_qp *ipoib_cm_create_tx_qp(struct net_device *dev, struct ipoib_
 
 	tx_qp = ib_create_qp(priv->pd, &attr);
 	if (PTR_ERR(tx_qp) == -EINVAL) {
-		ipoib_warn(priv, "can't use GFP_NOIO for QPs on device %s, using GFP_KERNEL\n",
-			   priv->ca->name);
 		attr.create_flags &= ~IB_QP_CREATE_USE_GFP_NOIO;
 		tx_qp = ib_create_qp(priv->pd, &attr);
 	}
@@ -1513,12 +1511,14 @@ static ssize_t set_mode(struct device *d, struct device_attribute *attr,
 
 	ret = ipoib_set_mode(dev, buf);
 
-	rtnl_unlock();
+	/* The assumption is that the function ipoib_set_mode returned
+	 * with the rtnl held by it, if not the value -EBUSY returned,
+	 * then no need to rtnl_unlock
+	 */
+	if (ret != -EBUSY)
+		rtnl_unlock();
 
-	if (!ret)
-		return count;
-
-	return ret;
+	return (!ret || ret == -EBUSY) ? count : ret;
 }
 
 static DEVICE_ATTR(mode, S_IWUSR | S_IRUGO, show_mode, set_mode);

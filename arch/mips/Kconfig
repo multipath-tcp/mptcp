@@ -9,6 +9,7 @@ config MIPS
 	select HAVE_CONTEXT_TRACKING
 	select HAVE_GENERIC_DMA_COHERENT
 	select HAVE_IDE
+	select HAVE_IRQ_EXIT_ON_IRQ_STACK
 	select HAVE_OPROFILE
 	select HAVE_PERF_EVENTS
 	select PERF_USE_VMALLOC
@@ -1367,6 +1368,7 @@ config CPU_LOONGSON3
 	select WEAK_ORDERING
 	select WEAK_REORDERING_BEYOND_LLSC
 	select MIPS_PGD_C0_CONTEXT
+	select MIPS_L1_CACHE_SHIFT_6
 	select GPIOLIB
 	help
 		The Loongson 3 processor implements the MIPS64R2 instruction
@@ -1526,7 +1528,7 @@ config CPU_MIPS64_R6
 	select CPU_SUPPORTS_HIGHMEM
 	select CPU_SUPPORTS_MSA
 	select GENERIC_CSUM
-	select MIPS_O32_FP64_SUPPORT if MIPS32_O32
+	select MIPS_O32_FP64_SUPPORT if 32BIT || MIPS32_O32
 	select HAVE_KVM
 	help
 	  Choose this option to build a kernel for release 6 or later of the

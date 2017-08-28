@@ -932,23 +932,10 @@ static u32 dce_v6_0_latency_watermark(struct dce6_wm_params *wm)
 	a.full = dfixed_const(available_bandwidth);
 	b.full = dfixed_const(wm->num_heads);
 	a.full = dfixed_div(a, b);
+	tmp = div_u64((u64) dmif_size * (u64) wm->disp_clk, mc_latency + 512);
+	tmp = min(dfixed_trunc(a), tmp);
 
-	b.full = dfixed_const(mc_latency + 512);
-	c.full = dfixed_const(wm->disp_clk);
-	b.full = dfixed_div(b, c);
-
-	c.full = dfixed_const(dmif_size);
-	b.full = dfixed_div(c, b);
-
-	tmp = min(dfixed_trunc(a), dfixed_trunc(b));
-
-	b.full = dfixed_const(1000);
-	c.full = dfixed_const(wm->disp_clk);
-	b.full = dfixed_div(c, b);
-	c.full = dfixed_const(wm->bytes_per_pixel);
-	b.full = dfixed_mul(b, c);
-
-	lb_fill_bw = min(tmp, dfixed_trunc(b));
+	lb_fill_bw = min(tmp, wm->disp_clk * wm->bytes_per_pixel / 1000);
 
 	a.full = dfixed_const(max_src_lines_per_dst_line * wm->src_width * wm->bytes_per_pixel);
 	b.full = dfixed_const(1000);
@@ -1057,18 +1044,21 @@ static void dce_v6_0_program_watermarks(struct amdgpu_device *adev,
 	struct drm_display_mode *mode = &amdgpu_crtc->base.mode;
 	struct dce6_wm_params wm_low, wm_high;
 	u32 dram_channels;
-	u32 pixel_period;
+	u32 active_time;
 	u32 line_time = 0;
 	u32 latency_watermark_a = 0, latency_watermark_b = 0;
 	u32 priority_a_mark = 0, priority_b_mark = 0;
 	u32 priority_a_cnt = PRIORITY_OFF;
 	u32 priority_b_cnt = PRIORITY_OFF;
-	u32 tmp, arb_control3;
+	u32 tmp, arb_control3, lb_vblank_lead_lines = 0;
 	fixed20_12 a, b, c;
 
 	if (amdgpu_crtc->base.enabled && num_heads && mode) {
-		pixel_period = 1000000 / (u32)mode->clock;
-		line_time = min((u32)mode->crtc_htotal * pixel_period, (u32)65535);
+		active_time = (u32) div_u64((u64)mode->crtc_hdisplay * 1000000,
+					    (u32)mode->clock);
+		line_time = (u32) div_u64((u64)mode->crtc_htotal * 1000000,
+					  (u32)mode->clock);
+		line_time = min(line_time, (u32)65535);
 		priority_a_cnt = 0;
 		priority_b_cnt = 0;
 
@@ -1087,7 +1077,7 @@ static void dce_v6_0_program_watermarks(struct amdgpu_device *adev,
 
 		wm_high.disp_clk = mode->clock;
 		wm_high.src_width = mode->crtc_hdisplay;
-		wm_high.active_time = mode->crtc_hdisplay * pixel_period;
+		wm_high.active_time = active_time;
 		wm_high.blank_time = line_time - wm_high.active_time;
 		wm_high.interlaced = false;
 		if (mode->flags & DRM_MODE_FLAG_INTERLACE)
@@ -1114,7 +1104,7 @@ static void dce_v6_0_program_watermarks(struct amdgpu_device *adev,
 
 		wm_low.disp_clk = mode->clock;
 		wm_low.src_width = mode->crtc_hdisplay;
-		wm_low.active_time = mode->crtc_hdisplay * pixel_period;
+		wm_low.active_time = active_time;
 		wm_low.blank_time = line_time - wm_low.active_time;
 		wm_low.interlaced = false;
 		if (mode->flags & DRM_MODE_FLAG_INTERLACE)
@@ -1175,6 +1165,8 @@ static void dce_v6_0_program_watermarks(struct amdgpu_device *adev,
 		c.full = dfixed_div(c, a);
 		priority_b_mark = dfixed_trunc(c);
 		priority_b_cnt |= priority_b_mark & PRIORITY_MARK_MASK;
+
+		lb_vblank_lead_lines = DIV_ROUND_UP(lb_size, mode->crtc_hdisplay);
 	}
 
 	/* select wm A */
@@ -1204,6 +1196,9 @@ static void dce_v6_0_program_watermarks(struct amdgpu_device *adev,
 	/* save values for DPM */
 	amdgpu_crtc->line_time = line_time;
 	amdgpu_crtc->wm_high = latency_watermark_a;
+
+	/* Save number of lines the linebuffer leads before the scanout */
+	amdgpu_crtc->lb_vblank_lead_lines = lb_vblank_lead_lines;
 }
 
 /* watermark setup */
@@ -1933,6 +1928,9 @@ static int dce_v6_0_cursor_move_locked(struct drm_crtc *crtc,
 
 	int w = amdgpu_crtc->cursor_width;
 
+	amdgpu_crtc->cursor_x = x;
+	amdgpu_crtc->cursor_y = y;
+
 	/* avivo cursor are offset into the total surface */
 	x += crtc->x;
 	y += crtc->y;
@@ -1952,8 +1950,6 @@ static int dce_v6_0_cursor_move_locked(struct drm_crtc *crtc,
 	WREG32(EVERGREEN_CUR_SIZE + amdgpu_crtc->crtc_offset,
 	       ((w - 1) << 16) | (amdgpu_crtc->cursor_height - 1));
 
-	amdgpu_crtc->cursor_x = x;
-	amdgpu_crtc->cursor_y = y;
 	return 0;
 }
 
@@ -2016,12 +2012,11 @@ static int dce_v6_0_crtc_cursor_set2(struct drm_crtc *crtc,
 		return ret;
 	}
 
-	amdgpu_crtc->cursor_width = width;
-	amdgpu_crtc->cursor_height = height;
-
 	dce_v6_0_lock_cursor(crtc, true);
 
-	if (hot_x != amdgpu_crtc->cursor_hot_x ||
+	if (width != amdgpu_crtc->cursor_width ||
+	    height != amdgpu_crtc->cursor_height ||
+	    hot_x != amdgpu_crtc->cursor_hot_x ||
 	    hot_y != amdgpu_crtc->cursor_hot_y) {
 		int x, y;
 
@@ -2030,6 +2025,8 @@ static int dce_v6_0_crtc_cursor_set2(struct drm_crtc *crtc,
 
 		dce_v6_0_cursor_move_locked(crtc, x, y);
 
+		amdgpu_crtc->cursor_width = width;
+		amdgpu_crtc->cursor_height = height;
 		amdgpu_crtc->cursor_hot_x = hot_x;
 		amdgpu_crtc->cursor_hot_y = hot_y;
 	}

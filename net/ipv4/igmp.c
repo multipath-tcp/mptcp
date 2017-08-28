@@ -219,9 +219,14 @@ static void igmp_start_timer(struct ip_mc_list *im, int max_delay)
 static void igmp_gq_start_timer(struct in_device *in_dev)
 {
 	int tv = prandom_u32() % in_dev->mr_maxdelay;
+	unsigned long exp = jiffies + tv + 2;
+
+	if (in_dev->mr_gq_running &&
+	    time_after_eq(exp, (in_dev->mr_gq_timer).expires))
+		return;
 
 	in_dev->mr_gq_running = 1;
-	if (!mod_timer(&in_dev->mr_gq_timer, jiffies+tv+2))
+	if (!mod_timer(&in_dev->mr_gq_timer, exp))
 		in_dev_hold(in_dev);
 }
 
@@ -1107,6 +1112,7 @@ static void igmpv3_add_delrec(struct in_device *in_dev, struct ip_mc_list *im)
 	pmc = kzalloc(sizeof(*pmc), GFP_KERNEL);
 	if (!pmc)
 		return;
+	spin_lock_init(&pmc->lock);
 	spin_lock_bh(&im->lock);
 	pmc->interface = im->interface;
 	in_dev_hold(in_dev);
@@ -1167,6 +1173,7 @@ static void igmpv3_del_delrec(struct in_device *in_dev, struct ip_mc_list *im)
 				psf->sf_crcount = im->crcount;
 		}
 		in_dev_put(pmc->interface);
+		kfree(pmc);
 	}
 	spin_unlock_bh(&im->lock);
 }
@@ -2065,21 +2072,26 @@ static int ip_mc_add_src(struct in_device *in_dev, __be32 *pmca, int sfmode,
 
 static void ip_mc_clear_src(struct ip_mc_list *pmc)
 {
-	struct ip_sf_list *psf, *nextpsf;
+	struct ip_sf_list *psf, *nextpsf, *tomb, *sources;
 
-	for (psf = pmc->tomb; psf; psf = nextpsf) {
-		nextpsf = psf->sf_next;
-		kfree(psf);
-	}
+	spin_lock_bh(&pmc->lock);
+	tomb = pmc->tomb;
 	pmc->tomb = NULL;
-	for (psf = pmc->sources; psf; psf = nextpsf) {
-		nextpsf = psf->sf_next;
-		kfree(psf);
-	}
+	sources = pmc->sources;
 	pmc->sources = NULL;
 	pmc->sfmode = MCAST_EXCLUDE;
 	pmc->sfcount[MCAST_INCLUDE] = 0;
 	pmc->sfcount[MCAST_EXCLUDE] = 1;
+	spin_unlock_bh(&pmc->lock);
+
+	for (psf = tomb; psf; psf = nextpsf) {
+		nextpsf = psf->sf_next;
+		kfree(psf);
+	}
+	for (psf = sources; psf; psf = nextpsf) {
+		nextpsf = psf->sf_next;
+		kfree(psf);
+	}
 }
 
 /* Join a multicast group
@@ -2962,12 +2974,6 @@ static int __net_init igmp_net_init(struct net *net)
 		goto out_sock;
 	}
 
-	/* Sysctl initialization */
-	net->ipv4.sysctl_igmp_max_memberships = 20;
-	net->ipv4.sysctl_igmp_max_msf = 10;
-	/* IGMP reports for link-local multicast groups are enabled by default */
-	net->ipv4.sysctl_igmp_llm_reports = 1;
-	net->ipv4.sysctl_igmp_qrv = 2;
 	return 0;
 
 out_sock:

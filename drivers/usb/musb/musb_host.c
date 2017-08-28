@@ -139,6 +139,7 @@ static void musb_h_tx_flush_fifo(struct musb_hw_ep *ep)
 				"Could not flush host TX%d fifo: csr: %04x\n",
 				ep->epnum, csr))
 			return;
+		mdelay(1);
 	}
 }
 
@@ -2374,12 +2375,11 @@ static int musb_cleanup_urb(struct urb *urb, struct musb_qh *qh)
 	int			is_in = usb_pipein(urb->pipe);
 	int			status = 0;
 	u16			csr;
+	struct dma_channel	*dma = NULL;
 
 	musb_ep_select(regs, hw_end);
 
 	if (is_dma_capable()) {
-		struct dma_channel	*dma;
-
 		dma = is_in ? ep->rx_channel : ep->tx_channel;
 		if (dma) {
 			status = ep->musb->dma_controller->channel_abort(dma);
@@ -2395,10 +2395,9 @@ static int musb_cleanup_urb(struct urb *urb, struct musb_qh *qh)
 		/* giveback saves bulk toggle */
 		csr = musb_h_flush_rxfifo(ep, 0);
 
-		/* REVISIT we still get an irq; should likely clear the
-		 * endpoint's irq status here to avoid bogus irqs.
-		 * clearing that status is platform-specific...
-		 */
+		/* clear the endpoint's irq status here to avoid bogus irqs */
+		if (is_dma_capable() && dma)
+			musb_platform_clear_ep_rxintr(musb, ep->epnum);
 	} else if (ep->epnum) {
 		musb_h_tx_flush_fifo(ep);
 		csr = musb_readw(epio, MUSB_TXCSR);
@@ -2782,10 +2781,11 @@ int musb_host_setup(struct musb *musb, int power_budget)
 	int ret;
 	struct usb_hcd *hcd = musb->hcd;
 
-	MUSB_HST_MODE(musb);
-	musb->xceiv->otg->default_a = 1;
-	musb->xceiv->otg->state = OTG_STATE_A_IDLE;
-
+	if (musb->port_mode == MUSB_PORT_MODE_HOST) {
+		MUSB_HST_MODE(musb);
+		musb->xceiv->otg->default_a = 1;
+		musb->xceiv->otg->state = OTG_STATE_A_IDLE;
+	}
 	otg_set_host(musb->xceiv->otg, &hcd->self);
 	hcd->self.otg_port = 1;
 	musb->xceiv->otg->host = &hcd->self;

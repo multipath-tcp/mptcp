@@ -1861,7 +1861,7 @@ super_1_rdev_size_change(struct md_rdev *rdev, sector_t num_sectors)
 	}
 	sb = page_address(rdev->sb_page);
 	sb->data_size = cpu_to_le64(num_sectors);
-	sb->super_offset = rdev->sb_start;
+	sb->super_offset = cpu_to_le64(rdev->sb_start);
 	sb->sb_csum = calc_sb_1_csum(sb);
 	md_super_write(rdev->mddev, rdev, rdev->sb_start, rdev->sb_size,
 		       rdev->sb_page);
@@ -2270,7 +2270,7 @@ static bool does_sb_need_changing(struct mddev *mddev)
 	/* Check if any mddev parameters have changed */
 	if ((mddev->dev_sectors != le64_to_cpu(sb->size)) ||
 	    (mddev->reshape_position != le64_to_cpu(sb->reshape_position)) ||
-	    (mddev->layout != le64_to_cpu(sb->layout)) ||
+	    (mddev->layout != le32_to_cpu(sb->layout)) ||
 	    (mddev->raid_disks != le32_to_cpu(sb->raid_disks)) ||
 	    (mddev->chunk_sectors != le32_to_cpu(sb->chunksize)))
 		return true;
@@ -6752,6 +6752,7 @@ static int md_ioctl(struct block_device *bdev, fmode_t mode,
 	void __user *argp = (void __user *)arg;
 	struct mddev *mddev = NULL;
 	int ro;
+	bool did_set_md_closing = false;
 
 	if (!md_ioctl_valid(cmd))
 		return -ENOTTY;
@@ -6829,7 +6830,7 @@ static int md_ioctl(struct block_device *bdev, fmode_t mode,
 		/* need to ensure recovery thread has run */
 		wait_event_interruptible_timeout(mddev->sb_wait,
 						 !test_bit(MD_RECOVERY_NEEDED,
-							   &mddev->flags),
+							   &mddev->recovery),
 						 msecs_to_jiffies(5000));
 	if (cmd == STOP_ARRAY || cmd == STOP_ARRAY_RO) {
 		/* Need to flush page cache, and ensure no-one else opens
@@ -6841,7 +6842,9 @@ static int md_ioctl(struct block_device *bdev, fmode_t mode,
 			err = -EBUSY;
 			goto out;
 		}
+		WARN_ON_ONCE(test_bit(MD_CLOSING, &mddev->flags));
 		set_bit(MD_CLOSING, &mddev->flags);
+		did_set_md_closing = true;
 		mutex_unlock(&mddev->open_mutex);
 		sync_blockdev(bdev);
 	}
@@ -7041,6 +7044,8 @@ unlock:
 		mddev->hold_active = 0;
 	mddev_unlock(mddev);
 out:
+	if(did_set_md_closing)
+		clear_bit(MD_CLOSING, &mddev->flags);
 	return err;
 }
 #ifdef CONFIG_COMPAT
@@ -7092,7 +7097,8 @@ static int md_open(struct block_device *bdev, fmode_t mode)
 
 	if (test_bit(MD_CLOSING, &mddev->flags)) {
 		mutex_unlock(&mddev->open_mutex);
-		return -ENODEV;
+		err = -ENODEV;
+		goto out;
 	}
 
 	err = 0;
@@ -7101,6 +7107,8 @@ static int md_open(struct block_device *bdev, fmode_t mode)
 
 	check_disk_change(bdev);
  out:
+	if (err)
+		mddev_put(mddev);
 	return err;
 }
 

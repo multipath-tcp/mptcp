@@ -143,10 +143,7 @@
 #include <net/inet_common.h>
 #endif
 
-#ifdef CONFIG_INET
 #include <net/tcp.h>
-#endif
-
 #include <net/busy_poll.h>
 
 static DEFINE_MUTEX(proto_list_mutex);
@@ -227,7 +224,7 @@ static const char *const af_family_key_strings[AF_MAX+1] = {
   "sk_lock-AF_RXRPC" , "sk_lock-AF_ISDN"     , "sk_lock-AF_PHONET"   ,
   "sk_lock-AF_IEEE802154", "sk_lock-AF_CAIF" , "sk_lock-AF_ALG"      ,
   "sk_lock-AF_NFC"   , "sk_lock-AF_VSOCK"    , "sk_lock-AF_KCM"      ,
-  "sk_lock-AF_MAX"
+  "sk_lock-AF_QIPCRTR", "sk_lock-AF_MAX"
 };
 static const char *const af_family_slock_key_strings[AF_MAX+1] = {
   "slock-AF_UNSPEC", "slock-AF_UNIX"     , "slock-AF_INET"     ,
@@ -244,7 +241,7 @@ static const char *const af_family_slock_key_strings[AF_MAX+1] = {
   "slock-AF_RXRPC" , "slock-AF_ISDN"     , "slock-AF_PHONET"   ,
   "slock-AF_IEEE802154", "slock-AF_CAIF" , "slock-AF_ALG"      ,
   "slock-AF_NFC"   , "slock-AF_VSOCK"    ,"slock-AF_KCM"       ,
-  "slock-AF_MAX"
+  "slock-AF_QIPCRTR", "slock-AF_MAX"
 };
 char *const af_family_clock_key_strings[AF_MAX+1] = {
   "clock-AF_UNSPEC", "clock-AF_UNIX"     , "clock-AF_INET"     ,
@@ -261,7 +258,7 @@ char *const af_family_clock_key_strings[AF_MAX+1] = {
   "clock-AF_RXRPC" , "clock-AF_ISDN"     , "clock-AF_PHONET"   ,
   "clock-AF_IEEE802154", "clock-AF_CAIF" , "clock-AF_ALG"      ,
   "clock-AF_NFC"   , "clock-AF_VSOCK"    , "clock-AF_KCM"      ,
-  "clock-AF_MAX"
+  "clock-AF_QIPCRTR", "clock-AF_MAX"
 };
 
 /*
@@ -1459,6 +1456,11 @@ static void __sk_destruct(struct rcu_head *head)
 		pr_debug("%s: optmem leakage (%d bytes) detected\n",
 			 __func__, atomic_read(&sk->sk_omem_alloc));
 
+	if (sk->sk_frag.page) {
+		put_page(sk->sk_frag.page);
+		sk->sk_frag.page = NULL;
+	}
+
 	if (sk->sk_peer_cred)
 		put_cred(sk->sk_peer_cred);
 	put_pid(sk->sk_peer_pid);
@@ -1556,6 +1558,12 @@ struct sock *sk_clone_lock(const struct sock *sk, const gfp_t priority)
 			is_charged = sk_filter_charge(newsk, filter);
 
 		if (unlikely(!is_charged || xfrm_sk_clone_policy(newsk, sk))) {
+			/* We need to make sure that we don't uncharge the new
+			 * socket if we couldn't charge it in the first place
+			 * as otherwise we uncharge the parent's filter.
+			 */
+			if (!is_charged)
+				RCU_INIT_POINTER(newsk->sk_filter, NULL);
 			/* It is still raw copy of parent, so invalidate
 			 * destructor and make plain sk_free() */
 			newsk->sk_destruct = NULL;
@@ -1699,28 +1707,24 @@ EXPORT_SYMBOL(skb_set_owner_w);
  * delay queue. We want to allow the owner socket to send more
  * packets, as if they were already TX completed by a typical driver.
  * But we also want to keep skb->sk set because some packet schedulers
- * rely on it (sch_fq for example). So we set skb->truesize to a small
- * amount (1) and decrease sk_wmem_alloc accordingly.
+ * rely on it (sch_fq for example).
  */
 void skb_orphan_partial(struct sk_buff *skb)
 {
-	/* If this skb is a TCP pure ACK or already went here,
-	 * we have nothing to do. 2 is already a very small truesize.
-	 */
-	if (skb->truesize <= 2)
+	if (skb_is_tcp_pure_ack(skb))
 		return;
 
-	/* TCP stack sets skb->ooo_okay based on sk_wmem_alloc,
-	 * so we do not completely orphan skb, but transfert all
-	 * accounted bytes but one, to avoid unexpected reorders.
-	 */
 	if (skb->destructor == sock_wfree
 #ifdef CONFIG_INET
 	    || skb->destructor == tcp_wfree
 #endif
 		) {
-		atomic_sub(skb->truesize - 1, &skb->sk->sk_wmem_alloc);
-		skb->truesize = 1;
+		struct sock *sk = skb->sk;
+
+		if (atomic_inc_not_zero(&sk->sk_refcnt)) {
+			atomic_sub(skb->truesize, &sk->sk_wmem_alloc);
+			skb->destructor = sock_efree;
+		}
 	} else {
 		skb_orphan(skb);
 	}
@@ -2760,11 +2764,6 @@ void sk_common_release(struct sock *sk)
 	xfrm_sk_free_policy(sk);
 
 	sk_refcnt_debug_release(sk);
-
-	if (sk->sk_frag.page) {
-		put_page(sk->sk_frag.page);
-		sk->sk_frag.page = NULL;
-	}
 
 	sock_put(sk);
 }

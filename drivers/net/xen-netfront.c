@@ -281,6 +281,7 @@ static void xennet_alloc_rx_buffers(struct netfront_queue *queue)
 {
 	RING_IDX req_prod = queue->rx.req_prod_pvt;
 	int notify;
+	int err = 0;
 
 	if (unlikely(!netif_carrier_ok(queue->info->netdev)))
 		return;
@@ -295,8 +296,10 @@ static void xennet_alloc_rx_buffers(struct netfront_queue *queue)
 		struct xen_netif_rx_request *req;
 
 		skb = xennet_alloc_one_rx_buffer(queue);
-		if (!skb)
+		if (!skb) {
+			err = -ENOMEM;
 			break;
+		}
 
 		id = xennet_rxidx(req_prod);
 
@@ -320,8 +323,13 @@ static void xennet_alloc_rx_buffers(struct netfront_queue *queue)
 
 	queue->rx.req_prod_pvt = req_prod;
 
-	/* Not enough requests? Try again later. */
-	if (req_prod - queue->rx.rsp_cons < NET_RX_SLOTS_MIN) {
+	/* Try again later if there are not enough requests or skb allocation
+	 * failed.
+	 * Enough requests is quantified as the sum of newly created slots and
+	 * the unconsumed slots at the backend.
+	 */
+	if (req_prod - queue->rx.rsp_cons < NET_RX_SLOTS_MIN ||
+	    unlikely(err)) {
 		mod_timer(&queue->rx_refill_timer, jiffies + (HZ/10));
 		return;
 	}
@@ -1397,6 +1405,8 @@ static void xennet_disconnect_backend(struct netfront_info *info)
 	for (i = 0; i < num_queues && info->queues; ++i) {
 		struct netfront_queue *queue = &info->queues[i];
 
+		del_timer_sync(&queue->rx_refill_timer);
+
 		if (queue->tx_irq && (queue->tx_irq == queue->rx_irq))
 			unbind_from_irqhandler(queue->tx_irq, queue);
 		if (queue->tx_irq && (queue->tx_irq != queue->rx_irq)) {
@@ -1751,7 +1761,6 @@ static void xennet_destroy_queues(struct netfront_info *info)
 
 		if (netif_running(info->netdev))
 			napi_disable(&queue->napi);
-		del_timer_sync(&queue->rx_refill_timer);
 		netif_napi_del(&queue->napi);
 	}
 

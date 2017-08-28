@@ -167,10 +167,12 @@ struct ibmvscsis_cmd {
 	struct iu_rsp rsp;
 	struct work_struct work;
 	struct scsi_info *adapter;
+	struct ibmvscsis_cmd *abort_cmd;
 	/* Sense buffer that will be mapped into outgoing status */
 	unsigned char sense_buf[TRANSPORT_SENSE_BUFFER];
 	u64 init_time;
 #define CMD_FAST_FAIL	BIT(0)
+#define DELAY_SEND	BIT(1)
 	u32 flags;
 	char type;
 };
@@ -204,8 +206,6 @@ struct scsi_info {
 	struct list_head waiting_rsp;
 #define NO_QUEUE                    0x00
 #define WAIT_ENABLED                0X01
-	/* driver has received an initialize command */
-#define PART_UP_WAIT_ENAB           0x02
 #define WAIT_CONNECTION             0x04
 	/* have established a connection */
 #define CONNECTED                   0x08
@@ -259,6 +259,8 @@ struct scsi_info {
 #define SCHEDULE_DISCONNECT           0x00400
 	/* disconnect handler is scheduled */
 #define DISCONNECT_SCHEDULED          0x00800
+	/* remove function is sleeping */
+#define CFG_SLEEPING                  0x01000
 	u32 flags;
 	/* adapter lock */
 	spinlock_t intr_lock;
@@ -287,6 +289,7 @@ struct scsi_info {
 
 	struct workqueue_struct *work_q;
 	struct completion wait_idle;
+	struct completion unconfig;
 	struct device dev;
 	struct vio_dev *dma_dev;
 	struct srp_target target;

@@ -361,6 +361,7 @@ struct drm_ioctl_desc {
 /* Event queued up for userspace to read */
 struct drm_pending_event {
 	struct completion *completion;
+	void (*completion_release)(struct completion *completion);
 	struct drm_event *event;
 	struct fence *fence;
 	struct list_head link;
@@ -775,6 +776,7 @@ struct drm_device {
 	struct drm_minor *control;		/**< Control node */
 	struct drm_minor *primary;		/**< Primary node */
 	struct drm_minor *render;		/**< Render node */
+	bool registered;
 
 	/* currently active master for this device. Protected by master_mutex */
 	struct drm_master *master;

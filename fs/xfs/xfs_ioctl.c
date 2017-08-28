@@ -910,16 +910,14 @@ xfs_ioc_fsgetxattr(
 	if (attr) {
 		if (ip->i_afp) {
 			if (ip->i_afp->if_flags & XFS_IFEXTENTS)
-				fa.fsx_nextents = ip->i_afp->if_bytes /
-							sizeof(xfs_bmbt_rec_t);
+				fa.fsx_nextents = xfs_iext_count(ip->i_afp);
 			else
 				fa.fsx_nextents = ip->i_d.di_anextents;
 		} else
 			fa.fsx_nextents = 0;
 	} else {
 		if (ip->i_df.if_flags & XFS_IFEXTENTS)
-			fa.fsx_nextents = ip->i_df.if_bytes /
-						sizeof(xfs_bmbt_rec_t);
+			fa.fsx_nextents = xfs_iext_count(&ip->i_df);
 		else
 			fa.fsx_nextents = ip->i_d.di_nextents;
 	}
@@ -1544,10 +1542,11 @@ xfs_ioc_getbmap(
 	unsigned int		cmd,
 	void			__user *arg)
 {
-	struct getbmapx		bmx;
+	struct getbmapx		bmx = { 0 };
 	int			error;
 
-	if (copy_from_user(&bmx, arg, sizeof(struct getbmapx)))
+	/* struct getbmap is a strict subset of struct getbmapx. */
+	if (copy_from_user(&bmx, arg, offsetof(struct getbmapx, bmv_iflags)))
 		return -EFAULT;
 
 	if (bmx.bmv_count < 2)

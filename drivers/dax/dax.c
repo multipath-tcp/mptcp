@@ -24,6 +24,7 @@
 #include "dax.h"
 
 static dev_t dax_devt;
+DEFINE_STATIC_SRCU(dax_srcu);
 static struct class *dax_class;
 static DEFINE_IDA(dax_minor_ida);
 static int nr_dax = CONFIG_NR_DEV_DAX;
@@ -59,7 +60,7 @@ struct dax_region {
  * @region - parent region
  * @dev - device backing the character device
  * @cdev - core chardev data
- * @alive - !alive + rcu grace period == no new mappings can be established
+ * @alive - !alive + srcu grace period == no new mappings can be established
  * @id - child id in the region
  * @num_resources - number of physical address extents in this device
  * @res - array of physical address ranges
@@ -334,6 +335,7 @@ static int __dax_dev_fault(struct dax_dev *dax_dev, struct vm_area_struct *vma,
 	int rc = VM_FAULT_SIGBUS;
 	phys_addr_t phys;
 	pfn_t pfn;
+	unsigned int fault_size = PAGE_SIZE;
 
 	if (check_vma(dax_dev, vma, __func__))
 		return VM_FAULT_SIGBUS;
@@ -343,6 +345,9 @@ static int __dax_dev_fault(struct dax_dev *dax_dev, struct vm_area_struct *vma,
 		dev_dbg(dev, "%s: alignment > fault size\n", __func__);
 		return VM_FAULT_SIGBUS;
 	}
+
+	if (fault_size != dax_region->align)
+		return VM_FAULT_SIGBUS;
 
 	phys = pgoff_to_phys(dax_dev, vmf->pgoff, PAGE_SIZE);
 	if (phys == -1) {
@@ -389,6 +394,7 @@ static int __dax_dev_pmd_fault(struct dax_dev *dax_dev,
 	phys_addr_t phys;
 	pgoff_t pgoff;
 	pfn_t pfn;
+	unsigned int fault_size = PMD_SIZE;
 
 	if (check_vma(dax_dev, vma, __func__))
 		return VM_FAULT_SIGBUS;
@@ -404,6 +410,16 @@ static int __dax_dev_pmd_fault(struct dax_dev *dax_dev,
 		dev_dbg(dev, "%s: alignment > fault size\n", __func__);
 		return VM_FAULT_SIGBUS;
 	}
+
+	if (fault_size < dax_region->align)
+		return VM_FAULT_SIGBUS;
+	else if (fault_size > dax_region->align)
+		return VM_FAULT_FALLBACK;
+
+	/* if we are outside of the VMA */
+	if (pmd_addr < vma->vm_start ||
+			(pmd_addr + PMD_SIZE) > vma->vm_end)
+		return VM_FAULT_SIGBUS;
 
 	pgoff = linear_page_index(vma, pmd_addr);
 	phys = pgoff_to_phys(dax_dev, pgoff, PMD_SIZE);
@@ -422,7 +438,7 @@ static int __dax_dev_pmd_fault(struct dax_dev *dax_dev,
 static int dax_dev_pmd_fault(struct vm_area_struct *vma, unsigned long addr,
 		pmd_t *pmd, unsigned int flags)
 {
-	int rc;
+	int rc, id;
 	struct file *filp = vma->vm_file;
 	struct dax_dev *dax_dev = filp->private_data;
 
@@ -430,9 +446,9 @@ static int dax_dev_pmd_fault(struct vm_area_struct *vma, unsigned long addr,
 			current->comm, (flags & FAULT_FLAG_WRITE)
 			? "write" : "read", vma->vm_start, vma->vm_end);
 
-	rcu_read_lock();
+	id = srcu_read_lock(&dax_srcu);
 	rc = __dax_dev_pmd_fault(dax_dev, vma, addr, pmd, flags);
-	rcu_read_unlock();
+	srcu_read_unlock(&dax_srcu, id);
 
 	return rc;
 }
@@ -530,36 +546,43 @@ static void dax_dev_release(struct device *dev)
 	struct dax_dev *dax_dev = to_dax_dev(dev);
 	struct dax_region *dax_region = dax_dev->region;
 
-	ida_simple_remove(&dax_region->ida, dax_dev->id);
+	if (dax_dev->id >= 0)
+		ida_simple_remove(&dax_region->ida, dax_dev->id);
 	ida_simple_remove(&dax_minor_ida, MINOR(dev->devt));
 	dax_region_put(dax_region);
 	iput(dax_dev->inode);
 	kfree(dax_dev);
 }
 
-static void unregister_dax_dev(void *dev)
+static void kill_dax_dev(struct dax_dev *dax_dev)
 {
-	struct dax_dev *dax_dev = to_dax_dev(dev);
 	struct cdev *cdev = &dax_dev->cdev;
-
-	dev_dbg(dev, "%s\n", __func__);
 
 	/*
 	 * Note, rcu is not protecting the liveness of dax_dev, rcu is
 	 * ensuring that any fault handlers that might have seen
 	 * dax_dev->alive == true, have completed.  Any fault handlers
-	 * that start after synchronize_rcu() has started will abort
+	 * that start after synchronize_srcu() has started will abort
 	 * upon seeing dax_dev->alive == false.
 	 */
 	dax_dev->alive = false;
-	synchronize_rcu();
+	synchronize_srcu(&dax_srcu);
 	unmap_mapping_range(dax_dev->inode->i_mapping, 0, 0, 1);
 	cdev_del(cdev);
+}
+
+static void unregister_dax_dev(void *dev)
+{
+	struct dax_dev *dax_dev = to_dax_dev(dev);
+
+	dev_dbg(dev, "%s\n", __func__);
+
+	kill_dax_dev(dax_dev);
 	device_unregister(dev);
 }
 
 struct dax_dev *devm_create_dax_dev(struct dax_region *dax_region,
-		struct resource *res, int count)
+		int id, struct resource *res, int count)
 {
 	struct device *parent = dax_region->dev;
 	struct dax_dev *dax_dev;
@@ -586,10 +609,16 @@ struct dax_dev *devm_create_dax_dev(struct dax_region *dax_region,
 	if (i < count)
 		goto err_id;
 
-	dax_dev->id = ida_simple_get(&dax_region->ida, 0, 0, GFP_KERNEL);
-	if (dax_dev->id < 0) {
-		rc = dax_dev->id;
-		goto err_id;
+	if (id < 0) {
+		id = ida_simple_get(&dax_region->ida, 0, 0, GFP_KERNEL);
+		dax_dev->id = id;
+		if (id < 0) {
+			rc = id;
+			goto err_id;
+		}
+	} else {
+		/* region provider owns @id lifetime */
+		dax_dev->id = -1;
 	}
 
 	minor = ida_simple_get(&dax_minor_ida, 0, 0, GFP_KERNEL);
@@ -628,9 +657,10 @@ struct dax_dev *devm_create_dax_dev(struct dax_region *dax_region,
 	dev->parent = parent;
 	dev->groups = dax_attribute_groups;
 	dev->release = dax_dev_release;
-	dev_set_name(dev, "dax%d.%d", dax_region->id, dax_dev->id);
+	dev_set_name(dev, "dax%d.%d", dax_region->id, id);
 	rc = device_add(dev);
 	if (rc) {
+		kill_dax_dev(dax_dev);
 		put_device(dev);
 		return ERR_PTR(rc);
 	}
@@ -646,7 +676,8 @@ struct dax_dev *devm_create_dax_dev(struct dax_region *dax_region,
  err_inode:
 	ida_simple_remove(&dax_minor_ida, minor);
  err_minor:
-	ida_simple_remove(&dax_region->ida, dax_dev->id);
+	if (dax_dev->id >= 0)
+		ida_simple_remove(&dax_region->ida, dax_dev->id);
  err_id:
 	kfree(dax_dev);
 

@@ -1126,7 +1126,7 @@ ep0_write (struct file *fd, const char __user *buf, size_t len, loff_t *ptr)
 	/* data and/or status stage for control request */
 	} else if (dev->state == STATE_DEV_SETUP) {
 
-		/* IN DATA+STATUS caller makes len <= wLength */
+		len = min_t(size_t, len, dev->setup_wLength);
 		if (dev->setup_in) {
 			retval = setup_req (dev->gadget->ep0, dev->req, len);
 			if (retval == 0) {
@@ -1183,8 +1183,10 @@ dev_release (struct inode *inode, struct file *fd)
 
 	/* closing ep0 === shutdown all */
 
-	if (dev->gadget_registered)
+	if (dev->gadget_registered) {
 		usb_gadget_unregister_driver (&gadgetfs_driver);
+		dev->gadget_registered = false;
+	}
 
 	/* at this point "good" hardware has disconnected the
 	 * device from USB; the host won't see it any more.
@@ -1677,9 +1679,10 @@ static void
 gadgetfs_suspend (struct usb_gadget *gadget)
 {
 	struct dev_data		*dev = get_gadget_data (gadget);
+	unsigned long		flags;
 
 	INFO (dev, "suspended from state %d\n", dev->state);
-	spin_lock (&dev->lock);
+	spin_lock_irqsave(&dev->lock, flags);
 	switch (dev->state) {
 	case STATE_DEV_SETUP:		// VERY odd... host died??
 	case STATE_DEV_CONNECTED:
@@ -1690,7 +1693,7 @@ gadgetfs_suspend (struct usb_gadget *gadget)
 	default:
 		break;
 	}
-	spin_unlock (&dev->lock);
+	spin_unlock_irqrestore(&dev->lock, flags);
 }
 
 static struct usb_gadget_driver gadgetfs_driver = {
@@ -1734,10 +1737,12 @@ static struct usb_gadget_driver gadgetfs_driver = {
  * such as configuration notifications.
  */
 
-static int is_valid_config (struct usb_config_descriptor *config)
+static int is_valid_config(struct usb_config_descriptor *config,
+		unsigned int total)
 {
 	return config->bDescriptorType == USB_DT_CONFIG
 		&& config->bLength == USB_DT_CONFIG_SIZE
+		&& total >= USB_DT_CONFIG_SIZE
 		&& config->bConfigurationValue != 0
 		&& (config->bmAttributes & USB_CONFIG_ATT_ONE) != 0
 		&& (config->bmAttributes & USB_CONFIG_ATT_WAKEUP) == 0;
@@ -1762,7 +1767,8 @@ dev_config (struct file *fd, const char __user *buf, size_t len, loff_t *ptr)
 	}
 	spin_unlock_irq(&dev->lock);
 
-	if (len < (USB_DT_CONFIG_SIZE + USB_DT_DEVICE_SIZE + 4))
+	if ((len < (USB_DT_CONFIG_SIZE + USB_DT_DEVICE_SIZE + 4)) ||
+	    (len > PAGE_SIZE * 4))
 		return -EINVAL;
 
 	/* we might need to change message format someday */
@@ -1786,7 +1792,8 @@ dev_config (struct file *fd, const char __user *buf, size_t len, loff_t *ptr)
 	/* full or low speed config */
 	dev->config = (void *) kbuf;
 	total = le16_to_cpu(dev->config->wTotalLength);
-	if (!is_valid_config (dev->config) || total >= length)
+	if (!is_valid_config(dev->config, total) ||
+			total > length - USB_DT_DEVICE_SIZE)
 		goto fail;
 	kbuf += total;
 	length -= total;
@@ -1795,10 +1802,13 @@ dev_config (struct file *fd, const char __user *buf, size_t len, loff_t *ptr)
 	if (kbuf [1] == USB_DT_CONFIG) {
 		dev->hs_config = (void *) kbuf;
 		total = le16_to_cpu(dev->hs_config->wTotalLength);
-		if (!is_valid_config (dev->hs_config) || total >= length)
+		if (!is_valid_config(dev->hs_config, total) ||
+				total > length - USB_DT_DEVICE_SIZE)
 			goto fail;
 		kbuf += total;
 		length -= total;
+	} else {
+		dev->hs_config = NULL;
 	}
 
 	/* could support multiple configs, using another encoding! */

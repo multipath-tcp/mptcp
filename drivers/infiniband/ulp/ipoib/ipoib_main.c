@@ -108,6 +108,33 @@ static struct ib_client ipoib_client = {
 	.get_net_dev_by_params = ipoib_get_net_dev_by_params,
 };
 
+#ifdef CONFIG_INFINIBAND_IPOIB_DEBUG
+static int ipoib_netdev_event(struct notifier_block *this,
+			      unsigned long event, void *ptr)
+{
+	struct netdev_notifier_info *ni = ptr;
+	struct net_device *dev = ni->dev;
+
+	if (dev->netdev_ops->ndo_open != ipoib_open)
+		return NOTIFY_DONE;
+
+	switch (event) {
+	case NETDEV_REGISTER:
+		ipoib_create_debug_files(dev);
+		break;
+	case NETDEV_CHANGENAME:
+		ipoib_delete_debug_files(dev);
+		ipoib_create_debug_files(dev);
+		break;
+	case NETDEV_UNREGISTER:
+		ipoib_delete_debug_files(dev);
+		break;
+	}
+
+	return NOTIFY_DONE;
+}
+#endif
+
 int ipoib_open(struct net_device *dev)
 {
 	struct ipoib_dev_priv *priv = netdev_priv(dev);
@@ -468,8 +495,7 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
 		priv->tx_wr.wr.send_flags &= ~IB_SEND_IP_CSUM;
 
 		ipoib_flush_paths(dev);
-		rtnl_lock();
-		return 0;
+		return (!rtnl_trylock()) ? -EBUSY : 0;
 	}
 
 	if (!strcmp(buf, "datagram\n")) {
@@ -478,8 +504,7 @@ int ipoib_set_mode(struct net_device *dev, const char *buf)
 		dev_set_mtu(dev, min(priv->mcast_mtu, dev->mtu));
 		rtnl_unlock();
 		ipoib_flush_paths(dev);
-		rtnl_lock();
-		return 0;
+		return (!rtnl_trylock()) ? -EBUSY : 0;
 	}
 
 	return -EINVAL;
@@ -701,6 +726,14 @@ int ipoib_check_sm_sendonly_fullmember_support(struct ipoib_dev_priv *priv)
 	kfree(callback_context);
 
 	return ret;
+}
+
+static void push_pseudo_header(struct sk_buff *skb, const char *daddr)
+{
+	struct ipoib_pseudo_header *phdr;
+
+	phdr = (struct ipoib_pseudo_header *)skb_push(skb, sizeof(*phdr));
+	memcpy(phdr->hwaddr, daddr, INFINIBAND_ALEN);
 }
 
 void ipoib_flush_paths(struct net_device *dev)
@@ -927,8 +960,7 @@ static void neigh_add_path(struct sk_buff *skb, u8 *daddr,
 			}
 			if (skb_queue_len(&neigh->queue) <
 			    IPOIB_MAX_PATH_REC_QUEUE) {
-				/* put pseudoheader back on for next time */
-				skb_push(skb, IPOIB_PSEUDO_LEN);
+				push_pseudo_header(skb, neigh->daddr);
 				__skb_queue_tail(&neigh->queue, skb);
 			} else {
 				ipoib_warn(priv, "queue length limit %d. Packet drop.\n",
@@ -946,10 +978,12 @@ static void neigh_add_path(struct sk_buff *skb, u8 *daddr,
 
 		if (!path->query && path_rec_start(dev, path))
 			goto err_path;
-		if (skb_queue_len(&neigh->queue) < IPOIB_MAX_PATH_REC_QUEUE)
+		if (skb_queue_len(&neigh->queue) < IPOIB_MAX_PATH_REC_QUEUE) {
+			push_pseudo_header(skb, neigh->daddr);
 			__skb_queue_tail(&neigh->queue, skb);
-		else
+		} else {
 			goto err_drop;
+		}
 	}
 
 	spin_unlock_irqrestore(&priv->lock, flags);
@@ -985,8 +1019,7 @@ static void unicast_arp_send(struct sk_buff *skb, struct net_device *dev,
 		}
 		if (path) {
 			if (skb_queue_len(&path->queue) < IPOIB_MAX_PATH_REC_QUEUE) {
-				/* put pseudoheader back on for next time */
-				skb_push(skb, IPOIB_PSEUDO_LEN);
+				push_pseudo_header(skb, phdr->hwaddr);
 				__skb_queue_tail(&path->queue, skb);
 			} else {
 				++dev->stats.tx_dropped;
@@ -1018,8 +1051,7 @@ static void unicast_arp_send(struct sk_buff *skb, struct net_device *dev,
 		return;
 	} else if ((path->query || !path_rec_start(dev, path)) &&
 		   skb_queue_len(&path->queue) < IPOIB_MAX_PATH_REC_QUEUE) {
-		/* put pseudoheader back on for next time */
-		skb_push(skb, IPOIB_PSEUDO_LEN);
+		push_pseudo_header(skb, phdr->hwaddr);
 		__skb_queue_tail(&path->queue, skb);
 	} else {
 		++dev->stats.tx_dropped;
@@ -1100,8 +1132,7 @@ send_using_neigh:
 	}
 
 	if (skb_queue_len(&neigh->queue) < IPOIB_MAX_PATH_REC_QUEUE) {
-		/* put pseudoheader back on for next time */
-		skb_push(skb, sizeof(*phdr));
+		push_pseudo_header(skb, phdr->hwaddr);
 		spin_lock_irqsave(&priv->lock, flags);
 		__skb_queue_tail(&neigh->queue, skb);
 		spin_unlock_irqrestore(&priv->lock, flags);
@@ -1133,7 +1164,6 @@ static int ipoib_hard_header(struct sk_buff *skb,
 			     unsigned short type,
 			     const void *daddr, const void *saddr, unsigned len)
 {
-	struct ipoib_pseudo_header *phdr;
 	struct ipoib_header *header;
 
 	header = (struct ipoib_header *) skb_push(skb, sizeof *header);
@@ -1146,8 +1176,7 @@ static int ipoib_hard_header(struct sk_buff *skb,
 	 * destination address into skb hard header so we can figure out where
 	 * to send the packet later.
 	 */
-	phdr = (struct ipoib_pseudo_header *) skb_push(skb, sizeof(*phdr));
-	memcpy(phdr->hwaddr, daddr, INFINIBAND_ALEN);
+	push_pseudo_header(skb, daddr);
 
 	return IPOIB_HARD_LEN;
 }
@@ -1653,8 +1682,6 @@ void ipoib_dev_cleanup(struct net_device *dev)
 
 	ASSERT_RTNL();
 
-	ipoib_delete_debug_files(dev);
-
 	/* Delete any child interfaces first */
 	list_for_each_entry_safe(cpriv, tcpriv, &priv->child_intfs, list) {
 		/* Stop GC on child */
@@ -2072,8 +2099,6 @@ static struct net_device *ipoib_add_port(const char *format,
 		goto register_failed;
 	}
 
-	ipoib_create_debug_files(priv->dev);
-
 	if (ipoib_cm_add_mode_attr(priv->dev))
 		goto sysfs_failed;
 	if (ipoib_add_pkey_attr(priv->dev))
@@ -2088,7 +2113,6 @@ static struct net_device *ipoib_add_port(const char *format,
 	return priv->dev;
 
 sysfs_failed:
-	ipoib_delete_debug_files(priv->dev);
 	unregister_netdev(priv->dev);
 
 register_failed:
@@ -2173,6 +2197,12 @@ static void ipoib_remove_one(struct ib_device *device, void *client_data)
 	kfree(dev_list);
 }
 
+#ifdef CONFIG_INFINIBAND_IPOIB_DEBUG
+static struct notifier_block ipoib_netdev_notifier = {
+	.notifier_call = ipoib_netdev_event,
+};
+#endif
+
 static int __init ipoib_init_module(void)
 {
 	int ret;
@@ -2225,6 +2255,9 @@ static int __init ipoib_init_module(void)
 	if (ret)
 		goto err_client;
 
+#ifdef CONFIG_INFINIBAND_IPOIB_DEBUG
+	register_netdevice_notifier(&ipoib_netdev_notifier);
+#endif
 	return 0;
 
 err_client:
@@ -2242,6 +2275,9 @@ err_fs:
 
 static void __exit ipoib_cleanup_module(void)
 {
+#ifdef CONFIG_INFINIBAND_IPOIB_DEBUG
+	unregister_netdevice_notifier(&ipoib_netdev_notifier);
+#endif
 	ipoib_netlink_fini();
 	ib_unregister_client(&ipoib_client);
 	ib_sa_unregister_client(&ipoib_sa_client);

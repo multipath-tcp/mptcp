@@ -1603,13 +1603,25 @@ static size_t sizeof_nfit_set_info(int num_mappings)
 		+ num_mappings * sizeof(struct nfit_set_info_map);
 }
 
-static int cmp_map(const void *m0, const void *m1)
+static int cmp_map_compat(const void *m0, const void *m1)
 {
 	const struct nfit_set_info_map *map0 = m0;
 	const struct nfit_set_info_map *map1 = m1;
 
 	return memcmp(&map0->region_offset, &map1->region_offset,
 			sizeof(u64));
+}
+
+static int cmp_map(const void *m0, const void *m1)
+{
+	const struct nfit_set_info_map *map0 = m0;
+	const struct nfit_set_info_map *map1 = m1;
+
+	if (map0->region_offset < map1->region_offset)
+		return -1;
+	else if (map0->region_offset > map1->region_offset)
+		return 1;
+	return 0;
 }
 
 /* Retrieve the nth entry referencing this spa */
@@ -1667,6 +1679,12 @@ static int acpi_nfit_init_interleave_set(struct acpi_nfit_desc *acpi_desc,
 	sort(&info->mapping[0], nr, sizeof(struct nfit_set_info_map),
 			cmp_map, NULL);
 	nd_set->cookie = nd_fletcher64(info, sizeof_nfit_set_info(nr), 0);
+
+	/* support namespaces created with the wrong sort order */
+	sort(&info->mapping[0], nr, sizeof(struct nfit_set_info_map),
+			cmp_map_compat, NULL);
+	nd_set->altcookie = nd_fletcher64(info, sizeof_nfit_set_info(nr), 0);
+
 	ndr_desc->nd_set = nd_set;
 	devm_kfree(dev, info);
 
@@ -2704,6 +2722,7 @@ static int acpi_nfit_flush_probe(struct nvdimm_bus_descriptor *nd_desc)
 	struct acpi_nfit_desc *acpi_desc = to_acpi_nfit_desc(nd_desc);
 	struct device *dev = acpi_desc->dev;
 	struct acpi_nfit_flush_work flush;
+	int rc;
 
 	/* bounce the device lock to flush acpi_nfit_add / acpi_nfit_notify */
 	device_lock(dev);
@@ -2716,7 +2735,10 @@ static int acpi_nfit_flush_probe(struct nvdimm_bus_descriptor *nd_desc)
 	INIT_WORK_ONSTACK(&flush.work, flush_probe);
 	COMPLETION_INITIALIZER_ONSTACK(flush.cmp);
 	queue_work(nfit_wq, &flush.work);
-	return wait_for_completion_interruptible(&flush.cmp);
+
+	rc = wait_for_completion_interruptible(&flush.cmp);
+	cancel_work_sync(&flush.work);
+	return rc;
 }
 
 static int acpi_nfit_clear_to_send(struct nvdimm_bus_descriptor *nd_desc,
@@ -2923,6 +2945,8 @@ static struct acpi_driver acpi_nfit_driver = {
 
 static __init int nfit_init(void)
 {
+	int ret;
+
 	BUILD_BUG_ON(sizeof(struct acpi_table_nfit) != 40);
 	BUILD_BUG_ON(sizeof(struct acpi_nfit_system_address) != 56);
 	BUILD_BUG_ON(sizeof(struct acpi_nfit_memory_map) != 48);
@@ -2950,8 +2974,14 @@ static __init int nfit_init(void)
 		return -ENOMEM;
 
 	nfit_mce_register();
+	ret = acpi_bus_register_driver(&acpi_nfit_driver);
+	if (ret) {
+		nfit_mce_unregister();
+		destroy_workqueue(nfit_wq);
+	}
 
-	return acpi_bus_register_driver(&acpi_nfit_driver);
+	return ret;
+
 }
 
 static __exit void nfit_exit(void)

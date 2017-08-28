@@ -189,7 +189,7 @@ long cifs_ioctl(struct file *filep, unsigned int command, unsigned long arg)
 	xid = get_xid();
 
 	cifs_sb = CIFS_SB(inode->i_sb);
-	cifs_dbg(VFS, "cifs ioctl 0x%x\n", command);
+	cifs_dbg(FYI, "cifs ioctl 0x%x\n", command);
 	switch (command) {
 		case FS_IOC_GETFLAGS:
 			if (pSMBFile == NULL)
@@ -264,10 +264,14 @@ long cifs_ioctl(struct file *filep, unsigned int command, unsigned long arg)
 				rc = -EOPNOTSUPP;
 			break;
 		case CIFS_IOC_GET_MNT_INFO:
+			if (pSMBFile == NULL)
+				break;
 			tcon = tlink_tcon(pSMBFile->tlink);
 			rc = smb_mnt_get_fsinfo(xid, tcon, (void __user *)arg);
 			break;
 		case CIFS_ENUMERATE_SNAPSHOTS:
+			if (pSMBFile == NULL)
+				break;
 			if (arg == 0) {
 				rc = -EINVAL;
 				goto cifs_ioc_exit;

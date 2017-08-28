@@ -558,13 +558,9 @@ static struct inode *f2fs_alloc_inode(struct super_block *sb)
 
 	init_once((void *) fi);
 
-	if (percpu_counter_init(&fi->dirty_pages, 0, GFP_NOFS)) {
-		kmem_cache_free(f2fs_inode_cachep, fi);
-		return NULL;
-	}
-
 	/* Initialize f2fs-specific inode info */
 	fi->vfs_inode.i_version = 1;
+	atomic_set(&fi->dirty_pages, 0);
 	fi->i_current_depth = 1;
 	fi->i_advise = 0;
 	init_rwsem(&fi->i_sem);
@@ -687,16 +683,11 @@ static void f2fs_i_callback(struct rcu_head *head)
 
 static void f2fs_destroy_inode(struct inode *inode)
 {
-	percpu_counter_destroy(&F2FS_I(inode)->dirty_pages);
 	call_rcu(&inode->i_rcu, f2fs_i_callback);
 }
 
 static void destroy_percpu_info(struct f2fs_sb_info *sbi)
 {
-	int i;
-
-	for (i = 0; i < NR_COUNT_TYPE; i++)
-		percpu_counter_destroy(&sbi->nr_pages[i]);
 	percpu_counter_destroy(&sbi->alloc_valid_block_count);
 	percpu_counter_destroy(&sbi->total_valid_inode_count);
 }
@@ -1414,6 +1405,13 @@ static int sanity_check_raw_super(struct f2fs_sb_info *sbi,
 		return 1;
 	}
 
+	if (le32_to_cpu(raw_super->segment_count) > F2FS_MAX_SEGMENT) {
+		f2fs_msg(sb, KERN_INFO,
+			"Invalid segment count (%u)",
+			le32_to_cpu(raw_super->segment_count));
+		return 1;
+	}
+
 	/* check CP/SIT/NAT/SSA/MAIN_AREA area boundary */
 	if (sanity_check_area_boundary(sbi, bh))
 		return 1;
@@ -1426,6 +1424,8 @@ int sanity_check_ckpt(struct f2fs_sb_info *sbi)
 	unsigned int total, fsmeta;
 	struct f2fs_super_block *raw_super = F2FS_RAW_SUPER(sbi);
 	struct f2fs_checkpoint *ckpt = F2FS_CKPT(sbi);
+	unsigned int main_segs, blocks_per_seg;
+	int i;
 
 	total = le32_to_cpu(raw_super->segment_count);
 	fsmeta = le32_to_cpu(raw_super->segment_count_ckpt);
@@ -1437,6 +1437,20 @@ int sanity_check_ckpt(struct f2fs_sb_info *sbi)
 	if (unlikely(fsmeta >= total))
 		return 1;
 
+	main_segs = le32_to_cpu(raw_super->segment_count_main);
+	blocks_per_seg = sbi->blocks_per_seg;
+
+	for (i = 0; i < NR_CURSEG_NODE_TYPE; i++) {
+		if (le32_to_cpu(ckpt->cur_node_segno[i]) >= main_segs ||
+			le16_to_cpu(ckpt->cur_node_blkoff[i]) >= blocks_per_seg)
+			return 1;
+	}
+	for (i = 0; i < NR_CURSEG_DATA_TYPE; i++) {
+		if (le32_to_cpu(ckpt->cur_data_segno[i]) >= main_segs ||
+			le16_to_cpu(ckpt->cur_data_blkoff[i]) >= blocks_per_seg)
+			return 1;
+	}
+
 	if (unlikely(f2fs_cp_error(sbi))) {
 		f2fs_msg(sbi->sb, KERN_ERR, "A bug case: need to run fsck");
 		return 1;
@@ -1447,6 +1461,7 @@ int sanity_check_ckpt(struct f2fs_sb_info *sbi)
 static void init_sb_info(struct f2fs_sb_info *sbi)
 {
 	struct f2fs_super_block *raw_super = sbi->raw_super;
+	int i;
 
 	sbi->log_sectors_per_block =
 		le32_to_cpu(raw_super->log_sectors_per_block);
@@ -1471,6 +1486,9 @@ static void init_sb_info(struct f2fs_sb_info *sbi)
 	sbi->interval_time[REQ_TIME] = DEF_IDLE_INTERVAL;
 	clear_sbi_flag(sbi, SBI_NEED_FSCK);
 
+	for (i = 0; i < NR_COUNT_TYPE; i++)
+		atomic_set(&sbi->nr_pages[i], 0);
+
 	INIT_LIST_HEAD(&sbi->s_list);
 	mutex_init(&sbi->umount_mutex);
 	mutex_init(&sbi->wio_mutex[NODE]);
@@ -1486,13 +1504,7 @@ static void init_sb_info(struct f2fs_sb_info *sbi)
 
 static int init_percpu_info(struct f2fs_sb_info *sbi)
 {
-	int i, err;
-
-	for (i = 0; i < NR_COUNT_TYPE; i++) {
-		err = percpu_counter_init(&sbi->nr_pages[i], 0, GFP_KERNEL);
-		if (err)
-			return err;
-	}
+	int err;
 
 	err = percpu_counter_init(&sbi->alloc_valid_block_count, 0, GFP_KERNEL);
 	if (err)

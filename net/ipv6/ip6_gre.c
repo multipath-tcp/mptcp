@@ -367,35 +367,37 @@ static void ip6gre_tunnel_uninit(struct net_device *dev)
 
 
 static void ip6gre_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
-		u8 type, u8 code, int offset, __be32 info)
+		       u8 type, u8 code, int offset, __be32 info)
 {
-	const struct ipv6hdr *ipv6h = (const struct ipv6hdr *)skb->data;
-	__be16 *p = (__be16 *)(skb->data + offset);
-	int grehlen = offset + 4;
+	const struct gre_base_hdr *greh;
+	const struct ipv6hdr *ipv6h;
+	int grehlen = sizeof(*greh);
 	struct ip6_tnl *t;
+	int key_off = 0;
 	__be16 flags;
+	__be32 key;
 
-	flags = p[0];
-	if (flags&(GRE_CSUM|GRE_KEY|GRE_SEQ|GRE_ROUTING|GRE_VERSION)) {
-		if (flags&(GRE_VERSION|GRE_ROUTING))
-			return;
-		if (flags&GRE_KEY) {
-			grehlen += 4;
-			if (flags&GRE_CSUM)
-				grehlen += 4;
-		}
+	if (!pskb_may_pull(skb, offset + grehlen))
+		return;
+	greh = (const struct gre_base_hdr *)(skb->data + offset);
+	flags = greh->flags;
+	if (flags & (GRE_VERSION | GRE_ROUTING))
+		return;
+	if (flags & GRE_CSUM)
+		grehlen += 4;
+	if (flags & GRE_KEY) {
+		key_off = grehlen + offset;
+		grehlen += 4;
 	}
 
-	/* If only 8 bytes returned, keyed message will be dropped here */
-	if (!pskb_may_pull(skb, grehlen))
+	if (!pskb_may_pull(skb, offset + grehlen))
 		return;
 	ipv6h = (const struct ipv6hdr *)skb->data;
-	p = (__be16 *)(skb->data + offset);
+	greh = (const struct gre_base_hdr *)(skb->data + offset);
+	key = key_off ? *(__be32 *)(skb->data + key_off) : 0;
 
 	t = ip6gre_tunnel_lookup(skb->dev, &ipv6h->daddr, &ipv6h->saddr,
-				flags & GRE_KEY ?
-				*(((__be32 *)p) + (grehlen / 4) - 1) : 0,
-				p[1]);
+				 key, greh->protocol);
 	if (!t)
 		return;
 
@@ -540,11 +542,10 @@ static inline int ip6gre_xmit_ipv4(struct sk_buff *skb, struct net_device *dev)
 
 	memcpy(&fl6, &t->fl.u.ip6, sizeof(fl6));
 
-	dsfield = ipv4_get_dsfield(iph);
-
 	if (t->parms.flags & IP6_TNL_F_USE_ORIG_TCLASS)
-		fl6.flowlabel |= htonl((__u32)iph->tos << IPV6_TCLASS_SHIFT)
-					  & IPV6_TCLASS_MASK;
+		dsfield = ipv4_get_dsfield(iph);
+	else
+		dsfield = ip6_tclass(t->parms.flowinfo);
 	if (t->parms.flags & IP6_TNL_F_USE_ORIG_FWMARK)
 		fl6.flowi6_mark = skb->mark;
 
@@ -580,6 +581,9 @@ static inline int ip6gre_xmit_ipv6(struct sk_buff *skb, struct net_device *dev)
 		return -1;
 
 	offset = ip6_tnl_parse_tlv_enc_lim(skb, skb_network_header(skb));
+	/* ip6_tnl_parse_tlv_enc_lim() might have reallocated skb->head */
+	ipv6h = ipv6_hdr(skb);
+
 	if (offset > 0) {
 		struct ipv6_tlv_tnl_enc_lim *tel;
 		tel = (struct ipv6_tlv_tnl_enc_lim *)&skb_network_header(skb)[offset];
@@ -594,9 +598,11 @@ static inline int ip6gre_xmit_ipv6(struct sk_buff *skb, struct net_device *dev)
 
 	memcpy(&fl6, &t->fl.u.ip6, sizeof(fl6));
 
-	dsfield = ipv6_get_dsfield(ipv6h);
 	if (t->parms.flags & IP6_TNL_F_USE_ORIG_TCLASS)
-		fl6.flowlabel |= (*(__be32 *) ipv6h & IPV6_TCLASS_MASK);
+		dsfield = ipv6_get_dsfield(ipv6h);
+	else
+		dsfield = ip6_tclass(t->parms.flowinfo);
+
 	if (t->parms.flags & IP6_TNL_F_USE_ORIG_FLOWLABEL)
 		fl6.flowlabel |= ip6_flowlabel(ipv6h);
 	if (t->parms.flags & IP6_TNL_F_USE_ORIG_FWMARK)

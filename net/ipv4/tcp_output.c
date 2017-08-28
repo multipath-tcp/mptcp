@@ -1278,7 +1278,7 @@ int tcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
  * eventually). The difference is that pulled data not copied, but
  * immediately discarded.
  */
-void __pskb_trim_head(struct sk_buff *skb, int len)
+int __pskb_trim_head(struct sk_buff *skb, int len)
 {
 	struct skb_shared_info *shinfo;
 	int i, k, eat;
@@ -1288,7 +1288,7 @@ void __pskb_trim_head(struct sk_buff *skb, int len)
 		__skb_pull(skb, eat);
 		len -= eat;
 		if (!len)
-			return;
+			return 0;
 	}
 	eat = len;
 	k = 0;
@@ -1314,23 +1314,28 @@ void __pskb_trim_head(struct sk_buff *skb, int len)
 	skb_reset_tail_pointer(skb);
 	skb->data_len -= len;
 	skb->len = skb->data_len;
+	return len;
 }
 
 /* Remove acked data from a packet in the transmit queue. */
 int tcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
 {
+	u32 delta_truesize;
+
 	if (skb_unclone(skb, GFP_ATOMIC))
 		return -ENOMEM;
 
-	__pskb_trim_head(skb, len);
+	delta_truesize = __pskb_trim_head(skb, len);
 
 	TCP_SKB_CB(skb)->seq += len;
 	skb->ip_summed = CHECKSUM_PARTIAL;
 
-	skb->truesize	     -= len;
-	sk->sk_wmem_queued   -= len;
-	sk_mem_uncharge(sk, len);
-	sock_set_flag(sk, SOCK_QUEUE_SHRUNK);
+	if (delta_truesize) {
+		skb->truesize	   -= delta_truesize;
+		sk->sk_wmem_queued -= delta_truesize;
+		sk_mem_uncharge(sk, delta_truesize);
+		sock_set_flag(sk, SOCK_QUEUE_SHRUNK);
+	}
 
 	/* Any change of skb->len requires recalculation of tso factor. */
 	if (tcp_skb_pcount(skb) > 1)
@@ -2476,9 +2481,11 @@ u32 __tcp_select_window(struct sock *sk)
 	int full_space = min_t(int, tp->window_clamp, allowed_space);
 	int window;
 
-	if (mss > full_space)
+	if (unlikely(mss > full_space)) {
 		mss = full_space;
-
+		if (mss <= 0)
+			return 0;
+	}
 	if (free_space < (full_space >> 1)) {
 		icsk->icsk_ack.quick = 0;
 
@@ -3410,6 +3417,9 @@ int tcp_connect(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *buff;
 	int err;
+
+	if (inet_csk(sk)->icsk_af_ops->rebuild_header(sk))
+		return -EHOSTUNREACH; /* Routing failure or similar. */
 
 	tcp_connect_init(sk);
 

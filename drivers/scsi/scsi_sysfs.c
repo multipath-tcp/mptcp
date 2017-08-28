@@ -1204,10 +1204,6 @@ int scsi_sysfs_add_sdev(struct scsi_device *sdev)
 	struct request_queue *rq = sdev->request_queue;
 	struct scsi_target *starget = sdev->sdev_target;
 
-	error = scsi_device_set_state(sdev, SDEV_RUNNING);
-	if (error)
-		return error;
-
 	error = scsi_target_add(starget);
 	if (error)
 		return error;
@@ -1374,11 +1370,15 @@ restart:
 	spin_lock_irqsave(shost->host_lock, flags);
 	list_for_each_entry(starget, &shost->__targets, siblings) {
 		if (starget->state == STARGET_DEL ||
-		    starget->state == STARGET_REMOVE)
+		    starget->state == STARGET_REMOVE ||
+		    starget->state == STARGET_CREATED_REMOVE)
 			continue;
 		if (starget->dev.parent == dev || &starget->dev == dev) {
 			kref_get(&starget->reap_ref);
-			starget->state = STARGET_REMOVE;
+			if (starget->state == STARGET_CREATED)
+				starget->state = STARGET_CREATED_REMOVE;
+			else
+				starget->state = STARGET_REMOVE;
 			spin_unlock_irqrestore(shost->host_lock, flags);
 			__scsi_remove_target(starget);
 			scsi_target_reap(starget);

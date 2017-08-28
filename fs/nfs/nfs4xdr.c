@@ -1761,7 +1761,7 @@ static void encode_exchange_id(struct xdr_stream *xdr,
 	int len = 0;
 
 	encode_op_hdr(xdr, OP_EXCHANGE_ID, decode_exchange_id_maxsz, hdr);
-	encode_nfs4_verifier(xdr, args->verifier);
+	encode_nfs4_verifier(xdr, &args->verifier);
 
 	encode_string(xdr, strlen(args->client->cl_owner_id),
 			args->client->cl_owner_id);
@@ -2492,7 +2492,7 @@ static void nfs4_xdr_enc_getacl(struct rpc_rqst *req, struct xdr_stream *xdr,
 	encode_compound_hdr(xdr, req, &hdr);
 	encode_sequence(xdr, &args->seq_args, &hdr);
 	encode_putfh(xdr, args->fh, &hdr);
-	replen = hdr.replen + op_decode_hdr_maxsz + 1;
+	replen = hdr.replen + op_decode_hdr_maxsz;
 	encode_getattr_two(xdr, FATTR4_WORD0_ACL, 0, &hdr);
 
 	xdr_inline_pages(&req->rq_rcv_buf, replen << 2,

@@ -115,7 +115,7 @@ int init_new_context(struct task_struct *tsk, struct mm_struct *mm)
 	mm->context.pte_frag = NULL;
 #endif
 #ifdef CONFIG_SPAPR_TCE_IOMMU
-	mm_iommu_init(&mm->context);
+	mm_iommu_init(mm);
 #endif
 	return 0;
 }
@@ -156,22 +156,26 @@ static inline void destroy_pagetable_page(struct mm_struct *mm)
 }
 #endif
 
-
 void destroy_context(struct mm_struct *mm)
 {
 #ifdef CONFIG_SPAPR_TCE_IOMMU
-	mm_iommu_cleanup(&mm->context);
+	WARN_ON_ONCE(!list_empty(&mm->context.iommu_group_mem_list));
 #endif
-
 #ifdef CONFIG_PPC_ICSWX
 	drop_cop(mm->context.acop, mm);
 	kfree(mm->context.cop_lockp);
 	mm->context.cop_lockp = NULL;
 #endif /* CONFIG_PPC_ICSWX */
 
-	if (radix_enabled())
-		process_tb[mm->context.id].prtb1 = 0;
-	else
+	if (radix_enabled()) {
+		/*
+		 * Radix doesn't have a valid bit in the process table
+		 * entries. However we know that at least P9 implementation
+		 * will avoid caching an entry with an invalid RTS field,
+		 * and 0 is invalid. So this will do.
+		 */
+		process_tb[mm->context.id].prtb0 = 0;
+	} else
 		subpage_prot_free(mm);
 	destroy_pagetable_page(mm);
 	__destroy_context(mm->context.id);

@@ -924,6 +924,7 @@ smb3_enum_snapshots(const unsigned int xid, struct cifs_tcon *tcon,
 		}
 		if (snapshot_in.snapshot_array_size < sizeof(struct smb_snapshot_array)) {
 			rc = -ERANGE;
+			kfree(retbuf);
 			return rc;
 		}
 
@@ -963,7 +964,7 @@ smb2_query_dir_first(const unsigned int xid, struct cifs_tcon *tcon,
 	rc = SMB2_open(xid, &oparms, utf16_path, &oplock, NULL, NULL);
 	kfree(utf16_path);
 	if (rc) {
-		cifs_dbg(VFS, "open dir failed\n");
+		cifs_dbg(FYI, "open dir failed rc=%d\n", rc);
 		return rc;
 	}
 
@@ -973,7 +974,7 @@ smb2_query_dir_first(const unsigned int xid, struct cifs_tcon *tcon,
 	rc = SMB2_query_directory(xid, tcon, fid->persistent_fid,
 				  fid->volatile_fid, 0, srch_inf);
 	if (rc) {
-		cifs_dbg(VFS, "query directory failed\n");
+		cifs_dbg(FYI, "query directory failed rc=%d\n", rc);
 		SMB2_close(xid, tcon, fid->persistent_fid, fid->volatile_fid);
 	}
 	return rc;
@@ -1565,6 +1566,7 @@ struct smb_version_operations smb20_operations = {
 	.clear_stats = smb2_clear_stats,
 	.print_stats = smb2_print_stats,
 	.is_oplock_break = smb2_is_valid_oplock_break,
+	.handle_cancelled_mid = smb2_handle_cancelled_mid,
 	.downgrade_oplock = smb2_downgrade_oplock,
 	.need_neg = smb2_need_neg,
 	.negotiate = smb2_negotiate,
@@ -1645,6 +1647,7 @@ struct smb_version_operations smb21_operations = {
 	.clear_stats = smb2_clear_stats,
 	.print_stats = smb2_print_stats,
 	.is_oplock_break = smb2_is_valid_oplock_break,
+	.handle_cancelled_mid = smb2_handle_cancelled_mid,
 	.downgrade_oplock = smb2_downgrade_oplock,
 	.need_neg = smb2_need_neg,
 	.negotiate = smb2_negotiate,
@@ -1727,6 +1730,7 @@ struct smb_version_operations smb30_operations = {
 	.print_stats = smb2_print_stats,
 	.dump_share_caps = smb2_dump_share_caps,
 	.is_oplock_break = smb2_is_valid_oplock_break,
+	.handle_cancelled_mid = smb2_handle_cancelled_mid,
 	.downgrade_oplock = smb2_downgrade_oplock,
 	.need_neg = smb2_need_neg,
 	.negotiate = smb2_negotiate,
@@ -1815,6 +1819,7 @@ struct smb_version_operations smb311_operations = {
 	.print_stats = smb2_print_stats,
 	.dump_share_caps = smb2_dump_share_caps,
 	.is_oplock_break = smb2_is_valid_oplock_break,
+	.handle_cancelled_mid = smb2_handle_cancelled_mid,
 	.downgrade_oplock = smb2_downgrade_oplock,
 	.need_neg = smb2_need_neg,
 	.negotiate = smb2_negotiate,

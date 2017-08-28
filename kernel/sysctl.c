@@ -2146,9 +2146,12 @@ static int do_proc_douintvec_conv(bool *negp, unsigned long *lvalp,
 	if (write) {
 		if (*negp)
 			return -EINVAL;
+		if (*lvalp > UINT_MAX)
+			return -EINVAL;
 		*valp = *lvalp;
 	} else {
 		unsigned int val = *valp;
+		*negp = false;
 		*lvalp = (unsigned long)val;
 	}
 	return 0;
@@ -2487,6 +2490,7 @@ static int __do_proc_doulongvec_minmax(void *data, struct ctl_table *table, int 
 				break;
 			if (neg)
 				continue;
+			val = convmul * val / convdiv;
 			if ((min && val < *min) || (max && val > *max))
 				continue;
 			*i = val;

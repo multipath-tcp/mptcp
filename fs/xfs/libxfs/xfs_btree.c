@@ -810,7 +810,8 @@ xfs_btree_read_bufl(
 	xfs_daddr_t		d;		/* real disk block address */
 	int			error;
 
-	ASSERT(fsbno != NULLFSBLOCK);
+	if (!XFS_FSB_SANITY_CHECK(mp, fsbno))
+		return -EFSCORRUPTED;
 	d = XFS_FSB_TO_DADDR(mp, fsbno);
 	error = xfs_trans_read_buf(mp, tp, mp->m_ddev_targp, d,
 				   mp->m_bsize, lock, &bp, ops);
@@ -1769,8 +1770,28 @@ xfs_btree_lookup_get_block(
 	if (error)
 		return error;
 
+	/* Check the inode owner since the verifiers don't. */
+	if (xfs_sb_version_hascrc(&cur->bc_mp->m_sb) &&
+	    (cur->bc_flags & XFS_BTREE_LONG_PTRS) &&
+	    be64_to_cpu((*blkp)->bb_u.l.bb_owner) !=
+			cur->bc_private.b.ip->i_ino)
+		goto out_bad;
+
+	/* Did we get the level we were looking for? */
+	if (be16_to_cpu((*blkp)->bb_level) != level)
+		goto out_bad;
+
+	/* Check that internal nodes have at least one record. */
+	if (level != 0 && be16_to_cpu((*blkp)->bb_numrecs) == 0)
+		goto out_bad;
+
 	xfs_btree_setbuf(cur, level, bp);
 	return 0;
+
+out_bad:
+	*blkp = NULL;
+	xfs_trans_brelse(cur->bc_tp, bp);
+	return -EFSCORRUPTED;
 }
 
 /*
@@ -4355,7 +4376,7 @@ xfs_btree_visit_blocks(
 			xfs_btree_readahead_ptr(cur, ptr, 1);
 
 			/* save for the next iteration of the loop */
-			lptr = *ptr;
+			xfs_btree_copy_ptrs(cur, &lptr, ptr, 1);
 		}
 
 		/* for each buffer in the level */

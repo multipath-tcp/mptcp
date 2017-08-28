@@ -3067,7 +3067,7 @@ static int __qlt_send_term_imm_notif(struct scsi_qla_host *vha,
 
 	pkt->entry_type = NOTIFY_ACK_TYPE;
 	pkt->entry_count = 1;
-	pkt->handle = QLA_TGT_SKIP_HANDLE | CTIO_COMPLETION_HANDLE_MARK;
+	pkt->handle = QLA_TGT_SKIP_HANDLE;
 
 	nack = (struct nack_to_isp *)pkt;
 	nack->ox_id = ntfy->ox_id;
@@ -5375,16 +5375,22 @@ qlt_send_busy(struct scsi_qla_host *vha,
 
 static int
 qlt_chk_qfull_thresh_hold(struct scsi_qla_host *vha,
-	struct atio_from_isp *atio)
+	struct atio_from_isp *atio, bool ha_locked)
 {
 	struct qla_hw_data *ha = vha->hw;
 	uint16_t status;
+	unsigned long flags;
 
 	if (ha->tgt.num_pend_cmds < Q_FULL_THRESH_HOLD(ha))
 		return 0;
 
+	if (!ha_locked)
+		spin_lock_irqsave(&ha->hardware_lock, flags);
 	status = temp_sam_status;
 	qlt_send_busy(vha, atio, status);
+	if (!ha_locked)
+		spin_unlock_irqrestore(&ha->hardware_lock, flags);
+
 	return 1;
 }
 
@@ -5429,7 +5435,7 @@ static void qlt_24xx_atio_pkt(struct scsi_qla_host *vha,
 
 
 		if (likely(atio->u.isp24.fcp_cmnd.task_mgmt_flags == 0)) {
-			rc = qlt_chk_qfull_thresh_hold(vha, atio);
+			rc = qlt_chk_qfull_thresh_hold(vha, atio, ha_locked);
 			if (rc != 0) {
 				tgt->atio_irq_cmd_count--;
 				return;
@@ -5552,7 +5558,7 @@ static void qlt_response_pkt(struct scsi_qla_host *vha, response_t *pkt)
 			break;
 		}
 
-		rc = qlt_chk_qfull_thresh_hold(vha, atio);
+		rc = qlt_chk_qfull_thresh_hold(vha, atio, true);
 		if (rc != 0) {
 			tgt->irq_cmd_count--;
 			return;
@@ -6457,12 +6463,29 @@ qlt_24xx_process_atio_queue(struct scsi_qla_host *vha, uint8_t ha_locked)
 	if (!vha->flags.online)
 		return;
 
-	while (ha->tgt.atio_ring_ptr->signature != ATIO_PROCESSED) {
+	while ((ha->tgt.atio_ring_ptr->signature != ATIO_PROCESSED) ||
+	    fcpcmd_is_corrupted(ha->tgt.atio_ring_ptr)) {
 		pkt = (struct atio_from_isp *)ha->tgt.atio_ring_ptr;
 		cnt = pkt->u.raw.entry_count;
 
-		qlt_24xx_atio_pkt_all_vps(vha, (struct atio_from_isp *)pkt,
-		    ha_locked);
+		if (unlikely(fcpcmd_is_corrupted(ha->tgt.atio_ring_ptr))) {
+			/*
+			 * This packet is corrupted. The header + payload
+			 * can not be trusted. There is no point in passing
+			 * it further up.
+			 */
+			ql_log(ql_log_warn, vha, 0xffff,
+			    "corrupted fcp frame SID[%3phN] OXID[%04x] EXCG[%x] %64phN\n",
+			    pkt->u.isp24.fcp_hdr.s_id,
+			    be16_to_cpu(pkt->u.isp24.fcp_hdr.ox_id),
+			    le32_to_cpu(pkt->u.isp24.exchange_addr), pkt);
+
+			adjust_corrupted_atio(pkt);
+			qlt_send_term_exchange(vha, NULL, pkt, ha_locked, 0);
+		} else {
+			qlt_24xx_atio_pkt_all_vps(vha,
+			    (struct atio_from_isp *)pkt, ha_locked);
+		}
 
 		for (i = 0; i < cnt; i++) {
 			ha->tgt.atio_ring_index++;
@@ -6794,6 +6817,8 @@ qlt_handle_abts_recv_work(struct work_struct *work)
 	spin_lock_irqsave(&ha->hardware_lock, flags);
 	qlt_response_pkt_all_vps(vha, (response_t *)&op->atio);
 	spin_unlock_irqrestore(&ha->hardware_lock, flags);
+
+	kfree(op);
 }
 
 void

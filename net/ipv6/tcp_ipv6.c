@@ -142,8 +142,13 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 	 *	connect() to INADDR_ANY means loopback (BSD'ism).
 	 */
 
-	if (ipv6_addr_any(&usin->sin6_addr))
-		usin->sin6_addr.s6_addr[15] = 0x1;
+	if (ipv6_addr_any(&usin->sin6_addr)) {
+		if (ipv6_addr_v4mapped(&sk->sk_v6_rcv_saddr))
+			ipv6_addr_set_v4mapped(htonl(INADDR_LOOPBACK),
+					       &usin->sin6_addr);
+		else
+			usin->sin6_addr = in6addr_loopback;
+	}
 
 	addr_type = ipv6_addr_type(&usin->sin6_addr);
 
@@ -182,7 +187,7 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 	 *	TCP over IPv4
 	 */
 
-	if (addr_type == IPV6_ADDR_MAPPED) {
+	if (addr_type & IPV6_ADDR_MAPPED) {
 		u32 exthdrlen = icsk->icsk_ext_hdr_len;
 		struct sockaddr_in sin;
 
@@ -384,10 +389,12 @@ static void tcp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 	np = inet6_sk(sk);
 
 	if (type == NDISC_REDIRECT) {
-		struct dst_entry *dst = __sk_dst_check(sk, np->dst_cookie);
+		if (!sock_owned_by_user(sk)) {
+			struct dst_entry *dst = __sk_dst_check(sk, np->dst_cookie);
 
-		if (dst)
-			dst->ops->redirect(dst, sk, skb);
+			if (dst)
+				dst->ops->redirect(dst, sk, skb);
+		}
 		goto out;
 	}
 
@@ -480,7 +487,7 @@ static int tcp_v6_send_synack(const struct sock *sk, struct dst_entry *dst,
 		opt = ireq->ipv6_opt;
 		if (!opt)
 			opt = rcu_dereference(np->opt);
-		err = ip6_xmit(sk, skb, fl6, opt, np->tclass);
+		err = ip6_xmit(sk, skb, fl6, sk->sk_mark, opt, np->tclass);
 		rcu_read_unlock();
 		err = net_xmit_eval(err);
 	}
@@ -866,7 +873,7 @@ static void tcp_v6_send_response(const struct sock *sk, struct sk_buff *skb, u32
 	dst = ip6_dst_lookup_flow(ctl_sk, &fl6, NULL);
 	if (!IS_ERR(dst)) {
 		skb_dst_set(buff, dst);
-		ip6_xmit(ctl_sk, buff, &fl6, NULL, tclass);
+		ip6_xmit(ctl_sk, buff, &fl6, fl6.flowi6_mark, NULL, tclass);
 		TCP_INC_STATS(net, TCP_MIB_OUTSEGS);
 		if (rst)
 			TCP_INC_STATS(net, TCP_MIB_OUTRSTS);
@@ -1023,6 +1030,16 @@ drop:
 	return 0; /* don't send reset */
 }
 
+static void tcp_v6_restore_cb(struct sk_buff *skb)
+{
+	/* We need to move header back to the beginning if xfrm6_policy_check()
+	 * and tcp_v6_fill_cb() are going to be called again.
+	 * ip6_datagram_recv_specific_ctl() also expects IP6CB to be there.
+	 */
+	memmove(IP6CB(skb), &TCP_SKB_CB(skb)->header.h6,
+		sizeof(struct inet6_skb_parm));
+}
+
 struct sock *tcp_v6_syn_recv_sock(const struct sock *sk, struct sk_buff *skb,
 				  struct request_sock *req,
 				  struct dst_entry *dst,
@@ -1078,6 +1095,7 @@ struct sock *tcp_v6_syn_recv_sock(const struct sock *sk, struct sk_buff *skb,
 		newtp->af_specific = &tcp_sock_ipv6_mapped_specific;
 #endif
 
+		newnp->ipv6_mc_list = NULL;
 		newnp->ipv6_ac_list = NULL;
 		newnp->ipv6_fl_list = NULL;
 		newnp->pktoptions  = NULL;
@@ -1155,6 +1173,7 @@ struct sock *tcp_v6_syn_recv_sock(const struct sock *sk, struct sk_buff *skb,
 	   First: no IPv4 options.
 	 */
 	newinet->inet_opt = NULL;
+	newnp->ipv6_mc_list = NULL;
 	newnp->ipv6_ac_list = NULL;
 	newnp->ipv6_fl_list = NULL;
 
@@ -1230,8 +1249,10 @@ struct sock *tcp_v6_syn_recv_sock(const struct sock *sk, struct sk_buff *skb,
 						      sk_gfp_mask(sk, GFP_ATOMIC));
 			consume_skb(ireq->pktopts);
 			ireq->pktopts = NULL;
-			if (newnp->pktoptions)
+			if (newnp->pktoptions) {
+				tcp_v6_restore_cb(newnp->pktoptions);
 				skb_set_owner_r(newnp->pktoptions, newsk);
+			}
 		}
 	}
 
@@ -1244,16 +1265,6 @@ out_nonewsk:
 out:
 	tcp_listendrop(sk);
 	return NULL;
-}
-
-static void tcp_v6_restore_cb(struct sk_buff *skb)
-{
-	/* We need to move header back to the beginning if xfrm6_policy_check()
-	 * and tcp_v6_fill_cb() are going to be called again.
-	 * ip6_datagram_recv_specific_ctl() also expects IP6CB to be there.
-	 */
-	memmove(IP6CB(skb), &TCP_SKB_CB(skb)->header.h6,
-		sizeof(struct inet6_skb_parm));
 }
 
 /* The socket must have it's spinlock held when we get

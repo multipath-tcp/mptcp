@@ -374,7 +374,7 @@ static int nfs_write_end(struct file *file, struct address_space *mapping,
 	 */
 	if (!PageUptodate(page)) {
 		unsigned pglen = nfs_page_length(page);
-		unsigned end = offset + len;
+		unsigned end = offset + copied;
 
 		if (pglen == 0) {
 			zero_user_segments(page, 0, offset,
@@ -757,7 +757,7 @@ do_setlk(struct file *filp, int cmd, struct file_lock *fl, int is_local)
 	 */
 	nfs_sync_mapping(filp->f_mapping);
 	if (!NFS_PROTO(inode)->have_delegation(inode, FMODE_READ))
-		nfs_zap_mapping(inode, filp->f_mapping);
+		nfs_zap_caches(inode);
 out:
 	return status;
 }

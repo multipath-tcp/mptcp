@@ -240,6 +240,7 @@ static int i915_getparam(struct drm_device *dev, void *data,
 	case I915_PARAM_IRQ_ACTIVE:
 	case I915_PARAM_ALLOW_BATCHBUFFER:
 	case I915_PARAM_LAST_DISPATCH:
+	case I915_PARAM_HAS_EXEC_CONSTANTS:
 		/* Reject all old ums/dri params. */
 		return -ENODEV;
 	case I915_PARAM_CHIPSET_ID:
@@ -265,9 +266,6 @@ static int i915_getparam(struct drm_device *dev, void *data,
 		break;
 	case I915_PARAM_HAS_BSD2:
 		value = intel_engine_initialized(&dev_priv->engine[VCS2]);
-		break;
-	case I915_PARAM_HAS_EXEC_CONSTANTS:
-		value = INTEL_GEN(dev_priv) >= 4;
 		break;
 	case I915_PARAM_HAS_LLC:
 		value = HAS_LLC(dev_priv);
@@ -575,9 +573,7 @@ static int i915_load_modeset_init(struct drm_device *dev)
 	if (i915_inject_load_failure())
 		return -ENODEV;
 
-	ret = intel_bios_init(dev_priv);
-	if (ret)
-		DRM_INFO("failed to find VBIOS tables\n");
+	intel_bios_init(dev_priv);
 
 	/* If we have > 1 VGA cards, then we need to arbitrate access
 	 * to the common VGA resources.
@@ -1203,6 +1199,15 @@ int i915_driver_load(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto out_free_priv;
 
 	pci_set_drvdata(pdev, &dev_priv->drm);
+	/*
+	 * Disable the system suspend direct complete optimization, which can
+	 * leave the device suspended skipping the driver's suspend handlers
+	 * if the device was already runtime suspended. This is needed due to
+	 * the difference in our runtime and system suspend sequence and
+	 * becaue the HDA driver may require us to enable the audio power
+	 * domain during system suspend.
+	 */
+	pdev->dev_flags |= PCI_DEV_FLAGS_NEEDS_RESUME;
 
 	ret = i915_driver_init_early(dev_priv, ent);
 	if (ret < 0)
@@ -2372,7 +2377,7 @@ static int intel_runtime_suspend(struct device *kdev)
 
 	assert_forcewakes_inactive(dev_priv);
 
-	if (!IS_VALLEYVIEW(dev_priv) || !IS_CHERRYVIEW(dev_priv))
+	if (!IS_VALLEYVIEW(dev_priv) && !IS_CHERRYVIEW(dev_priv))
 		intel_hpd_poll_init(dev_priv);
 
 	DRM_DEBUG_KMS("Device suspended\n");

@@ -1906,7 +1906,7 @@ tracing_generic_entry_update(struct trace_entry *entry, unsigned long flags,
 #endif
 		((pc & NMI_MASK    ) ? TRACE_FLAG_NMI     : 0) |
 		((pc & HARDIRQ_MASK) ? TRACE_FLAG_HARDIRQ : 0) |
-		((pc & SOFTIRQ_MASK) ? TRACE_FLAG_SOFTIRQ : 0) |
+		((pc & SOFTIRQ_OFFSET) ? TRACE_FLAG_SOFTIRQ : 0) |
 		(tif_need_resched() ? TRACE_FLAG_NEED_RESCHED : 0) |
 		(test_preempt_need_resched() ? TRACE_FLAG_PREEMPT_RESCHED : 0);
 }
@@ -6481,11 +6481,13 @@ ftrace_trace_snapshot_callback(struct ftrace_hash *hash,
 		return ret;
 
  out_reg:
+	ret = alloc_snapshot(&global_trace);
+	if (ret < 0)
+		goto out;
+
 	ret = register_ftrace_function_probe(glob, ops, count);
 
-	if (ret >= 0)
-		alloc_snapshot(&global_trace);
-
+ out:
 	return ret < 0 ? ret : 0;
 }
 
@@ -7150,6 +7152,7 @@ static int instance_rmdir(const char *name)
 
 	tracing_set_nop(tr);
 	event_trace_del_tracer(tr);
+	ftrace_clear_pids(tr);
 	ftrace_destroy_function_files(tr);
 	tracefs_remove_recursive(tr->dir);
 	free_trace_buffers(tr);
@@ -7159,6 +7162,7 @@ static int instance_rmdir(const char *name)
 	}
 	kfree(tr->topts);
 
+	free_cpumask_var(tr->tracing_cpumask);
 	kfree(tr->name);
 	kfree(tr);
 
@@ -7241,7 +7245,7 @@ init_tracer_tracefs(struct trace_array *tr, struct dentry *d_tracer)
 	ftrace_init_tracefs(tr, d_tracer);
 }
 
-static struct vfsmount *trace_automount(void *ingore)
+static struct vfsmount *trace_automount(struct dentry *mntpt, void *ingore)
 {
 	struct vfsmount *mnt;
 	struct file_system_type *type;
@@ -7254,7 +7258,7 @@ static struct vfsmount *trace_automount(void *ingore)
 	type = get_fs_type("tracefs");
 	if (!type)
 		return NULL;
-	mnt = vfs_kern_mount(type, 0, "tracefs", NULL);
+	mnt = vfs_submount(mntpt, type, "tracefs", NULL);
 	put_filesystem(type);
 	if (IS_ERR(mnt))
 		return NULL;

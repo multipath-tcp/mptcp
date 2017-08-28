@@ -7,6 +7,7 @@
 #include <linux/kthread.h>
 #include <linux/net.h>
 #include <linux/nsproxy.h>
+#include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/socket.h>
 #include <linux/string.h>
@@ -469,11 +470,16 @@ static int ceph_tcp_connect(struct ceph_connection *con)
 {
 	struct sockaddr_storage *paddr = &con->peer_addr.in_addr;
 	struct socket *sock;
+	unsigned int noio_flag;
 	int ret;
 
 	BUG_ON(con->sock);
+
+	/* sock_create_kern() allocates with GFP_KERNEL */
+	noio_flag = memalloc_noio_save();
 	ret = sock_create_kern(read_pnet(&con->msgr->net), paddr->ss_family,
 			       SOCK_STREAM, IPPROTO_TCP, &sock);
+	memalloc_noio_restore(noio_flag);
 	if (ret)
 		return ret;
 	sock->sk->sk_allocation = GFP_NOFS;
@@ -2026,6 +2032,19 @@ static int process_connect(struct ceph_connection *con)
 	int ret;
 
 	dout("process_connect on %p tag %d\n", con, (int)con->in_tag);
+
+	if (con->auth_reply_buf) {
+		/*
+		 * Any connection that defines ->get_authorizer()
+		 * should also define ->verify_authorizer_reply().
+		 * See get_connect_authorizer().
+		 */
+		ret = con->ops->verify_authorizer_reply(con, 0);
+		if (ret < 0) {
+			con->error_msg = "bad authorize reply";
+			return ret;
+		}
+	}
 
 	switch (con->in_reply.tag) {
 	case CEPH_MSGR_TAG_FEATURES:

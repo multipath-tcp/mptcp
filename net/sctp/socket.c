@@ -235,8 +235,12 @@ static struct sctp_transport *sctp_addr_id2transport(struct sock *sk,
 					      sctp_assoc_t id)
 {
 	struct sctp_association *addr_asoc = NULL, *id_asoc = NULL;
-	struct sctp_transport *transport;
+	struct sctp_af *af = sctp_get_af_specific(addr->ss_family);
 	union sctp_addr *laddr = (union sctp_addr *)addr;
+	struct sctp_transport *transport;
+
+	if (!af || sctp_verify_addr(sk, laddr, af->sockaddr_len))
+		return NULL;
 
 	addr_asoc = sctp_endpoint_lookup_assoc(sctp_sk(sk)->ep,
 					       laddr,
@@ -4456,13 +4460,13 @@ int sctp_for_each_endpoint(int (*cb)(struct sctp_endpoint *, void *),
 
 	for (head = sctp_ep_hashtable; hash < sctp_ep_hashsize;
 	     hash++, head++) {
-		read_lock(&head->lock);
+		read_lock_bh(&head->lock);
 		sctp_for_each_hentry(epb, &head->chain) {
 			err = cb(sctp_ep(epb), p);
 			if (err)
 				break;
 		}
-		read_unlock(&head->lock);
+		read_unlock_bh(&head->lock);
 	}
 
 	return err;
@@ -4479,9 +4483,10 @@ int sctp_transport_lookup_process(int (*cb)(struct sctp_transport *, void *),
 
 	rcu_read_lock();
 	transport = sctp_addrs_lookup_transport(net, laddr, paddr);
-	if (!transport || !sctp_transport_hold(transport))
+	if (!transport || !sctp_transport_hold(transport)) {
+		rcu_read_unlock();
 		goto out;
-
+	}
 	rcu_read_unlock();
 	err = cb(transport, p);
 	sctp_transport_put(transport);
@@ -4501,9 +4506,8 @@ int sctp_for_each_transport(int (*cb)(struct sctp_transport *, void *),
 	if (err)
 		return err;
 
-	sctp_transport_get_idx(net, &hti, pos);
-	obj = sctp_transport_get_next(net, &hti);
-	for (; obj && !IS_ERR(obj); obj = sctp_transport_get_next(net, &hti)) {
+	obj = sctp_transport_get_idx(net, &hti, pos + 1);
+	for (; !IS_ERR_OR_NULL(obj); obj = sctp_transport_get_next(net, &hti)) {
 		struct sctp_transport *transport = obj;
 
 		if (!sctp_transport_hold(transport))
@@ -4733,6 +4737,12 @@ int sctp_do_peeloff(struct sock *sk, sctp_assoc_t id, struct socket **sockp)
 
 	if (!asoc)
 		return -EINVAL;
+
+	/* If there is a thread waiting on more sndbuf space for
+	 * sending on this asoc, it cannot be peeled.
+	 */
+	if (waitqueue_active(&asoc->wait))
+		return -EBUSY;
 
 	/* An association cannot be branched off from an already peeled-off
 	 * socket, nor is this supported for tcp style sockets.
@@ -6854,6 +6864,9 @@ int sctp_inet_listen(struct socket *sock, int backlog)
 	if (sock->state != SS_UNCONNECTED)
 		goto out;
 
+	if (!sctp_sstate(sk, LISTENING) && !sctp_sstate(sk, CLOSED))
+		goto out;
+
 	/* If backlog is zero, disable listening. */
 	if (!backlog) {
 		if (sctp_sstate(sk, CLOSED))
@@ -7426,7 +7439,6 @@ static int sctp_wait_for_sndbuf(struct sctp_association *asoc, long *timeo_p,
 		 */
 		release_sock(sk);
 		current_timeo = schedule_timeout(current_timeo);
-		BUG_ON(sk != asoc->base.sk);
 		lock_sock(sk);
 
 		*timeo_p = current_timeo;

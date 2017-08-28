@@ -337,7 +337,7 @@
 #define   LPCR_DPFD_SH		52
 #define   LPCR_DPFD		(ASM_CONST(7) << LPCR_DPFD_SH)
 #define   LPCR_VRMASD_SH	47
-#define   LPCR_VRMASD		(ASM_CONST(1) << LPCR_VRMASD_SH)
+#define   LPCR_VRMASD		(ASM_CONST(0x1f) << LPCR_VRMASD_SH)
 #define   LPCR_VRMA_L		ASM_CONST(0x0008000000000000)
 #define   LPCR_VRMA_LP0		ASM_CONST(0x0001000000000000)
 #define   LPCR_VRMA_LP1		ASM_CONST(0x0000800000000000)
@@ -641,9 +641,10 @@
 #define   SRR1_ISI_N_OR_G	0x10000000 /* ISI: Access is no-exec or G */
 #define   SRR1_ISI_PROT		0x08000000 /* ISI: Other protection fault */
 #define   SRR1_WAKEMASK		0x00380000 /* reason for wakeup */
-#define   SRR1_WAKEMASK_P8	0x003c0000 /* reason for wakeup on POWER8 */
+#define   SRR1_WAKEMASK_P8	0x003c0000 /* reason for wakeup on POWER8 and 9 */
 #define   SRR1_WAKESYSERR	0x00300000 /* System error */
 #define   SRR1_WAKEEE		0x00200000 /* External interrupt */
+#define   SRR1_WAKEHVI		0x00240000 /* Hypervisor Virtualization Interrupt (P9) */
 #define   SRR1_WAKEMT		0x00280000 /* mtctrl */
 #define	  SRR1_WAKEHMI		0x00280000 /* Hypervisor maintenance */
 #define   SRR1_WAKEDEC		0x00180000 /* Decrementer interrupt */
@@ -1282,7 +1283,7 @@ static inline void msr_check_and_clear(unsigned long bits)
 				"	.llong 0\n"			\
 				".previous"				\
 			: "=r" (rval) \
-			: "i" (CPU_FTR_CELL_TB_BUG), "i" (SPRN_TBRL)); \
+			: "i" (CPU_FTR_CELL_TB_BUG), "i" (SPRN_TBRL) : "cr0"); \
 			rval;})
 #else
 #define mftb()		({unsigned long rval;	\

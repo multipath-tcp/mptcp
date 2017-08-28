@@ -203,6 +203,7 @@ ssize_t splice_to_pipe(struct pipe_inode_info *pipe,
 		buf->len = spd->partial[page_nr].len;
 		buf->private = spd->partial[page_nr].private;
 		buf->ops = spd->ops;
+		buf->flags = 0;
 
 		pipe->nrbufs++;
 		page_nr++;
@@ -1086,7 +1087,13 @@ EXPORT_SYMBOL(do_splice_direct);
 
 static int wait_for_space(struct pipe_inode_info *pipe, unsigned flags)
 {
-	while (pipe->nrbufs == pipe->buffers) {
+	for (;;) {
+		if (unlikely(!pipe->readers)) {
+			send_sig(SIGPIPE, current, 0);
+			return -EPIPE;
+		}
+		if (pipe->nrbufs != pipe->buffers)
+			return 0;
 		if (flags & SPLICE_F_NONBLOCK)
 			return -EAGAIN;
 		if (signal_pending(current))
@@ -1095,7 +1102,6 @@ static int wait_for_space(struct pipe_inode_info *pipe, unsigned flags)
 		pipe_wait(pipe);
 		pipe->waiting_writers--;
 	}
-	return 0;
 }
 
 static int splice_pipe_to_pipe(struct pipe_inode_info *ipipe,

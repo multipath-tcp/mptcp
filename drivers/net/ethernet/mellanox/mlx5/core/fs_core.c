@@ -1110,9 +1110,8 @@ static struct mlx5_flow_rule *add_rule_fg(struct mlx5_flow_group *fg,
 				return rule;
 			}
 			rule = add_rule_fte(fte, fg, dest);
-			unlock_ref_node(&fte->node);
 			if (IS_ERR(rule))
-				goto unlock_fg;
+				goto unlock_fte;
 			else
 				goto add_rule;
 		}
@@ -1130,6 +1129,7 @@ static struct mlx5_flow_rule *add_rule_fg(struct mlx5_flow_group *fg,
 		goto unlock_fg;
 	}
 	tree_init_node(&fte->node, 0, del_fte);
+	nested_lock_ref_node(&fte->node, FS_MUTEX_CHILD);
 	rule = add_rule_fte(fte, fg, dest);
 	if (IS_ERR(rule)) {
 		kfree(fte);
@@ -1142,6 +1142,8 @@ static struct mlx5_flow_rule *add_rule_fg(struct mlx5_flow_group *fg,
 	list_add(&fte->node.list, prev);
 add_rule:
 	tree_add_node(&rule->node, &fte->node);
+unlock_fte:
+	unlock_ref_node(&fte->node);
 unlock_fg:
 	unlock_ref_node(&fg->node);
 	return rule;
@@ -1676,7 +1678,7 @@ static int create_anchor_flow_table(struct mlx5_flow_steering *steering)
 	struct mlx5_flow_table *ft;
 
 	ns = mlx5_get_flow_namespace(steering->dev, MLX5_FLOW_NAMESPACE_ANCHOR);
-	if (!ns)
+	if (WARN_ON(!ns))
 		return -EINVAL;
 	ft = mlx5_create_flow_table(ns, ANCHOR_PRIO, ANCHOR_SIZE, ANCHOR_LEVEL);
 	if (IS_ERR(ft)) {

@@ -995,9 +995,11 @@ static int unix_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	unsigned int hash;
 	struct unix_address *addr;
 	struct hlist_head *list;
+	struct path path = { NULL, NULL };
 
 	err = -EINVAL;
-	if (sunaddr->sun_family != AF_UNIX)
+	if (addr_len < offsetofend(struct sockaddr_un, sun_family) ||
+	    sunaddr->sun_family != AF_UNIX)
 		goto out;
 
 	if (addr_len == sizeof(short)) {
@@ -1010,9 +1012,20 @@ static int unix_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 		goto out;
 	addr_len = err;
 
+	if (sun_path[0]) {
+		umode_t mode = S_IFSOCK |
+		       (SOCK_INODE(sock)->i_mode & ~current_umask());
+		err = unix_mknod(sun_path, mode, &path);
+		if (err) {
+			if (err == -EEXIST)
+				err = -EADDRINUSE;
+			goto out;
+		}
+	}
+
 	err = mutex_lock_interruptible(&u->bindlock);
 	if (err)
-		goto out;
+		goto out_put;
 
 	err = -EINVAL;
 	if (u->addr)
@@ -1029,16 +1042,6 @@ static int unix_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	atomic_set(&addr->refcnt, 1);
 
 	if (sun_path[0]) {
-		struct path path;
-		umode_t mode = S_IFSOCK |
-		       (SOCK_INODE(sock)->i_mode & ~current_umask());
-		err = unix_mknod(sun_path, mode, &path);
-		if (err) {
-			if (err == -EEXIST)
-				err = -EADDRINUSE;
-			unix_release_addr(addr);
-			goto out_up;
-		}
 		addr->hash = UNIX_HASH_SIZE;
 		hash = d_real_inode(path.dentry)->i_ino & (UNIX_HASH_SIZE - 1);
 		spin_lock(&unix_table_lock);
@@ -1065,6 +1068,9 @@ out_unlock:
 	spin_unlock(&unix_table_lock);
 out_up:
 	mutex_unlock(&u->bindlock);
+out_put:
+	if (err)
+		path_put(&path);
 out:
 	return err;
 }
@@ -1103,6 +1109,10 @@ static int unix_dgram_connect(struct socket *sock, struct sockaddr *addr,
 	struct sock *other;
 	unsigned int hash;
 	int err;
+
+	err = -EINVAL;
+	if (alen < offsetofend(struct sockaddr, sa_family))
+		goto out;
 
 	if (addr->sa_family != AF_UNSPEC) {
 		err = unix_mkname(sunaddr, alen, &hash);

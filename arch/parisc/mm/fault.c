@@ -149,6 +149,23 @@ int fixup_exception(struct pt_regs *regs)
 		d->fault_space = regs->isr;
 		d->fault_addr = regs->ior;
 
+		/*
+		 * Fix up get_user() and put_user().
+		 * ASM_EXCEPTIONTABLE_ENTRY_EFAULT() sets the least-significant
+		 * bit in the relative address of the fixup routine to indicate
+		 * that %r8 should be loaded with -EFAULT to report a userspace
+		 * access error.
+		 */
+		if (fix->fixup & 1) {
+			regs->gr[8] = -EFAULT;
+
+			/* zero target register for get_user() */
+			if (parisc_acctyp(0, regs->iir) == VM_READ) {
+				int treg = regs->iir & 0x1f;
+				regs->gr[treg] = 0;
+			}
+		}
+
 		regs->iaoq[0] = (unsigned long)&fix->fixup + fix->fixup;
 		regs->iaoq[0] &= ~3;
 		/*
@@ -234,7 +251,7 @@ show_signal_msg(struct pt_regs *regs, unsigned long code,
 	    tsk->comm, code, address);
 	print_vma_addr(KERN_CONT " in ", regs->iaoq[0]);
 
-	pr_cont(" trap #%lu: %s%c", code, trap_name(code),
+	pr_cont("\ntrap #%lu: %s%c", code, trap_name(code),
 		vma ? ',':'\n');
 
 	if (vma)
@@ -349,7 +366,7 @@ bad_area:
 		case 15:	/* Data TLB miss fault/Data page fault */
 			/* send SIGSEGV when outside of vma */
 			if (!vma ||
-			    address < vma->vm_start || address > vma->vm_end) {
+			    address < vma->vm_start || address >= vma->vm_end) {
 				si.si_signo = SIGSEGV;
 				si.si_code = SEGV_MAPERR;
 				break;
