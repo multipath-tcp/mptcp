@@ -1830,10 +1830,6 @@ void mptcp_disconnect(struct sock *sk)
 
 	local_bh_disable();
 	mptcp_for_each_sk_safe(tp->mpcb, subsk, tmpsk) {
-		/* Don't close subflow used for MP_FASTCLOSE */
-		if (tcp_sk(subsk)->send_mp_fclose)
-			continue;
-
 		/* The socket will get removed from the subsocket-list
 		 * and made non-mptcp by setting mpc to 0.
 		 *
