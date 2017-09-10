@@ -92,6 +92,12 @@ config MPTCP_REDUNDANT
 	  This scheduler sends all packets redundantly over all subflows to decreases
 	  latency and jitter on the cost of lower throughput.
 
+config MPTCP_RTTDELTA
+	tristate "MPTCP RttDelta"
+	depends on (MPTCP=y)
+	---help---
+	  This scheduler using default or redundant scheduler to send packets based on rtt delta between two subflows.	  
+
 choice
 	prompt "Default MPTCP Scheduler"
 	default DEFAULT
@@ -116,6 +122,12 @@ choice
 		  This is the redundant scheduler, sending packets redundantly over
 		  all the subflows.
 
+	config DEFAULT_RTTDELTA
+		bool "Rtt-Delta" if MPTCP_RTTDELTA=y
+		---help---
+		  This is the rtt-delta scheduler, using default or redundant scheduler 
+		  to send packets based on rtt delta between two subflows.		  
+
 endchoice
 endif
 
@@ -125,5 +137,6 @@ config DEFAULT_MPTCP_SCHED
 	default "default" if DEFAULT_SCHEDULER
 	default "roundrobin" if DEFAULT_ROUNDROBIN
 	default "redundant" if DEFAULT_REDUNDANT
+	default "rttdelta" if DEFAULT_RTTDELTA	
 	default "default"
 

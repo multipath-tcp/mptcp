@@ -286,7 +286,7 @@ struct mptcp_cb {
 	u8 cnt_subflows;
 	u8 cnt_established;
 
-#define MPTCP_SCHED_DATA_SIZE 8
+#define MPTCP_SCHED_DATA_SIZE 16
 	u8 mptcp_sched[MPTCP_SCHED_DATA_SIZE] __aligned(8);
 	struct mptcp_sched_ops *sched_ops;
 
