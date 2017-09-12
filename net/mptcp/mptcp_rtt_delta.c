@@ -102,7 +102,7 @@ static bool rtt_delta_redsched_use_subflow(struct sock* meta_sk,
 			return true;
 	}
 
-	return false;
+	return true;
 }
 
 static struct sock* rtt_delta_redundant_get_subflow(struct sock *meta_sk,
@@ -363,7 +363,7 @@ static struct sk_buff* rtt_delta_defsched_next_segment(struct sock *meta_sk,
 }
 
 
-#define MAX_SUBFLOW_NUM  2
+#define DELTAED_SUBFLOW_NUM  2
 static struct sk_buff* rtt_delta_next_segment(struct sock* meta_sk,
 	int* reinject,
 	struct sock** subsk,
@@ -388,7 +388,7 @@ static struct sk_buff* rtt_delta_next_segment(struct sock* meta_sk,
 	*limit = 0;
 	cnt_sched_subflow = count_can_sched_subflow(mpcb);
 
-	if(cnt_sched_subflow > MAX_SUBFLOW_NUM)
+	if(DELTAED_SUBFLOW_NUM != cnt_sched_subflow)
 	{
 		skb = rtt_delta_defsched_next_segment(meta_sk, reinject, subsk, limit);
 		return skb;
@@ -447,7 +447,7 @@ static struct sk_buff* rtt_delta_next_segment(struct sock* meta_sk,
 	return NULL;
 }
 
-static struct mptcp_sched_ops mptcp_sched_rtt_delta = 
+static struct mptcp_sched_ops mptcp_rtt_delta = 
 {
 	.get_subflow = rtt_delta_get_subflow,
 	.next_segment = rtt_delta_next_segment,
@@ -457,7 +457,7 @@ static struct mptcp_sched_ops mptcp_sched_rtt_delta =
 
 static int __init rtt_delta_register(void)
 {
-	if (mptcp_register_scheduler(&mptcp_sched_rtt_delta))
+	if (mptcp_register_scheduler(&mptcp_rtt_delta))
 		return -1;
 
 	return 0;
@@ -465,7 +465,7 @@ static int __init rtt_delta_register(void)
 
 static void rtt_delta_unregister(void)
 {
-	mptcp_unregister_scheduler(&mptcp_sched_rtt_delta);
+	mptcp_unregister_scheduler(&mptcp_rtt_delta);
 }
 
 module_init(rtt_delta_register);
