@@ -451,7 +451,7 @@ static struct mptcp_sched_ops mptcp_rtt_delta =
 {
 	.get_subflow = rtt_delta_get_subflow,
 	.next_segment = rtt_delta_next_segment,
-	.name = "rtt_delta",
+	.name = "rttdelta",
 	.owner = THIS_MODULE,
 };
 
