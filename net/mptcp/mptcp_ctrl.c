@@ -69,7 +69,11 @@ static int min_mptcp_version;
 static int max_mptcp_version = 1;
 int sysctl_mptcp_checksum __read_mostly = 1;
 int sysctl_mptcp_debug __read_mostly;
+
+int sysctl_mptcp_rtt_delta_threshold = 40;
+
 EXPORT_SYMBOL(sysctl_mptcp_debug);
+
 int sysctl_mptcp_syn_retries __read_mostly = 3;
 
 bool mptcp_init_failed __read_mostly;
@@ -164,6 +168,13 @@ static struct ctl_table mptcp_table[] = {
 		.mode		= 0644,
 		.maxlen		= MPTCP_SCHED_NAME_MAX,
 		.proc_handler	= proc_mptcp_scheduler,
+	},
+	{
+		.procname	= "mptcp_rtt_delta_threshold",
+		.data = &sysctl_mptcp_rtt_delta_threshold,
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.proc_handler = &proc_dointvec
 	},
 	{ }
 };
