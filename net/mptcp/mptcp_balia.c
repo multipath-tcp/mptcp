@@ -197,7 +197,7 @@ static void mptcp_balia_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 	if (!tcp_is_cwnd_limited(sk))
 		return;
 
-	if (tp->snd_cwnd <= tp->snd_ssthresh) {
+	if (tcp_in_slow_start(tp)) {
 		/* In "safe" area, increase. */
 		tcp_slow_start(tp, acked);
 		mptcp_balia_recalc_ai(sk);

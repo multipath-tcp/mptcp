@@ -239,7 +239,7 @@ static void mptcp_olia_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 		return;
 
 	/* slow start if it is in the safe area */
-	if (tp->snd_cwnd <= tp->snd_ssthresh) {
+	if (tcp_in_slow_start(tp)) {
 		tcp_slow_start(tp, acked);
 		return;
 	}
