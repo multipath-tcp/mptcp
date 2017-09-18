@@ -114,6 +114,10 @@ static struct sock *redundant_get_subflow(struct sock *meta_sk,
 		first_tp = mpcb->connection_list;
 	tp = first_tp;
 
+	/* still NULL (no subflow in connection_list?) */
+	if (!first_tp)
+		return NULL;
+
 	/* Search for any subflow to send it */
 	do {
 		if (mptcp_is_available((struct sock *)tp, skb,
@@ -192,6 +196,11 @@ static struct sk_buff *redundant_next_segment(struct sock *meta_sk,
 
 	if (!first_tp)
 		first_tp = mpcb->connection_list;
+
+	/* still NULL (no subflow in connection_list?) */
+	if (!first_tp)
+		return NULL;
+
 	tp = first_tp;
 
 	*reinject = 0;
