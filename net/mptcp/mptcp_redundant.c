@@ -147,7 +147,8 @@ static void redsched_correct_skb_pointers(struct sock *meta_sk,
 
 /* Returns the next skb from the queue */
 static struct sk_buff *redundant_next_skb_from_queue(struct sk_buff_head *queue,
-						     struct sk_buff *previous)
+						     struct sk_buff *previous,
+						     struct sock *meta_sk)
 {
 	if (skb_queue_empty(queue))
 		return NULL;
@@ -157,6 +158,26 @@ static struct sk_buff *redundant_next_skb_from_queue(struct sk_buff_head *queue,
 
 	if (skb_queue_is_last(queue, previous))
 		return NULL;
+
+	/* sk_data->skb stores the last scheduled packet for this subflow.
+	 * If sk_data->skb was scheduled but not sent (e.g., due to nagle),
+	 * we have to schedule it again.
+	 *
+	 * For the redundant scheduler, there are two cases:
+	 * 1. sk_data->skb was not sent on another subflow:
+	 *    we have to schedule it again to ensure that we do not
+	 *    skip this packet.
+	 * 2. sk_data->skb was already sent on another subflow:
+	 *    with regard to the redundant semantic, we have to
+	 *    schedule it again. However, we keep it simple and ignore it,
+	 *    as it was already sent by another subflow.
+	 *    This might be changed in the future.
+	 *
+	 * For case 1, send_head is equal previous, as only a single
+	 * packet can be skipped.
+	 */
+	if (tcp_send_head(meta_sk) == previous)
+		return tcp_send_head(meta_sk);
 
 	return skb_queue_next(queue, previous);
 }
@@ -213,7 +234,7 @@ static struct sk_buff *redundant_next_segment(struct sock *meta_sk,
 		redsched_correct_skb_pointers(meta_sk, sk_data);
 
 		skb = redundant_next_skb_from_queue(&meta_sk->sk_write_queue,
-						    sk_data->skb);
+						    sk_data->skb, meta_sk);
 		if (skb && redsched_use_subflow(meta_sk, active_valid_sks, tp,
 						skb)) {
 			sk_data->skb = skb;
