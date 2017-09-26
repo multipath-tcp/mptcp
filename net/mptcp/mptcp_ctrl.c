@@ -606,9 +606,6 @@ static void mptcp_sock_def_error_report(struct sock *sk)
 	const struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 	struct sock *meta_sk = mptcp_meta_sk(sk);
 
-	if (!sock_flag(sk, SOCK_DEAD))
-		mptcp_sub_close(sk, 0);
-
 	if (mpcb->infinite_mapping_rcv || mpcb->infinite_mapping_snd ||
 	    mpcb->send_infinite_mapping) {
 
@@ -740,6 +737,11 @@ static void mptcp_set_state(struct sock *sk)
 	if (sk->sk_state == TCP_ESTABLISHED) {
 		tcp_sk(sk)->mptcp->establish_increased = 1;
 		tcp_sk(sk)->mpcb->cnt_established++;
+	}
+
+	if (sk->sk_state == TCP_CLOSE) {
+		if (!sock_flag(sk, SOCK_DEAD))
+			mptcp_sub_close(sk, 0);
 	}
 }
 
