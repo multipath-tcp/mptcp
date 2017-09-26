@@ -2129,6 +2129,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk,
 	 * are attached immediately to the mpcb.
 	 */
 	inet_csk_reqsk_queue_drop(meta_sk, req);
+	reqsk_queue_removed(&inet_csk(meta_sk)->icsk_accept_queue, req);
 
 	/* The refcnt is initialized to 2, because regular TCP will put him
 	 * in the socket's listener queue. However, we do not have a listener-queue.
@@ -2144,6 +2145,7 @@ teardown:
 
 	/* Drop this request - sock creation failed. */
 	inet_csk_reqsk_queue_drop(meta_sk, req);
+	reqsk_queue_removed(&inet_csk(meta_sk)->icsk_accept_queue, req);
 	inet_csk_prepare_forced_close(child);
 	tcp_done(child);
 	return meta_sk;
