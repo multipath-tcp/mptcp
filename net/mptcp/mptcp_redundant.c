@@ -268,7 +268,7 @@ static void redundant_release(struct sock *sk)
 		cb_data->next_subflow = tp->mptcp->next;
 }
 
-struct mptcp_sched_ops mptcp_sched_redundant = {
+static struct mptcp_sched_ops mptcp_sched_redundant = {
 	.get_subflow = redundant_get_subflow,
 	.next_segment = redundant_next_segment,
 	.release = redundant_release,
