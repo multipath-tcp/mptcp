@@ -164,6 +164,7 @@ static int mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 }
 
 int mptcp_finish_handshake(struct sock *child, struct sk_buff *skb)
+	__releases(&child->sk_lock.slock)
 {
 	int ret;
 
