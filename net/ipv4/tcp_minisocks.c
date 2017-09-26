@@ -618,8 +618,6 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	bool paws_reject = false;
 	bool own_req;
 
-	BUG_ON(!mptcp(tcp_sk(sk)) && fastopen == (sk->sk_state == TCP_LISTEN));
-
 	tmp_opt.saw_tstamp = 0;
 
 	mptcp_init_mp_opt(&mopt);
