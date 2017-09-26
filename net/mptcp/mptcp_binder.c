@@ -62,9 +62,9 @@ static int mptcp_get_avail_list_ipv4(struct sock *sk)
 			opt_len = MAX_IPOPTLEN;
 			memset(opt, 0, MAX_IPOPTLEN);
 			opt_ret = ip_getsockopt(sk, IPPROTO_IP,
-				IP_OPTIONS, opt, &opt_len);
+				IP_OPTIONS, (char __user *)opt, (int __user *)&opt_len);
 			if (opt_ret < 0) {
-				mptcp_debug(KERN_ERR "%s: MPTCP subsocket getsockopt() IP_OPTIONS failed, error %d\n",
+				mptcp_debug("%s: MPTCP subsocket getsockopt() IP_OPTIONS failed, error %d\n",
 					    __func__, opt_ret);
 				goto error;
 			}
@@ -175,12 +175,11 @@ static void mptcp_v4_add_lsrr(struct sock *sk, struct in_addr addr)
 		/* setsockopt must be inside the lock, otherwise another
 		 * subflow could fail to see that we have taken a list.
 		 */
-		ret = ip_setsockopt(sk, IPPROTO_IP, IP_OPTIONS, opt,
-				4 + sizeof(mptcp_gws->list[i][0].s_addr)
-				* (mptcp_gws->len[i] + 1));
+		ret = ip_setsockopt(sk, IPPROTO_IP, IP_OPTIONS, (char __user *)opt,
+				    4 + sizeof(mptcp_gws->list[i][0].s_addr) * (mptcp_gws->len[i] + 1));
 
 		if (ret < 0) {
-			mptcp_debug(KERN_ERR "%s: MPTCP subsock setsockopt() IP_OPTIONS failed, error %d\n",
+			mptcp_debug("%s: MPTCP subsock setsockopt() IP_OPTIONS failed, error %d\n",
 				    __func__, ret);
 		}
 	}
@@ -405,7 +404,7 @@ static int proc_mptcp_gateways(struct ctl_table *ctl, int write,
 	if (write) {
 		tbl.data = kzalloc(MPTCP_GW_SYSCTL_MAX_LEN, GFP_KERNEL);
 		if (tbl.data == NULL)
-			return -1;
+			return -ENOMEM;
 		ret = proc_dostring(&tbl, write, buffer, lenp, ppos);
 		if (ret == 0) {
 			ret = mptcp_parse_gateway_ipv4(tbl.data);
@@ -440,7 +439,7 @@ static struct ctl_table binder_table[] = {
 	{ }
 };
 
-struct ctl_table_header *mptcp_sysctl_binder;
+static struct ctl_table_header *mptcp_sysctl_binder;
 
 /* General initialization of MPTCP_PM */
 static int __init binder_register(void)
