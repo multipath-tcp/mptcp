@@ -17,9 +17,15 @@
 #ifndef _UAPI_LINUX_TCP_H
 #define _UAPI_LINUX_TCP_H
 
-#include <linux/types.h>
+#ifndef __KERNEL__
+#include <sys/socket.h>
+#endif
+
 #include <asm/byteorder.h>
+#include <linux/in.h>
+#include <linux/in6.h>
 #include <linux/socket.h>
+#include <linux/types.h>
 
 struct tcphdr {
 	__be16	source;
