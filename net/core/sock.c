@@ -1365,6 +1365,7 @@ struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
 
 	if (sk != NULL) {
 		kmemcheck_annotate_bitfield(sk, flags);
+		sk->sk_prot_creator = prot;
 
 		if (security_sk_alloc(sk, family, priority))
 			goto out_free;
@@ -1526,6 +1527,8 @@ struct sock *sk_clone_lock(const struct sock *sk, const gfp_t priority)
 		struct sk_filter *filter;
 
 		sock_copy(newsk, sk);
+
+		newsk->sk_prot_creator = sk->sk_prot;
 
 		/* SANITY */
 		get_net(sock_net(newsk));
