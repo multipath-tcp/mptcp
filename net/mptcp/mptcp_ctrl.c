@@ -2518,7 +2518,7 @@ int mptcp_get_info(const struct sock *meta_sk, char __user *optval, int optlen)
 		len = min_t(unsigned int, m_info.meta_len, sizeof(meta_info));
 		m_info.meta_len = len;
 
-		if (copy_to_user(m_info.meta_info, &meta_info, len))
+		if (copy_to_user((void __user *)m_info.meta_info, &meta_info, len))
 			return -EFAULT;
 	}
 
@@ -2533,10 +2533,10 @@ int mptcp_get_info(const struct sock *meta_sk, char __user *optval, int optlen)
 			struct tcp_info info;
 
 			tcp_get_info(mpcb->master_sk, &info);
-			if (copy_to_user(m_info.initial, &info, info_len))
+			if (copy_to_user((void __user *)m_info.initial, &info, info_len))
 				return -EFAULT;
 		} else if (meta_tp->record_master_info && mpcb->master_info) {
-			if (copy_to_user(m_info.initial, mpcb->master_info, info_len))
+			if (copy_to_user((void __user *)m_info.initial, mpcb->master_info, info_len))
 				return -EFAULT;
 		} else {
 			return meta_tp->record_master_info ? -ENOMEM : -EINVAL;
