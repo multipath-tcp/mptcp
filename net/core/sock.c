@@ -1356,7 +1356,6 @@ struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
 
 	if (sk != NULL) {
 		kmemcheck_annotate_bitfield(sk, flags);
-		sk->sk_prot_creator = prot;
 
 		if (security_sk_alloc(sk, family, priority))
 			goto out_free;
