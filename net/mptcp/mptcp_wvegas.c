@@ -137,7 +137,7 @@ static void mptcp_wvegas_cwnd_event(struct sock *sk, enum tcp_ca_event event)
 
 static inline u32 mptcp_wvegas_ssthresh(const struct tcp_sock *tp)
 {
-	return  min(tp->snd_ssthresh, tp->snd_cwnd - 1);
+	return  min(tp->snd_ssthresh, tp->snd_cwnd);
 }
 
 static u64 mptcp_wvegas_weight(const struct mptcp_cb *mpcb, const struct sock *sk)
@@ -188,11 +188,11 @@ static void mptcp_wvegas_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 
 			diff = div_u64((u64)tp->snd_cwnd * (rtt - wvegas->base_rtt), rtt);
 
-			if (diff > gamma && tp->snd_cwnd <= tp->snd_ssthresh) {
+			if (diff > gamma && tcp_in_slow_start(tp)) {
 				tp->snd_cwnd = min(tp->snd_cwnd, (u32)target_cwnd+1);
 				tp->snd_ssthresh = mptcp_wvegas_ssthresh(tp);
 
-			} else if (tp->snd_cwnd <= tp->snd_ssthresh) {
+			} else if (tcp_in_slow_start(tp)) {
 				tcp_slow_start(tp, acked);
 			} else {
 				if (diff >= wvegas->alpha) {
@@ -231,7 +231,7 @@ static void mptcp_wvegas_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 		wvegas->sampled_rtt = 0;
 	}
 	/* Use normal slow start */
-	else if (tp->snd_cwnd <= tp->snd_ssthresh)
+	else if (tcp_in_slow_start(tp))
 		tcp_slow_start(tp, acked);
 }
 
