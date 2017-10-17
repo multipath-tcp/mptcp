@@ -203,7 +203,7 @@ int tcp_write_timeout(struct sock *sk)
 		    icsk->icsk_retransmits >= sysctl_mptcp_syn_retries) {
 			tcp_sk(sk)->request_mptcp = 0;
 
-			MPTCP_INC_STATS_BH(sock_net(sk), MPTCP_MIB_MPCAPABLERETRANSFALLBACK);
+			MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_MPCAPABLERETRANSFALLBACK);
 		}
 #endif /* CONFIG_MPTCP */
 	} else {

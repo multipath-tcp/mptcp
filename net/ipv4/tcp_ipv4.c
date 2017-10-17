@@ -1971,7 +1971,7 @@ void tcp_v4_destroy_sock(struct sock *sk)
 	if (mptcp(tp))
 		mptcp_destroy_sock(sk);
 	if (tp->inside_tk_table)
-		mptcp_hash_remove(tp);
+		mptcp_hash_remove_bh(tp);
 
 	/* Cleanup up the write buffer. */
 	tcp_write_queue_purge(sk);

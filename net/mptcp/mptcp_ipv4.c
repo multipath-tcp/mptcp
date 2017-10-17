@@ -213,9 +213,11 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	if (sk->sk_state == TCP_NEW_SYN_RECV) {
 		struct request_sock *req = inet_reqsk(sk);
 
+		local_bh_disable();
 		child = tcp_check_req(meta_sk, skb, req, false);
 		if (!child) {
 			reqsk_put(req);
+			local_bh_enable();
 			goto discard;
 		}
 
@@ -223,15 +225,18 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 			ret = mptcp_finish_handshake(child, skb);
 			if (ret) {
 				rsk = child;
+				local_bh_enable();
 				goto reset_and_discard;
 			}
 
+			local_bh_enable();
 			return 0;
 		}
 
 		/* tcp_check_req failed */
 		reqsk_put(req);
 
+		local_bh_enable();
 		goto discard;
 	}
 
@@ -264,8 +269,11 @@ new_subflow:
 		}
 	}
 
-	if (tcp_hdr(skb)->syn)
+	if (tcp_hdr(skb)->syn) {
+		local_bh_disable();
 		mptcp_v4_join_request(meta_sk, skb);
+		local_bh_enable();
+	}
 
 discard:
 	kfree_skb(skb);
