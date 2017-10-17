@@ -381,6 +381,9 @@ static void tcp_grow_window(struct sock *sk, const struct sk_buff *skb)
 	struct sock *meta_sk = mptcp(tp) ? mptcp_meta_sk(sk) : sk;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
+	if (is_meta_sk(sk))
+		return;
+
 	/* Check #1 */
 	if (meta_tp->rcv_ssthresh < meta_tp->window_clamp &&
 	    (int)meta_tp->rcv_ssthresh < tcp_space(meta_sk) &&
