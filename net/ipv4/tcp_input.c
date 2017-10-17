@@ -4100,6 +4100,11 @@ void tcp_fin(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
+	if (is_meta_sk(sk)) {
+		mptcp_fin(sk);
+		return;
+	}
+
 	inet_csk_schedule_ack(sk);
 
 	sk->sk_shutdown |= RCV_SHUTDOWN;
