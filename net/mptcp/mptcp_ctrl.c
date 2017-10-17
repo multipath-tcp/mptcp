@@ -2123,6 +2123,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk,
 	child_tp->mptcp->init_rcv_wnd = req->rsk_rcv_wnd;
 
 	child_tp->tsq_flags = 0;
+	child_tp->out_of_order_queue = RB_ROOT;
 
 	sock_rps_save_rxhash(child, skb);
 	tcp_synack_rtt_meas(child, req);
