@@ -2597,6 +2597,17 @@ int mptcp_get_info(const struct sock *meta_sk, char __user *optval, int optlen)
 	return 0;
 }
 
+void mptcp_clear_sk(struct sock *sk, int size)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	/* we do not want to clear tk_table field, because of RCU lookups */
+	sk_prot_clear_nulls(sk, offsetof(struct tcp_sock, tk_table.next));
+
+	size -= offsetof(struct tcp_sock, tk_table.pprev);
+	memset((char *)&tp->tk_table.pprev, 0, size);
+}
+
 static const struct snmp_mib mptcp_snmp_list[] = {
 	SNMP_MIB_ITEM("MPCapableSYNRX", MPTCP_MIB_MPCAPABLEPASSIVE),
 	SNMP_MIB_ITEM("MPCapableSYNTX", MPTCP_MIB_MPCAPABLEACTIVE),
