@@ -986,7 +986,7 @@ void tcp_v6_reqsk_send_ack(const struct sock *sk, struct sk_buff *skb,
 	 * exception of <SYN> segments, MUST be right-shifted by
 	 * Rcv.Wind.Shift bits:
 	 */
-	tcp_v6_send_ack(sk, skb, (sk->sk_state == TCP_LISTEN) ?
+	tcp_v6_send_ack(sk, skb, (sk->sk_state == TCP_LISTEN || is_meta_sk(sk)) ?
 			tcp_rsk(req)->snt_isn + 1 : tcp_sk(sk)->snd_nxt,
 			tcp_rsk(req)->rcv_nxt, 0,
 			req->rsk_rcv_wnd >> inet_rsk(req)->rcv_wscale,
