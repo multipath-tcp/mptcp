@@ -2040,6 +2040,9 @@ struct proto tcpv6_prot = {
 	.compat_getsockopt	= compat_tcp_getsockopt,
 #endif
 	.diag_destroy		= tcp_abort,
+#ifdef CONFIG_MPTCP
+	.clear_sk		= mptcp_clear_sk,
+#endif
 };
 
 static const struct inet6_protocol tcpv6_protocol = {

@@ -2523,6 +2523,9 @@ struct proto tcp_prot = {
 	.proto_cgroup		= tcp_proto_cgroup,
 #endif
 	.diag_destroy		= tcp_abort,
+#ifdef CONFIG_MPTCP
+	.clear_sk		= mptcp_clear_sk,
+#endif
 };
 EXPORT_SYMBOL(tcp_prot);
 
