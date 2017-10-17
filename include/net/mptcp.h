@@ -856,7 +856,6 @@ void mptcp_tsq_flags(struct sock *sk);
 void mptcp_tsq_sub_deferred(struct sock *meta_sk);
 struct mp_join *mptcp_find_join(const struct sk_buff *skb);
 void mptcp_hash_remove_bh(struct tcp_sock *meta_tp);
-void mptcp_hash_remove(struct tcp_sock *meta_tp);
 struct sock *mptcp_hash_find(const struct net *net, const u32 token);
 int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw);
 int mptcp_do_join_short(struct sk_buff *skb,
@@ -1260,7 +1259,7 @@ static inline bool mptcp_fallback_infinite(struct sock *sk, int flag)
 	       &inet_sk(sk)->inet_daddr, ntohs(inet_sk(sk)->inet_dport),
 	       tp->rcv_nxt, __builtin_return_address(0));
 	if (!is_master_tp(tp)) {
-		MPTCP_INC_STATS_BH(sock_net(sk), MPTCP_MIB_FBACKSUB);
+		MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_FBACKSUB);
 		return true;
 	}
 
@@ -1271,7 +1270,7 @@ static inline bool mptcp_fallback_infinite(struct sock *sk, int flag)
 
 	mptcp_sub_force_close_all(mpcb, sk);
 
-	MPTCP_INC_STATS_BH(sock_net(sk), MPTCP_MIB_FBACKINIT);
+	MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_FBACKINIT);
 
 	return false;
 }
@@ -1475,7 +1474,6 @@ static inline void mptcp_disconnect(struct sock *sk) {}
 static inline void mptcp_tsq_flags(struct sock *sk) {}
 static inline void mptcp_tsq_sub_deferred(struct sock *meta_sk) {}
 static inline void mptcp_hash_remove_bh(struct tcp_sock *meta_tp) {}
-static inline void mptcp_hash_remove(struct tcp_sock *meta_tp) {}
 static inline void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
 					  const struct sk_buff *skb) {}
 static inline void mptcp_init_tcp_sock(struct sock *sk) {}

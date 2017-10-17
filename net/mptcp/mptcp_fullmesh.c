@@ -1273,7 +1273,7 @@ static void full_mesh_new_session(const struct sock *meta_sk)
 #endif
 	}
 
-	rcu_read_lock();
+	rcu_read_lock_bh();
 	mptcp_local = rcu_dereference(fm_ns->local);
 
 	index = mptcp_find_address(mptcp_local, family, &saddr, if_idx);
@@ -1333,7 +1333,7 @@ skip_ipv4:
 skip_ipv6:
 #endif
 
-	rcu_read_unlock();
+	rcu_read_unlock_bh();
 
 	if (family == AF_INET)
 		fmp->announced_addrs_v4 |= (1 << index);
@@ -1349,7 +1349,7 @@ skip_ipv6:
 	return;
 
 fallback:
-	rcu_read_unlock();
+	rcu_read_unlock_bh();
 	mptcp_fallback_default(mpcb);
 	return;
 }
@@ -1405,7 +1405,7 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 	bool meta_v4 = meta_sk->sk_family == AF_INET;
 	int i;
 
-	rcu_read_lock();
+	rcu_read_lock_bh();
 	mptcp_local = rcu_dereference(fm_ns->local);
 
 	if (!meta_v4 && meta_sk->sk_ipv6only)
@@ -1528,7 +1528,7 @@ removal:
 	/* Just call it optimistically. It actually cannot do any harm */
 	update_addr_bitfields(meta_sk, mptcp_local);
 
-	rcu_read_unlock();
+	rcu_read_unlock_bh();
 }
 
 static int full_mesh_get_local_id(sa_family_t family, union inet_addr *addr,
@@ -1539,7 +1539,7 @@ static int full_mesh_get_local_id(sa_family_t family, union inet_addr *addr,
 	int index, id = -1;
 
 	/* Handle the backup-flows */
-	rcu_read_lock();
+	rcu_read_lock_bh();
 	mptcp_local = rcu_dereference(fm_ns->local);
 
 	index = mptcp_find_address(mptcp_local, family, addr, 0);
@@ -1555,7 +1555,7 @@ static int full_mesh_get_local_id(sa_family_t family, union inet_addr *addr,
 	}
 
 
-	rcu_read_unlock();
+	rcu_read_unlock_bh();
 
 	return id;
 }
@@ -1579,7 +1579,7 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 	if (likely(!fmp->add_addr))
 		goto remove_addr;
 
-	rcu_read_lock();
+	rcu_read_lock_bh();
 	mptcp_local = rcu_dereference(fm_ns->local);
 
 	if (!meta_v4 && meta_sk->sk_ipv6only)
@@ -1666,7 +1666,7 @@ skip_ipv4:
 	}
 
 skip_ipv6:
-	rcu_read_unlock();
+	rcu_read_unlock_bh();
 
 	if (!unannouncedv4 && !unannouncedv6 && skb)
 		fmp->add_addr--;

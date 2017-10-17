@@ -1149,7 +1149,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			}
 		}
 
-		MPTCP_INC_STATS_BH(sock_net((struct sock *)tp), MPTCP_MIB_ADDADDRTX);
+		MPTCP_INC_STATS(sock_net((struct sock *)tp), MPTCP_MIB_ADDADDRTX);
 	}
 	if (unlikely(OPTION_REMOVE_ADDR & opts->mptcp_options)) {
 		struct mp_remove_addr *mprem = (struct mp_remove_addr *)ptr;
@@ -1177,7 +1177,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 
 		ptr += len_align >> 2;
 
-		MPTCP_INC_STATS_BH(sock_net((struct sock *)tp), MPTCP_MIB_REMADDRTX);
+		MPTCP_INC_STATS(sock_net((struct sock *)tp), MPTCP_MIB_REMADDRTX);
 	}
 	if (unlikely(OPTION_MP_FAIL & opts->mptcp_options)) {
 		struct mp_fail *mpfail = (struct mp_fail *)ptr;
@@ -1337,7 +1337,7 @@ static void mptcp_ack_retransmit_timer(struct sock *sk)
 		tp->retrans_stamp = tcp_time_stamp ? : 1;
 
 	if (tcp_write_timeout(sk)) {
-		MPTCP_INC_STATS_BH(sock_net(sk), MPTCP_MIB_JOINACKRTO);
+		MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_JOINACKRTO);
 		tp->mptcp->pre_established = 0;
 		sk_stop_timer(sk, &tp->mptcp->mptcp_ack_timer);
 		tp->ops->send_active_reset(sk, GFP_ATOMIC);
@@ -1355,7 +1355,7 @@ static void mptcp_ack_retransmit_timer(struct sock *sk)
 	skb_reserve(skb, MAX_TCP_HEADER);
 	tcp_init_nondata_skb(skb, tp->snd_una, TCPHDR_ACK);
 
-	MPTCP_INC_STATS_BH(sock_net(sk), MPTCP_MIB_JOINACKRXMIT);
+	MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_JOINACKRXMIT);
 
 	if (tcp_transmit_skb(sk, skb, 0, GFP_ATOMIC) > 0) {
 		/* Retransmission failed because of local congestion,
@@ -1474,7 +1474,7 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 	skb_mstamp_get(&skb->skb_mstamp);
 
 	/* Update global TCP statistics. */
-	MPTCP_INC_STATS_BH(sock_net(meta_sk), MPTCP_MIB_RETRANSSEGS);
+	MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_RETRANSSEGS);
 
 	/* Diff to tcp_retransmit_skb */
 
