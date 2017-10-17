@@ -45,6 +45,7 @@ struct mptcp_loc_addr {
 	struct mptcp_loc6 locaddr6[MPTCP_MAX_ADDR];
 	u8 loc6_bits;
 	u8 next_v6_index;
+	struct rcu_head rcu;
 };
 
 struct mptcp_addr_event {
@@ -720,7 +721,7 @@ next_event:
 			mptcp_local->loc6_bits &= ~(1 << id);
 
 		rcu_assign_pointer(fm_ns->local, mptcp_local);
-		kfree(old);
+		kfree_rcu(old, rcu);
 	} else {
 		int i = mptcp_find_address(mptcp_local, event->family,
 					   &event->addr, event->if_idx);
@@ -782,7 +783,7 @@ next_event:
 		}
 
 		rcu_assign_pointer(fm_ns->local, mptcp_local);
-		kfree(old);
+		kfree_rcu(old, rcu);
 	}
 	success = true;
 
@@ -1772,7 +1773,7 @@ static void mptcp_fm_exit_net(struct net *net)
 	rcu_read_lock_bh();
 
 	mptcp_local = rcu_dereference_bh(fm_ns->local);
-	kfree(mptcp_local);
+	kfree_rcu(mptcp_local, rcu);
 
 	spin_lock(&fm_ns->local_lock);
 	list_for_each_entry_safe(eventq, tmp, &fm_ns->events, list) {
