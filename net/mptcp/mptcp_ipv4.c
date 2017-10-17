@@ -186,7 +186,6 @@ int mptcp_finish_handshake(struct sock *child, struct sk_buff *skb)
  */
 int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {
-	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	const struct tcphdr *th = tcp_hdr(skb);
 	const struct iphdr *iph = ip_hdr(skb);
 	struct sock *child, *rsk = NULL, *sk;
@@ -212,6 +211,9 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 
 	if (sk->sk_state == TCP_NEW_SYN_RECV) {
 		struct request_sock *req = inet_reqsk(sk);
+
+		if (!mptcp_can_new_subflow(meta_sk))
+			goto reset_and_discard;
 
 		child = tcp_check_req(meta_sk, skb, req, false);
 		if (!child) {
@@ -241,15 +243,7 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	return ret;
 
 new_subflow:
-	/* Has been removed from the tk-table. Thus, no new subflows.
-	 *
-	 * Check for close-state is necessary, because we may have been closed
-	 * without passing by mptcp_close().
-	 *
-	 * When falling back, no new subflows are allowed either.
-	 */
-	if (meta_sk->sk_state == TCP_CLOSE || !tcp_sk(meta_sk)->inside_tk_table ||
-	    mpcb->infinite_mapping_rcv || mpcb->send_infinite_mapping)
+	if (!mptcp_can_new_subflow(meta_sk))
 		goto reset_and_discard;
 
 	child = tcp_v4_cookie_check(meta_sk, skb);

@@ -1319,6 +1319,21 @@ static inline bool mptcp_v6_is_v4_mapped(const struct sock *sk)
 	       ipv6_addr_type(&inet6_sk(sk)->saddr) == IPV6_ADDR_MAPPED;
 }
 
+static inline bool mptcp_can_new_subflow(const struct sock *meta_sk)
+{
+	/* Has been removed from the tk-table. Thus, no new subflows.
+	 *
+	 * Check for close-state is necessary, because we may have been closed
+	 * without passing by mptcp_close().
+	 *
+	 * When falling back, no new subflows are allowed either.
+	 */
+	return meta_sk->sk_state != TCP_CLOSE &&
+	       tcp_sk(meta_sk)->inside_tk_table &&
+	       !tcp_sk(meta_sk)->mpcb->infinite_mapping_rcv &&
+	       !tcp_sk(meta_sk)->mpcb->send_infinite_mapping;
+}
+
 /* TCP and MPTCP mpc flag-depending functions */
 u16 mptcp_select_window(struct sock *sk);
 void mptcp_init_buffer_space(struct sock *sk);
