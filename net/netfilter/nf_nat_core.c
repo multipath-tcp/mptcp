@@ -225,20 +225,21 @@ find_appropriate_src(struct net *net,
 		.tuple = tuple,
 		.zone = zone
 	};
-	struct rhlist_head *hl;
+	struct rhlist_head *hl, *h;
 
 	hl = rhltable_lookup(&nf_nat_bysource_table, &key,
 			     nf_nat_bysource_params);
-	if (!hl)
-		return 0;
 
-	ct = container_of(hl, typeof(*ct), nat_bysource);
+	rhl_for_each_entry_rcu(ct, h, hl, nat_bysource) {
+		nf_ct_invert_tuplepr(result,
+				     &ct->tuplehash[IP_CT_DIR_REPLY].tuple);
+		result->dst = tuple->dst;
 
-	nf_ct_invert_tuplepr(result,
-			     &ct->tuplehash[IP_CT_DIR_REPLY].tuple);
-	result->dst = tuple->dst;
+		if (in_range(l3proto, l4proto, result, range))
+			return 1;
+	}
 
-	return in_range(l3proto, l4proto, result, range);
+	return 0;
 }
 
 /* For [FUTURE] fragmentation handling, we want the least-used
@@ -891,6 +892,8 @@ static void __exit nf_nat_cleanup(void)
 #ifdef CONFIG_XFRM
 	RCU_INIT_POINTER(nf_nat_decode_session_hook, NULL);
 #endif
+	synchronize_rcu();
+
 	for (i = 0; i < NFPROTO_NUMPROTO; i++)
 		kfree(nf_nat_l4protos[i]);
 
