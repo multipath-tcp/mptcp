@@ -64,7 +64,7 @@ endif
 config DEFAULT_MPTCP_PM
 	string
 	default "default" if DEFAULT_DUMMY
-	default "fullmesh" if DEFAULT_FULLMESH 
+	default "fullmesh" if DEFAULT_FULLMESH
 	default "ndiffports" if DEFAULT_NDIFFPORTS
 	default "binder" if DEFAULT_BINDER
 	default "default"
@@ -91,6 +91,13 @@ config MPTCP_REDUNDANT
 	---help---
 	  This scheduler sends all packets redundantly over all subflows to decreases
 	  latency and jitter on the cost of lower throughput.
+
+config MPTCP_MYSCHED
+  tristate "MPTCP Mysched"
+  depends on (MPTCP=y)
+  ---help---
+    This scheduler send packets in 8 : 1
+
 
 choice
 	prompt "Default MPTCP Scheduler"
@@ -126,4 +133,3 @@ config DEFAULT_MPTCP_SCHED
 	default "roundrobin" if DEFAULT_ROUNDROBIN
 	default "redundant" if DEFAULT_REDUNDANT
 	default "default"
-
