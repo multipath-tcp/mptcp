@@ -35,6 +35,7 @@
 #include <linux/list.h>
 #include <linux/net.h>
 #include <linux/netpoll.h>
+#include <linux/siphash.h>
 #include <linux/skbuff.h>
 #include <linux/socket.h>
 #include <linux/tcp.h>
@@ -750,7 +751,7 @@ extern char *meta_key_name;
 extern struct lock_class_key meta_slock_key;
 extern char *meta_slock_key_name;
 
-extern u32 mptcp_secret[MD5_MESSAGE_BYTES / 4];
+extern siphash_key_t mptcp_secret;
 
 /* This is needed to ensure that two subsequent key/nonce-generation result in
  * different keys/nonces if the IPs and ports are the same.

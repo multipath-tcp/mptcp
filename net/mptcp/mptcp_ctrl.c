@@ -757,7 +757,7 @@ static void mptcp_assign_congestion_control(struct sock *sk)
 	return;
 }
 
-u32 mptcp_secret[MD5_MESSAGE_BYTES / 4] ____cacheline_aligned;
+siphash_key_t mptcp_secret __read_mostly;
 u32 mptcp_seed = 0;
 
 void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn)
@@ -2825,7 +2825,7 @@ void __init mptcp_init(void)
 	if (!mptcp_tw_cache)
 		goto mptcp_tw_cache_failed;
 
-	get_random_bytes(mptcp_secret, sizeof(mptcp_secret));
+	get_random_bytes(&mptcp_secret, sizeof(mptcp_secret));
 
 	mptcp_wq = alloc_workqueue("mptcp_wq", WQ_UNBOUND | WQ_MEM_RECLAIM, 8);
 	if (!mptcp_wq)

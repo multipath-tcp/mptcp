@@ -47,43 +47,43 @@
 __u32 mptcp_v6_get_nonce(const __be32 *saddr, const __be32 *daddr,
 			 __be16 sport, __be16 dport)
 {
-	u32 secret[MD5_MESSAGE_BYTES / 4];
-	u32 hash[MD5_DIGEST_WORDS];
-	u32 i;
+	const struct {
+		struct in6_addr saddr;
+		struct in6_addr daddr;
+		u32 seed;
+		__be16 sport;
+		__be16 dport;
+	} __aligned(SIPHASH_ALIGNMENT) combined = {
+		.saddr = *(struct in6_addr *)saddr,
+		.daddr = *(struct in6_addr *)daddr,
+		.seed = mptcp_seed++;
+		.sport = sport,
+		.dport = dport
+	};
 
-	memcpy(hash, saddr, 16);
-	for (i = 0; i < 4; i++)
-		secret[i] = mptcp_secret[i] + (__force u32)daddr[i];
-	secret[4] = mptcp_secret[4] +
-		    (((__force u16)sport << 16) + (__force u16)dport);
-	secret[5] = mptcp_seed++;
-	for (i = 6; i < MD5_MESSAGE_BYTES / 4; i++)
-		secret[i] = mptcp_secret[i];
-
-	md5_transform(hash, secret);
-
-	return hash[0];
+	return siphash(&combined, offsetofend(typeof(combined), dport),
+		       &mptcp_secret);
 }
 
 u64 mptcp_v6_get_key(const __be32 *saddr, const __be32 *daddr,
 		     __be16 sport, __be16 dport, u32 seed)
 {
-	u32 secret[MD5_MESSAGE_BYTES / 4];
-	u32 hash[MD5_DIGEST_WORDS];
-	u32 i;
+	const struct {
+		struct in6_addr saddr;
+		struct in6_addr daddr;
+		u32 seed;
+		__be16 sport;
+		__be16 dport;
+	} __aligned(SIPHASH_ALIGNMENT) combined = {
+		.saddr = *(struct in6_addr *)saddr,
+		.daddr = *(struct in6_addr *)daddr,
+		.seed = seed;
+		.sport = sport,
+		.dport = dport
+	};
 
-	memcpy(hash, saddr, 16);
-	for (i = 0; i < 4; i++)
-		secret[i] = mptcp_secret[i] + (__force u32)daddr[i];
-	secret[4] = mptcp_secret[4] +
-		    (((__force u16)sport << 16) + (__force u16)dport);
-	secret[5] = seed;
-	for (i = 6; i < MD5_MESSAGE_BYTES / 4; i++)
-		secret[i] = mptcp_secret[i];
-
-	md5_transform(hash, secret);
-
-	return *((u64 *)hash);
+	return siphash(&combined, offsetofend(typeof(combined), dport),
+		       &mptcp_secret);
 }
 
 static void mptcp_v6_reqsk_destructor(struct request_sock *req)

@@ -43,31 +43,17 @@
 
 u32 mptcp_v4_get_nonce(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport)
 {
-	u32 hash[MD5_DIGEST_WORDS];
-
-	hash[0] = (__force u32)saddr;
-	hash[1] = (__force u32)daddr;
-	hash[2] = ((__force u16)sport << 16) + (__force u16)dport;
-	hash[3] = mptcp_seed++;
-
-	md5_transform(hash, mptcp_secret);
-
-	return hash[0];
+	return siphash_4u32((__force u32)saddr, (__force u32)daddr,
+			    (__force u32)sport << 16 | (__force u32)dport,
+			    mptcp_seed++, &mptcp_secret);
 }
 
 u64 mptcp_v4_get_key(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport,
 		     u32 seed)
 {
-	u32 hash[MD5_DIGEST_WORDS];
-
-	hash[0] = (__force u32)saddr;
-	hash[1] = (__force u32)daddr;
-	hash[2] = ((__force u16)sport << 16) + (__force u16)dport;
-	hash[3] = seed;
-
-	md5_transform(hash, mptcp_secret);
-
-	return *((u64 *)hash);
+	return siphash_2u64((__force u64)saddr << 32 | (__force u64)daddr,
+			    (__force u64)seed << 32 | (__force u64)sport << 16 | (__force u64)dport,
+			    &mptcp_secret);
 }
 
 
