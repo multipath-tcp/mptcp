@@ -593,6 +593,33 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 	return 0;
 }
 
+static void mptcp_restart_sending(struct sock *meta_sk)
+{
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct mptcp_cb *mpcb = meta_tp->mpcb;
+
+	/* We resend everything that has not been acknowledged */
+	meta_sk->sk_send_head = tcp_write_queue_head(meta_sk);
+
+	/* We artificially restart the whole send-queue. Thus,
+	 * it is as if no packets are in flight
+	 */
+	meta_tp->packets_out = 0;
+
+	/* If the snd_nxt already wrapped around, we have to
+	 * undo the wrapping, as we are restarting from snd_una
+	 * on.
+	 */
+	if (meta_tp->snd_nxt < meta_tp->snd_una) {
+		mpcb->snd_high_order[mpcb->snd_hiseq_index] -= 2;
+		mpcb->snd_hiseq_index = mpcb->snd_hiseq_index ? 0 : 1;
+	}
+	meta_tp->snd_nxt = meta_tp->snd_una;
+
+	/* Trigger a sending on the meta. */
+	mptcp_push_pending_frames(meta_sk);
+}
+
 /* @return: 0  everything is fine. Just continue processing
  *	    1  subflow is broken stop everything
  *	    -1 this packet was broken - continue with the next one.
@@ -689,6 +716,8 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 		/* We have to fixup data_len - it must be the same as skb->len */
 		data_len = skb->len + (mptcp_is_data_fin(skb) ? 1 : 0);
 		sub_seq = tcb->seq;
+
+		mptcp_restart_sending(tp->meta_sk);
 
 		mptcp_sub_force_close_all(mpcb, sk);
 
@@ -2079,26 +2108,8 @@ static void mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
 
 	if (!th->rst && !mpcb->infinite_mapping_snd) {
 		mpcb->send_infinite_mapping = 1;
-		/* We resend everything that has not been acknowledged */
-		meta_sk->sk_send_head = tcp_write_queue_head(meta_sk);
 
-		/* We artificially restart the whole send-queue. Thus,
-		 * it is as if no packets are in flight
-		 */
-		tcp_sk(meta_sk)->packets_out = 0;
-
-		/* If the snd_nxt already wrapped around, we have to
-		 * undo the wrapping, as we are restarting from snd_una
-		 * on.
-		 */
-		if (tcp_sk(meta_sk)->snd_nxt < tcp_sk(meta_sk)->snd_una) {
-			mpcb->snd_high_order[mpcb->snd_hiseq_index] -= 2;
-			mpcb->snd_hiseq_index = mpcb->snd_hiseq_index ? 0 : 1;
-		}
-		tcp_sk(meta_sk)->snd_nxt = tcp_sk(meta_sk)->snd_una;
-
-		/* Trigger a sending on the meta. */
-		mptcp_push_pending_frames(meta_sk);
+		mptcp_restart_sending(meta_sk);
 
 		mptcp_sub_force_close_all(mpcb, sk);
 	}
