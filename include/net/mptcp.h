@@ -1498,6 +1498,8 @@ static inline void mptcp_disable_static_key(void) {}
 static inline void mptcp_cookies_reqsk_init(struct request_sock *req,
 					    struct mptcp_options_received *mopt,
 					    struct sk_buff *skb) {}
+static inline void mptcp_fin(struct sock *meta_sk) {}
+
 #endif /* CONFIG_MPTCP */
 
 #endif /* _MPTCP_H */
