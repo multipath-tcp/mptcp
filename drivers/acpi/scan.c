@@ -30,12 +30,6 @@ extern struct acpi_device *acpi_root;
 
 #define INVALID_ACPI_HANDLE	((acpi_handle)empty_zero_page)
 
-/*
- * If set, devices will be hot-removed even if they cannot be put offline
- * gracefully (from the kernel's standpoint).
- */
-bool acpi_force_hot_remove;
-
 static const char *dummy_hid = "device";
 
 static LIST_HEAD(acpi_dep_list);
@@ -170,9 +164,6 @@ static acpi_status acpi_bus_offline(acpi_handle handle, u32 lvl, void *data,
 			pn->put_online = false;
 		}
 		ret = device_offline(pn->dev);
-		if (acpi_force_hot_remove)
-			continue;
-
 		if (ret >= 0) {
 			pn->put_online = !ret;
 		} else {
@@ -241,11 +232,11 @@ static int acpi_scan_try_to_offline(struct acpi_device *device)
 		acpi_walk_namespace(ACPI_TYPE_ANY, handle, ACPI_UINT32_MAX,
 				    NULL, acpi_bus_offline, (void *)true,
 				    (void **)&errdev);
-		if (!errdev || acpi_force_hot_remove)
+		if (!errdev)
 			acpi_bus_offline(handle, 0, (void *)true,
 					 (void **)&errdev);
 
-		if (errdev && !acpi_force_hot_remove) {
+		if (errdev) {
 			dev_warn(errdev, "Offline failed.\n");
 			acpi_bus_online(handle, 0, NULL, NULL);
 			acpi_walk_namespace(ACPI_TYPE_ANY, handle,
@@ -263,8 +254,7 @@ static int acpi_scan_hot_remove(struct acpi_device *device)
 	unsigned long long sta;
 	acpi_status status;
 
-	if (device->handler && device->handler->hotplug.demand_offline
-	    && !acpi_force_hot_remove) {
+	if (device->handler && device->handler->hotplug.demand_offline) {
 		if (!acpi_scan_is_offline(device, true))
 			return -EBUSY;
 	} else {
@@ -1373,20 +1363,25 @@ enum dev_dma_attr acpi_get_dma_attr(struct acpi_device *adev)
  * @dev: The pointer to the device
  * @attr: device dma attributes
  */
-void acpi_dma_configure(struct device *dev, enum dev_dma_attr attr)
+int acpi_dma_configure(struct device *dev, enum dev_dma_attr attr)
 {
 	const struct iommu_ops *iommu;
+	u64 size;
 
 	iort_set_dma_mask(dev);
 
 	iommu = iort_iommu_configure(dev);
+	if (IS_ERR(iommu) && PTR_ERR(iommu) == -EPROBE_DEFER)
+		return -EPROBE_DEFER;
 
+	size = max(dev->coherent_dma_mask, dev->coherent_dma_mask + 1);
 	/*
 	 * Assume dma valid range starts at 0 and covers the whole
 	 * coherent_dma_mask.
 	 */
-	arch_setup_dma_ops(dev, 0, dev->coherent_dma_mask + 1, iommu,
-			   attr == DEV_DMA_COHERENT);
+	arch_setup_dma_ops(dev, 0, size, iommu, attr == DEV_DMA_COHERENT);
+
+	return 0;
 }
 EXPORT_SYMBOL_GPL(acpi_dma_configure);
 
@@ -1433,6 +1428,37 @@ static void acpi_init_coherency(struct acpi_device *adev)
 	adev->flags.coherent_dma = cca;
 }
 
+static int acpi_check_spi_i2c_slave(struct acpi_resource *ares, void *data)
+{
+	bool *is_spi_i2c_slave_p = data;
+
+	if (ares->type != ACPI_RESOURCE_TYPE_SERIAL_BUS)
+		return 1;
+
+	/*
+	 * devices that are connected to UART still need to be enumerated to
+	 * platform bus
+	 */
+	if (ares->data.common_serial_bus.type != ACPI_RESOURCE_SERIAL_TYPE_UART)
+		*is_spi_i2c_slave_p = true;
+
+	 /* no need to do more checking */
+	return -1;
+}
+
+static bool acpi_is_spi_i2c_slave(struct acpi_device *device)
+{
+	struct list_head resource_list;
+	bool is_spi_i2c_slave = false;
+
+	INIT_LIST_HEAD(&resource_list);
+	acpi_dev_get_resources(device, &resource_list, acpi_check_spi_i2c_slave,
+			       &is_spi_i2c_slave);
+	acpi_dev_free_resource_list(&resource_list);
+
+	return is_spi_i2c_slave;
+}
+
 void acpi_init_device_object(struct acpi_device *device, acpi_handle handle,
 			     int type, unsigned long long sta)
 {
@@ -1448,6 +1474,7 @@ void acpi_init_device_object(struct acpi_device *device, acpi_handle handle,
 	acpi_bus_get_flags(device);
 	device->flags.match_driver = false;
 	device->flags.initialized = true;
+	device->flags.spi_i2c_slave = acpi_is_spi_i2c_slave(device);
 	acpi_device_clear_enumerated(device);
 	device_initialize(&device->dev);
 	dev_set_uevent_suppress(&device->dev, true);
@@ -1732,38 +1759,13 @@ static acpi_status acpi_bus_check_add(acpi_handle handle, u32 lvl_not_used,
 	return AE_OK;
 }
 
-static int acpi_check_spi_i2c_slave(struct acpi_resource *ares, void *data)
-{
-	bool *is_spi_i2c_slave_p = data;
-
-	if (ares->type != ACPI_RESOURCE_TYPE_SERIAL_BUS)
-		return 1;
-
-	/*
-	 * devices that are connected to UART still need to be enumerated to
-	 * platform bus
-	 */
-	if (ares->data.common_serial_bus.type != ACPI_RESOURCE_SERIAL_TYPE_UART)
-		*is_spi_i2c_slave_p = true;
-
-	 /* no need to do more checking */
-	return -1;
-}
-
 static void acpi_default_enumeration(struct acpi_device *device)
 {
-	struct list_head resource_list;
-	bool is_spi_i2c_slave = false;
-
 	/*
 	 * Do not enumerate SPI/I2C slaves as they will be enumerated by their
 	 * respective parents.
 	 */
-	INIT_LIST_HEAD(&resource_list);
-	acpi_dev_get_resources(device, &resource_list, acpi_check_spi_i2c_slave,
-			       &is_spi_i2c_slave);
-	acpi_dev_free_resource_list(&resource_list);
-	if (!is_spi_i2c_slave) {
+	if (!device->flags.spi_i2c_slave) {
 		acpi_create_platform_device(device, NULL);
 		acpi_device_set_enumerated(device);
 	} else {
@@ -1850,6 +1852,8 @@ static void acpi_bus_attach(struct acpi_device *device)
 			device->flags.power_manageable = 0;
 
 		device->flags.initialized = true;
+	} else if (device->flags.visited) {
+		goto ok;
 	}
 
 	ret = acpi_scan_attach_handler(device);
@@ -1857,7 +1861,7 @@ static void acpi_bus_attach(struct acpi_device *device)
 		return;
 
 	device->flags.match_driver = true;
-	if (ret > 0) {
+	if (ret > 0 && !device->flags.spi_i2c_slave) {
 		acpi_device_set_enumerated(device);
 		goto ok;
 	}
@@ -1866,7 +1870,7 @@ static void acpi_bus_attach(struct acpi_device *device)
 	if (ret < 0)
 		return;
 
-	if (ret > 0 || !device->pnp.type.platform_id)
+	if (!device->pnp.type.platform_id && !device->flags.spi_i2c_slave)
 		acpi_device_set_enumerated(device);
 	else
 		acpi_default_enumeration(device);

@@ -18,6 +18,7 @@
 #include <linux/random.h>
 #include <linux/siphash.h>
 #include <linux/kernel.h>
+#include <net/secure_seq.h>
 #include <net/ipv6.h>
 #include <net/mptcp.h>
 #include <net/mptcp_v6.h>
@@ -147,6 +148,7 @@ struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 	int mss;
 	struct dst_entry *dst;
 	__u8 rcv_wscale;
+	u32 tsoff = 0;
 
 	if (!sock_net(sk)->ipv4.sysctl_tcp_syncookies || !th->ack || th->rst)
 		goto out;
@@ -166,6 +168,12 @@ struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 	memset(&tcp_opt, 0, sizeof(tcp_opt));
 	mptcp_init_mp_opt(&mopt);
 	tcp_parse_options(skb, &tcp_opt, &mopt, 0, NULL, NULL);
+
+	if (tcp_opt.saw_tstamp && tcp_opt.rcv_tsecr) {
+		tsoff = secure_tcpv6_ts_off(ipv6_hdr(skb)->daddr.s6_addr32,
+					    ipv6_hdr(skb)->saddr.s6_addr32);
+		tcp_opt.rcv_tsecr -= tsoff;
+	}
 
 	if (!cookie_timestamp_decode(&tcp_opt))
 		goto out;
@@ -260,7 +268,7 @@ struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 	ireq->rcv_wscale = rcv_wscale;
 	ireq->ecn_ok = cookie_ecn_ok(&tcp_opt, sock_net(sk), dst);
 
-	ret = tcp_get_cookie_sock(sk, skb, req, dst);
+	ret = tcp_get_cookie_sock(sk, skb, req, dst, tsoff);
 out:
 	return ret;
 out_free:

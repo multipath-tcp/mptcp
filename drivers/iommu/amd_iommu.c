@@ -1234,7 +1234,7 @@ static void __domain_flush_pages(struct protection_domain *domain,
 
 	build_inv_iommu_pages(&cmd, address, size, domain->id, pde);
 
-	for (i = 0; i < amd_iommus_present; ++i) {
+	for (i = 0; i < amd_iommu_get_num_iommus(); ++i) {
 		if (!domain->dev_iommu[i])
 			continue;
 
@@ -1278,7 +1278,7 @@ static void domain_flush_complete(struct protection_domain *domain)
 {
 	int i;
 
-	for (i = 0; i < amd_iommus_present; ++i) {
+	for (i = 0; i < amd_iommu_get_num_iommus(); ++i) {
 		if (domain && !domain->dev_iommu[i])
 			continue;
 
@@ -3363,7 +3363,7 @@ static int __flush_pasid(struct protection_domain *domain, int pasid,
 	 * IOMMU TLB needs to be flushed before Device TLB to
 	 * prevent device TLB refill from IOMMU TLB
 	 */
-	for (i = 0; i < amd_iommus_present; ++i) {
+	for (i = 0; i < amd_iommu_get_num_iommus(); ++i) {
 		if (domain->dev_iommu[i] == 0)
 			continue;
 
@@ -3879,11 +3879,9 @@ static void irte_ga_prepare(void *entry,
 			    u8 vector, u32 dest_apicid, int devid)
 {
 	struct irte_ga *irte = (struct irte_ga *) entry;
-	struct iommu_dev_data *dev_data = search_dev_data(devid);
 
 	irte->lo.val                      = 0;
 	irte->hi.val                      = 0;
-	irte->lo.fields_remap.guest_mode  = dev_data ? dev_data->use_vapic : 0;
 	irte->lo.fields_remap.int_type    = delivery_mode;
 	irte->lo.fields_remap.dm          = dest_mode;
 	irte->hi.fields.vector            = vector;
@@ -3939,10 +3937,10 @@ static void irte_ga_set_affinity(void *entry, u16 devid, u16 index,
 	struct irte_ga *irte = (struct irte_ga *) entry;
 	struct iommu_dev_data *dev_data = search_dev_data(devid);
 
-	if (!dev_data || !dev_data->use_vapic) {
+	if (!dev_data || !dev_data->use_vapic ||
+	    !irte->lo.fields_remap.guest_mode) {
 		irte->hi.fields.vector = vector;
 		irte->lo.fields_remap.destination = dest_apicid;
-		irte->lo.fields_remap.guest_mode = 0;
 		modify_irte_ga(devid, index, irte, NULL);
 	}
 }

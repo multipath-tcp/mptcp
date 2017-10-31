@@ -35,6 +35,15 @@
 #include <linux/srcu.h>
 #include <linux/miscdevice.h>
 #include <linux/debugfs.h>
+#include <linux/gfp.h>
+#include <linux/vmalloc.h>
+#include <linux/highmem.h>
+#include <linux/hugetlb.h>
+#include <linux/kvm_irqfd.h>
+#include <linux/irqbypass.h>
+#include <linux/module.h>
+#include <linux/compiler.h>
+#include <linux/of.h>
 
 #include <asm/reg.h>
 #include <asm/cputable.h>
@@ -58,15 +67,7 @@
 #include <asm/mmu.h>
 #include <asm/opal.h>
 #include <asm/xics.h>
-#include <linux/gfp.h>
-#include <linux/vmalloc.h>
-#include <linux/highmem.h>
-#include <linux/hugetlb.h>
-#include <linux/kvm_irqfd.h>
-#include <linux/irqbypass.h>
-#include <linux/module.h>
-#include <linux/compiler.h>
-#include <linux/of.h>
+#include <asm/xive.h>
 
 #include "book3s.h"
 
@@ -837,6 +838,10 @@ int kvmppc_pseries_do_hcall(struct kvm_vcpu *vcpu)
 	case H_IPOLL:
 	case H_XIRR_X:
 		if (kvmppc_xics_enabled(vcpu)) {
+			if (xive_enabled()) {
+				ret = H_NOT_AVAILABLE;
+				return RESUME_GUEST;
+			}
 			ret = kvmppc_xics_hcall(vcpu, req);
 			break;
 		}
@@ -1481,6 +1486,14 @@ static int kvmppc_set_one_reg_hv(struct kvm_vcpu *vcpu, u64 id,
 		r = set_vpa(vcpu, &vcpu->arch.dtl, addr, len);
 		break;
 	case KVM_REG_PPC_TB_OFFSET:
+		/*
+		 * POWER9 DD1 has an erratum where writing TBU40 causes
+		 * the timebase to lose ticks.  So we don't let the
+		 * timebase offset be changed on P9 DD1.  (It is
+		 * initialized to zero.)
+		 */
+		if (cpu_has_feature(CPU_FTR_POWER9_DD1))
+			break;
 		/* round up to multiple of 2^24 */
 		vcpu->arch.vcore->tb_offset =
 			ALIGN(set_reg_val(id, *val), 1UL << 24);
@@ -2902,11 +2915,35 @@ static int kvmppc_vcpu_run_hv(struct kvm_run *run, struct kvm_vcpu *vcpu)
 {
 	int r;
 	int srcu_idx;
+	unsigned long ebb_regs[3] = {};	/* shut up GCC */
+	unsigned long user_tar = 0;
+	unsigned int user_vrsave;
 
 	if (!vcpu->arch.sane) {
 		run->exit_reason = KVM_EXIT_INTERNAL_ERROR;
 		return -EINVAL;
 	}
+
+	/*
+	 * Don't allow entry with a suspended transaction, because
+	 * the guest entry/exit code will lose it.
+	 * If the guest has TM enabled, save away their TM-related SPRs
+	 * (they will get restored by the TM unavailable interrupt).
+	 */
+#ifdef CONFIG_PPC_TRANSACTIONAL_MEM
+	if (cpu_has_feature(CPU_FTR_TM) && current->thread.regs &&
+	    (current->thread.regs->msr & MSR_TM)) {
+		if (MSR_TM_ACTIVE(current->thread.regs->msr)) {
+			run->exit_reason = KVM_EXIT_FAIL_ENTRY;
+			run->fail_entry.hardware_entry_failure_reason = 0;
+			return -EINVAL;
+		}
+		current->thread.tm_tfhar = mfspr(SPRN_TFHAR);
+		current->thread.tm_tfiar = mfspr(SPRN_TFIAR);
+		current->thread.tm_texasr = mfspr(SPRN_TEXASR);
+		current->thread.regs->msr &= ~MSR_TM;
+	}
+#endif
 
 	kvmppc_core_prepare_to_enter(vcpu);
 
@@ -2929,6 +2966,15 @@ static int kvmppc_vcpu_run_hv(struct kvm_run *run, struct kvm_vcpu *vcpu)
 
 	flush_all_to_thread(current);
 
+	/* Save userspace EBB and other register values */
+	if (cpu_has_feature(CPU_FTR_ARCH_207S)) {
+		ebb_regs[0] = mfspr(SPRN_EBBHR);
+		ebb_regs[1] = mfspr(SPRN_EBBRR);
+		ebb_regs[2] = mfspr(SPRN_BESCR);
+		user_tar = mfspr(SPRN_TAR);
+	}
+	user_vrsave = mfspr(SPRN_VRSAVE);
+
 	vcpu->arch.wqp = &vcpu->arch.vcore->wq;
 	vcpu->arch.pgdir = current->mm->pgd;
 	vcpu->arch.state = KVMPPC_VCPU_BUSY_IN_HOST;
@@ -2947,9 +2993,23 @@ static int kvmppc_vcpu_run_hv(struct kvm_run *run, struct kvm_vcpu *vcpu)
 			r = kvmppc_book3s_hv_page_fault(run, vcpu,
 				vcpu->arch.fault_dar, vcpu->arch.fault_dsisr);
 			srcu_read_unlock(&vcpu->kvm->srcu, srcu_idx);
-		} else if (r == RESUME_PASSTHROUGH)
-			r = kvmppc_xics_rm_complete(vcpu, 0);
+		} else if (r == RESUME_PASSTHROUGH) {
+			if (WARN_ON(xive_enabled()))
+				r = H_SUCCESS;
+			else
+				r = kvmppc_xics_rm_complete(vcpu, 0);
+		}
 	} while (is_kvmppc_resume_guest(r));
+
+	/* Restore userspace EBB and other register values */
+	if (cpu_has_feature(CPU_FTR_ARCH_207S)) {
+		mtspr(SPRN_EBBHR, ebb_regs[0]);
+		mtspr(SPRN_EBBRR, ebb_regs[1]);
+		mtspr(SPRN_BESCR, ebb_regs[2]);
+		mtspr(SPRN_TAR, user_tar);
+		mtspr(SPRN_FSCR, current->thread.fscr);
+	}
+	mtspr(SPRN_VRSAVE, user_vrsave);
 
  out:
 	vcpu->arch.state = KVMPPC_VCPU_NOTREADY;
@@ -3400,10 +3460,20 @@ static int kvmppc_core_init_vm_hv(struct kvm *kvm)
 	/*
 	 * On POWER9, VPM0 bit is reserved (VPM0=1 behaviour is assumed)
 	 * Set HVICE bit to enable hypervisor virtualization interrupts.
+	 * Set HEIC to prevent OS interrupts to go to hypervisor (should
+	 * be unnecessary but better safe than sorry in case we re-enable
+	 * EE in HV mode with this LPCR still set)
 	 */
 	if (cpu_has_feature(CPU_FTR_ARCH_300)) {
 		lpcr &= ~LPCR_VPM0;
-		lpcr |= LPCR_HVICE;
+		lpcr |= LPCR_HVICE | LPCR_HEIC;
+
+		/*
+		 * If xive is enabled, we route 0x500 interrupts directly
+		 * to the guest.
+		 */
+		if (xive_enabled())
+			lpcr |= LPCR_LPES;
 	}
 
 	/*
@@ -3533,7 +3603,7 @@ static int kvmppc_set_passthru_irq(struct kvm *kvm, int host_irq, int guest_gsi)
 	struct kvmppc_irq_map *irq_map;
 	struct kvmppc_passthru_irqmap *pimap;
 	struct irq_chip *chip;
-	int i;
+	int i, rc = 0;
 
 	if (!kvm_irq_bypass)
 		return 1;
@@ -3558,10 +3628,10 @@ static int kvmppc_set_passthru_irq(struct kvm *kvm, int host_irq, int guest_gsi)
 	/*
 	 * For now, we only support interrupts for which the EOI operation
 	 * is an OPAL call followed by a write to XIRR, since that's
-	 * what our real-mode EOI code does.
+	 * what our real-mode EOI code does, or a XIVE interrupt
 	 */
 	chip = irq_data_get_irq_chip(&desc->irq_data);
-	if (!chip || !is_pnv_opal_msi(chip)) {
+	if (!chip || !(is_pnv_opal_msi(chip) || is_xive_irq(chip))) {
 		pr_warn("kvmppc_set_passthru_irq_hv: Could not assign IRQ map for (%d,%d)\n",
 			host_irq, guest_gsi);
 		mutex_unlock(&kvm->lock);
@@ -3603,7 +3673,12 @@ static int kvmppc_set_passthru_irq(struct kvm *kvm, int host_irq, int guest_gsi)
 	if (i == pimap->n_mapped)
 		pimap->n_mapped++;
 
-	kvmppc_xics_set_mapped(kvm, guest_gsi, desc->irq_data.hwirq);
+	if (xive_enabled())
+		rc = kvmppc_xive_set_mapped(kvm, guest_gsi, desc);
+	else
+		kvmppc_xics_set_mapped(kvm, guest_gsi, desc->irq_data.hwirq);
+	if (rc)
+		irq_map->r_hwirq = 0;
 
 	mutex_unlock(&kvm->lock);
 
@@ -3614,7 +3689,7 @@ static int kvmppc_clr_passthru_irq(struct kvm *kvm, int host_irq, int guest_gsi)
 {
 	struct irq_desc *desc;
 	struct kvmppc_passthru_irqmap *pimap;
-	int i;
+	int i, rc = 0;
 
 	if (!kvm_irq_bypass)
 		return 0;
@@ -3624,11 +3699,9 @@ static int kvmppc_clr_passthru_irq(struct kvm *kvm, int host_irq, int guest_gsi)
 		return -EIO;
 
 	mutex_lock(&kvm->lock);
+	if (!kvm->arch.pimap)
+		goto unlock;
 
-	if (kvm->arch.pimap == NULL) {
-		mutex_unlock(&kvm->lock);
-		return 0;
-	}
 	pimap = kvm->arch.pimap;
 
 	for (i = 0; i < pimap->n_mapped; i++) {
@@ -3641,18 +3714,21 @@ static int kvmppc_clr_passthru_irq(struct kvm *kvm, int host_irq, int guest_gsi)
 		return -ENODEV;
 	}
 
-	kvmppc_xics_clr_mapped(kvm, guest_gsi, pimap->mapped[i].r_hwirq);
+	if (xive_enabled())
+		rc = kvmppc_xive_clr_mapped(kvm, guest_gsi, pimap->mapped[i].desc);
+	else
+		kvmppc_xics_clr_mapped(kvm, guest_gsi, pimap->mapped[i].r_hwirq);
 
-	/* invalidate the entry */
+	/* invalidate the entry (what do do on error from the above ?) */
 	pimap->mapped[i].r_hwirq = 0;
 
 	/*
 	 * We don't free this structure even when the count goes to
 	 * zero. The structure is freed when we destroy the VM.
 	 */
-
+ unlock:
 	mutex_unlock(&kvm->lock);
-	return 0;
+	return rc;
 }
 
 static int kvmppc_irq_bypass_add_producer_hv(struct irq_bypass_consumer *cons,
@@ -3930,7 +4006,7 @@ static int kvmppc_book3s_init_hv(void)
 	 * indirectly, via OPAL.
 	 */
 #ifdef CONFIG_SMP
-	if (!get_paca()->kvm_hstate.xics_phys) {
+	if (!xive_enabled() && !local_paca->kvm_hstate.xics_phys) {
 		struct device_node *np;
 
 		np = of_find_compatible_node(NULL, NULL, "ibm,opal-intc");

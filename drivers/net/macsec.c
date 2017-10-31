@@ -1605,8 +1605,9 @@ static int parse_sa_config(struct nlattr **attrs, struct nlattr **tb_sa)
 	if (!attrs[MACSEC_ATTR_SA_CONFIG])
 		return -EINVAL;
 
-	if (nla_parse_nested(tb_sa, MACSEC_SA_ATTR_MAX, attrs[MACSEC_ATTR_SA_CONFIG],
-			     macsec_genl_sa_policy))
+	if (nla_parse_nested(tb_sa, MACSEC_SA_ATTR_MAX,
+			     attrs[MACSEC_ATTR_SA_CONFIG],
+			     macsec_genl_sa_policy, NULL))
 		return -EINVAL;
 
 	return 0;
@@ -1617,8 +1618,9 @@ static int parse_rxsc_config(struct nlattr **attrs, struct nlattr **tb_rxsc)
 	if (!attrs[MACSEC_ATTR_RXSC_CONFIG])
 		return -EINVAL;
 
-	if (nla_parse_nested(tb_rxsc, MACSEC_RXSC_ATTR_MAX, attrs[MACSEC_ATTR_RXSC_CONFIG],
-			     macsec_genl_rxsc_policy))
+	if (nla_parse_nested(tb_rxsc, MACSEC_RXSC_ATTR_MAX,
+			     attrs[MACSEC_ATTR_RXSC_CONFIG],
+			     macsec_genl_rxsc_policy, NULL))
 		return -EINVAL;
 
 	return 0;
@@ -2994,7 +2996,6 @@ static void macsec_free_netdev(struct net_device *dev)
 	free_percpu(macsec->secy.tx_sc.stats);
 
 	dev_put(real_dev);
-	free_netdev(dev);
 }
 
 static void macsec_setup(struct net_device *dev)
@@ -3004,7 +3005,8 @@ static void macsec_setup(struct net_device *dev)
 	dev->max_mtu = ETH_MAX_MTU;
 	dev->priv_flags |= IFF_NO_QUEUE;
 	dev->netdev_ops = &macsec_netdev_ops;
-	dev->destructor = macsec_free_netdev;
+	dev->needs_free_netdev = true;
+	dev->priv_destructor = macsec_free_netdev;
 	SET_NETDEV_DEVTYPE(dev, &macsec_type);
 
 	eth_zero_addr(dev->broadcast);

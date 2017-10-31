@@ -1982,7 +1982,6 @@ int skb_splice_bits(struct sk_buff *skb, struct sock *sk, unsigned int offset,
 		.pages = pages,
 		.partial = partial,
 		.nr_pages_max = MAX_SKB_FRAGS,
-		.flags = flags,
 		.ops = &nosteal_pipe_buf_ops,
 		.spd_release = sock_spd_release,
 	};
@@ -3102,7 +3101,7 @@ struct sk_buff *skb_segment(struct sk_buff *head_skb,
 			skb_walk_frags(head_skb, iter) {
 				if (frag_len != iter->len && iter->next)
 					goto normal;
-				if (skb_headlen(iter))
+				if (skb_headlen(iter) && !iter->head_frag)
 					goto normal;
 
 				len -= iter->len;
@@ -3755,8 +3754,11 @@ struct sk_buff *sock_dequeue_err_skb(struct sock *sk)
 
 	spin_lock_irqsave(&q->lock, flags);
 	skb = __skb_dequeue(q);
-	if (skb && (skb_next = skb_peek(q)))
+	if (skb && (skb_next = skb_peek(q))) {
 		icmp_next = is_icmp_err_skb(skb_next);
+		if (icmp_next)
+			sk->sk_err = SKB_EXT_ERR(skb_next)->ee.ee_origin;
+	}
 	spin_unlock_irqrestore(&q->lock, flags);
 
 	if (is_icmp_err_skb(skb) && !icmp_next)

@@ -88,10 +88,10 @@ else
         KBUILD_CFLAGS += -m64
 
         # Align jump targets to 1 byte, not the default 16 bytes:
-        KBUILD_CFLAGS += -falign-jumps=1
+        KBUILD_CFLAGS += $(call cc-option,-falign-jumps=1)
 
         # Pack loops tightly as well:
-        KBUILD_CFLAGS += -falign-loops=1
+        KBUILD_CFLAGS += $(call cc-option,-falign-loops=1)
 
         # Don't autogenerate traditional x87 instructions
         KBUILD_CFLAGS += $(call cc-option,-mno-80387)
@@ -159,7 +159,7 @@ ifdef CONFIG_FUNCTION_GRAPH_TRACER
 	# If '-Os' is enabled, disable it and print a warning.
         ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
           undefine CONFIG_CC_OPTIMIZE_FOR_SIZE
-	  $(warning Disabling CONFIG_CC_OPTIMIZE_FOR_SIZE.  Your compiler does not have -mfentry so you cannot optimize for size with CONFIG_FUNCTION_GRAPH_TRACER.)
+          $(warning Disabling CONFIG_CC_OPTIMIZE_FOR_SIZE.  Your compiler does not have -mfentry so you cannot optimize for size with CONFIG_FUNCTION_GRAPH_TRACER.)
         endif
 
     endif
@@ -179,7 +179,8 @@ ifdef CONFIG_JUMP_LABEL
 endif
 
 ifeq ($(ACCUMULATE_OUTGOING_ARGS), 1)
-	KBUILD_CFLAGS += -maccumulate-outgoing-args
+	# This compiler flag is not supported by Clang:
+	KBUILD_CFLAGS += $(call cc-option,-maccumulate-outgoing-args,)
 endif
 
 # Stackpointer is addressed different for 32 bit and 64 bit x86

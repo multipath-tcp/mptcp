@@ -119,6 +119,7 @@ struct efx_ef10_filter_table {
 	bool mc_promisc;
 /* Whether in multicast promiscuous mode when last changed */
 	bool mc_promisc_last;
+	bool mc_overflow; /* Too many MC addrs; should always imply mc_promisc */
 	bool vlan_filter;
 	struct list_head vlan_list;
 };
@@ -4171,7 +4172,7 @@ found:
 	 * recipients
 	 */
 	if (is_mc_recip) {
-		MCDI_DECLARE_BUF(inbuf, MC_CMD_FILTER_OP_IN_LEN);
+		MCDI_DECLARE_BUF(inbuf, MC_CMD_FILTER_OP_EXT_IN_LEN);
 		unsigned int depth, i;
 
 		memset(inbuf, 0, sizeof(inbuf));
@@ -4319,7 +4320,7 @@ static int efx_ef10_filter_remove_internal(struct efx_nic *efx,
 			efx_ef10_filter_set_entry(table, filter_idx, NULL, 0);
 		} else {
 			efx_mcdi_display_error(efx, MC_CMD_FILTER_OP,
-					       MC_CMD_FILTER_OP_IN_LEN,
+					       MC_CMD_FILTER_OP_EXT_IN_LEN,
 					       NULL, 0, rc);
 		}
 	}
@@ -4452,7 +4453,7 @@ static s32 efx_ef10_filter_rfs_insert(struct efx_nic *efx,
 				      struct efx_filter_spec *spec)
 {
 	struct efx_ef10_filter_table *table = efx->filter_state;
-	MCDI_DECLARE_BUF(inbuf, MC_CMD_FILTER_OP_IN_LEN);
+	MCDI_DECLARE_BUF(inbuf, MC_CMD_FILTER_OP_EXT_IN_LEN);
 	struct efx_filter_spec *saved_spec;
 	unsigned int hash, i, depth = 1;
 	bool replacing = false;
@@ -4939,7 +4940,7 @@ not_restored:
 static void efx_ef10_filter_table_remove(struct efx_nic *efx)
 {
 	struct efx_ef10_filter_table *table = efx->filter_state;
-	MCDI_DECLARE_BUF(inbuf, MC_CMD_FILTER_OP_IN_LEN);
+	MCDI_DECLARE_BUF(inbuf, MC_CMD_FILTER_OP_EXT_IN_LEN);
 	struct efx_filter_spec *spec;
 	unsigned int filter_idx;
 	int rc;
@@ -5058,6 +5059,7 @@ static void efx_ef10_filter_mc_addr_list(struct efx_nic *efx)
 	struct netdev_hw_addr *mc;
 	unsigned int i, addr_count;
 
+	table->mc_overflow = false;
 	table->mc_promisc = !!(net_dev->flags & (IFF_PROMISC | IFF_ALLMULTI));
 
 	addr_count = netdev_mc_count(net_dev);
@@ -5065,6 +5067,7 @@ static void efx_ef10_filter_mc_addr_list(struct efx_nic *efx)
 	netdev_for_each_mc_addr(mc, net_dev) {
 		if (i >= EFX_EF10_FILTER_DEV_MC_MAX) {
 			table->mc_promisc = true;
+			table->mc_overflow = true;
 			break;
 		}
 		ether_addr_copy(table->dev_mc_list[i].addr, mc->addr);
@@ -5102,6 +5105,7 @@ static int efx_ef10_filter_insert_addr_list(struct efx_nic *efx,
 
 	/* Insert/renew filters */
 	for (i = 0; i < addr_count; i++) {
+		EFX_WARN_ON_PARANOID(ids[i] != EFX_EF10_FILTER_ID_INVALID);
 		efx_filter_init_rx(&spec, EFX_FILTER_PRI_AUTO, filter_flags, 0);
 		efx_filter_set_eth_local(&spec, vlan->vid, addr_list[i].addr);
 		rc = efx_ef10_filter_insert(efx, &spec, true);
@@ -5119,11 +5123,11 @@ static int efx_ef10_filter_insert_addr_list(struct efx_nic *efx,
 				}
 				return rc;
 			} else {
-				/* mark as not inserted, and carry on */
-				rc = EFX_EF10_FILTER_ID_INVALID;
+				/* keep invalid ID, and carry on */
 			}
+		} else {
+			ids[i] = efx_ef10_filter_get_unsafe_id(rc);
 		}
-		ids[i] = efx_ef10_filter_get_unsafe_id(rc);
 	}
 
 	if (multicast && rollback) {
@@ -5469,12 +5473,15 @@ static void efx_ef10_filter_vlan_sync_rx_mode(struct efx_nic *efx,
 			}
 		} else {
 			/* If we failed to insert promiscuous filters, don't
-			 * rollback.  Regardless, also insert the mc_list
+			 * rollback.  Regardless, also insert the mc_list,
+			 * unless it's incomplete due to overflow
 			 */
 			efx_ef10_filter_insert_def(efx, vlan,
 						   EFX_ENCAP_TYPE_NONE,
 						   true, false);
-			efx_ef10_filter_insert_addr_list(efx, vlan, true, false);
+			if (!table->mc_overflow)
+				efx_ef10_filter_insert_addr_list(efx, vlan,
+								 true, false);
 		}
 	} else {
 		/* If any filters failed to insert, rollback and fall back to
