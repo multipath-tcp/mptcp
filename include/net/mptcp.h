@@ -1499,6 +1499,10 @@ static inline void mptcp_cookies_reqsk_init(struct request_sock *req,
 					    struct mptcp_options_received *mopt,
 					    struct sk_buff *skb) {}
 static inline void mptcp_fin(struct sock *meta_sk) {}
+static inline bool mptcp_can_new_subflow(const struct sock *meta_sk)
+{
+	return false;
+}
 
 #endif /* CONFIG_MPTCP */
 
