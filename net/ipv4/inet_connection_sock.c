@@ -567,6 +567,9 @@ static void reqsk_timer_handler(unsigned long data)
 	if (sk_state_load(sk_listener) != TCP_LISTEN && !is_meta_sk(sk_listener))
 		goto drop;
 
+	if (is_meta_sk(sk_listener) && !mptcp_can_new_subflow(sk_listener))
+		goto drop;
+
 	max_retries = icsk->icsk_syn_retries ? : sysctl_tcp_synack_retries;
 	thresh = max_retries;
 	/* Normally all the openreqs are young and become mature
