@@ -68,7 +68,7 @@ static bool mptcp_is_temp_unavailable(struct sock *sk,
 	/* If TSQ is already throttling us, do not send on this subflow. When
 	 * TSQ gets cleared the subflow becomes eligible again.
 	 */
-	if (test_bit(TSQ_THROTTLED, &tp->tsq_flags))
+	if (test_bit(TSQ_THROTTLED, &sk->sk_tsq_flags))
 		return true;
 
 	in_flight = tcp_packets_in_flight(tp);

@@ -805,9 +805,9 @@ static void tcp_tasklet_func(unsigned long data)
 #define TCP_DEFERRED_ALL (TCPF_TSQ_DEFERRED |		\
 			  TCPF_WRITE_TIMER_DEFERRED |	\
 			  TCPF_DELACK_TIMER_DEFERRED |	\
-			  TCPF_MTU_REDUCED_DEFERRED) | \
-			  (TCPF_PATH_MANAGER_DEFERRED) |\
-			  (TCPF_SUB_DEFERRED))
+			  TCPF_MTU_REDUCED_DEFERRED | \
+			  TCPF_PATH_MANAGER_DEFERRED |\
+			  TCPF_SUB_DEFERRED)
 /**
  * tcp_release_cb - tcp release_sock() callback
  * @sk: socket

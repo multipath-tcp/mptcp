@@ -841,7 +841,7 @@ duno:
 
 			if (sock_owned_by_user(meta_sk)) {
 				if (!test_and_set_bit(MPTCP_PATH_MANAGER_DEFERRED,
-						      &meta_tp->tsq_flags))
+						      &meta_sk->sk_tsq_flags))
 					sock_hold(meta_sk);
 
 				goto next;

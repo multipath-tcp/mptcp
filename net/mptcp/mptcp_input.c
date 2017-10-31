@@ -1396,9 +1396,8 @@ static void mptcp_snd_una_update(struct tcp_sock *meta_tp, u32 data_ack)
 {
 	u32 delta = data_ack - meta_tp->snd_una;
 
-	u64_stats_update_begin(&meta_tp->syncp);
+	sock_owned_by_me((struct sock *)meta_tp);
 	meta_tp->bytes_acked += delta;
-	u64_stats_update_end(&meta_tp->syncp);
 	meta_tp->snd_una = data_ack;
 }
 

@@ -1135,7 +1135,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	tcp_prequeue_init(master_tp);
 	INIT_LIST_HEAD(&master_tp->tsq_node);
 
-	master_tp->tsq_flags = 0;
+	master_sk->sk_tsq_flags = 0;
 
 	mutex_init(&mpcb->mpcb_mutex);
 
@@ -2103,7 +2103,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk,
 	child_tp->mptcp->rcv_isn = tcp_rsk(req)->rcv_isn;
 	child_tp->mptcp->init_rcv_wnd = req->rsk_rcv_wnd;
 
-	child_tp->tsq_flags = 0;
+	child->sk_tsq_flags = 0;
 	child_tp->out_of_order_queue = RB_ROOT;
 
 	sock_rps_save_rxhash(child, skb);
@@ -2258,7 +2258,7 @@ void mptcp_tsq_flags(struct sock *sk)
 		sock_hold(sk);
 	}
 
-	if (!test_and_set_bit(MPTCP_SUB_DEFERRED, &tcp_sk(meta_sk)->tsq_flags))
+	if (!test_and_set_bit(MPTCP_SUB_DEFERRED, &meta_sk->sk_tsq_flags))
 		sock_hold(meta_sk);
 }
 
@@ -2420,7 +2420,6 @@ static void __mptcp_get_info(const struct sock *meta_sk,
 	const struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
 	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	u32 now = tcp_time_stamp;
-	unsigned int start;
 
 	memset(info, 0, sizeof(*info));
 
@@ -2439,11 +2438,8 @@ static void __mptcp_get_info(const struct sock *meta_sk,
 
 	info->mptcpi_total_retrans = meta_tp->total_retrans;
 
-	do {
-		start = u64_stats_fetch_begin_irq(&meta_tp->syncp);
-		info->mptcpi_bytes_acked = meta_tp->bytes_acked;
-		info->mptcpi_bytes_received = meta_tp->bytes_received;
-	} while (u64_stats_fetch_retry_irq(&meta_tp->syncp, start));
+	info->mptcpi_bytes_acked = meta_tp->bytes_acked;
+	info->mptcpi_bytes_received = meta_tp->bytes_received;
 }
 
 static void mptcp_get_sub_info(struct sock *sk, struct mptcp_sub_info *info)
