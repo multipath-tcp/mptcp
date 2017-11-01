@@ -1017,7 +1017,7 @@ next:
 		}
 	}
 
-	inet_csk(meta_sk)->icsk_ack.lrcvtime = tcp_time_stamp;
+	inet_csk(meta_sk)->icsk_ack.lrcvtime = tcp_jiffies32;
 	mptcp_reset_mapping(tp, old_copied_seq);
 
 	return data_queued ? -1 : -2;
@@ -1492,7 +1492,7 @@ static void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	 */
 	sk->sk_err_soft = 0;
 	inet_csk(meta_sk)->icsk_probes_out = 0;
-	meta_tp->rcv_tstamp = tcp_time_stamp;
+	meta_tp->rcv_tstamp = tcp_jiffies32;
 	prior_packets = meta_tp->packets_out;
 	if (!prior_packets)
 		goto no_queue;
@@ -2425,7 +2425,7 @@ void mptcp_init_buffer_space(struct sock *sk)
 
 	if (is_master_tp(tp)) {
 		meta_tp->rcvq_space.space = meta_tp->rcv_wnd;
-		skb_mstamp_get(&meta_tp->tcp_mstamp);
+		tcp_mstamp_refresh(meta_tp);
 		meta_tp->rcvq_space.time = meta_tp->tcp_mstamp;
 		meta_tp->rcvq_space.seq = meta_tp->copied_seq;
 

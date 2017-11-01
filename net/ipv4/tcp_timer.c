@@ -660,16 +660,6 @@ static void tcp_keepalive_timer (unsigned long data)
 	}
 
 	if (tp->send_mp_fclose) {
-		/* MUST do this before tcp_write_timeout, because retrans_stamp
-		 * may have been set to 0 in another part while we are
-		 * retransmitting MP_FASTCLOSE. Then, we would crash, because
-		 * retransmits_timed_out accesses the meta-write-queue.
-		 *
-		 * We make sure that the timestamp is != 0.
-		 */
-		if (!tp->retrans_stamp)
-			tp->retrans_stamp = tcp_time_stamp ? : 1;
-
 		if (icsk->icsk_retransmits >= MPTCP_FASTCLOSE_RETRIES) {
 			tcp_write_err(sk);
 			goto out;

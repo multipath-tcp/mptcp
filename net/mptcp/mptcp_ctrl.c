@@ -506,7 +506,7 @@ begin:
 		meta_sk = (struct sock *)meta_tp;
 		if (token == meta_tp->mptcp_loc_token &&
 		    net_eq(net, sock_net(meta_sk))) {
-			if (unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
+			if (unlikely(!refcount_inc_not_zero(&meta_sk->sk_refcnt)))
 				goto out;
 			if (unlikely(token != meta_tp->mptcp_loc_token ||
 				     !net_eq(net, sock_net(meta_sk)))) {
@@ -711,7 +711,7 @@ static void mptcp_set_state(struct sock *sk)
 			sk_wake_async(meta_sk, SOCK_WAKE_IO, POLL_OUT);
 		}
 
-		tcp_sk(meta_sk)->lsndtime = tcp_time_stamp;
+		tcp_sk(meta_sk)->lsndtime = tcp_jiffies32;
 	}
 
 	if (sk->sk_state == TCP_ESTABLISHED) {
@@ -963,7 +963,7 @@ int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb)
 
 	skb->sk = NULL;
 
-	if (unlikely(!atomic_inc_not_zero(&sk->sk_refcnt))) {
+	if (unlikely(!refcount_inc_not_zero(&sk->sk_refcnt))) {
 		kfree_skb(skb);
 		return 0;
 	}
@@ -1045,7 +1045,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 		/* sk_free (and __sk_free) requirese wmem_alloc to be 1.
 		 * All the rest is set to 0 thanks to __GFP_ZERO above.
 		 */
-		atomic_set(&master_sk->sk_wmem_alloc, 1);
+		refcount_set(&master_sk->sk_wmem_alloc, 1);
 		sk_free(master_sk);
 		return -ENOBUFS;
 	}
@@ -2032,7 +2032,7 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 		inet_csk_complete_hashdance(sk, meta_sk, req, true);
 	} else {
 		/* Thus, we come from syn-cookies */
-		atomic_set(&req->rsk_refcnt, 1);
+		refcount_set(&req->rsk_refcnt, 1);
 		inet_csk_reqsk_queue_add(sk, req, meta_sk);
 	}
 
@@ -2419,7 +2419,7 @@ static void __mptcp_get_info(const struct sock *meta_sk,
 {
 	const struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
 	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	u32 now = tcp_time_stamp;
+	u32 now = tcp_jiffies32;
 
 	memset(info, 0, sizeof(*info));
 

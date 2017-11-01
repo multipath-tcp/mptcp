@@ -824,7 +824,7 @@ duno:
 			else if (event->family == AF_INET && meta_sk->sk_ipv6only)
 				continue;
 
-			if (unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
+			if (unlikely(!refcount_inc_not_zero(&meta_sk->sk_refcnt)))
 				continue;
 
 			bh_lock_sock(meta_sk);
