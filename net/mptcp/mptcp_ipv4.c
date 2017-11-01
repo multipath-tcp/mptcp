@@ -408,7 +408,7 @@ int mptcp_pm_v4_init(void)
 	}
 
 	ops->slab = kmem_cache_create(ops->slab_name, ops->obj_size, 0,
-				      SLAB_DESTROY_BY_RCU|SLAB_HWCACHE_ALIGN,
+				      SLAB_TYPESAFE_BY_RCU|SLAB_HWCACHE_ALIGN,
 				      NULL);
 
 	if (ops->slab == NULL) {

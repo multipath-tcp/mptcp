@@ -2814,13 +2814,13 @@ void __init mptcp_init(void)
 		goto mptcp_sock_cache_failed;
 
 	mptcp_cb_cache = kmem_cache_create("mptcp_cb", sizeof(struct mptcp_cb),
-					   0, SLAB_DESTROY_BY_RCU|SLAB_HWCACHE_ALIGN,
+					   0, SLAB_TYPESAFE_BY_RCU|SLAB_HWCACHE_ALIGN,
 					   NULL);
 	if (!mptcp_cb_cache)
 		goto mptcp_cb_cache_failed;
 
 	mptcp_tw_cache = kmem_cache_create("mptcp_tw", sizeof(struct mptcp_tw),
-					   0, SLAB_DESTROY_BY_RCU|SLAB_HWCACHE_ALIGN,
+					   0, SLAB_TYPESAFE_BY_RCU|SLAB_HWCACHE_ALIGN,
 					   NULL);
 	if (!mptcp_tw_cache)
 		goto mptcp_tw_cache_failed;

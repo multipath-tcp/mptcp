@@ -56,7 +56,7 @@ __u32 mptcp_v6_get_nonce(const __be32 *saddr, const __be32 *daddr,
 	} __aligned(SIPHASH_ALIGNMENT) combined = {
 		.saddr = *(struct in6_addr *)saddr,
 		.daddr = *(struct in6_addr *)daddr,
-		.seed = mptcp_seed++;
+		.seed = mptcp_seed++,
 		.sport = sport,
 		.dport = dport
 	};
@@ -77,7 +77,7 @@ u64 mptcp_v6_get_key(const __be32 *saddr, const __be32 *daddr,
 	} __aligned(SIPHASH_ALIGNMENT) combined = {
 		.saddr = *(struct in6_addr *)saddr,
 		.daddr = *(struct in6_addr *)daddr,
-		.seed = seed;
+		.seed = seed,
 		.sport = sport,
 		.dport = dport
 	};
@@ -436,7 +436,7 @@ int mptcp_pm_v6_init(void)
 	}
 
 	ops->slab = kmem_cache_create(ops->slab_name, ops->obj_size, 0,
-				      SLAB_DESTROY_BY_RCU|SLAB_HWCACHE_ALIGN,
+				      SLAB_TYPESAFE_BY_RCU|SLAB_HWCACHE_ALIGN,
 				      NULL);
 
 	if (ops->slab == NULL) {

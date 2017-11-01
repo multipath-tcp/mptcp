@@ -1878,8 +1878,8 @@ bool mptcp_check_rtt(const struct tcp_sock *tp, int time)
 		if (!mptcp_sk_can_recv(sk))
 			continue;
 
-		if (rtt_max < tcp_sk(sk)->rcv_rtt_est.rtt)
-			rtt_max = tcp_sk(sk)->rcv_rtt_est.rtt;
+		if (rtt_max < tcp_sk(sk)->rcv_rtt_est.rtt_us)
+			rtt_max = tcp_sk(sk)->rcv_rtt_est.rtt_us;
 	}
 	if (time < (rtt_max >> 3) || !rtt_max)
 		return true;
@@ -2425,7 +2425,8 @@ void mptcp_init_buffer_space(struct sock *sk)
 
 	if (is_master_tp(tp)) {
 		meta_tp->rcvq_space.space = meta_tp->rcv_wnd;
-		meta_tp->rcvq_space.time = tcp_time_stamp;
+		skb_mstamp_get(&meta_tp->tcp_mstamp);
+		meta_tp->rcvq_space.time = meta_tp->tcp_mstamp;
 		meta_tp->rcvq_space.seq = meta_tp->copied_seq;
 
 		/* If there is only one subflow, we just use regular TCP
