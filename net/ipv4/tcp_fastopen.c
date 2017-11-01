@@ -215,7 +215,7 @@ static struct sock *tcp_fastopen_create_child(struct sock *sk,
 	inet_csk_reset_xmit_timer(child, ICSK_TIME_RETRANS,
 				  TCP_TIMEOUT_INIT, TCP_RTO_MAX);
 
-	atomic_set(&req->rsk_refcnt, 2);
+	refcount_set(&req->rsk_refcnt, 2);
 
 	tp->rcv_nxt = TCP_SKB_CB(skb)->seq + 1;
 
@@ -235,6 +235,7 @@ static struct sock *tcp_fastopen_create_child(struct sock *sk,
 	tcp_init_congestion_control(child);
 	tcp_mtup_init(child);
 	tcp_init_metrics(child);
+	tcp_call_bpf(child, BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB);
 	tp->ops->init_buffer_space(child);
 
 	/* tcp_conn_request() is sending the SYNACK,

@@ -123,6 +123,8 @@ enum {
 #define TCP_SAVED_SYN		28	/* Get SYN headers recorded for connection */
 #define TCP_REPAIR_WINDOW	29	/* Get/set window parameters */
 #define TCP_FASTOPEN_CONNECT	30	/* Attempt FastOpen with connect */
+#define TCP_ULP			31	/* Attach a ULP to a TCP connection */
+#define TCP_MD5SIG_EXT		32	/* TCP MD5 Signature with extensions */
 #define MPTCP_ENABLED		42
 #define MPTCP_SCHEDULER		43
 #define MPTCP_PATH_MANAGER	44
@@ -293,11 +295,15 @@ struct mptcp_info {
 /* for TCP_MD5SIG socket option */
 #define TCP_MD5SIG_MAXKEYLEN	80
 
+/* tcp_md5sig extension flags for TCP_MD5SIG_EXT */
+#define TCP_MD5SIG_FLAG_PREFIX		1	/* address prefix length */
+
 struct tcp_md5sig {
 	struct __kernel_sockaddr_storage tcpm_addr;	/* address associated */
-	__u16	__tcpm_pad1;				/* zero */
+	__u8	tcpm_flags;				/* extension flags */
+	__u8	tcpm_prefixlen;				/* address prefix */
 	__u16	tcpm_keylen;				/* key length */
-	__u32	__tcpm_pad2;				/* zero */
+	__u32	__tcpm_pad;				/* zero */
 	__u8	tcpm_key[TCP_MD5SIG_MAXKEYLEN];		/* key (binary) */
 };
 
