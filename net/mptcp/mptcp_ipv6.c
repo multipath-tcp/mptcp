@@ -188,7 +188,7 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 					&tcp_hashinfo,
 					&ip6h->saddr, th->source,
 					&ip6h->daddr, ntohs(th->dest),
-					tcp_v6_iif(skb));
+					tcp_v6_iif(skb), tcp_v6_sdif(skb));
 
 	if (!sk)
 		goto new_subflow;

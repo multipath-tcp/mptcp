@@ -418,28 +418,6 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb,
 	tcb->end_seq = tcb->seq + skb->len + inc;
 }
 
-/**
- * @return: 1 if the segment has been eaten and can be suppressed,
- *          otherwise 0.
- */
-static inline int mptcp_direct_copy(const struct sk_buff *skb,
-				    struct sock *meta_sk)
-{
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	int chunk = min_t(unsigned int, skb->len, meta_tp->ucopy.len);
-	int eaten = 0;
-
-	__set_current_state(TASK_RUNNING);
-
-	if (!skb_copy_datagram_msg(skb, 0, meta_tp->ucopy.msg, chunk)) {
-		meta_tp->ucopy.len -= chunk;
-		meta_tp->copied_seq += chunk;
-		eaten = (chunk == skb->len);
-		tcp_rcv_space_adjust(meta_sk);
-	}
-	return eaten;
-}
-
 static inline void mptcp_reset_mapping(struct tcp_sock *tp, u32 old_copied_seq)
 {
 	tp->mptcp->map_data_len = 0;
@@ -981,13 +959,6 @@ static int mptcp_queue_skb(struct sock *sk)
 				__kfree_skb(tmp1);
 				goto next;
 			}
-
-			/* Is direct copy possible ? */
-			if (TCP_SKB_CB(tmp1)->seq == meta_tp->rcv_nxt &&
-			    meta_tp->ucopy.task == current &&
-			    meta_tp->copied_seq == meta_tp->rcv_nxt &&
-			    meta_tp->ucopy.len && sock_owned_by_user(meta_sk))
-				eaten = mptcp_direct_copy(tmp1, meta_sk);
 
 			if (mpcb->in_time_wait) /* In time-wait, do not receive data */
 				eaten = 1;
