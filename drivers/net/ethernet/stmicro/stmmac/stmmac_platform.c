@@ -150,6 +150,13 @@ static void stmmac_mtl_setup(struct platform_device *pdev,
 	plat->rx_queues_to_use = 1;
 	plat->tx_queues_to_use = 1;
 
+	/* First Queue must always be in DCB mode. As MTL_QUEUE_DCB = 1 we need
+	 * to always set this, otherwise Queue will be classified as AVB
+	 * (because MTL_QUEUE_AVB = 0).
+	 */
+	plat->rx_queues_cfg[0].mode_to_use = MTL_QUEUE_DCB;
+	plat->tx_queues_cfg[0].mode_to_use = MTL_QUEUE_DCB;
+
 	rx_node = of_parse_phandle(pdev->dev.of_node, "snps,mtl-rx-config", 0);
 	if (!rx_node)
 		return;
@@ -315,6 +322,7 @@ static int stmmac_dt_phy(struct plat_stmmacenet_data *plat,
 		{ .compatible = "allwinner,sun8i-h3-emac" },
 		{ .compatible = "allwinner,sun8i-v3s-emac" },
 		{ .compatible = "allwinner,sun50i-a64-emac" },
+		{},
 	};
 
 	/* If phy-handle property is passed from DT, use it as the PHY */
