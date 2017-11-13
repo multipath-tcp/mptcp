@@ -240,27 +240,28 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define	TFO_SERVER_WO_SOCKOPT1	0x400
 
 /* Flags from tcp_input.c for tcp_ack */
-#define FLAG_DATA               0x01 /* Incoming frame contained data.          */
-#define FLAG_WIN_UPDATE         0x02 /* Incoming ACK was a window update.       */
-#define FLAG_DATA_ACKED         0x04 /* This ACK acknowledged new data.         */
-#define FLAG_RETRANS_DATA_ACKED 0x08 /* "" "" some of which was retransmitted.  */
-#define FLAG_SYN_ACKED          0x10 /* This ACK acknowledged SYN.              */
-#define FLAG_DATA_SACKED        0x20 /* New SACK.                               */
-#define FLAG_ECE                0x40 /* ECE in this ACK                         */
-#define FLAG_LOST_RETRANS       0x80 /* This ACK marks some retransmission lost */
-#define FLAG_SLOWPATH           0x100 /* Do not skip RFC checks for window update.*/
-#define FLAG_ORIG_SACK_ACKED    0x200 /* Never retransmitted data are (s)acked  */
-#define FLAG_SND_UNA_ADVANCED   0x400 /* Snd_una was changed (!= FLAG_DATA_ACKED) */
-#define FLAG_DSACKING_ACK       0x800 /* SACK blocks contained D-SACK info */
+#define FLAG_DATA		0x01 /* Incoming frame contained data.		*/
+#define FLAG_WIN_UPDATE		0x02 /* Incoming ACK was a window update.	*/
+#define FLAG_DATA_ACKED		0x04 /* This ACK acknowledged new data.		*/
+#define FLAG_RETRANS_DATA_ACKED	0x08 /* "" "" some of which was retransmitted.	*/
+#define FLAG_SYN_ACKED		0x10 /* This ACK acknowledged SYN.		*/
+#define FLAG_DATA_SACKED	0x20 /* New SACK.				*/
+#define FLAG_ECE		0x40 /* ECE in this ACK				*/
+#define FLAG_LOST_RETRANS	0x80 /* This ACK marks some retransmission lost */
+#define FLAG_SLOWPATH		0x100 /* Do not skip RFC checks for window update.*/
+#define FLAG_ORIG_SACK_ACKED	0x200 /* Never retransmitted data are (s)acked	*/
+#define FLAG_SND_UNA_ADVANCED	0x400 /* Snd_una was changed (!= FLAG_DATA_ACKED) */
+#define FLAG_DSACKING_ACK	0x800 /* SACK blocks contained D-SACK info */
 #define FLAG_SET_XMIT_TIMER	0x1000 /* Set TLP or RTO timer */
-#define FLAG_SACK_RENEGING      0x2000 /* snd_una advanced to a sacked seq */
-#define FLAG_UPDATE_TS_RECENT   0x4000 /* tcp_replace_ts_recent() */
+#define FLAG_SACK_RENEGING	0x2000 /* snd_una advanced to a sacked seq */
+#define FLAG_UPDATE_TS_RECENT	0x4000 /* tcp_replace_ts_recent() */
 #define FLAG_NO_CHALLENGE_ACK	0x8000 /* do not call tcp_send_challenge_ack()	*/
+
 #define MPTCP_FLAG_DATA_ACKED	0x10000
 
 #define FLAG_ACKED		(FLAG_DATA_ACKED|FLAG_SYN_ACKED)
 #define FLAG_NOT_DUP		(FLAG_DATA|FLAG_WIN_UPDATE|FLAG_ACKED)
-#define FLAG_CA_ALERT		(FLAG_DATA_SACKED|FLAG_ECE)
+#define FLAG_CA_ALERT		(FLAG_DATA_SACKED|FLAG_ECE|FLAG_DSACKING_ACK)
 #define FLAG_FORWARD_PROGRESS	(FLAG_ACKED|FLAG_DATA_SACKED)
 
 /* sysctl variables for tcp */
