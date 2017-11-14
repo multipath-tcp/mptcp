@@ -797,8 +797,18 @@ static void tcp_tasklet_func(unsigned long data)
 				tcp_tsq_handler(sk);
 				if (mptcp(tp))
 					tcp_tsq_handler(meta_sk);
+			} else if (mptcp(tp)) {
+				if (sk->sk_state != TCP_CLOSE)
+					mptcp_tsq_flags(sk);
 			}
 			bh_unlock_sock(meta_sk);
+		} else {
+			if (mptcp(tp)) {
+				bh_lock_sock(meta_sk);
+				if (sk->sk_state != TCP_CLOSE)
+					mptcp_tsq_flags(sk);
+				bh_unlock_sock(meta_sk);
+			}
 		}
 
 		sk_free(sk);
@@ -830,8 +840,11 @@ void tcp_release_cb(struct sock *sk)
 		nflags = flags & ~TCP_DEFERRED_ALL;
 	} while (cmpxchg(&sk->sk_tsq_flags, flags, nflags) != flags);
 
-	if (flags & TCPF_TSQ_DEFERRED)
+	if (flags & TCPF_TSQ_DEFERRED) {
 		tcp_tsq_handler(sk);
+		if (mptcp(tcp_sk(sk)))
+			tcp_tsq_handler(mptcp_meta_sk(sk));
+	}
 
 	/* Here begins the tricky part :
 	 * We are called from release_sock() with :
@@ -856,12 +869,12 @@ void tcp_release_cb(struct sock *sk)
 		inet_csk(sk)->icsk_af_ops->mtu_reduced(sk);
 		__sock_put(sk);
 	}
-	if (flags & (1UL << MPTCP_PATH_MANAGER_DEFERRED)) {
+	if (flags & TCPF_PATH_MANAGER_DEFERRED) {
 		if (tcp_sk(sk)->mpcb->pm_ops->release_sock)
 			tcp_sk(sk)->mpcb->pm_ops->release_sock(sk);
 		__sock_put(sk);
 	}
-	if (flags & (1UL << MPTCP_SUB_DEFERRED))
+	if (flags & TCPF_SUB_DEFERRED)
 		mptcp_tsq_sub_deferred(sk);
 }
 EXPORT_SYMBOL(tcp_release_cb);

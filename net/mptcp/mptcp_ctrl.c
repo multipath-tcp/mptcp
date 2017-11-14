@@ -2268,7 +2268,7 @@ void mptcp_tsq_sub_deferred(struct sock *meta_sk)
 
 		hlist_del_init(&mptcp->cb_list);
 		sk->sk_prot->release_cb(sk);
-		/* Final sock_put (cfr. mptcp_tsq_flags */
+		/* Final sock_put (cfr. mptcp_tsq_flags) */
 		sock_put(sk);
 	}
 }
