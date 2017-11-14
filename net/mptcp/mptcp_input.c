@@ -1446,6 +1446,9 @@ static void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	u32 nwin, data_ack, data_seq;
 	u16 data_len = 0;
 
+	if (meta_sk->sk_state == TCP_CLOSE)
+		return;
+
 	/* A valid packet came in - subflow is operational again */
 	tp->pf = 0;
 
