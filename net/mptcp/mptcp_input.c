@@ -996,7 +996,6 @@ static int mptcp_queue_skb(struct sock *sk)
 				eaten = tcp_queue_rcv(meta_sk, tmp1, 0, &fragstolen);
 
 			meta_tp->rcv_nxt = TCP_SKB_CB(tmp1)->end_seq;
-			mptcp_check_rcvseq_wrap(meta_tp, old_rcv_nxt);
 
 			if (TCP_SKB_CB(tmp1)->tcp_flags & TCPHDR_FIN)
 				mptcp_fin(meta_sk);
@@ -1004,6 +1003,8 @@ static int mptcp_queue_skb(struct sock *sk)
 			/* Check if this fills a gap in the ofo queue */
 			if (!RB_EMPTY_ROOT(&meta_tp->out_of_order_queue))
 				tcp_ofo_queue(meta_sk);
+
+			mptcp_check_rcvseq_wrap(meta_tp, old_rcv_nxt);
 
 			if (eaten)
 				kfree_skb_partial(tmp1, fragstolen);
