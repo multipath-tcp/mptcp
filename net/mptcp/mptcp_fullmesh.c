@@ -670,6 +670,37 @@ static int mptcp_find_address(const struct mptcp_loc_addr *mptcp_local,
 	return i;
 }
 
+static int mptcp_find_address_transp(const struct mptcp_loc_addr *mptcp_local,
+				     sa_family_t family, int if_idx)
+{
+	bool found = false;
+	u8 loc_bits;
+	int i;
+
+	if (family == AF_INET)
+		loc_bits = mptcp_local->loc4_bits;
+	else
+		loc_bits = mptcp_local->loc6_bits;
+
+	mptcp_for_each_bit_set(loc_bits, i) {
+		if (family == AF_INET &&
+		    (!if_idx || mptcp_local->locaddr4[i].if_idx == if_idx)) {
+			found = true;
+			break;
+		}
+		if (family == AF_INET6 &&
+		    (!if_idx || mptcp_local->locaddr6[i].if_idx == if_idx)) {
+			found = true;
+			break;
+		}
+	}
+
+	if (!found)
+		return -1;
+
+	return i;
+}
+
 static void mptcp_address_worker(struct work_struct *work)
 {
 	const struct delayed_work *delayed_work = container_of(work,
@@ -1274,10 +1305,16 @@ static void full_mesh_new_session(const struct sock *meta_sk)
 #endif
 	}
 
+	if (inet_sk(meta_sk)->transparent)
+		if_idx = inet_sk(meta_sk)->rx_dst_ifindex;
+
 	rcu_read_lock_bh();
 	mptcp_local = rcu_dereference(fm_ns->local);
 
-	index = mptcp_find_address(mptcp_local, family, &saddr, if_idx);
+	if (inet_sk(meta_sk)->transparent)
+		index = mptcp_find_address_transp(mptcp_local, family, if_idx);
+	else
+		index = mptcp_find_address(mptcp_local, family, &saddr, if_idx);
 	if (index < 0)
 		goto fallback;
 
