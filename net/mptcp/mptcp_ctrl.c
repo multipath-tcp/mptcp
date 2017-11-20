@@ -586,6 +586,20 @@ static void mptcp_sock_def_error_report(struct sock *sk)
 {
 	const struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
 	struct sock *meta_sk = mptcp_meta_sk(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	if (!sock_flag(sk, SOCK_DEAD)) {
+		if (tp->send_mp_fclose && sk->sk_err == ETIMEDOUT) {
+			/* Called by the keep alive timer (tcp_write_timeout),
+			 * when the limit of fastclose retransmissions has been
+			 * reached. Send a TCP RST to clear the status of any
+			 * stateful firewall (typically conntrack) which are
+			 * not aware of mptcp and cannot understand the
+			 * fastclose option.
+			 */
+			tp->ops->send_active_reset(sk, GFP_ATOMIC);
+		}
+	}
 
 	if (mpcb->infinite_mapping_rcv || mpcb->infinite_mapping_snd ||
 	    mpcb->send_infinite_mapping) {
