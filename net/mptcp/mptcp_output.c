@@ -1331,6 +1331,8 @@ static void mptcp_ack_retransmit_timer(struct sock *sk)
 	if (inet_csk(sk)->icsk_af_ops->rebuild_header(sk))
 		goto out; /* Routing failure or similar */
 
+	tcp_mstamp_refresh(tp);
+
 	if (tcp_write_timeout(sk)) {
 		MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_JOINACKRTO);
 		tp->mptcp->pre_established = 0;
@@ -1364,7 +1366,7 @@ static void mptcp_ack_retransmit_timer(struct sock *sk)
 	}
 
 	if (!tp->retrans_stamp)
-		tp->retrans_stamp = tcp_skb_timestamp(skb);
+		tp->retrans_stamp = tcp_time_stamp(tp) ? : 1;
 
 	icsk->icsk_retransmits++;
 	icsk->icsk_rto = min(icsk->icsk_rto << 1, TCP_RTO_MAX);
