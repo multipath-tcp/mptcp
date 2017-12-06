@@ -2293,7 +2293,7 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 		*skptr = sk;
 		tp = tcp_sk(sk);
 
-		sk->sk_bound_dev_if = skb->skb_iif;
+		sk->sk_bound_dev_if = inet_iif(skb);
 
 		/* If fastopen was used data might be in the send queue. We
 		 * need to update their sequence number to MPTCP-level seqno.
