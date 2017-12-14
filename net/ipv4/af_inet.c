@@ -199,7 +199,7 @@ int inet_listen(struct socket *sock, int backlog)
 {
 	struct sock *sk = sock->sk;
 	unsigned char old_state;
-	int err;
+	int err, tcp_fastopen;
 
 	lock_sock(sk);
 
@@ -221,11 +221,12 @@ int inet_listen(struct socket *sock, int backlog)
 		 * because the socket was in TCP_LISTEN state previously but
 		 * was shutdown() rather than close().
 		 */
-		if ((sysctl_tcp_fastopen & TFO_SERVER_WO_SOCKOPT1) &&
-		    (sysctl_tcp_fastopen & TFO_SERVER_ENABLE) &&
+		tcp_fastopen = sock_net(sk)->ipv4.sysctl_tcp_fastopen;
+		if ((tcp_fastopen & TFO_SERVER_WO_SOCKOPT1) &&
+		    (tcp_fastopen & TFO_SERVER_ENABLE) &&
 		    !inet_csk(sk)->icsk_accept_queue.fastopenq.max_qlen) {
 			fastopen_queue_tune(sk, backlog);
-			tcp_fastopen_init_key_once(true);
+			tcp_fastopen_init_key_once(sock_net(sk));
 		}
 
 		err = inet_csk_listen_start(sk, backlog);
@@ -846,6 +847,7 @@ int inet_shutdown(struct socket *sock, int how)
 		err = -ENOTCONN;
 		/* Hack to wake up other listeners, who can poll for
 		   POLLHUP, even on eg. unconnected UDP sockets -- RR */
+		/* fall through */
 	default:
 		sk->sk_shutdown |= how;
 		if (sk->sk_prot->shutdown)
@@ -859,7 +861,7 @@ int inet_shutdown(struct socket *sock, int how)
 	case TCP_LISTEN:
 		if (!(how & RCV_SHUTDOWN))
 			break;
-		/* Fall through */
+		/* fall through */
 	case TCP_SYN_SENT:
 		err = sk->sk_prot->disconnect(sk, O_NONBLOCK);
 		sock->state = err ? SS_DISCONNECTING : SS_UNCONNECTED;
@@ -1241,9 +1243,10 @@ EXPORT_SYMBOL(inet_sk_rebuild_header);
 struct sk_buff *inet_gso_segment(struct sk_buff *skb,
 				 netdev_features_t features)
 {
-	bool fixedid = false, gso_partial, encap;
+	bool udpfrag = false, fixedid = false, gso_partial, encap;
 	struct sk_buff *segs = ERR_PTR(-EINVAL);
 	const struct net_offload *ops;
+	unsigned int offset = 0;
 	struct iphdr *iph;
 	int proto, tot_len;
 	int nhoff;
@@ -1278,6 +1281,7 @@ struct sk_buff *inet_gso_segment(struct sk_buff *skb,
 	segs = ERR_PTR(-EPROTONOSUPPORT);
 
 	if (!skb->encapsulation || encap) {
+		udpfrag = !!(skb_shinfo(skb)->gso_type & SKB_GSO_UDP);
 		fixedid = !!(skb_shinfo(skb)->gso_type & SKB_GSO_TCP_FIXEDID);
 
 		/* fixed ID is invalid if DF bit is not set */
@@ -1297,7 +1301,13 @@ struct sk_buff *inet_gso_segment(struct sk_buff *skb,
 	skb = segs;
 	do {
 		iph = (struct iphdr *)(skb_mac_header(skb) + nhoff);
-		if (skb_is_gso(skb)) {
+		if (udpfrag) {
+			iph->frag_off = htons(offset >> 3);
+			if (skb->next)
+				iph->frag_off |= htons(IP_MF);
+			offset += skb->len - nhoff - ihl;
+			tot_len = skb->len - nhoff;
+		} else if (skb_is_gso(skb)) {
 			if (!fixedid) {
 				iph->id = htons(id);
 				id += skb_shinfo(skb)->gso_segs;
