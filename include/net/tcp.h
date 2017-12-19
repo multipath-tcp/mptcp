@@ -1421,8 +1421,7 @@ static inline void tcp_slow_start_after_idle_check(struct sock *sk)
 void tcp_select_initial_window(const struct sock *sk, int __space,
 			       __u32 mss, __u32 *rcv_wnd,
 			       __u32 *window_clamp, int wscale_ok,
-			       __u8 *rcv_wscale, __u32 init_rcv_wnd,
-			       const struct sock *sk);
+			       __u8 *rcv_wscale, __u32 init_rcv_wnd);
 
 static inline int tcp_win_from_space(const struct sock *sk, int space)
 {
@@ -1981,10 +1980,10 @@ struct tcp_sock_af_ops {
 struct tcp_sock_ops {
 	u32 (*__select_window)(struct sock *sk);
 	u16 (*select_window)(struct sock *sk);
-	void (*select_initial_window)(int __space, __u32 mss, __u32 *rcv_wnd,
+	void (*select_initial_window)(const struct sock *sk, int __space,
+				      __u32 mss, __u32 *rcv_wnd,
 				      __u32 *window_clamp, int wscale_ok,
-				      __u8 *rcv_wscale, __u32 init_rcv_wnd,
-				      const struct sock *sk);
+				      __u8 *rcv_wscale, __u32 init_rcv_wnd);
 	int (*select_size)(const struct sock *sk, bool sg, bool first_skb);
 	void (*init_buffer_space)(struct sock *sk);
 	void (*set_rto)(struct sock *sk);

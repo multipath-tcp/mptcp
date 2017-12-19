@@ -194,7 +194,7 @@ struct mptcp_tcp_sock {
 	u32	infinite_cutoff_seq;
 	struct delayed_work work;
 	u32	mptcp_loc_nonce;
-	struct tcp_sock *tp; /* Where is my daddy? */
+	struct tcp_sock *tp;
 	u32	last_end_data_seq;
 
 	/* MP_JOIN subflow: timer for retransmitting the 3rd ack */
@@ -816,10 +816,10 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk,
 				   struct sk_buff *skb,
 				   const struct mptcp_options_received *mopt);
 u32 __mptcp_select_window(struct sock *sk);
-void mptcp_select_initial_window(int __space, __u32 mss, __u32 *rcv_wnd,
-					__u32 *window_clamp, int wscale_ok,
-					__u8 *rcv_wscale, __u32 init_rcv_wnd,
-					const struct sock *sk);
+void mptcp_select_initial_window(const struct sock *sk, int __space, __u32 mss,
+				 __u32 *rcv_wnd, __u32 *window_clamp,
+				 int wscale_ok, __u8 *rcv_wscale,
+				 __u32 init_rcv_wnd);
 unsigned int mptcp_current_mss(struct sock *meta_sk);
 int mptcp_select_size(const struct sock *meta_sk, bool sg, bool first_skb);
 void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn);
@@ -835,7 +835,7 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay);
 struct sock *mptcp_select_ack_sock(const struct sock *meta_sk);
 void mptcp_fallback_meta_sk(struct sock *meta_sk);
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb);
-void mptcp_ack_handler(unsigned long);
+void mptcp_ack_handler(struct timer_list *t);
 bool mptcp_check_rtt(const struct tcp_sock *tp, int time);
 int mptcp_check_snd_buf(const struct tcp_sock *tp);
 bool mptcp_handle_options(struct sock *sk, const struct tcphdr *th,

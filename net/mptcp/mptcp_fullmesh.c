@@ -1106,9 +1106,9 @@ struct mptcp_dad_data {
 	struct inet6_ifaddr *ifa;
 };
 
-static void dad_callback(unsigned long arg);
-static int inet6_addr_event(struct notifier_block *this,
-				     unsigned long event, void *ptr);
+static void dad_callback(struct timer_list *t);
+static int inet6_addr_event(struct notifier_block *this, unsigned long event,
+			    void *ptr);
 
 static bool ipv6_dad_finished(const struct inet6_ifaddr *ifa)
 {
@@ -1117,20 +1117,18 @@ static bool ipv6_dad_finished(const struct inet6_ifaddr *ifa)
 }
 
 static void dad_init_timer(struct mptcp_dad_data *data,
-				 struct inet6_ifaddr *ifa)
+			   struct inet6_ifaddr *ifa)
 {
 	data->ifa = ifa;
-	data->timer.data = (unsigned long)data;
-	data->timer.function = dad_callback;
 	if (ifa->idev->cnf.rtr_solicit_delay)
 		data->timer.expires = jiffies + ifa->idev->cnf.rtr_solicit_delay;
 	else
 		data->timer.expires = jiffies + (HZ/10);
 }
 
-static void dad_callback(unsigned long arg)
+static void dad_callback(struct timer_list *t)
 {
-	struct mptcp_dad_data *data = (struct mptcp_dad_data *)arg;
+	struct mptcp_dad_data *data = from_timer(data, t, timer);
 
 	/* DAD failed or IP brought down? */
 	if (data->ifa->state == INET6_IFADDR_STATE_ERRDAD ||
@@ -1159,7 +1157,7 @@ static inline void dad_setup_timer(struct inet6_ifaddr *ifa)
 	if (!data)
 		return;
 
-	init_timer(&data->timer);
+	timer_setup(&data->timer, dad_callback, 0);
 	dad_init_timer(data, ifa);
 	add_timer(&data->timer);
 	in6_ifa_hold(ifa);

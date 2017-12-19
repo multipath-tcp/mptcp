@@ -84,13 +84,13 @@ struct tcp_sack_block {
 };
 
 struct tcp_out_options {
-	u16	options;	/* bit field of OPTION_* */
-	u8	ws;		/* window scale, 0 to disable */
-	u8	num_sack_blocks;/* number of SACK blocks to include */
-	u8	hash_size;	/* bytes in hash_location */
-	u16	mss;		/* 0 to disable */
-	__u8	*hash_location;	/* temporary pointer, overloaded */
-	__u32	tsval, tsecr;	/* need to include OPTION_TS */
+	u16 options;		/* bit field of OPTION_* */
+	u16 mss;		/* 0 to disable */
+	u8 ws;			/* window scale, 0 to disable */
+	u8 num_sack_blocks;	/* number of SACK blocks to include */
+	u8 hash_size;		/* bytes in hash_location */
+	__u8 *hash_location;	/* temporary pointer, overloaded */
+	__u32 tsval, tsecr;	/* need to include OPTION_TS */
 	struct tcp_fastopen_cookie *fastopen_cookie;	/* Fast open cookie */
 #ifdef CONFIG_MPTCP
 	u16	mptcp_options;	/* bit field of MPTCP related OPTION_* */

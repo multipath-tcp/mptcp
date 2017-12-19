@@ -491,7 +491,7 @@ void tcp_init_transfer(struct sock *sk, int bpf_op)
 	tcp_init_metrics(sk);
 	tcp_call_bpf(sk, bpf_op);
 	tcp_init_congestion_control(sk);
-	tp->ops->init_buffer_space(sk);
+	tcp_sk(sk)->ops->init_buffer_space(sk);
 }
 
 static void tcp_tx_timestamp(struct sock *sk, u16 tsflags)

@@ -95,14 +95,13 @@ static inline int mptcp_tso_acked_reinject(const struct sock *meta_sk,
  */
 static void mptcp_clean_rtx_queue(struct sock *meta_sk, u32 prior_snd_una)
 {
-	struct sk_buff *skb, *tmp;
+	struct sk_buff *skb, *tmp, *next;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	bool acked = false;
 	u32 acked_pcount;
 
-	while ((skb = tcp_write_queue_head(meta_sk)) &&
-	       skb != tcp_send_head(meta_sk)) {
+	for (skb = skb_rb_first(&meta_sk->tcp_rtx_queue); skb; skb = next) {
 		bool fully_acked = true;
 
 		if (before(meta_tp->snd_una, TCP_SKB_CB(skb)->end_seq)) {
@@ -126,7 +125,8 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk, u32 prior_snd_una)
 		if (!fully_acked)
 			break;
 
-		tcp_unlink_write_queue(skb, meta_sk);
+		next = skb_rb_next(skb);
+		tcp_rtx_queue_unlink(skb, meta_sk);
 
 		if (mptcp_is_data_fin(skb)) {
 			struct sock *sk_it, *sk_tmp;
@@ -573,9 +573,21 @@ static void mptcp_restart_sending(struct sock *meta_sk)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
+	struct sk_buff *skb, *tmp, *wq_head;
 
-	/* We resend everything that has not been acknowledged */
-	meta_sk->sk_send_head = tcp_write_queue_head(meta_sk);
+	/* We resend everything that has not been acknowledged, thus we need
+	 * to move it from the rtx-tree to the write-queue.
+	 */
+	wq_head = tcp_write_queue_head(meta_sk);
+	skb = tcp_rtx_queue_head(meta_sk);
+	skb_rbtree_walk_from_safe(skb, tmp) {
+		tcp_rtx_queue_unlink(skb, meta_sk);
+
+		if (wq_head)
+			__skb_queue_before(&meta_sk->sk_write_queue, wq_head, skb);
+		else
+			tcp_add_write_queue_tail(meta_sk, skb);
+	}
 
 	/* We artificially restart the whole send-queue. Thus,
 	 * it is as if no packets are in flight
@@ -1376,22 +1388,21 @@ void mptcp_fin(struct sock *meta_sk)
 	return;
 }
 
+/* Similar to tcp_xmit_retransmit_queue */
 static void mptcp_xmit_retransmit_queue(struct sock *meta_sk)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct sk_buff *skb;
+	struct sk_buff *skb, *rtx_head;
 
 	if (!meta_tp->packets_out)
 		return;
 
-	tcp_for_write_queue(skb, meta_sk) {
-		if (skb == tcp_send_head(meta_sk))
-			break;
-
+	skb = rtx_head = tcp_rtx_queue_head(meta_sk);
+	skb_rbtree_walk_from(skb) {
 		if (mptcp_retransmit_skb(meta_sk, skb))
 			return;
 
-		if (skb == tcp_write_queue_head(meta_sk))
+		if (skb == rtx_head)
 			inet_csk_reset_xmit_timer(meta_sk, ICSK_TIME_RETRANS,
 						  inet_csk(meta_sk)->icsk_rto,
 						  TCP_RTO_MAX);
@@ -2181,14 +2192,15 @@ static void mptcp_rcv_synsent_fastopen(struct sock *meta_sk)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct tcp_sock *master_tp = tcp_sk(meta_tp->mpcb->master_sk);
-	struct sk_buff *skb;
+	struct sk_buff *skb, *tmp;
 	u32 new_mapping = meta_tp->write_seq - master_tp->snd_una;
 
 	/* There should only be one skb in write queue: the data not
 	 * acknowledged in the SYN+ACK. In this case, we need to map
 	 * this data to data sequence numbers.
 	 */
-	skb_queue_walk(&meta_sk->sk_write_queue, skb) {
+	skb = tcp_rtx_queue_head(meta_sk);
+	skb_rbtree_walk_from_safe(skb, tmp) {
 		/* If the server only acknowledges partially the data sent in
 		 * the SYN, we need to trim the acknowledged part because
 		 * we don't want to retransmit this already received data.
@@ -2212,6 +2224,9 @@ static void mptcp_rcv_synsent_fastopen(struct sock *meta_sk)
 
 		TCP_SKB_CB(skb)->seq += new_mapping;
 		TCP_SKB_CB(skb)->end_seq += new_mapping;
+
+		tcp_rtx_queue_unlink(skb, meta_sk);
+		tcp_add_write_queue_tail(meta_sk, skb);
 	}
 
 	/* We can advance write_seq by the number of bytes unacknowledged
@@ -2225,13 +2240,6 @@ static void mptcp_rcv_synsent_fastopen(struct sock *meta_sk)
 	 */
 	master_tp->snd_nxt = master_tp->write_seq = master_tp->snd_una;
 	master_tp->packets_out = 0;
-
-	/* Although these data have been sent already over the subsk,
-	 * They have never been sent over the meta_sk, so we rewind
-	 * the send_head so that tcp considers it as an initial send
-	 * (instead of retransmit).
-	 */
-	meta_sk->sk_send_head = tcp_write_queue_head(meta_sk);
 }
 
 /* The skptr is needed, because if we become MPTCP-capable, we have to switch
@@ -2303,7 +2311,7 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 		 * Example of such rare cases: connect is non-blocking and
 		 * TFO is configured to work without cookies.
 		 */
-		if (!skb_queue_empty(&meta_sk->sk_write_queue))
+		if (tcp_rtx_queue_head(meta_sk))
 			mptcp_rcv_synsent_fastopen(meta_sk);
 
 		/* -1, because the SYN consumed 1 byte. In case of TFO, we
@@ -2434,7 +2442,8 @@ void mptcp_init_buffer_space(struct sock *sk)
 	 * addition, to give some space to allow traffic on the new subflow.
 	 * Autotuning will increase it further later on.
 	 */
-	space = min(meta_sk->sk_rcvbuf + sk->sk_rcvbuf, sysctl_tcp_rmem[2]);
+	space = min(meta_sk->sk_rcvbuf + sk->sk_rcvbuf,
+		    sock_net(meta_sk)->ipv4.sysctl_tcp_rmem[2]);
 	if (space > meta_sk->sk_rcvbuf) {
 		meta_tp->window_clamp += tp->window_clamp;
 		meta_tp->rcv_ssthresh += tp->rcv_ssthresh;
@@ -2449,7 +2458,8 @@ snd_buf:
 	 * addition, to give some space to allow traffic on the new subflow.
 	 * Autotuning will increase it further later on.
 	 */
-	space = min(meta_sk->sk_sndbuf + sk->sk_sndbuf, sysctl_tcp_wmem[2]);
+	space = min(meta_sk->sk_sndbuf + sk->sk_sndbuf,
+		    sock_net(meta_sk)->ipv4.sysctl_tcp_wmem[2]);
 	if (space > meta_sk->sk_sndbuf) {
 		meta_sk->sk_sndbuf = space;
 		meta_sk->sk_write_space(meta_sk);

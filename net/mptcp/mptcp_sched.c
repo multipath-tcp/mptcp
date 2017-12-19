@@ -278,9 +278,9 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 		return NULL;
 
 	meta_sk = mptcp_meta_sk(sk);
-	skb_head = tcp_write_queue_head(meta_sk);
+	skb_head = tcp_rtx_queue_head(meta_sk);
 
-	if (!skb_head || skb_head == tcp_send_head(meta_sk))
+	if (!skb_head)
 		return NULL;
 
 	/* If penalization is optional (coming from mptcp_next_segment() and

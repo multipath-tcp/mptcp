@@ -1622,12 +1622,15 @@ void mptcp_update_sndbuf(const struct tcp_sock *tp)
 
 		new_sndbuf += sk->sk_sndbuf;
 
-		if (new_sndbuf > sysctl_tcp_wmem[2] || new_sndbuf < 0) {
-			new_sndbuf = sysctl_tcp_wmem[2];
+		if (new_sndbuf > sock_net(meta_sk)->ipv4.sysctl_tcp_wmem[2] ||
+		    new_sndbuf < 0) {
+			new_sndbuf = sock_net(meta_sk)->ipv4.sysctl_tcp_wmem[2];
 			break;
 		}
 	}
-	meta_sk->sk_sndbuf = max(min(new_sndbuf, sysctl_tcp_wmem[2]), meta_sk->sk_sndbuf);
+	meta_sk->sk_sndbuf = max(min(new_sndbuf,
+				     sock_net(meta_sk)->ipv4.sysctl_tcp_wmem[2]),
+				 meta_sk->sk_sndbuf);
 
 	/* The subflow's call to sk_write_space in tcp_new_space ends up in
 	 * mptcp_write_space.
