@@ -276,6 +276,7 @@ void tcp_delack_timer_handler(struct sock *sk)
 			icsk->icsk_ack.pingpong = 0;
 			icsk->icsk_ack.ato      = TCP_ATO_MIN;
 		}
+		tcp_mstamp_refresh(tcp_sk(sk));
 		tcp_send_ack(sk);
 		__NET_INC_STATS(sock_net(sk), LINUX_MIB_DELAYEDACKS);
 	}
@@ -651,6 +652,8 @@ static void tcp_keepalive_timer (struct timer_list *t)
 		pr_err("Hmm... keepalive on a LISTEN ???\n");
 		goto out;
 	}
+
+	tcp_mstamp_refresh(tp);
 
 	if (tp->send_mp_fclose) {
 		if (icsk->icsk_retransmits >= MPTCP_FASTCLOSE_RETRIES) {
