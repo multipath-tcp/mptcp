@@ -707,6 +707,19 @@ config TCP_CONG_BALIA
 	Multipath TCP Balanced Linked Adaptation Congestion Control
 	To enable it, just put 'balia' in tcp_congestion_control
 
+config TCP_CONG_MCTCPDESYNC
+	tristate "DESYNCHRONIZED MCTCP CONGESTION CONTROL (EXPERIMENTAL)"
+	depends on MPTCP
+	default n
+	---help---
+	Desynchronized MultiChannel TCP Congestion Control. This is experimental
+	code that only supports single path and must have set mptcp_ndiffports
+	larger than one.
+	To enable it, just put 'mctcpdesync' in tcp_congestion_control
+	For further details see:
+	  http://ieeexplore.ieee.org/abstract/document/6911722/
+	  https://doi.org/10.1016/j.comcom.2015.07.010
+
 choice
 	prompt "Default TCP congestion control"
 	default DEFAULT_CUBIC
@@ -755,6 +768,9 @@ choice
 
 	config DEFAULT_BALIA
 		bool "Balia" if TCP_CONG_BALIA=y
+
+	config DEFAULT_MCTCPDESYNC
+		bool "Mctcpdesync (EXPERIMENTAL)" if TCP_CONG_MCTCPDESYNC=y
 
 	config DEFAULT_RENO
 		bool "Reno"
