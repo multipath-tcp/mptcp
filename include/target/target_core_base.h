@@ -197,6 +197,7 @@ enum tcm_tmreq_table {
 	TMR_LUN_RESET		= 5,
 	TMR_TARGET_WARM_RESET	= 6,
 	TMR_TARGET_COLD_RESET	= 7,
+	TMR_UNKNOWN		= 0xff,
 };
 
 /* fabric independent task management response values */
@@ -296,7 +297,7 @@ struct t10_alua_tg_pt_gp {
 	struct list_head tg_pt_gp_lun_list;
 	struct se_lun *tg_pt_gp_alua_lun;
 	struct se_node_acl *tg_pt_gp_alua_nacl;
-	struct delayed_work tg_pt_gp_transition_work;
+	struct work_struct tg_pt_gp_transition_work;
 	struct completion *tg_pt_gp_transition_complete;
 };
 
