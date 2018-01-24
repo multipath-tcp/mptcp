@@ -194,9 +194,12 @@
 #define X86_FEATURE_HW_PSTATE	( 7*32+ 8) /* AMD HW-PState */
 #define X86_FEATURE_PROC_FEEDBACK ( 7*32+ 9) /* AMD ProcFeedbackInterface */
 
-#define X86_FEATURE_INTEL_PT	( 7*32+15) /* Intel Processor Trace */
+#define X86_FEATURE_RETPOLINE	( 7*32+12) /* Generic Retpoline mitigation for Spectre variant 2 */
+#define X86_FEATURE_RETPOLINE_AMD ( 7*32+13) /* AMD Retpoline mitigation for Spectre variant 2 */
+
 #define X86_FEATURE_AVX512_4VNNIW (7*32+16) /* AVX-512 Neural Network Instructions */
 #define X86_FEATURE_AVX512_4FMAPS (7*32+17) /* AVX-512 Multiply Accumulation Single precision */
+#define X86_FEATURE_RSB_CTXSW		( 7*32+19) /* Fill RSB on context switches */
 
 /* Because the ALTERNATIVE scheme is for members of the X86_FEATURE club... */
 #define X86_FEATURE_KAISER	( 7*32+31) /* CONFIG_PAGE_TABLE_ISOLATION w/o nokaiser */
@@ -232,6 +235,7 @@
 #define X86_FEATURE_SMAP	( 9*32+20) /* Supervisor Mode Access Prevention */
 #define X86_FEATURE_CLFLUSHOPT	( 9*32+23) /* CLFLUSHOPT instruction */
 #define X86_FEATURE_CLWB	( 9*32+24) /* CLWB instruction */
+#define X86_FEATURE_INTEL_PT	( 9*32+25) /* Intel Processor Trace */
 #define X86_FEATURE_AVX512PF	( 9*32+26) /* AVX-512 Prefetch */
 #define X86_FEATURE_AVX512ER	( 9*32+27) /* AVX-512 Exponential and Reciprocal */
 #define X86_FEATURE_AVX512CD	( 9*32+28) /* AVX-512 Conflict Detection */
@@ -316,5 +320,8 @@
 #define X86_BUG_SWAPGS_FENCE	X86_BUG(11) /* SWAPGS without input dep on GS */
 #define X86_BUG_MONITOR		X86_BUG(12) /* IPI required to wake up remote CPU */
 #define X86_BUG_AMD_E400	X86_BUG(13) /* CPU is among the affected by Erratum 400 */
+#define X86_BUG_CPU_MELTDOWN	X86_BUG(14) /* CPU is affected by meltdown attack and needs kernel page table isolation */
+#define X86_BUG_SPECTRE_V1	X86_BUG(15) /* CPU is affected by Spectre variant 1 attack with conditional branches */
+#define X86_BUG_SPECTRE_V2	X86_BUG(16) /* CPU is affected by Spectre variant 2 attack with indirect branches */
 
 #endif /* _ASM_X86_CPUFEATURES_H */
