@@ -938,8 +938,11 @@ duno:
 				 * because the client never created a subflow.
 				 * So, we have to finally remove it here.
 				 */
-				if (id > 0)
-					announce_remove_addr(id, meta_sk);
+				if (id >= 0) {
+					u8 loc_id = id
+						+ (event->family == AF_INET ? 1 : MPTCP_MAX_ADDR);
+					announce_remove_addr(loc_id, meta_sk);
+				}
 			}
 
 			if (event->code == MPTCP_EVENT_MOD) {
