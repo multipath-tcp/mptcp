@@ -102,7 +102,7 @@ static void mptcp_find_and_set_pathmask(struct sock *meta_sk, struct sk_buff *sk
 
 	while (*p) {
 		parent = *p;
-		skb = rb_to_skb(parent);
+		skb_it = rb_to_skb(parent);
 		if (before(TCP_SKB_CB(skb)->seq, TCP_SKB_CB(skb_it)->seq)) {
 			p = &parent->rb_left;
 			continue;
