@@ -121,7 +121,8 @@ static void mptcp_find_and_set_pathmask(struct sock *meta_sk, struct sk_buff *sk
  * coming from the meta-retransmit-timer
  */
 static void __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk,
-				  struct sock *sk, int clone_it)
+				  struct sock *sk, int clone_it,
+				  enum tcp_queue tcp_queue)
 {
 	struct sk_buff *skb, *skb1;
 	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
@@ -135,7 +136,10 @@ static void __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk
 		 */
 		skb = pskb_copy_for_clone(orig_skb, GFP_ATOMIC);
 	} else {
-		__skb_unlink(orig_skb, &sk->sk_write_queue);
+		if (tcp_queue == TCP_FRAG_IN_WRITE_QUEUE)
+			__skb_unlink(orig_skb, &sk->sk_write_queue);
+		else
+			rb_erase(&orig_skb->rbnode, &sk->tcp_rtx_queue);
 		sock_set_flag(sk, SOCK_QUEUE_SHRUNK);
 		sk->sk_wmem_queued -= orig_skb->truesize;
 		sk_mem_uncharge(sk, orig_skb->truesize);
@@ -200,7 +204,8 @@ static void __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk
 			skb_rbtree_walk_from(skb) {
 				if (after(TCP_SKB_CB(skb)->end_seq, end_seq))
 					return;
-				__mptcp_reinject_data(skb, meta_sk, NULL, 1);
+				__mptcp_reinject_data(skb, meta_sk, NULL, 1,
+						      TCP_FRAG_IN_RTX_QUEUE);
 			}
 		}
 		return;
@@ -276,9 +281,9 @@ static void __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk
 /* Inserts data into the reinject queue */
 void mptcp_reinject_data(struct sock *sk, int clone_it)
 {
+	struct sock *meta_sk = mptcp_meta_sk(sk);
 	struct sk_buff *skb_it, *tmp;
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *meta_sk = tp->meta_sk;
+	enum tcp_queue tcp_queue;
 
 	/* It has already been closed - there is really no point in reinjecting */
 	if (meta_sk->sk_state == TCP_CLOSE)
@@ -300,17 +305,45 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 			continue;
 
 		tcb->mptcp_flags |= MPTCP_REINJECT;
-		__mptcp_reinject_data(skb_it, meta_sk, sk, clone_it);
+		__mptcp_reinject_data(skb_it, meta_sk, sk, clone_it,
+				      TCP_FRAG_IN_WRITE_QUEUE);
+	}
+
+	skb_rbtree_walk_safe(skb_it, &sk->tcp_rtx_queue, tmp) {
+		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb_it);
+		/* Subflow syn's and fin's are not reinjected.
+		 *
+		 * As well as empty subflow-fins with a data-fin.
+		 * They are reinjected below (without the subflow-fin-flag)
+		 */
+		if (tcb->tcp_flags & TCPHDR_SYN ||
+		    (tcb->tcp_flags & TCPHDR_FIN && !mptcp_is_data_fin(skb_it)) ||
+		    (tcb->tcp_flags & TCPHDR_FIN && mptcp_is_data_fin(skb_it) && !skb_it->len))
+			continue;
+
+		if (mptcp_is_reinjected(skb_it))
+			continue;
+
+		tcb->mptcp_flags |= MPTCP_REINJECT;
+		__mptcp_reinject_data(skb_it, meta_sk, sk, clone_it,
+				      TCP_FRAG_IN_RTX_QUEUE);
 	}
 
 	skb_it = tcp_write_queue_tail(meta_sk);
-	/* If sk has sent the empty data-fin, we have to reinject it too. */
-	if (skb_it && mptcp_is_data_fin(skb_it) && skb_it->len == 0 &&
-	    TCP_SKB_CB(skb_it)->path_mask & mptcp_pi_to_flag(tp->mptcp->path_index)) {
-		__mptcp_reinject_data(skb_it, meta_sk, NULL, 1);
+	tcp_queue = TCP_FRAG_IN_WRITE_QUEUE;
+
+	if (!skb_it) {
+		skb_it = skb_rb_last(&meta_sk->tcp_rtx_queue);
+		tcp_queue = TCP_FRAG_IN_RTX_QUEUE;
 	}
 
-	tp->pf = 1;
+	/* If sk has sent the empty data-fin, we have to reinject it too. */
+	if (skb_it && mptcp_is_data_fin(skb_it) && skb_it->len == 0 &&
+	    TCP_SKB_CB(skb_it)->path_mask & mptcp_pi_to_flag(tcp_sk(sk)->mptcp->path_index)) {
+		__mptcp_reinject_data(skb_it, meta_sk, NULL, 1, tcp_queue);
+	}
+
+	tcp_sk(sk)->pf = 1;
 
 	mptcp_push_pending_frames(meta_sk);
 }

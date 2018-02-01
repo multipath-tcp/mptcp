@@ -579,8 +579,7 @@ static void mptcp_restart_sending(struct sock *meta_sk)
 	 * to move it from the rtx-tree to the write-queue.
 	 */
 	wq_head = tcp_write_queue_head(meta_sk);
-	skb = tcp_rtx_queue_head(meta_sk);
-	skb_rbtree_walk_from_safe(skb, tmp) {
+	skb_rbtree_walk_safe(skb, &meta_sk->tcp_rtx_queue, tmp) {
 		tcp_rtx_queue_unlink(skb, meta_sk);
 
 		if (wq_head)
@@ -2199,8 +2198,7 @@ static void mptcp_rcv_synsent_fastopen(struct sock *meta_sk)
 	 * acknowledged in the SYN+ACK. In this case, we need to map
 	 * this data to data sequence numbers.
 	 */
-	skb = tcp_rtx_queue_head(meta_sk);
-	skb_rbtree_walk_from_safe(skb, tmp) {
+	skb_rbtree_walk_safe(skb, &meta_sk->tcp_rtx_queue, tmp) {
 		/* If the server only acknowledges partially the data sent in
 		 * the SYN, we need to trim the acknowledged part because
 		 * we don't want to retransmit this already received data.
