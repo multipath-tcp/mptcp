@@ -1205,6 +1205,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	skb_queue_head_init(&mpcb->reinject_queue);
 	master_tp->out_of_order_queue = RB_ROOT;
 	INIT_LIST_HEAD(&master_tp->tsq_node);
+	INIT_LIST_HEAD(&master_tp->tsorted_sent_queue);
 
 	master_sk->sk_tsq_flags = 0;
 
@@ -1551,7 +1552,7 @@ static int mptcp_sub_send_fin(struct sock *sk)
 		if (!skb)
 			return 1;
 
-		/* Reserve space for headers and prepare control bits. */
+		INIT_LIST_HEAD(&skb->tcp_tsorted_anchor);
 		skb_reserve(skb, MAX_TCP_HEADER);
 		/* FIN eats a sequence byte, write_seq advanced by tcp_queue_skb(). */
 		tcp_init_nondata_skb(skb, tp->write_seq,

@@ -134,7 +134,9 @@ static void __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk
 		 * will be changed when it's going to be reinjected on another
 		 * subflow.
 		 */
-		skb = pskb_copy_for_clone(orig_skb, GFP_ATOMIC);
+		tcp_skb_tsorted_save(orig_skb) {
+			skb = pskb_copy_for_clone(orig_skb, GFP_ATOMIC);
+		} tcp_skb_tsorted_restore(orig_skb);
 	} else {
 		if (tcp_queue == TCP_FRAG_IN_WRITE_QUEUE)
 			__skb_unlink(orig_skb, &sk->sk_write_queue);
@@ -154,6 +156,9 @@ static void __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk
 	}
 
 	skb->sk = meta_sk;
+
+	/* Make sure that this list is clean */
+	tcp_skb_tsorted_anchor_cleanup(skb);
 
 	/* Reset subflow-specific TCP control-data */
 	TCP_SKB_CB(skb)->sacked = 0;
@@ -497,7 +502,9 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 		TCP_SKB_CB(skb)->mptcp_flags |= (mpcb->snd_hiseq_index ?
 						  MPTCPHDR_SEQ64_INDEX : 0);
 
-	subskb = pskb_copy_for_clone(skb, GFP_ATOMIC);
+	tcp_skb_tsorted_save(skb) {
+		subskb = pskb_copy_for_clone(skb, GFP_ATOMIC);
+	} tcp_skb_tsorted_restore(skb);
 	if (!subskb)
 		return false;
 
@@ -547,6 +554,9 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 	 * segment is not part of the subflow but on a meta-only-level.
 	 */
 	if (!mptcp_is_data_fin(subskb) || tcb->end_seq != tcb->seq) {
+		/* Make sure that this list is clean */
+		INIT_LIST_HEAD(&subskb->tcp_tsorted_anchor);
+
 		tcp_add_write_queue_tail(sk, subskb);
 		sk->sk_wmem_queued += subskb->truesize;
 		sk_mem_charge(sk, subskb->truesize);
