@@ -5589,10 +5589,16 @@ static bool tcp_rcv_fastopen_synack(struct sock *sk, struct sk_buff *synack,
 				    struct tcp_fastopen_cookie *cookie)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *meta_sk = mptcp(tp) ? mptcp_meta_sk(sk) : sk;
-	struct sk_buff *data = tp->syn_data ? tcp_rtx_queue_head(meta_sk) : NULL;
+	struct sk_buff *data = NULL;
 	u16 mss = tp->rx_opt.mss_clamp, try_exp = 0;
 	bool syn_drop = false;
+
+	if (tp->syn_data) {
+		if (mptcp(tp))
+			data = tcp_write_queue_head(mptcp_meta_sk(sk));
+		else
+			data = tcp_rtx_queue_head(sk);
+	}
 
 	if (mss == tp->rx_opt.user_mss) {
 		struct tcp_options_received opt;
