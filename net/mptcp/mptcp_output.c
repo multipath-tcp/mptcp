@@ -1534,7 +1534,7 @@ void mptcp_meta_retransmit_timer(struct sock *meta_sk)
 	if (!meta_tp->packets_out || mpcb->infinite_mapping_snd)
 		return;
 
-	WARN_ON(tcp_write_queue_empty(meta_sk));
+	WARN_ON(tcp_rtx_queue_empty(meta_sk));
 
 	if (!meta_tp->snd_wnd && !sock_flag(meta_sk, SOCK_DEAD) &&
 	    !((1 << meta_sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV))) {
