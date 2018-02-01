@@ -518,20 +518,16 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 		sk->sk_wmem_queued += subskb->truesize;
 		sk_mem_charge(sk, subskb->truesize);
 	} else {
-		int err;
-
 		/* Necessary to initialize for tcp_transmit_skb. mss of 1, as
 		 * skb->len = 0 will force tso_segs to 1.
 		 */
 		tcp_init_tso_segs(subskb, 1);
+
 		/* Empty data-fins are sent immediatly on the subflow */
-		err = tcp_transmit_skb(sk, subskb, 1, GFP_ATOMIC);
-
-		/* It has not been queued, we can free it now. */
-		kfree_skb(subskb);
-
-		if (err)
+		if (tcp_transmit_skb(sk, subskb, 0, GFP_ATOMIC) != 0) {
+			kfree_skb(subskb);
 			return false;
+		}
 	}
 
 	if (!tp->mptcp->fully_established) {
