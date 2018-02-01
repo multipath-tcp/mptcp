@@ -628,7 +628,7 @@ static void mptcp_sock_def_error_report(struct sock *sk)
 
 static void mptcp_mpcb_put(struct mptcp_cb *mpcb)
 {
-	if (atomic_dec_and_test(&mpcb->mpcb_refcnt)) {
+	if (refcount_dec_and_test(&mpcb->mpcb_refcnt)) {
 		mptcp_cleanup_path_manager(mpcb);
 		mptcp_cleanup_scheduler(mpcb);
 		kfree(mpcb->master_info);
@@ -1282,7 +1282,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	mpcb->orig_window_clamp = meta_tp->window_clamp;
 
 	/* The meta is directly linked - set refcnt to 1 */
-	atomic_set(&mpcb->mpcb_refcnt, 1);
+	refcount_set(&mpcb->mpcb_refcnt, 1);
 
 	mptcp_init_path_manager(mpcb);
 	mptcp_init_scheduler(mpcb);
@@ -1344,7 +1344,7 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 	 * until the last subsocket is completely destroyed.
 	 */
 	sock_hold(meta_sk);
-	atomic_inc(&mpcb->mpcb_refcnt);
+	refcount_inc(&mpcb->mpcb_refcnt);
 
 	tp->mptcp->next = mpcb->connection_list;
 	mpcb->connection_list = tp;
@@ -2225,7 +2225,7 @@ int mptcp_init_tw_sock(struct sock *sk, struct tcp_timewait_sock *tw)
 		return -ENOBUFS;
 	}
 
-	atomic_inc(&mpcb->mpcb_refcnt);
+	refcount_inc(&mpcb->mpcb_refcnt);
 
 	tw->mptcp_tw = mptw;
 	mptw->loc_key = mpcb->mptcp_loc_key;
@@ -2253,7 +2253,7 @@ void mptcp_twsk_destructor(struct tcp_timewait_sock *tw)
 	/* If we are still holding a ref to the mpcb, we have to remove ourself
 	 * from the list and drop the ref properly.
 	 */
-	if (mpcb && atomic_inc_not_zero(&mpcb->mpcb_refcnt)) {
+	if (mpcb && refcount_inc_not_zero(&mpcb->mpcb_refcnt)) {
 		spin_lock(&mpcb->tw_lock);
 		if (tw->mptcp_tw->in_list) {
 			list_del_rcu(&tw->mptcp_tw->list);

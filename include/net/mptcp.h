@@ -304,7 +304,7 @@ struct mptcp_cb {
 	struct list_head tw_list;
 
 	/***** Start of fields, used for subflow establishment and closure */
-	atomic_t	mpcb_refcnt;
+	refcount_t	mpcb_refcnt;
 
 	/* Mutex needed, because otherwise mptcp_close will complain that the
 	 * socket is owned by the user.
