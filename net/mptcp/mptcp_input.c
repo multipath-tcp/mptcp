@@ -2408,64 +2408,6 @@ bool mptcp_should_expand_sndbuf(const struct sock *sk)
 	return false;
 }
 
-void mptcp_init_buffer_space(struct sock *sk)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *meta_sk = mptcp_meta_sk(sk);
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	int space;
-
-	tcp_init_buffer_space(sk);
-
-	if (is_master_tp(tp)) {
-		meta_tp->rcvq_space.space = meta_tp->rcv_wnd;
-		tcp_mstamp_refresh(meta_tp);
-		meta_tp->rcvq_space.time = meta_tp->tcp_mstamp;
-		meta_tp->rcvq_space.seq = meta_tp->copied_seq;
-
-		/* If there is only one subflow, we just use regular TCP
-		 * autotuning. User-locks are handled already by
-		 * tcp_init_buffer_space
-		 */
-		meta_tp->window_clamp = tp->window_clamp;
-		meta_tp->rcv_ssthresh = tp->rcv_ssthresh;
-		meta_sk->sk_rcvbuf = sk->sk_rcvbuf;
-		meta_sk->sk_sndbuf = sk->sk_sndbuf;
-
-		return;
-	}
-
-	if (meta_sk->sk_userlocks & SOCK_RCVBUF_LOCK)
-		goto snd_buf;
-
-	/* Adding a new subflow to the rcv-buffer space. We make a simple
-	 * addition, to give some space to allow traffic on the new subflow.
-	 * Autotuning will increase it further later on.
-	 */
-	space = min(meta_sk->sk_rcvbuf + sk->sk_rcvbuf,
-		    sock_net(meta_sk)->ipv4.sysctl_tcp_rmem[2]);
-	if (space > meta_sk->sk_rcvbuf) {
-		meta_tp->window_clamp += tp->window_clamp;
-		meta_tp->rcv_ssthresh += tp->rcv_ssthresh;
-		meta_sk->sk_rcvbuf = space;
-	}
-
-snd_buf:
-	if (meta_sk->sk_userlocks & SOCK_SNDBUF_LOCK)
-		return;
-
-	/* Adding a new subflow to the send-buffer space. We make a simple
-	 * addition, to give some space to allow traffic on the new subflow.
-	 * Autotuning will increase it further later on.
-	 */
-	space = min(meta_sk->sk_sndbuf + sk->sk_sndbuf,
-		    sock_net(meta_sk)->ipv4.sysctl_tcp_wmem[2]);
-	if (space > meta_sk->sk_sndbuf) {
-		meta_sk->sk_sndbuf = space;
-		meta_sk->sk_write_space(meta_sk);
-	}
-}
-
 void mptcp_tcp_set_rto(struct sock *sk)
 {
 	tcp_set_rto(sk);

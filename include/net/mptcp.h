@@ -866,7 +866,6 @@ void mptcp_reqsk_destructor(struct request_sock *req);
 void mptcp_connect_init(struct sock *sk);
 void mptcp_sub_force_close(struct sock *sk);
 int mptcp_sub_len_remove_addr_align(u16 bitfield);
-void mptcp_init_buffer_space(struct sock *sk);
 void mptcp_join_reqsk_init(const struct mptcp_cb *mpcb,
 			   const struct request_sock *req,
 			   struct sk_buff *skb);
@@ -1330,7 +1329,6 @@ static inline bool mptcp_can_new_subflow(const struct sock *meta_sk)
 
 /* TCP and MPTCP mpc flag-depending functions */
 u16 mptcp_select_window(struct sock *sk);
-void mptcp_init_buffer_space(struct sock *sk);
 void mptcp_tcp_set_rto(struct sock *sk);
 
 /* TCP and MPTCP flag-depending functions */
