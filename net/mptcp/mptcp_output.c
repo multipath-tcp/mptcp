@@ -615,7 +615,8 @@ static int mptcp_fragment(struct sock *meta_sk, enum tcp_queue tcp_queue,
 		sk_mem_uncharge(meta_sk, undo);
 
 		tcp_sk(meta_sk)->mpcb->reinject_queue.qlen++;
-		meta_sk->sk_write_queue.qlen--;
+		if (tcp_queue == TCP_FRAG_IN_WRITE_QUEUE)
+			meta_sk->sk_write_queue.qlen--;
 
 		if (!before(tcp_sk(meta_sk)->snd_nxt, TCP_SKB_CB(buff)->end_seq)) {
 			undo = old_factor - tcp_skb_pcount(skb) -
