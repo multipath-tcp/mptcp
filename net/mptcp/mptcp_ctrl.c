@@ -1204,6 +1204,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	/* Initialize the queues */
 	skb_queue_head_init(&mpcb->reinject_queue);
 	master_tp->out_of_order_queue = RB_ROOT;
+	master_sk->tcp_rtx_queue = RB_ROOT;
 	INIT_LIST_HEAD(&master_tp->tsq_node);
 	INIT_LIST_HEAD(&master_tp->tsorted_sent_queue);
 
@@ -2171,7 +2172,6 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk,
 	child_tp->mptcp->init_rcv_wnd = req->rsk_rcv_wnd;
 
 	child->sk_tsq_flags = 0;
-	child_tp->out_of_order_queue = RB_ROOT;
 
 	sock_rps_save_rxhash(child, skb);
 	tcp_synack_rtt_meas(child, req);

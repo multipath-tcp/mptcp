@@ -501,6 +501,8 @@ struct sock *tcp_create_openreq_child(const struct sock *sk,
 		newtp->snd_sml = newtp->snd_una =
 		newtp->snd_nxt = newtp->snd_up = treq->snt_isn + 1;
 
+		newtp->out_of_order_queue = RB_ROOT;
+		newsk->tcp_rtx_queue = RB_ROOT;
 		INIT_LIST_HEAD(&newtp->tsq_node);
 		INIT_LIST_HEAD(&newtp->tsorted_sent_queue);
 
