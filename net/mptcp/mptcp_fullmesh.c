@@ -1005,6 +1005,8 @@ static struct mptcp_addr_event *lookup_similar_event(const struct net *net,
 	list_for_each_entry(eventq, &fm_ns->events, list) {
 		if (eventq->family != event->family)
 			continue;
+		if (eventq->if_idx != event->if_idx)
+			continue;
 		if (event->family == AF_INET) {
 			if (eventq->addr.in.s_addr == event->addr.in.s_addr)
 				return eventq;
