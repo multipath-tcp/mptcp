@@ -1810,11 +1810,14 @@ static unsigned int mptcp_select_size_mss(struct sock *sk)
 	return tcp_sk(sk)->mss_cache;
 }
 
-int mptcp_select_size(const struct sock *meta_sk, bool sg, bool first_skb)
+int mptcp_select_size(const struct sock *meta_sk, bool sg, bool first_skb, bool zc)
 {
 	unsigned int mss = __mptcp_current_mss(meta_sk, mptcp_select_size_mss);
 
 	if (sg) {
+		if (zc)
+			return 0;
+
 		if (mptcp_sk_can_gso(meta_sk)) {
 			mss = linear_payload_sz(first_skb);
 		} else {
