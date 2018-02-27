@@ -1030,6 +1030,8 @@ void mptcp_data_ready(struct sock *sk)
 	struct sk_buff *skb, *tmp;
 	int queued = 0;
 
+	tcp_mstamp_refresh(tcp_sk(meta_sk));
+
 	/* restart before the check, because mptcp_fin might have changed the
 	 * state.
 	 */
