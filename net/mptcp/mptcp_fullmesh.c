@@ -846,10 +846,9 @@ duno:
 		rcu_read_lock_bh();
 		hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[i],
 					       tk_table) {
-			struct mptcp_cb *mpcb = meta_tp->mpcb;
 			struct sock *meta_sk = (struct sock *)meta_tp, *sk;
-			struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
 			bool meta_v4 = meta_sk->sk_family == AF_INET;
+			struct mptcp_cb *mpcb;
 
 			if (sock_net(meta_sk) != net)
 				continue;
@@ -858,15 +857,19 @@ duno:
 				/* skip IPv6 events if meta is IPv4 */
 				if (event->family == AF_INET6)
 					continue;
-			}
-			/* skip IPv4 events if IPV6_V6ONLY is set */
-			else if (event->family == AF_INET && meta_sk->sk_ipv6only)
+			} else if (event->family == AF_INET && meta_sk->sk_ipv6only) {
+				/* skip IPv4 events if IPV6_V6ONLY is set */
 				continue;
+			}
 
 			if (unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
 				continue;
 
 			bh_lock_sock(meta_sk);
+
+			mpcb = meta_tp->mpcb;
+			if (!mpcb)
+				goto next;
 
 			if (!mptcp(meta_tp) || !is_meta_sk(meta_sk) ||
 			    mpcb->infinite_mapping_snd ||
@@ -887,6 +890,8 @@ duno:
 			}
 
 			if (event->code == MPTCP_EVENT_ADD) {
+				struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
+
 				fmp->add_addr++;
 				mpcb->addr_signal = 1;
 
