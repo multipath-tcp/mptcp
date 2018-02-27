@@ -1428,9 +1428,6 @@ static void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	u32 nwin, data_ack, data_seq;
 	u16 data_len = 0;
 
-	if (meta_sk->sk_state == TCP_CLOSE)
-		return;
-
 	/* A valid packet came in - subflow is operational again */
 	tp->pf = 0;
 
@@ -1446,9 +1443,7 @@ static void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	 * set by mptcp_clean_rtx_infinite.
 	 */
 	if (!(tcb->mptcp_flags & MPTCPHDR_ACK) && !tp->mpcb->infinite_mapping_snd)
-		goto exit;
-
-	data_ack = tp->mptcp->rx_opt.data_ack;
+		return;
 
 	if (unlikely(!tp->mptcp->fully_established) &&
 	    tp->mptcp->snt_isn + 1 != TCP_SKB_CB(skb)->ack_seq)
@@ -1457,6 +1452,13 @@ static void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 		 */
 		mptcp_become_fully_estab(sk);
 
+	/* After we did the subflow-only processing (stopping timer and marking
+	 * subflow as established), check if we can proceed with MPTCP-level
+	 * processing.
+	 */
+	if (meta_sk->sk_state == TCP_CLOSE)
+		return;
+
 	/* Get the data_seq */
 	if (mptcp_is_data_seq(skb)) {
 		data_seq = tp->mptcp->rx_opt.data_seq;
@@ -1464,6 +1466,8 @@ static void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	} else {
 		data_seq = meta_tp->snd_wl1;
 	}
+
+	data_ack = tp->mptcp->rx_opt.data_ack;
 
 	/* If the ack is older than previous acks
 	 * then we can probably ignore it.
