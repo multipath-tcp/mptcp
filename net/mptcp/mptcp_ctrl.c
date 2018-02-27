@@ -2492,11 +2492,14 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 		rcu_read_lock_bh();
 		hlist_nulls_for_each_entry_rcu(meta_tp, node,
 					       &tk_hashtable[i], tk_table) {
-			struct mptcp_cb *mpcb = meta_tp->mpcb;
 			struct sock *meta_sk = (struct sock *)meta_tp;
 			struct inet_sock *isk = inet_sk(meta_sk);
+			struct mptcp_cb *mpcb = meta_tp->mpcb;
 
 			if (!mptcp(meta_tp) || !net_eq(net, sock_net(meta_sk)))
+				continue;
+
+			if (!mpcb)
 				continue;
 
 			if (capable(CAP_NET_ADMIN)) {
