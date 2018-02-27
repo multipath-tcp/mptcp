@@ -666,9 +666,10 @@ void mptcp_sock_destruct(struct sock *sk)
 		}
 		spin_unlock_bh(&mpcb->tw_lock);
 
-		mptcp_mpcb_put(mpcb);
+		mptcp_debug("%s destroying meta-sk token %#x\n", __func__,
+			    tcp_sk(sk)->mpcb->mptcp_loc_token);
 
-		mptcp_debug("%s destroying meta-sk\n", __func__);
+		mptcp_mpcb_put(mpcb);
 	}
 
 	WARN_ON(!static_key_false(&mptcp_static_key));

@@ -294,7 +294,8 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 
 	ret = inet6_create(sock_net(meta_sk), sock, IPPROTO_TCP, 1);
 	if (unlikely(ret < 0)) {
-		mptcp_debug("%s inet6_create failed ret: %d\n", __func__, ret);
+		net_err_ratelimited("%s inet6_create failed ret: %d\n",
+				    __func__, ret);
 		return ret;
 	}
 
@@ -305,8 +306,11 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	lockdep_set_class_and_name(&(sk)->sk_lock.slock, &meta_slock_key, meta_slock_key_name);
 	lockdep_init_map(&(sk)->sk_lock.dep_map, meta_key_name, &meta_key, 0);
 
-	if (mptcp_add_sock(meta_sk, sk, loc->loc6_id, rem->rem6_id, GFP_KERNEL))
+	if (mptcp_add_sock(meta_sk, sk, loc->loc6_id, rem->rem6_id, GFP_KERNEL)) {
+		net_err_ratelimited("%s mptcp_add_sock failed ret: %d\n",
+				    __func__, ret);
 		goto error;
+	}
 
 	tp->mptcp->slave_sk = 1;
 	tp->mptcp->low_prio = loc->low_prio;
@@ -331,8 +335,9 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	ret = kernel_bind(sock, (struct sockaddr *)&loc_in,
 			  sizeof(struct sockaddr_in6));
 	if (ret < 0) {
-		mptcp_debug("%s: MPTCP subsocket bind()failed, error %d\n",
-			    __func__, ret);
+		net_err_ratelimited("%s: token %#x bind() to %pI6 index %d failed, error %d\n",
+				    __func__, tcp_sk(meta_sk)->mpcb->mptcp_loc_token,
+				    &loc_in.sin6_addr, loc->if_idx, ret);
 		goto error;
 	}
 
@@ -348,8 +353,8 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	ret = kernel_connect(sock, (struct sockaddr *)&rem_in,
 			     sizeof(struct sockaddr_in6), O_NONBLOCK);
 	if (ret < 0 && ret != -EINPROGRESS) {
-		mptcp_debug("%s: MPTCP subsocket connect() failed, error %d\n",
-			    __func__, ret);
+		net_err_ratelimited("%s: MPTCP subsocket connect() failed, error %d\n",
+				    __func__, ret);
 		goto error;
 	}
 

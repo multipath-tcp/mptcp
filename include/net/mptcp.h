@@ -666,7 +666,7 @@ extern struct workqueue_struct *mptcp_wq;
 #define mptcp_debug(fmt, args...)					\
 	do {								\
 		if (unlikely(sysctl_mptcp_debug))			\
-			pr_err(__FILE__ ": " fmt, ##args);	\
+			pr_err(fmt, ##args);	\
 	} while (0)
 
 /* Iterates over all subflows */
