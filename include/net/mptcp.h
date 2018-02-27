@@ -894,7 +894,6 @@ void mptcp_reqsk_init(struct request_sock *req, struct sock *sk,
 int mptcp_conn_request(struct sock *sk, struct sk_buff *skb);
 void mptcp_enable_sock(struct sock *sk);
 void mptcp_disable_sock(struct sock *sk);
-void mptcp_enable_static_key(void);
 void mptcp_disable_static_key(void);
 void mptcp_cookies_reqsk_init(struct request_sock *req,
 			      struct mptcp_options_received *mopt,

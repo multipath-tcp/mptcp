@@ -382,62 +382,70 @@ static void mptcp_set_key_sk(const struct sock *sk)
 }
 
 #ifdef HAVE_JUMP_LABEL
-/* We are not allowed to call static_key_slow_dec() from irq context
- * If mptcp_enable/disable_static_key() is called from irq context,
- * defer the static_key_slow_dec() calls.
- */
-static atomic_t mptcp_enable_deferred;
+static atomic_t mptcp_needed_deferred;
+static atomic_t mptcp_wanted;
+
+static void mptcp_clear(struct work_struct *work)
+{
+	int deferred = atomic_xchg(&mptcp_needed_deferred, 0);
+	int wanted;
+
+	wanted = atomic_add_return(deferred, &mptcp_wanted);
+	if (wanted > 0)
+		static_key_enable(&mptcp_static_key);
+	else
+		static_key_disable(&mptcp_static_key);
+}
+
+static DECLARE_WORK(mptcp_work, mptcp_clear);
 #endif
 
-void mptcp_enable_static_key(void)
+static void mptcp_enable_static_key_bh(void)
 {
 #ifdef HAVE_JUMP_LABEL
-	int deferred;
+	int wanted;
 
-	if (in_interrupt()) {
-		atomic_inc(&mptcp_enable_deferred);
-		return;
+	while (1) {
+		wanted = atomic_read(&mptcp_wanted);
+		if (wanted <= 0)
+			break;
+		if (atomic_cmpxchg(&mptcp_wanted, wanted, wanted + 1) == wanted)
+			return;
 	}
-
-	deferred = atomic_xchg(&mptcp_enable_deferred, 0);
-
-	if (deferred > 0) {
-		while (deferred--)
-			static_key_slow_inc(&mptcp_static_key);
-	} else if (deferred < 0) {
-		/* Do exactly one dec less than necessary */
-		while (++deferred)
-			static_key_slow_dec(&mptcp_static_key);
-		return;
-	}
-#endif
+	atomic_inc(&mptcp_needed_deferred);
+	schedule_work(&mptcp_work);
+#else
 	static_key_slow_inc(&mptcp_static_key);
-	WARN_ON(atomic_read(&mptcp_static_key.enabled) == 0);
+#endif
+}
+
+static void mptcp_enable_static_key(void)
+{
+#ifdef HAVE_JUMP_LABEL
+	atomic_inc(&mptcp_wanted);
+	static_key_enable(&mptcp_static_key);
+#else
+	static_key_slow_inc(&mptcp_static_key);
+#endif
 }
 
 void mptcp_disable_static_key(void)
 {
 #ifdef HAVE_JUMP_LABEL
-	int deferred;
+	int wanted;
 
-	if (in_interrupt()) {
-		atomic_dec(&mptcp_enable_deferred);
-		return;
+	while (1) {
+		wanted = atomic_read(&mptcp_wanted);
+		if (wanted <= 1)
+			break;
+		if (atomic_cmpxchg(&mptcp_wanted, wanted, wanted - 1) == wanted)
+			return;
 	}
-
-	deferred = atomic_xchg(&mptcp_enable_deferred, 0);
-
-	if (deferred > 0) {
-		/* Do exactly one inc less than necessary */
-		while (--deferred)
-			static_key_slow_inc(&mptcp_static_key);
-		return;
-	} else if (deferred < 0) {
-		while (deferred++)
-			static_key_slow_dec(&mptcp_static_key);
-	}
-#endif
+	atomic_dec(&mptcp_needed_deferred);
+	schedule_work(&mptcp_work);
+#else
 	static_key_slow_dec(&mptcp_static_key);
+#endif
 }
 
 void mptcp_enable_sock(struct sock *sk)
@@ -1185,7 +1193,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	}
 
 	if (!sock_flag(meta_sk, SOCK_MPTCP)) {
-		mptcp_enable_static_key();
+		mptcp_enable_static_key_bh();
 		sock_set_flag(meta_sk, SOCK_MPTCP);
 	}
 
@@ -1273,7 +1281,7 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 	tp->meta_sk = meta_sk;
 
 	if (!sock_flag(sk, SOCK_MPTCP)) {
-		mptcp_enable_static_key();
+		mptcp_enable_static_key_bh();
 		sock_set_flag(sk, SOCK_MPTCP);
 	}
 
