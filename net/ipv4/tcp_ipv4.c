@@ -1746,9 +1746,8 @@ process:
 			if (!mptcp_can_new_subflow(sk)) {
 				inet_csk_reqsk_queue_drop_and_put(sk, req);
 				bh_unlock_sock(sk);
-				sock_put(sk);
 
-				return 0;
+				goto discard_and_relse;
 			}
 
 			if (sock_owned_by_user(sk)) {
