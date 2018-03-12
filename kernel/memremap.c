@@ -194,7 +194,7 @@ void put_zone_device_page(struct page *page)
 }
 EXPORT_SYMBOL(put_zone_device_page);
 
-static void pgmap_radix_release(struct resource *res)
+static void pgmap_radix_release(struct resource *res, resource_size_t end_key)
 {
 	resource_size_t key, align_start, align_size, align_end;
 
@@ -203,8 +203,11 @@ static void pgmap_radix_release(struct resource *res)
 	align_end = align_start + align_size - 1;
 
 	mutex_lock(&pgmap_lock);
-	for (key = res->start; key <= res->end; key += SECTION_SIZE)
+	for (key = res->start; key <= res->end; key += SECTION_SIZE) {
+		if (key >= end_key)
+			break;
 		radix_tree_delete(&pgmap_radix, key >> PA_SECTION_SHIFT);
+	}
 	mutex_unlock(&pgmap_lock);
 }
 
@@ -245,7 +248,8 @@ static void devm_memremap_pages_release(struct device *dev, void *data)
 
 	/* pages are dead and unused, undo the arch mapping */
 	align_start = res->start & ~(SECTION_SIZE - 1);
-	align_size = ALIGN(resource_size(res), SECTION_SIZE);
+	align_size = ALIGN(res->start + resource_size(res), SECTION_SIZE)
+		- align_start;
 
 	lock_device_hotplug();
 	mem_hotplug_begin();
@@ -254,7 +258,7 @@ static void devm_memremap_pages_release(struct device *dev, void *data)
 	unlock_device_hotplug();
 
 	untrack_pfn(NULL, PHYS_PFN(align_start), align_size);
-	pgmap_radix_release(res);
+	pgmap_radix_release(res, -1);
 	dev_WARN_ONCE(dev, pgmap->altmap && pgmap->altmap->alloc,
 			"%s: failed to free all reserved pages\n", __func__);
 }
@@ -288,7 +292,7 @@ struct dev_pagemap *find_dev_pagemap(resource_size_t phys)
 void *devm_memremap_pages(struct device *dev, struct resource *res,
 		struct percpu_ref *ref, struct vmem_altmap *altmap)
 {
-	resource_size_t key, align_start, align_size, align_end;
+	resource_size_t key = 0, align_start, align_size, align_end;
 	pgprot_t pgprot = PAGE_KERNEL;
 	struct dev_pagemap *pgmap;
 	struct page_map *page_map;
@@ -391,7 +395,7 @@ void *devm_memremap_pages(struct device *dev, struct resource *res,
 	untrack_pfn(NULL, PHYS_PFN(align_start), align_size);
  err_pfn_remap:
  err_radix:
-	pgmap_radix_release(res);
+	pgmap_radix_release(res, key);
 	devres_free(page_map);
 	return ERR_PTR(error);
 }
