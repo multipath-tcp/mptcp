@@ -1535,6 +1535,10 @@ process:
 			}
 
 			if (sock_owned_by_user(sk)) {
+				th = (const struct tcphdr *)skb->data;
+				hdr = ipv6_hdr(skb);
+				tcp_v6_fill_cb(skb, hdr, th);
+
 				skb->sk = sk;
 				if (unlikely(sk_add_backlog(sk, skb,
 							    sk->sk_rcvbuf + sk->sk_sndbuf))) {

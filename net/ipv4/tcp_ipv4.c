@@ -1737,10 +1737,6 @@ process:
 		refcounted = true;
 
 		if (is_meta_sk(sk)) {
-			th = (const struct tcphdr *)skb->data;
-			iph = ip_hdr(skb);
-			tcp_v4_fill_cb(skb, iph, th);
-
 			bh_lock_sock(sk);
 
 			if (!mptcp_can_new_subflow(sk)) {
@@ -1751,6 +1747,10 @@ process:
 			}
 
 			if (sock_owned_by_user(sk)) {
+				th = (const struct tcphdr *)skb->data;
+				iph = ip_hdr(skb);
+				tcp_v4_fill_cb(skb, iph, th);
+
 				skb->sk = sk;
 				if (unlikely(sk_add_backlog(sk, skb,
 							    sk->sk_rcvbuf + sk->sk_sndbuf))) {
