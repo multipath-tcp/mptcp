@@ -2184,10 +2184,10 @@ int mptcp_init_tw_sock(struct sock *sk, struct tcp_timewait_sock *tw)
 		mptw->rcv_nxt++;
 	rcu_assign_pointer(mptw->mpcb, mpcb);
 
-	spin_lock(&mpcb->tw_lock);
+	spin_lock_bh(&mpcb->tw_lock);
 	list_add_rcu(&mptw->list, &tp->mpcb->tw_list);
 	mptw->in_list = 1;
-	spin_unlock(&mpcb->tw_lock);
+	spin_unlock_bh(&mpcb->tw_lock);
 
 	return 0;
 }
@@ -2203,12 +2203,12 @@ void mptcp_twsk_destructor(struct tcp_timewait_sock *tw)
 	 * from the list and drop the ref properly.
 	 */
 	if (mpcb && atomic_inc_not_zero(&mpcb->mpcb_refcnt)) {
-		spin_lock(&mpcb->tw_lock);
+		spin_lock_bh(&mpcb->tw_lock);
 		if (tw->mptcp_tw->in_list) {
 			list_del_rcu(&tw->mptcp_tw->list);
 			tw->mptcp_tw->in_list = 0;
 		}
-		spin_unlock(&mpcb->tw_lock);
+		spin_unlock_bh(&mpcb->tw_lock);
 
 		/* Twice, because we increased it above */
 		mptcp_mpcb_put(mpcb);
