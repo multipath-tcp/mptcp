@@ -241,6 +241,7 @@ static struct tcp_congestion_ops mptcp_balia = {
 	.init		= mptcp_balia_init,
 	.ssthresh	= mptcp_balia_ssthresh,
 	.cong_avoid	= mptcp_balia_cong_avoid,
+	.undo_cwnd	= tcp_reno_undo_cwnd,
 	.cwnd_event	= mptcp_balia_cwnd_event,
 	.set_state	= mptcp_balia_set_state,
 	.owner		= THIS_MODULE,
