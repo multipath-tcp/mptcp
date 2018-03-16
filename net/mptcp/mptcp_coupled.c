@@ -244,6 +244,7 @@ static struct tcp_congestion_ops mptcp_ccc = {
 	.init		= mptcp_ccc_init,
 	.ssthresh	= tcp_reno_ssthresh,
 	.cong_avoid	= mptcp_ccc_cong_avoid,
+	.undo_cwnd	= tcp_reno_undo_cwnd,
 	.cwnd_event	= mptcp_ccc_cwnd_event,
 	.set_state	= mptcp_ccc_set_state,
 	.owner		= THIS_MODULE,
