@@ -782,8 +782,14 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		 * tcp_write_xmit has a TSO-level nagle check which is not
 		 * subject to the MPTCP-level. It is based on the properties of
 		 * the subflow, not the MPTCP-level.
+		 * When the segment is a reinjection or redundant scheduled
+		 * segment, nagle check at meta-level may prevent
+		 * sending. This could hurt with certain schedulers, as they
+		 * to reinjection to recover from a window-stall or reduce latency.
+		 * Therefore, Nagle check should be disabled in that case.
 		 */
-		if (unlikely(!tcp_nagle_test(meta_tp, skb, mss_now,
+		if (!reinject &&
+		    unlikely(!tcp_nagle_test(meta_tp, skb, mss_now,
 					     (tcp_skb_is_last(meta_sk, skb) ?
 					      nonagle : TCP_NAGLE_PUSH))))
 			break;
