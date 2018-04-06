@@ -210,12 +210,13 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 
 	if (sk->sk_state == TCP_NEW_SYN_RECV) {
 		struct request_sock *req = inet_reqsk(sk);
+		bool req_stolen;
 
 		if (!mptcp_can_new_subflow(meta_sk))
 			goto reset_and_discard;
 
 		local_bh_disable();
-		child = tcp_check_req(meta_sk, skb, req, false);
+		child = tcp_check_req(meta_sk, skb, req, false, &req_stolen);
 		if (!child) {
 			reqsk_put(req);
 			local_bh_enable();

@@ -516,17 +516,9 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 
 	TCP_SKB_CB(skb)->path_mask |= mptcp_pi_to_flag(tp->mptcp->path_index);
 
-	/* Compute checksum, if:
-	 * 1. The current route does not support csum offloading but it was
-	 *    assumed that it does (ip_summed is CHECKSUM_PARTIAL)
-	 * 2. We need the DSS-checksum but ended up not pre-computing it
-	 *    (e.g., in the case of TFO retransmissions).
-	 */
-	if (skb->ip_summed == CHECKSUM_PARTIAL &&
-	    (!sk_check_csum_caps(sk) || tp->mpcb->dss_csum)) {
+	/* Compute checksum */
+	if (tp->mpcb->dss_csum)
 		subskb->csum = skb->csum = skb_checksum(skb, 0, skb->len, 0);
-		subskb->ip_summed = skb->ip_summed = CHECKSUM_NONE;
-	}
 
 	tcb = TCP_SKB_CB(subskb);
 
@@ -1847,15 +1839,15 @@ static unsigned int mptcp_select_size_mss(struct sock *sk)
 	return tcp_sk(sk)->mss_cache;
 }
 
-int mptcp_select_size(const struct sock *meta_sk, bool sg, bool first_skb, bool zc)
+int mptcp_select_size(const struct sock *meta_sk, bool first_skb, bool zc)
 {
 	unsigned int mss = __mptcp_current_mss(meta_sk, mptcp_select_size_mss);
 
-	if (sg) {
+	if (mptcp_can_sg(meta_sk)) {
 		if (zc)
 			return 0;
 
-		if (mptcp_sk_can_gso(meta_sk)) {
+		if (!tcp_sk(meta_sk)->mpcb->dss_csum) {
 			mss = linear_payload_sz(first_skb);
 		} else {
 			int pgbreak = SKB_MAX_HEAD(MAX_TCP_HEADER);
@@ -1900,7 +1892,7 @@ unsigned int mptcp_xmit_size_goal(const struct sock *meta_sk, u32 mss_now,
 {
 	u32 xmit_size_goal = 0;
 
-	if (large_allowed && mptcp_sk_can_gso(meta_sk)) {
+	if (large_allowed && !tcp_sk(meta_sk)->mpcb->dss_csum) {
 		struct mptcp_tcp_sock *mptcp;
 
 		mptcp_for_each_sub(tcp_sk(meta_sk)->mpcb, mptcp) {

@@ -665,7 +665,7 @@ void tcp_skb_collapse_tstamp(struct sk_buff *skb,
 			     const struct sk_buff *next_skb);
 
 u16 tcp_select_window(struct sock *sk);
-int select_size(const struct sock *sk, bool sg, bool first_skb, bool zc);
+int select_size(const struct sock *sk, bool first_skb, bool zc);
 bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		int push_one, gfp_t gfp);
 
@@ -1984,7 +1984,7 @@ struct tcp_sock_ops {
 				      __u32 mss, __u32 *rcv_wnd,
 				      __u32 *window_clamp, int wscale_ok,
 				      __u8 *rcv_wscale, __u32 init_rcv_wnd);
-	int (*select_size)(const struct sock *sk, bool sg, bool first_skb, bool zc);
+	int (*select_size)(const struct sock *sk, bool first_skb, bool zc);
 	void (*init_buffer_space)(struct sock *sk);
 	void (*set_rto)(struct sock *sk);
 	bool (*should_expand_sndbuf)(const struct sock *sk);
