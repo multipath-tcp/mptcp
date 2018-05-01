@@ -323,7 +323,7 @@ next_subflow:
 		goto exit;
 
 	if (mptcp_binder_ndiffports > iter &&
-	    mptcp_binder_ndiffports > mpcb->cnt_subflows) {
+	    mptcp_binder_ndiffports > mptcp_subflow_count(mpcb)) {
 		struct mptcp_loc4 loc;
 		struct mptcp_rem4 rem;
 

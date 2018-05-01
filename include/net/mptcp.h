@@ -280,7 +280,6 @@ struct mptcp_cb {
 		rcv_hiseq_index:1; /* Index in rcv_high_order of rcv_nxt */
 
 	/* socket count in this connection */
-	u8 cnt_subflows;
 	u8 cnt_established;
 
 #define MPTCP_SCHED_DATA_SIZE 8
@@ -1292,6 +1291,17 @@ static inline bool mptcp_can_new_subflow(const struct sock *meta_sk)
 	       tcp_sk(meta_sk)->inside_tk_table &&
 	       !tcp_sk(meta_sk)->mpcb->infinite_mapping_rcv &&
 	       !tcp_sk(meta_sk)->mpcb->send_infinite_mapping;
+}
+
+static inline int mptcp_subflow_count(const struct mptcp_cb *mpcb)
+{
+	struct sock *sk;
+	int i = 0;
+
+	mptcp_for_each_sk(mpcb, sk)
+		i++;
+
+	return i;
 }
 
 /* TCP and MPTCP mpc flag-depending functions */

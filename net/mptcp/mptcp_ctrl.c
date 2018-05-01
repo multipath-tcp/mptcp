@@ -1379,7 +1379,6 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 	mpcb->connection_list = tp;
 	tp->mptcp->attached = 1;
 
-	mpcb->cnt_subflows++;
 	atomic_add(atomic_read(&((struct sock *)tp)->sk_rmem_alloc),
 		   &meta_sk->sk_rmem_alloc);
 
@@ -1399,23 +1398,21 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 	sk->sk_destruct = mptcp_sock_destruct;
 
 	if (sk->sk_family == AF_INET)
-		mptcp_debug("%s: token %#x pi %d, src_addr:%pI4:%d dst_addr:%pI4:%d, cnt_subflows now %d\n",
+		mptcp_debug("%s: token %#x pi %d, src_addr:%pI4:%d dst_addr:%pI4:%d\n",
 			    __func__ , mpcb->mptcp_loc_token,
 			    tp->mptcp->path_index,
 			    &((struct inet_sock *)tp)->inet_saddr,
 			    ntohs(((struct inet_sock *)tp)->inet_sport),
 			    &((struct inet_sock *)tp)->inet_daddr,
-			    ntohs(((struct inet_sock *)tp)->inet_dport),
-			    mpcb->cnt_subflows);
+			    ntohs(((struct inet_sock *)tp)->inet_dport));
 #if IS_ENABLED(CONFIG_IPV6)
 	else
-		mptcp_debug("%s: token %#x pi %d, src_addr:%pI6:%d dst_addr:%pI6:%d, cnt_subflows now %d\n",
+		mptcp_debug("%s: token %#x pi %d, src_addr:%pI6:%d dst_addr:%pI6:%d\n",
 			    __func__ , mpcb->mptcp_loc_token,
 			    tp->mptcp->path_index, &inet6_sk(sk)->saddr,
 			    ntohs(((struct inet_sock *)tp)->inet_sport),
 			    &sk->sk_v6_daddr,
-			    ntohs(((struct inet_sock *)tp)->inet_dport),
-			    mpcb->cnt_subflows);
+			    ntohs(((struct inet_sock *)tp)->inet_dport));
 #endif
 
 	return 0;
@@ -1452,7 +1449,6 @@ void mptcp_del_sock(struct sock *sk)
 			}
 		}
 	}
-	mpcb->cnt_subflows--;
 	if (tp->mptcp->establish_increased)
 		mpcb->cnt_established--;
 
@@ -2816,8 +2812,9 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 					   ntohs(isk->inet_dport));
 #endif
 			}
+
 			seq_printf(seq, " %02X %02X %08X:%08X %lu",
-				   meta_sk->sk_state, mpcb->cnt_subflows,
+				   meta_sk->sk_state, mptcp_subflow_count(mpcb),
 				   meta_tp->write_seq - meta_tp->snd_una,
 				   max_t(int, meta_tp->rcv_nxt -
 					 meta_tp->copied_seq, 0),

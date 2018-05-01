@@ -53,7 +53,7 @@ next_subflow:
 	    !tcp_sk(mpcb->master_sk)->mptcp->fully_established)
 		goto exit;
 
-	if (num_subflows > iter && num_subflows > mpcb->cnt_subflows) {
+	if (num_subflows > iter && num_subflows > mptcp_subflow_count(mpcb)) {
 		if (meta_sk->sk_family == AF_INET ||
 		    mptcp_v6_is_v4_mapped(meta_sk)) {
 			struct mptcp_loc4 loc;

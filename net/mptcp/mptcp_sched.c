@@ -219,14 +219,6 @@ struct sock *get_available_subflow(struct sock *meta_sk, struct sk_buff *skb,
 	struct sock *sk;
 	bool force;
 
-	/* if there is only one subflow, bypass the scheduling function */
-	if (mpcb->cnt_subflows == 1) {
-		sk = (struct sock *)mpcb->connection_list;
-		if (!mptcp_is_available(sk, skb, zero_wnd_test))
-			sk = NULL;
-		return sk;
-	}
-
 	/* Answer data_fin on same subflow!!! */
 	if (meta_sk->sk_shutdown & RCV_SHUTDOWN &&
 	    skb && mptcp_is_data_fin(skb)) {
@@ -267,9 +259,6 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 	struct tcp_sock *tp_it;
 	struct sk_buff *skb_head;
 	struct defsched_priv *dsp = defsched_get_priv(tp);
-
-	if (tp->mpcb->cnt_subflows == 1)
-		return NULL;
 
 	meta_sk = mptcp_meta_sk(sk);
 	skb_head = tcp_rtx_queue_head(meta_sk);

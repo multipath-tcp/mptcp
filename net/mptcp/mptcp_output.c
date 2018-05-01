@@ -1358,7 +1358,7 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	struct sock *sk;
 
-	if (!mpcb->cnt_subflows)
+	if (!mpcb->connection_list)
 		return;
 
 	WARN_ON(meta_tp->send_mp_fclose);

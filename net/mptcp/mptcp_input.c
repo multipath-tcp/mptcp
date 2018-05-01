@@ -347,6 +347,8 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 
 	/* Now, checksum must be 0 */
 	if (unlikely(csum_fold(csum_tcp))) {
+		struct sock *sk_it = NULL;
+
 		pr_err("%s csum is wrong: %#x tcp-seq %u dss_csum_added %d overflowed %d iterations %d\n",
 		       __func__, csum_fold(csum_tcp), TCP_SKB_CB(last)->seq,
 		       dss_csum_added, overflowed, iter);
@@ -359,7 +361,14 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 		 */
 		tp->mpcb->csum_cutoff_seq = tp->mptcp->map_data_seq;
 
-		if (tp->mpcb->cnt_subflows > 1) {
+		/* Search for another subflow that is fully established */
+		mptcp_for_each_sk(tp->mpcb, sk_it) {
+			if (sk_it != sk &&
+			    tcp_sk(sk_it)->mptcp->fully_established)
+				break;
+		}
+
+		if (sk_it) {
 			mptcp_send_reset(sk);
 			ans = -1;
 		} else {
