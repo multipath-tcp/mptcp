@@ -1315,8 +1315,8 @@ void mptcp_fallback_meta_sk(struct sock *meta_sk)
 int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 		   gfp_t flags)
 {
-	struct mptcp_cb *mpcb	= tcp_sk(meta_sk)->mpcb;
-	struct tcp_sock *tp	= tcp_sk(sk);
+	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+	struct tcp_sock *tp = tcp_sk(sk);
 
 	tp->mptcp = kmem_cache_zalloc(mptcp_sock_cache, flags);
 	if (!tp->mptcp)
@@ -2122,9 +2122,9 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk,
 				   struct sk_buff *skb,
 				   const struct mptcp_options_received *mopt)
 {
-	struct tcp_sock *child_tp = tcp_sk(child);
+	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
-	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+	struct tcp_sock *child_tp = tcp_sk(child);
 	u8 hash_mac_check[20];
 
 	child_tp->inside_tk_table = 0;
@@ -2488,6 +2488,23 @@ int mptcp_conn_request(struct sock *sk, struct sk_buff *skb)
 drop:
 	__NET_INC_STATS(sock_net(sk), LINUX_MIB_LISTENDROPS);
 	return 0;
+}
+
+int mptcp_finish_handshake(struct sock *child, struct sk_buff *skb)
+	__releases(&child->sk_lock.slock)
+{
+	int ret;
+
+	/* We don't call tcp_child_process here, because we hold
+	 * already the meta-sk-lock and are sure that it is not owned
+	 * by the user.
+	 */
+	tcp_sk(child)->segs_in += max_t(u16, 1, skb_shinfo(skb)->gso_segs);
+	ret = tcp_rcv_state_process(child, skb);
+	bh_unlock_sock(child);
+	sock_put(child);
+
+	return ret;
 }
 
 static void __mptcp_get_info(const struct sock *meta_sk,

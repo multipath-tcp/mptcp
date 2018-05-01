@@ -96,11 +96,11 @@ static u32 mptcp_v4_cookie_init_seq(struct request_sock *req, const struct sock 
 }
 #endif
 
-static int mptcp_v4_join_init_req(struct request_sock *req, const struct sock *sk,
+static int mptcp_v4_join_init_req(struct request_sock *req, const struct sock *meta_sk,
 				  struct sk_buff *skb, bool want_cookie)
 {
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
-	const struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
+	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	union inet_addr addr;
 	int loc_id;
 	bool low_prio = false;
@@ -112,14 +112,14 @@ static int mptcp_v4_join_init_req(struct request_sock *req, const struct sock *s
 	 */
 	mtreq->hash_entry.pprev = NULL;
 
-	tcp_request_sock_ipv4_ops.init_req(req, sk, skb, want_cookie);
+	tcp_request_sock_ipv4_ops.init_req(req, meta_sk, skb, want_cookie);
 
 	mtreq->mptcp_loc_nonce = mptcp_v4_get_nonce(ip_hdr(skb)->saddr,
 						    ip_hdr(skb)->daddr,
 						    tcp_hdr(skb)->source,
 						    tcp_hdr(skb)->dest);
 	addr.ip = inet_rsk(req)->ir_loc_addr;
-	loc_id = mpcb->pm_ops->get_local_id(AF_INET, &addr, sock_net(sk), &low_prio);
+	loc_id = mpcb->pm_ops->get_local_id(AF_INET, &addr, sock_net(meta_sk), &low_prio);
 	if (loc_id == -1)
 		return -1;
 	mtreq->loc_id = loc_id;
@@ -148,24 +148,6 @@ static int mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 				&mptcp_join_request_sock_ipv4_ops,
 				meta_sk, skb);
 }
-
-int mptcp_finish_handshake(struct sock *child, struct sk_buff *skb)
-	__releases(&child->sk_lock.slock)
-{
-	int ret;
-
-	/* We don't call tcp_child_process here, because we hold
-	 * already the meta-sk-lock and are sure that it is not owned
-	 * by the user.
-	 */
-	tcp_sk(child)->segs_in += max_t(u16, 1, skb_shinfo(skb)->gso_segs);
-	ret = tcp_rcv_state_process(child, skb);
-	bh_unlock_sock(child);
-	sock_put(child);
-
-	return ret;
-}
-
 
 /* Similar to: tcp_v4_do_rcv
  * We only process join requests here. (either the SYN or the final ACK)

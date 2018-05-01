@@ -79,7 +79,7 @@ struct fullmesh_priv {
 	u8 rem4_bits;
 	u8 rem6_bits;
 
-	/* Are we established the additional subflows for primary pair? */
+	/* Have we established the additional subflows for primary pair? */
 	u8 first_pair:1;
 };
 

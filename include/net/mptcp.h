@@ -663,10 +663,10 @@ extern int sysctl_mptcp_syn_retries;
 
 extern struct workqueue_struct *mptcp_wq;
 
-#define mptcp_debug(fmt, args...)					\
-	do {								\
-		if (unlikely(sysctl_mptcp_debug))			\
-			pr_err(fmt, ##args);	\
+#define mptcp_debug(fmt, args...)						\
+	do {									\
+		if (unlikely(sysctl_mptcp_debug))				\
+			pr_err(fmt, ##args);					\
 	} while (0)
 
 /* Iterates over all subflows */

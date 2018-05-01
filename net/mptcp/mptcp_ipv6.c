@@ -125,11 +125,11 @@ static u32 mptcp_v6_cookie_init_seq(struct request_sock *req, const struct sock 
 }
 #endif
 
-static int mptcp_v6_join_init_req(struct request_sock *req, const struct sock *sk,
+static int mptcp_v6_join_init_req(struct request_sock *req, const struct sock *meta_sk,
 				  struct sk_buff *skb, bool want_cookie)
 {
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
-	const struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
+	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	union inet_addr addr;
 	int loc_id;
 	bool low_prio = false;
@@ -141,14 +141,14 @@ static int mptcp_v6_join_init_req(struct request_sock *req, const struct sock *s
 	 */
 	mtreq->hash_entry.pprev = NULL;
 
-	tcp_request_sock_ipv6_ops.init_req(req, sk, skb, want_cookie);
+	tcp_request_sock_ipv6_ops.init_req(req, meta_sk, skb, want_cookie);
 
 	mtreq->mptcp_loc_nonce = mptcp_v6_get_nonce(ipv6_hdr(skb)->saddr.s6_addr32,
 						    ipv6_hdr(skb)->daddr.s6_addr32,
 						    tcp_hdr(skb)->source,
 						    tcp_hdr(skb)->dest);
 	addr.in6 = inet_rsk(req)->ir_v6_loc_addr;
-	loc_id = mpcb->pm_ops->get_local_id(AF_INET6, &addr, sock_net(sk), &low_prio);
+	loc_id = mpcb->pm_ops->get_local_id(AF_INET6, &addr, sock_net(meta_sk), &low_prio);
 	if (loc_id == -1)
 		return -1;
 	mtreq->loc_id = loc_id;

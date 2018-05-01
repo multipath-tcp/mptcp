@@ -89,10 +89,7 @@ static inline int mptcp_tso_acked_reinject(const struct sock *meta_sk,
 	return packets_acked;
 }
 
-/**
- * Cleans the meta-socket retransmission queue and the reinject-queue.
- * @sk must be the metasocket.
- */
+/* Cleans the meta-socket retransmission queue and the reinject-queue. */
 static void mptcp_clean_rtx_queue(struct sock *meta_sk, u32 prior_snd_una)
 {
 	struct sk_buff *skb, *tmp, *next;
@@ -350,7 +347,7 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 
 	/* Now, checksum must be 0 */
 	if (unlikely(csum_fold(csum_tcp))) {
-		pr_err("%s csum is wrong: %#x data_seq %u dss_csum_added %d overflowed %d iterations %d\n",
+		pr_err("%s csum is wrong: %#x tcp-seq %u dss_csum_added %d overflowed %d iterations %d\n",
 		       __func__, csum_fold(csum_tcp), TCP_SKB_CB(last)->seq,
 		       dss_csum_added, overflowed, iter);
 
