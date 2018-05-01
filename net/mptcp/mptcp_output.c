@@ -583,6 +583,11 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 
 /* Fragment an skb and update the mptcp meta-data. Due to reinject, we
  * might need to undo some operations done by tcp_fragment.
+ *
+ * Be careful, the skb may come from 3 different places:
+ * - The send-queue (tcp_queue == TCP_FRAG_IN_WRITE_QUEUE)
+ * - The retransmit-queue (tcp_queue == TCP_FRAG_IN_RTX_QUEUE)
+ * - The reinject-queue (reinject == -1)
  */
 static int mptcp_fragment(struct sock *meta_sk, enum tcp_queue tcp_queue,
 			  struct sk_buff *skb, u32 len,
@@ -607,7 +612,10 @@ static int mptcp_fragment(struct sock *meta_sk, enum tcp_queue tcp_queue,
 	if (ret)
 		return ret;
 
-	buff = skb->next;
+	if (tcp_queue == TCP_FRAG_IN_WRITE_QUEUE)
+		buff = skb->next;
+	else
+		buff = skb_rb_next(skb);
 
 	flags = TCP_SKB_CB(skb)->mptcp_flags;
 	TCP_SKB_CB(skb)->mptcp_flags = flags & ~(MPTCPHDR_FIN);
@@ -740,6 +748,7 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 
 	while ((skb = mpcb->sched_ops->next_segment(meta_sk, &reinject, &subsk,
 						    &sublimit))) {
+		enum tcp_queue tcp_queue = TCP_FRAG_IN_WRITE_QUEUE;
 		unsigned int limit;
 
 		WARN(TCP_SKB_CB(skb)->sacked, "sacked: %u reinject: %u",
@@ -755,6 +764,8 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 				__kfree_skb(skb);
 				continue;
 			}
+		} else if (reinject == -1) {
+			tcp_queue = TCP_FRAG_IN_RTX_QUEUE;
 		}
 
 		/* If the segment was cloned (e.g. a meta retransmission),
@@ -817,7 +828,7 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 			limit = min(limit, sublimit);
 
 		if (skb->len > limit &&
-		    unlikely(mptcp_fragment(meta_sk, TCP_FRAG_IN_WRITE_QUEUE,
+		    unlikely(mptcp_fragment(meta_sk, tcp_queue,
 					    skb, limit, gfp, reinject)))
 			break;
 
@@ -1545,7 +1556,7 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 					    TCP_NAGLE_OFF);
 
 	if (skb->len > limit &&
-	    unlikely(mptcp_fragment(meta_sk, TCP_FRAG_IN_WRITE_QUEUE, skb,
+	    unlikely(mptcp_fragment(meta_sk, TCP_FRAG_IN_RTX_QUEUE, skb,
 				    limit, GFP_ATOMIC, 0)))
 		goto failed;
 
