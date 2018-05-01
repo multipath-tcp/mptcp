@@ -125,6 +125,7 @@ static u32 mptcp_v6_cookie_init_seq(struct request_sock *req, const struct sock 
 }
 #endif
 
+/* May be called without holding the meta-level lock */
 static int mptcp_v6_join_init_req(struct request_sock *req, const struct sock *meta_sk,
 				  struct sk_buff *skb, bool want_cookie)
 {
@@ -170,6 +171,9 @@ struct request_sock_ops mptcp6_request_sock_ops __read_mostly = {
 	.syn_ack_timeout =	tcp_syn_ack_timeout,
 };
 
+/* Similar to: tcp_v6_conn_request
+ * May be called without holding the meta-level lock
+ */
 static int mptcp_v6_join_request(struct sock *meta_sk, struct sk_buff *skb)
 {
 	return tcp_conn_request(&mptcp6_request_sock_ops,

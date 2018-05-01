@@ -1521,41 +1521,12 @@ process:
 			inet_csk_reqsk_queue_drop_and_put(sk, req);
 			goto lookup;
 		}
+		if (unlikely(is_meta_sk(sk) && !mptcp_can_new_subflow(sk))) {
+			inet_csk_reqsk_queue_drop_and_put(sk, req);
+			goto lookup;
+		}
 		sock_hold(sk);
 		refcounted = true;
-
-		if (is_meta_sk(sk)) {
-			bh_lock_sock(sk);
-
-			if (!mptcp_can_new_subflow(sk)) {
-				inet_csk_reqsk_queue_drop_and_put(sk, req);
-				bh_unlock_sock(sk);
-
-				goto discard_and_relse;
-			}
-
-			if (sock_owned_by_user(sk)) {
-				th = (const struct tcphdr *)skb->data;
-				hdr = ipv6_hdr(skb);
-				tcp_v6_fill_cb(skb, hdr, th);
-
-				skb->sk = sk;
-				if (unlikely(sk_add_backlog(sk, skb,
-							    sk->sk_rcvbuf + sk->sk_sndbuf))) {
-					reqsk_put(req);
-
-					bh_unlock_sock(sk);
-					__NET_INC_STATS(net, LINUX_MIB_TCPBACKLOGDROP);
-					goto discard_and_relse;
-				}
-
-				reqsk_put(req);
-				bh_unlock_sock(sk);
-				sock_put(sk);
-
-				return 0;
-			}
-		}
 
 		nsk = NULL;
 		if (!tcp_filter(sk, skb)) {
@@ -1566,14 +1537,10 @@ process:
 		}
 		if (!nsk) {
 			reqsk_put(req);
-			if (is_meta_sk(sk))
-				bh_unlock_sock(sk);
 			goto discard_and_relse;
 		}
 		if (nsk == sk) {
 			reqsk_put(req);
-			if (is_meta_sk(sk))
-				bh_unlock_sock(sk);
 			tcp_v6_restore_cb(skb);
 		} else if (tcp_child_process(sk, nsk, skb)) {
 			tcp_v6_send_reset(nsk, skb);

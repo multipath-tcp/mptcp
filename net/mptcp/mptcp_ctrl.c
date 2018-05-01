@@ -1333,6 +1333,7 @@ static u8 mptcp_set_new_pathindex(struct mptcp_cb *mpcb)
 	return i;
 }
 
+/* May be called without holding the meta-level lock */
 int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 		   gfp_t flags)
 {
@@ -2112,6 +2113,11 @@ int mptcp_check_req_fastopen(struct sock *child, struct request_sock *req)
 	/* Handled by the master_sk */
 	tcp_sk(meta_sk)->fastopen_rsk = NULL;
 
+	/* Subflow establishment is now lockless, drop the lock here it will
+	 * be taken again in tcp_child_process().
+	 */
+	bh_unlock_sock(meta_sk);
+
 	return 0;
 }
 
@@ -2141,9 +2147,15 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 		inet_csk_reqsk_queue_add(sk, req, meta_sk);
 	}
 
+	/* Subflow establishment is now lockless, drop the lock here it will
+	 * be taken again in tcp_child_process().
+	 */
+	bh_unlock_sock(meta_sk);
+
 	return 0;
 }
 
+/* May be called without holding the meta-level lock */
 struct sock *mptcp_check_req_child(struct sock *meta_sk,
 				   struct sock *child,
 				   struct request_sock *req,
@@ -2386,6 +2398,7 @@ void mptcp_tsq_sub_deferred(struct sock *meta_sk)
 	}
 }
 
+/* May be called without holding the meta-level lock */
 void mptcp_join_reqsk_init(const struct mptcp_cb *mpcb,
 			   const struct request_sock *req,
 			   struct sk_buff *skb)

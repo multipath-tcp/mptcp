@@ -897,6 +897,11 @@ int tcp_child_process(struct sock *parent, struct sock *child,
 	sk_mark_napi_id(child, skb);
 
 	tcp_segs_in(tcp_sk(child), skb);
+	/* The following will be removed when we allow lockless data-reception
+	 * on the subflows.
+	 */
+	if (mptcp(tcp_sk(child)))
+		bh_lock_sock(meta_sk);
 	if (!sock_owned_by_user(meta_sk)) {
 		ret = tcp_rcv_state_process(child, skb);
 		/* Wakeup parent, send SIGIO */
@@ -912,9 +917,9 @@ int tcp_child_process(struct sock *parent, struct sock *child,
 		__sk_add_backlog(meta_sk, skb);
 	}
 
+	bh_unlock_sock(child);
 	if (mptcp(tcp_sk(child)))
-		bh_unlock_sock(child);
-	bh_unlock_sock(meta_sk);
+		bh_unlock_sock(meta_sk);
 	sock_put(child);
 	return ret;
 }
