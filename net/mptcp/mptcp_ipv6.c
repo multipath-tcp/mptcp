@@ -306,7 +306,8 @@ int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	lockdep_set_class_and_name(&(sk)->sk_lock.slock, &meta_slock_key, meta_slock_key_name);
 	lockdep_init_map(&(sk)->sk_lock.dep_map, meta_key_name, &meta_key, 0);
 
-	if (mptcp_add_sock(meta_sk, sk, loc->loc6_id, rem->rem6_id, GFP_KERNEL)) {
+	ret = mptcp_add_sock(meta_sk, sk, loc->loc6_id, rem->rem6_id, GFP_KERNEL);
+	if (ret) {
 		net_err_ratelimited("%s mptcp_add_sock failed ret: %d\n",
 				    __func__, ret);
 		goto error;
