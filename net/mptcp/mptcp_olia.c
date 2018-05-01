@@ -105,7 +105,7 @@ static void mptcp_get_epsilon(const struct mptcp_cb *mpcb)
 	struct tcp_sock *tp;
 	struct sock *sk;
 	u64 tmp_int, tmp_rtt, best_int = 0, best_rtt = 1;
-	u32 max_cwnd, tmp_cwnd;
+	u32 max_cwnd, tmp_cwnd, established_cnt = 0;
 	u8 M = 0, B_not_M = 0;
 
 	/* TODO - integrate this in the following loop - we just want to iterate once */
@@ -119,6 +119,8 @@ static void mptcp_get_epsilon(const struct mptcp_cb *mpcb)
 
 		if (!mptcp_olia_sk_can_send(sk))
 			continue;
+
+		established_cnt++;
 
 		tmp_rtt = (u64)tp->srtt_us * tp->srtt_us;
 		/* TODO - check here and rename variables */
@@ -173,10 +175,10 @@ static void mptcp_get_epsilon(const struct mptcp_cb *mpcb)
 			if (tmp_cwnd < max_cwnd &&
 			    (u64)tmp_int * best_rtt == (u64)best_int * tmp_rtt) {
 				ca->epsilon_num = 1;
-				ca->epsilon_den = mpcb->cnt_established * B_not_M;
+				ca->epsilon_den = established_cnt * B_not_M;
 			} else if (tmp_cwnd == max_cwnd) {
 				ca->epsilon_num = -1;
-				ca->epsilon_den = mpcb->cnt_established  * M;
+				ca->epsilon_den = established_cnt * M;
 			} else {
 				ca->epsilon_num = 0;
 				ca->epsilon_den = 1;

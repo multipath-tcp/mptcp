@@ -2357,11 +2357,9 @@ fallback:
 /* Similar to tcp_should_expand_sndbuf */
 bool mptcp_should_expand_sndbuf(const struct sock *sk)
 {
-	const struct sock *sk_it;
 	const struct sock *meta_sk = mptcp_meta_sk(sk);
 	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	int cnt_backups = 0;
-	int backup_available = 0;
+	const struct sock *sk_it;
 
 	/* We circumvent this check in tcp_check_space, because we want to
 	 * always call sk_write_space. So, we reproduce the check here.
@@ -2393,24 +2391,10 @@ bool mptcp_should_expand_sndbuf(const struct sock *sk)
 		if (!mptcp_sk_can_send(sk_it))
 			continue;
 
-		/* Backup-flows have to be counted - if there is no other
-		 * subflow we take the backup-flow into account.
-		 */
-		if (tp_it->mptcp->rcv_low_prio || tp_it->mptcp->low_prio)
-			cnt_backups++;
-
-		if (tcp_packets_in_flight(tp_it) < tp_it->snd_cwnd) {
-			if (tp_it->mptcp->rcv_low_prio || tp_it->mptcp->low_prio) {
-				backup_available = 1;
-				continue;
-			}
+		if (tcp_packets_in_flight(tp_it) < tp_it->snd_cwnd)
 			return true;
-		}
 	}
 
-	/* Backup-flow is available for sending - update send-buffer */
-	if (meta_tp->mpcb->cnt_established == cnt_backups && backup_available)
-		return true;
 	return false;
 }
 

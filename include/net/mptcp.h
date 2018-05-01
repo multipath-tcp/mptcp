@@ -166,7 +166,6 @@ struct mptcp_tcp_sock {
 	u16	map_data_len;
 	u16	slave_sk:1,
 		fully_established:1,
-		establish_increased:1,
 		second_packet:1,
 		attached:1,
 		send_mp_fail:1,
@@ -278,9 +277,6 @@ struct mptcp_cb {
 		passive_close:1,
 		snd_hiseq_index:1, /* Index in snd_high_order of snd_nxt */
 		rcv_hiseq_index:1; /* Index in rcv_high_order of rcv_nxt */
-
-	/* socket count in this connection */
-	u8 cnt_established;
 
 #define MPTCP_SCHED_DATA_SIZE 8
 	u8 mptcp_sched[MPTCP_SCHED_DATA_SIZE] __aligned(8);

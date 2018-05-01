@@ -86,10 +86,6 @@ static void mptcp_balia_recalc_ai(const struct sock *sk)
 	if (!mpcb)
 		return;
 
-	/* Only one subflow left - fall back to normal reno-behavior */
-	if (mpcb->cnt_established <= 1)
-		goto exit;
-
 	/* Find max_rate first */
 	mptcp_for_each_sk(mpcb, sub_sk) {
 		struct tcp_sock *sub_tp = tcp_sk(sub_sk);
@@ -186,7 +182,6 @@ static void mptcp_balia_set_state(struct sock *sk, u8 ca_state)
 static void mptcp_balia_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	const struct mptcp_cb *mpcb = tp->mpcb;
 	int snd_cwnd;
 
 	if (!mptcp(tp)) {
@@ -209,10 +204,7 @@ static void mptcp_balia_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 		mptcp_set_forced(sk, 0);
 	}
 
-	if (mpcb->cnt_established > 1)
-		snd_cwnd = (int) mptcp_get_ai(sk);
-	else
-		snd_cwnd = tp->snd_cwnd;
+	snd_cwnd = (int)mptcp_get_ai(sk);
 
 	if (tp->snd_cwnd_cnt >= snd_cwnd) {
 		if (tp->snd_cwnd < tp->snd_cwnd_clamp) {
@@ -229,9 +221,8 @@ static void mptcp_balia_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 static u32 mptcp_balia_ssthresh(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
-	const struct mptcp_cb *mpcb = tp->mpcb;
 
-	if (unlikely(!mptcp(tp) || mpcb->cnt_established <= 1))
+	if (unlikely(!mptcp(tp)))
 		return tcp_reno_ssthresh(sk);
 	else
 		return max((u32)(tp->snd_cwnd - mptcp_get_md(sk)), 1U);

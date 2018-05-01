@@ -59,7 +59,7 @@ static void mctcp_desync_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	if (!mptcp(tp) || (1 == tp->mpcb->cnt_established)) {
+	if (!mptcp(tp)) {
 		tcp_reno_cong_avoid(sk, ack, acked);
 		return;
 	} else if (!tcp_is_cwnd_limited(sk)) {
@@ -121,7 +121,7 @@ static u32 mctcp_desync_ssthresh(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	if (!mptcp(tp) || (1 == tp->mpcb->cnt_established)) {
+	if (!mptcp(tp)) {
 		return max(tp->snd_cwnd >> 1U, 2U);
 	} else {
 		struct mctcp_desync *ca = inet_csk_ca(mptcp_meta_sk(sk));

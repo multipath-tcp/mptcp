@@ -87,12 +87,6 @@ static void mptcp_ccc_recalc_alpha(const struct sock *sk)
 	if (!mpcb)
 		return;
 
-	/* Only one subflow left - fall back to normal reno-behavior
-	 * (set alpha to 1)
-	 */
-	if (mpcb->cnt_established <= 1)
-		goto exit;
-
 	/* Do regular alpha-calculation for multiple subflows */
 
 	/* Find the max numerator of the alpha-calculation */
@@ -137,8 +131,7 @@ static void mptcp_ccc_recalc_alpha(const struct sock *sk)
 	}
 	sum_denominator *= sum_denominator;
 	if (unlikely(!sum_denominator)) {
-		pr_err("%s: sum_denominator == 0, cnt_established:%d\n",
-		       __func__, mpcb->cnt_established);
+		pr_err("%s: sum_denominator == 0\n", __func__);
 		mptcp_for_each_sk(mpcb, sub_sk) {
 			struct tcp_sock *sub_tp = tcp_sk(sub_sk);
 			pr_err("%s: pi:%d, state:%d\n, rtt:%u, cwnd: %u",
@@ -183,8 +176,8 @@ static void mptcp_ccc_set_state(struct sock *sk, u8 ca_state)
 static void mptcp_ccc_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	const struct mptcp_cb *mpcb = tp->mpcb;
 	int snd_cwnd;
+	u64 alpha;
 
 	if (!mptcp(tp)) {
 		tcp_reno_cong_avoid(sk, ack, acked);
@@ -206,27 +199,22 @@ static void mptcp_ccc_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 		mptcp_set_forced(mptcp_meta_sk(sk), 0);
 	}
 
-	if (mpcb->cnt_established > 1) {
-		u64 alpha = mptcp_get_alpha(mptcp_meta_sk(sk));
+	alpha = mptcp_get_alpha(mptcp_meta_sk(sk));
 
-		/* This may happen, if at the initialization, the mpcb
-		 * was not yet attached to the sock, and thus
-		 * initializing alpha failed.
-		 */
-		if (unlikely(!alpha))
-			alpha = 1;
+	/* This may happen, if at the initialization, the mpcb
+	 * was not yet attached to the sock, and thus
+	 * initializing alpha failed.
+	 */
+	if (unlikely(!alpha))
+		alpha = 1;
 
-		snd_cwnd = (int) div_u64 ((u64) mptcp_ccc_scale(1, alpha_scale),
-						alpha);
+	snd_cwnd = (int)div_u64((u64)mptcp_ccc_scale(1, alpha_scale), alpha);
 
-		/* snd_cwnd_cnt >= max (scale * tot_cwnd / alpha, cwnd)
-		 * Thus, we select here the max value.
-		 */
-		if (snd_cwnd < tp->snd_cwnd)
-			snd_cwnd = tp->snd_cwnd;
-	} else {
+	/* snd_cwnd_cnt >= max (scale * tot_cwnd / alpha, cwnd)
+	 * Thus, we select here the max value.
+	 */
+	if (snd_cwnd < tp->snd_cwnd)
 		snd_cwnd = tp->snd_cwnd;
-	}
 
 	if (tp->snd_cwnd_cnt >= snd_cwnd) {
 		if (tp->snd_cwnd < tp->snd_cwnd_clamp) {

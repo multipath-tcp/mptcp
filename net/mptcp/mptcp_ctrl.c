@@ -737,11 +737,6 @@ static void mptcp_set_state(struct sock *sk)
 		tcp_sk(meta_sk)->lsndtime = tcp_jiffies32;
 	}
 
-	if (sk->sk_state == TCP_ESTABLISHED) {
-		tcp_sk(sk)->mptcp->establish_increased = 1;
-		tcp_sk(sk)->mpcb->cnt_established++;
-	}
-
 	if (sk->sk_state == TCP_CLOSE) {
 		if (!sock_flag(sk, SOCK_DEAD))
 			mptcp_sub_close(sk, 0);
@@ -1449,9 +1444,6 @@ void mptcp_del_sock(struct sock *sk)
 			}
 		}
 	}
-	if (tp->mptcp->establish_increased)
-		mpcb->cnt_established--;
-
 	tp->mptcp->next = NULL;
 	tp->mptcp->attached = 0;
 	mpcb->path_index_bits &= ~(1 << tp->mptcp->path_index);
