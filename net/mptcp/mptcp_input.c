@@ -1151,7 +1151,6 @@ struct mp_join *mptcp_find_join(const struct sk_buff *skb)
 
 int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 {
-	const struct mptcp_cb *mpcb;
 	struct sock *meta_sk;
 	u32 token;
 	bool meta_v4;
@@ -1184,16 +1183,6 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 		return -1;
 	}
 
-	mpcb = tcp_sk(meta_sk)->mpcb;
-	if (!mptcp_can_new_subflow(meta_sk)) {
-		/* We are in fallback-mode on the reception-side -
-		 * no new subflows!
-		 */
-		sock_put(meta_sk); /* Taken by mptcp_hash_find */
-		MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_JOINFALLBACK);
-		return -1;
-	}
-
 	/* Coming from time-wait-sock processing in tcp_v4_rcv.
 	 * We have to deschedule it before continuing, because otherwise
 	 * mptcp_v4_do_rcv will hit again on it inside tcp_v4_hnd_req.
@@ -1204,26 +1193,13 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 	/* OK, this is a new syn/join, let's create a new open request and
 	 * send syn+ack
 	 */
-	bh_lock_sock_nested(meta_sk);
-	if (sock_owned_by_user(meta_sk)) {
-		skb->sk = meta_sk;
-		if (unlikely(sk_add_backlog(meta_sk, skb,
-					    meta_sk->sk_rcvbuf + meta_sk->sk_sndbuf))) {
-			bh_unlock_sock(meta_sk);
-			__NET_INC_STATS(sock_net(meta_sk),
-					 LINUX_MIB_TCPBACKLOGDROP);
-			sock_put(meta_sk); /* Taken by mptcp_hash_find */
-			kfree_skb(skb);
-			return 1;
-		}
-	} else if (skb->protocol == htons(ETH_P_IP)) {
+	if (skb->protocol == htons(ETH_P_IP)) {
 		tcp_v4_do_rcv(meta_sk, skb);
 #if IS_ENABLED(CONFIG_IPV6)
 	} else {
 		tcp_v6_do_rcv(meta_sk, skb);
 #endif /* CONFIG_IPV6 */
 	}
-	bh_unlock_sock(meta_sk);
 	sock_put(meta_sk); /* Taken by mptcp_hash_find */
 	return 1;
 }
@@ -1260,48 +1236,20 @@ int mptcp_do_join_short(struct sk_buff *skb,
 	/* OK, this is a new syn/join, let's create a new open request and
 	 * send syn+ack
 	 */
-	bh_lock_sock(meta_sk);
 
-	/* This check is also done in mptcp_vX_do_rcv. But, there we cannot
-	 * call tcp_vX_send_reset, because we hold already two socket-locks.
-	 * (the listener and the meta from above)
-	 *
-	 * And the send-reset will try to take yet another one (ip_send_reply).
-	 * Thus, we propagate the reset up to tcp_rcv_state_process.
+	/* mptcp_v4_do_rcv tries to free the skb - we prevent this, as
+	 * the skb will finally be freed by tcp_v4_do_rcv (where we are
+	 * coming from)
 	 */
-	if (!mptcp_can_new_subflow(meta_sk)) {
-		MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_JOINFALLBACK);
-		bh_unlock_sock(meta_sk);
-		sock_put(meta_sk); /* Taken by mptcp_hash_find */
-		return -1;
-	}
-
-	if (sock_owned_by_user(meta_sk)) {
-		skb->sk = meta_sk;
-		if (unlikely(sk_add_backlog(meta_sk, skb,
-					    meta_sk->sk_rcvbuf + meta_sk->sk_sndbuf)))
-			__NET_INC_STATS(net, LINUX_MIB_TCPBACKLOGDROP);
-		else
-			/* Must make sure that upper layers won't free the
-			 * skb if it is added to the backlog-queue.
-			 */
-			skb_get(skb);
-	} else {
-		/* mptcp_v4_do_rcv tries to free the skb - we prevent this, as
-		 * the skb will finally be freed by tcp_v4_do_rcv (where we are
-		 * coming from)
-		 */
-		skb_get(skb);
-		if (skb->protocol == htons(ETH_P_IP)) {
-			tcp_v4_do_rcv(meta_sk, skb);
+	skb_get(skb);
+	if (skb->protocol == htons(ETH_P_IP)) {
+		tcp_v4_do_rcv(meta_sk, skb);
 #if IS_ENABLED(CONFIG_IPV6)
-		} else { /* IPv6 */
-			tcp_v6_do_rcv(meta_sk, skb);
+	} else { /* IPv6 */
+		tcp_v6_do_rcv(meta_sk, skb);
 #endif /* CONFIG_IPV6 */
-		}
 	}
 
-	bh_unlock_sock(meta_sk);
 	sock_put(meta_sk); /* Taken by mptcp_hash_find */
 	return 0;
 }
