@@ -67,7 +67,6 @@ static void mctcp_desync_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 	} else {
 		const struct mctcp_desync *ca = inet_csk_ca(mptcp_meta_sk(sk));
 		const u8 subfid = tp->mptcp->path_index;
-		const struct sock *sub_sk;
 
 		/* current aggregated cwnd */
 		u32 agg_cwnd = 0;
@@ -90,11 +89,14 @@ static void mctcp_desync_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 				tp->snd_ssthresh = tp->snd_cwnd = INI_MIN_CWND;
 			}
 			return;
-		}
-		  /* In dangerous area, increase slowly and linearly. */
-		  else {
+		} else {
+			/* In dangerous area, increase slowly and linearly. */
+			const struct mptcp_tcp_sock *mptcp;
+
 			/* get total cwnd and the subflow that has min cwnd */
-			mptcp_for_each_sk(tp->mpcb, sub_sk) {
+			mptcp_for_each_sub(tp->mpcb, mptcp) {
+				const struct sock *sub_sk = mptcp_to_sock(mptcp);
+
 				if (mctcp_cc_sk_can_send(sub_sk)) {
 					const struct tcp_sock *sub_tp =
 								tcp_sk(sub_sk);
@@ -126,12 +128,14 @@ static u32 mctcp_desync_ssthresh(struct sock *sk)
 	} else {
 		struct mctcp_desync *ca = inet_csk_ca(mptcp_meta_sk(sk));
 		const u8 subfid = tp->mptcp->path_index;
-		const struct sock *sub_sk;
+		const struct mptcp_tcp_sock *mptcp;
 		u32 max_cwnd = 0;
 		u8 max_cwnd_subfid = 0;
 
 		/* Find the subflow that has the max cwnd. */
-		mptcp_for_each_sk(tp->mpcb, sub_sk) {
+		mptcp_for_each_sub(tp->mpcb, mptcp) {
+			const struct sock *sub_sk = mptcp_to_sock(mptcp);
+
 			if (mctcp_cc_sk_can_send(sub_sk)) {
 				const struct tcp_sock *sub_tp = tcp_sk(sub_sk);
 				if (max_cwnd < sub_tp->snd_cwnd) {

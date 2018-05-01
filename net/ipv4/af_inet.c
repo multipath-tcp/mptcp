@@ -709,13 +709,14 @@ int inet_accept(struct socket *sock, struct socket *newsock, int flags,
 	sock_rps_record_flow(sk2);
 
 	if (sk2->sk_protocol == IPPROTO_TCP && mptcp(tcp_sk(sk2))) {
-		struct sock *sk_it = sk2;
+		struct mptcp_tcp_sock *mptcp;
 
-		mptcp_for_each_sk(tcp_sk(sk2)->mpcb, sk_it)
-			sock_rps_record_flow(sk_it);
+		mptcp_for_each_sub(tcp_sk(sk2)->mpcb, mptcp) {
+			sock_rps_record_flow(mptcp_to_sock(mptcp));
+		}
 
 		if (tcp_sk(sk2)->mpcb->master_sk) {
-			sk_it = tcp_sk(sk2)->mpcb->master_sk;
+			struct sock *sk_it = tcp_sk(sk2)->mpcb->master_sk;
 
 			write_lock_bh(&sk_it->sk_callback_lock);
 			sk_it->sk_wq = newsock->wq;

@@ -52,10 +52,12 @@ static bool redsched_get_active_valid_sks(struct sock *meta_sk)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
-	struct sock *sk;
+	struct mptcp_tcp_sock *mptcp;
 	int active_valid_sks = 0;
 
-	mptcp_for_each_sk(mpcb, sk) {
+	mptcp_for_each_sub(mpcb, mptcp) {
+		struct sock *sk = mptcp_to_sock(mptcp);
+
 		if (subflow_is_active((struct tcp_sock *)sk) &&
 		    !mptcp_is_def_unavailable(sk))
 			active_valid_sks++;
@@ -88,6 +90,21 @@ static bool redsched_use_subflow(struct sock *meta_sk,
 	return false;
 }
 
+#define mptcp_entry_next_rcu(__mptcp)						\
+	hlist_entry_safe(rcu_dereference_raw(hlist_next_rcu(			\
+		&(__mptcp)->node)), struct mptcp_tcp_sock, node)
+
+static void redundant_update_next_subflow(struct tcp_sock *tp,
+					  struct redsched_cb_data *cb_data)
+{
+	struct mptcp_tcp_sock *mptcp = mptcp_entry_next_rcu(tp->mptcp);
+
+	if (mptcp)
+		cb_data->next_subflow = mptcp->tp;
+	else
+		cb_data->next_subflow = NULL;
+}
+
 static struct sock *redundant_get_subflow(struct sock *meta_sk,
 					  struct sk_buff *skb,
 					  bool zero_wnd_test)
@@ -95,14 +112,16 @@ static struct sock *redundant_get_subflow(struct sock *meta_sk,
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	struct redsched_cb_data *cb_data = redsched_get_cb_data(meta_tp);
-	struct tcp_sock *first_tp = cb_data->next_subflow;
-	struct sock *sk;
-	struct tcp_sock *tp;
+	struct tcp_sock *first_tp = cb_data->next_subflow, *tp;
+	struct mptcp_tcp_sock *mptcp;
+	int found = 0;
 
 	/* Answer data_fin on same subflow */
 	if (meta_sk->sk_shutdown & RCV_SHUTDOWN &&
 	    skb && mptcp_is_data_fin(skb)) {
-		mptcp_for_each_sk(mpcb, sk) {
+		mptcp_for_each_sub(mpcb, mptcp) {
+			struct sock *sk = mptcp_to_sock(mptcp);
+
 			if (tcp_sk(sk)->mptcp->path_index ==
 				mpcb->dfin_path_index &&
 			    mptcp_is_available(sk, skb, zero_wnd_test))
@@ -110,26 +129,53 @@ static struct sock *redundant_get_subflow(struct sock *meta_sk,
 		}
 	}
 
-	if (!first_tp)
-		first_tp = mpcb->connection_list;
+	if (!first_tp && !hlist_empty(&mpcb->conn_list)) {
+		first_tp = hlist_entry_safe(rcu_dereference_raw(hlist_first_rcu(&mpcb->conn_list)),
+					    struct mptcp_tcp_sock, node)->tp;
+	}
 	tp = first_tp;
 
-	/* still NULL (no subflow in connection_list?) */
+	/* still NULL (no subflow in conn_list?) */
 	if (!first_tp)
 		return NULL;
 
-	/* Search for any subflow to send it */
-	do {
+	/* Search for a subflow to send it.
+	 *
+	 * We want to pick a subflow that is after 'first_tp' in the list of subflows.
+	 * Thus, the first mptcp_for_each_sub()-loop tries to walk the list up
+	 * to the subflow 'tp' and then checks whether any one of the remaining
+	 * ones is eligible to send.
+	 * The second mptcp_for_each-sub()-loop is then iterating from the
+	 * beginning of the list up to 'first_tp'.
+	 */
+	mptcp_for_each_sub(mpcb, mptcp) {
+		/* We go up to the subflow 'tp' and start from there */
+		if (tp == mptcp->tp)
+			found = 1;
+
+		if (!found)
+			continue;
+		tp = mptcp->tp;
+
 		if (mptcp_is_available((struct sock *)tp, skb,
 				       zero_wnd_test)) {
-			cb_data->next_subflow = tp->mptcp->next;
+			redundant_update_next_subflow(tp, cb_data);
 			return (struct sock *)tp;
 		}
+	}
 
-		tp = tp->mptcp->next;
-		if (!tp)
-			tp = mpcb->connection_list;
-	} while (tp != first_tp);
+	mptcp_for_each_sub(mpcb, mptcp) {
+		tp = mptcp->tp;
+
+		if (tp == first_tp)
+			break;
+
+		if (mptcp_is_available((struct sock *)tp, skb,
+				       zero_wnd_test)) {
+			redundant_update_next_subflow(tp, cb_data);
+			return (struct sock *)tp;
+		}
+	}
 
 	/* No space */
 	return NULL;
@@ -190,10 +236,11 @@ static struct sk_buff *redundant_next_segment(struct sock *meta_sk,
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	struct redsched_cb_data *cb_data = redsched_get_cb_data(meta_tp);
-	struct tcp_sock *first_tp = cb_data->next_subflow;
-	struct tcp_sock *tp;
-	struct sk_buff *skb;
+	struct tcp_sock *first_tp = cb_data->next_subflow, *tp;
+	struct mptcp_tcp_sock *mptcp;
 	int active_valid_sks = -1;
+	struct sk_buff *skb;
+	int found = 0;
 
 	/* As we set it, we have to reset it as well. */
 	*limit = 0;
@@ -215,10 +262,12 @@ static struct sk_buff *redundant_next_segment(struct sock *meta_sk,
 
 	/* Then try indistinctly redundant and normal skbs */
 
-	if (!first_tp)
-		first_tp = mpcb->connection_list;
+	if (!first_tp && !hlist_empty(&mpcb->conn_list)) {
+		first_tp = hlist_entry_safe(rcu_dereference_raw(hlist_first_rcu(&mpcb->conn_list)),
+					    struct mptcp_tcp_sock, node)->tp;
+	}
 
-	/* still NULL (no subflow in connection_list?) */
+	/* still NULL (no subflow in conn_list?) */
 	if (!first_tp)
 		return NULL;
 
@@ -226,8 +275,24 @@ static struct sk_buff *redundant_next_segment(struct sock *meta_sk,
 
 	*reinject = 0;
 	active_valid_sks = redsched_get_active_valid_sks(meta_sk);
-	do {
+
+	/* We want to pick a subflow that is after 'first_tp' in the list of subflows.
+	 * Thus, the first mptcp_for_each_sub()-loop tries to walk the list up
+	 * to the subflow 'tp' and then checks whether any one of the remaining
+	 * ones can send a segment.
+	 * The second mptcp_for_each-sub()-loop is then iterating from the
+	 * beginning of the list up to 'first_tp'.
+	 */
+	mptcp_for_each_sub(mpcb, mptcp) {
 		struct redsched_sock_data *sk_data;
+
+		if (tp == mptcp->tp)
+			found = 1;
+
+		if (!found)
+			continue;
+
+		tp = mptcp->tp;
 
 		/* Correct the skb pointers of the current subflow */
 		sk_data = redsched_get_sock_data(tp);
@@ -239,18 +304,41 @@ static struct sk_buff *redundant_next_segment(struct sock *meta_sk,
 						skb)) {
 			sk_data->skb = skb;
 			sk_data->skb_end_seq = TCP_SKB_CB(skb)->end_seq;
-			cb_data->next_subflow = tp->mptcp->next;
+			redundant_update_next_subflow(tp, cb_data);
 			*subsk = (struct sock *)tp;
 
 			if (TCP_SKB_CB(skb)->path_mask)
 				*reinject = -1;
 			return skb;
 		}
+	}
 
-		tp = tp->mptcp->next;
-		if (!tp)
-			tp = mpcb->connection_list;
-	} while (tp != first_tp);
+	mptcp_for_each_sub(mpcb, mptcp) {
+		struct redsched_sock_data *sk_data;
+
+		tp = mptcp->tp;
+
+		if (tp == first_tp)
+			break;
+
+		/* Correct the skb pointers of the current subflow */
+		sk_data = redsched_get_sock_data(tp);
+		redsched_correct_skb_pointers(meta_sk, sk_data);
+
+		skb = redundant_next_skb_from_queue(&meta_sk->sk_write_queue,
+						    sk_data->skb, meta_sk);
+		if (skb && redsched_use_subflow(meta_sk, active_valid_sks, tp,
+						skb)) {
+			sk_data->skb = skb;
+			sk_data->skb_end_seq = TCP_SKB_CB(skb)->end_seq;
+			redundant_update_next_subflow(tp, cb_data);
+			*subsk = (struct sock *)tp;
+
+			if (TCP_SKB_CB(skb)->path_mask)
+				*reinject = -1;
+			return skb;
+		}
+	}
 
 	/* Nothing to send */
 	return NULL;
@@ -265,7 +353,7 @@ static void redundant_release(struct sock *sk)
 	 * the pointer
 	 */
 	if (cb_data->next_subflow == tp)
-		cb_data->next_subflow = tp->mptcp->next;
+		redundant_update_next_subflow(tp, cb_data);
 }
 
 static struct mptcp_sched_ops mptcp_sched_redundant = {

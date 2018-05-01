@@ -156,7 +156,7 @@ struct mptcp_options_received {
 };
 
 struct mptcp_tcp_sock {
-	struct tcp_sock	*next;		/* Next subflow socket */
+	struct hlist_node node;
 	struct hlist_node cb_list;
 	struct mptcp_options_received rx_opt;
 
@@ -257,7 +257,7 @@ struct mptcp_sched_ops {
 
 struct mptcp_cb {
 	/* list of sockets in this multipath connection */
-	struct tcp_sock *connection_list;
+	struct hlist_head conn_list;
 	/* list of sockets that need a call to release_cb */
 	struct hlist_head callback_list;
 
@@ -312,7 +312,7 @@ struct mptcp_cb {
 	/***** Start of fields, used for subflow establishment */
 	struct sock *meta_sk;
 
-	/* Master socket, also part of the connection_list, this
+	/* Master socket, also part of the conn_list, this
 	 * socket is the one that the application sees.
 	 */
 	struct sock *master_sk;
@@ -664,21 +664,17 @@ extern struct workqueue_struct *mptcp_wq;
 			pr_err(fmt, ##args);					\
 	} while (0)
 
-/* Iterates over all subflows */
-#define mptcp_for_each_tp(mpcb, tp)					\
-	for ((tp) = (mpcb)->connection_list; (tp); (tp) = (tp)->mptcp->next)
+static inline struct sock *mptcp_to_sock(const struct mptcp_tcp_sock *mptcp)
+{
+	return (struct sock *)mptcp->tp;
+}
 
-#define mptcp_for_each_sk(mpcb, sk)					\
-	for ((sk) = (struct sock *)(mpcb)->connection_list;		\
-	     sk;							\
-	     sk = (struct sock *)tcp_sk(sk)->mptcp->next)
+#define mptcp_for_each_sub(__mpcb, __mptcp)					\
+	hlist_for_each_entry_rcu(__mptcp, &((__mpcb)->conn_list), node)
 
-#define mptcp_for_each_sk_safe(__mpcb, __sk, __temp)			\
-	for (__sk = (struct sock *)(__mpcb)->connection_list,		\
-	     __temp = __sk ? (struct sock *)tcp_sk(__sk)->mptcp->next : NULL; \
-	     __sk;							\
-	     __sk = __temp,						\
-	     __temp = __sk ? (struct sock *)tcp_sk(__sk)->mptcp->next : NULL)
+/* Must be called with the appropriate lock held */
+#define mptcp_for_each_sub_safe(__mpcb, __mptcp, __tmp)				\
+	hlist_for_each_entry_safe(__mptcp, __tmp, &((__mpcb)->conn_list), node)
 
 /* Iterates over all bit set to 1 in a bitset */
 #define mptcp_for_each_bit_set(b, i)					\
@@ -932,12 +928,14 @@ struct request_sock *rev_mptcp_rsk(const struct mptcp_request_sock *req)
 
 static inline bool mptcp_can_sendpage(struct sock *sk)
 {
-	struct sock *sk_it;
+	struct mptcp_tcp_sock *mptcp;
 
 	if (tcp_sk(sk)->mpcb->dss_csum)
 		return false;
 
-	mptcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it) {
+	mptcp_for_each_sub(tcp_sk(sk)->mpcb, mptcp) {
+		struct sock *sk_it = mptcp_to_sock(mptcp);
+
 		if (!(sk_it->sk_route_caps & NETIF_F_SG) ||
 		    !sk_check_csum_caps(sk_it))
 			return false;
@@ -972,9 +970,12 @@ static inline void mptcp_send_reset(struct sock *sk)
 static inline void mptcp_sub_force_close_all(struct mptcp_cb *mpcb,
 					     struct sock *except)
 {
-	struct sock *sk_it, *tmp;
+	struct mptcp_tcp_sock *mptcp;
+	struct hlist_node *tmp;
 
-	mptcp_for_each_sk_safe(mpcb, sk_it, tmp) {
+	mptcp_for_each_sub_safe(mpcb, mptcp, tmp) {
+		struct sock *sk_it = mptcp_to_sock(mptcp);
+
 		if (sk_it != except)
 			mptcp_send_reset(sk_it);
 	}
@@ -1161,12 +1162,14 @@ static inline int mptcp_sk_can_send_ack(const struct sock *sk)
 /* Only support GSO if all subflows supports it */
 static inline bool mptcp_sk_can_gso(const struct sock *meta_sk)
 {
-	struct sock *sk;
+	struct mptcp_tcp_sock *mptcp;
 
 	if (tcp_sk(meta_sk)->mpcb->dss_csum)
 		return false;
 
-	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk) {
+	mptcp_for_each_sub(tcp_sk(meta_sk)->mpcb, mptcp) {
+		struct sock *sk = mptcp_to_sock(mptcp);
+
 		if (!mptcp_sk_can_send(sk))
 			continue;
 		if (!sk_can_gso(sk))
@@ -1177,12 +1180,14 @@ static inline bool mptcp_sk_can_gso(const struct sock *meta_sk)
 
 static inline bool mptcp_can_sg(const struct sock *meta_sk)
 {
-	struct sock *sk;
+	struct mptcp_tcp_sock *mptcp;
 
 	if (tcp_sk(meta_sk)->mpcb->dss_csum)
 		return false;
 
-	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk) {
+	mptcp_for_each_sub(tcp_sk(meta_sk)->mpcb, mptcp) {
+		struct sock *sk = mptcp_to_sock(mptcp);
+
 		if (!mptcp_sk_can_send(sk))
 			continue;
 		if (!(sk->sk_route_caps & NETIF_F_SG))
@@ -1193,9 +1198,9 @@ static inline bool mptcp_can_sg(const struct sock *meta_sk)
 
 static inline void mptcp_set_rto(struct sock *sk)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *sk_it;
 	struct inet_connection_sock *micsk = inet_csk(mptcp_meta_sk(sk));
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct mptcp_tcp_sock *mptcp;
 	__u32 max_rto = 0;
 
 	/* We are in recovery-phase on the MPTCP-level. Do not update the
@@ -1204,7 +1209,9 @@ static inline void mptcp_set_rto(struct sock *sk)
 	if (micsk->icsk_retransmits)
 		return;
 
-	mptcp_for_each_sk(tp->mpcb, sk_it) {
+	mptcp_for_each_sub(tp->mpcb, mptcp) {
+		struct sock *sk_it = mptcp_to_sock(mptcp);
+
 		if ((mptcp_sk_can_send(sk_it) || sk->sk_state == TCP_SYN_RECV) &&
 		    inet_csk(sk_it)->icsk_rto > max_rto)
 			max_rto = inet_csk(sk_it)->icsk_rto;
@@ -1293,10 +1300,10 @@ static inline bool mptcp_can_new_subflow(const struct sock *meta_sk)
 
 static inline int mptcp_subflow_count(const struct mptcp_cb *mpcb)
 {
-	struct sock *sk;
+	struct mptcp_tcp_sock *mptcp;
 	int i = 0;
 
-	mptcp_for_each_sk(mpcb, sk)
+	mptcp_for_each_sub(mpcb, mptcp)
 		i++;
 
 	return i;
@@ -1314,12 +1321,8 @@ bool mptcp_prune_ofo_queue(struct sock *sk);
 	do {				\
 	} while (0)
 
-/* Without MPTCP, we just do one iteration
- * over the only socket available. This assumes that
- * the sk/tp arg is the socket in that case.
- */
-#define mptcp_for_each_sk(mpcb, sk)
-#define mptcp_for_each_sk_safe(__mpcb, __sk, __temp)
+#define mptcp_for_each_sub(__mpcb, __mptcp)					\
+	if (0)
 
 #define MPTCP_INC_STATS(net, field)	\
 	do {				\

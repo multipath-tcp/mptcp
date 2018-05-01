@@ -80,7 +80,7 @@ static inline void mptcp_set_forced(const struct sock *meta_sk, bool force)
 static void mptcp_ccc_recalc_alpha(const struct sock *sk)
 {
 	const struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
-	const struct sock *sub_sk;
+	const struct mptcp_tcp_sock *mptcp;
 	int best_cwnd = 0, best_rtt = 0, can_send = 0;
 	u64 max_numerator = 0, sum_denominator = 0, alpha = 1;
 
@@ -90,7 +90,8 @@ static void mptcp_ccc_recalc_alpha(const struct sock *sk)
 	/* Do regular alpha-calculation for multiple subflows */
 
 	/* Find the max numerator of the alpha-calculation */
-	mptcp_for_each_sk(mpcb, sub_sk) {
+	mptcp_for_each_sub(mpcb, mptcp) {
+		const struct sock *sub_sk = mptcp_to_sock(mptcp);
 		struct tcp_sock *sub_tp = tcp_sk(sub_sk);
 		u64 tmp;
 
@@ -118,7 +119,8 @@ static void mptcp_ccc_recalc_alpha(const struct sock *sk)
 		goto exit;
 
 	/* Calculate the denominator */
-	mptcp_for_each_sk(mpcb, sub_sk) {
+	mptcp_for_each_sub(mpcb, mptcp) {
+		const struct sock *sub_sk = mptcp_to_sock(mptcp);
 		struct tcp_sock *sub_tp = tcp_sk(sub_sk);
 
 		if (!mptcp_ccc_sk_can_send(sub_sk))
@@ -132,7 +134,8 @@ static void mptcp_ccc_recalc_alpha(const struct sock *sk)
 	sum_denominator *= sum_denominator;
 	if (unlikely(!sum_denominator)) {
 		pr_err("%s: sum_denominator == 0\n", __func__);
-		mptcp_for_each_sk(mpcb, sub_sk) {
+		mptcp_for_each_sub(mpcb, mptcp) {
+			const struct sock *sub_sk = mptcp_to_sock(mptcp);
 			struct tcp_sock *sub_tp = tcp_sk(sub_sk);
 			pr_err("%s: pi:%d, state:%d\n, rtt:%u, cwnd: %u",
 			       __func__, sub_tp->mptcp->path_index,

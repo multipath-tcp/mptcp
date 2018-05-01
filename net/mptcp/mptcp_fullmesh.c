@@ -903,8 +903,9 @@ duno:
 			}
 
 			if (event->code == MPTCP_EVENT_DEL) {
-				struct sock *sk, *tmpsk;
+				struct mptcp_tcp_sock *mptcp;
 				struct mptcp_loc_addr *mptcp_local;
+				struct hlist_node *tmp;
 				bool found = false;
 
 				mptcp_local = rcu_dereference_bh(fm_ns->local);
@@ -914,7 +915,9 @@ duno:
 					update_addr_bitfields(meta_sk, mptcp_local);
 
 				/* Look for the socket and remove him */
-				mptcp_for_each_sk_safe(mpcb, sk, tmpsk) {
+				mptcp_for_each_sub_safe(mpcb, mptcp, tmp) {
+					struct sock *sk = mptcp_to_sock(mptcp);
+
 					if ((event->family == AF_INET6 &&
 					     (sk->sk_family == AF_INET ||
 					      mptcp_v6_is_v4_mapped(sk))) ||
@@ -964,9 +967,10 @@ duno:
 			}
 
 			if (event->code == MPTCP_EVENT_MOD) {
-				struct sock *sk;
+				struct mptcp_tcp_sock *mptcp;
 
-				mptcp_for_each_sk(mpcb, sk) {
+				mptcp_for_each_sub(mpcb, mptcp) {
+					struct sock *sk = mptcp_to_sock(mptcp);
 					struct tcp_sock *tp = tcp_sk(sk);
 					if (event->family == AF_INET &&
 					    (sk->sk_family == AF_INET ||
@@ -1455,8 +1459,9 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
 	const struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(meta_sk));
-	struct sock *sk, *tmpsk;
 	bool meta_v4 = meta_sk->sk_family == AF_INET;
+	struct mptcp_tcp_sock *mptcp;
+	struct hlist_node *tmp;
 	int i;
 
 	rcu_read_lock_bh();
@@ -1470,7 +1475,8 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 		struct in_addr ifa = mptcp_local->locaddr4[i].addr;
 		bool found = false;
 
-		mptcp_for_each_sk(mpcb, sk) {
+		mptcp_for_each_sub(mpcb, mptcp) {
+			struct sock *sk = mptcp_to_sock(mptcp);
 			struct tcp_sock *tp = tcp_sk(sk);
 
 			if (sk->sk_family == AF_INET6 &&
@@ -1491,6 +1497,8 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 		}
 
 		if (!found) {
+			struct sock *sk;
+
 			fmp->add_addr++;
 			mpcb->addr_signal = 1;
 
@@ -1511,7 +1519,8 @@ skip_ipv4:
 		struct in6_addr ifa = mptcp_local->locaddr6[i].addr;
 		bool found = false;
 
-		mptcp_for_each_sk(mpcb, sk) {
+		mptcp_for_each_sub(mpcb, mptcp) {
+			struct sock *sk = mptcp_to_sock(mptcp);
 			struct tcp_sock *tp = tcp_sk(sk);
 
 			if (sk->sk_family == AF_INET ||
@@ -1532,6 +1541,8 @@ skip_ipv4:
 		}
 
 		if (!found) {
+			struct sock *sk;
+
 			fmp->add_addr++;
 			mpcb->addr_signal = 1;
 
@@ -1546,7 +1557,8 @@ removal:
 #endif
 
 	/* Now, detect address-removals */
-	mptcp_for_each_sk_safe(mpcb, sk, tmpsk) {
+	mptcp_for_each_sub_safe(mpcb, mptcp, tmp) {
+		struct sock *sk = mptcp_to_sock(mptcp);
 		bool shall_remove = true;
 
 		if (sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(sk)) {

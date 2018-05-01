@@ -46,6 +46,8 @@ static int mptcp_get_avail_list_ipv4(struct sock *sk)
 	unsigned char *opt_ptr, *opt_end_ptr, opt[MAX_IPOPTLEN];
 
 	for (i = 0; i < MPTCP_GW_MAX_LISTS; ++i) {
+		struct mptcp_tcp_sock *mptcp;
+
 		if (mptcp_gws->len[i] == 0)
 			goto error;
 
@@ -53,7 +55,9 @@ static int mptcp_get_avail_list_ipv4(struct sock *sk)
 		list_taken = 0;
 
 		/* Loop through all sub-sockets in this connection */
-		mptcp_for_each_sk(tcp_sk(sk)->mpcb, sk) {
+		mptcp_for_each_sub(tcp_sk(sk)->mpcb, mptcp) {
+			sk = mptcp_to_sock(mptcp);
+
 			mptcp_debug("mptcp_get_avail_list_ipv4: Next sock\n");
 
 			/* Reset length and options buffer, then retrieve

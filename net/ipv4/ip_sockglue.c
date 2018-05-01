@@ -758,8 +758,11 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 			sk_dst_reset(sk);
 			/* Update TOS on mptcp subflow */
 			if (is_meta_sk(sk)) {
-				struct sock *sk_it;
-				mptcp_for_each_sk(tcp_sk(sk)->mpcb, sk_it) {
+				struct mptcp_tcp_sock *mptcp;
+
+				mptcp_for_each_sub(tcp_sk(sk)->mpcb, mptcp) {
+					struct sock *sk_it = mptcp_to_sock(mptcp);
+
 					if (inet_sk(sk_it)->tos != inet_sk(sk)->tos) {
 						inet_sk(sk_it)->tos = inet_sk(sk)->tos;
 						sk_it->sk_priority = sk->sk_priority;

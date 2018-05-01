@@ -139,9 +139,10 @@ static struct sock
 	u32 min_srtt = 0xffffffff;
 	bool found_unused = false;
 	bool found_unused_una = false;
-	struct sock *sk;
+	struct mptcp_tcp_sock *mptcp;
 
-	mptcp_for_each_sk(mpcb, sk) {
+	mptcp_for_each_sub(mpcb, mptcp) {
+		struct sock *sk = mptcp_to_sock(mptcp);
 		struct tcp_sock *tp = tcp_sk(sk);
 		bool unused = false;
 
@@ -222,7 +223,11 @@ struct sock *get_available_subflow(struct sock *meta_sk, struct sk_buff *skb,
 	/* Answer data_fin on same subflow!!! */
 	if (meta_sk->sk_shutdown & RCV_SHUTDOWN &&
 	    skb && mptcp_is_data_fin(skb)) {
-		mptcp_for_each_sk(mpcb, sk) {
+		struct mptcp_tcp_sock *mptcp;
+
+		mptcp_for_each_sub(mpcb, mptcp) {
+			sk = mptcp_to_sock(mptcp);
+
 			if (tcp_sk(sk)->mptcp->path_index == mpcb->dfin_path_index &&
 			    mptcp_is_available(sk, skb, zero_wnd_test))
 				return sk;
@@ -256,7 +261,7 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 {
 	struct sock *meta_sk;
 	const struct tcp_sock *tp = tcp_sk(sk);
-	struct tcp_sock *tp_it;
+	struct mptcp_tcp_sock *mptcp;
 	struct sk_buff *skb_head;
 	struct defsched_priv *dsp = defsched_get_priv(tp);
 
@@ -279,7 +284,9 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 		goto retrans;
 
 	/* Half the cwnd of the slow flow */
-	mptcp_for_each_tp(tp->mpcb, tp_it) {
+	mptcp_for_each_sub(tp->mpcb, mptcp) {
+		struct tcp_sock *tp_it = mptcp->tp;
+
 		if (tp_it != tp &&
 		    TCP_SKB_CB(skb_head)->path_mask & mptcp_pi_to_flag(tp_it->mptcp->path_index)) {
 			if (tp->srtt_us < tp_it->srtt_us && inet_csk((struct sock *)tp_it)->icsk_ca_state == TCP_CA_Open) {
@@ -302,7 +309,9 @@ retrans:
 	/* Segment not yet injected into this path? Take it!!! */
 	if (!(TCP_SKB_CB(skb_head)->path_mask & mptcp_pi_to_flag(tp->mptcp->path_index))) {
 		bool do_retrans = false;
-		mptcp_for_each_tp(tp->mpcb, tp_it) {
+		mptcp_for_each_sub(tp->mpcb, mptcp) {
+			struct tcp_sock *tp_it = mptcp->tp;
+
 			if (tp_it != tp &&
 			    TCP_SKB_CB(skb_head)->path_mask & mptcp_pi_to_flag(tp_it->mptcp->path_index)) {
 				if (tp_it->snd_cwnd <= 4) {

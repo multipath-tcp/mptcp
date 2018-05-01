@@ -126,12 +126,14 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk, u32 prior_snd_una)
 		tcp_rtx_queue_unlink(skb, meta_sk);
 
 		if (mptcp_is_data_fin(skb)) {
-			struct sock *sk_it, *sk_tmp;
+			struct mptcp_tcp_sock *mptcp;
+			struct hlist_node *tmp;
 
 			/* DATA_FIN has been acknowledged - now we can close
 			 * the subflows
 			 */
-			mptcp_for_each_sk_safe(mpcb, sk_it, sk_tmp) {
+			mptcp_for_each_sub_safe(mpcb, mptcp, tmp) {
+				struct sock *sk_it = mptcp_to_sock(mptcp);
 				unsigned long delay = 0;
 
 				/* If we are the passive closer, don't trigger
@@ -347,6 +349,7 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 
 	/* Now, checksum must be 0 */
 	if (unlikely(csum_fold(csum_tcp))) {
+		struct mptcp_tcp_sock *mptcp;
 		struct sock *sk_it = NULL;
 
 		pr_err("%s csum is wrong: %#x tcp-seq %u dss_csum_added %d overflowed %d iterations %d\n",
@@ -362,7 +365,9 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 		tp->mpcb->csum_cutoff_seq = tp->mptcp->map_data_seq;
 
 		/* Search for another subflow that is fully established */
-		mptcp_for_each_sk(tp->mpcb, sk_it) {
+		mptcp_for_each_sub(tp->mpcb, mptcp) {
+			sk_it = mptcp_to_sock(mptcp);
+
 			if (sk_it != sk &&
 			    tcp_sk(sk_it)->mptcp->fully_established)
 				break;
@@ -1308,12 +1313,15 @@ int mptcp_do_join_short(struct sk_buff *skb,
  */
 void mptcp_fin(struct sock *meta_sk)
 {
-	struct sock *sk = NULL, *sk_it;
+	struct sock *sk = NULL;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
+	struct mptcp_tcp_sock *mptcp;
 	unsigned char state;
 
-	mptcp_for_each_sk(mpcb, sk_it) {
+	mptcp_for_each_sub(mpcb, mptcp) {
+		struct sock *sk_it = mptcp_to_sock(mptcp);
+
 		if (tcp_sk(sk_it)->mptcp->path_index == mpcb->dfin_path_index) {
 			sk = sk_it;
 			break;
@@ -1585,9 +1593,12 @@ void mptcp_clean_rtx_infinite(const struct sk_buff *skb, struct sock *sk)
 
 static void mptcp_send_reset_rem_id(const struct mptcp_cb *mpcb, u8 rem_id)
 {
-	struct sock *sk_it, *tmpsk;
+	struct mptcp_tcp_sock *mptcp;
+	struct hlist_node *tmp;
 
-	mptcp_for_each_sk_safe(mpcb, sk_it, tmpsk) {
+	mptcp_for_each_sub_safe(mpcb, mptcp, tmp) {
+		struct sock *sk_it = mptcp_to_sock(mptcp);
+
 		if (tcp_sk(sk_it)->mptcp->rem_id == rem_id) {
 			mptcp_reinject_data(sk_it, 0);
 			mptcp_send_reset(sk_it);
@@ -1892,13 +1903,15 @@ void tcp_parse_mptcp_options(const struct sk_buff *skb,
 bool mptcp_check_rtt(const struct tcp_sock *tp, int time)
 {
 	struct mptcp_cb *mpcb = tp->mpcb;
-	struct sock *sk;
+	struct mptcp_tcp_sock *mptcp;
 	u32 rtt_max = 0;
 
 	/* In MPTCP, we take the max delay across all flows,
 	 * in order to take into account meta-reordering buffers.
 	 */
-	mptcp_for_each_sk(mpcb, sk) {
+	mptcp_for_each_sub(mpcb, mptcp) {
+		struct sock *sk = mptcp_to_sock(mptcp);
+
 		if (!mptcp_sk_can_recv(sk))
 			continue;
 
@@ -2173,9 +2186,9 @@ bool mptcp_handle_options(struct sock *sk, const struct tcphdr *th,
 		if (mopt->saw_low_prio == 1) {
 			tp->mptcp->rcv_low_prio = mopt->low_prio;
 		} else {
-			struct sock *sk_it;
-			mptcp_for_each_sk(tp->mpcb, sk_it) {
-				struct mptcp_tcp_sock *mptcp = tcp_sk(sk_it)->mptcp;
+			struct mptcp_tcp_sock *mptcp;
+
+			mptcp_for_each_sub(tp->mpcb, mptcp) {
 				if (mptcp->rem_id == mopt->prio_addr_id)
 					mptcp->rcv_low_prio = mopt->low_prio;
 			}
@@ -2359,7 +2372,7 @@ bool mptcp_should_expand_sndbuf(const struct sock *sk)
 {
 	const struct sock *meta_sk = mptcp_meta_sk(sk);
 	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	const struct sock *sk_it;
+	const struct mptcp_tcp_sock *mptcp;
 
 	/* We circumvent this check in tcp_check_space, because we want to
 	 * always call sk_write_space. So, we reproduce the check here.
@@ -2385,8 +2398,9 @@ bool mptcp_should_expand_sndbuf(const struct sock *sk)
 	/* For MPTCP we look for a subsocket that could send data.
 	 * If we found one, then we update the send-buffer.
 	 */
-	mptcp_for_each_sk(meta_tp->mpcb, sk_it) {
-		struct tcp_sock *tp_it = tcp_sk(sk_it);
+	mptcp_for_each_sub(meta_tp->mpcb, mptcp) {
+		const struct sock *sk_it = mptcp_to_sock(mptcp);
+		const struct tcp_sock *tp_it = tcp_sk(sk_it);
 
 		if (!mptcp_sk_can_send(sk_it))
 			continue;

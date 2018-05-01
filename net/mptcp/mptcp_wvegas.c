@@ -143,14 +143,15 @@ static inline u32 mptcp_wvegas_ssthresh(const struct tcp_sock *tp)
 static u64 mptcp_wvegas_weight(const struct mptcp_cb *mpcb, const struct sock *sk)
 {
 	u64 total_rate = 0;
-	struct sock *sub_sk;
 	const struct wvegas *wvegas = inet_csk_ca(sk);
+	struct mptcp_tcp_sock *mptcp;
 
 	if (!mpcb)
 		return wvegas->weight;
 
 
-	mptcp_for_each_sk(mpcb, sub_sk) {
+	mptcp_for_each_sub(mpcb, mptcp) {
+		struct sock *sub_sk = mptcp_to_sock(mptcp);
 		struct wvegas *sub_wvegas = inet_csk_ca(sub_sk);
 
 		/* sampled_rtt is initialized by 0 */

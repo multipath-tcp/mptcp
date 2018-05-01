@@ -78,7 +78,7 @@ static void mptcp_balia_recalc_ai(const struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	const struct mptcp_cb *mpcb = tp->mpcb;
-	const struct sock *sub_sk;
+	struct mptcp_tcp_sock *mptcp;
 	u64 max_rate = 0, rate = 0, sum_rate = 0;
 	u64 alpha, ai = tp->snd_cwnd, md = (tp->snd_cwnd >> 1);
 	int num_scale_down = 0;
@@ -87,7 +87,8 @@ static void mptcp_balia_recalc_ai(const struct sock *sk)
 		return;
 
 	/* Find max_rate first */
-	mptcp_for_each_sk(mpcb, sub_sk) {
+	mptcp_for_each_sub(mpcb, mptcp) {
+		const struct sock *sub_sk = mptcp_to_sock(mptcp);
 		struct tcp_sock *sub_tp = tcp_sk(sub_sk);
 		u64 tmp;
 
@@ -119,7 +120,8 @@ static void mptcp_balia_recalc_ai(const struct sock *sk)
 
 	if (num_scale_down) {
 		sum_rate = 0;
-		mptcp_for_each_sk(mpcb, sub_sk) {
+		mptcp_for_each_sub(mpcb, mptcp) {
+			const struct sock *sub_sk = mptcp_to_sock(mptcp);
 			struct tcp_sock *sub_tp = tcp_sk(sub_sk);
 			u64 tmp;
 

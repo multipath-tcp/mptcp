@@ -61,10 +61,11 @@ static u32 mptcp_get_crt_cwnd(struct sock *sk)
 /* return the dominator of the first term of  the increasing term */
 static u64 mptcp_get_rate(const struct mptcp_cb *mpcb , u32 path_rtt)
 {
-	struct sock *sk;
+	struct mptcp_tcp_sock *mptcp;
 	u64 rate = 1; /* We have to avoid a zero-rate because it is used as a divisor */
 
-	mptcp_for_each_sk(mpcb, sk) {
+	mptcp_for_each_sub(mpcb, mptcp) {
+		struct sock *sk = mptcp_to_sock(mptcp);
 		struct tcp_sock *tp = tcp_sk(sk);
 		u64 scaled_num;
 		u32 tmp_cwnd;
@@ -83,10 +84,11 @@ static u64 mptcp_get_rate(const struct mptcp_cb *mpcb , u32 path_rtt)
 /* find the maximum cwnd, used to find set M */
 static u32 mptcp_get_max_cwnd(const struct mptcp_cb *mpcb)
 {
-	struct sock *sk;
+	struct mptcp_tcp_sock *mptcp;
 	u32 best_cwnd = 0;
 
-	mptcp_for_each_sk(mpcb, sk) {
+	mptcp_for_each_sub(mpcb, mptcp) {
+		struct sock *sk = mptcp_to_sock(mptcp);
 		u32 tmp_cwnd;
 
 		if (!mptcp_olia_sk_can_send(sk))
@@ -101,6 +103,7 @@ static u32 mptcp_get_max_cwnd(const struct mptcp_cb *mpcb)
 
 static void mptcp_get_epsilon(const struct mptcp_cb *mpcb)
 {
+	struct mptcp_tcp_sock *mptcp;
 	struct mptcp_olia *ca;
 	struct tcp_sock *tp;
 	struct sock *sk;
@@ -113,7 +116,8 @@ static void mptcp_get_epsilon(const struct mptcp_cb *mpcb)
 	max_cwnd = mptcp_get_max_cwnd(mpcb);
 
 	/* find the best path */
-	mptcp_for_each_sk(mpcb, sk) {
+	mptcp_for_each_sub(mpcb, mptcp) {
+		sk = mptcp_to_sock(mptcp);
 		tp = tcp_sk(sk);
 		ca = inet_csk_ca(sk);
 
@@ -135,7 +139,8 @@ static void mptcp_get_epsilon(const struct mptcp_cb *mpcb)
 
 	/* TODO - integrate this here in mptcp_get_max_cwnd and in the previous loop */
 	/* find the size of M and B_not_M */
-	mptcp_for_each_sk(mpcb, sk) {
+	mptcp_for_each_sub(mpcb, mptcp) {
+		sk = mptcp_to_sock(mptcp);
 		tp = tcp_sk(sk);
 		ca = inet_csk_ca(sk);
 
@@ -156,7 +161,8 @@ static void mptcp_get_epsilon(const struct mptcp_cb *mpcb)
 	}
 
 	/* check if the path is in M or B_not_M and set the value of epsilon accordingly */
-	mptcp_for_each_sk(mpcb, sk) {
+	mptcp_for_each_sub(mpcb, mptcp) {
+		sk = mptcp_to_sock(mptcp);
 		tp = tcp_sk(sk);
 		ca = inet_csk_ca(sk);
 

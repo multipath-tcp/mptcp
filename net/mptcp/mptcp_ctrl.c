@@ -553,10 +553,12 @@ void mptcp_hash_remove_bh(struct tcp_sock *meta_tp)
 struct sock *mptcp_select_ack_sock(const struct sock *meta_sk)
 {
 	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct sock *sk, *rttsk = NULL, *lastsk = NULL;
+	struct sock *rttsk = NULL, *lastsk = NULL;
 	u32 min_time = 0, last_active = 0;
+	struct mptcp_tcp_sock *mptcp;
 
-	mptcp_for_each_sk(meta_tp->mpcb, sk) {
+	mptcp_for_each_sub(meta_tp->mpcb, mptcp) {
+		struct sock *sk = mptcp_to_sock(mptcp);
 		struct tcp_sock *tp = tcp_sk(sk);
 		u32 elapsed;
 
@@ -689,7 +691,8 @@ void mptcp_sock_destruct(struct sock *sk)
 void mptcp_destroy_sock(struct sock *sk)
 {
 	if (is_meta_sk(sk)) {
-		struct sock *sk_it, *tmpsk;
+		struct mptcp_tcp_sock *mptcp;
+		struct hlist_node *tmp;
 
 		__skb_queue_purge(&tcp_sk(sk)->mpcb->reinject_queue);
 
@@ -699,7 +702,9 @@ void mptcp_destroy_sock(struct sock *sk)
 		 * not have been closed properly (as we are waiting for the
 		 * DATA_ACK of the DATA_FIN).
 		 */
-		mptcp_for_each_sk_safe(tcp_sk(sk)->mpcb, sk_it, tmpsk) {
+		mptcp_for_each_sub_safe(tcp_sk(sk)->mpcb, mptcp, tmp) {
+			struct sock *sk_it = mptcp_to_sock(mptcp);
+
 			/* Already did call tcp_close - waiting for graceful
 			 * closure, or if we are retransmitting fast-close on
 			 * the subflow. The reset (or timeout) will kill the
@@ -1281,6 +1286,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	INIT_LIST_HEAD(&mpcb->tw_list);
 
 	INIT_HLIST_HEAD(&mpcb->callback_list);
+	INIT_HLIST_HEAD(&mpcb->conn_list);
 	spin_lock_init(&mpcb->mpcb_list_lock);
 
 	mptcp_mpcb_inherit_sockopts(meta_sk, master_sk);
@@ -1370,8 +1376,12 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 	sock_hold(meta_sk);
 	refcount_inc(&mpcb->mpcb_refcnt);
 
-	tp->mptcp->next = mpcb->connection_list;
-	mpcb->connection_list = tp;
+	local_bh_disable();
+	spin_lock(&mpcb->mpcb_list_lock);
+	hlist_add_head_rcu(&tp->mptcp->node, &mpcb->conn_list);
+	spin_unlock(&mpcb->mpcb_list_lock);
+	local_bh_enable();
+
 	tp->mptcp->attached = 1;
 
 	atomic_add(atomic_read(&((struct sock *)tp)->sk_rmem_alloc),
@@ -1415,14 +1425,13 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 
 void mptcp_del_sock(struct sock *sk)
 {
-	struct tcp_sock *tp = tcp_sk(sk), *tp_prev;
+	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_cb *mpcb;
 
 	if (!tp->mptcp || !tp->mptcp->attached)
 		return;
 
 	mpcb = tp->mpcb;
-	tp_prev = mpcb->connection_list;
 
 	if (mpcb->sched_ops->release)
 		mpcb->sched_ops->release(sk);
@@ -1434,17 +1443,10 @@ void mptcp_del_sock(struct sock *sk)
 		    __func__, mpcb->mptcp_loc_token, tp->mptcp->path_index,
 		    sk->sk_state, is_meta_sk(sk));
 
-	if (tp_prev == tp) {
-		mpcb->connection_list = tp->mptcp->next;
-	} else {
-		for (; tp_prev && tp_prev->mptcp->next; tp_prev = tp_prev->mptcp->next) {
-			if (tp_prev->mptcp->next == tp) {
-				tp_prev->mptcp->next = tp->mptcp->next;
-				break;
-			}
-		}
-	}
-	tp->mptcp->next = NULL;
+	spin_lock(&mpcb->mpcb_list_lock);
+	hlist_del_init_rcu(&tp->mptcp->node);
+	spin_unlock(&mpcb->mpcb_list_lock);
+
 	tp->mptcp->attached = 0;
 	mpcb->path_index_bits &= ~(1 << tp->mptcp->path_index);
 
@@ -1491,8 +1493,8 @@ void mptcp_update_metasocket(const struct sock *meta_sk)
 void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct sock *sk;
 	bool recheck_rcv_window = false;
+	struct mptcp_tcp_sock *mptcp;
 	__u32 rcv_window_now = 0;
 
 	if (copied > 0 && !(meta_sk->sk_shutdown & RCV_SHUTDOWN)) {
@@ -1503,7 +1505,8 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 			recheck_rcv_window = true;
 	}
 
-	mptcp_for_each_sk(meta_tp->mpcb, sk) {
+	mptcp_for_each_sub(meta_tp->mpcb, mptcp) {
+		struct sock *sk = mptcp_to_sock(mptcp);
 		struct tcp_sock *tp = tcp_sk(sk);
 		const struct inet_connection_sock *icsk = inet_csk(sk);
 
@@ -1690,10 +1693,13 @@ EXPORT_SYMBOL(mptcp_sub_force_close);
  */
 void mptcp_update_sndbuf(const struct tcp_sock *tp)
 {
-	struct sock *meta_sk = tp->meta_sk, *sk;
+	struct sock *meta_sk = tp->meta_sk;
 	int new_sndbuf = 0, old_sndbuf = meta_sk->sk_sndbuf;
+	struct mptcp_tcp_sock *mptcp;
 
-	mptcp_for_each_sk(tp->mpcb, sk) {
+	mptcp_for_each_sub(tp->mpcb, mptcp) {
+		struct sock *sk = mptcp_to_sock(mptcp);
+
 		if (!mptcp_sk_can_send(sk))
 			continue;
 
@@ -1722,8 +1728,8 @@ void mptcp_update_sndbuf(const struct tcp_sock *tp)
 void mptcp_close(struct sock *meta_sk, long timeout)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct sock *sk_it, *tmpsk;
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
+	struct mptcp_tcp_sock *mptcp;
 	struct sk_buff *skb;
 	int data_was_unread = 0;
 	int state;
@@ -1756,7 +1762,12 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 
 	/* If socket has been already reset (e.g. in tcp_reset()) - kill it. */
 	if (meta_sk->sk_state == TCP_CLOSE) {
-		mptcp_for_each_sk_safe(mpcb, sk_it, tmpsk) {
+		struct mptcp_tcp_sock *mptcp;
+		struct hlist_node *tmp;
+
+		mptcp_for_each_sub_safe(mpcb, mptcp, tmp) {
+			struct sock *sk_it = mptcp_to_sock(mptcp);
+
 			if (tcp_sk(sk_it)->send_mp_fclose)
 				continue;
 			mptcp_sub_close(sk_it, 0);
@@ -1777,10 +1788,14 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 	} else if (tcp_close_state(meta_sk)) {
 		mptcp_send_fin(meta_sk);
 	} else if (meta_tp->snd_una == meta_tp->write_seq) {
+		struct mptcp_tcp_sock *mptcp;
+		struct hlist_node *tmp;
+
 		/* The DATA_FIN has been sent and acknowledged
 		 * (e.g., by sk_shutdown). Close all the other subflows
 		 */
-		mptcp_for_each_sk_safe(mpcb, sk_it, tmpsk) {
+		mptcp_for_each_sub_safe(mpcb, mptcp, tmp) {
+			struct sock *sk_it = mptcp_to_sock(mptcp);
 			unsigned long delay = 0;
 			/* If we are the passive closer, don't trigger
 			 * subflow-fin until the subflow has been finned
@@ -1804,7 +1819,9 @@ adjudge_to_death:
 	/* socket will be freed after mptcp_close - we have to prevent
 	 * access from the subflows.
 	 */
-	mptcp_for_each_sk(mpcb, sk_it) {
+	mptcp_for_each_sub(mpcb, mptcp) {
+		struct sock *sk_it = mptcp_to_sock(mptcp);
+
 		/* Similar to sock_orphan, but we don't set it DEAD, because
 		 * the callbacks are still set and must be called.
 		 */
@@ -1889,8 +1906,9 @@ out:
 
 void mptcp_disconnect(struct sock *sk)
 {
-	struct sock *subsk, *tmpsk;
+	struct mptcp_tcp_sock *mptcp;
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct hlist_node *tmp;
 
 	__skb_queue_purge(&tp->mpcb->reinject_queue);
 
@@ -1898,7 +1916,9 @@ void mptcp_disconnect(struct sock *sk)
 		mptcp_hash_remove_bh(tp);
 
 	local_bh_disable();
-	mptcp_for_each_sk_safe(tp->mpcb, subsk, tmpsk) {
+	mptcp_for_each_sub_safe(tp->mpcb, mptcp, tmp) {
+		struct sock *subsk = mptcp_to_sock(mptcp);
+
 		/* The socket will get removed from the subsocket-list
 		 * and made non-mptcp by setting mpc to 0.
 		 *
@@ -2582,7 +2602,6 @@ static void mptcp_get_sub_info(struct sock *sk, struct mptcp_sub_info *info)
 int mptcp_get_info(const struct sock *meta_sk, char __user *optval, int optlen)
 {
 	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct sock *sk;
 
 	struct mptcp_meta_info meta_info;
 	struct mptcp_info m_info;
@@ -2628,16 +2647,17 @@ int mptcp_get_info(const struct sock *meta_sk, char __user *optval, int optlen)
 
 	if (m_info.subflows) {
 		unsigned int len, sub_len = 0;
+		struct mptcp_tcp_sock *mptcp;
 		char __user *ptr;
 
 		ptr = (char __user *)m_info.subflows;
 		len = m_info.sub_len;
 
-		mptcp_for_each_sk(meta_tp->mpcb, sk) {
+		mptcp_for_each_sub(meta_tp->mpcb, mptcp) {
 			struct tcp_info t_info;
 			unsigned int tmp_len;
 
-			tcp_get_info(sk, &t_info);
+			tcp_get_info(mptcp_to_sock(mptcp), &t_info);
 
 			tmp_len = min_t(unsigned int, len, info_len);
 			len -= tmp_len;
@@ -2657,6 +2677,7 @@ int mptcp_get_info(const struct sock *meta_sk, char __user *optval, int optlen)
 
 	if (m_info.subflow_info) {
 		unsigned int len, sub_info_len, total_sub_info_len = 0;
+		struct mptcp_tcp_sock *mptcp;
 		char __user *ptr;
 
 		ptr = (char __user *)m_info.subflow_info;
@@ -2666,11 +2687,11 @@ int mptcp_get_info(const struct sock *meta_sk, char __user *optval, int optlen)
 				     sizeof(struct mptcp_sub_info));
 		m_info.sub_info_len = sub_info_len;
 
-		mptcp_for_each_sk(meta_tp->mpcb, sk) {
+		mptcp_for_each_sub(meta_tp->mpcb, mptcp) {
 			struct mptcp_sub_info m_sub_info;
 			unsigned int tmp_len;
 
-			mptcp_get_sub_info(sk, &m_sub_info);
+			mptcp_get_sub_info(mptcp_to_sock(mptcp), &m_sub_info);
 
 			tmp_len = min_t(unsigned int, len, sub_info_len);
 			len -= tmp_len;

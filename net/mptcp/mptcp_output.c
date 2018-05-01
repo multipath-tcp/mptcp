@@ -652,7 +652,6 @@ int mptcp_write_wakeup(struct sock *meta_sk, int mib)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct sk_buff *skb;
-	struct sock *sk_it;
 	int ans = 0;
 
 	if (meta_sk->sk_state == TCP_CLOSE)
@@ -709,17 +708,22 @@ int mptcp_write_wakeup(struct sock *meta_sk, int mib)
 
 		return 0;
 	} else {
+		struct mptcp_tcp_sock *mptcp;
+
 window_probe:
 		if (between(meta_tp->snd_up, meta_tp->snd_una + 1,
 			    meta_tp->snd_una + 0xFFFF)) {
-			mptcp_for_each_sk(meta_tp->mpcb, sk_it) {
+			mptcp_for_each_sub(meta_tp->mpcb, mptcp) {
+				struct sock *sk_it = mptcp_to_sock(mptcp);
+
 				if (mptcp_sk_can_send_ack(sk_it))
 					tcp_xmit_probe_skb(sk_it, 1, mib);
 			}
 		}
 
 		/* At least one of the tcp_xmit_probe_skb's has to succeed */
-		mptcp_for_each_sk(meta_tp->mpcb, sk_it) {
+		mptcp_for_each_sub(meta_tp->mpcb, mptcp) {
+			struct sock *sk_it = mptcp_to_sock(mptcp);
 			int ret;
 
 			if (!mptcp_sk_can_send_ack(sk_it))
@@ -737,6 +741,7 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		     int push_one, gfp_t gfp)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *subtp;
+	struct mptcp_tcp_sock *mptcp;
 	struct sock *subsk = NULL;
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	struct sk_buff *skb;
@@ -861,7 +866,8 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 			break;
 	}
 
-	mptcp_for_each_sk(mpcb, subsk) {
+	mptcp_for_each_sub(mpcb, mptcp) {
+		subsk = mptcp_to_sock(mptcp);
 		subtp = tcp_sk(subsk);
 
 		if (!(path_mask & mptcp_pi_to_flag(subtp->mptcp->path_index)))
@@ -1358,7 +1364,7 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	struct sock *sk;
 
-	if (!mpcb->connection_list)
+	if (hlist_empty(&mpcb->conn_list))
 		return;
 
 	WARN_ON(meta_tp->send_mp_fclose);
@@ -1733,10 +1739,11 @@ void mptcp_select_initial_window(const struct sock *sk, int __space, __u32 mss,
 static inline u64 mptcp_calc_rate(const struct sock *meta_sk, unsigned int mss,
 				  unsigned int (*mss_cb)(struct sock *sk))
 {
-	struct sock *sk;
+	struct mptcp_tcp_sock *mptcp;
 	u64 rate = 0;
 
-	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk) {
+	mptcp_for_each_sub(tcp_sk(meta_sk)->mpcb, mptcp) {
+		struct sock *sk = mptcp_to_sock(mptcp);
 		struct tcp_sock *tp = tcp_sk(sk);
 		int this_mss;
 		u64 this_rate;
@@ -1788,11 +1795,12 @@ static inline u64 mptcp_calc_rate(const struct sock *meta_sk, unsigned int mss,
 static unsigned int __mptcp_current_mss(const struct sock *meta_sk,
 					unsigned int (*mss_cb)(struct sock *sk))
 {
+	struct mptcp_tcp_sock *mptcp;
 	unsigned int mss = 0;
 	u64 rate = 0;
-	struct sock *sk;
 
-	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk) {
+	mptcp_for_each_sub(tcp_sk(meta_sk)->mpcb, mptcp) {
+		struct sock *sk = mptcp_to_sock(mptcp);
 		int this_mss;
 		u64 this_rate;
 
@@ -1857,14 +1865,16 @@ int mptcp_select_size(const struct sock *meta_sk, bool sg, bool first_skb, bool 
 
 int mptcp_check_snd_buf(const struct tcp_sock *tp)
 {
-	const struct sock *sk;
+	const struct mptcp_tcp_sock *mptcp;
 	u32 rtt_max = tp->srtt_us;
 	u64 bw_est;
 
 	if (!tp->srtt_us)
 		return tp->reordering + 1;
 
-	mptcp_for_each_sk(tp->mpcb, sk) {
+	mptcp_for_each_sub(tp->mpcb, mptcp) {
+		const struct sock *sk = mptcp_to_sock(mptcp);
+
 		if (!mptcp_sk_can_send(sk))
 			continue;
 
@@ -1882,11 +1892,13 @@ int mptcp_check_snd_buf(const struct tcp_sock *tp)
 unsigned int mptcp_xmit_size_goal(const struct sock *meta_sk, u32 mss_now,
 				  int large_allowed)
 {
-	struct sock *sk;
 	u32 xmit_size_goal = 0;
 
 	if (large_allowed && mptcp_sk_can_gso(meta_sk)) {
-		mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk) {
+		struct mptcp_tcp_sock *mptcp;
+
+		mptcp_for_each_sub(tcp_sk(meta_sk)->mpcb, mptcp) {
+			struct sock *sk = mptcp_to_sock(mptcp);
 			int this_size_goal;
 
 			if (!mptcp_sk_can_send(sk))
