@@ -945,11 +945,15 @@ static void mptcp_mpcb_inherit_sockopts(struct sock *meta_sk, struct sock *maste
 	inet_sk(master_sk)->recverr = 0;
 }
 
+/* Called without holding lock on meta_sk */
 static void mptcp_sub_inherit_sockopts(const struct sock *meta_sk, struct sock *sub_sk)
 {
+	__u8 meta_tos;
+
 	/* IP_TOS also goes to the subflow. */
-	if (inet_sk(sub_sk)->tos != inet_sk(meta_sk)->tos) {
-		inet_sk(sub_sk)->tos = inet_sk(meta_sk)->tos;
+	meta_tos = READ_ONCE(inet_sk(meta_sk)->tos);
+	if (inet_sk(sub_sk)->tos != meta_tos) {
+		inet_sk(sub_sk)->tos = meta_tos;
 		sub_sk->sk_priority = meta_sk->sk_priority;
 		sk_dst_reset(sub_sk);
 	}
