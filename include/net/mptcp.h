@@ -329,9 +329,7 @@ struct mptcp_cb {
 	u8 mptcp_pm[MPTCP_PM_SIZE] __aligned(8);
 	struct mptcp_pm_ops *pm_ops;
 
-	u32 path_index_bits;
-	/* Next pi to pick up in case a new path becomes available */
-	u8 next_path_index;
+	unsigned long path_index_bits;
 
 	__u8	mptcp_ver;
 
@@ -1273,36 +1271,6 @@ static inline bool mptcp_fallback_infinite(struct sock *sk, int flag)
 	MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_FBACKINIT);
 
 	return false;
-}
-
-/* Find the first index whose bit in the bit-field == 0 */
-static inline u8 mptcp_set_new_pathindex(struct mptcp_cb *mpcb)
-{
-	u8 base = mpcb->next_path_index;
-	int i;
-
-	/* Start at 1, because 0 is reserved for the meta-sk */
-	mptcp_for_each_bit_unset(mpcb->path_index_bits >> base, i) {
-		if (i + base < 1)
-			continue;
-		if (i + base >= sizeof(mpcb->path_index_bits) * 8)
-			break;
-		i += base;
-		mpcb->path_index_bits |= (1 << i);
-		mpcb->next_path_index = i + 1;
-		return i;
-	}
-	mptcp_for_each_bit_unset(mpcb->path_index_bits, i) {
-		if (i >= sizeof(mpcb->path_index_bits) * 8)
-			break;
-		if (i < 1)
-			continue;
-		mpcb->path_index_bits |= (1 << i);
-		mpcb->next_path_index = i + 1;
-		return i;
-	}
-
-	return 0;
 }
 
 static inline bool mptcp_v6_is_v4_mapped(const struct sock *sk)

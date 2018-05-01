@@ -1316,6 +1316,22 @@ void mptcp_fallback_meta_sk(struct sock *meta_sk)
 	kmem_cache_free(mptcp_cb_cache, tcp_sk(meta_sk)->mpcb);
 }
 
+/*  Called without holding lock on mpcb */
+static u8 mptcp_set_new_pathindex(struct mptcp_cb *mpcb)
+{
+	int i;
+
+	/* Start at 1, because 0 is reserved for the meta-sk */
+	for (i = 1; i < sizeof(mpcb->path_index_bits) * 8; i++) {
+		if (!test_and_set_bit(i, &mpcb->path_index_bits))
+			break;
+	}
+
+	if (i == sizeof(mpcb->path_index_bits) * 8)
+		return 0;
+	return i;
+}
+
 int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 		   gfp_t flags)
 {
