@@ -665,14 +665,14 @@ void mptcp_sock_destruct(struct sock *sk)
 		 * update to the rcv_nxt of the time-wait-sock and remove
 		 * its reference to the mpcb.
 		 */
-		spin_lock_bh(&mpcb->tw_lock);
+		spin_lock_bh(&mpcb->mpcb_list_lock);
 		list_for_each_entry_rcu(mptw, &mpcb->tw_list, list) {
 			list_del_rcu(&mptw->list);
 			mptw->in_list = 0;
 			mptcp_mpcb_put(mpcb);
 			rcu_assign_pointer(mptw->mpcb, NULL);
 		}
-		spin_unlock_bh(&mpcb->tw_lock);
+		spin_unlock_bh(&mpcb->mpcb_list_lock);
 
 		mptcp_debug("%s destroying meta-sk token %#x\n", __func__,
 			    tcp_sk(sk)->mpcb->mptcp_loc_token);
@@ -1279,9 +1279,9 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 
 	/* Init time-wait stuff */
 	INIT_LIST_HEAD(&mpcb->tw_list);
-	spin_lock_init(&mpcb->tw_lock);
 
 	INIT_HLIST_HEAD(&mpcb->callback_list);
+	spin_lock_init(&mpcb->mpcb_list_lock);
 
 	mptcp_mpcb_inherit_sockopts(meta_sk, master_sk);
 
@@ -2252,10 +2252,10 @@ int mptcp_init_tw_sock(struct sock *sk, struct tcp_timewait_sock *tw)
 		mptw->rcv_nxt++;
 	rcu_assign_pointer(mptw->mpcb, mpcb);
 
-	spin_lock_bh(&mpcb->tw_lock);
+	spin_lock_bh(&mpcb->mpcb_list_lock);
 	list_add_rcu(&mptw->list, &tp->mpcb->tw_list);
 	mptw->in_list = 1;
-	spin_unlock_bh(&mpcb->tw_lock);
+	spin_unlock_bh(&mpcb->mpcb_list_lock);
 
 	return 0;
 }
@@ -2271,12 +2271,12 @@ void mptcp_twsk_destructor(struct tcp_timewait_sock *tw)
 	 * from the list and drop the ref properly.
 	 */
 	if (mpcb && refcount_inc_not_zero(&mpcb->mpcb_refcnt)) {
-		spin_lock_bh(&mpcb->tw_lock);
+		spin_lock_bh(&mpcb->mpcb_list_lock);
 		if (tw->mptcp_tw->in_list) {
 			list_del_rcu(&tw->mptcp_tw->list);
 			tw->mptcp_tw->in_list = 0;
 		}
-		spin_unlock_bh(&mpcb->tw_lock);
+		spin_unlock_bh(&mpcb->mpcb_list_lock);
 
 		/* Twice, because we increased it above */
 		mptcp_mpcb_put(mpcb);

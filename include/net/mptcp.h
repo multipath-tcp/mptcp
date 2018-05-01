@@ -261,6 +261,9 @@ struct mptcp_cb {
 	/* list of sockets that need a call to release_cb */
 	struct hlist_head callback_list;
 
+	/* Lock used for protecting the different rcu-lists of mptcp_cb */
+	spinlock_t mpcb_list_lock;
+
 	/* High-order bits of 64-bit sequence numbers */
 	u32 snd_high_order[2];
 	u32 rcv_high_order[2];
@@ -292,7 +295,6 @@ struct mptcp_cb {
 	u64	infinite_rcv_seq;
 
 	/***** Start of fields, used for connection closure */
-	spinlock_t	 tw_lock;
 	unsigned char	 mptw_state;
 	u8		 dfin_path_index;
 
