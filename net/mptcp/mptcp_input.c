@@ -1171,7 +1171,7 @@ int mptcp_lookup_join(struct sk_buff *skb, struct inet_timewait_sock *tw)
 	}
 
 	mpcb = tcp_sk(meta_sk)->mpcb;
-	if (mpcb->infinite_mapping_rcv || mpcb->send_infinite_mapping) {
+	if (!mptcp_can_new_subflow(meta_sk)) {
 		/* We are in fallback-mode on the reception-side -
 		 * no new subflows!
 		 */
@@ -1255,9 +1255,7 @@ int mptcp_do_join_short(struct sk_buff *skb,
 	 * And the send-reset will try to take yet another one (ip_send_reply).
 	 * Thus, we propagate the reset up to tcp_rcv_state_process.
 	 */
-	if (tcp_sk(meta_sk)->mpcb->infinite_mapping_rcv ||
-	    tcp_sk(meta_sk)->mpcb->send_infinite_mapping ||
-	    meta_sk->sk_state == TCP_CLOSE || !tcp_sk(meta_sk)->inside_tk_table) {
+	if (!mptcp_can_new_subflow(meta_sk)) {
 		MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_JOINFALLBACK);
 		bh_unlock_sock(meta_sk);
 		sock_put(meta_sk); /* Taken by mptcp_hash_find */
