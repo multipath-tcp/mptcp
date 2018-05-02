@@ -1210,7 +1210,7 @@ static inline void mptcp_set_rto(struct sock *sk)
 		return;
 
 	mptcp_for_each_sk(tp->mpcb, sk_it) {
-		if ((mptcp_sk_can_send(sk_it) || sk->sk_state == TCP_SYN_RECV) &&
+		if ((mptcp_sk_can_send(sk_it) || sk_it->sk_state == TCP_SYN_RECV) &&
 		    inet_csk(sk_it)->icsk_rto > max_rto)
 			max_rto = inet_csk(sk_it)->icsk_rto;
 	}
