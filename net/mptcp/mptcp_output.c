@@ -642,6 +642,12 @@ static int mptcp_fragment(struct sock *meta_sk, enum tcp_queue tcp_queue,
 			if (undo)
 				tcp_adjust_pcount(meta_sk, skb, -undo);
 		}
+
+		/* tcp_fragment's call to sk_stream_alloc_skb initializes the
+		 * tcp_tsorted_anchor. We need to revert this as it clashes
+		 * with the refdst pointer.
+		 */
+		tcp_skb_tsorted_anchor_cleanup(buff);
 	}
 
 	return 0;
