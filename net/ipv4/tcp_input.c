@@ -1362,7 +1362,7 @@ static struct sk_buff *tcp_shift_skb_data(struct sock *sk, struct sk_buff *skb,
 	 * send-queue, because this will make us loose the DSS-option (which
 	 * is stored in TCP_SKB_CB(skb)->dss) of the skb we are removing.
 	 */
-	if (!sk_can_gso(sk) || mptcp(tp))
+	if (mptcp(tp))
 		goto fallback;
 
 	/* Normally R but no L won't result in plain S */
@@ -3894,11 +3894,8 @@ const u8 *tcp_parse_md5sig_option(const struct tcphdr *th)
 	int length = (th->doff << 2) - sizeof(*th);
 	const u8 *ptr = (const u8 *)(th + 1);
 
-	/* If the TCP option is too short, we can short cut */
-	if (length < TCPOLEN_MD5SIG)
-		return NULL;
-
-	while (length > 0) {
+	/* If not enough data remaining, we can short cut */
+	while (length >= TCPOLEN_MD5SIG) {
 		int opcode = *ptr++;
 		int opsize;
 
@@ -6013,10 +6010,12 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
 	tp->rx_opt.saw_tstamp = 0;
 	req = tp->fastopen_rsk;
 	if (req) {
+		bool req_stolen;
+
 		WARN_ON_ONCE(sk->sk_state != TCP_SYN_RECV &&
 		    sk->sk_state != TCP_FIN_WAIT1);
 
-		if (!tcp_check_req(sk, skb, req, true))
+		if (!tcp_check_req(sk, skb, req, true, &req_stolen))
 			goto discard;
 	}
 
