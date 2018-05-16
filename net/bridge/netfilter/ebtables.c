@@ -1821,8 +1821,13 @@ static int compat_table_info(const struct ebt_table_info *info,
 	const void *entries = info->entries;
 
 	newinfo->entries_size = size;
+	if (info->nentries) {
+		int ret = xt_compat_init_offsets(NFPROTO_BRIDGE,
+						 info->nentries);
+		if (ret)
+			return ret;
+	}
 
-	xt_compat_init_offsets(NFPROTO_BRIDGE, info->nentries);
 	return EBT_ENTRY_ITERATE(entries, size, compat_calc_entry, info,
 							entries, newinfo);
 }
@@ -2053,7 +2058,9 @@ static int ebt_size_mwt(struct compat_ebt_entry_mwt *match32,
 		if (match_kern)
 			match_kern->match_size = ret;
 
-		WARN_ON(type == EBT_COMPAT_TARGET && size_left);
+		if (WARN_ON(type == EBT_COMPAT_TARGET && size_left))
+			return -EINVAL;
+
 		match32 = (struct compat_ebt_entry_mwt *) buf;
 	}
 
@@ -2109,6 +2116,15 @@ static int size_entry_mwt(struct ebt_entry *entry, const unsigned char *base,
 	 *
 	 * offsets are relative to beginning of struct ebt_entry (i.e., 0).
 	 */
+	for (i = 0; i < 4 ; ++i) {
+		if (offsets[i] >= *total)
+			return -EINVAL;
+		if (i == 0)
+			continue;
+		if (offsets[i-1] > offsets[i])
+			return -EINVAL;
+	}
+
 	for (i = 0, j = 1 ; j < 4 ; j++, i++) {
 		struct compat_ebt_entry_mwt *match32;
 		unsigned int size;
@@ -2246,7 +2262,9 @@ static int compat_do_replace(struct net *net, void __user *user,
 
 	xt_compat_lock(NFPROTO_BRIDGE);
 
-	xt_compat_init_offsets(NFPROTO_BRIDGE, tmp.nentries);
+	ret = xt_compat_init_offsets(NFPROTO_BRIDGE, tmp.nentries);
+	if (ret < 0)
+		goto out_unlock;
 	ret = compat_copy_entries(entries_tmp, tmp.entries_size, &state);
 	if (ret < 0)
 		goto out_unlock;
