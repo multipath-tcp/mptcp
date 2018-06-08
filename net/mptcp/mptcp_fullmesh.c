@@ -1858,19 +1858,6 @@ static int mptcp_fm_seq_show(struct seq_file *seq, void *v)
 	return 0;
 }
 
-static int mptcp_fm_seq_open(struct inode *inode, struct file *file)
-{
-	return single_open_net(inode, file, mptcp_fm_seq_show);
-}
-
-static const struct file_operations mptcp_fm_seq_fops = {
-	.owner = THIS_MODULE,
-	.open = mptcp_fm_seq_open,
-	.read = seq_read,
-	.llseek = seq_lseek,
-	.release = single_release_net,
-};
-
 static int mptcp_fm_init_net(struct net *net)
 {
 	struct mptcp_loc_addr *mptcp_local;
@@ -1887,8 +1874,8 @@ static int mptcp_fm_init_net(struct net *net)
 		goto err_mptcp_local;
 	}
 
-	if (!proc_create("mptcp_fullmesh", S_IRUGO, net->proc_net,
-			 &mptcp_fm_seq_fops)) {
+	if (!proc_create_net_single("mptcp_fullmesh", S_IRUGO, net->proc_net,
+			 mptcp_fm_seq_show, NULL)) {
 		err = -ENOMEM;
 		goto err_seq_fops;
 	}

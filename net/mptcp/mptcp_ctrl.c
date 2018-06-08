@@ -2879,19 +2879,6 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 	return 0;
 }
 
-static int mptcp_pm_seq_open(struct inode *inode, struct file *file)
-{
-	return single_open_net(inode, file, mptcp_pm_seq_show);
-}
-
-static const struct file_operations mptcp_pm_seq_fops = {
-	.owner = THIS_MODULE,
-	.open = mptcp_pm_seq_open,
-	.read = seq_read,
-	.llseek = seq_lseek,
-	.release = single_release_net,
-};
-
 static int mptcp_snmp_seq_show(struct seq_file *seq, void *v)
 {
 	struct net *net = seq->private;
@@ -2905,19 +2892,6 @@ static int mptcp_snmp_seq_show(struct seq_file *seq, void *v)
 	return 0;
 }
 
-static int mptcp_snmp_seq_open(struct inode *inode, struct file *file)
-{
-	return single_open_net(inode, file, mptcp_snmp_seq_show);
-}
-
-static const struct file_operations mptcp_snmp_seq_fops = {
-	.owner = THIS_MODULE,
-	.open = mptcp_snmp_seq_open,
-	.read = seq_read,
-	.llseek = seq_lseek,
-	.release = single_release_net,
-};
-
 static int mptcp_pm_init_net(struct net *net)
 {
 	net->mptcp.mptcp_statistics = alloc_percpu(struct mptcp_mib);
@@ -2928,11 +2902,11 @@ static int mptcp_pm_init_net(struct net *net)
 	net->mptcp.proc_net_mptcp = proc_net_mkdir(net, "mptcp_net", net->proc_net);
 	if (!net->mptcp.proc_net_mptcp)
 		goto out_proc_net_mptcp;
-	if (!proc_create("mptcp", S_IRUGO, net->mptcp.proc_net_mptcp,
-			 &mptcp_pm_seq_fops))
+	if (!proc_create_net_single("mptcp", S_IRUGO, net->mptcp.proc_net_mptcp,
+				    mptcp_pm_seq_show, NULL))
 		goto out_mptcp_net_mptcp;
-	if (!proc_create("snmp", S_IRUGO, net->mptcp.proc_net_mptcp,
-			 &mptcp_snmp_seq_fops))
+	if (!proc_create_net_single("snmp", S_IRUGO, net->mptcp.proc_net_mptcp,
+				    mptcp_snmp_seq_show, NULL))
 		goto out_mptcp_net_snmp;
 #endif
 
