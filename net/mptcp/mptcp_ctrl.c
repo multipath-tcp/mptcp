@@ -2064,6 +2064,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk,
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	u8 hash_mac_check[20];
 
+	child_tp->out_of_order_queue = RB_ROOT;
 	child_tp->inside_tk_table = 0;
 
 	if (!mopt->join_ack) {
@@ -2118,7 +2119,6 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk,
 	child_tp->mptcp->init_rcv_wnd = req->rsk_rcv_wnd;
 
 	child_tp->tsq_flags = 0;
-	child_tp->out_of_order_queue = RB_ROOT;
 
 	sock_rps_save_rxhash(child, skb);
 	tcp_synack_rtt_meas(child, req);
