@@ -1303,9 +1303,9 @@ static void full_mesh_new_session(const struct sock *meta_sk)
 	struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
 	const struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(meta_sk));
 	struct tcp_sock *master_tp = tcp_sk(mpcb->master_sk);
-	int i, index, if_idx;
+	int i, index, if_idx = 0;
 	union inet_addr saddr, daddr;
-	sa_family_t family;
+	sa_family_t family = AF_INET;
 	bool meta_v4 = meta_sk->sk_family == AF_INET;
 
 	/* Init local variables necessary for the rest */
