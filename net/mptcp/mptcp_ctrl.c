@@ -391,10 +391,13 @@ static void mptcp_clear(struct work_struct *work)
 	int wanted;
 
 	wanted = atomic_add_return(deferred, &mptcp_wanted);
-	if (wanted > 0)
-		static_key_enable(&mptcp_static_key);
-	else
-		static_key_disable(&mptcp_static_key);
+	if (wanted > 0) {
+		if (!static_key_enabled(&mptcp_static_key))
+			static_key_slow_inc(&mptcp_static_key);
+	} else {
+		if (static_key_enabled(&mptcp_static_key))
+			static_key_slow_dec(&mptcp_static_key);
+	}
 }
 
 static DECLARE_WORK(mptcp_work, mptcp_clear);
@@ -423,7 +426,8 @@ static void mptcp_enable_static_key(void)
 {
 #ifdef HAVE_JUMP_LABEL
 	atomic_inc(&mptcp_wanted);
-	static_key_enable(&mptcp_static_key);
+	if (!static_key_enabled(&mptcp_static_key))
+		static_key_slow_inc(&mptcp_static_key);
 #else
 	static_key_slow_inc(&mptcp_static_key);
 #endif
