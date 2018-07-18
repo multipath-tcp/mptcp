@@ -1957,31 +1957,36 @@ void mptcp_disconnect(struct sock *sk)
 }
 
 
-/* Returns 1 if we should enable MPTCP for that socket. */
-int mptcp_doit(struct sock *sk)
+/* Returns True if we should enable MPTCP for that socket. */
+bool mptcp_doit(struct sock *sk)
 {
+	const struct dst_entry *dst = __sk_dst_get(sk);
+
 	/* Don't do mptcp over loopback */
 	if (sk->sk_family == AF_INET &&
 	    (ipv4_is_loopback(inet_sk(sk)->inet_daddr) ||
 	     ipv4_is_loopback(inet_sk(sk)->inet_saddr)))
-		return 0;
+		return false;
 #if IS_ENABLED(CONFIG_IPV6)
 	if (sk->sk_family == AF_INET6 &&
 	    (ipv6_addr_loopback(&sk->sk_v6_daddr) ||
 	     ipv6_addr_loopback(&inet6_sk(sk)->saddr)))
-		return 0;
+		return false;
 #endif
 	if (mptcp_v6_is_v4_mapped(sk) &&
 	    ipv4_is_loopback(inet_sk(sk)->inet_saddr))
-		return 0;
+		return false;
 
 #ifdef CONFIG_TCP_MD5SIG
 	/* If TCP_MD5SIG is enabled, do not do MPTCP - there is no Option-Space */
 	if (tcp_sk(sk)->af_specific->md5_lookup(sk, sk))
-		return 0;
+		return false;
 #endif
 
-	return 1;
+	if (dst->dev && (dst->dev->flags & IFF_NOMULTIPATH))
+		return false;
+
+	return true;
 }
 
 int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key,

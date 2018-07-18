@@ -794,7 +794,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			 const struct tcp_out_options *opts,
 			 struct sk_buff *skb);
 void mptcp_close(struct sock *meta_sk, long timeout);
-int mptcp_doit(struct sock *sk);
+bool mptcp_doit(struct sock *sk);
 int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key,
 			   __u8 mptcp_ver, u32 window);
 int mptcp_check_req_fastopen(struct sock *child, struct request_sock *req);
@@ -1360,9 +1360,9 @@ static inline void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 				       const struct tcp_out_options *opts,
 				       struct sk_buff *skb) {}
 static inline void mptcp_close(struct sock *meta_sk, long timeout) {}
-static inline int mptcp_doit(struct sock *sk)
+static inline bool mptcp_doit(struct sock *sk)
 {
-	return 0;
+	return false;
 }
 static inline int mptcp_check_req_fastopen(struct sock *child,
 					   struct request_sock *req)
