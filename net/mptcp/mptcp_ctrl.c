@@ -306,6 +306,7 @@ static void mptcp_reqsk_new_mptcp(struct request_sock *req,
 	const struct tcp_sock *tp = tcp_sk(sk);
 
 	inet_rsk(req)->saw_mpc = 1;
+
 	/* MPTCP version agreement */
 	if (mopt->mptcp_ver >= tp->mptcp_ver)
 		mtreq->mptcp_ver = tp->mptcp_ver;
@@ -325,10 +326,17 @@ static void mptcp_reqsk_new_mptcp(struct request_sock *req,
 }
 
 static int mptcp_reqsk_new_cookie(struct request_sock *req,
+				  const struct sock *sk,
 				  const struct mptcp_options_received *mopt,
 				  const struct sk_buff *skb)
 {
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
+
+	/* MPTCP version agreement */
+	if (mopt->mptcp_ver >= tcp_sk(sk)->mptcp_ver)
+		mtreq->mptcp_ver = tcp_sk(sk)->mptcp_ver;
+	else
+		mtreq->mptcp_ver = mopt->mptcp_ver;
 
 	rcu_read_lock();
 	spin_lock(&mptcp_tk_hashlock);
@@ -2377,7 +2385,7 @@ void mptcp_reqsk_init(struct request_sock *req, const struct sock *sk,
 	mtreq->dss_csum = mopt.dss_csum;
 
 	if (want_cookie) {
-		if (!mptcp_reqsk_new_cookie(req, &mopt, skb))
+		if (!mptcp_reqsk_new_cookie(req, sk, &mopt, skb))
 			/* No key available - back to regular TCP */
 			inet_rsk(req)->mptcp_rqsk = 0;
 		return;
