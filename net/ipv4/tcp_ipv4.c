@@ -1742,7 +1742,7 @@ process:
 			}
 
 			if (sock_owned_by_user(sk)) {
-				skb->sk = sk;
+				mptcp_prepare_for_backlog(sk, skb);
 				if (unlikely(sk_add_backlog(sk, skb,
 							    sk->sk_rcvbuf + sk->sk_sndbuf))) {
 					reqsk_put(req);
@@ -1819,7 +1819,7 @@ process:
 
 		bh_lock_sock_nested(meta_sk);
 		if (sock_owned_by_user(meta_sk))
-			skb->sk = sk;
+			mptcp_prepare_for_backlog(sk, skb);
 	} else {
 		meta_sk = sk;
 		bh_lock_sock_nested(sk);
