@@ -1608,7 +1608,7 @@ process:
 
 		bh_lock_sock_nested(meta_sk);
 		if (sock_owned_by_user(meta_sk))
-			skb->sk = sk;
+			mptcp_prepare_for_backlog(sk, skb);
 	} else {
 		meta_sk = sk;
 		bh_lock_sock_nested(sk);

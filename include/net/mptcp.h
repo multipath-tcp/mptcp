@@ -825,6 +825,7 @@ void mptcp_sub_close_wq(struct work_struct *work);
 void mptcp_sub_close(struct sock *sk, unsigned long delay);
 struct sock *mptcp_select_ack_sock(const struct sock *meta_sk);
 void mptcp_fallback_meta_sk(struct sock *meta_sk);
+void mptcp_prepare_for_backlog(struct sock *sk, struct sk_buff *skb);
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb);
 void mptcp_ack_handler(struct timer_list *t);
 bool mptcp_check_rtt(const struct tcp_sock *tp, int time);
@@ -1395,6 +1396,7 @@ static inline bool mptcp_fallback_infinite(const struct sock *sk, int flag)
 	return false;
 }
 static inline void mptcp_init_mp_opt(const struct mptcp_options_received *mopt) {}
+static inline void mptcp_prepare_for_backlog(struct sock *sk, struct sk_buff *skb) {}
 static inline bool mptcp_check_rtt(const struct tcp_sock *tp, int time)
 {
 	return false;

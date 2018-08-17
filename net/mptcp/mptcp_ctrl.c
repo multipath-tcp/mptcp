@@ -988,6 +988,16 @@ static void mptcp_sub_inherit_sockopts(const struct sock *meta_sk, struct sock *
 	inet_sk(sub_sk)->recverr = 0;
 }
 
+void mptcp_prepare_for_backlog(struct sock *sk, struct sk_buff *skb)
+{
+	/* In case of success (in mptcp_backlog_rcv) and error (in kfree_skb) of
+	 * sk_add_backlog, we will decrement the sk refcount.
+	 */
+	sock_hold(sk);
+	skb->sk = sk;
+	skb->destructor = sock_efree;
+}
+
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb)
 {
 	/* skb-sk may be NULL if we receive a packet immediatly after the
@@ -996,12 +1006,16 @@ int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	struct sock *sk = skb->sk ? skb->sk : meta_sk;
 	int ret = 0;
 
-	skb->sk = NULL;
-
 	if (unlikely(!refcount_inc_not_zero(&sk->sk_refcnt))) {
 		kfree_skb(skb);
 		return 0;
 	}
+
+	/* Decrement sk refcnt when calling the skb destructor.
+	 * Refcnt is incremented and skb destructor is set in tcp_v{4,6}_rcv via
+	 * mptcp_prepare_for_backlog() here above.
+	 */
+	skb_orphan(skb);
 
 	if (sk->sk_family == AF_INET)
 		ret = tcp_v4_do_rcv(sk, skb);
