@@ -1362,8 +1362,15 @@ void i40evf_virtchnl_completion(struct i40evf_adapter *adapter,
 		memcpy(adapter->vf_res, msg, min(msglen, len));
 		i40evf_validate_num_queues(adapter);
 		i40e_vf_parse_hw_config(&adapter->hw, adapter->vf_res);
-		/* restore current mac address */
-		ether_addr_copy(adapter->hw.mac.addr, netdev->dev_addr);
+		if (is_zero_ether_addr(adapter->hw.mac.addr)) {
+			/* restore current mac address */
+			ether_addr_copy(adapter->hw.mac.addr, netdev->dev_addr);
+		} else {
+			/* refresh current mac address if changed */
+			ether_addr_copy(netdev->dev_addr, adapter->hw.mac.addr);
+			ether_addr_copy(netdev->perm_addr,
+					adapter->hw.mac.addr);
+		}
 		i40evf_process_config(adapter);
 		}
 		break;
