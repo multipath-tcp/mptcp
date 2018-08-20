@@ -915,7 +915,7 @@ int tcp_child_process(struct sock *parent, struct sock *child,
 		 * socket does not protect us more.
 		 */
 		if (mptcp(tcp_sk(child)))
-			skb->sk = child;
+			mptcp_prepare_for_backlog(child, skb);
 		__sk_add_backlog(meta_sk, skb);
 	}
 
