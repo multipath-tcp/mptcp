@@ -795,7 +795,7 @@ static inline __be32 ip6_make_flowlabel(struct net *net, struct sk_buff *skb,
 	 * to minimize possbility that any useful information to an
 	 * attacker is leaked. Only lower 20 bits are relevant.
 	 */
-	rol32(hash, 16);
+	hash = rol32(hash, 16);
 
 	flowlabel = (__force __be32)hash & IPV6_FLOWLABEL_MASK;
 
@@ -859,6 +859,11 @@ static inline u8 ip6_tclass(__be32 flowinfo)
 static inline __be32 ip6_make_flowinfo(unsigned int tclass, __be32 flowlabel)
 {
 	return htonl(tclass << IPV6_TCLASS_SHIFT) | flowlabel;
+}
+
+static inline __be32 flowi6_get_flowlabel(const struct flowi6 *fl6)
+{
+	return fl6->flowlabel & IPV6_FLOWLABEL_MASK;
 }
 
 /*

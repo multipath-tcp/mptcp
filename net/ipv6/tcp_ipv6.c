@@ -947,7 +947,8 @@ void tcp_v6_send_reset(const struct sock *sk, struct sk_buff *skb)
 					   &tcp_hashinfo, NULL, 0,
 					   &ipv6h->saddr,
 					   th->source, &ipv6h->daddr,
-					   ntohs(th->source), tcp_v6_iif(skb),
+					   ntohs(th->source),
+					   tcp_v6_iif_l3_slave(skb),
 					   tcp_v6_sdif(skb));
 		if (!sk1)
 			goto out;
@@ -1512,6 +1513,10 @@ process:
 			reqsk_put(req);
 			goto discard_it;
 		}
+		if (tcp_checksum_complete(skb)) {
+			reqsk_put(req);
+			goto csum_error;
+		}
 		if (unlikely(sk->sk_state != TCP_LISTEN && !is_meta_sk(sk))) {
 			inet_csk_reqsk_queue_drop_and_put(sk, req);
 			goto lookup;
@@ -1686,7 +1691,8 @@ do_time_wait:
 					    skb, __tcp_hdrlen(th),
 					    &ipv6_hdr(skb)->saddr, th->source,
 					    &ipv6_hdr(skb)->daddr,
-					    ntohs(th->dest), tcp_v6_iif(skb),
+					    ntohs(th->dest),
+					    tcp_v6_iif_l3_slave(skb),
 					    sdif);
 		if (sk2) {
 			struct inet_timewait_sock *tw = inet_twsk(sk);
