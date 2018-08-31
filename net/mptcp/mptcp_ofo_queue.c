@@ -211,6 +211,9 @@ end:
 		if (!after(end_seq, TCP_SKB_CB(skb1)->seq))
 			break;
 
+		if (before(end_seq, TCP_SKB_CB(skb1)->end_seq))
+			break;
+
 		__skb_unlink(skb1, head);
 		mptcp_remove_shortcuts(mpcb, skb1);
 		__kfree_skb(skb1);
