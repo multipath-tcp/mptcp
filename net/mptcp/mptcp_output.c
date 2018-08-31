@@ -240,6 +240,9 @@ static void __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk
 		if (!after(end_seq, TCP_SKB_CB(skb1)->seq))
 			break;
 
+		if (before(end_seq, TCP_SKB_CB(skb1)->end_seq))
+			break;
+
 		__skb_unlink(skb1, &mpcb->reinject_queue);
 		__kfree_skb(skb1);
 	}
