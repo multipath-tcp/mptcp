@@ -299,6 +299,11 @@ static noinline __init void setup_facility_list(void)
 {
 	stfle(S390_lowcore.stfle_fac_list,
 	      ARRAY_SIZE(S390_lowcore.stfle_fac_list));
+	memcpy(S390_lowcore.alt_stfle_fac_list,
+	       S390_lowcore.stfle_fac_list,
+	       sizeof(S390_lowcore.alt_stfle_fac_list));
+	if (!IS_ENABLED(CONFIG_KERNEL_NOBP))
+		__clear_facility(82, S390_lowcore.alt_stfle_fac_list);
 }
 
 static __init void detect_diag9c(void)
@@ -372,7 +377,7 @@ static int __init topology_setup(char *str)
 
 	rc = kstrtobool(str, &enabled);
 	if (!rc && !enabled)
-		S390_lowcore.machine_flags &= ~MACHINE_HAS_TOPOLOGY;
+		S390_lowcore.machine_flags &= ~MACHINE_FLAG_TOPOLOGY;
 	return rc;
 }
 early_param("topology", topology_setup);

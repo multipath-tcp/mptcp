@@ -23,6 +23,7 @@
 #include <linux/vmalloc.h>
 #include <linux/qed/qed_if.h>
 #include <linux/qed/qed_ll2_if.h>
+#include <linux/crash_dump.h>
 
 #include "qed.h"
 #include "qed_sriov.h"
@@ -701,6 +702,14 @@ static int qed_slowpath_setup_int(struct qed_dev *cdev,
 	/* We want a minimum of one slowpath and one fastpath vector per hwfn */
 	cdev->int_params.in.min_msix_cnt = cdev->num_hwfns * 2;
 
+	if (is_kdump_kernel()) {
+		DP_INFO(cdev,
+			"Kdump kernel: Limit the max number of requested MSI-X vectors to %hd\n",
+			cdev->int_params.in.min_msix_cnt);
+		cdev->int_params.in.num_vectors =
+			cdev->int_params.in.min_msix_cnt;
+	}
+
 	rc = qed_set_int_mode(cdev, false);
 	if (rc)  {
 		DP_ERR(cdev, "qed_slowpath_setup_int ERR\n");
@@ -711,7 +720,8 @@ static int qed_slowpath_setup_int(struct qed_dev *cdev,
 	cdev->int_params.fp_msix_cnt = cdev->int_params.out.num_vectors -
 				       cdev->num_hwfns;
 
-	if (!IS_ENABLED(CONFIG_QED_RDMA))
+	if (!IS_ENABLED(CONFIG_QED_RDMA) ||
+	    QED_LEADING_HWFN(cdev)->hw_info.personality != QED_PCI_ETH_ROCE)
 		return 0;
 
 	for_each_hwfn(cdev, i)
@@ -1239,7 +1249,7 @@ static void qed_fill_link(struct qed_hwfn *hwfn,
 
 	/* TODO - at the moment assume supported and advertised speed equal */
 	if_link->supported_caps = QED_LM_FIBRE_BIT;
-	if (params.speed.autoneg)
+	if (link_caps.default_speed_autoneg)
 		if_link->supported_caps |= QED_LM_Autoneg_BIT;
 	if (params.pause.autoneg ||
 	    (params.pause.forced_rx && params.pause.forced_tx))
@@ -1249,6 +1259,10 @@ static void qed_fill_link(struct qed_hwfn *hwfn,
 		if_link->supported_caps |= QED_LM_Pause_BIT;
 
 	if_link->advertised_caps = if_link->supported_caps;
+	if (params.speed.autoneg)
+		if_link->advertised_caps |= QED_LM_Autoneg_BIT;
+	else
+		if_link->advertised_caps &= ~QED_LM_Autoneg_BIT;
 	if (params.speed.advertised_speeds &
 	    NVM_CFG1_PORT_DRV_SPEED_CAPABILITY_MASK_1G)
 		if_link->advertised_caps |= QED_LM_1000baseT_Half_BIT |

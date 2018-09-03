@@ -216,8 +216,6 @@ static int mlx4_ib_update_gids_v1_v2(struct gid_entry *gids,
 			gid_tbl[i].version = 2;
 			if (!ipv6_addr_v4mapped((struct in6_addr *)&gids[i].gid))
 				gid_tbl[i].type = 1;
-			else
-				memset(&gid_tbl[i].gid, 0, 12);
 		}
 	}
 
@@ -363,8 +361,13 @@ static int mlx4_ib_del_gid(struct ib_device *device,
 		if (!gids) {
 			ret = -ENOMEM;
 		} else {
-			for (i = 0; i < MLX4_MAX_PORT_GIDS; i++)
-				memcpy(&gids[i].gid, &port_gid_table->gids[i].gid, sizeof(union ib_gid));
+			for (i = 0; i < MLX4_MAX_PORT_GIDS; i++) {
+				memcpy(&gids[i].gid,
+				       &port_gid_table->gids[i].gid,
+				       sizeof(union ib_gid));
+				gids[i].gid_type =
+				    port_gid_table->gids[i].gid_type;
+			}
 		}
 	}
 	spin_unlock_bh(&iboe->lock);
@@ -1168,7 +1171,7 @@ static void mlx4_ib_disassociate_ucontext(struct ib_ucontext *ibcontext)
 	/* need to protect from a race on closing the vma as part of
 	 * mlx4_ib_vma_close().
 	 */
-	down_read(&owning_mm->mmap_sem);
+	down_write(&owning_mm->mmap_sem);
 	for (i = 0; i < HW_BAR_COUNT; i++) {
 		vma = context->hw_bar_info[i].vma;
 		if (!vma)
@@ -1182,11 +1185,13 @@ static void mlx4_ib_disassociate_ucontext(struct ib_ucontext *ibcontext)
 			BUG_ON(1);
 		}
 
+		context->hw_bar_info[i].vma->vm_flags &=
+			~(VM_SHARED | VM_MAYSHARE);
 		/* context going to be destroyed, should not access ops any more */
 		context->hw_bar_info[i].vma->vm_ops = NULL;
 	}
 
-	up_read(&owning_mm->mmap_sem);
+	up_write(&owning_mm->mmap_sem);
 	mmput(owning_mm);
 	put_task_struct(owning_process);
 }

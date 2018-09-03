@@ -491,9 +491,12 @@ bool nvmet_req_init(struct nvmet_req *req, struct nvmet_cq *cq,
 		goto fail;
 	}
 
-	/* either variant of SGLs is fine, as we don't support metadata */
-	if (unlikely((flags & NVME_CMD_SGL_ALL) != NVME_CMD_SGL_METABUF &&
-		     (flags & NVME_CMD_SGL_ALL) != NVME_CMD_SGL_METASEG)) {
+	/*
+	 * For fabrics, PSDT field shall describe metadata pointer (MPTR) that
+	 * contains an address of a single contiguous physical buffer that is
+	 * byte aligned.
+	 */
+	if (unlikely((flags & NVME_CMD_SGL_ALL) != NVME_CMD_SGL_METABUF)) {
 		status = NVME_SC_INVALID_FIELD | NVME_SC_DNR;
 		goto fail;
 	}
@@ -740,9 +743,6 @@ u16 nvmet_alloc_ctrl(const char *subsysnqn, const char *hostnqn,
 	memcpy(ctrl->subsysnqn, subsysnqn, NVMF_NQN_SIZE);
 	memcpy(ctrl->hostnqn, hostnqn, NVMF_NQN_SIZE);
 
-	/* generate a random serial number as our controllers are ephemeral: */
-	get_random_bytes(&ctrl->serial, sizeof(ctrl->serial));
-
 	kref_init(&ctrl->ref);
 	ctrl->subsys = subsys;
 
@@ -901,6 +901,8 @@ struct nvmet_subsys *nvmet_subsys_alloc(const char *subsysnqn,
 		return NULL;
 
 	subsys->ver = NVME_VS(1, 2, 1); /* NVMe 1.2.1 */
+	/* generate a random serial number as our controllers are ephemeral: */
+	get_random_bytes(&subsys->serial, sizeof(subsys->serial));
 
 	switch (type) {
 	case NVME_NQN_NVME:

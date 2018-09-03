@@ -102,6 +102,7 @@ struct x509_certificate *x509_cert_parse(const void *data, size_t datalen)
 		}
 	}
 
+	ret = -ENOMEM;
 	cert->pub->key = kmemdup(ctx->key, ctx->key_size, GFP_KERNEL);
 	if (!cert->pub->key)
 		goto error_decode;
@@ -246,6 +247,15 @@ int x509_note_signature(void *context, size_t hdrlen,
 		pr_warn("Got cert with pkey (%u) and sig (%u) algorithm OIDs\n",
 			ctx->algo_oid, ctx->last_oid);
 		return -EINVAL;
+	}
+
+	if (strcmp(ctx->cert->sig->pkey_algo, "rsa") == 0) {
+		/* Discard the BIT STRING metadata */
+		if (vlen < 1 || *(const u8 *)value != 0)
+			return -EBADMSG;
+
+		value++;
+		vlen--;
 	}
 
 	ctx->cert->raw_sig = value;

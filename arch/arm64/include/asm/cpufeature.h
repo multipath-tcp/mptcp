@@ -9,8 +9,6 @@
 #ifndef __ASM_CPUFEATURE_H
 #define __ASM_CPUFEATURE_H
 
-#include <linux/jump_label.h>
-
 #include <asm/cpucaps.h>
 #include <asm/hwcap.h>
 #include <asm/sysreg.h>
@@ -27,6 +25,8 @@
 
 #ifndef __ASSEMBLY__
 
+#include <linux/bug.h>
+#include <linux/jump_label.h>
 #include <linux/kernel.h>
 
 /* CPU feature register tracking */
@@ -96,6 +96,7 @@ struct arm64_cpu_capabilities {
 
 extern DECLARE_BITMAP(cpu_hwcaps, ARM64_NCAPS);
 extern struct static_key_false cpu_hwcap_keys[ARM64_NCAPS];
+extern struct static_key_false arm64_const_caps_ready;
 
 bool this_cpu_has_cap(unsigned int cap);
 
@@ -104,14 +105,27 @@ static inline bool cpu_have_feature(unsigned int num)
 	return elf_hwcap & (1UL << num);
 }
 
+/* System capability check for constant caps */
+static inline bool __cpus_have_const_cap(int num)
+{
+	if (num >= ARM64_NCAPS)
+		return false;
+	return static_branch_unlikely(&cpu_hwcap_keys[num]);
+}
+
 static inline bool cpus_have_cap(unsigned int num)
 {
 	if (num >= ARM64_NCAPS)
 		return false;
-	if (__builtin_constant_p(num))
-		return static_branch_unlikely(&cpu_hwcap_keys[num]);
+	return test_bit(num, cpu_hwcaps);
+}
+
+static inline bool cpus_have_const_cap(int num)
+{
+	if (static_branch_likely(&arm64_const_caps_ready))
+		return __cpus_have_const_cap(num);
 	else
-		return test_bit(num, cpu_hwcaps);
+		return cpus_have_cap(num);
 }
 
 static inline void cpus_set_cap(unsigned int num)
@@ -121,7 +135,6 @@ static inline void cpus_set_cap(unsigned int num)
 			num, ARM64_NCAPS);
 	} else {
 		__set_bit(num, cpu_hwcaps);
-		static_branch_enable(&cpu_hwcap_keys[num]);
 	}
 }
 
@@ -200,13 +213,35 @@ static inline bool cpu_supports_mixed_endian_el0(void)
 
 static inline bool system_supports_32bit_el0(void)
 {
-	return cpus_have_cap(ARM64_HAS_32BIT_EL0);
+	return cpus_have_const_cap(ARM64_HAS_32BIT_EL0);
 }
 
 static inline bool system_supports_mixed_endian_el0(void)
 {
 	return id_aa64mmfr0_mixed_endian_el0(read_system_reg(SYS_ID_AA64MMFR0_EL1));
 }
+
+#define ARM64_SSBD_UNKNOWN		-1
+#define ARM64_SSBD_FORCE_DISABLE	0
+#define ARM64_SSBD_KERNEL		1
+#define ARM64_SSBD_FORCE_ENABLE		2
+#define ARM64_SSBD_MITIGATED		3
+
+static inline int arm64_get_ssbd_state(void)
+{
+#ifdef CONFIG_ARM64_SSBD
+	extern int ssbd_state;
+	return ssbd_state;
+#else
+	return ARM64_SSBD_UNKNOWN;
+#endif
+}
+
+#ifdef CONFIG_ARM64_SSBD
+void arm64_set_ssbd_mitigation(bool state);
+#else
+static inline void arm64_set_ssbd_mitigation(bool state) {}
+#endif
 
 #endif /* __ASSEMBLY__ */
 

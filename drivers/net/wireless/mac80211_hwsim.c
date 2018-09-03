@@ -552,8 +552,6 @@ struct mac80211_hwsim_data {
 	/* wmediumd portid responsible for netgroup of this radio */
 	u32 wmediumd;
 
-	int power_level;
-
 	/* difference between this hw's clock and the real clock, in usecs */
 	s64 tsf_offset;
 	s64 bcn_delta;
@@ -730,16 +728,21 @@ static int hwsim_fops_ps_write(void *dat, u64 val)
 	    val != PS_MANUAL_POLL)
 		return -EINVAL;
 
+	if (val == PS_MANUAL_POLL) {
+		if (data->ps != PS_ENABLED)
+			return -EINVAL;
+		local_bh_disable();
+		ieee80211_iterate_active_interfaces_atomic(
+			data->hw, IEEE80211_IFACE_ITER_NORMAL,
+			hwsim_send_ps_poll, data);
+		local_bh_enable();
+		return 0;
+	}
 	old_ps = data->ps;
 	data->ps = val;
 
 	local_bh_disable();
-	if (val == PS_MANUAL_POLL) {
-		ieee80211_iterate_active_interfaces_atomic(
-			data->hw, IEEE80211_IFACE_ITER_NORMAL,
-			hwsim_send_ps_poll, data);
-		data->ps_poll_pending = true;
-	} else if (old_ps == PS_DISABLED && val != PS_DISABLED) {
+	if (old_ps == PS_DISABLED && val != PS_DISABLED) {
 		ieee80211_iterate_active_interfaces_atomic(
 			data->hw, IEEE80211_IFACE_ITER_NORMAL,
 			hwsim_send_nullfunc_ps, data);
@@ -1208,7 +1211,9 @@ static bool mac80211_hwsim_tx_frame_no_nl(struct ieee80211_hw *hw,
 	if (info->control.rates[0].flags & IEEE80211_TX_RC_SHORT_GI)
 		rx_status.flag |= RX_FLAG_SHORT_GI;
 	/* TODO: simulate real signal strength (and optional packet loss) */
-	rx_status.signal = data->power_level - 50;
+	rx_status.signal = -50;
+	if (info->control.vif)
+		rx_status.signal += info->control.vif->bss_conf.txpower;
 
 	if (data->ps != PS_DISABLED)
 		hdr->frame_control |= cpu_to_le16(IEEE80211_FCTL_PM);
@@ -1607,7 +1612,6 @@ static int mac80211_hwsim_config(struct ieee80211_hw *hw, u32 changed)
 
 	WARN_ON(data->channel && data->use_chanctx);
 
-	data->power_level = conf->power_level;
 	if (!data->started || !data->beacon_int)
 		tasklet_hrtimer_cancel(&data->beacon_timer);
 	else if (!hrtimer_is_queued(&data->beacon_timer.timer)) {
@@ -2212,7 +2216,6 @@ static const char mac80211_hwsim_gstrings_stats[][ETH_GSTRING_LEN] = {
 	"d_tx_failed",
 	"d_ps_mode",
 	"d_group",
-	"d_tx_power",
 };
 
 #define MAC80211_HWSIM_SSTATS_LEN ARRAY_SIZE(mac80211_hwsim_gstrings_stats)
@@ -2249,7 +2252,6 @@ static void mac80211_hwsim_get_et_stats(struct ieee80211_hw *hw,
 	data[i++] = ar->tx_failed;
 	data[i++] = ar->ps;
 	data[i++] = ar->group;
-	data[i++] = ar->power_level;
 
 	WARN_ON(i != MAC80211_HWSIM_SSTATS_LEN);
 }
@@ -3082,8 +3084,10 @@ static int hwsim_new_radio_nl(struct sk_buff *msg, struct genl_info *info)
 	if (info->attrs[HWSIM_ATTR_REG_CUSTOM_REG]) {
 		u32 idx = nla_get_u32(info->attrs[HWSIM_ATTR_REG_CUSTOM_REG]);
 
-		if (idx >= ARRAY_SIZE(hwsim_world_regdom_custom))
+		if (idx >= ARRAY_SIZE(hwsim_world_regdom_custom)) {
+			kfree(hwname);
 			return -EINVAL;
+		}
 		param.regd = hwsim_world_regdom_custom[idx];
 	}
 
@@ -3344,8 +3348,11 @@ static void __net_exit hwsim_exit_net(struct net *net)
 			continue;
 
 		list_del(&data->list);
-		INIT_WORK(&data->destroy_work, destroy_radio);
-		schedule_work(&data->destroy_work);
+		spin_unlock_bh(&hwsim_radio_lock);
+		mac80211_hwsim_del_radio(data, wiphy_name(data->hw->wiphy),
+					 NULL);
+		spin_lock_bh(&hwsim_radio_lock);
+
 	}
 	spin_unlock_bh(&hwsim_radio_lock);
 }

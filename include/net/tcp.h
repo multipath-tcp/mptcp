@@ -247,7 +247,9 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define FLAG_DSACKING_ACK       0x800 /* SACK blocks contained D-SACK info */
 #define FLAG_SACK_RENEGING      0x2000 /* snd_una advanced to a sacked seq */
 #define FLAG_UPDATE_TS_RECENT   0x4000 /* tcp_replace_ts_recent() */
-#define MPTCP_FLAG_DATA_ACKED	0x8000
+#define FLAG_NO_CHALLENGE_ACK	0x8000 /* do not call tcp_send_challenge_ack()	*/
+
+#define MPTCP_FLAG_DATA_ACKED   0x10000
 
 #define FLAG_ACKED              (FLAG_DATA_ACKED|FLAG_SYN_ACKED)
 #define FLAG_NOT_DUP            (FLAG_DATA|FLAG_WIN_UPDATE|FLAG_ACKED)
@@ -478,6 +480,7 @@ ssize_t tcp_splice_read(struct socket *sk, loff_t *ppos,
 			struct pipe_inode_info *pipe, size_t len,
 			unsigned int flags);
 
+void tcp_enter_quickack_mode(struct sock *sk, unsigned int max_quickacks);
 static inline void tcp_dec_quickack_mode(struct sock *sk,
 					 const unsigned int pkts)
 {
@@ -673,6 +676,7 @@ void tcp_send_fin(struct sock *sk);
 void tcp_send_active_reset(struct sock *sk, gfp_t priority);
 int tcp_send_synack(struct sock *);
 void tcp_push_one(struct sock *, unsigned int mss_now);
+void __tcp_send_ack(struct sock *sk, u32 rcv_nxt);
 void tcp_send_ack(struct sock *sk);
 void tcp_send_delayed_ack(struct sock *sk);
 void tcp_send_loss_probe(struct sock *sk);
@@ -1407,9 +1411,11 @@ void tcp_select_initial_window(int __space, __u32 mss, __u32 *rcv_wnd,
 
 static inline int tcp_win_from_space(int space)
 {
-	return sysctl_tcp_adv_win_scale<=0 ?
-		(space>>(-sysctl_tcp_adv_win_scale)) :
-		space - (space>>sysctl_tcp_adv_win_scale);
+	int tcp_adv_win_scale = sysctl_tcp_adv_win_scale;
+
+	return tcp_adv_win_scale <= 0 ?
+		(space>>(-tcp_adv_win_scale)) :
+		space - (space>>tcp_adv_win_scale);
 }
 
 #ifdef CONFIG_MPTCP

@@ -120,11 +120,10 @@ static void gic_redist_wait_for_rwp(void)
 }
 
 #ifdef CONFIG_ARM64
-static DEFINE_STATIC_KEY_FALSE(is_cavium_thunderx);
 
 static u64 __maybe_unused gic_read_iar(void)
 {
-	if (static_branch_unlikely(&is_cavium_thunderx))
+	if (cpus_have_const_cap(ARM64_WORKAROUND_CAVIUM_23154))
 		return gic_read_iar_cavium_thunderx();
 	else
 		return gic_read_iar_common();
@@ -601,7 +600,7 @@ static void gic_send_sgi(u64 cluster_id, u16 tlist, unsigned int irq)
 	       MPIDR_TO_SGI_AFFINITY(cluster_id, 1)	|
 	       tlist << ICC_SGI1R_TARGET_LIST_SHIFT);
 
-	pr_debug("CPU%d: ICC_SGI1R_EL1 %llx\n", smp_processor_id(), val);
+	pr_devel("CPU%d: ICC_SGI1R_EL1 %llx\n", smp_processor_id(), val);
 	gic_write_sgi1r(val);
 }
 
@@ -908,14 +907,6 @@ static const struct irq_domain_ops partition_domain_ops = {
 	.select = gic_irq_domain_select,
 };
 
-static void gicv3_enable_quirks(void)
-{
-#ifdef CONFIG_ARM64
-	if (cpus_have_cap(ARM64_WORKAROUND_CAVIUM_23154))
-		static_branch_enable(&is_cavium_thunderx);
-#endif
-}
-
 static int __init gic_init_bases(void __iomem *dist_base,
 				 struct redist_region *rdist_regs,
 				 u32 nr_redist_regions,
@@ -937,8 +928,6 @@ static int __init gic_init_bases(void __iomem *dist_base,
 	gic_data.redist_regions = rdist_regs;
 	gic_data.nr_redist_regions = nr_redist_regions;
 	gic_data.redist_stride = redist_stride;
-
-	gicv3_enable_quirks();
 
 	/*
 	 * Find out how many interrupts are supported.
@@ -1250,6 +1239,10 @@ gic_acpi_parse_madt_gicc(struct acpi_subtable_header *header,
 	u32 size = reg == GIC_PIDR2_ARCH_GICv4 ? SZ_64K * 4 : SZ_64K * 2;
 	void __iomem *redist_base;
 
+	/* GICC entry which has !ACPI_MADT_ENABLED is not unusable so skip */
+	if (!(gicc->flags & ACPI_MADT_ENABLED))
+		return 0;
+
 	redist_base = ioremap(gicc->gicr_base_address, size);
 	if (!redist_base)
 		return -ENOMEM;
@@ -1297,6 +1290,13 @@ static int __init gic_acpi_match_gicc(struct acpi_subtable_header *header,
 	 * GICR base is presented via GICC
 	 */
 	if ((gicc->flags & ACPI_MADT_ENABLED) && gicc->gicr_base_address)
+		return 0;
+
+	/*
+	 * It's perfectly valid firmware can pass disabled GICC entry, driver
+	 * should not treat as errors, skip the entry instead of probe fail.
+	 */
+	if (!(gicc->flags & ACPI_MADT_ENABLED))
 		return 0;
 
 	return -ENODEV;

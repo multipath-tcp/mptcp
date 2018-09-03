@@ -313,7 +313,7 @@ struct sta_info *sta_info_alloc(struct ieee80211_sub_if_data *sdata,
 
 	if (ieee80211_hw_check(hw, USES_RSS)) {
 		sta->pcpu_rx_stats =
-			alloc_percpu(struct ieee80211_sta_rx_stats);
+			alloc_percpu_gfp(struct ieee80211_sta_rx_stats, gfp);
 		if (!sta->pcpu_rx_stats)
 			goto free;
 	}
@@ -395,10 +395,15 @@ struct sta_info *sta_info_alloc(struct ieee80211_sub_if_data *sdata,
 	sta->sta.smps_mode = IEEE80211_SMPS_OFF;
 	if (sdata->vif.type == NL80211_IFTYPE_AP ||
 	    sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
-		struct ieee80211_supported_band *sband =
-			hw->wiphy->bands[ieee80211_get_sdata_band(sdata)];
-		u8 smps = (sband->ht_cap.cap & IEEE80211_HT_CAP_SM_PS) >>
-				IEEE80211_HT_CAP_SM_PS_SHIFT;
+		struct ieee80211_supported_band *sband;
+		u8 smps;
+
+		sband = ieee80211_get_sband(sdata);
+		if (!sband)
+			goto free_txq;
+
+		smps = (sband->ht_cap.cap & IEEE80211_HT_CAP_SM_PS) >>
+			IEEE80211_HT_CAP_SM_PS_SHIFT;
 		/*
 		 * Assume that hostapd advertises our caps in the beacon and
 		 * this is the known_smps_mode for a station that just assciated
@@ -428,6 +433,7 @@ free_txq:
 	if (sta->sta.txq[0])
 		kfree(to_txq_info(sta->sta.txq[0]));
 free:
+	free_percpu(sta->pcpu_rx_stats);
 #ifdef CONFIG_MAC80211_MESH
 	kfree(sta->mesh);
 #endif
