@@ -811,15 +811,6 @@ ssize_t tcp_splice_read(struct socket *sock, loff_t *ppos,
 
 	sock_rps_record_flow(sk);
 
-#ifdef CONFIG_MPTCP
-	if (mptcp(tcp_sk(sk))) {
-		struct mptcp_tcp_sock *mptcp;
-
-		mptcp_for_each_sub(tcp_sk(sk)->mpcb, mptcp) {
-			sock_rps_record_flow(mptcp_to_sock(mptcp));
-		}
-	}
-#endif
 	/*
 	 * We can't seek on a socket input
 	 */
@@ -829,6 +820,16 @@ ssize_t tcp_splice_read(struct socket *sock, loff_t *ppos,
 	ret = spliced = 0;
 
 	lock_sock(sk);
+
+#ifdef CONFIG_MPTCP
+	if (mptcp(tcp_sk(sk))) {
+		struct mptcp_tcp_sock *mptcp;
+
+		mptcp_for_each_sub(tcp_sk(sk)->mpcb, mptcp) {
+			sock_rps_record_flow(mptcp_to_sock(mptcp));
+		}
+	}
+#endif
 
 	timeo = sock_rcvtimeo(sk, sock->file->f_flags & O_NONBLOCK);
 	while (tss.len) {
