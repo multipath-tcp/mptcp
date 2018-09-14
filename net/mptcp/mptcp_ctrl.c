@@ -1399,11 +1399,9 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 	sock_hold(meta_sk);
 	refcount_inc(&mpcb->mpcb_refcnt);
 
-	local_bh_disable();
-	spin_lock(&mpcb->mpcb_list_lock);
+	spin_lock_bh(&mpcb->mpcb_list_lock);
 	hlist_add_head_rcu(&tp->mptcp->node, &mpcb->conn_list);
-	spin_unlock(&mpcb->mpcb_list_lock);
-	local_bh_enable();
+	spin_unlock_bh(&mpcb->mpcb_list_lock);
 
 	tp->mptcp->attached = 1;
 
@@ -1466,9 +1464,9 @@ void mptcp_del_sock(struct sock *sk)
 		    __func__, mpcb->mptcp_loc_token, tp->mptcp->path_index,
 		    sk->sk_state, is_meta_sk(sk));
 
-	spin_lock(&mpcb->mpcb_list_lock);
+	spin_lock_bh(&mpcb->mpcb_list_lock);
 	hlist_del_init_rcu(&tp->mptcp->node);
-	spin_unlock(&mpcb->mpcb_list_lock);
+	spin_unlock_bh(&mpcb->mpcb_list_lock);
 
 	tp->mptcp->attached = 0;
 	mpcb->path_index_bits &= ~(1 << tp->mptcp->path_index);
