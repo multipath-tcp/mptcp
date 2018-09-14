@@ -562,10 +562,8 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 		tcp_init_tso_segs(subskb, 1);
 
 		/* Empty data-fins are sent immediatly on the subflow */
-		if (tcp_transmit_skb(sk, subskb, 0, GFP_ATOMIC) != 0) {
-			kfree_skb(subskb);
+		if (tcp_transmit_skb(sk, subskb, 0, GFP_ATOMIC))
 			return false;
-		}
 	}
 
 	if (!tp->mptcp->fully_established) {
