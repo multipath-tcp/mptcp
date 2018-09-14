@@ -387,6 +387,8 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 				kfree_skb(tmp);
 			}
 
+			mptcp_sub_force_close_all(tp->mpcb, sk);
+
 			ans = 0;
 		}
 	}
