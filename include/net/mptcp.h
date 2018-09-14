@@ -1302,6 +1302,11 @@ bool mptcp_prune_ofo_queue(struct sock *sk);
 	do {				\
 	} while (0)
 
+static inline struct sock *mptcp_to_sock(const struct mptcp_tcp_sock *mptcp)
+{
+	return NULL;
+}
+
 #define mptcp_for_each_sub(__mpcb, __mptcp)					\
 	if (0)
 
