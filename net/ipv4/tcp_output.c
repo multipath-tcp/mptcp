@@ -163,8 +163,21 @@ static void tcp_event_data_sent(struct tcp_sock *tp,
 }
 
 /* Account for an ACK we sent. */
-static inline void tcp_event_ack_sent(struct sock *sk, unsigned int pkts)
+static inline void tcp_event_ack_sent(struct sock *sk, unsigned int pkts,
+				      u32 rcv_nxt)
 {
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	if (unlikely(tp->compressed_ack)) {
+		NET_ADD_STATS(sock_net(sk), LINUX_MIB_TCPACKCOMPRESSED,
+			      tp->compressed_ack);
+		tp->compressed_ack = 0;
+		if (hrtimer_try_to_cancel(&tp->compressed_ack_timer) == 1)
+			__sock_put(sk);
+	}
+
+	if (unlikely(rcv_nxt != tp->rcv_nxt))
+		return;  /* Special ACK sent by DCTCP to reflect ECN */
 	tcp_dec_quickack_mode(sk, pkts);
 	inet_csk_clear_xmit_timer(sk, ICSK_TIME_DACK);
 }
@@ -232,11 +245,9 @@ void tcp_select_initial_window(const struct sock *sk, int __space, __u32 mss,
 		}
 	}
 
-	if (mss > (1 << *rcv_wscale)) {
-		if (!init_rcv_wnd) /* Use default unless specified otherwise */
-			init_rcv_wnd = tcp_default_init_rwnd(mss);
-		*rcv_wnd = min(*rcv_wnd, init_rcv_wnd * mss);
-	}
+	if (!init_rcv_wnd) /* Use default unless specified otherwise */
+		init_rcv_wnd = tcp_default_init_rwnd(mss);
+	*rcv_wnd = min(*rcv_wnd, init_rcv_wnd * mss);
 
 	/* Set the clamp no higher than max representable value */
 	(*window_clamp) = min_t(__u32, U16_MAX << (*rcv_wscale), *window_clamp);
@@ -586,14 +597,15 @@ static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 	unsigned int remaining = MAX_TCP_OPTION_SPACE;
 	struct tcp_fastopen_request *fastopen = tp->fastopen_req;
 
-#ifdef CONFIG_TCP_MD5SIG
-	*md5 = tp->af_specific->md5_lookup(sk, sk);
-	if (*md5) {
-		opts->options |= OPTION_MD5;
-		remaining -= TCPOLEN_MD5SIG_ALIGNED;
-	}
-#else
 	*md5 = NULL;
+#ifdef CONFIG_TCP_MD5SIG
+	if (unlikely(rcu_access_pointer(tp->md5sig_info))) {
+		*md5 = tp->af_specific->md5_lookup(sk, sk);
+		if (*md5) {
+			opts->options |= OPTION_MD5;
+			remaining -= TCPOLEN_MD5SIG_ALIGNED;
+		}
+	}
 #endif
 
 	/* We always get an MSS option.  The option bytes which will be seen in
@@ -726,14 +738,15 @@ static unsigned int tcp_established_options(struct sock *sk, struct sk_buff *skb
 
 	opts->options = 0;
 
-#ifdef CONFIG_TCP_MD5SIG
-	*md5 = tp->af_specific->md5_lookup(sk, sk);
-	if (unlikely(*md5)) {
-		opts->options |= OPTION_MD5;
-		size += TCPOLEN_MD5SIG_ALIGNED;
-	}
-#else
 	*md5 = NULL;
+#ifdef CONFIG_TCP_MD5SIG
+	if (unlikely(rcu_access_pointer(tp->md5sig_info))) {
+		*md5 = tp->af_specific->md5_lookup(sk, sk);
+		if (*md5) {
+			opts->options |= OPTION_MD5;
+			size += TCPOLEN_MD5SIG_ALIGNED;
+		}
+	}
 #endif
 
 	if (likely(tp->rx_opt.tstamp_ok)) {
@@ -784,7 +797,7 @@ struct tsq_tasklet {
 };
 static DEFINE_PER_CPU(struct tsq_tasklet, tsq_tasklet);
 
-static void tcp_tsq_handler(struct sock *sk)
+static void tcp_tsq_write(struct sock *sk)
 {
 	if ((1 << sk->sk_state) &
 	    (TCPF_ESTABLISHED | TCPF_FIN_WAIT1 | TCPF_CLOSING |
@@ -801,6 +814,28 @@ static void tcp_tsq_handler(struct sock *sk)
 					    tcp_sk(sk)->nonagle, 0, GFP_ATOMIC);
 	}
 }
+
+static void tcp_tsq_handler(struct sock *sk)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct sock *meta_sk = mptcp(tp) ? mptcp_meta_sk(sk) : sk;
+
+	bh_lock_sock(meta_sk);
+	if (!sock_owned_by_user(meta_sk)) {
+		tcp_tsq_write(sk);
+
+		if (mptcp(tp))
+			tcp_tsq_write(meta_sk);
+	} else {
+		if (!test_and_set_bit(TCP_TSQ_DEFERRED, &meta_sk->sk_tsq_flags))
+			sock_hold(meta_sk);
+
+		if ((mptcp(tp)) && (sk->sk_state != TCP_CLOSE))
+			mptcp_tsq_flags(sk);
+	}
+
+	bh_unlock_sock(meta_sk);
+}
 /*
  * One tasklet per cpu tries to send more skbs.
  * We run in tasklet context but need to disable irqs when
@@ -814,7 +849,7 @@ static void tcp_tasklet_func(unsigned long data)
 	unsigned long flags;
 	struct list_head *q, *n;
 	struct tcp_sock *tp;
-	struct sock *sk, *meta_sk;
+	struct sock *sk;
 
 	local_irq_save(flags);
 	list_splice_init(&tsq->head, &list);
@@ -828,30 +863,7 @@ static void tcp_tasklet_func(unsigned long data)
 		smp_mb__before_atomic();
 		clear_bit(TSQ_QUEUED, &sk->sk_tsq_flags);
 
-		meta_sk = mptcp(tp) ? mptcp_meta_sk(sk) : sk;
-
-		if (!meta_sk->sk_lock.owned &&
-		    test_bit(TCP_TSQ_DEFERRED, &sk->sk_tsq_flags)) {
-			bh_lock_sock(meta_sk);
-			if (!sock_owned_by_user(meta_sk)) {
-				clear_bit(TCP_TSQ_DEFERRED, &sk->sk_tsq_flags);
-				tcp_tsq_handler(sk);
-				if (mptcp(tp))
-					tcp_tsq_handler(meta_sk);
-			} else if (mptcp(tp)) {
-				if (sk->sk_state != TCP_CLOSE)
-					mptcp_tsq_flags(sk);
-			}
-			bh_unlock_sock(meta_sk);
-		} else {
-			if (mptcp(tp)) {
-				bh_lock_sock(meta_sk);
-				if (sk->sk_state != TCP_CLOSE)
-					mptcp_tsq_flags(sk);
-				bh_unlock_sock(meta_sk);
-			}
-		}
-
+		tcp_tsq_handler(sk);
 		sk_free(sk);
 	}
 }
@@ -882,11 +894,12 @@ void tcp_release_cb(struct sock *sk)
 	} while (cmpxchg(&sk->sk_tsq_flags, flags, nflags) != flags);
 
 	if (flags & TCPF_TSQ_DEFERRED) {
-		tcp_tsq_handler(sk);
-		if (mptcp(tcp_sk(sk)))
-			tcp_tsq_handler(mptcp_meta_sk(sk));
-	}
+		tcp_tsq_write(sk);
+		__sock_put(sk);
 
+		if (mptcp(tcp_sk(sk)))
+			tcp_tsq_write(mptcp_meta_sk(sk));
+	}
 	/* Here begins the tricky part :
 	 * We are called from release_sock() with :
 	 * 1) BH disabled
@@ -967,7 +980,7 @@ void tcp_wfree(struct sk_buff *skb)
 		if (!(oval & TSQF_THROTTLED) || (oval & TSQF_QUEUED))
 			goto out;
 
-		nval = (oval & ~TSQF_THROTTLED) | TSQF_QUEUED | TCPF_TSQ_DEFERRED;
+		nval = (oval & ~TSQF_THROTTLED) | TSQF_QUEUED;
 		nval = cmpxchg(&sk->sk_tsq_flags, oval, nval);
 		if (nval != oval)
 			continue;
@@ -986,37 +999,17 @@ out:
 	sk_free(sk);
 }
 
-/* Note: Called under hard irq.
- * We can not call TCP stack right away.
+/* Note: Called under soft irq.
+ * We can call TCP stack right away, unless socket is owned by user.
  */
 enum hrtimer_restart tcp_pace_kick(struct hrtimer *timer)
 {
 	struct tcp_sock *tp = container_of(timer, struct tcp_sock, pacing_timer);
 	struct sock *sk = (struct sock *)tp;
-	unsigned long nval, oval;
 
-	for (oval = READ_ONCE(sk->sk_tsq_flags);; oval = nval) {
-		struct tsq_tasklet *tsq;
-		bool empty;
+	tcp_tsq_handler(sk);
+	sock_put(sk);
 
-		if (oval & TSQF_QUEUED)
-			break;
-
-		nval = (oval & ~TSQF_THROTTLED) | TSQF_QUEUED | TCPF_TSQ_DEFERRED;
-		nval = cmpxchg(&sk->sk_tsq_flags, oval, nval);
-		if (nval != oval)
-			continue;
-
-		if (!refcount_inc_not_zero(&sk->sk_wmem_alloc))
-			break;
-		/* queue this socket to tasklet queue */
-		tsq = this_cpu_ptr(&tsq_tasklet);
-		empty = list_empty(&tsq->head);
-		list_add(&tp->tsq_node, &tsq->head);
-		if (empty)
-			tasklet_schedule(&tsq->tasklet);
-		break;
-	}
 	return HRTIMER_NORESTART;
 }
 
@@ -1049,7 +1042,8 @@ static void tcp_internal_pacing(struct sock *sk, const struct sk_buff *skb)
 	do_div(len_ns, rate);
 	hrtimer_start(&tcp_sk(sk)->pacing_timer,
 		      ktime_add_ns(ktime_get(), len_ns),
-		      HRTIMER_MODE_ABS_PINNED);
+		      HRTIMER_MODE_ABS_PINNED_SOFT);
+	sock_hold(sk);
 }
 
 static void tcp_update_skb_after_send(struct tcp_sock *tp, struct sk_buff *skb)
@@ -1069,8 +1063,8 @@ static void tcp_update_skb_after_send(struct tcp_sock *tp, struct sk_buff *skb)
  * We are working here with either a clone of the original
  * SKB, or a fresh unique copy made by the retransmit engine.
  */
-int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
-		        gfp_t gfp_mask)
+static int __tcp_transmit_skb(struct sock *sk, struct sk_buff *skb,
+			      int clone_it, gfp_t gfp_mask, u32 rcv_nxt)
 {
 	const struct inet_connection_sock *icsk = inet_csk(sk);
 	struct inet_sock *inet;
@@ -1116,7 +1110,7 @@ int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 
 	/* if no packet is in qdisc/device queue, then allow XPS to select
 	 * another queue. We can be called from tcp_tsq_handler()
-	 * which holds one reference to sk_wmem_alloc.
+	 * which holds one reference to sk.
 	 *
 	 * TODO: Ideally, in-flight pure ACK packets should not matter here.
 	 * One way to get this would be to set skb->truesize = 2 on them.
@@ -1146,7 +1140,7 @@ int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	th->source		= inet->inet_sport;
 	th->dest		= inet->inet_dport;
 	th->seq			= htonl(tcb->seq);
-	th->ack_seq		= htonl(tp->rcv_nxt);
+	th->ack_seq		= htonl(rcv_nxt);
 	*(((__be16 *)th) + 6)	= htons(((tcp_header_size >> 2) << 12) |
 					tcb->tcp_flags);
 
@@ -1187,7 +1181,7 @@ int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	icsk->icsk_af_ops->send_check(sk, skb);
 
 	if (likely(tcb->tcp_flags & TCPHDR_ACK))
-		tcp_event_ack_sent(sk, tcp_skb_pcount(skb));
+		tcp_event_ack_sent(sk, tcp_skb_pcount(skb), rcv_nxt);
 
 	if (skb->len != tcp_header_size) {
 		tcp_event_data_sent(tp, sk);
@@ -1222,6 +1216,13 @@ int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		tcp_rate_skb_sent(sk, oskb);
 	}
 	return err;
+}
+
+int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
+		     gfp_t gfp_mask)
+{
+	return __tcp_transmit_skb(sk, skb, clone_it, gfp_mask,
+				  tcp_sk(sk)->rcv_nxt);
 }
 
 /* This routine just queues the buffer for sending.
@@ -2225,7 +2226,7 @@ static int tcp_mtu_probe(struct sock *sk)
 static bool tcp_pacing_check(const struct sock *sk)
 {
 	return tcp_needs_internal_pacing(sk) &&
-	       hrtimer_active(&tcp_sk(sk)->pacing_timer);
+	       hrtimer_is_queued(&tcp_sk(sk)->pacing_timer);
 }
 
 /* TCP Small Queues :
@@ -2410,8 +2411,6 @@ bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 					  skb, limit, mss_now, gfp)))
 			break;
 
-		if (test_bit(TCP_TSQ_DEFERRED, &sk->sk_tsq_flags))
-			clear_bit(TCP_TSQ_DEFERRED, &sk->sk_tsq_flags);
 		if (tcp_small_queue_check(sk, skb, 0))
 			break;
 
@@ -3614,8 +3613,6 @@ void tcp_send_delayed_ack(struct sock *sk)
 	int ato = icsk->icsk_ack.ato;
 	unsigned long timeout;
 
-	tcp_ca_event(sk, CA_EVENT_DELAYED_ACK);
-
 	if (ato > TCP_DELACK_MIN) {
 		const struct tcp_sock *tp = tcp_sk(sk);
 		int max_ato = HZ / 2;
@@ -3664,15 +3661,13 @@ void tcp_send_delayed_ack(struct sock *sk)
 }
 
 /* This routine sends an ack and also updates the window. */
-void tcp_send_ack(struct sock *sk)
+void __tcp_send_ack(struct sock *sk, u32 rcv_nxt)
 {
 	struct sk_buff *buff;
 
 	/* If we have been reset, we may not send again. */
 	if (sk->sk_state == TCP_CLOSE)
 		return;
-
-	tcp_ca_event(sk, CA_EVENT_NON_DELAYED_ACK);
 
 	/* We are not putting this on the write queue, so
 	 * tcp_transmit_skb() will set the ownership to this
@@ -3699,9 +3694,14 @@ void tcp_send_ack(struct sock *sk)
 	skb_set_tcp_pure_ack(buff);
 
 	/* Send it off, this clears delayed acks for us. */
-	tcp_transmit_skb(sk, buff, 0, (__force gfp_t)0);
+	__tcp_transmit_skb(sk, buff, 0, (__force gfp_t)0, rcv_nxt);
 }
-EXPORT_SYMBOL_GPL(tcp_send_ack);
+EXPORT_SYMBOL_GPL(__tcp_send_ack);
+
+void tcp_send_ack(struct sock *sk)
+{
+	__tcp_send_ack(sk, tcp_sk(sk)->rcv_nxt);
+}
 
 /* This routine sends a packet with an out of date sequence
  * number. It assumes the other end will try to ack it.
