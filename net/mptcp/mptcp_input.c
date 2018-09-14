@@ -371,6 +371,8 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 			if (sk_it != sk &&
 			    tcp_sk(sk_it)->mptcp->fully_established)
 				break;
+
+			sk_it = NULL;
 		}
 
 		if (sk_it) {
