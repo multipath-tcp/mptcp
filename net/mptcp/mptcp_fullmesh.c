@@ -606,7 +606,7 @@ static void announce_remove_addr(u8 addr_id, struct sock *meta_sk)
 	mpcb->addr_signal = 1;
 
 	if (sk)
-		tcp_send_ack(sk);
+		__tcp_send_ack(sk, tcp_sk(sk)->rcv_nxt);
 }
 
 static void update_addr_bitfields(struct sock *meta_sk,
@@ -897,7 +897,7 @@ duno:
 
 				sk = mptcp_select_ack_sock(meta_sk);
 				if (sk)
-					tcp_send_ack(sk);
+					__tcp_send_ack(sk, tcp_sk(sk)->rcv_nxt);
 
 				full_mesh_create_subflows(meta_sk);
 			}
@@ -980,7 +980,7 @@ duno:
 							tp->mptcp->send_mp_prio = 1;
 							tp->mptcp->low_prio = event->low_prio;
 
-							tcp_send_ack(sk);
+							__tcp_send_ack(sk, tcp_sk(sk)->rcv_nxt);
 						}
 					}
 
@@ -991,7 +991,7 @@ duno:
 							tp->mptcp->send_mp_prio = 1;
 							tp->mptcp->low_prio = event->low_prio;
 
-							tcp_send_ack(sk);
+							__tcp_send_ack(sk, tcp_sk(sk)->rcv_nxt);
 						}
 					}
 				}
@@ -1399,10 +1399,10 @@ skip_ipv6:
 		fmp->announced_addrs_v6 |= (1 << index);
 
 	for (i = fmp->add_addr; i && fmp->add_addr; i--)
-		tcp_send_ack(mpcb->master_sk);
+		__tcp_send_ack(mpcb->master_sk, tcp_sk(mpcb->master_sk)->rcv_nxt);
 
 	if (master_tp->mptcp->send_mp_prio)
-		tcp_send_ack(mpcb->master_sk);
+		__tcp_send_ack(mpcb->master_sk, tcp_sk(mpcb->master_sk)->rcv_nxt);
 
 	return;
 
@@ -1492,7 +1492,7 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 				tp->mptcp->send_mp_prio = 1;
 				tp->mptcp->low_prio = mptcp_local->locaddr4[i].low_prio;
 
-				tcp_send_ack(sk);
+				__tcp_send_ack(sk, tcp_sk(sk)->rcv_nxt);
 			}
 		}
 
@@ -1504,7 +1504,7 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 
 			sk = mptcp_select_ack_sock(meta_sk);
 			if (sk)
-				tcp_send_ack(sk);
+				__tcp_send_ack(sk, tcp_sk(sk)->rcv_nxt);
 			full_mesh_create_subflows(meta_sk);
 		}
 	}
@@ -1536,7 +1536,7 @@ skip_ipv4:
 				tp->mptcp->send_mp_prio = 1;
 				tp->mptcp->low_prio = mptcp_local->locaddr6[i].low_prio;
 
-				tcp_send_ack(sk);
+				__tcp_send_ack(sk, tcp_sk(sk)->rcv_nxt);
 			}
 		}
 
@@ -1548,7 +1548,7 @@ skip_ipv4:
 
 			sk = mptcp_select_ack_sock(meta_sk);
 			if (sk)
-				tcp_send_ack(sk);
+				__tcp_send_ack(sk, tcp_sk(sk)->rcv_nxt);
 			full_mesh_create_subflows(meta_sk);
 		}
 	}
