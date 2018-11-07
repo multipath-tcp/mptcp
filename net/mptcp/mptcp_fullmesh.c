@@ -1122,68 +1122,8 @@ static struct notifier_block mptcp_pm_inetaddr_notifier = {
 
 #if IS_ENABLED(CONFIG_IPV6)
 
-/* IPV6-related address/interface watchers */
-struct mptcp_dad_data {
-	struct timer_list timer;
-	struct inet6_ifaddr *ifa;
-};
-
-static void dad_callback(struct timer_list *t);
 static int inet6_addr_event(struct notifier_block *this, unsigned long event,
 			    void *ptr);
-
-static bool ipv6_dad_finished(const struct inet6_ifaddr *ifa)
-{
-	return !(ifa->flags & IFA_F_TENTATIVE) ||
-	       ifa->state > INET6_IFADDR_STATE_DAD;
-}
-
-static void dad_init_timer(struct mptcp_dad_data *data,
-			   struct inet6_ifaddr *ifa)
-{
-	data->ifa = ifa;
-	if (ifa->idev->cnf.rtr_solicit_delay)
-		data->timer.expires = jiffies + ifa->idev->cnf.rtr_solicit_delay;
-	else
-		data->timer.expires = jiffies + (HZ/10);
-}
-
-static void dad_callback(struct timer_list *t)
-{
-	struct mptcp_dad_data *data = from_timer(data, t, timer);
-
-	/* DAD failed or IP brought down? */
-	if (data->ifa->state == INET6_IFADDR_STATE_ERRDAD ||
-	    data->ifa->state == INET6_IFADDR_STATE_DEAD)
-		goto exit;
-
-	if (!ipv6_dad_finished(data->ifa)) {
-		dad_init_timer(data, data->ifa);
-		add_timer(&data->timer);
-		return;
-	}
-
-	inet6_addr_event(NULL, NETDEV_UP, data->ifa);
-
-exit:
-	in6_ifa_put(data->ifa);
-	kfree(data);
-}
-
-static inline void dad_setup_timer(struct inet6_ifaddr *ifa)
-{
-	struct mptcp_dad_data *data;
-
-	data = kmalloc(sizeof(*data), GFP_ATOMIC);
-
-	if (!data)
-		return;
-
-	timer_setup(&data->timer, dad_callback, 0);
-	dad_init_timer(data, ifa);
-	add_timer(&data->timer);
-	in6_ifa_hold(ifa);
-}
 
 static void addr6_event_handler(const struct inet6_ifaddr *ifa, unsigned long event,
 				struct net *net)
@@ -1233,10 +1173,7 @@ static int inet6_addr_event(struct notifier_block *this, unsigned long event,
 	      event == NETDEV_CHANGE))
 		return NOTIFY_DONE;
 
-	if (!ipv6_dad_finished(ifa6))
-		dad_setup_timer(ifa6);
-	else
-		addr6_event_handler(ifa6, event, net);
+	addr6_event_handler(ifa6, event, net);
 
 	return NOTIFY_DONE;
 }
