@@ -1231,7 +1231,7 @@ static int inet6_addr_event(struct notifier_block *this, unsigned long event,
 	      event == NETDEV_CHANGE))
 		return NOTIFY_DONE;
 
-	if (!ipv6_dad_finished(ifa6))
+	if (sysctl_mptcp_enabled && !ipv6_dad_finished(ifa6))
 		dad_setup_timer(ifa6);
 	else
 		addr6_event_handler(ifa6, event, net);
