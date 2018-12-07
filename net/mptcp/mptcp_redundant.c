@@ -196,14 +196,10 @@ static struct sk_buff *redundant_next_skb_from_queue(struct sk_buff_head *queue,
 						     struct sk_buff *previous,
 						     struct sock *meta_sk)
 {
-	if (skb_queue_empty(queue))
-		return NULL;
+	struct sk_buff *skb;
 
 	if (!previous)
 		return skb_peek(queue);
-
-	if (skb_queue_is_last(queue, previous))
-		return NULL;
 
 	/* sk_data->skb stores the last scheduled packet for this subflow.
 	 * If sk_data->skb was scheduled but not sent (e.g., due to nagle),
@@ -225,7 +221,11 @@ static struct sk_buff *redundant_next_skb_from_queue(struct sk_buff_head *queue,
 	if (tcp_send_head(meta_sk) == previous)
 		return tcp_send_head(meta_sk);
 
-	return skb_queue_next(queue, previous);
+	skb = skb_rb_next(previous);
+	if (skb)
+		return skb;
+
+	return tcp_send_head(meta_sk);
 }
 
 static struct sk_buff *redundant_next_segment(struct sock *meta_sk,
