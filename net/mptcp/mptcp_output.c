@@ -138,10 +138,12 @@ static void __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk
 			skb = pskb_copy_for_clone(orig_skb, GFP_ATOMIC);
 		} tcp_skb_tsorted_restore(orig_skb);
 	} else {
-		if (tcp_queue == TCP_FRAG_IN_WRITE_QUEUE)
+		if (tcp_queue == TCP_FRAG_IN_WRITE_QUEUE) {
 			__skb_unlink(orig_skb, &sk->sk_write_queue);
-		else
-			rb_erase(&orig_skb->rbnode, &sk->tcp_rtx_queue);
+		} else {
+			list_del(&orig_skb->tcp_tsorted_anchor);
+			tcp_rtx_queue_unlink(orig_skb, sk);
+		}
 		sock_set_flag(sk, SOCK_QUEUE_SHRUNK);
 		sk->sk_wmem_queued -= orig_skb->truesize;
 		sk_mem_uncharge(sk, orig_skb->truesize);
@@ -150,15 +152,15 @@ static void __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk
 	if (unlikely(!skb))
 		return;
 
+	/* Make sure that this list is clean */
+	tcp_skb_tsorted_anchor_cleanup(skb);
+
 	if (sk && !mptcp_reconstruct_mapping(skb)) {
 		__kfree_skb(skb);
 		return;
 	}
 
 	skb->sk = meta_sk;
-
-	/* Make sure that this list is clean */
-	tcp_skb_tsorted_anchor_cleanup(skb);
 
 	/* Reset subflow-specific TCP control-data */
 	TCP_SKB_CB(skb)->sacked = 0;
@@ -1320,8 +1322,8 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 /* Sends the datafin */
 void mptcp_send_fin(struct sock *meta_sk)
 {
+	struct sk_buff *skb, *tskb = tcp_write_queue_tail(meta_sk);
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct sk_buff *skb = tcp_write_queue_tail(meta_sk);
 	int mss_now;
 
 	if ((1 << meta_sk->sk_state) & (TCPF_CLOSE_WAIT | TCPF_LAST_ACK))
@@ -1333,9 +1335,9 @@ void mptcp_send_fin(struct sock *meta_sk)
 	 */
 	mss_now = mptcp_current_mss(meta_sk);
 
-	if (tcp_send_head(meta_sk) != NULL) {
-		TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_FIN;
-		TCP_SKB_CB(skb)->end_seq++;
+	if (tskb) {
+		TCP_SKB_CB(tskb)->mptcp_flags |= MPTCPHDR_FIN;
+		TCP_SKB_CB(tskb)->end_seq++;
 		meta_tp->write_seq++;
 	} else {
 		/* Socket is locked, keep trying until memory is available. */
@@ -1347,6 +1349,7 @@ void mptcp_send_fin(struct sock *meta_sk)
 			yield();
 		}
 		/* Reserve space for headers and prepare control bits. */
+		INIT_LIST_HEAD(&skb->tcp_tsorted_anchor);
 		skb_reserve(skb, MAX_TCP_HEADER);
 
 		tcp_init_nondata_skb(skb, meta_tp->write_seq, TCPHDR_ACK);
