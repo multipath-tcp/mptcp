@@ -188,7 +188,6 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 			goto reset_and_discard;
 
 		local_bh_disable();
-
 		child = tcp_check_req(meta_sk, skb, req, false, &req_stolen);
 		if (!child) {
 			reqsk_put(req);

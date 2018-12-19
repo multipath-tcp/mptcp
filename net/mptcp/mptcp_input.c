@@ -2302,6 +2302,7 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 		sk_set_socket(sk, meta_sk->sk_socket);
 		sk->sk_wq = meta_sk->sk_wq;
 
+		bh_unlock_sock(sk);
 		 /* hold in sk_clone_lock due to initialization to 2 */
 		sock_put(sk);
 	} else {

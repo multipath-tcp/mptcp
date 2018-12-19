@@ -5927,8 +5927,13 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 
 		if (tp->request_mptcp || mptcp(tp)) {
 			int ret;
+
+			rcu_read_lock();
+			local_bh_disable();
 			ret = mptcp_rcv_synsent_state_process(sk, &sk,
 							      skb, &mopt);
+			local_bh_enable();
+			rcu_read_unlock();
 
 			/* May have changed if we support MPTCP */
 			tp = tcp_sk(sk);
@@ -6187,8 +6192,6 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
 		tcp_urg(sk, skb, th);
 		__kfree_skb(skb);
 		tcp_data_snd_check(sk);
-		if (mptcp(tp) && is_master_tp(tp))
-			bh_unlock_sock(sk);
 		return 0;
 	}
 
