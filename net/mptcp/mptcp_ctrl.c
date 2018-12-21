@@ -77,6 +77,8 @@ bool mptcp_init_failed __read_mostly;
 struct static_key mptcp_static_key = STATIC_KEY_INIT_FALSE;
 EXPORT_SYMBOL(mptcp_static_key);
 
+static void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn);
+
 static int proc_mptcp_path_manager(struct ctl_table *ctl, int write,
 				   void __user *buffer, size_t *lenp,
 				   loff_t *ppos)
@@ -791,7 +793,7 @@ static void mptcp_assign_congestion_control(struct sock *sk)
 siphash_key_t mptcp_secret __read_mostly;
 u32 mptcp_seed = 0;
 
-void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn)
+static void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn)
 {
 	u32 workspace[SHA_WORKSPACE_WORDS];
 	u32 mptcp_hashed_key[SHA_DIGEST_WORDS];
@@ -812,12 +814,12 @@ void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn)
 	sha_transform(mptcp_hashed_key, input, workspace);
 
 	for (i = 0; i < 5; i++)
-		mptcp_hashed_key[i] = cpu_to_be32(mptcp_hashed_key[i]);
+		mptcp_hashed_key[i] = (__force u32)cpu_to_be32(mptcp_hashed_key[i]);
 
 	if (token)
 		*token = mptcp_hashed_key[0];
 	if (idsn)
-		*idsn = *((u64 *)&mptcp_hashed_key[3]);
+		*idsn = ntohll(*((__be64 *)&mptcp_hashed_key[3]));
 }
 
 void mptcp_hmac_sha1(const u8 *key_1, const u8 *key_2, u32 *hash_out,
@@ -866,7 +868,7 @@ void mptcp_hmac_sha1(const u8 *key_1, const u8 *key_2, u32 *hash_out,
 	memset(workspace, 0, sizeof(workspace));
 
 	for (i = 0; i < 5; i++)
-		hash_out[i] = cpu_to_be32(hash_out[i]);
+		hash_out[i] = (__force u32)cpu_to_be32(hash_out[i]);
 
 	/* Prepare second part of hmac */
 	memset(input, 0x5C, 64);
@@ -890,7 +892,7 @@ void mptcp_hmac_sha1(const u8 *key_1, const u8 *key_2, u32 *hash_out,
 	sha_transform(hash_out, &input[64], workspace);
 
 	for (i = 0; i < 5; i++)
-		hash_out[i] = cpu_to_be32(hash_out[i]);
+		hash_out[i] = (__force u32)cpu_to_be32(hash_out[i]);
 }
 EXPORT_SYMBOL(mptcp_hmac_sha1);
 
@@ -1201,7 +1203,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 
 	/* Generate Initial data-sequence-numbers */
 	mptcp_key_sha1(mpcb->mptcp_loc_key, NULL, &idsn);
-	idsn = ntohll(idsn) + 1;
+	idsn++;
 	mpcb->snd_high_order[0] = idsn >> 32;
 	mpcb->snd_high_order[1] = mpcb->snd_high_order[0] - 1;
 
@@ -1214,7 +1216,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 
 	mpcb->mptcp_rem_key = remote_key;
 	mptcp_key_sha1(mpcb->mptcp_rem_key, &mpcb->mptcp_rem_token, &idsn);
-	idsn = ntohll(idsn) + 1;
+	idsn++;
 	mpcb->rcv_high_order[0] = idsn >> 32;
 	mpcb->rcv_high_order[1] = mpcb->rcv_high_order[0] + 1;
 	meta_tp->copied_seq = (u32) idsn;

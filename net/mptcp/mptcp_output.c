@@ -60,8 +60,8 @@ EXPORT_SYMBOL(mptcp_sub_len_remove_addr_align);
 static bool mptcp_reconstruct_mapping(struct sk_buff *skb)
 {
 	const struct mp_dss *mpdss = (struct mp_dss *)TCP_SKB_CB(skb)->dss;
-	u32 *p32;
-	u16 *p16;
+	__be32 *p32;
+	__be16 *p16;
 
 	if (!mptcp_is_data_seq(skb))
 		return false;
@@ -70,7 +70,7 @@ static bool mptcp_reconstruct_mapping(struct sk_buff *skb)
 		return false;
 
 	/* Move the pointer to the data-seq */
-	p32 = (u32 *)mpdss;
+	p32 = (__be32 *)mpdss;
 	p32++;
 	if (mpdss->A) {
 		p32++;
@@ -83,7 +83,7 @@ static bool mptcp_reconstruct_mapping(struct sk_buff *skb)
 	/* Get the data_len to calculate the end_data_seq */
 	p32++;
 	p32++;
-	p16 = (u16 *)p32;
+	p16 = (__be16 *)p32;
 	TCP_SKB_CB(skb)->end_seq = ntohs(*p16) + TCP_SKB_CB(skb)->seq;
 
 	return true;
@@ -410,7 +410,7 @@ static int mptcp_write_dss_mapping(const struct tcp_sock *tp, const struct sk_bu
 		data_len = tcb->end_seq - tcb->seq;
 
 	if (tp->mpcb->dss_csum && data_len) {
-		__be16 *p16 = (__be16 *)ptr;
+		__sum16 *p16 = (__sum16 *)ptr;
 		__be32 hdseq = mptcp_get_highorder_sndbits(skb, tp->mpcb);
 		__wsum csum;
 
