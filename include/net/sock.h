@@ -1497,9 +1497,6 @@ static inline void unlock_sock_fast(struct sock *sk, bool slow)
 
 static inline void sock_owned_by_me(const struct sock *sk)
 {
-#ifdef CONFIG_LOCKDEP
-	WARN_ON_ONCE(!lockdep_sock_is_held(sk) && debug_locks);
-#endif
 }
 
 static inline bool sock_owned_by_user(const struct sock *sk)
