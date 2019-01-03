@@ -907,7 +907,7 @@ int tcp_child_process(struct sock *parent, struct sock *child,
 	 * on the subflows.
 	 */
 	if (mptcp(tcp_sk(child)))
-		bh_lock_sock(meta_sk);
+		bh_lock_sock_nested(meta_sk);
 	if (!sock_owned_by_user(meta_sk)) {
 		ret = tcp_rcv_state_process(child, skb);
 		/* Wakeup parent, send SIGIO */
