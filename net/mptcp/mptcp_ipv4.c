@@ -120,7 +120,7 @@ static int mptcp_v4_join_init_req(struct request_sock *req, const struct sock *m
 						    tcp_hdr(skb)->source,
 						    tcp_hdr(skb)->dest);
 	addr.ip = inet_rsk(req)->ir_loc_addr;
-	loc_id = mpcb->pm_ops->get_local_id(AF_INET, &addr, sock_net(meta_sk), &low_prio);
+	loc_id = mpcb->pm_ops->get_local_id(meta_sk, AF_INET, &addr, &low_prio);
 	if (loc_id == -1)
 		return -1;
 	mtreq->loc_id = loc_id;

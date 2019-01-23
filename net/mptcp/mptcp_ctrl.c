@@ -1856,6 +1856,9 @@ adjudge_to_death:
 		write_unlock_bh(&sk_it->sk_callback_lock);
 	}
 
+	if (mpcb->pm_ops->close_session)
+		mpcb->pm_ops->close_session(meta_sk);
+
 	/* It is the last release_sock in its life. It will remove backlog. */
 	release_sock(meta_sk);
 
@@ -2253,6 +2256,9 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk,
 
 	sock_rps_save_rxhash(child, skb);
 	tcp_synack_rtt_meas(child, req);
+
+	if (mpcb->pm_ops->established_subflow)
+		mpcb->pm_ops->established_subflow(child);
 
 	/* Subflows do not use the accept queue, as they
 	 * are attached immediately to the mpcb.

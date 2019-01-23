@@ -127,8 +127,9 @@ static void ndiffports_create_subflows(struct sock *meta_sk)
 	}
 }
 
-static int ndiffports_get_local_id(sa_family_t family, union inet_addr *addr,
-				   struct net *net, bool *low_prio)
+static int ndiffports_get_local_id(const struct sock *meta_sk,
+				   sa_family_t family, union inet_addr *addr,
+				   bool *low_prio)
 {
 	return 0;
 }

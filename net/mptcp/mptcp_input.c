@@ -386,7 +386,7 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 				kfree_skb(tmp);
 			}
 
-			mptcp_sub_force_close_all(tp->mpcb, sk);
+			mptcp_fallback_close(tp->mpcb, sk);
 
 			ans = 0;
 		}
@@ -563,7 +563,7 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 		mpcb->infinite_mapping_rcv = 1;
 		mpcb->infinite_rcv_seq = mptcp_get_rcv_nxt_64(mptcp_meta_tp(tp));
 
-		mptcp_sub_force_close_all(mpcb, sk);
+		mptcp_fallback_close(mpcb, sk);
 
 		/* We do a seamless fallback and should not send a inf.mapping. */
 		mpcb->send_infinite_mapping = 0;
@@ -721,7 +721,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 
 		mptcp_restart_sending(tp->meta_sk);
 
-		mptcp_sub_force_close_all(mpcb, sk);
+		mptcp_fallback_close(mpcb, sk);
 
 		/* data_seq and so on are set correctly */
 
@@ -1403,6 +1403,9 @@ static void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	if (tp->mptcp->pre_established && !tcp_hdr(skb)->syn) {
 		tp->mptcp->pre_established = 0;
 		sk_stop_timer(sk, &tp->mptcp->mptcp_ack_timer);
+
+		if (meta_tp->mpcb->pm_ops->established_subflow)
+			meta_tp->mpcb->pm_ops->established_subflow(sk);
 	}
 
 	/* If we are in infinite mapping mode, rx_opt.data_ack has been
@@ -2068,7 +2071,7 @@ static void mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
 
 		mptcp_restart_sending(meta_sk);
 
-		mptcp_sub_force_close_all(mpcb, sk);
+		mptcp_fallback_close(mpcb, sk);
 	}
 }
 
@@ -2088,6 +2091,7 @@ bool mptcp_handle_options(struct sock *sk, const struct tcphdr *th,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_options_received *mopt = &tp->mptcp->rx_opt;
+	struct mptcp_cb *mpcb = tp->mpcb;
 
 	if (tp->mpcb->infinite_mapping_rcv || tp->mpcb->infinite_mapping_snd)
 		return false;
@@ -2137,12 +2141,18 @@ bool mptcp_handle_options(struct sock *sk, const struct tcphdr *th,
 	if (mopt->saw_low_prio) {
 		if (mopt->saw_low_prio == 1) {
 			tp->mptcp->rcv_low_prio = mopt->low_prio;
+			if (mpcb->pm_ops->prio_changed)
+				mpcb->pm_ops->prio_changed(sk, mopt->low_prio);
 		} else {
 			struct mptcp_tcp_sock *mptcp;
 
 			mptcp_for_each_sub(tp->mpcb, mptcp) {
-				if (mptcp->rem_id == mopt->prio_addr_id)
+				if (mptcp->rem_id == mopt->prio_addr_id) {
 					mptcp->rcv_low_prio = mopt->low_prio;
+					if (mpcb->pm_ops->prio_changed)
+						mpcb->pm_ops->prio_changed(sk,
+									   mopt->low_prio);
+				}
 			}
 		}
 		mopt->saw_low_prio = 0;

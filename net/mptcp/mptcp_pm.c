@@ -34,8 +34,8 @@
 static DEFINE_SPINLOCK(mptcp_pm_list_lock);
 static LIST_HEAD(mptcp_pm_list);
 
-static int mptcp_default_id(sa_family_t family, union inet_addr *addr,
-			    struct net *net, bool *low_prio)
+static int mptcp_default_id(const struct sock *meta_sk, sa_family_t family,
+			    union inet_addr *addr, bool *low_prio)
 {
 	return 0;
 }

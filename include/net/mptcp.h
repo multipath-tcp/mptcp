@@ -220,10 +220,11 @@ struct mptcp_pm_ops {
 	void (*new_session)(const struct sock *meta_sk);
 	void (*release_sock)(struct sock *meta_sk);
 	void (*fully_established)(struct sock *meta_sk);
+	void (*close_session)(struct sock *meta_sk);
 	void (*new_remote_address)(struct sock *meta_sk);
 	void (*subflow_error)(struct sock *meta_sk, struct sock *sk);
-	int  (*get_local_id)(sa_family_t family, union inet_addr *addr,
-			     struct net *net, bool *low_prio);
+	int  (*get_local_id)(const struct sock *meta_sk, sa_family_t family,
+			     union inet_addr *addr, bool *low_prio);
 	void (*addr_signal)(struct sock *sk, unsigned *size,
 			    struct tcp_out_options *opts, struct sk_buff *skb);
 	void (*add_raddr)(struct mptcp_cb *mpcb, const union inet_addr *addr,
@@ -231,7 +232,9 @@ struct mptcp_pm_ops {
 	void (*rem_raddr)(struct mptcp_cb *mpcb, u8 rem_id);
 	void (*init_subsocket_v4)(struct sock *sk, struct in_addr addr);
 	void (*init_subsocket_v6)(struct sock *sk, struct in6_addr addr);
+	void (*established_subflow)(struct sock *sk);
 	void (*delete_subflow)(struct sock *sk);
+	void (*prio_changed)(struct sock *sk, int low_prio);
 
 	char		name[MPTCP_PM_NAME_MAX];
 	struct module	*owner;
@@ -1216,6 +1219,15 @@ static inline void mptcp_sub_close_passive(struct sock *sk)
 		mptcp_sub_close(sk, 0);
 }
 
+static inline void mptcp_fallback_close(struct mptcp_cb *mpcb,
+					struct sock *except)
+{
+	mptcp_sub_force_close_all(mpcb, except);
+
+	if (mpcb->pm_ops->close_session)
+		mpcb->pm_ops->close_session(mptcp_meta_sk(except));
+}
+
 static inline bool mptcp_fallback_infinite(struct sock *sk, int flag)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -1250,7 +1262,7 @@ static inline bool mptcp_fallback_infinite(struct sock *sk, int flag)
 	mpcb->infinite_rcv_seq = mptcp_get_rcv_nxt_64(mptcp_meta_tp(tp));
 	tp->mptcp->fully_established = 1;
 
-	mptcp_sub_force_close_all(mpcb, sk);
+	mptcp_fallback_close(mpcb, sk);
 
 	MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_FBACKINIT);
 

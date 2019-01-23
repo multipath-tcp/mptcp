@@ -149,7 +149,7 @@ static int mptcp_v6_join_init_req(struct request_sock *req, const struct sock *m
 						    tcp_hdr(skb)->source,
 						    tcp_hdr(skb)->dest);
 	addr.in6 = inet_rsk(req)->ir_v6_loc_addr;
-	loc_id = mpcb->pm_ops->get_local_id(AF_INET6, &addr, sock_net(meta_sk), &low_prio);
+	loc_id = mpcb->pm_ops->get_local_id(meta_sk, AF_INET6, &addr, &low_prio);
 	if (loc_id == -1)
 		return -1;
 	mtreq->loc_id = loc_id;
