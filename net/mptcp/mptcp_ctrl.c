@@ -548,6 +548,7 @@ found:
 	rcu_read_unlock_bh();
 	return meta_sk;
 }
+EXPORT_SYMBOL_GPL(mptcp_hash_find);
 
 void mptcp_hash_remove_bh(struct tcp_sock *meta_tp)
 {

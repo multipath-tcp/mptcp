@@ -39,6 +39,14 @@ config MPTCP_BINDER
 	  option to set the gateway (and/or path to) per each additional subflow
 	  via Loose Source Routing (IPv4 only).
 
+config MPTCP_NETLINK
+	tristate "MPTCP Netlink Path-Manager"
+	depends on MPTCP=y
+	---help---
+	  This path-management module is controlled over a Netlink interface. A userspace
+	  module can therefore control the establishment of new subflows and the policy
+	  to apply over those new subflows for every connection.
+
 choice
 	prompt "Default MPTCP Path-Manager"
 	default DEFAULT
@@ -53,6 +61,9 @@ choice
 
 	config DEFAULT_BINDER
 		bool "binder" if MPTCP_BINDER=y
+
+	config DEFAULT_NETLINK
+		bool "Netlink" if MPTCP_NETLINK=y
 
 	config DEFAULT_DUMMY
 		bool "Default"
