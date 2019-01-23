@@ -222,7 +222,6 @@ struct mptcp_pm_ops {
 	void (*fully_established)(struct sock *meta_sk);
 	void (*close_session)(struct sock *meta_sk);
 	void (*new_remote_address)(struct sock *meta_sk);
-	void (*subflow_error)(struct sock *meta_sk, struct sock *sk);
 	int  (*get_local_id)(const struct sock *meta_sk, sa_family_t family,
 			     union inet_addr *addr, bool *low_prio);
 	void (*addr_signal)(struct sock *sk, unsigned *size,

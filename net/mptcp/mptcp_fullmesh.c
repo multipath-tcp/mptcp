@@ -1369,24 +1369,6 @@ static void full_mesh_create_subflows(struct sock *meta_sk)
 	}
 }
 
-static void full_mesh_subflow_error(struct sock *meta_sk, struct sock *sk)
-{
-	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-
-	if (!create_on_err)
-		return;
-
-	if (mpcb->infinite_mapping_snd || mpcb->infinite_mapping_rcv ||
-	    mpcb->send_infinite_mapping ||
-	    mpcb->server_side || sock_flag(meta_sk, SOCK_DEAD))
-		return;
-
-	if (sk->sk_err != ETIMEDOUT)
-		return;
-
-	full_mesh_create_subflows(meta_sk);
-}
-
 /* Called upon release_sock, if the socket was owned by the user during
  * a path-management event.
  */
@@ -1873,7 +1855,6 @@ static struct mptcp_pm_ops full_mesh __read_mostly = {
 	.release_sock = full_mesh_release_sock,
 	.fully_established = full_mesh_create_subflows,
 	.new_remote_address = full_mesh_create_subflows,
-	.subflow_error = full_mesh_subflow_error,
 	.get_local_id = full_mesh_get_local_id,
 	.addr_signal = full_mesh_addr_signal,
 	.add_raddr = full_mesh_add_raddr,
