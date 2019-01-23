@@ -185,6 +185,7 @@ struct mptcp_tcp_sock {
 	u8	path_index;
 	u8	loc_id;
 	u8	rem_id;
+	u8	sk_err;
 
 #define MPTCP_SCHED_SIZE 16
 	u8	mptcp_sched[MPTCP_SCHED_SIZE] __aligned(8);

@@ -1686,10 +1686,14 @@ static void full_mesh_delete_subflow(struct sock *sk)
 {
 	struct fullmesh_priv *fmp = fullmesh_get_priv(tcp_sk(sk)->mpcb);
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(sk));
+	struct sock *meta_sk = mptcp_meta_sk(sk);
 	struct mptcp_loc_addr *mptcp_local;
 	int index, i;
 
 	if (!create_on_err)
+		return;
+
+	if (!mptcp_can_new_subflow(meta_sk))
 		return;
 
 	rcu_read_lock_bh();
@@ -1741,6 +1745,10 @@ static void full_mesh_delete_subflow(struct sock *sk)
 
 out:
 	rcu_read_unlock_bh();
+
+	/* re-schedule the creation of failed subflows */
+	if (tcp_sk(sk)->mptcp->sk_err == ETIMEDOUT || sk->sk_err == ETIMEDOUT)
+		full_mesh_create_subflows(meta_sk);
 }
 
 /* Output /proc/net/mptcp_fullmesh */

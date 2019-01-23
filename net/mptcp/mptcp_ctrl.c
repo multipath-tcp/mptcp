@@ -620,6 +620,9 @@ static void mptcp_sock_def_error_report(struct sock *sk)
 		}
 	}
 
+	/* record this info that can be used by PM after the sf close */
+	tp->mptcp->sk_err = sk->sk_err;
+
 	if (mpcb->infinite_mapping_rcv || mpcb->infinite_mapping_snd ||
 	    mpcb->send_infinite_mapping) {
 		struct sock *meta_sk = mptcp_meta_sk(sk);
