@@ -46,14 +46,22 @@ extern struct tcp_request_sock_ops mptcp_join_request_sock_ipv6_ops;
 int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb);
 struct sock *mptcp_v6_search_req(const __be16 rport, const struct in6_addr *raddr,
 				 const struct in6_addr *laddr, const struct net *net);
-int mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
-			   struct mptcp_rem6 *rem);
+int __mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
+			     __be16 sport, struct mptcp_rem6 *rem,
+			     struct sock **subsk);
 int mptcp_pm_v6_init(void);
 void mptcp_pm_v6_undo(void);
 __u32 mptcp_v6_get_nonce(const __be32 *saddr, const __be32 *daddr,
 			 __be16 sport, __be16 dport);
 u64 mptcp_v6_get_key(const __be32 *saddr, const __be32 *daddr,
 		     __be16 sport, __be16 dport, u32 seed);
+
+static inline int mptcp_init6_subsockets(struct sock *meta_sk,
+					 const struct mptcp_loc6 *loc,
+					 struct mptcp_rem6 *rem)
+{
+	return __mptcp_init6_subsockets(meta_sk, loc, 0, rem, NULL);
+}
 
 #else /* CONFIG_MPTCP */
 

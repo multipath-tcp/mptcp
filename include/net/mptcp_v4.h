@@ -47,13 +47,21 @@ extern struct tcp_request_sock_ops mptcp_join_request_sock_ipv4_ops;
 int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb);
 struct sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
 				 const __be32 laddr, const struct net *net);
-int mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
-			   struct mptcp_rem4 *rem);
+int __mptcp_init4_subsockets(struct sock *meta_sk, const struct mptcp_loc4 *loc,
+			     __be16 sport, struct mptcp_rem4 *rem,
+			     struct sock **subsk);
 int mptcp_pm_v4_init(void);
 void mptcp_pm_v4_undo(void);
 u32 mptcp_v4_get_nonce(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport);
 u64 mptcp_v4_get_key(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport,
 		     u32 seed);
+
+static inline int mptcp_init4_subsockets(struct sock *meta_sk,
+					 const struct mptcp_loc4 *loc,
+					 struct mptcp_rem4 *rem)
+{
+	return __mptcp_init4_subsockets(meta_sk, loc, 0, rem, NULL);
+}
 
 #else
 
