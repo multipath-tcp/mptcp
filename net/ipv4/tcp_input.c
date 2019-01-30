@@ -6055,10 +6055,13 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
 		 * using an MP_JOIN subtype.
 		 */
 		if (mptcp(tp)) {
-			if (is_master_tp(tp))
+			if (is_master_tp(tp)) {
 				mptcp_update_metasocket(mptcp_meta_sk(sk));
-			else
+			} else {
 				tcp_send_ack(sk);
+
+				mptcp_push_pending_frames(mptcp_meta_sk(sk));
+			}
 		}
 		break;
 
