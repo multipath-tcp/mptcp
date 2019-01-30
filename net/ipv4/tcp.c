@@ -2592,6 +2592,10 @@ void tcp_write_queue_purge(struct sock *sk)
 {
 	struct sk_buff *skb;
 
+	if (mptcp(tcp_sk(sk)) && !is_meta_sk(sk) &&
+	    !tcp_rtx_and_write_queues_empty(sk))
+		mptcp_reinject_data(sk, 0);
+
 	tcp_chrono_stop(sk, TCP_CHRONO_BUSY);
 	while ((skb = __skb_dequeue(&sk->sk_write_queue)) != NULL) {
 		tcp_skb_tsorted_anchor_cleanup(skb);
