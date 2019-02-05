@@ -3007,7 +3007,7 @@ void __init mptcp_init(void)
 	if (mptcp_register_scheduler(&mptcp_sched_default))
 		goto register_sched_failed;
 
-	pr_info("MPTCP: Unstable branch");
+	pr_info("MPTCP: Stable release v0.95-rc");
 
 	mptcp_init_failed = false;
 
