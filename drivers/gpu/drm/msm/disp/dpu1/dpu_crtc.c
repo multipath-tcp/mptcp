@@ -1535,8 +1535,7 @@ static int dpu_crtc_atomic_check(struct drm_crtc *crtc,
 		cnt++;
 
 		dst = drm_plane_state_dest(pstate);
-		if (!drm_rect_intersect(&clip, &dst) ||
-		    !drm_rect_equals(&clip, &dst)) {
+		if (!drm_rect_intersect(&clip, &dst)) {
 			DPU_ERROR("invalid vertical/horizontal destination\n");
 			DPU_ERROR("display: " DRM_RECT_FMT " plane: "
 				  DRM_RECT_FMT "\n", DRM_RECT_ARG(&crtc_rect),
@@ -2123,7 +2122,6 @@ struct drm_crtc *dpu_crtc_init(struct drm_device *dev, struct drm_plane *plane)
 				NULL);
 
 	drm_crtc_helper_add(crtc, &dpu_crtc_helper_funcs);
-	plane->crtc = crtc;
 
 	/* save user friendly CRTC name for later */
 	snprintf(dpu_crtc->name, DPU_CRTC_NAME_SIZE, "crtc%u", crtc->base.id);
