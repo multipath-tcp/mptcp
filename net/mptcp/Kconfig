@@ -89,6 +89,12 @@ menuconfig MPTCP_SCHED_ADVANCED
 
 if MPTCP_SCHED_ADVANCED
 
+config MPTCP_BLEST
+	tristate "MPTCP BLEST"
+	depends on MPTCP=y
+	---help---
+	  This is an experimental BLocking ESTimation-based (BLEST) scheduler.
+
 config MPTCP_ROUNDROBIN
 	tristate "MPTCP Round-Robin"
 	depends on (MPTCP=y)
