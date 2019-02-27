@@ -1474,6 +1474,7 @@ static inline int mptcp_check_snd_buf(const struct tcp_sock *tp)
 {
 	return 0;
 }
+static inline void mptcp_push_pending_frames(struct sock *meta_sk) {}
 static inline void mptcp_send_reset(const struct sock *sk) {}
 static inline bool mptcp_handle_options(struct sock *sk,
 					const struct tcphdr *th,
