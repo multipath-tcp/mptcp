@@ -2370,7 +2370,8 @@ EXPORT_SYMBOL(tcp_disconnect);
 static inline bool tcp_can_repair_sock(const struct sock *sk)
 {
 	return ns_capable(sock_net(sk)->user_ns, CAP_NET_ADMIN) &&
-		((1 << sk->sk_state) & (TCPF_CLOSE | TCPF_ESTABLISHED));
+		((1 << sk->sk_state) & (TCPF_CLOSE | TCPF_ESTABLISHED)) &&
+		!sock_flag(sk, SOCK_MPTCP);
 }
 
 static int tcp_repair_options_est(struct tcp_sock *tp,
