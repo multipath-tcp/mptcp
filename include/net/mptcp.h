@@ -850,7 +850,7 @@ unsigned int mptcp_xmit_size_goal(const struct sock *meta_sk, u32 mss_now,
 int mptcp_init_tw_sock(struct sock *sk, struct tcp_timewait_sock *tw);
 void mptcp_twsk_destructor(struct tcp_timewait_sock *tw);
 void mptcp_time_wait(struct sock *sk, int state, int timeo);
-void mptcp_disconnect(struct sock *sk);
+void mptcp_disconnect(struct sock *meta_sk);
 bool mptcp_should_expand_sndbuf(const struct sock *sk);
 int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb);
 void mptcp_tsq_flags(struct sock *sk);
@@ -1487,7 +1487,7 @@ static inline int mptcp_init_tw_sock(struct sock *sk,
 	return 0;
 }
 static inline void mptcp_twsk_destructor(struct tcp_timewait_sock *tw) {}
-static inline void mptcp_disconnect(struct sock *sk) {}
+static inline void mptcp_disconnect(struct sock *meta_sk) {}
 static inline void mptcp_tsq_flags(struct sock *sk) {}
 static inline void mptcp_tsq_sub_deferred(struct sock *meta_sk) {}
 static inline void mptcp_hash_remove_bh(struct tcp_sock *meta_tp) {}
