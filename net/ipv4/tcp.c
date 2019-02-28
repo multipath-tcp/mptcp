@@ -2732,7 +2732,10 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 #ifdef CONFIG_TCP_MD5SIG
 	case TCP_MD5SIG:
 		/* Read the IP->Key mappings from userspace */
-		err = tp->af_specific->md5_parse(sk, optval, optlen);
+		if (!sock_flag(sk, SOCK_MPTCP))
+			err = tp->af_specific->md5_parse(sk, optval, optlen);
+		else
+			err = -EINVAL;
 		break;
 #endif
 	case TCP_USER_TIMEOUT:
@@ -2768,7 +2771,11 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 #ifdef CONFIG_MPTCP
 	case MPTCP_ENABLED:
 		if (mptcp_init_failed || !sysctl_mptcp_enabled ||
-		    sk->sk_state != TCP_CLOSE) {
+		    sk->sk_state != TCP_CLOSE
+#ifdef CONFIG_TCP_MD5SIG
+		    || tp->md5sig_info
+#endif
+								) {
 			err = -EPERM;
 			break;
 		}
