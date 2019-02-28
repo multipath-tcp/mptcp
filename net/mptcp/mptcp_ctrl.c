@@ -1104,6 +1104,17 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 
 		newnp = inet6_sk(master_sk);
 		memcpy(newnp, np, sizeof(struct ipv6_pinfo));
+
+		newnp->ipv6_mc_list = NULL;
+		newnp->ipv6_ac_list = NULL;
+		newnp->ipv6_fl_list = NULL;
+		newnp->pktoptions = NULL;
+		newnp->opt = NULL;
+
+		newnp->rxopt.all = 0;
+		newnp->repflow = 0;
+		np->rxopt.all = 0;
+		np->repflow = 0;
 	} else if (meta_sk->sk_family == AF_INET6) {
 		struct tcp6_sock *master_tp6 = (struct tcp6_sock *)master_sk;
 		struct ipv6_pinfo *newnp, *np = inet6_sk(meta_sk);
@@ -1115,6 +1126,17 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 		newnp = inet6_sk(master_sk);
 		memcpy(newnp, np, sizeof(struct ipv6_pinfo));
 
+		newnp->ipv6_mc_list = NULL;
+		newnp->ipv6_ac_list = NULL;
+		newnp->ipv6_fl_list = NULL;
+		newnp->pktoptions = NULL;
+		newnp->opt = NULL;
+
+		newnp->rxopt.all = 0;
+		newnp->repflow = 0;
+		np->rxopt.all = 0;
+		np->repflow = 0;
+
 		opt = rcu_dereference(np->opt);
 		if (opt) {
 			opt = ipv6_dup_options(master_sk, opt);
@@ -1124,7 +1146,6 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 		if (opt)
 			inet_csk(master_sk)->icsk_ext_hdr_len = opt->opt_nflen +
 								opt->opt_flen;
-
 	}
 #endif
 
