@@ -1547,13 +1547,6 @@ static void mptcp_sub_close_doit(struct sock *sk)
 	if (sock_flag(sk, SOCK_DEAD))
 		return;
 
-	/* We come from tcp_disconnect. We are sure that meta_sk is set */
-	if (!mptcp(tp)) {
-		tp->closing = 1;
-		tcp_close(sk, 0);
-		return;
-	}
-
 	if (meta_sk->sk_shutdown == SHUTDOWN_MASK || sk->sk_state == TCP_CLOSE) {
 		tp->closing = 1;
 		tcp_close(sk, 0);
@@ -1841,44 +1834,31 @@ out:
 	sock_put(meta_sk); /* Taken by sock_hold */
 }
 
-void mptcp_disconnect(struct sock *sk)
+void mptcp_disconnect(struct sock *meta_sk)
 {
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct sock *subsk, *tmpsk;
-	struct tcp_sock *tp = tcp_sk(sk);
 
-	__skb_queue_purge(&tp->mpcb->reinject_queue);
+	__skb_queue_purge(&meta_tp->mpcb->reinject_queue);
 
-	if (tp->inside_tk_table)
-		mptcp_hash_remove_bh(tp);
+	if (meta_tp->inside_tk_table)
+		mptcp_hash_remove_bh(meta_tp);
 
 	local_bh_disable();
-	mptcp_for_each_sk_safe(tp->mpcb, subsk, tmpsk) {
-		/* The socket will get removed from the subsocket-list
-		 * and made non-mptcp by setting mpc to 0.
-		 *
-		 * This is necessary, because tcp_disconnect assumes
-		 * that the connection is completly dead afterwards.
-		 * Thus we need to do a mptcp_del_sock. Due to this call
-		 * we have to make it non-mptcp.
-		 *
-		 * We have to lock the socket, because we set mpc to 0.
-		 * An incoming packet would take the subsocket's lock
-		 * and go on into the receive-path.
-		 * This would be a race.
-		 */
+	mptcp_for_each_sk_safe(meta_tp->mpcb, subsk, tmpsk) {
+		meta_sk->sk_prot->disconnect(subsk, O_NONBLOCK);
 
-		bh_lock_sock(subsk);
-		mptcp_del_sock(subsk);
-		tcp_sk(subsk)->mpc = 0;
-		tcp_sk(subsk)->ops = &tcp_specific;
-		mptcp_sub_force_close(subsk);
-		bh_unlock_sock(subsk);
+		sock_orphan(subsk);
+
+		percpu_counter_inc(meta_sk->sk_prot->orphan_count);
+
+		inet_csk_destroy_sock(subsk);
 	}
 	local_bh_enable();
 
-	tp->was_meta_sk = 1;
-	tp->mpc = 0;
-	tp->ops = &tcp_specific;
+	meta_tp->was_meta_sk = 1;
+	meta_tp->mpc = 0;
+	meta_tp->ops = &tcp_specific;
 }
 
 
