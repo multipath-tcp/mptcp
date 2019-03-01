@@ -849,7 +849,6 @@ int mptcp_write_wakeup(struct sock *meta_sk);
 void mptcp_sub_close_wq(struct work_struct *work);
 void mptcp_sub_close(struct sock *sk, unsigned long delay);
 struct sock *mptcp_select_ack_sock(const struct sock *meta_sk);
-void mptcp_fallback_meta_sk(struct sock *meta_sk);
 void mptcp_prepare_for_backlog(struct sock *sk, struct sk_buff *skb);
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb);
 void mptcp_ack_handler(unsigned long);
