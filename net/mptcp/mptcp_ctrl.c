@@ -1737,7 +1737,7 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 		    __func__, mpcb->mptcp_loc_token);
 
 	mutex_lock(&mpcb->mpcb_mutex);
-	lock_sock(meta_sk);
+	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
 
 	if (meta_tp->inside_tk_table)
 		/* Detach the mpcb from the token hashtable */
