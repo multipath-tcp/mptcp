@@ -2213,7 +2213,13 @@ void tcp_close(struct sock *sk, long timeout)
 	int state;
 
 	if (is_meta_sk(sk)) {
-		mptcp_close(sk, timeout);
+		/* TODO: Currently forcing timeout to 0 because
+		 * sk_stream_wait_close will complain during lockdep because
+		 * of the mpcb_mutex (circular lock dependency through
+		 * inet_csk_listen_stop()).
+		 * We should find a way to get rid of the mpcb_mutex.
+		 */
+		mptcp_close(sk, 0);
 		return;
 	}
 
