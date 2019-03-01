@@ -1295,11 +1295,6 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	return 0;
 }
 
-void mptcp_fallback_meta_sk(struct sock *meta_sk)
-{
-	kmem_cache_free(mptcp_cb_cache, tcp_sk(meta_sk)->mpcb);
-}
-
 int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 		   gfp_t flags)
 {
@@ -1938,8 +1933,6 @@ int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key,
 	return 0;
 
 err_add_sock:
-	mptcp_fallback_meta_sk(meta_sk);
-
 	inet_csk_prepare_forced_close(master_sk);
 	tcp_done(master_sk);
 
