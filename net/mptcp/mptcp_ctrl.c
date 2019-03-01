@@ -1092,7 +1092,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	struct sock *master_sk;
 	struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
 	struct tcp_sock *master_tp, *meta_tp = tcp_sk(meta_sk);
-	u64 idsn;
+	u64 snd_idsn, rcv_idsn;
 
 	dst_release(meta_sk->sk_rx_dst);
 	meta_sk->sk_rx_dst = NULL;
@@ -1109,13 +1109,77 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 
 	mpcb = kmem_cache_zalloc(mptcp_cb_cache, GFP_ATOMIC);
 	if (!mpcb) {
-		/* sk_free (and __sk_free) requirese wmem_alloc to be 1.
-		 * All the rest is set to 0 thanks to __GFP_ZERO above.
-		 */
-		atomic_set(&master_sk->sk_wmem_alloc, 1);
 		sk_free(master_sk);
 		return -ENOBUFS;
 	}
+
+	/* Store the mptcp version agreed on initial handshake */
+	mpcb->mptcp_ver = mptcp_ver;
+
+	/* Store the keys and generate the peer's token */
+	mpcb->mptcp_loc_key = meta_tp->mptcp_loc_key;
+	mpcb->mptcp_loc_token = meta_tp->mptcp_loc_token;
+
+	/* Generate Initial data-sequence-numbers */
+	mptcp_key_sha1(mpcb->mptcp_loc_key, NULL, &snd_idsn);
+	snd_idsn = ntohll(snd_idsn) + 1;
+	mpcb->snd_high_order[0] = snd_idsn >> 32;
+	mpcb->snd_high_order[1] = mpcb->snd_high_order[0] - 1;
+
+	mpcb->mptcp_rem_key = remote_key;
+	mptcp_key_sha1(mpcb->mptcp_rem_key, &mpcb->mptcp_rem_token, &rcv_idsn);
+	rcv_idsn = ntohll(rcv_idsn) + 1;
+	mpcb->rcv_high_order[0] = rcv_idsn >> 32;
+	mpcb->rcv_high_order[1] = mpcb->rcv_high_order[0] + 1;
+
+	mpcb->meta_sk = meta_sk;
+	mpcb->master_sk = master_sk;
+
+	skb_queue_head_init(&mpcb->reinject_queue);
+	mutex_init(&mpcb->mpcb_mutex);
+
+	/* Init time-wait stuff */
+	INIT_LIST_HEAD(&mpcb->tw_list);
+	spin_lock_init(&mpcb->tw_lock);
+
+	INIT_HLIST_HEAD(&mpcb->callback_list);
+
+	mpcb->orig_sk_rcvbuf = meta_sk->sk_rcvbuf;
+	mpcb->orig_sk_sndbuf = meta_sk->sk_sndbuf;
+	mpcb->orig_window_clamp = meta_tp->window_clamp;
+
+	/* The meta is directly linked - set refcnt to 1 */
+	atomic_set(&mpcb->mpcb_refcnt, 1);
+
+	if (!meta_tp->inside_tk_table) {
+		/* Adding the meta_tp in the token hashtable - coming from server-side */
+		rcu_read_lock();
+		spin_lock(&mptcp_tk_hashlock);
+
+		/* With lockless listeners, we might process two ACKs at the
+		 * same time. With TCP, inet_csk_complete_hashdance takes care
+		 * of this. But, for MPTCP this would be too late if we add
+		 * this MPTCP-socket in the token table (new subflows might
+		 * come in and match on this socket here.
+		 * So, we need to check if someone else already added the token
+		 * and revert in that case. The other guy won the race...
+		 */
+		if (mptcp_find_token(mpcb->mptcp_loc_token)) {
+			spin_unlock(&mptcp_tk_hashlock);
+			rcu_read_unlock();
+
+			inet_put_port(master_sk);
+			kmem_cache_free(mptcp_cb_cache, mpcb);
+			sk_free(master_sk);
+
+			return -ENOBUFS;
+		}
+		__mptcp_hash_insert(meta_tp, mpcb->mptcp_loc_token);
+
+		spin_unlock(&mptcp_tk_hashlock);
+		rcu_read_unlock();
+	}
+	master_tp->inside_tk_table = 0;
 
 #if IS_ENABLED(CONFIG_IPV6)
 	if (meta_icsk->icsk_af_ops == &mptcp_v6_mapped) {
@@ -1173,34 +1237,16 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 
 	meta_tp->mptcp = NULL;
 
-	/* Store the mptcp version agreed on initial handshake */
-	mpcb->mptcp_ver = mptcp_ver;
-
-	/* Store the keys and generate the peer's token */
-	mpcb->mptcp_loc_key = meta_tp->mptcp_loc_key;
-	mpcb->mptcp_loc_token = meta_tp->mptcp_loc_token;
-
-	/* Generate Initial data-sequence-numbers */
-	mptcp_key_sha1(mpcb->mptcp_loc_key, NULL, &idsn);
-	idsn = ntohll(idsn) + 1;
-	mpcb->snd_high_order[0] = idsn >> 32;
-	mpcb->snd_high_order[1] = mpcb->snd_high_order[0] - 1;
-
-	meta_tp->write_seq = (u32)idsn;
+	meta_tp->write_seq = (u32)snd_idsn;
 	meta_tp->snd_sml = meta_tp->write_seq;
 	meta_tp->snd_una = meta_tp->write_seq;
 	meta_tp->snd_nxt = meta_tp->write_seq;
 	meta_tp->pushed_seq = meta_tp->write_seq;
 	meta_tp->snd_up = meta_tp->write_seq;
 
-	mpcb->mptcp_rem_key = remote_key;
-	mptcp_key_sha1(mpcb->mptcp_rem_key, &mpcb->mptcp_rem_token, &idsn);
-	idsn = ntohll(idsn) + 1;
-	mpcb->rcv_high_order[0] = idsn >> 32;
-	mpcb->rcv_high_order[1] = mpcb->rcv_high_order[0] + 1;
-	meta_tp->copied_seq = (u32) idsn;
-	meta_tp->rcv_nxt = (u32) idsn;
-	meta_tp->rcv_wup = (u32) idsn;
+	meta_tp->copied_seq = (u32)rcv_idsn;
+	meta_tp->rcv_nxt = (u32)rcv_idsn;
+	meta_tp->rcv_wup = (u32)rcv_idsn;
 
 	meta_tp->snd_wl1 = meta_tp->rcv_nxt - 1;
 	meta_tp->snd_wnd = window;
@@ -1214,13 +1260,10 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	master_tp->meta_sk = meta_sk;
 	meta_tp->mpcb = mpcb;
 	meta_tp->meta_sk = meta_sk;
-	mpcb->meta_sk = meta_sk;
-	mpcb->master_sk = master_sk;
 
 	meta_tp->was_meta_sk = 0;
 
 	/* Initialize the queues */
-	skb_queue_head_init(&mpcb->reinject_queue);
 	skb_queue_head_init(&master_tp->out_of_order_queue);
 	tcp_prequeue_init(master_tp);
 	INIT_LIST_HEAD(&master_tp->tsq_node);
@@ -1230,8 +1273,6 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	 * mptcp_create_master_sk. Same operation is done in inet_csk_clone_lock.
 	 */
 	inet_csk(master_sk)->icsk_bind_hash = NULL;
-
-	mutex_init(&mpcb->mpcb_mutex);
 
 	/* Init the accept_queue structure, we support a queue of 32 pending
 	 * connections, it does not need to be huge, since we only store  here
@@ -1260,50 +1301,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	/* Has been set for sending out the SYN */
 	inet_csk_clear_xmit_timer(meta_sk, ICSK_TIME_RETRANS);
 
-	if (!meta_tp->inside_tk_table) {
-		/* Adding the meta_tp in the token hashtable - coming from server-side */
-		rcu_read_lock();
-		spin_lock(&mptcp_tk_hashlock);
-
-		/* With lockless listeners, we might process two ACKs at the
-		 * same time. With TCP, inet_csk_complete_hashdance takes care
-		 * of this. But, for MPTCP this would be too late if we add
-		 * this MPTCP-socket in the token table (new subflows might
-		 * come in and match on this socket here.
-		 * So, we need to check if someone else already added the token
-		 * and revert in that case. The other guy won the race...
-		 */
-		if (mptcp_find_token(mpcb->mptcp_loc_token)) {
-			spin_unlock(&mptcp_tk_hashlock);
-			rcu_read_unlock();
-
-			inet_put_port(master_sk);
-			kmem_cache_free(mptcp_cb_cache, mpcb);
-			sk_free(master_sk);
-
-			return -ENOBUFS;
-		}
-		__mptcp_hash_insert(meta_tp, mpcb->mptcp_loc_token);
-
-		spin_unlock(&mptcp_tk_hashlock);
-		rcu_read_unlock();
-	}
-	master_tp->inside_tk_table = 0;
-
-	/* Init time-wait stuff */
-	INIT_LIST_HEAD(&mpcb->tw_list);
-	spin_lock_init(&mpcb->tw_lock);
-
-	INIT_HLIST_HEAD(&mpcb->callback_list);
-
 	mptcp_mpcb_inherit_sockopts(meta_sk, master_sk);
-
-	mpcb->orig_sk_rcvbuf = meta_sk->sk_rcvbuf;
-	mpcb->orig_sk_sndbuf = meta_sk->sk_sndbuf;
-	mpcb->orig_window_clamp = meta_tp->window_clamp;
-
-	/* The meta is directly linked - set refcnt to 1 */
-	atomic_set(&mpcb->mpcb_refcnt, 1);
 
 	mptcp_init_path_manager(mpcb);
 	mptcp_init_scheduler(mpcb);
@@ -1984,8 +1982,6 @@ err_add_sock:
 
 	inet_csk_prepare_forced_close(master_sk);
 	tcp_done(master_sk);
-	inet_csk_prepare_forced_close(meta_sk);
-	tcp_done(meta_sk);
 
 err_alloc_mpcb:
 	return -ENOBUFS;
@@ -2022,8 +2018,12 @@ static int __mptcp_check_req_master(struct sock *child,
 	child_tp->mptcp_loc_token = mtreq->mptcp_loc_token;
 
 	if (mptcp_create_master_sk(meta_sk, mtreq->mptcp_rem_key,
-				   mtreq->mptcp_ver, child_tp->snd_wnd))
+				   mtreq->mptcp_ver, child_tp->snd_wnd)) {
+		inet_csk_prepare_forced_close(meta_sk);
+		tcp_done(meta_sk);
+
 		return -ENOBUFS;
+	}
 
 	child = tcp_sk(child)->mpcb->master_sk;
 	child_tp = tcp_sk(child);
