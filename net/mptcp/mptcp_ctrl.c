@@ -1105,19 +1105,13 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	master_sk = sk_clone_lock(meta_sk, GFP_ATOMIC | __GFP_ZERO);
 	meta_tp->is_master_sk = 0;
 	if (!master_sk)
-		return -ENOBUFS;
+		goto err_alloc_master;
 
 	master_tp = tcp_sk(master_sk);
 
 	mpcb = kmem_cache_zalloc(mptcp_cb_cache, GFP_ATOMIC);
-	if (!mpcb) {
-		/* sk_free (and __sk_free) requirese wmem_alloc to be 1.
-		 * All the rest is set to 0 thanks to __GFP_ZERO above.
-		 */
-		atomic_set(&master_sk->sk_wmem_alloc, 1);
-		sk_free(master_sk);
-		return -ENOBUFS;
-	}
+	if (!mpcb)
+		goto err_alloc_mpcb;
 
 #if IS_ENABLED(CONFIG_IPV6)
 	if (meta_icsk->icsk_af_ops == &mptcp_v6_mapped) {
@@ -1303,6 +1297,20 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 		    __func__, mpcb->mptcp_loc_token);
 
 	return 0;
+
+err_alloc_mpcb:
+	/* sk_free (and __sk_free) requirese wmem_alloc to be 1.
+	 * All the rest is set to 0 thanks to __GFP_ZERO above.
+	 */
+	atomic_set(&master_sk->sk_wmem_alloc, 1);
+	inet_sk(master_sk)->inet_opt = NULL;
+	master_sk->sk_state = TCP_CLOSE;
+	sock_orphan(master_sk);
+	bh_unlock_sock(master_sk);
+	sk_free(master_sk);
+
+err_alloc_master:
+	return -ENOBUFS;
 }
 
 int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
