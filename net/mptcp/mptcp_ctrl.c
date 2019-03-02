@@ -1103,15 +1103,13 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	master_sk = sk_clone_lock(meta_sk, GFP_ATOMIC | __GFP_ZERO);
 	meta_tp->is_master_sk = 0;
 	if (!master_sk)
-		return -ENOBUFS;
+		goto err_alloc_master;
 
 	master_tp = tcp_sk(master_sk);
 
 	mpcb = kmem_cache_zalloc(mptcp_cb_cache, GFP_ATOMIC);
-	if (!mpcb) {
-		sk_free(master_sk);
-		return -ENOBUFS;
-	}
+	if (!mpcb)
+		goto err_alloc_mpcb;
 
 	/* Store the mptcp version agreed on initial handshake */
 	mpcb->mptcp_ver = mptcp_ver;
@@ -1168,11 +1166,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 			spin_unlock(&mptcp_tk_hashlock);
 			rcu_read_unlock();
 
-			inet_put_port(master_sk);
-			kmem_cache_free(mptcp_cb_cache, mpcb);
-			sk_free(master_sk);
-
-			return -ENOBUFS;
+			goto err_insert_token;
 		}
 		__mptcp_hash_insert(meta_tp, mpcb->mptcp_loc_token);
 
@@ -1315,6 +1309,19 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 		    __func__, mpcb->mptcp_loc_token);
 
 	return 0;
+
+err_insert_token:
+	kmem_cache_free(mptcp_cb_cache, mpcb);
+
+err_alloc_mpcb:
+	inet_sk(master_sk)->inet_opt = NULL;
+	master_sk->sk_state = TCP_CLOSE;
+	sock_orphan(master_sk);
+	bh_unlock_sock(master_sk);
+	sk_free(master_sk);
+
+err_alloc_master:
+	return -ENOBUFS;
 }
 
 int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
