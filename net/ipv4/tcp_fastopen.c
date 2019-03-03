@@ -134,6 +134,7 @@ static bool tcp_fastopen_create_child(struct sock *sk,
 	struct request_sock_queue *queue = &inet_csk(sk)->icsk_accept_queue;
 	struct sock *child, *meta_sk;
 	u32 end_seq;
+	int ret;
 
 	req->num_retrans = 0;
 	req->num_timeout = 0;
@@ -210,7 +211,11 @@ static bool tcp_fastopen_create_child(struct sock *sk,
 	tcp_rsk(req)->rcv_nxt = tp->rcv_nxt = end_seq;
 
 	meta_sk = child;
-	if (!mptcp_check_req_fastopen(meta_sk, req)) {
+	ret = mptcp_check_req_fastopen(meta_sk, req);
+	if (ret < 0)
+		return false;
+
+	if (ret == 0) {
 		child = tcp_sk(meta_sk)->mpcb->master_sk;
 		tp = tcp_sk(child);
 	}
