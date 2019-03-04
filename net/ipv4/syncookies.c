@@ -223,7 +223,7 @@ struct sock *tcp_get_cookie_sock(struct sock *sk, struct sk_buff *skb,
 	if (!child)
 		goto listen_overflow;
 
-	ret = mptcp_check_req_master(sk, child, req, skb, 0);
+	ret = mptcp_check_req_master(sk, child, req, skb, 0, tsoff);
 	if (ret < 0)
 		return NULL;
 
