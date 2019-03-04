@@ -3021,7 +3021,7 @@ static void tcp_get_info_chrono_stats(const struct tcp_sock *tp,
 }
 
 /* Return information about state of tcp endpoint in API format. */
-void tcp_get_info(struct sock *sk, struct tcp_info *info)
+void tcp_get_info(struct sock *sk, struct tcp_info *info, bool no_lock)
 {
 	const struct tcp_sock *tp = tcp_sk(sk); /* iff sk_type == SOCK_STREAM */
 	const struct inet_connection_sock *icsk = inet_csk(sk);
@@ -3058,7 +3058,8 @@ void tcp_get_info(struct sock *sk, struct tcp_info *info)
 		return;
 	}
 
-	slow = lock_sock_fast(sk);
+	if (!no_lock)
+		slow = lock_sock_fast(sk);
 
 	info->tcpi_ca_state = icsk->icsk_ca_state;
 	info->tcpi_retransmits = icsk->icsk_retransmits;
@@ -3127,7 +3128,9 @@ void tcp_get_info(struct sock *sk, struct tcp_info *info)
 	rate64 = tcp_compute_delivery_rate(tp);
 	if (rate64)
 		info->tcpi_delivery_rate = rate64;
-	unlock_sock_fast(sk, slow);
+
+	if (!no_lock)
+		unlock_sock_fast(sk, slow);
 }
 EXPORT_SYMBOL_GPL(tcp_get_info);
 
@@ -3233,7 +3236,7 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 		if (get_user(len, optlen))
 			return -EFAULT;
 
-		tcp_get_info(sk, &info);
+		tcp_get_info(sk, &info, false);
 
 		len = min_t(unsigned int, len, sizeof(info));
 		if (put_user(len, optlen))
