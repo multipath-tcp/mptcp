@@ -1887,6 +1887,9 @@ void mptcp_disconnect(struct sock *meta_sk)
 
 	local_bh_disable();
 	mptcp_for_each_sk_safe(meta_tp->mpcb, subsk, tmpsk) {
+		if (spin_is_locked(&subsk->sk_lock.slock))
+			bh_unlock_sock(subsk);
+
 		meta_sk->sk_prot->disconnect(subsk, O_NONBLOCK);
 
 		sock_orphan(subsk);
@@ -2093,7 +2096,11 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	} else {
 		/* Thus, we come from syn-cookies */
 		atomic_set(&req->rsk_refcnt, 1);
-		inet_csk_reqsk_queue_add(sk, req, meta_sk);
+		if (!inet_csk_reqsk_queue_add(sk, req, meta_sk)) {
+			bh_unlock_sock(meta_sk);
+			sock_put(meta_sk);
+			return -1;
+		}
 	}
 
 	return 0;
