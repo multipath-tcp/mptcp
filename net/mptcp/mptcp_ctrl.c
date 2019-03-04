@@ -508,7 +508,8 @@ void mptcp_connect_init(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	rcu_read_lock_bh();
+	rcu_read_lock();
+	local_bh_disable();
 	spin_lock(&mptcp_tk_hashlock);
 	do {
 		mptcp_set_key_sk(sk);
@@ -517,7 +518,8 @@ void mptcp_connect_init(struct sock *sk)
 
 	__mptcp_hash_insert(tp, tp->mptcp_loc_token);
 	spin_unlock(&mptcp_tk_hashlock);
-	rcu_read_unlock_bh();
+	local_bh_enable();
+	rcu_read_unlock();
 
 	MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_MPCAPABLEACTIVE);
 }
@@ -569,12 +571,14 @@ found:
 void mptcp_hash_remove_bh(struct tcp_sock *meta_tp)
 {
 	/* remove from the token hashtable */
-	rcu_read_lock_bh();
+	rcu_read_lock();
+	local_bh_disable();
 	spin_lock(&mptcp_tk_hashlock);
 	hlist_nulls_del_init_rcu(&meta_tp->tk_table);
 	meta_tp->inside_tk_table = 0;
 	spin_unlock(&mptcp_tk_hashlock);
-	rcu_read_unlock_bh();
+	local_bh_enable();
+	rcu_read_unlock();
 }
 
 void mptcp_hash_remove(struct tcp_sock *meta_tp)
@@ -2259,12 +2263,12 @@ void mptcp_twsk_destructor(struct tcp_timewait_sock *tw)
 	 * from the list and drop the ref properly.
 	 */
 	if (mpcb && atomic_inc_not_zero(&mpcb->mpcb_refcnt)) {
-		spin_lock_bh(&mpcb->tw_lock);
+		spin_lock(&mpcb->tw_lock);
 		if (tw->mptcp_tw->in_list) {
 			list_del_rcu(&tw->mptcp_tw->list);
 			tw->mptcp_tw->in_list = 0;
 		}
-		spin_unlock_bh(&mpcb->tw_lock);
+		spin_unlock(&mpcb->tw_lock);
 
 		/* Twice, because we increased it above */
 		mptcp_mpcb_put(mpcb);
@@ -2291,7 +2295,8 @@ void mptcp_time_wait(struct sock *meta_sk, int state, int timeo)
 	meta_tp->mpcb->mptw_state = state;
 
 	/* Update the time-wait-sock's information */
-	rcu_read_lock_bh();
+	rcu_read_lock();
+	local_bh_disable();
 	list_for_each_entry_rcu(mptw, &meta_tp->mpcb->tw_list, list) {
 		mptw->meta_tw = 1;
 		mptw->rcv_nxt = mptcp_get_rcv_nxt_64(meta_tp);
@@ -2304,7 +2309,8 @@ void mptcp_time_wait(struct sock *meta_sk, int state, int timeo)
 		if (state != TCP_TIME_WAIT)
 			mptw->rcv_nxt++;
 	}
-	rcu_read_unlock_bh();
+	local_bh_enable();
+	rcu_read_unlock();
 
 	if (meta_sk->sk_state != TCP_CLOSE)
 		tcp_done(meta_sk);
@@ -2545,7 +2551,8 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
 		struct hlist_nulls_node *node;
-		rcu_read_lock_bh();
+		rcu_read_lock();
+		local_bh_disable();
 		hlist_nulls_for_each_entry_rcu(meta_tp, node,
 					       &tk_hashtable[i], tk_table) {
 			struct sock *meta_sk = (struct sock *)meta_tp;
@@ -2594,7 +2601,8 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 			seq_putc(seq, '\n');
 		}
 
-		rcu_read_unlock_bh();
+		local_bh_enable();
+		rcu_read_unlock();
 	}
 
 	return 0;
