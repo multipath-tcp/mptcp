@@ -21,7 +21,7 @@
 #include <net/mptcp.h>
 
 /* Struct to store the data of a single subflow */
-struct redsched_sock_data {
+struct redsched_priv {
 	/* The skb or NULL */
 	struct sk_buff *skb;
 	/* End sequence number of the skb. This number should be checked
@@ -31,21 +31,21 @@ struct redsched_sock_data {
 };
 
 /* Struct to store the data of the control block */
-struct redsched_cb_data {
+struct redsched_cb {
 	/* The next subflow where a skb should be sent or NULL */
 	struct tcp_sock *next_subflow;
 };
 
 /* Returns the socket data from a given subflow socket */
-static struct redsched_sock_data *redsched_get_sock_data(struct tcp_sock *tp)
+static struct redsched_priv *redsched_get_priv(struct tcp_sock *tp)
 {
-	return (struct redsched_sock_data *)&tp->mptcp->mptcp_sched[0];
+	return (struct redsched_priv *)&tp->mptcp->mptcp_sched[0];
 }
 
 /* Returns the control block data from a given meta socket */
-static struct redsched_cb_data *redsched_get_cb_data(struct tcp_sock *tp)
+static struct redsched_cb *redsched_get_cb(struct tcp_sock *tp)
 {
-	return (struct redsched_cb_data *)&tp->mpcb->mptcp_sched[0];
+	return (struct redsched_cb *)&tp->mpcb->mptcp_sched[0];
 }
 
 static bool redsched_get_active_valid_sks(struct sock *meta_sk)
@@ -94,25 +94,25 @@ static bool redsched_use_subflow(struct sock *meta_sk,
 	hlist_entry_safe(rcu_dereference_raw(hlist_next_rcu(			\
 		&(__mptcp)->node)), struct mptcp_tcp_sock, node)
 
-static void redundant_update_next_subflow(struct tcp_sock *tp,
-					  struct redsched_cb_data *cb_data)
+static void redsched_update_next_subflow(struct tcp_sock *tp,
+					 struct redsched_cb *red_cb)
 {
 	struct mptcp_tcp_sock *mptcp = mptcp_entry_next_rcu(tp->mptcp);
 
 	if (mptcp)
-		cb_data->next_subflow = mptcp->tp;
+		red_cb->next_subflow = mptcp->tp;
 	else
-		cb_data->next_subflow = NULL;
+		red_cb->next_subflow = NULL;
 }
 
-static struct sock *redundant_get_subflow(struct sock *meta_sk,
-					  struct sk_buff *skb,
-					  bool zero_wnd_test)
+static struct sock *red_get_available_subflow(struct sock *meta_sk,
+					      struct sk_buff *skb,
+					      bool zero_wnd_test)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
-	struct redsched_cb_data *cb_data = redsched_get_cb_data(meta_tp);
-	struct tcp_sock *first_tp = cb_data->next_subflow, *tp;
+	struct redsched_cb *red_cb = redsched_get_cb(meta_tp);
+	struct tcp_sock *first_tp = red_cb->next_subflow, *tp;
 	struct mptcp_tcp_sock *mptcp;
 	int found = 0;
 
@@ -159,7 +159,7 @@ static struct sock *redundant_get_subflow(struct sock *meta_sk,
 
 		if (mptcp_is_available((struct sock *)tp, skb,
 				       zero_wnd_test)) {
-			redundant_update_next_subflow(tp, cb_data);
+			redsched_update_next_subflow(tp, red_cb);
 			return (struct sock *)tp;
 		}
 	}
@@ -172,7 +172,7 @@ static struct sock *redundant_get_subflow(struct sock *meta_sk,
 
 		if (mptcp_is_available((struct sock *)tp, skb,
 				       zero_wnd_test)) {
-			redundant_update_next_subflow(tp, cb_data);
+			redsched_update_next_subflow(tp, red_cb);
 			return (struct sock *)tp;
 		}
 	}
@@ -183,18 +183,18 @@ static struct sock *redundant_get_subflow(struct sock *meta_sk,
 
 /* Corrects the stored skb pointers if they are invalid */
 static void redsched_correct_skb_pointers(struct sock *meta_sk,
-					  struct redsched_sock_data *sk_data)
+					  struct redsched_priv *red_p)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
-	if (sk_data->skb && !after(sk_data->skb_end_seq, meta_tp->snd_una))
-		sk_data->skb = NULL;
+	if (red_p->skb && !after(red_p->skb_end_seq, meta_tp->snd_una))
+		red_p->skb = NULL;
 }
 
 /* Returns the next skb from the queue */
-static struct sk_buff *redundant_next_skb_from_queue(struct sk_buff_head *queue,
-						     struct sk_buff *previous,
-						     struct sock *meta_sk)
+static struct sk_buff *redsched_next_skb_from_queue(struct sk_buff_head *queue,
+						    struct sk_buff *previous,
+						    struct sock *meta_sk)
 {
 	struct sk_buff *skb;
 
@@ -228,15 +228,15 @@ static struct sk_buff *redundant_next_skb_from_queue(struct sk_buff_head *queue,
 	return tcp_send_head(meta_sk);
 }
 
-static struct sk_buff *redundant_next_segment(struct sock *meta_sk,
+static struct sk_buff *mptcp_red_next_segment(struct sock *meta_sk,
 					      int *reinject,
 					      struct sock **subsk,
 					      unsigned int *limit)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
-	struct redsched_cb_data *cb_data = redsched_get_cb_data(meta_tp);
-	struct tcp_sock *first_tp = cb_data->next_subflow, *tp;
+	struct redsched_cb *red_cb = redsched_get_cb(meta_tp);
+	struct tcp_sock *first_tp = red_cb->next_subflow, *tp;
 	struct mptcp_tcp_sock *mptcp;
 	int active_valid_sks = -1;
 	struct sk_buff *skb;
@@ -284,7 +284,7 @@ static struct sk_buff *redundant_next_segment(struct sock *meta_sk,
 	 * beginning of the list up to 'first_tp'.
 	 */
 	mptcp_for_each_sub(mpcb, mptcp) {
-		struct redsched_sock_data *sk_data;
+		struct redsched_priv *red_p;
 
 		if (tp == mptcp->tp)
 			found = 1;
@@ -295,16 +295,16 @@ static struct sk_buff *redundant_next_segment(struct sock *meta_sk,
 		tp = mptcp->tp;
 
 		/* Correct the skb pointers of the current subflow */
-		sk_data = redsched_get_sock_data(tp);
-		redsched_correct_skb_pointers(meta_sk, sk_data);
+		red_p = redsched_get_priv(tp);
+		redsched_correct_skb_pointers(meta_sk, red_p);
 
-		skb = redundant_next_skb_from_queue(&meta_sk->sk_write_queue,
-						    sk_data->skb, meta_sk);
+		skb = redsched_next_skb_from_queue(&meta_sk->sk_write_queue,
+						   red_p->skb, meta_sk);
 		if (skb && redsched_use_subflow(meta_sk, active_valid_sks, tp,
 						skb)) {
-			sk_data->skb = skb;
-			sk_data->skb_end_seq = TCP_SKB_CB(skb)->end_seq;
-			redundant_update_next_subflow(tp, cb_data);
+			red_p->skb = skb;
+			red_p->skb_end_seq = TCP_SKB_CB(skb)->end_seq;
+			redsched_update_next_subflow(tp, red_cb);
 			*subsk = (struct sock *)tp;
 
 			if (TCP_SKB_CB(skb)->path_mask)
@@ -314,7 +314,7 @@ static struct sk_buff *redundant_next_segment(struct sock *meta_sk,
 	}
 
 	mptcp_for_each_sub(mpcb, mptcp) {
-		struct redsched_sock_data *sk_data;
+		struct redsched_priv *red_p;
 
 		tp = mptcp->tp;
 
@@ -322,16 +322,16 @@ static struct sk_buff *redundant_next_segment(struct sock *meta_sk,
 			break;
 
 		/* Correct the skb pointers of the current subflow */
-		sk_data = redsched_get_sock_data(tp);
-		redsched_correct_skb_pointers(meta_sk, sk_data);
+		red_p = redsched_get_priv(tp);
+		redsched_correct_skb_pointers(meta_sk, red_p);
 
-		skb = redundant_next_skb_from_queue(&meta_sk->sk_write_queue,
-						    sk_data->skb, meta_sk);
+		skb = redsched_next_skb_from_queue(&meta_sk->sk_write_queue,
+						   red_p->skb, meta_sk);
 		if (skb && redsched_use_subflow(meta_sk, active_valid_sks, tp,
 						skb)) {
-			sk_data->skb = skb;
-			sk_data->skb_end_seq = TCP_SKB_CB(skb)->end_seq;
-			redundant_update_next_subflow(tp, cb_data);
+			red_p->skb = skb;
+			red_p->skb_end_seq = TCP_SKB_CB(skb)->end_seq;
+			redsched_update_next_subflow(tp, red_cb);
 			*subsk = (struct sock *)tp;
 
 			if (TCP_SKB_CB(skb)->path_mask)
@@ -344,44 +344,44 @@ static struct sk_buff *redundant_next_segment(struct sock *meta_sk,
 	return NULL;
 }
 
-static void redundant_release(struct sock *sk)
+static void redsched_release(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct redsched_cb_data *cb_data = redsched_get_cb_data(tp);
+	struct redsched_cb *red_cb = redsched_get_cb(tp);
 
 	/* Check if the next subflow would be the released one. If yes correct
 	 * the pointer
 	 */
-	if (cb_data->next_subflow == tp)
-		redundant_update_next_subflow(tp, cb_data);
+	if (red_cb->next_subflow == tp)
+		redsched_update_next_subflow(tp, red_cb);
 }
 
-static struct mptcp_sched_ops mptcp_sched_redundant = {
-	.get_subflow = redundant_get_subflow,
-	.next_segment = redundant_next_segment,
-	.release = redundant_release,
+static struct mptcp_sched_ops mptcp_sched_red = {
+	.get_subflow = red_get_available_subflow,
+	.next_segment = mptcp_red_next_segment,
+	.release = redsched_release,
 	.name = "redundant",
 	.owner = THIS_MODULE,
 };
 
-static int __init redundant_register(void)
+static int __init red_register(void)
 {
-	BUILD_BUG_ON(sizeof(struct redsched_sock_data) > MPTCP_SCHED_SIZE);
-	BUILD_BUG_ON(sizeof(struct redsched_cb_data) > MPTCP_SCHED_DATA_SIZE);
+	BUILD_BUG_ON(sizeof(struct redsched_priv) > MPTCP_SCHED_SIZE);
+	BUILD_BUG_ON(sizeof(struct redsched_cb) > MPTCP_SCHED_DATA_SIZE);
 
-	if (mptcp_register_scheduler(&mptcp_sched_redundant))
+	if (mptcp_register_scheduler(&mptcp_sched_red))
 		return -1;
 
 	return 0;
 }
 
-static void redundant_unregister(void)
+static void red_unregister(void)
 {
-	mptcp_unregister_scheduler(&mptcp_sched_redundant);
+	mptcp_unregister_scheduler(&mptcp_sched_red);
 }
 
-module_init(redundant_register);
-module_exit(redundant_unregister);
+module_init(red_register);
+module_exit(red_unregister);
 
 MODULE_AUTHOR("Tobias Erbshaeusser, Alexander Froemmgen");
 MODULE_LICENSE("GPL");
