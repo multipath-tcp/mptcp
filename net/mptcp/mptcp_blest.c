@@ -442,7 +442,7 @@ static void blestsched_init(struct sock *sk)
 	}
 }
 
-static struct mptcp_sched_ops mptcp_blest = {
+static struct mptcp_sched_ops mptcp_sched_blest = {
 	.get_subflow = blest_get_available_subflow,
 	.next_segment = mptcp_blest_next_segment,
 	.init = blestsched_init,
@@ -455,7 +455,7 @@ static int __init blest_register(void)
 	BUILD_BUG_ON(sizeof(struct blestsched_priv) > MPTCP_SCHED_SIZE);
 	BUILD_BUG_ON(sizeof(struct blestsched_cb) > MPTCP_SCHED_DATA_SIZE);
 
-	if (mptcp_register_scheduler(&mptcp_blest))
+	if (mptcp_register_scheduler(&mptcp_sched_blest))
 		return -1;
 
 	return 0;
@@ -463,7 +463,7 @@ static int __init blest_register(void)
 
 static void blest_unregister(void)
 {
-	mptcp_unregister_scheduler(&mptcp_blest);
+	mptcp_unregister_scheduler(&mptcp_sched_blest);
 }
 
 module_init(blest_register);
