@@ -671,6 +671,14 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 	unsigned int sublimit;
 	__u32 path_mask = 0;
 
+	if (inet_csk(meta_sk)->icsk_retransmits) {
+		/* If the timer already once fired, retransmit the head of the
+		 * queue to unblock us ASAP.
+		 */
+		if (meta_tp->packets_out && !mpcb->infinite_mapping_snd)
+			mptcp_retransmit_skb(meta_sk, tcp_write_queue_head(meta_sk));
+	}
+
 	while ((skb = mpcb->sched_ops->next_segment(meta_sk, &reinject, &subsk,
 						    &sublimit))) {
 		unsigned int limit;
