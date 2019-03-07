@@ -1821,6 +1821,7 @@ unsigned int tcp_cwnd_test(const struct tcp_sock *tp,
 	halfcwnd = max(cwnd >> 1, 1U);
 	return min(halfcwnd, cwnd - in_flight);
 }
+EXPORT_SYMBOL(tcp_cwnd_test);
 
 /* Initialize TSO state of a skb.
  * This must be invoked the first time we consider transmitting
@@ -1875,6 +1876,7 @@ bool tcp_snd_wnd_test(const struct tcp_sock *tp, const struct sk_buff *skb,
 
 	return !after(end_seq, tcp_wnd_end(tp));
 }
+EXPORT_SYMBOL(tcp_snd_wnd_test);
 
 /* Trim TSO SKB to LEN bytes, put the remaining data into a new packet
  * which is put after SKB on the list.  It is very much like

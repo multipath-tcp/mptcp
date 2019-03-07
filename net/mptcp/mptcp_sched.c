@@ -270,7 +270,7 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 	const struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_tcp_sock *mptcp;
 	struct sk_buff *skb_head;
-	struct defsched_priv *dsp = defsched_get_priv(tp);
+	struct defsched_priv *def_p = defsched_get_priv(tp);
 
 	meta_sk = mptcp_meta_sk(sk);
 	skb_head = tcp_rtx_queue_head(meta_sk);
@@ -287,7 +287,7 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 		goto retrans;
 
 	/* Only penalize again after an RTT has elapsed */
-	if (tcp_jiffies32 - dsp->last_rbuf_opti < usecs_to_jiffies(tp->srtt_us >> 3))
+	if (tcp_jiffies32 - def_p->last_rbuf_opti < usecs_to_jiffies(tp->srtt_us >> 3))
 		goto retrans;
 
 	/* Half the cwnd of the slow flow */
@@ -305,7 +305,7 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 				if (prior_cwnd >= tp_it->snd_ssthresh)
 					tp_it->snd_ssthresh = max(tp_it->snd_ssthresh >> 1U, 2U);
 
-				dsp->last_rbuf_opti = tcp_jiffies32;
+				def_p->last_rbuf_opti = tcp_jiffies32;
 			}
 			break;
 		}
@@ -450,9 +450,9 @@ static struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
 
 static void defsched_init(struct sock *sk)
 {
-	struct defsched_priv *dsp = defsched_get_priv(tcp_sk(sk));
+	struct defsched_priv *def_p = defsched_get_priv(tcp_sk(sk));
 
-	dsp->last_rbuf_opti = tcp_jiffies32;
+	def_p->last_rbuf_opti = tcp_jiffies32;
 }
 
 struct mptcp_sched_ops mptcp_sched_default = {
