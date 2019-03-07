@@ -3691,7 +3691,7 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 
 	if (mptcp(tp)) {
 		if (mptcp_fallback_infinite(sk, flag)) {
-			pr_err("%s resetting flow\n", __func__);
+			pr_debug("%s resetting flow\n", __func__);
 			mptcp_send_reset(sk);
 			goto invalid_ack;
 		}
