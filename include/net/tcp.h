@@ -749,7 +749,7 @@ static inline int tcp_bound_to_half_wnd(struct tcp_sock *tp, int pktsize)
 }
 
 /* tcp.c */
-void tcp_get_info(struct sock *, struct tcp_info *);
+void tcp_get_info(struct sock *, struct tcp_info *, bool no_lock);
 
 /* Read 'sendfile()'-style from a TCP socket */
 int tcp_read_sock(struct sock *sk, read_descriptor_t *desc,

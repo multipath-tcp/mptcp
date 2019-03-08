@@ -1530,7 +1530,7 @@ void mptcp_del_sock(struct sock *sk)
 						    GFP_ATOMIC);
 
 			if (mpcb->master_info)
-				tcp_get_info(sk, mpcb->master_info);
+				tcp_get_info(sk, mpcb->master_info, true);
 		}
 
 		mpcb->master_sk = NULL;
@@ -2718,7 +2718,7 @@ int mptcp_get_info(const struct sock *meta_sk, char __user *optval, int optlen)
 		if (mpcb->master_sk) {
 			struct tcp_info info;
 
-			tcp_get_info(mpcb->master_sk, &info);
+			tcp_get_info(mpcb->master_sk, &info, true);
 			if (copy_to_user((void __user *)m_info.initial, &info, info_len))
 				return -EFAULT;
 		} else if (meta_tp->record_master_info && mpcb->master_info) {
@@ -2741,7 +2741,7 @@ int mptcp_get_info(const struct sock *meta_sk, char __user *optval, int optlen)
 			struct tcp_info t_info;
 			unsigned int tmp_len;
 
-			tcp_get_info(mptcp_to_sock(mptcp), &t_info);
+			tcp_get_info(mptcp_to_sock(mptcp), &t_info, true);
 
 			tmp_len = min_t(unsigned int, len, info_len);
 			len -= tmp_len;
