@@ -1982,6 +1982,9 @@ void mptcp_disconnect(struct sock *meta_sk)
 	mptcp_for_each_sub_safe(meta_tp->mpcb, mptcp, tmp) {
 		struct sock *subsk = mptcp_to_sock(mptcp);
 
+		if (spin_is_locked(&subsk->sk_lock.slock))
+			bh_unlock_sock(subsk);
+
 		meta_sk->sk_prot->disconnect(subsk, O_NONBLOCK);
 
 		sock_orphan(subsk);
@@ -2198,7 +2201,11 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	} else {
 		/* Thus, we come from syn-cookies */
 		refcount_set(&req->rsk_refcnt, 1);
-		inet_csk_reqsk_queue_add(sk, req, meta_sk);
+		if (!inet_csk_reqsk_queue_add(sk, req, meta_sk)) {
+			bh_unlock_sock(meta_sk);
+			sock_put(meta_sk);
+			return -1;
+		}
 	}
 
 	/* Subflow establishment is now lockless, drop the lock here it will
