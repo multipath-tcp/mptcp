@@ -838,7 +838,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		goto listen_overflow;
 
 	if (own_req && !is_meta_sk(sk)) {
-		int ret = mptcp_check_req_master(sk, child, req, skb, 1);
+		int ret = mptcp_check_req_master(sk, child, req, skb, 1, 0);
 		if (ret < 0)
 			goto listen_overflow;
 

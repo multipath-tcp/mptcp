@@ -803,7 +803,7 @@ int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key,
 int mptcp_check_req_fastopen(struct sock *child, struct request_sock *req);
 int mptcp_check_req_master(struct sock *sk, struct sock *child,
 			   struct request_sock *req, const struct sk_buff *skb,
-			   int drop);
+			   int drop, u32 tsoff);
 struct sock *mptcp_check_req_child(struct sock *meta_sk,
 				   struct sock *child,
 				   struct request_sock *req,
@@ -1389,7 +1389,8 @@ static inline int mptcp_check_req_master(const struct sock *sk,
 					 const struct sock *child,
 					 const struct request_sock *req,
 					 const struct sk_buff *skb,
-					 int drop)
+					 int drop,
+					 u32 tsoff)
 {
 	return 1;
 }

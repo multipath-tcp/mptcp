@@ -2180,7 +2180,7 @@ int mptcp_check_req_fastopen(struct sock *child, struct request_sock *req)
 
 int mptcp_check_req_master(struct sock *sk, struct sock *child,
 			   struct request_sock *req, const struct sk_buff *skb,
-			   int drop)
+			   int drop, u32 tsoff)
 {
 	struct sock *meta_sk = child;
 	int ret;
@@ -2201,6 +2201,7 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	} else {
 		/* Thus, we come from syn-cookies */
 		refcount_set(&req->rsk_refcnt, 1);
+		tcp_sk(meta_sk)->tsoffset = tsoff;
 		if (!inet_csk_reqsk_queue_add(sk, req, meta_sk)) {
 			bh_unlock_sock(meta_sk);
 			sock_put(meta_sk);
