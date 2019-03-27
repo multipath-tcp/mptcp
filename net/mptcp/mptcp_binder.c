@@ -313,6 +313,9 @@ next_subflow:
 	mutex_lock(&mpcb->mpcb_mutex);
 	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
 
+	if (!mptcp(tcp_sk(meta_sk)))
+		goto exit;
+
 	iter++;
 
 	if (sock_flag(meta_sk, SOCK_DEAD))
@@ -343,6 +346,7 @@ next_subflow:
 exit:
 	release_sock(meta_sk);
 	mutex_unlock(&mpcb->mpcb_mutex);
+	mptcp_mpcb_put(mpcb);
 	sock_put(meta_sk);
 }
 
@@ -378,6 +382,7 @@ static void binder_create_subflows(struct sock *meta_sk)
 
 	if (!work_pending(&pm_priv->subflow_work)) {
 		sock_hold(meta_sk);
+		atomic_inc(&mpcb->mpcb_refcnt);
 		queue_work(mptcp_wq, &pm_priv->subflow_work);
 	}
 }

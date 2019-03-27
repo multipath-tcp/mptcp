@@ -672,7 +672,7 @@ static void mptcp_sock_def_error_report(struct sock *sk)
 	return;
 }
 
-static void mptcp_mpcb_put(struct mptcp_cb *mpcb)
+void mptcp_mpcb_put(struct mptcp_cb *mpcb)
 {
 	if (atomic_dec_and_test(&mpcb->mpcb_refcnt)) {
 		mptcp_cleanup_path_manager(mpcb);
@@ -680,12 +680,33 @@ static void mptcp_mpcb_put(struct mptcp_cb *mpcb)
 		kmem_cache_free(mptcp_cb_cache, mpcb);
 	}
 }
+EXPORT_SYMBOL(mptcp_mpcb_put);
+
+static void mptcp_mpcb_cleanup(struct mptcp_cb *mpcb)
+{
+	struct mptcp_tw *mptw;
+
+	/* The mpcb is disappearing - we can make the final
+	 * update to the rcv_nxt of the time-wait-sock and remove
+	 * its reference to the mpcb.
+	 */
+	spin_lock_bh(&mpcb->tw_lock);
+	list_for_each_entry_rcu(mptw, &mpcb->tw_list, list) {
+		list_del_rcu(&mptw->list);
+		mptw->in_list = 0;
+		mptcp_mpcb_put(mpcb);
+		rcu_assign_pointer(mptw->mpcb, NULL);
+	}
+	spin_unlock_bh(&mpcb->tw_lock);
+
+	mptcp_mpcb_put(mpcb);
+}
 
 void mptcp_sock_destruct(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	if (!is_meta_sk(sk) && !tp->was_meta_sk) {
+	if (!is_meta_sk(sk)) {
 		BUG_ON(!hlist_unhashed(&tp->mptcp->cb_list));
 
 		kmem_cache_free(mptcp_sock_cache, tp->mptcp);
@@ -695,25 +716,9 @@ void mptcp_sock_destruct(struct sock *sk)
 		sock_put(mptcp_meta_sk(sk));
 		mptcp_mpcb_put(tp->mpcb);
 	} else {
-		struct mptcp_cb *mpcb = tp->mpcb;
-		struct mptcp_tw *mptw;
-
-		/* The mpcb is disappearing - we can make the final
-		 * update to the rcv_nxt of the time-wait-sock and remove
-		 * its reference to the mpcb.
-		 */
-		spin_lock_bh(&mpcb->tw_lock);
-		list_for_each_entry_rcu(mptw, &mpcb->tw_list, list) {
-			list_del_rcu(&mptw->list);
-			mptw->in_list = 0;
-			mptcp_mpcb_put(mpcb);
-			rcu_assign_pointer(mptw->mpcb, NULL);
-		}
-		spin_unlock_bh(&mpcb->tw_lock);
-
-		mptcp_mpcb_put(mpcb);
-
 		mptcp_debug("%s destroying meta-sk\n", __func__);
+
+		mptcp_mpcb_cleanup(tp->mpcb);
 	}
 
 	WARN_ON(!static_key_false(&mptcp_static_key));
@@ -1218,8 +1223,6 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	mpcb->meta_sk = meta_sk;
 	mpcb->master_sk = master_sk;
 
-	meta_tp->was_meta_sk = 0;
-
 	/* Initialize the queues */
 	skb_queue_head_init(&mpcb->reinject_queue);
 	skb_queue_head_init(&master_tp->out_of_order_queue);
@@ -1564,9 +1567,10 @@ void mptcp_sub_close_wq(struct work_struct *work)
 {
 	struct tcp_sock *tp = container_of(work, struct mptcp_tcp_sock, work.work)->tp;
 	struct sock *sk = (struct sock *)tp;
+	struct mptcp_cb *mpcb = tp->mpcb;
 	struct sock *meta_sk = mptcp_meta_sk(sk);
 
-	mutex_lock(&tp->mpcb->mpcb_mutex);
+	mutex_lock(&mpcb->mpcb_mutex);
 	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
 
 	if (sock_flag(sk, SOCK_DEAD))
@@ -1589,7 +1593,8 @@ void mptcp_sub_close_wq(struct work_struct *work)
 
 exit:
 	release_sock(meta_sk);
-	mutex_unlock(&tp->mpcb->mpcb_mutex);
+	mutex_unlock(&mpcb->mpcb_mutex);
+	mptcp_mpcb_put(mpcb);
 	sock_put(sk);
 }
 
@@ -1660,6 +1665,7 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 	}
 
 	sock_hold(sk);
+	atomic_inc(&tp->mpcb->mpcb_refcnt);
 	queue_delayed_work(mptcp_wq, work, delay);
 }
 
@@ -1723,6 +1729,7 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 	mptcp_debug("%s: Close of meta_sk with tok %#x\n",
 		    __func__, mpcb->mptcp_loc_token);
 
+	WARN_ON(atomic_inc_not_zero(&mpcb->mpcb_refcnt) == 0);
 	mutex_lock(&mpcb->mpcb_mutex);
 	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
 
@@ -1878,6 +1885,7 @@ out:
 	bh_unlock_sock(meta_sk);
 	local_bh_enable();
 	mutex_unlock(&mpcb->mpcb_mutex);
+	mptcp_mpcb_put(mpcb);
 	sock_put(meta_sk); /* Taken by sock_hold */
 }
 
@@ -1918,9 +1926,21 @@ void mptcp_disconnect(struct sock *sk)
 	}
 	local_bh_enable();
 
-	tp->was_meta_sk = 1;
+	mptcp_mpcb_cleanup(tp->mpcb);
+	tp->meta_sk = NULL;
+
+	tp->send_mp_fclose = 0;
 	tp->mpc = 0;
 	tp->ops = &tcp_specific;
+#if IS_ENABLED(CONFIG_IPV6)
+	if (sk->sk_family == AF_INET6)
+		sk->sk_backlog_rcv = tcp_v6_do_rcv;
+	else
+		sk->sk_backlog_rcv = tcp_v4_do_rcv;
+#else
+	sk->sk_backlog_rcv = tcp_v4_do_rcv;
+#endif
+	sk->sk_destruct = inet_sock_destruct;
 }
 
 
@@ -2353,8 +2373,6 @@ void mptcp_tsq_sub_deferred(struct sock *meta_sk)
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_tcp_sock *mptcp;
 	struct hlist_node *tmp;
-
-	BUG_ON(!is_meta_sk(meta_sk) && !meta_tp->was_meta_sk);
 
 	__sock_put(meta_sk);
 	hlist_for_each_entry_safe(mptcp, tmp, &meta_tp->mpcb->callback_list, cb_list) {

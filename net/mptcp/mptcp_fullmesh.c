@@ -374,6 +374,9 @@ next_subflow:
 	mutex_lock(&mpcb->mpcb_mutex);
 	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
 
+	if (!mptcp(tcp_sk(meta_sk)))
+		goto exit;
+
 	iter++;
 
 	if (sock_flag(meta_sk, SOCK_DEAD))
@@ -430,6 +433,7 @@ exit:
 	kfree(mptcp_local);
 	release_sock(meta_sk);
 	mutex_unlock(&mpcb->mpcb_mutex);
+	mptcp_mpcb_put(mpcb);
 	sock_put(meta_sk);
 }
 
@@ -472,7 +476,7 @@ next_subflow:
 	mutex_lock(&mpcb->mpcb_mutex);
 	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
 
-	if (sock_flag(meta_sk, SOCK_DEAD))
+	if (sock_flag(meta_sk, SOCK_DEAD) || !mptcp(tcp_sk(meta_sk)))
 		goto exit;
 
 	if (mpcb->master_sk &&
@@ -580,6 +584,7 @@ next_subflow:
 
 	if (retry && !delayed_work_pending(&fmp->subflow_retry_work)) {
 		sock_hold(meta_sk);
+		atomic_inc(&mpcb->mpcb_refcnt);
 		queue_delayed_work(mptcp_wq, &fmp->subflow_retry_work,
 				   msecs_to_jiffies(MPTCP_SUBFLOW_RETRY_DELAY));
 	}
@@ -588,6 +593,7 @@ exit:
 	kfree(mptcp_local);
 	release_sock(meta_sk);
 	mutex_unlock(&mpcb->mpcb_mutex);
+	mptcp_mpcb_put(mpcb);
 	sock_put(meta_sk);
 }
 
@@ -1397,7 +1403,7 @@ fallback:
 
 static void full_mesh_create_subflows(struct sock *meta_sk)
 {
-	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
 
 	if (mptcp_in_infinite_mapping_weak(mpcb) ||
@@ -1410,6 +1416,7 @@ static void full_mesh_create_subflows(struct sock *meta_sk)
 
 	if (!work_pending(&fmp->subflow_work)) {
 		sock_hold(meta_sk);
+		atomic_inc(&mpcb->mpcb_refcnt);
 		queue_work(mptcp_wq, &fmp->subflow_work);
 	}
 }

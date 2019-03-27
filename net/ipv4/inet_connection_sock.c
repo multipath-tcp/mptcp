@@ -849,11 +849,13 @@ void inet_csk_listen_stop(struct sock *sk)
 	while ((req = acc_req) != NULL) {
 		struct sock *child = req->sk;
 		bool mutex_taken = false;
+		struct mptcp_cb *mpcb = tcp_sk(child)->mpcb;
 
 		acc_req = req->dl_next;
 
 		if (is_meta_sk(child)) {
-			mutex_lock(&tcp_sk(child)->mpcb->mpcb_mutex);
+			WARN_ON(atomic_inc_not_zero(&mpcb->mpcb_refcnt) == 0);
+			mutex_lock(&mpcb->mpcb_mutex);
 			mutex_taken = true;
 		}
 		local_bh_disable();
@@ -883,8 +885,10 @@ void inet_csk_listen_stop(struct sock *sk)
 
 		bh_unlock_sock(child);
 		local_bh_enable();
-		if (mutex_taken)
-			mutex_unlock(&tcp_sk(child)->mpcb->mpcb_mutex);
+		if (mutex_taken) {
+			mutex_unlock(&mpcb->mpcb_mutex);
+			mptcp_mpcb_put(mpcb);
+		}
 		sock_put(child);
 
 		sk_acceptq_removed(sk);

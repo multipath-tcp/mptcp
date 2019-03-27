@@ -899,6 +899,7 @@ void mptcp_cookies_reqsk_init(struct request_sock *req,
 			      struct mptcp_options_received *mopt,
 			      struct sk_buff *skb);
 void mptcp_sock_destruct(struct sock *sk);
+void mptcp_mpcb_put(struct mptcp_cb *mpcb);
 
 /* MPTCP-path-manager registration/initialization functions */
 int mptcp_register_path_manager(struct mptcp_pm_ops *pm);
