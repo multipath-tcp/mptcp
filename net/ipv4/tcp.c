@@ -3737,16 +3737,22 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 		if (put_user(len, optlen))
 			return -EFAULT;
 
+		lock_sock(sk);
 		if (mptcp(tcp_sk(sk))) {
 			struct mptcp_cb *mpcb = tcp_sk(mptcp_meta_sk(sk))->mpcb;
 
-			if (copy_to_user(optval, mpcb->sched_ops->name, len))
+			if (copy_to_user(optval, mpcb->sched_ops->name, len)) {
+				release_sock(sk);
 				return -EFAULT;
+			}
 		} else {
 			if (copy_to_user(optval, tcp_sk(sk)->mptcp_sched_name,
-					 len))
+					 len)) {
+				release_sock(sk);
 				return -EFAULT;
+			}
 		}
+		release_sock(sk);
 		return 0;
 
 	case MPTCP_PATH_MANAGER:
@@ -3756,16 +3762,22 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 		if (put_user(len, optlen))
 			return -EFAULT;
 
+		lock_sock(sk);
 		if (mptcp(tcp_sk(sk))) {
 			struct mptcp_cb *mpcb = tcp_sk(mptcp_meta_sk(sk))->mpcb;
 
-			if (copy_to_user(optval, mpcb->pm_ops->name, len))
+			if (copy_to_user(optval, mpcb->pm_ops->name, len)) {
+				release_sock(sk);
 				return -EFAULT;
+			}
 		} else {
 			if (copy_to_user(optval, tcp_sk(sk)->mptcp_pm_name,
-					 len))
+					 len)) {
+				release_sock(sk);
 				return -EFAULT;
+			}
 		}
+		release_sock(sk);
 		return 0;
 
 	case MPTCP_ENABLED:
