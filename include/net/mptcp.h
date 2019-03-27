@@ -888,6 +888,7 @@ void mptcp_cookies_reqsk_init(struct request_sock *req,
 			      struct mptcp_options_received *mopt,
 			      struct sk_buff *skb);
 void mptcp_sock_destruct(struct sock *sk);
+void mptcp_mpcb_put(struct mptcp_cb *mpcb);
 int mptcp_finish_handshake(struct sock *child, struct sk_buff *skb);
 int mptcp_get_info(const struct sock *meta_sk, char __user *optval, int optlen);
 
