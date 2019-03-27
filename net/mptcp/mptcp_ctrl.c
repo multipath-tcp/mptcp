@@ -641,9 +641,9 @@ static void mptcp_sock_def_error_report(struct sock *sk)
 		}
 	}
 
-	if (mpcb->infinite_mapping_rcv || mpcb->infinite_mapping_snd ||
-	    mpcb->send_infinite_mapping) {
-
+	if (!tp->tcp_disconnect &&
+	    (mpcb->infinite_mapping_rcv || mpcb->infinite_mapping_snd ||
+	     mpcb->send_infinite_mapping)) {
 		meta_sk->sk_err = sk->sk_err;
 		meta_sk->sk_err_soft = sk->sk_err_soft;
 
@@ -1917,6 +1917,8 @@ void mptcp_disconnect(struct sock *meta_sk)
 	mptcp_for_each_sk_safe(meta_tp->mpcb, subsk, tmpsk) {
 		if (spin_is_locked(&subsk->sk_lock.slock))
 			bh_unlock_sock(subsk);
+
+		tcp_sk(subsk)->tcp_disconnect = 1;
 
 		meta_sk->sk_prot->disconnect(subsk, O_NONBLOCK);
 
