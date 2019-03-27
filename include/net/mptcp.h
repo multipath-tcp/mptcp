@@ -1347,6 +1347,14 @@ static inline bool mptcp_v6_is_v4_mapped(const struct sock *sk)
 	       ipv6_addr_type(&inet6_sk(sk)->saddr) == IPV6_ADDR_MAPPED;
 }
 
+/* We are in or are becoming to be in infinite mapping mode */
+static inline bool mptcp_in_infinite_mapping_weak(const struct mptcp_cb *mpcb)
+{
+	return mpcb->infinite_mapping_rcv ||
+	       mpcb->infinite_mapping_snd ||
+	       mpcb->send_infinite_mapping;
+}
+
 /* TCP and MPTCP mpc flag-depending functions */
 u16 mptcp_select_window(struct sock *sk);
 void mptcp_init_buffer_space(struct sock *sk);
