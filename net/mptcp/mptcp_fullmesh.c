@@ -870,9 +870,7 @@ duno:
 				goto next;
 
 			if (!mptcp(meta_tp) || !is_meta_sk(meta_sk) ||
-			    mpcb->infinite_mapping_snd ||
-			    mpcb->infinite_mapping_rcv ||
-			    mpcb->send_infinite_mapping)
+			    mptcp_in_infinite_mapping_weak(mpcb))
 				goto next;
 
 			/* May be that the pm has changed in-between */
@@ -1413,8 +1411,7 @@ static void full_mesh_create_subflows(struct sock *meta_sk)
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
 
-	if (mpcb->infinite_mapping_snd || mpcb->infinite_mapping_rcv ||
-	    mpcb->send_infinite_mapping ||
+	if (mptcp_in_infinite_mapping_weak(mpcb) ||
 	    mpcb->server_side || sock_flag(meta_sk, SOCK_DEAD))
 		return;
 
@@ -1436,8 +1433,7 @@ static void full_mesh_subflow_error(struct sock *meta_sk, struct sock *sk)
 	if (!create_on_err)
 		return;
 
-	if (mpcb->infinite_mapping_snd || mpcb->infinite_mapping_rcv ||
-	    mpcb->send_infinite_mapping ||
+	if (mptcp_in_infinite_mapping_weak(mpcb) ||
 	    mpcb->server_side || sock_flag(meta_sk, SOCK_DEAD))
 		return;
 
