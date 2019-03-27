@@ -1385,9 +1385,7 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 	/* May happen if no subflow is in an appropriate state, OR
 	 * we are in infinite mode or about to go there - just send a reset
 	 */
-	if (!sk || mpcb->infinite_mapping_snd || mpcb->send_infinite_mapping ||
-	    mpcb->infinite_mapping_rcv) {
-
+	if (!sk || mptcp_in_infinite_mapping_weak(mpcb)) {
 		/* tcp_done must be handled with bh disabled */
 		if (!in_serving_softirq())
 			local_bh_disable();

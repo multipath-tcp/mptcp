@@ -1275,6 +1275,14 @@ static inline bool mptcp_v6_is_v4_mapped(const struct sock *sk)
 	       ipv6_addr_type(&inet6_sk(sk)->saddr) == IPV6_ADDR_MAPPED;
 }
 
+/* We are in or are becoming to be in infinite mapping mode */
+static inline bool mptcp_in_infinite_mapping_weak(const struct mptcp_cb *mpcb)
+{
+	return mpcb->infinite_mapping_rcv ||
+	       mpcb->infinite_mapping_snd ||
+	       mpcb->send_infinite_mapping;
+}
+
 static inline bool mptcp_can_new_subflow(const struct sock *meta_sk)
 {
 	/* Has been removed from the tk-table. Thus, no new subflows.

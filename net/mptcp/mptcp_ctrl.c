@@ -637,9 +637,7 @@ static void mptcp_sock_def_error_report(struct sock *sk)
 	/* record this info that can be used by PM after the sf close */
 	tp->mptcp->sk_err = sk->sk_err;
 
-	if (!tp->tcp_disconnect &&
-	    (mpcb->infinite_mapping_rcv || mpcb->infinite_mapping_snd ||
-	     mpcb->send_infinite_mapping)) {
+	if (!tp->tcp_disconnect && mptcp_in_infinite_mapping_weak(mpcb)) {
 		struct sock *meta_sk = mptcp_meta_sk(sk);
 
 		meta_sk->sk_err = sk->sk_err;
@@ -2417,6 +2415,20 @@ void mptcp_time_wait(struct sock *meta_sk, int state, int timeo)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_tw *mptw;
+
+	if (mptcp_in_infinite_mapping_weak(meta_tp->mpcb)) {
+		struct mptcp_tcp_sock *mptcp;
+		struct hlist_node *tmp;
+
+		mptcp_for_each_sub_safe(meta_tp->mpcb, mptcp, tmp) {
+			struct sock *sk_it = mptcp_to_sock(mptcp);
+
+			if (sk_it->sk_state == TCP_CLOSE)
+				continue;
+
+			tcp_sk(sk_it)->ops->time_wait(sk_it, state, timeo);
+		}
+	}
 
 	/* Used for sockets that go into tw after the meta
 	 * (see mptcp_init_tw_sock())

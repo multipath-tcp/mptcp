@@ -380,8 +380,7 @@ static void binder_create_subflows(struct sock *meta_sk)
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct binder_priv *pm_priv = (struct binder_priv *)&mpcb->mptcp_pm[0];
 
-	if (mpcb->infinite_mapping_snd || mpcb->infinite_mapping_rcv ||
-	    mpcb->send_infinite_mapping ||
+	if (mptcp_in_infinite_mapping_weak(mpcb) ||
 	    mpcb->server_side || sock_flag(meta_sk, SOCK_DEAD))
 		return;
 
