@@ -637,8 +637,9 @@ static void mptcp_sock_def_error_report(struct sock *sk)
 	/* record this info that can be used by PM after the sf close */
 	tp->mptcp->sk_err = sk->sk_err;
 
-	if (mpcb->infinite_mapping_rcv || mpcb->infinite_mapping_snd ||
-	    mpcb->send_infinite_mapping) {
+	if (!tp->tcp_disconnect &&
+	    (mpcb->infinite_mapping_rcv || mpcb->infinite_mapping_snd ||
+	     mpcb->send_infinite_mapping)) {
 		struct sock *meta_sk = mptcp_meta_sk(sk);
 
 		meta_sk->sk_err = sk->sk_err;
@@ -1984,6 +1985,8 @@ void mptcp_disconnect(struct sock *meta_sk)
 
 		if (spin_is_locked(&subsk->sk_lock.slock))
 			bh_unlock_sock(subsk);
+
+		tcp_sk(subsk)->tcp_disconnect = 1;
 
 		meta_sk->sk_prot->disconnect(subsk, O_NONBLOCK);
 

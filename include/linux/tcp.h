@@ -479,7 +479,8 @@ struct tcp_sock {
 		mptcp_ver:4,
 		mptcp_sched_setsockopt:1,
 		mptcp_pm_setsockopt:1,
-		record_master_info:1;
+		record_master_info:1,
+		tcp_disconnect:1;
 	struct mptcp_tcp_sock *mptcp;
 #ifdef CONFIG_MPTCP
 #define MPTCP_SCHED_NAME_MAX 16
