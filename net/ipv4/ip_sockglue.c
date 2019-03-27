@@ -659,7 +659,7 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 			break;
 		old = rcu_dereference_protected(inet->inet_opt,
 						lockdep_sock_is_held(sk));
-		if (inet->is_icsk) {
+		if (inet->is_icsk && !is_meta_sk(sk)) {
 			struct inet_connection_sock *icsk = inet_csk(sk);
 #if IS_ENABLED(CONFIG_IPV6)
 			if (sk->sk_family == PF_INET ||

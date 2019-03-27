@@ -1309,6 +1309,8 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	meta_tp->packets_out = 0;
 	meta_icsk->icsk_probes_out = 0;
 
+	rcu_assign_pointer(inet_sk(meta_sk)->inet_opt, NULL);
+
 	/* Set mptcp-pointers */
 	master_tp->mpcb = mpcb;
 	master_tp->meta_sk = meta_sk;
@@ -1537,8 +1539,6 @@ void mptcp_del_sock(struct sock *sk)
 	} else if (tp->mptcp->pre_established) {
 		sk_stop_timer(sk, &tp->mptcp->mptcp_ack_timer);
 	}
-
-	rcu_assign_pointer(inet_sk(sk)->inet_opt, NULL);
 }
 
 /* Updates the MPTCP-session based on path-manager information (e.g., addresses,
