@@ -34,7 +34,7 @@ static void tcp_diag_get_info(struct sock *sk, struct inet_diag_msg *r,
 		r->idiag_wqueue = tp->write_seq - tp->snd_una;
 	}
 	if (info)
-		tcp_get_info(sk, info);
+		tcp_get_info(sk, info, false);
 }
 
 #ifdef CONFIG_TCP_MD5SIG

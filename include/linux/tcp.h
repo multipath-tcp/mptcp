@@ -473,14 +473,14 @@ struct tcp_sock {
 		       * stop using the subflow
 		       */
 		mp_killed:1, /* Killed with a tcp_done in mptcp? */
-		was_meta_sk:1,	/* This was a meta sk (in case of reuse) */
 		is_master_sk:1,
 		close_it:1,	/* Must close socket in mptcp_data_ready? */
 		closing:1,
 		mptcp_ver:4,
 		mptcp_sched_setsockopt:1,
 		mptcp_pm_setsockopt:1,
-		record_master_info:1;
+		record_master_info:1,
+		tcp_disconnect:1;
 	struct mptcp_tcp_sock *mptcp;
 #ifdef CONFIG_MPTCP
 #define MPTCP_SCHED_NAME_MAX 16

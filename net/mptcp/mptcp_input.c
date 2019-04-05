@@ -283,9 +283,15 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 	__wsum csum_tcp = 0; /* cumulative checksum of pld + mptcp-header */
 	int ans = 1, overflowed = 0, offset = 0, dss_csum_added = 0;
 	int iter = 0;
+	u32 next_seq, offset_seq;
 
 	skb_queue_walk_safe(&sk->sk_receive_queue, tmp, tmp1) {
 		unsigned int csum_len;
+
+		/* init next seq in first round  */
+		if (!iter)
+			next_seq = TCP_SKB_CB(tmp)->seq;
+		offset_seq = next_seq - TCP_SKB_CB(tmp)->seq;
 
 		if (before(tp->mptcp->map_subseq + tp->mptcp->map_data_len, TCP_SKB_CB(tmp)->end_seq))
 			/* Mapping ends in the middle of the packet -
@@ -295,20 +301,22 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 		else
 			csum_len = tmp->len;
 
+		csum_len -= offset_seq;
 		offset = 0;
 		if (overflowed) {
 			char first_word[4];
 			first_word[0] = 0;
 			first_word[1] = 0;
 			first_word[2] = 0;
-			first_word[3] = *(tmp->data);
+			first_word[3] = *(tmp->data + offset_seq);
 			csum_tcp = csum_partial(first_word, 4, csum_tcp);
 			offset = 1;
 			csum_len--;
 			overflowed = 0;
 		}
 
-		csum_tcp = skb_checksum(tmp, offset, csum_len, csum_tcp);
+		csum_tcp = skb_checksum(tmp, offset + offset_seq, csum_len,
+					csum_tcp);
 
 		/* Was it on an odd-length? Then we have to merge the next byte
 		 * correctly (see above)
@@ -344,6 +352,7 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 		    !before(TCP_SKB_CB(tmp1)->seq,
 			    tp->mptcp->map_subseq + tp->mptcp->map_data_len))
 			break;
+		next_seq = TCP_SKB_CB(tmp)->end_seq;
 	}
 
 	/* Now, checksum must be 0 */
@@ -351,9 +360,9 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 		struct mptcp_tcp_sock *mptcp;
 		struct sock *sk_it = NULL;
 
-		pr_err("%s csum is wrong: %#x tcp-seq %u dss_csum_added %d overflowed %d iterations %d\n",
-		       __func__, csum_fold(csum_tcp), TCP_SKB_CB(last)->seq,
-		       dss_csum_added, overflowed, iter);
+		pr_debug("%s csum is wrong: %#x tcp-seq %u dss_csum_added %d overflowed %d iterations %d\n",
+			 __func__, csum_fold(csum_tcp), TCP_SKB_CB(last)->seq,
+			 dss_csum_added, overflowed, iter);
 
 		MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_CSUMFAIL);
 		tp->mptcp->send_mp_fail = 1;
@@ -546,10 +555,10 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 	 */
 	if (!tp->mptcp->fully_established && !mptcp_is_data_seq(skb) &&
 	    !tp->mptcp->mapping_present && !mpcb->infinite_mapping_rcv) {
-		pr_err("%s %#x will fallback - pi %d from %pS, seq %u\n",
-		       __func__, mpcb->mptcp_loc_token,
-		       tp->mptcp->path_index, __builtin_return_address(0),
-		       TCP_SKB_CB(skb)->seq);
+		pr_debug("%s %#x will fallback - pi %d from %pS, seq %u\n",
+			 __func__, mpcb->mptcp_loc_token,
+			 tp->mptcp->path_index, __builtin_return_address(0),
+			 TCP_SKB_CB(skb)->seq);
 
 		if (!is_master_tp(tp)) {
 			MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_FBDATASUB);
@@ -689,12 +698,12 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 	     data_len != tp->mptcp->map_data_len + tp->mptcp->map_data_fin ||
 	     mptcp_is_data_fin(skb) != tp->mptcp->map_data_fin)) {
 		/* Mapping in packet is different from what we want */
-		pr_err("%s Mappings do not match!\n", __func__);
-		pr_err("%s dseq %u mdseq %u, sseq %u msseq %u dlen %u mdlen %u dfin %d mdfin %d\n",
-		       __func__, data_seq, (u32)tp->mptcp->map_data_seq,
-		       sub_seq, tp->mptcp->map_subseq, data_len,
-		       tp->mptcp->map_data_len, mptcp_is_data_fin(skb),
-		       tp->mptcp->map_data_fin);
+		pr_debug("%s Mappings do not match!\n", __func__);
+		pr_debug("%s dseq %u mdseq %u, sseq %u msseq %u dlen %u mdlen %u dfin %d mdfin %d\n",
+			 __func__, data_seq, (u32)tp->mptcp->map_data_seq,
+			 sub_seq, tp->mptcp->map_subseq, data_len,
+			 tp->mptcp->map_data_len, mptcp_is_data_fin(skb),
+			 tp->mptcp->map_data_fin);
 		MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_DSSNOMATCH);
 		mptcp_send_reset(sk);
 		return 1;
@@ -784,10 +793,10 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 		/* Subflow-sequences of packet is different from what is in the
 		 * packet's dss-mapping. The peer is misbehaving - reset
 		 */
-		pr_err("%s Packet's mapping does not map to the DSS sub_seq %u "
-		       "end_seq %u, tcp_end_seq %u seq %u dfin %u len %u data_len %u"
-		       "copied_seq %u\n", __func__, sub_seq, tcb->end_seq, tcp_end_seq, tcb->seq, mptcp_is_data_fin(skb),
-		       skb->len, data_len, tp->copied_seq);
+		pr_debug("%s Packet's mapping does not map to the DSS sub_seq %u end_seq %u, tcp_end_seq %u seq %u dfin %u len %u data_len %u copied_seq %u\n",
+			 __func__, sub_seq, tcb->end_seq, tcp_end_seq,
+			 tcb->seq, mptcp_is_data_fin(skb),
+			 skb->len, data_len, tp->copied_seq);
 		MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_DSSTCPMISMATCH);
 		mptcp_send_reset(sk);
 		return 1;

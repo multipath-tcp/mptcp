@@ -2396,7 +2396,13 @@ void tcp_close(struct sock *sk, long timeout)
 	int state;
 
 	if (is_meta_sk(sk)) {
-		mptcp_close(sk, timeout);
+		/* TODO: Currently forcing timeout to 0 because
+		 * sk_stream_wait_close will complain during lockdep because
+		 * of the mpcb_mutex (circular lock dependency through
+		 * inet_csk_listen_stop()).
+		 * We should find a way to get rid of the mpcb_mutex.
+		 */
+		mptcp_close(sk, 0);
 		return;
 	}
 
@@ -2702,7 +2708,7 @@ EXPORT_SYMBOL(tcp_disconnect);
 static inline bool tcp_can_repair_sock(const struct sock *sk)
 {
 	return ns_capable(sock_net(sk)->user_ns, CAP_NET_ADMIN) &&
-		(sk->sk_state != TCP_LISTEN);
+		(sk->sk_state != TCP_LISTEN) && !sock_flag(sk, SOCK_MPTCP);
 }
 
 static int tcp_repair_set_window(struct tcp_sock *tp, char __user *optbuf, int len)
@@ -3124,7 +3130,7 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 #ifdef CONFIG_TCP_MD5SIG
 	case TCP_MD5SIG:
 	case TCP_MD5SIG_EXT:
-		if ((1 << sk->sk_state) & (TCPF_CLOSE | TCPF_LISTEN))
+		if ((1 << sk->sk_state) & (TCPF_CLOSE | TCPF_LISTEN) && !sock_flag(sk, SOCK_MPTCP))
 			err = tp->af_specific->md5_parse(sk, optname, optval, optlen);
 		else
 			err = -EINVAL;
@@ -3186,7 +3192,11 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 #ifdef CONFIG_MPTCP
 	case MPTCP_ENABLED:
 		if (mptcp_init_failed || !sysctl_mptcp_enabled ||
-		    sk->sk_state != TCP_CLOSE) {
+		    sk->sk_state != TCP_CLOSE
+#ifdef CONFIG_TCP_MD5SIG
+		    || tp->md5sig_info
+#endif
+								) {
 			err = -EPERM;
 			break;
 		}
@@ -3264,7 +3274,7 @@ static void tcp_get_info_chrono_stats(const struct tcp_sock *tp,
 }
 
 /* Return information about state of tcp endpoint in API format. */
-void tcp_get_info(struct sock *sk, struct tcp_info *info)
+void tcp_get_info(struct sock *sk, struct tcp_info *info, bool no_lock)
 {
 	const struct tcp_sock *tp = tcp_sk(sk); /* iff sk_type == SOCK_STREAM */
 	const struct inet_connection_sock *icsk = inet_csk(sk);
@@ -3301,7 +3311,8 @@ void tcp_get_info(struct sock *sk, struct tcp_info *info)
 		return;
 	}
 
-	slow = lock_sock_fast(sk);
+	if (!no_lock)
+		slow = lock_sock_fast(sk);
 
 	info->tcpi_ca_state = icsk->icsk_ca_state;
 	info->tcpi_retransmits = icsk->icsk_retransmits;
@@ -3375,7 +3386,9 @@ void tcp_get_info(struct sock *sk, struct tcp_info *info)
 	info->tcpi_bytes_retrans = tp->bytes_retrans;
 	info->tcpi_dsack_dups = tp->dsack_dups;
 	info->tcpi_reord_seen = tp->reord_seen;
-	unlock_sock_fast(sk, slow);
+
+	if (!no_lock)
+		unlock_sock_fast(sk, slow);
 }
 EXPORT_SYMBOL_GPL(tcp_get_info);
 
@@ -3520,7 +3533,7 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 		if (get_user(len, optlen))
 			return -EFAULT;
 
-		tcp_get_info(sk, &info);
+		tcp_get_info(sk, &info, false);
 
 		len = min_t(unsigned int, len, sizeof(info));
 		if (put_user(len, optlen))
@@ -3719,16 +3732,22 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 		if (put_user(len, optlen))
 			return -EFAULT;
 
+		lock_sock(sk);
 		if (mptcp(tcp_sk(sk))) {
 			struct mptcp_cb *mpcb = tcp_sk(mptcp_meta_sk(sk))->mpcb;
 
-			if (copy_to_user(optval, mpcb->sched_ops->name, len))
+			if (copy_to_user(optval, mpcb->sched_ops->name, len)) {
+				release_sock(sk);
 				return -EFAULT;
+			}
 		} else {
 			if (copy_to_user(optval, tcp_sk(sk)->mptcp_sched_name,
-					 len))
+					 len)) {
+				release_sock(sk);
 				return -EFAULT;
+			}
 		}
+		release_sock(sk);
 		return 0;
 
 	case MPTCP_PATH_MANAGER:
@@ -3738,16 +3757,22 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 		if (put_user(len, optlen))
 			return -EFAULT;
 
+		lock_sock(sk);
 		if (mptcp(tcp_sk(sk))) {
 			struct mptcp_cb *mpcb = tcp_sk(mptcp_meta_sk(sk))->mpcb;
 
-			if (copy_to_user(optval, mpcb->pm_ops->name, len))
+			if (copy_to_user(optval, mpcb->pm_ops->name, len)) {
+				release_sock(sk);
 				return -EFAULT;
+			}
 		} else {
 			if (copy_to_user(optval, tcp_sk(sk)->mptcp_pm_name,
-					 len))
+					 len)) {
+				release_sock(sk);
 				return -EFAULT;
+			}
 		}
+		release_sock(sk);
 		return 0;
 
 	case MPTCP_ENABLED:

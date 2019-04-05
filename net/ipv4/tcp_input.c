@@ -3691,7 +3691,7 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 
 	if (mptcp(tp)) {
 		if (mptcp_fallback_infinite(sk, flag)) {
-			pr_err("%s resetting flow\n", __func__);
+			pr_debug("%s resetting flow\n", __func__);
 			mptcp_send_reset(sk);
 			goto invalid_ack;
 		}
@@ -6297,7 +6297,18 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
 			if (is_master_tp(tp)) {
 				mptcp_update_metasocket(mptcp_meta_sk(sk));
 			} else {
+				struct sock *meta_sk = mptcp_meta_sk(sk);
+
 				tcp_send_ack(sk);
+
+				/* Update RTO as it might be worse/better */
+				mptcp_set_rto(sk);
+
+				/* If the new RTO would fire earlier, pull it in! */
+				if (tcp_sk(meta_sk)->packets_out &&
+				    icsk->icsk_timeout > inet_csk(meta_sk)->icsk_rto + jiffies) {
+					tcp_rearm_rto(meta_sk);
+				}
 
 				mptcp_push_pending_frames(mptcp_meta_sk(sk));
 			}

@@ -803,7 +803,7 @@ int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key,
 int mptcp_check_req_fastopen(struct sock *child, struct request_sock *req);
 int mptcp_check_req_master(struct sock *sk, struct sock *child,
 			   struct request_sock *req, const struct sk_buff *skb,
-			   int drop);
+			   int drop, u32 tsoff);
 struct sock *mptcp_check_req_child(struct sock *meta_sk,
 				   struct sock *child,
 				   struct request_sock *req,
@@ -826,7 +826,6 @@ int mptcp_write_wakeup(struct sock *meta_sk, int mib);
 void mptcp_sub_close_wq(struct work_struct *work);
 void mptcp_sub_close(struct sock *sk, unsigned long delay);
 struct sock *mptcp_select_ack_sock(const struct sock *meta_sk);
-void mptcp_fallback_meta_sk(struct sock *meta_sk);
 void mptcp_prepare_for_backlog(struct sock *sk, struct sk_buff *skb);
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb);
 void mptcp_ack_handler(struct timer_list *t);
@@ -844,7 +843,7 @@ unsigned int mptcp_xmit_size_goal(const struct sock *meta_sk, u32 mss_now,
 int mptcp_init_tw_sock(struct sock *sk, struct tcp_timewait_sock *tw);
 void mptcp_twsk_destructor(struct tcp_timewait_sock *tw);
 void mptcp_time_wait(struct sock *sk, int state, int timeo);
-void mptcp_disconnect(struct sock *sk);
+void mptcp_disconnect(struct sock *meta_sk);
 bool mptcp_should_expand_sndbuf(const struct sock *sk);
 int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb);
 void mptcp_tsq_flags(struct sock *sk);
@@ -872,7 +871,7 @@ void mptcp_disable_static_key(void);
 void mptcp_cookies_reqsk_init(struct request_sock *req,
 			      struct mptcp_options_received *mopt,
 			      struct sk_buff *skb);
-void mptcp_sock_destruct(struct sock *sk);
+void mptcp_mpcb_put(struct mptcp_cb *mpcb);
 int mptcp_finish_handshake(struct sock *child, struct sk_buff *skb);
 int mptcp_get_info(const struct sock *meta_sk, char __user *optval, int optlen);
 void mptcp_clear_sk(struct sock *sk, int size);
@@ -1196,6 +1195,7 @@ static inline void mptcp_set_rto(struct sock *sk)
 		struct sock *sk_it = mptcp_to_sock(mptcp);
 
 		if ((mptcp_sk_can_send(sk_it) || sk_it->sk_state == TCP_SYN_RECV) &&
+		    inet_csk(sk_it)->icsk_retransmits == 0 &&
 		    inet_csk(sk_it)->icsk_rto > max_rto)
 			max_rto = inet_csk(sk_it)->icsk_rto;
 	}
@@ -1247,11 +1247,11 @@ static inline bool mptcp_fallback_infinite(struct sock *sk, int flag)
 	if (mpcb->infinite_mapping_snd)
 		return false;
 
-	pr_err("%s %#x will fallback - pi %d, src %pI4:%u dst %pI4:%u rcv_nxt %u from %pS\n",
-	       __func__, mpcb->mptcp_loc_token, tp->mptcp->path_index,
-	       &inet_sk(sk)->inet_saddr, ntohs(inet_sk(sk)->inet_sport),
-	       &inet_sk(sk)->inet_daddr, ntohs(inet_sk(sk)->inet_dport),
-	       tp->rcv_nxt, __builtin_return_address(0));
+	pr_debug("%s %#x will fallback - pi %d, src %pI4:%u dst %pI4:%u rcv_nxt %u from %pS\n",
+		 __func__, mpcb->mptcp_loc_token, tp->mptcp->path_index,
+		 &inet_sk(sk)->inet_saddr, ntohs(inet_sk(sk)->inet_sport),
+		 &inet_sk(sk)->inet_daddr, ntohs(inet_sk(sk)->inet_dport),
+		 tp->rcv_nxt, __builtin_return_address(0));
 	if (!is_master_tp(tp)) {
 		MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_FBACKSUB);
 		return true;
@@ -1273,6 +1273,14 @@ static inline bool mptcp_v6_is_v4_mapped(const struct sock *sk)
 {
 	return sk->sk_family == AF_INET6 &&
 	       ipv6_addr_type(&inet6_sk(sk)->saddr) == IPV6_ADDR_MAPPED;
+}
+
+/* We are in or are becoming to be in infinite mapping mode */
+static inline bool mptcp_in_infinite_mapping_weak(const struct mptcp_cb *mpcb)
+{
+	return mpcb->infinite_mapping_rcv ||
+	       mpcb->infinite_mapping_snd ||
+	       mpcb->send_infinite_mapping;
 }
 
 static inline bool mptcp_can_new_subflow(const struct sock *meta_sk)
@@ -1390,7 +1398,8 @@ static inline int mptcp_check_req_master(const struct sock *sk,
 					 const struct sock *child,
 					 const struct request_sock *req,
 					 const struct sk_buff *skb,
-					 int drop)
+					 int drop,
+					 u32 tsoff)
 {
 	return 1;
 }
@@ -1421,6 +1430,7 @@ static inline int mptcp_check_snd_buf(const struct tcp_sock *tp)
 {
 	return 0;
 }
+static inline void mptcp_push_pending_frames(struct sock *meta_sk) {}
 static inline void mptcp_send_reset(const struct sock *sk) {}
 static inline bool mptcp_handle_options(struct sock *sk,
 					const struct tcphdr *th,
@@ -1457,7 +1467,7 @@ static inline int mptcp_init_tw_sock(struct sock *sk,
 	return 0;
 }
 static inline void mptcp_twsk_destructor(struct tcp_timewait_sock *tw) {}
-static inline void mptcp_disconnect(struct sock *sk) {}
+static inline void mptcp_disconnect(struct sock *meta_sk) {}
 static inline void mptcp_tsq_flags(struct sock *sk) {}
 static inline void mptcp_tsq_sub_deferred(struct sock *meta_sk) {}
 static inline void mptcp_hash_remove_bh(struct tcp_sock *meta_tp) {}
