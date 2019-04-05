@@ -6279,6 +6279,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
 		tcp_initialize_rcv_mss(sk);
 		tcp_fast_path_on(tp);
 
+#ifdef CONFIG_MPTCP
 		/* Send an ACK when establishing a new  MPTCP subflow, i.e.
 		 * using an MP_JOIN subtype.
 		 */
@@ -6302,6 +6303,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
 				mptcp_push_pending_frames(mptcp_meta_sk(sk));
 			}
 		}
+#endif
 		break;
 
 	case TCP_FIN_WAIT1: {
