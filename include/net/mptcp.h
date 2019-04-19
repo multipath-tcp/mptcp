@@ -1531,6 +1531,7 @@ static inline void mptcp_disable_static_key(void) {}
 static inline void mptcp_cookies_reqsk_init(struct request_sock *req,
 					    struct mptcp_options_received *mopt,
 					    struct sk_buff *skb) {}
+static inline void mptcp_mpcb_put(struct mptcp_cb *mpcb) {}
 static inline bool mptcp_in_infinite_mapping_weak(const struct mptcp_cb *mpcb)
 {
 	return false;
