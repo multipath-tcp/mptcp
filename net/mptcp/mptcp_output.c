@@ -82,6 +82,8 @@ static bool mptcp_reconstruct_mapping(struct sk_buff *skb)
 
 	/* Get the data_len to calculate the end_data_seq */
 	p32++;
+	if (mpdss->m)
+		p32++;
 	p32++;
 	p16 = (u16 *)p32;
 	TCP_SKB_CB(skb)->end_seq = ntohs(*p16) + TCP_SKB_CB(skb)->seq;
