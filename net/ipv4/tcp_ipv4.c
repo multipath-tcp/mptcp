@@ -1688,15 +1688,8 @@ EXPORT_SYMBOL(tcp_add_backlog);
 int tcp_filter(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcphdr *th = (struct tcphdr *)skb->data;
-	unsigned int eaten = skb->len;
-	int err;
 
-	err = sk_filter_trim_cap(sk, skb, th->doff * 4);
-	if (!err) {
-		eaten -= skb->len;
-		TCP_SKB_CB(skb)->end_seq -= eaten;
-	}
-	return err;
+	return sk_filter_trim_cap(sk, skb, th->doff * 4);
 }
 EXPORT_SYMBOL(tcp_filter);
 
@@ -2595,7 +2588,8 @@ static void __net_exit tcp_sk_exit(struct net *net)
 {
 	int cpu;
 
-	module_put(net->ipv4.tcp_congestion_control->owner);
+	if (net->ipv4.tcp_congestion_control)
+		module_put(net->ipv4.tcp_congestion_control->owner);
 
 	for_each_possible_cpu(cpu)
 		inet_ctl_sock_destroy(*per_cpu_ptr(net->ipv4.tcp_sk, cpu));
