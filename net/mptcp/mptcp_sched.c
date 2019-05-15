@@ -2,6 +2,7 @@
 
 #include <linux/module.h>
 #include <net/mptcp.h>
+#include <trace/events/tcp.h>
 
 static DEFINE_SPINLOCK(mptcp_sched_list_lock);
 static LIST_HEAD(mptcp_sched_list);
@@ -335,8 +336,10 @@ retrans:
 			}
 		}
 
-		if (do_retrans && mptcp_is_available(sk, skb_head, false))
+		if (do_retrans && mptcp_is_available(sk, skb_head, false)) {
+			trace_mptcp_retransmit(sk, skb_head);
 			return skb_head;
+		}
 	}
 	return NULL;
 }
