@@ -704,7 +704,7 @@ int mptcp_write_wakeup(struct sock *meta_sk, int mib)
 		tcp_event_new_data_sent(meta_sk, skb);
 
 		__tcp_push_pending_frames(subsk, mss, TCP_NAGLE_PUSH);
-		skb->skb_mstamp = meta_tp->tcp_mstamp;
+		skb->skb_mstamp_ns = meta_tp->tcp_wstamp_ns;
 		meta_tp->lsndtime = tcp_jiffies32;
 
 		return 0;
@@ -852,7 +852,7 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		 * always push on the subflow
 		 */
 		__tcp_push_pending_frames(subsk, mss_now, TCP_NAGLE_PUSH);
-		skb->skb_mstamp = meta_tp->tcp_mstamp;
+		skb->skb_mstamp_ns = meta_tp->tcp_wstamp_ns;
 		meta_tp->lsndtime = tcp_jiffies32;
 
 		path_mask |= mptcp_pi_to_flag(subtp->mptcp->path_index);
@@ -1589,7 +1589,7 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 	}
 
 	__tcp_push_pending_frames(subsk, mss_now, TCP_NAGLE_PUSH);
-	skb->skb_mstamp = meta_tp->tcp_mstamp;
+	skb->skb_mstamp_ns = meta_tp->tcp_wstamp_ns;
 	meta_tp->lsndtime = tcp_jiffies32;
 
 	return 0;
