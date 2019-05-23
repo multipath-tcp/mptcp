@@ -236,16 +236,14 @@ void tcp_select_initial_window(const struct sock *sk, int __space, __u32 mss,
 	if (init_rcv_wnd)
 		*rcv_wnd = min(*rcv_wnd, init_rcv_wnd * mss);
 
-	(*rcv_wscale) = 0;
+	*rcv_wscale = 0;
 	if (wscale_ok) {
 		/* Set window scaling on max possible window */
 		space = max_t(u32, space, sock_net(sk)->ipv4.sysctl_tcp_rmem[2]);
 		space = max_t(u32, space, sysctl_rmem_max);
 		space = min_t(u32, space, *window_clamp);
-		while (space > U16_MAX && (*rcv_wscale) < TCP_MAX_WSCALE) {
-			space >>= 1;
-			(*rcv_wscale)++;
-		}
+		*rcv_wscale = clamp_t(int, ilog2(space) - 15,
+				      0, TCP_MAX_WSCALE);
 	}
 	/* Set the clamp no higher than max representable value */
 	(*window_clamp) = min_t(__u32, U16_MAX << (*rcv_wscale), *window_clamp);
@@ -597,7 +595,8 @@ static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 
 	*md5 = NULL;
 #ifdef CONFIG_TCP_MD5SIG
-	if (unlikely(rcu_access_pointer(tp->md5sig_info))) {
+	if (static_key_false(&tcp_md5_needed) &&
+	    rcu_access_pointer(tp->md5sig_info)) {
 		*md5 = tp->af_specific->md5_lookup(sk, sk);
 		if (*md5) {
 			opts->options |= OPTION_MD5;
@@ -738,7 +737,8 @@ static unsigned int tcp_established_options(struct sock *sk, struct sk_buff *skb
 
 	*md5 = NULL;
 #ifdef CONFIG_TCP_MD5SIG
-	if (unlikely(rcu_access_pointer(tp->md5sig_info))) {
+	if (static_key_false(&tcp_md5_needed) &&
+	    rcu_access_pointer(tp->md5sig_info)) {
 		*md5 = tp->af_specific->md5_lookup(sk, sk);
 		if (*md5) {
 			opts->options |= OPTION_MD5;
@@ -1949,18 +1949,22 @@ static bool tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb,
 				 u32 max_segs)
 {
 	const struct inet_connection_sock *icsk = inet_csk(sk);
-	u32 age, send_win, cong_win, limit, in_flight;
+	u32 send_win, cong_win, limit, in_flight;
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *head;
 	int win_divisor;
+	s64 delta;
 
 	if (icsk->icsk_ca_state >= TCP_CA_Recovery)
 		goto send_now;
 
 	/* Avoid bursty behavior by allowing defer
-	 * only if the last write was recent.
+	 * only if the last write was recent (1 ms).
+	 * Note that tp->tcp_wstamp_ns can be in the future if we have
+	 * packets waiting in a qdisc or device for EDT delivery.
 	 */
-	if ((s32)(tcp_jiffies32 - tp->lsndtime) > 0)
+	delta = tp->tcp_clock_cache - tp->tcp_wstamp_ns - NSEC_PER_MSEC;
+	if (delta > 0)
 		goto send_now;
 
 	in_flight = tcp_packets_in_flight(tp);
@@ -2007,9 +2011,9 @@ static bool tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb,
 	head = tcp_rtx_queue_head(sk);
 	if (!head)
 		goto send_now;
-	age = tcp_stamp_us_delta(tp->tcp_mstamp, tcp_skb_timestamp_us(head));
+	delta = tp->tcp_clock_cache - head->tstamp;
 	/* If next ACK is likely to come too late (half srtt), do not defer */
-	if (age < (tp->srtt_us >> 4))
+	if ((s64)(delta - (u64)NSEC_PER_USEC * (tp->srtt_us >> 4)) < 0)
 		goto send_now;
 
 	/* Ok, it looks like it is advisable to defer.
@@ -2031,7 +2035,9 @@ static bool tcp_tso_should_defer(struct sock *sk, struct sk_buff *skb,
 	}
 
 	/* If this packet won't get more data, do not wait. */
-	if ((TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN) || mptcp_is_data_fin(skb))
+	if ((TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN) ||
+	    TCP_SKB_CB(skb)->eor ||
+	    mptcp_is_data_fin(skb))
 		goto send_now;
 
 	return true;
@@ -2268,8 +2274,9 @@ static bool tcp_small_queue_check(struct sock *sk, const struct sk_buff *skb,
 	limit = max_t(unsigned long,
 		      2 * skb->truesize,
 		      sk->sk_pacing_rate >> sk->sk_pacing_shift);
-	limit = min_t(unsigned long, limit,
-		      sock_net(sk)->ipv4.sysctl_tcp_limit_output_bytes);
+	if (sk->sk_pacing_status == SK_PACING_NONE)
+		limit = min_t(unsigned long, limit,
+			      sock_net(sk)->ipv4.sysctl_tcp_limit_output_bytes);
 	limit <<= factor;
 
 	if (refcount_read(&sk->sk_wmem_alloc) > limit) {
@@ -2386,6 +2393,7 @@ bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			/* "skb_mstamp_ns" is used as a start point for the retransmit timer */
 			skb->skb_mstamp_ns = tp->tcp_wstamp_ns = tp->tcp_clock_cache;
 			list_move_tail(&skb->tcp_tsorted_anchor, &tp->tsorted_sent_queue);
+			tcp_init_tso_segs(skb, mss_now);
 			goto repair; /* Skip network transmission */
 		}
 
