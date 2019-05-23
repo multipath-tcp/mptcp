@@ -1028,7 +1028,7 @@ static int mptcp_queue_skb(struct sock *sk)
 				eaten = 1;
 
 			if (!eaten)
-				eaten = tcp_queue_rcv(meta_sk, tmp1, 0, &fragstolen);
+				eaten = tcp_queue_rcv(meta_sk, tmp1, &fragstolen);
 
 			meta_tp->rcv_nxt = TCP_SKB_CB(tmp1)->end_seq;
 

@@ -419,7 +419,7 @@ static inline bool tcp_need_reset(int state)
 		TCPF_FIN_WAIT2 | TCPF_SYN_RECV);
 }
 
-int __must_check tcp_queue_rcv(struct sock *sk, struct sk_buff *skb, int hdrlen,
+int __must_check tcp_queue_rcv(struct sock *sk, struct sk_buff *skb,
 			       bool *fragstolen);
 void tcp_ofo_queue(struct sock *sk);
 void tcp_data_queue_ofo(struct sock *sk, struct sk_buff *skb);
