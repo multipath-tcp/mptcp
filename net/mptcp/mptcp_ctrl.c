@@ -2139,7 +2139,17 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 	 */
 	if (drop) {
 		tcp_synack_rtt_meas(child, req);
-		inet_csk_complete_hashdance(sk, meta_sk, req, true);
+
+		inet_csk_reqsk_queue_drop(sk, req);
+		reqsk_queue_removed(&inet_csk(sk)->icsk_accept_queue, req);
+		if (!inet_csk_reqsk_queue_add(sk, req, meta_sk)) {
+			bh_unlock_sock(meta_sk);
+			/* No sock_put() of the meta needed. The reference has
+			 * already been dropped in __mptcp_check_req_master().
+			 */
+			sock_put(child);
+			return -1;
+		}
 	} else {
 		/* Thus, we come from syn-cookies */
 		atomic_set(&req->rsk_refcnt, 1);
