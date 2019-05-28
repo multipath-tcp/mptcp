@@ -1573,6 +1573,8 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 					    UINT_MAX / mss_now,
 					    TCP_NAGLE_OFF);
 
+	limit = min(limit, tcp_wnd_end(meta_tp) - TCP_SKB_CB(skb)->seq);
+
 	if (skb->len > limit &&
 	    unlikely(mptcp_fragment(meta_sk, TCP_FRAG_IN_RTX_QUEUE, skb,
 				    limit, GFP_ATOMIC, 0)))
