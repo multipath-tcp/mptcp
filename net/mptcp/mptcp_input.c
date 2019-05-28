@@ -596,15 +596,19 @@ static void mptcp_restart_sending(struct sock *meta_sk)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
-	struct sk_buff *skb, *tmp, *wq_head;
+	struct sk_buff *wq_head, *skb, *tmp;
+
+	skb = tcp_rtx_queue_head(meta_sk);
 
 	/* We resend everything that has not been acknowledged, thus we need
 	 * to move it from the rtx-tree to the write-queue.
 	 */
 	wq_head = tcp_write_queue_head(meta_sk);
-	skb_rbtree_walk_safe(skb, &meta_sk->tcp_rtx_queue, tmp) {
+
+	skb_rbtree_walk_from_safe(skb, tmp) {
 		list_del(&skb->tcp_tsorted_anchor);
 		tcp_rtx_queue_unlink(skb, meta_sk);
+		INIT_LIST_HEAD(&skb->tcp_tsorted_anchor);
 
 		if (wq_head)
 			__skb_queue_before(&meta_sk->sk_write_queue, wq_head, skb);
@@ -2185,14 +2189,16 @@ static void mptcp_rcv_synsent_fastopen(struct sock *meta_sk)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct tcp_sock *master_tp = tcp_sk(meta_tp->mpcb->master_sk);
-	struct sk_buff *skb, *tmp;
 	u32 new_mapping = meta_tp->write_seq - master_tp->snd_una;
+	struct sk_buff *skb, *tmp;
+
+	skb = tcp_rtx_queue_head(meta_sk);
 
 	/* There should only be one skb in write queue: the data not
 	 * acknowledged in the SYN+ACK. In this case, we need to map
 	 * this data to data sequence numbers.
 	 */
-	skb_rbtree_walk_safe(skb, &meta_sk->tcp_rtx_queue, tmp) {
+	skb_rbtree_walk_from_safe(skb, tmp) {
 		/* If the server only acknowledges partially the data sent in
 		 * the SYN, we need to trim the acknowledged part because
 		 * we don't want to retransmit this already received data.
@@ -2217,7 +2223,10 @@ static void mptcp_rcv_synsent_fastopen(struct sock *meta_sk)
 		TCP_SKB_CB(skb)->seq += new_mapping;
 		TCP_SKB_CB(skb)->end_seq += new_mapping;
 
+		list_del(&skb->tcp_tsorted_anchor);
 		tcp_rtx_queue_unlink(skb, meta_sk);
+		INIT_LIST_HEAD(&skb->tcp_tsorted_anchor);
+
 		tcp_add_write_queue_tail(meta_sk, skb);
 	}
 

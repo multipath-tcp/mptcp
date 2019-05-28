@@ -378,6 +378,7 @@ bool retransmits_timed_out(struct sock *sk,
 			   unsigned int timeout);
 void tcp_write_err(struct sock *sk);
 void tcp_adjust_pcount(struct sock *sk, const struct sk_buff *skb, int decr);
+void tcp_update_skb_after_send(struct tcp_sock *tp, struct sk_buff *skb);
 void tcp_set_skb_tso_segs(struct sk_buff *skb, unsigned int mss_now);
 
 void tcp_v4_reqsk_send_ack(const struct sock *sk, struct sk_buff *skb,

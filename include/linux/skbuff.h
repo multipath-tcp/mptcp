@@ -3227,11 +3227,6 @@ static inline int __skb_grow_rcsum(struct sk_buff *skb, unsigned int len)
 		for (skb = skb_rb_first(root); skb != NULL;			\
 		     skb = skb_rb_next(skb))
 
-#define skb_rbtree_walk_safe(skb, root, tmp)					\
-		for (skb = skb_rb_first(root);					\
-		     tmp = skb ? skb_rb_next(skb) : NULL, (skb != NULL);	\
-		     skb = tmp)
-
 #define skb_rbtree_walk_from(skb)						\
 		for (; skb != NULL;						\
 		     skb = skb_rb_next(skb))
