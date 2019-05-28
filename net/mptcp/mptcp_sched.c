@@ -89,7 +89,7 @@ static bool mptcp_is_temp_unavailable(struct sock *sk,
 	 * calculated end_seq (because here at this point end_seq is still at
 	 * the meta-level).
 	 */
-	if (skb && !zero_wnd_test &&
+	if (skb && zero_wnd_test &&
 	    after(tp->write_seq + min(skb->len, mss_now), tcp_wnd_end(tp)))
 		return true;
 
