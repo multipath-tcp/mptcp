@@ -2117,7 +2117,11 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 		atomic_set(&req->rsk_refcnt, 1);
 		if (!inet_csk_reqsk_queue_add(sk, req, meta_sk)) {
 			bh_unlock_sock(meta_sk);
-			sock_put(meta_sk);
+			/* No sock_put() of the meta needed. The reference has
+			 * already been dropped in __mptcp_check_req_master().
+			 */
+			sock_put(child);
+			reqsk_put(req);
 			return -1;
 		}
 	}
