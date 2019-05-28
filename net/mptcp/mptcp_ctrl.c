@@ -1366,8 +1366,6 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 	tp->mptcp->attached = 1;
 
 	mpcb->cnt_subflows++;
-	atomic_add(atomic_read(&((struct sock *)tp)->sk_rmem_alloc),
-		   &meta_sk->sk_rmem_alloc);
 
 	mptcp_sub_inherit_sockopts(meta_sk, sk);
 	INIT_DELAYED_WORK(&tp->mptcp->work, mptcp_sub_close_wq);
