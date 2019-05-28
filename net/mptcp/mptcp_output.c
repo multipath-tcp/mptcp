@@ -143,6 +143,7 @@ static void __mptcp_reinject_data(struct sk_buff *orig_skb, struct sock *meta_sk
 		} else {
 			list_del(&orig_skb->tcp_tsorted_anchor);
 			tcp_rtx_queue_unlink(orig_skb, sk);
+			INIT_LIST_HEAD(&orig_skb->tcp_tsorted_anchor);
 		}
 		sock_set_flag(sk, SOCK_QUEUE_SHRUNK);
 		sk->sk_wmem_queued -= orig_skb->truesize;
@@ -319,8 +320,10 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 				      TCP_FRAG_IN_WRITE_QUEUE);
 	}
 
-	skb_rbtree_walk_safe(skb_it, &sk->tcp_rtx_queue, tmp) {
+	skb_it = tcp_rtx_queue_head(sk);
+	skb_rbtree_walk_from_safe(skb_it, tmp) {
 		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb_it);
+
 		/* Subflow syn's and fin's are not reinjected.
 		 *
 		 * As well as empty subflow-fins with a data-fin.
@@ -704,7 +707,7 @@ int mptcp_write_wakeup(struct sock *meta_sk, int mib)
 		tcp_event_new_data_sent(meta_sk, skb);
 
 		__tcp_push_pending_frames(subsk, mss, TCP_NAGLE_PUSH);
-		skb->skb_mstamp_ns = meta_tp->tcp_wstamp_ns;
+		tcp_update_skb_after_send(meta_sk, skb, meta_tp->tcp_wstamp_ns);
 		meta_tp->lsndtime = tcp_jiffies32;
 
 		return 0;
@@ -852,7 +855,8 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		 * always push on the subflow
 		 */
 		__tcp_push_pending_frames(subsk, mss_now, TCP_NAGLE_PUSH);
-		skb->skb_mstamp_ns = meta_tp->tcp_wstamp_ns;
+		if (reinject <= 0)
+			tcp_update_skb_after_send(meta_sk, skb, meta_tp->tcp_wstamp_ns);
 		meta_tp->lsndtime = tcp_jiffies32;
 
 		path_mask |= mptcp_pi_to_flag(subtp->mptcp->path_index);
@@ -1589,7 +1593,7 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 	}
 
 	__tcp_push_pending_frames(subsk, mss_now, TCP_NAGLE_PUSH);
-	skb->skb_mstamp_ns = meta_tp->tcp_wstamp_ns;
+	tcp_update_skb_after_send(meta_sk, skb, meta_tp->tcp_wstamp_ns);
 	meta_tp->lsndtime = tcp_jiffies32;
 
 	return 0;

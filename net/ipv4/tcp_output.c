@@ -1011,8 +1011,8 @@ enum hrtimer_restart tcp_pace_kick(struct hrtimer *timer)
 	return HRTIMER_NORESTART;
 }
 
-static void tcp_update_skb_after_send(struct sock *sk, struct sk_buff *skb,
-				      u64 prior_wstamp)
+void tcp_update_skb_after_send(struct sock *sk, struct sk_buff *skb,
+			       u64 prior_wstamp)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
