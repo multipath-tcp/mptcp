@@ -1635,6 +1635,7 @@ void mptcp_sub_close(struct sock *sk, unsigned long delay)
 		if (!cancel_delayed_work(work))
 			return;
 		sock_put(sk);
+		mptcp_mpcb_put(tp->mpcb);
 	}
 
 	if (!delay) {
