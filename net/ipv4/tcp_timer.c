@@ -174,8 +174,14 @@ bool retransmits_timed_out(struct sock *sk, unsigned int boundary,
 		return false;
 
 	start_ts = tcp_sk(sk)->retrans_stamp;
-	if (unlikely(!start_ts))
-		start_ts = tcp_skb_timestamp(tcp_write_queue_head(sk));
+	if (unlikely(!start_ts)) {
+		struct sk_buff *skb = tcp_write_queue_head(sk);
+
+		if (!skb)
+			return false;
+
+		start_ts = tcp_skb_timestamp(skb);
+	}
 
 	if (likely(timeout == 0)) {
 		linear_backoff_thresh = ilog2(TCP_RTO_MAX/rto_base);
