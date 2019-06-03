@@ -870,6 +870,8 @@ mptcp_nl_genl_create(struct sk_buff *skb, struct genl_info *info)
 		}
 
 		if (!info->attrs[MPTCP_ATTR_SADDR4]) {
+			bool found = false;
+
 			mptcp_for_each_bit_set(priv->loc4_bits, i) {
 				if (priv->locaddr4[i].loc4_id == loc_id) {
 					loc.addr	= priv->locaddr4[i].addr;
@@ -877,10 +879,13 @@ mptcp_nl_genl_create(struct sk_buff *skb, struct genl_info *info)
 						priv->locaddr4[i].low_prio;
 					loc.if_idx =
 						priv->locaddr4[i].if_idx;
+					found = true;
 					break;
 				}
 			}
-			goto create_failed;
+
+			if (!found)
+				goto create_failed;
 		} else {
 			loc.addr.s_addr =
 				nla_get_u32(info->attrs[MPTCP_ATTR_SADDR4]);
@@ -914,6 +919,8 @@ mptcp_nl_genl_create(struct sk_buff *skb, struct genl_info *info)
 		}
 
 		if (!info->attrs[MPTCP_ATTR_SADDR6]) {
+			bool found = false;
+
 			mptcp_for_each_bit_set(priv->loc6_bits, i) {
 				if (priv->locaddr6[i].loc6_id == loc_id) {
 					loc.addr	= priv->locaddr6[i].addr;
@@ -921,10 +928,14 @@ mptcp_nl_genl_create(struct sk_buff *skb, struct genl_info *info)
 						priv->locaddr6[i].low_prio;
 					loc.if_idx =
 						priv->locaddr6[i].if_idx;
+
+					found = true;
 					break;
 				}
 			}
-			goto create_failed;
+
+			if (!found)
+				goto create_failed;
 		} else {
 			loc.addr = *(struct in6_addr *)
 				nla_data(info->attrs[MPTCP_ATTR_SADDR6]);
