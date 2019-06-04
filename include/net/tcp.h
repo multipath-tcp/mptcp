@@ -698,7 +698,6 @@ void tcp_skb_collapse_tstamp(struct sk_buff *skb,
 			     const struct sk_buff *next_skb);
 
 u16 tcp_select_window(struct sock *sk);
-int select_size(const struct sock *sk, bool first_skb, bool zc);
 bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		int push_one, gfp_t gfp);
 
