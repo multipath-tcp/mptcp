@@ -2181,6 +2181,49 @@ bool mptcp_handle_options(struct sock *sk, const struct tcphdr *th,
 	return false;
 }
 
+static void _mptcp_rcv_synsent_fastopen(struct sock *meta_sk,
+					struct sk_buff *skb, bool rtx_queue)
+{
+	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+	struct tcp_sock *master_tp = tcp_sk(meta_tp->mpcb->master_sk);
+	u32 new_mapping = meta_tp->write_seq - master_tp->snd_una;
+
+	/* If the server only acknowledges partially the data sent in
+	 * the SYN, we need to trim the acknowledged part because
+	 * we don't want to retransmit this already received data.
+	 * When we reach this point, tcp_ack() has already cleaned up
+	 * fully acked segments. However, tcp trims partially acked
+	 * segments only when retransmitting. Since MPTCP comes into
+	 * play only now, we will fake an initial transmit, and
+	 * retransmit_skb() will not be called. The following fragment
+	 * comes from __tcp_retransmit_skb().
+	 */
+	if (before(TCP_SKB_CB(skb)->seq, master_tp->snd_una)) {
+		BUG_ON(before(TCP_SKB_CB(skb)->end_seq,
+			      master_tp->snd_una));
+		/* tcp_trim_head can only returns ENOMEM if skb is
+		 * cloned. It is not the case here (see
+		 * tcp_send_syn_data).
+		 */
+		BUG_ON(tcp_trim_head(meta_sk, skb, master_tp->snd_una -
+				     TCP_SKB_CB(skb)->seq));
+	}
+
+	TCP_SKB_CB(skb)->seq += new_mapping;
+	TCP_SKB_CB(skb)->end_seq += new_mapping;
+
+	list_del(&skb->tcp_tsorted_anchor);
+
+	if (rtx_queue)
+		tcp_rtx_queue_unlink(skb, meta_sk);
+	else
+		tcp_unlink_write_queue(skb, meta_sk);
+
+	INIT_LIST_HEAD(&skb->tcp_tsorted_anchor);
+
+	tcp_add_write_queue_tail(meta_sk, skb);
+}
+
 /* In case of fastopen, some data can already be in the write queue.
  * We need to update the sequence number of the segments as they
  * were initially TCP sequence numbers.
@@ -2189,45 +2232,34 @@ static void mptcp_rcv_synsent_fastopen(struct sock *meta_sk)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct tcp_sock *master_tp = tcp_sk(meta_tp->mpcb->master_sk);
-	u32 new_mapping = meta_tp->write_seq - master_tp->snd_una;
-	struct sk_buff *skb, *tmp;
+	struct sk_buff *skb_write_head, *skb_rtx_head, *tmp;
 
-	skb = tcp_rtx_queue_head(meta_sk);
+	skb_write_head = tcp_write_queue_head(meta_sk);
+	skb_rtx_head = tcp_rtx_queue_head(meta_sk);
 
-	/* There should only be one skb in write queue: the data not
+	if (!(skb_write_head || skb_rtx_head))
+		return;
+
+	/* There should only be one skb in {write, rtx} queue: the data not
 	 * acknowledged in the SYN+ACK. In this case, we need to map
 	 * this data to data sequence numbers.
 	 */
-	skb_rbtree_walk_from_safe(skb, tmp) {
-		/* If the server only acknowledges partially the data sent in
-		 * the SYN, we need to trim the acknowledged part because
-		 * we don't want to retransmit this already received data.
-		 * When we reach this point, tcp_ack() has already cleaned up
-		 * fully acked segments. However, tcp trims partially acked
-		 * segments only when retransmitting. Since MPTCP comes into
-		 * play only now, we will fake an initial transmit, and
-		 * retransmit_skb() will not be called. The following fragment
-		 * comes from __tcp_retransmit_skb().
-		 */
-		if (before(TCP_SKB_CB(skb)->seq, master_tp->snd_una)) {
-			BUG_ON(before(TCP_SKB_CB(skb)->end_seq,
-				      master_tp->snd_una));
-			/* tcp_trim_head can only returns ENOMEM if skb is
-			 * cloned. It is not the case here (see
-			 * tcp_send_syn_data).
-			 */
-			BUG_ON(tcp_trim_head(meta_sk, skb, master_tp->snd_una -
-					     TCP_SKB_CB(skb)->seq));
+
+	WARN_ON(skb_write_head && skb_rtx_head);
+
+	if (skb_write_head) {
+		skb_queue_walk_from_safe(&meta_sk->sk_write_queue,
+					 skb_write_head, tmp) {
+			_mptcp_rcv_synsent_fastopen(meta_sk, skb_write_head,
+						    false);
 		}
+	}
 
-		TCP_SKB_CB(skb)->seq += new_mapping;
-		TCP_SKB_CB(skb)->end_seq += new_mapping;
-
-		list_del(&skb->tcp_tsorted_anchor);
-		tcp_rtx_queue_unlink(skb, meta_sk);
-		INIT_LIST_HEAD(&skb->tcp_tsorted_anchor);
-
-		tcp_add_write_queue_tail(meta_sk, skb);
+	if (skb_rtx_head) {
+		skb_rbtree_walk_from_safe(skb_rtx_head, tmp) {
+			_mptcp_rcv_synsent_fastopen(meta_sk, skb_rtx_head,
+						    true);
+		}
 	}
 
 	/* We can advance write_seq by the number of bytes unacknowledged
@@ -2310,8 +2342,7 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 		 * Example of such rare cases: connect is non-blocking and
 		 * TFO is configured to work without cookies.
 		 */
-		if (tcp_rtx_queue_head(meta_sk))
-			mptcp_rcv_synsent_fastopen(meta_sk);
+		mptcp_rcv_synsent_fastopen(meta_sk);
 
 		/* -1, because the SYN consumed 1 byte. In case of TFO, we
 		 * start the subflow-sequence number as if the data of the SYN
