@@ -2083,6 +2083,11 @@ struct proto tcpv6_prot = {
 	.sysctl_rmem_offset	= offsetof(struct net, ipv4.sysctl_tcp_rmem),
 	.max_header		= MAX_TCP_HEADER,
 	.obj_size		= sizeof(struct tcp6_sock),
+#ifdef CONFIG_MPTCP
+	.useroffset		= offsetof(struct tcp_sock, mptcp_sched_name),
+	.usersize		= sizeof_field(struct tcp_sock, mptcp_sched_name) +
+				  sizeof_field(struct tcp_sock, mptcp_pm_name),
+#endif
 	.slab_flags		= SLAB_TYPESAFE_BY_RCU,
 	.twsk_prot		= &tcp6_timewait_sock_ops,
 	.rsk_prot		= &tcp6_request_sock_ops,
