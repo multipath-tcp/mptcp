@@ -109,6 +109,12 @@ config MPTCP_REDUNDANT
 	  This scheduler sends all packets redundantly over all subflows to decreases
 	  latency and jitter on the cost of lower throughput.
 
+config MPTCP_ECF
+	tristate "MPTCP ECF"
+	depends on (MPTCP=y)
+	---help---
+	  This is an experimental Earliest Completion First (ECF) scheduler.
+
 choice
 	prompt "Default MPTCP Scheduler"
 	default DEFAULT_SCHEDULER
