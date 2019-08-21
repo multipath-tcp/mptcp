@@ -2257,6 +2257,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk,
 				   struct sk_buff *skb,
 				   const struct mptcp_options_received *mopt)
 {
+	struct inet_connection_sock *child_icsk = inet_csk(child);
 	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
 	struct tcp_sock *child_tp = tcp_sk(child);
@@ -2316,6 +2317,10 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk,
 	child_tp->mptcp->init_rcv_wnd = req->rsk_rcv_wnd;
 
 	child->sk_tsq_flags = 0;
+
+	child_tp->packets_out = 0;
+
+	tcp_reset_vars(child);
 
 	sock_rps_save_rxhash(child, skb);
 	tcp_synack_rtt_meas(child, req);

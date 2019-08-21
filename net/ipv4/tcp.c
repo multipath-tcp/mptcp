@@ -2649,6 +2649,29 @@ void tcp_write_queue_purge(struct sock *sk)
 	inet_csk(sk)->icsk_backoff = 0;
 }
 
+void tcp_reset_vars(struct sock *sk)
+{
+	struct inet_connection_sock *icsk = inet_csk(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	tp->srtt_us = 0;
+	tp->mdev_us = jiffies_to_usecs(TCP_TIMEOUT_INIT);
+	tp->rcv_rtt_last_tsecr = 0;
+	icsk->icsk_rto = TCP_TIMEOUT_INIT;
+	tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
+	tp->snd_cwnd = TCP_INIT_CWND;
+	tp->snd_cwnd_cnt = 0;
+	tp->delivered_ce = 0;
+	tp->is_sack_reneg = 0;
+	tcp_clear_retrans(tp);
+	tp->bytes_sent = 0;
+	tp->bytes_received = 0;
+	tp->bytes_retrans = 0;
+	tp->bytes_acked = 0;
+	/* There's a bubble in the pipe until at least the first ACK. */
+	tp->app_limited = ~0U;
+}
+
 int tcp_disconnect(struct sock *sk, int flags)
 {
 	struct inet_sock *inet = inet_sk(sk);
@@ -2697,24 +2720,17 @@ int tcp_disconnect(struct sock *sk, int flags)
 
 	sk->sk_shutdown = 0;
 	sock_reset_flag(sk, SOCK_DONE);
-	tp->srtt_us = 0;
-	tp->mdev_us = jiffies_to_usecs(TCP_TIMEOUT_INIT);
-	tp->rcv_rtt_last_tsecr = 0;
 	tp->write_seq += tp->max_window + 2;
 	if (tp->write_seq == 0)
 		tp->write_seq = 1;
 	icsk->icsk_backoff = 0;
 	tp->snd_cwnd = 2;
 	icsk->icsk_probes_out = 0;
-	icsk->icsk_rto = TCP_TIMEOUT_INIT;
-	tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
-	tp->snd_cwnd = TCP_INIT_CWND;
-	tp->snd_cwnd_cnt = 0;
 	tp->window_clamp = 0;
-	tp->delivered_ce = 0;
+
+	tcp_reset_vars(sk);
+
 	tcp_set_ca_state(sk, TCP_CA_Open);
-	tp->is_sack_reneg = 0;
-	tcp_clear_retrans(tp);
 	inet_csk_delack_init(sk);
 	/* Initialize rcv_mss to TCP_MIN_MSS to avoid division by 0
 	 * issue in __tcp_select_window()
@@ -2726,8 +2742,6 @@ int tcp_disconnect(struct sock *sk, int flags)
 	sk->sk_rx_dst = NULL;
 	tcp_saved_syn_free(tp);
 	tp->compressed_ack = 0;
-	tp->bytes_sent = 0;
-	tp->bytes_retrans = 0;
 	tp->duplicate_sack[0].start_seq = 0;
 	tp->duplicate_sack[0].end_seq = 0;
 	tp->dsack_dups = 0;
@@ -2736,8 +2750,6 @@ int tcp_disconnect(struct sock *sk, int flags)
 	tp->sacked_out = 0;
 	tp->tlp_high_seq = 0;
 	tp->last_oow_ack_time = 0;
-	/* There's a bubble in the pipe until at least the first ACK. */
-	tp->app_limited = ~0U;
 	tp->rack.mstamp = 0;
 	tp->rack.advanced = 0;
 	tp->rack.reo_wnd_steps = 1;
