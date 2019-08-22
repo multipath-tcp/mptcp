@@ -202,6 +202,7 @@ struct sock *blest_get_available_subflow(struct sock *meta_sk, struct sk_buff *s
 	/* if we decided to use a slower flow, we have the option of not using it at all */
 	if (bestsk && minsk && bestsk != minsk) {
 		u32 slow_linger_time, fast_bytes, slow_inflight_bytes, slow_bytes, avail_space;
+		u32 buffered_bytes = 0;
 
 		meta_tp = tcp_sk(meta_sk);
 		besttp = tcp_sk(bestsk);
@@ -214,13 +215,16 @@ struct sock *blest_get_available_subflow(struct sock *meta_sk, struct sk_buff *s
 		slow_linger_time = blestsched_estimate_linger_time(bestsk);
 		fast_bytes = blestsched_estimate_bytes(minsk, slow_linger_time);
 
+		if (skb)
+			buffered_bytes = skb->len;
+
 		/* is the required space available in the mptcp meta send window?
 		 * we assume that all bytes inflight on the slow path will be acked in besttp->srtt seconds
 		 * (just like the SKB if it was sent now) -> that means that those inflight bytes will
 		 * keep occupying space in the meta window until then
 		 */
 		slow_inflight_bytes = besttp->write_seq - besttp->snd_una;
-		slow_bytes = skb->len + slow_inflight_bytes; // bytes of this SKB plus those in flight already
+		slow_bytes = buffered_bytes + slow_inflight_bytes; // bytes of this SKB plus those in flight already
 
 		avail_space = (slow_bytes < meta_tp->snd_wnd) ? (meta_tp->snd_wnd - slow_bytes) : 0;
 
