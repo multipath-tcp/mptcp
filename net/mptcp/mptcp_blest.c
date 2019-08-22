@@ -268,7 +268,7 @@ static struct sk_buff *mptcp_blest_rcv_buf_optimization(struct sock *sk, int pen
 	if (tcp_jiffies32 - blest_p->last_rbuf_opti < usecs_to_jiffies(tp->srtt_us >> 3))
 		goto retrans;
 
-	/* Half the cwnd of the slow flow */
+	/* Half the cwnd of the slow flows */
 	mptcp_for_each_sub(tp->mpcb, mptcp) {
 		struct tcp_sock *tp_it = mptcp->tp;
 
@@ -285,7 +285,6 @@ static struct sk_buff *mptcp_blest_rcv_buf_optimization(struct sock *sk, int pen
 
 				blest_p->last_rbuf_opti = tcp_jiffies32;
 			}
-			break;
 		}
 	}
 
