@@ -21,6 +21,7 @@
 
 #include <linux/module.h>
 #include <net/mptcp.h>
+#include <trace/events/tcp.h>
 
 static unsigned char lambda __read_mostly = 12;
 module_param(lambda, byte, 0644);
@@ -312,8 +313,10 @@ retrans:
 			}
 		}
 
-		if (do_retrans && mptcp_is_available(sk, skb_head, false))
+		if (do_retrans && mptcp_is_available(sk, skb_head, false)) {
+			trace_mptcp_retransmit(sk, skb_head);
 			return skb_head;
+		}
 	}
 	return NULL;
 }
