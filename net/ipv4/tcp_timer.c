@@ -381,7 +381,12 @@ static void tcp_probe_timer(struct sock *sk)
 	}
 
 	if (icsk->icsk_probes_out > max_probes) {
-abort:		tcp_write_err(sk);
+abort:
+		tcp_write_err(sk);
+		if (is_meta_sk(sk) &&
+		    mptcp_in_infinite_mapping_weak(tp->mpcb)) {
+			mptcp_sub_force_close_all(tp->mpcb, NULL);
+		}
 	} else {
 		/* Only send another probe if we didn't close things up. */
 		tcp_send_probe0(sk);
