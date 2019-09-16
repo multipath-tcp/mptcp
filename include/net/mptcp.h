@@ -1433,6 +1433,8 @@ static inline int mptcp_check_snd_buf(const struct tcp_sock *tp)
 }
 static inline void mptcp_push_pending_frames(struct sock *meta_sk) {}
 static inline void mptcp_send_reset(const struct sock *sk) {}
+static inline void mptcp_sub_force_close_all(struct mptcp_cb *mpcb,
+					     struct sock *except) {}
 static inline bool mptcp_handle_options(struct sock *sk,
 					const struct tcphdr *th,
 					struct sk_buff *skb)
@@ -1481,6 +1483,10 @@ static inline void mptcp_cookies_reqsk_init(struct request_sock *req,
 					    struct sk_buff *skb) {}
 static inline void mptcp_mpcb_put(struct mptcp_cb *mpcb) {}
 static inline void mptcp_fin(struct sock *meta_sk) {}
+static inline bool mptcp_in_infinite_mapping_weak(const struct mptcp_cb *mpcb)
+{
+	return false;
+}
 static inline bool mptcp_can_new_subflow(const struct sock *meta_sk)
 {
 	return false;
