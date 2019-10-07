@@ -5204,8 +5204,14 @@ static void __tcp_ack_snd_check(struct sock *sk, int ofo_possible)
 	if (((tp->rcv_nxt - tp->rcv_wup) > inet_csk(sk)->icsk_ack.rcv_mss &&
 	     /* ... and right edge of window advances far enough.
 	      * (tcp_recvmsg() will send ACK otherwise). Or...
+	      * in the case of mptcp the meta ofo queue may
+	      * prevent tcp_recvmsg from being called in time
+	      * so no data is available for the application, skip the
+	      * receive window check as there is no hope that the application
+	      * will do a tcp_recvmsg anytime soon.
 	      */
-	     tp->ops->__select_window(sk) >= tp->rcv_wnd) ||
+	    (tp->ops->__select_window(sk) >= tp->rcv_wnd || (mptcp(tp) &&
+	     skb_queue_empty(&mptcp_meta_sk(sk)->sk_receive_queue)))) ||
 	    /* We ACK each frame or... */
 	    tcp_in_quickack_mode(sk) ||
 	    /* We have out of order data. */
