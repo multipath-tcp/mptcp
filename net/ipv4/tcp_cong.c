@@ -338,6 +338,16 @@ out:
 /* Change congestion control for socket */
 int tcp_set_congestion_control(struct sock *sk, const char *name)
 {
+	return tcp_sk(sk)->ops->set_cong_ctrl(sk, name);
+}
+
+/* Change congestion control for socket. If load is false, then it is the
+ * responsibility of the caller to call tcp_init_congestion_control or
+ * tcp_reinit_congestion_control (if the current congestion control was
+ * already initialized.
+ */
+int __tcp_set_congestion_control(struct sock *sk, const char *name)
+{
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	const struct tcp_congestion_ops *ca;
 	int err = 0;
