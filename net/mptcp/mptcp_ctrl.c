@@ -797,6 +797,7 @@ static void mptcp_assign_congestion_control(struct sock *sk)
 		WARN(1, "Could not get the congestion control!");
 		return;
 	}
+	module_put(icsk->icsk_ca_ops->owner);
 	icsk->icsk_ca_ops = ca;
 
 	/* Clear out private data before diag gets it and
