@@ -773,6 +773,22 @@ static void mptcp_set_state(struct sock *sk)
 	}
 }
 
+static int mptcp_set_congestion_control(struct sock *meta_sk, const char *name,
+					bool load, bool reinit, bool cap_net_admin)
+{
+	int err, result = 0;
+	struct sock *sk_it;
+
+	result = __tcp_set_congestion_control(meta_sk, name, load, reinit, cap_net_admin);
+
+	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk_it) {
+		err = __tcp_set_congestion_control(sk_it, name, load, reinit, cap_net_admin);
+		if (err)
+			result = err;
+	}
+	return result;
+}
+
 static void mptcp_assign_congestion_control(struct sock *sk)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
@@ -1062,6 +1078,7 @@ static const struct tcp_sock_ops mptcp_meta_specific = {
 	.retransmit_timer		= mptcp_meta_retransmit_timer,
 	.time_wait			= mptcp_time_wait,
 	.cleanup_rbuf			= mptcp_cleanup_rbuf,
+	.set_cong_ctrl                  = mptcp_set_congestion_control,
 };
 
 static const struct tcp_sock_ops mptcp_sub_specific = {
@@ -1079,6 +1096,7 @@ static const struct tcp_sock_ops mptcp_sub_specific = {
 	.retransmit_timer		= mptcp_sub_retransmit_timer,
 	.time_wait			= tcp_time_wait,
 	.cleanup_rbuf			= tcp_cleanup_rbuf,
+	.set_cong_ctrl                  = __tcp_set_congestion_control,
 };
 
 static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
