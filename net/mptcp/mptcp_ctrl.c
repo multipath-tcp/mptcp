@@ -790,6 +790,8 @@ static int mptcp_set_congestion_control(struct sock *meta_sk, const char *name)
 
 	result = __tcp_set_congestion_control(meta_sk, name);
 
+	tcp_sk(meta_sk)->mpcb->tcp_ca_explicit_set = true;
+
 	mptcp_for_each_sk(tcp_sk(meta_sk)->mpcb, sk_it) {
 		err = __tcp_set_congestion_control(sk_it, name);
 		if (err)
@@ -806,8 +808,11 @@ static void mptcp_assign_congestion_control(struct sock *sk)
 
 	/* Congestion control is the same as meta. Thus, it has been
 	 * try_module_get'd by tcp_assign_congestion_control.
+	 * Congestion control on meta was not explicitly configured by
+	 * application, leave default or route based.
 	 */
-	if (icsk->icsk_ca_ops == ca)
+	if (icsk->icsk_ca_ops == ca ||
+	    !tcp_sk(mptcp_meta_sk(sk))->mpcb->tcp_ca_explicit_set)
 		return;
 
 	/* Use the same congestion control as set on the meta-sk */
