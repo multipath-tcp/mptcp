@@ -327,12 +327,19 @@ out:
 	return ret;
 }
 
+int tcp_set_congestion_control(struct sock *sk, const char *name, bool load,
+			       bool reinit)
+{
+	return tcp_sk(sk)->ops->set_cong_ctrl(sk, name, load, reinit);
+}
+
 /* Change congestion control for socket. If load is false, then it is the
  * responsibility of the caller to call tcp_init_congestion_control or
  * tcp_reinit_congestion_control (if the current congestion control was
  * already initialized.
  */
-int tcp_set_congestion_control(struct sock *sk, const char *name, bool load, bool reinit)
+int __tcp_set_congestion_control(struct sock *sk, const char *name, bool load,
+				 bool reinit)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	const struct tcp_congestion_ops *ca;

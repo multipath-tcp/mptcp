@@ -1209,6 +1209,8 @@ void tcp_get_available_congestion_control(char *buf, size_t len);
 void tcp_get_allowed_congestion_control(char *buf, size_t len);
 int tcp_set_allowed_congestion_control(char *allowed);
 int tcp_set_congestion_control(struct sock *sk, const char *name, bool load, bool reinit);
+int __tcp_set_congestion_control(struct sock *sk, const char *name, bool load,
+				 bool reinit);
 u32 tcp_slow_start(struct tcp_sock *tp, u32 acked);
 void tcp_cong_avoid_ai(struct tcp_sock *tp, u32 w, u32 acked);
 
@@ -2077,6 +2079,8 @@ struct tcp_sock_ops {
 	void (*time_wait)(struct sock *sk, int state, int timeo);
 	void (*cleanup_rbuf)(struct sock *sk, int copied);
 	void (*cwnd_validate)(struct sock *sk, bool is_cwnd_limited);
+	int (*set_cong_ctrl)(struct sock *sk, const char *name, bool load,
+			     bool reinit);
 };
 extern const struct tcp_sock_ops tcp_specific;
 
