@@ -418,6 +418,7 @@ const struct tcp_sock_ops tcp_specific = {
 	.time_wait			= tcp_time_wait,
 	.cleanup_rbuf			= tcp_cleanup_rbuf,
 	.cwnd_validate			= tcp_cwnd_validate,
+	.set_cong_ctrl			= __tcp_set_congestion_control,
 };
 
 /* Address-family independent initialization for a tcp_sock.
