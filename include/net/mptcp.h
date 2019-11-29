@@ -277,7 +277,8 @@ struct mptcp_cb {
 		dfin_combined:1,   /* Was the DFIN combined with subflow-fin? */
 		passive_close:1,
 		snd_hiseq_index:1, /* Index in snd_high_order of snd_nxt */
-		rcv_hiseq_index:1; /* Index in rcv_high_order of rcv_nxt */
+		rcv_hiseq_index:1, /* Index in rcv_high_order of rcv_nxt */
+		tcp_ca_explicit_set:1; /* was meta CC set by app? */
 
 	/* socket count in this connection */
 	u8 cnt_subflows;
