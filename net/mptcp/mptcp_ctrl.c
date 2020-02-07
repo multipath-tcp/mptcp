@@ -1253,6 +1253,10 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	INIT_LIST_HEAD(&master_tp->tsq_node);
 
 	master_tp->tsq_flags = 0;
+	/* icsk_bind_hash inherited from the meta, but it will be properly set in
+	 * mptcp_create_master_sk. Same operation is done in inet_csk_clone_lock.
+	 */
+	inet_csk(master_sk)->icsk_bind_hash = NULL;
 
 	mutex_init(&mpcb->mpcb_mutex);
 
@@ -1261,16 +1265,10 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	 * pending subflow creations.
 	 */
 	if (reqsk_queue_alloc(&meta_icsk->icsk_accept_queue, 32, GFP_ATOMIC)) {
-		inet_put_port(master_sk);
 		kmem_cache_free(mptcp_cb_cache, mpcb);
 		sk_free(master_sk);
 		return -ENOMEM;
 	}
-
-	/* icsk_bind_hash inherited from the meta, but it will be properly set in
-	 * mptcp_create_master_sk. Same operation is done in inet_csk_clone_lock.
-	 */
-	inet_csk(master_sk)->icsk_bind_hash = NULL;
 
 	if (!sock_flag(meta_sk, SOCK_MPTCP)) {
 		mptcp_enable_static_key_bh();
