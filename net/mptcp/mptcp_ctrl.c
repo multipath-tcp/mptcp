@@ -2215,11 +2215,6 @@ int mptcp_check_req_fastopen(struct sock *child, struct request_sock *req)
 	/* Handled by the master_sk */
 	tcp_sk(meta_sk)->fastopen_rsk = NULL;
 
-	/* Subflow establishment is now lockless, drop the lock here it will
-	 * be taken again in tcp_child_process().
-	 */
-	bh_unlock_sock(meta_sk);
-
 	return 0;
 }
 
@@ -2267,11 +2262,6 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 			return -1;
 		}
 	}
-
-	/* Subflow establishment is now lockless, drop the lock here it will
-	 * be taken again in tcp_child_process().
-	 */
-	bh_unlock_sock(meta_sk);
 
 	return 0;
 }
@@ -2376,6 +2366,7 @@ teardown:
 	reqsk_queue_removed(&inet_csk(meta_sk)->icsk_accept_queue, req);
 	inet_csk_prepare_forced_close(child);
 	tcp_done(child);
+	bh_unlock_sock(meta_sk);
 	return meta_sk;
 }
 
