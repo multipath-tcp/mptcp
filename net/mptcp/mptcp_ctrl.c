@@ -2427,11 +2427,12 @@ void mptcp_twsk_destructor(struct tcp_timewait_sock *tw)
 		if (tw->mptcp_tw->in_list) {
 			list_del_rcu(&tw->mptcp_tw->list);
 			tw->mptcp_tw->in_list = 0;
+			/* Put, because we added it to the list */
+			mptcp_mpcb_put(mpcb);
 		}
 		spin_unlock(&mpcb->mpcb_list_lock);
 
-		/* Twice, because we increased it above */
-		mptcp_mpcb_put(mpcb);
+		/* Second time, because we increased it above */
 		mptcp_mpcb_put(mpcb);
 	}
 
