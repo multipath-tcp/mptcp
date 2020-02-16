@@ -1139,6 +1139,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 		goto err_alloc_master;
 
 	master_tp = tcp_sk(master_sk);
+	master_tp->inside_tk_table = 0;
 
 	mpcb = kmem_cache_zalloc(mptcp_cb_cache, GFP_ATOMIC);
 	if (!mpcb)
@@ -1299,7 +1300,6 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 		spin_unlock(&mptcp_tk_hashlock);
 		rcu_read_unlock();
 	}
-	master_tp->inside_tk_table = 0;
 
 	/* Init time-wait stuff */
 	INIT_LIST_HEAD(&mpcb->tw_list);
@@ -2173,8 +2173,6 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk, struct sock *child,
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	u8 hash_mac_check[20];
-
-	child_tp->inside_tk_table = 0;
 
 	if (!mopt->join_ack) {
 		MPTCP_INC_STATS_BH(sock_net(meta_sk), MPTCP_MIB_JOINACKFAIL);
