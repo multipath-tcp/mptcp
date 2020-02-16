@@ -1190,6 +1190,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 		goto err_alloc_master;
 
 	master_tp = tcp_sk(master_sk);
+	master_tp->inside_tk_table = 0;
 
 	mpcb = kmem_cache_zalloc(mptcp_cb_cache, GFP_ATOMIC);
 	if (!mpcb)
@@ -1261,7 +1262,6 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 		local_bh_enable();
 		rcu_read_unlock();
 	}
-	master_tp->inside_tk_table = 0;
 
 #if IS_ENABLED(CONFIG_IPV6)
 	if (meta_icsk->icsk_af_ops == &mptcp_v6_mapped) {
@@ -2275,8 +2275,6 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk,
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
 	struct tcp_sock *child_tp = tcp_sk(child);
 	u8 hash_mac_check[20];
-
-	child_tp->inside_tk_table = 0;
 
 	if (!mopt->join_ack) {
 		MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_JOINACKFAIL);
