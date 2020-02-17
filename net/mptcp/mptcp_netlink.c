@@ -1170,43 +1170,36 @@ static struct genl_ops mptcp_genl_ops[] = {
 	{
 		.cmd	= MPTCP_CMD_ANNOUNCE,
 		.doit	= mptcp_nl_genl_announce,
-		.policy = mptcp_nl_genl_policy,
 		.flags	= GENL_ADMIN_PERM,
 	},
 	{
 		.cmd	= MPTCP_CMD_REMOVE,
 		.doit	= mptcp_nl_genl_remove,
-		.policy = mptcp_nl_genl_policy,
 		.flags	= GENL_ADMIN_PERM,
 	},
 	{
 		.cmd	= MPTCP_CMD_SUB_CREATE,
 		.doit	= mptcp_nl_genl_create,
-		.policy = mptcp_nl_genl_policy,
 		.flags	= GENL_ADMIN_PERM,
 	},
 	{
 		.cmd	= MPTCP_CMD_SUB_DESTROY,
 		.doit	= mptcp_nl_genl_destroy,
-		.policy = mptcp_nl_genl_policy,
 		.flags	= GENL_ADMIN_PERM,
 	},
 	{
 		.cmd	= MPTCP_CMD_SUB_PRIORITY,
 		.doit	= mptcp_nl_genl_priority,
-		.policy = mptcp_nl_genl_policy,
 		.flags	= GENL_ADMIN_PERM,
 	},
 	{
 		.cmd	= MPTCP_CMD_SET_FILTER,
 		.doit	= mptcp_nl_genl_set_filter,
-		.policy = mptcp_nl_genl_policy,
 		.flags	= GENL_ADMIN_PERM,
 	},
 	{
 		.cmd	= MPTCP_CMD_EXIST,
 		.doit	= mptcp_nl_genl_conn_exists,
-		.policy = mptcp_nl_genl_policy,
 		.flags	= GENL_ADMIN_PERM,
 	},
 };
@@ -1231,6 +1224,7 @@ static struct genl_family mptcp_genl_family = {
 	.name		= MPTCP_GENL_NAME,
 	.version	= MPTCP_GENL_VER,
 	.maxattr	= MPTCP_ATTR_MAX,
+	.policy		= mptcp_nl_genl_policy,
 	.netnsok	= true,
 	.module		= THIS_MODULE,
 	.ops		= mptcp_genl_ops,

@@ -754,7 +754,7 @@ int inet_accept(struct socket *sock, struct socket *newsock, int flags,
 			struct sock *sk_it = tcp_sk(sk2)->mpcb->master_sk;
 
 			write_lock_bh(&sk_it->sk_callback_lock);
-			sk_it->sk_wq = newsock->wq;
+			rcu_assign_pointer(sk_it->sk_wq, &newsock->wq);
 			sk_it->sk_socket = newsock;
 			write_unlock_bh(&sk_it->sk_callback_lock);
 		}

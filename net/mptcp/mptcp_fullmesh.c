@@ -1206,9 +1206,11 @@ static int netdev_event(struct notifier_block *this, unsigned long event,
 	in_dev = __in_dev_get_rtnl(dev);
 
 	if (in_dev) {
-		for_ifa(in_dev) {
+		struct in_ifaddr *ifa;
+
+		in_dev_for_each_ifa_rcu(ifa, in_dev) {
 			mptcp_pm_inetaddr_event(NULL, event, ifa);
-		} endfor_ifa(in_dev);
+		}
 	}
 
 #if IS_ENABLED(CONFIG_IPV6)
