@@ -75,6 +75,9 @@ obj-$(CONFIG_MFD_WM8994)	+= wm8994.o
 obj-$(CONFIG_MFD_WM97xx)	+= wm97xx-core.o
 
 madera-objs			:= madera-core.o
+ifeq ($(CONFIG_MFD_CS47L15),y)
+madera-objs			+= cs47l15-tables.o
+endif
 ifeq ($(CONFIG_MFD_CS47L35),y)
 madera-objs			+= cs47l35-tables.o
 endif
@@ -83,6 +86,9 @@ madera-objs			+= cs47l85-tables.o
 endif
 ifeq ($(CONFIG_MFD_CS47L90),y)
 madera-objs			+= cs47l90-tables.o
+endif
+ifeq ($(CONFIG_MFD_CS47L92),y)
+madera-objs			+= cs47l92-tables.o
 endif
 obj-$(CONFIG_MFD_MADERA)	+= madera.o
 obj-$(CONFIG_MFD_MADERA_I2C)	+= madera-i2c.o
@@ -155,6 +161,7 @@ obj-$(CONFIG_MFD_DA9150)	+= da9150-core.o
 
 obj-$(CONFIG_MFD_MAX14577)	+= max14577.o
 obj-$(CONFIG_MFD_MAX77620)	+= max77620.o
+obj-$(CONFIG_MFD_MAX77650)	+= max77650.o
 obj-$(CONFIG_MFD_MAX77686)	+= max77686.o
 obj-$(CONFIG_MFD_MAX77693)	+= max77693.o
 obj-$(CONFIG_MFD_MAX77843)	+= max77843.o
@@ -237,6 +244,7 @@ obj-$(CONFIG_INTEL_SOC_PMIC_CHTDC_TI)	+= intel_soc_pmic_chtdc_ti.o
 obj-$(CONFIG_MFD_MT6397)	+= mt6397-core.o
 
 obj-$(CONFIG_MFD_ALTERA_A10SR)	+= altera-a10sr.o
+obj-$(CONFIG_MFD_ALTERA_SYSMGR) += altera-sysmgr.o
 obj-$(CONFIG_MFD_STPMIC1)	+= stpmic1.o
 obj-$(CONFIG_MFD_SUN4I_GPADC)	+= sun4i-gpadc.o
 
@@ -245,5 +253,7 @@ obj-$(CONFIG_MFD_STM32_TIMERS) 	+= stm32-timers.o
 obj-$(CONFIG_MFD_MXS_LRADC)     += mxs-lradc.o
 obj-$(CONFIG_MFD_SC27XX_PMIC)	+= sprd-sc27xx-spi.o
 obj-$(CONFIG_RAVE_SP_CORE)	+= rave-sp.o
+obj-$(CONFIG_MFD_ROHM_BD70528)	+= rohm-bd70528.o
 obj-$(CONFIG_MFD_ROHM_BD718XX)	+= rohm-bd718x7.o
+obj-$(CONFIG_MFD_STMFX) 	+= stmfx.o
 

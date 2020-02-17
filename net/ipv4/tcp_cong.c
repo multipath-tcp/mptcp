@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Pluggable TCP congestion control support and newReno
  * congestion control.
@@ -328,9 +329,9 @@ out:
 }
 
 int tcp_set_congestion_control(struct sock *sk, const char *name, bool load,
-			       bool reinit)
+			       bool reinit, bool cap_net_admin)
 {
-	return tcp_sk(sk)->ops->set_cong_ctrl(sk, name, load, reinit);
+	return tcp_sk(sk)->ops->set_cong_ctrl(sk, name, load, reinit, cap_net_admin);
 }
 
 /* Change congestion control for socket. If load is false, then it is the
@@ -339,7 +340,7 @@ int tcp_set_congestion_control(struct sock *sk, const char *name, bool load,
  * already initialized.
  */
 int __tcp_set_congestion_control(struct sock *sk, const char *name, bool load,
-				 bool reinit)
+				 bool reinit, bool cap_net_admin)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	const struct tcp_congestion_ops *ca;
@@ -375,8 +376,7 @@ int __tcp_set_congestion_control(struct sock *sk, const char *name, bool load,
 		} else {
 			err = -EBUSY;
 		}
-	} else if (!((ca->flags & TCP_CONG_NON_RESTRICTED) ||
-		     ns_capable(sock_net(sk)->user_ns, CAP_NET_ADMIN))) {
+	} else if (!((ca->flags & TCP_CONG_NON_RESTRICTED) || cap_net_admin)) {
 		err = -EPERM;
 	} else if (!try_module_get(ca->owner)) {
 		err = -EBUSY;

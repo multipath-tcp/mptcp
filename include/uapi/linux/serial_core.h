@@ -129,7 +129,7 @@
 /* Motorola i.MX SoC */
 #define PORT_IMX	62
 
-/* Marvell MPSC */
+/* Marvell MPSC (obsolete unused) */
 #define PORT_MPSC	63
 
 /* TXX9 type number */
@@ -149,9 +149,6 @@
 #define PORT_JSM        69
 
 #define PORT_PNX8XXX	70
-
-/* Hilscher netx */
-#define PORT_NETX	71
 
 /* SUN4V Hypervisor Console */
 #define PORT_SUNHV	72
@@ -286,5 +283,11 @@
 
 /* RDA UART */
 #define PORT_RDA	118
+
+/* Socionext Milbeaut UART */
+#define PORT_MLB_USIO	119
+
+/* SiFive UART */
+#define PORT_SIFIVE_V0	120
 
 #endif /* _UAPILINUX_SERIAL_CORE_H */

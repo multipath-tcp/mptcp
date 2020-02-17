@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * INET		An implementation of the TCP/IP protocol suite for the LINUX
  *		operating system.  INET is implemented using the  BSD Socket
@@ -5,7 +6,6 @@
  *
  *		Generic socket support routines. Memory allocators, socket lock/release
  *		handler for protocols to use and generic option handler.
- *
  *
  * Authors:	Ross Biro
  *		Fred N. van Kempen, <waltje@uWalt.NL.Mugnet.ORG>
@@ -81,12 +81,6 @@
  *		Arnaldo C. Melo :       cleanups, use skb_queue_purge
  *
  * To Fix:
- *
- *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -137,6 +131,7 @@
 
 #include <linux/filter.h>
 #include <net/sock_reuseport.h>
+#include <net/bpf_sk_storage.h>
 
 #include <trace/events/sock.h>
 
@@ -1049,6 +1044,10 @@ set_rcvbuf:
 		}
 		break;
 
+	case SO_DETACH_REUSEPORT_BPF:
+		ret = reuseport_detach_prog(sk);
+		break;
+
 	case SO_DETACH_FILTER:
 		ret = sk_detach_filter(sk);
 		break;
@@ -1487,9 +1486,6 @@ int sock_getsockopt(struct socket *sock, int level, int optname,
 	{
 		u32 meminfo[SK_MEMINFO_VARS];
 
-		if (get_user(len, optlen))
-			return -EFAULT;
-
 		sk_get_meminfo(sk, meminfo);
 
 		len = min_t(unsigned int, len, sizeof(meminfo));
@@ -1623,7 +1619,7 @@ static struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
 		sk = kmem_cache_alloc(slab, priority & ~__GFP_ZERO);
 		if (!sk)
 			return sk;
-		if (priority & __GFP_ZERO) {
+		if (want_init_on_alloc(priority)) {
 			if (prot->clear_sk)
 				prot->clear_sk(sk, prot->obj_size);
 			else
@@ -1734,6 +1730,10 @@ static void __sk_destruct(struct rcu_head *head)
 		reuseport_detach_sock(sk);
 
 	sock_disable_timestamp(sk, SK_FLAGS_TIMESTAMP);
+
+#ifdef CONFIG_BPF_SYSCALL
+	bpf_sk_storage_free(sk);
+#endif
 
 	if (atomic_read(&sk->sk_omem_alloc))
 		pr_debug("%s: optmem leakage (%d bytes) detected\n",
@@ -1878,6 +1878,9 @@ struct sock *sk_clone_lock(const struct sock *sk, const gfp_t priority)
 			goto out;
 		}
 		RCU_INIT_POINTER(newsk->sk_reuseport_cb, NULL);
+#ifdef CONFIG_BPF_SYSCALL
+		RCU_INIT_POINTER(newsk->sk_bpf_storage, NULL);
+#endif
 
 		newsk->sk_err	   = 0;
 		newsk->sk_err_soft = 0;
@@ -2016,6 +2019,19 @@ void skb_set_owner_w(struct sk_buff *skb, struct sock *sk)
 }
 EXPORT_SYMBOL(skb_set_owner_w);
 
+static bool can_skb_orphan_partial(const struct sk_buff *skb)
+{
+#ifdef CONFIG_TLS_DEVICE
+	/* Drivers depend on in-order delivery for crypto offload,
+	 * partial orphan breaks out-of-order-OK logic.
+	 */
+	if (skb->decrypted)
+		return false;
+#endif
+	return (skb->destructor == sock_wfree ||
+		(IS_ENABLED(CONFIG_INET) && skb->destructor == tcp_wfree));
+}
+
 /* This helper is used by netem, as it can hold packets in its
  * delay queue. We want to allow the owner socket to send more
  * packets, as if they were already TX completed by a typical driver.
@@ -2027,11 +2043,7 @@ void skb_orphan_partial(struct sk_buff *skb)
 	if (skb_is_tcp_pure_ack(skb))
 		return;
 
-	if (skb->destructor == sock_wfree
-#ifdef CONFIG_INET
-	    || skb->destructor == tcp_wfree
-#endif
-		) {
+	if (can_skb_orphan_partial(skb)) {
 		struct sock *sk = skb->sk;
 
 		if (refcount_inc_not_zero(&sk->sk_refcnt)) {
@@ -2348,6 +2360,7 @@ static void sk_leave_memory_pressure(struct sock *sk)
 
 /* On 32bit arches, an skb frag is limited to 2^15 */
 #define SKB_FRAG_PAGE_ORDER	get_order(32768)
+DEFINE_STATIC_KEY_FALSE(net_high_order_alloc_disable_key);
 
 /**
  * skb_page_frag_refill - check that a page_frag contains enough room
@@ -2372,7 +2385,8 @@ bool skb_page_frag_refill(unsigned int sz, struct page_frag *pfrag, gfp_t gfp)
 	}
 
 	pfrag->offset = 0;
-	if (SKB_FRAG_PAGE_ORDER) {
+	if (SKB_FRAG_PAGE_ORDER &&
+	    !static_branch_unlikely(&net_high_order_alloc_disable_key)) {
 		/* Avoid direct reclaim but allow kswapd to wake */
 		pfrag->page = alloc_pages((gfp & ~__GFP_DIRECT_RECLAIM) |
 					  __GFP_COMP | __GFP_NOWARN |
@@ -2869,7 +2883,7 @@ void sock_init_data(struct socket *sock, struct sock *sk)
 
 	if (sock) {
 		sk->sk_type	=	sock->type;
-		RCU_INIT_POINTER(sk->sk_wq, sock->wq);
+		RCU_INIT_POINTER(sk->sk_wq, &sock->wq);
 		sock->sk	=	sk;
 		sk->sk_uid	=	SOCK_INODE(sock)->i_uid;
 	} else {
@@ -3004,39 +3018,44 @@ bool lock_sock_fast(struct sock *sk)
 }
 EXPORT_SYMBOL(lock_sock_fast);
 
-int sock_get_timestamp(struct sock *sk, struct timeval __user *userstamp)
+int sock_gettstamp(struct socket *sock, void __user *userstamp,
+		   bool timeval, bool time32)
 {
-	struct timeval tv;
+	struct sock *sk = sock->sk;
+	struct timespec64 ts;
 
 	sock_enable_timestamp(sk, SOCK_TIMESTAMP);
-	tv = ktime_to_timeval(sock_read_timestamp(sk));
-	if (tv.tv_sec == -1)
-		return -ENOENT;
-	if (tv.tv_sec == 0) {
-		ktime_t kt = ktime_get_real();
-		sock_write_timestamp(sk, kt);
-		tv = ktime_to_timeval(kt);
-	}
-	return copy_to_user(userstamp, &tv, sizeof(tv)) ? -EFAULT : 0;
-}
-EXPORT_SYMBOL(sock_get_timestamp);
-
-int sock_get_timestampns(struct sock *sk, struct timespec __user *userstamp)
-{
-	struct timespec ts;
-
-	sock_enable_timestamp(sk, SOCK_TIMESTAMP);
-	ts = ktime_to_timespec(sock_read_timestamp(sk));
+	ts = ktime_to_timespec64(sock_read_timestamp(sk));
 	if (ts.tv_sec == -1)
 		return -ENOENT;
 	if (ts.tv_sec == 0) {
 		ktime_t kt = ktime_get_real();
-		sock_write_timestamp(sk, kt);
-		ts = ktime_to_timespec(sk->sk_stamp);
+		sock_write_timestamp(sk, kt);;
+		ts = ktime_to_timespec64(kt);
 	}
-	return copy_to_user(userstamp, &ts, sizeof(ts)) ? -EFAULT : 0;
+
+	if (timeval)
+		ts.tv_nsec /= 1000;
+
+#ifdef CONFIG_COMPAT_32BIT_TIME
+	if (time32)
+		return put_old_timespec32(&ts, userstamp);
+#endif
+#ifdef CONFIG_SPARC64
+	/* beware of padding in sparc64 timeval */
+	if (timeval && !in_compat_syscall()) {
+		struct __kernel_old_timeval __user tv = {
+			.tv_sec = ts.tv_sec,
+			.tv_usec = ts.tv_nsec,
+		};
+		if (copy_to_user(userstamp, &tv, sizeof(tv)))
+			return -EFAULT;
+		return 0;
+	}
+#endif
+	return put_timespec64(&ts, userstamp);
 }
-EXPORT_SYMBOL(sock_get_timestampns);
+EXPORT_SYMBOL(sock_gettstamp);
 
 void sock_enable_timestamp(struct sock *sk, int flag)
 {
@@ -3295,16 +3314,17 @@ static __init int net_inuse_init(void)
 
 core_initcall(net_inuse_init);
 
-static void assign_proto_idx(struct proto *prot)
+static int assign_proto_idx(struct proto *prot)
 {
 	prot->inuse_idx = find_first_zero_bit(proto_inuse_idx, PROTO_INUSE_NR);
 
 	if (unlikely(prot->inuse_idx == PROTO_INUSE_NR - 1)) {
 		pr_err("PROTO_INUSE_NR exhausted\n");
-		return;
+		return -ENOSPC;
 	}
 
 	set_bit(prot->inuse_idx, proto_inuse_idx);
+	return 0;
 }
 
 static void release_proto_idx(struct proto *prot)
@@ -3313,8 +3333,9 @@ static void release_proto_idx(struct proto *prot)
 		clear_bit(prot->inuse_idx, proto_inuse_idx);
 }
 #else
-static inline void assign_proto_idx(struct proto *prot)
+static inline int assign_proto_idx(struct proto *prot)
 {
+	return 0;
 }
 
 static inline void release_proto_idx(struct proto *prot)
@@ -3363,6 +3384,8 @@ static int req_prot_init(const struct proto *prot)
 
 int proto_register(struct proto *prot, int alloc_slab)
 {
+	int ret = -ENOBUFS;
+
 	if (alloc_slab) {
 		prot->slab = kmem_cache_create_usercopy(prot->name,
 					prot->obj_size, 0,
@@ -3399,20 +3422,27 @@ int proto_register(struct proto *prot, int alloc_slab)
 	}
 
 	mutex_lock(&proto_list_mutex);
+	ret = assign_proto_idx(prot);
+	if (ret) {
+		mutex_unlock(&proto_list_mutex);
+		goto out_free_timewait_sock_slab_name;
+	}
 	list_add(&prot->node, &proto_list);
-	assign_proto_idx(prot);
 	mutex_unlock(&proto_list_mutex);
-	return 0;
+	return ret;
 
 out_free_timewait_sock_slab_name:
-	kfree(prot->twsk_prot->twsk_slab_name);
+	if (alloc_slab && prot->twsk_prot)
+		kfree(prot->twsk_prot->twsk_slab_name);
 out_free_request_sock_slab:
-	req_prot_cleanup(prot->rsk_prot);
+	if (alloc_slab) {
+		req_prot_cleanup(prot->rsk_prot);
 
-	kmem_cache_destroy(prot->slab);
-	prot->slab = NULL;
+		kmem_cache_destroy(prot->slab);
+		prot->slab = NULL;
+	}
 out:
-	return -ENOBUFS;
+	return ret;
 }
 EXPORT_SYMBOL(proto_register);
 

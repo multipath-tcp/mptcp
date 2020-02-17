@@ -367,6 +367,26 @@ static int vega20_set_tools_address(struct pp_hwmgr *hwmgr)
 	return ret;
 }
 
+int vega20_set_pptable_driver_address(struct pp_hwmgr *hwmgr)
+{
+	struct vega20_smumgr *priv =
+			(struct vega20_smumgr *)(hwmgr->smu_backend);
+	int ret = 0;
+
+	PP_ASSERT_WITH_CODE((ret = vega20_send_msg_to_smc_with_parameter(hwmgr,
+			PPSMC_MSG_SetDriverDramAddrHigh,
+			upper_32_bits(priv->smu_tables.entry[TABLE_PPTABLE].mc_addr))) == 0,
+			"[SetPPtabeDriverAddress] Attempt to Set Dram Addr High Failed!",
+			return ret);
+	PP_ASSERT_WITH_CODE((ret = vega20_send_msg_to_smc_with_parameter(hwmgr,
+			PPSMC_MSG_SetDriverDramAddrLow,
+			lower_32_bits(priv->smu_tables.entry[TABLE_PPTABLE].mc_addr))) == 0,
+			"[SetPPtabeDriverAddress] Attempt to Set Dram Addr Low Failed!",
+			return ret);
+
+	return ret;
+}
+
 static int vega20_smu_init(struct pp_hwmgr *hwmgr)
 {
 	struct vega20_smumgr *priv;
@@ -572,6 +592,7 @@ static int vega20_smc_table_manager(struct pp_hwmgr *hwmgr, uint8_t *table,
 }
 
 const struct pp_smumgr_func vega20_smu_funcs = {
+	.name = "vega20_smu",
 	.smu_init = &vega20_smu_init,
 	.smu_fini = &vega20_smu_fini,
 	.start_smu = &vega20_start_smu,

@@ -1,9 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * AD9833/AD9834/AD9837/AD9838 SPI DDS driver
  *
  * Copyright 2010-2011 Analog Devices Inc.
- *
- * Licensed under the GPL-2.
  */
 
 #include <linux/clk.h>
@@ -286,7 +285,7 @@ ssize_t ad9834_show_out0_wavetype_available(struct device *dev,
 	struct ad9834_state *st = iio_priv(indio_dev);
 	char *str;
 
-	if ((st->devid == ID_AD9833) || (st->devid == ID_AD9837))
+	if (st->devid == ID_AD9833 || st->devid == ID_AD9837)
 		str = "sine triangle square";
 	else if (st->control & AD9834_OPBITEN)
 		str = "sine";
@@ -522,9 +521,20 @@ static const struct spi_device_id ad9834_id[] = {
 };
 MODULE_DEVICE_TABLE(spi, ad9834_id);
 
+static const struct of_device_id ad9834_of_match[] = {
+	{.compatible = "adi,ad9833"},
+	{.compatible = "adi,ad9834"},
+	{.compatible = "adi,ad9837"},
+	{.compatible = "adi,ad9838"},
+	{}
+};
+
+MODULE_DEVICE_TABLE(of, ad9834_of_match);
+
 static struct spi_driver ad9834_driver = {
 	.driver = {
 		.name	= "ad9834",
+		.of_match_table = ad9834_of_match
 	},
 	.probe		= ad9834_probe,
 	.remove		= ad9834_remove,

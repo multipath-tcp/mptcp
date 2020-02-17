@@ -52,7 +52,7 @@
  *                irq line disabled until the threaded handler has been run.
  * IRQF_NO_SUSPEND - Do not disable this IRQ during suspend.  Does not guarantee
  *                   that this interrupt will wake the system from a suspended
- *                   state.  See Documentation/power/suspend-and-interrupts.txt
+ *                   state.  See Documentation/power/suspend-and-interrupts.rst
  * IRQF_FORCE_RESUME - Force enable it on resume even if IRQF_NO_SUSPEND is set
  * IRQF_NO_THREAD - Interrupt cannot be threaded
  * IRQF_EARLY_RESUME - Resume IRQ early during syscore instead of at device
@@ -667,31 +667,6 @@ extern void tasklet_kill(struct tasklet_struct *t);
 extern void tasklet_kill_immediate(struct tasklet_struct *t, unsigned int cpu);
 extern void tasklet_init(struct tasklet_struct *t,
 			 void (*func)(unsigned long), unsigned long data);
-
-struct tasklet_hrtimer {
-	struct hrtimer		timer;
-	struct tasklet_struct	tasklet;
-	enum hrtimer_restart	(*function)(struct hrtimer *);
-};
-
-extern void
-tasklet_hrtimer_init(struct tasklet_hrtimer *ttimer,
-		     enum hrtimer_restart (*function)(struct hrtimer *),
-		     clockid_t which_clock, enum hrtimer_mode mode);
-
-static inline
-void tasklet_hrtimer_start(struct tasklet_hrtimer *ttimer, ktime_t time,
-			   const enum hrtimer_mode mode)
-{
-	hrtimer_start(&ttimer->timer, time, mode);
-}
-
-static inline
-void tasklet_hrtimer_cancel(struct tasklet_hrtimer *ttimer)
-{
-	hrtimer_cancel(&ttimer->timer);
-	tasklet_kill(&ttimer->tasklet);
-}
 
 /*
  * Autoprobing for irqs:

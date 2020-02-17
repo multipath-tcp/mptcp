@@ -27,9 +27,10 @@
 #define LPFC_NVMET_RQE_DEF_COUNT	2048
 #define LPFC_NVMET_SUCCESS_LEN		12
 
-#define LPFC_NVMET_MRQ_OFF		0xffff
 #define LPFC_NVMET_MRQ_AUTO		0
 #define LPFC_NVMET_MRQ_MAX		16
+
+#define LPFC_NVMET_WAIT_TMO		(5 * MSEC_PER_SEC)
 
 /* Used for NVME Target */
 struct lpfc_nvmet_tgtport {
@@ -139,6 +140,7 @@ struct lpfc_nvmet_rcv_ctx {
 #define LPFC_NVMET_ABTS_RCV		0x10  /* ABTS received on exchange */
 #define LPFC_NVMET_CTX_REUSE_WQ		0x20  /* ctx reused via WQ */
 #define LPFC_NVMET_DEFER_WQFULL		0x40  /* Waiting on a free WQE */
+#define LPFC_NVMET_TNOTIFY		0x80  /* notify transport of abts */
 	struct rqb_dmabuf *rqb_buffer;
 	struct lpfc_nvmet_ctxbuf *ctxbuf;
 	struct lpfc_sli4_hdw_queue *hdwq;

@@ -29,7 +29,7 @@
 
 static void update_ht_cap(struct _adapter *padapter, u8 *pie, uint ie_len);
 
-static sint _init_mlme_priv(struct _adapter *padapter)
+int r8712_init_mlme_priv(struct _adapter *padapter)
 {
 	sint	i;
 	u8	*pbuf;
@@ -95,7 +95,7 @@ static void _free_network(struct mlme_priv *pmlmepriv,
 	unsigned long irqL;
 	struct  __queue *free_queue = &(pmlmepriv->free_bss_pool);
 
-	if (pnetwork == NULL)
+	if (!pnetwork)
 		return;
 	if (pnetwork->fixed)
 		return;
@@ -115,7 +115,7 @@ static void free_network_nolock(struct mlme_priv *pmlmepriv,
 {
 	struct  __queue *free_queue = &pmlmepriv->free_bss_pool;
 
-	if (pnetwork == NULL)
+	if (!pnetwork)
 		return;
 	if (pnetwork->fixed)
 		return;
@@ -129,8 +129,8 @@ static void free_network_nolock(struct mlme_priv *pmlmepriv,
  * Shall be called under atomic context...
  * to avoid possible racing condition...
  */
-static struct wlan_network *_r8712_find_network(struct  __queue *scanned_queue,
-					 u8 *addr)
+static struct wlan_network *r8712_find_network(struct  __queue *scanned_queue,
+					       u8 *addr)
 {
 	unsigned long irqL;
 	struct list_head *phead, *plist;
@@ -151,7 +151,7 @@ static struct wlan_network *_r8712_find_network(struct  __queue *scanned_queue,
 	return pnetwork;
 }
 
-static void _free_network_queue(struct _adapter *padapter)
+void r8712_free_network_queue(struct _adapter *padapter)
 {
 	unsigned long irqL;
 	struct list_head *phead, *plist;
@@ -174,7 +174,7 @@ sint r8712_if_up(struct _adapter *padapter)
 {
 	sint res;
 
-	if (padapter->bDriverStopped || padapter->bSurpriseRemoved ||
+	if (padapter->driver_stopped || padapter->surprise_removed ||
 	    !check_fwstate(&padapter->mlmepriv, _FW_LINKED)) {
 		res = false;
 	} else {
@@ -205,11 +205,6 @@ u8 *r8712_get_capability_from_ie(u8 *ie)
 	return ie + 8 + 2;
 }
 
-int r8712_init_mlme_priv(struct _adapter *padapter)
-{
-	return _init_mlme_priv(padapter);
-}
-
 void r8712_free_mlme_priv(struct mlme_priv *pmlmepriv)
 {
 	kfree(pmlmepriv->free_bss_buf);
@@ -218,25 +213,6 @@ void r8712_free_mlme_priv(struct mlme_priv *pmlmepriv)
 static struct	wlan_network *alloc_network(struct mlme_priv *pmlmepriv)
 {
 	return _r8712_alloc_network(pmlmepriv);
-}
-
-void r8712_free_network_queue(struct _adapter *dev)
-{
-	_free_network_queue(dev);
-}
-
-/*
- * return the wlan_network with the matching addr
- * Shall be called under atomic context...
- * to avoid possible racing condition...
- */
-static struct wlan_network *r8712_find_network(struct  __queue *scanned_queue,
-					       u8 *addr)
-{
-	struct wlan_network *pnetwork = _r8712_find_network(scanned_queue,
-							    addr);
-
-	return pnetwork;
 }
 
 int r8712_is_same_ibss(struct _adapter *adapter, struct wlan_network *pnetwork)
@@ -399,7 +375,7 @@ static void update_scanned_network(struct _adapter *adapter,
 			/* Otherwise just pull from the free list */
 			/* update scan_time */
 			pnetwork = alloc_network(pmlmepriv);
-			if (pnetwork == NULL)
+			if (!pnetwork)
 				return;
 			bssid_ex_sz = r8712_get_wlan_bssid_ex_sz(target);
 			target->Length = bssid_ex_sz;
@@ -558,8 +534,7 @@ void r8712_surveydone_event_callback(struct _adapter *adapter, u8 *pbuf)
 			if (!check_fwstate(pmlmepriv, _FW_LINKED)) {
 				set_fwstate(pmlmepriv, _FW_UNDER_LINKING);
 
-				if (r8712_select_and_join_from_scan(pmlmepriv)
-				    == _SUCCESS) {
+				if (!r8712_select_and_join_from_scan(pmlmepriv)) {
 					mod_timer(&pmlmepriv->assoc_timer, jiffies +
 						  msecs_to_jiffies(MAX_JOIN_TIMEOUT));
 				} else {
@@ -584,8 +559,7 @@ void r8712_surveydone_event_callback(struct _adapter *adapter, u8 *pbuf)
 		} else {
 			pmlmepriv->to_join = false;
 			set_fwstate(pmlmepriv, _FW_UNDER_LINKING);
-			if (r8712_select_and_join_from_scan(pmlmepriv) ==
-			    _SUCCESS)
+			if (!r8712_select_and_join_from_scan(pmlmepriv))
 				mod_timer(&pmlmepriv->assoc_timer, jiffies +
 					  msecs_to_jiffies(MAX_JOIN_TIMEOUT));
 			else
@@ -1055,7 +1029,7 @@ void _r8712_join_timeout_handler(struct _adapter *adapter)
 	unsigned long irqL;
 	struct mlme_priv *pmlmepriv = &adapter->mlmepriv;
 
-	if (adapter->bDriverStopped || adapter->bSurpriseRemoved)
+	if (adapter->driver_stopped || adapter->surprise_removed)
 		return;
 	spin_lock_irqsave(&pmlmepriv->lock, irqL);
 	_clr_fwstate_(pmlmepriv, _FW_UNDER_LINKING);
@@ -1084,16 +1058,11 @@ void r8712_scan_timeout_handler (struct _adapter *adapter)
 
 void _r8712_dhcp_timeout_handler (struct _adapter *adapter)
 {
-	if (adapter->bDriverStopped || adapter->bSurpriseRemoved)
+	if (adapter->driver_stopped || adapter->surprise_removed)
 		return;
 	if (adapter->pwrctrlpriv.pwr_mode != adapter->registrypriv.power_mgnt)
 		r8712_set_ps_mode(adapter, adapter->registrypriv.power_mgnt,
 			    adapter->registrypriv.smart_ps);
-}
-
-void _r8712_wdg_timeout_handler(struct _adapter *adapter)
-{
-	r8712_wdg_wk_cmd(adapter);
 }
 
 int r8712_select_and_join_from_scan(struct mlme_priv *pmlmepriv)
@@ -1116,12 +1085,10 @@ int r8712_select_and_join_from_scan(struct mlme_priv *pmlmepriv)
 				pnetwork = pnetwork_max_rssi;
 				goto ask_for_joinbss;
 			}
-			return _FAIL;
+			return -EINVAL;
 		}
 		pnetwork = container_of(pmlmepriv->pscanned,
 					struct wlan_network, list);
-		if (pnetwork == NULL)
-			return _FAIL;
 		pmlmepriv->pscanned = pmlmepriv->pscanned->next;
 		if (pmlmepriv->assoc_by_bssid) {
 			dst_ssid = pnetwork->network.MacAddress;

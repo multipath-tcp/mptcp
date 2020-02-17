@@ -615,13 +615,13 @@ static void destroy_sched_domains(struct sched_domain *sd)
  * the cpumask of the domain), this allows us to quickly tell if
  * two CPUs are in the same cache domain, see cpus_share_cache().
  */
-DEFINE_PER_CPU(struct sched_domain *, sd_llc);
+DEFINE_PER_CPU(struct sched_domain __rcu *, sd_llc);
 DEFINE_PER_CPU(int, sd_llc_size);
 DEFINE_PER_CPU(int, sd_llc_id);
-DEFINE_PER_CPU(struct sched_domain_shared *, sd_llc_shared);
-DEFINE_PER_CPU(struct sched_domain *, sd_numa);
-DEFINE_PER_CPU(struct sched_domain *, sd_asym_packing);
-DEFINE_PER_CPU(struct sched_domain *, sd_asym_cpucapacity);
+DEFINE_PER_CPU(struct sched_domain_shared __rcu *, sd_llc_shared);
+DEFINE_PER_CPU(struct sched_domain __rcu *, sd_numa);
+DEFINE_PER_CPU(struct sched_domain __rcu *, sd_asym_packing);
+DEFINE_PER_CPU(struct sched_domain __rcu *, sd_asym_cpucapacity);
 DEFINE_STATIC_KEY_FALSE(sched_asym_cpucapacity);
 
 static void update_top_cache_domain(int cpu)
@@ -1059,6 +1059,7 @@ static struct sched_group *get_group(int cpu, struct sd_data *sdd)
 	struct sched_domain *sd = *per_cpu_ptr(sdd->sd, cpu);
 	struct sched_domain *child = sd->child;
 	struct sched_group *sg;
+	bool already_visited;
 
 	if (child)
 		cpu = cpumask_first(sched_domain_span(child));
@@ -1066,9 +1067,14 @@ static struct sched_group *get_group(int cpu, struct sd_data *sdd)
 	sg = *per_cpu_ptr(sdd->sg, cpu);
 	sg->sgc = *per_cpu_ptr(sdd->sgc, cpu);
 
-	/* For claim_allocations: */
-	atomic_inc(&sg->ref);
-	atomic_inc(&sg->sgc->ref);
+	/* Increase refcounts for claim_allocations: */
+	already_visited = atomic_inc_return(&sg->ref) > 1;
+	/* sgc visits should follow a similar trend as sg */
+	WARN_ON(already_visited != (atomic_inc_return(&sg->sgc->ref) > 1));
+
+	/* If we have already visited that group, it's already initialized. */
+	if (already_visited)
+		return sg;
 
 	if (child) {
 		cpumask_copy(sched_group_span(sg), sched_domain_span(child));
@@ -1087,8 +1093,8 @@ static struct sched_group *get_group(int cpu, struct sd_data *sdd)
 
 /*
  * build_sched_groups will build a circular linked list of the groups
- * covered by the given span, and will set each group's ->cpumask correctly,
- * and ->cpu_capacity to 0.
+ * covered by the given span, will set each group's ->cpumask correctly,
+ * and will initialize their ->sgc.
  *
  * Assumes the sched_domain tree is fully constructed
  */
@@ -1338,11 +1344,6 @@ sd_init(struct sched_domain_topology_level *tl,
 		.imbalance_pct		= 125,
 
 		.cache_nice_tries	= 0,
-		.busy_idx		= 0,
-		.idle_idx		= 0,
-		.newidle_idx		= 0,
-		.wake_idx		= 0,
-		.forkexec_idx		= 0,
 
 		.flags			= 1*SD_LOAD_BALANCE
 					| 1*SD_BALANCE_NEWIDLE
@@ -1394,13 +1395,10 @@ sd_init(struct sched_domain_topology_level *tl,
 	} else if (sd->flags & SD_SHARE_PKG_RESOURCES) {
 		sd->imbalance_pct = 117;
 		sd->cache_nice_tries = 1;
-		sd->busy_idx = 2;
 
 #ifdef CONFIG_NUMA
 	} else if (sd->flags & SD_NUMA) {
 		sd->cache_nice_tries = 2;
-		sd->busy_idx = 3;
-		sd->idle_idx = 2;
 
 		sd->flags &= ~SD_PREFER_SIBLING;
 		sd->flags |= SD_SERIALIZE;
@@ -1413,8 +1411,6 @@ sd_init(struct sched_domain_topology_level *tl,
 #endif
 	} else {
 		sd->cache_nice_tries = 1;
-		sd->busy_idx = 2;
-		sd->idle_idx = 1;
 	}
 
 	/*
@@ -1878,10 +1874,10 @@ static struct sched_domain_topology_level
 	unsigned long cap;
 
 	/* Is there any asymmetry? */
-	cap = arch_scale_cpu_capacity(NULL, cpumask_first(cpu_map));
+	cap = arch_scale_cpu_capacity(cpumask_first(cpu_map));
 
 	for_each_cpu(i, cpu_map) {
-		if (arch_scale_cpu_capacity(NULL, i) != cap) {
+		if (arch_scale_cpu_capacity(i) != cap) {
 			asym = true;
 			break;
 		}
@@ -1896,7 +1892,7 @@ static struct sched_domain_topology_level
 	 * to everyone.
 	 */
 	for_each_cpu(i, cpu_map) {
-		unsigned long max_capacity = arch_scale_cpu_capacity(NULL, i);
+		unsigned long max_capacity = arch_scale_cpu_capacity(i);
 		int tl_id = 0;
 
 		for_each_sd_topology(tl) {
@@ -1906,7 +1902,7 @@ static struct sched_domain_topology_level
 			for_each_cpu_and(j, tl->mask(i), cpu_map) {
 				unsigned long capacity;
 
-				capacity = arch_scale_cpu_capacity(NULL, j);
+				capacity = arch_scale_cpu_capacity(j);
 
 				if (capacity <= max_capacity)
 					continue;
@@ -2075,9 +2071,8 @@ void free_sched_domains(cpumask_var_t doms[], unsigned int ndoms)
 }
 
 /*
- * Set up scheduler domains and groups. Callers must hold the hotplug lock.
- * For now this just excludes isolated CPUs, but could be used to
- * exclude other special cases in the future.
+ * Set up scheduler domains and groups.  For now this just excludes isolated
+ * CPUs, but could be used to exclude other special cases in the future.
  */
 int sched_init_domains(const struct cpumask *cpu_map)
 {

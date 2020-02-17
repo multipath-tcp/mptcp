@@ -1173,7 +1173,7 @@ static struct tty_struct *tty_driver_lookup_tty(struct tty_driver *driver,
  *	tty_init_termios	-  helper for termios setup
  *	@tty: the tty to set up
  *
- *	Initialise the termios structures for this tty. Thus runs under
+ *	Initialise the termios structure for this tty. This runs under
  *	the tty_mutex currently so we can be relaxed about ordering.
  */
 
@@ -1837,7 +1837,7 @@ static struct tty_struct *tty_open_current_tty(dev_t device, struct file *filp)
 static struct tty_driver *tty_lookup_driver(dev_t device, struct file *filp,
 		int *index)
 {
-	struct tty_driver *driver;
+	struct tty_driver *driver = NULL;
 
 	switch (device) {
 #ifdef CONFIG_VT
@@ -1858,6 +1858,8 @@ static struct tty_driver *tty_lookup_driver(dev_t device, struct file *filp,
 				break;
 			}
 		}
+		if (driver)
+			tty_driver_kref_put(driver);
 		return ERR_PTR(-ENODEV);
 	}
 	default:

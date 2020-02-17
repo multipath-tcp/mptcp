@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/fs/nfs/inode.c
  *
@@ -50,6 +51,7 @@
 #include "pnfs.h"
 #include "nfs.h"
 #include "netns.h"
+#include "sysfs.h"
 
 #include "nfstrace.h"
 
@@ -207,7 +209,7 @@ static void nfs_set_cache_invalid(struct inode *inode, unsigned long flags)
 	}
 
 	if (inode->i_mapping->nrpages == 0)
-		flags &= ~NFS_INO_INVALID_DATA;
+		flags &= ~(NFS_INO_INVALID_DATA|NFS_INO_DATA_INVAL_DEFER);
 	nfsi->cache_validity |= flags;
 	if (flags & NFS_INO_INVALID_DATA)
 		nfs_fscache_invalidate(inode);
@@ -651,7 +653,8 @@ static int nfs_vmtruncate(struct inode * inode, loff_t offset)
 	i_size_write(inode, offset);
 	/* Optimisation */
 	if (offset == 0)
-		NFS_I(inode)->cache_validity &= ~NFS_INO_INVALID_DATA;
+		NFS_I(inode)->cache_validity &= ~(NFS_INO_INVALID_DATA |
+				NFS_INO_DATA_INVAL_DEFER);
 	NFS_I(inode)->cache_validity &= ~NFS_INO_INVALID_SIZE;
 
 	spin_unlock(&inode->i_lock);
@@ -885,10 +888,14 @@ struct nfs_lock_context *nfs_get_lock_context(struct nfs_open_context *ctx)
 		spin_lock(&inode->i_lock);
 		res = __nfs_find_lock_context(ctx);
 		if (res == NULL) {
-			list_add_tail_rcu(&new->list, &ctx->lock_context.list);
-			new->open_context = ctx;
-			res = new;
-			new = NULL;
+			new->open_context = get_nfs_open_context(ctx);
+			if (new->open_context) {
+				list_add_tail_rcu(&new->list,
+						&ctx->lock_context.list);
+				res = new;
+				new = NULL;
+			} else
+				res = ERR_PTR(-EBADF);
 		}
 		spin_unlock(&inode->i_lock);
 		kfree(new);
@@ -906,6 +913,7 @@ void nfs_put_lock_context(struct nfs_lock_context *l_ctx)
 		return;
 	list_del_rcu(&l_ctx->list);
 	spin_unlock(&inode->i_lock);
+	put_nfs_open_context(ctx);
 	kfree_rcu(l_ctx, rcu_head);
 }
 EXPORT_SYMBOL_GPL(nfs_put_lock_context);
@@ -1026,6 +1034,10 @@ void nfs_inode_attach_open_context(struct nfs_open_context *ctx)
 	struct nfs_inode *nfsi = NFS_I(inode);
 
 	spin_lock(&inode->i_lock);
+	if (list_empty(&nfsi->open_files) &&
+	    (nfsi->cache_validity & NFS_INO_DATA_INVAL_DEFER))
+		nfsi->cache_validity |= NFS_INO_INVALID_DATA |
+			NFS_INO_REVAL_FORCED;
 	list_add_tail_rcu(&ctx->list, &nfsi->open_files);
 	spin_unlock(&inode->i_lock);
 }
@@ -1094,6 +1106,7 @@ int nfs_open(struct inode *inode, struct file *filp)
 	nfs_fscache_open_file(inode, filp);
 	return 0;
 }
+EXPORT_SYMBOL_GPL(nfs_open);
 
 /*
  * This function is called whenever some part of NFS notices that
@@ -1306,7 +1319,8 @@ int nfs_revalidate_mapping(struct inode *inode,
 
 	set_bit(NFS_INO_INVALIDATING, bitlock);
 	smp_wmb();
-	nfsi->cache_validity &= ~NFS_INO_INVALID_DATA;
+	nfsi->cache_validity &= ~(NFS_INO_INVALID_DATA|
+			NFS_INO_DATA_INVAL_DEFER);
 	spin_unlock(&inode->i_lock);
 	trace_nfs_invalidate_mapping_enter(inode);
 	ret = nfs_invalidate_mapping(inode, mapping);
@@ -1389,11 +1403,21 @@ static int nfs_check_inode_attributes(struct inode *inode, struct nfs_fattr *fat
 	if (NFS_PROTO(inode)->have_delegation(inode, FMODE_READ))
 		return 0;
 
+	if (!(fattr->valid & NFS_ATTR_FATTR_FILEID)) {
+		/* Only a mounted-on-fileid? Just exit */
+		if (fattr->valid & NFS_ATTR_FATTR_MOUNTED_ON_FILEID)
+			return 0;
 	/* Has the inode gone and changed behind our back? */
-	if ((fattr->valid & NFS_ATTR_FATTR_FILEID) && nfsi->fileid != fattr->fileid)
+	} else if (nfsi->fileid != fattr->fileid) {
+		/* Is this perhaps the mounted-on fileid? */
+		if ((fattr->valid & NFS_ATTR_FATTR_MOUNTED_ON_FILEID) &&
+		    nfsi->fileid == fattr->mounted_on_fileid)
+			return 0;
 		return -ESTALE;
+	}
 	if ((fattr->valid & NFS_ATTR_FATTR_TYPE) && (inode->i_mode & S_IFMT) != (fattr->mode & S_IFMT))
 		return -ESTALE;
+
 
 	if (!nfs_file_has_buffered_writers(nfsi)) {
 		/* Verify a few of the more important attributes */
@@ -1754,18 +1778,6 @@ int nfs_post_op_update_inode_force_wcc(struct inode *inode, struct nfs_fattr *fa
 EXPORT_SYMBOL_GPL(nfs_post_op_update_inode_force_wcc);
 
 
-static inline bool nfs_fileid_valid(struct nfs_inode *nfsi,
-				    struct nfs_fattr *fattr)
-{
-	bool ret1 = true, ret2 = true;
-
-	if (fattr->valid & NFS_ATTR_FATTR_FILEID)
-		ret1 = (nfsi->fileid == fattr->fileid);
-	if (fattr->valid & NFS_ATTR_FATTR_MOUNTED_ON_FILEID)
-		ret2 = (nfsi->fileid == fattr->mounted_on_fileid);
-	return ret1 || ret2;
-}
-
 /*
  * Many nfs protocol calls return the new file attributes after
  * an operation.  Here we update the inode to reflect the state
@@ -1796,7 +1808,16 @@ static int nfs_update_inode(struct inode *inode, struct nfs_fattr *fattr)
 			nfs_display_fhandle_hash(NFS_FH(inode)),
 			atomic_read(&inode->i_count), fattr->valid);
 
-	if (!nfs_fileid_valid(nfsi, fattr)) {
+	if (!(fattr->valid & NFS_ATTR_FATTR_FILEID)) {
+		/* Only a mounted-on-fileid? Just exit */
+		if (fattr->valid & NFS_ATTR_FATTR_MOUNTED_ON_FILEID)
+			return 0;
+	/* Has the inode gone and changed behind our back? */
+	} else if (nfsi->fileid != fattr->fileid) {
+		/* Is this perhaps the mounted-on fileid? */
+		if ((fattr->valid & NFS_ATTR_FATTR_MOUNTED_ON_FILEID) &&
+		    nfsi->fileid == fattr->mounted_on_fileid)
+			return 0;
 		printk(KERN_ERR "NFS: server %s error: fileid changed\n"
 			"fsid %s: expected fileid 0x%Lx, got 0x%Lx\n",
 			NFS_SERVER(inode)->nfs_client->cl_hostname,
@@ -1864,7 +1885,8 @@ static int nfs_update_inode(struct inode *inode, struct nfs_fattr *fattr)
 				dprintk("NFS: change_attr change on server for file %s/%ld\n",
 						inode->i_sb->s_id,
 						inode->i_ino);
-			}
+			} else if (!have_delegation)
+				nfsi->cache_validity |= NFS_INO_DATA_INVAL_DEFER;
 			inode_set_iversion_raw(inode, fattr->change_attr);
 			attr_changed = true;
 		}
@@ -2055,17 +2077,11 @@ struct inode *nfs_alloc_inode(struct super_block *sb)
 }
 EXPORT_SYMBOL_GPL(nfs_alloc_inode);
 
-static void nfs_i_callback(struct rcu_head *head)
+void nfs_free_inode(struct inode *inode)
 {
-	struct inode *inode = container_of(head, struct inode, i_rcu);
 	kmem_cache_free(nfs_inode_cachep, NFS_I(inode));
 }
-
-void nfs_destroy_inode(struct inode *inode)
-{
-	call_rcu(&inode->i_rcu, nfs_i_callback);
-}
-EXPORT_SYMBOL_GPL(nfs_destroy_inode);
+EXPORT_SYMBOL_GPL(nfs_free_inode);
 
 static inline void nfs4_init_once(struct nfs_inode *nfsi)
 {
@@ -2159,12 +2175,8 @@ static int nfs_net_init(struct net *net)
 
 static void nfs_net_exit(struct net *net)
 {
-	struct nfs_net *nn = net_generic(net, nfs_net_id);
-
 	nfs_fs_proc_net_exit(net);
-	nfs_cleanup_cb_ident_idr(net);
-	WARN_ON_ONCE(!list_empty(&nn->nfs_client_list));
-	WARN_ON_ONCE(!list_empty(&nn->nfs_volume_list));
+	nfs_clients_exit(net);
 }
 
 static struct pernet_operations nfs_net_ops = {
@@ -2180,6 +2192,10 @@ static struct pernet_operations nfs_net_ops = {
 static int __init init_nfs_fs(void)
 {
 	int err;
+
+	err = nfs_sysfs_init();
+	if (err < 0)
+		goto out10;
 
 	err = register_pernet_subsys(&nfs_net_ops);
 	if (err < 0)
@@ -2244,6 +2260,8 @@ out7:
 out8:
 	unregister_pernet_subsys(&nfs_net_ops);
 out9:
+	nfs_sysfs_exit();
+out10:
 	return err;
 }
 
@@ -2260,6 +2278,7 @@ static void __exit exit_nfs_fs(void)
 	unregister_nfs_fs();
 	nfs_fs_proc_exit();
 	nfsiod_stop();
+	nfs_sysfs_exit();
 }
 
 /* Not quite true; I just maintain it */

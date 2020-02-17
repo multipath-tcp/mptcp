@@ -31,7 +31,7 @@
  */
 #include <linux/list.h>
 #include <linux/slab.h>
-#include <drm/drmP.h>
+
 #include <drm/amdgpu_drm.h>
 #include <drm/drm_cache.h>
 #include "amdgpu.h"
@@ -88,12 +88,14 @@ static void amdgpu_bo_destroy(struct ttm_buffer_object *tbo)
 	if (bo->gem_base.import_attach)
 		drm_prime_gem_destroy(&bo->gem_base, bo->tbo.sg);
 	drm_gem_object_release(&bo->gem_base);
-	amdgpu_bo_unref(&bo->parent);
+	/* in case amdgpu_device_recover_vram got NULL of bo->parent */
 	if (!list_empty(&bo->shadow_list)) {
 		mutex_lock(&adev->shadow_list_lock);
 		list_del_init(&bo->shadow_list);
 		mutex_unlock(&adev->shadow_list_lock);
 	}
+	amdgpu_bo_unref(&bo->parent);
+
 	kfree(bo->metadata);
 	kfree(bo);
 }
@@ -493,7 +495,11 @@ static int amdgpu_bo_do_create(struct amdgpu_device *adev,
 #endif
 
 	bo->tbo.bdev = &adev->mman.bdev;
-	amdgpu_bo_placement_from_domain(bo, bp->domain);
+	if (bp->domain & (AMDGPU_GEM_DOMAIN_GWS | AMDGPU_GEM_DOMAIN_OA |
+			  AMDGPU_GEM_DOMAIN_GDS))
+		amdgpu_bo_placement_from_domain(bo, AMDGPU_GEM_DOMAIN_CPU);
+	else
+		amdgpu_bo_placement_from_domain(bo, bp->domain);
 	if (bp->type == ttm_bo_type_kernel)
 		bo->tbo.priority = 1;
 
@@ -973,6 +979,7 @@ static const char *amdgpu_vram_names[] = {
 	"HBM",
 	"DDR3",
 	"DDR4",
+	"GDDR6",
 };
 
 /**

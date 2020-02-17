@@ -12,16 +12,11 @@
 #include "xfs_mount.h"
 #include "xfs_inode.h"
 #include "xfs_trans.h"
-#include "xfs_inode_item.h"
-#include "xfs_alloc.h"
-#include "xfs_error.h"
 #include "xfs_iomap.h"
 #include "xfs_trace.h"
 #include "xfs_bmap.h"
 #include "xfs_bmap_util.h"
-#include "xfs_bmap_btree.h"
 #include "xfs_reflink.h"
-#include <linux/writeback.h>
 
 /*
  * structure owned by writepages passed to individual writepage calls
@@ -98,7 +93,6 @@ xfs_destroy_ioend(
 
 	for (bio = &ioend->io_inline_bio; bio; bio = next) {
 		struct bio_vec	*bvec;
-		int		i;
 		struct bvec_iter_all iter_all;
 
 		/*
@@ -111,7 +105,7 @@ xfs_destroy_ioend(
 			next = bio->bi_private;
 
 		/* walk each page on bio, ending page IO on them */
-		bio_for_each_segment_all(bvec, bio, i, iter_all)
+		bio_for_each_segment_all(bvec, bio, iter_all)
 			xfs_finish_page_writeback(inode, bvec, error);
 		bio_put(bio);
 	}
@@ -139,8 +133,7 @@ xfs_setfilesize_trans_alloc(
 	struct xfs_trans	*tp;
 	int			error;
 
-	error = xfs_trans_alloc(mp, &M_RES(mp)->tr_fsyncts, 0, 0,
-				XFS_TRANS_NOFS, &tp);
+	error = xfs_trans_alloc(mp, &M_RES(mp)->tr_fsyncts, 0, 0, 0, &tp);
 	if (error)
 		return error;
 
@@ -234,15 +227,22 @@ xfs_setfilesize_ioend(
  * IO write completion.
  */
 STATIC void
-xfs_end_io(
-	struct work_struct *work)
+xfs_end_ioend(
+	struct xfs_ioend	*ioend)
 {
-	struct xfs_ioend	*ioend =
-		container_of(work, struct xfs_ioend, io_work);
+	struct list_head	ioend_list;
 	struct xfs_inode	*ip = XFS_I(ioend->io_inode);
 	xfs_off_t		offset = ioend->io_offset;
 	size_t			size = ioend->io_size;
+	unsigned int		nofs_flag;
 	int			error;
+
+	/*
+	 * We can allocate memory here while doing writeback on behalf of
+	 * memory reclaim.  To avoid memory allocation deadlocks set the
+	 * task-wide nofs context for the following operations.
+	 */
+	nofs_flag = memalloc_nofs_save();
 
 	/*
 	 * Just clean up the in-memory strutures if the fs has been shut down.
@@ -275,7 +275,122 @@ xfs_end_io(
 done:
 	if (ioend->io_append_trans)
 		error = xfs_setfilesize_ioend(ioend, error);
+	list_replace_init(&ioend->io_list, &ioend_list);
 	xfs_destroy_ioend(ioend, error);
+
+	while (!list_empty(&ioend_list)) {
+		ioend = list_first_entry(&ioend_list, struct xfs_ioend,
+				io_list);
+		list_del_init(&ioend->io_list);
+		xfs_destroy_ioend(ioend, error);
+	}
+
+	memalloc_nofs_restore(nofs_flag);
+}
+
+/*
+ * We can merge two adjacent ioends if they have the same set of work to do.
+ */
+static bool
+xfs_ioend_can_merge(
+	struct xfs_ioend	*ioend,
+	struct xfs_ioend	*next)
+{
+	if (ioend->io_bio->bi_status != next->io_bio->bi_status)
+		return false;
+	if ((ioend->io_fork == XFS_COW_FORK) ^ (next->io_fork == XFS_COW_FORK))
+		return false;
+	if ((ioend->io_state == XFS_EXT_UNWRITTEN) ^
+	    (next->io_state == XFS_EXT_UNWRITTEN))
+		return false;
+	if (ioend->io_offset + ioend->io_size != next->io_offset)
+		return false;
+	return true;
+}
+
+/*
+ * If the to be merged ioend has a preallocated transaction for file
+ * size updates we need to ensure the ioend it is merged into also
+ * has one.  If it already has one we can simply cancel the transaction
+ * as it is guaranteed to be clean.
+ */
+static void
+xfs_ioend_merge_append_transactions(
+	struct xfs_ioend	*ioend,
+	struct xfs_ioend	*next)
+{
+	if (!ioend->io_append_trans) {
+		ioend->io_append_trans = next->io_append_trans;
+		next->io_append_trans = NULL;
+	} else {
+		xfs_setfilesize_ioend(next, -ECANCELED);
+	}
+}
+
+/* Try to merge adjacent completions. */
+STATIC void
+xfs_ioend_try_merge(
+	struct xfs_ioend	*ioend,
+	struct list_head	*more_ioends)
+{
+	struct xfs_ioend	*next_ioend;
+
+	while (!list_empty(more_ioends)) {
+		next_ioend = list_first_entry(more_ioends, struct xfs_ioend,
+				io_list);
+		if (!xfs_ioend_can_merge(ioend, next_ioend))
+			break;
+		list_move_tail(&next_ioend->io_list, &ioend->io_list);
+		ioend->io_size += next_ioend->io_size;
+		if (next_ioend->io_append_trans)
+			xfs_ioend_merge_append_transactions(ioend, next_ioend);
+	}
+}
+
+/* list_sort compare function for ioends */
+static int
+xfs_ioend_compare(
+	void			*priv,
+	struct list_head	*a,
+	struct list_head	*b)
+{
+	struct xfs_ioend	*ia;
+	struct xfs_ioend	*ib;
+
+	ia = container_of(a, struct xfs_ioend, io_list);
+	ib = container_of(b, struct xfs_ioend, io_list);
+	if (ia->io_offset < ib->io_offset)
+		return -1;
+	else if (ia->io_offset > ib->io_offset)
+		return 1;
+	return 0;
+}
+
+/* Finish all pending io completions. */
+void
+xfs_end_io(
+	struct work_struct	*work)
+{
+	struct xfs_inode	*ip;
+	struct xfs_ioend	*ioend;
+	struct list_head	completion_list;
+	unsigned long		flags;
+
+	ip = container_of(work, struct xfs_inode, i_ioend_work);
+
+	spin_lock_irqsave(&ip->i_ioend_lock, flags);
+	list_replace_init(&ip->i_ioend_list, &completion_list);
+	spin_unlock_irqrestore(&ip->i_ioend_lock, flags);
+
+	list_sort(NULL, &completion_list, xfs_ioend_compare);
+
+	while (!list_empty(&completion_list)) {
+		ioend = list_first_entry(&completion_list, struct xfs_ioend,
+				io_list);
+		list_del_init(&ioend->io_list);
+		xfs_ioend_try_merge(ioend, &completion_list);
+		xfs_end_ioend(ioend);
+	}
 }
 
 STATIC void
@@ -283,14 +398,20 @@ xfs_end_bio(
 	struct bio		*bio)
 {
 	struct xfs_ioend	*ioend = bio->bi_private;
-	struct xfs_mount	*mp = XFS_I(ioend->io_inode)->i_mount;
+	struct xfs_inode	*ip = XFS_I(ioend->io_inode);
+	struct xfs_mount	*mp = ip->i_mount;
+	unsigned long		flags;
 
 	if (ioend->io_fork == XFS_COW_FORK ||
-	    ioend->io_state == XFS_EXT_UNWRITTEN)
-		queue_work(mp->m_unwritten_workqueue, &ioend->io_work);
-	else if (ioend->io_append_trans)
-		queue_work(mp->m_data_workqueue, &ioend->io_work);
-	else
+	    ioend->io_state == XFS_EXT_UNWRITTEN ||
+	    ioend->io_append_trans != NULL) {
+		spin_lock_irqsave(&ip->i_ioend_lock, flags);
+		if (list_empty(&ip->i_ioend_list))
+			WARN_ON_ONCE(!queue_work(mp->m_unwritten_workqueue,
+						 &ip->i_ioend_work));
+		list_add_tail(&ioend->io_list, &ip->i_ioend_list);
+		spin_unlock_irqrestore(&ip->i_ioend_lock, flags);
+	} else
 		xfs_destroy_ioend(ioend, blk_status_to_errno(bio->bi_status));
 }
 
@@ -513,7 +634,7 @@ allocate_blocks:
  * reference to the ioend to ensure that the ioend completion is only done once
  * all bios have been submitted and the ioend is really done.
  *
- * If @fail is non-zero, it means that we have a situation where some part of
+ * If @status is non-zero, it means that we have a situation where some part of
  * the submission process has failed after we have marked paged for writeback
  * and unlocked them. In this situation, we need to fail the bio and ioend
  * rather than submit it to IO. This typically only happens on a filesystem
@@ -525,21 +646,19 @@ xfs_submit_ioend(
 	struct xfs_ioend	*ioend,
 	int			status)
 {
+	unsigned int		nofs_flag;
+
+	/*
+	 * We can allocate memory here while doing writeback on behalf of
+	 * memory reclaim.  To avoid memory allocation deadlocks set the
+	 * task-wide nofs context for the following operations.
+	 */
+	nofs_flag = memalloc_nofs_save();
+
 	/* Convert CoW extents to regular */
 	if (!status && ioend->io_fork == XFS_COW_FORK) {
-		/*
-		 * Yuk. This can do memory allocation, but is not a
-		 * transactional operation so everything is done in GFP_KERNEL
-		 * context. That can deadlock, because we hold pages in
-		 * writeback state and GFP_KERNEL allocations can block on them.
-		 * Hence we must operate in nofs conditions here.
-		 */
-		unsigned nofs_flag;
-
-		nofs_flag = memalloc_nofs_save();
 		status = xfs_reflink_convert_cow(XFS_I(ioend->io_inode),
 				ioend->io_offset, ioend->io_size);
-		memalloc_nofs_restore(nofs_flag);
 	}
 
 	/* Reserve log space if we might write beyond the on-disk inode size. */
@@ -550,9 +669,10 @@ xfs_submit_ioend(
 	    !ioend->io_append_trans)
 		status = xfs_setfilesize_trans_alloc(ioend);
 
+	memalloc_nofs_restore(nofs_flag);
+
 	ioend->io_bio->bi_private = ioend;
 	ioend->io_bio->bi_end_io = xfs_end_bio;
-	ioend->io_bio->bi_opf = REQ_OP_WRITE | wbc_to_write_flags(wbc);
 
 	/*
 	 * If we are failing the IO now, just mark the ioend with an
@@ -566,7 +686,6 @@ xfs_submit_ioend(
 		return status;
 	}
 
-	ioend->io_bio->bi_write_hint = ioend->io_inode->i_write_hint;
 	submit_bio(ioend->io_bio);
 	return 0;
 }
@@ -578,7 +697,8 @@ xfs_alloc_ioend(
 	xfs_exntst_t		state,
 	xfs_off_t		offset,
 	struct block_device	*bdev,
-	sector_t		sector)
+	sector_t		sector,
+	struct writeback_control *wbc)
 {
 	struct xfs_ioend	*ioend;
 	struct bio		*bio;
@@ -586,6 +706,9 @@ xfs_alloc_ioend(
 	bio = bio_alloc_bioset(GFP_NOFS, BIO_MAX_PAGES, &xfs_ioend_bioset);
 	bio_set_dev(bio, bdev);
 	bio->bi_iter.bi_sector = sector;
+	bio->bi_opf = REQ_OP_WRITE | wbc_to_write_flags(wbc);
+	bio->bi_write_hint = inode->i_write_hint;
+	wbc_init_bio(wbc, bio);
 
 	ioend = container_of(bio, struct xfs_ioend, io_inline_bio);
 	INIT_LIST_HEAD(&ioend->io_list);
@@ -594,7 +717,6 @@ xfs_alloc_ioend(
 	ioend->io_inode = inode;
 	ioend->io_size = 0;
 	ioend->io_offset = offset;
-	INIT_WORK(&ioend->io_work, xfs_end_io);
 	ioend->io_append_trans = NULL;
 	ioend->io_bio = bio;
 	return ioend;
@@ -607,24 +729,22 @@ xfs_alloc_ioend(
  * so that the bi_private linkage is set up in the right direction for the
  * traversal in xfs_destroy_ioend().
  */
-static void
+static struct bio *
 xfs_chain_bio(
-	struct xfs_ioend	*ioend,
-	struct writeback_control *wbc,
-	struct block_device	*bdev,
-	sector_t		sector)
+	struct bio		*prev)
 {
 	struct bio *new;
 
 	new = bio_alloc(GFP_NOFS, BIO_MAX_PAGES);
-	bio_set_dev(new, bdev);
-	new->bi_iter.bi_sector = sector;
-	bio_chain(ioend->io_bio, new);
-	bio_get(ioend->io_bio);		/* for xfs_destroy_ioend */
-	ioend->io_bio->bi_opf = REQ_OP_WRITE | wbc_to_write_flags(wbc);
-	ioend->io_bio->bi_write_hint = ioend->io_inode->i_write_hint;
-	submit_bio(ioend->io_bio);
-	ioend->io_bio = new;
+	bio_copy_dev(new, prev);/* also copies over blkcg information */
+	new->bi_iter.bi_sector = bio_end_sector(prev);
+	new->bi_opf = prev->bi_opf;
+	new->bi_write_hint = prev->bi_write_hint;
+
+	bio_chain(prev, new);
+	bio_get(prev);		/* for xfs_destroy_ioend */
+	submit_bio(prev);
+	return new;
 }
 
 /*
@@ -646,6 +766,7 @@ xfs_add_to_ioend(
 	struct block_device	*bdev = xfs_find_bdev_for_inode(inode);
 	unsigned		len = i_blocksize(inode);
 	unsigned		poff = offset & (PAGE_SIZE - 1);
+	bool			merged, same_page = false;
 	sector_t		sector;
 
 	sector = xfs_fsb_to_db(ip, wpc->imap.br_startblock) +
@@ -659,18 +780,23 @@ xfs_add_to_ioend(
 		if (wpc->ioend)
 			list_add(&wpc->ioend->io_list, iolist);
 		wpc->ioend = xfs_alloc_ioend(inode, wpc->fork,
-				wpc->imap.br_state, offset, bdev, sector);
+				wpc->imap.br_state, offset, bdev, sector, wbc);
 	}
 
-	if (!__bio_try_merge_page(wpc->ioend->io_bio, page, len, poff, true)) {
-		if (iop)
-			atomic_inc(&iop->write_count);
-		if (bio_full(wpc->ioend->io_bio))
-			xfs_chain_bio(wpc->ioend, wbc, bdev, sector);
+	merged = __bio_try_merge_page(wpc->ioend->io_bio, page, len, poff,
+			&same_page);
+
+	if (iop && !same_page)
+		atomic_inc(&iop->write_count);
+
+	if (!merged) {
+		if (bio_full(wpc->ioend->io_bio, len))
+			wpc->ioend->io_bio = xfs_chain_bio(wpc->ioend->io_bio);
 		bio_add_page(wpc->ioend->io_bio, page, len, poff);
 	}
 
 	wpc->ioend->io_size += len;
+	wbc_account_cgroup_owner(wbc, page, len);
 }
 
 STATIC void

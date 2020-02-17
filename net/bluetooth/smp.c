@@ -183,7 +183,6 @@ static int aes_cmac(struct crypto_shash *tfm, const u8 k[16], const u8 *m,
 	}
 
 	desc->tfm = tfm;
-	desc->flags = 0;
 
 	/* Swap key and message from LSB to MSB */
 	swap_buf(k, tmp, 16);
@@ -2577,6 +2576,19 @@ static int smp_cmd_ident_addr_info(struct l2cap_conn *conn,
 	if (!bacmp(&info->bdaddr, BDADDR_ANY) ||
 	    !hci_is_identity_address(&info->bdaddr, info->addr_type)) {
 		bt_dev_err(hcon->hdev, "ignoring IRK with no identity address");
+		goto distribute;
+	}
+
+	/* Drop IRK if peer is using identity address during pairing but is
+	 * providing different address as identity information.
+	 *
+	 * Microsoft Surface Precision Mouse is known to have this bug.
+	 */
+	if (hci_is_identity_address(&hcon->dst, hcon->dst_type) &&
+	    (bacmp(&info->bdaddr, &hcon->dst) ||
+	     info->addr_type != hcon->dst_type)) {
+		bt_dev_err(hcon->hdev,
+			   "ignoring IRK with invalid identity address");
 		goto distribute;
 	}
 

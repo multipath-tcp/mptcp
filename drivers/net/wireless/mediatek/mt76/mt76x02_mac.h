@@ -198,8 +198,8 @@ void mt76x02_mac_write_txwi(struct mt76x02_dev *dev, struct mt76x02_txwi *txwi,
 			    struct sk_buff *skb, struct mt76_wcid *wcid,
 			    struct ieee80211_sta *sta, int len);
 void mt76x02_mac_poll_tx_status(struct mt76x02_dev *dev, bool irq);
-void mt76x02_tx_complete_skb(struct mt76_dev *mdev, struct mt76_queue *q,
-			     struct mt76_queue_entry *e, bool flush);
+void mt76x02_tx_complete_skb(struct mt76_dev *mdev, enum mt76_txq_id qid,
+			     struct mt76_queue_entry *e);
 void mt76x02_update_channel(struct mt76_dev *mdev);
 void mt76x02_mac_work(struct work_struct *work);
 
@@ -209,5 +209,5 @@ int mt76x02_mac_set_beacon(struct mt76x02_dev *dev, u8 vif_idx,
 void mt76x02_mac_set_beacon_enable(struct mt76x02_dev *dev,
 				   struct ieee80211_vif *vif, bool val);
 
-void mt76x02_edcca_init(struct mt76x02_dev *dev, bool enable);
+void mt76x02_edcca_init(struct mt76x02_dev *dev);
 #endif

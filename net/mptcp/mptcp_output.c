@@ -1750,8 +1750,7 @@ void mptcp_select_initial_window(const struct sock *sk, int __space, __u32 mss,
 				  wscale_ok, rcv_wscale, init_rcv_wnd);
 }
 
-static inline u64 mptcp_calc_rate(const struct sock *meta_sk, unsigned int mss,
-				  unsigned int (*mss_cb)(struct sock *sk))
+static inline u64 mptcp_calc_rate(const struct sock *meta_sk, unsigned int mss)
 {
 	struct mptcp_tcp_sock *mptcp;
 	u64 rate = 0;
@@ -1771,7 +1770,7 @@ static inline u64 mptcp_calc_rate(const struct sock *meta_sk, unsigned int mss,
 		if (unlikely(!tp->srtt_us))
 			continue;
 
-		this_mss = mss_cb(sk);
+		this_mss = tcp_current_mss(sk);
 
 		/* If this_mss is smaller than mss, it means that a segment will
 		 * be splitted in two (or more) when pushed on this subflow. If
@@ -1806,8 +1805,7 @@ static inline u64 mptcp_calc_rate(const struct sock *meta_sk, unsigned int mss,
 	return rate;
 }
 
-static unsigned int __mptcp_current_mss(const struct sock *meta_sk,
-					unsigned int (*mss_cb)(struct sock *sk))
+static unsigned int __mptcp_current_mss(const struct sock *meta_sk)
 {
 	struct mptcp_tcp_sock *mptcp;
 	unsigned int mss = 0;
@@ -1821,7 +1819,7 @@ static unsigned int __mptcp_current_mss(const struct sock *meta_sk,
 		if (!mptcp_sk_can_send(sk))
 			continue;
 
-		this_mss = mss_cb(sk);
+		this_mss = tcp_current_mss(sk);
 
 		/* Same mss values will produce the same throughput. */
 		if (this_mss == mss)
@@ -1830,7 +1828,7 @@ static unsigned int __mptcp_current_mss(const struct sock *meta_sk,
 		/* See whether using this mss value can theoretically improve
 		 * the performances.
 		 */
-		this_rate = mptcp_calc_rate(meta_sk, this_mss, mss_cb);
+		this_rate = mptcp_calc_rate(meta_sk, this_mss);
 		if (this_rate >= rate) {
 			mss = this_mss;
 			rate = this_rate;
@@ -1842,39 +1840,12 @@ static unsigned int __mptcp_current_mss(const struct sock *meta_sk,
 
 unsigned int mptcp_current_mss(struct sock *meta_sk)
 {
-	unsigned int mss = __mptcp_current_mss(meta_sk, tcp_current_mss);
+	unsigned int mss = __mptcp_current_mss(meta_sk);
 
 	/* If no subflow is available, we take a default-mss from the
 	 * meta-socket.
 	 */
 	return !mss ? tcp_current_mss(meta_sk) : mss;
-}
-
-static unsigned int mptcp_select_size_mss(struct sock *sk)
-{
-	return tcp_sk(sk)->mss_cache;
-}
-
-int mptcp_select_size(const struct sock *meta_sk, bool first_skb, bool zc)
-{
-	unsigned int mss = __mptcp_current_mss(meta_sk, mptcp_select_size_mss);
-
-	if (mptcp_can_sg(meta_sk)) {
-		if (zc)
-			return 0;
-
-		if (!tcp_sk(meta_sk)->mpcb->dss_csum) {
-			mss = linear_payload_sz(first_skb);
-		} else {
-			int pgbreak = SKB_MAX_HEAD(MAX_TCP_HEADER);
-
-			if (mss >= pgbreak &&
-			    mss <= pgbreak + (MAX_SKB_FRAGS - 1) * PAGE_SIZE)
-				mss = pgbreak;
-		}
-	}
-
-	return !mss ? tcp_sk(meta_sk)->mss_cache : mss;
 }
 
 int mptcp_check_snd_buf(const struct tcp_sock *tp)

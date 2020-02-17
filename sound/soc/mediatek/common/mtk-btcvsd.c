@@ -193,13 +193,13 @@ static const u8 table_msbc_silence[SCO_PACKET_180] = {
 static void mtk_btcvsd_snd_irq_enable(struct mtk_btcvsd_snd *bt)
 {
 	regmap_update_bits(bt->infra, bt->infra_misc_offset,
-			   bt->conn_bt_cvsd_mask, bt->conn_bt_cvsd_mask);
+			   bt->conn_bt_cvsd_mask, 0);
 }
 
 static void mtk_btcvsd_snd_irq_disable(struct mtk_btcvsd_snd *bt)
 {
 	regmap_update_bits(bt->infra, bt->infra_misc_offset,
-			   bt->conn_bt_cvsd_mask, 0);
+			   bt->conn_bt_cvsd_mask, bt->conn_bt_cvsd_mask);
 }
 
 static void mtk_btcvsd_snd_set_state(struct mtk_btcvsd_snd *bt,
@@ -407,11 +407,11 @@ static int mtk_btcvsd_read_from_bt(struct mtk_btcvsd_snd *bt,
 	return 0;
 }
 
-int mtk_btcvsd_write_to_bt(struct mtk_btcvsd_snd *bt,
-			   enum bt_sco_packet_len packet_type,
-			   unsigned int packet_length,
-			   unsigned int packet_num,
-			   unsigned int blk_size)
+static int mtk_btcvsd_write_to_bt(struct mtk_btcvsd_snd *bt,
+				  enum bt_sco_packet_len packet_type,
+				  unsigned int packet_length,
+				  unsigned int packet_num,
+				  unsigned int blk_size)
 {
 	unsigned int i;
 	unsigned long flags;
@@ -695,9 +695,9 @@ static int wait_for_bt_irq(struct mtk_btcvsd_snd *bt,
 	return 0;
 }
 
-ssize_t mtk_btcvsd_snd_read(struct mtk_btcvsd_snd *bt,
-			    char __user *buf,
-			    size_t count)
+static ssize_t mtk_btcvsd_snd_read(struct mtk_btcvsd_snd *bt,
+				   char __user *buf,
+				   size_t count)
 {
 	ssize_t read_size = 0, read_count = 0, cur_read_idx, cont;
 	unsigned int cur_buf_ofs = 0;
@@ -776,9 +776,9 @@ ssize_t mtk_btcvsd_snd_read(struct mtk_btcvsd_snd *bt,
 	return read_count;
 }
 
-ssize_t mtk_btcvsd_snd_write(struct mtk_btcvsd_snd *bt,
-			     char __user *buf,
-			     size_t count)
+static ssize_t mtk_btcvsd_snd_write(struct mtk_btcvsd_snd *bt,
+				    char __user *buf,
+				    size_t count)
 {
 	int written_size = count, avail = 0, cur_write_idx, write_size, cont;
 	unsigned int cur_buf_ofs = 0;

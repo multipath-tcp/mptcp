@@ -27,33 +27,52 @@ enum bpf_linum_array_idx {
 	__NR_BPF_LINUM_ARRAY_IDX,
 };
 
-struct bpf_map_def SEC("maps") addr_map = {
-	.type = BPF_MAP_TYPE_ARRAY,
-	.key_size = sizeof(__u32),
-	.value_size = sizeof(struct sockaddr_in6),
-	.max_entries = __NR_BPF_ADDR_ARRAY_IDX,
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, __NR_BPF_ADDR_ARRAY_IDX);
+	__type(key, __u32);
+	__type(value, struct sockaddr_in6);
+} addr_map SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, __NR_BPF_RESULT_ARRAY_IDX);
+	__type(key, __u32);
+	__type(value, struct bpf_sock);
+} sock_result_map SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, __NR_BPF_RESULT_ARRAY_IDX);
+	__type(key, __u32);
+	__type(value, struct bpf_tcp_sock);
+} tcp_sock_result_map SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, __NR_BPF_LINUM_ARRAY_IDX);
+	__type(key, __u32);
+	__type(value, __u32);
+} linum_map SEC(".maps");
+
+struct bpf_spinlock_cnt {
+	struct bpf_spin_lock lock;
+	__u32 cnt;
 };
 
-struct bpf_map_def SEC("maps") sock_result_map = {
-	.type = BPF_MAP_TYPE_ARRAY,
-	.key_size = sizeof(__u32),
-	.value_size = sizeof(struct bpf_sock),
-	.max_entries = __NR_BPF_RESULT_ARRAY_IDX,
-};
+struct {
+	__uint(type, BPF_MAP_TYPE_SK_STORAGE);
+	__uint(map_flags, BPF_F_NO_PREALLOC);
+	__type(key, int);
+	__type(value, struct bpf_spinlock_cnt);
+} sk_pkt_out_cnt SEC(".maps");
 
-struct bpf_map_def SEC("maps") tcp_sock_result_map = {
-	.type = BPF_MAP_TYPE_ARRAY,
-	.key_size = sizeof(__u32),
-	.value_size = sizeof(struct bpf_tcp_sock),
-	.max_entries = __NR_BPF_RESULT_ARRAY_IDX,
-};
-
-struct bpf_map_def SEC("maps") linum_map = {
-	.type = BPF_MAP_TYPE_ARRAY,
-	.key_size = sizeof(__u32),
-	.value_size = sizeof(__u32),
-	.max_entries = __NR_BPF_LINUM_ARRAY_IDX,
-};
+struct {
+	__uint(type, BPF_MAP_TYPE_SK_STORAGE);
+	__uint(map_flags, BPF_F_NO_PREALLOC);
+	__type(key, int);
+	__type(value, struct bpf_spinlock_cnt);
+} sk_pkt_out_cnt10 SEC(".maps");
 
 static bool is_loopback6(__u32 *a6)
 {
@@ -120,7 +139,9 @@ static void tpcpy(struct bpf_tcp_sock *dst,
 SEC("cgroup_skb/egress")
 int egress_read_sock_fields(struct __sk_buff *skb)
 {
+	struct bpf_spinlock_cnt cli_cnt_init = { .lock = 0, .cnt = 0xeB9F };
 	__u32 srv_idx = ADDR_SRV_IDX, cli_idx = ADDR_CLI_IDX, result_idx;
+	struct bpf_spinlock_cnt *pkt_out_cnt, *pkt_out_cnt10;
 	struct sockaddr_in6 *srv_sa6, *cli_sa6;
 	struct bpf_tcp_sock *tp, *tp_ret;
 	struct bpf_sock *sk, *sk_ret;
@@ -160,6 +181,32 @@ int egress_read_sock_fields(struct __sk_buff *skb)
 
 	skcpy(sk_ret, sk);
 	tpcpy(tp_ret, tp);
+
+	if (result_idx == EGRESS_SRV_IDX) {
+		/* The userspace has created it for srv sk */
+		pkt_out_cnt = bpf_sk_storage_get(&sk_pkt_out_cnt, sk, 0, 0);
+		pkt_out_cnt10 = bpf_sk_storage_get(&sk_pkt_out_cnt10, sk,
+						   0, 0);
+	} else {
+		pkt_out_cnt = bpf_sk_storage_get(&sk_pkt_out_cnt, sk,
+						 &cli_cnt_init,
+						 BPF_SK_STORAGE_GET_F_CREATE);
+		pkt_out_cnt10 = bpf_sk_storage_get(&sk_pkt_out_cnt10,
+						   sk, &cli_cnt_init,
+						   BPF_SK_STORAGE_GET_F_CREATE);
+	}
+
+	if (!pkt_out_cnt || !pkt_out_cnt10)
+		RETURN;
+
+	/* Even both cnt and cnt10 have lock defined in their BTF,
+	 * intentionally one cnt takes lock while one does not
+	 * as a test for the spinlock support in BPF_MAP_TYPE_SK_STORAGE.
+	 */
+	pkt_out_cnt->cnt += 1;
+	bpf_spin_lock(&pkt_out_cnt10->lock);
+	pkt_out_cnt10->cnt += 10;
+	bpf_spin_unlock(&pkt_out_cnt10->lock);
 
 	RETURN;
 }

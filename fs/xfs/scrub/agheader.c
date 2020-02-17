@@ -9,20 +9,13 @@
 #include "xfs_format.h"
 #include "xfs_trans_resv.h"
 #include "xfs_mount.h"
-#include "xfs_defer.h"
 #include "xfs_btree.h"
-#include "xfs_bit.h"
-#include "xfs_log_format.h"
-#include "xfs_trans.h"
 #include "xfs_sb.h"
-#include "xfs_inode.h"
 #include "xfs_alloc.h"
 #include "xfs_ialloc.h"
 #include "xfs_rmap.h"
-#include "scrub/xfs_scrub.h"
 #include "scrub/scrub.h"
 #include "scrub/common.h"
-#include "scrub/trace.h"
 
 /* Superblock */
 
@@ -514,6 +507,7 @@ xchk_agf(
 {
 	struct xfs_mount	*mp = sc->mp;
 	struct xfs_agf		*agf;
+	struct xfs_perag	*pag;
 	xfs_agnumber_t		agno;
 	xfs_agblock_t		agbno;
 	xfs_agblock_t		eoag;
@@ -586,6 +580,16 @@ xchk_agf(
 	if (agfl_count != 0 && fl_count != agfl_count)
 		xchk_block_set_corrupt(sc, sc->sa.agf_bp);
 
+	/* Do the incore counters match? */
+	pag = xfs_perag_get(mp, agno);
+	if (pag->pagf_freeblks != be32_to_cpu(agf->agf_freeblks))
+		xchk_block_set_corrupt(sc, sc->sa.agf_bp);
+	if (pag->pagf_flcount != be32_to_cpu(agf->agf_flcount))
+		xchk_block_set_corrupt(sc, sc->sa.agf_bp);
+	if (pag->pagf_btreeblks != be32_to_cpu(agf->agf_btreeblks))
+		xchk_block_set_corrupt(sc, sc->sa.agf_bp);
+	xfs_perag_put(pag);
+
 	xchk_agf_xref(sc);
 out:
 	return error;
@@ -635,7 +639,7 @@ xchk_agfl_block(
 	xchk_agfl_block_xref(sc, agbno);
 
 	if (sc->sm->sm_flags & XFS_SCRUB_OFLAG_CORRUPT)
-		return XFS_BTREE_QUERY_RANGE_ABORT;
+		return XFS_ITER_ABORT;
 
 	return 0;
 }
@@ -726,7 +730,7 @@ xchk_agfl(
 	/* Check the blocks in the AGFL. */
 	error = xfs_agfl_walk(sc->mp, XFS_BUF_TO_AGF(sc->sa.agf_bp),
 			sc->sa.agfl_bp, xchk_agfl_block, &sai);
-	if (error == XFS_BTREE_QUERY_RANGE_ABORT) {
+	if (error == XFS_ITER_ABORT) {
 		error = 0;
 		goto out_free;
 	}
@@ -811,6 +815,7 @@ xchk_agi(
 {
 	struct xfs_mount	*mp = sc->mp;
 	struct xfs_agi		*agi;
+	struct xfs_perag	*pag;
 	xfs_agnumber_t		agno;
 	xfs_agblock_t		agbno;
 	xfs_agblock_t		eoag;
@@ -880,6 +885,14 @@ xchk_agi(
 
 	if (agi->agi_pad32 != cpu_to_be32(0))
 		xchk_block_set_corrupt(sc, sc->sa.agi_bp);
+
+	/* Do the incore counters match? */
+	pag = xfs_perag_get(mp, agno);
+	if (pag->pagi_count != be32_to_cpu(agi->agi_count))
+		xchk_block_set_corrupt(sc, sc->sa.agi_bp);
+	if (pag->pagi_freecount != be32_to_cpu(agi->agi_freecount))
+		xchk_block_set_corrupt(sc, sc->sa.agi_bp);
+	xfs_perag_put(pag);
 
 	xchk_agi_xref(sc);
 out:

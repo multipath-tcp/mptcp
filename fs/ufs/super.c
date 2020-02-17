@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/fs/ufs/super.c
  *
@@ -1406,11 +1407,9 @@ static int ufs_statfs(struct dentry *dentry, struct kstatfs *buf)
 	struct super_block *sb = dentry->d_sb;
 	struct ufs_sb_private_info *uspi= UFS_SB(sb)->s_uspi;
 	unsigned  flags = UFS_SB(sb)->s_flags;
-	struct ufs_super_block_third *usb3;
 	u64 id = huge_encode_dev(sb->s_bdev->bd_dev);
 
 	mutex_lock(&UFS_SB(sb)->s_lock);
-	usb3 = ubh_get_usb_third(uspi);
 	
 	if ((flags & UFS_TYPE_MASK) == UFS_TYPE_UFS2)
 		buf->f_type = UFS2_MAGIC;
@@ -1449,15 +1448,9 @@ static struct inode *ufs_alloc_inode(struct super_block *sb)
 	return &ei->vfs_inode;
 }
 
-static void ufs_i_callback(struct rcu_head *head)
+static void ufs_free_in_core_inode(struct inode *inode)
 {
-	struct inode *inode = container_of(head, struct inode, i_rcu);
 	kmem_cache_free(ufs_inode_cachep, UFS_I(inode));
-}
-
-static void ufs_destroy_inode(struct inode *inode)
-{
-	call_rcu(&inode->i_rcu, ufs_i_callback);
 }
 
 static void init_once(void *foo)
@@ -1494,7 +1487,7 @@ static void destroy_inodecache(void)
 
 static const struct super_operations ufs_super_ops = {
 	.alloc_inode	= ufs_alloc_inode,
-	.destroy_inode	= ufs_destroy_inode,
+	.free_inode	= ufs_free_in_core_inode,
 	.write_inode	= ufs_write_inode,
 	.evict_inode	= ufs_evict_inode,
 	.put_super	= ufs_put_super,

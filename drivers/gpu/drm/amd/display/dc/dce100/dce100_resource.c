@@ -22,6 +22,9 @@
  * Authors: AMD
  *
  */
+
+#include <linux/slab.h>
+
 #include "dm_services.h"
 
 #include "link_encoder.h"
@@ -35,8 +38,6 @@
 #include "irq/dce110/irq_service_dce110.h"
 #include "dce/dce_link_encoder.h"
 #include "dce/dce_stream_encoder.h"
-
-#include "dce/dce_clk_mgr.h"
 #include "dce/dce_mem_input.h"
 #include "dce/dce_ipp.h"
 #include "dce/dce_transform.h"
@@ -136,19 +137,6 @@ static const struct dce110_timing_generator_offsets dce100_tg_offsets[] = {
 /* set register offset with instance */
 #define SRI(reg_name, block, id)\
 	.reg_name = mm ## block ## id ## _ ## reg_name
-
-
-static const struct clk_mgr_registers disp_clk_regs = {
-		CLK_COMMON_REG_LIST_DCE_BASE()
-};
-
-static const struct clk_mgr_shift disp_clk_shift = {
-		CLK_COMMON_MASK_SH_LIST_DCE_COMMON_BASE(__SHIFT)
-};
-
-static const struct clk_mgr_mask disp_clk_mask = {
-		CLK_COMMON_MASK_SH_LIST_DCE_COMMON_BASE(_MASK)
-};
 
 #define ipp_regs(id)\
 [id] = {\
@@ -376,6 +364,28 @@ static const struct resource_caps res_cap = {
 	.num_stream_encoder = 6,
 	.num_pll = 3,
 	.num_ddc = 6,
+};
+
+static const struct dc_plane_cap plane_cap = {
+	.type = DC_PLANE_TYPE_DCE_RGB,
+
+	.pixel_format_support = {
+			.argb8888 = true,
+			.nv12 = false,
+			.fp16 = false
+	},
+
+	.max_upscale_factor = {
+			.argb8888 = 16000,
+			.nv12 = 1,
+			.fp16 = 1
+	},
+
+	.max_downscale_factor = {
+			.argb8888 = 250,
+			.nv12 = 1,
+			.fp16 = 1
+	}
 };
 
 #define CTX  ctx
@@ -724,9 +734,6 @@ static void destruct(struct dce110_resource_pool *pool)
 			dce_aud_destroy(&pool->base.audios[i]);
 	}
 
-	if (pool->base.clk_mgr != NULL)
-		dce_clk_mgr_destroy(&pool->base.clk_mgr);
-
 	if (pool->base.abm != NULL)
 				dce_abm_destroy(&pool->base.abm);
 
@@ -756,7 +763,8 @@ static enum dc_status build_mapped_resource(
 
 bool dce100_validate_bandwidth(
 	struct dc  *dc,
-	struct dc_state *context)
+	struct dc_state *context,
+	bool fast_validate)
 {
 	int i;
 	bool at_least_one_pipe = false;
@@ -768,11 +776,11 @@ bool dce100_validate_bandwidth(
 
 	if (at_least_one_pipe) {
 		/* TODO implement when needed but for now hardcode max value*/
-		context->bw.dce.dispclk_khz = 681000;
-		context->bw.dce.yclk_khz = 250000 * MEMORY_TYPE_MULTIPLIER_CZ;
+		context->bw_ctx.bw.dce.dispclk_khz = 681000;
+		context->bw_ctx.bw.dce.yclk_khz = 250000 * MEMORY_TYPE_MULTIPLIER_CZ;
 	} else {
-		context->bw.dce.dispclk_khz = 0;
-		context->bw.dce.yclk_khz = 0;
+		context->bw_ctx.bw.dce.dispclk_khz = 0;
+		context->bw_ctx.bw.dce.yclk_khz = 0;
 	}
 
 	return true;
@@ -844,13 +852,55 @@ enum dc_status dce100_validate_plane(const struct dc_plane_state *plane_state, s
 	return DC_FAIL_SURFACE_VALIDATE;
 }
 
+struct stream_encoder *dce100_find_first_free_match_stream_enc_for_link(
+		struct resource_context *res_ctx,
+		const struct resource_pool *pool,
+		struct dc_stream_state *stream)
+{
+	int i;
+	int j = -1;
+	struct dc_link *link = stream->link;
+
+	for (i = 0; i < pool->stream_enc_count; i++) {
+		if (!res_ctx->is_stream_enc_acquired[i] &&
+				pool->stream_enc[i]) {
+			/* Store first available for MST second display
+			 * in daisy chain use case
+			 */
+			j = i;
+			if (pool->stream_enc[i]->id ==
+					link->link_enc->preferred_engine)
+				return pool->stream_enc[i];
+		}
+	}
+
+	/*
+	 * below can happen in cases when stream encoder is acquired:
+	 * 1) for second MST display in chain, so preferred engine already
+	 * acquired;
+	 * 2) for another link, which preferred engine already acquired by any
+	 * MST configuration.
+	 *
+	 * If signal is of DP type and preferred engine not found, return last available
+	 *
+	 * TODO - This is just a patch up and a generic solution is
+	 * required for non DP connectors.
+	 */
+
+	if (j >= 0 && link->connector_signal == SIGNAL_TYPE_DISPLAY_PORT)
+		return pool->stream_enc[j];
+
+	return NULL;
+}
+
 static const struct resource_funcs dce100_res_pool_funcs = {
 	.destroy = dce100_destroy_resource_pool,
 	.link_enc_create = dce100_link_encoder_create,
 	.validate_bandwidth = dce100_validate_bandwidth,
 	.validate_plane = dce100_validate_plane,
 	.add_stream_to_ctx = dce100_add_stream_to_ctx,
-	.validate_global = dce100_validate_global
+	.validate_global = dce100_validate_global,
+	.find_first_free_match_stream_enc_for_link = dce100_find_first_free_match_stream_enc_for_link
 };
 
 static bool construct(
@@ -907,16 +957,6 @@ static bool construct(
 			BREAK_TO_DEBUGGER();
 			goto res_create_fail;
 		}
-	}
-
-	pool->base.clk_mgr = dce_clk_mgr_create(ctx,
-			&disp_clk_regs,
-			&disp_clk_shift,
-			&disp_clk_mask);
-	if (pool->base.clk_mgr == NULL) {
-		dm_error("DC: failed to create display clock!\n");
-		BREAK_TO_DEBUGGER();
-		goto res_create_fail;
 	}
 
 	pool->base.dmcu = dce_dmcu_create(ctx,
@@ -1022,6 +1062,9 @@ static bool construct(
 	}
 
 	dc->caps.max_planes =  pool->base.pipe_count;
+
+	for (i = 0; i < dc->caps.max_planes; ++i)
+		dc->caps.planes[i] = plane_cap;
 
 	if (!resource_construct(num_virtual_links, dc, &pool->base,
 			&res_create_funcs))

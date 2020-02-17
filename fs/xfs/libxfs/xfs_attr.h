@@ -112,7 +112,13 @@ typedef struct xfs_attr_list_context {
 	struct xfs_inode		*dp;		/* inode */
 	struct attrlist_cursor_kern	*cursor;	/* position in list */
 	char				*alist;		/* output buffer */
-	int				seen_enough;	/* T/F: seen enough of list? */
+
+	/*
+	 * Abort attribute list iteration if non-zero.  Can be used to pass
+	 * error values to the xfs_attr_list caller.
+	 */
+	int				seen_enough;
+
 	ssize_t				count;		/* num used entries */
 	int				dupcnt;		/* count dup hashvals seen */
 	int				bufsize;	/* total buffer size */
@@ -140,7 +146,7 @@ int xfs_attr_get(struct xfs_inode *ip, const unsigned char *name,
 		 unsigned char *value, int *valuelenp, int flags);
 int xfs_attr_set(struct xfs_inode *dp, const unsigned char *name,
 		 unsigned char *value, int valuelen, int flags);
-int xfs_attr_set_args(struct xfs_da_args *args, struct xfs_buf **leaf_bp);
+int xfs_attr_set_args(struct xfs_da_args *args);
 int xfs_attr_remove(struct xfs_inode *dp, const unsigned char *name, int flags);
 int xfs_attr_remove_args(struct xfs_da_args *args);
 int xfs_attr_list(struct xfs_inode *dp, char *buffer, int bufsize,

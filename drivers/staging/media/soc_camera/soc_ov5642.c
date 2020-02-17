@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Driver for OV5642 CMOS Image Sensor from Omnivision
  *
@@ -8,12 +9,7 @@
  *
  * Based on Omnivision OV7670 Camera Driver
  * Copyright (C) 2006-7 Jonathan Corbet <corbet@lwn.net>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
-
 #include <linux/bitops.h>
 #include <linux/delay.h>
 #include <linux/i2c.h>
@@ -691,7 +687,8 @@ static int reg_write16(struct i2c_client *client, u16 reg, u16 val16)
 }
 
 #ifdef CONFIG_VIDEO_ADV_DEBUG
-static int ov5642_get_register(struct v4l2_subdev *sd, struct v4l2_dbg_register *reg)
+static int ov5642_get_register(struct v4l2_subdev *sd,
+			       struct v4l2_dbg_register *reg)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	int ret;
@@ -709,7 +706,8 @@ static int ov5642_get_register(struct v4l2_subdev *sd, struct v4l2_dbg_register 
 	return ret;
 }
 
-static int ov5642_set_register(struct v4l2_subdev *sd, const struct v4l2_dbg_register *reg)
+static int ov5642_set_register(struct v4l2_subdev *sd,
+			       const struct v4l2_dbg_register *reg)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 

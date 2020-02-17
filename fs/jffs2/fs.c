@@ -340,6 +340,7 @@ struct inode *jffs2_iget(struct super_block *sb, unsigned long ino)
 			rdev = old_decode_dev(je16_to_cpu(jdev.old_id));
 		else
 			rdev = new_decode_dev(je32_to_cpu(jdev.new_id));
+		/* fall through */
 
 	case S_IFSOCK:
 	case S_IFIFO:
@@ -686,7 +687,7 @@ unsigned char *jffs2_gc_fetch_page(struct jffs2_sb_info *c,
 	struct page *pg;
 
 	pg = read_cache_page(inode->i_mapping, offset >> PAGE_SHIFT,
-			     (void *)jffs2_do_readpage_unlock, inode);
+			     jffs2_do_readpage_unlock, inode);
 	if (IS_ERR(pg))
 		return (void *)pg;
 

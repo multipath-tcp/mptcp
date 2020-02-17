@@ -711,7 +711,7 @@ static void ext4_es_insert_extent_ind_check(struct inode *inode,
 			 * We don't need to check unwritten extent because
 			 * indirect-based file doesn't have it.
 			 */
-			BUG_ON(1);
+			BUG();
 		}
 	} else if (retval == 0) {
 		if (ext4_es_is_written(es)) {
@@ -780,7 +780,7 @@ static int __es_insert_extent(struct inode *inode, struct extent_status *newes)
 			}
 			p = &(*p)->rb_right;
 		} else {
-			BUG_ON(1);
+			BUG();
 			return -EINVAL;
 		}
 	}
@@ -1317,7 +1317,6 @@ static int es_do_reclaim_extents(struct ext4_inode_info *ei, ext4_lblk_t end,
 	es = __es_tree_search(&tree->root, ei->i_es_shrink_lblk);
 	if (!es)
 		goto out_wrap;
-	node = &es->rb_node;
 	while (*nr_to_scan > 0) {
 		if (es->es_lblk > end) {
 			ei->i_es_shrink_lblk = end + 1;

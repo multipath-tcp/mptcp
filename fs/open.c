@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/fs/open.c
  *
@@ -372,6 +373,25 @@ long do_faccessat(int dfd, const char __user *filename, int mode)
 			override_cred->cap_effective =
 				override_cred->cap_permitted;
 	}
+
+	/*
+	 * The new set of credentials can *only* be used in
+	 * task-synchronous circumstances, and does not need
+	 * RCU freeing, unless somebody then takes a separate
+	 * reference to it.
+	 *
+	 * NOTE! This is _only_ true because this credential
+	 * is used purely for override_creds() that installs
+	 * it as the subjective cred. Other threads will be
+	 * accessing ->real_cred, not the subjective cred.
+	 *
+	 * If somebody _does_ make a copy of this (using the
+	 * 'get_current_cred()' function), that will clear the
+	 * non_rcu field, because now that other user may be
+	 * expecting RCU freeing. But normal thread-synchronous
+	 * cred accesses will keep things non-RCY.
+	 */
+	override_cred->non_rcu = 1;
 
 	old_cred = override_creds(override_cred);
 retry:
@@ -1219,8 +1239,9 @@ EXPORT_SYMBOL(nonseekable_open);
 /*
  * stream_open is used by subsystems that want stream-like file descriptors.
  * Such file descriptors are not seekable and don't have notion of position
- * (file.f_pos is always 0). Contrary to file descriptors of other regular
- * files, .read() and .write() can run simultaneously.
+ * (file.f_pos is always 0 and ppos passed to .read()/.write() is always NULL).
+ * Contrary to file descriptors of other regular files, .read() and .write()
+ * can run simultaneously.
  *
  * stream_open never fails and is marked to return int so that it could be
  * directly used as file_operations.open .

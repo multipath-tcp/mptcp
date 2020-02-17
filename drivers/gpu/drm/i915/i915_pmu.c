@@ -6,9 +6,12 @@
 
 #include <linux/irq.h>
 #include <linux/pm_runtime.h>
-#include "i915_pmu.h"
-#include "intel_ringbuffer.h"
+
+#include "gt/intel_engine.h"
+
 #include "i915_drv.h"
+#include "i915_pmu.h"
+#include "intel_pm.h"
 
 /* Frequency for the sampling timer for events which need it. */
 #define FREQUENCY 200
@@ -102,7 +105,7 @@ static bool pmu_needs_timer(struct drm_i915_private *i915, bool gpu_active)
 	 *
 	 * Use RCS as proxy for all engines.
 	 */
-	else if (intel_engine_supports_stats(i915->engine[RCS]))
+	else if (intel_engine_supports_stats(i915->engine[RCS0]))
 		enable &= ~BIT(I915_SAMPLE_BUSY);
 
 	/*
@@ -149,14 +152,6 @@ void i915_pmu_gt_unparked(struct drm_i915_private *i915)
 	spin_unlock_irq(&i915->pmu.lock);
 }
 
-static bool grab_forcewake(struct drm_i915_private *i915, bool fw)
-{
-	if (!fw)
-		intel_uncore_forcewake_get(i915, FORCEWAKE_ALL);
-
-	return true;
-}
-
 static void
 add_sample(struct i915_pmu_sample *sample, u32 val)
 {
@@ -169,51 +164,50 @@ engines_sample(struct drm_i915_private *dev_priv, unsigned int period_ns)
 	struct intel_engine_cs *engine;
 	enum intel_engine_id id;
 	intel_wakeref_t wakeref;
-	bool fw = false;
+	unsigned long flags;
 
 	if ((dev_priv->pmu.enable & ENGINE_SAMPLE_MASK) == 0)
 		return;
 
-	if (!dev_priv->gt.awake)
-		return;
-
-	wakeref = intel_runtime_pm_get_if_in_use(dev_priv);
+	wakeref = 0;
+	if (READ_ONCE(dev_priv->gt.awake))
+		wakeref = intel_runtime_pm_get_if_in_use(&dev_priv->runtime_pm);
 	if (!wakeref)
 		return;
 
+	spin_lock_irqsave(&dev_priv->uncore.lock, flags);
 	for_each_engine(engine, dev_priv, id) {
-		u32 current_seqno = intel_engine_get_seqno(engine);
-		u32 last_seqno = intel_engine_last_submit(engine);
+		struct intel_engine_pmu *pmu = &engine->pmu;
+		bool busy;
 		u32 val;
 
-		val = !i915_seqno_passed(current_seqno, last_seqno);
-
-		if (val)
-			add_sample(&engine->pmu.sample[I915_SAMPLE_BUSY],
-				   period_ns);
-
-		if (val && (engine->pmu.enable &
-		    (BIT(I915_SAMPLE_WAIT) | BIT(I915_SAMPLE_SEMA)))) {
-			fw = grab_forcewake(dev_priv, fw);
-
-			val = I915_READ_FW(RING_CTL(engine->mmio_base));
-		} else {
-			val = 0;
-		}
+		val = I915_READ_FW(RING_CTL(engine->mmio_base));
+		if (val == 0) /* powerwell off => engine idle */
+			continue;
 
 		if (val & RING_WAIT)
-			add_sample(&engine->pmu.sample[I915_SAMPLE_WAIT],
-				   period_ns);
-
+			add_sample(&pmu->sample[I915_SAMPLE_WAIT], period_ns);
 		if (val & RING_WAIT_SEMAPHORE)
-			add_sample(&engine->pmu.sample[I915_SAMPLE_SEMA],
-				   period_ns);
+			add_sample(&pmu->sample[I915_SAMPLE_SEMA], period_ns);
+
+		/*
+		 * While waiting on a semaphore or event, MI_MODE reports the
+		 * ring as idle. However, previously using the seqno, and with
+		 * execlists sampling, we account for the ring waiting as the
+		 * engine being busy. Therefore, we record the sample as being
+		 * busy if either waiting or !idle.
+		 */
+		busy = val & (RING_WAIT_SEMAPHORE | RING_WAIT);
+		if (!busy) {
+			val = I915_READ_FW(RING_MI_MODE(engine->mmio_base));
+			busy = !(val & MODE_IDLE);
+		}
+		if (busy)
+			add_sample(&pmu->sample[I915_SAMPLE_BUSY], period_ns);
 	}
+	spin_unlock_irqrestore(&dev_priv->uncore.lock, flags);
 
-	if (fw)
-		intel_uncore_forcewake_put(dev_priv, FORCEWAKE_ALL);
-
-	intel_runtime_pm_put(dev_priv, wakeref);
+	intel_runtime_pm_put(&dev_priv->runtime_pm, wakeref);
 }
 
 static void
@@ -233,9 +227,12 @@ frequency_sample(struct drm_i915_private *dev_priv, unsigned int period_ns)
 		if (dev_priv->gt.awake) {
 			intel_wakeref_t wakeref;
 
-			with_intel_runtime_pm_if_in_use(dev_priv, wakeref)
-				val = intel_get_cagf(dev_priv,
-						     I915_READ_NOTRACE(GEN6_RPSTAT1));
+			with_intel_runtime_pm_if_in_use(&dev_priv->runtime_pm,
+							wakeref) {
+				val = intel_uncore_read_notrace(&dev_priv->uncore,
+								GEN6_RPSTAT1);
+				val = intel_get_cagf(dev_priv, val);
+			}
 		}
 
 		add_sample_mult(&dev_priv->pmu.sample[__I915_SAMPLE_FREQ_ACT],
@@ -447,14 +444,15 @@ static u64 __get_rc6(struct drm_i915_private *i915)
 static u64 get_rc6(struct drm_i915_private *i915)
 {
 #if IS_ENABLED(CONFIG_PM)
+	struct intel_runtime_pm *rpm = &i915->runtime_pm;
 	intel_wakeref_t wakeref;
 	unsigned long flags;
 	u64 val;
 
-	wakeref = intel_runtime_pm_get_if_in_use(i915);
+	wakeref = intel_runtime_pm_get_if_in_use(rpm);
 	if (wakeref) {
 		val = __get_rc6(i915);
-		intel_runtime_pm_put(i915, wakeref);
+		intel_runtime_pm_put(rpm, wakeref);
 
 		/*
 		 * If we are coming back from being runtime suspended we must
@@ -473,8 +471,7 @@ static u64 get_rc6(struct drm_i915_private *i915)
 
 		spin_unlock_irqrestore(&i915->pmu.lock, flags);
 	} else {
-		struct pci_dev *pdev = i915->drm.pdev;
-		struct device *kdev = &pdev->dev;
+		struct device *kdev = rpm->kdev;
 
 		/*
 		 * We are runtime suspended.

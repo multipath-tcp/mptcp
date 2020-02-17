@@ -1,13 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Driver for MT9V022 CMOS Image Sensor from Micron
  *
  * Copyright (C) 2008, Guennadi Liakhovetski <kernel@pengutronix.de>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
-
 #include <linux/videodev2.h>
 #include <linux/slab.h>
 #include <linux/i2c.h>
@@ -887,7 +883,7 @@ static int mt9v022_probe(struct i2c_client *client,
 {
 	struct mt9v022 *mt9v022;
 	struct soc_camera_subdev_desc *ssdd = soc_camera_i2c_to_desc(client);
-	struct i2c_adapter *adapter = to_i2c_adapter(client->dev.parent);
+	struct i2c_adapter *adapter = client->adapter;
 	struct mt9v022_platform_data *pdata;
 	int ret;
 

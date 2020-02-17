@@ -65,6 +65,8 @@ static int stmpe_read_voltage(struct stmpe_adc *info,
 
 	mutex_lock(&info->lock);
 
+	reinit_completion(&info->completion);
+
 	info->channel = (u8)chan->channel;
 
 	if (info->channel > STMPE_ADC_LAST_NR) {
@@ -72,23 +74,16 @@ static int stmpe_read_voltage(struct stmpe_adc *info,
 		return -EINVAL;
 	}
 
-	stmpe_reg_write(info->stmpe, STMPE_REG_ADC_INT_EN,
-			STMPE_ADC_CH(info->channel));
-
 	stmpe_reg_write(info->stmpe, STMPE_REG_ADC_CAPT,
 			STMPE_ADC_CH(info->channel));
 
-	*val = info->value;
-
-	ret = wait_for_completion_interruptible_timeout
-		(&info->completion, STMPE_ADC_TIMEOUT);
+	ret = wait_for_completion_timeout(&info->completion, STMPE_ADC_TIMEOUT);
 
 	if (ret <= 0) {
+		stmpe_reg_write(info->stmpe, STMPE_REG_ADC_INT_STA,
+				STMPE_ADC_CH(info->channel));
 		mutex_unlock(&info->lock);
-		if (ret == 0)
-			return -ETIMEDOUT;
-		else
-			return ret;
+		return -ETIMEDOUT;
 	}
 
 	*val = info->value;
@@ -105,6 +100,8 @@ static int stmpe_read_temp(struct stmpe_adc *info,
 
 	mutex_lock(&info->lock);
 
+	reinit_completion(&info->completion);
+
 	info->channel = (u8)chan->channel;
 
 	if (info->channel != STMPE_TEMP_CHANNEL) {
@@ -115,15 +112,11 @@ static int stmpe_read_temp(struct stmpe_adc *info,
 	stmpe_reg_write(info->stmpe, STMPE_REG_TEMP_CTRL,
 			STMPE_START_ONE_TEMP_CONV);
 
-	ret = wait_for_completion_interruptible_timeout
-		(&info->completion, STMPE_ADC_TIMEOUT);
+	ret = wait_for_completion_timeout(&info->completion, STMPE_ADC_TIMEOUT);
 
 	if (ret <= 0) {
 		mutex_unlock(&info->lock);
-		if (ret == 0)
-			return -ETIMEDOUT;
-		else
-			return ret;
+		return -ETIMEDOUT;
 	}
 
 	/*
@@ -184,9 +177,6 @@ static irqreturn_t stmpe_adc_isr(int irq, void *dev_id)
 	struct stmpe_adc *info = (struct stmpe_adc *)dev_id;
 	u16 data;
 
-	if (info->channel > STMPE_TEMP_CHANNEL)
-		return IRQ_NONE;
-
 	if (info->channel <= STMPE_ADC_LAST_NR) {
 		int int_sta;
 
@@ -205,6 +195,8 @@ static irqreturn_t stmpe_adc_isr(int irq, void *dev_id)
 		/* Read value */
 		stmpe_block_read(info->stmpe, STMPE_REG_TEMP_DATA, 2,
 				(u8 *) &data);
+	} else {
+		return IRQ_NONE;
 	}
 
 	info->value = (u32) be16_to_cpu(data);
@@ -332,6 +324,12 @@ static int stmpe_adc_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
+	stmpe_reg_write(info->stmpe, STMPE_REG_ADC_INT_EN,
+			~(norequest_mask & 0xFF));
+
+	stmpe_reg_write(info->stmpe, STMPE_REG_ADC_INT_STA,
+			~(norequest_mask & 0xFF));
+
 	return devm_iio_device_register(&pdev->dev, indio_dev);
 }
 
@@ -354,8 +352,13 @@ static struct platform_driver stmpe_adc_driver = {
 		.pm	= &stmpe_adc_pm_ops,
 	},
 };
-
 module_platform_driver(stmpe_adc_driver);
+
+static const struct of_device_id stmpe_adc_ids[] = {
+	{ .compatible = "st,stmpe-adc", },
+	{ },
+};
+MODULE_DEVICE_TABLE(of, stmpe_adc_ids);
 
 MODULE_AUTHOR("Stefan Agner <stefan.agner@toradex.com>");
 MODULE_DESCRIPTION("STMPEXXX ADC driver");

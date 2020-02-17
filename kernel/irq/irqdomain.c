@@ -123,7 +123,7 @@ EXPORT_SYMBOL_GPL(irq_domain_free_fwnode);
  * @ops: domain callbacks
  * @host_data: Controller private data pointer
  *
- * Allocates and initialize and irq_domain structure.
+ * Allocates and initializes an irq_domain structure.
  * Returns pointer to IRQ domain, or NULL on failure.
  */
 struct irq_domain *__irq_domain_add(struct fwnode_handle *fwnode, int size,
@@ -139,7 +139,7 @@ struct irq_domain *__irq_domain_add(struct fwnode_handle *fwnode, int size,
 
 	domain = kzalloc_node(sizeof(*domain) + (sizeof(unsigned int) * size),
 			      GFP_KERNEL, of_node_to_nid(of_node));
-	if (WARN_ON(!domain))
+	if (!domain)
 		return NULL;
 
 	if (fwnode && is_fwnode_irqchip(fwnode)) {
@@ -1297,7 +1297,7 @@ int irq_domain_alloc_irqs_hierarchy(struct irq_domain *domain,
 /**
  * __irq_domain_alloc_irqs - Allocate IRQs from domain
  * @domain:	domain to allocate from
- * @irq_base:	allocate specified IRQ nubmer if irq_base >= 0
+ * @irq_base:	allocate specified IRQ number if irq_base >= 0
  * @nr_irqs:	number of IRQs to allocate
  * @node:	NUMA node id for memory allocation
  * @arg:	domain specific argument

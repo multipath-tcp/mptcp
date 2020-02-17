@@ -635,7 +635,7 @@ static DEFINE_MUTEX(ipmidriver_mutex);
 
 static LIST_HEAD(ipmi_interfaces);
 static DEFINE_MUTEX(ipmi_interfaces_mutex);
-struct srcu_struct ipmi_interfaces_srcu;
+static struct srcu_struct ipmi_interfaces_srcu;
 
 /*
  * List of watchers that want to know when smi's are added and deleted.
@@ -2819,9 +2819,9 @@ static const struct device_type bmc_device_type = {
 	.groups		= bmc_dev_attr_groups,
 };
 
-static int __find_bmc_guid(struct device *dev, void *data)
+static int __find_bmc_guid(struct device *dev, const void *data)
 {
-	guid_t *guid = data;
+	const guid_t *guid = data;
 	struct bmc_device *bmc;
 	int rv;
 
@@ -2857,9 +2857,9 @@ struct prod_dev_id {
 	unsigned char device_id;
 };
 
-static int __find_bmc_prod_dev_id(struct device *dev, void *data)
+static int __find_bmc_prod_dev_id(struct device *dev, const void *data)
 {
-	struct prod_dev_id *cid = data;
+	const struct prod_dev_id *cid = data;
 	struct bmc_device *bmc;
 	int rv;
 
@@ -5179,7 +5179,7 @@ static void __exit cleanup_ipmi(void)
 		 * avoids problems with race conditions removing the timer
 		 * here.
 		 */
-		atomic_inc(&stop_operation);
+		atomic_set(&stop_operation, 1);
 		del_timer_sync(&ipmi_timer);
 
 		initialized = false;

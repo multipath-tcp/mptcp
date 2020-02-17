@@ -447,8 +447,7 @@ int usnic_ib_query_pkey(struct ib_device *ibdev, u8 port, u16 index,
 	return 0;
 }
 
-int usnic_ib_alloc_pd(struct ib_pd *ibpd, struct ib_ucontext *context,
-		      struct ib_udata *udata)
+int usnic_ib_alloc_pd(struct ib_pd *ibpd, struct ib_udata *udata)
 {
 	struct usnic_ib_pd *pd = to_upd(ibpd);
 	void *umem_pd;
@@ -461,7 +460,7 @@ int usnic_ib_alloc_pd(struct ib_pd *ibpd, struct ib_ucontext *context,
 	return 0;
 }
 
-void usnic_ib_dealloc_pd(struct ib_pd *pd)
+void usnic_ib_dealloc_pd(struct ib_pd *pd, struct ib_udata *udata)
 {
 	usnic_uiom_dealloc_pd((to_upd(pd))->umem_pd);
 }
@@ -539,7 +538,7 @@ out_release_mutex:
 	return ERR_PTR(err);
 }
 
-int usnic_ib_destroy_qp(struct ib_qp *qp)
+int usnic_ib_destroy_qp(struct ib_qp *qp, struct ib_udata *udata)
 {
 	struct usnic_ib_qp_grp *qp_grp;
 	struct usnic_ib_vf *vf;
@@ -588,29 +587,18 @@ out_unlock:
 	return status;
 }
 
-struct ib_cq *usnic_ib_create_cq(struct ib_device *ibdev,
-				 const struct ib_cq_init_attr *attr,
-				 struct ib_ucontext *context,
-				 struct ib_udata *udata)
+int usnic_ib_create_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
+		       struct ib_udata *udata)
 {
-	struct ib_cq *cq;
-
-	usnic_dbg("\n");
 	if (attr->flags)
-		return ERR_PTR(-EINVAL);
+		return -EINVAL;
 
-	cq = kzalloc(sizeof(*cq), GFP_KERNEL);
-	if (!cq)
-		return ERR_PTR(-EBUSY);
-
-	return cq;
+	return 0;
 }
 
-int usnic_ib_destroy_cq(struct ib_cq *cq)
+void usnic_ib_destroy_cq(struct ib_cq *cq, struct ib_udata *udata)
 {
-	usnic_dbg("\n");
-	kfree(cq);
-	return 0;
+	return;
 }
 
 struct ib_mr *usnic_ib_reg_mr(struct ib_pd *pd, u64 start, u64 length,
@@ -642,13 +630,13 @@ err_free:
 	return ERR_PTR(err);
 }
 
-int usnic_ib_dereg_mr(struct ib_mr *ibmr)
+int usnic_ib_dereg_mr(struct ib_mr *ibmr, struct ib_udata *udata)
 {
 	struct usnic_ib_mr *mr = to_umr(ibmr);
 
 	usnic_dbg("va 0x%lx length 0x%zx\n", mr->umem->va, mr->umem->length);
 
-	usnic_uiom_reg_release(mr->umem, ibmr->uobject->context);
+	usnic_uiom_reg_release(mr->umem);
 	kfree(mr);
 	return 0;
 }
@@ -731,4 +719,3 @@ int usnic_ib_mmap(struct ib_ucontext *context,
 	return -EINVAL;
 }
 
-/* End of ib callbacks section */

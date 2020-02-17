@@ -218,6 +218,14 @@ static void dpp1_dscl_set_lb(
 			INTERLEAVE_EN, lb_params->interleave_en, /* Interleave source enable */
 			LB_DATA_FORMAT__ALPHA_EN, lb_params->alpha_en); /* Alpha enable */
 	}
+#if defined(CONFIG_DRM_AMD_DC_DCN2_0)
+	else {
+		/* DSCL caps: pixel data processed in float format */
+		REG_SET_2(LB_DATA_FORMAT, 0,
+			INTERLEAVE_EN, lb_params->interleave_en, /* Interleave source enable */
+			LB_DATA_FORMAT__ALPHA_EN, lb_params->alpha_en); /* Alpha enable */
+	}
+#endif
 
 	REG_SET_2(LB_MEMORY_CTRL, 0,
 		MEMORY_CONFIG, mem_size_config,
@@ -406,15 +414,25 @@ void dpp1_dscl_calc_lb_num_partitions(
 		int *num_part_y,
 		int *num_part_c)
 {
+	int lb_memory_size, lb_memory_size_c, lb_memory_size_a, num_partitions_a,
+	lb_bpc, memory_line_size_y, memory_line_size_c, memory_line_size_a;
+
 	int line_size = scl_data->viewport.width < scl_data->recout.width ?
 			scl_data->viewport.width : scl_data->recout.width;
 	int line_size_c = scl_data->viewport_c.width < scl_data->recout.width ?
 			scl_data->viewport_c.width : scl_data->recout.width;
-	int lb_bpc = dpp1_dscl_get_lb_depth_bpc(scl_data->lb_params.depth);
-	int memory_line_size_y = (line_size * lb_bpc + 71) / 72; /* +71 to ceil */
-	int memory_line_size_c = (line_size_c * lb_bpc + 71) / 72; /* +71 to ceil */
-	int memory_line_size_a = (line_size + 5) / 6; /* +5 to ceil */
-	int lb_memory_size, lb_memory_size_c, lb_memory_size_a, num_partitions_a;
+
+	if (line_size == 0)
+		line_size = 1;
+
+	if (line_size_c == 0)
+		line_size_c = 1;
+
+
+	lb_bpc = dpp1_dscl_get_lb_depth_bpc(scl_data->lb_params.depth);
+	memory_line_size_y = (line_size * lb_bpc + 71) / 72; /* +71 to ceil */
+	memory_line_size_c = (line_size_c * lb_bpc + 71) / 72; /* +71 to ceil */
+	memory_line_size_a = (line_size + 5) / 6; /* +5 to ceil */
 
 	if (lb_config == LB_MEMORY_CONFIG_1) {
 		lb_memory_size = 816;

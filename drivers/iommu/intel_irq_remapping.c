@@ -101,7 +101,7 @@ static void init_ir_status(struct intel_iommu *iommu)
 		iommu->flags |= VTD_FLAG_IRQ_REMAP_PRE_ENABLED;
 }
 
-static int alloc_irte(struct intel_iommu *iommu, int irq,
+static int alloc_irte(struct intel_iommu *iommu,
 		      struct irq_2_iommu *irq_iommu, u16 count)
 {
 	struct ir_table *table = iommu->ir_table;
@@ -424,7 +424,7 @@ static int set_msi_sid(struct irte *irte, struct pci_dev *dev)
 		set_irte_sid(irte, SVT_VERIFY_SID_SQ, SQ_ALL_16, data.alias);
 	else
 		set_irte_sid(irte, SVT_VERIFY_SID_SQ, SQ_ALL_16,
-			     PCI_DEVID(dev->bus->number, dev->devfn));
+			     pci_dev_id(dev));
 
 	return 0;
 }
@@ -548,8 +548,7 @@ static int intel_setup_irq_remapping(struct intel_iommu *iommu)
 		goto out_free_table;
 	}
 
-	bitmap = kcalloc(BITS_TO_LONGS(INTR_REMAP_TABLE_ENTRIES),
-			 sizeof(long), GFP_ATOMIC);
+	bitmap = bitmap_zalloc(INTR_REMAP_TABLE_ENTRIES, GFP_ATOMIC);
 	if (bitmap == NULL) {
 		pr_err("IR%d: failed to allocate bitmap\n", iommu->seq_id);
 		goto out_free_pages;
@@ -616,7 +615,7 @@ static int intel_setup_irq_remapping(struct intel_iommu *iommu)
 	return 0;
 
 out_free_bitmap:
-	kfree(bitmap);
+	bitmap_free(bitmap);
 out_free_pages:
 	__free_pages(pages, INTR_REMAP_PAGE_ORDER);
 out_free_table:
@@ -640,7 +639,7 @@ static void intel_teardown_irq_remapping(struct intel_iommu *iommu)
 		}
 		free_pages((unsigned long)iommu->ir_table->base,
 			   INTR_REMAP_PAGE_ORDER);
-		kfree(iommu->ir_table->bitmap);
+		bitmap_free(iommu->ir_table->bitmap);
 		kfree(iommu->ir_table);
 		iommu->ir_table = NULL;
 	}
@@ -1375,7 +1374,7 @@ static int intel_irq_remapping_alloc(struct irq_domain *domain,
 		goto out_free_parent;
 
 	down_read(&dmar_global_lock);
-	index = alloc_irte(iommu, virq, &data->irq_2_iommu, nr_irqs);
+	index = alloc_irte(iommu, &data->irq_2_iommu, nr_irqs);
 	up_read(&dmar_global_lock);
 	if (index < 0) {
 		pr_warn("Failed to allocate IRTE\n");

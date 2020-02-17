@@ -907,7 +907,8 @@ struct qed_common_ops {
 
 	u32		(*sb_release)(struct qed_dev *cdev,
 				      struct qed_sb_info *sb_info,
-				      u16 sb_id);
+				      u16 sb_id,
+				      enum qed_sb_type type);
 
 	void		(*simd_handler_config)(struct qed_dev *cdev,
 					       void *token,
@@ -1123,6 +1124,13 @@ struct qed_common_ops {
  */
 	int (*read_module_eeprom)(struct qed_dev *cdev,
 				  char *buf, u8 dev_addr, u32 offset, u32 len);
+
+/**
+ * @brief get_affin_hwfn_idx
+ *
+ * @param cdev
+ */
+	u8 (*get_affin_hwfn_idx)(struct qed_dev *cdev);
 };
 
 #define MASK_FIELD(_name, _value) \
@@ -1338,7 +1346,6 @@ static inline u16 qed_sb_update_sb_idx(struct qed_sb_info *sb_info)
 	}
 
 	/* Let SB update */
-	mmiowb();
 	return rc;
 }
 
@@ -1374,7 +1381,6 @@ static inline void qed_sb_ack(struct qed_sb_info *sb_info,
 	/* Both segments (interrupts & acks) are written to same place address;
 	 * Need to guarantee all commands will be received (in-order) by HW.
 	 */
-	mmiowb();
 	barrier();
 }
 

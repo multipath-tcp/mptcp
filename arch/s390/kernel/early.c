@@ -138,9 +138,9 @@ static void early_pgm_check_handler(void)
 	unsigned long addr;
 
 	addr = S390_lowcore.program_old_psw.addr;
-	fixup = search_exception_tables(addr);
+	fixup = s390_search_extables(addr);
 	if (!fixup)
-		disabled_wait(0);
+		disabled_wait();
 	/* Disable low address protection before storing into lowcore. */
 	__ctl_store(cr0, 0, 0);
 	cr0_new = cr0 & ~(1UL << 28);
@@ -296,7 +296,7 @@ static void __init check_image_bootable(void)
 	sclp_early_printk("Linux kernel boot failure: An attempt to boot a vmlinux ELF image failed.\n");
 	sclp_early_printk("This image does not contain all parts necessary for starting up. Use\n");
 	sclp_early_printk("bzImage or arch/s390/boot/compressed/vmlinux instead.\n");
-	disabled_wait(0xbadb007);
+	disabled_wait();
 }
 
 void __init startup_init(void)
@@ -309,7 +309,6 @@ void __init startup_init(void)
 	setup_facility_list();
 	detect_machine_type();
 	setup_arch_string();
-	ipl_store_parameters();
 	setup_boot_command_line();
 	detect_diag9c();
 	detect_diag44();

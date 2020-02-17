@@ -71,8 +71,8 @@ struct rxe_pd {
 };
 
 struct rxe_ah {
-	struct rxe_pool_entry	pelem;
 	struct ib_ah		ibah;
+	struct rxe_pool_entry	pelem;
 	struct rxe_pd		*pd;
 	struct rxe_av		av;
 };
@@ -85,8 +85,8 @@ struct rxe_cqe {
 };
 
 struct rxe_cq {
-	struct rxe_pool_entry	pelem;
 	struct ib_cq		ibcq;
+	struct rxe_pool_entry	pelem;
 	struct rxe_queue	*queue;
 	spinlock_t		cq_lock;
 	u8			notify;
@@ -120,8 +120,8 @@ struct rxe_rq {
 };
 
 struct rxe_srq {
-	struct rxe_pool_entry	pelem;
 	struct ib_srq		ibsrq;
+	struct rxe_pool_entry	pelem;
 	struct rxe_pd		*pd;
 	struct rxe_rq		rq;
 	u32			srq_num;
@@ -213,6 +213,7 @@ struct rxe_resp_info {
 	struct rxe_mem		*mr;
 	u32			resid;
 	u32			rkey;
+	u32			length;
 	u64			atomic_orig;
 
 	/* SRQ only */

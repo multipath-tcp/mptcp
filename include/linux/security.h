@@ -51,6 +51,7 @@ struct fown_struct;
 struct file_operations;
 struct msg_msg;
 struct xattr;
+struct kernfs_node;
 struct xfrm_sec_ctx;
 struct mm_struct;
 struct fs_context;
@@ -188,9 +189,9 @@ static inline const char *kernel_load_data_id_str(enum kernel_load_data_id id)
 
 #ifdef CONFIG_SECURITY
 
-int call_lsm_notifier(enum lsm_event event, void *data);
-int register_lsm_notifier(struct notifier_block *nb);
-int unregister_lsm_notifier(struct notifier_block *nb);
+int call_blocking_lsm_notifier(enum lsm_event event, void *data);
+int register_blocking_lsm_notifier(struct notifier_block *nb);
+int unregister_blocking_lsm_notifier(struct notifier_block *nb);
 
 /* prototypes */
 extern int security_init(void);
@@ -250,6 +251,7 @@ int security_sb_clone_mnt_opts(const struct super_block *oldsb,
 				unsigned long *set_kern_flags);
 int security_add_mnt_opt(const char *option, const char *val,
 				int len, void **mnt_opts);
+int security_move_mount(const struct path *from_path, const struct path *to_path);
 int security_dentry_init_security(struct dentry *dentry, int mode,
 					const struct qstr *name, void **ctx,
 					u32 *ctxlen);
@@ -299,6 +301,8 @@ int security_inode_listsecurity(struct inode *inode, char *buffer, size_t buffer
 void security_inode_getsecid(struct inode *inode, u32 *secid);
 int security_inode_copy_up(struct dentry *src, struct cred **new);
 int security_inode_copy_up_xattr(const char *name);
+int security_kernfs_init_security(struct kernfs_node *kn_dir,
+				  struct kernfs_node *kn);
 int security_file_permission(struct file *file, int mask);
 int security_file_alloc(struct file *file);
 void security_file_free(struct file *file);
@@ -390,17 +394,17 @@ int security_inode_setsecctx(struct dentry *dentry, void *ctx, u32 ctxlen);
 int security_inode_getsecctx(struct inode *inode, void **ctx, u32 *ctxlen);
 #else /* CONFIG_SECURITY */
 
-static inline int call_lsm_notifier(enum lsm_event event, void *data)
+static inline int call_blocking_lsm_notifier(enum lsm_event event, void *data)
 {
 	return 0;
 }
 
-static inline int register_lsm_notifier(struct notifier_block *nb)
+static inline int register_blocking_lsm_notifier(struct notifier_block *nb)
 {
 	return 0;
 }
 
-static inline  int unregister_lsm_notifier(struct notifier_block *nb)
+static inline  int unregister_blocking_lsm_notifier(struct notifier_block *nb)
 {
 	return 0;
 }
@@ -611,6 +615,12 @@ static inline int security_add_mnt_opt(const char *option, const char *val,
 	return 0;
 }
 
+static inline int security_move_mount(const struct path *from_path,
+				      const struct path *to_path)
+{
+	return 0;
+}
+
 static inline int security_inode_alloc(struct inode *inode)
 {
 	return 0;
@@ -797,6 +807,12 @@ static inline void security_inode_getsecid(struct inode *inode, u32 *secid)
 }
 
 static inline int security_inode_copy_up(struct dentry *src, struct cred **new)
+{
+	return 0;
+}
+
+static inline int security_kernfs_init_security(struct kernfs_node *kn_dir,
+						struct kernfs_node *kn)
 {
 	return 0;
 }

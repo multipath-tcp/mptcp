@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0
  *
- * Copyright 2016-2018 HabanaLabs, Ltd.
+ * Copyright 2016-2019 HabanaLabs, Ltd.
  * All Rights Reserved.
  *
  */
@@ -12,6 +12,7 @@
 #include "stlb_regs.h"
 #include "mmu_regs.h"
 #include "pcie_aux_regs.h"
+#include "pcie_wrap_regs.h"
 #include "psoc_global_conf_regs.h"
 #include "psoc_spi_regs.h"
 #include "psoc_mme_pll_regs.h"
@@ -87,6 +88,7 @@
 #include "psoc_global_conf_masks.h"
 #include "dma_macro_masks.h"
 #include "dma_qm_0_masks.h"
+#include "dma_ch_0_masks.h"
 #include "tpc0_qm_masks.h"
 #include "tpc0_cmdq_masks.h"
 #include "mme_qm_masks.h"

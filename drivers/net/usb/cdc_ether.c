@@ -1,20 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * CDC Ethernet based networking peripherals
  * Copyright (C) 2003-2005 by David Brownell
  * Copyright (C) 2006 by Ole Andre Vadla Ravnas (ActiveSync)
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 // #define	DEBUG			// error path messages, extra info
@@ -218,7 +206,15 @@ int usbnet_generic_cdc_bind(struct usbnet *dev, struct usb_interface *intf)
 		goto bad_desc;
 	}
 skip:
-	if (rndis && header.usb_cdc_acm_descriptor &&
+	/* Communcation class functions with bmCapabilities are not
+	 * RNDIS.  But some Wireless class RNDIS functions use
+	 * bmCapabilities for their own purpose. The failsafe is
+	 * therefore applied only to Communication class RNDIS
+	 * functions.  The rndis test is redundant, but a cheap
+	 * optimization.
+	 */
+	if (rndis && is_rndis(&intf->cur_altsetting->desc) &&
+	    header.usb_cdc_acm_descriptor &&
 	    header.usb_cdc_acm_descriptor->bmCapabilities) {
 		dev_dbg(&intf->dev,
 			"ACM capabilities %02x, not really RNDIS?\n",

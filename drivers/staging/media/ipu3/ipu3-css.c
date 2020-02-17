@@ -3,6 +3,7 @@
 
 #include <linux/device.h>
 #include <linux/iopoll.h>
+#include <linux/slab.h>
 
 #include "ipu3-css.h"
 #include "ipu3-css-fw.h"
@@ -23,9 +24,8 @@
 #define IPU3_CSS_MAX_H		3136
 #define IPU3_CSS_MAX_W		4224
 
-/* filter size from graph settings is fixed as 4 */
-#define FILTER_SIZE             4
-#define MIN_ENVELOPE            8
+/* minimal envelope size(GDC in - out) should be 4 */
+#define MIN_ENVELOPE            4
 
 /*
  * pre-allocated buffer size for CSS ABI, auxiliary frames
@@ -1744,14 +1744,17 @@ int imgu_css_fmt_try(struct imgu_css *css,
 	struct v4l2_rect *const bds = &r[IPU3_CSS_RECT_BDS];
 	struct v4l2_rect *const env = &r[IPU3_CSS_RECT_ENVELOPE];
 	struct v4l2_rect *const gdc = &r[IPU3_CSS_RECT_GDC];
-	struct imgu_css_queue q[IPU3_CSS_QUEUES];
-	struct v4l2_pix_format_mplane *const in =
-					&q[IPU3_CSS_QUEUE_IN].fmt.mpix;
-	struct v4l2_pix_format_mplane *const out =
-					&q[IPU3_CSS_QUEUE_OUT].fmt.mpix;
-	struct v4l2_pix_format_mplane *const vf =
-					&q[IPU3_CSS_QUEUE_VF].fmt.mpix;
+	struct imgu_css_queue *q;
+	struct v4l2_pix_format_mplane *in, *out, *vf;
 	int i, s, ret;
+
+	q = kcalloc(IPU3_CSS_QUEUES, sizeof(struct imgu_css_queue), GFP_KERNEL);
+	if (!q)
+		return -ENOMEM;
+
+	in  = &q[IPU3_CSS_QUEUE_IN].fmt.mpix;
+	out = &q[IPU3_CSS_QUEUE_OUT].fmt.mpix;
+	vf  = &q[IPU3_CSS_QUEUE_VF].fmt.mpix;
 
 	/* Adjust all formats, get statistics buffer sizes and formats */
 	for (i = 0; i < IPU3_CSS_QUEUES; i++) {
@@ -1766,7 +1769,8 @@ int imgu_css_fmt_try(struct imgu_css *css,
 					IPU3_CSS_QUEUE_TO_FLAGS(i))) {
 			dev_notice(css->dev, "can not initialize queue %s\n",
 				   qnames[i]);
-			return -EINVAL;
+			ret = -EINVAL;
+			goto out;
 		}
 	}
 	for (i = 0; i < IPU3_CSS_RECTS; i++) {
@@ -1788,7 +1792,8 @@ int imgu_css_fmt_try(struct imgu_css *css,
 	if (!imgu_css_queue_enabled(&q[IPU3_CSS_QUEUE_IN]) ||
 	    !imgu_css_queue_enabled(&q[IPU3_CSS_QUEUE_OUT])) {
 		dev_warn(css->dev, "required queues are disabled\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto out;
 	}
 
 	if (!imgu_css_queue_enabled(&q[IPU3_CSS_QUEUE_OUT])) {
@@ -1821,15 +1826,16 @@ int imgu_css_fmt_try(struct imgu_css *css,
 	vf->width   = imgu_css_adjust(vf->width, VF_ALIGN_W);
 	vf->height  = imgu_css_adjust(vf->height, 1);
 
-	s = (bds->width - gdc->width) / 2 - FILTER_SIZE;
+	s = (bds->width - gdc->width) / 2;
 	env->width = s < MIN_ENVELOPE ? MIN_ENVELOPE : s;
-	s = (bds->height - gdc->height) / 2 - FILTER_SIZE;
+	s = (bds->height - gdc->height) / 2;
 	env->height = s < MIN_ENVELOPE ? MIN_ENVELOPE : s;
 
 	ret = imgu_css_find_binary(css, pipe, q, r);
 	if (ret < 0) {
 		dev_err(css->dev, "failed to find suitable binary\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto out;
 	}
 	css->pipes[pipe].bindex = ret;
 
@@ -1843,7 +1849,8 @@ int imgu_css_fmt_try(struct imgu_css *css,
 						IPU3_CSS_QUEUE_TO_FLAGS(i))) {
 				dev_err(css->dev,
 					"final resolution adjustment failed\n");
-				return -EINVAL;
+				ret = -EINVAL;
+				goto out;
 			}
 			*fmts[i] = q[i].fmt.mpix;
 		}
@@ -1859,7 +1866,10 @@ int imgu_css_fmt_try(struct imgu_css *css,
 		 bds->width, bds->height, gdc->width, gdc->height,
 		 out->width, out->height, vf->width, vf->height);
 
-	return 0;
+	ret = 0;
+out:
+	kfree(q);
+	return ret;
 }
 
 int imgu_css_fmt_set(struct imgu_css *css,
@@ -2160,11 +2170,6 @@ int imgu_css_set_parameters(struct imgu_css *css, unsigned int pipe,
 	obgrid_size = imgu_css_fw_obgrid_size(bi);
 	stripes = bi->info.isp.sp.iterator.num_stripes ? : 1;
 
-	/*
-	 * TODO(b/118782861): If userspace queues more than 4 buffers, the
-	 * parameters from previous buffers will be overwritten. Fix the driver
-	 * not to allow this.
-	 */
 	imgu_css_pool_get(&css_pipe->pool.parameter_set_info);
 	param_set = imgu_css_pool_last(&css_pipe->pool.parameter_set_info,
 				       0)->vaddr;
@@ -2245,9 +2250,8 @@ int imgu_css_set_parameters(struct imgu_css *css, unsigned int pipe,
 				css_pipe->aux_frames[a].height,
 				css_pipe->rect[g].width,
 				css_pipe->rect[g].height,
-				css_pipe->rect[e].width + FILTER_SIZE,
-				css_pipe->rect[e].height +
-				FILTER_SIZE);
+				css_pipe->rect[e].width,
+				css_pipe->rect[e].height);
 		}
 	}
 

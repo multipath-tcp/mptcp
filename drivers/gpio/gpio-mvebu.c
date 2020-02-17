@@ -38,6 +38,7 @@
 #include <linux/err.h>
 #include <linux/gpio/driver.h>
 #include <linux/gpio/consumer.h>
+#include <linux/gpio/machine.h>
 #include <linux/init.h>
 #include <linux/io.h>
 #include <linux/irq.h>
@@ -618,15 +619,11 @@ static int mvebu_pwm_request(struct pwm_chip *chip, struct pwm_device *pwm)
 		ret = -EBUSY;
 	} else {
 		desc = gpiochip_request_own_desc(&mvchip->chip,
-						 pwm->hwpwm, "mvebu-pwm", 0);
+						 pwm->hwpwm, "mvebu-pwm",
+						 GPIO_ACTIVE_HIGH,
+						 GPIOD_OUT_LOW);
 		if (IS_ERR(desc)) {
 			ret = PTR_ERR(desc);
-			goto out;
-		}
-
-		ret = gpiod_direction_output(desc, 0);
-		if (ret) {
-			gpiochip_free_own_desc(desc);
 			goto out;
 		}
 
@@ -1038,11 +1035,9 @@ static const struct regmap_config mvebu_gpio_regmap_config = {
 static int mvebu_gpio_probe_raw(struct platform_device *pdev,
 				struct mvebu_gpio_chip *mvchip)
 {
-	struct resource *res;
 	void __iomem *base;
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	base = devm_ioremap_resource(&pdev->dev, res);
+	base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(base))
 		return PTR_ERR(base);
 
@@ -1062,8 +1057,7 @@ static int mvebu_gpio_probe_raw(struct platform_device *pdev,
 	 * per-CPU registers
 	 */
 	if (mvchip->soc_variant == MVEBU_GPIO_SOC_VARIANT_ARMADAXP) {
-		res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
-		base = devm_ioremap_resource(&pdev->dev, res);
+		base = devm_platform_ioremap_resource(pdev, 1);
 		if (IS_ERR(base))
 			return PTR_ERR(base);
 

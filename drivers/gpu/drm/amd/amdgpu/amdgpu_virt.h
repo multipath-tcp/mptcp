@@ -48,6 +48,12 @@ struct amdgpu_vf_error_buffer {
 	uint64_t data[AMDGPU_VF_ERROR_ENTRY_SIZE];
 };
 
+/* According to the fw feature, some new reg access modes are supported */
+#define AMDGPU_VIRT_REG_ACCESS_LEGACY          (1 << 0) /* directly mmio */
+#define AMDGPU_VIRT_REG_ACCESS_PSP_PRG_IH      (1 << 1) /* by PSP */
+#define AMDGPU_VIRT_REG_ACCESS_RLC             (1 << 2) /* by RLC */
+#define AMDGPU_VIRT_REG_SKIP_SEETING           (1 << 3) /* Skip setting reg */
+
 /**
  * struct amdgpu_virt_ops - amdgpu device virt operations
  */
@@ -57,6 +63,9 @@ struct amdgpu_virt_ops {
 	int (*reset_gpu)(struct amdgpu_device *adev);
 	int (*wait_reset)(struct amdgpu_device *adev);
 	void (*trans_msg)(struct amdgpu_device *adev, u32 req, u32 data1, u32 data2, u32 data3);
+	int (*get_pp_clk)(struct amdgpu_device *adev, u32 type, char *buf);
+	int (*force_dpm_level)(struct amdgpu_device *adev, u32 level);
+	void (*init_reg_access_mode)(struct amdgpu_device *adev);
 };
 
 /*
@@ -83,6 +92,8 @@ enum AMDGIM_FEATURE_FLAG {
 	AMDGIM_FEATURE_GIM_LOAD_UCODES   = 0x2,
 	/* VRAM LOST by GIM */
 	AMDGIM_FEATURE_GIM_FLR_VRAMLOST = 0x4,
+	/* HW PERF SIM in GIM */
+	AMDGIM_FEATURE_HW_PERF_SIMULATION = (1 << 3),
 };
 
 struct amd_sriov_msg_pf2vf_info_header {
@@ -242,6 +253,7 @@ typedef struct amdgim_vf2pf_info_v2 amdgim_vf2pf_info ;
 struct amdgpu_virt {
 	uint32_t			caps;
 	struct amdgpu_bo		*csa_obj;
+	void				*csa_cpu_addr;
 	bool chained_ib_support;
 	uint32_t			reg_val_offs;
 	struct amdgpu_irq_src		ack_irq;
@@ -252,6 +264,9 @@ struct amdgpu_virt {
 	struct amdgpu_vf_error_buffer   vf_errors;
 	struct amdgpu_virt_fw_reserve	fw_reserve;
 	uint32_t gim_feature;
+	/* protect DPM events to GIM */
+	struct mutex                    dpm_mutex;
+	uint32_t reg_access_mode;
 };
 
 #define amdgpu_sriov_enabled(adev) \
@@ -278,6 +293,9 @@ static inline bool is_virtual_machine(void)
 #endif
 }
 
+#define amdgim_is_hwperf(adev) \
+	((adev)->virt.gim_feature & AMDGIM_FEATURE_HW_PERF_SIMULATION)
+
 bool amdgpu_virt_mmio_blocked(struct amdgpu_device *adev);
 void amdgpu_virt_init_setting(struct amdgpu_device *adev);
 uint32_t amdgpu_virt_kiq_rreg(struct amdgpu_device *adev, uint32_t reg);
@@ -295,5 +313,12 @@ int amdgpu_virt_fw_reserve_get_checksum(void *obj, unsigned long obj_size,
 					unsigned int key,
 					unsigned int chksum);
 void amdgpu_virt_init_data_exchange(struct amdgpu_device *adev);
+uint32_t amdgpu_virt_get_sclk(struct amdgpu_device *adev, bool lowest);
+uint32_t amdgpu_virt_get_mclk(struct amdgpu_device *adev, bool lowest);
+
+void amdgpu_virt_init_reg_access_mode(struct amdgpu_device *adev);
+bool amdgpu_virt_support_psp_prg_ih_reg(struct amdgpu_device *adev);
+bool amdgpu_virt_support_rlc_prg_reg(struct amdgpu_device *adev);
+bool amdgpu_virt_support_skip_setting(struct amdgpu_device *adev);
 
 #endif

@@ -5,11 +5,14 @@
  * All Rights Reserved.
  */
 
+#define pr_fmt(fmt)			"habanalabs: " fmt
+
 #include "habanalabs.h"
 
 #include <linux/pci.h>
 #include <linux/sched/signal.h>
 #include <linux/hwmon.h>
+#include <uapi/misc/habanalabs.h>
 
 #define HL_PLDM_PENDING_RESET_PER_SEC	(HL_PENDING_RESET_PER_SEC * 10)
 
@@ -20,6 +23,20 @@ bool hl_device_disabled_or_in_reset(struct hl_device *hdev)
 	else
 		return false;
 }
+
+enum hl_device_status hl_device_status(struct hl_device *hdev)
+{
+	enum hl_device_status status;
+
+	if (hdev->disabled)
+		status = HL_DEVICE_STATUS_MALFUNCTION;
+	else if (atomic_read(&hdev->in_reset))
+		status = HL_DEVICE_STATUS_IN_RESET;
+	else
+		status = HL_DEVICE_STATUS_OPERATIONAL;
+
+	return status;
+};
 
 static void hpriv_release(struct kref *ref)
 {
@@ -214,6 +231,8 @@ static int device_early_init(struct hl_device *hdev)
 
 	mutex_init(&hdev->fd_open_cnt_lock);
 	mutex_init(&hdev->send_cpu_message_lock);
+	mutex_init(&hdev->debug_lock);
+	mutex_init(&hdev->mmu_cache_lock);
 	INIT_LIST_HEAD(&hdev->hw_queues_mirror_list);
 	spin_lock_init(&hdev->hw_queues_mirror_lock);
 	atomic_set(&hdev->in_reset, 0);
@@ -243,6 +262,8 @@ early_fini:
  */
 static void device_early_fini(struct hl_device *hdev)
 {
+	mutex_destroy(&hdev->mmu_cache_lock);
+	mutex_destroy(&hdev->debug_lock);
 	mutex_destroy(&hdev->send_cpu_message_lock);
 
 	hl_cb_mgr_fini(hdev, &hdev->kernel_cb_mgr);
@@ -305,7 +326,15 @@ static int device_late_init(struct hl_device *hdev)
 {
 	int rc;
 
-	INIT_DELAYED_WORK(&hdev->work_freq, set_freq_to_low_job);
+	if (hdev->asic_funcs->late_init) {
+		rc = hdev->asic_funcs->late_init(hdev);
+		if (rc) {
+			dev_err(hdev->dev,
+				"failed late initialization for the H/W\n");
+			return rc;
+		}
+	}
+
 	hdev->high_pll = hdev->asic_prop.high_pll;
 
 	/* force setting to low frequency */
@@ -316,17 +345,9 @@ static int device_late_init(struct hl_device *hdev)
 	else
 		hdev->asic_funcs->set_pll_profile(hdev, PLL_LAST);
 
-	if (hdev->asic_funcs->late_init) {
-		rc = hdev->asic_funcs->late_init(hdev);
-		if (rc) {
-			dev_err(hdev->dev,
-				"failed late initialization for the H/W\n");
-			return rc;
-		}
-	}
-
+	INIT_DELAYED_WORK(&hdev->work_freq, set_freq_to_low_job);
 	schedule_delayed_work(&hdev->work_freq,
-			usecs_to_jiffies(HL_PLL_LOW_JOB_FREQ_USEC));
+	usecs_to_jiffies(HL_PLL_LOW_JOB_FREQ_USEC));
 
 	if (hdev->heartbeat) {
 		INIT_DELAYED_WORK(&hdev->work_heartbeat, hl_device_heartbeat);
@@ -399,6 +420,52 @@ int hl_device_set_frequency(struct hl_device *hdev, enum hl_pll_frequency freq)
 	hdev->asic_funcs->set_pll_profile(hdev, freq);
 
 	return 1;
+}
+
+int hl_device_set_debug_mode(struct hl_device *hdev, bool enable)
+{
+	int rc = 0;
+
+	mutex_lock(&hdev->debug_lock);
+
+	if (!enable) {
+		if (!hdev->in_debug) {
+			dev_err(hdev->dev,
+				"Failed to disable debug mode because device was not in debug mode\n");
+			rc = -EFAULT;
+			goto out;
+		}
+
+		hdev->asic_funcs->halt_coresight(hdev);
+		hdev->in_debug = 0;
+
+		goto out;
+	}
+
+	if (hdev->in_debug) {
+		dev_err(hdev->dev,
+			"Failed to enable debug mode because device is already in debug mode\n");
+		rc = -EFAULT;
+		goto out;
+	}
+
+	mutex_lock(&hdev->fd_open_cnt_lock);
+
+	if (atomic_read(&hdev->fd_open_cnt) > 1) {
+		dev_err(hdev->dev,
+			"Failed to enable debug mode. More then a single user is using the device\n");
+		rc = -EPERM;
+		goto unlock_fd_open_lock;
+	}
+
+	hdev->in_debug = 1;
+
+unlock_fd_open_lock:
+	mutex_unlock(&hdev->fd_open_cnt_lock);
+out:
+	mutex_unlock(&hdev->debug_lock);
+
+	return rc;
 }
 
 /*
@@ -498,11 +565,8 @@ disable_device:
 	return rc;
 }
 
-static void hl_device_hard_reset_pending(struct work_struct *work)
+static void device_kill_open_processes(struct hl_device *hdev)
 {
-	struct hl_device_reset_work *device_reset_work =
-		container_of(work, struct hl_device_reset_work, reset_work);
-	struct hl_device *hdev = device_reset_work->hdev;
 	u16 pending_total, pending_cnt;
 	struct task_struct *task = NULL;
 
@@ -537,6 +601,12 @@ static void hl_device_hard_reset_pending(struct work_struct *work)
 		}
 	}
 
+	/* We killed the open users, but because the driver cleans up after the
+	 * user contexts are closed (e.g. mmu mappings), we need to wait again
+	 * to make sure the cleaning phase is finished before continuing with
+	 * the reset
+	 */
+
 	pending_cnt = pending_total;
 
 	while ((atomic_read(&hdev->fd_open_cnt)) && (pending_cnt)) {
@@ -551,6 +621,16 @@ static void hl_device_hard_reset_pending(struct work_struct *work)
 			"Going to hard reset with open user contexts\n");
 
 	mutex_unlock(&hdev->fd_open_cnt_lock);
+
+}
+
+static void device_hard_reset_pending(struct work_struct *work)
+{
+	struct hl_device_reset_work *device_reset_work =
+		container_of(work, struct hl_device_reset_work, reset_work);
+	struct hl_device *hdev = device_reset_work->hdev;
+
+	device_kill_open_processes(hdev);
 
 	hl_device_reset(hdev, true, true);
 
@@ -613,13 +693,6 @@ again:
 	if ((hard_reset) && (!from_hard_reset_thread)) {
 		struct hl_device_reset_work *device_reset_work;
 
-		if (!hdev->pdev) {
-			dev_err(hdev->dev,
-				"Reset action is NOT supported in simulator\n");
-			rc = -EINVAL;
-			goto out_err;
-		}
-
 		hdev->hard_reset_pending = true;
 
 		device_reset_work = kzalloc(sizeof(*device_reset_work),
@@ -635,7 +708,7 @@ again:
 		 * from a dedicated work
 		 */
 		INIT_WORK(&device_reset_work->reset_work,
-				hl_device_hard_reset_pending);
+				device_hard_reset_pending);
 		device_reset_work->hdev = hdev;
 		schedule_work(&device_reset_work->reset_work);
 
@@ -663,23 +736,16 @@ again:
 	/* Go over all the queues, release all CS and their jobs */
 	hl_cs_rollback_all(hdev);
 
-	if (hard_reset) {
-		/* Release kernel context */
-		if (hl_ctx_put(hdev->kernel_ctx) != 1) {
-			dev_err(hdev->dev,
-				"kernel ctx is alive during hard reset\n");
-			rc = -EBUSY;
-			goto out_err;
-		}
-
+	/* Release kernel context */
+	if ((hard_reset) && (hl_ctx_put(hdev->kernel_ctx) == 1))
 		hdev->kernel_ctx = NULL;
-	}
 
 	/* Reset the H/W. It will be in idle state after this returns */
 	hdev->asic_funcs->hw_fini(hdev, hard_reset);
 
 	if (hard_reset) {
 		hl_vm_fini(hdev);
+		hl_mmu_fini(hdev);
 		hl_eq_reset(hdev, &hdev->event_queue);
 	}
 
@@ -688,16 +754,31 @@ again:
 	for (i = 0 ; i < hdev->asic_prop.completion_queues_count ; i++)
 		hl_cq_reset(hdev, &hdev->completion_queue[i]);
 
-	/* Make sure the setup phase for the user context will run again */
+	/* Make sure the context switch phase will run again */
 	if (hdev->user_ctx) {
-		atomic_set(&hdev->user_ctx->thread_restore_token, 1);
-		hdev->user_ctx->thread_restore_wait_token = 0;
+		atomic_set(&hdev->user_ctx->thread_ctx_switch_token, 1);
+		hdev->user_ctx->thread_ctx_switch_wait_token = 0;
 	}
 
 	/* Finished tear-down, starting to re-initialize */
 
 	if (hard_reset) {
 		hdev->device_cpu_disabled = false;
+		hdev->hard_reset_pending = false;
+
+		if (hdev->kernel_ctx) {
+			dev_crit(hdev->dev,
+				"kernel ctx was alive during hard reset, something is terribly wrong\n");
+			rc = -EBUSY;
+			goto out_err;
+		}
+
+		rc = hl_mmu_init(hdev);
+		if (rc) {
+			dev_err(hdev->dev,
+				"Failed to initialize MMU S/W after hard reset\n");
+			goto out_err;
+		}
 
 		/* Allocate the kernel context */
 		hdev->kernel_ctx = kzalloc(sizeof(*hdev->kernel_ctx),
@@ -752,8 +833,6 @@ again:
 		}
 
 		hl_set_max_power(hdev, hdev->max_power);
-
-		hdev->hard_reset_pending = false;
 	} else {
 		rc = hdev->asic_funcs->soft_reset_late_init(hdev);
 		if (rc) {
@@ -872,11 +951,18 @@ int hl_device_init(struct hl_device *hdev, struct class *hclass)
 		goto cq_fini;
 	}
 
+	/* MMU S/W must be initialized before kernel context is created */
+	rc = hl_mmu_init(hdev);
+	if (rc) {
+		dev_err(hdev->dev, "Failed to initialize MMU S/W structures\n");
+		goto eq_fini;
+	}
+
 	/* Allocate the kernel context */
 	hdev->kernel_ctx = kzalloc(sizeof(*hdev->kernel_ctx), GFP_KERNEL);
 	if (!hdev->kernel_ctx) {
 		rc = -ENOMEM;
-		goto eq_fini;
+		goto mmu_fini;
 	}
 
 	hdev->user_ctx = NULL;
@@ -884,7 +970,8 @@ int hl_device_init(struct hl_device *hdev, struct class *hclass)
 	rc = hl_ctx_init(hdev, hdev->kernel_ctx, true);
 	if (rc) {
 		dev_err(hdev->dev, "failed to initialize kernel context\n");
-		goto free_ctx;
+		kfree(hdev->kernel_ctx);
+		goto mmu_fini;
 	}
 
 	rc = hl_cb_pool_init(hdev);
@@ -923,8 +1010,6 @@ int hl_device_init(struct hl_device *hdev, struct class *hclass)
 		rc = 0;
 		goto out_disabled;
 	}
-
-	/* After test_queues, KMD can start sending messages to device CPU */
 
 	rc = device_late_init(hdev);
 	if (rc) {
@@ -969,8 +1054,8 @@ release_ctx:
 	if (hl_ctx_put(hdev->kernel_ctx) != 1)
 		dev_err(hdev->dev,
 			"kernel ctx is still alive on initialization failure\n");
-free_ctx:
-	kfree(hdev->kernel_ctx);
+mmu_fini:
+	hl_mmu_fini(hdev);
 eq_fini:
 	hl_eq_fini(hdev, &hdev->event_queue);
 cq_fini:
@@ -1030,10 +1115,21 @@ void hl_device_fini(struct hl_device *hdev)
 			WARN(1, "Failed to remove device because reset function did not finish\n");
 			return;
 		}
-	};
+	}
 
 	/* Mark device as disabled */
 	hdev->disabled = true;
+
+	/*
+	 * Flush anyone that is inside the critical section of enqueue
+	 * jobs to the H/W
+	 */
+	hdev->asic_funcs->hw_queues_lock(hdev);
+	hdev->asic_funcs->hw_queues_unlock(hdev);
+
+	hdev->hard_reset_pending = true;
+
+	device_kill_open_processes(hdev);
 
 	hl_hwmon_fini(hdev);
 
@@ -1064,6 +1160,8 @@ void hl_device_fini(struct hl_device *hdev)
 
 	hl_vm_fini(hdev);
 
+	hl_mmu_fini(hdev);
+
 	hl_eq_fini(hdev, &hdev->event_queue);
 
 	for (i = 0 ; i < hdev->asic_prop.completion_queues_count ; i++)
@@ -1082,89 +1180,6 @@ void hl_device_fini(struct hl_device *hdev)
 	cdev_del(&hdev->cdev);
 
 	pr_info("removed device successfully\n");
-}
-
-/*
- * hl_poll_timeout_memory - Periodically poll a host memory address
- *                              until it is not zero or a timeout occurs
- * @hdev: pointer to habanalabs device structure
- * @addr: Address to poll
- * @timeout_us: timeout in us
- * @val: Variable to read the value into
- *
- * Returns 0 on success and -ETIMEDOUT upon a timeout. In either
- * case, the last read value at @addr is stored in @val. Must not
- * be called from atomic context if sleep_us or timeout_us are used.
- *
- * The function sleeps for 100us with timeout value of
- * timeout_us
- */
-int hl_poll_timeout_memory(struct hl_device *hdev, u64 addr,
-				u32 timeout_us, u32 *val)
-{
-	/*
-	 * address in this function points always to a memory location in the
-	 * host's (server's) memory. That location is updated asynchronously
-	 * either by the direct access of the device or by another core
-	 */
-	u32 *paddr = (u32 *) (uintptr_t) addr;
-	ktime_t timeout = ktime_add_us(ktime_get(), timeout_us);
-
-	might_sleep();
-
-	for (;;) {
-		/*
-		 * Flush CPU read/write buffers to make sure we read updates
-		 * done by other cores or by the device
-		 */
-		mb();
-		*val = *paddr;
-		if (*val)
-			break;
-		if (ktime_compare(ktime_get(), timeout) > 0) {
-			*val = *paddr;
-			break;
-		}
-		usleep_range((100 >> 2) + 1, 100);
-	}
-
-	return *val ? 0 : -ETIMEDOUT;
-}
-
-/*
- * hl_poll_timeout_devicememory - Periodically poll a device memory address
- *                                until it is not zero or a timeout occurs
- * @hdev: pointer to habanalabs device structure
- * @addr: Device address to poll
- * @timeout_us: timeout in us
- * @val: Variable to read the value into
- *
- * Returns 0 on success and -ETIMEDOUT upon a timeout. In either
- * case, the last read value at @addr is stored in @val. Must not
- * be called from atomic context if sleep_us or timeout_us are used.
- *
- * The function sleeps for 100us with timeout value of
- * timeout_us
- */
-int hl_poll_timeout_device_memory(struct hl_device *hdev, void __iomem *addr,
-				u32 timeout_us, u32 *val)
-{
-	ktime_t timeout = ktime_add_us(ktime_get(), timeout_us);
-
-	might_sleep();
-
-	for (;;) {
-		*val = readl(addr);
-		if (*val)
-			break;
-		if (ktime_compare(ktime_get(), timeout) > 0) {
-			*val = readl(addr);
-			break;
-		}
-		usleep_range((100 >> 2) + 1, 100);
-	}
-
-	return *val ? 0 : -ETIMEDOUT;
 }
 
 /*

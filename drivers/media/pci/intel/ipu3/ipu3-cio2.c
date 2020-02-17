@@ -1174,7 +1174,7 @@ static const struct v4l2_file_operations cio2_v4l2_fops = {
 
 static const struct v4l2_ioctl_ops cio2_v4l2_ioctl_ops = {
 	.vidioc_querycap = cio2_v4l2_querycap,
-	.vidioc_enum_fmt_vid_cap_mplane = cio2_v4l2_enum_fmt,
+	.vidioc_enum_fmt_vid_cap = cio2_v4l2_enum_fmt,
 	.vidioc_g_fmt_vid_cap_mplane = cio2_v4l2_g_fmt,
 	.vidioc_s_fmt_vid_cap_mplane = cio2_v4l2_s_fmt,
 	.vidioc_try_fmt_vid_cap_mplane = cio2_v4l2_try_fmt,
@@ -1601,6 +1601,7 @@ static int cio2_queue_init(struct cio2_device *cio2, struct cio2_queue *q)
 	subdev->owner = THIS_MODULE;
 	snprintf(subdev->name, sizeof(subdev->name),
 		 CIO2_ENTITY_NAME " %td", q - cio2->queue);
+	subdev->entity.function = MEDIA_ENT_F_VID_IF_BRIDGE;
 	v4l2_set_subdevdata(subdev, cio2);
 	r = v4l2_device_register_subdev(&cio2->v4l2_dev, subdev);
 	if (r) {

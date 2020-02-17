@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  This file contains ioremap and related functions for 64-bit machines.
  *
@@ -13,12 +14,6 @@
  *
  *  Dave Engebretsen <engebret@us.ibm.com>
  *      Rework for PPC64 port.
- *
- *  This program is free software; you can redistribute it and/or
- *  modify it under the terms of the GNU General Public License
- *  as published by the Free Software Foundation; either version
- *  2 of the License, or (at your option) any later version.
- *
  */
 
 #include <linux/signal.h>
@@ -52,7 +47,7 @@
 #include <asm/firmware.h>
 #include <asm/dma.h>
 
-#include "mmu_decl.h"
+#include <mm/mmu_decl.h>
 
 
 #ifdef CONFIG_PPC_BOOK3S_64
@@ -90,14 +85,13 @@ unsigned long __pgd_val_bits;
 EXPORT_SYMBOL(__pgd_val_bits);
 unsigned long __kernel_virt_start;
 EXPORT_SYMBOL(__kernel_virt_start);
-unsigned long __kernel_virt_size;
-EXPORT_SYMBOL(__kernel_virt_size);
 unsigned long __vmalloc_start;
 EXPORT_SYMBOL(__vmalloc_start);
 unsigned long __vmalloc_end;
 EXPORT_SYMBOL(__vmalloc_end);
 unsigned long __kernel_io_start;
 EXPORT_SYMBOL(__kernel_io_start);
+unsigned long __kernel_io_end;
 struct page *vmemmap;
 EXPORT_SYMBOL(vmemmap);
 unsigned long __pte_frag_nr;
@@ -109,25 +103,45 @@ unsigned long ioremap_bot;
 unsigned long ioremap_bot = IOREMAP_BASE;
 #endif
 
+int __weak ioremap_range(unsigned long ea, phys_addr_t pa, unsigned long size, pgprot_t prot, int nid)
+{
+	unsigned long i;
+
+	for (i = 0; i < size; i += PAGE_SIZE) {
+		int err = map_kernel_page(ea + i, pa + i, prot);
+		if (err) {
+			if (slab_is_available())
+				unmap_kernel_range(ea, size);
+			else
+				WARN_ON_ONCE(1); /* Should clean up */
+			return err;
+		}
+	}
+
+	return 0;
+}
+
 /**
  * __ioremap_at - Low level function to establish the page tables
  *                for an IO mapping
  */
 void __iomem *__ioremap_at(phys_addr_t pa, void *ea, unsigned long size, pgprot_t prot)
 {
-	unsigned long i;
-
 	/* We don't support the 4K PFN hack with ioremap */
 	if (pgprot_val(prot) & H_PAGE_4K_PFN)
 		return NULL;
+
+	if ((ea + size) >= (void *)IOREMAP_END) {
+		pr_warn("Outside the supported range\n");
+		return NULL;
+	}
 
 	WARN_ON(pa & ~PAGE_MASK);
 	WARN_ON(((unsigned long)ea) & ~PAGE_MASK);
 	WARN_ON(size & ~PAGE_MASK);
 
-	for (i = 0; i < size; i += PAGE_SIZE)
-		if (map_kernel_page((unsigned long)ea + i, pa + i, prot))
-			return NULL;
+	if (ioremap_range((unsigned long)ea, pa, size, prot, NUMA_NO_NODE))
+		return NULL;
 
 	return (void __iomem *)ea;
 }
@@ -178,8 +192,6 @@ void __iomem * __ioremap_caller(phys_addr_t addr, unsigned long size,
 
 		area->phys_addr = paligned;
 		ret = __ioremap_at(paligned, area->addr, size, prot);
-		if (!ret)
-			vunmap(area->addr);
 	} else {
 		ret = __ioremap_at(paligned, (void *)ioremap_bot, size, prot);
 		if (ret)
@@ -292,16 +304,20 @@ EXPORT_SYMBOL(__iounmap_at);
 /* 4 level page table */
 struct page *pgd_page(pgd_t pgd)
 {
-	if (pgd_huge(pgd))
+	if (pgd_is_leaf(pgd)) {
+		VM_WARN_ON(!pgd_huge(pgd));
 		return pte_page(pgd_pte(pgd));
+	}
 	return virt_to_page(pgd_page_vaddr(pgd));
 }
 #endif
 
 struct page *pud_page(pud_t pud)
 {
-	if (pud_huge(pud))
+	if (pud_is_leaf(pud)) {
+		VM_WARN_ON(!pud_huge(pud));
 		return pte_page(pud_pte(pud));
+	}
 	return virt_to_page(pud_page_vaddr(pud));
 }
 
@@ -311,8 +327,10 @@ struct page *pud_page(pud_t pud)
  */
 struct page *pmd_page(pmd_t pmd)
 {
-	if (pmd_large(pmd) || pmd_huge(pmd) || pmd_devmap(pmd))
+	if (pmd_is_leaf(pmd)) {
+		VM_WARN_ON(!(pmd_large(pmd) || pmd_huge(pmd)));
 		return pte_page(pmd_pte(pmd));
+	}
 	return virt_to_page(pmd_page_vaddr(pmd));
 }
 
@@ -328,6 +346,9 @@ void mark_rodata_ro(void)
 		radix__mark_rodata_ro();
 	else
 		hash__mark_rodata_ro();
+
+	// mark_initmem_nx() should have already run by now
+	ptdump_check_wx();
 }
 
 void mark_initmem_nx(void)

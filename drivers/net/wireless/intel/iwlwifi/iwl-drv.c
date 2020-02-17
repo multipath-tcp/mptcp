@@ -179,6 +179,7 @@ static void iwl_dealloc_ucode(struct iwl_drv *drv)
 		kfree(drv->fw.dbg.trigger_tlv[i]);
 	kfree(drv->fw.dbg.mem_tlv);
 	kfree(drv->fw.iml);
+	kfree(drv->fw.ucode_capa.cmd_versions);
 
 	for (i = 0; i < IWL_UCODE_TYPE_MAX; i++)
 		iwl_free_fw_img(drv, drv->fw.img + i);
@@ -252,8 +253,8 @@ static int iwl_request_firmware(struct iwl_drv *drv, bool first)
 	snprintf(drv->firmware_name, sizeof(drv->firmware_name), "%s%s.ucode",
 		 cfg->fw_name_pre, tag);
 
-	IWL_DEBUG_INFO(drv, "attempting to load firmware '%s'\n",
-		       drv->firmware_name);
+	IWL_DEBUG_FW_INFO(drv, "attempting to load firmware '%s'\n",
+			  drv->firmware_name);
 
 	return request_firmware_nowait(THIS_MODULE, 1, drv->firmware_name,
 				       drv->trans->dev,
@@ -1104,6 +1105,18 @@ static int iwl_parse_tlv_firmware(struct iwl_drv *drv,
 				le32_to_cpu(recov_info->buf_size);
 			}
 			break;
+		case IWL_UCODE_TLV_FW_FSEQ_VERSION: {
+			struct {
+				u8 version[32];
+				u8 sha1[20];
+			} *fseq_ver = (void *)tlv_data;
+
+			if (tlv_len != sizeof(*fseq_ver))
+				goto invalid_tlv_len;
+			IWL_INFO(drv, "TLV_FW_FSEQ_VERSION: %s\n",
+				 fseq_ver->version);
+			}
+			break;
 		case IWL_UCODE_TLV_UMAC_DEBUG_ADDRS: {
 			struct iwl_umac_debug_addrs *dbg_ptrs =
 				(void *)tlv_data;
@@ -1113,10 +1126,10 @@ static int iwl_parse_tlv_firmware(struct iwl_drv *drv,
 			if (drv->trans->cfg->device_family <
 			    IWL_DEVICE_FAMILY_22000)
 				break;
-			drv->trans->umac_error_event_table =
+			drv->trans->dbg.umac_error_event_table =
 				le32_to_cpu(dbg_ptrs->error_info_addr) &
 				~FW_ADDR_CACHE_CONTROL;
-			drv->trans->error_event_table_tlv_status |=
+			drv->trans->dbg.error_event_table_tlv_status |=
 				IWL_ERROR_EVENT_TABLE_UMAC;
 			break;
 			}
@@ -1129,13 +1142,14 @@ static int iwl_parse_tlv_firmware(struct iwl_drv *drv,
 			if (drv->trans->cfg->device_family <
 			    IWL_DEVICE_FAMILY_22000)
 				break;
-			drv->trans->lmac_error_event_table[0] =
+			drv->trans->dbg.lmac_error_event_table[0] =
 				le32_to_cpu(dbg_ptrs->error_event_table_ptr) &
 				~FW_ADDR_CACHE_CONTROL;
-			drv->trans->error_event_table_tlv_status |=
+			drv->trans->dbg.error_event_table_tlv_status |=
 				IWL_ERROR_EVENT_TABLE_LMAC1;
 			break;
 			}
+		case IWL_UCODE_TLV_TYPE_DEBUG_INFO:
 		case IWL_UCODE_TLV_TYPE_BUFFER_ALLOCATION:
 		case IWL_UCODE_TLV_TYPE_HCMD:
 		case IWL_UCODE_TLV_TYPE_REGIONS:
@@ -1143,6 +1157,23 @@ static int iwl_parse_tlv_firmware(struct iwl_drv *drv,
 		case IWL_UCODE_TLV_TYPE_DEBUG_FLOW:
 			if (iwlwifi_mod_params.enable_ini)
 				iwl_fw_dbg_copy_tlv(drv->trans, tlv, false);
+			break;
+		case IWL_UCODE_TLV_CMD_VERSIONS:
+			if (tlv_len % sizeof(struct iwl_fw_cmd_version)) {
+				IWL_ERR(drv,
+					"Invalid length for command versions: %u\n",
+					tlv_len);
+				tlv_len /= sizeof(struct iwl_fw_cmd_version);
+				tlv_len *= sizeof(struct iwl_fw_cmd_version);
+			}
+			if (WARN_ON(capa->cmd_versions))
+				return -EINVAL;
+			capa->cmd_versions = kmemdup(tlv_data, tlv_len,
+						     GFP_KERNEL);
+			if (!capa->cmd_versions)
+				return -ENOMEM;
+			capa->n_cmd_versions =
+				tlv_len / sizeof(struct iwl_fw_cmd_version);
 			break;
 		default:
 			IWL_DEBUG_INFO(drv, "unknown TLV: %d\n", tlv_type);
@@ -1318,8 +1349,8 @@ static void iwl_req_fw_callback(const struct firmware *ucode_raw, void *context)
 	if (!ucode_raw)
 		goto try_again;
 
-	IWL_DEBUG_INFO(drv, "Loaded firmware file '%s' (%zd bytes).\n",
-		       drv->firmware_name, ucode_raw->size);
+	IWL_DEBUG_FW_INFO(drv, "Loaded firmware file '%s' (%zd bytes).\n",
+			  drv->firmware_name, ucode_raw->size);
 
 	/* Make sure that we got at least the API version number */
 	if (ucode_raw->size < 4) {
@@ -1579,7 +1610,6 @@ static void iwl_req_fw_callback(const struct firmware *ucode_raw, void *context)
 	goto free;
 
  out_free_fw:
-	iwl_dealloc_ucode(drv);
 	release_firmware(ucode_raw);
  out_unbind:
 	complete(&drv->request_firmware_complete);
@@ -1610,6 +1640,8 @@ struct iwl_drv *iwl_drv_start(struct iwl_trans *trans)
 	init_completion(&drv->request_firmware_complete);
 	INIT_LIST_HEAD(&drv->list);
 
+	iwl_load_fw_dbg_tlv(drv->trans->dev, drv->trans);
+
 #ifdef CONFIG_IWLWIFI_DEBUGFS
 	/* Create the device debugfs entries. */
 	drv->dbgfs_drv = debugfs_create_dir(dev_name(trans->dev),
@@ -1630,8 +1662,8 @@ struct iwl_drv *iwl_drv_start(struct iwl_trans *trans)
 err_fw:
 #ifdef CONFIG_IWLWIFI_DEBUGFS
 	debugfs_remove_recursive(drv->dbgfs_drv);
-	iwl_fw_dbg_free(drv->trans);
 #endif
+	iwl_fw_dbg_free(drv->trans);
 	kfree(drv);
 err:
 	return ERR_PTR(ret);
@@ -1727,7 +1759,7 @@ IWL_EXPORT_SYMBOL(iwl_opmode_deregister);
 
 static int __init iwl_drv_init(void)
 {
-	int i;
+	int i, err;
 
 	mutex_init(&iwlwifi_opmode_table_mtx);
 
@@ -1742,7 +1774,17 @@ static int __init iwl_drv_init(void)
 	iwl_dbgfs_root = debugfs_create_dir(DRV_NAME, NULL);
 #endif
 
-	return iwl_pci_register_driver();
+	err = iwl_pci_register_driver();
+	if (err)
+		goto cleanup_debugfs;
+
+	return 0;
+
+cleanup_debugfs:
+#ifdef CONFIG_IWLWIFI_DEBUGFS
+	debugfs_remove_recursive(iwl_dbgfs_root);
+#endif
+	return err;
 }
 module_init(iwl_drv_init);
 

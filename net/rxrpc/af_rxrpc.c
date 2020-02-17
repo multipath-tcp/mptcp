@@ -1,12 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /* AF_RXRPC implementation
  *
  * Copyright (C) 2007 Red Hat, Inc. All Rights Reserved.
  * Written by David Howells (dhowells@redhat.com)
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version
- * 2 of the License, or (at your option) any later version.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -197,7 +193,7 @@ static int rxrpc_bind(struct socket *sock, struct sockaddr *saddr, int len)
 
 service_in_use:
 	write_unlock(&local->services_lock);
-	rxrpc_put_local(local);
+	rxrpc_unuse_local(local);
 	ret = -EADDRINUSE;
 error_unlock:
 	release_sock(&rx->sk);
@@ -270,6 +266,7 @@ static int rxrpc_listen(struct socket *sock, int backlog)
  * @gfp: The allocation constraints
  * @notify_rx: Where to send notifications instead of socket queue
  * @upgrade: Request service upgrade for call
+ * @intr: The call is interruptible
  * @debug_id: The debug ID for tracing to be assigned to the call
  *
  * Allow a kernel service to begin a call on the nominated socket.  This just
@@ -287,6 +284,7 @@ struct rxrpc_call *rxrpc_kernel_begin_call(struct socket *sock,
 					   gfp_t gfp,
 					   rxrpc_notify_rx_t notify_rx,
 					   bool upgrade,
+					   bool intr,
 					   unsigned int debug_id)
 {
 	struct rxrpc_conn_parameters cp;
@@ -311,6 +309,7 @@ struct rxrpc_call *rxrpc_kernel_begin_call(struct socket *sock,
 	memset(&p, 0, sizeof(p));
 	p.user_call_ID = user_call_ID;
 	p.tx_total_len = tx_total_len;
+	p.intr = intr;
 
 	memset(&cp, 0, sizeof(cp));
 	cp.local		= rx->local;
@@ -403,7 +402,7 @@ EXPORT_SYMBOL(rxrpc_kernel_check_life);
  */
 void rxrpc_kernel_probe_life(struct socket *sock, struct rxrpc_call *call)
 {
-	rxrpc_propose_ACK(call, RXRPC_ACK_PING, 0, 0, true, false,
+	rxrpc_propose_ACK(call, RXRPC_ACK_PING, 0, true, false,
 			  rxrpc_propose_ack_ping_for_check_life);
 	rxrpc_send_ack_packet(call, true, NULL);
 }
@@ -442,6 +441,31 @@ void rxrpc_kernel_new_call_notification(
 	rx->discard_new_call = discard_new_call;
 }
 EXPORT_SYMBOL(rxrpc_kernel_new_call_notification);
+
+/**
+ * rxrpc_kernel_set_max_life - Set maximum lifespan on a call
+ * @sock: The socket the call is on
+ * @call: The call to configure
+ * @hard_timeout: The maximum lifespan of the call in jiffies
+ *
+ * Set the maximum lifespan of a call.  The call will end with ETIME or
+ * ETIMEDOUT if it takes longer than this.
+ */
+void rxrpc_kernel_set_max_life(struct socket *sock, struct rxrpc_call *call,
+			       unsigned long hard_timeout)
+{
+	unsigned long now;
+
+	mutex_lock(&call->user_mutex);
+
+	now = jiffies;
+	hard_timeout += now;
+	WRITE_ONCE(call->expect_term_by, hard_timeout);
+	rxrpc_reduce_call_timer(call, hard_timeout, now, rxrpc_timer_set_for_hard);
+
+	mutex_unlock(&call->user_mutex);
+}
+EXPORT_SYMBOL(rxrpc_kernel_set_max_life);
 
 /*
  * connect an RxRPC socket
@@ -521,6 +545,7 @@ static int rxrpc_sendmsg(struct socket *sock, struct msghdr *m, size_t len)
 
 	switch (rx->sk.sk_state) {
 	case RXRPC_UNBOUND:
+	case RXRPC_CLIENT_UNBOUND:
 		rx->srx.srx_family = AF_RXRPC;
 		rx->srx.srx_service = 0;
 		rx->srx.transport_type = SOCK_DGRAM;
@@ -545,10 +570,9 @@ static int rxrpc_sendmsg(struct socket *sock, struct msghdr *m, size_t len)
 		}
 
 		rx->local = local;
-		rx->sk.sk_state = RXRPC_CLIENT_UNBOUND;
+		rx->sk.sk_state = RXRPC_CLIENT_BOUND;
 		/* Fall through */
 
-	case RXRPC_CLIENT_UNBOUND:
 	case RXRPC_CLIENT_BOUND:
 		if (!m->msg_name &&
 		    test_bit(RXRPC_SOCK_CONNECTED, &rx->flags)) {
@@ -838,7 +862,6 @@ static void rxrpc_sock_destructor(struct sock *sk)
 static int rxrpc_release_sock(struct sock *sk)
 {
 	struct rxrpc_sock *rx = rxrpc_sk(sk);
-	struct rxrpc_net *rxnet = rxrpc_net(sock_net(&rx->sk));
 
 	_enter("%p{%d,%d}", sk, sk->sk_state, refcount_read(&sk->sk_refcnt));
 
@@ -874,10 +897,8 @@ static int rxrpc_release_sock(struct sock *sk)
 	rxrpc_release_calls_on_socket(rx);
 	flush_workqueue(rxrpc_workqueue);
 	rxrpc_purge_queue(&sk->sk_receive_queue);
-	rxrpc_queue_work(&rxnet->service_conn_reaper);
-	rxrpc_queue_work(&rxnet->client_conn_reaper);
 
-	rxrpc_put_local(rx->local);
+	rxrpc_unuse_local(rx->local);
 	rx->local = NULL;
 	key_put(rx->key);
 	rx->key = NULL;

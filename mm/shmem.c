@@ -400,7 +400,7 @@ static bool shmem_confirm_swap(struct address_space *mapping,
 
 static int shmem_huge __read_mostly;
 
-#if defined(CONFIG_SYSFS) || defined(CONFIG_TMPFS)
+#if defined(CONFIG_SYSFS)
 static int shmem_parse_huge(const char *str)
 {
 	if (!strcmp(str, "never"))
@@ -417,7 +417,9 @@ static int shmem_parse_huge(const char *str)
 		return SHMEM_HUGE_FORCE;
 	return -EINVAL;
 }
+#endif
 
+#if defined(CONFIG_SYSFS) || defined(CONFIG_TMPFS)
 static const char *shmem_format_huge(int huge)
 {
 	switch (huge) {
@@ -1464,7 +1466,7 @@ static struct page *shmem_alloc_hugepage(gfp_t gfp,
 
 	shmem_pseudo_vma_init(&pvma, info, hindex);
 	page = alloc_pages_vma(gfp | __GFP_COMP | __GFP_NORETRY | __GFP_NOWARN,
-			HPAGE_PMD_ORDER, &pvma, 0, numa_node_id(), true);
+			HPAGE_PMD_ORDER, &pvma, 0, numa_node_id());
 	shmem_pseudo_vma_destroy(&pvma);
 	if (page)
 		prep_transhuge_page(page);
@@ -3631,9 +3633,8 @@ static struct inode *shmem_alloc_inode(struct super_block *sb)
 	return &info->vfs_inode;
 }
 
-static void shmem_destroy_callback(struct rcu_head *head)
+static void shmem_free_in_core_inode(struct inode *inode)
 {
-	struct inode *inode = container_of(head, struct inode, i_rcu);
 	if (S_ISLNK(inode->i_mode))
 		kfree(inode->i_link);
 	kmem_cache_free(shmem_inode_cachep, SHMEM_I(inode));
@@ -3643,7 +3644,6 @@ static void shmem_destroy_inode(struct inode *inode)
 {
 	if (S_ISREG(inode->i_mode))
 		mpol_free_shared_policy(&SHMEM_I(inode)->policy);
-	call_rcu(&inode->i_rcu, shmem_destroy_callback);
 }
 
 static void shmem_init_inode(void *foo)
@@ -3734,6 +3734,7 @@ static const struct inode_operations shmem_special_inode_operations = {
 
 static const struct super_operations shmem_ops = {
 	.alloc_inode	= shmem_alloc_inode,
+	.free_inode	= shmem_free_in_core_inode,
 	.destroy_inode	= shmem_destroy_inode,
 #ifdef CONFIG_TMPFS
 	.statfs		= shmem_statfs,
@@ -3775,10 +3776,6 @@ static struct file_system_type shmem_fs_type = {
 int __init shmem_init(void)
 {
 	int error;
-
-	/* If rootfs called this, don't re-init */
-	if (shmem_inode_cachep)
-		return 0;
 
 	shmem_init_inodecache();
 
@@ -3873,6 +3870,9 @@ bool shmem_huge_enabled(struct vm_area_struct *vma)
 	loff_t i_size;
 	pgoff_t off;
 
+	if ((vma->vm_flags & VM_NOHUGEPAGE) ||
+	    test_bit(MMF_DISABLE_THP, &vma->vm_mm->flags))
+		return false;
 	if (shmem_huge == SHMEM_HUGE_FORCE)
 		return true;
 	if (shmem_huge == SHMEM_HUGE_DENY)

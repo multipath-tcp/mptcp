@@ -19,6 +19,7 @@ enum ti_sysc_module_type {
 
 struct ti_sysc_cookie {
 	void *data;
+	void *clkdm;
 };
 
 /**
@@ -46,8 +47,17 @@ struct sysc_regbits {
 	s8 emufree_shift;
 };
 
-#define SYSC_QUIRK_LEGACY_IDLE		BIT(8)
-#define SYSC_QUIRK_RESET_STATUS		BIT(7)
+#define SYSC_MODULE_QUIRK_HDQ1W		BIT(17)
+#define SYSC_MODULE_QUIRK_I2C		BIT(16)
+#define SYSC_MODULE_QUIRK_WDT		BIT(15)
+#define SYSS_QUIRK_RESETDONE_INVERTED	BIT(14)
+#define SYSC_QUIRK_SWSUP_MSTANDBY	BIT(13)
+#define SYSC_QUIRK_SWSUP_SIDLE_ACT	BIT(12)
+#define SYSC_QUIRK_SWSUP_SIDLE		BIT(11)
+#define SYSC_QUIRK_EXT_OPT_CLOCK	BIT(10)
+#define SYSC_QUIRK_LEGACY_IDLE		BIT(9)
+#define SYSC_QUIRK_RESET_STATUS		BIT(8)
+#define SYSC_QUIRK_NO_IDLE		BIT(7)
 #define SYSC_QUIRK_NO_IDLE_ON_INIT	BIT(6)
 #define SYSC_QUIRK_NO_RESET_ON_INIT	BIT(5)
 #define SYSC_QUIRK_OPT_CLKS_NEEDED	BIT(4)
@@ -120,9 +130,16 @@ struct ti_sysc_module_data {
 };
 
 struct device;
+struct clk;
 
 struct ti_sysc_platform_data {
 	struct of_dev_auxdata *auxdata;
+	int (*init_clockdomain)(struct device *dev, struct clk *fck,
+				struct clk *ick, struct ti_sysc_cookie *cookie);
+	void (*clkdm_deny_idle)(struct device *dev,
+				const struct ti_sysc_cookie *cookie);
+	void (*clkdm_allow_idle)(struct device *dev,
+				 const struct ti_sysc_cookie *cookie);
 	int (*init_module)(struct device *dev,
 			   const struct ti_sysc_module_data *data,
 			   struct ti_sysc_cookie *cookie);

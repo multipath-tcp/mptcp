@@ -75,9 +75,10 @@ static void usnic_uiom_put_pages(struct list_head *chunk_list, int dirty)
 		for_each_sg(chunk->page_list, sg, chunk->nents, i) {
 			page = sg_page(sg);
 			pa = sg_phys(sg);
-			if (!PageDirty(page) && dirty)
-				set_page_dirty_lock(page);
-			put_page(page);
+			if (dirty)
+				put_user_pages_dirty_lock(&page, 1);
+			else
+				put_user_page(page);
 			usnic_dbg("pa: %pa\n", &pa);
 		}
 		kfree(chunk);
@@ -143,10 +144,11 @@ static int usnic_uiom_get_pages(unsigned long addr, size_t size, int writable,
 	ret = 0;
 
 	while (npages) {
-		ret = get_user_pages_longterm(cur_base,
-					min_t(unsigned long, npages,
-					PAGE_SIZE / sizeof(struct page *)),
-					gup_flags, page_list, NULL);
+		ret = get_user_pages(cur_base,
+				     min_t(unsigned long, npages,
+				     PAGE_SIZE / sizeof(struct page *)),
+				     gup_flags | FOLL_LONGTERM,
+				     page_list, NULL);
 
 		if (ret < 0)
 			goto out;
@@ -432,8 +434,7 @@ static inline size_t usnic_uiom_num_pages(struct usnic_uiom_reg *uiomr)
 	return PAGE_ALIGN(uiomr->length + uiomr->offset) >> PAGE_SHIFT;
 }
 
-void usnic_uiom_reg_release(struct usnic_uiom_reg *uiomr,
-			    struct ib_ucontext *context)
+void usnic_uiom_reg_release(struct usnic_uiom_reg *uiomr)
 {
 	__usnic_uiom_reg_release(uiomr->pd, uiomr, 1);
 

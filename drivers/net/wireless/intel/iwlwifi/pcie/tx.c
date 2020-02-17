@@ -435,6 +435,8 @@ static void iwl_pcie_tfd_unmap(struct iwl_trans *trans,
 					 DMA_TO_DEVICE);
 	}
 
+	meta->tbs = 0;
+
 	if (trans->cfg->use_tfh) {
 		struct iwl_tfh_tfd *tfd_fh = (void *)tfd;
 
@@ -996,10 +998,11 @@ static int iwl_pcie_tx_alloc(struct iwl_trans *trans)
 		bool cmd_queue = (txq_id == trans_pcie->cmd_queue);
 
 		if (cmd_queue)
-			slots_num = max_t(u32, TFD_CMD_SLOTS,
+			slots_num = max_t(u32, IWL_CMD_QUEUE_SIZE,
 					  trans->cfg->min_txq_size);
 		else
-			slots_num = TFD_TX_CMD_SLOTS;
+			slots_num = max_t(u32, IWL_DEFAULT_QUEUE_SIZE,
+					  trans->cfg->min_256_ba_txq_size);
 		trans_pcie->txq[txq_id] = &trans_pcie->txq_memory[txq_id];
 		ret = iwl_pcie_txq_alloc(trans, trans_pcie->txq[txq_id],
 					 slots_num, cmd_queue);
@@ -1049,10 +1052,11 @@ int iwl_pcie_tx_init(struct iwl_trans *trans)
 		bool cmd_queue = (txq_id == trans_pcie->cmd_queue);
 
 		if (cmd_queue)
-			slots_num = max_t(u32, TFD_CMD_SLOTS,
+			slots_num = max_t(u32, IWL_CMD_QUEUE_SIZE,
 					  trans->cfg->min_txq_size);
 		else
-			slots_num = TFD_TX_CMD_SLOTS;
+			slots_num = max_t(u32, IWL_DEFAULT_QUEUE_SIZE,
+					  trans->cfg->min_256_ba_txq_size);
 		ret = iwl_pcie_txq_init(trans, trans_pcie->txq[txq_id],
 					slots_num, cmd_queue);
 		if (ret) {

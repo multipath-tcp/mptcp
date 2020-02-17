@@ -746,7 +746,8 @@ static int iwl_mvm_find_free_queue(struct iwl_mvm *mvm, u8 sta_id,
 static int iwl_mvm_tvqm_enable_txq(struct iwl_mvm *mvm,
 				   u8 sta_id, u8 tid, unsigned int timeout)
 {
-	int queue, size = IWL_DEFAULT_QUEUE_SIZE;
+	int queue, size = max_t(u32, IWL_DEFAULT_QUEUE_SIZE,
+				mvm->trans->cfg->min_256_ba_txq_size);
 
 	if (tid == IWL_MAX_TID_COUNT) {
 		tid = IWL_MGMT_TID;
@@ -1683,6 +1684,8 @@ int iwl_mvm_add_sta(struct iwl_mvm *mvm,
 	 */
 	if (iwl_mvm_has_tlc_offload(mvm))
 		iwl_mvm_rs_add_sta(mvm, mvm_sta);
+	else
+		spin_lock_init(&mvm_sta->lq_sta.rs_drv.pers.lock);
 
 	iwl_mvm_toggle_tx_ant(mvm, &mvm_sta->tx_ant);
 
@@ -2109,12 +2112,14 @@ int iwl_mvm_send_add_bcast_sta(struct iwl_mvm *mvm, struct ieee80211_vif *vif)
 
 	if (!iwl_mvm_has_new_tx_api(mvm)) {
 		if (vif->type == NL80211_IFTYPE_AP ||
-		    vif->type == NL80211_IFTYPE_ADHOC)
+		    vif->type == NL80211_IFTYPE_ADHOC) {
 			queue = mvm->probe_queue;
-		else if (vif->type == NL80211_IFTYPE_P2P_DEVICE)
+		} else if (vif->type == NL80211_IFTYPE_P2P_DEVICE) {
 			queue = mvm->p2p_dev_queue;
-		else if (WARN(1, "Missing required TXQ for adding bcast STA\n"))
+		} else {
+			WARN(1, "Missing required TXQ for adding bcast STA\n");
 			return -EINVAL;
+		}
 
 		bsta->tfd_queue_msk |= BIT(queue);
 
@@ -2277,7 +2282,8 @@ int iwl_mvm_add_mcast_sta(struct iwl_mvm *mvm, struct ieee80211_vif *vif)
 	static const u8 _maddr[] = {0x03, 0x00, 0x00, 0x00, 0x00, 0x00};
 	const u8 *maddr = _maddr;
 	struct iwl_trans_txq_scd_cfg cfg = {
-		.fifo = IWL_MVM_TX_FIFO_MCAST,
+		.fifo = vif->type == NL80211_IFTYPE_AP ?
+			IWL_MVM_TX_FIFO_MCAST : IWL_MVM_TX_FIFO_BE,
 		.sta_id = msta->sta_id,
 		.tid = 0,
 		.aggregate = false,
@@ -2417,7 +2423,7 @@ int iwl_mvm_rm_mcast_sta(struct iwl_mvm *mvm, struct ieee80211_vif *vif)
 
 static void iwl_mvm_sync_rxq_del_ba(struct iwl_mvm *mvm, u8 baid)
 {
-	struct iwl_mvm_delba_notif notif = {
+	struct iwl_mvm_rss_sync_notif notif = {
 		.metadata.type = IWL_MVM_RXQ_NOTIF_DEL_BA,
 		.metadata.sync = 1,
 		.delba.baid = baid,
@@ -2968,7 +2974,7 @@ out:
 	IWL_DEBUG_HT(mvm, "Tx aggregation enabled on ra = %pM tid = %d\n",
 		     sta->addr, tid);
 
-	return iwl_mvm_send_lq_cmd(mvm, &mvmsta->lq_sta.rs_drv.lq, false);
+	return iwl_mvm_send_lq_cmd(mvm, &mvmsta->lq_sta.rs_drv.lq);
 }
 
 static void iwl_mvm_unreserve_agg_queue(struct iwl_mvm *mvm,

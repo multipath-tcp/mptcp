@@ -1,12 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * BIOS auto-parser helper functions for HD-audio
  *
  * Copyright (c) 2012 Takashi Iwai <tiwai@suse.de>
- *
- * This driver is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 
 #include <linux/slab.h>
@@ -828,6 +824,8 @@ static void apply_fixup(struct hda_codec *codec, int id, int action, int depth)
 	while (id >= 0) {
 		const struct hda_fixup *fix = codec->fixup_list + id;
 
+		if (++depth > 10)
+			break;
 		if (fix->chained_before)
 			apply_fixup(codec, fix->chain_id, action, depth + 1);
 
@@ -866,8 +864,6 @@ static void apply_fixup(struct hda_codec *codec, int id, int action, int depth)
 			break;
 		}
 		if (!fix->chained || fix->chained_before)
-			break;
-		if (++depth > 10)
 			break;
 		id = fix->chain_id;
 	}

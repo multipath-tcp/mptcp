@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * ACPI configfs support
  *
  * Copyright (c) 2016 Intel Corporation
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published by
- * the Free Software Foundation.
  */
 
 #define pr_fmt(fmt) "ACPI configfs: " fmt
@@ -56,11 +53,7 @@ static ssize_t acpi_table_aml_write(struct config_item *cfg,
 	if (!table->header)
 		return -ENOMEM;
 
-	ACPI_INFO(("Host-directed Dynamic ACPI Table Load:"));
-	ret = acpi_tb_install_and_load_table(
-			ACPI_PTR_TO_PHYSADDR(table->header),
-			ACPI_TABLE_ORIGIN_EXTERNAL_VIRTUAL, FALSE,
-			&table->index);
+	ret = acpi_load_table(table->header);
 	if (ret) {
 		kfree(table->header);
 		table->header = NULL;
@@ -109,7 +102,7 @@ static ssize_t acpi_table_signature_show(struct config_item *cfg, char *str)
 	if (!h)
 		return -EINVAL;
 
-	return sprintf(str, "%.*s\n", ACPI_NAME_SIZE, h->signature);
+	return sprintf(str, "%.*s\n", ACPI_NAMESEG_SIZE, h->signature);
 }
 
 static ssize_t acpi_table_length_show(struct config_item *cfg, char *str)
@@ -170,7 +163,7 @@ static ssize_t acpi_table_asl_compiler_id_show(struct config_item *cfg,
 	if (!h)
 		return -EINVAL;
 
-	return sprintf(str, "%.*s\n", ACPI_NAME_SIZE, h->asl_compiler_id);
+	return sprintf(str, "%.*s\n", ACPI_NAMESEG_SIZE, h->asl_compiler_id);
 }
 
 static ssize_t acpi_table_asl_compiler_revision_show(struct config_item *cfg,

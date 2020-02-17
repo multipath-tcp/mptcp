@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0 */
+/* SPDX-License-Identifier: MIT */
 #ifndef __NOUVEAU_DRV_H__
 #define __NOUVEAU_DRV_H__
 
@@ -59,8 +59,6 @@
 
 struct nouveau_channel;
 struct platform_device;
-
-#define DRM_FILE_PAGE_OFFSET (0x100000000ULL >> PAGE_SHIFT)
 
 #include "nouveau_fence.h"
 #include "nouveau_bios.h"

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 #
 # Misc strange devices
 #
@@ -8,7 +9,6 @@ config SENSORS_LIS3LV02D
 	tristate
 	depends on INPUT
 	select INPUT_POLLDEV
-	default n
 
 config AD525X_DPOT
 	tristate "Analog Devices Digital Potentiometers"
@@ -59,33 +59,8 @@ config ATMEL_TCLIB
 	  blocks found on many Atmel processors.  This facilitates using
 	  these blocks by different drivers despite processor differences.
 
-config ATMEL_TCB_CLKSRC
-	bool "TC Block Clocksource"
-	depends on ATMEL_TCLIB
-	default y
-	help
-	  Select this to get a high precision clocksource based on a
-	  TC block with a 5+ MHz base clock rate.  Two timer channels
-	  are combined to make a single 32-bit timer.
-
-	  When GENERIC_CLOCKEVENTS is defined, the third timer channel
-	  may be used as a clock event device supporting oneshot mode
-	  (delays of up to two seconds) based on the 32 KiHz clock.
-
-config ATMEL_TCB_CLKSRC_BLOCK
-	int
-	depends on ATMEL_TCB_CLKSRC
-	default 0
-	range 0 1
-	help
-	  Some chips provide more than one TC block, so you have the
-	  choice of which one to use for the clock framework.  The other
-	  TC can be used for other purposes, such as PWM generation and
-	  interval timing.
-
 config DUMMY_IRQ
 	tristate "Dummy IRQ handler"
-	default n
 	---help---
 	  This module accepts a single 'irq' parameter, which it should register for.
 	  The sole purpose of this module is to help with debugging of systems on
@@ -141,7 +116,6 @@ config PHANTOM
 config INTEL_MID_PTI
 	tristate "Parallel Trace Interface for MIPI P1149.7 cJTAG standard"
 	depends on PCI && TTY && (X86_INTEL_MID || COMPILE_TEST)
-	default n
 	help
 	  The PTI (Parallel Trace Interface) driver directs
 	  trace data routed from various parts in the system out
@@ -217,7 +191,6 @@ config ATMEL_SSC
 
 config ENCLOSURE_SERVICES
 	tristate "Enclosure Services"
-	default n
 	help
 	  Provides support for intelligent enclosures (bays which
 	  contain storage devices).  You also need either a host
@@ -241,7 +214,6 @@ config SGI_XP
 config CS5535_MFGPT
 	tristate "CS5535/CS5536 Geode Multi-Function General Purpose Timer (MFGPT) support"
 	depends on MFD_CS5535
-	default n
 	help
 	  This driver provides access to MFGPT functionality for other
 	  drivers that need timers.  MFGPTs are available in the CS5535 and
@@ -274,7 +246,6 @@ config CS5535_CLOCK_EVENT_SRC
 config HP_ILO
 	tristate "Channel interface driver for the HP iLO processor"
 	depends on PCI
-	default n
 	help
 	  The channel interface driver allows applications to communicate
 	  with iLO management processors present on HP ProLiant servers.
@@ -309,7 +280,6 @@ config QCOM_FASTRPC
 config SGI_GRU
 	tristate "SGI GRU driver"
 	depends on X86_UV && SMP
-	default n
 	select MMU_NOTIFIER
 	---help---
 	The GRU is a hardware resource located in the system chipset. The GRU
@@ -324,7 +294,6 @@ config SGI_GRU
 config SGI_GRU_DEBUG
 	bool  "SGI GRU driver debug"
 	depends on SGI_GRU
-	default n
 	---help---
 	This option enables additional debugging code for the SGI GRU driver.
 	If you are unsure, say N.
@@ -382,7 +351,6 @@ config SENSORS_BH1770
 config SENSORS_APDS990X
 	 tristate "APDS990X combined als and proximity sensors"
 	 depends on I2C
-	 default n
 	 ---help---
 	   Say Y here if you want to build a driver for Avago APDS990x
 	   combined ambient light and proximity sensor chip.
@@ -410,7 +378,6 @@ config DS1682
 config SPEAR13XX_PCIE_GADGET
 	bool "PCIe gadget support for SPEAr13XX platform"
 	depends on ARCH_SPEAR13XX && BROKEN
-	default n
 	help
 	 This option enables gadget support for PCIe controller. If
 	 board file defines any controller as PCIe endpoint then a sysfs
@@ -420,6 +387,7 @@ config SPEAR13XX_PCIE_GADGET
 config VMWARE_BALLOON
 	tristate "VMware Balloon Driver"
 	depends on VMWARE_VMCI && X86 && HYPERVISOR_GUEST
+	select MEMORY_BALLOON
 	help
 	  This is VMware physical memory management driver which acts
 	  like a "balloon" that can be inflated to reclaim physical pages
@@ -454,15 +422,6 @@ config PCH_PHUB
 	  To compile this driver as a module, choose M here: the module will
 	  be called pch_phub.
 
-config USB_SWITCH_FSA9480
-	tristate "FSA9480 USB Switch"
-	depends on I2C
-	help
-	  The FSA9480 is a USB port accessory detector and switch.
-	  The FSA9480 is fully controlled using I2C and enables USB data,
-	  stereo and mono audio, video, microphone and UART data to use
-	  a common connector port.
-
 config LATTICE_ECP3_CONFIG
 	tristate "Lattice ECP3 FPGA bitstream configuration via SPI"
 	depends on SPI && SYSFS
@@ -496,22 +455,6 @@ config VEXPRESS_SYSCFG
 	  bus. System Configuration interface is one of the possible means
 	  of generating transactions on this bus.
 
-config ASPEED_LPC_CTRL
-	depends on (ARCH_ASPEED || COMPILE_TEST) && REGMAP && MFD_SYSCON
-	tristate "Aspeed ast2400/2500 HOST LPC to BMC bridge control"
-	---help---
-	  Control Aspeed ast2400/2500 HOST LPC to BMC mappings through
-	  ioctl()s, the driver also provides a read/write interface to a BMC ram
-	  region where the host LPC read/write region can be buffered.
-
-config ASPEED_LPC_SNOOP
-	tristate "Aspeed ast2500 HOST LPC snoop support"
-	depends on (ARCH_ASPEED || COMPILE_TEST) && REGMAP && MFD_SYSCON
-	help
-	  Provides a driver to control the LPC snoop interface which
-	  allows the BMC to listen on and save the data written by
-	  the host to an arbitrary LPC I/O port.
-
 config PCI_ENDPOINT_TEST
 	depends on PCI
 	select CRC32
@@ -519,6 +462,19 @@ config PCI_ENDPOINT_TEST
 	---help---
            Enable this configuration option to enable the host side test driver
            for PCI Endpoint.
+
+config XILINX_SDFEC
+	tristate "Xilinx SDFEC 16"
+	depends on HAS_IOMEM
+	help
+	  This option enables support for the Xilinx SDFEC (Soft Decision
+	  Forward Error Correction) driver. This enables a char driver
+	  for the SDFEC.
+
+	  You may select this driver if your design instantiates the
+	  SDFEC(16nm) hardened block. To compile this as a module choose M.
+
+	  If unsure, say N.
 
 config MISC_RTSX
 	tristate

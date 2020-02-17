@@ -23,12 +23,18 @@
  *
  */
 
+#include <linux/delay.h>
+#include <linux/slab.h>
+
 #include "dm_services.h"
 #include "dc.h"
 #include "core_types.h"
 #include "resource.h"
 #include "ipp.h"
 #include "timing_generator.h"
+#if defined(CONFIG_DRM_AMD_DC_DCN1_0)
+#include "dcn10/dcn10_hw_sequencer.h"
+#endif
 
 #define DC_LOGGER dc->ctx->logger
 
@@ -44,8 +50,8 @@ void update_stream_signal(struct dc_stream_state *stream, struct dc_sink *sink)
 
 	if (dc_is_dvi_signal(stream->signal)) {
 		if (stream->ctx->dc->caps.dual_link_dvi &&
-		    (stream->timing.pix_clk_100hz / 10) > TMDS_MAX_PIXEL_CLOCK &&
-		    sink->sink_signal != SIGNAL_TYPE_DVI_SINGLE_LINK)
+			(stream->timing.pix_clk_100hz / 10) > TMDS_MAX_PIXEL_CLOCK &&
+			sink->sink_signal != SIGNAL_TYPE_DVI_SINGLE_LINK)
 			stream->signal = SIGNAL_TYPE_DVI_DUAL_LINK;
 		else
 			stream->signal = SIGNAL_TYPE_DVI_SINGLE_LINK;
@@ -101,6 +107,17 @@ static void construct(struct dc_stream_state *stream,
 
 	/* EDID CAP translation for HDMI 2.0 */
 	stream->timing.flags.LTE_340MCSC_SCRAMBLE = dc_sink_data->edid_caps.lte_340mcsc_scramble;
+
+#ifdef CONFIG_DRM_AMD_DC_DSC_SUPPORT
+	memset(&stream->timing.dsc_cfg, 0, sizeof(stream->timing.dsc_cfg));
+	stream->timing.dsc_cfg.num_slices_h = 0;
+	stream->timing.dsc_cfg.num_slices_v = 0;
+	stream->timing.dsc_cfg.bits_per_pixel = 128;
+	stream->timing.dsc_cfg.block_pred_enable = 1;
+	stream->timing.dsc_cfg.linebuf_depth = 9;
+	stream->timing.dsc_cfg.version_minor = 2;
+	stream->timing.dsc_cfg.ycbcr422_simple = 0;
+#endif
 
 	update_stream_signal(stream, dc_sink_data);
 
@@ -160,6 +177,28 @@ struct dc_stream_state *dc_create_stream_for_sink(
 	return stream;
 }
 
+struct dc_stream_state *dc_copy_stream(const struct dc_stream_state *stream)
+{
+	struct dc_stream_state *new_stream;
+
+	new_stream = kmemdup(stream, sizeof(struct dc_stream_state), GFP_KERNEL);
+	if (!new_stream)
+		return NULL;
+
+	if (new_stream->sink)
+		dc_sink_retain(new_stream->sink);
+
+	if (new_stream->out_transfer_func)
+		dc_transfer_func_retain(new_stream->out_transfer_func);
+
+	new_stream->stream_id = new_stream->ctx->dc_stream_id_count;
+	new_stream->ctx->dc_stream_id_count++;
+
+	kref_init(&new_stream->refcount);
+
+	return new_stream;
+}
+
 /**
  * dc_stream_get_status_from_state - Get stream status from given dc state
  * @state: DC state to find the stream status in
@@ -194,6 +233,35 @@ struct dc_stream_status *dc_stream_get_status(
 {
 	struct dc *dc = stream->ctx->dc;
 	return dc_stream_get_status_from_state(dc->current_state, stream);
+}
+
+static void delay_cursor_until_vupdate(struct pipe_ctx *pipe_ctx, struct dc *dc)
+{
+#if defined(CONFIG_DRM_AMD_DC_DCN1_0)
+	unsigned int vupdate_line;
+	unsigned int lines_to_vupdate, us_to_vupdate, vpos, nvpos;
+	struct dc_stream_state *stream = pipe_ctx->stream;
+	unsigned int us_per_line;
+
+	if (stream->ctx->asic_id.chip_family == FAMILY_RV &&
+			ASICREV_IS_RAVEN(stream->ctx->asic_id.hw_internal_rev)) {
+
+		vupdate_line = get_vupdate_offset_from_vsync(pipe_ctx);
+		if (!dc_stream_get_crtc_position(dc, &stream, 1, &vpos, &nvpos))
+			return;
+
+		if (vpos >= vupdate_line)
+			return;
+
+		us_per_line = stream->timing.h_total * 10000 / stream->timing.pix_clk_100hz;
+		lines_to_vupdate = vupdate_line - vpos;
+		us_to_vupdate = lines_to_vupdate * us_per_line;
+
+		/* 70 us is a conservative estimate of cursor update time*/
+		if (us_to_vupdate < 70)
+			udelay(us_to_vupdate);
+	}
+#endif
 }
 
 /**
@@ -234,6 +302,8 @@ bool dc_stream_set_cursor_attributes(
 
 		if (!pipe_to_program) {
 			pipe_to_program = pipe_ctx;
+
+			delay_cursor_until_vupdate(pipe_ctx, core_dc);
 			core_dc->hwss.pipe_control_lock(core_dc, pipe_to_program, true);
 		}
 
@@ -278,11 +348,13 @@ bool dc_stream_set_cursor_position(
 				(!pipe_ctx->plane_res.mi  && !pipe_ctx->plane_res.hubp) ||
 				!pipe_ctx->plane_state ||
 				(!pipe_ctx->plane_res.xfm && !pipe_ctx->plane_res.dpp) ||
-				!pipe_ctx->plane_res.ipp)
+				(!pipe_ctx->plane_res.ipp && !pipe_ctx->plane_res.dpp))
 			continue;
 
 		if (!pipe_to_program) {
 			pipe_to_program = pipe_ctx;
+
+			delay_cursor_until_vupdate(pipe_ctx, core_dc);
 			core_dc->hwss.pipe_control_lock(core_dc, pipe_to_program, true);
 		}
 
@@ -294,6 +366,121 @@ bool dc_stream_set_cursor_position(
 
 	return true;
 }
+
+#if defined(CONFIG_DRM_AMD_DC_DCN2_0)
+bool dc_stream_add_writeback(struct dc *dc,
+		struct dc_stream_state *stream,
+		struct dc_writeback_info *wb_info)
+{
+	bool isDrc = false;
+	int i = 0;
+	struct dwbc *dwb;
+
+	if (stream == NULL) {
+		dm_error("DC: dc_stream is NULL!\n");
+		return false;
+	}
+
+	if (wb_info == NULL) {
+		dm_error("DC: dc_writeback_info is NULL!\n");
+		return false;
+	}
+
+	if (wb_info->dwb_pipe_inst >= MAX_DWB_PIPES) {
+		dm_error("DC: writeback pipe is invalid!\n");
+		return false;
+	}
+
+	wb_info->dwb_params.out_transfer_func = stream->out_transfer_func;
+
+	dwb = dc->res_pool->dwbc[wb_info->dwb_pipe_inst];
+	dwb->dwb_is_drc = false;
+
+	/* recalculate and apply DML parameters */
+
+	for (i = 0; i < stream->num_wb_info; i++) {
+		/*dynamic update*/
+		if (stream->writeback_info[i].wb_enabled &&
+			stream->writeback_info[i].dwb_pipe_inst == wb_info->dwb_pipe_inst) {
+			stream->writeback_info[i] = *wb_info;
+			isDrc = true;
+		}
+	}
+
+	if (!isDrc) {
+		stream->writeback_info[stream->num_wb_info++] = *wb_info;
+	}
+
+	if (!dc->hwss.update_bandwidth(dc, dc->current_state)) {
+		dm_error("DC: update_bandwidth failed!\n");
+		return false;
+	}
+
+	/* enable writeback */
+	if (dc->hwss.enable_writeback) {
+		struct dc_stream_status *stream_status = dc_stream_get_status(stream);
+		struct dwbc *dwb = dc->res_pool->dwbc[wb_info->dwb_pipe_inst];
+
+		if (dwb->funcs->is_enabled(dwb)) {
+			/* writeback pipe already enabled, only need to update */
+			dc->hwss.update_writeback(dc, stream_status, wb_info);
+		} else {
+			/* Enable writeback pipe from scratch*/
+			dc->hwss.enable_writeback(dc, stream_status, wb_info);
+		}
+	}
+
+	return true;
+}
+
+bool dc_stream_remove_writeback(struct dc *dc,
+		struct dc_stream_state *stream,
+		uint32_t dwb_pipe_inst)
+{
+	int i = 0, j = 0;
+	if (stream == NULL) {
+		dm_error("DC: dc_stream is NULL!\n");
+		return false;
+	}
+
+	if (dwb_pipe_inst >= MAX_DWB_PIPES) {
+		dm_error("DC: writeback pipe is invalid!\n");
+		return false;
+	}
+
+//	stream->writeback_info[dwb_pipe_inst].wb_enabled = false;
+	for (i = 0; i < stream->num_wb_info; i++) {
+		/*dynamic update*/
+		if (stream->writeback_info[i].wb_enabled &&
+			stream->writeback_info[i].dwb_pipe_inst == dwb_pipe_inst) {
+			stream->writeback_info[i].wb_enabled = false;
+		}
+	}
+
+	/* remove writeback info for disabled writeback pipes from stream */
+	for (i = 0, j = 0; i < stream->num_wb_info; i++) {
+		if (stream->writeback_info[i].wb_enabled) {
+			if (i != j)
+				/* trim the array */
+				stream->writeback_info[j] = stream->writeback_info[i];
+			j++;
+		}
+	}
+	stream->num_wb_info = j;
+
+	/* recalculate and apply DML parameters */
+	if (!dc->hwss.update_bandwidth(dc, dc->current_state)) {
+		dm_error("DC: update_bandwidth failed!\n");
+		return false;
+	}
+
+	/* disable writeback */
+	if (dc->hwss.disable_writeback)
+		dc->hwss.disable_writeback(dc, dwb_pipe_inst);
+
+	return true;
+}
+#endif
 
 uint32_t dc_stream_get_vblank_counter(const struct dc_stream_state *stream)
 {
@@ -312,6 +499,41 @@ uint32_t dc_stream_get_vblank_counter(const struct dc_stream_state *stream)
 	}
 
 	return 0;
+}
+
+bool dc_stream_send_dp_sdp(const struct dc_stream_state *stream,
+		const uint8_t *custom_sdp_message,
+		unsigned int sdp_message_size)
+{
+	int i;
+	struct dc  *dc;
+	struct resource_context *res_ctx;
+
+	if (stream == NULL) {
+		dm_error("DC: dc_stream is NULL!\n");
+		return false;
+	}
+
+	dc = stream->ctx->dc;
+	res_ctx = &dc->current_state->res_ctx;
+
+	for (i = 0; i < MAX_PIPES; i++) {
+		struct pipe_ctx *pipe_ctx = &res_ctx->pipe_ctx[i];
+
+		if (pipe_ctx->stream != stream)
+			continue;
+
+		if (dc->hwss.send_immediate_sdp_message != NULL)
+			dc->hwss.send_immediate_sdp_message(pipe_ctx,
+								custom_sdp_message,
+								sdp_message_size);
+		else
+			DC_LOG_WARNING("%s:send_immediate_sdp_message not implemented on this ASIC\n",
+			__func__);
+
+	}
+
+	return true;
 }
 
 bool dc_stream_get_scanoutpos(const struct dc_stream_state *stream,
@@ -344,6 +566,78 @@ bool dc_stream_get_scanoutpos(const struct dc_stream_state *stream,
 
 	return ret;
 }
+#if defined(CONFIG_DRM_AMD_DC_DCN2_0)
+bool dc_stream_dmdata_status_done(struct dc *dc, struct dc_stream_state *stream)
+{
+	bool status = true;
+	struct pipe_ctx *pipe = NULL;
+	int i;
+
+	if (!dc->hwss.dmdata_status_done)
+		return false;
+
+	for (i = 0; i < MAX_PIPES; i++) {
+		pipe = &dc->current_state->res_ctx.pipe_ctx[i];
+		if (pipe->stream == stream)
+			break;
+	}
+	/* Stream not found, by default we'll assume HUBP fetched dm data */
+	if (i == MAX_PIPES)
+		return true;
+
+	status = dc->hwss.dmdata_status_done(pipe);
+	return status;
+}
+
+bool dc_stream_set_dynamic_metadata(struct dc *dc,
+		struct dc_stream_state *stream,
+		struct dc_dmdata_attributes *attr)
+{
+	struct pipe_ctx *pipe_ctx = NULL;
+	struct hubp *hubp;
+	int i;
+
+	for (i = 0; i < MAX_PIPES; i++) {
+		pipe_ctx = &dc->current_state->res_ctx.pipe_ctx[i];
+		if (pipe_ctx->stream == stream)
+			break;
+	}
+
+	if (i == MAX_PIPES)
+		return false;
+
+	hubp = pipe_ctx->plane_res.hubp;
+	if (hubp == NULL)
+		return false;
+
+	pipe_ctx->stream->dmdata_address = attr->address;
+
+	if (pipe_ctx->stream_res.stream_enc &&
+			pipe_ctx->stream_res.stream_enc->funcs->set_dynamic_metadata != NULL) {
+		if (pipe_ctx->stream->dmdata_address.quad_part != 0) {
+			/* if using dynamic meta, don't set up generic infopackets */
+			pipe_ctx->stream_res.encoder_info_frame.hdrsmd.valid = false;
+			pipe_ctx->stream_res.stream_enc->funcs->set_dynamic_metadata(
+					pipe_ctx->stream_res.stream_enc,
+					true, pipe_ctx->plane_res.hubp->inst,
+					dc_is_dp_signal(pipe_ctx->stream->signal) ?
+							dmdata_dp : dmdata_hdmi);
+		} else
+			pipe_ctx->stream_res.stream_enc->funcs->set_dynamic_metadata(
+					pipe_ctx->stream_res.stream_enc,
+					false, pipe_ctx->plane_res.hubp->inst,
+					dc_is_dp_signal(pipe_ctx->stream->signal) ?
+							dmdata_dp : dmdata_hdmi);
+	}
+
+	if (hubp->funcs->dmdata_set_attributes != NULL &&
+			pipe_ctx->stream->dmdata_address.quad_part != 0) {
+		hubp->funcs->dmdata_set_attributes(hubp, attr);
+	}
+
+	return true;
+}
+#endif
 
 void dc_stream_log(const struct dc *dc, const struct dc_stream_state *stream)
 {

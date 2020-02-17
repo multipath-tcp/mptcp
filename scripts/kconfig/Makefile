@@ -12,6 +12,10 @@ else
 Kconfig := Kconfig
 endif
 
+ifndef KBUILD_DEFCONFIG
+KBUILD_DEFCONFIG := defconfig
+endif
+
 ifeq ($(quiet),silent_)
 silent := -s
 endif
@@ -74,16 +78,12 @@ savedefconfig: $(obj)/conf
 	$< $(silent) --$@=defconfig $(Kconfig)
 
 defconfig: $(obj)/conf
-ifeq ($(KBUILD_DEFCONFIG),)
-	$< $(silent) --defconfig $(Kconfig)
-else
 ifneq ($(wildcard $(srctree)/arch/$(SRCARCH)/configs/$(KBUILD_DEFCONFIG)),)
 	@$(kecho) "*** Default configuration is based on '$(KBUILD_DEFCONFIG)'"
 	$(Q)$< $(silent) --defconfig=arch/$(SRCARCH)/configs/$(KBUILD_DEFCONFIG) $(Kconfig)
 else
 	@$(kecho) "*** Default configuration is based on target '$(KBUILD_DEFCONFIG)'"
 	$(Q)$(MAKE) -f $(srctree)/Makefile $(KBUILD_DEFCONFIG)
-endif
 endif
 
 %_defconfig: $(obj)/conf
@@ -94,7 +94,7 @@ configfiles=$(wildcard $(srctree)/kernel/configs/$@ $(srctree)/arch/$(SRCARCH)/c
 %.config: $(obj)/conf
 	$(if $(call configfiles),, $(error No configuration exists for this target on this architecture))
 	$(Q)$(CONFIG_SHELL) $(srctree)/scripts/kconfig/merge_config.sh -m .config $(configfiles)
-	+$(Q)yes "" | $(MAKE) -f $(srctree)/Makefile oldconfig
+	$(Q)$(MAKE) -f $(srctree)/Makefile olddefconfig
 
 PHONY += kvmconfig
 kvmconfig: kvm_guest.config
@@ -147,8 +147,8 @@ common-objs	:= confdata.o expr.o lexer.lex.o parser.tab.o preprocess.o \
 		   symbol.o
 
 $(obj)/lexer.lex.o: $(obj)/parser.tab.h
-HOSTCFLAGS_lexer.lex.o	:= -I$(src)
-HOSTCFLAGS_parser.tab.o	:= -I$(src)
+HOSTCFLAGS_lexer.lex.o	:= -I $(srctree)/$(src)
+HOSTCFLAGS_parser.tab.o	:= -I $(srctree)/$(src)
 
 # conf: Used for defconfig, oldconfig and related targets
 hostprogs-y	+= conf

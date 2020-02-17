@@ -6,7 +6,7 @@
  * GPL LICENSE SUMMARY
  *
  * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 Intel Corporation
+ * Copyright(c) 2018 - 2019 Intel Corporation
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -20,7 +20,7 @@
  * BSD LICENSE
  *
  * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 Intel Corporation
+ * Copyright(c) 2018 - 2019 Intel Corporation
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -148,7 +148,7 @@ void _iwl_trans_pcie_gen2_stop_device(struct iwl_trans *trans, bool low_power)
 	trans_pcie->is_down = true;
 
 	/* Stop dbgc before stopping device */
-	_iwl_fw_dbg_stop_recording(trans, NULL);
+	iwl_fw_dbg_stop_recording(trans, NULL);
 
 	/* tell the device to stop sending interrupts */
 	iwl_disable_interrupts(trans);
@@ -234,7 +234,8 @@ void iwl_trans_pcie_gen2_stop_device(struct iwl_trans *trans, bool low_power)
 static int iwl_pcie_gen2_nic_init(struct iwl_trans *trans)
 {
 	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
-	int queue_size = max_t(u32, TFD_CMD_SLOTS, trans->cfg->min_txq_size);
+	int queue_size = max_t(u32, IWL_CMD_QUEUE_SIZE,
+			       trans->cfg->min_txq_size);
 
 	/* TODO: most of the logic can be removed in A0 - but not in Z0 */
 	spin_lock(&trans_pcie->irq_lock);
@@ -272,6 +273,15 @@ void iwl_trans_pcie_gen2_fw_alive(struct iwl_trans *trans, u32 scd_addr)
 	 * paging memory cannot be freed included since FW will still use it
 	 */
 	iwl_pcie_ctxt_info_free(trans);
+
+	/*
+	 * Re-enable all the interrupts, including the RF-Kill one, now that
+	 * the firmware is alive.
+	 */
+	iwl_enable_interrupts(trans);
+	mutex_lock(&trans_pcie->mutex);
+	iwl_pcie_check_hw_rf_kill(trans);
+	mutex_unlock(&trans_pcie->mutex);
 }
 
 int iwl_trans_pcie_gen2_start_fw(struct iwl_trans *trans,

@@ -229,7 +229,7 @@ lpfc_nvme_create_queue(struct nvme_fc_local_port *pnvme_lport,
 	if (qhandle == NULL)
 		return -ENOMEM;
 
-	qhandle->cpu_id = smp_processor_id();
+	qhandle->cpu_id = raw_smp_processor_id();
 	qhandle->qidx = qidx;
 	/*
 	 * NVME qidx == 0 is the admin queue, so both admin queue
@@ -312,7 +312,7 @@ lpfc_nvme_localport_delete(struct nvme_fc_local_port *localport)
  * Return value :
  * None
  */
-void
+static void
 lpfc_nvme_remoteport_delete(struct nvme_fc_remote_port *remoteport)
 {
 	struct lpfc_nvme_rport *rport = remoteport->private;
@@ -1106,13 +1106,16 @@ lpfc_nvme_io_cmd_wqe_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pwqeIn,
 					 lpfc_ncmd, nCmd,
 					 lpfc_ncmd->cur_iocbq.sli4_xritag,
 					 bf_get(lpfc_wcqe_c_xb, wcqe));
+			/* fall through */
 		default:
 out_err:
 			lpfc_printf_vlog(vport, KERN_INFO, LOG_NVME_IOERR,
 					 "6072 NVME Completion Error: xri %x "
-					 "status x%x result x%x placed x%x\n",
+					 "status x%x result x%x [x%x] "
+					 "placed x%x\n",
 					 lpfc_ncmd->cur_iocbq.sli4_xritag,
 					 lpfc_ncmd->status, lpfc_ncmd->result,
+					 wcqe->parameter,
 					 wcqe->total_data_placed);
 			nCmd->transferred_length = 0;
 			nCmd->rcv_rsplen = 0;
@@ -1140,7 +1143,7 @@ out_err:
 	if (phba->cpucheck_on & LPFC_CHECK_NVME_IO) {
 		uint32_t cpu;
 		idx = lpfc_ncmd->cur_iocbq.hba_wqidx;
-		cpu = smp_processor_id();
+		cpu = raw_smp_processor_id();
 		if (cpu < LPFC_CHECK_CPU_CNT) {
 			if (lpfc_ncmd->cpu != cpu)
 				lpfc_printf_vlog(vport,
@@ -1558,7 +1561,7 @@ lpfc_nvme_fcp_io_submit(struct nvme_fc_local_port *pnvme_lport,
 	if (phba->cfg_fcp_io_sched == LPFC_FCP_SCHED_BY_HDWQ) {
 		idx = lpfc_queue_info->index;
 	} else {
-		cpu = smp_processor_id();
+		cpu = raw_smp_processor_id();
 		idx = phba->sli4_hba.cpu_map[cpu].hdwq;
 	}
 
@@ -1638,7 +1641,7 @@ lpfc_nvme_fcp_io_submit(struct nvme_fc_local_port *pnvme_lport,
 		lpfc_ncmd->ts_cmd_wqput = ktime_get_ns();
 
 	if (phba->cpucheck_on & LPFC_CHECK_NVME_IO) {
-		cpu = smp_processor_id();
+		cpu = raw_smp_processor_id();
 		if (cpu < LPFC_CHECK_CPU_CNT) {
 			lpfc_ncmd->cpu = cpu;
 			if (idx != cpu)
@@ -2080,15 +2083,15 @@ lpfc_nvme_create_localport(struct lpfc_vport *vport)
 		lpfc_nvme_template.max_hw_queues =
 			phba->sli4_hba.num_present_cpu;
 
+	if (!IS_ENABLED(CONFIG_NVME_FC))
+		return ret;
+
 	/* localport is allocated from the stack, but the registration
 	 * call allocates heap memory as well as the private area.
 	 */
-#if (IS_ENABLED(CONFIG_NVME_FC))
+
 	ret = nvme_fc_register_localport(&nfcp_info, &lpfc_nvme_template,
 					 &vport->phba->pcidev->dev, &localport);
-#else
-	ret = -ENOMEM;
-#endif
 	if (!ret) {
 		lpfc_printf_vlog(vport, KERN_INFO, LOG_NVME | LOG_NVME_DISC,
 				 "6005 Successfully registered local "
@@ -2123,6 +2126,7 @@ lpfc_nvme_create_localport(struct lpfc_vport *vport)
 	return ret;
 }
 
+#if (IS_ENABLED(CONFIG_NVME_FC))
 /* lpfc_nvme_lport_unreg_wait - Wait for the host to complete an lport unreg.
  *
  * The driver has to wait for the host nvme transport to callback
@@ -2133,14 +2137,15 @@ lpfc_nvme_create_localport(struct lpfc_vport *vport)
  * An uninterruptible wait is used because of the risk of transport-to-
  * driver state mismatch.
  */
-void
+static void
 lpfc_nvme_lport_unreg_wait(struct lpfc_vport *vport,
 			   struct lpfc_nvme_lport *lport,
 			   struct completion *lport_unreg_cmp)
 {
-#if (IS_ENABLED(CONFIG_NVME_FC))
 	u32 wait_tmo;
-	int ret;
+	int ret, i, pending = 0;
+	struct lpfc_sli_ring  *pring;
+	struct lpfc_hba  *phba = vport->phba;
 
 	/* Host transport has to clean up and confirm requiring an indefinite
 	 * wait. Print a message if a 10 second wait expires and renew the
@@ -2150,10 +2155,18 @@ lpfc_nvme_lport_unreg_wait(struct lpfc_vport *vport,
 	while (true) {
 		ret = wait_for_completion_timeout(lport_unreg_cmp, wait_tmo);
 		if (unlikely(!ret)) {
+			pending = 0;
+			for (i = 0; i < phba->cfg_hdw_queue; i++) {
+				pring = phba->sli4_hba.hdwq[i].nvme_wq->pring;
+				if (!pring)
+					continue;
+				if (pring->txcmplq_cnt)
+					pending += pring->txcmplq_cnt;
+			}
 			lpfc_printf_vlog(vport, KERN_ERR, LOG_NVME_IOERR,
 					 "6176 Lport %p Localport %p wait "
-					 "timed out. Renewing.\n",
-					 lport, vport->localport);
+					 "timed out. Pending %d. Renewing.\n",
+					 lport, vport->localport, pending);
 			continue;
 		}
 		break;
@@ -2161,8 +2174,8 @@ lpfc_nvme_lport_unreg_wait(struct lpfc_vport *vport,
 	lpfc_printf_vlog(vport, KERN_INFO, LOG_NVME_IOERR,
 			 "6177 Lport %p Localport %p Complete Success\n",
 			 lport, vport->localport);
-#endif
 }
+#endif
 
 /**
  * lpfc_nvme_destroy_localport - Destroy lpfc_nvme bound to nvme transport.
@@ -2396,6 +2409,50 @@ lpfc_nvme_register_port(struct lpfc_vport *vport, struct lpfc_nodelist *ndlp)
 	return ret;
 #else
 	return 0;
+#endif
+}
+
+/**
+ * lpfc_nvme_rescan_port - Check to see if we should rescan this remoteport
+ *
+ * If the ndlp represents an NVME Target, that we are logged into,
+ * ping the NVME FC Transport layer to initiate a device rescan
+ * on this remote NPort.
+ */
+void
+lpfc_nvme_rescan_port(struct lpfc_vport *vport, struct lpfc_nodelist *ndlp)
+{
+#if (IS_ENABLED(CONFIG_NVME_FC))
+	struct lpfc_nvme_rport *rport;
+	struct nvme_fc_remote_port *remoteport;
+
+	rport = ndlp->nrport;
+
+	lpfc_printf_vlog(vport, KERN_INFO, LOG_NVME_DISC,
+			 "6170 Rescan NPort DID x%06x type x%x "
+			 "state x%x rport %p\n",
+			 ndlp->nlp_DID, ndlp->nlp_type, ndlp->nlp_state, rport);
+	if (!rport)
+		goto input_err;
+	remoteport = rport->remoteport;
+	if (!remoteport)
+		goto input_err;
+
+	/* Only rescan if we are an NVME target in the MAPPED state */
+	if (remoteport->port_role & FC_PORT_ROLE_NVME_DISCOVERY &&
+	    ndlp->nlp_state == NLP_STE_MAPPED_NODE) {
+		nvme_fc_rescan_remoteport(remoteport);
+
+		lpfc_printf_vlog(vport, KERN_ERR, LOG_NVME_DISC,
+				 "6172 NVME rescanned DID x%06x "
+				 "port_state x%x\n",
+				 ndlp->nlp_DID, remoteport->port_state);
+	}
+	return;
+input_err:
+	lpfc_printf_vlog(vport, KERN_ERR, LOG_NVME_DISC,
+			 "6169 State error: lport %p, rport%p FCID x%06x\n",
+			 vport->localport, ndlp->rport, ndlp->nlp_DID);
 #endif
 }
 

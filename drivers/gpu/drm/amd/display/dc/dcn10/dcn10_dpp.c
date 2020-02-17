@@ -91,13 +91,6 @@ enum dscl_mode_sel {
 	DSCL_MODE_DSCL_BYPASS = 6
 };
 
-enum gamut_remap_select {
-	GAMUT_REMAP_BYPASS = 0,
-	GAMUT_REMAP_COEFF,
-	GAMUT_REMAP_COMA_COEFF,
-	GAMUT_REMAP_COMB_COEFF
-};
-
 void dpp_read_state(struct dpp *dpp_base,
 		struct dcn_dpp_state *s)
 {
@@ -297,7 +290,12 @@ void dpp1_cnv_setup (
 		enum surface_pixel_format format,
 		enum expansion_mode mode,
 		struct dc_csc_transform input_csc_color_matrix,
+#ifdef CONFIG_DRM_AMD_DC_DCN2_0
+		enum dc_color_space input_color_space,
+		struct cnv_alpha_2bit_lut *alpha_2bit_lut)
+#else
 		enum dc_color_space input_color_space)
+#endif
 {
 	uint32_t pixel_format;
 	uint32_t alpha_en;
@@ -392,6 +390,10 @@ void dpp1_cnv_setup (
 	default:
 		break;
 	}
+
+	/* Set default color space based on format if none is given. */
+	color_space = input_color_space ? input_color_space : color_space;
+
 	REG_SET(CNVC_SURFACE_PIXEL_FORMAT, 0,
 			CNVC_SURFACE_PIXEL_FORMAT, pixel_format);
 	REG_UPDATE(FORMAT_CONTROL, FORMAT_CONTROL__ALPHA_EN, alpha_en);
@@ -403,7 +405,7 @@ void dpp1_cnv_setup (
 		for (i = 0; i < 12; i++)
 			tbl_entry.regval[i] = input_csc_color_matrix.matrix[i];
 
-		tbl_entry.color_space = input_color_space;
+		tbl_entry.color_space = color_space;
 
 		if (color_space >= COLOR_SPACE_YCBCR601)
 			select = INPUT_CSC_SELECT_ICSC;
@@ -526,6 +528,11 @@ static const struct dpp_funcs dcn10_dpp_funcs = {
 		.set_optional_cursor_attributes = dpp1_cnv_set_optional_cursor_attributes,
 		.dpp_dppclk_control = dpp1_dppclk_control,
 		.dpp_set_hdr_multiplier = dpp1_set_hdr_multiplier,
+#if defined(CONFIG_DRM_AMD_DC_DCN2_0)
+		.dpp_program_blnd_lut = NULL,
+		.dpp_program_shaper_lut = NULL,
+		.dpp_program_3dlut = NULL
+#endif
 };
 
 static struct dpp_caps dcn10_dpp_cap = {

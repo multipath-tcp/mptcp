@@ -1,10 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 #ifndef __KVM_HOST_H
 #define __KVM_HOST_H
 
-/*
- * This work is licensed under the terms of the GNU GPL, version 2.  See
- * the COPYING file in the top-level directory.
- */
 
 #include <linux/types.h>
 #include <linux/hardirq.h>
@@ -162,7 +159,7 @@ static inline bool is_error_page(struct page *page)
 
 extern struct kmem_cache *kvm_vcpu_cache;
 
-extern spinlock_t kvm_lock;
+extern struct mutex kvm_lock;
 extern struct list_head vm_list;
 
 struct kvm_io_range {
@@ -226,6 +223,32 @@ enum {
 	EXITING_GUEST_MODE,
 	READING_SHADOW_PAGE_TABLES,
 };
+
+#define KVM_UNMAPPED_PAGE	((void *) 0x500 + POISON_POINTER_DELTA)
+
+struct kvm_host_map {
+	/*
+	 * Only valid if the 'pfn' is managed by the host kernel (i.e. There is
+	 * a 'struct page' for it. When using mem= kernel parameter some memory
+	 * can be used as guest memory but they are not managed by host
+	 * kernel).
+	 * If 'pfn' is not managed by the host kernel, this field is
+	 * initialized to KVM_UNMAPPED_PAGE.
+	 */
+	struct page *page;
+	void *hva;
+	kvm_pfn_t pfn;
+	kvm_pfn_t gfn;
+};
+
+/*
+ * Used to check if the mapping is valid or not. Never use 'kvm_host_map'
+ * directly to check for that.
+ */
+static inline bool kvm_vcpu_mapped(struct kvm_host_map *map)
+{
+	return !!map->hva;
+}
 
 /*
  * Sometimes a large or cross-page mmio needs to be broken up into separate
@@ -295,6 +318,7 @@ struct kvm_vcpu {
 	} spin_loop;
 #endif
 	bool preempted;
+	bool ready;
 	struct kvm_vcpu_arch arch;
 	struct dentry *debugfs_dentry;
 };
@@ -733,7 +757,9 @@ struct kvm_memslots *kvm_vcpu_memslots(struct kvm_vcpu *vcpu);
 struct kvm_memory_slot *kvm_vcpu_gfn_to_memslot(struct kvm_vcpu *vcpu, gfn_t gfn);
 kvm_pfn_t kvm_vcpu_gfn_to_pfn_atomic(struct kvm_vcpu *vcpu, gfn_t gfn);
 kvm_pfn_t kvm_vcpu_gfn_to_pfn(struct kvm_vcpu *vcpu, gfn_t gfn);
+int kvm_vcpu_map(struct kvm_vcpu *vcpu, gpa_t gpa, struct kvm_host_map *map);
 struct page *kvm_vcpu_gfn_to_page(struct kvm_vcpu *vcpu, gfn_t gfn);
+void kvm_vcpu_unmap(struct kvm_vcpu *vcpu, struct kvm_host_map *map, bool dirty);
 unsigned long kvm_vcpu_gfn_to_hva(struct kvm_vcpu *vcpu, gfn_t gfn);
 unsigned long kvm_vcpu_gfn_to_hva_prot(struct kvm_vcpu *vcpu, gfn_t gfn, bool *writable);
 int kvm_vcpu_read_guest_page(struct kvm_vcpu *vcpu, gfn_t gfn, void *data, int offset,
@@ -835,17 +861,19 @@ int kvm_arch_vcpu_setup(struct kvm_vcpu *vcpu);
 void kvm_arch_vcpu_postcreate(struct kvm_vcpu *vcpu);
 void kvm_arch_vcpu_destroy(struct kvm_vcpu *vcpu);
 
-bool kvm_arch_has_vcpu_debugfs(void);
-int kvm_arch_create_vcpu_debugfs(struct kvm_vcpu *vcpu);
+#ifdef __KVM_HAVE_ARCH_VCPU_DEBUGFS
+void kvm_arch_create_vcpu_debugfs(struct kvm_vcpu *vcpu);
+#endif
 
 int kvm_arch_hardware_enable(void);
 void kvm_arch_hardware_disable(void);
 int kvm_arch_hardware_setup(void);
 void kvm_arch_hardware_unsetup(void);
-void kvm_arch_check_processor_compat(void *rtn);
+int kvm_arch_check_processor_compat(void);
 int kvm_arch_vcpu_runnable(struct kvm_vcpu *vcpu);
 bool kvm_arch_vcpu_in_kernel(struct kvm_vcpu *vcpu);
 int kvm_arch_vcpu_should_kick(struct kvm_vcpu *vcpu);
+bool kvm_arch_dy_runnable(struct kvm_vcpu *vcpu);
 
 #ifndef __KVM_HAVE_ARCH_VM_ALLOC
 /*
@@ -965,6 +993,7 @@ void kvm_unregister_irq_ack_notifier(struct kvm *kvm,
 				   struct kvm_irq_ack_notifier *kian);
 int kvm_request_irq_source_id(struct kvm *kvm);
 void kvm_free_irq_source_id(struct kvm *kvm, int irq_source_id);
+bool kvm_arch_irqfd_allowed(struct kvm *kvm, struct kvm_irqfd *args);
 
 /*
  * search_memslots() and __gfn_to_memslot() are here because they are
@@ -1242,11 +1271,21 @@ struct kvm_device_ops {
 	 */
 	void (*destroy)(struct kvm_device *dev);
 
+	/*
+	 * Release is an alternative method to free the device. It is
+	 * called when the device file descriptor is closed. Once
+	 * release is called, the destroy method will not be called
+	 * anymore as the device is removed from the device list of
+	 * the VM. kvm->lock is held.
+	 */
+	void (*release)(struct kvm_device *dev);
+
 	int (*set_attr)(struct kvm_device *dev, struct kvm_device_attr *attr);
 	int (*get_attr)(struct kvm_device *dev, struct kvm_device_attr *attr);
 	int (*has_attr)(struct kvm_device *dev, struct kvm_device_attr *attr);
 	long (*ioctl)(struct kvm_device *dev, unsigned int ioctl,
 		      unsigned long arg);
+	int (*mmap)(struct kvm_device *dev, struct vm_area_struct *vma);
 };
 
 void kvm_device_get(struct kvm_device *dev);
@@ -1306,6 +1345,16 @@ static inline bool vcpu_valid_wakeup(struct kvm_vcpu *vcpu)
 	return true;
 }
 #endif /* CONFIG_HAVE_KVM_INVALID_WAKEUPS */
+
+#ifdef CONFIG_HAVE_KVM_NO_POLL
+/* Callback that tells if we must not poll */
+bool kvm_arch_no_poll(struct kvm_vcpu *vcpu);
+#else
+static inline bool kvm_arch_no_poll(struct kvm_vcpu *vcpu)
+{
+	return false;
+}
+#endif /* CONFIG_HAVE_KVM_NO_POLL */
 
 #ifdef CONFIG_HAVE_KVM_VCPU_ASYNC_IOCTL
 long kvm_arch_vcpu_async_ioctl(struct file *filp,

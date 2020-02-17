@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * INET		An implementation of the TCP/IP protocol suite for the LINUX
  *		operating system.  INET is implemented using the  BSD Socket
@@ -304,6 +305,7 @@ void tcp_time_wait(struct sock *sk, int state, int timeo)
 			tcptw->mptcp_tw = NULL;
 		}
 
+		tcptw->tw_tx_delay	= tp->tcp_tx_delay;
 #if IS_ENABLED(CONFIG_IPV6)
 		if (tw->tw_family == PF_INET6) {
 			struct ipv6_pinfo *np = inet6_sk(sk);
@@ -312,6 +314,7 @@ void tcp_time_wait(struct sock *sk, int state, int timeo)
 			tw->tw_v6_rcv_saddr = sk->sk_v6_rcv_saddr;
 			tw->tw_tclass = np->tclass;
 			tw->tw_flowlabel = be32_to_cpu(np->flow_label & IPV6_FLOWLABEL_MASK);
+			tw->tw_txhash = sk->sk_txhash;
 			tw->tw_ipv6only = sk->sk_ipv6only;
 		}
 #endif
@@ -562,6 +565,11 @@ struct sock *tcp_create_openreq_child(const struct sock *sk,
 	}
 	if (ireq->saw_mpc)
 		newtp->tcp_header_len += MPTCP_SUB_LEN_DSM_ALIGN;
+	if (req->num_timeout) {
+		newtp->undo_marker = treq->snt_isn;
+		newtp->retrans_stamp = div_u64(treq->snt_synack,
+					       USEC_PER_SEC / TCP_TS_HZ);
+	}
 	newtp->tsoffset = treq->ts_off;
 #ifdef CONFIG_TCP_MD5SIG
 	newtp->md5sig_info = NULL;	/*XXX*/

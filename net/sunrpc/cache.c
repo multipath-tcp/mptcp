@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * net/sunrpc/cache.c
  *
@@ -5,9 +6,6 @@
  * used by sunrpc clients and servers.
  *
  * Copyright (C) 2002 Neil Brown <neilb@cse.unsw.edu.au>
- *
- * Released under terms in GPL version 2.  See COPYING.
- *
  */
 
 #include <linux/types.h>
@@ -40,6 +38,7 @@
 
 static bool cache_defer_req(struct cache_req *req, struct cache_head *item);
 static void cache_revisit_request(struct cache_head *item);
+static bool cache_listeners_exist(struct cache_detail *detail);
 
 static void cache_init(struct cache_head *h, struct cache_detail *detail)
 {
@@ -306,7 +305,8 @@ int cache_check(struct cache_detail *detail,
 				cache_fresh_unlocked(h, detail);
 				break;
 			}
-		}
+		} else if (!cache_listeners_exist(detail))
+			rv = try_to_negate_entry(detail, h);
 	}
 
 	if (rv == -EAGAIN) {
@@ -1375,7 +1375,6 @@ static void *cache_seq_next(struct seq_file *m, void *p, loff_t *pos)
 				hlist_first_rcu(&cd->hash_table[hash])),
 				struct cache_head, cache_list);
 }
-EXPORT_SYMBOL_GPL(cache_seq_next);
 
 void *cache_seq_start_rcu(struct seq_file *m, loff_t *pos)
 	__acquires(RCU)

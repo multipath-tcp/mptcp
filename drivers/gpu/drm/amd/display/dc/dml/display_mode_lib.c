@@ -25,40 +25,36 @@
 
 #include "display_mode_lib.h"
 #include "dc_features.h"
+#if defined(CONFIG_DRM_AMD_DC_DCN2_0)
+#include "dcn20/display_mode_vba_20.h"
+#include "dcn20/display_rq_dlg_calc_20.h"
+#endif
 
-extern const struct _vcs_dpi_ip_params_st dcn1_0_ip;
-extern const struct _vcs_dpi_soc_bounding_box_st dcn1_0_soc;
+#if defined(CONFIG_DRM_AMD_DC_DCN2_0)
+const struct dml_funcs dml20_funcs = {
+	.validate = dml20_ModeSupportAndSystemConfigurationFull,
+	.recalculate = dml20_recalculate,
+	.rq_dlg_get_dlg_reg = dml20_rq_dlg_get_dlg_reg,
+	.rq_dlg_get_rq_reg = dml20_rq_dlg_get_rq_reg
+};
+#endif
 
-static void set_soc_bounding_box(struct _vcs_dpi_soc_bounding_box_st *soc, enum dml_project project)
+void dml_init_instance(struct display_mode_lib *lib,
+		const struct _vcs_dpi_soc_bounding_box_st *soc_bb,
+		const struct _vcs_dpi_ip_params_st *ip_params,
+		enum dml_project project)
 {
+	lib->soc = *soc_bb;
+	lib->ip = *ip_params;
+	lib->project = project;
 	switch (project) {
-	case DML_PROJECT_RAVEN1:
-		*soc = dcn1_0_soc;
+#ifdef CONFIG_DRM_AMD_DC_DCN2_0
+	case DML_PROJECT_NAVI10:
+		lib->funcs = dml20_funcs;
 		break;
+#endif
 	default:
-		ASSERT(0);
 		break;
-	}
-}
-
-static void set_ip_params(struct _vcs_dpi_ip_params_st *ip, enum dml_project project)
-{
-	switch (project) {
-	case DML_PROJECT_RAVEN1:
-		*ip = dcn1_0_ip;
-		break;
-	default:
-		ASSERT(0);
-		break;
-	}
-}
-
-void dml_init_instance(struct display_mode_lib *lib, enum dml_project project)
-{
-	if (lib->project != project) {
-		set_soc_bounding_box(&lib->soc, project);
-		set_ip_params(&lib->ip, project);
-		lib->project = project;
 	}
 }
 

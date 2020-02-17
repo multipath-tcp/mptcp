@@ -1,13 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* SIP extension for IP connection tracking.
  *
  * (C) 2005 by Christian Hentschel <chentschel@arnet.com.ar>
  * based on RR's ip_conntrack_ftp.c and other modules.
  * (C) 2007 United Security Providers
  * (C) 2007, 2008 Patrick McHardy <kaber@trash.net>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -30,11 +27,13 @@
 #include <net/netfilter/nf_conntrack_zones.h>
 #include <linux/netfilter/nf_conntrack_sip.h>
 
+#define HELPER_NAME "sip"
+
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Christian Hentschel <chentschel@arnet.com.ar>");
 MODULE_DESCRIPTION("SIP connection tracking helper");
 MODULE_ALIAS("ip_conntrack_sip");
-MODULE_ALIAS_NFCT_HELPER("sip");
+MODULE_ALIAS_NFCT_HELPER(HELPER_NAME);
 
 #define MAX_PORTS	8
 static unsigned short ports[MAX_PORTS];
@@ -928,7 +927,7 @@ static int set_expected_rtp_rtcp(struct sk_buff *skb, unsigned int protoff,
 		    nfct_help(exp->master)->helper != nfct_help(ct)->helper ||
 		    exp->class != class)
 			break;
-#ifdef CONFIG_NF_NAT_NEEDED
+#if IS_ENABLED(CONFIG_NF_NAT)
 		if (!direct_rtp &&
 		    (!nf_inet_addr_cmp(&exp->saved_addr, &exp->tuple.dst.u3) ||
 		     exp->saved_proto.udp.port != exp->tuple.dst.u.udp.port) &&
@@ -978,11 +977,15 @@ static int set_expected_rtp_rtcp(struct sk_buff *skb, unsigned int protoff,
 		/* -EALREADY handling works around end-points that send
 		 * SDP messages with identical port but different media type,
 		 * we pretend expectation was set up.
+		 * It also works in the case that SDP messages are sent with
+		 * identical expect tuples but for different master conntracks.
 		 */
-		int errp = nf_ct_expect_related(rtp_exp);
+		int errp = nf_ct_expect_related(rtp_exp,
+						NF_CT_EXP_F_SKIP_MASTER);
 
 		if (errp == 0 || errp == -EALREADY) {
-			int errcp = nf_ct_expect_related(rtcp_exp);
+			int errcp = nf_ct_expect_related(rtcp_exp,
+						NF_CT_EXP_F_SKIP_MASTER);
 
 			if (errcp == 0 || errcp == -EALREADY)
 				ret = NF_ACCEPT;
@@ -1297,7 +1300,7 @@ static int process_register_request(struct sk_buff *skb, unsigned int protoff,
 		ret = hooks->expect(skb, protoff, dataoff, dptr, datalen,
 				    exp, matchoff, matchlen);
 	else {
-		if (nf_ct_expect_related(exp) != 0) {
+		if (nf_ct_expect_related(exp, 0) != 0) {
 			nf_ct_helper_log(skb, ct, "cannot add expectation");
 			ret = NF_DROP;
 		} else
@@ -1669,21 +1672,21 @@ static int __init nf_conntrack_sip_init(void)
 		ports[ports_c++] = SIP_PORT;
 
 	for (i = 0; i < ports_c; i++) {
-		nf_ct_helper_init(&sip[4 * i], AF_INET, IPPROTO_UDP, "sip",
-				  SIP_PORT, ports[i], i, sip_exp_policy,
-				  SIP_EXPECT_MAX, sip_help_udp,
+		nf_ct_helper_init(&sip[4 * i], AF_INET, IPPROTO_UDP,
+				  HELPER_NAME, SIP_PORT, ports[i], i,
+				  sip_exp_policy, SIP_EXPECT_MAX, sip_help_udp,
 				  NULL, THIS_MODULE);
-		nf_ct_helper_init(&sip[4 * i + 1], AF_INET, IPPROTO_TCP, "sip",
-				  SIP_PORT, ports[i], i, sip_exp_policy,
-				  SIP_EXPECT_MAX, sip_help_tcp,
+		nf_ct_helper_init(&sip[4 * i + 1], AF_INET, IPPROTO_TCP,
+				  HELPER_NAME, SIP_PORT, ports[i], i,
+				  sip_exp_policy, SIP_EXPECT_MAX, sip_help_tcp,
 				  NULL, THIS_MODULE);
-		nf_ct_helper_init(&sip[4 * i + 2], AF_INET6, IPPROTO_UDP, "sip",
-				  SIP_PORT, ports[i], i, sip_exp_policy,
-				  SIP_EXPECT_MAX, sip_help_udp,
+		nf_ct_helper_init(&sip[4 * i + 2], AF_INET6, IPPROTO_UDP,
+				  HELPER_NAME, SIP_PORT, ports[i], i,
+				  sip_exp_policy, SIP_EXPECT_MAX, sip_help_udp,
 				  NULL, THIS_MODULE);
-		nf_ct_helper_init(&sip[4 * i + 3], AF_INET6, IPPROTO_TCP, "sip",
-				  SIP_PORT, ports[i], i, sip_exp_policy,
-				  SIP_EXPECT_MAX, sip_help_tcp,
+		nf_ct_helper_init(&sip[4 * i + 3], AF_INET6, IPPROTO_TCP,
+				  HELPER_NAME, SIP_PORT, ports[i], i,
+				  sip_exp_policy, SIP_EXPECT_MAX, sip_help_tcp,
 				  NULL, THIS_MODULE);
 	}
 

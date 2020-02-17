@@ -14,6 +14,7 @@
 #include <linux/types.h>
 #include <linux/wait.h>
 
+#include "../ccm.h"
 #include "../nfp_asm.h"
 #include "fw.h"
 
@@ -84,15 +85,9 @@ enum pkt_vec {
 /**
  * struct nfp_app_bpf - bpf app priv structure
  * @app:		backpointer to the app
+ * @ccm:		common control message handler data
  *
  * @bpf_dev:		BPF offload device handle
- *
- * @tag_allocator:	bitmap of control message tags in use
- * @tag_alloc_next:	next tag bit to allocate
- * @tag_alloc_last:	next tag bit to be freed
- *
- * @cmsg_replies:	received cmsg replies waiting to be consumed
- * @cmsg_wq:		work queue for waiting for cmsg replies
  *
  * @cmsg_key_sz:	size of key in cmsg element array
  * @cmsg_val_sz:	size of value in cmsg element array
@@ -132,15 +127,9 @@ enum pkt_vec {
  */
 struct nfp_app_bpf {
 	struct nfp_app *app;
+	struct nfp_ccm ccm;
 
 	struct bpf_offload_dev *bpf_dev;
-
-	DECLARE_BITMAP(tag_allocator, U16_MAX + 1);
-	u16 tag_alloc_next;
-	u16 tag_alloc_last;
-
-	struct sk_buff_head cmsg_replies;
-	struct wait_queue_head cmsg_wq;
 
 	unsigned int cmsg_key_sz;
 	unsigned int cmsg_val_sz;
@@ -249,6 +238,8 @@ struct nfp_bpf_reg_state {
 #define FLAG_INSN_SKIP_PREC_DEPENDENT		BIT(4)
 /* Instruction is optimized by the verifier */
 #define FLAG_INSN_SKIP_VERIFIER_OPT		BIT(5)
+/* Instruction needs to zero extend to high 32-bit */
+#define FLAG_INSN_DO_ZEXT			BIT(6)
 
 #define FLAG_INSN_SKIP_MASK		(FLAG_INSN_SKIP_NOOP | \
 					 FLAG_INSN_SKIP_PREC_DEPENDENT | \

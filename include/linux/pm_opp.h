@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Generic OPP Interface
  *
@@ -5,10 +6,6 @@
  *	Nishanth Menon
  *	Romit Dasgupta
  *	Kevin Hilman
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #ifndef __LINUX_OPP_H__
@@ -102,6 +99,8 @@ struct dev_pm_opp *dev_pm_opp_find_freq_exact(struct device *dev,
 
 struct dev_pm_opp *dev_pm_opp_find_freq_floor(struct device *dev,
 					      unsigned long *freq);
+struct dev_pm_opp *dev_pm_opp_find_freq_ceil_by_volt(struct device *dev,
+						     unsigned long u_volt);
 
 struct dev_pm_opp *dev_pm_opp_find_freq_ceil(struct device *dev,
 					     unsigned long *freq);
@@ -129,8 +128,8 @@ struct opp_table *dev_pm_opp_set_clkname(struct device *dev, const char * name);
 void dev_pm_opp_put_clkname(struct opp_table *opp_table);
 struct opp_table *dev_pm_opp_register_set_opp_helper(struct device *dev, int (*set_opp)(struct dev_pm_set_opp_data *data));
 void dev_pm_opp_unregister_set_opp_helper(struct opp_table *opp_table);
-struct opp_table *dev_pm_opp_set_genpd_virt_dev(struct device *dev, struct device *virt_dev, int index);
-void dev_pm_opp_put_genpd_virt_dev(struct opp_table *opp_table, struct device *virt_dev);
+struct opp_table *dev_pm_opp_attach_genpd(struct device *dev, const char **names);
+void dev_pm_opp_detach_genpd(struct opp_table *opp_table);
 int dev_pm_opp_xlate_performance_state(struct opp_table *src_table, struct opp_table *dst_table, unsigned int pstate);
 int dev_pm_opp_set_rate(struct device *dev, unsigned long target_freq);
 int dev_pm_opp_set_sharing_cpus(struct device *cpu_dev, const struct cpumask *cpumask);
@@ -203,6 +202,12 @@ static inline struct dev_pm_opp *dev_pm_opp_find_freq_exact(struct device *dev,
 
 static inline struct dev_pm_opp *dev_pm_opp_find_freq_floor(struct device *dev,
 					unsigned long *freq)
+{
+	return ERR_PTR(-ENOTSUPP);
+}
+
+static inline struct dev_pm_opp *dev_pm_opp_find_freq_ceil_by_volt(struct device *dev,
+					unsigned long u_volt)
 {
 	return ERR_PTR(-ENOTSUPP);
 }
@@ -287,12 +292,12 @@ static inline struct opp_table *dev_pm_opp_set_clkname(struct device *dev, const
 
 static inline void dev_pm_opp_put_clkname(struct opp_table *opp_table) {}
 
-static inline struct opp_table *dev_pm_opp_set_genpd_virt_dev(struct device *dev, struct device *virt_dev, int index)
+static inline struct opp_table *dev_pm_opp_attach_genpd(struct device *dev, const char **names)
 {
 	return ERR_PTR(-ENOTSUPP);
 }
 
-static inline void dev_pm_opp_put_genpd_virt_dev(struct opp_table *opp_table, struct device *virt_dev) {}
+static inline void dev_pm_opp_detach_genpd(struct opp_table *opp_table) {}
 
 static inline int dev_pm_opp_xlate_performance_state(struct opp_table *src_table, struct opp_table *dst_table, unsigned int pstate)
 {

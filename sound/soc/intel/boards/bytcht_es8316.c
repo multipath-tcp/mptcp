@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  bytcht_es8316.c - ASoc Machine driver for Intel Baytrail/Cherrytrail
  *                    platforms with Everest ES8316 SoC
@@ -8,20 +9,12 @@
  *
  *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; version 2 of the License.
- *
- *  This program is distributed in the hope that it will be useful, but
- *  WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- *  General Public License for more details.
- *
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  */
 #include <linux/acpi.h>
 #include <linux/clk.h>
 #include <linux/device.h>
+#include <linux/dmi.h>
 #include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
 #include <linux/init.h>
@@ -29,9 +22,6 @@
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-#include <asm/cpu_device_id.h>
-#include <asm/intel-family.h>
-#include <asm/platform_sst_audio.h>
 #include <sound/jack.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
@@ -39,6 +29,10 @@
 #include <sound/soc-acpi.h>
 #include "../atom/sst-atom-controls.h"
 #include "../common/sst-dsp.h"
+#include "../common/soc-intel-quirks.h"
+
+/* jd-inv + terminating entry */
+#define MAX_NO_PROPS 2
 
 struct byt_cht_es8316_private {
 	struct clk *mclk;
@@ -55,8 +49,9 @@ enum {
 #define BYT_CHT_ES8316_MAP(quirk)		((quirk) & GENMASK(3, 0))
 #define BYT_CHT_ES8316_SSP0			BIT(16)
 #define BYT_CHT_ES8316_MONO_SPEAKER		BIT(17)
+#define BYT_CHT_ES8316_JD_INVERTED		BIT(18)
 
-static int quirk;
+static unsigned long quirk;
 
 static int quirk_override = -1;
 module_param_named(quirk, quirk_override, int, 0444);
@@ -72,6 +67,8 @@ static void log_quirks(struct device *dev)
 		dev_info(dev, "quirk SSP0 enabled");
 	if (quirk & BYT_CHT_ES8316_MONO_SPEAKER)
 		dev_info(dev, "quirk MONO_SPEAKER enabled\n");
+	if (quirk & BYT_CHT_ES8316_JD_INVERTED)
+		dev_info(dev, "quirk JD_INVERTED enabled\n");
 }
 
 static int byt_cht_es8316_speaker_power_event(struct snd_soc_dapm_widget *w,
@@ -302,32 +299,43 @@ static const struct snd_soc_ops byt_cht_es8316_aif1_ops = {
 	.startup = byt_cht_es8316_aif1_startup,
 };
 
+SND_SOC_DAILINK_DEF(dummy,
+	DAILINK_COMP_ARRAY(COMP_DUMMY()));
+
+SND_SOC_DAILINK_DEF(media,
+	DAILINK_COMP_ARRAY(COMP_CPU("media-cpu-dai")));
+
+SND_SOC_DAILINK_DEF(deepbuffer,
+	DAILINK_COMP_ARRAY(COMP_CPU("deepbuffer-cpu-dai")));
+
+SND_SOC_DAILINK_DEF(ssp2_port,
+	DAILINK_COMP_ARRAY(COMP_CPU("ssp2-port")));
+SND_SOC_DAILINK_DEF(ssp2_codec,
+	DAILINK_COMP_ARRAY(COMP_CODEC("i2c-ESSX8316:00", "ES8316 HiFi")));
+
+SND_SOC_DAILINK_DEF(platform,
+	DAILINK_COMP_ARRAY(COMP_PLATFORM("sst-mfld-platform")));
+
 static struct snd_soc_dai_link byt_cht_es8316_dais[] = {
 	[MERR_DPCM_AUDIO] = {
 		.name = "Audio Port",
 		.stream_name = "Audio",
-		.cpu_dai_name = "media-cpu-dai",
-		.codec_dai_name = "snd-soc-dummy-dai",
-		.codec_name = "snd-soc-dummy",
-		.platform_name = "sst-mfld-platform",
 		.nonatomic = true,
 		.dynamic = 1,
 		.dpcm_playback = 1,
 		.dpcm_capture = 1,
 		.ops = &byt_cht_es8316_aif1_ops,
+		SND_SOC_DAILINK_REG(media, dummy, platform),
 	},
 
 	[MERR_DPCM_DEEP_BUFFER] = {
 		.name = "Deep-Buffer Audio Port",
 		.stream_name = "Deep-Buffer Audio",
-		.cpu_dai_name = "deepbuffer-cpu-dai",
-		.codec_dai_name = "snd-soc-dummy-dai",
-		.codec_name = "snd-soc-dummy",
-		.platform_name = "sst-mfld-platform",
 		.nonatomic = true,
 		.dynamic = 1,
 		.dpcm_playback = 1,
 		.ops = &byt_cht_es8316_aif1_ops,
+		SND_SOC_DAILINK_REG(deepbuffer, dummy, platform),
 	},
 
 		/* back ends */
@@ -337,11 +345,7 @@ static struct snd_soc_dai_link byt_cht_es8316_dais[] = {
 		 */
 		.name = "SSP2-Codec",
 		.id = 0,
-		.cpu_dai_name = "ssp2-port",
-		.platform_name = "sst-mfld-platform",
 		.no_pcm = 1,
-		.codec_dai_name = "ES8316 HiFi",
-		.codec_name = "i2c-ESSX8316:00",
 		.dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF
 						| SND_SOC_DAIFMT_CBS_CFS,
 		.be_hw_params_fixup = byt_cht_es8316_codec_fixup,
@@ -349,6 +353,7 @@ static struct snd_soc_dai_link byt_cht_es8316_dais[] = {
 		.dpcm_playback = 1,
 		.dpcm_capture = 1,
 		.init = byt_cht_es8316_init,
+		SND_SOC_DAILINK_REG(ssp2_port, ssp2_codec, platform),
 	},
 };
 
@@ -423,11 +428,6 @@ static struct snd_soc_card byt_cht_es8316_card = {
 	.resume_post = byt_cht_es8316_resume,
 };
 
-static const struct x86_cpu_id baytrail_cpu_ids[] = {
-	{ X86_VENDOR_INTEL, 6, INTEL_FAM6_ATOM_SILVERMONT }, /* Valleyview */
-	{}
-};
-
 static const struct acpi_gpio_params first_gpio = { 0, 0, false };
 
 static const struct acpi_gpio_mapping byt_cht_es8316_gpios[] = {
@@ -435,15 +435,39 @@ static const struct acpi_gpio_mapping byt_cht_es8316_gpios[] = {
 	{ },
 };
 
+/* Please keep this list alphabetically sorted */
+static const struct dmi_system_id byt_cht_es8316_quirk_table[] = {
+	{	/* Irbis NB41 */
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "IRBIS"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "NB41"),
+		},
+		.driver_data = (void *)(BYT_CHT_ES8316_INTMIC_IN2_MAP
+					| BYT_CHT_ES8316_JD_INVERTED),
+	},
+	{	/* Teclast X98 Plus II */
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "TECLAST"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "X98 Plus II"),
+		},
+		.driver_data = (void *)(BYT_CHT_ES8316_INTMIC_IN1_MAP
+					| BYT_CHT_ES8316_JD_INVERTED),
+	},
+	{}
+};
+
 static int snd_byt_cht_es8316_mc_probe(struct platform_device *pdev)
 {
 	static const char * const mic_name[] = { "in1", "in2" };
+	struct property_entry props[MAX_NO_PROPS] = {};
 	struct byt_cht_es8316_private *priv;
+	const struct dmi_system_id *dmi_id;
 	struct device *dev = &pdev->dev;
 	struct snd_soc_acpi_mach *mach;
 	const char *platform_name;
-	const char *i2c_name = NULL;
+	struct acpi_device *adev;
 	struct device *codec_dev;
+	unsigned int cnt = 0;
 	int dai_index = 0;
 	int i;
 	int ret = 0;
@@ -455,7 +479,7 @@ static int snd_byt_cht_es8316_mc_probe(struct platform_device *pdev)
 	mach = dev->platform_data;
 	/* fix index of codec dai */
 	for (i = 0; i < ARRAY_SIZE(byt_cht_es8316_dais); i++) {
-		if (!strcmp(byt_cht_es8316_dais[i].codec_name,
+		if (!strcmp(byt_cht_es8316_dais[i].codecs->name,
 			    "i2c-ESSX8316:00")) {
 			dai_index = i;
 			break;
@@ -463,14 +487,16 @@ static int snd_byt_cht_es8316_mc_probe(struct platform_device *pdev)
 	}
 
 	/* fixup codec name based on HID */
-	i2c_name = acpi_dev_get_first_match_name(mach->id, NULL, -1);
-	if (i2c_name) {
+	adev = acpi_dev_get_first_match_dev(mach->id, NULL, -1);
+	if (adev) {
 		snprintf(codec_name, sizeof(codec_name),
-			"%s%s", "i2c-", i2c_name);
-		byt_cht_es8316_dais[dai_index].codec_name = codec_name;
+			 "i2c-%s", acpi_dev_name(adev));
+		put_device(&adev->dev);
+		byt_cht_es8316_dais[dai_index].codecs->name = codec_name;
 	}
 
 	/* override plaform name, if required */
+	byt_cht_es8316_card.dev = dev;
 	platform_name = mach->mach_params.platform;
 
 	ret = snd_soc_fixup_dai_links_platform_name(&byt_cht_es8316_card,
@@ -479,8 +505,11 @@ static int snd_byt_cht_es8316_mc_probe(struct platform_device *pdev)
 		return ret;
 
 	/* Check for BYTCR or other platform and setup quirks */
-	if (x86_match_cpu(baytrail_cpu_ids) &&
-	    mach->mach_params.acpi_ipc_irq_index == 0) {
+	dmi_id = dmi_first_match(byt_cht_es8316_quirk_table);
+	if (dmi_id) {
+		quirk = (unsigned long)dmi_id->driver_data;
+	} else if (soc_intel_is_byt() &&
+		   mach->mach_params.acpi_ipc_irq_index == 0) {
 		/* On BYTCR default to SSP0, internal-mic-in2-map, mono-spk */
 		quirk = BYT_CHT_ES8316_SSP0 | BYT_CHT_ES8316_INTMIC_IN2_MAP |
 			BYT_CHT_ES8316_MONO_SPEAKER;
@@ -490,14 +519,15 @@ static int snd_byt_cht_es8316_mc_probe(struct platform_device *pdev)
 			BYT_CHT_ES8316_MONO_SPEAKER;
 	}
 	if (quirk_override != -1) {
-		dev_info(dev, "Overriding quirk 0x%x => 0x%x\n", quirk,
+		dev_info(dev, "Overriding quirk 0x%x => 0x%x\n",
+			 (unsigned int)quirk,
 			 quirk_override);
 		quirk = quirk_override;
 	}
 	log_quirks(dev);
 
 	if (quirk & BYT_CHT_ES8316_SSP0)
-		byt_cht_es8316_dais[dai_index].cpu_dai_name = "ssp0-port";
+		byt_cht_es8316_dais[dai_index].cpus->dai_name = "ssp0-port";
 
 	/* get the clock */
 	priv->mclk = devm_clk_get(dev, "pmc_plt_clk_3");
@@ -511,6 +541,15 @@ static int snd_byt_cht_es8316_mc_probe(struct platform_device *pdev)
 	codec_dev = bus_find_device_by_name(&i2c_bus_type, NULL, codec_name);
 	if (!codec_dev)
 		return -EPROBE_DEFER;
+
+	if (quirk & BYT_CHT_ES8316_JD_INVERTED)
+		props[cnt++] = PROPERTY_ENTRY_BOOL("everest,jack-detect-inverted");
+
+	if (cnt) {
+		ret = device_add_properties(codec_dev, props);
+		if (ret)
+			return ret;
+	}
 
 	devm_acpi_dev_add_driver_gpios(codec_dev, byt_cht_es8316_gpios);
 	priv->speaker_en_gpio =
@@ -538,7 +577,6 @@ static int snd_byt_cht_es8316_mc_probe(struct platform_device *pdev)
 		 (quirk & BYT_CHT_ES8316_MONO_SPEAKER) ? "mono" : "stereo",
 		 mic_name[BYT_CHT_ES8316_MAP(quirk)]);
 	byt_cht_es8316_card.long_name = long_name;
-	byt_cht_es8316_card.dev = dev;
 	snd_soc_card_set_drvdata(&byt_cht_es8316_card, priv);
 
 	ret = devm_snd_soc_register_card(dev, &byt_cht_es8316_card);

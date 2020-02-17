@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 menu "Kernel hacking"
 
 menu "printk and dmesg options"
@@ -219,6 +220,14 @@ config DEBUG_INFO_DWARF4
 	  But it significantly improves the success of resolving
 	  variables in gdb on optimized code.
 
+config DEBUG_INFO_BTF
+	bool "Generate BTF typeinfo"
+	depends on DEBUG_INFO
+	help
+	  Generate deduplicated BTF type information from DWARF debug info.
+	  Turning this on expects presence of pahole tool, which will convert
+	  DWARF type info into equivalent deduplicated BTF type info.
+
 config GDB_SCRIPTS
 	bool "Provide GDB scripts for kernel debugging"
 	depends on DEBUG_INFO
@@ -296,19 +305,40 @@ config DEBUG_FS
 
 	  If unsure, say N.
 
-config HEADERS_CHECK
-	bool "Run 'make headers_check' when building vmlinux"
+config HEADERS_INSTALL
+	bool "Install uapi headers to usr/include"
 	depends on !UML
 	help
-	  This option will extract the user-visible kernel headers whenever
-	  building the kernel, and will run basic sanity checks on them to
-	  ensure that exported files do not attempt to include files which
-	  were not exported, etc.
+	  This option will install uapi headers (headers exported to user-space)
+	  into the usr/include directory for use during the kernel build.
+	  This is unneeded for building the kernel itself, but needed for some
+	  user-space program samples. It is also needed by some features such
+	  as uapi header sanity checks.
+
+config HEADERS_CHECK
+	bool "Run sanity checks on uapi headers when building 'all'"
+	depends on HEADERS_INSTALL
+	help
+	  This option will run basic sanity checks on uapi headers when
+	  building the 'all' target, for example, ensure that they do not
+	  attempt to include files which were not exported, etc.
 
 	  If you're making modifications to header files which are
-	  relevant for userspace, say 'Y', and check the headers
-	  exported to $(INSTALL_HDR_PATH) (usually 'usr/include' in
-	  your build tree), to make sure they're suitable.
+	  relevant for userspace, say 'Y'.
+
+config OPTIMIZE_INLINING
+	bool "Allow compiler to uninline functions marked 'inline'"
+	help
+	  This option determines if the kernel forces gcc to inline the functions
+	  developers have marked 'inline'. Doing so takes away freedom from gcc to
+	  do what it thinks is best, which is desirable for the gcc 3.x series of
+	  compilers. The gcc 4.x series have a rewritten inlining algorithm and
+	  enabling this option will generate a smaller kernel there. Hopefully
+	  this algorithm is so good that allowing gcc 4.x and above to make the
+	  decision will become the default in the future. Until then this option
+	  is there to test gcc for this.
+
+	  If unsure, say N.
 
 config DEBUG_SECTION_MISMATCH
 	bool "Enable full Section mismatch analysis"
@@ -323,23 +353,13 @@ config DEBUG_SECTION_MISMATCH
 	  which results in the code/data being placed in specific sections.
 	  The section mismatch analysis is always performed after a full
 	  kernel build, and enabling this option causes the following
-	  additional steps to occur:
+	  additional step to occur:
 	  - Add the option -fno-inline-functions-called-once to gcc commands.
 	    When inlining a function annotated with __init in a non-init
 	    function, we would lose the section information and thus
 	    the analysis would not catch the illegal reference.
 	    This option tells gcc to inline less (but it does result in
 	    a larger kernel).
-	  - Run the section mismatch analysis for each module/built-in.a file.
-	    When we run the section mismatch analysis on vmlinux.o, we
-	    lose valuable information about where the mismatch was
-	    introduced.
-	    Running the analysis for each module/built-in.a file
-	    tells where the mismatch happens much closer to the
-	    source. The drawback is that the same mismatch is
-	    reported at least twice.
-	  - Enable verbose reporting from modpost in order to help resolve
-	    the section mismatches that are reported.
 
 config SECTION_MISMATCH_WARN_ONLY
 	bool "Make section mismatch errors non-fatal"
@@ -438,6 +458,15 @@ config DEBUG_KERNEL
 	  Say Y here if you are developing drivers or trying to debug and
 	  identify kernel problems.
 
+config DEBUG_MISC
+	bool "Miscellaneous debug code"
+	default DEBUG_KERNEL
+	depends on DEBUG_KERNEL
+	help
+	  Say Y here if you need to enable miscellaneous debug code that should
+	  be under a more specific debug option but isn't.
+
+
 menu "Memory Debugging"
 
 source "mm/Kconfig.debug"
@@ -510,10 +539,6 @@ config DEBUG_SLAB
 	  Say Y here to have the kernel do limited verification on memory
 	  allocation as well as poisoning memory on free to catch use of freed
 	  memory. This can make kmalloc/kfree-intensive workloads much slower.
-
-config DEBUG_SLAB_LEAK
-	bool "Memory leak debugging"
-	depends on DEBUG_SLAB
 
 config SLUB_DEBUG_ON
 	bool "SLUB debugging on by default"
@@ -1067,7 +1092,7 @@ config PROVE_LOCKING
 	select DEBUG_SPINLOCK
 	select DEBUG_MUTEXES
 	select DEBUG_RT_MUTEXES if RT_MUTEXES
-	select DEBUG_RWSEMS if RWSEM_SPIN_ON_OWNER
+	select DEBUG_RWSEMS
 	select DEBUG_WW_MUTEX_SLOWPATH
 	select DEBUG_LOCK_ALLOC
 	select TRACE_IRQFLAGS
@@ -1104,7 +1129,7 @@ config PROVE_LOCKING
 	 the proof of observed correctness is also maintained for an
 	 arbitrary combination of these separate locking variants.
 
-	 For more details, see Documentation/locking/lockdep-design.txt.
+	 For more details, see Documentation/locking/lockdep-design.rst.
 
 config LOCK_STAT
 	bool "Lock usage statistics"
@@ -1118,7 +1143,7 @@ config LOCK_STAT
 	help
 	 This feature enables tracking lock contention points
 
-	 For more details, see Documentation/locking/lockstat.txt
+	 For more details, see Documentation/locking/lockstat.rst
 
 	 This also enables lock events required by "perf lock",
 	 subcommand of perf.
@@ -1171,10 +1196,10 @@ config DEBUG_WW_MUTEX_SLOWPATH
 
 config DEBUG_RWSEMS
 	bool "RW Semaphore debugging: basic checks"
-	depends on DEBUG_KERNEL && RWSEM_SPIN_ON_OWNER
+	depends on DEBUG_KERNEL
 	help
-	  This debugging feature allows mismatched rw semaphore locks and unlocks
-	  to be detected and reported.
+	  This debugging feature allows mismatched rw semaphore locks
+	  and unlocks to be detected and reported.
 
 config DEBUG_LOCK_ALLOC
 	bool "Lock debugging: detect incorrect freeing of live locks"
@@ -1350,7 +1375,7 @@ config DEBUG_LIST
 
 	  If unsure, say N.
 
-config DEBUG_PI_LIST
+config DEBUG_PLIST
 	bool "Debug priority linked list manipulation"
 	depends on DEBUG_KERNEL
 	help
@@ -1673,7 +1698,7 @@ config LKDTM
 	called lkdtm.
 
 	Documentation on how to use the module can be found in
-	Documentation/fault-injection/provoke-crashes.txt
+	Documentation/fault-injection/provoke-crashes.rst
 
 config TEST_LIST_SORT
 	tristate "Linked list sorting test"
@@ -1726,6 +1751,18 @@ config RBTREE_TEST
 	  A benchmark measuring the performance of the rbtree library.
 	  Also includes rbtree invariant checks.
 
+config REED_SOLOMON_TEST
+	tristate "Reed-Solomon library test"
+	depends on DEBUG_KERNEL || m
+	select REED_SOLOMON
+	select REED_SOLOMON_ENC16
+	select REED_SOLOMON_DEC16
+	help
+	  This option enables the self-test function of rslib at boot,
+	  or at module load time.
+
+	  If unsure, say N.
+
 config INTERVAL_TREE_TEST
 	tristate "Interval tree test"
 	depends on DEBUG_KERNEL
@@ -1768,6 +1805,9 @@ config TEST_HEXDUMP
 
 config TEST_STRING_HELPERS
 	tristate "Test functions located in the string_helpers module at runtime"
+
+config TEST_STRSCPY
+	tristate "Test strscpy*() family of functions at runtime"
 
 config TEST_KSTRTOX
 	tristate "Test kstrto*() family of functions at runtime"
@@ -1827,6 +1867,14 @@ config TEST_PARMAN
 
 	  If unsure, say N.
 
+config TEST_IRQ_TIMINGS
+	bool "IRQ timings selftest"
+	depends on IRQ_TIMINGS
+	help
+	  Enable this option to test the irq timings code on boot.
+
+	  If unsure, say N.
+
 config TEST_LKM
 	tristate "Test module loading with 'hello world' module"
 	depends on m
@@ -1875,6 +1923,15 @@ config TEST_BPF
 	  development, but also to run regression tests against changes in
 	  the interpreter code. It also enables test stubs for eBPF maps and
 	  verifier used by user space verifier testsuite.
+
+	  If unsure, say N.
+
+config TEST_BLACKHOLE_DEV
+	tristate "Test blackhole netdev functionality"
+	depends on m && NET
+	help
+	  This builds the "test_blackhole_dev" module that validates the
+	  data path through this blackhole netdev.
 
 	  If unsure, say N.
 
@@ -1927,7 +1984,6 @@ config TEST_STATIC_KEYS
 config TEST_KMOD
 	tristate "kmod stress tester"
 	depends on m
-	depends on BLOCK && (64BIT || LBDAF)	  # for XFS, BTRFS
 	depends on NETDEVICES && NET_CORE && INET # for TUN
 	depends on BLOCK
 	select TEST_LKM
@@ -2007,6 +2063,14 @@ config TEST_STACKINIT
 	  padding. Coverage is controlled by compiler flags,
 	  CONFIG_GCC_PLUGIN_STRUCTLEAK, CONFIG_GCC_PLUGIN_STRUCTLEAK_BYREF,
 	  or CONFIG_GCC_PLUGIN_STRUCTLEAK_BYREF_ALL.
+
+	  If unsure, say N.
+
+config TEST_MEMINIT
+	tristate "Test heap/page initialization"
+	help
+	  Test if the kernel is zero-initializing heap and page allocations.
+	  This can be useful to test init_on_alloc and init_on_free features.
 
 	  If unsure, say N.
 

@@ -12,6 +12,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/module.h>
 #include <linux/of_platform.h>
+#include <linux/pm_runtime.h>
 
 #include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
@@ -129,6 +130,67 @@ static void drv_unload(struct drm_device *ddev)
 	drm_mode_config_cleanup(ddev);
 }
 
+static __maybe_unused int drv_suspend(struct device *dev)
+{
+	struct drm_device *ddev = dev_get_drvdata(dev);
+	struct ltdc_device *ldev = ddev->dev_private;
+	struct drm_atomic_state *state;
+
+	WARN_ON(ldev->suspend_state);
+
+	state = drm_atomic_helper_suspend(ddev);
+	if (IS_ERR(state))
+		return PTR_ERR(state);
+
+	ldev->suspend_state = state;
+	pm_runtime_force_suspend(dev);
+
+	return 0;
+}
+
+static __maybe_unused int drv_resume(struct device *dev)
+{
+	struct drm_device *ddev = dev_get_drvdata(dev);
+	struct ltdc_device *ldev = ddev->dev_private;
+	int ret;
+
+	if (WARN_ON(!ldev->suspend_state))
+		return -ENOENT;
+
+	pm_runtime_force_resume(dev);
+	ret = drm_atomic_helper_resume(ddev, ldev->suspend_state);
+	if (ret)
+		pm_runtime_force_suspend(dev);
+
+	ldev->suspend_state = NULL;
+
+	return ret;
+}
+
+static __maybe_unused int drv_runtime_suspend(struct device *dev)
+{
+	struct drm_device *ddev = dev_get_drvdata(dev);
+
+	DRM_DEBUG_DRIVER("\n");
+	ltdc_suspend(ddev);
+
+	return 0;
+}
+
+static __maybe_unused int drv_runtime_resume(struct device *dev)
+{
+	struct drm_device *ddev = dev_get_drvdata(dev);
+
+	DRM_DEBUG_DRIVER("\n");
+	return ltdc_resume(ddev);
+}
+
+static const struct dev_pm_ops drv_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(drv_suspend, drv_resume)
+	SET_RUNTIME_PM_OPS(drv_runtime_suspend,
+			   drv_runtime_resume, NULL)
+};
+
 static int stm_drm_platform_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -186,6 +248,7 @@ static struct platform_driver stm_drm_platform_driver = {
 	.driver = {
 		.name = "stm32-display",
 		.of_match_table = drv_dt_ids,
+		.pm = &drv_pm_ops,
 	},
 };
 

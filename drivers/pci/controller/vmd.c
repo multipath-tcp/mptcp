@@ -95,10 +95,8 @@ struct vmd_dev {
 	struct irq_domain	*irq_domain;
 	struct pci_bus		*bus;
 
-#ifdef CONFIG_X86_DEV_DMA_OPS
 	struct dma_map_ops	dma_ops;
 	struct dma_domain	dma_domain;
-#endif
 };
 
 static inline struct vmd_dev *vmd_from_bus(struct pci_bus *bus)
@@ -293,7 +291,6 @@ static struct msi_domain_info vmd_msi_domain_info = {
 	.chip		= &vmd_msi_controller,
 };
 
-#ifdef CONFIG_X86_DEV_DMA_OPS
 /*
  * VMD replaces the requester ID with its own.  DMA mappings for devices in a
  * VMD domain need to be mapped for the VMD, not the device requiring
@@ -438,10 +435,6 @@ static void vmd_setup_dma_ops(struct vmd_dev *vmd)
 	add_dma_domain(domain);
 }
 #undef ASSIGN_VMD_DMA_OPS
-#else
-static void vmd_teardown_dma_ops(struct vmd_dev *vmd) {}
-static void vmd_setup_dma_ops(struct vmd_dev *vmd) {}
-#endif
 
 static char __iomem *vmd_cfg_addr(struct vmd_dev *vmd, struct pci_bus *bus,
 				  unsigned int devfn, int reg, int len)
@@ -634,7 +627,7 @@ static int vmd_enable_domain(struct vmd_dev *vmd, unsigned long features)
 	 * 32-bit resources.  __pci_assign_resource() enforces that
 	 * artificial restriction to make sure everything will fit.
 	 *
-	 * The only way we could use a 64-bit non-prefechable MEMBAR is
+	 * The only way we could use a 64-bit non-prefetchable MEMBAR is
 	 * if its address is <4GB so that we can convert it to a 32-bit
 	 * resource.  To be visible to the host OS, all VMD endpoints must
 	 * be initially configured by platform BIOS, which includes setting

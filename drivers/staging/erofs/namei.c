@@ -211,7 +211,8 @@ int erofs_namei(struct inode *dir,
 
 /* NOTE: i_mutex is already held by vfs */
 static struct dentry *erofs_lookup(struct inode *dir,
-	struct dentry *dentry, unsigned int flags)
+				   struct dentry *dentry,
+				   unsigned int flags)
 {
 	int err;
 	erofs_nid_t nid;
@@ -246,6 +247,7 @@ static struct dentry *erofs_lookup(struct inode *dir,
 
 const struct inode_operations erofs_dir_iops = {
 	.lookup = erofs_lookup,
+	.getattr = erofs_getattr,
 #ifdef CONFIG_EROFS_FS_XATTR
 	.listxattr = erofs_listxattr,
 #endif

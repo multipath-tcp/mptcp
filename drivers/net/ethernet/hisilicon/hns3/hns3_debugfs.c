@@ -11,7 +11,8 @@
 
 static struct dentry *hns3_dbgfs_root;
 
-static int hns3_dbg_queue_info(struct hnae3_handle *h, char *cmd_buf)
+static int hns3_dbg_queue_info(struct hnae3_handle *h,
+			       const char *cmd_buf)
 {
 	struct hns3_nic_priv *priv = h->priv;
 	struct hns3_nic_ring_data *ring_data;
@@ -155,7 +156,7 @@ static int hns3_dbg_queue_map(struct hnae3_handle *h)
 	return 0;
 }
 
-static int hns3_dbg_bd_info(struct hnae3_handle *h, char *cmd_buf)
+static int hns3_dbg_bd_info(struct hnae3_handle *h, const char *cmd_buf)
 {
 	struct hns3_nic_priv *priv = h->priv;
 	struct hns3_nic_ring_data *ring_data;
@@ -239,6 +240,10 @@ static void hns3_dbg_help(struct hnae3_handle *h)
 	dev_info(&h->pdev->dev, "queue info [number]\n");
 	dev_info(&h->pdev->dev, "queue map\n");
 	dev_info(&h->pdev->dev, "bd info [q_num] <bd index>\n");
+
+	if (!hns3_is_phys_func(h->pdev))
+		return;
+
 	dev_info(&h->pdev->dev, "dump fd tcam\n");
 	dev_info(&h->pdev->dev, "dump tc\n");
 	dev_info(&h->pdev->dev, "dump tm map [q_num]\n");
@@ -247,6 +252,10 @@ static void hns3_dbg_help(struct hnae3_handle *h)
 	dev_info(&h->pdev->dev, "dump qos pri map\n");
 	dev_info(&h->pdev->dev, "dump qos buf cfg\n");
 	dev_info(&h->pdev->dev, "dump mng tbl\n");
+	dev_info(&h->pdev->dev, "dump reset info\n");
+	dev_info(&h->pdev->dev, "dump m7 info\n");
+	dev_info(&h->pdev->dev, "dump ncl_config <offset> <length>(in hex)\n");
+	dev_info(&h->pdev->dev, "dump mac tnl status\n");
 
 	memset(printf_buf, 0, HNS3_DBG_BUF_LEN);
 	strncat(printf_buf, "dump reg [[bios common] [ssu <prt_id>]",
@@ -341,6 +350,8 @@ static ssize_t hns3_dbg_cmd_write(struct file *filp, const char __user *buffer,
 		ret = hns3_dbg_bd_info(handle, cmd_buf);
 	else if (handle->ae_algo->ops->dbg_run_cmd)
 		ret = handle->ae_algo->ops->dbg_run_cmd(handle, cmd_buf);
+	else
+		ret = -EOPNOTSUPP;
 
 	if (ret)
 		hns3_dbg_help(handle);

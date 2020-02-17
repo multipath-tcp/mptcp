@@ -88,13 +88,6 @@ enum dscl_mode_sel {
 	DSCL_MODE_DSCL_BYPASS = 6
 };
 
-enum gamut_remap_select {
-	GAMUT_REMAP_BYPASS = 0,
-	GAMUT_REMAP_COEFF,
-	GAMUT_REMAP_COMA_COEFF,
-	GAMUT_REMAP_COMB_COEFF
-};
-
 static const struct dpp_input_csc_matrix dpp_input_csc_matrix[] = {
 	{COLOR_SPACE_SRGB,
 		{0x2000, 0, 0, 0, 0, 0x2000, 0, 0, 0, 0, 0x2000, 0} },
@@ -738,6 +731,10 @@ void dpp1_full_bypass(struct dpp *dpp_base)
 	/* COLOR_KEYER_CONTROL.COLOR_KEYER_EN = 0 this should be default */
 	if (dpp->tf_mask->CM_BYPASS_EN)
 		REG_SET(CM_CONTROL, 0, CM_BYPASS_EN, 1);
+#if defined(CONFIG_DRM_AMD_DC_DCN2_0)
+	else
+		REG_SET(CM_CONTROL, 0, CM_BYPASS, 1);
+#endif
 
 	/* Setting degamma bypass for now */
 	REG_SET(CM_DGAM_CONTROL, 0, CM_DGAM_LUT_MODE, 0);

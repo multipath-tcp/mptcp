@@ -22,7 +22,6 @@ Core utilities
    workqueue
    genericirq
    xarray
-   flexible-arrays
    librs
    genalloc
    errseq
@@ -35,6 +34,9 @@ Core utilities
    timekeeping
    boot-time-mm
    memory-hotplug
+   protection-keys
+   ../RCU/index
+   gcc-plugins
 
 
 Interfaces for kernel debugging

@@ -81,6 +81,8 @@ int fscrypt_ioctl_set_policy(struct file *filp, const void __user *arg)
 	if (ret == -ENODATA) {
 		if (!S_ISDIR(inode->i_mode))
 			ret = -ENOTDIR;
+		else if (IS_DEADDIR(inode))
+			ret = -ENOENT;
 		else if (!inode->i_sb->s_cop->empty_dir(inode))
 			ret = -ENOTEMPTY;
 		else
@@ -194,8 +196,8 @@ int fscrypt_has_permitted_context(struct inode *parent, struct inode *child)
 	res = fscrypt_get_encryption_info(child);
 	if (res)
 		return 0;
-	parent_ci = parent->i_crypt_info;
-	child_ci = child->i_crypt_info;
+	parent_ci = READ_ONCE(parent->i_crypt_info);
+	child_ci = READ_ONCE(child->i_crypt_info);
 
 	if (parent_ci && child_ci) {
 		return memcmp(parent_ci->ci_master_key_descriptor,
@@ -246,7 +248,7 @@ int fscrypt_inherit_context(struct inode *parent, struct inode *child,
 	if (res < 0)
 		return res;
 
-	ci = parent->i_crypt_info;
+	ci = READ_ONCE(parent->i_crypt_info);
 	if (ci == NULL)
 		return -ENOKEY;
 

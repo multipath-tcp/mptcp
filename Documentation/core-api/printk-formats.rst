@@ -58,6 +58,14 @@ A raw pointer value may be printed with %p which will hash the address
 before printing. The kernel also supports extended specifiers for printing
 pointers of different types.
 
+Some of the extended specifiers print the data on the given address instead
+of printing the address itself. In this case, the following error messages
+might be printed instead of the unreachable information::
+
+	(null)	 data on plain NULL address
+	(efault) data on invalid address
+	(einval) invalid data on a valid address
+
 Plain Pointers
 --------------
 
@@ -111,7 +119,7 @@ Kernel Pointers
 
 For printing kernel pointers which should be hidden from unprivileged
 users. The behaviour of %pK depends on the kptr_restrict sysctl - see
-Documentation/sysctl/kernel.txt for more details.
+Documentation/admin-guide/sysctl/kernel.rst for more details.
 
 Unmodified Addresses
 --------------------

@@ -1,13 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Bridge multicast support.
  *
  * Copyright (c) 2010 Herbert Xu <herbert@gondor.apana.org.au>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the Free
- * Software Foundation; either version 2 of the License, or (at your option)
- * any later version.
- *
  */
 
 #include <linux/err.h>
@@ -44,7 +39,6 @@ static const struct rhashtable_params br_mdb_rht_params = {
 	.key_offset = offsetof(struct net_bridge_mdb_entry, addr),
 	.key_len = sizeof(struct br_ip),
 	.automatic_shrinking = true,
-	.locks_mul = 1,
 };
 
 static void br_multicast_start_querier(struct net_bridge *br,
@@ -64,23 +58,6 @@ static void br_ip6_multicast_leave_group(struct net_bridge *br,
 					 const struct in6_addr *group,
 					 __u16 vid, const unsigned char *src);
 #endif
-
-static inline int br_ip_equal(const struct br_ip *a, const struct br_ip *b)
-{
-	if (a->proto != b->proto)
-		return 0;
-	if (a->vid != b->vid)
-		return 0;
-	switch (a->proto) {
-	case htons(ETH_P_IP):
-		return a->u.ip4 == b->u.ip4;
-#if IS_ENABLED(CONFIG_IPV6)
-	case htons(ETH_P_IPV6):
-		return ipv6_addr_equal(&a->u.ip6, &b->u.ip6);
-#endif
-	}
-	return 0;
-}
 
 static struct net_bridge_mdb_entry *br_mdb_ip_get_rcu(struct net_bridge *br,
 						      struct br_ip *dst)
@@ -517,7 +494,7 @@ struct net_bridge_port_group *br_multicast_new_port_group(
 	if (src)
 		memcpy(p->eth_addr, src, ETH_ALEN);
 	else
-		memset(p->eth_addr, 0xff, ETH_ALEN);
+		eth_broadcast_addr(p->eth_addr);
 
 	return p;
 }
@@ -934,6 +911,7 @@ static int br_ip4_multicast_igmp3_report(struct net_bridge *br,
 	int type;
 	int err = 0;
 	__be32 group;
+	u16 nsrcs;
 
 	ih = igmpv3_report_hdr(skb);
 	num = ntohs(ih->ngrec);
@@ -947,8 +925,9 @@ static int br_ip4_multicast_igmp3_report(struct net_bridge *br,
 		grec = (void *)(skb->data + len - sizeof(*grec));
 		group = grec->grec_mca;
 		type = grec->grec_type;
+		nsrcs = ntohs(grec->grec_nsrcs);
 
-		len += ntohs(grec->grec_nsrcs) * 4;
+		len += nsrcs * 4;
 		if (!ip_mc_may_pull(skb, len))
 			return -EINVAL;
 
@@ -969,7 +948,7 @@ static int br_ip4_multicast_igmp3_report(struct net_bridge *br,
 		src = eth_hdr(skb)->h_source;
 		if ((type == IGMPV3_CHANGE_TO_INCLUDE ||
 		     type == IGMPV3_MODE_IS_INCLUDE) &&
-		    ntohs(grec->grec_nsrcs) == 0) {
+		    nsrcs == 0) {
 			br_ip4_multicast_leave_group(br, port, group, vid, src);
 		} else {
 			err = br_ip4_multicast_add_group(br, port, group, vid,
@@ -1006,7 +985,8 @@ static int br_ip6_multicast_mld2_report(struct net_bridge *br,
 	len = skb_transport_offset(skb) + sizeof(*icmp6h);
 
 	for (i = 0; i < num; i++) {
-		__be16 *nsrcs, _nsrcs;
+		__be16 *_nsrcs, __nsrcs;
+		u16 nsrcs;
 
 		nsrcs_offset = len + offsetof(struct mld2_grec, grec_nsrcs);
 
@@ -1014,12 +994,13 @@ static int br_ip6_multicast_mld2_report(struct net_bridge *br,
 		    nsrcs_offset + sizeof(_nsrcs))
 			return -EINVAL;
 
-		nsrcs = skb_header_pointer(skb, nsrcs_offset,
-					   sizeof(_nsrcs), &_nsrcs);
-		if (!nsrcs)
+		_nsrcs = skb_header_pointer(skb, nsrcs_offset,
+					    sizeof(__nsrcs), &__nsrcs);
+		if (!_nsrcs)
 			return -EINVAL;
 
-		grec_len = struct_size(grec, grec_src, ntohs(*nsrcs));
+		nsrcs = ntohs(*_nsrcs);
+		grec_len = struct_size(grec, grec_src, nsrcs);
 
 		if (!ipv6_mc_may_pull(skb, len + grec_len))
 			return -EINVAL;
@@ -1044,7 +1025,7 @@ static int br_ip6_multicast_mld2_report(struct net_bridge *br,
 		src = eth_hdr(skb)->h_source;
 		if ((grec->grec_type == MLD2_CHANGE_TO_INCLUDE ||
 		     grec->grec_type == MLD2_MODE_IS_INCLUDE) &&
-		    ntohs(*nsrcs) == 0) {
+		    nsrcs == 0) {
 			br_ip6_multicast_leave_group(br, port, &grec->grec_mca,
 						     vid, src);
 		} else {
@@ -1298,7 +1279,6 @@ static int br_ip6_multicast_query(struct net_bridge *br,
 				  u16 vid)
 {
 	unsigned int transport_len = ipv6_transport_len(skb);
-	const struct ipv6hdr *ip6h = ipv6_hdr(skb);
 	struct mld_msg *mld;
 	struct net_bridge_mdb_entry *mp;
 	struct mld2_query *mld2q;
@@ -1342,7 +1322,7 @@ static int br_ip6_multicast_query(struct net_bridge *br,
 
 	if (is_general_query) {
 		saddr.proto = htons(ETH_P_IPV6);
-		saddr.u.ip6 = ip6h->saddr;
+		saddr.u.ip6 = ipv6_hdr(skb)->saddr;
 
 		br_multicast_query_received(br, port, &br->ip6_other_query,
 					    &saddr, max_delay);
@@ -1407,6 +1387,9 @@ br_multicast_leave_group(struct net_bridge *br,
 		     pp = &p->next) {
 			if (!br_port_group_equal(p, port, src))
 				continue;
+
+			if (p->flags & MDB_PG_FLAGS_PERMANENT)
+				break;
 
 			rcu_assign_pointer(*pp, p->next);
 			hlist_del_init(&p->mglist);
@@ -2194,7 +2177,7 @@ int br_multicast_list_adjacent(struct net_device *dev,
 	int count = 0;
 
 	rcu_read_lock();
-	if (!br_ip_list || !br_port_exists(dev))
+	if (!br_ip_list || !netif_is_bridge_port(dev))
 		goto unlock;
 
 	port = br_port_get_rcu(dev);
@@ -2241,7 +2224,7 @@ bool br_multicast_has_querier_anywhere(struct net_device *dev, int proto)
 	bool ret = false;
 
 	rcu_read_lock();
-	if (!br_port_exists(dev))
+	if (!netif_is_bridge_port(dev))
 		goto unlock;
 
 	port = br_port_get_rcu(dev);
@@ -2277,7 +2260,7 @@ bool br_multicast_has_querier_adjacent(struct net_device *dev, int proto)
 	bool ret = false;
 
 	rcu_read_lock();
-	if (!br_port_exists(dev))
+	if (!netif_is_bridge_port(dev))
 		goto unlock;
 
 	port = br_port_get_rcu(dev);

@@ -30,6 +30,8 @@
 #include <scsi/scsi_device.h>
 #include <scsi/scsi_host.h>
 #include <scsi/scsi_transport_fc.h>
+#include <uapi/scsi/fc/fc_fs.h>
+#include <uapi/scsi/fc/fc_els.h>
 
 #include "lpfc_hw4.h"
 #include "lpfc_hw.h"
@@ -1961,7 +1963,7 @@ lpfc_cmpl_els_plogi(struct lpfc_hba *phba, struct lpfc_iocbq *cmdiocb,
 	IOCB_t *irsp;
 	struct lpfc_nodelist *ndlp;
 	struct lpfc_dmabuf *prsp;
-	int disc, rc;
+	int disc;
 
 	/* we pass cmdiocb to state machine which needs rspiocb as well */
 	cmdiocb->context_un.rsp_iocb = rspiocb;
@@ -1990,7 +1992,6 @@ lpfc_cmpl_els_plogi(struct lpfc_hba *phba, struct lpfc_iocbq *cmdiocb,
 	disc = (ndlp->nlp_flag & NLP_NPR_2B_DISC);
 	ndlp->nlp_flag &= ~NLP_NPR_2B_DISC;
 	spin_unlock_irq(shost->host_lock);
-	rc = 0;
 
 	/* PLOGI completes to NPort <nlp_DID> */
 	lpfc_printf_vlog(vport, KERN_INFO, LOG_ELS,
@@ -2029,18 +2030,16 @@ lpfc_cmpl_els_plogi(struct lpfc_hba *phba, struct lpfc_iocbq *cmdiocb,
 				 ndlp->nlp_DID, irsp->ulpStatus,
 				 irsp->un.ulpWord[4]);
 		/* Do not call DSM for lpfc_els_abort'ed ELS cmds */
-		if (lpfc_error_lost_link(irsp))
-			rc = NLP_STE_FREED_NODE;
-		else
-			rc = lpfc_disc_state_machine(vport, ndlp, cmdiocb,
-						     NLP_EVT_CMPL_PLOGI);
+		if (!lpfc_error_lost_link(irsp))
+			lpfc_disc_state_machine(vport, ndlp, cmdiocb,
+						NLP_EVT_CMPL_PLOGI);
 	} else {
 		/* Good status, call state machine */
 		prsp = list_entry(((struct lpfc_dmabuf *)
 				   cmdiocb->context2)->list.next,
 				  struct lpfc_dmabuf, list);
 		ndlp = lpfc_plogi_confirm_nport(phba, prsp->virt, ndlp);
-		rc = lpfc_disc_state_machine(vport, ndlp, cmdiocb,
+		lpfc_disc_state_machine(vport, ndlp, cmdiocb,
 					     NLP_EVT_CMPL_PLOGI);
 	}
 
@@ -3078,6 +3077,116 @@ lpfc_issue_els_scr(struct lpfc_vport *vport, uint32_t nportid, uint8_t retry)
 	 */
 	if (!(vport->fc_flag & FC_PT2PT))
 		lpfc_nlp_put(ndlp);
+	return 0;
+}
+
+/**
+ * lpfc_issue_els_rscn - Issue an RSCN to the Fabric Controller (Fabric)
+ *   or the other nport (pt2pt).
+ * @vport: pointer to a host virtual N_Port data structure.
+ * @retry: number of retries to the command IOCB.
+ *
+ * This routine issues a RSCN to the Fabric Controller (DID 0xFFFFFD)
+ *  when connected to a fabric, or to the remote port when connected
+ *  in point-to-point mode. When sent to the Fabric Controller, it will
+ *  replay the RSCN to registered recipients.
+ *
+ * Note that, in lpfc_prep_els_iocb() routine, the reference count of ndlp
+ * will be incremented by 1 for holding the ndlp and the reference to ndlp
+ * will be stored into the context1 field of the IOCB for the completion
+ * callback function to the RSCN ELS command.
+ *
+ * Return code
+ *   0 - Successfully issued RSCN command
+ *   1 - Failed to issue RSCN command
+ **/
+int
+lpfc_issue_els_rscn(struct lpfc_vport *vport, uint8_t retry)
+{
+	struct lpfc_hba *phba = vport->phba;
+	struct lpfc_iocbq *elsiocb;
+	struct lpfc_nodelist *ndlp;
+	struct {
+		struct fc_els_rscn rscn;
+		struct fc_els_rscn_page portid;
+	} *event;
+	uint32_t nportid;
+	uint16_t cmdsize = sizeof(*event);
+
+	/* Not supported for private loop */
+	if (phba->fc_topology == LPFC_TOPOLOGY_LOOP &&
+	    !(vport->fc_flag & FC_PUBLIC_LOOP))
+		return 1;
+
+	if (vport->fc_flag & FC_PT2PT) {
+		/* find any mapped nport - that would be the other nport */
+		ndlp = lpfc_findnode_mapped(vport);
+		if (!ndlp)
+			return 1;
+	} else {
+		nportid = FC_FID_FCTRL;
+		/* find the fabric controller node */
+		ndlp = lpfc_findnode_did(vport, nportid);
+		if (!ndlp) {
+			/* if one didn't exist, make one */
+			ndlp = lpfc_nlp_init(vport, nportid);
+			if (!ndlp)
+				return 1;
+			lpfc_enqueue_node(vport, ndlp);
+		} else if (!NLP_CHK_NODE_ACT(ndlp)) {
+			ndlp = lpfc_enable_node(vport, ndlp,
+						NLP_STE_UNUSED_NODE);
+			if (!ndlp)
+				return 1;
+		}
+	}
+
+	elsiocb = lpfc_prep_els_iocb(vport, 1, cmdsize, retry, ndlp,
+				     ndlp->nlp_DID, ELS_CMD_RSCN_XMT);
+
+	if (!elsiocb) {
+		/* This will trigger the release of the node just
+		 * allocated
+		 */
+		lpfc_nlp_put(ndlp);
+		return 1;
+	}
+
+	event = ((struct lpfc_dmabuf *)elsiocb->context2)->virt;
+
+	event->rscn.rscn_cmd = ELS_RSCN;
+	event->rscn.rscn_page_len = sizeof(struct fc_els_rscn_page);
+	event->rscn.rscn_plen = cpu_to_be16(cmdsize);
+
+	nportid = vport->fc_myDID;
+	/* appears that page flags must be 0 for fabric to broadcast RSCN */
+	event->portid.rscn_page_flags = 0;
+	event->portid.rscn_fid[0] = (nportid & 0x00FF0000) >> 16;
+	event->portid.rscn_fid[1] = (nportid & 0x0000FF00) >> 8;
+	event->portid.rscn_fid[2] = nportid & 0x000000FF;
+
+	lpfc_debugfs_disc_trc(vport, LPFC_DISC_TRC_ELS_CMD,
+			      "Issue RSCN:       did:x%x",
+			      ndlp->nlp_DID, 0, 0);
+
+	phba->fc_stat.elsXmitRSCN++;
+	elsiocb->iocb_cmpl = lpfc_cmpl_els_cmd;
+	if (lpfc_sli_issue_iocb(phba, LPFC_ELS_RING, elsiocb, 0) ==
+	    IOCB_ERROR) {
+		/* The additional lpfc_nlp_put will cause the following
+		 * lpfc_els_free_iocb routine to trigger the rlease of
+		 * the node.
+		 */
+		lpfc_nlp_put(ndlp);
+		lpfc_els_free_iocb(phba, elsiocb);
+		return 1;
+	}
+	/* This will cause the callback-function lpfc_cmpl_els_cmd to
+	 * trigger the release of node.
+	 */
+	if (!(vport->fc_flag & FC_PT2PT))
+		lpfc_nlp_put(ndlp);
+
 	return 0;
 }
 
@@ -4199,6 +4308,7 @@ lpfc_cmpl_els_rsp(struct lpfc_hba *phba, struct lpfc_iocbq *cmdiocb,
 		if ((rspiocb->iocb.ulpStatus == 0)
 		    && (ndlp->nlp_flag & NLP_ACC_REGLOGIN)) {
 			if (!lpfc_unreg_rpi(vport, ndlp) &&
+			    (!(vport->fc_flag & FC_PT2PT)) &&
 			    (ndlp->nlp_state ==  NLP_STE_PLOGI_ISSUE ||
 			     ndlp->nlp_state == NLP_STE_REG_LOGIN_ISSUE)) {
 				lpfc_printf_vlog(vport, KERN_INFO,
@@ -6217,6 +6327,8 @@ lpfc_rscn_recovery_check(struct lpfc_vport *vport)
 			continue;
 		}
 
+		if (ndlp->nlp_fc4_type & NLP_FC4_NVME)
+			lpfc_nvme_rescan_port(vport, ndlp);
 
 		lpfc_disc_state_machine(vport, ndlp, NULL,
 					NLP_EVT_DEVICE_RECOVERY);
@@ -6320,6 +6432,19 @@ lpfc_els_rcv_rscn(struct lpfc_vport *vport, struct lpfc_iocbq *cmdiocb,
 	for (i = 0; i < payload_len/sizeof(uint32_t); i++)
 		fc_host_post_event(shost, fc_get_event_number(),
 			FCH_EVT_RSCN, lp[i]);
+
+	/* Check if RSCN is coming from a direct-connected remote NPort */
+	if (vport->fc_flag & FC_PT2PT) {
+		/* If so, just ACC it, no other action needed for now */
+		lpfc_printf_vlog(vport, KERN_INFO, LOG_ELS,
+				 "2024 pt2pt RSCN %08x Data: x%x x%x\n",
+				 *lp, vport->fc_flag, payload_len);
+		lpfc_els_rsp_acc(vport, ELS_CMD_ACC, cmdiocb, ndlp, NULL);
+
+		if (ndlp->nlp_fc4_type & NLP_FC4_NVME)
+			lpfc_nvme_rescan_port(vport, ndlp);
+		return 0;
+	}
 
 	/* If we are about to begin discovery, just ACC the RSCN.
 	 * Discovery processing will satisfy it.
@@ -6744,12 +6869,11 @@ lpfc_els_rcv_rnid(struct lpfc_vport *vport, struct lpfc_iocbq *cmdiocb,
 	uint32_t *lp;
 	RNID *rn;
 	struct ls_rjt stat;
-	uint32_t cmd;
 
 	pcmd = (struct lpfc_dmabuf *) cmdiocb->context2;
 	lp = (uint32_t *) pcmd->virt;
 
-	cmd = *lp++;
+	lp++;
 	rn = (RNID *) lp;
 
 	/* RNID received */
@@ -7338,7 +7462,10 @@ int
 lpfc_send_rrq(struct lpfc_hba *phba, struct lpfc_node_rrq *rrq)
 {
 	struct lpfc_nodelist *ndlp = lpfc_findnode_did(rrq->vport,
-							rrq->nlp_DID);
+						       rrq->nlp_DID);
+	if (!ndlp)
+		return 1;
+
 	if (lpfc_test_rrq_active(phba, ndlp, rrq->xritag))
 		return lpfc_issue_els_rrq(rrq->vport, ndlp,
 					 rrq->nlp_DID, rrq);
@@ -7508,14 +7635,14 @@ lpfc_els_rcv_farp(struct lpfc_vport *vport, struct lpfc_iocbq *cmdiocb,
 	uint32_t *lp;
 	IOCB_t *icmd;
 	FARP *fp;
-	uint32_t cmd, cnt, did;
+	uint32_t cnt, did;
 
 	icmd = &cmdiocb->iocb;
 	did = icmd->un.elsreq64.remoteID;
 	pcmd = (struct lpfc_dmabuf *) cmdiocb->context2;
 	lp = (uint32_t *) pcmd->virt;
 
-	cmd = *lp++;
+	lp++;
 	fp = (FARP *) lp;
 	/* FARP-REQ received from DID <did> */
 	lpfc_printf_vlog(vport, KERN_INFO, LOG_ELS,
@@ -7580,14 +7707,14 @@ lpfc_els_rcv_farpr(struct lpfc_vport *vport, struct lpfc_iocbq *cmdiocb,
 	struct lpfc_dmabuf *pcmd;
 	uint32_t *lp;
 	IOCB_t *icmd;
-	uint32_t cmd, did;
+	uint32_t did;
 
 	icmd = &cmdiocb->iocb;
 	did = icmd->un.elsreq64.remoteID;
 	pcmd = (struct lpfc_dmabuf *) cmdiocb->context2;
 	lp = (uint32_t *) pcmd->virt;
 
-	cmd = *lp++;
+	lp++;
 	/* FARP-RSP received from DID <did> */
 	lpfc_printf_vlog(vport, KERN_INFO, LOG_ELS,
 			 "0600 FARP-RSP received from DID x%x\n", did);
@@ -8454,6 +8581,14 @@ lpfc_els_unsol_buffer(struct lpfc_hba *phba, struct lpfc_sli_ring *pring,
 		rjt_err = LSRJT_UNABLE_TPC;
 		rjt_exp = LSEXP_INVALID_OX_RX;
 		break;
+	case ELS_CMD_FPIN:
+		/*
+		 * Received FPIN from fabric - pass it to the
+		 * transport FPIN handler.
+		 */
+		fc_host_fpin_rcv(shost, elsiocb->iocb.unsli3.rcvsli3.acc_len,
+				(char *)payload);
+		break;
 	default:
 		lpfc_debugfs_disc_trc(vport, LPFC_DISC_TRC_ELS_UNSOL,
 			"RCV ELS cmd:     cmd:x%x did:x%x/ste:x%x",
@@ -8775,7 +8910,7 @@ lpfc_cmpl_reg_new_vport(struct lpfc_hba *phba, LPFC_MBOXQ_t *pmb)
 				lpfc_nlp_put(ndlp);
 				return;
 			}
-
+			/* fall through */
 		default:
 			/* Try to recover from this error */
 			if (phba->sli_rev == LPFC_SLI_REV4)

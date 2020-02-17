@@ -1,10 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * net/sched/act_pedit.c	Generic packet editor
- *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
  *
  * Authors:	Jamal Hadi Salim (2002-4)
  */
@@ -70,8 +66,9 @@ static struct tcf_pedit_key_ex *tcf_pedit_keys_ex_parse(struct nlattr *nla,
 			goto err_out;
 		}
 
-		err = nla_parse_nested(tb, TCA_PEDIT_KEY_EX_MAX, ka,
-				       pedit_key_ex_policy, NULL);
+		err = nla_parse_nested_deprecated(tb, TCA_PEDIT_KEY_EX_MAX,
+						  ka, pedit_key_ex_policy,
+						  NULL);
 		if (err)
 			goto err_out;
 
@@ -108,14 +105,15 @@ err_out:
 static int tcf_pedit_key_ex_dump(struct sk_buff *skb,
 				 struct tcf_pedit_key_ex *keys_ex, int n)
 {
-	struct nlattr *keys_start = nla_nest_start(skb, TCA_PEDIT_KEYS_EX);
+	struct nlattr *keys_start = nla_nest_start_noflag(skb,
+							  TCA_PEDIT_KEYS_EX);
 
 	if (!keys_start)
 		goto nla_failure;
 	for (; n > 0; n--) {
 		struct nlattr *key_start;
 
-		key_start = nla_nest_start(skb, TCA_PEDIT_KEY_EX);
+		key_start = nla_nest_start_noflag(skb, TCA_PEDIT_KEY_EX);
 		if (!key_start)
 			goto nla_failure;
 
@@ -151,13 +149,15 @@ static int tcf_pedit_init(struct net *net, struct nlattr *nla,
 	struct tcf_pedit *p;
 	int ret = 0, err;
 	int ksize;
+	u32 index;
 
 	if (!nla) {
 		NL_SET_ERR_MSG_MOD(extack, "Pedit requires attributes to be passed");
 		return -EINVAL;
 	}
 
-	err = nla_parse_nested(tb, TCA_PEDIT_MAX, nla, pedit_policy, NULL);
+	err = nla_parse_nested_deprecated(tb, TCA_PEDIT_MAX, nla,
+					  pedit_policy, NULL);
 	if (err < 0)
 		return err;
 
@@ -180,18 +180,19 @@ static int tcf_pedit_init(struct net *net, struct nlattr *nla,
 	if (IS_ERR(keys_ex))
 		return PTR_ERR(keys_ex);
 
-	err = tcf_idr_check_alloc(tn, &parm->index, a, bind);
+	index = parm->index;
+	err = tcf_idr_check_alloc(tn, &index, a, bind);
 	if (!err) {
 		if (!parm->nkeys) {
-			tcf_idr_cleanup(tn, parm->index);
+			tcf_idr_cleanup(tn, index);
 			NL_SET_ERR_MSG_MOD(extack, "Pedit requires keys to be passed");
 			ret = -EINVAL;
 			goto out_free;
 		}
-		ret = tcf_idr_create(tn, parm->index, est, a,
+		ret = tcf_idr_create(tn, index, est, a,
 				     &act_pedit_ops, bind, false);
 		if (ret) {
-			tcf_idr_cleanup(tn, parm->index);
+			tcf_idr_cleanup(tn, index);
 			goto out_free;
 		}
 		ret = ACT_P_CREATED;
@@ -497,7 +498,7 @@ static __net_init int pedit_init_net(struct net *net)
 {
 	struct tc_action_net *tn = net_generic(net, pedit_net_id);
 
-	return tc_action_net_init(tn, &act_pedit_ops);
+	return tc_action_net_init(net, tn, &act_pedit_ops);
 }
 
 static void __net_exit pedit_exit_net(struct list_head *net_list)

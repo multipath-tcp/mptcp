@@ -452,6 +452,19 @@ void drm_atomic_private_obj_fini(struct drm_private_obj *obj);
 struct drm_private_state * __must_check
 drm_atomic_get_private_obj_state(struct drm_atomic_state *state,
 				 struct drm_private_obj *obj);
+struct drm_private_state *
+drm_atomic_get_old_private_obj_state(struct drm_atomic_state *state,
+				     struct drm_private_obj *obj);
+struct drm_private_state *
+drm_atomic_get_new_private_obj_state(struct drm_atomic_state *state,
+				     struct drm_private_obj *obj);
+
+struct drm_connector *
+drm_atomic_get_old_connector_for_encoder(struct drm_atomic_state *state,
+					 struct drm_encoder *encoder);
+struct drm_connector *
+drm_atomic_get_new_connector_for_encoder(struct drm_atomic_state *state,
+					 struct drm_encoder *encoder);
 
 /**
  * drm_atomic_get_existing_crtc_state - get crtc state, if it exists
@@ -942,6 +955,21 @@ drm_atomic_crtc_needs_modeset(const struct drm_crtc_state *state)
 {
 	return state->mode_changed || state->active_changed ||
 	       state->connectors_changed;
+}
+
+/**
+ * drm_atomic_crtc_effectively_active - compute whether crtc is actually active
+ * @state: &drm_crtc_state for the CRTC
+ *
+ * When in self refresh mode, the crtc_state->active value will be false, since
+ * the crtc is off. However in some cases we're interested in whether the crtc
+ * is active, or effectively active (ie: it's connected to an active display).
+ * In these cases, use this function instead of just checking active.
+ */
+static inline bool
+drm_atomic_crtc_effectively_active(const struct drm_crtc_state *state)
+{
+	return state->active || state->self_refresh_active;
 }
 
 #endif /* DRM_ATOMIC_H_ */

@@ -1,10 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * net/sched/act_police.c	Input police filter
- *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
  *
  * Authors:	Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>
  * 		J Hadi Salim (action changes)
@@ -22,42 +18,7 @@
 #include <net/act_api.h>
 #include <net/netlink.h>
 #include <net/pkt_cls.h>
-
-struct tcf_police_params {
-	int			tcfp_result;
-	u32			tcfp_ewma_rate;
-	s64			tcfp_burst;
-	u32			tcfp_mtu;
-	s64			tcfp_mtu_ptoks;
-	struct psched_ratecfg	rate;
-	bool			rate_present;
-	struct psched_ratecfg	peak;
-	bool			peak_present;
-	struct rcu_head rcu;
-};
-
-struct tcf_police {
-	struct tc_action	common;
-	struct tcf_police_params __rcu *params;
-
-	spinlock_t		tcfp_lock ____cacheline_aligned_in_smp;
-	s64			tcfp_toks;
-	s64			tcfp_ptoks;
-	s64			tcfp_t_c;
-};
-
-#define to_police(pc) ((struct tcf_police *)pc)
-
-/* old policer structure from before tc actions */
-struct tc_police_compat {
-	u32			index;
-	int			action;
-	u32			limit;
-	u32			burst;
-	u32			mtu;
-	struct tc_ratespec	rate;
-	struct tc_ratespec	peakrate;
-};
+#include <net/tc_act/tc_police.h>
 
 /* Each policer is serialized by its individual spinlock */
 
@@ -96,11 +57,13 @@ static int tcf_police_init(struct net *net, struct nlattr *nla,
 	struct tc_action_net *tn = net_generic(net, police_net_id);
 	struct tcf_police_params *new;
 	bool exists = false;
+	u32 index;
 
 	if (nla == NULL)
 		return -EINVAL;
 
-	err = nla_parse_nested(tb, TCA_POLICE_MAX, nla, police_policy, NULL);
+	err = nla_parse_nested_deprecated(tb, TCA_POLICE_MAX, nla,
+					  police_policy, NULL);
 	if (err < 0)
 		return err;
 
@@ -111,7 +74,8 @@ static int tcf_police_init(struct net *net, struct nlattr *nla,
 		return -EINVAL;
 
 	parm = nla_data(tb[TCA_POLICE_TBF]);
-	err = tcf_idr_check_alloc(tn, &parm->index, a, bind);
+	index = parm->index;
+	err = tcf_idr_check_alloc(tn, &index, a, bind);
 	if (err < 0)
 		return err;
 	exists = err;
@@ -119,10 +83,10 @@ static int tcf_police_init(struct net *net, struct nlattr *nla,
 		return 0;
 
 	if (!exists) {
-		ret = tcf_idr_create(tn, parm->index, NULL, a,
+		ret = tcf_idr_create(tn, index, NULL, a,
 				     &act_police_ops, bind, true);
 		if (ret) {
-			tcf_idr_cleanup(tn, parm->index);
+			tcf_idr_cleanup(tn, index);
 			return ret;
 		}
 		ret = ACT_P_CREATED;
@@ -316,6 +280,20 @@ static void tcf_police_cleanup(struct tc_action *a)
 		kfree_rcu(p, rcu);
 }
 
+static void tcf_police_stats_update(struct tc_action *a,
+				    u64 bytes, u32 packets,
+				    u64 lastuse, bool hw)
+{
+	struct tcf_police *police = to_police(a);
+	struct tcf_t *tm = &police->tcf_tm;
+
+	_bstats_cpu_update(this_cpu_ptr(a->cpu_bstats), bytes, packets);
+	if (hw)
+		_bstats_cpu_update(this_cpu_ptr(a->cpu_bstats_hw),
+				   bytes, packets);
+	tm->lastuse = max_t(u64, tm->lastuse, lastuse);
+}
+
 static int tcf_police_dump(struct sk_buff *skb, struct tc_action *a,
 			       int bind, int ref)
 {
@@ -379,6 +357,7 @@ static struct tc_action_ops act_police_ops = {
 	.kind		=	"police",
 	.id		=	TCA_ID_POLICE,
 	.owner		=	THIS_MODULE,
+	.stats_update	=	tcf_police_stats_update,
 	.act		=	tcf_police_act,
 	.dump		=	tcf_police_dump,
 	.init		=	tcf_police_init,
@@ -392,7 +371,7 @@ static __net_init int police_init_net(struct net *net)
 {
 	struct tc_action_net *tn = net_generic(net, police_net_id);
 
-	return tc_action_net_init(tn, &act_police_ops);
+	return tc_action_net_init(net, tn, &act_police_ops);
 }
 
 static void __net_exit police_exit_net(struct list_head *net_list)

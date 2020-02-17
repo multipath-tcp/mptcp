@@ -32,6 +32,7 @@
 struct drm_clip_rect;
 struct drm_device;
 struct drm_file;
+struct drm_format_info;
 struct drm_framebuffer;
 struct drm_gem_object;
 
@@ -85,6 +86,9 @@ struct drm_framebuffer_funcs {
 	 * See documentation in drm_mode.h for the struct drm_mode_fb_dirty_cmd
 	 * for more information as all the semantics and arguments have a one to
 	 * one mapping on this function.
+	 *
+	 * Atomic drivers should use drm_atomic_helper_dirtyfb() to implement
+	 * this hook.
 	 *
 	 * RETURNS:
 	 *

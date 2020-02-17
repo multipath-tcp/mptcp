@@ -25,12 +25,10 @@
 #include <linux/module.h>
 #include <linux/fdtable.h>
 #include <linux/uaccess.h>
-#include <linux/firmware.h>
 #include <linux/mmu_context.h>
-#include <drm/drmP.h>
+
 #include "amdgpu.h"
 #include "amdgpu_amdkfd.h"
-#include "amdgpu_ucode.h"
 #include "soc15_hw_ip.h"
 #include "gc/gc_9_0_offset.h"
 #include "gc/gc_9_0_sh_mask.h"
@@ -111,7 +109,6 @@ static uint16_t get_atc_vmid_pasid_mapping_pasid(struct kgd_dev *kgd,
 		uint8_t vmid);
 static void set_vm_context_page_table_base(struct kgd_dev *kgd, uint32_t vmid,
 		uint64_t page_table_base);
-static uint16_t get_fw_version(struct kgd_dev *kgd, enum kgd_engine_type type);
 static void set_scratch_backing_va(struct kgd_dev *kgd,
 					uint64_t va, uint32_t vmid);
 static int invalidate_tlbs(struct kgd_dev *kgd, uint16_t pasid);
@@ -158,7 +155,6 @@ static const struct kfd2kgd_calls kfd2kgd = {
 			get_atc_vmid_pasid_mapping_pasid,
 	.get_atc_vmid_pasid_mapping_valid =
 			get_atc_vmid_pasid_mapping_valid,
-	.get_fw_version = get_fw_version,
 	.set_scratch_backing_va = set_scratch_backing_va,
 	.get_tile_config = amdgpu_amdkfd_get_tile_config,
 	.set_vm_context_page_table_base = set_vm_context_page_table_base,
@@ -229,8 +225,8 @@ static void kgd_program_sh_mem_settings(struct kgd_dev *kgd, uint32_t vmid,
 
 	lock_srbm(kgd, 0, 0, 0, vmid);
 
-	WREG32(SOC15_REG_OFFSET(GC, 0, mmSH_MEM_CONFIG), sh_mem_config);
-	WREG32(SOC15_REG_OFFSET(GC, 0, mmSH_MEM_BASES), sh_mem_bases);
+	WREG32_RLC(SOC15_REG_OFFSET(GC, 0, mmSH_MEM_CONFIG), sh_mem_config);
+	WREG32_RLC(SOC15_REG_OFFSET(GC, 0, mmSH_MEM_BASES), sh_mem_bases);
 	/* APE1 no longer exists on GFX9 */
 
 	unlock_srbm(kgd);
@@ -373,7 +369,7 @@ static int kgd_hqd_load(struct kgd_dev *kgd, void *mqd, uint32_t pipe_id,
 		value = RREG32(SOC15_REG_OFFSET(GC, 0, mmRLC_CP_SCHEDULERS));
 		value = REG_SET_FIELD(value, RLC_CP_SCHEDULERS, scheduler1,
 			((mec << 5) | (pipe << 3) | queue_id | 0x80));
-		WREG32(SOC15_REG_OFFSET(GC, 0, mmRLC_CP_SCHEDULERS), value);
+		WREG32_RLC(SOC15_REG_OFFSET(GC, 0, mmRLC_CP_SCHEDULERS), value);
 	}
 
 	/* HQD registers extend from CP_MQD_BASE_ADDR to CP_HQD_EOP_WPTR_MEM. */
@@ -382,13 +378,13 @@ static int kgd_hqd_load(struct kgd_dev *kgd, void *mqd, uint32_t pipe_id,
 
 	for (reg = hqd_base;
 	     reg <= SOC15_REG_OFFSET(GC, 0, mmCP_HQD_PQ_WPTR_HI); reg++)
-		WREG32(reg, mqd_hqd[reg - hqd_base]);
+		WREG32_RLC(reg, mqd_hqd[reg - hqd_base]);
 
 
 	/* Activate doorbell logic before triggering WPTR poll. */
 	data = REG_SET_FIELD(m->cp_hqd_pq_doorbell_control,
 			     CP_HQD_PQ_DOORBELL_CONTROL, DOORBELL_EN, 1);
-	WREG32(SOC15_REG_OFFSET(GC, 0, mmCP_HQD_PQ_DOORBELL_CONTROL), data);
+	WREG32_RLC(SOC15_REG_OFFSET(GC, 0, mmCP_HQD_PQ_DOORBELL_CONTROL), data);
 
 	if (wptr) {
 		/* Don't read wptr with get_user because the user
@@ -417,25 +413,25 @@ static int kgd_hqd_load(struct kgd_dev *kgd, void *mqd, uint32_t pipe_id,
 		guessed_wptr += m->cp_hqd_pq_wptr_lo & ~(queue_size - 1);
 		guessed_wptr += (uint64_t)m->cp_hqd_pq_wptr_hi << 32;
 
-		WREG32(SOC15_REG_OFFSET(GC, 0, mmCP_HQD_PQ_WPTR_LO),
+		WREG32_RLC(SOC15_REG_OFFSET(GC, 0, mmCP_HQD_PQ_WPTR_LO),
 		       lower_32_bits(guessed_wptr));
-		WREG32(SOC15_REG_OFFSET(GC, 0, mmCP_HQD_PQ_WPTR_HI),
+		WREG32_RLC(SOC15_REG_OFFSET(GC, 0, mmCP_HQD_PQ_WPTR_HI),
 		       upper_32_bits(guessed_wptr));
-		WREG32(SOC15_REG_OFFSET(GC, 0, mmCP_HQD_PQ_WPTR_POLL_ADDR),
+		WREG32_RLC(SOC15_REG_OFFSET(GC, 0, mmCP_HQD_PQ_WPTR_POLL_ADDR),
 		       lower_32_bits((uintptr_t)wptr));
-		WREG32(SOC15_REG_OFFSET(GC, 0, mmCP_HQD_PQ_WPTR_POLL_ADDR_HI),
+		WREG32_RLC(SOC15_REG_OFFSET(GC, 0, mmCP_HQD_PQ_WPTR_POLL_ADDR_HI),
 		       upper_32_bits((uintptr_t)wptr));
 		WREG32(SOC15_REG_OFFSET(GC, 0, mmCP_PQ_WPTR_POLL_CNTL1),
 		       get_queue_mask(adev, pipe_id, queue_id));
 	}
 
 	/* Start the EOP fetcher */
-	WREG32(SOC15_REG_OFFSET(GC, 0, mmCP_HQD_EOP_RPTR),
+	WREG32_RLC(SOC15_REG_OFFSET(GC, 0, mmCP_HQD_EOP_RPTR),
 	       REG_SET_FIELD(m->cp_hqd_eop_rptr,
 			     CP_HQD_EOP_RPTR, INIT_FETCHER, 1));
 
 	data = REG_SET_FIELD(m->cp_hqd_active, CP_HQD_ACTIVE, ACTIVE, 1);
-	WREG32(SOC15_REG_OFFSET(GC, 0, mmCP_HQD_ACTIVE), data);
+	WREG32_RLC(SOC15_REG_OFFSET(GC, 0, mmCP_HQD_ACTIVE), data);
 
 	release_queue(kgd);
 
@@ -637,7 +633,7 @@ static int kgd_hqd_destroy(struct kgd_dev *kgd, void *mqd,
 	acquire_queue(kgd, pipe_id, queue_id);
 
 	if (m->cp_hqd_vmid == 0)
-		WREG32_FIELD15(GC, 0, RLC_CP_SCHEDULERS, scheduler1, 0);
+		WREG32_FIELD15_RLC(GC, 0, RLC_CP_SCHEDULERS, scheduler1, 0);
 
 	switch (reset_type) {
 	case KFD_PREEMPT_TYPE_WAVEFRONT_DRAIN:
@@ -651,7 +647,7 @@ static int kgd_hqd_destroy(struct kgd_dev *kgd, void *mqd,
 		break;
 	}
 
-	WREG32(SOC15_REG_OFFSET(GC, 0, mmCP_HQD_DEQUEUE_REQUEST), type);
+	WREG32_RLC(SOC15_REG_OFFSET(GC, 0, mmCP_HQD_DEQUEUE_REQUEST), type);
 
 	end_jiffies = (utimeout * HZ / 1000) + jiffies;
 	while (true) {
@@ -730,29 +726,8 @@ static uint16_t get_atc_vmid_pasid_mapping_pasid(struct kgd_dev *kgd,
 	return reg & ATC_VMID0_PASID_MAPPING__PASID_MASK;
 }
 
-static void write_vmid_invalidate_request(struct kgd_dev *kgd, uint8_t vmid)
-{
-	struct amdgpu_device *adev = (struct amdgpu_device *) kgd;
-
-	/* Use legacy mode tlb invalidation.
-	 *
-	 * Currently on Raven the code below is broken for anything but
-	 * legacy mode due to a MMHUB power gating problem. A workaround
-	 * is for MMHUB to wait until the condition PER_VMID_INVALIDATE_REQ
-	 * == PER_VMID_INVALIDATE_ACK instead of simply waiting for the ack
-	 * bit.
-	 *
-	 * TODO 1: agree on the right set of invalidation registers for
-	 * KFD use. Use the last one for now. Invalidate both GC and
-	 * MMHUB.
-	 *
-	 * TODO 2: support range-based invalidation, requires kfg2kgd
-	 * interface change
-	 */
-	amdgpu_gmc_flush_gpu_tlb(adev, vmid, 0);
-}
-
-static int invalidate_tlbs_with_kiq(struct amdgpu_device *adev, uint16_t pasid)
+static int invalidate_tlbs_with_kiq(struct amdgpu_device *adev, uint16_t pasid,
+			uint32_t flush_type)
 {
 	signed long r;
 	uint32_t seq;
@@ -765,7 +740,7 @@ static int invalidate_tlbs_with_kiq(struct amdgpu_device *adev, uint16_t pasid)
 			PACKET3_INVALIDATE_TLBS_DST_SEL(1) |
 			PACKET3_INVALIDATE_TLBS_ALL_HUB(1) |
 			PACKET3_INVALIDATE_TLBS_PASID(pasid) |
-			PACKET3_INVALIDATE_TLBS_FLUSH_TYPE(0)); /* legacy */
+			PACKET3_INVALIDATE_TLBS_FLUSH_TYPE(flush_type));
 	amdgpu_fence_emit_polling(ring, &seq);
 	amdgpu_ring_commit(ring);
 	spin_unlock(&adev->gfx.kiq.ring_lock);
@@ -784,12 +759,16 @@ static int invalidate_tlbs(struct kgd_dev *kgd, uint16_t pasid)
 	struct amdgpu_device *adev = (struct amdgpu_device *) kgd;
 	int vmid;
 	struct amdgpu_ring *ring = &adev->gfx.kiq.ring;
+	uint32_t flush_type = 0;
 
 	if (adev->in_gpu_reset)
 		return -EIO;
+	if (adev->gmc.xgmi.num_physical_nodes &&
+		adev->asic_type == CHIP_VEGA20)
+		flush_type = 2;
 
 	if (ring->sched.ready)
-		return invalidate_tlbs_with_kiq(adev, pasid);
+		return invalidate_tlbs_with_kiq(adev, pasid, flush_type);
 
 	for (vmid = 0; vmid < 16; vmid++) {
 		if (!amdgpu_amdkfd_is_kfd_vmid(adev, vmid))
@@ -797,7 +776,8 @@ static int invalidate_tlbs(struct kgd_dev *kgd, uint16_t pasid)
 		if (get_atc_vmid_pasid_mapping_valid(kgd, vmid)) {
 			if (get_atc_vmid_pasid_mapping_pasid(kgd, vmid)
 				== pasid) {
-				write_vmid_invalidate_request(kgd, vmid);
+				amdgpu_gmc_flush_gpu_tlb(adev, vmid,
+							 flush_type);
 				break;
 			}
 		}
@@ -815,7 +795,22 @@ static int invalidate_tlbs_vmid(struct kgd_dev *kgd, uint16_t vmid)
 		return 0;
 	}
 
-	write_vmid_invalidate_request(kgd, vmid);
+	/* Use legacy mode tlb invalidation.
+	 *
+	 * Currently on Raven the code below is broken for anything but
+	 * legacy mode due to a MMHUB power gating problem. A workaround
+	 * is for MMHUB to wait until the condition PER_VMID_INVALIDATE_REQ
+	 * == PER_VMID_INVALIDATE_ACK instead of simply waiting for the ack
+	 * bit.
+	 *
+	 * TODO 1: agree on the right set of invalidation registers for
+	 * KFD use. Use the last one for now. Invalidate both GC and
+	 * MMHUB.
+	 *
+	 * TODO 2: support range-based invalidation, requires kfg2kgd
+	 * interface change
+	 */
+	amdgpu_gmc_flush_gpu_tlb(adev, vmid, 0);
 	return 0;
 }
 
@@ -842,7 +837,7 @@ static int kgd_wave_control_execute(struct kgd_dev *kgd,
 
 	mutex_lock(&adev->grbm_idx_mutex);
 
-	WREG32(SOC15_REG_OFFSET(GC, 0, mmGRBM_GFX_INDEX), gfx_index_val);
+	WREG32_SOC15_RLC_SHADOW(GC, 0, mmGRBM_GFX_INDEX, gfx_index_val);
 	WREG32(SOC15_REG_OFFSET(GC, 0, mmSQ_CMD), sq_cmd);
 
 	data = REG_SET_FIELD(data, GRBM_GFX_INDEX,
@@ -852,7 +847,7 @@ static int kgd_wave_control_execute(struct kgd_dev *kgd,
 	data = REG_SET_FIELD(data, GRBM_GFX_INDEX,
 		SE_BROADCAST_WRITES, 1);
 
-	WREG32(SOC15_REG_OFFSET(GC, 0, mmGRBM_GFX_INDEX), data);
+	WREG32_SOC15_RLC_SHADOW(GC, 0, mmGRBM_GFX_INDEX, data);
 	mutex_unlock(&adev->grbm_idx_mutex);
 
 	return 0;
@@ -872,56 +867,6 @@ static void set_scratch_backing_va(struct kgd_dev *kgd,
 	 * passed to the shader by the CP. It's the user mode driver's
 	 * responsibility.
 	 */
-}
-
-/* FIXME: Does this need to be ASIC-specific code? */
-static uint16_t get_fw_version(struct kgd_dev *kgd, enum kgd_engine_type type)
-{
-	struct amdgpu_device *adev = (struct amdgpu_device *) kgd;
-	const union amdgpu_firmware_header *hdr;
-
-	switch (type) {
-	case KGD_ENGINE_PFP:
-		hdr = (const union amdgpu_firmware_header *)adev->gfx.pfp_fw->data;
-		break;
-
-	case KGD_ENGINE_ME:
-		hdr = (const union amdgpu_firmware_header *)adev->gfx.me_fw->data;
-		break;
-
-	case KGD_ENGINE_CE:
-		hdr = (const union amdgpu_firmware_header *)adev->gfx.ce_fw->data;
-		break;
-
-	case KGD_ENGINE_MEC1:
-		hdr = (const union amdgpu_firmware_header *)adev->gfx.mec_fw->data;
-		break;
-
-	case KGD_ENGINE_MEC2:
-		hdr = (const union amdgpu_firmware_header *)adev->gfx.mec2_fw->data;
-		break;
-
-	case KGD_ENGINE_RLC:
-		hdr = (const union amdgpu_firmware_header *)adev->gfx.rlc_fw->data;
-		break;
-
-	case KGD_ENGINE_SDMA1:
-		hdr = (const union amdgpu_firmware_header *)adev->sdma.instance[0].fw->data;
-		break;
-
-	case KGD_ENGINE_SDMA2:
-		hdr = (const union amdgpu_firmware_header *)adev->sdma.instance[1].fw->data;
-		break;
-
-	default:
-		return 0;
-	}
-
-	if (hdr == NULL)
-		return 0;
-
-	/* Only 12 bit in use*/
-	return hdr->common.ucode_version;
 }
 
 static void set_vm_context_page_table_base(struct kgd_dev *kgd, uint32_t vmid,

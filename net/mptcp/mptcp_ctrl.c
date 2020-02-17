@@ -777,19 +777,19 @@ static void mptcp_set_state(struct sock *sk)
 }
 
 static int mptcp_set_congestion_control(struct sock *meta_sk, const char *name,
-					bool load, bool reinit)
+					bool load, bool reinit, bool cap_net_admin)
 {
 	struct mptcp_tcp_sock *mptcp;
 	int err, result = 0;
 
-	result = __tcp_set_congestion_control(meta_sk, name, load, reinit);
+	result = __tcp_set_congestion_control(meta_sk, name, load, reinit, cap_net_admin);
 
 	tcp_sk(meta_sk)->mpcb->tcp_ca_explicit_set = true;
 
 	mptcp_for_each_sub(tcp_sk(meta_sk)->mpcb, mptcp) {
 		struct sock *sk_it = mptcp_to_sock(mptcp);
 
-		err = __tcp_set_congestion_control(sk_it, name, load, reinit);
+		err = __tcp_set_congestion_control(sk_it, name, load, reinit, cap_net_admin);
 		if (err)
 			result = err;
 	}
@@ -1139,7 +1139,6 @@ static const struct tcp_sock_ops mptcp_meta_specific = {
 	.__select_window		= __mptcp_select_window,
 	.select_window			= mptcp_select_window,
 	.select_initial_window		= mptcp_select_initial_window,
-	.select_size			= mptcp_select_size,
 	.init_buffer_space		= mptcp_init_buffer_space,
 	.set_rto			= mptcp_tcp_set_rto,
 	.should_expand_sndbuf		= mptcp_should_expand_sndbuf,
@@ -1157,7 +1156,6 @@ static const struct tcp_sock_ops mptcp_sub_specific = {
 	.__select_window		= __mptcp_select_window,
 	.select_window			= mptcp_select_window,
 	.select_initial_window		= mptcp_select_initial_window,
-	.select_size			= mptcp_select_size,
 	.init_buffer_space		= mptcp_init_buffer_space,
 	.set_rto			= mptcp_tcp_set_rto,
 	.should_expand_sndbuf		= mptcp_should_expand_sndbuf,

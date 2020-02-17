@@ -11,7 +11,7 @@
  * Copyright 2008 Jouni Malinen <jouni.malinen@atheros.com>
  * Copyright 2008 Colin McCabe <colin@cozybit.com>
  * Copyright 2015-2017	Intel Deutschland GmbH
- * Copyright (C) 2018 Intel Corporation
+ * Copyright (C) 2018-2019 Intel Corporation
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -232,6 +232,15 @@
  * on FILS cache identifier. Additionally %NL80211_ATTR_PMK is used with
  * %NL80211_SET_PMKSA to specify the PMK corresponding to a PMKSA for driver to
  * use in a FILS shared key connection with PMKSA caching.
+ */
+
+/**
+ * DOC: SAE authentication offload
+ *
+ * By setting @NL80211_EXT_FEATURE_SAE_OFFLOAD flag drivers can indicate they
+ * support offloading SAE authentication for WPA3-Personal networks. In
+ * %NL80211_CMD_CONNECT the password for SAE should be specified using
+ * %NL80211_ATTR_SAE_PASSWORD.
  */
 
 /**
@@ -1065,6 +1074,26 @@
  *	indicated by %NL80211_ATTR_WIPHY_FREQ and other attributes
  *	determining the width and type.
  *
+ * @NL80211_CMD_UPDATE_OWE_INFO: This interface allows the host driver to
+ *	offload OWE processing to user space. This intends to support
+ *	OWE AKM by the host drivers that implement SME but rely
+ *	on the user space for the cryptographic/DH IE processing in AP mode.
+ *
+ * @NL80211_CMD_PROBE_MESH_LINK: The requirement for mesh link metric
+ *	refreshing, is that from one mesh point we be able to send some data
+ *	frames to other mesh points which are not currently selected as a
+ *	primary traffic path, but which are only 1 hop away. The absence of
+ *	the primary path to the chosen node makes it necessary to apply some
+ *	form of marking on a chosen packet stream so that the packets can be
+ *	properly steered to the selected node for testing, and not by the
+ *	regular mesh path lookup. Further, the packets must be of type data
+ *	so that the rate control (often embedded in firmware) is used for
+ *	rate selection.
+ *
+ *	Here attribute %NL80211_ATTR_MAC is used to specify connected mesh
+ *	peer MAC address and %NL80211_ATTR_FRAME is used to specify the frame
+ *	content. The frame is ethernet data.
+ *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -1284,6 +1313,10 @@ enum nl80211_commands {
 	NL80211_CMD_PEER_MEASUREMENT_COMPLETE,
 
 	NL80211_CMD_NOTIFY_RADAR,
+
+	NL80211_CMD_UPDATE_OWE_INFO,
+
+	NL80211_CMD_PROBE_MESH_LINK,
 
 	/* add new commands above here */
 
@@ -2308,6 +2341,21 @@ enum nl80211_commands {
  * @NL80211_ATTR_AIRTIME_WEIGHT: Station's weight when scheduled by the airtime
  *	scheduler.
  *
+ * @NL80211_ATTR_STA_TX_POWER_SETTING: Transmit power setting type (u8) for
+ *	station associated with the AP. See &enum nl80211_tx_power_setting for
+ *	possible values.
+ * @NL80211_ATTR_STA_TX_POWER: Transmit power level (s16) in dBm units. This
+ *	allows to set Tx power for a station. If this attribute is not included,
+ *	the default per-interface tx power setting will be overriding. Driver
+ *	should be picking up the lowest tx power, either tx power per-interface
+ *	or per-station.
+ *
+ * @NL80211_ATTR_SAE_PASSWORD: attribute for passing SAE password material. It
+ *	is used with %NL80211_CMD_CONNECT to provide password for offloading
+ *	SAE authentication for WPA3-Personal networks.
+ *
+ * @NL80211_ATTR_TWT_RESPONDER: Enable target wait time responder support.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -2758,6 +2806,12 @@ enum nl80211_attrs {
 	NL80211_ATTR_PEER_MEASUREMENTS,
 
 	NL80211_ATTR_AIRTIME_WEIGHT,
+	NL80211_ATTR_STA_TX_POWER_SETTING,
+	NL80211_ATTR_STA_TX_POWER,
+
+	NL80211_ATTR_SAE_PASSWORD,
+
+	NL80211_ATTR_TWT_RESPONDER,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -2802,14 +2856,14 @@ enum nl80211_attrs {
 
 #define NL80211_MAX_SUPP_RATES			32
 #define NL80211_MAX_SUPP_HT_RATES		77
-#define NL80211_MAX_SUPP_REG_RULES		64
+#define NL80211_MAX_SUPP_REG_RULES		128
 #define NL80211_TKIP_DATA_OFFSET_ENCR_KEY	0
 #define NL80211_TKIP_DATA_OFFSET_TX_MIC_KEY	16
 #define NL80211_TKIP_DATA_OFFSET_RX_MIC_KEY	24
 #define NL80211_HT_CAPABILITY_LEN		26
 #define NL80211_VHT_CAPABILITY_LEN		12
 #define NL80211_HE_MIN_CAPABILITY_LEN           16
-#define NL80211_HE_MAX_CAPABILITY_LEN           51
+#define NL80211_HE_MAX_CAPABILITY_LEN           54
 #define NL80211_MAX_NR_CIPHER_SUITES		5
 #define NL80211_MAX_NR_AKM_SUITES		2
 
@@ -3139,6 +3193,7 @@ enum nl80211_sta_bss_param {
  * @NL80211_STA_INFO_TX_DURATION: aggregate PPDU duration for all frames
  *	sent to the station (u64, usec)
  * @NL80211_STA_INFO_AIRTIME_WEIGHT: current airtime weight for station (u16)
+ * @NL80211_STA_INFO_AIRTIME_LINK_METRIC: airtime link metric for mesh station
  * @__NL80211_STA_INFO_AFTER_LAST: internal
  * @NL80211_STA_INFO_MAX: highest possible station info attribute
  */
@@ -3184,6 +3239,7 @@ enum nl80211_sta_info {
 	NL80211_STA_INFO_CONNECTED_TO_GATE,
 	NL80211_STA_INFO_TX_DURATION,
 	NL80211_STA_INFO_AIRTIME_WEIGHT,
+	NL80211_STA_INFO_AIRTIME_LINK_METRIC,
 
 	/* keep last */
 	__NL80211_STA_INFO_AFTER_LAST,
@@ -3638,6 +3694,14 @@ enum nl80211_reg_rule_attr {
  *	value as specified by &struct nl80211_bss_select_rssi_adjust.
  * @NL80211_SCHED_SCAN_MATCH_ATTR_BSSID: BSSID to be used for matching
  *	(this cannot be used together with SSID).
+ * @NL80211_SCHED_SCAN_MATCH_PER_BAND_RSSI: Nested attribute that carries the
+ *	band specific minimum rssi thresholds for the bands defined in
+ *	enum nl80211_band. The minimum rssi threshold value(s32) specific to a
+ *	band shall be encapsulated in attribute with type value equals to one
+ *	of the NL80211_BAND_* defined in enum nl80211_band. For example, the
+ *	minimum rssi threshold value for 2.4GHZ band shall be encapsulated
+ *	within an attribute of type NL80211_BAND_2GHZ. And one or more of such
+ *	attributes will be nested within this attribute.
  * @NL80211_SCHED_SCAN_MATCH_ATTR_MAX: highest scheduled scan filter
  *	attribute number currently defined
  * @__NL80211_SCHED_SCAN_MATCH_ATTR_AFTER_LAST: internal use
@@ -3650,6 +3714,7 @@ enum nl80211_sched_scan_match_attr {
 	NL80211_SCHED_SCAN_MATCH_ATTR_RELATIVE_RSSI,
 	NL80211_SCHED_SCAN_MATCH_ATTR_RSSI_ADJUST,
 	NL80211_SCHED_SCAN_MATCH_ATTR_BSSID,
+	NL80211_SCHED_SCAN_MATCH_PER_BAND_RSSI,
 
 	/* keep last */
 	__NL80211_SCHED_SCAN_MATCH_ATTR_AFTER_LAST,
@@ -4135,6 +4200,27 @@ enum nl80211_channel_type {
 };
 
 /**
+ * enum nl80211_key_mode - Key mode
+ *
+ * @NL80211_KEY_RX_TX: (Default)
+ *	Key can be used for Rx and Tx immediately
+ *
+ * The following modes can only be selected for unicast keys and when the
+ * driver supports @NL80211_EXT_FEATURE_EXT_KEY_ID:
+ *
+ * @NL80211_KEY_NO_TX: Only allowed in combination with @NL80211_CMD_NEW_KEY:
+ *	Unicast key can only be used for Rx, Tx not allowed, yet
+ * @NL80211_KEY_SET_TX: Only allowed in combination with @NL80211_CMD_SET_KEY:
+ *	The unicast key identified by idx and mac is cleared for Tx and becomes
+ *	the preferred Tx key for the station.
+ */
+enum nl80211_key_mode {
+	NL80211_KEY_RX_TX,
+	NL80211_KEY_NO_TX,
+	NL80211_KEY_SET_TX
+};
+
+/**
  * enum nl80211_chan_width - channel width definitions
  *
  * These values are used with the %NL80211_ATTR_CHANNEL_WIDTH
@@ -4339,6 +4425,7 @@ enum nl80211_mfp {
 enum nl80211_wpa_versions {
 	NL80211_WPA_VERSION_1 = 1 << 0,
 	NL80211_WPA_VERSION_2 = 1 << 1,
+	NL80211_WPA_VERSION_3 = 1 << 2,
 };
 
 /**
@@ -4377,6 +4464,9 @@ enum nl80211_key_default_types {
  * @NL80211_KEY_DEFAULT_TYPES: A nested attribute containing flags
  *	attributes, specifying what a key should be set as default as.
  *	See &enum nl80211_key_default_types.
+ * @NL80211_KEY_MODE: the mode from enum nl80211_key_mode.
+ *	Defaults to @NL80211_KEY_RX_TX.
+ *
  * @__NL80211_KEY_AFTER_LAST: internal
  * @NL80211_KEY_MAX: highest key attribute
  */
@@ -4390,6 +4480,7 @@ enum nl80211_key_attributes {
 	NL80211_KEY_DEFAULT_MGMT,
 	NL80211_KEY_TYPE,
 	NL80211_KEY_DEFAULT_TYPES,
+	NL80211_KEY_MODE,
 
 	/* keep last */
 	__NL80211_KEY_AFTER_LAST,
@@ -5243,7 +5334,7 @@ enum nl80211_feature_flags {
 	NL80211_FEATURE_TDLS_CHANNEL_SWITCH		= 1 << 28,
 	NL80211_FEATURE_SCAN_RANDOM_MAC_ADDR		= 1 << 29,
 	NL80211_FEATURE_SCHED_SCAN_RANDOM_MAC_ADDR	= 1 << 30,
-	NL80211_FEATURE_ND_RANDOM_MAC_ADDR		= 1 << 31,
+	NL80211_FEATURE_ND_RANDOM_MAC_ADDR		= 1U << 31,
 };
 
 /**
@@ -5335,6 +5426,8 @@ enum nl80211_feature_flags {
  *      able to rekey an in-use key correctly. Userspace must not rekey PTK keys
  *      if this flag is not set. Ignoring this can leak clear text packets and/or
  *      freeze the connection.
+ * @NL80211_EXT_FEATURE_EXT_KEY_ID: Driver supports "Extended Key ID for
+ *      Individually Addressed Frames" from IEEE802.11-2016.
  *
  * @NL80211_EXT_FEATURE_AIRTIME_FAIRNESS: Driver supports getting airtime
  *	fairness for transmitted packets and has enabled airtime fairness
@@ -5342,6 +5435,15 @@ enum nl80211_feature_flags {
  *
  * @NL80211_EXT_FEATURE_AP_PMKSA_CACHING: Driver/device supports PMKSA caching
  *	(set/del PMKSA operations) in AP mode.
+ *
+ * @NL80211_EXT_FEATURE_SCHED_SCAN_BAND_SPECIFIC_RSSI_THOLD: Driver supports
+ *	filtering of sched scan results using band specific RSSI thresholds.
+ *
+ * @NL80211_EXT_FEATURE_STA_TX_PWR: This driver supports controlling tx power
+ *	to a station.
+ *
+ * @NL80211_EXT_FEATURE_SAE_OFFLOAD: Device wants to do SAE authentication in
+ *	station mode (SAE password is passed as part of the connect command).
  *
  * @NUM_NL80211_EXT_FEATURES: number of extended features.
  * @MAX_NL80211_EXT_FEATURES: highest extended feature index.
@@ -5384,6 +5486,10 @@ enum nl80211_ext_feature_index {
 	NL80211_EXT_FEATURE_ENABLE_FTM_RESPONDER,
 	NL80211_EXT_FEATURE_AIRTIME_FAIRNESS,
 	NL80211_EXT_FEATURE_AP_PMKSA_CACHING,
+	NL80211_EXT_FEATURE_SCHED_SCAN_BAND_SPECIFIC_RSSI_THOLD,
+	NL80211_EXT_FEATURE_EXT_KEY_ID,
+	NL80211_EXT_FEATURE_STA_TX_PWR,
+	NL80211_EXT_FEATURE_SAE_OFFLOAD,
 
 	/* add new features before the definition below */
 	NUM_NL80211_EXT_FEATURES,

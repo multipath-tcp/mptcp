@@ -107,6 +107,12 @@ fbdev Helper Functions Reference
 .. kernel-doc:: drivers/gpu/drm/drm_fb_helper.c
    :export:
 
+format Helper Functions Reference
+=================================
+
+.. kernel-doc:: drivers/gpu/drm/drm_format_helper.c
+   :export:
+
 Framebuffer CMA Helper Functions Reference
 ==========================================
 
@@ -173,6 +179,21 @@ Panel Helper Reference
    :export:
 
 .. kernel-doc:: drivers/gpu/drm/drm_panel_orientation_quirks.c
+   :export:
+
+Panel Self Refresh Helper Reference
+===================================
+
+.. kernel-doc:: drivers/gpu/drm/drm_self_refresh_helper.c
+   :doc: overview
+
+.. kernel-doc:: drivers/gpu/drm/drm_self_refresh_helper.c
+   :export:
+
+HDCP Helper Functions Reference
+===============================
+
+.. kernel-doc:: drivers/gpu/drm/drm_hdcp.c
    :export:
 
 Display Port Helper Functions Reference
@@ -368,4 +389,16 @@ Legacy CRTC/Modeset Helper Functions Reference
    :doc: overview
 
 .. kernel-doc:: drivers/gpu/drm/drm_crtc_helper.c
+   :export:
+
+SHMEM GEM Helper Reference
+==========================
+
+.. kernel-doc:: drivers/gpu/drm/drm_gem_shmem_helper.c
+   :doc: overview
+
+.. kernel-doc:: include/drm/drm_gem_shmem_helper.h
+   :internal:
+
+.. kernel-doc:: drivers/gpu/drm/drm_gem_shmem_helper.c
    :export:

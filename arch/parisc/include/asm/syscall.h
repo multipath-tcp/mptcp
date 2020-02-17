@@ -29,6 +29,13 @@ static inline void syscall_get_arguments(struct task_struct *tsk,
 	args[0] = regs->gr[26];
 }
 
+static inline long syscall_get_error(struct task_struct *task,
+				     struct pt_regs *regs)
+{
+	unsigned long error = regs->gr[28];
+	return IS_ERR_VALUE(error) ? error : 0;
+}
+
 static inline long syscall_get_return_value(struct task_struct *task,
 						struct pt_regs *regs)
 {
@@ -48,11 +55,11 @@ static inline void syscall_rollback(struct task_struct *task,
 	/* do nothing */
 }
 
-static inline int syscall_get_arch(void)
+static inline int syscall_get_arch(struct task_struct *task)
 {
 	int arch = AUDIT_ARCH_PARISC;
 #ifdef CONFIG_64BIT
-	if (!is_compat_task())
+	if (!__is_compat_task(task))
 		arch = AUDIT_ARCH_PARISC64;
 #endif
 	return arch;

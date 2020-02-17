@@ -37,6 +37,8 @@
 #include <linux/device.h>
 #include <linux/netdevice.h>
 
+#include <rdma/ib_verbs.h>
+
 extern struct _ddebug __start___verbose[];
 extern struct _ddebug __stop___verbose[];
 
@@ -636,6 +638,41 @@ EXPORT_SYMBOL(__dynamic_netdev_dbg);
 
 #endif
 
+#if IS_ENABLED(CONFIG_INFINIBAND)
+
+void __dynamic_ibdev_dbg(struct _ddebug *descriptor,
+			 const struct ib_device *ibdev, const char *fmt, ...)
+{
+	struct va_format vaf;
+	va_list args;
+
+	va_start(args, fmt);
+
+	vaf.fmt = fmt;
+	vaf.va = &args;
+
+	if (ibdev && ibdev->dev.parent) {
+		char buf[PREFIX_SIZE];
+
+		dev_printk_emit(LOGLEVEL_DEBUG, ibdev->dev.parent,
+				"%s%s %s %s: %pV",
+				dynamic_emit_prefix(descriptor, buf),
+				dev_driver_string(ibdev->dev.parent),
+				dev_name(ibdev->dev.parent),
+				dev_name(&ibdev->dev),
+				&vaf);
+	} else if (ibdev) {
+		printk(KERN_DEBUG "%s: %pV", dev_name(&ibdev->dev), &vaf);
+	} else {
+		printk(KERN_DEBUG "(NULL ib_device): %pV", &vaf);
+	}
+
+	va_end(args);
+}
+EXPORT_SYMBOL(__dynamic_ibdev_dbg);
+
+#endif
+
 #define DDEBUG_STRING_SIZE 1024
 static __initdata char ddebug_setup_string[DDEBUG_STRING_SIZE];
 
@@ -956,20 +993,14 @@ static __initdata int ddebug_init_success;
 
 static int __init dynamic_debug_init_debugfs(void)
 {
-	struct dentry *dir, *file;
+	struct dentry *dir;
 
 	if (!ddebug_init_success)
 		return -ENODEV;
 
 	dir = debugfs_create_dir("dynamic_debug", NULL);
-	if (!dir)
-		return -ENOMEM;
-	file = debugfs_create_file("control", 0644, dir, NULL,
-					&ddebug_proc_fops);
-	if (!file) {
-		debugfs_remove(dir);
-		return -ENOMEM;
-	}
+	debugfs_create_file("control", 0644, dir, NULL, &ddebug_proc_fops);
+
 	return 0;
 }
 

@@ -64,6 +64,10 @@ extern struct page *balloon_page_alloc(void);
 extern void balloon_page_enqueue(struct balloon_dev_info *b_dev_info,
 				 struct page *page);
 extern struct page *balloon_page_dequeue(struct balloon_dev_info *b_dev_info);
+extern size_t balloon_page_list_enqueue(struct balloon_dev_info *b_dev_info,
+				      struct list_head *pages);
+extern size_t balloon_page_list_dequeue(struct balloon_dev_info *b_dev_info,
+				     struct list_head *pages, size_t n_req_pages);
 
 static inline void balloon_devinfo_init(struct balloon_dev_info *balloon)
 {
@@ -149,21 +153,6 @@ static inline void balloon_page_delete(struct page *page)
 {
 	__ClearPageOffline(page);
 	list_del(&page->lru);
-}
-
-static inline bool __is_movable_balloon_page(struct page *page)
-{
-	return false;
-}
-
-static inline bool balloon_page_movable(struct page *page)
-{
-	return false;
-}
-
-static inline bool isolated_balloon_page(struct page *page)
-{
-	return false;
 }
 
 static inline bool balloon_page_isolate(struct page *page)

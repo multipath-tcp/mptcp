@@ -136,6 +136,13 @@ static int __send_message(struct bnxt_qplib_rcfw *rcfw, struct cmdq_base *req,
 		spin_unlock_irqrestore(&cmdq->lock, flags);
 		return -EBUSY;
 	}
+
+	size = req->cmd_size;
+	/* change the cmd_size to the number of 16byte cmdq unit.
+	 * req->cmd_size is modified here
+	 */
+	bnxt_qplib_set_cmd_slots(req);
+
 	memset(resp, 0, sizeof(*resp));
 	crsqe->resp = (struct creq_qp_event *)resp;
 	crsqe->resp->cookie = req->cookie;
@@ -150,7 +157,6 @@ static int __send_message(struct bnxt_qplib_rcfw *rcfw, struct cmdq_base *req,
 
 	cmdq_ptr = (struct bnxt_qplib_cmdqe **)cmdq->pbl_ptr;
 	preq = (u8 *)req;
-	size = req->cmd_size * BNXT_QPLIB_CMDQE_UNITS;
 	do {
 		/* Locate the next cmdq slot */
 		sw_prod = HWQ_CMP(cmdq->prod, cmdq);
@@ -569,7 +575,7 @@ int bnxt_qplib_alloc_rcfw_channel(struct pci_dev *pdev,
 	rcfw->pdev = pdev;
 	rcfw->creq.max_elements = BNXT_QPLIB_CREQE_MAX_CNT;
 	hwq_type = bnxt_qplib_get_hwq_type(rcfw->res);
-	if (bnxt_qplib_alloc_init_hwq(rcfw->pdev, &rcfw->creq, NULL, 0,
+	if (bnxt_qplib_alloc_init_hwq(rcfw->pdev, &rcfw->creq, NULL,
 				      &rcfw->creq.max_elements,
 				      BNXT_QPLIB_CREQE_UNITS,
 				      0, PAGE_SIZE, hwq_type)) {
@@ -584,7 +590,7 @@ int bnxt_qplib_alloc_rcfw_channel(struct pci_dev *pdev,
 
 	rcfw->cmdq.max_elements = rcfw->cmdq_depth;
 	if (bnxt_qplib_alloc_init_hwq
-			(rcfw->pdev, &rcfw->cmdq, NULL, 0,
+			(rcfw->pdev, &rcfw->cmdq, NULL,
 			 &rcfw->cmdq.max_elements,
 			 BNXT_QPLIB_CMDQE_UNITS, 0,
 			 bnxt_qplib_cmdqe_page_size(rcfw->cmdq_depth),

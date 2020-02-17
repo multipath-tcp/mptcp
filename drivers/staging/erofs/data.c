@@ -17,12 +17,17 @@
 
 static inline void read_endio(struct bio *bio)
 {
-	int i;
+	struct super_block *const sb = bio->bi_private;
 	struct bio_vec *bvec;
-	const blk_status_t err = bio->bi_status;
+	blk_status_t err = bio->bi_status;
 	struct bvec_iter_all iter_all;
 
-	bio_for_each_segment_all(bvec, bio, i, iter_all) {
+	if (time_to_inject(EROFS_SB(sb), FAULT_READ_IO)) {
+		erofs_show_injection_info(FAULT_READ_IO);
+		err = BLK_STS_IOERR;
+	}
+
+	bio_for_each_segment_all(bvec, bio, iter_all) {
 		struct page *page = bvec->bv_page;
 
 		/* page is already locked */
@@ -63,7 +68,7 @@ repeat:
 	if (!PageUptodate(page)) {
 		struct bio *bio;
 
-		bio = erofs_grab_bio(sb, blkaddr, 1, read_endio, nofail);
+		bio = erofs_grab_bio(sb, blkaddr, 1, sb, read_endio, nofail);
 		if (IS_ERR(bio)) {
 			DBG_BUGON(nofail);
 			err = PTR_ERR(bio);
@@ -119,7 +124,7 @@ static int erofs_map_blocks_flatmode(struct inode *inode,
 	trace_erofs_map_blocks_flatmode_enter(inode, map, flags);
 
 	nblocks = DIV_ROUND_UP(inode->i_size, PAGE_SIZE);
-	lastblk = nblocks - is_inode_layout_inline(inode);
+	lastblk = nblocks - is_inode_flat_inline(inode);
 
 	if (unlikely(offset >= inode->i_size)) {
 		/* leave out-of-bound access unmapped */
@@ -134,7 +139,7 @@ static int erofs_map_blocks_flatmode(struct inode *inode,
 	if (offset < blknr_to_addr(lastblk)) {
 		map->m_pa = blknr_to_addr(vi->raw_blkaddr) + map->m_la;
 		map->m_plen = blknr_to_addr(lastblk) - offset;
-	} else if (is_inode_layout_inline(inode)) {
+	} else if (is_inode_flat_inline(inode)) {
 		/* 2 - inode inline B: inode, [xattrs], inline last blk... */
 		struct erofs_sb_info *sbi = EROFS_SB(inode->i_sb);
 
@@ -188,7 +193,8 @@ static inline struct bio *erofs_read_raw_page(struct bio *bio,
 					      unsigned int nblocks,
 					      bool ra)
 {
-	struct inode *inode = mapping->host;
+	struct inode *const inode = mapping->host;
+	struct super_block *const sb = inode->i_sb;
 	erofs_off_t current_block = (erofs_off_t)page->index;
 	int err;
 
@@ -280,9 +286,8 @@ submit_bio_retry:
 		if (nblocks > BIO_MAX_PAGES)
 			nblocks = BIO_MAX_PAGES;
 
-		bio = erofs_grab_bio(inode->i_sb,
-				     blknr, nblocks, read_endio, false);
-
+		bio = erofs_grab_bio(sb, blknr, nblocks, sb,
+				     read_endio, false);
 		if (IS_ERR(bio)) {
 			err = PTR_ERR(bio);
 			bio = NULL;

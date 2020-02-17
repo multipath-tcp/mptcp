@@ -26,8 +26,18 @@ static void hl_ctx_fini(struct hl_ctx *ctx)
 		dma_fence_put(ctx->cs_pending[i]);
 
 	if (ctx->asid != HL_KERNEL_ASID_ID) {
+		/*
+		 * The engines are stopped as there is no executing CS, but the
+		 * Coresight might be still working by accessing addresses
+		 * related to the stopped engines. Hence stop it explicitly.
+		 */
+		if (hdev->in_debug)
+			hl_device_set_debug_mode(hdev, false);
+
 		hl_vm_ctx_fini(ctx);
 		hl_asid_free(hdev, ctx->asid);
+	} else {
+		hl_mmu_ctx_fini(ctx);
 	}
 }
 
@@ -106,11 +116,16 @@ int hl_ctx_init(struct hl_device *hdev, struct hl_ctx *ctx, bool is_kernel_ctx)
 
 	ctx->cs_sequence = 1;
 	spin_lock_init(&ctx->cs_lock);
-	atomic_set(&ctx->thread_restore_token, 1);
-	ctx->thread_restore_wait_token = 0;
+	atomic_set(&ctx->thread_ctx_switch_token, 1);
+	ctx->thread_ctx_switch_wait_token = 0;
 
 	if (is_kernel_ctx) {
 		ctx->asid = HL_KERNEL_ASID_ID; /* KMD gets ASID 0 */
+		rc = hl_mmu_ctx_init(ctx);
+		if (rc) {
+			dev_err(hdev->dev, "Failed to init mmu ctx module\n");
+			goto mem_ctx_err;
+		}
 	} else {
 		ctx->asid = hl_asid_alloc(hdev);
 		if (!ctx->asid) {

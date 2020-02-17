@@ -29,6 +29,13 @@
 #include "dc_types.h"
 #include "grph_object_defs.h"
 
+#ifdef CONFIG_DRM_AMD_DC_DSC_SUPPORT
+enum dc_link_fec_state {
+	dc_link_fec_not_ready,
+	dc_link_fec_ready,
+	dc_link_fec_enabled
+};
+#endif
 struct dc_link_status {
 	bool link_active;
 	struct dpcd_caps *dpcd_caps;
@@ -75,6 +82,7 @@ struct dc_link {
 	enum dc_irq_source irq_source_hpd_rx;/* aka DP Short Pulse  */
 	bool is_hpd_filter_disabled;
 	bool dp_ss_off;
+	bool link_state_valid;
 
 	/* caps is the same as reported_link_cap. link_traing use
 	 * reported_link_cap. Will clean up.  TODO
@@ -120,6 +128,7 @@ struct dc_link {
 	/* MST record stream using this link */
 	struct link_flags {
 		bool dp_keep_receiver_powered;
+		bool dp_skip_DID2;
 	} wa_flags;
 	struct link_mst_stream_allocation_table mst_stream_alloc_table;
 
@@ -127,6 +136,9 @@ struct dc_link {
 
 	struct link_trace link_trace;
 	struct gpio *hpd_gpio;
+#ifdef CONFIG_DRM_AMD_DC_DSC_SUPPORT
+	enum dc_link_fec_state fec_state;
+#endif
 };
 
 const struct dc_link_status *dc_link_get_status(const struct dc_link *dc_link);
@@ -246,10 +258,18 @@ void dc_link_set_test_pattern(struct dc_link *link,
 			const struct link_training_settings *p_link_settings,
 			const unsigned char *p_custom_pattern,
 			unsigned int cust_pattern_size);
+uint32_t dc_link_bandwidth_kbps(
+	const struct dc_link *link,
+	const struct dc_link_settings *link_setting);
+
+const struct dc_link_settings *dc_link_get_link_cap(
+		const struct dc_link *link);
 
 bool dc_submit_i2c(
 		struct dc *dc,
 		uint32_t link_index,
 		struct i2c_command *cmd);
 
+uint32_t dc_bandwidth_in_kbps_from_timing(
+	const struct dc_crtc_timing *timing);
 #endif /* DC_LINK_H_ */

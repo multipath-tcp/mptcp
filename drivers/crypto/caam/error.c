@@ -13,7 +13,7 @@
 #ifdef DEBUG
 #include <linux/highmem.h>
 
-void caam_dump_sg(const char *level, const char *prefix_str, int prefix_type,
+void caam_dump_sg(const char *prefix_str, int prefix_type,
 		  int rowsize, int groupsize, struct scatterlist *sg,
 		  size_t tlen, bool ascii)
 {
@@ -22,7 +22,7 @@ void caam_dump_sg(const char *level, const char *prefix_str, int prefix_type,
 	size_t len;
 	void *buf;
 
-	for (it = sg; it && tlen > 0 ; it = sg_next(sg)) {
+	for (it = sg; it && tlen > 0 ; it = sg_next(it)) {
 		/*
 		 * make sure the scatterlist's page
 		 * has a valid virtual memory mapping
@@ -35,15 +35,15 @@ void caam_dump_sg(const char *level, const char *prefix_str, int prefix_type,
 
 		buf = it_page + it->offset;
 		len = min_t(size_t, tlen, it->length);
-		print_hex_dump(level, prefix_str, prefix_type, rowsize,
-			       groupsize, buf, len, ascii);
+		print_hex_dump_debug(prefix_str, prefix_type, rowsize,
+				     groupsize, buf, len, ascii);
 		tlen -= len;
 
 		kunmap_atomic(it_page);
 	}
 }
 #else
-void caam_dump_sg(const char *level, const char *prefix_str, int prefix_type,
+void caam_dump_sg(const char *prefix_str, int prefix_type,
 		  int rowsize, int groupsize, struct scatterlist *sg,
 		  size_t tlen, bool ascii)
 {}
@@ -138,7 +138,7 @@ static const struct {
 	{ 0x46, "Annotation length exceeds offset (reuse mode)"},
 	{ 0x48, "Annotation output enabled but ASA limited by ASAR (reuse mode)"},
 	{ 0x49, "Data offset correction exceeds input frame data length (reuse mode)"},
-	{ 0x4B, "Annotation output enabled but ASA cannote be expanded (frame list)"},
+	{ 0x4B, "Annotation output enabled but ASA cannot be expanded (frame list)"},
 	{ 0x51, "Unsupported IF reuse mode"},
 	{ 0x52, "Unsupported FL use mode"},
 	{ 0x53, "Unsupported RJD use mode"},

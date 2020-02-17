@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
    SCSI Tape Driver for Linux version 1.1 and newer. See the accompanying
    file Documentation/scsi/st.txt for more information.
@@ -227,7 +228,6 @@ static DEFINE_IDR(st_index_idr);
 
 
 
-#include "osst_detect.h"
 #ifndef SIGS_FROM_OSST
 #define SIGS_FROM_OSST \
 	{"OnStream", "SC-", "", "osst"}, \
@@ -4266,9 +4266,10 @@ static int st_probe(struct device *dev)
 	if (SDp->type != TYPE_TAPE)
 		return -ENODEV;
 	if ((stp = st_incompatible(SDp))) {
-		sdev_printk(KERN_INFO, SDp, "Found incompatible tape\n");
 		sdev_printk(KERN_INFO, SDp,
-			    "st: The suggested driver is %s.\n", stp);
+			    "OnStream tapes are no longer supported;\n");
+		sdev_printk(KERN_INFO, SDp,
+			    "please mail to linux-scsi@vger.kernel.org.\n");
 		return -ENODEV;
 	}
 
@@ -4922,7 +4923,8 @@ static int sgl_map_user_pages(struct st_buffer *STbp,
 
         /* Try to fault in all of the necessary pages */
         /* rw==READ means read from drive, write into memory area */
-	res = get_user_pages_fast(uaddr, nr_pages, rw == READ, pages);
+	res = get_user_pages_fast(uaddr, nr_pages, rw == READ ? FOLL_WRITE : 0,
+				  pages);
 
 	/* Errors and no page mapped should return here */
 	if (res < nr_pages)

@@ -1,12 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * kexec: kexec_file_load system call
  *
  * Copyright (C) 2014 Red Hat Inc.
  * Authors:
  *      Vivek Goyal <vgoyal@redhat.com>
- *
- * This source code is licensed under the GNU General Public License,
- * Version 2.  See the file COPYING for more details.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -198,9 +196,6 @@ kimage_file_prepare_segments(struct kimage *image, int kernel_fd, int initrd_fd,
 		return ret;
 	image->kernel_buf_len = size;
 
-	/* IMA needs to pass the measurement list to the next kernel. */
-	ima_add_kexec_buffer(image);
-
 	/* Call arch image probe handlers */
 	ret = arch_kexec_kernel_image_probe(image, image->kernel_buf,
 					    image->kernel_buf_len);
@@ -241,7 +236,13 @@ kimage_file_prepare_segments(struct kimage *image, int kernel_fd, int initrd_fd,
 			ret = -EINVAL;
 			goto out;
 		}
+
+		ima_kexec_cmdline(image->cmdline_buf,
+				  image->cmdline_buf_len - 1);
 	}
+
+	/* IMA needs to pass the measurement list to the next kernel. */
+	ima_add_kexec_buffer(image);
 
 	/* Call arch image load handlers */
 	ldata = arch_kexec_kernel_image_load(image);
@@ -500,13 +501,7 @@ static int locate_mem_hole_callback(struct resource *res, void *arg)
 	return locate_mem_hole_bottom_up(start, end, kbuf);
 }
 
-#ifdef CONFIG_ARCH_DISCARD_MEMBLOCK
-static int kexec_walk_memblock(struct kexec_buf *kbuf,
-			       int (*func)(struct resource *, void *))
-{
-	return 0;
-}
-#else
+#ifdef CONFIG_ARCH_KEEP_MEMBLOCK
 static int kexec_walk_memblock(struct kexec_buf *kbuf,
 			       int (*func)(struct resource *, void *))
 {
@@ -550,6 +545,12 @@ static int kexec_walk_memblock(struct kexec_buf *kbuf,
 
 	return ret;
 }
+#else
+static int kexec_walk_memblock(struct kexec_buf *kbuf,
+			       int (*func)(struct resource *, void *))
+{
+	return 0;
+}
 #endif
 
 /**
@@ -589,7 +590,7 @@ int kexec_locate_mem_hole(struct kexec_buf *kbuf)
 	if (kbuf->mem != KEXEC_BUF_MEM_UNKNOWN)
 		return 0;
 
-	if (IS_ENABLED(CONFIG_ARCH_DISCARD_MEMBLOCK))
+	if (!IS_ENABLED(CONFIG_ARCH_KEEP_MEMBLOCK))
 		ret = kexec_walk_resources(kbuf, locate_mem_hole_callback);
 	else
 		ret = kexec_walk_memblock(kbuf, locate_mem_hole_callback);
@@ -688,7 +689,6 @@ static int kexec_calculate_store_digests(struct kimage *image)
 		goto out_free_desc;
 
 	desc->tfm   = tfm;
-	desc->flags = 0;
 
 	ret = crypto_shash_init(desc);
 	if (ret < 0)

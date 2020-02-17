@@ -27,6 +27,18 @@ struct page *erofs_allocpage(struct list_head *pool, gfp_t gfp)
 	return page;
 }
 
+#if (EROFS_PCPUBUF_NR_PAGES > 0)
+static struct {
+	u8 data[PAGE_SIZE * EROFS_PCPUBUF_NR_PAGES];
+} ____cacheline_aligned_in_smp erofs_pcpubuf[NR_CPUS];
+
+void *erofs_get_pcpubuf(unsigned int pagenr)
+{
+	preempt_disable();
+	return &erofs_pcpubuf[smp_processor_id()].data[pagenr * PAGE_SIZE];
+}
+#endif
+
 /* global shrink count (for all mounted EROFS instances) */
 static atomic_long_t erofs_global_shrink_cnt;
 
@@ -61,7 +73,7 @@ struct erofs_workgroup *erofs_find_workgroup(struct super_block *sb,
 repeat:
 	rcu_read_lock();
 	grp = radix_tree_lookup(&sbi->workstn_tree, index);
-	if (grp != NULL) {
+	if (grp) {
 		*tag = xa_pointer_tag(grp);
 		grp = xa_untag_pointer(grp);
 
@@ -221,7 +233,7 @@ repeat:
 	erofs_workstn_lock(sbi);
 
 	found = radix_tree_gang_lookup(&sbi->workstn_tree,
-		batch, first_index, PAGEVEC_SIZE);
+				       batch, first_index, PAGEVEC_SIZE);
 
 	for (i = 0; i < found; ++i) {
 		struct erofs_workgroup *grp = xa_untag_pointer(batch[i]);

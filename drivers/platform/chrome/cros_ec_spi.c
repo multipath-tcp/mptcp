@@ -12,7 +12,7 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/spi/spi.h>
-
+#include <uapi/linux/sched/types.h>
 
 /* The header byte, which follows the preamble */
 #define EC_MSG_HEADER			0xec
@@ -67,12 +67,35 @@
  *      is sent when we want to turn on CS at the start of a transaction.
  * @end_of_msg_delay: used to set the delay_usecs on the spi_transfer that
  *      is sent when we want to turn off CS at the end of a transaction.
+ * @high_pri_worker: Used to schedule high priority work.
  */
 struct cros_ec_spi {
 	struct spi_device *spi;
 	s64 last_transfer_ns;
 	unsigned int start_of_msg_delay;
 	unsigned int end_of_msg_delay;
+	struct kthread_worker *high_pri_worker;
+};
+
+typedef int (*cros_ec_xfer_fn_t) (struct cros_ec_device *ec_dev,
+				  struct cros_ec_command *ec_msg);
+
+/**
+ * struct cros_ec_xfer_work_params - params for our high priority workers
+ *
+ * @work: The work_struct needed to queue work
+ * @fn: The function to use to transfer
+ * @ec_dev: ChromeOS EC device
+ * @ec_msg: Message to transfer
+ * @ret: The return value of the function
+ */
+
+struct cros_ec_xfer_work_params {
+	struct kthread_work work;
+	cros_ec_xfer_fn_t fn;
+	struct cros_ec_device *ec_dev;
+	struct cros_ec_command *ec_msg;
+	int ret;
 };
 
 static void debug_packet(struct device *dev, const char *name, u8 *ptr,
@@ -350,13 +373,13 @@ static int cros_ec_spi_receive_response(struct cros_ec_device *ec_dev,
 }
 
 /**
- * cros_ec_pkt_xfer_spi - Transfer a packet over SPI and receive the reply
+ * do_cros_ec_pkt_xfer_spi - Transfer a packet over SPI and receive the reply
  *
  * @ec_dev: ChromeOS EC device
  * @ec_msg: Message to transfer
  */
-static int cros_ec_pkt_xfer_spi(struct cros_ec_device *ec_dev,
-				struct cros_ec_command *ec_msg)
+static int do_cros_ec_pkt_xfer_spi(struct cros_ec_device *ec_dev,
+				   struct cros_ec_command *ec_msg)
 {
 	struct ec_host_response *response;
 	struct cros_ec_spi *ec_spi = ec_dev->priv;
@@ -493,13 +516,13 @@ exit:
 }
 
 /**
- * cros_ec_cmd_xfer_spi - Transfer a message over SPI and receive the reply
+ * do_cros_ec_cmd_xfer_spi - Transfer a message over SPI and receive the reply
  *
  * @ec_dev: ChromeOS EC device
  * @ec_msg: Message to transfer
  */
-static int cros_ec_cmd_xfer_spi(struct cros_ec_device *ec_dev,
-				struct cros_ec_command *ec_msg)
+static int do_cros_ec_cmd_xfer_spi(struct cros_ec_device *ec_dev,
+				   struct cros_ec_command *ec_msg)
 {
 	struct cros_ec_spi *ec_spi = ec_dev->priv;
 	struct spi_transfer trans;
@@ -611,6 +634,54 @@ exit:
 	return ret;
 }
 
+static void cros_ec_xfer_high_pri_work(struct kthread_work *work)
+{
+	struct cros_ec_xfer_work_params *params;
+
+	params = container_of(work, struct cros_ec_xfer_work_params, work);
+	params->ret = params->fn(params->ec_dev, params->ec_msg);
+}
+
+static int cros_ec_xfer_high_pri(struct cros_ec_device *ec_dev,
+				 struct cros_ec_command *ec_msg,
+				 cros_ec_xfer_fn_t fn)
+{
+	struct cros_ec_spi *ec_spi = ec_dev->priv;
+	struct cros_ec_xfer_work_params params = {
+		.work = KTHREAD_WORK_INIT(params.work,
+					  cros_ec_xfer_high_pri_work),
+		.ec_dev = ec_dev,
+		.ec_msg = ec_msg,
+		.fn = fn,
+	};
+
+	/*
+	 * This looks a bit ridiculous.  Why do the work on a
+	 * different thread if we're just going to block waiting for
+	 * the thread to finish?  The key here is that the thread is
+	 * running at high priority but the calling context might not
+	 * be.  We need to be at high priority to avoid getting
+	 * context switched out for too long and the EC giving up on
+	 * the transfer.
+	 */
+	kthread_queue_work(ec_spi->high_pri_worker, &params.work);
+	kthread_flush_work(&params.work);
+
+	return params.ret;
+}
+
+static int cros_ec_pkt_xfer_spi(struct cros_ec_device *ec_dev,
+				struct cros_ec_command *ec_msg)
+{
+	return cros_ec_xfer_high_pri(ec_dev, ec_msg, do_cros_ec_pkt_xfer_spi);
+}
+
+static int cros_ec_cmd_xfer_spi(struct cros_ec_device *ec_dev,
+				struct cros_ec_command *ec_msg)
+{
+	return cros_ec_xfer_high_pri(ec_dev, ec_msg, do_cros_ec_cmd_xfer_spi);
+}
+
 static void cros_ec_spi_dt_probe(struct cros_ec_spi *ec_spi, struct device *dev)
 {
 	struct device_node *np = dev->of_node;
@@ -626,6 +697,40 @@ static void cros_ec_spi_dt_probe(struct cros_ec_spi *ec_spi, struct device *dev)
 		ec_spi->end_of_msg_delay = val;
 }
 
+static void cros_ec_spi_high_pri_release(void *worker)
+{
+	kthread_destroy_worker(worker);
+}
+
+static int cros_ec_spi_devm_high_pri_alloc(struct device *dev,
+					   struct cros_ec_spi *ec_spi)
+{
+	struct sched_param sched_priority = {
+		.sched_priority = MAX_RT_PRIO - 1,
+	};
+	int err;
+
+	ec_spi->high_pri_worker =
+		kthread_create_worker(0, "cros_ec_spi_high_pri");
+
+	if (IS_ERR(ec_spi->high_pri_worker)) {
+		err = PTR_ERR(ec_spi->high_pri_worker);
+		dev_err(dev, "Can't create cros_ec high pri worker: %d\n", err);
+		return err;
+	}
+
+	err = devm_add_action_or_reset(dev, cros_ec_spi_high_pri_release,
+				       ec_spi->high_pri_worker);
+	if (err)
+		return err;
+
+	err = sched_setscheduler_nocheck(ec_spi->high_pri_worker->task,
+					 SCHED_FIFO, &sched_priority);
+	if (err)
+		dev_err(dev, "Can't set cros_ec high pri priority: %d\n", err);
+	return err;
+}
+
 static int cros_ec_spi_probe(struct spi_device *spi)
 {
 	struct device *dev = &spi->dev;
@@ -635,6 +740,7 @@ static int cros_ec_spi_probe(struct spi_device *spi)
 
 	spi->bits_per_word = 8;
 	spi->mode = SPI_MODE_0;
+	spi->rt = true;
 	err = spi_setup(spi);
 	if (err < 0)
 		return err;
@@ -663,6 +769,10 @@ static int cros_ec_spi_probe(struct spi_device *spi)
 	ec_dev->dout_size = sizeof(struct ec_host_request);
 
 	ec_spi->last_transfer_ns = ktime_get_ns();
+
+	err = cros_ec_spi_devm_high_pri_alloc(dev, ec_spi);
+	if (err)
+		return err;
 
 	err = cros_ec_register(ec_dev);
 	if (err) {
@@ -709,7 +819,7 @@ MODULE_DEVICE_TABLE(spi, cros_ec_spi_id);
 static struct spi_driver cros_ec_driver_spi = {
 	.driver	= {
 		.name	= "cros-ec-spi",
-		.of_match_table = of_match_ptr(cros_ec_spi_of_match),
+		.of_match_table = cros_ec_spi_of_match,
 		.pm	= &cros_ec_spi_pm_ops,
 	},
 	.probe		= cros_ec_spi_probe,

@@ -936,6 +936,8 @@ struct xhci_virt_ep {
 #define EP_GETTING_NO_STREAMS	(1 << 5)
 #define EP_HARD_CLEAR_TOGGLE	(1 << 6)
 #define EP_SOFT_CLEAR_TOGGLE	(1 << 7)
+/* usb_hub_clear_tt_buffer is in progress */
+#define EP_CLEARING_TT		(1 << 8)
 	/* ----  Related to URB cancellation ---- */
 	struct list_head	cancelled_td_list;
 	/* Watchdog timer for stop endpoint command to cancel URBs */
@@ -1010,6 +1012,15 @@ struct xhci_virt_device {
 	u8				real_port;
 	struct xhci_interval_bw_table	*bw_table;
 	struct xhci_tt_bw_info		*tt_info;
+	/*
+	 * flags for state tracking based on events and issued commands.
+	 * Software can not rely on states from output contexts because of
+	 * latency between events and xHC updating output context values.
+	 * See xhci 1.1 section 4.8.3 for more details
+	 */
+	unsigned long			flags;
+#define VDEV_PORT_ERROR			BIT(0) /* Port error, link inactive */
+
 	/* The current max exit latency for the enabled USB3 link states. */
 	u16				current_mel;
 	/* Used for the debugfs interfaces. */
@@ -1303,6 +1314,8 @@ enum xhci_setup_dev {
 #define TRB_IOC			(1<<5)
 /* The buffer pointer contains immediate data */
 #define TRB_IDT			(1<<6)
+/* TDs smaller than this might use IDT */
+#define TRB_IDT_MAX_SIZE	8
 
 /* Block Event Interrupt */
 #define	TRB_BEI			(1<<9)
@@ -2100,6 +2113,9 @@ void xhci_handle_command_timeout(struct work_struct *work);
 
 void xhci_ring_ep_doorbell(struct xhci_hcd *xhci, unsigned int slot_id,
 		unsigned int ep_index, unsigned int stream_id);
+void xhci_ring_doorbell_for_active_rings(struct xhci_hcd *xhci,
+		unsigned int slot_id,
+		unsigned int ep_index);
 void xhci_cleanup_command_queue(struct xhci_hcd *xhci);
 void inc_deq(struct xhci_hcd *xhci, struct xhci_ring *ring);
 unsigned int count_trbs(u64 addr, u64 len);
@@ -2147,6 +2163,23 @@ static inline struct xhci_ring *xhci_urb_to_transfer_ring(struct xhci_hcd *xhci,
 	return xhci_triad_to_transfer_ring(xhci, urb->dev->slot_id,
 					xhci_get_endpoint_index(&urb->ep->desc),
 					urb->stream_id);
+}
+
+/*
+ * TODO: As per spec Isochronous IDT transmissions are supported. We bypass
+ * them anyways as we where unable to find a device that matches the
+ * constraints.
+ */
+static inline bool xhci_urb_suitable_for_idt(struct urb *urb)
+{
+	if (!usb_endpoint_xfer_isoc(&urb->ep->desc) && usb_urb_dir_out(urb) &&
+	    usb_endpoint_maxp(&urb->ep->desc) >= TRB_IDT_MAX_SIZE &&
+	    urb->transfer_buffer_length <= TRB_IDT_MAX_SIZE &&
+	    !(urb->transfer_flags & URB_NO_TRANSFER_DMA_MAP) &&
+	    !urb->num_sgs)
+		return true;
+
+	return false;
 }
 
 static inline char *xhci_slot_state_string(u32 state)
@@ -2381,6 +2414,35 @@ static inline const char *xhci_decode_trb(u32 field0, u32 field1, u32 field2,
 			field0, field1, field2, field3);
 	}
 
+	return str;
+}
+
+static inline const char *xhci_decode_ctrl_ctx(unsigned long drop,
+					       unsigned long add)
+{
+	static char	str[1024];
+	unsigned int	bit;
+	int		ret = 0;
+
+	if (drop) {
+		ret = sprintf(str, "Drop:");
+		for_each_set_bit(bit, &drop, 32)
+			ret += sprintf(str + ret, " %d%s",
+				       bit / 2,
+				       bit % 2 ? "in":"out");
+		ret += sprintf(str + ret, ", ");
+	}
+
+	if (add) {
+		ret += sprintf(str + ret, "Add:%s%s",
+			       (add & SLOT_FLAG) ? " slot":"",
+			       (add & EP0_FLAG) ? " ep0":"");
+		add &= ~(SLOT_FLAG | EP0_FLAG);
+		for_each_set_bit(bit, &add, 32)
+			ret += sprintf(str + ret, " %d%s",
+				       bit / 2,
+				       bit % 2 ? "in":"out");
+	}
 	return str;
 }
 

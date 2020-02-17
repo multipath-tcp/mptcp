@@ -380,14 +380,12 @@ void workingset_update_node(struct xa_node *node)
 	if (node->count && node->count == node->nr_values) {
 		if (list_empty(&node->private_list)) {
 			list_lru_add(&shadow_nodes, &node->private_list);
-			__inc_lruvec_page_state(virt_to_page(node),
-						WORKINGSET_NODES);
+			__inc_lruvec_slab_state(node, WORKINGSET_NODES);
 		}
 	} else {
 		if (!list_empty(&node->private_list)) {
 			list_lru_del(&shadow_nodes, &node->private_list);
-			__dec_lruvec_page_state(virt_to_page(node),
-						WORKINGSET_NODES);
+			__dec_lruvec_slab_state(node, WORKINGSET_NODES);
 		}
 	}
 }
@@ -426,12 +424,14 @@ static unsigned long count_shadow_nodes(struct shrinker *shrinker,
 #ifdef CONFIG_MEMCG
 	if (sc->memcg) {
 		struct lruvec *lruvec;
+		int i;
 
-		pages = mem_cgroup_node_nr_lru_pages(sc->memcg, sc->nid,
-						     LRU_ALL);
 		lruvec = mem_cgroup_lruvec(NODE_DATA(sc->nid), sc->memcg);
-		pages += lruvec_page_state(lruvec, NR_SLAB_RECLAIMABLE);
-		pages += lruvec_page_state(lruvec, NR_SLAB_UNRECLAIMABLE);
+		for (pages = 0, i = 0; i < NR_LRU_LISTS; i++)
+			pages += lruvec_page_state_local(lruvec,
+							 NR_LRU_BASE + i);
+		pages += lruvec_page_state_local(lruvec, NR_SLAB_RECLAIMABLE);
+		pages += lruvec_page_state_local(lruvec, NR_SLAB_UNRECLAIMABLE);
 	} else
 #endif
 		pages = node_present_pages(sc->nid);
@@ -478,7 +478,7 @@ static enum lru_status shadow_lru_isolate(struct list_head *item,
 	}
 
 	list_lru_isolate(lru, item);
-	__dec_lruvec_page_state(virt_to_page(node), WORKINGSET_NODES);
+	__dec_lruvec_slab_state(node, WORKINGSET_NODES);
 
 	spin_unlock(lru_lock);
 
@@ -501,7 +501,7 @@ static enum lru_status shadow_lru_isolate(struct list_head *item,
 	 * shadow entries we were tracking ...
 	 */
 	xas_store(&xas, NULL);
-	__inc_lruvec_page_state(virt_to_page(node), WORKINGSET_NODERECLAIM);
+	__inc_lruvec_slab_state(node, WORKINGSET_NODERECLAIM);
 
 out_invalid:
 	xa_unlock_irq(&mapping->i_pages);

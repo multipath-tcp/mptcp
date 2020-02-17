@@ -1,12 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /* connection-level event handling
  *
  * Copyright (C) 2007 Red Hat, Inc. All Rights Reserved.
  * Written by David Howells (dhowells@redhat.com)
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version
- * 2 of the License, or (at your option) any later version.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -476,7 +472,7 @@ void rxrpc_process_connection(struct work_struct *work)
 	/* go through the conn-level event packets, releasing the ref on this
 	 * connection that each one has when we've finished with it */
 	while ((skb = skb_dequeue(&conn->rx_queue))) {
-		rxrpc_see_skb(skb, rxrpc_skb_rx_seen);
+		rxrpc_see_skb(skb, rxrpc_skb_seen);
 		ret = rxrpc_process_event(conn, skb, &abort_code);
 		switch (ret) {
 		case -EPROTO:
@@ -488,7 +484,7 @@ void rxrpc_process_connection(struct work_struct *work)
 			goto requeue_and_leave;
 		case -ECONNABORTED:
 		default:
-			rxrpc_free_skb(skb, rxrpc_skb_rx_freed);
+			rxrpc_free_skb(skb, rxrpc_skb_freed);
 			break;
 		}
 	}
@@ -505,6 +501,6 @@ requeue_and_leave:
 protocol_error:
 	if (rxrpc_abort_connection(conn, ret, abort_code) < 0)
 		goto requeue_and_leave;
-	rxrpc_free_skb(skb, rxrpc_skb_rx_freed);
+	rxrpc_free_skb(skb, rxrpc_skb_freed);
 	goto out;
 }

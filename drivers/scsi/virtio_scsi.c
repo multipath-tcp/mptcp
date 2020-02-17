@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Virtio SCSI HBA driver
  *
@@ -7,10 +8,6 @@
  * Authors:
  *  Stefan Hajnoczi   <stefanha@linux.vnet.ibm.com>
  *  Paolo Bonzini   <pbonzini@redhat.com>
- *
- * This work is licensed under the terms of the GNU GPL, version 2 or later.
- * See the COPYING file in the top-level directory.
- *
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -76,9 +73,6 @@ struct virtio_scsi {
 	struct virtio_scsi_event_node event_list[VIRTIO_SCSI_EVENT_LEN];
 
 	u32 num_queues;
-
-	/* If the affinity hint is set for virtqueues */
-	bool affinity_hint_set;
 
 	struct hlist_node node;
 
@@ -659,7 +653,7 @@ static int virtscsi_abort(struct scsi_cmnd *sc)
 static int virtscsi_map_queues(struct Scsi_Host *shost)
 {
 	struct virtio_scsi *vscsi = shost_priv(shost);
-	struct blk_mq_queue_map *qmap = &shost->tag_set.map[0];
+	struct blk_mq_queue_map *qmap = &shost->tag_set.map[HCTX_TYPE_DEFAULT];
 
 	return blk_mq_virtio_map_queues(qmap, vscsi->vdev, 2);
 }
@@ -798,7 +792,7 @@ static int virtscsi_probe(struct virtio_device *vdev)
 	num_targets = virtscsi_config_get(vdev, max_target) + 1;
 
 	shost = scsi_host_alloc(&virtscsi_host_template,
-		sizeof(*vscsi) + sizeof(vscsi->req_vqs[0]) * num_queues);
+				struct_size(vscsi, req_vqs, num_queues));
 	if (!shost)
 		return -ENOMEM;
 

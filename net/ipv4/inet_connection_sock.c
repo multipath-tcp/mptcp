@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * INET		An implementation of the TCP/IP protocol suite for the LINUX
  *		operating system.  INET is implemented using the  BSD Socket
@@ -6,11 +7,6 @@
  *		Support for INET connection oriented protocols.
  *
  * Authors:	See the TCP sources
- *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or(at your option) any later version.
  */
 
 #include <linux/module.h>
@@ -565,7 +561,7 @@ struct dst_entry *inet_csk_route_req(const struct sock *sk,
 	rt = ip_route_output_flow(net, fl4, sk);
 	if (IS_ERR(rt))
 		goto no_route;
-	if (opt && opt->opt.is_strictroute && rt->rt_uses_gateway)
+	if (opt && opt->opt.is_strictroute && rt->rt_gw_family)
 		goto route_err;
 	rcu_read_unlock();
 	return &rt->dst;
@@ -603,7 +599,7 @@ struct dst_entry *inet_csk_route_child_sock(const struct sock *sk,
 	rt = ip_route_output_flow(net, fl4, sk);
 	if (IS_ERR(rt))
 		goto no_route;
-	if (opt && opt->opt.is_strictroute && rt->rt_uses_gateway)
+	if (opt && opt->opt.is_strictroute && rt->rt_gw_family)
 		goto route_err;
 	return &rt->dst;
 
@@ -654,8 +650,7 @@ int inet_rtx_syn_ack(const struct sock *parent, struct request_sock *req)
 EXPORT_SYMBOL(inet_rtx_syn_ack);
 
 /* return true if req was found in the ehash table */
-static bool reqsk_queue_unlink(struct request_sock_queue *queue,
-			       struct request_sock *req)
+static bool reqsk_queue_unlink(struct request_sock *req)
 {
 	struct inet_hashinfo *hashinfo = req_to_sk(req)->sk_prot->h.hashinfo;
 	bool found = false;
@@ -674,7 +669,7 @@ static bool reqsk_queue_unlink(struct request_sock_queue *queue,
 
 void inet_csk_reqsk_queue_drop(struct sock *sk, struct request_sock *req)
 {
-	if (reqsk_queue_unlink(&inet_csk(sk)->icsk_accept_queue, req)) {
+	if (reqsk_queue_unlink(req)) {
 		reqsk_queue_removed(&inet_csk(sk)->icsk_accept_queue, req);
 		reqsk_put(req);
 	}
@@ -760,10 +755,6 @@ drop:
 static void reqsk_queue_hash_req(struct request_sock *req,
 				 unsigned long timeout)
 {
-	req->num_retrans = 0;
-	req->num_timeout = 0;
-	req->sk = NULL;
-
 	timer_setup(&req->rsk_timer, reqsk_timer_handler, TIMER_PINNED);
 	mod_timer(&req->rsk_timer, jiffies + timeout);
 

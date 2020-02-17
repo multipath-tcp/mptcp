@@ -1,13 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /* Client connection-specific management code.
  *
  * Copyright (C) 2016 Red Hat, Inc. All Rights Reserved.
  * Written by David Howells (dhowells@redhat.com)
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public Licence
- * as published by the Free Software Foundation; either version
- * 2 of the Licence, or (at your option) any later version.
- *
  *
  * Client connections need to be cached for a little while after they've made a
  * call so as to handle retransmitted DATA packets in case the server didn't
@@ -656,10 +651,14 @@ static int rxrpc_wait_for_channel(struct rxrpc_call *call, gfp_t gfp)
 
 		add_wait_queue_exclusive(&call->waitq, &myself);
 		for (;;) {
-			set_current_state(TASK_INTERRUPTIBLE);
+			if (test_bit(RXRPC_CALL_IS_INTR, &call->flags))
+				set_current_state(TASK_INTERRUPTIBLE);
+			else
+				set_current_state(TASK_UNINTERRUPTIBLE);
 			if (call->call_id)
 				break;
-			if (signal_pending(current)) {
+			if (test_bit(RXRPC_CALL_IS_INTR, &call->flags) &&
+			    signal_pending(current)) {
 				ret = -ERESTARTSYS;
 				break;
 			}
@@ -1162,4 +1161,48 @@ void rxrpc_destroy_all_client_connections(struct rxrpc_net *rxnet)
 		_debug("destroy: queue failed");
 
 	_leave("");
+}
+
+/*
+ * Clean up the client connections on a local endpoint.
+ */
+void rxrpc_clean_up_local_conns(struct rxrpc_local *local)
+{
+	struct rxrpc_connection *conn, *tmp;
+	struct rxrpc_net *rxnet = local->rxnet;
+	unsigned int nr_active;
+	LIST_HEAD(graveyard);
+
+	_enter("");
+
+	spin_lock(&rxnet->client_conn_cache_lock);
+	nr_active = rxnet->nr_active_client_conns;
+
+	list_for_each_entry_safe(conn, tmp, &rxnet->idle_client_conns,
+				 cache_link) {
+		if (conn->params.local == local) {
+			ASSERTCMP(conn->cache_state, ==, RXRPC_CONN_CLIENT_IDLE);
+
+			trace_rxrpc_client(conn, -1, rxrpc_client_discard);
+			if (!test_and_clear_bit(RXRPC_CONN_EXPOSED, &conn->flags))
+				BUG();
+			conn->cache_state = RXRPC_CONN_CLIENT_INACTIVE;
+			list_move(&conn->cache_link, &graveyard);
+			nr_active--;
+		}
+	}
+
+	rxnet->nr_active_client_conns = nr_active;
+	spin_unlock(&rxnet->client_conn_cache_lock);
+	ASSERTCMP(nr_active, >=, 0);
+
+	while (!list_empty(&graveyard)) {
+		conn = list_entry(graveyard.next,
+				  struct rxrpc_connection, cache_link);
+		list_del_init(&conn->cache_link);
+
+		rxrpc_put_connection(conn);
+	}
+
+	_leave(" [culled]");
 }

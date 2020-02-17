@@ -66,6 +66,7 @@ struct intel_guc_ct_channel {
 	struct intel_guc_ct_buffer ctbs[2];
 	u32 owner;
 	u32 next_fence;
+	bool enabled;
 };
 
 /** Holds all command transport channels.
@@ -90,7 +91,14 @@ struct intel_guc_ct {
 };
 
 void intel_guc_ct_init_early(struct intel_guc_ct *ct);
+int intel_guc_ct_init(struct intel_guc_ct *ct);
+void intel_guc_ct_fini(struct intel_guc_ct *ct);
 int intel_guc_ct_enable(struct intel_guc_ct *ct);
 void intel_guc_ct_disable(struct intel_guc_ct *ct);
+
+static inline void intel_guc_ct_stop(struct intel_guc_ct *ct)
+{
+	ct->host_channel.enabled = false;
+}
 
 #endif /* _INTEL_GUC_CT_H_ */

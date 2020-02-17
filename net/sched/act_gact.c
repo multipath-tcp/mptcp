@@ -1,13 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * net/sched/act_gact.c		Generic actions
  *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
- *
  * copyright 	Jamal Hadi Salim (2002-4)
- *
  */
 
 #include <linux/types.h>
@@ -66,6 +61,7 @@ static int tcf_gact_init(struct net *net, struct nlattr *nla,
 	struct tc_gact *parm;
 	struct tcf_gact *gact;
 	int ret = 0;
+	u32 index;
 	int err;
 #ifdef CONFIG_GACT_PROB
 	struct tc_gact_p *p_parm = NULL;
@@ -74,13 +70,15 @@ static int tcf_gact_init(struct net *net, struct nlattr *nla,
 	if (nla == NULL)
 		return -EINVAL;
 
-	err = nla_parse_nested(tb, TCA_GACT_MAX, nla, gact_policy, NULL);
+	err = nla_parse_nested_deprecated(tb, TCA_GACT_MAX, nla, gact_policy,
+					  NULL);
 	if (err < 0)
 		return err;
 
 	if (tb[TCA_GACT_PARMS] == NULL)
 		return -EINVAL;
 	parm = nla_data(tb[TCA_GACT_PARMS]);
+	index = parm->index;
 
 #ifndef CONFIG_GACT_PROB
 	if (tb[TCA_GACT_PROB] != NULL)
@@ -98,12 +96,12 @@ static int tcf_gact_init(struct net *net, struct nlattr *nla,
 	}
 #endif
 
-	err = tcf_idr_check_alloc(tn, &parm->index, a, bind);
+	err = tcf_idr_check_alloc(tn, &index, a, bind);
 	if (!err) {
-		ret = tcf_idr_create(tn, parm->index, est, a,
+		ret = tcf_idr_create(tn, index, est, a,
 				     &act_gact_ops, bind, true);
 		if (ret) {
-			tcf_idr_cleanup(tn, parm->index);
+			tcf_idr_cleanup(tn, index);
 			return ret;
 		}
 		ret = ACT_P_CREATED;
@@ -280,7 +278,7 @@ static __net_init int gact_init_net(struct net *net)
 {
 	struct tc_action_net *tn = net_generic(net, gact_net_id);
 
-	return tc_action_net_init(tn, &act_gact_ops);
+	return tc_action_net_init(net, tn, &act_gact_ops);
 }
 
 static void __net_exit gact_exit_net(struct list_head *net_list)

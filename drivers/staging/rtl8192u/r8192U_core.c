@@ -1,24 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0
 /******************************************************************************
  * Copyright(c) 2008 - 2010 Realtek Corporation. All rights reserved.
  * Linux device driver for RTL8192U
  *
  * Based on the r8187 driver, which is:
  * Copyright 2004-2005 Andrea Merello <andrea.merello@gmail.com>, et al.
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
- *
- * The full GNU General Public License is included in this distribution in the
- * file called LICENSE.
  *
  * Contact Information:
  * Jerry chuang <wlanfae@realtek.com>
@@ -727,7 +713,7 @@ static u32 get_rxpacket_shiftbytes_819xusb(struct ieee80211_rx_stats *pstats)
 		+ pstats->RxBufShift);
 }
 
-static int rtl8192_rx_initiate(struct net_device *dev)
+void rtl8192_rx_enable(struct net_device *dev)
 {
 	struct r8192_priv *priv = (struct r8192_priv *)ieee80211_priv(dev);
 	struct urb *entry;
@@ -777,8 +763,6 @@ static int rtl8192_rx_initiate(struct net_device *dev)
 		skb_queue_tail(&priv->rx_queue, skb);
 		usb_submit_urb(entry, GFP_KERNEL);
 	}
-
-	return 0;
 }
 
 void rtl8192_set_rxconf(struct net_device *dev)
@@ -822,12 +806,6 @@ void rtl8192_set_rxconf(struct net_device *dev)
 	rxconf = rxconf | RCR_ONLYERLPKT;
 
 	write_nic_dword(dev, RCR, rxconf);
-}
-
-/* wait to be removed */
-void rtl8192_rx_enable(struct net_device *dev)
-{
-	rtl8192_rx_initiate(dev);
 }
 
 void rtl8192_rtx_disable(struct net_device *dev)

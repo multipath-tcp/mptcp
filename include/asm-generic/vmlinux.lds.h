@@ -110,10 +110,17 @@
 #endif
 
 #ifdef CONFIG_FTRACE_MCOUNT_RECORD
+#ifdef CC_USING_PATCHABLE_FUNCTION_ENTRY
+#define MCOUNT_REC()	. = ALIGN(8);				\
+			__start_mcount_loc = .;			\
+			KEEP(*(__patchable_function_entries))	\
+			__stop_mcount_loc = .;
+#else
 #define MCOUNT_REC()	. = ALIGN(8);				\
 			__start_mcount_loc = .;			\
 			KEEP(*(__mcount_loc))			\
 			__stop_mcount_loc = .;
+#endif
 #else
 #define MCOUNT_REC()
 #endif
@@ -239,6 +246,16 @@
 #define ACPI_PROBE_TABLE(name)
 #endif
 
+#ifdef CONFIG_THERMAL
+#define THERMAL_TABLE(name)						\
+	. = ALIGN(8);							\
+	__##name##_thermal_table = .;					\
+	KEEP(*(__##name##_thermal_table))				\
+	__##name##_thermal_table_end = .;
+#else
+#define THERMAL_TABLE(name)
+#endif
+
 #define KERNEL_DTB()							\
 	STRUCT_ALIGN();							\
 	__dtb_start = .;						\
@@ -332,7 +349,6 @@
 		__start_rodata = .;					\
 		*(.rodata) *(.rodata.*)					\
 		RO_AFTER_INIT_DATA	/* Read only after init */	\
-		KEEP(*(__vermagic))	/* Kernel version magic */	\
 		. = ALIGN(8);						\
 		__start___tracepoints_ptrs = .;				\
 		KEEP(*(__tracepoints_ptrs)) /* Tracepoints: pointer array */ \
@@ -609,6 +625,7 @@
 	IRQCHIP_OF_MATCH_TABLE()					\
 	ACPI_PROBE_TABLE(irqchip)					\
 	ACPI_PROBE_TABLE(timer)						\
+	THERMAL_TABLE(governor)						\
 	EARLYCON_TABLE()						\
 	LSM_TABLE()
 
@@ -844,6 +861,7 @@
 	EXIT_CALL							\
 	*(.discard)							\
 	*(.discard.*)							\
+	*(.modinfo)							\
 	}
 
 /**

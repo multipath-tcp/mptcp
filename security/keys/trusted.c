@@ -1,12 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2010 IBM Corporation
  *
  * Author:
  * David Safford <safford@us.ibm.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, version 2 of the License.
  *
  * See Documentation/security/keys/trusted-encrypted.rst
  */
@@ -55,7 +52,6 @@ static struct sdesc *init_sdesc(struct crypto_shash *alg)
 	if (!sdesc)
 		return ERR_PTR(-ENOMEM);
 	sdesc->shash.tfm = alg;
-	sdesc->shash.flags = 0x0;
 	return sdesc;
 }
 
@@ -1232,23 +1228,10 @@ hashalg_fail:
 
 static int __init init_digests(void)
 {
-	u8 digest[TPM_MAX_DIGEST_SIZE];
-	int ret;
-	int i;
-
-	ret = tpm_get_random(chip, digest, TPM_MAX_DIGEST_SIZE);
-	if (ret < 0)
-		return ret;
-	if (ret < TPM_MAX_DIGEST_SIZE)
-		return -EFAULT;
-
 	digests = kcalloc(chip->nr_allocated_banks, sizeof(*digests),
 			  GFP_KERNEL);
 	if (!digests)
 		return -ENOMEM;
-
-	for (i = 0; i < chip->nr_allocated_banks; i++)
-		memcpy(digests[i].digest, digest, TPM_MAX_DIGEST_SIZE);
 
 	return 0;
 }

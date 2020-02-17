@@ -85,18 +85,6 @@ enum kgd_memory_pool {
 	KGD_POOL_FRAMEBUFFER = 3,
 };
 
-enum kgd_engine_type {
-	KGD_ENGINE_PFP = 1,
-	KGD_ENGINE_ME,
-	KGD_ENGINE_CE,
-	KGD_ENGINE_MEC1,
-	KGD_ENGINE_MEC2,
-	KGD_ENGINE_RLC,
-	KGD_ENGINE_SDMA1,
-	KGD_ENGINE_SDMA2,
-	KGD_ENGINE_MAX
-};
-
 /**
  * enum kfd_sched_policy
  *
@@ -186,6 +174,7 @@ struct tile_config {
 #define ALLOC_MEM_FLAGS_GTT		(1 << 1)
 #define ALLOC_MEM_FLAGS_USERPTR		(1 << 2)
 #define ALLOC_MEM_FLAGS_DOORBELL	(1 << 3)
+#define ALLOC_MEM_FLAGS_MMIO_REMAP	(1 << 4)
 
 /*
  * Allocation flags attributes/access options.
@@ -229,8 +218,6 @@ struct tile_config {
  *
  * @hqd_sdma_destroy: Destructs and preempts the SDMA queue assigned to that
  * SDMA hqd slot.
- *
- * @get_fw_version: Returns FW versions from the header
  *
  * @set_scratch_backing_va: Sets VA for scratch backing memory of a VMID.
  * Only used for no cp scheduling mode
@@ -311,8 +298,6 @@ struct kfd2kgd_calls {
 					struct kgd_dev *kgd,
 					uint8_t vmid);
 
-	uint16_t (*get_fw_version)(struct kgd_dev *kgd,
-				enum kgd_engine_type type);
 	void (*set_scratch_backing_va)(struct kgd_dev *kgd,
 				uint64_t va, uint32_t vmid);
 	int (*get_tile_config)(struct kgd_dev *kgd, struct tile_config *config);

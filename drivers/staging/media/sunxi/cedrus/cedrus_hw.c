@@ -46,6 +46,10 @@ int cedrus_engine_enable(struct cedrus_dev *dev, enum cedrus_codec codec)
 		reg |= VE_MODE_DEC_MPEG;
 		break;
 
+	case CEDRUS_CODEC_H264:
+		reg |= VE_MODE_DEC_H264;
+		break;
+
 	default:
 		return -EINVAL;
 	}
@@ -177,7 +181,8 @@ int cedrus_hw_probe(struct cedrus_dev *dev)
 	 */
 
 #ifdef PHYS_PFN_OFFSET
-	dev->dev->dma_pfn_offset = PHYS_PFN_OFFSET;
+	if (!(variant->quirks & CEDRUS_QUIRK_NO_DMA_OFFSET))
+		dev->dev->dma_pfn_offset = PHYS_PFN_OFFSET;
 #endif
 
 	ret = of_reserved_mem_device_init(dev->dev);
@@ -235,7 +240,7 @@ int cedrus_hw_probe(struct cedrus_dev *dev)
 		goto err_sram;
 	}
 
-	ret = clk_set_rate(dev->mod_clk, CEDRUS_CLOCK_RATE_DEFAULT);
+	ret = clk_set_rate(dev->mod_clk, variant->mod_rate);
 	if (ret) {
 		dev_err(dev->dev, "Failed to set clock rate\n");
 

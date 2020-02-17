@@ -150,7 +150,7 @@ static struct ib_umem_odp *odp_lookup(u64 start, u64 length,
 		if (!rb)
 			goto not_found;
 		odp = rb_entry(rb, struct ib_umem_odp, interval_tree.rb);
-		if (ib_umem_start(&odp->umem) > start + length)
+		if (ib_umem_start(odp) > start + length)
 			goto not_found;
 	}
 not_found:
@@ -200,7 +200,7 @@ void mlx5_odp_populate_klm(struct mlx5_klm *pklm, size_t offset,
 static void mr_leaf_free_action(struct work_struct *work)
 {
 	struct ib_umem_odp *odp = container_of(work, struct ib_umem_odp, work);
-	int idx = ib_umem_start(&odp->umem) >> MLX5_IMR_MTT_SHIFT;
+	int idx = ib_umem_start(odp) >> MLX5_IMR_MTT_SHIFT;
 	struct mlx5_ib_mr *mr = odp->private, *imr = mr->parent;
 
 	mr->parent = NULL;
@@ -224,7 +224,6 @@ void mlx5_ib_invalidate_range(struct ib_umem_odp *umem_odp, unsigned long start,
 	const u64 umr_block_mask = (MLX5_UMR_MTT_ALIGNMENT /
 				    sizeof(struct mlx5_mtt)) - 1;
 	u64 idx = 0, blk_start_idx = 0;
-	struct ib_umem *umem;
 	int in_block = 0;
 	u64 addr;
 
@@ -232,15 +231,14 @@ void mlx5_ib_invalidate_range(struct ib_umem_odp *umem_odp, unsigned long start,
 		pr_err("invalidation called on NULL umem or non-ODP umem\n");
 		return;
 	}
-	umem = &umem_odp->umem;
 
 	mr = umem_odp->private;
 
 	if (!mr || !mr->ibmr.pd)
 		return;
 
-	start = max_t(u64, ib_umem_start(umem), start);
-	end = min_t(u64, ib_umem_end(umem), end);
+	start = max_t(u64, ib_umem_start(umem_odp), start);
+	end = min_t(u64, ib_umem_end(umem_odp), end);
 
 	/*
 	 * Iteration one - zap the HW's MTTs. The notifiers_count ensures that
@@ -248,9 +246,9 @@ void mlx5_ib_invalidate_range(struct ib_umem_odp *umem_odp, unsigned long start,
 	 * overwrite the same MTTs.  Concurent invalidations might race us,
 	 * but they will write 0s as well, so no difference in the end result.
 	 */
-
-	for (addr = start; addr < end; addr += BIT(umem->page_shift)) {
-		idx = (addr - ib_umem_start(umem)) >> umem->page_shift;
+	mutex_lock(&umem_odp->umem_mutex);
+	for (addr = start; addr < end; addr += BIT(umem_odp->page_shift)) {
+		idx = (addr - ib_umem_start(umem_odp)) >> umem_odp->page_shift;
 		/*
 		 * Strive to write the MTTs in chunks, but avoid overwriting
 		 * non-existing MTTs. The huristic here can be improved to
@@ -280,6 +278,7 @@ void mlx5_ib_invalidate_range(struct ib_umem_odp *umem_odp, unsigned long start,
 				   idx - blk_start_idx + 1, 0,
 				   MLX5_IB_UPD_XLT_ZAP |
 				   MLX5_IB_UPD_XLT_ATOMIC);
+	mutex_unlock(&umem_odp->umem_mutex);
 	/*
 	 * We are now sure that the device will not access the
 	 * memory. We can safely unmap it, and mark it as dirty if
@@ -288,7 +287,7 @@ void mlx5_ib_invalidate_range(struct ib_umem_odp *umem_odp, unsigned long start,
 
 	ib_umem_odp_unmap_dma_pages(umem_odp, start, end);
 
-	if (unlikely(!umem->npages && mr->parent &&
+	if (unlikely(!umem_odp->npages && mr->parent &&
 		     !umem_odp->dying)) {
 		WRITE_ONCE(umem_odp->dying, 1);
 		atomic_inc(&mr->parent->num_leaf_free);
@@ -302,7 +301,8 @@ void mlx5_ib_internal_fill_odp_caps(struct mlx5_ib_dev *dev)
 
 	memset(caps, 0, sizeof(*caps));
 
-	if (!MLX5_CAP_GEN(dev->mdev, pg))
+	if (!MLX5_CAP_GEN(dev->mdev, pg) ||
+	    !mlx5_ib_can_use_umr(dev, true))
 		return;
 
 	caps->general_caps = IB_ODP_SUPPORT;
@@ -356,7 +356,8 @@ void mlx5_ib_internal_fill_odp_caps(struct mlx5_ib_dev *dev)
 
 	if (MLX5_CAP_GEN(dev->mdev, fixed_buffer_size) &&
 	    MLX5_CAP_GEN(dev->mdev, null_mkey) &&
-	    MLX5_CAP_GEN(dev->mdev, umr_extended_translation_offset))
+	    MLX5_CAP_GEN(dev->mdev, umr_extended_translation_offset) &&
+	    !MLX5_CAP_GEN(dev->mdev, umr_indirect_mkey_disabled))
 		caps->general_caps |= IB_ODP_SUPPORT_IMPLICIT;
 
 	return;
@@ -544,13 +545,12 @@ static int mr_leaf_free(struct ib_umem_odp *umem_odp, u64 start, u64 end,
 			void *cookie)
 {
 	struct mlx5_ib_mr *mr = umem_odp->private, *imr = cookie;
-	struct ib_umem *umem = &umem_odp->umem;
 
 	if (mr->parent != imr)
 		return 0;
 
-	ib_umem_odp_unmap_dma_pages(umem_odp, ib_umem_start(umem),
-				    ib_umem_end(umem));
+	ib_umem_odp_unmap_dma_pages(umem_odp, ib_umem_start(umem_odp),
+				    ib_umem_end(umem_odp));
 
 	if (umem_odp->dying)
 		return 0;
@@ -581,7 +581,6 @@ static int pagefault_mr(struct mlx5_ib_dev *dev, struct mlx5_ib_mr *mr,
 			u32 flags)
 {
 	int npages = 0, current_seq, page_shift, ret, np;
-	bool implicit = false;
 	struct ib_umem_odp *odp_mr = to_ib_umem_odp(mr->umem);
 	bool downgrade = flags & MLX5_PF_FLAGS_DOWNGRADE;
 	bool prefetch = flags & MLX5_PF_FLAGS_PREFETCH;
@@ -596,15 +595,14 @@ static int pagefault_mr(struct mlx5_ib_dev *dev, struct mlx5_ib_mr *mr,
 		if (IS_ERR(odp))
 			return PTR_ERR(odp);
 		mr = odp->private;
-		implicit = true;
 	} else {
 		odp = odp_mr;
 	}
 
 next_mr:
-	size = min_t(size_t, bcnt, ib_umem_end(&odp->umem) - io_virt);
+	size = min_t(size_t, bcnt, ib_umem_end(odp) - io_virt);
 
-	page_shift = mr->umem->page_shift;
+	page_shift = odp->page_shift;
 	page_mask = ~(BIT(page_shift) - 1);
 	start_idx = (io_virt - (mr->mmkey.iova & page_mask)) >> page_shift;
 	access_mask = ODP_READ_ALLOWED_BIT;
@@ -684,19 +682,15 @@ next_mr:
 
 out:
 	if (ret == -EAGAIN) {
-		if (implicit || !odp->dying) {
-			unsigned long timeout =
-				msecs_to_jiffies(MMU_NOTIFIER_TIMEOUT);
+		unsigned long timeout = msecs_to_jiffies(MMU_NOTIFIER_TIMEOUT);
 
-			if (!wait_for_completion_timeout(
-					&odp->notifier_completion,
-					timeout)) {
-				mlx5_ib_warn(dev, "timeout waiting for mmu notifier. seq %d against %d. notifiers_count=%d\n",
-					     current_seq, odp->notifiers_seq, odp->notifiers_count);
-			}
-		} else {
-			/* The MR is being killed, kill the QP as well. */
-			ret = -EFAULT;
+		if (!wait_for_completion_timeout(&odp->notifier_completion,
+						 timeout)) {
+			mlx5_ib_warn(
+				dev,
+				"timeout waiting for mmu notifier. seq %d against %d. notifiers_count=%d\n",
+				current_seq, odp->notifiers_seq,
+				odp->notifiers_count);
 		}
 	}
 
@@ -710,6 +704,15 @@ struct pf_frame {
 	size_t bcnt;
 	int depth;
 };
+
+static bool mkey_is_eq(struct mlx5_core_mkey *mmkey, u32 key)
+{
+	if (!mmkey)
+		return false;
+	if (mmkey->type == MLX5_MKEY_MW)
+		return mlx5_base_mkey(mmkey->key) == mlx5_base_mkey(key);
+	return mmkey->key == key;
+}
 
 static int get_indirect_num_descs(struct mlx5_core_mkey *mmkey)
 {
@@ -759,8 +762,8 @@ static int pagefault_single_data_segment(struct mlx5_ib_dev *dev,
 	bcnt -= *bytes_committed;
 
 next_mr:
-	mmkey = __mlx5_mr_lookup(dev->mdev, mlx5_base_mkey(key));
-	if (!mmkey || mmkey->key != key) {
+	mmkey = xa_load(&dev->mdev->priv.mkey_table, mlx5_base_mkey(key));
+	if (!mkey_is_eq(mmkey, key)) {
 		mlx5_ib_dbg(dev, "failed to find mkey %x\n", key);
 		ret = -EFAULT;
 		goto srcu_unlock;
@@ -920,7 +923,7 @@ static int pagefault_data_segments(struct mlx5_ib_dev *dev,
 				   struct mlx5_pagefault *pfault,
 				   void *wqe,
 				   void *wqe_end, u32 *bytes_mapped,
-				   u32 *total_wqe_bytes, int receive_queue)
+				   u32 *total_wqe_bytes, bool receive_queue)
 {
 	int ret = 0, npages = 0;
 	u64 io_virt;
@@ -1200,17 +1203,15 @@ static inline struct mlx5_ib_srq *res_to_srq(struct mlx5_core_rsc_common *res)
 static void mlx5_ib_mr_wqe_pfault_handler(struct mlx5_ib_dev *dev,
 					  struct mlx5_pagefault *pfault)
 {
-	int ret;
-	void *wqe, *wqe_end;
-	u32 bytes_mapped, total_wqe_bytes;
-	char *buffer = NULL;
-	int resume_with_error = 1;
+	bool sq = pfault->type & MLX5_PFAULT_REQUESTOR;
 	u16 wqe_index = pfault->wqe.wqe_index;
-	int requestor = pfault->type & MLX5_PFAULT_REQUESTOR;
-	struct mlx5_core_rsc_common *res = NULL;
-	struct mlx5_ib_qp *qp = NULL;
-	struct mlx5_ib_srq *srq = NULL;
+	void *wqe = NULL, *wqe_end = NULL;
+	u32 bytes_mapped, total_wqe_bytes;
+	struct mlx5_core_rsc_common *res;
+	int resume_with_error = 1;
+	struct mlx5_ib_qp *qp;
 	size_t bytes_copied;
+	int ret = 0;
 
 	res = odp_get_rsc(dev, pfault->wqe.wq_num, pfault->type);
 	if (!res) {
@@ -1218,87 +1219,74 @@ static void mlx5_ib_mr_wqe_pfault_handler(struct mlx5_ib_dev *dev,
 		return;
 	}
 
-	switch (res->res) {
-	case MLX5_RES_QP:
-		qp = res_to_qp(res);
-		break;
-	case MLX5_RES_SRQ:
-	case MLX5_RES_XSRQ:
-		srq = res_to_srq(res);
-		break;
-	default:
-		mlx5_ib_err(dev, "wqe page fault for unsupported type %d\n", pfault->type);
+	if (res->res != MLX5_RES_QP && res->res != MLX5_RES_SRQ &&
+	    res->res != MLX5_RES_XSRQ) {
+		mlx5_ib_err(dev, "wqe page fault for unsupported type %d\n",
+			    pfault->type);
 		goto resolve_page_fault;
 	}
 
-	buffer = (char *)__get_free_page(GFP_KERNEL);
-	if (!buffer) {
+	wqe = (void *)__get_free_page(GFP_KERNEL);
+	if (!wqe) {
 		mlx5_ib_err(dev, "Error allocating memory for IO page fault handling.\n");
 		goto resolve_page_fault;
 	}
 
-	if (qp) {
-		if (requestor) {
-			ret = mlx5_ib_read_user_wqe_sq(qp, wqe_index,
-					buffer, PAGE_SIZE,
-					&bytes_copied);
-		} else {
-			ret = mlx5_ib_read_user_wqe_rq(qp, wqe_index,
-					buffer, PAGE_SIZE,
-					&bytes_copied);
-		}
-	} else {
-		ret = mlx5_ib_read_user_wqe_srq(srq, wqe_index,
-						buffer, PAGE_SIZE,
+	qp = (res->res == MLX5_RES_QP) ? res_to_qp(res) : NULL;
+	if (qp && sq) {
+		ret = mlx5_ib_read_user_wqe_sq(qp, wqe_index, wqe, PAGE_SIZE,
+					       &bytes_copied);
+		if (ret)
+			goto read_user;
+		ret = mlx5_ib_mr_initiator_pfault_handler(
+			dev, pfault, qp, &wqe, &wqe_end, bytes_copied);
+	} else if (qp && !sq) {
+		ret = mlx5_ib_read_user_wqe_rq(qp, wqe_index, wqe, PAGE_SIZE,
+					       &bytes_copied);
+		if (ret)
+			goto read_user;
+		ret = mlx5_ib_mr_responder_pfault_handler_rq(
+			dev, qp, wqe, &wqe_end, bytes_copied);
+	} else if (!qp) {
+		struct mlx5_ib_srq *srq = res_to_srq(res);
+
+		ret = mlx5_ib_read_user_wqe_srq(srq, wqe_index, wqe, PAGE_SIZE,
 						&bytes_copied);
+		if (ret)
+			goto read_user;
+		ret = mlx5_ib_mr_responder_pfault_handler_srq(
+			dev, srq, &wqe, &wqe_end, bytes_copied);
 	}
 
-	if (ret) {
-		mlx5_ib_err(dev, "Failed reading a WQE following page fault, error=%d, wqe_index=%x, qpn=%x\n",
-			    ret, wqe_index, pfault->token);
-		goto resolve_page_fault;
-	}
-
-	wqe = buffer;
-	if (requestor)
-		ret = mlx5_ib_mr_initiator_pfault_handler(dev, pfault, qp,
-							  &wqe,  &wqe_end,
-							  bytes_copied);
-	else if (qp)
-		ret = mlx5_ib_mr_responder_pfault_handler_rq(dev, qp,
-							     wqe, &wqe_end,
-							     bytes_copied);
-	else
-		ret = mlx5_ib_mr_responder_pfault_handler_srq(dev, srq,
-							      &wqe, &wqe_end,
-							      bytes_copied);
-
-	if (ret < 0)
+	if (ret < 0 || wqe >= wqe_end)
 		goto resolve_page_fault;
 
-	if (wqe >= wqe_end) {
-		mlx5_ib_err(dev, "ODP fault on invalid WQE.\n");
-		goto resolve_page_fault;
-	}
+	ret = pagefault_data_segments(dev, pfault, wqe, wqe_end, &bytes_mapped,
+				      &total_wqe_bytes, !sq);
+	if (ret == -EAGAIN)
+		goto out;
 
-	ret = pagefault_data_segments(dev, pfault, wqe, wqe_end,
-				      &bytes_mapped, &total_wqe_bytes,
-				      !requestor);
-	if (ret == -EAGAIN) {
-		resume_with_error = 0;
+	if (ret < 0 || total_wqe_bytes > bytes_mapped)
 		goto resolve_page_fault;
-	} else if (ret < 0 || total_wqe_bytes > bytes_mapped) {
-		goto resolve_page_fault;
-	}
 
+out:
+	ret = 0;
 	resume_with_error = 0;
+
+read_user:
+	if (ret)
+		mlx5_ib_err(
+			dev,
+			"Failed reading a WQE following page fault, error %d, wqe_index %x, qpn %x\n",
+			ret, wqe_index, pfault->token);
+
 resolve_page_fault:
 	mlx5_ib_page_fault_resume(dev, pfault, resume_with_error);
 	mlx5_ib_dbg(dev, "PAGE FAULT completed. QP 0x%x resume_with_error=%d, type: 0x%x\n",
 		    pfault->wqe.wq_num, resume_with_error,
 		    pfault->type);
 	mlx5_core_res_put(res);
-	free_page((unsigned long)buffer);
+	free_page((unsigned long)wqe);
 }
 
 static int pages_in_range(u64 address, u32 length)
@@ -1494,9 +1482,11 @@ static void mlx5_ib_eq_pf_process(struct mlx5_ib_pf_eq *eq)
 	mlx5_eq_update_ci(eq->core, cc, 1);
 }
 
-static irqreturn_t mlx5_ib_eq_pf_int(int irq, void *eq_ptr)
+static int mlx5_ib_eq_pf_int(struct notifier_block *nb, unsigned long type,
+			     void *data)
 {
-	struct mlx5_ib_pf_eq *eq = eq_ptr;
+	struct mlx5_ib_pf_eq *eq =
+		container_of(nb, struct mlx5_ib_pf_eq, irq_nb);
 	unsigned long flags;
 
 	if (spin_trylock_irqsave(&eq->lock, flags)) {
@@ -1559,20 +1549,26 @@ mlx5_ib_create_pf_eq(struct mlx5_ib_dev *dev, struct mlx5_ib_pf_eq *eq)
 		goto err_mempool;
 	}
 
+	eq->irq_nb.notifier_call = mlx5_ib_eq_pf_int;
 	param = (struct mlx5_eq_param) {
-		.index = MLX5_EQ_PFAULT_IDX,
-		.mask = 1 << MLX5_EVENT_TYPE_PAGE_FAULT,
+		.irq_index = 0,
 		.nent = MLX5_IB_NUM_PF_EQE,
-		.context = eq,
-		.handler = mlx5_ib_eq_pf_int
 	};
-	eq->core = mlx5_eq_create_generic(dev->mdev, "mlx5_ib_page_fault_eq", &param);
+	param.mask[0] = 1ull << MLX5_EVENT_TYPE_PAGE_FAULT;
+	eq->core = mlx5_eq_create_generic(dev->mdev, &param);
 	if (IS_ERR(eq->core)) {
 		err = PTR_ERR(eq->core);
 		goto err_wq;
 	}
+	err = mlx5_eq_enable(dev->mdev, eq->core, &eq->irq_nb);
+	if (err) {
+		mlx5_ib_err(dev, "failed to enable odp EQ %d\n", err);
+		goto err_eq;
+	}
 
 	return 0;
+err_eq:
+	mlx5_eq_destroy_generic(dev->mdev, eq->core);
 err_wq:
 	destroy_workqueue(eq->wq);
 err_mempool:
@@ -1585,6 +1581,7 @@ mlx5_ib_destroy_pf_eq(struct mlx5_ib_dev *dev, struct mlx5_ib_pf_eq *eq)
 {
 	int err;
 
+	mlx5_eq_disable(dev->mdev, eq->core, &eq->irq_nb);
 	err = mlx5_eq_destroy_generic(dev->mdev, eq->core);
 	cancel_work_sync(&eq->work);
 	destroy_workqueue(eq->wq);
@@ -1627,8 +1624,10 @@ int mlx5_ib_odp_init_one(struct mlx5_ib_dev *dev)
 {
 	int ret = 0;
 
-	if (dev->odp_caps.general_caps & IB_ODP_SUPPORT)
-		ib_set_device_ops(&dev->ib_dev, &mlx5_ib_dev_odp_ops);
+	if (!(dev->odp_caps.general_caps & IB_ODP_SUPPORT))
+		return ret;
+
+	ib_set_device_ops(&dev->ib_dev, &mlx5_ib_dev_odp_ops);
 
 	if (dev->odp_caps.general_caps & IB_ODP_SUPPORT_IMPLICIT) {
 		ret = mlx5_cmd_null_mkey(dev->mdev, &dev->null_mkey);
@@ -1638,9 +1637,6 @@ int mlx5_ib_odp_init_one(struct mlx5_ib_dev *dev)
 		}
 	}
 
-	if (!MLX5_CAP_GEN(dev->mdev, pg))
-		return ret;
-
 	ret = mlx5_ib_create_pf_eq(dev, &dev->odp_pf_eq);
 
 	return ret;
@@ -1648,7 +1644,7 @@ int mlx5_ib_odp_init_one(struct mlx5_ib_dev *dev)
 
 void mlx5_ib_odp_cleanup_one(struct mlx5_ib_dev *dev)
 {
-	if (!MLX5_CAP_GEN(dev->mdev, pg))
+	if (!(dev->odp_caps.general_caps & IB_ODP_SUPPORT))
 		return;
 
 	mlx5_ib_destroy_pf_eq(dev, &dev->odp_pf_eq);
@@ -1683,8 +1679,8 @@ static void num_pending_prefetch_dec(struct mlx5_ib_dev *dev,
 		struct mlx5_core_mkey *mmkey;
 		struct mlx5_ib_mr *mr;
 
-		mmkey = __mlx5_mr_lookup(dev->mdev,
-					 mlx5_base_mkey(sg_list[i].lkey));
+		mmkey = xa_load(&dev->mdev->priv.mkey_table,
+				mlx5_base_mkey(sg_list[i].lkey));
 		mr = container_of(mmkey, struct mlx5_ib_mr, mmkey);
 		atomic_dec(&mr->num_pending_prefetch);
 	}
@@ -1703,8 +1699,8 @@ static bool num_pending_prefetch_inc(struct ib_pd *pd,
 		struct mlx5_core_mkey *mmkey;
 		struct mlx5_ib_mr *mr;
 
-		mmkey = __mlx5_mr_lookup(dev->mdev,
-					 mlx5_base_mkey(sg_list[i].lkey));
+		mmkey = xa_load(&dev->mdev->priv.mkey_table,
+				mlx5_base_mkey(sg_list[i].lkey));
 		if (!mmkey || mmkey->key != sg_list[i].lkey) {
 			ret = false;
 			break;
@@ -1771,7 +1767,7 @@ static void mlx5_ib_prefetch_mr_work(struct work_struct *work)
 
 	num_pending_prefetch_dec(to_mdev(w->pd->device), w->sg_list,
 				 w->num_sge, 0);
-	kfree(w);
+	kvfree(w);
 }
 
 int mlx5_ib_advise_mr_prefetch(struct ib_pd *pd,
@@ -1813,7 +1809,7 @@ int mlx5_ib_advise_mr_prefetch(struct ib_pd *pd,
 	if (valid_req)
 		queue_work(system_unbound_wq, &work->work);
 	else
-		kfree(work);
+		kvfree(work);
 
 	srcu_read_unlock(&dev->mr_srcu, srcu_key);
 

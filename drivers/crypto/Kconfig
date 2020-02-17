@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 
 menuconfig CRYPTO_HW
 	bool "Hardware crypto devices"
@@ -404,15 +405,6 @@ config CRYPTO_DEV_SAHARA
 	  This option enables support for the SAHARA HW crypto accelerator
 	  found in some Freescale i.MX chips.
 
-config CRYPTO_DEV_MXC_SCC
-	tristate "Support for Freescale Security Controller (SCC)"
-	depends on ARCH_MXC && OF
-	select CRYPTO_BLKCIPHER
-	select CRYPTO_DES
-	help
-	  This option enables support for the Security Controller (SCC)
-	  found in Freescale i.MX25 chips.
-
 config CRYPTO_DEV_EXYNOS_RNG
 	tristate "EXYNOS HW pseudo random number generator support"
 	depends on ARCH_EXYNOS || COMPILE_TEST
@@ -528,10 +520,13 @@ config CRYPTO_DEV_ATMEL_SHA
 	  To compile this driver as a module, choose M here: the module
 	  will be called atmel-sha.
 
+config CRYPTO_DEV_ATMEL_I2C
+	tristate
+
 config CRYPTO_DEV_ATMEL_ECC
 	tristate "Support for Microchip / Atmel ECC hw accelerator"
-	depends on ARCH_AT91 || COMPILE_TEST
 	depends on I2C
+	select CRYPTO_DEV_ATMEL_I2C
 	select CRYPTO_ECDH
 	select CRC16
 	help
@@ -541,6 +536,21 @@ config CRYPTO_DEV_ATMEL_ECC
 
 	  To compile this driver as a module, choose M here: the module
 	  will be called atmel-ecc.
+
+config CRYPTO_DEV_ATMEL_SHA204A
+	tristate "Support for Microchip / Atmel SHA accelerator and RNG"
+	depends on I2C
+	select CRYPTO_DEV_ATMEL_I2C
+	select HW_RANDOM
+	select CRC16
+	help
+	  Microhip / Atmel SHA accelerator and RNG.
+	  Select this if you want to use the Microchip / Atmel SHA204A
+	  module as a random number generator. (Other functions of the
+	  chip are currently not exposed by this driver)
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called atmel-sha204a.
 
 config CRYPTO_DEV_CCP
 	bool "Support for AMD Secure Processor"

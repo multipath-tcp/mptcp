@@ -214,6 +214,8 @@ mt76_init_sband(struct mt76_dev *dev, struct mt76_sband *msband,
 	vht_cap->cap |= IEEE80211_VHT_CAP_RXLDPC |
 			IEEE80211_VHT_CAP_RXSTBC_1 |
 			IEEE80211_VHT_CAP_SHORT_GI_80 |
+			IEEE80211_VHT_CAP_RX_ANTENNA_PATTERN |
+			IEEE80211_VHT_CAP_TX_ANTENNA_PATTERN |
 			(3 << IEEE80211_VHT_CAP_MAX_A_MPDU_LENGTH_EXPONENT_SHIFT);
 
 	return 0;
@@ -369,9 +371,15 @@ void mt76_unregister_device(struct mt76_dev *dev)
 
 	mt76_tx_status_check(dev, NULL, true);
 	ieee80211_unregister_hw(hw);
-	mt76_tx_free(dev);
 }
 EXPORT_SYMBOL_GPL(mt76_unregister_device);
+
+void mt76_free_device(struct mt76_dev *dev)
+{
+	mt76_tx_free(dev);
+	ieee80211_free_hw(dev->hw);
+}
+EXPORT_SYMBOL_GPL(mt76_free_device);
 
 void mt76_rx(struct mt76_dev *dev, enum mt76_rxq_id q, struct sk_buff *skb)
 {
@@ -384,17 +392,20 @@ void mt76_rx(struct mt76_dev *dev, enum mt76_rxq_id q, struct sk_buff *skb)
 }
 EXPORT_SYMBOL_GPL(mt76_rx);
 
-static bool mt76_has_tx_pending(struct mt76_dev *dev)
+bool mt76_has_tx_pending(struct mt76_dev *dev)
 {
+	struct mt76_queue *q;
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(dev->q_tx); i++) {
-		if (dev->q_tx[i].queued)
+		q = dev->q_tx[i].q;
+		if (q && q->queued)
 			return true;
 	}
 
 	return false;
 }
+EXPORT_SYMBOL_GPL(mt76_has_tx_pending);
 
 void mt76_set_channel(struct mt76_dev *dev)
 {
@@ -560,6 +571,7 @@ mt76_check_sta(struct mt76_dev *dev, struct sk_buff *skb)
 	struct ieee80211_sta *sta;
 	struct mt76_wcid *wcid = status->wcid;
 	bool ps;
+	int i;
 
 	if (ieee80211_is_pspoll(hdr->frame_control) && !wcid) {
 		sta = ieee80211_find_sta_by_ifaddr(dev->hw, hdr->addr2, NULL);
@@ -606,6 +618,20 @@ mt76_check_sta(struct mt76_dev *dev, struct sk_buff *skb)
 
 	dev->drv->sta_ps(dev, sta, ps);
 	ieee80211_sta_ps_transition(sta, ps);
+
+	if (ps)
+		return;
+
+	for (i = 0; i < ARRAY_SIZE(sta->txq); i++) {
+		struct mt76_txq *mtxq;
+
+		if (!sta->txq[i])
+			continue;
+
+		mtxq = (struct mt76_txq *) sta->txq[i]->drv_priv;
+		if (!skb_queue_empty(&mtxq->retry_q))
+			ieee80211_schedule_txq(dev->hw, sta->txq[i]);
+	}
 }
 
 void mt76_rx_complete(struct mt76_dev *dev, struct sk_buff_head *frames,
@@ -737,13 +763,24 @@ int mt76_get_txpower(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	struct mt76_dev *dev = hw->priv;
 	int n_chains = hweight8(dev->antenna_mask);
 
-	*dbm = dev->txpower_cur / 2;
+	*dbm = DIV_ROUND_UP(dev->txpower_cur, 2);
 
 	/* convert from per-chain power to combined
-	 * output on 2x2 devices
+	 * output power
 	 */
-	if (n_chains > 1)
+	switch (n_chains) {
+	case 4:
+		*dbm += 6;
+		break;
+	case 3:
+		*dbm += 4;
+		break;
+	case 2:
 		*dbm += 3;
+		break;
+	default:
+		break;
+	}
 
 	return 0;
 }
@@ -787,3 +824,57 @@ void mt76_csa_check(struct mt76_dev *dev)
 		__mt76_csa_check, dev);
 }
 EXPORT_SYMBOL_GPL(mt76_csa_check);
+
+int
+mt76_set_tim(struct ieee80211_hw *hw, struct ieee80211_sta *sta, bool set)
+{
+	return 0;
+}
+EXPORT_SYMBOL_GPL(mt76_set_tim);
+
+void mt76_insert_ccmp_hdr(struct sk_buff *skb, u8 key_id)
+{
+	struct mt76_rx_status *status = (struct mt76_rx_status *)skb->cb;
+	int hdr_len = ieee80211_get_hdrlen_from_skb(skb);
+	u8 *hdr, *pn = status->iv;
+
+	__skb_push(skb, 8);
+	memmove(skb->data, skb->data + 8, hdr_len);
+	hdr = skb->data + hdr_len;
+
+	hdr[0] = pn[5];
+	hdr[1] = pn[4];
+	hdr[2] = 0;
+	hdr[3] = 0x20 | (key_id << 6);
+	hdr[4] = pn[3];
+	hdr[5] = pn[2];
+	hdr[6] = pn[1];
+	hdr[7] = pn[0];
+
+	status->flag &= ~RX_FLAG_IV_STRIPPED;
+}
+EXPORT_SYMBOL_GPL(mt76_insert_ccmp_hdr);
+
+int mt76_get_rate(struct mt76_dev *dev,
+		  struct ieee80211_supported_band *sband,
+		  int idx, bool cck)
+{
+	int i, offset = 0, len = sband->n_bitrates;
+
+	if (cck) {
+		if (sband == &dev->sband_5g.sband)
+			return 0;
+
+		idx &= ~BIT(2); /* short preamble */
+	} else if (sband == &dev->sband_2g.sband) {
+		offset = 4;
+	}
+
+	for (i = offset; i < len; i++) {
+		if ((sband->bitrates[i].hw_value & GENMASK(7, 0)) == idx)
+			return i;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(mt76_get_rate);

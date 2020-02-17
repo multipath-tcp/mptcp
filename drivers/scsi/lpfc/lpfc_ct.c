@@ -886,7 +886,7 @@ lpfc_cmpl_ct_cmd_gid_pt(struct lpfc_hba *phba, struct lpfc_iocbq *cmdiocb,
 	}
 	if (lpfc_error_lost_link(irsp)) {
 		lpfc_printf_vlog(vport, KERN_INFO, LOG_DISCOVERY,
-				 "4101 NS query failed due to link event\n");
+				 "4166 NS query failed due to link event\n");
 		if (vport->fc_flag & FC_RSCN_MODE)
 			lpfc_els_flush_rscn(vport);
 		goto out;
@@ -907,7 +907,7 @@ lpfc_cmpl_ct_cmd_gid_pt(struct lpfc_hba *phba, struct lpfc_iocbq *cmdiocb,
 		 * Re-issue the NS cmd
 		 */
 		lpfc_printf_vlog(vport, KERN_INFO, LOG_ELS,
-				 "4102 Process Deferred RSCN Data: x%x x%x\n",
+				 "4167 Process Deferred RSCN Data: x%x x%x\n",
 				 vport->fc_flag, vport->fc_rscn_id_cnt);
 		lpfc_els_handle_rscn(vport);
 
@@ -1430,7 +1430,7 @@ lpfc_vport_symbolic_port_name(struct lpfc_vport *vport, char *symbol,
 	 * Name object.  NPIV is not in play so this integer
 	 * value is sufficient and unique per FC-ID.
 	 */
-	n = snprintf(symbol, size, "%d", vport->phba->brd_no);
+	n = scnprintf(symbol, size, "%d", vport->phba->brd_no);
 	return n;
 }
 
@@ -1444,26 +1444,26 @@ lpfc_vport_symbolic_node_name(struct lpfc_vport *vport, char *symbol,
 
 	lpfc_decode_firmware_rev(vport->phba, fwrev, 0);
 
-	n = snprintf(symbol, size, "Emulex %s", vport->phba->ModelName);
+	n = scnprintf(symbol, size, "Emulex %s", vport->phba->ModelName);
 	if (size < n)
 		return n;
 
-	n += snprintf(symbol + n, size - n, " FV%s", fwrev);
+	n += scnprintf(symbol + n, size - n, " FV%s", fwrev);
 	if (size < n)
 		return n;
 
-	n += snprintf(symbol + n, size - n, " DV%s.",
+	n += scnprintf(symbol + n, size - n, " DV%s.",
 		      lpfc_release_version);
 	if (size < n)
 		return n;
 
-	n += snprintf(symbol + n, size - n, " HN:%s.",
+	n += scnprintf(symbol + n, size - n, " HN:%s.",
 		      init_utsname()->nodename);
 	if (size < n)
 		return n;
 
 	/* Note :- OS name is "Linux" */
-	n += snprintf(symbol + n, size - n, " OS:%s\n",
+	n += scnprintf(symbol + n, size - n, " OS:%s",
 		      init_utsname()->sysname);
 	return n;
 }
@@ -2005,8 +2005,11 @@ lpfc_fdmi_hba_attr_manufacturer(struct lpfc_vport *vport,
 	ae = (struct lpfc_fdmi_attr_entry *)&ad->AttrValue;
 	memset(ae, 0, 256);
 
+	/* This string MUST be consistent with other FC platforms
+	 * supported by Broadcom.
+	 */
 	strncpy(ae->un.AttrString,
-		"Broadcom Inc.",
+		"Emulex Corporation",
 		       sizeof(ae->un.AttrString));
 	len = strnlen(ae->un.AttrString,
 			  sizeof(ae->un.AttrString));
@@ -2301,7 +2304,8 @@ lpfc_fdmi_hba_attr_bios_ver(struct lpfc_vport *vport,
 	ae = (struct lpfc_fdmi_attr_entry *)&ad->AttrValue;
 	memset(ae, 0, 256);
 
-	lpfc_decode_firmware_rev(phba, ae->un.AttrString, 1);
+	strlcat(ae->un.AttrString, phba->BIOSVersion,
+		sizeof(ae->un.AttrString));
 	len = strnlen(ae->un.AttrString,
 			  sizeof(ae->un.AttrString));
 	len += (len & 3) ? (4 - (len & 3)) : 4;
@@ -2354,16 +2358,22 @@ static int
 lpfc_fdmi_port_attr_fc4type(struct lpfc_vport *vport,
 			    struct lpfc_fdmi_attr_def *ad)
 {
+	struct lpfc_hba   *phba = vport->phba;
 	struct lpfc_fdmi_attr_entry *ae;
 	uint32_t size;
 
 	ae = (struct lpfc_fdmi_attr_entry *)&ad->AttrValue;
 	memset(ae, 0, 32);
 
-	ae->un.AttrTypes[3] = 0x02; /* Type 1 - ELS */
-	ae->un.AttrTypes[2] = 0x01; /* Type 8 - FCP */
-	ae->un.AttrTypes[6] = 0x01; /* Type 40 - NVME */
-	ae->un.AttrTypes[7] = 0x01; /* Type 32 - CT */
+	ae->un.AttrTypes[3] = 0x02; /* Type 0x1 - ELS */
+	ae->un.AttrTypes[2] = 0x01; /* Type 0x8 - FCP */
+	ae->un.AttrTypes[7] = 0x01; /* Type 0x20 - CT */
+
+	/* Check to see if Firmware supports NVME and on physical port */
+	if ((phba->sli_rev == LPFC_SLI_REV4) && (vport == phba->pport) &&
+	    phba->sli4_hba.pc_sli4_params.nvme)
+		ae->un.AttrTypes[6] = 0x01; /* Type 0x28 - NVME */
+
 	size = FOURBYTES + 32;
 	ad->AttrLen = cpu_to_be16(size);
 	ad->AttrType = cpu_to_be16(RPRT_SUPPORTED_FC4_TYPES);
@@ -2673,9 +2683,14 @@ lpfc_fdmi_port_attr_active_fc4type(struct lpfc_vport *vport,
 	ae = (struct lpfc_fdmi_attr_entry *)&ad->AttrValue;
 	memset(ae, 0, 32);
 
-	ae->un.AttrTypes[3] = 0x02; /* Type 1 - ELS */
-	ae->un.AttrTypes[2] = 0x01; /* Type 8 - FCP */
-	ae->un.AttrTypes[7] = 0x01; /* Type 32 - CT */
+	ae->un.AttrTypes[3] = 0x02; /* Type 0x1 - ELS */
+	ae->un.AttrTypes[2] = 0x01; /* Type 0x8 - FCP */
+	ae->un.AttrTypes[7] = 0x01; /* Type 0x20 - CT */
+
+	/* Check to see if NVME is configured or not */
+	if (vport->phba->cfg_enable_fc4_type & LPFC_ENABLE_NVME)
+		ae->un.AttrTypes[6] = 0x1; /* Type 0x28 - NVME */
+
 	size = FOURBYTES + 32;
 	ad->AttrLen = cpu_to_be16(size);
 	ad->AttrType = cpu_to_be16(RPRT_ACTIVE_FC4_TYPES);
@@ -3092,6 +3107,7 @@ port_out:
 	case SLI_MGMT_GHAT:
 	case SLI_MGMT_GRPL:
 		rsp_size = FC_MAX_NS_RSP;
+		/* fall through */
 	case SLI_MGMT_DHBA:
 	case SLI_MGMT_DHAT:
 		pe = (struct lpfc_fdmi_port_entry *)&CtReq->un.PortID;
@@ -3104,6 +3120,7 @@ port_out:
 	case SLI_MGMT_GPAT:
 	case SLI_MGMT_GPAS:
 		rsp_size = FC_MAX_NS_RSP;
+		/* fall through */
 	case SLI_MGMT_DPRT:
 	case SLI_MGMT_DPA:
 		pe = (struct lpfc_fdmi_port_entry *)&CtReq->un.PortID;

@@ -81,6 +81,7 @@ struct hdac_device {
 	atomic_t in_pm;		/* suspend/resume being performed */
 
 	/* sysfs */
+	struct mutex widget_lock;
 	struct hdac_widget_tree *widgets;
 
 	/* regmap */
@@ -119,7 +120,7 @@ void snd_hdac_device_unregister(struct hdac_device *codec);
 int snd_hdac_device_set_chip_name(struct hdac_device *codec, const char *name);
 int snd_hdac_codec_modalias(struct hdac_device *hdac, char *buf, size_t size);
 
-int snd_hdac_refresh_widgets(struct hdac_device *codec, bool sysfs);
+int snd_hdac_refresh_widgets(struct hdac_device *codec);
 
 unsigned int snd_hdac_make_cmd(struct hdac_device *codec, hda_nid_t nid,
 			       unsigned int verb, unsigned int parm);
@@ -297,7 +298,7 @@ struct hdac_rb {
  * @num_streams: streams supported
  * @idx: HDA link index
  * @hlink_list: link list of HDA links
- * @lock: lock for link mgmt
+ * @lock: lock for link and display power mgmt
  * @cmd_dma_state: state of cmd DMAs: CORB and RIRB
  */
 struct hdac_bus {
@@ -357,27 +358,29 @@ struct hdac_bus {
 	bool align_bdle_4k:1;		/* BDLE align 4K boundary */
 	bool reverse_assign:1;		/* assign devices in reverse order */
 	bool corbrp_self_clear:1;	/* CORBRP clears itself after reset */
+	bool polling_mode:1;
+
+	int poll_count;
 
 	int bdl_pos_adj;		/* BDL position adjustment */
 
 	/* locks */
 	spinlock_t reg_lock;
 	struct mutex cmd_mutex;
+	struct mutex lock;
 
 	/* DRM component interface */
 	struct drm_audio_component *audio_component;
 	long display_power_status;
-	bool display_power_active;
+	unsigned long display_power_active;
 
 	/* parameters required for enhanced capabilities */
 	int num_streams;
 	int idx;
 
+	/* link management */
 	struct list_head hlink_list;
-
-	struct mutex lock;
 	bool cmd_dma_state;
-
 };
 
 int snd_hdac_bus_init(struct hdac_bus *bus, struct device *dev,

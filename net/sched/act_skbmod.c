@@ -1,12 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * net/sched/act_skbmod.c  skb data modifier
  *
  * Copyright (c) 2016 Jamal Hadi Salim <jhs@mojatatu.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
 */
 
 #include <linux/module.h>
@@ -91,18 +87,19 @@ static int tcf_skbmod_init(struct net *net, struct nlattr *nla,
 	struct tcf_skbmod_params *p, *p_old;
 	struct tcf_chain *goto_ch = NULL;
 	struct tc_skbmod *parm;
+	u32 lflags = 0, index;
 	struct tcf_skbmod *d;
 	bool exists = false;
 	u8 *daddr = NULL;
 	u8 *saddr = NULL;
 	u16 eth_type = 0;
-	u32 lflags = 0;
 	int ret = 0, err;
 
 	if (!nla)
 		return -EINVAL;
 
-	err = nla_parse_nested(tb, TCA_SKBMOD_MAX, nla, skbmod_policy, NULL);
+	err = nla_parse_nested_deprecated(tb, TCA_SKBMOD_MAX, nla,
+					  skbmod_policy, NULL);
 	if (err < 0)
 		return err;
 
@@ -125,10 +122,11 @@ static int tcf_skbmod_init(struct net *net, struct nlattr *nla,
 	}
 
 	parm = nla_data(tb[TCA_SKBMOD_PARMS]);
+	index = parm->index;
 	if (parm->flags & SKBMOD_F_SWAPMAC)
 		lflags = SKBMOD_F_SWAPMAC;
 
-	err = tcf_idr_check_alloc(tn, &parm->index, a, bind);
+	err = tcf_idr_check_alloc(tn, &index, a, bind);
 	if (err < 0)
 		return err;
 	exists = err;
@@ -139,15 +137,15 @@ static int tcf_skbmod_init(struct net *net, struct nlattr *nla,
 		if (exists)
 			tcf_idr_release(*a, bind);
 		else
-			tcf_idr_cleanup(tn, parm->index);
+			tcf_idr_cleanup(tn, index);
 		return -EINVAL;
 	}
 
 	if (!exists) {
-		ret = tcf_idr_create(tn, parm->index, est, a,
+		ret = tcf_idr_create(tn, index, est, a,
 				     &act_skbmod_ops, bind, true);
 		if (ret) {
-			tcf_idr_cleanup(tn, parm->index);
+			tcf_idr_cleanup(tn, index);
 			return ret;
 		}
 
@@ -289,7 +287,7 @@ static __net_init int skbmod_init_net(struct net *net)
 {
 	struct tc_action_net *tn = net_generic(net, skbmod_net_id);
 
-	return tc_action_net_init(tn, &act_skbmod_ops);
+	return tc_action_net_init(net, tn, &act_skbmod_ops);
 }
 
 static void __net_exit skbmod_exit_net(struct list_head *net_list)

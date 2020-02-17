@@ -1,15 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Driver for IMX074 CMOS Image Sensor from Sony
  *
  * Copyright (C) 2010, Guennadi Liakhovetski <g.liakhovetski@gmx.de>
  *
  * Partially inspired by the IMX074 driver from the Android / MSM tree
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
-
 #include <linux/delay.h>
 #include <linux/i2c.h>
 #include <linux/v4l2-mediabus.h>
@@ -413,7 +409,7 @@ static int imx074_probe(struct i2c_client *client,
 			const struct i2c_device_id *did)
 {
 	struct imx074 *priv;
-	struct i2c_adapter *adapter = to_i2c_adapter(client->dev.parent);
+	struct i2c_adapter *adapter = client->adapter;
 	struct soc_camera_subdev_desc *ssdd = soc_camera_i2c_to_desc(client);
 	int ret;
 

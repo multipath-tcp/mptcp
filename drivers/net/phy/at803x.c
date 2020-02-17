@@ -257,36 +257,20 @@ static int at803x_config_init(struct phy_device *phydev)
 	 *   after HW reset: RX delay enabled and TX delay disabled
 	 *   after SW reset: RX delay enabled, while TX delay retains the
 	 *   value before reset.
-	 *
-	 * So let's first disable the RX and TX delays in PHY and enable
-	 * them based on the mode selected (this also takes care of RGMII
-	 * mode where we expect delays to be disabled)
 	 */
-
-	ret = at803x_disable_rx_delay(phydev);
-	if (ret < 0)
-		return ret;
-	ret = at803x_disable_tx_delay(phydev);
-	if (ret < 0)
-		return ret;
-
 	if (phydev->interface == PHY_INTERFACE_MODE_RGMII_ID ||
-	    phydev->interface == PHY_INTERFACE_MODE_RGMII_RXID) {
-		/* If RGMII_ID or RGMII_RXID are specified enable RX delay,
-		 * otherwise keep it disabled
-		 */
+	    phydev->interface == PHY_INTERFACE_MODE_RGMII_RXID)
 		ret = at803x_enable_rx_delay(phydev);
-		if (ret < 0)
-			return ret;
-	}
+	else
+		ret = at803x_disable_rx_delay(phydev);
+	if (ret < 0)
+		return ret;
 
 	if (phydev->interface == PHY_INTERFACE_MODE_RGMII_ID ||
-	    phydev->interface == PHY_INTERFACE_MODE_RGMII_TXID) {
-		/* If RGMII_ID or RGMII_TXID are specified enable TX delay,
-		 * otherwise keep it disabled
-		 */
+	    phydev->interface == PHY_INTERFACE_MODE_RGMII_TXID)
 		ret = at803x_enable_tx_delay(phydev);
-	}
+	else
+		ret = at803x_disable_tx_delay(phydev);
 
 	return ret;
 }
@@ -324,8 +308,6 @@ static int at803x_config_intr(struct phy_device *phydev)
 
 static void at803x_link_change_notify(struct phy_device *phydev)
 {
-	struct at803x_priv *priv = phydev->priv;
-
 	/*
 	 * Conduct a hardware reset for AT8030 every time a link loss is
 	 * signalled. This is necessary to circumvent a hardware bug that
@@ -333,25 +315,19 @@ static void at803x_link_change_notify(struct phy_device *phydev)
 	 * in the FIFO. In such cases, the FIFO enters an error mode it
 	 * cannot recover from by software.
 	 */
-	if (phydev->state == PHY_NOLINK) {
-		if (phydev->mdio.reset && !priv->phy_reset) {
-			struct at803x_context context;
+	if (phydev->state == PHY_NOLINK && phydev->mdio.reset_gpio) {
+		struct at803x_context context;
 
-			at803x_context_save(phydev, &context);
+		at803x_context_save(phydev, &context);
 
-			phy_device_reset(phydev, 1);
-			msleep(1);
-			phy_device_reset(phydev, 0);
-			msleep(1);
+		phy_device_reset(phydev, 1);
+		msleep(1);
+		phy_device_reset(phydev, 0);
+		msleep(1);
 
-			at803x_context_restore(phydev, &context);
+		at803x_context_restore(phydev, &context);
 
-			phydev_dbg(phydev, "%s(): phy was reset\n",
-				   __func__);
-			priv->phy_reset = true;
-		}
-	} else {
-		priv->phy_reset = false;
+		phydev_dbg(phydev, "%s(): phy was reset\n", __func__);
 	}
 }
 
@@ -397,7 +373,7 @@ static struct phy_driver at803x_driver[] = {
 	.get_wol		= at803x_get_wol,
 	.suspend		= at803x_suspend,
 	.resume			= at803x_resume,
-	.features		= PHY_GBIT_FEATURES,
+	/* PHY_GBIT_FEATURES */
 	.ack_interrupt		= at803x_ack_interrupt,
 	.config_intr		= at803x_config_intr,
 }, {
@@ -412,7 +388,7 @@ static struct phy_driver at803x_driver[] = {
 	.get_wol		= at803x_get_wol,
 	.suspend		= at803x_suspend,
 	.resume			= at803x_resume,
-	.features		= PHY_BASIC_FEATURES,
+	/* PHY_BASIC_FEATURES */
 	.ack_interrupt		= at803x_ack_interrupt,
 	.config_intr		= at803x_config_intr,
 }, {
@@ -426,7 +402,7 @@ static struct phy_driver at803x_driver[] = {
 	.get_wol		= at803x_get_wol,
 	.suspend		= at803x_suspend,
 	.resume			= at803x_resume,
-	.features		= PHY_GBIT_FEATURES,
+	/* PHY_GBIT_FEATURES */
 	.aneg_done		= at803x_aneg_done,
 	.ack_interrupt		= &at803x_ack_interrupt,
 	.config_intr		= &at803x_config_intr,

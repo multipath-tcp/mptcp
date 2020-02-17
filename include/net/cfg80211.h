@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 #ifndef __NET_CFG80211_H
 #define __NET_CFG80211_H
 /*
@@ -7,10 +8,6 @@
  * Copyright 2013-2014 Intel Mobile Communications GmbH
  * Copyright 2015-2017	Intel Deutschland GmbH
  * Copyright (C) 2018-2019 Intel Corporation
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/netdevice.h>
@@ -382,6 +379,26 @@ ieee80211_get_sband_iftype_data(const struct ieee80211_supported_band *sband,
 }
 
 /**
+ * ieee80211_get_he_iftype_cap - return HE capabilities for an sband's iftype
+ * @sband: the sband to search for the iftype on
+ * @iftype: enum nl80211_iftype
+ *
+ * Return: pointer to the struct ieee80211_sta_he_cap, or NULL is none found
+ */
+static inline const struct ieee80211_sta_he_cap *
+ieee80211_get_he_iftype_cap(const struct ieee80211_supported_band *sband,
+			    u8 iftype)
+{
+	const struct ieee80211_sband_iftype_data *data =
+		ieee80211_get_sband_iftype_data(sband, iftype);
+
+	if (data && data->he_cap.has_he)
+		return &data->he_cap;
+
+	return NULL;
+}
+
+/**
  * ieee80211_get_he_sta_cap - return HE capabilities for an sband's STA
  * @sband: the sband to search for the STA on
  *
@@ -390,13 +407,7 @@ ieee80211_get_sband_iftype_data(const struct ieee80211_supported_band *sband,
 static inline const struct ieee80211_sta_he_cap *
 ieee80211_get_he_sta_cap(const struct ieee80211_supported_band *sband)
 {
-	const struct ieee80211_sband_iftype_data *data =
-		ieee80211_get_sband_iftype_data(sband, NL80211_IFTYPE_STATION);
-
-	if (data && data->he_cap.has_he)
-		return &data->he_cap;
-
-	return NULL;
+	return ieee80211_get_he_iftype_cap(sband, NL80211_IFTYPE_STATION);
 }
 
 /**
@@ -485,6 +496,7 @@ struct vif_params {
  *	with the get_key() callback, must be in little endian,
  *	length given by @seq_len.
  * @seq_len: length of @seq.
+ * @mode: key install mode (RX_TX, NO_TX or SET_TX)
  */
 struct key_params {
 	const u8 *key;
@@ -492,6 +504,7 @@ struct key_params {
 	int key_len;
 	int seq_len;
 	u32 cipher;
+	enum nl80211_key_mode mode;
 };
 
 /**
@@ -740,6 +753,9 @@ struct survey_info {
  *	CFG80211_MAX_WEP_KEYS WEP keys
  * @wep_tx_key: key index (0..3) of the default TX static WEP key
  * @psk: PSK (for devices supporting 4-way-handshake offload)
+ * @sae_pwd: password for SAE authentication (for devices supporting SAE
+ *	offload)
+ * @sae_pwd_len: length of SAE password (for devices supporting SAE offload)
  */
 struct cfg80211_crypto_settings {
 	u32 wpa_versions;
@@ -755,6 +771,8 @@ struct cfg80211_crypto_settings {
 	struct key_params *wep_keys;
 	int wep_tx_key;
 	const u8 *psk;
+	const u8 *sae_pwd;
+	u8 sae_pwd_len;
 };
 
 /**
@@ -876,6 +894,7 @@ enum cfg80211_ap_settings_flags {
  * @he_cap: HE capabilities (or %NULL if HE isn't enabled)
  * @ht_required: stations must support HT
  * @vht_required: stations must support VHT
+ * @twt_responder: Enable Target Wait Time
  * @flags: flags, as defined in enum cfg80211_ap_settings_flags
  */
 struct cfg80211_ap_settings {
@@ -902,6 +921,7 @@ struct cfg80211_ap_settings {
 	const struct ieee80211_vht_cap *vht_cap;
 	const struct ieee80211_he_cap_elem *he_cap;
 	bool ht_required, vht_required;
+	bool twt_responder;
 	u32 flags;
 };
 
@@ -973,6 +993,27 @@ enum station_parameters_apply_mask {
 	STATION_PARAM_APPLY_UAPSD = BIT(0),
 	STATION_PARAM_APPLY_CAPABILITY = BIT(1),
 	STATION_PARAM_APPLY_PLINK_STATE = BIT(2),
+	STATION_PARAM_APPLY_STA_TXPOWER = BIT(3),
+};
+
+/**
+ * struct sta_txpwr - station txpower configuration
+ *
+ * Used to configure txpower for station.
+ *
+ * @power: tx power (in dBm) to be used for sending data traffic. If tx power
+ *	is not provided, the default per-interface tx power setting will be
+ *	overriding. Driver should be picking up the lowest tx power, either tx
+ *	power per-interface or per-station.
+ * @type: In particular if TPC %type is NL80211_TX_POWER_LIMITED then tx power
+ *	will be less than or equal to specified from userspace, whereas if TPC
+ *	%type is NL80211_TX_POWER_AUTOMATIC then it indicates default tx power.
+ *	NL80211_TX_POWER_FIXED is not a valid configuration option for
+ *	per peer TPC.
+ */
+struct sta_txpwr {
+	s16 power;
+	enum nl80211_tx_power_setting type;
 };
 
 /**
@@ -1047,6 +1088,7 @@ struct station_parameters {
 	const struct ieee80211_he_cap_elem *he_capa;
 	u8 he_capa_len;
 	u16 airtime_weight;
+	struct sta_txpwr txpwr;
 };
 
 /**
@@ -1327,6 +1369,7 @@ struct cfg80211_tid_stats {
  * @fcs_err_count: number of packets (MPDUs) received from this station with
  *	an FCS error. This counter should be incremented only when TA of the
  *	received packet with an FCS error matches the peer MAC address.
+ * @airtime_link_metric: mesh airtime link metric.
  */
 struct station_info {
 	u64 filled;
@@ -1381,6 +1424,8 @@ struct station_info {
 
 	u32 rx_mpdu_count;
 	u32 fcs_err_count;
+
+	u32 airtime_link_metric;
 };
 
 #if IS_ENABLED(CONFIG_CFG80211)
@@ -1832,11 +1877,19 @@ static inline void get_random_mask_addr(u8 *buf, const u8 *addr, const u8 *mask)
  * @bssid: BSSID to be matched; may be all-zero BSSID in case of SSID match
  *	or no match (RSSI only)
  * @rssi_thold: don't report scan results below this threshold (in s32 dBm)
+ * @per_band_rssi_thold: Minimum rssi threshold for each band to be applied
+ *	for filtering out scan results received. Drivers advertize this support
+ *	of band specific rssi based filtering through the feature capability
+ *	%NL80211_EXT_FEATURE_SCHED_SCAN_BAND_SPECIFIC_RSSI_THOLD. These band
+ *	specific rssi thresholds take precedence over rssi_thold, if specified.
+ *	If not specified for any band, it will be assigned with rssi_thold of
+ *	corresponding matchset.
  */
 struct cfg80211_match_set {
 	struct cfg80211_ssid ssid;
 	u8 bssid[ETH_ALEN];
 	s32 rssi_thold;
+	s32 per_band_rssi_thold[NUM_NL80211_BANDS];
 };
 
 /**
@@ -1975,7 +2028,7 @@ enum cfg80211_signal_type {
  *	received by the device (not just by the host, in case it was
  *	buffered on the device) and be accurate to about 10ms.
  *	If the frame isn't buffered, just passing the return value of
- *	ktime_get_boot_ns() is likely appropriate.
+ *	ktime_get_boottime_ns() is likely appropriate.
  * @parent_tsf: the time at the start of reception of the first octet of the
  *	timestamp field of the frame. The time is the TSF of the BSS specified
  *	by %parent_bssid.
@@ -3100,6 +3153,32 @@ struct cfg80211_pmsr_request {
 };
 
 /**
+ * struct cfg80211_update_owe_info - OWE Information
+ *
+ * This structure provides information needed for the drivers to offload OWE
+ * (Opportunistic Wireless Encryption) processing to the user space.
+ *
+ * Commonly used across update_owe_info request and event interfaces.
+ *
+ * @peer: MAC address of the peer device for which the OWE processing
+ *	has to be done.
+ * @status: status code, %WLAN_STATUS_SUCCESS for successful OWE info
+ *	processing, use %WLAN_STATUS_UNSPECIFIED_FAILURE if user space
+ *	cannot give you the real status code for failures. Used only for
+ *	OWE update request command interface (user space to driver).
+ * @ie: IEs obtained from the peer or constructed by the user space. These are
+ *	the IEs of the remote peer in the event from the host driver and
+ *	the constructed IEs by the user space in the request interface.
+ * @ie_len: Length of IEs in octets.
+ */
+struct cfg80211_update_owe_info {
+	u8 peer[ETH_ALEN] __aligned(2);
+	u16 status;
+	const u8 *ie;
+	size_t ie_len;
+};
+
+/**
  * struct cfg80211_ops - backend description for wireless configuration
  *
  * This struct is registered by fullmac card drivers and/or wireless stacks
@@ -3436,6 +3515,13 @@ struct cfg80211_pmsr_request {
  *	Statistics should be cumulative, currently no way to reset is provided.
  * @start_pmsr: start peer measurement (e.g. FTM)
  * @abort_pmsr: abort peer measurement
+ *
+ * @update_owe_info: Provide updated OWE info to driver. Driver implementing SME
+ *	but offloading OWE processing to the user space will get the updated
+ *	DH IE through this interface.
+ *
+ * @probe_mesh_link: Probe direct Mesh peer's link quality by sending data frame
+ *	and overrule HWMP path selection algorithm.
  */
 struct cfg80211_ops {
 	int	(*suspend)(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
@@ -3750,6 +3836,10 @@ struct cfg80211_ops {
 			      struct cfg80211_pmsr_request *request);
 	void	(*abort_pmsr)(struct wiphy *wiphy, struct wireless_dev *wdev,
 			      struct cfg80211_pmsr_request *request);
+	int	(*update_owe_info)(struct wiphy *wiphy, struct net_device *dev,
+				   struct cfg80211_update_owe_info *owe_info);
+	int	(*probe_mesh_link)(struct wiphy *wiphy, struct net_device *dev,
+				   const u8 *buf, size_t len);
 };
 
 /*
@@ -3767,7 +3857,8 @@ struct cfg80211_ops {
  *	on wiphy_new(), but can be changed by the driver if it has a good
  *	reason to override the default
  * @WIPHY_FLAG_4ADDR_AP: supports 4addr mode even on AP (with a single station
- *	on a VLAN interface)
+ *	on a VLAN interface). This flag also serves an extra purpose of
+ *	supporting 4ADDR AP mode on devices which do not support AP/VLAN iftype.
  * @WIPHY_FLAG_4ADDR_STATION: supports 4addr mode even as a station
  * @WIPHY_FLAG_CONTROL_PORT_PROTOCOL: This device supports setting the
  *	control port protocol ethertype. The device also honours the
@@ -4079,6 +4170,8 @@ struct sta_opmode_info {
 	u8 rx_nss;
 };
 
+#define VENDOR_CMD_RAW_DATA ((const struct nla_policy *)(long)(-ENODATA))
+
 /**
  * struct wiphy_vendor_command - vendor command definition
  * @info: vendor command identifying information, as used in nl80211
@@ -4089,6 +4182,10 @@ struct sta_opmode_info {
  * @dumpit: dump callback, for transferring bigger/multiple items. The
  *	@storage points to cb->args[5], ie. is preserved over the multiple
  *	dumpit calls.
+ * @policy: policy pointer for attributes within %NL80211_ATTR_VENDOR_DATA.
+ *	Set this to %VENDOR_CMD_RAW_DATA if no policy can be given and the
+ *	attribute is just raw data (e.g. a firmware command).
+ * @maxattr: highest attribute number in policy
  * It's recommended to not have the same sub command with both @doit and
  * @dumpit, so that userspace can assume certain ones are get and others
  * are used with dump requests.
@@ -4101,6 +4198,8 @@ struct wiphy_vendor_command {
 	int (*dumpit)(struct wiphy *wiphy, struct wireless_dev *wdev,
 		      struct sk_buff *skb, const void *data, int data_len,
 		      unsigned long *storage);
+	const struct nla_policy *policy;
+	unsigned int maxattr;
 };
 
 /**
@@ -5492,6 +5591,28 @@ static inline void cfg80211_gen_new_bssid(const u8 *bssid, u8 max_bssid,
 }
 
 /**
+ * cfg80211_is_element_inherited - returns if element ID should be inherited
+ * @element: element to check
+ * @non_inherit_element: non inheritance element
+ */
+bool cfg80211_is_element_inherited(const struct element *element,
+				   const struct element *non_inherit_element);
+
+/**
+ * cfg80211_merge_profile - merges a MBSSID profile if it is split between IEs
+ * @ie: ies
+ * @ielen: length of IEs
+ * @mbssid_elem: current MBSSID element
+ * @sub_elem: current MBSSID subelement (profile)
+ * @merged_ie: location of the merged profile
+ * @max_copy_len: max merged profile length
+ */
+size_t cfg80211_merge_profile(const u8 *ie, size_t ielen,
+			      const struct element *mbssid_elem,
+			      const struct element *sub_elem,
+			      u8 *merged_ie, size_t max_copy_len);
+
+/**
  * enum cfg80211_bss_frame_type - frame type that the BSS data came from
  * @CFG80211_BSS_FTYPE_UNKNOWN: driver doesn't know whether the data is
  *	from a beacon or probe response
@@ -5626,6 +5747,26 @@ void cfg80211_put_bss(struct wiphy *wiphy, struct cfg80211_bss *bss);
  * out, so it is not necessary to use this function at all.
  */
 void cfg80211_unlink_bss(struct wiphy *wiphy, struct cfg80211_bss *bss);
+
+/**
+ * cfg80211_bss_iter - iterate all BSS entries
+ *
+ * This function iterates over the BSS entries associated with the given wiphy
+ * and calls the callback for the iterated BSS. The iterator function is not
+ * allowed to call functions that might modify the internal state of the BSS DB.
+ *
+ * @wiphy: the wiphy
+ * @chandef: if given, the iterator function will be called only if the channel
+ *     of the currently iterated BSS is a subset of the given channel.
+ * @iter: the iterator function to call
+ * @iter_data: an argument to the iterator function
+ */
+void cfg80211_bss_iter(struct wiphy *wiphy,
+		       struct cfg80211_chan_def *chandef,
+		       void (*iter)(struct wiphy *wiphy,
+				    struct cfg80211_bss *bss,
+				    void *data),
+		       void *iter_data);
 
 static inline enum nl80211_bss_scan_width
 cfg80211_chandef_to_scan_width(const struct cfg80211_chan_def *chandef)
@@ -6137,8 +6278,11 @@ struct cfg80211_fils_resp_params {
  *	case.
  * @bssid: The BSSID of the AP (may be %NULL)
  * @bss: Entry of bss to which STA got connected to, can be obtained through
- *	cfg80211_get_bss() (may be %NULL). Only one parameter among @bssid and
- *	@bss needs to be specified.
+ *	cfg80211_get_bss() (may be %NULL). But it is recommended to store the
+ *	bss from the connect_request and hold a reference to it and return
+ *	through this param to avoid a warning if the bss is expired during the
+ *	connection, esp. for those drivers implementing connect op.
+ *	Only one parameter among @bssid and @bss needs to be specified.
  * @req_ie: Association request IEs (may be %NULL)
  * @req_ie_len: Association request IEs length
  * @resp_ie: Association response IEs (may be %NULL)
@@ -6186,8 +6330,12 @@ void cfg80211_connect_done(struct net_device *dev,
  *
  * @dev: network device
  * @bssid: the BSSID of the AP
- * @bss: entry of bss to which STA got connected to, can be obtained
- *	through cfg80211_get_bss (may be %NULL)
+ * @bss: Entry of bss to which STA got connected to, can be obtained through
+ *	cfg80211_get_bss() (may be %NULL). But it is recommended to store the
+ *	bss from the connect_request and hold a reference to it and return
+ *	through this param to avoid a warning if the bss is expired during the
+ *	connection, esp. for those drivers implementing connect op.
+ *	Only one parameter among @bssid and @bss needs to be specified.
  * @req_ie: association request IEs (maybe be %NULL)
  * @req_ie_len: association request IEs length
  * @resp_ie: association response IEs (may be %NULL)
@@ -6396,6 +6544,16 @@ void cfg80211_ready_on_channel(struct wireless_dev *wdev, u64 cookie,
 void cfg80211_remain_on_channel_expired(struct wireless_dev *wdev, u64 cookie,
 					struct ieee80211_channel *chan,
 					gfp_t gfp);
+
+/**
+ * cfg80211_tx_mgmt_expired - tx_mgmt duration expired
+ * @wdev: wireless device
+ * @cookie: the requested cookie
+ * @chan: The current channel (from tx_mgmt request)
+ * @gfp: allocation flags
+ */
+void cfg80211_tx_mgmt_expired(struct wireless_dev *wdev, u64 cookie,
+			      struct ieee80211_channel *chan, gfp_t gfp);
 
 /**
  * cfg80211_sinfo_alloc_tid_stats - allocate per-tid statistics.
@@ -7162,6 +7320,21 @@ void cfg80211_pmsr_complete(struct wireless_dev *wdev,
 			    struct cfg80211_pmsr_request *req,
 			    gfp_t gfp);
 
+/**
+ * cfg80211_iftype_allowed - check whether the interface can be allowed
+ * @wiphy: the wiphy
+ * @iftype: interface type
+ * @is_4addr: use_4addr flag, must be '0' when check_swif is '1'
+ * @check_swif: check iftype against software interfaces
+ *
+ * Check whether the interface is allowed to operate; additionally, this API
+ * can be used to check iftype against the software interfaces when
+ * check_swif is '1'.
+ */
+bool cfg80211_iftype_allowed(struct wiphy *wiphy, enum nl80211_iftype iftype,
+			     bool is_4addr, u8 check_swif);
+
+
 /* Logging, debugging and troubleshooting/diagnostic helpers. */
 
 /* wiphy_printk helpers, similar to dev_printk */
@@ -7212,5 +7385,15 @@ void cfg80211_pmsr_complete(struct wireless_dev *wdev,
  */
 #define wiphy_WARN(wiphy, format, args...)			\
 	WARN(1, "wiphy: %s\n" format, wiphy_name(wiphy), ##args);
+
+/**
+ * cfg80211_update_owe_info_event - Notify the peer's OWE info to user space
+ * @netdev: network device
+ * @owe_info: peer's owe info
+ * @gfp: allocation flags
+ */
+void cfg80211_update_owe_info_event(struct net_device *netdev,
+				    struct cfg80211_update_owe_info *owe_info,
+				    gfp_t gfp);
 
 #endif /* __NET_CFG80211_H */

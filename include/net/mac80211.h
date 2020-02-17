@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * mac80211 <-> driver interface
  *
@@ -7,10 +8,6 @@
  * Copyright 2013-2014  Intel Mobile Communications GmbH
  * Copyright (C) 2015 - 2017 Intel Deutschland GmbH
  * Copyright (C) 2018 - 2019 Intel Corporation
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #ifndef MAC80211_H
@@ -317,6 +314,7 @@ struct ieee80211_vif_chanctx_switch {
  * @BSS_CHANGED_MCAST_RATE: Multicast Rate setting changed for this interface
  * @BSS_CHANGED_FTM_RESPONDER: fime timing reasurement request responder
  *	functionality changed for this BSS (AP mode).
+ * @BSS_CHANGED_TWT: TWT status changed
  *
  */
 enum ieee80211_bss_change {
@@ -347,6 +345,7 @@ enum ieee80211_bss_change {
 	BSS_CHANGED_KEEP_ALIVE		= 1<<24,
 	BSS_CHANGED_MCAST_RATE		= 1<<25,
 	BSS_CHANGED_FTM_RESPONDER	= 1<<26,
+	BSS_CHANGED_TWT			= 1<<27,
 
 	/* when adding here, make sure to change ieee80211_reconfig */
 };
@@ -504,6 +503,8 @@ struct ieee80211_ftm_responder_params {
  * @he_support: does this BSS support HE
  * @twt_requester: does this BSS support TWT requester (relevant for managed
  *	mode only, set if the AP advertises TWT responder role)
+ * @twt_responder: does this BSS support TWT requester (relevant for managed
+ *	mode only, set if the AP advertises TWT responder role)
  * @assoc: association status
  * @ibss_joined: indicates whether this station is part of an IBSS
  *	or not
@@ -611,6 +612,7 @@ struct ieee80211_bss_conf {
 	u16 frame_time_rts_th;
 	bool he_support;
 	bool twt_requester;
+	bool twt_responder;
 	/* association related data */
 	bool assoc, ibss_joined;
 	bool ibss_creator;
@@ -807,6 +809,7 @@ enum mac80211_tx_info_flags {
  * @IEEE80211_TX_CTRL_RATE_INJECT: This frame is injected with rate information
  * @IEEE80211_TX_CTRL_AMSDU: This frame is an A-MSDU frame
  * @IEEE80211_TX_CTRL_FAST_XMIT: This frame is going through the fast_xmit path
+ * @IEEE80211_TX_CTRL_SKIP_MPATH_LOOKUP: This frame skips mesh path lookup
  *
  * These flags are used in tx_info->control.flags.
  */
@@ -816,6 +819,7 @@ enum mac80211_tx_control_flags {
 	IEEE80211_TX_CTRL_RATE_INJECT		= BIT(2),
 	IEEE80211_TX_CTRL_AMSDU			= BIT(3),
 	IEEE80211_TX_CTRL_FAST_XMIT		= BIT(4),
+	IEEE80211_TX_CTRL_SKIP_MPATH_LOOKUP	= BIT(5),
 };
 
 /*
@@ -1697,6 +1701,7 @@ struct wireless_dev *ieee80211_vif_to_wdev(struct ieee80211_vif *vif);
  * @IEEE80211_KEY_FLAG_PUT_MIC_SPACE: This flag should be set by the driver for
  *	a TKIP key if it only requires MIC space. Do not set together with
  *	@IEEE80211_KEY_FLAG_GENERATE_MMIC on the same key.
+ * @IEEE80211_KEY_FLAG_NO_AUTO_TX: Key needs explicit Tx activation.
  */
 enum ieee80211_key_flags {
 	IEEE80211_KEY_FLAG_GENERATE_IV_MGMT	= BIT(0),
@@ -1708,6 +1713,7 @@ enum ieee80211_key_flags {
 	IEEE80211_KEY_FLAG_RX_MGMT		= BIT(6),
 	IEEE80211_KEY_FLAG_RESERVE_TAILROOM	= BIT(7),
 	IEEE80211_KEY_FLAG_PUT_MIC_SPACE	= BIT(8),
+	IEEE80211_KEY_FLAG_NO_AUTO_TX		= BIT(9),
 };
 
 /**
@@ -1888,6 +1894,24 @@ struct ieee80211_sta_rates {
 };
 
 /**
+ * struct ieee80211_sta_txpwr - station txpower configuration
+ *
+ * Used to configure txpower for station.
+ *
+ * @power: indicates the tx power, in dBm, to be used when sending data frames
+ *	to the STA.
+ * @type: In particular if TPC %type is NL80211_TX_POWER_LIMITED then tx power
+ *	will be less than or equal to specified from userspace, whereas if TPC
+ *	%type is NL80211_TX_POWER_AUTOMATIC then it indicates default tx power.
+ *	NL80211_TX_POWER_FIXED is not a valid configuration option for
+ *	per peer TPC.
+ */
+struct ieee80211_sta_txpwr {
+	s16 power;
+	enum nl80211_tx_power_setting type;
+};
+
+/**
  * struct ieee80211_sta - station table entry
  *
  * A station table entry represents a station we are possibly
@@ -1973,6 +1997,7 @@ struct ieee80211_sta {
 	bool support_p2p_ps;
 	u16 max_rc_amsdu_len;
 	u16 max_tid_amsdu_len[IEEE80211_NUM_TIDS];
+	struct ieee80211_sta_txpwr txpwr;
 
 	struct ieee80211_txq *txq[IEEE80211_NUM_TIDS + 1];
 
@@ -2243,6 +2268,12 @@ struct ieee80211_txq {
  * @IEEE80211_HW_SUPPORTS_ONLY_HE_MULTI_BSSID: Hardware supports multi BSSID
  *	only for HE APs. Applies if @IEEE80211_HW_SUPPORTS_MULTI_BSSID is set.
  *
+ * @IEEE80211_HW_EXT_KEY_ID_NATIVE: Driver and hardware are supporting Extended
+ *	Key ID and can handle two unicast keys per station for Rx and Tx.
+ *
+ * @IEEE80211_HW_NO_AMPDU_KEYBORDER_SUPPORT: The card/driver can't handle
+ *	active Tx A-MPDU sessions with Extended Key IDs during rekey.
+ *
  * @NUM_IEEE80211_HW_FLAGS: number of hardware flags, used for sizing arrays
  */
 enum ieee80211_hw_flags {
@@ -2294,6 +2325,8 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_TX_STATUS_NO_AMPDU_LEN,
 	IEEE80211_HW_SUPPORTS_MULTI_BSSID,
 	IEEE80211_HW_SUPPORTS_ONLY_HE_MULTI_BSSID,
+	IEEE80211_HW_EXT_KEY_ID_NATIVE,
+	IEEE80211_HW_NO_AMPDU_KEYBORDER_SUPPORT,
 
 	/* keep last, obviously */
 	NUM_IEEE80211_HW_FLAGS
@@ -3794,6 +3827,9 @@ struct ieee80211_ops {
 #endif
 	void (*sta_notify)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			enum sta_notify_cmd, struct ieee80211_sta *sta);
+	int (*sta_set_txpwr)(struct ieee80211_hw *hw,
+			     struct ieee80211_vif *vif,
+			     struct ieee80211_sta *sta);
 	int (*sta_state)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			 struct ieee80211_sta *sta,
 			 enum ieee80211_sta_state old_state,
@@ -5920,29 +5956,6 @@ static inline int rate_supported(struct ieee80211_sta *sta,
 {
 	return (sta == NULL || sta->supp_rates[band] & BIT(index));
 }
-
-/**
- * rate_control_send_low - helper for drivers for management/no-ack frames
- *
- * Rate control algorithms that agree to use the lowest rate to
- * send management frames and NO_ACK data with the respective hw
- * retries should use this in the beginning of their mac80211 get_rate
- * callback. If true is returned the rate control can simply return.
- * If false is returned we guarantee that sta and sta and priv_sta is
- * not null.
- *
- * Rate control algorithms wishing to do more intelligent selection of
- * rate for multicast/broadcast frames may choose to not use this.
- *
- * @sta: &struct ieee80211_sta pointer to the target destination. Note
- * 	that this may be null.
- * @priv_sta: private rate control structure. This may be null.
- * @txrc: rate control information we sholud populate for mac80211.
- */
-bool rate_control_send_low(struct ieee80211_sta *sta,
-			   void *priv_sta,
-			   struct ieee80211_tx_rate_control *txrc);
-
 
 static inline s8
 rate_lowest_index(struct ieee80211_supported_band *sband,

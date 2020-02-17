@@ -303,6 +303,7 @@ struct ssif_info {
 	((unsigned int) atomic_read(&(ssif)->stats[SSIF_STAT_ ## stat]))
 
 static bool initialized;
+static bool platform_registered;
 
 static void return_hosed_msg(struct ssif_info *ssif_info,
 			     struct ipmi_smi_msg *msg);
@@ -727,12 +728,16 @@ static void msg_done_handler(struct ssif_info *ssif_info, int result,
 			/* End of read */
 			len = ssif_info->multi_len;
 			data = ssif_info->data;
-		} else if (blocknum != ssif_info->multi_pos) {
+		} else if (blocknum + 1 != ssif_info->multi_pos) {
 			/*
 			 * Out of sequence block, just abort.  Block
 			 * numbers start at zero for the second block,
 			 * but multi_pos starts at one, so the +1.
 			 */
+			if (ssif_info->ssif_debug & SSIF_DEBUG_MSG)
+				dev_dbg(&ssif_info->client->dev,
+					"Received message out of sequence, expected %u, got %u\n",
+					ssif_info->multi_pos - 1, blocknum);
 			result = -EIO;
 		} else {
 			ssif_inc_stat(ssif_info, received_message_parts);
@@ -1991,7 +1996,7 @@ static int dmi_ipmi_probe(struct platform_device *pdev)
 
 	rv = device_property_read_u8(&pdev->dev, "slave-addr", &slave_addr);
 	if (rv)
-		dev_warn(&pdev->dev, "device has no slave-addr property");
+		slave_addr = 0x20;
 
 	return new_ssif_client(i2c_addr, NULL, 0,
 			       slave_addr, SI_SMBIOS, &pdev->dev);
@@ -2084,6 +2089,8 @@ static int init_ipmi_ssif(void)
 		rv = platform_driver_register(&ipmi_driver);
 		if (rv)
 			pr_err("Unable to register driver: %d\n", rv);
+		else
+			platform_registered = true;
 	}
 
 	ssif_i2c_driver.address_list = ssif_address_list();
@@ -2107,7 +2114,8 @@ static void cleanup_ipmi_ssif(void)
 
 	kfree(ssif_i2c_driver.address_list);
 
-	platform_driver_unregister(&ipmi_driver);
+	if (ssif_trydmi && platform_registered)
+		platform_driver_unregister(&ipmi_driver);
 
 	free_ssif_clients();
 }

@@ -9,7 +9,7 @@ This is the authoritative documentation on the design, interface and
 conventions of cgroup v2.  It describes all userland-visible aspects
 of cgroup including core and specific controller behaviors.  All
 future changes must be reflected in this document.  Documentation for
-v1 is available under Documentation/cgroup-v1/.
+v1 is available under Documentation/admin-guide/cgroup-v1/.
 
 .. CONTENTS
 
@@ -176,6 +176,15 @@ cgroup v2 currently supports the following mount options.
 	through remount from the init namespace.  The mount option is
 	ignored on non-init namespace mounts.  Please refer to the
 	Delegation section for details.
+
+  memory_localevents
+
+        Only populate memory.events with data for the current cgroup,
+        and not any subtrees. This is legacy behaviour, the default
+        behaviour without this option is to include subtree counts.
+        This option is system wide and can only be set on mount or
+        modified through remount from the init namespace. The mount
+        option is ignored on non-init namespace mounts.
 
 
 Organizing Processes and Threads
@@ -696,6 +705,12 @@ Conventions
   informational files on the root cgroup which end up showing global
   information available elsewhere shouldn't exist.
 
+- The default time unit is microseconds.  If a different unit is ever
+  used, an explicit unit suffix must be present.
+
+- A parts-per quantity should use a percentage decimal with at least
+  two digit fractional part - e.g. 13.40.
+
 - If a controller implements weight based resource distribution, its
   interface file should be named "weight" and have the range [1,
   10000] with 100 as the default.  The values are chosen to allow
@@ -864,6 +879,8 @@ All cgroup core files are prefixed with "cgroup."
 	  populated
 		1 if the cgroup or its descendants contains any live
 		processes; otherwise, 0.
+	  frozen
+		1 if the cgroup is frozen; otherwise, 0.
 
   cgroup.max.descendants
 	A read-write single value files.  The default is "max".
@@ -897,6 +914,31 @@ All cgroup core files are prefixed with "cgroup."
 		A dying cgroup can consume system resources not exceeding
 		limits, which were active at the moment of cgroup deletion.
 
+  cgroup.freeze
+	A read-write single value file which exists on non-root cgroups.
+	Allowed values are "0" and "1". The default is "0".
+
+	Writing "1" to the file causes freezing of the cgroup and all
+	descendant cgroups. This means that all belonging processes will
+	be stopped and will not run until the cgroup will be explicitly
+	unfrozen. Freezing of the cgroup may take some time; when this action
+	is completed, the "frozen" value in the cgroup.events control file
+	will be updated to "1" and the corresponding notification will be
+	issued.
+
+	A cgroup can be frozen either by its own settings, or by settings
+	of any ancestor cgroups. If any of ancestor cgroups is frozen, the
+	cgroup will remain frozen.
+
+	Processes in the frozen cgroup can be killed by a fatal signal.
+	They also can enter and leave a frozen cgroup: either by an explicit
+	move by a user, or if freezing of the cgroup races with fork().
+	If a process is moved to a frozen cgroup, it stops. If a process is
+	moved out of a frozen cgroup, it becomes running.
+
+	Frozen status of a cgroup doesn't affect any cgroup tree operations:
+	it's possible to delete a frozen (and empty) cgroup, as well as
+	create new sub-cgroups.
 
 Controllers
 ===========
@@ -972,7 +1014,7 @@ All time durations are in microseconds.
 	A read-only nested-key file which exists on non-root cgroups.
 
 	Shows pressure stall information for CPU. See
-	Documentation/accounting/psi.txt for details.
+	Documentation/accounting/psi.rst for details.
 
 
 Memory
@@ -1104,6 +1146,11 @@ PAGE_SIZE multiple when read back.
 	otherwise, a value change in this file generates a file
 	modified event.
 
+	Note that all fields in this file are hierarchical and the
+	file modified event can be generated due to an event down the
+	hierarchy. For for the local events at the cgroup level see
+	memory.events.local.
+
 	  low
 		The number of times the cgroup is reclaimed due to
 		high memory pressure even though its usage is under
@@ -1142,6 +1189,11 @@ PAGE_SIZE multiple when read back.
 	  oom_kill
 		The number of processes belonging to this cgroup
 		killed by any kind of OOM killer.
+
+  memory.events.local
+	Similar to memory.events but the fields in the file are local
+	to the cgroup i.e. not hierarchical. The file modified event
+	generated on this file reflects only the local events.
 
   memory.stat
 	A read-only flat-keyed file which exists on non-root cgroups.
@@ -1303,7 +1355,7 @@ PAGE_SIZE multiple when read back.
 	A read-only nested-key file which exists on non-root cgroups.
 
 	Shows pressure stall information for memory. See
-	Documentation/accounting/psi.txt for details.
+	Documentation/accounting/psi.rst for details.
 
 
 Usage Guidelines
@@ -1446,7 +1498,7 @@ IO Interface Files
 	A read-only nested-key file which exists on non-root cgroups.
 
 	Shows pressure stall information for IO. See
-	Documentation/accounting/psi.txt for details.
+	Documentation/accounting/psi.rst for details.
 
 
 Writeback
@@ -2072,7 +2124,7 @@ following two functions.
 	a queue (device) has been associated with the bio and
 	before submission.
 
-  wbc_account_io(@wbc, @page, @bytes)
+  wbc_account_cgroup_owner(@wbc, @page, @bytes)
 	Should be called for each data segment being written out.
 	While this function doesn't care exactly when it's called
 	during the writeback session, it's the easiest and most

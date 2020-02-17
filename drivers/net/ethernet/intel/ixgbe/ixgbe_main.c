@@ -36,6 +36,7 @@
 #include <net/vxlan.h>
 #include <net/mpls.h>
 #include <net/xdp_sock.h>
+#include <net/xfrm.h>
 
 #include "ixgbe.h"
 #include "ixgbe_common.h"
@@ -1800,7 +1801,7 @@ static void ixgbe_pull_tail(struct ixgbe_ring *rx_ring,
 	 * we need the header to contain the greater of either ETH_HLEN or
 	 * 60 bytes if the skb->len is less than 60 for skb_pad.
 	 */
-	pull_len = eth_get_headlen(va, IXGBE_RX_HDR_SIZE);
+	pull_len = eth_get_headlen(skb->dev, va, IXGBE_RX_HDR_SIZE);
 
 	/* align pull length to size of long to optimize memcpy performance */
 	skb_copy_to_linear_data(skb, va, ALIGN(pull_len, sizeof(long)));
@@ -2621,7 +2622,7 @@ adjust_by_size:
 		/* 16K ints/sec to 9.2K ints/sec */
 		avg_wire_size *= 15;
 		avg_wire_size += 11452;
-	} else if (avg_wire_size <= 1980) {
+	} else if (avg_wire_size < 1968) {
 		/* 9.2K ints/sec to 8K ints/sec */
 		avg_wire_size *= 5;
 		avg_wire_size += 22420;
@@ -2654,6 +2655,8 @@ adjust_by_size:
 	case IXGBE_LINK_SPEED_2_5GB_FULL:
 	case IXGBE_LINK_SPEED_1GB_FULL:
 	case IXGBE_LINK_SPEED_10_FULL:
+		if (avg_wire_size > 8064)
+			avg_wire_size = 8064;
 		itr += DIV_ROUND_UP(avg_wire_size,
 				    IXGBE_ITR_ADAPTIVE_MIN_INC * 64) *
 		       IXGBE_ITR_ADAPTIVE_MIN_INC;
@@ -6288,6 +6291,10 @@ static int ixgbe_sw_init(struct ixgbe_adapter *adapter,
 	if (ixgbe_init_rss_key(adapter))
 		return -ENOMEM;
 
+	adapter->af_xdp_zc_qps = bitmap_zalloc(MAX_XDP_QUEUES, GFP_KERNEL);
+	if (!adapter->af_xdp_zc_qps)
+		return -ENOMEM;
+
 	/* Set MAC specific capability flags and exceptions */
 	switch (hw->mac.type) {
 	case ixgbe_mac_82598EB:
@@ -7893,11 +7900,8 @@ static void ixgbe_service_task(struct work_struct *work)
 		return;
 	}
 	if (ixgbe_check_fw_error(adapter)) {
-		if (!test_bit(__IXGBE_DOWN, &adapter->state)) {
-			rtnl_lock();
+		if (!test_bit(__IXGBE_DOWN, &adapter->state))
 			unregister_netdev(adapter->netdev);
-			rtnl_unlock();
-		}
 		ixgbe_service_event_complete(adapter);
 		return;
 	}
@@ -8297,13 +8301,8 @@ static int ixgbe_tx_map(struct ixgbe_ring *tx_ring,
 
 	ixgbe_maybe_stop_tx(tx_ring, DESC_NEEDED);
 
-	if (netif_xmit_stopped(txring_txq(tx_ring)) || !skb->xmit_more) {
+	if (netif_xmit_stopped(txring_txq(tx_ring)) || !netdev_xmit_more()) {
 		writel(i, tx_ring->tail);
-
-		/* we need this if more than one processor can write to our tail
-		 * at a time, it synchronizes IO on IA64/Altix systems
-		 */
-		mmiowb();
 	}
 
 	return 0;
@@ -8483,8 +8482,7 @@ static void ixgbe_atr(struct ixgbe_ring *ring,
 
 #ifdef IXGBE_FCOE
 static u16 ixgbe_select_queue(struct net_device *dev, struct sk_buff *skb,
-			      struct net_device *sb_dev,
-			      select_queue_fallback_t fallback)
+			      struct net_device *sb_dev)
 {
 	struct ixgbe_adapter *adapter;
 	struct ixgbe_ring_feature *f;
@@ -8514,7 +8512,7 @@ static u16 ixgbe_select_queue(struct net_device *dev, struct sk_buff *skb,
 			break;
 		/* fall through */
 	default:
-		return fallback(dev, skb, sb_dev);
+		return netdev_pick_tx(dev, skb, sb_dev);
 	}
 
 	f = &adapter->ring_feature[RING_F_FCOE];
@@ -8700,7 +8698,7 @@ netdev_tx_t ixgbe_xmit_frame_ring(struct sk_buff *skb,
 #endif /* IXGBE_FCOE */
 
 #ifdef CONFIG_IXGBE_IPSEC
-	if (secpath_exists(skb) &&
+	if (xfrm_offload(skb) &&
 	    !ixgbe_ipsec_tx(tx_ring, first, &ipsec_tx))
 		goto out_drop;
 #endif
@@ -9609,27 +9607,6 @@ static int ixgbe_setup_tc_block_cb(enum tc_setup_type type, void *type_data,
 	}
 }
 
-static int ixgbe_setup_tc_block(struct net_device *dev,
-				struct tc_block_offload *f)
-{
-	struct ixgbe_adapter *adapter = netdev_priv(dev);
-
-	if (f->binder_type != TCF_BLOCK_BINDER_TYPE_CLSACT_INGRESS)
-		return -EOPNOTSUPP;
-
-	switch (f->command) {
-	case TC_BLOCK_BIND:
-		return tcf_block_cb_register(f->block, ixgbe_setup_tc_block_cb,
-					     adapter, adapter, f->extack);
-	case TC_BLOCK_UNBIND:
-		tcf_block_cb_unregister(f->block, ixgbe_setup_tc_block_cb,
-					adapter);
-		return 0;
-	default:
-		return -EOPNOTSUPP;
-	}
-}
-
 static int ixgbe_setup_tc_mqprio(struct net_device *dev,
 				 struct tc_mqprio_qopt *mqprio)
 {
@@ -9637,12 +9614,19 @@ static int ixgbe_setup_tc_mqprio(struct net_device *dev,
 	return ixgbe_setup_tc(dev, mqprio->num_tc);
 }
 
+static LIST_HEAD(ixgbe_block_cb_list);
+
 static int __ixgbe_setup_tc(struct net_device *dev, enum tc_setup_type type,
 			    void *type_data)
 {
+	struct ixgbe_adapter *adapter = netdev_priv(dev);
+
 	switch (type) {
 	case TC_SETUP_BLOCK:
-		return ixgbe_setup_tc_block(dev, type_data);
+		return flow_block_cb_setup_simple(type_data,
+						  &ixgbe_block_cb_list,
+						  ixgbe_setup_tc_block_cb,
+						  adapter, adapter, true);
 	case TC_SETUP_QDISC_MQPRIO:
 		return ixgbe_setup_tc_mqprio(dev, type_data);
 	default:
@@ -9796,7 +9780,7 @@ static int ixgbe_set_features(struct net_device *netdev,
 			    NETIF_F_HW_VLAN_CTAG_FILTER))
 		ixgbe_set_rx_mode(netdev);
 
-	return 0;
+	return 1;
 }
 
 /**
@@ -11167,6 +11151,7 @@ err_sw_init:
 	kfree(adapter->jump_tables[0]);
 	kfree(adapter->mac_table);
 	kfree(adapter->rss_key);
+	bitmap_free(adapter->af_xdp_zc_qps);
 err_ioremap:
 	disable_dev = !test_and_set_bit(__IXGBE_DISABLED, &adapter->state);
 	free_netdev(netdev);
@@ -11255,6 +11240,7 @@ static void ixgbe_remove(struct pci_dev *pdev)
 
 	kfree(adapter->mac_table);
 	kfree(adapter->rss_key);
+	bitmap_free(adapter->af_xdp_zc_qps);
 	disable_dev = !test_and_set_bit(__IXGBE_DISABLED, &adapter->state);
 	free_netdev(netdev);
 

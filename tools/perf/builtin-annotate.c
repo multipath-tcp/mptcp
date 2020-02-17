@@ -8,11 +8,11 @@
  */
 #include "builtin.h"
 
-#include "util/util.h"
 #include "util/color.h"
 #include <linux/list.h>
 #include "util/cache.h"
 #include <linux/rbtree.h>
+#include <linux/zalloc.h>
 #include "util/symbol.h"
 
 #include "perf.h"
@@ -159,8 +159,6 @@ static int hist_iter__branch_callback(struct hist_entry_iter *iter,
 	struct perf_evsel *evsel = iter->evsel;
 	int err;
 
-	hist__account_cycles(sample->branch_stack, al, sample, false);
-
 	bi = he->branch_info;
 	err = addr_map_symbol__inc_samples(&bi->from, sample, evsel);
 
@@ -198,6 +196,8 @@ static int process_branch_callback(struct perf_evsel *evsel,
 
 	if (a.map != NULL)
 		a.map->dso->hit = 1;
+
+	hist__account_cycles(sample->branch_stack, al, sample, false);
 
 	ret = hist_entry_iter__add(&iter, &a, PERF_MAX_STACK_DEPTH, ann);
 	return ret;

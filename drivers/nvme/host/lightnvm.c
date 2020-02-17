@@ -660,7 +660,7 @@ static struct request *nvme_nvm_alloc_request(struct request_queue *q,
 	rq->cmd_flags &= ~REQ_FAILFAST_DRIVER;
 
 	if (rqd->bio)
-		blk_init_request_from_bio(rq, rqd->bio);
+		blk_rq_append_bio(rq, &rqd->bio);
 	else
 		rq->ioprio = IOPRIO_PRIO_VALUE(IOPRIO_CLASS_BE, IOPRIO_NORM);
 
@@ -977,6 +977,7 @@ int nvme_nvm_register(struct nvme_ns *ns, char *disk_name, int node)
 	geo->csecs = 1 << ns->lba_shift;
 	geo->sos = ns->ms;
 	geo->ext = ns->ext;
+	geo->mdts = ns->ctrl->max_hw_sectors;
 
 	dev->q = q;
 	memcpy(dev->name, disk_name, DISK_NAME_LEN);

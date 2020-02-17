@@ -9,6 +9,7 @@
 #include <linux/dmaengine.h>
 #include <linux/module.h>
 #include <linux/of_address.h>
+#include <linux/pm_runtime.h>
 #include <linux/regmap.h>
 #include <linux/slab.h>
 #include <linux/time.h>
@@ -268,12 +269,14 @@ static int fsl_sai_set_dai_fmt_tr(struct snd_soc_dai *cpu_dai,
 	case SND_SOC_DAIFMT_CBS_CFS:
 		val_cr2 |= FSL_SAI_CR2_BCD_MSTR;
 		val_cr4 |= FSL_SAI_CR4_FSD_MSTR;
+		sai->is_slave_mode = false;
 		break;
 	case SND_SOC_DAIFMT_CBM_CFM:
 		sai->is_slave_mode = true;
 		break;
 	case SND_SOC_DAIFMT_CBS_CFM:
 		val_cr2 |= FSL_SAI_CR2_BCD_MSTR;
+		sai->is_slave_mode = false;
 		break;
 	case SND_SOC_DAIFMT_CBM_CFS:
 		val_cr4 |= FSL_SAI_CR4_FSD_MSTR;
@@ -593,14 +596,7 @@ static int fsl_sai_startup(struct snd_pcm_substream *substream,
 {
 	struct fsl_sai *sai = snd_soc_dai_get_drvdata(cpu_dai);
 	bool tx = substream->stream == SNDRV_PCM_STREAM_PLAYBACK;
-	struct device *dev = &sai->pdev->dev;
 	int ret;
-
-	ret = clk_prepare_enable(sai->bus_clk);
-	if (ret) {
-		dev_err(dev, "failed to enable bus clock: %d\n", ret);
-		return ret;
-	}
 
 	regmap_update_bits(sai->regmap, FSL_SAI_xCR3(tx), FSL_SAI_CR3_TRCE,
 			   FSL_SAI_CR3_TRCE);
@@ -618,8 +614,6 @@ static void fsl_sai_shutdown(struct snd_pcm_substream *substream,
 	bool tx = substream->stream == SNDRV_PCM_STREAM_PLAYBACK;
 
 	regmap_update_bits(sai->regmap, FSL_SAI_xCR3(tx), FSL_SAI_CR3_TRCE, 0);
-
-	clk_disable_unprepare(sai->bus_clk);
 }
 
 static const struct snd_soc_dai_ops fsl_sai_pcm_dai_ops = {
@@ -899,6 +893,8 @@ static int fsl_sai_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, sai);
 
+	pm_runtime_enable(&pdev->dev);
+
 	ret = devm_snd_soc_register_component(&pdev->dev, &fsl_component,
 			&fsl_sai_dai, 1);
 	if (ret)
@@ -910,6 +906,13 @@ static int fsl_sai_probe(struct platform_device *pdev)
 		return devm_snd_dmaengine_pcm_register(&pdev->dev, NULL, 0);
 }
 
+static int fsl_sai_remove(struct platform_device *pdev)
+{
+	pm_runtime_disable(&pdev->dev);
+
+	return 0;
+}
+
 static const struct of_device_id fsl_sai_ids[] = {
 	{ .compatible = "fsl,vf610-sai", },
 	{ .compatible = "fsl,imx6sx-sai", },
@@ -918,10 +921,18 @@ static const struct of_device_id fsl_sai_ids[] = {
 };
 MODULE_DEVICE_TABLE(of, fsl_sai_ids);
 
-#ifdef CONFIG_PM_SLEEP
-static int fsl_sai_suspend(struct device *dev)
+#ifdef CONFIG_PM
+static int fsl_sai_runtime_suspend(struct device *dev)
 {
 	struct fsl_sai *sai = dev_get_drvdata(dev);
+
+	if (sai->mclk_streams & BIT(SNDRV_PCM_STREAM_CAPTURE))
+		clk_disable_unprepare(sai->mclk_clk[sai->mclk_id[0]]);
+
+	if (sai->mclk_streams & BIT(SNDRV_PCM_STREAM_PLAYBACK))
+		clk_disable_unprepare(sai->mclk_clk[sai->mclk_id[1]]);
+
+	clk_disable_unprepare(sai->bus_clk);
 
 	regcache_cache_only(sai->regmap, true);
 	regcache_mark_dirty(sai->regmap);
@@ -929,9 +940,28 @@ static int fsl_sai_suspend(struct device *dev)
 	return 0;
 }
 
-static int fsl_sai_resume(struct device *dev)
+static int fsl_sai_runtime_resume(struct device *dev)
 {
 	struct fsl_sai *sai = dev_get_drvdata(dev);
+	int ret;
+
+	ret = clk_prepare_enable(sai->bus_clk);
+	if (ret) {
+		dev_err(dev, "failed to enable bus clock: %d\n", ret);
+		return ret;
+	}
+
+	if (sai->mclk_streams & BIT(SNDRV_PCM_STREAM_PLAYBACK)) {
+		ret = clk_prepare_enable(sai->mclk_clk[sai->mclk_id[1]]);
+		if (ret)
+			goto disable_bus_clk;
+	}
+
+	if (sai->mclk_streams & BIT(SNDRV_PCM_STREAM_CAPTURE)) {
+		ret = clk_prepare_enable(sai->mclk_clk[sai->mclk_id[0]]);
+		if (ret)
+			goto disable_tx_clk;
+	}
 
 	regcache_cache_only(sai->regmap, false);
 	regmap_write(sai->regmap, FSL_SAI_TCSR, FSL_SAI_CSR_SR);
@@ -939,16 +969,36 @@ static int fsl_sai_resume(struct device *dev)
 	usleep_range(1000, 2000);
 	regmap_write(sai->regmap, FSL_SAI_TCSR, 0);
 	regmap_write(sai->regmap, FSL_SAI_RCSR, 0);
-	return regcache_sync(sai->regmap);
+
+	ret = regcache_sync(sai->regmap);
+	if (ret)
+		goto disable_rx_clk;
+
+	return 0;
+
+disable_rx_clk:
+	if (sai->mclk_streams & BIT(SNDRV_PCM_STREAM_CAPTURE))
+		clk_disable_unprepare(sai->mclk_clk[sai->mclk_id[0]]);
+disable_tx_clk:
+	if (sai->mclk_streams & BIT(SNDRV_PCM_STREAM_PLAYBACK))
+		clk_disable_unprepare(sai->mclk_clk[sai->mclk_id[1]]);
+disable_bus_clk:
+	clk_disable_unprepare(sai->bus_clk);
+
+	return ret;
 }
-#endif /* CONFIG_PM_SLEEP */
+#endif /* CONFIG_PM */
 
 static const struct dev_pm_ops fsl_sai_pm_ops = {
-	SET_SYSTEM_SLEEP_PM_OPS(fsl_sai_suspend, fsl_sai_resume)
+	SET_RUNTIME_PM_OPS(fsl_sai_runtime_suspend,
+			   fsl_sai_runtime_resume, NULL)
+	SET_SYSTEM_SLEEP_PM_OPS(pm_runtime_force_suspend,
+				pm_runtime_force_resume)
 };
 
 static struct platform_driver fsl_sai_driver = {
 	.probe = fsl_sai_probe,
+	.remove = fsl_sai_remove,
 	.driver = {
 		.name = "fsl-sai",
 		.pm = &fsl_sai_pm_ops,

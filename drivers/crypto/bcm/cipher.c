@@ -1,17 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2016 Broadcom
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2, as
- * published by the Free Software Foundation (the "GPL").
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License version 2 (GPLv2) for more details.
- *
- * You should have received a copy of the GNU General Public License
- * version 2 (GPLv2) along with this source code.
  */
 
 #include <linux/err.h>
@@ -96,7 +85,7 @@ MODULE_PARM_DESC(aead_pri, "Priority for AEAD algos");
  * 0x70 - ring 2
  * 0x78 - ring 3
  */
-char BCMHEADER[] = { 0x60, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x28 };
+static char BCMHEADER[] = { 0x60, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x28 };
 /*
  * Some SPU hw does not use BCM header on SPU messages. So BCM_HDR_LEN
  * is set dynamically after reading SPU type from device tree.
@@ -1840,13 +1829,14 @@ static int threedes_setkey(struct crypto_ablkcipher *cipher, const u8 *key,
 	struct iproc_ctx_s *ctx = crypto_ablkcipher_ctx(cipher);
 
 	if (keylen == (DES_KEY_SIZE * 3)) {
-		const u32 *K = (const u32 *)key;
-		u32 flags = CRYPTO_TFM_RES_BAD_KEY_SCHED;
+		u32 flags;
+		int ret;
 
-		if (!((K[0] ^ K[2]) | (K[1] ^ K[3])) ||
-		    !((K[2] ^ K[4]) | (K[3] ^ K[5]))) {
+		flags = crypto_ablkcipher_get_flags(cipher);
+		ret = __des3_verify_key(&flags, key);
+		if (unlikely(ret)) {
 			crypto_ablkcipher_set_flags(cipher, flags);
-			return -EINVAL;
+			return ret;
 		}
 
 		ctx->cipher_type = CIPHER_TYPE_3DES;
@@ -2093,7 +2083,7 @@ static int __ahash_init(struct ahash_request *req)
  * Return: true if incremental hashing is not supported
  *         false otherwise
  */
-bool spu_no_incr_hash(struct iproc_ctx_s *ctx)
+static bool spu_no_incr_hash(struct iproc_ctx_s *ctx)
 {
 	struct spu_hw *spu = &iproc_priv.spu;
 
@@ -2139,7 +2129,6 @@ static int ahash_init(struct ahash_request *req)
 			goto err_hash;
 		}
 		ctx->shash->tfm = hash;
-		ctx->shash->flags = 0;
 
 		/* Set the key using data we already have from setkey */
 		if (ctx->authkeylen > 0) {
@@ -2885,13 +2874,13 @@ static int aead_authenc_setkey(struct crypto_aead *cipher,
 		break;
 	case CIPHER_ALG_3DES:
 		if (ctx->enckeylen == (DES_KEY_SIZE * 3)) {
-			const u32 *K = (const u32 *)keys.enckey;
-			u32 flags = CRYPTO_TFM_RES_BAD_KEY_SCHED;
+			u32 flags;
 
-			if (!((K[0] ^ K[2]) | (K[1] ^ K[3])) ||
-			    !((K[2] ^ K[4]) | (K[3] ^ K[5]))) {
+			flags = crypto_aead_get_flags(cipher);
+			ret = __des3_verify_key(&flags, keys.enckey);
+			if (unlikely(ret)) {
 				crypto_aead_set_flags(cipher, flags);
-				return -EINVAL;
+				return ret;
 			}
 
 			ctx->cipher_type = CIPHER_TYPE_3DES;
@@ -4820,7 +4809,7 @@ static int spu_dt_read(struct platform_device *pdev)
 	return 0;
 }
 
-int bcm_spu_probe(struct platform_device *pdev)
+static int bcm_spu_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct spu_hw *spu = &iproc_priv.spu;
@@ -4864,7 +4853,7 @@ failure:
 	return err;
 }
 
-int bcm_spu_remove(struct platform_device *pdev)
+static int bcm_spu_remove(struct platform_device *pdev)
 {
 	int i;
 	struct device *dev = &pdev->dev;

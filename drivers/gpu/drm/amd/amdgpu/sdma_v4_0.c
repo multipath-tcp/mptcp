@@ -21,8 +21,11 @@
  *
  */
 
+#include <linux/delay.h>
 #include <linux/firmware.h>
-#include <drm/drmP.h>
+#include <linux/module.h>
+#include <linux/pci.h>
+
 #include "amdgpu.h"
 #include "amdgpu_ucode.h"
 #include "amdgpu_trace.h"
@@ -40,6 +43,8 @@
 
 #include "ivsrcid/sdma0/irqsrcs_sdma0_4_0.h"
 #include "ivsrcid/sdma1/irqsrcs_sdma1_4_0.h"
+
+#include "amdgpu_ras.h"
 
 MODULE_FIRMWARE("amdgpu/vega10_sdma.bin");
 MODULE_FIRMWARE("amdgpu/vega10_sdma1.bin");
@@ -154,7 +159,6 @@ static const struct soc15_reg_golden golden_settings_sdma0_4_2[] =
 	SOC15_REG_GOLDEN_VALUE(SDMA0, 0, mmSDMA0_RLC7_RB_RPTR_ADDR_LO, 0xfffffffd, 0x00000001),
 	SOC15_REG_GOLDEN_VALUE(SDMA0, 0, mmSDMA0_RLC7_RB_WPTR_POLL_CNTL, 0xfffffff7, 0x00403000),
 	SOC15_REG_GOLDEN_VALUE(SDMA0, 0, mmSDMA0_UTCL1_PAGE, 0x000003ff, 0x000003c0),
-	SOC15_REG_GOLDEN_VALUE(SDMA0, 0, mmSDMA0_UTCL1_WATERMK, 0xFE000000, 0x00000000),
 };
 
 static const struct soc15_reg_golden golden_settings_sdma1_4_2[] = {
@@ -184,7 +188,6 @@ static const struct soc15_reg_golden golden_settings_sdma1_4_2[] = {
 	SOC15_REG_GOLDEN_VALUE(SDMA1, 0, mmSDMA1_RLC7_RB_RPTR_ADDR_LO, 0xfffffffd, 0x00000001),
 	SOC15_REG_GOLDEN_VALUE(SDMA1, 0, mmSDMA1_RLC7_RB_WPTR_POLL_CNTL, 0xfffffff7, 0x00403000),
 	SOC15_REG_GOLDEN_VALUE(SDMA1, 0, mmSDMA1_UTCL1_PAGE, 0x000003ff, 0x000003c0),
-	SOC15_REG_GOLDEN_VALUE(SDMA1, 0, mmSDMA1_UTCL1_WATERMK, 0xFE000000, 0x00000000),
 };
 
 static const struct soc15_reg_golden golden_settings_sdma_rv1[] =
@@ -210,12 +213,14 @@ static void sdma_v4_0_init_golden_registers(struct amdgpu_device *adev)
 {
 	switch (adev->asic_type) {
 	case CHIP_VEGA10:
-		soc15_program_register_sequence(adev,
-						 golden_settings_sdma_4,
-						 ARRAY_SIZE(golden_settings_sdma_4));
-		soc15_program_register_sequence(adev,
-						 golden_settings_sdma_vg10,
-						 ARRAY_SIZE(golden_settings_sdma_vg10));
+		if (!amdgpu_virt_support_skip_setting(adev)) {
+			soc15_program_register_sequence(adev,
+							 golden_settings_sdma_4,
+							 ARRAY_SIZE(golden_settings_sdma_4));
+			soc15_program_register_sequence(adev,
+							 golden_settings_sdma_vg10,
+							 ARRAY_SIZE(golden_settings_sdma_vg10));
+		}
 		break;
 	case CHIP_VEGA12:
 		soc15_program_register_sequence(adev,
@@ -849,7 +854,7 @@ static void sdma_v4_0_gfx_resume(struct amdgpu_device *adev, unsigned int i)
 	wptr_poll_cntl = RREG32_SDMA(i, mmSDMA0_GFX_RB_WPTR_POLL_CNTL);
 	wptr_poll_cntl = REG_SET_FIELD(wptr_poll_cntl,
 				       SDMA0_GFX_RB_WPTR_POLL_CNTL,
-				       F32_POLL_ENABLE, amdgpu_sriov_vf(adev));
+				       F32_POLL_ENABLE, amdgpu_sriov_vf(adev)? 1 : 0);
 	WREG32_SDMA(i, mmSDMA0_GFX_RB_WPTR_POLL_CNTL, wptr_poll_cntl);
 
 	/* enable DMA RB */
@@ -940,7 +945,7 @@ static void sdma_v4_0_page_resume(struct amdgpu_device *adev, unsigned int i)
 	wptr_poll_cntl = RREG32_SDMA(i, mmSDMA0_PAGE_RB_WPTR_POLL_CNTL);
 	wptr_poll_cntl = REG_SET_FIELD(wptr_poll_cntl,
 				       SDMA0_PAGE_RB_WPTR_POLL_CNTL,
-				       F32_POLL_ENABLE, amdgpu_sriov_vf(adev));
+				       F32_POLL_ENABLE, amdgpu_sriov_vf(adev)? 1 : 0);
 	WREG32_SDMA(i, mmSDMA0_PAGE_RB_WPTR_POLL_CNTL, wptr_poll_cntl);
 
 	/* enable DMA RB */
@@ -1090,7 +1095,7 @@ static int sdma_v4_0_load_microcode(struct amdgpu_device *adev)
 static int sdma_v4_0_start(struct amdgpu_device *adev)
 {
 	struct amdgpu_ring *ring;
-	int i, r;
+	int i, r = 0;
 
 	if (amdgpu_sriov_vf(adev)) {
 		sdma_v4_0_ctx_switch_enable(adev, false);
@@ -1207,7 +1212,7 @@ static int sdma_v4_0_ring_test_ring(struct amdgpu_ring *ring)
 		tmp = le32_to_cpu(adev->wb.wb[index]);
 		if (tmp == 0xDEADBEEF)
 			break;
-		DRM_UDELAY(1);
+		udelay(1);
 	}
 
 	if (i >= adev->usec_timeout)
@@ -1493,6 +1498,107 @@ static int sdma_v4_0_early_init(void *handle)
 	return 0;
 }
 
+static int sdma_v4_0_process_ras_data_cb(struct amdgpu_device *adev,
+		struct amdgpu_iv_entry *entry);
+
+static int sdma_v4_0_late_init(void *handle)
+{
+	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
+	struct ras_common_if **ras_if = &adev->sdma.ras_if;
+	struct ras_ih_if ih_info = {
+		.cb = sdma_v4_0_process_ras_data_cb,
+	};
+	struct ras_fs_if fs_info = {
+		.sysfs_name = "sdma_err_count",
+		.debugfs_name = "sdma_err_inject",
+	};
+	struct ras_common_if ras_block = {
+		.block = AMDGPU_RAS_BLOCK__SDMA,
+		.type = AMDGPU_RAS_ERROR__MULTI_UNCORRECTABLE,
+		.sub_block_index = 0,
+		.name = "sdma",
+	};
+	int r;
+
+	if (!amdgpu_ras_is_supported(adev, AMDGPU_RAS_BLOCK__SDMA)) {
+		amdgpu_ras_feature_enable_on_boot(adev, &ras_block, 0);
+		return 0;
+	}
+
+	/* handle resume path. */
+	if (*ras_if) {
+		/* resend ras TA enable cmd during resume.
+		 * prepare to handle failure.
+		 */
+		ih_info.head = **ras_if;
+		r = amdgpu_ras_feature_enable_on_boot(adev, *ras_if, 1);
+		if (r) {
+			if (r == -EAGAIN) {
+				/* request a gpu reset. will run again. */
+				amdgpu_ras_request_reset_on_boot(adev,
+						AMDGPU_RAS_BLOCK__SDMA);
+				return 0;
+			}
+			/* fail to enable ras, cleanup all. */
+			goto irq;
+		}
+		/* enable successfully. continue. */
+		goto resume;
+	}
+
+	*ras_if = kmalloc(sizeof(**ras_if), GFP_KERNEL);
+	if (!*ras_if)
+		return -ENOMEM;
+
+	**ras_if = ras_block;
+
+	r = amdgpu_ras_feature_enable_on_boot(adev, *ras_if, 1);
+	if (r) {
+		if (r == -EAGAIN) {
+			amdgpu_ras_request_reset_on_boot(adev,
+					AMDGPU_RAS_BLOCK__SDMA);
+			r = 0;
+		}
+		goto feature;
+	}
+
+	ih_info.head = **ras_if;
+	fs_info.head = **ras_if;
+
+	r = amdgpu_ras_interrupt_add_handler(adev, &ih_info);
+	if (r)
+		goto interrupt;
+
+	amdgpu_ras_debugfs_create(adev, &fs_info);
+
+	r = amdgpu_ras_sysfs_create(adev, &fs_info);
+	if (r)
+		goto sysfs;
+resume:
+	r = amdgpu_irq_get(adev, &adev->sdma.ecc_irq, AMDGPU_SDMA_IRQ_INSTANCE0);
+	if (r)
+		goto irq;
+
+	r = amdgpu_irq_get(adev, &adev->sdma.ecc_irq, AMDGPU_SDMA_IRQ_INSTANCE1);
+	if (r) {
+		amdgpu_irq_put(adev, &adev->sdma.ecc_irq, AMDGPU_SDMA_IRQ_INSTANCE0);
+		goto irq;
+	}
+
+	return 0;
+irq:
+	amdgpu_ras_sysfs_remove(adev, *ras_if);
+sysfs:
+	amdgpu_ras_debugfs_remove(adev, *ras_if);
+	amdgpu_ras_interrupt_remove_handler(adev, &ih_info);
+interrupt:
+	amdgpu_ras_feature_enable(adev, *ras_if, 0);
+feature:
+	kfree(*ras_if);
+	*ras_if = NULL;
+	return r;
+}
+
 static int sdma_v4_0_sw_init(void *handle)
 {
 	struct amdgpu_ring *ring;
@@ -1511,6 +1617,18 @@ static int sdma_v4_0_sw_init(void *handle)
 	if (r)
 		return r;
 
+	/* SDMA SRAM ECC event */
+	r = amdgpu_irq_add_id(adev, SOC15_IH_CLIENTID_SDMA0, SDMA0_4_0__SRCID__SDMA_SRAM_ECC,
+			&adev->sdma.ecc_irq);
+	if (r)
+		return r;
+
+	/* SDMA SRAM ECC event */
+	r = amdgpu_irq_add_id(adev, SOC15_IH_CLIENTID_SDMA1, SDMA1_4_0__SRCID__SDMA_SRAM_ECC,
+			&adev->sdma.ecc_irq);
+	if (r)
+		return r;
+
 	for (i = 0; i < adev->sdma.num_instances; i++) {
 		ring = &adev->sdma.instance[i].ring;
 		ring->ring_obj = NULL;
@@ -1526,8 +1644,8 @@ static int sdma_v4_0_sw_init(void *handle)
 		r = amdgpu_ring_init(adev, ring, 1024,
 				     &adev->sdma.trap_irq,
 				     (i == 0) ?
-				     AMDGPU_SDMA_IRQ_TRAP0 :
-				     AMDGPU_SDMA_IRQ_TRAP1);
+				     AMDGPU_SDMA_IRQ_INSTANCE0 :
+				     AMDGPU_SDMA_IRQ_INSTANCE1);
 		if (r)
 			return r;
 
@@ -1546,8 +1664,8 @@ static int sdma_v4_0_sw_init(void *handle)
 			r = amdgpu_ring_init(adev, ring, 1024,
 					     &adev->sdma.trap_irq,
 					     (i == 0) ?
-					     AMDGPU_SDMA_IRQ_TRAP0 :
-					     AMDGPU_SDMA_IRQ_TRAP1);
+					     AMDGPU_SDMA_IRQ_INSTANCE0 :
+					     AMDGPU_SDMA_IRQ_INSTANCE1);
 			if (r)
 				return r;
 		}
@@ -1560,6 +1678,22 @@ static int sdma_v4_0_sw_fini(void *handle)
 {
 	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
 	int i;
+
+	if (amdgpu_ras_is_supported(adev, AMDGPU_RAS_BLOCK__SDMA) &&
+			adev->sdma.ras_if) {
+		struct ras_common_if *ras_if = adev->sdma.ras_if;
+		struct ras_ih_if ih_info = {
+			.head = *ras_if,
+		};
+
+		/*remove fs first*/
+		amdgpu_ras_debugfs_remove(adev, ras_if);
+		amdgpu_ras_sysfs_remove(adev, ras_if);
+		/*remove the IH*/
+		amdgpu_ras_interrupt_remove_handler(adev, &ih_info);
+		amdgpu_ras_feature_enable(adev, ras_if, 0);
+		kfree(ras_if);
+	}
 
 	for (i = 0; i < adev->sdma.num_instances; i++) {
 		amdgpu_ring_fini(&adev->sdma.instance[i].ring);
@@ -1597,6 +1731,9 @@ static int sdma_v4_0_hw_fini(void *handle)
 
 	if (amdgpu_sriov_vf(adev))
 		return 0;
+
+	amdgpu_irq_put(adev, &adev->sdma.ecc_irq, AMDGPU_SDMA_IRQ_INSTANCE0);
+	amdgpu_irq_put(adev, &adev->sdma.ecc_irq, AMDGPU_SDMA_IRQ_INSTANCE1);
 
 	sdma_v4_0_ctx_switch_enable(adev, false);
 	sdma_v4_0_enable(adev, false);
@@ -1666,13 +1803,12 @@ static int sdma_v4_0_set_trap_irq_state(struct amdgpu_device *adev,
 					unsigned type,
 					enum amdgpu_interrupt_state state)
 {
-	unsigned int instance = (type == AMDGPU_SDMA_IRQ_TRAP0) ? 0 : 1;
 	u32 sdma_cntl;
 
-	sdma_cntl = RREG32_SDMA(instance, mmSDMA0_CNTL);
+	sdma_cntl = RREG32_SDMA(type, mmSDMA0_CNTL);
 	sdma_cntl = REG_SET_FIELD(sdma_cntl, SDMA0_CNTL, TRAP_ENABLE,
 		       state == AMDGPU_IRQ_STATE_ENABLE ? 1 : 0);
-	WREG32_SDMA(instance, mmSDMA0_CNTL, sdma_cntl);
+	WREG32_SDMA(type, mmSDMA0_CNTL, sdma_cntl);
 
 	return 0;
 }
@@ -1714,6 +1850,58 @@ static int sdma_v4_0_process_trap_irq(struct amdgpu_device *adev,
 	return 0;
 }
 
+static int sdma_v4_0_process_ras_data_cb(struct amdgpu_device *adev,
+		struct amdgpu_iv_entry *entry)
+{
+	uint32_t instance, err_source;
+
+	switch (entry->client_id) {
+	case SOC15_IH_CLIENTID_SDMA0:
+		instance = 0;
+		break;
+	case SOC15_IH_CLIENTID_SDMA1:
+		instance = 1;
+		break;
+	default:
+		return 0;
+	}
+
+	switch (entry->src_id) {
+	case SDMA0_4_0__SRCID__SDMA_SRAM_ECC:
+		err_source = 0;
+		break;
+	case SDMA0_4_0__SRCID__SDMA_ECC:
+		err_source = 1;
+		break;
+	default:
+		return 0;
+	}
+
+	kgd2kfd_set_sram_ecc_flag(adev->kfd.dev);
+
+	amdgpu_ras_reset_gpu(adev, 0);
+
+	return AMDGPU_RAS_UE;
+}
+
+static int sdma_v4_0_process_ecc_irq(struct amdgpu_device *adev,
+				      struct amdgpu_irq_src *source,
+				      struct amdgpu_iv_entry *entry)
+{
+	struct ras_common_if *ras_if = adev->sdma.ras_if;
+	struct ras_dispatch_if ih_data = {
+		.entry = entry,
+	};
+
+	if (!ras_if)
+		return 0;
+
+	ih_data.head = *ras_if;
+
+	amdgpu_ras_interrupt_dispatch(adev, &ih_data);
+	return 0;
+}
+
 static int sdma_v4_0_process_illegal_inst_irq(struct amdgpu_device *adev,
 					      struct amdgpu_irq_src *source,
 					      struct amdgpu_iv_entry *entry)
@@ -1738,6 +1926,25 @@ static int sdma_v4_0_process_illegal_inst_irq(struct amdgpu_device *adev,
 		drm_sched_fault(&adev->sdma.instance[instance].ring.sched);
 		break;
 	}
+	return 0;
+}
+
+static int sdma_v4_0_set_ecc_irq_state(struct amdgpu_device *adev,
+					struct amdgpu_irq_src *source,
+					unsigned type,
+					enum amdgpu_interrupt_state state)
+{
+	u32 sdma_edc_config;
+
+	u32 reg_offset = (type == AMDGPU_SDMA_IRQ_INSTANCE0) ?
+		sdma_v4_0_get_reg_offset(adev, 0, mmSDMA0_EDC_CONFIG) :
+		sdma_v4_0_get_reg_offset(adev, 1, mmSDMA0_EDC_CONFIG);
+
+	sdma_edc_config = RREG32(reg_offset);
+	sdma_edc_config = REG_SET_FIELD(sdma_edc_config, SDMA0_EDC_CONFIG, ECC_INT_ENABLE,
+		       state == AMDGPU_IRQ_STATE_ENABLE ? 1 : 0);
+	WREG32(reg_offset, sdma_edc_config);
+
 	return 0;
 }
 
@@ -1906,7 +2113,7 @@ static void sdma_v4_0_get_clockgating_state(void *handle, u32 *flags)
 const struct amd_ip_funcs sdma_v4_0_ip_funcs = {
 	.name = "sdma_v4_0",
 	.early_init = sdma_v4_0_early_init,
-	.late_init = NULL,
+	.late_init = sdma_v4_0_late_init,
 	.sw_init = sdma_v4_0_sw_init,
 	.sw_fini = sdma_v4_0_sw_fini,
 	.hw_init = sdma_v4_0_hw_init,
@@ -2008,11 +2215,20 @@ static const struct amdgpu_irq_src_funcs sdma_v4_0_illegal_inst_irq_funcs = {
 	.process = sdma_v4_0_process_illegal_inst_irq,
 };
 
+static const struct amdgpu_irq_src_funcs sdma_v4_0_ecc_irq_funcs = {
+	.set = sdma_v4_0_set_ecc_irq_state,
+	.process = sdma_v4_0_process_ecc_irq,
+};
+
+
+
 static void sdma_v4_0_set_irq_funcs(struct amdgpu_device *adev)
 {
 	adev->sdma.trap_irq.num_types = AMDGPU_SDMA_IRQ_LAST;
 	adev->sdma.trap_irq.funcs = &sdma_v4_0_trap_irq_funcs;
 	adev->sdma.illegal_inst_irq.funcs = &sdma_v4_0_illegal_inst_irq_funcs;
+	adev->sdma.ecc_irq.num_types = AMDGPU_SDMA_IRQ_LAST;
+	adev->sdma.ecc_irq.funcs = &sdma_v4_0_ecc_irq_funcs;
 }
 
 /**
@@ -2077,8 +2293,8 @@ static const struct amdgpu_buffer_funcs sdma_v4_0_buffer_funcs = {
 static void sdma_v4_0_set_buffer_funcs(struct amdgpu_device *adev)
 {
 	adev->mman.buffer_funcs = &sdma_v4_0_buffer_funcs;
-	if (adev->sdma.has_page_queue)
-		adev->mman.buffer_funcs_ring = &adev->sdma.instance[0].page;
+	if (adev->sdma.has_page_queue && adev->sdma.num_instances > 1)
+		adev->mman.buffer_funcs_ring = &adev->sdma.instance[1].page;
 	else
 		adev->mman.buffer_funcs_ring = &adev->sdma.instance[0].ring;
 }
@@ -2097,15 +2313,22 @@ static void sdma_v4_0_set_vm_pte_funcs(struct amdgpu_device *adev)
 	unsigned i;
 
 	adev->vm_manager.vm_pte_funcs = &sdma_v4_0_vm_pte_funcs;
-	for (i = 0; i < adev->sdma.num_instances; i++) {
-		if (adev->sdma.has_page_queue)
+	if (adev->sdma.has_page_queue && adev->sdma.num_instances > 1) {
+		for (i = 1; i < adev->sdma.num_instances; i++) {
 			sched = &adev->sdma.instance[i].page.sched;
-		else
+			adev->vm_manager.vm_pte_rqs[i - 1] =
+				&sched->sched_rq[DRM_SCHED_PRIORITY_KERNEL];
+		}
+		adev->vm_manager.vm_pte_num_rqs = adev->sdma.num_instances - 1;
+		adev->vm_manager.page_fault = &adev->sdma.instance[0].page;
+	} else {
+		for (i = 0; i < adev->sdma.num_instances; i++) {
 			sched = &adev->sdma.instance[i].ring.sched;
-		adev->vm_manager.vm_pte_rqs[i] =
-			&sched->sched_rq[DRM_SCHED_PRIORITY_KERNEL];
+			adev->vm_manager.vm_pte_rqs[i] =
+				&sched->sched_rq[DRM_SCHED_PRIORITY_KERNEL];
+		}
+		adev->vm_manager.vm_pte_num_rqs = adev->sdma.num_instances;
 	}
-	adev->vm_manager.vm_pte_num_rqs = adev->sdma.num_instances;
 }
 
 const struct amdgpu_ip_block_version sdma_v4_0_ip_block = {

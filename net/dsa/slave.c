@@ -1,11 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * net/dsa/slave.c - Slave device handling
  * Copyright (c) 2008-2009 Marvell Semiconductor
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 
 #include <linux/list.h>
@@ -26,7 +22,7 @@
 
 #include "dsa_priv.h"
 
-static bool dsa_slave_dev_check(struct net_device *dev);
+static bool dsa_slave_dev_check(const struct net_device *dev);
 
 /* slave mii_bus handling ***************************************************/
 static int dsa_slave_phy_read(struct mii_bus *bus, int addr, int reg)
@@ -119,6 +115,9 @@ static int dsa_slave_close(struct net_device *dev)
 {
 	struct net_device *master = dsa_slave_to_master(dev);
 	struct dsa_port *dp = dsa_slave_to_port(dev);
+
+	cancel_work_sync(&dp->xmit_work);
+	skb_queue_purge(&dp->xmit_queue);
 
 	phylink_stop(dp->pl);
 
@@ -302,6 +301,9 @@ static int dsa_slave_port_attr_set(struct net_device *dev,
 	case SWITCHDEV_ATTR_ID_PORT_BRIDGE_FLAGS:
 		ret = dsa_port_bridge_flags(dp, attr->u.brport_flags, trans);
 		break;
+	case SWITCHDEV_ATTR_ID_BRIDGE_MROUTER:
+		ret = dsa_port_mrouter(dp->cpu_dp, attr->u.mrouter, trans);
+		break;
 	default:
 		ret = -EOPNOTSUPP;
 		break;
@@ -312,7 +314,8 @@ static int dsa_slave_port_attr_set(struct net_device *dev,
 
 static int dsa_slave_port_obj_add(struct net_device *dev,
 				  const struct switchdev_obj *obj,
-				  struct switchdev_trans *trans)
+				  struct switchdev_trans *trans,
+				  struct netlink_ext_ack *extack)
 {
 	struct dsa_port *dp = dsa_slave_to_port(dev);
 	int err;
@@ -324,6 +327,8 @@ static int dsa_slave_port_obj_add(struct net_device *dev,
 
 	switch (obj->id) {
 	case SWITCHDEV_OBJ_ID_PORT_MDB:
+		if (obj->orig_dev != dev)
+			return -EOPNOTSUPP;
 		err = dsa_port_mdb_add(dp, SWITCHDEV_OBJ_PORT_MDB(obj), trans);
 		break;
 	case SWITCHDEV_OBJ_ID_HOST_MDB:
@@ -334,6 +339,8 @@ static int dsa_slave_port_obj_add(struct net_device *dev,
 				       trans);
 		break;
 	case SWITCHDEV_OBJ_ID_PORT_VLAN:
+		if (obj->orig_dev != dev)
+			return -EOPNOTSUPP;
 		err = dsa_port_vlan_add(dp, SWITCHDEV_OBJ_PORT_VLAN(obj),
 					trans);
 		break;
@@ -353,6 +360,8 @@ static int dsa_slave_port_obj_del(struct net_device *dev,
 
 	switch (obj->id) {
 	case SWITCHDEV_OBJ_ID_PORT_MDB:
+		if (obj->orig_dev != dev)
+			return -EOPNOTSUPP;
 		err = dsa_port_mdb_del(dp, SWITCHDEV_OBJ_PORT_MDB(obj));
 		break;
 	case SWITCHDEV_OBJ_ID_HOST_MDB:
@@ -362,6 +371,8 @@ static int dsa_slave_port_obj_del(struct net_device *dev,
 		err = dsa_port_mdb_del(dp->cpu_dp, SWITCHDEV_OBJ_PORT_MDB(obj));
 		break;
 	case SWITCHDEV_OBJ_ID_PORT_VLAN:
+		if (obj->orig_dev != dev)
+			return -EOPNOTSUPP;
 		err = dsa_port_vlan_del(dp, SWITCHDEV_OBJ_PORT_VLAN(obj));
 		break;
 	default:
@@ -378,6 +389,13 @@ static int dsa_slave_get_port_parent_id(struct net_device *dev,
 	struct dsa_port *dp = dsa_slave_to_port(dev);
 	struct dsa_switch *ds = dp->ds;
 	struct dsa_switch_tree *dst = ds->dst;
+
+	/* For non-legacy ports, devlink is used and it takes
+	 * care of the name generation. This ndo implementation
+	 * should be removed with legacy support.
+	 */
+	if (dp->ds->devlink)
+		return -EOPNOTSUPP;
 
 	ppid->id_len = sizeof(dst->index);
 	memcpy(&ppid->id, &dst->index, ppid->id_len);
@@ -417,11 +435,31 @@ static void dsa_skb_tx_timestamp(struct dsa_slave_priv *p,
 	if (!clone)
 		return;
 
+	DSA_SKB_CB(skb)->clone = clone;
+
 	if (ds->ops->port_txtstamp(ds, p->dp->index, clone, type))
 		return;
 
 	kfree_skb(clone);
 }
+
+netdev_tx_t dsa_enqueue_skb(struct sk_buff *skb, struct net_device *dev)
+{
+	/* SKB for netpoll still need to be mangled with the protocol-specific
+	 * tag to be successfully transmitted
+	 */
+	if (unlikely(netpoll_tx_running(dev)))
+		return dsa_slave_netpoll_send_skb(dev, skb);
+
+	/* Queue the SKB for transmission on the parent interface, but
+	 * do not modify its EtherType
+	 */
+	skb->dev = dsa_slave_to_master(dev);
+	dev_queue_xmit(skb);
+
+	return NETDEV_TX_OK;
+}
+EXPORT_SYMBOL_GPL(dsa_enqueue_skb);
 
 static netdev_tx_t dsa_slave_xmit(struct sk_buff *skb, struct net_device *dev)
 {
@@ -435,6 +473,9 @@ static netdev_tx_t dsa_slave_xmit(struct sk_buff *skb, struct net_device *dev)
 	s->tx_bytes += skb->len;
 	u64_stats_update_end(&s->syncp);
 
+	DSA_SKB_CB(skb)->deferred_xmit = false;
+	DSA_SKB_CB(skb)->clone = NULL;
+
 	/* Identify PTP protocol packets, clone them, and pass them to the
 	 * switch driver
 	 */
@@ -445,23 +486,37 @@ static netdev_tx_t dsa_slave_xmit(struct sk_buff *skb, struct net_device *dev)
 	 */
 	nskb = p->xmit(skb, dev);
 	if (!nskb) {
-		kfree_skb(skb);
+		if (!DSA_SKB_CB(skb)->deferred_xmit)
+			kfree_skb(skb);
 		return NETDEV_TX_OK;
 	}
 
-	/* SKB for netpoll still need to be mangled with the protocol-specific
-	 * tag to be successfully transmitted
-	 */
-	if (unlikely(netpoll_tx_running(dev)))
-		return dsa_slave_netpoll_send_skb(dev, nskb);
+	return dsa_enqueue_skb(nskb, dev);
+}
 
-	/* Queue the SKB for transmission on the parent interface, but
-	 * do not modify its EtherType
-	 */
-	nskb->dev = dsa_slave_to_master(dev);
-	dev_queue_xmit(nskb);
+void *dsa_defer_xmit(struct sk_buff *skb, struct net_device *dev)
+{
+	struct dsa_port *dp = dsa_slave_to_port(dev);
 
-	return NETDEV_TX_OK;
+	DSA_SKB_CB(skb)->deferred_xmit = true;
+
+	skb_queue_tail(&dp->xmit_queue, skb);
+	schedule_work(&dp->xmit_work);
+	return NULL;
+}
+EXPORT_SYMBOL_GPL(dsa_defer_xmit);
+
+static void dsa_port_xmit_work(struct work_struct *work)
+{
+	struct dsa_port *dp = container_of(work, struct dsa_port, xmit_work);
+	struct dsa_switch *ds = dp->ds;
+	struct sk_buff *skb;
+
+	if (unlikely(!ds->ops->port_deferred_xmit))
+		return;
+
+	while ((skb = skb_dequeue(&dp->xmit_queue)) != NULL)
+		ds->ops->port_deferred_xmit(ds, dp->index, skb);
 }
 
 /* ethtool operations *******************************************************/
@@ -736,6 +791,13 @@ static int dsa_slave_get_phys_port_name(struct net_device *dev,
 {
 	struct dsa_port *dp = dsa_slave_to_port(dev);
 
+	/* For non-legacy ports, devlink is used and it takes
+	 * care of the name generation. This ndo implementation
+	 * should be removed with legacy support.
+	 */
+	if (dp->ds->devlink)
+		return -EOPNOTSUPP;
+
 	if (snprintf(name, len, "p%d", dp->index) >= len)
 		return -EINVAL;
 
@@ -764,27 +826,25 @@ static int dsa_slave_add_cls_matchall(struct net_device *dev,
 	struct dsa_mall_tc_entry *mall_tc_entry;
 	__be16 protocol = cls->common.protocol;
 	struct dsa_switch *ds = dp->ds;
-	struct net_device *to_dev;
-	const struct tc_action *a;
+	struct flow_action_entry *act;
 	struct dsa_port *to_dp;
 	int err = -EOPNOTSUPP;
 
 	if (!ds->ops->port_mirror_add)
 		return err;
 
-	if (!tcf_exts_has_one_action(cls->exts))
+	if (!flow_offload_has_one_action(&cls->rule->action))
 		return err;
 
-	a = tcf_exts_first_action(cls->exts);
+	act = &cls->rule->action.entries[0];
 
-	if (is_tcf_mirred_egress_mirror(a) && protocol == htons(ETH_P_ALL)) {
+	if (act->id == FLOW_ACTION_MIRRED && protocol == htons(ETH_P_ALL)) {
 		struct dsa_mall_mirror_tc_entry *mirror;
 
-		to_dev = tcf_mirred_dev(a);
-		if (!to_dev)
+		if (!act->dev)
 			return -EINVAL;
 
-		if (!dsa_slave_dev_check(to_dev))
+		if (!dsa_slave_dev_check(act->dev))
 			return -EOPNOTSUPP;
 
 		mall_tc_entry = kzalloc(sizeof(*mall_tc_entry), GFP_KERNEL);
@@ -795,7 +855,7 @@ static int dsa_slave_add_cls_matchall(struct net_device *dev,
 		mall_tc_entry->type = DSA_PORT_MALL_MIRROR;
 		mirror = &mall_tc_entry->mirror;
 
-		to_dp = dsa_slave_to_port(to_dev);
+		to_dp = dsa_slave_to_port(act->dev);
 
 		mirror->to_local_port = to_dp->index;
 		mirror->ingress = ingress;
@@ -885,23 +945,42 @@ static int dsa_slave_setup_tc_block_cb_eg(enum tc_setup_type type,
 	return dsa_slave_setup_tc_block_cb(type, type_data, cb_priv, false);
 }
 
-static int dsa_slave_setup_tc_block(struct net_device *dev,
-				    struct tc_block_offload *f)
-{
-	tc_setup_cb_t *cb;
+static LIST_HEAD(dsa_slave_block_cb_list);
 
-	if (f->binder_type == TCF_BLOCK_BINDER_TYPE_CLSACT_INGRESS)
+static int dsa_slave_setup_tc_block(struct net_device *dev,
+				    struct flow_block_offload *f)
+{
+	struct flow_block_cb *block_cb;
+	flow_setup_cb_t *cb;
+
+	if (f->binder_type == FLOW_BLOCK_BINDER_TYPE_CLSACT_INGRESS)
 		cb = dsa_slave_setup_tc_block_cb_ig;
-	else if (f->binder_type == TCF_BLOCK_BINDER_TYPE_CLSACT_EGRESS)
+	else if (f->binder_type == FLOW_BLOCK_BINDER_TYPE_CLSACT_EGRESS)
 		cb = dsa_slave_setup_tc_block_cb_eg;
 	else
 		return -EOPNOTSUPP;
 
+	f->driver_block_list = &dsa_slave_block_cb_list;
+
 	switch (f->command) {
-	case TC_BLOCK_BIND:
-		return tcf_block_cb_register(f->block, cb, dev, dev, f->extack);
-	case TC_BLOCK_UNBIND:
-		tcf_block_cb_unregister(f->block, cb, dev);
+	case FLOW_BLOCK_BIND:
+		if (flow_block_cb_is_busy(cb, dev, &dsa_slave_block_cb_list))
+			return -EBUSY;
+
+		block_cb = flow_block_cb_alloc(cb, dev, dev, NULL);
+		if (IS_ERR(block_cb))
+			return PTR_ERR(block_cb);
+
+		flow_block_cb_add(block_cb, f);
+		list_add_tail(&block_cb->driver_list, &dsa_slave_block_cb_list);
+		return 0;
+	case FLOW_BLOCK_UNBIND:
+		block_cb = flow_block_cb_lookup(f->block, cb, dev);
+		if (!block_cb)
+			return -ENOENT;
+
+		flow_block_cb_remove(block_cb, f);
+		list_del(&block_cb->driver_list);
 		return 0;
 	default:
 		return -EOPNOTSUPP;
@@ -987,13 +1066,6 @@ static int dsa_slave_vlan_rx_add_vid(struct net_device *dev, __be16 proto,
 				     u16 vid)
 {
 	struct dsa_port *dp = dsa_slave_to_port(dev);
-	struct switchdev_obj_port_vlan vlan = {
-		.vid_begin = vid,
-		.vid_end = vid,
-		/* This API only allows programming tagged, non-PVID VIDs */
-		.flags = 0,
-	};
-	struct switchdev_trans trans;
 	struct bridge_vlan_info info;
 	int ret;
 
@@ -1010,25 +1082,14 @@ static int dsa_slave_vlan_rx_add_vid(struct net_device *dev, __be16 proto,
 			return -EBUSY;
 	}
 
-	trans.ph_prepare = true;
-	ret = dsa_port_vlan_add(dp, &vlan, &trans);
-	if (ret == -EOPNOTSUPP)
-		return 0;
-
-	trans.ph_prepare = false;
-	return dsa_port_vlan_add(dp, &vlan, &trans);
+	/* This API only allows programming tagged, non-PVID VIDs */
+	return dsa_port_vid_add(dp, vid, 0);
 }
 
 static int dsa_slave_vlan_rx_kill_vid(struct net_device *dev, __be16 proto,
 				      u16 vid)
 {
 	struct dsa_port *dp = dsa_slave_to_port(dev);
-	struct switchdev_obj_port_vlan vlan = {
-		.vid_begin = vid,
-		.vid_end = vid,
-		/* This API only allows programming tagged, non-PVID VIDs */
-		.flags = 0,
-	};
 	struct bridge_vlan_info info;
 	int ret;
 
@@ -1045,7 +1106,7 @@ static int dsa_slave_vlan_rx_kill_vid(struct net_device *dev, __be16 proto,
 			return -EBUSY;
 	}
 
-	ret = dsa_port_vlan_del(dp, &vlan);
+	ret = dsa_port_vid_del(dp, vid);
 	if (ret == -EOPNOTSUPP)
 		ret = 0;
 
@@ -1096,6 +1157,13 @@ int dsa_legacy_fdb_del(struct ndmsg *ndm, struct nlattr *tb[],
 	return dsa_port_fdb_del(dp, addr, vid);
 }
 
+static struct devlink_port *dsa_slave_get_devlink_port(struct net_device *dev)
+{
+	struct dsa_port *dp = dsa_slave_to_port(dev);
+
+	return dp->ds->devlink ? &dp->devlink_port : NULL;
+}
+
 static const struct net_device_ops dsa_slave_netdev_ops = {
 	.ndo_open	 	= dsa_slave_open,
 	.ndo_stop		= dsa_slave_close,
@@ -1119,102 +1187,11 @@ static const struct net_device_ops dsa_slave_netdev_ops = {
 	.ndo_get_port_parent_id	= dsa_slave_get_port_parent_id,
 	.ndo_vlan_rx_add_vid	= dsa_slave_vlan_rx_add_vid,
 	.ndo_vlan_rx_kill_vid	= dsa_slave_vlan_rx_kill_vid,
+	.ndo_get_devlink_port	= dsa_slave_get_devlink_port,
 };
 
 static struct device_type dsa_type = {
 	.name	= "dsa",
-};
-
-static void dsa_slave_phylink_validate(struct net_device *dev,
-				       unsigned long *supported,
-				       struct phylink_link_state *state)
-{
-	struct dsa_port *dp = dsa_slave_to_port(dev);
-	struct dsa_switch *ds = dp->ds;
-
-	if (!ds->ops->phylink_validate)
-		return;
-
-	ds->ops->phylink_validate(ds, dp->index, supported, state);
-}
-
-static int dsa_slave_phylink_mac_link_state(struct net_device *dev,
-					    struct phylink_link_state *state)
-{
-	struct dsa_port *dp = dsa_slave_to_port(dev);
-	struct dsa_switch *ds = dp->ds;
-
-	/* Only called for SGMII and 802.3z */
-	if (!ds->ops->phylink_mac_link_state)
-		return -EOPNOTSUPP;
-
-	return ds->ops->phylink_mac_link_state(ds, dp->index, state);
-}
-
-static void dsa_slave_phylink_mac_config(struct net_device *dev,
-					 unsigned int mode,
-					 const struct phylink_link_state *state)
-{
-	struct dsa_port *dp = dsa_slave_to_port(dev);
-	struct dsa_switch *ds = dp->ds;
-
-	if (!ds->ops->phylink_mac_config)
-		return;
-
-	ds->ops->phylink_mac_config(ds, dp->index, mode, state);
-}
-
-static void dsa_slave_phylink_mac_an_restart(struct net_device *dev)
-{
-	struct dsa_port *dp = dsa_slave_to_port(dev);
-	struct dsa_switch *ds = dp->ds;
-
-	if (!ds->ops->phylink_mac_an_restart)
-		return;
-
-	ds->ops->phylink_mac_an_restart(ds, dp->index);
-}
-
-static void dsa_slave_phylink_mac_link_down(struct net_device *dev,
-					    unsigned int mode,
-					    phy_interface_t interface)
-{
-	struct dsa_port *dp = dsa_slave_to_port(dev);
-	struct dsa_switch *ds = dp->ds;
-
-	if (!ds->ops->phylink_mac_link_down) {
-		if (ds->ops->adjust_link && dev->phydev)
-			ds->ops->adjust_link(ds, dp->index, dev->phydev);
-		return;
-	}
-
-	ds->ops->phylink_mac_link_down(ds, dp->index, mode, interface);
-}
-
-static void dsa_slave_phylink_mac_link_up(struct net_device *dev,
-					  unsigned int mode,
-					  phy_interface_t interface,
-					  struct phy_device *phydev)
-{
-	struct dsa_port *dp = dsa_slave_to_port(dev);
-	struct dsa_switch *ds = dp->ds;
-
-	if (!ds->ops->phylink_mac_link_up) {
-		if (ds->ops->adjust_link && dev->phydev)
-			ds->ops->adjust_link(ds, dp->index, dev->phydev);
-		return;
-	}
-
-	ds->ops->phylink_mac_link_up(ds, dp->index, mode, interface, phydev);
-}
-
-static const struct phylink_mac_ops dsa_slave_phylink_mac_ops = {
-	.validate = dsa_slave_phylink_validate,
-	.mac_link_state = dsa_slave_phylink_mac_link_state,
-	.mac_config = dsa_slave_phylink_mac_config,
-	.mac_an_restart = dsa_slave_phylink_mac_an_restart,
-	.mac_link_down = dsa_slave_phylink_mac_link_down,
-	.mac_link_up = dsa_slave_phylink_mac_link_up,
 };
 
 void dsa_port_phylink_mac_change(struct dsa_switch *ds, int port, bool up)
@@ -1264,8 +1241,11 @@ static int dsa_slave_phy_setup(struct net_device *slave_dev)
 	if (mode < 0)
 		mode = PHY_INTERFACE_MODE_NA;
 
-	dp->pl = phylink_create(slave_dev, of_fwnode_handle(port_dn), mode,
-				&dsa_slave_phylink_mac_ops);
+	dp->pl_config.dev = &slave_dev->dev;
+	dp->pl_config.type = PHYLINK_NETDEV;
+
+	dp->pl = phylink_create(&dp->pl_config, of_fwnode_handle(port_dn), mode,
+				&dsa_port_phylink_mac_ops);
 	if (IS_ERR(dp->pl)) {
 		netdev_err(slave_dev,
 			   "error creating PHYLINK: %ld\n", PTR_ERR(dp->pl));
@@ -1283,9 +1263,9 @@ static int dsa_slave_phy_setup(struct net_device *slave_dev)
 		phy_flags = ds->ops->get_phy_flags(ds, dp->index);
 
 	ret = phylink_of_phy_connect(dp->pl, port_dn, phy_flags);
-	if (ret == -ENODEV) {
-		/* We could not connect to a designated PHY or SFP, so use the
-		 * switch internal MDIO bus instead
+	if (ret == -ENODEV && ds->slave_mii_bus) {
+		/* We could not connect to a designated PHY or SFP, so try to
+		 * use the switch internal MDIO bus instead
 		 */
 		ret = dsa_slave_phy_connect(slave_dev, dp->index);
 		if (ret) {
@@ -1297,7 +1277,7 @@ static int dsa_slave_phy_setup(struct net_device *slave_dev)
 		}
 	}
 
-	return 0;
+	return ret;
 }
 
 static struct lock_class_key dsa_slave_netdev_xmit_lock_key;
@@ -1315,6 +1295,9 @@ int dsa_slave_suspend(struct net_device *slave_dev)
 
 	if (!netif_running(slave_dev))
 		return 0;
+
+	cancel_work_sync(&dp->xmit_work);
+	skb_queue_purge(&dp->xmit_queue);
 
 	netif_device_detach(slave_dev);
 
@@ -1378,7 +1361,10 @@ int dsa_slave_create(struct dsa_port *port)
 				NETIF_F_HW_VLAN_CTAG_FILTER;
 	slave_dev->hw_features |= NETIF_F_HW_TC;
 	slave_dev->ethtool_ops = &dsa_slave_ethtool_ops;
-	eth_hw_addr_inherit(slave_dev, master);
+	if (!IS_ERR_OR_NULL(port->mac))
+		ether_addr_copy(slave_dev->dev_addr, port->mac);
+	else
+		eth_hw_addr_inherit(slave_dev, master);
 	slave_dev->priv_flags |= IFF_NO_QUEUE;
 	slave_dev->netdev_ops = &dsa_slave_netdev_ops;
 	slave_dev->min_mtu = 0;
@@ -1400,6 +1386,8 @@ int dsa_slave_create(struct dsa_port *port)
 	}
 	p->dp = port;
 	INIT_LIST_HEAD(&p->mall_tc_list);
+	INIT_WORK(&port->xmit_work, dsa_port_xmit_work);
+	skb_queue_head_init(&port->xmit_queue);
 	p->xmit = cpu_dp->tag_ops->xmit;
 	port->slave = slave_dev;
 
@@ -1451,7 +1439,7 @@ void dsa_slave_destroy(struct net_device *slave_dev)
 	free_netdev(slave_dev);
 }
 
-static bool dsa_slave_dev_check(struct net_device *dev)
+static bool dsa_slave_dev_check(const struct net_device *dev)
 {
 	return dev->netdev_ops == &dsa_slave_netdev_ops;
 }
@@ -1520,19 +1508,6 @@ static int dsa_slave_netdevice_event(struct notifier_block *nb,
 	}
 
 	return NOTIFY_DONE;
-}
-
-static int
-dsa_slave_switchdev_port_attr_set_event(struct net_device *netdev,
-		struct switchdev_notifier_port_attr_info *port_attr_info)
-{
-	int err;
-
-	err = dsa_slave_port_attr_set(netdev, port_attr_info->attr,
-				      port_attr_info->trans);
-
-	port_attr_info->handled = true;
-	return notifier_from_errno(err);
 }
 
 struct dsa_switchdev_event_work {
@@ -1609,12 +1584,17 @@ static int dsa_slave_switchdev_event(struct notifier_block *unused,
 {
 	struct net_device *dev = switchdev_notifier_info_to_dev(ptr);
 	struct dsa_switchdev_event_work *switchdev_work;
+	int err;
+
+	if (event == SWITCHDEV_PORT_ATTR_SET) {
+		err = switchdev_handle_port_attr_set(dev, ptr,
+						     dsa_slave_dev_check,
+						     dsa_slave_port_attr_set);
+		return notifier_from_errno(err);
+	}
 
 	if (!dsa_slave_dev_check(dev))
 		return NOTIFY_DONE;
-
-	if (event == SWITCHDEV_PORT_ATTR_SET)
-		return dsa_slave_switchdev_port_attr_set_event(dev, ptr);
 
 	switchdev_work = kzalloc(sizeof(*switchdev_work), GFP_ATOMIC);
 	if (!switchdev_work)
@@ -1645,41 +1625,28 @@ err_fdb_work_init:
 	return NOTIFY_BAD;
 }
 
-static int
-dsa_slave_switchdev_port_obj_event(unsigned long event,
-			struct net_device *netdev,
-			struct switchdev_notifier_port_obj_info *port_obj_info)
-{
-	int err = -EOPNOTSUPP;
-
-	switch (event) {
-	case SWITCHDEV_PORT_OBJ_ADD:
-		err = dsa_slave_port_obj_add(netdev, port_obj_info->obj,
-					     port_obj_info->trans);
-		break;
-	case SWITCHDEV_PORT_OBJ_DEL:
-		err = dsa_slave_port_obj_del(netdev, port_obj_info->obj);
-		break;
-	}
-
-	port_obj_info->handled = true;
-	return notifier_from_errno(err);
-}
-
 static int dsa_slave_switchdev_blocking_event(struct notifier_block *unused,
 					      unsigned long event, void *ptr)
 {
 	struct net_device *dev = switchdev_notifier_info_to_dev(ptr);
-
-	if (!dsa_slave_dev_check(dev))
-		return NOTIFY_DONE;
+	int err;
 
 	switch (event) {
-	case SWITCHDEV_PORT_OBJ_ADD: /* fall through */
+	case SWITCHDEV_PORT_OBJ_ADD:
+		err = switchdev_handle_port_obj_add(dev, ptr,
+						    dsa_slave_dev_check,
+						    dsa_slave_port_obj_add);
+		return notifier_from_errno(err);
 	case SWITCHDEV_PORT_OBJ_DEL:
-		return dsa_slave_switchdev_port_obj_event(event, dev, ptr);
+		err = switchdev_handle_port_obj_del(dev, ptr,
+						    dsa_slave_dev_check,
+						    dsa_slave_port_obj_del);
+		return notifier_from_errno(err);
 	case SWITCHDEV_PORT_ATTR_SET:
-		return dsa_slave_switchdev_port_attr_set_event(dev, ptr);
+		err = switchdev_handle_port_attr_set(dev, ptr,
+						     dsa_slave_dev_check,
+						     dsa_slave_port_attr_set);
+		return notifier_from_errno(err);
 	}
 
 	return NOTIFY_DONE;

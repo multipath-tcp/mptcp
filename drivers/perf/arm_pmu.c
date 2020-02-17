@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 #undef DEBUG
 
 /*
@@ -722,8 +723,8 @@ static int cpu_pm_pmu_notify(struct notifier_block *b, unsigned long cmd,
 		cpu_pm_pmu_setup(armpmu, cmd);
 		break;
 	case CPU_PM_EXIT:
-		cpu_pm_pmu_setup(armpmu, cmd);
 	case CPU_PM_ENTER_FAILED:
+		cpu_pm_pmu_setup(armpmu, cmd);
 		armpmu->start(armpmu);
 		break;
 	default:

@@ -4,7 +4,6 @@
 
 #include "util/evlist.h"
 #include "util/evsel.h"
-#include "util/util.h"
 #include "util/config.h"
 #include "util/map.h"
 #include "util/symbol.h"
@@ -21,16 +20,18 @@
 #include "util/cpumap.h"
 
 #include "util/debug.h"
+#include "util/string2.h"
 
 #include <linux/kernel.h>
 #include <linux/rbtree.h>
 #include <linux/string.h>
+#include <linux/zalloc.h>
 #include <errno.h>
 #include <inttypes.h>
 #include <locale.h>
 #include <regex.h>
 
-#include "sane_ctype.h"
+#include <linux/ctype.h>
 
 static int	kmem_slab;
 static int	kmem_page;
@@ -1975,7 +1976,7 @@ int cmd_kmem(int argc, const char **argv)
 			goto out_delete;
 		}
 
-		kmem_page_size = tep_get_page_size(evsel->tp_format->pevent);
+		kmem_page_size = tep_get_page_size(evsel->tp_format->tep);
 		symbol_conf.use_callchain = true;
 	}
 

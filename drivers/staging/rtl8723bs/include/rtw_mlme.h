@@ -454,33 +454,6 @@ struct mlme_priv {
 	_lock	bcn_update_lock;
 	u8 update_bcn;
 
-#ifdef CONFIG_INTEL_WIDI
-	int	widi_state;
-	int	listen_state;
-	_timer	listen_timer;
-	atomic_t	rx_probe_rsp; /*  1:receive probe respone from RDS source. */
-	u8 *l2sdTaBuffer;
-	u8 channel_idx;
-	u8 group_cnt;	/* In WiDi 3.5, they specified another scan algo. for WFD/RDS co-existed */
-	u8 sa_ext[L2SDTA_SERVICE_VE_LEN];
-
-	u8 widi_enable;
-	/**
-	 * For WiDi 4; upper layer would set
-	 * p2p_primary_device_type_category_id
-	 * p2p_primary_device_type_sub_category_id
-	 * p2p_secondary_device_type_category_id
-	 * p2p_secondary_device_type_sub_category_id
-	 */
-	u16 p2p_pdt_cid;
-	u16 p2p_pdt_scid;
-	u8 num_p2p_sdt;
-	u16 p2p_sdt_cid[MAX_NUM_P2P_SDT];
-	u16 p2p_sdt_scid[MAX_NUM_P2P_SDT];
-	u8 p2p_reject_disable;	/* When starting NL80211 wpa_supplicant/hostapd, it will call netdev_close */
-							/* such that it will cause p2p disabled. Use this flag to reject. */
-#endif /*  CONFIG_INTEL_WIDI */
-
 	u8 NumOfBcnInfoChkFail;
 	unsigned long	timeBcnInfoChkStart;
 };
@@ -616,10 +589,7 @@ extern void rtw_scan_timeout_handler(struct timer_list *t);
 extern void rtw_dynamic_check_timer_handler(struct adapter *adapter);
 bool rtw_is_scan_deny(struct adapter *adapter);
 void rtw_clear_scan_deny(struct adapter *adapter);
-void rtw_set_scan_deny_timer_hdl(struct adapter *adapter);
 void rtw_set_scan_deny(struct adapter *adapter, u32 ms);
-
-extern int _rtw_init_mlme_priv(struct adapter *padapter);
 
 void rtw_free_mlme_priv_ie_data(struct mlme_priv *pmlmepriv);
 
@@ -627,7 +597,7 @@ extern void _rtw_free_mlme_priv(struct mlme_priv *pmlmepriv);
 
 /* extern struct wlan_network* _rtw_dequeue_network(struct __queue *queue); */
 
-extern struct wlan_network* _rtw_alloc_network(struct mlme_priv *pmlmepriv);
+extern struct wlan_network *rtw_alloc_network(struct mlme_priv *pmlmepriv);
 
 
 extern void _rtw_free_network(struct mlme_priv *pmlmepriv, struct wlan_network *pnetwork, u8 isfreeall);
@@ -635,8 +605,6 @@ extern void _rtw_free_network_nolock(struct mlme_priv *pmlmepriv, struct wlan_ne
 
 
 extern struct wlan_network* _rtw_find_network(struct __queue *scanned_queue, u8 *addr);
-
-extern void _rtw_free_network_queue(struct adapter *padapter, u8 isfreeall);
 
 extern sint rtw_if_up(struct adapter *padapter);
 

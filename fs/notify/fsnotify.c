@@ -1,19 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Copyright (C) 2008 Red Hat, Inc., Eric Paris <eparis@redhat.com>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2, or (at your option)
- *  any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; see the file COPYING.  If not, write to
- *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #include <linux/dcache.h>
@@ -179,10 +166,10 @@ int __fsnotify_parent(const struct path *path, struct dentry *dentry, __u32 mask
 		take_dentry_name_snapshot(&name, dentry);
 		if (path)
 			ret = fsnotify(p_inode, mask, path, FSNOTIFY_EVENT_PATH,
-				       name.name, 0);
+				       &name.name, 0);
 		else
 			ret = fsnotify(p_inode, mask, dentry->d_inode, FSNOTIFY_EVENT_INODE,
-				       name.name, 0);
+				       &name.name, 0);
 		release_dentry_name_snapshot(&name);
 	}
 
@@ -195,7 +182,7 @@ EXPORT_SYMBOL_GPL(__fsnotify_parent);
 static int send_to_group(struct inode *to_tell,
 			 __u32 mask, const void *data,
 			 int data_is, u32 cookie,
-			 const unsigned char *file_name,
+			 const struct qstr *file_name,
 			 struct fsnotify_iter_info *iter_info)
 {
 	struct fsnotify_group *group = NULL;
@@ -325,7 +312,7 @@ static void fsnotify_iter_next(struct fsnotify_iter_info *iter_info)
  * notification event in whatever means they feel necessary.
  */
 int fsnotify(struct inode *to_tell, __u32 mask, const void *data, int data_is,
-	     const unsigned char *file_name, u32 cookie)
+	     const struct qstr *file_name, u32 cookie)
 {
 	struct fsnotify_iter_info iter_info = {};
 	struct super_block *sb = to_tell->i_sb;

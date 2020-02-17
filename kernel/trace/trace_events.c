@@ -70,14 +70,6 @@ static int system_refcount_dec(struct event_subsystem *system)
 #define while_for_each_event_file()		\
 	}
 
-static struct list_head *
-trace_get_fields(struct trace_event_call *event_call)
-{
-	if (!event_call->class->get_fields)
-		return &event_call->class->fields;
-	return event_call->class->get_fields(event_call);
-}
-
 static struct ftrace_event_field *
 __find_event_field(struct list_head *head, char *name)
 {
@@ -795,7 +787,7 @@ static int __ftrace_set_clr_event(struct trace_array *tr, const char *match,
 	return ret;
 }
 
-static int ftrace_set_clr_event(struct trace_array *tr, char *buf, int set)
+int ftrace_set_clr_event(struct trace_array *tr, char *buf, int set)
 {
 	char *event = NULL, *sub = NULL, *match;
 	int ret;
@@ -832,6 +824,7 @@ static int ftrace_set_clr_event(struct trace_array *tr, char *buf, int set)
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(ftrace_set_clr_event);
 
 /**
  * trace_set_clr_event - enable or disable an event
@@ -1317,9 +1310,6 @@ event_id_read(struct file *filp, char __user *ubuf, size_t cnt, loff_t *ppos)
 	int id = (long)event_file_data(filp);
 	char buf[32];
 	int len;
-
-	if (*ppos)
-		return 0;
 
 	if (unlikely(!id))
 		return -ENODEV;
@@ -3192,7 +3182,7 @@ void __init trace_event_init(void)
 	event_trace_enable();
 }
 
-#ifdef CONFIG_FTRACE_STARTUP_TEST
+#ifdef CONFIG_EVENT_TRACE_STARTUP_TEST
 
 static DEFINE_SPINLOCK(test_spinlock);
 static DEFINE_SPINLOCK(test_spinlock_irq);

@@ -560,6 +560,8 @@ struct fc_vft_header {
 #define fc_vft_hdr_hopct_WORD		word1
 };
 
+#include <uapi/scsi/fc/fc_els.h>
+
 /*
  *  Extended Link Service LS_COMMAND codes (Payload Word 0)
  */
@@ -599,10 +601,12 @@ struct fc_vft_header {
 #define ELS_CMD_RPL       0x57000000
 #define ELS_CMD_FAN       0x60000000
 #define ELS_CMD_RSCN      0x61040000
+#define ELS_CMD_RSCN_XMT  0x61040008
 #define ELS_CMD_SCR       0x62000000
 #define ELS_CMD_RNID      0x78000000
 #define ELS_CMD_LIRR      0x7A000000
 #define ELS_CMD_LCB	  0x81000000
+#define ELS_CMD_FPIN	  0x16000000
 #else	/*  __LITTLE_ENDIAN_BITFIELD */
 #define ELS_CMD_MASK      0xffff
 #define ELS_RSP_MASK      0xff
@@ -639,10 +643,12 @@ struct fc_vft_header {
 #define ELS_CMD_RPL       0x57
 #define ELS_CMD_FAN       0x60
 #define ELS_CMD_RSCN      0x0461
+#define ELS_CMD_RSCN_XMT  0x08000461
 #define ELS_CMD_SCR       0x62
 #define ELS_CMD_RNID      0x78
 #define ELS_CMD_LIRR      0x7A
 #define ELS_CMD_LCB	  0x81
+#define ELS_CMD_FPIN	  ELS_FPIN
 #endif
 
 /*

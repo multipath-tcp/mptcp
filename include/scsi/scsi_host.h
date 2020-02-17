@@ -369,6 +369,8 @@ struct scsi_host_template {
 	 */
 	unsigned long dma_boundary;
 
+	unsigned long virt_boundary_mask;
+
 	/*
 	 * This specifies "machine infinity" for host templates which don't
 	 * limit the transfer size.  Note this limit represents an absolute
@@ -587,6 +589,7 @@ struct Scsi_Host {
 	unsigned int max_sectors;
 	unsigned int max_segment_size;
 	unsigned long dma_boundary;
+	unsigned long virt_boundary_mask;
 	/*
 	 * In scsi-mq mode, the number of hardware queues supported by the LLD.
 	 *
@@ -628,6 +631,9 @@ struct Scsi_Host {
 	/* Host responded with short (<36 bytes) INQUIRY result */
 	unsigned short_inquiry:1;
 
+	/* The transport requires the LUN bits NOT to be stored in CDB[1] */
+	unsigned no_scsi2_lun_in_cdb:1;
+
 	/*
 	 * Optional work queue to be utilized by the transport
 	 */
@@ -638,9 +644,6 @@ struct Scsi_Host {
 	 * Task management function work queue
 	 */
 	struct workqueue_struct *tmf_work_q;
-
-	/* The transport requires the LUN bits NOT to be stored in CDB[1] */
-	unsigned no_scsi2_lun_in_cdb:1;
 
 	/*
 	 * Value host_blocked counts down from

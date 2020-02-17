@@ -17,12 +17,6 @@
 
 
 
-/* FC Port role bitmask - can merge with FC Port Roles in fc transport */
-#define FC_PORT_ROLE_NVME_INITIATOR	0x10
-#define FC_PORT_ROLE_NVME_TARGET	0x20
-#define FC_PORT_ROLE_NVME_DISCOVERY	0x40
-
-
 /**
  * struct nvme_fc_port_info - port-specific ids and FC connection-specific
  *                            data element used during NVME Host role
@@ -797,6 +791,11 @@ struct nvmet_fc_target_port {
  *       nvmefc_tgt_fcp_req.
  *       Entrypoint is Optional.
  *
+ * @discovery_event:  Called by the transport to generate an RSCN
+ *       change notifications to NVME initiators. The RSCN notifications
+ *       should cause the initiator to rescan the discovery controller
+ *       on the targetport.
+ *
  * @max_hw_queues:  indicates the maximum number of hw queues the LLDD
  *       supports for cpu affinitization.
  *       Value is Mandatory. Must be at least 1.
@@ -838,6 +837,7 @@ struct nvmet_fc_target_template {
 				struct nvmefc_tgt_fcp_req *fcpreq);
 	void (*defer_rcv)(struct nvmet_fc_target_port *tgtport,
 				struct nvmefc_tgt_fcp_req *fcpreq);
+	void (*discovery_event)(struct nvmet_fc_target_port *tgtport);
 
 	u32	max_hw_queues;
 	u16	max_sgl_segments;

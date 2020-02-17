@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * KVM Microsoft Hyper-V emulation
  *
@@ -15,10 +16,6 @@
  *   Amit Shah    <amit.shah@qumranet.com>
  *   Ben-Ami Yassour <benami@il.ibm.com>
  *   Andrey Smetanin <asmetanin@virtuozzo.com>
- *
- * This work is licensed under the terms of the GNU GPL, version 2.  See
- * the COPYING file in the top-level directory.
- *
  */
 
 #include "x86.h"
@@ -1535,10 +1532,10 @@ static void kvm_hv_hypercall_set_result(struct kvm_vcpu *vcpu, u64 result)
 
 	longmode = is_64_bit_mode(vcpu);
 	if (longmode)
-		kvm_register_write(vcpu, VCPU_REGS_RAX, result);
+		kvm_rax_write(vcpu, result);
 	else {
-		kvm_register_write(vcpu, VCPU_REGS_RDX, result >> 32);
-		kvm_register_write(vcpu, VCPU_REGS_RAX, result & 0xffffffff);
+		kvm_rdx_write(vcpu, result >> 32);
+		kvm_rax_write(vcpu, result & 0xffffffff);
 	}
 }
 
@@ -1597,7 +1594,7 @@ int kvm_hv_hypercall(struct kvm_vcpu *vcpu)
 {
 	u64 param, ingpa, outgpa, ret = HV_STATUS_SUCCESS;
 	uint16_t code, rep_idx, rep_cnt;
-	bool fast, longmode, rep;
+	bool fast, rep;
 
 	/*
 	 * hypercall generates UD from non zero cpl and real mode
@@ -1608,23 +1605,21 @@ int kvm_hv_hypercall(struct kvm_vcpu *vcpu)
 		return 1;
 	}
 
-	longmode = is_64_bit_mode(vcpu);
-
-	if (!longmode) {
-		param = ((u64)kvm_register_read(vcpu, VCPU_REGS_RDX) << 32) |
-			(kvm_register_read(vcpu, VCPU_REGS_RAX) & 0xffffffff);
-		ingpa = ((u64)kvm_register_read(vcpu, VCPU_REGS_RBX) << 32) |
-			(kvm_register_read(vcpu, VCPU_REGS_RCX) & 0xffffffff);
-		outgpa = ((u64)kvm_register_read(vcpu, VCPU_REGS_RDI) << 32) |
-			(kvm_register_read(vcpu, VCPU_REGS_RSI) & 0xffffffff);
-	}
 #ifdef CONFIG_X86_64
-	else {
-		param = kvm_register_read(vcpu, VCPU_REGS_RCX);
-		ingpa = kvm_register_read(vcpu, VCPU_REGS_RDX);
-		outgpa = kvm_register_read(vcpu, VCPU_REGS_R8);
-	}
+	if (is_64_bit_mode(vcpu)) {
+		param = kvm_rcx_read(vcpu);
+		ingpa = kvm_rdx_read(vcpu);
+		outgpa = kvm_r8_read(vcpu);
+	} else
 #endif
+	{
+		param = ((u64)kvm_rdx_read(vcpu) << 32) |
+			(kvm_rax_read(vcpu) & 0xffffffff);
+		ingpa = ((u64)kvm_rbx_read(vcpu) << 32) |
+			(kvm_rcx_read(vcpu) & 0xffffffff);
+		outgpa = ((u64)kvm_rdi_read(vcpu) << 32) |
+			(kvm_rsi_read(vcpu) & 0xffffffff);
+	}
 
 	code = param & 0xffff;
 	fast = !!(param & HV_HYPERCALL_FAST_BIT);
@@ -1786,7 +1781,7 @@ int kvm_vm_ioctl_hv_eventfd(struct kvm *kvm, struct kvm_hyperv_eventfd *args)
 int kvm_vcpu_ioctl_get_hv_cpuid(struct kvm_vcpu *vcpu, struct kvm_cpuid2 *cpuid,
 				struct kvm_cpuid_entry2 __user *entries)
 {
-	uint16_t evmcs_ver = kvm_x86_ops->nested_get_evmcs_version(vcpu);
+	uint16_t evmcs_ver = 0;
 	struct kvm_cpuid_entry2 cpuid_entries[] = {
 		{ .function = HYPERV_CPUID_VENDOR_AND_MAX_FUNCTIONS },
 		{ .function = HYPERV_CPUID_INTERFACE },
@@ -1797,6 +1792,9 @@ int kvm_vcpu_ioctl_get_hv_cpuid(struct kvm_vcpu *vcpu, struct kvm_cpuid2 *cpuid,
 		{ .function = HYPERV_CPUID_NESTED_FEATURES },
 	};
 	int i, nent = ARRAY_SIZE(cpuid_entries);
+
+	if (kvm_x86_ops->nested_get_evmcs_version)
+		evmcs_ver = kvm_x86_ops->nested_get_evmcs_version(vcpu);
 
 	/* Skip NESTED_FEATURES if eVMCS is not supported */
 	if (!evmcs_ver)

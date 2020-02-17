@@ -23,6 +23,9 @@
  *
  */
 
+#include <linux/delay.h>
+#include <linux/slab.h>
+
 #include "reg_helper.h"
 
 #include "core_types.h"
@@ -229,7 +232,9 @@ static void setup_panel_mode(
 {
 	uint32_t value;
 
-	ASSERT(REG(DP_DPHY_INTERNAL_CTRL));
+	if (!REG(DP_DPHY_INTERNAL_CTRL))
+		return;
+
 	value = REG_READ(DP_DPHY_INTERNAL_CTRL);
 
 	switch (panel_mode) {
@@ -726,6 +731,8 @@ void dcn10_link_encoder_construct(
 		enc10->base.features.flags.bits.IS_HBR3_CAPABLE =
 				bp_cap_info.DP_HBR3_EN;
 		enc10->base.features.flags.bits.HDMI_6GB_EN = bp_cap_info.HDMI_6GB_EN;
+		enc10->base.features.flags.bits.DP_IS_USB_C =
+				bp_cap_info.DP_IS_USB_C;
 	} else {
 		DC_LOG_WARNING("%s: Failed to get encoder_cap_info from VBIOS with error code %d!\n",
 				__func__,
@@ -1304,7 +1311,6 @@ void dcn10_link_encoder_connect_dig_be_to_fe(
 #define HPD_REG_UPDATE_N(reg_name, n, ...)	\
 		generic_reg_update_ex(CTX, \
 				HPD_REG(reg_name), \
-				HPD_REG_READ(reg_name), \
 				n, __VA_ARGS__)
 
 #define HPD_REG_UPDATE(reg_name, field, val)	\
@@ -1337,7 +1343,6 @@ void dcn10_link_encoder_disable_hpd(struct link_encoder *enc)
 #define AUX_REG_UPDATE_N(reg_name, n, ...)	\
 		generic_reg_update_ex(CTX, \
 				AUX_REG(reg_name), \
-				AUX_REG_READ(reg_name), \
 				n, __VA_ARGS__)
 
 #define AUX_REG_UPDATE(reg_name, field, val)	\
@@ -1359,5 +1364,5 @@ void dcn10_aux_initialize(struct dcn10_link_encoder *enc10)
 
 	/* 1/4 window (the maximum allowed) */
 	AUX_REG_UPDATE(AUX_DPHY_RX_CONTROL0,
-			AUX_RX_RECEIVE_WINDOW, 1);
+			AUX_RX_RECEIVE_WINDOW, 0);
 }

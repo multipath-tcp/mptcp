@@ -433,9 +433,9 @@ static int isif_get_params(struct v4l2_subdev *sd, void *params)
 	return 0;
 }
 
-static int isif_validate_df_csc_params(struct vpfe_isif_df_csc *df_csc)
+static int isif_validate_df_csc_params(const struct vpfe_isif_df_csc *df_csc)
 {
-	struct vpfe_isif_color_space_conv *csc;
+	const struct vpfe_isif_color_space_conv *csc;
 	int err = -EINVAL;
 	int i;
 
@@ -481,7 +481,7 @@ static int isif_validate_df_csc_params(struct vpfe_isif_df_csc *df_csc)
 #define DM365_ISIF_MAX_DFCMEM0		0x1fff
 #define DM365_ISIF_MAX_DFCMEM1		0x1fff
 
-static int isif_validate_dfc_params(struct vpfe_isif_dfc *dfc)
+static int isif_validate_dfc_params(const struct vpfe_isif_dfc *dfc)
 {
 	int err = -EINVAL;
 	int i;
@@ -532,7 +532,7 @@ static int isif_validate_dfc_params(struct vpfe_isif_dfc *dfc)
 #define DM365_ISIF_MAX_CLVSV			0x1fff
 #define DM365_ISIF_MAX_HEIGHT_BLACK_REGION	0x1fff
 
-static int isif_validate_bclamp_params(struct vpfe_isif_black_clamp *bclamp)
+static int isif_validate_bclamp_params(const struct vpfe_isif_black_clamp *bclamp)
 {
 	int err = -EINVAL;
 
@@ -580,7 +580,7 @@ static int isif_validate_bclamp_params(struct vpfe_isif_black_clamp *bclamp)
 }
 
 static int
-isif_validate_raw_params(struct vpfe_isif_raw_config *params)
+isif_validate_raw_params(const struct vpfe_isif_raw_config *params)
 {
 	int ret;
 
@@ -593,20 +593,18 @@ isif_validate_raw_params(struct vpfe_isif_raw_config *params)
 	return isif_validate_bclamp_params(&params->bclamp);
 }
 
-static int isif_set_params(struct v4l2_subdev *sd, void *params)
+static int isif_set_params(struct v4l2_subdev *sd, const struct vpfe_isif_raw_config *params)
 {
 	struct vpfe_isif_device *isif = v4l2_get_subdevdata(sd);
-	struct vpfe_isif_raw_config isif_raw_params;
 	int ret = -EINVAL;
 
 	/* only raw module parameters can be set through the IOCTL */
 	if (isif->formats[ISIF_PAD_SINK].code != MEDIA_BUS_FMT_SGRBG12_1X12)
 		return ret;
 
-	memcpy(&isif_raw_params, params, sizeof(isif_raw_params));
-	if (!isif_validate_raw_params(&isif_raw_params)) {
-		memcpy(&isif->isif_cfg.bayer.config_params, &isif_raw_params,
-			sizeof(isif_raw_params));
+	if (!isif_validate_raw_params(params)) {
+		memcpy(&isif->isif_cfg.bayer.config_params, params,
+			sizeof(*params));
 		ret = 0;
 	}
 	return ret;
@@ -818,7 +816,7 @@ isif_config_dfc(struct vpfe_isif_device *isif, struct vpfe_isif_dfc *vdfc)
 
 	/* Correct whole line or partial */
 	if (vdfc->corr_whole_line)
-		val |= 1 << ISIF_VDFC_CORR_WHOLE_LN_SHIFT;
+		val |= BIT(ISIF_VDFC_CORR_WHOLE_LN_SHIFT);
 
 	/* level shift value */
 	val |= (vdfc->def_level_shift & ISIF_VDFC_LEVEL_SHFT_MASK) <<
@@ -846,7 +844,7 @@ isif_config_dfc(struct vpfe_isif_device *isif, struct vpfe_isif_dfc *vdfc)
 
 	val = isif_read(isif->isif_cfg.base_addr, DFCMEMCTL);
 	/* set DFCMARST and set DFCMWR */
-	val |= 1 << ISIF_DFCMEMCTL_DFCMARST_SHIFT;
+	val |= BIT(ISIF_DFCMEMCTL_DFCMARST_SHIFT);
 	val |= 1;
 	isif_write(isif->isif_cfg.base_addr, val, DFCMEMCTL);
 
@@ -877,7 +875,7 @@ isif_config_dfc(struct vpfe_isif_device *isif, struct vpfe_isif_dfc *vdfc)
 		}
 		val = isif_read(isif->isif_cfg.base_addr, DFCMEMCTL);
 		/* clear DFCMARST and set DFCMWR */
-		val &= ~(1 << ISIF_DFCMEMCTL_DFCMARST_SHIFT);
+		val &= ~BIT(ISIF_DFCMEMCTL_DFCMARST_SHIFT);
 		val |= 1;
 		isif_write(isif->isif_cfg.base_addr, val, DFCMEMCTL);
 
@@ -1137,7 +1135,7 @@ static int isif_config_raw(struct v4l2_subdev *sd, int mode)
 	isif_write(isif->isif_cfg.base_addr, val, CGAMMAWD);
 	/* Configure DPCM compression settings */
 	if (params->v4l2_pix_fmt == V4L2_PIX_FMT_SGRBG10DPCM8) {
-		val =  1 << ISIF_DPCM_EN_SHIFT;
+		val =  BIT(ISIF_DPCM_EN_SHIFT);
 		val |= (params->dpcm_predictor &
 			ISIF_DPCM_PREDICTOR_MASK) << ISIF_DPCM_PREDICTOR_SHIFT;
 	}

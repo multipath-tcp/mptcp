@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Security plug functions
  *
@@ -5,11 +6,6 @@
  * Copyright (C) 2001-2002 Greg Kroah-Hartman <greg@kroah.com>
  * Copyright (C) 2001 Networks Associates Technology, Inc <ssmalley@nai.com>
  * Copyright (C) 2016 Mellanox Technologies
- *
- *	This program is free software; you can redistribute it and/or modify
- *	it under the terms of the GNU General Public License as published by
- *	the Free Software Foundation; either version 2 of the License, or
- *	(at your option) any later version.
  */
 
 #define pr_fmt(fmt) "LSM: " fmt
@@ -39,7 +35,7 @@
 #define LSM_COUNT (__end_lsm_info - __start_lsm_info)
 
 struct security_hook_heads security_hook_heads __lsm_ro_after_init;
-static ATOMIC_NOTIFIER_HEAD(lsm_notifier_chain);
+static BLOCKING_NOTIFIER_HEAD(blocking_lsm_notifier_chain);
 
 static struct kmem_cache *lsm_file_cache;
 static struct kmem_cache *lsm_inode_cache;
@@ -430,23 +426,26 @@ void __init security_add_hooks(struct security_hook_list *hooks, int count,
 		panic("%s - Cannot get early memory.\n", __func__);
 }
 
-int call_lsm_notifier(enum lsm_event event, void *data)
+int call_blocking_lsm_notifier(enum lsm_event event, void *data)
 {
-	return atomic_notifier_call_chain(&lsm_notifier_chain, event, data);
+	return blocking_notifier_call_chain(&blocking_lsm_notifier_chain,
+					    event, data);
 }
-EXPORT_SYMBOL(call_lsm_notifier);
+EXPORT_SYMBOL(call_blocking_lsm_notifier);
 
-int register_lsm_notifier(struct notifier_block *nb)
+int register_blocking_lsm_notifier(struct notifier_block *nb)
 {
-	return atomic_notifier_chain_register(&lsm_notifier_chain, nb);
+	return blocking_notifier_chain_register(&blocking_lsm_notifier_chain,
+						nb);
 }
-EXPORT_SYMBOL(register_lsm_notifier);
+EXPORT_SYMBOL(register_blocking_lsm_notifier);
 
-int unregister_lsm_notifier(struct notifier_block *nb)
+int unregister_blocking_lsm_notifier(struct notifier_block *nb)
 {
-	return atomic_notifier_chain_unregister(&lsm_notifier_chain, nb);
+	return blocking_notifier_chain_unregister(&blocking_lsm_notifier_chain,
+						  nb);
 }
-EXPORT_SYMBOL(unregister_lsm_notifier);
+EXPORT_SYMBOL(unregister_blocking_lsm_notifier);
 
 /**
  * lsm_cred_alloc - allocate a composite cred blob
@@ -865,6 +864,11 @@ int security_add_mnt_opt(const char *option, const char *val, int len,
 					option, val, len, mnt_opts);
 }
 EXPORT_SYMBOL(security_add_mnt_opt);
+
+int security_move_mount(const struct path *from_path, const struct path *to_path)
+{
+	return call_int_hook(move_mount, 0, from_path, to_path);
+}
 
 int security_inode_alloc(struct inode *inode)
 {
@@ -1317,6 +1321,12 @@ int security_inode_copy_up_xattr(const char *name)
 	return call_int_hook(inode_copy_up_xattr, -EOPNOTSUPP, name);
 }
 EXPORT_SYMBOL(security_inode_copy_up_xattr);
+
+int security_kernfs_init_security(struct kernfs_node *kn_dir,
+				  struct kernfs_node *kn)
+{
+	return call_int_hook(kernfs_init_security, 0, kn_dir, kn);
+}
 
 int security_file_permission(struct file *file, int mask)
 {

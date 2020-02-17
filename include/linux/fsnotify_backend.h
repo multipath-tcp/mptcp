@@ -117,7 +117,7 @@ struct fsnotify_ops {
 	int (*handle_event)(struct fsnotify_group *group,
 			    struct inode *inode,
 			    u32 mask, const void *data, int data_type,
-			    const unsigned char *file_name, u32 cookie,
+			    const struct qstr *file_name, u32 cookie,
 			    struct fsnotify_iter_info *iter_info);
 	void (*free_group_priv)(struct fsnotify_group *group);
 	void (*freeing_mark)(struct fsnotify_mark *mark, struct fsnotify_group *group);
@@ -292,7 +292,9 @@ typedef struct fsnotify_mark_connector __rcu *fsnotify_connp_t;
  */
 struct fsnotify_mark_connector {
 	spinlock_t lock;
-	unsigned int type;	/* Type of object [lock] */
+	unsigned short type;	/* Type of object [lock] */
+#define FSNOTIFY_CONN_FLAG_HAS_FSID	0x01
+	unsigned short flags;	/* flags [lock] */
 	__kernel_fsid_t fsid;	/* fsid of filesystem containing object */
 	union {
 		/* Object pointer [lock] */
@@ -350,7 +352,7 @@ struct fsnotify_mark {
 
 /* main fsnotify call to send events */
 extern int fsnotify(struct inode *to_tell, __u32 mask, const void *data, int data_is,
-		    const unsigned char *name, u32 cookie);
+		    const struct qstr *name, u32 cookie);
 extern int __fsnotify_parent(const struct path *path, struct dentry *dentry, __u32 mask);
 extern void __fsnotify_inode_delete(struct inode *inode);
 extern void __fsnotify_vfsmount_delete(struct vfsmount *mnt);
@@ -505,7 +507,7 @@ static inline void fsnotify_init_event(struct fsnotify_event *event,
 #else
 
 static inline int fsnotify(struct inode *to_tell, __u32 mask, const void *data, int data_is,
-			   const unsigned char *name, u32 cookie)
+			   const struct qstr *name, u32 cookie)
 {
 	return 0;
 }

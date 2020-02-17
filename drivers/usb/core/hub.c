@@ -873,7 +873,7 @@ int usb_hub_clear_tt_buffer(struct urb *urb)
 	/* info that CLEAR_TT_BUFFER needs */
 	clear->tt = tt->multi ? udev->ttport : 1;
 	clear->devinfo = usb_pipeendpoint (pipe);
-	clear->devinfo |= udev->devnum << 4;
+	clear->devinfo |= ((u16)udev->devaddr) << 4;
 	clear->devinfo |= usb_pipecontrol(pipe)
 			? (USB_ENDPOINT_XFER_CONTROL << 11)
 			: (USB_ENDPOINT_XFER_BULK << 11);
@@ -2125,6 +2125,8 @@ static void update_devnum(struct usb_device *udev, int devnum)
 	/* The address for a WUSB device is managed by wusbcore. */
 	if (!udev->wusb)
 		udev->devnum = devnum;
+	if (!udev->devaddr)
+		udev->devaddr = (u8)devnum;
 }
 
 static void hub_free_dev(struct usb_device *udev)
@@ -2719,7 +2721,7 @@ static bool use_new_scheme(struct usb_device *udev, int retry,
 }
 
 /* Is a USB 3.0 port in the Inactive or Compliance Mode state?
- * Port worm reset is required to recover
+ * Port warm reset is required to recover
  */
 static bool hub_port_warm_reset_required(struct usb_hub *hub, int port1,
 		u16 portstatus)
@@ -3174,13 +3176,14 @@ static int usb_disable_remote_wakeup(struct usb_device *udev)
 }
 
 /* Count of wakeup-enabled devices at or below udev */
-static unsigned wakeup_enabled_descendants(struct usb_device *udev)
+unsigned usb_wakeup_enabled_descendants(struct usb_device *udev)
 {
 	struct usb_hub *hub = usb_hub_to_struct_hub(udev);
 
 	return udev->do_remote_wakeup +
 			(hub ? hub->wakeup_enabled_descendants : 0);
 }
+EXPORT_SYMBOL_GPL(usb_wakeup_enabled_descendants);
 
 /*
  * usb_port_suspend - suspend a usb device's upstream port
@@ -3282,7 +3285,7 @@ int usb_port_suspend(struct usb_device *udev, pm_message_t msg)
 	 * Therefore we will turn on the suspend feature if udev or any of its
 	 * descendants is enabled for remote wakeup.
 	 */
-	else if (PMSG_IS_AUTO(msg) || wakeup_enabled_descendants(udev) > 0)
+	else if (PMSG_IS_AUTO(msg) || usb_wakeup_enabled_descendants(udev) > 0)
 		status = set_port_feature(hub->hdev, port1,
 				USB_PORT_FEAT_SUSPEND);
 	else {
@@ -3616,6 +3619,7 @@ static int hub_handle_remote_wakeup(struct usb_hub *hub, unsigned int port,
 	struct usb_device *hdev;
 	struct usb_device *udev;
 	int connect_change = 0;
+	u16 link_state;
 	int ret;
 
 	hdev = hub->hdev;
@@ -3625,9 +3629,11 @@ static int hub_handle_remote_wakeup(struct usb_hub *hub, unsigned int port,
 			return 0;
 		usb_clear_port_feature(hdev, port, USB_PORT_FEAT_C_SUSPEND);
 	} else {
+		link_state = portstatus & USB_PORT_STAT_LINK_STATE;
 		if (!udev || udev->state != USB_STATE_SUSPENDED ||
-				 (portstatus & USB_PORT_STAT_LINK_STATE) !=
-				 USB_SS_PORT_LS_U0)
+				(link_state != USB_SS_PORT_LS_U0 &&
+				 link_state != USB_SS_PORT_LS_U1 &&
+				 link_state != USB_SS_PORT_LS_U2))
 			return 0;
 	}
 
@@ -3668,7 +3674,6 @@ static int hub_suspend(struct usb_interface *intf, pm_message_t msg)
 	struct usb_hub		*hub = usb_get_intfdata(intf);
 	struct usb_device	*hdev = hub->hdev;
 	unsigned		port1;
-	int			status;
 
 	/*
 	 * Warn if children aren't already suspended.
@@ -3687,7 +3692,7 @@ static int hub_suspend(struct usb_interface *intf, pm_message_t msg)
 		}
 		if (udev)
 			hub->wakeup_enabled_descendants +=
-					wakeup_enabled_descendants(udev);
+					usb_wakeup_enabled_descendants(udev);
 	}
 
 	if (hdev->do_remote_wakeup && hub->quirk_check_port_auto_suspend) {
@@ -3702,12 +3707,12 @@ static int hub_suspend(struct usb_interface *intf, pm_message_t msg)
 	if (hub_is_superspeed(hdev) && hdev->do_remote_wakeup) {
 		/* Enable hub to send remote wakeup for all ports. */
 		for (port1 = 1; port1 <= hdev->maxchild; port1++) {
-			status = set_port_feature(hdev,
-					port1 |
-					USB_PORT_FEAT_REMOTE_WAKE_CONNECT |
-					USB_PORT_FEAT_REMOTE_WAKE_DISCONNECT |
-					USB_PORT_FEAT_REMOTE_WAKE_OVER_CURRENT,
-					USB_PORT_FEAT_REMOTE_WAKE_MASK);
+			set_port_feature(hdev,
+					 port1 |
+					 USB_PORT_FEAT_REMOTE_WAKE_CONNECT |
+					 USB_PORT_FEAT_REMOTE_WAKE_DISCONNECT |
+					 USB_PORT_FEAT_REMOTE_WAKE_OVER_CURRENT,
+					 USB_PORT_FEAT_REMOTE_WAKE_MASK);
 		}
 	}
 
@@ -3999,6 +4004,9 @@ static int usb_set_lpm_timeout(struct usb_device *udev,
  * control transfers to set the hub timeout or enable device-initiated U1/U2
  * will be successful.
  *
+ * If the control transfer to enable device-initiated U1/U2 entry fails, then
+ * hub-initiated U1/U2 will be disabled.
+ *
  * If we cannot set the parent hub U1/U2 timeout, we attempt to let the xHCI
  * driver know about it.  If that call fails, it should be harmless, and just
  * take up more slightly more bus bandwidth for unnecessary U1/U2 exit latency.
@@ -4053,23 +4061,24 @@ static void usb_enable_link_state(struct usb_hcd *hcd, struct usb_device *udev,
 		 * host know that this link state won't be enabled.
 		 */
 		hcd->driver->disable_usb3_lpm_timeout(hcd, udev, state);
-	} else {
-		/* Only a configured device will accept the Set Feature
-		 * U1/U2_ENABLE
-		 */
-		if (udev->actconfig)
-			usb_set_device_initiated_lpm(udev, state, true);
+		return;
+	}
 
-		/* As soon as usb_set_lpm_timeout(timeout) returns 0, the
-		 * hub-initiated LPM is enabled. Thus, LPM is enabled no
-		 * matter the result of usb_set_device_initiated_lpm().
-		 * The only difference is whether device is able to initiate
-		 * LPM.
-		 */
+	/* Only a configured device will accept the Set Feature
+	 * U1/U2_ENABLE
+	 */
+	if (udev->actconfig &&
+	    usb_set_device_initiated_lpm(udev, state, true) == 0) {
 		if (state == USB3_LPM_U1)
 			udev->usb3_lpm_u1_enabled = 1;
 		else if (state == USB3_LPM_U2)
 			udev->usb3_lpm_u2_enabled = 1;
+	} else {
+		/* Don't request U1/U2 entry if the device
+		 * cannot transition to U1/U2.
+		 */
+		usb_set_lpm_timeout(udev, state, 0);
+		hcd->driver->disable_usb3_lpm_timeout(hcd, udev, state);
 	}
 }
 
@@ -4139,7 +4148,7 @@ int usb_disable_lpm(struct usb_device *udev)
 	if (!udev || !udev->parent ||
 			udev->speed < USB_SPEED_SUPER ||
 			!udev->lpm_capable ||
-			udev->state < USB_STATE_DEFAULT)
+			udev->state < USB_STATE_CONFIGURED)
 		return 0;
 
 	hcd = bus_to_hcd(udev->bus);
@@ -4198,7 +4207,7 @@ void usb_enable_lpm(struct usb_device *udev)
 	if (!udev || !udev->parent ||
 			udev->speed < USB_SPEED_SUPER ||
 			!udev->lpm_capable ||
-			udev->state < USB_STATE_DEFAULT)
+			udev->state < USB_STATE_CONFIGURED)
 		return;
 
 	udev->lpm_disable_count--;
@@ -5902,7 +5911,10 @@ int usb_reset_device(struct usb_device *udev)
 					cintf->needs_binding = 1;
 			}
 		}
-		usb_unbind_and_rebind_marked_interfaces(udev);
+
+		/* If the reset failed, hub_wq will unbind drivers later */
+		if (ret == 0)
+			usb_unbind_and_rebind_marked_interfaces(udev);
 	}
 
 	usb_autosuspend_device(udev);

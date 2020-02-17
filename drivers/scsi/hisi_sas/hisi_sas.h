@@ -1,12 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Copyright (c) 2015 Linaro Ltd.
  * Copyright (c) 2015 Hisilicon Limited.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
  */
 
 #ifndef _HISI_SAS_H_
@@ -65,10 +60,6 @@
 #define HISI_SAS_MAX_SSP_RESP_SZ (sizeof(struct ssp_frame_hdr) + 1024)
 #define HISI_SAS_MAX_SMP_RESP_SZ 1028
 #define HISI_SAS_MAX_STP_RESP_SZ 28
-
-#define DEV_IS_EXPANDER(type) \
-	((type == SAS_EDGE_EXPANDER_DEVICE) || \
-	(type == SAS_FANOUT_EXPANDER_DEVICE))
 
 #define HISI_SAS_SATA_PROTOCOL_NONDATA		0x1
 #define HISI_SAS_SATA_PROTOCOL_PIO			0x2
@@ -170,6 +161,7 @@ struct hisi_sas_phy {
 	u32		code_violation_err_count;
 	enum sas_linkrate	minimum_linkrate;
 	enum sas_linkrate	maximum_linkrate;
+	int enable;
 };
 
 struct hisi_sas_port {
@@ -483,12 +475,12 @@ struct hisi_sas_command_table_stp {
 	u8	atapi_cdb[ATAPI_CDB_LEN];
 };
 
-#define HISI_SAS_SGE_PAGE_CNT SG_CHUNK_SIZE
+#define HISI_SAS_SGE_PAGE_CNT (124)
 struct hisi_sas_sge_page {
 	struct hisi_sas_sge sge[HISI_SAS_SGE_PAGE_CNT];
 }  __aligned(16);
 
-#define HISI_SAS_SGE_DIF_PAGE_CNT   SG_CHUNK_SIZE
+#define HISI_SAS_SGE_DIF_PAGE_CNT   HISI_SAS_SGE_PAGE_CNT
 struct hisi_sas_sge_dif_page {
 	struct hisi_sas_sge sge[HISI_SAS_SGE_DIF_PAGE_CNT];
 }  __aligned(16);
@@ -551,6 +543,8 @@ extern int hisi_sas_slave_configure(struct scsi_device *sdev);
 extern int hisi_sas_scan_finished(struct Scsi_Host *shost, unsigned long time);
 extern void hisi_sas_scan_start(struct Scsi_Host *shost);
 extern int hisi_sas_host_reset(struct Scsi_Host *shost, int reset_type);
+extern void hisi_sas_phy_enable(struct hisi_hba *hisi_hba, int phy_no,
+				int enable);
 extern void hisi_sas_phy_down(struct hisi_hba *hisi_hba, int phy_no, int rdy);
 extern void hisi_sas_slot_task_free(struct hisi_hba *hisi_hba,
 				    struct sas_task *task,

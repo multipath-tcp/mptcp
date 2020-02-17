@@ -56,6 +56,8 @@
 #define RTC_PMIC_EXT_WAKEUP_EN				BIT(0)
 
 	.arm
+	.arch armv7-a
+	.arch_extension sec
 	.align 3
 
 ENTRY(am43xx_do_wfi)
@@ -367,6 +369,9 @@ wait_emif_enable1:
 	ldr     r2, am43xx_phys_emif_poweroff
 	mov     r1, #AM43XX_EMIF_POWEROFF_DISABLE
 	str     r1, [r2, #0x0]
+
+	ldr     r1, [r9, #EMIF_PM_RUN_HW_LEVELING]
+	blx     r1
 
 #ifdef CONFIG_CACHE_L2X0
 	ldr	r2, l2_cache_base

@@ -1,9 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * ADIS16240 Programmable Impact Sensor and Recorder driver
  *
  * Copyright 2010 Analog Devices Inc.
- *
- * Licensed under the GPL-2 or later.
  */
 
 #include <linux/interrupt.h>
@@ -176,7 +175,7 @@
 /* Power supply above 3.625 V */
 #define ADIS16240_DIAG_STAT_POWER_HIGH_BIT	1
 
- /* Power supply below 3.15 V */
+ /* Power supply below 2.225 V */
 #define ADIS16240_DIAG_STAT_POWER_LOW_BIT	0
 
 /* GLOB_CMD */
@@ -436,9 +435,16 @@ static int adis16240_remove(struct spi_device *spi)
 	return 0;
 }
 
+static const struct of_device_id adis16240_of_match[] = {
+	{ .compatible = "adi,adis16240" },
+	{ },
+};
+MODULE_DEVICE_TABLE(of, adis16240_of_match);
+
 static struct spi_driver adis16240_driver = {
 	.driver = {
 		.name = "adis16240",
+		.of_match_table = adis16240_of_match,
 	},
 	.probe = adis16240_probe,
 	.remove = adis16240_remove,

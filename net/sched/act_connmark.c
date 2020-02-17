@@ -1,13 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * net/sched/act_connmark.c  netfilter connmark retriever action
  * skb mark is over-written
  *
  * Copyright (c) 2011 Felix Fietkau <nbd@openwrt.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
 */
 
 #include <linux/module.h>
@@ -107,12 +103,13 @@ static int tcf_connmark_init(struct net *net, struct nlattr *nla,
 	struct tcf_connmark_info *ci;
 	struct tc_connmark *parm;
 	int ret = 0, err;
+	u32 index;
 
 	if (!nla)
 		return -EINVAL;
 
-	ret = nla_parse_nested(tb, TCA_CONNMARK_MAX, nla, connmark_policy,
-			       NULL);
+	ret = nla_parse_nested_deprecated(tb, TCA_CONNMARK_MAX, nla,
+					  connmark_policy, NULL);
 	if (ret < 0)
 		return ret;
 
@@ -120,13 +117,13 @@ static int tcf_connmark_init(struct net *net, struct nlattr *nla,
 		return -EINVAL;
 
 	parm = nla_data(tb[TCA_CONNMARK_PARMS]);
-
-	ret = tcf_idr_check_alloc(tn, &parm->index, a, bind);
+	index = parm->index;
+	ret = tcf_idr_check_alloc(tn, &index, a, bind);
 	if (!ret) {
-		ret = tcf_idr_create(tn, parm->index, est, a,
+		ret = tcf_idr_create(tn, index, est, a,
 				     &act_connmark_ops, bind, false);
 		if (ret) {
-			tcf_idr_cleanup(tn, parm->index);
+			tcf_idr_cleanup(tn, index);
 			return ret;
 		}
 
@@ -234,7 +231,7 @@ static __net_init int connmark_init_net(struct net *net)
 {
 	struct tc_action_net *tn = net_generic(net, connmark_net_id);
 
-	return tc_action_net_init(tn, &act_connmark_ops);
+	return tc_action_net_init(net, tn, &act_connmark_ops);
 }
 
 static void __net_exit connmark_exit_net(struct list_head *net_list)

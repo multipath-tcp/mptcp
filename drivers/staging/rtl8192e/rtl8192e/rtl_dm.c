@@ -1,17 +1,9 @@
-/******************************************************************************
+// SPDX-License-Identifier: GPL-2.0
+/*
  * Copyright(c) 2008 - 2010 Realtek Corporation. All rights reserved.
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * The full GNU General Public License is included in this distribution in the
- * file called LICENSE.
- *
- * Contact Information:
- * wlanfae <wlanfae@realtek.com>
- *****************************************************************************/
+ * Contact Information: wlanfae <wlanfae@realtek.com>
+ */
 #include "rtl_core.h"
 #include "rtl_dm.h"
 #include "r8192E_hw.h"
@@ -342,7 +334,7 @@ static void _rtl92e_dm_check_rate_adaptive(struct net_device *dev)
 
 	if (!priv->up) {
 		RT_TRACE(COMP_RATE,
-			 "<---- _rtl92e_dm_check_rate_adaptive(): driver is going to unload\n");
+			 "<---- %s: driver is going to unload\n", __func__);
 		return;
 	}
 
@@ -1186,7 +1178,7 @@ void rtl92e_dm_restore_state(struct net_device *dev)
 
 	if (!priv->up) {
 		RT_TRACE(COMP_RATE,
-			 "<---- rtl92e_dm_restore_state(): driver is going to unload\n");
+			 "<---- %s: driver is going to unload\n", __func__);
 		return;
 	}
 

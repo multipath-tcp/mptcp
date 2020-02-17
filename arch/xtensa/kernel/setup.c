@@ -310,7 +310,8 @@ extern char _SecondaryResetVector_text_start;
 extern char _SecondaryResetVector_text_end;
 #endif
 
-static inline int mem_reserve(unsigned long start, unsigned long end)
+static inline int __init_memblock mem_reserve(unsigned long start,
+					      unsigned long end)
 {
 	return memblock_reserve(start, end - start);
 }
@@ -403,10 +404,6 @@ void __init setup_arch(char **cmdline_p)
 # elif defined(CONFIG_DUMMY_CONSOLE)
 	conswitchp = &dummy_con;
 # endif
-#endif
-
-#ifdef CONFIG_PCI
-	platform_pcibios_init();
 #endif
 }
 
@@ -514,6 +511,7 @@ void cpu_reset(void)
 				      "add	%2, %2, %7\n\t"
 				      "addi	%0, %0, -1\n\t"
 				      "bnez	%0, 1b\n\t"
+				      "isync\n\t"
 				      /* Jump to identity mapping */
 				      "jx	%3\n"
 				      "2:\n\t"
@@ -650,6 +648,9 @@ c_show(struct seq_file *f, void *slot)
 #endif
 #if XCHAL_HAVE_S32C1I
 		     "s32c1i "
+#endif
+#if XCHAL_HAVE_EXCLUSIVE
+		     "exclusive "
 #endif
 		     "\n");
 

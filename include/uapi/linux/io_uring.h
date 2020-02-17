@@ -26,6 +26,8 @@ struct io_uring_sqe {
 		__kernel_rwf_t	rw_flags;
 		__u32		fsync_flags;
 		__u16		poll_events;
+		__u32		sync_range_flags;
+		__u32		msg_flags;
 	};
 	__u64	user_data;	/* data to be passed back at completion time */
 	union {
@@ -38,6 +40,8 @@ struct io_uring_sqe {
  * sqe->flags
  */
 #define IOSQE_FIXED_FILE	(1U << 0)	/* use fixed fileset */
+#define IOSQE_IO_DRAIN		(1U << 1)	/* issue after inflight IO */
+#define IOSQE_IO_LINK		(1U << 2)	/* links next sqe */
 
 /*
  * io_uring_setup() flags
@@ -54,6 +58,9 @@ struct io_uring_sqe {
 #define IORING_OP_WRITE_FIXED	5
 #define IORING_OP_POLL_ADD	6
 #define IORING_OP_POLL_REMOVE	7
+#define IORING_OP_SYNC_FILE_RANGE	8
+#define IORING_OP_SENDMSG	9
+#define IORING_OP_RECVMSG	10
 
 /*
  * sqe->fsync_flags
@@ -133,5 +140,7 @@ struct io_uring_params {
 #define IORING_UNREGISTER_BUFFERS	1
 #define IORING_REGISTER_FILES		2
 #define IORING_UNREGISTER_FILES		3
+#define IORING_REGISTER_EVENTFD		4
+#define IORING_UNREGISTER_EVENTFD	5
 
 #endif

@@ -307,6 +307,8 @@
  *
  * Used by:
  * struct btrfs_dir_item.type
+ *
+ * Values 0..7 must match common file type values in fs_types.h.
  */
 #define BTRFS_FT_UNKNOWN	0
 #define BTRFS_FT_REG_FILE	1
@@ -863,6 +865,8 @@ enum btrfs_raid_types {
 					 BTRFS_BLOCK_GROUP_RAID10)
 #define BTRFS_BLOCK_GROUP_RAID56_MASK	(BTRFS_BLOCK_GROUP_RAID5 |   \
 					 BTRFS_BLOCK_GROUP_RAID6)
+
+#define BTRFS_BLOCK_GROUP_RAID1_MASK	(BTRFS_BLOCK_GROUP_RAID1)
 
 /*
  * We need a bit for restriper to be able to tell when chunks of type

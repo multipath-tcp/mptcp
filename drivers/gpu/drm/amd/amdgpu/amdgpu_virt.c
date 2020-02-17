@@ -21,6 +21,10 @@
  *
  */
 
+#include <linux/module.h>
+
+#include <drm/drm_drv.h>
+
 #include "amdgpu.h"
 
 bool amdgpu_virt_mmio_blocked(struct amdgpu_device *adev)
@@ -36,6 +40,7 @@ void amdgpu_virt_init_setting(struct amdgpu_device *adev)
 	/* enable virtual display */
 	adev->mode_info.num_crtc = 1;
 	adev->enable_virtual_display = true;
+	adev->ddev->driver->driver_features &= ~DRIVER_ATOMIC;
 	adev->cg_flags = 0;
 	adev->pg_flags = 0;
 }
@@ -375,4 +380,98 @@ void amdgpu_virt_init_data_exchange(struct amdgpu_device *adev)
 	}
 }
 
+static uint32_t parse_clk(char *buf, bool min)
+{
+        char *ptr = buf;
+        uint32_t clk = 0;
 
+        do {
+                ptr = strchr(ptr, ':');
+                if (!ptr)
+                        break;
+                ptr+=2;
+		if (kstrtou32(ptr, 10, &clk))
+			return 0;
+        } while (!min);
+
+        return clk * 100;
+}
+
+uint32_t amdgpu_virt_get_sclk(struct amdgpu_device *adev, bool lowest)
+{
+	char *buf = NULL;
+	uint32_t clk = 0;
+
+	buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	adev->virt.ops->get_pp_clk(adev, PP_SCLK, buf);
+	clk = parse_clk(buf, lowest);
+
+	kfree(buf);
+
+	return clk;
+}
+
+uint32_t amdgpu_virt_get_mclk(struct amdgpu_device *adev, bool lowest)
+{
+	char *buf = NULL;
+	uint32_t clk = 0;
+
+	buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	adev->virt.ops->get_pp_clk(adev, PP_MCLK, buf);
+	clk = parse_clk(buf, lowest);
+
+	kfree(buf);
+
+	return clk;
+}
+
+void amdgpu_virt_init_reg_access_mode(struct amdgpu_device *adev)
+{
+	struct amdgpu_virt *virt = &adev->virt;
+
+	if (virt->ops && virt->ops->init_reg_access_mode)
+		virt->ops->init_reg_access_mode(adev);
+}
+
+bool amdgpu_virt_support_psp_prg_ih_reg(struct amdgpu_device *adev)
+{
+	bool ret = false;
+	struct amdgpu_virt *virt = &adev->virt;
+
+	if (amdgpu_sriov_vf(adev)
+		&& (virt->reg_access_mode & AMDGPU_VIRT_REG_ACCESS_PSP_PRG_IH))
+		ret = true;
+
+	return ret;
+}
+
+bool amdgpu_virt_support_rlc_prg_reg(struct amdgpu_device *adev)
+{
+	bool ret = false;
+	struct amdgpu_virt *virt = &adev->virt;
+
+	if (amdgpu_sriov_vf(adev)
+		&& (virt->reg_access_mode & AMDGPU_VIRT_REG_ACCESS_RLC)
+		&& !(amdgpu_sriov_runtime(adev)))
+		ret = true;
+
+	return ret;
+}
+
+bool amdgpu_virt_support_skip_setting(struct amdgpu_device *adev)
+{
+	bool ret = false;
+	struct amdgpu_virt *virt = &adev->virt;
+
+	if (amdgpu_sriov_vf(adev)
+		&& (virt->reg_access_mode & AMDGPU_VIRT_REG_SKIP_SEETING))
+		ret = true;
+
+	return ret;
+}

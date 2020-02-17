@@ -391,12 +391,8 @@ struct ib_qp *pvrdma_create_qp(struct ib_pd *pd,
 err_pdir:
 	pvrdma_page_dir_cleanup(dev, &qp->pdir);
 err_umem:
-	if (!qp->is_kernel) {
-		if (qp->rumem)
-			ib_umem_release(qp->rumem);
-		if (qp->sumem)
-			ib_umem_release(qp->sumem);
-	}
+	ib_umem_release(qp->rumem);
+	ib_umem_release(qp->sumem);
 err_qp:
 	kfree(qp);
 	atomic_dec(&dev->num_qps);
@@ -429,12 +425,8 @@ static void pvrdma_free_qp(struct pvrdma_qp *qp)
 		complete(&qp->free);
 	wait_for_completion(&qp->free);
 
-	if (!qp->is_kernel) {
-		if (qp->rumem)
-			ib_umem_release(qp->rumem);
-		if (qp->sumem)
-			ib_umem_release(qp->sumem);
-	}
+	ib_umem_release(qp->rumem);
+	ib_umem_release(qp->sumem);
 
 	pvrdma_page_dir_cleanup(dev, &qp->pdir);
 
@@ -446,10 +438,11 @@ static void pvrdma_free_qp(struct pvrdma_qp *qp)
 /**
  * pvrdma_destroy_qp - destroy a queue pair
  * @qp: the queue pair to destroy
+ * @udata: user data or null for kernel object
  *
  * @return: 0 on success.
  */
-int pvrdma_destroy_qp(struct ib_qp *qp)
+int pvrdma_destroy_qp(struct ib_qp *qp, struct ib_udata *udata)
 {
 	struct pvrdma_qp *vqp = to_vqp(qp);
 	union pvrdma_cmd_req req;

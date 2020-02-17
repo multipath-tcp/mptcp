@@ -89,9 +89,6 @@ extern void paging_init(void);
  */
 extern void update_mmu_cache(struct vm_area_struct *, unsigned long, pte_t *);
 
-extern int gup_hugepte(pte_t *ptep, unsigned long sz, unsigned long addr,
-		       unsigned long end, int write,
-		       struct page **pages, int *nr);
 #ifndef CONFIG_TRANSPARENT_HUGEPAGE
 #define pmd_large(pmd)		0
 #endif
@@ -106,6 +103,12 @@ void pgtable_cache_init(void);
 void mark_initmem_nx(void);
 #else
 static inline void mark_initmem_nx(void) { }
+#endif
+
+#ifdef CONFIG_PPC_DEBUG_WX
+void ptdump_check_wx(void);
+#else
+static inline void ptdump_check_wx(void) { }
 #endif
 
 /*
@@ -136,6 +139,44 @@ static inline void pte_frag_set(mm_context_t *ctx, void *p)
 {
 }
 #endif
+
+#ifndef pmd_is_leaf
+#define pmd_is_leaf pmd_is_leaf
+static inline bool pmd_is_leaf(pmd_t pmd)
+{
+	return false;
+}
+#endif
+
+#ifndef pud_is_leaf
+#define pud_is_leaf pud_is_leaf
+static inline bool pud_is_leaf(pud_t pud)
+{
+	return false;
+}
+#endif
+
+#ifndef pgd_is_leaf
+#define pgd_is_leaf pgd_is_leaf
+static inline bool pgd_is_leaf(pgd_t pgd)
+{
+	return false;
+}
+#endif
+
+#ifdef CONFIG_PPC64
+#define is_ioremap_addr is_ioremap_addr
+static inline bool is_ioremap_addr(const void *x)
+{
+#ifdef CONFIG_MMU
+	unsigned long addr = (unsigned long)x;
+
+	return addr >= IOREMAP_BASE && addr < IOREMAP_END;
+#else
+	return false;
+#endif
+}
+#endif /* CONFIG_PPC64 */
 
 #endif /* __ASSEMBLY__ */
 

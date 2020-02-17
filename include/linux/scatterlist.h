@@ -266,10 +266,11 @@ int sg_split(struct scatterlist *in, const int in_mapped_nents,
 typedef struct scatterlist *(sg_alloc_fn)(unsigned int, gfp_t);
 typedef void (sg_free_fn)(struct scatterlist *, unsigned int);
 
-void __sg_free_table(struct sg_table *, unsigned int, bool, sg_free_fn *);
+void __sg_free_table(struct sg_table *, unsigned int, unsigned int,
+		     sg_free_fn *);
 void sg_free_table(struct sg_table *);
 int __sg_alloc_table(struct sg_table *, unsigned int, unsigned int,
-		     struct scatterlist *, gfp_t, sg_alloc_fn *);
+		     struct scatterlist *, unsigned int, gfp_t, sg_alloc_fn *);
 int sg_alloc_table(struct sg_table *, unsigned int, gfp_t);
 int __sg_alloc_table_from_pages(struct sg_table *sgt, struct page **pages,
 				unsigned int n_pages, unsigned int offset,
@@ -331,20 +332,22 @@ size_t sg_zero_buffer(struct scatterlist *sgl, unsigned int nents,
 #endif
 
 #ifdef CONFIG_SG_POOL
-void sg_free_table_chained(struct sg_table *table, bool first_chunk);
+void sg_free_table_chained(struct sg_table *table,
+			   unsigned nents_first_chunk);
 int sg_alloc_table_chained(struct sg_table *table, int nents,
-			   struct scatterlist *first_chunk);
+			   struct scatterlist *first_chunk,
+			   unsigned nents_first_chunk);
 #endif
 
 /*
  * sg page iterator
  *
  * Iterates over sg entries page-by-page.  On each successful iteration, you
- * can call sg_page_iter_page(@piter) to get the current page and its dma
- * address. @piter->sg will point to the sg holding this page and
- * @piter->sg_pgoffset to the page's page offset within the sg. The iteration
- * will stop either when a maximum number of sg entries was reached or a
- * terminating sg (sg_last(sg) == true) was reached.
+ * can call sg_page_iter_page(@piter) to get the current page.
+ * @piter->sg will point to the sg holding this page and @piter->sg_pgoffset to
+ * the page's page offset within the sg. The iteration will stop either when a
+ * maximum number of sg entries was reached or a terminating sg
+ * (sg_last(sg) == true) was reached.
  */
 struct sg_page_iter {
 	struct scatterlist	*sg;		/* sg holding the page */

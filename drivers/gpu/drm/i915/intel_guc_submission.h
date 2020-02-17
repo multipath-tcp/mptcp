@@ -27,6 +27,8 @@
 
 #include <linux/spinlock.h>
 
+#include "gt/intel_engine_types.h"
+
 #include "i915_gem.h"
 #include "i915_selftest.h"
 

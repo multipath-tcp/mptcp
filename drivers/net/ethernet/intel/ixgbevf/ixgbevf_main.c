@@ -30,6 +30,7 @@
 #include <linux/bpf.h>
 #include <linux/bpf_trace.h>
 #include <linux/atomic.h>
+#include <net/xfrm.h>
 
 #include "ixgbevf.h"
 
@@ -895,7 +896,8 @@ struct sk_buff *ixgbevf_construct_skb(struct ixgbevf_ring *rx_ring,
 	/* Determine available headroom for copy */
 	headlen = size;
 	if (headlen > IXGBEVF_RX_HDR_SIZE)
-		headlen = eth_get_headlen(xdp->data, IXGBEVF_RX_HDR_SIZE);
+		headlen = eth_get_headlen(skb->dev, xdp->data,
+					  IXGBEVF_RX_HDR_SIZE);
 
 	/* align pull length to size of long to optimize memcpy performance */
 	memcpy(__skb_put(skb, headlen), xdp->data,
@@ -1422,6 +1424,9 @@ static void ixgbevf_update_itr(struct ixgbevf_q_vector *q_vector,
 	 */
 	/* what was last interrupt timeslice? */
 	timepassed_us = q_vector->itr >> 2;
+	if (timepassed_us == 0)
+		return;
+
 	bytes_perint = bytes / timepassed_us; /* bytes/usec */
 
 	switch (itr_setting) {
@@ -4157,7 +4162,7 @@ static int ixgbevf_xmit_frame_ring(struct sk_buff *skb,
 	first->protocol = vlan_get_protocol(skb);
 
 #ifdef CONFIG_IXGBEVF_IPSEC
-	if (secpath_exists(skb) && !ixgbevf_ipsec_tx(tx_ring, first, &ipsec_tx))
+	if (xfrm_offload(skb) && !ixgbevf_ipsec_tx(tx_ring, first, &ipsec_tx))
 		goto out_drop;
 #endif
 	tso = ixgbevf_tso(tx_ring, first, &hdr_len, &ipsec_tx);

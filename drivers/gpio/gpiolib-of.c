@@ -86,9 +86,9 @@ static void of_gpio_flags_quirks(struct device_node *np,
 	if (IS_ENABLED(CONFIG_REGULATOR) &&
 	    (of_device_is_compatible(np, "regulator-fixed") ||
 	     of_device_is_compatible(np, "reg-fixed-voltage") ||
-	     (of_device_is_compatible(np, "regulator-gpio") &&
-	      !(strcmp(propname, "enable-gpio") &&
-	        strcmp(propname, "enable-gpios"))))) {
+	     (!(strcmp(propname, "enable-gpio") &&
+		strcmp(propname, "enable-gpios")) &&
+	      of_device_is_compatible(np, "regulator-gpio")))) {
 		/*
 		 * The regulator GPIO handles are specified such that the
 		 * presence or absence of "enable-active-high" solely controls
@@ -119,9 +119,8 @@ static void of_gpio_flags_quirks(struct device_node *np,
 	 * property named "cs-gpios" we need to inspect the child node
 	 * to determine if the flags should have inverted semantics.
 	 */
-	if (IS_ENABLED(CONFIG_SPI_MASTER) &&
-	    of_property_read_bool(np, "cs-gpios") &&
-	    !strcmp(propname, "cs-gpios")) {
+	if (IS_ENABLED(CONFIG_SPI_MASTER) && !strcmp(propname, "cs-gpios") &&
+	    of_property_read_bool(np, "cs-gpios")) {
 		struct device_node *child;
 		u32 cs;
 		int ret;
@@ -155,10 +154,17 @@ static void of_gpio_flags_quirks(struct device_node *np,
 							of_node_full_name(child));
 					*flags |= OF_GPIO_ACTIVE_LOW;
 				}
+				of_node_put(child);
 				break;
 			}
 		}
 	}
+
+	/* Legacy handling of stmmac's active-low PHY reset line */
+	if (IS_ENABLED(CONFIG_STMMAC_ETH) &&
+	    !strcmp(propname, "snps,reset-gpio") &&
+	    of_property_read_bool(np, "snps,reset-active-low"))
+		*flags |= OF_GPIO_ACTIVE_LOW;
 }
 
 /**
@@ -256,6 +262,37 @@ static struct gpio_desc *of_find_spi_gpio(struct device *dev, const char *con_id
 }
 
 /*
+ * The old Freescale bindings use simply "gpios" as name for the chip select
+ * lines rather than "cs-gpios" like all other SPI hardware. Account for this
+ * with a special quirk.
+ */
+static struct gpio_desc *of_find_spi_cs_gpio(struct device *dev,
+					     const char *con_id,
+					     unsigned int idx,
+					     unsigned long *flags)
+{
+	struct device_node *np = dev->of_node;
+
+	if (!IS_ENABLED(CONFIG_SPI_MASTER))
+		return ERR_PTR(-ENOENT);
+
+	/* Allow this specifically for Freescale devices */
+	if (!of_device_is_compatible(np, "fsl,spi") &&
+	    !of_device_is_compatible(np, "aeroflexgaisler,spictrl"))
+		return ERR_PTR(-ENOENT);
+	/* Allow only if asking for "cs-gpios" */
+	if (!con_id || strcmp(con_id, "cs"))
+		return ERR_PTR(-ENOENT);
+
+	/*
+	 * While all other SPI controllers use "cs-gpios" the Freescale
+	 * uses just "gpios" so translate to that when "cs-gpios" is
+	 * requested.
+	 */
+	return of_find_gpio(dev, NULL, idx, flags);
+}
+
+/*
  * Some regulator bindings happened before we managed to establish that GPIO
  * properties should be named "foo-gpios" so we have this special kludge for
  * them.
@@ -288,8 +325,7 @@ static struct gpio_desc *of_find_regulator_gpio(struct device *dev, const char *
 }
 
 struct gpio_desc *of_find_gpio(struct device *dev, const char *con_id,
-			       unsigned int idx,
-			       enum gpio_lookup_flags *flags)
+			       unsigned int idx, unsigned long *flags)
 {
 	char prop_name[32]; /* 32 is max size of property name */
 	enum of_gpio_flags of_flags;
@@ -307,30 +343,27 @@ struct gpio_desc *of_find_gpio(struct device *dev, const char *con_id,
 
 		desc = of_get_named_gpiod_flags(dev->of_node, prop_name, idx,
 						&of_flags);
-		/*
-		 * -EPROBE_DEFER in our case means that we found a
-		 * valid GPIO property, but no controller has been
-		 * registered so far.
-		 *
-		 * This means we don't need to look any further for
-		 * alternate name conventions, and we should really
-		 * preserve the return code for our user to be able to
-		 * retry probing later.
-		 */
-		if (IS_ERR(desc) && PTR_ERR(desc) == -EPROBE_DEFER)
-			return desc;
 
-		if (!IS_ERR(desc) || (PTR_ERR(desc) != -ENOENT))
+		if (!IS_ERR(desc) || PTR_ERR(desc) != -ENOENT)
 			break;
 	}
 
-	/* Special handling for SPI GPIOs if used */
-	if (IS_ERR(desc))
+	if (IS_ERR(desc) && PTR_ERR(desc) == -ENOENT) {
+		/* Special handling for SPI GPIOs if used */
 		desc = of_find_spi_gpio(dev, con_id, &of_flags);
+	}
 
-	/* Special handling for regulator GPIOs if used */
-	if (IS_ERR(desc) && PTR_ERR(desc) != -EPROBE_DEFER)
+	if (IS_ERR(desc) && PTR_ERR(desc) == -ENOENT) {
+		/* This quirk looks up flags and all */
+		desc = of_find_spi_cs_gpio(dev, con_id, idx, flags);
+		if (!IS_ERR(desc))
+			return desc;
+	}
+
+	if (IS_ERR(desc) && PTR_ERR(desc) == -ENOENT) {
+		/* Special handling for regulator GPIOs if used */
 		desc = of_find_regulator_gpio(dev, con_id, &of_flags);
+	}
 
 	if (IS_ERR(desc))
 		return desc;
@@ -362,8 +395,8 @@ struct gpio_desc *of_find_gpio(struct device *dev, const char *con_id,
  * @chip:	GPIO chip whose hog is parsed
  * @idx:	Index of the GPIO to parse
  * @name:	GPIO line name
- * @lflags:	gpio_lookup_flags - returned from of_find_gpio() or
- *		of_parse_own_gpio()
+ * @lflags:	bitmask of gpio_lookup_flags GPIO_* values - returned from
+ *		of_find_gpio() or of_parse_own_gpio()
  * @dflags:	gpiod_flags - optional GPIO initialization flags
  *
  * Returns GPIO descriptor to use with Linux GPIO API, or one of the errno
@@ -372,7 +405,7 @@ struct gpio_desc *of_find_gpio(struct device *dev, const char *con_id,
 static struct gpio_desc *of_parse_own_gpio(struct device_node *np,
 					   struct gpio_chip *chip,
 					   unsigned int idx, const char **name,
-					   enum gpio_lookup_flags *lflags,
+					   unsigned long *lflags,
 					   enum gpiod_flags *dflags)
 {
 	struct device_node *chip_np;
@@ -388,7 +421,7 @@ static struct gpio_desc *of_parse_own_gpio(struct device_node *np,
 		return ERR_PTR(-EINVAL);
 
 	xlate_flags = 0;
-	*lflags = 0;
+	*lflags = GPIO_LOOKUP_FLAGS_DEFAULT;
 	*dflags = 0;
 
 	ret = of_property_read_u32(chip_np, "#gpio-cells", &tmp);
@@ -445,7 +478,7 @@ static int of_gpiochip_scan_gpios(struct gpio_chip *chip)
 	struct gpio_desc *desc = NULL;
 	struct device_node *np;
 	const char *name;
-	enum gpio_lookup_flags lflags;
+	unsigned long lflags;
 	enum gpiod_flags dflags;
 	unsigned int i;
 	int ret;

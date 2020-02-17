@@ -29,6 +29,7 @@ static DEFINE_PER_CPU(struct coresight_device *, csdev_src);
 
 /* ETMv3.5/PTM's ETMCR is 'config' */
 PMU_FORMAT_ATTR(cycacc,		"config:" __stringify(ETM_OPT_CYCACC));
+PMU_FORMAT_ATTR(contextid,	"config:" __stringify(ETM_OPT_CTXTID));
 PMU_FORMAT_ATTR(timestamp,	"config:" __stringify(ETM_OPT_TS));
 PMU_FORMAT_ATTR(retstack,	"config:" __stringify(ETM_OPT_RETSTK));
 /* Sink ID - same for all ETMs */
@@ -36,6 +37,7 @@ PMU_FORMAT_ATTR(sinkid,		"config2:0-31");
 
 static struct attribute *etm_config_formats_attr[] = {
 	&format_attr_cycacc.attr,
+	&format_attr_contextid.attr,
 	&format_attr_timestamp.attr,
 	&format_attr_retstack.attr,
 	&format_attr_sinkid.attr,
@@ -118,23 +120,34 @@ out:
 	return ret;
 }
 
+static void free_sink_buffer(struct etm_event_data *event_data)
+{
+	int cpu;
+	cpumask_t *mask = &event_data->mask;
+	struct coresight_device *sink;
+
+	if (WARN_ON(cpumask_empty(mask)))
+		return;
+
+	if (!event_data->snk_config)
+		return;
+
+	cpu = cpumask_first(mask);
+	sink = coresight_get_sink(etm_event_cpu_path(event_data, cpu));
+	sink_ops(sink)->free_buffer(event_data->snk_config);
+}
+
 static void free_event_data(struct work_struct *work)
 {
 	int cpu;
 	cpumask_t *mask;
 	struct etm_event_data *event_data;
-	struct coresight_device *sink;
 
 	event_data = container_of(work, struct etm_event_data, work);
 	mask = &event_data->mask;
 
 	/* Free the sink buffers, if there are any */
-	if (event_data->snk_config && !WARN_ON(cpumask_empty(mask))) {
-		cpu = cpumask_first(mask);
-		sink = coresight_get_sink(etm_event_cpu_path(event_data, cpu));
-		if (sink_ops(sink)->free_buffer)
-			sink_ops(sink)->free_buffer(event_data->snk_config);
-	}
+	free_sink_buffer(event_data);
 
 	for_each_cpu(cpu, mask) {
 		struct list_head **ppath;
@@ -213,7 +226,7 @@ static void *etm_setup_aux(struct perf_event *event, void **pages,
 		sink = coresight_get_enabled_sink(true);
 	}
 
-	if (!sink || !sink_ops(sink)->alloc_buffer)
+	if (!sink)
 		goto err;
 
 	mask = &event_data->mask;
@@ -259,9 +272,12 @@ static void *etm_setup_aux(struct perf_event *event, void **pages,
 	if (cpu >= nr_cpu_ids)
 		goto err;
 
+	if (!sink_ops(sink)->alloc_buffer || !sink_ops(sink)->free_buffer)
+		goto err;
+
 	/* Allocate the sink buffer for this session */
 	event_data->snk_config =
-			sink_ops(sink)->alloc_buffer(sink, cpu, pages,
+			sink_ops(sink)->alloc_buffer(sink, event, pages,
 						     nr_pages, overwrite);
 	if (!event_data->snk_config)
 		goto err;
@@ -507,7 +523,7 @@ int etm_perf_add_symlink_sink(struct coresight_device *csdev)
 	unsigned long hash;
 	const char *name;
 	struct device *pmu_dev = etm_pmu.dev;
-	struct device *pdev = csdev->dev.parent;
+	struct device *dev = &csdev->dev;
 	struct dev_ext_attribute *ea;
 
 	if (csdev->type != CORESIGHT_DEV_TYPE_SINK &&
@@ -520,15 +536,16 @@ int etm_perf_add_symlink_sink(struct coresight_device *csdev)
 	if (!etm_perf_up)
 		return -EPROBE_DEFER;
 
-	ea = devm_kzalloc(pdev, sizeof(*ea), GFP_KERNEL);
+	ea = devm_kzalloc(dev, sizeof(*ea), GFP_KERNEL);
 	if (!ea)
 		return -ENOMEM;
 
-	name = dev_name(pdev);
+	name = dev_name(dev);
 	/* See function coresight_get_sink_by_id() to know where this is used */
 	hash = hashlen_hash(hashlen_string(NULL, name));
 
-	ea->attr.attr.name = devm_kstrdup(pdev, name, GFP_KERNEL);
+	sysfs_attr_init(&ea->attr.attr);
+	ea->attr.attr.name = devm_kstrdup(dev, name, GFP_KERNEL);
 	if (!ea->attr.attr.name)
 		return -ENOMEM;
 
@@ -566,7 +583,8 @@ static int __init etm_perf_init(void)
 {
 	int ret;
 
-	etm_pmu.capabilities		= PERF_PMU_CAP_EXCLUSIVE;
+	etm_pmu.capabilities		= (PERF_PMU_CAP_EXCLUSIVE |
+					   PERF_PMU_CAP_ITRACE);
 
 	etm_pmu.attr_groups		= etm_pmu_attr_groups;
 	etm_pmu.task_ctx_nr		= perf_sw_context;

@@ -22,7 +22,6 @@
 #include "meson_overlay.h"
 #include "meson_vpp.h"
 #include "meson_viu.h"
-#include "meson_canvas.h"
 #include "meson_registers.h"
 
 /* VD1_IF0_GEN_REG */
@@ -350,13 +349,6 @@ static void meson_overlay_atomic_update(struct drm_plane *plane,
 
 	DRM_DEBUG_DRIVER("\n");
 
-	/* Fallback is canvas provider is not available */
-	if (!priv->canvas) {
-		priv->canvas_id_vd1_0 = MESON_CANVAS_ID_VD1_0;
-		priv->canvas_id_vd1_1 = MESON_CANVAS_ID_VD1_1;
-		priv->canvas_id_vd1_2 = MESON_CANVAS_ID_VD1_2;
-	}
-
 	interlace_mode = state->crtc->mode.flags & DRM_MODE_FLAG_INTERLACE;
 
 	spin_lock_irqsave(&priv->drm->event_lock, flags);
@@ -466,7 +458,7 @@ static void meson_overlay_atomic_update(struct drm_plane *plane,
 	}
 
 	/* Update Canvas with buffer address */
-	priv->viu.vd1_planes = drm_format_num_planes(fb->format->format);
+	priv->viu.vd1_planes = fb->format->num_planes;
 
 	switch (priv->viu.vd1_planes) {
 	case 3:
@@ -474,8 +466,8 @@ static void meson_overlay_atomic_update(struct drm_plane *plane,
 		priv->viu.vd1_addr2 = gem->paddr + fb->offsets[2];
 		priv->viu.vd1_stride2 = fb->pitches[2];
 		priv->viu.vd1_height2 =
-			drm_format_plane_height(fb->height,
-						fb->format->format, 2);
+			drm_format_info_plane_height(fb->format,
+						fb->height, 2);
 		DRM_DEBUG("plane 2 addr 0x%x stride %d height %d\n",
 			 priv->viu.vd1_addr2,
 			 priv->viu.vd1_stride2,
@@ -486,8 +478,8 @@ static void meson_overlay_atomic_update(struct drm_plane *plane,
 		priv->viu.vd1_addr1 = gem->paddr + fb->offsets[1];
 		priv->viu.vd1_stride1 = fb->pitches[1];
 		priv->viu.vd1_height1 =
-			drm_format_plane_height(fb->height,
-						fb->format->format, 1);
+			drm_format_info_plane_height(fb->format,
+						fb->height, 1);
 		DRM_DEBUG("plane 1 addr 0x%x stride %d height %d\n",
 			 priv->viu.vd1_addr1,
 			 priv->viu.vd1_stride1,
@@ -498,8 +490,8 @@ static void meson_overlay_atomic_update(struct drm_plane *plane,
 		priv->viu.vd1_addr0 = gem->paddr + fb->offsets[0];
 		priv->viu.vd1_stride0 = fb->pitches[0];
 		priv->viu.vd1_height0 =
-			drm_format_plane_height(fb->height,
-						fb->format->format, 0);
+			drm_format_info_plane_height(fb->format,
+						fb->height, 0);
 		DRM_DEBUG("plane 0 addr 0x%x stride %d height %d\n",
 			 priv->viu.vd1_addr0,
 			 priv->viu.vd1_stride0,
@@ -524,8 +516,14 @@ static void meson_overlay_atomic_disable(struct drm_plane *plane,
 	priv->viu.vd1_enabled = false;
 
 	/* Disable VD1 */
-	writel_bits_relaxed(VPP_VD1_POSTBLEND | VPP_VD1_PREBLEND, 0,
-			    priv->io_base + _REG(VPP_MISC));
+	if (meson_vpu_is_compatible(priv, "amlogic,meson-g12a-vpu")) {
+		writel_relaxed(0, priv->io_base + _REG(VD1_BLEND_SRC_CTRL));
+		writel_relaxed(0, priv->io_base + _REG(VD2_BLEND_SRC_CTRL));
+		writel_relaxed(0, priv->io_base + _REG(VD1_IF0_GEN_REG + 0x17b0));
+		writel_relaxed(0, priv->io_base + _REG(VD2_IF0_GEN_REG + 0x17b0));
+	} else
+		writel_bits_relaxed(VPP_VD1_POSTBLEND | VPP_VD1_PREBLEND, 0,
+				    priv->io_base + _REG(VPP_MISC));
 
 }
 
@@ -579,6 +577,9 @@ int meson_overlay_create(struct meson_drm *priv)
 				 DRM_PLANE_TYPE_OVERLAY, "meson_overlay_plane");
 
 	drm_plane_helper_add(plane, &meson_overlay_helper_funcs);
+
+	/* For now, VD Overlay plane is always on the back */
+	drm_plane_create_zpos_immutable_property(plane, 0);
 
 	priv->overlay_plane = plane;
 

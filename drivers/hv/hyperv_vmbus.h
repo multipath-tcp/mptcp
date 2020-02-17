@@ -1,25 +1,12 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *
  * Copyright (c) 2011, Microsoft Corporation.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 59 Temple
- * Place - Suite 330, Boston, MA 02111-1307 USA.
  *
  * Authors:
  *   Haiyang Zhang <haiyangz@microsoft.com>
  *   Hank Janssen  <hjanssen@microsoft.com>
  *   K. Y. Srinivasan <kys@microsoft.com>
- *
  */
 
 #ifndef _HYPERV_VMBUS_H
@@ -151,7 +138,6 @@ struct hv_per_cpu_context {
 	 * per-cpu list of the channels based on their CPU affinity.
 	 */
 	struct list_head chan_list;
-	struct clock_event_device *clk_evt;
 };
 
 struct hv_context {
@@ -159,8 +145,6 @@ struct hv_context {
 	 * So at this point this really can only contain the Hyper-V ID
 	 */
 	u64 guestid;
-
-	void *tsc_page;
 
 	struct hv_per_cpu_context __percpu *cpu_context;
 
@@ -189,10 +173,9 @@ extern int hv_synic_init(unsigned int cpu);
 
 extern int hv_synic_cleanup(unsigned int cpu);
 
-extern void hv_synic_clockevents_cleanup(void);
-
 /* Interface */
 
+void hv_ringbuffer_pre_init(struct vmbus_channel *channel);
 
 int hv_ringbuffer_init(struct hv_ring_buffer_info *ring_info,
 		       struct page *pages, u32 pagecnt);
@@ -320,6 +303,8 @@ int vmbus_device_register(struct hv_device *child_device_obj);
 void vmbus_device_unregister(struct hv_device *device_obj);
 int vmbus_add_channel_kobj(struct hv_device *device_obj,
 			   struct vmbus_channel *channel);
+
+void vmbus_remove_channel_attr_group(struct vmbus_channel *channel);
 
 struct vmbus_channel *relid2channel(u32 relid);
 

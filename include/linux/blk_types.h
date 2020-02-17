@@ -154,18 +154,6 @@ struct bio {
 	blk_status_t		bi_status;
 	u8			bi_partno;
 
-	/* Number of segments in this BIO after
-	 * physical address coalescing is performed.
-	 */
-	unsigned int		bi_phys_segments;
-
-	/*
-	 * To keep track of the max segment size, we account for the
-	 * sizes of the first and last mergeable segments in this bio.
-	 */
-	unsigned int		bi_seg_front_size;
-	unsigned int		bi_seg_back_size;
-
 	struct bvec_iter	bi_iter;
 
 	atomic_t		__bi_remaining;
@@ -215,21 +203,23 @@ struct bio {
 /*
  * bio flags
  */
-#define BIO_NO_PAGE_REF	0	/* don't put release vec pages */
-#define BIO_SEG_VALID	1	/* bi_phys_segments valid */
-#define BIO_CLONED	2	/* doesn't own data */
-#define BIO_BOUNCED	3	/* bio is a bounce bio */
-#define BIO_USER_MAPPED 4	/* contains user pages */
-#define BIO_NULL_MAPPED 5	/* contains invalid user pages */
-#define BIO_QUIET	6	/* Make BIO Quiet */
-#define BIO_CHAIN	7	/* chained bio, ->bi_remaining in effect */
-#define BIO_REFFED	8	/* bio has elevated ->bi_cnt */
-#define BIO_THROTTLED	9	/* This bio has already been subjected to
+enum {
+	BIO_NO_PAGE_REF,	/* don't put release vec pages */
+	BIO_CLONED,		/* doesn't own data */
+	BIO_BOUNCED,		/* bio is a bounce bio */
+	BIO_USER_MAPPED,	/* contains user pages */
+	BIO_NULL_MAPPED,	/* contains invalid user pages */
+	BIO_QUIET,		/* Make BIO Quiet */
+	BIO_CHAIN,		/* chained bio, ->bi_remaining in effect */
+	BIO_REFFED,		/* bio has elevated ->bi_cnt */
+	BIO_THROTTLED,		/* This bio has already been subjected to
 				 * throttling rules. Don't do it again. */
-#define BIO_TRACE_COMPLETION 10	/* bio_endio() should trace the final completion
+	BIO_TRACE_COMPLETION,	/* bio_endio() should trace the final completion
 				 * of this bio. */
-#define BIO_QUEUE_ENTERED 11	/* can use blk_queue_enter_live() */
-#define BIO_TRACKED 12		/* set if bio goes through the rq_qos path */
+	BIO_QUEUE_ENTERED,	/* can use blk_queue_enter_live() */
+	BIO_TRACKED,		/* set if bio goes through the rq_qos path */
+	BIO_FLAG_LAST
+};
 
 /* See BVEC_POOL_OFFSET below before adding new flags */
 
@@ -321,6 +311,14 @@ enum req_flag_bits {
 	__REQ_RAHEAD,		/* read ahead, can fail anytime */
 	__REQ_BACKGROUND,	/* background IO */
 	__REQ_NOWAIT,           /* Don't wait if request will block */
+	/*
+	 * When a shared kthread needs to issue a bio for a cgroup, doing
+	 * so synchronously can lead to priority inversions as the kthread
+	 * can be trapped waiting for that cgroup.  CGROUP_PUNT flag makes
+	 * submit_bio() punt the actual issuing to a dedicated per-blkcg
+	 * work item to avoid such priority inversions.
+	 */
+	__REQ_CGROUP_PUNT,
 
 	/* command specific flags for REQ_OP_WRITE_ZEROES: */
 	__REQ_NOUNMAP,		/* do not free blocks when zeroing */
@@ -347,6 +345,8 @@ enum req_flag_bits {
 #define REQ_RAHEAD		(1ULL << __REQ_RAHEAD)
 #define REQ_BACKGROUND		(1ULL << __REQ_BACKGROUND)
 #define REQ_NOWAIT		(1ULL << __REQ_NOWAIT)
+#define REQ_CGROUP_PUNT		(1ULL << __REQ_CGROUP_PUNT)
+
 #define REQ_NOUNMAP		(1ULL << __REQ_NOUNMAP)
 #define REQ_HIPRI		(1ULL << __REQ_HIPRI)
 

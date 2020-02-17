@@ -697,33 +697,30 @@ void r8712_ResetPhyRxPktCount(struct _adapter *pAdapter)
 static u32 GetPhyRxPktCounts(struct _adapter *pAdapter, u32 selbit)
 {
 	/*selection*/
-	u32 phyrx_set = 0, count = 0;
+	u32 phyrx_set = 0;
 	u32 SelectBit;
 
 	SelectBit = selbit << 28;
 	phyrx_set |= (SelectBit & 0xF0000000);
 	r8712_write32(pAdapter, RXERR_RPT, phyrx_set);
 	/*Read packet count*/
-	count = r8712_read32(pAdapter, RXERR_RPT) & RPTMaxCount;
-	return count;
+	return r8712_read32(pAdapter, RXERR_RPT) & RPTMaxCount;
 }
 
 u32 r8712_GetPhyRxPktReceived(struct _adapter *pAdapter)
 {
-	u32 OFDM_cnt = 0, CCK_cnt = 0, HT_cnt = 0;
+	u32 OFDM_cnt = GetPhyRxPktCounts(pAdapter, OFDM_MPDU_OK_BIT);
+	u32 CCK_cnt  = GetPhyRxPktCounts(pAdapter, CCK_MPDU_OK_BIT);
+	u32 HT_cnt   = GetPhyRxPktCounts(pAdapter, HT_MPDU_OK_BIT);
 
-	OFDM_cnt = GetPhyRxPktCounts(pAdapter, OFDM_MPDU_OK_BIT);
-	CCK_cnt = GetPhyRxPktCounts(pAdapter, CCK_MPDU_OK_BIT);
-	HT_cnt = GetPhyRxPktCounts(pAdapter, HT_MPDU_OK_BIT);
 	return OFDM_cnt + CCK_cnt + HT_cnt;
 }
 
 u32 r8712_GetPhyRxPktCRC32Error(struct _adapter *pAdapter)
 {
-	u32 OFDM_cnt = 0, CCK_cnt = 0, HT_cnt = 0;
+	u32 OFDM_cnt = GetPhyRxPktCounts(pAdapter, OFDM_MPDU_FAIL_BIT);
+	u32 CCK_cnt  = GetPhyRxPktCounts(pAdapter, CCK_MPDU_FAIL_BIT);
+	u32 HT_cnt   = GetPhyRxPktCounts(pAdapter, HT_MPDU_FAIL_BIT);
 
-	OFDM_cnt = GetPhyRxPktCounts(pAdapter, OFDM_MPDU_FAIL_BIT);
-	CCK_cnt = GetPhyRxPktCounts(pAdapter, CCK_MPDU_FAIL_BIT);
-	HT_cnt = GetPhyRxPktCounts(pAdapter, HT_MPDU_FAIL_BIT);
 	return OFDM_cnt + CCK_cnt + HT_cnt;
 }

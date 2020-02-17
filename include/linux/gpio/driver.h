@@ -18,6 +18,7 @@ struct seq_file;
 struct gpio_device;
 struct module;
 enum gpiod_flags;
+enum gpio_lookup_flags;
 
 #ifdef CONFIG_GPIOLIB
 
@@ -102,13 +103,6 @@ struct gpio_irq_chip {
 	unsigned int num_parents;
 
 	/**
-	 * @parent_irq:
-	 *
-	 * For use by gpiochip_set_cascaded_irqchip()
-	 */
-	unsigned int parent_irq;
-
-	/**
 	 * @parents:
 	 *
 	 * A list of interrupt parents of a GPIO chip. This is owned by the
@@ -167,7 +161,7 @@ struct gpio_irq_chip {
 	 */
 	void		(*irq_disable)(struct irq_data *data);
 };
-#endif
+#endif /* CONFIG_GPIOLIB_IRQCHIP */
 
 /**
  * struct gpio_chip - abstract a GPIO controller
@@ -200,6 +194,8 @@ struct gpio_irq_chip {
  * @dbg_show: optional routine to show contents in debugfs; default code
  *	will be used when this is omitted, but custom code can show extra
  *	state (such as pullup/pulldown configuration).
+ * @init_valid_mask: optional routine to initialize @valid_mask, to be used if
+ *	not all GPIOs are valid.
  * @base: identifies the first GPIO number handled by this chip;
  *	or, if negative during registration, requests dynamic ID allocation.
  *	DEPRECATION: providing anything non-negative and nailing the base
@@ -227,9 +223,10 @@ struct gpio_irq_chip {
  * @reg_dat: data (in) register for generic GPIO
  * @reg_set: output set register (out=high) for generic GPIO
  * @reg_clr: output clear register (out=low) for generic GPIO
- * @reg_dir: direction setting register for generic GPIO
- * @bgpio_dir_inverted: indicates that the direction register is inverted
- *	(gpiolib private state variable)
+ * @reg_dir_out: direction out setting register for generic GPIO
+ * @reg_dir_in: direction in setting register for generic GPIO
+ * @bgpio_dir_unreadable: indicates that the direction register(s) cannot
+ *	be read and we need to rely on out internal state tracking.
  * @bgpio_bits: number of register bits used for a generic GPIO i.e.
  *	<register width> * 8
  * @bgpio_lock: used to lock chip->bgpio_data. Also, this is needed to keep
@@ -237,7 +234,8 @@ struct gpio_irq_chip {
  * @bgpio_data:	shadowed data register for generic GPIO to clear/set bits
  *	safely.
  * @bgpio_dir: shadowed direction register for generic GPIO to clear/set
- *	direction safely.
+ *	direction safely. A "1" in this word means the line is set as
+ *	output.
  *
  * A gpio_chip can help platforms abstract various sources of GPIOs so
  * they can all be accessed through a common programing interface.
@@ -298,13 +296,14 @@ struct gpio_chip {
 	void __iomem *reg_dat;
 	void __iomem *reg_set;
 	void __iomem *reg_clr;
-	void __iomem *reg_dir;
-	bool bgpio_dir_inverted;
+	void __iomem *reg_dir_out;
+	void __iomem *reg_dir_in;
+	bool bgpio_dir_unreadable;
 	int bgpio_bits;
 	spinlock_t bgpio_lock;
 	unsigned long bgpio_data;
 	unsigned long bgpio_dir;
-#endif
+#endif /* CONFIG_GPIO_GENERIC */
 
 #ifdef CONFIG_GPIOLIB_IRQCHIP
 	/*
@@ -319,7 +318,7 @@ struct gpio_chip {
 	 * used to handle IRQs for most practical cases.
 	 */
 	struct gpio_irq_chip irq;
-#endif
+#endif /* CONFIG_GPIOLIB_IRQCHIP */
 
 	/**
 	 * @need_valid_mask:
@@ -366,7 +365,7 @@ struct gpio_chip {
 	 */
 	int (*of_xlate)(struct gpio_chip *gc,
 			const struct of_phandle_args *gpiospec, u32 *flags);
-#endif
+#endif /* CONFIG_OF_GPIO */
 };
 
 extern const char *gpiochip_is_requested(struct gpio_chip *chip,
@@ -409,7 +408,7 @@ extern int gpiochip_add_data_with_key(struct gpio_chip *chip, void *data,
 	})
 #else
 #define gpiochip_add_data(chip, data) gpiochip_add_data_with_key(chip, data, NULL, NULL)
-#endif
+#endif /* CONFIG_LOCKDEP */
 
 static inline int gpiochip_add(struct gpio_chip *chip)
 {
@@ -464,7 +463,7 @@ int bgpio_init(struct gpio_chip *gc, struct device *dev,
 #define BGPIOF_READ_OUTPUT_REG_SET	BIT(4) /* reg_set stores output value */
 #define BGPIOF_NO_OUTPUT		BIT(5) /* only input */
 
-#endif
+#endif /* CONFIG_GPIO_GENERIC */
 
 #ifdef CONFIG_GPIOLIB_IRQCHIP
 
@@ -534,7 +533,7 @@ static inline int gpiochip_irqchip_add_nested(struct gpio_chip *gpiochip,
 					handler, type, true,
 					&lock_key, &request_key);
 }
-#else
+#else /* ! CONFIG_LOCKDEP */
 static inline int gpiochip_irqchip_add(struct gpio_chip *gpiochip,
 				       struct irq_chip *irqchip,
 				       unsigned int first_irq,
@@ -585,7 +584,9 @@ int gpiochip_add_pingroup_range(struct gpio_chip *chip,
 			unsigned int gpio_offset, const char *pin_group);
 void gpiochip_remove_pin_ranges(struct gpio_chip *chip);
 
-#else
+#else /* ! CONFIG_PINCTRL */
+
+struct pinctrl_dev;
 
 static inline int
 gpiochip_add_pin_range(struct gpio_chip *chip, const char *pinctl_name,
@@ -611,8 +612,12 @@ gpiochip_remove_pin_ranges(struct gpio_chip *chip)
 
 struct gpio_desc *gpiochip_request_own_desc(struct gpio_chip *chip, u16 hwnum,
 					    const char *label,
-					    enum gpiod_flags flags);
+					    enum gpio_lookup_flags lflags,
+					    enum gpiod_flags dflags);
 void gpiochip_free_own_desc(struct gpio_desc *desc);
+
+void devprop_gpiochip_set_names(struct gpio_chip *chip,
+				const struct fwnode_handle *fwnode);
 
 #else /* CONFIG_GPIOLIB */
 

@@ -128,12 +128,12 @@ struct nvmet_fc_tgt_queue {
 	struct nvmet_cq			nvme_cq;
 	struct nvmet_sq			nvme_sq;
 	struct nvmet_fc_tgt_assoc	*assoc;
-	struct nvmet_fc_fcp_iod		*fod;		/* array of fcp_iods */
 	struct list_head		fod_list;
 	struct list_head		pending_cmd_list;
 	struct list_head		avail_defer_list;
 	struct workqueue_struct		*work_q;
 	struct kref			ref;
+	struct nvmet_fc_fcp_iod		fod[];		/* array of fcp_iods */
 } __aligned(sizeof(unsigned long long));
 
 struct nvmet_fc_tgt_assoc {
@@ -588,9 +588,7 @@ nvmet_fc_alloc_target_queue(struct nvmet_fc_tgt_assoc *assoc,
 	if (qid > NVMET_NR_QUEUES)
 		return NULL;
 
-	queue = kzalloc((sizeof(*queue) +
-				(sizeof(struct nvmet_fc_fcp_iod) * sqsize)),
-				GFP_KERNEL);
+	queue = kzalloc(struct_size(queue, fod, sqsize), GFP_KERNEL);
 	if (!queue)
 		return NULL;
 
@@ -603,7 +601,6 @@ nvmet_fc_alloc_target_queue(struct nvmet_fc_tgt_assoc *assoc,
 	if (!queue->work_q)
 		goto out_a_put;
 
-	queue->fod = (struct nvmet_fc_fcp_iod *)&queue[1];
 	queue->qid = qid;
 	queue->sqsize = sqsize;
 	queue->assoc = assoc;
@@ -1809,7 +1806,7 @@ nvmet_fc_prep_fcp_rsp(struct nvmet_fc_tgtport *tgtport,
 	 */
 	rspcnt = atomic_inc_return(&fod->queue->zrspcnt);
 	if (!(rspcnt % fod->queue->ersp_ratio) ||
-	    sqe->opcode == nvme_fabrics_command ||
+	    nvme_is_fabrics((struct nvme_command *) sqe) ||
 	    xfr_length != fod->req.transfer_len ||
 	    (le16_to_cpu(cqe->status) & 0xFFFE) || cqewd[0] || cqewd[1] ||
 	    (sqe->flags & (NVME_CMD_FUSE_FIRST | NVME_CMD_FUSE_SECOND)) ||
@@ -2187,7 +2184,7 @@ nvmet_fc_handle_fcp_rqst(struct nvmet_fc_tgtport *tgtport,
 	}
 
 	fod->req.cmd = &fod->cmdiubuf.sqe;
-	fod->req.rsp = &fod->rspiubuf.cqe;
+	fod->req.cqe = &fod->rspiubuf.cqe;
 	fod->req.port = tgtport->pe->port;
 
 	/* clear any response payload */
@@ -2552,6 +2549,16 @@ nvmet_fc_remove_port(struct nvmet_port *port)
 	kfree(pe);
 }
 
+static void
+nvmet_fc_discovery_chg(struct nvmet_port *port)
+{
+	struct nvmet_fc_port_entry *pe = port->priv;
+	struct nvmet_fc_tgtport *tgtport = pe->tgtport;
+
+	if (tgtport && tgtport->ops->discovery_event)
+		tgtport->ops->discovery_event(&tgtport->fc_target_port);
+}
+
 static const struct nvmet_fabrics_ops nvmet_fc_tgt_fcp_ops = {
 	.owner			= THIS_MODULE,
 	.type			= NVMF_TRTYPE_FC,
@@ -2560,6 +2567,7 @@ static const struct nvmet_fabrics_ops nvmet_fc_tgt_fcp_ops = {
 	.remove_port		= nvmet_fc_remove_port,
 	.queue_response		= nvmet_fc_fcp_nvme_cmd_done,
 	.delete_ctrl		= nvmet_fc_delete_ctrl,
+	.discovery_chg		= nvmet_fc_discovery_chg,
 };
 
 static int __init nvmet_fc_init_module(void)

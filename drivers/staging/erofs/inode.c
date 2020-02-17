@@ -20,12 +20,13 @@ static int read_inode(struct inode *inode, void *data)
 	struct erofs_vnode *vi = EROFS_V(inode);
 	struct erofs_inode_v1 *v1 = data;
 	const unsigned int advise = le16_to_cpu(v1->i_advise);
+	erofs_blk_t nblks = 0;
 
-	vi->data_mapping_mode = __inode_data_mapping(advise);
+	vi->datamode = __inode_data_mapping(advise);
 
-	if (unlikely(vi->data_mapping_mode >= EROFS_INODE_LAYOUT_MAX)) {
-		errln("unknown data mapping mode %u of nid %llu",
-			vi->data_mapping_mode, vi->nid);
+	if (unlikely(vi->datamode >= EROFS_INODE_LAYOUT_MAX)) {
+		errln("unsupported data mapping %u of nid %llu",
+		      vi->datamode, vi->nid);
 		DBG_BUGON(1);
 		return -EIO;
 	}
@@ -38,7 +39,7 @@ static int read_inode(struct inode *inode, void *data)
 
 		inode->i_mode = le16_to_cpu(v2->i_mode);
 		if (S_ISREG(inode->i_mode) || S_ISDIR(inode->i_mode) ||
-						S_ISLNK(inode->i_mode)) {
+		    S_ISLNK(inode->i_mode)) {
 			vi->raw_blkaddr = le32_to_cpu(v2->i_u.raw_blkaddr);
 		} else if (S_ISCHR(inode->i_mode) || S_ISBLK(inode->i_mode)) {
 			inode->i_rdev =
@@ -60,6 +61,10 @@ static int read_inode(struct inode *inode, void *data)
 			le32_to_cpu(v2->i_ctime_nsec);
 
 		inode->i_size = le64_to_cpu(v2->i_size);
+
+		/* total blocks for compressed files */
+		if (is_inode_layout_compression(inode))
+			nblks = le32_to_cpu(v2->i_u.compressed_blocks);
 	} else if (__inode_version(advise) == EROFS_INODE_LAYOUT_V1) {
 		struct erofs_sb_info *sbi = EROFS_SB(inode->i_sb);
 
@@ -68,7 +73,7 @@ static int read_inode(struct inode *inode, void *data)
 
 		inode->i_mode = le16_to_cpu(v1->i_mode);
 		if (S_ISREG(inode->i_mode) || S_ISDIR(inode->i_mode) ||
-						S_ISLNK(inode->i_mode)) {
+		    S_ISLNK(inode->i_mode)) {
 			vi->raw_blkaddr = le32_to_cpu(v1->i_u.raw_blkaddr);
 		} else if (S_ISCHR(inode->i_mode) || S_ISBLK(inode->i_mode)) {
 			inode->i_rdev =
@@ -90,15 +95,20 @@ static int read_inode(struct inode *inode, void *data)
 			sbi->build_time_nsec;
 
 		inode->i_size = le32_to_cpu(v1->i_size);
+		if (is_inode_layout_compression(inode))
+			nblks = le32_to_cpu(v1->i_u.compressed_blocks);
 	} else {
 		errln("unsupported on-disk inode version %u of nid %llu",
-			__inode_version(advise), vi->nid);
+		      __inode_version(advise), vi->nid);
 		DBG_BUGON(1);
 		return -EIO;
 	}
 
-	/* measure inode.i_blocks as the generic filesystem */
-	inode->i_blocks = ((inode->i_size - 1) >> 9) + 1;
+	if (!nblks)
+		/* measure inode.i_blocks as generic filesystems */
+		inode->i_blocks = roundup(inode->i_size, EROFS_BLKSIZ) >> 9;
+	else
+		inode->i_blocks = nblks << LOG_SECTORS_PER_BLOCK;
 	return 0;
 }
 
@@ -117,19 +127,16 @@ static int fill_inline_data(struct inode *inode, void *data,
 {
 	struct erofs_vnode *vi = EROFS_V(inode);
 	struct erofs_sb_info *sbi = EROFS_I_SB(inode);
-	int mode = vi->data_mapping_mode;
-
-	DBG_BUGON(mode >= EROFS_INODE_LAYOUT_MAX);
 
 	/* should be inode inline C */
-	if (mode != EROFS_INODE_LAYOUT_INLINE)
+	if (!is_inode_flat_inline(inode))
 		return 0;
 
 	/* fast symlink (following ext4) */
 	if (S_ISLNK(inode->i_mode) && inode->i_size < PAGE_SIZE) {
 		char *lnk = erofs_kmalloc(sbi, inode->i_size + 1, GFP_KERNEL);
 
-		if (unlikely(lnk == NULL))
+		if (unlikely(!lnk))
 			return -ENOMEM;
 
 		m_pofs += vi->inode_isize + vi->xattr_isize;
@@ -148,7 +155,7 @@ static int fill_inline_data(struct inode *inode, void *data,
 		inode->i_link = lnk;
 		set_inode_fast_symlink(inode);
 	}
-	return -EAGAIN;
+	return 0;
 }
 
 static int fill_inode(struct inode *inode, int isdir)
@@ -173,7 +180,7 @@ static int fill_inode(struct inode *inode, int isdir)
 
 	if (IS_ERR(page)) {
 		errln("failed to get inode (nid: %llu) page, err %ld",
-			vi->nid, PTR_ERR(page));
+		      vi->nid, PTR_ERR(page));
 		return PTR_ERR(page);
 	}
 
@@ -197,25 +204,21 @@ static int fill_inode(struct inode *inode, int isdir)
 			S_ISFIFO(inode->i_mode) || S_ISSOCK(inode->i_mode)) {
 			inode->i_op = &erofs_generic_iops;
 			init_special_inode(inode, inode->i_mode, inode->i_rdev);
+			goto out_unlock;
 		} else {
 			err = -EIO;
 			goto out_unlock;
 		}
 
 		if (is_inode_layout_compression(inode)) {
-#ifdef CONFIG_EROFS_FS_ZIP
-			inode->i_mapping->a_ops =
-				&z_erofs_vle_normalaccess_aops;
-#else
-			err = -ENOTSUPP;
-#endif
+			err = z_erofs_fill_inode(inode);
 			goto out_unlock;
 		}
 
 		inode->i_mapping->a_ops = &erofs_raw_access_aops;
 
 		/* fill last page if inline data is available */
-		fill_inline_data(inode, data, ofs);
+		err = fill_inline_data(inode, data, ofs);
 	}
 
 out_unlock:
@@ -260,16 +263,18 @@ static inline struct inode *erofs_iget_locked(struct super_block *sb,
 }
 
 struct inode *erofs_iget(struct super_block *sb,
-	erofs_nid_t nid, bool isdir)
+			 erofs_nid_t nid,
+			 bool isdir)
 {
 	struct inode *inode = erofs_iget_locked(sb, nid);
 
-	if (unlikely(inode == NULL))
+	if (unlikely(!inode))
 		return ERR_PTR(-ENOMEM);
 
 	if (inode->i_state & I_NEW) {
 		int err;
 		struct erofs_vnode *vi = EROFS_V(inode);
+
 		vi->nid = nid;
 
 		err = fill_inode(inode, isdir);
@@ -283,7 +288,24 @@ struct inode *erofs_iget(struct super_block *sb,
 	return inode;
 }
 
+int erofs_getattr(const struct path *path, struct kstat *stat,
+		  u32 request_mask, unsigned int query_flags)
+{
+	struct inode *const inode = d_inode(path->dentry);
+
+	if (is_inode_layout_compression(inode))
+		stat->attributes |= STATX_ATTR_COMPRESSED;
+
+	stat->attributes |= STATX_ATTR_IMMUTABLE;
+	stat->attributes_mask |= (STATX_ATTR_COMPRESSED |
+				  STATX_ATTR_IMMUTABLE);
+
+	generic_fillattr(inode, stat);
+	return 0;
+}
+
 const struct inode_operations erofs_generic_iops = {
+	.getattr = erofs_getattr,
 #ifdef CONFIG_EROFS_FS_XATTR
 	.listxattr = erofs_listxattr,
 #endif
@@ -292,6 +314,7 @@ const struct inode_operations erofs_generic_iops = {
 
 const struct inode_operations erofs_symlink_iops = {
 	.get_link = page_get_link,
+	.getattr = erofs_getattr,
 #ifdef CONFIG_EROFS_FS_XATTR
 	.listxattr = erofs_listxattr,
 #endif
@@ -300,6 +323,7 @@ const struct inode_operations erofs_symlink_iops = {
 
 const struct inode_operations erofs_fast_symlink_iops = {
 	.get_link = simple_get_link,
+	.getattr = erofs_getattr,
 #ifdef CONFIG_EROFS_FS_XATTR
 	.listxattr = erofs_listxattr,
 #endif

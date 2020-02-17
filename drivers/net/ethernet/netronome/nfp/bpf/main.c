@@ -160,35 +160,19 @@ static int nfp_bpf_setup_tc_block_cb(enum tc_setup_type type,
 	return 0;
 }
 
-static int nfp_bpf_setup_tc_block(struct net_device *netdev,
-				  struct tc_block_offload *f)
-{
-	struct nfp_net *nn = netdev_priv(netdev);
-
-	if (f->binder_type != TCF_BLOCK_BINDER_TYPE_CLSACT_INGRESS)
-		return -EOPNOTSUPP;
-
-	switch (f->command) {
-	case TC_BLOCK_BIND:
-		return tcf_block_cb_register(f->block,
-					     nfp_bpf_setup_tc_block_cb,
-					     nn, nn, f->extack);
-	case TC_BLOCK_UNBIND:
-		tcf_block_cb_unregister(f->block,
-					nfp_bpf_setup_tc_block_cb,
-					nn);
-		return 0;
-	default:
-		return -EOPNOTSUPP;
-	}
-}
+static LIST_HEAD(nfp_bpf_block_cb_list);
 
 static int nfp_bpf_setup_tc(struct nfp_app *app, struct net_device *netdev,
 			    enum tc_setup_type type, void *type_data)
 {
+	struct nfp_net *nn = netdev_priv(netdev);
+
 	switch (type) {
 	case TC_SETUP_BLOCK:
-		return nfp_bpf_setup_tc_block(netdev, type_data);
+		return flow_block_cb_setup_simple(type_data,
+						  &nfp_bpf_block_cb_list,
+						  nfp_bpf_setup_tc_block_cb,
+						  nn, nn, true);
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -442,13 +426,15 @@ static int nfp_bpf_init(struct nfp_app *app)
 	bpf->app = app;
 	app->priv = bpf;
 
-	skb_queue_head_init(&bpf->cmsg_replies);
-	init_waitqueue_head(&bpf->cmsg_wq);
 	INIT_LIST_HEAD(&bpf->map_list);
+
+	err = nfp_ccm_init(&bpf->ccm, app);
+	if (err)
+		goto err_free_bpf;
 
 	err = rhashtable_init(&bpf->maps_neutral, &nfp_bpf_maps_neutral_params);
 	if (err)
-		goto err_free_bpf;
+		goto err_clean_ccm;
 
 	nfp_bpf_init_capabilities(bpf);
 
@@ -474,6 +460,8 @@ static int nfp_bpf_init(struct nfp_app *app)
 
 err_free_neutral_maps:
 	rhashtable_destroy(&bpf->maps_neutral);
+err_clean_ccm:
+	nfp_ccm_clean(&bpf->ccm);
 err_free_bpf:
 	kfree(bpf);
 	return err;
@@ -484,7 +472,7 @@ static void nfp_bpf_clean(struct nfp_app *app)
 	struct nfp_app_bpf *bpf = app->priv;
 
 	bpf_offload_dev_destroy(bpf->bpf_dev);
-	WARN_ON(!skb_queue_empty(&bpf->cmsg_replies));
+	nfp_ccm_clean(&bpf->ccm);
 	WARN_ON(!list_empty(&bpf->map_list));
 	WARN_ON(bpf->maps_in_use || bpf->map_elems_in_use);
 	rhashtable_free_and_destroy(&bpf->maps_neutral,

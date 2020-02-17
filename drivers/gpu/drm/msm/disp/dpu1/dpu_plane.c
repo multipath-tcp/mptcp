@@ -1,19 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2014-2018 The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published by
- * the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #define pr_fmt(fmt)	"[drm:%s:%d] " fmt, __func__, __LINE__
@@ -21,6 +10,7 @@
 #include <linux/debugfs.h>
 #include <linux/dma-buf.h>
 
+#include <drm/drm_damage_helper.h>
 #include <drm/drm_atomic_uapi.h>
 
 #include "msm_drv.h"
@@ -387,7 +377,7 @@ static void _dpu_plane_set_ot_limit(struct drm_plane *plane,
 	ot_params.width = drm_rect_width(&pdpu->pipe_cfg.src_rect);
 	ot_params.height = drm_rect_height(&pdpu->pipe_cfg.src_rect);
 	ot_params.is_wfd = !pdpu->is_rt_pipe;
-	ot_params.frame_rate = crtc->mode.vrefresh;
+	ot_params.frame_rate = drm_mode_vrefresh(&crtc->mode);
 	ot_params.vbif_idx = VBIF_RT;
 	ot_params.clk_ctrl = pdpu->pipe_hw->cap->clk_ctrl;
 	ot_params.rd = true;
@@ -557,14 +547,9 @@ static void _dpu_plane_setup_scaler(struct dpu_plane *pdpu,
 		struct dpu_plane_state *pstate,
 		const struct dpu_format *fmt, bool color_fill)
 {
-	uint32_t chroma_subsmpl_h, chroma_subsmpl_v;
+	const struct drm_format_info *info = drm_format_info(fmt->base.pixel_format);
 
 	/* don't chroma subsample if decimating */
-	chroma_subsmpl_h =
-		drm_format_horz_chroma_subsampling(fmt->base.pixel_format);
-	chroma_subsmpl_v =
-		drm_format_vert_chroma_subsampling(fmt->base.pixel_format);
-
 	/* update scaler. calculate default config for QSEED3 */
 	_dpu_plane_setup_scaler3(pdpu, pstate,
 			drm_rect_width(&pdpu->pipe_cfg.src_rect),
@@ -572,7 +557,7 @@ static void _dpu_plane_setup_scaler(struct dpu_plane *pdpu,
 			drm_rect_width(&pdpu->pipe_cfg.dst_rect),
 			drm_rect_height(&pdpu->pipe_cfg.dst_rect),
 			&pstate->scaler3_cfg, fmt,
-			chroma_subsmpl_h, chroma_subsmpl_v);
+			info->hsub, info->vsub);
 }
 
 /**
@@ -780,7 +765,6 @@ static int dpu_plane_prepare_fb(struct drm_plane *plane,
 	struct dpu_plane_state *pstate = to_dpu_plane_state(new_state);
 	struct dpu_hw_fmt_layout layout;
 	struct drm_gem_object *obj;
-	struct msm_gem_object *msm_obj;
 	struct dma_fence *fence;
 	struct dpu_kms *kms = _dpu_plane_get_kms(&pdpu->base);
 	int ret;
@@ -799,8 +783,7 @@ static int dpu_plane_prepare_fb(struct drm_plane *plane,
 	 *       implicit fence and fb prepare by hand here.
 	 */
 	obj = msm_framebuffer_bo(new_state->fb, 0);
-	msm_obj = to_msm_bo(obj);
-	fence = reservation_object_get_excl_rcu(msm_obj->resv);
+	fence = reservation_object_get_excl_rcu(obj->resv);
 	if (fence)
 		drm_atomic_set_fence_for_plane(new_state, fence);
 
@@ -1331,9 +1314,6 @@ static int _dpu_plane_init_debugfs(struct drm_plane *plane)
 		debugfs_create_dir(pdpu->pipe_name,
 				plane->dev->primary->debugfs_root);
 
-	if (!pdpu->debugfs_root)
-		return -ENOMEM;
-
 	/* don't error check these */
 	debugfs_create_x32("features", 0600,
 			pdpu->debugfs_root, &pdpu->features);
@@ -1541,6 +1521,8 @@ struct drm_plane *dpu_plane_init(struct drm_device *dev,
 	ret = drm_plane_create_zpos_property(plane, 0, 0, zpos_max);
 	if (ret)
 		DPU_ERROR("failed to install zpos property, rc = %d\n", ret);
+
+	drm_plane_enable_fb_damage_clips(plane);
 
 	/* success! finalize initialization */
 	drm_plane_helper_add(plane, &dpu_plane_helper_funcs);

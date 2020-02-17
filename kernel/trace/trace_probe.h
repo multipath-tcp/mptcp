@@ -55,7 +55,6 @@
 /* Flags for trace_probe */
 #define TP_FLAG_TRACE		1
 #define TP_FLAG_PROFILE		2
-#define TP_FLAG_REGISTERED	4
 
 /* data_loc: data location, compatible with u32 */
 #define make_data_loc(len, offs)	\
@@ -92,10 +91,13 @@ enum fetch_op {
 	FETCH_OP_FOFFS,		/* File offset: .immediate */
 	// Stage 2 (dereference) op
 	FETCH_OP_DEREF,		/* Dereference: .offset */
+	FETCH_OP_UDEREF,	/* User-space Dereference: .offset */
 	// Stage 3 (store) ops
 	FETCH_OP_ST_RAW,	/* Raw: .size */
 	FETCH_OP_ST_MEM,	/* Mem: .offset, .size */
+	FETCH_OP_ST_UMEM,	/* Mem: .offset, .size */
 	FETCH_OP_ST_STRING,	/* String: .offset, .size */
+	FETCH_OP_ST_USTRING,	/* User String: .offset, .size */
 	// Stage 4 (modify) op
 	FETCH_OP_MOD_BF,	/* Bitfield: .basesize, .lshift, .rshift */
 	// Stage 5 (loop) op
@@ -124,6 +126,7 @@ struct fetch_insn {
 
 /* fetch + deref*N + store + mod + end <= 16, this allows N=12, enough */
 #define FETCH_INSN_MAX	16
+#define FETCH_TOKEN_COMM	(-ECOMM)
 
 /* Fetch type information table */
 struct fetch_type {
@@ -234,15 +237,70 @@ struct event_file_link {
 	struct list_head		list;
 };
 
-static inline bool trace_probe_is_enabled(struct trace_probe *tp)
+static inline bool trace_probe_test_flag(struct trace_probe *tp,
+					 unsigned int flag)
 {
-	return !!(tp->flags & (TP_FLAG_TRACE | TP_FLAG_PROFILE));
+	return !!(tp->flags & flag);
 }
 
-static inline bool trace_probe_is_registered(struct trace_probe *tp)
+static inline void trace_probe_set_flag(struct trace_probe *tp,
+					unsigned int flag)
 {
-	return !!(tp->flags & TP_FLAG_REGISTERED);
+	tp->flags |= flag;
 }
+
+static inline void trace_probe_clear_flag(struct trace_probe *tp,
+					  unsigned int flag)
+{
+	tp->flags &= ~flag;
+}
+
+static inline bool trace_probe_is_enabled(struct trace_probe *tp)
+{
+	return trace_probe_test_flag(tp, TP_FLAG_TRACE | TP_FLAG_PROFILE);
+}
+
+static inline const char *trace_probe_name(struct trace_probe *tp)
+{
+	return trace_event_name(&tp->call);
+}
+
+static inline const char *trace_probe_group_name(struct trace_probe *tp)
+{
+	return tp->call.class->system;
+}
+
+static inline struct trace_event_call *
+	trace_probe_event_call(struct trace_probe *tp)
+{
+	return &tp->call;
+}
+
+static inline int trace_probe_unregister_event_call(struct trace_probe *tp)
+{
+	/* tp->event is unregistered in trace_remove_event_call() */
+	return trace_remove_event_call(&tp->call);
+}
+
+static inline bool trace_probe_has_single_file(struct trace_probe *tp)
+{
+	return !!list_is_singular(&tp->files);
+}
+
+int trace_probe_init(struct trace_probe *tp, const char *event,
+		     const char *group);
+void trace_probe_cleanup(struct trace_probe *tp);
+int trace_probe_register_event_call(struct trace_probe *tp);
+int trace_probe_add_file(struct trace_probe *tp, struct trace_event_file *file);
+int trace_probe_remove_file(struct trace_probe *tp,
+			    struct trace_event_file *file);
+struct event_file_link *trace_probe_get_file_link(struct trace_probe *tp,
+						struct trace_event_file *file);
+
+#define trace_probe_for_each_link(pos, tp)	\
+	list_for_each_entry(pos, &(tp)->files, list)
+#define trace_probe_for_each_link_rcu(pos, tp)	\
+	list_for_each_entry_rcu(pos, &(tp)->files, list)
 
 /* Check the name is good for event/group/fields */
 static inline bool is_good_name(const char *name)
@@ -254,18 +312,6 @@ static inline bool is_good_name(const char *name)
 			return false;
 	}
 	return true;
-}
-
-static inline struct event_file_link *
-find_event_file_link(struct trace_probe *tp, struct trace_event_file *file)
-{
-	struct event_file_link *link;
-
-	list_for_each_entry(link, &tp->files, list)
-		if (link->file == file)
-			return link;
-
-	return NULL;
 }
 
 #define TPARG_FL_RETURN BIT(0)
@@ -280,8 +326,8 @@ extern int traceprobe_update_arg(struct probe_arg *arg);
 extern void traceprobe_free_probe_arg(struct probe_arg *arg);
 
 extern int traceprobe_split_symbol_offset(char *symbol, long *offset);
-extern int traceprobe_parse_event_name(const char **pevent,
-				       const char **pgroup, char *buf);
+int traceprobe_parse_event_name(const char **pevent, const char **pgroup,
+				char *buf, int offset);
 
 extern int traceprobe_set_print_fmt(struct trace_probe *tp, bool is_return);
 
@@ -298,3 +344,76 @@ extern void destroy_local_trace_uprobe(struct trace_event_call *event_call);
 #endif
 extern int traceprobe_define_arg_fields(struct trace_event_call *event_call,
 					size_t offset, struct trace_probe *tp);
+
+#undef ERRORS
+#define ERRORS	\
+	C(FILE_NOT_FOUND,	"Failed to find the given file"),	\
+	C(NO_REGULAR_FILE,	"Not a regular file"),			\
+	C(BAD_REFCNT,		"Invalid reference counter offset"),	\
+	C(REFCNT_OPEN_BRACE,	"Reference counter brace is not closed"), \
+	C(BAD_REFCNT_SUFFIX,	"Reference counter has wrong suffix"),	\
+	C(BAD_UPROBE_OFFS,	"Invalid uprobe offset"),		\
+	C(MAXACT_NO_KPROBE,	"Maxactive is not for kprobe"),		\
+	C(BAD_MAXACT,		"Invalid maxactive number"),		\
+	C(MAXACT_TOO_BIG,	"Maxactive is too big"),		\
+	C(BAD_PROBE_ADDR,	"Invalid probed address or symbol"),	\
+	C(BAD_RETPROBE,		"Retprobe address must be an function entry"), \
+	C(NO_GROUP_NAME,	"Group name is not specified"),		\
+	C(GROUP_TOO_LONG,	"Group name is too long"),		\
+	C(BAD_GROUP_NAME,	"Group name must follow the same rules as C identifiers"), \
+	C(NO_EVENT_NAME,	"Event name is not specified"),		\
+	C(EVENT_TOO_LONG,	"Event name is too long"),		\
+	C(BAD_EVENT_NAME,	"Event name must follow the same rules as C identifiers"), \
+	C(RETVAL_ON_PROBE,	"$retval is not available on probe"),	\
+	C(BAD_STACK_NUM,	"Invalid stack number"),		\
+	C(BAD_ARG_NUM,		"Invalid argument number"),		\
+	C(BAD_VAR,		"Invalid $-valiable specified"),	\
+	C(BAD_REG_NAME,		"Invalid register name"),		\
+	C(BAD_MEM_ADDR,		"Invalid memory address"),		\
+	C(FILE_ON_KPROBE,	"File offset is not available with kprobe"), \
+	C(BAD_FILE_OFFS,	"Invalid file offset value"),		\
+	C(SYM_ON_UPROBE,	"Symbol is not available with uprobe"),	\
+	C(TOO_MANY_OPS,		"Dereference is too much nested"), 	\
+	C(DEREF_NEED_BRACE,	"Dereference needs a brace"),		\
+	C(BAD_DEREF_OFFS,	"Invalid dereference offset"),		\
+	C(DEREF_OPEN_BRACE,	"Dereference brace is not closed"),	\
+	C(COMM_CANT_DEREF,	"$comm can not be dereferenced"),	\
+	C(BAD_FETCH_ARG,	"Invalid fetch argument"),		\
+	C(ARRAY_NO_CLOSE,	"Array is not closed"),			\
+	C(BAD_ARRAY_SUFFIX,	"Array has wrong suffix"),		\
+	C(BAD_ARRAY_NUM,	"Invalid array size"),			\
+	C(ARRAY_TOO_BIG,	"Array number is too big"),		\
+	C(BAD_TYPE,		"Unknown type is specified"),		\
+	C(BAD_STRING,		"String accepts only memory argument"),	\
+	C(BAD_BITFIELD,		"Invalid bitfield"),			\
+	C(ARG_NAME_TOO_LONG,	"Argument name is too long"),		\
+	C(NO_ARG_NAME,		"Argument name is not specified"),	\
+	C(BAD_ARG_NAME,		"Argument name must follow the same rules as C identifiers"), \
+	C(USED_ARG_NAME,	"This argument name is already used"),	\
+	C(ARG_TOO_LONG,		"Argument expression is too long"),	\
+	C(NO_ARG_BODY,		"No argument expression"),		\
+	C(BAD_INSN_BNDRY,	"Probe point is not an instruction boundary"),\
+	C(FAIL_REG_PROBE,	"Failed to register probe event"),
+
+#undef C
+#define C(a, b)		TP_ERR_##a
+
+/* Define TP_ERR_ */
+enum { ERRORS };
+
+/* Error text is defined in trace_probe.c */
+
+struct trace_probe_log {
+	const char	*subsystem;
+	const char	**argv;
+	int		argc;
+	int		index;
+};
+
+void trace_probe_log_init(const char *subsystem, int argc, const char **argv);
+void trace_probe_log_set_index(int index);
+void trace_probe_log_clear(void);
+void __trace_probe_log_err(int offset, int err);
+
+#define trace_probe_log_err(offs, err)	\
+	__trace_probe_log_err(offs, TP_ERR_##err)

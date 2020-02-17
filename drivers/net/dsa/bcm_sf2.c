@@ -1,12 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Broadcom Starfighter 2 DSA switch driver
  *
  * Copyright (C) 2014, Broadcom Corporation
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 
 #include <linux/list.h>
@@ -482,6 +478,7 @@ static void bcm_sf2_sw_validate(struct dsa_switch *ds, int port,
 				unsigned long *supported,
 				struct phylink_link_state *state)
 {
+	struct bcm_sf2_priv *priv = bcm_sf2_to_priv(ds);
 	__ETHTOOL_DECLARE_LINK_MODE_MASK(mask) = { 0, };
 
 	if (!phy_interface_mode_is_rgmii(state->interface) &&
@@ -491,8 +488,10 @@ static void bcm_sf2_sw_validate(struct dsa_switch *ds, int port,
 	    state->interface != PHY_INTERFACE_MODE_INTERNAL &&
 	    state->interface != PHY_INTERFACE_MODE_MOCA) {
 		bitmap_zero(supported, __ETHTOOL_LINK_MODE_MASK_NBITS);
-		dev_err(ds->dev,
-			"Unsupported interface: %d\n", state->interface);
+		if (port != core_readl(priv, CORE_IMP0_PRT_ID))
+			dev_err(ds->dev,
+				"Unsupported interface: %d for port %d\n",
+				state->interface, port);
 		return;
 	}
 
@@ -529,6 +528,9 @@ static void bcm_sf2_sw_mac_config(struct dsa_switch *ds, int port,
 	struct bcm_sf2_priv *priv = bcm_sf2_to_priv(ds);
 	u32 id_mode_dis = 0, port_mode;
 	u32 reg, offset;
+
+	if (port == core_readl(priv, CORE_IMP0_PRT_ID))
+		return;
 
 	if (priv->type == BCM7445_DEVICE_ID)
 		offset = CORE_STS_OVERRIDE_GMIIP_PORT(port);
@@ -1188,10 +1190,11 @@ static int bcm_sf2_sw_probe(struct platform_device *pdev)
 	if (ret)
 		goto out_mdio;
 
-	pr_info("Starfighter 2 top: %x.%02x, core: %x.%02x base: 0x%p, IRQs: %d, %d\n",
-		priv->hw_params.top_rev >> 8, priv->hw_params.top_rev & 0xff,
-		priv->hw_params.core_rev >> 8, priv->hw_params.core_rev & 0xff,
-		priv->core, priv->irq0, priv->irq1);
+	dev_info(&pdev->dev,
+		 "Starfighter 2 top: %x.%02x, core: %x.%02x, IRQs: %d, %d\n",
+		 priv->hw_params.top_rev >> 8, priv->hw_params.top_rev & 0xff,
+		 priv->hw_params.core_rev >> 8, priv->hw_params.core_rev & 0xff,
+		 priv->irq0, priv->irq1);
 
 	return 0;
 

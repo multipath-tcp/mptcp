@@ -1,14 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  *  linux/drivers/mmc/host/sdhci.h - Secure Digital Host Controller Interface driver
  *
  * Header file for Host Controller registers and I/O accessors.
  *
  *  Copyright (C) 2005-2008 Pierre Ossman, All Rights Reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or (at
- * your option) any later version.
  */
 #ifndef __SDHCI_HW_H
 #define __SDHCI_HW_H
@@ -93,7 +89,7 @@
 #define   SDHCI_CTRL_ADMA32	0x10
 #define   SDHCI_CTRL_ADMA64	0x18
 #define   SDHCI_CTRL_ADMA3	0x18
-#define   SDHCI_CTRL_8BITBUS	0x20
+#define  SDHCI_CTRL_8BITBUS	0x20
 #define  SDHCI_CTRL_CDTEST_INS	0x40
 #define  SDHCI_CTRL_CDTEST_EN	0x80
 
@@ -560,7 +556,8 @@ struct sdhci_host {
 
 	unsigned int desc_sz;	/* ADMA descriptor size */
 
-	struct tasklet_struct finish_tasklet;	/* Tasklet structures */
+	struct workqueue_struct *complete_wq;	/* Request completion wq */
+	struct work_struct	complete_work;	/* Request completion work */
 
 	struct timer_list timer;	/* Timer for timeouts */
 	struct timer_list data_timer;	/* Timer for data timeouts */
@@ -596,6 +593,7 @@ struct sdhci_host {
 #define SDHCI_TUNING_MODE_3	2
 	/* Delay (ms) between tuning commands */
 	int			tuning_delay;
+	int			tuning_loop_count;
 
 	/* Host SDMA buffer boundary. */
 	u32			sdma_boundary;
@@ -783,7 +781,7 @@ void sdhci_adma_write_desc(struct sdhci_host *host, void **desc,
 int sdhci_suspend_host(struct sdhci_host *host);
 int sdhci_resume_host(struct sdhci_host *host);
 int sdhci_runtime_suspend_host(struct sdhci_host *host);
-int sdhci_runtime_resume_host(struct sdhci_host *host);
+int sdhci_runtime_resume_host(struct sdhci_host *host, int soft_reset);
 #endif
 
 void sdhci_cqe_enable(struct mmc_host *mmc);

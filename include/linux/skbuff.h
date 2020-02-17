@@ -1,14 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  *	Definitions for the 'struct sk_buff' memory handlers.
  *
  *	Authors:
  *		Alan Cox, <gw4pts@gw4pts.ampr.org>
  *		Florian La Roche, <rzsfl@rz.uni-sb.de>
- *
- *	This program is free software; you can redistribute it and/or
- *	modify it under the terms of the GNU General Public License
- *	as published by the Free Software Foundation; either version
- *	2 of the License, or (at your option) any later version.
  */
 
 #ifndef _LINUX_SKBUFF_H
@@ -657,7 +653,6 @@ typedef unsigned char *sk_buff_data_t;
  *	@tc_index: Traffic control index
  *	@hash: the packet hash
  *	@queue_mapping: Queue mapping for multiqueue devices
- *	@xmit_more: More SKBs are pending for this queue
  *	@pfmemalloc: skbuff was allocated from PFMEMALLOC reserves
  *	@active_extensions: active extensions (skb_ext_id types)
  *	@ndisc_nodetype: router type (from link layer)
@@ -764,7 +759,6 @@ struct sk_buff {
 				fclone:2,
 				peeked:1,
 				head_frag:1,
-				xmit_more:1,
 				pfmemalloc:1;
 #ifdef CONFIG_SKB_EXTENSIONS
 	__u8			active_extensions;
@@ -1030,6 +1024,7 @@ static inline bool skb_unref(struct sk_buff *skb)
 void skb_release_head_state(struct sk_buff *skb);
 void kfree_skb(struct sk_buff *skb);
 void kfree_skb_list(struct sk_buff *segs);
+void skb_dump(const char *level, const struct sk_buff *skb, bool full_pkt);
 void skb_tx_error(struct sk_buff *skb);
 void consume_skb(struct sk_buff *skb);
 void __consume_stateless_skb(struct sk_buff *skb);
@@ -1044,6 +1039,8 @@ struct sk_buff *__alloc_skb(unsigned int size, gfp_t priority, int flags,
 			    int node);
 struct sk_buff *__build_skb(void *data, unsigned int frag_size);
 struct sk_buff *build_skb(void *data, unsigned int frag_size);
+struct sk_buff *build_skb_around(struct sk_buff *skb,
+				 void *data, unsigned int frag_size);
 
 /**
  * alloc_skb - allocate a network buffer
@@ -1063,6 +1060,7 @@ struct sk_buff *alloc_skb_with_frags(unsigned long header_len,
 				     int max_page_order,
 				     int *errcode,
 				     gfp_t gfp_mask);
+struct sk_buff *alloc_skb_for_msg(struct sk_buff *first);
 
 /* Layout of fast clones : [skb1][skb2][fclone_ref] */
 struct sk_buff_fclones {
@@ -1258,11 +1256,19 @@ void skb_flow_dissector_init(struct flow_dissector *flow_dissector,
 			     unsigned int key_count);
 
 #ifdef CONFIG_NET
+int skb_flow_dissector_prog_query(const union bpf_attr *attr,
+				  union bpf_attr __user *uattr);
 int skb_flow_dissector_bpf_prog_attach(const union bpf_attr *attr,
 				       struct bpf_prog *prog);
 
 int skb_flow_dissector_bpf_prog_detach(const union bpf_attr *attr);
 #else
+static inline int skb_flow_dissector_prog_query(const union bpf_attr *attr,
+						union bpf_attr __user *uattr)
+{
+	return -EOPNOTSUPP;
+}
+
 static inline int skb_flow_dissector_bpf_prog_attach(const union bpf_attr *attr,
 						     struct bpf_prog *prog)
 {
@@ -1275,12 +1281,12 @@ static inline int skb_flow_dissector_bpf_prog_detach(const union bpf_attr *attr)
 }
 #endif
 
-struct bpf_flow_keys;
-bool __skb_flow_bpf_dissect(struct bpf_prog *prog,
-			    const struct sk_buff *skb,
-			    struct flow_dissector *flow_dissector,
-			    struct bpf_flow_keys *flow_keys);
-bool __skb_flow_dissect(const struct sk_buff *skb,
+struct bpf_flow_dissector;
+bool bpf_flow_dissect(struct bpf_prog *prog, struct bpf_flow_dissector *ctx,
+		      __be16 proto, int nhoff, int hlen);
+
+bool __skb_flow_dissect(const struct net *net,
+			const struct sk_buff *skb,
 			struct flow_dissector *flow_dissector,
 			void *target_container,
 			void *data, __be16 proto, int nhoff, int hlen,
@@ -1290,8 +1296,8 @@ static inline bool skb_flow_dissect(const struct sk_buff *skb,
 				    struct flow_dissector *flow_dissector,
 				    void *target_container, unsigned int flags)
 {
-	return __skb_flow_dissect(skb, flow_dissector, target_container,
-				  NULL, 0, 0, 0, flags);
+	return __skb_flow_dissect(NULL, skb, flow_dissector,
+				  target_container, NULL, 0, 0, 0, flags);
 }
 
 static inline bool skb_flow_dissect_flow_keys(const struct sk_buff *skb,
@@ -1299,21 +1305,36 @@ static inline bool skb_flow_dissect_flow_keys(const struct sk_buff *skb,
 					      unsigned int flags)
 {
 	memset(flow, 0, sizeof(*flow));
-	return __skb_flow_dissect(skb, &flow_keys_dissector, flow,
-				  NULL, 0, 0, 0, flags);
+	return __skb_flow_dissect(NULL, skb, &flow_keys_dissector,
+				  flow, NULL, 0, 0, 0, flags);
 }
 
 static inline bool
-skb_flow_dissect_flow_keys_basic(const struct sk_buff *skb,
+skb_flow_dissect_flow_keys_basic(const struct net *net,
+				 const struct sk_buff *skb,
 				 struct flow_keys_basic *flow, void *data,
 				 __be16 proto, int nhoff, int hlen,
 				 unsigned int flags)
 {
 	memset(flow, 0, sizeof(*flow));
-	return __skb_flow_dissect(skb, &flow_keys_basic_dissector, flow,
+	return __skb_flow_dissect(net, skb, &flow_keys_basic_dissector, flow,
 				  data, proto, nhoff, hlen, flags);
 }
 
+void skb_flow_dissect_meta(const struct sk_buff *skb,
+			   struct flow_dissector *flow_dissector,
+			   void *target_container);
+
+/* Gets a skb connection tracking info, ctinfo map should be a
+ * a map of mapsize to translate enum ip_conntrack_info states
+ * to user states.
+ */
+void
+skb_flow_dissect_ct(const struct sk_buff *skb,
+		    struct flow_dissector *flow_dissector,
+		    void *target_container,
+		    u16 *ctinfo_map,
+		    size_t mapsize);
 void
 skb_flow_dissect_tunnel_info(const struct sk_buff *skb,
 			     struct flow_dissector *flow_dissector,
@@ -1352,6 +1373,14 @@ static inline void skb_copy_hash(struct sk_buff *to, const struct sk_buff *from)
 	to->sw_hash = from->sw_hash;
 	to->l4_hash = from->l4_hash;
 };
+
+static inline void skb_copy_decrypted(struct sk_buff *to,
+				      const struct sk_buff *from)
+{
+#ifdef CONFIG_TLS_DEVICE
+	to->decrypted = from->decrypted;
+#endif
+}
 
 #ifdef NET_SKBUFF_DATA_USES_OFFSET
 static inline unsigned char *skb_end_pointer(const struct sk_buff *skb)
@@ -1425,10 +1454,12 @@ static inline void skb_zcopy_clear(struct sk_buff *skb, bool zerocopy)
 	struct ubuf_info *uarg = skb_zcopy(skb);
 
 	if (uarg) {
-		if (uarg->callback == sock_zerocopy_callback) {
+		if (skb_zcopy_is_nouarg(skb)) {
+			/* no notification callback */
+		} else if (uarg->callback == sock_zerocopy_callback) {
 			uarg->zerocopy = uarg->zerocopy && zerocopy;
 			sock_zerocopy_put(uarg);
-		} else if (!skb_zcopy_is_nouarg(skb)) {
+		} else {
 			uarg->callback(uarg, zerocopy);
 		}
 
@@ -2102,8 +2133,6 @@ void skb_add_rx_frag(struct sk_buff *skb, int i, struct page *page, int off,
 void skb_coalesce_rx_frag(struct sk_buff *skb, int i, int size,
 			  unsigned int truesize);
 
-#define SKB_PAGE_ASSERT(skb) 	BUG_ON(skb_shinfo(skb)->nr_frags)
-#define SKB_FRAG_ASSERT(skb) 	BUG_ON(skb_has_frag_list(skb))
 #define SKB_LINEAR_ASSERT(skb)  BUG_ON(skb_is_nonlinear(skb))
 
 #ifdef NET_SKBUFF_DATA_USES_OFFSET
@@ -2490,7 +2519,8 @@ static inline void skb_probe_transport_header(struct sk_buff *skb)
 	if (skb_transport_header_was_set(skb))
 		return;
 
-	if (skb_flow_dissect_flow_keys_basic(skb, &keys, NULL, 0, 0, 0, 0))
+	if (skb_flow_dissect_flow_keys_basic(NULL, skb, &keys,
+					     NULL, 0, 0, 0, 0))
 		skb_set_transport_header(skb, keys.control.thoff);
 }
 
@@ -2683,7 +2713,8 @@ static inline int skb_orphan_frags(struct sk_buff *skb, gfp_t gfp_mask)
 {
 	if (likely(!skb_zcopy(skb)))
 		return 0;
-	if (skb_uarg(skb)->callback == sock_zerocopy_callback)
+	if (!skb_zcopy_is_nouarg(skb) &&
+	    skb_uarg(skb)->callback == sock_zerocopy_callback)
 		return 0;
 	return skb_copy_ubufs(skb, gfp_mask);
 }
@@ -3372,17 +3403,17 @@ struct sk_buff *__skb_try_recv_from_queue(struct sock *sk,
 					  unsigned int flags,
 					  void (*destructor)(struct sock *sk,
 							   struct sk_buff *skb),
-					  int *peeked, int *off, int *err,
+					  int *off, int *err,
 					  struct sk_buff **last);
 struct sk_buff *__skb_try_recv_datagram(struct sock *sk, unsigned flags,
 					void (*destructor)(struct sock *sk,
 							   struct sk_buff *skb),
-					int *peeked, int *off, int *err,
+					int *off, int *err,
 					struct sk_buff **last);
 struct sk_buff *__skb_recv_datagram(struct sock *sk, unsigned flags,
 				    void (*destructor)(struct sock *sk,
 						       struct sk_buff *skb),
-				    int *peeked, int *off, int *err);
+				    int *off, int *err);
 struct sk_buff *skb_recv_datagram(struct sock *sk, unsigned flags, int noblock,
 				  int *err);
 __poll_t datagram_poll(struct file *file, struct socket *sock,
@@ -3434,6 +3465,10 @@ int skb_ensure_writable(struct sk_buff *skb, int write_len);
 int __skb_vlan_pop(struct sk_buff *skb, u16 *vlan_tci);
 int skb_vlan_pop(struct sk_buff *skb);
 int skb_vlan_push(struct sk_buff *skb, __be16 vlan_proto, u16 vlan_tci);
+int skb_mpls_push(struct sk_buff *skb, __be32 mpls_lse, __be16 mpls_proto);
+int skb_mpls_pop(struct sk_buff *skb, __be16 next_proto);
+int skb_mpls_update_lse(struct sk_buff *skb, __be32 mpls_lse);
+int skb_mpls_dec_ttl(struct sk_buff *skb);
 struct sk_buff *pskb_extract(struct sk_buff *skb, int off, int to_copy,
 			     gfp_t gfp);
 
@@ -3907,18 +3942,16 @@ static inline bool __skb_checksum_convert_check(struct sk_buff *skb)
 	return (skb->ip_summed == CHECKSUM_NONE && skb->csum_valid);
 }
 
-static inline void __skb_checksum_convert(struct sk_buff *skb,
-					  __sum16 check, __wsum pseudo)
+static inline void __skb_checksum_convert(struct sk_buff *skb, __wsum pseudo)
 {
 	skb->csum = ~pseudo;
 	skb->ip_summed = CHECKSUM_COMPLETE;
 }
 
-#define skb_checksum_try_convert(skb, proto, check, compute_pseudo)	\
+#define skb_checksum_try_convert(skb, proto, compute_pseudo)	\
 do {									\
 	if (__skb_checksum_convert_check(skb))				\
-		__skb_checksum_convert(skb, check,			\
-				       compute_pseudo(skb, proto));	\
+		__skb_checksum_convert(skb, compute_pseudo(skb, proto)); \
 } while (0)
 
 static inline void skb_remcsum_adjust_partial(struct sk_buff *skb, void *ptr,
