@@ -2201,8 +2201,6 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk,
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	u8 hash_mac_check[20];
 
-	child_tp->inside_tk_table = 0;
-
 	if (!mopt->join_ack) {
 		MPTCP_INC_STATS_BH(sock_net(meta_sk), MPTCP_MIB_JOINACKFAIL);
 		goto teardown;
