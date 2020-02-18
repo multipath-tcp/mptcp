@@ -2175,7 +2175,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk,
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	u8 hash_mac_check[20];
 
-	child_tp->inside_tk_table = 0;
+	child_tp->out_of_order_queue = RB_ROOT;
 
 	if (!mopt->join_ack) {
 		MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_JOINACKFAIL);
