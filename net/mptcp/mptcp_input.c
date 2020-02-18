@@ -2211,6 +2211,7 @@ static void _mptcp_rcv_synsent_fastopen(struct sock *meta_sk,
 
 	TCP_SKB_CB(skb)->seq += new_mapping;
 	TCP_SKB_CB(skb)->end_seq += new_mapping;
+	TCP_SKB_CB(skb)->sacked = 0;
 
 	list_del(&skb->tcp_tsorted_anchor);
 
@@ -2273,6 +2274,10 @@ static void mptcp_rcv_synsent_fastopen(struct sock *meta_sk)
 	 */
 	master_tp->snd_nxt = master_tp->write_seq = master_tp->snd_una;
 	master_tp->packets_out = 0;
+	tcp_clear_retrans(meta_tp);
+	tcp_clear_retrans(master_tp);
+	tcp_set_ca_state(meta_tp->mpcb->master_sk, TCP_CA_Open);
+	tcp_set_ca_state(meta_sk, TCP_CA_Open);
 }
 
 /* The skptr is needed, because if we become MPTCP-capable, we have to switch
