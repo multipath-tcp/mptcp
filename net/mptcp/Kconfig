@@ -49,7 +49,7 @@ config MPTCP_NETLINK
 
 choice
 	prompt "Default MPTCP Path-Manager"
-	default DEFAULT
+	default DEFAULT_DUMMY
 	help
 	  Select the Path-Manager of your choice
 
@@ -75,7 +75,7 @@ endif
 config DEFAULT_MPTCP_PM
 	string
 	default "default" if DEFAULT_DUMMY
-	default "fullmesh" if DEFAULT_FULLMESH 
+	default "fullmesh" if DEFAULT_FULLMESH
 	default "ndiffports" if DEFAULT_NDIFFPORTS
 	default "binder" if DEFAULT_BINDER
 	default "default"
@@ -111,7 +111,7 @@ config MPTCP_REDUNDANT
 
 choice
 	prompt "Default MPTCP Scheduler"
-	default DEFAULT
+	default DEFAULT_SCHEDULER
 	help
 	  Select the Scheduler of your choice
 
