@@ -372,8 +372,8 @@ static struct sk_buff *__mptcp_next_segment(struct sock *meta_sk, int *reinject)
 		if (!skb && meta_sk->sk_socket &&
 		    test_bit(SOCK_NOSPACE, &meta_sk->sk_socket->flags) &&
 		    sk_stream_wspace(meta_sk) < sk_stream_min_wspace(meta_sk)) {
-			struct sock *subsk = get_available_subflow(meta_sk, NULL,
-								   false);
+			struct sock *subsk = mpcb->sched_ops->get_subflow(meta_sk, NULL,
+									  false);
 			if (!subsk)
 				return NULL;
 
@@ -385,7 +385,7 @@ static struct sk_buff *__mptcp_next_segment(struct sock *meta_sk, int *reinject)
 	return skb;
 }
 
-static struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
+struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
 					  int *reinject,
 					  struct sock **subsk,
 					  unsigned int *limit)
@@ -403,7 +403,7 @@ static struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
 	if (!skb)
 		return NULL;
 
-	*subsk = get_available_subflow(meta_sk, skb, false);
+	*subsk = tcp_sk(meta_sk)->mpcb->sched_ops->get_subflow(meta_sk, skb, false);
 	if (!*subsk)
 		return NULL;
 
@@ -461,6 +461,7 @@ static struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
 
 	return skb;
 }
+EXPORT_SYMBOL_GPL(mptcp_next_segment);
 
 static void defsched_init(struct sock *sk)
 {

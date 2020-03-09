@@ -918,6 +918,10 @@ bool subflow_is_active(const struct tcp_sock *tp);
 bool subflow_is_backup(const struct tcp_sock *tp);
 struct sock *get_available_subflow(struct sock *meta_sk, struct sk_buff *skb,
 				   bool zero_wnd_test);
+struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
+				   int *reinject,
+				   struct sock **subsk,
+				   unsigned int *limit);
 extern struct mptcp_sched_ops mptcp_sched_default;
 
 /* Initializes function-pointers and MPTCP-flags */
