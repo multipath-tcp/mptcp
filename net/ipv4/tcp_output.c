@@ -825,8 +825,8 @@ static void tcp_tsq_handler(struct sock *sk)
 		if (mptcp(tp))
 			tcp_tsq_write(meta_sk);
 	} else {
-		if (!test_and_set_bit(TCP_TSQ_DEFERRED, &meta_sk->sk_tsq_flags))
-			sock_hold(meta_sk);
+		if (!test_and_set_bit(TCP_TSQ_DEFERRED, &sk->sk_tsq_flags))
+			sock_hold(sk);
 
 		if ((mptcp(tp)) && (sk->sk_state != TCP_CLOSE))
 			mptcp_tsq_flags(sk);
