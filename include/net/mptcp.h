@@ -240,7 +240,6 @@ struct mptcp_pm_ops {
 	struct module	*owner;
 };
 
-#define MPTCP_SCHED_NAME_MAX 16
 struct mptcp_sched_ops {
 	struct list_head list;
 

@@ -983,7 +983,7 @@ void mptcp_syn_options(const struct sock *sk, struct tcp_out_options *opts,
 	opts->options |= OPTION_MPTCP;
 	if (is_master_tp(tp)) {
 		opts->mptcp_options |= OPTION_MP_CAPABLE | OPTION_TYPE_SYN;
-		opts->mptcp_ver = tcp_sk(sk)->mptcp_ver;
+		opts->mptcp_ver = tp->mptcp_ver;
 		*remaining -= MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN;
 		opts->mp_capable.sender_key = tp->mptcp_loc_key;
 		opts->dss_csum = !!sysctl_mptcp_checksum;
