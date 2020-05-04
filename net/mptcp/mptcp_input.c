@@ -559,10 +559,10 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 	 */
 	if (!tp->mptcp->fully_established && !mptcp_is_data_seq(skb) &&
 	    !tp->mptcp->mapping_present && !mpcb->infinite_mapping_rcv) {
-		pr_debug("%s %#x will fallback - pi %d from %pS, seq %u\n",
+		pr_debug("%s %#x will fallback - pi %d from %pS, seq %u mptcp-flags %#x\n",
 			 __func__, mpcb->mptcp_loc_token,
 			 tp->mptcp->path_index, __builtin_return_address(0),
-			 TCP_SKB_CB(skb)->seq);
+			 TCP_SKB_CB(skb)->seq, TCP_SKB_CB(skb)->mptcp_flags);
 
 		if (!is_master_tp(tp)) {
 			MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_FBDATASUB);
