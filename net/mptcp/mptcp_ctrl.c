@@ -27,6 +27,8 @@
  *      2 of the License, or (at your option) any later version.
  */
 
+#include <crypto/sha.h>
+
 #include <net/inet_common.h>
 #include <net/inet6_hashtables.h>
 #include <net/ipv6.h>
@@ -834,6 +836,71 @@ static void mptcp_assign_congestion_control(struct sock *sk)
 
 siphash_key_t mptcp_secret __read_mostly;
 u32 mptcp_seed = 0;
+
+#define SHA256_DIGEST_WORDS (SHA256_DIGEST_SIZE / 4)
+
+static void mptcp_key_sha256(const u64 key, u32 *token, u64 *idsn)
+{
+	u32 mptcp_hashed_key[SHA256_DIGEST_WORDS];
+	struct sha256_state state;
+
+	sha256_init(&state);
+	sha256_update(&state, (const u8 *)&key, sizeof(key));
+	sha256_final(&state, (u8 *)mptcp_hashed_key);
+
+	if (token)
+		*token = mptcp_hashed_key[0];
+	if (idsn)
+		*idsn = ntohll(*((__be64 *)&mptcp_hashed_key[6]));
+}
+
+static void mptcp_hmac_sha256(const u8 *key_1, const u8 *key_2, u32 *hash_out,
+			      int arg_num, va_list list)
+{
+	u8 input[SHA256_BLOCK_SIZE + SHA256_DIGEST_SIZE];
+	__be32 output[SHA256_DIGEST_WORDS];
+	struct sha256_state state;
+	int index, msg_length;
+	int length = 0;
+	u8 *msg;
+	int i;
+
+	/* Generate key xored with ipad */
+	memset(input, 0x36, SHA256_BLOCK_SIZE);
+	for (i = 0; i < 8; i++)
+		input[i] ^= key_1[i];
+	for (i = 0; i < 8; i++)
+		input[i + 8] ^= key_2[i];
+
+	index = SHA256_BLOCK_SIZE;
+	msg_length = 0;
+	for (i = 0; i < arg_num; i++) {
+		length = va_arg(list, int);
+		msg = va_arg(list, u8 *);
+		BUG_ON(index + length >= sizeof(input)); /* Message is too long */
+		memcpy(&input[index], msg, length);
+		index += length;
+		msg_length += length;
+	}
+
+	sha256_init(&state);
+	sha256_update(&state, input, SHA256_BLOCK_SIZE + msg_length);
+	sha256_final(&state, &input[SHA256_BLOCK_SIZE]);
+
+	/* Prepare second part of hmac */
+	memset(input, 0x5C, SHA256_BLOCK_SIZE);
+	for (i = 0; i < 8; i++)
+		input[i] ^= key_1[i];
+	for (i = 0; i < 8; i++)
+		input[i + 8] ^= key_2[i];
+
+	sha256_init(&state);
+	sha256_update(&state, input, sizeof(input));
+	sha256_final(&state, (u8 *)output);
+
+	for (i = 0; i < 5; i++)
+		hash_out[i] = output[i];
+}
 
 static void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn)
 {
