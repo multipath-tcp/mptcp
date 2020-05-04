@@ -79,7 +79,7 @@ bool mptcp_init_failed __read_mostly;
 struct static_key mptcp_static_key = STATIC_KEY_INIT_FALSE;
 EXPORT_SYMBOL(mptcp_static_key);
 
-static void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn);
+static void mptcp_key_hash(u8 version, u64 key, u32 *token, u64 *idsn);
 
 static int proc_mptcp_path_manager(struct ctl_table *ctl, int write,
 				   void __user *buffer, size_t *lenp,
@@ -288,7 +288,7 @@ static void mptcp_set_key_reqsk(struct request_sock *req,
 #endif
 	}
 
-	mptcp_key_sha1(mtreq->mptcp_loc_key, &mtreq->mptcp_loc_token, NULL);
+	mptcp_key_hash(mtreq->mptcp_ver, mtreq->mptcp_loc_key, &mtreq->mptcp_loc_token, NULL);
 }
 
 /* New MPTCP-connection request, prepare a new token for the meta-socket that
@@ -389,8 +389,7 @@ static void mptcp_set_key_sk(const struct sock *sk)
 						     mptcp_seed++);
 #endif
 
-	mptcp_key_sha1(tp->mptcp_loc_key,
-		       &tp->mptcp_loc_token, NULL);
+	mptcp_key_hash(tp->mptcp_ver, tp->mptcp_loc_key, &tp->mptcp_loc_token, NULL);
 }
 
 #ifdef CONFIG_JUMP_LABEL
@@ -938,8 +937,16 @@ static void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn)
 		*idsn = ntohll(*((__be64 *)&mptcp_hashed_key[3]));
 }
 
-void mptcp_hmac_sha1(const u8 *key_1, const u8 *key_2, u32 *hash_out,
-		     int arg_num, ...)
+static void mptcp_key_hash(u8 version, u64 key, u32 *token, u64 *idsn)
+{
+	if (version == MPTCP_VERSION_0)
+		mptcp_key_sha1(key, token, idsn);
+	else if (version >= MPTCP_VERSION_1)
+		mptcp_key_sha256(key, token, idsn);
+}
+
+static void mptcp_hmac_sha1(const u8 *key_1, const u8 *key_2, u32 *hash_out,
+			    int arg_num, va_list list)
 {
 	u32 workspace[SHA_WORKSPACE_WORDS];
 	u8 input[128]; /* 2 512-bit blocks */
@@ -947,7 +954,6 @@ void mptcp_hmac_sha1(const u8 *key_1, const u8 *key_2, u32 *hash_out,
 	int index;
 	int length;
 	u8 *msg;
-	va_list list;
 
 	memset(workspace, 0, sizeof(workspace));
 
@@ -958,7 +964,6 @@ void mptcp_hmac_sha1(const u8 *key_1, const u8 *key_2, u32 *hash_out,
 	for (i = 0; i < 8; i++)
 		input[i + 8] ^= key_2[i];
 
-	va_start(list, arg_num);
 	index = 64;
 	for (i = 0; i < arg_num; i++) {
 		length = va_arg(list, int);
@@ -967,7 +972,6 @@ void mptcp_hmac_sha1(const u8 *key_1, const u8 *key_2, u32 *hash_out,
 		memcpy(&input[index], msg, length);
 		index += length;
 	}
-	va_end(list);
 
 	input[index] = 0x80; /* Padding: First bit after message = 1 */
 	memset(&input[index + 1], 0, (126 - index));
@@ -1010,7 +1014,20 @@ void mptcp_hmac_sha1(const u8 *key_1, const u8 *key_2, u32 *hash_out,
 	for (i = 0; i < 5; i++)
 		hash_out[i] = (__force u32)cpu_to_be32(hash_out[i]);
 }
-EXPORT_SYMBOL(mptcp_hmac_sha1);
+
+void mptcp_hmac(u8 ver, const u8 *key_1, const u8 *key_2, u32 *hash_out,
+		int arg_num, ...)
+{
+	va_list args;
+
+	va_start(args, arg_num);
+	if (ver == MPTCP_VERSION_0)
+		mptcp_hmac_sha1(key_1, key_2, hash_out, arg_num, args);
+	else if (ver >= MPTCP_VERSION_1)
+		mptcp_hmac_sha256(key_1, key_2, hash_out, arg_num, args);
+	va_end(args);
+}
+EXPORT_SYMBOL(mptcp_hmac);
 
 static void mptcp_mpcb_inherit_sockopts(struct sock *meta_sk, struct sock *master_sk)
 {
@@ -1250,7 +1267,7 @@ void mptcp_initialize_recv_vars(struct tcp_sock *meta_tp, struct mptcp_cb *mpcb,
 
 	mpcb->mptcp_rem_key = remote_key;
 	mpcb->rem_key_set = 1;
-	mptcp_key_sha1(mpcb->mptcp_rem_key, &mpcb->mptcp_rem_token, &idsn);
+	mptcp_key_hash(mpcb->mptcp_ver, mpcb->mptcp_rem_key, &mpcb->mptcp_rem_token, &idsn);
 
 	idsn++;
 	mpcb->rcv_high_order[0] = idsn >> 32;
@@ -1297,7 +1314,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	mpcb->mptcp_loc_token = meta_tp->mptcp_loc_token;
 
 	/* Generate Initial data-sequence-numbers */
-	mptcp_key_sha1(mpcb->mptcp_loc_key, NULL, &snd_idsn);
+	mptcp_key_hash(mpcb->mptcp_ver, mpcb->mptcp_loc_key, NULL, &snd_idsn);
 	snd_idsn++;
 	mpcb->snd_high_order[0] = snd_idsn >> 32;
 	mpcb->snd_high_order[1] = mpcb->snd_high_order[0] - 1;
@@ -2376,11 +2393,10 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk,
 		goto teardown;
 	}
 
-	mptcp_hmac_sha1((u8 *)&mpcb->mptcp_rem_key,
-			(u8 *)&mpcb->mptcp_loc_key,
-			(u32 *)hash_mac_check, 2,
-			4, (u8 *)&mtreq->mptcp_rem_nonce,
-			4, (u8 *)&mtreq->mptcp_loc_nonce);
+	mptcp_hmac(mpcb->mptcp_ver, (u8 *)&mpcb->mptcp_rem_key,
+		   (u8 *)&mpcb->mptcp_loc_key, (u32 *)hash_mac_check, 2,
+		   4, (u8 *)&mtreq->mptcp_rem_nonce,
+		   4, (u8 *)&mtreq->mptcp_loc_nonce);
 
 	if (memcmp(hash_mac_check, (char *)&mopt->mptcp_recv_mac, 20)) {
 		MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_JOINACKMAC);
@@ -2642,11 +2658,10 @@ void mptcp_join_reqsk_init(const struct mptcp_cb *mpcb,
 
 	mtreq->mptcp_rem_nonce = mopt.mptcp_recv_nonce;
 
-	mptcp_hmac_sha1((u8 *)&mpcb->mptcp_loc_key,
-			(u8 *)&mpcb->mptcp_rem_key,
-			(u32 *)mptcp_hash_mac, 2,
-			4, (u8 *)&mtreq->mptcp_loc_nonce,
-			4, (u8 *)&mtreq->mptcp_rem_nonce);
+	mptcp_hmac(mpcb->mptcp_ver, (u8 *)&mpcb->mptcp_loc_key,
+		   (u8 *)&mpcb->mptcp_rem_key, (u32 *)mptcp_hash_mac, 2,
+		   4, (u8 *)&mtreq->mptcp_loc_nonce,
+		   4, (u8 *)&mtreq->mptcp_rem_nonce);
 	mtreq->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
 
 	mtreq->rem_id = mopt.rem_id;
@@ -2692,7 +2707,7 @@ void mptcp_cookies_reqsk_init(struct request_sock *req,
 	mtreq->rem_key_set = 1;
 
 	/* Generate the token */
-	mptcp_key_sha1(mtreq->mptcp_loc_key, &mtreq->mptcp_loc_token, NULL);
+	mptcp_key_hash(mtreq->mptcp_ver, mtreq->mptcp_loc_key, &mtreq->mptcp_loc_token, NULL);
 
 	rcu_read_lock();
 	local_bh_disable();

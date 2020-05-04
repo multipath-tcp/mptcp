@@ -830,8 +830,8 @@ void mptcp_select_initial_window(const struct sock *sk, int __space, __u32 mss,
 				 int wscale_ok, __u8 *rcv_wscale,
 				 __u32 init_rcv_wnd);
 unsigned int mptcp_current_mss(struct sock *meta_sk);
-void mptcp_hmac_sha1(const u8 *key_1, const u8 *key_2, u32 *hash_out,
-		     int arg_num, ...);
+void mptcp_hmac(u8 ver, const u8 *key_1, const u8 *key_2, u32 *hash_out,
+		int arg_num, ...);
 void mptcp_clean_rtx_infinite(const struct sk_buff *skb, struct sock *sk);
 void mptcp_fin(struct sock *meta_sk);
 void mptcp_meta_retransmit_timer(struct sock *meta_sk);
