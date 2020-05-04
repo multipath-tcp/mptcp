@@ -1467,6 +1467,9 @@ static bool mptcp_process_data_ack(struct sock *sk, const struct sk_buff *skb)
 	if (after(data_ack, meta_tp->snd_nxt))
 		goto exit;
 
+	/* First valid DATA_ACK, we can stop sending the special MP_CAPABLE */
+	tp->mpcb->send_mptcpv1_mpcapable = 0;
+
 	/*** Now, update the window  - inspired by tcp_ack_update_window ***/
 	nwin = ntohs(tcp_hdr(skb)->window);
 
@@ -2339,6 +2342,11 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 		if (mopt->mptcp_ver > tcp_sk(sk)->mptcp_ver)
 			/* TODO Consider adding new MPTCP_INC_STATS entry */
 			goto fallback;
+		if (tcp_sk(sk)->mptcp_ver == MPTCP_VERSION_1 &&
+		    mopt->mptcp_ver < MPTCP_VERSION_1)
+			/* TODO Consider adding new MPTCP_INC_STATS entry */
+			/* TODO - record this in the cache - use v0 next time */
+			goto fallback;
 
 		if (mptcp_create_master_sk(sk, mopt->mptcp_sender_key,
 					   mopt->mptcp_ver,
@@ -2367,6 +2375,9 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 		tp->mpcb->dss_csum = mopt->dss_csum;
 		if (tp->mpcb->dss_csum)
 			MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_CSUMENABLED);
+
+		if (tp->mpcb->mptcp_ver >= MPTCP_VERSION_1)
+			tp->mpcb->send_mptcpv1_mpcapable = 1;
 
 		tp->mptcp->include_mpc = 1;
 

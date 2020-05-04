@@ -271,6 +271,7 @@ struct mptcp_cb {
 	u32 rcv_high_order[2];
 
 	u16	send_infinite_mapping:1,
+		send_mptcpv1_mpcapable:1,
 		in_time_wait:1,
 		list_rcvd:1, /* XXX TO REMOVE */
 		addr_signal:1, /* Path-manager wants us to call addr_signal */
@@ -352,6 +353,16 @@ struct mptcp_cb {
 #define MPTCP_SUB_LEN_CAPABLE_SYN_ALIGN		12
 #define MPTCP_SUB_LEN_CAPABLE_ACK		20
 #define MPTCP_SUB_LEN_CAPABLE_ACK_ALIGN		20
+
+#define MPTCPV1_SUB_LEN_CAPABLE_SYN		4
+#define MPTCPV1_SUB_LEN_CAPABLE_SYN_ALIGN	4
+#define MPTCPV1_SUB_LEN_CAPABLE_SYNACK		12
+#define MPTCPV1_SUB_LEN_CAPABLE_SYNACK_ALIGN	12
+#define MPTCPV1_SUB_LEN_CAPABLE_ACK		20
+#define MPTCPV1_SUB_LEN_CAPABLE_ACK_ALIGN	20
+#define MPTCPV1_SUB_LEN_CAPABLE_DATA		22
+#define MPTCPV1_SUB_LEN_CAPABLE_DATA_CSUM	22
+#define MPTCPV1_SUB_LEN_CAPABLE_DATA_ALIGN	24
 
 #define MPTCP_SUB_JOIN			1
 #define MPTCP_SUB_LEN_JOIN_SYN		12
@@ -449,14 +460,15 @@ extern bool mptcp_init_failed;
 #define MPTCPHDR_SEQ		0x01 /* DSS.M option is present */
 #define MPTCPHDR_FIN		0x02 /* DSS.F option is present */
 #define MPTCPHDR_SEQ64_INDEX	0x04 /* index of seq in mpcb->snd_high_order */
+#define MPTCPHDR_MPC_DATA	0x08
 /* MPTCP flags: RX only */
-#define MPTCPHDR_ACK		0x08
-#define MPTCPHDR_SEQ64_SET	0x10 /* Did we received a 64-bit seq number?  */
-#define MPTCPHDR_SEQ64_OFO	0x20 /* Is it not in our circular array? */
-#define MPTCPHDR_DSS_CSUM	0x40
+#define MPTCPHDR_ACK		0x10
+#define MPTCPHDR_SEQ64_SET	0x20 /* Did we received a 64-bit seq number?  */
+#define MPTCPHDR_SEQ64_OFO	0x40 /* Is it not in our circular array? */
+#define MPTCPHDR_DSS_CSUM	0x80
 /* MPTCP flags: TX only */
-#define MPTCPHDR_INF		0x08
-#define MPTCP_REINJECT		0x10 /* Did we reinject this segment? */
+#define MPTCPHDR_INF		0x10
+#define MPTCP_REINJECT		0x20 /* Did we reinject this segment? */
 
 struct mptcp_option {
 	__u8	kind;
@@ -979,6 +991,11 @@ static inline void mptcp_sub_force_close_all(struct mptcp_cb *mpcb,
 		if (sk_it != except)
 			mptcp_send_reset(sk_it);
 	}
+}
+
+static inline bool mptcp_is_data_mpcapable(const struct sk_buff *skb)
+{
+	return TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_MPC_DATA;
 }
 
 static inline bool mptcp_is_data_seq(const struct sk_buff *skb)
