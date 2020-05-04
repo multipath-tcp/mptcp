@@ -519,19 +519,31 @@ static int mptcp_write_mpcapable_data(const struct tcp_sock *tp,
 static int mptcp_write_dss_data_seq(const struct tcp_sock *tp, struct sk_buff *skb,
 				    __be32 *ptr)
 {
+	int length;
 	__be32 *start = ptr;
 
-	memcpy(ptr, TCP_SKB_CB(skb)->dss, mptcp_dss_len);
+	if (tp->mpcb->rem_key_set) {
+		memcpy(ptr, TCP_SKB_CB(skb)->dss, mptcp_dss_len);
 
-	/* update the data_ack */
-	start[1] = htonl(mptcp_meta_tp(tp)->rcv_nxt);
+		/* update the data_ack */
+		start[1] = htonl(mptcp_meta_tp(tp)->rcv_nxt);
+
+		length = mptcp_dss_len / sizeof(*ptr);
+	} else {
+		memcpy(ptr, TCP_SKB_CB(skb)->dss, MPTCP_SUB_LEN_DSS_ALIGN);
+
+		ptr++;
+		memcpy(ptr, TCP_SKB_CB(skb)->dss + 2, MPTCP_SUB_LEN_SEQ_ALIGN);
+
+		length = (MPTCP_SUB_LEN_DSS_ALIGN + MPTCP_SUB_LEN_SEQ_ALIGN) / sizeof(*ptr);
+	}
 
 	/* dss is in a union with inet_skb_parm and
 	 * the IP layer expects zeroed IPCB fields.
 	 */
 	memset(TCP_SKB_CB(skb)->dss, 0 , mptcp_dss_len);
 
-	return mptcp_dss_len/sizeof(*ptr);
+	return length;
 }
 
 static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
@@ -1161,7 +1173,7 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		/* If !skb, we come from tcp_current_mss and thus we always
 		 * assume that the DSS-option will be set for the data-packet.
 		 */
-		if (skb && !mptcp_is_data_seq(skb)) {
+		if (skb && !mptcp_is_data_seq(skb) && mpcb->rem_key_set) {
 			*size += MPTCP_SUB_LEN_ACK_ALIGN;
 		} else if ((skb && mptcp_is_data_mpcapable(skb)) ||
 			   (!skb && tp->mpcb->send_mptcpv1_mpcapable)) {
@@ -1170,8 +1182,11 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 			/* Doesn't matter, if csum included or not. It will be
 			 * either 10 or 12, and thus aligned = 12
 			 */
-			*size += MPTCP_SUB_LEN_ACK_ALIGN +
-				 MPTCP_SUB_LEN_SEQ_ALIGN;
+			if (mpcb->rem_key_set)
+				*size += MPTCP_SUB_LEN_ACK_ALIGN +
+					 MPTCP_SUB_LEN_SEQ_ALIGN;
+			else
+				*size += MPTCP_SUB_LEN_SEQ_ALIGN;
 		}
 
 		*size += MPTCP_SUB_LEN_DSS_ALIGN;
@@ -1383,7 +1398,7 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	}
 
 	if (OPTION_DATA_ACK & opts->mptcp_options) {
-		if (!mptcp_is_data_seq(skb))
+		if (!mptcp_is_data_seq(skb) && tp->mpcb->rem_key_set)
 			ptr += mptcp_write_dss_data_ack(tp, skb, ptr);
 		else if (mptcp_is_data_mpcapable(skb))
 			ptr += mptcp_write_mpcapable_data(tp, skb, ptr);

@@ -348,6 +348,17 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 						sizeof(data_seq), csum_tcp);
 
 			dss_csum_added = 1; /* Just do it once */
+		} else if (mptcp_is_data_mpcapable(tmp) && !dss_csum_added) {
+			u32 offset = skb_transport_offset(tmp) + TCP_SKB_CB(tmp)->dss_off;
+			__be64 data_seq = htonll(tp->mptcp->map_data_seq);
+			__be32 rel_seq = htonl(tp->mptcp->map_subseq - tp->mptcp->rcv_isn);
+
+			csum_tcp = csum_partial(&data_seq, sizeof(data_seq), csum_tcp);
+			csum_tcp = csum_partial(&rel_seq, sizeof(rel_seq), csum_tcp);
+
+			csum_tcp = skb_checksum(tmp, offset, 4, csum_tcp);
+
+			dss_csum_added = 1;
 		}
 		last = tmp;
 		iter++;
@@ -558,6 +569,7 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 	 * this segment, this path has to fallback to infinite or be torn down.
 	 */
 	if (!tp->mptcp->fully_established && !mptcp_is_data_seq(skb) &&
+	    !mptcp_is_data_mpcapable(skb) &&
 	    !tp->mptcp->mapping_present && !mpcb->infinite_mapping_rcv) {
 		pr_debug("%s %#x will fallback - pi %d from %pS, seq %u mptcp-flags %#x\n",
 			 __func__, mpcb->mptcp_loc_token,
@@ -670,24 +682,35 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 		return 0;
 	}
 
-	/* No mapping here? Exit - it is either already set or still on its way */
-	if (!mptcp_is_data_seq(skb)) {
-		/* Too many packets without a mapping - this subflow is broken */
+	if (!tp->mptcp->mapping_present && mptcp_is_data_mpcapable(skb)) {
+		__u32 *ptr = (__u32 *)(skb_transport_header(skb) + TCP_SKB_CB(skb)->dss_off);
+
+		sub_seq = 1 + tp->mptcp->rcv_isn;
+		data_seq = meta_tp->rcv_nxt;
+		data_len = get_unaligned_be16(ptr);
+	} else if (!mptcp_is_data_seq(skb)) {
+		/* No mapping here?
+		 * Exit - it is either already set or still on its way
+		 */
 		if (!tp->mptcp->mapping_present &&
 		    tp->rcv_nxt - tp->copied_seq > 65536) {
+			/* Too many packets without a mapping,
+			 * this subflow is broken
+			 */
 			MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_NODSSWINDOW);
 			mptcp_send_reset(sk);
 			return 1;
 		}
 
 		return 0;
+	} else {
+		/* Well, then the DSS-mapping is there. So, read it! */
+		ptr = mptcp_skb_set_data_seq(skb, &data_seq, mpcb);
+		ptr++;
+		sub_seq = get_unaligned_be32(ptr) + tp->mptcp->rcv_isn;
+		ptr++;
+		data_len = get_unaligned_be16(ptr);
 	}
-
-	ptr = mptcp_skb_set_data_seq(skb, &data_seq, mpcb);
-	ptr++;
-	sub_seq = get_unaligned_be32(ptr) + tp->mptcp->rcv_isn;
-	ptr++;
-	data_len = get_unaligned_be16(ptr);
 
 	/* If it's an empty skb with DATA_FIN, sub_seq must get fixed.
 	 * The draft sets it to 0, but we really would like to have the
@@ -1616,6 +1639,7 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			 struct tcp_sock *tp)
 {
 	const struct mptcp_option *mp_opt = (struct mptcp_option *)ptr;
+	const struct tcphdr *th = tcp_hdr(skb);
 
 	/* If the socket is mp-capable we would have a mopt. */
 	if (!mopt)
@@ -1626,9 +1650,21 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 	{
 		const struct mp_capable *mpcapable = (struct mp_capable *)ptr;
 
-		if (opsize != MPTCP_SUB_LEN_CAPABLE_SYN &&
-		    opsize != MPTCP_SUB_LEN_CAPABLE_ACK) {
-			mptcp_debug("%s: mp_capable: bad option size %d\n",
+		if (mpcapable->ver == MPTCP_VERSION_0 &&
+		    ((th->syn && opsize != MPTCP_SUB_LEN_CAPABLE_SYN) ||
+		     (!th->syn && th->ack && opsize != MPTCP_SUB_LEN_CAPABLE_ACK))) {
+			mptcp_debug("%s: mp_capable v0: bad option size %d\n",
+				    __func__, opsize);
+			break;
+		}
+
+		if (mpcapable->ver == MPTCP_VERSION_1 &&
+		    ((th->syn && !th->ack && opsize != MPTCPV1_SUB_LEN_CAPABLE_SYN) ||
+		     (th->syn && th->ack && opsize != MPTCPV1_SUB_LEN_CAPABLE_SYNACK) ||
+		     (!th->syn && th->ack && opsize != MPTCPV1_SUB_LEN_CAPABLE_ACK &&
+		      opsize != MPTCPV1_SUB_LEN_CAPABLE_DATA &&
+		      opsize != MPTCPV1_SUB_LEN_CAPABLE_DATA_CSUM))) {
+			mptcp_debug("%s: mp_capable v1: bad option size %d\n",
 				    __func__, opsize);
 			break;
 		}
@@ -1652,10 +1688,38 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 		mopt->saw_mpc = 1;
 		mopt->dss_csum = sysctl_mptcp_checksum || mpcapable->a;
 
-		if (opsize >= MPTCP_SUB_LEN_CAPABLE_SYN)
-			mopt->mptcp_sender_key = mpcapable->sender_key;
-		if (opsize == MPTCP_SUB_LEN_CAPABLE_ACK)
-			mopt->mptcp_receiver_key = mpcapable->receiver_key;
+		if (mpcapable->ver == MPTCP_VERSION_0) {
+			if (opsize == MPTCP_SUB_LEN_CAPABLE_SYN)
+				mopt->mptcp_sender_key = mpcapable->sender_key;
+
+			if (opsize == MPTCP_SUB_LEN_CAPABLE_ACK) {
+				mopt->mptcp_sender_key = mpcapable->sender_key;
+				mopt->mptcp_receiver_key = mpcapable->receiver_key;
+			}
+		} else if (mpcapable->ver == MPTCP_VERSION_1) {
+			if (opsize == MPTCPV1_SUB_LEN_CAPABLE_SYNACK)
+				mopt->mptcp_sender_key = mpcapable->sender_key;
+
+			if (opsize == MPTCPV1_SUB_LEN_CAPABLE_ACK) {
+				mopt->mptcp_sender_key = mpcapable->sender_key;
+				mopt->mptcp_receiver_key = mpcapable->receiver_key;
+			}
+
+			if (opsize == MPTCPV1_SUB_LEN_CAPABLE_DATA ||
+			    opsize == MPTCPV1_SUB_LEN_CAPABLE_DATA_CSUM) {
+				mopt->mptcp_sender_key = mpcapable->sender_key;
+				mopt->mptcp_receiver_key = mpcapable->receiver_key;
+
+				TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_MPC_DATA;
+
+				ptr += sizeof(struct mp_capable);
+				TCP_SKB_CB(skb)->dss_off = (ptr - skb_transport_header(skb));
+
+				/* Is a check-sum present? */
+				if (opsize == MPTCPV1_SUB_LEN_CAPABLE_DATA_CSUM)
+					TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_DSS_CSUM;
+			}
+		}
 
 		mopt->mptcp_ver = mpcapable->ver;
 		break;
@@ -2127,6 +2191,10 @@ bool mptcp_handle_options(struct sock *sk, const struct tcphdr *th,
 	if (sk->sk_state == TCP_RST_WAIT && !th->rst)
 		return true;
 
+	if (mopt->saw_mpc && !tp->mpcb->rem_key_set)
+		mptcp_initialize_recv_vars(mptcp_meta_tp(tp), tp->mpcb,
+					   mopt->mptcp_sender_key);
+
 	if (unlikely(mopt->mp_fail))
 		mptcp_mp_fail_rcvd(sk, th);
 
@@ -2134,7 +2202,8 @@ bool mptcp_handle_options(struct sock *sk, const struct tcphdr *th,
 	 * If a checksum is not present when its use has been negotiated, the
 	 * receiver MUST close the subflow with a RST as it is considered broken.
 	 */
-	if (mptcp_is_data_seq(skb) && tp->mpcb->dss_csum &&
+	if ((mptcp_is_data_seq(skb) || mptcp_is_data_mpcapable(skb)) &&
+	    tp->mpcb->dss_csum &&
 	    !(TCP_SKB_CB(skb)->mptcp_flags & MPTCPHDR_DSS_CSUM)) {
 		mptcp_send_reset(sk);
 		return true;
@@ -2348,7 +2417,7 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 			/* TODO - record this in the cache - use v0 next time */
 			goto fallback;
 
-		if (mptcp_create_master_sk(sk, mopt->mptcp_sender_key,
+		if (mptcp_create_master_sk(sk, mopt->mptcp_sender_key, 1,
 					   mopt->mptcp_ver,
 					   ntohs(tcp_hdr(skb)->window)))
 			return 2;

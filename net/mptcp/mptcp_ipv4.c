@@ -106,6 +106,9 @@ static int mptcp_v4_join_init_req(struct request_sock *req, const struct sock *m
 	int loc_id;
 	bool low_prio = false;
 
+	if (!mpcb->rem_key_set)
+		return -1;
+
 	/* We need to do this as early as possible. Because, if we fail later
 	 * (e.g., get_local_id), then reqsk_free tries to remove the
 	 * request-socket from the htb in mptcp_hash_request_remove as pprev

@@ -102,7 +102,8 @@ struct mptcp_request_sock {
 
 	u8				loc_id;
 	u8				rem_id; /* Address-id in the MP_JOIN */
-	u8				dss_csum:1,
+	u16				dss_csum:1,
+					rem_key_set:1,
 					is_sub:1, /* Is this a new subflow? */
 					low_prio:1, /* Interface set to low-prio? */
 					rcv_low_prio:1,
@@ -272,6 +273,7 @@ struct mptcp_cb {
 
 	u16	send_infinite_mapping:1,
 		send_mptcpv1_mpcapable:1,
+		rem_key_set:1,
 		in_time_wait:1,
 		list_rcvd:1, /* XXX TO REMOVE */
 		addr_signal:1, /* Path-manager wants us to call addr_signal */
@@ -811,10 +813,11 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 void mptcp_close(struct sock *meta_sk, long timeout);
 bool mptcp_doit(struct sock *sk);
 int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key,
-			   __u8 mptcp_ver, u32 window);
+			   int rem_key_set, __u8 mptcp_ver, u32 window);
 int mptcp_check_req_fastopen(struct sock *child, struct request_sock *req);
 int mptcp_check_req_master(struct sock *sk, struct sock *child,
 			   struct request_sock *req, const struct sk_buff *skb,
+			   const struct mptcp_options_received *mopt,
 			   int drop, u32 tsoff);
 struct sock *mptcp_check_req_child(struct sock *meta_sk,
 				   struct sock *child,
@@ -838,6 +841,8 @@ void mptcp_sub_close_wq(struct work_struct *work);
 void mptcp_sub_close(struct sock *sk, unsigned long delay);
 struct sock *mptcp_select_ack_sock(const struct sock *meta_sk);
 void mptcp_prepare_for_backlog(struct sock *sk, struct sk_buff *skb);
+void mptcp_initialize_recv_vars(struct tcp_sock *meta_tp, struct mptcp_cb *mpcb,
+				__u64 remote_key);
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb);
 void mptcp_ack_handler(struct timer_list *t);
 bool mptcp_check_rtt(const struct tcp_sock *tp, int time);
@@ -1415,6 +1420,7 @@ static inline int mptcp_check_req_master(const struct sock *sk,
 					 const struct sock *child,
 					 const struct request_sock *req,
 					 const struct sk_buff *skb,
+					 const struct mptcp_options_received *mopt,
 					 int drop,
 					 u32 tsoff)
 {
