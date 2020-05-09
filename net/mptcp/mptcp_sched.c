@@ -76,7 +76,7 @@ static bool mptcp_is_temp_unavailable(struct sock *sk,
 	 */
 	space = (tp->snd_cwnd - in_flight) * tp->mss_cache;
 
-	if (tp->write_seq - tp->snd_nxt > space)
+	if (tp->write_seq - tp->snd_nxt >= space)
 		return true;
 
 	if (zero_wnd_test && !before(tp->write_seq, tcp_wnd_end(tp)))
