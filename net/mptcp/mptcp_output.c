@@ -851,10 +851,7 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 
 		if (!mptcp_skb_entail(subsk, skb, reinject))
 			break;
-		/* Nagle is handled at the MPTCP-layer, so
-		 * always push on the subflow
-		 */
-		__tcp_push_pending_frames(subsk, mss_now, TCP_NAGLE_PUSH);
+
 		if (reinject <= 0)
 			tcp_update_skb_after_send(meta_tp, skb);
 		meta_tp->lsndtime = tcp_jiffies32;
@@ -886,14 +883,12 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		if (!(path_mask & mptcp_pi_to_flag(subtp->mptcp->path_index)))
 			continue;
 
-		/* We have pushed data on this subflow. We ignore the call to
-		 * cwnd_validate in tcp_write_xmit as is_cwnd_limited will never
-		 * be true (we never push more than what the cwnd can accept).
-		 * We need to ensure that we call tcp_cwnd_validate with
-		 * is_cwnd_limited set to true if we have filled the cwnd.
+		mss_now = tcp_current_mss(subsk);
+
+		/* Nagle is handled at the MPTCP-layer, so
+		 * always push on the subflow
 		 */
-		tcp_cwnd_validate(subsk, tcp_packets_in_flight(subtp) >=
-				  subtp->snd_cwnd);
+		__tcp_push_pending_frames(subsk, mss_now, TCP_NAGLE_PUSH);
 	}
 
 	return !meta_tp->packets_out && tcp_send_head(meta_sk);
