@@ -391,10 +391,11 @@ static struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
 					  unsigned int *limit)
 {
 	struct sk_buff *skb = __mptcp_next_segment(meta_sk, reinject);
-	unsigned int mss_now;
+	unsigned int mss_now, in_flight_space;
+	int remaining_in_flight_space;
+	u32 max_len, max_segs, window;
 	struct tcp_sock *subtp;
 	u16 gso_max_segs;
-	u32 max_len, max_segs, window, needed;
 
 	/* As we set it, we have to reset it as well. */
 	*limit = 0;
@@ -424,9 +425,6 @@ static struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
 	/* The following is similar to tcp_mss_split_point, but
 	 * we do not care about nagle, because we will anyways
 	 * use TCP_NAGLE_PUSH, which overrides this.
-	 *
-	 * So, we first limit according to the cwnd/gso-size and then according
-	 * to the subflow's window.
 	 */
 
 	gso_max_segs = (*subsk)->sk_gso_max_segs;
@@ -436,16 +434,30 @@ static struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
 	if (!max_segs)
 		return NULL;
 
-	max_len = mss_now * max_segs;
+	/* max_len is what would fit in the cwnd (respecting the 2GSO-limit of
+	 * tcp_cwnd_test), but ignoring whatever was already queued.
+	 */
+	max_len = min(mss_now * max_segs, skb->len);
+
+	in_flight_space = (subtp->snd_cwnd - tcp_packets_in_flight(subtp)) * mss_now;
+	remaining_in_flight_space = (int)in_flight_space - (subtp->write_seq - subtp->snd_nxt);
+
+	if (remaining_in_flight_space <= 0)
+		WARN_ONCE(1, "in_flight %u cwnd %u wseq %u snxt %u mss_now %u cache %u",
+			  tcp_packets_in_flight(subtp), subtp->snd_cwnd,
+			  subtp->write_seq, subtp->snd_nxt, mss_now, subtp->mss_cache);
+	else
+		/* max_len now fits exactly in the write-queue, taking into
+		 * account what was already queued.
+		 */
+		max_len = min_t(u32, max_len, remaining_in_flight_space);
+
 	window = tcp_wnd_end(subtp) - subtp->write_seq;
 
-	needed = min(skb->len, window);
-	if (max_len <= skb->len)
-		/* Take max_win, which is actually the cwnd/gso-size */
-		*limit = max_len;
-	else
-		/* Or, take the window */
-		*limit = needed;
+	/* max_len now also respects the announced receive-window */
+	max_len = min(max_len, window);
+
+	*limit = max_len;
 
 	return skb;
 }
