@@ -343,7 +343,6 @@ extern const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops;
 struct mptcp_options_received;
 
 void tcp_cleanup_rbuf(struct sock *sk, int copied);
-void tcp_cwnd_validate(struct sock *sk, bool is_cwnd_limited);
 int tcp_close_state(struct sock *sk);
 void tcp_minshall_update(struct tcp_sock *tp, unsigned int mss_now,
 			 const struct sk_buff *skb);
@@ -2126,7 +2125,6 @@ struct tcp_sock_ops {
 	void (*retransmit_timer)(struct sock *sk);
 	void (*time_wait)(struct sock *sk, int state, int timeo);
 	void (*cleanup_rbuf)(struct sock *sk, int copied);
-	void (*cwnd_validate)(struct sock *sk, bool is_cwnd_limited);
 	int (*set_cong_ctrl)(struct sock *sk, const char *name, bool load,
 			     bool reinit, bool cap_net_admin);
 };
