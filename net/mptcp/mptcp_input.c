@@ -177,6 +177,10 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk, u32 prior_snd_una)
 }
 
 /* Inspired by tcp_rcv_state_process */
+/* Returns 0 if processing the packet can continue
+ *	   -1 if connection was closed with an active reset
+ *	   1 if connection was closed and processing should stop.
+ */
 static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 				   const struct sk_buff *skb, u32 data_seq,
 				   u16 data_len)
@@ -217,7 +221,7 @@ static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 			mptcp_send_active_reset(meta_sk, GFP_ATOMIC);
 			tcp_done(meta_sk);
 			__NET_INC_STATS(sock_net(meta_sk), LINUX_MIB_TCPABORTONDATA);
-			return 1;
+			return -1;
 		}
 
 		tmo = tcp_fin_time(meta_sk);
@@ -260,7 +264,7 @@ static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 				__NET_INC_STATS(sock_net(meta_sk), LINUX_MIB_TCPABORTONDATA);
 				mptcp_send_active_reset(meta_sk, GFP_ATOMIC);
 				tcp_reset(meta_sk);
-				return 1;
+				return -1;
 			}
 		}
 		break;
@@ -1444,7 +1448,7 @@ static void mptcp_snd_una_update(struct tcp_sock *meta_tp, u32 data_ack)
 }
 
 /* Handle the DATA_ACK */
-static void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
+static bool mptcp_process_data_ack(struct sock *sk, const struct sk_buff *skb)
 {
 	struct sock *meta_sk = mptcp_meta_sk(sk);
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *tp = tcp_sk(sk);
@@ -1469,7 +1473,7 @@ static void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	 * set by mptcp_clean_rtx_infinite.
 	 */
 	if (!(tcb->mptcp_flags & MPTCPHDR_ACK) && !tp->mpcb->infinite_mapping_snd)
-		return;
+		return false;
 
 	if (unlikely(!tp->mptcp->fully_established) &&
 	    tp->mptcp->snt_isn + 1 != TCP_SKB_CB(skb)->ack_seq)
@@ -1483,7 +1487,7 @@ static void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	 * processing.
 	 */
 	if (meta_sk->sk_state == TCP_CLOSE)
-		return;
+		return false;
 
 	/* Get the data_seq */
 	if (mptcp_is_data_seq(skb)) {
@@ -1564,14 +1568,19 @@ static void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 			meta_sk->sk_write_space(meta_sk);
 	}
 
-	if (meta_sk->sk_state != TCP_ESTABLISHED &&
-	    mptcp_rcv_state_process(meta_sk, sk, skb, data_seq, data_len))
-		return;
+	if (meta_sk->sk_state != TCP_ESTABLISHED) {
+		int ret = mptcp_rcv_state_process(meta_sk, sk, skb, data_seq, data_len);
+
+		if (ret < 0)
+			return true;
+		else if (ret > 0)
+			return false;
+	}
 
 exit:
 	mptcp_push_pending_frames(meta_sk);
 
-	return;
+	return false;
 
 no_queue:
 	if (tcp_send_head(meta_sk))
@@ -1579,7 +1588,7 @@ no_queue:
 
 	mptcp_push_pending_frames(meta_sk);
 
-	return;
+	return false;
 }
 
 void mptcp_clean_rtx_infinite(const struct sk_buff *skb, struct sock *sk)
@@ -1598,7 +1607,7 @@ void mptcp_clean_rtx_infinite(const struct sk_buff *skb, struct sock *sk)
 	tp->mptcp->rx_opt.data_ack = meta_tp->snd_nxt - tp->snd_nxt +
 				     tp->snd_una;
 
-	mptcp_data_ack(sk, skb);
+	mptcp_process_data_ack(sk, skb);
 }
 
 /**** static functions used by mptcp_parse_options */
@@ -2203,7 +2212,8 @@ bool mptcp_handle_options(struct sock *sk, const struct tcphdr *th,
 		mopt->saw_low_prio = 0;
 	}
 
-	mptcp_data_ack(sk, skb);
+	if (mptcp_process_data_ack(sk, skb))
+		return true;
 
 	mptcp_path_array_check(mptcp_meta_sk(sk));
 	/* Socket may have been mp_killed by a REMOVE_ADDR */
