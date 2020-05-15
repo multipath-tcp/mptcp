@@ -197,13 +197,11 @@ static struct sk_buff *redsched_next_skb_from_queue(struct sk_buff_head *queue,
 						    struct sock *meta_sk)
 {
 	struct sk_buff *skb;
-	if (!previous){
-		if (tcp_rtx_queue_head(meta_sk)){
+	if (!previous) {
+		if (tcp_rtx_queue_head(meta_sk))
 			return tcp_rtx_queue_head(meta_sk);
-		}
 		return skb_peek(queue);
 	}
-
 
 	/* sk_data->skb stores the last scheduled packet for this subflow.
 	 * If sk_data->skb was scheduled but not sent (e.g., due to nagle),
@@ -251,7 +249,7 @@ static struct sk_buff *mptcp_red_next_segment(struct sock *meta_sk,
 
 	if (skb_queue_empty(&mpcb->reinject_queue) &&
 	    skb_queue_empty(&meta_sk->sk_write_queue) &&
-		tcp_rtx_queue_empty(meta_sk))
+	    tcp_rtx_queue_empty(meta_sk))
 		/* Nothing to send */
 		return NULL;
 
