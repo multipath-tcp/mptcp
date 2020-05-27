@@ -1312,29 +1312,35 @@ void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 
 		mpadd->kind = TCPOPT_MPTCP;
 		if (opts->add_addr_v4) {
-			mpadd->sub = MPTCP_SUB_ADD_ADDR;
-			mpadd->ipver = 4;
 			mpadd->addr_id = opts->add_addr4.addr_id;
 			mpadd->u.v4.addr = opts->add_addr4.addr;
 			if (mpcb->mptcp_ver < MPTCP_VERSION_1) {
+				mpadd->u_bit.v0.sub = MPTCP_SUB_ADD_ADDR;
+				mpadd->u_bit.v0.ipver = 4;
 				mpadd->len = MPTCP_SUB_LEN_ADD_ADDR4;
 				ptr += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN >> 2;
 			} else {
+				mpadd->u_bit.v1.sub = MPTCP_SUB_ADD_ADDR;
+				mpadd->u_bit.v1.rsv = 0;
+				mpadd->u_bit.v1.echo = 0;
 				memcpy((char *)mpadd->u.v4.mac - 2,
 				       (char *)&opts->add_addr4.trunc_mac, 8);
 				mpadd->len = MPTCP_SUB_LEN_ADD_ADDR4_VER1;
 				ptr += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN_VER1 >> 2;
 			}
 		} else if (opts->add_addr_v6) {
-			mpadd->sub = MPTCP_SUB_ADD_ADDR;
-			mpadd->ipver = 6;
 			mpadd->addr_id = opts->add_addr6.addr_id;
 			memcpy(&mpadd->u.v6.addr, &opts->add_addr6.addr,
 			       sizeof(mpadd->u.v6.addr));
 			if (mpcb->mptcp_ver < MPTCP_VERSION_1) {
+				mpadd->u_bit.v0.sub = MPTCP_SUB_ADD_ADDR;
+				mpadd->u_bit.v0.ipver = 6;
 				mpadd->len = MPTCP_SUB_LEN_ADD_ADDR6;
 				ptr += MPTCP_SUB_LEN_ADD_ADDR6_ALIGN >> 2;
 			} else {
+				mpadd->u_bit.v1.sub = MPTCP_SUB_ADD_ADDR;
+				mpadd->u_bit.v1.rsv = 0;
+				mpadd->u_bit.v1.echo = 0;
 				memcpy((char *)mpadd->u.v6.mac - 2,
 				       (char *)&opts->add_addr6.trunc_mac, 8);
 				mpadd->len = MPTCP_SUB_LEN_ADD_ADDR6_VER1;

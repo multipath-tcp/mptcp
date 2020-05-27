@@ -1614,19 +1614,21 @@ static inline bool is_valid_addropt_opsize(u8 mptcp_ver,
 					   int opsize)
 {
 #if IS_ENABLED(CONFIG_IPV6)
-	if (mptcp_ver < MPTCP_VERSION_1 && mpadd->ipver == 6) {
+	if (mptcp_ver < MPTCP_VERSION_1 && mpadd->u_bit.v0.ipver == 6) {
 		return opsize == MPTCP_SUB_LEN_ADD_ADDR6 ||
 		       opsize == MPTCP_SUB_LEN_ADD_ADDR6 + 2;
 	}
-	if (mptcp_ver >= MPTCP_VERSION_1 && mpadd->ipver == 6)
+	if (mptcp_ver >= MPTCP_VERSION_1)
 		return opsize == MPTCP_SUB_LEN_ADD_ADDR6_VER1 ||
-		       opsize == MPTCP_SUB_LEN_ADD_ADDR6_VER1 + 2;
+		       opsize == MPTCP_SUB_LEN_ADD_ADDR6_VER1 + 2 ||
+		       opsize == MPTCP_SUB_LEN_ADD_ADDR4_VER1 ||
+		       opsize == MPTCP_SUB_LEN_ADD_ADDR4_VER1 + 2;
 #endif
-	if (mptcp_ver < MPTCP_VERSION_1 && mpadd->ipver == 4) {
+	if (mptcp_ver < MPTCP_VERSION_1 && mpadd->u_bit.v0.ipver == 4) {
 		return opsize == MPTCP_SUB_LEN_ADD_ADDR4 ||
 		       opsize == MPTCP_SUB_LEN_ADD_ADDR4 + 2;
 	}
-	if (mptcp_ver >= MPTCP_VERSION_1 && mpadd->ipver == 4) {
+	if (mptcp_ver >= MPTCP_VERSION_1) {
 		return opsize == MPTCP_SUB_LEN_ADD_ADDR4_VER1 ||
 		       opsize == MPTCP_SUB_LEN_ADD_ADDR4_VER1 + 2;
 	}
@@ -1972,33 +1974,42 @@ static void mptcp_handle_add_addr(const unsigned char *ptr, struct sock *sk)
 {
 	struct mp_add_addr *mpadd = (struct mp_add_addr *)ptr;
 	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
-	__be16 port = 0;
 	union inet_addr addr;
 	sa_family_t family;
+	__be16 port = 0;
+	bool is_v4;
 
-	if (mpadd->ipver == 4) {
+	if (mpcb->mptcp_ver < MPTCP_VERSION_1) {
+		is_v4 = mpadd->u_bit.v0.ipver == 4;
+	} else {
+		is_v4 = mpadd->len == MPTCP_SUB_LEN_ADD_ADDR4_VER1 ||
+			mpadd->len == MPTCP_SUB_LEN_ADD_ADDR4_VER1 + 2;
+
+		/* TODO: support ADD_ADDRv1 retransmissions */
+		if (mpadd->u_bit.v1.echo)
+			return;
+	}
+
+	if (is_v4) {
+		u8 hash_mac_check[SHA256_DIGEST_SIZE];
+		__be16 hmacport = 0;
 		char *recv_hmac;
-		u8 hash_mac_check[20];
-		u8 no_key[8];
-		int msg_parts = 0;
 
 		if (mpcb->mptcp_ver < MPTCP_VERSION_1)
 			goto skip_hmac_v4;
 
-		*(u64 *)no_key = 0;
 		recv_hmac = (char *)mpadd->u.v4.mac;
 		if (mpadd->len == MPTCP_SUB_LEN_ADD_ADDR4_VER1) {
 			recv_hmac -= sizeof(mpadd->u.v4.port);
-			msg_parts = 2;
 		} else if (mpadd->len == MPTCP_SUB_LEN_ADD_ADDR4_VER1 + 2) {
-			msg_parts = 3;
+			hmacport = mpadd->u.v4.port;
 		}
 		mptcp_hmac(mpcb->mptcp_ver, (u8 *)&mpcb->mptcp_rem_key,
-			   (u8 *)no_key, (u32 *)hash_mac_check, msg_parts,
+			   (u8 *)&mpcb->mptcp_loc_key, hash_mac_check, 3,
 			   1, (u8 *)&mpadd->addr_id,
 			   4, (u8 *)&mpadd->u.v4.addr.s_addr,
-			   2, (u8 *)&mpadd->u.v4.port);
-		if (memcmp(hash_mac_check, recv_hmac, 8) != 0)
+			   2, (u8 *)&hmacport);
+		if (memcmp(&hash_mac_check[SHA256_DIGEST_SIZE - sizeof(u64)], recv_hmac, 8) != 0)
 			/* ADD_ADDR2 discarded */
 			return;
 skip_hmac_v4:
@@ -2010,29 +2021,26 @@ skip_hmac_v4:
 		family = AF_INET;
 		addr.in = mpadd->u.v4.addr;
 #if IS_ENABLED(CONFIG_IPV6)
-	} else if (mpadd->ipver == 6) {
+	} else {
+		u8 hash_mac_check[SHA256_DIGEST_SIZE];
+		__be16 hmacport = 0;
 		char *recv_hmac;
-		u8 hash_mac_check[20];
-		u8 no_key[8];
-		int msg_parts = 0;
 
 		if (mpcb->mptcp_ver < MPTCP_VERSION_1)
 			goto skip_hmac_v6;
 
-		*(u64 *)no_key = 0;
 		recv_hmac = (char *)mpadd->u.v6.mac;
 		if (mpadd->len == MPTCP_SUB_LEN_ADD_ADDR6_VER1) {
 			recv_hmac -= sizeof(mpadd->u.v6.port);
-			msg_parts = 2;
 		} else if (mpadd->len == MPTCP_SUB_LEN_ADD_ADDR6_VER1 + 2) {
-			msg_parts = 3;
+			hmacport = mpadd->u.v6.port;
 		}
 		mptcp_hmac(mpcb->mptcp_ver, (u8 *)&mpcb->mptcp_rem_key,
-			   (u8 *)no_key, (u32 *)hash_mac_check, msg_parts,
+			   (u8 *)&mpcb->mptcp_loc_key, hash_mac_check, 3,
 			   1, (u8 *)&mpadd->addr_id,
 			   16, (u8 *)&mpadd->u.v6.addr.s6_addr,
-			   2, (u8 *)&mpadd->u.v6.port);
-		if (memcmp(hash_mac_check, recv_hmac, 8) != 0)
+			   2, (u8 *)&hmacport);
+		if (memcmp(&hash_mac_check[SHA256_DIGEST_SIZE - sizeof(u64)], recv_hmac, 8) != 0)
 			/* ADD_ADDR2 discarded */
 			return;
 skip_hmac_v6:
@@ -2044,8 +2052,6 @@ skip_hmac_v6:
 		family = AF_INET6;
 		addr.in6 = mpadd->u.v6.addr;
 #endif /* CONFIG_IPV6 */
-	} else {
-		return;
 	}
 
 	if (mpcb->pm_ops->add_raddr)
@@ -2374,11 +2380,11 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	if (mptcp(tp)) {
-		u8 hash_mac_check[20];
+		u8 hash_mac_check[SHA256_DIGEST_SIZE];
 		struct mptcp_cb *mpcb = tp->mpcb;
 
 		mptcp_hmac(mpcb->mptcp_ver, (u8 *)&mpcb->mptcp_rem_key,
-			   (u8 *)&mpcb->mptcp_loc_key, (u32 *)hash_mac_check, 2,
+			   (u8 *)&mpcb->mptcp_loc_key, hash_mac_check, 2,
 			   4, (u8 *)&tp->mptcp->rx_opt.mptcp_recv_nonce,
 			   4, (u8 *)&tp->mptcp->mptcp_loc_nonce);
 		if (memcmp(hash_mac_check,
@@ -2396,7 +2402,7 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 
 		mptcp_hmac(mpcb->mptcp_ver, (u8 *)&mpcb->mptcp_loc_key,
 			   (u8 *)&mpcb->mptcp_rem_key,
-			   (u32 *)&tp->mptcp->sender_mac[0], 2,
+			   tp->mptcp->sender_mac, 2,
 			   4, (u8 *)&tp->mptcp->mptcp_loc_nonce,
 			   4, (u8 *)&tp->mptcp->rx_opt.mptcp_recv_nonce);
 

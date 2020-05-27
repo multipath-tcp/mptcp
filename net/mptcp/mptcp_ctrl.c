@@ -860,11 +860,10 @@ static void mptcp_key_sha256(const u64 key, u32 *token, u64 *idsn)
 		*idsn = ntohll(*((__be64 *)&mptcp_hashed_key[6]));
 }
 
-static void mptcp_hmac_sha256(const u8 *key_1, const u8 *key_2, u32 *hash_out,
+static void mptcp_hmac_sha256(const u8 *key_1, const u8 *key_2, u8 *hash_out,
 			      int arg_num, va_list list)
 {
 	u8 input[SHA256_BLOCK_SIZE + SHA256_DIGEST_SIZE];
-	__be32 output[SHA256_DIGEST_WORDS];
 	struct sha256_state state;
 	int index, msg_length;
 	int length = 0;
@@ -902,10 +901,7 @@ static void mptcp_hmac_sha256(const u8 *key_1, const u8 *key_2, u32 *hash_out,
 
 	sha256_init(&state);
 	sha256_update(&state, input, sizeof(input));
-	sha256_final(&state, (u8 *)output);
-
-	for (i = 0; i < 5; i++)
-		hash_out[i] = output[i];
+	sha256_final(&state, hash_out);
 }
 
 static void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn)
@@ -1015,14 +1011,14 @@ static void mptcp_hmac_sha1(const u8 *key_1, const u8 *key_2, u32 *hash_out,
 		hash_out[i] = (__force u32)cpu_to_be32(hash_out[i]);
 }
 
-void mptcp_hmac(u8 ver, const u8 *key_1, const u8 *key_2, u32 *hash_out,
+void mptcp_hmac(u8 ver, const u8 *key_1, const u8 *key_2, u8 *hash_out,
 		int arg_num, ...)
 {
 	va_list args;
 
 	va_start(args, arg_num);
 	if (ver == MPTCP_VERSION_0)
-		mptcp_hmac_sha1(key_1, key_2, hash_out, arg_num, args);
+		mptcp_hmac_sha1(key_1, key_2, (u32 *)hash_out, arg_num, args);
 	else if (ver >= MPTCP_VERSION_1)
 		mptcp_hmac_sha256(key_1, key_2, hash_out, arg_num, args);
 	va_end(args);
@@ -2386,7 +2382,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk,
 	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
 	struct tcp_sock *child_tp = tcp_sk(child);
-	u8 hash_mac_check[20];
+	u8 hash_mac_check[SHA256_DIGEST_SIZE];
 
 	if (!mopt->join_ack) {
 		MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_JOINACKFAIL);
@@ -2394,7 +2390,7 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk,
 	}
 
 	mptcp_hmac(mpcb->mptcp_ver, (u8 *)&mpcb->mptcp_rem_key,
-		   (u8 *)&mpcb->mptcp_loc_key, (u32 *)hash_mac_check, 2,
+		   (u8 *)&mpcb->mptcp_loc_key, hash_mac_check, 2,
 		   4, (u8 *)&mtreq->mptcp_rem_nonce,
 		   4, (u8 *)&mtreq->mptcp_loc_nonce);
 
@@ -2647,8 +2643,8 @@ void mptcp_join_reqsk_init(const struct mptcp_cb *mpcb,
 			   struct sk_buff *skb)
 {
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
+	u8 mptcp_hash_mac[SHA256_DIGEST_SIZE];
 	struct mptcp_options_received mopt;
-	u8 mptcp_hash_mac[20];
 
 	mptcp_init_mp_opt(&mopt);
 	tcp_parse_mptcp_options(skb, &mopt);
@@ -2659,7 +2655,7 @@ void mptcp_join_reqsk_init(const struct mptcp_cb *mpcb,
 	mtreq->mptcp_rem_nonce = mopt.mptcp_recv_nonce;
 
 	mptcp_hmac(mpcb->mptcp_ver, (u8 *)&mpcb->mptcp_loc_key,
-		   (u8 *)&mpcb->mptcp_rem_key, (u32 *)mptcp_hash_mac, 2,
+		   (u8 *)&mpcb->mptcp_rem_key, mptcp_hash_mac, 2,
 		   4, (u8 *)&mtreq->mptcp_loc_nonce,
 		   4, (u8 *)&mtreq->mptcp_rem_nonce);
 	mtreq->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;

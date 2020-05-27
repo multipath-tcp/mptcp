@@ -44,6 +44,7 @@
 #include <asm/byteorder.h>
 #include <asm/unaligned.h>
 #include <crypto/hash.h>
+#include <crypto/sha.h>
 #include <net/tcp.h>
 
 #if defined(__LITTLE_ENDIAN_BITFIELD)
@@ -202,7 +203,7 @@ struct mptcp_tcp_sock {
 	struct timer_list mptcp_ack_timer;
 
 	/* HMAC of the third ack */
-	char sender_mac[20];
+	char sender_mac[SHA256_DIGEST_SIZE];
 };
 
 struct mptcp_tw {
@@ -570,11 +571,29 @@ struct mp_add_addr {
 	__u8	kind;
 	__u8	len;
 #if defined(__LITTLE_ENDIAN_BITFIELD)
-	__u8	ipver:4,
-		sub:4;
+	union {
+		struct {
+			__u8	ipver:4,
+				sub:4;
+		} v0;
+		struct {
+			__u8	echo:1,
+				rsv:3,
+				sub:4;
+		} v1;
+	} u_bit;
 #elif defined(__BIG_ENDIAN_BITFIELD)
-	__u8	sub:4,
-		ipver:4;
+	union {
+		struct {
+			__u8	sub:4,
+				ipver:4;
+		} v0;
+		struct {
+			__u8	sub:4,
+				rsv:3,
+				echo:1;
+		} v1;
+	} u_bit;
 #else
 #error	"Adjust your <asm/byteorder.h> defines"
 #endif
@@ -830,7 +849,7 @@ void mptcp_select_initial_window(const struct sock *sk, int __space, __u32 mss,
 				 int wscale_ok, __u8 *rcv_wscale,
 				 __u32 init_rcv_wnd);
 unsigned int mptcp_current_mss(struct sock *meta_sk);
-void mptcp_hmac(u8 ver, const u8 *key_1, const u8 *key_2, u32 *hash_out,
+void mptcp_hmac(u8 ver, const u8 *key_1, const u8 *key_2, u8 *hash_out,
 		int arg_num, ...);
 void mptcp_clean_rtx_infinite(const struct sk_buff *skb, struct sock *sk);
 void mptcp_fin(struct sock *meta_sk);
