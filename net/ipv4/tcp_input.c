@@ -4748,7 +4748,8 @@ void tcp_data_ready(struct sock *sk)
 	const struct tcp_sock *tp = tcp_sk(sk);
 	int avail = tp->rcv_nxt - tp->copied_seq;
 
-	if (avail < sk->sk_rcvlowat && !sock_flag(sk, SOCK_DONE) && !mptcp(tp))
+	if (avail < sk->sk_rcvlowat && !tcp_rmem_pressure(sk) &&
+	    !sock_flag(sk, SOCK_DONE) && !mptcp(tp))
 		return;
 
 	sk->sk_data_ready(sk);

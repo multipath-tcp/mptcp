@@ -670,6 +670,7 @@ static int spinand_markbad(struct nand_device *nand, const struct nand_pos *pos)
 		.ooboffs = 0,
 		.ooblen = sizeof(marker),
 		.oobbuf.out = marker,
+		.mode = MTD_OPS_RAW,
 	};
 	int ret;
 
@@ -1043,6 +1044,10 @@ static int spinand_init(struct spinand_device *spinand)
 		goto err_cleanup_nanddev;
 
 	mtd->oobavail = ret;
+
+	/* Propagate ECC information to mtd_info */
+	mtd->ecc_strength = nand->eccreq.strength;
+	mtd->ecc_step_size = nand->eccreq.step_size;
 
 	return 0;
 
