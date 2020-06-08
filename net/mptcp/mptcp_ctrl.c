@@ -2466,6 +2466,10 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk,
 	reqsk_put(req);
 
 	MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_JOINACKRX);
+
+	if (inet_sk(child)->inet_sport != inet_sk(meta_sk)->inet_sport)
+		MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_JOINALTERNATEPORT);
+
 	return child;
 
 teardown:
@@ -3033,6 +3037,7 @@ static const struct snmp_mib mptcp_snmp_list[] = {
 	SNMP_MIB_ITEM("AddAddrTx", MPTCP_MIB_ADDADDRTX),
 	SNMP_MIB_ITEM("RemAddrRx", MPTCP_MIB_REMADDRRX),
 	SNMP_MIB_ITEM("RemAddrTx", MPTCP_MIB_REMADDRTX),
+	SNMP_MIB_ITEM("MPJoinAlternatePort", MPTCP_MIB_JOINALTERNATEPORT),
 	SNMP_MIB_SENTINEL
 };
 

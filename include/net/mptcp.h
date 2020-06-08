@@ -773,6 +773,7 @@ enum
 	MPTCP_MIB_ADDADDRTX,		/* Sent an ADD_ADDR */
 	MPTCP_MIB_REMADDRRX,		/* Received a REMOVE_ADDR */
 	MPTCP_MIB_REMADDRTX,		/* Sent a REMOVE_ADDR */
+	MPTCP_MIB_JOINALTERNATEPORT,	/* Established a subflow on a different destination port-number */
 	__MPTCP_MIB_MAX
 };
 
