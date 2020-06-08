@@ -406,6 +406,7 @@ void tcp_v6_reqsk_destructor(struct request_sock *req);
 unsigned int tcp_xmit_size_goal(struct sock *sk, u32 mss_now,
 				       int large_allowed);
 u32 tcp_tso_acked(struct sock *sk, struct sk_buff *skb);
+void tcp_ack_tstamp(struct sock *sk, struct sk_buff *skb, u32 prior_snd_una);
 
 void skb_clone_fraglist(struct sk_buff *skb);
 

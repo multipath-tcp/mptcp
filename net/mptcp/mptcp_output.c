@@ -603,6 +603,9 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 	tp->write_seq += subskb->len + ((tcb->tcp_flags & TCPHDR_FIN) ? 1 : 0);
 	tcb->end_seq = tp->write_seq;
 
+	/* txstamp_ack is handled at the meta-level */
+	tcb->txstamp_ack = 0;
+
 	/* If it's a non-payload DATA_FIN (also no subflow-fin), the
 	 * segment is not part of the subflow but on a meta-only-level.
 	 */

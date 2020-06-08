@@ -3048,8 +3048,7 @@ u32 tcp_tso_acked(struct sock *sk, struct sk_buff *skb)
 	return packets_acked;
 }
 
-static void tcp_ack_tstamp(struct sock *sk, struct sk_buff *skb,
-			   u32 prior_snd_una)
+void tcp_ack_tstamp(struct sock *sk, struct sk_buff *skb, u32 prior_snd_una)
 {
 	const struct skb_shared_info *shinfo;
 

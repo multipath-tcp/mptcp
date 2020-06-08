@@ -95,21 +95,23 @@ static void mptcp_clean_rtx_queue(struct sock *meta_sk, u32 prior_snd_una)
 	struct sk_buff *skb, *tmp, *next;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
+	bool fully_acked = true;
 	bool acked = false;
 	u32 acked_pcount;
 
 	for (skb = skb_rb_first(&meta_sk->tcp_rtx_queue); skb; skb = next) {
-		bool fully_acked = true;
+		struct tcp_skb_cb *scb = TCP_SKB_CB(skb);
 
-		if (before(meta_tp->snd_una, TCP_SKB_CB(skb)->end_seq)) {
+		tcp_ack_tstamp(meta_sk, skb, prior_snd_una);
+
+		if (after(scb->end_seq, meta_tp->snd_una)) {
 			if (tcp_skb_pcount(skb) == 1 ||
-			    !after(meta_tp->snd_una, TCP_SKB_CB(skb)->seq))
+			    !after(meta_tp->snd_una, scb->seq))
 				break;
 
 			acked_pcount = tcp_tso_acked(meta_sk, skb);
 			if (!acked_pcount)
 				break;
-
 			fully_acked = false;
 		} else {
 			acked_pcount = tcp_skb_pcount(skb);
