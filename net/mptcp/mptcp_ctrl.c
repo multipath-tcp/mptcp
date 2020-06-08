@@ -3038,6 +3038,7 @@ static const struct snmp_mib mptcp_snmp_list[] = {
 	SNMP_MIB_ITEM("RemAddrRx", MPTCP_MIB_REMADDRRX),
 	SNMP_MIB_ITEM("RemAddrTx", MPTCP_MIB_REMADDRTX),
 	SNMP_MIB_ITEM("MPJoinAlternatePort", MPTCP_MIB_JOINALTERNATEPORT),
+	SNMP_MIB_ITEM("MPCurrEstab", MPTCP_MIB_CURRESTAB),
 	SNMP_MIB_SENTINEL
 };
 

@@ -728,6 +728,7 @@ static inline struct sock *mptcp_to_sock(const struct mptcp_tcp_sock *mptcp)
 	mptcp_for_each_bit_set(~b, i)
 
 #define MPTCP_INC_STATS(net, field)	SNMP_INC_STATS((net)->mptcp.mptcp_statistics, field)
+#define MPTCP_DEC_STATS(net, field)	SNMP_DEC_STATS((net)->mptcp.mptcp_statistics, field)
 #define MPTCP_INC_STATS_BH(net, field)	__SNMP_INC_STATS((net)->mptcp.mptcp_statistics, field)
 
 enum
@@ -774,6 +775,7 @@ enum
 	MPTCP_MIB_REMADDRRX,		/* Received a REMOVE_ADDR */
 	MPTCP_MIB_REMADDRTX,		/* Sent a REMOVE_ADDR */
 	MPTCP_MIB_JOINALTERNATEPORT,	/* Established a subflow on a different destination port-number */
+	MPTCP_MIB_CURRESTAB,		/* Current established MPTCP connections */
 	__MPTCP_MIB_MAX
 };
 

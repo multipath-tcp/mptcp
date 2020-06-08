@@ -2318,8 +2318,11 @@ void tcp_set_state(struct sock *sk, int state)
 
 	switch (state) {
 	case TCP_ESTABLISHED:
-		if (oldstate != TCP_ESTABLISHED)
+		if (oldstate != TCP_ESTABLISHED) {
 			TCP_INC_STATS(sock_net(sk), TCP_MIB_CURRESTAB);
+			if (is_meta_sk(sk))
+				MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_CURRESTAB);
+		}
 		break;
 
 	case TCP_CLOSE:
@@ -2332,8 +2335,11 @@ void tcp_set_state(struct sock *sk, int state)
 			inet_put_port(sk);
 		/* fall through */
 	default:
-		if (oldstate == TCP_ESTABLISHED)
+		if (oldstate == TCP_ESTABLISHED) {
 			TCP_DEC_STATS(sock_net(sk), TCP_MIB_CURRESTAB);
+			if (is_meta_sk(sk))
+				MPTCP_DEC_STATS(sock_net(sk), MPTCP_MIB_CURRESTAB);
+		}
 	}
 
 	/* Change state AFTER socket is unhashed to avoid closed
