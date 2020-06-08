@@ -150,6 +150,8 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 	int err;
 	struct inet_timewait_death_row *tcp_death_row = &sock_net(sk)->ipv4.tcp_death_row;
 
+	mptcp_init_connect(sk);
+
 	if (addr_len < SIN6_LEN_RFC2133)
 		return -EINVAL;
 

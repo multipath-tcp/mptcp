@@ -231,6 +231,8 @@ int inet_listen(struct socket *sock, int backlog)
 			tcp_fastopen_init_key_once(sock_net(sk));
 		}
 
+		mptcp_init_listen(sk);
+
 		err = inet_csk_listen_start(sk, backlog);
 		if (err)
 			goto out;

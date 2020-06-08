@@ -211,6 +211,8 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	struct ip_options_rcu *inet_opt;
 	struct inet_timewait_death_row *tcp_death_row = &sock_net(sk)->ipv4.tcp_death_row;
 
+	mptcp_init_connect(sk);
+
 	if (addr_len < sizeof(struct sockaddr_in))
 		return -EINVAL;
 

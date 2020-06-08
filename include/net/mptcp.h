@@ -689,7 +689,10 @@ static inline int mptcp_sub_len_dss(const struct mp_dss *m, const int csum)
 	return 4 + m->A * (4 + m->a * 4) + m->M * (10 + m->m * 4 + csum * 2);
 }
 
-#define MPTCP_SYSCTL	1
+#define MPTCP_ENABLE		0x01
+#define MPTCP_SOCKOPT		0x02
+#define MPTCP_CLIENT_DISABLE	0x04
+#define MPTCP_SERVER_DISABLE	0x08
 
 extern int sysctl_mptcp_enabled;
 extern int sysctl_mptcp_version;
@@ -949,7 +952,25 @@ extern struct mptcp_sched_ops mptcp_sched_default;
 /* Initializes function-pointers and MPTCP-flags */
 static inline void mptcp_init_tcp_sock(struct sock *sk)
 {
-	if (!mptcp_init_failed && sysctl_mptcp_enabled == MPTCP_SYSCTL)
+	if (!mptcp_init_failed && sysctl_mptcp_enabled == MPTCP_ENABLE)
+		mptcp_enable_sock(sk);
+}
+
+static inline void mptcp_init_listen(struct sock *sk)
+{
+	if (!mptcp_init_failed &&
+	    sk->sk_type == SOCK_STREAM && sk->sk_protocol == IPPROTO_TCP &&
+	    sysctl_mptcp_enabled & MPTCP_ENABLE &&
+	    !(sysctl_mptcp_enabled & MPTCP_SERVER_DISABLE))
+		mptcp_enable_sock(sk);
+}
+
+static inline void mptcp_init_connect(struct sock *sk)
+{
+	if (!mptcp_init_failed &&
+	    sk->sk_type == SOCK_STREAM && sk->sk_protocol == IPPROTO_TCP &&
+	    sysctl_mptcp_enabled & MPTCP_ENABLE &&
+	    !(sysctl_mptcp_enabled & MPTCP_CLIENT_DISABLE))
 		mptcp_enable_sock(sk);
 }
 
@@ -1525,6 +1546,8 @@ static inline void mptcp_hash_remove_bh(struct tcp_sock *meta_tp) {}
 static inline void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
 					  const struct sk_buff *skb) {}
 static inline void mptcp_init_tcp_sock(struct sock *sk) {}
+static inline void mptcp_init_listen(struct sock *sk) {}
+static inline void mptcp_init_connect(struct sock *sk) {}
 static inline void mptcp_disable_static_key(void) {}
 static inline void mptcp_cookies_reqsk_init(struct request_sock *req,
 					    struct mptcp_options_received *mopt,
