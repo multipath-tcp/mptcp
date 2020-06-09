@@ -45,6 +45,7 @@
 #include <net/transp_v6.h>
 #include <net/xfrm.h>
 
+#include <linux/memblock.h>
 #include <linux/cryptohash.h>
 #include <linux/kconfig.h>
 #include <linux/module.h>
@@ -172,16 +173,16 @@ static struct ctl_table mptcp_table[] = {
 	{ }
 };
 
-static inline u32 mptcp_hash_tk(u32 token)
+static inline u32 mptcp_hash_tk(u32 token, struct mptcp_hashtable *htable)
 {
-	return token % MPTCP_HASH_SIZE;
+	return token & htable->mask;
 }
 
-struct hlist_nulls_head tk_hashtable[MPTCP_HASH_SIZE];
-EXPORT_SYMBOL(tk_hashtable);
+struct mptcp_hashtable mptcp_tk_htable;
+EXPORT_SYMBOL(mptcp_tk_htable);
 
 /* The following hash table is used to avoid collision of token */
-static struct hlist_nulls_head mptcp_reqsk_tk_htb[MPTCP_HASH_SIZE];
+static struct mptcp_hashtable mptcp_reqsk_tk_htb;
 
 /* Lock, protecting the two hash-tables that hold the token. Namely,
  * mptcp_reqsk_tk_htb and tk_hashtable
@@ -190,13 +191,14 @@ static spinlock_t mptcp_tk_hashlock;
 
 static bool mptcp_reqsk_find_tk(const u32 token)
 {
-	const u32 hash = mptcp_hash_tk(token);
+	const u32 hash = mptcp_hash_tk(token, &mptcp_reqsk_tk_htb);
 	const struct mptcp_request_sock *mtreqsk;
 	const struct hlist_nulls_node *node;
 
 begin:
 	hlist_nulls_for_each_entry_rcu(mtreqsk, node,
-				       &mptcp_reqsk_tk_htb[hash], hash_entry) {
+				       &mptcp_reqsk_tk_htb.hashtable[hash],
+				       hash_entry) {
 		if (token == mtreqsk->mptcp_loc_token)
 			return true;
 	}
@@ -213,10 +215,10 @@ begin:
 
 static void mptcp_reqsk_insert_tk(struct request_sock *reqsk, const u32 token)
 {
-	u32 hash = mptcp_hash_tk(token);
+	u32 hash = mptcp_hash_tk(token, &mptcp_reqsk_tk_htb);
 
 	hlist_nulls_add_head_rcu(&mptcp_rsk(reqsk)->hash_entry,
-				 &mptcp_reqsk_tk_htb[hash]);
+				 &mptcp_reqsk_tk_htb.hashtable[hash]);
 }
 
 static void mptcp_reqsk_remove_tk(const struct request_sock *reqsk)
@@ -238,19 +240,23 @@ void mptcp_reqsk_destructor(struct request_sock *req)
 
 static void __mptcp_hash_insert(struct tcp_sock *meta_tp, const u32 token)
 {
-	u32 hash = mptcp_hash_tk(token);
-	hlist_nulls_add_head_rcu(&meta_tp->tk_table, &tk_hashtable[hash]);
+	u32 hash = mptcp_hash_tk(token, &mptcp_tk_htable);
+
+	hlist_nulls_add_head_rcu(&meta_tp->tk_table,
+				 &mptcp_tk_htable.hashtable[hash]);
 	meta_tp->inside_tk_table = 1;
 }
 
 static bool mptcp_find_token(u32 token)
 {
-	const u32 hash = mptcp_hash_tk(token);
+	const u32 hash = mptcp_hash_tk(token, &mptcp_tk_htable);
 	const struct tcp_sock *meta_tp;
 	const struct hlist_nulls_node *node;
 
 begin:
-	hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[hash], tk_table) {
+	hlist_nulls_for_each_entry_rcu(meta_tp, node,
+				       &mptcp_tk_htable.hashtable[hash],
+				       tk_table) {
 		if (token == meta_tp->mptcp_loc_token)
 			return true;
 	}
@@ -529,7 +535,7 @@ void mptcp_connect_init(struct sock *sk)
  */
 struct sock *mptcp_hash_find(const struct net *net, const u32 token)
 {
-	const u32 hash = mptcp_hash_tk(token);
+	const u32 hash = mptcp_hash_tk(token, &mptcp_tk_htable);
 	const struct tcp_sock *meta_tp;
 	struct sock *meta_sk = NULL;
 	const struct hlist_nulls_node *node;
@@ -537,7 +543,8 @@ struct sock *mptcp_hash_find(const struct net *net, const u32 token)
 	rcu_read_lock();
 	local_bh_disable();
 begin:
-	hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[hash],
+	hlist_nulls_for_each_entry_rcu(meta_tp, node,
+				       &mptcp_tk_htable.hashtable[hash],
 				       tk_table) {
 		meta_sk = (struct sock *)meta_tp;
 		if (token == meta_tp->mptcp_loc_token &&
@@ -3037,17 +3044,18 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 {
 	struct tcp_sock *meta_tp;
 	const struct net *net = seq->private;
-	int i, n = 0;
+	unsigned int i, n = 0;
 
 	seq_printf(seq, "  sl  loc_tok  rem_tok  v6 local_address                         remote_address                        st ns tx_queue rx_queue inode");
 	seq_putc(seq, '\n');
 
-	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
+	for (i = 0; i <= mptcp_tk_htable.mask; i++) {
 		struct hlist_nulls_node *node;
 		rcu_read_lock();
 		local_bh_disable();
 		hlist_nulls_for_each_entry_rcu(meta_tp, node,
-					       &tk_hashtable[i], tk_table) {
+					       &mptcp_tk_htable.hashtable[i],
+					       tk_table) {
 			struct sock *meta_sk = (struct sock *)meta_tp;
 			struct inet_sock *isk = inet_sk(meta_sk);
 			struct mptcp_cb *mpcb = meta_tp->mpcb;
@@ -3161,10 +3169,27 @@ static struct pernet_operations mptcp_pm_proc_ops = {
 	.exit = mptcp_pm_exit_net,
 };
 
+static unsigned long mptcp_htable_entries __initdata;
+
+static int __init set_mptcp_htable_entries(char *str)
+{
+	ssize_t ret;
+
+	if (!str)
+		return 0;
+
+	ret = kstrtoul(str, 0, &mptcp_htable_entries);
+	if (ret)
+		return 0;
+
+	return 1;
+}
+__setup("mptcp_htable_entries=", set_mptcp_htable_entries);
+
 /* General initialization of mptcp */
 void __init mptcp_init(void)
 {
-	int i;
+	unsigned int i;
 	struct ctl_table_header *mptcp_sysctl;
 
 	mptcp_sock_cache = kmem_cache_create("mptcp_sock",
@@ -3192,10 +3217,34 @@ void __init mptcp_init(void)
 	if (!mptcp_wq)
 		goto alloc_workqueue_failed;
 
-	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
-		INIT_HLIST_NULLS_HEAD(&tk_hashtable[i], i);
-		INIT_HLIST_NULLS_HEAD(&mptcp_reqsk_tk_htb[i], i);
-	}
+	mptcp_tk_htable.hashtable =
+		alloc_large_system_hash("MPTCP tokens",
+					sizeof(mptcp_tk_htable.hashtable[0]),
+					mptcp_htable_entries,
+					18, /* one slot per 256KB of memory */
+					0,
+					NULL,
+					&mptcp_tk_htable.mask,
+					1024,
+					mptcp_htable_entries ? 0 : 1024 * 1024);
+
+	for (i = 0; i <= mptcp_tk_htable.mask; i++)
+		INIT_HLIST_NULLS_HEAD(&mptcp_tk_htable.hashtable[i], i);
+
+	mptcp_reqsk_tk_htb.hashtable =
+		alloc_large_system_hash("MPTCP request tokens",
+					sizeof(mptcp_reqsk_tk_htb.hashtable[0]),
+					mptcp_htable_entries,
+					18, /* one slot per 256KB of memory */
+					0,
+					NULL,
+					&mptcp_reqsk_tk_htb.mask,
+					1024,
+					mptcp_htable_entries ? 0 : 1024 * 1024);
+
+	for (i = 0; i <= mptcp_reqsk_tk_htb.mask; i++)
+		INIT_HLIST_NULLS_HEAD(&mptcp_reqsk_tk_htb.hashtable[i], i);
+
 
 	spin_lock_init(&mptcp_tk_hashlock);
 

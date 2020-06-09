@@ -679,6 +679,11 @@ struct mp_prio {
 	__u8	addr_id;
 } __attribute__((__packed__));
 
+struct mptcp_hashtable {
+	struct hlist_nulls_head *hashtable;
+	unsigned int mask;
+};
+
 static inline int mptcp_sub_len_dss(const struct mp_dss *m, const int csum)
 {
 	return 4 + m->A * (4 + m->a * 4) + m->M * (10 + m->m * 4 + csum * 2);
@@ -785,9 +790,7 @@ extern siphash_key_t mptcp_secret;
  */
 extern u32 mptcp_seed;
 
-#define MPTCP_HASH_SIZE                1024
-
-extern struct hlist_nulls_head tk_hashtable[MPTCP_HASH_SIZE];
+extern struct mptcp_hashtable mptcp_tk_htable;
 
 /* Request-sockets can be hashed in the tk_htb for collision-detection or in
  * the regular htb for join-connections. We need to define different NULLS

@@ -2724,6 +2724,10 @@
 			allocations which rules out almost all kernel
 			allocations. Use with caution!
 
+	mptcp_htable_entries=
+			[KNL,NET] Set number of hash buckets for MPTCP token
+			hashtables.
+
 	MTD_Partition=	[MTD]
 			Format: <name>,<region-number>,<size>,<offset>
 

@@ -845,12 +845,13 @@ duno:
 		goto next_event;
 
 	/* Now we iterate over the MPTCP-sockets and apply the event. */
-	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
+	for (i = 0; i <= mptcp_tk_htable.mask; i++) {
 		const struct hlist_nulls_node *node;
 		struct tcp_sock *meta_tp;
 
 		rcu_read_lock_bh();
-		hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[i],
+		hlist_nulls_for_each_entry_rcu(meta_tp, node,
+					       &mptcp_tk_htable.hashtable[i],
 					       tk_table) {
 			struct sock *meta_sk = (struct sock *)meta_tp, *sk;
 			bool meta_v4 = meta_sk->sk_family == AF_INET;
