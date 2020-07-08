@@ -1773,7 +1773,7 @@ static int mptcp_fm_seq_show(struct seq_file *seq, void *v)
 	mptcp_for_each_bit_set(mptcp_local->loc4_bits, i) {
 		struct mptcp_loc4 *loc4 = &mptcp_local->locaddr4[i];
 
-		seq_printf(seq, "%u, %u, %u, %pI4 %u\n", i, loc4->loc4_id,
+		seq_printf(seq, "%u, %u, %u, %pI4, %u\n", i, loc4->loc4_id,
 			   loc4->low_prio, &loc4->addr, loc4->if_idx);
 	}
 
@@ -1782,7 +1782,7 @@ static int mptcp_fm_seq_show(struct seq_file *seq, void *v)
 	mptcp_for_each_bit_set(mptcp_local->loc6_bits, i) {
 		struct mptcp_loc6 *loc6 = &mptcp_local->locaddr6[i];
 
-		seq_printf(seq, "%u, %u, %u, %pI6 %u\n", i, loc6->loc6_id,
+		seq_printf(seq, "%u, %u, %u, %pI6, %u\n", i, loc6->loc6_id,
 			   loc6->low_prio, &loc6->addr, loc6->if_idx);
 	}
 	rcu_read_unlock_bh();
