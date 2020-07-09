@@ -1191,6 +1191,10 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	if (!master_sk)
 		goto err_alloc_master;
 
+	/* Same as in inet_csk_clone_lock - need to init to 0 */
+	memset(&inet_csk(master_sk)->icsk_accept_queue, 0,
+	       sizeof(inet_csk(master_sk)->icsk_accept_queue));
+
 	master_tp = tcp_sk(master_sk);
 	master_tp->inside_tk_table = 0;
 
