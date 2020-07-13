@@ -634,6 +634,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	__be32 flg = tcp_flag_word(th) & (TCP_FLAG_RST|TCP_FLAG_SYN|TCP_FLAG_ACK);
 	bool paws_reject = false;
 	bool own_req;
+	bool meta_locked = false;
 
 	tmp_opt.saw_tstamp = 0;
 
@@ -836,8 +837,10 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	 * ESTABLISHED STATE. If it will be dropped after
 	 * socket is created, wait for troubles.
 	 */
-	if (is_meta_sk(sk))
+	if (is_meta_sk(sk)) {
 		bh_lock_sock_nested(sk);
+		meta_locked = true;
+	}
 	child = inet_csk(sk)->icsk_af_ops->syn_recv_sock(sk, skb, req, NULL,
 							 req, &own_req);
 	if (!child)
@@ -855,16 +858,17 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		return mptcp_check_req_child(sk, child, req, skb, &mopt);
 	}
 
-	if (is_meta_sk(sk))
+	if (meta_locked)
 		bh_unlock_sock(sk);
 
 	sock_rps_save_rxhash(child, skb);
 	tcp_synack_rtt_meas(child, req);
 	*req_stolen = !own_req;
+
 	return inet_csk_complete_hashdance(sk, child, req, own_req);
 
 listen_overflow:
-	if (is_meta_sk(sk))
+	if (meta_locked)
 		bh_unlock_sock(sk);
 
 	if (!sock_net(sk)->ipv4.sysctl_tcp_abort_on_overflow) {

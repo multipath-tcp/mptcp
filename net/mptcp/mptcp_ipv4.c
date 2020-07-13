@@ -203,6 +203,7 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 				goto reset_and_discard;
 			}
 
+			bh_unlock_sock(meta_sk);
 			local_bh_enable();
 			return 0;
 		}
