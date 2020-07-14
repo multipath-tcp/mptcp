@@ -4,6 +4,8 @@
 config MPTCP
         bool "MPTCP protocol"
         depends on (IPV6=y || IPV6=n)
+        select CRYPTO_LIB_SHA256
+        select CRYPTO
         ---help---
           This replaces the normal TCP stack with a Multipath TCP stack,
           able to use several paths at once.
