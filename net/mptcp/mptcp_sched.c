@@ -71,18 +71,18 @@ static bool mptcp_is_temp_unavailable(struct sock *sk,
 	if (in_flight >= tp->snd_cwnd)
 		return true;
 
+	mss_now = tcp_current_mss(sk);
+
 	/* Now, check if what is queued in the subflow's send-queue
 	 * already fills the cwnd.
 	 */
-	space = (tp->snd_cwnd - in_flight) * tp->mss_cache;
+	space = (tp->snd_cwnd - in_flight) * mss_now;
 
 	if (tp->write_seq - tp->snd_nxt >= space)
 		return true;
 
 	if (zero_wnd_test && !before(tp->write_seq, tcp_wnd_end(tp)))
 		return true;
-
-	mss_now = tcp_current_mss(sk);
 
 	/* Don't send on this subflow if we bypass the allowed send-window at
 	 * the per-subflow level. Similar to tcp_snd_wnd_test, but manually
