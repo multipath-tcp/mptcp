@@ -460,10 +460,10 @@ qedr_addr6_resolve(struct qedr_dev *dev,
 
 	if ((!dst) || dst->error) {
 		if (dst) {
-			dst_release(dst);
 			DP_ERR(dev,
 			       "ip6_route_output returned dst->error = %d\n",
 			       dst->error);
+			dst_release(dst);
 		}
 		return -EINVAL;
 	}
@@ -677,6 +677,7 @@ int qedr_iw_destroy_listen(struct iw_cm_id *cm_id)
 						    listener->qed_handle);
 
 	cm_id->rem_ref(cm_id);
+	kfree(listener);
 	return rc;
 }
 
