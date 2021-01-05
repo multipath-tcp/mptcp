@@ -4132,16 +4132,8 @@ static int con_font_get(struct vc_data *vc, struct console_font_op *op)
 
 	if (op->data && font.charcount > op->charcount)
 		rc = -ENOSPC;
-	if (!(op->flags & KD_FONT_FLAG_OLD)) {
-		if (font.width > op->width || font.height > op->height) 
-			rc = -ENOSPC;
-	} else {
-		if (font.width != 8)
-			rc = -EIO;
-		else if ((op->height && font.height > op->height) ||
-			 font.height > 32)
-			rc = -ENOSPC;
-	}
+	if (font.width > op->width || font.height > op->height)
+		rc = -ENOSPC;
 	if (rc)
 		goto out;
 
@@ -4169,27 +4161,7 @@ static int con_font_set(struct vc_data *vc, struct console_font_op *op)
 		return -EINVAL;
 	if (op->charcount > 512)
 		return -EINVAL;
-	if (!op->height) {		/* Need to guess font height [compat] */
-		int h, i;
-		u8 __user *charmap = op->data;
-		u8 tmp;
-		
-		/* If from KDFONTOP ioctl, don't allow things which can be done in userland,
-		   so that we can get rid of this soon */
-		if (!(op->flags & KD_FONT_FLAG_OLD))
-			return -EINVAL;
-		for (h = 32; h > 0; h--)
-			for (i = 0; i < op->charcount; i++) {
-				if (get_user(tmp, &charmap[32*i+h-1]))
-					return -EFAULT;
-				if (tmp)
-					goto nonzero;
-			}
-		return -EINVAL;
-	nonzero:
-		op->height = h;
-	}
-	if (op->width <= 0 || op->width > 32 || op->height > 32)
+	if (op->width <= 0 || op->width > 32 || !op->height || op->height > 32)
 		return -EINVAL;
 	size = (op->width+7)/8 * 32 * op->charcount;
 	if (size > max_font_size)
