@@ -664,6 +664,7 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		     int push_one, gfp_t gfp)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *subtp;
+	bool is_rwnd_limited = false;
 	struct sock *subsk = NULL;
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	struct sk_buff *skb;
@@ -707,8 +708,10 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		if (skb_unclone(skb, GFP_ATOMIC))
 			break;
 
-		if (unlikely(!tcp_snd_wnd_test(meta_tp, skb, mss_now)))
+		if (unlikely(!tcp_snd_wnd_test(meta_tp, skb, mss_now))) {
+			is_rwnd_limited = true;
 			break;
+		}
 
 		/* Force tso_segs to 1 by using UINT_MAX.
 		 * We actually don't care about the exact number of segments
@@ -781,6 +784,11 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		if (push_one)
 			break;
 	}
+
+	if (is_rwnd_limited)
+		tcp_chrono_start(meta_sk, TCP_CHRONO_RWND_LIMITED);
+	else
+		tcp_chrono_stop(meta_sk, TCP_CHRONO_RWND_LIMITED);
 
 	mptcp_for_each_sk(mpcb, subsk) {
 		subtp = tcp_sk(subsk);
