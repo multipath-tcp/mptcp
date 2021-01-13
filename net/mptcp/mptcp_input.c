@@ -1400,6 +1400,19 @@ static void mptcp_snd_una_update(struct tcp_sock *meta_tp, u32 data_ack)
 	meta_tp->snd_una = data_ack;
 }
 
+static void mptcp_stop_subflow_chronos(struct sock *meta_sk,
+				       const enum tcp_chrono type)
+{
+	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+	struct mptcp_tcp_sock *mptcp;
+
+	mptcp_for_each_sub(mpcb, mptcp) {
+		struct sock *sk_it = mptcp_to_sock(mptcp);
+
+		tcp_chrono_stop(sk_it, type);
+	}
+}
+
 /* Handle the DATA_ACK */
 static bool mptcp_process_data_ack(struct sock *sk, const struct sk_buff *skb)
 {
@@ -1522,6 +1535,13 @@ static bool mptcp_process_data_ack(struct sock *sk, const struct sk_buff *skb)
 		if (meta_sk->sk_socket &&
 		    test_bit(SOCK_NOSPACE, &meta_sk->sk_socket->flags))
 			meta_sk->sk_write_space(meta_sk);
+
+		if (meta_sk->sk_socket &&
+		    !test_bit(SOCK_NOSPACE, &meta_sk->sk_socket->flags)) {
+			tcp_chrono_stop(meta_sk, TCP_CHRONO_SNDBUF_LIMITED);
+			mptcp_stop_subflow_chronos(meta_sk,
+						   TCP_CHRONO_SNDBUF_LIMITED);
+		}
 	}
 
 	if (meta_sk->sk_state != TCP_ESTABLISHED) {

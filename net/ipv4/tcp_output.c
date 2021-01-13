@@ -1682,8 +1682,11 @@ static void tcp_cwnd_validate(struct sock *sk, bool is_cwnd_limited)
 		 * 2) not cwnd limited (this else condition)
 		 * 3) no more data to send (tcp_write_queue_empty())
 		 * 4) application is hitting buffer limit (SOCK_NOSPACE)
+		 * 5) For MPTCP subflows, the scheduler determines
+		 *    sndbuf limited.
 		 */
 		if (tcp_write_queue_empty(sk) && sk->sk_socket &&
+		    !(mptcp(tcp_sk(sk)) && !is_meta_sk(sk)) &&
 		    test_bit(SOCK_NOSPACE, &sk->sk_socket->flags) &&
 		    (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCPF_CLOSE_WAIT))
 			tcp_chrono_start(sk, TCP_CHRONO_SNDBUF_LIMITED);
