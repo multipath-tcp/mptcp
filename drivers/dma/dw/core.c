@@ -118,16 +118,11 @@ static void dwc_initialize(struct dw_dma_chan *dwc)
 {
 	struct dw_dma *dw = to_dw_dma(dwc->chan.device);
 
-	if (test_bit(DW_DMA_IS_INITIALIZED, &dwc->flags))
-		return;
-
 	dw->initialize_chan(dwc);
 
 	/* Enable interrupts */
 	channel_set_bit(dw, MASK.XFER, dwc->mask);
 	channel_set_bit(dw, MASK.ERROR, dwc->mask);
-
-	set_bit(DW_DMA_IS_INITIALIZED, &dwc->flags);
 }
 
 /*----------------------------------------------------------------------*/
@@ -777,6 +772,10 @@ bool dw_dma_filter(struct dma_chan *chan, void *param)
 	if (dws->dma_dev != chan->device->dev)
 		return false;
 
+	/* permit channels in accordance with the channels mask */
+	if (dws->channels && !(dws->channels & dwc->mask))
+		return false;
+
 	/* We have to copy data since dws can be temporary storage */
 	memcpy(&dwc->dws, dws, sizeof(struct dw_dma_slave));
 
@@ -954,8 +953,6 @@ static void dwc_issue_pending(struct dma_chan *chan)
 
 void do_dw_dma_off(struct dw_dma *dw)
 {
-	unsigned int i;
-
 	dma_writel(dw, CFG, 0);
 
 	channel_clear_bit(dw, MASK.XFER, dw->all_chan_mask);
@@ -966,9 +963,6 @@ void do_dw_dma_off(struct dw_dma *dw)
 
 	while (dma_readl(dw, CFG) & DW_CFG_DMA_EN)
 		cpu_relax();
-
-	for (i = 0; i < dw->dma.chancnt; i++)
-		clear_bit(DW_DMA_IS_INITIALIZED, &dw->chan[i].flags);
 }
 
 void do_dw_dma_on(struct dw_dma *dw)
@@ -1031,8 +1025,6 @@ static void dwc_free_chan_resources(struct dma_chan *chan)
 
 	/* Clear custom channel configuration */
 	memset(&dwc->dws, 0, sizeof(struct dw_dma_slave));
-
-	clear_bit(DW_DMA_IS_INITIALIZED, &dwc->flags);
 
 	/* Disable interrupts */
 	channel_clear_bit(dw, MASK.XFER, dwc->mask);

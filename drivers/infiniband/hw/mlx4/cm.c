@@ -186,23 +186,6 @@ out:
 	kfree(ent);
 }
 
-static void id_map_find_del(struct ib_device *ibdev, int pv_cm_id)
-{
-	struct mlx4_ib_sriov *sriov = &to_mdev(ibdev)->sriov;
-	struct rb_root *sl_id_map = &sriov->sl_id_map;
-	struct id_map_entry *ent, *found_ent;
-
-	spin_lock(&sriov->id_map_lock);
-	ent = xa_erase(&sriov->pv_id_table, pv_cm_id);
-	if (!ent)
-		goto out;
-	found_ent = id_map_find_by_sl_id(ibdev, ent->slave_id, ent->sl_cm_id);
-	if (found_ent && found_ent == ent)
-		rb_erase(&found_ent->node, sl_id_map);
-out:
-	spin_unlock(&sriov->id_map_lock);
-}
-
 static void sl_id_map_add(struct ib_device *ibdev, struct id_map_entry *new)
 {
 	struct rb_root *sl_id_map = &to_mdev(ibdev)->sriov.sl_id_map;
@@ -294,9 +277,12 @@ static void schedule_delayed(struct ib_device *ibdev, struct id_map_entry *id)
 	spin_lock(&sriov->id_map_lock);
 	spin_lock_irqsave(&sriov->going_down_lock, flags);
 	/*make sure that there is no schedule inside the scheduled work.*/
-	if (!sriov->is_going_down) {
+	if (!sriov->is_going_down && !id->scheduled_delete) {
 		id->scheduled_delete = 1;
 		schedule_delayed_work(&id->timeout, CM_CLEANUP_CACHE_TIMEOUT);
+	} else if (id->scheduled_delete) {
+		/* Adjust timeout if already scheduled */
+		mod_delayed_work(system_wq, &id->timeout, CM_CLEANUP_CACHE_TIMEOUT);
 	}
 	spin_unlock_irqrestore(&sriov->going_down_lock, flags);
 	spin_unlock(&sriov->id_map_lock);
@@ -341,9 +327,6 @@ cont:
 
 	if (mad->mad_hdr.attr_id == CM_DREQ_ATTR_ID)
 		schedule_delayed(ibdev, id);
-	else if (mad->mad_hdr.attr_id == CM_DREP_ATTR_ID)
-		id_map_find_del(ibdev, pv_cm_id);
-
 	return 0;
 }
 
@@ -382,12 +365,9 @@ int mlx4_ib_demux_cm_handler(struct ib_device *ibdev, int port, int *slave,
 		*slave = id->slave_id;
 	set_remote_comm_id(mad, id->sl_cm_id);
 
-	if (mad->mad_hdr.attr_id == CM_DREQ_ATTR_ID)
+	if (mad->mad_hdr.attr_id == CM_DREQ_ATTR_ID ||
+	    mad->mad_hdr.attr_id == CM_REJ_ATTR_ID)
 		schedule_delayed(ibdev, id);
-	else if (mad->mad_hdr.attr_id == CM_REJ_ATTR_ID ||
-			mad->mad_hdr.attr_id == CM_DREP_ATTR_ID) {
-		id_map_find_del(ibdev, (int) pv_cm_id);
-	}
 
 	return 0;
 }

@@ -53,9 +53,6 @@ static void cache_init(struct cache_head *h, struct cache_detail *detail)
 	h->last_refresh = now;
 }
 
-static inline int cache_is_valid(struct cache_head *h);
-static void cache_fresh_locked(struct cache_head *head, time_t expiry,
-				struct cache_detail *detail);
 static void cache_fresh_unlocked(struct cache_head *head,
 				struct cache_detail *detail);
 
@@ -105,9 +102,6 @@ static struct cache_head *sunrpc_cache_add_entry(struct cache_detail *detail,
 			if (cache_is_expired(detail, tmp)) {
 				hlist_del_init_rcu(&tmp->cache_list);
 				detail->entries --;
-				if (cache_is_valid(tmp) == -EAGAIN)
-					set_bit(CACHE_NEGATIVE, &tmp->flags);
-				cache_fresh_locked(tmp, 0, detail);
 				freeme = tmp;
 				break;
 			}
@@ -1894,7 +1888,9 @@ void sunrpc_cache_unhash(struct cache_detail *cd, struct cache_head *h)
 	if (!hlist_unhashed(&h->cache_list)){
 		hlist_del_init_rcu(&h->cache_list);
 		cd->entries--;
+		set_bit(CACHE_CLEANED, &h->flags);
 		spin_unlock(&cd->hash_lock);
+		cache_fresh_unlocked(h, cd);
 		cache_put(h, cd);
 	} else
 		spin_unlock(&cd->hash_lock);

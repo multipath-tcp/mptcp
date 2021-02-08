@@ -279,6 +279,12 @@ out:
 	return len;
 }
 
+static int svc_sock_read_payload(struct svc_rqst *rqstp, unsigned int offset,
+				 unsigned int length)
+{
+	return 0;
+}
+
 /*
  * Report socket names for nfsdfs
  */
@@ -605,6 +611,8 @@ svc_udp_sendto(struct svc_rqst *rqstp)
 {
 	int		error;
 
+	svc_release_udp_skb(rqstp);
+
 	error = svc_sendto(rqstp, &rqstp->rq_res);
 	if (error == -ECONNREFUSED)
 		/* ICMP error on earlier request. */
@@ -653,6 +661,7 @@ static const struct svc_xprt_ops svc_udp_ops = {
 	.xpo_create = svc_udp_create,
 	.xpo_recvfrom = svc_udp_recvfrom,
 	.xpo_sendto = svc_udp_sendto,
+	.xpo_read_payload = svc_sock_read_payload,
 	.xpo_release_rqst = svc_release_udp_skb,
 	.xpo_detach = svc_sock_detach,
 	.xpo_free = svc_sock_free,
@@ -1137,6 +1146,8 @@ static int svc_tcp_sendto(struct svc_rqst *rqstp)
 	int sent;
 	__be32 reclen;
 
+	svc_release_skb(rqstp);
+
 	/* Set up the first element of the reply kvec.
 	 * Any other kvecs that may be in use have been taken
 	 * care of by the server implementation itself.
@@ -1171,6 +1182,7 @@ static const struct svc_xprt_ops svc_tcp_ops = {
 	.xpo_create = svc_tcp_create,
 	.xpo_recvfrom = svc_tcp_recvfrom,
 	.xpo_sendto = svc_tcp_sendto,
+	.xpo_read_payload = svc_sock_read_payload,
 	.xpo_release_rqst = svc_release_skb,
 	.xpo_detach = svc_tcp_sock_detach,
 	.xpo_free = svc_sock_free,

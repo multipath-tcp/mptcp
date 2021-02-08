@@ -424,16 +424,22 @@ static void ave_ethtool_get_wol(struct net_device *ndev,
 		phy_ethtool_get_wol(ndev->phydev, wol);
 }
 
+static int __ave_ethtool_set_wol(struct net_device *ndev,
+				 struct ethtool_wolinfo *wol)
+{
+	if (!ndev->phydev ||
+	    (wol->wolopts & (WAKE_ARP | WAKE_MAGICSECURE)))
+		return -EOPNOTSUPP;
+
+	return phy_ethtool_set_wol(ndev->phydev, wol);
+}
+
 static int ave_ethtool_set_wol(struct net_device *ndev,
 			       struct ethtool_wolinfo *wol)
 {
 	int ret;
 
-	if (!ndev->phydev ||
-	    (wol->wolopts & (WAKE_ARP | WAKE_MAGICSECURE)))
-		return -EOPNOTSUPP;
-
-	ret = phy_ethtool_set_wol(ndev->phydev, wol);
+	ret = __ave_ethtool_set_wol(ndev, wol);
 	if (!ret)
 		device_set_wakeup_enable(&ndev->dev, !!wol->wolopts);
 
@@ -1185,7 +1191,7 @@ static int ave_init(struct net_device *ndev)
 	ret = regmap_update_bits(priv->regmap, SG_ETPINMODE,
 				 priv->pinmode_mask, priv->pinmode_val);
 	if (ret)
-		return ret;
+		goto out_reset_assert;
 
 	ave_global_reset(ndev);
 
@@ -1216,7 +1222,7 @@ static int ave_init(struct net_device *ndev)
 
 	/* set wol initial state disabled */
 	wol.wolopts = 0;
-	ave_ethtool_set_wol(ndev, &wol);
+	__ave_ethtool_set_wol(ndev, &wol);
 
 	if (!phy_interface_is_rgmii(phydev))
 		phy_set_max_speed(phydev, SPEED_100);
@@ -1768,7 +1774,7 @@ static int ave_resume(struct device *dev)
 
 	ave_ethtool_get_wol(ndev, &wol);
 	wol.wolopts = priv->wolopts;
-	ave_ethtool_set_wol(ndev, &wol);
+	__ave_ethtool_set_wol(ndev, &wol);
 
 	if (ndev->phydev) {
 		ret = phy_resume(ndev->phydev);

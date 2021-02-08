@@ -197,7 +197,7 @@ static int nct7904_read_fan(struct device *dev, u32 attr, int channel,
 		if (ret < 0)
 			return ret;
 		cnt = ((ret & 0xff00) >> 3) | (ret & 0x1f);
-		if (cnt == 0x1fff)
+		if (cnt == 0 || cnt == 0x1fff)
 			rpm = 0;
 		else
 			rpm = 1350000 / cnt;
@@ -209,7 +209,7 @@ static int nct7904_read_fan(struct device *dev, u32 attr, int channel,
 		if (ret < 0)
 			return ret;
 		cnt = ((ret & 0xff00) >> 3) | (ret & 0x1f);
-		if (cnt == 0x1fff)
+		if (cnt == 0 || cnt == 0x1fff)
 			rpm = 0;
 		else
 			rpm = 1350000 / cnt;
@@ -356,6 +356,7 @@ static int nct7904_read_temp(struct device *dev, u32 attr, int channel,
 	struct nct7904_data *data = dev_get_drvdata(dev);
 	int ret, temp;
 	unsigned int reg1, reg2, reg3;
+	s8 temps;
 
 	switch (attr) {
 	case hwmon_temp_input:
@@ -461,7 +462,8 @@ static int nct7904_read_temp(struct device *dev, u32 attr, int channel,
 
 	if (ret < 0)
 		return ret;
-	*val = ret * 1000;
+	temps = ret;
+	*val = temps * 1000;
 	return 0;
 }
 

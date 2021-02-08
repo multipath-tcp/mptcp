@@ -39,7 +39,7 @@ static inline void bnxt_link_bp_to_dl(struct bnxt *bp, struct devlink *dl)
 #define NVM_OFF_DIS_GRE_VER_CHECK	171
 #define NVM_OFF_ENABLE_SRIOV		401
 
-#define BNXT_MSIX_VEC_MAX	1280
+#define BNXT_MSIX_VEC_MAX	512
 #define BNXT_MSIX_VEC_MIN_MAX	128
 
 enum bnxt_nvm_dir_type {
@@ -57,6 +57,8 @@ struct bnxt_dl_nvm_param {
 };
 
 void bnxt_devlink_health_report(struct bnxt *bp, unsigned long event);
+void bnxt_dl_fw_reporters_create(struct bnxt *bp);
+void bnxt_dl_fw_reporters_destroy(struct bnxt *bp, bool all);
 int bnxt_dl_register(struct bnxt *bp);
 void bnxt_dl_unregister(struct bnxt *bp);
 

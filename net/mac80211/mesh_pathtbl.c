@@ -60,6 +60,7 @@ static struct mesh_table *mesh_table_alloc(void)
 	atomic_set(&newtbl->entries,  0);
 	spin_lock_init(&newtbl->gates_lock);
 	spin_lock_init(&newtbl->walk_lock);
+	rhashtable_init(&newtbl->rhead, &mesh_rht_params);
 
 	return newtbl;
 }
@@ -521,6 +522,7 @@ static void mesh_path_free_rcu(struct mesh_table *tbl,
 	del_timer_sync(&mpath->timer);
 	atomic_dec(&sdata->u.mesh.mpaths);
 	atomic_dec(&tbl->entries);
+	mesh_path_flush_pending(mpath);
 	kfree_rcu(mpath, rcu);
 }
 
@@ -773,9 +775,6 @@ int mesh_pathtbl_init(struct ieee80211_sub_if_data *sdata)
 		ret = -ENOMEM;
 		goto free_path;
 	}
-
-	rhashtable_init(&tbl_path->rhead, &mesh_rht_params);
-	rhashtable_init(&tbl_mpp->rhead, &mesh_rht_params);
 
 	sdata->u.mesh.mesh_paths = tbl_path;
 	sdata->u.mesh.mpp_paths = tbl_mpp;

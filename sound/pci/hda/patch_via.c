@@ -113,6 +113,7 @@ static struct via_spec *via_new_spec(struct hda_codec *codec)
 		spec->codec_type = VT1708S;
 	spec->gen.indep_hp = 1;
 	spec->gen.keep_eapd_on = 1;
+	spec->gen.dac_min_mute = 1;
 	spec->gen.pcm_playback_hook = via_playback_pcm_hook;
 	spec->gen.add_stereo_mix_input = HDA_HINT_STEREO_MIX_AUTO;
 	codec->power_save_node = 1;
@@ -396,7 +397,7 @@ static int via_resume(struct hda_codec *codec)
 	/* some delay here to make jack detection working (bko#98921) */
 	msleep(10);
 	codec->patch_ops.init(codec);
-	regcache_sync(codec->core.regmap);
+	snd_hda_regmap_sync(codec);
 	return 0;
 }
 #endif
@@ -1002,6 +1003,7 @@ static const struct hda_verb vt1802_init_verbs[] = {
 enum {
 	VIA_FIXUP_INTMIC_BOOST,
 	VIA_FIXUP_ASUS_G75,
+	VIA_FIXUP_POWER_SAVE,
 };
 
 static void via_fixup_intmic_boost(struct hda_codec *codec,
@@ -1009,6 +1011,13 @@ static void via_fixup_intmic_boost(struct hda_codec *codec,
 {
 	if (action == HDA_FIXUP_ACT_PRE_PROBE)
 		override_mic_boost(codec, 0x30, 0, 2, 40);
+}
+
+static void via_fixup_power_save(struct hda_codec *codec,
+				 const struct hda_fixup *fix, int action)
+{
+	if (action == HDA_FIXUP_ACT_PRE_PROBE)
+		codec->power_save_node = 0;
 }
 
 static const struct hda_fixup via_fixups[] = {
@@ -1025,11 +1034,16 @@ static const struct hda_fixup via_fixups[] = {
 			{ }
 		}
 	},
+	[VIA_FIXUP_POWER_SAVE] = {
+		.type = HDA_FIXUP_FUNC,
+		.v.func = via_fixup_power_save,
+	},
 };
 
 static const struct snd_pci_quirk vt2002p_fixups[] = {
 	SND_PCI_QUIRK(0x1043, 0x1487, "Asus G75", VIA_FIXUP_ASUS_G75),
 	SND_PCI_QUIRK(0x1043, 0x8532, "Asus X202E", VIA_FIXUP_INTMIC_BOOST),
+	SND_PCI_QUIRK_VENDOR(0x1558, "Clevo", VIA_FIXUP_POWER_SAVE),
 	{}
 };
 
@@ -1038,8 +1052,8 @@ static const struct snd_pci_quirk vt2002p_fixups[] = {
  */
 static void fix_vt1802_connections(struct hda_codec *codec)
 {
-	static hda_nid_t conn_24[] = { 0x14, 0x1c };
-	static hda_nid_t conn_33[] = { 0x1c };
+	static const hda_nid_t conn_24[] = { 0x14, 0x1c };
+	static const hda_nid_t conn_33[] = { 0x1c };
 
 	snd_hda_override_conn_list(codec, 0x24, ARRAY_SIZE(conn_24), conn_24);
 	snd_hda_override_conn_list(codec, 0x33, ARRAY_SIZE(conn_33), conn_33);

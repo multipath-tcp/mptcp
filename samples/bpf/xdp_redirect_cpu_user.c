@@ -13,14 +13,17 @@ static const char *__doc__ =
 #include <unistd.h>
 #include <locale.h>
 #include <sys/resource.h>
+#include <sys/sysinfo.h>
 #include <getopt.h>
 #include <net/if.h>
 #include <time.h>
+#include <linux/limits.h>
+
+#define __must_check
+#include <linux/err.h>
 
 #include <arpa/inet.h>
 #include <linux/if_link.h>
-
-#define MAX_CPUS 64 /* WARNING - sync with _kern.c */
 
 /* How many xdp_progs are defined in _kern.c */
 #define MAX_PROG 6
@@ -36,6 +39,7 @@ static char *ifname;
 static __u32 prog_id;
 
 static __u32 xdp_flags = XDP_FLAGS_UPDATE_IF_NOEXIST;
+static int n_cpus;
 static int cpu_map_fd;
 static int rx_cnt_map_fd;
 static int redirect_err_cnt_map_fd;
@@ -45,6 +49,10 @@ static int cpus_available_map_fd;
 static int cpus_count_map_fd;
 static int cpus_iterator_map_fd;
 static int exception_cnt_map_fd;
+
+#define NUM_TP 5
+struct bpf_link *tp_links[NUM_TP] = { 0 };
+static int tp_cnt = 0;
 
 /* Exit return codes */
 #define EXIT_OK		0
@@ -88,6 +96,10 @@ static void int_exit(int sig)
 			printf("program on interface changed, not removing\n");
 		}
 	}
+	/* Detach tracepoints */
+	while (tp_cnt)
+		bpf_link__destroy(tp_links[--tp_cnt]);
+
 	exit(EXIT_OK);
 }
 
@@ -158,7 +170,7 @@ struct stats_record {
 	struct record redir_err;
 	struct record kthread;
 	struct record exception;
-	struct record enq[MAX_CPUS];
+	struct record enq[];
 };
 
 static bool map_collect_percpu(int fd, __u32 key, struct record *rec)
@@ -198,11 +210,8 @@ static struct datarec *alloc_record_per_cpu(void)
 {
 	unsigned int nr_cpus = bpf_num_possible_cpus();
 	struct datarec *array;
-	size_t size;
 
-	size = sizeof(struct datarec) * nr_cpus;
-	array = malloc(size);
-	memset(array, 0, size);
+	array = calloc(nr_cpus, sizeof(struct datarec));
 	if (!array) {
 		fprintf(stderr, "Mem alloc error (nr_cpus:%u)\n", nr_cpus);
 		exit(EXIT_FAIL_MEM);
@@ -213,19 +222,20 @@ static struct datarec *alloc_record_per_cpu(void)
 static struct stats_record *alloc_stats_record(void)
 {
 	struct stats_record *rec;
-	int i;
+	int i, size;
 
-	rec = malloc(sizeof(*rec));
-	memset(rec, 0, sizeof(*rec));
+	size = sizeof(*rec) + n_cpus * sizeof(struct record);
+	rec = malloc(size);
 	if (!rec) {
 		fprintf(stderr, "Mem alloc error\n");
 		exit(EXIT_FAIL_MEM);
 	}
+	memset(rec, 0, size);
 	rec->rx_cnt.cpu    = alloc_record_per_cpu();
 	rec->redir_err.cpu = alloc_record_per_cpu();
 	rec->kthread.cpu   = alloc_record_per_cpu();
 	rec->exception.cpu = alloc_record_per_cpu();
-	for (i = 0; i < MAX_CPUS; i++)
+	for (i = 0; i < n_cpus; i++)
 		rec->enq[i].cpu = alloc_record_per_cpu();
 
 	return rec;
@@ -235,7 +245,7 @@ static void free_stats_record(struct stats_record *r)
 {
 	int i;
 
-	for (i = 0; i < MAX_CPUS; i++)
+	for (i = 0; i < n_cpus; i++)
 		free(r->enq[i].cpu);
 	free(r->exception.cpu);
 	free(r->kthread.cpu);
@@ -338,7 +348,7 @@ static void stats_print(struct stats_record *stats_rec,
 	}
 
 	/* cpumap enqueue stats */
-	for (to_cpu = 0; to_cpu < MAX_CPUS; to_cpu++) {
+	for (to_cpu = 0; to_cpu < n_cpus; to_cpu++) {
 		char *fmt = "%-15s %3d:%-3d %'-14.0f %'-11.0f %'-10.2f %s\n";
 		char *fm2 = "%-15s %3s:%-3d %'-14.0f %'-11.0f %'-10.2f %s\n";
 		char *errstr = "";
@@ -463,7 +473,7 @@ static void stats_collect(struct stats_record *rec)
 	map_collect_percpu(fd, 1, &rec->redir_err);
 
 	fd = cpumap_enqueue_cnt_map_fd;
-	for (i = 0; i < MAX_CPUS; i++)
+	for (i = 0; i < n_cpus; i++)
 		map_collect_percpu(fd, i, &rec->enq[i]);
 
 	fd = cpumap_kthread_cnt_map_fd;
@@ -537,10 +547,10 @@ static int create_cpu_entry(__u32 cpu, __u32 queue_size,
  */
 static void mark_cpus_unavailable(void)
 {
-	__u32 invalid_cpu = MAX_CPUS;
+	__u32 invalid_cpu = n_cpus;
 	int ret, i;
 
-	for (i = 0; i < MAX_CPUS; i++) {
+	for (i = 0; i < n_cpus; i++) {
 		ret = bpf_map_update_elem(cpus_available_map_fd, &i,
 					  &invalid_cpu, 0);
 		if (ret) {
@@ -588,23 +598,61 @@ static void stats_poll(int interval, bool use_separators, char *prog_name,
 	free_stats_record(prev);
 }
 
+static struct bpf_link * attach_tp(struct bpf_object *obj,
+				   const char *tp_category,
+				   const char* tp_name)
+{
+	struct bpf_program *prog;
+	struct bpf_link *link;
+	char sec_name[PATH_MAX];
+	int len;
+
+	len = snprintf(sec_name, PATH_MAX, "tracepoint/%s/%s",
+		       tp_category, tp_name);
+	if (len < 0)
+		exit(EXIT_FAIL);
+
+	prog = bpf_object__find_program_by_title(obj, sec_name);
+	if (!prog) {
+		fprintf(stderr, "ERR: finding progsec: %s\n", sec_name);
+		exit(EXIT_FAIL_BPF);
+	}
+
+	link = bpf_program__attach_tracepoint(prog, tp_category, tp_name);
+	if (IS_ERR(link))
+		exit(EXIT_FAIL_BPF);
+
+	return link;
+}
+
+static void init_tracepoints(struct bpf_object *obj) {
+	tp_links[tp_cnt++] = attach_tp(obj, "xdp", "xdp_redirect_err");
+	tp_links[tp_cnt++] = attach_tp(obj, "xdp", "xdp_redirect_map_err");
+	tp_links[tp_cnt++] = attach_tp(obj, "xdp", "xdp_exception");
+	tp_links[tp_cnt++] = attach_tp(obj, "xdp", "xdp_cpumap_enqueue");
+	tp_links[tp_cnt++] = attach_tp(obj, "xdp", "xdp_cpumap_kthread");
+}
+
 static int init_map_fds(struct bpf_object *obj)
 {
-	cpu_map_fd = bpf_object__find_map_fd_by_name(obj, "cpu_map");
-	rx_cnt_map_fd = bpf_object__find_map_fd_by_name(obj, "rx_cnt");
+	/* Maps updated by tracepoints */
 	redirect_err_cnt_map_fd =
 		bpf_object__find_map_fd_by_name(obj, "redirect_err_cnt");
+	exception_cnt_map_fd =
+		bpf_object__find_map_fd_by_name(obj, "exception_cnt");
 	cpumap_enqueue_cnt_map_fd =
 		bpf_object__find_map_fd_by_name(obj, "cpumap_enqueue_cnt");
 	cpumap_kthread_cnt_map_fd =
 		bpf_object__find_map_fd_by_name(obj, "cpumap_kthread_cnt");
+
+	/* Maps used by XDP */
+	rx_cnt_map_fd = bpf_object__find_map_fd_by_name(obj, "rx_cnt");
+	cpu_map_fd = bpf_object__find_map_fd_by_name(obj, "cpu_map");
 	cpus_available_map_fd =
 		bpf_object__find_map_fd_by_name(obj, "cpus_available");
 	cpus_count_map_fd = bpf_object__find_map_fd_by_name(obj, "cpus_count");
 	cpus_iterator_map_fd =
 		bpf_object__find_map_fd_by_name(obj, "cpus_iterator");
-	exception_cnt_map_fd =
-		bpf_object__find_map_fd_by_name(obj, "exception_cnt");
 
 	if (cpu_map_fd < 0 || rx_cnt_map_fd < 0 ||
 	    redirect_err_cnt_map_fd < 0 || cpumap_enqueue_cnt_map_fd < 0 ||
@@ -638,6 +686,8 @@ int main(int argc, char **argv)
 	int prog_fd;
 	__u32 qsize;
 
+	n_cpus = get_nprocs_conf();
+
 	/* Notice: choosing he queue size is very important with the
 	 * ixgbe driver, because it's driver page recycling trick is
 	 * dependend on pages being returned quickly.  The number of
@@ -662,6 +712,7 @@ int main(int argc, char **argv)
 			strerror(errno));
 		return EXIT_FAIL;
 	}
+	init_tracepoints(obj);
 	if (init_map_fds(obj) < 0) {
 		fprintf(stderr, "bpf_object__find_map_fd_by_name failed\n");
 		return EXIT_FAIL;
@@ -706,7 +757,7 @@ int main(int argc, char **argv)
 		case 'c':
 			/* Add multiple CPUs */
 			add_cpu = strtoul(optarg, NULL, 0);
-			if (add_cpu >= MAX_CPUS) {
+			if (add_cpu >= n_cpus) {
 				fprintf(stderr,
 				"--cpu nr too large for cpumap err(%d):%s\n",
 					errno, strerror(errno));

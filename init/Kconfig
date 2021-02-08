@@ -36,24 +36,9 @@ config TOOLS_SUPPORT_RELR
 config CC_HAS_ASM_INLINE
 	def_bool $(success,echo 'void foo(void) { asm inline (""); }' | $(CC) -x c - -c -o /dev/null)
 
-config CC_HAS_WARN_MAYBE_UNINITIALIZED
-	def_bool $(cc-option,-Wmaybe-uninitialized)
-	help
-	  GCC >= 4.7 supports this option.
-
-config CC_DISABLE_WARN_MAYBE_UNINITIALIZED
-	bool
-	depends on CC_HAS_WARN_MAYBE_UNINITIALIZED
-	default CC_IS_GCC && GCC_VERSION < 40900  # unreliable for GCC < 4.9
-	help
-	  GCC's -Wmaybe-uninitialized is not reliable by definition.
-	  Lots of false positive warnings are produced in some cases.
-
-	  If this option is enabled, -Wno-maybe-uninitialzed is passed
-	  to the compiler to suppress maybe-uninitialized warnings.
-
 config CONSTRUCTORS
 	bool
+	depends on !UML
 
 config IRQ_WORK
 	bool
@@ -104,29 +89,9 @@ config COMPILE_TEST
 	  here. If you are a user/distributor, say N here to exclude useless
 	  drivers to be distributed.
 
-config HEADER_TEST
-	bool "Compile test headers that should be standalone compilable"
-	help
-	  Compile test headers listed in header-test-y target to ensure they are
-	  self-contained, i.e. compilable as standalone units.
-
-	  If you are a developer or tester and want to ensure the requested
-	  headers are self-contained, say Y here. Otherwise, choose N.
-
-config KERNEL_HEADER_TEST
-	bool "Compile test kernel headers"
-	depends on HEADER_TEST
-	help
-	  Headers in include/ are used to build external moduls.
-	  Compile test them to ensure they are self-contained, i.e.
-	  compilable as standalone units.
-
-	  If you are a developer or tester and want to ensure the headers
-	  in include/ are self-contained, say Y here. Otherwise, choose N.
-
 config UAPI_HEADER_TEST
 	bool "Compile test UAPI headers"
-	depends on HEADER_TEST && HEADERS_INSTALL && CC_CAN_LINK
+	depends on HEADERS_INSTALL && CC_CAN_LINK
 	help
 	  Compile test headers exported to user-space to ensure they are
 	  self-contained, i.e. compilable as standalone units.
@@ -629,7 +594,8 @@ config IKHEADERS
 
 config LOG_BUF_SHIFT
 	int "Kernel log buffer size (16 => 64KB, 17 => 128KB)"
-	range 12 25
+	range 12 25 if !H8300
+	range 12 19 if H8300
 	default 17
 	depends on PRINTK
 	help
@@ -1245,14 +1211,12 @@ config CC_OPTIMIZE_FOR_PERFORMANCE
 config CC_OPTIMIZE_FOR_PERFORMANCE_O3
 	bool "Optimize more for performance (-O3)"
 	depends on ARC
-	imply CC_DISABLE_WARN_MAYBE_UNINITIALIZED  # avoid false positives
 	help
 	  Choosing this option will pass "-O3" to your compiler to optimize
 	  the kernel yet more for performance.
 
 config CC_OPTIMIZE_FOR_SIZE
 	bool "Optimize for size (-Os)"
-	imply CC_DISABLE_WARN_MAYBE_UNINITIALIZED  # avoid false positives
 	help
 	  Choosing this option will pass "-Os" to your compiler resulting
 	  in a smaller kernel.

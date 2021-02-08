@@ -93,6 +93,8 @@ static bool __init cntvct_functional(void)
 	 */
 	np = of_find_compatible_node(NULL, NULL, "arm,armv7-timer");
 	if (!np)
+		np = of_find_compatible_node(NULL, NULL, "arm,armv8-timer");
+	if (!np)
 		goto out_put;
 
 	if (of_property_read_bool(np, "arm,cpu-registers-not-fw-configured"))
@@ -279,7 +281,7 @@ static bool tk_is_cntvct(const struct timekeeper *tk)
 	if (!IS_ENABLED(CONFIG_ARM_ARCH_TIMER))
 		return false;
 
-	if (!tk->tkr_mono.clock->archdata.vdso_direct)
+	if (tk->tkr_mono.clock->archdata.clock_mode != VDSO_CLOCKMODE_ARCHTIMER)
 		return false;
 
 	return true;

@@ -82,6 +82,7 @@ static int dmz_reclaim_align_wp(struct dmz_reclaim *zrc, struct dm_zone *zone,
 			    "Align zone %u wp %llu to %llu (wp+%u) blocks failed %d",
 			    dmz_id(zmd, zone), (unsigned long long)wp_block,
 			    (unsigned long long)block, nr_blocks, ret);
+		dmz_check_bdev(zrc->dev);
 		return ret;
 	}
 
@@ -348,8 +349,8 @@ static int dmz_do_reclaim(struct dmz_reclaim *zrc)
 
 	/* Get a data zone */
 	dzone = dmz_get_zone_for_reclaim(zmd);
-	if (IS_ERR(dzone))
-		return PTR_ERR(dzone);
+	if (!dzone)
+		return -EBUSY;
 
 	start = jiffies;
 
@@ -489,12 +490,7 @@ static void dmz_reclaim_work(struct work_struct *work)
 	ret = dmz_do_reclaim(zrc);
 	if (ret) {
 		dmz_dev_debug(zrc->dev, "Reclaim error %d\n", ret);
-		if (ret == -EIO)
-			/*
-			 * LLD might be performing some error handling sequence
-			 * at the underlying device. To not interfere, do not
-			 * attempt to schedule the next reclaim run immediately.
-			 */
+		if (!dmz_check_bdev(zrc->dev))
 			return;
 	}
 

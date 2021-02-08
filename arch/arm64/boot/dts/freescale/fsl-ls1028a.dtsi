@@ -102,8 +102,8 @@
 
 	reboot {
 		compatible ="syscon-reboot";
-		regmap = <&dcfg>;
-		offset = <0xb0>;
+		regmap = <&rst>;
+		offset = <0>;
 		mask = <0x02>;
 	};
 
@@ -158,7 +158,13 @@
 		dcfg: syscon@1e00000 {
 			compatible = "fsl,ls1028a-dcfg", "syscon";
 			reg = <0x0 0x1e00000 0x0 0x10000>;
-			big-endian;
+			little-endian;
+		};
+
+		rst: syscon@1e60000 {
+			compatible = "syscon";
+			reg = <0x0 0x1e60000 0x0 0x10000>;
+			little-endian;
 		};
 
 		scfg: syscon@1fc0000 {
@@ -567,7 +573,7 @@
 					       0x00010004 0x0000003d
 					       0x00010005 0x00000045
 					       0x00010006 0x0000004d
-					       0x00010007 0x00000045
+					       0x00010007 0x00000055
 					       0x00010008 0x0000005e
 					       0x00010009 0x00000066
 					       0x0001000a 0x0000006e
@@ -667,7 +673,7 @@
 			ethernet@0,4 {
 				compatible = "fsl,enetc-ptp";
 				reg = <0x000400 0 0 0 0>;
-				clocks = <&clockgen 4 0>;
+				clocks = <&clockgen 2 3>;
 				little-endian;
 			};
 		};

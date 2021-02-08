@@ -129,6 +129,27 @@ static const unsigned long goodix_irq_flags[] = {
 static const struct dmi_system_id rotated_screen[] = {
 #if defined(CONFIG_DMI) && defined(CONFIG_X86)
 	{
+		.ident = "Teclast X89",
+		.matches = {
+			/* tPAD is too generic, also match on bios date */
+			DMI_MATCH(DMI_BOARD_VENDOR, "TECLAST"),
+			DMI_MATCH(DMI_BOARD_NAME, "tPAD"),
+			DMI_MATCH(DMI_BIOS_DATE, "12/19/2014"),
+		},
+	},
+	{
+		.ident = "Teclast X98 Pro",
+		.matches = {
+			/*
+			 * Only match BIOS date, because the manufacturers
+			 * BIOS does not report the board name at all
+			 * (sometimes)...
+			 */
+			DMI_MATCH(DMI_BOARD_VENDOR, "TECLAST"),
+			DMI_MATCH(DMI_BIOS_DATE, "10/28/2015"),
+		},
+	},
+	{
 		.ident = "WinBook TW100",
 		.matches = {
 			DMI_MATCH(DMI_SYS_VENDOR, "WinBook"),
@@ -154,6 +175,22 @@ static const struct dmi_system_id nine_bytes_report[] = {
 		.matches = {
 			DMI_MATCH(DMI_PRODUCT_NAME, "Lenovo YB1-X9")
 		}
+	},
+#endif
+	{}
+};
+
+/*
+ * Those tablets have their x coordinate inverted
+ */
+static const struct dmi_system_id inverted_x_screen[] = {
+#if defined(CONFIG_DMI) && defined(CONFIG_X86)
+	{
+		.ident = "Cube I15-TC",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "Cube"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "I15-TC")
+		},
 	},
 #endif
 	{}
@@ -769,6 +806,12 @@ static int goodix_configure_dev(struct goodix_ts_data *ts)
 
 		dev_dbg(&ts->client->dev,
 			"Non-standard 9-bytes report format quirk\n");
+	}
+
+	if (dmi_check_system(inverted_x_screen)) {
+		ts->prop.invert_x = true;
+		dev_dbg(&ts->client->dev,
+			"Applying 'inverted x screen' quirk\n");
 	}
 
 	error = input_mt_init_slots(ts->input_dev, ts->max_touch_num,

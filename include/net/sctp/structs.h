@@ -224,12 +224,14 @@ struct sctp_sock {
 		data_ready_signalled:1;
 
 	atomic_t pd_mode;
+
+	/* Fields after this point will be skipped on copies, like on accept
+	 * and peeloff operations
+	 */
+
 	/* Receive to here while partial delivery is in effect. */
 	struct sk_buff_head pd_lobby;
 
-	/* These must be the last fields, as they will skipped on copies,
-	 * like on accept and peeloff operations
-	 */
 	struct list_head auto_asconf_list;
 	int do_auto_asconf;
 };
@@ -1238,6 +1240,9 @@ struct sctp_ep_common {
 
 	/* What socket does this endpoint belong to?  */
 	struct sock *sk;
+
+	/* Cache netns and it won't change once set */
+	struct net *net;
 
 	/* This is where we receive inbound chunks.  */
 	struct sctp_inq	  inqueue;

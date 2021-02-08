@@ -342,7 +342,8 @@ bool dm_pp_get_clock_levels_by_type(
 	if (adev->powerplay.pp_funcs && adev->powerplay.pp_funcs->get_clock_by_type) {
 		if (adev->powerplay.pp_funcs->get_clock_by_type(pp_handle,
 			dc_to_pp_clock_type(clk_type), &pp_clks)) {
-		/* Error in pplib. Provide default values. */
+			/* Error in pplib. Provide default values. */
+			get_default_clock_levels(clk_type, dc_clks);
 			return true;
 		}
 	} else if (adev->smu.funcs && adev->smu.funcs->get_clock_by_type) {
@@ -529,6 +530,8 @@ bool dm_pp_get_static_clocks(
 			&pp_clk_info);
 	else if (adev->smu.funcs)
 		ret = smu_get_current_clocks(&adev->smu, &pp_clk_info);
+	else
+		return false;
 	if (ret)
 		return false;
 

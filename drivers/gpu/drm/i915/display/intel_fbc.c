@@ -504,8 +504,7 @@ static int intel_fbc_alloc_cfb(struct intel_crtc *crtc)
 	if (!ret)
 		goto err_llb;
 	else if (ret > 1) {
-		DRM_INFO("Reducing the compressed framebuffer size. This may lead to less power savings than a non-reduced-size. Try to increase stolen memory size if available in BIOS.\n");
-
+		DRM_INFO_ONCE("Reducing the compressed framebuffer size. This may lead to less power savings than a non-reduced-size. Try to increase stolen memory size if available in BIOS.\n");
 	}
 
 	fbc->threshold = ret;
@@ -1284,7 +1283,7 @@ static int intel_sanitize_fbc_option(struct drm_i915_private *dev_priv)
 		return 0;
 
 	/* https://bugs.freedesktop.org/show_bug.cgi?id=108085 */
-	if (IS_GEMINILAKE(dev_priv))
+	if (INTEL_GEN(dev_priv) >= 10 || IS_GEMINILAKE(dev_priv))
 		return 0;
 
 	if (IS_BROADWELL(dev_priv) || INTEL_GEN(dev_priv) >= 9)

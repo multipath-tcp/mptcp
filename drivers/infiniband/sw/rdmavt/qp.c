@@ -61,6 +61,8 @@
 #define RVT_RWQ_COUNT_THRESHOLD 16
 
 static void rvt_rc_timeout(struct timer_list *t);
+static void rvt_reset_qp(struct rvt_dev_info *rdi, struct rvt_qp *qp,
+			 enum ib_qp_type type);
 
 /*
  * Convert the AETH RNR timeout code into the number of microseconds.
@@ -452,40 +454,41 @@ no_qp_table:
 }
 
 /**
- * free_all_qps - check for QPs still in use
+ * rvt_free_qp_cb - callback function to reset a qp
+ * @qp: the qp to reset
+ * @v: a 64-bit value
+ *
+ * This function resets the qp and removes it from the
+ * qp hash table.
+ */
+static void rvt_free_qp_cb(struct rvt_qp *qp, u64 v)
+{
+	unsigned int *qp_inuse = (unsigned int *)v;
+	struct rvt_dev_info *rdi = ib_to_rvt(qp->ibqp.device);
+
+	/* Reset the qp and remove it from the qp hash list */
+	rvt_reset_qp(rdi, qp, qp->ibqp.qp_type);
+
+	/* Increment the qp_inuse count */
+	(*qp_inuse)++;
+}
+
+/**
+ * rvt_free_all_qps - check for QPs still in use
  * @rdi: rvt device info structure
  *
  * There should not be any QPs still in use.
  * Free memory for table.
+ * Return the number of QPs still in use.
  */
 static unsigned rvt_free_all_qps(struct rvt_dev_info *rdi)
 {
-	unsigned long flags;
-	struct rvt_qp *qp;
-	unsigned n, qp_inuse = 0;
-	spinlock_t *ql; /* work around too long line below */
-
-	if (rdi->driver_f.free_all_qps)
-		qp_inuse = rdi->driver_f.free_all_qps(rdi);
+	unsigned int qp_inuse = 0;
 
 	qp_inuse += rvt_mcast_tree_empty(rdi);
 
-	if (!rdi->qp_dev)
-		return qp_inuse;
+	rvt_qp_iter(rdi, (u64)&qp_inuse, rvt_free_qp_cb);
 
-	ql = &rdi->qp_dev->qpt_lock;
-	spin_lock_irqsave(ql, flags);
-	for (n = 0; n < rdi->qp_dev->qp_table_size; n++) {
-		qp = rcu_dereference_protected(rdi->qp_dev->qp_table[n],
-					       lockdep_is_held(ql));
-		RCU_INIT_POINTER(rdi->qp_dev->qp_table[n], NULL);
-
-		for (; qp; qp = rcu_dereference_protected(qp->next,
-							  lockdep_is_held(ql)))
-			qp_inuse++;
-	}
-	spin_unlock_irqrestore(ql, flags);
-	synchronize_rcu();
 	return qp_inuse;
 }
 
@@ -895,21 +898,19 @@ static void rvt_init_qp(struct rvt_dev_info *rdi, struct rvt_qp *qp,
 	qp->s_tail_ack_queue = 0;
 	qp->s_acked_ack_queue = 0;
 	qp->s_num_rd_atomic = 0;
-	if (qp->r_rq.kwq)
-		qp->r_rq.kwq->count = qp->r_rq.size;
 	qp->r_sge.num_sge = 0;
 	atomic_set(&qp->s_reserved_used, 0);
 }
 
 /**
- * rvt_reset_qp - initialize the QP state to the reset state
+ * _rvt_reset_qp - initialize the QP state to the reset state
  * @qp: the QP to reset
  * @type: the QP type
  *
  * r_lock, s_hlock, and s_lock are required to be held by the caller
  */
-static void rvt_reset_qp(struct rvt_dev_info *rdi, struct rvt_qp *qp,
-			 enum ib_qp_type type)
+static void _rvt_reset_qp(struct rvt_dev_info *rdi, struct rvt_qp *qp,
+			  enum ib_qp_type type)
 	__must_hold(&qp->s_lock)
 	__must_hold(&qp->s_hlock)
 	__must_hold(&qp->r_lock)
@@ -953,6 +954,27 @@ static void rvt_reset_qp(struct rvt_dev_info *rdi, struct rvt_qp *qp,
 	lockdep_assert_held(&qp->r_lock);
 	lockdep_assert_held(&qp->s_hlock);
 	lockdep_assert_held(&qp->s_lock);
+}
+
+/**
+ * rvt_reset_qp - initialize the QP state to the reset state
+ * @rdi: the device info
+ * @qp: the QP to reset
+ * @type: the QP type
+ *
+ * This is the wrapper function to acquire the r_lock, s_hlock, and s_lock
+ * before calling _rvt_reset_qp().
+ */
+static void rvt_reset_qp(struct rvt_dev_info *rdi, struct rvt_qp *qp,
+			 enum ib_qp_type type)
+{
+	spin_lock_irq(&qp->r_lock);
+	spin_lock(&qp->s_hlock);
+	spin_lock(&qp->s_lock);
+	_rvt_reset_qp(rdi, qp, type);
+	spin_unlock(&qp->s_lock);
+	spin_unlock(&qp->s_hlock);
+	spin_unlock_irq(&qp->r_lock);
 }
 
 /** rvt_free_qpn - Free a qpn from the bit map
@@ -1172,7 +1194,7 @@ struct ib_qp *rvt_create_qp(struct ib_pd *ibpd,
 		err = alloc_ud_wq_attr(qp, rdi->dparms.node);
 		if (err) {
 			ret = (ERR_PTR(err));
-			goto bail_driver_priv;
+			goto bail_rq_rvt;
 		}
 
 		err = alloc_qpn(rdi, &rdi->qp_dev->qpn_table,
@@ -1220,8 +1242,8 @@ struct ib_qp *rvt_create_qp(struct ib_pd *ibpd,
 
 			qp->ip = rvt_create_mmap_info(rdi, s, udata,
 						      qp->r_rq.wq);
-			if (!qp->ip) {
-				ret = ERR_PTR(-ENOMEM);
+			if (IS_ERR(qp->ip)) {
+				ret = ERR_CAST(qp->ip);
 				goto bail_qpn;
 			}
 
@@ -1276,8 +1298,10 @@ bail_qpn:
 	rvt_free_qpn(&rdi->qp_dev->qpn_table, qp->ibqp.qp_num);
 
 bail_rq_wq:
-	rvt_free_rq(&qp->r_rq);
 	free_ud_wq_attr(qp);
+
+bail_rq_rvt:
+	rvt_free_rq(&qp->r_rq);
 
 bail_driver_priv:
 	rdi->driver_f.qp_priv_free(rdi, qp);
@@ -1546,7 +1570,7 @@ int rvt_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 	switch (new_state) {
 	case IB_QPS_RESET:
 		if (qp->state != IB_QPS_RESET)
-			rvt_reset_qp(rdi, qp, ibqp->qp_type);
+			_rvt_reset_qp(rdi, qp, ibqp->qp_type);
 		break;
 
 	case IB_QPS_RTR:
@@ -1695,13 +1719,7 @@ int rvt_destroy_qp(struct ib_qp *ibqp, struct ib_udata *udata)
 	struct rvt_qp *qp = ibqp_to_rvtqp(ibqp);
 	struct rvt_dev_info *rdi = ib_to_rvt(ibqp->device);
 
-	spin_lock_irq(&qp->r_lock);
-	spin_lock(&qp->s_hlock);
-	spin_lock(&qp->s_lock);
 	rvt_reset_qp(rdi, qp, ibqp->qp_type);
-	spin_unlock(&qp->s_lock);
-	spin_unlock(&qp->s_hlock);
-	spin_unlock_irq(&qp->r_lock);
 
 	wait_event(qp->wait, !atomic_read(&qp->refcount));
 	/* qpn is now available for use again */
@@ -2333,31 +2351,6 @@ bad_lkey:
 }
 
 /**
- * get_count - count numbers of request work queue entries
- * in circular buffer
- * @rq: data structure for request queue entry
- * @tail: tail indices of the circular buffer
- * @head: head indices of the circular buffer
- *
- * Return - total number of entries in the circular buffer
- */
-static u32 get_count(struct rvt_rq *rq, u32 tail, u32 head)
-{
-	u32 count;
-
-	count = head;
-
-	if (count >= rq->size)
-		count = 0;
-	if (count < tail)
-		count += rq->size - tail;
-	else
-		count -= tail;
-
-	return count;
-}
-
-/**
  * get_rvt_head - get head indices of the circular buffer
  * @rq: data structure for request queue entry
  * @ip: the QP
@@ -2431,7 +2424,7 @@ int rvt_get_rwqe(struct rvt_qp *qp, bool wr_id_only)
 
 	if (kwq->count < RVT_RWQ_COUNT_THRESHOLD) {
 		head = get_rvt_head(rq, ip);
-		kwq->count = get_count(rq, tail, head);
+		kwq->count = rvt_get_rq_count(rq, head, tail);
 	}
 	if (unlikely(kwq->count == 0)) {
 		ret = 0;
@@ -2466,7 +2459,9 @@ int rvt_get_rwqe(struct rvt_qp *qp, bool wr_id_only)
 		 * the number of remaining WQEs.
 		 */
 		if (kwq->count < srq->limit) {
-			kwq->count = get_count(rq, tail, get_rvt_head(rq, ip));
+			kwq->count =
+				rvt_get_rq_count(rq,
+						 get_rvt_head(rq, ip), tail);
 			if (kwq->count < srq->limit) {
 				struct ib_event ev;
 

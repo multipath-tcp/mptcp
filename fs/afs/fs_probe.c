@@ -32,9 +32,8 @@ void afs_fileserver_probe_result(struct afs_call *call)
 	struct afs_server *server = call->server;
 	unsigned int server_index = call->server_index;
 	unsigned int index = call->addr_ix;
-	unsigned int rtt = UINT_MAX;
+	unsigned int rtt_us;
 	bool have_result = false;
-	u64 _rtt;
 	int ret = call->error;
 
 	_enter("%pU,%u", &server->uuid, index);
@@ -93,15 +92,9 @@ responded:
 		}
 	}
 
-	/* Get the RTT and scale it to fit into a 32-bit value that represents
-	 * over a minute of time so that we can access it with one instruction
-	 * on a 32-bit system.
-	 */
-	_rtt = rxrpc_kernel_get_rtt(call->net->socket, call->rxcall);
-	_rtt /= 64;
-	rtt = (_rtt > UINT_MAX) ? UINT_MAX : _rtt;
-	if (rtt < server->probe.rtt) {
-		server->probe.rtt = rtt;
+	if (rxrpc_kernel_get_srtt(call->net->socket, call->rxcall, &rtt_us) &&
+	    rtt_us < server->probe.rtt) {
+		server->probe.rtt = rtt_us;
 		alist->preferred = index;
 		have_result = true;
 	}
@@ -113,8 +106,7 @@ out:
 	spin_unlock(&server->probe_lock);
 
 	_debug("probe [%u][%u] %pISpc rtt=%u ret=%d",
-	       server_index, index, &alist->addrs[index].transport,
-	       (unsigned int)rtt, ret);
+	       server_index, index, &alist->addrs[index].transport, rtt_us, ret);
 
 	have_result |= afs_fs_probe_done(server);
 	if (have_result) {
@@ -145,6 +137,7 @@ static int afs_do_probe_fileserver(struct afs_net *net,
 	read_lock(&server->fs_lock);
 	ac.alist = rcu_dereference_protected(server->addresses,
 					     lockdep_is_held(&server->fs_lock));
+	afs_get_addrlist(ac.alist);
 	read_unlock(&server->fs_lock);
 
 	atomic_set(&server->probe_outstanding, ac.alist->nr_addrs);
@@ -163,6 +156,7 @@ static int afs_do_probe_fileserver(struct afs_net *net,
 
 	if (!in_progress)
 		afs_fs_probe_done(server);
+	afs_put_addrlist(ac.alist);
 	return in_progress;
 }
 
