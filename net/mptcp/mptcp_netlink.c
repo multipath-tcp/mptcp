@@ -73,6 +73,7 @@ static const struct nla_policy mptcp_nl_genl_policy[MPTCP_ATTR_MAX + 1] = {
 	[MPTCP_ATTR_SPORT]	= { .type	= NLA_U16,	},
 	[MPTCP_ATTR_DPORT]	= { .type	= NLA_U16,	},
 	[MPTCP_ATTR_BACKUP]	= { .type	= NLA_U8,	},
+	[MPTCP_ATTR_FLAGS]	= { .type	= NLA_U16,	},
 	[MPTCP_ATTR_TIMEOUT]	= { .type	= NLA_U32,	},
 	[MPTCP_ATTR_IF_IDX]	= { .type	= NLA_S32,	},
 };
