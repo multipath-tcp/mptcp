@@ -1271,6 +1271,7 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	meta_tp->copied_seq = (u32)rcv_idsn;
 	meta_tp->rcv_nxt = (u32)rcv_idsn;
 	meta_tp->rcv_wup = (u32)rcv_idsn;
+	meta_tp->rcv_right_edge = meta_tp->rcv_wup + meta_tp->rcv_wnd;
 
 	meta_tp->snd_wl1 = meta_tp->rcv_nxt - 1;
 	meta_tp->snd_wnd = window;
@@ -1526,7 +1527,7 @@ void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied)
 	__u32 rcv_window_now = 0;
 
 	if (copied > 0 && !(meta_sk->sk_shutdown & RCV_SHUTDOWN)) {
-		rcv_window_now = tcp_receive_window(meta_tp);
+		rcv_window_now = tcp_receive_window_now(meta_tp);
 
 		/* Optimize, __mptcp_select_window() is not cheap. */
 		if (2 * rcv_window_now <= meta_tp->window_clamp)

@@ -318,6 +318,7 @@ struct tcp_sock {
 	u32	prr_out;	/* Total number of pkts sent during Recovery. */
 
  	u32	rcv_wnd;	/* Current receiver window		*/
+	u32	rcv_right_edge;	/* Highest announced right edge */
 	u32	write_seq;	/* Tail(+1) of data held in tcp send buffer */
 	u32	notsent_lowat;	/* TCP_NOTSENT_LOWAT */
 	u32	pushed_seq;	/* Last pushed seq, required to talk to windows */

@@ -1507,7 +1507,7 @@ void tcp_cleanup_rbuf(struct sock *sk, int copied)
 	 * in states, where we will not receive more. It is useless.
 	 */
 	if (copied > 0 && !time_to_ack && !(sk->sk_shutdown & RCV_SHUTDOWN)) {
-		__u32 rcv_window_now = tcp_receive_window(tp);
+		__u32 rcv_window_now = tcp_receive_window_now(tp);
 
 		/* Optimize, __tcp_select_window() is not cheap. */
 		if (2*rcv_window_now <= tp->window_clamp) {
