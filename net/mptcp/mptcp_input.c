@@ -859,7 +859,7 @@ static inline bool mptcp_sequence(const struct tcp_sock *meta_tp,
 	}
 
 	return	!before64(end_data_seq, rcv_wup64) &&
-		!after64(data_seq, mptcp_get_rcv_nxt_64(meta_tp) + tcp_receive_window(meta_tp));
+		!after64(data_seq, mptcp_get_rcv_nxt_64(meta_tp) + tcp_receive_window_now(meta_tp));
 }
 
 /* @return: 0  everything is fine. Just continue processing
@@ -1008,7 +1008,7 @@ static int mptcp_queue_skb(struct sock *sk)
 
 		/* Quick ACK if more 3/4 of the receive window is filled */
 		if (after64(tp->mptcp->map_data_seq,
-			    rcv_nxt64 + 3 * (tcp_receive_window(meta_tp) >> 2)))
+			    rcv_nxt64 + 3 * (tcp_receive_window_now(meta_tp) >> 2)))
 			tcp_enter_quickack_mode(sk, TCP_MAX_QUICKACKS);
 
 	} else {

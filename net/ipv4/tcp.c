@@ -521,7 +521,7 @@ static inline bool tcp_stream_is_readable(const struct tcp_sock *tp,
 			return true;
 		if (tcp_rmem_pressure(sk))
 			return true;
-		if (tcp_receive_window(tp) <= inet_csk(sk)->icsk_ack.rcv_mss)
+		if (tcp_receive_window_now(tp) <= inet_csk(sk)->icsk_ack.rcv_mss)
 			return true;
 	}
 	if (sk->sk_prot->stream_memory_read)
@@ -1658,7 +1658,7 @@ void tcp_cleanup_rbuf(struct sock *sk, int copied)
 	 * in states, where we will not receive more. It is useless.
 	 */
 	if (copied > 0 && !time_to_ack && !(sk->sk_shutdown & RCV_SHUTDOWN)) {
-		__u32 rcv_window_now = tcp_receive_window(tp);
+		__u32 rcv_window_now = tcp_receive_window_now(tp);
 
 		/* Optimize, __tcp_select_window() is not cheap. */
 		if (2*rcv_window_now <= tp->window_clamp) {
@@ -2784,6 +2784,7 @@ static int tcp_repair_set_window(struct tcp_sock *tp, char __user *optbuf, int l
 
 	tp->rcv_wnd	= opt.rcv_wnd;
 	tp->rcv_wup	= opt.rcv_wup;
+	tp->rcv_right_edge = tp->rcv_wup + tp->rcv_wnd;
 
 	return 0;
 }

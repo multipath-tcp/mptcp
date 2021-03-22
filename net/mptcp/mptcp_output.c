@@ -1161,6 +1161,10 @@ u16 mptcp_select_window(struct sock *sk)
 
 	meta_tp->rcv_wnd	= tp->rcv_wnd;
 	meta_tp->rcv_wup	= meta_tp->rcv_nxt;
+	/* no need to use tcp_update_rcv_right_edge, because at the meta level
+	 * right edge cannot go back
+	 */
+	meta_tp->rcv_right_edge = meta_tp->rcv_wnd + meta_tp->rcv_wup;
 
 	return new_win;
 }
