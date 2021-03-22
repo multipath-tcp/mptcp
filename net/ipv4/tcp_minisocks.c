@@ -291,7 +291,11 @@ void tcp_time_wait(struct sock *sk, int state, int timeo)
 		tw->tw_rcv_wscale	= tp->rx_opt.rcv_wscale;
 		tcptw->tw_rcv_nxt	= tp->rcv_nxt;
 		tcptw->tw_snd_nxt	= tp->snd_nxt;
-		tcptw->tw_rcv_wnd	= tcp_receive_window(tp);
+		/* no need to keep track of the right-most right edge
+		 * when in time wait, can directly use the currently
+		 * advertised window.
+		 */
+		tcptw->tw_rcv_wnd	= tcp_receive_window_now(tp);
 		tcptw->tw_ts_recent	= tp->rx_opt.ts_recent;
 		tcptw->tw_ts_recent_stamp = tp->rx_opt.ts_recent_stamp;
 		tcptw->tw_ts_offset	= tp->tsoffset;
@@ -550,6 +554,7 @@ struct sock *tcp_create_openreq_child(const struct sock *sk,
 	newtp->window_clamp = req->rsk_window_clamp;
 	newtp->rcv_ssthresh = req->rsk_rcv_wnd;
 	newtp->rcv_wnd = req->rsk_rcv_wnd;
+	newtp->rcv_right_edge = newtp->rcv_wnd + newtp->rcv_wup;
 	newtp->rx_opt.wscale_ok = ireq->wscale_ok;
 	if (newtp->rx_opt.wscale_ok) {
 		newtp->rx_opt.snd_wscale = ireq->snd_wscale;

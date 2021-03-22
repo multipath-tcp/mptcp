@@ -263,7 +263,7 @@ u16 tcp_select_window(struct sock *sk)
 	 * have to allow this. Otherwise we may announce a window too large
 	 * for the current meta-level sk_rcvbuf.
 	 */
-	u32 cur_win = tcp_receive_window(mptcp(tp) ? tcp_sk(mptcp_meta_sk(sk)) : tp);
+	u32 cur_win = tcp_receive_window_now(mptcp(tp) ? tcp_sk(mptcp_meta_sk(sk)) : tp);
 	u32 new_win = tp->ops->__select_window(sk);
 
 	/* Never shrink the offered window */
@@ -283,6 +283,7 @@ u16 tcp_select_window(struct sock *sk)
 
 	tp->rcv_wnd = new_win;
 	tp->rcv_wup = tp->rcv_nxt;
+	tcp_update_rcv_right_edge(tp);
 
 	/* Make sure we do not exceed the maximum possible
 	 * scaled window.
@@ -3487,6 +3488,8 @@ static void tcp_connect_init(struct sock *sk)
 	else
 		tp->rcv_tstamp = tcp_jiffies32;
 	tp->rcv_wup = tp->rcv_nxt;
+	/* force set rcv_right_edge here at start of connection */
+	tp->rcv_right_edge = tp->rcv_wup + tp->rcv_wnd;
 	WRITE_ONCE(tp->copied_seq, tp->rcv_nxt);
 
 	inet_csk(sk)->icsk_rto = tcp_timeout_init(sk);
