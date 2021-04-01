@@ -299,9 +299,9 @@ static u32 stm32_spi_prepare_fthlv(struct stm32_spi *spi)
 
 	/* align packet size with data registers access */
 	if (spi->cur_bpw > 8)
-		fthlv -= (fthlv % 2); /* multiple of 2 */
+		fthlv += (fthlv % 2) ? 1 : 0;
 	else
-		fthlv -= (fthlv % 4); /* multiple of 4 */
+		fthlv += (fthlv % 4) ? (4 - (fthlv % 4)) : 0;
 
 	return fthlv;
 }
@@ -991,6 +991,10 @@ static int stm32_spi_transfer_one(struct spi_master *master,
 {
 	struct stm32_spi *spi = spi_master_get_devdata(master);
 	int ret;
+
+	/* Don't do anything on 0 bytes transfers */
+	if (transfer->len == 0)
+		return 0;
 
 	spi->tx_buf = transfer->tx_buf;
 	spi->rx_buf = transfer->rx_buf;
