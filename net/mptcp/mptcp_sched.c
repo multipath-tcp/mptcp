@@ -1,5 +1,6 @@
 /* MPTCP Scheduler module selector. Highly inspired by tcp_cong.c */
 
+#include <linux/bug.h>
 #include <linux/module.h>
 #include <net/mptcp.h>
 #include <trace/events/tcp.h>
@@ -37,12 +38,38 @@ bool mptcp_is_def_unavailable(struct sock *sk)
 }
 EXPORT_SYMBOL_GPL(mptcp_is_def_unavailable);
 
+/* estimate number of segments currently in flight + unsent in
+ * the subflow socket.
+ */
+static int mptcp_subflow_queued(struct sock *sk, u32 max_tso_segs)
+{
+	const struct tcp_sock *tp = tcp_sk(sk);
+	unsigned int queued;
+
+	/* estimate the max number of segments in the write queue
+	 * this is an overestimation, avoiding to iterate over the queue
+	 * to make a better estimation.
+	 * Having only one skb in the queue however might trigger tso deferral,
+	 * delaying the sending of a tso segment in the hope that skb_entail
+	 * will append more data to the skb soon.
+	 * Therefore, in the case only one skb is in the queue, we choose to
+	 * potentially underestimate, risking to schedule one skb too many onto
+	 * the subflow rather than not enough.
+	 */
+	if (sk->sk_write_queue.qlen > 1)
+		queued = sk->sk_write_queue.qlen * max_tso_segs;
+	else
+		queued = sk->sk_write_queue.qlen;
+
+	return queued + tcp_packets_in_flight(tp);
+}
+
 static bool mptcp_is_temp_unavailable(struct sock *sk,
 				      const struct sk_buff *skb,
 				      bool zero_wnd_test)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
-	unsigned int mss_now, space, in_flight;
+	unsigned int mss_now;
 
 	if (inet_csk(sk)->icsk_ca_state == TCP_CA_Loss) {
 		/* If SACK is disabled, and we got a loss, TCP does not exit
@@ -66,19 +93,11 @@ static bool mptcp_is_temp_unavailable(struct sock *sk,
 			return true;
 	}
 
-	in_flight = tcp_packets_in_flight(tp);
-	/* Not even a single spot in the cwnd */
-	if (in_flight >= tp->snd_cwnd)
-		return true;
-
 	mss_now = tcp_current_mss(sk);
 
-	/* Now, check if what is queued in the subflow's send-queue
-	 * already fills the cwnd.
-	 */
-	space = (tp->snd_cwnd - in_flight) * mss_now;
-
-	if (tp->write_seq - tp->snd_nxt >= space)
+	/* Not even a single spot in the cwnd */
+	if (mptcp_subflow_queued(sk, tcp_tso_segs(sk, tcp_current_mss(sk)))
+	    >= tp->snd_cwnd)
 		return true;
 
 	if (zero_wnd_test && !before(tp->write_seq, tcp_wnd_end(tp)))
@@ -398,11 +417,10 @@ static struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
 					  unsigned int *limit)
 {
 	struct sk_buff *skb = __mptcp_next_segment(meta_sk, reinject);
-	unsigned int mss_now, in_flight_space;
-	int remaining_in_flight_space;
-	u32 max_len, max_segs, window;
+	unsigned int mss_now;
+	u32 max_len, gso_max_segs, max_segs, max_tso_segs, window;
 	struct tcp_sock *subtp;
-	u16 gso_max_segs;
+	int queued;
 
 	/* As we set it, we have to reset it as well. */
 	*limit = 0;
@@ -440,35 +458,29 @@ static struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
 	if (skb->len <= mss_now)
 		return skb;
 
-	/* The following is similar to tcp_mss_split_point, but
-	 * we do not care about nagle, because we will anyways
-	 * use TCP_NAGLE_PUSH, which overrides this.
+	max_tso_segs = tcp_tso_segs(*subsk, tcp_current_mss(*subsk));
+	queued = mptcp_subflow_queued(*subsk, max_tso_segs);
+
+	/* this condition should already have been established in
+	 * mptcp_is_temp_unavailable when selecting available flows
 	 */
+	WARN_ONCE(subtp->snd_cwnd <= queued, "Selected subflow no cwnd room");
 
 	gso_max_segs = (*subsk)->sk_gso_max_segs;
 	if (!gso_max_segs) /* No gso supported on the subflow's NIC */
 		gso_max_segs = 1;
-	max_segs = min_t(unsigned int, tcp_cwnd_test(subtp, skb), gso_max_segs);
+
+	max_segs = min_t(unsigned int, subtp->snd_cwnd - queued, gso_max_segs);
 	if (!max_segs)
 		return NULL;
 
-	/* max_len is what would fit in the cwnd (respecting the 2GSO-limit of
-	 * tcp_cwnd_test), but ignoring whatever was already queued.
+	/* if there is room for a segment, schedule up to a complete TSO
+	 * segment to avoid TSO splitting. Even if it is more than allowed by
+	 * the congestion window.
 	 */
+	max_segs = max_t(unsigned int, max_tso_segs, max_segs);
+
 	max_len = min(mss_now * max_segs, skb->len);
-
-	in_flight_space = (subtp->snd_cwnd - tcp_packets_in_flight(subtp)) * mss_now;
-	remaining_in_flight_space = (int)in_flight_space - (subtp->write_seq - subtp->snd_nxt);
-
-	if (remaining_in_flight_space <= 0)
-		WARN_ONCE(1, "in_flight %u cwnd %u wseq %u snxt %u mss_now %u cache %u",
-			  tcp_packets_in_flight(subtp), subtp->snd_cwnd,
-			  subtp->write_seq, subtp->snd_nxt, mss_now, subtp->mss_cache);
-	else
-		/* max_len now fits exactly in the write-queue, taking into
-		 * account what was already queued.
-		 */
-		max_len = min_t(u32, max_len, remaining_in_flight_space);
 
 	window = tcp_wnd_end(subtp) - subtp->write_seq;
 
