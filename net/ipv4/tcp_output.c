@@ -1587,6 +1587,12 @@ static u32 tcp_tso_autosize(const struct sock *sk, unsigned int mss_now)
 	return min_t(u32, segs, sk->sk_gso_max_segs);
 }
 
+/* MPTCP: added to ease the backports */
+u32 tcp_tso_segs(struct sock *sk, unsigned int mss_now)
+{
+	return tcp_tso_autosize(sk, mss_now);
+}
+
 /* Returns the portion of skb which can be sent right away */
 unsigned int tcp_mss_split_point(const struct sock *sk,
 				 const struct sk_buff *skb,
