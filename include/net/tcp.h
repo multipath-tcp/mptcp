@@ -350,6 +350,7 @@ int tcp_xmit_probe_skb(struct sock *sk, int urgent, int mib);
 void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb);
 int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		     gfp_t gfp_mask);
+u32 tcp_tso_segs(struct sock *sk, unsigned int mss_now);
 unsigned int tcp_mss_split_point(const struct sock *sk,
 				 const struct sk_buff *skb,
 				 unsigned int mss_now,
