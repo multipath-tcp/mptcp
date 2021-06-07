@@ -1315,9 +1315,6 @@ static inline int mptcp_subflow_count(const struct mptcp_cb *mpcb)
 u16 mptcp_select_window(struct sock *sk);
 void mptcp_tcp_set_rto(struct sock *sk);
 
-/* TCP and MPTCP flag-depending functions */
-bool mptcp_prune_ofo_queue(struct sock *sk);
-
 #else /* CONFIG_MPTCP */
 #define mptcp_debug(fmt, args...)	\
 	do {				\
