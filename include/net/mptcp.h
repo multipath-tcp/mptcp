@@ -1343,9 +1343,6 @@ u16 mptcp_select_window(struct sock *sk);
 void mptcp_init_buffer_space(struct sock *sk);
 void mptcp_tcp_set_rto(struct sock *sk);
 
-/* TCP and MPTCP flag-depending functions */
-bool mptcp_prune_ofo_queue(struct sock *sk);
-
 #else /* CONFIG_MPTCP */
 #define mptcp_debug(fmt, args...)	\
 	do {				\
