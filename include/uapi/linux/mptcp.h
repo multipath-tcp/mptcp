@@ -87,8 +87,8 @@ enum {
  *   - MPTCP_CMD_REMOVE: token, loc_id
  *       Announce that an address has been lost to the peer.
  *
- *   - MPTCP_CMD_SUB_CREATE: token, family, loc_id, rem_id, [saddr4 | saddr6,
- *                           daddr4 | daddr6, dport [, sport, backup, if_idx]]
+ *   - MPTCP_CMD_SUB_CREATE: token, family, loc_id, rem_id, daddr4 | daddr6,
+ *                           dport [, saddr4 | saddr6, sport, backup, if_idx]
  *       Create a new subflow.
  *
  *   - MPTCP_CMD_SUB_DESTROY: token, family, saddr4 | saddr6, daddr4 | daddr6,
