@@ -219,7 +219,7 @@ static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 			   meta_tp->rcv_nxt))) {
 			mptcp_send_active_reset(meta_sk, GFP_ATOMIC);
 			tcp_done(meta_sk);
-			__NET_INC_STATS(sock_net(meta_sk), LINUX_MIB_TCPABORTONDATA);
+			NET_INC_STATS(sock_net(meta_sk), LINUX_MIB_TCPABORTONDATA);
 			return -1;
 		}
 
@@ -260,7 +260,7 @@ static int mptcp_rcv_state_process(struct sock *meta_sk, struct sock *sk,
 			if (TCP_SKB_CB(skb)->end_seq != TCP_SKB_CB(skb)->seq &&
 			    after(TCP_SKB_CB(skb)->end_seq - th->fin, tp->rcv_nxt) &&
 			    !mptcp_is_data_fin2(skb, tp)) {
-				__NET_INC_STATS(sock_net(meta_sk), LINUX_MIB_TCPABORTONDATA);
+				NET_INC_STATS(sock_net(meta_sk), LINUX_MIB_TCPABORTONDATA);
 				mptcp_send_active_reset(meta_sk, GFP_ATOMIC);
 				tcp_reset(meta_sk);
 				return -1;
