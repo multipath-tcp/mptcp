@@ -96,8 +96,7 @@ static bool mptcp_is_temp_unavailable(struct sock *sk,
 	mss_now = tcp_current_mss(sk);
 
 	/* Not even a single spot in the cwnd */
-	if (mptcp_subflow_queued(sk, tcp_tso_segs(sk, tcp_current_mss(sk)))
-	    >= tp->snd_cwnd)
+	if (mptcp_subflow_queued(sk, tcp_tso_segs(sk, mss_now)) >= tp->snd_cwnd)
 		return true;
 
 	if (zero_wnd_test && !before(tp->write_seq, tcp_wnd_end(tp)))
