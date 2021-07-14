@@ -3170,8 +3170,12 @@ static int add_vlan_push_action(struct mlx5e_priv *priv,
 	if (err)
 		return err;
 
-	*out_dev = dev_get_by_index_rcu(dev_net(vlan_dev),
-					dev_get_iflink(vlan_dev));
+	rcu_read_lock();
+	*out_dev = dev_get_by_index_rcu(dev_net(vlan_dev), dev_get_iflink(vlan_dev));
+	rcu_read_unlock();
+	if (!*out_dev)
+		return -ENODEV;
+
 	if (is_vlan_dev(*out_dev))
 		err = add_vlan_push_action(priv, attr, out_dev, action);
 
@@ -4075,7 +4079,7 @@ static void mlx5e_tc_hairpin_update_dead_peer(struct mlx5e_priv *priv,
 	list_for_each_entry_safe(hpe, tmp, &init_wait_list, dead_peer_wait_list) {
 		wait_for_completion(&hpe->res_ready);
 		if (!IS_ERR_OR_NULL(hpe->hp) && hpe->peer_vhca_id == peer_vhca_id)
-			hpe->hp->pair->peer_gone = true;
+			mlx5_core_hairpin_clear_dead_peer(hpe->hp->pair);
 
 		mlx5e_hairpin_put(priv, hpe);
 	}

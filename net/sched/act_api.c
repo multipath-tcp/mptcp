@@ -823,7 +823,7 @@ static const struct nla_policy tcf_action_policy[TCA_ACT_MAX + 1] = {
 	[TCA_ACT_OPTIONS]	= { .type = NLA_NESTED },
 };
 
-static void tcf_idr_insert_many(struct tc_action *actions[])
+void tcf_idr_insert_many(struct tc_action *actions[])
 {
 	int i;
 
@@ -934,6 +934,9 @@ struct tc_action *tcf_action_init_1(struct net *net, struct tcf_proto *tp,
 	 */
 	if (err != ACT_P_CREATED)
 		module_put(a_o->owner);
+
+	if (!bind && ovr && err == ACT_P_CREATED)
+		refcount_set(&a->tcfa_refcnt, 2);
 
 	return a;
 
