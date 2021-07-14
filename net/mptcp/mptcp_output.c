@@ -801,6 +801,7 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		     int push_one, gfp_t gfp)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk), *subtp;
+	bool is_rwnd_limited = false;
 	struct mptcp_tcp_sock *mptcp;
 	struct sock *subsk = NULL;
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
@@ -848,8 +849,10 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		if (skb_unclone(skb, GFP_ATOMIC))
 			break;
 
-		if (unlikely(!tcp_snd_wnd_test(meta_tp, skb, mss_now)))
+		if (unlikely(!tcp_snd_wnd_test(meta_tp, skb, mss_now))) {
+			is_rwnd_limited = true;
 			break;
+		}
 
 		/* Force tso_segs to 1 by using UINT_MAX.
 		 * We actually don't care about the exact number of segments
@@ -931,6 +934,11 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		if (push_one)
 			break;
 	}
+
+	if (is_rwnd_limited)
+		tcp_chrono_start(meta_sk, TCP_CHRONO_RWND_LIMITED);
+	else
+		tcp_chrono_stop(meta_sk, TCP_CHRONO_RWND_LIMITED);
 
 	mptcp_for_each_sub(mpcb, mptcp) {
 		subsk = mptcp_to_sock(mptcp);
@@ -1229,6 +1237,10 @@ u16 mptcp_select_window(struct sock *sk)
 
 	meta_tp->rcv_wnd	= tp->rcv_wnd;
 	meta_tp->rcv_wup	= meta_tp->rcv_nxt;
+	/* no need to use tcp_update_rcv_right_edge, because at the meta level
+	 * right edge cannot go back
+	 */
+	meta_tp->rcv_right_edge = meta_tp->rcv_wnd + meta_tp->rcv_wup;
 
 	return new_win;
 }
@@ -1698,7 +1710,7 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 	return 0;
 
 failed:
-	__NET_INC_STATS(sock_net(meta_sk), LINUX_MIB_TCPRETRANSFAIL);
+	NET_INC_STATS(sock_net(meta_sk), LINUX_MIB_TCPRETRANSFAIL);
 	return err;
 }
 
@@ -1757,7 +1769,7 @@ void mptcp_meta_retransmit_timer(struct sock *meta_sk)
 		return;
 
 	if (meta_icsk->icsk_retransmits == 0)
-		__NET_INC_STATS(sock_net(meta_sk), LINUX_MIB_TCPTIMEOUTS);
+		NET_INC_STATS(sock_net(meta_sk), LINUX_MIB_TCPTIMEOUTS);
 
 	meta_icsk->icsk_ca_state = TCP_CA_Loss;
 

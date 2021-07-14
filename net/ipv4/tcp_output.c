@@ -266,7 +266,7 @@ u16 tcp_select_window(struct sock *sk)
 	 * have to allow this. Otherwise we may announce a window too large
 	 * for the current meta-level sk_rcvbuf.
 	 */
-	u32 cur_win = tcp_receive_window(mptcp(tp) ? tcp_sk(mptcp_meta_sk(sk)) : tp);
+	u32 cur_win = tcp_receive_window_now(mptcp(tp) ? tcp_sk(mptcp_meta_sk(sk)) : tp);
 	u32 new_win = tp->ops->__select_window(sk);
 
 	/* Never shrink the offered window */
@@ -286,6 +286,7 @@ u16 tcp_select_window(struct sock *sk)
 
 	tp->rcv_wnd = new_win;
 	tp->rcv_wup = tp->rcv_nxt;
+	tcp_update_rcv_right_edge(tp);
 
 	/* Make sure we do not exceed the maximum possible
 	 * scaled window.
@@ -1717,8 +1718,11 @@ static void tcp_cwnd_validate(struct sock *sk, bool is_cwnd_limited)
 		 * 2) not cwnd limited (this else condition)
 		 * 3) no more data to send (tcp_write_queue_empty())
 		 * 4) application is hitting buffer limit (SOCK_NOSPACE)
+		 * 5) For MPTCP subflows, the scheduler determines
+		 *    sndbuf limited.
 		 */
 		if (tcp_write_queue_empty(sk) && sk->sk_socket &&
+		    !(mptcp(tcp_sk(sk)) && !is_meta_sk(sk)) &&
 		    test_bit(SOCK_NOSPACE, &sk->sk_socket->flags) &&
 		    (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCPF_CLOSE_WAIT))
 			tcp_chrono_start(sk, TCP_CHRONO_SNDBUF_LIMITED);
@@ -1787,7 +1791,7 @@ static u32 tcp_tso_autosize(const struct sock *sk, unsigned int mss_now,
 /* Return the number of segments we want in the skb we are transmitting.
  * See if congestion control module wants to decide; otherwise, autosize.
  */
-static u32 tcp_tso_segs(struct sock *sk, unsigned int mss_now)
+u32 tcp_tso_segs(struct sock *sk, unsigned int mss_now)
 {
 	const struct tcp_congestion_ops *ca_ops = inet_csk(sk)->icsk_ca_ops;
 	u32 min_tso, tso_segs;
@@ -3512,6 +3516,8 @@ static void tcp_connect_init(struct sock *sk)
 	else
 		tp->rcv_tstamp = tcp_jiffies32;
 	tp->rcv_wup = tp->rcv_nxt;
+	/* force set rcv_right_edge here at start of connection */
+	tp->rcv_right_edge = tp->rcv_wup + tp->rcv_wnd;
 	WRITE_ONCE(tp->copied_seq, tp->rcv_nxt);
 
 	inet_csk(sk)->icsk_rto = tcp_timeout_init(sk);

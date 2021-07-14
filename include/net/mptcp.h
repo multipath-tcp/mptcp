@@ -364,7 +364,7 @@ struct mptcp_cb {
 #define MPTCPV1_SUB_LEN_CAPABLE_ACK		20
 #define MPTCPV1_SUB_LEN_CAPABLE_ACK_ALIGN	20
 #define MPTCPV1_SUB_LEN_CAPABLE_DATA		22
-#define MPTCPV1_SUB_LEN_CAPABLE_DATA_CSUM	22
+#define MPTCPV1_SUB_LEN_CAPABLE_DATA_CSUM	24
 #define MPTCPV1_SUB_LEN_CAPABLE_DATA_ALIGN	24
 
 #define MPTCP_SUB_JOIN			1
@@ -729,7 +729,6 @@ static inline struct sock *mptcp_to_sock(const struct mptcp_tcp_sock *mptcp)
 
 #define MPTCP_INC_STATS(net, field)	SNMP_INC_STATS((net)->mptcp.mptcp_statistics, field)
 #define MPTCP_DEC_STATS(net, field)	SNMP_DEC_STATS((net)->mptcp.mptcp_statistics, field)
-#define MPTCP_INC_STATS_BH(net, field)	__SNMP_INC_STATS((net)->mptcp.mptcp_statistics, field)
 
 enum
 {
@@ -1384,9 +1383,6 @@ static inline int mptcp_subflow_count(const struct mptcp_cb *mpcb)
 /* TCP and MPTCP mpc flag-depending functions */
 u16 mptcp_select_window(struct sock *sk);
 void mptcp_tcp_set_rto(struct sock *sk);
-
-/* TCP and MPTCP flag-depending functions */
-bool mptcp_prune_ofo_queue(struct sock *sk);
 
 #else /* CONFIG_MPTCP */
 #define mptcp_debug(fmt, args...)	\
