@@ -4844,7 +4844,7 @@ void tcp_data_ready(struct sock *sk)
 
 	if (avail < sk->sk_rcvlowat && !tcp_rmem_pressure(sk) &&
 	    !sock_flag(sk, SOCK_DONE) &&
-	    tcp_receive_window(tp) > inet_csk(sk)->icsk_ack.rcv_mss &&
+	    tcp_receive_window_now(tp) > inet_csk(sk)->icsk_ack.rcv_mss &&
 	    !mptcp(tp))
 		return;
 

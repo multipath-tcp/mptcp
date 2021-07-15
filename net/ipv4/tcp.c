@@ -507,7 +507,7 @@ static inline bool tcp_stream_is_readable(const struct tcp_sock *tp,
 			return true;
 		if (tcp_rmem_pressure(sk))
 			return true;
-		if (tcp_receive_window(tp) <= inet_csk(sk)->icsk_ack.rcv_mss)
+		if (tcp_receive_window_now(tp) <= inet_csk(sk)->icsk_ack.rcv_mss)
 			return true;
 	}
 	if (sk->sk_prot->stream_memory_read)
