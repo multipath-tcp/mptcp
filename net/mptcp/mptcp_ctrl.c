@@ -306,15 +306,9 @@ static void mptcp_reqsk_new_mptcp(struct request_sock *req,
 				  const struct sk_buff *skb)
 {
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
-	const struct tcp_sock *tp = tcp_sk(sk);
 
 	inet_rsk(req)->saw_mpc = 1;
-
-	/* MPTCP version agreement */
-	if (mopt->mptcp_ver >= tp->mptcp_ver)
-		mtreq->mptcp_ver = tp->mptcp_ver;
-	else
-		mtreq->mptcp_ver = mopt->mptcp_ver;
+	mtreq->mptcp_ver = mopt->mptcp_ver;
 
 	rcu_read_lock();
 	local_bh_disable();
@@ -341,11 +335,10 @@ static int mptcp_reqsk_new_cookie(struct request_sock *req,
 {
 	struct mptcp_request_sock *mtreq = mptcp_rsk(req);
 
-	/* MPTCP version agreement */
-	if (mopt->mptcp_ver >= tcp_sk(sk)->mptcp_ver)
-		mtreq->mptcp_ver = tcp_sk(sk)->mptcp_ver;
-	else
-		mtreq->mptcp_ver = mopt->mptcp_ver;
+	/* Must happen before mptcp_set_key_reqsk to generate the token with
+	 * the proper hash algo.
+	 */
+	mtreq->mptcp_ver = mopt->mptcp_ver;
 
 	rcu_read_lock();
 	local_bh_disable();
@@ -2754,6 +2747,10 @@ int mptcp_conn_request(struct sock *sk, struct sk_buff *skb)
 		goto drop;
 
 	if (!sock_flag(sk, SOCK_MPTCP))
+		mopt.saw_mpc = 0;
+
+	/* If the requested version is higher than what we support, fall back */
+	if (mopt.saw_mpc && mopt.mptcp_ver > tcp_sk(sk)->mptcp_ver)
 		mopt.saw_mpc = 0;
 
 	if (skb->protocol == htons(ETH_P_IP)) {
