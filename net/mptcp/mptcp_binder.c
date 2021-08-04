@@ -423,7 +423,6 @@ static int proc_mptcp_gateways(struct ctl_table *ctl, int write,
 		ret = proc_dostring(ctl, write, buffer, lenp, ppos);
 	}
 
-
 	return ret;
 }
 

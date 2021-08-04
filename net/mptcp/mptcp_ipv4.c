@@ -56,7 +56,6 @@ u64 mptcp_v4_get_key(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport,
 			    &mptcp_secret);
 }
 
-
 static void mptcp_v4_reqsk_destructor(struct request_sock *req)
 {
 	mptcp_reqsk_destructor(req);

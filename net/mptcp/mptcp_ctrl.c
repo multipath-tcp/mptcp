@@ -2086,7 +2086,6 @@ adjudge_to_death:
 		}
 	}
 
-
 	if (meta_sk->sk_state == TCP_CLOSE)
 		inet_csk_destroy_sock(meta_sk);
 	/* Otherwise, socket is reprieved until protocol close. */
@@ -2145,7 +2144,6 @@ void mptcp_disconnect(struct sock *meta_sk)
 #endif
 	meta_sk->sk_destruct = inet_sock_destruct;
 }
-
 
 /* Returns True if we should enable MPTCP for that socket. */
 bool mptcp_doit(struct sock *sk)
@@ -3252,7 +3250,6 @@ void __init mptcp_init(void)
 
 	for (i = 0; i <= mptcp_reqsk_tk_htb.mask; i++)
 		INIT_HLIST_NULLS_HEAD(&mptcp_reqsk_tk_htb.hashtable[i], i);
-
 
 	spin_lock_init(&mptcp_tk_hashlock);
 
