@@ -3335,7 +3335,7 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 		if (mptcp_init_failed || !sysctl_mptcp_enabled ||
 		    sk->sk_state != TCP_CLOSE
 #ifdef CONFIG_TCP_MD5SIG
-		    || tp->md5sig_info
+		    || rcu_access_pointer(tp->md5sig_info)
 #endif
 								) {
 			err = -EPERM;

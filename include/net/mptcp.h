@@ -962,6 +962,9 @@ static inline void mptcp_init_listen(struct sock *sk)
 {
 	if (!mptcp_init_failed &&
 	    sk->sk_type == SOCK_STREAM && sk->sk_protocol == IPPROTO_TCP &&
+#ifdef CONFIG_TCP_MD5SIG
+	    !rcu_access_pointer(tcp_sk(sk)->md5sig_info) &&
+#endif
 	    sysctl_mptcp_enabled & MPTCP_ENABLE &&
 	    !(sysctl_mptcp_enabled & MPTCP_SERVER_DISABLE))
 		mptcp_enable_sock(sk);
@@ -971,6 +974,9 @@ static inline void mptcp_init_connect(struct sock *sk)
 {
 	if (!mptcp_init_failed &&
 	    sk->sk_type == SOCK_STREAM && sk->sk_protocol == IPPROTO_TCP &&
+#ifdef CONFIG_TCP_MD5SIG
+	    !rcu_access_pointer(tcp_sk(sk)->md5sig_info) &&
+#endif
 	    sysctl_mptcp_enabled & MPTCP_ENABLE &&
 	    !(sysctl_mptcp_enabled & MPTCP_CLIENT_DISABLE))
 		mptcp_enable_sock(sk);
