@@ -24,9 +24,10 @@
 struct redsched_priv {
 	/* The skb or NULL */
 	struct sk_buff *skb;
-	/* End sequence number of the skb. This number should be checked
+	/* Start/end sequence number of the skb. This number should be checked
 	 * to be valid before the skb field is used
 	 */
+	u32 skb_start_seq;
 	u32 skb_end_seq;
 };
 
@@ -188,7 +189,7 @@ static void redsched_correct_skb_pointers(struct sock *meta_sk,
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
 	if (red_p->skb &&
-	    (!after(red_p->skb_end_seq, meta_tp->snd_una) ||
+	    (!after(red_p->skb_start_seq, meta_tp->snd_una) ||
 	     after(red_p->skb_end_seq, meta_tp->snd_nxt)))
 		red_p->skb = NULL;
 }
@@ -306,6 +307,7 @@ static struct sk_buff *mptcp_red_next_segment(struct sock *meta_sk,
 		if (skb && redsched_use_subflow(meta_sk, active_valid_sks, tp,
 						skb)) {
 			red_p->skb = skb;
+			red_p->skb_start_seq = TCP_SKB_CB(skb)->seq;
 			red_p->skb_end_seq = TCP_SKB_CB(skb)->end_seq;
 			redsched_update_next_subflow(tp, red_cb);
 			*subsk = (struct sock *)tp;
@@ -333,6 +335,7 @@ static struct sk_buff *mptcp_red_next_segment(struct sock *meta_sk,
 		if (skb && redsched_use_subflow(meta_sk, active_valid_sks, tp,
 						skb)) {
 			red_p->skb = skb;
+			red_p->skb_start_seq = TCP_SKB_CB(skb)->seq;
 			red_p->skb_end_seq = TCP_SKB_CB(skb)->end_seq;
 			redsched_update_next_subflow(tp, red_cb);
 			*subsk = (struct sock *)tp;
