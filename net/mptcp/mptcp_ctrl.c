@@ -1097,6 +1097,10 @@ static void mptcp_sub_inherit_sockopts(const struct sock *meta_sk, struct sock *
 		sk_dst_reset(sub_sk);
 	}
 
+	/* IPV6_TCLASS */
+	if (sub_sk->sk_family == AF_INET6 && meta_sk->sk_family == AF_INET6)
+		inet6_sk(sub_sk)->tclass = inet6_sk(meta_sk)->tclass;
+
 	/* Inherit SO_REUSEADDR */
 	sub_sk->sk_reuse = meta_sk->sk_reuse;
 

@@ -1068,6 +1068,19 @@ set_rcvbuf:
 		} else if (val != sk->sk_mark) {
 			sk->sk_mark = val;
 			sk_dst_reset(sk);
+
+			if (is_meta_sk(sk)) {
+				struct mptcp_tcp_sock *mptcp;
+
+				mptcp_for_each_sub(tcp_sk(sk)->mpcb, mptcp) {
+					struct sock *sk_it = mptcp_to_sock(mptcp);
+
+					if (val != sk_it->sk_mark) {
+						sk_it->sk_mark = val;
+						sk_dst_reset(sk_it);
+					}
+				}
+			}
 		}
 		break;
 

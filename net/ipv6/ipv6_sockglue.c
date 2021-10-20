@@ -352,6 +352,17 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
 		if (val == -1)
 			val = 0;
 		np->tclass = val;
+
+		if (is_meta_sk(sk)) {
+			struct mptcp_tcp_sock *mptcp;
+
+			mptcp_for_each_sub(tcp_sk(sk)->mpcb, mptcp) {
+				struct sock *sk_it = mptcp_to_sock(mptcp);
+
+				if (sk_it->sk_family == AF_INET6)
+					inet6_sk(sk_it)->tclass = val;
+			}
+		}
 		retv = 0;
 		break;
 
