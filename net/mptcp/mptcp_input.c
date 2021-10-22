@@ -2355,9 +2355,6 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 
 		tp->mptcp->include_mpc = 1;
 
-		/* Ensure that fastopen is handled at the meta-level. */
-		tp->fastopen_req = NULL;
-
 		sk_set_socket(sk, meta_sk->sk_socket);
 		sk->sk_wq = meta_sk->sk_wq;
 
