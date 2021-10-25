@@ -2307,8 +2307,7 @@ static void _mptcp_rcv_synsent_fastopen(struct sock *meta_sk,
 	 * comes from __tcp_retransmit_skb().
 	 */
 	if (before(TCP_SKB_CB(skb)->seq, master_tp->snd_una)) {
-		BUG_ON(before(TCP_SKB_CB(skb)->end_seq,
-			      master_tp->snd_una));
+		BUG_ON(before(TCP_SKB_CB(skb)->end_seq, master_tp->snd_una));
 		/* tcp_trim_head can only returns ENOMEM if skb is
 		 * cloned. It is not the case here (see
 		 * tcp_send_syn_data).
@@ -2325,12 +2324,11 @@ static void _mptcp_rcv_synsent_fastopen(struct sock *meta_sk,
 
 	if (rtx_queue)
 		tcp_rtx_queue_unlink(skb, meta_sk);
-	else
-		tcp_unlink_write_queue(skb, meta_sk);
 
 	INIT_LIST_HEAD(&skb->tcp_tsorted_anchor);
 
-	tcp_add_write_queue_tail(meta_sk, skb);
+	if (rtx_queue)
+		tcp_add_write_queue_tail(meta_sk, skb);
 }
 
 /* In case of fastopen, some data can already be in the write queue.
@@ -2354,7 +2352,7 @@ static void mptcp_rcv_synsent_fastopen(struct sock *meta_sk)
 	 * this data to data sequence numbers.
 	 */
 
-	WARN_ON(skb_write_head && skb_rtx_head);
+	BUG_ON(skb_write_head && skb_rtx_head);
 
 	if (skb_write_head) {
 		skb_queue_walk_from_safe(&meta_sk->sk_write_queue,
