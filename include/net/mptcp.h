@@ -1407,6 +1407,10 @@ static inline struct sock *mptcp_to_sock(const struct mptcp_tcp_sock *mptcp)
 	do {				\
 	} while(0)
 
+#define MPTCP_DEC_STATS(net, field)	\
+	do {				\
+	} while(0)
+
 static inline bool mptcp_is_data_fin(const struct sk_buff *skb)
 {
 	return false;
