@@ -1439,7 +1439,7 @@ static void cbq_destroy_class(struct Qdisc *sch, struct cbq_class *cl)
 	WARN_ON(cl->filters);
 
 	tcf_block_put(cl->block);
-	qdisc_destroy(cl->q);
+	qdisc_put(cl->q);
 	qdisc_put_rtab(cl->R_tab);
 	gen_kill_estimator(&cl->rate_est);
 	if (cl != &q->link)
@@ -1616,7 +1616,7 @@ cbq_change_class(struct Qdisc *sch, u32 classid, u32 parentid, struct nlattr **t
 	err = tcf_block_get(&cl->block, &cl->filter_list, sch, extack);
 	if (err) {
 		kfree(cl);
-		return err;
+		goto failure;
 	}
 
 	if (tca[TCA_RATE]) {
