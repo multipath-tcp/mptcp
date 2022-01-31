@@ -157,6 +157,7 @@ struct mptcp_options_received {
 
 struct mptcp_tcp_sock {
 	struct hlist_node node;
+	struct tcp_sock	*next;		/* Next subflow socket */
 	struct hlist_node cb_list;
 	struct mptcp_options_received rx_opt;
 
@@ -166,6 +167,7 @@ struct mptcp_tcp_sock {
 	u16	map_data_len;
 	u16	slave_sk:1,
 		fully_established:1,
+		establish_increased:1,
 		second_packet:1,
 		attached:1,
 		send_mp_fail:1,
@@ -187,7 +189,7 @@ struct mptcp_tcp_sock {
 	u8	rem_id;
 	u8	sk_err;
 
-#define MPTCP_SCHED_SIZE 16
+#define MPTCP_SCHED_SIZE 64
 	u8	mptcp_sched[MPTCP_SCHED_SIZE] __aligned(8);
 
 	int	init_rcv_wnd;
@@ -261,6 +263,8 @@ struct mptcp_sched_ops {
 struct mptcp_cb {
 	/* list of sockets in this multipath connection */
 	struct hlist_head conn_list;
+	/*phuc*/
+	struct tcp_sock *connection_list;
 	/* list of sockets that need a call to release_cb */
 	struct hlist_head callback_list;
 
@@ -285,6 +289,9 @@ struct mptcp_cb {
 		rcv_hiseq_index:1, /* Index in rcv_high_order of rcv_nxt */
 		tcp_ca_explicit_set:1; /* was meta CC set by app? */
 
+	/* socket count in this connection */
+	u8 cnt_subflows;
+	u8 cnt_established;
 #define MPTCP_SCHED_DATA_SIZE 8
 	u8 mptcp_sched[MPTCP_SCHED_DATA_SIZE] __aligned(8);
 	const struct mptcp_sched_ops *sched_ops;
@@ -659,6 +666,22 @@ extern int sysctl_mptcp_version;
 extern int sysctl_mptcp_checksum;
 extern int sysctl_mptcp_debug;
 extern int sysctl_mptcp_syn_retries;
+/* swetankk */
+extern int sysctl_mptcp_scheduler_optimizations_disabled;
+extern int sysctl_mptcp_set_backup;
+/* end: swetankk */
+/* shivanga */
+extern int sysctl_num_segments_flow_one;
+extern int sysctl_mptcp_rate_sample;
+extern int sysctl_mptcp_ratio_trigger_search;
+extern int sysctl_mptcp_ratio_search_step;
+extern int sysctl_mptcp_trigger_threshold;
+extern int sysctl_mptcp_probe_interval_secs;
+extern int sysctl_mptcp_ratio_static;
+
+#define MPTCP_BYTES_NOT_SENT_MAX 165
+//#define MPTCP_RATE_MAX 50
+/* end: shivanga */
 
 extern struct workqueue_struct *mptcp_wq;
 
@@ -679,6 +702,12 @@ static inline struct sock *mptcp_to_sock(const struct mptcp_tcp_sock *mptcp)
 /* Must be called with the appropriate lock held */
 #define mptcp_for_each_sub_safe(__mpcb, __mptcp, __tmp)				\
 	hlist_for_each_entry_safe(__mptcp, __tmp, &((__mpcb)->conn_list), node)
+
+/*Phuc*/
+#define mptcp_for_each_sk(mpcb, sk)					\
+	for ((sk) = (struct sock *)(mpcb)->connection_list;		\
+	     sk;							\
+	     sk = (struct sock *)tcp_sk(sk)->mptcp->next)
 
 /* Iterates over all bit set to 1 in a bitset */
 #define mptcp_for_each_bit_set(b, i)					\
