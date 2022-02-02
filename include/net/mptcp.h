@@ -294,7 +294,8 @@ struct mptcp_cb {
 	u8 cnt_established;
 #define MPTCP_SCHED_DATA_SIZE 8
 	u8 mptcp_sched[MPTCP_SCHED_DATA_SIZE] __aligned(8);
-	const struct mptcp_sched_ops *sched_ops;
+	//const struct mptcp_sched_ops *sched_ops;
+	struct mptcp_sched_ops *sched_ops;
 
 	struct sk_buff_head reinject_queue;
 	/* First cache-line boundary is here minus 8 bytes. But from the
