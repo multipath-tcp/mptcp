@@ -170,7 +170,7 @@ zero_wnd_test:
 		return false;
     }
 
-    //printk("mptcp_ratio_is_available: true\n");
+    printk("mptcp_ratio_is_available: true\n");
 	return true;
 }
 
@@ -185,13 +185,18 @@ static int mptcp_ratio_dont_reinject_skb(const struct tcp_sock *tp, const struct
 		mptcp_pi_to_flag(tp->mptcp->path_index) & TCP_SKB_CB(skb)->path_mask;
 }
 
-/* We just look for any subflow that is available */
+/* We just look for any subflow that as available */
 static struct sock *ratio_get_available_subflow(struct sock *meta_sk,
 					     struct sk_buff *skb,
 					     bool zero_wnd_test)
 {
 	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct sock *sk, *bestsk = NULL, *backupsk = NULL;
+	//struct sock *sk, *bestsk = NULL, *backupsk = NULL;
+	/*Phuc*/
+	struct sock *sk=NULL, *bestsk = NULL, *backupsk = NULL;
+	struct mptcp_tcp_sock *mptcp;
+	/****/
+	int count = 0;
 
 #ifdef MPTCP_SCHED_PROBE
     struct sock *sk_it;
@@ -213,7 +218,8 @@ static struct sock *ratio_get_available_subflow(struct sock *meta_sk,
     /* Answer data_fin on same subflow!!! */
 	if (meta_sk->sk_shutdown & RCV_SHUTDOWN &&
 	    skb && mptcp_is_data_fin(skb)) {
-		mptcp_for_each_sk(mpcb, sk) {
+		mptcp_for_each_sub(mpcb, mptcp) {
+			struct sock *sk = mptcp_to_sock(mptcp);
 #ifdef MPTCP_SCHED_PROBE
 			if (tcp_sk(sk)->mptcp->path_index == mpcb->dfin_path_index &&
 			    mptcp_ratio_is_available(sk, skb, zero_wnd_test, true)) {
@@ -229,18 +235,21 @@ static struct sock *ratio_get_available_subflow(struct sock *meta_sk,
 	}
 
 	/* First, find the best subflow */
-	mptcp_for_each_sk(mpcb, sk) {
-		struct tcp_sock *tp = tcp_sk(sk);
-
-		if (!mptcp_ratio_is_available(sk, skb, zero_wnd_test, true))
+	mptcp_for_each_sub(mpcb, mptcp) {
+		/*Phuc*/
+		//sk = mptcp_to_sock(mptcp);
+		struct tcp_sock *tp = tcp_sk(mptcp_to_sock(mptcp));
+		count++;
+		printk("%d",count);
+		if (!mptcp_ratio_is_available(mptcp_to_sock(mptcp), skb, zero_wnd_test, true))
 			continue;
 
 		if (mptcp_ratio_dont_reinject_skb(tp, skb)) {
-			backupsk = sk;
+			backupsk = mptcp_to_sock(mptcp);
 			continue;
 		}
 
-		bestsk = sk;
+		bestsk = mptcp_to_sock(mptcp);
 	}
 
 	if (bestsk) {
@@ -344,7 +353,9 @@ static struct sk_buff *mptcp_ratio_next_segment(struct sock *meta_sk,
 					     unsigned int *limit)
 {
 	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct sock *sk_it, *choose_sk = NULL;
+	//struct sock *sk_it, *choose_sk = NULL;
+	struct sock *choose_sk=NULL;
+	struct mptcp_tcp_sock *mptcp;
 	struct sk_buff *skb = __mptcp_ratio_next_segment(meta_sk, reinject);
 	unsigned int split = num_segments;
 	unsigned char iter = 0, full_subs = 0, counter = 0, i = 0;
@@ -572,7 +583,9 @@ static struct sk_buff *mptcp_ratio_next_segment(struct sock *meta_sk,
 
 retry:
 	/* First, we look for a subflow who is currently being used */
-	mptcp_for_each_sk(mpcb, sk_it) {
+	//mptcp_for_each_sk(mpcb, mk_it) {
+	mptcp_for_each_sub(mpcb, mptcp) {
+		struct sock *sk_it = mptcp_to_sock(mptcp);
 		struct tcp_sock *tp_it = tcp_sk(sk_it);
 		struct ratio_sched_priv *rsp = ratio_sched_get_priv(tp_it);
 	    const struct inet_sock *inet = inet_sk(sk_it);
@@ -585,7 +598,7 @@ retry:
         counter++;
     
         tcp_probe_copy_fl_to_si4(inet, dst.v4, d);
-        if (!mptcp_ratio_is_available(sk_it, skb, false, cwnd_limited)){
+        if (!mptcp_ratio_is_available(sk_ita skb, false, cwnd_limited)){
             printk("flow rejected");
 			continue;
         }
@@ -649,7 +662,9 @@ retry:
 		/* So, we restart this round by setting quota to 0 and retry
 		 * to find a subflow.
 		 */
-		mptcp_for_each_sk(mpcb, sk_it) {
+		//mptcp_for_each_sk(mpcb, sk_it) {
+		mptcp_for_each_sub(mpcb, mptcp) {
+			struct sock *sk_it = mptcp_to_sock(mptcp);
 			struct tcp_sock *tp_it = tcp_sk(sk_it);
 			struct ratio_sched_priv *rsp = ratio_sched_get_priv(tp_it);
 

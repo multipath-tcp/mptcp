@@ -199,10 +199,12 @@ static int proc_mptcp_bytes_not_sent(struct ctl_table *ctl, int write,
 		rcu_read_lock_bh();
 		hlist_nulls_for_each_entry_rcu(meta_tp, node,
 					       &tk_hashtable[i], tk_table) {
-			struct sock *sk_it;
+			//struct sock *sk_it;
+			struct mptcp_tcp_sock *mptcp_sock;
 			struct mptcp_cb *mpcb = meta_tp->mpcb;
             int iter;
 
+	    /*Ask shivang whaht this is*/
 			if (!mptcp(meta_tp))
 				continue;
 
@@ -210,9 +212,13 @@ static int proc_mptcp_bytes_not_sent(struct ctl_table *ctl, int write,
 				continue;
 
             iter = 0;
-            mptcp_for_each_sk(mpcb, sk_it) {
-                struct tcp_sock *tp_it = tcp_sk(sk_it);
-                const struct inet_sock *inet = inet_sk(sk_it);
+	    /*Phuc*/
+	    /*Double check with Shivang for these type casts*/
+            mptcp_for_each_sub(mpcb, mptcp_sock) {
+                //struct tcp_sock *tp_it = tcp_sk(sk_it);
+		const struct sock *sk = mptcp_to_sock(mptcp_sock);
+		const struct tcp_sock *tp_it = tcp_sk(sk);
+                const struct inet_sock *inet = inet_sk(sk);//do we need const?
                 union {
                     struct sockaddr     raw;
                     struct sockaddr_in  v4;
@@ -224,6 +230,7 @@ static int proc_mptcp_bytes_not_sent(struct ctl_table *ctl, int write,
                 val_length += sprintf(val + val_length, "%u\n", tp_it->write_seq - tp_it->snd_una); 
                 iter++;
             }
+	    /*******/
             val_length += sprintf(val + val_length, "\n");
 		}
 
@@ -303,7 +310,8 @@ static int proc_mptcp_set_pf(struct ctl_table *ctl, int write,
             rcu_read_lock_bh();
             hlist_nulls_for_each_entry_rcu(meta_tp, node,
                                &tk_hashtable[i], tk_table) {
-                struct sock *sk_it;
+                //struct sock *sk_it;
+                struct mptcp_tcp_sock *mptcp_sock;
                 struct mptcp_cb *mpcb = meta_tp->mpcb;
 
                 if (!mptcp(meta_tp))
@@ -312,7 +320,10 @@ static int proc_mptcp_set_pf(struct ctl_table *ctl, int write,
                 if (!mpcb)
                     continue;
 
-                mptcp_for_each_sk(mpcb, sk_it) {
+		/*Phuc*/
+                mptcp_for_each_sub(mpcb, mptcp_sock) {
+		
+		    struct sock *sk_it = mptcp_to_sock(mptcp_sock);
                     struct tcp_sock *tp_it = tcp_sk(sk_it);
                     if (tp_it->pf) {
                         tempval = 1;
@@ -320,6 +331,7 @@ static int proc_mptcp_set_pf(struct ctl_table *ctl, int write,
                     }
                         
                 }
+		/*****/
                 if (tempval == 1)
                     break;
             }
@@ -341,7 +353,8 @@ static int proc_mptcp_set_pf(struct ctl_table *ctl, int write,
             rcu_read_lock_bh();
             hlist_nulls_for_each_entry_rcu(meta_tp, node,
                                &tk_hashtable[i], tk_table) {
-                struct sock *sk_it;
+                //struct sock *sk_it;
+		struct mptcp_tcp_sock *mptcp_sock;
                 struct mptcp_cb *mpcb = meta_tp->mpcb;
                 int iter = 0;
 
@@ -350,8 +363,9 @@ static int proc_mptcp_set_pf(struct ctl_table *ctl, int write,
 
                 if (!mpcb)
                     continue;
-
-                mptcp_for_each_sk(mpcb, sk_it) {
+		/*phuc*/
+                mptcp_for_each_sub(mpcb, mptcp_sock) {
+		    struct sock *sk_it = mptcp_to_sock(mptcp_sock);
                     struct tcp_sock *tp_it = tcp_sk(sk_it);
                     tp_it->pf = val;
                     iter++;
@@ -365,6 +379,7 @@ static int proc_mptcp_set_pf(struct ctl_table *ctl, int write,
                         tcp_set_ca_state(sk_it, TCP_CA_Recovery);
                     }
                 }
+		/*****/
             }
 
             rcu_read_unlock_bh();
@@ -479,7 +494,9 @@ static int proc_mptcp_buffer_size(struct ctl_table *ctl, int write,
 		rcu_read_lock_bh();
 		hlist_nulls_for_each_entry_rcu(meta_tp, node,
 					       &tk_hashtable[i], tk_table) {
-			struct sock *sk_it, *sk;
+			//struct sock *sk_it, *sk;
+			struct sock *sk;
+			struct mptcp_tcp_sock *mptcp_sock;
 			struct mptcp_cb *mpcb = meta_tp->mpcb;
             int iter;
 
@@ -496,9 +513,12 @@ static int proc_mptcp_buffer_size(struct ctl_table *ctl, int write,
                 if (dst && dst->dev) {
                     if (strcmp(dst->dev->name, "enp5s0")) continue;
                     iter = 0;
-                    mptcp_for_each_sk(mpcb, sk_it) {
+		    /*phuc*/
+                    mptcp_for_each_sub(mpcb, mptcp_sock) {
+			struct sock *sk_it = mptcp_to_sock(mptcp_sock);
                         struct tcp_sock *tp_it = tcp_sk(sk_it);
                         struct ratio_sched_priv *rsp = ratio_sched_get_priv(tp_it);
+		    /*****/
                         if (rsp->delivered) {
                             do_div(rsp->buffer_size, rsp->delivered);
                             val_length += sprintf(val + val_length, "%u ", rsp->buffer_size);
