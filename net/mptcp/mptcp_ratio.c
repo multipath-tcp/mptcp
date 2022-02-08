@@ -57,12 +57,19 @@ static bool mptcp_ratio_is_available(struct sock *sk, const struct sk_buff *skb,
 	unsigned int space, in_flight;
     
     /* shivanga */
-    if (blocked_sk && blocked_sk == sk) return false;
-    /* end: shivanga */
+    if (blocked_sk && blocked_sk == sk) {
+	printk("sk is blocked");
+	return false;
+    }
+	
+
+        /* end: shivanga */
 
     /* swetankk */
-    if (subflow_is_backup(tp)) return false;
-    /* swetankk: end*/
+    if (subflow_is_backup(tp)) {
+	    printk("subflow is backup");
+	    return false;
+    }    /* swetankk: end*/
 
 	// shivanga
 	/*struct net *net;
@@ -94,27 +101,27 @@ static bool mptcp_ratio_is_available(struct sock *sk, const struct sk_buff *skb,
     
 	/* Set of states for which we are allowed to send data */
 	if (!mptcp_sk_can_send(sk)) {
-        printk("mptcp_sk_can_send");
+        printk("mptcp_sk cannot send");
 		return false;
 	}
-    //printk("mptcp_sk_can_send");
+    	printk("mptcp_sk can send");
 
 	/* We do not send data on this subflow unless it is
 	 * fully established, i.e. the 4th ack has been received.
 	 */
 	if (tp->mptcp->pre_established) {
-        printk("tp->mptcp->pre_established");
+        	printk("tp is in PRE_ESTABLISHED state");
 		return false;
-    }
-    //printk("tp->mptcp->pre_established");
+    	}
+    	printk("tp is not in PRE_ESTABLISHED state");
     
 	if (tp->pf) {
-        printk("tp->pf");
+        	printk("tp->pf is set");
 		return false;
     }
     
 
-    //printk("tp->pf");
+    printk("tp->pf is not set");
     
 	if (inet_csk(sk)->icsk_ca_state == TCP_CA_Loss) {
 		/* If SACK is disabled, and we got a loss, TCP does not exit
@@ -141,12 +148,12 @@ static bool mptcp_ratio_is_available(struct sock *sk, const struct sk_buff *skb,
 		/* Make sure that we send in-order data */
 		if (skb && tp->mptcp->second_packet &&
 		    tp->mptcp->last_end_data_seq != TCP_SKB_CB(skb)->seq) {
-            printk("tp->mptcp->fully_established");
+            	printk("tp->mptcp->fully_established is false");
 			return false;
         }
 	}
 
-    //printk("tp->mptcp->fully_established");
+    printk("tp->mptcp->fully_established is true");
 
 	if (!cwnd_test)
 		goto zero_wnd_test;
@@ -196,7 +203,6 @@ static struct sock *ratio_get_available_subflow(struct sock *meta_sk,
 	struct sock *sk=NULL, *bestsk = NULL, *backupsk = NULL;
 	struct mptcp_tcp_sock *mptcp;
 	/****/
-	int count = 0;
 
 #ifdef MPTCP_SCHED_PROBE
     struct sock *sk_it;
@@ -239,8 +245,6 @@ static struct sock *ratio_get_available_subflow(struct sock *meta_sk,
 		/*Phuc*/
 		//sk = mptcp_to_sock(mptcp);
 		struct tcp_sock *tp = tcp_sk(mptcp_to_sock(mptcp));
-		count++;
-		printk("%d",count);
 		if (!mptcp_ratio_is_available(mptcp_to_sock(mptcp), skb, zero_wnd_test, true))
 			continue;
 
@@ -598,7 +602,7 @@ retry:
         counter++;
     
         tcp_probe_copy_fl_to_si4(inet, dst.v4, d);
-        if (!mptcp_ratio_is_available(sk_ita skb, false, cwnd_limited)){
+        if (!mptcp_ratio_is_available(sk_it, skb, false, cwnd_limited)){
             printk("flow rejected");
 			continue;
         }
