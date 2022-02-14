@@ -692,6 +692,7 @@ extern struct workqueue_struct *mptcp_wq;
 			pr_err(fmt, ##args);					\
 	} while (0)
 
+/* Iterates over all subflows */
 static inline struct sock *mptcp_to_sock(const struct mptcp_tcp_sock *mptcp)
 {
 	return (struct sock *)mptcp->tp;
@@ -700,17 +701,9 @@ static inline struct sock *mptcp_to_sock(const struct mptcp_tcp_sock *mptcp)
 #define mptcp_for_each_sub(__mpcb, __mptcp)					\
 	hlist_for_each_entry_rcu(__mptcp, &((__mpcb)->conn_list), node)
 
-/* Must be called with the appropriate lock held */
 #define mptcp_for_each_sub_safe(__mpcb, __mptcp, __tmp)				\
 	hlist_for_each_entry_safe(__mptcp, __tmp, &((__mpcb)->conn_list), node)
 
-/*Phuc*/
-
-/*#define mptcp_for_each_sk(mpcb, sk)					\
-//	for ((sk) = (struct sock *)(mpcb)->connection_list;		\
-//	     sk;							\
-//	     sk = (struct sock *)tcp_sk(sk)->mptcp->next)
-*/
 /* Iterates over all bit set to 1 in a bitset */
 #define mptcp_for_each_bit_set(b, i)					\
 	for (i = ffs(b) - 1; i >= 0; i = ffs(b >> (i + 1) << (i + 1)) - 1)
