@@ -58,7 +58,7 @@ static bool mptcp_ratio_is_available(struct sock *sk, const struct sk_buff *skb,
     
     /* shivanga */
     if (blocked_sk && blocked_sk == sk) {
-	printk("sk is blocked");
+	//printk("sk is blocked");
 	return false;
     }
 	
@@ -67,7 +67,7 @@ static bool mptcp_ratio_is_available(struct sock *sk, const struct sk_buff *skb,
 
     /* swetankk */
     if (subflow_is_backup(tp)) {
-	    printk("subflow is backup");
+	    //printk("subflow is backup");
 	    return false;
     }    /* swetankk: end*/
 
@@ -101,27 +101,27 @@ static bool mptcp_ratio_is_available(struct sock *sk, const struct sk_buff *skb,
     
 	/* Set of states for which we are allowed to send data */
 	if (!mptcp_sk_can_send(sk)) {
-        printk("mptcp_sk cannot send");
+        //printk("mptcp_sk cannot send");
 		return false;
 	}
-    	printk("mptcp_sk can send");
+    	//printk("mptcp_sk can send");
 
 	/* We do not send data on this subflow unless it is
 	 * fully established, i.e. the 4th ack has been received.
 	 */
 	if (tp->mptcp->pre_established) {
-        	printk("tp is in PRE_ESTABLISHED state");
+        	//printk("tp is in PRE_ESTABLISHED state");
 		return false;
     	}
-    	printk("tp is not in PRE_ESTABLISHED state");
+    	//printk("tp is not in PRE_ESTABLISHED state");
     
 	if (tp->pf) {
-        	printk("tp->pf is set");
+        	//printk("tp->pf is set");
 		return false;
     }
     
 
-    printk("tp->pf is not set");
+    //printk("tp->pf is not set");
     
 	if (inet_csk(sk)->icsk_ca_state == TCP_CA_Loss) {
 		/* If SACK is disabled, and we got a loss, TCP does not exit
@@ -153,7 +153,7 @@ static bool mptcp_ratio_is_available(struct sock *sk, const struct sk_buff *skb,
         }
 	}
 
-    printk("tp->mptcp->fully_established is true");
+    //printk("tp->mptcp->fully_established is true");
 
 	if (!cwnd_test)
 		goto zero_wnd_test;
@@ -1222,6 +1222,9 @@ nosearch:
             }
 
             // Trigger?
+	    printk("in_search:%d",in_search);
+	    printk("last_rate: %d", last_rate);
+	    printk("sysctl_mptcp_ratio_static%d",sysctl_mptcp_ratio_static);
             if (!in_search && last_rate && !sysctl_mptcp_ratio_static) {
                 //diff_last = (int)last_rate - (int)meta_tp->rate_delivered;
                
@@ -1275,6 +1278,7 @@ nosearch:
                 }*/
 
 		if (!meta_tp->init_search) {
+                    printk("Search initiated\n");
 		    meta_tp->init_search = true;
 		    goto search_start;
 		}
@@ -1293,7 +1297,7 @@ nosearch:
                         goto nosearch;
                     }
 search_start:
-                    printk("Search triggered\n");
+                    printk("Search started\n");
                     in_search = true;
                     threshold_cnt = 0;
                     buffer_threshold_cnt = 0;
@@ -1310,6 +1314,9 @@ search_start:
                         meta_tp->ratio_search_step = -1*abs(meta_tp->ratio_search_step);
                         meta_tp->num_segments_flow_one += meta_tp->ratio_search_step;
                     }
+		    /**Phuc:quickly observe ratio**/
+		    printk("ratio: %d", meta_tp->num_segments_flow_one); 
+		    /******************************/
                     last_rate = 0;
                     for (iter = 0; iter < 3; iter++)
                         last_rate += meta_tp->last_rate_search_start[iter];
