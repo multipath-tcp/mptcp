@@ -1452,6 +1452,9 @@ static int do_rename(struct inode *old_dir, struct dentry *old_dentry,
 			if (unlink)
 				drop_nlink(old_dir);
 		}
+
+		/* Add the old_dentry size to the old_dir size. */
+		old_sz -= CALC_DENT_SIZE(fname_len(&old_nm));
 	}
 
 	old_dir->i_size -= old_sz;
