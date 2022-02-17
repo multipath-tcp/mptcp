@@ -472,6 +472,10 @@ int migrate_page_move_mapping(struct address_space *mapping,
 
 	pslot = radix_tree_lookup_slot(&mapping->i_pages,
  					page_index(page));
+	if (pslot == NULL) {
+		xa_unlock_irq(&mapping->i_pages);
+		return -EAGAIN;
+	}
 
 	expected_count += hpage_nr_pages(page) + page_has_private(page);
 	if (page_count(page) != expected_count ||
@@ -590,6 +594,10 @@ int migrate_huge_page_move_mapping(struct address_space *mapping,
 	xa_lock_irq(&mapping->i_pages);
 
 	pslot = radix_tree_lookup_slot(&mapping->i_pages, page_index(page));
+	if (pslot == NULL) {
+		xa_unlock_irq(&mapping->i_pages);
+		return -EAGAIN;
+	}
 
 	expected_count = 2 + page_has_private(page);
 	if (page_count(page) != expected_count ||
