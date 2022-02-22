@@ -249,7 +249,9 @@ discard:
 	return 0;
 
 reset_and_discard:
-	tcp_v4_send_reset(rsk, skb);
+	/* skb_dst will be NULL if we come from mptcp_backlog_rcv */
+	if (rsk || skb_dst(skb))
+		tcp_v4_send_reset(rsk, skb);
 	goto discard;
 }
 
