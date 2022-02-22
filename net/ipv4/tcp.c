@@ -2335,6 +2335,7 @@ int tcp_disconnect(struct sock *sk, int flags)
 	if (is_meta_sk(sk)) {
 		mptcp_disconnect(sk);
 	} else {
+		tp->request_mptcp = 0;
 		if (tp->inside_tk_table)
 			mptcp_hash_remove_bh(tp);
 	}
