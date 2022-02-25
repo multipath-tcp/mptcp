@@ -1,0 +1,188 @@
+  DESCEND  objtool
+  CALL    scripts/checksyscalls.sh
+  CHK     include/generated/compile.h
+  CC      net/mptcp/mptcp_ratio.o
+  CC [M]  net/mptcp/mptcp_sched_probe.o
+net/mptcp/mptcp_ratio.c: In function ‘mptcp_ratio_next_segment’:
+net/mptcp/mptcp_ratio.c:817:12: error: ‘struct tcp_sock’ has no member named ‘rate_est_val’
+  817 |       tp_it->rate_est_val += subflow_rate64;
+      |            ^~
+net/mptcp/mptcp_ratio.c:818:12: error: ‘struct tcp_sock’ has no member named ‘rate_est_cnt’
+  818 |       tp_it->rate_est_cnt++;
+      |            ^~
+net/mptcp/mptcp_ratio.c:858:9: error: implicit declaration of function ‘mptcp_for_each_sk’; did you mean ‘mptcp_for_each_sub’? [-Werror=implicit-function-declaration]
+  858 |         mptcp_for_each_sk(mpcb, sk_it) {
+      |         ^~~~~~~~~~~~~~~~~
+      |         mptcp_for_each_sub
+net/mptcp/mptcp_ratio.c:858:33: error: ‘sk_it’ undeclared (first use in this function)
+  858 |         mptcp_for_each_sk(mpcb, sk_it) {
+      |                                 ^~~~~
+net/mptcp/mptcp_ratio.c:858:33: note: each undeclared identifier is reported only once for each function it appears in
+net/mptcp/mptcp_ratio.c:858:39: error: expected ‘;’ before ‘{’ token
+  858 |         mptcp_for_each_sk(mpcb, sk_it) {
+      |                                       ^~
+      |                                       ;
+net/mptcp/mptcp_ratio.c:908:43: error: expected ‘;’ before ‘{’ token
+  908 |             mptcp_for_each_sk(mpcb, sk_it) {
+      |                                           ^~
+      |                                           ;
+net/mptcp/mptcp_ratio.c:949:13: error: expected ‘}’ before ‘else’
+  949 |             else
+      |             ^~~~
+net/mptcp/mptcp_ratio.c:1022:28: error: ‘struct tcp_sock’ has no member named ‘buffer_trigger_threshold’
+ 1022 |                     meta_tp->buffer_trigger_threshold = 0;
+      |                            ^~
+net/mptcp/mptcp_ratio.c:1023:51: error: expected ‘;’ before ‘{’ token
+ 1023 |                     mptcp_for_each_sk(mpcb, sk_it) {
+      |                                                   ^~
+      |                                                   ;
+net/mptcp/mptcp_ratio.c:1035:51: error: expected ‘;’ before ‘{’ token
+ 1035 |                     mptcp_for_each_sk(mpcb, sk_it) {
+      |                                                   ^~
+      |                                                   ;
+net/mptcp/mptcp_ratio.c:1244:47: error: expected ‘;’ before ‘{’ token
+ 1244 |                 mptcp_for_each_sk(mpcb, sk_it) {
+      |                                               ^~
+      |                                               ;
+net/mptcp/mptcp_ratio.c:1258:49: error: ‘struct tcp_sock’ has no member named ‘buffer_trigger_threshold’
+ 1258 |                 } else if (buffer_diff < meta_tp->buffer_trigger_threshold) {
+      |                                                 ^~
+net/mptcp/mptcp_ratio.c:1294:51: error: expected ‘;’ before ‘{’ token
+ 1294 |                     mptcp_for_each_sk(mpcb, sk_it) {
+      |                                                   ^~
+      |                                                   ;
+net/mptcp/mptcp_ratio.c:1328:45: error: ‘struct tcp_sock’ has no member named ‘last_rate_search_start’
+ 1328 |                         last_rate += meta_tp->last_rate_search_start[iter];
+      |                                             ^~
+net/mptcp/mptcp_ratio.c:1505:36: error: expected ‘;’ before ‘{’ token
+ 1505 |      mptcp_for_each_sk(mpcb, sk_it) {
+      |                                    ^~
+      |                                    ;
+net/mptcp/mptcp_ratio.c:1515:39: error: expected ‘;’ before ‘{’ token
+ 1515 |         mptcp_for_each_sk(mpcb, sk_it) {
+      |                                       ^~
+      |                                       ;
+net/mptcp/mptcp_ratio.c:1331:1: warning: label ‘nosearch’ defined but not used [-Wunused-label]
+ 1331 | nosearch:
+      | ^~~~~~~~
+net/mptcp/mptcp_ratio.c:1289:7: error: label ‘search_start’ used but not defined
+ 1289 |       goto search_start;
+      |       ^~~~
+net/mptcp/mptcp_ratio.c:382:9: warning: unused variable ‘completion_times’ [-Wunused-variable]
+  382 |     int completion_times[2] = {0, 0};
+      |         ^~~~~~~~~~~~~~~~
+net/mptcp/mptcp_ratio.c:379:19: warning: unused variable ‘diff_last’ [-Wunused-variable]
+  379 |     int diff_ref, diff_last, threshold_cnt;
+      |                   ^~~~~~~~~
+net/mptcp/mptcp_ratio.c:379:9: warning: unused variable ‘diff_ref’ [-Wunused-variable]
+  379 |     int diff_ref, diff_last, threshold_cnt;
+      |         ^~~~~~~~
+net/mptcp/mptcp_ratio.c:376:24: warning: unused variable ‘rate_search_100’ [-Wunused-variable]
+  376 |     u32 rate_search_0, rate_search_100, buffer_total, init_buffer_total, trigger_threshold;
+      |                        ^~~~~~~~~~~~~~~
+net/mptcp/mptcp_ratio.c:376:9: warning: unused variable ‘rate_search_0’ [-Wunused-variable]
+  376 |     u32 rate_search_0, rate_search_100, buffer_total, init_buffer_total, trigger_threshold;
+      |         ^~~~~~~~~~~~~
+net/mptcp/mptcp_ratio.c:375:140: warning: unused variable ‘curr_diff’ [-Wunused-variable]
+  375 |     u32 total_rate, rate_ad, rate_ac, ref_rate, last_rate, best_rate, best_ratio, in_search, last_trigger_tstamp, thresh_cnt_reset, qSize, curr_diff, count_set_init_rate, init_rate;
+      |                                                                                                                                            ^~~~~~~~~
+net/mptcp/mptcp_ratio.c:375:133: warning: unused variable ‘qSize’ [-Wunused-variable]
+  375 |     u32 total_rate, rate_ad, rate_ac, ref_rate, last_rate, best_rate, best_ratio, in_search, last_trigger_tstamp, thresh_cnt_reset, qSize, curr_diff, count_set_init_rate, init_rate;
+      |                                                                                                                                     ^~~~~
+net/mptcp/mptcp_ratio.c:375:115: warning: unused variable ‘thresh_cnt_reset’ [-Wunused-variable]
+  375 |     u32 total_rate, rate_ad, rate_ac, ref_rate, last_rate, best_rate, best_ratio, in_search, last_trigger_tstamp, thresh_cnt_reset, qSize, curr_diff, count_set_init_rate, init_rate;
+      |                                                                                                                   ^~~~~~~~~~~~~~~~
+net/mptcp/mptcp_ratio.c:375:71: warning: unused variable ‘best_ratio’ [-Wunused-variable]
+  375 |     u32 total_rate, rate_ad, rate_ac, ref_rate, last_rate, best_rate, best_ratio, in_search, last_trigger_tstamp, thresh_cnt_reset, qSize, curr_diff, count_set_init_rate, init_rate;
+      |                                                                       ^~~~~~~~~~
+net/mptcp/mptcp_ratio.c:375:60: warning: unused variable ‘best_rate’ [-Wunused-variable]
+  375 |     u32 total_rate, rate_ad, rate_ac, ref_rate, last_rate, best_rate, best_ratio, in_search, last_trigger_tstamp, thresh_cnt_reset, qSize, curr_diff, count_set_init_rate, init_rate;
+      |                                                            ^~~~~~~~~
+net/mptcp/mptcp_ratio.c:375:39: warning: unused variable ‘ref_rate’ [-Wunused-variable]
+  375 |     u32 total_rate, rate_ad, rate_ac, ref_rate, last_rate, best_rate, best_ratio, in_search, last_trigger_tstamp, thresh_cnt_reset, qSize, curr_diff, count_set_init_rate, init_rate;
+      |                                       ^~~~~~~~
+net/mptcp/mptcp_ratio.c:373:11: warning: unused variable ‘ip_5’ [-Wunused-variable]
+  373 |     char *ip_5 = "192.168.2.10";
+      |           ^~~~
+net/mptcp/mptcp_ratio.c:372:11: warning: unused variable ‘ip_60’ [-Wunused-variable]
+  372 |     char *ip_60 = "192.168.2.11";
+      |           ^~~~~
+net/mptcp/mptcp_ratio.c:370:54: warning: unused variable ‘i’ [-Wunused-variable]
+  370 |  unsigned char iter = 0, full_subs = 0, counter = 0, i = 0;
+      |                                                      ^
+net/mptcp/mptcp_ratio.c: At top level:
+net/mptcp/mptcp_ratio.c:1529:5: warning: data definition has no type or storage class
+ 1529 |     iter = 0;
+      |     ^~~~
+net/mptcp/mptcp_ratio.c:1529:5: error: type defaults to ‘int’ in declaration of ‘iter’ [-Werror=implicit-int]
+net/mptcp/mptcp_ratio.c:1530:5: error: return type defaults to ‘int’ [-Werror=return-type]
+ 1530 |     mptcp_for_each_sk(mpcb, sk_it) {
+      |     ^~~~~~~~~~~~~~~~~
+net/mptcp/mptcp_ratio.c:1530:5: error: function declaration isn’t a prototype [-Werror=strict-prototypes]
+net/mptcp/mptcp_ratio.c: In function ‘mptcp_for_each_sk’:
+net/mptcp/mptcp_ratio.c:1531:33: error: ‘sprobe’ undeclared (first use in this function); did you mean ‘uprobe’?
+ 1531 |         mptcp_sched_probe_init(&sprobe);
+      |                                 ^~~~~~
+      |                                 uprobe
+net/mptcp/mptcp_ratio.c:1534:46: error: ‘skb’ undeclared (first use in this function)
+ 1534 |         if (!mptcp_ratio_is_available(sk_it, skb, false, cwnd_limited)) sprobe.temp_unavailable = true;
+      |                                              ^~~
+net/mptcp/mptcp_ratio.c:1534:39: warning: passing argument 1 of ‘mptcp_ratio_is_available’ makes pointer from integer without a cast [-Wint-conversion]
+ 1534 |         if (!mptcp_ratio_is_available(sk_it, skb, false, cwnd_limited)) sprobe.temp_unavailable = true;
+      |                                       ^~~~~
+      |                                       |
+      |                                       int
+net/mptcp/mptcp_ratio.c:53:51: note: expected ‘struct sock *’ but argument is of type ‘int’
+   53 | static bool mptcp_ratio_is_available(struct sock *sk, const struct sk_buff *skb,
+      |                                      ~~~~~~~~~~~~~^~
+net/mptcp/mptcp_ratio.c:1536:13: error: ‘choose_sk’ undeclared (first use in this function)
+ 1536 |         if (choose_sk == sk_it) {
+      |             ^~~~~~~~~
+net/mptcp/mptcp_ratio.c:1537:55: error: ‘sched_probe_id’ undeclared (first use in this function)
+ 1537 |             mptcp_sched_probe_log_hook(&sprobe, true, sched_probe_id, sk_it);
+      |                                                       ^~~~~~~~~~~~~~
+net/mptcp/mptcp_ratio.c:1537:71: warning: passing argument 4 of ‘mptcp_sched_probe_log_hook’ makes pointer from integer without a cast [-Wint-conversion]
+ 1537 |             mptcp_sched_probe_log_hook(&sprobe, true, sched_probe_id, sk_it);
+      |                                                                       ^~~~~
+      |                                                                       |
+      |                                                                       int
+In file included from net/mptcp/mptcp_ratio.c:4:
+./include/net/mptcp.h:979:34: note: expected ‘struct sock *’ but argument is of type ‘int’
+  979 | extern struct mptcp_sched_probe* mptcp_sched_probe_log_hook(struct mptcp_sched_probe* sprobe, bool selected, unsigned long sched_probe_id, struct sock *sk);
+      |                                  ^~~~~~~~~~~~~~~~~~~~~~~~~~
+net/mptcp/mptcp_ratio.c:1539:73: warning: passing argument 4 of ‘mptcp_sched_probe_log_hook’ makes pointer from integer without a cast [-Wint-conversion]
+ 1539 |         else mptcp_sched_probe_log_hook(&sprobe, false, sched_probe_id, sk_it);
+      |                                                                         ^~~~~
+      |                                                                         |
+      |                                                                         int
+In file included from net/mptcp/mptcp_ratio.c:4:
+./include/net/mptcp.h:979:34: note: expected ‘struct sock *’ but argument is of type ‘int’
+  979 | extern struct mptcp_sched_probe* mptcp_sched_probe_log_hook(struct mptcp_sched_probe* sprobe, bool selected, unsigned long sched_probe_id, struct sock *sk);
+      |                                  ^~~~~~~~~~~~~~~~~~~~~~~~~~
+net/mptcp/mptcp_ratio.c: At top level:
+net/mptcp/mptcp_ratio.c:1542:2: error: expected identifier or ‘(’ before ‘return’
+ 1542 |  return NULL;
+      |  ^~~~~~
+net/mptcp/mptcp_ratio.c:1543:1: error: expected identifier or ‘(’ before ‘}’ token
+ 1543 | }
+      | ^
+net/mptcp/mptcp_ratio.c: In function ‘mptcp_for_each_sk’:
+net/mptcp/mptcp_ratio.c:1540:5: error: control reaches end of non-void function [-Werror=return-type]
+ 1540 |     }
+      |     ^
+net/mptcp/mptcp_ratio.c: In function ‘mptcp_ratio_next_segment’:
+net/mptcp/mptcp_ratio.c:1527:2: error: control reaches end of non-void function [-Werror=return-type]
+ 1527 |  }
+      |  ^
+cc1: some warnings being treated as errors
+make[2]: *** [scripts/Makefile.build:304: net/mptcp/mptcp_ratio.o] Error 1
+make[2]: *** Waiting for unfinished jobs....
+net/mptcp/mptcp_sched_probe.c: In function ‘log_tcp_params’:
+net/mptcp/mptcp_sched_probe.c:179:51: error: ‘const struct tcp_rack’ has no member named ‘reord’
+  179 |                         p->rack_reord = (tp->rack).reord;
+      |                                                   ^
+make[2]: *** [scripts/Makefile.build:310: net/mptcp/mptcp_sched_probe.o] Error 1
+make[1]: *** [scripts/Makefile.build:544: net/mptcp] Error 2
+make[1]: *** Waiting for unfinished jobs....
+make: *** [Makefile:1070: net] Error 2
+make: *** Waiting for unfinished jobs....

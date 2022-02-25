@@ -282,6 +282,9 @@ struct tcp_sock {
 		u32 end_seq; /* Ending TCP sequence of the skb */
 		u32 last_delivered; /* tp->delivered at last reo_wnd adj */
 		u8 reo_wnd_steps;   /* Allowed reordering window */
+		/*Phuc*/
+		u8 reord;    /* reordering detected */
+		/****/
 #define TCP_RACK_RECOVERY_THRESH 16
 		u8 reo_wnd_persist:5, /* No. of recovery since last adj */
 		   dsack_seen:1, /* Whether DSACK seen after last adj */
@@ -510,9 +513,13 @@ struct tcp_sock {
     u32 last_ratio;
     u64 prev_tx_bytes;
     u64 prev_tstamp;
+    u32 rate_est_val;
+    u32 rate_est_cnt;
+    u32 last_rate_search_start[3]; /* 3 because that's the search trigger threshold */
     u32 init_buffer_size[2];
     u32 last_buffer_size[2];
     u8 buffer_threshold_cnt;
+    s32 buffer_trigger_threshold;
     ratio_search_state search_state;
     //u8 buf_size_acc;
     struct sock *prev_sk;

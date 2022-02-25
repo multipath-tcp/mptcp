@@ -351,6 +351,11 @@ struct mptcp_cb {
 	u32 orig_window_clamp;
 
 	struct tcp_info	*master_info;
+
+	/* swetank */
+	u32 cnt_in_order;
+	u32 cnt_out_of_order;
+	/* end:swetankk */
 };
 
 #define MPTCP_VERSION_0 0
@@ -466,6 +471,18 @@ extern bool mptcp_init_failed;
 /* MPTCP flags: TX only */
 #define MPTCPHDR_INF		0x08
 #define MPTCP_REINJECT		0x10 /* Did we reinject this segment? */
+
+/* swetankk */
+#define MPTCP_SCHED_PROBE
+#ifdef CONFIG_MPTCP_QUEUE_PROBE
+    #define MPTCP_QUEUE_PROBE
+#endif
+
+#ifdef MPTCP_QUEUE_PROBE
+	#define MPTCP_RCV_QUEUE 0x00
+	#define MPTCP_OFO_QUEUE 0x01
+#endif
+/* end: swetankk */
 
 struct mptcp_option {
 	__u8	kind;
@@ -654,6 +671,35 @@ struct mp_prio {
 #endif
 	__u8	addr_id;
 } __attribute__((__packed__));
+
+/* swetankk */
+#ifdef MPTCP_SCHED_PROBE
+struct mptcp_sched_probe {
+    unsigned long id;
+    struct sock *sk;
+    bool selector_reject;
+    bool found_unused_reject;
+    bool def_unavailable;
+    bool temp_unavailable;
+	bool srtt_reject;
+    bool selected;
+    int split;
+    int skblen;
+    u32 tx_bytes;
+    u32 trans_start;
+};
+#endif
+#ifdef MPTCP_QUEUE_PROBE
+struct mptcp_queue_probe {
+	u8 q_id;
+	struct tcp_sock *meta_tp;
+	u32 skb_seq;
+	u32 skb_end_seq;
+	u8 op_id;
+	u32 q_size;
+};
+#endif
+/* end:swetankk */
 
 static inline int mptcp_sub_len_dss(const struct mp_dss *m, const int csum)
 {
@@ -927,6 +973,15 @@ bool subflow_is_backup(const struct tcp_sock *tp);
 struct sock *get_available_subflow(struct sock *meta_sk, struct sk_buff *skb,
 				   bool zero_wnd_test);
 extern struct mptcp_sched_ops mptcp_sched_default;
+/* swetankk */
+#ifdef MPTCP_SCHED_PROBE
+extern void mptcp_sched_probe_init(struct mptcp_sched_probe *sprobe);
+extern struct mptcp_sched_probe* mptcp_sched_probe_log_hook(struct mptcp_sched_probe* sprobe, bool selected, unsigned long sched_probe_id, struct sock *sk);
+#endif
+#ifdef MPTCP_QUEUE_PROBE
+extern struct mptcp_queue_probe* mptcp_queue_probe_log_hook(u8 q_id, struct tcp_sock *meta_tp, struct sk_buff *skb, u8 op_id);
+#endif
+/* end: swetankk */
 
 /* Initializes function-pointers and MPTCP-flags */
 static inline void mptcp_init_tcp_sock(struct sock *sk)

@@ -1,40 +1,5 @@
   DESCEND  objtool
   CALL    scripts/checksyscalls.sh
   CHK     include/generated/compile.h
-  CC      net/mptcp/mptcp_rtt.o
-net/mptcp/mptcp_rtt.c: In function ‘rtt_get_subflow_from_selectors’:
-net/mptcp/mptcp_rtt.c:194:32: error: ‘sk’ undeclared (first use in this function); did you mean ‘skb’?
-  194 |   if (mptcp_is_def_unavailable(sk)) {
-      |                                ^~
-      |                                skb
-net/mptcp/mptcp_rtt.c:194:32: note: each undeclared identifier is reported only once for each function it appears in
-net/mptcp/mptcp_rtt.c: In function ‘rtt_get_available_subflow’:
-net/mptcp/mptcp_rtt.c:302:3: error: implicit declaration of function ‘mptcp_for_each_sk’; did you mean ‘mptcp_for_each_sub’? [-Werror=implicit-function-declaration]
-  302 |   mptcp_for_each_sk(mpcb, sk) {
-      |   ^~~~~~~~~~~~~~~~~
-      |   mptcp_for_each_sub
-net/mptcp/mptcp_rtt.c:302:30: error: expected ‘;’ before ‘{’ token
-  302 |   mptcp_for_each_sk(mpcb, sk) {
-      |                              ^~
-      |                              ;
-net/mptcp/mptcp_rtt.c: In function ‘mptcp_rcv_buf_optimization’:
-net/mptcp/mptcp_rtt.c:387:2: error: implicit declaration of function ‘mptcp_for_each_tp’; did you mean ‘mptcp_for_each_sub’? [-Werror=implicit-function-declaration]
-  387 |  mptcp_for_each_tp(tp->mpcb, tp_it) {
-      |  ^~~~~~~~~~~~~~~~~
-      |  mptcp_for_each_sub
-net/mptcp/mptcp_rtt.c:387:36: error: expected ‘;’ before ‘{’ token
-  387 |  mptcp_for_each_tp(tp->mpcb, tp_it) {
-      |                                    ^~
-      |                                    ;
-net/mptcp/mptcp_rtt.c:384:6: error: label ‘retrans’ used but not defined
-  384 |      goto retrans;
-      |      ^~~~
-net/mptcp/mptcp_rtt.c:434:1: error: control reaches end of non-void function [-Werror=return-type]
-  434 | }
-      | ^
-cc1: some warnings being treated as errors
-make[2]: *** [scripts/Makefile.build:304: net/mptcp/mptcp_rtt.o] Error 1
-make[1]: *** [scripts/Makefile.build:544: net/mptcp] Error 2
-make[1]: *** Waiting for unfinished jobs....
-make: *** [Makefile:1070: net] Error 2
-make: *** Waiting for unfinished jobs....
+  CC      net/mptcp/mptcp_ratio.o
+  CC [M]  net/mptcp/mptcp_sched_probe.o
