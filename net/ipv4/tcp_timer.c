@@ -712,7 +712,7 @@ static void tcp_keepalive_timer (struct timer_list *t)
 
 	tcp_mstamp_refresh(tp);
 
-	if (tp->send_mp_fclose) {
+	if (tp->send_mp_fclose && sk->sk_state == TCP_RST_WAIT) {
 		if (icsk->icsk_retransmits >= MPTCP_FASTCLOSE_RETRIES) {
 			tcp_write_err(sk);
 			goto out;
