@@ -2096,6 +2096,7 @@ static const unsigned char new_state[16] = {
   [TCP_LISTEN]		= TCP_CLOSE,
   [TCP_CLOSING]		= TCP_CLOSING,
   [TCP_NEW_SYN_RECV]	= TCP_CLOSE,	/* should not happen ! */
+  [TCP_RST_WAIT]	= TCP_CLOSE,
 };
 
 int tcp_close_state(struct sock *sk)
