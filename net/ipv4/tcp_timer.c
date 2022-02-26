@@ -621,7 +621,7 @@ static void tcp_keepalive_timer (unsigned long data)
 		goto out;
 	}
 
-	if (tp->send_mp_fclose) {
+	if (tp->send_mp_fclose && sk->sk_state == TCP_RST_WAIT) {
 		/* MUST do this before tcp_write_timeout, because retrans_stamp
 		 * may have been set to 0 in another part while we are
 		 * retransmitting MP_FASTCLOSE. Then, we would crash, because
