@@ -581,13 +581,13 @@ mptcp_for_each_sk(mpcb, sk_it) {
 if (!skb)
 	return NULL;
 
-	if (*reinject) {
-		*subsk = ratio_get_available_subflow(meta_sk, skb, false);
-		if (!*subsk)
-			return NULL;
+if (*reinject) {
+	*subsk = ratio_get_available_subflow(meta_sk, skb, false);
+	if (!*subsk)
+		return NULL;
 
-		return skb;
-	}
+	return skb;
+}
 
 
 retry:
@@ -1108,7 +1108,7 @@ last_rate = 0;
 
 goto reset;
 }*/
-if (sysctl_mptcp_ratio_trigger_search) {
+if (sysctl_mptcp_ratio_trigger_search) {//Manual trigger
 	sysctl_mptcp_ratio_trigger_search = 0;
 	goto search_start;
 }
@@ -1232,8 +1232,8 @@ if (!meta_tp->rate_delivered && !last_rate) {
 }
 
 // Trigger search or not
-printk("in_search:%d",in_search);
-printk("last_rate: %d", last_rate);
+//printk("in_search:%d",in_search);
+//printk("last_rate: %d", last_rate);
 //printk("sysctl_mptcp_ratio_static %d",sysctl_mptcp_ratio_static);
 if (!in_search && last_rate && !sysctl_mptcp_ratio_static) {
 	//diff_last = (int)last_rate - (int)meta_tp->rate_delivered;
@@ -1255,11 +1255,11 @@ if (!in_search && last_rate && !sysctl_mptcp_ratio_static) {
 	buffer_diff = (int)buffer_total - (int)init_buffer_total;
 	//printk("Curr_diff: %d, Buffer_diff: %d, Rate Trigger Threshold: %u", rate_diff, buffer_diff, trigger_threshold);
 	//if (abs(rate_diff) > sysctl_mptcp_trigger_threshold) {
-	if (abs(rate_diff) > trigger_threshold) {
-		buffer_threshold_cnt = 0;
-		//printk("Cur rate - init_rate: %d - %f", meta_tp->rate_delivered, init_rate);
-		threshold_cnt++;
-		//} else if (buffer_diff < -75000) {
+if (abs(rate_diff) > trigger_threshold) {
+	buffer_threshold_cnt = 0;
+	//printk("Cur rate - init_rate: %d - %f", meta_tp->rate_delivered, init_rate);
+	threshold_cnt++;
+	//} else if (buffer_diff < -75000) {
 } else if (buffer_diff < meta_tp->buffer_trigger_threshold) {
 	threshold_cnt = 0;
 	buffer_threshold_cnt++;
@@ -1289,8 +1289,7 @@ if (!in_search && last_rate && !sysctl_mptcp_ratio_static) {
   }*/
 
 if (!meta_tp->init_search) {
-	//Initialize ratio seach, this only set one
-	printk("Search initiated\n");
+	printk("INITIAL SEARCH\n");
 	meta_tp->init_search = true;
 	goto search_start;
 }
@@ -1310,19 +1309,29 @@ if (buffer_threshold_cnt == 5 || threshold_cnt == 3) {
 		goto nosearch;
 	}
 search_start:
-	printk("Search started\n");
+	printk("SEARCH START:\n");
+	if(buffer_threshold_cnt==5)
+	{
+		printk("DECREASED SEND QUEUE\n");
+	}
+	else if(threshold_cnt==3)
+	{
+		printk("DECREASED THROUGHPUT\n");
+	}
+	else 
+	{
+		printk("INITIAL or PERIODIC SEARCH\n");
+	}
 	in_search = true;
 	threshold_cnt = 0;
 	buffer_threshold_cnt = 0;
 	meta_tp->ratio_rate_sample = 200;
 	last_trigger_tstamp = jiffies;
 	if (meta_tp->num_segments_flow_one < (100 - abs(meta_tp->ratio_search_step))) {
-		//Set ratio = ratio+5
 		meta_tp->search_state = RIGHT_RATIO_SET;
 		meta_tp->num_segments_flow_one += meta_tp->ratio_search_step;
 	}
 	else {
-		//Set ratio = ratio+-5
 		meta_tp->search_state = SEARCH_RATE;
 		meta_tp->ratio_search_step = -1*abs(meta_tp->ratio_search_step);
 		meta_tp->num_segments_flow_one += meta_tp->ratio_search_step;
@@ -1333,7 +1342,7 @@ search_start:
 	do_div(last_rate, 3);
 	goto reset;
 nosearch:
-	printk("Search skipped\n");
+	printk("NO SEARCH\n");
 	last_rate = 0;
 	threshold_cnt = 0;
 	buffer_threshold_cnt = 0;
@@ -1358,7 +1367,6 @@ if (in_search) {
 		case RIGHT_RATIO_SET:
 			printk("RIGHT_RATIO_SET");
 			if (meta_tp->rate_delivered > last_rate + 5) {
-				//printk("Next ratio?: %d", meta_tp->num_segments_flow_one + meta_tp->ratio_search_step);
 				if (meta_tp->num_segments_flow_one + meta_tp->ratio_search_step < 100) {
 					meta_tp->num_segments_flow_one += meta_tp->ratio_search_step;
 					meta_tp->search_state = SEARCH_RATE;
@@ -1404,7 +1412,7 @@ if (in_search) {
 		case SEARCH_RATE:
 			printk("SEARCH_RATE");
 			if (meta_tp->rate_delivered < last_rate) {
-				printk("meta_tp->rate_delivered < last_rate"); 
+				//printk("meta_tp->rate_delivered < last_rate"); 
 				meta_tp->num_segments_flow_one -= meta_tp->ratio_search_step;
 				meta_tp->ratio_search_step = abs(meta_tp->ratio_search_step);
 				if (meta_tp->num_segments_flow_one + meta_tp->ratio_search_step/2 < 100) {
@@ -1416,7 +1424,7 @@ if (in_search) {
 				}
 				goto reset;
 			} else {
-				printk("meta_tp->rate_delivered > last_rate");
+				//printk("meta_tp->rate_delivered > last_rate");
 				if (meta_tp->num_segments_flow_one + meta_tp->ratio_search_step < 100 && meta_tp->num_segments_flow_one + meta_tp->ratio_search_step > 0)
 					meta_tp->num_segments_flow_one += meta_tp->ratio_search_step;
 				else {
