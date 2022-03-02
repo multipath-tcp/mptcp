@@ -2155,6 +2155,7 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 			 * already been dropped in __mptcp_check_req_master().
 			 */
 			sock_put(child);
+			reqsk_put(req);
 			return -1;
 		}
 	}
