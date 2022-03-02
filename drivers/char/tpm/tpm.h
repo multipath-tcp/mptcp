@@ -593,4 +593,6 @@ int tpm2_prepare_space(struct tpm_chip *chip, struct tpm_space *space, u32 cc,
 		       u8 *cmd);
 int tpm2_commit_space(struct tpm_chip *chip, struct tpm_space *space,
 		      u32 cc, u8 *buf, size_t *bufsiz);
+int tpm_devs_add(struct tpm_chip *chip);
+void tpm_devs_remove(struct tpm_chip *chip);
 #endif
