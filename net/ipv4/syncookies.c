@@ -224,10 +224,8 @@ struct sock *tcp_get_cookie_sock(struct sock *sk, struct sk_buff *skb,
 		goto listen_overflow;
 
 	ret = mptcp_check_req_master(sk, child, req, skb, 0, tsoff);
-	if (ret < 0) {
-		__reqsk_free(req);
+	if (ret < 0)
 		return NULL;
-	}
 
 	if (!ret)
 		return tcp_sk(child)->mpcb->master_sk;
