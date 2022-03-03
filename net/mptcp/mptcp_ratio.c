@@ -1325,7 +1325,8 @@ search_start:
 	in_search = true;
 	threshold_cnt = 0;
 	buffer_threshold_cnt = 0;
-	meta_tp->ratio_rate_sample = 200;
+	//meta_tp->ratio_rate_sample = 200;
+	meta_tp->ratio_rate_sample = meta_tp->ratio_rate_sample*2;
 	last_trigger_tstamp = jiffies;
 	if (meta_tp->num_segments_flow_one < (100 - abs(meta_tp->ratio_search_step))) {
 		meta_tp->search_state = RIGHT_RATIO_SET;
@@ -1373,7 +1374,8 @@ if (in_search) {
 				} else {
 					last_rate = 0;
 					in_search = false;
-					meta_tp->ratio_rate_sample = 100;
+					//meta_tp->ratio_rate_sample = 100;
+					meta_tp->ratio_rate_sample = sysctl_mptcp_rate_sample;
 					goto reset;
 				}
 			} else if (meta_tp->num_segments_flow_one - 2*meta_tp->ratio_search_step > 0) {
@@ -1383,7 +1385,8 @@ if (in_search) {
 			} else {
 				meta_tp->num_segments_flow_one -= meta_tp->ratio_search_step;
 				last_rate = 0;
-				meta_tp->ratio_rate_sample = 100;
+				//meta_tp->ratio_rate_sample = 100;
+				meta_tp->ratio_rate_sample = sysctl_mptcp_rate_sample;
 				in_search = false;
 				goto reset;
 			}
@@ -1398,13 +1401,15 @@ if (in_search) {
 				} else {
 					last_rate = 0;
 					in_search = false;
-					meta_tp->ratio_rate_sample = 100;
+					//meta_tp->ratio_rate_sample = 100;
+					meta_tp->ratio_rate_sample = sysctl_mptcp_rate_sample;
 					goto reset;
 				}
 			} else {
 				meta_tp->num_segments_flow_one += meta_tp->ratio_search_step;
 				last_rate = 0;
-				meta_tp->ratio_rate_sample = 100;
+				//meta_tp->ratio_rate_sample = 100;
+				meta_tp->ratio_rate_sample = sysctl_mptcp_rate_sample;
 				in_search = false;
 				goto reset;
 			}
@@ -1430,7 +1435,8 @@ if (in_search) {
 				else {
 					last_rate = 0;
 					in_search = false;
-					meta_tp->ratio_rate_sample = 100;
+					//meta_tp->ratio_rate_sample = 100;
+					meta_tp->ratio_rate_sample = sysctl_mptcp_rate_sample;
 					goto reset;
 				}
 			}
@@ -1440,7 +1446,8 @@ if (in_search) {
 			if (meta_tp->rate_delivered > last_rate + 5) {
 				last_rate = 0;
 				in_search = false;
-				meta_tp->ratio_rate_sample = 100;
+				//meta_tp->ratio_rate_sample = 100;
+				meta_tp->ratio_rate_sample = sysctl_mptcp_rate_sample;
 			} else {
 				if (meta_tp->num_segments_flow_one > meta_tp->ratio_search_step) {
 					meta_tp->num_segments_flow_one -= meta_tp->ratio_search_step;
@@ -1449,7 +1456,8 @@ if (in_search) {
 					meta_tp->num_segments_flow_one -= meta_tp->ratio_search_step/2;
 					last_rate = 0;
 					in_search = false;
-					meta_tp->ratio_rate_sample = 100;
+					//meta_tp->ratio_rate_sample = 100;
+					meta_tp->ratio_rate_sample = sysctl_mptcp_rate_sample;
 				}
 			}
 			goto reset;
@@ -1461,7 +1469,8 @@ if (in_search) {
 			}
 			last_rate = 0;
 			in_search = false;
-			meta_tp->ratio_rate_sample = 100;
+			//meta_tp->ratio_rate_sample = 100;
+			meta_tp->ratio_rate_sample = sysctl_mptcp_rate_sample;
 			goto reset;
 			break;
 	}
