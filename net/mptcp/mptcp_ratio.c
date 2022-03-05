@@ -71,34 +71,6 @@ static bool mptcp_ratio_is_available(struct sock *sk, const struct sk_buff *skb,
 		return false;
 	}    /* swetankk: end*/
 
-	// shivanga
-	/*struct net *net;
-	  struct net_device *dev;	
-	  struct inet_sock *inet;
-	  const struct inet_connection_sock *icsk = inet_csk(sk);
-
-	  net = sock_net(sk);
-	  inet = inet_sk(sk);
-	  if(net && inet) {
-	  dev = __ip_dev_find(net, inet->inet_saddr, true);
-	  if (dev && dev->operstate==6 && tp->pf) {
-	  tp->pf = 0;
-	  tp->snd_cwnd = icsk->icsk_ca_ops->undo_cwnd(sk);
-	  if (tp->prior_ssthresh > tp->snd_ssthresh) 
-	  tp->snd_ssthresh = tp->prior_ssthresh;
-	  tcp_set_ca_state(sk, TCP_CA_Recovery);
-	  tp->ops->write_wakeup(sk, LINUX_MIB_TCPKEEPALIVE);
-	//printk("name: %s operstate: %ul state: %lu flags: %ul\n", dev->name, dev->operstate, dev->state, dev->flags);
-	} 
-	}
-	*/
-	/* swetankk */
-	/*if (subflow_is_backup(tp)) {
-	  printk("backup\n");
-	  return false;
-	  }*/
-	/* end: swetankk */
-
 	/* Set of states for which we are allowed to send data */
 	if (!mptcp_sk_can_send(sk)) {
 		//printk("mptcp_sk cannot send");
@@ -311,9 +283,6 @@ u32 get_queue_size(struct sock *sk, struct tcp_sock *meta_tp){
 
 	}
 
-	//printk("tx_packets: %llu, trans_start: %lu, num_tx_queues: %u, real_num_tx_queues: %u, path index: %u\n", stats->tx_packets, txq0->trans_start, dst->dev->num_tx_queues, dst->dev->real_num_tx_queues, tcp_sk(sk)->mptcp->path_index); 
-	//printk(KERN_INFO "Packets in queue %u, path index: %u, dql_avail: %d", packets_in_queue, tcp_sk(sk)->mptcp->path_index, dql_avail(dql0));
-	//printk(KERN_INFO "qdisc len: %d, path index: %u\n", qdisc_qlen(qdisc), tcp_sk(sk)->mptcp->path_index);
 	return tput;
 }
 
@@ -374,6 +343,9 @@ static struct sk_buff *mptcp_ratio_next_segment(struct sock *meta_sk,
 
 	u32 total_rate, rate_ad, rate_ac, ref_rate, last_rate, best_rate, best_ratio, in_search, last_trigger_tstamp, thresh_cnt_reset, qSize, curr_diff, count_set_init_rate, init_rate;
 	u32 rate_search_0, rate_search_100, buffer_total, init_buffer_total, trigger_threshold;
+	u32 srtt[2]={0xffffffff,0xffffffff};
+	u32 min_rtt[2]={0xffffffff,0xffffffff};
+	u32 num_acks[2]={0,0};
 	int rate_diff, buffer_diff;
 	u32 last_buffer_size[2] = {0, 0}, init_buffer_size[2] = {0, 0}, tput[2] = {0, 0};
 	int diff_ref, diff_last, threshold_cnt;
@@ -401,180 +373,9 @@ static struct sk_buff *mptcp_ratio_next_segment(struct sock *meta_sk,
 			printk("MPTCP Run Started, destination: %pI4", &inet_sk(meta_sk)->inet_daddr);
 		else
 			printk("MPTCP Run Started");
-		//meta_tp->dest_ip_any = inet_sk(meta_sk)->inet_daddr;
-		//mptcp_for_each_sk(mpcb, sk_it) {
-		//    meta_tp->dest_ip_any = inet_sk(sk_it)->inet_daddr;
-		//    break;
-		//}
 	}
 
-	/* swetankk */
-	/*mptcp_for_each_sk(mpcb, sk_it) {
-	  struct tcp_sock *tp = tcp_sk(sk_it);
-	//printk("low:%u, send:%u\n", tp->mptcp->low_prio, tp->mptcp->send_mp_prio); 
-	inet = inet_sk(sk_it);
-	if (inet) {// && inet->inet_saddr == in_aton("192.168.1.4")) {
-	net = sock_net(sk_it);
-	if (net) {
-	if (sysctl_mptcp_set_backup) {
-	if (!tp->mptcp->low_prio) {
-	rtnl_lock();
-	//printk("set\n");
-	choose_sk                dev = __ip_dev_find(net, inet->inet_saddr, false);
-	printk("%s set\n", dev->name);
-	dev_change_flags(dev, dev->flags | IFF_MPBACKUP);
-	rtnl_unlock();
-	}
-	break;
-	} 
-	else {
-	if (tp->mptcp->low_prio) {
-	rtnl_lock();
-	printk("unset\n");
-	dev = __ip_dev_find(net, inet->inet_saddr, false);
-	dev_change_flags(dev, dev->flags & ~IFF_MPBACKUP);
-	rtnl_unlock();
-	break;
-	}
-	}
-	}
-	}
-	}*/
-	/* swetankk: end*/
-	/*
-	   mptcp_for_each_sk(mpcb, sk_it) {
-	   struct tcp_sock *tp_it = tcp_sk(sk_it);
-	   struct ratio_sched_priv *rsp = ratio_sched_get_priv(tp_it);
 
-	   loop_counter++;
-
-	   completion_times[loop_counter-1] = rsp->completion_time;
-	   }
-	   if (loop_counter == 2) {    
-	   loop_counter = 0;
-	   mptcp_for_each_sk(mpcb, sk_it) {
-	   struct tcp_sock *tp_it = tcp_sk(sk_it);
-	   struct ratio_sched_priv *rsp = ratio_sched_get_priv(tp_it);
-	   uint mss_now = tcp_current_mss(sk_it);
-	   loop_counter++;
-
-	//printk("%u: meta_tp->write_seq: %u, snd_una: %u, saved: %u, %u", loop_counter, meta_tp->snd_nxt, meta_tp->snd_una, rsp->write_seq_saved, mpcb->cnt_established); 
-
-	if(loop_counter % 2) {
-	if (rsp->write_seq_tv.tv_usec && after(meta_tp->snd_una, rsp->write_seq_saved)) {
-	//printk("loop_counter %% 2");
-	if (!after(meta_tp->snd_una, rsp->write_seq_saved + num_segments_flow_one * mss_now) && !rsp->snd_una_tv.tv_sec) {
-	do_gettimeofday(&rsp->snd_una_tv);    
-	} else if (after(meta_tp->snd_una, rsp->write_seq_saved + num_segments_flow_one * mss_now)){
-	u32 sub_snd_una[2] = {0,0};
-	int snd_una_loop = 0;
-	struct sock *local_sk_it;
-	if (!rsp->snd_una_tv.tv_sec) {
-	//printk("!rsp->snd_una_tv.tv_sec");
-	rsp->completion_time = rsp->write_seq_tv.tv_sec*1000000 + rsp->write_seq_tv.tv_usec;
-	} else {
-	//printk("rsp->snd_una_tv.tv_sec");
-	struct timeval tv, tv_diff;
-	do_gettimeofday(&tv);
-	//printk("subtraction 2");
-	timersub(&tv, &rsp->snd_una_tv, &tv_diff);
-	//rsp->completion_time = jiffies_to_msecs(jiffies - rsp->write_seq_jiffies);
-	rsp->completion_time = (tv_diff.tv_sec  + rsp->write_seq_tv.tv_sec)*1000000 + (tv_diff.tv_usec + rsp->write_seq_tv.tv_usec);
-	}
-	mptcp_for_each_sk(mpcb, local_sk_it) {
-	sub_snd_una[snd_una_loop++] = tcp_sk(local_sk_it)->snd_una;
-	}
-	//printk("%u: jiffies: %lu, time taken %llu us, ratio: %u, meta->snd_una: %u, tp_ad->snd_una: %u, tp_ac->snd_una: %u", loop_counter, jiffies, rsp->completion_time, num_segments_flow_one, meta_tp->snd_una, sub_snd_una[0], sub_snd_una[1]);
-	rsp->write_seq_tv.tv_sec = 0;
-	rsp->write_seq_tv.tv_usec = 0;
-	rsp->snd_una_tv.tv_sec = 0;
-	rsp->snd_una_tv.tv_usec = 0;
-	rsp->write_seq_saved = 0;
-	}
-	}
-	} else {
-	if (rsp->write_seq_tv.tv_usec && after(meta_tp->snd_una, rsp->write_seq_saved)) {
-	//printk("!loop_counter %% 2");
-	if (!after(meta_tp->snd_una, rsp->write_seq_saved + (num_segments - num_segments_flow_one) * mss_now) && !rsp->snd_una_tv.tv_sec) {
-	do_gettimeofday(&rsp->snd_una_tv);   
-	} else if (after(meta_tp->snd_una, rsp->write_seq_saved + (num_segments - num_segments_flow_one) * mss_now)) {
-	u32 sub_snd_una[2] = {0,0};
-	int snd_una_loop = 0;
-	struct sock *local_sk_it;
-	if (!rsp->snd_una_tv.tv_sec) {
-	//printk("!rsp->snd_una_tv.tv_sec");
-	rsp->completion_time = rsp->write_seq_tv.tv_sec*1000000 + rsp->write_seq_tv.tv_usec;
-	} else {
-	//printk("rsp->snd_una_tv.tv_sec");
-	struct timeval tv, tv_diff;
-	do_gettimeofday(&tv);
-	//printk("subtraction 2");
-	timersub(&tv, &rsp->snd_una_tv, &tv_diff);
-	//rsp->completion_time = jiffies_to_msecs(jiffies - rsp->write_seq_jiffies);
-	rsp->completion_time = (tv_diff.tv_sec  + rsp->write_seq_tv.tv_sec)*1000000 + (tv_diff.tv_usec + rsp->write_seq_tv.tv_usec);
-}
-mptcp_for_each_sk(mpcb, local_sk_it) {
-	sub_snd_una[snd_una_loop++] = tcp_sk(local_sk_it)->snd_una;
-}
-//printk("%u: jiffies: %lu, time taken %llu us, ratio: %u, meta->snd_una: %u, tp_ad->snd_una: %u, tp_ac->snd_una: %u", loop_counter, jiffies, rsp->completion_time, num_segments_flow_one, meta_tp->snd_una, sub_snd_una[0], sub_snd_una[1]);
-rsp->write_seq_tv.tv_sec = 0;
-rsp->write_seq_tv.tv_usec = 0;
-rsp->snd_una_tv.tv_sec = 0;
-rsp->snd_una_tv.tv_usec = 0;
-rsp->write_seq_saved = 0;
-}
-}
-}
-}
-loop_counter = 0;
-mptcp_for_each_sk(mpcb, sk_it) { 
-	struct tcp_sock *tp_it = tcp_sk(sk_it);
-	struct ratio_sched_priv *rsp = ratio_sched_get_priv(tp_it);
-	if (rsp->completion_time) loop_counter++;
-} 
-
-if (loop_counter == 2) {
-	loop_counter = 0;
-	mptcp_for_each_sk(mpcb, sk_it) {
-		struct tcp_sock *tp_it = tcp_sk(sk_it);
-		struct ratio_sched_priv *rsp = ratio_sched_get_priv(tp_it);
-		completion_times[loop_counter++] = rsp->completion_time;
-		//printk("%u: time taken %u ms, ratio: %u", loop_counter, rsp->last_completion_time, sysctl_num_segments_flow_one);
-		rsp->completion_time = 0;
-		rsp->is_accounting = false;
-		rsp->is_init_accounted = false;
-	}
-
-	//printk("diff: %d", completion_times[0] - completion_times[1]);
-}   
-} else {
-	completion_times[0] = 0;
-	completion_times[1] = 0;
-}
-
-mptcp_for_each_sk(mpcb, sk_it) {
-	//struct tcp_sock *tp = tcp_sk(sk_it);
-	//if (!i) { i++; continue; }
-	//i = 0;
-	if (i) { i = 0; break; }
-	i++;
-	if (sysctl_mptcp_set_backup) {
-		if (!blocked_sk) {
-			printk("set blocked_sk\n");
-			//tp->pf = 1;
-			blocked_sk = sk_it;
-		}
-		break;
-	}
-	if (!sysctl_mptcp_set_backup) {
-		if (blocked_sk) {
-			printk("unset blocked_sk\n");
-			blocked_sk = NULL;
-		}
-		break;
-	}
-}
-*/
 /* As we set it, we have to reset it as well. */
 *limit = 0;
 
@@ -699,73 +500,8 @@ if (choose_sk) {
 		struct sockaddr_in6 v6;
 	} dst;
 
-	/*if (mpcb->cnt_established == 2) {
-
-	  if (choose_sk != meta_tp->prev_sk) {
-	//printk("choose_sk != meta_tp->prev_sk");
-	if (meta_tp->prev_sk) {
-	struct tcp_sock *prev_tp = tcp_sk(meta_tp->prev_sk);
-	struct ratio_sched_priv *prev_rsp = ratio_sched_get_priv(prev_tp);
-	//printk("prev_accounted: %u prev_accounting: %u", prev_rsp->is_init_accounted, prev_rsp->is_accounting);
-	if (!prev_rsp->is_init_accounted && prev_rsp->is_accounting) {
-	struct timeval tv_now, tv_diff;
-	do_gettimeofday(&tv_now);
-	//printk("%pI4 subtraction 1", &inet_sk(meta_tp->prev_sk)->inet_daddr);
-	timersub(&tv_now, &prev_rsp->write_seq_tv, &tv_diff);
-	prev_rsp->write_seq_tv = tv_diff;
-	prev_rsp->is_init_accounted = true;
-	//printk("is_init_accounted");
-	} 
-	}
-	if (!rsp->is_accounting) {
-	//printk("%pI4 init", &inet_sk(choose_sk)->inet_daddr);
-	u32 sub_write_seq[2] = {0,0}, sub_snd_nxt[2] = {0,0}, sub_snd_una[2] = {0,0};
-	u32 loop_counter = 0;
-	do_gettimeofday(&rsp->write_seq_tv);
-	rsp->write_seq_saved = meta_tp->snd_nxt;
-	mptcp_for_each_sk(mpcb, sk_it) {
-	struct tcp_sock *tp = tcp_sk(sk_it);
-	sub_write_seq[loop_counter] = tp->write_seq;
-	sub_snd_nxt[loop_counter] = tp->snd_nxt;
-	sub_snd_una[loop_counter] = tp->snd_una;
-	loop_counter++;
-	}
-
-	//printk("usecs: %lu, meta->snd_nxt: %u, meta->write_seq: %u, meta->snd_una: %u, snd_nxt_ad: %u, write_seq_ad: %u, snd_una_ad: %u, snd_nxt_ac: %u, write_seq_ac: %u, snd_una_ac: %u, is_init_accounted: %u", rsp->write_seq_tv.tv_sec*1000000 + rsp->write_seq_tv.tv_usec, meta_tp->snd_nxt, meta_tp->write_seq, meta_tp->snd_una, sub_snd_nxt[0], sub_write_seq[0], sub_snd_una[0], sub_snd_nxt[1], sub_write_seq[1], sub_snd_una[1], rsp->is_init_accounted);
-
-
-	meta_tp->prev_sk = choose_sk;
-	rsp->is_accounting = true;
-	}
-
-	}*/
-
-	//printk("%d %d", completion_times[0], completion_times[1]);
-	/*if (!rsp->is_accounting && choose_sk != meta_tp->prev_sk) {
-	  u32 sub_write_seq[2] = {0,0}, sub_snd_nxt[2] = {0,0}, sub_snd_una[2] = {0,0};
-	  u32 loop_counter = 0;
-	  do_gettimeofday(&rsp->write_seq_tv);
-	  rsp->write_seq_saved = meta_tp->snd_nxt;
-	  mptcp_for_each_sk(mpcb, sk_it) {
-	  struct tcp_sock *tp = tcp_sk(sk_it);
-	  sub_write_seq[loop_counter] = tp->write_seq;
-	  sub_snd_nxt[loop_counter] = tp->snd_nxt;
-	  sub_snd_una[loop_counter] = tp->snd_una;
-	  loop_counter++; 
-	  }
-
-	  printk("usecs: %lu, meta->snd_nxt: %u, meta->write_seq: %u, meta->snd_una: %u, snd_nxt_ad: %u, write_seq_ad: %u, snd_una_ad: %u, snd_nxt_ac: %u, write_seq_ac: %u, snd_una_ac: %u", rsp->write_seq_tv.tv_sec*1000000 + rsp->write_seq_tv.tv_usec, meta_tp->snd_nxt, meta_tp->write_seq, meta_tp->snd_una, sub_snd_nxt[0], sub_write_seq[0], sub_snd_una[0], sub_snd_nxt[1], sub_write_seq[1], sub_snd_una[1]);
-
-
-	  meta_tp->prev_sk = choose_sk;
-	  rsp->is_accounting = true;
-	  }*/
-	//}
-
 	if (!mptcp_ratio_is_available(choose_sk, skb, false, true))
 		return NULL;
-
-	//printk("pass quota: %u snd_nxt: %u snd_una: %u write_seq: %u copied_seq: %u", rsp->quota, choose_tp->snd_nxt, choose_tp->snd_una, choose_tp->write_seq, choose_tp->copied_seq);
 
 	tcp_probe_copy_fl_to_si4(inet, dst.v4, d);
 	*subsk = choose_sk;
@@ -784,33 +520,22 @@ if (choose_sk) {
 		struct tcp_sock *tp_it = tcp_sk(sk_it);
 		u32 subflow_rate, subflow_intv;
 		u64 subflow_rate64 = 0;
-		//struct dst_entry *dst;
-		//struct netdev_queue *txq0;
-		//struct rtnl_link_stats64 temp;
-		//struct rtnl_link_stats64 *stats;
 
 		mptcp_sched_probe_init(&sprobe);
 		iter++;
 
 		subflow_rate = READ_ONCE(tp_it->rate_delivered);
-		subflow_intv = READ_ONCE(tp_it->rate_interval_us);
+		subflow_intv = READ_ONCE(tp_it->rate_interval_us);//no use, we use our own
 		if (subflow_rate && subflow_intv) {
 			subflow_rate64 = (u64)subflow_rate * tp_it->mss_cache * USEC_PER_SEC;
 			do_div(subflow_rate64, subflow_intv);
 			subflow_rate64 *= 8;
-			/*if (iter == 1) {
-			  rate_ad += subflow_rate64;
-			  } else {
-			  rate_ac += subflow_rate64;
-			  }*/
 
 			if (subflow_rate64 != tp_it->last_ac_rate) { // Using last_ac_rate as last ac or ad rate
 				if (iter == 1) {
 					rate_ad += subflow_rate64;
-					//printk("ad %pI4: %llu, %u, %u, count %u", &inet_sk(meta_sk)->inet_daddr, subflow_rate64, subflow_rate, subflow_intv, tp_it->in_probe);
 				} else {
 					rate_ac += subflow_rate64;
-					//printk("ac %pI4: %llu, %u, %u, count %u", &inet_sk(meta_sk)->inet_daddr, subflow_rate64, subflow_rate, subflow_intv, tp_it->in_probe);
 				} 
 				tp_it->last_ac_rate = subflow_rate64;
 				do_div(subflow_rate64, 1000000);
@@ -820,19 +545,8 @@ if (choose_sk) {
 				total_rate += subflow_rate64;
 			} else
 				tp_it->in_probe++;
-			//total_rate += subflow_rate64;
 		}
 
-		//qSize = get_queue_size(sk_it, meta_tp);
-		/*dst = sk_dst_get(sk_it);
-
-		//if (dst->dev) {
-		stats = dev_get_stats(dst->dev, &temp);
-
-		txq0 = netdev_get_tx_queue(dst->dev, 0); //get txqueueu from dst
-
-		sprobe.tx_bytes = stats->tx_bytes;
-		sprobe.trans_start = txq0->trans_start;*/
 
 		if (!mptcp_ratio_is_available(sk_it, skb, false, cwnd_limited)) sprobe.temp_unavailable = true;
 
@@ -844,16 +558,9 @@ if (choose_sk) {
 
 	/* AUTO-RATE search */
 	do_div(total_rate, 1000000);
-	//do_div(rate_ad, 1000000);
-	//do_div(rate_ac, 1000000);
-	//meta_tp->high_seq += rate_ad;
-	//meta_tp->undo_marker += rate_ac;
-	meta_tp->rate_delivered += total_rate;
+	meta_tp->rate_delivered += total_rate;//no use
 	meta_tp->delivered++;
 
-	/*if (meta_tp->ratio_rate_sample == 800) {
-	  printk("Total_rate yo: %u, Rate_delivered also: %u", total_rate, meta_tp->rate_delivered);
-	  }*/
 
 	mptcp_for_each_sub(mpcb, mptcp) {
 		struct sock *sk_it = mptcp_to_sock(mptcp);
@@ -865,47 +572,19 @@ if (choose_sk) {
 
 	time_diff = jiffies_to_msecs(jiffies - meta_tp->rate_interval_us);    
 	if (time_diff >= meta_tp->ratio_rate_sample) {
-		//do_div(meta_tp->rate_delivered, meta_tp->delivered);
-		//do_div(meta_tp->high_seq, meta_tp->delivered);
-		//do_div(meta_tp->undo_marker, meta_tp->delivered);
-
-		// Recycle unused variables in the meta_tp struct
-		//last_rate = meta_tp->snd_cwnd;
 		last_rate = meta_tp->prr_out;
-		//ref_rate = meta_tp->prior_cwnd; // <- FOR MEAN OF RUNNING DIFFERENCE (PUT BACK FOR OLD REFERENCE SCHEDULER)
-		//best_rate = meta_tp->prr_delivered;
-		//best_ratio = meta_tp->prr_out;
 		trigger_threshold = meta_tp->prr_delivered;
-		// rate_search_0 = meta_tp->prr_delivered;
-		// rate_search_100 = meta_tp->prr_out;
 		in_search = meta_tp->lost;
 		threshold_cnt = (meta_tp->snd_ssthresh == INT_MAX) ? 0 : meta_tp->snd_ssthresh;
 		buffer_threshold_cnt = meta_tp->buffer_threshold_cnt;
 		last_trigger_tstamp = meta_tp->prior_ssthresh;
-		//thresh_cnt_reset = meta_tp->snd_cwnd_used;
-		//last_buffer_size = meta_tp->snd_cwnd_used;
-
-		// RUNNING DIFFERENCE
-		//curr_diff = meta_tp->undo_retrans;
 		count_set_init_rate = meta_tp->total_retrans;
 		init_rate = meta_tp->prior_cwnd;
 		memcpy(init_buffer_size, meta_tp->init_buffer_size, 2*sizeof(u32));
-		//init_buffer_size = &(meta_tp->init_buffer_size);
 		memcpy(last_buffer_size, meta_tp->last_buffer_size, 2*sizeof(u32));
-		//last_buffer_size = &(meta_tp->last_buffer_size);
-
-		// Queue-based rate estimate
-		/*mptcp_for_each_sk(mpcb, sk_it) {
-		  meta_tp->rate_delivered = get_queue_size(sk_it, meta_tp);
-		  meta_tp->high_seq = meta_tp->rate_delivered;
-		  meta_tp->undo_marker = meta_tp->rate_delivered;
-		  break;
-		//printk("cwnd: %u, packets: %u, app_limited:%u\n", tcp_sk(sk_it)->snd_cwnd, tcp_packets_in_flight(tcp_sk(sk_it)), sk_wmem_alloc_get(sk_it) < SKB_TRUESIZE(1));
-		}*/
 
 		iter = 0;
-		//u32 tput[2] = {0, 0};
-		meta_tp->rate_delivered = 0; 
+		meta_tp->rate_delivered = 0; //for throughput estimation
 		mptcp_for_each_sub(mpcb, mptcp) {
 			struct sock *sk_it = mptcp_to_sock(mptcp);
 			struct tcp_sock *tp_it_temp = tcp_sk(sk_it);
@@ -915,25 +594,19 @@ if (choose_sk) {
 			do_div(rsp_temp->buffer_size, meta_tp->delivered);
 			curr_tstamp = jiffies;
 			subflow_rate = tp_it_temp->delivered - tp_it_temp->prev_tx_bytes;
+			num_acks[iter] = subflow_rate;
 			tp_it_temp->prev_tx_bytes = tp_it_temp->delivered;
 			subflow_intv = jiffies_to_msecs(curr_tstamp - tp_it_temp->prev_tstamp);
 			tp_it_temp->prev_tstamp = curr_tstamp;
 			subflow_rate64 = (u64)subflow_rate * tp_it_temp->mss_cache * 8 * MSEC_PER_SEC;
 			do_div(subflow_rate64, subflow_intv);
-			do_div(subflow_rate64, 1000000);
-			//if (tp_it_temp->rate_est_cnt != 0)
-			//do_div(tp_it_temp->rate_est_val, tp_it_temp->rate_est_cnt);
-			//tput[iter] = tp_it_temp->rate_est_val;
+			do_div(subflow_rate64, 1000000);//subflow_intv is in us
+			srtt[iter] = tp_it_temp->srtt_us>>3;
+			min_rtt[iter] = tcp_min_rtt(tp_it_temp);
 			tput[iter] = subflow_rate64;
 			meta_tp->rate_delivered += tput[iter];
-			//tput[loop_counter] = (tp_it_temp->snd_una - rsp_temp->snd_una_saved)*8;
-			//do_div(tput[loop_counter], 100000);
-			//printk("%u: snd_una_tput: %u", loop_counter+1, tput[loop_counter]);
 			rsp_temp->snd_una_saved = tp_it_temp->snd_una;
-			//rsp_temp->buffer_size = 0;
 			iter++;
-
-			//printk("write_seq_saved: %u, write_seq: %u, snd_una: %u", rsp_temp->write_seq_saved, tp_it_temp->write_seq, tp_it_temp->snd_una);
 		}
 
 		for (iter = 0; iter < 3; iter++) {
@@ -942,74 +615,12 @@ if (choose_sk) {
 			else
 				meta_tp->last_rate_search_start[iter] = meta_tp->last_rate_search_start[iter+1];
 		}
-		//if (tput[0] && tput[1]) {
-		//    printk("tput ratio: %u", 100*tput[0]/(tput[0]+tput[1]));
-		//}
-		//loop_counter = 0;
 		if (inet_sk(meta_sk)->inet_daddr)
-			printk("daddr: %pI4, num_samples: %u, ratio: %d, rate_ad: %u, rate_ac: %u, rate_total: %u\n", &inet_sk(meta_sk)->inet_daddr, meta_tp->delivered, meta_tp->num_segments_flow_one, tput[0], tput[1], meta_tp->rate_delivered);
+			printk("daddr: %pI4, num_samples: %u, ratio: %d, rate_ad: %u, rate_ac: %u, rate_total: %u, srtt_ad: %u, srtt_ac: %u, min_rtt_ad:%u, min_rtt_ac:%u, num_acks_ad: %u, num_acks_ac: %u\n", &inet_sk(meta_sk)->inet_daddr, meta_tp->delivered, meta_tp->num_segments_flow_one, tput[0], tput[1], meta_tp->rate_delivered, srtt[0], srtt[1], min_rtt[0], min_rtt[1], num_acks[0], num_acks[1]);
 		else
-			printk("daddr NULL, num_samples: %u, ratio: %d, rate_ad: %u, rate_ac: %u, rate_total: %u\n", meta_tp->delivered, meta_tp->num_segments_flow_one, tput[0], tput[1], meta_tp->rate_delivered);
+			printk("daddr NULL, num_samples: %u, ratio: %d, rate_ad: %u, rate_ac: %u, rate_total: %u, srtt_ad: %u, srtt_ac: %u, min_rtt_ad:%u, min_rtt_ac:%u, num_acks_ad: %u, num_acks_ac: %u\n", meta_tp->delivered, meta_tp->num_segments_flow_one, tput[0], tput[1], meta_tp->rate_delivered, srtt[0], srtt[1], min_rtt[0], min_rtt[1], num_acks[0], num_acks[1]);
 
 		printk("rate_thresh_cnt: %d, buffer_thresh_cnt: %d, count_init: %u, last_rate: %u, last_trigger_tstamp: %u\n", threshold_cnt, buffer_threshold_cnt, count_set_init_rate, last_rate, last_trigger_tstamp);
-		//else
-		//printk("ratio:%u, meta_rate: %u, cnt: %d, curr_diff: %d, rate_ad: %u, rate_ac: %u, count_init: %u, last_rate: %u, last_trigger_tstamp: %u\n", sysctl_num_segments_flow_one, meta_tp->rate_delivered, threshold_cnt, meta_tp->undo_retrans, meta_tp->high_seq, meta_tp->undo_marker, count_set_init_rate, last_rate, last_trigger_tstamp);
-
-		/*if (meta_tp->in_probe) {
-		  if (num_segments_flow_one == 100) {
-		  printk("ubwins: in probe 100\n");
-		  if (rate_search_100 < sample_skip_ad)
-		  rate_search_100++;
-		  else if (rate_search_100 == sample_skip_ad)
-		  rate_search_100 = meta_tp->high_seq;
-		  else {
-		  rate_search_100 += meta_tp->high_seq;
-		  num_segments_flow_one = (rate_search_100 * 100) / (rate_search_100 + rate_search_0);
-		  printk("New ratio: %u\n", num_segments_flow_one);
-		  meta_tp->in_probe = 0;
-		  meta_tp->last_ac_rate = rate_search_0/2;
-		  best_rate = 0;
-		  best_ratio = 0;
-		  last_rate = 0;
-		  threshold_cnt = 0;
-		  thresh_cnt_reset = 0;
-		  curr_diff = 0;
-		  count_set_init_rate = 0;
-		  init_rate = 0;
-		  rate_search_0 = 0;
-		  rate_search_100 = 0;
-
-		  goto reset;
-		  }
-		  }
-		  else if (num_segments_flow_one == 0) {
-		  printk("ubwins: in probe 0\n");
-		  if (rate_search_0 < sample_skip_ac)
-		  rate_search_0++;
-		  else if (rate_search_0 == sample_skip_ac)
-		  rate_search_0 = meta_tp->undo_marker;
-		  else {
-		  rate_search_0 += meta_tp->undo_marker;
-		  if (abs(meta_tp->last_ac_rate - rate_search_0/2) > sysctl_mptcp_trigger_threshold) {
-		  printk("last_ac_rate: %u, current rate: %u, difference: %d\n", meta_tp->last_ac_rate, rate_search_0/2, meta_tp->last_ac_rate - rate_search_0/2);
-		  num_segments_flow_one = 100;
-		  } else {
-		  num_segments_flow_one = meta_tp->last_ratio;
-		  rate_search_0 = 0;
-		  meta_tp->in_probe = 0; 
-		  }
-		  }
-		  }
-		  }*/
-
-		/*if (!in_search && !(meta_tp->in_probe) && jiffies_to_msecs(jiffies - meta_tp->last_probe_tstamp)/1000 > sysctl_mptcp_probe_interval && last_trigger_tstamp) {
-		  meta_tp->in_probe = true;
-		  last_trigger_tstamp = meta_tp->last_probe_tstamp = jiffies;
-		  meta_tp->last_ratio = num_segments_flow_one;
-		  num_segments_flow_one = 0;
-		  }*/
-
-
 
 		//if (!in_search && !(meta_tp->in_probe) && !last_rate && last_trigger_tstamp) {
 		//if (!in_search && !last_rate && last_trigger_tstamp) {
