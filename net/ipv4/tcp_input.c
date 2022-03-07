@@ -3583,13 +3583,11 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 	acked -= tp->packets_out;
 
 	if (mptcp(tp)) {
-		if (mptcp_fallback_infinite(sk, flag)) {
+		if (mptcp_handle_ack_in_infinite(sk, skb, flag)) {
 			pr_err("%s resetting flow\n", __func__);
 			mptcp_send_reset(sk);
 			goto invalid_ack;
 		}
-
-		mptcp_clean_rtx_infinite(skb, sk);
 	}
 
 	/* Advance cwnd if state allows */
