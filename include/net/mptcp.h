@@ -279,6 +279,9 @@ struct mptcp_cb {
 		server_side:1,
 		infinite_mapping_rcv:1,
 		infinite_mapping_snd:1,
+		infinite_send_una_ahead:1, /* While falling back, the snd_una
+					    *on meta is ahead of the subflow.
+					    */
 		dfin_combined:1,   /* Was the DFIN combined with subflow-fin? */
 		passive_close:1,
 		snd_hiseq_index:1, /* Index in snd_high_order of snd_nxt */
@@ -782,6 +785,8 @@ bool mptcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		      int push_one, gfp_t gfp);
 void tcp_parse_mptcp_options(const struct sk_buff *skb,
 			     struct mptcp_options_received *mopt);
+bool mptcp_handle_ack_in_infinite(struct sock *sk, const struct sk_buff *skb,
+				  int flag);
 void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			 struct mptcp_options_received *mopt,
 			 const struct sk_buff *skb,
@@ -818,7 +823,6 @@ unsigned int mptcp_current_mss(struct sock *meta_sk);
 int mptcp_select_size(const struct sock *meta_sk, bool first_skb, bool zc);
 void mptcp_hmac_sha1(const u8 *key_1, const u8 *key_2, u32 *hash_out,
 		     int arg_num, ...);
-void mptcp_clean_rtx_infinite(const struct sk_buff *skb, struct sock *sk);
 void mptcp_fin(struct sock *meta_sk);
 void mptcp_meta_retransmit_timer(struct sock *meta_sk);
 void mptcp_sub_retransmit_timer(struct sock *sk);
@@ -1229,47 +1233,6 @@ static inline void mptcp_fallback_close(struct mptcp_cb *mpcb,
 		mpcb->pm_ops->close_session(mptcp_meta_sk(except));
 }
 
-static inline bool mptcp_fallback_infinite(struct sock *sk, int flag)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct mptcp_cb *mpcb = tp->mpcb;
-
-	/* If data has been acknowleged on the meta-level, fully_established
-	 * will have been set before and thus we will not fall back to infinite
-	 * mapping.
-	 */
-	if (likely(tp->mptcp->fully_established))
-		return false;
-
-	if (!(flag & MPTCP_FLAG_DATA_ACKED))
-		return false;
-
-	/* Don't fallback twice ;) */
-	if (mpcb->infinite_mapping_snd)
-		return false;
-
-	pr_debug("%s %#x will fallback - pi %d, src %pI4:%u dst %pI4:%u rcv_nxt %u from %pS\n",
-		 __func__, mpcb->mptcp_loc_token, tp->mptcp->path_index,
-		 &inet_sk(sk)->inet_saddr, ntohs(inet_sk(sk)->inet_sport),
-		 &inet_sk(sk)->inet_daddr, ntohs(inet_sk(sk)->inet_dport),
-		 tp->rcv_nxt, __builtin_return_address(0));
-	if (!is_master_tp(tp)) {
-		MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_FBACKSUB);
-		return true;
-	}
-
-	mpcb->infinite_mapping_snd = 1;
-	mpcb->infinite_mapping_rcv = 1;
-	mpcb->infinite_rcv_seq = mptcp_get_rcv_nxt_64(mptcp_meta_tp(tp));
-	tp->mptcp->fully_established = 1;
-
-	mptcp_fallback_close(mpcb, sk);
-
-	MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_FBACKINIT);
-
-	return false;
-}
-
 static inline bool mptcp_v6_is_v4_mapped(const struct sock *sk)
 {
 	return sk->sk_family == AF_INET6 &&
@@ -1359,8 +1322,6 @@ static inline void mptcp_del_sock(const struct sock *sk) {}
 static inline void mptcp_update_metasocket(const struct sock *meta_sk) {}
 static inline void mptcp_reinject_data(struct sock *orig_sk, int clone_it) {}
 static inline void mptcp_update_sndbuf(const struct tcp_sock *tp) {}
-static inline void mptcp_clean_rtx_infinite(const struct sk_buff *skb,
-					    const struct sock *sk) {}
 static inline void mptcp_sub_close(struct sock *sk, unsigned long delay) {}
 static inline void mptcp_set_rto(const struct sock *sk) {}
 static inline void mptcp_send_fin(const struct sock *meta_sk) {}
@@ -1414,7 +1375,9 @@ static inline unsigned int mptcp_current_mss(struct sock *meta_sk)
 	return 0;
 }
 static inline void mptcp_sub_close_passive(struct sock *sk) {}
-static inline bool mptcp_fallback_infinite(const struct sock *sk, int flag)
+static inline bool mptcp_handle_ack_in_infinite(const struct sock *sk,
+						const struct sk_buff *skb,
+						int flag)
 {
 	return false;
 }
