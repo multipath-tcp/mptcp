@@ -596,7 +596,7 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 	return 0;
 }
 
-static void mptcp_restart_sending(struct sock *meta_sk)
+static void mptcp_restart_sending(struct sock *meta_sk, uint32_t in_flight_seq)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
@@ -604,12 +604,22 @@ static void mptcp_restart_sending(struct sock *meta_sk)
 
 	skb = tcp_rtx_queue_head(meta_sk);
 
-	/* We resend everything that has not been acknowledged, thus we need
-	 * to move it from the rtx-tree to the write-queue.
+	/* We resend everything that has not been acknowledged and is not in-flight,
+	 * thus we need to move it from the rtx-tree to the write-queue.
 	 */
 	wq_head = tcp_write_queue_head(meta_sk);
 
+	/* We artificially restart parts of the send-queue. Thus,
+	 * it is as if no packets are in flight, minus the one that are.
+	 */
+	meta_tp->packets_out = 0;
+
 	skb_rbtree_walk_from_safe(skb, tmp) {
+		if (!after(TCP_SKB_CB(skb)->end_seq, in_flight_seq)) {
+			meta_tp->packets_out += tcp_skb_pcount(skb);
+			continue;
+		}
+
 		list_del(&skb->tcp_tsorted_anchor);
 		tcp_rtx_queue_unlink(skb, meta_sk);
 		INIT_LIST_HEAD(&skb->tcp_tsorted_anchor);
@@ -620,20 +630,15 @@ static void mptcp_restart_sending(struct sock *meta_sk)
 			tcp_add_write_queue_tail(meta_sk, skb);
 	}
 
-	/* We artificially restart the whole send-queue. Thus,
-	 * it is as if no packets are in flight
-	 */
-	meta_tp->packets_out = 0;
-
 	/* If the snd_nxt already wrapped around, we have to
-	 * undo the wrapping, as we are restarting from snd_una
+	 * undo the wrapping, as we are restarting from in_flight_seq
 	 * on.
 	 */
-	if (meta_tp->snd_nxt < meta_tp->snd_una) {
+	if (meta_tp->snd_nxt < in_flight_seq) {
 		mpcb->snd_high_order[mpcb->snd_hiseq_index] -= 2;
 		mpcb->snd_hiseq_index = mpcb->snd_hiseq_index ? 0 : 1;
 	}
-	meta_tp->snd_nxt = meta_tp->snd_una;
+	meta_tp->snd_nxt = in_flight_seq;
 
 	/* Trigger a sending on the meta. */
 	mptcp_push_pending_frames(meta_sk);
@@ -736,9 +741,9 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 		data_len = skb->len + (mptcp_is_data_fin(skb) ? 1 : 0);
 		sub_seq = tcb->seq;
 
-		mptcp_restart_sending(tp->meta_sk);
-
 		mptcp_fallback_close(mpcb, sk);
+
+		mptcp_restart_sending(tp->meta_sk, meta_tp->snd_una);
 
 		/* data_seq and so on are set correctly */
 
@@ -1626,6 +1631,8 @@ bool mptcp_handle_ack_in_infinite(struct sock *sk, const struct sk_buff *skb,
 
 	mptcp_fallback_close(mpcb, sk);
 
+	mptcp_restart_sending(tp->meta_sk, tp->mptcp->last_end_data_seq);
+
 	MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_FBACKINIT);
 
 	/* The acknowledged data-seq at the subflow-level is:
@@ -2174,7 +2181,7 @@ static void mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
 	if (!th->rst && !mpcb->infinite_mapping_snd) {
 		mpcb->send_infinite_mapping = 1;
 
-		mptcp_restart_sending(meta_sk);
+		mptcp_restart_sending(meta_sk, tcp_sk(meta_sk)->snd_una);
 
 		mptcp_fallback_close(mpcb, sk);
 	}
