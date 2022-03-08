@@ -54,7 +54,6 @@ struct wvegas {
 	u32 queue_delay; /* queue delay*/
 };
 
-
 static inline u64 mptcp_wvegas_scale(u32 val, int scale)
 {
 	return (u64) val << scale;
@@ -149,7 +148,6 @@ static u64 mptcp_wvegas_weight(const struct mptcp_cb *mpcb, const struct sock *s
 	if (!mpcb)
 		return wvegas->weight;
 
-
 	mptcp_for_each_sub(mpcb, mptcp) {
 		struct sock *sub_sk = mptcp_to_sock(mptcp);
 		struct wvegas *sub_wvegas = inet_csk_ca(sub_sk);
@@ -235,7 +233,6 @@ static void mptcp_wvegas_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 	else if (tcp_in_slow_start(tp))
 		tcp_slow_start(tp, acked);
 }
-
 
 static struct tcp_congestion_ops mptcp_wvegas __read_mostly = {
 	.init		= mptcp_wvegas_init,

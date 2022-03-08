@@ -1547,7 +1547,6 @@ static int full_mesh_get_local_id(const struct sock *meta_sk,
 		}
 	}
 
-
 	rcu_read_unlock_bh();
 
 	return id;
@@ -1903,7 +1902,6 @@ static int __init full_mesh_register(void)
 
 out:
 	return ret;
-
 
 err_reg_pm:
 #if IS_ENABLED(CONFIG_IPV6)

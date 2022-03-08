@@ -2006,4 +2006,3 @@ unsigned int mptcp_xmit_size_goal(const struct sock *meta_sk, u32 mss_now,
 
 	return max(xmit_size_goal, mss_now);
 }
-

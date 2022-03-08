@@ -18,7 +18,6 @@
  * 2 of the License, or (at your option) any later version.
  */
 
-
 #include <net/tcp.h>
 #include <net/mptcp.h>
 
@@ -276,7 +275,6 @@ static void mptcp_olia_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 		ca->mptcp_snd_cwnd_cnt += div64_u64(
 		    mptcp_olia_scale(inc_num , scale) , inc_den);
 	}
-
 
 	if (ca->mptcp_snd_cwnd_cnt >= (1 << scale) - 1) {
 		if (tp->snd_cwnd < tp->snd_cwnd_clamp)
