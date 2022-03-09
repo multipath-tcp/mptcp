@@ -606,28 +606,28 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 	return 0;
 }
 
-static void mptcp_restart_sending(struct sock *meta_sk, uint32_t in_flight_seq)
+static void mptcp_restart_sending(struct sock *meta_sk)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 
-	/* We resend everything that has not been acknowledged and is not in-flight */
+	/* We resend everything that has not been acknowledged */
 	meta_sk->sk_send_head = tcp_write_queue_head(meta_sk);
 
-	/* We artificially restart parts of the send-queue. Thus,
-	 * it is as if no packets are in flight, minus the one that are.
+	/* We artificially restart the whole send-queue. Thus,
+	 * it is as if no packets are in flight
 	 */
 	meta_tp->packets_out = 0;
 
 	/* If the snd_nxt already wrapped around, we have to
-	 * undo the wrapping, as we are restarting from in_flight_seq
+	 * undo the wrapping, as we are restarting from snd_una
 	 * on.
 	 */
-	if (meta_tp->snd_nxt < in_flight_seq) {
+	if (meta_tp->snd_nxt < meta_tp->snd_una) {
 		mpcb->snd_high_order[mpcb->snd_hiseq_index] -= 2;
 		mpcb->snd_hiseq_index = mpcb->snd_hiseq_index ? 0 : 1;
 	}
-	meta_tp->snd_nxt = in_flight_seq;
+	meta_tp->snd_nxt = meta_tp->snd_una;
 
 	/* Trigger a sending on the meta. */
 	mptcp_push_pending_frames(meta_sk);
@@ -730,9 +730,9 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 		data_len = skb->len + (mptcp_is_data_fin(skb) ? 1 : 0);
 		sub_seq = tcb->seq;
 
-		mptcp_sub_force_close_all(mpcb, sk);
+		mptcp_restart_sending(tp->meta_sk);
 
-		mptcp_restart_sending(tp->meta_sk, meta_tp->snd_una);
+		mptcp_sub_force_close_all(mpcb, sk);
 
 		/* data_seq and so on are set correctly */
 
@@ -1651,8 +1651,6 @@ bool mptcp_handle_ack_in_infinite(struct sock *sk, const struct sk_buff *skb,
 
 	mptcp_sub_force_close_all(mpcb, sk);
 
-	mptcp_restart_sending(tp->meta_sk, tp->mptcp->last_end_data_seq);
-
 	MPTCP_INC_STATS_BH(sock_net(sk), MPTCP_MIB_FBACKINIT);
 
 	/* The acknowledged data-seq at the subflow-level is:
@@ -2196,7 +2194,7 @@ static void mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
 	if (!th->rst && !mpcb->infinite_mapping_snd) {
 		mpcb->send_infinite_mapping = 1;
 
-		mptcp_restart_sending(meta_sk, tcp_sk(meta_sk)->snd_una);
+		mptcp_restart_sending(meta_sk);
 
 		mptcp_sub_force_close_all(mpcb, sk);
 	}
