@@ -984,6 +984,12 @@ static inline void mptcp_sub_force_close_all(struct mptcp_cb *mpcb,
 {
 	struct sock *sk_it, *tmp;
 
+	/* It can happen that the meta is already closed. In that case, don't
+	 * keep the subflow alive - close everything!
+	 */
+	if (mpcb->meta_sk->sk_state == TCP_CLOSE)
+		except = NULL;
+
 	mptcp_for_each_sk_safe(mpcb, sk_it, tmp) {
 		if (sk_it != except)
 			mptcp_send_reset(sk_it);
