@@ -1153,7 +1153,8 @@ set_rcvbuf:
 			if (!((sk->sk_type == SOCK_STREAM &&
 			       sk->sk_protocol == IPPROTO_TCP) ||
 			      (sk->sk_type == SOCK_DGRAM &&
-			       sk->sk_protocol == IPPROTO_UDP)))
+			       sk->sk_protocol == IPPROTO_UDP)) ||
+			    sock_flag(sk, SOCK_MPTCP))
 				ret = -ENOTSUPP;
 		} else if (sk->sk_family != PF_RDS) {
 			ret = -ENOTSUPP;
