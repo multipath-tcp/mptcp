@@ -2974,7 +2974,8 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 #ifdef CONFIG_MPTCP
 	case MPTCP_ENABLED:
 		if (mptcp_init_failed || !sysctl_mptcp_enabled ||
-		    sk->sk_state != TCP_CLOSE
+		    sk->sk_state != TCP_CLOSE ||
+		    sock_flag(sk, SOCK_ZEROCOPY)
 #ifdef CONFIG_TCP_MD5SIG
 		    || tp->md5sig_info
 #endif

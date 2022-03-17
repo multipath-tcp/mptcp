@@ -1055,7 +1055,8 @@ set_rcvbuf:
 	case SO_ZEROCOPY:
 		if (sk->sk_family != PF_INET && sk->sk_family != PF_INET6)
 			ret = -ENOTSUPP;
-		else if (sk->sk_protocol != IPPROTO_TCP)
+		else if (sk->sk_protocol != IPPROTO_TCP ||
+			 sock_flag(sk, SOCK_MPTCP))
 			ret = -ENOTSUPP;
 		else if (sk->sk_state != TCP_CLOSE)
 			ret = -EBUSY;
