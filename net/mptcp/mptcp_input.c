@@ -1614,11 +1614,11 @@ bool mptcp_handle_ack_in_infinite(struct sock *sk, const struct sk_buff *skb,
 	if (!(flag & MPTCP_FLAG_DATA_ACKED))
 		return false;
 
-	pr_debug("%s %#x will fallback - pi %d, src %pI4:%u dst %pI4:%u rcv_nxt %u from %pS\n",
+	pr_debug("%s %#x will fallback - pi %d, src %pI4:%u dst %pI4:%u rcv_nxt %u\n",
 		 __func__, mpcb->mptcp_loc_token, tp->mptcp->path_index,
 		 &inet_sk(sk)->inet_saddr, ntohs(inet_sk(sk)->inet_sport),
 		 &inet_sk(sk)->inet_daddr, ntohs(inet_sk(sk)->inet_dport),
-		 tp->rcv_nxt, __builtin_return_address(0));
+		 tp->rcv_nxt);
 	if (!is_master_tp(tp)) {
 		MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_FBACKSUB);
 		return true;

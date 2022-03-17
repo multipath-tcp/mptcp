@@ -1227,6 +1227,12 @@ static inline void mptcp_sub_close_passive(struct sock *sk)
 static inline void mptcp_fallback_close(struct mptcp_cb *mpcb,
 					struct sock *except)
 {
+	/* It can happen that the meta is already closed. In that case, don't
+	 * keep the subflow alive - close everything!
+	 */
+	if (mpcb->meta_sk->sk_state == TCP_CLOSE)
+		except = NULL;
+
 	mptcp_sub_force_close_all(mpcb, except);
 
 	if (mpcb->pm_ops->close_session)
