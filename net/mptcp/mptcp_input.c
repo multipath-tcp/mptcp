@@ -1681,10 +1681,9 @@ bool mptcp_handle_ack_in_infinite(struct sock *sk, const struct sk_buff *skb,
 	if (!(flag & MPTCP_FLAG_DATA_ACKED))
 		return false;
 
-	pr_err("%s %#x will fallback - pi %d, src %pI4 dst %pI4 from %pS\n",
+	pr_err("%s %#x will fallback - pi %d, src %pI4 dst %pI4\n",
 	       __func__, mpcb->mptcp_loc_token, tp->mptcp->path_index,
-	       &inet_sk(sk)->inet_saddr, &inet_sk(sk)->inet_daddr,
-	       __builtin_return_address(0));
+	       &inet_sk(sk)->inet_saddr, &inet_sk(sk)->inet_daddr);
 	if (!is_master_tp(tp)) {
 		MPTCP_INC_STATS_BH(sock_net(sk), MPTCP_MIB_FBACKSUB);
 		return true;
