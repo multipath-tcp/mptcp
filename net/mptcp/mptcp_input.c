@@ -1624,6 +1624,13 @@ bool mptcp_handle_ack_in_infinite(struct sock *sk, const struct sk_buff *skb,
 		return true;
 	}
 
+	/* We have sent more than what has ever been sent on the master subflow.
+	 * This means, we won't be able to seamlessly fallback because there
+	 * will now be a hole in the sequence space.
+	 */
+	if (before(tp->mptcp->last_end_data_seq, meta_tp->snd_una))
+		return true;
+
 	mpcb->infinite_mapping_snd = 1;
 	mpcb->infinite_mapping_rcv = 1;
 	mpcb->infinite_rcv_seq = mptcp_get_rcv_nxt_64(mptcp_meta_tp(tp));
