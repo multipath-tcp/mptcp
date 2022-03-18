@@ -315,7 +315,7 @@ static struct sk_buff *mptcp_ratio_next_segment(struct sock *meta_sk,
 		int *reinject,
 		struct sock **subsk,
 		unsigned int *limit)
-{/*Start scheduling next segments*/
+{
 	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct sock *choose_sk=NULL;
 	struct mptcp_tcp_sock *mptcp;
@@ -346,8 +346,8 @@ static struct sk_buff *mptcp_ratio_next_segment(struct sock *meta_sk,
 	mptcp_sched_probe_init(&sprobe);
 
 #endif
+	/*Intial parameter setup for meta_tp*/
 	if (meta_tp->run_started == 0) {
-		/*Intial parameter setup*/
 		meta_tp->run_started = 1;
 		num_segments_flow_one = meta_tp->num_segments_flow_one = sysctl_num_segments_flow_one;
 		meta_tp->ratio_search_step = sysctl_mptcp_ratio_search_step;
@@ -374,9 +374,8 @@ static struct sk_buff *mptcp_ratio_next_segment(struct sock *meta_sk,
 		return skb;
 	}
 
-
+/*Schedule the next segment*/
 retry:
-	/* First, we look for a subflow who is currently being used */
 	mptcp_for_each_sub(mpcb, mptcp) {
 		struct sock *sk_it = mptcp_to_sock(mptcp);
 		struct tcp_sock *tp_it = tcp_sk(sk_it);
@@ -388,7 +387,8 @@ retry:
 			struct sockaddr_in6 v6;
 		} dst;
 
-		counter++;//This is for what??
+		/*Counter to distinguish the subflows*/
+		counter++;
 
 		tcp_probe_copy_fl_to_si4(inet, dst.v4, d);
 		if (!mptcp_ratio_is_available(sk_it, skb, false, cwnd_limited)){
@@ -396,22 +396,24 @@ retry:
 			continue;
 		}
 
+		/*Counter to compare with full_subs for round restart*/
 		iter++;
 
+		/* Considering the first subflow */
 		if (counter % 2) {
 			if (meta_tp->num_segments_flow_one == 0) {
 				full_subs++;
 				continue;
 			}
 
-			/* Is this subflow currently being used? */
+			/*This subflow is being used but not yet reached the quota*/
 			if (rsp->quota > 0 && rsp->quota < meta_tp->num_segments_flow_one) {
 				split = meta_tp->num_segments_flow_one - rsp->quota;
 				choose_sk = sk_it;
 				goto found;
 			}
 
-			/* Or, it's totally unused */
+			/*Nothing scheduled on this subflow yet*/
 			if (!rsp->quota) {
 				split = meta_tp->num_segments_flow_one;
 				choose_sk = sk_it;
@@ -421,20 +423,21 @@ retry:
 			if (rsp->quota >= meta_tp->num_segments_flow_one)
 				full_subs++;
 		} 
+		/* Considering the second subflow */
 		else {
 			if (num_segments - meta_tp->num_segments_flow_one == 0) {
 				full_subs++;
 				continue;
 			}  
 
-			/* Is this subflow currently being used? */
+			/*This subflow is being used but not yet reached the quota*/
 			if (rsp->quota > 0 && rsp->quota < (num_segments - meta_tp->num_segments_flow_one)) {
 				split = (num_segments - meta_tp->num_segments_flow_one) - rsp->quota;
 				choose_sk = sk_it;
 				goto found;
 			}
 
-			/* Or, it's totally unused */
+			/*Nothing scheduled on this subflow yet*/
 			if (!rsp->quota) {
 				split = num_segments - meta_tp->num_segments_flow_one;
 				choose_sk = sk_it;
@@ -446,10 +449,10 @@ retry:
 		}
 	}
 
+	/* All subflows reach quota, we restart this round by setting quota to 0 and retry
+	 * to find a subflow.
+	 */
 	if (iter && iter == full_subs) {
-		/* So, all sub flows reach quota, we restart this round by setting quota to 0 and retry
-		 * to find a subflow.
-		 */
 		mptcp_for_each_sub(mpcb, mptcp) {
 			struct sock *sk_it = mptcp_to_sock(mptcp);
 			struct tcp_sock *tp_it = tcp_sk(sk_it);
@@ -465,7 +468,6 @@ retry:
 
 found:
 	if (choose_sk) {
-		/*Schedule the chosen socket*/
 		unsigned int mss_now;
 		struct tcp_sock *choose_tp = tcp_sk(choose_sk);
 		struct ratio_sched_priv *rsp = ratio_sched_get_priv(choose_tp);
@@ -492,6 +494,8 @@ found:
 
 #ifdef MPTCP_SCHED_PROBE
 		iter = total_rate = rate_ad = rate_ac = 0;
+		
+		/*Start probe logic for every segment*/
 		mptcp_for_each_sub(mpcb, mptcp) {
 			struct sock *sk_it = mptcp_to_sock(mptcp);
 			struct tcp_sock *tp_it = tcp_sk(sk_it);
@@ -501,7 +505,7 @@ found:
 			mptcp_sched_probe_init(&sprobe);
 			iter++;
 
-			/*These two are read for every function call, e.g, every segments
+			/*These two are read for every function call, e.g, every segment
 			 * we log every 100ms or longer*/
 			subflow_rate = READ_ONCE(tp_it->rate_delivered);
 			subflow_intv = READ_ONCE(tp_it->rate_interval_us);
@@ -510,7 +514,7 @@ found:
 				do_div(subflow_rate64, subflow_intv);
 				subflow_rate64 *= 8;
 
-				if (subflow_rate64 != tp_it->last_ac_rate) { // Using last_ac_rate as last ac or ad rate
+				if (subflow_rate64 != tp_it->last_ac_rate) {
 					if (iter == 1) {
 						rate_ad += subflow_rate64;
 					} else {
@@ -533,13 +537,12 @@ found:
 				mptcp_sched_probe_log_hook(&sprobe, true, sched_probe_id, sk_it);
 			}
 			else mptcp_sched_probe_log_hook(&sprobe, false, sched_probe_id, sk_it);
-		}
+		}/*End probe logic for every segment*/
 
 		/* AUTO-RATE search */
 		do_div(total_rate, 1000000);
 		meta_tp->rate_delivered += total_rate;//no use
 		meta_tp->delivered++;
-
 
 		mptcp_for_each_sub(mpcb, mptcp) {
 			struct sock *sk_it = mptcp_to_sock(mptcp);
@@ -550,8 +553,8 @@ found:
 		}
 
 		time_diff = jiffies_to_msecs(jiffies - meta_tp->rate_interval_us);    
+		/*Ratio search logic, triggered by collecting samples every ratio_rate_sample (ms)*/
 		if (time_diff >= meta_tp->ratio_rate_sample) {
-			/*Collecting samples over an fixed sampling interval (i.e 100ms)*/
 			last_rate = meta_tp->prr_out;
 			trigger_threshold = meta_tp->prr_delivered;
 			in_search = meta_tp->lost;
@@ -565,8 +568,9 @@ found:
 
 			iter = 0;
 			meta_tp->rate_delivered = 0; 
+
+			/*Value estimation per sampling interval*/
 			mptcp_for_each_sub(mpcb, mptcp) {
-				//Throughput estimation on each interface
 				struct sock *sk_it = mptcp_to_sock(mptcp);
 				struct tcp_sock *tp_it_temp = tcp_sk(sk_it);
 				struct ratio_sched_priv *rsp_temp = ratio_sched_get_priv(tp_it_temp);
@@ -588,7 +592,7 @@ found:
 				meta_tp->rate_delivered += tput[iter];
 				rsp_temp->snd_una_saved = tp_it_temp->snd_una;
 				iter++;
-			}
+			}/*End value estimation per sampling interval*/
 
 			for (iter = 0; iter < 3; iter++) {
 				if (iter == 2)
@@ -751,8 +755,8 @@ nosearch:
 			}
 
 
+			/*Start ratio searching*/
 			if (in_search) {
-				/*Start searching*/
 				switch(meta_tp->search_state) {
 					case RIGHT_RATIO_SET:
 						printk("RIGHT_RATIO_SET");
@@ -853,9 +857,10 @@ nosearch:
 						goto reset;
 						break;
 				}
-			}//End searching
+			}/*End ratio searching*/
 
 			last_rate = meta_tp->rate_delivered;
+//Save estimation value at this interval for later use
 reset:
 			meta_tp->prr_out = last_rate;
 			meta_tp->prr_delivered = trigger_threshold;
@@ -900,14 +905,16 @@ reset:
 	iter = 0;
 	mptcp_for_each_sub(mpcb, mptcp) {
 		struct sock *sk_it = mptcp_to_sock(mptcp);
-		mptcp_sched_probe_init(&sprobe);
+		mptcp_sched_probe_init(&sprobe);//initialize sprobe
 		iter++;
 
 		if (!mptcp_ratio_is_available(sk_it, skb, false, cwnd_limited)) sprobe.temp_unavailable = true;
 
+		//Probe the chosen subflow
 		if (choose_sk == sk_it) {
 			mptcp_sched_probe_log_hook(&sprobe, true, sched_probe_id, sk_it);
 		}
+		//Don't probe the current subflow
 		else mptcp_sched_probe_log_hook(&sprobe, false, sched_probe_id, sk_it);
 	}
 #endif
