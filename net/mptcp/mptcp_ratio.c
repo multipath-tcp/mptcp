@@ -332,7 +332,7 @@ static struct sk_buff *mptcp_ratio_next_segment(struct sock *meta_sk,
 	u32 num_acks[2]={0,0};
 	int rate_diff, buffer_diff;
 	int rate_diff_sub[2] = {0,0};
-	int buffer_diff_sub[2] = {0,0};
+	int buffer_sub[2] = {0,0};
 	u32 last_buffer_size[2] = {0, 0}, init_buffer_size[2] = {0, 0}, tput[2] = {0, 0};
 	u8 threshold_cnt;
 	u8 buffer_threshold_cnt;
@@ -492,6 +492,7 @@ found:
 		else
 			rsp->quota++;
 
+		//printk("skb->len: %u, mss_now: %u, mss_cache: %u",skb->len , mss_now, choose_tp->mss_cache);
 #ifdef MPTCP_SCHED_PROBE
 		iter = total_rate = rate_ad = rate_ac = 0;
 		
@@ -544,12 +545,14 @@ found:
 		meta_tp->rate_delivered += total_rate;//no use
 		meta_tp->delivered++;
 
+		iter = 0;
 		mptcp_for_each_sub(mpcb, mptcp) {
 			struct sock *sk_it = mptcp_to_sock(mptcp);
 			struct tcp_sock *tp_it_temp = tcp_sk(sk_it);
 			struct ratio_sched_priv *rsp_temp = ratio_sched_get_priv(tp_it_temp);
 			rsp_temp->buffer_size += (tp_it_temp->write_seq - tp_it_temp->snd_una);
 			rsp_temp->delivered++;
+			iter++;
 		}
 
 		time_diff = jiffies_to_msecs(jiffies - meta_tp->rate_interval_us);    
@@ -577,6 +580,8 @@ found:
 				u32 subflow_rate, subflow_intv, curr_tstamp;
 				u64 subflow_rate64 = 0;
 				do_div(rsp_temp->buffer_size, meta_tp->delivered);
+				buffer_sub[iter] = rsp_temp->buffer_size;
+				do_div(buffer_sub[iter], 1000);//KB
 				curr_tstamp = jiffies;
 				subflow_rate = tp_it_temp->delivered - tp_it_temp->prev_tx_bytes;
 				num_acks[iter] = subflow_rate;
@@ -601,9 +606,9 @@ found:
 					meta_tp->last_rate_search_start[iter] = meta_tp->last_rate_search_start[iter+1];
 			}
 			if (inet_sk(meta_sk)->inet_daddr)
-				printk("daddr: %pI4, num_samples: %u, ratio: %d, rate_ad: %u, rate_ac: %u, rate_total: %u, srtt_ad: %u, srtt_ac: %u, min_rtt_ad:%u, min_rtt_ac:%u, num_acks_ad: %u, num_acks_ac: %u\n", &inet_sk(meta_sk)->inet_daddr, meta_tp->delivered, meta_tp->num_segments_flow_one, tput[0], tput[1], meta_tp->rate_delivered, srtt[0], srtt[1], min_rtt[0], min_rtt[1], num_acks[0], num_acks[1]);
+				printk("daddr: %pI4, num_samples: %u, ratio: %d, rate_ad: %u, rate_ac: %u, rate_total: %u, srtt_ad: %u, srtt_ac: %u, min_rtt_ad:%u, min_rtt_ac:%u, num_acks_ad: %u, num_acks_ac: %u, buffer_ad: %u, buffer_ac: %u\n", &inet_sk(meta_sk)->inet_daddr, meta_tp->delivered, meta_tp->num_segments_flow_one, tput[0], tput[1], meta_tp->rate_delivered, srtt[0], srtt[1], min_rtt[0], min_rtt[1], num_acks[0], num_acks[1],buffer_sub[0], buffer_sub[1]);
 			else
-				printk("daddr NULL, num_samples: %u, ratio: %d, rate_ad: %u, rate_ac: %u, rate_total: %u, srtt_ad: %u, srtt_ac: %u, min_rtt_ad:%u, min_rtt_ac:%u, num_acks_ad: %u, num_acks_ac: %u\n", meta_tp->delivered, meta_tp->num_segments_flow_one, tput[0], tput[1], meta_tp->rate_delivered, srtt[0], srtt[1], min_rtt[0], min_rtt[1], num_acks[0], num_acks[1]);
+				printk("daddr NULL, num_samples: %u, ratio: %d, rate_ad: %u, rate_ac: %u, rate_total: %u, srtt_ad: %u, srtt_ac: %u, min_rtt_ad:%u, min_rtt_ac:%u, num_acks_ad: %u, num_acks_ac: %u, buffer_ad: %u, buffer_ac: %u\n", meta_tp->delivered, meta_tp->num_segments_flow_one, tput[0], tput[1], meta_tp->rate_delivered, srtt[0], srtt[1], min_rtt[0], min_rtt[1], num_acks[0], num_acks[1], buffer_sub[0], buffer_sub[1]);
 
 			printk("rate_thresh_cnt: %d, buffer_thresh_cnt: %d, count_init: %u, last_rate: %u, last_trigger_tstamp: %u\n", threshold_cnt, buffer_threshold_cnt, count_set_init_rate, last_rate, last_trigger_tstamp);
 
@@ -611,7 +616,6 @@ found:
 				count_set_init_rate++;
 				printk("Entered: In search = 0, last rate = 0");
 				if (count_set_init_rate == 5) {
-					//printk("");
 					last_rate = init_rate;
 					trigger_threshold = 15 * last_rate / 100;
 					loop_counter = 0;
