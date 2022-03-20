@@ -551,6 +551,7 @@ found:
 			struct tcp_sock *tp_it_temp = tcp_sk(sk_it);
 			struct ratio_sched_priv *rsp_temp = ratio_sched_get_priv(tp_it_temp);
 			rsp_temp->buffer_size += (tp_it_temp->write_seq - tp_it_temp->snd_una);
+			buffer_sub[iter] = rsp_temp->buffer_size;
 			rsp_temp->delivered++;
 			iter++;
 		}
@@ -580,7 +581,6 @@ found:
 				u32 subflow_rate, subflow_intv, curr_tstamp;
 				u64 subflow_rate64 = 0;
 				do_div(rsp_temp->buffer_size, meta_tp->delivered);
-				buffer_sub[iter] = rsp_temp->buffer_size;
 				do_div(buffer_sub[iter], 1000);//KB
 				curr_tstamp = jiffies;
 				subflow_rate = tp_it_temp->delivered - tp_it_temp->prev_tx_bytes;
