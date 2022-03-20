@@ -606,11 +606,14 @@ found:
 					meta_tp->last_rate_search_start[iter] = meta_tp->last_rate_search_start[iter+1];
 			}
 			if (inet_sk(meta_sk)->inet_daddr)
-				printk("daddr: %pI4, num_samples: %u, ratio: %d, rate_ad: %u, rate_ac: %u, rate_total: %u, srtt_ad: %u, srtt_ac: %u, min_rtt_ad:%u, min_rtt_ac:%u, num_acks_ad: %u, num_acks_ac: %u, buffer_ad: %u, buffer_ac: %u\n", &inet_sk(meta_sk)->inet_daddr, meta_tp->delivered, meta_tp->num_segments_flow_one, tput[0], tput[1], meta_tp->rate_delivered, srtt[0], srtt[1], min_rtt[0], min_rtt[1], num_acks[0], num_acks[1],buffer_sub[0], buffer_sub[1]);
+				//printk("daddr: %pI4, num_samples: %u, ratio: %d, rate_ad: %u, rate_ac: %u, rate_total: %u, srtt_ad: %u, srtt_ac: %u, min_rtt_ad:%u, min_rtt_ac:%u, num_acks_ad: %u, num_acks_ac: %u, buffer_ad: %u, buffer_ac: %u\n", &inet_sk(meta_sk)->inet_daddr, meta_tp->delivered, meta_tp->num_segments_flow_one, tput[0], tput[1], meta_tp->rate_delivered, srtt[0], srtt[1], min_rtt[0], min_rtt[1], num_acks[0], num_acks[1],buffer_sub[0], buffer_sub[1]);
+				printk("ratio: %d, rate_ad: %u, rate_ac: %u, srtt_ad: %u, srtt_ac: %u, num_acks_ad: %u, num_acks_ac: %u, buffer_ad: %u, buffer_ac: %u\n", meta_tp->num_segments_flow_one, tput[0], tput[1], srtt[0], srtt[1], num_acks[0], num_acks[1], buffer_sub[0], buffer_sub[1]);
 			else
-				printk("daddr NULL, num_samples: %u, ratio: %d, rate_ad: %u, rate_ac: %u, rate_total: %u, srtt_ad: %u, srtt_ac: %u, min_rtt_ad:%u, min_rtt_ac:%u, num_acks_ad: %u, num_acks_ac: %u, buffer_ad: %u, buffer_ac: %u\n", meta_tp->delivered, meta_tp->num_segments_flow_one, tput[0], tput[1], meta_tp->rate_delivered, srtt[0], srtt[1], min_rtt[0], min_rtt[1], num_acks[0], num_acks[1], buffer_sub[0], buffer_sub[1]);
+				//printk("daddr NULL, num_samples: %u, ratio: %d, rate_ad: %u, rate_ac: %u, rate_total: %u, srtt_ad: %u, srtt_ac: %u, min_rtt_ad:%u, min_rtt_ac:%u, num_acks_ad: %u, num_acks_ac: %u, buffer_ad: %u, buffer_ac: %u\n", meta_tp->delivered, meta_tp->num_segments_flow_one, tput[0], tput[1], meta_tp->rate_delivered, srtt[0], srtt[1], min_rtt[0], min_rtt[1], num_acks[0], num_acks[1], buffer_sub[0], buffer_sub[1]);
+				printk("ratio: %d, rate_ad: %u, rate_ac: %u, srtt_ad: %u, srtt_ac: %u, num_acks_ad: %u, num_acks_ac: %u, buffer_ad: %u, buffer_ac: %u\n", meta_tp->num_segments_flow_one, tput[0], tput[1], srtt[0], srtt[1], num_acks[0], num_acks[1], buffer_sub[0], buffer_sub[1]);
 
-			printk("rate_thresh_cnt: %d, buffer_thresh_cnt: %d, count_init: %u, last_rate: %u, last_trigger_tstamp: %u\n", threshold_cnt, buffer_threshold_cnt, count_set_init_rate, last_rate, last_trigger_tstamp);
+			//printk("rate_thresh_cnt: %d, buffer_thresh_cnt: %d, count_init: %u, last_rate: %u, last_trigger_tstamp: %u\n", threshold_cnt, buffer_threshold_cnt, count_set_init_rate, last_rate, last_trigger_tstamp);
+			printk("rate_thresh_cnt: %d, buffer_thresh_cnt: %d\n", threshold_cnt, buffer_threshold_cnt);
 
 			if (!in_search && !last_rate) {
 				count_set_init_rate++;
