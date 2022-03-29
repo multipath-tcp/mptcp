@@ -557,8 +557,9 @@ found:
 		}
 
 		time_diff = jiffies_to_msecs(jiffies - meta_tp->rate_interval_us);    
-		/*Ratio search logic, triggered by collecting samples every ratio_rate_sample (ms)*/
+		/*Ratio search logic, triggered by collecting samples every probe interval: ratio_rate_probe interval(ms)*/
 		if (time_diff >= meta_tp->ratio_rate_sample) {
+			/*Load parameter from previous probe interval*/
 			last_rate = meta_tp->prr_out;
 			trigger_threshold = meta_tp->prr_delivered;
 			in_search = meta_tp->lost;
@@ -601,45 +602,32 @@ found:
 
 			for (iter = 0; iter < 3; iter++) {
 				if (iter == 2)
-					meta_tp->last_rate_search_start[iter] = meta_tp->rate_delivered;
+					meta_tp->last_rate_search_start[iter] = meta_tp->rate_delivered;//is current rate
 				else
-					meta_tp->last_rate_search_start[iter] = meta_tp->last_rate_search_start[iter+1];
+					meta_tp->last_rate_search_start[iter] = meta_tp->last_rate_search_start[iter+1];//keep shifting to get the updated rate
 			}
-			if (inet_sk(meta_sk)->inet_daddr)
-				printk("ratio: %d"
-					", rate_ad: %u"
-					", rate_ac: %u"
-					", srtt_ad: %u"
-					", srtt_ac: %u"
-					", num_acks_ad: %u"
-					", num_acks_ac: %u\n",
-				       	meta_tp->num_segments_flow_one, 
-					tput[0], 
-					tput[1], 
-					srtt[0], 
-					srtt[1], 
-					num_acks[0], 
-					num_acks[1]);
-			else
-				printk("ratio: %d"
-					", rate_ad: %u"
-					", rate_ac: %u"
-					", srtt_ad: %u"
-					", srtt_ac: %u"
-					", num_acks_ad: %u"
-					", num_acks_ac: %u\n",
-				       	meta_tp->num_segments_flow_one, 
-					tput[0], 
-					tput[1], 
-					srtt[0], 
-					srtt[1], 
-					num_acks[0], 
-					num_acks[1]);
 
-			printk("rate_thresh_cnt: %d"
-				", buffer_thresh_cnt: %d\n", 
-				threshold_cnt, 
-				buffer_threshold_cnt);
+			if (inet_sk(meta_sk)->inet_daddr){}
+			{
+				printk("ratio: %d"
+					", rate_ad: %u"
+					", rate_ac: %u"
+					", srtt_ad: %u"
+					", srtt_ac: %u"
+					", num_acks_ad: %u"
+					", num_acks_ac: %u\n",
+				       	meta_tp->num_segments_flow_one, 
+					tput[0], 
+					tput[1], 
+					srtt[0], 
+					srtt[1], 
+					num_acks[0], 
+					num_acks[1]);
+				printk("rate_thresh_cnt: %d"
+					", buffer_thresh_cnt: %d\n", 
+					threshold_cnt, 
+					buffer_threshold_cnt);
+			}
 
 			if (!in_search && !last_rate) {
 				count_set_init_rate++;
@@ -749,12 +737,12 @@ search_start:
 						printk("INITIAL or PERIODIC SEARCH\n");
 					}
 
-					/*Set search state and reset counter for the next skb*/
+					/*Set search state and reset counter for the next interval*/
 					in_search = true;
 					threshold_cnt = 0;
 					buffer_threshold_cnt = 0;
 
-					/*Multiply sampling interval*/
+					/*Increase sampling interval*/
 					meta_tp->ratio_rate_sample = meta_tp->ratio_rate_sample*4;
 					last_trigger_tstamp = jiffies;
 
@@ -769,7 +757,7 @@ search_start:
 					}
 
 
-					/*?????*/
+					/*Calculating averate last_rate if we decide to search*/
 					last_rate = 0;
 					for (iter = 0; iter < 3; iter++)
 						last_rate += meta_tp->last_rate_search_start[iter];
@@ -891,8 +879,8 @@ nosearch:
 			}/*End ratio searching*/
 
 			last_rate = meta_tp->rate_delivered;
-//Save estimation value at this interval for later use
 reset:
+			/*Save the calculated parameters this interval*/
 			meta_tp->prr_out = last_rate;
 			meta_tp->prr_delivered = trigger_threshold;
 			meta_tp->lost = in_search;
@@ -903,6 +891,8 @@ reset:
 			meta_tp->prior_cwnd = init_rate;
 			memcpy(meta_tp->init_buffer_size, init_buffer_size, 2*sizeof(u32));
 			memcpy(meta_tp->last_buffer_size, last_buffer_size, 2*sizeof(u32));
+			
+			/*Reset the containers for the next intervals*/
 			meta_tp->delivered = 0;
 			meta_tp->rate_delivered = 0;
 			meta_tp->high_seq = 0;
