@@ -836,7 +836,7 @@ nosearch:
 							}
 							goto reset;
 						} else {
-							if (meta_tp->num_segments_flow_one + meta_tp->ratio_search_step < 100 && meta_tp->num_segments_flow_one + meta_tp->ratio_search_step > 0)
+							if (meta_tp->num_segments_flow_one + meta_tp->ratio_search_step <= 100 && meta_tp->num_segments_flow_one + meta_tp->ratio_search_step > 0)
 								meta_tp->num_segments_flow_one += meta_tp->ratio_search_step;
 							else {
 								last_rate = 0;
