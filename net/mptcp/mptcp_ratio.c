@@ -600,8 +600,8 @@ found:
 				iter++;
 			}/*End value estimation per sampling interval*/
 
-			for (iter = 0; iter < 3; iter++) {
-				if (iter == 2)
+			for (iter = 0; iter < 5; iter++) {
+				if (iter == 4)
 					meta_tp->last_rate_search_start[iter] = meta_tp->rate_delivered;//is current rate
 				else
 					meta_tp->last_rate_search_start[iter] = meta_tp->last_rate_search_start[iter+1];//keep shifting to get the updated rate
@@ -746,7 +746,7 @@ search_start:
 					meta_tp->ratio_rate_sample = meta_tp->ratio_rate_sample*4;
 					last_trigger_tstamp = jiffies;
 
-					if (meta_tp->num_segments_flow_one < (100 - abs(meta_tp->ratio_search_step))) {
+					if (meta_tp->num_segments_flow_one <= (100 - abs(meta_tp->ratio_search_step))) {
 						meta_tp->search_state = RIGHT_RATIO_SET;
 						meta_tp->num_segments_flow_one += meta_tp->ratio_search_step;
 					}
@@ -759,9 +759,9 @@ search_start:
 
 					/*Calculating averate last_rate if we decide to search*/
 					last_rate = 0;
-					for (iter = 0; iter < 3; iter++)
+					for (iter = 0; iter < 5; iter++)
 						last_rate += meta_tp->last_rate_search_start[iter];
-					do_div(last_rate, 3);
+					do_div(last_rate, 5);
 					goto reset;
 nosearch:
 					printk("NO SEARCH\n");
@@ -779,8 +779,8 @@ nosearch:
 				switch(meta_tp->search_state) {
 					case RIGHT_RATIO_SET:
 						printk("RIGHT_RATIO_SET");
-						if (meta_tp->rate_delivered > last_rate + 5) {
-							if (meta_tp->num_segments_flow_one + meta_tp->ratio_search_step < 100) {
+						if (meta_tp->rate_delivered > last_rate) {
+							if (meta_tp->num_segments_flow_one + meta_tp->ratio_search_step <= 100) {
 								meta_tp->num_segments_flow_one += meta_tp->ratio_search_step;
 								meta_tp->search_state = SEARCH_RATE;
 							} else {
@@ -803,7 +803,7 @@ nosearch:
 						break;
 					case LEFT_RATIO_SET:
 						printk("LEFT_RATIO_SET");
-						if (meta_tp->rate_delivered > last_rate + 5) {
+						if (meta_tp->rate_delivered > last_rate) {
 							meta_tp->ratio_search_step = -1*abs(meta_tp->ratio_search_step);
 							if (meta_tp->num_segments_flow_one > abs(meta_tp->ratio_search_step)) {
 								meta_tp->num_segments_flow_one += meta_tp->ratio_search_step;
@@ -827,7 +827,7 @@ nosearch:
 						if (meta_tp->rate_delivered < last_rate) {
 							meta_tp->num_segments_flow_one -= meta_tp->ratio_search_step;
 							meta_tp->ratio_search_step = abs(meta_tp->ratio_search_step);
-							if (meta_tp->num_segments_flow_one + meta_tp->ratio_search_step/2 < 100) {
+							if (meta_tp->num_segments_flow_one + meta_tp->ratio_search_step/2 <= 100) {
 								meta_tp->num_segments_flow_one += meta_tp->ratio_search_step/2;
 								meta_tp->search_state = RIGHT_RATIO_FINE;
 							} else {
@@ -848,7 +848,7 @@ nosearch:
 						break;
 					case RIGHT_RATIO_FINE:
 						printk("RIGHT_RATIO_FINE");
-						if (meta_tp->rate_delivered > last_rate + 5) {
+						if (meta_tp->rate_delivered > last_rate) {
 							last_rate = 0;
 							in_search = false;
 							meta_tp->ratio_rate_sample = sysctl_mptcp_rate_sample;
@@ -867,7 +867,7 @@ nosearch:
 						break;
 					case LEFT_RATIO_FINE:
 						printk("LEFT_RATIO_FINE");
-						if (meta_tp->rate_delivered <= last_rate + 5) {
+						if (meta_tp->rate_delivered <= last_rate) {
 							meta_tp->num_segments_flow_one += meta_tp->ratio_search_step/2;
 						}
 						last_rate = 0;

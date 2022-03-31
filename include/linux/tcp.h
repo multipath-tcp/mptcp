@@ -515,7 +515,7 @@ struct tcp_sock {
     u64 prev_tstamp;
     u32 rate_est_val;
     u32 rate_est_cnt;
-    u32 last_rate_search_start[3]; /* 3 because that's the search trigger threshold */
+    u32 last_rate_search_start[5]; /* 5 because that's the search trigger threshold */
     u32 init_buffer_size[2];
     u32 last_buffer_size[2];
     u8 buffer_threshold_cnt;
