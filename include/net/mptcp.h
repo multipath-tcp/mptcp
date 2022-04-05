@@ -1224,7 +1224,8 @@ static inline void mptcp_sub_close_passive(struct sock *sk)
 		mptcp_sub_close(sk, 0);
 }
 
-static inline void mptcp_fallback_close(struct mptcp_cb *mpcb,
+/* Returns true if all subflows were closed */
+static inline bool mptcp_fallback_close(struct mptcp_cb *mpcb,
 					struct sock *except)
 {
 	/* It can happen that the meta is already closed. In that case, don't
@@ -1237,6 +1238,8 @@ static inline void mptcp_fallback_close(struct mptcp_cb *mpcb,
 
 	if (mpcb->pm_ops->close_session)
 		mpcb->pm_ops->close_session(mptcp_meta_sk(except));
+
+	return !except;
 }
 
 static inline bool mptcp_v6_is_v4_mapped(const struct sock *sk)
