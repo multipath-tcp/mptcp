@@ -1297,19 +1297,44 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	meta_tp->is_master_sk = 1;
 	master_sk = sk_clone_lock(meta_sk, GFP_ATOMIC | __GFP_ZERO);
 	meta_tp->is_master_sk = 0;
-	if (!master_sk)
+	if (!master_sk) {
+		net_err_ratelimited("%s Could not allocate master_sk on meta %p\n",
+				    __func__, meta_sk);
 		goto err_alloc_master;
+	}
 
 	/* Same as in inet_csk_clone_lock - need to init to 0 */
 	memset(&inet_csk(master_sk)->icsk_accept_queue, 0,
 	       sizeof(inet_csk(master_sk)->icsk_accept_queue));
 
+	/* icsk_bind_hash inherited from the meta, but it will be properly set
+	 * in mptcp_create_master_sk. Same operation is done in
+	 * inet_csk_clone_lock.
+	 */
+	inet_csk(master_sk)->icsk_bind_hash = NULL;
+
 	master_tp = tcp_sk(master_sk);
 	master_tp->inside_tk_table = 0;
 
+	master_tp->mptcp = kmem_cache_zalloc(mptcp_sock_cache, GFP_ATOMIC);
+	if (!master_tp->mptcp) {
+		net_err_ratelimited("%s Could not allocate mptcp_tcp_sock on meta %p\n",
+				    __func__, meta_sk);
+		goto err_alloc_mptcp;
+	}
+
 	mpcb = kmem_cache_zalloc(mptcp_cb_cache, GFP_ATOMIC);
-	if (!mpcb)
+	if (!mpcb) {
+		net_err_ratelimited("%s Could not allocate mpcb on meta %p\n",
+				    __func__, meta_sk);
 		goto err_alloc_mpcb;
+	}
+
+	if (__inet_inherit_port(meta_sk, master_sk) < 0) {
+		net_err_ratelimited("%s Could not inherit port on meta %p\n",
+				    __func__, meta_sk);
+		goto err_inherit_port;
+	}
 
 	/* Store the mptcp version agreed on initial handshake */
 	mpcb->mptcp_ver = mptcp_ver;
@@ -1461,10 +1486,6 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	master_tp->fastopen_req = NULL;
 
 	master_sk->sk_tsq_flags = 0;
-	/* icsk_bind_hash inherited from the meta, but it will be properly set in
-	 * mptcp_create_master_sk. Same operation is done in inet_csk_clone_lock.
-	 */
-	inet_csk(master_sk)->icsk_bind_hash = NULL;
 
 	/* Init the accept_queue structure, we support a queue of 32 pending
 	 * connections, it does not need to be huge, since we only store  here
@@ -1511,7 +1532,21 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 err_insert_token:
 	kmem_cache_free(mptcp_cb_cache, mpcb);
 
+	kmem_cache_free(mptcp_sock_cache, master_tp->mptcp);
+	master_tp->mptcp = NULL;
+
+	inet_csk_prepare_forced_close(master_sk);
+	tcp_done(master_sk);
+	return -EINVAL;
+
+err_inherit_port:
+	kmem_cache_free(mptcp_cb_cache, mpcb);
+
 err_alloc_mpcb:
+	kmem_cache_free(mptcp_sock_cache, master_tp->mptcp);
+	master_tp->mptcp = NULL;
+
+err_alloc_mptcp:
 	inet_sk(master_sk)->inet_opt = NULL;
 	master_sk->sk_state = TCP_CLOSE;
 	sock_orphan(master_sk);
@@ -1545,13 +1580,19 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	tp->mptcp = kmem_cache_zalloc(mptcp_sock_cache, flags);
-	if (!tp->mptcp)
-		return -ENOMEM;
+	/* Could have been allocated by mptcp_alloc_mpcb */
+	if (!tp->mptcp) {
+		tp->mptcp = kmem_cache_zalloc(mptcp_sock_cache, flags);
+
+		if (!tp->mptcp)
+			return -ENOMEM;
+	}
 
 	tp->mptcp->path_index = mptcp_set_new_pathindex(mpcb);
 	/* No more space for more subflows? */
 	if (!tp->mptcp->path_index) {
+		WARN_ON(is_master_tp(tp));
+
 		kmem_cache_free(mptcp_sock_cache, tp->mptcp);
 		return -EPERM;
 	}
@@ -2196,11 +2237,10 @@ int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key,
 	master_sk = tcp_sk(meta_sk)->mpcb->master_sk;
 	master_tp = tcp_sk(master_sk);
 
-	if (mptcp_add_sock(meta_sk, master_sk, 0, 0, GFP_ATOMIC))
-		goto err_add_sock;
-
-	if (__inet_inherit_port(meta_sk, master_sk) < 0)
-		goto err_add_sock;
+	if (mptcp_add_sock(meta_sk, master_sk, 0, 0, GFP_ATOMIC)) {
+		WARN_ON(1);
+		return -EINVAL;
+	}
 
 	meta_sk->sk_prot->unhash(meta_sk);
 	inet_ehash_nolisten(master_sk, NULL);
@@ -2208,10 +2248,6 @@ int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key,
 	master_tp->mptcp->init_rcv_wnd = master_tp->rcv_wnd;
 
 	return 0;
-
-err_add_sock:
-	inet_csk_prepare_forced_close(master_sk);
-	tcp_done(master_sk);
 
 err_alloc_mpcb:
 	return -ENOBUFS;
