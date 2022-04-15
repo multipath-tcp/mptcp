@@ -1447,7 +1447,7 @@ static void mptcp_snd_una_update(struct tcp_sock *meta_tp, u32 data_ack)
 	meta_tp->snd_una = data_ack;
 }
 
-/* Handle the DATA_ACK */
+/* Return false if we can continue processing packets. True, otherwise */
 static bool mptcp_process_data_ack(struct sock *sk, const struct sk_buff *skb)
 {
 	struct sock *meta_sk = mptcp_meta_sk(sk);
@@ -1591,6 +1591,7 @@ no_queue:
 	return false;
 }
 
+/* Return false if we can continue processing packets. True, otherwise */
 bool mptcp_handle_ack_in_infinite(struct sock *sk, const struct sk_buff *skb,
 				  int flag)
 {
@@ -1675,9 +1676,8 @@ bool mptcp_handle_ack_in_infinite(struct sock *sk, const struct sk_buff *skb,
 	}
 
 exit:
-	mptcp_process_data_ack(sk, skb);
 
-	return false;
+	return mptcp_process_data_ack(sk, skb);
 }
 
 /**** static functions used by mptcp_parse_options */
