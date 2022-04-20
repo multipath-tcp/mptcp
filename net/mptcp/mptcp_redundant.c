@@ -309,7 +309,7 @@ static struct sk_buff *mptcp_red_next_segment(struct sock *meta_sk,
 			red_p->skb = skb;
 			red_p->skb_start_seq = TCP_SKB_CB(skb)->seq;
 			red_p->skb_end_seq = TCP_SKB_CB(skb)->end_seq;
-			/*CBD) To make the reordering scheduler, this point should be modified compactly*/
+			/*CBD) To make the reordering scheduler, this part should be modified compactly*/
 			redsched_update_next_subflow(tp, red_cb);
 			*subsk = (struct sock *)tp;
 
