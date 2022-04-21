@@ -189,7 +189,7 @@ static void redsched_correct_skb_pointers(struct sock *meta_sk,
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
 	if (red_p->skb &&
-	    (!after(red_p->skb_start_seq, meta_tp->snd_una) ||
+	    (before(red_p->skb_start_seq, meta_tp->snd_una) ||
 	     after(red_p->skb_end_seq, meta_tp->snd_nxt)))
 		red_p->skb = NULL;
 }
