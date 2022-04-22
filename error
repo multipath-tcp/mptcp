@@ -1,5 +1,0 @@
-  DESCEND  objtool
-  CALL    scripts/checksyscalls.sh
-  CHK     include/generated/compile.h
-  CC      net/mptcp/mptcp_ratio.o
-  CC [M]  net/mptcp/mptcp_sched_probe.o

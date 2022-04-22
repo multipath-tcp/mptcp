@@ -317,10 +317,10 @@ static struct sk_buff *mptcp_ratio_next_segment(struct sock *meta_sk,
 		unsigned int *limit)
 {
 	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
-	struct sock *choose_sk=NULL;
-	struct mptcp_tcp_sock *mptcp;
+	struct sock *choose_sk=NULL;//chosen socket
+	struct mptcp_tcp_sock *mptcp;//an mptcp_socket
 	struct sk_buff *skb = __mptcp_ratio_next_segment(meta_sk, reinject);
-	unsigned int split = num_segments;
+	unsigned int split = num_segments;//
 	unsigned char iter = 0, full_subs = 0, counter = 0;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
@@ -375,11 +375,15 @@ static struct sk_buff *mptcp_ratio_next_segment(struct sock *meta_sk,
 	}
 
 /*Schedule the next segment*/
+
 retry:
 	mptcp_for_each_sub(mpcb, mptcp) {
+		/*Get scheduler private information*/
 		struct sock *sk_it = mptcp_to_sock(mptcp);
 		struct tcp_sock *tp_it = tcp_sk(sk_it);
 		struct ratio_sched_priv *rsp = ratio_sched_get_priv(tp_it);
+		/***********************************/
+
 		const struct inet_sock *inet = inet_sk(sk_it);
 		union {
 			struct sockaddr     raw;
@@ -387,10 +391,11 @@ retry:
 			struct sockaddr_in6 v6;
 		} dst;
 
-		/*Counter to distinguish the subflows*/
-		counter++;
+		
+		counter++;//this is to keep track of subflow index
+		tcp_probe_copy_fl_to_si4(inet, dst.v4, d); //useless
 
-		tcp_probe_copy_fl_to_si4(inet, dst.v4, d);
+		/*Sanity check*/
 		if (!mptcp_ratio_is_available(sk_it, skb, false, cwnd_limited)){
 			//printk("flow rejected");
 			continue;
@@ -399,7 +404,8 @@ retry:
 		/*Counter to compare with full_subs for round restart*/
 		iter++;
 
-		/* Considering the first subflow */
+		/* Check  subflow with odd index
+		 * full_sub > 0: subflow reached full quota*/
 		if (counter % 2) {
 			if (meta_tp->num_segments_flow_one == 0) {
 				full_subs++;
@@ -409,22 +415,23 @@ retry:
 			/*This subflow is being used but not yet reached the quota*/
 			if (rsp->quota > 0 && rsp->quota < meta_tp->num_segments_flow_one) {
 				split = meta_tp->num_segments_flow_one - rsp->quota;
-				choose_sk = sk_it;
+				choose_sk = sk_it;//choose this subflow
 				goto found;
 			}
 
-			/*Nothing scheduled on this subflow yet*/
+			/*Nothing scheduled on this subflow yet: choose it*/
 			if (!rsp->quota) {
 				split = meta_tp->num_segments_flow_one;
 				choose_sk = sk_it;
 			}
 
-			/* Or, it must then be fully used  */
+			/* Or, it must then be fully used*/
 			if (rsp->quota >= meta_tp->num_segments_flow_one)
 				full_subs++;
 		} 
-		/* Considering the second subflow */
+		/* Consider the even-indexed subflows*/
 		else {
+			/*This subflow has reached full quota*/
 			if (num_segments - meta_tp->num_segments_flow_one == 0) {
 				full_subs++;
 				continue;
@@ -467,6 +474,7 @@ retry:
 	}
 
 found:
+	/*We have fould the chosen socket*/
 	if (choose_sk) {
 		unsigned int mss_now;
 		struct tcp_sock *choose_tp = tcp_sk(choose_sk);
@@ -487,6 +495,8 @@ found:
 		mss_now = tcp_current_mss(*subsk);
 		*limit = split * mss_now;
 
+		/*The number of quota would be how many segements that we decided to send
+		 * on the choose_sk*/
 		if (skb->len > mss_now)
 			rsp->quota += DIV_ROUND_UP(skb->len, mss_now);
 		else
@@ -496,7 +506,7 @@ found:
 #ifdef MPTCP_SCHED_PROBE
 		iter = total_rate = rate_ad = rate_ac = 0;
 		
-		/*Start probe logic for every segment*/
+		/*Supposedly useless*/
 		mptcp_for_each_sub(mpcb, mptcp) {
 			struct sock *sk_it = mptcp_to_sock(mptcp);
 			struct tcp_sock *tp_it = tcp_sk(sk_it);
@@ -538,7 +548,7 @@ found:
 				mptcp_sched_probe_log_hook(&sprobe, true, sched_probe_id, sk_it);
 			}
 			else mptcp_sched_probe_log_hook(&sprobe, false, sched_probe_id, sk_it);
-		}/*End probe logic for every segment*/
+		}/*Supposedly useless*/
 
 		/* AUTO-RATE search */
 		do_div(total_rate, 1000000);
@@ -557,10 +567,10 @@ found:
 		}
 
 		time_diff = jiffies_to_msecs(jiffies - meta_tp->rate_interval_us);    
-		/*Ratio search logic, triggered by collecting samples every probe interval: ratio_rate_probe interval(ms)*/
+		/*start dynamic ratio search*/
 		if (time_diff >= meta_tp->ratio_rate_sample) {
 			/*Load parameter from previous probe interval*/
-			last_rate = meta_tp->prr_out;
+			last_rate = meta_tp->prr_out;//get last_rate from the container
 			trigger_threshold = meta_tp->prr_delivered;
 			in_search = meta_tp->lost;
 			threshold_cnt = (meta_tp->snd_ssthresh == INT_MAX) ? 0 : meta_tp->snd_ssthresh;
@@ -570,9 +580,10 @@ found:
 			init_rate = meta_tp->prior_cwnd;
 			memcpy(init_buffer_size, meta_tp->init_buffer_size, 2*sizeof(u32));
 			memcpy(last_buffer_size, meta_tp->last_buffer_size, 2*sizeof(u32));
+			/*End loading*/
 
 			iter = 0;
-			meta_tp->rate_delivered = 0; 
+			meta_tp->rate_delivered = 0; //reset this container so that we can use it to calculate rate
 
 			/*Value estimation per sampling interval*/
 			mptcp_for_each_sub(mpcb, mptcp) {
@@ -584,7 +595,7 @@ found:
 				do_div(rsp_temp->buffer_size, meta_tp->delivered);
 				do_div(buffer_sub[iter], 1000);//KB
 				curr_tstamp = jiffies;
-				subflow_rate = tp_it_temp->delivered - tp_it_temp->prev_tx_bytes;
+				subflow_rate = tp_it_temp->delivered - tp_it_temp->prev_tx_bytes;//number of ACKs came back
 				num_acks[iter] = subflow_rate;
 				tp_it_temp->prev_tx_bytes = tp_it_temp->delivered;
 				subflow_intv = jiffies_to_msecs(curr_tstamp - tp_it_temp->prev_tstamp);
@@ -595,19 +606,19 @@ found:
 				srtt[iter] = tp_it_temp->srtt_us>>3;
 				min_rtt[iter] = tcp_min_rtt(tp_it_temp);
 				tput[iter] = subflow_rate64;
-				meta_tp->rate_delivered += tput[iter];
+				meta_tp->rate_delivered += tput[iter];//cummulate rate on both interface
 				rsp_temp->snd_una_saved = tp_it_temp->snd_una;
 				iter++;
-			}/*End value estimation per sampling interval*/
+			}
 
 			for (iter = 0; iter < 5; iter++) {
 				if (iter == 4)
-					meta_tp->last_rate_search_start[iter] = meta_tp->rate_delivered;//is current rate
+					meta_tp->last_rate_search_start[iter] = meta_tp->rate_delivered;
 				else
 					meta_tp->last_rate_search_start[iter] = meta_tp->last_rate_search_start[iter+1];//keep shifting to get the updated rate
 			}
 
-			if (inet_sk(meta_sk)->inet_daddr){}
+			if (inet_sk(meta_sk)->inet_daddr)
 			{
 				printk("ratio: %d"
 					", rate_ad: %u"
@@ -630,8 +641,9 @@ found:
 			}
 
 			if (!in_search && !last_rate) {
-				count_set_init_rate++;
-				printk("Entered: In search = 0, last rate = 0");
+				/*Calculate the initial rate got started*/
+				count_set_init_rate++;//how many count do we like to average out for init rate
+				printk("Entered: In search = 0, last rate = 0");//
 				if (count_set_init_rate == 5) {
 					last_rate = init_rate;
 					trigger_threshold = 15 * last_rate / 100;
@@ -678,9 +690,7 @@ found:
 			}
 
 			if (!in_search && last_rate && !sysctl_mptcp_ratio_static) {
-				/*In not searching, keep monitoring if search trigger is needed*/
-				/*go to search_start if triggered*/
-				/*go to nosearch if not triggered*/
+				/*Not in search but last rate !=0:*/
 				rate_diff = (int)meta_tp->rate_delivered - (int)init_rate;
 				buffer_total = 0, init_buffer_total = 0;
 				loop_counter = 0;
@@ -691,6 +701,7 @@ found:
 					buffer_total += rsp_temp->buffer_size;
 					init_buffer_total += init_buffer_size[loop_counter++];
 				}
+
 				buffer_diff = (int)buffer_total - (int)init_buffer_total;
 
 				if (abs(rate_diff) > trigger_threshold) {
@@ -709,6 +720,7 @@ found:
 				}
 
 				if (buffer_threshold_cnt == 5 || threshold_cnt == 5) {
+					/*Search trigger condition met*/
 					mptcp_for_each_sub(mpcb, mptcp) {
 						struct sock *sk_it = mptcp_to_sock(mptcp);
 						if (tcp_in_slow_start(tcp_sk(sk_it))) {
@@ -757,8 +769,8 @@ search_start:
 					}
 
 
-					/*Calculating averate last_rate if we decide to search*/
 					last_rate = 0;
+					/*When search starts, get the average of of the last iter*sampling_time ms for comparable*/
 					for (iter = 0; iter < 5; iter++)
 						last_rate += meta_tp->last_rate_search_start[iter];
 					do_div(last_rate, 5);
@@ -878,10 +890,10 @@ nosearch:
 				}
 			}/*End ratio searching*/
 
-			last_rate = meta_tp->rate_delivered;
+			last_rate = meta_tp->rate_delivered;//if we are not in_search, last_rate is what we collected this interval
 reset:
 			/*Save the calculated parameters this interval*/
-			meta_tp->prr_out = last_rate;
+			meta_tp->prr_out = last_rate;//rate delivered this interval
 			meta_tp->prr_delivered = trigger_threshold;
 			meta_tp->lost = in_search;
 			meta_tp->snd_ssthresh = threshold_cnt;
@@ -905,7 +917,7 @@ reset:
 			}
 			meta_tp->rate_interval_us = jiffies;
 
-		}
+		}/*end dynamic ratio_search*/
 		// AUTO-RATE search 
 
 		mptcp_for_each_sub(mpcb, mptcp) {
