@@ -601,7 +601,8 @@ found:
 			num_acks_head[0] = (in_search==0)? 0: meta_tp->num_acks_head[0];
 			num_acks_head[1] = (in_search==0)? 0: meta_tp->num_acks_head[1];
 			head_length = (num_acks_head[0]==0)? 0:meta_tp->head_length;
-			//printk("head_length this period: %u", head_length);
+			//printk("head_length this period: %u, since search is %d",
+			//	       	head_length, in_search);
 			memcpy(init_buffer_size, meta_tp->init_buffer_size, 2*sizeof(u32));
 			memcpy(last_buffer_size, meta_tp->last_buffer_size, 2*sizeof(u32));
 			/*End loading*/
