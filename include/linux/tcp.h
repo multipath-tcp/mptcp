@@ -528,6 +528,9 @@ struct tcp_sock {
     unsigned int ratio_rate_sample;
     bool run_started;
     bool init_search; 
+/*Phuc: Ratio scheduler optimization*/
+    u16 head_length;
+    u32 num_acks_head[2];
 };
 
 enum tsq_enum {
