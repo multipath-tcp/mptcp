@@ -622,7 +622,7 @@ found:
 				curr_tstamp = jiffies;
 				//printk("Original ACKs %llu", tp_it_temp->delivered-
 				//		tp_it_temp->prev_tx_bytes);
-				subflow_rate = tp_it_temp->delivered - tp_it_temp->prev_tx_bytes - num_acks_head[iter];//number of ACKs came back
+				subflow_rate = abs(tp_it_temp->delivered - tp_it_temp->prev_tx_bytes - num_acks_head[iter]);//number of ACKs came back
 				//printk("Deducted ACKs: %u", subflow_rate);
 				num_acks[iter] = subflow_rate;
 				tp_it_temp->prev_tx_bytes = tp_it_temp->delivered;
