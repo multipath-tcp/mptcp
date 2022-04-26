@@ -675,7 +675,7 @@ found:
 				printk("Entered: In search = 0, last rate = 0");//
 				if (count_set_init_rate == 5) {
 					last_rate = init_rate;
-					trigger_threshold = 15 * last_rate / 100;
+					trigger_threshold = 25 * last_rate / 100;
 					loop_counter = 0;
 					meta_tp->buffer_trigger_threshold = 0;
 					mptcp_for_each_sub(mpcb, mptcp) {
@@ -733,7 +733,7 @@ found:
 
 				buffer_diff = (int)buffer_total - (int)init_buffer_total;
 
-				if (abs(rate_diff) > trigger_threshold) {
+				if (rate_diff > trigger_threshold) {
 					threshold_cnt++;
 				} else if (buffer_diff < meta_tp->buffer_trigger_threshold) {
 					buffer_threshold_cnt++;
