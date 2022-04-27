@@ -2793,7 +2793,7 @@ hsw_compute_linetime_wm(const struct intel_crtc_state *cstate)
 }
 
 static void intel_read_wm_latency(struct drm_i915_private *dev_priv,
-				  uint16_t wm[8])
+				  uint16_t wm[])
 {
 	if (INTEL_GEN(dev_priv) >= 9) {
 		uint32_t val;
