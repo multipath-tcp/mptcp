@@ -48,25 +48,18 @@
 #define EX_CCR		52
 #define EX_CFAR		56
 #define EX_PPR		64
+#define EX_LR		72
 #if defined(CONFIG_RELOCATABLE)
-#define EX_CTR		72
-#define EX_SIZE		10	/* size in u64 units */
+#define EX_CTR		80
+#define EX_SIZE		11	/* size in u64 units */
 #else
-#define EX_SIZE		9	/* size in u64 units */
+#define EX_SIZE		10	/* size in u64 units */
 #endif
 
 /*
  * maximum recursive depth of MCE exceptions
  */
 #define MAX_MCE_DEPTH	4
-
-/*
- * EX_LR is only used in EXSLB and where it does not overlap with EX_DAR
- * EX_CCR similarly with DSISR, but being 4 byte registers there is a hole
- * in the save area so it's not necessary to overlap them. Could be used
- * for future savings though if another 4 byte register was to be saved.
- */
-#define EX_LR		EX_DAR
 
 /*
  * EX_R3 is only used by the bad_stack handler. bad_stack reloads and
