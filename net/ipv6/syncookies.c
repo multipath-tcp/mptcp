@@ -188,6 +188,7 @@ struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 	ireq->mptcp_rqsk = 0;
 	ireq->saw_mpc = 0;
 	treq = tcp_rsk(req);
+	treq->af_specific = &tcp_request_sock_ipv6_ops;
 	treq->tfo_listener = false;
 
 	/* Must be done before anything else, as it initializes
