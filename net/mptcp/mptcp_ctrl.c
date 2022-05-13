@@ -2243,7 +2243,7 @@ int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key,
 	}
 
 	meta_sk->sk_prot->unhash(meta_sk);
-	inet_ehash_nolisten(master_sk, NULL);
+	inet_ehash_nolisten(master_sk, NULL, NULL);
 
 	master_tp->mptcp->init_rcv_wnd = master_tp->rcv_wnd;
 
