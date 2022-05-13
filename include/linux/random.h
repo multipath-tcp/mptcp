@@ -12,12 +12,12 @@
 
 struct notifier_block;
 
-void add_device_randomness(const void *, size_t);
-void add_bootloader_randomness(const void *, size_t);
+void add_device_randomness(const void *buf, size_t len);
+void add_bootloader_randomness(const void *buf, size_t len);
 void add_input_randomness(unsigned int type, unsigned int code,
 			  unsigned int value) __latent_entropy;
 void add_interrupt_randomness(int irq) __latent_entropy;
-void add_hwgenerator_randomness(const void *buffer, size_t count, size_t entropy);
+void add_hwgenerator_randomness(const void *buf, size_t len, size_t entropy);
 
 #if defined(LATENT_ENTROPY_PLUGIN) && !defined(__CHECKER__)
 static inline void add_latent_entropy(void)
@@ -28,8 +28,8 @@ static inline void add_latent_entropy(void)
 static inline void add_latent_entropy(void) { }
 #endif
 
-void get_random_bytes(void *buf, size_t nbytes);
-size_t __must_check get_random_bytes_arch(void *buf, size_t nbytes);
+void get_random_bytes(void *buf, size_t len);
+size_t __must_check get_random_bytes_arch(void *buf, size_t len);
 u32 get_random_u32(void);
 u64 get_random_u64(void);
 static inline unsigned int get_random_int(void)
@@ -81,18 +81,18 @@ static inline int get_random_bytes_wait(void *buf, size_t nbytes)
 	return ret;
 }
 
-#define declare_get_random_var_wait(var) \
-	static inline int get_random_ ## var ## _wait(var *out) { \
+#define declare_get_random_var_wait(name, ret_type) \
+	static inline int get_random_ ## name ## _wait(ret_type *out) { \
 		int ret = wait_for_random_bytes(); \
 		if (unlikely(ret)) \
 			return ret; \
-		*out = get_random_ ## var(); \
+		*out = get_random_ ## name(); \
 		return 0; \
 	}
-declare_get_random_var_wait(u32)
-declare_get_random_var_wait(u64)
-declare_get_random_var_wait(int)
-declare_get_random_var_wait(long)
+declare_get_random_var_wait(u32, u32)
+declare_get_random_var_wait(u64, u32)
+declare_get_random_var_wait(int, unsigned int)
+declare_get_random_var_wait(long, unsigned long)
 #undef declare_get_random_var
 
 /*
