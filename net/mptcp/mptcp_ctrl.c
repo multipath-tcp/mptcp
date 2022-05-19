@@ -1491,8 +1491,6 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 	tp->mptcp->path_index = mptcp_set_new_pathindex(mpcb);
 	/* No more space for more subflows? */
 	if (!tp->mptcp->path_index) {
-		WARN_ON(is_master_tp(tp));
-
 		kmem_cache_free(mptcp_sock_cache, tp->mptcp);
 		return -EPERM;
 	}
