@@ -574,6 +574,13 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 	if (!tp->mptcp->fully_established) {
 		tp->mptcp->second_packet = 1;
 		tp->mptcp->last_end_data_seq = TCP_SKB_CB(skb)->end_seq;
+		if (mptcp_is_data_fin(skb)) {
+			/* If this is a data-fin, do not account for it. Because,
+			 * a data-fin does not consume space in the subflow
+			 * sequence number space.
+			 */
+			tp->mptcp->last_end_data_seq--;
+		}
 	}
 
 	return true;
