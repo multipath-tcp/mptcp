@@ -59,17 +59,18 @@ class
 
 dma_mode
 
-	Transfer modes supported by the device when in DMA mode.
+	DMA transfer mode used by the device.
 	Mostly used by PATA device.
 
 pio_mode
 
-	Transfer modes supported by the device when in PIO mode.
+	PIO transfer mode used by the device.
 	Mostly used by PATA device.
 
 xfer_mode
 
 	Current transfer mode.
+	Mostly used by PATA device.
 
 id
 
