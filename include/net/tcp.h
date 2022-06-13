@@ -1570,10 +1570,10 @@ static inline int tcp_win_from_space(const struct sock *sk, int space)
 }
 
 #ifdef CONFIG_MPTCP
-extern struct static_key mptcp_static_key;
+DECLARE_STATIC_KEY_FALSE(mptcp_static_key);
 static inline bool mptcp(const struct tcp_sock *tp)
 {
-	return static_key_false(&mptcp_static_key) && tp->mpc;
+	return static_branch_unlikely(&mptcp_static_key) && tp->mpc;
 }
 #else
 static inline bool mptcp(const struct tcp_sock *tp)
