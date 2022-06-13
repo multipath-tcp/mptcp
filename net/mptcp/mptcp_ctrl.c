@@ -74,7 +74,7 @@ int sysctl_mptcp_syn_retries __read_mostly = 3;
 
 bool mptcp_init_failed __read_mostly;
 
-struct static_key mptcp_static_key = STATIC_KEY_INIT_FALSE;
+DEFINE_STATIC_KEY_FALSE(mptcp_static_key);
 EXPORT_SYMBOL(mptcp_static_key);
 
 static void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn);
@@ -384,71 +384,14 @@ static void mptcp_set_key_sk(const struct sock *sk)
 		       &tp->mptcp_loc_token, NULL);
 }
 
-#ifdef CONFIG_JUMP_LABEL
-static atomic_t mptcp_needed_deferred;
-static atomic_t mptcp_wanted;
-
-static void mptcp_clear(struct work_struct *work)
-{
-	int deferred = atomic_xchg(&mptcp_needed_deferred, 0);
-	int wanted;
-
-	wanted = atomic_add_return(deferred, &mptcp_wanted);
-	if (wanted > 0)
-		static_key_enable(&mptcp_static_key);
-	else
-		static_key_disable(&mptcp_static_key);
-}
-
-static DECLARE_WORK(mptcp_work, mptcp_clear);
-#endif
-
-static void mptcp_enable_static_key_bh(void)
-{
-#ifdef CONFIG_JUMP_LABEL
-	int wanted;
-
-	while (1) {
-		wanted = atomic_read(&mptcp_wanted);
-		if (wanted <= 0)
-			break;
-		if (atomic_cmpxchg(&mptcp_wanted, wanted, wanted + 1) == wanted)
-			return;
-	}
-	atomic_inc(&mptcp_needed_deferred);
-	schedule_work(&mptcp_work);
-#else
-	static_key_slow_inc(&mptcp_static_key);
-#endif
-}
-
 static void mptcp_enable_static_key(void)
 {
-#ifdef CONFIG_JUMP_LABEL
-	atomic_inc(&mptcp_wanted);
-	static_key_enable(&mptcp_static_key);
-#else
-	static_key_slow_inc(&mptcp_static_key);
-#endif
-}
+	if (!static_branch_unlikely(&mptcp_static_key)) {
+		static int __mptcp_static_key = 0;
 
-void mptcp_disable_static_key(void)
-{
-#ifdef CONFIG_JUMP_LABEL
-	int wanted;
-
-	while (1) {
-		wanted = atomic_read(&mptcp_wanted);
-		if (wanted <= 1)
-			break;
-		if (atomic_cmpxchg(&mptcp_wanted, wanted, wanted - 1) == wanted)
-			return;
+		if (cmpxchg(&__mptcp_static_key, 0, 1) == 0)
+			static_branch_enable(&mptcp_static_key);
 	}
-	atomic_dec(&mptcp_needed_deferred);
-	schedule_work(&mptcp_work);
-#else
-	static_key_slow_dec(&mptcp_static_key);
-#endif
 }
 
 void mptcp_enable_sock(struct sock *sk)
@@ -489,8 +432,6 @@ void mptcp_disable_sock(struct sock *sk)
 		else
 			inet_csk(sk)->icsk_af_ops = &ipv6_specific;
 #endif
-
-		mptcp_disable_static_key();
 	}
 }
 
@@ -709,8 +650,6 @@ static void mptcp_sock_destruct(struct sock *sk)
 
 		mptcp_mpcb_cleanup(tp->mpcb);
 	}
-
-	WARN_ON(!static_key_false(&mptcp_static_key));
 
 	/* Must be called here, because this will decrement the jump-label. */
 	inet_sock_destruct(sk);
@@ -1395,10 +1334,8 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	meta_sk->sk_max_ack_backlog = 32;
 	meta_sk->sk_ack_backlog = 0;
 
-	if (!sock_flag(meta_sk, SOCK_MPTCP)) {
-		mptcp_enable_static_key_bh();
+	if (!sock_flag(meta_sk, SOCK_MPTCP))
 		sock_set_flag(meta_sk, SOCK_MPTCP);
-	}
 
 	/* Redefine function-pointers as the meta-sk is now fully ready */
 	meta_tp->mpc = 1;
@@ -1501,10 +1438,8 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 	tp->mpcb = mpcb;
 	tp->meta_sk = meta_sk;
 
-	if (!sock_flag(sk, SOCK_MPTCP)) {
-		mptcp_enable_static_key_bh();
+	if (!sock_flag(sk, SOCK_MPTCP))
 		sock_set_flag(sk, SOCK_MPTCP);
-	}
 
 	tp->mpc = 1;
 	tp->ops = &mptcp_sub_specific;
