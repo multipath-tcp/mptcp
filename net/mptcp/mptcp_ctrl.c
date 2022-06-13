@@ -1429,6 +1429,7 @@ int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 	/* No more space for more subflows? */
 	if (!tp->mptcp->path_index) {
 		kmem_cache_free(mptcp_sock_cache, tp->mptcp);
+		tp->mptcp = NULL;
 		return -EPERM;
 	}
 
