@@ -78,6 +78,7 @@ config DEFAULT_MPTCP_PM
 	default "fullmesh" if DEFAULT_FULLMESH
 	default "ndiffports" if DEFAULT_NDIFFPORTS
 	default "binder" if DEFAULT_BINDER
+	default "netlink" if DEFAULT_NETLINK
 	default "default"
 
 menuconfig MPTCP_SCHED_ADVANCED
