@@ -294,7 +294,7 @@ int __mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 {
 	struct tcp_sock *tp;
 	struct sock *sk;
-	struct sockaddr_in6 loc_in, rem_in;
+	struct sockaddr_in6 sockaddr;
 	struct socket_alloc sock_full;
 	struct socket *sock = (struct socket *)&sock_full;
 	int ret;
@@ -332,38 +332,39 @@ int __mptcp_init6_subsockets(struct sock *meta_sk, const struct mptcp_loc6 *loc,
 	timer_setup(&tp->mptcp->mptcp_ack_timer, mptcp_ack_handler, 0);
 
 	/** Then, connect the socket to the peer */
-	loc_in.sin6_family = AF_INET6;
-	rem_in.sin6_family = AF_INET6;
-	loc_in.sin6_port = sport;
-	if (rem->port)
-		rem_in.sin6_port = rem->port;
-	else
-		rem_in.sin6_port = inet_sk(meta_sk)->inet_dport;
-	loc_in.sin6_addr = loc->addr;
-	rem_in.sin6_addr = rem->addr;
+	sockaddr.sin6_family = AF_INET6;
+	sockaddr.sin6_port = sport;
+	sockaddr.sin6_addr = loc->addr;
 
 	if (loc->if_idx)
 		sk->sk_bound_dev_if = loc->if_idx;
 
-	ret = kernel_bind(sock, (struct sockaddr *)&loc_in,
+	ret = kernel_bind(sock, (struct sockaddr *)&sockaddr,
 			  sizeof(struct sockaddr_in6));
 	if (ret < 0) {
 		net_err_ratelimited("%s: token %#x bind() to %pI6 index %d failed, error %d\n",
 				    __func__, tcp_sk(meta_sk)->mpcb->mptcp_loc_token,
-				    &loc_in.sin6_addr, loc->if_idx, ret);
+				    &sockaddr.sin6_addr, loc->if_idx, ret);
 		goto error;
 	}
-
-	mptcp_debug("%s: token %#x pi %d src_addr:%pI6:%d dst_addr:%pI6:%d ifidx: %u\n",
-		    __func__, tcp_sk(meta_sk)->mpcb->mptcp_loc_token,
-		    tp->mptcp->path_index, &loc_in.sin6_addr,
-		    ntohs(loc_in.sin6_port), &rem_in.sin6_addr,
-		    ntohs(rem_in.sin6_port), loc->if_idx);
 
 	if (tcp_sk(meta_sk)->mpcb->pm_ops->init_subsocket_v6)
 		tcp_sk(meta_sk)->mpcb->pm_ops->init_subsocket_v6(sk, rem->addr);
 
-	ret = kernel_connect(sock, (struct sockaddr *)&rem_in,
+	sockaddr.sin6_family = AF_INET6;
+	if (rem->port)
+		sockaddr.sin6_port = rem->port;
+	else
+		sockaddr.sin6_port = inet_sk(meta_sk)->inet_dport;
+	sockaddr.sin6_addr = rem->addr;
+
+	mptcp_debug("%s: token %#x pi %d src_addr:%pI6:%d dst_addr:%pI6:%d ifidx: %u\n",
+		    __func__, tcp_sk(meta_sk)->mpcb->mptcp_loc_token,
+		    tp->mptcp->path_index, &loc->addr,
+		    ntohs(sport), &sockaddr.sin6_addr,
+		    ntohs(sockaddr.sin6_port), loc->if_idx);
+
+	ret = kernel_connect(sock, (struct sockaddr *)&sockaddr,
 			     sizeof(struct sockaddr_in6), O_NONBLOCK);
 	if (ret < 0 && ret != -EINPROGRESS) {
 		net_err_ratelimited("%s: MPTCP subsocket connect() failed, error %d\n",
