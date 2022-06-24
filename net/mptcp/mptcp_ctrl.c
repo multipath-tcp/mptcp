@@ -1041,6 +1041,28 @@ static const struct tcp_sock_ops mptcp_sub_specific = {
 	.set_cong_ctrl                  = __tcp_set_congestion_control,
 };
 
+/* Inspired by inet_csk_prepare_forced_close */
+static void mptcp_icsk_forced_close(struct sock *sk)
+{
+	/* The problem with inet_csk_prepare_forced_close is that it unlocks
+	 * before calling tcp_done. That is fine for sockets that are not
+	 * yet in the ehash table. But for us we already are there. Thus,
+	 * if we unlock we run the risk of processing packets while inside
+	 * tcp_done() and friends. That can cause all kind of problems...
+	 */
+
+	/* The below has to be done to allow calling inet_csk_destroy_sock */
+	sock_set_flag(sk, SOCK_DEAD);
+	percpu_counter_inc(sk->sk_prot->orphan_count);
+	inet_sk(sk)->inet_num = 0;
+
+	tcp_done(sk);
+
+	/* sk_clone_lock locked the socket and set refcnt to 2 */
+	bh_unlock_sock(sk);
+	sock_put(sk);
+}
+
 static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 			    __u8 mptcp_ver, u32 window)
 {
@@ -1295,8 +1317,7 @@ err_insert_token:
 	kmem_cache_free(mptcp_sock_cache, master_tp->mptcp);
 	master_tp->mptcp = NULL;
 
-	inet_csk_prepare_forced_close(master_sk);
-	tcp_done(master_sk);
+	mptcp_icsk_forced_close(master_sk);
 	return -EINVAL;
 
 err_inherit_port:
@@ -2011,8 +2032,7 @@ static int __mptcp_check_req_master(struct sock *child,
 
 	if (mptcp_create_master_sk(meta_sk, mtreq->mptcp_rem_key,
 				   mtreq->mptcp_ver, child_tp->snd_wnd)) {
-		inet_csk_prepare_forced_close(meta_sk);
-		tcp_done(meta_sk);
+		mptcp_icsk_forced_close(meta_sk);
 
 		return -ENOBUFS;
 	}
@@ -2223,8 +2243,9 @@ teardown:
 	/* Drop this request - sock creation failed. */
 	inet_csk_reqsk_queue_drop(meta_sk, req);
 	reqsk_queue_removed(&inet_csk(meta_sk)->icsk_accept_queue, req);
-	inet_csk_prepare_forced_close(child);
-	tcp_done(child);
+
+	mptcp_icsk_forced_close(child);
+
 	return meta_sk;
 }
 
