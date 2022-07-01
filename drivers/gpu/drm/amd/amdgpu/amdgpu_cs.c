@@ -84,7 +84,7 @@ static int amdgpu_cs_parser_init(struct amdgpu_cs_parser *p, void *data)
 	int ret;
 
 	if (cs->in.num_chunks == 0)
-		return 0;
+		return -EINVAL;
 
 	chunk_array = kmalloc_array(cs->in.num_chunks, sizeof(uint64_t), GFP_KERNEL);
 	if (!chunk_array)
