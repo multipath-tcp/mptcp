@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
 VERSION = 5
 PATCHLEVEL = 4
-SUBLEVEL = 197
+SUBLEVEL = 202
 EXTRAVERSION =
 NAME = Kleptomaniac Octopus
 
@@ -1073,7 +1073,7 @@ PHONY += autoksyms_recursive
 ifdef CONFIG_TRIM_UNUSED_KSYMS
 autoksyms_recursive: descend modules.order
 	$(Q)$(CONFIG_SHELL) $(srctree)/scripts/adjust_autoksyms.sh \
-	  "$(MAKE) -f $(srctree)/Makefile vmlinux"
+	  "$(MAKE) -f $(srctree)/Makefile autoksyms_recursive"
 endif
 
 # For the kernel to actually contain only the needed exported symbols,
