@@ -197,14 +197,14 @@ int mptcp_v6_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	if (!sk)
 		goto new_subflow;
 
-	if (is_meta_sk(sk)) {
-		WARN("%s Did not find a sub-sk - did found the meta!\n", __func__);
-		sock_put(sk);
+	if (sk->sk_state == TCP_TIME_WAIT) {
+		inet_twsk_put(inet_twsk(sk));
 		goto discard;
 	}
 
-	if (sk->sk_state == TCP_TIME_WAIT) {
-		inet_twsk_put(inet_twsk(sk));
+	if (is_meta_sk(sk)) {
+		WARN("%s Did not find a sub-sk - did found the meta!\n", __func__);
+		sock_put(sk);
 		goto discard;
 	}
 
