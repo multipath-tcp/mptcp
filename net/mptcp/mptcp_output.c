@@ -279,6 +279,10 @@ void mptcp_reinject_data(struct sock *sk, int clone_it)
 		__mptcp_reinject_data(skb_it, meta_sk, sk, clone_it);
 	}
 
+	/* We are emptying the rtx-queue. highest_sack is invalid */
+	if (!clone_it)
+		tp->highest_sack = NULL;
+
 	skb_it = tcp_write_queue_tail(meta_sk);
 	/* If sk has sent the empty data-fin, we have to reinject it too. */
 	if (skb_it && mptcp_is_data_fin(skb_it) && skb_it->len == 0 &&
