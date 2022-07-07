@@ -199,16 +199,16 @@ int mptcp_v4_do_rcv(struct sock *meta_sk, struct sk_buff *skb)
 			kfree_skb(skb);
 			return 0;
 		}
+		if (sk->sk_state == TCP_TIME_WAIT) {
+			inet_twsk_put(inet_twsk(sk));
+			kfree_skb(skb);
+			return 0;
+		}
+
 		if (is_meta_sk(sk)) {
 			WARN("%s Did not find a sub-sk - did found the meta!\n", __func__);
 			kfree_skb(skb);
 			sock_put(sk);
-			return 0;
-		}
-
-		if (sk->sk_state == TCP_TIME_WAIT) {
-			inet_twsk_put(inet_twsk(sk));
-			kfree_skb(skb);
 			return 0;
 		}
 
