@@ -1563,7 +1563,9 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 	 */
 	if (refcount_read(&meta_sk->sk_wmem_alloc) >
 	    min(meta_sk->sk_wmem_queued + (meta_sk->sk_wmem_queued >> 2), meta_sk->sk_sndbuf)) {
-		return -EAGAIN;
+		err = -EAGAIN;
+
+		goto failed;
 	}
 
 	/* We need to make sure that the retransmitted segment can be sent on a
@@ -1626,6 +1628,12 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 
 failed:
 	NET_INC_STATS(sock_net(meta_sk), LINUX_MIB_TCPRETRANSFAIL);
+	/* Save stamp of the first attempted retransmit. */
+	if (!meta_tp->retrans_stamp) {
+		tcp_mstamp_refresh(meta_tp);
+		meta_tp->retrans_stamp = tcp_time_stamp(meta_tp);
+	}
+
 	return err;
 }
 
