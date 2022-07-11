@@ -1382,6 +1382,7 @@ void mptcp_send_fin(struct sock *meta_sk)
 		tcp_init_nondata_skb(skb, meta_tp->write_seq, TCPHDR_ACK);
 		TCP_SKB_CB(skb)->end_seq++;
 		TCP_SKB_CB(skb)->mptcp_flags |= MPTCPHDR_FIN;
+		sk_forced_mem_schedule(meta_sk, skb->truesize);
 		tcp_queue_skb(meta_sk, skb);
 	}
 	__tcp_push_pending_frames(meta_sk, mss_now, TCP_NAGLE_OFF);

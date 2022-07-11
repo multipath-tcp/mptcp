@@ -1673,6 +1673,7 @@ static int mptcp_sub_send_fin(struct sock *sk)
 		/* FIN eats a sequence byte, write_seq advanced by tcp_queue_skb(). */
 		tcp_init_nondata_skb(skb, tp->write_seq,
 				     TCPHDR_ACK | TCPHDR_FIN);
+		sk_forced_mem_schedule(sk, skb->truesize);
 		tcp_queue_skb(sk, skb);
 	}
 	__tcp_push_pending_frames(sk, mss_now, TCP_NAGLE_OFF);
