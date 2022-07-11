@@ -1391,6 +1391,12 @@ int tcp_fragment(struct sock *sk, enum tcp_queue tcp_queue,
 	TCP_SKB_CB(buff)->end_seq = TCP_SKB_CB(skb)->end_seq;
 	TCP_SKB_CB(skb)->end_seq = TCP_SKB_CB(buff)->seq;
 
+#ifdef CONFIG_MPTCP
+	memcpy(TCP_SKB_CB(buff)->dss, TCP_SKB_CB(skb)->dss,
+	       sizeof(TCP_SKB_CB(skb)->dss));
+	TCP_SKB_CB(buff)->mptcp_flags = TCP_SKB_CB(skb)->mptcp_flags;
+#endif
+
 	/* PSH and FIN should only be set in the second packet. */
 	flags = TCP_SKB_CB(skb)->tcp_flags;
 	TCP_SKB_CB(skb)->tcp_flags = flags & ~(TCPHDR_FIN | TCPHDR_PSH);
@@ -1953,6 +1959,12 @@ static int tso_fragment(struct sock *sk, struct sk_buff *skb, unsigned int len,
 	TCP_SKB_CB(buff)->seq = TCP_SKB_CB(skb)->seq + len;
 	TCP_SKB_CB(buff)->end_seq = TCP_SKB_CB(skb)->end_seq;
 	TCP_SKB_CB(skb)->end_seq = TCP_SKB_CB(buff)->seq;
+
+#ifdef CONFIG_MPTCP
+	memcpy(TCP_SKB_CB(buff)->dss, TCP_SKB_CB(skb)->dss,
+	       sizeof(TCP_SKB_CB(skb)->dss));
+	TCP_SKB_CB(buff)->mptcp_flags = TCP_SKB_CB(skb)->mptcp_flags;
+#endif
 
 	/* PSH and FIN should only be set in the second packet. */
 	flags = TCP_SKB_CB(skb)->tcp_flags;
