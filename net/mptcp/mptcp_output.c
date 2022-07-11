@@ -506,9 +506,19 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 	struct tcp_skb_cb *tcb;
 	struct sk_buff *subskb = NULL;
 
-	if (!reinject)
+	if (reinject) {
+		/* Make sure to update counters and MIB in case of meta-retrans
+		 * AKA reinjections, similar to what is done in
+		 * __tcp_retransmit_skb().
+		 */
+		int segs = tcp_skb_pcount(skb);
+
+		MPTCP_ADD_STATS(sock_net(meta_sk), MPTCP_MIB_RETRANSSEGS, segs);
+		tcp_sk(meta_sk)->total_retrans += segs;
+	} else {
 		TCP_SKB_CB(skb)->mptcp_flags |= (mpcb->snd_hiseq_index ?
 						  MPTCPHDR_SEQ64_INDEX : 0);
+	}
 
 	tcp_skb_tsorted_save(skb) {
 		subskb = pskb_copy_for_clone(skb, GFP_ATOMIC);
@@ -1598,9 +1608,6 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 
 	if (!mptcp_skb_entail(subsk, skb, -1))
 		goto failed;
-
-	/* Update global TCP statistics. */
-	MPTCP_ADD_STATS(sock_net(meta_sk), MPTCP_MIB_RETRANSSEGS, tcp_skb_pcount(skb));
 
 	/* Diff to tcp_retransmit_skb */
 
