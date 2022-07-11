@@ -515,6 +515,7 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 
 		MPTCP_ADD_STATS(sock_net(meta_sk), MPTCP_MIB_RETRANSSEGS, segs);
 		tcp_sk(meta_sk)->total_retrans += segs;
+		tcp_sk(meta_sk)->bytes_retrans += skb->len;
 	} else {
 		TCP_SKB_CB(skb)->mptcp_flags |= (mpcb->snd_hiseq_index ?
 						  MPTCPHDR_SEQ64_INDEX : 0);
