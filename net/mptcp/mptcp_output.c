@@ -559,6 +559,7 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 
 		tcp_add_write_queue_tail(sk, subskb);
 		sk->sk_wmem_queued += subskb->truesize;
+		sk_forced_mem_schedule(sk, subskb->truesize);
 		sk_mem_charge(sk, subskb->truesize);
 	} else {
 		/* Necessary to initialize for tcp_transmit_skb. mss of 1, as

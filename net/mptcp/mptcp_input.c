@@ -998,6 +998,7 @@ static int mptcp_queue_skb(struct sock *sk)
 			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 			mptcp_prepare_skb(tmp1, sk);
 			__skb_unlink(tmp1, &sk->sk_receive_queue);
+			sk_forced_mem_schedule(meta_sk, tmp1->truesize);
 			/* MUST be done here, because fragstolen may be true later.
 			 * Then, kfree_skb_partial will not account the memory.
 			 */
@@ -1029,6 +1030,7 @@ static int mptcp_queue_skb(struct sock *sk)
 			tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 			mptcp_prepare_skb(tmp1, sk);
 			__skb_unlink(tmp1, &sk->sk_receive_queue);
+			sk_forced_mem_schedule(meta_sk, tmp1->truesize);
 			/* MUST be done here, because fragstolen may be true.
 			 * Then, kfree_skb_partial will not account the memory.
 			 */
