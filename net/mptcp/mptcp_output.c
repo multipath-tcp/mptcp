@@ -492,6 +492,7 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 	if (!mptcp_is_data_fin(subskb) || tcb->end_seq != tcb->seq) {
 		tcp_add_write_queue_tail(sk, subskb);
 		sk->sk_wmem_queued += subskb->truesize;
+		sk_forced_mem_schedule(sk, subskb->truesize);
 		sk_mem_charge(sk, subskb->truesize);
 	} else {
 		int err;
