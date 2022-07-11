@@ -1600,7 +1600,7 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 		goto failed;
 
 	/* Update global TCP statistics. */
-	MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_RETRANSSEGS);
+	MPTCP_ADD_STATS(sock_net(meta_sk), MPTCP_MIB_RETRANSSEGS, tcp_skb_pcount(skb));
 
 	/* Diff to tcp_retransmit_skb */
 

@@ -691,6 +691,7 @@ static inline struct sock *mptcp_to_sock(const struct mptcp_tcp_sock *mptcp)
 	mptcp_for_each_bit_set(~b, i)
 
 #define MPTCP_INC_STATS(net, field)	SNMP_INC_STATS((net)->mptcp.mptcp_statistics, field)
+#define MPTCP_ADD_STATS(net, field, val)	SNMP_ADD_STATS((net)->mptcp.mptcp_statistics, field, val)
 
 enum
 {
