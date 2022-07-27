@@ -1131,7 +1131,6 @@ static void mptcp_icsk_forced_close(struct sock *sk)
 	/* The below has to be done to allow calling inet_csk_destroy_sock */
 	sock_set_flag(sk, SOCK_DEAD);
 	percpu_counter_inc(sk->sk_prot->orphan_count);
-	inet_sk(sk)->inet_num = 0;
 
 	tcp_done(sk);
 
