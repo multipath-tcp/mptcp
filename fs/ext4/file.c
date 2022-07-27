@@ -588,6 +588,12 @@ static loff_t ext4_seek_data(struct file *file, loff_t offset, loff_t maxsize)
 		inode_unlock(inode);
 		return -ENXIO;
 	}
+	/*
+	 * Make sure inline data cannot be created anymore since we are going
+	 * to allocate blocks for DIO. We know the inode does not have any
+	 * inline data now because ext4_dio_supported() checked for that.
+	 */
+	ext4_clear_inode_state(inode, EXT4_STATE_MAY_INLINE_DATA);
 
 	blkbits = inode->i_sb->s_blocksize_bits;
 	start = offset >> blkbits;
