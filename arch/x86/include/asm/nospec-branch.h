@@ -52,7 +52,9 @@
 774:						\
 	dec	reg;				\
 	jnz	771b;				\
-	add	$(BITS_PER_LONG/8) * nr, sp;
+	add	$(BITS_PER_LONG/8) * nr, sp;	\
+	/* barrier for jnz misprediction */	\
+	lfence;
 
 /* Sequence to mitigate PBRSB on eIBRS CPUs */
 #define __ISSUE_UNBALANCED_RET_GUARD(sp)	\
