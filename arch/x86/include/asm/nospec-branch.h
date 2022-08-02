@@ -54,6 +54,14 @@
 	jnz	771b;				\
 	add	$(BITS_PER_LONG/8) * nr, sp;
 
+/* Sequence to mitigate PBRSB on eIBRS CPUs */
+#define __ISSUE_UNBALANCED_RET_GUARD(sp)	\
+	call	881f;				\
+	int3;					\
+881:						\
+	add	$(BITS_PER_LONG/8), sp;		\
+	lfence;
+
 #ifdef __ASSEMBLY__
 
 /*
@@ -269,6 +277,13 @@ static inline void vmexit_fill_RSB(void)
 		      : "=r" (loops), ASM_CALL_CONSTRAINT
 		      : : "memory" );
 #endif
+	asm volatile (ANNOTATE_NOSPEC_ALTERNATIVE
+		      ALTERNATIVE("jmp 920f",
+				  __stringify(__ISSUE_UNBALANCED_RET_GUARD(%0)),
+				  X86_FEATURE_RSB_VMEXIT_LITE)
+		      "920:"
+		      : ASM_CALL_CONSTRAINT
+		      : : "memory" );
 }
 
 static __always_inline
