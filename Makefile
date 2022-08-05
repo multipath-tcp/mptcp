@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
 VERSION = 4
 PATCHLEVEL = 19
-SUBLEVEL = 249
+SUBLEVEL = 254
 EXTRAVERSION =
 NAME = "People's Front"
 
@@ -1017,7 +1017,7 @@ PHONY += autoksyms_recursive
 autoksyms_recursive: $(vmlinux-deps)
 ifdef CONFIG_TRIM_UNUSED_KSYMS
 	$(Q)$(CONFIG_SHELL) $(srctree)/scripts/adjust_autoksyms.sh \
-	  "$(MAKE) -f $(srctree)/Makefile vmlinux"
+	  "$(MAKE) -f $(srctree)/Makefile autoksyms_recursive"
 endif
 
 # For the kernel to actually contain only the needed exported symbols,
