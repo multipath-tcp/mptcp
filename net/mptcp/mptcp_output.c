@@ -1628,7 +1628,7 @@ out_reset_timer:
 	 * linear-timeout retransmissions into a black hole
 	 */
 	if (meta_sk->sk_state == TCP_ESTABLISHED &&
-	    (meta_tp->thin_lto || sysctl_tcp_thin_linear_timeouts) &&
+	    (meta_tp->thin_lto || READ_ONCE(sysctl_tcp_thin_linear_timeouts)) &&
 	    tcp_stream_is_thin(meta_tp) &&
 	    meta_icsk->icsk_retransmits <= TCP_THIN_LINEAR_RETRIES) {
 		meta_icsk->icsk_backoff = 0;
