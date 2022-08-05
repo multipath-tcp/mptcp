@@ -582,7 +582,7 @@ static inline void skb_drop_fraglist(struct sk_buff *skb)
 	skb_drop_list(&skb_shinfo(skb)->frag_list);
 }
 
-void skb_clone_fraglist(struct sk_buff *skb)
+static void skb_clone_fraglist(struct sk_buff *skb)
 {
 	struct sk_buff *list;
 
