@@ -410,8 +410,6 @@ unsigned int tcp_xmit_size_goal(struct sock *sk, u32 mss_now,
 				       int large_allowed);
 u32 tcp_tso_acked(struct sock *sk, struct sk_buff *skb);
 
-void skb_clone_fraglist(struct sk_buff *skb);
-
 void inet_twsk_free(struct inet_timewait_sock *tw);
 int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb);
 /* These states need RST on ABORT according to RFC793 */
