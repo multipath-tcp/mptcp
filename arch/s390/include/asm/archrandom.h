@@ -2,7 +2,7 @@
 /*
  * Kernel interface for the s390 arch_random_* functions
  *
- * Copyright IBM Corp. 2017
+ * Copyright IBM Corp. 2017, 2020
  *
  * Author: Harald Freudenberger <freude@de.ibm.com>
  *
@@ -20,38 +20,34 @@
 DECLARE_STATIC_KEY_FALSE(s390_arch_random_available);
 extern atomic64_t s390_arch_random_counter;
 
-static void s390_arch_random_generate(u8 *buf, unsigned int nbytes)
+static inline bool __must_check arch_get_random_long(unsigned long *v)
 {
-	cpacf_trng(NULL, 0, buf, nbytes);
-	atomic64_add(nbytes, &s390_arch_random_counter);
+	return false;
 }
 
-static inline bool arch_get_random_long(unsigned long *v)
+static inline bool __must_check arch_get_random_int(unsigned int *v)
+{
+	return false;
+}
+
+static inline bool __must_check arch_get_random_seed_long(unsigned long *v)
 {
 	if (static_branch_likely(&s390_arch_random_available)) {
-		s390_arch_random_generate((u8 *)v, sizeof(*v));
+		cpacf_trng(NULL, 0, (u8 *)v, sizeof(*v));
+		atomic64_add(sizeof(*v), &s390_arch_random_counter);
 		return true;
 	}
 	return false;
 }
 
-static inline bool arch_get_random_int(unsigned int *v)
+static inline bool __must_check arch_get_random_seed_int(unsigned int *v)
 {
 	if (static_branch_likely(&s390_arch_random_available)) {
-		s390_arch_random_generate((u8 *)v, sizeof(*v));
+		cpacf_trng(NULL, 0, (u8 *)v, sizeof(*v));
+		atomic64_add(sizeof(*v), &s390_arch_random_counter);
 		return true;
 	}
 	return false;
-}
-
-static inline bool arch_get_random_seed_long(unsigned long *v)
-{
-	return arch_get_random_long(v);
-}
-
-static inline bool arch_get_random_seed_int(unsigned int *v)
-{
-	return arch_get_random_int(v);
 }
 
 #endif /* CONFIG_ARCH_RANDOM */
