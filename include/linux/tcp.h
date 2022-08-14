@@ -199,6 +199,15 @@ static inline struct tcp_request_sock *tcp_rsk(const struct request_sock *req)
 
 struct tcp_md5sig_key;
 
+/*phuc*/
+typedef enum {
+        RIGHT_RATIO_SET,
+        LEFT_RATIO_SET,
+        SEARCH_RATE,
+	RIGHT_RATIO_FINE,
+	LEFT_RATIO_FINE
+}ratio_search_state;
+
 struct tcp_sock {
 	/* inet_connection_sock has to be the first member of tcp_sock */
 	struct inet_connection_sock	inet_conn;
@@ -273,6 +282,9 @@ struct tcp_sock {
 		u32 end_seq; /* Ending TCP sequence of the skb */
 		u32 last_delivered; /* tp->delivered at last reo_wnd adj */
 		u8 reo_wnd_steps;   /* Allowed reordering window */
+		/*Phuc*/
+		u8 reord;    /* reordering detected */
+		/****/
 #define TCP_RACK_RECOVERY_THRESH 16
 		u8 reo_wnd_persist:5, /* No. of recovery since last adj */
 		   dsack_seen:1, /* Whether DSACK seen after last adj */
@@ -494,6 +506,31 @@ struct tcp_sock {
 	char		mptcp_sched_name[MPTCP_SCHED_NAME_MAX];
 	char		mptcp_pm_name[MPTCP_PM_NAME_MAX];
 #endif /* CONFIG_MPTCP */
+/* shivanga: Ratio Scheduler Variables */
+    u32 last_probe_tstamp;
+    u32 in_probe;
+    u32 last_ac_rate;
+    u32 last_ratio;
+    u64 prev_tx_bytes;
+    u64 prev_tstamp;
+    u32 rate_est_val;
+    u32 rate_est_cnt;
+    u32 last_rate_search_start[5]; /* 5 because that's the search trigger threshold */
+    u32 init_buffer_size[2];
+    u32 last_buffer_size[2];
+    u8 buffer_threshold_cnt;
+    s32 buffer_trigger_threshold;
+    ratio_search_state search_state;
+    //u8 buf_size_acc;
+    struct sock *prev_sk;
+    unsigned int num_segments_flow_one;
+    int ratio_search_step;
+    unsigned int ratio_rate_sample;
+    bool run_started;
+    bool init_search; 
+/*Phuc: Ratio scheduler optimization*/
+    u16 head_length;
+    u32 num_acks_head[2];
 };
 
 enum tsq_enum {
@@ -536,7 +573,7 @@ struct tcp_timewait_sock {
 	/* The time we sent the last out-of-window ACK: */
 	u32			  tw_last_oow_ack_time;
 
-	int			  tw_ts_recent_stamp;
+	long			  tw_ts_recent_stamp;
 #ifdef CONFIG_TCP_MD5SIG
 	struct tcp_md5sig_key	  *tw_md5_key;
 #endif

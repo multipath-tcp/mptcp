@@ -157,6 +157,7 @@ struct mptcp_options_received {
 
 struct mptcp_tcp_sock {
 	struct hlist_node node;
+	struct tcp_sock	*next;		/* Next subflow socket */
 	struct hlist_node cb_list;
 	struct mptcp_options_received rx_opt;
 
@@ -166,6 +167,7 @@ struct mptcp_tcp_sock {
 	u16	map_data_len;
 	u16	slave_sk:1,
 		fully_established:1,
+		establish_increased:1,
 		second_packet:1,
 		attached:1,
 		send_mp_fail:1,
@@ -187,7 +189,7 @@ struct mptcp_tcp_sock {
 	u8	rem_id;
 	u8	sk_err;
 
-#define MPTCP_SCHED_SIZE 16
+#define MPTCP_SCHED_SIZE 64
 	u8	mptcp_sched[MPTCP_SCHED_SIZE] __aligned(8);
 
 	int	init_rcv_wnd;
@@ -261,6 +263,8 @@ struct mptcp_sched_ops {
 struct mptcp_cb {
 	/* list of sockets in this multipath connection */
 	struct hlist_head conn_list;
+	/*phuc*/
+	struct tcp_sock *connection_list;
 	/* list of sockets that need a call to release_cb */
 	struct hlist_head callback_list;
 
@@ -288,9 +292,13 @@ struct mptcp_cb {
 		rcv_hiseq_index:1, /* Index in rcv_high_order of rcv_nxt */
 		tcp_ca_explicit_set:1; /* was meta CC set by app? */
 
+	/* socket count in this connection */
+	u8 cnt_subflows;
+	u8 cnt_established;
 #define MPTCP_SCHED_DATA_SIZE 8
 	u8 mptcp_sched[MPTCP_SCHED_DATA_SIZE] __aligned(8);
-	const struct mptcp_sched_ops *sched_ops;
+	//const struct mptcp_sched_ops *sched_ops;
+	struct mptcp_sched_ops *sched_ops;
 
 	struct sk_buff_head reinject_queue;
 	/* First cache-line boundary is here minus 8 bytes. But from the
@@ -346,6 +354,11 @@ struct mptcp_cb {
 	u32 orig_window_clamp;
 
 	struct tcp_info	*master_info;
+
+	/* swetank */
+	u32 cnt_in_order;
+	u32 cnt_out_of_order;
+	/* end:swetankk */
 };
 
 #define MPTCP_VERSION_0 0
@@ -461,6 +474,18 @@ extern bool mptcp_init_failed;
 /* MPTCP flags: TX only */
 #define MPTCPHDR_INF		0x08
 #define MPTCP_REINJECT		0x10 /* Did we reinject this segment? */
+
+/* swetankk */
+#define MPTCP_SCHED_PROBE
+#ifdef CONFIG_MPTCP_QUEUE_PROBE
+    #define MPTCP_QUEUE_PROBE
+#endif
+
+#ifdef MPTCP_QUEUE_PROBE
+	#define MPTCP_RCV_QUEUE 0x00
+	#define MPTCP_OFO_QUEUE 0x01
+#endif
+/* end: swetankk */
 
 struct mptcp_option {
 	__u8	kind;
@@ -650,6 +675,35 @@ struct mp_prio {
 	__u8	addr_id;
 } __attribute__((__packed__));
 
+/* swetankk */
+#ifdef MPTCP_SCHED_PROBE
+struct mptcp_sched_probe {
+    unsigned long id;
+    struct sock *sk;
+    bool selector_reject;
+    bool found_unused_reject;
+    bool def_unavailable;
+    bool temp_unavailable;
+	bool srtt_reject;
+    bool selected;
+    int split;
+    int skblen;
+    u32 tx_bytes;
+    u32 trans_start;
+};
+#endif
+#ifdef MPTCP_QUEUE_PROBE
+struct mptcp_queue_probe {
+	u8 q_id;
+	struct tcp_sock *meta_tp;
+	u32 skb_seq;
+	u32 skb_end_seq;
+	u8 op_id;
+	u32 q_size;
+};
+#endif
+/* end:swetankk */
+
 static inline int mptcp_sub_len_dss(const struct mp_dss *m, const int csum)
 {
 	return 4 + m->A * (4 + m->a * 4) + m->M * (10 + m->m * 4 + csum * 2);
@@ -662,6 +716,22 @@ extern int sysctl_mptcp_version;
 extern int sysctl_mptcp_checksum;
 extern int sysctl_mptcp_debug;
 extern int sysctl_mptcp_syn_retries;
+/* swetankk */
+extern int sysctl_mptcp_scheduler_optimizations_disabled;
+extern int sysctl_mptcp_set_backup;
+/* end: swetankk */
+/* shivanga */
+extern int sysctl_num_segments_flow_one;
+extern int sysctl_mptcp_rate_sample;
+extern int sysctl_mptcp_ratio_trigger_search;
+extern int sysctl_mptcp_ratio_search_step;
+extern int sysctl_mptcp_trigger_threshold;
+extern int sysctl_mptcp_probe_interval_secs;
+extern int sysctl_mptcp_ratio_static;
+
+#define MPTCP_BYTES_NOT_SENT_MAX 165
+//#define MPTCP_RATE_MAX 50
+/* end: shivanga */
 
 extern struct workqueue_struct *mptcp_wq;
 
@@ -671,6 +741,7 @@ extern struct workqueue_struct *mptcp_wq;
 			pr_err(fmt, ##args);					\
 	} while (0)
 
+/* Iterates over all subflows */
 static inline struct sock *mptcp_to_sock(const struct mptcp_tcp_sock *mptcp)
 {
 	return (struct sock *)mptcp->tp;
@@ -679,7 +750,6 @@ static inline struct sock *mptcp_to_sock(const struct mptcp_tcp_sock *mptcp)
 #define mptcp_for_each_sub(__mpcb, __mptcp)					\
 	hlist_for_each_entry_rcu(__mptcp, &((__mpcb)->conn_list), node)
 
-/* Must be called with the appropriate lock held */
 #define mptcp_for_each_sub_safe(__mpcb, __mptcp, __tmp)				\
 	hlist_for_each_entry_safe(__mptcp, __tmp, &((__mpcb)->conn_list), node)
 
@@ -907,6 +977,15 @@ bool subflow_is_backup(const struct tcp_sock *tp);
 struct sock *get_available_subflow(struct sock *meta_sk, struct sk_buff *skb,
 				   bool zero_wnd_test);
 extern struct mptcp_sched_ops mptcp_sched_default;
+/* swetankk */
+#ifdef MPTCP_SCHED_PROBE
+extern void mptcp_sched_probe_init(struct mptcp_sched_probe *sprobe);
+extern struct mptcp_sched_probe* mptcp_sched_probe_log_hook(struct mptcp_sched_probe* sprobe, bool selected, unsigned long sched_probe_id, struct sock *sk);
+#endif
+#ifdef MPTCP_QUEUE_PROBE
+extern struct mptcp_queue_probe* mptcp_queue_probe_log_hook(u8 q_id, struct tcp_sock *meta_tp, struct sk_buff *skb, u8 op_id);
+#endif
+/* end: swetankk */
 
 /* Initializes function-pointers and MPTCP-flags */
 static inline void mptcp_init_tcp_sock(struct sock *sk)

@@ -72,6 +72,59 @@ int sysctl_mptcp_debug __read_mostly;
 EXPORT_SYMBOL(sysctl_mptcp_debug);
 int sysctl_mptcp_syn_retries __read_mostly = 3;
 
+/* swetankk */
+int sysctl_mptcp_scheduler_optimizations_disabled __read_mostly = 0;
+EXPORT_SYMBOL(sysctl_mptcp_scheduler_optimizations_disabled);
+/* end: swetankk */
+
+/* shivanga */
+int sysctl_num_segments_flow_one __read_mostly = 77;
+EXPORT_SYMBOL(sysctl_num_segments_flow_one);
+
+int sysctl_mptcp_rate_sample __read_mostly = 100;
+EXPORT_SYMBOL(sysctl_mptcp_rate_sample);
+
+int sysctl_mptcp_ratio_static = 0;
+EXPORT_SYMBOL(sysctl_mptcp_ratio_static);
+
+int sysctl_mptcp_ratio_trigger_search = 0;
+EXPORT_SYMBOL(sysctl_mptcp_ratio_trigger_search);
+
+int sysctl_mptcp_ratio_search_step = 5;
+EXPORT_SYMBOL(sysctl_mptcp_ratio_search_step);
+
+int sysctl_mptcp_trigger_threshold = 100000; //Kbps
+EXPORT_SYMBOL(sysctl_mptcp_trigger_threshold);
+
+int sysctl_mptcp_set_backup = 0;
+EXPORT_SYMBOL(sysctl_mptcp_set_backup);
+
+int sysctl_mptcp_probe_interval_secs = 0; //seconds, 0 = probe disabled
+EXPORT_SYMBOL(sysctl_mptcp_probe_interval_secs);
+
+//int sysctl_mptcp_rate = 0;
+//EXPORT_SYMBOL(sysctl_mptcp_rate);
+
+#define REPORT_BUF_SIZE_MAX 500
+u64 prev_tx_bytes = 0, prev_tstamp = 0;
+
+struct ratio_sched_priv {
+    u16 quota;
+    u32 write_seq_saved;
+    //u32 write_seq_jiffies;
+    struct timeval write_seq_tv, snd_una_tv;
+    u64 completion_time;
+    u8 is_accounting, is_init_accounted;
+    u32 snd_una_saved, buffer_size;
+    u32 delivered;
+};
+
+static struct ratio_sched_priv *ratio_sched_get_priv(const struct tcp_sock *tp)
+{
+    return (struct ratio_sched_priv *)&tp->mptcp->mptcp_sched[0];
+}
+
+/* end: shivanga */
 bool mptcp_init_failed __read_mostly;
 
 DEFINE_STATIC_KEY_FALSE(mptcp_static_key);
@@ -115,6 +168,380 @@ static int proc_mptcp_scheduler(struct ctl_table *ctl, int write,
 	if (write && ret == 0)
 		ret = mptcp_set_default_scheduler(val);
 	return ret;
+}
+
+/* shivanga */
+
+#define tcp_probe_copy_fl_to_si4(inet, si4, mem)        \
+    do {                            \
+        si4.sin_family = AF_INET;           \
+        si4.sin_port = inet->inet_##mem##port;      \
+        si4.sin_addr.s_addr = inet->inet_##mem##addr;   \
+    } while (0)                     \
+
+static int proc_mptcp_bytes_not_sent(struct ctl_table *ctl, int write,
+                                   void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+    char val[MPTCP_BYTES_NOT_SENT_MAX];
+    int val_length = 0;
+    struct ctl_table tbl = {
+       .data = val,
+       .maxlen = MPTCP_BYTES_NOT_SENT_MAX,
+    };
+    int ret;
+
+    struct tcp_sock *meta_tp;
+	int i;
+
+    memset(val, 0, MPTCP_BYTES_NOT_SENT_MAX);
+	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
+		struct hlist_nulls_node *node;
+		rcu_read_lock_bh();
+		hlist_nulls_for_each_entry_rcu(meta_tp, node,
+					       &tk_hashtable[i], tk_table) {
+			//struct sock *sk_it;
+			struct mptcp_tcp_sock *mptcp_sock;
+			struct mptcp_cb *mpcb = meta_tp->mpcb;
+            int iter;
+
+	    /*Ask shivang whaht this is*/
+			if (!mptcp(meta_tp))
+				continue;
+
+			if (!mpcb)
+				continue;
+
+            iter = 0;
+	    /*Phuc*/
+	    /*Double check with Shivang for these type casts*/
+            mptcp_for_each_sub(mpcb, mptcp_sock) {
+                //struct tcp_sock *tp_it = tcp_sk(sk_it);
+		const struct sock *sk = mptcp_to_sock(mptcp_sock);
+		const struct tcp_sock *tp_it = tcp_sk(sk);
+                const struct inet_sock *inet = inet_sk(sk);//do we need const?
+                union {
+                    struct sockaddr     raw;
+                    struct sockaddr_in  v4;
+                    struct sockaddr_in6 v6;
+                } dst;
+
+                tcp_probe_copy_fl_to_si4(inet, dst.v4, d);
+                val_length += sprintf(val + val_length, "%pISpc ", &dst);
+                val_length += sprintf(val + val_length, "%u\n", tp_it->write_seq - tp_it->snd_una); 
+                iter++;
+            }
+	    /*******/
+            val_length += sprintf(val + val_length, "\n");
+		}
+
+		rcu_read_unlock_bh();
+	}
+
+    ret = proc_dostring(&tbl, write, buffer, lenp, ppos);
+
+    return ret;
+}
+/*
+static int proc_mptcp_num_segments_flow_one(struct ctl_table *ctl, int write,
+                void __user *buffer, size_t *lenp,
+                loff_t *ppos)
+{
+    int val = 0;
+    struct ctl_table tbl = {
+        .data = &val,
+        .maxlen = sizeof(int),
+    };
+    int ret;
+
+    val = sysctl_num_segments_flow_one;
+
+    ret = proc_dointvec(&tbl, write, buffer, lenp, ppos);
+    if (write && ret == 0) {
+        struct tcp_sock *meta_tp;
+        int i;
+        sysctl_num_segments_flow_one = val;
+
+        for (i = 0; i < MPTCP_HASH_SIZE; i++) {
+            struct hlist_nulls_node *node;
+            rcu_read_lock_bh();
+            hlist_nulls_for_each_entry_rcu(meta_tp, node,
+                               &tk_hashtable[i], tk_table) {
+                struct sock *sk_it;
+                struct mptcp_cb *mpcb = meta_tp->mpcb;
+                int iter;
+
+                if (!mptcp(meta_tp))
+                    continue;
+
+                if (!mpcb)
+                    continue;
+
+                iter = 0;
+                mptcp_for_each_sk(mpcb, sk_it) {
+                    struct tcp_sock *tp_it = tcp_sk(sk_it);
+                    struct ratio_sched_priv *rsp = ratio_sched_get_priv(tp_it);
+                    //rsp->quota = 0;
+                    iter++;
+                }
+            }
+
+            rcu_read_unlock_bh();
+        }
+
+    }  
+    return ret;
+}
+*/
+static int proc_mptcp_set_pf(struct ctl_table *ctl, int write,
+                void __user *buffer, size_t *lenp,
+                loff_t *ppos)
+{
+    int val = 0, tempval = 0;
+    struct ctl_table tbl = {
+        .data = &val,
+        .maxlen = sizeof(int),
+    };
+    int ret;
+    
+    int i;
+    struct tcp_sock *meta_tp;
+    for (i = 0; i < MPTCP_HASH_SIZE; i++) {
+            struct hlist_nulls_node *node;
+            rcu_read_lock_bh();
+            hlist_nulls_for_each_entry_rcu(meta_tp, node,
+                               &tk_hashtable[i], tk_table) {
+                //struct sock *sk_it;
+                struct mptcp_tcp_sock *mptcp_sock;
+                struct mptcp_cb *mpcb = meta_tp->mpcb;
+
+                if (!mptcp(meta_tp))
+                    continue;
+
+                if (!mpcb)
+                    continue;
+
+		/*Phuc*/
+                mptcp_for_each_sub(mpcb, mptcp_sock) {
+		
+		    struct sock *sk_it = mptcp_to_sock(mptcp_sock);
+                    struct tcp_sock *tp_it = tcp_sk(sk_it);
+                    if (tp_it->pf) {
+                        tempval = 1;
+                        break;
+                    }
+                        
+                }
+		/*****/
+                if (tempval == 1)
+                    break;
+            }
+
+            rcu_read_unlock_bh();
+            if (tempval == 1)
+                break;
+        }
+
+    val = tempval;
+
+    ret = proc_dointvec(&tbl, write, buffer, lenp, ppos);
+    if (write && ret == 0) {
+        struct tcp_sock *meta_tp;
+        int i;
+
+        for (i = 0; i < MPTCP_HASH_SIZE; i++) {
+            struct hlist_nulls_node *node;
+            rcu_read_lock_bh();
+            hlist_nulls_for_each_entry_rcu(meta_tp, node,
+                               &tk_hashtable[i], tk_table) {
+                //struct sock *sk_it;
+		struct mptcp_tcp_sock *mptcp_sock;
+                struct mptcp_cb *mpcb = meta_tp->mpcb;
+                int iter = 0;
+
+                if (!mptcp(meta_tp))
+                    continue;
+
+                if (!mpcb)
+                    continue;
+		/*phuc*/
+                mptcp_for_each_sub(mpcb, mptcp_sock) {
+		    struct sock *sk_it = mptcp_to_sock(mptcp_sock);
+                    struct tcp_sock *tp_it = tcp_sk(sk_it);
+                    tp_it->pf = val;
+                    iter++;
+                    if (tp_it->prior_ssthresh) {
+                        const struct inet_connection_sock *icsk = inet_csk(sk_it);
+
+                        tp_it->snd_cwnd = icsk->icsk_ca_ops->undo_cwnd(sk_it);
+                        if (tp_it->prior_ssthresh > tp_it->snd_ssthresh) {
+                            tp_it->snd_ssthresh = tp_it->prior_ssthresh;
+                        }
+                        tcp_set_ca_state(sk_it, TCP_CA_Recovery);
+                    }
+                }
+		/*****/
+            }
+
+            rcu_read_unlock_bh();
+        }
+
+    }
+    return ret;
+}
+
+static int proc_mptcp_rate(struct ctl_table *ctl, int write,
+                                   void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+    u32 val = 0, tempval = 0;
+    struct ctl_table tbl = {
+        .data = &val,
+        .maxlen = sizeof(u32),
+    };
+
+    int ret;
+
+    struct tcp_sock *meta_tp;
+    int i;
+
+	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
+		struct hlist_nulls_node *node;
+		rcu_read_lock_bh();
+		hlist_nulls_for_each_entry_rcu(meta_tp, node,
+					       &tk_hashtable[i], tk_table) {
+			struct mptcp_cb *mpcb = meta_tp->mpcb;
+            struct sock *sk = NULL;
+            struct dst_entry *dst;
+                
+            struct netdev_queue *txq0;
+            struct rtnl_link_stats64 temp;
+            //const struct rtnl_link_stats64 *stats;
+            u32 tput = 0;
+            
+			if (!mptcp(meta_tp))
+				continue;
+
+			if (!mpcb)
+				continue;
+            
+            sk = &((meta_tp->inet_conn).icsk_inet.sk);
+
+            if (sk) {
+                //printk("if sk\n");
+                dst = sk_dst_get(sk);
+
+                if (dst && dst->dev) {
+                    const struct rtnl_link_stats64 *stats = dev_get_stats(dst->dev, &temp);
+                    //printk("if dst->dev\n");
+                    //printk("%s\n", dst->dev->name);
+                    if (strcmp(dst->dev->name, "enp5s0")) continue;
+                    txq0 = netdev_get_tx_queue(dst->dev, 0); //get txqueueu from dst
+
+                    if (stats && txq0) {
+                        //printk("if stats && txq0\n");
+                        if (!prev_tx_bytes) prev_tx_bytes = stats->tx_bytes;
+                        if (!prev_tstamp) prev_tstamp = txq0->trans_start;
+
+                        if (prev_tx_bytes && prev_tstamp && txq0->trans_start != prev_tstamp && jiffies_to_msecs(txq0->trans_start - prev_tstamp)) {
+                            //printk("prev_bytes: %llu, prev_tstamp: %llu, cur_bytes: %llu, cur_tstamp: %lu", prev_tx_bytes, prev_tstamp, stats->tx_bytes, txq0->trans_start);
+                            tput = ((stats->tx_bytes - prev_tx_bytes)*8)/(jiffies_to_msecs(txq0->trans_start - prev_tstamp));
+                            //printk("rate: %llu\n", tput);
+                            prev_tx_bytes = stats->tx_bytes;
+                            prev_tstamp = txq0->trans_start;
+                            if (!tempval) {
+                                tempval = tput;
+                                //printk("tempval = tput: %u\n", tempval);
+                            } //else printk("tempval again\n"); 
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        rcu_read_unlock_bh();
+
+        //if (tempval) break;
+
+	}
+
+    val = tempval;
+
+    //printk("ret: %u\n", val);
+
+    ret = proc_douintvec(&tbl, write, buffer, lenp, ppos);
+
+    return ret;
+}
+
+
+static int proc_mptcp_buffer_size(struct ctl_table *ctl, int write,
+                                   void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+    char val[REPORT_BUF_SIZE_MAX];
+    int val_length = 0;
+    struct ctl_table tbl = {
+       .data = val,
+       .maxlen = REPORT_BUF_SIZE_MAX,
+    };
+    int ret;
+
+    struct tcp_sock *meta_tp;
+	int i;
+
+    memset(val, 0, REPORT_BUF_SIZE_MAX);
+	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
+		struct hlist_nulls_node *node;
+		rcu_read_lock_bh();
+		hlist_nulls_for_each_entry_rcu(meta_tp, node,
+					       &tk_hashtable[i], tk_table) {
+			//struct sock *sk_it, *sk;
+			struct sock *sk;
+			struct mptcp_tcp_sock *mptcp_sock;
+			struct mptcp_cb *mpcb = meta_tp->mpcb;
+            int iter;
+
+			if (!mptcp(meta_tp))
+				continue;
+
+			if (!mpcb)
+				continue;
+
+            sk = &((meta_tp->inet_conn).icsk_inet.sk);
+            if (sk) {
+                struct dst_entry *dst = sk_dst_get(sk);
+
+                if (dst && dst->dev) {
+                    if (strcmp(dst->dev->name, "enp5s0")) continue;
+                    iter = 0;
+		    /*phuc*/
+                    mptcp_for_each_sub(mpcb, mptcp_sock) {
+			struct sock *sk_it = mptcp_to_sock(mptcp_sock);
+                        struct tcp_sock *tp_it = tcp_sk(sk_it);
+                        struct ratio_sched_priv *rsp = ratio_sched_get_priv(tp_it);
+		    /*****/
+                        if (rsp->delivered) {
+                            do_div(rsp->buffer_size, rsp->delivered);
+                            val_length += sprintf(val + val_length, "%u ", rsp->buffer_size);
+                            rsp->buffer_size = 0;
+                            rsp->delivered = 0;
+                            //val_length += sprintf(val + val_length, "%u\n", tp_it->write_seq - tp_it->snd_una); 
+                        }
+                        iter++;
+                    }
+                    if (meta_tp->delivered) { 
+                        val_length += sprintf(val + val_length, "\n");
+                        break;
+                    }
+                }
+            }
+		}
+
+		rcu_read_unlock_bh();
+	}
+
+    ret = proc_dostring(&tbl, write, buffer, lenp, ppos);
+
+    return ret;
 }
 
 static struct ctl_table mptcp_table[] = {
@@ -167,6 +594,97 @@ static struct ctl_table mptcp_table[] = {
 		.maxlen		= MPTCP_SCHED_NAME_MAX,
 		.proc_handler	= proc_mptcp_scheduler,
 	},
+    /* swetankk */
+ 	{
+        .procname     = "mptcp_scheduler_optimizations_disabled",
+        .data         = &sysctl_mptcp_scheduler_optimizations_disabled,
+        .maxlen       = sizeof(int),
+        .mode         = 0644,
+        .proc_handler = &proc_dointvec,
+    },
+    {
+        .procname     = "mptcp_set_backup",
+        .data         = &sysctl_mptcp_set_backup,
+        .maxlen       = sizeof(int),
+        .mode         = 0644,
+        .proc_handler = &proc_dointvec,
+    },
+    /* end: swetankk */
+    /* shivanga */
+    {
+        .procname     = "num_segments_flow_one",
+        .data         = &sysctl_num_segments_flow_one,
+        .maxlen       = sizeof(int),
+        .mode         = 0644,
+        .proc_handler = &proc_dointvec,
+    },
+    {
+        .procname       = "mptcp_bytes_not_sent",
+        .maxlen         = MPTCP_BYTES_NOT_SENT_MAX,
+        .mode           = 0644,
+        .proc_handler   = proc_mptcp_bytes_not_sent,
+    },
+    {
+        .procname     = "mptcp_pf",
+        .maxlen       = sizeof(int),
+        .mode         = 0644,
+        .proc_handler = proc_mptcp_set_pf,
+    },
+    {
+        .procname       = "mptcp_rate",
+        .maxlen         = sizeof(u32),
+        .mode           = 0644,
+        .proc_handler   = proc_mptcp_rate,
+    },
+    {
+        .procname     = "mptcp_rate_sample",
+        .data         = &sysctl_mptcp_rate_sample,
+        .maxlen       = sizeof(int),
+        .mode         = 0644,
+        .proc_handler = &proc_dointvec,
+    },
+    {
+        .procname     = "mptcp_ratio_static",
+        .data         = &sysctl_mptcp_ratio_static,
+        .maxlen       = sizeof(int),
+        .mode         = 0644,
+        .proc_handler = &proc_dointvec,
+    },
+    {
+        .procname     = "mptcp_ratio_trigger_search",
+        .data         = &sysctl_mptcp_ratio_trigger_search,
+        .maxlen       = sizeof(int),
+        .mode         = 0644,
+        .proc_handler = &proc_dointvec,
+    },
+    {
+        .procname     = "mptcp_ratio_search_step",
+        .data         = &sysctl_mptcp_ratio_search_step,
+        .maxlen       = sizeof(int),
+        .mode         = 0644,
+        .proc_handler = &proc_dointvec,
+    },
+    {
+        .procname     = "mptcp_trigger_threshold",
+        .data         = &sysctl_mptcp_trigger_threshold,
+        .maxlen       = sizeof(int),
+        .mode         = 0644,
+        .proc_handler = &proc_dointvec,
+    },
+    {
+        .procname     = "mptcp_probe_interval_secs",
+        .data         = &sysctl_mptcp_probe_interval_secs,
+        .maxlen       = sizeof(int),
+        .mode         = 0644,
+        .proc_handler = &proc_dointvec,
+    },
+    {
+        .procname       = "mptcp_buffer_size",
+        .maxlen         = REPORT_BUF_SIZE_MAX,
+        .mode           = 0644,
+        .proc_handler   = proc_mptcp_buffer_size,
+    },
+    /* end: shivanga */
 	{ }
 };
 

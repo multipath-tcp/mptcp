@@ -110,6 +110,20 @@ config MPTCP_REDUNDANT
 	  This scheduler sends all packets redundantly over all subflows to decreases
 	  latency and jitter on the cost of lower throughput.
 
+config MPTCP_RTT
+    tristate "MPTCP RTT"
+    depends on (MPTCP=y)
+    ---help---
+      This is a round-trip time (RTT) based scheduler (copy of the default one). It sends 
+	  packets to the flow with the lower RTT.
+
+config MPTCP_RATIO
+    tristate "MPTCP Ratio"
+    depends on (MPTCP=y)
+    ---help---
+      This is a quota based scheduler that assigns packets to subflows based on given ratio.
+      It based on the design of the ROUNDROBIN scheduler which gives equal quota to all subflows.
+
 choice
 	prompt "Default MPTCP Scheduler"
 	default DEFAULT_SCHEDULER
@@ -134,6 +148,18 @@ choice
 		  This is the redundant scheduler, sending packets redundantly over
 		  all the subflows.
 
+	config DEFAULT_RTT
+         bool "RTT" if MPTCP_RTT=y
+         ---help---
+         This is a copy of default RTT-based scheduler. The only difference is that
+		 it is built as a seperate module, making it easier to make changes to it.
+
+    config DEFAULT_RATIO
+         bool "Ratio" if MPTCP_RATIO=y
+         ---help---
+         This is a quota based scheduler that assigns packets to subflows based on given ratio.
+         It based on the design of the ROUNDROBIN scheduler which gives equal quota to all subflows.
+
 endchoice
 endif
 
@@ -143,5 +169,12 @@ config DEFAULT_MPTCP_SCHED
 	default "default" if DEFAULT_SCHEDULER
 	default "roundrobin" if DEFAULT_ROUNDROBIN
 	default "redundant" if DEFAULT_REDUNDANT
+	default "rtt" if DEFAULT_RTT
+    	default "ratio" if DEFAULT_RATIO
 	default "default"
 
+config MPTCP_QUEUE_PROBE
+        bool "MPTCP Meta-Queues Instrumentation"
+        depends on (MPTCP=y)
+        ---help---
+          This adds instrumentation in the MPTCP stack to trace meta rcv and ofo queues.
