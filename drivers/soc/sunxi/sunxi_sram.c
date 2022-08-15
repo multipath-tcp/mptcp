@@ -328,9 +328,9 @@ static struct regmap_config sunxi_sram_emac_clock_regmap = {
 static int __init sunxi_sram_probe(struct platform_device *pdev)
 {
 	struct resource *res;
-	struct dentry *d;
 	struct regmap *emac_clock;
 	const struct sunxi_sramc_variant *variant;
+	struct device *dev = &pdev->dev;
 
 	sram_dev = &pdev->dev;
 
@@ -343,13 +343,6 @@ static int __init sunxi_sram_probe(struct platform_device *pdev)
 	if (IS_ERR(base))
 		return PTR_ERR(base);
 
-	of_platform_populate(pdev->dev.of_node, NULL, NULL, &pdev->dev);
-
-	d = debugfs_create_file("sram", S_IRUGO, NULL, NULL,
-				&sunxi_sram_fops);
-	if (!d)
-		return -ENOMEM;
-
 	if (variant->has_emac_clock) {
 		emac_clock = devm_regmap_init_mmio(&pdev->dev, base,
 						   &sunxi_sram_emac_clock_regmap);
@@ -357,6 +350,10 @@ static int __init sunxi_sram_probe(struct platform_device *pdev)
 		if (IS_ERR(emac_clock))
 			return PTR_ERR(emac_clock);
 	}
+
+	of_platform_populate(dev->of_node, NULL, NULL, dev);
+
+	debugfs_create_file("sram", 0444, NULL, NULL, &sunxi_sram_fops);
 
 	return 0;
 }
