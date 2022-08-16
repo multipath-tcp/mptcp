@@ -771,9 +771,10 @@ static enum hrtimer_restart tcp_compressed_ack_kick(struct hrtimer *timer)
 {
 	struct tcp_sock *tp = container_of(timer, struct tcp_sock, compressed_ack_timer);
 	struct sock *sk = (struct sock *)tp;
+	struct sock *meta_sk = mptcp(tp) ? mptcp_meta_sk(sk) : sk;
 
-	bh_lock_sock(sk);
-	if (!sock_owned_by_user(sk)) {
+	bh_lock_sock(meta_sk);
+	if (!sock_owned_by_user(meta_sk)) {
 		if (tp->compressed_ack > TCP_FASTRETRANS_THRESH)
 			tcp_send_ack(sk);
 	} else {
@@ -781,7 +782,7 @@ static enum hrtimer_restart tcp_compressed_ack_kick(struct hrtimer *timer)
 				      &sk->sk_tsq_flags))
 			sock_hold(sk);
 	}
-	bh_unlock_sock(sk);
+	bh_unlock_sock(meta_sk);
 
 	sock_put(sk);
 
