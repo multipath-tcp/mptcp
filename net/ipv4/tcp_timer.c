@@ -150,6 +150,13 @@ static int tcp_orphan_retries(struct sock *sk, bool alive)
 	if (sk->sk_err_soft && !alive)
 		retries = 0;
 
+	/* If the app called close() and we don't have any subflows left,
+	 * be aggressive at killing the connection. Otherwise we will linger
+	 * around for a very long time.
+	 */
+	if (is_meta_sk(sk) && hlist_empty(&tcp_sk(sk)->mpcb->conn_list))
+		retries = 1;
+
 	/* However, if socket sent something recently, select some safe
 	 * number of retries. 8 corresponds to >100 seconds with minimal
 	 * RTO of 200msec. */
