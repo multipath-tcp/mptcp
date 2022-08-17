@@ -6502,8 +6502,10 @@ int tcp_conn_request(struct request_sock_ops *rsk_ops,
 		inet_csk_reqsk_queue_add(sk, req, meta_sk);
 		sk->sk_data_ready(sk);
 		bh_unlock_sock(fastopen_sk);
-		if (meta_sk != fastopen_sk)
+		if (meta_sk != fastopen_sk) {
 			bh_unlock_sock(meta_sk);
+			sock_put(meta_sk);
+		}
 		sock_put(fastopen_sk);
 	} else {
 		tcp_rsk(req)->tfo_listener = false;
