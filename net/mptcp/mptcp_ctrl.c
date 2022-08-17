@@ -2052,9 +2052,6 @@ static int __mptcp_check_req_master(struct sock *child,
 	 */
 	mptcp_reqsk_remove_tk(req);
 
-	/* Hold when creating the meta-sk in tcp_vX_syn_recv_sock. */
-	sock_put(meta_sk);
-
 	return 0;
 }
 
@@ -2130,9 +2127,7 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 		reqsk_queue_removed(&inet_csk(sk)->icsk_accept_queue, req);
 		if (!inet_csk_reqsk_queue_add(sk, req, meta_sk)) {
 			bh_unlock_sock(meta_sk);
-			/* No sock_put() of the meta needed. The reference has
-			 * already been dropped in __mptcp_check_req_master().
-			 */
+			sock_put(meta_sk);
 			sock_put(child);
 			return -1;
 		}
@@ -2142,14 +2137,14 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 		tcp_sk(meta_sk)->tsoffset = tsoff;
 		if (!inet_csk_reqsk_queue_add(sk, req, meta_sk)) {
 			bh_unlock_sock(meta_sk);
-			/* No sock_put() of the meta needed. The reference has
-			 * already been dropped in __mptcp_check_req_master().
-			 */
+			sock_put(meta_sk);
 			sock_put(child);
 			reqsk_put(req);
 			return -1;
 		}
 	}
+
+	sock_put(meta_sk);
 
 	return 0;
 }
