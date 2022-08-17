@@ -6933,13 +6933,17 @@ int tcp_conn_request(struct request_sock_ops *rsk_ops,
 			 * by the failed call to inet_csk_reqsk_queue_add
 			 */
 			bh_unlock_sock(meta_sk);
+			if (meta_sk != fastopen_sk)
+				sock_put(meta_sk);
 			sock_put(fastopen_sk);
 			goto drop_and_free;
 		}
 		sk->sk_data_ready(sk);
 		bh_unlock_sock(fastopen_sk);
-		if (meta_sk != fastopen_sk)
+		if (meta_sk != fastopen_sk) {
 			bh_unlock_sock(meta_sk);
+			sock_put(meta_sk);
+		}
 		sock_put(fastopen_sk);
 	} else {
 		tcp_rsk(req)->tfo_listener = false;
