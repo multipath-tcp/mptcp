@@ -1517,12 +1517,26 @@ static inline void lock_sock(struct sock *sk)
 void __release_sock(struct sock *sk);
 void release_sock(struct sock *sk);
 
+#ifdef CONFIG_MPTCP_DEBUG_LOCK
+extern void mptcp_check_lock(struct sock* sk);
+#endif
+static inline void lock_sock_check_mptcp(struct sock* sk)
+{
+#ifdef CONFIG_MPTCP_DEBUG_LOCK
+	if (sk && sk->sk_type == SOCK_STREAM && sk->sk_protocol == IPPROTO_TCP)
+		mptcp_check_lock(sk);
+#endif
+}
+
 /* BH context may only use the following locking interface. */
-#define bh_lock_sock(__sk)	spin_lock(&((__sk)->sk_lock.slock))
-#define bh_lock_sock_nested(__sk) \
+#define bh_lock_sock(__sk)	do { lock_sock_check_mptcp(__sk); \
+				spin_lock(&((__sk)->sk_lock.slock)); } while (0)
+#define bh_lock_sock_nested(__sk) do { \
+				lock_sock_check_mptcp(__sk); \
 				spin_lock_nested(&((__sk)->sk_lock.slock), \
-				SINGLE_DEPTH_NESTING)
-#define bh_unlock_sock(__sk)	spin_unlock(&((__sk)->sk_lock.slock))
+				SINGLE_DEPTH_NESTING); } while (0)
+#define bh_unlock_sock(__sk)	do { lock_sock_check_mptcp(__sk); \
+				spin_unlock(&((__sk)->sk_lock.slock)); } while (0)
 
 bool lock_sock_fast(struct sock *sk);
 /**

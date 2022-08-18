@@ -3139,3 +3139,15 @@ mptcp_cb_cache_failed:
 mptcp_sock_cache_failed:
 	mptcp_init_failed = true;
 }
+
+#ifdef CONFIG_MPTCP_DEBUG_LOCK
+void mptcp_check_lock(struct sock *sk)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	/* make sure the meta lock is held when we hold the sublock */
+	if (mptcp(tp) && !is_meta_tp(tp) && tp->meta_sk)
+		WARN_ON(!spin_is_locked(&tp->meta_sk->sk_lock.slock) &&
+			!sock_owned_by_user(tp->meta_sk));
+}
+EXPORT_SYMBOL(mptcp_check_lock);
+#endif
