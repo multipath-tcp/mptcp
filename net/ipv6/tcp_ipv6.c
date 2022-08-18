@@ -437,7 +437,7 @@ static int tcp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 	np = tcp_inet6_sk(sk);
 
 	if (type == NDISC_REDIRECT) {
-		if (!sock_owned_by_user(sk)) {
+		if (!sock_owned_by_user(meta_sk)) {
 			struct dst_entry *dst = __sk_dst_check(sk, np->dst_cookie);
 
 			if (dst)
