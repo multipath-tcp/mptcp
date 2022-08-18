@@ -153,3 +153,10 @@ config DEFAULT_MPTCP_SCHED
 	default "redundant" if DEFAULT_REDUNDANT
 	default "default"
 
+config MPTCP_DEBUG_LOCK
+	bool "MPTCP lock debugging"
+	default n
+	depends on MPTCP
+	---help---
+	  Check that MPTCP meta locks are properly held when locking subflows.
+	  This is a debug option that impacts performances. Say N if unsure.
