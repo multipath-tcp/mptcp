@@ -6286,6 +6286,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
 		break;
 
 	case TCP_FIN_WAIT1: {
+		struct sock *meta_sk = mptcp(tcp_sk(sk)) ? mptcp_meta_sk(sk) : sk;
 		struct dst_entry *dst;
 		int tmo;
 
@@ -6327,7 +6328,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
 		if (tmo > TCP_TIMEWAIT_LEN) {
 			inet_csk_reset_keepalive_timer(sk, tmo - TCP_TIMEWAIT_LEN);
 		} else if (th->fin || mptcp_is_data_fin(skb) ||
-			   sock_owned_by_user(sk)) {
+			   sock_owned_by_user(meta_sk)) {
 			/* Bad case. We could lose such FIN otherwise.
 			 * It is not a big problem, but it looks confusing
 			 * and not so rare event. We still can lose it now,
