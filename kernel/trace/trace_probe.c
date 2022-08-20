@@ -361,7 +361,7 @@ static int parse_probe_vars(char *arg, const struct fetch_type *t,
 			}
 		} else
 			ret = -EINVAL;
-	} else if (strcmp(arg, "comm") == 0) {
+	} else if (strcmp(arg, "comm") == 0 || strcmp(arg, "COMM") == 0) {
 		if (strcmp(t->name, "string") != 0 &&
 		    strcmp(t->name, "string_size") != 0)
 			return -EINVAL;
@@ -544,7 +544,7 @@ int traceprobe_parse_probe_arg(char *arg, ssize_t *size,
 	 * The default type of $comm should be "string", and it can't be
 	 * dereferenced.
 	 */
-	if (!t && strcmp(arg, "$comm") == 0)
+	if (!t && (strcmp(arg, "$comm") == 0 || strcmp(arg, "$COMM") == 0))
 		t = "string";
 	parg->type = find_fetch_type(t, ftbl);
 	if (!parg->type) {
