@@ -1611,6 +1611,7 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 		if (mpcb->mptcp_ver >= MPTCP_VERSION_1)
 			*size += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN_VER1;
 
+		mpcb->add_addr_signal++;
 		goto skip_ipv6;
 	}
 
@@ -1649,6 +1650,8 @@ skip_ipv4:
 			*size += MPTCP_SUB_LEN_ADD_ADDR6_ALIGN;
 		if (mpcb->mptcp_ver >= MPTCP_VERSION_1)
 			*size += MPTCP_SUB_LEN_ADD_ADDR6_ALIGN_VER1;
+
+		mpcb->add_addr_signal++;
 	}
 
 skip_ipv6:
