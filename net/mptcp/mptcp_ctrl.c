@@ -1141,6 +1141,118 @@ static int mptcp_getsockopt_info(struct sock *meta_sk, char __user *optval,
 	return 0;
 }
 
+#define MIN_INFO_OPTLEN_SIZE	16
+
+static int mptcp_get_subflow_data(struct mptcp_subflow_data *sfd,
+				  char __user *optval, int __user *optlen)
+{
+	int len, copylen;
+
+	if (get_user(len, optlen))
+		return -EFAULT;
+
+	/* if mptcp_subflow_data size is changed, need to adjust
+	 * this function to deal with programs using old version.
+	 */
+	BUILD_BUG_ON(sizeof(*sfd) != MIN_INFO_OPTLEN_SIZE);
+
+	if (len < MIN_INFO_OPTLEN_SIZE)
+		return -EINVAL;
+
+	memset(sfd, 0, sizeof(*sfd));
+
+	copylen = min_t(unsigned int, len, sizeof(*sfd));
+	if (copy_from_user(sfd, optval, copylen))
+		return -EFAULT;
+
+	/* size_subflow_data is u32, but len is signed */
+	if (sfd->size_subflow_data > INT_MAX ||
+	    sfd->size_user > INT_MAX)
+		return -EINVAL;
+
+	if (sfd->size_subflow_data < MIN_INFO_OPTLEN_SIZE ||
+	    sfd->size_subflow_data > len)
+		return -EINVAL;
+
+	if (sfd->num_subflows || sfd->size_kernel)
+		return -EINVAL;
+
+	return len - sfd->size_subflow_data;
+}
+
+static int mptcp_put_subflow_data(struct mptcp_subflow_data *sfd,
+				  char __user *optval,
+				  u32 copied,
+				  int __user *optlen)
+{
+	u32 copylen = min_t(u32, sfd->size_subflow_data, sizeof(*sfd));
+
+	if (copied)
+		copied += sfd->size_subflow_data;
+	else
+		copied = copylen;
+
+	if (put_user(copied, optlen))
+		return -EFAULT;
+
+	if (copy_to_user(optval, sfd, copylen))
+		return -EFAULT;
+
+	return 0;
+}
+
+static int mptcp_getsockopt_tcpinfo(struct sock *meta_sk, char __user *optval,
+				    int __user *optlen)
+{
+	unsigned int sfcount = 0, copied = 0;
+	struct mptcp_subflow_data sfd;
+	struct mptcp_tcp_sock *mptcp;
+	char __user *infoptr;
+	int len;
+
+	len = mptcp_get_subflow_data(&sfd, optval, optlen);
+	if (len < 0)
+		return len;
+
+	sfd.size_kernel = sizeof(struct tcp_info);
+	sfd.size_user = min_t(unsigned int, sfd.size_user,
+			      sizeof(struct tcp_info));
+
+	infoptr = optval + sfd.size_subflow_data;
+
+	lock_sock(meta_sk);
+
+	mptcp_for_each_sub(tcp_sk(meta_sk)->mpcb, mptcp) {
+		struct sock *ssk = mptcp_to_sock(mptcp);
+
+		++sfcount;
+
+		if (len && len >= sfd.size_user) {
+			struct tcp_info info;
+
+			tcp_get_info(ssk, &info, true);
+
+			if (copy_to_user(infoptr, &info, sfd.size_user)) {
+				release_sock(meta_sk);
+				return -EFAULT;
+			}
+
+			infoptr += sfd.size_user;
+			copied += sfd.size_user;
+			len -= sfd.size_user;
+		}
+	}
+
+	release_sock(meta_sk);
+
+	sfd.num_subflows = sfcount;
+
+	if (mptcp_put_subflow_data(&sfd, optval, copied, optlen))
+		return -EFAULT;
+
+	return 0;
+}
+
 int mptcp_getsockopt(struct sock *meta_sk, int level, int optname,
 		     char __user *optval, int __user *optlen)
 {
@@ -1151,6 +1263,7 @@ int mptcp_getsockopt(struct sock *meta_sk, int level, int optname,
 	case MPTCP_INFO:
 		return mptcp_getsockopt_info(meta_sk, optval, optlen);
 	case MPTCP_TCPINFO:
+		return mptcp_getsockopt_tcpinfo(meta_sk, optval, optlen);
 	case MPTCP_SUBFLOW_ADDRS:
 		return -EOPNOTSUPP;
 	}
