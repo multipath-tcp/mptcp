@@ -351,6 +351,7 @@ struct mptcp_cb {
 	struct tcp_info	*master_info;
 
 	u8 add_addr_signal;
+	u8 add_addr_accepted;
 };
 
 #define MPTCP_VERSION_0 0

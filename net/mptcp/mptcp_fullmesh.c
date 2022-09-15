@@ -191,8 +191,13 @@ static void mptcp_addv4_raddr(struct mptcp_cb *mpcb,
 	rem4->bitfield = 0;
 	rem4->retry_bitfield = 0;
 	rem4->rem4_id = id;
-	mpcb->list_rcvd = 1;
 	fmp->rem4_bits |= (1 << i);
+
+	mpcb->list_rcvd = 1;
+
+	/* Don't count the address of the initial subflow */
+	if (id != 0)
+		mpcb->add_addr_accepted++;
 
 	return;
 }
@@ -246,8 +251,13 @@ static void mptcp_addv6_raddr(struct mptcp_cb *mpcb,
 	rem6->bitfield = 0;
 	rem6->retry_bitfield = 0;
 	rem6->rem6_id = id;
-	mpcb->list_rcvd = 1;
 	fmp->rem6_bits |= (1 << i);
+
+	mpcb->list_rcvd = 1;
+
+	/* Don't count the address of the initial subflow */
+	if (id != 0)
+		mpcb->add_addr_accepted++;
 
 	return;
 }

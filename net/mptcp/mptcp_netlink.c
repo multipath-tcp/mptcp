@@ -415,6 +415,8 @@ mptcp_nl_pm_add_raddr(struct mptcp_cb *mpcb, const union inet_addr *addr,
 	struct sk_buff	*msg;
 	void		*hdr;
 
+	mpcb->add_addr_accepted++;
+
 	if (!mptcp_nl_must_notify(MPTCPF_EVENT_ANNOUNCED, mpcb->meta_sk))
 		return;
 
