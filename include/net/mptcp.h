@@ -875,6 +875,8 @@ int mptcp_write_wakeup(struct sock *meta_sk, int mib);
 void mptcp_sub_close_wq(struct work_struct *work);
 void mptcp_sub_close(struct sock *sk, unsigned long delay);
 struct sock *mptcp_select_ack_sock(const struct sock *meta_sk);
+int mptcp_getsockopt(struct sock *meta_sk, int level, int optname,
+		     char __user *optval, int __user *optlen);
 void mptcp_prepare_for_backlog(struct sock *sk, struct sk_buff *skb);
 void mptcp_initialize_recv_vars(struct tcp_sock *meta_tp, struct mptcp_cb *mpcb,
 				__u64 remote_key);
@@ -1415,6 +1417,11 @@ static inline void mptcp_update_metasocket(const struct sock *meta_sk) {}
 static inline void mptcp_reinject_data(struct sock *orig_sk, int clone_it) {}
 static inline void mptcp_update_sndbuf(const struct tcp_sock *tp) {}
 static inline void mptcp_sub_close(struct sock *sk, unsigned long delay) {}
+static inline int mptcp_getsockopt(struct sock *meta_sk, int level, int optname,
+				   char __user *optval, int __user *optlen)
+{
+	return -EOPNOTSUPP;
+}
 static inline void mptcp_set_rto(const struct sock *sk) {}
 static inline void mptcp_send_fin(const struct sock *meta_sk) {}
 static inline void mptcp_parse_options(const uint8_t *ptr, const int opsize,
