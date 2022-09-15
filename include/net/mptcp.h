@@ -349,6 +349,8 @@ struct mptcp_cb {
 	u32 orig_window_clamp;
 
 	struct tcp_info	*master_info;
+
+	u8 add_addr_signal;
 };
 
 #define MPTCP_VERSION_0 0

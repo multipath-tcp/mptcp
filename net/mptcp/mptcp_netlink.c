@@ -539,6 +539,8 @@ mptcp_nl_pm_addr_signal(struct sock *sk, unsigned *size,
 		if (skb)
 			priv->announced4 |= (1 << i);
 		*size += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN;
+
+		mpcb->add_addr_signal++;
 	}
 
 #if IS_ENABLED(CONFIG_IPV6)
@@ -556,6 +558,8 @@ mptcp_nl_pm_addr_signal(struct sock *sk, unsigned *size,
 		if (skb)
 			priv->announced6 |= (1 << i);
 		*size += MPTCP_SUB_LEN_ADD_ADDR6_ALIGN;
+
+		mpcb->add_addr_signal++;
 	}
 #endif
 
