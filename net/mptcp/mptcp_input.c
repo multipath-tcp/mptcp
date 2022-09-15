@@ -892,20 +892,44 @@ static int mptcp_validate_mapping(struct sock *sk, struct sk_buff *skb)
 		mptcp_skb_trim_head(tmp, sk, tp->mptcp->map_subseq);
 	}
 
-	/* ... or the new skb (tail) has to be split at the end. */
-	tcp_end_seq = TCP_SKB_CB(skb)->end_seq;
-	if (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN)
-		tcp_end_seq--;
-	if (after(tcp_end_seq, tp->mptcp->map_subseq + tp->mptcp->map_data_len)) {
-		u32 seq = tp->mptcp->map_subseq + tp->mptcp->map_data_len;
-		MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_DSSSPLITTAIL);
-		if (mptcp_skb_split_tail(skb, sk, seq)) { /* Allocation failed */
-			/* TODO : maybe handle this here better.
-			 * We now just force meta-retransmission.
+	skb_queue_walk_from(&sk->sk_receive_queue, skb) {
+		/* ... or the new skb (tail) has to be split at the end. */
+		tcp_end_seq = TCP_SKB_CB(skb)->end_seq;
+		if (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN)
+			tcp_end_seq--;
+
+		if (tcp_end_seq == tp->mptcp->map_subseq + tp->mptcp->map_data_len)
+			break;
+
+		if (after(tcp_end_seq, tp->mptcp->map_subseq + tp->mptcp->map_data_len)) {
+			u32 seq = tp->mptcp->map_subseq + tp->mptcp->map_data_len;
+
+			MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_DSSSPLITTAIL);
+			if (mptcp_skb_split_tail(skb, sk, seq)) {
+				if (net_ratelimit())
+					pr_err("MPTCP: Could not allocate memory for mptcp_skb_split_tail on seq %u\n", seq);
+
+				/* allocations are failing - there is not much to do.
+				 * Let's try the best and trigger meta-rexmit on the
+				 * sender-side by simply dropping all packets up to sk
+				 * in the receive-queue.
+				 */
+
+				skb_queue_walk_safe(&sk->sk_receive_queue, tmp, tmp1) {
+					tp->copied_seq = TCP_SKB_CB(tmp)->end_seq;
+					__skb_unlink(tmp, &sk->sk_receive_queue);
+					__kfree_skb(tmp);
+
+					if (tmp == skb)
+						break;
+				}
+			}
+
+			/* We just split an skb in the receive-queue (or removed
+			 * a whole bunch of them).
+			 * We have to restart as otherwise the list-processing
+			 * will fail - thus return -1.
 			 */
-			tp->copied_seq = TCP_SKB_CB(skb)->end_seq;
-			__skb_unlink(skb, &sk->sk_receive_queue);
-			__kfree_skb(skb);
 			return -1;
 		}
 	}
