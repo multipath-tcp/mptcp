@@ -3969,6 +3969,8 @@ int tcp_getsockopt(struct sock *sk, int level, int optname, char __user *optval,
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
+	if (level == SOL_MPTCP)
+		return mptcp_getsockopt(sk, level, optname, optval, optlen);
 	if (level != SOL_TCP)
 		return icsk->icsk_af_ops->getsockopt(sk, level, optname,
 						     optval, optlen);

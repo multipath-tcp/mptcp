@@ -62,6 +62,8 @@
 #include <linux/atomic.h>
 #include <linux/sysctl.h>
 
+#include <uapi/linux/mptcp.h>
+
 static struct kmem_cache *mptcp_sock_cache __read_mostly;
 static struct kmem_cache *mptcp_cb_cache __read_mostly;
 static struct kmem_cache *mptcp_tw_cache __read_mostly;
@@ -1060,6 +1062,100 @@ static void mptcp_sub_inherit_sockopts(const struct sock *meta_sk, struct sock *
 
 	/* Do not propagate subflow-errors up to the MPTCP-layer */
 	inet_sk(sub_sk)->recverr = 0;
+}
+
+static void mptcp_diag_fill_info(struct sock *meta_sk, struct mptcp_info_upstream *info)
+{
+	struct tcp_sock *meta_tp;
+	struct mptcp_cb *mpcb;
+	u32 flags = 0;
+
+	memset(info, 0, sizeof(*info));
+
+	lock_sock(meta_sk);
+
+	meta_tp = tcp_sk(meta_sk);
+	mpcb = meta_tp->mpcb;
+
+	/* If connection fell back to regular TCP we need to set the FALLBACK flag */
+	if (!mptcp(meta_tp) || meta_tp->request_mptcp == 0) {
+		if (meta_sk->sk_state != TCP_CLOSE)
+			info->mptcpi_flags |= MPTCP_INFO_FLAG_FALLBACK;
+
+		goto exit;
+	}
+
+	info->mptcpi_subflows = hweight32(mpcb->path_index_bits);
+	info->mptcpi_add_addr_signal = mpcb->add_addr_signal;
+	info->mptcpi_add_addr_accepted = mpcb->add_addr_accepted;
+	info->mptcpi_subflows_max = sizeof(mpcb->path_index_bits) * 8;
+	/* mptcpi_add_addr_signal_max - addresses endpoint added with the 'signal' flag:
+	 *                              doesn't apply to our model, we don't have
+	 *                                $ ip mptcp endpoints add ADDRESS signal
+	 */
+	info->mptcpi_add_addr_accepted_max = U8_MAX;
+
+	if (mptcp_in_infinite_mapping_weak(mpcb))
+		flags |= MPTCP_INFO_FLAG_FALLBACK;
+	if (mpcb->rem_key_set)
+		flags |= MPTCP_INFO_FLAG_REMOTE_KEY_RECEIVED;
+	info->mptcpi_flags = flags;
+
+	info->mptcpi_token = mpcb->mptcp_loc_token;
+	info->mptcpi_write_seq = meta_tp->write_seq;
+	info->mptcpi_snd_una = meta_tp->snd_una;
+	info->mptcpi_rcv_nxt = meta_tp->rcv_nxt;
+
+	/* mptcpi_local_addr_used - hard to apply to our model because we can have
+	 *                          multiple subflows on same local addr
+	 */
+	/* mptcpi_local_addr_max - addresses endpoint added with the 'subflow' flag:
+	 *                         doesn't apply to our model, we don't have
+	 *                           $ ip mptcp endpoints add ADDRESS subflow
+	 */
+	info->mptcpi_csum_enabled = mpcb->dss_csum;
+
+exit:
+	release_sock(meta_sk);
+}
+
+static int mptcp_getsockopt_info(struct sock *meta_sk, char __user *optval,
+				 int __user *optlen)
+{
+	struct mptcp_info_upstream m_info;
+	int len;
+
+	if (get_user(len, optlen))
+		return -EFAULT;
+
+	len = min_t(unsigned int, len, sizeof(struct mptcp_info_upstream));
+
+	mptcp_diag_fill_info(meta_sk, &m_info);
+
+	if (put_user(len, optlen))
+		return -EFAULT;
+
+	if (copy_to_user(optval, &m_info, len))
+		return -EFAULT;
+
+	return 0;
+}
+
+int mptcp_getsockopt(struct sock *meta_sk, int level, int optname,
+		     char __user *optval, int __user *optlen)
+{
+	if (level != SOL_MPTCP)
+		return -EOPNOTSUPP;
+
+	switch (optname) {
+	case MPTCP_INFO:
+		return mptcp_getsockopt_info(meta_sk, optval, optlen);
+	case MPTCP_TCPINFO:
+	case MPTCP_SUBFLOW_ADDRS:
+		return -EOPNOTSUPP;
+	}
+
+	return -EOPNOTSUPP;
 }
 
 void mptcp_prepare_for_backlog(struct sock *sk, struct sk_buff *skb)
