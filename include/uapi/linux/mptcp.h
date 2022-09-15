@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0+ WITH Linux-syscall-note */
 /*
- * Netlink API for Multipath TCP
+ * Userspace API for Multipath TCP
  *
  * Author: Gregory Detal <gregory.detal@tessares.net>
+ *	   Christoph Paasch <cpaasch@apple.com>
  *
  *	This program is free software; you can redistribute it and/or
  *	modify it under the terms of the GNU General Public License
@@ -12,6 +13,17 @@
 
 #ifndef _LINUX_MPTCP_H
 #define _LINUX_MPTCP_H
+
+#ifndef __KERNEL__
+#include <netinet/in.h>		/* for sockaddr_in and sockaddr_in6	*/
+#include <sys/socket.h>		/* for struct sockaddr			*/
+#endif
+
+#include <linux/in.h>		/* for sockaddr_in			*/
+#include <linux/in6.h>		/* for sockaddr_in6			*/
+#include <linux/socket.h>	/* for sockaddr_storage and sa_family	*/
+
+/** NETLINK API **/
 
 #define MPTCP_GENL_NAME		"mptcp"
 #define MPTCP_GENL_EV_GRP_NAME	"mptcp_events"
@@ -146,6 +158,56 @@ enum {
 	MPTCPF_EVENT_SUB_ESTABLISHED	= (1 << 6),
 	MPTCPF_EVENT_SUB_CLOSED		= (1 << 7),
 	MPTCPF_EVENT_SUB_PRIORITY	= (1 << 8),
+};
+
+/** Upstream Linux compatibility **/
+
+/* MPTCP socket options */
+#define MPTCP_INFO_UPSTREAM	1
+#define MPTCP_TCPINFO		2
+#define MPTCP_SUBFLOW_ADDRS	3
+
+#define MPTCP_INFO_FLAG_FALLBACK		_BITUL(0)
+#define MPTCP_INFO_FLAG_REMOTE_KEY_RECEIVED	_BITUL(1)
+
+struct mptcp_info_upstream {
+	__u8	mptcpi_subflows;
+	__u8	mptcpi_add_addr_signal;
+	__u8	mptcpi_add_addr_accepted;
+	__u8	mptcpi_subflows_max;
+	__u8	mptcpi_add_addr_signal_max;
+	__u8	mptcpi_add_addr_accepted_max;
+	__u32	mptcpi_flags;
+	__u32	mptcpi_token;
+	__u64	mptcpi_write_seq;
+	__u64	mptcpi_snd_una;
+	__u64	mptcpi_rcv_nxt;
+	__u8	mptcpi_local_addr_used;
+	__u8	mptcpi_local_addr_max;
+	__u8	mptcpi_csum_enabled;
+};
+
+struct mptcp_subflow_data {
+	__u32		size_subflow_data;		/* size of this structure in userspace */
+	__u32		num_subflows;			/* must be 0, set by kernel */
+	__u32		size_kernel;			/* must be 0, set by kernel */
+	__u32		size_user;			/* size of one element in data[] */
+} __attribute__((aligned(8)));
+
+struct mptcp_subflow_addrs {
+	union {
+		__kernel_sa_family_t sa_family;
+		struct sockaddr sa_local;
+		struct sockaddr_in sin_local;
+		struct sockaddr_in6 sin6_local;
+		struct __kernel_sockaddr_storage ss_local;
+	};
+	union {
+		struct sockaddr sa_remote;
+		struct sockaddr_in sin_remote;
+		struct sockaddr_in6 sin6_remote;
+		struct __kernel_sockaddr_storage ss_remote;
+	};
 };
 
 #endif /* _LINUX_MPTCP_H */
