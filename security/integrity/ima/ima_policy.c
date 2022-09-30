@@ -1044,8 +1044,10 @@ void ima_delete_rules(void)
 
 	temp_ima_appraise = 0;
 	list_for_each_entry_safe(entry, tmp, &ima_temp_rules, list) {
-		for (i = 0; i < MAX_LSM_RULES; i++)
+		for (i = 0; i < MAX_LSM_RULES; i++) {
+			security_filter_rule_free(entry->lsm[i].rule);
 			kfree(entry->lsm[i].args_p);
+		}
 
 		list_del(&entry->list);
 		kfree(entry);
