@@ -1124,7 +1124,9 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 	}
 
 	if (unlikely(mpcb->addr_signal) && mpcb->pm_ops->addr_signal &&
-	    mpcb->mptcp_ver >= MPTCP_VERSION_1 && skb && !mptcp_is_data_seq(skb)) {
+	    mpcb->mptcp_ver >= MPTCP_VERSION_1 &&
+	    skb && !mptcp_is_data_seq(skb) &&
+	    tp->mptcp->fully_established) {
 		mpcb->pm_ops->addr_signal(sk, size, opts, skb);
 
 		if (opts->add_addr_v6)
