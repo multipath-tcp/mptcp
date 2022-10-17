@@ -972,13 +972,15 @@ struct sock *inet_csk_reqsk_queue_add(struct sock *sk,
 
 	spin_lock(&queue->rskq_lock);
 	if (unlikely(sk->sk_state != TCP_LISTEN)) {
-		struct tcp_sock *tp = tcp_sk(sk);
+		if (sk->sk_protocol == IPPROTO_TCP) {
+			struct tcp_sock *child_tp = tcp_sk(child);
 
-		/* in case of mptcp, two locks may been taken, one
-		 * on the meta, the other on master_sk
-		 */
-		if (mptcp(tp) && tp->mpcb && tp->mpcb->master_sk)
-			bh_unlock_sock(tp->mpcb->master_sk);
+			/* in case of mptcp, two locks may been taken, one
+			 * on the meta, the other on master_sk
+			 */
+			if (mptcp(child_tp) && child_tp->mpcb && child_tp->mpcb->master_sk)
+				bh_unlock_sock(child_tp->mpcb->master_sk);
+		}
 
 		inet_child_forget(sk, req, child);
 		child = NULL;
