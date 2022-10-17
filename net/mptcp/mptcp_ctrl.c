@@ -2017,6 +2017,8 @@ void mptcp_disconnect(struct sock *meta_sk)
 	mptcp_for_each_sub_safe(meta_tp->mpcb, mptcp, tmp) {
 		struct sock *subsk = mptcp_to_sock(mptcp);
 
+		BUG_ON(spin_is_locked(&subsk->sk_lock.slock));
+
 		tcp_sk(subsk)->tcp_disconnect = 1;
 
 		meta_sk->sk_prot->disconnect(subsk, O_NONBLOCK);
