@@ -1680,7 +1680,7 @@ bool mptcp_handle_ack_in_infinite(struct sock *sk, const struct sk_buff *skb,
 	 * this becomes our data_ack.
 	 */
 	if (after(meta_tp->snd_una, tp->mptcp->last_end_data_seq - (tp->snd_nxt - tp->snd_una))) {
-		/* Remmeber that meta snd_una is ahead of the game */
+		/* Remember that meta snd_una is ahead of the game */
 		mpcb->infinite_send_una_ahead = 1;
 		tp->mptcp->rx_opt.data_ack = meta_tp->snd_una;
 	} else {
