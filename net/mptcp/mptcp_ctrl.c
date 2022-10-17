@@ -2528,7 +2528,6 @@ static int __mptcp_check_req_master(struct sock *child,
 		 * must still remove it.
 		 */
 		MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_MPCAPABLEPASSIVEFALLBACK);
-		mptcp_reqsk_remove_tk(req);
 		return 1;
 	}
 
@@ -2564,11 +2563,6 @@ static int __mptcp_check_req_master(struct sock *child,
 
 	mpcb->dss_csum = mtreq->dss_csum;
 	mpcb->server_side = 1;
-
-	/* Needs to be done here additionally, because when accepting a
-	 * new connection we pass by __reqsk_free and not reqsk_free.
-	 */
-	mptcp_reqsk_remove_tk(req);
 
 	return 0;
 }
