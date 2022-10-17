@@ -2533,7 +2533,10 @@ static int __mptcp_check_req_master(struct sock *child,
 	}
 
 	/* mopt can be NULL when coming from FAST-OPEN */
-	if (mopt && mopt->saw_mpc && mtreq->mptcp_ver == MPTCP_VERSION_1) {
+	if (mopt && mtreq->mptcp_ver == MPTCP_VERSION_1) {
+		if (!mopt->saw_mpc)
+			return 1;
+
 		mtreq->mptcp_rem_key = mopt->mptcp_sender_key;
 		mtreq->rem_key_set = 1;
 	}
