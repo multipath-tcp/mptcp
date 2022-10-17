@@ -1603,11 +1603,13 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 		opts->add_addr_v4 = 1;
 		if (mpcb->mptcp_ver >= MPTCP_VERSION_1) {
 			u8 mptcp_hash_mac[SHA256_DIGEST_SIZE];
+			u16 port = 0;
 
 			mptcp_hmac(mpcb->mptcp_ver, (u8 *)&mpcb->mptcp_loc_key,
-				   (u8 *)&mpcb->mptcp_rem_key, mptcp_hash_mac, 2,
+				   (u8 *)&mpcb->mptcp_rem_key, mptcp_hash_mac, 3,
 				   1, (u8 *)&mptcp_local->locaddr4[ind].loc4_id,
-				   4, (u8 *)&opts->add_addr4.addr.s_addr);
+				   4, (u8 *)&opts->add_addr4.addr.s_addr,
+				   2, (u8 *)&port);
 			opts->add_addr4.trunc_mac = *(u64 *)&mptcp_hash_mac[SHA256_DIGEST_SIZE - sizeof(u64)];
 		}
 
@@ -1644,11 +1646,13 @@ skip_ipv4:
 		opts->add_addr_v6 = 1;
 		if (mpcb->mptcp_ver >= MPTCP_VERSION_1) {
 			u8 mptcp_hash_mac[SHA256_DIGEST_SIZE];
+			u16 port = 0;
 
 			mptcp_hmac(mpcb->mptcp_ver, (u8 *)&mpcb->mptcp_loc_key,
-				   (u8 *)&mpcb->mptcp_rem_key, mptcp_hash_mac, 2,
+				   (u8 *)&mpcb->mptcp_rem_key, mptcp_hash_mac, 3,
 				   1, (u8 *)&mptcp_local->locaddr6[ind].loc6_id,
-				   16, (u8 *)&opts->add_addr6.addr.s6_addr);
+				   16, (u8 *)opts->add_addr6.addr.s6_addr,
+				   2, (u8 *)&port);
 			opts->add_addr6.trunc_mac = *(u64 *)&mptcp_hash_mac[SHA256_DIGEST_SIZE - sizeof(u64)];
 		}
 
