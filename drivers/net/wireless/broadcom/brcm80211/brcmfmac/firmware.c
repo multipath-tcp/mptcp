@@ -648,6 +648,11 @@ brcmf_fw_alloc_request(u32 chip, u32 chiprev,
 	char end = '\0';
 	size_t reqsz;
 
+	if (chiprev >= BITS_PER_TYPE(u32)) {
+		brcmf_err("Invalid chip revision %u\n", chiprev);
+		return NULL;
+	}
+
 	for (i = 0; i < table_size; i++) {
 		if (mapping_table[i].chipid == chip &&
 		    mapping_table[i].revmask & BIT(chiprev))
