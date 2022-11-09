@@ -260,7 +260,7 @@ enum {
 	ICH_MAP				= 0x90, /* ICH MAP register */
 
 	/* em constants */
-	EM_MAX_SLOTS			= 8,
+	EM_MAX_SLOTS			= SATA_PMP_MAX_PORTS,
 	EM_MAX_RETRY			= 5,
 
 	/* em_ctl bits */
