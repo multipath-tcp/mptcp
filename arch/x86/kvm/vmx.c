@@ -11022,8 +11022,8 @@ static void __noclone vmx_vcpu_run(struct kvm_vcpu *vcpu)
 	 * entries and (in some cases) RSB underflow.
 	 *
 	 * eIBRS has its own protection against poisoned RSB, so it doesn't
-	 * need the RSB filling sequence.  But it does need to be enabled
-	 * before the first unbalanced RET.
+	 * need the RSB filling sequence.  But it does need to be enabled, and a
+	 * single call to retire, before the first unbalanced RET.
 	 *
 	 * So no RETs before vmx_spec_ctrl_restore_host() below.
 	 */
