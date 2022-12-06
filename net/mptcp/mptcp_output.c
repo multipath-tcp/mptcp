@@ -1215,7 +1215,8 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 		 * assume that the DSS-option will be set for the data-packet.
 		 */
 		if (skb && !mptcp_is_data_seq(skb) && mpcb->rem_key_set) {
-			*size += MPTCP_SUB_LEN_ACK_ALIGN;
+			*size += MPTCP_SUB_LEN_ACK_ALIGN +
+				 MPTCP_SUB_LEN_DSS_ALIGN;
 		} else if ((skb && mptcp_is_data_mpcapable(skb)) ||
 			   (!skb && tp->mpcb->send_mptcpv1_mpcapable)) {
 			*size += MPTCPV1_SUB_LEN_CAPABLE_DATA_ALIGN;
@@ -1228,9 +1229,10 @@ void mptcp_established_options(struct sock *sk, struct sk_buff *skb,
 					 MPTCP_SUB_LEN_SEQ_ALIGN;
 			else
 				*size += MPTCP_SUB_LEN_SEQ_ALIGN;
+
+			*size += MPTCP_SUB_LEN_DSS_ALIGN;
 		}
 
-		*size += MPTCP_SUB_LEN_DSS_ALIGN;
 	}
 
 	/* In fallback mp_fail-mode, we have to repeat it until the fallback
