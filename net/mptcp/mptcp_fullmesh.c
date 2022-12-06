@@ -1352,8 +1352,10 @@ skip_ipv6:
 	else
 		fmp->announced_addrs_v6 |= (1 << index);
 
-	for (i = fmp->add_addr; i && fmp->add_addr; i--)
-		tcp_send_ack(mpcb->master_sk);
+	/* Only version 0 can send ADD_ADDR right at the beginning */
+	if (mpcb->mptcp_ver == MPTCP_VERSION_0)
+		for (i = fmp->add_addr; i && fmp->add_addr; i--)
+			tcp_send_ack(mpcb->master_sk);
 
 	if (master_tp->mptcp->send_mp_prio)
 		tcp_send_ack(mpcb->master_sk);
