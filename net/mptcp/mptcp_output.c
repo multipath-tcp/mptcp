@@ -2044,3 +2044,67 @@ unsigned int mptcp_xmit_size_goal(const struct sock *meta_sk, u32 mss_now,
 
 	return max(xmit_size_goal, mss_now);
 }
+
+unsigned int mptcp_options_fill_add_addr4(struct mptcp_cb *mpcb,
+					  struct tcp_out_options *opts,
+					  struct mptcp_loc4 *loc)
+{
+	u16 port = 0; /* for ADD_ADDRv1, not supported yet */
+
+	opts->options |= OPTION_MPTCP;
+	opts->mptcp_options |= OPTION_ADD_ADDR;
+	opts->add_addr4.addr_id = loc->loc4_id;
+	opts->add_addr4.addr = loc->addr;
+	opts->add_addr_v4 = 1;
+
+	if (mpcb->mptcp_ver >= MPTCP_VERSION_1) {
+		u8 mptcp_hash_mac[SHA256_DIGEST_SIZE];
+
+		mptcp_hmac(mpcb->mptcp_ver, (u8 *)&mpcb->mptcp_loc_key,
+			   (u8 *)&mpcb->mptcp_rem_key, mptcp_hash_mac, 3,
+			   1, (u8 *)&loc->loc4_id,
+			   4, (u8 *)&loc->addr.s_addr,
+			   2, (u8 *)&port);
+		opts->add_addr4.trunc_mac = *(u64 *)&mptcp_hash_mac[SHA256_DIGEST_SIZE - sizeof(u64)];
+	}
+
+	mpcb->add_addr_signal++;
+
+	if (mpcb->mptcp_ver < MPTCP_VERSION_1)
+		return MPTCP_SUB_LEN_ADD_ADDR4_ALIGN;
+
+	return MPTCP_SUB_LEN_ADD_ADDR4_ALIGN_VER1;
+}
+EXPORT_SYMBOL(mptcp_options_fill_add_addr4);
+
+unsigned int mptcp_options_fill_add_addr6(struct mptcp_cb *mpcb,
+					  struct tcp_out_options *opts,
+					  struct mptcp_loc6 *loc)
+{
+	u16 port = 0; /* for ADD_ADDRv1, not supported yet */
+
+	opts->options |= OPTION_MPTCP;
+	opts->mptcp_options |= OPTION_ADD_ADDR;
+	opts->add_addr6.addr_id = loc->loc6_id;
+	opts->add_addr6.addr = loc->addr;
+	opts->add_addr_v6 = 1;
+
+	if (mpcb->mptcp_ver >= MPTCP_VERSION_1) {
+		u8 mptcp_hash_mac[SHA256_DIGEST_SIZE];
+
+		mptcp_hmac(mpcb->mptcp_ver, (u8 *)&mpcb->mptcp_loc_key,
+			   (u8 *)&mpcb->mptcp_rem_key, mptcp_hash_mac, 3,
+			   1, (u8 *)&loc->loc6_id,
+			   16, (u8 *)loc->addr.s6_addr,
+			   2, (u8 *)&port);
+		opts->add_addr6.trunc_mac = *(u64 *)&mptcp_hash_mac[SHA256_DIGEST_SIZE - sizeof(u64)];
+	}
+
+	mpcb->add_addr_signal++;
+
+	if (mpcb->mptcp_ver < MPTCP_VERSION_1)
+		return MPTCP_SUB_LEN_ADD_ADDR6_ALIGN;
+
+	return MPTCP_SUB_LEN_ADD_ADDR6_ALIGN_VER1;
+}
+EXPORT_SYMBOL(mptcp_options_fill_add_addr6);

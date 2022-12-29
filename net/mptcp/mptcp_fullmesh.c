@@ -1594,34 +1594,14 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 	if (unannouncedv4 && mptcp_options_add_addr4_enough_space(mpcb, *size)) {
 		int ind = mptcp_find_free_index(~unannouncedv4);
 
-		opts->options |= OPTION_MPTCP;
-		opts->mptcp_options |= OPTION_ADD_ADDR;
-		opts->add_addr4.addr_id = mptcp_local->locaddr4[ind].loc4_id;
-		opts->add_addr4.addr = mptcp_local->locaddr4[ind].addr;
-		opts->add_addr_v4 = 1;
-		if (mpcb->mptcp_ver >= MPTCP_VERSION_1) {
-			u8 mptcp_hash_mac[SHA256_DIGEST_SIZE];
-			u16 port = 0;
-
-			mptcp_hmac(mpcb->mptcp_ver, (u8 *)&mpcb->mptcp_loc_key,
-				   (u8 *)&mpcb->mptcp_rem_key, mptcp_hash_mac, 3,
-				   1, (u8 *)&mptcp_local->locaddr4[ind].loc4_id,
-				   4, (u8 *)&opts->add_addr4.addr.s_addr,
-				   2, (u8 *)&port);
-			opts->add_addr4.trunc_mac = *(u64 *)&mptcp_hash_mac[SHA256_DIGEST_SIZE - sizeof(u64)];
-		}
+		*size += mptcp_options_fill_add_addr4(mpcb, opts,
+						      &mptcp_local->locaddr4[ind]);
 
 		if (skb) {
 			fmp->announced_addrs_v4 |= (1 << ind);
 			fmp->add_addr--;
 		}
 
-		if (mpcb->mptcp_ver < MPTCP_VERSION_1)
-			*size += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN;
-		if (mpcb->mptcp_ver >= MPTCP_VERSION_1)
-			*size += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN_VER1;
-
-		mpcb->add_addr_signal++;
 		goto skip_ipv6;
 	}
 
@@ -1633,33 +1613,13 @@ skip_ipv4:
 	if (unannouncedv6 && mptcp_options_add_addr6_enough_space(mpcb, *size)) {
 		int ind = mptcp_find_free_index(~unannouncedv6);
 
-		opts->options |= OPTION_MPTCP;
-		opts->mptcp_options |= OPTION_ADD_ADDR;
-		opts->add_addr6.addr_id = mptcp_local->locaddr6[ind].loc6_id;
-		opts->add_addr6.addr = mptcp_local->locaddr6[ind].addr;
-		opts->add_addr_v6 = 1;
-		if (mpcb->mptcp_ver >= MPTCP_VERSION_1) {
-			u8 mptcp_hash_mac[SHA256_DIGEST_SIZE];
-			u16 port = 0;
-
-			mptcp_hmac(mpcb->mptcp_ver, (u8 *)&mpcb->mptcp_loc_key,
-				   (u8 *)&mpcb->mptcp_rem_key, mptcp_hash_mac, 3,
-				   1, (u8 *)&mptcp_local->locaddr6[ind].loc6_id,
-				   16, (u8 *)opts->add_addr6.addr.s6_addr,
-				   2, (u8 *)&port);
-			opts->add_addr6.trunc_mac = *(u64 *)&mptcp_hash_mac[SHA256_DIGEST_SIZE - sizeof(u64)];
-		}
+		*size += mptcp_options_fill_add_addr6(mpcb, opts,
+						      &mptcp_local->locaddr6[ind]);
 
 		if (skb) {
 			fmp->announced_addrs_v6 |= (1 << ind);
 			fmp->add_addr--;
 		}
-		if (mpcb->mptcp_ver < MPTCP_VERSION_1)
-			*size += MPTCP_SUB_LEN_ADD_ADDR6_ALIGN;
-		if (mpcb->mptcp_ver >= MPTCP_VERSION_1)
-			*size += MPTCP_SUB_LEN_ADD_ADDR6_ALIGN_VER1;
-
-		mpcb->add_addr_signal++;
 	}
 
 skip_ipv6:
