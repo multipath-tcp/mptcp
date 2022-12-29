@@ -1385,6 +1385,13 @@ static inline bool mptcp_options_add_addr6_enough_space(const struct mptcp_cb *m
 	return remaining >= MPTCP_SUB_LEN_ADD_ADDR6_ALIGN_VER1;
 }
 
+unsigned int mptcp_options_fill_add_addr4(struct mptcp_cb *mpcb,
+					  struct tcp_out_options *opts,
+					  struct mptcp_loc4 *loc);
+unsigned int mptcp_options_fill_add_addr6(struct mptcp_cb *mpcb,
+					  struct tcp_out_options *opts,
+					  struct mptcp_loc6 *loc);
+
 /* TCP and MPTCP mpc flag-depending functions */
 u16 mptcp_select_window(struct sock *sk);
 void mptcp_tcp_set_rto(struct sock *sk);
