@@ -1363,6 +1363,28 @@ static inline int mptcp_subflow_count(const struct mptcp_cb *mpcb)
 	return i;
 }
 
+static inline bool mptcp_options_add_addr4_enough_space(const struct mptcp_cb *mpcb,
+							unsigned int size)
+{
+	unsigned int remaining = MAX_TCP_OPTION_SPACE - size;
+
+	if (mpcb->mptcp_ver < MPTCP_VERSION_1)
+		return remaining >= MPTCP_SUB_LEN_ADD_ADDR4_ALIGN;
+
+	return remaining >= MPTCP_SUB_LEN_ADD_ADDR4_ALIGN_VER1;
+}
+
+static inline bool mptcp_options_add_addr6_enough_space(const struct mptcp_cb *mpcb,
+							unsigned int size)
+{
+	unsigned int remaining = MAX_TCP_OPTION_SPACE - size;
+
+	if (mpcb->mptcp_ver < MPTCP_VERSION_1)
+		return remaining >= MPTCP_SUB_LEN_ADD_ADDR6_ALIGN;
+
+	return remaining >= MPTCP_SUB_LEN_ADD_ADDR6_ALIGN_VER1;
+}
+
 /* TCP and MPTCP mpc flag-depending functions */
 u16 mptcp_select_window(struct sock *sk);
 void mptcp_tcp_set_rto(struct sock *sk);
