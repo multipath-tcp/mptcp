@@ -2108,3 +2108,14 @@ unsigned int mptcp_options_fill_add_addr6(struct mptcp_cb *mpcb,
 	return MPTCP_SUB_LEN_ADD_ADDR6_ALIGN_VER1;
 }
 EXPORT_SYMBOL(mptcp_options_fill_add_addr6);
+
+unsigned int mptcp_options_fill_rm_addr(struct tcp_out_options *opts,
+					u16 remove_addrs, int remove_addr_len)
+{
+	opts->options |= OPTION_MPTCP;
+	opts->mptcp_options |= OPTION_REMOVE_ADDR;
+	opts->remove_addrs = remove_addrs;
+
+	return remove_addr_len;
+}
+EXPORT_SYMBOL(mptcp_options_fill_rm_addr);

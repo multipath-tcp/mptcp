@@ -1385,12 +1385,25 @@ static inline bool mptcp_options_add_addr6_enough_space(const struct mptcp_cb *m
 	return remaining >= MPTCP_SUB_LEN_ADD_ADDR6_ALIGN_VER1;
 }
 
+static inline bool mptcp_options_rm_addr_enough_space(u16 remove_addrs,
+						      int *remove_addr_len,
+						      unsigned int size)
+{
+	unsigned int remaining = MAX_TCP_OPTION_SPACE - size;
+
+	*remove_addr_len = mptcp_sub_len_remove_addr_align(remove_addrs);
+
+	return remaining >= *remove_addr_len;
+}
+
 unsigned int mptcp_options_fill_add_addr4(struct mptcp_cb *mpcb,
 					  struct tcp_out_options *opts,
 					  struct mptcp_loc4 *loc);
 unsigned int mptcp_options_fill_add_addr6(struct mptcp_cb *mpcb,
 					  struct tcp_out_options *opts,
 					  struct mptcp_loc6 *loc);
+unsigned int mptcp_options_fill_rm_addr(struct tcp_out_options *opts,
+					u16 remove_addrs, int remove_addr_len);
 
 /* TCP and MPTCP mpc flag-depending functions */
 u16 mptcp_select_window(struct sock *sk);

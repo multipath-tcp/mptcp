@@ -1632,14 +1632,13 @@ remove_addr:
 	if (likely(!fmp->remove_addrs))
 		goto exit;
 
-	remove_addr_len = mptcp_sub_len_remove_addr_align(fmp->remove_addrs);
-	if (MAX_TCP_OPTION_SPACE - *size < remove_addr_len)
+	if (!mptcp_options_rm_addr_enough_space(fmp->remove_addrs,
+						&remove_addr_len, *size))
 		goto exit;
 
-	opts->options |= OPTION_MPTCP;
-	opts->mptcp_options |= OPTION_REMOVE_ADDR;
-	opts->remove_addrs = fmp->remove_addrs;
-	*size += remove_addr_len;
+	*size += mptcp_options_fill_rm_addr(opts, fmp->remove_addrs,
+					    remove_addr_len);
+
 	if (skb)
 		fmp->remove_addrs = 0;
 
