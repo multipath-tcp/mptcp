@@ -1214,7 +1214,7 @@ struct sock *tcp_v6_syn_recv_sock(const struct sock *sk, struct sk_buff *skb,
 		/* We must check on the request-socket because the listener
 		 * socket's flag may have been changed halfway through.
 		 */
-		if (!inet_rsk(req)->saw_mpc)
+		if (inet_rsk(req)->saw_mpc)
 			inet_csk(newsk)->icsk_af_ops = &mptcp_v6_mapped;
 		else
 #endif
