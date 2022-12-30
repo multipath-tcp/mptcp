@@ -686,11 +686,15 @@ mptcp_nl_genl_announce(struct sk_buff *skb, struct genl_info *info)
 
 	mpcb->addr_signal = 1;
 
-	rcu_read_lock_bh();
-	subsk = mptcp_select_ack_sock(meta_sk);
-	if (subsk)
-		tcp_send_ack(subsk);
-	rcu_read_unlock_bh();
+	/* Only version 0 can send ADD_ADDR right at the beginning */
+	if (mpcb->mptcp_ver < MPTCP_VERSION_1 ||
+	    tcp_sk(meta_sk)->mptcp->fully_established) {
+		rcu_read_lock_bh();
+		subsk = mptcp_select_ack_sock(meta_sk);
+		if (subsk)
+			tcp_send_ack(subsk);
+		rcu_read_unlock_bh();
+	}
 
 exit:
 	release_sock(meta_sk);
