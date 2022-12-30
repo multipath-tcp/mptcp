@@ -551,22 +551,16 @@ mptcp_nl_pm_addr_signal(struct sock *sk, unsigned *size,
 	}
 #endif
 
-	if (likely(!priv->remove_addrs))
-		goto exit;
+	if (unlikely(priv->remove_addrs) &&
+	    mptcp_options_rm_addr_enough_space(priv->remove_addrs,
+					       &remove_addr_len, *size)) {
+		*size += mptcp_options_fill_rm_addr(opts, priv->remove_addrs,
+						    remove_addr_len);
 
-	remove_addr_len = mptcp_sub_len_remove_addr_align(priv->remove_addrs);
-	if (MAX_TCP_OPTION_SPACE - *size < remove_addr_len)
-		goto exit;
+		if (skb)
+			priv->remove_addrs = 0;
+	}
 
-	opts->options		|= OPTION_MPTCP;
-	opts->mptcp_options	|= OPTION_REMOVE_ADDR;
-	opts->remove_addrs	= priv->remove_addrs;
-
-	if (skb)
-		priv->remove_addrs = 0;
-	*size += remove_addr_len;
-
-exit:
 	mpcb->addr_signal = !!((~priv->announced4) & priv->loc4_bits ||
 #if IS_ENABLED(CONFIG_IPV6)
 			       (~priv->announced6) & priv->loc6_bits ||
