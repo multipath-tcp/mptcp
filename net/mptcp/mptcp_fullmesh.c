@@ -1629,20 +1629,16 @@ skip_ipv6:
 		fmp->add_addr--;
 
 remove_addr:
-	if (likely(!fmp->remove_addrs))
-		goto exit;
+	if (unlikely(fmp->remove_addrs) &&
+	    mptcp_options_rm_addr_enough_space(fmp->remove_addrs,
+					       &remove_addr_len, *size)) {
+		*size += mptcp_options_fill_rm_addr(opts, fmp->remove_addrs,
+						    remove_addr_len);
 
-	if (!mptcp_options_rm_addr_enough_space(fmp->remove_addrs,
-						&remove_addr_len, *size))
-		goto exit;
+		if (skb)
+			fmp->remove_addrs = 0;
+	}
 
-	*size += mptcp_options_fill_rm_addr(opts, fmp->remove_addrs,
-					    remove_addr_len);
-
-	if (skb)
-		fmp->remove_addrs = 0;
-
-exit:
 	mpcb->addr_signal = !!(fmp->add_addr || fmp->remove_addrs);
 }
 
