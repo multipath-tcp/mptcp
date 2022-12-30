@@ -528,40 +528,26 @@ mptcp_nl_pm_addr_signal(struct sock *sk, unsigned *size,
 	int			remove_addr_len;
 
 	unannounced = (~priv->announced4) & priv->loc4_bits;
-	if (unannounced &&
-	    MAX_TCP_OPTION_SPACE - *size >= MPTCP_SUB_LEN_ADD_ADDR4_ALIGN) {
+	if (unannounced && mptcp_options_add_addr4_enough_space(mpcb, *size)) {
 		int i = mptcp_nl_find_free_index(~unannounced);
 
-		opts->options		|= OPTION_MPTCP;
-		opts->mptcp_options	|= OPTION_ADD_ADDR;
-		opts->add_addr4.addr_id = priv->locaddr4[i].loc4_id;
-		opts->add_addr4.addr	= priv->locaddr4[i].addr;
-		opts->add_addr_v4	= 1;
+		*size += mptcp_options_fill_add_addr4(mpcb, opts,
+						      &priv->locaddr4[i]);
 
 		if (skb)
 			priv->announced4 |= (1 << i);
-		*size += MPTCP_SUB_LEN_ADD_ADDR4_ALIGN;
-
-		mpcb->add_addr_signal++;
 	}
 
 #if IS_ENABLED(CONFIG_IPV6)
 	unannounced = (~priv->announced6) & priv->loc6_bits;
-	if (unannounced &&
-	    MAX_TCP_OPTION_SPACE - *size >= MPTCP_SUB_LEN_ADD_ADDR6_ALIGN) {
+	if (unannounced && mptcp_options_add_addr6_enough_space(mpcb, *size)) {
 		int i = mptcp_nl_find_free_index(~unannounced);
 
-		opts->options		|= OPTION_MPTCP;
-		opts->mptcp_options	|= OPTION_ADD_ADDR;
-		opts->add_addr6.addr_id = priv->locaddr6[i].loc6_id;
-		opts->add_addr6.addr	= priv->locaddr6[i].addr;
-		opts->add_addr_v6	= 1;
+		*size += mptcp_options_fill_add_addr6(mpcb, opts,
+						      &priv->locaddr6[i]);
 
 		if (skb)
 			priv->announced6 |= (1 << i);
-		*size += MPTCP_SUB_LEN_ADD_ADDR6_ALIGN;
-
-		mpcb->add_addr_signal++;
 	}
 #endif
 
