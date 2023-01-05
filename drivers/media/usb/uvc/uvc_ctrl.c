@@ -11,6 +11,7 @@
  *
  */
 
+#include <asm/barrier.h>
 #include <linux/kernel.h>
 #include <linux/list.h>
 #include <linux/module.h>
@@ -1322,6 +1323,10 @@ static void uvc_ctrl_status_event_work(struct work_struct *work)
 	int ret;
 
 	uvc_ctrl_status_event(w->chain, w->ctrl, w->data);
+
+	/* The barrier is needed to synchronize with uvc_status_stop(). */
+	if (smp_load_acquire(&dev->flush_status))
+		return;
 
 	/* Resubmit the URB. */
 	w->urb->interval = dev->int_ep->desc.bInterval;
