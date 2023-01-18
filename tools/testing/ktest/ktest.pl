@@ -4243,6 +4243,9 @@ sub send_email {
 }
 
 sub cancel_test {
+    if ($monitor_cnt) {
+	end_monitor;
+    }
     if ($email_when_canceled) {
         send_email("KTEST: Your [$test_type] test was cancelled",
                 "Your test started at $script_start_time was cancelled: sig int");
