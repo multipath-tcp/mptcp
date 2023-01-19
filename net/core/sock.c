@@ -135,10 +135,8 @@
 
 #include <trace/events/sock.h>
 
-#ifdef CONFIG_MPTCP
 #include <net/mptcp.h>
 #include <net/inet_common.h>
-#endif
 
 #include <net/tcp.h>
 #include <net/busy_poll.h>
