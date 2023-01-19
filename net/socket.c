@@ -1413,9 +1413,11 @@ int __sock_create(struct net *net, int family, int type, int protocol,
 	if (err < 0)
 		goto out_module_put;
 
+#ifdef CONFIG_MPTCP
 	if (sysctl_mptcp_enabled && old_protocol == IPPROTO_MPTCP &&
 	    type == SOCK_STREAM && (family == AF_INET || family == AF_INET6))
 		mptcp_enable_sock(sock->sk);
+#endif
 
 	/*
 	 * Now to bump the refcnt of the [loadable] module that owns this
