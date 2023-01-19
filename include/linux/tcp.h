@@ -480,9 +480,9 @@ struct tcp_sock {
 		record_master_info:1,
 		tcp_disconnect:1;
 	struct mptcp_tcp_sock *mptcp;
-#ifdef CONFIG_MPTCP
 #define MPTCP_SCHED_NAME_MAX 16
 #define MPTCP_PM_NAME_MAX 16
+#ifdef CONFIG_MPTCP
 	struct hlist_nulls_node tk_table;
 	u32		mptcp_loc_token;
 	u64		mptcp_loc_key;
