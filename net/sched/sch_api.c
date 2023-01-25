@@ -959,10 +959,14 @@ skip:
 		if (cops && cops->graft) {
 			unsigned long cl = cops->find(parent, classid);
 
-			if (cl)
-				err = cops->graft(parent, cl, new, &old);
-			else
+			if (cl) {
+				if (new && new->ops == &noqueue_qdisc_ops)
+					err = -EINVAL;
+				else
+					err = cops->graft(parent, cl, new, &old);
+			} else {
 				err = -ENOENT;
+			}
 		}
 		if (!err)
 			notify_and_destroy(net, skb, n, classid, old, new);
