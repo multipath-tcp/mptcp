@@ -433,7 +433,7 @@ static int fill_res_cm_id_entry(struct sk_buff *msg,
 	struct nlattr *entry_attr;
 
 	if (port && port != cm_id->port_num)
-		return 0;
+		return -EAGAIN;
 
 	entry_attr = nla_nest_start(msg, RDMA_NLDEV_ATTR_RES_CM_ID_ENTRY);
 	if (!entry_attr)
