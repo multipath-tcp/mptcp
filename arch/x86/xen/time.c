@@ -516,7 +516,7 @@ static void __init xen_time_init(void)
 		pvclock_gtod_register_notifier(&xen_pvclock_gtod_notifier);
 }
 
-void __ref xen_init_time_ops(void)
+void __init xen_init_time_ops(void)
 {
 	xen_sched_clock_offset = xen_clocksource_read();
 	pv_time_ops = xen_time_ops;
