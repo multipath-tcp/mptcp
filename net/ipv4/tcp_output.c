@@ -813,11 +813,11 @@ static void tcp_tsq_handler(struct sock *sk)
 
 		if (mptcp(tp))
 			tcp_tsq_write(meta_sk);
-	} else {
+	} else if (sk->sk_state != TCP_CLOSE) {
 		if (!test_and_set_bit(TCP_TSQ_DEFERRED, &sk->sk_tsq_flags))
 			sock_hold(sk);
 
-		if ((mptcp(tp)) && (sk->sk_state != TCP_CLOSE))
+		if (mptcp(tp))
 			mptcp_tsq_flags(sk);
 	}
 
