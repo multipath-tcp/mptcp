@@ -2062,6 +2062,12 @@ static inline bool nested_cpu_has_shadow_vmcs(struct vmcs12 *vmcs12)
 	return nested_cpu_has2(vmcs12, SECONDARY_EXEC_SHADOW_VMCS);
 }
 
+static inline bool nested_cpu_has_save_preemption_timer(struct vmcs12 *vmcs12)
+{
+	return vmcs12->vm_exit_controls &
+	    VM_EXIT_SAVE_VMX_PREEMPTION_TIMER;
+}
+
 static inline bool is_nmi(u32 intr_info)
 {
 	return (intr_info & (INTR_INFO_INTR_TYPE_MASK | INTR_INFO_VALID_MASK))
@@ -4734,9 +4740,6 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 		}
 	}
 
-	if (boot_cpu_has(X86_FEATURE_XSAVES))
-		rdmsrl(MSR_IA32_XSS, host_xss);
-
 	return 0;
 }
 
@@ -5518,18 +5521,15 @@ static u32 vmx_segment_access_rights(struct kvm_segment *var)
 {
 	u32 ar;
 
-	if (var->unusable || !var->present)
-		ar = 1 << 16;
-	else {
-		ar = var->type & 15;
-		ar |= (var->s & 1) << 4;
-		ar |= (var->dpl & 3) << 5;
-		ar |= (var->present & 1) << 7;
-		ar |= (var->avl & 1) << 12;
-		ar |= (var->l & 1) << 13;
-		ar |= (var->db & 1) << 14;
-		ar |= (var->g & 1) << 15;
-	}
+	ar = var->type & 15;
+	ar |= (var->s & 1) << 4;
+	ar |= (var->dpl & 3) << 5;
+	ar |= (var->present & 1) << 7;
+	ar |= (var->avl & 1) << 12;
+	ar |= (var->l & 1) << 13;
+	ar |= (var->db & 1) << 14;
+	ar |= (var->g & 1) << 15;
+	ar |= (var->unusable || !var->present) << 16;
 
 	return ar;
 }
@@ -7950,6 +7950,9 @@ static __init int hardware_setup(void)
 		rdmsrl(MSR_IA32_BNDCFGS, host_bndcfgs);
 		WARN_ONCE(host_bndcfgs, "KVM: BNDCFGS in host will be lost");
 	}
+
+	if (boot_cpu_has(X86_FEATURE_XSAVES))
+		rdmsrl(MSR_IA32_XSS, host_xss);
 
 	if (!cpu_has_vmx_vpid() || !cpu_has_vmx_invvpid() ||
 		!(cpu_has_vmx_invvpid_single() || cpu_has_vmx_invvpid_global()))
@@ -12607,6 +12610,10 @@ static int check_vmentry_prereqs(struct kvm_vcpu *vcpu, struct vmcs12 *vmcs12)
 		return VMXERR_ENTRY_INVALID_CONTROL_FIELD;
 
 	if (nested_vmx_check_msr_switch_controls(vcpu, vmcs12))
+		return VMXERR_ENTRY_INVALID_CONTROL_FIELD;
+
+	if (!nested_cpu_has_preemption_timer(vmcs12) &&
+	    nested_cpu_has_save_preemption_timer(vmcs12))
 		return VMXERR_ENTRY_INVALID_CONTROL_FIELD;
 
 	if (nested_vmx_check_pml_controls(vcpu, vmcs12))
