@@ -574,7 +574,7 @@ int brcmf_fw_map_chip_to_name(u32 chip, u32 chiprev,
 
 	if (chiprev >= BITS_PER_TYPE(u32)) {
 		brcmf_err("Invalid chip revision %u\n", chiprev);
-		return NULL;
+		return -EINVAL;
 	}
 
 	for (i = 0; i < table_size; i++) {
