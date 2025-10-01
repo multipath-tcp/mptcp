@@ -1663,7 +1663,7 @@ bool mptcp_handle_ack_in_infinite(struct sock *sk, const struct sk_buff *skb,
 
 	mpcb->infinite_mapping_snd = 1;
 	mpcb->infinite_mapping_rcv = 1;
-	mpcb->infinite_rcv_seq = mptcp_get_rcv_nxt_64(mptcp_meta_tp(tp));
+	mpcb->infinite_rcv_seq = mptcp_get_rcv_nxt_64(meta_tp);
 	tp->mptcp->fully_established = 1;
 
 	MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_FBACKINIT);
