@@ -1316,7 +1316,7 @@ static inline bool mptcp_fallback_close(struct mptcp_cb *mpcb,
 
 	mptcp_sub_force_close_all(mpcb, except);
 
-	if (mpcb->pm_ops->close_session)
+	if (mpcb->pm_ops->close_session && except)
 		mpcb->pm_ops->close_session(mptcp_meta_sk(except));
 
 	return !except;
