@@ -525,6 +525,7 @@ int rpcrdma_ep_create(struct rpcrdma_xprt *r_xprt)
 				 IB_POLL_WORKQUEUE);
 	if (IS_ERR(sendcq)) {
 		rc = PTR_ERR(sendcq);
+		sendcq = NULL;
 		goto out1;
 	}
 
@@ -533,6 +534,7 @@ int rpcrdma_ep_create(struct rpcrdma_xprt *r_xprt)
 				 IB_POLL_WORKQUEUE);
 	if (IS_ERR(recvcq)) {
 		rc = PTR_ERR(recvcq);
+		recvcq = NULL;
 		goto out2;
 	}
 

@@ -37,8 +37,8 @@
 #define STATIC_SCREEN_RAMP_DELTA_REFRESH_RATE_PER_FRAME ((1000 / 60) * 65)
 /* Number of elements in the render times cache array */
 #define RENDER_TIMES_MAX_COUNT 10
-/* Threshold to exit BTR (to avoid frequent enter-exits at the lower limit) */
-#define BTR_EXIT_MARGIN 2000
+/* Threshold to exit/exit BTR (to avoid frequent enter-exits at the lower limit) */
+#define BTR_MAX_MARGIN 2500
 /* Threshold to change BTR multiplier (to avoid frequent changes) */
 #define BTR_DRIFT_MARGIN 2000
 /*Threshold to exit fixed refresh rate*/
@@ -131,7 +131,7 @@ static unsigned int calc_v_total_from_refresh(
 
 	v_total = div64_u64(div64_u64(((unsigned long long)(
 			frame_duration_in_ns) * (stream->timing.pix_clk_100hz / 10)),
-			stream->timing.h_total), 1000000);
+			stream->timing.h_total) + 500000, 1000000);
 
 	/* v_total cannot be less than nominal */
 	if (v_total < stream->timing.v_total) {
@@ -250,24 +250,22 @@ static void apply_below_the_range(struct core_freesync *core_freesync,
 	unsigned int delta_from_mid_point_in_us_1 = 0xFFFFFFFF;
 	unsigned int delta_from_mid_point_in_us_2 = 0xFFFFFFFF;
 	unsigned int frames_to_insert = 0;
-	unsigned int min_frame_duration_in_ns = 0;
-	unsigned int max_render_time_in_us = in_out_vrr->max_duration_in_us;
 	unsigned int delta_from_mid_point_delta_in_us;
-
-	min_frame_duration_in_ns = ((unsigned int) (div64_u64(
-		(1000000000ULL * 1000000),
-		in_out_vrr->max_refresh_in_uhz)));
+	unsigned int max_render_time_in_us =
+			in_out_vrr->max_duration_in_us - in_out_vrr->btr.margin_in_us;
 
 	/* Program BTR */
-	if (last_render_time_in_us + BTR_EXIT_MARGIN < max_render_time_in_us) {
+	if ((last_render_time_in_us + in_out_vrr->btr.margin_in_us / 2) < max_render_time_in_us) {
 		/* Exit Below the Range */
 		if (in_out_vrr->btr.btr_active) {
 			in_out_vrr->btr.frame_counter = 0;
 			in_out_vrr->btr.btr_active = false;
 		}
-	} else if (last_render_time_in_us > max_render_time_in_us) {
+	} else if (last_render_time_in_us > (max_render_time_in_us + in_out_vrr->btr.margin_in_us / 2)) {
 		/* Enter Below the Range */
-		in_out_vrr->btr.btr_active = true;
+		if (!in_out_vrr->btr.btr_active) {
+			in_out_vrr->btr.btr_active = true;
+		}
 	}
 
 	/* BTR set to "not active" so disengage */
@@ -322,24 +320,50 @@ static void apply_below_the_range(struct core_freesync *core_freesync,
 
 		/* Choose number of frames to insert based on how close it
 		 * can get to the mid point of the variable range.
+		 *  - Delta for CEIL: delta_from_mid_point_in_us_1
+		 *  - Delta for FLOOR: delta_from_mid_point_in_us_2
 		 */
-		if (delta_from_mid_point_in_us_1 < delta_from_mid_point_in_us_2) {
-			frames_to_insert = mid_point_frames_ceil;
-			delta_from_mid_point_delta_in_us = delta_from_mid_point_in_us_2 -
-					delta_from_mid_point_in_us_1;
-		} else {
+		if (mid_point_frames_ceil &&
+		    (last_render_time_in_us / mid_point_frames_ceil) <
+		    in_out_vrr->min_duration_in_us) {
+			/* Check for out of range.
+			 * If using CEIL produces a value that is out of range,
+			 * then we are forced to use FLOOR.
+			 */
 			frames_to_insert = mid_point_frames_floor;
-			delta_from_mid_point_delta_in_us = delta_from_mid_point_in_us_1 -
-					delta_from_mid_point_in_us_2;
+		} else if (mid_point_frames_floor < 2) {
+			/* Check if FLOOR would result in non-LFC. In this case
+			 * choose to use CEIL
+			 */
+			frames_to_insert = mid_point_frames_ceil;
+		} else if (delta_from_mid_point_in_us_1 < delta_from_mid_point_in_us_2) {
+			/* If choosing CEIL results in a frame duration that is
+			 * closer to the mid point of the range.
+			 * Choose CEIL
+			 */
+			frames_to_insert = mid_point_frames_ceil;
+		} else {
+			/* If choosing FLOOR results in a frame duration that is
+			 * closer to the mid point of the range.
+			 * Choose FLOOR
+			 */
+			frames_to_insert = mid_point_frames_floor;
 		}
 
 		/* Prefer current frame multiplier when BTR is enabled unless it drifts
 		 * too far from the midpoint
 		 */
+		if (delta_from_mid_point_in_us_1 < delta_from_mid_point_in_us_2) {
+			delta_from_mid_point_delta_in_us = delta_from_mid_point_in_us_2 -
+					delta_from_mid_point_in_us_1;
+		} else {
+			delta_from_mid_point_delta_in_us = delta_from_mid_point_in_us_1 -
+					delta_from_mid_point_in_us_2;
+		}
 		if (in_out_vrr->btr.frames_to_insert != 0 &&
 				delta_from_mid_point_delta_in_us < BTR_DRIFT_MARGIN) {
 			if (((last_render_time_in_us / in_out_vrr->btr.frames_to_insert) <
-					in_out_vrr->max_duration_in_us) &&
+					max_render_time_in_us) &&
 				((last_render_time_in_us / in_out_vrr->btr.frames_to_insert) >
 					in_out_vrr->min_duration_in_us))
 				frames_to_insert = in_out_vrr->btr.frames_to_insert;
@@ -348,8 +372,9 @@ static void apply_below_the_range(struct core_freesync *core_freesync,
 		/* Either we've calculated the number of frames to insert,
 		 * or we need to insert min duration frames
 		 */
-		if (last_render_time_in_us / frames_to_insert <
-				in_out_vrr->min_duration_in_us){
+		if (frames_to_insert &&
+		    (last_render_time_in_us / frames_to_insert) <
+		    in_out_vrr->min_duration_in_us){
 			frames_to_insert -= (frames_to_insert > 1) ?
 					1 : 0;
 		}
@@ -792,6 +817,11 @@ void mod_freesync_build_vrr_params(struct mod_freesync *mod_freesync,
 		refresh_range = in_out_vrr->max_refresh_in_uhz -
 				in_out_vrr->min_refresh_in_uhz;
 
+		in_out_vrr->btr.margin_in_us = in_out_vrr->max_duration_in_us -
+				2 * in_out_vrr->min_duration_in_us;
+		if (in_out_vrr->btr.margin_in_us > BTR_MAX_MARGIN)
+			in_out_vrr->btr.margin_in_us = BTR_MAX_MARGIN;
+
 		in_out_vrr->supported = true;
 	}
 
@@ -808,6 +838,7 @@ void mod_freesync_build_vrr_params(struct mod_freesync *mod_freesync,
 	in_out_vrr->btr.inserted_duration_in_us = 0;
 	in_out_vrr->btr.frames_to_insert = 0;
 	in_out_vrr->btr.frame_counter = 0;
+
 	in_out_vrr->btr.mid_point_in_us =
 				(in_out_vrr->min_duration_in_us +
 				 in_out_vrr->max_duration_in_us) / 2;

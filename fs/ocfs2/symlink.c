@@ -66,7 +66,7 @@ static int ocfs2_fast_symlink_readpage(struct file *unused, struct page *page)
 
 	if (status < 0) {
 		mlog_errno(status);
-		return status;
+		goto out;
 	}
 
 	fe = (struct ocfs2_dinode *) bh->b_data;
@@ -77,9 +77,10 @@ static int ocfs2_fast_symlink_readpage(struct file *unused, struct page *page)
 	memcpy(kaddr, link, len + 1);
 	kunmap_atomic(kaddr);
 	SetPageUptodate(page);
+out:
 	unlock_page(page);
 	brelse(bh);
-	return 0;
+	return status;
 }
 
 const struct address_space_operations ocfs2_fast_symlink_aops = {

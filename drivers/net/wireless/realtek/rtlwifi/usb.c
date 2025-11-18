@@ -1079,11 +1079,11 @@ int rtl_usb_probe(struct usb_interface *intf,
 	return 0;
 
 error_out:
+	rtl_usb_deinit(hw);
 	rtl_deinit_core(hw);
 error_out2:
 	_rtl_usb_io_handler_release(hw);
 	usb_put_dev(udev);
-	complete(&rtlpriv->firmware_loading_complete);
 	kfree(rtlpriv->usb_data);
 	return -ENODEV;
 }

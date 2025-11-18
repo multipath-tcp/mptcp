@@ -16,6 +16,8 @@
 
 #define VIDC_CLKS_NUM_MAX	4
 
+#define VENUS_MAX_FPS			240
+
 struct freq_tbl {
 	unsigned int load;
 	unsigned long freq;

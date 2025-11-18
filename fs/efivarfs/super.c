@@ -46,6 +46,10 @@ static int efivarfs_d_compare(const struct dentry *dentry,
 {
 	int guid = len - EFI_VARIABLE_GUID_LEN;
 
+	/* Parallel lookups may produce a temporary invalid filename */
+	if (guid <= 0)
+		return 1;
+
 	if (name->len != len)
 		return 1;
 
@@ -62,9 +66,6 @@ static int efivarfs_d_hash(const struct dentry *dentry, struct qstr *qstr)
 	unsigned long hash = init_name_hash(dentry);
 	const unsigned char *s = qstr->name;
 	unsigned int len = qstr->len;
-
-	if (!efivarfs_valid_name(s, len))
-		return -EINVAL;
 
 	while (len-- > EFI_VARIABLE_GUID_LEN)
 		hash = partial_name_hash(*s++, hash);

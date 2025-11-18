@@ -161,6 +161,7 @@ err_init_txq:
 		hinic_clean_txq(&nic_dev->txqs[j]);
 
 	devm_kfree(&netdev->dev, nic_dev->txqs);
+	nic_dev->txqs = NULL;
 	return err;
 }
 
@@ -221,6 +222,7 @@ err_init_rxq:
 		hinic_clean_rxq(&nic_dev->rxqs[j]);
 
 	devm_kfree(&netdev->dev, nic_dev->rxqs);
+	nic_dev->rxqs = NULL;
 	return err;
 }
 

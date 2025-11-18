@@ -97,7 +97,12 @@ int lima_mmu_init(struct lima_ip *ip)
 
 void lima_mmu_fini(struct lima_ip *ip)
 {
+	struct lima_device *dev = ip->dev;
 
+	if (ip->id == lima_ip_ppmmu_bcast)
+		return;
+
+	devm_free_irq(dev->dev, ip->irq, ip);
 }
 
 void lima_mmu_switch_vm(struct lima_ip *ip, struct lima_vm *vm)

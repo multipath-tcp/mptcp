@@ -98,7 +98,27 @@ static void async_pf_execute(struct work_struct *work)
 		swake_up_one(&vcpu->wq);
 
 	mmput(mm);
-	kvm_put_kvm(vcpu->kvm);
+}
+
+static void kvm_flush_and_free_async_pf_work(struct kvm_async_pf *work)
+{
+	/*
+	 * The async #PF is "done", but KVM must wait for the work item itself,
+	 * i.e. async_pf_execute(), to run to completion.  If KVM is a module,
+	 * KVM must ensure *no* code owned by the KVM (the module) can be run
+	 * after the last call to module_put().  Note, flushing the work item
+	 * is always required when the item is taken off the completion queue.
+	 * E.g. even if the vCPU handles the item in the "normal" path, the VM
+	 * could be terminated before async_pf_execute() completes.
+	 *
+	 * Wake all events skip the queue and go straight done, i.e. don't
+	 * need to be flushed (but sanity check that the work wasn't queued).
+	 */
+	if (work->wakeup_all)
+		WARN_ON_ONCE(work->work.func);
+	else
+		flush_work(&work->work);
+	kmem_cache_free(async_pf_cache, work);
 }
 
 void kvm_clear_async_pf_completion_queue(struct kvm_vcpu *vcpu)
@@ -125,7 +145,6 @@ void kvm_clear_async_pf_completion_queue(struct kvm_vcpu *vcpu)
 #else
 		if (cancel_work_sync(&work->work)) {
 			mmput(work->mm);
-			kvm_put_kvm(vcpu->kvm); /* == work->vcpu->kvm */
 			kmem_cache_free(async_pf_cache, work);
 		}
 #endif
@@ -137,7 +156,10 @@ void kvm_clear_async_pf_completion_queue(struct kvm_vcpu *vcpu)
 			list_first_entry(&vcpu->async_pf.done,
 					 typeof(*work), link);
 		list_del(&work->link);
-		kmem_cache_free(async_pf_cache, work);
+
+		spin_unlock(&vcpu->async_pf.lock);
+		kvm_flush_and_free_async_pf_work(work);
+		spin_lock(&vcpu->async_pf.lock);
 	}
 	spin_unlock(&vcpu->async_pf.lock);
 
@@ -161,7 +183,7 @@ void kvm_check_async_pf_completion(struct kvm_vcpu *vcpu)
 
 		list_del(&work->queue);
 		vcpu->async_pf.queued--;
-		kmem_cache_free(async_pf_cache, work);
+		kvm_flush_and_free_async_pf_work(work);
 	}
 }
 
@@ -173,7 +195,9 @@ int kvm_setup_async_pf(struct kvm_vcpu *vcpu, gpa_t cr2_or_gpa,
 	if (vcpu->async_pf.queued >= ASYNC_PF_PER_VCPU)
 		return 0;
 
-	/* setup delayed work */
+	/* Arch specific code should not do async PF in this case */
+	if (unlikely(kvm_is_error_hva(hva)))
+		return 0;
 
 	/*
 	 * do alloc nowait since if we are going to sleep anyway we
@@ -190,26 +214,16 @@ int kvm_setup_async_pf(struct kvm_vcpu *vcpu, gpa_t cr2_or_gpa,
 	work->arch = *arch;
 	work->mm = current->mm;
 	mmget(work->mm);
-	kvm_get_kvm(work->vcpu->kvm);
-
-	/* this can't really happen otherwise gfn_to_pfn_async
-	   would succeed */
-	if (unlikely(kvm_is_error_hva(work->addr)))
-		goto retry_sync;
 
 	INIT_WORK(&work->work, async_pf_execute);
-	if (!schedule_work(&work->work))
-		goto retry_sync;
 
 	list_add_tail(&work->queue, &vcpu->async_pf.queue);
 	vcpu->async_pf.queued++;
 	kvm_arch_async_page_not_present(vcpu, work);
+
+	schedule_work(&work->work);
+
 	return 1;
-retry_sync:
-	kvm_put_kvm(work->vcpu->kvm);
-	mmput(work->mm);
-	kmem_cache_free(async_pf_cache, work);
-	return 0;
 }
 
 int kvm_async_pf_wakeup_all(struct kvm_vcpu *vcpu)

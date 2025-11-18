@@ -94,6 +94,8 @@ static int enetc_vf_set_mac_addr(struct net_device *ndev, void *addr)
 	if (err)
 		return err;
 
+	eth_hw_addr_set(ndev, saddr->sa_data);
+
 	return 0;
 }
 

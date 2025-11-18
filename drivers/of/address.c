@@ -692,7 +692,7 @@ static struct device_node *__of_get_dma_parent(const struct device_node *np)
 	if (ret < 0)
 		return of_get_parent(np);
 
-	return of_node_get(args.np);
+	return args.np;
 }
 
 u64 of_translate_dma_address(struct device_node *dev, const __be32 *in_addr)

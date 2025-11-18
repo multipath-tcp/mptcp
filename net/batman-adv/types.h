@@ -603,9 +603,6 @@ struct batadv_hardif_neigh_node_bat_v {
 	 *  neighbor
 	 */
 	unsigned long last_unicast_tx;
-
-	/** @metric_work: work queue callback item for metric update */
-	struct work_struct metric_work;
 };
 
 /**
@@ -1562,6 +1559,12 @@ struct batadv_priv {
 
 	/** @soft_iface: net device which holds this struct as private data */
 	struct net_device *soft_iface;
+
+	/**
+	 * @mtu_set_by_user: MTU was set once by user
+	 * protected by rtnl_lock
+	 */
+	int mtu_set_by_user;
 
 	/**
 	 * @bat_counters: mesh internal traffic statistic counters (see

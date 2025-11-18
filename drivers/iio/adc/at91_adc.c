@@ -1139,7 +1139,7 @@ static int at91_ts_register(struct at91_adc_state *st,
 	return ret;
 
 err:
-	input_free_device(st->ts_input);
+	input_free_device(input);
 	return ret;
 }
 

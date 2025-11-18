@@ -73,6 +73,7 @@ struct rpc_clnt {
 #endif
 	struct rpc_xprt_iter	cl_xpi;
 	const struct cred	*cl_cred;
+	struct super_block *pipefs_sb;
 };
 
 /*
@@ -121,6 +122,7 @@ struct rpc_create_args {
 	const char		*servername;
 	const char		*nodename;
 	const struct rpc_program *program;
+	struct rpc_stat		*stats;
 	u32			prognumber;	/* overrides program->number */
 	u32			version;
 	rpc_authflavor_t	authflavor;

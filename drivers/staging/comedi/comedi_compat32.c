@@ -360,6 +360,9 @@ static int compat_insnlist(struct file *file, unsigned long arg)
 	if (err)
 		return -EFAULT;
 
+	if (n_insns > 65536)	/* See MAX_INSNS in comedi_fops.c */
+		return -EINVAL;
+
 	/* Allocate user memory to copy insnlist and insns into. */
 	s = compat_alloc_user_space(offsetof(struct combined_insnlist,
 					     insn[n_insns]));

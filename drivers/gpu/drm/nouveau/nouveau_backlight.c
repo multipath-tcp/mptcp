@@ -40,7 +40,7 @@
 #include "nouveau_connector.h"
 
 static struct ida bl_ida;
-#define BL_NAME_SIZE 15 // 12 for name + 2 for digits + 1 for '\0'
+#define BL_NAME_SIZE 24 // 12 for name + 11 for digits + 1 for '\0'
 
 struct nouveau_backlight {
 	struct backlight_device *dev;

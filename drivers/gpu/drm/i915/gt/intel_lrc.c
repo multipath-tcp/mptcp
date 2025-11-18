@@ -475,7 +475,7 @@ static struct i915_request *
 __unwind_incomplete_requests(struct intel_engine_cs *engine)
 {
 	struct i915_request *rq, *rn, *active = NULL;
-	struct list_head *uninitialized_var(pl);
+	struct list_head *pl;
 	int prio = I915_PRIORITY_INVALID;
 
 	lockdep_assert_held(&engine->active.lock);
@@ -2992,6 +2992,9 @@ static u32 *gen11_emit_fini_breadcrumb_rcs(struct i915_request *request,
 static void execlists_park(struct intel_engine_cs *engine)
 {
 	del_timer(&engine->execlists.timer);
+
+	/* Reset upon idling, or we may delay the busy wakeup. */
+	WRITE_ONCE(engine->execlists.queue_priority_hint, INT_MIN);
 }
 
 void intel_execlists_set_default_submission(struct intel_engine_cs *engine)

@@ -858,3 +858,21 @@ be misspelled d_alloc_anon().
 [should've been added in 2016] stale comment in finish_open() nonwithstanding,
 failure exits in ->atomic_open() instances should *NOT* fput() the file,
 no matter what.  Everything is handled by the caller.
+
+---
+
+**mandatory**
+
+If ->rename() update of .. on cross-directory move needs an exclusion with
+directory modifications, do *not* lock the subdirectory in question in your
+->rename() - it's done by the caller now [that item should've been added in
+28eceeda130f "fs: Lock moved directories"].
+
+---
+
+**mandatory**
+
+On same-directory ->rename() the (tautological) update of .. is not protected
+by any locks; just don't do it if the old parent is the same as the new one.
+We really can't lock two subdirectories in same-directory rename - not without
+deadlocks.

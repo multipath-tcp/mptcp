@@ -47,8 +47,10 @@ static int igt_add_request(void *arg)
 
 	mutex_lock(&i915->drm.struct_mutex);
 	request = mock_request(i915->engine[RCS0]->kernel_context, HZ / 10);
-	if (!request)
+	if (IS_ERR(request)) {
+		err = PTR_ERR(request);
 		goto out_unlock;
+	}
 
 	i915_request_add(request);
 
@@ -69,8 +71,8 @@ static int igt_wait_request(void *arg)
 
 	mutex_lock(&i915->drm.struct_mutex);
 	request = mock_request(i915->engine[RCS0]->kernel_context, T);
-	if (!request) {
-		err = -ENOMEM;
+	if (IS_ERR(request)) {
+		err = PTR_ERR(request);
 		goto out_unlock;
 	}
 	i915_request_get(request);
@@ -142,8 +144,8 @@ static int igt_fence_wait(void *arg)
 
 	mutex_lock(&i915->drm.struct_mutex);
 	request = mock_request(i915->engine[RCS0]->kernel_context, T);
-	if (!request) {
-		err = -ENOMEM;
+	if (IS_ERR(request)) {
+		err = PTR_ERR(request);
 		goto out_locked;
 	}
 
@@ -203,8 +205,8 @@ static int igt_request_rewind(void *arg)
 	GEM_BUG_ON(IS_ERR(ce));
 	request = mock_request(ce, 2 * HZ);
 	intel_context_put(ce);
-	if (!request) {
-		err = -ENOMEM;
+	if (IS_ERR(request)) {
+		err = PTR_ERR(request);
 		goto err_context_0;
 	}
 
@@ -216,8 +218,8 @@ static int igt_request_rewind(void *arg)
 	GEM_BUG_ON(IS_ERR(ce));
 	vip = mock_request(ce, 0);
 	intel_context_put(ce);
-	if (!vip) {
-		err = -ENOMEM;
+	if (IS_ERR(vip)) {
+		err = PTR_ERR(vip);
 		goto err_context_1;
 	}
 

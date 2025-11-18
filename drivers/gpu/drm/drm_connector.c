@@ -912,6 +912,10 @@ static const struct drm_prop_enum_list hdmi_colorspaces[] = {
  * 	implemented in the DRM core.  This is the only standard connector
  * 	property that userspace can change.
  *
+ * 	On atomic drivers any DPMS setproperty ioctl where the value does not
+ * 	change is completely skipped, otherwise a full atomic commit will occur.
+ * 	On legacy drivers the exact behavior is driver specific.
+ *
  * 	Note that this property cannot be set through the MODE_ATOMIC ioctl,
  * 	userspace must use "ACTIVE" on the CRTC instead.
  *
