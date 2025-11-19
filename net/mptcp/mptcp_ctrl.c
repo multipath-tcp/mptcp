@@ -2093,7 +2093,7 @@ static void mptcp_sub_close_doit(struct sock *sk)
 		tp->closing = 1;
 		tcp_close(sk, 0);
 	} else if (tcp_close_state(sk)) {
-		sk->sk_shutdown |= SEND_SHUTDOWN;
+		WRITE_ONCE(sk->sk_shutdown, sk->sk_shutdown | SEND_SHUTDOWN);
 		tcp_send_fin(sk);
 	}
 }
@@ -2238,7 +2238,7 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 		/* Detach the mpcb from the token hashtable */
 		mptcp_hash_remove_bh(meta_tp);
 
-	meta_sk->sk_shutdown = SHUTDOWN_MASK;
+	WRITE_ONCE(meta_sk->sk_shutdown, SHUTDOWN_MASK);
 	/* We need to flush the recv. buffs.  We do this only on the
 	 * descriptor close, not protocol-sourced closes, because the
 	 * reader process may not have drained the data yet!

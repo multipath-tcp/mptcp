@@ -392,7 +392,7 @@ static void mptcp_combine_dfin(const struct sk_buff *skb,
 
 combine:
 	if (tcp_close_state(subsk)) {
-		subsk->sk_shutdown |= SEND_SHUTDOWN;
+		WRITE_ONCE(subsk->sk_shutdown, subsk->sk_shutdown | SEND_SHUTDOWN);
 		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_FIN;
 	}
 }
