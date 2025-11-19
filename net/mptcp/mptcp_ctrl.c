@@ -411,14 +411,15 @@ void mptcp_enable_sock(struct sock *sk)
 
 		/* Necessary here, because MPTCP can be enabled/disabled through
 		 * a setsockopt.
+		 * Paired with READ_ONCE() in tcp_(get|set)sockopt()
 		 */
 		if (sk->sk_family == AF_INET)
-			inet_csk(sk)->icsk_af_ops = &mptcp_v4_specific;
+			WRITE_ONCE(inet_csk(sk)->icsk_af_ops, &mptcp_v4_specific);
 #if IS_ENABLED(CONFIG_IPV6)
 		else if (mptcp_v6_is_v4_mapped(sk))
-			inet_csk(sk)->icsk_af_ops = &mptcp_v6_mapped;
+			WRITE_ONCE(inet_csk(sk)->icsk_af_ops, &mptcp_v6_mapped);
 		else
-			inet_csk(sk)->icsk_af_ops = &mptcp_v6_specific;
+			WRITE_ONCE(inet_csk(sk)->icsk_af_ops, &mptcp_v6_specific);
 #endif
 
 		mptcp_enable_static_key();
@@ -432,14 +433,15 @@ void mptcp_disable_sock(struct sock *sk)
 
 		/* Necessary here, because MPTCP can be enabled/disabled through
 		 * a setsockopt.
+		 * Paired with READ_ONCE() in tcp_(get|set)sockopt()
 		 */
 		if (sk->sk_family == AF_INET)
-			inet_csk(sk)->icsk_af_ops = &ipv4_specific;
+			WRITE_ONCE(inet_csk(sk)->icsk_af_ops, &ipv4_specific);
 #if IS_ENABLED(CONFIG_IPV6)
 		else if (mptcp_v6_is_v4_mapped(sk))
-			inet_csk(sk)->icsk_af_ops = &ipv6_mapped;
+			WRITE_ONCE(inet_csk(sk)->icsk_af_ops, &ipv6_mapped);
 		else
-			inet_csk(sk)->icsk_af_ops = &ipv6_specific;
+			WRITE_ONCE(inet_csk(sk)->icsk_af_ops, &ipv6_specific);
 #endif
 	}
 }

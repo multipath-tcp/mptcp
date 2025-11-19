@@ -228,7 +228,7 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
 				WRITE_ONCE(sk->sk_prot, &tcp_prot);
 #ifdef CONFIG_MPTCP
 				if (sock_flag(sk, SOCK_MPTCP))
-					icsk->icsk_af_ops = &mptcp_v4_specific;
+					WRITE_ONCE(icsk->icsk_af_ops, &mptcp_v4_specific);
 				else
 #endif
 					/* Paired with READ_ONCE() in tcp_(get|set)sockopt() */
