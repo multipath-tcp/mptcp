@@ -2453,17 +2453,6 @@ void __tcp_close(struct sock *sk, long timeout)
 	struct sk_buff *skb;
 	int state;
 
-	if (is_meta_sk(sk)) {
-		/* TODO: Currently forcing timeout to 0 because
-		 * sk_stream_wait_close will complain during lockdep because
-		 * of the mpcb_mutex (circular lock dependency through
-		 * inet_csk_listen_stop()).
-		 * We should find a way to get rid of the mpcb_mutex.
-		 */
-		mptcp_close(sk, 0);
-		return;
-	}
-
 	WRITE_ONCE(sk->sk_shutdown, SHUTDOWN_MASK);
 
 	if (sk->sk_state == TCP_LISTEN) {
@@ -2633,6 +2622,17 @@ out:
 
 void tcp_close(struct sock *sk, long timeout)
 {
+	if (is_meta_sk(sk)) {
+		/* TODO: Currently forcing timeout to 0 because
+		 * sk_stream_wait_close will complain during lockdep because
+		 * of the mpcb_mutex (circular lock dependency through
+		 * inet_csk_listen_stop()).
+		 * We should find a way to get rid of the mpcb_mutex.
+		 */
+		mptcp_close(sk, 0);
+		return;
+	}
+
 	lock_sock(sk);
 	__tcp_close(sk, timeout);
 	release_sock(sk);
