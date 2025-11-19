@@ -2332,6 +2332,9 @@ adjudge_to_death:
 	/* It is the last release_sock in its life. It will remove backlog. */
 	release_sock(meta_sk);
 
+	if (!meta_sk->sk_net_refcnt)
+		inet_csk_clear_xmit_timers_sync(meta_sk);
+
 	/* Now socket is owned by kernel and we acquire BH lock
 	 * to finish close. No need to check for user refs.
 	 */
