@@ -2342,8 +2342,11 @@ void tcp_set_state(struct sock *sk, int state)
 		}
 		break;
 	case TCP_CLOSE_WAIT:
-		if (oldstate == TCP_SYN_RECV)
+		if (oldstate == TCP_SYN_RECV) {
 			TCP_INC_STATS(sock_net(sk), TCP_MIB_CURRESTAB);
+			if (is_meta_sk(sk))
+				MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_CURRESTAB);
+		}
 		break;
 
 	case TCP_CLOSE:
