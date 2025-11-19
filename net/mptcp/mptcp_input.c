@@ -2477,6 +2477,11 @@ static void mptcp_rcv_synsent_fastopen(struct sock *meta_sk)
 			_mptcp_rcv_synsent_fastopen(meta_sk, skb_rtx_head,
 						    true);
 		}
+
+		if (master_tp->total_retrans)
+			master_tp->fastopen_client_fail = TFO_SYN_RETRANSMITTED;
+		else
+			master_tp->fastopen_client_fail = TFO_DATA_NOT_ACKED;
 	}
 
 	/* We can advance write_seq by the number of bytes unacknowledged
