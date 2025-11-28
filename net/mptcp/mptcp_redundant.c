@@ -20,6 +20,12 @@
 #include <linux/module.h>
 #include <net/mptcp.h>
 
+/*CBD) for seqeunce reordering
+u32 seq_temp_start;
+u32 seq_temp_end;
+u32 seq_temp_length;
+
+
 /* Struct to store the data of a single subflow */
 struct redsched_priv {
 	/* The skb or NULL */
@@ -301,14 +307,25 @@ static struct sk_buff *mptcp_red_next_segment(struct sock *meta_sk,
 		/* Correct the skb pointers of the current subflow */
 		red_p = redsched_get_priv(tp);
 		redsched_correct_skb_pointers(meta_sk, red_p);
+		
 
 		skb = redsched_next_skb_from_queue(&meta_sk->sk_write_queue,
 						   red_p->skb, meta_sk);
 		if (skb && redsched_use_subflow(meta_sk, active_valid_sks, tp,
 						skb)) {
+			
+			/*from here original code
 			red_p->skb = skb;
 			red_p->skb_start_seq = TCP_SKB_CB(skb)->seq;
 			red_p->skb_end_seq = TCP_SKB_CB(skb)->end_seq;
+			*/
+			/*CBD) To make the reordering scheduler, this part should be modified compactly*/
+			
+			red_p->skb = skb;
+			seq_temp_length = TCP_SKB_CB(skb)->end_seq; - TCP_SKB_CB(skb)->seq;
+			red_p->skb_start_seq = (seq_temp_length >> 1) + TCP_SKB_CB(skb)->seq;
+			red_p->skb_end_seq = TCP_SKB_CB(skb)->end_seq;
+			
 			redsched_update_next_subflow(tp, red_cb);
 			*subsk = (struct sock *)tp;
 
@@ -370,7 +387,7 @@ static struct mptcp_sched_ops mptcp_sched_red = {
 	.owner = THIS_MODULE,
 };
 
-static int __init red_register(void)
+static int __init red_register(void) 
 {
 	BUILD_BUG_ON(sizeof(struct redsched_priv) > MPTCP_SCHED_SIZE);
 	BUILD_BUG_ON(sizeof(struct redsched_cb) > MPTCP_SCHED_DATA_SIZE);
